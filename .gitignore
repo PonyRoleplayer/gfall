@@ -53,3 +53,8 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# repo-specific build and data
+/build/
+/daggerfall/
+
