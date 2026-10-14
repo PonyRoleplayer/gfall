@@ -1,20 +1,19 @@
 /*
- * GFALL frame. Platform fills one input snapshot, the player flies the
- * camera, and the renderer draws the block. Nothing else is in this step.
+ * One room. The platform fills an input snapshot, the game flies the
+ * camera, and the engine draws the level. Escape quits.
  */
 
-#include "game/player.h"
-#include "game/world.h"
-#include "platform/mem.h"
-#include "platform/win32.h"
-#include "render/camera.h"
-#include "render/draw.h"
-#include "render/glide.h"
-#include "render/texcache.h"
+#include "engine/core/mem.h"
+#include "engine/gfx/camera.h"
+#include "engine/gfx/gfx.h"
+#include "engine/platform/win32.h"
+#include "game/dagger/player.h"
+#include "game/dagger/world.h"
 
 int gfall_main(void *instance)
 {
     World *world;
+    Level level;
     Camera cam;
     Input in;
     float x;
@@ -24,7 +23,7 @@ int gfall_main(void *instance)
     float pitch;
 
     mem_init();
-    if (!win_startup(instance)) {
+    if (!win_startup(instance, "/ARENA2")) {
         mem_shutdown();
         return 1;
     }
@@ -36,16 +35,17 @@ int gfall_main(void *instance)
         mem_shutdown();
         return 1;
     }
+    world_as_level(world, &level);
 
-    if (!glide_open(win_hwnd())) {
-        win_fail(glide_error());
+    if (!gfx_startup(win_hwnd())) {
+        win_fail(gfx_error());
         win_shutdown();
         mem_shutdown();
         return 1;
     }
-    if (!texcache_upload(world)) {
-        win_fail(texcache_error());
-        glide_close();
+    if (!gfx_prepare(&level)) {
+        win_fail(gfx_error());
+        gfx_shutdown();
         win_shutdown();
         mem_shutdown();
         return 1;
@@ -61,10 +61,10 @@ int gfall_main(void *instance)
             break;
         }
         player_tick(&cam, &in);
-        draw_frame(&cam, world);
+        gfx_frame(&cam, &level);
     }
     input_end();
-    glide_close();
+    gfx_shutdown();
     win_shutdown();
     mem_shutdown();
     return 0;

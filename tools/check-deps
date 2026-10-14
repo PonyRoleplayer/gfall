@@ -1,0 +1,82 @@
+#!/bin/sh
+# Warn when the tools or game data for a build are missing.
+#   sh tools/check-deps        full disc build (make)
+#   sh tools/check-deps host   native test only (make hostcheck)
+
+set -u
+
+ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd) || exit 1
+MODE=${1:-all}
+MISSING=0
+
+if [ "$MODE" != all ] && [ "$MODE" != host ]; then
+    echo "usage: sh tools/check-deps [all|host]" >&2
+    exit 2
+fi
+
+ok() {
+    printf '  ok      %s\n' "$1"
+}
+
+bad() {
+    printf '  missing %s\n' "$1"
+    printf '          %s\n' "$2"
+    MISSING=1
+}
+
+# $1 command, $2 what breaks without it, $3 package on Debian/Ubuntu
+need_cmd() {
+    cmd=$1
+    why=$2
+    pkg=$3
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        bad "$cmd" "$why. Debian/Ubuntu package: $pkg"
+        return
+    fi
+    if ! "$cmd" --version >/dev/null 2>&1; then
+        bad "$cmd" "found, but it did not run ($cmd --version failed)"
+        return
+    fi
+    ok "$cmd"
+}
+
+need_file() {
+    rel=$1
+    if [ -f "$ROOT/$rel" ]; then
+        ok "$rel"
+    else
+        bad "$rel" "game data. hostcheck and the GFALL disc both read this tree"
+    fi
+}
+
+echo "gfall dependencies ($MODE)"
+
+need_cmd gcc "native hostcheck" gcc
+need_cmd make "the build" make
+
+need_file daggerfall/DAGGER/ARENA2/ARCH3D.BSA
+need_file daggerfall/DAGGER/ARENA2/BLOCKS.BSA
+need_file daggerfall/DAGGER/ARENA2/ART_PAL.COL
+
+if [ "$MODE" = all ]; then
+    need_cmd i686-w64-mingw32-gcc "GFALL.EXE and SPINTRI.EXE" gcc-mingw-w64-i686
+    need_cmd i686-w64-mingw32-objdump "the PE checks" binutils-mingw-w64-i686
+    need_cmd xorriso "the ISO images" xorriso
+    need_cmd file "the PE checks" file
+fi
+
+if [ "$MISSING" -ne 0 ]; then
+    echo
+    echo "Not ready to build."
+    if [ "$MODE" = host ]; then
+        echo "make hostcheck needs gcc, make, and daggerfall/DAGGER/ARENA2."
+    else
+        echo "On Debian/Ubuntu:"
+        echo "  sudo apt install build-essential file gcc-mingw-w64-i686 binutils-mingw-w64-i686 xorriso"
+    fi
+    exit 1
+fi
+
+echo
+echo "Ready."
+exit 0

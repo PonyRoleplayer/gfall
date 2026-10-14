@@ -7,8 +7,9 @@
 # Do not copy glide2x.dll onto either disc. The system driver is the one
 # that draws the 3dfx splash.
 #
-# Tools: i686-w64-mingw32-gcc, i686-w64-mingw32-objdump
-#        (gcc-mingw-w64-i686-win32), xorriso, and a native gcc for hostcheck.
+# Tools: sh tools/check-deps
+#        i686-w64-mingw32-gcc, i686-w64-mingw32-objdump
+#        (gcc-mingw-w64-i686), xorriso, file, and a native gcc for hostcheck.
 # glide2x.dll is loaded at runtime. The driver export has no @N suffix,
 # and a static import of grBufferClear@12 will not start.
 
@@ -36,40 +37,55 @@ HOST_CFLAGS := -std=gnu90 -Wall -Wextra -O2 -DDF_HOST -Isrc
 
 GFALL_SRC := \
 	src/main.c \
-	src/platform/win32.c \
-	src/platform/input.c \
-	src/platform/fs.c \
-	src/platform/mem.c \
-	src/assets/bsa.c \
-	src/assets/arch3d.c \
-	src/assets/texture.c \
-	src/assets/palette.c \
-	src/assets/rdb.c \
-	src/render/glide.c \
-	src/render/camera.c \
-	src/render/texcache.c \
-	src/render/draw.c \
-	src/render/hud.c \
-	src/game/world.c \
-	src/game/player.c
+	src/engine/platform/win32.c \
+	src/engine/platform/input.c \
+	src/engine/platform/fs.c \
+	src/engine/core/mem.c \
+	src/engine/assets/vfs.c \
+	src/engine/assets/loader.c \
+	src/engine/scene/scene.c \
+	src/engine/gfx/glide.c \
+	src/engine/gfx/camera.c \
+	src/engine/gfx/texcache.c \
+	src/engine/gfx/draw.c \
+	src/engine/gfx/gfx.c \
+	src/engine/ui/hud.c \
+	src/game/dagger/bsa.c \
+	src/game/dagger/arch3d.c \
+	src/game/dagger/texture.c \
+	src/game/dagger/palette.c \
+	src/game/dagger/rdb.c \
+	src/game/dagger/bind.c \
+	src/game/dagger/world.c \
+	src/game/dagger/player.c
 
 HOST_SRC := \
-	src/platform/mem.c \
-	src/platform/fs.c \
-	src/assets/bsa.c \
-	src/assets/palette.c \
-	src/assets/texture.c \
-	src/assets/arch3d.c \
-	src/assets/rdb.c \
-	src/game/world.c \
-	src/game/player.c \
-	src/render/camera.c
+	src/engine/core/mem.c \
+	src/engine/platform/fs.c \
+	src/engine/assets/vfs.c \
+	src/engine/assets/loader.c \
+	src/engine/scene/scene.c \
+	src/engine/gfx/camera.c \
+	src/game/dagger/bsa.c \
+	src/game/dagger/palette.c \
+	src/game/dagger/texture.c \
+	src/game/dagger/arch3d.c \
+	src/game/dagger/rdb.c \
+	src/game/dagger/bind.c \
+	src/game/dagger/world.c \
+	src/game/dagger/player.c
 
-.PHONY: all check clean hostcheck gfall-check
+.PHONY: all check clean hostcheck gfall-check deps deps-host
 
-all: check build/spintri.iso gfall-check build/gfall.iso
+deps:
+	sh tools/check-deps
 
-build/SPINTRI.EXE: src/spintri.c third_party/glide2/include/glide.h
+deps-host:
+	sh tools/check-deps host
+
+all: deps check build/spintri.iso gfall-check build/gfall.iso
+
+build/SPINTRI.EXE: src/spintri.c third_party/glide2/include/glide.h | deps
 	mkdir -p build
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ src/spintri.c -luser32 -lkernel32 -lgcc
 
@@ -93,17 +109,17 @@ build/cdroot/SPINTRI.EXE: build/SPINTRI.EXE
 	mkdir -p build/cdroot
 	cp build/SPINTRI.EXE $@
 
-build/spintri.iso: build/cdroot/SPINTRI.EXE
+build/spintri.iso: build/cdroot/SPINTRI.EXE | deps
 	$(XORRISO) -as mkisofs -o $@ -V SPINTRI -J -iso-level 1 build/cdroot
 
-build/hostcheck: tools/hostcheck.c $(HOST_SRC)
+build/hostcheck: tools/hostcheck.c tools/check_engine.c tools/check_dagger.c tools/check_util.c $(HOST_SRC) | deps-host
 	mkdir -p build
-	$(HOST_CC) $(HOST_CFLAGS) -o $@ tools/hostcheck.c $(HOST_SRC)
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ tools/hostcheck.c tools/check_engine.c tools/check_dagger.c tools/check_util.c $(HOST_SRC)
 
 hostcheck: build/hostcheck
 	./build/hostcheck
 
-build/GFALL.EXE: $(GFALL_SRC) third_party/glide2/include/glide.h
+build/GFALL.EXE: $(GFALL_SRC) third_party/glide2/include/glide.h | deps
 	mkdir -p build
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(GFALL_SRC) -luser32 -lkernel32 -lgcc
 
@@ -123,7 +139,7 @@ gfall-check: build/GFALL.EXE
 	! grep -q 'glide2x.dll' build/gfall.dump
 	! $(OBJDUMP) -d build/GFALL.EXE | grep -E -i -q '(^|[[:space:]])(cmov|fcmov|fucomi|fcomi|movaps|movss|addps|xmm)[[:digit:]]*'
 
-build/gfall.iso: build/GFALL.EXE build/hostcheck
+build/gfall.iso: build/GFALL.EXE build/hostcheck | deps
 	./build/hostcheck
 	$(XORRISO) -as mkisofs -o $@ -V GFALL -J -relaxed-filenames \
 		-graft-points \

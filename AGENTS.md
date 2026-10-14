@@ -17,13 +17,15 @@
 **Execution (target):** Mount the ISO and run `D:\SPINTRI.EXE` or `D:\GFALL.EXE`. **Do not copy glide2x.dll onto discs.** Escape quits.
 
 ## Codebase layout
-- `src/main.c` — `gfall_main(void *)` entrypoint; platform calls it from `WinMainCRTStartup`.
-- `src/df.h` — Shared types, endian read helpers, `df_sin/df_cos` use **x87 inline asm** (no libm). Respect when adding math.
-- `src/platform/` — Win32 and host I/O: `win32.c` sets `_WinMainCRTStartup` and gets module root (CD dir → uses `.../ARENA2`), `input.c`, `fs.c` (POSIX if `DF_HOST`, Win32 otherwise), `mem.c` (stdlib malloc if `DF_HOST`, Win32 heap + CRT `memcpy/memmove/memset/strlen` replacements if not).
-- `src/assets/` — Daggerfall formats: `bsa.c` (BSA archives), `arch3d.c` (ARCH3D.BSA meshes, `fsqrt` via x87), `texture.c` (source tiling into POT square), `palette.c`, `rdb.c` (RDB block data).
-- `src/render/` — `glide.c` (dynamic loading of glide2x.dll; exports resolved by plain/`@N`/`_name@N` to work with retail driver), `texcache.c` (2MB TMU), `camera.c`, `draw.c`, `hud.c`.
-- `src/game/` — `world.c` hardcodes **one** room from `N0000012.RDB` (room model 62022, position (896,-512,1152), 2 torches TEXTURE.210 record 6). `player.c` (WASD/Q/E, mouse look).
-- `tools/hostcheck.c` — End-to-end host validation: rotation/camera/math, parses ARENA2, asserts exact hardcoded expectations (1 model, 12 tris, 2 flats, 21 editor markers), checks texture POT/square tiling, projects screen points, writes `build/tex0.ppm`. **Update this when world/loading changes.**
+- `src/main.c` — `gfall_main(void *)` entrypoint; platform calls it from `WinMainCRTStartup`. Loads one Daggerfall room and hands a `Level` to `gfx.h`.
+- `src/engine/core/` — `df.h` types, endian helpers, x87 `df_sin`/`df_cos` (no libm). `mem.c` is the heap (stdlib malloc if `DF_HOST`, Win32 heap + CRT `memcpy`/`memmove`/`memset`/`strlen` replacements if not).
+- `src/engine/platform/` — `win32.c` (`_WinMainCRTStartup`, content dir beside the exe), `input.c`, `fs.c` (POSIX if `DF_HOST`, Win32 otherwise).
+- `src/engine/assets/` — VFS over `fs`, loader registry, engine formats: mesh, texture, palette, level.
+- `src/engine/scene/` — placed meshes, billboards, transforms, visibility query (everything is visible, in storage order).
+- `src/engine/gfx/` — `gfx.h` is the call the game makes. `glide.c` loads glide2x.dll at runtime (plain/`@N`/`_name@N`), `texcache.c` (2MB TMU), `camera.c`, `draw.c`.
+- `src/engine/ui/` — HUD primitives.
+- `src/game/dagger/` — BSA, ARCH3D, RDB, COL, TEXTURE.###, the one room in `world.c` (`N0000012.RDB`, model 62022 at (896,-512,1152), 2 torches TEXTURE.210 record 6), and `player.c` (WASD/Q/E, mouse look).
+- `tools/hostcheck.c` — runs `check_engine.c` then `check_dagger.c`. Engine tests cover transforms, camera, visibility, loaders, VFS. Dagger tests assert the room (1 model, 12 tris, 2 flats, 21 editor markers), texture POT/square tiling, and write `build/tex0.ppm`. **Update the dagger test when world/loading changes.**
 - `daggerfall/DAGGER/ARENA2/` — Game data used at runtime/for tests (baked into ISOs).
 - `third_party/glide2/include/` — Glide 2 headers.
 
@@ -40,7 +42,7 @@
 - **Build first, test fast:** Use `make hostcheck` to verify logic on the host; then `make gfall-check` if changing Win32/Glide code paths.
 - **Trust executable sources:** If behavior differs between docs (e.g. README/NOTES) and code/Makefile, trust Makefile + headers + source + existing build artifacts. This repo is instruction-heavy in its Makefile/checks.
 - **Don't commit generated:** `build/` is build output. Keep `daggerfall/DAGGER/ARENA2` and `daggerfall/decompiled` as-is (data/reference). `.gitignore` is standard C/MingW.
-- **Minimal changes:** This aims for period accuracy. Avoid modern C or features that would trip the check scripts. If you modify `src/game/world.c` (hardcoded geometry/data counts), update `tools/hostcheck.c` accordingly.
+- **Minimal changes:** This aims for period accuracy. Avoid modern C or features that would trip the check scripts. If you modify `src/game/dagger/world.c` (hardcoded geometry/data counts), update `tools/check_dagger.c` accordingly.
 - **Style:** gnu90 C. No comments unless asked. Follow existing naming (snake_case). Keep Windows `WINVER`/`_WIN32_WINNT`/`WIN32_LEAN_AND_MEAN` in Win32/Glide files.
 
 ## Debugging
