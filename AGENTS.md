@@ -2,7 +2,8 @@
 
 ## Project
 - **Goal:** Recreate Daggerfall for Windows 98 on period hardware (Pentium MMX 233, 64 MB RAM, Voodoo 1, AWE64). Renders via 3dfx Glide 2; **glide2x.dll is loaded at runtime**.
-- **Status:** Single-room block viewer (GFALL) plus tech demo (SPINTRI). This is a "from scratch" recreation for the 90s, not a port of the original source. See `daggerfall/decompiled/NOTES.txt` for reference, but do not build against it.
+- **Status:** Single-room block viewer (GFALL) plus tech demo (SPINTRI). This is a "from scratch" recreation for the 90s, not a port of the original source.
+- **Reference:** Prefer public sources for formats and behavior: the [UESP wiki](https://en.uesp.net/wiki/Daggerfall:Daggerfall) (file formats, mechanics), plus community writeups such as the Daggerfall Unity docs and Interkarma's format notes. Do not treat `daggerfall/decompiled/` as authoritative; that decompilation is unreliable.
 
 ## Build (Linux, cross-compile)
 **Required tools:** `i686-w64-mingw32-gcc` (or gcc-mingw-w64-i686-win32), `i686-w64-mingw32-objdump`, `xorriso`, and native `gcc` (for hostcheck). These are **not present** in this environment; build artifacts already exist in `build/`.
@@ -40,10 +41,10 @@
 
 ## Conventions
 - **Build first, test fast:** Use `make hostcheck` to verify logic on the host; then `make gfall-check` if changing Win32/Glide code paths.
-- **Trust executable sources:** If behavior differs between docs (e.g. README/NOTES) and code/Makefile, trust Makefile + headers + source + existing build artifacts. This repo is instruction-heavy in its Makefile/checks.
-- **Don't commit generated:** `build/` is build output. Keep `daggerfall/DAGGER/ARENA2` and `daggerfall/decompiled` as-is (data/reference). `.gitignore` is standard C/MingW.
+- **Trust executable sources:** If public docs (UESP, format writeups) and this repo disagree about what the program does, trust Makefile + headers + source + existing build artifacts. This repo is instruction-heavy in its Makefile/checks.
+- **Don't commit generated:** `build/` is build output. Keep `daggerfall/DAGGER/ARENA2` as-is (game data). `.gitignore` is standard C/MingW.
 - **Minimal changes:** This aims for period accuracy. Avoid modern C or features that would trip the check scripts. If you modify `src/game/dagger/world.c` (hardcoded geometry/data counts), update `tools/check_dagger.c` accordingly.
-- **Style:** gnu90 C. No comments unless asked. Follow existing naming (snake_case). Keep Windows `WINVER`/`_WIN32_WINNT`/`WIN32_LEAN_AND_MEAN` in Win32/Glide files.
+- **Style:** gnu90 C. Comment non-obvious intent, format quirks, and constraints — this codebase is vibe-coded and has to be reviewable. Follow existing naming (snake_case). Keep Windows `WINVER`/`_WIN32_WINNT`/`WIN32_LEAN_AND_MEAN` in Win32/Glide files.
 
 ## Debugging
 - `build/*.dump` from objdump (PE info, imports) are produced during checks. Useful to inspect.
