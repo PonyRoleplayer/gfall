@@ -24,6 +24,8 @@ Bsa *bsa_open(const char *rel);
 void bsa_close(Bsa *bsa);
 int bsa_named(const Bsa *bsa);
 int bsa_count(const Bsa *bsa);
+/* Directory order after the numbered sort. 0 when index is out of range. */
+const BsaRec *bsa_at(const Bsa *bsa, int index);
 
 const BsaRec *bsa_find_id(const Bsa *bsa, df_u32 id);
 const BsaRec *bsa_find_name(const Bsa *bsa, const char *name);

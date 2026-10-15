@@ -6,44 +6,68 @@
  * the rotated axes. Built once when the entity is placed.
  */
 
-static void rot_apply(float rx, float ry, float rz, float *x, float *y, float *z)
+static void rot_x(float a, float *y, float *z)
 {
-    float c, s, x1, y1, z1;
+    float c, s, y1, z1;
 
-    c = df_cos(rx);
-    s = df_sin(rx);
+    c = df_cos(a);
+    s = df_sin(a);
     y1 = *y * c - *z * s;
     z1 = *y * s + *z * c;
     *y = y1;
     *z = z1;
+}
 
-    c = df_cos(ry);
-    s = df_sin(ry);
+static void rot_y(float a, float *x, float *z)
+{
+    float c, s, x1, z1;
+
+    c = df_cos(a);
+    s = df_sin(a);
     x1 = *x * c + *z * s;
     z1 = -*x * s + *z * c;
     *x = x1;
     *z = z1;
+}
 
-    c = df_cos(rz);
-    s = df_sin(rz);
+static void rot_z(float a, float *x, float *y)
+{
+    float c, s, x1, y1;
+
+    c = df_cos(a);
+    s = df_sin(a);
     x1 = *x * c - *y * s;
     y1 = *x * s + *y * c;
     *x = x1;
     *y = y1;
 }
 
-void instance_set_rotation(Instance *in, float rx, float ry, float rz)
+/* X, then Y, then Z. */
+static void rot_xyz(float rx, float ry, float rz, float *x, float *y, float *z)
+{
+    rot_x(rx, y, z);
+    rot_y(ry, x, z);
+    rot_z(rz, x, y);
+}
+
+/* Y, then X, then Z. Dungeon records are stored this way. */
+static void rot_yxz(float rx, float ry, float rz, float *x, float *y, float *z)
+{
+    rot_y(ry, x, z);
+    rot_x(rx, y, z);
+    rot_z(rz, x, y);
+}
+
+static void set_axes(Instance *in,
+                     void (*spin)(float, float, float, float *, float *, float *),
+                     float rx, float ry, float rz)
 {
     float x, y, z;
-
-    rx = df_wrap_tau(rx);
-    ry = df_wrap_tau(ry);
-    rz = df_wrap_tau(rz);
 
     x = 1.0f;
     y = 0.0f;
     z = 0.0f;
-    rot_apply(rx, ry, rz, &x, &y, &z);
+    spin(rx, ry, rz, &x, &y, &z);
     in->m[0] = x;
     in->m[3] = y;
     in->m[6] = z;
@@ -51,7 +75,7 @@ void instance_set_rotation(Instance *in, float rx, float ry, float rz)
     x = 0.0f;
     y = 1.0f;
     z = 0.0f;
-    rot_apply(rx, ry, rz, &x, &y, &z);
+    spin(rx, ry, rz, &x, &y, &z);
     in->m[1] = x;
     in->m[4] = y;
     in->m[7] = z;
@@ -59,10 +83,21 @@ void instance_set_rotation(Instance *in, float rx, float ry, float rz)
     x = 0.0f;
     y = 0.0f;
     z = 1.0f;
-    rot_apply(rx, ry, rz, &x, &y, &z);
+    spin(rx, ry, rz, &x, &y, &z);
     in->m[2] = x;
     in->m[5] = y;
     in->m[8] = z;
+}
+
+void instance_set_rotation(Instance *in, float rx, float ry, float rz)
+{
+    set_axes(in, rot_xyz, df_wrap_tau(rx), df_wrap_tau(ry), df_wrap_tau(rz));
+}
+
+void instance_set_dungeon_rotation(Instance *in, float rx, float ry, float rz)
+{
+    /* The file angle is the opposite turn, about Y then X then Z. */
+    set_axes(in, rot_yxz, df_wrap_tau(-rx), df_wrap_tau(-ry), df_wrap_tau(-rz));
 }
 
 void instance_point(const Instance *in, float lx, float ly, float lz,

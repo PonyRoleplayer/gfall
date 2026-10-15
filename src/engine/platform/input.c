@@ -60,6 +60,11 @@ void input_request_quit(void)
     g_quit = 1;
 }
 
+void input_clear_quit(void)
+{
+    g_quit = 0;
+}
+
 void input_begin(void *hwnd)
 {
     RECT rc;
@@ -101,13 +106,18 @@ void input_end(void)
     }
 }
 
+/* Mouse deltas are pixels. Arrows have no pixel count, so each held
+   arrow adds this many pixels per frame. At 60 Hz that is about 80
+   degrees per second through LOOK_SENS. */
+#define KEY_LOOK 8
+
 void input_read(Input *out)
 {
     out->move_f = key_down('W') - key_down('S');
     out->move_r = key_down('D') - key_down('A');
     out->move_y = key_down('Q') - key_down('E');
-    out->look_dx = g_look_dx;
-    out->look_dy = g_look_dy;
+    out->look_dx = g_look_dx + (key_down(VK_RIGHT) - key_down(VK_LEFT)) * KEY_LOOK;
+    out->look_dy = g_look_dy + (key_down(VK_DOWN) - key_down(VK_UP)) * KEY_LOOK;
     g_look_dx = 0;
     g_look_dy = 0;
     if (key_down(VK_ESCAPE)) {

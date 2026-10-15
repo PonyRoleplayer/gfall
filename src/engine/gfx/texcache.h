@@ -7,6 +7,8 @@ struct Level;
 
 int texcache_upload(const struct Level *level);
 void texcache_bind(int slot);
+/* The next bind runs even if that slot was the last one selected. */
+void texcache_forget(void);
 const char *texcache_error(void);
 
 #endif

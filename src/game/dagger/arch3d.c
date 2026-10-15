@@ -221,7 +221,8 @@ static void emit_tri(Mesh *mesh, int cap, const Pt *pts, const int *uv_u, const 
 
         p = idx[k];
         t->x[k] = (float)pts[p].x / POINT_DIV;
-        t->y[k] = (float)pts[p].y / POINT_DIV;
+        /* File Y grows downward. The camera treats larger Y as up. */
+        t->y[k] = -(float)pts[p].y / POINT_DIV;
         t->z[k] = (float)pts[p].z / POINT_DIV;
         t->u[k] = (float)uv_u[p] / UV_DIV;
         t->v[k] = (float)uv_v[p] / UV_DIV;

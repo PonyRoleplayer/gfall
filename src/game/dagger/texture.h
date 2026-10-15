@@ -10,6 +10,13 @@
 
 void texture_filename(int file, char *dst, int n);
 Image *texture_load(int file, int image);
+/* Records in TEXTURE.file, or 0 when the file is missing. */
+int texture_record_count(int file);
+/*
+ * Drops the cached TEXTURE.### pointers. Does not free them.
+ * Call this just before destroying the heap those bytes came from.
+ */
+void texture_cache_clear(void);
 
 /* What the "texture" loader writes. file and image pick the record. */
 typedef struct TexLoad {

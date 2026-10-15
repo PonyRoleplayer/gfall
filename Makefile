@@ -1,5 +1,6 @@
 # SPINTRI.EXE: extruded Glide 2 text for Windows 98 and a Voodoo 1.
-# GFALL.EXE: one Daggerfall block, mouse look, WASD, Q up, E down.
+# GFALL.EXE: Privateer's Hold, mouse look, WASD, Q up, E down.
+# RENDERFALL.EXE: ARCH3D model list. Same disc, same ARENA2 tree.
 # make
 # Mount build/spintri.iso and run D:\SPINTRI.EXE, or mount build/gfall.iso
 # and run D:\GFALL.EXE. The disc carries the whole ARENA2 tree beside the exe.
@@ -50,14 +51,36 @@ GFALL_SRC := \
 	src/engine/gfx/draw.c \
 	src/engine/gfx/gfx.c \
 	src/engine/ui/hud.c \
+	src/engine/ui/font.c \
 	src/game/dagger/bsa.c \
 	src/game/dagger/arch3d.c \
 	src/game/dagger/texture.c \
 	src/game/dagger/palette.c \
 	src/game/dagger/rdb.c \
+	src/game/dagger/dungeon.c \
 	src/game/dagger/bind.c \
 	src/game/dagger/world.c \
 	src/game/dagger/player.c
+
+RENDER_SRC := \
+	tools/renderfall/main.c \
+	src/engine/platform/win32.c \
+	src/engine/platform/input.c \
+	src/engine/platform/fs.c \
+	src/engine/core/mem.c \
+	src/engine/assets/vfs.c \
+	src/engine/scene/scene.c \
+	src/engine/gfx/glide.c \
+	src/engine/gfx/camera.c \
+	src/engine/gfx/texcache.c \
+	src/engine/gfx/draw.c \
+	src/engine/gfx/gfx.c \
+	src/engine/ui/hud.c \
+	src/engine/ui/font.c \
+	src/game/dagger/bsa.c \
+	src/game/dagger/arch3d.c \
+	src/game/dagger/texture.c \
+	src/game/dagger/palette.c
 
 HOST_SRC := \
 	src/engine/core/mem.c \
@@ -71,11 +94,12 @@ HOST_SRC := \
 	src/game/dagger/texture.c \
 	src/game/dagger/arch3d.c \
 	src/game/dagger/rdb.c \
+	src/game/dagger/dungeon.c \
 	src/game/dagger/bind.c \
 	src/game/dagger/world.c \
 	src/game/dagger/player.c
 
-.PHONY: all check clean hostcheck gfall-check deps deps-host
+.PHONY: all check clean hostcheck gfall-check renderfall-check deps deps-host
 
 deps:
 	sh tools/check-deps
@@ -83,7 +107,7 @@ deps:
 deps-host:
 	sh tools/check-deps host
 
-all: deps check build/spintri.iso gfall-check build/gfall.iso
+all: deps check build/spintri.iso gfall-check renderfall-check build/gfall.iso
 
 build/SPINTRI.EXE: src/spintri.c third_party/glide2/include/glide.h | deps
 	mkdir -p build
@@ -139,11 +163,32 @@ gfall-check: build/GFALL.EXE
 	! grep -q 'glide2x.dll' build/gfall.dump
 	! $(OBJDUMP) -d build/GFALL.EXE | grep -E -i -q '(^|[[:space:]])(cmov|fcmov|fucomi|fcomi|movaps|movss|addps|xmm)[[:digit:]]*'
 
-build/gfall.iso: build/GFALL.EXE build/hostcheck | deps
+build/RENDERFALL.EXE: $(RENDER_SRC) third_party/glide2/include/glide.h | deps
+	mkdir -p build
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(RENDER_SRC) -luser32 -lkernel32 -lgcc
+
+renderfall-check: build/RENDERFALL.EXE
+	file build/RENDERFALL.EXE | grep -q 'PE32'
+	file build/RENDERFALL.EXE | grep -q '80386'
+	file build/RENDERFALL.EXE | grep -q 'GUI'
+	$(OBJDUMP) -p build/RENDERFALL.EXE > build/renderfall.dump
+	grep -q 'MajorOSystemVersion[[:space:]]*4' build/renderfall.dump
+	grep -q 'MinorOSystemVersion[[:space:]]*0' build/renderfall.dump
+	grep -q 'MajorSubsystemVersion[[:space:]]*4' build/renderfall.dump
+	grep -q 'MinorSubsystemVersion[[:space:]]*0' build/renderfall.dump
+	grep -q 'Subsystem[[:space:]]*00000002' build/renderfall.dump
+	awk 'BEGIN{bad=0} /^[[:space:]]*DLL Name:/{name=$$3; if (name!="KERNEL32.dll" && name!="USER32.dll") {print "unexpected import", name; bad=1}} END{exit bad}' build/renderfall.dump
+	grep -q 'LoadLibraryA' build/renderfall.dump
+	grep -q 'GetProcAddress' build/renderfall.dump
+	! grep -q 'glide2x.dll' build/renderfall.dump
+	! $(OBJDUMP) -d build/RENDERFALL.EXE | grep -E -i -q '(^|[[:space:]])(cmov|fcmov|fucomi|fcomi|movaps|movss|addps|xmm)[[:digit:]]*'
+
+build/gfall.iso: build/GFALL.EXE build/RENDERFALL.EXE build/hostcheck | deps
 	./build/hostcheck
 	$(XORRISO) -as mkisofs -o $@ -V GFALL -J -relaxed-filenames \
 		-graft-points \
 		/GFALL.EXE=build/GFALL.EXE \
+		/RENDERFALL.EXE=build/RENDERFALL.EXE \
 		/ARENA2/=daggerfall/DAGGER/ARENA2
 
 clean:

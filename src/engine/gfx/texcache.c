@@ -21,6 +21,9 @@ int texcache_upload(const Level *level)
     int n;
 
     g_bound = -1;
+    for (i = 0; i < TEX_SLOTS; i++) {
+        g_live[i] = 0;
+    }
     if (!level || !level->palette) {
         g_why = "texture upload failed";
         return 0;
@@ -40,8 +43,11 @@ int texcache_upload(const Level *level)
         int cutout;
 
         img = level->images[i];
+        if (!img) {
+            continue;
+        }
         cutout = level->cutout && level->cutout[i] ? 1 : 0;
-        if (!img || !glide_upload(img->pot, img->pot_w, img->pot_h,
+        if (!glide_upload(img->pot, img->pot_w, img->pot_h,
                                   cutout,
                                   pal->r, pal->g, pal->b, &g_addr[i])) {
             g_why = glide_error();
@@ -59,4 +65,9 @@ void texcache_bind(int slot)
     }
     glide_bind(g_addr[slot]);
     g_bound = slot;
+}
+
+void texcache_forget(void)
+{
+    g_bound = -1;
 }

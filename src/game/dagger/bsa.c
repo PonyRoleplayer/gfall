@@ -194,6 +194,14 @@ int bsa_count(const Bsa *bsa)
     return bsa ? bsa->count : 0;
 }
 
+const BsaRec *bsa_at(const Bsa *bsa, int index)
+{
+    if (!bsa || index < 0 || index >= bsa->count) {
+        return 0;
+    }
+    return &bsa->recs[index];
+}
+
 const BsaRec *bsa_find_id(const Bsa *bsa, df_u32 id)
 {
     int lo;

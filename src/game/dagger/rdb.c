@@ -6,6 +6,7 @@
 
 #define MAX_INST 2048
 #define MAX_FLAT 2048
+#define MAX_MARK 256
 #define MAX_CACHE 512
 #define EDITOR_ARCHIVE 199
 #define ROT_STEP (DF_TAU / 2048.0f)
@@ -111,7 +112,8 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch)
     }
     block->inst = (Instance *)mem_alloc(MAX_INST * (df_u32)sizeof(Instance));
     block->flat = (Flat *)mem_alloc(MAX_FLAT * (df_u32)sizeof(Flat));
-    if (!block->inst || !block->flat) {
+    block->marker = (Marker *)mem_alloc(MAX_MARK * (df_u32)sizeof(Marker));
+    if (!block->inst || !block->flat || !block->marker) {
         return 0;
     }
     ncache = 0;
@@ -153,12 +155,12 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch)
                         in = &block->inst[block->ninst];
                         in->mesh = mesh;
                         in->x = (float)df_ri32(rdb + at + 8);
-                        in->y = (float)df_ri32(rdb + at + 12);
+                        in->y = -(float)df_ri32(rdb + at + 12);
                         in->z = (float)df_ri32(rdb + at + 16);
-                        instance_set_rotation(in,
-                                              (float)xr * ROT_STEP,
-                                              (float)yr * ROT_STEP,
-                                              (float)zr * ROT_STEP);
+                        instance_set_dungeon_rotation(in,
+                                                      (float)xr * ROT_STEP,
+                                                      (float)yr * ROT_STEP,
+                                                      (float)zr * ROT_STEP);
                         block->ninst++;
                         block->ntris += mesh->ntris;
                     }
@@ -169,10 +171,20 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch)
                 record = (int)(bitfield & 0x7f);
                 if (archive == EDITOR_ARCHIVE) {
                     block->neditor++;
+                    if (block->nmarker < MAX_MARK) {
+                        Marker *mk;
+
+                        mk = &block->marker[block->nmarker];
+                        mk->x = (float)df_ri32(rdb + at + 8);
+                        mk->y = -(float)df_ri32(rdb + at + 12);
+                        mk->z = (float)df_ri32(rdb + at + 16);
+                        mk->record = (df_u16)record;
+                        block->nmarker++;
+                    }
                 } else if (block->nflat < MAX_FLAT) {
                     fl = &block->flat[block->nflat];
                     fl->x = (float)df_ri32(rdb + at + 8);
-                    fl->y = (float)df_ri32(rdb + at + 12);
+                    fl->y = -(float)df_ri32(rdb + at + 12);
                     fl->z = (float)df_ri32(rdb + at + 16);
                     fl->file = (df_u16)archive;
                     fl->image = (df_u16)record;

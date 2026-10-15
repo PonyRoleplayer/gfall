@@ -33,6 +33,19 @@
 #define CLIP_Y (GLIDE_GUARD / DF_FOCAL)
 #define CLIP_MAX 16
 
+static void (*g_extra)(void);
+static void (*g_under)(void);
+
+void draw_set_extra(void (*fn)(void))
+{
+    g_extra = fn;
+}
+
+void draw_set_under(void (*fn)(void))
+{
+    g_under = fn;
+}
+
 typedef struct Vtx {
     float x, y, z;
     float u, v;
@@ -160,7 +173,8 @@ static int clip_view(const Vtx *in, Vtx *out)
     return nsrc;
 }
 
-static int project_vert(DrawVert *dv, const Vtx *v, float inv_w, float inv_h)
+static int project_vert(DrawVert *dv, const Vtx *v, float inv_w, float inv_h,
+                        float cr, float cg, float cb)
 {
     float sx, sy, oow, ooz;
 
@@ -176,9 +190,9 @@ static int project_vert(DrawVert *dv, const Vtx *v, float inv_w, float inv_h)
     dv->ooz = ooz;
     dv->sow = v->u * inv_w * GLIDE_TEXEL * oow;
     dv->tow = TEX_V_SIGN * v->v * inv_h * GLIDE_TEXEL * oow;
-    dv->r = 255.0f;
-    dv->g = 255.0f;
-    dv->b = 255.0f;
+    dv->r = cr;
+    dv->g = cg;
+    dv->b = cb;
     return 1;
 }
 
@@ -189,7 +203,8 @@ static void image_inv(const Image *img, float *inv_w, float *inv_h)
     *inv_h = (float)img->span_h / ((float)img->pot_h * (float)img->height);
 }
 
-static void submit(const Vtx *poly, int n, float inv_w, float inv_h)
+static void submit(const Vtx *poly, int n, float inv_w, float inv_h,
+                   float cr, float cg, float cb)
 {
     DrawVert dv[CLIP_MAX];
     int i;
@@ -200,7 +215,7 @@ static void submit(const Vtx *poly, int n, float inv_w, float inv_h)
     }
     ok = 1;
     for (i = 0; i < n; i++) {
-        if (!project_vert(&dv[i], &poly[i], inv_w, inv_h)) {
+        if (!project_vert(&dv[i], &poly[i], inv_w, inv_h, cr, cg, cb)) {
             ok = 0;
             break;
         }
@@ -290,7 +305,7 @@ static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
         if (nout < 3) {
             continue;
         }
-        submit(clipped, nout, inv_w, inv_h);
+        submit(clipped, nout, inv_w, inv_h, 255.0f, 255.0f, 255.0f);
     }
 }
 
@@ -305,6 +320,12 @@ void draw_frame(const Camera *cam, const Level *level)
         return;
     }
     glide_clear();
+    /*
+     * Text binds its own sheet through glide_bind. That leaves g_bound
+     * naming a model slot whose texels are no longer current, so the
+     * next frame would paint the font across those faces.
+     */
+    texcache_forget();
     camera_basis(cam, &basis);
     glide_sprite_alpha(0);
     norder = scene_visible_models(&level->scene, cam, order, VIS_MAX);
@@ -313,6 +334,9 @@ void draw_frame(const Camera *cam, const Level *level)
         int t;
 
         in = &level->scene.models[order[oi]];
+        if (!in->mesh) {
+            continue;
+        }
         for (t = 0; t < in->mesh->ntris; t++) {
             const Tri *tri;
             const Image *img;
@@ -328,9 +352,6 @@ void draw_frame(const Camera *cam, const Level *level)
                 continue;
             }
             img = level_image(level, (int)tri->slot);
-            if (!img || img->width < 1 || img->height < 1) {
-                continue;
-            }
             for (k = 0; k < 3; k++) {
                 float wx, wy, wz;
 
@@ -343,9 +364,19 @@ void draw_frame(const Camera *cam, const Level *level)
             if (nout < 3) {
                 continue;
             }
+            /*
+             * A null image is a texture the loader could not read.
+             * Draw it flat magenta so the face is not silently dropped.
+             */
+            if (!img || img->width < 1 || img->height < 1) {
+                glide_flat(1);
+                submit(clipped, nout, 1.0f, 1.0f, 255.0f, 0.0f, 255.0f);
+                glide_flat(0);
+                continue;
+            }
             texcache_bind((int)tri->slot);
             image_inv(img, &inv_w, &inv_h);
-            submit(clipped, nout, inv_w, inv_h);
+            submit(clipped, nout, inv_w, inv_h, 255.0f, 255.0f, 255.0f);
         }
     }
     glide_sprite_alpha(1);
@@ -354,6 +385,12 @@ void draw_frame(const Camera *cam, const Level *level)
         draw_flat(cam, &basis, level, &level->scene.sprites[order[oi]]);
     }
     glide_sprite_alpha(0);
+    if (g_under) {
+        g_under();
+    }
     hud_draw(cam);
+    if (g_extra) {
+        g_extra();
+    }
     glide_swap();
 }

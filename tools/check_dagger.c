@@ -1,6 +1,6 @@
 /*
- * Daggerfall content tests. One room from N0000012: the chamber, its two
- * torches, the floor axis, and the fly frame. Does not open Glide.
+ * Daggerfall content tests. Privateer's Hold: the placed blocks, the
+ * start marker, a torch sprite, and the fly frame. Does not open Glide.
  */
 
 #include "check_util.h"
@@ -285,29 +285,67 @@ int check_dagger(const char *root_in)
     printf("editor skipped %d\n", world_editor_count(world));
     printf("textures %d\n", images);
     printf("uv failures %d\n", arch3d_uv_failures());
-    check_expect(models == 1, "chamber is not one model");
-    check_expect(tris == 12, "triangle count");
-    check_expect(world_flat_count(world) == 2, "flat count");
-    check_expect(world_editor_count(world) == 21, "editor marker count");
+    check_expect(models == 365, "model count");
+    check_expect(tris == 9075, "triangle count");
+    check_expect(world_flat_count(world) == 130, "flat count");
+    check_expect(world_editor_count(world) == 56, "editor marker count");
     check_expect(images > 0, "no textures");
     {
-        const Instance *room;
+        int nfiles;
+        int f;
+        int saw_crypt;
+        int saw_cave;
+
+        /*
+         * Location 50050 is woodlands. Key 122 resolves to TEXTURE.319,
+         * and cave set 147 records that exist in 347 move there.
+         */
+        saw_crypt = 0;
+        saw_cave = 0;
+        nfiles = world_texture_file_count(world);
+        for (f = 0; f < nfiles; f++) {
+            int file;
+
+            file = world_texture_file(world, f);
+            if (file == 319) {
+                saw_crypt = 1;
+            }
+            if (file == 347) {
+                saw_cave = 1;
+            }
+        }
+        check_expect(saw_crypt, "woodland crypt set was not selected");
+        check_expect(saw_cave, "woodland cave set was not selected");
+    }
+    {
         const Flat *torch;
         float sx, sy, sz, syaw, spitch;
+        float minx, miny, minz, maxx, maxy, maxz;
+        int outside;
 
-        room = world_instance(world, 0);
-        check_expect(room && room->mesh && room->mesh->id == 62022u, "room is not model 62022");
-        check_expect(room && check_near(room->x, 896.0f, 0.01f) && check_near(room->y, -512.0f, 0.01f) &&
-               check_near(room->z, 1152.0f, 0.01f),
-               "room is not at 896 -512 1152");
         torch = find_flat(world, 210, 6);
         check_expect(torch && check_near(torch->w, 16.0f, 0.01f) && check_near(torch->h, 94.0f, 0.01f),
                "torch 210/6 is not 16 by 94");
         world_start(world, &sx, &sy, &sz, &syaw, &spitch);
-        check_expect(check_near(sx, 768.0f, 0.1f) && check_near(sy, -610.0f, 0.1f) && check_near(sz, 1152.0f, 0.1f),
-               "start is not inside the room");
-        check_expect(check_near(syaw, 0.714f, 0.001f) && check_near(spitch, 0.28f, 0.001f),
-               "start look is not aimed between the torches");
+        printf("start %.2f %.2f %.2f yaw %.3f pitch %.3f\n", sx, sy, sz, syaw, spitch);
+        check_expect(check_near(sx, 1135.0f, 0.1f) && check_near(sy, 1559.0f, 0.1f) &&
+               check_near(sz, 496.0f, 0.1f),
+               "start is not the marker in S0000999");
+        check_expect(check_near(syaw, 0.0f, 0.001f) && check_near(spitch, 0.0f, 0.001f),
+               "start look is not level along +Z");
+        world_bounds(world, &minx, &miny, &minz, &maxx, &maxy, &maxz);
+        check_expect(minx < -2000.0f && maxx > 4000.0f && minz < -2000.0f && maxz > 4000.0f,
+               "border blocks are not around the hold");
+        outside = 0;
+        for (i = 0; i < models; i++) {
+            const Instance *in;
+
+            in = world_instance(world, i);
+            if (in && (in->x < -1500.0f || in->x > 2500.0f || in->z < -1500.0f || in->z > 2500.0f)) {
+                outside++;
+            }
+        }
+        check_expect(outside > 40, "border models were not shifted onto their tiles");
     }
 
     shot = 0;

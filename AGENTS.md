@@ -25,8 +25,8 @@
 - `src/engine/scene/` — placed meshes, billboards, transforms, visibility query (everything is visible, in storage order).
 - `src/engine/gfx/` — `gfx.h` is the call the game makes. `glide.c` loads glide2x.dll at runtime (plain/`@N`/`_name@N`), `texcache.c` (2MB TMU), `camera.c`, `draw.c`.
 - `src/engine/ui/` — HUD primitives.
-- `src/game/dagger/` — BSA, ARCH3D, RDB, COL, TEXTURE.###, the one room in `world.c` (`N0000012.RDB`, model 62022 at (896,-512,1152), 2 torches TEXTURE.210 record 6), and `player.c` (WASD/Q/E, mouse look).
-- `tools/hostcheck.c` — runs `check_engine.c` then `check_dagger.c`. Engine tests cover transforms, camera, visibility, loaders, VFS. Dagger tests assert the room (1 model, 12 tris, 2 flats, 21 editor markers), texture POT/square tiling, and write `build/tex0.ppm`. **Update the dagger test when world/loading changes.**
+- `src/game/dagger/` — BSA, ARCH3D, RDB, COL, TEXTURE.###, Privateer's Hold in `dungeon.c`/`world.c` (`MAPDITEM.017`: `S0000999.RDB` at the origin tile plus four `B` border blocks, camera on editor marker 10), and `player.c` (WASD/Q/E, mouse look).
+- `tools/hostcheck.c` — runs `check_engine.c` then `check_dagger.c`. Engine tests cover transforms, camera, visibility, loaders, VFS. Dagger tests assert the hold (models, sprites, start marker), texture POT/square tiling, and write `build/tex0.ppm`. **Update the dagger test when world/loading changes.**
 - `daggerfall/DAGGER/ARENA2/` — Game data used at runtime/for tests (baked into ISOs).
 - `third_party/glide2/include/` — Glide 2 headers.
 
@@ -36,7 +36,7 @@
 - **C:** `-std=gnu90` (C90 + GNU extensions). Math uses x87 inline asm (`df_sin`, `df_cos`, `fsqrt` in arch3d). Avoid `libm` calls.
 - **Memory:** Win32 heap in `mem.c` (not C runtime malloc). Host uses libc malloc. Keep allocation consistent with the target side.
 - **Textures (Voodoo 1, 2MB TMU):** Must be square and power-of-two. Non-square/non-POT source -> tiled into `pot_w x pot_h` (power-of-two square), with subrect `span_w x span_h`; `pot_w % span_w == 0`. `glide.c` uploads `pot` with `cutout` flag to pack. hostcheck enforces and sums bytes < 1500000.
-- **Single-room world:** Hardcoded to `N0000012.RDB`, specific model/flats/start (must not change lightly). Asset paths use backslashes/ARENA2 root (in CD root: `ARENA2/` sits next to `.EXE`).
+- **Privateer's Hold:** The one loaded dungeon. Block list comes from `MAPDITEM.017`; tiles are 2048 units; the camera starts at marker record 10. Model faces store texture keys 119/120/122/123/124. The game builds one table from the location id and that place's climate: each key draws an offset 0..4 (a draw of 2 becomes 4) and adds it to the climate's crypt base. This hold is woodlands, so the keys become 323/322/319/322/320. Door set 74 (records 0..2), sewer set 168, and cave set 47 use the same family (374, 368, and 347 when the record exists). Sprites are not remapped. Asset paths use backslashes/ARENA2 root (in CD root: `ARENA2/` sits next to `.EXE`).
 - **No SEH, no DLLs except those above.** Keep minimal imports.
 
 ## Conventions

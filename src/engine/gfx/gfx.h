@@ -19,4 +19,9 @@ int gfx_prepare(const Level *level);
 /* Clear, draw what the scene says is visible, overlay, swap. */
 void gfx_frame(const Camera *cam, const Level *level);
 
+/* Drawn after the frame and before the swap. 0 clears it. */
+void gfx_set_extra(void (*fn)(void));
+/* Drawn after the scene and before the HUD. 0 clears it. */
+void gfx_set_under(void (*fn)(void));
+
 #endif

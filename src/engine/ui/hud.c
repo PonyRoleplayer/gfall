@@ -1,55 +1,15 @@
 #include "engine/ui/hud.h"
+
+#define WINVER 0x0400
+#define _WIN32_WINNT 0x0400
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
 #include "engine/gfx/glide.h"
+#include "engine/ui/font.h"
 
-/*
- * 8x8 glyphs, row 0 at the top, bit 7 on the left. The right column and
- * the bottom row stay clear so two letters do not touch.
- */
-
-#define SCALE 2
-#define CELL 8
-#define GAP 4
+#define GAP 2
 #define MARGIN 8
-
-static const struct {
-    char ch;
-    df_u8 row[CELL];
-} g_font[] = {
-    { ' ', { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 } },
-    { '-', { 0x00, 0x00, 0x00, 0x70, 0x00, 0x00, 0x00, 0x00 } },
-    { '0', { 0x70, 0x88, 0x98, 0xa8, 0xc8, 0x88, 0x70, 0x00 } },
-    { '1', { 0x10, 0x30, 0x10, 0x10, 0x10, 0x10, 0x38, 0x00 } },
-    { '2', { 0x70, 0x88, 0x08, 0x30, 0x40, 0x80, 0xf8, 0x00 } },
-    { '3', { 0x70, 0x88, 0x08, 0x30, 0x08, 0x88, 0x70, 0x00 } },
-    { '4', { 0x10, 0x30, 0x50, 0x90, 0xf8, 0x10, 0x10, 0x00 } },
-    { '5', { 0xf8, 0x80, 0xf0, 0x08, 0x08, 0x88, 0x70, 0x00 } },
-    { '6', { 0x30, 0x40, 0x80, 0xf0, 0x88, 0x88, 0x70, 0x00 } },
-    { '7', { 0xf8, 0x08, 0x10, 0x20, 0x40, 0x40, 0x40, 0x00 } },
-    { '8', { 0x70, 0x88, 0x88, 0x70, 0x88, 0x88, 0x70, 0x00 } },
-    { '9', { 0x70, 0x88, 0x88, 0x78, 0x08, 0x10, 0x60, 0x00 } },
-    { 'a', { 0x30, 0x48, 0x08, 0x38, 0x48, 0x48, 0x38, 0x00 } },
-    { 'c', { 0x38, 0x40, 0x80, 0x80, 0x80, 0x40, 0x38, 0x00 } },
-    { 'h', { 0x80, 0x80, 0x80, 0xf0, 0x88, 0x88, 0x88, 0x00 } },
-    { 'i', { 0x38, 0x10, 0x10, 0x10, 0x10, 0x10, 0x38, 0x00 } },
-    { 'p', { 0xf0, 0x88, 0x88, 0xf0, 0x80, 0x80, 0x80, 0x00 } },
-    { 't', { 0xf8, 0x20, 0x20, 0x20, 0x20, 0x20, 0x10, 0x00 } },
-    { 'w', { 0x88, 0x88, 0x88, 0xa8, 0xa8, 0x50, 0x50, 0x00 } },
-    { 'x', { 0x88, 0x50, 0x20, 0x20, 0x50, 0x88, 0x00, 0x00 } },
-    { 'y', { 0x88, 0x88, 0x50, 0x20, 0x20, 0x40, 0x80, 0x00 } },
-    { 'z', { 0xf8, 0x08, 0x10, 0x20, 0x40, 0x80, 0xf8, 0x00 } },
-};
-
-static const df_u8 *glyph(char ch)
-{
-    int i;
-
-    for (i = 0; i < (int)(sizeof(g_font) / sizeof(g_font[0])); i++) {
-        if (g_font[i].ch == ch) {
-            return g_font[i].row;
-        }
-    }
-    return g_font[0].row;
-}
 
 static void rect(float x, float y, float w, float h, float r, float g, float b)
 {
@@ -75,56 +35,6 @@ static void rect(float x, float y, float w, float h, float r, float g, float b)
     v[3].y = y;
     glide_triangle(&v[0], &v[1], &v[2]);
     glide_triangle(&v[0], &v[2], &v[3]);
-}
-
-static int text_width(const char *s)
-{
-    int n;
-
-    n = 0;
-    while (s[n]) {
-        n++;
-    }
-    return n * CELL * SCALE;
-}
-
-static void text(int x, int top, const char *s)
-{
-    int i;
-
-    i = 0;
-    while (s[i]) {
-        const df_u8 *row;
-        int ry;
-
-        row = glyph(s[i]);
-        for (ry = 0; ry < CELL; ry++) {
-            int bit;
-            int run;
-            int col;
-
-            bit = row[ry];
-            col = 0;
-            while (col < CELL) {
-                if ((bit & (0x80 >> col)) == 0) {
-                    col++;
-                    continue;
-                }
-                run = 0;
-                while (col + run < CELL && (bit & (0x80 >> (col + run))) != 0) {
-                    run++;
-                }
-                rect((float)(x + col * SCALE),
-                     (float)(top - (ry + 1) * SCALE),
-                     (float)(run * SCALE),
-                     (float)SCALE,
-                     255.0f, 236.0f, 180.0f);
-                col += run;
-            }
-        }
-        x += CELL * SCALE;
-        i++;
-    }
 }
 
 static int fmt_int(char *dst, int cap, int v)
@@ -194,6 +104,67 @@ static int pitch_deg(float pitch)
     return (int)(pitch * (360.0f / DF_TAU));
 }
 
+static int g_fps_on = 1;
+static int g_fps_ready;
+static int g_fps;
+static int g_fps_frames;
+static DWORD g_fps_tick;
+static int g_fps_key;
+
+static void fps_sample(void)
+{
+    DWORD now;
+    DWORD dt;
+    int down;
+
+    down = (GetAsyncKeyState(VK_F3) & 0x8000) ? 1 : 0;
+    if (down && !g_fps_key) {
+        g_fps_on = g_fps_on ? 0 : 1;
+    }
+    g_fps_key = down;
+    now = GetTickCount();
+    if (g_fps_tick == 0) {
+        g_fps_tick = now;
+        return;
+    }
+    g_fps_frames++;
+    dt = now - g_fps_tick;
+    if (dt >= 500) {
+        g_fps = (int)(((unsigned int)g_fps_frames * 1000u) / dt);
+        g_fps_frames = 0;
+        g_fps_tick = now;
+        g_fps_ready = 1;
+    }
+}
+
+static void draw_fps(void)
+{
+    char fps[24];
+    int n;
+    int wide;
+    int line;
+    int top;
+
+    if (!g_fps_on || !g_fps_ready) {
+        return;
+    }
+    n = 0;
+    fps[0] = 0;
+    add_str(fps, &n, (int)sizeof(fps), "fps ");
+    add_int(fps, &n, (int)sizeof(fps), g_fps);
+    wide = ui_string_width(fps);
+    line = ui_line_height();
+    top = DF_VIEW_H - MARGIN;
+    glide_plate(1);
+    rect((float)(DF_VIEW_W - wide - 16),
+         (float)(top - line - 4),
+         (float)(wide + 12),
+         (float)(line + 8),
+         0.0f, 0.0f, 0.0f);
+    glide_plate(0);
+    ui_string(DF_VIEW_W - wide - 10, top, fps);
+}
+
 void hud_draw(const Camera *cam)
 {
     char pos[64];
@@ -206,6 +177,7 @@ void hud_draw(const Camera *cam)
     if (!cam) {
         return;
     }
+    fps_sample();
     n = 0;
     pos[0] = 0;
     add_str(pos, &n, (int)sizeof(pos), "x ");
@@ -222,19 +194,20 @@ void hud_draw(const Camera *cam)
     add_str(look, &n, (int)sizeof(look), " pitch ");
     add_int(look, &n, (int)sizeof(look), pitch_deg(cam->pitch));
 
-    wide = text_width(pos);
-    if (text_width(look) > wide) {
-        wide = text_width(look);
+    wide = ui_string_width(pos);
+    if (ui_string_width(look) > wide) {
+        wide = ui_string_width(look);
     }
-    line = CELL * SCALE;
+    line = ui_line_height();
     top = DF_VIEW_H - MARGIN;
-    glide_overlay(1);
+    glide_plate(1);
     rect(4.0f,
          (float)(top - line - GAP - line - 4),
          (float)(wide + MARGIN),
          (float)(line + GAP + line + 8),
          0.0f, 0.0f, 0.0f);
-    text(MARGIN, top, pos);
-    text(MARGIN, top - line - GAP, look);
-    glide_overlay(0);
+    glide_plate(0);
+    ui_string(MARGIN, top, pos);
+    ui_string(MARGIN, top - line - GAP, look);
+    draw_fps();
 }

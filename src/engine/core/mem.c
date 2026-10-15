@@ -27,6 +27,15 @@ void *mem_alloc(df_u32 bytes)
     return p;
 }
 
+int mem_temp_begin(void)
+{
+    return 1;
+}
+
+void mem_temp_end(void)
+{
+}
+
 #else
 
 #define WINVER 0x0400
@@ -35,6 +44,7 @@ void *mem_alloc(df_u32 bytes)
 #include <windows.h>
 
 static HANDLE g_heap;
+static HANDLE g_temp;
 
 void mem_init(void)
 {
@@ -45,18 +55,39 @@ void mem_init(void)
 
 void mem_shutdown(void)
 {
+    mem_temp_end();
     if (g_heap) {
         HeapDestroy(g_heap);
         g_heap = 0;
     }
 }
 
+int mem_temp_begin(void)
+{
+    if (g_temp) {
+        return 1;
+    }
+    g_temp = HeapCreate(0, 1024 * 1024, 0);
+    return g_temp != 0;
+}
+
+void mem_temp_end(void)
+{
+    if (g_temp) {
+        HeapDestroy(g_temp);
+        g_temp = 0;
+    }
+}
+
 void *mem_alloc(df_u32 bytes)
 {
-    if (!g_heap || bytes == 0) {
+    HANDLE heap;
+
+    heap = g_temp ? g_temp : g_heap;
+    if (!heap || bytes == 0) {
         return 0;
     }
-    return HeapAlloc(g_heap, HEAP_ZERO_MEMORY, bytes);
+    return HeapAlloc(heap, HEAP_ZERO_MEMORY, bytes);
 }
 
 /* GCC emits these for block copies. The exe has no C runtime. */

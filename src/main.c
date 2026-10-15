@@ -1,7 +1,14 @@
 /*
- * One room. The platform fills an input snapshot, the game flies the
- * camera, and the engine draws the level. Escape quits.
+ * Privateer's Hold. The platform fills an input snapshot, the game flies
+ * the camera, and the engine draws the level. Escape quits.
+ * WinMainCRTStartup lives here so renderfall can link the same window
+ * code and bring its own entry.
  */
+
+#define WINVER 0x0400
+#define _WIN32_WINNT 0x0400
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 
 #include "engine/core/mem.h"
 #include "engine/gfx/camera.h"
@@ -23,7 +30,7 @@ int gfall_main(void *instance)
     float pitch;
 
     mem_init();
-    if (!win_startup(instance, "/ARENA2")) {
+    if (!win_startup(instance, "/ARENA2", "gfall", 0)) {
         mem_shutdown();
         return 1;
     }
@@ -68,4 +75,9 @@ int gfall_main(void *instance)
     win_shutdown();
     mem_shutdown();
     return 0;
+}
+
+void WinMainCRTStartup(void)
+{
+    ExitProcess((UINT)gfall_main(GetModuleHandleA(0)));
 }

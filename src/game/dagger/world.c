@@ -1,6 +1,8 @@
 #include "game/dagger/world.h"
 #include "game/dagger/bind.h"
 #include "game/dagger/bsa.h"
+#include "game/dagger/climate.h"
+#include "game/dagger/dungeon.h"
 #include "game/dagger/rdb.h"
 #include "game/dagger/texture.h"
 #include "engine/assets/loader.h"
@@ -8,26 +10,22 @@
 #include "engine/core/mem.h"
 
 /*
- * N0000012.RDB is a 4x4 block. The view keeps one room from it:
- * model 62022, tag R1C, at (896, -512, 1152). Two TEXTURE.210
- * record 6 torches stand on the far wall. Other models are dropped,
- * and a flat is kept only when its point sits inside that mesh.
- * world_as_level is the handoff. After that the renderer sees a Level.
+ * Privateer's Hold. MAPDITEM.017 places S0000999.RDB on the origin
+ * tile and four border blocks around it. A tile is 2048 units. Model
+ * and sprite positions in the RDB are relative to that tile. The camera
+ * sits on editor marker 10, the new-game marker. File height is
+ * mirrored so larger Y is up, matching the camera.
  */
-#define BLOCK_NAME "N0000012.RDB"
 #define PAL_NAME "ART_PAL.COL"
-#define MAX_IMAGES 256
-#define MAX_FILES 64
-#define CHAMBER_ID 62022u
-#define CHAMBER_X 896
-#define CHAMBER_Y (-512)
-#define CHAMBER_Z 1152
-/* This room's floor is the mesh minimum Y. The lift frames both torches. */
-#define EYE_LIFT 158.0f
-#define START_YAW 0.714f
-#define START_PITCH 0.28f
+#define TILE 2048
+#define START_RECORD 10
+#define MAX_IMAGES 512
+#define MAX_FILES 96
+#define MAX_MODELS 4096
+#define MAX_FLATS 4096
 
 static char g_why[96];
+static char g_title[32];
 
 static void why(const char *text)
 {
@@ -61,7 +59,12 @@ static void why_tex(int file, int image)
 }
 
 struct World {
-    Block *block;
+    Instance *inst;
+    int ninst;
+    int ntris;
+    Flat *flat;
+    int nflat;
+    int neditor;
     Image *images[MAX_IMAGES];
     df_u16 key_file[MAX_IMAGES];
     df_u16 key_image[MAX_IMAGES];
@@ -74,6 +77,10 @@ struct World {
     float maxx, maxy, maxz;
     float start_x, start_y, start_z;
     float start_yaw, start_pitch;
+    int have_start;
+    /* Climate family, and the five archives for keys 119, 120, 122, 123, 124. */
+    int tex_family;
+    int tex_arch[5];
 };
 
 static int find_slot(const World *world, df_u16 file, df_u16 image)
@@ -162,17 +169,75 @@ static int place_image(World *world, int file, int image, int cutout, int *slot_
     return 1;
 }
 
+static void shift_block(Block *block, int gx, int gz)
+{
+    float dx;
+    float dz;
+    int i;
+
+    dx = (float)(gx * TILE);
+    dz = (float)(gz * TILE);
+    for (i = 0; i < block->ninst; i++) {
+        block->inst[i].x += dx;
+        block->inst[i].z += dz;
+    }
+    for (i = 0; i < block->nflat; i++) {
+        block->flat[i].x += dx;
+        block->flat[i].z += dz;
+    }
+    for (i = 0; i < block->nmarker; i++) {
+        block->marker[i].x += dx;
+        block->marker[i].z += dz;
+    }
+}
+
+static int append_block(World *world, Block *block)
+{
+    int i;
+
+    if (world->ninst + block->ninst > MAX_MODELS || world->nflat + block->nflat > MAX_FLATS) {
+        why("dungeon is too large");
+        return 0;
+    }
+    for (i = 0; i < block->ninst; i++) {
+        world->inst[world->ninst++] = block->inst[i];
+        world->ntris += block->inst[i].mesh->ntris;
+    }
+    for (i = 0; i < block->nflat; i++) {
+        world->flat[world->nflat++] = block->flat[i];
+    }
+    world->neditor += block->neditor;
+    return 1;
+}
+
+static void note_start(World *world, const Block *block)
+{
+    int i;
+
+    for (i = 0; i < block->nmarker; i++) {
+        if ((int)block->marker[i].record == START_RECORD) {
+            world->start_x = block->marker[i].x;
+            world->start_y = block->marker[i].y;
+            world->start_z = block->marker[i].z;
+            world->start_yaw = 0.0f;
+            world->start_pitch = 0.0f;
+            world->have_start = 1;
+            return;
+        }
+    }
+}
+
 static void measure(World *world)
 {
     int i;
     int first;
 
     first = 1;
-    for (i = 0; i < world->block->ninst; i++) {
+    for (i = 0; i < world->ninst; i++) {
         const Instance *in;
         int t;
 
-        in = &world->block->inst[i];
+        in = &world->inst[i];
         for (t = 0; t < in->mesh->ntris; t++) {
             const Tri *tri;
             int k;
@@ -197,139 +262,130 @@ static void measure(World *world)
             }
         }
     }
-    if (first) {
-        return;
-    }
-    /* Centre of the room, high enough to see the torches on the far wall. */
-    world->start_x = (world->minx + world->maxx) * 0.5f;
-    world->start_y = world->miny + EYE_LIFT;
-    world->start_z = (world->minz + world->maxz) * 0.5f;
-    world->start_yaw = START_YAW;
-    world->start_pitch = START_PITCH;
 }
 
-/* One placed copy of the chamber model. Other pieces of the block stay out. */
-static int keep_chamber(Block *block)
+/*
+ * Watcom's rand: seed = seed * 0x41C64E6D + 0x3039, result is the high
+ * 15 bits. One dungeon seeds it once with the location id.
+ */
+static df_u32 g_rng;
+
+static int watcom(void)
 {
-    int i;
-    int kept;
+    g_rng = g_rng * 0x41C64E6Du + 0x3039u;
+    return (int)((g_rng >> 16) & 0x7fffu);
+}
 
-    kept = 0;
-    for (i = 0; i < block->ninst; i++) {
-        Instance *in;
+/* True when archive is that set in one of the four real families. */
+static int same_set(int archive, int set)
+{
+    int family;
 
-        in = &block->inst[i];
-        if (!in->mesh || in->mesh->id != CHAMBER_ID) {
-            continue;
-        }
-        if ((int)in->x != CHAMBER_X || (int)in->y != CHAMBER_Y || (int)in->z != CHAMBER_Z) {
-            continue;
-        }
-        if (kept != i) {
-            block->inst[kept] = *in;
-        }
-        kept++;
-    }
-    if (kept != 1) {
+    if (archive < set) {
         return 0;
     }
-    block->ninst = 1;
-    block->ntris = block->inst[0].mesh->ntris;
+    family = archive - set;
+    return family == TEX_DESERT || family == TEX_MOUNTAIN
+        || family == TEX_WOODLAND || family == TEX_SWAMP;
+}
+
+/*
+ * Keys 119, 120, 122, 123, 124 each draw an offset 0..4. A draw of 2
+ * becomes 4, because archive numbers skip one slot. The offset is added
+ * to this climate's crypt base (family + 19). Doors, sewers, and caves
+ * take the same family. A door record above 2 stays as stored. A cave
+ * record the climate file does not contain stays on the archive the
+ * face named, so paint does not abort.
+ */
+static int build_tex_table(World *world, const Dungeon *hold)
+{
+    int family;
+    int i;
+
+    family = climate_family(hold->climate);
+    if (family < 0 || hold->location_id <= 0) {
+        why("climate");
+        return 0;
+    }
+    world->tex_family = family;
+    g_rng = (df_u32)hold->location_id;
+    for (i = 0; i < 5; i++) {
+        int off;
+
+        off = watcom() % 5;
+        if (off == 2) {
+            off = 4;
+        }
+        world->tex_arch[i] = family + TEX_SET_CRYPT + off;
+    }
     return 1;
 }
 
-World *world_load(void)
+static int face_archive(const World *world, int archive, int record)
 {
-    World *world;
-    Bsa *arch;
-    Bsa *blocks;
-    const BsaRec *rec;
-    df_u8 *rdb_bytes;
+    static const int keys[5] = {119, 120, 122, 123, 124};
+    int i;
+    int set;
+
+    if (same_set(archive, TEX_SET_DOOR)) {
+        if (record > 2) {
+            return archive;
+        }
+        return world->tex_family + TEX_SET_DOOR;
+    }
+    for (i = 0; i < 5; i++) {
+        if (archive == keys[i]) {
+            return world->tex_arch[i];
+        }
+    }
+    if (same_set(archive, TEX_SET_SEWER)) {
+        return world->tex_family + TEX_SET_SEWER;
+    }
+    if (same_set(archive, TEX_SET_CAVE)) {
+        set = world->tex_family + TEX_SET_CAVE;
+        if (record >= 0 && record < texture_record_count(set)) {
+            return set;
+        }
+    }
+    return archive;
+}
+
+static int paint(World *world)
+{
     int i;
     int t;
 
-    why("load failed");
-    dagger_bind_loaders();
-    world = (World *)mem_alloc(sizeof(World));
-    if (!world) {
-        why("out of memory");
-        return 0;
-    }
-    arch = bsa_open("ARCH3D.BSA");
-    if (!arch) {
-        why("ARCH3D.BSA");
-        return 0;
-    }
-    blocks = bsa_open("BLOCKS.BSA");
-    if (!blocks) {
-        why("BLOCKS.BSA");
-        bsa_close(arch);
-        return 0;
-    }
-    rec = bsa_find_name(blocks, BLOCK_NAME);
-    if (!rec) {
-        why(BLOCK_NAME);
-        bsa_close(blocks);
-        bsa_close(arch);
-        return 0;
-    }
-    rdb_bytes = bsa_read(blocks, rec);
-    bsa_close(blocks);
-    if (!rdb_bytes) {
-        why(BLOCK_NAME);
-        bsa_close(arch);
-        return 0;
-    }
-    world->block = rdb_load(rdb_bytes, rec->size, arch);
-    bsa_close(arch);
-    if (!world->block || world->block->ninst < 1 || world->block->ntris < 1) {
-        why("block has no models");
-        return 0;
-    }
-    if (!keep_chamber(world->block)) {
-        why("chamber missing");
-        return 0;
-    }
-    for (i = 0; i < world->block->ninst; i++) {
+    for (i = 0; i < world->ninst; i++) {
         Mesh *mesh;
 
-        mesh = world->block->inst[i].mesh;
+        mesh = world->inst[i].mesh;
         for (t = 0; t < mesh->ntris; t++) {
             Tri *tri;
             int slot;
+            int archive;
 
             tri = &mesh->tris[t];
-            if (!place_image(world, (int)tri->tex_file, (int)tri->tex_image, 0, &slot)) {
+            archive = face_archive(world, (int)tri->tex_file, (int)tri->tex_image);
+            if (!place_image(world, archive, (int)tri->tex_image, 0, &slot)) {
                 return 0;
             }
             tri->slot = (df_u16)slot;
         }
-    }
-    measure(world);
-    if (world->maxx <= world->minx || world->maxy <= world->miny) {
-        why("chamber has no extent");
-        return 0;
     }
     {
         int f;
         int kept;
 
         kept = 0;
-        for (f = 0; f < world->block->nflat; f++) {
+        for (f = 0; f < world->nflat; f++) {
             Flat *fl;
             int slot;
             const Image *img;
             int extent_w;
             int extent_h;
 
-            fl = &world->block->flat[f];
-            if (fl->x < world->minx || fl->x > world->maxx ||
-                fl->y < world->miny || fl->y > world->maxy ||
-                fl->z < world->minz || fl->z > world->maxz) {
-                continue;
-            }
+            fl = &world->flat[f];
             if (!place_image(world, (int)fl->file, (int)fl->image, 1, &slot)) {
-                /* A missing decoration is dropped. A full table is fatal. */
                 if (world->nimages >= MAX_IMAGES || world->nfiles >= MAX_FILES) {
                     return 0;
                 }
@@ -345,11 +401,109 @@ World *world_load(void)
             fl->h = (float)extent_h;
             fl->slot = (df_u16)slot;
             if (kept != f) {
-                world->block->flat[kept] = *fl;
+                world->flat[kept] = *fl;
             }
             kept++;
         }
-        world->block->nflat = kept;
+        world->nflat = kept;
+    }
+    return 1;
+}
+
+World *world_load(void)
+{
+    World *world;
+    Dungeon hold;
+    Bsa *arch;
+    Bsa *blocks;
+    int b;
+
+    why("load failed");
+    dagger_bind_loaders();
+    if (!dungeon_load(&hold)) {
+        why(dungeon_error());
+        return 0;
+    }
+    df_copy(g_title, hold.title, (int)sizeof(g_title));
+    world = (World *)mem_alloc(sizeof(World));
+    if (!world) {
+        why("out of memory");
+        return 0;
+    }
+    mem_zero(world, sizeof(World));
+    world->inst = (Instance *)mem_alloc(MAX_MODELS * (df_u32)sizeof(Instance));
+    world->flat = (Flat *)mem_alloc(MAX_FLATS * (df_u32)sizeof(Flat));
+    if (!world->inst || !world->flat) {
+        why("out of memory");
+        return 0;
+    }
+    arch = bsa_open("ARCH3D.BSA");
+    if (!arch) {
+        why("ARCH3D.BSA");
+        return 0;
+    }
+    blocks = bsa_open("BLOCKS.BSA");
+    if (!blocks) {
+        why("BLOCKS.BSA");
+        bsa_close(arch);
+        return 0;
+    }
+    for (b = 0; b < hold.nblocks; b++) {
+        const BsaRec *rec;
+        df_u8 *rdb_bytes;
+        Block *block;
+
+        rec = bsa_find_name(blocks, hold.block[b].name);
+        if (!rec) {
+            why(hold.block[b].name);
+            bsa_close(blocks);
+            bsa_close(arch);
+            return 0;
+        }
+        rdb_bytes = bsa_read(blocks, rec);
+        if (!rdb_bytes) {
+            why(hold.block[b].name);
+            bsa_close(blocks);
+            bsa_close(arch);
+            return 0;
+        }
+        block = rdb_load(rdb_bytes, rec->size, arch);
+        if (!block) {
+            why(hold.block[b].name);
+            bsa_close(blocks);
+            bsa_close(arch);
+            return 0;
+        }
+        shift_block(block, hold.block[b].x, hold.block[b].z);
+        if (hold.block[b].start) {
+            note_start(world, block);
+        }
+        if (!append_block(world, block)) {
+            bsa_close(blocks);
+            bsa_close(arch);
+            return 0;
+        }
+    }
+    bsa_close(blocks);
+    bsa_close(arch);
+    if (world->ninst < 1 || world->ntris < 1) {
+        why("dungeon has no models");
+        return 0;
+    }
+    if (!world->have_start) {
+        why("start marker");
+        return 0;
+    }
+    if (!build_tex_table(world, &hold)) {
+        return 0;
+    }
+    if (!paint(world)) {
+        return 0;
+    }
+    measure(world);
+    if (world->maxx <= world->minx || world->maxy <= world->miny) {
+        why("dungeon has no extent");
+        return 0;
     }
     {
         df_u8 *pal_bytes;
@@ -372,43 +526,43 @@ const char *world_error(void)
 
 const char *world_block_name(void)
 {
-    return BLOCK_NAME;
+    return g_title[0] ? g_title : "Privateer's Hold";
 }
 
 int world_model_count(const World *world)
 {
-    return world && world->block ? world->block->ninst : 0;
+    return world ? world->ninst : 0;
 }
 
 int world_triangle_count(const World *world)
 {
-    return world && world->block ? world->block->ntris : 0;
+    return world ? world->ntris : 0;
 }
 
 const Instance *world_instance(const World *world, int index)
 {
-    if (!world || !world->block || index < 0 || index >= world->block->ninst) {
+    if (!world || index < 0 || index >= world->ninst) {
         return 0;
     }
-    return &world->block->inst[index];
+    return &world->inst[index];
 }
 
 int world_flat_count(const World *world)
 {
-    return world && world->block ? world->block->nflat : 0;
+    return world ? world->nflat : 0;
 }
 
 int world_editor_count(const World *world)
 {
-    return world && world->block ? world->block->neditor : 0;
+    return world ? world->neditor : 0;
 }
 
 const Flat *world_flat(const World *world, int index)
 {
-    if (!world || !world->block || index < 0 || index >= world->block->nflat) {
+    if (!world || index < 0 || index >= world->nflat) {
         return 0;
     }
-    return &world->block->flat[index];
+    return &world->flat[index];
 }
 
 int world_image_count(const World *world)
@@ -488,11 +642,8 @@ void world_as_level(const World *world, Level *level)
     level->cutout = world->cutout;
     level->nimages = world->nimages;
     level->palette = &world->pal;
-    if (!world->block) {
-        return;
-    }
-    level->scene.models = world->block->inst;
-    level->scene.nmodels = world->block->ninst;
-    level->scene.sprites = world->block->flat;
-    level->scene.nsprites = world->block->nflat;
+    level->scene.models = world->inst;
+    level->scene.nmodels = world->ninst;
+    level->scene.sprites = world->flat;
+    level->scene.nsprites = world->nflat;
 }

@@ -42,6 +42,7 @@ typedef void (FX_CALL *gr_swap_fn)(int interval);
 typedef void (FX_CALL *gr_tri_fn)(const GrVertex *a, const GrVertex *b, const GrVertex *c);
 typedef FxU32 (FX_CALL *gr_tex_calc_fn)(
     GrLOD_t lodmin, GrLOD_t lodmax, GrAspectRatio_t aspect, GrTextureFormat_t fmt);
+typedef FxU32 (FX_CALL *gr_tex_mem_fn)(FxU32 even_odd, GrTexInfo *info);
 typedef FxU32 (FX_CALL *gr_tex_min_fn)(GrChipID_t tmu);
 typedef FxU32 (FX_CALL *gr_tex_max_fn)(GrChipID_t tmu);
 typedef void (FX_CALL *gr_tex_source_fn)(
@@ -67,6 +68,10 @@ typedef void (FX_CALL *gr_alpha_fn)(
     GrCombineLocal_t local, GrCombineOther_t other, FxBool invert);
 typedef void (FX_CALL *gr_alpha_test_fn)(GrCmpFnc_t function);
 typedef void (FX_CALL *gr_alpha_ref_fn)(GrAlpha_t value);
+typedef void (FX_CALL *gr_blend_fn)(
+    GrAlphaBlendFnc_t rgb_sf, GrAlphaBlendFnc_t rgb_df,
+    GrAlphaBlendFnc_t alpha_sf, GrAlphaBlendFnc_t alpha_df);
+typedef void (FX_CALL *gr_line_fn)(const GrVertex *a, const GrVertex *b);
 
 static struct {
     HMODULE dll;
@@ -85,6 +90,7 @@ static struct {
     gr_swap_fn swap;
     gr_tri_fn triangle;
     gr_tex_calc_fn tex_calc;
+    gr_tex_mem_fn tex_mem;
     gr_tex_min_fn tex_min;
     gr_tex_max_fn tex_max;
     gr_tex_source_fn tex_source;
@@ -100,11 +106,15 @@ static struct {
     gr_alpha_fn alpha;
     gr_alpha_test_fn alpha_test;
     gr_alpha_ref_fn alpha_ref;
+    gr_blend_fn blend;
+    gr_line_fn line;
 } glide;
 
 static int g_inited;
 static int g_opened;
 static const char *g_why = "glide failed";
+static GrColor_t g_clear_color;
+static float g_alpha = 255.0f;
 static df_u32 g_addr;
 static df_u32 g_addr_max;
 static int g_ntex;
@@ -167,6 +177,15 @@ static int load_glide(void)
     BIND(glide.swap, gr_swap_fn, "grBufferSwap", "grBufferSwap@4", "_grBufferSwap@4");
     BIND(glide.triangle, gr_tri_fn, "grDrawTriangle", "grDrawTriangle@12", "_grDrawTriangle@12");
     BIND(glide.tex_calc, gr_tex_calc_fn, "grTexCalcMemRequired", "grTexCalcMemRequired@16", "_grTexCalcMemRequired@16");
+    /*
+     * Optional. This one counts the even/odd mip slot the TMU actually
+     * reserves. CalcMemRequired is only the host image.
+     */
+    glide.tex_mem = (gr_tex_mem_fn)(void *)find_export(
+        glide.dll,
+        "grTexTextureMemRequired",
+        "grTexTextureMemRequired@8",
+        "_grTexTextureMemRequired@8");
     BIND(glide.tex_min, gr_tex_min_fn, "grTexMinAddress", "grTexMinAddress@4", "_grTexMinAddress@4");
     BIND(glide.tex_max, gr_tex_max_fn, "grTexMaxAddress", "grTexMaxAddress@4", "_grTexMaxAddress@4");
     BIND(glide.tex_source, gr_tex_source_fn, "grTexSource", "grTexSource@16", "_grTexSource@16");
@@ -182,6 +201,8 @@ static int load_glide(void)
     BIND(glide.alpha, gr_alpha_fn, "grAlphaCombine", "grAlphaCombine@20", "_grAlphaCombine@20");
     BIND(glide.alpha_test, gr_alpha_test_fn, "grAlphaTestFunction", "grAlphaTestFunction@4", "_grAlphaTestFunction@4");
     BIND(glide.alpha_ref, gr_alpha_ref_fn, "grAlphaTestReferenceValue", "grAlphaTestReferenceValue@4", "_grAlphaTestReferenceValue@4");
+    BIND(glide.blend, gr_blend_fn, "grAlphaBlendFunction", "grAlphaBlendFunction@16", "_grAlphaBlendFunction@16");
+    BIND(glide.line, gr_line_fn, "grDrawLine", "grDrawLine@8", "_grDrawLine@8");
     return 1;
 }
 #pragma GCC diagnostic pop
@@ -195,7 +216,7 @@ static void fill_vertex(GrVertex *v, const DrawVert *s)
     v->g = s->g;
     v->b = s->b;
     v->ooz = s->ooz;
-    v->a = 255.0f;
+    v->a = g_alpha;
     v->oow = s->oow;
     v->tmuvtx[0].sow = s->sow;
     v->tmuvtx[0].tow = s->tow;
@@ -305,13 +326,15 @@ int glide_open(void *hwnd)
         FXFALSE,
         FXFALSE);
     glide.tex_clamp(GR_TMU0, GR_TEXTURECLAMP_WRAP, GR_TEXTURECLAMP_WRAP);
-    glide.tex_filter(GR_TMU0, GR_TEXTUREFILTER_POINT_SAMPLED, GR_TEXTUREFILTER_POINT_SAMPLED);
+    /* Nearest sampling turns a 64-wide brick course into vertical
+       streaks once the wall is edge-on. Bilinear keeps the courses. */
+    glide.tex_filter(GR_TMU0, GR_TEXTUREFILTER_BILINEAR, GR_TEXTUREFILTER_BILINEAR);
     glide.tex_mip(GR_TMU0, GR_MIPMAP_DISABLE, FXFALSE);
 
     /*
      * Table entry i is eye-space w = 2^(3 + i/4) / (8 - (i % 4)).
      * That is the Glide 2 fog-table spacing. Density is 0 at DF_FOG_NEAR
-     * and solid at DF_FOG_FAR. The colour is black, the same as the clear.
+     * and solid at DF_FOG_FAR. The colour matches the clear.
      */
     {
         GrFog_t table[GR_FOG_TABLE_SIZE];
@@ -335,7 +358,7 @@ int glide_open(void *hwnd)
             }
             table[i] = (GrFog_t)(density * 255.0f);
         }
-        glide.fog_color(0);
+        glide.fog_color(g_clear_color);
         glide.fog_table(table);
         glide.fog_mode(GR_FOG_WITH_TABLE);
     }
@@ -362,9 +385,39 @@ void glide_close(void)
     }
 }
 
+static int clamp_byte(int v)
+{
+    if (v < 0) {
+        return 0;
+    }
+    if (v > 255) {
+        return 255;
+    }
+    return v;
+}
+
+static GrColor_t pack_rgb(int r, int g, int b)
+{
+    /* grSstWinOpen was asked for GR_COLORFORMAT_ARGB. */
+    return ((GrColor_t)clamp_byte(r) << 16)
+        | ((GrColor_t)clamp_byte(g) << 8)
+        | (GrColor_t)clamp_byte(b);
+}
+
+void glide_background(int r, int g, int b)
+{
+    g_clear_color = pack_rgb(r, g, b);
+    if (g_opened && glide.fog_color) {
+        glide.fog_color(g_clear_color);
+    }
+}
+
 void glide_clear(void)
 {
-    glide.clear(0, 0, GR_ZDEPTHVALUE_FARTHEST);
+    if (!g_opened) {
+        return;
+    }
+    glide.clear(g_clear_color, 0, GR_ZDEPTHVALUE_FARTHEST);
 }
 
 void glide_swap(void)
@@ -380,6 +433,32 @@ void glide_triangle(const DrawVert *a, const DrawVert *b, const DrawVert *c)
     fill_vertex(&vb, b);
     fill_vertex(&vc, c);
     glide.triangle(&va, &vb, &vc);
+}
+
+void glide_line(const DrawVert *a, const DrawVert *b)
+{
+    GrVertex va, vb;
+
+    if (!g_opened) {
+        return;
+    }
+    fill_vertex(&va, a);
+    fill_vertex(&vb, b);
+    glide.line(&va, &vb);
+}
+
+static void glide_blend(int on)
+{
+    if (!g_opened) {
+        return;
+    }
+    if (on) {
+        glide.blend(
+            GR_BLEND_SRC_ALPHA, GR_BLEND_ONE_MINUS_SRC_ALPHA,
+            GR_BLEND_ZERO, GR_BLEND_ZERO);
+        return;
+    }
+    glide.blend(GR_BLEND_ONE, GR_BLEND_ZERO, GR_BLEND_ONE, GR_BLEND_ZERO);
 }
 
 int glide_palette(const df_u8 *r, const df_u8 *g, const df_u8 *b)
@@ -452,12 +531,14 @@ int glide_upload(const df_u8 *pixels, int pot_w, int pot_h, int cutout,
     int major;
     int n;
     FxU32 bytes;
-    df_u32 units;
+    df_u32 size;
+    df_u32 at;
+    df_u32 boundary;
     GrTextureFormat_t fmt;
     const df_u8 *src;
     GrTexInfo info;
 
-    if (!pixels || g_ntex >= GPU_SLOTS) {
+    if (!pixels || !addr || g_ntex >= GPU_SLOTS) {
         g_why = "texture upload failed";
         return 0;
     }
@@ -477,27 +558,49 @@ int glide_upload(const df_u8 *pixels, int pot_w, int pot_h, int cutout,
         }
         fmt = GR_TEXFMT_ARGB_1555;
     }
-    bytes = glide.tex_calc(lod, lod, aspect, fmt);
-    if (bytes == 0) {
-        g_why = "grTexCalcMemRequired returned 0";
-        return 0;
-    }
-    units = (df_u32)((bytes + 7) >> 3);
-    if (g_addr + units < g_addr || g_addr + units > g_addr_max) {
-        g_why = "texture memory is full";
-        return 0;
-    }
     info.smallLod = lod;
     info.largeLod = lod;
     info.aspectRatio = aspect;
     info.format = fmt;
     info.data = (void *)src;
-    glide.tex_down(GR_TMU0, g_addr, GR_MIPMAPLEVELMASK_BOTH, &info);
-    g_tex[g_ntex].addr = g_addr;
+    bytes = glide.tex_calc(lod, lod, aspect, fmt);
+    if (glide.tex_mem) {
+        FxU32 need;
+
+        need = glide.tex_mem(GR_MIPMAPLEVELMASK_BOTH, &info);
+        if (need > bytes) {
+            bytes = need;
+        }
+    }
+    if (bytes == 0) {
+        g_why = "grTexCalcMemRequired returned 0";
+        return 0;
+    }
+    /*
+     * startAddress is a byte offset between grTexMinAddress and
+     * grTexMaxAddress. grTexTextureMemRequired returns the bytes to
+     * add for the next free address, and that address stays 8-byte
+     * aligned. Shrinking the byte count to 8-byte units packs eight
+     * maps into one slot, so a wall reads the font. A download that
+     * crosses a 2MB boundary blanks the frame, so a map that would
+     * land on the boundary starts after it.
+     */
+    size = ((df_u32)bytes + 7u) & ~7u;
+    at = (g_addr + 7u) & ~7u;
+    boundary = (at & ~0x1fffffu) + 0x200000u;
+    if (at + size > boundary) {
+        at = boundary;
+    }
+    if (at < g_addr || at + size < at || at + size > g_addr_max) {
+        g_why = "texture memory is full";
+        return 0;
+    }
+    glide.tex_down(GR_TMU0, at, GR_MIPMAPLEVELMASK_BOTH, &info);
+    g_tex[g_ntex].addr = at;
     g_tex[g_ntex].info = info;
     g_tex[g_ntex].live = 1;
-    *addr = g_addr;
-    g_addr += units;
+    *addr = at;
+    g_addr = at + size;
     g_ntex++;
     return 1;
 }
@@ -526,6 +629,105 @@ void glide_sprite_alpha(int on)
         FXFALSE);
     glide.alpha_test(GR_CMP_ALWAYS);
     glide.alpha_ref(0);
+}
+
+void glide_flat(int on)
+{
+    if (!g_opened) {
+        return;
+    }
+    if (on) {
+        glide.color(
+            GR_COMBINE_FUNCTION_LOCAL,
+            GR_COMBINE_FACTOR_NONE,
+            GR_COMBINE_LOCAL_ITERATED,
+            GR_COMBINE_OTHER_NONE,
+            FXFALSE);
+        glide.tex_combine(
+            GR_TMU0,
+            GR_COMBINE_FUNCTION_ZERO,
+            GR_COMBINE_FACTOR_NONE,
+            GR_COMBINE_FUNCTION_ZERO,
+            GR_COMBINE_FACTOR_NONE,
+            FXFALSE,
+            FXFALSE);
+        return;
+    }
+    glide.color(
+        GR_COMBINE_FUNCTION_SCALE_OTHER,
+        GR_COMBINE_FACTOR_ONE,
+        GR_COMBINE_LOCAL_NONE,
+        GR_COMBINE_OTHER_TEXTURE,
+        FXFALSE);
+    glide.tex_combine(
+        GR_TMU0,
+        GR_COMBINE_FUNCTION_LOCAL,
+        GR_COMBINE_FACTOR_NONE,
+        GR_COMBINE_FUNCTION_LOCAL,
+        GR_COMBINE_FACTOR_NONE,
+        FXFALSE,
+        FXFALSE);
+}
+
+void glide_ui(int on)
+{
+    if (!g_opened) {
+        return;
+    }
+    if (on) {
+        glide.depth_func(GR_CMP_ALWAYS);
+        glide.depth_mask(FXFALSE);
+        glide.color(
+            GR_COMBINE_FUNCTION_SCALE_OTHER,
+            GR_COMBINE_FACTOR_ONE,
+            GR_COMBINE_LOCAL_NONE,
+            GR_COMBINE_OTHER_TEXTURE,
+            FXFALSE);
+        glide.tex_combine(
+            GR_TMU0,
+            GR_COMBINE_FUNCTION_LOCAL,
+            GR_COMBINE_FACTOR_NONE,
+            GR_COMBINE_FUNCTION_LOCAL,
+            GR_COMBINE_FACTOR_NONE,
+            FXFALSE,
+            FXFALSE);
+        glide.tex_filter(GR_TMU0, GR_TEXTUREFILTER_POINT_SAMPLED, GR_TEXTUREFILTER_POINT_SAMPLED);
+        return;
+    }
+    glide.depth_func(GR_CMP_GREATER);
+    glide.depth_mask(FXTRUE);
+    glide.color(
+        GR_COMBINE_FUNCTION_SCALE_OTHER,
+        GR_COMBINE_FACTOR_ONE,
+        GR_COMBINE_LOCAL_NONE,
+        GR_COMBINE_OTHER_TEXTURE,
+        FXFALSE);
+    glide.tex_combine(
+        GR_TMU0,
+        GR_COMBINE_FUNCTION_LOCAL,
+        GR_COMBINE_FACTOR_NONE,
+        GR_COMBINE_FUNCTION_LOCAL,
+        GR_COMBINE_FACTOR_NONE,
+        FXFALSE,
+        FXFALSE);
+    glide.tex_filter(GR_TMU0, GR_TEXTUREFILTER_BILINEAR, GR_TEXTUREFILTER_BILINEAR);
+}
+
+void glide_plate(int on)
+{
+    if (!g_opened) {
+        return;
+    }
+    if (on) {
+        glide_overlay(1);
+        glide_blend(1);
+        /* 191/255 is about 75% opacity. */
+        g_alpha = 191.0f;
+        return;
+    }
+    g_alpha = 255.0f;
+    glide_blend(0);
+    glide_overlay(0);
 }
 
 void glide_overlay(int on)

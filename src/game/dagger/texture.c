@@ -405,6 +405,26 @@ static int read_rle(const df_u8 *file, df_u32 file_size, df_u32 rec_pos, df_u32 
     return 1;
 }
 
+int texture_record_count(int file)
+{
+    const df_u8 *bytes;
+    df_u32 size;
+    int count;
+
+    if (file <= 1) {
+        return 0;
+    }
+    bytes = file_bytes(file, &size);
+    if (!bytes || size < 2) {
+        return 0;
+    }
+    count = df_ri16(bytes);
+    if (count < 0 || count > 1024) {
+        return 0;
+    }
+    return count;
+}
+
 Image *texture_load(int file, int image)
 {
     const df_u8 *bytes;
@@ -486,4 +506,14 @@ Image *texture_load(int file, int image)
     img->xscale = xs;
     img->yscale = ys;
     return img;
+}
+
+void texture_cache_clear(void)
+{
+    int i;
+
+    for (i = 0; i < FILE_CACHE; i++) {
+        g_file[i] = 0;
+        g_file_size[i] = 0;
+    }
 }

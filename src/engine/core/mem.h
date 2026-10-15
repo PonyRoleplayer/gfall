@@ -12,6 +12,14 @@ void mem_init(void);
 void mem_shutdown(void);
 void *mem_alloc(df_u32 bytes);
 
+/*
+ * A second heap for one model. Allocations after mem_temp_begin die in
+ * mem_temp_end. The directory and the palette stay on the main heap.
+ * Host builds keep a single malloc heap; rewind is a no-op there.
+ */
+int mem_temp_begin(void);
+void mem_temp_end(void);
+
 static void mem_copy(void *dst, const void *src, df_u32 n)
 {
     df_u32 i;
