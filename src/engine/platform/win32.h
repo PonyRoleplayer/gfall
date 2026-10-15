@@ -2,8 +2,8 @@
 #define DF_WIN32_H
 
 /*
- * 640x480 popup. The content directory is <exe dir><suffix>,
- * for example suffix "/ARENA2". The frame loop pumps, then reads input.
+ * 640x480 popup. The content directory is <exe dir><suffix>.
+ * The frame loop pumps, then reads input.
  * title is the window caption and the dialog title. gui turns on a
  * system cursor and a window background so a child list can sit on it.
  */

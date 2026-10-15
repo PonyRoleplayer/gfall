@@ -4,17 +4,30 @@
 #include "engine/core/df.h"
 
 /*
- * Looks for FONT0000.FNT. When those glyphs are present, builds a
- * 256x256 sheet and writes font0000.bmp beside the exe if it is missing.
- * Text then uses that sheet. With no glyphs, text uses the built-in 8x8.
+ * Screen text. With no sheet, letters are the built-in 8x8 face.
+ * A sheet is a square index image, row 0 at the top. Glyph i
+ * (character code first+i) sits in cell i of a grid of cell-pixel
+ * squares. widths[i] is the ink width. gap is the advance for a
+ * missing glyph. pixels stays valid until shutdown.
+ * Call font_set before font_upload. A null sheet clears back to 8x8.
  */
 
-int font_ensure(void);
-const char *font_error(void);
-int font_ready(void);
-int font_generated(void);
+#define FONT_MAX 256
 
-/* After the level palette is on the TMU. Missing glyphs are not an error. */
+typedef struct FontSheet {
+    const df_u8 *pixels;
+    int side;
+    int cell;
+    int height;
+    const df_u8 *widths;
+    int nwidths;
+    int first;
+    int gap;
+} FontSheet;
+
+int font_set(const FontSheet *sheet);
+
+/* Uploads the sheet. No sheet leaves the built-in face in place. */
 void font_upload(const df_u8 *r, const df_u8 *g, const df_u8 *b);
 
 int ui_line_height(void);

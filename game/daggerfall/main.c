@@ -14,6 +14,7 @@
 #include "engine/gfx/camera.h"
 #include "engine/gfx/gfx.h"
 #include "engine/platform/win32.h"
+#include "game/dagger/fnt.h"
 #include "game/dagger/player.h"
 #include "game/dagger/world.h"
 
@@ -50,6 +51,7 @@ int gfall_main(void *instance)
         mem_shutdown();
         return 1;
     }
+    fnt_install();
     if (!gfx_prepare(&level)) {
         win_fail(gfx_error());
         gfx_shutdown();

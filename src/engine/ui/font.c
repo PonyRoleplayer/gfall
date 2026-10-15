@@ -1,43 +1,23 @@
 #include "engine/ui/font.h"
 
-#define WINVER 0x0400
-#define _WIN32_WINNT 0x0400
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-
-#include "engine/assets/vfs.h"
-#include "engine/core/mem.h"
 #include "engine/gfx/glide.h"
 #include "engine/gfx/texcache.h"
 
 /*
- * FONT0000.FNT: uint16 cell width, uint16 cell height, then 240 records
- * of uint16 offset and uint16 glyph width. Each glyph is height rows of
- * a little-endian uint16. Bit 15 is the leftmost pixel. Index 0 is '!'.
- *
  * The built-in face is 8x8, row 0 at the top, bit 7 on the left. It is
  * drawn 1:1. The right column and the bottom row stay clear.
  */
 
-#define FNT_NAME "FONT0000.FNT"
-#define BMP_NAME "font0000.bmp"
-#define FONT_N 240
-#define FONT_FIRST 33
-#define FONT_SIDE 256
-#define FONT_CELL 16
-#define FONT_INK 224
-#define FONT_SPACE 5
-#define BMP_OFF (14 + 40 + 256 * 4)
-
 #define FALL_CELL 8
 
-static const char *g_why = "FONT0000.FNT is missing";
-static df_u8 *g_pixels;
-static df_u8 g_width[FONT_N];
+static const df_u8 *g_pixels;
+static df_u8 g_width[FONT_MAX];
+static int g_side;
+static int g_cell;
 static int g_height;
-static int g_ready;
-static int g_generated;
-static int g_tried;
+static int g_nwidths;
+static int g_first;
+static int g_gap;
 static int g_uploaded;
 static df_u32 g_addr;
 
@@ -83,236 +63,59 @@ static const struct {
     { 'z', { 0xf8, 0x08, 0x10, 0x20, 0x40, 0x80, 0xf8, 0x00 } },
 };
 
-const char *font_error(void)
+static int pot(int n)
 {
-    return g_why;
+    return n > 0 && (n & (n - 1)) == 0;
 }
 
-int font_ready(void)
+int font_set(const FontSheet *sheet)
 {
-    return g_ready;
-}
-
-int font_generated(void)
-{
-    return g_generated;
-}
-
-static int exe_file(char *dst, int n, const char *leaf)
-{
-    char exe[260];
-    DWORD len;
-    int slash;
     int i;
-    int k;
+    int cols;
 
-    len = GetModuleFileNameA(0, exe, 260);
-    if (len == 0 || len >= 259) {
-        return 0;
-    }
-    exe[len] = 0;
-    slash = -1;
-    for (i = 0; exe[i]; i++) {
-        if (exe[i] == '\\' || exe[i] == '/') {
-            slash = i;
-        }
-    }
-    if (slash < 1) {
-        return 0;
-    }
-    k = 0;
-    while (leaf[k]) {
-        k++;
-    }
-    if (slash + 1 + k + 1 > n) {
-        return 0;
-    }
-    for (i = 0; i <= slash; i++) {
-        dst[i] = exe[i];
-    }
-    for (i = 0; i < k; i++) {
-        dst[slash + 1 + i] = leaf[i];
-    }
-    dst[slash + 1 + k] = 0;
-    return 1;
-}
-
-static void put_u16(df_u8 *p, unsigned v)
-{
-    p[0] = (df_u8)(v & 0xff);
-    p[1] = (df_u8)((v >> 8) & 0xff);
-}
-
-static void put_u32(df_u8 *p, unsigned v)
-{
-    p[0] = (df_u8)(v & 0xff);
-    p[1] = (df_u8)((v >> 8) & 0xff);
-    p[2] = (df_u8)((v >> 16) & 0xff);
-    p[3] = (df_u8)((v >> 24) & 0xff);
-}
-
-static int decode_fnt(const df_u8 *fnt, df_u32 size)
-{
-    int height;
-    int i;
-
-    if (!fnt || size < 4u + 240u * 4u) {
-        g_why = "FONT0000.FNT is too small";
-        return 0;
-    }
-    height = (int)df_ru16(fnt + 2);
-    if (height < 1 || height > FONT_CELL) {
-        g_why = "FONT0000.FNT height is unusable";
-        return 0;
-    }
-    g_pixels = (df_u8 *)mem_alloc(FONT_SIDE * FONT_SIDE);
-    if (!g_pixels) {
-        g_why = "out of memory for the font image";
-        return 0;
-    }
-    g_height = height;
-    for (i = 0; i < FONT_N; i++) {
-        int rec;
-        int off;
-        int w;
-        int col;
-        int row;
-        int y;
-        int x;
-
-        rec = 4 + i * 4;
-        off = (int)df_ru16(fnt + rec);
-        w = (int)df_ru16(fnt + rec + 2);
-        if (w > FONT_CELL) {
-            w = FONT_CELL;
-        }
-        g_width[i] = (df_u8)w;
-        if (w < 1) {
-            continue;
-        }
-        if ((df_u32)off + (df_u32)height * 2u > size) {
-            g_width[i] = 0;
-            continue;
-        }
-        col = i & 15;
-        row = i >> 4;
-        for (y = 0; y < height; y++) {
-            df_u16 bits;
-
-            bits = df_ru16(fnt + off + y * 2);
-            for (x = 0; x < w; x++) {
-                if (bits & (df_u16)(1u << (15 - x))) {
-                    g_pixels[(row * FONT_CELL + y) * FONT_SIDE
-                        + col * FONT_CELL + x] = FONT_INK;
-                }
-            }
-        }
-    }
-    return 1;
-}
-
-static int write_bmp(const char *path)
-{
-    df_u8 *file;
-    df_u32 bytes;
-    int y;
-    int x;
-    HANDLE out;
-    DWORD wrote;
-    int ok;
-
-    bytes = BMP_OFF + FONT_SIDE * FONT_SIDE + FONT_N;
-    file = (df_u8 *)mem_alloc(bytes);
-    if (!file) {
-        g_why = "out of memory for the font image";
-        return 0;
-    }
-    file[0] = 'B';
-    file[1] = 'M';
-    put_u32(file + 2, bytes);
-    put_u32(file + 10, BMP_OFF);
-    put_u32(file + 14, 40);
-    put_u32(file + 18, FONT_SIDE);
-    put_u32(file + 22, FONT_SIDE);
-    put_u16(file + 26, 1);
-    put_u16(file + 28, 8);
-    put_u32(file + 34, FONT_SIDE * FONT_SIDE);
-    put_u32(file + 42, (unsigned)g_height);
-    put_u32(file + 46, 256);
-    /* Index 0 is black. Index 1 is the letter, so Paint shows the sheet. */
-    file[BMP_OFF - 256 * 4 + 4 + 0] = 199;
-    file[BMP_OFF - 256 * 4 + 4 + 1] = 255;
-    file[BMP_OFF - 256 * 4 + 4 + 2] = 254;
-    for (y = 0; y < FONT_SIDE; y++) {
-        df_u8 *dst;
-
-        dst = file + BMP_OFF + (FONT_SIDE - 1 - y) * FONT_SIDE;
-        for (x = 0; x < FONT_SIDE; x++) {
-            dst[x] = g_pixels[y * FONT_SIDE + x] ? 1 : 0;
-        }
-    }
-    for (x = 0; x < FONT_N; x++) {
-        file[BMP_OFF + FONT_SIDE * FONT_SIDE + x] = g_width[x];
-    }
-    out = CreateFileA(path, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
-    if (out == INVALID_HANDLE_VALUE) {
-        g_why = "could not write font0000.bmp";
-        return 0;
-    }
-    ok = WriteFile(out, file, bytes, &wrote, 0) && wrote == bytes;
-    CloseHandle(out);
-    if (!ok) {
-        g_why = "could not write font0000.bmp";
-        return 0;
-    }
-    return 1;
-}
-
-int font_ensure(void)
-{
-    char path[260];
-    df_u8 *fnt;
-    df_u32 size;
-
-    if (g_tried) {
-        return g_ready;
-    }
-    g_tried = 1;
-    g_ready = 0;
-    g_generated = 0;
+    g_uploaded = 0;
     g_pixels = 0;
+    g_side = 0;
+    g_cell = 0;
     g_height = 0;
-    fnt = vfs_read(FNT_NAME, &size);
-    if (!fnt) {
-        g_why = "FONT0000.FNT is missing";
-        return 0;
-    }
-    if (!decode_fnt(fnt, size)) {
-        return 0;
-    }
-    g_ready = 1;
-    g_why = 0;
-    if (!exe_file(path, (int)sizeof(path), BMP_NAME)) {
+    g_nwidths = 0;
+    g_first = 0;
+    g_gap = 0;
+    if (!sheet) {
         return 1;
     }
-    if (GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES) {
-        return 1;
+    if (!sheet->pixels || !sheet->widths
+        || sheet->nwidths < 1 || sheet->nwidths > FONT_MAX
+        || !pot(sheet->side) || sheet->cell < 1
+        || sheet->side % sheet->cell != 0
+        || sheet->height < 1 || sheet->height > sheet->cell
+        || sheet->first < 0 || sheet->gap < 0) {
+        return 0;
     }
-    if (write_bmp(path)) {
-        g_generated = 1;
-        g_why = 0;
+    cols = sheet->side / sheet->cell;
+    if (cols < 1 || sheet->nwidths > cols * cols) {
+        return 0;
     }
+    for (i = 0; i < sheet->nwidths; i++) {
+        g_width[i] = sheet->widths[i];
+    }
+    g_pixels = sheet->pixels;
+    g_side = sheet->side;
+    g_cell = sheet->cell;
+    g_height = sheet->height;
+    g_nwidths = sheet->nwidths;
+    g_first = sheet->first;
+    g_gap = sheet->gap;
     return 1;
 }
 
 void font_upload(const df_u8 *r, const df_u8 *g, const df_u8 *b)
 {
     g_uploaded = 0;
-    font_ensure();
-    if (!g_ready || !g_pixels || !r || !g || !b) {
+    if (!g_pixels || g_side < 1 || !r || !g || !b) {
         return;
     }
-    if (!glide_upload(g_pixels, FONT_SIDE, FONT_SIDE, 1, r, g, b, &g_addr)) {
+    if (!glide_upload(g_pixels, g_side, g_side, 1, r, g, b, &g_addr)) {
         return;
     }
     g_uploaded = 1;
@@ -433,6 +236,9 @@ static void glyph_quad(float x, float y, float w, float h, float s, float t)
 
 static void atlas_text(int x, int top, const char *s)
 {
+    int cols;
+
+    cols = g_side / g_cell;
     while (*s) {
         int c;
         int i;
@@ -441,22 +247,22 @@ static void atlas_text(int x, int top, const char *s)
         int row;
 
         c = (unsigned char)*s++;
-        if (c < FONT_FIRST || c >= FONT_FIRST + FONT_N) {
-            x += FONT_SPACE;
+        if (c < g_first || c >= g_first + g_nwidths) {
+            x += g_gap;
             continue;
         }
-        i = c - FONT_FIRST;
+        i = c - g_first;
         w = g_width[i];
         if (w < 1) {
-            x += FONT_SPACE;
+            x += g_gap;
             continue;
         }
-        col = i & 15;
-        row = i >> 4;
+        col = i % cols;
+        row = i / cols;
         glyph_quad((float)x, (float)(top - g_height),
                    (float)w, (float)g_height,
-                   (float)(col * FONT_CELL),
-                   (float)(row * FONT_CELL));
+                   (float)(col * g_cell),
+                   (float)(row * g_cell));
         x += w + 1;
     }
 }
@@ -489,13 +295,13 @@ int ui_string_width(const char *s)
         int w;
 
         c = (unsigned char)*s++;
-        if (c < FONT_FIRST || c >= FONT_FIRST + FONT_N) {
-            x += FONT_SPACE;
+        if (c < g_first || c >= g_first + g_nwidths) {
+            x += g_gap;
             continue;
         }
-        w = g_width[c - FONT_FIRST];
+        w = g_width[c - g_first];
         if (w < 1) {
-            x += FONT_SPACE;
+            x += g_gap;
             continue;
         }
         x += w + 1;

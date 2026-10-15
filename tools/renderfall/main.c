@@ -22,6 +22,7 @@
 #include "engine/scene/scene.h"
 #include "game/dagger/arch3d.h"
 #include "game/dagger/bsa.h"
+#include "game/dagger/fnt.h"
 #include "game/dagger/palette.h"
 #include "game/dagger/texture.h"
 #include "engine/ui/font.h"
@@ -1737,12 +1738,12 @@ static void cfg_load(void)
 
 static void load_font(void)
 {
-    if (!font_ensure()) {
-        log_line(font_error());
+    if (!fnt_install()) {
+        log_line(fnt_error());
         log_line("text uses the built-in font");
         return;
     }
-    if (font_generated()) {
+    if (fnt_generated()) {
         log_line("font0000.bmp written from FONT0000.FNT");
         return;
     }

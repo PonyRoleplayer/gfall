@@ -18,14 +18,14 @@
 **Execution (target):** Mount the ISO and run `D:\SPINTRI.EXE` or `D:\GFALL.EXE`. **Do not copy glide2x.dll onto discs.** Escape quits.
 
 ## Codebase layout
-- `src/main.c` — `gfall_main(void *)` entrypoint; platform calls it from `WinMainCRTStartup`. Loads one Daggerfall room and hands a `Level` to `gfx.h`.
+- `game/daggerfall/main.c` — `GFALL.EXE` entry. Same relationship to the engine as `tools/renderfall/main.c`: it links engine and dagger code and brings `WinMainCRTStartup`. Loads Privateer's Hold and hands a `Level` to `gfx.h`.
 - `src/engine/core/` — `df.h` types, endian helpers, x87 `df_sin`/`df_cos` (no libm). `mem.c` is the heap (stdlib malloc if `DF_HOST`, Win32 heap + CRT `memcpy`/`memmove`/`memset`/`strlen` replacements if not).
 - `src/engine/platform/` — `win32.c` (`_WinMainCRTStartup`, content dir beside the exe), `input.c`, `fs.c` (POSIX if `DF_HOST`, Win32 otherwise).
 - `src/engine/assets/` — VFS over `fs`, loader registry, engine formats: mesh, texture, palette, level.
 - `src/engine/scene/` — placed meshes, billboards, transforms, visibility query (everything is visible, in storage order).
 - `src/engine/gfx/` — `gfx.h` is the call the game makes. `glide.c` loads glide2x.dll at runtime (plain/`@N`/`_name@N`), `texcache.c` (2MB TMU), `camera.c`, `draw.c`.
-- `src/engine/ui/` — HUD primitives.
-- `src/game/dagger/` — BSA, ARCH3D, RDB, COL, TEXTURE.###, Privateer's Hold in `dungeon.c`/`world.c` (`MAPDITEM.017`: `S0000999.RDB` at the origin tile plus four `B` border blocks, camera on editor marker 10), and `player.c` (WASD/Q/E, mouse look).
+- `src/engine/ui/` — HUD and text. Text draws a glyph sheet the game installed, or a built-in 8x8 face.
+- `src/game/dagger/` — BSA, ARCH3D, RDB, COL, TEXTURE.###, FONT0000.FNT, Privateer's Hold in `dungeon.c`/`world.c` (`MAPDITEM.017`: `S0000999.RDB` at the origin tile plus four `B` border blocks, camera on editor marker 10), and `player.c` (WASD/Q/E, mouse look).
 - `tools/hostcheck.c` — runs `check_engine.c` then `check_dagger.c`. Engine tests cover transforms, camera, visibility, loaders, VFS. Dagger tests assert the hold (models, sprites, start marker), texture POT/square tiling, and write `build/tex0.ppm`. **Update the dagger test when world/loading changes.**
 - `daggerfall/DAGGER/ARENA2/` — Game data used at runtime/for tests (baked into ISOs).
 - `third_party/glide2/include/` — Glide 2 headers.

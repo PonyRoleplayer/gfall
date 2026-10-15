@@ -46,8 +46,6 @@ typedef struct Scene {
 } Scene;
 
 void instance_set_rotation(Instance *in, float rx, float ry, float rz);
-/* RDB placement. Negates the file angles and turns Y, then X, then Z. */
-void instance_set_dungeon_rotation(Instance *in, float rx, float ry, float rz);
 void instance_point(const Instance *in, float lx, float ly, float lz,
                     float *x, float *y, float *z);
 

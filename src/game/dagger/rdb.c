@@ -83,6 +83,82 @@ static Mesh *cached_mesh(CacheEnt *cache, int *ncache, Bsa *arch, df_u32 id)
     return mesh;
 }
 
+static void rot_x(float a, float *y, float *z)
+{
+    float c, s, y1, z1;
+
+    c = df_cos(a);
+    s = df_sin(a);
+    y1 = *y * c - *z * s;
+    z1 = *y * s + *z * c;
+    *y = y1;
+    *z = z1;
+}
+
+static void rot_y(float a, float *x, float *z)
+{
+    float c, s, x1, z1;
+
+    c = df_cos(a);
+    s = df_sin(a);
+    x1 = *x * c + *z * s;
+    z1 = -*x * s + *z * c;
+    *x = x1;
+    *z = z1;
+}
+
+static void rot_z(float a, float *x, float *y)
+{
+    float c, s, x1, y1;
+
+    c = df_cos(a);
+    s = df_sin(a);
+    x1 = *x * c - *y * s;
+    y1 = *x * s + *y * c;
+    *x = x1;
+    *y = y1;
+}
+
+/* File angles are the opposite turn, about Y then X then Z. */
+static void place_model(Instance *in, float rx, float ry, float rz)
+{
+    float x, y, z;
+
+    rx = df_wrap_tau(-rx);
+    ry = df_wrap_tau(-ry);
+    rz = df_wrap_tau(-rz);
+
+    x = 1.0f;
+    y = 0.0f;
+    z = 0.0f;
+    rot_y(ry, &x, &z);
+    rot_x(rx, &y, &z);
+    rot_z(rz, &x, &y);
+    in->m[0] = x;
+    in->m[3] = y;
+    in->m[6] = z;
+
+    x = 0.0f;
+    y = 1.0f;
+    z = 0.0f;
+    rot_y(ry, &x, &z);
+    rot_x(rx, &y, &z);
+    rot_z(rz, &x, &y);
+    in->m[1] = x;
+    in->m[4] = y;
+    in->m[7] = z;
+
+    x = 0.0f;
+    y = 0.0f;
+    z = 1.0f;
+    rot_y(ry, &x, &z);
+    rot_x(rx, &y, &z);
+    rot_z(rz, &x, &y);
+    in->m[2] = x;
+    in->m[5] = y;
+    in->m[8] = z;
+}
+
 Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch)
 {
     df_u32 width;
@@ -157,10 +233,10 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch)
                         in->x = (float)df_ri32(rdb + at + 8);
                         in->y = -(float)df_ri32(rdb + at + 12);
                         in->z = (float)df_ri32(rdb + at + 16);
-                        instance_set_dungeon_rotation(in,
-                                                      (float)xr * ROT_STEP,
-                                                      (float)yr * ROT_STEP,
-                                                      (float)zr * ROT_STEP);
+                        place_model(in,
+                                    (float)xr * ROT_STEP,
+                                    (float)yr * ROT_STEP,
+                                    (float)zr * ROT_STEP);
                         block->ninst++;
                         block->ntris += mesh->ntris;
                     }

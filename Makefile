@@ -37,7 +37,7 @@ HOST_CC := gcc
 HOST_CFLAGS := -std=gnu90 -Wall -Wextra -O2 -DDF_HOST -Isrc
 
 GFALL_SRC := \
-	src/main.c \
+	game/daggerfall/main.c \
 	src/engine/platform/win32.c \
 	src/engine/platform/input.c \
 	src/engine/platform/fs.c \
@@ -56,6 +56,7 @@ GFALL_SRC := \
 	src/game/dagger/arch3d.c \
 	src/game/dagger/texture.c \
 	src/game/dagger/palette.c \
+	src/game/dagger/fnt.c \
 	src/game/dagger/rdb.c \
 	src/game/dagger/dungeon.c \
 	src/game/dagger/bind.c \
@@ -80,7 +81,8 @@ RENDER_SRC := \
 	src/game/dagger/bsa.c \
 	src/game/dagger/arch3d.c \
 	src/game/dagger/texture.c \
-	src/game/dagger/palette.c
+	src/game/dagger/palette.c \
+	src/game/dagger/fnt.c
 
 HOST_SRC := \
 	src/engine/core/mem.c \

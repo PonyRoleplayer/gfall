@@ -50,14 +50,6 @@ static void rot_xyz(float rx, float ry, float rz, float *x, float *y, float *z)
     rot_z(rz, x, y);
 }
 
-/* Y, then X, then Z. Dungeon records are stored this way. */
-static void rot_yxz(float rx, float ry, float rz, float *x, float *y, float *z)
-{
-    rot_y(ry, x, z);
-    rot_x(rx, y, z);
-    rot_z(rz, x, y);
-}
-
 static void set_axes(Instance *in,
                      void (*spin)(float, float, float, float *, float *, float *),
                      float rx, float ry, float rz)
@@ -92,12 +84,6 @@ static void set_axes(Instance *in,
 void instance_set_rotation(Instance *in, float rx, float ry, float rz)
 {
     set_axes(in, rot_xyz, df_wrap_tau(rx), df_wrap_tau(ry), df_wrap_tau(rz));
-}
-
-void instance_set_dungeon_rotation(Instance *in, float rx, float ry, float rz)
-{
-    /* The file angle is the opposite turn, about Y then X then Z. */
-    set_axes(in, rot_yxz, df_wrap_tau(-rx), df_wrap_tau(-ry), df_wrap_tau(-rz));
 }
 
 void instance_point(const Instance *in, float lx, float ly, float lz,

@@ -28,7 +28,7 @@ static gdi_color_fn g_set_text;
 static gdi_color_fn g_set_bk;
 static void *g_ui_font;
 
-/* Directory of this exe, plus the game's suffix. "/ARENA2" reproduces the old root. */
+/* Directory of this exe, plus the caller's suffix. */
 static int content_root(char *dst, int n, const char *suffix)
 {
     char exe[260];
@@ -146,7 +146,7 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
 void win_fail(const char *text)
 {
-    MessageBoxA(0, text ? text : "failed", g_title[0] ? g_title : "gfall",
+    MessageBoxA(0, text ? text : "failed", g_title[0] ? g_title : "window",
                 MB_OK | MB_ICONERROR);
 }
 
@@ -302,10 +302,10 @@ int win_startup(void *instance, const char *suffix, const char *title, int gui)
 
     g_inst = (HINSTANCE)instance;
     g_gui = gui ? 1 : 0;
-    df_copy(g_title, title ? title : "gfall", (int)sizeof(g_title));
+    df_copy(g_title, title ? title : "window", (int)sizeof(g_title));
     df_copy(g_class_name, g_title, (int)sizeof(g_class_name));
     if (!content_root(root, (int)sizeof(root), suffix)) {
-        win_fail("Could not find ARENA2 next to the program.");
+        win_fail("Could not find the content directory next to the program.");
         return 0;
     }
     fs_set_root(root);
