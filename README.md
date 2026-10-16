@@ -61,9 +61,11 @@ The list line is the record id and its size in bytes. `renderfall.log` is writte
 | List | Esc | Clear the find box. Quit when it is already empty. |
 | List | Title-bar cross | Quit. |
 | View | Mouse | Look. |
-| View | W / S | Fly along the aim, including up and down when the camera is pitched. |
-| View | A / D | Strafe. |
-| View | Arrow keys | Move up, down, left, and right. Left and right strafe. Up and down are world vertical, independent of pitch. |
+| View | W / S, Up / Down | Fly along the aim, including up and down when the camera is pitched. |
+| View | A / D | Strafe left and right. |
+| View | Left / Right | Turn. |
+| View | PgUp / PgDn | Look up toward the sky, or down, without moving. |
+| View | Wheel | Forward narrows the field of view. Back widens it. |
 | View | Shift | Fly faster. |
 | View | F1 | Show or hide the instruction message. |
 | View | Esc | Close Glide and return to the list. |

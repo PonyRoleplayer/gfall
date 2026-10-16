@@ -48,6 +48,8 @@ A far face binds the 16 by 16 even when a near face uses the same record. The tr
 
 `GPU_SLOTS` is 768. That array only tracks uploads. The hardware limit is the 2MB. The extra entries are the near set on top of the 16 by 16 set and the font.
 
+The console log is 48 lines of 96 characters, static. The first time it opens it allocates one 640 by 480 frame at 16 bits (about 600KB) on the main heap and keeps it. That grab is the picture shown while the world is not drawing. Do not grow the log with the session, and do not take another grab per frame.
+
 Distance is to the instance origin. A ground patch is 512 units and its origin is the block corner, so a patch reads as near when that corner is inside 8192, not when the camera is standing on the dirt. Beyond 8192, or once the card is full, the face stays the small copy until you move closer.
 
 `paint` records each mesh's unique texture slots in `slot_keys`. The band walk reads that list. It does not scan the triangles again when the camera changes cells.

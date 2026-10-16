@@ -77,6 +77,11 @@ typedef void (FX_CALL *gr_blend_fn)(
     GrAlphaBlendFnc_t rgb_sf, GrAlphaBlendFnc_t rgb_df,
     GrAlphaBlendFnc_t alpha_sf, GrAlphaBlendFnc_t alpha_df);
 typedef void (FX_CALL *gr_line_fn)(const GrVertex *a, const GrVertex *b);
+typedef FxBool (FX_CALL *gr_lfb_read_fn)(
+    GrBuffer_t src, FxU32 x, FxU32 y, FxU32 w, FxU32 h, FxU32 stride, void *dst);
+typedef FxBool (FX_CALL *gr_lfb_write_fn)(
+    GrBuffer_t dst, FxU32 x, FxU32 y, GrLfbSrcFmt_t fmt,
+    FxU32 w, FxU32 h, FxI32 stride, void *src);
 
 static struct {
     HMODULE dll;
@@ -113,6 +118,8 @@ static struct {
     gr_alpha_ref_fn alpha_ref;
     gr_blend_fn blend;
     gr_line_fn line;
+    gr_lfb_read_fn lfb_read;
+    gr_lfb_write_fn lfb_write;
 } glide;
 
 static int g_inited;
@@ -213,6 +220,11 @@ static int load_glide(void)
     BIND(glide.alpha_ref, gr_alpha_ref_fn, "grAlphaTestReferenceValue", "grAlphaTestReferenceValue@4", "_grAlphaTestReferenceValue@4");
     BIND(glide.blend, gr_blend_fn, "grAlphaBlendFunction", "grAlphaBlendFunction@16", "_grAlphaBlendFunction@16");
     BIND(glide.line, gr_line_fn, "grDrawLine", "grDrawLine@8", "_grDrawLine@8");
+    /* Optional. A console can freeze the picture without them. */
+    glide.lfb_read = (gr_lfb_read_fn)(void *)find_export(
+        glide.dll, "grLfbReadRegion", "grLfbReadRegion@28", "_grLfbReadRegion@28");
+    glide.lfb_write = (gr_lfb_write_fn)(void *)find_export(
+        glide.dll, "grLfbWriteRegion", "grLfbWriteRegion@32", "_grLfbWriteRegion@32");
     return 1;
 }
 #pragma GCC diagnostic pop
@@ -472,6 +484,28 @@ void glide_clear(void)
 void glide_swap(void)
 {
     glide.swap(1);
+}
+
+int glide_lfb_read(void *dst, int stride_bytes)
+{
+    if (!g_opened || !dst || !glide.lfb_read || stride_bytes < 2) {
+        return 0;
+    }
+    return glide.lfb_read(
+        GR_BUFFER_FRONTBUFFER, 0, 0,
+        (FxU32)DF_VIEW_W, (FxU32)DF_VIEW_H,
+        (FxU32)stride_bytes, dst) ? 1 : 0;
+}
+
+int glide_lfb_write(const void *src, int stride_bytes)
+{
+    if (!g_opened || !src || !glide.lfb_write || stride_bytes < 2) {
+        return 0;
+    }
+    return glide.lfb_write(
+        GR_BUFFER_BACKBUFFER, 0, 0, GR_LFB_SRC_FMT_565,
+        (FxU32)DF_VIEW_W, (FxU32)DF_VIEW_H,
+        (FxI32)stride_bytes, (void *)src) ? 1 : 0;
 }
 
 void glide_triangle(const DrawVert *a, const DrawVert *b, const DrawVert *c)
@@ -811,6 +845,28 @@ void glide_ui(int on)
         FXFALSE,
         FXFALSE);
     glide.tex_filter(GR_TMU0, GR_TEXTUREFILTER_BILINEAR, GR_TEXTUREFILTER_BILINEAR);
+}
+
+void glide_dim(int on, int alpha)
+{
+    if (!g_opened) {
+        return;
+    }
+    if (on) {
+        if (alpha < 0) {
+            alpha = 0;
+        }
+        if (alpha > 255) {
+            alpha = 255;
+        }
+        glide_overlay(1);
+        glide_blend(1);
+        g_alpha = (float)alpha;
+        return;
+    }
+    g_alpha = 255.0f;
+    glide_blend(0);
+    glide_overlay(0);
 }
 
 void glide_plate(int on)

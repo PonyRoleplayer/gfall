@@ -19,7 +19,7 @@ void input_end(void);
 void input_read(Input *out);
 
 /* Mouse deltas since the last take. Does not read the keyboard.
-   LEVELFALL uses this so the arrow keys can translate instead of look. */
+   LEVELFALL turns with its own arrow keys and does not call input_read. */
 void input_look(int *dx, int *dy);
 int input_quit_requested(void);
 

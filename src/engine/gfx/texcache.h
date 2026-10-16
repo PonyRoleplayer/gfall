@@ -1,6 +1,8 @@
 #ifndef DF_TEXCACHE_H
 #define DF_TEXCACHE_H
 
+#include "engine/core/df.h"
+
 struct Level;
 struct Camera;
 
@@ -19,5 +21,11 @@ void texcache_bind(int slot, int sharp);
 /* The next bind runs even if that slot was the last one selected. */
 void texcache_forget(void);
 const char *texcache_error(void);
+/* 0 auto, 1 tiny (no full maps), 2 sharp (every live map is wanted). */
+void texcache_set_mode(int mode);
+int texcache_mode(void);
+/* Bytes of full-size maps sent in one frame. 0 pauses new uploads. */
+void texcache_set_budget(df_u32 bytes);
+df_u32 texcache_budget(void);
 
 #endif

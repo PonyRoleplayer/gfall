@@ -11,6 +11,7 @@
 #include "engine/platform/fs.h"
 #include "engine/platform/input.h"
 #include "engine/platform/win32.h"
+#include "engine/ui/console.h"
 
 static HINSTANCE g_inst;
 static HWND g_hwnd;
@@ -112,7 +113,7 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         break;
     case WM_KEYDOWN:
-        if (wp == VK_ESCAPE) {
+        if (wp == VK_ESCAPE && !console_take_escape()) {
             input_request_quit();
         }
         return 0;

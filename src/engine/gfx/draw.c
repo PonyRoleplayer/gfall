@@ -1,6 +1,7 @@
 #include "engine/gfx/draw.h"
 #include "engine/assets/level.h"
 #include "engine/gfx/glide.h"
+#include "engine/ui/console.h"
 #include "engine/ui/hud.h"
 #include "engine/gfx/texcache.h"
 
@@ -24,18 +25,27 @@
 /*
  * SST-1 screen coordinates live in about +/-2048. Past that the edge
  * walker wraps and the triangle turns into stripes. camera_project is
- *   sx = 320 + x * FOCAL / z
+ *   sx = 320 + x * focal / z
  * so a guard of 1600 pixels from the centre stays inside that range
- * when the camera pitches or a wall gets close.
+ * when the camera pitches or a wall gets close. The guard follows
+ * camera_focal, so a wider field does not push the clip into the SST-1 wrap.
  */
 #define GLIDE_GUARD 1600.0f
-#define CLIP_X (GLIDE_GUARD / DF_FOCAL)
-#define CLIP_Y (GLIDE_GUARD / DF_FOCAL)
 #define CLIP_MAX 16
 
 static void (*g_extra)(void);
 static void (*g_under)(void);
 static float g_far = DF_FAR;
+static int g_faces = 1;
+static int g_vis_models;
+static int g_vis_sprites;
+static int g_faces_kept;
+static int g_faces_drop;
+
+static float clip_guard(void)
+{
+    return GLIDE_GUARD / camera_focal();
+}
 
 void draw_set_far(float far)
 {
@@ -51,6 +61,32 @@ void draw_set_far(float far)
 float draw_far(void)
 {
     return g_far;
+}
+
+void draw_set_faces(int on)
+{
+    g_faces = on ? 1 : 0;
+}
+
+int draw_faces(void)
+{
+    return g_faces;
+}
+
+void draw_stats(int *models, int *sprites, int *kept, int *dropped)
+{
+    if (models) {
+        *models = g_vis_models;
+    }
+    if (sprites) {
+        *sprites = g_vis_sprites;
+    }
+    if (kept) {
+        *kept = g_faces_kept;
+    }
+    if (dropped) {
+        *dropped = g_faces_drop;
+    }
 }
 
 void draw_set_extra(void (*fn)(void))
@@ -77,13 +113,13 @@ static float plane_side(int plane, const Vtx *v)
     case 1:
         return g_far - v->z;
     case 2:
-        return v->z * CLIP_X + v->x;
+        return v->z * clip_guard() + v->x;
     case 3:
-        return v->z * CLIP_X - v->x;
+        return v->z * clip_guard() - v->x;
     case 4:
-        return v->z * CLIP_Y + v->y;
+        return v->z * clip_guard() + v->y;
     case 5:
-        return v->z * CLIP_Y - v->y;
+        return v->z * clip_guard() - v->y;
     default:
         return 1.0f;
     }
@@ -409,6 +445,17 @@ void draw_frame(const Camera *cam, const Level *level)
     if (!level) {
         return;
     }
+    console_bind(cam);
+    console_pump();
+    if (console_open()) {
+        console_present(cam);
+        return;
+    }
+    console_release();
+    g_vis_models = 0;
+    g_vis_sprites = 0;
+    g_faces_kept = 0;
+    g_faces_drop = 0;
     glide_clear();
     /*
      * Text binds its own sheet through glide_bind. That leaves g_bound
@@ -420,6 +467,7 @@ void draw_frame(const Camera *cam, const Level *level)
     camera_basis(cam, &basis);
     glide_sprite_alpha(0);
     norder = scene_visible_models(&level->scene, cam, order, VIS_MAX);
+    g_vis_models = norder;
     for (oi = 0; oi < norder; oi++) {
         const Instance *in;
         int sharp_model;
@@ -441,12 +489,14 @@ void draw_frame(const Camera *cam, const Level *level)
                     continue;
                 }
                 tri = &in->mesh->tris[face->first];
-                if (face->ntris >= 2 &&
+                if (g_faces && face->ntris >= 2 &&
                     !instance_faces(in, cam, &basis,
                                     face->nx, face->ny, face->nz,
                                     tri->x[0], tri->y[0], tri->z[0])) {
+                    g_faces_drop++;
                     continue;
                 }
+                g_faces_kept++;
                 draw_tris(cam, &basis, level, in, face->first, face->ntris, sharp_model);
             }
         } else {
@@ -455,6 +505,7 @@ void draw_frame(const Camera *cam, const Level *level)
     }
     glide_sprite_alpha(1);
     norder = scene_visible_sprites(&level->scene, cam, order, VIS_MAX);
+    g_vis_sprites = norder;
     for (oi = 0; oi < norder; oi++) {
         draw_flat(cam, &basis, level, &level->scene.sprites[order[oi]],
                   texcache_near_flat(order[oi]));

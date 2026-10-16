@@ -14,7 +14,7 @@ Once per call, the yaw and pitch become six inward planes:
 - far, at the distance below
 - left, right, top, bottom, through the eye
 
-The side slopes are the picture, not the Glide guard. `camera_project` is `sx = 320 + x * 400 / z`, so a point is on the left or right edge when `|x| / z = 320/400 = 0.8`, and on the top or bottom when `|y| / z = 240/400 = 0.6`. The guard is `1600/400 = 4`, wide enough that a triangle which merely crosses the picture does not wrap on the SST-1. A box outside the picture has no pixels, so the test uses 0.8 and 0.6.
+The side slopes are the picture, not the Glide guard. `camera_project` is `sx = 320 + x * focal / z`. The focal length is `camera_focal()`, from the horizontal field of view. The default is 75 degrees, focal about 417, so a point is on the left or right edge when `|x| / z` is about 0.77, and on the top or bottom when `|y| / z` is about 0.58. `fov` in the console changes this on the next world frame, clamped to 45..120. The guard is `1600 / focal`, wide enough that a triangle which merely crosses the picture does not wrap on the SST-1. A box outside the picture has no pixels, so the test uses the picture slopes, not the guard. `scene_set_cull(0)` lists every entity and skips these planes.
 
 A plane rejects the box when the nearest corner is outside: `dot(normal, center) + d + radius < 0`. The radius is `ex*|nx| + ey*|ny| + ez*|nz|`. Far is tested first.
 

@@ -2,6 +2,47 @@
 #include "engine/core/df.h"
 
 #define PITCH_LIMIT 1.55334303f
+/* 75 degrees across 640. 320 / tan(37.5 deg). */
+#define FOV_DEFAULT 75.0f
+#define FOCAL_DEFAULT 417.042f
+
+static float g_fov = FOV_DEFAULT;
+static float g_focal = FOCAL_DEFAULT;
+
+void camera_set_fov(float degrees)
+{
+    float half;
+    float s;
+    float c;
+
+    if (degrees < 45.0f) {
+        degrees = 45.0f;
+    }
+    if (degrees > 120.0f) {
+        degrees = 120.0f;
+    }
+    half = degrees * (DF_TAU / 720.0f);
+    s = df_sin(half);
+    c = df_cos(half);
+    if (c < 0.05f) {
+        c = 0.05f;
+    }
+    if (s < 0.05f) {
+        s = 0.05f;
+    }
+    g_fov = degrees;
+    g_focal = ((float)DF_VIEW_W * 0.5f) * (c / s);
+}
+
+float camera_fov(void)
+{
+    return g_fov;
+}
+
+float camera_focal(void)
+{
+    return g_focal;
+}
 
 void camera_set(Camera *cam, float x, float y, float z, float yaw, float pitch)
 {
@@ -67,7 +108,7 @@ int camera_project(float vx, float vy, float vz,
     w = 1.0f / vz;
     *oow = w;
     *ooz = 65535.0f * w;
-    *sx = (float)DF_VIEW_W * 0.5f + vx * DF_FOCAL * w;
-    *sy = (float)DF_VIEW_H * 0.5f + vy * DF_FOCAL * w;
+    *sx = (float)DF_VIEW_W * 0.5f + vx * g_focal * w;
+    *sy = (float)DF_VIEW_H * 0.5f + vy * g_focal * w;
     return 1;
 }

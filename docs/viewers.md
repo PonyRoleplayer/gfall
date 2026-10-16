@@ -40,12 +40,16 @@ Levelfall flies. Do not route it through `player_tick` or `input_read`. Those ar
 Spectator step, in `fly_step`:
 
 - Mouse changes yaw and pitch. Positive pitch looks up. Pitch clamps to about ±89 degrees (`1.55334303`).
-- W/S move along the aim: `(sin yaw * cos pitch, sin pitch, cos yaw * cos pitch)`. Looking up and holding W climbs.
-- A/D and Left/Right strafe on the horizontal right vector `(cos yaw, 0, -sin yaw)`.
-- Up/Down arrows move on world Y, ignoring pitch.
+- W/S and Up/Down move along the aim: `(sin yaw * cos pitch, sin pitch, cos yaw * cos pitch)`. Looking up and holding W climbs. Holding both a letter and its arrow does not go faster.
+- A/D strafe on the horizontal right vector `(cos yaw, 0, -sin yaw)`.
+- Left/Right turn. Positive yaw turns right. The rate is `TURN_RATE` (1.44 radians/second), the game's arrow look of 8 pixels per frame at 60 Hz, and it does not speed up with Shift.
+- Page Up and Page Down pitch at that same rate. Page Up looks toward the sky. The position does not change. Pitch still clamps at about ±89 degrees.
+- The wheel changes `camera_set_fov`. One notch is 120. Forward (positive) lowers the field by `FOV_STEP` (5 degrees). Back raises it. The camera clamps to 45..120. The value stays for the rest of the process. Take the wheel messages in the fly loop, before `win_pump`, or the list's scroll path is not the one that runs.
 - Speed is 720 units/second (the game's 12 units per vsync at 60 Hz). Shift multiplies by 4. Delta time is capped at 100 ms.
 
 The HUD (`hud_draw`, already called from `gfx_frame`) prints position, yaw, pitch, and fps (F3). Levelfall's own overlay is the dungeon name plus the F1 help lines.
+
+The key immediately left of 1 toggles the engine console. See `docs/console.md`. While that panel is up, including while it is sliding, these loops do not move the camera and do not toggle fog, the grid, or help. Escape closes the console. A second Escape, after it has shut, leaves the view.
 
 ## Game controls, unchanged
 

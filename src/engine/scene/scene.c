@@ -1,6 +1,19 @@
 #include "engine/scene/scene.h"
 #include "engine/core/df.h"
 
+/* 0 lists every stored entity, the same path as a null camera. */
+static int g_cull = 1;
+
+void scene_set_cull(int on)
+{
+    g_cull = on ? 1 : 0;
+}
+
+int scene_cull(void)
+{
+    return g_cull;
+}
+
 /*
  * Turns a local point into a world point. The three columns of m[] are
  * the rotated axes. Built once when the entity is placed.
@@ -307,8 +320,8 @@ static void frustum_planes(const Camera *cam, float far, Plane *p)
     ux = -basis.sp * basis.fx;
     uy = basis.cp;
     uz = -basis.sp * basis.fz;
-    sx = (float)DF_VIEW_W * 0.5f / DF_FOCAL;
-    sy = (float)DF_VIEW_H * 0.5f / DF_FOCAL;
+    sx = (float)DF_VIEW_W * 0.5f / camera_focal();
+    sy = (float)DF_VIEW_H * 0.5f / camera_focal();
 
     /* Far first: a city is mostly past this plane. */
     plane_through(&p[0], -fx, -fy, -fz,
@@ -463,7 +476,7 @@ int scene_visible_models(const Scene *scene, const Camera *cam, int *out, int ca
     if (!scene || !out || cap < 1 || scene->nmodels < 1) {
         return 0;
     }
-    if (!cam) {
+    if (!cam || !g_cull) {
         return fill_order(scene->nmodels, out, cap);
     }
     frustum_planes(cam, visible_far(), planes);
@@ -498,7 +511,7 @@ int scene_visible_sprites(const Scene *scene, const Camera *cam, int *out, int c
     if (!scene || !out || cap < 1 || scene->nsprites < 1) {
         return 0;
     }
-    if (!cam) {
+    if (!cam || !g_cull) {
         return fill_order(scene->nsprites, out, cap);
     }
     frustum_planes(cam, visible_far(), planes);

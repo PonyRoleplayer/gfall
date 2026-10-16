@@ -53,6 +53,7 @@ GFALL_SRC := \
 	src/engine/gfx/gfx.c \
 	src/engine/ui/hud.c \
 	src/engine/ui/font.c \
+	src/engine/ui/console.c \
 	src/game/dagger/bsa.c \
 	src/game/dagger/arch3d.c \
 	src/game/dagger/texture.c \
@@ -80,6 +81,7 @@ RENDER_SRC := \
 	src/engine/gfx/gfx.c \
 	src/engine/ui/hud.c \
 	src/engine/ui/font.c \
+	src/engine/ui/console.c \
 	src/game/dagger/bsa.c \
 	src/game/dagger/arch3d.c \
 	src/game/dagger/texture.c \
@@ -101,6 +103,7 @@ LEVEL_SRC := \
 	src/engine/gfx/gfx.c \
 	src/engine/ui/hud.c \
 	src/engine/ui/font.c \
+	src/engine/ui/console.c \
 	src/game/dagger/bsa.c \
 	src/game/dagger/arch3d.c \
 	src/game/dagger/texture.c \

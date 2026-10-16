@@ -24,6 +24,7 @@
 #include "game/dagger/bsa.h"
 #include "game/dagger/palette.h"
 #include "game/dagger/texture.h"
+#include "engine/ui/console.h"
 #include "engine/ui/font.h"
 
 #define MAX_TEX 256
@@ -274,7 +275,7 @@ static float fit_dist(float radius)
 {
     float dist;
 
-    dist = radius * (DF_FOCAL / ((float)DF_VIEW_H * 0.5f)) * 1.35f + 16.0f;
+    dist = radius * (camera_focal() / ((float)DF_VIEW_H * 0.5f)) * 1.35f + 16.0f;
     if (dist < radius + 8.0f) {
         dist = radius + 8.0f;
     }
@@ -308,6 +309,9 @@ static void on_mouse(unsigned int msg, int x, int y)
     int dx;
     int dy;
 
+    if (console_open()) {
+        return;
+    }
     if (msg == WM_LBUTTONDOWN) {
         g_left = 1;
         g_lx = x;
@@ -1089,23 +1093,24 @@ static void draw_overlay(void)
     draw_help();
 }
 
-#define GRID_CLIP (1600.0f / DF_FOCAL)
-
 static float grid_side(int plane, float x, float y, float z)
 {
+    float guard;
+
+    guard = 1600.0f / camera_focal();
     switch (plane) {
     case 0:
         return z - DF_NEAR;
     case 1:
         return DF_FAR - z;
     case 2:
-        return z * GRID_CLIP + x;
+        return z * guard + x;
     case 3:
-        return z * GRID_CLIP - x;
+        return z * guard - x;
     case 4:
-        return z * GRID_CLIP + y;
+        return z * guard + y;
     default:
-        return z * GRID_CLIP - y;
+        return z * guard - y;
     }
 }
 
@@ -1283,6 +1288,7 @@ static void run_view(const Level *level, float cx, float cy, float cz, float sca
     g_dy = 0;
     g_rz = 0;
     tick = GetTickCount();
+    place_camera(&cam, cx, cy, cz, yaw, pitch, dist);
     input_clear_quit();
     g_grid_cx = cx;
     g_grid_cy = cy;
@@ -1311,6 +1317,13 @@ static void run_view(const Level *level, float cx, float cy, float cz, float sca
         tick = now;
         if (dt > 100) {
             dt = 100;
+        }
+        if (console_open()) {
+            g_dx = 0;
+            g_dy = 0;
+            g_rz = 0;
+            gfx_frame(&cam, level);
+            continue;
         }
         help_now = key_down(VK_F1);
         if (help_now && !help_was) {

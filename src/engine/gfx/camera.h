@@ -27,6 +27,11 @@ void camera_basis(const Camera *cam, Basis *basis);
 void camera_view(const Camera *cam, const Basis *basis,
                  float wx, float wy, float wz,
                  float *vx, float *vy, float *vz);
+/* Horizontal field of view in degrees. Default 75. Clamped to 45..120. */
+void camera_set_fov(float degrees);
+float camera_fov(void);
+/* Focal length that matches camera_fov. Projection and the cull share it. */
+float camera_focal(void);
 int camera_project(float vx, float vy, float vz,
                    float *sx, float *sy, float *oow, float *ooz);
 

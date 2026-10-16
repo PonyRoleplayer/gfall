@@ -4,8 +4,9 @@
  * locations (RMB blocks). The index is built once at startup.
  * Type a name to filter. Esc clears the find box, then quits.
  * Esc in the view returns to the list. The title-bar cross quits.
- * WASD flies along the look direction, the way a spectator camera does.
- * Arrow keys translate up, down, left, and right without changing pitch.
+ * W/S and Up/Down fly along the aim. A/D strafe. Left/Right turn.
+ * Page Up and Page Down pitch, staying in place.
+ * The wheel changes the field of view.
  */
 
 #define WINVER 0x0400
@@ -20,6 +21,7 @@
 #include "engine/gfx/glide.h"
 #include "engine/platform/input.h"
 #include "engine/platform/win32.h"
+#include "engine/ui/console.h"
 #include "engine/ui/font.h"
 #include "game/dagger/dungeon.h"
 #include "game/dagger/texture.h"
@@ -27,7 +29,11 @@
 
 #define MAX_LEVELS 24576
 #define LOOK_SENS 0.003f
+/* Game arrow look is 8 pixels per frame. At 60 Hz that is this many radians. */
+#define TURN_RATE 1.44f
 #define PITCH_LIMIT 1.55334303f
+/* One wheel notch. Forward narrows the view. camera_set_fov clamps 45..120. */
+#define FOV_STEP 5.0f
 /* 12 units per vsync at 60 Hz, same pace as the game's fly. Shift is 4x. */
 #define FLY_SPEED 720.0f
 
@@ -1025,19 +1031,33 @@ static void draw_lines(const char **lines, int nlines, int x, int top)
     }
 }
 
+static int take_wheel(void)
+{
+    MSG msg;
+    int sum;
+
+    sum = 0;
+    while (PeekMessageA(&msg, 0, WM_MOUSEWHEEL, WM_MOUSEWHEEL, PM_REMOVE)) {
+        sum += (int)(short)HIWORD(msg.wParam);
+    }
+    return sum;
+}
+
 static void draw_overlay(void)
 {
     static const char *help[] = {
         "mouse: look",
-        "w s: fly along the aim",
+        "w s up down: along the aim",
         "a d: strafe",
-        "arrows: up down left right",
+        "left right: turn",
+        "pgup pgdn: look up and down",
+        "wheel: field of view",
         "shift: faster",
         "f1: hide this",
         "esc: back to the list",
         "close: quit"
     };
-    const char *lines[10];
+    const char *lines[12];
     int n;
     int line_h;
     int i;
@@ -1058,12 +1078,13 @@ static void fly_step(Camera *cam, int dx, int dy, float dt)
     Basis basis;
     float mf;
     float mr;
-    float ay;
-    float ar;
     float speed;
 
-    cam->yaw = df_wrap_tau(cam->yaw + (float)dx * LOOK_SENS);
+    cam->yaw = df_wrap_tau(cam->yaw + (float)dx * LOOK_SENS
+        + (float)(key_down(VK_RIGHT) - key_down(VK_LEFT)) * TURN_RATE * dt);
+    /* Page Up pitches toward the sky. The camera stays where it is. */
     cam->pitch -= (float)dy * LOOK_SENS;
+    cam->pitch += (float)(key_down(VK_PRIOR) - key_down(VK_NEXT)) * TURN_RATE * dt;
     if (cam->pitch > PITCH_LIMIT) {
         cam->pitch = PITCH_LIMIT;
     }
@@ -1071,18 +1092,17 @@ static void fly_step(Camera *cam, int dx, int dy, float dt)
         cam->pitch = -PITCH_LIMIT;
     }
     camera_basis(cam, &basis);
-    mf = (float)(key_down('W') - key_down('S'));
+    mf = (float)((key_down('W') || key_down(VK_UP))
+        - (key_down('S') || key_down(VK_DOWN)));
     mr = (float)(key_down('D') - key_down('A'));
-    ay = (float)(key_down(VK_UP) - key_down(VK_DOWN));
-    ar = (float)(key_down(VK_RIGHT) - key_down(VK_LEFT));
     speed = FLY_SPEED * dt;
     if (key_down(VK_SHIFT)) {
         speed *= 4.0f;
     }
-    /* W follows the aim, including pitch. Arrows stay on the horizontal. */
-    cam->x += (basis.fx * basis.cp * mf + basis.rx * (mr + ar)) * speed;
-    cam->y += (basis.sp * mf + ay) * speed;
-    cam->z += (basis.fz * basis.cp * mf + basis.rz * (mr + ar)) * speed;
+    /* W and Up follow the aim, including pitch. */
+    cam->x += (basis.fx * basis.cp * mf + basis.rx * mr) * speed;
+    cam->y += basis.sp * mf * speed;
+    cam->z += (basis.fz * basis.cp * mf + basis.rz * mr) * speed;
 }
 
 static void run_view(const Level *level, Camera *cam)
@@ -1102,9 +1122,20 @@ static void run_view(const Level *level, Camera *cam)
         int help_now;
         int dx;
         int dy;
+        int wheel;
 
+        wheel = take_wheel();
+        if (wheel && !console_open()) {
+            int notches;
+
+            notches = wheel / 120;
+            if (notches == 0) {
+                notches = wheel > 0 ? 1 : -1;
+            }
+            camera_set_fov(camera_fov() - (float)notches * FOV_STEP);
+        }
         win_pump();
-        if (input_quit_requested() || key_down(VK_ESCAPE)) {
+        if (input_quit_requested()) {
             break;
         }
         now = GetTickCount();
@@ -1113,13 +1144,15 @@ static void run_view(const Level *level, Camera *cam)
         if (dt > 100) {
             dt = 100;
         }
-        help_now = key_down(VK_F1);
-        if (help_now && !help_was) {
-            g_help = g_help ? 0 : 1;
-        }
-        help_was = help_now;
         input_look(&dx, &dy);
-        fly_step(cam, dx, dy, (float)dt / 1000.0f);
+        if (!console_open()) {
+            help_now = key_down(VK_F1);
+            if (help_now && !help_was) {
+                g_help = g_help ? 0 : 1;
+            }
+            help_was = help_now;
+            fly_step(cam, dx, dy, (float)dt / 1000.0f);
+        }
         gfx_frame(cam, level);
     }
     gfx_set_extra(0);

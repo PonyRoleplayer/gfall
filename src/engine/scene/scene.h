@@ -100,11 +100,15 @@ int instance_faces(const Instance *in, const Camera *cam, const Basis *basis,
  * fresh device. gfx calls this when either value changes.
  */
 void scene_set_limits(float clip_far, int fog);
+/* 1 keeps the frustum. 0 lists every entity, as a null camera does. */
+void scene_set_cull(int on);
+int scene_cull(void);
 
 /*
  * Visibility. Writes storage indices into out, in storage order, and
  * returns how many. A null camera lists every entity, so a test can
- * ignore the frustum. With a camera, a block span is tested first, then
+ * ignore the frustum. scene_set_cull(0) does the same with a camera.
+ * With culling on, a block span is tested first, then
  * each model's baked box. A model or sprite is dropped when its box
  * lies wholly outside the view: behind the near plane, past the fog or
  * the far clip, or past a screen edge. Without baked bounds, the box is

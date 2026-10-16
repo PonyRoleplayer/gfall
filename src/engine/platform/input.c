@@ -10,6 +10,7 @@
 #include <windows.h>
 
 #include "engine/platform/input.h"
+#include "engine/ui/console.h"
 
 static HWND g_hwnd;
 static int g_cx;
@@ -42,7 +43,14 @@ void input_on_mouse(int x, int y)
     int dx;
     int dy;
 
-    if (!g_active || g_ignore) {
+    if (!g_active || g_ignore || console_open()) {
+        if (g_active && !g_ignore && console_open()) {
+            dx = x - g_cx;
+            dy = y - g_cy;
+            if (dx || dy) {
+                center_cursor();
+            }
+        }
         return;
     }
     dx = x - g_cx;
@@ -67,6 +75,11 @@ void input_clear_quit(void)
 
 void input_look(int *dx, int *dy)
 {
+    console_pump();
+    if (console_open()) {
+        g_look_dx = 0;
+        g_look_dy = 0;
+    }
     if (dx) {
         *dx = g_look_dx;
     }
@@ -130,6 +143,18 @@ void input_end(void)
 
 void input_read(Input *out)
 {
+    console_pump();
+    if (console_open()) {
+        g_look_dx = 0;
+        g_look_dy = 0;
+        out->move_f = 0;
+        out->move_r = 0;
+        out->move_y = 0;
+        out->look_dx = 0;
+        out->look_dy = 0;
+        out->quit = g_quit;
+        return;
+    }
     out->move_f = key_down('W') - key_down('S');
     out->move_r = key_down('D') - key_down('A');
     out->move_y = key_down('Q') - key_down('E');

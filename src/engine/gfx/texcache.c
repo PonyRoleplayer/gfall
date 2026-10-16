@@ -41,6 +41,9 @@ static df_u8 g_model_near[NEAR_MAX];
 static df_u8 g_flat_near[NEAR_MAX];
 static int g_nmodels;
 static int g_nflats;
+/* 0 follows distance. 1 never binds a full map. 2 wants every full map. */
+static int g_mode;
+static df_u32 g_budget = UPLOAD_BUDGET;
 static df_u8 g_shrink[TINY * TINY];
 static const char *g_why = "texture upload failed";
 
@@ -368,7 +371,7 @@ static void upload_some(void)
         if (g_small[i] || !g_want[i] || !g_live[i] || g_sharp_live[i]) {
             continue;
         }
-        if (sent >= UPLOAD_BUDGET) {
+        if (sent >= g_budget) {
             g_pending = 1;
             return;
         }
@@ -381,7 +384,7 @@ static void upload_some(void)
             return;
         }
         sent += nbytes;
-        if (rewound || sent >= UPLOAD_BUDGET) {
+        if (rewound || sent >= g_budget) {
             g_pending = 1;
             return;
         }
@@ -430,6 +433,53 @@ static int everything_fits(const Level *level, df_u32 room)
     return 1;
 }
 
+static void mark_near(int on)
+{
+    int i;
+
+    for (i = 0; i < g_nmodels; i++) {
+        g_model_near[i] = (df_u8)(on ? 1 : 0);
+    }
+    for (i = 0; i < g_nflats; i++) {
+        g_flat_near[i] = (df_u8)(on ? 1 : 0);
+    }
+}
+
+void texcache_set_mode(int mode)
+{
+    if (mode < 0) {
+        mode = 0;
+    }
+    if (mode > 2) {
+        mode = 2;
+    }
+    if (mode == g_mode) {
+        return;
+    }
+    g_mode = mode;
+    g_cell_ok = 0;
+    g_pending = 1;
+}
+
+int texcache_mode(void)
+{
+    return g_mode;
+}
+
+void texcache_set_budget(df_u32 bytes)
+{
+    if (bytes > 524288u) {
+        bytes = 524288u;
+    }
+    g_budget = bytes;
+    g_pending = 1;
+}
+
+df_u32 texcache_budget(void)
+{
+    return g_budget;
+}
+
 void texcache_detail(const Camera *cam, const Level *level)
 {
     int cx;
@@ -439,6 +489,23 @@ void texcache_detail(const Camera *cam, const Level *level)
     df_u32 room;
 
     if (!cam || !level || g_n < 1) {
+        return;
+    }
+    if (g_mode == 1) {
+        mark_near(0);
+        return;
+    }
+    if (g_mode == 2) {
+        int i;
+
+        mark_near(1);
+        for (i = 0; i < g_n; i++) {
+            g_want[i] = (g_live[i] && !g_small[i]) ? 1 : 0;
+        }
+        if (g_pending || !g_cell_ok) {
+            upload_some();
+            g_cell_ok = 1;
+        }
         return;
     }
     cx = (int)(cam->x / (float)BAND);

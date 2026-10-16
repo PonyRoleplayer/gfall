@@ -16,5 +16,10 @@ void draw_set_under(void (*fn)(void));
 /* Far clip in world units. Default is DF_FAR. Clamped to DF_FAR_MAX. */
 void draw_set_far(float far);
 float draw_far(void);
+/* 1 drops ARCH3D faces whose normal points away. 0 draws them. */
+void draw_set_faces(int on);
+int draw_faces(void);
+/* Counts from the last world frame. A frozen console keeps these. */
+void draw_stats(int *models, int *sprites, int *kept, int *dropped);
 
 #endif

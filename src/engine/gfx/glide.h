@@ -27,6 +27,13 @@ int glide_fog_on(void);
 /* Eye-space distances where the table is clear and where it is solid. */
 void glide_fog_range(float near_z, float far_z);
 void glide_swap(void);
+/*
+ * Copy the 640x480 front buffer into dst, 16-bit 565, stride in bytes.
+ * Writes that picture back to the back buffer. 0 if the driver has no
+ * linear frame buffer entry, or the copy fails.
+ */
+int glide_lfb_read(void *dst, int stride_bytes);
+int glide_lfb_write(const void *src, int stride_bytes);
 void glide_triangle(const DrawVert *a, const DrawVert *b, const DrawVert *c);
 void glide_line(const DrawVert *a, const DrawVert *b);
 int glide_palette(const df_u8 *r, const df_u8 *g, const df_u8 *b);
@@ -54,6 +61,8 @@ void glide_sprite_alpha(int on);
 void glide_overlay(int on);
 /* Same as overlay, at about 75% opacity, so the frame shows through. */
 void glide_plate(int on);
+/* Untextured colour at an explicit opacity, 0..255. 0 restores the room. */
+void glide_dim(int on, int alpha);
 /* Textured screen quads, point sampled, drawn over the frame. */
 void glide_ui(int on);
 /* Untextured iterated colour with the room's depth test left alone. */
