@@ -36,6 +36,17 @@ int glide_palette(const df_u8 *r, const df_u8 *g, const df_u8 *b);
  */
 int glide_upload(const df_u8 *pixels, int pot_w, int pot_h, int cutout,
                  const df_u8 *pr, const df_u8 *pg, const df_u8 *pb, df_u32 *addr);
+/* Bytes this shape will take on the card, including the 8-byte pad. */
+int glide_texture_bytes(int pot_w, int pot_h, int cutout, df_u32 *bytes);
+/*
+ * Remember the upload pointer. glide_rewind drops every map uploaded
+ * after the mark so a nearer set can reuse that part of the card.
+ * The small copies and the font stay put.
+ */
+void glide_mark(void);
+void glide_rewind(void);
+/* Bytes free after the mark, with a pad so a map is not packed to the edge. */
+df_u32 glide_detail_room(void);
 void glide_bind(df_u32 addr);
 /* Sprites sample texture alpha and reject alpha 0. Models use vertex alpha. */
 void glide_sprite_alpha(int on);

@@ -20,7 +20,12 @@ typedef char gfall_vertex_is_glide2[
 typedef char gfall_view_is_640[(DF_VIEW_W == 640 && DF_VIEW_H == 480) ? 1 : -1];
 typedef char gfall_fog_table_is_64[(GR_FOG_TABLE_SIZE == 64) ? 1 : -1];
 
-#define GPU_SLOTS 256
+/*
+ * One entry per uploaded map. A place keeps a small copy of every
+ * picture, then a second copy of the ones close to the camera.
+ * 256 is the image table. The rest is that near set, plus the font.
+ */
+#define GPU_SLOTS 768
 
 typedef void (FX_CALL *gr_init_fn)(void);
 typedef void (FX_CALL *gr_shutdown_fn)(void);
@@ -121,6 +126,8 @@ static float g_alpha = 255.0f;
 static df_u32 g_addr;
 static df_u32 g_addr_max;
 static int g_ntex;
+static df_u32 g_mark_addr;
+static int g_mark_ntex;
 
 static struct {
     df_u32 addr;
@@ -286,6 +293,8 @@ int glide_open(void *hwnd)
 
     g_why = "glide failed";
     g_ntex = 0;
+    g_mark_ntex = 0;
+    g_mark_addr = 0;
     if (!load_glide()) {
         return 0;
     }
@@ -531,19 +540,19 @@ int glide_palette(const df_u8 *r, const df_u8 *g, const df_u8 *b)
  * opaque pixel stays. A colour key of black would punch that pixel too,
  * because index 255 is also RGB 0. Walls stay P_8.
  */
+/* Reused for every cutout upload. Download copies it onto the card. */
+static df_u8 g_expand[256 * 256 * 2];
+
 static df_u8 *expand_argb1555(const df_u8 *pixels, int n,
                               const df_u8 *pr, const df_u8 *pg, const df_u8 *pb)
 {
     df_u8 *buf;
     int i;
 
-    if (!pr || !pg || !pb) {
+    if (!pr || !pg || !pb || n < 1 || n > 256 * 256) {
         return 0;
     }
-    buf = (df_u8 *)mem_alloc((df_u32)n * 2u);
-    if (!buf) {
-        return 0;
-    }
+    buf = g_expand;
     for (i = 0; i < n; i++) {
         df_u8 index;
         df_u16 pix;
@@ -563,18 +572,90 @@ static df_u8 *expand_argb1555(const df_u8 *pixels, int n,
     return buf;
 }
 
-int glide_upload(const df_u8 *pixels, int pot_w, int pot_h, int cutout,
-                 const df_u8 *pr, const df_u8 *pg, const df_u8 *pb, df_u32 *addr)
+static int shape_bytes(int pot_w, int pot_h, int cutout, GrTexInfo *info, df_u32 *bytes_out)
 {
     GrLOD_t lod;
     GrAspectRatio_t aspect;
     int major;
-    int n;
     FxU32 bytes;
+
+    major = (pot_w > pot_h) ? pot_w : pot_h;
+    if (!lod_of(major, &lod) || !aspect_of(pot_w, pot_h, &aspect)) {
+        return 0;
+    }
+    info->smallLod = lod;
+    info->largeLod = lod;
+    info->aspectRatio = aspect;
+    info->format = cutout ? GR_TEXFMT_ARGB_1555 : GR_TEXFMT_P_8;
+    info->data = &g_expand[0];
+    if (!glide.tex_calc) {
+        return 0;
+    }
+    bytes = glide.tex_calc(lod, lod, info->aspectRatio, info->format);
+    if (glide.tex_mem) {
+        FxU32 need;
+
+        need = glide.tex_mem(GR_MIPMAPLEVELMASK_BOTH, info);
+        if (need > bytes) {
+            bytes = need;
+        }
+    }
+    if (bytes == 0) {
+        return 0;
+    }
+    *bytes_out = ((df_u32)bytes + 7u) & ~7u;
+    return 1;
+}
+
+int glide_texture_bytes(int pot_w, int pot_h, int cutout, df_u32 *bytes)
+{
+    GrTexInfo info;
+
+    if (!bytes) {
+        return 0;
+    }
+    return shape_bytes(pot_w, pot_h, cutout, &info, bytes);
+}
+
+void glide_mark(void)
+{
+    g_mark_addr = g_addr;
+    g_mark_ntex = g_ntex;
+}
+
+void glide_rewind(void)
+{
+    int i;
+
+    for (i = g_mark_ntex; i < g_ntex; i++) {
+        g_tex[i].live = 0;
+    }
+    g_ntex = g_mark_ntex;
+    g_addr = g_mark_addr;
+}
+
+df_u32 glide_detail_room(void)
+{
+    df_u32 room;
+
+    if (g_addr_max <= g_mark_addr) {
+        return 0;
+    }
+    room = g_addr_max - g_mark_addr;
+    /* A download that would cross a 2MB edge is pushed past it. Leave a gap. */
+    if (room > 65536u) {
+        return room - 65536u;
+    }
+    return 0;
+}
+
+int glide_upload(const df_u8 *pixels, int pot_w, int pot_h, int cutout,
+                 const df_u8 *pr, const df_u8 *pg, const df_u8 *pb, df_u32 *addr)
+{
+    int n;
     df_u32 size;
     df_u32 at;
     df_u32 boundary;
-    GrTextureFormat_t fmt;
     const df_u8 *src;
     GrTexInfo info;
 
@@ -582,12 +663,10 @@ int glide_upload(const df_u8 *pixels, int pot_w, int pot_h, int cutout,
         g_why = "texture upload failed";
         return 0;
     }
-    major = (pot_w > pot_h) ? pot_w : pot_h;
-    if (!lod_of(major, &lod) || !aspect_of(pot_w, pot_h, &aspect)) {
+    if (!shape_bytes(pot_w, pot_h, cutout, &info, &size)) {
         g_why = "texture size is not a Voodoo shape";
         return 0;
     }
-    fmt = GR_TEXFMT_P_8;
     src = pixels;
     if (cutout) {
         n = pot_w * pot_h;
@@ -596,26 +675,8 @@ int glide_upload(const df_u8 *pixels, int pot_w, int pot_h, int cutout,
             g_why = "texture upload failed";
             return 0;
         }
-        fmt = GR_TEXFMT_ARGB_1555;
     }
-    info.smallLod = lod;
-    info.largeLod = lod;
-    info.aspectRatio = aspect;
-    info.format = fmt;
     info.data = (void *)src;
-    bytes = glide.tex_calc(lod, lod, aspect, fmt);
-    if (glide.tex_mem) {
-        FxU32 need;
-
-        need = glide.tex_mem(GR_MIPMAPLEVELMASK_BOTH, &info);
-        if (need > bytes) {
-            bytes = need;
-        }
-    }
-    if (bytes == 0) {
-        g_why = "grTexCalcMemRequired returned 0";
-        return 0;
-    }
     /*
      * startAddress is a byte offset between grTexMinAddress and
      * grTexMaxAddress. grTexTextureMemRequired returns the bytes to
@@ -625,7 +686,6 @@ int glide_upload(const df_u8 *pixels, int pot_w, int pot_h, int cutout,
      * crosses a 2MB boundary blanks the frame, so a map that would
      * land on the boundary starts after it.
      */
-    size = ((df_u32)bytes + 7u) & ~7u;
     at = (g_addr + 7u) & ~7u;
     boundary = (at & ~0x1fffffu) + 0x200000u;
     if (at + size > boundary) {

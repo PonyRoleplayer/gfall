@@ -233,6 +233,134 @@ static void emit_tri(Mesh *mesh, int cap, const Pt *pts, const int *uv_u, const 
     mesh->ntris++;
 }
 
+/* Triangles emit_tri will accept for this face. */
+static int tri_count(const Pt *pts, int npts)
+{
+    int corners[MAX_FACE];
+    int nc;
+    int k;
+    int n;
+
+    nc = corners_of(pts, npts, corners);
+    if (nc < 3) {
+        for (k = 0; k < npts; k++) {
+            corners[k] = k;
+        }
+        nc = npts;
+    }
+    n = 0;
+    for (k = 1; k < nc - 1; k++) {
+        if (corners[0] != corners[k] && corners[k] != corners[k + 1]
+            && corners[0] != corners[k + 1]) {
+            n++;
+        }
+    }
+    return n;
+}
+
+/*
+ * One plane. 1 means pts and tex are filled. 0 means this plane was
+ * skipped and *p advanced. -1 means the record ends here.
+ */
+static int decode_plane(const df_u8 *rec, df_u32 size, df_u32 *p_io,
+                        int v25, df_i32 point_off, df_u32 id,
+                        Pt *pts, int *npts_out, df_u16 *tex_out)
+{
+    df_u32 p;
+    int npts;
+    int k;
+
+    p = *p_io;
+    if (p + 8 > size) {
+        return -1;
+    }
+    npts = rec[p];
+    *tex_out = df_ru16(rec + p + 2);
+    p += 8;
+    if (npts < 3 || npts > MAX_FACE) {
+        if (npts > MAX_FACE || p + (df_u32)npts * 8 > size) {
+            return -1;
+        }
+        *p_io = p + (df_u32)npts * 8;
+        return 0;
+    }
+    if (p + (df_u32)npts * 8 > size) {
+        return -1;
+    }
+    for (k = 0; k < npts; k++) {
+        df_i32 off;
+        df_i32 u;
+        df_i32 v;
+        df_i32 pp;
+
+        off = df_ri32(rec + p);
+        u = df_ri16(rec + p + 4);
+        v = df_ri16(rec + p + 6);
+        p += 8;
+        if (k < 3 && id < 905) {
+            uv_unpack(&u);
+            uv_unpack(&v);
+        }
+        if (v25) {
+            pp = point_off + off * 12;
+        } else {
+            pp = point_off + off;
+        }
+        if (pp < 0 || (df_u32)pp + 12 > size) {
+            return -1;
+        }
+        pts[k].x = df_ri32(rec + pp);
+        pts[k].y = df_ri32(rec + pp + 4);
+        pts[k].z = df_ri32(rec + pp + 8);
+        pts[k].u = u;
+        pts[k].v = v;
+    }
+    *p_io = p;
+    *npts_out = npts;
+    return 1;
+}
+
+static void emit_plane(Mesh *mesh, int cap, const Pt *pts, int npts, df_u16 tex)
+{
+    int uv_u[MAX_FACE];
+    int uv_v[MAX_FACE];
+    int corners[MAX_FACE];
+    int nc;
+    int k;
+
+    if (npts == 3) {
+        uv_u[0] = pts[0].u;
+        uv_v[0] = pts[0].v;
+        uv_u[1] = pts[0].u + pts[1].u;
+        uv_v[1] = pts[0].v + pts[1].v;
+        uv_u[2] = uv_u[1] + pts[2].u;
+        uv_v[2] = uv_v[1] + pts[2].v;
+    } else if (!face_uv(pts, npts, uv_u, uv_v)) {
+        g_uv_fail++;
+        uv_u[0] = pts[0].u;
+        uv_v[0] = pts[0].v;
+        uv_u[1] = pts[0].u + pts[1].u;
+        uv_v[1] = pts[0].v + pts[1].v;
+        uv_u[2] = uv_u[1] + pts[2].u;
+        uv_v[2] = uv_v[1] + pts[2].v;
+        for (k = 3; k < npts; k++) {
+            uv_u[k] = uv_u[2];
+            uv_v[k] = uv_v[2];
+        }
+    }
+    nc = corners_of(pts, npts, corners);
+    if (nc < 3) {
+        for (k = 0; k < npts; k++) {
+            corners[k] = k;
+        }
+        nc = npts;
+    }
+    for (k = 1; k < nc - 1; k++) {
+        emit_tri(mesh, cap, pts, uv_u, uv_v, corners[0], corners[k], corners[k + 1],
+                 (df_u16)(tex >> 7), (df_u16)(tex & 0x7f));
+    }
+}
+
 Mesh *arch3d_load(const df_u8 *rec, df_u32 size, df_u32 id)
 {
     int v25;
@@ -261,111 +389,55 @@ Mesh *arch3d_load(const df_u8 *rec, df_u32 size, df_u32 id)
     if (point_off < 64 || plane_off < 64 || (df_u32)plane_off >= size) {
         return 0;
     }
-    cap = (int)(size / 8) + 4;
-    if (cap < 4) {
-        cap = 4;
+    /*
+     * The old cap was the file length over 8, which reserved a triangle
+     * for every few bytes of points. Count the faces, then allocate that.
+     */
+    cap = 0;
+    p = (df_u32)plane_off;
+    for (plane = 0; plane < plane_count; plane++) {
+        Pt pts[MAX_FACE];
+        int npts;
+        df_u16 tex;
+        int got;
+
+        got = decode_plane(rec, size, &p, v25, point_off, id, pts, &npts, &tex);
+        if (got < 0) {
+            break;
+        }
+        if (got == 0) {
+            continue;
+        }
+        cap += tri_count(pts, npts);
+    }
+    if (cap < 1) {
+        return 0;
     }
     mesh = (Mesh *)mem_alloc(sizeof(Mesh));
     if (!mesh) {
         return 0;
     }
     mesh->id = id;
+    mesh->ntris = 0;
     mesh->tris = (Tri *)mem_alloc((df_u32)cap * (df_u32)sizeof(Tri));
     if (!mesh->tris) {
         return 0;
     }
     p = (df_u32)plane_off;
     for (plane = 0; plane < plane_count; plane++) {
+        Pt pts[MAX_FACE];
         int npts;
         df_u16 tex;
-        Pt pts[MAX_FACE];
-        int uv_u[MAX_FACE];
-        int uv_v[MAX_FACE];
-        int corners[MAX_FACE];
-        int nc;
-        int k;
-        int bad;
+        int got;
 
-        if (p + 8 > size) {
+        got = decode_plane(rec, size, &p, v25, point_off, id, pts, &npts, &tex);
+        if (got < 0) {
             break;
         }
-        npts = rec[p];
-        tex = df_ru16(rec + p + 2);
-        p += 8;
-        if (npts < 3 || npts > MAX_FACE) {
-            if (npts > MAX_FACE || p + (df_u32)npts * 8 > size) {
-                break;
-            }
-            p += (df_u32)npts * 8;
+        if (got == 0) {
             continue;
         }
-        if (p + (df_u32)npts * 8 > size) {
-            break;
-        }
-        bad = 0;
-        for (k = 0; k < npts; k++) {
-            df_i32 off;
-            df_i32 u;
-            df_i32 v;
-            df_i32 pp;
-
-            off = df_ri32(rec + p);
-            u = df_ri16(rec + p + 4);
-            v = df_ri16(rec + p + 6);
-            p += 8;
-            if (k < 3 && id < 905) {
-                uv_unpack(&u);
-                uv_unpack(&v);
-            }
-            if (v25) {
-                pp = point_off + off * 12;
-            } else {
-                pp = point_off + off;
-            }
-            if (pp < 0 || (df_u32)pp + 12 > size) {
-                bad = 1;
-                break;
-            }
-            pts[k].x = df_ri32(rec + pp);
-            pts[k].y = df_ri32(rec + pp + 4);
-            pts[k].z = df_ri32(rec + pp + 8);
-            pts[k].u = u;
-            pts[k].v = v;
-        }
-        if (bad) {
-            break;
-        }
-        if (npts == 3) {
-            uv_u[0] = pts[0].u;
-            uv_v[0] = pts[0].v;
-            uv_u[1] = pts[0].u + pts[1].u;
-            uv_v[1] = pts[0].v + pts[1].v;
-            uv_u[2] = uv_u[1] + pts[2].u;
-            uv_v[2] = uv_v[1] + pts[2].v;
-        } else if (!face_uv(pts, npts, uv_u, uv_v)) {
-            g_uv_fail++;
-            uv_u[0] = pts[0].u;
-            uv_v[0] = pts[0].v;
-            uv_u[1] = pts[0].u + pts[1].u;
-            uv_v[1] = pts[0].v + pts[1].v;
-            uv_u[2] = uv_u[1] + pts[2].u;
-            uv_v[2] = uv_v[1] + pts[2].v;
-            for (k = 3; k < npts; k++) {
-                uv_u[k] = uv_u[2];
-                uv_v[k] = uv_v[2];
-            }
-        }
-        nc = corners_of(pts, npts, corners);
-        if (nc < 3) {
-            for (k = 0; k < npts; k++) {
-                corners[k] = k;
-            }
-            nc = npts;
-        }
-        for (k = 1; k < nc - 1; k++) {
-            emit_tri(mesh, cap, pts, uv_u, uv_v, corners[0], corners[k], corners[k + 1],
-                     (df_u16)(tex >> 7), (df_u16)(tex & 0x7f));
-        }
+        emit_plane(mesh, cap, pts, npts, tex);
     }
     return mesh;
 }

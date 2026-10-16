@@ -263,7 +263,7 @@ static const Image *level_image(const Level *level, int slot)
 }
 
 static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
-                      const Flat *flat)
+                      const Flat *flat, int sharp)
 {
     const Image *img;
     float hx;
@@ -307,7 +307,7 @@ static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
     flat_corner(cam, basis,
                 flat->x - rx * hx, flat->y - ry * hx - hy, flat->z - rz * hx,
                 0.0f, uh, &corner[3]);
-    texcache_bind((int)flat->slot);
+    texcache_bind((int)flat->slot, sharp);
     for (pass = 0; pass < 2; pass++) {
         if (pass == 0) {
             tri[0] = corner[0];
@@ -343,17 +343,20 @@ void draw_frame(const Camera *cam, const Level *level)
      * next frame would paint the font across those faces.
      */
     texcache_forget();
+    texcache_detail(cam, level);
     camera_basis(cam, &basis);
     glide_sprite_alpha(0);
     norder = scene_visible_models(&level->scene, cam, order, VIS_MAX);
     for (oi = 0; oi < norder; oi++) {
         const Instance *in;
         int t;
+        int sharp_model;
 
         in = &level->scene.models[order[oi]];
         if (!in->mesh) {
             continue;
         }
+        sharp_model = texcache_near_model(order[oi]);
         for (t = 0; t < in->mesh->ntris; t++) {
             const Tri *tri;
             const Image *img;
@@ -391,7 +394,7 @@ void draw_frame(const Camera *cam, const Level *level)
                 glide_flat(0);
                 continue;
             }
-            texcache_bind((int)tri->slot);
+            texcache_bind((int)tri->slot, sharp_model);
             image_inv(img, &inv_w, &inv_h);
             submit(clipped, nout, inv_w, inv_h, 255.0f, 255.0f, 255.0f);
         }
@@ -399,7 +402,8 @@ void draw_frame(const Camera *cam, const Level *level)
     glide_sprite_alpha(1);
     norder = scene_visible_sprites(&level->scene, cam, order, VIS_MAX);
     for (oi = 0; oi < norder; oi++) {
-        draw_flat(cam, &basis, level, &level->scene.sprites[order[oi]]);
+        draw_flat(cam, &basis, level, &level->scene.sprites[order[oi]],
+                  texcache_near_flat(order[oi]));
     }
     glide_sprite_alpha(0);
     if (g_under) {

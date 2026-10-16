@@ -12,6 +12,7 @@
 
 struct Bsa;
 
-Block *rmb_load(const df_u8 *rmb, df_u32 size, struct Bsa *arch, int ground_file);
+Block *rmb_load(const df_u8 *rmb, df_u32 size, struct Bsa *arch, int ground_file,
+                ArchEnt *cache, int *ncache);
 
 #endif

@@ -31,4 +31,10 @@ const BsaRec *bsa_find_id(const Bsa *bsa, df_u32 id);
 const BsaRec *bsa_find_name(const Bsa *bsa, const char *name);
 df_u8 *bsa_read(Bsa *bsa, const BsaRec *rec);
 
+/* Block file. A model may be read into the other slot while this is live. */
+#define BSA_SCRATCH_BLOCK 0
+#define BSA_SCRATCH_MODEL 1
+/* Same bytes as bsa_read, in a reused buffer. Do not keep the pointer. */
+df_u8 *bsa_read_scratch(Bsa *bsa, const BsaRec *rec, int slot);
+
 #endif

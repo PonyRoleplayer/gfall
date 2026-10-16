@@ -7,14 +7,13 @@
 #define MAX_INST 2048
 #define MAX_FLAT 2048
 #define MAX_MARK 256
-#define MAX_CACHE 512
 #define EDITOR_ARCHIVE 199
 #define ROT_STEP (DF_TAU / 2048.0f)
 
-typedef struct CacheEnt {
-    df_u32 id;
-    Mesh *mesh;
-} CacheEnt;
+/* Used when a block has none of that kind, so the pointer is never null. */
+static Instance g_none_inst;
+static Flat g_none_flat;
+static Marker g_none_mark;
 
 static int parse_id(const df_u8 *s, df_u32 *id)
 {
@@ -41,26 +40,29 @@ static int parse_id(const df_u8 *s, df_u32 *id)
     return 1;
 }
 
-static Mesh *cached_mesh(CacheEnt *cache, int *ncache, Bsa *arch, df_u32 id)
+Mesh *arch_cached(ArchEnt *cache, int *ncache, Bsa *arch, df_u32 id)
 {
     int i;
     const BsaRec *rec;
     df_u8 *bytes;
     Mesh *mesh;
 
+    if (!cache || !ncache || !arch) {
+        return 0;
+    }
     for (i = 0; i < *ncache; i++) {
         if (cache[i].id == id) {
             return cache[i].mesh;
         }
     }
-    if (*ncache >= MAX_CACHE) {
+    if (*ncache >= ARCH_CACHE) {
         return 0;
     }
     rec = bsa_find_id(arch, id);
     if (!rec) {
         return 0;
     }
-    bytes = bsa_read(arch, rec);
+    bytes = bsa_read_scratch(arch, rec, BSA_SCRATCH_MODEL);
     if (!bytes) {
         return 0;
     }
@@ -81,6 +83,47 @@ static Mesh *cached_mesh(CacheEnt *cache, int *ncache, Bsa *arch, df_u32 id)
     cache[*ncache].mesh = mesh;
     (*ncache)++;
     return mesh;
+}
+
+int block_reserve(Block *block, int ninst, int nflat, int nmark)
+{
+    if (!block) {
+        return 0;
+    }
+    if (ninst < 0) {
+        ninst = 0;
+    }
+    if (nflat < 0) {
+        nflat = 0;
+    }
+    if (nmark < 0) {
+        nmark = 0;
+    }
+    if (ninst > MAX_INST) {
+        ninst = MAX_INST;
+    }
+    if (nflat > MAX_FLAT) {
+        nflat = MAX_FLAT;
+    }
+    if (nmark > MAX_MARK) {
+        nmark = MAX_MARK;
+    }
+    block->inst_cap = ninst;
+    block->flat_cap = nflat;
+    block->mark_cap = nmark;
+    block->inst = ninst
+        ? (Instance *)mem_alloc((df_u32)ninst * (df_u32)sizeof(Instance))
+        : &g_none_inst;
+    block->flat = nflat
+        ? (Flat *)mem_alloc((df_u32)nflat * (df_u32)sizeof(Flat))
+        : &g_none_flat;
+    block->marker = nmark
+        ? (Marker *)mem_alloc((df_u32)nmark * (df_u32)sizeof(Marker))
+        : &g_none_mark;
+    if (!block->inst || !block->flat || !block->marker) {
+        return 0;
+    }
+    return 1;
 }
 
 static void rot_x(float a, float *y, float *z)
@@ -159,18 +202,69 @@ static void place_model(Instance *in, float rx, float ry, float rz)
     in->m[8] = z;
 }
 
-Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch)
+/* Upper bound on what the walk below will place. A missing mesh still counts. */
+static void rdb_tally(const df_u8 *rdb, df_u32 size, df_u32 width, df_u32 height,
+                      df_u32 root, int *ninst, int *nflat, int *nmark)
+{
+    df_u32 cell;
+
+    *ninst = 0;
+    *nflat = 0;
+    *nmark = 0;
+    for (cell = 0; cell < width * height; cell++) {
+        df_i32 off;
+        int guard_cells;
+
+        off = df_ri32(rdb + root + cell * 4);
+        guard_cells = 0;
+        while (off >= 0 && guard_cells < 4096) {
+            df_u32 at;
+            df_u8 type;
+            df_u32 res;
+            df_u16 mindex;
+            df_u16 bitfield;
+            df_u32 id;
+
+            guard_cells++;
+            at = (df_u32)off;
+            if (at + 25 > size) {
+                break;
+            }
+            type = rdb[at + 20];
+            res = df_ru32(rdb + at + 21);
+            if (type == 0x01 && res + 14 <= size && *ninst < MAX_INST) {
+                mindex = df_ru16(rdb + res + 12);
+                if (mindex < 750 && parse_id(rdb + 20 + (df_u32)mindex * 8, &id)) {
+                    (*ninst)++;
+                }
+            } else if (type == 0x03 && res + 11 <= size) {
+                bitfield = df_ru16(rdb + res);
+                if ((int)(bitfield >> 7) == EDITOR_ARCHIVE) {
+                    if (*nmark < MAX_MARK) {
+                        (*nmark)++;
+                    }
+                } else if (*nflat < MAX_FLAT) {
+                    (*nflat)++;
+                }
+            }
+            off = df_ri32(rdb + at);
+        }
+    }
+}
+
+Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch, ArchEnt *cache, int *ncache)
 {
     df_u32 width;
     df_u32 height;
     df_u32 root;
     Block *block;
-    CacheEnt cache[MAX_CACHE];
-    int ncache;
+    int want_inst;
+    int want_flat;
+    int want_mark;
     df_u32 cell;
     int guard_cells;
 
-    if (!rdb || !arch || size < 20 + 750 * 8) {
+    if (!rdb || !arch || !cache || !ncache || size < 20 + 750 * 8) {
         return 0;
     }
     width = df_ru32(rdb + 4);
@@ -182,18 +276,14 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch)
     if (root > size || width * height * 4 > size - root) {
         return 0;
     }
+    rdb_tally(rdb, size, width, height, root, &want_inst, &want_flat, &want_mark);
     block = (Block *)mem_alloc(sizeof(Block));
     if (!block) {
         return 0;
     }
-    block->inst = (Instance *)mem_alloc(MAX_INST * (df_u32)sizeof(Instance));
-    block->flat = (Flat *)mem_alloc(MAX_FLAT * (df_u32)sizeof(Flat));
-    block->marker = (Marker *)mem_alloc(MAX_MARK * (df_u32)sizeof(Marker));
-    if (!block->inst || !block->flat || !block->marker) {
+    if (!block_reserve(block, want_inst, want_flat, want_mark)) {
         return 0;
     }
-    ncache = 0;
-    mem_zero(cache, sizeof(cache));
     for (cell = 0; cell < width * height; cell++) {
         df_i32 off;
 
@@ -220,13 +310,13 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch)
             }
             type = rdb[at + 20];
             res = df_ru32(rdb + at + 21);
-            if (type == 0x01 && res + 14 <= size && block->ninst < MAX_INST) {
+            if (type == 0x01 && res + 14 <= size && block->ninst < block->inst_cap) {
                 xr = df_ri32(rdb + res);
                 yr = df_ri32(rdb + res + 4);
                 zr = df_ri32(rdb + res + 8);
                 mindex = df_ru16(rdb + res + 12);
                 if (mindex < 750 && parse_id(rdb + 20 + (df_u32)mindex * 8, &id)) {
-                    mesh = cached_mesh(cache, &ncache, arch, id);
+                    mesh = arch_cached(cache, ncache, arch, id);
                     if (mesh) {
                         in = &block->inst[block->ninst];
                         in->mesh = mesh;
@@ -247,7 +337,7 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch)
                 record = (int)(bitfield & 0x7f);
                 if (archive == EDITOR_ARCHIVE) {
                     block->neditor++;
-                    if (block->nmarker < MAX_MARK) {
+                    if (block->nmarker < block->mark_cap) {
                         Marker *mk;
 
                         mk = &block->marker[block->nmarker];
@@ -257,7 +347,7 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch)
                         mk->record = (df_u16)record;
                         block->nmarker++;
                     }
-                } else if (block->nflat < MAX_FLAT) {
+                } else if (block->nflat < block->flat_cap) {
                     fl = &block->flat[block->nflat];
                     fl->x = (float)df_ri32(rdb + at + 8);
                     fl->y = -(float)df_ri32(rdb + at + 12);

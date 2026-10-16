@@ -1,5 +1,47 @@
 #include "engine/core/mem.h"
 
+#define SCRATCH_SLOTS 2
+
+static void *g_scratch[SCRATCH_SLOTS];
+static df_u32 g_scratch_cap[SCRATCH_SLOTS];
+
+static void scratch_drop(void)
+{
+    int i;
+
+    for (i = 0; i < SCRATCH_SLOTS; i++) {
+        g_scratch[i] = 0;
+        g_scratch_cap[i] = 0;
+    }
+}
+
+void *mem_scratch(int slot, df_u32 bytes)
+{
+    df_u32 cap;
+    void *p;
+
+    if (slot < 0 || slot >= SCRATCH_SLOTS || bytes == 0) {
+        return 0;
+    }
+    if (g_scratch[slot] && g_scratch_cap[slot] >= bytes) {
+        return g_scratch[slot];
+    }
+    cap = 4096;
+    while (cap < bytes) {
+        if (cap >= 0x40000000u) {
+            return 0;
+        }
+        cap <<= 1;
+    }
+    p = mem_alloc(cap);
+    if (!p) {
+        return 0;
+    }
+    g_scratch[slot] = p;
+    g_scratch_cap[slot] = cap;
+    return p;
+}
+
 #ifdef DF_HOST
 
 #include <stdlib.h>
@@ -10,6 +52,12 @@ void mem_init(void)
 
 void mem_shutdown(void)
 {
+    int i;
+
+    for (i = 0; i < SCRATCH_SLOTS; i++) {
+        free(g_scratch[i]);
+    }
+    scratch_drop();
 }
 
 void *mem_alloc(df_u32 bytes)
@@ -56,6 +104,7 @@ void mem_init(void)
 void mem_shutdown(void)
 {
     mem_temp_end();
+    scratch_drop();
     if (g_heap) {
         HeapDestroy(g_heap);
         g_heap = 0;
@@ -74,6 +123,8 @@ int mem_temp_begin(void)
 void mem_temp_end(void)
 {
     if (g_temp) {
+        /* Scratch bytes came from this heap. Drop the pointers first. */
+        scratch_drop();
         HeapDestroy(g_temp);
         g_temp = 0;
     }

@@ -418,6 +418,12 @@ static int paint(World *world)
             }
             fl->w = (float)extent_w;
             fl->h = (float)extent_h;
+            /*
+             * The quad is drawn from its centre. The file point is the
+             * base, so the centre sits half a height above it. Without
+             * this the picture is half under the floor.
+             */
+            fl->y += (float)extent_h * 0.5f;
             fl->slot = (df_u16)slot;
             if (kept != f) {
                 world->flat[kept] = *fl;
@@ -434,6 +440,8 @@ static World *assemble(const Dungeon *hold, int require_start)
     World *world;
     Bsa *arch;
     Bsa *blocks;
+    ArchEnt *cache;
+    int ncache;
     int b;
     int tile;
 
@@ -468,6 +476,14 @@ static World *assemble(const Dungeon *hold, int require_start)
         bsa_close(arch);
         return 0;
     }
+    cache = (ArchEnt *)mem_alloc((df_u32)ARCH_CACHE * (df_u32)sizeof(ArchEnt));
+    if (!cache) {
+        why("out of memory");
+        bsa_close(blocks);
+        bsa_close(arch);
+        return 0;
+    }
+    ncache = 0;
     for (b = 0; b < hold->nblocks; b++) {
         const BsaRec *rec;
         df_u8 *rdb_bytes;
@@ -480,7 +496,7 @@ static World *assemble(const Dungeon *hold, int require_start)
             bsa_close(arch);
             return 0;
         }
-        rdb_bytes = bsa_read(blocks, rec);
+        rdb_bytes = bsa_read_scratch(blocks, rec, BSA_SCRATCH_BLOCK);
         if (!rdb_bytes) {
             why(hold->block[b].name);
             bsa_close(blocks);
@@ -489,9 +505,10 @@ static World *assemble(const Dungeon *hold, int require_start)
         }
         if (hold->outdoor) {
             block = rmb_load(rdb_bytes, rec->size, arch,
-                             climate_family(hold->climate) + TEX_SET_GROUND);
+                             climate_family(hold->climate) + TEX_SET_GROUND,
+                             cache, &ncache);
         } else {
-            block = rdb_load(rdb_bytes, rec->size, arch);
+            block = rdb_load(rdb_bytes, rec->size, arch, cache, &ncache);
         }
         if (!block) {
             why(hold->block[b].name);

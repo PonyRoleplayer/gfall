@@ -1,8 +1,6 @@
 #include "game/dagger/rmb.h"
-#include "game/dagger/arch3d.h"
 #include "game/dagger/bsa.h"
 #include "game/dagger/texture.h"
-#include "engine/assets/loader.h"
 #include "engine/core/mem.h"
 
 /*
@@ -27,59 +25,9 @@
 #define GROUND_TEX 64.0f
 #define PROP_DROP 4.0f
 #define ROT_STEP (DF_TAU / 2048.0f)
-#define MAX_INST 2048
-#define MAX_FLAT 2048
-#define MAX_CACHE 512
 #define EDITOR_ARCHIVE 199
 #define MODEL_BYTES 66
 #define FLAT_BYTES 17
-
-typedef struct CacheEnt {
-    df_u32 id;
-    Mesh *mesh;
-} CacheEnt;
-
-static Mesh *cached_mesh(CacheEnt *cache, int *ncache, Bsa *arch, df_u32 id)
-{
-    int i;
-    const BsaRec *rec;
-    df_u8 *bytes;
-    Mesh *mesh;
-
-    for (i = 0; i < *ncache; i++) {
-        if (cache[i].id == id) {
-            return cache[i].mesh;
-        }
-    }
-    if (*ncache >= MAX_CACHE) {
-        return 0;
-    }
-    rec = bsa_find_id(arch, id);
-    if (!rec) {
-        return 0;
-    }
-    bytes = bsa_read(arch, rec);
-    if (!bytes) {
-        return 0;
-    }
-    {
-        ArchLoad load;
-
-        load.id = id;
-        load.mesh = 0;
-        if (!loader_call("arch3d", 0, bytes, rec->size, &load)) {
-            return 0;
-        }
-        mesh = load.mesh;
-    }
-    if (!mesh || mesh->ntris < 1) {
-        return 0;
-    }
-    cache[*ncache].id = id;
-    cache[*ncache].mesh = mesh;
-    (*ncache)++;
-    return mesh;
-}
 
 static void place_child(Instance *in, float sub_yaw, float model_yaw,
                         float lx, float ly, float lz,
@@ -95,7 +43,7 @@ static void place_child(Instance *in, float sub_yaw, float model_yaw,
     instance_set_rotation(in, 0.0f, df_wrap_tau(-(sub_yaw + model_yaw)), 0.0f);
 }
 
-static void add_model(Block *block, CacheEnt *cache, int *ncache, Bsa *arch,
+static void add_model(Block *block, ArchEnt *cache, int *ncache, Bsa *arch,
                       int id, float sub_yaw, float model_yaw,
                       float lx, float ly, float lz,
                       float ox, float oy, float oz)
@@ -103,10 +51,10 @@ static void add_model(Block *block, CacheEnt *cache, int *ncache, Bsa *arch,
     Mesh *mesh;
     Instance *in;
 
-    if (id <= 0 || block->ninst >= MAX_INST) {
+    if (id <= 0 || block->ninst >= block->inst_cap) {
         return;
     }
-    mesh = cached_mesh(cache, ncache, arch, (df_u32)id);
+    mesh = arch_cached(cache, ncache, arch, (df_u32)id);
     if (!mesh) {
         return;
     }
@@ -130,7 +78,7 @@ static int model_id(const df_u8 *p)
     return (int)id1 * 100 + id2;
 }
 
-static void read_model(Block *block, CacheEnt *cache, int *ncache, Bsa *arch,
+static void read_model(Block *block, ArchEnt *cache, int *ncache, Bsa *arch,
                        const df_u8 *p, float sub_yaw, float ox, float oy, float oz)
 {
     float myaw;
@@ -147,7 +95,7 @@ static void add_flat(Block *block, const df_u8 *p, float ox, float oz)
     int archive;
     Flat *fl;
 
-    if (block->nflat >= MAX_FLAT) {
+    if (block->nflat >= block->flat_cap) {
         return;
     }
     bits = df_ru16(p + 12);
@@ -168,7 +116,7 @@ static void add_flat(Block *block, const df_u8 *p, float ox, float oz)
 }
 
 /* Exterior lists only. The interior list is inside the same size span. */
-static void read_exterior(Block *block, CacheEnt *cache, int *ncache, Bsa *arch,
+static void read_exterior(Block *block, ArchEnt *cache, int *ncache, Bsa *arch,
                           const df_u8 *rmb, df_u32 end, df_u32 at,
                           float sx, float sub_yaw, float sz)
 {
@@ -206,18 +154,37 @@ static void read_exterior(Block *block, CacheEnt *cache, int *ncache, Bsa *arch,
     }
 }
 
+/*
+ * Bits 0x40 and 0x80 are four orientations, not a mirror.
+ * 00 leaves the picture, 01 turns it 90 degrees, 10 turns it 180,
+ * 11 is the other 90. Corner 0 is low X low Z, then high X low Z,
+ * high X high Z, low X high Z. Row 0 of the picture is v = 0, so the
+ * sample is flipped against a v that grows with Z.
+ */
 static void corner_uv(int corner, int rot, int flip, float *u, float *v)
 {
-    static const float cu[4] = {0.0f, GROUND_TEX, GROUND_TEX, 0.0f};
-    static const float cv[4] = {0.0f, 0.0f, GROUND_TEX, GROUND_TEX};
-    int k;
+    float lx;
+    float lz;
+    float su;
+    float sv;
 
-    k = (corner + rot) & 3;
-    *u = cu[k];
-    *v = cv[k];
-    if (flip) {
-        *u = GROUND_TEX - *u;
+    lx = (corner == 1 || corner == 2) ? 1.0f : 0.0f;
+    lz = (corner >= 2) ? 1.0f : 0.0f;
+    if (rot && flip) {
+        su = 1.0f - lz;
+        sv = lx;
+    } else if (rot) {
+        su = lz;
+        sv = 1.0f - lx;
+    } else if (flip) {
+        su = 1.0f - lx;
+        sv = 1.0f - lz;
+    } else {
+        su = lx;
+        sv = lz;
     }
+    *u = su * GROUND_TEX;
+    *v = (1.0f - sv) * GROUND_TEX;
 }
 
 static void ground_tri(Tri *tri, float x0, float z0, float x1, float z1, float x2, float z2,
@@ -240,21 +207,40 @@ static void ground_tri(Tri *tri, float x0, float z0, float x1, float z1, float x
     tri->slot = 0xffff;
 }
 
+static int ground_quads(const df_u8 *tiles, int count)
+{
+    int i;
+    int n;
+
+    n = 0;
+    for (i = 0; i < 256; i++) {
+        if ((int)(tiles[i] & 0x3f) < count) {
+            n++;
+        }
+    }
+    return n;
+}
+
 static void add_ground(Block *block, const df_u8 *tiles, int file)
 {
     Mesh *mesh;
     Tri *tris;
     int count;
+    int quads;
     int ty;
     int n;
 
     count = texture_record_count(file);
-    if (count < 1) {
+    if (count < 1 || block->ninst >= block->inst_cap) {
         return;
     }
-    tris = (Tri *)mem_alloc(256u * 2u * (df_u32)sizeof(Tri));
+    quads = ground_quads(tiles, count);
+    if (quads < 1) {
+        return;
+    }
+    tris = (Tri *)mem_alloc((df_u32)quads * 2u * (df_u32)sizeof(Tri));
     mesh = (Mesh *)mem_alloc(sizeof(Mesh));
-    if (!tris || !mesh || block->ninst >= MAX_INST) {
+    if (!tris || !mesh) {
         return;
     }
     n = 0;
@@ -301,34 +287,103 @@ static void add_ground(Block *block, const df_u8 *tiles, int file)
     block->ntris += n;
 }
 
-Block *rmb_load(const df_u8 *rmb, df_u32 size, Bsa *arch, int ground_file)
+static void tally_exterior(const df_u8 *rmb, df_u32 end, df_u32 at, int *ninst, int *nflat)
+{
+    int n3d;
+    int listed;
+    int nsec;
+    int npeople;
+    int i;
+
+    if (at + 17 > end) {
+        return;
+    }
+    n3d = (int)rmb[at];
+    listed = (int)rmb[at + 1];
+    nsec = (int)rmb[at + 2];
+    npeople = (int)rmb[at + 3];
+    at += 17;
+    for (i = 0; i < n3d && at + MODEL_BYTES <= end; i++) {
+        if (model_id(rmb + at) > 0) {
+            (*ninst)++;
+        }
+        at += MODEL_BYTES;
+    }
+    for (i = 0; i < listed && at + FLAT_BYTES <= end; i++) {
+        if ((int)(df_ru16(rmb + at + 12) >> 7) != EDITOR_ARCHIVE) {
+            (*nflat)++;
+        }
+        at += FLAT_BYTES;
+    }
+    if (nsec > 256 || at + (df_u32)nsec * 16u > end) {
+        return;
+    }
+    at += (df_u32)nsec * 16u;
+    for (i = 0; i < npeople && at + FLAT_BYTES <= end; i++) {
+        if ((int)(df_ru16(rmb + at + 12) >> 7) != EDITOR_ARCHIVE) {
+            (*nflat)++;
+        }
+        at += FLAT_BYTES;
+    }
+}
+
+Block *rmb_load(const df_u8 *rmb, df_u32 size, Bsa *arch, int ground_file,
+                ArchEnt *cache, int *ncache)
 {
     Block *block;
-    CacheEnt cache[MAX_CACHE];
-    int ncache;
     int nsub;
     int i;
+    int want_inst;
+    int want_flat;
     df_u32 pos;
 
-    if (!rmb || !arch || size < (df_u32)FLD_BYTES) {
+    if (!rmb || !arch || !cache || !ncache || size < (df_u32)FLD_BYTES) {
         return 0;
     }
     nsub = (int)rmb[0];
     if (nsub > 32) {
         return 0;
     }
+    want_inst = 0;
+    want_flat = 0;
+    if (ground_file > 1) {
+        int records;
+
+        records = texture_record_count(ground_file);
+        if (records > 0 && ground_quads(rmb + FLD_GROUND, records) > 0) {
+            want_inst++;
+        }
+    }
+    pos = (df_u32)FLD_BYTES;
+    for (i = 0; i < nsub; i++) {
+        df_i32 span;
+
+        span = df_ri32(rmb + FLD_SIZES + i * 4);
+        if (span < 17 || pos + (df_u32)span > size) {
+            break;
+        }
+        tally_exterior(rmb, pos + (df_u32)span, pos, &want_inst, &want_flat);
+        pos += (df_u32)span;
+    }
+    for (i = 0; i < (int)rmb[1] && pos + MODEL_BYTES <= size; i++) {
+        if (model_id(rmb + pos) > 0) {
+            want_inst++;
+        }
+        pos += MODEL_BYTES;
+    }
+    for (i = 0; i < (int)rmb[2] && pos + FLAT_BYTES <= size; i++) {
+        if ((int)(df_ru16(rmb + pos + 12) >> 7) != EDITOR_ARCHIVE) {
+            want_flat++;
+        }
+        pos += FLAT_BYTES;
+    }
     block = (Block *)mem_alloc(sizeof(Block));
     if (!block) {
         return 0;
     }
-    mem_zero(block, sizeof(Block));
-    block->inst = (Instance *)mem_alloc(MAX_INST * (df_u32)sizeof(Instance));
-    block->flat = (Flat *)mem_alloc(MAX_FLAT * (df_u32)sizeof(Flat));
-    if (!block->inst || !block->flat) {
+    if (!block_reserve(block, want_inst, want_flat, 0)) {
         return 0;
     }
-    ncache = 0;
-    mem_zero(cache, sizeof(cache));
     if (ground_file > 1) {
         add_ground(block, rmb + FLD_GROUND, ground_file);
     }
@@ -348,11 +403,11 @@ Block *rmb_load(const df_u8 *rmb, df_u32 size, Bsa *arch, int ground_file)
         sx = (float)df_ri32(bp + 8);
         sz = (float)df_ri32(bp + 12);
         syaw = (float)df_ri32(bp + 16) * ROT_STEP;
-        read_exterior(block, cache, &ncache, arch, rmb, pos + (df_u32)span, pos, sx, syaw, sz);
+        read_exterior(block, cache, ncache, arch, rmb, pos + (df_u32)span, pos, sx, syaw, sz);
         pos += (df_u32)span;
     }
     for (i = 0; i < (int)rmb[1] && pos + MODEL_BYTES <= size; i++) {
-        read_model(block, cache, &ncache, arch, rmb + pos, 0.0f, 0.0f, -PROP_DROP, RMB_SIDE);
+        read_model(block, cache, ncache, arch, rmb + pos, 0.0f, 0.0f, -PROP_DROP, RMB_SIDE);
         pos += MODEL_BYTES;
     }
     for (i = 0; i < (int)rmb[2] && pos + FLAT_BYTES <= size; i++) {

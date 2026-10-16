@@ -20,6 +20,14 @@ void *mem_alloc(df_u32 bytes);
 int mem_temp_begin(void);
 void mem_temp_end(void);
 
+/*
+ * A buffer for a record that is parsed and then discarded. slot is 0 or 1,
+ * so a block file and a model record can be live together. The pointer is
+ * invalid after the next call on that slot. On Win32 it also dies with the
+ * temp heap. The old buffer is abandoned when the slot has to grow.
+ */
+void *mem_scratch(int slot, df_u32 bytes);
+
 static void mem_copy(void *dst, const void *src, df_u32 n)
 {
     df_u32 i;

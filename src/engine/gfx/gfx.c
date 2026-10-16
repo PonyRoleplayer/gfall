@@ -36,6 +36,8 @@ int gfx_prepare(const Level *level)
     if (level->palette) {
         font_upload(level->palette->r, level->palette->g, level->palette->b);
     }
+    /* Detail maps upload after this. Rewind must not cover the font. */
+    glide_mark();
     return 1;
 }
 

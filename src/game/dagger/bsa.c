@@ -256,3 +256,17 @@ df_u8 *bsa_read(Bsa *bsa, const BsaRec *rec)
     }
     return bytes;
 }
+
+df_u8 *bsa_read_scratch(Bsa *bsa, const BsaRec *rec, int slot)
+{
+    df_u8 *bytes;
+
+    if (!bsa || !rec || rec->size == 0) {
+        return 0;
+    }
+    bytes = (df_u8 *)mem_scratch(slot, rec->size);
+    if (!bytes || !vfs_read_at(bsa->file, rec->offset, bytes, rec->size)) {
+        return 0;
+    }
+    return bytes;
+}
