@@ -2,9 +2,10 @@
 #define DF_FNT_H
 
 /*
- * FONT0000.FNT. Builds a glyph sheet and hands it to the engine.
+ * FONT0000.FNT. Builds a glyph sheet and hands it to the engine,
+ * replacing the OEM face the engine would use on its own.
  * Writes font0000.bmp beside the exe when that file is missing.
- * A missing font is not fatal: the engine keeps the built-in face.
+ * A missing font is not fatal: the engine keeps its own face.
  */
 
 int fnt_install(void);

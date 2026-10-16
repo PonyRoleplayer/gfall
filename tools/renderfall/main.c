@@ -22,7 +22,6 @@
 #include "engine/scene/scene.h"
 #include "game/dagger/arch3d.h"
 #include "game/dagger/bsa.h"
-#include "game/dagger/fnt.h"
 #include "game/dagger/palette.h"
 #include "game/dagger/texture.h"
 #include "engine/ui/font.h"
@@ -1793,20 +1792,6 @@ static void cfg_load(void)
     cfg_log();
 }
 
-static void load_font(void)
-{
-    if (!fnt_install()) {
-        log_line(fnt_error());
-        log_line("text uses the built-in font");
-        return;
-    }
-    if (fnt_generated()) {
-        log_line("font0000.bmp written from FONT0000.FNT");
-        return;
-    }
-    log_line("FONT0000.FNT");
-}
-
 static int renderfall_main(void *instance)
 {
     Bsa *bsa;
@@ -1839,7 +1824,6 @@ static int renderfall_main(void *instance)
         mem_shutdown();
         return 1;
     }
-    load_font();
     if (!load_palette()) {
         win_fail("Could not read ART_PAL.COL.");
         win_shutdown();

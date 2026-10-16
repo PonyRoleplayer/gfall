@@ -4,12 +4,14 @@
 #include "engine/core/df.h"
 
 /*
- * Screen text. With no sheet, letters are the built-in 8x8 face.
- * A sheet is a square index image, row 0 at the top. Glyph i
- * (character code first+i) sits in cell i of a grid of cell-pixel
- * squares. widths[i] is the ink width. gap is the advance for a
- * missing glyph. pixels stays valid until shutdown.
- * Call font_set before font_upload. A null sheet clears back to 8x8.
+ * Screen text. A sheet is a square index image, row 0 at the top.
+ * Glyph i (character code first+i) sits in cell i of a grid of
+ * cell-pixel squares. widths[i] is the ink width. gap is the advance
+ * for a missing glyph. pixels stays valid until shutdown.
+ * Call font_set before font_upload to replace the engine face.
+ * With no sheet, font_upload rasterizes the stock OEM fixed font
+ * (the DOS face Windows always has). The built-in 8x8 face is what
+ * draws when that raster fails. A null sheet clears back to that path.
  */
 
 #define FONT_MAX 256
@@ -27,7 +29,7 @@ typedef struct FontSheet {
 
 int font_set(const FontSheet *sheet);
 
-/* Uploads the sheet. No sheet leaves the built-in face in place. */
+/* Uploads the sheet. No sheet installs the OEM face, then uploads it. */
 void font_upload(const df_u8 *r, const df_u8 *g, const df_u8 *b);
 
 int ui_line_height(void);

@@ -22,7 +22,6 @@
 #include "engine/platform/win32.h"
 #include "engine/ui/font.h"
 #include "game/dagger/dungeon.h"
-#include "game/dagger/fnt.h"
 #include "game/dagger/texture.h"
 #include "game/dagger/world.h"
 
@@ -1200,16 +1199,6 @@ static void view_row(int index)
     input_clear_quit();
 }
 
-static void load_font(void)
-{
-    if (!fnt_install()) {
-        log_line(fnt_error());
-        log_line("text uses the built-in font");
-        return;
-    }
-    log_line("FONT0000.FNT");
-}
-
 static int beside_exe(char *dst, int cap, const char *leaf)
 {
     char exe[260];
@@ -1496,7 +1485,6 @@ static int levelfall_main(void *instance)
         mem_shutdown();
         return 1;
     }
-    load_font();
     g_rows = (DunRef *)mem_alloc((df_u32)MAX_LEVELS * (df_u32)sizeof(DunRef));
     g_view = (int *)mem_alloc((df_u32)MAX_LEVELS * (df_u32)sizeof(int));
     if (!g_rows || !g_view) {

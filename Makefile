@@ -83,8 +83,7 @@ RENDER_SRC := \
 	src/game/dagger/bsa.c \
 	src/game/dagger/arch3d.c \
 	src/game/dagger/texture.c \
-	src/game/dagger/palette.c \
-	src/game/dagger/fnt.c
+	src/game/dagger/palette.c
 
 LEVEL_SRC := \
 	tools/levelfall/main.c \
@@ -106,7 +105,6 @@ LEVEL_SRC := \
 	src/game/dagger/arch3d.c \
 	src/game/dagger/texture.c \
 	src/game/dagger/palette.c \
-	src/game/dagger/fnt.c \
 	src/game/dagger/rdb.c \
 	src/game/dagger/rmb.c \
 	src/game/dagger/dungeon.c \
