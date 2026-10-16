@@ -25,6 +25,14 @@ typedef struct Mesh {
     df_u32 id;
     Tri *tris;
     int ntris;
+    /*
+     * Local box, measured by the visibility pass. bound_n is the
+     * triangle count that produced it. 0 means not measured yet.
+     * The center is cx,cy,cz. ex,ey,ez are the half-size.
+     */
+    float cx, cy, cz;
+    float ex, ey, ez;
+    int bound_n;
 } Mesh;
 
 #endif

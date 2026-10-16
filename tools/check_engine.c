@@ -90,6 +90,148 @@ static void check_scene(void)
                  "sprites were not listed in storage order");
 }
 
+static Mesh *tri_mesh(float x0, float y0, float z0,
+                      float x1, float y1, float z1,
+                      float x2, float y2, float z2)
+{
+    Mesh *mesh;
+    Tri *tri;
+
+    mesh = (Mesh *)mem_alloc(sizeof(Mesh));
+    tri = (Tri *)mem_alloc(sizeof(Tri));
+    if (!mesh || !tri) {
+        return 0;
+    }
+    tri->x[0] = x0;
+    tri->y[0] = y0;
+    tri->z[0] = z0;
+    tri->x[1] = x1;
+    tri->y[1] = y1;
+    tri->z[1] = z1;
+    tri->x[2] = x2;
+    tri->y[2] = y2;
+    tri->z[2] = z2;
+    mesh->tris = tri;
+    mesh->ntris = 1;
+    return mesh;
+}
+
+static void place_at(Instance *in, Mesh *mesh, float x, float y, float z)
+{
+    mem_zero(in, sizeof(*in));
+    in->mesh = mesh;
+    in->x = x;
+    in->y = y;
+    in->z = z;
+    instance_set_rotation(in, 0.0f, 0.0f, 0.0f);
+}
+
+static void check_cull(void)
+{
+    Mesh *mesh;
+    Mesh *span;
+    Mesh *behind;
+    Instance models[4];
+    Flat sprites[2];
+    Scene scene;
+    Camera cam;
+    int order[4];
+    int n;
+
+    mesh = tri_mesh(-1.0f, -1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 0.0f, 1.0f, 1.0f);
+    /* Local Z from -400 to 0, so a placement past the fog can still reach back. */
+    span = tri_mesh(0.0f, 0.0f, -400.0f, 1.0f, 0.0f, -400.0f, 0.0f, 1.0f, 0.0f);
+    /* Local Z around -800. A half turn about Y brings it in front of the camera. */
+    behind = tri_mesh(0.0f, 0.0f, -800.0f, 1.0f, 0.0f, -800.0f, 0.0f, 1.0f, -790.0f);
+    check_expect(mesh && span && behind, "cull meshes were not allocated");
+    if (!mesh || !span || !behind) {
+        return;
+    }
+
+    scene_set_limits(DF_FAR, 1);
+    camera_set(&cam, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    place_at(&models[0], mesh, 0.0f, 0.0f, 200.0f);
+    place_at(&models[1], mesh, 0.0f, 0.0f, -80.0f);
+    place_at(&models[2], mesh, 900.0f, 0.0f, 40.0f);
+    place_at(&models[3], mesh, 0.0f, 0.0f, DF_FOG_FAR + 80.0f);
+    scene.models = models;
+    scene.nmodels = 4;
+    scene.sprites = 0;
+    scene.nsprites = 0;
+    n = scene_visible_models(&scene, &cam, order, 4);
+    check_expect(n == 1 && order[0] == 0,
+                 "frustum kept a model outside the view");
+
+    place_at(&models[0], mesh, 0.0f, 900.0f, 30.0f);
+    scene.nmodels = 1;
+    n = scene_visible_models(&scene, &cam, order, 4);
+    check_expect(n == 0, "model above the view was kept");
+
+    /* Positive yaw looks toward world +X. The side model is then in front. */
+    camera_set(&cam, 0.0f, 0.0f, 0.0f, 1.5707963f, 0.0f);
+    place_at(&models[0], mesh, 0.0f, 0.0f, 200.0f);
+    place_at(&models[1], mesh, 0.0f, 0.0f, -80.0f);
+    place_at(&models[2], mesh, 900.0f, 0.0f, 40.0f);
+    place_at(&models[3], mesh, 0.0f, 0.0f, DF_FOG_FAR + 80.0f);
+    scene.nmodels = 4;
+    n = scene_visible_models(&scene, &cam, order, 4);
+    check_expect(n == 1 && order[0] == 2,
+                 "yaw did not keep the model in front");
+
+    camera_set(&cam, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    place_at(&models[0], span, 0.0f, 0.0f, DF_FOG_FAR + 100.0f);
+    scene.nmodels = 1;
+    n = scene_visible_models(&scene, &cam, order, 4);
+    check_expect(n == 1 && order[0] == 0,
+                 "model crossing the fog was dropped");
+
+    place_at(&models[0], behind, 0.0f, 0.0f, 50.0f);
+    instance_set_rotation(&models[0], 0.0f, 3.14159265f, 0.0f);
+    n = scene_visible_models(&scene, &cam, order, 4);
+    check_expect(n == 1 && order[0] == 0,
+                 "rotated model in front was dropped");
+
+    scene_set_limits(DF_FAR, 0);
+    place_at(&models[0], mesh, 0.0f, 0.0f, (DF_FOG_FAR + DF_FAR) * 0.5f);
+    n = scene_visible_models(&scene, &cam, order, 4);
+    check_expect(n == 1, "fog off hid a model inside the far clip");
+    place_at(&models[0], mesh, 0.0f, 0.0f, DF_FAR + 80.0f);
+    n = scene_visible_models(&scene, &cam, order, 4);
+    check_expect(n == 0, "fog off kept a model past the far clip");
+
+    scene_set_limits(DF_FAR, 1);
+    mem_zero(sprites, sizeof(sprites));
+    sprites[0].x = 0.0f;
+    sprites[0].y = 0.0f;
+    sprites[0].z = 150.0f;
+    sprites[0].w = 32.0f;
+    sprites[0].h = 64.0f;
+    sprites[1].x = 0.0f;
+    sprites[1].y = 0.0f;
+    sprites[1].z = DF_FOG_FAR + 200.0f;
+    sprites[1].w = 32.0f;
+    sprites[1].h = 64.0f;
+    scene.models = 0;
+    scene.nmodels = 0;
+    scene.sprites = sprites;
+    scene.nsprites = 2;
+    n = scene_visible_sprites(&scene, &cam, order, 4);
+    check_expect(n == 1 && order[0] == 0,
+                 "sprite past the fog was kept");
+
+    place_at(&models[0], mesh, 0.0f, 0.0f, 100.0f);
+    place_at(&models[1], mesh, 0.0f, 0.0f, -100.0f);
+    place_at(&models[2], mesh, 0.0f, 0.0f, 180.0f);
+    scene.models = models;
+    scene.nmodels = 3;
+    scene.sprites = 0;
+    scene.nsprites = 0;
+    n = scene_visible_models(&scene, &cam, order, 1);
+    check_expect(n == 1 && order[0] == 0,
+                 "cap did not keep the first visible model");
+    scene_set_limits(DF_FAR, 1);
+}
+
 static void check_loader(void)
 {
     int flag;
@@ -116,6 +258,7 @@ void check_engine(void)
     check_rotation();
     check_camera();
     check_scene();
+    check_cull();
     check_loader();
     check_vfs();
 }

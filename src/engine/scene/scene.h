@@ -50,11 +50,23 @@ void instance_point(const Instance *in, float lx, float ly, float lz,
                     float *x, float *y, float *z);
 
 /*
- * Visibility. Writes storage indices into out and returns how many.
- * Nothing is culled yet: every entity is visible, in the order it was
- * stored. cam is part of the call so a later room can test the frustum
- * here without changing the draw loop. A count above cap is truncated,
- * so pass a cap of at least nmodels or nsprites.
+ * How far a frame can see. clip_far is the card's far clip, in world
+ * units. fog nonzero means distance fog is on, so the visible limit is
+ * the solid fog distance: clip_far * (DF_FOG_FAR / DF_FAR), the same
+ * fraction gfx uses, and never closer than the fog start. fog zero
+ * uses the clip itself. Defaults are fog on and DF_FAR, matching a
+ * fresh device. gfx calls this when either value changes.
+ */
+void scene_set_limits(float clip_far, int fog);
+
+/*
+ * Visibility. Writes storage indices into out, in storage order, and
+ * returns how many. A null camera lists every entity, so a test can
+ * ignore the frustum. With a camera, a model or sprite is dropped when
+ * its box lies wholly outside the view: behind the near plane, past
+ * the fog or the far clip, or past a screen edge. A model with no
+ * triangles is omitted. A count above cap is truncated, so pass a cap
+ * of at least nmodels or nsprites.
  */
 
 int scene_visible_models(const Scene *scene, const Camera *cam, int *out, int cap);

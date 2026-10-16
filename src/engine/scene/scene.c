@@ -94,12 +94,11 @@ void instance_point(const Instance *in, float lx, float ly, float lz,
     *z = in->m[6] * lx + in->m[7] * ly + in->m[8] * lz + in->z;
 }
 
-static int fill_order(int count, const Camera *cam, int *out, int cap)
+static int fill_order(int count, int *out, int cap)
 {
     int i;
     int n;
 
-    (void)cam;
     if (!out || cap < 1 || count < 1) {
         return 0;
     }
@@ -113,18 +112,295 @@ static int fill_order(int count, const Camera *cam, int *out, int cap)
     return n;
 }
 
-int scene_visible_models(const Scene *scene, const Camera *cam, int *out, int cap)
+/*
+ * clip_far is the card clip. Fog, when on, is solid closer than that
+ * and the clear is the same colour, so a box past the solid distance
+ * cannot be seen. The fraction matches gfx_set_far. Glide will not
+ * put solid fog closer than the fog start, and neither does this.
+ */
+static float g_clip = DF_FAR;
+static int g_fog = 1;
+
+void scene_set_limits(float clip_far, int fog)
 {
-    if (!scene) {
+    if (clip_far < DF_NEAR * 2.0f) {
+        clip_far = DF_NEAR * 2.0f;
+    }
+    if (clip_far > DF_FAR_MAX) {
+        clip_far = DF_FAR_MAX;
+    }
+    g_clip = clip_far;
+    g_fog = fog ? 1 : 0;
+}
+
+static float visible_far(void)
+{
+    float far;
+    float fog_far;
+
+    far = g_clip;
+    if (!g_fog) {
+        return far;
+    }
+    fog_far = g_clip * (DF_FOG_FAR / DF_FAR);
+    if (fog_far < DF_FOG_NEAR + 1.0f) {
+        fog_far = DF_FOG_NEAR + 1.0f;
+    }
+    if (fog_far < far) {
+        far = fog_far;
+    }
+    return far;
+}
+
+/* Inward normal. dot(n, point) + d >= 0 is inside. n is unit length. */
+typedef struct Plane {
+    float nx, ny, nz, d;
+} Plane;
+
+static void plane_through(Plane *p, float nx, float ny, float nz,
+                          float px, float py, float pz)
+{
+    float len;
+    float inv;
+
+    len = nx * nx + ny * ny + nz * nz;
+    __asm__ __volatile__("fsqrt" : "=t"(len) : "0"(len));
+    if (len < 1.0e-8f) {
+        p->nx = 0.0f;
+        p->ny = 1.0f;
+        p->nz = 0.0f;
+        p->d = -py;
+        return;
+    }
+    inv = 1.0f / len;
+    p->nx = nx * inv;
+    p->ny = ny * inv;
+    p->nz = nz * inv;
+    p->d = -(p->nx * px + p->ny * py + p->nz * pz);
+}
+
+/*
+ * Screen edges, not the Glide guard. The guard is wide so a triangle
+ * that crosses the picture stays inside +/-2048. A box that misses the
+ * picture has no pixels. Slopes match camera_project: half the view
+ * divided by the focal length.
+ */
+static void frustum_planes(const Camera *cam, float far, Plane *p)
+{
+    Basis basis;
+    float fx, fy, fz;
+    float rx, ry, rz;
+    float ux, uy, uz;
+    float sx, sy;
+
+    camera_basis(cam, &basis);
+    fx = basis.fx * basis.cp;
+    fy = basis.sp;
+    fz = basis.fz * basis.cp;
+    rx = basis.rx;
+    ry = 0.0f;
+    rz = basis.rz;
+    ux = -basis.sp * basis.fx;
+    uy = basis.cp;
+    uz = -basis.sp * basis.fz;
+    sx = (float)DF_VIEW_W * 0.5f / DF_FOCAL;
+    sy = (float)DF_VIEW_H * 0.5f / DF_FOCAL;
+
+    /* Far first: a city is mostly past this plane. */
+    plane_through(&p[0], -fx, -fy, -fz,
+                  cam->x + fx * far, cam->y + fy * far, cam->z + fz * far);
+    plane_through(&p[1], fx, fy, fz,
+                  cam->x + fx * DF_NEAR, cam->y + fy * DF_NEAR, cam->z + fz * DF_NEAR);
+    plane_through(&p[2], rx + fx * sx, ry + fy * sx, rz + fz * sx,
+                  cam->x, cam->y, cam->z);
+    plane_through(&p[3], -rx + fx * sx, -ry + fy * sx, -rz + fz * sx,
+                  cam->x, cam->y, cam->z);
+    plane_through(&p[4], ux + fx * sy, uy + fy * sy, uz + fz * sy,
+                  cam->x, cam->y, cam->z);
+    plane_through(&p[5], -ux + fx * sy, -uy + fy * sy, -uz + fz * sy,
+                  cam->x, cam->y, cam->z);
+}
+
+/* True when every corner is outside this plane. */
+static int box_out(const Plane *p, float cx, float cy, float cz,
+                   float ex, float ey, float ez)
+{
+    float dist;
+    float rad;
+
+    dist = p->nx * cx + p->ny * cy + p->nz * cz + p->d;
+    rad = ex * df_absf(p->nx) + ey * df_absf(p->ny) + ez * df_absf(p->nz);
+    return dist + rad < 0.0f;
+}
+
+static int box_visible(const Plane *planes, float cx, float cy, float cz,
+                       float ex, float ey, float ez)
+{
+    int i;
+
+    for (i = 0; i < 6; i++) {
+        if (box_out(&planes[i], cx, cy, cz, ex, ey, ez)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int mesh_box(Mesh *mesh, float *cx, float *cy, float *cz,
+                    float *ex, float *ey, float *ez)
+{
+    float minx, miny, minz, maxx, maxy, maxz;
+    int t;
+    int k;
+
+    if (!mesh || mesh->ntris < 1 || !mesh->tris) {
         return 0;
     }
-    return fill_order(scene->nmodels, cam, out, cap);
+    if (mesh->bound_n != mesh->ntris) {
+        minx = maxx = mesh->tris[0].x[0];
+        miny = maxy = mesh->tris[0].y[0];
+        minz = maxz = mesh->tris[0].z[0];
+        for (t = 0; t < mesh->ntris; t++) {
+            for (k = 0; k < 3; k++) {
+                float x, y, z;
+
+                x = mesh->tris[t].x[k];
+                y = mesh->tris[t].y[k];
+                z = mesh->tris[t].z[k];
+                if (x < minx) {
+                    minx = x;
+                }
+                if (y < miny) {
+                    miny = y;
+                }
+                if (z < minz) {
+                    minz = z;
+                }
+                if (x > maxx) {
+                    maxx = x;
+                }
+                if (y > maxy) {
+                    maxy = y;
+                }
+                if (z > maxz) {
+                    maxz = z;
+                }
+            }
+        }
+        mesh->cx = (minx + maxx) * 0.5f;
+        mesh->cy = (miny + maxy) * 0.5f;
+        mesh->cz = (minz + maxz) * 0.5f;
+        mesh->ex = (maxx - minx) * 0.5f;
+        mesh->ey = (maxy - miny) * 0.5f;
+        mesh->ez = (maxz - minz) * 0.5f;
+        mesh->bound_n = mesh->ntris;
+    }
+    *cx = mesh->cx;
+    *cy = mesh->cy;
+    *cz = mesh->cz;
+    *ex = mesh->ex;
+    *ey = mesh->ey;
+    *ez = mesh->ez;
+    return 1;
+}
+
+/*
+ * World box of the mesh. The half-size is the local half-size times
+ * the absolute columns of m[], so a rotated model stays inside the box.
+ */
+static int instance_box(const Instance *in, float *cx, float *cy, float *cz,
+                        float *ex, float *ey, float *ez)
+{
+    float lx, ly, lz;
+    float lex, ley, lez;
+
+    if (!in || !mesh_box(in->mesh, &lx, &ly, &lz, &lex, &ley, &lez)) {
+        return 0;
+    }
+    instance_point(in, lx, ly, lz, cx, cy, cz);
+    *ex = df_absf(in->m[0]) * lex + df_absf(in->m[1]) * ley + df_absf(in->m[2]) * lez;
+    *ey = df_absf(in->m[3]) * lex + df_absf(in->m[4]) * ley + df_absf(in->m[5]) * lez;
+    *ez = df_absf(in->m[6]) * lex + df_absf(in->m[7]) * ley + df_absf(in->m[8]) * lez;
+    return 1;
+}
+
+/*
+ * A flat faces yaw and stays upright, so it fits in a box of half the
+ * width on X and Z and half the height on Y.
+ */
+static int flat_box(const Flat *fl, float *cx, float *cy, float *cz,
+                    float *ex, float *ey, float *ez)
+{
+    if (!fl || fl->w < 1.0f || fl->h < 1.0f) {
+        return 0;
+    }
+    *cx = fl->x;
+    *cy = fl->y;
+    *cz = fl->z;
+    *ex = fl->w * 0.5f;
+    *ey = fl->h * 0.5f;
+    *ez = *ex;
+    return 1;
+}
+
+int scene_visible_models(const Scene *scene, const Camera *cam, int *out, int cap)
+{
+    Plane planes[6];
+    int i;
+    int n;
+
+    if (!scene || !out || cap < 1 || scene->nmodels < 1) {
+        return 0;
+    }
+    if (!cam) {
+        return fill_order(scene->nmodels, out, cap);
+    }
+    frustum_planes(cam, visible_far(), planes);
+    n = 0;
+    for (i = 0; i < scene->nmodels; i++) {
+        float cx, cy, cz, ex, ey, ez;
+
+        if (!instance_box(&scene->models[i], &cx, &cy, &cz, &ex, &ey, &ez)) {
+            continue;
+        }
+        if (!box_visible(planes, cx, cy, cz, ex, ey, ez)) {
+            continue;
+        }
+        if (n >= cap) {
+            break;
+        }
+        out[n++] = i;
+    }
+    return n;
 }
 
 int scene_visible_sprites(const Scene *scene, const Camera *cam, int *out, int cap)
 {
-    if (!scene) {
+    Plane planes[6];
+    int i;
+    int n;
+
+    if (!scene || !out || cap < 1 || scene->nsprites < 1) {
         return 0;
     }
-    return fill_order(scene->nsprites, cam, out, cap);
+    if (!cam) {
+        return fill_order(scene->nsprites, out, cap);
+    }
+    frustum_planes(cam, visible_far(), planes);
+    n = 0;
+    for (i = 0; i < scene->nsprites; i++) {
+        float cx, cy, cz, ex, ey, ez;
+
+        if (!flat_box(&scene->sprites[i], &cx, &cy, &cz, &ex, &ey, &ez)) {
+            continue;
+        }
+        if (!box_visible(planes, cx, cy, cz, ex, ey, ez)) {
+            continue;
+        }
+        if (n >= cap) {
+            break;
+        }
+        out[n++] = i;
+    }
+    return n;
 }
