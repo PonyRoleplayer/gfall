@@ -6,7 +6,7 @@ The key immediately left of 1 toggles it. That is scan code `0x29`, turned into 
 
 While the panel is on screen, including during the slide, the world is not drawn. The frame that was already on the front buffer is copied once, through `grLfbReadRegion`, and written back to the back buffer each console frame. The 3D pass, the HUD, and texture uploads do not run. The camera does not move: `input_read` and `input_look` report no motion, and the viewer loops skip their own keys. Rendering resumes on the first frame after the panel has shut. A command changes engine state immediately. The picture shows that change when the console closes.
 
-The background of the panel is a black wash at alpha 88, so the grabbed frame stays visible. Text uses the engine face.
+The background of the panel is a black wash at alpha 88, so the grabbed frame stays visible. Text uses the engine face, the 8x8 Terminal strike, unless a game installed its own sheet.
 
 ## Log
 

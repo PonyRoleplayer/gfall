@@ -47,7 +47,15 @@ Spectator step, in `fly_step`:
 - The wheel changes `camera_set_fov`. One notch is 120. Forward (positive) lowers the field by `FOV_STEP` (5 degrees). Back raises it. The camera clamps to 45..120. The value stays for the rest of the process. Take the wheel messages in the fly loop, before `win_pump`, or the list's scroll path is not the one that runs.
 - Speed is 720 units/second (the game's 12 units per vsync at 60 Hz). Shift multiplies by 4. Delta time is capped at 100 ms.
 
-The HUD (`hud_draw`, already called from `gfx_frame`) prints position, yaw, pitch, and fps (F3). Levelfall's own overlay is the dungeon name plus the F1 help lines.
+`hud_set(0)` while the fly view is up, so the engine corner readout does not stack on this one. `hud_set(1)` on the way out. GFALL never calls `hud_set`.
+
+The fly view is a 640 by 480 picture. Text is the engine face: the 8x8 Terminal strike, or the built-in 8x8 if that raster fails. Panels size from `ui_line_height`. Do not draw a second face, and do not cover the centre with a key list.
+
+Each panel is a dark body, a title band in the same hue, and a 1px border in the bright colour. White text sits on that. Place is amber, camera is blue, block is green, frame is grey.
+
+- `place`, top left: the name, indoor or outdoor, the region file, and the climate. The title band says `f1` or `f1 hide`.
+- `camera`, `block`, and `frame` sit in a row along the bottom. Camera is x y z, yaw (and the axis it faces), pitch, and the field of view. Block is the file under the camera (`outside` when the tile is empty), the cell, and the grid span. Frame is visible models and flats over the place totals, fog, the far clip, and `tex` (`auto`, `tiny`, or `sharp`). The frame title band carries fps.
+- F1 opens three more panels down the right: `record` (location, climate, family, counts), `draw` (frustum, backfaces, faces kept and hidden), and `keys`. They start closed.
 
 The key immediately left of 1 toggles the engine console. See `docs/console.md`. While that panel is up, including while it is sliding, these loops do not move the camera and do not toggle fog, the grid, or help. Escape closes the console. A second Escape, after it has shut, leaves the view.
 

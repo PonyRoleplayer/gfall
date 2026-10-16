@@ -30,10 +30,11 @@ static int g_sys_tried;
 static df_u32 g_addr;
 
 /*
- * OEM fixed font, the face Windows stocks for a DOS box. Cells are
- * 16 so an 8 by 12 glyph sits in the corner of a 256 square. The
- * atlas treats s,t as pixels on a 256-wide sheet, which is also
- * Glide's 0..256 range. Index 0 is clear. Index 1 is white.
+ * 8x8 Terminal, the EGA OEM strike. The stock OEM_FIXED_FONT on a VGA
+ * machine is the 8x12 face, so this asks for height 8 by name. Cells
+ * are 16 so the glyph sits in the corner of a 256 square. The atlas
+ * treats s,t as pixels on a 256-wide sheet, which is also Glide's
+ * 0..256 range. Index 0 is clear. Index 1 is white.
  */
 #define SYS_SIDE 256
 #define SYS_CELL 16
@@ -94,21 +95,147 @@ static int pot(int n)
     return n > 0 && (n & (n - 1)) == 0;
 }
 
-/* Stock OEM face. A missing gdi32, or a cell that will not fit, leaves the 8x8. */
+/* Positive height is the cell. Width 0 lets the strike pick its own. */
+#define TERM_CHARSET 255
+#define TERM_RASTER 6
+#define TERM_FIXED ((1) | (3 << 4))
+#define TERM_WEIGHT 400
+
+typedef void *(WINAPI *create_font_fn)(
+    int, int, int, int, int,
+    unsigned, unsigned, unsigned, unsigned,
+    unsigned, unsigned, unsigned, unsigned,
+    const char *);
+typedef int (WINAPI *add_font_fn)(const char *);
+typedef void *(WINAPI *sel_fn)(HDC, void *);
+typedef int (WINAPI *tm_fn)(HDC, TEXTMETRIC *);
+typedef int (WINAPI *del_fn)(void *);
+
+static void *create_terminal(create_font_fn create, int width)
+{
+    if (!create) {
+        return 0;
+    }
+    return create(8, width, 0, 0, TERM_WEIGHT,
+                  0, 0, 0, TERM_CHARSET,
+                  TERM_RASTER, 0, 0, TERM_FIXED, "Terminal");
+}
+
+static int path_join(char *dst, int cap, const char *a, const char *b)
+{
+    int n;
+    int i;
+
+    n = 0;
+    while (a[n]) {
+        n++;
+    }
+    i = 0;
+    while (b[i]) {
+        i++;
+    }
+    if (n + i + 1 > cap) {
+        return 0;
+    }
+    for (i = 0; i < n; i++) {
+        dst[i] = a[i];
+    }
+    n = 0;
+    while (b[n]) {
+        dst[i] = b[n];
+        i++;
+        n++;
+    }
+    dst[i] = 0;
+    return 1;
+}
+
+/* EGAOEM.FON is the 8x8 Terminal. The VGA stock face does not include it. */
+static void add_ega(add_font_fn add)
+{
+    char dir[260];
+    char path[260];
+    unsigned n;
+    int i;
+    static const char *tail[] = {
+        "\\FONTS\\EGAOEM.FON",
+        "\\SYSTEM\\EGAOEM.FON",
+        "\\EGAOEM.FON"
+    };
+
+    if (!add) {
+        return;
+    }
+    n = GetWindowsDirectoryA(dir, 240);
+    if (n == 0 || n >= 240) {
+        return;
+    }
+    for (i = 0; i < 3; i++) {
+        if (path_join(path, (int)sizeof(path), dir, tail[i])) {
+            add(path);
+        }
+    }
+}
+
+static int metrics_8x8(tm_fn metrics, HDC dc)
+{
+    TEXTMETRIC tm;
+
+    if (!metrics || !metrics(dc, &tm)) {
+        return 0;
+    }
+    return (int)tm.tmAveCharWidth == 8
+        && (int)tm.tmHeight == 8
+        && (int)tm.tmMaxCharWidth <= SYS_CELL;
+}
+
+/* Selects the 8x8 strike, then deselects it. The caller owns the font. */
+static void *font_8x8(create_font_fn create, add_font_fn add,
+                      sel_fn select, tm_fn metrics, del_fn kill, HDC dc)
+{
+    int pass;
+    void *font;
+    void *old;
+
+    if (!dc) {
+        return 0;
+    }
+    for (pass = 0; pass < 2; pass++) {
+        if (pass == 1) {
+            add_ega(add);
+        }
+        font = create_terminal(create, 8);
+        if (!font) {
+            font = create_terminal(create, 0);
+        }
+        if (!font) {
+            continue;
+        }
+        old = select(dc, font);
+        if (old && metrics_8x8(metrics, dc)) {
+            select(dc, old);
+            return font;
+        }
+        if (old) {
+            select(dc, old);
+        }
+        kill(font);
+    }
+    return 0;
+}
+
+/* 8x8 Terminal. A missing gdi32, or no 8x8 strike, leaves the built-in face. */
 static int raster_oem(void)
 {
-    typedef void *(WINAPI *stock_fn)(int);
     typedef HDC (WINAPI *cdc_fn)(HDC);
     typedef int (WINAPI *deldc_fn)(HDC);
-    typedef void *(WINAPI *sel_fn)(HDC, void *);
-    typedef int (WINAPI *tm_fn)(HDC, TEXTMETRIC *);
     typedef unsigned (WINAPI *color_fn)(HDC, unsigned);
     typedef int (WINAPI *mode_fn)(HDC, int);
     typedef int (WINAPI *text_fn)(HDC, int, int, const char *, int);
     typedef void *(WINAPI *dib_fn)(HDC, const BITMAPINFO *, unsigned, void **, void *, unsigned);
-    typedef int (WINAPI *del_fn)(void *);
     HMODULE gdi;
-    stock_fn stock;
+    create_font_fn create;
+    add_font_fn addfont;
     cdc_fn make_dc;
     deldc_fn free_dc;
     sel_fn select;
@@ -153,7 +280,8 @@ static int raster_oem(void)
     if (!gdi) {
         return 0;
     }
-    stock = (stock_fn)(void *)GetProcAddress(gdi, "GetStockObject");
+    create = (create_font_fn)(void *)GetProcAddress(gdi, "CreateFontA");
+    addfont = (add_font_fn)(void *)GetProcAddress(gdi, "AddFontResourceA");
     make_dc = (cdc_fn)(void *)GetProcAddress(gdi, "CreateCompatibleDC");
     free_dc = (deldc_fn)(void *)GetProcAddress(gdi, "DeleteDC");
     select = (sel_fn)(void *)GetProcAddress(gdi, "SelectObject");
@@ -164,23 +292,22 @@ static int raster_oem(void)
     text_out = (text_fn)(void *)GetProcAddress(gdi, "TextOutA");
     make_dib = (dib_fn)(void *)GetProcAddress(gdi, "CreateDIBSection");
     free_obj = (del_fn)(void *)GetProcAddress(gdi, "DeleteObject");
-    if (!stock || !make_dc || !free_dc || !select || !metrics
+    if (!create || !make_dc || !free_dc || !select || !metrics
         || !set_text || !set_bk || !set_mode || !text_out
         || !make_dib || !free_obj) {
         return 0;
     }
-    font = stock(OEM_FIXED_FONT);
     screen = GetDC(0);
-    if (font && screen) {
+    if (screen) {
         dc = make_dc(screen);
     }
-    if (dc) {
+    font = font_8x8(create, addfont, select, metrics, free_obj, dc);
+    if (dc && font) {
         oldfont = select(dc, font);
         if (oldfont && metrics(dc, &tm)) {
             cw = (int)tm.tmAveCharWidth;
             ch = (int)tm.tmHeight;
-            if (cw >= 1 && cw <= SYS_CELL && ch >= 1 && ch <= SYS_CELL
-                && (int)tm.tmMaxCharWidth <= SYS_CELL) {
+            if (cw == 8 && ch == 8 && (int)tm.tmMaxCharWidth <= SYS_CELL) {
                 stride = (cw * 3 + 3) & ~3;
                 mem_zero(&info, (df_u32)sizeof(info));
                 info.bmiHeader.biSize = (unsigned)sizeof(info.bmiHeader);
@@ -250,6 +377,9 @@ static int raster_oem(void)
     }
     if (screen) {
         ReleaseDC(0, screen);
+    }
+    if (font) {
+        free_obj(font);
     }
     return ok;
 }

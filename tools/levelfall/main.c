@@ -7,6 +7,7 @@
  * W/S and Up/Down fly along the aim. A/D strafe. Left/Right turn.
  * Page Up and Page Down pitch, staying in place.
  * The wheel changes the field of view.
+ * The view keeps a title bar and a status bar. F1 opens the rest.
  */
 
 #define WINVER 0x0400
@@ -17,12 +18,16 @@
 #include "engine/assets/vfs.h"
 #include "engine/core/df.h"
 #include "engine/core/mem.h"
+#include "engine/gfx/draw.h"
 #include "engine/gfx/gfx.h"
 #include "engine/gfx/glide.h"
+#include "engine/gfx/texcache.h"
 #include "engine/platform/input.h"
 #include "engine/platform/win32.h"
 #include "engine/ui/console.h"
 #include "engine/ui/font.h"
+#include "engine/ui/hud.h"
+#include "game/dagger/climate.h"
 #include "game/dagger/dungeon.h"
 #include "game/dagger/texture.h"
 #include "game/dagger/world.h"
@@ -99,6 +104,14 @@ static int g_nindoor;
 static int g_noutdoor;
 static char g_query[64];
 static int g_help;
+static const Camera *g_cam;
+static const Dungeon *g_dun;
+static const World *g_world;
+static int g_region;
+static int g_fps;
+static int g_fps_ready;
+static int g_fps_frames;
+static DWORD g_fps_tick;
 static int g_fog = 1;
 /* Two outdoor blocks. One block is 4096. The engine caps this at DF_FAR_MAX. */
 static int g_far = 8192;
@@ -178,6 +191,39 @@ static void add_u(char *dst, int *n, int cap, df_u32 v)
         tmp[k++] = (char)('0' + (int)(v % 10u));
         v /= 10u;
     } while (v && k < (int)sizeof(tmp));
+    while (k > 0 && *n < cap - 1) {
+        dst[*n] = tmp[--k];
+        *n += 1;
+    }
+    dst[*n] = 0;
+}
+
+/* Right-aligned in `width` columns. Width 0 writes the digits only. */
+static void add_num(char *dst, int *n, int cap, int v, int width)
+{
+    char tmp[16];
+    int k;
+    int neg;
+    unsigned int u;
+    int digits;
+
+    neg = v < 0;
+    u = neg ? (unsigned int)(-v) : (unsigned int)v;
+    k = 0;
+    do {
+        tmp[k++] = (char)('0' + (int)(u % 10u));
+        u /= 10u;
+    } while (u && k < (int)sizeof(tmp));
+    digits = k + (neg ? 1 : 0);
+    while (width > digits && *n < cap - 1) {
+        dst[*n] = ' ';
+        *n += 1;
+        width--;
+    }
+    if (neg && *n < cap - 1) {
+        dst[*n] = '-';
+        *n += 1;
+    }
     while (k > 0 && *n < cap - 1) {
         dst[*n] = tmp[--k];
         *n += 1;
@@ -995,42 +1041,6 @@ static void help_rect(float x, float y, float w, float h, float r, float g, floa
     glide_triangle(&v[0], &v[2], &v[3]);
 }
 
-static void draw_lines(const char **lines, int nlines, int x, int top)
-{
-    int i;
-    int wide;
-    int line_h;
-    int block;
-    int y;
-
-    line_h = ui_line_height() + 2;
-    wide = 0;
-    for (i = 0; i < nlines; i++) {
-        int w;
-
-        w = ui_string_width(lines[i]);
-        if (w > wide) {
-            wide = w;
-        }
-    }
-    block = nlines * line_h;
-    if (x < 0) {
-        x = DF_VIEW_W - wide - 16;
-        if (x < 8) {
-            x = 8;
-        }
-    }
-    glide_plate(1);
-    help_rect((float)x, (float)(top - block), (float)(wide + 16), (float)(block + 8),
-              0.0f, 0.0f, 0.0f);
-    glide_plate(0);
-    y = top;
-    for (i = 0; i < nlines; i++) {
-        ui_string(x + 8, y, lines[i]);
-        y -= line_h;
-    }
-}
-
 static int take_wheel(void)
 {
     MSG msg;
@@ -1043,34 +1053,575 @@ static int take_wheel(void)
     return sum;
 }
 
-static void draw_overlay(void)
+static void text_right(int right, int top, const char *s)
 {
-    static const char *help[] = {
-        "mouse: look",
-        "w s up down: along the aim",
-        "a d: strafe",
-        "left right: turn",
-        "pgup pgdn: look up and down",
-        "wheel: field of view",
-        "shift: faster",
-        "f1: hide this",
-        "esc: back to the list",
-        "close: quit"
-    };
-    const char *lines[12];
-    int n;
-    int line_h;
+    ui_string(right - ui_string_width(s), top, s);
+}
+
+static int yaw_deg(float yaw)
+{
+    int d;
+
+    d = (int)(yaw * (360.0f / DF_TAU));
+    d %= 360;
+    if (d < 0) {
+        d += 360;
+    }
+    return d;
+}
+
+/* Yaw 0 looks down world +Z. Positive yaw turns toward +X. */
+static const char *facing_name(int deg)
+{
+    if (deg >= 45 && deg < 135) {
+        return "+X";
+    }
+    if (deg >= 135 && deg < 225) {
+        return "-Z";
+    }
+    if (deg >= 225 && deg < 315) {
+        return "-X";
+    }
+    return "+Z";
+}
+
+static const char *climate_name(int id)
+{
+    if (id == CLIMATE_OCEAN) return "ocean";
+    if (id == CLIMATE_DESERT) return "desert";
+    if (id == CLIMATE_DESERT2) return "desert";
+    if (id == CLIMATE_MOUNTAIN) return "mountain";
+    if (id == CLIMATE_RAINFOREST) return "rainforest";
+    if (id == CLIMATE_SWAMP) return "swamp";
+    if (id == CLIMATE_SUBTROPICAL) return "subtropical";
+    if (id == CLIMATE_MOUNTAIN_WOODS) return "mtn woods";
+    if (id == CLIMATE_WOODLANDS) return "woodlands";
+    if (id == CLIMATE_HAUNTED) return "haunted";
+    return "climate";
+}
+
+static const char *family_name(int family)
+{
+    if (family == TEX_DESERT) return "desert";
+    if (family == TEX_MOUNTAIN) return "mountain";
+    if (family == TEX_WOODLAND) return "woodland";
+    if (family == TEX_SWAMP) return "swamp";
+    return "family";
+}
+
+static const char *tex_name(void)
+{
+    if (texcache_mode() == 1) {
+        return "tiny";
+    }
+    if (texcache_mode() == 2) {
+        return "sharp";
+    }
+    return "auto";
+}
+
+/* Truncation toward zero would put a negative edge in the next tile. */
+static int tile_of(float v, int tile)
+{
     int i;
 
-    n = 0;
-    lines[n++] = g_view_name;
-    if (g_help) {
-        for (i = 0; i < (int)(sizeof(help) / sizeof(help[0])); i++) {
-            lines[n++] = help[i];
+    i = (int)(v / (float)tile);
+    if (v < 0.0f && (float)(i * tile) != v) {
+        i--;
+    }
+    return i;
+}
+
+static const DunBlock *block_here(int *gx, int *gz)
+{
+    int tile;
+    int i;
+    const DunBlock *hit;
+
+    if (!g_dun) {
+        return 0;
+    }
+    tile = g_dun->outdoor ? 4096 : 2048;
+    *gx = tile_of(g_cam->x, tile);
+    *gz = tile_of(g_cam->z, tile);
+    hit = 0;
+    for (i = 0; i < g_dun->nblocks; i++) {
+        if (g_dun->block[i].x == *gx && g_dun->block[i].z == *gz) {
+            hit = &g_dun->block[i];
         }
     }
-    line_h = ui_line_height() + 2;
-    draw_lines(lines, n, 8, 12 + n * line_h);
+    return hit;
+}
+
+static void grid_span(int *w, int *h)
+{
+    int i;
+    int minx;
+    int maxx;
+    int minz;
+    int maxz;
+
+    minx = 0;
+    maxx = 0;
+    minz = 0;
+    maxz = 0;
+    if (g_dun && g_dun->nblocks > 0) {
+        minx = maxx = g_dun->block[0].x;
+        minz = maxz = g_dun->block[0].z;
+        for (i = 1; i < g_dun->nblocks; i++) {
+            if (g_dun->block[i].x < minx) minx = g_dun->block[i].x;
+            if (g_dun->block[i].x > maxx) maxx = g_dun->block[i].x;
+            if (g_dun->block[i].z < minz) minz = g_dun->block[i].z;
+            if (g_dun->block[i].z > maxz) maxz = g_dun->block[i].z;
+        }
+    }
+    *w = maxx - minx + 1;
+    *h = maxz - minz + 1;
+}
+
+static void sample_fps(void)
+{
+    DWORD now;
+    DWORD dt;
+
+    now = GetTickCount();
+    if (g_fps_tick == 0) {
+        g_fps_tick = now;
+        return;
+    }
+    g_fps_frames++;
+    dt = now - g_fps_tick;
+    if (dt >= 500) {
+        g_fps = (int)(((unsigned int)g_fps_frames * 1000u) / dt);
+        g_fps_frames = 0;
+        g_fps_tick = now;
+        g_fps_ready = 1;
+    }
+}
+
+static void pair_line(char *dst, int cap, const char *label, const char *value)
+{
+    int n;
+    int col;
+
+    n = 0;
+    dst[0] = 0;
+    add_str(dst, &n, cap, label);
+    col = n;
+    while (col < 12 && n < cap - 1) {
+        dst[n++] = ' ';
+        col++;
+    }
+    dst[n] = 0;
+    add_str(dst, &n, cap, value);
+}
+
+static int line_h(void)
+{
+    int h;
+
+    h = ui_line_height();
+    if (h < 1) {
+        h = 8;
+    }
+    return h;
+}
+
+static int measure_lines(const char *title, const char *aside, const char **lines, int n)
+{
+    int w;
+    int i;
+    int t;
+
+    w = ui_string_width(title);
+    if (aside && aside[0]) {
+        t = ui_string_width(title) + 12 + ui_string_width(aside);
+        if (t > w) {
+            w = t;
+        }
+    }
+    for (i = 0; i < n; i++) {
+        if (!lines[i]) {
+            continue;
+        }
+        t = ui_string_width(lines[i]);
+        if (t > w) {
+            w = t;
+        }
+    }
+    return w + 8;
+}
+
+/* Title band, then n body lines with one pixel between them. */
+static int measure_h(int n)
+{
+    int line;
+
+    line = line_h();
+    return (line + 4) + n * line + n + 4;
+}
+
+static void draw_panel(int x, int y, int w, int h, const char *title, const char *aside,
+                       const char **lines, int n,
+                       float ar, float ag, float ab)
+{
+    int line;
+    int band;
+    int i;
+    int top;
+    float tr;
+    float tg;
+    float tb;
+    float br;
+    float bg;
+    float bb;
+
+    line = line_h();
+    band = line + 4;
+    tr = ar * 0.50f;
+    tg = ag * 0.50f;
+    tb = ab * 0.50f;
+    br = ar * 0.16f;
+    bg = ag * 0.16f;
+    bb = ab * 0.16f;
+    glide_dim(1, 220);
+    help_rect((float)x, (float)y, (float)w, (float)(h - band), br, bg, bb);
+    help_rect((float)x, (float)(y + h - band), (float)w, (float)band, tr, tg, tb);
+    glide_dim(0, 0);
+    glide_overlay(1);
+    help_rect((float)x, (float)y, (float)w, 1.0f, ar, ag, ab);
+    help_rect((float)x, (float)(y + h - 1), (float)w, 1.0f, ar, ag, ab);
+    help_rect((float)x, (float)y, 1.0f, (float)h, ar, ag, ab);
+    help_rect((float)(x + w - 1), (float)y, 1.0f, (float)h, ar, ag, ab);
+    glide_overlay(0);
+    ui_string(x + 4, y + h - 2, title);
+    if (aside && aside[0]) {
+        text_right(x + w - 4, y + h - 2, aside);
+    }
+    top = y + h - band - 2;
+    for (i = 0; i < n; i++) {
+        if (lines[i] && lines[i][0]) {
+            ui_string(x + 4, top, lines[i]);
+        }
+        top -= line + 1;
+    }
+}
+
+static void draw_overlay(void)
+{
+    char place_kind[40];
+    char place_clim[40];
+    char cam_x[48];
+    char cam_y[48];
+    char cam_z[48];
+    char block_name[24];
+    char block_cell[32];
+    char block_grid[40];
+    char frame_models[40];
+    char frame_flats[40];
+    char frame_fog[48];
+    char fps[16];
+    char loc_v[16];
+    char clim_v[32];
+    char fam_v[32];
+    char tri_v[16];
+    char img_v[16];
+    char ed_v[16];
+    char files_v[16];
+    char frust_v[8];
+    char back_v[8];
+    char face_v[16];
+    char hid_v[16];
+    char rec_row[7][40];
+    char draw_row[4][32];
+    char key_lines[11][48];
+    const char *place_l[3];
+    const char *cam_l[3];
+    const char *block_l[3];
+    const char *frame_l[3];
+    const char *rec_l[7];
+    const char *draw_l[4];
+    const char *key_l[11];
+    const char *key_name[11];
+    const char *key_act[11];
+    int n;
+    int i;
+    int gx;
+    int gz;
+    int gw;
+    int gh;
+    int yaw;
+    int pitch;
+    int models;
+    int sprites;
+    int kept;
+    int dropped;
+    int family;
+    int pw;
+    int cw;
+    int bw;
+    int fw;
+    int ph;
+    int gap;
+    int x;
+    int side_w;
+    int rw;
+    int dw;
+    int kw;
+    int rh;
+    int dh;
+    int kh;
+    int y;
+    const DunBlock *block;
+
+    if (!g_cam) {
+        return;
+    }
+    sample_fps();
+    yaw = yaw_deg(g_cam->yaw);
+    pitch = (int)(g_cam->pitch * (360.0f / DF_TAU));
+    gx = 0;
+    gz = 0;
+    block = block_here(&gx, &gz);
+    grid_span(&gw, &gh);
+    models = 0;
+    sprites = 0;
+    kept = 0;
+    dropped = 0;
+    draw_stats(&models, &sprites, &kept, &dropped);
+
+    n = 0;
+    place_kind[0] = 0;
+    if (g_dun) {
+        add_str(place_kind, &n, (int)sizeof(place_kind),
+                g_dun->outdoor ? "outdoor" : "indoor");
+        add_str(place_kind, &n, (int)sizeof(place_kind), "   r");
+        add_num(place_kind, &n, (int)sizeof(place_kind), g_region, 0);
+    }
+    n = 0;
+    place_clim[0] = 0;
+    if (g_dun) {
+        add_str(place_clim, &n, (int)sizeof(place_clim), climate_name(g_dun->climate));
+    }
+    place_l[0] = g_view_name;
+    place_l[1] = place_kind;
+    place_l[2] = place_clim;
+
+    n = 0;
+    cam_x[0] = 0;
+    add_str(cam_x, &n, (int)sizeof(cam_x), "x ");
+    add_num(cam_x, &n, (int)sizeof(cam_x), (int)g_cam->x, 6);
+    add_str(cam_x, &n, (int)sizeof(cam_x), "   yaw ");
+    add_num(cam_x, &n, (int)sizeof(cam_x), yaw, 3);
+    add_str(cam_x, &n, (int)sizeof(cam_x), " ");
+    add_str(cam_x, &n, (int)sizeof(cam_x), facing_name(yaw));
+    n = 0;
+    cam_y[0] = 0;
+    add_str(cam_y, &n, (int)sizeof(cam_y), "y ");
+    add_num(cam_y, &n, (int)sizeof(cam_y), (int)g_cam->y, 6);
+    add_str(cam_y, &n, (int)sizeof(cam_y), "   pitch ");
+    add_num(cam_y, &n, (int)sizeof(cam_y), pitch, 4);
+    n = 0;
+    cam_z[0] = 0;
+    add_str(cam_z, &n, (int)sizeof(cam_z), "z ");
+    add_num(cam_z, &n, (int)sizeof(cam_z), (int)g_cam->z, 6);
+    add_str(cam_z, &n, (int)sizeof(cam_z), "   fov ");
+    add_num(cam_z, &n, (int)sizeof(cam_z), (int)camera_fov(), 3);
+    cam_l[0] = cam_x;
+    cam_l[1] = cam_y;
+    cam_l[2] = cam_z;
+
+    n = 0;
+    block_name[0] = 0;
+    if (block) {
+        add_str(block_name, &n, (int)sizeof(block_name), block->name);
+    } else {
+        add_str(block_name, &n, (int)sizeof(block_name), "outside");
+    }
+    n = 0;
+    block_cell[0] = 0;
+    add_str(block_cell, &n, (int)sizeof(block_cell), "cell ");
+    add_num(block_cell, &n, (int)sizeof(block_cell), gx, 0);
+    add_str(block_cell, &n, (int)sizeof(block_cell), ",");
+    add_num(block_cell, &n, (int)sizeof(block_cell), gz, 0);
+    n = 0;
+    block_grid[0] = 0;
+    add_str(block_grid, &n, (int)sizeof(block_grid), "grid ");
+    add_num(block_grid, &n, (int)sizeof(block_grid), gw, 0);
+    add_str(block_grid, &n, (int)sizeof(block_grid), "x");
+    add_num(block_grid, &n, (int)sizeof(block_grid), gh, 0);
+    block_l[0] = block_name;
+    block_l[1] = block_cell;
+    block_l[2] = block_grid;
+
+    n = 0;
+    frame_models[0] = 0;
+    add_str(frame_models, &n, (int)sizeof(frame_models), "models ");
+    add_num(frame_models, &n, (int)sizeof(frame_models), models, 0);
+    add_str(frame_models, &n, (int)sizeof(frame_models), "/");
+    add_num(frame_models, &n, (int)sizeof(frame_models),
+            g_world ? world_model_count(g_world) : 0, 0);
+    n = 0;
+    frame_flats[0] = 0;
+    add_str(frame_flats, &n, (int)sizeof(frame_flats), "flats ");
+    add_num(frame_flats, &n, (int)sizeof(frame_flats), sprites, 0);
+    add_str(frame_flats, &n, (int)sizeof(frame_flats), "/");
+    add_num(frame_flats, &n, (int)sizeof(frame_flats),
+            g_world ? world_flat_count(g_world) : 0, 0);
+    n = 0;
+    frame_fog[0] = 0;
+    add_str(frame_fog, &n, (int)sizeof(frame_fog), "fog ");
+    add_str(frame_fog, &n, (int)sizeof(frame_fog), gfx_fog() ? "on" : "off");
+    add_str(frame_fog, &n, (int)sizeof(frame_fog), "  far ");
+    add_num(frame_fog, &n, (int)sizeof(frame_fog), (int)gfx_far(), 0);
+    add_str(frame_fog, &n, (int)sizeof(frame_fog), "  ");
+    add_str(frame_fog, &n, (int)sizeof(frame_fog), tex_name());
+    frame_l[0] = frame_models;
+    frame_l[1] = frame_flats;
+    frame_l[2] = frame_fog;
+    n = 0;
+    fps[0] = 0;
+    if (g_fps_ready) {
+        add_num(fps, &n, (int)sizeof(fps), g_fps, 0);
+    } else {
+        add_str(fps, &n, (int)sizeof(fps), "--");
+    }
+    add_str(fps, &n, (int)sizeof(fps), " fps");
+
+    gap = 6;
+    ph = measure_h(3);
+    pw = measure_lines("place", g_help ? "f1 hide" : "f1", place_l, 3);
+    cw = measure_lines("camera", 0, cam_l, 3);
+    bw = measure_lines("block", 0, block_l, 3);
+    fw = measure_lines("frame", fps, frame_l, 3);
+    draw_panel(gap, DF_VIEW_H - gap - ph, pw, ph, "place",
+               g_help ? "f1 hide" : "f1", place_l, 3, 204.0f, 160.0f, 64.0f);
+    x = gap;
+    draw_panel(x, gap, cw, ph, "camera", 0, cam_l, 3, 112.0f, 168.0f, 208.0f);
+    x += cw + gap;
+    draw_panel(x, gap, bw, ph, "block", 0, block_l, 3, 120.0f, 184.0f, 96.0f);
+    x += bw + gap;
+    if (x + fw > DF_VIEW_W - gap) {
+        fw = DF_VIEW_W - gap - x;
+    }
+    if (fw > 8) {
+        draw_panel(x, gap, fw, ph, "frame", fps, frame_l, 3, 168.0f, 168.0f, 180.0f);
+    }
+
+    if (!g_help) {
+        return;
+    }
+    n = 0;
+    loc_v[0] = 0;
+    add_num(loc_v, &n, (int)sizeof(loc_v), g_dun ? g_dun->location_id : 0, 0);
+    n = 0;
+    clim_v[0] = 0;
+    if (g_dun) {
+        add_num(clim_v, &n, (int)sizeof(clim_v), g_dun->climate, 0);
+        add_str(clim_v, &n, (int)sizeof(clim_v), " ");
+        add_str(clim_v, &n, (int)sizeof(clim_v), climate_name(g_dun->climate));
+    }
+    family = g_dun ? climate_family(g_dun->climate) : -1;
+    n = 0;
+    fam_v[0] = 0;
+    if (family >= 0) {
+        add_num(fam_v, &n, (int)sizeof(fam_v), family, 0);
+        add_str(fam_v, &n, (int)sizeof(fam_v), " ");
+        add_str(fam_v, &n, (int)sizeof(fam_v), family_name(family));
+    } else {
+        add_str(fam_v, &n, (int)sizeof(fam_v), "none");
+    }
+    n = 0;
+    tri_v[0] = 0;
+    add_num(tri_v, &n, (int)sizeof(tri_v), g_world ? world_triangle_count(g_world) : 0, 0);
+    n = 0;
+    img_v[0] = 0;
+    add_num(img_v, &n, (int)sizeof(img_v), g_world ? world_image_count(g_world) : 0, 0);
+    n = 0;
+    ed_v[0] = 0;
+    add_num(ed_v, &n, (int)sizeof(ed_v), g_world ? world_editor_count(g_world) : 0, 0);
+    n = 0;
+    files_v[0] = 0;
+    add_num(files_v, &n, (int)sizeof(files_v),
+            g_world ? world_texture_file_count(g_world) : 0, 0);
+    pair_line(rec_row[0], 40, "location", loc_v);
+    pair_line(rec_row[1], 40, "climate", clim_v);
+    pair_line(rec_row[2], 40, "family", fam_v);
+    pair_line(rec_row[3], 40, "triangles", tri_v);
+    pair_line(rec_row[4], 40, "images", img_v);
+    pair_line(rec_row[5], 40, "editors", ed_v);
+    pair_line(rec_row[6], 40, "tex files", files_v);
+    for (i = 0; i < 7; i++) {
+        rec_l[i] = rec_row[i];
+    }
+    n = 0;
+    frust_v[0] = 0;
+    add_str(frust_v, &n, (int)sizeof(frust_v), scene_cull() ? "on" : "off");
+    n = 0;
+    back_v[0] = 0;
+    add_str(back_v, &n, (int)sizeof(back_v), draw_faces() ? "drop" : "draw");
+    n = 0;
+    face_v[0] = 0;
+    add_num(face_v, &n, (int)sizeof(face_v), kept, 0);
+    n = 0;
+    hid_v[0] = 0;
+    add_num(hid_v, &n, (int)sizeof(hid_v), dropped, 0);
+    pair_line(draw_row[0], 32, "frustum", frust_v);
+    pair_line(draw_row[1], 32, "backfaces", back_v);
+    pair_line(draw_row[2], 32, "faces", face_v);
+    pair_line(draw_row[3], 32, "hidden", hid_v);
+    for (i = 0; i < 4; i++) {
+        draw_l[i] = draw_row[i];
+    }
+    key_name[0] = "mouse";
+    key_act[0] = "look";
+    key_name[1] = "w s";
+    key_act[1] = "forward";
+    key_name[2] = "up down";
+    key_act[2] = "forward";
+    key_name[3] = "a d";
+    key_act[3] = "strafe";
+    key_name[4] = "left right";
+    key_act[4] = "turn";
+    key_name[5] = "pgup pgdn";
+    key_act[5] = "pitch";
+    key_name[6] = "wheel";
+    key_act[6] = "field";
+    key_name[7] = "shift";
+    key_act[7] = "faster";
+    key_name[8] = "esc";
+    key_act[8] = "list";
+    key_name[9] = "f1";
+    key_act[9] = "hide";
+    key_name[10] = "left of 1";
+    key_act[10] = "console";
+    for (i = 0; i < 11; i++) {
+        pair_line(key_lines[i], 48, key_name[i], key_act[i]);
+        key_l[i] = key_lines[i];
+    }
+    rw = measure_lines("record", 0, rec_l, 7);
+    dw = measure_lines("draw", 0, draw_l, 4);
+    kw = measure_lines("keys", 0, key_l, 11);
+    side_w = rw;
+    if (dw > side_w) {
+        side_w = dw;
+    }
+    if (kw > side_w) {
+        side_w = kw;
+    }
+    rh = measure_h(7);
+    dh = measure_h(4);
+    kh = measure_h(11);
+    x = DF_VIEW_W - gap - side_w;
+    y = DF_VIEW_H - gap - rh;
+    draw_panel(x, y, side_w, rh, "record", 0, rec_l, 7, 204.0f, 160.0f, 64.0f);
+    y -= gap + dh;
+    draw_panel(x, y, side_w, dh, "draw", 0, draw_l, 4, 112.0f, 168.0f, 208.0f);
+    y -= gap + kh;
+    if (y < gap + ph) {
+        y = gap + ph;
+    }
+    draw_panel(x, y, side_w, kh, "keys", 0, key_l, 11, 168.0f, 168.0f, 180.0f);
 }
 
 static void fly_step(Camera *cam, int dx, int dy, float dt)
@@ -1111,10 +1662,14 @@ static void run_view(const Level *level, Camera *cam)
     DWORD tick;
 
     help_was = key_down(VK_F1);
-    g_help = 1;
+    g_fps_tick = 0;
+    g_fps_frames = 0;
+    g_fps_ready = 0;
+    g_cam = cam;
     tick = GetTickCount();
     input_clear_quit();
     input_begin(win_hwnd());
+    hud_set(0);
     gfx_set_extra(draw_overlay);
     for (;;) {
         DWORD now;
@@ -1156,6 +1711,8 @@ static void run_view(const Level *level, Camera *cam)
         gfx_frame(cam, level);
     }
     gfx_set_extra(0);
+    hud_set(1);
+    g_cam = 0;
     input_end();
 }
 
@@ -1219,7 +1776,12 @@ static void view_row(int index)
                 world_start(world, &x, &y, &z, &yaw, &pitch);
                 camera_set(&cam, x, y, z, yaw, pitch);
                 log_line("glide open 640x480");
+                g_region = g_rows[index].region;
+                g_dun = &dun;
+                g_world = world;
                 run_view(&level, &cam);
+                g_dun = 0;
+                g_world = 0;
             }
         }
     }

@@ -104,6 +104,7 @@ static int pitch_deg(float pitch)
     return (int)(pitch * (360.0f / DF_TAU));
 }
 
+static int g_show = 1;
 static int g_fps_on = 1;
 static int g_fps_ready;
 static int g_fps;
@@ -165,6 +166,11 @@ static void draw_fps(void)
     ui_string(DF_VIEW_W - wide - 10, top, fps);
 }
 
+void hud_set(int on)
+{
+    g_show = on ? 1 : 0;
+}
+
 void hud_draw(const Camera *cam)
 {
     char pos[64];
@@ -174,7 +180,7 @@ void hud_draw(const Camera *cam)
     int top;
     int line;
 
-    if (!cam) {
+    if (!g_show || !cam) {
         return;
     }
     fps_sample();
