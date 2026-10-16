@@ -6,9 +6,6 @@
 
 #define MAP_NAME "MAPS.BSA"
 #define REGION_NAME "MAPDITEM.017"
-#define TABLE_NAME "MAPTABLE.017"
-#define PITEM_NAME "MAPPITEM.017"
-#define NAMES_NAME "MAPNAMES.017"
 #define CLIMATE_NAME "CLIMATE.PAK"
 #define HOLD_NAME "Privateer's Hold"
 #define LOC_NAME 71
@@ -28,6 +25,22 @@ static char g_why[48];
 static void why(const char *text)
 {
     df_copy(g_why, text, (int)sizeof(g_why));
+}
+
+/* stem is "MAPDITEM." / "MAPPITEM." / "MAPTABLE." / "MAPNAMES." plus a dot. */
+static void map_file(char *dst, const char *stem, int region)
+{
+    int i;
+
+    i = 0;
+    while (stem[i] && i < 12) {
+        dst[i] = stem[i];
+        i++;
+    }
+    dst[i++] = (char)('0' + region / 100);
+    dst[i++] = (char)('0' + (region / 10) % 10);
+    dst[i++] = (char)('0' + region % 10);
+    dst[i] = 0;
 }
 
 static int sign8(df_u8 v)
@@ -86,16 +99,13 @@ static void read_title(char *dst, const df_u8 *src)
     dst[i] = 0;
 }
 
-static int read_climate(Bsa *maps, int parent, int self_id);
+static int read_climate(Bsa *maps, int region, int parent, int self_id);
 
-/* 1 = Privateer's Hold, 0 = some other record, -1 = the hold is unreadable. */
-static int take_hold(const df_u8 *rec, df_u32 size, Dungeon *out, Bsa *maps)
+/* Past the door list, or 0 when this is not a location record. */
+static int location_at(const df_u8 *rec, df_u32 size, df_u32 *at_out)
 {
     df_u32 doors;
     df_u32 at;
-    df_u32 head;
-    df_u16 count;
-    int i;
 
     if (size < 4) {
         return 0;
@@ -108,19 +118,26 @@ static int take_hold(const df_u8 *rec, df_u32 size, Dungeon *out, Bsa *maps)
     if (at > size || size - at < (df_u32)LOC_TAIL + DUN_HEAD) {
         return 0;
     }
-    read_title(out->title, rec + at + LOC_NAME);
-    if (!df_eq(out->title, HOLD_NAME)) {
-        return 0;
-    }
+    *at_out = at;
+    return 1;
+}
+
+/* 1 = blocks stored, 0 = the list is unusable and dungeon_error is set. */
+static int read_blocks(const df_u8 *rec, df_u32 size, df_u32 at, Dungeon *out)
+{
+    df_u32 head;
+    df_u16 count;
+    int i;
+
     head = at + (df_u32)LOC_TAIL;
     count = df_ru16(rec + head + 10);
     if (count < 1 || count > DUN_MAX_BLOCKS) {
         why("block count");
-        return -1;
+        return 0;
     }
     if (size - (head + DUN_HEAD) < (df_u32)count * 4u) {
         why("block list");
-        return -1;
+        return 0;
     }
     out->nblocks = 0;
     for (i = 0; i < (int)count; i++) {
@@ -136,7 +153,7 @@ static int take_hold(const df_u8 *rec, df_u32 size, Dungeon *out, Bsa *maps)
         number = (int)(bits & 0x3ff);
         if (letter < 0 || letter >= (int)sizeof(g_letters) - 1) {
             why("block letter");
-            return -1;
+            return 0;
         }
         blk = &out->block[out->nblocks];
         block_name(blk->name, letter, number);
@@ -146,17 +163,38 @@ static int take_hold(const df_u8 *rec, df_u32 size, Dungeon *out, Bsa *maps)
         out->nblocks++;
     }
     out->location_id = (int)df_ru16(rec + at + LOC_ID);
-    {
-        int parent;
+    return 1;
+}
 
-        parent = 0;
-        if (df_ru16(rec + at + LOC_HAS_PARENT) != 0) {
-            parent = (int)df_ru16(rec + at + LOC_PARENT);
-        }
-        out->climate = read_climate(maps, parent, out->location_id);
+static int apply_climate(const df_u8 *rec, df_u32 at, Dungeon *out, Bsa *maps, int region)
+{
+    int parent;
+
+    parent = 0;
+    if (df_ru16(rec + at + LOC_HAS_PARENT) != 0) {
+        parent = (int)df_ru16(rec + at + LOC_PARENT);
     }
+    out->climate = read_climate(maps, region, parent, out->location_id);
     if (climate_family(out->climate) < 0) {
         why("climate");
+        return 0;
+    }
+    return 1;
+}
+
+/* 1 = Privateer's Hold, 0 = some other record, -1 = the hold is unreadable. */
+static int take_hold(const df_u8 *rec, df_u32 size, Dungeon *out, Bsa *maps)
+{
+    df_u32 at;
+
+    if (!location_at(rec, size, &at)) {
+        return 0;
+    }
+    read_title(out->title, rec + at + LOC_NAME);
+    if (!df_eq(out->title, HOLD_NAME)) {
+        return 0;
+    }
+    if (!read_blocks(rec, size, at, out) || !apply_climate(rec, at, out, maps, 17)) {
         return -1;
     }
     return 1;
@@ -213,7 +251,7 @@ static int climate_pixel(int x, int y)
  * MAPPITEM. Longitude is bits 8..24 of the first bitfield, latitude
  * bits 8..23 of the next word. A pixel is those values divided by 128.
  */
-static int climate_of_index(Bsa *maps, int index)
+static int climate_of_index(Bsa *maps, int region, int index)
 {
     const BsaRec *rec;
     df_u8 *table;
@@ -223,8 +261,10 @@ static int climate_of_index(Bsa *maps, int index)
     int latitude;
     int x;
     int y;
+    char name[16];
 
-    rec = bsa_find_name(maps, TABLE_NAME);
+    map_file(name, "MAPTABLE.", region);
+    rec = bsa_find_name(maps, name);
     if (!rec) {
         return -1;
     }
@@ -245,7 +285,7 @@ static int climate_of_index(Bsa *maps, int index)
 }
 
 /* Index of the exterior whose LocationNum is `which`, or -1. */
-static int find_exterior(Bsa *maps, int which)
+static int find_exterior(Bsa *maps, int region, int which)
 {
     const BsaRec *names;
     const BsaRec *items;
@@ -254,9 +294,12 @@ static int find_exterior(Bsa *maps, int which)
     df_u32 count;
     df_u32 base;
     df_u32 i;
+    char name[16];
 
-    names = bsa_find_name(maps, NAMES_NAME);
-    items = bsa_find_name(maps, PITEM_NAME);
+    map_file(name, "MAPNAMES.", region);
+    names = bsa_find_name(maps, name);
+    map_file(name, "MAPPITEM.", region);
+    items = bsa_find_name(maps, name);
     if (!names || !items) {
         return -1;
     }
@@ -299,20 +342,20 @@ static int find_exterior(Bsa *maps, int which)
     return -1;
 }
 
-static int read_climate(Bsa *maps, int parent, int self_id)
+static int read_climate(Bsa *maps, int region, int parent, int self_id)
 {
     int which;
     int index;
 
     which = parent ? parent : self_id;
-    index = find_exterior(maps, which);
+    index = find_exterior(maps, region, which);
     if (index < 0 && parent && self_id != parent) {
-        index = find_exterior(maps, self_id);
+        index = find_exterior(maps, region, self_id);
     }
     if (index < 0) {
         return -1;
     }
-    return climate_of_index(maps, index);
+    return climate_of_index(maps, region, index);
 }
 
 int dungeon_load(Dungeon *out)
@@ -332,6 +375,7 @@ int dungeon_load(Dungeon *out)
     out->title[0] = 0;
     out->location_id = 0;
     out->climate = 0;
+    out->outdoor = 0;
     maps = bsa_open(MAP_NAME);
     if (!maps) {
         why(MAP_NAME);
@@ -383,6 +427,601 @@ int dungeon_load(Dungeon *out)
     bsa_close(maps);
     why(HOLD_NAME);
     return 0;
+}
+
+static void region_name(char *dst, int region)
+{
+    map_file(dst, "MAPDITEM.", region);
+}
+
+/* Walk one MAPDITEM. visit returns 0 to stop. Returns 0 if the file is missing. */
+static int each_record(Bsa *maps, int region,
+                       int (*visit)(const df_u8 *rec, df_u32 size, int index, void *user),
+                       void *user)
+{
+    char name[16];
+    const BsaRec *file;
+    df_u8 *bytes;
+    df_u32 count;
+    df_u32 base;
+    df_u32 i;
+
+    region_name(name, region);
+    file = bsa_find_name(maps, name);
+    if (!file) {
+        return 1;
+    }
+    if (file->size < 12) {
+        return 1;
+    }
+    bytes = bsa_read(maps, file);
+    if (!bytes) {
+        why(name);
+        return 0;
+    }
+    count = df_ru32(bytes);
+    if (count < 1 || count > 4096 || file->size < 4u + count * 8u) {
+        return 1;
+    }
+    base = 4u + count * 8u;
+    for (i = 0; i < count; i++) {
+        df_u32 rel;
+        df_u32 pos;
+
+        rel = df_ru32(bytes + 4u + i * 8u);
+        if (rel > file->size - base) {
+            continue;
+        }
+        pos = base + rel;
+        if (!visit(bytes + pos, file->size - pos, (int)i, user)) {
+            return 1;
+        }
+    }
+    return 1;
+}
+
+struct ListWalk {
+    DunRef *out;
+    int cap;
+    int n;
+    int region;
+};
+
+static int list_visit(const df_u8 *rec, df_u32 size, int index, void *user)
+{
+    struct ListWalk *walk;
+    Dungeon dun;
+    df_u32 at;
+    DunRef *row;
+
+    walk = (struct ListWalk *)user;
+    if (!location_at(rec, size, &at)) {
+        return 1;
+    }
+    read_title(dun.title, rec + at + LOC_NAME);
+    if (!read_blocks(rec, size, at, &dun)) {
+        return 1;
+    }
+    if (walk->out && walk->n < walk->cap) {
+        row = &walk->out[walk->n];
+        df_copy(row->name, dun.title, (int)sizeof(row->name));
+        row->region = walk->region;
+        row->index = index;
+        row->nblocks = dun.nblocks;
+        row->location_id = dun.location_id;
+        row->outdoor = 0;
+    }
+    walk->n++;
+    return 1;
+}
+
+int dungeon_list(DunRef *out, int cap)
+{
+    Bsa *maps;
+    struct ListWalk walk;
+    int region;
+
+    why("load failed");
+    maps = bsa_open(MAP_NAME);
+    if (!maps) {
+        why(MAP_NAME);
+        return 0;
+    }
+    walk.out = out;
+    walk.cap = cap;
+    walk.n = 0;
+    for (region = 0; region < DUN_REGIONS; region++) {
+        walk.region = region;
+        if (!each_record(maps, region, list_visit, &walk)) {
+            bsa_close(maps);
+            return 0;
+        }
+    }
+    bsa_close(maps);
+    why("");
+    return walk.n;
+}
+
+struct OneWalk {
+    int want;
+    int region;
+    Dungeon *out;
+    Bsa *maps;
+    int found;
+    int bad;
+};
+
+static int one_visit(const df_u8 *rec, df_u32 size, int index, void *user)
+{
+    struct OneWalk *walk;
+    df_u32 at;
+
+    walk = (struct OneWalk *)user;
+    if (index != walk->want) {
+        return 1;
+    }
+    walk->found = 1;
+    if (!location_at(rec, size, &at)) {
+        why("dungeon record");
+        walk->bad = 1;
+        return 0;
+    }
+    read_title(walk->out->title, rec + at + LOC_NAME);
+    if (!read_blocks(rec, size, at, walk->out)
+        || !apply_climate(rec, at, walk->out, walk->maps, walk->region)) {
+        walk->bad = 1;
+        return 0;
+    }
+    return 0;
+}
+
+int dungeon_load_at(int region, int index, Dungeon *out)
+{
+    Bsa *maps;
+    struct OneWalk walk;
+    char name[16];
+
+    why("load failed");
+    if (!out || region < 0 || region >= DUN_REGIONS || index < 0) {
+        return 0;
+    }
+    out->nblocks = 0;
+    out->title[0] = 0;
+    out->location_id = 0;
+    out->climate = 0;
+    out->outdoor = 0;
+    maps = bsa_open(MAP_NAME);
+    if (!maps) {
+        why(MAP_NAME);
+        return 0;
+    }
+    walk.want = index;
+    walk.region = region;
+    walk.out = out;
+    walk.maps = maps;
+    walk.found = 0;
+    walk.bad = 0;
+    if (!each_record(maps, region, one_visit, &walk)) {
+        bsa_close(maps);
+        return 0;
+    }
+    bsa_close(maps);
+    if (walk.bad || !walk.found || out->nblocks < 1) {
+        if (!walk.bad) {
+            region_name(name, region);
+            why(name);
+        }
+        return 0;
+    }
+    why("");
+    return 1;
+}
+
+/*
+ * RMB block file. Prefixes are the building kind. Letter 1 is the
+ * location's letter when bit 0x10 is set, otherwise A. Letter 2 is
+ * ALMS from the top two bits of (character * 2) masked to a byte.
+ * Temples (index 13 and 14) use a letter plus the number. Everything
+ * else uses a two-digit number, three when the number is 100 or more.
+ */
+static const char *const g_rmb_prefix[45] = {
+    "TVRN", "GENR", "RESI", "WEAP", "ARMR", "ALCH", "BANK", "BOOK",
+    "CLOT", "FURN", "GEMS", "LIBR", "PAWN", "TEMP", "TEMP", "PALA",
+    "FARM", "DUNG", "CAST", "MANR", "SHRI", "RUIN", "SHCK", "GRVE",
+    "FILL", "KRAV", "KDRA", "KOWL", "KMOO", "KCAN", "KFLA", "KHOR",
+    "KROS", "KWHE", "KSCA", "KHAW", "MAGE", "THIE", "DARK", "FIGH",
+    "CUST", "WALL", "MARK", "SHIP", "WITC"
+};
+
+static const char g_letter2[] = "ALMS";
+
+static int emit_char(char *dst, int n, char c)
+{
+    if (n < 0 || n >= DUN_NAME_MAX - 1) {
+        return -1;
+    }
+    dst[n] = c;
+    return n + 1;
+}
+
+static int emit_str(char *dst, int n, const char *s)
+{
+    int i;
+
+    for (i = 0; s[i]; i++) {
+        n = emit_char(dst, n, s[i]);
+        if (n < 0) {
+            return -1;
+        }
+    }
+    return n;
+}
+
+static int emit_dec(char *dst, int n, int value, int width)
+{
+    char tmp[8];
+    int k;
+
+    if (value < 0) {
+        value = 0;
+    }
+    k = 0;
+    do {
+        tmp[k++] = (char)('0' + (value % 10));
+        value /= 10;
+    } while (value && k < (int)sizeof(tmp));
+    while (k < width && k < (int)sizeof(tmp)) {
+        tmp[k++] = '0';
+    }
+    while (k > 0) {
+        n = emit_char(dst, n, tmp[--k]);
+        if (n < 0) {
+            return -1;
+        }
+    }
+    return n;
+}
+
+static int rmb_block_name(char *dst, int letter1, int block_index, int block_number, int block_character)
+{
+    int n;
+    int letter;
+
+    if (block_index < 0 || block_index >= (int)(sizeof(g_rmb_prefix) / sizeof(g_rmb_prefix[0]))) {
+        return 0;
+    }
+    n = emit_str(dst, 0, g_rmb_prefix[block_index]);
+    if ((block_character & 0x10) && letter1 >= 32 && letter1 < 127) {
+        letter = letter1;
+    } else {
+        letter = 'A';
+    }
+    n = emit_char(dst, n, (char)letter);
+    n = emit_char(dst, n, g_letter2[((block_character * 2) & 0xff) >> 6]);
+    if (n < 0) {
+        return 0;
+    }
+    if (block_index == 13 || block_index == 14) {
+        n = emit_char(dst, n, (char)((block_character & 0x0f) + 65));
+        n = emit_dec(dst, n, block_number, 1);
+    } else if (block_number >= 100) {
+        n = emit_dec(dst, n, block_number, 3);
+    } else {
+        n = emit_dec(dst, n, block_number, 2);
+    }
+    n = emit_str(dst, n, ".RMB");
+    if (n < 0) {
+        return 0;
+    }
+    dst[n] = 0;
+    return 1;
+}
+
+static void read_map_name(char *dst, const df_u8 *src)
+{
+    int i;
+
+    for (i = 0; i < 32 && src[i]; i++) {
+        dst[i] = (char)src[i];
+    }
+    dst[i] = 0;
+}
+
+/* Past the doors and the shared header. 0 when the record is short. */
+static int exterior_at(const df_u8 *rec, df_u32 size, df_u32 *ext_out, int *width, int *height, int *letter1)
+{
+    df_u32 doors;
+    df_u32 at;
+    int buildings;
+    df_u32 ext;
+
+    if (size < 4) {
+        return 0;
+    }
+    doors = df_ru32(rec);
+    if (doors > 4096) {
+        return 0;
+    }
+    at = 4u + doors * 6u;
+    if (at > size || size - at < (df_u32)LOC_TAIL + 2u) {
+        return 0;
+    }
+    buildings = (int)df_ru16(rec + at + LOC_TAIL);
+    if (buildings < 0 || buildings > 4096) {
+        return 0;
+    }
+    ext = at + (df_u32)LOC_TAIL + 7u + (df_u32)buildings * 26u;
+    if (ext > size || size - ext < 241u) {
+        return 0;
+    }
+    *width = (int)rec[ext + 40];
+    *height = (int)rec[ext + 41];
+    *letter1 = (int)rec[ext + 46];
+    if (*width < 1 || *height < 1 || (*width * *height) > DUN_MAX_BLOCKS) {
+        return 0;
+    }
+    *ext_out = ext;
+    return 1;
+}
+
+static int fill_rmb_blocks(const df_u8 *rec, df_u32 ext, int width, int height, int letter1, Dungeon *out)
+{
+    int n;
+    int i;
+
+    n = width * height;
+    out->nblocks = 0;
+    for (i = 0; i < n; i++) {
+        int block_index;
+        int block_number;
+        int block_character;
+        DunBlock *blk;
+
+        block_index = (int)rec[ext + 49u + (df_u32)i];
+        block_number = (int)rec[ext + 113u + (df_u32)i];
+        block_character = (int)rec[ext + 177u + (df_u32)i];
+        blk = &out->block[out->nblocks];
+        if (!rmb_block_name(blk->name, letter1, block_index, block_number, block_character)) {
+            why("block name");
+            return 0;
+        }
+        blk->x = i % width;
+        blk->z = i / width;
+        blk->start = 0;
+        out->nblocks++;
+    }
+    return 1;
+}
+
+typedef struct ExtNames {
+    const df_u8 *names;
+    df_u32 name_bytes;
+    int region;
+} ExtNames;
+
+struct ExtWalk {
+    ExtNames src;
+    DunRef *out;
+    int cap;
+    int n;
+};
+
+static int each_exterior(Bsa *maps, int region, ExtNames *src,
+                         int (*visit)(const df_u8 *rec, df_u32 size, int index, void *user),
+                         void *user)
+{
+    char name[16];
+    const BsaRec *names_rec;
+    const BsaRec *items_rec;
+    df_u8 *names;
+    df_u8 *items;
+    df_u32 count;
+    df_u32 base;
+    df_u32 i;
+
+    map_file(name, "MAPNAMES.", region);
+    names_rec = bsa_find_name(maps, name);
+    map_file(name, "MAPPITEM.", region);
+    items_rec = bsa_find_name(maps, name);
+    if (!names_rec || !items_rec || names_rec->size < 4 || items_rec->size < 4) {
+        return 1;
+    }
+    names = bsa_read(maps, names_rec);
+    items = bsa_read(maps, items_rec);
+    if (!names || !items) {
+        why(name);
+        return 0;
+    }
+    count = df_ru32(names);
+    base = count * 4u;
+    if (count < 1 || count > 4096 || items_rec->size < base) {
+        return 1;
+    }
+    if (4u + count * 32u > names_rec->size) {
+        return 1;
+    }
+    src->names = names;
+    src->name_bytes = names_rec->size;
+    src->region = region;
+    for (i = 0; i < count; i++) {
+        df_u32 rel;
+        df_u32 pos;
+
+        rel = df_ru32(items + i * 4u);
+        if (rel > items_rec->size - base) {
+            continue;
+        }
+        pos = base + rel;
+        if (!visit(items + pos, items_rec->size - pos, (int)i, user)) {
+            return 1;
+        }
+    }
+    return 1;
+}
+
+static int ext_list_visit(const df_u8 *rec, df_u32 size, int index, void *user)
+{
+    struct ExtWalk *walk;
+    df_u32 ext;
+    int width;
+    int height;
+    int letter1;
+    DunRef *row;
+
+    walk = (struct ExtWalk *)user;
+    if (!exterior_at(rec, size, &ext, &width, &height, &letter1)) {
+        return 1;
+    }
+    if (walk->out && walk->n < walk->cap) {
+        row = &walk->out[walk->n];
+        if (4u + (df_u32)index * 32u + 32u <= walk->src.name_bytes) {
+            read_map_name(row->name, walk->src.names + 4u + (df_u32)index * 32u);
+        } else {
+            row->name[0] = 0;
+        }
+        row->region = walk->src.region;
+        row->index = index;
+        row->nblocks = width * height;
+        row->location_id = 0;
+        if (size >= 4) {
+            df_u32 doors;
+            df_u32 at;
+
+            doors = df_ru32(rec);
+            at = 4u + doors * 6u;
+            if (doors <= 4096 && at + LOC_ID + 2u <= size) {
+                row->location_id = (int)df_ru16(rec + at + LOC_ID);
+            }
+        }
+        row->outdoor = 1;
+    }
+    walk->n++;
+    return 1;
+}
+
+int exterior_list(DunRef *out, int cap)
+{
+    Bsa *maps;
+    struct ExtWalk walk;
+    int region;
+
+    why("load failed");
+    maps = bsa_open(MAP_NAME);
+    if (!maps) {
+        why(MAP_NAME);
+        return 0;
+    }
+    walk.out = out;
+    walk.cap = cap;
+    walk.n = 0;
+    walk.src.names = 0;
+    walk.src.name_bytes = 0;
+    walk.src.region = 0;
+    for (region = 0; region < DUN_REGIONS; region++) {
+        if (!each_exterior(maps, region, &walk.src, ext_list_visit, &walk)) {
+            bsa_close(maps);
+            return 0;
+        }
+    }
+    bsa_close(maps);
+    why("");
+    return walk.n;
+}
+
+struct ExtOne {
+    ExtNames src;
+    int want;
+    Dungeon *out;
+    Bsa *maps;
+    int found;
+    int bad;
+};
+
+static int ext_one_visit(const df_u8 *rec, df_u32 size, int index, void *user)
+{
+    struct ExtOne *one;
+    df_u32 ext;
+    int width;
+    int height;
+    int letter1;
+    df_u32 doors;
+    df_u32 at;
+
+    one = (struct ExtOne *)user;
+    if (index != one->want) {
+        return 1;
+    }
+    one->found = 1;
+    if (!exterior_at(rec, size, &ext, &width, &height, &letter1)) {
+        why("exterior record");
+        one->bad = 1;
+        return 0;
+    }
+    if (4u + (df_u32)index * 32u + 32u > one->src.name_bytes || !one->src.names) {
+        why("map name");
+        one->bad = 1;
+        return 0;
+    }
+    read_map_name(one->out->title, one->src.names + 4u + (df_u32)index * 32u);
+    if (!fill_rmb_blocks(rec, ext, width, height, letter1, one->out)) {
+        one->bad = 1;
+        return 0;
+    }
+    doors = df_ru32(rec);
+    at = 4u + doors * 6u;
+    one->out->location_id = (int)df_ru16(rec + at + LOC_ID);
+    one->out->climate = climate_of_index(one->maps, one->src.region, index);
+    if (climate_family(one->out->climate) < 0) {
+        why("climate");
+        one->bad = 1;
+        return 0;
+    }
+    one->out->outdoor = 1;
+    return 0;
+}
+
+int exterior_load_at(int region, int index, Dungeon *out)
+{
+    Bsa *maps;
+    struct ExtOne one;
+    char name[16];
+
+    why("load failed");
+    if (!out || region < 0 || region >= DUN_REGIONS || index < 0) {
+        return 0;
+    }
+    out->nblocks = 0;
+    out->title[0] = 0;
+    out->location_id = 0;
+    out->climate = 0;
+    out->outdoor = 0;
+    maps = bsa_open(MAP_NAME);
+    if (!maps) {
+        why(MAP_NAME);
+        return 0;
+    }
+    one.src.names = 0;
+    one.src.name_bytes = 0;
+    one.src.region = region;
+    one.want = index;
+    one.out = out;
+    one.maps = maps;
+    one.found = 0;
+    one.bad = 0;
+    if (!each_exterior(maps, region, &one.src, ext_one_visit, &one)) {
+        bsa_close(maps);
+        return 0;
+    }
+    bsa_close(maps);
+    if (one.bad || !one.found || out->nblocks < 1) {
+        if (!one.bad) {
+            map_file(name, "MAPPITEM.", region);
+            why(name);
+        }
+        return 0;
+    }
+    why("");
+    return 1;
 }
 
 const char *dungeon_error(void)

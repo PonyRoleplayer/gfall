@@ -9,13 +9,14 @@
 **Required tools:** `i686-w64-mingw32-gcc` (or gcc-mingw-w64-i686-win32), `i686-w64-mingw32-objdump`, `xorriso`, and native `gcc` (for hostcheck). These are **not present** in this environment; build artifacts already exist in `build/`.
 
 **Primary targets:**
-- `make` — Runs `check`, builds `build/spintri.iso`, runs `gfall-check`, builds `build/gfall.iso`.
+- `make` — Runs `check`, builds `build/spintri.iso`, runs `gfall-check`, `renderfall-check`, and `levelfall-check`, builds `build/gfall.iso`.
 - `make hostcheck` — **Only test.** Native build + run (`build/hostcheck`) against `daggerfall/DAGGER/ARENA2`. Writes `build/tex0.ppm`. Does not touch Glide or Windows.
 - `make gfall-check` — Cross-builds `GFALL.EXE` and validates: PE32, 80386 GUI, Win95/NT4 subsystem/version, only `KERNEL32.dll` and `USER32.dll` imports, `LoadLibraryA`/`GetProcAddress` present, **no `glide2x.dll` import**, and rejects SSE/P6-specific instructions (cmov/fcmov/fucomi/fcomi/movaps/movss/addps/xmm).
+- `make renderfall-check` / `make levelfall-check` — Same validator for `RENDERFALL.EXE` and `LEVELFALL.EXE`.
 - `make check` — Same validator for `SPINTRI.EXE`.
 - `make clean` — Removes `build/`.
 
-**Execution (target):** Mount the ISO and run `D:\SPINTRI.EXE` or `D:\GFALL.EXE`. **Do not copy glide2x.dll onto discs.** Escape quits.
+**Execution (target):** Mount the ISO and run `D:\SPINTRI.EXE`, `D:\GFALL.EXE`, `D:\RENDERFALL.EXE`, or `D:\LEVELFALL.EXE`. **Do not copy glide2x.dll onto discs.** Escape quits.
 
 ## Codebase layout
 - `game/daggerfall/main.c` — `GFALL.EXE` entry. Same relationship to the engine as `tools/renderfall/main.c`: it links engine and dagger code and brings `WinMainCRTStartup`. Loads Privateer's Hold and hands a `Level` to `gfx.h`.
@@ -25,8 +26,11 @@
 - `src/engine/scene/` — placed meshes, billboards, transforms, visibility query (everything is visible, in storage order).
 - `src/engine/gfx/` — `gfx.h` is the call the game makes. `glide.c` loads glide2x.dll at runtime (plain/`@N`/`_name@N`), `texcache.c` (2MB TMU), `camera.c`, `draw.c`.
 - `src/engine/ui/` — HUD and text. Text draws a glyph sheet the game installed, or a built-in 8x8 face.
-- `src/game/dagger/` — BSA, ARCH3D, RDB, COL, TEXTURE.###, FONT0000.FNT, Privateer's Hold in `dungeon.c`/`world.c` (`MAPDITEM.017`: `S0000999.RDB` at the origin tile plus four `B` border blocks, camera on editor marker 10), and `player.c` (WASD/Q/E, mouse look).
-- `tools/hostcheck.c` — runs `check_engine.c` then `check_dagger.c`. Engine tests cover transforms, camera, visibility, loaders, VFS. Dagger tests assert the hold (models, sprites, start marker), texture POT/square tiling, and write `build/tex0.ppm`. **Update the dagger test when world/loading changes.**
+- `src/game/dagger/` — BSA, ARCH3D, RDB, RMB, COL, TEXTURE.###, FONT0000.FNT, Privateer's Hold in `dungeon.c`/`world.c` (`MAPDITEM.017`: `S0000999.RDB` at the origin tile plus four `B` border blocks, camera on editor marker 10), outdoor locations in `rmb.c`, and `player.c` (WASD/Q/E, mouse look).
+- `tools/levelfall/main.c` — `LEVELFALL.EXE`. Indexes every indoor (`MAPDITEM`) and outdoor (`MAPPITEM`) place at startup, filters by name, and flies through one. Same window and Glide path as renderfall.
+- `tools/hostcheck.c` — runs `check_engine.c` then `check_dagger.c`. Engine tests cover transforms, camera, visibility, loaders, VFS. Dagger tests assert the hold (models, sprites, start marker), the dungeon list (4232 records, Privateer's Hold in region 17), the outdoor list (15251, Daggerfall region 17 block `WALLAA02.RMB`, one farmstead loads), texture POT/square tiling, and write `build/tex0.ppm`. **Update the dagger test when world/loading changes.**
+- `docs/dungeons.md` — dungeon record layout, climate, and which loader to call. Read this before editing `dungeon.c` or `world.c`.
+- `docs/viewers.md` — RENDERFALL and LEVELFALL list UI, keys, and the temp heap. Read this before editing either viewer.
 - `daggerfall/DAGGER/ARENA2/` — Game data used at runtime/for tests (baked into ISOs).
 - `third_party/glide2/include/` — Glide 2 headers.
 

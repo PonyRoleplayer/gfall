@@ -15,6 +15,7 @@
 static HINSTANCE g_inst;
 static HWND g_hwnd;
 static int g_class;
+static int g_closed;
 static int g_gui;
 static int g_blank;
 static int g_cursor_hidden;
@@ -133,7 +134,11 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         break;
     case WM_CLOSE:
+        /* The title-bar cross. Returning 0 used to swallow it: DefWindowProc
+           is what posts WM_QUIT, and the list loop never saw a posted close. */
+        g_closed = 1;
         input_request_quit();
+        PostQuitMessage(0);
         return 0;
     case WM_DESTROY:
         PostQuitMessage(0);
@@ -340,6 +345,11 @@ void win_pump(void)
         TranslateMessage(&msg);
         DispatchMessageA(&msg);
     }
+}
+
+int win_closed(void)
+{
+    return g_closed;
 }
 
 void *win_hwnd(void)

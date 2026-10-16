@@ -65,6 +65,23 @@ void input_clear_quit(void)
     g_quit = 0;
 }
 
+void input_look(int *dx, int *dy)
+{
+    if (dx) {
+        *dx = g_look_dx;
+    }
+    if (dy) {
+        *dy = g_look_dy;
+    }
+    g_look_dx = 0;
+    g_look_dy = 0;
+}
+
+int input_quit_requested(void)
+{
+    return g_quit;
+}
+
 void input_begin(void *hwnd)
 {
     RECT rc;

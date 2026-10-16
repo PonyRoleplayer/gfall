@@ -35,6 +35,23 @@
 
 static void (*g_extra)(void);
 static void (*g_under)(void);
+static float g_far = DF_FAR;
+
+void draw_set_far(float far)
+{
+    if (far < DF_NEAR * 2.0f) {
+        far = DF_NEAR * 2.0f;
+    }
+    if (far > DF_FAR_MAX) {
+        far = DF_FAR_MAX;
+    }
+    g_far = far;
+}
+
+float draw_far(void)
+{
+    return g_far;
+}
 
 void draw_set_extra(void (*fn)(void))
 {
@@ -58,7 +75,7 @@ static float plane_side(int plane, const Vtx *v)
     case 0:
         return v->z - DF_NEAR;
     case 1:
-        return DF_FAR - v->z;
+        return g_far - v->z;
     case 2:
         return v->z * CLIP_X + v->x;
     case 3:

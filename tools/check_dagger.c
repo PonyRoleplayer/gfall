@@ -10,6 +10,7 @@
 #include "engine/assets/vfs.h"
 #include "engine/core/mem.h"
 #include "game/dagger/arch3d.h"
+#include "game/dagger/dungeon.h"
 #include "game/dagger/player.h"
 #include "game/dagger/world.h"
 
@@ -252,6 +253,66 @@ static const Flat *find_flat(const World *world, int file, int image)
     return 0;
 }
 
+/* This ARENA2 tree. MAPDITEM.002 and the other empty region files are four bytes. */
+#define LEVEL_COUNT 4232
+
+static DunRef g_region61;
+static int g_have_region61;
+
+static void check_levels(void)
+{
+    DunRef *rows;
+    Dungeon from_list;
+    Dungeon hold;
+    int n;
+    int i;
+    int found;
+    int blocks;
+
+    g_have_region61 = 0;
+    rows = (DunRef *)mem_alloc((df_u32)8192 * (df_u32)sizeof(DunRef));
+    check_expect(rows != 0, "dungeon list allocation");
+    if (!rows) {
+        return;
+    }
+    n = dungeon_list(rows, 8192);
+    printf("dungeons %d\n", n);
+    check_expect(n == LEVEL_COUNT, "dungeon count");
+    found = -1;
+    for (i = 0; i < n && i < 8192; i++) {
+        if (rows[i].region == 61) {
+            g_region61 = rows[i];
+            g_have_region61 = 1;
+        }
+        if (rows[i].region == 17 && df_eq(rows[i].name, "Privateer's Hold")) {
+            found = i;
+        }
+    }
+    check_expect(found >= 0 && rows[found].nblocks == 5 && rows[found].location_id == 50050
+           && rows[found].outdoor == 0,
+           "Privateer's Hold is not region 17 record with 5 blocks");
+    if (found < 0) {
+        return;
+    }
+    check_expect(dungeon_load_at(rows[found].region, rows[found].index, &from_list),
+           dungeon_error());
+    check_expect(dungeon_load(&hold), dungeon_error());
+    check_expect(from_list.nblocks == hold.nblocks && from_list.location_id == hold.location_id
+           && from_list.climate == hold.climate,
+           "listed hold does not match dungeon_load");
+    blocks = from_list.nblocks;
+    if (hold.nblocks < blocks) {
+        blocks = hold.nblocks;
+    }
+    for (i = 0; i < blocks; i++) {
+        check_expect(df_eq(from_list.block[i].name, hold.block[i].name)
+               && from_list.block[i].x == hold.block[i].x
+               && from_list.block[i].z == hold.block[i].z
+               && from_list.block[i].start == hold.block[i].start,
+               "hold block list mismatch");
+    }
+}
+
 int check_dagger(const char *root_in)
 {
     World *world;
@@ -269,6 +330,7 @@ int check_dagger(const char *root_in)
     mem_init();
     vfs_mount(root);
     check_fly();
+    check_levels();
 
     world = world_load();
     if (!world) {
@@ -388,6 +450,93 @@ int check_dagger(const char *root_in)
         check_expect(write_ppm(shot, world_palette(world), "build/tex0.ppm"), "ppm write failed");
     }
     check_view(world);
+
+    {
+        Dungeon one;
+        World *other;
+        float sx, sy, sz, syaw, spitch;
+        float minx, miny, minz, maxx, maxy, maxz;
+
+        check_expect(g_have_region61, "region 61 has no dungeon");
+        if (g_have_region61 && dungeon_load_at(g_region61.region, g_region61.index, &one)) {
+            printf("other %s blocks %d\n", one.title, one.nblocks);
+            other = world_load_dungeon(&one);
+            if (!other) {
+                fprintf(stderr, "fail: %s\n", world_error());
+            }
+            check_expect(other && world_model_count(other) > 0, "region 61 did not load");
+            if (other) {
+                world_start(other, &sx, &sy, &sz, &syaw, &spitch);
+                world_bounds(other, &minx, &miny, &minz, &maxx, &maxy, &maxz);
+                check_expect(sx >= minx && sx <= maxx && sy >= miny && sy <= maxy
+                       && sz >= minz && sz <= maxz,
+                       "region 61 start is outside the dungeon");
+            }
+        } else if (g_have_region61) {
+            check_expect(0, dungeon_error());
+        }
+    }
+
+    {
+        DunRef *places;
+        Dungeon ext;
+        World *town;
+        int n;
+        int i;
+        int dagger;
+        int farm;
+        float sx, sy, sz, syaw, spitch;
+        float minx, miny, minz, maxx, maxy, maxz;
+
+        places = (DunRef *)mem_alloc((df_u32)16384 * (df_u32)sizeof(DunRef));
+        check_expect(places != 0, "outdoor list allocation");
+        if (places) {
+            n = exterior_list(places, 16384);
+            printf("outdoors %d\n", n);
+            check_expect(n == 15251, "outdoor count");
+            dagger = -1;
+            farm = -1;
+            for (i = 0; i < n && i < 16384; i++) {
+                if (places[i].region != 17) {
+                    continue;
+                }
+                if (df_eq(places[i].name, "Daggerfall")) {
+                    dagger = i;
+                }
+                if (df_eq(places[i].name, "The Ashwing Farmstead")) {
+                    farm = i;
+                }
+            }
+            check_expect(dagger >= 0 && places[dagger].nblocks == 64 && places[dagger].outdoor,
+                   "Daggerfall is not an 8 by 8 outdoor");
+            if (dagger >= 0 && exterior_load_at(places[dagger].region, places[dagger].index, &ext)) {
+                check_expect(ext.nblocks == 64 && ext.outdoor
+                       && df_eq(ext.block[0].name, "WALLAA02.RMB")
+                       && ext.block[0].x == 0 && ext.block[0].z == 0,
+                       "Daggerfall block 0 is not WALLAA02.RMB");
+            } else if (dagger >= 0) {
+                check_expect(0, dungeon_error());
+            }
+            check_expect(farm >= 0 && places[farm].nblocks == 1, "Ashwing Farmstead missing");
+            if (farm >= 0 && exterior_load_at(places[farm].region, places[farm].index, &ext)) {
+                printf("outdoor %s blocks %d\n", ext.title, ext.nblocks);
+                town = world_load_dungeon(&ext);
+                if (!town) {
+                    fprintf(stderr, "fail: %s\n", world_error());
+                }
+                check_expect(town && world_model_count(town) > 0, "outdoor did not load");
+                if (town) {
+                    world_start(town, &sx, &sy, &sz, &syaw, &spitch);
+                    world_bounds(town, &minx, &miny, &minz, &maxx, &maxy, &maxz);
+                    check_expect(sx >= minx && sx <= maxx && sz >= minz && sz <= maxz
+                           && sy >= maxy,
+                           "outdoor start is not above the place");
+                }
+            } else if (farm >= 0) {
+                check_expect(0, dungeon_error());
+            }
+        }
+    }
 
     return check_failed() ? 1 : 0;
 }

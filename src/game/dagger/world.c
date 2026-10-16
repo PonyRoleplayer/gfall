@@ -4,6 +4,7 @@
 #include "game/dagger/climate.h"
 #include "game/dagger/dungeon.h"
 #include "game/dagger/rdb.h"
+#include "game/dagger/rmb.h"
 #include "game/dagger/texture.h"
 #include "engine/assets/loader.h"
 #include "engine/assets/vfs.h"
@@ -18,14 +19,18 @@
  */
 #define PAL_NAME "ART_PAL.COL"
 #define TILE 2048
+#define RMB_TILE 4096
+/* Family + 2 is the ground archive: 002, 102, 302, 402. */
+#define TEX_SET_GROUND 2
 #define START_RECORD 10
 #define MAX_IMAGES 512
 #define MAX_FILES 96
-#define MAX_MODELS 4096
-#define MAX_FLATS 4096
+/* A city is one mesh per RMB block plus its buildings. 4096 fills up. */
+#define MAX_MODELS 8192
+#define MAX_FLATS 8192
 
 static char g_why[96];
-static char g_title[32];
+static char g_title[40];
 
 static void why(const char *text)
 {
@@ -78,6 +83,8 @@ struct World {
     float start_x, start_y, start_z;
     float start_yaw, start_pitch;
     int have_start;
+    float fall_x, fall_y, fall_z;
+    int have_fall;
     /* Climate family, and the five archives for keys 119, 120, 122, 123, 124. */
     int tex_family;
     int tex_arch[5];
@@ -169,14 +176,14 @@ static int place_image(World *world, int file, int image, int cutout, int *slot_
     return 1;
 }
 
-static void shift_block(Block *block, int gx, int gz)
+static void shift_block(Block *block, int gx, int gz, int tile)
 {
     float dx;
     float dz;
     int i;
 
-    dx = (float)(gx * TILE);
-    dz = (float)(gz * TILE);
+    dx = (float)(gx * tile);
+    dz = (float)(gz * tile);
     for (i = 0; i < block->ninst; i++) {
         block->inst[i].x += dx;
         block->inst[i].z += dz;
@@ -225,6 +232,18 @@ static void note_start(World *world, const Block *block)
             return;
         }
     }
+}
+
+/* Entrance block, used when marker 10 is not in this dungeon. */
+static void note_fall(World *world, const Block *block)
+{
+    if (world->have_fall || block->nmarker < 1) {
+        return;
+    }
+    world->fall_x = block->marker[0].x;
+    world->fall_y = block->marker[0].y;
+    world->fall_z = block->marker[0].z;
+    world->have_fall = 1;
 }
 
 static void measure(World *world)
@@ -410,21 +429,21 @@ static int paint(World *world)
     return 1;
 }
 
-World *world_load(void)
+static World *assemble(const Dungeon *hold, int require_start)
 {
     World *world;
-    Dungeon hold;
     Bsa *arch;
     Bsa *blocks;
     int b;
+    int tile;
 
     why("load failed");
     dagger_bind_loaders();
-    if (!dungeon_load(&hold)) {
-        why(dungeon_error());
+    if (!hold || hold->nblocks < 1) {
+        why("dungeon");
         return 0;
     }
-    df_copy(g_title, hold.title, (int)sizeof(g_title));
+    df_copy(g_title, hold->title, (int)sizeof(g_title));
     world = (World *)mem_alloc(sizeof(World));
     if (!world) {
         why("out of memory");
@@ -437,6 +456,7 @@ World *world_load(void)
         why("out of memory");
         return 0;
     }
+    tile = hold->outdoor ? RMB_TILE : TILE;
     arch = bsa_open("ARCH3D.BSA");
     if (!arch) {
         why("ARCH3D.BSA");
@@ -448,35 +468,43 @@ World *world_load(void)
         bsa_close(arch);
         return 0;
     }
-    for (b = 0; b < hold.nblocks; b++) {
+    for (b = 0; b < hold->nblocks; b++) {
         const BsaRec *rec;
         df_u8 *rdb_bytes;
         Block *block;
 
-        rec = bsa_find_name(blocks, hold.block[b].name);
+        rec = bsa_find_name(blocks, hold->block[b].name);
         if (!rec) {
-            why(hold.block[b].name);
+            why(hold->block[b].name);
             bsa_close(blocks);
             bsa_close(arch);
             return 0;
         }
         rdb_bytes = bsa_read(blocks, rec);
         if (!rdb_bytes) {
-            why(hold.block[b].name);
+            why(hold->block[b].name);
             bsa_close(blocks);
             bsa_close(arch);
             return 0;
         }
-        block = rdb_load(rdb_bytes, rec->size, arch);
+        if (hold->outdoor) {
+            block = rmb_load(rdb_bytes, rec->size, arch,
+                             climate_family(hold->climate) + TEX_SET_GROUND);
+        } else {
+            block = rdb_load(rdb_bytes, rec->size, arch);
+        }
         if (!block) {
-            why(hold.block[b].name);
+            why(hold->block[b].name);
             bsa_close(blocks);
             bsa_close(arch);
             return 0;
         }
-        shift_block(block, hold.block[b].x, hold.block[b].z);
-        if (hold.block[b].start) {
+        shift_block(block, hold->block[b].x, hold->block[b].z, tile);
+        if (hold->block[b].start) {
             note_start(world, block);
+            if (!world->have_start) {
+                note_fall(world, block);
+            }
         }
         if (!append_block(world, block)) {
             bsa_close(blocks);
@@ -491,10 +519,20 @@ World *world_load(void)
         return 0;
     }
     if (!world->have_start) {
-        why("start marker");
-        return 0;
+        if (require_start) {
+            why("start marker");
+            return 0;
+        }
+        if (world->have_fall) {
+            world->start_x = world->fall_x;
+            world->start_y = world->fall_y;
+            world->start_z = world->fall_z;
+            world->start_yaw = 0.0f;
+            world->start_pitch = 0.0f;
+            world->have_start = 1;
+        }
     }
-    if (!build_tex_table(world, &hold)) {
+    if (!build_tex_table(world, hold)) {
         return 0;
     }
     if (!paint(world)) {
@@ -504,6 +542,23 @@ World *world_load(void)
     if (world->maxx <= world->minx || world->maxy <= world->miny) {
         why("dungeon has no extent");
         return 0;
+    }
+    if (!world->have_start) {
+        world->start_x = (world->minx + world->maxx) * 0.5f;
+        world->start_y = (world->miny + world->maxy) * 0.5f;
+        world->start_z = (world->minz + world->maxz) * 0.5f;
+        world->start_yaw = 0.0f;
+        world->start_pitch = 0.0f;
+        world->have_start = 1;
+    }
+    /* Above the roofs, looking down, so a town opens as a map rather than a wall. */
+    if (hold->outdoor) {
+        world->start_x = (world->minx + world->maxx) * 0.5f;
+        world->start_y = world->maxy + 256.0f;
+        world->start_z = (world->minz + world->maxz) * 0.5f;
+        world->start_yaw = 0.0f;
+        world->start_pitch = -0.6f;
+        world->have_start = 1;
     }
     {
         df_u8 *pal_bytes;
@@ -517,6 +572,22 @@ World *world_load(void)
     }
     why("");
     return world;
+}
+
+World *world_load(void)
+{
+    Dungeon hold;
+
+    if (!dungeon_load(&hold)) {
+        why(dungeon_error());
+        return 0;
+    }
+    return assemble(&hold, 1);
+}
+
+World *world_load_dungeon(const Dungeon *dungeon)
+{
+    return assemble(dungeon, 0);
 }
 
 const char *world_error(void)

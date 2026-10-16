@@ -11,6 +11,8 @@
 int win_startup(void *instance, const char *suffix, const char *title, int gui);
 void win_shutdown(void);
 void win_pump(void);
+/* 1 after the title bar cross (or Alt+F4). Stays set; Esc does not set it. */
+int win_closed(void);
 void *win_hwnd(void);
 void win_fail(const char *text);
 

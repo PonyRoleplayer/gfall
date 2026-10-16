@@ -112,6 +112,9 @@ static struct {
 
 static int g_inited;
 static int g_opened;
+static int g_fog = 1;
+static float g_fog_near = DF_FOG_NEAR;
+static float g_fog_far = DF_FOG_FAR;
 static const char *g_why = "glide failed";
 static GrColor_t g_clear_color;
 static float g_alpha = 255.0f;
@@ -275,6 +278,8 @@ const char *glide_error(void)
     return g_why;
 }
 
+static void fog_upload(void);
+
 int glide_open(void *hwnd)
 {
     GrHwConfiguration hw;
@@ -333,35 +338,10 @@ int glide_open(void *hwnd)
 
     /*
      * Table entry i is eye-space w = 2^(3 + i/4) / (8 - (i % 4)).
-     * That is the Glide 2 fog-table spacing. Density is 0 at DF_FOG_NEAR
-     * and solid at DF_FOG_FAR. The colour matches the clear.
+     * That is the Glide 2 fog-table spacing. Density is 0 at g_fog_near
+     * and solid at g_fog_far. The colour matches the clear.
      */
-    {
-        GrFog_t table[GR_FOG_TABLE_SIZE];
-        int i;
-        float span;
-
-        span = DF_FOG_FAR - DF_FOG_NEAR;
-        for (i = 0; i < GR_FOG_TABLE_SIZE; i++) {
-            int q;
-            float w;
-            float density;
-
-            q = i >> 2;
-            w = (float)(8u << q) / (float)(8 - (i & 3));
-            density = (w - DF_FOG_NEAR) / span;
-            if (density < 0.0f) {
-                density = 0.0f;
-            }
-            if (density > 1.0f) {
-                density = 1.0f;
-            }
-            table[i] = (GrFog_t)(density * 255.0f);
-        }
-        glide.fog_color(g_clear_color);
-        glide.fog_table(table);
-        glide.fog_mode(GR_FOG_WITH_TABLE);
-    }
+    fog_upload();
     glide_sprite_alpha(0);
 
     g_addr = glide.tex_min(GR_TMU0);
@@ -410,6 +390,66 @@ void glide_background(int r, int g, int b)
     if (g_opened && glide.fog_color) {
         glide.fog_color(g_clear_color);
     }
+}
+
+static void fog_upload(void)
+{
+    GrFog_t table[GR_FOG_TABLE_SIZE];
+    int i;
+    float span;
+
+    if (!g_opened || !glide.fog_table || !glide.fog_mode) {
+        return;
+    }
+    span = g_fog_far - g_fog_near;
+    if (span < 1.0f) {
+        span = 1.0f;
+    }
+    for (i = 0; i < GR_FOG_TABLE_SIZE; i++) {
+        int q;
+        float w;
+        float density;
+
+        q = i >> 2;
+        w = (float)(8u << q) / (float)(8 - (i & 3));
+        density = (w - g_fog_near) / span;
+        if (density < 0.0f) {
+            density = 0.0f;
+        }
+        if (density > 1.0f) {
+            density = 1.0f;
+        }
+        table[i] = (GrFog_t)(density * 255.0f);
+    }
+    glide.fog_color(g_clear_color);
+    glide.fog_table(table);
+    glide.fog_mode(g_fog ? GR_FOG_WITH_TABLE : GR_FOG_DISABLE);
+}
+
+void glide_fog(int on)
+{
+    g_fog = on ? 1 : 0;
+    if (g_opened && glide.fog_mode) {
+        glide.fog_mode(g_fog ? GR_FOG_WITH_TABLE : GR_FOG_DISABLE);
+    }
+}
+
+void glide_fog_range(float near_z, float far_z)
+{
+    if (near_z < 1.0f) {
+        near_z = 1.0f;
+    }
+    if (far_z < near_z + 1.0f) {
+        far_z = near_z + 1.0f;
+    }
+    g_fog_near = near_z;
+    g_fog_far = far_z;
+    fog_upload();
+}
+
+int glide_fog_on(void)
+{
+    return g_fog;
 }
 
 void glide_clear(void)

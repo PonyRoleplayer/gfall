@@ -18,6 +18,11 @@ void input_begin(void *hwnd);
 void input_end(void);
 void input_read(Input *out);
 
+/* Mouse deltas since the last take. Does not read the keyboard.
+   LEVELFALL uses this so the arrow keys can translate instead of look. */
+void input_look(int *dx, int *dy);
+int input_quit_requested(void);
+
 /* Client coordinates. The window calls this from WM_MOUSEMOVE. */
 void input_on_mouse(int x, int y);
 void input_request_quit(void);

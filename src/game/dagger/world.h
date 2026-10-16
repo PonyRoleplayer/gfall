@@ -2,10 +2,18 @@
 #define DF_WORLD_H
 
 #include "engine/assets/level.h"
+#include "game/dagger/dungeon.h"
 
 typedef struct World World;
 
 World *world_load(void);
+
+/* One already-parsed place. Marker 10 is the start when that block
+   has it. Otherwise the first marker on the entrance block, otherwise
+   the center of the bounds. outdoor places are RMB blocks on 4096-unit
+   tiles and start above the bounds. The game path stays world_load,
+   which still requires marker 10. */
+World *world_load_dungeon(const Dungeon *dungeon);
 const char *world_error(void);
 const char *world_block_name(void);
 

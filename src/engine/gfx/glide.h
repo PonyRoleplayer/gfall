@@ -18,6 +18,14 @@ const char *glide_error(void);
 void glide_clear(void);
 /* Clear and fog colour. 0,0,0 until a viewer sets its own. */
 void glide_background(int r, int g, int b);
+/*
+ * Distance fog. 1 uses the table built at open. 0 is GR_FOG_DISABLE.
+ * Default is on. Safe before glide_open; the next open obeys it.
+ */
+void glide_fog(int on);
+int glide_fog_on(void);
+/* Eye-space distances where the table is clear and where it is solid. */
+void glide_fog_range(float near_z, float far_z);
 void glide_swap(void);
 void glide_triangle(const DrawVert *a, const DrawVert *b, const DrawVert *c);
 void glide_line(const DrawVert *a, const DrawVert *b);

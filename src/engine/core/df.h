@@ -19,10 +19,12 @@ typedef unsigned char df_u8;
 #define DF_VIEW_H 480
 #define DF_FOCAL 400.0f
 #define DF_NEAR 4.0f
-/* Fog is solid at DF_FOG_FAR. The clip is a little farther, so the cut is black. */
+/* Fog is solid at DF_FOG_FAR. The default clip is a little farther. */
 #define DF_FOG_NEAR 280.0f
 #define DF_FOG_FAR 1100.0f
 #define DF_FAR 1400.0f
+/* gfx_set_far will not go past this. 65535/z is still above 1 here. */
+#define DF_FAR_MAX 16384.0f
 #define DF_TAU 6.28318530718f
 
 static df_u16 df_ru16(const df_u8 *p)

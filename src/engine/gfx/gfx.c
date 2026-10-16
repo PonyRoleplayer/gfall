@@ -53,3 +53,28 @@ void gfx_set_under(void (*fn)(void))
 {
     draw_set_under(fn);
 }
+
+void gfx_set_fog(int on)
+{
+    glide_fog(on);
+}
+
+int gfx_fog(void)
+{
+    return glide_fog_on();
+}
+
+void gfx_set_far(float far)
+{
+    float fog_far;
+
+    draw_set_far(far);
+    /* Keep fog solid a little before the clip, same ratio as 1100/1400. */
+    fog_far = draw_far() * (DF_FOG_FAR / DF_FAR);
+    glide_fog_range(DF_FOG_NEAR, fog_far);
+}
+
+float gfx_far(void)
+{
+    return draw_far();
+}

@@ -90,10 +90,11 @@ static df_u8 g_cutout[MAX_TEX];
 static df_u16 g_key_file[MAX_TEX];
 static df_u16 g_key_image[MAX_TEX];
 
-static int g_bg_r = 48;
-static int g_bg_g = 48;
-static int g_bg_b = 48;
+static int g_bg_r = 128;
+static int g_bg_g = 128;
+static int g_bg_b = 128;
 static int g_grid = 1;
+static int g_fog = 1;
 static const Camera *g_frame_cam;
 static float g_grid_cx, g_grid_cy, g_grid_cz, g_grid_r;
 
@@ -1066,6 +1067,7 @@ static void draw_help(void)
         "right mouse or w s: zoom",
         "r: reset",
         "g: grid",
+        "f: fog",
         "f1: hide this",
         "f2: stats",
         "f3: fps",
@@ -1262,6 +1264,7 @@ static void run_view(const Level *level, float cx, float cy, float cz, float sca
     int reset_was;
     int help_was;
     int grid_was;
+    int fog_was;
     int stats_was;
     DWORD tick;
 
@@ -1272,6 +1275,7 @@ static void run_view(const Level *level, float cx, float cy, float cz, float sca
     reset_was = key_down('R');
     help_was = key_down(VK_F1);
     grid_was = key_down('G');
+    fog_was = key_down('F');
     stats_was = key_down(VK_F2);
     g_help = 0;
     g_left = 0;
@@ -1294,6 +1298,7 @@ static void run_view(const Level *level, float cx, float cy, float cz, float sca
         int reset_now;
         int help_now;
         int grid_now;
+        int fog_now;
         int stats_now;
         float step;
 
@@ -1320,6 +1325,13 @@ static void run_view(const Level *level, float cx, float cy, float cz, float sca
             log_line(g_grid ? "grid on" : "grid off");
         }
         grid_was = grid_now;
+        fog_now = key_down('F');
+        if (fog_now && !fog_was) {
+            g_fog = g_fog ? 0 : 1;
+            gfx_set_fog(g_fog);
+            log_line(g_fog ? "fog on" : "fog off");
+        }
+        fog_was = fog_now;
         stats_now = key_down(VK_F2);
         if (stats_now && !stats_was) {
             g_stats = g_stats ? 0 : 1;
@@ -1581,11 +1593,37 @@ static int key_is(const char *s, const char *key, const char **rest)
         }
         i++;
     }
-    if (s[i] != 0 && s[i] != ' ' && s[i] != '\t' && s[i] != '\r') {
-        return 0;
+    const char *after;
+
+    s += i;
+    after = s;
+    s = skip_space(s);
+    if (*s == '=') {
+        *rest = skip_space(s + 1);
+        return 1;
     }
-    *rest = s + i;
-    return 1;
+    /* A file from before key=value still loads. */
+    if (s != after) {
+        *rest = s;
+        return 1;
+    }
+    return 0;
+}
+
+static int next_number(const char **ps)
+{
+    const char *s;
+
+    s = skip_space(*ps);
+    if (*s == ',') {
+        *ps = s + 1;
+        return 1;
+    }
+    if (s != *ps) {
+        *ps = s;
+        return 1;
+    }
+    return 0;
 }
 
 static int read_int(const char **ps, int *out)
@@ -1625,7 +1663,8 @@ static void cfg_line(const char *s)
         return;
     }
     if (key_is(s, "background", &rest)) {
-        if (!read_int(&rest, &r) || !read_int(&rest, &g) || !read_int(&rest, &b)) {
+        if (!read_int(&rest, &r) || !next_number(&rest) || !read_int(&rest, &g)
+            || !next_number(&rest) || !read_int(&rest, &b)) {
             return;
         }
         if (r > 255 || g > 255 || b > 255) {
@@ -1642,6 +1681,14 @@ static void cfg_line(const char *s)
             return;
         }
         g_grid = 0;
+        return;
+    }
+    if (key_is(s, "fog", &rest)) {
+        if (!read_int(&rest, &v) || v != 0) {
+            g_fog = 1;
+            return;
+        }
+        g_fog = 0;
     }
 }
 
@@ -1652,27 +1699,34 @@ static void cfg_log(void)
 
     n = 0;
     line[0] = 0;
-    add_str(line, &n, (int)sizeof(line), "background ");
+    add_str(line, &n, (int)sizeof(line), "background=");
     add_u(line, &n, (int)sizeof(line), (df_u32)g_bg_r);
-    add_str(line, &n, (int)sizeof(line), " ");
+    add_str(line, &n, (int)sizeof(line), ",");
     add_u(line, &n, (int)sizeof(line), (df_u32)g_bg_g);
-    add_str(line, &n, (int)sizeof(line), " ");
+    add_str(line, &n, (int)sizeof(line), ",");
     add_u(line, &n, (int)sizeof(line), (df_u32)g_bg_b);
     log_line(line);
     n = 0;
     line[0] = 0;
-    add_str(line, &n, (int)sizeof(line), "grid ");
+    add_str(line, &n, (int)sizeof(line), "grid=");
     add_u(line, &n, (int)sizeof(line), (df_u32)g_grid);
+    log_line(line);
+    n = 0;
+    line[0] = 0;
+    add_str(line, &n, (int)sizeof(line), "fog=");
+    add_u(line, &n, (int)sizeof(line), (df_u32)g_fog);
     log_line(line);
 }
 
 static void cfg_load(void)
 {
     static const char text[] =
-        "# background R G B, each 0 to 255\r\n"
-        "background 48 48 48\r\n"
-        "# grid 1 draws scale planes, 0 hides them\r\n"
-        "grid 1\r\n";
+        "# background=R,G,B, each 0 to 255\r\n"
+        "background=128,128,128\r\n"
+        "# grid=1 draws scale planes, grid=0 hides them\r\n"
+        "grid=1\r\n"
+        "# fog=1 uses the distance table, fog=0 turns it off\r\n"
+        "fog=1\r\n";
     char path[260];
     char buf[2048];
     HANDLE file;
@@ -1681,13 +1735,15 @@ static void cfg_load(void)
     int n;
     char *p;
 
-    g_bg_r = 48;
-    g_bg_g = 48;
-    g_bg_b = 48;
+    g_bg_r = 128;
+    g_bg_g = 128;
+    g_bg_b = 128;
     g_grid = 1;
+    g_fog = 1;
     if (!beside_exe(path, (int)sizeof(path), "renderfall.cfg")) {
         log_line("could not name renderfall.cfg");
         glide_background(g_bg_r, g_bg_g, g_bg_b);
+        gfx_set_fog(g_fog);
         cfg_log();
         return;
     }
@@ -1733,6 +1789,7 @@ static void cfg_load(void)
         }
     }
     glide_background(g_bg_r, g_bg_g, g_bg_b);
+    gfx_set_fog(g_fog);
     cfg_log();
 }
 
@@ -1810,7 +1867,7 @@ static int renderfall_main(void *instance)
     add_u(line, &len, (int)sizeof(line), (df_u32)n);
     log_line(line);
     log_line("list: Enter or double-click opens, click a column to sort, Esc quits");
-    log_line("view: arrows or left mouse pan, W/S zoom, R resets, G grid, F1 help, F2 stats, F3 fps, Esc returns");
+    log_line("view: arrows or left mouse pan, W/S zoom, R resets, G grid, F fog, F1 help, F2 stats, F3 fps, Esc returns");
     if (n < 1) {
         win_fail("ARCH3D.BSA has no records.");
     } else {
