@@ -6,7 +6,7 @@ There is no `mem_free`. Bytes live until `mem_temp_end` destroys the temp heap (
 
 ## Why a city died on the heap
 
-Daggerfall is region 17, index 1231, location id 50026, an 8 by 8 grid. That is 64 RMB names and 45 distinct files. It places about 1045 models, but only 202 different ARCH3D ids. The old loader did three wasteful things:
+Daggerfall is region 17, index 1231, location id 50026, an 8 by 8 grid. That is 64 RMB names and 45 distinct files. It places about 3500 instances once the ground is split into 512-unit patches, and about 202 different ARCH3D ids. The old loader did three wasteful things:
 
 - The mesh cache lived inside one `rmb_load` and was thrown away with the block. Those 202 models were parsed 580 times. Each parse kept the raw ARCH3D record and a triangle buffer of `file_size / 8` slots. One copy of that buffer was about 10MB. The repeats were about 25MB.
 - Each block reserved 2048 model slots and 2048 sprite slots, then `append_block` copied the few that were used and left the arrays behind. Across 64 blocks that was about 10MB of empty slots.
@@ -40,10 +40,12 @@ The image table is still 256 (`TEX_SLOTS`). Daggerfall names about 235 pictures.
 
 `texcache_upload` now sends each picture at 16 by 16, or at its real size when that is already 16 or smaller. Glide maps every texture across s,t in 0..256, so the face UVs do not change. The 16 by 16 is a uniform shrink of the same square. A place whose full squares fit in the bytes left after that upload and the font is marked sharp everywhere (`g_all`). Agajnu is in that set. A city is not.
 
-`glide_mark` runs at the end of `gfx_prepare`, after the font. `texcache_detail` runs at the start of each frame. It groups models and sprites into 512-unit bands out to 8192. The nearest band is taken first. A model is near if the band was still inside the budget when it was visited. Its records are uploaded at full size into the memory after the mark. `glide_rewind` drops those uploads and resets the bump pointer when the camera crosses into another 512-unit cell, then the new set is sent. The card cannot free a hole. The 16 by 16 copies and the font stay where they were.
+`glide_mark` runs at the end of `gfx_prepare`, after the font. `texcache_detail` runs at the start of each frame. It groups models and sprites into 512-unit bands out to 8192. The nearest band is taken first. A model is near if the band was still inside the budget when it was visited. Its records are uploaded at full size into the memory after the mark. The card cannot free a hole. Maps that are still wanted stay where they are when the camera crosses into the next 512-unit cell. Only new ones are sent, and at most 32KB of them in a single frame. A rewind happens when a new map does not fit among the stale ones, and that frame downloads just the one map that needed the room. The 16 by 16 copies and the font stay where they were.
 
 A far face binds the 16 by 16 even when a near face uses the same record. The triangle still stores one slot number. The draw call passes whether that instance is near. Do not write a second slot into the mesh. Two slots per record would blow the 256-image table.
 
 `GPU_SLOTS` is 768. That array only tracks uploads. The hardware limit is the 2MB. The extra entries are the near set on top of the 16 by 16 set and the font.
 
-Distance is to the instance origin. Ground is one mesh per block with its origin at the block corner, so a block you are standing in is near when the corner is inside 8192. Beyond 8192, or once the card is full, the face stays the small copy until you move closer.
+Distance is to the instance origin. A ground patch is 512 units and its origin is the block corner, so a patch reads as near when that corner is inside 8192, not when the camera is standing on the dirt. Beyond 8192, or once the card is full, the face stays the small copy until you move closer.
+
+`paint` records each mesh's unique texture slots in `slot_keys`. The band walk reads that list. It does not scan the triangles again when the camera changes cells.

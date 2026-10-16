@@ -38,9 +38,35 @@ typedef struct Flat {
  * Storage order is submission order.
  */
 
+/*
+ * World box of one instance. Filled once the placement is final.
+ * The center is cx,cy,cz. ex,ey,ez are the half-size.
+ */
+
+typedef struct Bound {
+    float cx, cy, cz;
+    float ex, ey, ez;
+} Bound;
+
+/*
+ * One loaded block. first is an index into models[] and bounds[].
+ * The box is the union of those models, so a block the camera cannot
+ * see is skipped before any of its instances are read.
+ */
+
+typedef struct Span {
+    int first;
+    int count;
+    float cx, cy, cz;
+    float ex, ey, ez;
+} Span;
+
 typedef struct Scene {
     const Instance *models;
+    const Bound *bounds;
     int nmodels;
+    const Span *spans;
+    int nspans;
     const Flat *sprites;
     int nsprites;
 } Scene;
@@ -48,6 +74,22 @@ typedef struct Scene {
 void instance_set_rotation(Instance *in, float rx, float ry, float rz);
 void instance_point(const Instance *in, float lx, float ly, float lz,
                     float *x, float *y, float *z);
+
+/* Local box from the triangles. A second call with the same count is free. */
+void mesh_measure(Mesh *mesh);
+
+/* World box. 0 when the mesh has no triangles. */
+int instance_world_box(const Instance *in, Bound *out);
+
+/*
+ * 1 when the plane faces the camera, or the normal is degenerate.
+ * nx,ny,nz and lx,ly,lz are in mesh space. The normal uses the same
+ * winding as the triangle. A camera on the front side sees dot < 0
+ * after both are transformed into view space.
+ */
+int instance_faces(const Instance *in, const Camera *cam, const Basis *basis,
+                   float nx, float ny, float nz,
+                   float lx, float ly, float lz);
 
 /*
  * How far a frame can see. clip_far is the card's far clip, in world
@@ -62,11 +104,13 @@ void scene_set_limits(float clip_far, int fog);
 /*
  * Visibility. Writes storage indices into out, in storage order, and
  * returns how many. A null camera lists every entity, so a test can
- * ignore the frustum. With a camera, a model or sprite is dropped when
- * its box lies wholly outside the view: behind the near plane, past
- * the fog or the far clip, or past a screen edge. A model with no
- * triangles is omitted. A count above cap is truncated, so pass a cap
- * of at least nmodels or nsprites.
+ * ignore the frustum. With a camera, a block span is tested first, then
+ * each model's baked box. A model or sprite is dropped when its box
+ * lies wholly outside the view: behind the near plane, past the fog or
+ * the far clip, or past a screen edge. Without baked bounds, the box is
+ * measured from the mesh and a model with no triangles is omitted.
+ * A count above cap is truncated, so pass a cap of at least nmodels
+ * or nsprites.
  */
 
 int scene_visible_models(const Scene *scene, const Camera *cam, int *out, int cap);

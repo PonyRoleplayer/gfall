@@ -13,8 +13,10 @@
  *
  * A building sits at (X, 0, 4096 - Z) and its model at (X, -Y, Z) in
  * that frame. Props use (X, -Y - 4, Z + 4096). Ground is a 16 by 16
- * grid of 256-unit quads. Tile row 0 is the high-Z side, matching the
- * 4096 - Z flip, so a building and the dirt under it share one axis.
+ * grid of 256-unit quads, emitted as 512-unit patches so the cull can
+ * drop the ones behind the camera. Tile row 0 is the high-Z side,
+ * matching the 4096 - Z flip, so a building and the dirt under it
+ * share one axis.
  */
 
 #define FLD_BYTES 6776
@@ -22,6 +24,9 @@
 #define FLD_GROUND 1739
 #define RMB_SIDE 4096.0f
 #define GROUND_TILE 256.0f
+/* Two cells on a side. 512 units is inside the solid fog, so a patch behind the camera drops out. */
+#define PATCH_TILES 2
+#define PATCH_N 8
 #define GROUND_TEX 64.0f
 #define PROP_DROP 4.0f
 #define ROT_STEP (DF_TAU / 2048.0f)
@@ -207,47 +212,76 @@ static void ground_tri(Tri *tri, float x0, float z0, float x1, float z1, float x
     tri->slot = 0xffff;
 }
 
-static int ground_quads(const df_u8 *tiles, int count)
+static int cell_live(const df_u8 *tiles, int count, int tx, int ty)
 {
-    int i;
+    if (tx < 0 || ty < 0 || tx > 15 || ty > 15) {
+        return 0;
+    }
+    return ((int)tiles[ty * 16 + tx] & 0x3f) < count;
+}
+
+static int patch_quads(const df_u8 *tiles, int count, int px, int py)
+{
     int n;
+    int ty;
+    int tx;
 
     n = 0;
-    for (i = 0; i < 256; i++) {
-        if ((int)(tiles[i] & 0x3f) < count) {
-            n++;
+    for (ty = py * PATCH_TILES; ty < py * PATCH_TILES + PATCH_TILES; ty++) {
+        for (tx = px * PATCH_TILES; tx < px * PATCH_TILES + PATCH_TILES; tx++) {
+            if (cell_live(tiles, count, tx, ty)) {
+                n++;
+            }
         }
     }
     return n;
 }
 
-static void add_ground(Block *block, const df_u8 *tiles, int file)
+static int count_patches(const df_u8 *tiles, int count)
+{
+    int n;
+    int py;
+    int px;
+
+    if (count < 1) {
+        return 0;
+    }
+    n = 0;
+    for (py = 0; py < PATCH_N; py++) {
+        for (px = 0; px < PATCH_N; px++) {
+            if (patch_quads(tiles, count, px, py) > 0) {
+                n++;
+            }
+        }
+    }
+    return n;
+}
+
+static void add_patch(Block *block, const df_u8 *tiles, int file, int count,
+                      int px, int py)
 {
     Mesh *mesh;
     Tri *tris;
-    int count;
+    Face *face;
     int quads;
     int ty;
     int n;
 
-    count = texture_record_count(file);
-    if (count < 1 || block->ninst >= block->inst_cap) {
-        return;
-    }
-    quads = ground_quads(tiles, count);
-    if (quads < 1) {
+    quads = patch_quads(tiles, count, px, py);
+    if (quads < 1 || block->ninst >= block->inst_cap) {
         return;
     }
     tris = (Tri *)mem_alloc((df_u32)quads * 2u * (df_u32)sizeof(Tri));
     mesh = (Mesh *)mem_alloc(sizeof(Mesh));
-    if (!tris || !mesh) {
+    face = (Face *)mem_alloc(sizeof(Face));
+    if (!tris || !mesh || !face) {
         return;
     }
     n = 0;
-    for (ty = 0; ty < 16; ty++) {
+    for (ty = py * PATCH_TILES; ty < py * PATCH_TILES + PATCH_TILES; ty++) {
         int tx;
 
-        for (tx = 0; tx < 16; tx++) {
+        for (tx = px * PATCH_TILES; tx < px * PATCH_TILES + PATCH_TILES; tx++) {
             int bits;
             int record;
             float x0;
@@ -255,11 +289,11 @@ static void add_ground(Block *block, const df_u8 *tiles, int file)
             float x1;
             float z1;
 
-            bits = (int)tiles[ty * 16 + tx];
-            record = bits & 0x3f;
-            if (record >= count) {
+            if (!cell_live(tiles, count, tx, ty)) {
                 continue;
             }
+            bits = (int)tiles[ty * 16 + tx];
+            record = bits & 0x3f;
             x0 = (float)tx * GROUND_TILE;
             z0 = (float)(15 - ty) * GROUND_TILE;
             x1 = x0 + GROUND_TILE;
@@ -278,6 +312,15 @@ static void add_ground(Block *block, const df_u8 *tiles, int file)
     mesh->id = 0;
     mesh->tris = tris;
     mesh->ntris = n;
+    face->nx = 0.0f;
+    face->ny = 1.0f;
+    face->nz = 0.0f;
+    face->first = 0;
+    face->ntris = n;
+    mesh->faces = face;
+    mesh->nfaces = 1;
+    mesh->face_cap = 1;
+    mesh_measure(mesh);
     block->inst[block->ninst].mesh = mesh;
     block->inst[block->ninst].x = 0.0f;
     block->inst[block->ninst].y = 0.0f;
@@ -285,6 +328,23 @@ static void add_ground(Block *block, const df_u8 *tiles, int file)
     instance_set_rotation(&block->inst[block->ninst], 0.0f, 0.0f, 0.0f);
     block->ninst++;
     block->ntris += n;
+}
+
+static void add_ground(Block *block, const df_u8 *tiles, int file)
+{
+    int count;
+    int py;
+    int px;
+
+    count = texture_record_count(file);
+    if (count < 1) {
+        return;
+    }
+    for (py = 0; py < PATCH_N; py++) {
+        for (px = 0; px < PATCH_N; px++) {
+            add_patch(block, tiles, file, count, px, py);
+        }
+    }
 }
 
 static void tally_exterior(const df_u8 *rmb, df_u32 end, df_u32 at, int *ninst, int *nflat)
@@ -350,9 +410,7 @@ Block *rmb_load(const df_u8 *rmb, df_u32 size, Bsa *arch, int ground_file,
         int records;
 
         records = texture_record_count(ground_file);
-        if (records > 0 && ground_quads(rmb + FLD_GROUND, records) > 0) {
-            want_inst++;
-        }
+        want_inst += count_patches(rmb + FLD_GROUND, records);
     }
     pos = (df_u32)FLD_BYTES;
     for (i = 0; i < nsub; i++) {

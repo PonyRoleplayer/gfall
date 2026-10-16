@@ -7,8 +7,8 @@ struct Camera;
 /*
  * Every image is uploaded at 16 by 16. texcache_detail sends the real
  * square for models and sprites near the camera, into the rest of the
- * 2MB. A far face keeps the small copy even when a near face shares
- * the record.
+ * 2MB, a slice per frame. A far face keeps the small copy even when a
+ * near face shares the record.
  */
 
 int texcache_upload(const struct Level *level);

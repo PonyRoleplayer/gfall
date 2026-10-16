@@ -349,6 +349,53 @@ int check_dagger(const char *root_in)
     printf("uv failures %d\n", arch3d_uv_failures());
     check_expect(models == 365, "model count");
     check_expect(tris == 9075, "triangle count");
+    {
+        Level level;
+        Camera cam;
+        Basis basis;
+        int order[512];
+        int vis;
+        int front;
+        int faces;
+        int mi;
+        float x, y, z, yaw, pitch;
+
+        world_as_level(world, &level);
+        world_start(world, &x, &y, &z, &yaw, &pitch);
+        camera_set(&cam, x, y, z, yaw, pitch);
+        vis = scene_visible_models(&level.scene, &cam, order, 512);
+        check_expect(vis > 0 && vis < models, "hold cull kept every model");
+        camera_basis(&cam, &basis);
+        front = 0;
+        faces = 0;
+        for (mi = 0; mi < models; mi++) {
+            const Instance *in;
+            int f;
+
+            in = world_instance(world, mi);
+            if (!in || !in->mesh || !in->mesh->faces) {
+                continue;
+            }
+            for (f = 0; f < in->mesh->nfaces; f++) {
+                const Face *face;
+                const Tri *tri;
+
+                face = &in->mesh->faces[f];
+                if (face->ntris < 2 || face->first < 0) {
+                    continue;
+                }
+                tri = &in->mesh->tris[face->first];
+                faces++;
+                if (instance_faces(in, &cam, &basis,
+                                   face->nx, face->ny, face->nz,
+                                   tri->x[0], tri->y[0], tri->z[0])) {
+                    front++;
+                }
+            }
+        }
+        check_expect(faces > 0 && front > 0 && front < faces,
+                     "hold faces did not split into front and back");
+    }
     check_expect(world_flat_count(world) == 130, "flat count");
     check_expect(world_editor_count(world) == 56, "editor marker count");
     check_expect(images > 0, "no textures");

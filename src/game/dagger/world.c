@@ -25,7 +25,7 @@
 #define START_RECORD 10
 #define MAX_IMAGES 512
 #define MAX_FILES 96
-/* A city is one mesh per RMB block plus its buildings. 4096 fills up. */
+/* Buildings plus one ground patch per 512-unit square. 8192 is the cap. */
 #define MAX_MODELS 8192
 #define MAX_FLATS 8192
 
@@ -65,7 +65,10 @@ static void why_tex(int file, int image)
 
 struct World {
     Instance *inst;
+    Bound *bounds;
+    Span *spans;
     int ninst;
+    int nspans;
     int ntris;
     Flat *flat;
     int nflat;
@@ -198,18 +201,90 @@ static void shift_block(Block *block, int gx, int gz, int tile)
     }
 }
 
+static void cover_span(World *world, int first, int count)
+{
+    Span *sp;
+    float minx, miny, minz, maxx, maxy, maxz;
+    int i;
+
+    if (count < 1 || world->nspans >= DUN_MAX_BLOCKS) {
+        return;
+    }
+    minx = world->bounds[first].cx - world->bounds[first].ex;
+    miny = world->bounds[first].cy - world->bounds[first].ey;
+    minz = world->bounds[first].cz - world->bounds[first].ez;
+    maxx = world->bounds[first].cx + world->bounds[first].ex;
+    maxy = world->bounds[first].cy + world->bounds[first].ey;
+    maxz = world->bounds[first].cz + world->bounds[first].ez;
+    for (i = 1; i < count; i++) {
+        Bound *b;
+        float x0, y0, z0, x1, y1, z1;
+
+        b = &world->bounds[first + i];
+        x0 = b->cx - b->ex;
+        y0 = b->cy - b->ey;
+        z0 = b->cz - b->ez;
+        x1 = b->cx + b->ex;
+        y1 = b->cy + b->ey;
+        z1 = b->cz + b->ez;
+        if (x0 < minx) {
+            minx = x0;
+        }
+        if (y0 < miny) {
+            miny = y0;
+        }
+        if (z0 < minz) {
+            minz = z0;
+        }
+        if (x1 > maxx) {
+            maxx = x1;
+        }
+        if (y1 > maxy) {
+            maxy = y1;
+        }
+        if (z1 > maxz) {
+            maxz = z1;
+        }
+    }
+    sp = &world->spans[world->nspans];
+    sp->first = first;
+    sp->count = count;
+    sp->cx = (minx + maxx) * 0.5f;
+    sp->cy = (miny + maxy) * 0.5f;
+    sp->cz = (minz + maxz) * 0.5f;
+    sp->ex = (maxx - minx) * 0.5f;
+    sp->ey = (maxy - miny) * 0.5f;
+    sp->ez = (maxz - minz) * 0.5f;
+    world->nspans++;
+}
+
 static int append_block(World *world, Block *block)
 {
     int i;
+    int first;
 
     if (world->ninst + block->ninst > MAX_MODELS || world->nflat + block->nflat > MAX_FLATS) {
         why("dungeon is too large");
         return 0;
     }
+    first = world->ninst;
     for (i = 0; i < block->ninst; i++) {
-        world->inst[world->ninst++] = block->inst[i];
+        int at;
+
+        at = world->ninst;
+        world->inst[at] = block->inst[i];
+        if (!instance_world_box(&world->inst[at], &world->bounds[at])) {
+            world->bounds[at].cx = world->inst[at].x;
+            world->bounds[at].cy = world->inst[at].y;
+            world->bounds[at].cz = world->inst[at].z;
+            world->bounds[at].ex = 0.0f;
+            world->bounds[at].ey = 0.0f;
+            world->bounds[at].ez = 0.0f;
+        }
+        world->ninst++;
         world->ntris += block->inst[i].mesh->ntris;
     }
+    cover_span(world, first, block->ninst);
     for (i = 0; i < block->nflat; i++) {
         world->flat[world->nflat++] = block->flat[i];
     }
@@ -369,6 +444,44 @@ static int face_archive(const World *world, int archive, int record)
     return archive;
 }
 
+/* Unique texture slots, so a camera step does not rescan every triangle. */
+static void note_keys(Mesh *mesh)
+{
+    df_u8 seen[256];
+    df_u16 tmp[256];
+    int t;
+    int n;
+
+    if (!mesh || mesh->have_keys) {
+        return;
+    }
+    n = 0;
+    for (t = 0; t < 256; t++) {
+        seen[t] = 0;
+    }
+    for (t = 0; t < mesh->ntris; t++) {
+        int slot;
+
+        slot = (int)mesh->tris[t].slot;
+        if (slot < 0 || slot >= 256 || seen[slot]) {
+            continue;
+        }
+        seen[slot] = 1;
+        tmp[n++] = (df_u16)slot;
+    }
+    if (n > 0) {
+        mesh->slot_keys = (df_u16 *)mem_alloc((df_u32)n * (df_u32)sizeof(df_u16));
+        if (!mesh->slot_keys) {
+            return;
+        }
+        for (t = 0; t < n; t++) {
+            mesh->slot_keys[t] = tmp[t];
+        }
+    }
+    mesh->nslot_keys = n;
+    mesh->have_keys = 1;
+}
+
 static int paint(World *world)
 {
     int i;
@@ -390,6 +503,9 @@ static int paint(World *world)
             }
             tri->slot = (df_u16)slot;
         }
+    }
+    for (i = 0; i < world->ninst; i++) {
+        note_keys(world->inst[i].mesh);
     }
     {
         int f;
@@ -459,8 +575,10 @@ static World *assemble(const Dungeon *hold, int require_start)
     }
     mem_zero(world, sizeof(World));
     world->inst = (Instance *)mem_alloc(MAX_MODELS * (df_u32)sizeof(Instance));
+    world->bounds = (Bound *)mem_alloc(MAX_MODELS * (df_u32)sizeof(Bound));
+    world->spans = (Span *)mem_alloc(DUN_MAX_BLOCKS * (df_u32)sizeof(Span));
     world->flat = (Flat *)mem_alloc(MAX_FLATS * (df_u32)sizeof(Flat));
-    if (!world->inst || !world->flat) {
+    if (!world->inst || !world->bounds || !world->spans || !world->flat) {
         why("out of memory");
         return 0;
     }
@@ -720,7 +838,10 @@ void world_as_level(const World *world, Level *level)
     level->nimages = 0;
     level->palette = 0;
     level->scene.models = 0;
+    level->scene.bounds = 0;
     level->scene.nmodels = 0;
+    level->scene.spans = 0;
+    level->scene.nspans = 0;
     level->scene.sprites = 0;
     level->scene.nsprites = 0;
     if (!world) {
@@ -731,7 +852,10 @@ void world_as_level(const World *world, Level *level)
     level->nimages = world->nimages;
     level->palette = &world->pal;
     level->scene.models = world->inst;
+    level->scene.bounds = world->bounds;
     level->scene.nmodels = world->ninst;
+    level->scene.spans = world->spans;
+    level->scene.nspans = world->nspans;
     level->scene.sprites = world->flat;
     level->scene.nsprites = world->nflat;
 }

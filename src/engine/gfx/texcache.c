@@ -9,6 +9,13 @@
 #define NEAR_MAX 8192
 #define BAND 512
 #define BANDS 16
+/*
+ * Card bytes of full-size maps sent in one frame. A cell crossing used
+ * to rewind and download the whole near set, which stalled an otherwise
+ * 60 Hz flight through a city. One or two maps a frame stays inside
+ * the frame. The rest stay the 16 by 16 copy until the next frames.
+ */
+#define UPLOAD_BUDGET 32768u
 
 static df_u32 g_addr[TEX_SLOTS];
 static df_u32 g_sharp[TEX_SLOTS];
@@ -27,6 +34,8 @@ static int g_bound_slot = -1;
 static int g_bound_sharp;
 static int g_cell_ok;
 static int g_all;
+static int g_fit_known;
+static int g_pending;
 static int g_cx, g_cy, g_cz;
 static df_u8 g_model_near[NEAR_MAX];
 static df_u8 g_flat_near[NEAR_MAX];
@@ -75,6 +84,8 @@ int texcache_upload(const Level *level)
     g_bound_slot = -1;
     g_cell_ok = 0;
     g_all = 0;
+    g_fit_known = 0;
+    g_pending = 0;
     g_n = 0;
     g_nmodels = 0;
     g_nflats = 0;
@@ -172,25 +183,36 @@ static int take_mesh(const Mesh *mesh, df_u32 *used, df_u32 room)
 {
     int t;
     int ok;
-    df_u8 seen[TEX_SLOTS];
 
     if (!mesh) {
         return 1;
     }
     ok = 1;
-    for (t = 0; t < TEX_SLOTS; t++) {
-        seen[t] = 0;
-    }
-    for (t = 0; t < mesh->ntris; t++) {
-        int slot;
-
-        slot = (int)mesh->tris[t].slot;
-        if (slot < 0 || slot >= g_n || seen[slot]) {
-            continue;
+    if (mesh->have_keys) {
+        for (t = 0; t < mesh->nslot_keys; t++) {
+            if (!take((int)mesh->slot_keys[t], used, room)) {
+                ok = 0;
+            }
         }
-        seen[slot] = 1;
-        if (!take(slot, used, room)) {
-            ok = 0;
+        return ok;
+    }
+    {
+        df_u8 seen[TEX_SLOTS];
+
+        for (t = 0; t < TEX_SLOTS; t++) {
+            seen[t] = 0;
+        }
+        for (t = 0; t < mesh->ntris; t++) {
+            int slot;
+
+            slot = (int)mesh->tris[t].slot;
+            if (slot < 0 || slot >= g_n || seen[slot]) {
+                continue;
+            }
+            seen[slot] = 1;
+            if (!take(slot, used, room)) {
+                ok = 0;
+            }
         }
     }
     return ok;
@@ -285,33 +307,84 @@ static void choose_near(const Camera *cam, const Level *level, df_u32 room)
     }
 }
 
-static void upload_near(void)
+/* The bump cannot free a hole. Drop every full-size map and start over. */
+static void drop_sharp(void)
 {
     int i;
 
     glide_rewind();
     g_bound_slot = -1;
     for (i = 0; i < g_n; i++) {
-        const Image *img;
-
         if (g_small[i]) {
             g_sharp[i] = g_addr[i];
             g_sharp_live[i] = g_live[i];
-            continue;
+        } else {
+            g_sharp_live[i] = 0;
         }
-        g_sharp_live[i] = 0;
-        if (!g_want[i] || !g_live[i]) {
-            continue;
-        }
-        img = g_img[i];
-        if (!img) {
-            continue;
-        }
-        if (!glide_upload(img->pot, img->pot_w, img->pot_h, g_cut[i],
-                          g_pr, g_pg, g_pb, &g_sharp[i])) {
-            break;
-        }
+    }
+}
+
+/* 1 on success. *rewound is set when the bump was reset to make room. */
+static int upload_slot(int i, int *rewound)
+{
+    const Image *img;
+
+    img = g_img[i];
+    if (!img) {
+        return 0;
+    }
+    if (glide_upload(img->pot, img->pot_w, img->pot_h, g_cut[i],
+                     g_pr, g_pg, g_pb, &g_sharp[i])) {
         g_sharp_live[i] = 1;
+        return 1;
+    }
+    /*
+     * Stale maps from the path behind are still occupying the bump.
+     * Rewind once. Callers stop after this map so the frame does not
+     * refill the whole near set.
+     */
+    drop_sharp();
+    *rewound = 1;
+    if (!glide_upload(img->pot, img->pot_w, img->pot_h, g_cut[i],
+                      g_pr, g_pg, g_pb, &g_sharp[i])) {
+        return 0;
+    }
+    g_sharp_live[i] = 1;
+    return 1;
+}
+
+static void upload_some(void)
+{
+    int i;
+    df_u32 sent;
+    int rewound;
+
+    sent = 0;
+    rewound = 0;
+    g_pending = 0;
+    for (i = 0; i < g_n; i++) {
+        df_u32 nbytes;
+
+        if (g_small[i] || !g_want[i] || !g_live[i] || g_sharp_live[i]) {
+            continue;
+        }
+        if (sent >= UPLOAD_BUDGET) {
+            g_pending = 1;
+            return;
+        }
+        nbytes = g_bytes[i];
+        if (nbytes < 1u) {
+            nbytes = 1u;
+        }
+        if (!upload_slot(i, &rewound)) {
+            g_pending = 1;
+            return;
+        }
+        sent += nbytes;
+        if (rewound || sent >= UPLOAD_BUDGET) {
+            g_pending = 1;
+            return;
+        }
     }
 }
 
@@ -362,27 +435,28 @@ void texcache_detail(const Camera *cam, const Level *level)
     int cx;
     int cy;
     int cz;
+    int moved;
     df_u32 room;
 
     if (!cam || !level || g_n < 1) {
         return;
     }
-    if (g_all && g_cell_ok) {
-        return;
-    }
     cx = (int)(cam->x / (float)BAND);
     cy = (int)(cam->y / (float)BAND);
     cz = (int)(cam->z / (float)BAND);
-    if (g_cell_ok && cx == g_cx && cy == g_cy && cz == g_cz) {
+    moved = !g_cell_ok || cx != g_cx || cy != g_cy || cz != g_cz;
+    if (!moved && !g_pending) {
         return;
     }
     room = glide_detail_room();
-    if (everything_fits(level, room)) {
-        g_all = 1;
-    } else {
+    if (!g_fit_known) {
+        g_all = everything_fits(level, room);
+        g_fit_known = 1;
+    }
+    if (moved && !g_all) {
         choose_near(cam, level, room);
     }
-    upload_near();
+    upload_some();
     g_cx = cx;
     g_cy = cy;
     g_cz = cz;

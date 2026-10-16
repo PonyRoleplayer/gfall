@@ -24,14 +24,15 @@
 - `src/engine/platform/` — `win32.c` (`_WinMainCRTStartup`, content dir beside the exe), `input.c`, `fs.c` (POSIX if `DF_HOST`, Win32 otherwise).
 - `src/engine/assets/` — VFS over `fs`, loader registry, engine formats: mesh, texture, palette, level.
 - `src/engine/scene/` — placed meshes, billboards, transforms, visibility. Models and sprites whose box misses the view, or sits past the fog or the far clip, are not drawn. See `docs/culling.md`.
-- `src/engine/gfx/` — `gfx.h` is the call the game makes. `glide.c` loads glide2x.dll at runtime (plain/`@N`/`_name@N`), `texcache.c` (2MB TMU), `camera.c`, `draw.c`.
+- `src/engine/gfx/` — `gfx.h` is the call the game makes. `glide.c` loads glide2x.dll at runtime (plain/`@N`/`_name@N`), `texcache.c` (2MB TMU, sharp maps dripped in 32KB slices), `camera.c`, `draw.c`.
 - `src/engine/ui/` — HUD and text. Text draws a glyph sheet the game installed, or a built-in 8x8 face.
 - `src/game/dagger/` — BSA, ARCH3D, RDB, RMB, COL, TEXTURE.###, FONT0000.FNT, Privateer's Hold in `dungeon.c`/`world.c` (`MAPDITEM.017`: `S0000999.RDB` at the origin tile plus four `B` border blocks, camera on editor marker 10), outdoor locations in `rmb.c`, and `player.c` (WASD/Q/E, mouse look).
 - `tools/levelfall/main.c` — `LEVELFALL.EXE`. Indexes every indoor (`MAPDITEM`) and outdoor (`MAPPITEM`) place at startup, filters by name, and flies through one. Same window and Glide path as renderfall.
 - `tools/hostcheck.c` — runs `check_engine.c` then `check_dagger.c`. Engine tests cover transforms, camera, visibility, loaders, VFS. Dagger tests assert the hold (models, sprites, start marker), the dungeon list (4232 records, Privateer's Hold in region 17), the outdoor list (15251, Daggerfall region 17 block `WALLAA02.RMB`, one farmstead loads), texture POT/square tiling, and write `build/tex0.ppm`. **Update the dagger test when world/loading changes.**
 - `docs/dungeons.md` — dungeon record layout, climate, and which loader to call. Read this before editing `dungeon.c` or `world.c`.
 - `docs/viewers.md` — RENDERFALL and LEVELFALL list UI, keys, and the temp heap. Read this before editing either viewer.
-- `docs/culling.md` — frustum and fog cull in `scene_visible_models` / `scene_visible_sprites`. Read this before editing `scene.c`, the far clip, or fog.
+- `docs/culling.md` — block spans, baked boxes, and ARCH3D face cull. Read this before editing `scene.c`, the far clip, or fog.
+- `docs/memory.md` — heap, the shared mesh cache, and the 2MB texture card. Read this before editing `world.c`, `texcache.c`, or `glide.c` uploads.
 - `daggerfall/DAGGER/ARENA2/` — Game data used at runtime/for tests (baked into ISOs).
 - `third_party/glide2/include/` — Glide 2 headers.
 
@@ -50,6 +51,7 @@
 - **Don't commit generated:** `build/` is build output. Keep `daggerfall/DAGGER/ARENA2` as-is (game data). `.gitignore` is standard C/MingW.
 - **Minimal changes:** This aims for period accuracy. Avoid modern C or features that would trip the check scripts. If you modify `src/game/dagger/world.c` (hardcoded geometry/data counts), update `tools/check_dagger.c` accordingly.
 - **Style:** gnu90 C. Comment non-obvious intent, format quirks, and constraints — this codebase is vibe-coded and has to be reviewable. Follow existing naming (snake_case). Keep Windows `WINVER`/`_WIN32_WINNT`/`WIN32_LEAN_AND_MEAN` in Win32/Glide files.
+- **Document the change:** Behavior a later edit has to preserve goes in `docs/` before the commit, and the layout list above gains a line if the doc is new. Update the existing note (`docs/culling.md`, `docs/memory.md`, `docs/dungeons.md`, `docs/viewers.md`) when the change is one of those. A commit that changes what the frame draws, what is loaded, or a budget the next change must respect, without that note, is incomplete.
 
 ## Debugging
 - `build/*.dump` from objdump (PE info, imports) are produced during checks. Useful to inspect.

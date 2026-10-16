@@ -24,18 +24,26 @@ A plane rejects the box when the nearest corner is outside: `dot(normal, center)
 
 Fog is solid at `clip_far * (DF_FOG_FAR / DF_FAR)`, the same fraction `gfx_set_far` uploads (1100 out of 1400). The clear colour is the fog colour, so a box entirely past that distance is invisible. The distance is never closer than `DF_FOG_NEAR + 1`, because `glide_fog_range` will not put solid fog in front of the fog start. With fog off, the limit is the far clip itself. A box that only straddles the limit is kept, and the clipper cuts it.
 
-## The box
+## Blocks, then models
 
-Mesh bounds live on the `Mesh`: center `cx,cy,cz`, half-size `ex,ey,ez`. `bound_n` is the triangle count that produced them. `0` means not measured. The first cull scans the vertices once. A shared mesh (one ARCH3D id, many instances) is scanned once. Rebuilding the triangle list with a new count measures it again.
+`world` stores a `Span` per block: the first model index, the count, and the union of those models' boxes. The frame tests that box with the same six planes. A block that misses is not read. Survivors are still in storage order, block after block.
 
-The world box is that local box through the instance. The center goes through `instance_point`. The half-size is the local half-size times the absolute columns of `m[]`, so a rotated or scaled model stays inside the box. The box is larger than the triangles. It can keep a model that is actually just off screen. It does not drop a model that still has a vertex in view.
+Inside a block, each instance has a `Bound` filled once, in `append_block`, after `shift_block` has written the final position. The cull reads that array and does not touch `m[]` or the mesh. `mesh_measure` runs at load (`arch3d_load`, ground patches). `bound_n` is the triangle count that produced the local box. A shared mesh is measured once.
 
-A sprite faces yaw and stays upright. Its box is half the width on X and Z and half the height on Y, centered on the flat. A flat with `w` or `h` below 1 is omitted. `draw_flat` already skips those.
+The world box is the local box through the instance. The half-size is the local half-size times the absolute columns of `m[]`, so a rotated or scaled model stays inside. The box is larger than the triangles. It can keep a model that is actually just off screen. It does not drop a model that still has a vertex in view.
+
+A sprite faces yaw and stays upright. Its box is half the width on X and Z and half the height on Y, centered on the flat. A flat with `w` or `h` below 1 is omitted. `draw_flat` already skips those. Sprites are not blocked by spans.
+
+With no spans and no bounds (a single renderfall model, or a null camera), the old path remains: measure from the triangles if needed, and list everything when the camera is null.
+
+## Planes
+
+Each ARCH3D plane keeps a normal and the triangle range it fanned into. The stored normal is the opposite of the first triangle's cross product: that winding points away from the visible side, the same way a ground quad's cross product points down while the patch normal points up. `draw_frame` tests that normal before transforming the range. Two or more triangles are worth the test. A single triangle is drawn directly. A zero normal is drawn too. The test keeps the face when the camera is on the front side (`instance_faces`).
+
+Ground is not one 4096-wide mesh. `add_ground` emits 512-unit patches, each with an upward normal, so a patch behind the camera is dropped with the block or the box.
+
+`grCullMode` stays `GR_CULL_DISABLE`. The Voodoo cull would run after the Pentium had already built the triangle.
 
 ## What this does not do
 
-One outdoor ground mesh is 512 triangles over a 4096 square. Standing on it, the box intersects the view, and every ground triangle is still transformed. The same is true of any mesh larger than the picture. Splitting that mesh is a loader change, not a change to the plane test.
-
-`grCullMode` stays `GR_CULL_DISABLE`. Winding is still unproven, and a Glide cull runs after the Pentium has transformed the triangle. This pass does not reject backfacing planes.
-
-There is no portal step. A neighbor block behind a wall and inside the fog is still drawn. The Z buffer hides it.
+There is no portal step. A neighbor block whose box still intersects the view is drawn, including the part hidden by a wall. The Z buffer hides it. A mesh that is one rigid object larger than the picture, other than the ground, is still one box.

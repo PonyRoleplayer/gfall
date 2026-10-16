@@ -78,6 +78,7 @@ static void check_scene(void)
 
     mem_zero(models, sizeof(models));
     mem_zero(sprites, sizeof(sprites));
+    mem_zero(&scene, sizeof(scene));
     scene.models = models;
     scene.nmodels = 2;
     scene.sprites = sprites;
@@ -133,8 +134,11 @@ static void check_cull(void)
     Mesh *behind;
     Instance models[4];
     Flat sprites[2];
+    Bound bounds[2];
+    Span spans[2];
     Scene scene;
     Camera cam;
+    Basis basis;
     int order[4];
     int n;
 
@@ -148,6 +152,7 @@ static void check_cull(void)
         return;
     }
 
+    mem_zero(&scene, sizeof(scene));
     scene_set_limits(DF_FAR, 1);
     camera_set(&cam, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
     place_at(&models[0], mesh, 0.0f, 0.0f, 200.0f);
@@ -229,6 +234,47 @@ static void check_cull(void)
     n = scene_visible_models(&scene, &cam, order, 1);
     check_expect(n == 1 && order[0] == 0,
                  "cap did not keep the first visible model");
+
+    /* Normal +Z on a point in front points away from a camera looking +Z. */
+    place_at(&models[0], mesh, 0.0f, 0.0f, 0.0f);
+    camera_basis(&cam, &basis);
+    check_expect(!instance_faces(&models[0], &cam, &basis,
+                                 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 10.0f),
+                 "back face was kept");
+    check_expect(instance_faces(&models[0], &cam, &basis,
+                                0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 10.0f),
+                 "front face was dropped");
+
+    place_at(&models[0], mesh, 0.0f, 0.0f, 200.0f);
+    place_at(&models[1], mesh, 0.0f, 0.0f, 8000.0f);
+    check_expect(instance_world_box(&models[0], &bounds[0]), "near box was not baked");
+    check_expect(instance_world_box(&models[1], &bounds[1]), "far box was not baked");
+    spans[0].first = 0;
+    spans[0].count = 1;
+    spans[0].cx = bounds[0].cx;
+    spans[0].cy = bounds[0].cy;
+    spans[0].cz = bounds[0].cz;
+    spans[0].ex = bounds[0].ex;
+    spans[0].ey = bounds[0].ey;
+    spans[0].ez = bounds[0].ez;
+    spans[1].first = 1;
+    spans[1].count = 1;
+    spans[1].cx = bounds[1].cx;
+    spans[1].cy = bounds[1].cy;
+    spans[1].cz = bounds[1].cz;
+    spans[1].ex = bounds[1].ex;
+    spans[1].ey = bounds[1].ey;
+    spans[1].ez = bounds[1].ez;
+    scene.models = models;
+    scene.bounds = bounds;
+    scene.nmodels = 2;
+    scene.spans = spans;
+    scene.nspans = 2;
+    scene.sprites = 0;
+    scene.nsprites = 0;
+    n = scene_visible_models(&scene, &cam, order, 4);
+    check_expect(n == 1 && order[0] == 0,
+                 "block past the fog was kept");
     scene_set_limits(DF_FAR, 1);
 }
 

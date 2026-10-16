@@ -1,5 +1,6 @@
 #include "game/dagger/arch3d.h"
 #include "engine/core/mem.h"
+#include "engine/scene/scene.h"
 
 #define MAX_FACE 24
 #define POINT_DIV 256.0f
@@ -320,6 +321,38 @@ static int decode_plane(const df_u8 *rec, df_u32 size, df_u32 *p_io,
     return 1;
 }
 
+/*
+ * The cross product of the emitted winding points away from the side
+ * you are meant to see. A ground quad does the same: its winding points
+ * down, and the patch normal is stored pointing up. Flip this one too,
+ * so instance_faces keeps the near wall instead of the far one.
+ */
+static void push_face(Mesh *mesh, int first)
+{
+    Tri *t;
+    float ax, ay, az;
+    float bx, by, bz;
+    Face *f;
+
+    if (!mesh->faces || mesh->nfaces >= mesh->face_cap || mesh->ntris <= first) {
+        return;
+    }
+    t = &mesh->tris[first];
+    ax = t->x[1] - t->x[0];
+    ay = t->y[1] - t->y[0];
+    az = t->z[1] - t->z[0];
+    bx = t->x[2] - t->x[0];
+    by = t->y[2] - t->y[0];
+    bz = t->z[2] - t->z[0];
+    f = &mesh->faces[mesh->nfaces];
+    f->nx = az * by - ay * bz;
+    f->ny = ax * bz - az * bx;
+    f->nz = ay * bx - ax * by;
+    f->first = first;
+    f->ntris = mesh->ntris - first;
+    mesh->nfaces++;
+}
+
 static void emit_plane(Mesh *mesh, int cap, const Pt *pts, int npts, df_u16 tex)
 {
     int uv_u[MAX_FACE];
@@ -327,6 +360,7 @@ static void emit_plane(Mesh *mesh, int cap, const Pt *pts, int npts, df_u16 tex)
     int corners[MAX_FACE];
     int nc;
     int k;
+    int first;
 
     if (npts == 3) {
         uv_u[0] = pts[0].u;
@@ -355,10 +389,12 @@ static void emit_plane(Mesh *mesh, int cap, const Pt *pts, int npts, df_u16 tex)
         }
         nc = npts;
     }
+    first = mesh->ntris;
     for (k = 1; k < nc - 1; k++) {
         emit_tri(mesh, cap, pts, uv_u, uv_v, corners[0], corners[k], corners[k + 1],
                  (df_u16)(tex >> 7), (df_u16)(tex & 0x7f));
     }
+    push_face(mesh, first);
 }
 
 Mesh *arch3d_load(const df_u8 *rec, df_u32 size, df_u32 id)
@@ -368,6 +404,7 @@ Mesh *arch3d_load(const df_u8 *rec, df_u32 size, df_u32 id)
     df_i32 point_off;
     df_i32 plane_off;
     int cap;
+    int nface;
     Mesh *mesh;
     df_u32 p;
     int plane;
@@ -394,12 +431,14 @@ Mesh *arch3d_load(const df_u8 *rec, df_u32 size, df_u32 id)
      * for every few bytes of points. Count the faces, then allocate that.
      */
     cap = 0;
+    nface = 0;
     p = (df_u32)plane_off;
     for (plane = 0; plane < plane_count; plane++) {
         Pt pts[MAX_FACE];
         int npts;
         df_u16 tex;
         int got;
+        int nt;
 
         got = decode_plane(rec, size, &p, v25, point_off, id, pts, &npts, &tex);
         if (got < 0) {
@@ -408,7 +447,11 @@ Mesh *arch3d_load(const df_u8 *rec, df_u32 size, df_u32 id)
         if (got == 0) {
             continue;
         }
-        cap += tri_count(pts, npts);
+        nt = tri_count(pts, npts);
+        cap += nt;
+        if (nt > 0) {
+            nface++;
+        }
     }
     if (cap < 1) {
         return 0;
@@ -422,6 +465,13 @@ Mesh *arch3d_load(const df_u8 *rec, df_u32 size, df_u32 id)
     mesh->tris = (Tri *)mem_alloc((df_u32)cap * (df_u32)sizeof(Tri));
     if (!mesh->tris) {
         return 0;
+    }
+    mesh->face_cap = nface;
+    if (nface > 0) {
+        mesh->faces = (Face *)mem_alloc((df_u32)nface * (df_u32)sizeof(Face));
+        if (!mesh->faces) {
+            mesh->face_cap = 0;
+        }
     }
     p = (df_u32)plane_off;
     for (plane = 0; plane < plane_count; plane++) {
@@ -439,5 +489,6 @@ Mesh *arch3d_load(const df_u8 *rec, df_u32 size, df_u32 id)
         }
         emit_plane(mesh, cap, pts, npts, tex);
     }
+    mesh_measure(mesh);
     return mesh;
 }

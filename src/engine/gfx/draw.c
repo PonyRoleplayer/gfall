@@ -245,6 +245,79 @@ static void submit(const Vtx *poly, int n, float inv_w, float inv_h,
     }
 }
 
+static const Image *level_image(const Level *level, int slot);
+
+/* Local point straight into view space. One less round trip through memory. */
+static void view_point(const Instance *in, const Camera *cam, const Basis *basis,
+                       float lx, float ly, float lz, float *vx, float *vy, float *vz)
+{
+    float dx, dy, dz;
+    float x1, z1;
+
+    dx = in->m[0] * lx + in->m[1] * ly + in->m[2] * lz + in->x - cam->x;
+    dy = in->m[3] * lx + in->m[4] * ly + in->m[5] * lz + in->y - cam->y;
+    dz = in->m[6] * lx + in->m[7] * ly + in->m[8] * lz + in->z - cam->z;
+    x1 = dx * basis->rx + dz * basis->rz;
+    z1 = dx * basis->fx + dz * basis->fz;
+    *vx = x1;
+    *vy = dy * basis->cp - z1 * basis->sp;
+    *vz = dy * basis->sp + z1 * basis->cp;
+}
+
+static void draw_tris(const Camera *cam, const Basis *basis, const Level *level,
+                      const Instance *in, int first, int count, int sharp)
+{
+    int t;
+    int end;
+
+    end = first + count;
+    if (first < 0) {
+        first = 0;
+    }
+    if (!in->mesh || end > in->mesh->ntris) {
+        end = in->mesh ? in->mesh->ntris : 0;
+    }
+    for (t = first; t < end; t++) {
+        const Tri *tri;
+        const Image *img;
+        Vtx view[3];
+        Vtx clipped[CLIP_MAX];
+        int k;
+        int nout;
+        float inv_w;
+        float inv_h;
+
+        tri = &in->mesh->tris[t];
+        if (tri->slot == 0xffff) {
+            continue;
+        }
+        img = level_image(level, (int)tri->slot);
+        for (k = 0; k < 3; k++) {
+            view_point(in, cam, basis, tri->x[k], tri->y[k], tri->z[k],
+                       &view[k].x, &view[k].y, &view[k].z);
+            view[k].u = tri->u[k];
+            view[k].v = tri->v[k];
+        }
+        nout = clip_view(view, clipped);
+        if (nout < 3) {
+            continue;
+        }
+        /*
+         * A null image is a texture the loader could not read.
+         * Draw it flat magenta so the face is not silently dropped.
+         */
+        if (!img || img->width < 1 || img->height < 1) {
+            glide_flat(1);
+            submit(clipped, nout, 1.0f, 1.0f, 255.0f, 0.0f, 255.0f);
+            glide_flat(0);
+            continue;
+        }
+        texcache_bind((int)tri->slot, sharp);
+        image_inv(img, &inv_w, &inv_h);
+        submit(clipped, nout, inv_w, inv_h, 255.0f, 255.0f, 255.0f);
+    }
+}
+
 static void flat_corner(const Camera *cam, const Basis *basis,
                          float wx, float wy, float wz, float u, float v, Vtx *out)
 {
@@ -349,7 +422,6 @@ void draw_frame(const Camera *cam, const Level *level)
     norder = scene_visible_models(&level->scene, cam, order, VIS_MAX);
     for (oi = 0; oi < norder; oi++) {
         const Instance *in;
-        int t;
         int sharp_model;
 
         in = &level->scene.models[order[oi]];
@@ -357,46 +429,28 @@ void draw_frame(const Camera *cam, const Level *level)
             continue;
         }
         sharp_model = texcache_near_model(order[oi]);
-        for (t = 0; t < in->mesh->ntris; t++) {
-            const Tri *tri;
-            const Image *img;
-            Vtx view[3];
-            Vtx clipped[CLIP_MAX];
-            int k;
-            int nout;
-            float inv_w;
-            float inv_h;
+        if (in->mesh->nfaces > 0 && in->mesh->faces) {
+            int f;
 
-            tri = &in->mesh->tris[t];
-            if (tri->slot == 0xffff) {
-                continue;
-            }
-            img = level_image(level, (int)tri->slot);
-            for (k = 0; k < 3; k++) {
-                float wx, wy, wz;
+            for (f = 0; f < in->mesh->nfaces; f++) {
+                const Face *face;
+                const Tri *tri;
 
-                instance_point(in, tri->x[k], tri->y[k], tri->z[k], &wx, &wy, &wz);
-                camera_view(cam, &basis, wx, wy, wz, &view[k].x, &view[k].y, &view[k].z);
-                view[k].u = tri->u[k];
-                view[k].v = tri->v[k];
+                face = &in->mesh->faces[f];
+                if (face->ntris < 1 || face->first < 0) {
+                    continue;
+                }
+                tri = &in->mesh->tris[face->first];
+                if (face->ntris >= 2 &&
+                    !instance_faces(in, cam, &basis,
+                                    face->nx, face->ny, face->nz,
+                                    tri->x[0], tri->y[0], tri->z[0])) {
+                    continue;
+                }
+                draw_tris(cam, &basis, level, in, face->first, face->ntris, sharp_model);
             }
-            nout = clip_view(view, clipped);
-            if (nout < 3) {
-                continue;
-            }
-            /*
-             * A null image is a texture the loader could not read.
-             * Draw it flat magenta so the face is not silently dropped.
-             */
-            if (!img || img->width < 1 || img->height < 1) {
-                glide_flat(1);
-                submit(clipped, nout, 1.0f, 1.0f, 255.0f, 0.0f, 255.0f);
-                glide_flat(0);
-                continue;
-            }
-            texcache_bind((int)tri->slot, sharp_model);
-            image_inv(img, &inv_w, &inv_h);
-            submit(clipped, nout, inv_w, inv_h, 255.0f, 255.0f, 255.0f);
+        } else {
+            draw_tris(cam, &basis, level, in, 0, in->mesh->ntris, sharp_model);
         }
     }
     glide_sprite_alpha(1);
