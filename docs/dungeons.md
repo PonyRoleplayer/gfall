@@ -65,4 +65,4 @@ The RMB name is prefix + letter1 + letter2 + number + `.RMB`. Prefixes run `TVRN
 
 ## What will not open
 
-A missing block name, a texture the climate file does not contain (except a cave record, which stays on the archive the face named), or more than 256 distinct images fails the open. The image table is 256 (`TEX_SLOTS`). The viewer shows `world_error()` or `gfx_error()` and returns to the list. House interiors are not part of the outdoor load. A city whose full-size pictures are larger than the 2MB texture card still opens: far faces stay at 16 by 16. See `docs/memory.md`.
+A missing block name, a texture the climate file does not contain (except a cave record, which stays on the archive the face named), or more than 384 distinct images fails the open. The image table is 384 (`TEX_SLOTS`). Wayrest is 273 and used to die on the old table of 256. The viewer shows `world_error()` or `gfx_error()` and returns to the list. House interiors are not part of the outdoor load. A city whose full-size pictures are larger than the 2MB texture card still opens: far faces stay at 16 by 16. See `docs/memory.md`.

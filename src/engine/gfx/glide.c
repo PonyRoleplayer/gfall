@@ -23,7 +23,8 @@ typedef char gfall_fog_table_is_64[(GR_FOG_TABLE_SIZE == 64) ? 1 : -1];
 /*
  * One entry per uploaded map. A place keeps a small copy of every
  * picture, then a second copy of the ones close to the camera.
- * 256 is the image table. The rest is that near set, plus the font.
+ * The image table is TEX_SLOTS in texcache.c (384). This array has
+ * to hold that table, the font, and the near copies.
  */
 #define GPU_SLOTS 768
 
@@ -355,6 +356,11 @@ int glide_open(void *hwnd)
     /* Nearest sampling turns a 64-wide brick course into vertical
        streaks once the wall is edge-on. Bilinear keeps the courses. */
     glide.tex_filter(GR_TMU0, GR_TEXTUREFILTER_BILINEAR, GR_TEXTUREFILTER_BILINEAR);
+    /*
+     * One level only. On a 2MB TMU even and odd mip levels share an
+     * address in two banks, and the odd levels overwrite the picture.
+     * That scrambled the font sheet and the ground.
+     */
     glide.tex_mip(GR_TMU0, GR_MIPMAP_DISABLE, FXFALSE);
 
     /*
@@ -617,8 +623,8 @@ static int shape_bytes(int pot_w, int pot_h, int cutout, GrTexInfo *info, df_u32
     if (!lod_of(major, &lod) || !aspect_of(pot_w, pot_h, &aspect)) {
         return 0;
     }
-    info->smallLod = lod;
     info->largeLod = lod;
+    info->smallLod = lod;
     info->aspectRatio = aspect;
     info->format = cutout ? GR_TEXFMT_ARGB_1555 : GR_TEXFMT_P_8;
     info->data = &g_expand[0];
@@ -681,6 +687,14 @@ df_u32 glide_detail_room(void)
         return room - 65536u;
     }
     return 0;
+}
+
+df_u32 glide_tex_free(void)
+{
+    if (!g_opened || g_addr_max <= g_addr) {
+        return 0;
+    }
+    return g_addr_max - g_addr;
 }
 
 int glide_upload(const df_u8 *pixels, int pot_w, int pot_h, int cutout,
@@ -845,6 +859,38 @@ void glide_ui(int on)
         FXFALSE,
         FXFALSE);
     glide.tex_filter(GR_TMU0, GR_TEXTUREFILTER_BILINEAR, GR_TEXTUREFILTER_BILINEAR);
+}
+
+void glide_opacity(int alpha, int texture)
+{
+    if (!g_opened) {
+        return;
+    }
+    if (alpha < 0) {
+        g_alpha = 255.0f;
+        glide_blend(0);
+        return;
+    }
+    if (alpha > 255) {
+        alpha = 255;
+    }
+    g_alpha = (float)alpha;
+    glide_blend(1);
+    if (texture) {
+        glide.alpha(
+            GR_COMBINE_FUNCTION_SCALE_OTHER,
+            GR_COMBINE_FACTOR_LOCAL,
+            GR_COMBINE_LOCAL_ITERATED,
+            GR_COMBINE_OTHER_TEXTURE,
+            FXFALSE);
+        return;
+    }
+    glide.alpha(
+        GR_COMBINE_FUNCTION_SCALE_OTHER,
+        GR_COMBINE_FACTOR_ONE,
+        GR_COMBINE_LOCAL_NONE,
+        GR_COMBINE_OTHER_ITERATED,
+        FXFALSE);
 }
 
 void glide_dim(int on, int alpha)

@@ -41,6 +41,8 @@ int glide_palette(const df_u8 *r, const df_u8 *g, const df_u8 *b);
  * cutout uploads GR_TEXFMT_ARGB_1555. Index 0 is transparent.
  * pr/pg/pb are the 256-entry palette and are used only for a cutout.
  */
+/* Bytes still free on TMU0, from the upload cursor to grTexMaxAddress. */
+df_u32 glide_tex_free(void);
 int glide_upload(const df_u8 *pixels, int pot_w, int pot_h, int cutout,
                  const df_u8 *pr, const df_u8 *pg, const df_u8 *pb, df_u32 *addr);
 /* Bytes this shape will take on the card, including the 8-byte pad. */
@@ -63,6 +65,12 @@ void glide_overlay(int on);
 void glide_plate(int on);
 /* Untextured colour at an explicit opacity, 0..255. 0 restores the room. */
 void glide_dim(int on, int alpha);
+/*
+ * Vertex alpha 0..255 with blending. texture nonzero multiplies the
+ * texture alpha by that value. texture zero uses the vertex alpha
+ * alone, for flat glyphs. A negative alpha turns blending off.
+ */
+void glide_opacity(int alpha, int texture);
 /* Textured screen quads, point sampled, drawn over the frame. */
 void glide_ui(int on);
 /* Untextured iterated colour with the room's depth test left alone. */

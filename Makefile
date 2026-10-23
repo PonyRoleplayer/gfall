@@ -1,10 +1,11 @@
 # SPINTRI.EXE: extruded Glide 2 text for Windows 98 and a Voodoo 1.
 # GFALL.EXE: Privateer's Hold, mouse look, WASD, Q up, E down.
-# RENDERFALL.EXE: ARCH3D model list. Same disc, same ARENA2 tree.
+# RENDERFALL.EXE: ARCH3D model list.
 # LEVELFALL.EXE: indoor and outdoor place list. Fly through one.
 # make
 # Mount build/spintri.iso and run D:\SPINTRI.EXE, or mount build/gfall.iso
-# and run D:\GFALL.EXE. The disc carries the whole ARENA2 tree beside the exe.
+# and run D:\GFALL.EXE. The disc is the executables only. ARENA2 stays
+# beside them on the machine. It is not copied onto the disc.
 # The guest needs the 3dfx Voodoo Graphics driver (glide2x.dll). Escape quits.
 # Do not copy glide2x.dll onto either disc. The system driver is the one
 # that draws the 3dfx splash.
@@ -18,6 +19,8 @@
 CC := i686-w64-mingw32-gcc
 OBJDUMP := i686-w64-mingw32-objdump
 XORRISO := xorriso
+
+BUILD_STAMP := $(shell date +%Y-%m-%dT%H:%M:%S)
 
 CFLAGS := -std=gnu90 -Wall -Wextra -O2 \
 	-march=pentium-mmx -mfpmath=387 -mno-sse \
@@ -54,6 +57,8 @@ GFALL_SRC := \
 	src/engine/ui/hud.c \
 	src/engine/ui/font.c \
 	src/engine/ui/console.c \
+	src/engine/ui/shot.c \
+	src/engine/ui/build.c \
 	src/game/dagger/bsa.c \
 	src/game/dagger/arch3d.c \
 	src/game/dagger/texture.c \
@@ -82,6 +87,8 @@ RENDER_SRC := \
 	src/engine/ui/hud.c \
 	src/engine/ui/font.c \
 	src/engine/ui/console.c \
+	src/engine/ui/shot.c \
+	src/engine/ui/build.c \
 	src/game/dagger/bsa.c \
 	src/game/dagger/arch3d.c \
 	src/game/dagger/texture.c \
@@ -104,6 +111,8 @@ LEVEL_SRC := \
 	src/engine/ui/hud.c \
 	src/engine/ui/font.c \
 	src/engine/ui/console.c \
+	src/engine/ui/shot.c \
+	src/engine/ui/build.c \
 	src/game/dagger/bsa.c \
 	src/game/dagger/arch3d.c \
 	src/game/dagger/texture.c \
@@ -178,7 +187,7 @@ hostcheck: build/hostcheck
 
 build/GFALL.EXE: $(GFALL_SRC) third_party/glide2/include/glide.h | deps
 	mkdir -p build
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(GFALL_SRC) -luser32 -lkernel32 -lgcc
+	$(CC) $(CFLAGS) -DBUILD_STAMP='"$(BUILD_STAMP)"' $(LDFLAGS) -o $@ $(GFALL_SRC) -luser32 -lkernel32 -lgcc
 
 gfall-check: build/GFALL.EXE
 	file build/GFALL.EXE | grep -q 'PE32'
@@ -198,7 +207,7 @@ gfall-check: build/GFALL.EXE
 
 build/RENDERFALL.EXE: $(RENDER_SRC) third_party/glide2/include/glide.h | deps
 	mkdir -p build
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(RENDER_SRC) -luser32 -lkernel32 -lgcc
+	$(CC) $(CFLAGS) -DBUILD_STAMP='"$(BUILD_STAMP)"' $(LDFLAGS) -o $@ $(RENDER_SRC) -luser32 -lkernel32 -lgcc
 
 renderfall-check: build/RENDERFALL.EXE
 	file build/RENDERFALL.EXE | grep -q 'PE32'
@@ -218,7 +227,7 @@ renderfall-check: build/RENDERFALL.EXE
 
 build/LEVELFALL.EXE: $(LEVEL_SRC) third_party/glide2/include/glide.h | deps
 	mkdir -p build
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(LEVEL_SRC) -luser32 -lkernel32 -lgcc
+	$(CC) $(CFLAGS) -DBUILD_STAMP='"$(BUILD_STAMP)"' $(LDFLAGS) -o $@ $(LEVEL_SRC) -luser32 -lkernel32 -lgcc
 
 levelfall-check: build/LEVELFALL.EXE
 	file build/LEVELFALL.EXE | grep -q 'PE32'
@@ -242,8 +251,7 @@ build/gfall.iso: build/GFALL.EXE build/RENDERFALL.EXE build/LEVELFALL.EXE build/
 		-graft-points \
 		/GFALL.EXE=build/GFALL.EXE \
 		/RENDERFALL.EXE=build/RENDERFALL.EXE \
-		/LEVELFALL.EXE=build/LEVELFALL.EXE \
-		/ARENA2/=daggerfall/DAGGER/ARENA2
+		/LEVELFALL.EXE=build/LEVELFALL.EXE
 
 clean:
 	rm -rf build

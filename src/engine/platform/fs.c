@@ -110,6 +110,103 @@ int fs_read_at(FsFile *file, df_u32 offset, void *dst, df_u32 n)
     return 1;
 }
 
+static int g_out = -1;
+static char g_out_path[FS_PATH];
+
+static int beside_path(char *dst, int n, const char *name)
+{
+    int i;
+    int slash;
+    int k;
+
+    if (!name || !name[0] || !g_root[0]) {
+        return 0;
+    }
+    slash = -1;
+    for (i = 0; g_root[i]; i++) {
+        if (g_root[i] == '/' || g_root[i] == '\\') {
+            slash = i;
+        }
+    }
+    if (slash < 1) {
+        return fs_join(dst, n, name);
+    }
+    k = 0;
+    for (i = 0; i < slash && k < n - 1; i++) {
+        dst[k++] = g_root[i];
+    }
+    if (k < n - 1) {
+        dst[k++] = g_root[slash];
+    }
+    i = 0;
+    while (name[i] && k < n - 1) {
+        dst[k++] = name[i++];
+    }
+    dst[k] = 0;
+    return name[i] == 0;
+}
+
+int fs_create(const char *name)
+{
+    char path[FS_PATH];
+
+    if (g_out >= 0) {
+        close(g_out);
+        g_out = -1;
+    }
+    if (!beside_path(path, FS_PATH, name)) {
+        return 0;
+    }
+    g_out = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (g_out < 0) {
+        return 0;
+    }
+    df_copy(g_out_path, path, FS_PATH);
+    return 1;
+}
+
+int fs_append(const void *src, df_u32 n)
+{
+    const df_u8 *p;
+    df_u32 got;
+
+    if (g_out < 0 || !src) {
+        return 0;
+    }
+    p = (const df_u8 *)src;
+    got = 0;
+    while (got < n) {
+        ssize_t chunk;
+
+        chunk = write(g_out, p + got, n - got);
+        if (chunk <= 0) {
+            return 0;
+        }
+        got += (df_u32)chunk;
+    }
+    return 1;
+}
+
+void fs_finish(void)
+{
+    if (g_out >= 0) {
+        close(g_out);
+        g_out = -1;
+    }
+}
+
+void fs_abort(void)
+{
+    if (g_out >= 0) {
+        close(g_out);
+        g_out = -1;
+        if (g_out_path[0]) {
+            unlink(g_out_path);
+        }
+    }
+    g_out_path[0] = 0;
+}
+
 #else
 
 #define WINVER 0x0400
@@ -194,6 +291,109 @@ int fs_read_at(FsFile *file, df_u32 offset, void *dst, df_u32 n)
         got += (df_u32)chunk;
     }
     return 1;
+}
+
+static HANDLE g_out = INVALID_HANDLE_VALUE;
+static char g_out_path[FS_PATH];
+
+static int beside_path(char *dst, int n, const char *name)
+{
+    int i;
+    int slash;
+    int k;
+
+    if (!name || !name[0] || !g_root[0]) {
+        return 0;
+    }
+    slash = -1;
+    for (i = 0; g_root[i]; i++) {
+        if (g_root[i] == '/' || g_root[i] == '\\') {
+            slash = i;
+        }
+    }
+    if (slash < 1) {
+        return fs_join(dst, n, name);
+    }
+    k = 0;
+    for (i = 0; i < slash && k < n - 1; i++) {
+        dst[k++] = g_root[i];
+    }
+    if (k < n - 1) {
+        dst[k++] = g_root[slash];
+    }
+    i = 0;
+    while (name[i] && k < n - 1) {
+        dst[k++] = name[i++];
+    }
+    dst[k] = 0;
+    return name[i] == 0;
+}
+
+int fs_create(const char *name)
+{
+    char path[FS_PATH];
+
+    if (g_out != INVALID_HANDLE_VALUE) {
+        CloseHandle(g_out);
+        g_out = INVALID_HANDLE_VALUE;
+    }
+    if (!beside_path(path, FS_PATH, name)) {
+        return 0;
+    }
+    g_out = CreateFileA(
+        path,
+        GENERIC_WRITE,
+        0,
+        0,
+        CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL,
+        0);
+    if (g_out == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+    df_copy(g_out_path, path, FS_PATH);
+    return 1;
+}
+
+int fs_append(const void *src, df_u32 n)
+{
+    const df_u8 *p;
+    df_u32 got;
+
+    if (g_out == INVALID_HANDLE_VALUE || !src) {
+        return 0;
+    }
+    p = (const df_u8 *)src;
+    got = 0;
+    while (got < n) {
+        DWORD chunk;
+
+        if (!WriteFile(g_out, p + got, n - got, &chunk, 0) || chunk == 0) {
+            return 0;
+        }
+        got += (df_u32)chunk;
+    }
+    return 1;
+}
+
+void fs_finish(void)
+{
+    if (g_out != INVALID_HANDLE_VALUE) {
+        CloseHandle(g_out);
+        g_out = INVALID_HANDLE_VALUE;
+    }
+}
+
+void fs_abort(void)
+{
+    if (g_out != INVALID_HANDLE_VALUE) {
+        CloseHandle(g_out);
+        g_out = INVALID_HANDLE_VALUE;
+        if (g_out_path[0]) {
+            DeleteFileA(g_out_path);
+        }
+    }
+    g_out_path[0] = 0;
 }
 
 #endif

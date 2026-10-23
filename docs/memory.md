@@ -36,20 +36,18 @@ Texture records are not in this cache. `place_image` already keeps one `Image` p
 
 ## The 2MB texture card
 
-The image table is still 256 (`TEX_SLOTS`). Daggerfall names about 235 pictures. That fits the table and does not fit the card: the squares are about 2.8MB, and the font sheet is uploaded after them. `gfx_prepare` used to send every full square and fail with `texture memory is full` before the first frame.
+The image table is 384 (`TEX_SLOTS`). Daggerfall names 235 pictures. Wayrest names 273, and a table of 256 rejected that open with `texture count` after the world had loaded. The full squares still do not fit the card: Daggerfall's are about 2.8MB. `gfx_prepare` used to send every full square and fail with `texture memory is full` before the first frame.
 
-`texcache_upload` now sends each picture at 16 by 16, or at its real size when that is already 16 or smaller. Glide maps every texture across s,t in 0..256, so the face UVs do not change. The 16 by 16 is a uniform shrink of the same square. A place whose full squares fit in the bytes left after that upload and the font is marked sharp everywhere (`g_all`). Agajnu is in that set. A city is not.
+`texcache_upload` sends each picture once, at full size, with `smallLod` equal to `largeLod`. `grTexMipMapMode` stays `GR_MIPMAP_DISABLE`. A mip chain on a 2MB TMU writes even and odd levels to one address, and the odd levels replace the picture. That is what turned the ground into bands and the font into the wrong glyphs. A picture that does not fit is left unbound. 192KB stays free for the font sheet, uploaded after the pictures. Glide still maps s,t across 0..256, so the face UVs do not change.
 
 That font is one 256 square, uploaded once per `gfx_prepare`, and it is the only glyph sheet. With no `font_set`, the square is the stock OEM fixed font: 256 glyphs in 16-pixel cells, index 0 clear, index 1 white. Those pixels are a static buffer, so `mem_temp_end` does not free them. `GFALL.EXE` calls `font_set` from `FONT0000.FNT` before `gfx_prepare`, and that sheet is uploaded instead. Do not upload both. A stock glyph taller than 16 pixels is not stamped; the HUD then draws the built-in 8x8 rects. `RENDERFALL.EXE` and `LEVELFALL.EXE` leave the OEM sheet in place.
 
-`glide_mark` runs at the end of `gfx_prepare`, after the font. `texcache_detail` runs at the start of each frame. It groups models and sprites into 512-unit bands out to 8192. The nearest band is taken first. A model is near if the band was still inside the budget when it was visited. Its records are uploaded at full size into the memory after the mark. The card cannot free a hole. Maps that are still wanted stay where they are when the camera crosses into the next 512-unit cell. Only new ones are sent, and at most 32KB of them in a single frame. A rewind happens when a new map does not fit among the stale ones, and that frame downloads just the one map that needed the room. The 16 by 16 copies and the font stay where they were.
+Nothing is uploaded during the frame. Do not put the drip back: walking the city and downloading a sharp copy when the camera reached a wall was a second renderer on the 233, and the close picture stayed the 16 by 16 until that download finished.
 
-A far face binds the 16 by 16 even when a near face uses the same record. The triangle still stores one slot number. The draw call passes whether that instance is near. Do not write a second slot into the mesh. Two slots per record would blow the 256-image table.
+The triangle still stores one slot number. Do not write a second slot into the mesh. Two slots per record would blow the 384-image table.
 
-`GPU_SLOTS` is 768. That array only tracks uploads. The hardware limit is the 2MB. The extra entries are the near set on top of the 16 by 16 set and the font.
+`GPU_SLOTS` is 768. That array only tracks uploads. The hardware limit is the 2MB. The image table has to stay below that 768, with room left for the font.
 
-The console log is 48 lines of 96 characters, static. The first time it opens it allocates one 640 by 480 frame at 16 bits (about 600KB) on the main heap and keeps it. That grab is the picture shown while the world is not drawing. Do not grow the log with the session, and do not take another grab per frame.
+The console log is 48 lines of 96 characters, static. The first time it opens it allocates one 640 by 480 frame at 16 bits (about 600KB) on the main heap and keeps it. That grab is the picture shown while the world is not drawing. Do not grow the log with the session, and do not take another grab per frame. `shot.c` keeps a second buffer of the same size, allocated on the first screenshot and reused. The BMP is written a row at a time. Do not put that buffer in the console.
 
-Distance is to the instance origin. A ground patch is 512 units and its origin is the block corner, so a patch reads as near when that corner is inside 8192, not when the camera is standing on the dirt. Beyond 8192, or once the card is full, the face stays the small copy until you move closer.
-
-`paint` records each mesh's unique texture slots in `slot_keys`. The band walk reads that list. It does not scan the triangles again when the camera changes cells.
+`paint` records each mesh's unique texture slots in `slot_keys`. Nothing in the frame reads that list anymore. Do not bring the distance bands back to decide which map is sharp.

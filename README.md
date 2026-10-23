@@ -18,7 +18,7 @@ make
 | `make hostcheck` | Native test only. No Windows, no Glide. Writes `build/tex0.ppm`. |
 | `make renderfall-check` | `build/RENDERFALL.EXE`, the ARCH3D model viewer. |
 | `make levelfall-check` | `build/LEVELFALL.EXE`, the dungeon viewer. |
-| `make` | `build/spintri.iso` and `build/gfall.iso`. The gfall disc also carries `RENDERFALL.EXE` and `LEVELFALL.EXE`. |
+| `make` | `build/spintri.iso` and `build/gfall.iso`. The gfall disc is `GFALL.EXE`, `RENDERFALL.EXE`, and `LEVELFALL.EXE`. |
 | `make clean` | Deletes `build/`. |
 
 `make hostcheck` needs `gcc`, `make`, and `daggerfall/DAGGER/ARENA2`. A full `make` also needs the i686 MinGW cross compiler, `i686-w64-mingw32-objdump`, `xorriso`, and `file`. If something is missing, `sh tools/check-deps` names it and the Debian package. `sh tools/check-deps host` checks the native test only.
@@ -31,9 +31,9 @@ sudo apt install build-essential file gcc-mingw-w64-i686 binutils-mingw-w64-i686
 
 ## Run
 
-Mount `build/gfall.iso` and run `D:\GFALL.EXE`. WASD moves, the mouse looks, Q is up, E is down, Escape quits. `build/spintri.iso` is the Glide text demo: `D:\SPINTRI.EXE`.
+Mount `build/gfall.iso` and run `D:\GFALL.EXE`. WASD moves, the mouse looks, Q is up, E is down, Escape quits. `build/spintri.iso` is the Glide text demo: `D:\SPINTRI.EXE`. The disc does not carry `ARENA2`. Put that directory beside the exe. The programs read it from there.
 
-`D:\RENDERFALL.EXE` sits on the same disc and reads the same `ARENA2` tree. It lists every record in `ARCH3D.BSA`. Enter (or a double-click) loads that one model. Faces use the texture archive and record stored on the face. A face whose texture did not load is flat magenta.
+`D:\RENDERFALL.EXE` sits on the same disc. It lists every record in `ARCH3D.BSA` from the `ARENA2` tree beside the exe. Enter (or a double-click) loads that one model. Faces use the texture archive and record stored on the face. A face whose texture did not load is flat magenta.
 
 | Where | Key | Action |
 | --- | --- | --- |

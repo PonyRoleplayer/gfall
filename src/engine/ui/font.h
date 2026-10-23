@@ -36,5 +36,7 @@ int ui_line_height(void);
 int ui_string_width(const char *s);
 /* top is the top of the line. Origin is the lower left of the screen. */
 void ui_string(int x, int top, const char *s);
+/* Same line, drawn at alpha 0..255 so a note can fade. */
+void ui_string_alpha(int x, int top, const char *s, int alpha);
 
 #endif

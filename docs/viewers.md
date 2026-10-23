@@ -1,6 +1,6 @@
 # Viewers
 
-`RENDERFALL.EXE` (`tools/renderfall/main.c`) lists `ARCH3D.BSA` and orbits one model. `LEVELFALL.EXE` (`tools/levelfall/main.c`) lists every indoor and outdoor place and flies through one. Both are PE32 GUI programs on the gfall disc, next to `ARENA2`. Neither imports `glide2x.dll`. `comctl32.dll` is `LoadLibrary`'d for `SysListView32`; it is not in the import table. `make renderfall-check` and `make levelfall-check` are the same PE checks as `gfall-check`.
+`RENDERFALL.EXE` (`tools/renderfall/main.c`) lists `ARCH3D.BSA` and orbits one model. `LEVELFALL.EXE` (`tools/levelfall/main.c`) lists every indoor and outdoor place and flies through one. Both are PE32 GUI programs on the gfall disc. `ARENA2` is not on the disc. They read it from the directory beside the exe. Neither imports `glide2x.dll`. `comctl32.dll` is `LoadLibrary`'d for `SysListView32`; it is not in the import table. `make renderfall-check` and `make levelfall-check` are the same PE checks as `gfall-check`.
 
 Read `docs/dungeons.md` before changing what a level is. This file is the UI and the camera.
 
@@ -27,7 +27,7 @@ Order when leaving the view:
 4. `mem_temp_end`
 5. `show_list(1)` and `input_clear_quit`
 
-The HUD uses the engine face: the stock OEM fixed font, rasterized once into a sheet on the first `gfx_prepare`. `GFALL.EXE` replaces that sheet with `FONT0000.FNT`. These viewers do not, so a tool does not read the game font. The place index is filled inside one temp heap, then `mem_temp_end`, so the map files are not kept. The `DunRef` array itself is allocated before that. A failed open shows `dungeon_error()`, `world_error()`, or `gfx_error()` and stays on the list. `texture memory is full` used to mean the Voodoo's 2MB filled during `gfx_prepare`. That upload is now a 16 by 16 stand-in, and the real picture is sent for nearby models. Distance and the card budget are in `docs/memory.md`. Esc in the view sets the quit flag; clear it before waiting on the list again or the next Esc test trips immediately. The title-bar cross sets `win_closed` and posts `WM_QUIT`, including from the fly view, so that path leaves the process instead of returning to the list.
+The HUD uses the engine face: the stock OEM fixed font, rasterized once into a sheet on the first `gfx_prepare`. `GFALL.EXE` replaces that sheet with `FONT0000.FNT`. These viewers do not, so a tool does not read the game font. The place index is filled inside one temp heap, then `mem_temp_end`, so the map files are not kept. The `DunRef` array itself is allocated before that. A failed open shows `dungeon_error()`, `world_error()`, or `gfx_error()` and stays on the list. `texture memory is full` used to mean the Voodoo's 2MB filled during `gfx_prepare`. Pictures are one full image each. A picture that does not fit is left unbound. See `docs/memory.md`. Esc in the view sets the quit flag; clear it before waiting on the list again or the next Esc test trips immediately. The title-bar cross sets `win_closed` and posts `WM_QUIT`, including from the fly view, so that path leaves the process instead of returning to the list.
 
 Glide clear stays black (the default). Fog uses that color. `gfx_set_fog` turns the distance table on or off; the default is on, and a call before `gfx_startup` is applied when the device opens. Renderfall reads `renderfall.cfg` beside the exe (`background=R,G,B`, `grid=1` or `0`, `fog=1` or `0`) and F toggles fog for the rest of the run. Levelfall reads `levelfall.cfg` beside the exe for `background`, `fog`, and `far`, each as `key=value`. A missing file is written on first run. Nothing on the disc is a cfg. `far` is the clip distance in world units (`gfx_set_far`); the engine default is 1400 and the cap is 16384. Levelfall's own default is 8192. Fog, when on, goes solid at about four fifths of that distance, in the clear colour.
 
@@ -54,10 +54,10 @@ The fly view is a 640 by 480 picture. Text is the engine face: the 8x8 Terminal 
 Each panel is a dark body, a title band in the same hue, and a 1px border in the bright colour. White text sits on that. Place is amber, camera is blue, block is green, frame is grey.
 
 - `place`, top left: the name, indoor or outdoor, the region file, and the climate. The title band says `f1` or `f1 hide`.
-- `camera`, `block`, and `frame` sit in a row along the bottom. Camera is x y z, yaw (and the axis it faces), pitch, and the field of view. Block is the file under the camera (`outside` when the tile is empty), the cell, and the grid span. Frame is visible models and flats over the place totals, fog, the far clip, and `tex` (`auto`, `tiny`, or `sharp`). The frame title band carries fps.
+- `camera`, `block`, and `frame` sit in a row along the bottom. Camera is x y z, yaw (and the axis it faces), pitch, and the field of view. Block is the file under the camera (`outside` when the tile is empty), the cell, and the grid span. Frame is visible models and flats over the place totals, fog, the far clip, and `full`. The frame title band carries fps.
 - F1 opens three more panels down the right: `record` (location, climate, family, counts), `draw` (frustum, backfaces, faces kept and hidden), and `keys`. They start closed.
 
-The key immediately left of 1 toggles the engine console. See `docs/console.md`. While that panel is up, including while it is sliding, these loops do not move the camera and do not toggle fog, the grid, or help. Escape closes the console. A second Escape, after it has shut, leaves the view.
+The key immediately left of 1 toggles the engine console. See `docs/console.md`. While that panel is up, including while it is sliding, these loops do not move the camera and do not toggle fog, the grid, or help. Escape closes the console. A second Escape, after it has shut, leaves the view. F12 writes a BMP beside the program. The name fades in the top right.
 
 ## Game controls, unchanged
 

@@ -111,7 +111,11 @@ int scene_cull(void);
  * With culling on, a block span is tested first, then
  * each model's baked box. A model or sprite is dropped when its box
  * lies wholly outside the view: behind the near plane, past the fog or
- * the far clip, or past a screen edge. Without baked bounds, the box is
+ * the far clip, or past a screen edge. A close vertical face then hides
+ * a box only when that box sits inside that face's screen rectangle
+ * and is farther than the face. A floor, a ceiling, and the gap
+ * between a roof and a side wall stay. scene_set_cull(0) skips both.
+ * Without baked bounds, the box is
  * measured from the mesh and a model with no triangles is omitted.
  * A count above cap is truncated, so pass a cap of at least nmodels
  * or nsprites.
@@ -119,5 +123,14 @@ int scene_cull(void);
 
 int scene_visible_models(const Scene *scene, const Camera *cam, int *out, int cap);
 int scene_visible_sprites(const Scene *scene, const Camera *cam, int *out, int cap);
+
+/* Draw the rectangles the wall test used last frame. Default on. */
+void scene_set_cover_draw(int on);
+int scene_cover_draw(void);
+int scene_cover_count(void);
+void scene_cover_at(int index, float *x0, float *y0, float *x1, float *y1);
+/* Joined walls. Faces join only when their rectangles meet. */
+int scene_facade_count(void);
+void scene_facade_at(int index, float *x0, float *y0, float *x1, float *y1);
 
 #endif

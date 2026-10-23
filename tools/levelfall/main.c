@@ -21,7 +21,6 @@
 #include "engine/gfx/draw.h"
 #include "engine/gfx/gfx.h"
 #include "engine/gfx/glide.h"
-#include "engine/gfx/texcache.h"
 #include "engine/platform/input.h"
 #include "engine/platform/win32.h"
 #include "engine/ui/console.h"
@@ -1111,13 +1110,7 @@ static const char *family_name(int family)
 
 static const char *tex_name(void)
 {
-    if (texcache_mode() == 1) {
-        return "tiny";
-    }
-    if (texcache_mode() == 2) {
-        return "sharp";
-    }
-    return "auto";
+    return "full";
 }
 
 /* Truncation toward zero would put a negative edge in the next tile. */
@@ -1334,16 +1327,16 @@ static void draw_overlay(void)
     char hid_v[16];
     char rec_row[7][40];
     char draw_row[4][32];
-    char key_lines[11][48];
+    char key_lines[12][48];
     const char *place_l[3];
     const char *cam_l[3];
     const char *block_l[3];
     const char *frame_l[3];
     const char *rec_l[7];
     const char *draw_l[4];
-    const char *key_l[11];
-    const char *key_name[11];
-    const char *key_act[11];
+    const char *key_l[12];
+    const char *key_name[12];
+    const char *key_act[12];
     int n;
     int i;
     int gx;
@@ -1595,13 +1588,15 @@ static void draw_overlay(void)
     key_act[9] = "hide";
     key_name[10] = "left of 1";
     key_act[10] = "console";
-    for (i = 0; i < 11; i++) {
+    key_name[11] = "f12";
+    key_act[11] = "screenshot";
+    for (i = 0; i < 12; i++) {
         pair_line(key_lines[i], 48, key_name[i], key_act[i]);
         key_l[i] = key_lines[i];
     }
     rw = measure_lines("record", 0, rec_l, 7);
     dw = measure_lines("draw", 0, draw_l, 4);
-    kw = measure_lines("keys", 0, key_l, 11);
+    kw = measure_lines("keys", 0, key_l, 12);
     side_w = rw;
     if (dw > side_w) {
         side_w = dw;
@@ -1611,7 +1606,7 @@ static void draw_overlay(void)
     }
     rh = measure_h(7);
     dh = measure_h(4);
-    kh = measure_h(11);
+    kh = measure_h(12);
     x = DF_VIEW_W - gap - side_w;
     y = DF_VIEW_H - gap - rh;
     draw_panel(x, y, side_w, rh, "record", 0, rec_l, 7, 204.0f, 160.0f, 64.0f);
@@ -1621,7 +1616,7 @@ static void draw_overlay(void)
     if (y < gap + ph) {
         y = gap + ph;
     }
-    draw_panel(x, y, side_w, kh, "keys", 0, key_l, 11, 168.0f, 168.0f, 180.0f);
+    draw_panel(x, y, side_w, kh, "keys", 0, key_l, 12, 168.0f, 168.0f, 180.0f);
 }
 
 static void fly_step(Camera *cam, int dx, int dy, float dt)

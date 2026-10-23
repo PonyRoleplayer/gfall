@@ -18,4 +18,15 @@ int fs_read_at(FsFile *file, df_u32 offset, void *dst, df_u32 n);
 /* Whole file. The bytes live until process exit. */
 df_u8 *fs_read_all(const char *rel, df_u32 *size);
 
+/*
+ * Replace one file in the directory that contains the content root,
+ * beside the program rather than inside ARENA2. name is a single
+ * component. A file already there is replaced. fs_create opens it,
+ * fs_append writes, fs_finish keeps it, fs_abort deletes the partial.
+ */
+int fs_create(const char *name);
+int fs_append(const void *src, df_u32 n);
+void fs_finish(void);
+void fs_abort(void);
+
 #endif

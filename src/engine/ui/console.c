@@ -7,6 +7,8 @@
 
 #include "engine/core/df.h"
 #include "engine/core/mem.h"
+#include "engine/ui/shot.h"
+#include "engine/ui/build.h"
 #include "engine/gfx/camera.h"
 #include "engine/gfx/draw.h"
 #include "engine/gfx/gfx.h"
@@ -209,17 +211,27 @@ static int parse_switch(const char *s, int *out)
     return 0;
 }
 
+static void cmd_screenshot(const char *arg)
+{
+    if (!shot_save(arg)) {
+        say(shot_status());
+        return;
+    }
+    say(shot_status());
+}
+
 static void cmd_help(void)
 {
     say("fov 45..120");
     say("fog on|off");
     say("cull on|off");
+    say("covers on|off");
+    say("version on|off");
     say("far units");
     say("faces on|off");
-    say("tex auto|tiny|sharp");
-    say("budget bytes");
     say("stats");
     say("pos");
+    say("screenshot name");
     say("clear");
     say("help");
 }
@@ -254,6 +266,40 @@ static void cmd_fog(const char *arg)
     }
     gfx_set_fog(v);
     say_int("fog", gfx_fog());
+}
+
+static void cmd_covers(const char *arg)
+{
+    int v;
+
+    if (!arg[0]) {
+        say_int("covers", scene_cover_draw());
+        return;
+    }
+    if (!parse_switch(arg, &v)) {
+        say("covers on|off");
+        return;
+    }
+    scene_set_cover_draw(v);
+    say_int("covers", scene_cover_draw());
+}
+
+static void cmd_version(const char *arg)
+{
+    int v;
+
+    if (!arg[0]) {
+        say(build_text());
+        say_int("version", build_draw());
+        return;
+    }
+    if (!parse_switch(arg, &v)) {
+        say("version on|off");
+        return;
+    }
+    build_set_draw(v);
+    say(build_text());
+    say_int("version", build_draw());
 }
 
 static void cmd_cull(const char *arg)
@@ -304,45 +350,6 @@ static void cmd_faces(const char *arg)
     say_int("faces", draw_faces());
 }
 
-static void cmd_tex(const char *arg)
-{
-    if (!arg[0] || df_eq(arg, "auto")) {
-        if (arg[0]) {
-            texcache_set_mode(0);
-        }
-        say(texcache_mode() == 0 ? "tex auto" :
-            texcache_mode() == 1 ? "tex tiny" : "tex sharp");
-        return;
-    }
-    if (df_eq(arg, "tiny")) {
-        texcache_set_mode(1);
-        say("tex tiny");
-        return;
-    }
-    if (df_eq(arg, "sharp")) {
-        texcache_set_mode(2);
-        say("tex sharp");
-        return;
-    }
-    say("tex auto|tiny|sharp");
-}
-
-static void cmd_budget(const char *arg)
-{
-    int v;
-
-    if (!arg[0]) {
-        say_int("budget", (int)texcache_budget());
-        return;
-    }
-    if (!parse_int(arg, &v) || v < 0) {
-        say("budget bytes");
-        return;
-    }
-    texcache_set_budget((df_u32)v);
-    say_int("budget", (int)texcache_budget());
-}
-
 static void cmd_stats(void)
 {
     int models;
@@ -355,9 +362,6 @@ static void cmd_stats(void)
     say_int("far", (int)gfx_far());
     say_int("cull", scene_cull());
     say_int("faces", draw_faces());
-    say(texcache_mode() == 0 ? "tex auto" :
-        texcache_mode() == 1 ? "tex tiny" : "tex sharp");
-    say_int("budget", (int)texcache_budget());
     draw_stats(&models, &sprites, &kept, &dropped);
     say_int("models", models);
     say_int("sprites", sprites);
@@ -433,18 +437,20 @@ static void run_line(char *line)
         cmd_fog(arg);
     } else if (df_eq(cmd, "cull")) {
         cmd_cull(arg);
+    } else if (df_eq(cmd, "covers")) {
+        cmd_covers(arg);
+    } else if (df_eq(cmd, "version")) {
+        cmd_version(arg);
     } else if (df_eq(cmd, "far")) {
         cmd_far(arg);
     } else if (df_eq(cmd, "faces")) {
         cmd_faces(arg);
-    } else if (df_eq(cmd, "tex")) {
-        cmd_tex(arg);
-    } else if (df_eq(cmd, "budget")) {
-        cmd_budget(arg);
     } else if (df_eq(cmd, "stats")) {
         cmd_stats();
     } else if (df_eq(cmd, "pos")) {
         cmd_pos();
+    } else if (df_eq(cmd, "screenshot")) {
+        cmd_screenshot(arg);
     } else if (df_eq(cmd, "clear")) {
         cmd_clear();
     } else {
@@ -512,6 +518,14 @@ void console_pump(void)
             g_target = 0;
         } else {
             g_target = CON_H;
+        }
+    }
+    {
+        const char *shot;
+
+        shot = shot_pump();
+        if (shot) {
+            say(shot);
         }
     }
     /* Letters are tracked every frame so a held key is not typed on open. */
@@ -694,5 +708,7 @@ void console_present(const Camera *cam)
     }
     texcache_forget();
     draw_panel();
+    shot_note();
+    build_legend();
     glide_swap();
 }

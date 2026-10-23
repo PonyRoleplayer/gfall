@@ -673,20 +673,40 @@ int ui_string_width(const char *s)
 
 void ui_string(int x, int top, const char *s)
 {
-    if (!s) {
+    ui_string_alpha(x, top, s, 255);
+}
+
+void ui_string_alpha(int x, int top, const char *s, int alpha)
+{
+    if (!s || alpha < 1) {
         return;
+    }
+    if (alpha > 255) {
+        alpha = 255;
     }
     if (g_uploaded && g_height > 0) {
         glide_ui(1);
         glide_sprite_alpha(1);
+        if (alpha < 255) {
+            glide_opacity(alpha, 1);
+        }
         glide_bind(g_addr);
         atlas_text(x, top, s);
+        if (alpha < 255) {
+            glide_opacity(-1, 0);
+        }
         glide_sprite_alpha(0);
         glide_ui(0);
         texcache_forget();
         return;
     }
     glide_overlay(1);
+    if (alpha < 255) {
+        glide_opacity(alpha, 0);
+    }
     fallback_text(x, top, s);
+    if (alpha < 255) {
+        glide_opacity(-1, 0);
+    }
     glide_overlay(0);
 }

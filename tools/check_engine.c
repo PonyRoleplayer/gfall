@@ -91,6 +91,50 @@ static void check_scene(void)
                  "sprites were not listed in storage order");
 }
 
+/* Quad in local XY, normal -Z, so it faces a camera looking along +Z. */
+static Mesh *wall_mesh(float half)
+{
+    Mesh *mesh;
+    Tri *tris;
+    Face *face;
+
+    mesh = (Mesh *)mem_alloc(sizeof(Mesh));
+    tris = (Tri *)mem_alloc((df_u32)sizeof(Tri) * 2u);
+    face = (Face *)mem_alloc(sizeof(Face));
+    if (!mesh || !tris || !face) {
+        return 0;
+    }
+    tris[0].x[0] = -half;
+    tris[0].y[0] = -half;
+    tris[0].z[0] = 0.0f;
+    tris[0].x[1] = half;
+    tris[0].y[1] = -half;
+    tris[0].z[1] = 0.0f;
+    tris[0].x[2] = half;
+    tris[0].y[2] = half;
+    tris[0].z[2] = 0.0f;
+    tris[1].x[0] = -half;
+    tris[1].y[0] = -half;
+    tris[1].z[0] = 0.0f;
+    tris[1].x[1] = half;
+    tris[1].y[1] = half;
+    tris[1].z[1] = 0.0f;
+    tris[1].x[2] = -half;
+    tris[1].y[2] = half;
+    tris[1].z[2] = 0.0f;
+    face->nx = 0.0f;
+    face->ny = 0.0f;
+    face->nz = -1.0f;
+    face->first = 0;
+    face->ntris = 2;
+    mesh->tris = tris;
+    mesh->ntris = 2;
+    mesh->faces = face;
+    mesh->nfaces = 1;
+    mesh->face_cap = 1;
+    return mesh;
+}
+
 static Mesh *tri_mesh(float x0, float y0, float z0,
                       float x1, float y1, float z1,
                       float x2, float y2, float z2)
@@ -114,6 +158,50 @@ static Mesh *tri_mesh(float x0, float y0, float z0,
     tri->z[2] = z2;
     mesh->tris = tri;
     mesh->ntris = 1;
+    return mesh;
+}
+
+/* Left wall plus a roof. Unioning those two faces fills the picture. */
+static Mesh *porch_mesh(void)
+{
+    Mesh *mesh;
+    Tri *tris;
+    Face *faces;
+
+    mesh = (Mesh *)mem_alloc(sizeof(Mesh));
+    tris = (Tri *)mem_alloc((df_u32)sizeof(Tri) * 4u);
+    faces = (Face *)mem_alloc((df_u32)sizeof(Face) * 2u);
+    if (!mesh || !tris || !faces) {
+        return 0;
+    }
+    tris[0].x[0] = -30.0f; tris[0].y[0] = -50.0f; tris[0].z[0] = 20.0f;
+    tris[0].x[1] = -30.0f; tris[0].y[1] = -50.0f; tris[0].z[1] = 100.0f;
+    tris[0].x[2] = -30.0f; tris[0].y[2] = 50.0f; tris[0].z[2] = 100.0f;
+    tris[1].x[0] = -30.0f; tris[1].y[0] = -50.0f; tris[1].z[0] = 20.0f;
+    tris[1].x[1] = -30.0f; tris[1].y[1] = 50.0f; tris[1].z[1] = 100.0f;
+    tris[1].x[2] = -30.0f; tris[1].y[2] = 50.0f; tris[1].z[2] = 20.0f;
+    tris[2].x[0] = -100.0f; tris[2].y[0] = 40.0f; tris[2].z[0] = 10.0f;
+    tris[2].x[1] = 100.0f; tris[2].y[1] = 40.0f; tris[2].z[1] = 10.0f;
+    tris[2].x[2] = 100.0f; tris[2].y[2] = 40.0f; tris[2].z[2] = 140.0f;
+    tris[3].x[0] = -100.0f; tris[3].y[0] = 40.0f; tris[3].z[0] = 10.0f;
+    tris[3].x[1] = 100.0f; tris[3].y[1] = 40.0f; tris[3].z[1] = 140.0f;
+    tris[3].x[2] = -100.0f; tris[3].y[2] = 40.0f; tris[3].z[2] = 140.0f;
+    faces[0].nx = 1.0f;
+    faces[0].ny = 0.0f;
+    faces[0].nz = 0.0f;
+    faces[0].first = 0;
+    faces[0].ntris = 2;
+    faces[1].nx = 0.0f;
+    faces[1].ny = -1.0f;
+    faces[1].nz = 0.0f;
+    faces[1].first = 2;
+    faces[1].ntris = 2;
+    mesh->tris = tris;
+    mesh->ntris = 4;
+    mesh->faces = faces;
+    mesh->nfaces = 2;
+    mesh->face_cap = 2;
+    mesh->id = 1;
     return mesh;
 }
 
@@ -276,6 +364,116 @@ static void check_cull(void)
     check_expect(n == 1 && order[0] == 0,
                  "block past the fog was kept");
     scene_set_limits(DF_FAR, 1);
+
+    /*
+     * A wall at 100 hides the model straight behind it and leaves the
+     * one beside it. Cull off lists all three.
+     */
+    {
+        Mesh *wall;
+
+        wall = wall_mesh(40.0f);
+        check_expect(wall != 0, "wall mesh was not allocated");
+        if (wall) {
+            scene.bounds = 0;
+            scene.spans = 0;
+            scene.nspans = 0;
+            camera_set(&cam, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+            /* Farther than the close-wall test, so it does not cover the street. */
+            wall->id = 1;
+            place_at(&models[0], wall, 0.0f, 0.0f, 100.0f);
+            place_at(&models[1], mesh, 10.0f, -20.0f, 400.0f);
+            place_at(&models[2], mesh, 150.0f, 0.0f, 250.0f);
+            scene.models = models;
+            scene.nmodels = 3;
+            scene.sprites = 0;
+            scene.nsprites = 0;
+            n = scene_visible_models(&scene, &cam, order, 4);
+            check_expect(n == 2 && order[0] == 0 && order[1] == 2,
+                         "model beside the wall was dropped");
+
+            mem_zero(sprites, sizeof(sprites));
+            sprites[0].x = 10.0f;
+            sprites[0].y = -20.0f;
+            sprites[0].z = 400.0f;
+            sprites[0].w = 8.0f;
+            sprites[0].h = 8.0f;
+            sprites[1].x = 150.0f;
+            sprites[1].y = 0.0f;
+            sprites[1].z = 250.0f;
+            sprites[1].w = 8.0f;
+            sprites[1].h = 8.0f;
+            scene.sprites = sprites;
+            scene.nsprites = 2;
+            n = scene_visible_sprites(&scene, &cam, order, 4);
+            check_expect(n == 1 && order[0] == 1,
+                         "sprite beside the wall was dropped");
+
+            scene_set_cull(0);
+            n = scene_visible_models(&scene, &cam, order, 4);
+            check_expect(n == 3, "cull off still hid the model behind the wall");
+            scene_set_cull(1);
+            /*
+             * Nose in a tall mesh. The box reaches from behind the eye
+             * to z=40 and fills the picture. The model at z=80 projects
+             * inside that wall, so it is not drawn.
+             */
+            wall->tris[0].z[0] = 40.0f;
+            wall->tris[0].z[1] = 40.0f;
+            wall->tris[0].z[2] = -20.0f;
+            wall->tris[1].z[0] = -20.0f;
+            wall->tris[1].z[1] = 40.0f;
+            wall->tris[1].z[2] = -20.0f;
+            wall->bound_n = 0;
+            place_at(&models[0], wall, 0.0f, 0.0f, 0.0f);
+            place_at(&models[1], mesh, 0.0f, 0.0f, 80.0f);
+            scene.nmodels = 2;
+            scene.nsprites = 0;
+            n = scene_visible_models(&scene, &cam, order, 4);
+            check_expect(n == 1 && order[0] == 0,
+                         "model past the lens wall was kept");
+            /*
+             * A closer wall that does not fill the picture. The model
+             * straight behind it goes. The one beside it stays.
+             */
+            {
+                Mesh *part;
+
+                part = wall_mesh(32.0f);
+                check_expect(part != 0, "partial wall was not allocated");
+                if (part) {
+                    part->id = 1;
+                    place_at(&models[0], part, 0.0f, 0.0f, 55.0f);
+                    place_at(&models[1], mesh, 0.0f, 0.0f, 120.0f);
+                    place_at(&models[2], mesh, 55.0f, 0.0f, 80.0f);
+                    scene.nmodels = 3;
+                    n = scene_visible_models(&scene, &cam, order, 4);
+                    check_expect(n == 2 && order[0] == 0 && order[1] == 2,
+                                 "model beside the wall was dropped");
+                }
+            }
+            /*
+             * Under a porch. The roof and the side wall must not
+             * combine into one rectangle the size of the picture.
+             * The model in the opening stays.
+             */
+            {
+                Mesh *porch;
+
+                porch = porch_mesh();
+                check_expect(porch != 0, "porch was not allocated");
+                if (porch) {
+                    place_at(&models[0], porch, 0.0f, 0.0f, 0.0f);
+                    place_at(&models[1], mesh, 0.0f, 0.0f, 180.0f);
+                    scene.nmodels = 2;
+                    scene.nsprites = 0;
+                    n = scene_visible_models(&scene, &cam, order, 4);
+                    check_expect(n == 2 && order[0] == 0 && order[1] == 1,
+                                 "model under the roof was dropped");
+                }
+            }
+        }
+    }
 }
 
 static void check_loader(void)

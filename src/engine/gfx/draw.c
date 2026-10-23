@@ -2,6 +2,8 @@
 #include "engine/assets/level.h"
 #include "engine/gfx/glide.h"
 #include "engine/ui/console.h"
+#include "engine/ui/shot.h"
+#include "engine/ui/build.h"
 #include "engine/ui/hud.h"
 #include "engine/gfx/texcache.h"
 
@@ -24,13 +26,16 @@
 
 /*
  * SST-1 screen coordinates live in about +/-2048. Past that the edge
- * walker wraps and the triangle turns into stripes. camera_project is
+ * walker wraps and a close wall turns into stripes, or the chip walks
+ * a triangle several screens wide. camera_project is
  *   sx = 320 + x * focal / z
- * so a guard of 1600 pixels from the centre stays inside that range
- * when the camera pitches or a wall gets close. The guard follows
- * camera_focal, so a wider field does not push the clip into the SST-1 wrap.
+ * The clip is the picture plus a few pixels, not a 1600-pixel guard.
+ * A wall against the lens used to be submitted with a corner at
+ * x = -3242. The visible part is the same. The walker no longer
+ * starts thousands of pixels off the glass. The margin follows
+ * camera_focal, so a wider field stays inside the SST-1 range.
  */
-#define GLIDE_GUARD 1600.0f
+#define CLIP_MARGIN 16.0f
 #define CLIP_MAX 16
 
 static void (*g_extra)(void);
@@ -42,9 +47,22 @@ static int g_vis_sprites;
 static int g_faces_kept;
 static int g_faces_drop;
 
-static float clip_guard(void)
+/*
+ * Picture slopes, plus CLIP_MARGIN. Divided once per frame. A triangle
+ * already inside the picture never divides again.
+ */
+static float g_clip_x = (320.0f + CLIP_MARGIN) / 417.0f;
+static float g_clip_y = (240.0f + CLIP_MARGIN) / 417.0f;
+static float g_focal = 417.0f;
+
+static void clip_slopes(void)
 {
-    return GLIDE_GUARD / camera_focal();
+    g_focal = camera_focal();
+    if (g_focal < 1.0f) {
+        g_focal = 1.0f;
+    }
+    g_clip_x = ((float)DF_VIEW_W * 0.5f + CLIP_MARGIN) / g_focal;
+    g_clip_y = ((float)DF_VIEW_H * 0.5f + CLIP_MARGIN) / g_focal;
 }
 
 void draw_set_far(float far)
@@ -113,13 +131,13 @@ static float plane_side(int plane, const Vtx *v)
     case 1:
         return g_far - v->z;
     case 2:
-        return v->z * clip_guard() + v->x;
+        return v->z * g_clip_x + v->x;
     case 3:
-        return v->z * clip_guard() - v->x;
+        return v->z * g_clip_x - v->x;
     case 4:
-        return v->z * clip_guard() + v->y;
+        return v->z * g_clip_y + v->y;
     case 5:
-        return v->z * clip_guard() - v->y;
+        return v->z * g_clip_y - v->y;
     default:
         return 1.0f;
     }
@@ -256,6 +274,57 @@ static void image_inv(const Image *img, float *inv_w, float *inv_h)
     *inv_h = (float)img->span_h / ((float)img->pot_h * (float)img->height);
 }
 
+/*
+ * 1 when every vertex is inside the near plane, the far clip, and the
+ * picture. A triangle that crosses the glass is cut to it. One that
+ * is already on the glass is projected directly.
+ */
+static int tri_inside(const Vtx *v)
+{
+    int i;
+
+    for (i = 0; i < 3; i++) {
+        float x;
+        float y;
+        float z;
+        float gx;
+        float gy;
+
+        x = v[i].x;
+        y = v[i].y;
+        z = v[i].z;
+        if (z < DF_NEAR || z > g_far) {
+            return 0;
+        }
+        gx = z * g_clip_x;
+        gy = z * g_clip_y;
+        if (gx + x < 0.0f || gx - x < 0.0f || gy + y < 0.0f || gy - y < 0.0f) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void submit(const Vtx *poly, int n, float inv_w, float inv_h,
+                   float cr, float cg, float cb);
+
+static void emit_tri(const Vtx *view, float inv_w, float inv_h,
+                     float cr, float cg, float cb)
+{
+    Vtx clipped[CLIP_MAX];
+    int nout;
+
+    if (tri_inside(view)) {
+        submit(view, 3, inv_w, inv_h, cr, cg, cb);
+        return;
+    }
+    nout = clip_view(view, clipped);
+    if (nout < 3) {
+        return;
+    }
+    submit(clipped, nout, inv_w, inv_h, cr, cg, cb);
+}
+
 static void submit(const Vtx *poly, int n, float inv_w, float inv_h,
                    float cr, float cg, float cb)
 {
@@ -283,9 +352,36 @@ static void submit(const Vtx *poly, int n, float inv_w, float inv_h,
 
 static const Image *level_image(const Level *level, int slot);
 
+/*
+ * image_inv is two divides. A face repeats the same picture, so the
+ * pair is stored by slot and reused. The pointer compare notices a
+ * new place without clearing the table.
+ */
+#define INV_SLOTS 512
+static const Image *g_inv_img[INV_SLOTS];
+static float g_inv_w[INV_SLOTS];
+static float g_inv_h[INV_SLOTS];
+
+static void image_scale(const Image *img, int slot, float *inv_w, float *inv_h)
+{
+    if ((unsigned)slot < INV_SLOTS && g_inv_img[slot] == img) {
+        *inv_w = g_inv_w[slot];
+        *inv_h = g_inv_h[slot];
+        return;
+    }
+    image_inv(img, inv_w, inv_h);
+    if ((unsigned)slot < INV_SLOTS) {
+        g_inv_img[slot] = img;
+        g_inv_w[slot] = *inv_w;
+        g_inv_h[slot] = *inv_h;
+    }
+}
+
 /* Local point straight into view space. One less round trip through memory. */
-static void view_point(const Instance *in, const Camera *cam, const Basis *basis,
-                       float lx, float ly, float lz, float *vx, float *vy, float *vz)
+/* Inlined. A call per vertex is three calls per triangle on a 233. */
+static __inline__ void view_point(const Instance *in, const Camera *cam, const Basis *basis,
+                                  float lx, float ly, float lz,
+                                  float *vx, float *vy, float *vz)
 {
     float dx, dy, dz;
     float x1, z1;
@@ -301,7 +397,7 @@ static void view_point(const Instance *in, const Camera *cam, const Basis *basis
 }
 
 static void draw_tris(const Camera *cam, const Basis *basis, const Level *level,
-                      const Instance *in, int first, int count, int sharp)
+                      const Instance *in, int first, int count)
 {
     int t;
     int end;
@@ -317,9 +413,7 @@ static void draw_tris(const Camera *cam, const Basis *basis, const Level *level,
         const Tri *tri;
         const Image *img;
         Vtx view[3];
-        Vtx clipped[CLIP_MAX];
         int k;
-        int nout;
         float inv_w;
         float inv_h;
 
@@ -334,23 +428,19 @@ static void draw_tris(const Camera *cam, const Basis *basis, const Level *level,
             view[k].u = tri->u[k];
             view[k].v = tri->v[k];
         }
-        nout = clip_view(view, clipped);
-        if (nout < 3) {
-            continue;
-        }
         /*
          * A null image is a texture the loader could not read.
          * Draw it flat magenta so the face is not silently dropped.
          */
         if (!img || img->width < 1 || img->height < 1) {
             glide_flat(1);
-            submit(clipped, nout, 1.0f, 1.0f, 255.0f, 0.0f, 255.0f);
+            emit_tri(view, 1.0f, 1.0f, 255.0f, 0.0f, 255.0f);
             glide_flat(0);
             continue;
         }
-        texcache_bind((int)tri->slot, sharp);
-        image_inv(img, &inv_w, &inv_h);
-        submit(clipped, nout, inv_w, inv_h, 255.0f, 255.0f, 255.0f);
+        texcache_bind((int)tri->slot);
+        image_scale(img, (int)tri->slot, &inv_w, &inv_h);
+        emit_tri(view, inv_w, inv_h, 255.0f, 255.0f, 255.0f);
     }
 }
 
@@ -372,7 +462,7 @@ static const Image *level_image(const Level *level, int slot)
 }
 
 static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
-                      const Flat *flat, int sharp)
+                      const Flat *flat)
 {
     const Image *img;
     float hx;
@@ -382,11 +472,9 @@ static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
     float uh;
     float inv_w;
     float inv_h;
-    Vtx corner[4];
-    Vtx tri[3];
-    Vtx clipped[CLIP_MAX];
-    int nout;
-    int pass;
+        Vtx corner[4];
+        Vtx tri[3];
+        int pass;
 
     if (!flat || flat->slot == 0xffff || flat->w < 1.0f || flat->h < 1.0f) {
         return;
@@ -402,7 +490,7 @@ static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
     rz = basis->rz;
     uw = (float)img->width;
     uh = (float)img->height;
-    image_inv(img, &inv_w, &inv_h);
+    image_scale(img, (int)flat->slot, &inv_w, &inv_h);
     /* 0 top-left, 1 top-right, 2 bottom-right, 3 bottom-left. v = 0 is the top row. */
     flat_corner(cam, basis,
                 flat->x - rx * hx, flat->y - ry * hx + hy, flat->z - rz * hx,
@@ -416,7 +504,7 @@ static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
     flat_corner(cam, basis,
                 flat->x - rx * hx, flat->y - ry * hx - hy, flat->z - rz * hx,
                 0.0f, uh, &corner[3]);
-    texcache_bind((int)flat->slot, sharp);
+    texcache_bind((int)flat->slot);
     for (pass = 0; pass < 2; pass++) {
         if (pass == 0) {
             tri[0] = corner[0];
@@ -427,13 +515,11 @@ static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
             tri[1] = corner[2];
             tri[2] = corner[3];
         }
-        nout = clip_view(tri, clipped);
-        if (nout < 3) {
-            continue;
-        }
-        submit(clipped, nout, inv_w, inv_h, 255.0f, 255.0f, 255.0f);
+        emit_tri(tri, inv_w, inv_h, 255.0f, 255.0f, 255.0f);
     }
 }
+
+static void draw_covers(void);
 
 void draw_frame(const Camera *cam, const Level *level)
 {
@@ -463,20 +549,18 @@ void draw_frame(const Camera *cam, const Level *level)
      * next frame would paint the font across those faces.
      */
     texcache_forget();
-    texcache_detail(cam, level);
+    clip_slopes();
     camera_basis(cam, &basis);
     glide_sprite_alpha(0);
     norder = scene_visible_models(&level->scene, cam, order, VIS_MAX);
     g_vis_models = norder;
     for (oi = 0; oi < norder; oi++) {
         const Instance *in;
-        int sharp_model;
 
         in = &level->scene.models[order[oi]];
         if (!in->mesh) {
             continue;
         }
-        sharp_model = texcache_near_model(order[oi]);
         if (in->mesh->nfaces > 0 && in->mesh->faces) {
             int f;
 
@@ -497,18 +581,17 @@ void draw_frame(const Camera *cam, const Level *level)
                     continue;
                 }
                 g_faces_kept++;
-                draw_tris(cam, &basis, level, in, face->first, face->ntris, sharp_model);
+                draw_tris(cam, &basis, level, in, face->first, face->ntris);
             }
         } else {
-            draw_tris(cam, &basis, level, in, 0, in->mesh->ntris, sharp_model);
+            draw_tris(cam, &basis, level, in, 0, in->mesh->ntris);
         }
     }
     glide_sprite_alpha(1);
     norder = scene_visible_sprites(&level->scene, cam, order, VIS_MAX);
     g_vis_sprites = norder;
     for (oi = 0; oi < norder; oi++) {
-        draw_flat(cam, &basis, level, &level->scene.sprites[order[oi]],
-                  texcache_near_flat(order[oi]));
+        draw_flat(cam, &basis, level, &level->scene.sprites[order[oi]]);
     }
     glide_sprite_alpha(0);
     if (g_under) {
@@ -518,5 +601,82 @@ void draw_frame(const Camera *cam, const Level *level)
     if (g_extra) {
         g_extra();
     }
+    shot_note();
+    build_legend();
+    draw_covers();
     glide_swap();
+}
+
+static void cover_bar(float x, float y, float w, float h, float r, float g, float b)
+{
+    DrawVert v[4];
+    int i;
+
+    if (w < 1.0f || h < 1.0f) {
+        return;
+    }
+    for (i = 0; i < 4; i++) {
+        v[i].oow = 1.0f;
+        v[i].ooz = 1.0f;
+        v[i].sow = 0.0f;
+        v[i].tow = 0.0f;
+        v[i].r = r;
+        v[i].g = g;
+        v[i].b = b;
+    }
+    v[0].x = x;
+    v[0].y = y + h;
+    v[1].x = x + w;
+    v[1].y = y + h;
+    v[2].x = x + w;
+    v[2].y = y;
+    v[3].x = x;
+    v[3].y = y;
+    glide_triangle(&v[0], &v[1], &v[2]);
+    glide_triangle(&v[0], &v[2], &v[3]);
+}
+
+static void cover_frame(float x0, float y0, float x1, float y1, float r, float g, float b)
+{
+    float t;
+
+    if (x1 < x0) {
+        t = x0;
+        x0 = x1;
+        x1 = t;
+    }
+    if (y1 < y0) {
+        t = y0;
+        y0 = y1;
+        y1 = t;
+    }
+    t = 3.0f;
+    cover_bar(x0, y0, x1 - x0, t, r, g, b);
+    cover_bar(x0, y1 - t, x1 - x0, t, r, g, b);
+    cover_bar(x0, y0, t, y1 - y0, r, g, b);
+    cover_bar(x1 - t, y0, t, y1 - y0, r, g, b);
+}
+
+/* Green is one face. Red is the joined facade that hides a center. */
+static void draw_covers(void)
+{
+    int i;
+    int n;
+    float x0, y0, x1, y1;
+
+    if (!scene_cover_draw()) {
+        return;
+    }
+    n = scene_cover_count();
+    glide_overlay(1);
+    for (i = 0; i < n; i++) {
+        scene_cover_at(i, &x0, &y0, &x1, &y1);
+        cover_frame(x0, y0, x1, y1, 40.0f, 255.0f, 80.0f);
+    }
+    n = scene_facade_count();
+    for (i = 0; i < n; i++) {
+        scene_facade_at(i, &x0, &y0, &x1, &y1);
+        cover_frame(x0, y0, x1, y1, 255.0f, 40.0f, 40.0f);
+    }
+    glide_overlay(0);
 }

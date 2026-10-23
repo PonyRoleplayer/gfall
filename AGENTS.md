@@ -24,8 +24,10 @@
 - `src/engine/platform/` — `win32.c` (`_WinMainCRTStartup`, content dir beside the exe), `input.c`, `fs.c` (POSIX if `DF_HOST`, Win32 otherwise).
 - `src/engine/assets/` — VFS over `fs`, loader registry, engine formats: mesh, texture, palette, level.
 - `src/engine/scene/` — placed meshes, billboards, transforms, visibility. Models and sprites whose box misses the view, or sits past the fog or the far clip, are not drawn. See `docs/culling.md`.
-- `src/engine/gfx/` — `gfx.h` is the call the game makes. `glide.c` loads glide2x.dll at runtime (plain/`@N`/`_name@N`), `texcache.c` (2MB TMU, sharp maps dripped in 32KB slices), `camera.c`, `draw.c`.
+- `src/engine/gfx/` — `gfx.h` is the call the game makes. `glide.c` loads glide2x.dll at runtime (plain/`@N`/`_name@N`), `texcache.c` (one full image per picture, no mip chain, no per-frame upload), `camera.c`, `draw.c`.
 - `src/engine/ui/` — HUD, text, and the console. Text draws a glyph sheet the game installed. With no sheet, the engine rasterizes the 8x8 Terminal strike (not the 8x12 stock OEM face). The built-in 8x8 face draws when that raster fails. The console is `docs/console.md`.
+- `src/engine/ui/shot.c` — BMP screenshots. Reads the front buffer, writes the file beside the program, and draws the fading note. `console.c` only dispatches `screenshot` and pumps F12. Read `docs/console.md` before editing `shot.c`.
+- `src/engine/ui/build.c` — the compile stamp in the bottom left. The Makefile passes the local time of the link as `BUILD_STAMP` (`YYYY-MM-DDTHH:MM:SS`). `version` turns the drawing on and off. Read `docs/console.md` before editing `build.c`.
 - `src/game/dagger/` — BSA, ARCH3D, RDB, RMB, COL, TEXTURE.###, FONT0000.FNT, Privateer's Hold in `dungeon.c`/`world.c` (`MAPDITEM.017`: `S0000999.RDB` at the origin tile plus four `B` border blocks, camera on editor marker 10), outdoor locations in `rmb.c`, and `player.c` (WASD/Q/E, mouse look).
 - `tools/levelfall/main.c` — `LEVELFALL.EXE`. Indexes every indoor (`MAPDITEM`) and outdoor (`MAPPITEM`) place at startup, filters by name, and flies through one. The fly camera and the titled panels are `docs/viewers.md`. Same window and Glide path as renderfall.
 - `tools/hostcheck.c` — runs `check_engine.c` then `check_dagger.c`. Engine tests cover transforms, camera, visibility, loaders, VFS. Dagger tests assert the hold (models, sprites, start marker), the dungeon list (4232 records, Privateer's Hold in region 17), the outdoor list (15251, Daggerfall region 17 block `WALLAA02.RMB`, one farmstead loads), texture POT/square tiling, and write `build/tex0.ppm`. **Update the dagger test when world/loading changes.**
@@ -34,7 +36,7 @@
 - `docs/culling.md` — block spans, baked boxes, and ARCH3D face cull. Read this before editing `scene.c`, the far clip, or fog.
 - `docs/console.md` — the engine console, its log, and the commands that change a live frame. Read this before editing `console.c`.
 - `docs/memory.md` — heap, the shared mesh cache, and the 2MB texture card. Read this before editing `world.c`, `texcache.c`, or `glide.c` uploads.
-- `daggerfall/DAGGER/ARENA2/` — Game data used at runtime/for tests (baked into ISOs).
+- `daggerfall/DAGGER/ARENA2/` — Game data used at runtime and by hostcheck. Not copied onto the discs. The executables still look for `ARENA2` beside themselves.
 - `third_party/glide2/include/` — Glide 2 headers.
 
 ## Critical constraints
@@ -43,7 +45,7 @@
 - **C:** `-std=gnu90` (C90 + GNU extensions). Math uses x87 inline asm (`df_sin`, `df_cos`, `fsqrt` in arch3d). Avoid `libm` calls.
 - **Memory:** Win32 heap in `mem.c` (not C runtime malloc). Host uses libc malloc. Keep allocation consistent with the target side.
 - **Textures (Voodoo 1, 2MB TMU):** Must be square and power-of-two. Non-square/non-POT source -> tiled into `pot_w x pot_h` (power-of-two square), with subrect `span_w x span_h`; `pot_w % span_w == 0`. `glide.c` uploads `pot` with `cutout` flag to pack. hostcheck enforces and sums bytes < 1500000.
-- **Privateer's Hold:** The one loaded dungeon. Block list comes from `MAPDITEM.017`; tiles are 2048 units; the camera starts at marker record 10. Model faces store texture keys 119/120/122/123/124. The game builds one table from the location id and that place's climate: each key draws an offset 0..4 (a draw of 2 becomes 4) and adds it to the climate's crypt base. This hold is woodlands, so the keys become 323/322/319/322/320. Door set 74 (records 0..2), sewer set 168, and cave set 47 use the same family (374, 368, and 347 when the record exists). Sprites are not remapped. Asset paths use backslashes/ARENA2 root (in CD root: `ARENA2/` sits next to `.EXE`).
+- **Privateer's Hold:** The one loaded dungeon. Block list comes from `MAPDITEM.017`; tiles are 2048 units; the camera starts at marker record 10. Model faces store texture keys 119/120/122/123/124. The game builds one table from the location id and that place's climate: each key draws an offset 0..4 (a draw of 2 becomes 4) and adds it to the climate's crypt base. This hold is woodlands, so the keys become 323/322/319/322/320. Door set 74 (records 0..2), sewer set 168, and cave set 47 use the same family (374, 368, and 347 when the record exists). Sprites are not remapped. Asset paths use backslashes and an `ARENA2` directory beside the exe. That directory is not on the disc.
 - **No SEH, no DLLs except those above.** Keep minimal imports.
 
 ## Conventions
