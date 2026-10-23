@@ -1,5 +1,6 @@
 #include "engine/scene/scene.h"
 #include "engine/core/df.h"
+#include "engine/core/mem.h"
 
 /* 0 lists every stored entity, the same path as a null camera. */
 static int g_cull = 1;
@@ -468,107 +469,295 @@ static int take_visible(const Scene *scene, const Plane *planes,
 }
 
 /*
- * A wall against the lens. The frustum is a pyramid, so a wall in
- * front of the eye still leaves every box behind it "inside" out to
- * the fog. Drawing those is the slow frame: the floor is two models,
- * the same street aimed at a wall is a couple of hundred.
+ * Occlusion.
  *
- * One rectangle per front face, clipped to the picture. A floor or
- * ceiling is not a cover. Tall faces at the same depth then share one
- * rectangle, so the panels of a facade count as the wall. A shallow
- * band does not join them. The depth is the nearest vertex. A face
- * that reaches the edges of the picture hides every box more than
- * COVER_THICK past that depth. A smaller face hides only a box whose
- * corners project inside it. mesh id 0 is a ground patch. This is
- * not a raster of the wall.
+ * The frustum is a pyramid, so a wall in front of the eye still leaves
+ * every box behind it "inside" out to the fog. Drawing those is the
+ * slow frame: the floor is two models, the same street aimed at a wall
+ * is a couple of hundred.
+ *
+ * The answer is a coarse depth picture built on the Pentium before
+ * anything goes to the card:
+ *
+ *   1. The picture is cut into OCC_W x OCC_H cells of OCC_CELL pixels.
+ *   2. Big front faces of the nearest models are projected and
+ *      rasterized into those cells. A cell is written only when one
+ *      face covers all of it. It keeps 1/z of the farthest point that
+ *      face can have inside the cell. Of several faces, the nearest
+ *      bound wins.
+ *   3. A box is hidden when its screen rectangle lands only on written
+ *      cells, and every one of them is nearer than the nearest point of
+ *      the box.
+ *
+ * Every step errs toward drawing. A cell is written only when the face
+ * is known to be over every pixel of it, and only with a depth no
+ * nearer than the face really is there. A box is dropped only when
+ * every pixel it could reach is behind such a cell. So the cull can
+ * keep a model that turns out to be hidden, and the Z buffer sorts that
+ * out, but it cannot drop one that has a pixel on the glass.
+ *
+ * Joining walls is not a separate step. Two panels of one facade fill
+ * their own cells, and the box behind the pair is tested against all of
+ * them. A gap between the panels is a run of empty cells, so whatever
+ * shows through the gap stays. The price of one face per cell is the
+ * seam: a cell that two faces share between them is left empty.
+ *
+ * The cost is held under the vertex work it saves. A cell is 16 pixels,
+ * so the grid is 40 x 30 floats and sits in the Pentium's 16 KB data
+ * cache. 8-pixel cells hid 29% of what the frustum kept in Privateer's
+ * Hold against 27.5% for 16, at about twice the fill. A row of cells is
+ * a span solved per edge, not a test per cell. A model whose box is
+ * already hidden adds no faces. See docs/culling.md for the numbers.
  */
-#define COVER_NEAR 512.0f
-#define COVER_SPAN 320.0f
-#define COVER_H 32.0f
-#define COVER_THICK 32.0f
-#define COVER_MAX 4
-/* A roof slope's rectangle is mostly sky. The triangles have to fill it.
-   A piece below COVER_SOLID is split once into four before that test. */
-#define COVER_FILL 0.55f
-#define COVER_SOLID 0.80f
 
-typedef struct Cover {
-    float sx0, sy0, sx1, sy1;
-    float z1;
-    /* Screen area of the triangles, not of the rectangle. */
-    float fill;
-} Cover;
+#define OCC_CELL 16
+/*
+ * Pixel to cell is a multiply and df_ifloor, never a C cast: on the
+ * x87 a cast switches the rounding mode, about 30 cycles a time.
+ */
+#define OCC_INV (1.0f / (float)OCC_CELL)
+#define OCC_W (DF_VIEW_W / OCC_CELL)
+#define OCC_H (DF_VIEW_H / OCC_CELL)
+/* A model is looked at only when part of its box is nearer than this. */
+#define OCC_NEAR 640.0f
+/* A screen box smaller than 3x3 cells cannot fill enough cells to pay. */
+#define OCC_MODEL_AREA (9.0f * OCC_CELL * OCC_CELL)
+/* Nearest models looked at per frame, and faces drawn into the cells. */
+#define OCC_MODELS 32
+#define OCC_FACES 96
+/*
+ * Faces are clipped this far past the picture, not to its edge, so a
+ * wall that fills the glass also fills the border cells.
+ */
+#define OCC_MARGIN 16.0f
+/*
+ * A cell is tested grown by this much on every side. It covers the
+ * card's 1/16-pixel vertex snap and float error at the outline.
+ */
+#define OCC_EDGE 0.25f
+/*
+ * A box has to be this much farther than the cell, as a factor on 1/z.
+ * 0.1% keeps a sign or a door that is flush with its wall.
+ */
+#define OCC_SLACK 1.001f
+/*
+ * A plane is rebuilt from its fan as one polygon of at most OCC_POLY
+ * corners. Each of the five clip planes adds at most one corner.
+ */
+#define OCC_POLY 16
+#define CV_MAX (OCC_POLY + 6)
+/* Corners closer than this, in pixels, after clipping are one corner. */
+#define OCC_DUP 0.01f
+/*
+ * A corner may turn the wrong way by this much, as sin^2 of the angle,
+ * before the outline counts as notched: float error on a clipped
+ * corner, about 1e-5, not a notch a cell could sit in.
+ */
+#define OCC_BEND 1.0e-8f
 
-static Cover g_cover[COVER_MAX];
-static int g_ncover;
-static Cover g_facade[COVER_MAX];
-static int g_nfacade;
-static int g_cover_draw = 1;
+/* 1/z per cell. 0 is no cover. */
+static float g_occ[OCC_W * OCC_H];
+/* Written cells, inclusive. Empty when x0 > x1. Clearing reads only this. */
+static int g_occ_x0 = OCC_W;
+static int g_occ_y0 = OCC_H;
+static int g_occ_x1 = -1;
+static int g_occ_y1 = -1;
+static int g_occ_on = 1;
+static int g_occ_faces;
+static int g_occ_hidden;
+static int g_cover_draw;
 
-static void box_depth(const Camera *cam, const Basis *basis,
-                      float cx, float cy, float cz,
-                      float ex, float ey, float ez,
-                      float *z0, float *z1)
+void scene_set_occlude(int on)
 {
-    float fx;
-    float fy;
-    float fz;
-    float z;
-    float rad;
-
-    fx = basis->fx * basis->cp;
-    fy = basis->sp;
-    fz = basis->fz * basis->cp;
-    z = (cx - cam->x) * fx + (cy - cam->y) * fy + (cz - cam->z) * fz;
-    rad = ex * df_absf(fx) + ey * df_absf(fy) + ez * df_absf(fz);
-    *z0 = z - rad;
-    *z1 = z + rad;
+    g_occ_on = on ? 1 : 0;
 }
 
-static void view_local(const Instance *in, const Camera *cam, const Basis *basis,
-                       float lx, float ly, float lz,
-                       float *vx, float *vy, float *vz)
+int scene_occlude(void)
 {
-    float wx, wy, wz;
+    return g_occ_on;
+}
 
-    instance_point(in, lx, ly, lz, &wx, &wy, &wz);
-    camera_view(cam, basis, wx, wy, wz, vx, vy, vz);
+void scene_occ_stats(int *faces, int *hidden)
+{
+    if (faces) {
+        *faces = g_occ_faces;
+    }
+    if (hidden) {
+        *hidden = g_occ_hidden;
+    }
+}
+
+/* Clears last frame's cells. Only the rectangle that was written. */
+static void occ_reset(void)
+{
+    int y;
+
+    if (g_occ_x0 <= g_occ_x1) {
+        for (y = g_occ_y0; y <= g_occ_y1; y++) {
+            mem_zero(&g_occ[y * OCC_W + g_occ_x0],
+                     (df_u32)(g_occ_x1 - g_occ_x0 + 1) * (df_u32)sizeof(float));
+        }
+    }
+    g_occ_x0 = OCC_W;
+    g_occ_y0 = OCC_H;
+    g_occ_x1 = -1;
+    g_occ_y1 = -1;
+    g_occ_faces = 0;
 }
 
 /*
- * A floor or a ceiling. Its normal is more vertical than horizontal,
- * so the street in front of the eye is not behind it. A corner that
- * misses the glass must not be clamped onto the opposite edge: that
- * turned the eave into a rectangle the size of the picture.
+ * The camera as three rows, the same numbers camera_view uses: view x
+ * is r, view y is u, view z is f. Built once per call, so a box or a
+ * vertex is three dot products and no function call.
  */
-static int face_overhead(const Instance *in, float nx, float ny, float nz)
-{
-    float wx, wy, wz;
+typedef struct View {
+    float ex, ey, ez;
+    float rx, ry, rz;
+    float ux, uy, uz;
+    float fx, fy, fz;
+    float focal;
+} View;
 
-    wx = in->m[0] * nx + in->m[1] * ny + in->m[2] * nz;
-    wy = in->m[3] * nx + in->m[4] * ny + in->m[5] * nz;
-    wz = in->m[6] * nx + in->m[7] * ny + in->m[8] * nz;
-    return wy * wy > wx * wx + wz * wz;
+static void view_build(View *v, const Camera *cam)
+{
+    Basis b;
+
+    camera_basis(cam, &b);
+    v->ex = cam->x;
+    v->ey = cam->y;
+    v->ez = cam->z;
+    v->rx = b.rx;
+    v->ry = 0.0f;
+    v->rz = b.rz;
+    v->ux = -b.sp * b.fx;
+    v->uy = b.cp;
+    v->uz = -b.sp * b.fz;
+    v->fx = b.cp * b.fx;
+    v->fy = b.sp;
+    v->fz = b.cp * b.fz;
+    v->focal = camera_focal();
 }
 
-#define CV_MAX 12
+/*
+ * Screen rectangle of a world box, and the view depth of its nearest
+ * point. The box is turned into view space as a center plus half-sizes,
+ * the same trick as instance_world_box, so the view box holds every
+ * corner. x / z over a depth range peaks at one end of it, so two
+ * divisions bound the whole box. 0 when part of it is nearer than the
+ * near plane: the box then reaches the eye and is never hidden.
+ */
+static int box_screen(const View *v, float cx, float cy, float cz,
+                      float ex, float ey, float ez,
+                      float *sx0, float *sy0, float *sx1, float *sy1,
+                      float *znear)
+{
+    float dx, dy, dz;
+    float vx, vy, vz;
+    float hx, hy, hz;
+    float i0, i1;
+    float a, b;
+
+    dx = cx - v->ex;
+    dy = cy - v->ey;
+    dz = cz - v->ez;
+    vz = dx * v->fx + dy * v->fy + dz * v->fz;
+    hz = ex * df_absf(v->fx) + ey * df_absf(v->fy) + ez * df_absf(v->fz);
+    if (vz - hz < DF_NEAR) {
+        return 0;
+    }
+    vx = dx * v->rx + dy * v->ry + dz * v->rz;
+    vy = dx * v->ux + dy * v->uy + dz * v->uz;
+    hx = ex * df_absf(v->rx) + ey * df_absf(v->ry) + ez * df_absf(v->rz);
+    hy = ex * df_absf(v->ux) + ey * df_absf(v->uy) + ez * df_absf(v->uz);
+    i0 = v->focal / (vz - hz);
+    i1 = v->focal / (vz + hz);
+    a = (vx - hx) * i0;
+    b = (vx - hx) * i1;
+    *sx0 = (float)DF_VIEW_W * 0.5f + (a < b ? a : b);
+    a = (vx + hx) * i0;
+    b = (vx + hx) * i1;
+    *sx1 = (float)DF_VIEW_W * 0.5f + (a > b ? a : b);
+    a = (vy - hy) * i0;
+    b = (vy - hy) * i1;
+    *sy0 = (float)DF_VIEW_H * 0.5f + (a < b ? a : b);
+    a = (vy + hy) * i0;
+    b = (vy + hy) * i1;
+    *sy1 = (float)DF_VIEW_H * 0.5f + (a > b ? a : b);
+    *znear = vz - hz;
+    return 1;
+}
+
+static float clampf(float x, float lo, float hi)
+{
+    if (x < lo) {
+        return lo;
+    }
+    if (x > hi) {
+        return hi;
+    }
+    return x;
+}
+
+/*
+ * Mesh space straight to view space: the camera rows times m[], built
+ * once per model. A vertex is then nine multiplies, the cost draw.c
+ * pays for the same point.
+ */
+typedef struct Xf {
+    float m[9];
+    float t[3];
+} Xf;
 
 typedef struct Cv {
     float x, y, z;
 } Cv;
 
+static void xf_build(Xf *x, const Instance *in, const View *v)
+{
+    float dx, dy, dz;
+    int j;
+
+    for (j = 0; j < 3; j++) {
+        float ax, ay, az;
+
+        /* Column j of m[] is local axis j in the world. */
+        ax = in->m[j];
+        ay = in->m[3 + j];
+        az = in->m[6 + j];
+        x->m[j] = v->rx * ax + v->ry * ay + v->rz * az;
+        x->m[3 + j] = v->ux * ax + v->uy * ay + v->uz * az;
+        x->m[6 + j] = v->fx * ax + v->fy * ay + v->fz * az;
+    }
+    dx = in->x - v->ex;
+    dy = in->y - v->ey;
+    dz = in->z - v->ez;
+    x->t[0] = v->rx * dx + v->ry * dy + v->rz * dz;
+    x->t[1] = v->ux * dx + v->uy * dy + v->uz * dz;
+    x->t[2] = v->fx * dx + v->fy * dy + v->fz * dz;
+}
+
+static void xf_point(const Xf *x, float lx, float ly, float lz, Cv *o)
+{
+    o->x = x->m[0] * lx + x->m[1] * ly + x->m[2] * lz + x->t[0];
+    o->y = x->m[3] * lx + x->m[4] * ly + x->m[5] * lz + x->t[1];
+    o->z = x->m[6] * lx + x->m[7] * ly + x->m[8] * lz + x->t[2];
+}
+
+/*
+ * Near, then the four picture edges pushed out by OCC_MARGIN. hx and
+ * hy are those slopes. No far plane: a wall that runs past the fog
+ * still hides what is behind it, and that is farther still.
+ */
 static float cv_dist(int plane, float hx, float hy, const Cv *v)
 {
     switch (plane) {
     case 0:
         return v->z - DF_NEAR;
     case 1:
-        return COVER_SPAN - v->z;
-    case 2:
         return v->z * hx + v->x;
-    case 3:
+    case 2:
         return v->z * hx - v->x;
-    case 4:
+    case 3:
         return v->z * hy + v->y;
     default:
         return v->z * hy - v->y;
@@ -605,6 +794,9 @@ static int cv_clip(const Cv *in, int n, Cv *out, int plane, float hx, float hy)
             }
             continue;
         }
+        if (!ain && !bin) {
+            continue;
+        }
         denom = dist[i] - dist[j];
         if (denom > -1.0e-8f && denom < 1.0e-8f) {
             continue;
@@ -613,29 +805,18 @@ static int cv_clip(const Cv *in, int n, Cv *out, int plane, float hx, float hy)
         hit.x = in[i].x + (in[j].x - in[i].x) * t;
         hit.y = in[i].y + (in[j].y - in[i].y) * t;
         hit.z = in[i].z + (in[j].z - in[i].z) * t;
-        if (ain && !bin) {
-            if (nout < CV_MAX) {
-                out[nout++] = hit;
-            }
-        } else if (!ain && bin) {
-            if (nout < CV_MAX) {
-                out[nout++] = hit;
-            }
-            if (nout < CV_MAX) {
-                out[nout++] = in[j];
-            }
+        if (nout < CV_MAX) {
+            out[nout++] = hit;
+        }
+        if (bin && nout < CV_MAX) {
+            out[nout++] = in[j];
         }
     }
     return nout;
 }
 
-static float cover_area(const Cover *c)
-{
-    return (c->sx1 - c->sx0) * (c->sy1 - c->sy0);
-}
-
-/* Keep the largest faces. One mesh must not union a roof and a wall. */
-static float poly_area(const float *sx, const float *sy, int n)
+/* Twice the signed area. Positive turns left. */
+static float poly_area2(const float *sx, const float *sy, int n)
 {
     float a;
     int i;
@@ -647,662 +828,564 @@ static float poly_area(const float *sx, const float *sy, int n)
         j = (i + 1) % n;
         a += sx[i] * sy[j] - sx[j] * sy[i];
     }
-    if (a < 0.0f) {
-        a = -a;
-    }
-    return a * 0.5f;
+    return a;
 }
 
-static void consider_cover(float sx0, float sy0, float sx1, float sy1,
-                           float z1, float fill)
+/*
+ * 1 when the outline, already turning left, is convex: no corner turns
+ * right past OCC_BEND, and x reverses direction at most twice on the
+ * way round. Turning one way alone would still pass a star that winds
+ * twice. The x count refuses it.
+ */
+static int poly_convex(const float *px, const float *py, int n)
 {
-    float area;
+    int first;
+    int last;
+    int flips;
     int i;
-    int small;
-    float small_a;
 
-    if (z1 > 1.0e8f || sx1 - sx0 < 8.0f || sy1 - sy0 < 8.0f) {
-        return;
-    }
-    area = (sx1 - sx0) * (sy1 - sy0);
-    if (g_ncover < COVER_MAX) {
-        g_cover[g_ncover].sx0 = sx0;
-        g_cover[g_ncover].sy0 = sy0;
-        g_cover[g_ncover].sx1 = sx1;
-        g_cover[g_ncover].sy1 = sy1;
-        g_cover[g_ncover].z1 = z1;
-        g_cover[g_ncover].fill = fill;
-        g_ncover++;
-        return;
-    }
-    small = 0;
-    small_a = cover_area(&g_cover[0]);
-    for (i = 1; i < g_ncover; i++) {
-        float a;
-
-        a = cover_area(&g_cover[i]);
-        if (a < small_a) {
-            small = i;
-            small_a = a;
-        }
-    }
-    if (area <= small_a) {
-        return;
-    }
-    g_cover[small].sx0 = sx0;
-    g_cover[small].sy0 = sy0;
-    g_cover[small].sx1 = sx1;
-    g_cover[small].sy1 = sy1;
-    g_cover[small].z1 = z1;
-    g_cover[small].fill = fill;
-}
-
-static void cv_mid(Cv *o, const Cv *a, const Cv *b)
-{
-    o->x = (a->x + b->x) * 0.5f;
-    o->y = (a->y + b->y) * 0.5f;
-    o->z = (a->z + b->z) * 0.5f;
-}
-
-static int point_in_poly(float x, float y, const float *sx, const float *sy, int n)
-{
-    int i;
-    int sign;
-
-    sign = 0;
+    first = 0;
+    last = 0;
+    flips = 0;
     for (i = 0; i < n; i++) {
-        int j;
+        float ax, ay, bx, by;
         float cross;
-        int s;
+        int j;
+        int k;
+        int sx;
 
         j = (i + 1) % n;
-        cross = (sx[j] - sx[i]) * (y - sy[i]) - (sy[j] - sy[i]) * (x - sx[i]);
-        if (cross > 0.5f) {
-            s = 1;
-        } else if (cross < -0.5f) {
-            s = -1;
-        } else {
+        k = (i + 2) % n;
+        ax = px[j] - px[i];
+        ay = py[j] - py[i];
+        bx = px[k] - px[j];
+        by = py[k] - py[j];
+        cross = ax * by - ay * bx;
+        if (cross < 0.0f &&
+            cross * cross > OCC_BEND * (ax * ax + ay * ay) * (bx * bx + by * by)) {
+            return 0;
+        }
+        sx = ax > OCC_DUP ? 1 : (ax < -OCC_DUP ? -1 : 0);
+        if (sx == 0) {
             continue;
         }
-        if (sign == 0) {
-            sign = s;
-        } else if (s != sign) {
+        if (first == 0) {
+            first = sx;
+        } else if (sx != last) {
+            flips++;
+        }
+        last = sx;
+    }
+    if (first != 0 && first != last) {
+        flips++;
+    }
+    return flips <= 2;
+}
+
+/* 1 when the cell at origin x, y is inside every edge. */
+static int cell_in(const float *ea, const float *eb, const float *ec, int n,
+                   float x, float y)
+{
+    int i;
+
+    for (i = 0; i < n; i++) {
+        if (ea[i] * x + eb[i] * y + ec[i] < 0.0f) {
             return 0;
         }
     }
     return 1;
 }
 
-/* Largest square grown from the centroid that stays inside the polygon. */
-static void inner_rect(const float *sx, const float *sy, int n,
-                       float ox0, float oy0, float ox1, float oy1,
-                       float *ix0, float *iy0, float *ix1, float *iy1)
+/*
+ * Writes the cells the outline fully covers. The outline turns left.
+ * w(sx, sy) = wa * sx + wb * sy + wc is 1/z of the plane the face sits
+ * on or in front of, and wfar is 1/z of its farthest clipped vertex.
+ * Both are bounds on how far the face can be, so a cell keeps the
+ * larger, nearer, of the two.
+ *
+ * Each edge is a line a * x + b * y + c, positive inside. Over a cell
+ * that is smallest at one corner, picked by the signs of a and b, so a
+ * cell is inside when that one corner is. With that corner baked into
+ * c, "inside" is a * x + r >= 0 for the cell origin x, where r is the
+ * row's b * y + c. An edge with a > 0 bounds the run from the left, one
+ * with a < 0 from the right, so each row's run of covered cells is one
+ * multiply per edge, not a test per cell. The two end cells are then
+ * checked edge by edge, so rounding in that division cannot let in a
+ * cell the outline misses. The same corner rule gives the farthest w
+ * in a cell, and w steps by wa * OCC_CELL along the run.
+ */
+static void occ_fill(const float *px, const float *py, int n,
+                     float wa, float wb, float wc, float wfar)
 {
-    float cx;
-    float cy;
-    float lo;
-    float hi;
+    float ea[CV_MAX];
+    float eb[CV_MAX];
+    float ec[CV_MAX];
+    float ia[CV_MAX];
+    float minx, miny, maxx, maxy;
+    float wox, woy;
+    int gx0, gy0, gx1, gy1;
+    int gy;
     int i;
-    int k;
 
-    cx = 0.0f;
-    cy = 0.0f;
+    minx = maxx = px[0];
+    miny = maxy = py[0];
     for (i = 0; i < n; i++) {
-        cx += sx[i];
-        cy += sy[i];
-    }
-    cx /= (float)n;
-    cy /= (float)n;
-    lo = 0.0f;
-    hi = 1.0f;
-    for (k = 0; k < 8; k++) {
-        float t;
-        float x0, y0, x1, y1;
+        int j;
+        float a, b;
 
-        t = (lo + hi) * 0.5f;
-        x0 = cx + (ox0 - cx) * t;
-        y0 = cy + (oy0 - cy) * t;
-        x1 = cx + (ox1 - cx) * t;
-        y1 = cy + (oy1 - cy) * t;
-        if (point_in_poly(x0, y0, sx, sy, n) &&
-            point_in_poly(x1, y0, sx, sy, n) &&
-            point_in_poly(x0, y1, sx, sy, n) &&
-            point_in_poly(x1, y1, sx, sy, n)) {
-            lo = t;
-        } else {
-            hi = t;
+        if (px[i] < minx) {
+            minx = px[i];
+        }
+        if (px[i] > maxx) {
+            maxx = px[i];
+        }
+        if (py[i] < miny) {
+            miny = py[i];
+        }
+        if (py[i] > maxy) {
+            maxy = py[i];
+        }
+        j = (i + 1) % n;
+        a = -(py[j] - py[i]);
+        b = px[j] - px[i];
+        /* Bake in the worst corner of the grown cell, relative to its origin. */
+        ec[i] = -(a * px[i] + b * py[i]) +
+                a * (a > 0.0f ? -OCC_EDGE : (float)OCC_CELL + OCC_EDGE) +
+                b * (b > 0.0f ? -OCC_EDGE : (float)OCC_CELL + OCC_EDGE);
+        ea[i] = a;
+        eb[i] = b;
+        ia[i] = a != 0.0f ? 1.0f / a : 0.0f;
+    }
+    /* Only cells wholly inside the outline's box can be covered. */
+    gx0 = df_ifloor((clampf(minx, 0.0f, (float)DF_VIEW_W) + (float)OCC_CELL - 0.001f) * OCC_INV);
+    gy0 = df_ifloor((clampf(miny, 0.0f, (float)DF_VIEW_H) + (float)OCC_CELL - 0.001f) * OCC_INV);
+    gx1 = df_ifloor(clampf(maxx, 0.0f, (float)DF_VIEW_W) * OCC_INV) - 1;
+    gy1 = df_ifloor(clampf(maxy, 0.0f, (float)DF_VIEW_H) * OCC_INV) - 1;
+    if (gx0 > gx1 || gy0 > gy1) {
+        return;
+    }
+    wox = wa > 0.0f ? 0.0f : (float)OCC_CELL;
+    woy = wb > 0.0f ? 0.0f : (float)OCC_CELL;
+    for (gy = gy0; gy <= gy1; gy++) {
+        float y;
+        float lo, hi;
+        float w, dw;
+        float *cell;
+        int s, e;
+        int gx;
+
+        y = (float)(gy * OCC_CELL);
+        lo = (float)(gx0 * OCC_CELL);
+        hi = (float)(gx1 * OCC_CELL);
+        for (i = 0; i < n && lo <= hi; i++) {
+            float r;
+
+            r = eb[i] * y + ec[i];
+            if (ea[i] > 0.0f) {
+                float x;
+
+                x = -r * ia[i];
+                if (x > lo) {
+                    lo = x;
+                }
+            } else if (ea[i] < 0.0f) {
+                float x;
+
+                x = -r * ia[i];
+                if (x < hi) {
+                    hi = x;
+                }
+            } else if (r < 0.0f) {
+                lo = hi + 1.0f;
+            }
+        }
+        if (lo > hi) {
+            continue;
+        }
+        s = df_ifloor(lo * OCC_INV);
+        if ((float)(s * OCC_CELL) < lo) {
+            s++;
+        }
+        e = df_ifloor(hi * OCC_INV);
+        if (s < gx0) {
+            s = gx0;
+        }
+        if (e > gx1) {
+            e = gx1;
+        }
+        while (s <= e && !cell_in(ea, eb, ec, n, (float)(s * OCC_CELL), y)) {
+            s++;
+        }
+        while (e >= s && !cell_in(ea, eb, ec, n, (float)(e * OCC_CELL), y)) {
+            e--;
+        }
+        if (s > e) {
+            continue;
+        }
+        w = wa * ((float)(s * OCC_CELL) + wox) + wb * (y + woy) + wc;
+        dw = wa * (float)OCC_CELL;
+        cell = &g_occ[gy * OCC_W + s];
+        for (gx = s; gx <= e; gx++) {
+            float v;
+
+            v = w < wfar ? wfar : w;
+            if (v > *cell) {
+                *cell = v;
+            }
+            cell++;
+            w += dw;
+        }
+        if (s < g_occ_x0) {
+            g_occ_x0 = s;
+        }
+        if (e > g_occ_x1) {
+            g_occ_x1 = e;
+        }
+        if (gy < g_occ_y0) {
+            g_occ_y0 = gy;
+        }
+        if (gy > g_occ_y1) {
+            g_occ_y1 = gy;
         }
     }
-    *ix0 = cx + (ox0 - cx) * lo;
-    *iy0 = cy + (oy0 - cy) * lo;
-    *ix1 = cx + (ox1 - cx) * lo;
-    *iy1 = cy + (oy1 - cy) * lo;
 }
 
 /*
- * Clip one triangle to the picture. 1 when it still covers pixels.
- * sx0..sy1 is the outer square. ix0..iy1 is the inner square, whose
- * edges sit inside the triangle. z1 and filled are written.
+ * One ARCH3D plane into the cells. 1 when it was drawn there.
+ *
+ * Only what draw_frame puts on the glass can hide anything:
+ *   - a plane of two or more triangles has to face the eye, by the
+ *     same normal test draw_frame uses. A single triangle is drawn
+ *     from both sides, so it counts from both sides.
+ *   - every triangle needs a texture slot. 0xffff is never drawn.
+ *
+ * The loader fans a plane from its first corner: triangle k is corners
+ * 0, k + 1 and k + 2, each copied from the same file point. So the
+ * polygon comes back exactly when every triangle starts on corner 0
+ * and on the corner the last one ended on. A mesh that is not such a
+ * fan is not used as a cover. The polygon is transformed once per
+ * corner and clipped once, not triangle by triangle.
+ *
+ * The cells need a convex outline, or a notch would be covered. After
+ * clipping and projection the outline has to pass poly_convex.
+ *
+ * The depth is a plane through the polygon, with Newell's normal, to
+ * which every corner contributes. It is pushed back to the farthest
+ * corner, so a slightly bent face is never nearer than its plane. That
+ * plane gives 1/z as a linear function of the pixel: the ray
+ * (x', y', 1), with x' = (sx - 320) / focal, meets n.v + d = 0 at
+ * z = -d / (n . ray).
  */
-static int measure_tri(const Cv *a, const Cv *b, const Cv *c,
-                       float hx, float hy,
-                       float *sx0, float *sy0, float *sx1, float *sy1,
-                       float *ix0, float *iy0, float *ix1, float *iy1,
-                       float *z1, float *filled)
+static int occ_face(const Mesh *mesh, const Face *face, const Xf *xf,
+                    float hx, float hy, float focal)
 {
+    const Tri *tris;
+    const Tri *t0;
     Cv poly[2][CV_MAX];
-    float psx[CV_MAX];
-    float psy[CV_MAX];
-    int src;
-    int npoly;
-    int plane;
-    int np;
-    int k;
+    float px[CV_MAX];
+    float py[CV_MAX];
+    float nx, ny, nz, d, side;
+    float zfar, area;
+    float wa, wb, wc;
+    int t, tend;
+    int n, np, k;
+    int src, plane;
 
-    poly[0][0] = *a;
-    poly[0][1] = *b;
-    poly[0][2] = *c;
-    npoly = 3;
-    src = 0;
-    for (plane = 0; plane < 6; plane++) {
-        int dst;
-        int ndst;
+    tris = mesh->tris;
+    tend = face->first + face->ntris;
+    if (face->first < 0 || face->ntris < 1 || tend > mesh->ntris ||
+        face->ntris + 2 > OCC_POLY) {
+        return 0;
+    }
+    t0 = &tris[face->first];
+    xf_point(xf, t0->x[0], t0->y[0], t0->z[0], &poly[0][0]);
+    if (face->ntris >= 2) {
+        float vx, vy, vz;
 
-        dst = src ^ 1;
-        ndst = cv_clip(poly[src], npoly, poly[dst], plane, hx, hy);
-        if (ndst < 3) {
+        vx = xf->m[0] * face->nx + xf->m[1] * face->ny + xf->m[2] * face->nz;
+        vy = xf->m[3] * face->nx + xf->m[4] * face->ny + xf->m[5] * face->nz;
+        vz = xf->m[6] * face->nx + xf->m[7] * face->ny + xf->m[8] * face->nz;
+        if (vx * poly[0][0].x + vy * poly[0][0].y + vz * poly[0][0].z >= 0.0f) {
             return 0;
         }
-        src = dst;
-        npoly = ndst;
     }
-    *sx0 = 1.0e9f;
-    *sy0 = 1.0e9f;
-    *sx1 = -1.0e9f;
-    *sy1 = -1.0e9f;
-    *z1 = 1.0e9f;
-    np = 0;
-    for (k = 0; k < npoly; k++) {
-        float sx, sy, oow, ooz;
-        float vz;
+    for (t = face->first; t < tend; t++) {
+        const Tri *tri;
 
-        vz = poly[src][k].z;
-        if (!camera_project(poly[src][k].x, poly[src][k].y, vz,
-                            &sx, &sy, &oow, &ooz)) {
+        tri = &tris[t];
+        if (tri->slot == 0xffff) {
+            return 0;
+        }
+        if (t > face->first &&
+            (tri->x[0] != t0->x[0] || tri->y[0] != t0->y[0] || tri->z[0] != t0->z[0] ||
+             tri->x[1] != tri[-1].x[2] || tri->y[1] != tri[-1].y[2] ||
+             tri->z[1] != tri[-1].z[2])) {
+            return 0;
+        }
+    }
+
+    /* Corner 0 is already in view space. */
+    n = 1;
+    xf_point(xf, t0->x[1], t0->y[1], t0->z[1], &poly[0][n++]);
+    for (t = face->first; t < tend; t++) {
+        xf_point(xf, tris[t].x[2], tris[t].y[2], tris[t].z[2], &poly[0][n++]);
+    }
+    nx = ny = nz = 0.0f;
+    side = 0.0f;
+    for (k = 0; k < n; k++) {
+        const Cv *p;
+        const Cv *q;
+
+        p = &poly[0][k];
+        q = &poly[0][(k + 1) % n];
+        nx += (p->y - q->y) * (p->z + q->z);
+        ny += (p->z - q->z) * (p->x + q->x);
+        nz += (p->x - q->x) * (p->y + q->y);
+    }
+    if (nx * nx + ny * ny + nz * nz < 1.0e-6f) {
+        return 0;
+    }
+    /* Point the normal at the eye, the view origin, then find the back. */
+    for (k = 0; k < n; k++) {
+        side += nx * poly[0][k].x + ny * poly[0][k].y + nz * poly[0][k].z;
+    }
+    if (side > 0.0f) {
+        nx = -nx;
+        ny = -ny;
+        nz = -nz;
+    }
+    d = -1.0e30f;
+    for (k = 0; k < n; k++) {
+        float e;
+
+        e = -(nx * poly[0][k].x + ny * poly[0][k].y + nz * poly[0][k].z);
+        if (e > d) {
+            d = e;
+        }
+    }
+    /* The eye has to be clearly in front of the plane. */
+    if (d * d <= 1.0e-6f * (nx * nx + ny * ny + nz * nz)) {
+        return 0;
+    }
+
+    /* Only a plane the polygon crosses cuts it. */
+    src = 0;
+    for (plane = 0; plane < 5; plane++) {
+        int out;
+
+        out = 0;
+        for (k = 0; k < n; k++) {
+            if (cv_dist(plane, hx, hy, &poly[src][k]) < 0.0f) {
+                out++;
+            }
+        }
+        if (out == 0) {
             continue;
         }
-        if (np < CV_MAX) {
-            psx[np] = sx;
-            psy[np] = sy;
-            np++;
+        if (out == n) {
+            return 0;
         }
-        if (sx < *sx0) {
-            *sx0 = sx;
+        n = cv_clip(poly[src], n, poly[src ^ 1], plane, hx, hy);
+        src ^= 1;
+        if (n < 3) {
+            return 0;
         }
-        if (sy < *sy0) {
-            *sy0 = sy;
+    }
+
+    zfar = 0.0f;
+    np = 0;
+    for (k = 0; k < n; k++) {
+        float iz, x, y;
+
+        if (poly[src][k].z > zfar) {
+            zfar = poly[src][k].z;
         }
-        if (sx > *sx1) {
-            *sx1 = sx;
+        iz = focal / poly[src][k].z;
+        x = (float)DF_VIEW_W * 0.5f + poly[src][k].x * iz;
+        y = (float)DF_VIEW_H * 0.5f + poly[src][k].y * iz;
+        if (np > 0 && df_absf(x - px[np - 1]) < OCC_DUP && df_absf(y - py[np - 1]) < OCC_DUP) {
+            continue;
         }
-        if (sy > *sy1) {
-            *sy1 = sy;
-        }
-        if (vz > DF_NEAR + 1.0f && vz < *z1) {
-            *z1 = vz;
-        }
+        px[np] = x;
+        py[np] = y;
+        np++;
+    }
+    if (np > 1 && df_absf(px[0] - px[np - 1]) < OCC_DUP && df_absf(py[0] - py[np - 1]) < OCC_DUP) {
+        np--;
     }
     if (np < 3) {
         return 0;
     }
-    *filled = poly_area(psx, psy, np);
-    inner_rect(psx, psy, np, *sx0, *sy0, *sx1, *sy1, ix0, iy0, ix1, iy1);
+    /* occ_fill wants the outline turning left. A face seen from its back
+       (a single triangle) arrives turning right. */
+    area = poly_area2(px, py, np);
+    if (area < 0.0f) {
+        for (k = 0; k < np / 2; k++) {
+            float x, y;
+
+            x = px[k];
+            y = py[k];
+            px[k] = px[np - 1 - k];
+            py[k] = py[np - 1 - k];
+            px[np - 1 - k] = x;
+            py[np - 1 - k] = y;
+        }
+        area = -area;
+    }
+    /* Twice the area. Under two cells, nothing can be fully covered. */
+    if (area < 4.0f * (float)(OCC_CELL * OCC_CELL) || !poly_convex(px, py, np)) {
+        return 0;
+    }
+    wa = -nx / (d * focal);
+    wb = -ny / (d * focal);
+    wc = -(nz - nx * ((float)DF_VIEW_W * 0.5f) / focal -
+           ny * ((float)DF_VIEW_H * 0.5f) / focal) / d;
+    occ_fill(px, py, np, wa, wb, wc, 1.0f / zfar);
     return 1;
 }
 
-/* Four pieces. A triangle fills at most half of its square, so the bar is 0.40. */
-static void split_tri(const Cv *a, const Cv *b, const Cv *c, float hx, float hy)
-{
-    Cv ab, bc, ca;
-    Cv p[3];
-    int i;
-
-    cv_mid(&ab, a, b);
-    cv_mid(&bc, b, c);
-    cv_mid(&ca, c, a);
-    p[0] = *a;
-    p[1] = ab;
-    p[2] = ca;
-    for (i = 0; i < 4; i++) {
-        float sx0, sy0, sx1, sy1, z1, filled;
-        float ix0, iy0, ix1, iy1;
-        const Cv *u;
-        const Cv *v;
-        const Cv *w;
-
-        if (i == 1) {
-            u = b;
-            v = &bc;
-            w = &ab;
-        } else if (i == 2) {
-            u = c;
-            v = &ca;
-            w = &bc;
-        } else if (i == 3) {
-            u = &ab;
-            v = &bc;
-            w = &ca;
-        } else {
-            u = &p[0];
-            v = &p[1];
-            w = &p[2];
-        }
-        if (measure_tri(u, v, w, hx, hy, &sx0, &sy0, &sx1, &sy1,
-                        &ix0, &iy0, &ix1, &iy1, &z1, &filled)) {
-            float outer;
-
-            outer = (sx1 - sx0) * (sy1 - sy0);
-            if (outer < 64.0f || filled < outer * 0.40f) {
-                continue;
-            }
-            consider_cover(ix0, iy0, ix1, iy1, z1, filled);
-        }
-    }
-}
-
-/* One rectangle per front face, clipped to the picture. */
-static void push_cover(const Instance *in, const Camera *cam, const Basis *basis)
-{
-    float hx;
-    float hy;
-    int f;
-
-    if (!in->mesh || in->mesh->id == 0) {
-        return;
-    }
-    if (in->mesh->nfaces < 1 || !in->mesh->faces || !in->mesh->tris) {
-        return;
-    }
-    hx = ((float)DF_VIEW_W * 0.5f) / camera_focal();
-    hy = ((float)DF_VIEW_H * 0.5f) / camera_focal();
-    for (f = 0; f < in->mesh->nfaces; f++) {
-        const Face *face;
-        float minz;
-        int t;
-        int tend;
-        int sample;
-
-        face = &in->mesh->faces[f];
-        if (face->ntris < 1 || face->first < 0) {
-            continue;
-        }
-        if (face_overhead(in, face->nx, face->ny, face->nz)) {
-            continue;
-        }
-        tend = face->first + face->ntris;
-        if (tend > in->mesh->ntris) {
-            tend = in->mesh->ntris;
-        }
-        minz = 1.0e9f;
-        sample = 0;
-        for (t = face->first; t < tend; t++) {
-            const Tri *tri;
-            int k;
-
-            tri = &in->mesh->tris[t];
-            for (k = 0; k < 3; k++) {
-                float vx, vy, vz;
-
-                view_local(in, cam, basis, tri->x[k], tri->y[k], tri->z[k],
-                           &vx, &vy, &vz);
-                if (vz < minz) {
-                    minz = vz;
-                }
-                if (vz >= DF_NEAR && vz <= COVER_SPAN) {
-                    sample = 1;
-                }
-            }
-        }
-        if (!sample || minz >= COVER_NEAR) {
-            continue;
-        }
-        if (face->ntris >= 2) {
-            const Tri *tri;
-
-            tri = &in->mesh->tris[face->first];
-            if (!instance_faces(in, cam, basis, face->nx, face->ny, face->nz,
-                                tri->x[0], tri->y[0], tri->z[0])) {
-                continue;
-            }
-        }
-        {
-            float sx0, sy0, sx1, sy1, z1, filled;
-            int any;
-
-            sx0 = 1.0e9f;
-            sy0 = 1.0e9f;
-            sx1 = -1.0e9f;
-            sy1 = -1.0e9f;
-            z1 = 1.0e9f;
-            filled = 0.0f;
-            any = 0;
-            for (t = face->first; t < tend; t++) {
-                const Tri *tri;
-                Cv v0, v1, v2;
-                float x0, y0, x1, y1, zn, fa;
-                float ix0, iy0, ix1, iy1;
-
-                tri = &in->mesh->tris[t];
-                view_local(in, cam, basis, tri->x[0], tri->y[0], tri->z[0],
-                           &v0.x, &v0.y, &v0.z);
-                view_local(in, cam, basis, tri->x[1], tri->y[1], tri->z[1],
-                           &v1.x, &v1.y, &v1.z);
-                view_local(in, cam, basis, tri->x[2], tri->y[2], tri->z[2],
-                           &v2.x, &v2.y, &v2.z);
-                if (!measure_tri(&v0, &v1, &v2, hx, hy, &x0, &y0, &x1, &y1,
-                                 &ix0, &iy0, &ix1, &iy1, &zn, &fa)) {
-                    continue;
-                }
-                if (x0 < sx0) {
-                    sx0 = x0;
-                }
-                if (y0 < sy0) {
-                    sy0 = y0;
-                }
-                if (x1 > sx1) {
-                    sx1 = x1;
-                }
-                if (y1 > sy1) {
-                    sy1 = y1;
-                }
-                if (zn < z1) {
-                    z1 = zn;
-                }
-                filled += fa;
-                any = 1;
-            }
-            if (any) {
-                float box;
-
-                box = (sx1 - sx0) * (sy1 - sy0);
-                if (box >= 64.0f && filled >= box * COVER_SOLID) {
-                    consider_cover(sx0, sy0, sx1, sy1, z1, filled);
-                } else {
-                    for (t = face->first; t < tend; t++) {
-                        const Tri *tri;
-                        Cv v0, v1, v2;
-
-                        tri = &in->mesh->tris[t];
-                        view_local(in, cam, basis, tri->x[0], tri->y[0], tri->z[0],
-                                   &v0.x, &v0.y, &v0.z);
-                        view_local(in, cam, basis, tri->x[1], tri->y[1], tri->z[1],
-                                   &v1.x, &v1.y, &v1.z);
-                        view_local(in, cam, basis, tri->x[2], tri->y[2], tri->z[2],
-                                   &v2.x, &v2.y, &v2.z);
-                        split_tri(&v0, &v1, &v2, hx, hy);
-                    }
-                }
-            }
-        }
-    }
-}
-
-static void find_covers(const Scene *scene, const Camera *cam, const Basis *basis,
-                        const int *idx, int n)
-{
-    int i;
-
-    g_ncover = 0;
-    for (i = 0; i < n; i++) {
-        float cx, cy, cz, ex, ey, ez;
-        float z0, z1;
-
-        if (!model_box(scene, idx[i], &cx, &cy, &cz, &ex, &ey, &ez)) {
-            continue;
-        }
-        if (ey < COVER_H) {
-            continue;
-        }
-        box_depth(cam, basis, cx, cy, cz, ex, ey, ez, &z0, &z1);
-        (void)z1;
-        if (z0 >= COVER_NEAR) {
-            continue;
-        }
-        push_cover(&scene->models[idx[i]], cam, basis);
-    }
-}
-
-static int cover_tall(const Cover *c)
-{
-    return c->sy1 - c->sy0 >= 200.0f;
-}
-
-/* Adjacent panels of one wall. A sign post across the street does not meet. */
-static int cover_meet(const Cover *a, const Cover *b)
-{
-    float gap;
-    float sx0, sy0, sx1, sy1;
-    float box;
-
-    gap = 16.0f;
-    if (a->z1 > b->z1 + 48.0f || b->z1 > a->z1 + 48.0f) {
-        return 0;
-    }
-    if (a->sx1 + gap < b->sx0 || b->sx1 + gap < a->sx0) {
-        return 0;
-    }
-    if (a->sy1 + gap < b->sy0 || b->sy1 + gap < a->sy0) {
-        return 0;
-    }
-    sx0 = a->sx0 < b->sx0 ? a->sx0 : b->sx0;
-    sy0 = a->sy0 < b->sy0 ? a->sy0 : b->sy0;
-    sx1 = a->sx1 > b->sx1 ? a->sx1 : b->sx1;
-    sy1 = a->sy1 > b->sy1 ? a->sy1 : b->sy1;
-    box = (sx1 - sx0) * (sy1 - sy0);
-    if (box < 1.0f) {
-        return 0;
-    }
-    /* Joining a slope's pieces must not put the sky back in the box. */
-    return a->fill + b->fill >= box * COVER_FILL;
-}
-
-static void cover_grow(Cover *u, const Cover *c)
-{
-    if (c->sx0 < u->sx0) {
-        u->sx0 = c->sx0;
-    }
-    if (c->sy0 < u->sy0) {
-        u->sy0 = c->sy0;
-    }
-    if (c->sx1 > u->sx1) {
-        u->sx1 = c->sx1;
-    }
-    if (c->sy1 > u->sy1) {
-        u->sy1 = c->sy1;
-    }
-    if (c->z1 < u->z1) {
-        u->z1 = c->z1;
-    }
-    u->fill += c->fill;
-}
+static int occ_hides(const View *v, float cx, float cy, float cz,
+                     float ex, float ey, float ez);
 
 /*
- * Tall faces join only when their rectangles meet. A brick course and
- * the column beside it become one wall. The sign post across the gap
- * stays its own rectangle, so the street between them is not solid.
+ * Fills the cells from the visible list. Ground patches are mesh id 0:
+ * nothing is under the ground, so they are not worth the time. The
+ * nearest OCC_MODELS models go first, so the cap drops the far ones.
  */
-static void facade_build(void)
+static void occ_build(const Scene *scene, const View *v, const int *idx, int n)
 {
-    int used[COVER_MAX];
+    int cand[OCC_MODELS];
+    float cz[OCC_MODELS];
+    float hx, hy;
+    int nc;
     int i;
 
-    g_nfacade = 0;
-    for (i = 0; i < COVER_MAX; i++) {
-        used[i] = 0;
-    }
-    for (i = 0; i < g_ncover; i++) {
-        int grew;
-        Cover u;
+    nc = 0;
+    for (i = 0; i < n; i++) {
+        const Instance *in;
+        float cx, cy, czz, ex, ey, ez;
+        float sx0, sy0, sx1, sy1, z;
+        int j;
 
-        if (used[i] || !cover_tall(&g_cover[i])) {
+        in = &scene->models[idx[i]];
+        if (!in->mesh || in->mesh->id == 0 || in->mesh->nfaces < 1 ||
+            !in->mesh->faces || !in->mesh->tris) {
             continue;
         }
-        used[i] = 1;
-        u = g_cover[i];
-        do {
-            int j;
-
-            grew = 0;
-            for (j = 0; j < g_ncover; j++) {
-                if (used[j] || !cover_tall(&g_cover[j])) {
-                    continue;
-                }
-                if (!cover_meet(&u, &g_cover[j])) {
-                    continue;
-                }
-                used[j] = 1;
-                cover_grow(&u, &g_cover[j]);
-                grew = 1;
-            }
-        } while (grew);
-        if (g_nfacade < COVER_MAX) {
-            g_facade[g_nfacade++] = u;
+        if (!model_box(scene, idx[i], &cx, &cy, &czz, &ex, &ey, &ez)) {
+            continue;
         }
+        if (box_screen(v, cx, cy, czz, ex, ey, ez, &sx0, &sy0, &sx1, &sy1, &z)) {
+            float w;
+            float h;
+
+            if (z >= OCC_NEAR) {
+                continue;
+            }
+            w = clampf(sx1, 0.0f, (float)DF_VIEW_W) - clampf(sx0, 0.0f, (float)DF_VIEW_W);
+            h = clampf(sy1, 0.0f, (float)DF_VIEW_H) - clampf(sy0, 0.0f, (float)DF_VIEW_H);
+            if (w * h < OCC_MODEL_AREA) {
+                continue;
+            }
+        } else {
+            /* The eye is in or against the box: the best cover there is. */
+            z = 0.0f;
+        }
+        if (nc == OCC_MODELS && z >= cz[nc - 1]) {
+            continue;
+        }
+        if (nc < OCC_MODELS) {
+            nc++;
+        }
+        j = nc - 1;
+        while (j > 0 && cz[j - 1] > z) {
+            cand[j] = cand[j - 1];
+            cz[j] = cz[j - 1];
+            j--;
+        }
+        cand[j] = idx[i];
+        cz[j] = z;
     }
-}
+    hx = ((float)DF_VIEW_W * 0.5f + OCC_MARGIN) / v->focal;
+    hy = ((float)DF_VIEW_H * 0.5f + OCC_MARGIN) / v->focal;
+    for (i = 0; i < nc && g_occ_faces < OCC_FACES; i++) {
+        const Instance *in;
+        float cx, cy, czz, ex, ey, ez;
+        Xf xf;
+        int f;
 
-/* 1 when every corner is in front and the projected box sits in the cover. */
-static int box_in_cover(const Camera *cam, const Basis *basis, const Cover *c,
-                        float cx, float cy, float cz,
-                        float ex, float ey, float ez)
-{
-    static const float s[2] = {-1.0f, 1.0f};
-    float sx0, sy0, sx1, sy1;
-    int a, b, d;
-
-    sx0 = 1.0e9f;
-    sy0 = 1.0e9f;
-    sx1 = -1.0e9f;
-    sy1 = -1.0e9f;
-    for (a = 0; a < 2; a++) {
-        for (b = 0; b < 2; b++) {
-            for (d = 0; d < 2; d++) {
-                float vx, vy, vz;
-                float sx, sy, oow, ooz;
-
-                camera_view(cam, basis,
-                            cx + s[a] * ex, cy + s[b] * ey, cz + s[d] * ez,
-                            &vx, &vy, &vz);
-                if (vz < DF_NEAR) {
-                    return 0;
-                }
-                if (!camera_project(vx, vy, vz, &sx, &sy, &oow, &ooz)) {
-                    return 0;
-                }
-                if (sx < sx0) {
-                    sx0 = sx;
-                }
-                if (sy < sy0) {
-                    sy0 = sy;
-                }
-                if (sx > sx1) {
-                    sx1 = sx;
-                }
-                if (sy > sy1) {
-                    sy1 = sy;
-                }
+        /*
+         * Nearest first, so a model already behind the cells could only
+         * add cells farther than the ones it is behind. Skipping it
+         * saves its faces. It is still dropped by the filter below.
+         */
+        if (g_occ_x0 <= g_occ_x1 &&
+            model_box(scene, cand[i], &cx, &cy, &czz, &ex, &ey, &ez) &&
+            occ_hides(v, cx, cy, czz, ex, ey, ez)) {
+            continue;
+        }
+        in = &scene->models[cand[i]];
+        xf_build(&xf, in, v);
+        for (f = 0; f < in->mesh->nfaces && g_occ_faces < OCC_FACES; f++) {
+            if (occ_face(in->mesh, &in->mesh->faces[f], &xf, hx, hy, v->focal)) {
+                g_occ_faces++;
             }
         }
     }
-    return sx0 >= c->sx0 && sy0 >= c->sy0 && sx1 <= c->sx1 && sy1 <= c->sy1;
 }
 
-/* The center of the box, for a facade wider than any one model. */
-static int center_in_cover(const Camera *cam, const Basis *basis, const Cover *c,
-                           float cx, float cy, float cz)
+/* 1 when every cell under the box is nearer than the box. */
+static int occ_hides(const View *v, float cx, float cy, float cz,
+                     float ex, float ey, float ez)
 {
-    float vx, vy, vz;
-    float sx, sy, oow, ooz;
+    float sx0, sy0, sx1, sy1, z;
+    float wt;
+    int gx0, gy0, gx1, gy1;
+    int gx, gy;
 
-    camera_view(cam, basis, cx, cy, cz, &vx, &vy, &vz);
-    if (vz < DF_NEAR) {
+    if (!box_screen(v, cx, cy, cz, ex, ey, ez, &sx0, &sy0, &sx1, &sy1, &z)) {
         return 0;
     }
-    if (!camera_project(vx, vy, vz, &sx, &sy, &oow, &ooz)) {
+    /* Off the glass is not a view past the wall. */
+    gx0 = df_ifloor(clampf(sx0, 0.0f, (float)DF_VIEW_W - 0.5f) * OCC_INV);
+    gy0 = df_ifloor(clampf(sy0, 0.0f, (float)DF_VIEW_H - 0.5f) * OCC_INV);
+    gx1 = df_ifloor(clampf(sx1, 0.0f, (float)DF_VIEW_W - 0.5f) * OCC_INV);
+    gy1 = df_ifloor(clampf(sy1, 0.0f, (float)DF_VIEW_H - 0.5f) * OCC_INV);
+    if (gx0 < g_occ_x0 || gy0 < g_occ_y0 || gx1 > g_occ_x1 || gy1 > g_occ_y1) {
         return 0;
     }
-    return sx >= c->sx0 && sy >= c->sy0 && sx <= c->sx1 && sy <= c->sy1;
+    wt = OCC_SLACK / z;
+    for (gy = gy0; gy <= gy1; gy++) {
+        const float *row;
+
+        row = &g_occ[gy * OCC_W];
+        for (gx = gx0; gx <= gx1; gx++) {
+            if (row[gx] <= wt) {
+                return 0;
+            }
+        }
+    }
+    return 1;
 }
 
-static int hide_covered(const Scene *scene, const Camera *cam, const Basis *basis,
-                        int *idx, int n, int sprites)
+/* Drops the hidden entries from idx, in place. Storage order is kept. */
+static int occ_filter(const Scene *scene, const View *v, int *idx, int n, int sprites)
 {
     int i;
     int w;
 
-    if (g_ncover < 1 || n < 1) {
-        return n;
-    }
-    facade_build();
     w = 0;
     for (i = 0; i < n; i++) {
         float cx, cy, cz, ex, ey, ez;
-        float z0, z1;
         int ok;
-        int c;
-        int hide;
 
         if (sprites) {
             ok = flat_box(&scene->sprites[idx[i]], &cx, &cy, &cz, &ex, &ey, &ez);
         } else {
             ok = model_box(scene, idx[i], &cx, &cy, &cz, &ex, &ey, &ez);
         }
-        if (!ok) {
-            idx[w++] = idx[i];
-            continue;
-        }
-        box_depth(cam, basis, cx, cy, cz, ex, ey, ez, &z0, &z1);
-        (void)z1;
-        hide = 0;
-        for (c = 0; c < g_ncover; c++) {
-            if (z0 <= g_cover[c].z1 + COVER_THICK) {
-                continue;
-            }
-            /*
-             * A cover that reaches the edges of the glass hides every
-             * box behind it. A large box still pokes off the glass in
-             * projection, and that is not a view past the wall. A
-             * smaller cover hides only a box that sits inside it.
-             */
-            if (g_cover[c].sx0 <= 8.0f && g_cover[c].sy0 <= 8.0f &&
-                g_cover[c].sx1 >= (float)DF_VIEW_W - 8.0f &&
-                g_cover[c].sy1 >= (float)DF_VIEW_H - 8.0f) {
-                hide = 1;
-                break;
-            }
-            if (box_in_cover(cam, basis, &g_cover[c], cx, cy, cz, ex, ey, ez)) {
-                hide = 1;
-                break;
-            }
-        }
-        /*
-         * A house behind one wall is wider than the brick. Its box
-         * sticks out even when the mesh is hidden, so the center has
-         * to sit inside that wall. A gap between two walls is not
-         * inside either rectangle.
-         */
-        if (!hide) {
-            int f;
-
-            for (f = 0; f < g_nfacade; f++) {
-                if (z0 > g_facade[f].z1 + COVER_THICK &&
-                    center_in_cover(cam, basis, &g_facade[f], cx, cy, cz)) {
-                    hide = 1;
-                    break;
-                }
-            }
-        }
-        if (hide) {
+        if (ok && occ_hides(v, cx, cy, cz, ex, ey, ez)) {
+            g_occ_hidden++;
             continue;
         }
         idx[w++] = idx[i];
@@ -1313,12 +1396,13 @@ static int hide_covered(const Scene *scene, const Camera *cam, const Basis *basi
 int scene_visible_models(const Scene *scene, const Camera *cam, int *out, int cap)
 {
     Plane planes[6];
-    Basis basis;
+    View view;
     int n;
     int s;
 
-    g_ncover = 0;
-    g_nfacade = 0;
+    /* The sprite pass reads these cells, so a skipped frame leaves none. */
+    occ_reset();
+    g_occ_hidden = 0;
     if (!scene || !out || cap < 1 || scene->nmodels < 1) {
         return 0;
     }
@@ -1346,15 +1430,26 @@ int scene_visible_models(const Scene *scene, const Camera *cam, int *out, int ca
     } else {
         n = take_visible(scene, planes, 0, scene->nmodels, out, cap, 0);
     }
-    camera_basis(cam, &basis);
-    find_covers(scene, cam, &basis, out, n);
-    return hide_covered(scene, cam, &basis, out, n, 0);
+    if (!g_occ_on || n < 1) {
+        return n;
+    }
+    view_build(&view, cam);
+    occ_build(scene, &view, out, n);
+    if (g_occ_x0 > g_occ_x1) {
+        return n;
+    }
+    return occ_filter(scene, &view, out, n, 0);
 }
 
+/*
+ * Sprites never hide anything: a flat has see-through texels. They are
+ * hidden by the cells the model pass of the same frame wrote, so call
+ * scene_visible_models first, as draw_frame does.
+ */
 int scene_visible_sprites(const Scene *scene, const Camera *cam, int *out, int cap)
 {
     Plane planes[6];
-    Basis basis;
+    View view;
     int i;
     int n;
 
@@ -1380,12 +1475,21 @@ int scene_visible_sprites(const Scene *scene, const Camera *cam, int *out, int c
         }
         out[n++] = i;
     }
-    if (g_ncover < 1 || !cam) {
+    if (!g_occ_on || g_occ_x0 > g_occ_x1 || n < 1) {
         return n;
     }
-    camera_basis(cam, &basis);
-    return hide_covered(scene, cam, &basis, out, n, 1);
+    view_build(&view, cam);
+    return occ_filter(scene, &view, out, n, 1);
 }
+
+/*
+ * The debug picture: each written row of cells as runs of neighbours.
+ * Built when asked, from the cells the last frame left.
+ */
+#define OCC_RUNS 512
+
+static short g_run[OCC_RUNS][3];
+static int g_nrun;
 
 void scene_set_cover_draw(int on)
 {
@@ -1399,54 +1503,51 @@ int scene_cover_draw(void)
 
 int scene_cover_count(void)
 {
-    if (!g_cover_draw) {
+    int gy;
+
+    g_nrun = 0;
+    if (!g_cover_draw || g_occ_x0 > g_occ_x1) {
         return 0;
     }
-    return g_ncover;
+    for (gy = g_occ_y0; gy <= g_occ_y1; gy++) {
+        int gx;
+
+        gx = g_occ_x0;
+        while (gx <= g_occ_x1 && g_nrun < OCC_RUNS) {
+            int start;
+
+            if (g_occ[gy * OCC_W + gx] <= 0.0f) {
+                gx++;
+                continue;
+            }
+            start = gx;
+            while (gx <= g_occ_x1 && g_occ[gy * OCC_W + gx] > 0.0f) {
+                gx++;
+            }
+            g_run[g_nrun][0] = (short)start;
+            g_run[g_nrun][1] = (short)(gx - 1);
+            g_run[g_nrun][2] = (short)gy;
+            g_nrun++;
+        }
+    }
+    return g_nrun;
 }
 
 void scene_cover_at(int index, float *x0, float *y0, float *x1, float *y1)
 {
-    if (index < 0 || index >= g_ncover) {
+    if (index < 0 || index >= g_nrun) {
         return;
     }
     if (x0) {
-        *x0 = g_cover[index].sx0;
+        *x0 = (float)(g_run[index][0] * OCC_CELL);
     }
     if (y0) {
-        *y0 = g_cover[index].sy0;
+        *y0 = (float)(g_run[index][2] * OCC_CELL);
     }
     if (x1) {
-        *x1 = g_cover[index].sx1;
+        *x1 = (float)((g_run[index][1] + 1) * OCC_CELL);
     }
     if (y1) {
-        *y1 = g_cover[index].sy1;
-    }
-}
-
-int scene_facade_count(void)
-{
-    if (!g_cover_draw) {
-        return 0;
-    }
-    return g_nfacade;
-}
-
-void scene_facade_at(int index, float *x0, float *y0, float *x1, float *y1)
-{
-    if (index < 0 || index >= g_nfacade) {
-        return;
-    }
-    if (x0) {
-        *x0 = g_facade[index].sx0;
-    }
-    if (y0) {
-        *y0 = g_facade[index].sy0;
-    }
-    if (x1) {
-        *x1 = g_facade[index].sx1;
-    }
-    if (y1) {
-        *y1 = g_facade[index].sy1;
+        *y1 = (float)((g_run[index][2] + 1) * OCC_CELL);
     }
 }

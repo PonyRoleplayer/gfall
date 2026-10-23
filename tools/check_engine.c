@@ -205,6 +205,126 @@ static Mesh *porch_mesh(void)
     return mesh;
 }
 
+/* Trapezoid in local XY. The outer square includes the empty corner
+   above the short edge. A cover that uses that square fails the test. */
+static Mesh *slope_mesh(void)
+{
+    Mesh *mesh;
+    Tri *tris;
+    Face *face;
+
+    mesh = (Mesh *)mem_alloc(sizeof(Mesh));
+    tris = (Tri *)mem_alloc((df_u32)sizeof(Tri) * 2u);
+    face = (Face *)mem_alloc(sizeof(Face));
+    if (!mesh || !tris || !face) {
+        return 0;
+    }
+    tris[0].x[0] = -50.0f;
+    tris[0].y[0] = -30.0f;
+    tris[0].z[0] = 0.0f;
+    tris[0].x[1] = 50.0f;
+    tris[0].y[1] = -50.0f;
+    tris[0].z[1] = 0.0f;
+    tris[0].x[2] = 50.0f;
+    tris[0].y[2] = 50.0f;
+    tris[0].z[2] = 0.0f;
+    tris[1].x[0] = -50.0f;
+    tris[1].y[0] = -30.0f;
+    tris[1].z[0] = 0.0f;
+    tris[1].x[1] = 50.0f;
+    tris[1].y[1] = 50.0f;
+    tris[1].z[1] = 0.0f;
+    tris[1].x[2] = -50.0f;
+    tris[1].y[2] = 30.0f;
+    tris[1].z[2] = 0.0f;
+    face->nx = 0.0f;
+    face->ny = 0.0f;
+    face->nz = -1.0f;
+    face->first = 0;
+    face->ntris = 2;
+    mesh->tris = tris;
+    mesh->ntris = 2;
+    mesh->faces = face;
+    mesh->nfaces = 1;
+    mesh->face_cap = 1;
+    mesh->id = 1;
+    return mesh;
+}
+
+/* 1 when (x, y) is inside the projected trapezoid. A point on the edge counts. */
+static int quad_inside(float x, float y, const float *qx, const float *qy)
+{
+    int i;
+    int sign;
+
+    sign = 0;
+    for (i = 0; i < 4; i++) {
+        int j;
+        float cross;
+        int s;
+
+        j = (i + 1) & 3;
+        cross = (qx[j] - qx[i]) * (y - qy[i]) - (qy[j] - qy[i]) * (x - qx[i]);
+        if (cross > 1.0f) {
+            s = 1;
+        } else if (cross < -1.0f) {
+            s = -1;
+        } else {
+            continue;
+        }
+        if (sign == 0) {
+            sign = s;
+        } else if (s != sign) {
+            return 0;
+        }
+    }
+    return sign != 0;
+}
+
+/*
+ * One ARCH3D-style plane: a fan of n points, triangle k is
+ * (0, k + 1, k + 2), the same order the loader fans a plane into.
+ * The normal is the plane's front. id 1, so it is not ground.
+ */
+static Mesh *fan_mesh(const float *x, const float *y, const float *z, int n,
+                      float nx, float ny, float nz)
+{
+    Mesh *mesh;
+    Tri *tris;
+    Face *face;
+    int k;
+
+    mesh = (Mesh *)mem_alloc(sizeof(Mesh));
+    tris = (Tri *)mem_alloc((df_u32)sizeof(Tri) * (df_u32)(n - 2));
+    face = (Face *)mem_alloc(sizeof(Face));
+    if (!mesh || !tris || !face) {
+        return 0;
+    }
+    for (k = 0; k < n - 2; k++) {
+        tris[k].x[0] = x[0];
+        tris[k].y[0] = y[0];
+        tris[k].z[0] = z[0];
+        tris[k].x[1] = x[k + 1];
+        tris[k].y[1] = y[k + 1];
+        tris[k].z[1] = z[k + 1];
+        tris[k].x[2] = x[k + 2];
+        tris[k].y[2] = y[k + 2];
+        tris[k].z[2] = z[k + 2];
+    }
+    face->nx = nx;
+    face->ny = ny;
+    face->nz = nz;
+    face->first = 0;
+    face->ntris = n - 2;
+    mesh->tris = tris;
+    mesh->ntris = n - 2;
+    mesh->faces = face;
+    mesh->nfaces = 1;
+    mesh->face_cap = 1;
+    mesh->id = 1;
+    return mesh;
+}
+
 static void place_at(Instance *in, Mesh *mesh, float x, float y, float z)
 {
     mem_zero(in, sizeof(*in));
@@ -414,15 +534,18 @@ static void check_cull(void)
             check_expect(n == 3, "cull off still hid the model behind the wall");
             scene_set_cull(1);
             /*
-             * Nose in a tall mesh. The box reaches from behind the eye
-             * to z=40 and fills the picture. The model at z=80 projects
-             * inside that wall, so it is not drawn.
+             * Nose in a tall mesh. The wall slants from z=40 at its
+             * bottom edge to behind the eye at its top, so its box
+             * reaches from behind the eye to z=40 and it fills the
+             * picture. The model at z=80 is behind it, so it is not
+             * drawn. Both triangles stay one plane, fanned from the
+             * bottom-left corner as the loader fans one.
              */
             wall->tris[0].z[0] = 40.0f;
             wall->tris[0].z[1] = 40.0f;
             wall->tris[0].z[2] = -20.0f;
-            wall->tris[1].z[0] = -20.0f;
-            wall->tris[1].z[1] = 40.0f;
+            wall->tris[1].z[0] = 40.0f;
+            wall->tris[1].z[1] = -20.0f;
             wall->tris[1].z[2] = -20.0f;
             wall->bound_n = 0;
             place_at(&models[0], wall, 0.0f, 0.0f, 0.0f);
@@ -472,6 +595,208 @@ static void check_cull(void)
                                  "model under the roof was dropped");
                 }
             }
+            /*
+             * A trapezoid. The outer square covers the empty corner
+             * above the short edge. The cover has to stay on the
+             * trapezoid, and a model in that corner stays.
+             */
+            {
+                Mesh *slope;
+                float qx[4];
+                float qy[4];
+                float oow;
+                float ooz;
+                int ci;
+                int ok;
+                static const float lx[4] = {-50.0f, 50.0f, 50.0f, -50.0f};
+                static const float ly[4] = {-30.0f, -50.0f, 50.0f, 30.0f};
+
+                slope = slope_mesh();
+                check_expect(slope != 0, "slope was not allocated");
+                if (slope) {
+                    camera_set(&cam, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+                    for (ci = 0; ci < 4; ci++) {
+                        camera_project(lx[ci], ly[ci], 100.0f,
+                                       &qx[ci], &qy[ci], &oow, &ooz);
+                    }
+                    place_at(&models[0], slope, 0.0f, 0.0f, 100.0f);
+                    place_at(&models[1], mesh, 0.0f, 0.0f, 250.0f);
+                    place_at(&models[2], mesh, -125.0f, 125.0f, 250.0f);
+                    scene.nmodels = 3;
+                    scene.nsprites = 0;
+                    n = scene_visible_models(&scene, &cam, order, 4);
+                    check_expect(n == 2 && order[0] == 0 && order[1] == 2,
+                                 "model past the slanted edge was dropped");
+                    /* Every covered cell has to sit on the trapezoid. */
+                    scene_set_cover_draw(1);
+                    ok = scene_cover_count() > 0;
+                    for (ci = 0; ci < scene_cover_count(); ci++) {
+                        float x0, y0, x1, y1;
+
+                        scene_cover_at(ci, &x0, &y0, &x1, &y1);
+                        if (!quad_inside(x0, y0, qx, qy) ||
+                            !quad_inside(x1, y0, qx, qy) ||
+                            !quad_inside(x0, y1, qx, qy) ||
+                            !quad_inside(x1, y1, qx, qy)) {
+                            ok = 0;
+                        }
+                    }
+                    scene_set_cover_draw(0);
+                    check_expect(ok, "slope cover left the trapezoid");
+                }
+            }
+        }
+    }
+}
+
+/*
+ * Occlusion. Each case is a shape the old wall rectangles got wrong:
+ * the model that has a pixel on the glass has to stay.
+ */
+static void check_occlusion(void)
+{
+    Mesh *dot;
+    Mesh *tall;
+    Instance models[4];
+    Scene scene;
+    Camera cam;
+    int order[4];
+    int n;
+
+    dot = tri_mesh(-1.0f, -1.0f, -1.0f, 1.0f, -1.0f, -1.0f, 0.0f, 1.0f, 1.0f);
+    /* A post from y -60 to 200. Its center is low, its top is high. */
+    tall = tri_mesh(-2.0f, -60.0f, 0.0f, 2.0f, -60.0f, 0.0f, 0.0f, 200.0f, 0.0f);
+    check_expect(dot && tall, "occlusion meshes were not allocated");
+    if (!dot || !tall) {
+        return;
+    }
+    mem_zero(&scene, sizeof(scene));
+    scene.models = models;
+    scene_set_limits(DF_FAR, 1);
+    camera_set(&cam, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+
+    /*
+     * A wall down the right side of the street, x = 60, from z 10 to
+     * 400. A post on the street at z 150 is in front of the far end of
+     * the wall, though it is farther than the wall's nearest point. The
+     * old test hid it. A post past the wall at z 200 goes.
+     */
+    {
+        static const float wx[4] = {60.0f, 60.0f, 60.0f, 60.0f};
+        static const float wy[4] = {-50.0f, -50.0f, 50.0f, 50.0f};
+        static const float wz[4] = {10.0f, 400.0f, 400.0f, 10.0f};
+        Mesh *side;
+
+        side = fan_mesh(wx, wy, wz, 4, -1.0f, 0.0f, 0.0f);
+        check_expect(side != 0, "side wall was not allocated");
+        if (side) {
+            place_at(&models[0], side, 0.0f, 0.0f, 0.0f);
+            place_at(&models[1], dot, 50.0f, 0.0f, 150.0f);
+            place_at(&models[2], dot, 120.0f, 0.0f, 200.0f);
+            scene.nmodels = 3;
+            n = scene_visible_models(&scene, &cam, order, 4);
+            check_expect(n == 2 && order[0] == 0 && order[1] == 1,
+                         "post in front of a wall seen at an angle was wrong");
+        }
+    }
+
+    /*
+     * Two panels of one facade, x -80..0 and 0..80, y -40..40, at z 100.
+     * The post behind them has its center inside the facade and its top
+     * above it. The old joined rectangle tested the center and hid it.
+     * A small model behind the left panel goes.
+     */
+    {
+        static const float lx[4] = {-80.0f, 0.0f, 0.0f, -80.0f};
+        static const float rx[4] = {0.0f, 80.0f, 80.0f, 0.0f};
+        static const float py[4] = {-40.0f, -40.0f, 40.0f, 40.0f};
+        static const float pz[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        Mesh *left;
+        Mesh *right;
+
+        left = fan_mesh(lx, py, pz, 4, 0.0f, 0.0f, -1.0f);
+        right = fan_mesh(rx, py, pz, 4, 0.0f, 0.0f, -1.0f);
+        check_expect(left && right, "facade was not allocated");
+        if (left && right) {
+            place_at(&models[0], left, 0.0f, 0.0f, 100.0f);
+            place_at(&models[1], right, 0.0f, 0.0f, 100.0f);
+            place_at(&models[2], tall, 10.0f, 0.0f, 300.0f);
+            place_at(&models[3], dot, -40.0f, 0.0f, 300.0f);
+            scene.nmodels = 4;
+            n = scene_visible_models(&scene, &cam, order, 4);
+            check_expect(n == 3 && order[2] == 2,
+                         "post above the facade was dropped or the panel hid nothing");
+        }
+    }
+
+    /*
+     * An L: the fan of a plane with a notch at the top right. Its
+     * outline is not convex, and a cell filled from it could sit in
+     * the notch, so the plane is not a cover at all. A model seen
+     * through the notch stays.
+     */
+    {
+        static const float lx[6] = {-40.0f, 40.0f, 40.0f, 0.0f, 0.0f, -40.0f};
+        static const float ly[6] = {-40.0f, -40.0f, 0.0f, 0.0f, 40.0f, 40.0f};
+        static const float lz[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+        Mesh *ell;
+
+        ell = fan_mesh(lx, ly, lz, 6, 0.0f, 0.0f, -1.0f);
+        check_expect(ell != 0, "notched plane was not allocated");
+        if (ell) {
+            place_at(&models[0], ell, 0.0f, 0.0f, 100.0f);
+            place_at(&models[1], dot, 20.0f, 20.0f, 300.0f);
+            scene.nmodels = 2;
+            n = scene_visible_models(&scene, &cam, order, 4);
+            check_expect(n == 2, "model seen through the notch was dropped");
+        }
+    }
+
+    /* A plane with no texture is never drawn, so it hides nothing. */
+    {
+        Mesh *bare;
+
+        bare = wall_mesh(40.0f);
+        check_expect(bare != 0, "bare wall was not allocated");
+        if (bare) {
+            bare->id = 1;
+            bare->tris[0].slot = 0xffff;
+            bare->tris[1].slot = 0xffff;
+            place_at(&models[0], bare, 0.0f, 0.0f, 100.0f);
+            place_at(&models[1], dot, 0.0f, 0.0f, 300.0f);
+            scene.nmodels = 2;
+            n = scene_visible_models(&scene, &cam, order, 4);
+            check_expect(n == 2, "untextured wall hid a model");
+        }
+    }
+
+    /*
+     * Looking down at a floor, y -50. A model under it goes, a model
+     * standing on it stays. The old test skipped floors entirely.
+     */
+    {
+        static const float fx[4] = {-400.0f, 400.0f, 400.0f, -400.0f};
+        static const float fy[4] = {-50.0f, -50.0f, -50.0f, -50.0f};
+        static const float fz[4] = {0.0f, 0.0f, 600.0f, 600.0f};
+        Mesh *floor;
+
+        floor = fan_mesh(fx, fy, fz, 4, 0.0f, 1.0f, 0.0f);
+        check_expect(floor != 0, "floor was not allocated");
+        if (floor) {
+            camera_set(&cam, 0.0f, 0.0f, 0.0f, 0.0f, -0.8f);
+            place_at(&models[0], floor, 0.0f, 0.0f, 0.0f);
+            place_at(&models[1], dot, 0.0f, -150.0f, 150.0f);
+            place_at(&models[2], dot, 0.0f, -40.0f, 45.0f);
+            scene.nmodels = 3;
+            n = scene_visible_models(&scene, &cam, order, 4);
+            check_expect(n == 2 && order[0] == 0 && order[1] == 2,
+                         "floor did not hide the model under it");
+            /* Occlusion off keeps the frustum and lists all three. */
+            scene_set_occlude(0);
+            n = scene_visible_models(&scene, &cam, order, 4);
+            check_expect(n == 3, "occlude off still hid the model under the floor");
+            scene_set_occlude(1);
+            camera_set(&cam, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
         }
     }
 }
@@ -503,6 +828,7 @@ void check_engine(void)
     check_camera();
     check_scene();
     check_cull();
+    check_occlusion();
     check_loader();
     check_vfs();
 }

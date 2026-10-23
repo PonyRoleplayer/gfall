@@ -20,10 +20,10 @@
 
 ## Codebase layout
 - `game/daggerfall/main.c` — `GFALL.EXE` entry. Same relationship to the engine as `tools/renderfall/main.c`: it links engine and dagger code and brings `WinMainCRTStartup`. Loads Privateer's Hold and hands a `Level` to `gfx.h`.
-- `src/engine/core/` — `df.h` types, endian helpers, x87 `df_sin`/`df_cos` (no libm). `mem.c` is the heap (stdlib malloc if `DF_HOST`, Win32 heap + CRT `memcpy`/`memmove`/`memset`/`strlen` replacements if not).
+- `src/engine/core/` — `df.h` types, endian helpers, x87 `df_sin`/`df_cos` (no libm), and `df_iround`/`df_ifloor` (float to int without a rounding-mode switch). `mem.c` is the heap (stdlib malloc if `DF_HOST`, Win32 heap + CRT `memcpy`/`memmove`/`memset`/`strlen` replacements if not).
 - `src/engine/platform/` — `win32.c` (`_WinMainCRTStartup`, content dir beside the exe), `input.c`, `fs.c` (POSIX if `DF_HOST`, Win32 otherwise).
 - `src/engine/assets/` — VFS over `fs`, loader registry, engine formats: mesh, texture, palette, level.
-- `src/engine/scene/` — placed meshes, billboards, transforms, visibility. Models and sprites whose box misses the view, or sits past the fog or the far clip, are not drawn. See `docs/culling.md`.
+- `src/engine/scene/` — placed meshes, billboards, transforms, visibility. Models and sprites whose box misses the view, sits past the fog or the far clip, or is wholly behind nearer walls in the occlusion cells, are not drawn. See `docs/culling.md`.
 - `src/engine/gfx/` — `gfx.h` is the call the game makes. `glide.c` loads glide2x.dll at runtime (plain/`@N`/`_name@N`), `texcache.c` (one full image per picture, no mip chain, no per-frame upload), `camera.c`, `draw.c`.
 - `src/engine/ui/` — HUD, text, and the console. Text draws a glyph sheet the game installed. With no sheet, the engine rasterizes the 8x8 Terminal strike (not the 8x12 stock OEM face). The built-in 8x8 face draws when that raster fails. The console is `docs/console.md`.
 - `src/engine/ui/shot.c` — BMP screenshots. Reads the front buffer, writes the file beside the program, and draws the fading note. `console.c` only dispatches `screenshot` and pumps F12. Read `docs/console.md` before editing `shot.c`.
@@ -41,7 +41,7 @@
 
 ## Critical constraints
 - **Platform:** Windows 98, PE32 GUI, 80386, subsystem 4.0. No C runtime: `-nostdlib`, custom entry `_WinMainCRTStartup`. Only `KERNEL32.dll`/`USER32.dll` may be imported. `glide2x.dll` imported dynamically.
-- **CPU:** `-march=pentium-mmx -mfpmath=387 -mno-sse`. The check forbids SSE/cm* and `xmm`-using insns — do not introduce them.
+- **CPU:** `-march=pentium-mmx -mfpmath=387 -mno-sse`. The check forbids SSE/cm* and `xmm`-using insns — do not introduce them. In per-frame loops, turn floats into ints with `df_ifloor`/`df_iround`, not a C cast: on the x87 GCC emits `fnstcw`/`fldcw`/`fistp`/`fldcw` for each cast, about 30 cycles.
 - **C:** `-std=gnu90` (C90 + GNU extensions). Math uses x87 inline asm (`df_sin`, `df_cos`, `fsqrt` in arch3d). Avoid `libm` calls.
 - **Memory:** Win32 heap in `mem.c` (not C runtime malloc). Host uses libc malloc. Keep allocation consistent with the target side.
 - **Textures (Voodoo 1, 2MB TMU):** Must be square and power-of-two. Non-square/non-POT source -> tiled into `pot_w x pot_h` (power-of-two square), with subrect `span_w x span_h`; `pot_w % span_w == 0`. `glide.c` uploads `pot` with `cutout` flag to pack. hostcheck enforces and sums bytes < 1500000.

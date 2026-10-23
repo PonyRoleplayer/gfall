@@ -23,11 +23,12 @@ A line is a word and an optional argument. Letters are taken as lower case. Ente
 | `fov` | Horizontal field of view, 45..120. Default 75. |
 | `fog` | `on` or `off`. |
 | `cull` | `on` or `off`. Off lists every model and sprite. |
-| `covers` | `on` or `off`. On draws the wall test. Green is one face. Red is faces that meet and were joined. A gap between them stays open. Default on. |
+| `occlude` | `on` or `off`. Off keeps the frustum and skips the occlusion step, to compare a frame. Default on. See `docs/culling.md`. |
+| `covers` | `on` or `off`. On washes the occlusion cells of the last frame green. A model or sprite whose box lands only on green, and is behind it, was not drawn. Default off. |
 | `version` | `on` or `off`. On draws the compile stamp in the bottom left: `build YYYY-MM-DDTHH:MM:SS`, the local time of the link. Default on. With no argument it prints the stamp. |
 | `far` | Far clip in world units. Clamped to the engine cap, 16384. |
 | `faces` | `on` or `off`. Off draws ARCH3D faces the normal would drop. |
-| `stats` | Those values, plus models, sprites, faces kept, and faces hidden on the last world frame. |
+| `stats` | Those values, plus models, sprites, faces kept, and faces hidden on the last world frame. Then `occlude`, `occluders` (faces written into the occlusion cells) and `occluded` (models and sprites those cells dropped). |
 | `pos` | Camera position and yaw, pitch in degrees. |
 | `screenshot` | Writes the current picture as a 24-bit BMP beside the program, not inside `ARENA2`. The argument is the file name. `.bmp` is added when it is missing. A file of that name is replaced. |
 | `clear` | Drops the log. |
@@ -39,4 +40,4 @@ The name is drawn at the top right as `name taken...`. It stays solid for about 
 
 The read is one 640 by 480 picture at 16 bits, allocated on the first shot and kept. The buffer's first row is the top of the glass. The BMP stores the bottom row first, so the file is written from the last row upward. Rows are expanded to 24-bit as they are written. The note's plate uses the same box as the glyphs: `ui_string` takes the top of the line, and the plate's bottom is one line below that. See `docs/memory.md`.
 
-`fov` and `cull` move the slopes in `docs/culling.md`. Pictures are one full image each. See `docs/memory.md`.
+`fov`, `cull` and `occlude` change the cull in `docs/culling.md`. Pictures are one full image each. See `docs/memory.md`.

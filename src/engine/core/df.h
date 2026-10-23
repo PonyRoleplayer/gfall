@@ -107,6 +107,36 @@ static float df_cos(float x)
     return r;
 }
 
+/*
+ * Nearest integer, for |v| below 2^22. A C cast on the x87 switches the
+ * rounding mode twice (fnstcw, fldcw, fistp, fldcw), about 30 cycles on
+ * a Pentium. Adding 1.5 * 2^23 pushes the fraction out of a float's
+ * 23-bit mantissa, so storing the sum rounds it to an integer in the
+ * current mode, which is nearest, and the low bits are that integer.
+ */
+static int df_iround(float v)
+{
+    union {
+        float f;
+        df_i32 i;
+    } u;
+
+    u.f = v + 12582912.0f;
+    return (int)(u.i - 0x4B400000);
+}
+
+/* Largest integer not above v, for |v| below 2^22. No mode switch. */
+static int df_ifloor(float v)
+{
+    int i;
+
+    i = df_iround(v);
+    if ((float)i > v) {
+        i--;
+    }
+    return i;
+}
+
 #pragma GCC diagnostic pop
 
 #endif

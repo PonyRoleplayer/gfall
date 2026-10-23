@@ -225,6 +225,7 @@ static void cmd_help(void)
     say("fov 45..120");
     say("fog on|off");
     say("cull on|off");
+    say("occlude on|off");
     say("covers on|off");
     say("version on|off");
     say("far units");
@@ -266,6 +267,23 @@ static void cmd_fog(const char *arg)
     }
     gfx_set_fog(v);
     say_int("fog", gfx_fog());
+}
+
+/* Off keeps the frustum and skips the wall test, to compare a frame. */
+static void cmd_occlude(const char *arg)
+{
+    int v;
+
+    if (!arg[0]) {
+        say_int("occlude", scene_occlude());
+        return;
+    }
+    if (!parse_switch(arg, &v)) {
+        say("occlude on|off");
+        return;
+    }
+    scene_set_occlude(v);
+    say_int("occlude", scene_occlude());
 }
 
 static void cmd_covers(const char *arg)
@@ -367,6 +385,10 @@ static void cmd_stats(void)
     say_int("sprites", sprites);
     say_int("faces", kept);
     say_int("hidden", dropped);
+    say_int("occlude", scene_occlude());
+    scene_occ_stats(&kept, &dropped);
+    say_int("occluders", kept);
+    say_int("occluded", dropped);
 }
 
 static int yaw_deg(float yaw)
@@ -437,6 +459,8 @@ static void run_line(char *line)
         cmd_fog(arg);
     } else if (df_eq(cmd, "cull")) {
         cmd_cull(arg);
+    } else if (df_eq(cmd, "occlude")) {
+        cmd_occlude(arg);
     } else if (df_eq(cmd, "covers")) {
         cmd_covers(arg);
     } else if (df_eq(cmd, "version")) {

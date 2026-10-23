@@ -365,6 +365,21 @@ int check_dagger(const char *root_in)
         camera_set(&cam, x, y, z, yaw, pitch);
         vis = scene_visible_models(&level.scene, &cam, order, 512);
         check_expect(vis > 0 && vis < models, "hold cull kept every model");
+        /* Occlusion only ever removes from the frustum's list. */
+        {
+            int frustum;
+            int occ_faces;
+            int occ_hidden;
+
+            scene_occ_stats(&occ_faces, &occ_hidden);
+            scene_set_occlude(0);
+            frustum = scene_visible_models(&level.scene, &cam, order, 512);
+            scene_set_occlude(1);
+            printf("hold visible %d frustum %d occluders %d\n", vis, frustum, occ_faces);
+            check_expect(vis <= frustum && frustum - vis == occ_hidden,
+                         "hold occlusion added models");
+            vis = scene_visible_models(&level.scene, &cam, order, 512);
+        }
         camera_basis(&cam, &basis);
         front = 0;
         faces = 0;

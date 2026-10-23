@@ -183,8 +183,22 @@ static int clip_plane(const Vtx *in, int n, Vtx *out, int plane)
         if (df_absf(denom) < 1.0e-8f) {
             continue;
         }
-        t = dist[i] / denom;
-        lerp_vtx(&hit, &in[i], &in[j], t);
+        /*
+         * Always walk from the inside vertex to the outside one. Two
+         * triangles that share this edge see it in opposite orders, and
+         * a lerp from either end rounds differently. The two cut points
+         * then snap to different 1/16 pixels on the card and leave a
+         * crack along a wall that crosses the near plane or the glass.
+         * From the inside end, both triangles do the same arithmetic on
+         * the same numbers and meet exactly.
+         */
+        if (ain) {
+            t = dist[i] / denom;
+            lerp_vtx(&hit, &in[i], &in[j], t);
+        } else {
+            t = dist[j] / -denom;
+            lerp_vtx(&hit, &in[j], &in[i], t);
+        }
         if (ain && !bin) {
             if (nout < CLIP_MAX) {
                 out[nout++] = hit;
@@ -636,28 +650,12 @@ static void cover_bar(float x, float y, float w, float h, float r, float g, floa
     glide_triangle(&v[0], &v[2], &v[3]);
 }
 
-static void cover_frame(float x0, float y0, float x1, float y1, float r, float g, float b)
-{
-    float t;
-
-    if (x1 < x0) {
-        t = x0;
-        x0 = x1;
-        x1 = t;
-    }
-    if (y1 < y0) {
-        t = y0;
-        y0 = y1;
-        y1 = t;
-    }
-    t = 3.0f;
-    cover_bar(x0, y0, x1 - x0, t, r, g, b);
-    cover_bar(x0, y1 - t, x1 - x0, t, r, g, b);
-    cover_bar(x0, y0, t, y1 - y0, r, g, b);
-    cover_bar(x1 - t, y0, t, y1 - y0, r, g, b);
-}
-
-/* Green is one face. Red is the joined facade that hides a center. */
+/*
+ * The occlusion cells of this frame as a green wash. A model or sprite
+ * whose screen box lands only on green, and is behind it, was not
+ * drawn. One quad per run of cells in a row, so a wall is a few dozen
+ * quads, not one per cell.
+ */
 static void draw_covers(void)
 {
     int i;
@@ -668,15 +666,13 @@ static void draw_covers(void)
         return;
     }
     n = scene_cover_count();
-    glide_overlay(1);
+    if (n < 1) {
+        return;
+    }
+    glide_dim(1, 72);
     for (i = 0; i < n; i++) {
         scene_cover_at(i, &x0, &y0, &x1, &y1);
-        cover_frame(x0, y0, x1, y1, 40.0f, 255.0f, 80.0f);
+        cover_bar(x0, y0, x1 - x0, y1 - y0, 40.0f, 255.0f, 80.0f);
     }
-    n = scene_facade_count();
-    for (i = 0; i < n; i++) {
-        scene_facade_at(i, &x0, &y0, &x1, &y1);
-        cover_frame(x0, y0, x1, y1, 255.0f, 40.0f, 40.0f);
-    }
-    glide_overlay(0);
+    glide_dim(0, 0);
 }
