@@ -2,7 +2,7 @@
 
 `draw_frame` does not walk the scene. It draws the index list from `scene_visible_models` and `scene_visible_sprites`. Those two calls are the cull. Read this before editing `scene.c`, the far clip, or fog.
 
-A null camera lists every stored entity, in storage order. `check_engine` uses that. With a camera, a model or sprite is dropped when its box is wholly outside the view, and then when it is wholly behind nearer walls. Survivors stay in storage order. `VIS_MAX` (2048) still truncates the list. A model with no triangles is omitted, so an empty slot does not consume the cap.
+A null camera lists every stored entity, in storage order. `check_engine` uses that. With a camera, a model or sprite is dropped when its box is wholly outside the view, and then when it is wholly behind nearer walls. Survivors stay in storage order. `VIS_MAX` (2048, exported as `DRAW_VIS_MAX` in `draw.h`) still truncates the list. A city holds more models than that, so `cull off` there drops the tail; LEVELFALL marks a count at the cap `CAP`. A model with no triangles is omitted, so an empty slot does not consume the cap.
 
 The rule for every step: the cull may keep something that turns out to be hidden, and the Z buffer sorts that out. It never drops something that has a pixel on the glass.
 

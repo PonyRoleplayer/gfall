@@ -21,8 +21,8 @@
 
 #define TEX_V_SIGN 1.0f
 #define GLIDE_TEXEL 256.0f
-/* Matches the block loader's placement cap, so the visible list is not cut. */
-#define VIS_MAX 2048
+/* Matches the block loader's placement cap. draw.h exports it for viewers. */
+#define VIS_MAX DRAW_VIS_MAX
 
 /*
  * SST-1 screen coordinates live in about +/-2048. Past that the edge

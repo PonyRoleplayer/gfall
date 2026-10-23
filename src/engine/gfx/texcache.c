@@ -14,6 +14,9 @@
 static df_u32 g_addr[TEX_SLOTS];
 static int g_live[TEX_SLOTS];
 static int g_n;
+static int g_nlive;
+static int g_unfit;
+static df_u32 g_bytes;
 static int g_bound_slot = -1;
 static const char *g_why = "texture upload failed";
 
@@ -30,6 +33,9 @@ int texcache_upload(const Level *level)
 
     g_bound_slot = -1;
     g_n = 0;
+    g_nlive = 0;
+    g_unfit = 0;
+    g_bytes = 0;
     for (i = 0; i < TEX_SLOTS; i++) {
         g_live[i] = 0;
         g_addr[i] = 0;
@@ -67,13 +73,17 @@ int texcache_upload(const Level *level)
         }
         freeb = glide_tex_free();
         if (freeb < need + FONT_KEEP) {
+            g_unfit++;
             continue;
         }
         if (!glide_upload(img->pot, img->pot_w, img->pot_h, cutout,
                           pal->r, pal->g, pal->b, &g_addr[i])) {
+            g_unfit++;
             continue;
         }
         g_live[i] = 1;
+        g_nlive++;
+        g_bytes += need;
     }
     g_n = n;
     return 1;
@@ -89,6 +99,22 @@ void texcache_bind(int slot)
     }
     glide_bind(g_addr[slot]);
     g_bound_slot = slot;
+}
+
+void texcache_stats(int *live, int *unfit, int *total, df_u32 *bytes)
+{
+    if (live) {
+        *live = g_nlive;
+    }
+    if (unfit) {
+        *unfit = g_unfit;
+    }
+    if (total) {
+        *total = g_n;
+    }
+    if (bytes) {
+        *bytes = g_bytes;
+    }
 }
 
 void texcache_forget(void)

@@ -40,4 +40,6 @@ The name is drawn at the top right as `name taken...`. It stays solid for about 
 
 The read is one 640 by 480 picture at 16 bits, allocated on the first shot and kept. The buffer's first row is the top of the glass. The BMP stores the bottom row first, so the file is written from the last row upward. Rows are expanded to 24-bit as they are written. The note's plate uses the same box as the glyphs: `ui_string` takes the top of the line, and the plate's bottom is one line below that. See `docs/memory.md`.
 
+LEVELFALL also flips `cull`, `occlude`, `covers`, `faces`, and `fog` with F5 to F9, without opening the console, so the frame changes as you watch, and its `draw` panel uses these command names. Its F12 also writes a bookmark to `levelfall.log`. See `docs/viewers.md`.
+
 `fov`, `cull` and `occlude` change the cull in `docs/culling.md`. Pictures are one full image each. See `docs/memory.md`.

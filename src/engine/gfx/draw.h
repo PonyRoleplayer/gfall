@@ -5,6 +5,12 @@
 
 struct Level;
 
+/*
+ * Longest visible list one frame draws, for models and for sprites.
+ * Past it the rest are not drawn. A count equal to this was cut.
+ */
+#define DRAW_VIS_MAX 2048
+
 /* Transform, clip to the near plane, project, submit, swap. */
 
 void draw_frame(const Camera *cam, const struct Level *level);

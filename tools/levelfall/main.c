@@ -8,6 +8,8 @@
  * Page Up and Page Down pitch, staying in place.
  * The wheel changes the field of view.
  * The view keeps a title bar and a status bar. F1 opens the rest.
+ * F5..F9 flip cull, occlude, covers, faces, fog. F12 is a screenshot
+ * plus a bookmark in levelfall.log that levelfall.cfg can reopen.
  */
 
 #define WINVER 0x0400
@@ -21,11 +23,14 @@
 #include "engine/gfx/draw.h"
 #include "engine/gfx/gfx.h"
 #include "engine/gfx/glide.h"
+#include "engine/gfx/texcache.h"
 #include "engine/platform/input.h"
 #include "engine/platform/win32.h"
+#include "engine/scene/scene.h"
 #include "engine/ui/console.h"
 #include "engine/ui/font.h"
 #include "engine/ui/hud.h"
+#include "engine/ui/shot.h"
 #include "game/dagger/climate.h"
 #include "game/dagger/dungeon.h"
 #include "game/dagger/texture.h"
@@ -118,6 +123,54 @@ static int g_bg_r = 128;
 static int g_bg_g = 128;
 static int g_bg_b = 128;
 static char g_view_name[40];
+/* The row on screen, for the F12 bookmark. */
+static const DunRef *g_ref;
+/* levelfall.cfg fov=. 0 leaves the camera default. */
+static int g_fov_cfg;
+/* levelfall.cfg open=kind,region,index. kind -1 is none, 0 indoor, 1 outdoor. */
+static int g_auto_kind = -1;
+static int g_auto_region;
+static int g_auto_index;
+/* levelfall.cfg cam=x,y,z,yaw,pitch, degrees. Only for that first open. */
+static int g_auto_cam;
+static int g_auto_row = -1;
+static float g_auto_pose[5];
+
+/* F5..F9 flip these engine switches in the fly view. Same names as the console. */
+#define NSWITCH 5
+static const int g_switch_vk[NSWITCH] = { VK_F5, VK_F6, VK_F7, VK_F8, VK_F9 };
+static int g_switch_was[NSWITCH];
+
+/* Red frame panel: a cut visible list or a picture with no room on the card. */
+#define WARN_R 224.0f
+#define WARN_G 72.0f
+#define WARN_B 56.0f
+
+/*
+ * The frame on the glass when F12 went down. Taken before the camera
+ * moves and before the next frame resets the counts, because the shot
+ * reads the front buffer, which is the previous frame.
+ */
+typedef struct LfSnap {
+    Camera cam;
+    int valid;
+    int models;
+    int sprites;
+    int kept;
+    int dropped;
+    int occ_faces;
+    int occ_hidden;
+    int cull;
+    int occlude;
+    int covers;
+    int faces;
+    int fog;
+    int far_clip;
+    int fov;
+    int fps;
+} LfSnap;
+
+static LfSnap g_snap;
 
 typedef struct LvItem {
     unsigned int mask;
@@ -1108,11 +1161,6 @@ static const char *family_name(int family)
     return "family";
 }
 
-static const char *tex_name(void)
-{
-    return "full";
-}
-
 /* Truncation toward zero would put a negative edge in the next tile. */
 static int tile_of(float v, int tile)
 {
@@ -1201,7 +1249,7 @@ static void pair_line(char *dst, int cap, const char *label, const char *value)
     dst[0] = 0;
     add_str(dst, &n, cap, label);
     col = n;
-    while (col < 12 && n < cap - 1) {
+    while (col < 13 && n < cap - 1) {
         dst[n++] = ' ';
         col++;
     }
@@ -1300,6 +1348,34 @@ static void draw_panel(int x, int y, int w, int h, const char *title, const char
     }
 }
 
+/* Label, value, then the key that flips it, in three columns. */
+static void switch_line(char *dst, int cap, const char *label, int on, const char *key)
+{
+    int n;
+
+    pair_line(dst, cap, label, on ? "on" : "off");
+    n = 0;
+    while (dst[n]) {
+        n++;
+    }
+    while (n < 18 && n < cap - 1) {
+        dst[n++] = ' ';
+    }
+    dst[n] = 0;
+    add_str(dst, &n, cap, key);
+}
+
+static void count_line(char *dst, int cap, const char *label, int v)
+{
+    char num[16];
+    int n;
+
+    n = 0;
+    num[0] = 0;
+    add_num(num, &n, (int)sizeof(num), v, 0);
+    pair_line(dst, cap, label, num);
+}
+
 static void draw_overlay(void)
 {
     char place_kind[40];
@@ -1313,6 +1389,7 @@ static void draw_overlay(void)
     char frame_models[40];
     char frame_flats[40];
     char frame_fog[48];
+    char frame_tex[48];
     char fps[16];
     char loc_v[16];
     char clim_v[32];
@@ -1321,19 +1398,15 @@ static void draw_overlay(void)
     char img_v[16];
     char ed_v[16];
     char files_v[16];
-    char frust_v[8];
-    char back_v[8];
-    char face_v[16];
-    char hid_v[16];
     char rec_row[7][40];
-    char draw_row[4][32];
+    char draw_row[9][32];
     char key_lines[12][48];
     const char *place_l[3];
     const char *cam_l[3];
     const char *block_l[3];
-    const char *frame_l[3];
+    const char *frame_l[4];
     const char *rec_l[7];
-    const char *draw_l[4];
+    const char *draw_l[9];
     const char *key_l[12];
     const char *key_name[12];
     const char *key_act[12];
@@ -1349,6 +1422,13 @@ static void draw_overlay(void)
     int sprites;
     int kept;
     int dropped;
+    int occ_faces;
+    int occ_hidden;
+    int tex_live;
+    int tex_unfit;
+    int tex_total;
+    df_u32 tex_bytes;
+    int warn;
     int family;
     int pw;
     int cw;
@@ -1382,6 +1462,15 @@ static void draw_overlay(void)
     kept = 0;
     dropped = 0;
     draw_stats(&models, &sprites, &kept, &dropped);
+    occ_faces = 0;
+    occ_hidden = 0;
+    scene_occ_stats(&occ_faces, &occ_hidden);
+    tex_live = 0;
+    tex_unfit = 0;
+    tex_total = 0;
+    tex_bytes = 0;
+    texcache_stats(&tex_live, &tex_unfit, &tex_total, &tex_bytes);
+    warn = models >= DRAW_VIS_MAX || sprites >= DRAW_VIS_MAX || tex_unfit > 0;
 
     n = 0;
     place_kind[0] = 0;
@@ -1454,6 +1543,10 @@ static void draw_overlay(void)
     add_str(frame_models, &n, (int)sizeof(frame_models), "/");
     add_num(frame_models, &n, (int)sizeof(frame_models),
             g_world ? world_model_count(g_world) : 0, 0);
+    /* The list stopped at the cap: the rest of the models were not drawn. */
+    if (models >= DRAW_VIS_MAX) {
+        add_str(frame_models, &n, (int)sizeof(frame_models), " CAP");
+    }
     n = 0;
     frame_flats[0] = 0;
     add_str(frame_flats, &n, (int)sizeof(frame_flats), "flats ");
@@ -1461,17 +1554,36 @@ static void draw_overlay(void)
     add_str(frame_flats, &n, (int)sizeof(frame_flats), "/");
     add_num(frame_flats, &n, (int)sizeof(frame_flats),
             g_world ? world_flat_count(g_world) : 0, 0);
+    if (sprites >= DRAW_VIS_MAX) {
+        add_str(frame_flats, &n, (int)sizeof(frame_flats), " CAP");
+    }
     n = 0;
     frame_fog[0] = 0;
     add_str(frame_fog, &n, (int)sizeof(frame_fog), "fog ");
     add_str(frame_fog, &n, (int)sizeof(frame_fog), gfx_fog() ? "on" : "off");
     add_str(frame_fog, &n, (int)sizeof(frame_fog), "  far ");
     add_num(frame_fog, &n, (int)sizeof(frame_fog), (int)gfx_far(), 0);
-    add_str(frame_fog, &n, (int)sizeof(frame_fog), "  ");
-    add_str(frame_fog, &n, (int)sizeof(frame_fog), tex_name());
+    /*
+     * Pictures on the card over the level's count, and their size. An
+     * unfit picture has no room, so its faces wear the last bound texture.
+     */
+    n = 0;
+    frame_tex[0] = 0;
+    add_str(frame_tex, &n, (int)sizeof(frame_tex), "tex ");
+    add_num(frame_tex, &n, (int)sizeof(frame_tex), tex_live, 0);
+    add_str(frame_tex, &n, (int)sizeof(frame_tex), "/");
+    add_num(frame_tex, &n, (int)sizeof(frame_tex), tex_total, 0);
+    add_str(frame_tex, &n, (int)sizeof(frame_tex), "  ");
+    add_u(frame_tex, &n, (int)sizeof(frame_tex), tex_bytes / 1024u);
+    add_str(frame_tex, &n, (int)sizeof(frame_tex), "K");
+    if (tex_unfit > 0) {
+        add_str(frame_tex, &n, (int)sizeof(frame_tex), "  unfit ");
+        add_num(frame_tex, &n, (int)sizeof(frame_tex), tex_unfit, 0);
+    }
     frame_l[0] = frame_models;
     frame_l[1] = frame_flats;
     frame_l[2] = frame_fog;
+    frame_l[3] = frame_tex;
     n = 0;
     fps[0] = 0;
     if (g_fps_ready) {
@@ -1486,9 +1598,11 @@ static void draw_overlay(void)
     pw = measure_lines("place", g_help ? "f1 hide" : "f1", place_l, 3);
     cw = measure_lines("camera", 0, cam_l, 3);
     bw = measure_lines("block", 0, block_l, 3);
-    fw = measure_lines("frame", fps, frame_l, 3);
+    fw = measure_lines("frame", fps, frame_l, 4);
     draw_panel(gap, DF_VIEW_H - gap - ph, pw, ph, "place",
                g_help ? "f1 hide" : "f1", place_l, 3, 204.0f, 160.0f, 64.0f);
+    /* The bottom row is as tall as frame. Camera and block leave a blank last line. */
+    ph = measure_h(4);
     x = gap;
     draw_panel(x, gap, cw, ph, "camera", 0, cam_l, 3, 112.0f, 168.0f, 208.0f);
     x += cw + gap;
@@ -1498,7 +1612,11 @@ static void draw_overlay(void)
         fw = DF_VIEW_W - gap - x;
     }
     if (fw > 8) {
-        draw_panel(x, gap, fw, ph, "frame", fps, frame_l, 3, 168.0f, 168.0f, 180.0f);
+        if (warn) {
+            draw_panel(x, gap, fw, ph, "frame", fps, frame_l, 4, WARN_R, WARN_G, WARN_B);
+        } else {
+            draw_panel(x, gap, fw, ph, "frame", fps, frame_l, 4, 168.0f, 168.0f, 180.0f);
+        }
     }
 
     if (!g_help) {
@@ -1547,41 +1665,40 @@ static void draw_overlay(void)
     for (i = 0; i < 7; i++) {
         rec_l[i] = rec_row[i];
     }
-    n = 0;
-    frust_v[0] = 0;
-    add_str(frust_v, &n, (int)sizeof(frust_v), scene_cull() ? "on" : "off");
-    n = 0;
-    back_v[0] = 0;
-    add_str(back_v, &n, (int)sizeof(back_v), draw_faces() ? "drop" : "draw");
-    n = 0;
-    face_v[0] = 0;
-    add_num(face_v, &n, (int)sizeof(face_v), kept, 0);
-    n = 0;
-    hid_v[0] = 0;
-    add_num(hid_v, &n, (int)sizeof(hid_v), dropped, 0);
-    pair_line(draw_row[0], 32, "frustum", frust_v);
-    pair_line(draw_row[1], 32, "backfaces", back_v);
-    pair_line(draw_row[2], 32, "faces", face_v);
-    pair_line(draw_row[3], 32, "hidden", hid_v);
-    for (i = 0; i < 4; i++) {
+    /*
+     * Labels are the console's words, so what is read here is what is
+     * typed there. faces on drops ARCH3D planes whose normal points away.
+     * occluders are faces written into the cells; occluded is the models
+     * and sprites those cells dropped.
+     */
+    switch_line(draw_row[0], 32, "cull", scene_cull(), "f5");
+    switch_line(draw_row[1], 32, "occlude", scene_occlude(), "f6");
+    switch_line(draw_row[2], 32, "covers", scene_cover_draw(), "f7");
+    switch_line(draw_row[3], 32, "faces", draw_faces(), "f8");
+    switch_line(draw_row[4], 32, "fog", gfx_fog(), "f9");
+    count_line(draw_row[5], 32, "faces kept", kept);
+    count_line(draw_row[6], 32, "faces hidden", dropped);
+    count_line(draw_row[7], 32, "occluders", occ_faces);
+    count_line(draw_row[8], 32, "occluded", occ_hidden);
+    for (i = 0; i < 9; i++) {
         draw_l[i] = draw_row[i];
     }
     key_name[0] = "mouse";
     key_act[0] = "look";
-    key_name[1] = "w s";
+    key_name[1] = "w s up dn";
     key_act[1] = "forward";
-    key_name[2] = "up down";
-    key_act[2] = "forward";
-    key_name[3] = "a d";
-    key_act[3] = "strafe";
-    key_name[4] = "left right";
-    key_act[4] = "turn";
-    key_name[5] = "pgup pgdn";
-    key_act[5] = "pitch";
-    key_name[6] = "wheel";
-    key_act[6] = "field";
-    key_name[7] = "shift";
-    key_act[7] = "faster";
+    key_name[2] = "a d";
+    key_act[2] = "strafe";
+    key_name[3] = "left right";
+    key_act[3] = "turn";
+    key_name[4] = "pgup pgdn";
+    key_act[4] = "pitch";
+    key_name[5] = "wheel";
+    key_act[5] = "field";
+    key_name[6] = "shift";
+    key_act[6] = "faster";
+    key_name[7] = "f5 - f9";
+    key_act[7] = "draw switches";
     key_name[8] = "esc";
     key_act[8] = "list";
     key_name[9] = "f1";
@@ -1589,13 +1706,13 @@ static void draw_overlay(void)
     key_name[10] = "left of 1";
     key_act[10] = "console";
     key_name[11] = "f12";
-    key_act[11] = "screenshot";
+    key_act[11] = "shot, bookmark";
     for (i = 0; i < 12; i++) {
         pair_line(key_lines[i], 48, key_name[i], key_act[i]);
         key_l[i] = key_lines[i];
     }
     rw = measure_lines("record", 0, rec_l, 7);
-    dw = measure_lines("draw", 0, draw_l, 4);
+    dw = measure_lines("draw", 0, draw_l, 9);
     kw = measure_lines("keys", 0, key_l, 12);
     side_w = rw;
     if (dw > side_w) {
@@ -1605,13 +1722,13 @@ static void draw_overlay(void)
         side_w = kw;
     }
     rh = measure_h(7);
-    dh = measure_h(4);
+    dh = measure_h(9);
     kh = measure_h(12);
     x = DF_VIEW_W - gap - side_w;
     y = DF_VIEW_H - gap - rh;
     draw_panel(x, y, side_w, rh, "record", 0, rec_l, 7, 204.0f, 160.0f, 64.0f);
     y -= gap + dh;
-    draw_panel(x, y, side_w, dh, "draw", 0, draw_l, 4, 112.0f, 168.0f, 208.0f);
+    draw_panel(x, y, side_w, dh, "draw", 0, draw_l, 9, 112.0f, 168.0f, 208.0f);
     y -= gap + kh;
     if (y < gap + ph) {
         y = gap + ph;
@@ -1651,12 +1768,208 @@ static void fly_step(Camera *cam, int dx, int dy, float dt)
     cam->z += (basis.fz * basis.cp * mf + basis.rz * mr) * speed;
 }
 
+/* Flip one engine switch and say so in the console log, as the command would. */
+static void flip_switch(int i)
+{
+    char line[24];
+    const char *name;
+    int on;
+    int n;
+
+    if (i == 0) {
+        name = "cull";
+        on = scene_cull() ? 0 : 1;
+        scene_set_cull(on);
+    } else if (i == 1) {
+        name = "occlude";
+        on = scene_occlude() ? 0 : 1;
+        scene_set_occlude(on);
+    } else if (i == 2) {
+        name = "covers";
+        on = scene_cover_draw() ? 0 : 1;
+        scene_set_cover_draw(on);
+    } else if (i == 3) {
+        name = "faces";
+        on = draw_faces() ? 0 : 1;
+        draw_set_faces(on);
+    } else {
+        name = "fog";
+        on = gfx_fog() ? 0 : 1;
+        gfx_set_fog(on);
+    }
+    n = 0;
+    line[0] = 0;
+    add_str(line, &n, (int)sizeof(line), name);
+    add_str(line, &n, (int)sizeof(line), on ? " on" : " off");
+    console_log(line);
+}
+
+/* Edges are tracked while the console is up too, so a key held through it does not fire. */
+static void switch_keys(int act)
+{
+    int i;
+    int down;
+
+    for (i = 0; i < NSWITCH; i++) {
+        down = key_down(g_switch_vk[i]);
+        if (act && down && !g_switch_was[i]) {
+            flip_switch(i);
+        }
+        g_switch_was[i] = down;
+    }
+}
+
+static void snap_take(const Camera *cam, int valid)
+{
+    g_snap.cam = *cam;
+    g_snap.valid = valid;
+    draw_stats(&g_snap.models, &g_snap.sprites, &g_snap.kept, &g_snap.dropped);
+    scene_occ_stats(&g_snap.occ_faces, &g_snap.occ_hidden);
+    g_snap.cull = scene_cull();
+    g_snap.occlude = scene_occlude();
+    g_snap.covers = scene_cover_draw();
+    g_snap.faces = draw_faces();
+    g_snap.fog = gfx_fog();
+    g_snap.far_clip = df_iround(gfx_far());
+    g_snap.fov = df_iround(camera_fov());
+    g_snap.fps = g_fps_ready ? g_fps : 0;
+}
+
+/*
+ * Three places after the point, rounded. A C cast is fine here: this
+ * runs once per F12, not per frame, and df_iround stops at 2^22.
+ */
+static void add_fixed(char *dst, int *n, int cap, float v)
+{
+    int a;
+    int frac;
+
+    a = (int)(v * 1000.0f + (v < 0.0f ? -0.5f : 0.5f));
+    if (a < 0) {
+        add_str(dst, n, cap, "-");
+        a = -a;
+    }
+    add_u(dst, n, cap, (df_u32)(a / 1000));
+    add_str(dst, n, cap, ".");
+    frac = a % 1000;
+    add_u(dst, n, cap, (df_u32)(frac / 100));
+    add_u(dst, n, cap, (df_u32)((frac / 10) % 10));
+    add_u(dst, n, cap, (df_u32)(frac % 10));
+}
+
+static void add_flag(char *dst, int *n, int cap, const char *name, int v)
+{
+    add_str(dst, n, cap, name);
+    add_str(dst, n, cap, "=");
+    add_num(dst, n, cap, v, 0);
+}
+
+/*
+ * F12 went down: write the place and the pose as levelfall.cfg lines,
+ * so pasting open= and cam= into the cfg reopens this exact view. The
+ * comment lines are the switches and counts of that frame.
+ */
+static void bookmark(void)
+{
+    char line[200];
+    int n;
+    int live;
+    int unfit;
+    int total;
+
+    if (!g_snap.valid || !g_ref) {
+        return;
+    }
+    n = 0;
+    line[0] = 0;
+    add_str(line, &n, (int)sizeof(line), "bookmark ");
+    add_str(line, &n, (int)sizeof(line), shot_status());
+    log_line(line);
+    n = 0;
+    line[0] = 0;
+    add_str(line, &n, (int)sizeof(line), g_ref->outdoor ? "open=outdoor," : "open=indoor,");
+    add_num(line, &n, (int)sizeof(line), g_ref->region, 0);
+    add_str(line, &n, (int)sizeof(line), ",");
+    add_num(line, &n, (int)sizeof(line), g_ref->index, 0);
+    log_line(line);
+    n = 0;
+    line[0] = 0;
+    add_str(line, &n, (int)sizeof(line), "cam=");
+    add_fixed(line, &n, (int)sizeof(line), g_snap.cam.x);
+    add_str(line, &n, (int)sizeof(line), ",");
+    add_fixed(line, &n, (int)sizeof(line), g_snap.cam.y);
+    add_str(line, &n, (int)sizeof(line), ",");
+    add_fixed(line, &n, (int)sizeof(line), g_snap.cam.z);
+    add_str(line, &n, (int)sizeof(line), ",");
+    add_fixed(line, &n, (int)sizeof(line), g_snap.cam.yaw * (360.0f / DF_TAU));
+    add_str(line, &n, (int)sizeof(line), ",");
+    add_fixed(line, &n, (int)sizeof(line), g_snap.cam.pitch * (360.0f / DF_TAU));
+    log_line(line);
+    n = 0;
+    line[0] = 0;
+    add_flag(line, &n, (int)sizeof(line), "fov", g_snap.fov);
+    log_line(line);
+    n = 0;
+    line[0] = 0;
+    add_str(line, &n, (int)sizeof(line), "# ");
+    add_str(line, &n, (int)sizeof(line), g_view_name);
+    add_str(line, &n, (int)sizeof(line), "  ");
+    add_flag(line, &n, (int)sizeof(line), "cull", g_snap.cull);
+    add_str(line, &n, (int)sizeof(line), " ");
+    add_flag(line, &n, (int)sizeof(line), "occlude", g_snap.occlude);
+    add_str(line, &n, (int)sizeof(line), " ");
+    add_flag(line, &n, (int)sizeof(line), "covers", g_snap.covers);
+    add_str(line, &n, (int)sizeof(line), " ");
+    add_flag(line, &n, (int)sizeof(line), "faces", g_snap.faces);
+    add_str(line, &n, (int)sizeof(line), " ");
+    add_flag(line, &n, (int)sizeof(line), "fog", g_snap.fog);
+    add_str(line, &n, (int)sizeof(line), " ");
+    add_flag(line, &n, (int)sizeof(line), "far", g_snap.far_clip);
+    log_line(line);
+    live = 0;
+    unfit = 0;
+    total = 0;
+    texcache_stats(&live, &unfit, &total, 0);
+    n = 0;
+    line[0] = 0;
+    add_str(line, &n, (int)sizeof(line), "# ");
+    add_flag(line, &n, (int)sizeof(line), "models", g_snap.models);
+    add_str(line, &n, (int)sizeof(line), " ");
+    add_flag(line, &n, (int)sizeof(line), "sprites", g_snap.sprites);
+    add_str(line, &n, (int)sizeof(line), " ");
+    add_flag(line, &n, (int)sizeof(line), "kept", g_snap.kept);
+    add_str(line, &n, (int)sizeof(line), " ");
+    add_flag(line, &n, (int)sizeof(line), "hidden", g_snap.dropped);
+    add_str(line, &n, (int)sizeof(line), " ");
+    add_flag(line, &n, (int)sizeof(line), "occluders", g_snap.occ_faces);
+    add_str(line, &n, (int)sizeof(line), " ");
+    add_flag(line, &n, (int)sizeof(line), "occluded", g_snap.occ_hidden);
+    add_str(line, &n, (int)sizeof(line), " ");
+    add_flag(line, &n, (int)sizeof(line), "tex", live);
+    add_str(line, &n, (int)sizeof(line), "/");
+    add_num(line, &n, (int)sizeof(line), total, 0);
+    add_str(line, &n, (int)sizeof(line), " ");
+    add_flag(line, &n, (int)sizeof(line), "unfit", unfit);
+    add_str(line, &n, (int)sizeof(line), " ");
+    add_flag(line, &n, (int)sizeof(line), "fps", g_snap.fps);
+    log_line(line);
+}
+
 static void run_view(const Level *level, Camera *cam)
 {
     int help_was;
+    int f12_was;
+    int i;
+    int frames;
     DWORD tick;
 
     help_was = key_down(VK_F1);
+    f12_was = key_down(VK_F12);
+    for (i = 0; i < NSWITCH; i++) {
+        g_switch_was[i] = key_down(g_switch_vk[i]);
+    }
+    frames = 0;
+    g_snap.valid = 0;
     g_fps_tick = 0;
     g_fps_frames = 0;
     g_fps_ready = 0;
@@ -1695,6 +2008,8 @@ static void run_view(const Level *level, Camera *cam)
             dt = 100;
         }
         input_look(&dx, &dy);
+        /* Before the camera moves: this pose and these counts are the glass. */
+        snap_take(cam, frames > 0);
         if (!console_open()) {
             help_now = key_down(VK_F1);
             if (help_now && !help_was) {
@@ -1703,7 +2018,22 @@ static void run_view(const Level *level, Camera *cam)
             help_was = help_now;
             fly_step(cam, dx, dy, (float)dt / 1000.0f);
         }
+        switch_keys(!console_open());
         gfx_frame(cam, level);
+        frames++;
+        /*
+         * shot_pump saw F12 inside that frame and wrote the file, so
+         * shot_status already names it. Poll right after for the same edge.
+         */
+        {
+            int f12_now;
+
+            f12_now = key_down(VK_F12);
+            if (f12_now && !f12_was) {
+                bookmark();
+            }
+            f12_was = f12_now;
+        }
     }
     gfx_set_extra(0);
     hud_set(1);
@@ -1769,12 +2099,24 @@ static void view_row(int index)
                 win_fail(gfx_error());
             } else {
                 world_start(world, &x, &y, &z, &yaw, &pitch);
+                /* cam= from the cfg replaces the start marker, once, for open= only. */
+                if (g_auto_cam && index == g_auto_row) {
+                    x = g_auto_pose[0];
+                    y = g_auto_pose[1];
+                    z = g_auto_pose[2];
+                    yaw = g_auto_pose[3] * (DF_TAU / 360.0f);
+                    pitch = g_auto_pose[4] * (DF_TAU / 360.0f);
+                    g_auto_cam = 0;
+                    log_line("cam from levelfall.cfg");
+                }
                 camera_set(&cam, x, y, z, yaw, pitch);
                 log_line("glide open 640x480");
                 g_region = g_rows[index].region;
                 g_dun = &dun;
                 g_world = world;
+                g_ref = &g_rows[index];
                 run_view(&level, &cam);
+                g_ref = 0;
                 g_dun = 0;
                 g_world = 0;
             }
@@ -1904,6 +2246,67 @@ static int read_int(const char **ps, int *out)
     return 1;
 }
 
+/* An optional minus, digits, and an optional point with more digits. */
+static int read_fixed(const char **ps, float *out)
+{
+    const char *s;
+    float v;
+    float place;
+    int neg;
+    int any;
+
+    s = skip_space(*ps);
+    neg = 0;
+    if (*s == '-') {
+        neg = 1;
+        s++;
+    }
+    v = 0.0f;
+    any = 0;
+    while (*s >= '0' && *s <= '9') {
+        any = 1;
+        if (v < 10000000.0f) {
+            v = v * 10.0f + (float)(*s - '0');
+        }
+        s++;
+    }
+    if (*s == '.') {
+        s++;
+        place = 0.1f;
+        while (*s >= '0' && *s <= '9') {
+            any = 1;
+            v += place * (float)(*s - '0');
+            place *= 0.1f;
+            s++;
+        }
+    }
+    if (!any) {
+        return 0;
+    }
+    *out = neg ? -v : v;
+    *ps = s;
+    return 1;
+}
+
+/* A word followed by the end, a comma, or a space. */
+static int read_word(const char **ps, const char *word)
+{
+    const char *s;
+    int i;
+
+    s = skip_space(*ps);
+    for (i = 0; word[i]; i++) {
+        if (fold_ch((unsigned char)s[i]) != word[i]) {
+            return 0;
+        }
+    }
+    if (s[i] && s[i] != ',' && s[i] != ' ' && s[i] != '\t' && s[i] != '\r') {
+        return 0;
+    }
+    *ps = s + i;
+    return 1;
+}
+
 static void cfg_line(const char *s)
 {
     const char *rest;
@@ -1942,6 +2345,50 @@ static void cfg_line(const char *s)
             return;
         }
         g_far = v;
+        return;
+    }
+    if (key_is(s, "fov", &rest)) {
+        if (!read_int(&rest, &v) || v < 1) {
+            return;
+        }
+        g_fov_cfg = v;
+        return;
+    }
+    if (key_is(s, "open", &rest)) {
+        int kind;
+
+        if (read_word(&rest, "indoor")) {
+            kind = 0;
+        } else if (read_word(&rest, "outdoor")) {
+            kind = 1;
+        } else {
+            return;
+        }
+        if (!next_number(&rest) || !read_int(&rest, &r)
+            || !next_number(&rest) || !read_int(&rest, &v)) {
+            return;
+        }
+        g_auto_kind = kind;
+        g_auto_region = r;
+        g_auto_index = v;
+        return;
+    }
+    if (key_is(s, "cam", &rest)) {
+        float pose[5];
+        int i;
+
+        for (i = 0; i < 5; i++) {
+            if (i > 0 && !next_number(&rest)) {
+                return;
+            }
+            if (!read_fixed(&rest, &pose[i])) {
+                return;
+            }
+        }
+        for (i = 0; i < 5; i++) {
+            g_auto_pose[i] = pose[i];
+        }
+        g_auto_cam = 1;
     }
 }
 
@@ -1972,6 +2419,23 @@ static void cfg_apply(void)
     add_str(line, &n, (int)sizeof(line), "far=");
     add_u(line, &n, (int)sizeof(line), (df_u32)g_far);
     log_line(line);
+    if (g_fov_cfg > 0) {
+        camera_set_fov((float)g_fov_cfg);
+        n = 0;
+        line[0] = 0;
+        add_str(line, &n, (int)sizeof(line), "fov=");
+        add_u(line, &n, (int)sizeof(line), (df_u32)camera_fov());
+        log_line(line);
+    }
+    if (g_auto_kind >= 0) {
+        n = 0;
+        line[0] = 0;
+        add_str(line, &n, (int)sizeof(line), g_auto_kind ? "open=outdoor," : "open=indoor,");
+        add_u(line, &n, (int)sizeof(line), (df_u32)g_auto_region);
+        add_str(line, &n, (int)sizeof(line), ",");
+        add_u(line, &n, (int)sizeof(line), (df_u32)g_auto_index);
+        log_line(line);
+    }
 }
 
 static void cfg_load(void)
@@ -1982,7 +2446,12 @@ static void cfg_load(void)
         "# fog=1 uses the distance table, fog=0 turns it off\r\n"
         "fog=1\r\n"
         "# far is the clip distance in world units, at most 16384\r\n"
-        "far=8192\r\n";
+        "far=8192\r\n"
+        "# fov is the horizontal field of view in degrees, 45 to 120\r\n"
+        "fov=75\r\n"
+        "# open=outdoor,17,1231 opens that place at start: indoor or outdoor,\r\n"
+        "# the region, the index. cam=x,y,z,yaw,pitch (degrees) puts the\r\n"
+        "# camera there. F12 in the view logs both lines to levelfall.log.\r\n";
     char path[260];
     char buf[2048];
     HANDLE file;
@@ -1996,6 +2465,9 @@ static void cfg_load(void)
     g_bg_r = 128;
     g_bg_g = 128;
     g_bg_b = 128;
+    g_fov_cfg = 0;
+    g_auto_kind = -1;
+    g_auto_cam = 0;
     if (!beside_exe(path, (int)sizeof(path), "levelfall.cfg")) {
         log_line("could not name levelfall.cfg");
         cfg_apply();
@@ -2043,6 +2515,39 @@ static void cfg_load(void)
         }
     }
     cfg_apply();
+}
+
+/*
+ * open= from levelfall.cfg: select that row in the list and fly it, so a
+ * bookmark reopens without a search. Esc from the view lands on the list.
+ */
+static void open_auto(void)
+{
+    int i;
+    int row;
+
+    row = -1;
+    for (i = 0; i < g_nrows; i++) {
+        if (g_rows[i].outdoor == g_auto_kind && g_rows[i].region == g_auto_region
+            && g_rows[i].index == g_auto_index) {
+            row = i;
+            break;
+        }
+    }
+    if (row < 0) {
+        log_line("open=: no such place");
+        g_auto_cam = 0;
+        return;
+    }
+    for (i = 0; i < g_nview; i++) {
+        if (g_view[i] == row) {
+            select_row(i);
+            break;
+        }
+    }
+    g_auto_row = row;
+    view_row(row);
+    g_auto_cam = 0;
 }
 
 static int levelfall_main(void *instance)
@@ -2132,10 +2637,13 @@ static int levelfall_main(void *instance)
         refill_list();
     }
     log_line("list: type to filter, Enter opens, click a column to sort, Esc clears then quits");
-    log_line("view: mouse looks, WASD flies along the aim, arrows translate, Shift is faster, Esc returns");
+    log_line("view: mouse looks, WASD flies along the aim, Left/Right turn, Shift is faster, Esc returns");
     if (g_nrows < 1) {
         win_fail(dungeon_error()[0] ? dungeon_error() : "MAPS.BSA has no places.");
     } else {
+        if (g_auto_kind >= 0) {
+            open_auto();
+        }
         while (!win_closed() && wait_list()) {
             int idx;
 
