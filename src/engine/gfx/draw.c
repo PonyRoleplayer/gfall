@@ -1,5 +1,11 @@
+#define WINVER 0x0400
+#define _WIN32_WINNT 0x0400
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
 #include "engine/gfx/draw.h"
 #include "engine/assets/level.h"
+#include "engine/core/log.h"
 #include "engine/gfx/glide.h"
 #include "engine/ui/console.h"
 #include "engine/ui/shot.h"
@@ -65,15 +71,16 @@ static void clip_slopes(void)
     g_clip_y = ((float)DF_VIEW_H * 0.5f + CLIP_MARGIN) / g_focal;
 }
 
-void draw_set_far(float far)
+/* Not "far": windows.h defines far and near as empty macros. */
+void draw_set_far(float dist)
 {
-    if (far < DF_NEAR * 2.0f) {
-        far = DF_NEAR * 2.0f;
+    if (dist < DF_NEAR * 2.0f) {
+        dist = DF_NEAR * 2.0f;
     }
-    if (far > DF_FAR_MAX) {
-        far = DF_FAR_MAX;
+    if (dist > DF_FAR_MAX) {
+        dist = DF_FAR_MAX;
     }
-    g_far = far;
+    g_far = dist;
 }
 
 float draw_far(void)
@@ -105,6 +112,91 @@ void draw_stats(int *models, int *sprites, int *kept, int *dropped)
     if (dropped) {
         *dropped = g_faces_drop;
     }
+}
+
+/*
+ * World frame time, from one draw_frame to the next, read with the
+ * performance counter (about 1.19 MHz on Windows 98; GetTickCount steps
+ * in 55 ms there and cannot time a frame). An interval that spans a
+ * console frame is dropped, so the frozen panel does not count. Each
+ * second of frames is summed into one report: mean and worst.
+ */
+static df_u32 g_ft_freq;
+static LARGE_INTEGER g_ft_last;
+static int g_ft_have;
+static df_u32 g_ft_sum;
+static df_u32 g_ft_worst;
+static int g_ft_frames;
+static float g_ft_avg_ms;
+static float g_ft_worst_ms;
+static int g_ft_done;
+static DWORD g_ft_hitch;
+
+static void frame_time_read(LARGE_INTEGER *t)
+{
+    if (g_ft_freq == 0) {
+        LARGE_INTEGER f;
+
+        if (QueryPerformanceFrequency(&f) && f.HighPart == 0 && f.LowPart >= 1000u) {
+            g_ft_freq = f.LowPart;
+        } else {
+            g_ft_freq = 1000u;
+        }
+    }
+    if (g_ft_freq == 1000u || !QueryPerformanceCounter(t)) {
+        t->HighPart = 0;
+        t->LowPart = GetTickCount();
+    }
+}
+
+/* fresh drops the interval since the last world frame. */
+static void frame_time_tick(int fresh)
+{
+    LARGE_INTEGER now;
+    df_u32 dt;
+
+    frame_time_read(&now);
+    if (fresh || !g_ft_have) {
+        g_ft_last = now;
+        g_ft_have = 1;
+        g_ft_sum = 0;
+        g_ft_worst = 0;
+        g_ft_frames = 0;
+        return;
+    }
+    dt = (df_u32)(now.QuadPart - g_ft_last.QuadPart);
+    g_ft_last = now;
+    g_ft_sum += dt;
+    g_ft_frames++;
+    if (dt > g_ft_worst) {
+        g_ft_worst = dt;
+    }
+    /* A tenth of a second is a stall worth a debug line, once a second. */
+    if (dt > g_ft_freq / 10u && log_wants(LOG_DEBUG)
+        && GetTickCount() - g_ft_hitch > 1000u) {
+        g_ft_hitch = GetTickCount();
+        log_print(LOG_DEBUG, "frame: one frame took %u ms",
+                  (unsigned int)(dt / (g_ft_freq / 1000u)));
+    }
+    if (g_ft_sum >= g_ft_freq) {
+        g_ft_avg_ms = (float)g_ft_sum * 1000.0f / ((float)g_ft_freq * (float)g_ft_frames);
+        g_ft_worst_ms = (float)g_ft_worst * 1000.0f / (float)g_ft_freq;
+        g_ft_done = g_ft_frames;
+        g_ft_sum = 0;
+        g_ft_worst = 0;
+        g_ft_frames = 0;
+    }
+}
+
+int draw_frame_time(float *avg_ms, float *worst_ms)
+{
+    if (avg_ms) {
+        *avg_ms = g_ft_avg_ms;
+    }
+    if (worst_ms) {
+        *worst_ms = g_ft_worst_ms;
+    }
+    return g_ft_done;
 }
 
 void draw_set_extra(void (*fn)(void))
@@ -535,6 +627,19 @@ static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
 
 static void draw_covers(void);
 
+static int g_cap_models;
+static int g_cap_sprites;
+
+/* Once when a visible list reaches the cap, again only after it drops. */
+static void cap_warn(int *state, int n, const char *what)
+{
+    if (n >= VIS_MAX && !*state) {
+        log_print(LOG_WARN, "draw: %d visible %s, the cap; the rest are not drawn",
+                  n, what);
+    }
+    *state = n >= VIS_MAX;
+}
+
 void draw_frame(const Camera *cam, const Level *level)
 {
     Basis basis;
@@ -549,9 +654,11 @@ void draw_frame(const Camera *cam, const Level *level)
     console_pump();
     if (console_open()) {
         console_present(cam);
+        g_ft_have = 0;
         return;
     }
     console_release();
+    frame_time_tick(0);
     g_vis_models = 0;
     g_vis_sprites = 0;
     g_faces_kept = 0;
@@ -568,6 +675,7 @@ void draw_frame(const Camera *cam, const Level *level)
     glide_sprite_alpha(0);
     norder = scene_visible_models(&level->scene, cam, order, VIS_MAX);
     g_vis_models = norder;
+    cap_warn(&g_cap_models, norder, "models");
     for (oi = 0; oi < norder; oi++) {
         const Instance *in;
 
@@ -604,6 +712,7 @@ void draw_frame(const Camera *cam, const Level *level)
     glide_sprite_alpha(1);
     norder = scene_visible_sprites(&level->scene, cam, order, VIS_MAX);
     g_vis_sprites = norder;
+    cap_warn(&g_cap_sprites, norder, "sprites");
     for (oi = 0; oi < norder; oi++) {
         draw_flat(cam, &basis, level, &level->scene.sprites[order[oi]]);
     }

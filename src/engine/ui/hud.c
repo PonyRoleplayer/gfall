@@ -171,6 +171,21 @@ void hud_set(int on)
     g_show = on ? 1 : 0;
 }
 
+int hud_shown(void)
+{
+    return g_show;
+}
+
+void hud_set_fps(int on)
+{
+    g_fps_on = on ? 1 : 0;
+}
+
+int hud_fps(void)
+{
+    return g_fps_on;
+}
+
 void hud_draw(const Camera *cam)
 {
     char pos[64];

@@ -1,6 +1,7 @@
 #include "engine/gfx/texcache.h"
 #include "engine/assets/level.h"
 #include "engine/gfx/glide.h"
+#include "engine/core/log.h"
 
 /*
  * One upload per picture, full size, one mip level. A chain is not
@@ -47,11 +48,13 @@ int texcache_upload(const Level *level)
     pal = level->palette;
     if (!glide_palette(pal->r, pal->g, pal->b)) {
         g_why = glide_error();
+        log_print(LOG_ERROR, "palette: %s", g_why);
         return 0;
     }
     n = level->nimages;
     if (n < 1 || n > TEX_SLOTS) {
         g_why = "texture count";
+        log_print(LOG_ERROR, "textures: %d pictures, the cache holds 1..%d", n, TEX_SLOTS);
         return 0;
     }
     for (i = 0; i < n; i++) {
@@ -86,6 +89,12 @@ int texcache_upload(const Level *level)
         g_bytes += need;
     }
     g_n = n;
+    log_print(LOG_INFO, "textures: %d of %d on the card, %u KB",
+              g_nlive, n, (unsigned int)(g_bytes / 1024u));
+    if (g_unfit > 0) {
+        log_print(LOG_WARN, "textures: %d did not fit and draw with the last bound one",
+                  g_unfit);
+    }
     return 1;
 }
 

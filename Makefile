@@ -46,6 +46,7 @@ GFALL_SRC := \
 	src/engine/platform/input.c \
 	src/engine/platform/fs.c \
 	src/engine/core/mem.c \
+	src/engine/core/log.c \
 	src/engine/assets/vfs.c \
 	src/engine/assets/loader.c \
 	src/engine/scene/scene.c \
@@ -57,6 +58,7 @@ GFALL_SRC := \
 	src/engine/ui/hud.c \
 	src/engine/ui/font.c \
 	src/engine/ui/console.c \
+	src/engine/ui/cmd.c \
 	src/engine/ui/shot.c \
 	src/engine/ui/build.c \
 	src/game/dagger/bsa.c \
@@ -77,6 +79,7 @@ RENDER_SRC := \
 	src/engine/platform/input.c \
 	src/engine/platform/fs.c \
 	src/engine/core/mem.c \
+	src/engine/core/log.c \
 	src/engine/assets/vfs.c \
 	src/engine/scene/scene.c \
 	src/engine/gfx/glide.c \
@@ -87,6 +90,7 @@ RENDER_SRC := \
 	src/engine/ui/hud.c \
 	src/engine/ui/font.c \
 	src/engine/ui/console.c \
+	src/engine/ui/cmd.c \
 	src/engine/ui/shot.c \
 	src/engine/ui/build.c \
 	src/game/dagger/bsa.c \
@@ -100,6 +104,7 @@ LEVEL_SRC := \
 	src/engine/platform/input.c \
 	src/engine/platform/fs.c \
 	src/engine/core/mem.c \
+	src/engine/core/log.c \
 	src/engine/assets/vfs.c \
 	src/engine/assets/loader.c \
 	src/engine/scene/scene.c \
@@ -111,6 +116,7 @@ LEVEL_SRC := \
 	src/engine/ui/hud.c \
 	src/engine/ui/font.c \
 	src/engine/ui/console.c \
+	src/engine/ui/cmd.c \
 	src/engine/ui/shot.c \
 	src/engine/ui/build.c \
 	src/game/dagger/bsa.c \
@@ -125,6 +131,8 @@ LEVEL_SRC := \
 
 HOST_SRC := \
 	src/engine/core/mem.c \
+	src/engine/core/log.c \
+	src/engine/ui/cmd.c \
 	src/engine/platform/fs.c \
 	src/engine/assets/vfs.c \
 	src/engine/assets/loader.c \

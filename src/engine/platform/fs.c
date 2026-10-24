@@ -146,6 +146,11 @@ static int beside_path(char *dst, int n, const char *name)
     return name[i] == 0;
 }
 
+int fs_beside(char *dst, int n, const char *name)
+{
+    return beside_path(dst, n, name);
+}
+
 int fs_create(const char *name)
 {
     char path[FS_PATH];
@@ -327,6 +332,11 @@ static int beside_path(char *dst, int n, const char *name)
     }
     dst[k] = 0;
     return name[i] == 0;
+}
+
+int fs_beside(char *dst, int n, const char *name)
+{
+    return beside_path(dst, n, name);
 }
 
 int fs_create(const char *name)

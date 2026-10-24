@@ -1,15 +1,18 @@
 /*
  * Engine tests. No Daggerfall archives. Transforms, camera, the visibility
- * list, the loader table, and the VFS mount string.
+ * list, the loader table, the VFS mount string, and the console's log,
+ * command table, history, and line editing.
  */
 
 #include "check_util.h"
 
 #include "engine/assets/loader.h"
 #include "engine/assets/vfs.h"
+#include "engine/core/log.h"
 #include "engine/core/mem.h"
 #include "engine/gfx/camera.h"
 #include "engine/scene/scene.h"
+#include "engine/ui/cmd.h"
 
 static int probe_hits;
 
@@ -886,6 +889,152 @@ static void check_vfs(void)
                  "vfs mount did not keep the root string");
 }
 
+static int same(const char *a, const char *b)
+{
+    int i;
+
+    for (i = 0; a[i] && a[i] == b[i]; i++) {
+    }
+    return a[i] == b[i];
+}
+
+static void check_format(void)
+{
+    char buf[64];
+
+    log_format(buf, (int)sizeof(buf), "%d %u %x %s %c %%", -42, 7u, 0xbeefu, "ok", 'z');
+    check_expect(same(buf, "-42 7 beef ok z %"), "log_format plain conversions");
+    log_format(buf, (int)sizeof(buf), "[%5d][%-5d][%05d][%3s][%-3s]", 12, 12, -12, "a", "b");
+    check_expect(same(buf, "[   12][12   ][-0012][  a][b  ]"), "log_format width and flags");
+    log_format(buf, (int)sizeof(buf), "%.2f %.1f %.0f %f %.2f", 3.14159, -0.06, 2.5, 1.0, -0.001);
+    check_expect(same(buf, "3.14 -0.1 3 1.00 0.00"), "log_format fixed point");
+    log_format(buf, (int)sizeof(buf), "%.3s|%d", "abcdef", -2147483647 - 1);
+    check_expect(same(buf, "abc|-2147483648"), "log_format precision and INT_MIN");
+    check_expect(log_format(buf, 6, "%s", "longer than six") == 5 && same(buf, "longe"),
+                 "log_format ran past its cap");
+}
+
+static int g_var;
+static int g_hits;
+static char g_last_arg[32];
+
+static int get_var(void) { return g_var; }
+static void set_var(int v) { g_var = v; }
+
+static void probe_cmd(int argc, char **argv)
+{
+    g_hits++;
+    g_last_arg[0] = 0;
+    if (argc > 1) {
+        int i;
+
+        for (i = 0; argv[1][i] && i < 31; i++) {
+            g_last_arg[i] = argv[1][i];
+        }
+        g_last_arg[i] = 0;
+    }
+}
+
+static void type(const char *s)
+{
+    while (*s) {
+        cmd_line_char(*s++);
+    }
+}
+
+static void check_console(void)
+{
+    int i;
+
+    check_format();
+
+    /* Levels: a line past the level is not kept, a reply always is. */
+    log_clear();
+    log_set_level(LOG_WARN);
+    log_print(LOG_INFO, "hidden %d", 1);
+    log_print(LOG_WARN, "shown %d", 2);
+    log_text(LOG_PRINT, "reply");
+    check_expect(log_count() == 2, "log kept a line above its level");
+    check_expect(same(log_get(0), "reply") && same(log_get(1), "warning: shown 2"),
+                 "log lines or prefix wrong");
+    check_expect(log_get_level(1) == LOG_WARN, "log lost a line's level");
+    log_set_level(LOG_INFO);
+    for (i = 0; i < LOG_LINES + 5; i++) {
+        log_print(LOG_INFO, "line %d", i);
+    }
+    check_expect(log_count() == LOG_LINES, "log ring did not stop at LOG_LINES");
+    check_expect(same(log_get(0), "line 260") && same(log_get(LOG_LINES - 1), "line 5"),
+                 "log ring dropped the wrong end");
+    log_text(LOG_PRINT, "tab\there");
+    check_expect(same(log_get(0), "tab here"), "log kept a tab");
+
+    /* Variables clamp, switches print on and off, and a toggle flips. */
+    check_expect(cmd_var("probe_n", get_var, set_var, 10, 20, "test"), "cmd_var failed");
+    check_expect(!cmd_var("probe_n", get_var, set_var, 10, 20, "test"), "cmd_var took a name twice");
+    check_expect(cmd_add("probe", probe_cmd, "word", "test"), "cmd_add failed");
+    log_clear();
+    cmd_run("probe_n 99");
+    check_expect(g_var == 20 && same(log_get(0), "probe_n 20"), "variable did not clamp");
+    cmd_run("PROBE_N -5");
+    check_expect(g_var == 10, "a command name was case sensitive");
+    cmd_run("probe_n x");
+    check_expect(g_var == 10 && same(log_get(0), "usage: probe_n 10..20"), "bad number was taken");
+    check_expect(cmd_run("probe a; probe \"two words\" // probe c\n# probe d\nprobe e") == 3,
+                 "cmd_run did not split commands and comments");
+    check_expect(g_hits == 3 && same(g_last_arg, "e"), "cmd_run ran the wrong commands");
+    cmd_run("probe \"two words\"");
+    check_expect(same(g_last_arg, "two words"), "quotes did not keep one argument");
+    cmd_run("nosuch");
+    check_expect(same(log_get(0), "unknown command nosuch, help lists them"), "unknown command reply");
+
+    /* The typed line: editing, Enter, history walk, and the saved draft. */
+    type("probe one");
+    cmd_line_key(CMD_KEY_HOME);
+    cmd_line_key(CMD_KEY_DELETE);
+    cmd_line_char('P');
+    cmd_line_key(CMD_KEY_END);
+    cmd_line_key(CMD_KEY_BACK);
+    cmd_line_char('E');
+    check_expect(same(cmd_line_text(), "Probe onE") && cmd_line_cursor() == 9, "line editing");
+    cmd_line_key(CMD_KEY_ENTER);
+    check_expect(same(cmd_line_text(), "") && same(g_last_arg, "onE"), "Enter did not run the line");
+    type("probe two");
+    cmd_line_key(CMD_KEY_ENTER);
+    type("probe two");
+    cmd_line_key(CMD_KEY_ENTER);
+    check_expect(cmd_history_count() == 2 && same(cmd_history(0), "probe two")
+                 && same(cmd_history(1), "Probe onE"), "history kept a repeat or lost a line");
+    type("draft");
+    cmd_line_key(CMD_KEY_UP);
+    check_expect(same(cmd_line_text(), "probe two"), "Up did not recall the newest");
+    cmd_line_key(CMD_KEY_UP);
+    cmd_line_key(CMD_KEY_UP);
+    check_expect(same(cmd_line_text(), "Probe onE"), "Up went past the oldest");
+    cmd_line_key(CMD_KEY_DOWN);
+    cmd_line_key(CMD_KEY_DOWN);
+    check_expect(same(cmd_line_text(), "draft"), "Down did not give back the draft");
+    cmd_line_key(CMD_KEY_KILL);
+
+    /* Completion: one match fills in, several stop at their common start. */
+    type("probe_");
+    cmd_line_key(CMD_KEY_TAB);
+    check_expect(same(cmd_line_text(), "probe_n "), "Tab did not complete a single match");
+    cmd_line_key(CMD_KEY_KILL);
+    type("pro");
+    cmd_line_key(CMD_KEY_TAB);
+    check_expect(same(cmd_line_text(), "probe"), "Tab did not stop at the common start");
+    cmd_line_key(CMD_KEY_KILL);
+    type("help probe_");
+    cmd_line_key(CMD_KEY_TAB);
+    check_expect(same(cmd_line_text(), "help probe_n "), "Tab did not complete after help");
+    cmd_line_key(CMD_KEY_KILL);
+    type("probe probe_");
+    cmd_line_key(CMD_KEY_TAB);
+    check_expect(same(cmd_line_text(), "probe probe_"), "Tab completed a plain argument");
+    cmd_line_key(CMD_KEY_KILL);
+    log_clear();
+}
+
 void check_engine(void)
 {
     check_rotation();
@@ -895,4 +1044,5 @@ void check_engine(void)
     check_occlusion();
     check_loader();
     check_vfs();
+    check_console();
 }

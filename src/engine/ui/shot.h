@@ -6,8 +6,9 @@
  * fading note are here. Read docs/console.md before editing.
  */
 
-/* Write the front buffer as a BMP beside the program. 0 on a bad name
-   or a failed write. shot_status() is the line to log either way. */
+/* Write the front buffer as a BMP beside the program. A null or empty
+   name takes the F12 time-stamp name. 0 on a bad name or a failed
+   write. shot_status() is the line to log either way. */
 int shot_save(const char *name);
 const char *shot_status(void);
 

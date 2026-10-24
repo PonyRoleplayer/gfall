@@ -48,6 +48,6 @@ The triangle still stores one slot number. Do not write a second slot into the m
 
 `GPU_SLOTS` is 768. That array only tracks uploads. The hardware limit is the 2MB. The image table has to stay below that 768, with room left for the font.
 
-The console log is 48 lines of 96 characters, static. The first time it opens it allocates one 640 by 480 frame at 16 bits (about 600KB) on the main heap and keeps it. That grab is the picture shown while the world is not drawing. Do not grow the log with the session, and do not take another grab per frame. `shot.c` keeps a second buffer of the same size, allocated on the first screenshot and reused. The BMP is written a row at a time. Do not put that buffer in the console.
+The engine log (`log.c`) is 256 lines of 96 characters, static, about 25KB. The console's `exec` buffers are four of 4KB, static. The command table and the 32-line history are static too. The first time it opens it allocates one 640 by 480 frame at 16 bits (about 600KB) on the main heap and keeps it. That grab is the picture shown while the world is not drawing. Do not grow the log with the session, and do not take another grab per frame. `shot.c` keeps a second buffer of the same size, allocated on the first screenshot and reused. The BMP is written a row at a time. Do not put that buffer in the console.
 
 `paint` records each mesh's unique texture slots in `slot_keys`. Nothing in the frame reads that list anymore. Do not bring the distance bands back to decide which map is sharp.

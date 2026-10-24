@@ -162,7 +162,8 @@ void input_read(Input *out)
     out->look_dy = g_look_dy + (key_down(VK_DOWN) - key_down(VK_UP)) * KEY_LOOK;
     g_look_dx = 0;
     g_look_dy = 0;
-    if (key_down(VK_ESCAPE)) {
+    /* An Escape that just closed the console is still down. */
+    if (key_down(VK_ESCAPE) && !console_take_escape()) {
         g_quit = 1;
     }
     out->quit = g_quit;

@@ -21,6 +21,12 @@ int mem_temp_begin(void);
 void mem_temp_end(void);
 
 /*
+ * Bytes allocated so far on the main heap, and on the temp heap since
+ * mem_temp_begin. A failed allocation logs an error with its size.
+ */
+void mem_stats(df_u32 *main_bytes, df_u32 *temp_bytes);
+
+/*
  * A buffer for a record that is parsed and then discarded. slot is 0 or 1,
  * so a block file and a model record can be live together. The pointer is
  * invalid after the next call on that slot. On Win32 it also dies with the

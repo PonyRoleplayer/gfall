@@ -12,6 +12,7 @@
 #include <glide.h>
 
 #include "engine/gfx/glide.h"
+#include "engine/core/log.h"
 #include "engine/core/mem.h"
 
 typedef char gfall_two_tmus[(GLIDE_NUM_TMU == 2) ? 1 : -1];
@@ -136,6 +137,18 @@ static df_u32 g_addr_max;
 static int g_ntex;
 static df_u32 g_mark_addr;
 static int g_mark_ntex;
+/*
+ * grBufferSwap(1) waits for the vertical retrace. At 60 Hz a frame that
+ * takes 17 ms then shows at 30 fps, so a counter that averages swaps
+ * reads values like 35 that the scene never ran at. 0 swaps at once,
+ * tearing, and the counter then reads the real rate.
+ */
+static int g_vsync = 1;
+/* Which export spelling find_export matched last: 0 plain, 1 @N, 2 _name@N. */
+static int g_form;
+/* What grSstQueryHardware said, for glide_report. */
+static GrHwConfiguration g_hw;
+static int g_have_hw;
 
 static struct {
     df_u32 addr;
@@ -149,12 +162,15 @@ static FARPROC find_export(HMODULE dll, const char *plain, const char *atn, cons
 
     sym = GetProcAddress(dll, plain);
     if (sym) {
+        g_form = 0;
         return sym;
     }
     sym = GetProcAddress(dll, atn);
     if (sym) {
+        g_form = 1;
         return sym;
     }
+    g_form = 2;
     return GetProcAddress(dll, uscore);
 }
 
@@ -164,6 +180,7 @@ static FARPROC find_export(HMODULE dll, const char *plain, const char *atn, cons
         sym = find_export(glide.dll, plain, atn, uscore); \
         if (!sym) { \
             g_why = "glide2x.dll has no " plain; \
+            log_text(LOG_ERROR, g_why); \
             FreeLibrary(glide.dll); \
             glide.dll = 0; \
             return 0; \
@@ -178,9 +195,21 @@ static int load_glide(void)
     glide.dll = LoadLibraryA("glide2x.dll");
     if (!glide.dll) {
         g_why = "Could not load glide2x.dll.";
+        log_text(LOG_ERROR, g_why);
         return 0;
     }
     BIND(glide.init, gr_init_fn, "grGlideInit", "grGlideInit@0", "_grGlideInit@0");
+    {
+        static const char *form_name[3] = { "plain", "@N", "_name@N" };
+        char path[260];
+        DWORD len;
+
+        len = GetModuleFileNameA(glide.dll, path, (DWORD)sizeof(path));
+        if (len == 0 || len >= sizeof(path)) {
+            df_copy(path, "glide2x.dll", (int)sizeof(path));
+        }
+        log_print(LOG_INFO, "glide: %s, %s exports", path, form_name[g_form]);
+    }
     BIND(glide.shutdown, gr_shutdown_fn, "grGlideShutdown", "grGlideShutdown@0", "_grGlideShutdown@0");
     BIND(glide.query, gr_query_fn, "grSstQueryHardware", "grSstQueryHardware@4", "_grSstQueryHardware@4");
     BIND(glide.select, gr_select_fn, "grSstSelect", "grSstSelect@4", "_grSstSelect@4");
@@ -323,9 +352,12 @@ int glide_open(void *hwnd)
     g_inited = 1;
     if (!glide.query(&hw)) {
         g_why = "grSstQueryHardware found no Voodoo.";
+        log_text(LOG_ERROR, g_why);
         glide_close();
         return 0;
     }
+    g_hw = hw;
+    g_have_hw = 1;
     glide.select(0);
     if (!glide.open(
             (FxU32)(UINT_PTR)hwnd,
@@ -336,6 +368,7 @@ int glide_open(void *hwnd)
             2,
             1)) {
         g_why = "grSstWinOpen failed. Wanted 640x480 at 60 Hz.";
+        log_text(LOG_ERROR, g_why);
         glide_close();
         return 0;
     }
@@ -381,7 +414,68 @@ int glide_open(void *hwnd)
 
     g_addr = glide.tex_min(GR_TMU0);
     g_addr_max = glide.tex_max(GR_TMU0);
+    glide_report(LOG_INFO);
     return 1;
+}
+
+static const char *board_name(GrSstType type)
+{
+    switch (type) {
+    case GR_SSTTYPE_VOODOO: return "Voodoo Graphics";
+    case GR_SSTTYPE_SST96: return "Voodoo Rush";
+    case GR_SSTTYPE_AT3D: return "AT3D";
+    case GR_SSTTYPE_Voodoo2: return "Voodoo2";
+    default: return "unknown board";
+    }
+}
+
+void glide_report(int level)
+{
+    if (!log_wants(level)) {
+        return;
+    }
+    if (!g_have_hw) {
+        log_text(level, "glide: not open yet");
+        return;
+    }
+    if (g_hw.SSTs[0].type == GR_SSTTYPE_VOODOO || g_hw.SSTs[0].type == GR_SSTTYPE_Voodoo2) {
+        const GrVoodooConfig_t *v;
+
+        v = &g_hw.SSTs[0].sstBoard.VoodooConfig;
+        log_print(level, "board: %s, 1 of %d, frame buffer %d MB, FBI rev %d%s",
+                  board_name(g_hw.SSTs[0].type), g_hw.num_sst, v->fbRam, v->fbiRev,
+                  v->sliDetect ? ", SLI" : "");
+        log_print(level, "texture: %d TMU, TMU0 %d MB rev %d",
+                  v->nTexelfx, v->tmuConfig[0].tmuRam, v->tmuConfig[0].tmuRev);
+    } else if (g_hw.SSTs[0].type == GR_SSTTYPE_SST96) {
+        const GrSst96Config_t *r;
+
+        r = &g_hw.SSTs[0].sstBoard.SST96Config;
+        log_print(level, "board: %s, frame buffer %d MB, TMU %d MB",
+                  board_name(g_hw.SSTs[0].type), r->fbRam, r->tmuConfig.tmuRam);
+    } else {
+        log_print(level, "board: %s", board_name(g_hw.SSTs[0].type));
+    }
+    if (!g_opened) {
+        log_text(level, "mode: closed");
+        return;
+    }
+    log_print(level, "mode: 640x480 60 Hz, 2 colour buffers and depth, vsync %s",
+              g_vsync ? "on" : "off");
+    log_print(level, "textures: %u KB of %u KB left on TMU0; frame grab %s",
+              (unsigned int)((g_addr_max > g_addr ? g_addr_max - g_addr : 0u) / 1024u),
+              (unsigned int)((g_addr_max - glide.tex_min(GR_TMU0)) / 1024u),
+              glide.lfb_read && glide.lfb_write ? "yes" : "no, the console shows black");
+}
+
+void glide_set_vsync(int on)
+{
+    g_vsync = on ? 1 : 0;
+}
+
+int glide_vsync(void)
+{
+    return g_vsync;
 }
 
 void glide_close(void)
@@ -497,7 +591,7 @@ void glide_clear(void)
 
 void glide_swap(void)
 {
-    glide.swap(1);
+    glide.swap(g_vsync ? 1 : 0);
 }
 
 int glide_lfb_read(void *dst, int stride_bytes)

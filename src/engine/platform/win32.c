@@ -335,17 +335,38 @@ void win_shutdown(void)
     }
 }
 
+/*
+ * The console sees every key message first, whichever window has the
+ * focus. It can keep a message (the toggle key, or typing while it is
+ * open), or ask for it to be translated into WM_CHAR but not delivered.
+ */
 void win_pump(void)
 {
     MSG msg;
 
     while (PeekMessageA(&msg, 0, 0, 0, PM_REMOVE)) {
+        int take;
+
         if (msg.message == WM_QUIT) {
             input_request_quit();
         }
+        take = console_message(msg.message, (unsigned int)msg.wParam, (long)msg.lParam);
+        if (take == CONSOLE_KEEP) {
+            continue;
+        }
         TranslateMessage(&msg);
+        if (take == CONSOLE_TRANSLATE) {
+            continue;
+        }
         DispatchMessageA(&msg);
     }
+}
+
+void win_quit(void)
+{
+    g_closed = 1;
+    input_request_quit();
+    PostQuitMessage(0);
 }
 
 int win_closed(void)

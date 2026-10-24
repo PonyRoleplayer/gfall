@@ -11,8 +11,13 @@
 int win_startup(void *instance, const char *suffix, const char *title, int gui);
 void win_shutdown(void);
 void win_pump(void);
-/* 1 after the title bar cross (or Alt+F4). Stays set; Esc does not set it. */
+/* 1 after the title bar cross (or Alt+F4, or win_quit). Stays set; Esc does not set it. */
 int win_closed(void);
+/*
+ * Leave the program, as the title-bar cross does: win_closed turns 1,
+ * the frame loop sees a quit, and a list loop sees WM_QUIT.
+ */
+void win_quit(void);
 void *win_hwnd(void);
 void win_fail(const char *text);
 

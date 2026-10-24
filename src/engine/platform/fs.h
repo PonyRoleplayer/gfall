@@ -25,6 +25,8 @@ df_u8 *fs_read_all(const char *rel, df_u32 *size);
  * fs_append writes, fs_finish keeps it, fs_abort deletes the partial.
  */
 int fs_create(const char *name);
+/* Full path of name in that directory beside the program. 0 if too long. */
+int fs_beside(char *dst, int n, const char *name);
 int fs_append(const void *src, df_u32 n);
 void fs_finish(void);
 void fs_abort(void);

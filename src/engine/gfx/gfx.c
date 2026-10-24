@@ -1,4 +1,5 @@
 #include "engine/gfx/gfx.h"
+#include "engine/core/log.h"
 #include "engine/gfx/draw.h"
 #include "engine/gfx/glide.h"
 #include "engine/gfx/texcache.h"
@@ -29,6 +30,11 @@ const char *gfx_error(void)
 
 int gfx_prepare(const Level *level)
 {
+    if (level) {
+        log_print(LOG_INFO, "level: %d models in %d blocks, %d sprites, %d pictures",
+                  level->scene.nmodels, level->scene.nspans,
+                  level->scene.nsprites, level->nimages);
+    }
     if (!texcache_upload(level)) {
         g_why = texcache_error();
         return 0;

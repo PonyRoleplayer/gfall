@@ -27,6 +27,11 @@ int glide_fog_on(void);
 /* Eye-space distances where the table is clear and where it is solid. */
 void glide_fog_range(float near_z, float far_z);
 void glide_swap(void);
+/* 1 waits for the retrace on each swap (default), 0 swaps at once. */
+void glide_set_vsync(int on);
+int glide_vsync(void);
+/* Logs the DLL's board, TMU, mode, and texture room at this level. */
+void glide_report(int level);
 /*
  * Copy the 640x480 front buffer into dst, 16-bit 565, stride in bytes.
  * Writes that picture back to the back buffer. 0 if the driver has no

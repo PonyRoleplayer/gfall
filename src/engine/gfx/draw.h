@@ -27,5 +27,11 @@ void draw_set_faces(int on);
 int draw_faces(void);
 /* Counts from the last world frame. A frozen console keeps these. */
 void draw_stats(int *models, int *sprites, int *kept, int *dropped);
+/*
+ * Mean and worst world frame in ms over the last whole second of world
+ * frames, swap to swap. Returns how many frames that second held, 0
+ * before the first second. Console frames are not counted.
+ */
+int draw_frame_time(float *avg_ms, float *worst_ms);
 
 #endif

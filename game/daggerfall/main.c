@@ -14,6 +14,7 @@
 #include "engine/gfx/camera.h"
 #include "engine/gfx/gfx.h"
 #include "engine/platform/win32.h"
+#include "engine/ui/console.h"
 #include "game/dagger/fnt.h"
 #include "game/dagger/player.h"
 #include "game/dagger/world.h"
@@ -62,6 +63,7 @@ int gfall_main(void *instance)
 
     world_start(world, &x, &y, &z, &yaw, &pitch);
     camera_set(&cam, x, y, z, yaw, pitch);
+    console_set_camera(&cam);
     input_begin(win_hwnd());
     for (;;) {
         win_pump();

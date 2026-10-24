@@ -1,6 +1,36 @@
 #include "engine/core/mem.h"
+#include "engine/core/log.h"
 
 #define SCRATCH_SLOTS 2
+
+/* Bytes handed out, for the console's mem command. Not freed bytes. */
+static df_u32 g_main_bytes;
+static df_u32 g_temp_bytes;
+
+void mem_stats(df_u32 *main_bytes, df_u32 *temp_bytes)
+{
+    if (main_bytes) {
+        *main_bytes = g_main_bytes;
+    }
+    if (temp_bytes) {
+        *temp_bytes = g_temp_bytes;
+    }
+}
+
+static void *counted(void *p, df_u32 bytes, int temp)
+{
+    if (!p) {
+        log_print(LOG_ERROR, "out of memory: %u bytes on the %s heap",
+                  (unsigned int)bytes, temp ? "temp" : "main");
+        return 0;
+    }
+    if (temp) {
+        g_temp_bytes += bytes;
+    } else {
+        g_main_bytes += bytes;
+    }
+    return p;
+}
 
 static void *g_scratch[SCRATCH_SLOTS];
 static df_u32 g_scratch_cap[SCRATCH_SLOTS];
@@ -67,7 +97,7 @@ void *mem_alloc(df_u32 bytes)
     if (bytes == 0) {
         return 0;
     }
-    p = malloc(bytes);
+    p = counted(malloc(bytes), bytes, 0);
     if (!p) {
         return 0;
     }
@@ -127,6 +157,7 @@ void mem_temp_end(void)
         scratch_drop();
         HeapDestroy(g_temp);
         g_temp = 0;
+        g_temp_bytes = 0;
     }
 }
 
@@ -138,7 +169,7 @@ void *mem_alloc(df_u32 bytes)
     if (!heap || bytes == 0) {
         return 0;
     }
-    return HeapAlloc(heap, HEAP_ZERO_MEMORY, bytes);
+    return counted(HeapAlloc(heap, HEAP_ZERO_MEMORY, bytes), bytes, g_temp != 0);
 }
 
 /* GCC emits these for block copies. The exe has no C runtime. */

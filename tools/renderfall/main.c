@@ -1868,7 +1868,8 @@ static int renderfall_main(void *instance)
     if (n < 1) {
         win_fail("ARCH3D.BSA has no records.");
     } else {
-        while (wait_list()) {
+        /* win_closed: the console's quit leaves from the view, not just the list. */
+        while (!win_closed() && wait_list()) {
             int idx;
 
             idx = selected_record();

@@ -263,6 +263,14 @@ int shot_save(const char *arg)
 {
     char name[SHOT_NAME];
 
+    /* No name takes the F12 name, so "screenshot" alone is F12 from the console. */
+    while (arg && *arg == ' ') {
+        arg++;
+    }
+    if (!arg || !arg[0]) {
+        stamp_name(name, SHOT_NAME);
+        return save_file(name);
+    }
     if (!build_name(name, SHOT_NAME, arg)) {
         df_copy(g_status, "screenshot name", (int)sizeof(g_status));
         return 0;

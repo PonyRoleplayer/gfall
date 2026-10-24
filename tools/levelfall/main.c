@@ -1978,6 +1978,7 @@ static void run_view(const Level *level, Camera *cam)
     input_clear_quit();
     input_begin(win_hwnd());
     hud_set(0);
+    console_set_camera(cam);
     gfx_set_extra(draw_overlay);
     for (;;) {
         DWORD now;
@@ -2038,6 +2039,7 @@ static void run_view(const Level *level, Camera *cam)
     gfx_set_extra(0);
     hud_set(1);
     g_cam = 0;
+    console_set_camera(0);
     input_end();
 }
 
