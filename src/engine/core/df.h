@@ -125,6 +125,22 @@ static int df_iround(float v)
     return (int)(u.i - 0x4B400000);
 }
 
+/*
+ * v rounded to the nearest 1/16, for |v| below 2^18. The SST-1 takes
+ * screen x and y in 12.4 fixed point. Adding 1.5 * 2^19 leaves a float
+ * four fraction bits, so the store rounds to 1/16 and the subtraction
+ * is exact. volatile forces that store: on the x87 the sum would
+ * otherwise stay in an 80-bit register with every bit. A union read of
+ * the same member is not enough, GCC keeps it in the register.
+ */
+static float df_snap16(float v)
+{
+    volatile float t;
+
+    t = v + 786432.0f;
+    return t - 786432.0f;
+}
+
 /* Largest integer not above v, for |v| below 2^22. No mode switch. */
 static int df_ifloor(float v)
 {

@@ -480,34 +480,36 @@ static int take_visible(const Scene *scene, const Plane *planes,
  * anything goes to the card:
  *
  *   1. The picture is cut into OCC_W x OCC_H cells of OCC_CELL pixels.
- *   2. Big front faces of the nearest models are projected and
- *      rasterized into those cells. A cell is written only when one
- *      face covers all of it. It keeps 1/z of the farthest point that
- *      face can have inside the cell. Of several faces, the nearest
- *      bound wins.
- *   3. A box is hidden when its screen rectangle lands only on written
+ *   2. Front faces of the nearest models are projected and rasterized
+ *      into those cells. A face that covers all of a cell writes 1/z of
+ *      the farthest point it can have there; of several, the nearest
+ *      bound wins. A face that covers part of a cell lists itself on
+ *      that cell instead.
+ *   3. A cell that no one face covers may be covered by the faces listed
+ *      on it together: a wall and its floor, two panels, a door leaf in
+ *      its frame. The seam pass cuts them out of the cell and closes it
+ *      when nothing a pixel could land in is left. See OCC_PART.
+ *   4. A box is hidden when its screen rectangle lands only on covered
  *      cells, and every one of them is nearer than the nearest point of
  *      the box.
  *
- * Every step errs toward drawing. A cell is written only when the face
- * is known to be over every pixel of it, and only with a depth no
- * nearer than the face really is there. A box is dropped only when
- * every pixel it could reach is behind such a cell. So the cull can
- * keep a model that turns out to be hidden, and the Z buffer sorts that
- * out, but it cannot drop one that has a pixel on the glass.
+ * Every step errs toward drawing. A cell is covered only when the faces
+ * are known to be over every sample of it, and only with a depth no
+ * nearer than they really are there. A box is dropped only when every
+ * pixel it could reach is behind such a cell. So the cull can keep a
+ * model that turns out to be hidden, and the Z buffer sorts that out,
+ * but it cannot drop one that has a pixel on the glass.
  *
  * Joining walls is not a separate step. Two panels of one facade fill
- * their own cells, and the box behind the pair is tested against all of
- * them. A gap between the panels is a run of empty cells, so whatever
- * shows through the gap stays. The price of one face per cell is the
- * seam: a cell that two faces share between them is left empty.
+ * their own cells and share the ones on their seam, and the box behind
+ * the pair is tested against all of them. A gap between the panels is a
+ * run of open cells, so whatever shows through the gap stays.
  *
- * The cost is held under the vertex work it saves. A cell is 16 pixels,
- * so the grid is 40 x 30 floats and sits in the Pentium's 16 KB data
- * cache. 8-pixel cells hid 29% of what the frustum kept in Privateer's
- * Hold against 27.5% for 16, at about twice the fill. A row of cells is
- * a span solved per edge, not a test per cell. A model whose box is
- * already hidden adds no faces. See docs/culling.md for the numbers.
+ * The cost is held under the work it saves. A cell is 16 pixels, so the
+ * grid is 40 x 30 floats and sits in the Pentium's 16 KB data cache. A
+ * row of cells is a span solved per edge, not a test per cell. A model
+ * whose box is already hidden adds no faces. The seam pass runs only on
+ * the cells a box test asks about. See docs/culling.md for the numbers.
  */
 
 #define OCC_CELL 16
@@ -522,6 +524,11 @@ static int take_visible(const Scene *scene, const Plane *planes,
 #define OCC_NEAR 640.0f
 /* A screen box smaller than 3x3 cells cannot fill enough cells to pay. */
 #define OCC_MODEL_AREA (9.0f * OCC_CELL * OCC_CELL)
+/*
+ * A face smaller than this on screen is not written. Alone it covers no
+ * cell, but a door jamb or a beam end still closes a seam.
+ */
+#define OCC_FACE_AREA (0.125f * OCC_CELL * OCC_CELL)
 /* Nearest models looked at per frame, and faces drawn into the cells. */
 #define OCC_MODELS 32
 #define OCC_FACES 96
@@ -531,10 +538,12 @@ static int take_visible(const Scene *scene, const Plane *planes,
  */
 #define OCC_MARGIN 16.0f
 /*
- * A cell is tested grown by this much on every side. It covers the
- * card's 1/16-pixel vertex snap and float error at the outline.
+ * A cell is tested grown by this much on every side. Outlines are
+ * snapped to the 1/16 pixel the card draws at, but a corner the clip
+ * made can land one step away from the one draw.c sends, so an edge
+ * may lie up to 1/32 pixel off. 1/16 covers that and the fill rule.
  */
-#define OCC_EDGE 0.25f
+#define OCC_EDGE (1.0f / 16.0f)
 /*
  * A box has to be this much farther than the cell, as a factor on 1/z.
  * 0.1% keeps a sign or a door that is flush with its wall.
@@ -555,8 +564,57 @@ static int take_visible(const Scene *scene, const Plane *planes,
  */
 #define OCC_BEND 1.0e-8f
 
+/*
+ * A cell that no single face covers can still be covered by several:
+ * a wall and the floor it stands on, two panels, a corner. Each face
+ * lists itself on the cells it only partly covers, up to OCC_PART per
+ * cell, nearest kept. occ_seam then cuts those faces out of the cell.
+ *
+ * The outlines are snapped to 1/16 pixel, the coordinates glide.c hands
+ * the card. Two faces that share an edge then share it exactly, on the
+ * card and here, and the card's fill rule puts every sample on that
+ * edge in one of them. So a piece left after the cuts is closed when:
+ *   - it is thinner than OCC_NOISE: nothing but rounding in the cuts,
+ *     the trace of an edge both faces share. Or
+ *   - no sample point lies within OCC_SNAP of it. The card's own edge
+ *     can sit up to 1/32 pixel from this one where a clip made the
+ *     corner, so anything nearer than 1/16 could fall on either side.
+ * Every half pixel is tried, so the test holds whether the SST-1
+ * samples pixel centres or pixel corners. A T-junction, where a wall
+ * ends partway along the floor's edge, is not shared: its hairline
+ * wedge stays open wherever a sample comes near it. So does a door
+ * leaf that stops a tenth of a pixel above its threshold.
+ */
+#define OCC_PART 8
+#define OCC_NOISE (1.0f / 4096.0f)
+#define OCC_SNAP (1.0f / 16.0f)
+/* Pieces a cell may break into while faces are cut out of it. */
+#define OCC_PIECES 8
+#define OCC_PV (CV_MAX + 4)
+
 /* 1/z per cell. 0 is no cover. */
 static float g_occ[OCC_W * OCC_H];
+/* The faces written this frame, in screen space, for the seam pass. */
+typedef struct OccFace {
+    float x[CV_MAX];
+    float y[CV_MAX];
+    int n;
+} OccFace;
+static OccFace g_face[OCC_FACES];
+/* Partial covers per cell: count, face index, and that face's 1/z bound there. */
+static unsigned char g_npart[OCC_W * OCC_H];
+static unsigned char g_part_f[OCC_W * OCC_H][OCC_PART];
+static float g_part_w[OCC_W * OCC_H][OCC_PART];
+/* 1 once the seam pass has tried the cell. See occ_seam. */
+static unsigned char g_tried[OCC_W * OCC_H];
+/* Cells with a partial cover, inclusive. Empty when x0 > x1. */
+static int g_part_x0 = OCC_W;
+static int g_part_y0 = OCC_H;
+static int g_part_x1 = -1;
+static int g_part_y1 = -1;
+/* Set once every face is in: only then may a box test resolve a seam. */
+static int g_occ_lazy;
+static int g_occ_seams;
 /* Written cells, inclusive. Empty when x0 > x1. Clearing reads only this. */
 static int g_occ_x0 = OCC_W;
 static int g_occ_y0 = OCC_H;
@@ -603,6 +661,14 @@ static void occ_reset(void)
     g_occ_x1 = -1;
     g_occ_y1 = -1;
     g_occ_faces = 0;
+    g_occ_seams = 0;
+    g_occ_lazy = 0;
+    g_part_x0 = OCC_W;
+    g_part_y0 = OCC_H;
+    g_part_x1 = -1;
+    g_part_y1 = -1;
+    mem_zero(g_npart, (df_u32)sizeof(g_npart));
+    mem_zero(g_tried, (df_u32)sizeof(g_tried));
 }
 
 /*
@@ -801,10 +867,19 @@ static int cv_clip(const Cv *in, int n, Cv *out, int plane, float hx, float hy)
         if (denom > -1.0e-8f && denom < 1.0e-8f) {
             continue;
         }
-        t = dist[i] / denom;
-        hit.x = in[i].x + (in[j].x - in[i].x) * t;
-        hit.y = in[i].y + (in[j].y - in[i].y) * t;
-        hit.z = in[i].z + (in[j].z - in[i].z) * t;
+        /* Inside end first, as draw.c cuts, so two faces that share
+           this edge get the same corner. */
+        if (ain) {
+            t = dist[i] / denom;
+            hit.x = in[i].x + (in[j].x - in[i].x) * t;
+            hit.y = in[i].y + (in[j].y - in[i].y) * t;
+            hit.z = in[i].z + (in[j].z - in[i].z) * t;
+        } else {
+            t = dist[j] / -denom;
+            hit.x = in[j].x + (in[i].x - in[j].x) * t;
+            hit.y = in[j].y + (in[i].y - in[j].y) * t;
+            hit.z = in[j].z + (in[i].z - in[j].z) * t;
+        }
         if (nout < CV_MAX) {
             out[nout++] = hit;
         }
@@ -896,8 +971,65 @@ static int cell_in(const float *ea, const float *eb, const float *ec, int n,
     return 1;
 }
 
+static void occ_mark(int gx, int gy)
+{
+    if (gx < g_occ_x0) {
+        g_occ_x0 = gx;
+    }
+    if (gx > g_occ_x1) {
+        g_occ_x1 = gx;
+    }
+    if (gy < g_occ_y0) {
+        g_occ_y0 = gy;
+    }
+    if (gy > g_occ_y1) {
+        g_occ_y1 = gy;
+    }
+}
+
+/* Lists face f on cell c, which it only partly covers. A full list keeps the nearest. */
+static void occ_part(int c, int f, float w)
+{
+    int k;
+    int far;
+    int gx;
+    int gy;
+
+    gx = c % OCC_W;
+    gy = c / OCC_W;
+    if (gx < g_part_x0) {
+        g_part_x0 = gx;
+    }
+    if (gx > g_part_x1) {
+        g_part_x1 = gx;
+    }
+    if (gy < g_part_y0) {
+        g_part_y0 = gy;
+    }
+    if (gy > g_part_y1) {
+        g_part_y1 = gy;
+    }
+
+    if (g_npart[c] < OCC_PART) {
+        g_part_f[c][g_npart[c]] = (unsigned char)f;
+        g_part_w[c][g_npart[c]] = w;
+        g_npart[c]++;
+        return;
+    }
+    far = 0;
+    for (k = 1; k < OCC_PART; k++) {
+        if (g_part_w[c][k] < g_part_w[c][far]) {
+            far = k;
+        }
+    }
+    if (w > g_part_w[c][far]) {
+        g_part_f[c][far] = (unsigned char)f;
+        g_part_w[c][far] = w;
+    }
+}
+
 /*
- * Writes the cells the outline fully covers. The outline turns left.
+ * Writes face f into the cells. The outline turns left.
  * w(sx, sy) = wa * sx + wb * sy + wc is 1/z of the plane the face sits
  * on or in front of, and wfar is 1/z of its farthest clipped vertex.
  * Both are bounds on how far the face can be, so a cell keeps the
@@ -913,25 +1045,37 @@ static int cell_in(const float *ea, const float *eb, const float *ec, int n,
  * checked edge by edge, so rounding in that division cannot let in a
  * cell the outline misses. The same corner rule gives the farthest w
  * in a cell, and w steps by wa * OCC_CELL along the run.
+ *
+ * The opposite corner, the largest value, gives the run of cells the
+ * face touches at all. A touched cell outside the full run is listed
+ * for the seam pass. That run may include a cell the face only grazes:
+ * the seam pass then cuts nothing from it, which costs time, not cover.
  */
-static void occ_fill(const float *px, const float *py, int n,
-                     float wa, float wb, float wc, float wfar)
+static void occ_fill(int f, float wa, float wb, float wc, float wfar)
 {
+    const float *px;
+    const float *py;
     float ea[CV_MAX];
     float eb[CV_MAX];
     float ec[CV_MAX];
+    float et[CV_MAX];
     float ia[CV_MAX];
     float minx, miny, maxx, maxy;
     float wox, woy;
     int gx0, gy0, gx1, gy1;
+    int tx0, ty0, tx1, ty1;
     int gy;
     int i;
+    int n;
 
+    px = g_face[f].x;
+    py = g_face[f].y;
+    n = g_face[f].n;
     minx = maxx = px[0];
     miny = maxy = py[0];
     for (i = 0; i < n; i++) {
         int j;
-        float a, b;
+        float a, b, c;
 
         if (px[i] < minx) {
             minx = px[i];
@@ -948,39 +1092,52 @@ static void occ_fill(const float *px, const float *py, int n,
         j = (i + 1) % n;
         a = -(py[j] - py[i]);
         b = px[j] - px[i];
+        c = -(a * px[i] + b * py[i]);
         /* Bake in the worst corner of the grown cell, relative to its origin. */
-        ec[i] = -(a * px[i] + b * py[i]) +
+        ec[i] = c +
                 a * (a > 0.0f ? -OCC_EDGE : (float)OCC_CELL + OCC_EDGE) +
                 b * (b > 0.0f ? -OCC_EDGE : (float)OCC_CELL + OCC_EDGE);
+        /* And the best corner, for the cells it touches. */
+        et[i] = c +
+                a * (a > 0.0f ? (float)OCC_CELL + OCC_EDGE : -OCC_EDGE) +
+                b * (b > 0.0f ? (float)OCC_CELL + OCC_EDGE : -OCC_EDGE);
         ea[i] = a;
         eb[i] = b;
         ia[i] = a != 0.0f ? 1.0f / a : 0.0f;
     }
-    /* Only cells wholly inside the outline's box can be covered. */
+    if (maxx < 0.0f || maxy < 0.0f || minx > (float)DF_VIEW_W || miny > (float)DF_VIEW_H) {
+        return;
+    }
+    /* Cells wholly inside the outline's box can be covered. */
     gx0 = df_ifloor((clampf(minx, 0.0f, (float)DF_VIEW_W) + (float)OCC_CELL - 0.001f) * OCC_INV);
     gy0 = df_ifloor((clampf(miny, 0.0f, (float)DF_VIEW_H) + (float)OCC_CELL - 0.001f) * OCC_INV);
     gx1 = df_ifloor(clampf(maxx, 0.0f, (float)DF_VIEW_W) * OCC_INV) - 1;
     gy1 = df_ifloor(clampf(maxy, 0.0f, (float)DF_VIEW_H) * OCC_INV) - 1;
-    if (gx0 > gx1 || gy0 > gy1) {
-        return;
-    }
+    /* Cells that overlap the box can be touched. */
+    /* Grown like the cells are, or a face that stops just short of a
+       row would never list itself on it. */
+    tx0 = df_ifloor(clampf(minx - OCC_EDGE, 0.0f, (float)DF_VIEW_W - 0.5f) * OCC_INV);
+    ty0 = df_ifloor(clampf(miny - OCC_EDGE, 0.0f, (float)DF_VIEW_H - 0.5f) * OCC_INV);
+    tx1 = df_ifloor(clampf(maxx + OCC_EDGE, 0.0f, (float)DF_VIEW_W - 0.5f) * OCC_INV);
+    ty1 = df_ifloor(clampf(maxy + OCC_EDGE, 0.0f, (float)DF_VIEW_H - 0.5f) * OCC_INV);
     wox = wa > 0.0f ? 0.0f : (float)OCC_CELL;
     woy = wb > 0.0f ? 0.0f : (float)OCC_CELL;
-    for (gy = gy0; gy <= gy1; gy++) {
+    for (gy = ty0; gy <= ty1; gy++) {
         float y;
         float lo, hi;
         float w, dw;
-        float *cell;
         int s, e;
+        int ts, te;
         int gx;
 
         y = (float)(gy * OCC_CELL);
-        lo = (float)(gx0 * OCC_CELL);
-        hi = (float)(gx1 * OCC_CELL);
+        /* The touched run. */
+        lo = (float)(tx0 * OCC_CELL);
+        hi = (float)(tx1 * OCC_CELL);
         for (i = 0; i < n && lo <= hi; i++) {
             float r;
 
-            r = eb[i] * y + ec[i];
+            r = eb[i] * y + et[i];
             if (ea[i] > 0.0f) {
                 float x;
 
@@ -1002,51 +1159,479 @@ static void occ_fill(const float *px, const float *py, int n,
         if (lo > hi) {
             continue;
         }
-        s = df_ifloor(lo * OCC_INV);
-        if ((float)(s * OCC_CELL) < lo) {
-            s++;
+        ts = df_ifloor(lo * OCC_INV);
+        if ((float)(ts * OCC_CELL) < lo) {
+            ts++;
         }
-        e = df_ifloor(hi * OCC_INV);
-        if (s < gx0) {
-            s = gx0;
+        te = df_ifloor(hi * OCC_INV);
+        if (ts < tx0) {
+            ts = tx0;
         }
-        if (e > gx1) {
-            e = gx1;
+        if (te > tx1) {
+            te = tx1;
         }
-        while (s <= e && !cell_in(ea, eb, ec, n, (float)(s * OCC_CELL), y)) {
-            s++;
-        }
-        while (e >= s && !cell_in(ea, eb, ec, n, (float)(e * OCC_CELL), y)) {
-            e--;
-        }
-        if (s > e) {
+        if (ts > te) {
             continue;
         }
-        w = wa * ((float)(s * OCC_CELL) + wox) + wb * (y + woy) + wc;
+        /* The full run, inside the touched one. */
+        s = te + 1;
+        e = te;
+        if (gy >= gy0 && gy <= gy1 && gx0 <= gx1) {
+            lo = (float)(gx0 * OCC_CELL);
+            hi = (float)(gx1 * OCC_CELL);
+            for (i = 0; i < n && lo <= hi; i++) {
+                float r;
+
+                r = eb[i] * y + ec[i];
+                if (ea[i] > 0.0f) {
+                    float x;
+
+                    x = -r * ia[i];
+                    if (x > lo) {
+                        lo = x;
+                    }
+                } else if (ea[i] < 0.0f) {
+                    float x;
+
+                    x = -r * ia[i];
+                    if (x < hi) {
+                        hi = x;
+                    }
+                } else if (r < 0.0f) {
+                    lo = hi + 1.0f;
+                }
+            }
+            if (lo <= hi) {
+                s = df_ifloor(lo * OCC_INV);
+                if ((float)(s * OCC_CELL) < lo) {
+                    s++;
+                }
+                e = df_ifloor(hi * OCC_INV);
+                if (s < gx0) {
+                    s = gx0;
+                }
+                if (e > gx1) {
+                    e = gx1;
+                }
+                while (s <= e && !cell_in(ea, eb, ec, n, (float)(s * OCC_CELL), y)) {
+                    s++;
+                }
+                while (e >= s && !cell_in(ea, eb, ec, n, (float)(e * OCC_CELL), y)) {
+                    e--;
+                }
+            }
+            if (s > e) {
+                s = te + 1;
+                e = te;
+            }
+        }
+        w = wa * ((float)(ts * OCC_CELL) + wox) + wb * (y + woy) + wc;
         dw = wa * (float)OCC_CELL;
-        cell = &g_occ[gy * OCC_W + s];
-        for (gx = s; gx <= e; gx++) {
+        for (gx = ts; gx <= te; gx++) {
             float v;
+            int c;
 
             v = w < wfar ? wfar : w;
-            if (v > *cell) {
-                *cell = v;
-            }
-            cell++;
             w += dw;
+            c = gy * OCC_W + gx;
+            if (gx >= s && gx <= e) {
+                if (v > g_occ[c]) {
+                    g_occ[c] = v;
+                }
+                continue;
+            }
+            /* Only a face nearer than the cell's own cover can improve it. */
+            if (v > g_occ[c]) {
+                occ_part(c, f, v);
+            }
         }
-        if (s < g_occ_x0) {
-            g_occ_x0 = s;
+        if (s <= e) {
+            occ_mark(s, gy);
+            occ_mark(e, gy);
         }
-        if (e > g_occ_x1) {
-            g_occ_x1 = e;
+    }
+}
+
+/*
+ * A cell, or a piece of one, while faces are cut out of it. The
+ * coordinates are relative to the cell's corner, so the numbers stay
+ * small and the area of a sliver is exact enough to judge.
+ */
+typedef struct Pc {
+    float x[OCC_PV];
+    float y[OCC_PV];
+    int n;
+} Pc;
+
+/* Keeps the part where sign * (a * x + b * y + c) >= 0. */
+static void pc_cut(const Pc *in, float a, float b, float c, float sign, Pc *out)
+{
+    float d[OCC_PV];
+    int i;
+
+    out->n = 0;
+    for (i = 0; i < in->n; i++) {
+        d[i] = sign * (a * in->x[i] + b * in->y[i] + c);
+    }
+    for (i = 0; i < in->n; i++) {
+        int j;
+
+        j = (i + 1) % in->n;
+        if (d[i] >= 0.0f && out->n < OCC_PV) {
+            out->x[out->n] = in->x[i];
+            out->y[out->n] = in->y[i];
+            out->n++;
         }
-        if (gy < g_occ_y0) {
-            g_occ_y0 = gy;
+        if ((d[i] >= 0.0f) != (d[j] >= 0.0f) && out->n < OCC_PV) {
+            float t;
+
+            t = d[i] / (d[i] - d[j]);
+            out->x[out->n] = in->x[i] + (in->x[j] - in->x[i]) * t;
+            out->y[out->n] = in->y[i] + (in->y[j] - in->y[i]) * t;
+            out->n++;
         }
-        if (gy > g_occ_y1) {
-            g_occ_y1 = gy;
+    }
+}
+
+/*
+ * 1 when the piece is only rounding from the cuts, thinner than
+ * OCC_NOISE: the trace of an edge two faces share. See OCC_PART. The
+ * width of a convex piece across its narrowest direction is at most
+ * twice its area over its longest extent, and the longest side of its
+ * box is no longer than that extent, so the test can only call a piece
+ * thin when it is. Cheap: it runs on every piece a cut makes.
+ */
+static int pc_thin(const Pc *p)
+{
+    float minx, miny, maxx, maxy, side;
+    int i;
+
+    if (p->n < 3) {
+        return 1;
+    }
+    minx = maxx = p->x[0];
+    miny = maxy = p->y[0];
+    for (i = 1; i < p->n; i++) {
+        if (p->x[i] < minx) {
+            minx = p->x[i];
         }
+        if (p->x[i] > maxx) {
+            maxx = p->x[i];
+        }
+        if (p->y[i] < miny) {
+            miny = p->y[i];
+        }
+        if (p->y[i] > maxy) {
+            maxy = p->y[i];
+        }
+    }
+    side = maxx - minx > maxy - miny ? maxx - minx : maxy - miny;
+    return side < OCC_NOISE ||
+           df_absf(poly_area2(p->x, p->y, p->n)) <= OCC_NOISE * side;
+}
+
+/*
+ * 1 when no sample point lies within OCC_SNAP of the piece, so the card
+ * cannot draw a pixel in it. See OCC_PART. Sample points are the
+ * multiples of a half pixel in screen space; ox, oy is the cell corner.
+ * The piece is convex and turns left, as the cell does and every cut
+ * keeps. Each edge is pushed out by OCC_SNAP. Then, for each half-pixel
+ * row in the piece's box, the edges bound the run of x inside it, the
+ * same solve occ_fill uses for a row of cells, and the run is checked
+ * for a half-pixel x. A long thin sliver costs one row per half pixel
+ * of its height, not a test per point. This is the dear test, so it
+ * runs only on what is left once every face has been cut out.
+ */
+static int pc_nosample(const Pc *p, float ox, float oy)
+{
+    float ea[OCC_PV];
+    float eb[OCC_PV];
+    float ec[OCC_PV];
+    float minx, miny, maxx, maxy;
+    int sy0, sy1, gy;
+    int i;
+
+    if (p->n < 3) {
+        return 1;
+    }
+    minx = maxx = p->x[0];
+    miny = maxy = p->y[0];
+    for (i = 0; i < p->n; i++) {
+        float dx, dy, l2, len;
+        int j;
+
+        if (p->x[i] < minx) {
+            minx = p->x[i];
+        }
+        if (p->x[i] > maxx) {
+            maxx = p->x[i];
+        }
+        if (p->y[i] < miny) {
+            miny = p->y[i];
+        }
+        if (p->y[i] > maxy) {
+            maxy = p->y[i];
+        }
+        /* Inside is ea * x + eb * y + ec >= 0, in screen space, grown. */
+        j = (i + 1) % p->n;
+        dx = p->x[j] - p->x[i];
+        dy = p->y[j] - p->y[i];
+        l2 = dx * dx + dy * dy;
+        __asm__ __volatile__("fsqrt" : "=t"(len) : "0"(l2));
+        ea[i] = -dy;
+        eb[i] = dx;
+        ec[i] = dy * (p->x[i] + ox) - dx * (p->y[i] + oy) + OCC_SNAP * len;
+    }
+    minx += ox - OCC_SNAP;
+    maxx += ox + OCC_SNAP;
+    sy0 = df_ifloor((miny + oy - OCC_SNAP) * 2.0f) + 1;
+    sy1 = df_ifloor((maxy + oy + OCC_SNAP) * 2.0f);
+    for (gy = sy0; gy <= sy1; gy++) {
+        float y, lo, hi;
+        int sx;
+
+        y = (float)gy * 0.5f;
+        lo = minx;
+        hi = maxx;
+        for (i = 0; i < p->n && lo <= hi; i++) {
+            float r;
+
+            r = eb[i] * y + ec[i];
+            if (ea[i] > 0.0f) {
+                float x;
+
+                x = -r / ea[i];
+                if (x > lo) {
+                    lo = x;
+                }
+            } else if (ea[i] < 0.0f) {
+                float x;
+
+                x = -r / ea[i];
+                if (x < hi) {
+                    hi = x;
+                }
+            } else if (r < 0.0f) {
+                lo = hi + 1.0f;
+            }
+        }
+        if (lo > hi) {
+            continue;
+        }
+        /* The first half pixel at or after lo. */
+        sx = df_ifloor(lo * 2.0f);
+        if ((float)sx * 0.5f < lo) {
+            sx++;
+        }
+        if ((float)sx * 0.5f <= hi) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* Drops the pieces that hold no sample. Returns how many are left. */
+static int pc_prune(Pc *pieces, int np, float ox, float oy)
+{
+    int p;
+    int w;
+
+    w = 0;
+    for (p = 0; p < np; p++) {
+        if (!pc_nosample(&pieces[p], ox, oy)) {
+            if (w != p) {
+                pieces[w] = pieces[p];
+            }
+            w++;
+        }
+    }
+    return w;
+}
+
+/*
+ * Cuts face f out of every piece. A piece becomes the parts of it
+ * outside each edge in turn: outside edge 0, then inside 0 and outside
+ * 1, and so on, which are convex and do not overlap. What is inside
+ * every edge is the face, and goes. An edge with the whole piece on one
+ * side cuts nothing: wholly inside, it is skipped; wholly outside, the
+ * rest of the piece is outside the face and stays as it is. *used is
+ * set when the face took something. 0 when the pieces would pass
+ * OCC_PIECES even after the ones with no sample are dropped: the cell
+ * is then left as it was.
+ */
+static void pc_copy(Pc *dst, const Pc *src)
+{
+    int i;
+
+    for (i = 0; i < src->n; i++) {
+        dst->x[i] = src->x[i];
+        dst->y[i] = src->y[i];
+    }
+    dst->n = src->n;
+}
+
+static int pc_subtract(Pc *pieces, int *np, int f, float ox, float oy, int *used)
+{
+    static Pc next[OCC_PIECES];
+    static Pc work[2];
+    const OccFace *fc;
+    int nn;
+    int p;
+
+    fc = &g_face[f];
+    nn = 0;
+    for (p = 0; p < *np; p++) {
+        const Pc *cur;
+        int side;
+        int i;
+        int took;
+
+        /* cur is the part of the piece inside the edges so far. Cuts go
+           straight into next[] and work[], so no piece is copied whole. */
+        cur = &pieces[p];
+        side = 0;
+        took = 1;
+        for (i = 0; i < fc->n; i++) {
+            float a, b, c;
+            int in, out, k, j;
+
+            j = (i + 1) % fc->n;
+            a = -(fc->y[j] - fc->y[i]);
+            b = fc->x[j] - fc->x[i];
+            /* The edge in cell coordinates. */
+            c = -(a * (fc->x[i] - ox) + b * (fc->y[i] - oy));
+            in = 0;
+            out = 0;
+            for (k = 0; k < cur->n; k++) {
+                if (a * cur->x[k] + b * cur->y[k] + c >= 0.0f) {
+                    in++;
+                } else {
+                    out++;
+                }
+            }
+            if (out == 0) {
+                continue;
+            }
+            if (nn >= OCC_PIECES) {
+                nn = pc_prune(next, nn, ox, oy);
+                if (nn >= OCC_PIECES) {
+                    return 0;
+                }
+            }
+            if (in == 0) {
+                /* All of what is left is outside the face. */
+                pc_copy(&next[nn], cur);
+                if (!pc_thin(&next[nn])) {
+                    nn++;
+                }
+                took = 0;
+                break;
+            }
+            pc_cut(cur, a, b, c, -1.0f, &next[nn]);
+            if (!pc_thin(&next[nn])) {
+                nn++;
+            }
+            pc_cut(cur, a, b, c, 1.0f, &work[side]);
+            cur = &work[side];
+            side ^= 1;
+            if (pc_thin(cur)) {
+                took = 0;
+                break;
+            }
+        }
+        if (took) {
+            *used = 1;
+        }
+    }
+    for (p = 0; p < nn; p++) {
+        pc_copy(&pieces[p], &next[p]);
+    }
+    *np = nn;
+    return 1;
+}
+
+/*
+ * The seam pass, for one cell. A cell listed by two or more faces is
+ * cut by those faces, nearest first. When the pieces that are left
+ * hold no sample, the faces that took a part cover it together, and
+ * the farthest of their bounds is the cell's 1/z. It only replaces a
+ * farther cover.
+ *
+ * It runs lazily. A cell is worth cutting only when a box test lands
+ * on it, and a visible box stops at its first open cell, so most seam
+ * cells are never asked about. occ_hides calls this the first time it
+ * meets an uncovered cell with a list, once every face is in, and
+ * g_tried keeps the answer for the rest of the frame.
+ */
+static void occ_seam(int c)
+{
+    Pc pieces[OCC_PIECES];
+    unsigned char fo[OCC_PART];
+    float wo[OCC_PART];
+    float ox, oy;
+    float w;
+    int m;
+    int k;
+    int np;
+    int ok;
+
+    g_tried[c] = 1;
+    m = g_npart[c];
+    if (m < 2) {
+        return;
+    }
+    /* Nearest first: insertion sort of at most OCC_PART. */
+    for (k = 0; k < m; k++) {
+        int j;
+
+        j = k;
+        while (j > 0 && wo[j - 1] < g_part_w[c][k]) {
+            wo[j] = wo[j - 1];
+            fo[j] = fo[j - 1];
+            j--;
+        }
+        wo[j] = g_part_w[c][k];
+        fo[j] = g_part_f[c][k];
+    }
+    /* None of them can beat the cover the cell already has. */
+    if (wo[0] <= g_occ[c]) {
+        return;
+    }
+    pieces[0].n = 4;
+    pieces[0].x[0] = -OCC_EDGE;
+    pieces[0].y[0] = -OCC_EDGE;
+    pieces[0].x[1] = (float)OCC_CELL + OCC_EDGE;
+    pieces[0].y[1] = -OCC_EDGE;
+    pieces[0].x[2] = (float)OCC_CELL + OCC_EDGE;
+    pieces[0].y[2] = (float)OCC_CELL + OCC_EDGE;
+    pieces[0].x[3] = -OCC_EDGE;
+    pieces[0].y[3] = (float)OCC_CELL + OCC_EDGE;
+    np = 1;
+    ox = (float)((c % OCC_W) * OCC_CELL);
+    oy = (float)((c / OCC_W) * OCC_CELL);
+    w = 1.0e30f;
+    ok = 1;
+    for (k = 0; k < m && np > 0; k++) {
+        int used;
+
+        used = 0;
+        if (!pc_subtract(pieces, &np, fo[k], ox, oy, &used)) {
+            ok = 0;
+            break;
+        }
+        if (used && wo[k] < w) {
+            w = wo[k];
+        }
+    }
+    if (!ok || w <= g_occ[c]) {
+        return;
+    }
+    if (np > 0) {
+        np = pc_prune(pieces, np, ox, oy);
+    }
+    if (np == 0) {
+        g_occ[c] = w;
+        g_occ_seams++;
     }
 }
 
@@ -1077,7 +1662,7 @@ static void occ_fill(const float *px, const float *py, int n,
  * z = -d / (n . ray).
  */
 static int occ_face(const Mesh *mesh, const Face *face, const Xf *xf,
-                    float hx, float hy, float focal)
+                    float hx, float hy, float focal, int slot)
 {
     const Tri *tris;
     const Tri *t0;
@@ -1129,6 +1714,17 @@ static int occ_face(const Mesh *mesh, const Face *face, const Xf *xf,
     xf_point(xf, t0->x[1], t0->y[1], t0->z[1], &poly[0][n++]);
     for (t = face->first; t < tend; t++) {
         xf_point(xf, tris[t].x[2], tris[t].y[2], tris[t].z[2], &poly[0][n++]);
+    }
+    /* Wholly behind the eye or off one side: no normal, no clip. */
+    for (plane = 0; plane < 5; plane++) {
+        for (k = 0; k < n; k++) {
+            if (cv_dist(plane, hx, hy, &poly[0][k]) >= 0.0f) {
+                break;
+            }
+        }
+        if (k == n) {
+            return 0;
+        }
     }
     nx = ny = nz = 0.0f;
     side = 0.0f;
@@ -1200,9 +1796,11 @@ static int occ_face(const Mesh *mesh, const Face *face, const Xf *xf,
         if (poly[src][k].z > zfar) {
             zfar = poly[src][k].z;
         }
-        iz = focal / poly[src][k].z;
-        x = (float)DF_VIEW_W * 0.5f + poly[src][k].x * iz;
-        y = (float)DF_VIEW_H * 0.5f + poly[src][k].y * iz;
+        /* Where the card will put the corner: camera_project's sums,
+           then the snap glide.c applies. See OCC_PART. */
+        iz = 1.0f / poly[src][k].z;
+        x = df_snap16((float)DF_VIEW_W * 0.5f + poly[src][k].x * focal * iz);
+        y = df_snap16((float)DF_VIEW_H * 0.5f + poly[src][k].y * focal * iz);
         if (np > 0 && df_absf(x - px[np - 1]) < OCC_DUP && df_absf(y - py[np - 1]) < OCC_DUP) {
             continue;
         }
@@ -1232,15 +1830,21 @@ static int occ_face(const Mesh *mesh, const Face *face, const Xf *xf,
         }
         area = -area;
     }
-    /* Twice the area. Under two cells, nothing can be fully covered. */
-    if (area < 4.0f * (float)(OCC_CELL * OCC_CELL) || !poly_convex(px, py, np)) {
+    /* Twice the area. A sliver of a face still closes a seam, so the
+       bar is a quarter of a cell, not a cell. */
+    if (area < 2.0f * OCC_FACE_AREA || !poly_convex(px, py, np)) {
         return 0;
     }
     wa = -nx / (d * focal);
     wb = -ny / (d * focal);
     wc = -(nz - nx * ((float)DF_VIEW_W * 0.5f) / focal -
            ny * ((float)DF_VIEW_H * 0.5f) / focal) / d;
-    occ_fill(px, py, np, wa, wb, wc, 1.0f / zfar);
+    for (k = 0; k < np; k++) {
+        g_face[slot].x[k] = px[k];
+        g_face[slot].y[k] = py[k];
+    }
+    g_face[slot].n = np;
+    occ_fill(slot, wa, wb, wc, 1.0f / zfar);
     return 1;
 }
 
@@ -1327,10 +1931,20 @@ static void occ_build(const Scene *scene, const View *v, const int *idx, int n)
         in = &scene->models[cand[i]];
         xf_build(&xf, in, v);
         for (f = 0; f < in->mesh->nfaces && g_occ_faces < OCC_FACES; f++) {
-            if (occ_face(in->mesh, &in->mesh->faces[f], &xf, hx, hy, v->focal)) {
+            if (occ_face(in->mesh, &in->mesh->faces[f], &xf, hx, hy, v->focal,
+                         g_occ_faces)) {
                 g_occ_faces++;
             }
         }
+    }
+    /*
+     * Every face is in. From here a box test may resolve a seam, and
+     * the box of cells to test and to clear reaches the listed cells.
+     */
+    g_occ_lazy = 1;
+    if (g_part_x0 <= g_part_x1) {
+        occ_mark(g_part_x0, g_part_y0);
+        occ_mark(g_part_x1, g_part_y1);
     }
 }
 
@@ -1360,6 +1974,17 @@ static int occ_hides(const View *v, float cx, float cy, float cz,
 
         row = &g_occ[gy * OCC_W];
         for (gx = gx0; gx <= gx1; gx++) {
+            int c;
+
+            if (row[gx] > wt) {
+                continue;
+            }
+            /* Not covered yet. Faces that share it may still be. */
+            c = gy * OCC_W + gx;
+            if (!g_occ_lazy || g_tried[c] || g_npart[c] < 2) {
+                return 0;
+            }
+            occ_seam(c);
             if (row[gx] <= wt) {
                 return 0;
             }
@@ -1508,6 +2133,16 @@ int scene_cover_count(void)
     g_nrun = 0;
     if (!g_cover_draw || g_occ_x0 > g_occ_x1) {
         return 0;
+    }
+    /* The overlay shows every seam the faces close, asked about or not. */
+    if (g_occ_lazy) {
+        int c;
+
+        for (c = 0; c < OCC_W * OCC_H; c++) {
+            if (!g_tried[c] && g_npart[c] >= 2) {
+                occ_seam(c);
+            }
+        }
     }
     for (gy = g_occ_y0; gy <= g_occ_y1; gy++) {
         int gx;

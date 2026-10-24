@@ -230,10 +230,18 @@ static int load_glide(void)
 }
 #pragma GCC diagnostic pop
 
+/*
+ * x and y are snapped to the 1/16 pixel the SST-1 rasterizes at, as the
+ * Glide 2 guide asks. Unsnapped, two triangles that share an edge reach
+ * the card a fraction apart, and its edge walker drops pixels along the
+ * seam: sparkles in every wall joint. Snapped, a shared edge is shared
+ * exactly and the card's fill rule leaves no gap. The occlusion seam
+ * pass in scene.c relies on that, and snaps its outlines the same way.
+ */
 static void fill_vertex(GrVertex *v, const DrawVert *s)
 {
-    v->x = s->x;
-    v->y = s->y;
+    v->x = df_snap16(s->x);
+    v->y = df_snap16(s->y);
     v->z = 0.0f;
     v->r = s->r;
     v->g = s->g;

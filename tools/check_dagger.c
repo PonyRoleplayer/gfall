@@ -258,6 +258,9 @@ static const Flat *find_flat(const World *world, int file, int image)
 
 static DunRef g_region61;
 static int g_have_region61;
+/* Daggerfall's castle, location 50027: the interior culling case. */
+static DunRef g_castle;
+static int g_have_castle;
 
 static void check_levels(void)
 {
@@ -270,6 +273,7 @@ static void check_levels(void)
     int blocks;
 
     g_have_region61 = 0;
+    g_have_castle = 0;
     rows = (DunRef *)mem_alloc((df_u32)8192 * (df_u32)sizeof(DunRef));
     check_expect(rows != 0, "dungeon list allocation");
     if (!rows) {
@@ -286,6 +290,10 @@ static void check_levels(void)
         }
         if (rows[i].region == 17 && df_eq(rows[i].name, "Privateer's Hold")) {
             found = i;
+        }
+        if (rows[i].location_id == 50027) {
+            g_castle = rows[i];
+            g_have_castle = 1;
         }
     }
     check_expect(found >= 0 && rows[found].nblocks == 5 && rows[found].location_id == 50050
@@ -535,6 +543,43 @@ int check_dagger(const char *root_in)
                        "region 61 start is outside the dungeon");
             }
         } else if (g_have_region61) {
+            check_expect(0, dungeon_error());
+        }
+    }
+
+    /*
+     * Inside Daggerfall's castle, facing a closed door down a hall. The
+     * frustum keeps 38 models at the default far clip; 4 have a pixel
+     * on the glass. Occlusion has to get near that, with walls, floor
+     * and the door leaves covering each other's seams.
+     */
+    {
+        Dungeon castle;
+        World *inside;
+
+        check_expect(g_have_castle, "Daggerfall castle is not in the dungeon list");
+        if (g_have_castle && dungeon_load_at(g_castle.region, g_castle.index, &castle)) {
+            inside = world_load_dungeon(&castle);
+            check_expect(inside != 0, "Daggerfall castle did not load");
+            if (inside) {
+                Level level;
+                Camera cam;
+                int order[2048];
+                int vis;
+                int frustum;
+
+                world_as_level(inside, &level);
+                scene_set_limits(DF_FAR, 1);
+                camera_set(&cam, 2002.0f, 1081.0f, 1022.0f,
+                           268.0f * (DF_TAU / 360.0f), 2.0f * (DF_TAU / 360.0f));
+                scene_set_occlude(0);
+                frustum = scene_visible_models(&level.scene, &cam, order, 2048);
+                scene_set_occlude(1);
+                vis = scene_visible_models(&level.scene, &cam, order, 2048);
+                printf("castle door visible %d frustum %d\n", vis, frustum);
+                check_expect(frustum > 30 && vis <= 8, "castle door view kept the rooms behind it");
+            }
+        } else if (g_have_castle) {
             check_expect(0, dungeon_error());
         }
     }

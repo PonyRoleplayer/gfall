@@ -115,8 +115,8 @@ int scene_cull(void);
  *
  * Then occlusion: the near front faces of the surviving models are
  * rasterized into a grid of 16x16-pixel cells, and a box is dropped only
- * when every cell under its screen rectangle is covered by a face that
- * is nearer than the whole box. It never drops a box that has a pixel
+ * when every cell under its screen rectangle is covered, by one face or
+ * by the faces that meet in it, nearer than the whole box. It never drops a box that has a pixel
  * on the glass. See docs/culling.md. The sprite call reads the cells
  * the model call wrote, so call scene_visible_models first.
  *

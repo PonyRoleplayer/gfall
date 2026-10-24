@@ -20,7 +20,7 @@
 
 ## Codebase layout
 - `game/daggerfall/main.c` — `GFALL.EXE` entry. Same relationship to the engine as `tools/renderfall/main.c`: it links engine and dagger code and brings `WinMainCRTStartup`. Loads Privateer's Hold and hands a `Level` to `gfx.h`.
-- `src/engine/core/` — `df.h` types, endian helpers, x87 `df_sin`/`df_cos` (no libm), and `df_iround`/`df_ifloor` (float to int without a rounding-mode switch). `mem.c` is the heap (stdlib malloc if `DF_HOST`, Win32 heap + CRT `memcpy`/`memmove`/`memset`/`strlen` replacements if not).
+- `src/engine/core/` — `df.h` types, endian helpers, x87 `df_sin`/`df_cos` (no libm), `df_iround`/`df_ifloor` (float to int without a rounding-mode switch), and `df_snap16` (the 1/16-pixel snap `glide.c` applies to every vertex). `mem.c` is the heap (stdlib malloc if `DF_HOST`, Win32 heap + CRT `memcpy`/`memmove`/`memset`/`strlen` replacements if not).
 - `src/engine/platform/` — `win32.c` (`_WinMainCRTStartup`, content dir beside the exe), `input.c`, `fs.c` (POSIX if `DF_HOST`, Win32 otherwise).
 - `src/engine/assets/` — VFS over `fs`, loader registry, engine formats: mesh, texture, palette, level.
 - `src/engine/scene/` — placed meshes, billboards, transforms, visibility. Models and sprites whose box misses the view, sits past the fog or the far clip, or is wholly behind nearer walls in the occlusion cells, are not drawn. See `docs/culling.md`.

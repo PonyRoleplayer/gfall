@@ -726,6 +726,70 @@ static void check_occlusion(void)
             n = scene_visible_models(&scene, &cam, order, 4);
             check_expect(n == 3 && order[2] == 2,
                          "post above the facade was dropped or the panel hid nothing");
+            /*
+             * The seam between the panels is x = 0, the edge of two
+             * cells, so neither panel covers those cells alone. Cut
+             * together they do, and a model straight behind the seam
+             * goes.
+             */
+            place_at(&models[2], dot, 0.0f, 0.0f, 300.0f);
+            scene.nmodels = 3;
+            n = scene_visible_models(&scene, &cam, order, 4);
+            check_expect(n == 2, "model behind the seam of two panels was kept");
+        }
+    }
+
+    /*
+     * The same panels a unit apart: four pixels of open glass, with
+     * samples in it. The model behind the gap stays.
+     */
+    {
+        static const float lx[4] = {-80.0f, -0.5f, -0.5f, -80.0f};
+        static const float rx[4] = {0.5f, 80.0f, 80.0f, 0.5f};
+        static const float py[4] = {-40.0f, -40.0f, 40.0f, 40.0f};
+        static const float pz[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        Mesh *left;
+        Mesh *right;
+
+        left = fan_mesh(lx, py, pz, 4, 0.0f, 0.0f, -1.0f);
+        right = fan_mesh(rx, py, pz, 4, 0.0f, 0.0f, -1.0f);
+        check_expect(left && right, "split facade was not allocated");
+        if (left && right) {
+            place_at(&models[0], left, 0.0f, 0.0f, 100.0f);
+            place_at(&models[1], right, 0.0f, 0.0f, 100.0f);
+            place_at(&models[2], dot, 0.0f, 0.0f, 300.0f);
+            scene.nmodels = 3;
+            n = scene_visible_models(&scene, &cam, order, 4);
+            check_expect(n == 3, "model seen through a gap between panels was dropped");
+        }
+    }
+
+    /*
+     * A wall at z 100 standing on a floor at y -50 that ends at the
+     * wall. Their edge is one line on the glass, and every cell along
+     * it is part wall, part floor. A model behind that line goes.
+     */
+    {
+        static const float wx[4] = {-100.0f, 100.0f, 100.0f, -100.0f};
+        static const float wy[4] = {-50.0f, -50.0f, 50.0f, 50.0f};
+        static const float wz[4] = {100.0f, 100.0f, 100.0f, 100.0f};
+        static const float fx[4] = {-100.0f, -100.0f, 100.0f, 100.0f};
+        static const float fy[4] = {-50.0f, -50.0f, -50.0f, -50.0f};
+        static const float fz[4] = {0.0f, 100.0f, 100.0f, 0.0f};
+        Mesh *wall;
+        Mesh *floor;
+
+        wall = fan_mesh(wx, wy, wz, 4, 0.0f, 0.0f, -1.0f);
+        floor = fan_mesh(fx, fy, fz, 4, 0.0f, 1.0f, 0.0f);
+        check_expect(wall && floor, "wall and floor were not allocated");
+        if (wall && floor) {
+            place_at(&models[0], wall, 0.0f, 0.0f, 0.0f);
+            place_at(&models[1], floor, 0.0f, 0.0f, 0.0f);
+            /* y -150 at z 300 is on the line y -50 at z 100 from the eye. */
+            place_at(&models[2], dot, 0.0f, -150.0f, 300.0f);
+            scene.nmodels = 3;
+            n = scene_visible_models(&scene, &cam, order, 4);
+            check_expect(n == 2, "model behind the edge of a wall and its floor was kept");
         }
     }
 
