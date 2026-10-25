@@ -39,7 +39,7 @@ static int load_texture(const char *name, const df_u8 *bytes, df_u32 size, void 
     if (!load) {
         return 0;
     }
-    load->out = texture_load(load->file, load->image);
+    load->out = texture_load_frame(load->file, load->image, load->frame);
     return load->out != 0;
 }
 

@@ -8,8 +8,8 @@ An RDB block lists its objects by type: 1 is a model, 3 a flat, and 2 a light. `
 
 | Offset | Size | Use |
 |---|---|---|
-| 0 | 4 | Unknown. Small numbers in most records: 41 distinct values, 3 to 68, about 19 on average. Kept as `Light.raw0`. |
-| 4 | 4 | Unknown. 0 or -2. Kept as `Light.raw1`. |
+| 0 | 4 | Unknown. Small numbers in most records: 41 distinct values, 3 to 68, about 19 on average. Not kept. |
+| 4 | 4 | Unknown. 0 or -2. Not kept. |
 | 8 | 2 | Radius, in world units. Daggerfall Unity reads it the same way. |
 
 The position is the object header's, like a model's or a flat's: y is negated into the engine's y-up.
@@ -44,6 +44,12 @@ The falloff pictures are 8 RGB 565 squares of 64, 64 KB on TMU0, one per band of
 
 The falloff at distance d of reach R, with angle θ to the face: L = 1.5 (1 - d/R)² (0.35 + 0.65 cos θ), clipped at 1. The softened Lambert term keeps a torch on its own wall lighting the wall around it. The 1.5 gives a brighter core with the same reach; at 1 a host preview showed the pools too faint against the ambient.
 
+## Flicker
+
+A flame's light wavers. The records do not say which lights are flames; the pictures do. In `TEXTURE.210` the torches, candles, braziers and fires are records of several frames, and the lanterns, chandeliers and lamp posts a single one (`docs/sprites.md`). So `world.c` (`flame_lights`) marks a dungeon light as flickering (`Light.flicker`) when the light flat nearest it, within 64 units, is a moving flame; a light with none near lights its room steadily. A town's lamp flickers when its own flat moves: braziers and fires do, the lantern posts do not. 36 of the hold's 71 lights flicker.
+
+`light_flicker` gives a flame's brightness each frame, 179 to 255 of 255: value noise, a random level about ten times a second and a smooth step between, each light hashing its own index into the ticks, so no two flames move together. It is the tint of the light's decal pass, one register a light, so a flickering pool dims and brightens on its wall and floor. Two integer hashes and a blend a lit flame a frame, no float-to-int cast. Sprites keep their one colour from load and do not flicker. Daggerfall Unity flickers its dungeon and town lights by varying their range; this varies their strength, which is what a decal can change for nothing.
+
 ## Switches
 
 | Console | Default | Effect |
@@ -76,4 +82,4 @@ Testing each decal on its own is what keeps the drawn count low: a visible light
 
 - No player light, no flicker, no light from windows outdoors at night.
 - Models are not lit by distance from the camera; only the place's lights and the ambient.
-- The first two fields of a light record are not understood.
+- The first two fields of a light record are not understood. Neither says which lights flicker.

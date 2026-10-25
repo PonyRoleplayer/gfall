@@ -10,6 +10,14 @@
 
 void texture_filename(int file, char *dst, int n);
 Image *texture_load(int file, int image);
+/*
+ * Frame frame of the record, 0 up to texture_frame_count. A flame, a
+ * waterfall, a walking townsman: Daggerfall's animated flats are records
+ * of several frames.
+ */
+Image *texture_load_frame(int file, int image, int frame);
+/* Frames in the record; 1 for a still picture, or when it cannot be read. */
+int texture_frame_count(int file, int image);
 /* Records in TEXTURE.file, or 0 when the file is missing. */
 int texture_record_count(int file);
 /*
@@ -34,6 +42,7 @@ void texture_smooth(Image *img, const df_u8 *pr, const df_u8 *pg, const df_u8 *p
 typedef struct TexLoad {
     int file;
     int image;
+    int frame;
     Image *out;
 } TexLoad;
 

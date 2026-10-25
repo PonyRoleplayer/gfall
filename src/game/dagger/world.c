@@ -27,6 +27,8 @@
 #define TEX_SET_GROUND 2
 #define START_RECORD 10
 #define MAX_IMAGES 512
+/* TEXTURE.210: the flats that give light, flames among them. */
+#define LIGHT_FLATS 210
 #define MAX_FILES 96
 /* Buildings plus one ground patch per 512-unit square. 8192 is the cap. */
 #define MAX_MODELS 8192
@@ -82,6 +84,8 @@ struct World {
     Image *images[MAX_IMAGES];
     df_u16 key_file[MAX_IMAGES];
     df_u16 key_image[MAX_IMAGES];
+    /* 1 for an animated record's sheet of frames: built padded, not padded again. */
+    df_u8 sheet[MAX_IMAGES];
     /* cutout: a sprite uses it, so it uploads with alpha. wall: a model face does. */
     df_u8 cutout[MAX_IMAGES];
     df_u8 wall[MAX_IMAGES];
@@ -145,6 +149,21 @@ static int flat_extent(int pixels, int scale)
     return pixels + change;
 }
 
+/* A record's frame through the "texture" loader. 0 when it cannot be read. */
+static Image *load_frame(int file, int image, int frame)
+{
+    TexLoad req;
+
+    req.file = file;
+    req.image = image;
+    req.frame = frame;
+    req.out = 0;
+    if (!loader_call("texture", 0, 0, 0, &req)) {
+        return 0;
+    }
+    return req.out;
+}
+
 static int place_image(World *world, int file, int image, int cutout, int *slot_out)
 {
     int slot;
@@ -164,17 +183,7 @@ static int place_image(World *world, int file, int image, int cutout, int *slot_
         why("too many textures");
         return 0;
     }
-    {
-        TexLoad req;
-
-        req.file = file;
-        req.image = image;
-        req.out = 0;
-        if (!loader_call("texture", 0, 0, 0, &req)) {
-            req.out = 0;
-        }
-        img = req.out;
-    }
+    img = load_frame(file, image, 0);
     if (!img) {
         why_tex(file, image);
         return 0;
@@ -503,6 +512,123 @@ static void note_keys(Mesh *mesh)
     mesh->have_keys = 1;
 }
 
+/*
+ * Daggerfall's animated flats are records of several frames: flames,
+ * waterfalls, townsfolk, animals. A record's frames go into one sheet:
+ * side by side, SHEET_GAP texels apart, in the smallest power-of-two
+ * square that holds them, which for a narrow flame is the square its
+ * first frame was padded into anyway. The engine shows frame k by moving
+ * the texture coordinates (Image.frames, frame_cols, frame_dx, frame_dy).
+ * A slot per frame cost the hold 36 more pictures and 440 KB, the
+ * padding of each frame's square; the sheet costs none for most.
+ *
+ * Flames (TEXTURE.210) run at 12 frames a second and everything else at
+ * 5, as Daggerfall Unity runs them; each flat starts at its own frame, so
+ * the candles in a room do not move in step. A record whose frames do not
+ * all load, or do not fit a 256 sheet, stays still.
+ */
+#define FLAME_RATE 12
+#define FLAT_RATE 5
+#define SHEET_GAP 2
+#define SHEET_FRAMES 64
+
+static int pot_up(int v)
+{
+    int p;
+
+    p = 1;
+    while (p < v) {
+        p <<= 1;
+    }
+    return p;
+}
+
+/* The frames of the record in slot into one sheet. 1 when it animates. */
+static int make_sheet(World *world, int slot, int file, int image)
+{
+    Image *frame[SHEET_FRAMES];
+    Image *img;
+    df_u8 *pot;
+    int frames;
+    int fw;
+    int fh;
+    int side;
+    int cols;
+    int k;
+
+    img = world->images[slot];
+    if (world->sheet[slot]) {
+        return img->frames > 1;
+    }
+    world->sheet[slot] = 0;
+    frames = texture_frame_count(file, image);
+    if (frames < 2 || frames > SHEET_FRAMES) {
+        return 0;
+    }
+    fw = 0;
+    fh = 0;
+    for (k = 0; k < frames; k++) {
+        frame[k] = k == 0 ? img : load_frame(file, image, k);
+        if (!frame[k]) {
+            return 0;
+        }
+        fw = frame[k]->width > fw ? frame[k]->width : fw;
+        fh = frame[k]->height > fh ? frame[k]->height : fh;
+    }
+    /* The smallest square whose grid of cells holds every frame. */
+    for (side = pot_up(fw > fh ? fw : fh); side <= 256; side <<= 1) {
+        int rows;
+
+        cols = (side + SHEET_GAP) / (fw + SHEET_GAP);
+        rows = (side + SHEET_GAP) / (fh + SHEET_GAP);
+        if (cols * rows >= frames) {
+            break;
+        }
+    }
+    if (side > 256) {
+        return 0;
+    }
+    pot = (df_u8 *)mem_alloc((df_u32)side * (df_u32)side);
+    if (!pot) {
+        return 0;
+    }
+    for (k = 0; k < frames; k++) {
+        int x0;
+        int y0;
+        int y;
+
+        x0 = (k % cols) * (fw + SHEET_GAP);
+        y0 = (k / cols) * (fh + SHEET_GAP);
+        for (y = 0; y < frame[k]->height; y++) {
+            mem_copy(pot + (y0 + y) * side + x0, frame[k]->index + y * frame[k]->width,
+                     (df_u32)frame[k]->width);
+        }
+    }
+    img->pot = pot;
+    img->pot_w = side;
+    img->pot_h = side;
+    img->span_w = img->width;
+    img->span_h = img->height;
+    img->frames = frames;
+    img->frame_cols = cols;
+    img->frame_dx = fw + SHEET_GAP;
+    img->frame_dy = fh + SHEET_GAP;
+    world->sheet[slot] = 1;
+    return 1;
+}
+
+static void animate(World *world, Flat *fl, int slot)
+{
+    fl->rate = 0;
+    fl->phase = 0;
+    if (!make_sheet(world, slot, (int)fl->file, (int)fl->image)) {
+        return;
+    }
+    fl->rate = (df_u8)(fl->file == LIGHT_FLATS ? FLAME_RATE : FLAT_RATE);
+    /* Where it stands picks where it starts: the same every load. */
+    fl->phase = (df_u8)(((unsigned int)df_iround(fl->x) * 7u + (unsigned int)df_iround(fl->z) * 13u) & 255u);
+}
+
 static int paint(World *world)
 {
     int i;
@@ -547,6 +673,7 @@ static int paint(World *world)
                 }
                 continue;
             }
+            animate(world, fl, slot);
             img = world->images[slot];
             extent_w = flat_extent(img->width, img->xscale);
             extent_h = flat_extent(img->height, img->yscale);
@@ -556,11 +683,18 @@ static int paint(World *world)
             fl->w = (float)extent_w;
             fl->h = (float)extent_h;
             /*
-             * The quad is drawn from its centre. The file point is the
-             * base, so the centre sits half a height above it. Without
-             * this the picture is half under the floor.
+             * The quad is drawn from its centre. An RMB flat's file point
+             * is its base, so outdoors the centre sits half a height above
+             * it; without this a lamp post is half under the street. An
+             * RDB flat's point is already its centre, as Daggerfall Unity
+             * places them (only RMBLayout calls AlignBillboardToBase):
+             * lifting those too set every dungeon sprite half its height
+             * in the air. The data agrees: a dungeon flat standing on a
+             * floor has its point at mid-height, a town's at its base.
              */
-            fl->y += (float)extent_h * 0.5f;
+            if (world->outdoor) {
+                fl->y += (float)extent_h * 0.5f;
+            }
             fl->slot = (df_u16)slot;
             if (kept != f) {
                 world->flat[kept] = *fl;
@@ -600,7 +734,9 @@ static void finish_images(World *world)
         if (world->cutout[i] && world->wall[i]) {
             shared++;
         }
-        if (world->cutout[i] && !world->wall[i]) {
+        if (world->sheet[i]) {
+            padded++;
+        } else if (world->cutout[i] && !world->wall[i]) {
             texture_pad(img);
             padded++;
         } else if (img->span_w != img->width || img->span_h != img->height) {
@@ -610,6 +746,48 @@ static void finish_images(World *world)
     }
     log_print(LOG_DEBUG, "textures: %d sprites padded, %d walls smoothed, %d used as both",
               padded, smoothed, shared);
+}
+
+/*
+ * Which of a dungeon's lights flicker. The records do not say; the
+ * pictures do. TEXTURE.210's flames, the torches, candles, braziers and
+ * fires, are records of several frames, and its lanterns, chandeliers
+ * and lamp posts a single one. So a light flickers when the light flat
+ * nearest it, within FLAME_NEAR, is a moving flame; a light with none
+ * near lights its room steadily. After paint, which builds the sheets.
+ */
+#define FLAME_NEAR 64.0f
+
+static void flame_lights(World *world)
+{
+    int i;
+
+    for (i = 0; i < world->nlight; i++) {
+        Light *li;
+        float best;
+        int f;
+
+        li = &world->light[i];
+        li->flicker = 0;
+        best = FLAME_NEAR * FLAME_NEAR;
+        for (f = 0; f < world->nflat; f++) {
+            const Flat *fl;
+            float dx, dy, dz, d2;
+
+            fl = &world->flat[f];
+            if (fl->file != LIGHT_FLATS) {
+                continue;
+            }
+            dx = fl->x - li->x;
+            dy = fl->y - li->y;
+            dz = fl->z - li->z;
+            d2 = dx * dx + dy * dy + dz * dz;
+            if (d2 < best) {
+                best = d2;
+                li->flicker = (df_u8)(world->images[fl->slot]->frames > 1);
+            }
+        }
+    }
 }
 
 /*
@@ -637,8 +815,8 @@ static void add_lamps(World *world)
         li->y = fl->y + fl->h * 0.25f;
         li->z = fl->z;
         li->radius = LAMP_RADIUS;
-        li->raw0 = 0;
-        li->raw1 = 0;
+        /* A brazier or a fire flickers; a lantern on its post burns steady. */
+        li->flicker = (df_u8)(world->images[fl->slot]->frames > 1);
     }
 }
 
@@ -665,6 +843,8 @@ static World *assemble(const Dungeon *hold, int require_start)
         return 0;
     }
     mem_zero(world, sizeof(World));
+    /* Set now: paint places flats by it. */
+    world->outdoor = hold->outdoor;
     world->inst = (Instance *)mem_alloc(MAX_MODELS * (df_u32)sizeof(Instance));
     world->bounds = (Bound *)mem_alloc(MAX_MODELS * (df_u32)sizeof(Bound));
     world->spans = (Span *)mem_alloc(DUN_MAX_BLOCKS * (df_u32)sizeof(Span));
@@ -798,6 +978,7 @@ static World *assemble(const Dungeon *hold, int require_start)
         }
     }
     finish_images(world);
+    flame_lights(world);
     if (hold->outdoor) {
         world->outdoor = 1;
         skyfile_open(hold->climate, SEASON_SUMMER, &world->sky);

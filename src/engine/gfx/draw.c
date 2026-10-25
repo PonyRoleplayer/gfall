@@ -741,10 +741,28 @@ static const Image *level_image(const Level *level, int slot)
     return level->images[slot];
 }
 
+/*
+ * Seconds of real time the flats animate by: a flame moves with the
+ * clock stopped. Wrapped long before a float loses its fractions.
+ */
+static float g_anim_time;
+
+/* The frame an animated flat shows now, 0 for a still one. */
+static int flat_frame(const Flat *flat, const Image *img)
+{
+    if (img->frames < 2 || flat->rate == 0) {
+        return 0;
+    }
+    return (df_ifloor(g_anim_time * (float)flat->rate) + (int)flat->phase) % img->frames;
+}
+
 static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
                       const Flat *flat)
 {
     const Image *img;
+    int frame;
+    float du;
+    float dv;
     float hx;
     float hy;
     float rx, ry, rz;
@@ -780,6 +798,18 @@ static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
     v0 = img->span_h > 1 ? 0.5f * (float)img->height / (float)img->span_h : 0.0f;
     uw = (float)img->width - u0;
     uh = (float)img->height - v0;
+    /* An animated flat's frame: its cell in the sheet, in the picture's texels. */
+    frame = flat_frame(flat, img);
+    du = 0.0f;
+    dv = 0.0f;
+    if (frame > 0) {
+        du = (float)((frame % img->frame_cols) * img->frame_dx) * (float)img->width / (float)img->span_w;
+        dv = (float)((frame / img->frame_cols) * img->frame_dy) * (float)img->height / (float)img->span_h;
+        u0 += du;
+        v0 += dv;
+        uw += du;
+        uh += dv;
+    }
     image_scale(img, (int)flat->slot, &inv_w, &inv_h);
     /* 0 top-left, 1 top-right, 2 bottom-right, 3 bottom-left. v = 0 is the top row. */
     flat_corner(cam, basis,
@@ -891,7 +921,13 @@ static void draw_lights(const Camera *cam, const Basis *basis)
         float cx, cy, cz, ex, ey, ez;
         int n;
         int k;
+        df_u32 flame;
 
+        /* A flame wavers: its pool dims and brightens on its own (docs/lighting.md). */
+        flame = (df_u32)light_flicker(i, g_anim_time);
+        if (!outdoor) {
+            glide_tint((flame << 16) | (flame << 8) | flame);
+        }
         if (outdoor) {
             const Light *li;
             float dx, dy, dz, d2;
@@ -914,6 +950,7 @@ static void draw_lights(const Camera *cam, const Basis *basis)
                 l = (df_u32)df_iround((float)lamp * (LAMP_FADE_FAR - dist)
                                       * (1.0f / (LAMP_FADE_FAR - LAMP_FADE_NEAR)));
             }
+            l = l * flame / 255u;
             if (l == 0) {
                 continue;
             }
@@ -1513,6 +1550,10 @@ void draw_frame(const Camera *cam, const Level *level)
     }
     weather_advance(clock_advance(secs));
     weather_state(&w);
+    g_anim_time += secs;
+    if (g_anim_time > 3600.0f) {
+        g_anim_time -= 3600.0f;
+    }
     /*
      * Collision (tcl): the body follows the console's camera, which is
      * the one drawn, and puts it back at its eye before anything reads

@@ -96,6 +96,8 @@ They use the same decals as a dungeon's lights (`docs/lighting.md`), cut at load
 
 Open ground is one flat face per patch of tiles, two triangles a tile, so a lamp's square on it took about 32 decals. When the triangles of a flat face cover the whole of the square inside the face's outline, `merge_face` in `light.c` cuts that rectangle as one decal instead; a face with a hole there (a tile left out), or one that is not flat, is still cut triangle by triangle. Daggerfall went from 9857 decals to 5880, and the far view on the Voodoo from 518 decals a frame to 219. Dungeon faces are fans, so the dungeons are unchanged.
 
+A lamp whose flat is a moving flame (a brazier, a fire) flickers; a lantern on its post burns steady (`docs/lighting.md`).
+
 Sprites near a lamp take the sum of the lamps on them, times the passes, on top of their daylight colour (`light_sprite_over`). A flat that gives light is drawn white.
 
 ## Switches

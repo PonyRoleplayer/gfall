@@ -47,6 +47,8 @@ Climate is the map pixel of the exterior location in the **same region**. `MAPPI
 
 ## Start position
 
+An RDB flat's point is its centre, an RMB flat's its base: `paint` lifts flats by half their height outdoors only (`docs/sprites.md`).
+
 `rdb_load` keeps an RDB block's lights (object type 2) as `Light` records, and `world.c` shifts and appends them with the block's models and flats, up to 8192 for a place; the hold has 71. RMB blocks have none; for an outdoor place `world.c` makes one per `TEXTURE.210` flat after `paint`, and gives the place its sky (`docs/daylight.md`). The record layout is in `docs/lighting.md`.
 
 `world_load` fails when the entrance block has no marker record 10. That marker is the new-game start in `S0000999.RDB` at about (1135, 1559, 496), yaw 0, pitch 0.

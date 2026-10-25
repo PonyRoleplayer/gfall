@@ -236,7 +236,13 @@ static int read_uncompressed(const df_u8 *file, df_u32 file_size, df_u32 pos, in
     return 1;
 }
 
-static int read_frames(const df_u8 *file, df_u32 file_size, df_u32 data, int frames, Image **out)
+/*
+ * A multi-frame record that is not row-RLE: a table of one 32-bit offset
+ * per frame, each to a frame of its own width and height, rows of zero
+ * runs and raw runs. frame picks one.
+ */
+static int read_frames(const df_u8 *file, df_u32 file_size, df_u32 data, int frames, int frame,
+                       Image **out)
 {
     df_u32 off0;
     int cx;
@@ -246,13 +252,13 @@ static int read_frames(const df_u8 *file, df_u32 file_size, df_u32 data, int fra
     int y;
     Image *img;
 
-    if (frames < 2 || frames > 256) {
+    if (frames < 2 || frames > 256 || frame < 0 || frame >= frames) {
         return 0;
     }
     if (data + (df_u32)frames * 4 + 4 > file_size) {
         return 0;
     }
-    off0 = df_ru32(file + data);
+    off0 = df_ru32(file + data + (df_u32)frame * 4);
     if (data + off0 + 4 > file_size) {
         return 0;
     }
@@ -426,30 +432,29 @@ int texture_record_count(int file)
     return count;
 }
 
-Image *texture_load(int file, int image)
-{
-    const df_u8 *bytes;
-    df_u32 size;
-    df_i32 count;
-    df_u32 header;
-    df_i32 rec_pos;
+/* The record's header: its size, compression, data offset, frames and scale. */
+typedef struct RecHead {
+    df_i32 pos;
     int w;
     int h;
     int comp;
+    df_u32 data;
     int frames;
     int xs;
     int ys;
-    df_u32 data_off;
-    Image *img;
+} RecHead;
 
-    if (file < 0) {
+static const df_u8 *record_head(int file, int image, df_u32 *size, RecHead *r)
+{
+    const df_u8 *bytes;
+    df_i32 count;
+    df_u32 header;
+
+    if (file <= 1) {
         return 0;
     }
-    if (file == 0 || file == 1) {
-        return solid_image(file, image);
-    }
-    bytes = file_bytes(file, &size);
-    if (!bytes || size < 26) {
+    bytes = file_bytes(file, size);
+    if (!bytes || *size < 26) {
         return 0;
     }
     count = df_ri16(bytes);
@@ -457,55 +462,81 @@ Image *texture_load(int file, int image)
         return 0;
     }
     header = 26 + (df_u32)image * 20;
-    if (header + 20 > size) {
+    if (header + 20 > *size) {
         return 0;
     }
-    rec_pos = df_ri32(bytes + header + 2);
-    if (rec_pos < 0 || (df_u32)rec_pos + 28 > size) {
+    r->pos = df_ri32(bytes + header + 2);
+    if (r->pos < 0 || (df_u32)r->pos + 28 > *size) {
         return 0;
     }
-    w = df_ri16(bytes + rec_pos + 4);
-    h = df_ri16(bytes + rec_pos + 6);
-    comp = df_ri16(bytes + rec_pos + 8);
-    data_off = df_ru32(bytes + rec_pos + 14);
-    frames = df_ri16(bytes + rec_pos + 20);
-    xs = df_ri16(bytes + rec_pos + 24);
-    ys = df_ri16(bytes + rec_pos + 26);
-    if (frames < 1) {
+    r->w = df_ri16(bytes + r->pos + 4);
+    r->h = df_ri16(bytes + r->pos + 6);
+    r->comp = df_ri16(bytes + r->pos + 8);
+    r->data = df_ru32(bytes + r->pos + 14);
+    r->frames = df_ri16(bytes + r->pos + 20);
+    r->xs = df_ri16(bytes + r->pos + 24);
+    r->ys = df_ri16(bytes + r->pos + 26);
+    if (r->frames < 1 || (df_u32)r->pos + r->data > *size) {
         return 0;
     }
-    if ((df_u32)rec_pos + data_off > size) {
+    return bytes;
+}
+
+int texture_frame_count(int file, int image)
+{
+    df_u32 size;
+    RecHead r;
+
+    if (!record_head(file, image, &size, &r)) {
+        return 1;
+    }
+    return r.frames;
+}
+
+Image *texture_load(int file, int image)
+{
+    return texture_load_frame(file, image, 0);
+}
+
+Image *texture_load_frame(int file, int image, int frame)
+{
+    const df_u8 *bytes;
+    df_u32 size;
+    RecHead r;
+    Image *img;
+
+    if (file < 0) {
         return 0;
     }
-    if (comp == COMP_IMAGE_RLE || comp == COMP_RECORD_RLE) {
-        if (!read_rle(bytes, size, (df_u32)rec_pos, (df_u32)rec_pos + data_off, w, h, 0, &img)) {
+    if (file == 0 || file == 1) {
+        return frame == 0 ? solid_image(file, image) : 0;
+    }
+    bytes = record_head(file, image, &size, &r);
+    if (!bytes || frame < 0 || frame >= r.frames) {
+        return 0;
+    }
+    if (r.comp == COMP_IMAGE_RLE || r.comp == COMP_RECORD_RLE) {
+        /* Row-RLE: each frame is h more row entries in the same table. */
+        if (!read_rle(bytes, size, (df_u32)r.pos, (df_u32)r.pos + r.data, r.w, r.h, frame, &img)) {
             return 0;
         }
-        img->xscale = xs;
-        img->yscale = ys;
-        return img;
-    }
-    if (frames == 1) {
-        img = image_new(w, h);
+    } else if (r.frames == 1) {
+        img = image_new(r.w, r.h);
         if (!img) {
             return 0;
         }
-        if (!read_uncompressed(bytes, size, (df_u32)rec_pos + data_off, w, h, img->index)) {
+        if (!read_uncompressed(bytes, size, (df_u32)r.pos + r.data, r.w, r.h, img->index)) {
             return 0;
         }
         scale_pot(img);
         if (!img->pot) {
             return 0;
         }
-        img->xscale = xs;
-        img->yscale = ys;
-        return img;
-    }
-    if (!read_frames(bytes, size, (df_u32)rec_pos + data_off, frames, &img)) {
+    } else if (!read_frames(bytes, size, (df_u32)r.pos + r.data, r.frames, frame, &img)) {
         return 0;
     }
-    img->xscale = xs;
-    img->yscale = ys;
+    img->xscale = r.xs;
+    img->yscale = r.ys;
     return img;
 }
 

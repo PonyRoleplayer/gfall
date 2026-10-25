@@ -29,6 +29,16 @@ typedef struct Image {
     int yscale;
     df_u8 *index;
     df_u8 *pot;
+    /*
+     * An animated picture's frames, laid in pot as a sheet: frame k at
+     * column k % frame_cols, row k / frame_cols, frame_dx by frame_dy
+     * texels apart. width and height are one frame's. 0 or 1 is a still
+     * picture. See docs/sprites.md.
+     */
+    int frames;
+    int frame_cols;
+    int frame_dx;
+    int frame_dy;
 } Image;
 
 #endif

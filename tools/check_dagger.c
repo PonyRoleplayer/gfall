@@ -6,6 +6,7 @@
 #include "check_util.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #include "engine/assets/vfs.h"
 #include "engine/core/mem.h"
@@ -17,6 +18,7 @@
 #include "game/dagger/climate.h"
 #include "game/dagger/forecast.h"
 #include "engine/scene/weather.h"
+#include "engine/scene/collide.h"
 #include "game/dagger/texture.h"
 #include "game/dagger/world.h"
 
@@ -471,6 +473,44 @@ static void check_v25(void)
 }
 
 /*
+ * Flats that stand on the floor under them: their bottom (centre less
+ * half the height) within a few units above it. Dungeon flats are placed
+ * by their centre and town flats by their base; lifting a dungeon flat
+ * as if by its base floated every one half its height up.
+ */
+static int flats_on_floor(const World *world, int *over_floor)
+{
+    Level lv;
+    int i;
+    int on;
+
+    world_as_level(world, &lv);
+    on = 0;
+    *over_floor = 0;
+    if (!collide_use(&lv.scene)) {
+        return 0;
+    }
+    collide_set_shape(1.0f, 1.0f);
+    for (i = 0; i < lv.scene.nsprites; i++) {
+        const Flat *f;
+        float bottom;
+        float fy;
+
+        f = &lv.scene.sprites[i];
+        bottom = f->y - f->h * 0.5f;
+        collide_gather(f->x - 1.0f, bottom - 400.0f, f->z - 1.0f, f->x + 1.0f, bottom + 2.0f, f->z + 1.0f);
+        if (!collide_floor(f->x, f->z, bottom + 1.0f, bottom - 400.0f, &fy)) {
+            continue;
+        }
+        (*over_floor)++;
+        if (bottom - fy > -1.0f && bottom - fy < 8.0f) {
+            on++;
+        }
+    }
+    return on;
+}
+
+/*
  * SKY##.DAT and NITE: which file a climate draws, the frame by the
  * hour, and how the halves land on the circle (docs/daylight.md).
  */
@@ -695,9 +735,40 @@ int check_dagger(const char *root_in)
         float minx, miny, minz, maxx, maxy, maxz;
         int outside;
 
+        {
+            int over;
+            int on;
+
+            on = flats_on_floor(world, &over);
+            printf("hold flats standing on the floor: %d of %d over one\n", on, over);
+            check_expect(over > 100 && on * 3 > over, "the hold's flats do not stand on its floors");
+        }
         torch = find_flat(world, 210, 6);
         check_expect(torch && check_near(torch->w, 16.0f, 0.01f) && check_near(torch->h, 94.0f, 0.01f),
                "torch 210/6 is not 16 by 94");
+        /* Its four frames in one sheet, the square it had anyway, and they differ. */
+        if (torch) {
+            const Image *ti;
+
+            ti = world_image(world, torch->slot);
+            check_expect(ti && ti->frames == 4 && ti->pot_w == 128 && ti->frame_cols >= 4
+                         && ti->frame_dx == 18 && torch->rate == 12
+                         && memcmp(ti->pot, ti->pot + ti->frame_dx, 16) != 0,
+                         "the torch's frames are not a sheet of four at 12 a second");
+        }
+        {
+            Level hl;
+            int k;
+            int flick;
+
+            world_as_level(world, &hl);
+            flick = 0;
+            for (k = 0; k < hl.scene.nlights; k++) {
+                flick += hl.scene.lights[k].flicker;
+            }
+            printf("hold lights flickering: %d of %d\n", flick, hl.scene.nlights);
+            check_expect(flick > 20 && flick < hl.scene.nlights, "the hold's flames do not flicker, or all do");
+        }
         world_start(world, &sx, &sy, &sz, &syaw, &spitch);
         printf("start %.2f %.2f %.2f yaw %.3f pitch %.3f\n", sx, sy, sz, syaw, spitch);
         check_expect(check_near(sx, 1135.0f, 0.1f) && check_near(sy, 1559.0f, 0.1f) &&
@@ -895,6 +966,13 @@ int check_dagger(const char *root_in)
                     glow = 0;
                     for (k = 0; k < world_flat_count(town); k++) {
                         glow += world_flat(town, k)->glow ? 1 : 0;
+                    }
+                    {
+                        int over;
+                        int on;
+
+                        on = flats_on_floor(town, &over);
+                        check_expect(over > 10 && on * 10 > over * 8, "a farm's flats do not stand on the ground");
                     }
                     check_expect(world_outdoor(town) && tl.sky && tl.scene.outdoor
                                  && world_light_count(town) == glow,

@@ -348,10 +348,11 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch, ArchEnt *cache, int *n
                        && block->nlight < want_light) {
                 /*
                  * A light: two 32-bit fields whose meaning is not known,
-                 * then the radius, 16 bits, in world units. 93% of the
-                 * 4268 in BLOCKS.BSA sit within 64 units of a TEXTURE.210
-                 * flat, the torch or candle that shows it; the rest light
-                 * a room on their own. See docs/lighting.md.
+                 * not kept, then the radius, 16 bits, in world units. 93%
+                 * of the 4268 in BLOCKS.BSA sit within 64 units of a
+                 * TEXTURE.210 flat, the torch or candle that shows it; the
+                 * rest light a room on their own. world.c decides which
+                 * flicker. See docs/lighting.md.
                  */
                 Light *li;
 
@@ -359,9 +360,8 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch, ArchEnt *cache, int *n
                 li->x = (float)df_ri32(rdb + at + 8);
                 li->y = -(float)df_ri32(rdb + at + 12);
                 li->z = (float)df_ri32(rdb + at + 16);
-                li->raw0 = df_ru32(rdb + res);
-                li->raw1 = df_ru32(rdb + res + 4);
                 li->radius = (float)df_ru16(rdb + res + 8);
+                li->flicker = 0;
                 block->nlight++;
             } else if (type == 0x03 && res + 11 <= size) {
                 bitfield = df_ru16(rdb + res);

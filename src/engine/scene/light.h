@@ -49,6 +49,14 @@ typedef struct Decal {
 int light_build(const Scene *scene);
 /* Lights of the built scene; 0 outdoors. */
 int light_count(void);
+/*
+ * How bright light i burns at seconds, 0..255: 255 for a steady light; a
+ * flame (Light.flicker) wavers between LIGHT_FLICKER_LOW and full, on its
+ * own course, about LIGHT_FLICKER_RATE times a second.
+ */
+#define LIGHT_FLICKER_LOW 179
+#define LIGHT_FLICKER_RATE 10.0f
+int light_flicker(int i, float seconds);
 /* World box around light i's decals. 0 when it lights nothing. */
 int light_box(int i, float *cx, float *cy, float *cz, float *ex, float *ey, float *ez);
 /* How far light i reaches: its radius times light_range(). */

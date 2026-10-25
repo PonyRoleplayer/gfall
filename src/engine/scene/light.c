@@ -127,6 +127,47 @@ int light_count(void)
     return g_nlights;
 }
 
+/* An integer hash to 0..255: Thomas Wang's, cheap and well mixed. */
+static int flicker_noise(df_u32 n)
+{
+    n = (n ^ 61u) ^ (n >> 16);
+    n += n << 3;
+    n ^= n >> 4;
+    n *= 0x27d4eb2du;
+    n ^= n >> 15;
+    return (int)(n & 255u);
+}
+
+/*
+ * Value noise: a random level at each tick of LIGHT_FLICKER_RATE, and a
+ * smooth step between ticks, so a flame dims and brightens rather than
+ * jumping. Each light hashes its own index into the ticks. Once a frame
+ * for each lit flame: two hashes and a blend, no float-to-int cast.
+ */
+int light_flicker(int i, float seconds)
+{
+    const Light *li;
+    float t;
+    float f;
+    int tick;
+    int a;
+    int b;
+    int level;
+
+    li = light_at(i);
+    if (!li || !li->flicker) {
+        return 255;
+    }
+    t = seconds * LIGHT_FLICKER_RATE;
+    tick = df_ifloor(t);
+    f = t - (float)tick;
+    f = f * f * (3.0f - 2.0f * f);
+    a = flicker_noise((df_u32)tick * 2654435761u + (df_u32)i * 40503u);
+    b = flicker_noise((df_u32)(tick + 1) * 2654435761u + (df_u32)i * 40503u);
+    level = df_iround((float)a + (float)(b - a) * f);
+    return LIGHT_FLICKER_LOW + level * (255 - LIGHT_FLICKER_LOW) / 255;
+}
+
 int light_active(void)
 {
     return g_on && g_nlights > 0 && (!g_outdoor || g_lamps > 0);

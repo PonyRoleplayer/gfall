@@ -33,19 +33,23 @@ typedef struct Flat {
     df_u16 slot;
     /* 1 for a picture that gives light, a torch or a candle: drawn full bright. */
     df_u16 glow;
+    /*
+     * An animated flat (its picture has frames, Image.frames): rate
+     * frames a second, starting at frame phase. See docs/sprites.md.
+     */
+    df_u8 rate;
+    df_u8 phase;
 } Flat;
 
 /*
  * A point light, in world units. radius is where the place's data says
- * the light ends; the engine scales it (docs/lighting.md). raw0 and
- * raw1 are the record's other two fields, kept unread: their meaning
- * is not known.
+ * the light ends; the engine scales it (docs/lighting.md). flicker 1 is
+ * a live flame, whose light wavers; 0 burns steady.
  */
 typedef struct Light {
     float x, y, z;
     float radius;
-    df_u32 raw0;
-    df_u32 raw1;
+    df_u8 flicker;
 } Light;
 
 /*

@@ -17,7 +17,7 @@
  * size, and every picture is on the card instead of some drawing with
  * the last bound one. See docs/glide.md and docs/memory.md.
  */
-#define TEX_SLOTS 384
+#define TEX_SLOTS 512
 
 /* glide_upload handles. glide_bind skips a repeat, so there is no cache here. */
 static df_u32 g_handle[TEX_SLOTS];

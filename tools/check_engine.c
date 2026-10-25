@@ -1214,6 +1214,27 @@ static void check_lights(void)
             && q[3] >= -0.001f && q[3] <= 1.001f && q[4] >= -0.001f && q[4] <= 1.001f;
     }
     check_expect(ok, "the decal is not the wall's square around the light");
+    /* A steady light is full; a flame wavers between its low and full, and moves. */
+    {
+        int lo;
+        int hi;
+        int k;
+
+        check_expect(light_flicker(0, 1.234f) == 255, "a steady light flickers");
+        light.flicker = 1;
+        lo = 255;
+        hi = 0;
+        for (k = 0; k < 200; k++) {
+            int v;
+
+            v = light_flicker(0, (float)k * 0.037f);
+            lo = v < lo ? v : lo;
+            hi = v > hi ? v : hi;
+        }
+        check_expect(lo >= LIGHT_FLICKER_LOW && hi <= 255 && hi - lo > 30,
+                     "a flame does not waver within its range");
+        light.flicker = 0;
+    }
     amb = light_ambient_rgb();
     lit = light_sprite_rgb(0);
     check_expect(((lit >> 16) & 255) > ((amb >> 16) & 255) && ((lit >> 16) & 255) >= ((lit >> 8) & 255)
