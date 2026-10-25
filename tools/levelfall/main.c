@@ -26,7 +26,11 @@
 #include "engine/gfx/texcache.h"
 #include "engine/platform/input.h"
 #include "engine/platform/win32.h"
+#include "engine/scene/clock.h"
+#include "engine/scene/daylight.h"
+#include "engine/scene/light.h"
 #include "engine/scene/scene.h"
+#include "engine/scene/weather.h"
 #include "engine/ui/console.h"
 #include "engine/ui/font.h"
 #include "engine/ui/hud.h"
@@ -127,6 +131,10 @@ static char g_view_name[40];
 static const DunRef *g_ref;
 /* levelfall.cfg fov=. 0 leaves the camera default. */
 static int g_fov_cfg;
+/* levelfall.cfg time=hh:mm, minutes since midnight. -1 leaves the clock at noon. */
+static int g_time_cfg = -1;
+/* levelfall.cfg weather=kind: there at start and held. -1 follows the odds. */
+static int g_weather_cfg = -1;
 /* levelfall.cfg open=kind,region,index. kind -1 is none, 0 indoor, 1 outdoor. */
 static int g_auto_kind = -1;
 static int g_auto_region;
@@ -168,6 +176,9 @@ typedef struct LfSnap {
     int far_clip;
     int fov;
     int fps;
+    int hour;
+    int minute;
+    int weather;
 } LfSnap;
 
 static LfSnap g_snap;
@@ -1376,10 +1387,154 @@ static void count_line(char *dst, int cap, const char *label, int v)
     pair_line(dst, cap, label, num);
 }
 
+static void add_hm(char *dst, int *n, int cap, int hour, int minute)
+{
+    add_u(dst, n, cap, (df_u32)(hour / 10));
+    add_u(dst, n, cap, (df_u32)(hour % 10));
+    add_str(dst, n, cap, ":");
+    add_u(dst, n, cap, (df_u32)(minute / 10));
+    add_u(dst, n, cap, (df_u32)(minute % 10));
+}
+
+/*
+ * The world clock, its timescale, and what lights an outdoor place at
+ * that hour: sun or moon, and the lamps' level 0..255 once they are on.
+ * Indoors nothing reads the clock (docs/daylight.md), so it says unused.
+ */
+static void time_line(char *dst, int cap)
+{
+    Daylight dl;
+    int hour;
+    int minute;
+    int scale;
+    int lamps;
+    int n;
+
+    clock_hm(&hour, &minute);
+    scale = clock_scale();
+    n = 0;
+    dst[0] = 0;
+    add_str(dst, &n, cap, "time ");
+    add_hm(dst, &n, cap, hour, minute);
+    if (scale > 0) {
+        add_str(dst, &n, cap, "  x");
+        add_num(dst, &n, cap, scale, 0);
+    } else {
+        add_str(dst, &n, cap, "  stopped");
+    }
+    if (!g_dun || !g_dun->outdoor) {
+        add_str(dst, &n, cap, "  unused");
+        return;
+    }
+    if (!daylight_on()) {
+        add_str(dst, &n, cap, "  full bright");
+        return;
+    }
+    daylight_at(clock_minute(), &dl);
+    add_str(dst, &n, cap, dl.sun ? "  sun" : "  moon");
+    lamps = light_lamps();
+    if (lamps > 0) {
+        add_str(dst, &n, cap, "  lamps ");
+        add_num(dst, &n, cap, lamps, 0);
+    }
+}
+
+/* 0..1 as a whole percent. */
+static int pct(float v)
+{
+    return df_iround(v * 100.0f);
+}
+
+/*
+ * Two lines. The first is the kind, the one it is blending from and how
+ * far (cloudy>rain 40%), then held when a kind is forced or the game
+ * time to the next roll of the odds. The second is what the weather
+ * does now: where its fog goes solid, the cloud, rain, snow and storm
+ * in percent when there is any, and the simulated view when weathersim
+ * is on. Single spaces keep a thunderstorm clear of the F1 panels.
+ * Indoors the weather runs unseen, and with weather off it is drawn
+ * clear: the second line is then empty, because none of those values
+ * reach the frame.
+ */
+static void weather_lines(char *top, char *low, int cap)
+{
+    Weather w;
+    int n;
+    int next;
+
+    weather_state(&w);
+    n = 0;
+    top[0] = 0;
+    low[0] = 0;
+    add_str(top, &n, cap, "weather ");
+    if (w.blend < 1.0f && w.from != w.kind) {
+        add_str(top, &n, cap, weather_name(w.from));
+        add_str(top, &n, cap, ">");
+        add_str(top, &n, cap, weather_name(w.kind));
+        add_str(top, &n, cap, " ");
+        add_num(top, &n, cap, pct(w.blend), 0);
+        add_str(top, &n, cap, "%");
+    } else {
+        add_str(top, &n, cap, weather_name(w.kind));
+    }
+    /* A held kind does not roll, so it has no next. */
+    if (weather_forced() >= 0) {
+        add_str(top, &n, cap, "  held");
+    } else {
+        next = df_iround(w.next);
+        add_str(top, &n, cap, "  next ");
+        if (next >= 60) {
+            add_num(top, &n, cap, next / 60, 0);
+            add_str(top, &n, cap, "h");
+        } else {
+            add_num(top, &n, cap, next, 0);
+            add_str(top, &n, cap, "m");
+        }
+    }
+    if (!g_dun || !g_dun->outdoor) {
+        add_str(top, &n, cap, "  unused");
+        return;
+    }
+    if (!weather_on()) {
+        add_str(top, &n, cap, "  off");
+        return;
+    }
+    n = 0;
+    add_str(low, &n, cap, "fog ");
+    if (w.fog >= WEATHER_CLEAR * 0.5f) {
+        add_str(low, &n, cap, "clear");
+    } else {
+        add_num(low, &n, cap, df_iround(w.fog), 0);
+    }
+    if (pct(w.cloud) > 0) {
+        add_str(low, &n, cap, " cloud ");
+        add_num(low, &n, cap, pct(w.cloud), 0);
+    }
+    if (pct(w.rain) > 0) {
+        add_str(low, &n, cap, " rain ");
+        add_num(low, &n, cap, pct(w.rain), 0);
+    }
+    if (pct(w.snow) > 0) {
+        add_str(low, &n, cap, " snow ");
+        add_num(low, &n, cap, pct(w.snow), 0);
+    }
+    if (pct(w.storm) > 0) {
+        add_str(low, &n, cap, " storm ");
+        add_num(low, &n, cap, pct(w.storm), 0);
+    }
+    if (weather_sim()) {
+        add_str(low, &n, cap, " view ");
+        add_num(low, &n, cap, df_iround(w.view), 0);
+    }
+}
+
 static void draw_overlay(void)
 {
     char place_kind[40];
     char place_clim[40];
+    char place_time[48];
+    char place_sky[64];
+    char place_air[64];
     char cam_x[48];
     char cam_y[48];
     char cam_z[48];
@@ -1401,7 +1556,7 @@ static void draw_overlay(void)
     char rec_row[7][40];
     char draw_row[9][32];
     char key_lines[12][48];
-    const char *place_l[3];
+    const char *place_l[6];
     const char *cam_l[3];
     const char *block_l[3];
     const char *frame_l[4];
@@ -1485,9 +1640,14 @@ static void draw_overlay(void)
     if (g_dun) {
         add_str(place_clim, &n, (int)sizeof(place_clim), climate_name(g_dun->climate));
     }
+    time_line(place_time, (int)sizeof(place_time));
+    weather_lines(place_sky, place_air, (int)sizeof(place_sky));
     place_l[0] = g_view_name;
     place_l[1] = place_kind;
     place_l[2] = place_clim;
+    place_l[3] = place_time;
+    place_l[4] = place_sky;
+    place_l[5] = place_air;
 
     n = 0;
     cam_x[0] = 0;
@@ -1594,15 +1754,16 @@ static void draw_overlay(void)
     add_str(fps, &n, (int)sizeof(fps), " fps");
 
     gap = 6;
-    ph = measure_h(3);
-    pw = measure_lines("place", g_help ? "f1 hide" : "f1", place_l, 3);
+    /* Place is six lines, alone in the top left. Its weather line can be empty, so its height is fixed. */
+    ph = measure_h(6);
+    pw = measure_lines("place", g_help ? "f1 hide" : "f1", place_l, 6);
+    draw_panel(gap, DF_VIEW_H - gap - ph, pw, ph, "place",
+               g_help ? "f1 hide" : "f1", place_l, 6, 204.0f, 160.0f, 64.0f);
+    /* The bottom row is as tall as frame. Camera and block leave a blank last line. */
+    ph = measure_h(4);
     cw = measure_lines("camera", 0, cam_l, 3);
     bw = measure_lines("block", 0, block_l, 3);
     fw = measure_lines("frame", fps, frame_l, 4);
-    draw_panel(gap, DF_VIEW_H - gap - ph, pw, ph, "place",
-               g_help ? "f1 hide" : "f1", place_l, 3, 204.0f, 160.0f, 64.0f);
-    /* The bottom row is as tall as frame. Camera and block leave a blank last line. */
-    ph = measure_h(4);
     x = gap;
     draw_panel(x, gap, cw, ph, "camera", 0, cam_l, 3, 112.0f, 168.0f, 208.0f);
     x += cw + gap;
@@ -1833,6 +1994,13 @@ static void snap_take(const Camera *cam, int valid)
     g_snap.far_clip = df_iround(gfx_far());
     g_snap.fov = df_iround(camera_fov());
     g_snap.fps = g_fps_ready ? g_fps : 0;
+    clock_hm(&g_snap.hour, &g_snap.minute);
+    {
+        Weather w;
+
+        weather_state(&w);
+        g_snap.weather = w.kind;
+    }
 }
 
 /*
@@ -1908,6 +2076,18 @@ static void bookmark(void)
     n = 0;
     line[0] = 0;
     add_flag(line, &n, (int)sizeof(line), "fov", g_snap.fov);
+    log_line(line);
+    /* The hour lights an outdoor place, so a lighting bug needs it to reopen. */
+    n = 0;
+    line[0] = 0;
+    add_str(line, &n, (int)sizeof(line), "time=");
+    add_hm(line, &n, (int)sizeof(line), g_snap.hour, g_snap.minute);
+    log_line(line);
+    /* The kind arrived or arriving. Reopened, it is there at once and held. */
+    n = 0;
+    line[0] = 0;
+    add_str(line, &n, (int)sizeof(line), "weather=");
+    add_str(line, &n, (int)sizeof(line), weather_name(g_snap.weather));
     log_line(line);
     n = 0;
     line[0] = 0;
@@ -2356,6 +2536,39 @@ static void cfg_line(const char *s)
         g_fov_cfg = v;
         return;
     }
+    if (key_is(s, "time", &rest)) {
+        int m;
+
+        if (!read_int(&rest, &v) || v > 23) {
+            return;
+        }
+        /* time=21 is the hour alone. time=21:30 adds the minute. */
+        m = 0;
+        if (*rest == ':') {
+            rest++;
+            if (!read_int(&rest, &m) || m > 59) {
+                return;
+            }
+        }
+        g_time_cfg = v * 60 + m;
+        return;
+    }
+    if (key_is(s, "weather", &rest)) {
+        char word[16];
+        int i;
+
+        /* The value is one word; weather_by_name wants it on its own. */
+        for (i = 0; i < 15 && rest[i] && rest[i] != ' ' && rest[i] != '\t'
+                    && rest[i] != '\r' && rest[i] != '#'; i++) {
+            word[i] = (char)fold_ch((unsigned char)rest[i]);
+        }
+        word[i] = 0;
+        v = weather_by_name(word);
+        if (v >= 0 && v < WEATHER_KINDS) {
+            g_weather_cfg = v;
+        }
+        return;
+    }
     if (key_is(s, "open", &rest)) {
         int kind;
 
@@ -2429,6 +2642,24 @@ static void cfg_apply(void)
         add_u(line, &n, (int)sizeof(line), (df_u32)camera_fov());
         log_line(line);
     }
+    if (g_time_cfg >= 0) {
+        clock_set_minute((float)g_time_cfg);
+        n = 0;
+        line[0] = 0;
+        add_str(line, &n, (int)sizeof(line), "time=");
+        add_hm(line, &n, (int)sizeof(line), g_time_cfg / 60, g_time_cfg % 60);
+        log_line(line);
+    }
+    /* Set, so it is there with no blend, then forced, so no roll replaces it. */
+    if (g_weather_cfg >= 0) {
+        weather_set(g_weather_cfg);
+        weather_force(g_weather_cfg);
+        n = 0;
+        line[0] = 0;
+        add_str(line, &n, (int)sizeof(line), "weather=");
+        add_str(line, &n, (int)sizeof(line), weather_name(g_weather_cfg));
+        log_line(line);
+    }
     if (g_auto_kind >= 0) {
         n = 0;
         line[0] = 0;
@@ -2453,7 +2684,10 @@ static void cfg_load(void)
         "fov=75\r\n"
         "# open=outdoor,17,1231 opens that place at start: indoor or outdoor,\r\n"
         "# the region, the index. cam=x,y,z,yaw,pitch (degrees) puts the\r\n"
-        "# camera there. F12 in the view logs both lines to levelfall.log.\r\n";
+        "# camera there. time=21:30 sets the world clock at start (it lights\r\n"
+        "# outdoor places). weather=rain starts in that weather and holds it:\r\n"
+        "# sunny cloudy overcast fog rain thunder snow. F12 in the view logs\r\n"
+        "# these lines to levelfall.log.\r\n";
     char path[260];
     char buf[2048];
     HANDLE file;
@@ -2468,6 +2702,8 @@ static void cfg_load(void)
     g_bg_g = 128;
     g_bg_b = 128;
     g_fov_cfg = 0;
+    g_time_cfg = -1;
+    g_weather_cfg = -1;
     g_auto_kind = -1;
     g_auto_cam = 0;
     if (!beside_exe(path, (int)sizeof(path), "levelfall.cfg")) {
