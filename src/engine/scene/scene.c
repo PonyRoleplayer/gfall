@@ -251,6 +251,14 @@ void scene_set_limits(float clip_far, int fog)
     g_fog = fog ? 1 : 0;
 }
 
+/* Where draw.c put the fog this frame; 0 is the far clip's own (df_fog_far). */
+static float g_fog_far;
+
+void scene_set_fog_far(float fog_far)
+{
+    g_fog_far = fog_far > 0.0f ? fog_far : 0.0f;
+}
+
 static float visible_far(void)
 {
     float far;
@@ -261,7 +269,7 @@ static float visible_far(void)
         return far;
     }
     /* The table's first solid entry, the same distance draw.c clips at. */
-    fog_far = df_fog_solid(df_fog_far(g_clip));
+    fog_far = df_fog_solid(g_fog_far > 0.0f ? g_fog_far : df_fog_far(g_clip));
     if (fog_far < far) {
         far = fog_far;
     }

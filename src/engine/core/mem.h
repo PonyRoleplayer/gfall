@@ -19,6 +19,14 @@ void *mem_alloc(df_u32 bytes);
  */
 int mem_temp_begin(void);
 void mem_temp_end(void);
+/*
+ * Changes whenever a temp heap begins or ends, on the host too. A
+ * module that keeps a buffer from mem_alloc to reuse later records the
+ * epoch with it, and allocates again when the epoch has moved: the
+ * buffer may have died with a place's heap. light.c reused its decal
+ * buffers into the next place's build and wrote through freed pages.
+ */
+df_u32 mem_epoch(void);
 
 /*
  * Always the main heap, even between mem_temp_begin and mem_temp_end.

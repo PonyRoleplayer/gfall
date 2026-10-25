@@ -15,6 +15,8 @@
 #include "game/dagger/player.h"
 #include "game/dagger/skyfile.h"
 #include "game/dagger/climate.h"
+#include "game/dagger/forecast.h"
+#include "engine/scene/weather.h"
 #include "game/dagger/texture.h"
 #include "game/dagger/world.h"
 
@@ -489,14 +491,38 @@ static void check_skies(void)
                  && skyfile_index(CLIMATE_MOUNTAIN, SEASON_WINTER) == 3
                  && skyfile_index(CLIMATE_SWAMP, SEASON_SPRING) == 25,
                  "a climate draws the wrong sky file");
+    {
+        df_u8 odds[WEATHER_KINDS];
+        int total;
+        int k;
+
+        /* The Chronicles' table: woodlands in winter snow, deserts in summer never rain. */
+        forecast_odds(CLIMATE_WOODLANDS, SEASON_WINTER, odds);
+        total = 0;
+        for (k = 0; k < WEATHER_KINDS; k++) {
+            total += odds[k];
+        }
+        check_expect(total == 100 && odds[WEATHER_SNOW] == 25, "woodland winter odds are not the table's");
+        forecast_odds(CLIMATE_DESERT, SEASON_SUMMER, odds);
+        check_expect(odds[WEATHER_SUNNY] == 85 && odds[WEATHER_RAIN] == 0 && odds[WEATHER_SNOW] == 0,
+                     "the summer desert can rain");
+    }
     check_expect(skyfile_frame(360.0f) == 0 && skyfile_frame(720.0f) == 32
                  && skyfile_frame(1079.0f) == 63 && skyfile_frame(480.0f) == 20,
                  "the sky frames do not follow the hour");
     skyfile_open(CLIMATE_WOODLANDS, SEASON_SUMMER, &sky);
-    check_expect(sky.pick(&sky, 120.0f) == 64 && sky.pick(&sky, 1080.0f) == 64
-                 && sky.pick(&sky, 720.0f) == 32 && sky.night == 2,
+    /* Keys are the file times 128 plus the frame; 64 is the night picture. */
+    check_expect(sky.pick(&sky, 120.0f, WEATHER_SKY_CLEAR) == 18 * 128 + 64
+                 && sky.pick(&sky, 1080.0f, WEATHER_SKY_CLEAR) == 18 * 128 + 64
+                 && sky.pick(&sky, 720.0f, WEATHER_SKY_CLEAR) == 18 * 128 + 32 && sky.night == 2,
                  "night is not its own picture");
-    check_expect(sky.read(&sky, 20, morning, rgb) && sky.read(&sky, 43, evening, rgb2),
+    check_expect(sky.pick(&sky, 720.0f, WEATHER_SKY_RAIN) == 20 * 128 + 32
+                 && sky.pick(&sky, 720.0f, WEATHER_SKY_OVERCAST) == 21 * 128 + 32
+                 && sky.pick(&sky, 720.0f, WEATHER_SKY_SNOW) == 22 * 128 + 32
+                 && sky.pick(&sky, 120.0f, WEATHER_SKY_RAIN) == 20 * 128,
+                 "bad weather does not draw the climate's rain or snow sky, frame 0 at night");
+    check_expect(sky.read(&sky, 21 * 128 + 31, morning, rgb), "SKY21.DAT did not read");
+    check_expect(sky.read(&sky, 18 * 128 + 20, morning, rgb) && sky.read(&sky, 18 * 128 + 43, evening, rgb2),
                  "SKY18.DAT frame 20 did not read");
     /* Record 1, frame 20, row 100: the eastern half, columns 0..511 in the morning. */
     f = vfs_open("SKY18.DAT");
@@ -517,7 +543,7 @@ static void check_skies(void)
             && evening[100 * SKY_W + 512 + k] == half[k];
     }
     check_expect(same, "the eastern half is not first in the morning and second in the evening");
-    check_expect(sky.read(&sky, 64, morning, rgb) && morning[219 * SKY_W] == morning[218 * SKY_W]
+    check_expect(sky.read(&sky, 18 * 128 + 64, morning, rgb) && morning[219 * SKY_W] == morning[218 * SKY_W]
                  && morning[10 * SKY_W + 5] == morning[10 * SKY_W + 517],
                  "the night picture does not fill both halves and the last row");
 }

@@ -15,6 +15,7 @@
 #include "engine/scene/light.h"
 #include "engine/scene/clock.h"
 #include "engine/scene/daylight.h"
+#include "engine/scene/weather.h"
 #include "engine/scene/scene.h"
 #include "engine/ui/cmd.h"
 
@@ -1183,6 +1184,23 @@ static void check_lights(void)
     light_set_on(1);
     light_set_range(3);
     check_expect(light_build(&scene) == 1 && light_count() == 1, "the wall did not get one decal");
+    {
+        const float *kept;
+        df_u32 epoch;
+
+        /* A rebuild of the same place reuses its buffers... */
+        kept = light_corners();
+        light_build(&scene);
+        check_expect(light_corners() == kept, "a rebuild of the same place did not reuse its decals");
+        /* ...but not after a temp heap ended: they died with it (mem_epoch). */
+        epoch = mem_epoch();
+        mem_temp_begin();
+        mem_temp_end();
+        check_expect(mem_epoch() != epoch, "a temp heap did not move the heap epoch");
+        light_build(&scene);
+        check_expect(light_corners() != kept && light_decal_total() == 1,
+                     "the next place's decals were written into the last place's buffers");
+    }
     n = light_decals(0, &d);
     ok = n == 1 && d[0].n == 4 && d[0].nz < -0.99f && d[0].d > 0.0f;
     c = light_corners();
@@ -1281,6 +1299,79 @@ static void check_daylight(void)
     }
 }
 
+/* The weather's rolls and blends (docs/weather.md). */
+static void check_weather(void)
+{
+    static const df_u8 only_fog[WEATHER_KINDS] = { 0, 0, 0, 100, 0, 0, 0 };
+    static const df_u8 desert[WEATHER_KINDS] = { 85, 15, 0, 0, 0, 0, 0 };
+    Weather w;
+    float before;
+
+    weather_seed(1234u);
+    weather_set(WEATHER_SUNNY);
+    weather_state(&w);
+    check_expect(w.kind == WEATHER_SUNNY && w.blend == 1.0f && w.fog >= WEATHER_CLEAR
+                 && w.rain == 0.0f && w.sky == WEATHER_SKY_CLEAR,
+                 "sunny is not clear");
+    weather_force(WEATHER_RAIN);
+    weather_advance(WEATHER_BLEND * 0.4f);
+    weather_state(&w);
+    check_expect(w.kind == WEATHER_RAIN && w.from == WEATHER_SUNNY && w.rain > 0.1f && w.rain < 0.9f
+                 && w.sky == WEATHER_SKY_CLEAR && w.fog < WEATHER_CLEAR && w.fog > 2400.0f,
+                 "rain does not blend in, or its sky came before half way");
+    before = w.rain;
+    weather_advance(WEATHER_BLEND * 0.2f);
+    weather_state(&w);
+    check_expect(w.rain > before && w.sky == WEATHER_SKY_RAIN, "the rain sky did not come at half way");
+    weather_advance(WEATHER_BLEND);
+    weather_state(&w);
+    check_expect(w.blend == 1.0f && w.rain == 1.0f && check_near(w.fog, 2400.0f, 1.0f),
+                 "rain did not arrive whole");
+    /* Held: rolls do not move it. */
+    weather_set_odds(only_fog);
+    weather_advance(WEATHER_HOLD_MAX * 2.0f);
+    weather_state(&w);
+    check_expect(w.kind == WEATHER_RAIN, "a held weather was rolled away");
+    /* Given back to the odds: the next roll is fog. */
+    weather_force(-1);
+    weather_advance(WEATHER_HOLD_MAX + 1.0f);
+    weather_advance(WEATHER_BLEND);
+    weather_state(&w);
+    check_expect(w.kind == WEATHER_FOG && w.fog < 700.0f && w.sky == WEATHER_SKY_OVERCAST,
+                 "the odds did not roll fog");
+    /* Odds that rule the weather out end it at once. */
+    weather_set_odds(desert);
+    weather_state(&w);
+    check_expect((w.kind == WEATHER_SUNNY || w.kind == WEATHER_CLOUDY) && w.blend == 1.0f,
+                 "fog stayed in a place where it cannot happen");
+    weather_set_on(0);
+    weather_force(WEATHER_SNOW);
+    weather_advance(WEATHER_BLEND);
+    weather_state(&w);
+    check_expect(w.snow == 0.0f && w.fog >= WEATHER_CLEAR, "weather off still snows");
+    weather_set_on(1);
+    /* The simulated view: a fog's is short and fogged from near the camera, a clear day's long and hazy at the end. */
+    weather_set(WEATHER_SUNNY);
+    weather_state(&w);
+    check_expect(w.view > 4000.0f && w.haze > 0.6f, "a clear day's view is not long with a late haze");
+    weather_force(WEATHER_FOG);
+    weather_advance(WEATHER_BLEND * 0.5f);
+    weather_state(&w);
+    check_expect(w.view < 4000.0f && w.view > 700.0f, "the view does not close in during a change");
+    weather_advance(WEATHER_BLEND);
+    weather_state(&w);
+    check_expect(check_near(w.view, 700.0f, 1.0f) && w.haze < 0.2f, "a fog's view is not short");
+    check_expect(df_fog_below(1400.0f) <= 1400.0f && df_fog_solid(df_fog_below(1400.0f)) <= 1400.0f
+                 && df_fog_below(1400.0f) > 1200.0f,
+                 "the simulated fog end is not a table entry just inside the clip");
+    weather_force(-1);
+    check_expect(weather_by_name("thunder") == WEATHER_THUNDER && weather_by_name("hail") == WEATHER_KINDS,
+                 "weather names do not match the kinds");
+    weather_force(-1);
+    weather_set_odds(0);
+    weather_set(WEATHER_SUNNY);
+}
+
 void check_engine(void)
 {
     check_rotation();
@@ -1294,4 +1385,5 @@ void check_engine(void)
     check_mip();
     check_lights();
     check_daylight();
+    check_weather();
 }

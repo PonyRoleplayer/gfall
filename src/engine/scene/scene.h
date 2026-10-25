@@ -123,6 +123,13 @@ int instance_faces(const Instance *in, const Camera *cam, const Basis *basis,
  * fresh device. gfx calls this when either value changes.
  */
 void scene_set_limits(float clip_far, int fog);
+/*
+ * Where the fog is meant to go solid, when something nearer than the far
+ * clip's own (df_fog_far) sets it: the weather. 0 goes back to the far
+ * clip's. draw.c sets it with the card's fog table, so the cull and the
+ * fog agree. See docs/weather.md.
+ */
+void scene_set_fog_far(float fog_far);
 /* 1 keeps the frustum. 0 lists every entity, as a null camera does. */
 void scene_set_cull(int on);
 int scene_cull(void);

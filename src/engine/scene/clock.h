@@ -24,7 +24,10 @@ void clock_hm(int *hour, int *minute);
 /* 0 stops the clock. Clamped to 0..CLOCK_SCALE_MAX. */
 void clock_set_scale(int scale);
 int clock_scale(void);
-/* Advance by seconds of real time. Negative or absurd values are ignored. */
-void clock_advance(float seconds);
+/*
+ * Advance by seconds of real time. Negative or absurd values are ignored.
+ * Returns the game minutes it moved, for what runs on game time (weather).
+ */
+float clock_advance(float seconds);
 
 #endif

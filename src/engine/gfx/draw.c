@@ -15,6 +15,7 @@
 #include "engine/scene/light.h"
 #include "engine/scene/clock.h"
 #include "engine/scene/daylight.h"
+#include "engine/scene/weather.h"
 #include "engine/gfx/sky.h"
 
 /*
@@ -77,19 +78,36 @@ static float g_clip_x = (320.0f + CLIP_MARGIN) / 417.0f;
 static float g_clip_y = (240.0f + CLIP_MARGIN) / 417.0f;
 static float g_focal = 417.0f;
 
+/*
+ * Where the card's fog table goes solid now: the far clip's own
+ * (df_fog_far), or nearer when the weather closes it in (fog_apply).
+ * The cull (scene_set_fog_far) and the clip below follow it, so a fog
+ * or a storm also draws less.
+ */
+static float g_fog_now = -1.0f;
+static float g_fog_near_now = -1.0f;
+static float g_limit_fog_now = -1.0f;
+/*
+ * The far clip this frame: the far setting, or under the weather's
+ * simulated view (weather_sim) its own distance with the far setting as
+ * the ceiling. See docs/weather.md.
+ */
+static float g_far_now = DF_FAR;
+
 static void clip_slopes(void)
 {
     int fog;
 
     fog = glide_fog_on();
-    if (g_far != g_limit_far || fog != g_limit_fog) {
+    if (g_far_now != g_limit_far || fog != g_limit_fog || g_fog_now != g_limit_fog_now) {
         float solid;
 
-        g_limit_far = g_far;
+        g_limit_far = g_far_now;
         g_limit_fog = fog;
-        g_limit = g_far;
+        g_limit_fog_now = g_fog_now;
+        g_limit = g_far_now;
         if (fog) {
-            solid = df_fog_solid(df_fog_far(g_far));
+            solid = df_fog_solid(g_fog_now > 0.0f ? g_fog_now : df_fog_far(g_far_now));
             if (solid < g_limit) {
                 g_limit = solid;
             }
@@ -113,6 +131,14 @@ void draw_set_far(float dist)
         dist = DF_FAR_MAX;
     }
     g_far = dist;
+    g_far_now = dist;
+}
+
+void draw_view(float *far_now, float *fog_near, float *fog_far)
+{
+    *far_now = g_far_now;
+    *fog_near = g_fog_near_now;
+    *fog_far = g_fog_now;
 }
 
 float draw_far(void)
@@ -451,6 +477,13 @@ static int poly_inside(const Vtx *v, int n)
 static void submit(const Vtx *poly, int n, float inv_w, float inv_h,
                    float cr, float cg, float cb);
 
+/*
+ * How many times submit sends each polygon: 1, except in the lamp pass,
+ * which lays each decal LAMP_PASSES deep. The corners are transformed,
+ * clipped and projected once for all of them.
+ */
+static int g_repeat = 1;
+
 static void emit_poly(const Vtx *view, int n, float inv_w, float inv_h,
                       float cr, float cg, float cb)
 {
@@ -494,20 +527,33 @@ static void submit(const Vtx *poly, int n, float inv_w, float inv_h,
     if (!ok) {
         return;
     }
-    glide_polygon(dv, n);
+    for (i = 0; i < g_repeat; i++) {
+        glide_polygon(dv, n);
+    }
 }
 
 static const Image *level_image(const Level *level, int slot);
 
 /*
  * image_inv is two divides. A face repeats the same picture, so the
- * pair is stored by slot and reused. The pointer compare notices a
- * new place without clearing the table.
+ * pair is stored by slot and reused. The pointer compare alone does not
+ * notice a new place: LEVELFALL's next place is a new temp heap that
+ * can hand out the same addresses, so a picture could take the last
+ * place's scale. draw_prepare empties the table for each level.
  */
 #define INV_SLOTS 512
 static const Image *g_inv_img[INV_SLOTS];
 static float g_inv_w[INV_SLOTS];
 static float g_inv_h[INV_SLOTS];
+
+void draw_prepare(void)
+{
+    int i;
+
+    for (i = 0; i < INV_SLOTS; i++) {
+        g_inv_img[i] = 0;
+    }
+}
 
 static void image_scale(const Image *img, int slot, float *inv_w, float *inv_h)
 {
@@ -809,44 +855,75 @@ void draw_light_stats(int *lights, int *decals)
  * 1400 that leaves 10 to 80 a frame of the 100 to 700 a visible light
  * can carry.
  */
+/*
+ * Outdoors a lamp's decals fade out between these distances from the
+ * camera and are not drawn past the second: a pool there is a sliver
+ * in the fog, and at far 8192 in Daggerfall 9 of 16 lamps on the glass
+ * were past 2500, half the lamp pass's polygons. The fade is the tint,
+ * one register a lamp, so a lamp never pops.
+ */
+#define LAMP_FADE_NEAR 2048.0f
+#define LAMP_FADE_FAR 3072.0f
+
 static void draw_lights(const Camera *cam, const Basis *basis)
 {
     const float *corners;
+    df_u32 lamp;
+    int outdoor;
     int i;
-
-    int pass;
-    int passes;
 
     if (!light_active() || !g_light_ready) {
         return;
     }
     corners = light_corners();
+    outdoor = light_outdoor();
     /* Outdoors the lamps fade in by the hour, flame-coloured, LAMP_PASSES deep. */
-    if (light_outdoor()) {
-        df_u32 l;
-
-        l = (df_u32)light_lamps();
-        glide_tint(((l * LAMP_R / 255u) << 16) | ((l * LAMP_G / 255u) << 8) | (l * LAMP_B / 255u));
-        passes = LAMP_PASSES;
+    lamp = (df_u32)light_lamps();
+    if (outdoor) {
+        g_repeat = LAMP_PASSES;
     } else {
         glide_tint(0xffffffu);
-        passes = 1;
     }
     glide_decal(1);
-    for (pass = 0; pass < passes; pass++)
     for (i = 0; i < light_count(); i++) {
         const Decal *d;
         float cx, cy, cz, ex, ey, ez;
         int n;
         int k;
 
+        if (outdoor) {
+            const Light *li;
+            float dx, dy, dz, d2;
+            df_u32 l;
+
+            li = light_at(i);
+            dx = li->x - cam->x;
+            dy = li->y - cam->y;
+            dz = li->z - cam->z;
+            d2 = dx * dx + dy * dy + dz * dz;
+            if (d2 >= LAMP_FADE_FAR * LAMP_FADE_FAR) {
+                continue;
+            }
+            l = lamp;
+            if (d2 > LAMP_FADE_NEAR * LAMP_FADE_NEAR) {
+                float dist;
+
+                dist = d2;
+                __asm__ __volatile__("fsqrt" : "=t"(dist) : "0"(dist));
+                l = (df_u32)df_iround((float)lamp * (LAMP_FADE_FAR - dist)
+                                      * (1.0f / (LAMP_FADE_FAR - LAMP_FADE_NEAR)));
+            }
+            if (l == 0) {
+                continue;
+            }
+            glide_tint(((l * LAMP_R / 255u) << 16) | ((l * LAMP_G / 255u) << 8)
+                       | (l * LAMP_B / 255u));
+        }
         if (!light_box(i, &cx, &cy, &cz, &ex, &ey, &ez)
             || !scene_box_visible(cx, cy, cz, ex, ey, ez)) {
             continue;
         }
-        if (pass == 0) {
-            g_lights_drawn++;
-        }
+        g_lights_drawn++;
         n = light_decals(i, &d);
         for (k = 0; k < n; k++) {
             const Decal *dc;
@@ -876,28 +953,291 @@ static void draw_lights(const Camera *cam, const Basis *basis)
             g_decals_drawn++;
         }
     }
+    g_repeat = 1;
     glide_decal(0);
 }
 
 /*
+ * Fog for the frame: clear to near_z, solid at fog_far. The table, the
+ * cull and the clip move only when either moves by more than a fraction
+ * of a percent: during a change that is a 64-entry table a frame.
+ */
+static void fog_apply(float near_z, float fog_far)
+{
+    if (near_z > fog_far - 1.0f) {
+        near_z = fog_far - 1.0f;
+    }
+    if (g_fog_now > 0.0f && df_absf(fog_far - g_fog_now) < fog_far * 0.002f
+        && df_absf(near_z - g_fog_near_now) < fog_far * 0.002f) {
+        return;
+    }
+    g_fog_now = fog_far;
+    g_fog_near_now = near_z;
+    glide_fog_range(near_z, fog_far);
+    scene_set_fog_far(fog_far);
+}
+
+/* At night the simulated view shortens by this much: dark is near. */
+#define WEATHERSIM_NIGHT 0.4f
+/* And never under this, whatever the weather. */
+#define WEATHERSIM_MIN 256.0f
+
+/*
+ * Rain and snow: WX_N drops in a box round the camera, each at a fixed
+ * place in a lattice of boxes that fills the world, so walking through
+ * them is parallax, not a pattern stuck to the glass. They fall in real
+ * seconds, so a stopped clock still rains. The weather's rain or snow
+ * (0..1) says how many are drawn.
+ *
+ * Rain is a streak, one line on the card; snow a flake, a little square
+ * a few pixels across. Both are flat colour, half transparent, with the
+ * depth test, so they pass behind walls, and with fog. A screen of
+ * scrolling rain pictures is the usual trick, but on a Voodoo 1 every
+ * layer of it is a full screen of blended fill, about 7 ms; 300 lines
+ * are a few thousand pixels and one setup each.
+ */
+#define WX_N 320
+#define RAIN_W 768.0f
+#define RAIN_H 512.0f
+#define RAIN_FALL 1100.0f
+#define RAIN_WIND_X 90.0f
+#define RAIN_WIND_Z 40.0f
+/* A streak is where the drop was this long ago. */
+#define RAIN_STREAK 0.025f
+#define SNOW_W 640.0f
+#define SNOW_H 400.0f
+#define SNOW_FALL 70.0f
+#define SNOW_SWAY 18.0f
+#define SNOW_SIZE 1.6f
+
+static float g_wx[WX_N];
+static float g_wy[WX_N];
+static float g_wz[WX_N];
+static float g_wphase[WX_N];
+static int g_wx_ready;
+static float g_wtime;
+static df_u32 g_wseed = 0x9e3779b9u;
+/* Lightning: time to the next stroke, and what is left of this one. */
+static float g_flash_wait = 6.0f;
+static float g_flash_left;
+
+static float wx_rand(void)
+{
+    g_wseed = g_wseed * 1664525u + 1013904223u;
+    return (float)(g_wseed >> 16) * (1.0f / 65536.0f);
+}
+
+/* v moved by whole spans to within half a span of c. */
+static float wrap_near(float v, float c, float span)
+{
+    return v - span * (float)df_ifloor((v - c) / span + 0.5f);
+}
+
+/* A segment cut to the six planes, from the inside end. 0 when none is left. */
+static int clip_segment(Vtx *a, Vtx *b)
+{
+    int plane;
+
+    for (plane = 0; plane < 6; plane++) {
+        float da;
+        float db;
+        Vtx hit;
+
+        da = plane_side(plane, a);
+        db = plane_side(plane, b);
+        if (da < 0.0f && db < 0.0f) {
+            return 0;
+        }
+        if (da < 0.0f) {
+            lerp_vtx(&hit, b, a, db / (db - da));
+            *a = hit;
+        } else if (db < 0.0f) {
+            lerp_vtx(&hit, a, b, da / (da - db));
+            *b = hit;
+        }
+    }
+    return 1;
+}
+
+static int wx_vert(DrawVert *dv, const Vtx *v, float r, float g, float b)
+{
+    if (!camera_project(v->x, v->y, v->z, &dv->x, &dv->y, &dv->oow, &dv->ooz)) {
+        return 0;
+    }
+    dv->sow = 0.0f;
+    dv->tow = 0.0f;
+    dv->r = r;
+    dv->g = g;
+    dv->b = b;
+    return 1;
+}
+
+/* The lightning's light this frame, 0..1, and the next stroke scheduled. */
+static float flash_tick(float storm, float secs)
+{
+    float f;
+
+    f = 0.0f;
+    if (g_flash_left > 0.0f) {
+        /* A stroke flickers: bright, dim, bright, gone. */
+        f = g_flash_left > 0.17f ? 1.0f : (g_flash_left > 0.10f ? 0.25f : 0.7f);
+        g_flash_left -= secs;
+    }
+    if (storm < 0.3f) {
+        return f;
+    }
+    g_flash_wait -= secs;
+    if (g_flash_wait <= 0.0f) {
+        g_flash_left = 0.25f;
+        g_flash_wait = (4.0f + 14.0f * wx_rand()) / storm;
+    }
+    return f;
+}
+
+static void draw_precip(const Camera *cam, const Basis *basis, const Weather *w,
+                        float light, float secs)
+{
+    int n;
+    int i;
+
+    if (w->rain < 0.01f && w->snow < 0.01f) {
+        return;
+    }
+    if (!g_wx_ready) {
+        for (i = 0; i < WX_N; i++) {
+            g_wx[i] = wx_rand();
+            g_wy[i] = wx_rand();
+            g_wz[i] = wx_rand();
+            g_wphase[i] = wx_rand() * DF_TAU;
+        }
+        g_wx_ready = 1;
+    }
+    g_wtime += secs;
+    /* Wrapped well before a float loses the fractions of a second. */
+    if (g_wtime > 3600.0f) {
+        g_wtime -= 3600.0f;
+    }
+    if (light > 1.0f) {
+        light = 1.0f;
+    }
+    glide_flat(1);
+    if (w->rain >= 0.01f) {
+        float r, g, b;
+
+        r = 150.0f * light + 30.0f;
+        g = 160.0f * light + 30.0f;
+        b = 180.0f * light + 35.0f;
+        glide_opacity(130, 0);
+        n = df_iround(w->rain * (float)WX_N);
+        for (i = 0; i < n; i++) {
+            Vtx a;
+            Vtx e;
+            DrawVert da;
+            DrawVert de;
+            float x, y, z;
+
+            x = wrap_near(g_wx[i] * RAIN_W + RAIN_WIND_X * g_wtime, cam->x, RAIN_W);
+            y = wrap_near(g_wy[i] * RAIN_H - RAIN_FALL * g_wtime, cam->y, RAIN_H);
+            z = wrap_near(g_wz[i] * RAIN_W + RAIN_WIND_Z * g_wtime, cam->z, RAIN_W);
+            camera_view(cam, basis, x, y, z, &a.x, &a.y, &a.z);
+            camera_view(cam, basis, x - RAIN_WIND_X * RAIN_STREAK, y + RAIN_FALL * RAIN_STREAK,
+                        z - RAIN_WIND_Z * RAIN_STREAK, &e.x, &e.y, &e.z);
+            a.u = a.v = e.u = e.v = 0.0f;
+            if (!clip_segment(&a, &e) || !wx_vert(&da, &a, r, g, b) || !wx_vert(&de, &e, r, g, b)) {
+                continue;
+            }
+            glide_line(&da, &de);
+        }
+    }
+    if (w->snow >= 0.01f) {
+        float c;
+
+        c = 200.0f * light + 50.0f;
+        glide_opacity(210, 0);
+        n = df_iround(w->snow * (float)WX_N);
+        for (i = 0; i < n; i++) {
+            DrawVert q[4];
+            float x, y, z, vx, vy, vz, sx, sy, oow, ooz, half;
+            int k;
+
+            x = g_wx[i] * SNOW_W + SNOW_SWAY * df_sin(g_wtime * 1.3f + g_wphase[i]);
+            y = g_wy[i] * SNOW_H - SNOW_FALL * g_wtime;
+            z = g_wz[i] * SNOW_W + SNOW_SWAY * df_cos(g_wtime * 0.9f + g_wphase[i]);
+            x = wrap_near(x, cam->x, SNOW_W);
+            y = wrap_near(y, cam->y, SNOW_H);
+            z = wrap_near(z, cam->z, SNOW_W);
+            camera_view(cam, basis, x, y, z, &vx, &vy, &vz);
+            if (vz < DF_NEAR * 2.0f || vz > g_limit
+                || !camera_project(vx, vy, vz, &sx, &sy, &oow, &ooz)) {
+                continue;
+            }
+            /* Only a flake whose centre is on the glass: every corner stays near it. */
+            if (sx < 0.0f || sx > (float)DF_VIEW_W || sy < 0.0f || sy > (float)DF_VIEW_H) {
+                continue;
+            }
+            half = SNOW_SIZE * g_focal / vz;
+            half = half < 0.75f ? 0.75f : (half > 3.0f ? 3.0f : half);
+            for (k = 0; k < 4; k++) {
+                q[k].x = sx + ((k == 1 || k == 2) ? half : -half);
+                q[k].y = sy + (k >= 2 ? -half : half);
+                q[k].oow = oow;
+                q[k].ooz = ooz;
+                q[k].sow = 0.0f;
+                q[k].tow = 0.0f;
+                q[k].r = c;
+                q[k].g = c;
+                q[k].b = c + 8.0f;
+            }
+            glide_polygon(q, 4);
+        }
+    }
+    glide_opacity(-1, 0);
+    glide_flat(0);
+}
+
+/*
+ * Clouds dim the key light and flatten the ambient toward its own grey;
+ * lightning lifts the ambient for a stroke. See docs/weather.md.
+ */
+static void weather_light(Daylight *dl, const Weather *w, float flash)
+{
+    float c;
+    float l;
+    float dim;
+
+    c = w->cloud;
+    dl->kr *= 1.0f - 0.6f * c;
+    dl->kg *= 1.0f - 0.6f * c;
+    dl->kb *= 1.0f - 0.6f * c;
+    l = (dl->ar + dl->ag + dl->ab) * (1.0f / 3.0f);
+    dim = 1.0f - 0.12f * c;
+    dl->ar = (dl->ar + (l - dl->ar) * 0.6f * c) * dim + 0.7f * flash;
+    dl->ag = (dl->ag + (l - dl->ag) * 0.6f * c) * dim + 0.7f * flash;
+    dl->ab = (dl->ab + (l - dl->ab) * 0.6f * c) * dim + 0.75f * flash;
+}
+
+/*
  * The sky, first in the frame: SKY_SEGS flat panels round the camera,
- * each a column of the picture from below the horizon to high up the
- * dome, and a fan from their tops to the zenith. Depth is neither read
+ * each a column of the picture from just below the horizon to its top
+ * row, and above them a fan to the zenith with the dome picture
+ * (sky_cap) on it. Depth is neither read
  * nor written, so the panels sit only a few units out (SKY_RADIUS, or
  * less with a short far clip) and the world draws over them.
  *
  * A column's v runs straight with height on its panel, the cylinder
  * the original sky pictures are drawn for: a sky row is as tall as it
  * is wide, so 220 rows reach 220 / (1024 / 2 pi) = 1.35 radii up, about
- * 53 degrees. The panel runs past both ends of the picture and the
- * clamp holds the first row above it and the horizon row below it.
- * 64 polygons, most cut away by the clip at once. Looking level, the
+ * 53 degrees. The panel runs past the bottom of the picture and the
+ * clamp holds the horizon row below it. 64 polygons, most cut away by
+ * the clip at once. Looking level, the
  * sky is about half a screen of fill a frame.
  */
 #define SKY_SEGS 32
 #define SKY_RADIUS 16.0f
-#define SKY_TOP 4.0f
-#define SKY_APEX 8.0f
+/* The picture's top row: 220 rows of 1024 / 2 pi a radius. */
+#define SKY_TOP ((float)SKY_H / SKY_ROWS_PER_RADIUS)
+/* The dome's apex, straight above, this many radii up. */
+#define SKY_APEX 4.0f
 /*
  * Only a little below the horizon. The Voodoo pays a clock for every
  * pixel it draws, hidden or not, and below the horizon the ground
@@ -956,15 +1296,24 @@ static void draw_sky(const Camera *cam, const Basis *basis)
         sky_corner(cam, basis, r, seg + 1, SKY_BOTTOM, u1, &v[2]);
         sky_corner(cam, basis, r, seg, SKY_BOTTOM, u0, &v[3]);
         emit_poly(v, 4, 1.0f / (float)SKY_TILE, 1.0f / (float)SKY_TILE, 255.0f, 255.0f, 255.0f);
-        /* The fan to the zenith keeps the top row's colour: v is clamped there. */
-        v[2] = v[1];
-        v[1] = v[0];
-        camera_view(cam, basis, cam->x, cam->y + SKY_APEX * r, cam->z, &v[0].x, &v[0].y, &v[0].z);
-        v[0].u = (u0 + u1) * 0.5f;
+    }
+    /* The dome: row 0 of the cap on the panels' tops, its last row at the apex. */
+    glide_bind(sky_cap());
+    for (seg = 0; seg < SKY_SEGS; seg++) {
+        Vtx v[3];
+        float u0;
+        float u1;
+
+        u0 = (float)(seg * (SKY_CAP / SKY_SEGS));
+        u1 = u0 + (float)(SKY_CAP / SKY_SEGS);
+        sky_corner(cam, basis, r, seg, SKY_TOP, u0, &v[0]);
+        sky_corner(cam, basis, r, seg + 1, SKY_TOP, u1, &v[1]);
+        camera_view(cam, basis, cam->x, cam->y + SKY_APEX * r, cam->z, &v[2].x, &v[2].y, &v[2].z);
         v[0].v = 0.5f;
         v[1].v = 0.5f;
-        v[2].v = 0.5f;
-        emit_poly(v, 3, 1.0f / (float)SKY_TILE, 1.0f / (float)SKY_TILE, 255.0f, 255.0f, 255.0f);
+        v[2].u = (u0 + u1) * 0.5f;
+        v[2].v = (float)SKY_CAP - 0.5f;
+        emit_poly(v, 3, 1.0f / (float)SKY_CAP, 1.0f / (float)SKY_CAP, 255.0f, 255.0f, 255.0f);
     }
     glide_sky(0, 0);
 }
@@ -1134,6 +1483,12 @@ void draw_frame(const Camera *cam, const Level *level)
     int outdoor;
     int lit;
     int sky;
+    int sky_alpha;
+    Weather w;
+    float secs;
+    float flash;
+    float fog_far;
+    float fog_near;
     float kx = 0.0f;
     float ky = 0.0f;
     float kz = 0.0f;
@@ -1150,7 +1505,13 @@ void draw_frame(const Camera *cam, const Level *level)
         return;
     }
     console_release();
-    clock_advance(frame_time_tick(0));
+    /* Real seconds for the rain and the lightning; game minutes for the clock and the weather. */
+    secs = frame_time_tick(0);
+    if (secs < 0.0f || secs > 1.0f) {
+        secs = 0.0f;
+    }
+    weather_advance(clock_advance(secs));
+    weather_state(&w);
     g_vis_models = 0;
     g_vis_sprites = 0;
     g_faces_kept = 0;
@@ -1161,20 +1522,69 @@ void draw_frame(const Camera *cam, const Level *level)
      */
     outdoor = level->scene.outdoor;
     lit = outdoor && daylight_on();
+    flash = outdoor ? flash_tick(w.storm, secs) : 0.0f;
     if (lit) {
         daylight_at(clock_minute(), &dl);
+        weather_light(&dl, &w, flash);
         daylight_table(&dl, g_shade);
         light_set_lamps(df_iround(dl.lamps * 255.0f));
     } else if (outdoor) {
         light_set_lamps(0);
     }
+    /*
+     * The view. Outdoors the weather closes the fog in; under the
+     * simulation it also sets the far clip, ceiling the far setting,
+     * and where the fog starts. See docs/weather.md.
+     */
+    if (outdoor && weather_on() && weather_sim()) {
+        g_far_now = w.view * (1.0f - WEATHERSIM_NIGHT * (lit ? dl.lamps : 0.0f));
+        if (g_far_now > g_far) {
+            g_far_now = g_far;
+        }
+        if (g_far_now < WEATHERSIM_MIN) {
+            g_far_now = WEATHERSIM_MIN;
+        }
+        /* Solid on a table entry at or before the clip: nothing past it is half seen. */
+        fog_far = df_fog_below(g_far_now);
+        if (w.fog < fog_far) {
+            fog_far = w.fog;
+        }
+        fog_near = w.haze * fog_far;
+    } else {
+        g_far_now = g_far;
+        fog_far = df_fog_far(g_far);
+        if (outdoor && w.fog < fog_far) {
+            fog_far = w.fog;
+        }
+        fog_near = DF_FOG_NEAR < fog_far * 0.25f ? DF_FOG_NEAR : fog_far * 0.25f;
+    }
+    /* Two stores; gfx_set_far and gfx_set_fog set it too, so set it every frame. */
+    scene_set_limits(g_far_now, glide_fog_on());
+    fog_apply(fog_near, fog_far);
     sky = outdoor && level->sky && sky_on() && sky_ready();
+    sky_alpha = 255;
     if (sky) {
         int hr, hg, hb;
 
-        sky_update(clock_minute());
+        sky_update(clock_minute(), w.sky);
         sky_horizon(&hr, &hg, &hb);
+        /*
+         * The fog is the horizon's colour exactly, so a fogged house meets
+         * the bottom of the sky with no seam; the weather's own sky is
+         * already grey. A stroke of lightning whitens it.
+         */
+        hr = df_iround((float)hr + 160.0f * flash);
+        hg = df_iround((float)hg + 160.0f * flash);
+        hb = df_iround((float)hb + 170.0f * flash);
         glide_sky_color(1, hr, hg, hb);
+        /*
+         * The sky fades into the fog as the fog closes in, and in a thick
+         * fog is not drawn at all: half a screen of fill saved. A stroke
+         * fades it into the whitened fog too, so the whole sky lights up
+         * and a far roof is not a pale shape on a dark sky.
+         */
+        sky_alpha = df_iround(255.0f * (w.fog - 500.0f) * (1.0f / 2100.0f) * (1.0f - flash));
+        sky_alpha = sky_alpha < 0 ? 0 : (sky_alpha > 255 ? 255 : sky_alpha);
     } else {
         glide_sky_color(0, 0, 0, 0);
     }
@@ -1183,8 +1593,14 @@ void draw_frame(const Camera *cam, const Level *level)
     camera_basis(cam, &basis);
     /* Before the sky: the HUD may have left blending or a fade on. */
     glide_sprite_alpha(0);
-    if (sky) {
+    if (sky && sky_alpha > 8) {
+        if (sky_alpha < 255) {
+            glide_opacity(sky_alpha, 0);
+        }
         draw_sky(cam, &basis);
+        if (sky_alpha < 255) {
+            glide_opacity(-1, 0);
+        }
     }
     /* The place's ambient, white when it is unlit. See docs/lighting.md. */
     glide_tint(lit ? g_shade[DAYLIGHT_STEPS / 2] : light_ambient_rgb());
@@ -1264,6 +1680,12 @@ void draw_frame(const Camera *cam, const Level *level)
     }
     glide_sprite_alpha(0);
     glide_tint(0xffffffu);
+    if (outdoor) {
+        float light;
+
+        light = lit ? (dl.ar + dl.ag + dl.ab) * (1.0f / 3.0f) + 0.3f * dl.kg : 1.0f;
+        draw_precip(cam, &basis, &w, light + flash, secs);
+    }
     draw_light_view(cam, &basis);
     if (g_under) {
         g_under();

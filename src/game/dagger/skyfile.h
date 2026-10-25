@@ -30,5 +30,7 @@ int skyfile_index(int climate, int season);
 void skyfile_open(int climate, int season, Sky *sky);
 /* The day frame, 0..63, at a minute between 06:00 and 18:00. */
 int skyfile_frame(float minute);
+/* The sky file a weather sky (WEATHER_SKY_*) draws for this place. */
+int skyfile_weather_index(const Sky *sky, int weather);
 
 #endif

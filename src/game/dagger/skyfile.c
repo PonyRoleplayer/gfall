@@ -2,6 +2,7 @@
 #include "game/dagger/climate.h"
 #include "engine/assets/vfs.h"
 #include "engine/core/log.h"
+#include "engine/scene/weather.h"
 
 #define FRAME_W 512
 #define FRAME_H 220
@@ -12,8 +13,12 @@
 #define MAP_BYTES 16384
 #define PICTURES_AT ((df_u32)FRAMES * PAL_BYTES + (df_u32)FRAMES * MAP_BYTES)
 #define FRAME_BYTES ((df_u32)FRAME_W * FRAME_H)
-/* The key for the night picture; day keys are frames 0..63. */
+/*
+ * A key is the sky file times KEY_FILE plus the frame, 0..63, or
+ * KEY_NIGHT for the night picture.
+ */
 #define KEY_NIGHT 64
+#define KEY_FILE 128
 #define DAWN 360.0f
 #define DUSK 1080.0f
 
@@ -92,13 +97,37 @@ int skyfile_frame(float minute)
     return frame;
 }
 
-static int pick(const Sky *sky, float minute)
+/*
+ * The weather's sky: each climate's four files after its seasons are,
+ * by the look of them, a dark storm sky (+4), a grey one (+5), a pale
+ * snow sky (+6) and a dark snow storm (+7). Daggerfall Unity calls them
+ * Rain1, Rain2, Snow1 and Snow2 and picks one of a pair at random.
+ */
+int skyfile_weather_index(const Sky *sky, int weather)
 {
-    (void)sky;
-    if (minute < DAWN || minute >= DUSK) {
-        return KEY_NIGHT;
+    switch (weather) {
+    case WEATHER_SKY_OVERCAST:
+        return sky->base + 5;
+    case WEATHER_SKY_RAIN:
+    case WEATHER_SKY_STORM:
+        return sky->base + 4;
+    case WEATHER_SKY_SNOW:
+        return sky->base + 6;
+    default:
+        return sky->index;
     }
-    return skyfile_frame(minute);
+}
+
+static int pick(const Sky *sky, float minute, int weather)
+{
+    int file;
+
+    file = skyfile_weather_index(sky, weather);
+    if (minute < DAWN || minute >= DUSK) {
+        /* No stars in bad weather: its darkest frame runs all night, as in Daggerfall Unity. */
+        return file * KEY_FILE + (file == sky->index ? KEY_NIGHT : 0);
+    }
+    return file * KEY_FILE + skyfile_frame(minute);
 }
 
 static int read_at(const char *name, df_u32 at, void *dst, df_u32 n)
@@ -180,15 +209,18 @@ static int read_sky(const Sky *sky, int key, df_u8 *pixels, df_u8 *rgb)
     int flip;
     int rec;
     int i;
+    int file;
 
+    file = key / KEY_FILE;
+    key %= KEY_FILE;
     if (key == KEY_NIGHT) {
         return read_night(sky, pixels, rgb);
     }
-    if (key < 0 || key > 63) {
+    if (key < 0 || key > 63 || file < 0 || file > 31) {
         return 0;
     }
-    name[3] = (char)('0' + sky->index / 10);
-    name[4] = (char)('0' + sky->index % 10);
+    name[3] = (char)('0' + file / 10);
+    name[4] = (char)('0' + file % 10);
     flip = key >= FRAMES;
     frame = flip ? 63 - key : key;
     if (!read_at(name, (df_u32)frame * PAL_BYTES, g_col, PAL_BYTES)) {
@@ -219,6 +251,7 @@ void skyfile_open(int climate, int season, Sky *sky)
     sky->pick = pick;
     sky->read = read_sky;
     sky->index = index;
+    sky->base = index - index % 8;
     /* The night picture by the sky's group, as Daggerfall Unity pairs them. */
     if (index <= 7) {
         sky->night = 3;

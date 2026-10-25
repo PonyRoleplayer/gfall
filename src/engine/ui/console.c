@@ -24,6 +24,7 @@
 #include "engine/scene/light.h"
 #include "engine/scene/clock.h"
 #include "engine/scene/daylight.h"
+#include "engine/scene/weather.h"
 #include "engine/gfx/sky.h"
 
 /*
@@ -592,6 +593,8 @@ static void c_version(int argc, char **argv)
     log_print(LOG_PRINT, "%s, drawn %s", build_text(), build_draw() ? "on" : "off");
 }
 
+static void print_view(void);
+
 static void c_stats(int argc, char **argv)
 {
     int models;
@@ -636,6 +639,7 @@ static void c_stats(int argc, char **argv)
         log_print(LOG_PRINT, "outdoors %d%d:%d%d, timescale %d, sky %s, daylight %s, lamps %d of 255",
                   h / 10, h % 10, m / 10, m % 10, clock_scale(), sky_on() ? "on" : "off",
                   daylight_on() ? "on" : "off", light_lamps());
+        print_view();
     }
     log_print(LOG_PRINT, "fov %d, far %d, fog %s, faces %s, covers %s",
               get_fov(), get_far(), gfx_fog() ? "on" : "off",
@@ -693,6 +697,56 @@ static void c_time(int argc, char **argv)
     clock_hm(&h, &m);
     log_print(LOG_PRINT, "time %d%d:%d%d, %d game seconds a second",
               h / 10, h % 10, m / 10, m % 10, clock_scale());
+}
+
+/* The far clip and fog the last frame drew, and who set them. */
+static void print_view(void)
+{
+    float far_now;
+    float fog_near;
+    float fog_far;
+
+    draw_view(&far_now, &fog_near, &fog_far);
+    log_print(LOG_PRINT, "view: far %d, fog %d to %d, %s",
+              df_iround(far_now), df_iround(fog_near), df_iround(fog_far),
+              weather_sim() ? "the weather's (weathersim on, far is the ceiling)" : "the far setting's");
+}
+
+static void c_weather(int argc, char **argv)
+{
+    Weather w;
+    int kind;
+    int v;
+
+    if (argc > 2) {
+        log_text(LOG_PRINT, "usage: weather [sunny|cloudy|overcast|fog|rain|thunder|snow|auto|on|off]");
+        return;
+    }
+    if (argc == 2) {
+        kind = weather_by_name(argv[1]);
+        if (kind < WEATHER_KINDS) {
+            weather_force(kind);
+        } else if (argv[1][0] == 'a') {
+            weather_force(-1);
+        } else if (cmd_parse_switch(argv[1], &v)) {
+            weather_set_on(v);
+        } else {
+            log_text(LOG_PRINT, "usage: weather [sunny|cloudy|overcast|fog|rain|thunder|snow|auto|on|off]");
+            return;
+        }
+    }
+    weather_state(&w);
+    log_print(LOG_PRINT, "weather %s%s, %d%% of the way from %s; %s",
+              weather_name(w.kind), weather_on() ? "" : " (off: drawn clear)",
+              df_iround(w.blend * 100.0f), weather_name(w.from),
+              weather_forced() >= 0 ? "held there" : "following the odds");
+    if (weather_forced() < 0) {
+        log_print(LOG_PRINT, "next roll in %d game minutes", df_iround(w.next));
+    }
+    log_print(LOG_PRINT, "cloud %d%%, fog solid at %d, rain %d%%, snow %d%%, storm %d%%",
+              df_iround(w.cloud * 100.0f), w.fog >= WEATHER_CLEAR ? 0 : df_iround(w.fog),
+              df_iround(w.rain * 100.0f), df_iround(w.snow * 100.0f), df_iround(w.storm * 100.0f));
+    print_view();
 }
 
 static void c_pos(int argc, char **argv)
@@ -823,6 +877,8 @@ static void commands(void)
     cmd_add("stats", c_stats, "", "frame time and what the last world frame drew");
     cmd_add("pos", c_pos, "", "camera position, yaw and pitch in degrees");
     cmd_add("time", c_time, "[hh:mm]", "the hour of the world clock, or set it");
+    cmd_add("weather", c_weather, "[kind|auto|on|off]",
+            "the weather now; a kind holds it, auto gives it back to the odds");
     cmd_add("setpos", c_setpos, "x y z [yaw [pitch]]", "move the camera there");
     cmd_add("screenshot", c_screenshot, "[name]", "save the picture as a BMP beside the program");
     cmd_add("exec", c_exec, "file", "run the commands in a file beside the program");
@@ -859,6 +915,8 @@ static void commands(void)
     cmd_var("sky", sky_on, sky_set_on, 0, 1, "the sky behind an outdoor place");
     cmd_var("daylight", daylight_on, daylight_set_on, 0, 1,
             "sun and moon light outdoors; off draws it full bright");
+    cmd_var("weathersim", weather_sim, weather_set_sim, 0, 1,
+            "the weather sets the far clip and the fog outdoors; far is the ceiling");
     cmd_var("hud", hud_shown, hud_set, 0, 1, "position and fps corners");
     cmd_var("fps", hud_fps, hud_set_fps, 0, 1, "the fps corner of the hud; F3 flips it");
     cmd_var("logfile", logfile_on, logfile_set, 0, 1,

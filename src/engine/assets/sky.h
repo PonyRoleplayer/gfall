@@ -19,15 +19,17 @@
 
 typedef struct Sky {
     /*
-     * The picture for a minute of the day, 0..1440, as a key that is
-     * the same for every minute that shows the same picture. The engine
+     * The picture for a minute of the day, 0..1440, and the weather's
+     * sky (WEATHER_SKY_*, engine/scene/weather.h), as a key that is the
+     * same for every moment that shows the same picture. The engine
      * reads the picture again only when the key changes.
      */
-    int (*pick)(const struct Sky *sky, float minute);
+    int (*pick)(const struct Sky *sky, float minute, int weather);
     /* Fills pixels (SKY_W * SKY_H) and rgb (768) for a key. 0 on failure. */
     int (*read)(const struct Sky *sky, int key, df_u8 *pixels, df_u8 *rgb);
-    /* The game's own: which sky file, which night picture. */
+    /* The game's own: the fair-weather sky file, the climate's first, the night picture. */
     int index;
+    int base;
     int night;
 } Sky;
 

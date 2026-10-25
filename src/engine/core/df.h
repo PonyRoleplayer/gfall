@@ -181,6 +181,31 @@ static float df_fog_solid(float fog_far)
     return fog_far;
 }
 
+/*
+ * The fog table's farthest entry at or before limit: a fog that goes
+ * solid there is solid by limit, so with the far clip at limit nothing
+ * is cut off while still a few percent visible. The weather's simulated
+ * view puts its fog end here (docs/weather.md). The first entry, 1,
+ * when limit is nearer.
+ */
+static float df_fog_below(float limit)
+{
+    int i;
+    float best;
+
+    best = 1.0f;
+    for (i = 0; i < 64; i++) {
+        float w;
+
+        w = (float)(8u << (i >> 2)) / (float)(8 - (i & 3));
+        if (w > limit) {
+            break;
+        }
+        best = w;
+    }
+    return best;
+}
+
 /* Largest integer not above v, for |v| below 2^22. No mode switch. */
 static int df_ifloor(float v)
 {

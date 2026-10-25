@@ -45,11 +45,13 @@ From 18:00 to 06:00 the sky is one of `NITE00I0.IMG` to `NITE03I0.IMG`: 512 × 2
 
 ### How it is drawn
 
-The game hands the engine a `Sky` (`engine/assets/sky.h`): a `pick` from the minute to a key, and a `read` from a key to the whole circle, 1024 × 220 pixels with column 0 north and the columns running clockwise seen from above, plus its palette. `Level.sky` is 0 indoors.
+The game hands the engine a `Sky` (`engine/assets/sky.h`): a `pick` from the minute and the weather's sky (`docs/weather.md`) to a key, and a `read` from a key to the whole circle, 1024 × 220 pixels with column 0 north and the columns running clockwise seen from above, plus its palette. `Level.sky` is 0 indoors.
 
-`gfx_prepare` sends the circle as four P_8 squares of 256 (`sky.c`): 64 KB each, 256 KB on TMU0, before the light falloff and the level's pictures, so the texture budget sees the room left. Rows 220..255 repeat the horizon row. Each frame `sky_update` asks for the key; when it changes, the new picture is read and sent to the same four places (`glide_replace`). That is one frame change every 11 game minutes or so, about once a minute at timescale 12. With no room on the card, the place draws on the viewer's background, as before.
+`gfx_prepare` sends the circle as four P_8 squares of 256 (`sky.c`): 64 KB each, 256 KB on TMU0, and the dome (below), 32 KB, before the light falloff and the level's pictures, so the texture budget sees the room left. Rows 220..255 repeat the horizon row. Each frame `sky_update` asks for the key; when it changes, the new picture is read, the dome is made again, and both are sent to the same places (`glide_replace`). That is one frame change every 11 game minutes or so, about once a minute at timescale 12. With no room on the card, the place draws on the viewer's background, as before.
 
-The sky is drawn first, after the clear (`draw_sky`): 32 flat panels round the camera, each a column of 32 sky pixels, and a fan from their tops to the zenith. A row is as tall as it is wide, so the 220 rows reach 1.35 radii up the panels, about 53 degrees, which is how Daggerfall Unity scales them on the glass. The panels run from just below the horizon to 4 radii up, and clamped addressing holds the top row above the picture and the horizon row below it. They sit 16 units out, less with a short far clip, because depth is neither read nor written: the world draws over them. The panels go through the same clip as every polygon, so nothing reaches the card past the SST-1's ±2048.
+The sky is drawn first, after the clear (`draw_sky`): 32 flat panels round the camera, each a column of 32 sky pixels, and a fan from their tops to the zenith. A row is as tall as it is wide, so the 220 rows reach 1.35 radii up the panels, about 53 degrees, which is how Daggerfall Unity scales them on the glass. The panels run from just below the horizon to the picture's top row, and clamped addressing holds the horizon row below it.
+
+The pictures stop at 53 degrees; Daggerfall Unity never shows above them. The fan above is the dome, a 128 × 128 RGB 565 picture made from the sky each time it changes (`make_cap`). Its first row is the picture's top two rows, averaged 8 columns at a time. Each row up blurs that ring a texel wider on each side, and fades to the top rows' mean colour by row 48, which is the zenith. The first version stretched the top row up to the zenith; on the Voodoo that drew the top row's clouds as rays meeting overhead. They sit 16 units out, less with a short far clip, because depth is neither read nor written: the world draws over them. The panels go through the same clip as every polygon, so nothing reaches the card past the SST-1's ±2048.
 
 `glide_sky(1, palette)` downloads the sky's palette, turns off depth and fog, and clamps; `glide_sky(0, 0)` downloads the level's palette again (kept from `glide_palette`) and puts the state back. Two palette downloads a frame.
 
@@ -89,7 +91,10 @@ They use the same decals as a dungeon's lights (`docs/lighting.md`), cut at load
 
 - They are drawn only while `daylight` says the lamps are lit: off by day, fading in from 17:15 to 18:30 and out from 05:30 to 06:45. `light_set_lamps` takes the level each frame.
 - The decal pass is texture times the constant colour: the lamps' level times an oil flame's colour, 255 200 120, redder than the torch colour in the falloff pictures. A pool reads warm against the blue night, not white.
-- It is drawn three times (`LAMP_PASSES`). One pass at most doubles a pixel, and a moonlit street starts at about a quarter of its texture; three take the ground under a lamp to its full colour.
+- It is drawn twice (`LAMP_PASSES`). One pass at most doubles a pixel, and a moonlit street starts at about a third of its texture; two take the ground under a lamp to most of its colour. The corners are transformed, clipped and projected once, and the polygon is sent twice (`g_repeat` in `draw.c`). Three passes were tried first: a little brighter, but on the Voodoo a near pool's third layer of blended fill cost more than it showed.
+- A lamp fades out between 2048 and 3072 units from the camera (`LAMP_FADE_NEAR`, `LAMP_FADE_FAR`), through its tint, and is not drawn past that. In Daggerfall at far 8192, 9 of 16 lamps on the glass were past 2500, half the polygons of the lamp pass, for pools a few pixels deep in the fog.
+
+Open ground is one flat face per patch of tiles, two triangles a tile, so a lamp's square on it took about 32 decals. When the triangles of a flat face cover the whole of the square inside the face's outline, `merge_face` in `light.c` cuts that rectangle as one decal instead; a face with a hole there (a tile left out), or one that is not flat, is still cut triangle by triangle. Daggerfall went from 9857 decals to 5880, and the far view on the Voodoo from 518 decals a frame to 219. Dungeon faces are fans, so the dungeons are unchanged.
 
 Sprites near a lamp take the sum of the lamps on them, times the passes, on top of their daylight colour (`light_sprite_over`). A flat that gives light is drawn white.
 
@@ -111,17 +116,19 @@ Per frame, outdoors:
 
 - The sky: 64 polygons, most cut away by the clip, and its fill: about half the screen looking level, a little over 3 ms at the Voodoo's 45 Mpixels a second. Two palette downloads.
 - The light: a 33-entry table, three dot products a model, one dot product a face, a constant colour write when the colour changes.
-- At night, the lamps' decals three times over.
+- At night, the decals of the lamps within 3072 units, sent twice.
 
-On a key change: 225 KB read from the sky file and 256 KB sent to the card, a few tens of milliseconds on the 233.
+Measured on the Voodoo 1 and the 233 before the lamp changes, LEVELFALL at 640 × 480: the Daggerfall square at far 4096 ran 35 fps by day and 29 at night; a street at far 8192, 16 fps by day and 9 at night (16 with `lights off`). Sentinel at far 8192, 19 fps by day and 16 at night. After the merge, the fade and two passes, the same street at night runs 13 fps with the lamps and 14 without: the lamps went from about 50 ms to about 5.
 
-At load: the lamps' decals. Daggerfall 155 lamps, 9857 decals, about 1.2 MB, cut in 7 ms on the host; Wayrest 110 lamps, 7555 decals; Sentinel 7 lamps, 422 decals. None of this is measured on the 233 yet.
+On a key change: 225 KB read from the sky file, the dome made again, and 288 KB sent to the card, a few tens of milliseconds on the 233.
 
-Memory: `sky.c` keeps the circle (220 KB) and one tile (64 KB) static, and `skyfile.c` one half picture (112 KB); none is on a heap, because the viewers' temp heap dies with each place. 256 KB of TMU0.
+At load: the lamps' decals. Daggerfall 155 lamps, 5880 decals, 774 KB, cut in 6 ms on the host; Wayrest 110 lamps, 4705 decals, 615 KB; Sentinel 7 lamps, 235 decals.
+
+Memory: `sky.c` keeps the circle (220 KB), one tile (64 KB) and the dome (32 KB) static, and `skyfile.c` one half picture (112 KB); none is on a heap, because the viewers' temp heap dies with each place. `sky.c` also keeps its own copy of the place's `Sky`, not a pointer into the place. 288 KB of TMU0.
 
 ## Not done
 
-- Seasons and weather: every place is summer and clear. Rain and snow skies are the same files with another offset in Daggerfall Unity.
+- Seasons: every place is summer until the game has a calendar. The weather picks the rain and snow skies (`docs/weather.md`); a Daggerfall key is the sky file times 128 plus the frame, 64 for the night picture.
 - The moons are not drawn, only their light. `MOON00I0.CFA` and `MOON01I0.CFA` are probably Masser and Secunda.
 - No windows lit at night, no shadows, no flicker.
 - The night picture comes in at 18:00 and goes at 06:00 in one step, as in Daggerfall Unity.

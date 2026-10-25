@@ -6,6 +6,7 @@
 #include "game/dagger/rdb.h"
 #include "game/dagger/rmb.h"
 #include "game/dagger/skyfile.h"
+#include "game/dagger/forecast.h"
 #include "game/dagger/texture.h"
 #include "engine/assets/loader.h"
 #include "engine/assets/vfs.h"
@@ -800,6 +801,8 @@ static World *assemble(const Dungeon *hold, int require_start)
     if (hold->outdoor) {
         world->outdoor = 1;
         skyfile_open(hold->climate, SEASON_SUMMER, &world->sky);
+        /* The climate's odds; the engine's weather rolls them. */
+        forecast_set(hold->climate, SEASON_SUMMER);
         add_lamps(world);
     }
     why("");

@@ -45,6 +45,15 @@ static df_u8 *g_sprite_light;
 static int g_nsprites;
 static int g_sprite_cap;
 static int g_light_cap;
+/*
+ * The heap epoch the buffers above were allocated in. They are reused
+ * by a rebuild of the same place (lightrange) only: a new place in
+ * LEVELFALL or RENDERFALL is a new temp heap, and the old one, buffers
+ * and all, is gone (mem_epoch).
+ */
+static df_u32 g_epoch;
+/* Copied, so a question between places never reads the last one's Scene. */
+static int g_outdoor;
 
 static float root(float x)
 {
@@ -120,12 +129,12 @@ int light_count(void)
 
 int light_active(void)
 {
-    return g_on && g_nlights > 0 && (!g_scene->outdoor || g_lamps > 0);
+    return g_on && g_nlights > 0 && (!g_outdoor || g_lamps > 0);
 }
 
 int light_outdoor(void)
 {
-    return g_scene && g_scene->outdoor;
+    return g_outdoor;
 }
 
 void light_set_lamps(int level)
@@ -336,81 +345,127 @@ static int cut_side(const Cut *in, int n, Cut *out, int axis, float limit, float
  * faces (a single triangle) are lit from either side. Writes the decal
  * when fill is set, and counts it either way.
  */
-static void cut_face(const float (*p)[3], int n, const float *vis, int two_sided,
-                     const Light *li, float reach, int fill, int light)
-{
-    float nx, ny, nz, len, h, rr;
+/*
+ * Where a light meets a face's plane: the plane's unit normal toward
+ * the light, the light's height h over it, the radius rr of the circle
+ * it reaches there, the circle's centre, and two axes across the plane
+ * (U, V) the square around the circle is cut along.
+ */
+typedef struct Frame {
+    float nx, ny, nz;
+    float h, rr;
     float cx, cy, cz;
     float ux, uy, uz, vx, vy, vz;
-    Cut a[DECAL_MAX];
-    Cut b[DECAL_MAX];
-    int m;
+} Frame;
+
+/* 0 when the light is behind the plane (and it is one-sided) or out of reach. */
+static int light_frame(const float *vis, const float *p0, int two_sided,
+                       const Light *li, float reach, Frame *f)
+{
+    float len;
+
+    f->nx = vis[0];
+    f->ny = vis[1];
+    f->nz = vis[2];
+    len = root(f->nx * f->nx + f->ny * f->ny + f->nz * f->nz);
+    if (len < 1.0e-6f) {
+        return 0;
+    }
+    f->nx /= len;
+    f->ny /= len;
+    f->nz /= len;
+    f->h = f->nx * (li->x - p0[0]) + f->ny * (li->y - p0[1]) + f->nz * (li->z - p0[2]);
+    if (f->h < 0.0f) {
+        if (!two_sided) {
+            return 0;
+        }
+        f->nx = -f->nx;
+        f->ny = -f->ny;
+        f->nz = -f->nz;
+        f->h = -f->h;
+    }
+    if (f->h >= reach) {
+        return 0;
+    }
+    f->rr = root(reach * reach - f->h * f->h);
+    if (f->rr < 1.0f) {
+        return 0;
+    }
+    f->cx = li->x - f->h * f->nx;
+    f->cy = li->y - f->h * f->ny;
+    f->cz = li->z - f->h * f->nz;
+    /* Any two axes across the plane. A floor gets world x and z. */
+    if (df_absf(f->nx) < 0.6f) {
+        f->ux = 0.0f;
+        f->uy = f->nz;
+        f->uz = -f->ny;
+    } else {
+        f->ux = -f->nz;
+        f->uy = 0.0f;
+        f->uz = f->nx;
+    }
+    len = root(f->ux * f->ux + f->uy * f->uy + f->uz * f->uz);
+    f->ux /= len;
+    f->uy /= len;
+    f->uz /= len;
+    f->vx = f->ny * f->uz - f->nz * f->uy;
+    f->vy = f->nz * f->ux - f->nx * f->uz;
+    f->vz = f->nx * f->uy - f->ny * f->ux;
+    return 1;
+}
+
+/* World corners into the frame's U, V. */
+static void to_frame(const Frame *f, const float (*p)[3], int n, Cut *a)
+{
     int k;
 
-    nx = vis[0];
-    ny = vis[1];
-    nz = vis[2];
-    len = root(nx * nx + ny * ny + nz * nz);
-    if (len < 1.0e-6f || n < 3 || n > DECAL_MAX - 8) {
-        return;
-    }
-    nx /= len;
-    ny /= len;
-    nz /= len;
-    h = nx * (li->x - p[0][0]) + ny * (li->y - p[0][1]) + nz * (li->z - p[0][2]);
-    if (h < 0.0f) {
-        if (!two_sided) {
-            return;
-        }
-        nx = -nx;
-        ny = -ny;
-        nz = -nz;
-        h = -h;
-    }
-    if (h >= reach) {
-        return;
-    }
-    rr = root(reach * reach - h * h);
-    if (rr < 1.0f) {
-        return;
-    }
-    cx = li->x - h * nx;
-    cy = li->y - h * ny;
-    cz = li->z - h * nz;
-    /* Any two axes across the plane. */
-    if (df_absf(nx) < 0.6f) {
-        ux = 0.0f;
-        uy = nz;
-        uz = -ny;
-    } else {
-        ux = -nz;
-        uy = 0.0f;
-        uz = nx;
-    }
-    len = root(ux * ux + uy * uy + uz * uz);
-    ux /= len;
-    uy /= len;
-    uz /= len;
-    vx = ny * uz - nz * uy;
-    vy = nz * ux - nx * uz;
-    vz = nx * uy - ny * ux;
     for (k = 0; k < n; k++) {
         float dx, dy, dz;
 
-        dx = p[k][0] - cx;
-        dy = p[k][1] - cy;
-        dz = p[k][2] - cz;
+        dx = p[k][0] - f->cx;
+        dy = p[k][1] - f->cy;
+        dz = p[k][2] - f->cz;
         a[k].x = p[k][0];
         a[k].y = p[k][1];
         a[k].z = p[k][2];
-        a[k].u = dx * ux + dy * uy + dz * uz;
-        a[k].v = dx * vx + dy * vy + dz * vz;
+        a[k].u = dx * f->ux + dy * f->uy + dz * f->uz;
+        a[k].v = dx * f->vx + dy * f->vy + dz * f->vz;
     }
-    /* The square the circle fits in. */
+}
+
+/* The part of a[0..n) inside the square round the circle, back in a. */
+static int to_square(Cut *a, int n, float rr)
+{
+    Cut b[DECAL_MAX];
+    int m;
+
     m = cut_side(a, n, b, 0, rr, 1.0f);
     m = m >= 3 ? cut_side(b, m, a, 0, -rr, -1.0f) : 0;
     m = m >= 3 ? cut_side(a, m, b, 1, rr, 1.0f) : 0;
     m = m >= 3 ? cut_side(b, m, a, 1, -rr, -1.0f) : 0;
+    return m >= 3 ? m : 0;
+}
+
+static void cut_face(const float (*p)[3], int n, const float *vis, int two_sided,
+                     const Light *li, float reach, int fill, int light)
+{
+    float nx, ny, nz, h, rr;
+    Frame f;
+    Cut a[DECAL_MAX];
+    int m;
+    int k;
+
+    if (n < 3 || n > DECAL_MAX - 8 || !light_frame(vis, p[0], two_sided, li, reach, &f)) {
+        return;
+    }
+    nx = f.nx;
+    ny = f.ny;
+    nz = f.nz;
+    h = f.h;
+    rr = f.rr;
+    to_frame(&f, p, n, a);
+    /* The square the circle fits in. */
+    m = to_square(a, n, rr);
     if (m < 3) {
         return;
     }
@@ -535,6 +590,119 @@ static void cut_face(const float (*p)[3], int n, const float *vis, int two_sided
 }
 
 /*
+ * A flat face of many triangles, as the ground is (a patch of 256-unit
+ * tiles, two triangles each), would take a decal per triangle: about 32
+ * on open ground under one street lamp, each transformed, clipped and
+ * set up on the 233 every pass. When the triangles cover the whole of
+ * the square that lies inside the face's outline, that rectangle is one
+ * decal instead. A face that is not flat, or has a hole there (a tile
+ * left out), returns 0 and is cut triangle by triangle.
+ */
+#define MERGE_FLAT 0.5f
+
+static int merge_face(const Instance *in, const Mesh *mesh, const Face *face,
+                      const float *vis, const Light *li, float reach, int fill, int light)
+{
+    const Tri *t0;
+    float p0[3];
+    float rect[4][3];
+    float lo_u, hi_u, lo_v, hi_v;
+    float area;
+    Frame f;
+    int t;
+    int k;
+
+    t0 = &mesh->tris[face->first];
+    instance_point(in, t0->x[0], t0->y[0], t0->z[0], &p0[0], &p0[1], &p0[2]);
+    if (!light_frame(vis, p0, 0, li, reach, &f)) {
+        /* Before trusting that for every triangle, the face must be flat. */
+        f.nx = vis[0];
+        f.ny = vis[1];
+        f.nz = vis[2];
+        area = root(f.nx * f.nx + f.ny * f.ny + f.nz * f.nz);
+        if (area < 1.0e-6f) {
+            return 0;
+        }
+        f.nx /= area;
+        f.ny /= area;
+        f.nz /= area;
+        for (t = face->first; t < face->first + face->ntris; t++) {
+            for (k = 0; k < 3; k++) {
+                float q[3];
+
+                instance_point(in, mesh->tris[t].x[k], mesh->tris[t].y[k], mesh->tris[t].z[k],
+                               &q[0], &q[1], &q[2]);
+                if (df_absf(f.nx * (q[0] - p0[0]) + f.ny * (q[1] - p0[1])
+                            + f.nz * (q[2] - p0[2])) > MERGE_FLAT) {
+                    return 0;
+                }
+            }
+        }
+        return 1;
+    }
+    lo_u = lo_v = 1.0e30f;
+    hi_u = hi_v = -1.0e30f;
+    area = 0.0f;
+    for (t = face->first; t < face->first + face->ntris; t++) {
+        float q[3][3];
+        Cut c[DECAL_MAX];
+        int m;
+
+        for (k = 0; k < 3; k++) {
+            instance_point(in, mesh->tris[t].x[k], mesh->tris[t].y[k], mesh->tris[t].z[k],
+                           &q[k][0], &q[k][1], &q[k][2]);
+            if (df_absf(f.nx * (q[k][0] - f.cx) + f.ny * (q[k][1] - f.cy)
+                        + f.nz * (q[k][2] - f.cz)) > MERGE_FLAT) {
+                return 0;
+            }
+        }
+        to_frame(&f, (const float (*)[3])q, 3, c);
+        for (k = 0; k < 3; k++) {
+            lo_u = c[k].u < lo_u ? c[k].u : lo_u;
+            hi_u = c[k].u > hi_u ? c[k].u : hi_u;
+            lo_v = c[k].v < lo_v ? c[k].v : lo_v;
+            hi_v = c[k].v > hi_v ? c[k].v : hi_v;
+        }
+        m = to_square(c, 3, f.rr);
+        for (k = 0; k < m; k++) {
+            const Cut *e0;
+            const Cut *e1;
+
+            e0 = &c[k];
+            e1 = &c[(k + 1) % m];
+            area += e0->u * e1->v - e1->u * e0->v;
+        }
+    }
+    area = df_absf(area) * 0.5f;
+    lo_u = lo_u > -f.rr ? lo_u : -f.rr;
+    hi_u = hi_u < f.rr ? hi_u : f.rr;
+    lo_v = lo_v > -f.rr ? lo_v : -f.rr;
+    hi_v = hi_v < f.rr ? hi_v : f.rr;
+    if (hi_u <= lo_u || hi_v <= lo_v) {
+        return 1;
+    }
+    /*
+     * Every triangle wound the same way, so the signed sum is the area
+     * covered; the rectangle is whole when it matches.
+     */
+    if (area < (hi_u - lo_u) * (hi_v - lo_v) * 0.999f) {
+        return 0;
+    }
+    for (k = 0; k < 4; k++) {
+        float u;
+        float v;
+
+        u = (k == 1 || k == 2) ? hi_u : lo_u;
+        v = (k >= 2) ? hi_v : lo_v;
+        rect[k][0] = f.cx + u * f.ux + v * f.vx;
+        rect[k][1] = f.cy + u * f.uy + v * f.vy;
+        rect[k][2] = f.cz + u * f.uz + v * f.vz;
+    }
+    cut_face((const float (*)[3])rect, 4, vis, 0, li, reach, fill, light);
+    return 1;
+}
+
+/*
  * The face as one polygon when its triangles are an exact fan, as the
  * ARCH3D loader makes them; otherwise each triangle on its own.
  */
@@ -584,6 +752,9 @@ static void light_mesh(const Instance *in, const Light *li, float reach, int fil
                 n++;
             }
             cut_face((const float (*)[3])p, n, vis, face->ntris == 1, li, reach, fill, light);
+            continue;
+        }
+        if (face->ntris > 1 && merge_face(in, mesh, face, vis, li, reach, fill, light)) {
             continue;
         }
         for (t = face->first; t < face->first + face->ntris; t++) {
@@ -685,10 +856,19 @@ int light_build(const Scene *scene)
     int nc;
 
     g_scene = scene;
+    g_outdoor = scene ? scene->outdoor : 0;
     g_nlights = 0;
     g_ndecal = 0;
     g_ncorner = 0;
     g_nsprites = 0;
+    if (g_epoch != mem_epoch()) {
+        /* Allocated on a heap that may be gone: never reuse them. */
+        g_decal_cap = 0;
+        g_corner_cap = 0;
+        g_light_cap = 0;
+        g_sprite_cap = 0;
+        g_epoch = mem_epoch();
+    }
     if (!scene || scene->nlights < 1 || !scene->lights) {
         return 0;
     }
@@ -743,7 +923,7 @@ static df_u32 rgb(int r, int g, int b)
 
 df_u32 light_ambient_rgb(void)
 {
-    if (!light_active() || g_scene->outdoor) {
+    if (!light_active() || g_outdoor) {
         return 0xffffffu;
     }
     return rgb(g_ambient, g_ambient, g_ambient);

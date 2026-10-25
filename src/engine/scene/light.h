@@ -90,10 +90,12 @@ df_u32 light_ambient_rgb(void);
 df_u32 light_sprite_over(int s, df_u32 base);
 /*
  * Outdoors the decals are drawn this many times: a pass at most doubles
- * a pixel, and a night street starts dark, so three passes are what
- * take the ground under a lamp from moonlight to its full colour.
+ * a pixel, and a night street starts dark. Two take the ground under a
+ * lamp from moonlight to most of its colour. Three looked a little
+ * brighter, and on the Voodoo the third pass of a near pool's fill cost
+ * more than it showed.
  */
-#define LAMP_PASSES 3
+#define LAMP_PASSES 2
 /*
  * And tinted this colour, times how lit the lamps are: an oil flame,
  * redder than the torch colour the falloff pictures carry, so a pool

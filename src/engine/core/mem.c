@@ -6,6 +6,13 @@
 /* Bytes handed out, for the console's mem command. Not freed bytes. */
 static df_u32 g_main_bytes;
 static df_u32 g_temp_bytes;
+/* Moves on at every mem_temp_begin and mem_temp_end. See mem_epoch. */
+static df_u32 g_epoch;
+
+df_u32 mem_epoch(void)
+{
+    return g_epoch;
+}
 
 void mem_stats(df_u32 *main_bytes, df_u32 *temp_bytes)
 {
@@ -107,6 +114,7 @@ void *mem_alloc(df_u32 bytes)
 
 int mem_temp_begin(void)
 {
+    g_epoch++;
     return 1;
 }
 
@@ -118,6 +126,7 @@ void *mem_keep(df_u32 bytes)
 
 void mem_temp_end(void)
 {
+    g_epoch++;
 }
 
 #else
@@ -152,6 +161,7 @@ int mem_temp_begin(void)
     if (g_temp) {
         return 1;
     }
+    g_epoch++;
     g_temp = HeapCreate(0, 1024 * 1024, 0);
     return g_temp != 0;
 }
@@ -164,6 +174,7 @@ void mem_temp_end(void)
         HeapDestroy(g_temp);
         g_temp = 0;
         g_temp_bytes = 0;
+        g_epoch++;
     }
 }
 

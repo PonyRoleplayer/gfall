@@ -65,11 +65,15 @@ int clock_scale(void)
     return g_scale;
 }
 
-void clock_advance(float seconds)
+float clock_advance(float seconds)
 {
+    float minutes;
+
     /* A frame of more than a second is a stall or a load: do not jump the sky. */
     if (seconds <= 0.0f || seconds > 1.0f || g_scale == 0) {
-        return;
+        return 0.0f;
     }
-    g_minute = wrap_day(g_minute + seconds * (float)g_scale * (1.0f / 60.0f));
+    minutes = seconds * (float)g_scale * (1.0f / 60.0f);
+    g_minute = wrap_day(g_minute + minutes);
+    return minutes;
 }
