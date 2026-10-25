@@ -29,6 +29,7 @@
 /* Buildings plus one ground patch per 512-unit square. 8192 is the cap. */
 #define MAX_MODELS 8192
 #define MAX_FLATS 8192
+#define MAX_LIGHTS 8192
 
 static char g_why[96];
 static char g_title[40];
@@ -73,6 +74,8 @@ struct World {
     int ntris;
     Flat *flat;
     int nflat;
+    Light *light;
+    int nlight;
     int neditor;
     Image *images[MAX_IMAGES];
     df_u16 key_file[MAX_IMAGES];
@@ -201,6 +204,10 @@ static void shift_block(Block *block, int gx, int gz, int tile)
         block->flat[i].x += dx;
         block->flat[i].z += dz;
     }
+    for (i = 0; i < block->nlight; i++) {
+        block->light[i].x += dx;
+        block->light[i].z += dz;
+    }
     for (i = 0; i < block->nmarker; i++) {
         block->marker[i].x += dx;
         block->marker[i].z += dz;
@@ -293,6 +300,9 @@ static int append_block(World *world, Block *block)
     cover_span(world, first, block->ninst);
     for (i = 0; i < block->nflat; i++) {
         world->flat[world->nflat++] = block->flat[i];
+    }
+    for (i = 0; i < block->nlight && world->nlight < MAX_LIGHTS; i++) {
+        world->light[world->nlight++] = block->light[i];
     }
     world->neditor += block->neditor;
     return 1;
@@ -624,7 +634,8 @@ static World *assemble(const Dungeon *hold, int require_start)
     world->bounds = (Bound *)mem_alloc(MAX_MODELS * (df_u32)sizeof(Bound));
     world->spans = (Span *)mem_alloc(DUN_MAX_BLOCKS * (df_u32)sizeof(Span));
     world->flat = (Flat *)mem_alloc(MAX_FLATS * (df_u32)sizeof(Flat));
-    if (!world->inst || !world->bounds || !world->spans || !world->flat) {
+    world->light = (Light *)mem_alloc(MAX_LIGHTS * (df_u32)sizeof(Light));
+    if (!world->inst || !world->bounds || !world->spans || !world->flat || !world->light) {
         why("out of memory");
         return 0;
     }
@@ -891,6 +902,8 @@ void world_as_level(const World *world, Level *level)
     level->scene.nspans = 0;
     level->scene.sprites = 0;
     level->scene.nsprites = 0;
+    level->scene.lights = 0;
+    level->scene.nlights = 0;
     if (!world) {
         return;
     }
@@ -905,4 +918,11 @@ void world_as_level(const World *world, Level *level)
     level->scene.nspans = world->nspans;
     level->scene.sprites = world->flat;
     level->scene.nsprites = world->nflat;
+    level->scene.lights = world->light;
+    level->scene.nlights = world->nlight;
+}
+
+int world_light_count(const World *world)
+{
+    return world ? world->nlight : 0;
 }

@@ -26,6 +26,9 @@ typedef struct Block {
     int nmarker;
     int mark_cap;
     int neditor;
+    /* RDB object type 2. RMB blocks have none. */
+    Light *light;
+    int nlight;
 } Block;
 
 struct Bsa;

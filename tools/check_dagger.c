@@ -511,6 +511,9 @@ int check_dagger(const char *root_in)
      * and the corners it inserts where faces meet partway along an edge.
      */
     check_expect(tris == 9315, "triangle count");
+    /* RDB object type 2: 71 lights in the hold's five blocks. See docs/lighting.md. */
+    printf("lights %d\n", world_light_count(world));
+    check_expect(world_light_count(world) == 71, "light count");
     {
         Level level;
         Camera cam;

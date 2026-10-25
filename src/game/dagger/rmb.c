@@ -117,6 +117,8 @@ static void add_flat(Block *block, const df_u8 *p, float ox, float oz)
     fl->file = (df_u16)archive;
     fl->image = (df_u16)(bits & 0x7f);
     fl->slot = 0xffff;
+    /* TEXTURE.210: lamps and fires give light. */
+    fl->glow = (df_u16)(archive == 210);
     block->nflat++;
 }
 

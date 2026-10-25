@@ -12,6 +12,7 @@
 #include "engine/ui/build.h"
 #include "engine/ui/hud.h"
 #include "engine/gfx/texcache.h"
+#include "engine/scene/light.h"
 
 /*
  * View signs live in camera_view. This file only clips and submits.
@@ -745,6 +746,254 @@ static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
 
 static void draw_covers(void);
 
+/*
+ * The falloff pictures the light decals are drawn with, one handle per
+ * height band. Uploaded by gfx_prepare before the level's pictures, so
+ * the texture budget sees the room they leave; 0 ready when the place
+ * has no lights.
+ */
+static df_u32 g_light_tex[LIGHT_VARIANTS];
+static int g_light_ready;
+static int g_lights_drawn;
+static int g_decals_drawn;
+/*
+ * A decal is drawn this much nearer the eye than its face, as a factor
+ * on its view position: the same pixels, and a depth the test passes
+ * on its own face. The W-buffer resolves distance / 4096, so 1/500 is
+ * eight steps; the Z-buffer fallback holds it to about 500 units.
+ */
+#define DECAL_PULL 0.998f
+
+int draw_light_upload(int want)
+{
+    static df_u16 pixels[LIGHT_TEX * LIGHT_TEX];
+    int v;
+
+    g_light_ready = 0;
+    if (!want) {
+        return 1;
+    }
+    for (v = 0; v < LIGHT_VARIANTS; v++) {
+        light_texture(v, pixels);
+        if (!glide_upload_565(pixels, LIGHT_TEX, &g_light_tex[v])) {
+            log_text(LOG_WARN, "lights: no room for the falloff pictures, the place is unlit");
+            return 0;
+        }
+    }
+    g_light_ready = 1;
+    return 1;
+}
+
+void draw_light_stats(int *lights, int *decals)
+{
+    if (lights) {
+        *lights = g_lights_drawn;
+    }
+    if (decals) {
+        *decals = g_decals_drawn;
+    }
+}
+
+/*
+ * The light decals of every light the cull lets through: after the
+ * models, before the sprites, which take their light as one colour.
+ * Each decal is tested on its own: the face side it lights, then its
+ * box against the frustum and this frame's cells. In the castle at far
+ * 1400 that leaves 10 to 80 a frame of the 100 to 700 a visible light
+ * can carry.
+ */
+static void draw_lights(const Camera *cam, const Basis *basis)
+{
+    const float *corners;
+    int i;
+
+    if (!light_active() || !g_light_ready) {
+        return;
+    }
+    corners = light_corners();
+    glide_decal(1);
+    for (i = 0; i < light_count(); i++) {
+        const Decal *d;
+        float cx, cy, cz, ex, ey, ez;
+        int n;
+        int k;
+
+        if (!light_box(i, &cx, &cy, &cz, &ex, &ey, &ez)
+            || !scene_box_visible(cx, cy, cz, ex, ey, ez)) {
+            continue;
+        }
+        g_lights_drawn++;
+        n = light_decals(i, &d);
+        for (k = 0; k < n; k++) {
+            const Decal *dc;
+            Vtx v[FACE_MAX];
+            int q;
+
+            dc = &d[k];
+            if (dc->nx * cam->x + dc->ny * cam->y + dc->nz * cam->z + dc->d <= 0.0f
+                || dc->n > FACE_MAX
+                || !scene_box_visible(dc->cx, dc->cy, dc->cz, dc->ex, dc->ey, dc->ez)) {
+                continue;
+            }
+            for (q = 0; q < dc->n; q++) {
+                const float *c;
+                float x, y, z;
+
+                c = &corners[(dc->first + q) * LIGHT_CORNER];
+                camera_view(cam, basis, c[0], c[1], c[2], &x, &y, &z);
+                v[q].x = x * DECAL_PULL;
+                v[q].y = y * DECAL_PULL;
+                v[q].z = z * DECAL_PULL;
+                v[q].u = c[3];
+                v[q].v = c[4];
+            }
+            glide_bind(g_light_tex[dc->variant]);
+            emit_poly(v, dc->n, 1.0f, 1.0f, 255.0f, 255.0f, 255.0f);
+            g_decals_drawn++;
+        }
+    }
+    glide_decal(0);
+}
+
+/*
+ * `lightview`: for the lights within light_view() units of the camera,
+ * the LIGHT_VIEW_COUNT nearest, a square at each and a ring as wide as
+ * its reach at its distance: yellow when its decals passed the cull
+ * this frame, dim orange when not. Drawn over everything, walls
+ * included, so a light behind one still shows.
+ *
+ * Every coordinate stays well inside the SST-1's +/-2048: a light is
+ * drawn only when its centre is on the glass, and its ring only when
+ * it is at most LIGHT_VIEW_RING pixels wide. The first version drew
+ * every light up to the far clip, and a light beside the camera
+ * projected thousands of pixels off the glass: a ring from there sent
+ * the card lines it hung on, and the machine with it.
+ */
+#define LIGHT_VIEW_COUNT 64
+#define LIGHT_VIEW_RING 480.0f
+
+static void view_quad(float x, float y, float half, float r, float g, float b)
+{
+    DrawVert q[4];
+    int k;
+
+    for (k = 0; k < 4; k++) {
+        q[k].oow = 1.0f;
+        q[k].ooz = 1.0f;
+        q[k].sow = 0.0f;
+        q[k].tow = 0.0f;
+        q[k].r = r;
+        q[k].g = g;
+        q[k].b = b;
+    }
+    q[0].x = x - half;
+    q[0].y = y + half;
+    q[1].x = x + half;
+    q[1].y = y + half;
+    q[2].x = x + half;
+    q[2].y = y - half;
+    q[3].x = x - half;
+    q[3].y = y - half;
+    glide_polygon(q, 4);
+}
+
+static void draw_light_view(const Camera *cam, const Basis *basis)
+{
+    int pick[LIGHT_VIEW_COUNT];
+    float dist2[LIGHT_VIEW_COUNT];
+    float range2;
+    int npick;
+    int i;
+    int j;
+
+    if (light_view() < 1 || light_count() < 1) {
+        return;
+    }
+    /* The nearest few within the range, kept in order by an insertion. */
+    range2 = (float)light_view() * (float)light_view();
+    npick = 0;
+    for (i = 0; i < light_count(); i++) {
+        const Light *li;
+        float dx, dy, dz, d2;
+
+        li = light_at(i);
+        dx = li->x - cam->x;
+        dy = li->y - cam->y;
+        dz = li->z - cam->z;
+        d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 > range2 || (npick == LIGHT_VIEW_COUNT && d2 >= dist2[npick - 1])) {
+            continue;
+        }
+        if (npick < LIGHT_VIEW_COUNT) {
+            npick++;
+        }
+        for (j = npick - 1; j > 0 && dist2[j - 1] > d2; j--) {
+            dist2[j] = dist2[j - 1];
+            pick[j] = pick[j - 1];
+        }
+        dist2[j] = d2;
+        pick[j] = i;
+    }
+    if (npick < 1) {
+        return;
+    }
+    glide_overlay(1);
+    for (j = 0; j < npick; j++) {
+        const Light *li;
+        float x, y, z, sx, sy, oow, ooz, rad;
+        float cx, cy, cz, ex, ey, ez;
+        float r, g, b;
+        int seg;
+
+        i = pick[j];
+        li = light_at(i);
+        camera_view(cam, basis, li->x, li->y, li->z, &x, &y, &z);
+        if (z < DF_NEAR || !camera_project(x, y, z, &sx, &sy, &oow, &ooz)) {
+            continue;
+        }
+        /* The centre on the glass, or nothing: see above. */
+        if (sx < 0.0f || sx > (float)DF_VIEW_W || sy < 0.0f || sy > (float)DF_VIEW_H) {
+            continue;
+        }
+        if (light_box(i, &cx, &cy, &cz, &ex, &ey, &ez)
+            && scene_box_visible(cx, cy, cz, ex, ey, ez)) {
+            r = 255.0f;
+            g = 230.0f;
+            b = 60.0f;
+        } else {
+            r = 150.0f;
+            g = 80.0f;
+            b = 30.0f;
+        }
+        view_quad(sx, sy, 3.0f, r, g, b);
+        rad = light_reach(i) * g_focal / z;
+        if (rad < 4.0f || rad > LIGHT_VIEW_RING) {
+            continue;
+        }
+        for (seg = 0; seg < 32; seg++) {
+            DrawVert a;
+            DrawVert e;
+            float t0, t1;
+
+            t0 = (float)seg * (DF_TAU / 32.0f);
+            t1 = (float)(seg + 1) * (DF_TAU / 32.0f);
+            a.x = sx + rad * df_cos(t0);
+            a.y = sy + rad * df_sin(t0);
+            e.x = sx + rad * df_cos(t1);
+            e.y = sy + rad * df_sin(t1);
+            a.oow = e.oow = 1.0f;
+            a.ooz = e.ooz = 1.0f;
+            a.sow = e.sow = 0.0f;
+            a.tow = e.tow = 0.0f;
+            a.r = e.r = r;
+            a.g = e.g = g;
+            a.b = e.b = b;
+            glide_line(&a, &e);
+        }
+    }
+    glide_overlay(0);
+}
+
 static int g_cap_models;
 static int g_cap_sprites;
 
@@ -785,6 +1034,10 @@ void draw_frame(const Camera *cam, const Level *level)
     clip_slopes();
     camera_basis(cam, &basis);
     glide_sprite_alpha(0);
+    /* The place's ambient, white when it is unlit. See docs/lighting.md. */
+    glide_tint(light_ambient_rgb());
+    g_lights_drawn = 0;
+    g_decals_drawn = 0;
     norder = scene_visible_models(&level->scene, cam, order, VIS_MAX);
     g_vis_models = norder;
     cap_warn(&g_cap_models, norder, "models");
@@ -821,14 +1074,19 @@ void draw_frame(const Camera *cam, const Level *level)
             draw_tris(cam, &basis, level, in, 0, in->mesh->ntris);
         }
     }
+    draw_lights(cam, &basis);
     glide_sprite_alpha(1);
     norder = scene_visible_sprites(&level->scene, cam, order, VIS_MAX);
     g_vis_sprites = norder;
     cap_warn(&g_cap_sprites, norder, "sprites");
     for (oi = 0; oi < norder; oi++) {
+        /* One colour per sprite from the lights around it; torches full bright. */
+        glide_tint(light_sprite_rgb(order[oi]));
         draw_flat(cam, &basis, level, &level->scene.sprites[order[oi]]);
     }
     glide_sprite_alpha(0);
+    glide_tint(0xffffffu);
+    draw_light_view(cam, &basis);
     if (g_under) {
         g_under();
     }

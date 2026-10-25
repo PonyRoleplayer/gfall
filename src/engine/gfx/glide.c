@@ -144,6 +144,14 @@ static GrColor_t g_clear_color;
  * it lives in the constant colour too, never in the vertices.
  */
 static int g_cut;
+/*
+ * The constant colour's RGB: the light the scene is drawn in, 0xRRGGBB.
+ * White draws textures as they are. Anything else multiplies them,
+ * without a gradient: see color_textured and docs/lighting.md.
+ */
+static GrColor_t g_tint = 0xffffffu;
+/* 1 while color_flat is the colour path, so a tint change leaves it alone. */
+static int g_flat_mode;
 static int g_fade = -1;
 static int g_fade_tex;
 /*
@@ -946,6 +954,62 @@ df_u32 glide_tex_free(void)
     return g_addr_max - g_addr;
 }
 
+/*
+ * A square RGB 565 picture, one level: the light decals' falloff.
+ * Not budgeted by texcache; upload it before texcache_upload so the
+ * budget sees the room it leaves.
+ */
+int glide_upload_565(const df_u16 *pixels, int side, df_u32 *handle)
+{
+    df_u32 size;
+    df_u32 at;
+    GrLOD_t lod;
+    GrAspectRatio_t aspect;
+    GrTexInfo info;
+    int i;
+
+    if (!g_opened || !pixels || !handle || g_ntex >= GPU_SLOTS
+        || !lod_of(side, &lod) || !aspect_of(side, side, &aspect)) {
+        return 0;
+    }
+    info.largeLod = lod;
+    info.smallLod = lod;
+    info.aspectRatio = aspect;
+    info.format = GR_TEXFMT_RGB_565;
+    /* Glide reads the texels little-endian, as df_u16 already is on x86. */
+    for (i = 0; i < side * side; i++) {
+        g_levels[i * 2] = (df_u8)(pixels[i] & 0xff);
+        g_levels[i * 2 + 1] = (df_u8)(pixels[i] >> 8);
+    }
+    info.data = (void *)g_levels;
+    size = glide.tex_calc(lod, lod, aspect, GR_TEXFMT_RGB_565);
+    if (glide.tex_mem) {
+        FxU32 need;
+
+        need = glide.tex_mem(GR_MIPMAPLEVELMASK_BOTH, &info);
+        if (need > size) {
+            size = need;
+        }
+    }
+    size = (size + 7u) & ~7u;
+    at = (g_addr + 7u) & ~7u;
+    if (at + size > ((at & ~0x1fffffu) + 0x200000u)) {
+        at = (at & ~0x1fffffu) + 0x200000u;
+    }
+    if (at + size > g_addr_max) {
+        g_why = "texture memory is full";
+        return 0;
+    }
+    glide.tex_down(GR_TMU0, at, GR_MIPMAPLEVELMASK_BOTH, &info);
+    g_tex[g_ntex].addr = at;
+    g_tex[g_ntex].info = info;
+    g_tex[g_ntex].live = 1;
+    *handle = (df_u32)g_ntex;
+    g_addr = at + size;
+    g_ntex++;
+    return 1;
+}
+
 int glide_upload(const df_u8 *pixels, int side, int cutout, int drop, int chain,
                  const df_u8 *pr, const df_u8 *pg, const df_u8 *pb, df_u32 *handle)
 {
@@ -1015,7 +1079,7 @@ static void alpha_apply(void)
         return;
     }
     a = g_fade >= 0 ? g_fade : 255;
-    glide.constant((GrColor_t)a << 24);
+    glide.constant(((GrColor_t)a << 24) | g_tint);
     if (g_cut) {
         if (g_fade >= 0 && g_fade_tex) {
             /* Texture alpha times the opacity: a fading glyph. */
@@ -1058,10 +1122,16 @@ void glide_sprite_alpha(int on)
 /* The scene's colour path: texture times one, TMU0 passes its texel. */
 static void color_textured(void)
 {
+    g_flat_mode = 0;
+    /*
+     * Texture times the constant colour when the scene is lit: the
+     * constant is a register, so the triangles still carry no colour.
+     * White keeps the plain texture path, exact and unchanged.
+     */
     glide.color(
         GR_COMBINE_FUNCTION_SCALE_OTHER,
-        GR_COMBINE_FACTOR_ONE,
-        GR_COMBINE_LOCAL_NONE,
+        g_tint == 0xffffffu ? GR_COMBINE_FACTOR_ONE : GR_COMBINE_FACTOR_LOCAL,
+        GR_COMBINE_LOCAL_CONSTANT,
         GR_COMBINE_OTHER_TEXTURE,
         FXFALSE);
     glide.tex_combine(
@@ -1077,6 +1147,7 @@ static void color_textured(void)
 /* Vertex colour only. TMU0 outputs zero, so no texel is fetched for it. */
 static void color_flat(void)
 {
+    g_flat_mode = 1;
     glide.color(
         GR_COMBINE_FUNCTION_LOCAL,
         GR_COMBINE_FACTOR_NONE,
@@ -1098,6 +1169,63 @@ static void depth_over(int on)
 {
     glide.depth_func(on ? GR_CMP_ALWAYS : g_depth_cmp);
     glide.depth_mask(on ? FXFALSE : FXTRUE);
+}
+
+void glide_tint(df_u32 rgb)
+{
+    GrColor_t was;
+
+    rgb &= 0xffffffu;
+    if (!g_opened || rgb == g_tint) {
+        g_tint = rgb;
+        return;
+    }
+    was = g_tint;
+    g_tint = rgb;
+    alpha_apply();
+    /* Only a switch to or from white changes the combine. */
+    if (!g_flat_mode && ((was == 0xffffffu) != (rgb == 0xffffffu))) {
+        color_textured();
+    }
+}
+
+df_u32 glide_tinted(void)
+{
+    return g_tint;
+}
+
+/*
+ * The light decal pass. The decal's colour is the light it adds, 0 at
+ * its edge: blended DST_COLOR, ONE the pixel becomes dst + dst * src,
+ * so the edge leaves the wall exactly as it was and the centre at most
+ * doubles it. No depth write; the decal is pulled toward the eye so the
+ * depth test passes on its own face. No fog: under a multiply, black
+ * fog already on the wall stays right. Clamped addressing, so the
+ * falloff picture does not wrap at its border.
+ */
+void glide_decal(int on)
+{
+    if (!g_opened) {
+        return;
+    }
+    if (on) {
+        glide.color(
+            GR_COMBINE_FUNCTION_SCALE_OTHER,
+            GR_COMBINE_FACTOR_ONE,
+            GR_COMBINE_LOCAL_NONE,
+            GR_COMBINE_OTHER_TEXTURE,
+            FXFALSE);
+        glide.blend(GR_BLEND_DST_COLOR, GR_BLEND_ONE, GR_BLEND_ZERO, GR_BLEND_ONE);
+        glide.depth_mask(FXFALSE);
+        glide.fog_mode(GR_FOG_DISABLE);
+        glide.tex_clamp(GR_TMU0, GR_TEXTURECLAMP_CLAMP, GR_TEXTURECLAMP_CLAMP);
+        return;
+    }
+    glide_blend(g_fade >= 0);
+    glide.depth_mask(FXTRUE);
+    glide.fog_mode(g_fog ? GR_FOG_WITH_TABLE : GR_FOG_DISABLE);
+    glide.tex_clamp(GR_TMU0, GR_TEXTURECLAMP_WRAP, GR_TEXTURECLAMP_WRAP);
+    color_textured();
 }
 
 void glide_flat(int on)

@@ -21,6 +21,10 @@ The Z-buffer is the fallback, `wbuffer off` in the console: `GR_CMP_GREATER` on 
 
 Every overlay that turns the depth test off (`glide_ui`, `glide_overlay`, and the modes built on them) restores `g_depth_cmp`, not a fixed compare. A new mode that touches `grDepthBufferFunction` must do the same, or the scene draws with the other buffer's compare after the first HUD string.
 
+## Lighting
+
+A lit place draws texture times the constant colour's RGB (`glide_tint`), not iterated colour: still no colour gradients per triangle. White keeps `FACTOR_ONE`. Light decals blend `DST_COLOR, ONE` with fog off and clamped addressing (`glide_decal`). `alpha_apply` writes the constant colour, so it carries the tint too. See `docs/lighting.md`.
+
 ## Polygons
 
 `draw.c` sends each ARCH3D face as one polygon through `glide_polygon`:

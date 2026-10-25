@@ -1,0 +1,80 @@
+# Lighting
+
+Dungeons are lit by the place's own lights. Read this before editing `src/engine/scene/light.c`, the light pass in `draw.c`, `glide_tint` or `glide_decal` in `glide.c`, or the light records in `rdb.c`.
+
+## Where the lights come from
+
+An RDB block lists its objects by type: 1 is a model, 3 a flat, and 2 a light. `rdb.c` used to skip type 2. Its resource is 10 bytes:
+
+| Offset | Size | Use |
+|---|---|---|
+| 0 | 4 | Unknown. Small numbers in most records: 41 distinct values, 3 to 68, about 19 on average. Kept as `Light.raw0`. |
+| 4 | 4 | Unknown. 0 or -2. Kept as `Light.raw1`. |
+| 8 | 2 | Radius, in world units. Daggerfall Unity reads it the same way. |
+
+The position is the object header's, like a model's or a flat's: y is negated into the engine's y-up.
+
+What the data says, from all of `BLOCKS.BSA`:
+
+- 187 dungeon blocks, every one with lights: 4268 in all. Privateer's Hold has 71; Daggerfall's castle 278.
+- Radius: 1291 under 64, 2803 from 64 to 127, 174 above. 80 is typical.
+- 93% of lights sit within 64 units of a flat from `TEXTURE.210`, the torch, candle, or brazier that shows them. The two are separate objects; the light usually sits 3 to 30 units from its flat.
+- The rest, 312, light a room on their own, with no flat near them.
+- The first field does not follow the flat's picture: it averages 17 to 27 for every torch and candle kind. It may be a brightness, but nothing here uses it yet.
+- RMB blocks, the outdoors, have no light objects.
+
+Flats from `TEXTURE.210` are marked `Flat.glow` by `rdb.c` and `rmb.c`, and drawn full bright.
+
+`lightview 512` in the console draws the lights within 512 units of the camera, the 64 nearest at most (`lightview` takes 0, which is off, to 2048): a square at each, and a ring as wide as its reach at its distance. Yellow when its decals passed this frame's cull, dim orange when not. It draws over walls, so a light behind one still shows. A light is drawn only when its centre is on the glass, and its ring only when at most 480 pixels wide. The first version drew every light up to the far clip: in LEVELFALL at 8192 the glass filled with rings, and a light beside the camera projected thousands of pixels off the glass, so its ring sent the card line coordinates past the SST-1's +/-2048. The card hung and took the machine with it. Anything drawn straight to the card has to stay inside that range; the scene's own polygons are clipped for the same reason (`docs/culling.md`).
+
+## How it is drawn
+
+Per-vertex (Gouraud) lighting does not fit. Daggerfall's walls are big quads, 256 to 512 units across, and a light reaches a few hundred, so most vertices sit outside every light. It would need the walls cut into many more triangles, and triangles are what the 233 pays most for.
+
+So the light is laid on where it falls, as decals:
+
+1. The scene is drawn as texture times the ambient colour. The ambient is the RGB of Glide's constant colour (`glide_tint`), with the colour combine `SCALE_OTHER` by `FACTOR_LOCAL` of `LOCAL_CONSTANT`. A register, not a vertex colour: a triangle still carries no colour gradients. White keeps the old `FACTOR_ONE` path, so an unlit place draws exactly as before.
+2. At load (`light_build`, from `gfx_prepare`), each light cuts its decals. For each face of each model whose box the light reaches, on the face's lit side: the light's height h over the face's plane, the circle it reaches on the plane, radius sqrt(R² - h²), the square around that circle, and the face cut to that square. The cut is kept as a polygon in the world with texture coordinates across the square. A decal whose patch misses the circle entirely is dropped. A face of more than 32 corners, or not an exact fan, is cut triangle by triangle.
+3. Each frame, after the models and before the sprites (`draw_lights`), every light whose decal box passes `scene_box_visible` (this frame's frustum and occlusion cells) draws its decals. Each decal is tested on its own: the camera on its lit side, then its box against the frustum and cells. It is drawn 0.2% nearer the eye, so the same pixels pass the depth test on their own face.
+4. The decal blend is `GR_BLEND_DST_COLOR, GR_BLEND_ONE`: the pixel becomes dst + dst × src. The decal's colour is the light it adds: black at its edge, so the edge leaves the wall exactly as it was, and at most white at its centre, which doubles the wall. Overlapping lights compound. A neutral of 0.5 with a 2x modulate was the first idea, but RGB 565 cannot hold 0.5: 16/31 left a 3% step at every decal's edge.
+5. No fog in the decal pass. Under a multiply, black fog already on the wall stays right. A coloured fog (LEVELFALL's grey background) is brightened a little under a light.
+6. Sprites take one colour each: ambient × (1 + the lights around them), the same sum a wall gets, worked out at load (`light_sprite_rgb`). A glowing flat is white.
+
+The falloff pictures are 8 RGB 565 squares of 64, 64 KB on TMU0, one per band of h over the reach. They are uploaded before the level's pictures, so the texture budget sees the room left, and only for a place with lights. Their colour is a torch's: red 1.0, green 0.8, blue 0.55.
+
+The falloff at distance d of reach R, with angle θ to the face: L = 1.5 (1 - d/R)² (0.35 + 0.65 cos θ), clipped at 1. The softened Lambert term keeps a torch on its own wall lighting the wall around it. The 1.5 gives a brighter core with the same reach; at 1 a host preview showed the pools too faint against the ambient.
+
+## Switches
+
+| Console | Default | Effect |
+|---|---|---|
+| `lights` | on | Off draws every place full bright, as before. |
+| `ambient` | 112 | Brightness away from lights, 0..255. A lit wall goes to at most twice this. |
+| `lightrange` | 3 | A light reaches this many times its radius, 1..8, as Daggerfall Unity's range of 3. A change cuts the decals again (`gfx_set_light_range`). |
+| `lightview` | 0 | The squares and rings above, for lights within this many units, up to 2048. 0 is off. |
+
+`stats` adds how many lights lit something on screen and how many decals were drawn.
+
+## Cost
+
+At load, in the castle at the default range: 278 lights, 8285 decals of 32358 corners, about 1 MB, cut in about 5 ms on the host. The hold: 71 lights, 2379 decals, 300 KB. At range 2: 4595 decals. The decals live on the level's heap: a `Decal` is 52 bytes and a corner 20.
+
+Per frame, in the castle at far 1400 (host count, default range):
+
+| View | Lights through the cull | Their decals | Drawn |
+|---|---|---|---|
+| Corridor | 6 | 196 | 26 |
+| Door | 2 | 98 | 14 |
+| Stair hall | 13 | 367 | 80 |
+| Vault hall | 15 | 342 | 20 |
+| Thrones | 2 | 94 | 24 |
+| Storeroom | 10 | 699 | 35 |
+
+Testing each decal on its own is what keeps the drawn count low: a visible light's decals are mostly behind the camera, off the glass, or behind a wall. The pass costs its tests, those polygons, and fill only where light lands. None of this is measured on the 233 yet.
+
+## Not done
+
+- Outdoors are drawn full bright. RMB blocks carry no light records; their lamps and fires are `TEXTURE.210` flats, marked glow and nothing more. Exterior lights would have to be made from those flats.
+- No player light, no flicker, no light from windows outdoors at night.
+- Models are not lit by distance from the camera; only the place's lights and the ambient.
+- The first two fields of a light record are not understood.

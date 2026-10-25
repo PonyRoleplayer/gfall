@@ -24,6 +24,8 @@ int gfx_prepare(const Level *level);
  */
 void gfx_set_mipmap(int on);
 int gfx_mipmap(void);
+/* How far lights reach, 1..8 times their radius; cuts the decals again. */
+void gfx_set_light_range(int scale);
 
 /* Clear, draw what the scene says is visible, overlay, swap. */
 void gfx_frame(const Camera *cam, const Level *level);

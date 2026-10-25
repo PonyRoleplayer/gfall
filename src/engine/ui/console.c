@@ -21,6 +21,7 @@
 #include "engine/gfx/glide.h"
 #include "engine/gfx/texcache.h"
 #include "engine/scene/scene.h"
+#include "engine/scene/light.h"
 
 /*
  * The panel slides down from the top over a grabbed frame. The log it
@@ -616,6 +617,14 @@ static void c_stats(int argc, char **argv)
     log_print(LOG_PRINT, "cull %s, occlude %s: %d occluders hid %d boxes",
               scene_cull() ? "on" : "off", scene_occlude() ? "on" : "off",
               occ_faces, occ_hidden);
+    if (light_count() > 0) {
+        int lit;
+        int decals;
+
+        draw_light_stats(&lit, &decals);
+        log_print(LOG_PRINT, "lights %s: %d of %d lit something on screen, %d decals drawn",
+                  light_on() ? "on" : "off", lit, light_count(), decals);
+    }
     log_print(LOG_PRINT, "fov %d, far %d, fog %s, faces %s, covers %s",
               get_fov(), get_far(), gfx_fog() ? "on" : "off",
               draw_faces() ? "on" : "off", scene_cover_draw() ? "on" : "off");
@@ -771,6 +780,14 @@ static void commands(void)
             "send each face as one planar polygon; off sends triangles");
     cmd_var("mipmap", gfx_mipmap, gfx_set_mipmap, 0, 1,
             "mip chains on the card; a change sends the level again");
+    cmd_var("lights", light_on, light_set_on, 0, 1,
+            "dungeon lights; off draws every place full bright");
+    cmd_var("ambient", light_ambient, light_set_ambient, 0, 255,
+            "brightness away from lights, in a lit place");
+    cmd_var("lightrange", light_range, gfx_set_light_range, 1, 8,
+            "how many times its radius a light reaches; cuts the decals again");
+    cmd_var("lightview", light_view, light_set_view, 0, LIGHT_VIEW_MAX,
+            "squares and rings for the lights within this many units; 0 is off");
     cmd_var("hud", hud_shown, hud_set, 0, 1, "position and fps corners");
     cmd_var("fps", hud_fps, hud_set_fps, 0, 1, "the fps corner of the hud; F3 flips it");
     cmd_var("logfile", logfile_on, logfile_set, 0, 1,

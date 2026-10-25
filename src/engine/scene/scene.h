@@ -31,7 +31,22 @@ typedef struct Flat {
     df_u16 file;
     df_u16 image;
     df_u16 slot;
+    /* 1 for a picture that gives light, a torch or a candle: drawn full bright. */
+    df_u16 glow;
 } Flat;
+
+/*
+ * A point light, in world units. radius is where the place's data says
+ * the light ends; the engine scales it (docs/lighting.md). raw0 and
+ * raw1 are the record's other two fields, kept unread: their meaning
+ * is not known.
+ */
+typedef struct Light {
+    float x, y, z;
+    float radius;
+    df_u32 raw0;
+    df_u32 raw1;
+} Light;
 
 /*
  * What a frame can see. models[] is drawn first, then sprites[].
@@ -69,6 +84,9 @@ typedef struct Scene {
     int nspans;
     const Flat *sprites;
     int nsprites;
+    /* Point lights. Outdoor places and RENDERFALL have none. */
+    const Light *lights;
+    int nlights;
 } Scene;
 
 void instance_set_rotation(Instance *in, float rx, float ry, float rz);
@@ -128,6 +146,13 @@ int scene_cull(void);
 
 int scene_visible_models(const Scene *scene, const Camera *cam, int *out, int cap);
 int scene_visible_sprites(const Scene *scene, const Camera *cam, int *out, int cap);
+
+/*
+ * 1 when a world box passes the frustum of the last
+ * scene_visible_models call and is not behind the cells it wrote.
+ * For the light pass, after the model pass. 1 when culling is off.
+ */
+int scene_box_visible(float cx, float cy, float cz, float ex, float ey, float ez);
 
 /* 1 runs the occlusion step after the frustum. Default on. */
 void scene_set_occlude(int on);

@@ -55,6 +55,10 @@ A variable prints its value when typed alone, and takes a new one as an argument
 | `vsync` | on/off | On waits for the retrace on each swap. Default on. |
 | `wbuffer` | on/off | On is the W-buffer, depth from 1/w. Off is the 16-bit Z-buffer, to compare. Default on. See `docs/glide.md`. |
 | `mipmap` | on/off | On uploads mip chains, off single levels. Both are budgeted to fit the card. A change sends the level again on the next frame. Default on. See `docs/glide.md`. |
+| `lights` | on/off | Dungeon lights: ambient tint and light decals. Off draws every place full bright. Default on. See `docs/lighting.md`. |
+| `ambient` | 0..255 | Brightness away from lights in a lit place. Default 112. |
+| `lightrange` | 1..8 | How many times its radius a light reaches. Cuts the decals again. Default 3. |
+| `lightview` | 0..2048 | Squares and rings for the lights within this many units of the camera, the 64 nearest: yellow when its decals were drawn, orange when not. 0 (default) is off. Try 512. |
 | `planar` | on/off | On sends each face as one planar polygon, when `glide2x.dll` has `grDrawPlanarPolygonVertexList`. Off sends its triangles. Reads off when the DLL lacks it. Default on. |
 | `hud` | on/off | GFALL's position and fps corners. LEVELFALL draws its own panels and turns this off in the view. |
 | `fps` | on/off | The fps corner alone. F3 flips it too. |

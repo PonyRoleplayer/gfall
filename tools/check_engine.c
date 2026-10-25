@@ -12,6 +12,7 @@
 #include "engine/core/mem.h"
 #include "engine/gfx/camera.h"
 #include "engine/gfx/mip.h"
+#include "engine/scene/light.h"
 #include "engine/scene/scene.h"
 #include "engine/ui/cmd.h"
 
@@ -1127,6 +1128,88 @@ static void check_mip(void)
                  "budget went below MIP_MIN_SIDE or counted a missing picture");
 }
 
+/*
+ * A 400-unit wall at z = 100 seen from the origin, a light 40 units in
+ * front of it with radius 50 (reach 150 at the default x3): one decal,
+ * in the wall's plane, cut to the square around the 145-unit circle,
+ * seen from the camera's side. The same light behind the wall lights
+ * nothing. The falloff picture is 0 at its corner and warm at its
+ * centre. A sprite at the light is brighter than the ambient; a flat
+ * that gives light is white; lights off is white.
+ */
+static void check_lights(void)
+{
+    static const float wx[4] = { -200.0f, 200.0f, 200.0f, -200.0f };
+    static const float wy[4] = { -200.0f, -200.0f, 200.0f, 200.0f };
+    static const float wz[4] = { 100.0f, 100.0f, 100.0f, 100.0f };
+    static df_u16 tex[LIGHT_TEX * LIGHT_TEX];
+    Instance model;
+    Flat sprites[2];
+    Light light;
+    Scene scene;
+    Mesh *wall;
+    const Decal *d;
+    const float *c;
+    df_u32 amb;
+    df_u32 lit;
+    int n;
+    int k;
+    int ok;
+
+    wall = fan_mesh(wx, wy, wz, 4, 0.0f, 0.0f, -1.0f);
+    check_expect(wall != 0, "light wall was not allocated");
+    if (!wall) {
+        return;
+    }
+    place_at(&model, wall, 0.0f, 0.0f, 0.0f);
+    mem_zero(sprites, sizeof(sprites));
+    sprites[0].z = 60.0f;
+    sprites[0].w = 16.0f;
+    sprites[0].h = 16.0f;
+    sprites[1] = sprites[0];
+    sprites[1].glow = 1;
+    mem_zero(&light, sizeof(light));
+    light.z = 60.0f;
+    light.radius = 50.0f;
+    mem_zero(&scene, sizeof(scene));
+    scene.models = &model;
+    scene.nmodels = 1;
+    scene.sprites = sprites;
+    scene.nsprites = 2;
+    scene.lights = &light;
+    scene.nlights = 1;
+    light_set_on(1);
+    light_set_range(3);
+    check_expect(light_build(&scene) == 1 && light_count() == 1, "the wall did not get one decal");
+    n = light_decals(0, &d);
+    ok = n == 1 && d[0].n == 4 && d[0].nz < -0.99f && d[0].d > 0.0f;
+    c = light_corners();
+    for (k = 0; ok && k < d[0].n; k++) {
+        const float *q;
+
+        q = &c[(d[0].first + k) * LIGHT_CORNER];
+        ok = check_near(q[2], 100.0f, 0.01f) && q[0] > -146.0f && q[0] < 146.0f
+            && q[3] >= -0.001f && q[3] <= 1.001f && q[4] >= -0.001f && q[4] <= 1.001f;
+    }
+    check_expect(ok, "the decal is not the wall's square around the light");
+    amb = light_ambient_rgb();
+    lit = light_sprite_rgb(0);
+    check_expect(((lit >> 16) & 255) > ((amb >> 16) & 255) && ((lit >> 16) & 255) >= ((lit >> 8) & 255)
+                 && light_sprite_rgb(1) == 0xffffffu,
+                 "sprite light is not ambient raised by a warm light, or a glowing flat is not white");
+    light_set_on(0);
+    check_expect(light_sprite_rgb(0) == 0xffffffu && light_ambient_rgb() == 0xffffffu,
+                 "lights off did not draw full bright");
+    light_set_on(1);
+    light.z = 140.0f;
+    check_expect(light_build(&scene) == 0, "a light behind the wall lit its front");
+    light_texture(0, tex);
+    check_expect(tex[0] == 0 && tex[LIGHT_TEX * LIGHT_TEX - 1] == 0
+                 && (tex[(LIGHT_TEX / 2) * LIGHT_TEX + LIGHT_TEX / 2] >> 11) == 31,
+                 "the falloff picture is not 0 at its corner and full red at its centre");
+    light_build(0);
+}
+
 void check_engine(void)
 {
     check_rotation();
@@ -1138,4 +1221,5 @@ void check_engine(void)
     check_vfs();
     check_console();
     check_mip();
+    check_lights();
 }

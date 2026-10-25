@@ -688,6 +688,11 @@ typedef struct View {
     float focal;
 } View;
 
+/* The last scene_visible_models' frustum and view, for scene_box_visible. */
+static Plane g_last_planes[6];
+static View g_last_view;
+static int g_last_ok;
+
 static void view_build(View *v, const Camera *cam)
 {
     Basis b;
@@ -2071,6 +2076,7 @@ int scene_visible_models(const Scene *scene, const Camera *cam, int *out, int ca
     /* The sprite pass reads these cells, so a skipped frame leaves none. */
     occ_reset();
     g_occ_hidden = 0;
+    g_last_ok = 0;
     if (!scene || !out || cap < 1 || scene->nmodels < 1) {
         return 0;
     }
@@ -2078,6 +2084,12 @@ int scene_visible_models(const Scene *scene, const Camera *cam, int *out, int ca
         return fill_order(scene->nmodels, out, cap);
     }
     frustum_planes(cam, visible_far(), planes);
+    /* Kept for scene_box_visible: the light pass asks after this call. */
+    for (s = 0; s < 6; s++) {
+        g_last_planes[s] = planes[s];
+    }
+    view_build(&g_last_view, cam);
+    g_last_ok = 1;
     n = 0;
     if (scene->nspans > 0 && scene->spans) {
         for (s = 0; s < scene->nspans; s++) {
@@ -2148,6 +2160,25 @@ int scene_visible_sprites(const Scene *scene, const Camera *cam, int *out, int c
     }
     view_build(&view, cam);
     return occ_filter(scene, &view, out, n, 1);
+}
+
+/*
+ * A box against this frame's frustum and the cells scene_visible_models
+ * wrote, the same tests a model box gets. The light pass asks it for
+ * each light's decals, after the model pass.
+ */
+int scene_box_visible(float cx, float cy, float cz, float ex, float ey, float ez)
+{
+    if (!g_last_ok) {
+        return 1;
+    }
+    if (!box_visible(g_last_planes, cx, cy, cz, ex, ey, ez)) {
+        return 0;
+    }
+    if (!g_occ_on || g_occ_x0 > g_occ_x1) {
+        return 1;
+    }
+    return !occ_hides(&g_last_view, cx, cy, cz, ex, ey, ez);
 }
 
 /*

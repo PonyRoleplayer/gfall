@@ -80,6 +80,8 @@ df_u32 glide_tex_free(void);
  */
 int glide_upload(const df_u8 *pixels, int side, int cutout, int drop, int chain,
                  const df_u8 *pr, const df_u8 *pg, const df_u8 *pb, df_u32 *handle);
+/* A square RGB 565 picture, one level, not mipmapped: the light falloff. */
+int glide_upload_565(const df_u16 *pixels, int side, df_u32 *handle);
 /* Bytes a texture whose first level is side takes, with the 8-byte pad. */
 int glide_texture_bytes(int side, int cutout, int chain, df_u32 *bytes);
 /* Forget every upload: the next one starts at the bottom of TMU0. */
@@ -124,5 +126,14 @@ void glide_opacity(int alpha, int texture);
 void glide_ui(int on);
 /* Untextured iterated colour with the room's depth test left alone. */
 void glide_flat(int on);
+/*
+ * The light the scene is drawn in, 0xRRGGBB, held in the constant
+ * colour. White (default) draws textures as they are. Set white again
+ * before drawing the HUD.
+ */
+void glide_tint(df_u32 rgb);
+df_u32 glide_tinted(void);
+/* The light decal pass: dst + dst * texture, no depth write, no fog, clamped. */
+void glide_decal(int on);
 
 #endif

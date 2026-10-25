@@ -33,5 +33,13 @@ void draw_stats(int *models, int *sprites, int *kept, int *dropped);
  * before the first second. Console frames are not counted.
  */
 int draw_frame_time(float *avg_ms, float *worst_ms);
+/*
+ * Uploads the light falloff pictures when want is set (the place has
+ * lights). Call after glide_tex_reset and before the level's pictures.
+ * 0 when they did not fit: the place is then drawn unlit.
+ */
+int draw_light_upload(int want);
+/* Lights whose decals passed the cull last frame, and decals drawn. */
+void draw_light_stats(int *lights, int *decals);
 
 #endif

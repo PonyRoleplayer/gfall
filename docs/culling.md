@@ -47,6 +47,8 @@ The frustum is a pyramid, so a wall in front of the eye still leaves every box b
 
 `scene_visible_sprites` reads the cells that `scene_visible_models` wrote in the same frame, so call the model list first, as `draw_frame` does. Sprites never hide anything: a flat has see-through texels.
 
+`scene_box_visible` tests any world box against the planes, view, and cells that the last `scene_visible_models` call left, the same frustum and occlusion test a model gets. The light pass uses it for each light's decal box and then each decal (`docs/lighting.md`). Call it only after the model list of the same frame.
+
 ### Why it never drops a visible model
 
 Each rule errs toward drawing:

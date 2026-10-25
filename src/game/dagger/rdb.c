@@ -7,7 +7,10 @@
 #define MAX_INST 2048
 #define MAX_FLAT 2048
 #define MAX_MARK 256
+#define MAX_LIGHT 1024
 #define EDITOR_ARCHIVE 199
+/* TEXTURE.210 holds the torches, candles, and braziers: flats that give light. */
+#define LIGHTS_ARCHIVE 210
 #define ROT_STEP (DF_TAU / 2048.0f)
 
 /* Used when a block has none of that kind, so the pointer is never null. */
@@ -204,13 +207,14 @@ static void place_model(Instance *in, float rx, float ry, float rz)
 
 /* Upper bound on what the walk below will place. A missing mesh still counts. */
 static void rdb_tally(const df_u8 *rdb, df_u32 size, df_u32 width, df_u32 height,
-                      df_u32 root, int *ninst, int *nflat, int *nmark)
+                      df_u32 root, int *ninst, int *nflat, int *nmark, int *nlight)
 {
     df_u32 cell;
 
     *ninst = 0;
     *nflat = 0;
     *nmark = 0;
+    *nlight = 0;
     for (cell = 0; cell < width * height; cell++) {
         df_i32 off;
         int guard_cells;
@@ -237,6 +241,8 @@ static void rdb_tally(const df_u8 *rdb, df_u32 size, df_u32 width, df_u32 height
                 if (mindex < 750 && parse_id(rdb + 20 + (df_u32)mindex * 8, &id)) {
                     (*ninst)++;
                 }
+            } else if (type == 0x02 && res + 10 <= size && *nlight < MAX_LIGHT) {
+                (*nlight)++;
             } else if (type == 0x03 && res + 11 <= size) {
                 bitfield = df_ru16(rdb + res);
                 if ((int)(bitfield >> 7) == EDITOR_ARCHIVE) {
@@ -261,6 +267,7 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch, ArchEnt *cache, int *n
     int want_inst;
     int want_flat;
     int want_mark;
+    int want_light;
     df_u32 cell;
     int guard_cells;
 
@@ -276,13 +283,19 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch, ArchEnt *cache, int *n
     if (root > size || width * height * 4 > size - root) {
         return 0;
     }
-    rdb_tally(rdb, size, width, height, root, &want_inst, &want_flat, &want_mark);
+    rdb_tally(rdb, size, width, height, root, &want_inst, &want_flat, &want_mark, &want_light);
     block = (Block *)mem_alloc(sizeof(Block));
     if (!block) {
         return 0;
     }
     if (!block_reserve(block, want_inst, want_flat, want_mark)) {
         return 0;
+    }
+    if (want_light > 0) {
+        block->light = (Light *)mem_alloc((df_u32)want_light * (df_u32)sizeof(Light));
+        if (!block->light) {
+            return 0;
+        }
     }
     for (cell = 0; cell < width * height; cell++) {
         df_i32 off;
@@ -331,6 +344,25 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch, ArchEnt *cache, int *n
                         block->ntris += mesh->ntris;
                     }
                 }
+            } else if (type == 0x02 && res + 10 <= size && block->light
+                       && block->nlight < want_light) {
+                /*
+                 * A light: two 32-bit fields whose meaning is not known,
+                 * then the radius, 16 bits, in world units. 93% of the
+                 * 4268 in BLOCKS.BSA sit within 64 units of a TEXTURE.210
+                 * flat, the torch or candle that shows it; the rest light
+                 * a room on their own. See docs/lighting.md.
+                 */
+                Light *li;
+
+                li = &block->light[block->nlight];
+                li->x = (float)df_ri32(rdb + at + 8);
+                li->y = -(float)df_ri32(rdb + at + 12);
+                li->z = (float)df_ri32(rdb + at + 16);
+                li->raw0 = df_ru32(rdb + res);
+                li->raw1 = df_ru32(rdb + res + 4);
+                li->radius = (float)df_ru16(rdb + res + 8);
+                block->nlight++;
             } else if (type == 0x03 && res + 11 <= size) {
                 bitfield = df_ru16(rdb + res);
                 archive = (int)(bitfield >> 7);
@@ -355,6 +387,7 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch, ArchEnt *cache, int *n
                     fl->file = (df_u16)archive;
                     fl->image = (df_u16)record;
                     fl->slot = 0xffff;
+                    fl->glow = (df_u16)(archive == LIGHTS_ARCHIVE);
                     block->nflat++;
                 }
             }

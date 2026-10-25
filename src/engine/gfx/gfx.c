@@ -1,5 +1,6 @@
 #include "engine/gfx/gfx.h"
 #include "engine/core/log.h"
+#include "engine/scene/light.h"
 #include "engine/gfx/draw.h"
 #include "engine/gfx/glide.h"
 #include "engine/gfx/texcache.h"
@@ -9,6 +10,8 @@ static const char *g_why = "graphics failed";
 /* A level is on the card, and mipmap changed: send it again next frame. */
 static int g_prepared;
 static int g_reload;
+/* The prepared level, for a light rebuild. The caller keeps it alive. */
+static const Level *g_level;
 
 int gfx_startup(void *hwnd)
 {
@@ -22,6 +25,7 @@ int gfx_startup(void *hwnd)
 void gfx_shutdown(void)
 {
     g_prepared = 0;
+    g_level = 0;
     g_reload = 0;
     draw_set_extra(0);
     draw_set_under(0);
@@ -42,6 +46,8 @@ int gfx_prepare(const Level *level)
     }
     /* Start the card from empty, so a second prepare replaces the first. */
     glide_tex_reset();
+    /* The light falloff first, so the picture budget sees the room left. */
+    draw_light_upload(level && level->scene.nlights > 0);
     if (!texcache_upload(level)) {
         g_why = texcache_error();
         return 0;
@@ -50,8 +56,18 @@ int gfx_prepare(const Level *level)
         font_upload(level->palette->r, level->palette->g, level->palette->b);
     }
     glide_mark();
+    light_build(&level->scene);
+    g_level = level;
     g_prepared = 1;
     return 1;
+}
+
+void gfx_set_light_range(int scale)
+{
+    light_set_range(scale);
+    if (g_prepared && g_level) {
+        light_build(&g_level->scene);
+    }
 }
 
 void gfx_frame(const Camera *cam, const Level *level)
