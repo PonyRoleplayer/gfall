@@ -21,6 +21,14 @@
 #include "engine/scene/collide.h"
 #include "game/dagger/texture.h"
 #include "game/dagger/world.h"
+#include "game/dagger/hmi.h"
+#include "game/dagger/sndfile.h"
+#include "game/dagger/sounds.h"
+#include "engine/assets/loader.h"
+#include "engine/sound/ambience.h"
+#include "engine/sound/mixer.h"
+#include "engine/sound/music.h"
+#include "engine/sound/sound.h"
 
 static int write_ppm(const Image *img, const Palette *pal, const char *path)
 {
@@ -514,6 +522,273 @@ static int flats_on_floor(const World *world, int *over_floor)
  * SKY##.DAT and NITE: which file a climate draws, the frame by the
  * hour, and how the halves land on the circle (docs/daylight.md).
  */
+static void put_u32(FILE *f, df_u32 v)
+{
+    fputc((int)(v & 255u), f);
+    fputc((int)((v >> 8) & 255u), f);
+    fputc((int)((v >> 16) & 255u), f);
+    fputc((int)((v >> 24) & 255u), f);
+}
+
+/* 16-bit stereo at 11025 Hz, to listen to what a test mixed. */
+static void write_wav(const char *path, const df_i16 *buf, int frames)
+{
+    FILE *f;
+    int i;
+
+    f = fopen(path, "wb");
+    if (!f) {
+        return;
+    }
+    fwrite("RIFF", 1, 4, f);
+    put_u32(f, 36u + (df_u32)frames * 4u);
+    fwrite("WAVEfmt ", 1, 8, f);
+    put_u32(f, 16);
+    put_u32(f, 1u | (2u << 16));
+    put_u32(f, 11025);
+    put_u32(f, 11025u * 4u);
+    put_u32(f, 4u | (16u << 16));
+    fwrite("data", 1, 4, f);
+    put_u32(f, (df_u32)frames * 4u);
+    for (i = 0; i < frames * 2; i++) {
+        fputc(buf[i] & 255, f);
+        fputc((buf[i] >> 8) & 255, f);
+    }
+    fclose(f);
+}
+
+/*
+ * Run a place's sound for secs at 20 frames a second from cam, mixing
+ * into out (frames of 11025 Hz), as draw_frame would. strokes: a
+ * lightning stroke every this many frames, 0 for none.
+ */
+static int run_sound(const Level *level, const Camera *cam, float night, int strokes,
+                     float secs, df_i16 *out, int cap)
+{
+    Weather w;
+    int frames;
+    int k;
+    int n;
+
+    frames = 0;
+    n = df_iround(secs * 20.0f);
+    for (k = 0; k < n; k++) {
+        int per;
+
+        weather_state(&w);
+        ambience_frame(level, cam, &w, night, strokes > 0 && k % strokes == 1, 0.05f);
+        per = 551 + (k % 20 == 0 ? 5 : 0);
+        if (frames + per > cap) {
+            break;
+        }
+        mix_clear(out + frames * 2, per);
+        sound_mix(out + frames * 2, per);
+        frames += per;
+    }
+    return frames;
+}
+
+static double rms_of(const df_i16 *buf, int frames)
+{
+    double e;
+    int i;
+
+    e = 0.0;
+    for (i = 0; i < frames * 2; i++) {
+        e += (double)buf[i] * buf[i];
+    }
+    if (frames <= 0) {
+        return 0.0;
+    }
+    e /= frames * 2.0;
+    {
+        /* Newton's square root: the host build links no libm. */
+        double r;
+        int k;
+
+        r = e > 1.0 ? e : 1.0;
+        for (k = 0; k < 60; k++) {
+            r = 0.5 * (r + e / r);
+        }
+        return r;
+    }
+}
+
+/* DAGGER.SND and MIDI.BSA as the game reads them (docs/sound.md). */
+static void check_sound_files(void)
+{
+    const SoundClip *rain;
+    int i;
+    int ok;
+    int most_events;
+    int most_notes;
+    int stolen_any;
+    static df_u32 words[(MUSIC_EVENTS + MUSIC_EVENTS / 8 + 64) * 3];
+
+    printf("sound clips %d\n", sndfile_count());
+    check_expect(sndfile_count() == 459, "DAGGER.SND does not have 459 records");
+    rain = sndfile_clip(SND_RAIN);
+    check_expect(rain && rain->frames == 31346 && rain->rate == 11025 && rain->data[0] == -3,
+                 "the rain clip (389) is not 31346 signed samples at 11025 Hz");
+    check_expect(sndfile_clip(SND_RAIN) == rain, "a clip loaded twice");
+    check_expect(sndfile_by_id(385) == SND_RAIN && sndfile_clip(5) == 0,
+                 "record id 385 is not position 389, or the empty record at 5 gave a clip");
+    printf("songs %d\n", hmi_count());
+    check_expect(hmi_count() == 131, "MIDI.BSA does not have 131 songs");
+    ok = 1;
+    most_events = 0;
+    most_notes = 0;
+    stolen_any = 0;
+    for (i = 0; i < hmi_count(); i++) {
+        Song song;
+        int n;
+        int stolen;
+        int peak;
+
+        mem_zero(&song, sizeof(song));
+        if (!hmi_load(hmi_name(i), 0, &song) || song.division != 480 || song.length == 0) {
+            printf("song %s did not read\n", hmi_name(i));
+            ok = 0;
+            continue;
+        }
+        n = music_render(&song, words, (int)(sizeof(words) / 4), MUSIC_VOICES_MAX, 100, &stolen, &peak);
+        if (n == 0) {
+            ok = 0;
+        }
+        most_events = song.count > most_events ? song.count : most_events;
+        most_notes = peak > most_notes ? peak : most_notes;
+        stolen_any += stolen;
+        if (df_eq(hmi_name(i), "D1.HMI")) {
+            printf("song D1.HMI %d events, %.1f s, %d notes at most\n", song.count,
+                   (double)song.length / 120.0, peak);
+            check_expect(song.length / 120u >= 222u && song.length / 120u <= 226u,
+                         "D1.HMI is not about 224 seconds");
+        }
+    }
+    printf("songs: most events %d, most notes at once %d, cut by 32 voices %d\n",
+           most_events, most_notes, stolen_any);
+    check_expect(ok, "a song of MIDI.BSA did not read or render");
+    check_expect(most_notes <= 32 && stolen_any == 0 && most_events < MUSIC_EVENTS,
+                 "a Daggerfall song needs more than 32 voices or MUSIC_EVENTS");
+    {
+        Song fm;
+
+        mem_zero(&fm, sizeof(fm));
+        check_expect(hmi_load("D1FM.HMI", 1, &fm) && fm.count > 0, "the FM tracks of D1FM.HMI did not read");
+    }
+}
+
+/* The hold: torches loop their fire, the dungeon's noises come now and then. */
+static void check_sound_hold(const World *world)
+{
+    static df_i16 buf[11025 * 6 * 2];
+    const Soundscape *sc;
+    const Emitter *torch;
+    Level hl;
+    Camera cam;
+    int heard;
+    int loops;
+    int frames;
+    int k;
+    const char *name;
+
+    world_as_level(world, &hl);
+    sc = world_soundscape(world);
+    printf("hold emitters %d\n", world_emitter_count(world));
+    check_expect(world_emitter_count(world) > 10 && hl.scene.nemitters == world_emitter_count(world)
+                 && hl.sound == sc, "the hold's torches make no sound");
+    check_expect(sc && sc->kind == SCAPE_DUNGEON && sc->naround == 14 && !sc->rain,
+                 "the hold's soundscape is not the dungeon's fourteen noises");
+    name = sc ? sc->song(sc, -1, 0) : 0;
+    {
+        Song song;
+
+        mem_zero(&song, sizeof(song));
+        check_expect(name && loader_call("song", name, 0, 0, &song), "the hold's song does not load");
+    }
+    torch = world_emitter_at(world, 0);
+    for (k = 0; k < world_emitter_count(world); k++) {
+        if (world_emitter_at(world, k)->every == 0.0f) {
+            torch = world_emitter_at(world, k);
+            break;
+        }
+    }
+    camera_set(&cam, torch->x + 60.0f, torch->y, torch->z, 0.0f, 0.0f);
+    sound_set_mix_rate(11025);
+    sound_set_on(1);
+    music_stop();
+    frames = run_sound(&hl, &cam, 0.0f, 0, 5.0f, buf, 11025 * 6);
+    ambience_stats(&heard, &loops);
+    printf("hold sound: song %s, %d heard, %d loops, %d voices, rms %.0f\n",
+           music_name(), heard, loops, sound_busy(), rms_of(buf, frames));
+    check_expect(loops >= 1 && rms_of(buf, frames) > 50.0, "beside a torch the fire is silent");
+    check_expect(df_eq(music_name(), name), "the hold's song did not start");
+    write_wav("build/snd0.wav", buf, frames);
+    camera_set(&cam, torch->x + 5000.0f, torch->y, torch->z, 0.0f, 0.0f);
+    run_sound(&hl, &cam, 0.0f, 0, 0.5f, buf, 11025 * 6);
+    ambience_stats(&heard, &loops);
+    check_expect(loops == 0, "a torch out of reach still holds a voice");
+    sound_stop_all();
+    music_stop();
+}
+
+/* A farm: songs for every weather, the rain and thunder of a storm. */
+static void check_sound_town(const World *town)
+{
+    static df_i16 buf[11025 * 8 * 2];
+    const Soundscape *sc;
+    Level tl;
+    Camera cam;
+    double quiet;
+    double storm;
+    int frames;
+    int kind;
+    int ok;
+
+    world_as_level(town, &tl);
+    sc = world_soundscape(town);
+    check_expect(sc && sc->kind == SCAPE_TOWN && sc->rain && sc->night && sc->wind
+                 && sc->nthunder == 3 && sc->nday == 2,
+                 "the farm's soundscape lacks rain, crickets, wind, thunder or birds");
+    ok = 1;
+    for (kind = 0; sc && kind < WEATHER_KINDS; kind++) {
+        int night;
+        int index;
+
+        for (night = 0; night < 2; night++) {
+            for (index = 0; index < 40; index++) {
+                Soundscape probe;
+                Song song;
+                const char *name;
+
+                probe = *sc;
+                probe.index = index;
+                name = probe.song(&probe, kind, night);
+                mem_zero(&song, sizeof(song));
+                if (!name || !hmi_load(name, 0, &song)) {
+                    printf("no song for weather %d night %d: %s\n", kind, night, name ? name : "-");
+                    ok = 0;
+                }
+            }
+        }
+    }
+    check_expect(ok, "a playlist names a song MIDI.BSA does not have");
+    world_start(town, &cam.x, &cam.y, &cam.z, &cam.yaw, &cam.pitch);
+    sound_stop_all();
+    weather_set(WEATHER_SUNNY);
+    frames = run_sound(&tl, &cam, 0.0f, 0, 1.0f, buf, 11025 * 8);
+    quiet = rms_of(buf, frames);
+    weather_set(WEATHER_THUNDER);
+    frames = run_sound(&tl, &cam, 0.0f, 30, 7.0f, buf, 11025 * 8);
+    storm = rms_of(buf, frames);
+    printf("farm sound: sunny rms %.0f, storm rms %.0f, song %s\n", quiet, storm, music_name());
+    check_expect(storm > quiet + 100.0, "a thunderstorm is not louder than a sunny day");
+    write_wav("build/snd1.wav", buf, frames);
+    weather_set(WEATHER_SUNNY);
+    sound_stop_all();
+    music_stop();
+}
+
 static void check_skies(void)
 {
     static df_u8 morning[SKY_W * SKY_H];
@@ -610,6 +885,7 @@ int check_dagger(const char *root_in)
     check_v25();
     check_fly();
     check_levels();
+    check_sound_files();
 
     world = world_load();
     if (!world) {
@@ -769,6 +1045,7 @@ int check_dagger(const char *root_in)
             printf("hold lights flickering: %d of %d\n", flick, hl.scene.nlights);
             check_expect(flick > 20 && flick < hl.scene.nlights, "the hold's flames do not flicker, or all do");
         }
+        check_sound_hold(world);
         world_start(world, &sx, &sy, &sz, &syaw, &spitch);
         printf("start %.2f %.2f %.2f yaw %.3f pitch %.3f\n", sx, sy, sz, syaw, spitch);
         check_expect(check_near(sx, 1135.0f, 0.1f) && check_near(sy, 1559.0f, 0.1f) &&
@@ -977,6 +1254,9 @@ int check_dagger(const char *root_in)
                     check_expect(world_outdoor(town) && tl.sky && tl.scene.outdoor
                                  && world_light_count(town) == glow,
                                  "an outdoor place has no sky, or a lamp flat has no light");
+                }
+                if (town) {
+                    check_sound_town(town);
                 }
                 if (town) {
                     world_start(town, &sx, &sy, &sz, &syaw, &spitch);

@@ -4,6 +4,9 @@
  * command table, history, and line editing.
  */
 
+#include <stdio.h>
+#include <string.h>
+
 #include "check_util.h"
 
 #include "engine/assets/loader.h"
@@ -20,6 +23,9 @@
 #include "engine/scene/collide.h"
 #include "engine/scene/scene.h"
 #include "engine/ui/cmd.h"
+#include "engine/sound/mixer.h"
+#include "engine/sound/music.h"
+#include "engine/sound/sound.h"
 
 static int probe_hits;
 
@@ -1520,6 +1526,219 @@ static void check_weather(void)
     weather_set(WEATHER_SUNNY);
 }
 
+static df_u32 g_snd_seed = 12345u;
+
+static int snd_rand(void)
+{
+    g_snd_seed = g_snd_seed * 1103515245u + 12345u;
+    return (int)((g_snd_seed >> 16) & 0x7fff);
+}
+
+/* Left and right energy of a stereo buffer. */
+static void snd_energy(const df_i16 *buf, int frames, double *l, double *r)
+{
+    int i;
+
+    *l = 0.0;
+    *r = 0.0;
+    for (i = 0; i < frames; i++) {
+        *l += (double)buf[i * 2] * buf[i * 2];
+        *r += (double)buf[i * 2 + 1] * buf[i * 2 + 1];
+    }
+}
+
+/* The mixer, the voices and the music's events (docs/sound.md). */
+static void check_sound(void)
+{
+    static signed char samples[1001];
+    static df_i16 a[2600 * 2];
+    static df_i16 b[2600 * 2];
+    static SongEvent ev[128];
+    static df_u32 out[4096];
+    SoundClip clip;
+    MixVoice va;
+    MixVoice vb;
+    Song song;
+    int i;
+
+    for (i = 0; i < 1001; i++) {
+        samples[i] = (signed char)(snd_rand() & 255);
+    }
+    samples[0] = 127;
+    samples[1] = -128;
+    for (i = 0; i < 2600 * 2; i++) {
+        a[i] = (df_i16)(snd_rand() - 16384);
+        if (i % 7 == 0) {
+            a[i] = (df_i16)(i % 2 ? -32700 : 32700);
+        }
+        b[i] = a[i];
+    }
+    mem_zero(&va, sizeof(va));
+    va.data = samples;
+    va.frames = 1001;
+    va.step = MIX_ONE;
+    va.gl = 32767;
+    va.gr = 12345;
+    va.on = 1;
+    vb = va;
+    mix_set_mmx(0);
+    mix_voice(&va, a, 1200);
+    mix_set_mmx(1);
+    mix_voice(&vb, b, 1200);
+    check_expect(memcmp(a, b, sizeof(a)) == 0, "the MMX mixer does not match the C mixer");
+    check_expect(!va.on && !vb.on, "a voice did not stop at the end of its clip");
+    va.on = vb.on = 1;
+    va.pos = vb.pos = 0;
+    va.loop = vb.loop = 1;
+    mix_set_mmx(0);
+    mix_voice(&va, a, 2600);
+    mix_set_mmx(1);
+    mix_voice(&vb, b, 2600);
+    check_expect(memcmp(a, b, sizeof(a)) == 0 && va.pos == 2600u % 1001u && vb.pos == va.pos,
+                 "a looping voice differs between the mixers or lost its place");
+    printf("mixer: MMX %s, C and MMX agree over 3800 frames\n", mix_has_mmx() ? "found" : "missing");
+    mix_clear(a, 4);
+    va.pos = 0;
+    va.loop = 0;
+    va.on = 1;
+    mix_voice(&va, a, 2);
+    check_expect(a[0] == 16255 && a[2] == -16384,
+                 "a full sample at full gain is not half of full scale ((s << 8) * g >> 16)");
+    a[0] = 32000;
+    va.pos = 0;
+    va.on = 1;
+    mix_voice(&va, a, 1);
+    check_expect(a[0] == 32767, "the mix did not saturate");
+    mix_clear(a, 100);
+    va.pos = 0;
+    va.frac = 0;
+    va.on = 1;
+    va.step = MIX_ONE / 2;
+    mix_voice(&va, a, 100);
+    check_expect(va.pos == 50 && a[0] == a[2] && a[4] == a[6],
+                 "a clip at half the output's rate did not hold each sample two frames");
+
+    /* Voices from points: louder on the side they are on, quiet past reach, the quietest taken. */
+    clip.data = samples;
+    clip.frames = 1001;
+    clip.rate = 11025;
+    sound_set_mix_rate(11025);
+    sound_set_on(1);
+    sound_stop_all();
+    sound_listen(0.0f, 0.0f, 0.0f, 0.0f);
+    {
+        double l;
+        double r;
+        int h;
+
+        h = sound_play_at(&clip, 500.0f, 0.0f, 0.0f, 100.0f, 1000.0f, 1.0f, SOUND_LOOP);
+        mix_clear(a, 1000);
+        sound_mix(a, 1000);
+        snd_energy(a, 1000, &l, &r);
+        check_expect(h != 0 && r > l * 4.0, "a sound on the right is not louder on the right");
+        sound_listen(0.0f, 0.0f, 0.0f, DF_TAU * 0.5f);
+        sound_update();
+        mix_clear(a, 1000);
+        sound_mix(a, 1000);
+        snd_energy(a, 1000, &l, &r);
+        check_expect(l > r * 4.0, "turned round, the sound did not move to the left");
+        sound_stop(h);
+        check_expect(!sound_playing(h) && sound_busy() == 0, "a stopped voice still plays");
+        check_expect(sound_play_at(&clip, 5000.0f, 0.0f, 0.0f, 100.0f, 1000.0f, 1.0f, 0) == 0,
+                     "a sound out of reach took a voice");
+        for (i = 0; i < SOUND_VOICES; i++) {
+            sound_play(&clip, 0.5f, 0.0f, SOUND_LOOP);
+        }
+        check_expect(sound_busy() == SOUND_VOICES, "the voices did not fill");
+        check_expect(sound_play(&clip, 0.1f, 0.0f, 0) == 0, "a quiet sound took a louder one's voice");
+        h = sound_play(&clip, 1.0f, 0.0f, 0);
+        check_expect(h != 0 && sound_playing(h) && sound_busy() == SOUND_VOICES,
+                     "a loud sound did not take the quietest voice");
+        sound_stop_all();
+    }
+
+    /* The events: forty notes at once under a limit of 32, the oldest ended first. */
+    for (i = 0; i < 40; i++) {
+        ev[i].tick = (df_u32)i;
+        ev[i].msg = 0x90u | ((df_u32)(20 + i) << 8) | (100u << 16);
+        ev[40 + i].tick = 100;
+        ev[40 + i].msg = 0x80u | ((df_u32)(20 + i) << 8);
+    }
+    ev[80].tick = 50;
+    ev[80].msg = 0xb0u | (7u << 8) | (100u << 16);
+    /* Out of order on purpose: the sort puts it, and at tick 100 the note-offs first. */
+    ev[81].tick = 100;
+    ev[81].msg = 0x91u | (60u << 8) | (90u << 16);
+    ev[82].tick = 120;
+    ev[82].msg = 0x81u | (60u << 8);
+    ev[83] = ev[0];
+    ev[0].tick = 30;
+    ev[0].msg = 0xc0u | (5u << 8);
+    song.events = ev;
+    song.count = 84;
+    song.division = 480;
+    song.tempo = 4000000u;
+    song.length = 200;
+    song_sort(&song);
+    {
+        int ok;
+
+        ok = 1;
+        for (i = 1; i < song.count; i++) {
+            if (ev[i].tick < ev[i - 1].tick) {
+                ok = 0;
+            }
+        }
+        for (i = 0; i < song.count; i++) {
+            if (ev[i].tick == 100 && ev[i].msg == (0x91u | (60u << 8) | (90u << 16))) {
+                ok &= ev[i - 1].tick == 100 && (ev[i - 1].msg & 0xf0u) == 0x80u
+                    && (i + 1 >= song.count || ev[i + 1].tick > 100);
+            }
+        }
+        check_expect(ok, "the song's events are not in time order with note-offs first");
+    }
+    {
+        int words;
+        int stolen;
+        int peak;
+        int sounding;
+        int most;
+        int vol_ok;
+        df_u32 t;
+
+        words = music_render(&song, out, 4096, 32, 50, &stolen, &peak);
+        sounding = 0;
+        most = 0;
+        vol_ok = 0;
+        t = 0;
+        for (i = 0; i < words; i += 3) {
+            df_u32 e;
+
+            t += out[i];
+            e = out[i + 2];
+            if ((e >> 24) != 0) {
+                continue;
+            }
+            if ((e & 0xf0u) == 0x90u && ((e >> 16) & 0x7fu) > 0) {
+                sounding++;
+            } else if ((e & 0xf0u) == 0x80u) {
+                sounding--;
+            }
+            most = sounding > most ? sounding : most;
+            if ((e & 0xffffu) == 0x07b0u && t == 50) {
+                vol_ok = ((e >> 16) & 0x7fu) == 50;
+            }
+        }
+        check_expect(words > 0 && (out[2] >> 24) == 1 && (out[2] & 0xffffffu) == 4000000u,
+                     "the stream does not open with the song's tempo");
+        check_expect(stolen == 8 && peak == 32 && most <= 32 && sounding == 0,
+                     "forty notes under a 32-voice limit did not end the oldest eight");
+        check_expect(vol_ok, "a channel volume was not scaled by the music volume");
+        check_expect(t == 200 && (out[words - 1] >> 24) == 2, "the stream does not end at the song's length");
+        check_expect(music_render(&song, out, 30, 32, 100, 0, 0) == 0, "a stream too long for its room was made");
+    }
+}
+
 void check_engine(void)
 {
     check_rotation();
@@ -1535,4 +1754,5 @@ void check_engine(void)
     check_daylight();
     check_weather();
     check_collision();
+    check_sound();
 }

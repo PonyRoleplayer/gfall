@@ -3,6 +3,7 @@
 
 #include "engine/assets/palette.h"
 #include "engine/assets/sky.h"
+#include "engine/assets/soundscape.h"
 #include "engine/assets/texture.h"
 #include "engine/scene/scene.h"
 
@@ -20,6 +21,8 @@ typedef struct Level {
     const Palette *palette;
     /* The sky, for an outdoor place; 0 indoors. See docs/daylight.md. */
     const Sky *sky;
+    /* Its music and ambience, or 0 for none. See docs/sound.md. */
+    const Soundscape *sound;
     Scene scene;
 } Level;
 

@@ -28,6 +28,12 @@
 #include "engine/scene/walker.h"
 #include "engine/scene/collide.h"
 #include "engine/gfx/sky.h"
+#include "engine/assets/loader.h"
+#include "engine/sound/ambience.h"
+#include "engine/sound/audio.h"
+#include "engine/sound/mixer.h"
+#include "engine/sound/music.h"
+#include "engine/sound/sound.h"
 
 /*
  * The panel slides down from the top over a grabbed frame. The log it
@@ -768,6 +774,99 @@ static void c_stuck(int argc, char **argv)
     log_text(LOG_PRINT, "stuck: moving to the nearest free place");
 }
 
+/* Sound: see docs/sound.md. */
+static void c_sndinfo(int argc, char **argv)
+{
+    int heard;
+    int loops;
+    int stolen;
+    int peak;
+    int events;
+
+    (void)argc;
+    (void)argv;
+    ambience_stats(&heard, &loops);
+    music_stats(&stolen, &peak, &events);
+    log_print(LOG_PRINT, "sound: %s, %d Hz, ring %d ms, lead %d ms, mixer %s",
+              audio_mode_name(audio_mode()), sound_rate(), audio_buffer_ms(), audio_lead_ms(),
+              mix_mmx() ? "MMX" : "C");
+    log_print(LOG_PRINT, "sound: %d of %d voices, %d emitters in reach, %d loops held",
+              sound_busy(), SOUND_VOICES, heard, loops);
+    log_print(LOG_PRINT, "music: \"%s\"%s on \"%s\", %d events, %d notes at most, %d cut by the %d-voice limit",
+              music_name(), music_playing() ? "" : " (stopped)", music_device_name(), events, peak,
+              stolen, music_voices());
+}
+
+static void c_musdev(int argc, char **argv)
+{
+    int n;
+    int i;
+
+    if (argc >= 2) {
+        if (df_eq(argv[1], "auto")) {
+            music_set_device(-1);
+        } else if (cmd_parse_int(argv[1], &i)) {
+            music_set_device(i);
+        } else {
+            log_text(LOG_PRINT, "musdev: a number, or auto");
+            return;
+        }
+    }
+    n = music_devices();
+    for (i = 0; i < n; i++) {
+        log_print(LOG_PRINT, "musdev %d: %s", i, music_device_at(i));
+    }
+    log_print(LOG_PRINT, "musdev: playing on \"%s\" (%s)", music_device_name(),
+              music_device() < 0 ? "chosen" : "set");
+}
+
+static void c_song(int argc, char **argv)
+{
+    Song song;
+
+    if (argc < 2) {
+        log_print(LOG_PRINT, "song: \"%s\"%s", music_name(),
+                  music_name()[0] && !music_playing() ? ", not playing (music off, or no device)" : "");
+        return;
+    }
+    if (df_eq(argv[1], "stop")) {
+        music_stop();
+        log_text(LOG_PRINT, "song: stopped");
+        return;
+    }
+    mem_zero(&song, sizeof(song));
+    if (!loader_call("song", argv[1], 0, 0, &song)) {
+        log_print(LOG_PRINT, "song: the game has no song %s", argv[1]);
+        return;
+    }
+    music_stop();
+    if (!music_play(&song, argv[1])) {
+        log_print(LOG_PRINT, "song: %s did not start", argv[1]);
+        return;
+    }
+    log_print(LOG_PRINT, "song: %s, %d events", argv[1], song.count);
+}
+
+static void c_play(int argc, char **argv)
+{
+    const SoundClip *clip;
+
+    if (argc < 2) {
+        log_text(LOG_PRINT, "play: which sound (a number)");
+        return;
+    }
+    clip = 0;
+    if (!loader_call("sound", argv[1], 0, 0, &clip) || !clip) {
+        log_print(LOG_PRINT, "play: the game has no sound %s", argv[1]);
+        return;
+    }
+    if (!sound_play(clip, 1.0f, 0.0f, 0)) {
+        log_text(LOG_PRINT, "play: no voice (sound off?)");
+        return;
+    }
+    log_print(LOG_PRINT, "play: %s, %d ms", argv[1], (int)(clip->frames * 1000u / clip->rate));
+}
+
 static int get_tcl(void)
 {
     return walker_on();
@@ -963,4 +1062,19 @@ static void commands(void)
     cmd_var("fps", hud_fps, hud_set_fps, 0, 1, "the fps corner of the hud; F3 flips it");
     cmd_var("logfile", logfile_on, logfile_set, 0, 1,
             "copy the log to console.log beside the program");
+    cmd_add("sndinfo", c_sndinfo, "", "the sound card's way out, voices, the song and its voice limit");
+    cmd_add("musdev", c_musdev, "[n|auto]", "the MIDI outputs, or play the music on one");
+    cmd_add("song", c_song, "[name|stop]", "the song playing, or play one of the game's");
+    cmd_add("play", c_play, "n", "play the game's sound effect n");
+    cmd_var("sound", sound_on, sound_set_on, 0, 1, "sound effects");
+    cmd_var("sndvol", sound_volume, sound_set_volume, 0, 100, "sound effects volume, percent");
+    cmd_var("sndrate", sound_rate, sound_set_rate, 8000, 44100,
+            "the card's rate; 11025 is the effects' own, more only steps through them");
+    cmd_var("snddrv", sound_mode, sound_set_mode, AUDIO_AUTO, AUDIO_NONE,
+            "way out: 0 chooses, 1 DirectSound primary, 2 a DirectSound buffer, 3 wave, 4 none");
+    cmd_var("sndmmx", mix_mmx, mix_set_mmx, 0, 1, "the mixer's MMX loop; 0 is the C loop");
+    cmd_var("music", music_on, music_set_on, 0, 1, "MIDI music");
+    cmd_var("musvol", music_volume, music_set_volume, 0, 100, "music volume, percent");
+    cmd_var("musvoices", music_voices, music_set_voices, 1, MUSIC_VOICES_MAX,
+            "most notes the music plays at once; past 32 an AWE64 plays them on the CPU");
 }

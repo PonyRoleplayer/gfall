@@ -56,6 +56,12 @@ GFALL_SRC := \
 	src/engine/scene/weather.c \
 	src/engine/scene/collide.c \
 	src/engine/scene/walker.c \
+	src/engine/platform/winmm.c \
+	src/engine/sound/mixer.c \
+	src/engine/sound/audio.c \
+	src/engine/sound/sound.c \
+	src/engine/sound/music.c \
+	src/engine/sound/ambience.c \
 	src/engine/gfx/glide.c \
 	src/engine/gfx/camera.c \
 	src/engine/gfx/texcache.c \
@@ -81,7 +87,10 @@ GFALL_SRC := \
 	src/game/dagger/world.c \
 	src/game/dagger/skyfile.c \
 	src/game/dagger/forecast.c \
-	src/game/dagger/player.c
+	src/game/dagger/player.c \
+	src/game/dagger/sndfile.c \
+	src/game/dagger/hmi.c \
+	src/game/dagger/sounds.c
 
 RENDER_SRC := \
 	tools/renderfall/main.c \
@@ -91,6 +100,7 @@ RENDER_SRC := \
 	src/engine/core/mem.c \
 	src/engine/core/log.c \
 	src/engine/assets/vfs.c \
+	src/engine/assets/loader.c \
 	src/engine/scene/scene.c \
 	src/engine/scene/light.c \
 	src/engine/scene/clock.c \
@@ -98,6 +108,12 @@ RENDER_SRC := \
 	src/engine/scene/weather.c \
 	src/engine/scene/collide.c \
 	src/engine/scene/walker.c \
+	src/engine/platform/winmm.c \
+	src/engine/sound/mixer.c \
+	src/engine/sound/audio.c \
+	src/engine/sound/sound.c \
+	src/engine/sound/music.c \
+	src/engine/sound/ambience.c \
 	src/engine/gfx/glide.c \
 	src/engine/gfx/camera.c \
 	src/engine/gfx/texcache.c \
@@ -132,6 +148,12 @@ LEVEL_SRC := \
 	src/engine/scene/weather.c \
 	src/engine/scene/collide.c \
 	src/engine/scene/walker.c \
+	src/engine/platform/winmm.c \
+	src/engine/sound/mixer.c \
+	src/engine/sound/audio.c \
+	src/engine/sound/sound.c \
+	src/engine/sound/music.c \
+	src/engine/sound/ambience.c \
 	src/engine/gfx/glide.c \
 	src/engine/gfx/camera.c \
 	src/engine/gfx/texcache.c \
@@ -155,7 +177,10 @@ LEVEL_SRC := \
 	src/game/dagger/bind.c \
 	src/game/dagger/world.c \
 	src/game/dagger/skyfile.c \
-	src/game/dagger/forecast.c
+	src/game/dagger/forecast.c \
+	src/game/dagger/sndfile.c \
+	src/game/dagger/hmi.c \
+	src/game/dagger/sounds.c
 
 HOST_SRC := \
 	src/engine/core/mem.c \
@@ -171,6 +196,11 @@ HOST_SRC := \
 	src/engine/scene/weather.c \
 	src/engine/scene/collide.c \
 	src/engine/scene/walker.c \
+	src/engine/sound/mixer.c \
+	src/engine/sound/audio.c \
+	src/engine/sound/sound.c \
+	src/engine/sound/music.c \
+	src/engine/sound/ambience.c \
 	src/engine/gfx/camera.c \
 	src/engine/gfx/mip.c \
 	src/game/dagger/bsa.c \
@@ -184,7 +214,10 @@ HOST_SRC := \
 	src/game/dagger/world.c \
 	src/game/dagger/skyfile.c \
 	src/game/dagger/forecast.c \
-	src/game/dagger/player.c
+	src/game/dagger/player.c \
+	src/game/dagger/sndfile.c \
+	src/game/dagger/hmi.c \
+	src/game/dagger/sounds.c
 
 .PHONY: all check clean hostcheck gfall-check renderfall-check levelfall-check deps deps-host
 

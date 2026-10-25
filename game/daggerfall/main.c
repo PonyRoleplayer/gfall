@@ -14,6 +14,8 @@
 #include "engine/gfx/camera.h"
 #include "engine/gfx/gfx.h"
 #include "engine/platform/win32.h"
+#include "engine/sound/music.h"
+#include "engine/sound/sound.h"
 #include "engine/ui/console.h"
 #include "game/dagger/fnt.h"
 #include "game/dagger/player.h"
@@ -61,6 +63,9 @@ int gfall_main(void *instance)
         return 1;
     }
 
+    /* The card's sound and its synthesizer; without either the hold is silent. See docs/sound.md. */
+    sound_startup(win_hwnd());
+    music_startup();
     world_start(world, &x, &y, &z, &yaw, &pitch);
     camera_set(&cam, x, y, z, yaw, pitch);
     console_set_camera(&cam);
@@ -75,6 +80,8 @@ int gfall_main(void *instance)
         gfx_frame(&cam, &level);
     }
     input_end();
+    music_shutdown();
+    sound_shutdown();
     gfx_shutdown();
     win_shutdown();
     mem_shutdown();

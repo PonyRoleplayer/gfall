@@ -6,6 +6,7 @@
 #include "game/dagger/rdb.h"
 #include "game/dagger/rmb.h"
 #include "game/dagger/skyfile.h"
+#include "game/dagger/sounds.h"
 #include "game/dagger/forecast.h"
 #include "game/dagger/texture.h"
 #include "engine/assets/loader.h"
@@ -34,6 +35,7 @@
 #define MAX_MODELS 8192
 #define MAX_FLATS 8192
 #define MAX_LIGHTS 8192
+#define MAX_EMITTERS 2048
 
 static char g_why[96];
 static char g_title[40];
@@ -106,6 +108,10 @@ struct World {
     /* An RMB place: under the sky, lit by the hour, its lamps the lights. */
     int outdoor;
     Sky sky;
+    /* Its music and ambience, and the flats that make a sound (docs/sound.md). */
+    Soundscape scape;
+    Emitter *emit;
+    int nemit;
 };
 
 static int find_slot(const World *world, df_u16 file, df_u16 image)
@@ -798,6 +804,30 @@ static void flame_lights(World *world)
  */
 #define LAMP_RADIUS 160.0f
 
+/*
+ * A sound from each flat that makes one: a flaming torch's fire, an
+ * animal's call (sounds_flat). At the flat's centre, where it is drawn.
+ */
+static void add_emitters(World *world)
+{
+    int i;
+
+    world->nemit = 0;
+    world->emit = (Emitter *)mem_alloc(MAX_EMITTERS * (df_u32)sizeof(Emitter));
+    if (!world->emit) {
+        return;
+    }
+    for (i = 0; i < world->nflat && world->nemit < MAX_EMITTERS; i++) {
+        const Flat *fl;
+
+        fl = &world->flat[i];
+        if (sounds_flat((int)fl->file, (int)fl->image, fl->x, fl->y, fl->z,
+                        &world->emit[world->nemit])) {
+            world->nemit++;
+        }
+    }
+}
+
 static void add_lamps(World *world)
 {
     int i;
@@ -979,6 +1009,8 @@ static World *assemble(const Dungeon *hold, int require_start)
     }
     finish_images(world);
     flame_lights(world);
+    add_emitters(world);
+    sounds_scape(&world->scape, hold->outdoor ? SCAPE_TOWN : SCAPE_DUNGEON, hold->location_id);
     if (hold->outdoor) {
         world->outdoor = 1;
         skyfile_open(hold->climate, SEASON_SUMMER, &world->sky);
@@ -1128,7 +1160,10 @@ void world_as_level(const World *world, Level *level)
     level->scene.lights = 0;
     level->scene.nlights = 0;
     level->scene.outdoor = 0;
+    level->scene.emitters = 0;
+    level->scene.nemitters = 0;
     level->sky = 0;
+    level->sound = 0;
     if (!world) {
         return;
     }
@@ -1147,6 +1182,27 @@ void world_as_level(const World *world, Level *level)
     level->scene.nlights = world->nlight;
     level->scene.outdoor = world->outdoor;
     level->sky = world->outdoor ? &world->sky : 0;
+    level->scene.emitters = world->emit;
+    level->scene.nemitters = world->nemit;
+    level->sound = &world->scape;
+}
+
+int world_emitter_count(const World *world)
+{
+    return world ? world->nemit : 0;
+}
+
+const Emitter *world_emitter_at(const World *world, int index)
+{
+    if (!world || index < 0 || index >= world->nemit) {
+        return 0;
+    }
+    return &world->emit[index];
+}
+
+const Soundscape *world_soundscape(const World *world)
+{
+    return world ? &world->scape : 0;
 }
 
 int world_light_count(const World *world)

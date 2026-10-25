@@ -1,6 +1,7 @@
 #ifndef ENG_SCENE_H
 #define ENG_SCENE_H
 
+#include "engine/assets/clip.h"
 #include "engine/assets/mesh.h"
 #include "engine/gfx/camera.h"
 
@@ -53,6 +54,23 @@ typedef struct Light {
 } Light;
 
 /*
+ * A sound from a point: a torch's fire, a cat. Full volume within
+ * inner, silent past reach (world units), linear between. every 0
+ * loops it while the listener is within reach; above 0 it plays now
+ * and then while within reach, every that many seconds on average.
+ * The clip is the game's and outlives the place. Not "near" and
+ * "far": windows.h defines both as empty macros. See docs/sound.md.
+ */
+typedef struct Emitter {
+    float x, y, z;
+    const SoundClip *clip;
+    float inner;
+    float reach;
+    float volume;
+    float every;
+} Emitter;
+
+/*
  * What a frame can see. models[] is drawn first, then sprites[].
  * Storage order is submission order.
  */
@@ -91,6 +109,9 @@ typedef struct Scene {
     /* Point lights. RENDERFALL has none; outdoors they are the lamps. */
     const Light *lights;
     int nlights;
+    /* Sounds from points (docs/sound.md). */
+    const Emitter *emitters;
+    int nemitters;
     /*
      * 1 for a place under the sky: lit by daylight, and its lights are
      * street lamps, on only at night (docs/daylight.md).

@@ -34,6 +34,10 @@ The slot grows by doubling from 4KB. The previous buffer is abandoned until the 
 
 Texture records are not in this cache. `place_image` already keeps one `Image` per archive plus record. The same brick on fifty walls is one picture. The whole `TEXTURE.###` file stays in `texture.c` until `texture_cache_clear`, which must run before `mem_temp_end`.
 
+## Sound
+
+About 1.5 MB on the main heap, kept for the process (`mem_keep`), since a voice may play a clip after the place that asked for it is gone: the clips loaded so far (at most 3 MB, a place's few hundred KB), the song buffers and the MIDI stream. A place's emitters are on its own heap. See `docs/sound.md`.
+
 ## The 2MB texture card
 
 The image table is 384 (`TEX_SLOTS`). Daggerfall names 235 pictures. Wayrest names 273, and a table of 256 rejected that open with `texture count` after the world had loaded. The full squares still do not fit the card: Daggerfall's are about 2.8MB. `gfx_prepare` used to send every full square and fail with `texture memory is full` before the first frame.

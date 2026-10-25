@@ -30,6 +30,10 @@ const Image *world_image(const World *world, int slot);
 int world_image_cutout(const World *world, int slot);
 /* RDB light objects placed in the world; outdoors, one per lamp or fire flat. */
 int world_light_count(const World *world);
+/* Flats that make a sound, and the place's soundscape (docs/sound.md). */
+int world_emitter_count(const World *world);
+const Emitter *world_emitter_at(const World *world, int index);
+const Soundscape *world_soundscape(const World *world);
 /* 1 for an RMB place, under the sky. */
 int world_outdoor(const World *world);
 /* The sky an outdoor place draws; 0 indoors. */

@@ -31,6 +31,8 @@
 #include "engine/scene/light.h"
 #include "engine/scene/scene.h"
 #include "engine/scene/weather.h"
+#include "engine/sound/music.h"
+#include "engine/sound/sound.h"
 #include "engine/ui/console.h"
 #include "engine/ui/font.h"
 #include "engine/ui/hud.h"
@@ -2298,6 +2300,9 @@ static void view_row(int index)
                 g_world = world;
                 g_ref = &g_rows[index];
                 run_view(&level, &cam);
+                /* The list is quiet: the place's song and sounds end with it. */
+                music_stop();
+                sound_stop_all();
                 g_ref = 0;
                 g_dun = 0;
                 g_world = 0;
@@ -2879,6 +2884,9 @@ static int levelfall_main(void *instance)
     if (g_nrows < 1) {
         win_fail(dungeon_error()[0] ? dungeon_error() : "MAPS.BSA has no places.");
     } else {
+        /* Once for the program: each place plays its own sound in it (docs/sound.md). */
+        sound_startup(win_hwnd());
+        music_startup();
         if (g_auto_kind >= 0) {
             open_auto();
         }
@@ -2891,6 +2899,8 @@ static int levelfall_main(void *instance)
             }
             view_row(idx);
         }
+        music_shutdown();
+        sound_shutdown();
     }
     win_shutdown();
     log_line("quit");

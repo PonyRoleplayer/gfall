@@ -17,6 +17,7 @@
 #include "engine/scene/daylight.h"
 #include "engine/scene/weather.h"
 #include "engine/scene/walker.h"
+#include "engine/sound/ambience.h"
 #include "engine/gfx/sky.h"
 
 /*
@@ -1058,6 +1059,8 @@ static df_u32 g_wseed = 0x9e3779b9u;
 /* Lightning: time to the next stroke, and what is left of this one. */
 static float g_flash_wait = 6.0f;
 static float g_flash_left;
+/* 1 on the frame a stroke begins: its thunder follows (docs/sound.md). */
+static int g_stroke;
 
 static float wx_rand(void)
 {
@@ -1116,6 +1119,7 @@ static float flash_tick(float storm, float secs)
     float f;
 
     f = 0.0f;
+    g_stroke = 0;
     if (g_flash_left > 0.0f) {
         /* A stroke flickers: bright, dim, bright, gone. */
         f = g_flash_left > 0.17f ? 1.0f : (g_flash_left > 0.10f ? 0.25f : 0.7f);
@@ -1127,6 +1131,7 @@ static float flash_tick(float storm, float secs)
     g_flash_wait -= secs;
     if (g_flash_wait <= 0.0f) {
         g_flash_left = 0.25f;
+        g_stroke = 1;
         g_flash_wait = (4.0f + 14.0f * wx_rand()) / storm;
     }
     return f;
@@ -1540,6 +1545,8 @@ void draw_frame(const Camera *cam, const Level *level)
     if (console_open()) {
         console_present(cam);
         g_ft_have = 0;
+        /* The sound runs on under the console. */
+        ambience_idle();
         return;
     }
     console_release();
@@ -1581,6 +1588,12 @@ void draw_frame(const Camera *cam, const Level *level)
     } else if (outdoor) {
         light_set_lamps(0);
     }
+    /*
+     * The place's sound: its song, the weather's loops and thunder, its
+     * emitters, heard from this camera; then the card is refilled. The
+     * night is the lamps' share of the hour. See docs/sound.md.
+     */
+    ambience_frame(level, cam, &w, lit ? dl.lamps : 0.0f, outdoor && g_stroke, secs);
     /*
      * The view. Outdoors the weather closes the fog in; under the
      * simulation it also sets the far clip, ceiling the far setting,

@@ -87,6 +87,8 @@ A screen of scrolling rain pictures is the usual cheap trick, but on a Voodoo 1 
 
 **Lightning.** With storm above 0.3, a stroke every 4 to 18 real seconds, more often the stormier. A stroke lasts a quarter of a second and flickers: bright, dim, bright. It lifts the ambient (so the per-face table) and whitens the fog colour, and the sky fades into that fog for the stroke, so the whole sky lights up. A first version lit only the world, and far roofs became pale shapes on a dark sky.
 
+**Sound.** The place's soundscape hears the weather (`ambience_frame`, `docs/sound.md`): the rain loop follows the rain, a wind loop the snow, crickets the dark of a fair night, and each lightning stroke raises `g_stroke` for one frame, so a thunder clip follows it 0.3 to 2.5 seconds later. The weather's kind and the night choose the song.
+
 ## Switches
 
 | Console | Effect |
@@ -106,5 +108,4 @@ Per frame: a few floats blended; when the fog moves, a 64-entry table. Rain or s
 - No calendar or seasons in the game yet: every place is summer.
 - The weather is one for the whole world, not one per climate group as in the original.
 - No snow on the ground or the roofs, no wet ground: the climate's `TEXTURE` files +1 (snow) and +2 (wet) are there, but swapping them means sending the place's pictures to the card again.
-- No sound: rain, wind, thunder.
 - The sky changes picture in one step at half way; the rest blends.
