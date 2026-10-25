@@ -20,6 +20,8 @@ void console_log(const char *s);
 void console_bind(const struct Camera *cam);
 /* A camera setpos may move. 0 when the program has none to offer. */
 void console_set_camera(struct Camera *cam);
+/* The camera the program handed over with console_set_camera, or 0. */
+struct Camera *console_camera(void);
 int console_open(void);
 void console_pump(void);
 /* 1 if this Escape press closes the console, or already did and is still held. */

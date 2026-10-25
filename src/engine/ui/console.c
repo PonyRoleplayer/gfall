@@ -25,6 +25,8 @@
 #include "engine/scene/clock.h"
 #include "engine/scene/daylight.h"
 #include "engine/scene/weather.h"
+#include "engine/scene/walker.h"
+#include "engine/scene/collide.h"
 #include "engine/gfx/sky.h"
 
 /*
@@ -77,6 +79,11 @@ int console_open(void)
 void console_bind(const Camera *cam)
 {
     g_cam = cam;
+}
+
+Camera *console_camera(void)
+{
+    return g_player;
 }
 
 void console_set_camera(Camera *cam)
@@ -749,6 +756,32 @@ static void c_weather(int argc, char **argv)
     print_view();
 }
 
+static void c_stuck(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+    if (!walker_on()) {
+        log_text(LOG_PRINT, "stuck: only with collision on (tcl 1)");
+        return;
+    }
+    walker_unstick();
+    log_text(LOG_PRINT, "stuck: moving to the nearest free place");
+}
+
+static int get_tcl(void)
+{
+    return walker_on();
+}
+
+static void set_tcl(int on)
+{
+    if (on && !g_player) {
+        log_text(LOG_PRINT, "tcl: this program has no camera to walk");
+        return;
+    }
+    walker_set_on(on);
+}
+
 static void c_pos(int argc, char **argv)
 {
     const Camera *cam;
@@ -881,6 +914,7 @@ static void commands(void)
     cmd_add("stats", c_stats, "", "frame time and what the last world frame drew");
     cmd_add("pos", c_pos, "", "camera position, yaw and pitch in degrees");
     cmd_add("time", c_time, "[hh:mm]", "the hour of the world clock, or set it");
+    cmd_add("stuck", c_stuck, "", "with collision on, move out of whatever the body is caught in");
     cmd_add("weather", c_weather, "[kind|auto|on|off]",
             "the weather now; a kind holds it, auto gives it back to the odds");
     cmd_add("setpos", c_setpos, "x y z [yaw [pitch]]", "move the camera there");
@@ -890,6 +924,8 @@ static void commands(void)
     cmd_add("texmem", c_texmem, "", "pictures on the card and the room left");
     cmd_add("mem", c_mem, "", "engine heaps and the machine's free memory");
     cmd_var("fov", get_fov, set_fov, 45, 120, "horizontal field of view in degrees");
+    cmd_var("tcl", get_tcl, set_tcl, 0, 1,
+            "collision: 1 walks the camera under gravity, 0 flies it free");
     cmd_var("far", get_far, set_far, 16, (int)DF_FAR_MAX, "far clip in world units");
     cmd_var("fog", gfx_fog, gfx_set_fog, 0, 1, "distance fog");
     cmd_var("cull", scene_cull, scene_set_cull, 0, 1, "drop models and sprites out of view");

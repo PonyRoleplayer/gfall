@@ -16,6 +16,7 @@
 #include "engine/scene/clock.h"
 #include "engine/scene/daylight.h"
 #include "engine/scene/weather.h"
+#include "engine/scene/walker.h"
 #include "engine/gfx/sky.h"
 
 /*
@@ -1512,6 +1513,14 @@ void draw_frame(const Camera *cam, const Level *level)
     }
     weather_advance(clock_advance(secs));
     weather_state(&w);
+    /*
+     * Collision (tcl): the body follows the console's camera, which is
+     * the one drawn, and puts it back at its eye before anything reads
+     * it. See docs/collision.md.
+     */
+    if (walker_on() && (const Camera *)console_camera() == cam) {
+        walker_step(console_camera(), &level->scene, secs);
+    }
     g_vis_models = 0;
     g_vis_sprites = 0;
     g_faces_kept = 0;

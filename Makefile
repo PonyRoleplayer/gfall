@@ -54,6 +54,8 @@ GFALL_SRC := \
 	src/engine/scene/clock.c \
 	src/engine/scene/daylight.c \
 	src/engine/scene/weather.c \
+	src/engine/scene/collide.c \
+	src/engine/scene/walker.c \
 	src/engine/gfx/glide.c \
 	src/engine/gfx/camera.c \
 	src/engine/gfx/texcache.c \
@@ -94,6 +96,8 @@ RENDER_SRC := \
 	src/engine/scene/clock.c \
 	src/engine/scene/daylight.c \
 	src/engine/scene/weather.c \
+	src/engine/scene/collide.c \
+	src/engine/scene/walker.c \
 	src/engine/gfx/glide.c \
 	src/engine/gfx/camera.c \
 	src/engine/gfx/texcache.c \
@@ -126,6 +130,8 @@ LEVEL_SRC := \
 	src/engine/scene/clock.c \
 	src/engine/scene/daylight.c \
 	src/engine/scene/weather.c \
+	src/engine/scene/collide.c \
+	src/engine/scene/walker.c \
 	src/engine/gfx/glide.c \
 	src/engine/gfx/camera.c \
 	src/engine/gfx/texcache.c \
@@ -163,6 +169,8 @@ HOST_SRC := \
 	src/engine/scene/clock.c \
 	src/engine/scene/daylight.c \
 	src/engine/scene/weather.c \
+	src/engine/scene/collide.c \
+	src/engine/scene/walker.c \
 	src/engine/gfx/camera.c \
 	src/engine/gfx/mip.c \
 	src/game/dagger/bsa.c \

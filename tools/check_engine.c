@@ -16,6 +16,8 @@
 #include "engine/scene/clock.h"
 #include "engine/scene/daylight.h"
 #include "engine/scene/weather.h"
+#include "engine/scene/walker.h"
+#include "engine/scene/collide.h"
 #include "engine/scene/scene.h"
 #include "engine/ui/cmd.h"
 
@@ -1299,6 +1301,131 @@ static void check_daylight(void)
     }
 }
 
+/* A course for the walker: corners of quads, two triangles each. */
+static Tri g_course[64];
+static int g_ncourse;
+
+static void course_quad(float x0, float y0, float z0, float x1, float y1, float z1,
+                        float x2, float y2, float z2, float x3, float y3, float z3)
+{
+    Tri *t;
+    int k;
+
+    for (k = 0; k < 2 && g_ncourse < 64; k++) {
+        t = &g_course[g_ncourse++];
+        mem_zero(t, sizeof(*t));
+        t->slot = 1;
+        t->x[0] = x0;
+        t->y[0] = y0;
+        t->z[0] = z0;
+        t->x[1] = k ? x2 : x1;
+        t->y[1] = k ? y2 : y1;
+        t->z[1] = k ? z2 : z1;
+        t->x[2] = k ? x3 : x2;
+        t->y[2] = k ? y3 : y2;
+        t->z[2] = k ? z3 : z2;
+    }
+}
+
+/* A box, its six sides. */
+static void course_box(float x0, float y0, float z0, float x1, float y1, float z1)
+{
+    course_quad(x0, y1, z0, x1, y1, z0, x1, y1, z1, x0, y1, z1);
+    course_quad(x0, y0, z0, x0, y0, z1, x1, y0, z1, x1, y0, z0);
+    course_quad(x0, y0, z0, x0, y1, z0, x0, y1, z1, x0, y0, z1);
+    course_quad(x1, y0, z0, x1, y0, z1, x1, y1, z1, x1, y1, z0);
+    course_quad(x0, y0, z0, x1, y0, z0, x1, y1, z0, x0, y1, z0);
+    course_quad(x0, y0, z1, x0, y1, z1, x1, y1, z1, x1, y0, z1);
+}
+
+static void walk(Camera *cam, const Scene *scene, float dx, float dz, int frames)
+{
+    int f;
+
+    for (f = 0; f < frames; f++) {
+        cam->x += dx;
+        cam->z += dz;
+        walker_step(cam, scene, 1.0f / 30.0f);
+    }
+}
+
+/* Collision and the walker (docs/collision.md). */
+static void check_collision(void)
+{
+    static Mesh mesh;
+    Instance in;
+    Scene scene;
+    Camera cam;
+    float eye;
+
+    g_ncourse = 0;
+    /* A floor 1000 square at y 0, a wall at x 200, a step 20 high and a block 48 high. */
+    course_quad(-500.0f, 0.0f, -500.0f, -500.0f, 0.0f, 500.0f, 500.0f, 0.0f, 500.0f, 500.0f, 0.0f, -500.0f);
+    course_quad(200.0f, 0.0f, -500.0f, 200.0f, 200.0f, -500.0f, 200.0f, 200.0f, 500.0f, 200.0f, 0.0f, 500.0f);
+    course_box(-400.0f, 0.0f, -100.0f, -300.0f, 20.0f, 100.0f);
+    course_box(-100.0f, 0.0f, 300.0f, 0.0f, 48.0f, 400.0f);
+    mem_zero(&mesh, sizeof(mesh));
+    mesh.tris = g_course;
+    mesh.ntris = g_ncourse;
+    mesh_measure(&mesh);
+    mem_zero(&in, sizeof(in));
+    in.mesh = &mesh;
+    instance_set_rotation(&in, 0.0f, 0.0f, 0.0f);
+    mem_zero(&scene, sizeof(scene));
+    scene.models = &in;
+    scene.nmodels = 1;
+    eye = WALK_EYE;
+
+    walker_set_on(1);
+    camera_set(&cam, 0.0f, 300.0f, 0.0f, 0.0f, 0.0f);
+    walk(&cam, &scene, 0.0f, 0.0f, 150);
+    check_expect(check_near(cam.y, eye, 0.5f) && walker_grounded(),
+                 "a body dropped on the floor does not stand on it at eye height");
+    walk(&cam, &scene, 10.0f, 0.0f, 60);
+    check_expect(cam.x < 200.0f - WALK_RADIUS + 0.5f && cam.x > 200.0f - WALK_RADIUS - 2.0f
+                 && check_near(cam.y, eye, 0.5f),
+                 "walking into the wall does not stop a radius short of it");
+    /* Just under the teleport distance, in one frame: the sweep still meets the wall. */
+    walk(&cam, &scene, -400.0f, 0.0f, 1);
+    walk(&cam, &scene, 700.0f, 0.0f, 1);
+    check_expect(cam.x < 200.0f - WALK_RADIUS + 0.5f, "700 units in one frame went through the wall");
+    camera_set(&cam, -250.0f, eye, 0.0f, 0.0f, 0.0f);
+    walk(&cam, &scene, 0.0f, 0.0f, 2);
+    walk(&cam, &scene, -6.0f, 0.0f, 25);
+    check_expect(check_near(cam.y, 20.0f + eye, 1.0f) && cam.x < -320.0f,
+                 "the body did not walk up a 20-unit step");
+    camera_set(&cam, -50.0f, eye, 200.0f, 0.0f, 0.0f);
+    walk(&cam, &scene, 0.0f, 0.0f, 2);
+    walk(&cam, &scene, 0.0f, 6.0f, 30);
+    check_expect(check_near(cam.y, eye, 1.0f) && cam.z < 300.0f - WALK_RADIUS + 0.5f,
+                 "the body walked up a 48-unit block");
+    /* Off the floor's edge: it falls out, and comes back to where it last stood. */
+    camera_set(&cam, -50.0f, eye, -450.0f, 0.0f, 0.0f);
+    walk(&cam, &scene, 0.0f, 0.0f, 2);
+    walk(&cam, &scene, 0.0f, -8.0f, 20);
+    walk(&cam, &scene, 0.0f, 0.0f, 150);
+    check_expect(cam.y > 0.0f && cam.z > -520.0f, "a body that fell out of the place was not put back");
+    /* Set inside the block: it is moved out to a free place with a floor. */
+    camera_set(&cam, -50.0f, 30.0f, 350.0f, 0.0f, 0.0f);
+    walk(&cam, &scene, 0.0f, 0.0f, 3);
+    {
+        float body[3];
+
+        /* The upper body's centre, from the feet. */
+        body[0] = cam.x;
+        body[1] = cam.y - WALK_EYE + WALK_STEP + WALK_UPPER;
+        body[2] = cam.z;
+        collide_gather(body[0] - 40.0f, body[1] - 80.0f, body[2] - 40.0f,
+                       body[0] + 40.0f, body[1] + 80.0f, body[2] + 40.0f);
+        check_expect(!collide_overlap(body) && (cam.y - WALK_EYE > 47.0f || cam.z < 300.0f - WALK_RADIUS + 1.0f
+                                                || cam.z > 400.0f + WALK_RADIUS - 1.0f
+                                                || cam.x < -100.0f - WALK_RADIUS + 1.0f
+                                                || cam.x > WALK_RADIUS - 1.0f),
+                     "a body set inside a block was not moved out");
+    }
+    walker_set_on(0);
+}
+
 /* The weather's rolls and blends (docs/weather.md). */
 static void check_weather(void)
 {
@@ -1386,4 +1513,5 @@ void check_engine(void)
     check_lights();
     check_daylight();
     check_weather();
+    check_collision();
 }

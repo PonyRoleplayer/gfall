@@ -45,6 +45,7 @@ A variable prints its value when typed alone, and takes a new one as an argument
 
 | Variable | Range | Effect |
 |---|---|---|
+| `tcl` | 0/1 | Collision. 1: the camera is a body that walks on floors, stops at walls, climbs stairs and falls under gravity; Q and E do nothing. 0 (default): it flies free. Only where the program gave the console its camera (GFALL, LEVELFALL's view). See `docs/collision.md`. |
 | `fov` | 45..120 | Horizontal field of view. Default 75. |
 | `far` | 16..16384 | Far clip in world units. Default 1400. LEVELFALL starts at 8192. |
 | `fog` | on/off | Distance fog. |
@@ -76,6 +77,7 @@ A variable prints its value when typed alone, and takes a new one as an argument
 | `quit`, `qqq`, `exit` | Leave the program, as the title-bar cross does. In RENDERFALL and LEVELFALL this leaves from the view too, not just back to the list. |
 | `stats` | Frame time: mean and worst over the last whole second of world frames, swap to swap, with the vsync state. Then models, sprites, and faces drawn on the last world frame, faces turned away, the occlusion counts (`occluders`, faces written into the cells, and the boxes they hid), the lights, outdoors the hour and how lit the lamps are, and the view variables. |
 | `pos` | Camera position, and yaw and pitch in degrees. |
+| `stuck` | With collision on, moves the body to the nearest free place with a floor, or back to where it last stood. See `docs/collision.md`. |
 | `weather [kind|auto|on|off]` | The weather now, where it is coming from, the next roll, and its values. A kind (`sunny`, `cloudy`, `overcast`, `fog`, `rain`, `thunder`, `snow`) holds it, blending to it; `auto` gives it back to the odds; `off` draws clear weather. See `docs/weather.md`. |
 | `time [hh:mm]` | The world clock and its timescale; with an hour, sets it: `time 21`, `time 6:45`. The clock runs only while the world draws, so it stops while the console is open. See `docs/daylight.md`. |
 | `setpos x y z [yaw [pitch]]` | Moves the camera. Whole world units and degrees. Works where the program gave the console its camera: GFALL and LEVELFALL's view. RENDERFALL orbits a model and offers none. |
