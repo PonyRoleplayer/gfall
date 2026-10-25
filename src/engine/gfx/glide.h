@@ -29,6 +29,12 @@ void glide_clear(void);
 /* Clear and fog colour. 0,0,0 until a viewer sets its own. */
 void glide_background(int r, int g, int b);
 /*
+ * While on, the clear and the fog take this colour instead of the
+ * background: an outdoor place's horizon. Off goes back to the
+ * background. Sends the fog colour only when it changes.
+ */
+void glide_sky_color(int on, int r, int g, int b);
+/*
  * Distance fog. 1 uses the table built at open. 0 is GR_FOG_DISABLE.
  * Default is on. Safe before glide_open; the next open obeys it.
  */
@@ -133,7 +139,23 @@ void glide_flat(int on);
  */
 void glide_tint(df_u32 rgb);
 df_u32 glide_tinted(void);
-/* The light decal pass: dst + dst * texture, no depth write, no fog, clamped. */
+/*
+ * The light decal pass: dst + dst * texture * tint, no depth write, no
+ * fog, clamped. Set the tint first: white indoors, the lamps' level
+ * outdoors.
+ */
 void glide_decal(int on);
+/*
+ * A square P_8 picture of one level, drawn through the palette on TMU0
+ * at the time: the sky's tiles. glide_replace sends new texels of the
+ * same shape to the same place on the card.
+ */
+int glide_upload_p8(const df_u8 *pixels, int side, df_u32 *handle);
+int glide_replace(df_u32 handle, const df_u8 *pixels);
+/*
+ * The sky pass: rgb (768 bytes) on TMU0 as the palette, no depth test,
+ * no fog, clamped. Off puts the level's palette and the state back.
+ */
+void glide_sky(int on, const df_u8 *rgb);
 
 #endif

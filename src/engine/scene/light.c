@@ -26,6 +26,8 @@ static int g_on = 1;
 static int g_ambient = 112;
 static int g_range = 3;
 static int g_view;
+/* Outdoors, how lit the lamps are: 0..255, from the hour. */
+static int g_lamps = 255;
 
 static const Scene *g_scene;
 static int g_nlights;
@@ -118,7 +120,28 @@ int light_count(void)
 
 int light_active(void)
 {
-    return g_on && g_nlights > 0;
+    return g_on && g_nlights > 0 && (!g_scene->outdoor || g_lamps > 0);
+}
+
+int light_outdoor(void)
+{
+    return g_scene && g_scene->outdoor;
+}
+
+void light_set_lamps(int level)
+{
+    if (level < 0) {
+        level = 0;
+    }
+    if (level > 255) {
+        level = 255;
+    }
+    g_lamps = level;
+}
+
+int light_lamps(void)
+{
+    return g_lamps;
 }
 
 const Light *light_at(int i)
@@ -720,7 +743,7 @@ static df_u32 rgb(int r, int g, int b)
 
 df_u32 light_ambient_rgb(void)
 {
-    if (!light_active()) {
+    if (!light_active() || g_scene->outdoor) {
         return 0xffffffu;
     }
     return rgb(g_ambient, g_ambient, g_ambient);
@@ -741,4 +764,33 @@ df_u32 light_sprite_rgb(int s)
     return rgb(g_ambient * (255 + l[0]) / 255,
                g_ambient * (255 + l[1]) / 255,
                g_ambient * (255 + l[2]) / 255);
+}
+
+df_u32 light_sprite_over(int s, df_u32 base)
+{
+    const df_u8 *l;
+    int r;
+    int g;
+    int b;
+
+    if (s < 0 || s >= g_nsprites || !g_scene) {
+        return base;
+    }
+    if (g_scene->sprites[s].glow) {
+        return 0xffffffu;
+    }
+    if (!light_active()) {
+        return base;
+    }
+    /*
+     * base times (1 + passes * lamp colour * light): what LAMP_PASSES
+     * decals give a wall, near enough. Each product stays under 2^31.
+     */
+    l = &g_sprite_light[s * 3];
+    r = (int)((base >> 16) & 255u);
+    g = (int)((base >> 8) & 255u);
+    b = (int)(base & 255u);
+    return rgb(r + r * (l[0] * g_lamps / 255) * LAMP_PASSES * LAMP_R / (255 * 255),
+               g + g * (l[1] * g_lamps / 255) * LAMP_PASSES * LAMP_G / (255 * 255),
+               b + b * (l[2] * g_lamps / 255) * LAMP_PASSES * LAMP_B / (255 * 255));
 }

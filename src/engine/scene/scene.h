@@ -84,9 +84,14 @@ typedef struct Scene {
     int nspans;
     const Flat *sprites;
     int nsprites;
-    /* Point lights. Outdoor places and RENDERFALL have none. */
+    /* Point lights. RENDERFALL has none; outdoors they are the lamps. */
     const Light *lights;
     int nlights;
+    /*
+     * 1 for a place under the sky: lit by daylight, and its lights are
+     * street lamps, on only at night (docs/daylight.md).
+     */
+    int outdoor;
 } Scene;
 
 void instance_set_rotation(Instance *in, float rx, float ry, float rz);

@@ -1,6 +1,8 @@
 #include "engine/gfx/gfx.h"
 #include "engine/core/log.h"
 #include "engine/scene/light.h"
+#include "engine/scene/clock.h"
+#include "engine/gfx/sky.h"
 #include "engine/gfx/draw.h"
 #include "engine/gfx/glide.h"
 #include "engine/gfx/texcache.h"
@@ -27,6 +29,7 @@ void gfx_shutdown(void)
     g_prepared = 0;
     g_level = 0;
     g_reload = 0;
+    sky_reset();
     draw_set_extra(0);
     draw_set_under(0);
     glide_close();
@@ -46,7 +49,11 @@ int gfx_prepare(const Level *level)
     }
     /* Start the card from empty, so a second prepare replaces the first. */
     glide_tex_reset();
-    /* The light falloff first, so the picture budget sees the room left. */
+    /*
+     * The sky and the light falloff first, so the picture budget sees
+     * the room left. Without room for them the place draws as before.
+     */
+    sky_prepare(level ? level->sky : 0, clock_minute());
     draw_light_upload(level && level->scene.nlights > 0);
     if (!texcache_upload(level)) {
         g_why = texcache_error();

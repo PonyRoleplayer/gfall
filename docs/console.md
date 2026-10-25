@@ -58,6 +58,9 @@ A variable prints its value when typed alone, and takes a new one as an argument
 | `lights` | on/off | Dungeon lights: ambient tint and light decals. Off draws every place full bright. Default on. See `docs/lighting.md`. |
 | `ambient` | 0..255 | Brightness away from lights in a lit place. Default 112. |
 | `lightrange` | 1..8 | How many times its radius a light reaches. Cuts the decals again. Default 3. |
+| `timescale` | 0..2000 | Game seconds a real second. Default 12; 0 stops the clock. |
+| `sky` | on/off | The sky behind an outdoor place. Off draws on the viewer's background. Default on. |
+| `daylight` | on/off | Sun and moon light outdoors, and the street lamps. Off draws outdoors full bright. Default on. |
 | `lightview` | 0..2048 | Squares and rings for the lights within this many units of the camera, the 64 nearest: yellow when its decals were drawn, orange when not. 0 (default) is off. Try 512. |
 | `planar` | on/off | On sends each face as one planar polygon, when `glide2x.dll` has `grDrawPlanarPolygonVertexList`. Off sends its triangles. Reads off when the DLL lacks it. Default on. |
 | `hud` | on/off | GFALL's position and fps corners. LEVELFALL draws its own panels and turns this off in the view. |
@@ -69,8 +72,9 @@ A variable prints its value when typed alone, and takes a new one as an argument
 | Command | Effect |
 |---|---|
 | `quit`, `qqq`, `exit` | Leave the program, as the title-bar cross does. In RENDERFALL and LEVELFALL this leaves from the view too, not just back to the list. |
-| `stats` | Frame time: mean and worst over the last whole second of world frames, swap to swap, with the vsync state. Then models, sprites, and faces drawn on the last world frame, faces turned away, the occlusion counts (`occluders`, faces written into the cells, and the boxes they hid), and the view variables. |
+| `stats` | Frame time: mean and worst over the last whole second of world frames, swap to swap, with the vsync state. Then models, sprites, and faces drawn on the last world frame, faces turned away, the occlusion counts (`occluders`, faces written into the cells, and the boxes they hid), the lights, outdoors the hour and how lit the lamps are, and the view variables. |
 | `pos` | Camera position, and yaw and pitch in degrees. |
+| `time [hh:mm]` | The world clock and its timescale; with an hour, sets it: `time 21`, `time 6:45`. The clock runs only while the world draws, so it stops while the console is open. See `docs/daylight.md`. |
 | `setpos x y z [yaw [pitch]]` | Moves the camera. Whole world units and degrees. Works where the program gave the console its camera: GFALL and LEVELFALL's view. RENDERFALL orbits a model and offers none. |
 | `screenshot [name]` | Writes the current picture as a 24-bit BMP beside the program, not inside `ARENA2`. `.bmp` is added when it is missing. A file of that name is replaced. No name uses the F12 name. |
 | `exec file` | Runs the commands in a file beside the program, as if typed, without echoing them. `.cfg` is added when the name has no dot. A file may exec another, four deep. Up to 4095 bytes are read. |

@@ -2,6 +2,7 @@
 #define ENG_LEVEL_H
 
 #include "engine/assets/palette.h"
+#include "engine/assets/sky.h"
 #include "engine/assets/texture.h"
 #include "engine/scene/scene.h"
 
@@ -17,6 +18,8 @@ typedef struct Level {
     const df_u8 *cutout;
     int nimages;
     const Palette *palette;
+    /* The sky, for an outdoor place; 0 indoors. See docs/daylight.md. */
+    const Sky *sky;
     Scene scene;
 } Level;
 

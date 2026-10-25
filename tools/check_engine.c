@@ -13,6 +13,8 @@
 #include "engine/gfx/camera.h"
 #include "engine/gfx/mip.h"
 #include "engine/scene/light.h"
+#include "engine/scene/clock.h"
+#include "engine/scene/daylight.h"
 #include "engine/scene/scene.h"
 #include "engine/ui/cmd.h"
 
@@ -1210,6 +1212,75 @@ static void check_lights(void)
     light_build(0);
 }
 
+static int red_of(df_u32 c)
+{
+    return (int)((c >> 16) & 255u);
+}
+
+static int blue_of(df_u32 c)
+{
+    return (int)(c & 255u);
+}
+
+/* The world clock and the light by the hour (docs/daylight.md). */
+static void check_daylight(void)
+{
+    Daylight dl;
+    df_u32 table[DAYLIGHT_STEPS + 1];
+    int h;
+    int m;
+    int i;
+    int ok;
+
+    clock_set_scale(60);
+    clock_set_minute(1439.0f);
+    clock_advance(2.0f);
+    check_expect(check_near(clock_minute(), 1439.0f, 0.01f), "a two second frame moved the clock");
+    clock_advance(0.75f);
+    clock_advance(0.75f);
+    check_expect(check_near(clock_minute(), 0.5f, 0.01f), "the clock did not run past midnight");
+    clock_set_minute(-30.0f);
+    clock_hm(&h, &m);
+    check_expect(h == 23 && m == 30, "minus half an hour is not 23:30");
+    clock_set_scale(0);
+    clock_advance(0.5f);
+    check_expect(check_near(clock_minute(), 1410.0f, 0.01f), "a stopped clock moved");
+    clock_set_scale(CLOCK_SCALE);
+    clock_set_minute(720.0f);
+
+    daylight_at(720.0f, &dl);
+    check_expect(dl.sun && dl.ky > 0.8f && dl.kz < -0.4f && dl.lamps == 0.0f,
+                 "noon is not a high sun in the south with the lamps out");
+    check_expect(dl.kr > 0.9f && dl.ar > 0.4f && dl.ar < 0.6f, "noon is not a white sun on a mid ambient");
+    daylight_at(420.0f, &dl);
+    check_expect(dl.sun && dl.kx > 0.9f && dl.ky > 0.0f && dl.kr > dl.kb * 1.5f,
+                 "seven is not a low orange sun in the east");
+    daylight_at(1020.0f, &dl);
+    check_expect(dl.sun && dl.kx < -0.9f, "seventeen is not a sun in the west");
+    daylight_at(0.0f, &dl);
+    check_expect(!dl.sun && dl.ky > 0.7f && dl.lamps == 1.0f && dl.ab > dl.ar,
+                 "midnight is not a high moon, lamps lit, a blue ambient");
+    daylight_table(&dl, table);
+    ok = 1;
+    for (i = 1; i <= DAYLIGHT_STEPS; i++) {
+        ok = ok && red_of(table[i]) >= red_of(table[i - 1]) && blue_of(table[i]) >= blue_of(table[i - 1]);
+    }
+    check_expect(ok && table[DAYLIGHT_STEPS] != table[0], "a face nearer the key is not brighter");
+    daylight_at(420.0f, &dl);
+    /* Looking west, the low eastern sun is behind the camera and on the flats' faces. */
+    check_expect(red_of(daylight_sprite(&dl, -1.0f, 0.0f)) > red_of(daylight_sprite(&dl, 1.0f, 0.0f)),
+                 "a flat facing the sun is not brighter than one with the sun behind it");
+    /* The day and the night rows meet at midnight. */
+    daylight_at(0.0f, &dl);
+    {
+        Daylight late;
+
+        daylight_at(1439.9f, &late);
+        check_expect(check_near(late.ar, dl.ar, 0.01f) && check_near(late.kb, dl.kb, 0.01f),
+                     "the light jumps at midnight");
+    }
+}
+
 void check_engine(void)
 {
     check_rotation();
@@ -1222,4 +1293,5 @@ void check_engine(void)
     check_console();
     check_mip();
     check_lights();
+    check_daylight();
 }

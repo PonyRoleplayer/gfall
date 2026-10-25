@@ -137,6 +137,16 @@ static float g_fog_far = DF_FOG_FAR;
 static const char *g_why = "glide failed";
 static GrColor_t g_clear_color;
 /*
+ * The sky's horizon colour, while an outdoor place draws its sky: the
+ * clear and the fog take it instead of the viewer's background, so the
+ * far town fades into the bottom of the sky. See docs/daylight.md.
+ */
+static GrColor_t g_sky_color;
+static int g_sky_color_on;
+/* The level's palette, kept so the sky pass can put it back. */
+static FxU32 g_pal[256];
+static int g_have_pal;
+/*
  * Alpha state. Models take a constant alpha, not the iterated one, so
  * the triangle setup never computes or sends alpha gradients for them.
  * g_cut is on for sprites and text: alpha comes from the texture and
@@ -152,6 +162,8 @@ static int g_cut;
 static GrColor_t g_tint = 0xffffffu;
 /* 1 while color_flat is the colour path, so a tint change leaves it alone. */
 static int g_flat_mode;
+/* The decal pass is on: a tint change keeps its combine. */
+static int g_decal_mode;
 static int g_fade = -1;
 static int g_fade_tex;
 /*
@@ -596,11 +608,30 @@ static GrColor_t pack_rgb(int r, int g, int b)
         | (GrColor_t)clamp_byte(b);
 }
 
+static GrColor_t clear_color(void)
+{
+    return g_sky_color_on ? g_sky_color : g_clear_color;
+}
+
 void glide_background(int r, int g, int b)
 {
     g_clear_color = pack_rgb(r, g, b);
     if (g_opened && glide.fog_color) {
-        glide.fog_color(g_clear_color);
+        glide.fog_color(clear_color());
+    }
+}
+
+void glide_sky_color(int on, int r, int g, int b)
+{
+    GrColor_t was;
+
+    was = clear_color();
+    g_sky_color_on = on ? 1 : 0;
+    if (on) {
+        g_sky_color = pack_rgb(r, g, b);
+    }
+    if (g_opened && glide.fog_color && clear_color() != was) {
+        glide.fog_color(clear_color());
     }
 }
 
@@ -633,7 +664,7 @@ static void fog_upload(void)
         }
         table[i] = (GrFog_t)(density * 255.0f);
     }
-    glide.fog_color(g_clear_color);
+    glide.fog_color(clear_color());
     glide.fog_table(table);
     glide.fog_mode(g_fog ? GR_FOG_WITH_TABLE : GR_FOG_DISABLE);
 }
@@ -669,7 +700,7 @@ void glide_clear(void)
     if (!g_opened) {
         return;
     }
-    glide.clear(g_clear_color, 0, g_depth_far);
+    glide.clear(clear_color(), 0, g_depth_far);
 }
 
 void glide_swap(void)
@@ -815,7 +846,9 @@ int glide_palette(const df_u8 *r, const df_u8 *g, const df_u8 *b)
      */
     for (i = 0; i < 256; i++) {
         pal[i] = ((FxU32)r[i] << 16) | ((FxU32)g[i] << 8) | (FxU32)b[i];
+        g_pal[i] = pal[i];
     }
+    g_have_pal = 1;
     glide.tex_table(GR_TMU0, GR_TEXTABLE_PALETTE, pal);
     return 1;
 }
@@ -1010,6 +1043,73 @@ int glide_upload_565(const df_u16 *pixels, int side, df_u32 *handle)
     return 1;
 }
 
+/*
+ * A square P_8 picture, one level, read through whatever palette is on
+ * TMU0 when it is drawn: the sky's tiles, drawn under their own palette
+ * (glide_sky). Like glide_upload_565, upload it before texcache_upload.
+ * pixels must stay valid until the call returns; Glide copies them.
+ */
+int glide_upload_p8(const df_u8 *pixels, int side, df_u32 *handle)
+{
+    df_u32 size;
+    df_u32 at;
+    GrLOD_t lod;
+    GrAspectRatio_t aspect;
+    GrTexInfo info;
+
+    if (!g_opened || !pixels || !handle || g_ntex >= GPU_SLOTS
+        || !lod_of(side, &lod) || !aspect_of(side, side, &aspect)) {
+        return 0;
+    }
+    info.largeLod = lod;
+    info.smallLod = lod;
+    info.aspectRatio = aspect;
+    info.format = GR_TEXFMT_P_8;
+    info.data = (void *)pixels;
+    size = glide.tex_calc(lod, lod, aspect, GR_TEXFMT_P_8);
+    if (glide.tex_mem) {
+        FxU32 need;
+
+        need = glide.tex_mem(GR_MIPMAPLEVELMASK_BOTH, &info);
+        if (need > size) {
+            size = need;
+        }
+    }
+    size = (size + 7u) & ~7u;
+    at = (g_addr + 7u) & ~7u;
+    if (at + size > ((at & ~0x1fffffu) + 0x200000u)) {
+        at = (at & ~0x1fffffu) + 0x200000u;
+    }
+    if (at + size > g_addr_max) {
+        g_why = "texture memory is full";
+        return 0;
+    }
+    glide.tex_down(GR_TMU0, at, GR_MIPMAPLEVELMASK_BOTH, &info);
+    g_tex[g_ntex].addr = at;
+    g_tex[g_ntex].info = info;
+    g_tex[g_ntex].info.data = 0;
+    g_tex[g_ntex].live = 1;
+    *handle = (df_u32)g_ntex;
+    g_addr = at + size;
+    g_ntex++;
+    return 1;
+}
+
+int glide_replace(df_u32 handle, const df_u8 *pixels)
+{
+    GrTexInfo info;
+    int i;
+
+    i = (int)handle;
+    if (!g_opened || !pixels || i < 0 || i >= g_ntex || !g_tex[i].live) {
+        return 0;
+    }
+    info = g_tex[i].info;
+    info.data = (void *)pixels;
+    glide.tex_down(GR_TMU0, g_tex[i].addr, GR_MIPMAPLEVELMASK_BOTH, &info);
+    return 1;
+}
+
 int glide_upload(const df_u8 *pixels, int side, int cutout, int drop, int chain,
                  const df_u8 *pr, const df_u8 *pg, const df_u8 *pb, df_u32 *handle)
 {
@@ -1182,9 +1282,14 @@ void glide_tint(df_u32 rgb)
     }
     was = g_tint;
     g_tint = rgb;
-    alpha_apply();
+    /*
+     * Only the constant carries the tint; the alpha state does not
+     * change. Outdoors this runs once a face, so it is one register
+     * write, not alpha_apply's five calls.
+     */
+    glide.constant(((GrColor_t)(g_fade >= 0 ? g_fade : 255) << 24) | g_tint);
     /* Only a switch to or from white changes the combine. */
-    if (!g_flat_mode && ((was == 0xffffffu) != (rgb == 0xffffffu))) {
+    if (!g_flat_mode && !g_decal_mode && ((was == 0xffffffu) != (rgb == 0xffffffu))) {
         color_textured();
     }
 }
@@ -1198,21 +1303,24 @@ df_u32 glide_tinted(void)
  * The light decal pass. The decal's colour is the light it adds, 0 at
  * its edge: blended DST_COLOR, ONE the pixel becomes dst + dst * src,
  * so the edge leaves the wall exactly as it was and the centre at most
- * doubles it. No depth write; the decal is pulled toward the eye so the
- * depth test passes on its own face. No fog: under a multiply, black
- * fog already on the wall stays right. Clamped addressing, so the
- * falloff picture does not wrap at its border.
+ * doubles it. The texture is scaled by the tint, so street lamps can
+ * fade in at dusk; white (indoors) is the texture as it is. No depth
+ * write; the decal is pulled toward the eye so the depth test passes on
+ * its own face. No fog: under a multiply, black fog already on the
+ * wall stays right. Clamped addressing, so the falloff picture does not
+ * wrap at its border.
  */
 void glide_decal(int on)
 {
     if (!g_opened) {
         return;
     }
+    g_decal_mode = on ? 1 : 0;
     if (on) {
         glide.color(
             GR_COMBINE_FUNCTION_SCALE_OTHER,
-            GR_COMBINE_FACTOR_ONE,
-            GR_COMBINE_LOCAL_NONE,
+            GR_COMBINE_FACTOR_LOCAL,
+            GR_COMBINE_LOCAL_CONSTANT,
             GR_COMBINE_OTHER_TEXTURE,
             FXFALSE);
         glide.blend(GR_BLEND_DST_COLOR, GR_BLEND_ONE, GR_BLEND_ZERO, GR_BLEND_ONE);
@@ -1226,6 +1334,43 @@ void glide_decal(int on)
     glide.fog_mode(g_fog ? GR_FOG_WITH_TABLE : GR_FOG_DISABLE);
     glide.tex_clamp(GR_TMU0, GR_TEXTURECLAMP_WRAP, GR_TEXTURECLAMP_WRAP);
     color_textured();
+}
+
+/*
+ * The sky pass, first in the frame: the sky's palette on TMU0, no depth
+ * test or write, no fog, clamped addressing, the texture as it is. Off
+ * puts back the level's palette and the scene's state. Two palette
+ * downloads a frame, 256 entries each.
+ */
+void glide_sky(int on, const df_u8 *rgb)
+{
+    FxU32 pal[256];
+    int i;
+
+    if (!g_opened) {
+        return;
+    }
+    if (on) {
+        if (!rgb) {
+            return;
+        }
+        for (i = 0; i < 256; i++) {
+            pal[i] = ((FxU32)rgb[i * 3] << 16) | ((FxU32)rgb[i * 3 + 1] << 8)
+                | (FxU32)rgb[i * 3 + 2];
+        }
+        glide.tex_table(GR_TMU0, GR_TEXTABLE_PALETTE, pal);
+        glide_tint(0xffffffu);
+        depth_over(1);
+        glide.fog_mode(GR_FOG_DISABLE);
+        glide.tex_clamp(GR_TMU0, GR_TEXTURECLAMP_CLAMP, GR_TEXTURECLAMP_CLAMP);
+        return;
+    }
+    if (g_have_pal) {
+        glide.tex_table(GR_TMU0, GR_TEXTABLE_PALETTE, g_pal);
+    }
+    depth_over(0);
+    glide.fog_mode(g_fog ? GR_FOG_WITH_TABLE : GR_FOG_DISABLE);
+    glide.tex_clamp(GR_TMU0, GR_TEXTURECLAMP_WRAP, GR_TEXTURECLAMP_WRAP);
 }
 
 void glide_flat(int on)

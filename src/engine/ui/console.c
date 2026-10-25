@@ -22,6 +22,9 @@
 #include "engine/gfx/texcache.h"
 #include "engine/scene/scene.h"
 #include "engine/scene/light.h"
+#include "engine/scene/clock.h"
+#include "engine/scene/daylight.h"
+#include "engine/gfx/sky.h"
 
 /*
  * The panel slides down from the top over a grabbed frame. The log it
@@ -625,9 +628,71 @@ static void c_stats(int argc, char **argv)
         log_print(LOG_PRINT, "lights %s: %d of %d lit something on screen, %d decals drawn",
                   light_on() ? "on" : "off", lit, light_count(), decals);
     }
+    if (light_outdoor()) {
+        int h;
+        int m;
+
+        clock_hm(&h, &m);
+        log_print(LOG_PRINT, "outdoors %d%d:%d%d, timescale %d, sky %s, daylight %s, lamps %d of 255",
+                  h / 10, h % 10, m / 10, m % 10, clock_scale(), sky_on() ? "on" : "off",
+                  daylight_on() ? "on" : "off", light_lamps());
+    }
     log_print(LOG_PRINT, "fov %d, far %d, fog %s, faces %s, covers %s",
               get_fov(), get_far(), gfx_fog() ? "on" : "off",
               draw_faces() ? "on" : "off", scene_cover_draw() ? "on" : "off");
+}
+
+/* "14", "14:30" or "7:05": minutes since midnight, or -1. */
+static int parse_hm(const char *s)
+{
+    int h;
+    int m;
+    int digits;
+
+    h = 0;
+    digits = 0;
+    while (*s >= '0' && *s <= '9' && digits < 2) {
+        h = h * 10 + (*s++ - '0');
+        digits++;
+    }
+    if (digits == 0 || h > 23) {
+        return -1;
+    }
+    m = 0;
+    if (*s == ':') {
+        s++;
+        digits = 0;
+        while (*s >= '0' && *s <= '9' && digits < 2) {
+            m = m * 10 + (*s++ - '0');
+            digits++;
+        }
+        if (digits != 2 || m > 59) {
+            return -1;
+        }
+    }
+    return *s ? -1 : h * 60 + m;
+}
+
+static void c_time(int argc, char **argv)
+{
+    int h;
+    int m;
+
+    if (argc > 2) {
+        log_text(LOG_PRINT, "usage: time [hh:mm]");
+        return;
+    }
+    if (argc == 2) {
+        m = parse_hm(argv[1]);
+        if (m < 0) {
+            log_text(LOG_PRINT, "usage: time [hh:mm], 00:00 to 23:59");
+            return;
+        }
+        clock_set_minute((float)m);
+    }
+    clock_hm(&h, &m);
+    log_print(LOG_PRINT, "time %d%d:%d%d, %d game seconds a second",
+              h / 10, h % 10, m / 10, m % 10, clock_scale());
 }
 
 static void c_pos(int argc, char **argv)
@@ -757,6 +822,7 @@ static void commands(void)
     cmd_add("version", c_version, "[on|off]", "the compile stamp, and whether it is drawn");
     cmd_add("stats", c_stats, "", "frame time and what the last world frame drew");
     cmd_add("pos", c_pos, "", "camera position, yaw and pitch in degrees");
+    cmd_add("time", c_time, "[hh:mm]", "the hour of the world clock, or set it");
     cmd_add("setpos", c_setpos, "x y z [yaw [pitch]]", "move the camera there");
     cmd_add("screenshot", c_screenshot, "[name]", "save the picture as a BMP beside the program");
     cmd_add("exec", c_exec, "file", "run the commands in a file beside the program");
@@ -788,6 +854,11 @@ static void commands(void)
             "how many times its radius a light reaches; cuts the decals again");
     cmd_var("lightview", light_view, light_set_view, 0, LIGHT_VIEW_MAX,
             "squares and rings for the lights within this many units; 0 is off");
+    cmd_var("timescale", clock_scale, clock_set_scale, 0, CLOCK_SCALE_MAX,
+            "game seconds a real second; 0 stops the clock");
+    cmd_var("sky", sky_on, sky_set_on, 0, 1, "the sky behind an outdoor place");
+    cmd_var("daylight", daylight_on, daylight_set_on, 0, 1,
+            "sun and moon light outdoors; off draws it full bright");
     cmd_var("hud", hud_shown, hud_set, 0, 1, "position and fps corners");
     cmd_var("fps", hud_fps, hud_set_fps, 0, 1, "the fps corner of the hud; F3 flips it");
     cmd_var("logfile", logfile_on, logfile_set, 0, 1,

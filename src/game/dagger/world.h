@@ -28,8 +28,12 @@ const Flat *world_flat(const World *world, int index);
 int world_image_count(const World *world);
 const Image *world_image(const World *world, int slot);
 int world_image_cutout(const World *world, int slot);
-/* RDB light objects placed in the world. */
+/* RDB light objects placed in the world; outdoors, one per lamp or fire flat. */
 int world_light_count(const World *world);
+/* 1 for an RMB place, under the sky. */
+int world_outdoor(const World *world);
+/* The sky an outdoor place draws; 0 indoors. */
+const Sky *world_sky(const World *world);
 const Palette *world_palette(const World *world);
 
 void world_start(const World *world, float *x, float *y, float *z, float *yaw, float *pitch);

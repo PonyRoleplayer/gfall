@@ -23,7 +23,11 @@ Every overlay that turns the depth test off (`glide_ui`, `glide_overlay`, and th
 
 ## Lighting
 
-A lit place draws texture times the constant colour's RGB (`glide_tint`), not iterated colour: still no colour gradients per triangle. White keeps `FACTOR_ONE`. Light decals blend `DST_COLOR, ONE` with fog off and clamped addressing (`glide_decal`). `alpha_apply` writes the constant colour, so it carries the tint too. See `docs/lighting.md`.
+A lit place draws texture times the constant colour's RGB (`glide_tint`), not iterated colour: still no colour gradients per triangle. White keeps `FACTOR_ONE`. Outdoors the tint changes per face, by its angle to the sun; `glide_tint` sends nothing when the colour is the one already set. Light decals blend `DST_COLOR, ONE` with fog off and clamped addressing, and their colour is texture times the constant colour (`glide_decal`): set the tint before turning it on, white indoors. A tint change during the decal pass keeps the decal combine. `alpha_apply` writes the constant colour, so it carries the tint too. See `docs/lighting.md` and `docs/daylight.md`.
+
+## Sky
+
+The sky's four tiles are P_8 (`glide_upload_p8`), drawn under the sky's own palette, not the level's. `glide_sky(1, rgb)` downloads that palette, turns off the depth test and write and the fog, and clamps; `glide_sky(0, 0)` downloads the level's palette again, kept from the last `glide_palette`, and restores the depth, fog, and wrap. The palette is one table on TMU0, so every P_8 picture drawn between those two calls is read through the sky's colours. `glide_replace` sends new texels of the same shape to a picture's place on the card. `glide_sky_color` puts the horizon colour in the clear and the fog in place of the background while an outdoor place draws its sky. See `docs/daylight.md`.
 
 ## Polygons
 

@@ -1,6 +1,6 @@
 # Lighting
 
-Dungeons are lit by the place's own lights. Read this before editing `src/engine/scene/light.c`, the light pass in `draw.c`, `glide_tint` or `glide_decal` in `glide.c`, or the light records in `rdb.c`.
+Dungeons are lit by the place's own lights. Outdoors, the same decals are the street lamps, lit only at night, and the sun and the moon light the rest: `docs/daylight.md`. Read this before editing `src/engine/scene/light.c`, the light pass in `draw.c`, `glide_tint` or `glide_decal` in `glide.c`, or the light records in `rdb.c`.
 
 ## Where the lights come from
 
@@ -21,7 +21,7 @@ What the data says, from all of `BLOCKS.BSA`:
 - 93% of lights sit within 64 units of a flat from `TEXTURE.210`, the torch, candle, or brazier that shows them. The two are separate objects; the light usually sits 3 to 30 units from its flat.
 - The rest, 312, light a room on their own, with no flat near them.
 - The first field does not follow the flat's picture: it averages 17 to 27 for every torch and candle kind. It may be a brightness, but nothing here uses it yet.
-- RMB blocks, the outdoors, have no light objects.
+- RMB blocks, the outdoors, have no light objects. `world.c` makes one for each `TEXTURE.210` flat there instead (`docs/daylight.md`).
 
 Flats from `TEXTURE.210` are marked `Flat.glow` by `rdb.c` and `rmb.c`, and drawn full bright.
 
@@ -31,12 +31,12 @@ Flats from `TEXTURE.210` are marked `Flat.glow` by `rdb.c` and `rmb.c`, and draw
 
 Per-vertex (Gouraud) lighting does not fit. Daggerfall's walls are big quads, 256 to 512 units across, and a light reaches a few hundred, so most vertices sit outside every light. It would need the walls cut into many more triangles, and triangles are what the 233 pays most for.
 
-So the light is laid on where it falls, as decals:
+So the light is laid on where it falls, as decals. It is the period's own trick: GLQuake drew its lightmaps on the Voodoo 1 the same way, a second pass that multiplies a light texture into the frame buffer. Here the light pictures are made at load from the place's light records, not baked by a level compiler.
 
 1. The scene is drawn as texture times the ambient colour. The ambient is the RGB of Glide's constant colour (`glide_tint`), with the colour combine `SCALE_OTHER` by `FACTOR_LOCAL` of `LOCAL_CONSTANT`. A register, not a vertex colour: a triangle still carries no colour gradients. White keeps the old `FACTOR_ONE` path, so an unlit place draws exactly as before.
 2. At load (`light_build`, from `gfx_prepare`), each light cuts its decals. For each face of each model whose box the light reaches, on the face's lit side: the light's height h over the face's plane, the circle it reaches on the plane, radius sqrt(R² - h²), the square around that circle, and the face cut to that square. The cut is kept as a polygon in the world with texture coordinates across the square. A decal whose patch misses the circle entirely is dropped. A face of more than 32 corners, or not an exact fan, is cut triangle by triangle.
 3. Each frame, after the models and before the sprites (`draw_lights`), every light whose decal box passes `scene_box_visible` (this frame's frustum and occlusion cells) draws its decals. Each decal is tested on its own: the camera on its lit side, then its box against the frustum and cells. It is drawn 0.2% nearer the eye, so the same pixels pass the depth test on their own face.
-4. The decal blend is `GR_BLEND_DST_COLOR, GR_BLEND_ONE`: the pixel becomes dst + dst × src. The decal's colour is the light it adds: black at its edge, so the edge leaves the wall exactly as it was, and at most white at its centre, which doubles the wall. Overlapping lights compound. A neutral of 0.5 with a 2x modulate was the first idea, but RGB 565 cannot hold 0.5: 16/31 left a 3% step at every decal's edge.
+4. The decal blend is `GR_BLEND_DST_COLOR, GR_BLEND_ONE`: the pixel becomes dst + dst × src. src is the falloff picture times the constant colour: white in a dungeon; outdoors the lamps' level times a flame colour, and three passes (`docs/daylight.md`). The decal's colour is the light it adds: black at its edge, so the edge leaves the wall exactly as it was, and at most white at its centre, which doubles the wall. Overlapping lights compound. A neutral of 0.5 with a 2x modulate was the first idea, but RGB 565 cannot hold 0.5: 16/31 left a 3% step at every decal's edge.
 5. No fog in the decal pass. Under a multiply, black fog already on the wall stays right. A coloured fog (LEVELFALL's grey background) is brightened a little under a light.
 6. Sprites take one colour each: ambient × (1 + the lights around them), the same sum a wall gets, worked out at load (`light_sprite_rgb`). A glowing flat is white.
 
@@ -74,7 +74,6 @@ Testing each decal on its own is what keeps the drawn count low: a visible light
 
 ## Not done
 
-- Outdoors are drawn full bright. RMB blocks carry no light records; their lamps and fires are `TEXTURE.210` flats, marked glow and nothing more. Exterior lights would have to be made from those flats.
 - No player light, no flicker, no light from windows outdoors at night.
 - Models are not lit by distance from the camera; only the place's lights and the ambient.
 - The first two fields of a light record are not understood.

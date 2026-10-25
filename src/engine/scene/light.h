@@ -60,10 +60,19 @@ const float *light_corners(void);
 int light_decal_total(void);
 
 /*
- * 1 when the scene should be drawn lit: lights on, and the built scene
- * has lights. Outdoor places and RENDERFALL are never lit.
+ * 1 when the light decals should be drawn: lights on, and the built
+ * scene has lights; outdoors, also the lamps lit (light_set_lamps).
+ * RENDERFALL is never lit.
  */
 int light_active(void);
+/* 1 when the built scene is outdoors: its lights are street lamps. */
+int light_outdoor(void);
+/*
+ * Outdoors, how lit the lamps are, 0..255, set each frame from the
+ * hour (docs/daylight.md). 0 by day: no decals. Indoors it is not read.
+ */
+void light_set_lamps(int level);
+int light_lamps(void);
 
 /*
  * The colour sprite s is drawn with, as 0xRRGGBB: the ambient raised
@@ -71,8 +80,28 @@ int light_active(void);
  * when the scene is not lit.
  */
 df_u32 light_sprite_rgb(int s);
-/* The ambient as 0xRRGGBB. White when the scene is not lit. */
+/* The ambient as 0xRRGGBB. White when the scene is not lit, or outdoors. */
 df_u32 light_ambient_rgb(void);
+/*
+ * Outdoors: sprite s in daylight colour base, raised by the lamps
+ * around it as far as they are lit. White for a flat that gives light.
+ * base when no lamp is lit.
+ */
+df_u32 light_sprite_over(int s, df_u32 base);
+/*
+ * Outdoors the decals are drawn this many times: a pass at most doubles
+ * a pixel, and a night street starts dark, so three passes are what
+ * take the ground under a lamp from moonlight to its full colour.
+ */
+#define LAMP_PASSES 3
+/*
+ * And tinted this colour, times how lit the lamps are: an oil flame,
+ * redder than the torch colour the falloff pictures carry, so a pool
+ * reads warm against the blue night rather than white.
+ */
+#define LAMP_R 255
+#define LAMP_G 200
+#define LAMP_B 120
 
 /* LIGHT_TEX x LIGHT_TEX texels of RGB 565, row 0 first: falloff picture v. */
 void light_texture(int variant, df_u16 *out);

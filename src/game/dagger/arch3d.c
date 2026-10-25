@@ -368,6 +368,22 @@ static void push_face(Mesh *mesh, int first)
     f->nx = az * by - ay * bz;
     f->ny = ax * bz - az * bx;
     f->nz = ay * bx - ax * by;
+    /*
+     * Unit length: outdoors a face's light is one dot product with the
+     * sun a frame (docs/daylight.md). Everything else reads only its
+     * sign or normalises it again.
+     */
+    {
+        float len;
+
+        len = f->nx * f->nx + f->ny * f->ny + f->nz * f->nz;
+        if (len > 1.0e-12f) {
+            __asm__ __volatile__("fsqrt" : "=t"(len) : "0"(len));
+            f->nx /= len;
+            f->ny /= len;
+            f->nz /= len;
+        }
+    }
     f->first = first;
     f->ntris = mesh->ntris - first;
     mesh->nfaces++;

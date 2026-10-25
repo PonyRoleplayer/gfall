@@ -51,11 +51,14 @@ GFALL_SRC := \
 	src/engine/assets/loader.c \
 	src/engine/scene/scene.c \
 	src/engine/scene/light.c \
+	src/engine/scene/clock.c \
+	src/engine/scene/daylight.c \
 	src/engine/gfx/glide.c \
 	src/engine/gfx/camera.c \
 	src/engine/gfx/texcache.c \
 	src/engine/gfx/mip.c \
 	src/engine/gfx/draw.c \
+	src/engine/gfx/sky.c \
 	src/engine/gfx/gfx.c \
 	src/engine/ui/hud.c \
 	src/engine/ui/font.c \
@@ -73,6 +76,7 @@ GFALL_SRC := \
 	src/game/dagger/dungeon.c \
 	src/game/dagger/bind.c \
 	src/game/dagger/world.c \
+	src/game/dagger/skyfile.c \
 	src/game/dagger/player.c
 
 RENDER_SRC := \
@@ -85,11 +89,14 @@ RENDER_SRC := \
 	src/engine/assets/vfs.c \
 	src/engine/scene/scene.c \
 	src/engine/scene/light.c \
+	src/engine/scene/clock.c \
+	src/engine/scene/daylight.c \
 	src/engine/gfx/glide.c \
 	src/engine/gfx/camera.c \
 	src/engine/gfx/texcache.c \
 	src/engine/gfx/mip.c \
 	src/engine/gfx/draw.c \
+	src/engine/gfx/sky.c \
 	src/engine/gfx/gfx.c \
 	src/engine/ui/hud.c \
 	src/engine/ui/font.c \
@@ -113,11 +120,14 @@ LEVEL_SRC := \
 	src/engine/assets/loader.c \
 	src/engine/scene/scene.c \
 	src/engine/scene/light.c \
+	src/engine/scene/clock.c \
+	src/engine/scene/daylight.c \
 	src/engine/gfx/glide.c \
 	src/engine/gfx/camera.c \
 	src/engine/gfx/texcache.c \
 	src/engine/gfx/mip.c \
 	src/engine/gfx/draw.c \
+	src/engine/gfx/sky.c \
 	src/engine/gfx/gfx.c \
 	src/engine/ui/hud.c \
 	src/engine/ui/font.c \
@@ -133,7 +143,8 @@ LEVEL_SRC := \
 	src/game/dagger/rmb.c \
 	src/game/dagger/dungeon.c \
 	src/game/dagger/bind.c \
-	src/game/dagger/world.c
+	src/game/dagger/world.c \
+	src/game/dagger/skyfile.c
 
 HOST_SRC := \
 	src/engine/core/mem.c \
@@ -144,6 +155,8 @@ HOST_SRC := \
 	src/engine/assets/loader.c \
 	src/engine/scene/scene.c \
 	src/engine/scene/light.c \
+	src/engine/scene/clock.c \
+	src/engine/scene/daylight.c \
 	src/engine/gfx/camera.c \
 	src/engine/gfx/mip.c \
 	src/game/dagger/bsa.c \
@@ -155,6 +168,7 @@ HOST_SRC := \
 	src/game/dagger/dungeon.c \
 	src/game/dagger/bind.c \
 	src/game/dagger/world.c \
+	src/game/dagger/skyfile.c \
 	src/game/dagger/player.c
 
 .PHONY: all check clean hostcheck gfall-check renderfall-check levelfall-check deps deps-host

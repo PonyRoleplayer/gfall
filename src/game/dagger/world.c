@@ -5,6 +5,7 @@
 #include "game/dagger/dungeon.h"
 #include "game/dagger/rdb.h"
 #include "game/dagger/rmb.h"
+#include "game/dagger/skyfile.h"
 #include "game/dagger/texture.h"
 #include "engine/assets/loader.h"
 #include "engine/assets/vfs.h"
@@ -97,6 +98,9 @@ struct World {
     /* Climate family, and the five archives for keys 119, 120, 122, 123, 124. */
     int tex_family;
     int tex_arch[5];
+    /* An RMB place: under the sky, lit by the hour, its lamps the lights. */
+    int outdoor;
+    Sky sky;
 };
 
 static int find_slot(const World *world, df_u16 file, df_u16 image)
@@ -607,6 +611,36 @@ static void finish_images(World *world)
               padded, smoothed, shared);
 }
 
+/*
+ * RMB blocks carry no light records. Outdoors the lights are the
+ * TEXTURE.210 flats, the lamp posts, braziers and fires: one each, a
+ * quarter of the flat's height above its centre, where the flame is.
+ * After paint, which sizes the flats. See docs/daylight.md.
+ */
+#define LAMP_RADIUS 160.0f
+
+static void add_lamps(World *world)
+{
+    int i;
+
+    for (i = 0; i < world->nflat && world->nlight < MAX_LIGHTS; i++) {
+        const Flat *fl;
+        Light *li;
+
+        fl = &world->flat[i];
+        if (!fl->glow) {
+            continue;
+        }
+        li = &world->light[world->nlight++];
+        li->x = fl->x;
+        li->y = fl->y + fl->h * 0.25f;
+        li->z = fl->z;
+        li->radius = LAMP_RADIUS;
+        li->raw0 = 0;
+        li->raw1 = 0;
+    }
+}
+
 static World *assemble(const Dungeon *hold, int require_start)
 {
     World *world;
@@ -763,6 +797,11 @@ static World *assemble(const Dungeon *hold, int require_start)
         }
     }
     finish_images(world);
+    if (hold->outdoor) {
+        world->outdoor = 1;
+        skyfile_open(hold->climate, SEASON_SUMMER, &world->sky);
+        add_lamps(world);
+    }
     why("");
     return world;
 }
@@ -904,6 +943,8 @@ void world_as_level(const World *world, Level *level)
     level->scene.nsprites = 0;
     level->scene.lights = 0;
     level->scene.nlights = 0;
+    level->scene.outdoor = 0;
+    level->sky = 0;
     if (!world) {
         return;
     }
@@ -920,9 +961,21 @@ void world_as_level(const World *world, Level *level)
     level->scene.nsprites = world->nflat;
     level->scene.lights = world->light;
     level->scene.nlights = world->nlight;
+    level->scene.outdoor = world->outdoor;
+    level->sky = world->outdoor ? &world->sky : 0;
 }
 
 int world_light_count(const World *world)
 {
     return world ? world->nlight : 0;
+}
+
+int world_outdoor(const World *world)
+{
+    return world ? world->outdoor : 0;
+}
+
+const Sky *world_sky(const World *world)
+{
+    return world && world->outdoor ? &world->sky : 0;
 }

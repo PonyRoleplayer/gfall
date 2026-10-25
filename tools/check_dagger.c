@@ -13,6 +13,8 @@
 #include "game/dagger/bsa.h"
 #include "game/dagger/dungeon.h"
 #include "game/dagger/player.h"
+#include "game/dagger/skyfile.h"
+#include "game/dagger/climate.h"
 #include "game/dagger/texture.h"
 #include "game/dagger/world.h"
 
@@ -466,6 +468,60 @@ static void check_v25(void)
     check_expect(arch3d_bad_refs() == 0, "an ARCH3D face referred past its point table");
 }
 
+/*
+ * SKY##.DAT and NITE: which file a climate draws, the frame by the
+ * hour, and how the halves land on the circle (docs/daylight.md).
+ */
+static void check_skies(void)
+{
+    static df_u8 morning[SKY_W * SKY_H];
+    static df_u8 evening[SKY_W * SKY_H];
+    static df_u8 half[512];
+    df_u8 rgb[768];
+    df_u8 rgb2[768];
+    Sky sky;
+    VfsFile *f;
+    int same;
+    int k;
+
+    check_expect(skyfile_index(CLIMATE_WOODLANDS, SEASON_SUMMER) == 18
+                 && skyfile_index(CLIMATE_DESERT, SEASON_FALL) == 8
+                 && skyfile_index(CLIMATE_MOUNTAIN, SEASON_WINTER) == 3
+                 && skyfile_index(CLIMATE_SWAMP, SEASON_SPRING) == 25,
+                 "a climate draws the wrong sky file");
+    check_expect(skyfile_frame(360.0f) == 0 && skyfile_frame(720.0f) == 32
+                 && skyfile_frame(1079.0f) == 63 && skyfile_frame(480.0f) == 20,
+                 "the sky frames do not follow the hour");
+    skyfile_open(CLIMATE_WOODLANDS, SEASON_SUMMER, &sky);
+    check_expect(sky.pick(&sky, 120.0f) == 64 && sky.pick(&sky, 1080.0f) == 64
+                 && sky.pick(&sky, 720.0f) == 32 && sky.night == 2,
+                 "night is not its own picture");
+    check_expect(sky.read(&sky, 20, morning, rgb) && sky.read(&sky, 43, evening, rgb2),
+                 "SKY18.DAT frame 20 did not read");
+    /* Record 1, frame 20, row 100: the eastern half, columns 0..511 in the morning. */
+    f = vfs_open("SKY18.DAT");
+    check_expect(f && vfs_read_at(f, 32u * 776u + 32u * 16384u + 112640u * 52u + 100u * 512u, half, 512)
+                 && vfs_read_at(f, 20u * 776u + 8u, rgb2, 768),
+                 "SKY18.DAT is not there");
+    if (f) {
+        vfs_close(f);
+    }
+    same = 1;
+    for (k = 0; k < 768; k++) {
+        same = same && rgb[k] == rgb2[k];
+    }
+    check_expect(same, "the sky palette is not frame 20's, after its 8-byte header");
+    same = 1;
+    for (k = 0; k < 512; k++) {
+        same = same && morning[100 * SKY_W + k] == half[k]
+            && evening[100 * SKY_W + 512 + k] == half[k];
+    }
+    check_expect(same, "the eastern half is not first in the morning and second in the evening");
+    check_expect(sky.read(&sky, 64, morning, rgb) && morning[219 * SKY_W] == morning[218 * SKY_W]
+                 && morning[10 * SKY_W + 5] == morning[10 * SKY_W + 517],
+                 "the night picture does not fill both halves and the last row");
+}
+
 int check_dagger(const char *root_in)
 {
     World *world;
@@ -514,6 +570,7 @@ int check_dagger(const char *root_in)
     /* RDB object type 2: 71 lights in the hold's five blocks. See docs/lighting.md. */
     printf("lights %d\n", world_light_count(world));
     check_expect(world_light_count(world) == 71, "light count");
+    check_expect(!world_outdoor(world) && !world_sky(world), "the hold has a sky");
     {
         Level level;
         Camera cam;
@@ -804,6 +861,20 @@ int check_dagger(const char *root_in)
                 }
                 check_expect(town && world_model_count(town) > 0, "outdoor did not load");
                 if (town) {
+                    Level tl;
+                    int glow;
+                    int k;
+
+                    world_as_level(town, &tl);
+                    glow = 0;
+                    for (k = 0; k < world_flat_count(town); k++) {
+                        glow += world_flat(town, k)->glow ? 1 : 0;
+                    }
+                    check_expect(world_outdoor(town) && tl.sky && tl.scene.outdoor
+                                 && world_light_count(town) == glow,
+                                 "an outdoor place has no sky, or a lamp flat has no light");
+                }
+                if (town) {
                     world_start(town, &sx, &sy, &sz, &syaw, &spitch);
                     world_bounds(town, &minx, &miny, &minz, &maxx, &maxy, &maxz);
                     check_expect(sx >= minx && sx <= maxx && sz >= minz && sz <= maxz
@@ -816,5 +887,6 @@ int check_dagger(const char *root_in)
         }
     }
 
+    check_skies();
     return check_failed() ? 1 : 0;
 }

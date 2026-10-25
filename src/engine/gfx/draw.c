@@ -13,6 +13,9 @@
 #include "engine/ui/hud.h"
 #include "engine/gfx/texcache.h"
 #include "engine/scene/light.h"
+#include "engine/scene/clock.h"
+#include "engine/scene/daylight.h"
+#include "engine/gfx/sky.h"
 
 /*
  * View signs live in camera_view. This file only clips and submits.
@@ -178,8 +181,11 @@ static void frame_time_read(LARGE_INTEGER *t)
     }
 }
 
-/* fresh drops the interval since the last world frame. */
-static void frame_time_tick(int fresh)
+/*
+ * fresh drops the interval since the last world frame. Returns that
+ * interval in seconds, 0 when dropped: what the world clock runs on.
+ */
+static float frame_time_tick(int fresh)
 {
     LARGE_INTEGER now;
     df_u32 dt;
@@ -191,7 +197,7 @@ static void frame_time_tick(int fresh)
         g_ft_sum = 0;
         g_ft_worst = 0;
         g_ft_frames = 0;
-        return;
+        return 0.0f;
     }
     dt = (df_u32)(now.QuadPart - g_ft_last.QuadPart);
     g_ft_last = now;
@@ -215,6 +221,7 @@ static void frame_time_tick(int fresh)
         g_ft_worst = 0;
         g_ft_frames = 0;
     }
+    return (float)dt / (float)g_ft_freq;
 }
 
 int draw_frame_time(float *avg_ms, float *worst_ms)
@@ -807,11 +814,26 @@ static void draw_lights(const Camera *cam, const Basis *basis)
     const float *corners;
     int i;
 
+    int pass;
+    int passes;
+
     if (!light_active() || !g_light_ready) {
         return;
     }
     corners = light_corners();
+    /* Outdoors the lamps fade in by the hour, flame-coloured, LAMP_PASSES deep. */
+    if (light_outdoor()) {
+        df_u32 l;
+
+        l = (df_u32)light_lamps();
+        glide_tint(((l * LAMP_R / 255u) << 16) | ((l * LAMP_G / 255u) << 8) | (l * LAMP_B / 255u));
+        passes = LAMP_PASSES;
+    } else {
+        glide_tint(0xffffffu);
+        passes = 1;
+    }
     glide_decal(1);
+    for (pass = 0; pass < passes; pass++)
     for (i = 0; i < light_count(); i++) {
         const Decal *d;
         float cx, cy, cz, ex, ey, ez;
@@ -822,7 +844,9 @@ static void draw_lights(const Camera *cam, const Basis *basis)
             || !scene_box_visible(cx, cy, cz, ex, ey, ez)) {
             continue;
         }
-        g_lights_drawn++;
+        if (pass == 0) {
+            g_lights_drawn++;
+        }
         n = light_decals(i, &d);
         for (k = 0; k < n; k++) {
             const Decal *dc;
@@ -853,6 +877,96 @@ static void draw_lights(const Camera *cam, const Basis *basis)
         }
     }
     glide_decal(0);
+}
+
+/*
+ * The sky, first in the frame: SKY_SEGS flat panels round the camera,
+ * each a column of the picture from below the horizon to high up the
+ * dome, and a fan from their tops to the zenith. Depth is neither read
+ * nor written, so the panels sit only a few units out (SKY_RADIUS, or
+ * less with a short far clip) and the world draws over them.
+ *
+ * A column's v runs straight with height on its panel, the cylinder
+ * the original sky pictures are drawn for: a sky row is as tall as it
+ * is wide, so 220 rows reach 220 / (1024 / 2 pi) = 1.35 radii up, about
+ * 53 degrees. The panel runs past both ends of the picture and the
+ * clamp holds the first row above it and the horizon row below it.
+ * 64 polygons, most cut away by the clip at once. Looking level, the
+ * sky is about half a screen of fill a frame.
+ */
+#define SKY_SEGS 32
+#define SKY_RADIUS 16.0f
+#define SKY_TOP 4.0f
+#define SKY_APEX 8.0f
+/*
+ * Only a little below the horizon. The Voodoo pays a clock for every
+ * pixel it draws, hidden or not, and below the horizon the ground
+ * covers the sky; past the ground's end the clear is the horizon's
+ * colour already. 45 degrees down cost half a screen of fill a frame.
+ */
+#define SKY_BOTTOM -0.1f
+#define SKY_ROWS_PER_RADIUS ((float)SKY_W / DF_TAU)
+
+static float g_sky_sin[SKY_SEGS + 1];
+static float g_sky_cos[SKY_SEGS + 1];
+static int g_sky_trig;
+
+static void sky_corner(const Camera *cam, const Basis *basis, float r, int seg, float up,
+                       float u, Vtx *out)
+{
+    float v;
+
+    camera_view(cam, basis, cam->x + r * g_sky_sin[seg], cam->y + up * r,
+                cam->z + r * g_sky_cos[seg], &out->x, &out->y, &out->z);
+    v = (float)SKY_H - up * SKY_ROWS_PER_RADIUS;
+    out->u = u;
+    out->v = v;
+}
+
+static void draw_sky(const Camera *cam, const Basis *basis)
+{
+    float r;
+    int seg;
+    int per_tile;
+
+    if (!g_sky_trig) {
+        for (seg = 0; seg <= SKY_SEGS; seg++) {
+            g_sky_sin[seg] = df_sin((float)seg * (DF_TAU / (float)SKY_SEGS));
+            g_sky_cos[seg] = df_cos((float)seg * (DF_TAU / (float)SKY_SEGS));
+        }
+        g_sky_trig = 1;
+    }
+    /* Inside the far clip with room: the apex is SKY_APEX radii out. */
+    r = SKY_RADIUS;
+    if (r * (SKY_APEX + 1.0f) > g_limit) {
+        r = g_limit / (SKY_APEX + 1.0f);
+    }
+    per_tile = SKY_SEGS / SKY_TILES;
+    glide_sky(1, sky_palette());
+    for (seg = 0; seg < SKY_SEGS; seg++) {
+        Vtx v[4];
+        float u0;
+        float u1;
+
+        u0 = (float)((seg % per_tile) * (SKY_TILE / per_tile));
+        u1 = u0 + (float)(SKY_TILE / per_tile);
+        glide_bind(sky_tile(seg / per_tile));
+        sky_corner(cam, basis, r, seg, SKY_TOP, u0, &v[0]);
+        sky_corner(cam, basis, r, seg + 1, SKY_TOP, u1, &v[1]);
+        sky_corner(cam, basis, r, seg + 1, SKY_BOTTOM, u1, &v[2]);
+        sky_corner(cam, basis, r, seg, SKY_BOTTOM, u0, &v[3]);
+        emit_poly(v, 4, 1.0f / (float)SKY_TILE, 1.0f / (float)SKY_TILE, 255.0f, 255.0f, 255.0f);
+        /* The fan to the zenith keeps the top row's colour: v is clamped there. */
+        v[2] = v[1];
+        v[1] = v[0];
+        camera_view(cam, basis, cam->x, cam->y + SKY_APEX * r, cam->z, &v[0].x, &v[0].y, &v[0].z);
+        v[0].u = (u0 + u1) * 0.5f;
+        v[0].v = 0.5f;
+        v[1].v = 0.5f;
+        v[2].v = 0.5f;
+        emit_poly(v, 3, 1.0f / (float)SKY_TILE, 1.0f / (float)SKY_TILE, 255.0f, 255.0f, 255.0f);
+    }
+    glide_sky(0, 0);
 }
 
 /*
@@ -1007,12 +1121,23 @@ static void cap_warn(int *state, int n, const char *what)
     *state = n >= VIS_MAX;
 }
 
+/* This frame's daylight colours by angle to the key light. */
+static df_u32 g_shade[DAYLIGHT_STEPS + 1];
+
 void draw_frame(const Camera *cam, const Level *level)
 {
     Basis basis;
+    Daylight dl;
     int order[VIS_MAX];
     int norder;
     int oi;
+    int outdoor;
+    int lit;
+    int sky;
+    float kx = 0.0f;
+    float ky = 0.0f;
+    float kz = 0.0f;
+    df_u32 sprite_day;
 
     if (!level) {
         return;
@@ -1025,17 +1150,44 @@ void draw_frame(const Camera *cam, const Level *level)
         return;
     }
     console_release();
-    frame_time_tick(0);
+    clock_advance(frame_time_tick(0));
     g_vis_models = 0;
     g_vis_sprites = 0;
     g_faces_kept = 0;
     g_faces_drop = 0;
+    /*
+     * Outdoors: the hour's light, and the sky, whose horizon is the clear
+     * and the fog. See docs/daylight.md.
+     */
+    outdoor = level->scene.outdoor;
+    lit = outdoor && daylight_on();
+    if (lit) {
+        daylight_at(clock_minute(), &dl);
+        daylight_table(&dl, g_shade);
+        light_set_lamps(df_iround(dl.lamps * 255.0f));
+    } else if (outdoor) {
+        light_set_lamps(0);
+    }
+    sky = outdoor && level->sky && sky_on() && sky_ready();
+    if (sky) {
+        int hr, hg, hb;
+
+        sky_update(clock_minute());
+        sky_horizon(&hr, &hg, &hb);
+        glide_sky_color(1, hr, hg, hb);
+    } else {
+        glide_sky_color(0, 0, 0, 0);
+    }
     glide_clear();
     clip_slopes();
     camera_basis(cam, &basis);
+    /* Before the sky: the HUD may have left blending or a fade on. */
     glide_sprite_alpha(0);
+    if (sky) {
+        draw_sky(cam, &basis);
+    }
     /* The place's ambient, white when it is unlit. See docs/lighting.md. */
-    glide_tint(light_ambient_rgb());
+    glide_tint(lit ? g_shade[DAYLIGHT_STEPS / 2] : light_ambient_rgb());
     g_lights_drawn = 0;
     g_decals_drawn = 0;
     norder = scene_visible_models(&level->scene, cam, order, VIS_MAX);
@@ -1047,6 +1199,12 @@ void draw_frame(const Camera *cam, const Level *level)
         in = &level->scene.models[order[oi]];
         if (!in->mesh) {
             continue;
+        }
+        if (lit) {
+            /* The key light in the mesh's frame: one dot product a face. */
+            kx = in->m[0] * dl.kx + in->m[3] * dl.ky + in->m[6] * dl.kz;
+            ky = in->m[1] * dl.kx + in->m[4] * dl.ky + in->m[7] * dl.kz;
+            kz = in->m[2] * dl.kx + in->m[5] * dl.ky + in->m[8] * dl.kz;
         }
         if (in->mesh->nfaces > 0 && in->mesh->faces) {
             int f;
@@ -1068,9 +1226,27 @@ void draw_frame(const Camera *cam, const Level *level)
                     continue;
                 }
                 g_faces_kept++;
+                if (lit) {
+                    float d;
+                    int step;
+
+                    d = face->nx * kx + face->ny * ky + face->nz * kz;
+                    /* A lone triangle is drawn from both sides: lit from either. */
+                    if (face->ntris == 1 && d < 0.0f) {
+                        d = -d;
+                    }
+                    step = d > 0.0f ? df_iround(d * (float)DAYLIGHT_STEPS) : 0;
+                    if (step > DAYLIGHT_STEPS) {
+                        step = DAYLIGHT_STEPS;
+                    }
+                    glide_tint(g_shade[step]);
+                }
                 draw_face(cam, &basis, level, in, face);
             }
         } else {
+            if (lit) {
+                glide_tint(g_shade[DAYLIGHT_STEPS / 2]);
+            }
             draw_tris(cam, &basis, level, in, 0, in->mesh->ntris);
         }
     }
@@ -1079,9 +1255,11 @@ void draw_frame(const Camera *cam, const Level *level)
     norder = scene_visible_sprites(&level->scene, cam, order, VIS_MAX);
     g_vis_sprites = norder;
     cap_warn(&g_cap_sprites, norder, "sprites");
+    sprite_day = lit ? daylight_sprite(&dl, basis.fx, basis.fz) : 0xffffffu;
     for (oi = 0; oi < norder; oi++) {
         /* One colour per sprite from the lights around it; torches full bright. */
-        glide_tint(light_sprite_rgb(order[oi]));
+        glide_tint(outdoor ? light_sprite_over(order[oi], sprite_day)
+                           : light_sprite_rgb(order[oi]));
         draw_flat(cam, &basis, level, &level->scene.sprites[order[oi]]);
     }
     glide_sprite_alpha(0);
