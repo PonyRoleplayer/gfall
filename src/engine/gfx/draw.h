@@ -41,6 +41,14 @@ void draw_view(float *far_now, float *fog_near, float *fog_far);
 /* Forget what the last level left in draw's caches. gfx_prepare calls it. */
 void draw_prepare(void);
 /*
+ * Hold the frame on the glass, dimmed, with text in the middle
+ * ("Loading..."), while a place loads with the card open. Swaps it to
+ * the front; nothing else is drawn until the next frame.
+ */
+void draw_hold(const char *text);
+/* The next secs of frames fade in from black. 0 cancels a fade. */
+void draw_fade_in(float secs);
+/*
  * Uploads the light falloff pictures when want is set (the place has
  * lights). Call after glide_tex_reset and before the level's pictures.
  * 0 when they did not fit: the place is then drawn unlit.

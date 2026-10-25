@@ -18,6 +18,11 @@ typedef struct Dungeon {
     int nblocks;
     /* LocationNum in the dungeon record, and the climate id of its map pixel. */
     int location_id;
+    /*
+     * The location of the outside it lies under: a dungeon's parent, when
+     * it names one, else its own number; an outside's own number.
+     */
+    int exterior_id;
     int climate;
     /* 0 = RDB tiles of 2048. 1 = RMB tiles of 4096. */
     int outdoor;
@@ -32,6 +37,7 @@ typedef struct DunRef {
     int index;
     int nblocks;
     int location_id;
+    int exterior_id;
     int outdoor;
 } DunRef;
 

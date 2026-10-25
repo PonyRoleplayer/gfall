@@ -64,7 +64,8 @@ A variable prints its value when typed alone, and takes a new one as an argument
 | `sky` | on/off | The sky behind an outdoor place. Off draws on the viewer's background. Default on. |
 | `weathersim` | on/off | Outdoors the weather sets the far clip and the fog: a long hazy view on a clear day, a short one in rain, snow or fog, shorter at night. `far` becomes the ceiling. Default off. See `docs/weather.md`. |
 | `daylight` | on/off | Sun and moon light outdoors, and the street lamps. Off draws outdoors full bright. Default on. |
-| `lightview` | 0..2048 | Squares and rings for the lights within this many units of the camera, the 64 nearest: yellow when its decals were drawn, orange when not. 0 (default) is off. Try 512. |
+| `lightshadow` | 0, 1 | A light does not reach through a floor or a wall (`docs/lighting.md`). Cuts the decals again. Default 1. |
+| `lightview` | 0..2048 | Squares and rings for the lights within this many units of the camera, the 64 nearest: yellow when its decals were drawn, orange when not. 0 (default) is off; 1 to 63 hold nothing, so they turn it on at 512. |
 | `planar` | on/off | On sends each face as one planar polygon, when `glide2x.dll` has `grDrawPlanarPolygonVertexList`. Off sends its triangles. Reads off when the DLL lacks it. Default on. |
 | `hud` | on/off | GFALL's position and fps corners. LEVELFALL draws its own panels and turns this off in the view. |
 | `fps` | on/off | The fps corner alone. F3 flips it too. |
@@ -93,6 +94,7 @@ A variable prints its value when typed alone, and takes a new one as an argument
 | `clear` | Empties the log. |
 | `help [name]`, `find word` | See above. |
 | `sndinfo`, `sndlist`, `sndview`, `song`, `play`, `musdev`, `sound`, `sndvol`, `sndrate`, `snddrv`, `sndmmx`, `music`, `musvol`, `musvoices` | The sound and the music: see `docs/sound.md`. |
+| `useview`, `uselist`, `locks` | What can be used, and the doors' locks: see `docs/interact.md`. |
 
 `autoexec.cfg` beside the program runs on the first frame, when the device is open, if it exists. A missing file is silent, except for a debug line. For example:
 

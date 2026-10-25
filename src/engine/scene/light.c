@@ -46,6 +46,25 @@ static int g_nsprites;
 static int g_sprite_cap;
 static int g_light_cap;
 /*
+ * Per model, 1 + the mover that moves it, 0 for none: a moving model
+ * gets no decals, which are cut where it stood, but one colour, from
+ * the lights round its box (g_mover_light, three bytes a mover).
+ */
+static df_u16 *g_moves;
+static int g_moves_cap;
+static df_u8 *g_mover_light;
+static int g_mover_cap;
+static int g_nmodels;
+static int g_nmovers;
+/*
+ * The models within reach of the light being cut, which are all that
+ * can stand between it and a face it reaches (seen).
+ */
+static int *g_near;
+static int g_nnear;
+static int g_near_cap;
+static int g_shadow = 1;
+/*
  * The heap epoch the buffers above were allocated in. They are reused
  * by a rebuild of the same place (lightrange) only: a new place in
  * LEVELFALL or RENDERFALL is a new temp heap, and the old one, buffers
@@ -62,6 +81,16 @@ static float root(float x)
     }
     __asm__ __volatile__("fsqrt" : "=t"(x) : "0"(x));
     return x;
+}
+
+void light_set_shadow(int on)
+{
+    g_shadow = on ? 1 : 0;
+}
+
+int light_shadow(void)
+{
+    return g_shadow;
 }
 
 void light_set_on(int on)
@@ -108,6 +137,10 @@ int light_range(void)
 
 void light_set_view(int units)
 {
+    /* A range too small to hold anything is "on": `lightview 1`. */
+    if (units > 0 && units < LIGHT_VIEW_SMALL) {
+        units = LIGHT_VIEW_ON;
+    }
     if (units < 0) {
         units = 0;
     }
@@ -487,6 +520,129 @@ static int to_square(Cut *a, int n, float rr)
     return m >= 3 ? m : 0;
 }
 
+/* Where the segment o + t d, t in 0..len, enters a world box; 0 when it misses. */
+static int seg_box(const float *o, const float *d, float len, const Bound *b)
+{
+    float c[3], e[3];
+    float t0, t1;
+    int k;
+
+    c[0] = b->cx;
+    c[1] = b->cy;
+    c[2] = b->cz;
+    e[0] = b->ex;
+    e[1] = b->ey;
+    e[2] = b->ez;
+    t0 = 0.0f;
+    t1 = len;
+    for (k = 0; k < 3; k++) {
+        float a, z;
+
+        if (d[k] > -1.0e-6f && d[k] < 1.0e-6f) {
+            if (o[k] < c[k] - e[k] || o[k] > c[k] + e[k]) {
+                return 0;
+            }
+            continue;
+        }
+        a = (c[k] - e[k] - o[k]) / d[k];
+        z = (c[k] + e[k] - o[k]) / d[k];
+        if (a > z) {
+            float w;
+
+            w = a;
+            a = z;
+            z = w;
+        }
+        t0 = a > t0 ? a : t0;
+        t1 = z < t1 ? z : t1;
+        if (t0 > t1) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* 1 when nothing of the models near the light lies on the way from it to x, y, z. */
+static int light_reaches(const Light *li, float x, float y, float z)
+{
+    float o[3];
+    float d[3];
+    float len;
+    float t;
+    int i;
+
+    o[0] = li->x;
+    o[1] = li->y;
+    o[2] = li->z;
+    d[0] = x - o[0];
+    d[1] = y - o[1];
+    d[2] = z - o[2];
+    len = root(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    /* Stop short of the face itself. */
+    if (len < 2.0f) {
+        return 1;
+    }
+    d[0] /= len;
+    d[1] /= len;
+    d[2] /= len;
+    len -= 1.0f;
+    for (i = 0; i < g_nnear; i++) {
+        const Instance *in;
+        Bound b;
+        int m;
+
+        m = g_near[i];
+        in = &g_scene->models[m];
+        if (g_scene->bounds) {
+            b = g_scene->bounds[m];
+        } else if (!instance_world_box(in, &b)) {
+            continue;
+        }
+        if (seg_box(o, d, len, &b) && instance_ray(in, o, d, len, &t)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/*
+ * A decal the light cannot see is not cut: a lamp on the floor above
+ * does not light the room below through its floor, nor a torch the
+ * next room through a wall. It is seen when the way to its middle, or
+ * to any of four of its corners drawn a fifth of the way in, is clear.
+ * Moving models do not shade (they are not in g_near).
+ */
+static int seen(const Light *li, const Cut *a, int m)
+{
+    float cx, cy, cz;
+    int j;
+    int k;
+
+    if (!g_shadow || g_nnear < 1) {
+        return 1;
+    }
+    cx = cy = cz = 0.0f;
+    for (k = 0; k < m; k++) {
+        cx += a[k].x;
+        cy += a[k].y;
+        cz += a[k].z;
+    }
+    cx /= (float)m;
+    cy /= (float)m;
+    cz /= (float)m;
+    if (light_reaches(li, cx, cy, cz)) {
+        return 1;
+    }
+    for (j = 0; j < 4; j++) {
+        k = j * m / 4;
+        if (light_reaches(li, a[k].x + (cx - a[k].x) * 0.2f, a[k].y + (cy - a[k].y) * 0.2f,
+                          a[k].z + (cz - a[k].z) * 0.2f)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void cut_face(const float (*p)[3], int n, const float *vis, int two_sided,
                      const Light *li, float reach, int fill, int light)
 {
@@ -557,6 +713,9 @@ static void cut_face(const float (*p)[3], int n, const float *vis, int two_sided
         if (!inside && best >= rr * rr) {
             return;
         }
+    }
+    if (!seen(li, a, m)) {
+        return;
     }
     if (fill) {
         Decal *d;
@@ -830,12 +989,14 @@ static void light_all(const Scene *scene, int fill)
         if (reach < 1.0f) {
             continue;
         }
-        for (m = 0; m < scene->nmodels; m++) {
+        /* The models it reaches, the still ones: they take its decals and shade it. */
+        g_nnear = 0;
+        for (m = 0; m < scene->nmodels && g_nnear < g_near_cap; m++) {
             const Instance *in;
             const Bound *bd;
 
             in = &scene->models[m];
-            if (!in->mesh || !in->mesh->faces) {
+            if (!in->mesh || !in->mesh->faces || (m < g_nmodels && g_moves[m])) {
                 continue;
             }
             if (scene->bounds) {
@@ -846,9 +1007,46 @@ static void light_all(const Scene *scene, int fill)
                     continue;
                 }
             }
-            light_mesh(in, li, reach, fill, i);
+            g_near[g_nnear++] = m;
+        }
+        for (m = 0; m < g_nnear; m++) {
+            light_mesh(&scene->models[g_near[m]], li, reach, fill, i);
         }
     }
+}
+
+/* The lights' sum at a point, per channel, 0..255 meaning 0..1. */
+static void light_point(const Scene *scene, float x, float y, float z, df_u8 *out)
+{
+    float r;
+    float g;
+    float b;
+    int i;
+
+    r = 0.0f;
+    g = 0.0f;
+    b = 0.0f;
+    for (i = 0; i < scene->nlights; i++) {
+        const Light *li;
+        float reach, dx, dy, dz, d2, l;
+
+        li = &scene->lights[i];
+        reach = li->radius * (float)g_range;
+        dx = x - li->x;
+        dy = y - li->y;
+        dz = z - li->z;
+        d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 >= reach * reach) {
+            continue;
+        }
+        l = falloff(root(d2) / reach, 1.0f);
+        r += l * LIGHT_R;
+        g += l * LIGHT_G;
+        b += l * LIGHT_B;
+    }
+    out[0] = byte01(r);
+    out[1] = byte01(g);
+    out[2] = byte01(b);
 }
 
 /* Every sprite's light, from every light that reaches it. */
@@ -858,37 +1056,61 @@ static void light_sprites(const Scene *scene)
 
     for (s = 0; s < scene->nsprites; s++) {
         const Flat *fl;
-        float r;
-        float g;
-        float b;
-        int i;
 
         fl = &scene->sprites[s];
-        r = 0.0f;
-        g = 0.0f;
-        b = 0.0f;
-        for (i = 0; i < scene->nlights; i++) {
-            const Light *li;
-            float reach, dx, dy, dz, d2, l;
-
-            li = &scene->lights[i];
-            reach = li->radius * (float)g_range;
-            dx = fl->x - li->x;
-            dy = fl->y - li->y;
-            dz = fl->z - li->z;
-            d2 = dx * dx + dy * dy + dz * dz;
-            if (d2 >= reach * reach) {
-                continue;
-            }
-            l = falloff(root(d2) / reach, 1.0f);
-            r += l * LIGHT_R;
-            g += l * LIGHT_G;
-            b += l * LIGHT_B;
-        }
-        g_sprite_light[s * 3] = byte01(r);
-        g_sprite_light[s * 3 + 1] = byte01(g);
-        g_sprite_light[s * 3 + 2] = byte01(b);
+        light_point(scene, fl->x, fl->y, fl->z, &g_sprite_light[s * 3]);
     }
+}
+
+/*
+ * Which models move, and each mover's light at its model's box as the
+ * place built it. Before the decals, which skip the moving ones.
+ */
+static int light_movers(const Scene *scene)
+{
+    int i;
+
+    g_nmodels = 0;
+    g_nmovers = 0;
+    if (!scene->movers || scene->nmovers < 1) {
+        return 1;
+    }
+    if (scene->nmodels > g_moves_cap) {
+        g_moves = (df_u16 *)mem_alloc((df_u32)scene->nmodels * (df_u32)sizeof(df_u16));
+        g_moves_cap = g_moves ? scene->nmodels : 0;
+    }
+    if (scene->nmovers > g_mover_cap) {
+        g_mover_light = (df_u8 *)mem_alloc((df_u32)scene->nmovers * 3u);
+        g_mover_cap = g_mover_light ? scene->nmovers : 0;
+    }
+    if (!g_moves || !g_mover_light || g_moves_cap < scene->nmodels
+        || g_mover_cap < scene->nmovers) {
+        return 0;
+    }
+    for (i = 0; i < scene->nmodels; i++) {
+        g_moves[i] = 0;
+    }
+    for (i = 0; i < scene->nmovers && i < 65535; i++) {
+        const Mover *mv;
+        Bound b;
+        int m;
+
+        mv = &scene->movers[i];
+        m = mv->model;
+        g_mover_light[i * 3] = 0;
+        g_mover_light[i * 3 + 1] = 0;
+        g_mover_light[i * 3 + 2] = 0;
+        if (m < 0 || m >= scene->nmodels) {
+            continue;
+        }
+        g_moves[m] = (df_u16)(i + 1);
+        if (instance_world_box(&scene->models[m], &b)) {
+            light_point(scene, b.cx, b.cy, b.cz, &g_mover_light[i * 3]);
+        }
+    }
+    g_nmodels = scene->nmodels;
+    g_nmovers = scene->nmovers;
+    return 1;
 }
 
 int light_build(const Scene *scene)
@@ -908,10 +1130,30 @@ int light_build(const Scene *scene)
         g_corner_cap = 0;
         g_light_cap = 0;
         g_sprite_cap = 0;
+        g_moves_cap = 0;
+        g_mover_cap = 0;
+        g_moves = 0;
+        g_mover_light = 0;
+        g_near = 0;
+        g_near_cap = 0;
         g_epoch = mem_epoch();
     }
+    g_nmodels = 0;
+    g_nmovers = 0;
     if (!scene || scene->nlights < 1 || !scene->lights) {
         return 0;
+    }
+    if (!light_movers(scene)) {
+        log_text(LOG_ERROR, "lights: out of memory, the place is unlit");
+        return -1;
+    }
+    if (scene->nmodels > g_near_cap) {
+        g_near = (int *)mem_alloc((df_u32)scene->nmodels * (df_u32)sizeof(int));
+        g_near_cap = g_near ? scene->nmodels : 0;
+        if (!g_near) {
+            log_text(LOG_ERROR, "lights: out of memory, the place is unlit");
+            return -1;
+        }
     }
     /* Count, then allocate what this place needs; a rebuild that fits reuses it. */
     light_all(scene, 0);
@@ -982,6 +1224,24 @@ df_u32 light_sprite_rgb(int s)
     }
     /* The same sum the decals give a wall: ambient times (1 + light). */
     l = &g_sprite_light[s * 3];
+    return rgb(g_ambient * (255 + l[0]) / 255,
+               g_ambient * (255 + l[1]) / 255,
+               g_ambient * (255 + l[2]) / 255);
+}
+
+df_u32 light_model_rgb(int m, df_u32 base)
+{
+    const df_u8 *l;
+    int i;
+
+    if (!light_active() || g_outdoor || m < 0 || m >= g_nmodels || !g_moves[m]) {
+        return base;
+    }
+    i = (int)g_moves[m] - 1;
+    if (i >= g_nmovers) {
+        return base;
+    }
+    l = &g_mover_light[i * 3];
     return rgb(g_ambient * (255 + l[0]) / 255,
                g_ambient * (255 + l[1]) / 255,
                g_ambient * (255 + l[2]) / 255);

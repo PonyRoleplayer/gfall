@@ -11,6 +11,10 @@
  * F2 shows the sound panel; F4 steps the engine's sndview range.
  * F5..F9 flip cull, occlude, covers, faces, fog. F12 is a screenshot
  * plus a bookmark in levelfall.log that levelfall.cfg can reopen.
+ * The left button or E uses what the middle of the view rests on: a
+ * door swings, and a passage loads where it leads (a house's inside,
+ * the street again, the dungeon below, the outside above). F11 steps
+ * the engine's useview range, which draws what can be used.
  */
 
 #define WINVER 0x0400
@@ -28,6 +32,8 @@
 #include "engine/platform/input.h"
 #include "engine/platform/win32.h"
 #include "engine/scene/clock.h"
+#include "engine/scene/interact.h"
+#include "engine/scene/walker.h"
 #include "engine/scene/daylight.h"
 #include "engine/scene/light.h"
 #include "engine/scene/scene.h"
@@ -41,6 +47,7 @@
 #include "engine/ui/hud.h"
 #include "engine/ui/shot.h"
 #include "game/dagger/climate.h"
+#include "game/dagger/doors.h"
 #include "game/dagger/dungeon.h"
 #include "game/dagger/texture.h"
 #include "game/dagger/world.h"
@@ -166,6 +173,22 @@ static int g_music_cfg = -1;
 static int g_musvol_cfg = -1;
 static int g_f2_was;
 static int g_f4_was;
+static int g_f11_was;
+
+/*
+ * A passage used in the view (docs/interact.md): what it leads to
+ * (DOOR_*, 0 for none yet), its tag, and the passage as it stood. The
+ * view ends on the frame it is set, and view_row opens where it leads.
+ */
+typedef struct LfGo {
+    int what;
+    int tag;
+    Usable door;
+} LfGo;
+static LfGo g_go;
+/* The row being viewed, and 1 while it is a building's inside. */
+static int g_row_now = -1;
+static int g_inside;
 
 /* F5..F9 flip these engine switches in the fly view. Same names as the console. */
 #define NSWITCH 5
@@ -1785,16 +1808,16 @@ static void draw_overlay(void)
     char files_v[16];
     char rec_row[7][40];
     char draw_row[9][32];
-    char key_lines[14][48];
+    char key_lines[16][48];
     const char *place_l[6];
     const char *cam_l[3];
     const char *block_l[3];
     const char *frame_l[4];
     const char *rec_l[7];
     const char *draw_l[9];
-    const char *key_l[14];
-    const char *key_name[14];
-    const char *key_act[14];
+    const char *key_l[16];
+    const char *key_name[16];
+    const char *key_act[16];
     int n;
     int i;
     int gx;
@@ -1861,7 +1884,7 @@ static void draw_overlay(void)
     place_kind[0] = 0;
     if (g_dun) {
         add_str(place_kind, &n, (int)sizeof(place_kind),
-                g_dun->outdoor ? "outdoor" : "indoor");
+                g_inside ? "inside" : (g_dun->outdoor ? "outdoor" : "indoor"));
         add_str(place_kind, &n, (int)sizeof(place_kind), "   r");
         add_num(place_kind, &n, (int)sizeof(place_kind), g_region, 0);
     }
@@ -2103,13 +2126,17 @@ static void draw_overlay(void)
     key_act[12] = "sound panel";
     key_name[13] = "f4";
     key_act[13] = "sndview range";
-    for (i = 0; i < 14; i++) {
+    key_name[14] = "click e";
+    key_act[14] = "use";
+    key_name[15] = "f11";
+    key_act[15] = "useview range";
+    for (i = 0; i < 16; i++) {
         pair_line(key_lines[i], 48, key_name[i], key_act[i]);
         key_l[i] = key_lines[i];
     }
     rw = measure_lines("record", 0, rec_l, 7);
     dw = measure_lines("draw", 0, draw_l, 9);
-    kw = measure_lines("keys", 0, key_l, 14);
+    kw = measure_lines("keys", 0, key_l, 16);
     side_w = rw;
     if (dw > side_w) {
         side_w = dw;
@@ -2119,7 +2146,7 @@ static void draw_overlay(void)
     }
     rh = measure_h(7);
     dh = measure_h(9);
-    kh = measure_h(14);
+    kh = measure_h(16);
     x = DF_VIEW_W - gap - side_w;
     y = DF_VIEW_H - gap - rh;
     draw_panel(x, y, side_w, rh, "record", 0, rec_l, 7, 204.0f, 160.0f, 64.0f);
@@ -2129,7 +2156,7 @@ static void draw_overlay(void)
     if (y < gap + ph) {
         y = gap + ph;
     }
-    draw_panel(x, y, side_w, kh, "keys", 0, key_l, 14, 168.0f, 168.0f, 180.0f);
+    draw_panel(x, y, side_w, kh, "keys", 0, key_l, 16, 168.0f, 168.0f, 180.0f);
 }
 
 static void fly_step(Camera *cam, int dx, int dy, float dt)
@@ -2230,6 +2257,32 @@ static void step_sndview(void)
     console_log(line);
 }
 
+/* F11: what can be used, within 256, 512, then 1024 units, then off. */
+static void step_useview(void)
+{
+    static const int steps[3] = { 256, 512, 1024 };
+    char line[24];
+    int cur;
+    int next;
+    int i;
+    int n;
+
+    cur = interact_view();
+    next = 0;
+    for (i = 0; i < 3; i++) {
+        if (steps[i] > cur) {
+            next = steps[i];
+            break;
+        }
+    }
+    interact_set_view(next);
+    n = 0;
+    line[0] = 0;
+    add_str(line, &n, (int)sizeof(line), "useview ");
+    add_num(line, &n, (int)sizeof(line), interact_view(), 0);
+    console_log(line);
+}
+
 /* Edges are tracked while the console is up too, so a key held through it does not fire. */
 static void switch_keys(int act)
 {
@@ -2253,6 +2306,80 @@ static void switch_keys(int act)
         step_sndview();
     }
     g_f4_was = down;
+    down = key_down(VK_F11);
+    if (act && down && !g_f11_was) {
+        step_useview();
+    }
+    g_f11_was = down;
+}
+
+/*
+ * The other half of row's location: with want_outdoor 0, the dungeon
+ * under a town (its exterior_id is the town's number); with 1, the
+ * outside above a dungeon. -1 when the list has none.
+ */
+static int pair_row(int row, int want_outdoor)
+{
+    const DunRef *r;
+    int i;
+
+    if (row < 0 || row >= g_nrows) {
+        return -1;
+    }
+    r = &g_rows[row];
+    for (i = 0; i < g_nrows; i++) {
+        const DunRef *o;
+
+        o = &g_rows[i];
+        if (o->region != r->region || o->outdoor != want_outdoor) {
+            continue;
+        }
+        if (want_outdoor ? o->location_id == r->exterior_id : o->exterior_id == r->location_id) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/*
+ * The engine's handler while a place is viewed (interact_set_handler):
+ * a passage ends the view, once view_row has somewhere to open; a
+ * person says who they are, which is all a person does yet.
+ */
+static int lf_use(const Scene *scene, const Usable *u, int index)
+{
+    char line[64];
+    int n;
+
+    (void)scene;
+    (void)index;
+    if (u->kind == USE_TALK) {
+        n = 0;
+        line[0] = 0;
+        add_str(line, &n, (int)sizeof(line), "A person, faction ");
+        add_num(line, &n, (int)sizeof(line), u->what, 0);
+        add_str(line, &n, (int)sizeof(line), ".");
+        interact_say(line);
+        return 1;
+    }
+    if (u->kind != USE_PASSAGE) {
+        return 0;
+    }
+    if ((u->what == DOOR_DUNGEON && pair_row(g_row_now, 0) < 0)
+        || (u->what == DOOR_EXIT && pair_row(g_row_now, 1) < 0)) {
+        interact_say("It leads nowhere in the list.");
+        return 1;
+    }
+    if (u->what == DOOR_LEAVE && !g_inside) {
+        return 0;
+    }
+    g_go.what = u->what;
+    g_go.tag = u->tag;
+    g_go.door = *u;
+    log_line(u->what == DOOR_ENTER ? "use: into a building"
+             : u->what == DOOR_LEAVE ? "use: out to the street"
+             : u->what == DOOR_DUNGEON ? "use: down into the dungeon" : "use: out of the dungeon");
+    return 1;
 }
 
 static void snap_take(const Camera *cam, int valid)
@@ -2321,6 +2448,11 @@ static void bookmark(void)
     int total;
 
     if (!g_snap.valid || !g_ref) {
+        return;
+    }
+    /* open= names a row of the list; a building's inside is not one. */
+    if (g_inside) {
+        log_line("bookmark: not inside a building");
         return;
     }
     n = 0;
@@ -2449,6 +2581,9 @@ static void run_view(const Level *level, Camera *cam)
     }
     g_f2_was = key_down(VK_F2);
     g_f4_was = key_down(VK_F4);
+    g_f11_was = key_down(VK_F11);
+    g_go.what = 0;
+    interact_set_handler(lf_use);
     frames = 0;
     g_snap.valid = 0;
     g_fps_tick = 0;
@@ -2503,6 +2638,10 @@ static void run_view(const Level *level, Camera *cam)
         switch_keys(!console_open());
         gfx_frame(cam, level);
         frames++;
+        /* A passage was used in that frame: view_row opens where it leads. */
+        if (g_go.what) {
+            break;
+        }
         /*
          * shot_pump saw F12 inside that frame and wrote the file, so
          * shot_status already names it. Poll right after for the same edge.
@@ -2518,72 +2657,167 @@ static void run_view(const Level *level, Camera *cam)
         }
     }
     gfx_set_extra(0);
+    interact_set_handler(0);
     hud_set(1);
     g_cam = 0;
     console_set_camera(0);
     input_end();
 }
 
+/*
+ * Where the camera lands in a place a passage opened (docs/viewers.md):
+ * the place's own start; outside the street door it went in by; inside,
+ * by the way out nearest that door; above a dungeon, by its way down;
+ * below, on the start facing away from the nearest way out, as
+ * Daggerfall Unity turns the player on coming down.
+ */
+enum {
+    LAND_START,
+    LAND_STREET,
+    LAND_IN,
+    LAND_DOWN,
+    LAND_BELOW
+};
+/* Out of a door three body radii, into a house a radius and 0.4 m: Daggerfall Unity's. */
+#define LAND_OUT (3.0f * WALK_RADIUS)
+#define LAND_INTO (WALK_RADIUS + 16.0f)
+
+static void land_at(const World *world, int land, const Usable *street,
+                    float *x, float *y, float *z, float *yaw, float *pitch)
+{
+    const Usable *u;
+    int k;
+
+    world_start(world, x, y, z, yaw, pitch);
+    u = 0;
+    if (land == LAND_STREET) {
+        u = street;
+    } else if (land == LAND_IN) {
+        k = world_passage(world, DOOR_LEAVE, street->cx, street->cy, street->cz);
+        u = k >= 0 ? world_usable(world, k) : 0;
+    } else if (land == LAND_DOWN) {
+        k = world_passage(world, DOOR_DUNGEON, *x, *y, *z);
+        u = k >= 0 ? world_usable(world, k) : 0;
+    }
+    if (land == LAND_BELOW) {
+        k = world_passage(world, DOOR_EXIT, *x, *y, *z);
+        if (k >= 0) {
+            u = world_usable(world, k);
+            *yaw = df_wrap_tau(df_atan2(u->nx, u->nz));
+            *pitch = 0.0f;
+        }
+        return;
+    }
+    if (u) {
+        doors_landing(u, land == LAND_IN ? LAND_INTO : LAND_OUT, WALK_EYE, x, y, z, yaw);
+        *pitch = 0.0f;
+    }
+}
+
+/* A new place through a passage comes up from black over this long. */
+#define LAND_FADE 0.6f
+
+/*
+ * View list row index, then wherever its passages lead, until Esc. Each
+ * place is its own temp heap; the card stays open from one to the next,
+ * holding the last frame under "Loading..." while the next one loads
+ * (gfx_hold), so a door is not the list and back. A building's inside
+ * keeps the town's record (dun), which the street is opened from again.
+ */
 static void view_row(int index)
 {
     Dungeon dun;
     World *world;
     Level level;
     Camera cam;
+    Usable street;
+    LfGo go;
     int glide_up;
+    int row;
+    int block;
+    int record;
+    int land;
     char line[80];
     int n;
 
     if (index < 0 || index >= g_nrows) {
         return;
     }
-    df_copy(g_view_name, g_rows[index].name, (int)sizeof(g_view_name));
-    n = 0;
-    line[0] = 0;
-    add_str(line, &n, (int)sizeof(line), "open ");
-    add_u(line, &n, (int)sizeof(line), (df_u32)g_rows[index].region);
-    add_str(line, &n, (int)sizeof(line), " ");
-    add_str(line, &n, (int)sizeof(line), g_view_name);
-    log_line(line);
-    if (!mem_temp_begin()) {
-        log_line("temp heap failed");
-        win_fail("Out of memory.");
-        return;
-    }
+    row = index;
+    block = -1;
+    record = -1;
+    land = LAND_START;
     glide_up = 0;
-    world = 0;
-    if (g_rows[index].outdoor) {
-        n = exterior_load_at(g_rows[index].region, g_rows[index].index, &dun);
-    } else {
-        n = dungeon_load_at(g_rows[index].region, g_rows[index].index, &dun);
-    }
-    if (!n) {
-        log_line(dungeon_error());
-        win_fail(dungeon_error());
-    } else {
-        world = world_load_dungeon(&dun);
-        if (!world) {
-            log_line(world_error());
-            win_fail(world_error());
+    mem_zero(&street, sizeof(street));
+    for (;;) {
+        df_copy(g_view_name, g_rows[row].name, (int)sizeof(g_view_name));
+        n = 0;
+        line[0] = 0;
+        add_str(line, &n, (int)sizeof(line), "open ");
+        add_u(line, &n, (int)sizeof(line), (df_u32)g_rows[row].region);
+        add_str(line, &n, (int)sizeof(line), " ");
+        add_str(line, &n, (int)sizeof(line), g_view_name);
+        if (block >= 0) {
+            add_str(line, &n, (int)sizeof(line), ", building ");
+            add_num(line, &n, (int)sizeof(line), record, 0);
+            add_str(line, &n, (int)sizeof(line), " of block ");
+            add_num(line, &n, (int)sizeof(line), block, 0);
         }
-    }
-    if (world) {
-        float x, y, z, yaw, pitch;
-
-        world_as_level(world, &level);
-        show_list(0);
-        if (!gfx_startup(win_hwnd())) {
-            log_line(gfx_error());
-            win_fail(gfx_error());
+        log_line(line);
+        if (!mem_temp_begin()) {
+            log_line("temp heap failed");
+            if (glide_up) {
+                gfx_shutdown();
+                glide_up = 0;
+            }
+            win_fail("Out of memory.");
+            break;
+        }
+        world = 0;
+        go.what = 0;
+        n = 1;
+        /* Inside, dun is still the town's record from the street. */
+        if (block < 0) {
+            if (g_rows[row].outdoor) {
+                n = exterior_load_at(g_rows[row].region, g_rows[row].index, &dun);
+            } else {
+                n = dungeon_load_at(g_rows[row].region, g_rows[row].index, &dun);
+            }
+        }
+        if (n) {
+            world = block >= 0 ? world_load_inside(&dun, block, record) : world_load_dungeon(&dun);
+        }
+        if (!world) {
+            /* The card holds the screen: give it back before Windows says why. */
+            if (glide_up) {
+                gfx_shutdown();
+                glide_up = 0;
+            }
+            log_line(n ? world_error() : dungeon_error());
+            win_fail(n ? world_error() : dungeon_error());
         } else {
-            glide_up = 1;
-            if (!gfx_prepare(&level)) {
+            float x, y, z, yaw, pitch;
+
+            world_as_level(world, &level);
+            if (!glide_up) {
+                show_list(0);
+                if (!gfx_startup(win_hwnd())) {
+                    log_line(gfx_error());
+                    win_fail(gfx_error());
+                } else {
+                    glide_up = 1;
+                    log_line("glide open 640x480");
+                }
+            }
+            if (glide_up && !gfx_prepare(&level)) {
+                gfx_shutdown();
+                glide_up = 0;
                 log_line(gfx_error());
                 win_fail(gfx_error());
-            } else {
-                world_start(world, &x, &y, &z, &yaw, &pitch);
+            } else if (glide_up) {
+                land_at(world, land, &street, &x, &y, &z, &yaw, &pitch);
                 /* cam= from the cfg replaces the start marker, once, for open= only. */
-                if (g_auto_cam && index == g_auto_row) {
+                if (land == LAND_START && g_auto_cam && row == g_auto_row) {
                     x = g_auto_pose[0];
                     y = g_auto_pose[1];
                     z = g_auto_pose[2];
@@ -2593,26 +2827,57 @@ static void view_row(int index)
                     log_line("cam from levelfall.cfg");
                 }
                 camera_set(&cam, x, y, z, yaw, pitch);
-                log_line("glide open 640x480");
-                g_region = g_rows[index].region;
+                if (land != LAND_START) {
+                    gfx_fade_in(LAND_FADE);
+                }
+                g_region = g_rows[row].region;
                 g_dun = &dun;
                 g_world = world;
-                g_ref = &g_rows[index];
+                g_ref = &g_rows[row];
+                g_row_now = row;
+                g_inside = block >= 0;
                 run_view(&level, &cam);
-                /* The list is quiet: the place's song and sounds end with it. */
+                go = g_go;
+                g_go.what = 0;
+                /* The list is quiet, and the next place has its own song. */
                 music_stop();
                 sound_stop_all();
                 g_ref = 0;
                 g_dun = 0;
                 g_world = 0;
+                g_row_now = -1;
+                g_inside = 0;
             }
+        }
+        /* Through a passage the card stays open, holding this frame while the next place loads. */
+        if (go.what && glide_up) {
+            gfx_hold("Loading...");
+        }
+        texture_cache_clear();
+        mem_temp_end();
+        /* Where the passage leads, if one was used; Esc and a failed load go back to the list. */
+        if (go.what == DOOR_ENTER) {
+            street = go.door;
+            block = go.tag >> 8;
+            record = go.tag & 0xff;
+            land = LAND_IN;
+        } else if (go.what == DOOR_LEAVE) {
+            block = -1;
+            land = LAND_STREET;
+        } else if (go.what == DOOR_DUNGEON || go.what == DOOR_EXIT) {
+            row = pair_row(row, go.what == DOOR_EXIT);
+            block = -1;
+            land = go.what == DOOR_EXIT ? LAND_DOWN : LAND_BELOW;
+        } else {
+            break;
+        }
+        if (row < 0) {
+            break;
         }
     }
     if (glide_up) {
         gfx_shutdown();
     }
-    texture_cache_clear();
-    mem_temp_end();
     show_list(1);
     input_clear_quit();
 }

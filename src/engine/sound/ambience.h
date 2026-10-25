@@ -50,6 +50,9 @@ int ambience_emitter_playing(int index);
  * camera, 0..AMBIENCE_VIEW_MAX. 0 (default) is off.
  */
 #define AMBIENCE_VIEW_MAX 4096
+/* 1 to AMBIENCE_VIEW_SMALL - 1 turns it on at AMBIENCE_VIEW_ON. */
+#define AMBIENCE_VIEW_SMALL 64
+#define AMBIENCE_VIEW_ON 1024
 void ambience_set_view(int units);
 int ambience_view(void);
 

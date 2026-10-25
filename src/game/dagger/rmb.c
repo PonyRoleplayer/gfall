@@ -48,26 +48,42 @@ static void place_child(Instance *in, float sub_yaw, float model_yaw,
     instance_set_rotation(in, 0.0f, df_wrap_tau(-(sub_yaw + model_yaw)), 0.0f);
 }
 
-static void add_model(Block *block, ArchEnt *cache, int *ncache, Bsa *arch,
-                      int id, float sub_yaw, float model_yaw,
-                      float lx, float ly, float lz,
-                      float ox, float oy, float oz)
+/*
+ * Place model id; record is the building it belongs to (-1 the block's
+ * own). prop: an interior's clutter (object type 3), whose file height
+ * is where its lowest point stands, not negated, as Daggerfall Unity
+ * places it (DaggerfallInterior.AddModels). The block's index of the
+ * model, or -1.
+ */
+static int add_model(Block *block, ArchEnt *cache, int *ncache, Bsa *arch,
+                     int id, float sub_yaw, float model_yaw,
+                     float lx, float ly, float lz,
+                     float ox, float oy, float oz, int record, int prop)
 {
     Mesh *mesh;
     Instance *in;
+    int at;
 
     if (id <= 0 || block->ninst >= block->inst_cap) {
-        return;
+        return -1;
     }
     mesh = arch_cached(cache, ncache, arch, (df_u32)id);
     if (!mesh) {
-        return;
+        return -1;
     }
-    in = &block->inst[block->ninst];
+    if (prop) {
+        mesh_measure(mesh);
+        ly = -ly - (mesh->cy - mesh->ey);
+    }
+    at = block->ninst;
+    in = &block->inst[at];
     in->mesh = mesh;
     place_child(in, sub_yaw, model_yaw, lx, ly, lz, ox, oy, oz);
+    block->act[at].id = (df_u32)id;
+    block->act[at].record = (df_i16)record;
     block->ninst++;
     block->ntris += mesh->ntris;
+    return at;
 }
 
 static int model_id(const df_u8 *p)
@@ -83,35 +99,58 @@ static int model_id(const df_u8 *p)
     return (int)id1 * 100 + id2;
 }
 
+/* Object type 3 of an interior's models: clutter, a prop. */
+#define PROP_TYPE 3
+
 static void read_model(Block *block, ArchEnt *cache, int *ncache, Bsa *arch,
-                       const df_u8 *p, float sub_yaw, float ox, float oy, float oz)
+                       const df_u8 *p, float sub_yaw, float ox, float oy, float oz,
+                       int record, int inside)
 {
     float myaw;
 
     myaw = (float)df_ri16(p + 52) * ROT_STEP;
     add_model(block, cache, ncache, arch, model_id(p), sub_yaw, myaw,
               (float)df_ri32(p + 36), -(float)df_ri32(p + 40), (float)df_ri32(p + 44),
-              ox, oy, oz);
+              ox, oy, oz, record, inside && (int)p[3] == PROP_TYPE);
 }
 
-static void add_flat(Block *block, const df_u8 *p, float ox, float oz)
+/*
+ * A flat at its file point turned by sub_yaw about the building's
+ * origin (0 for the block's own). tag goes on it: FLAT_PERSON for the
+ * people lists. An editor marker is kept as a Marker when the block
+ * has room for them (an interior's), and dropped otherwise.
+ */
+static void add_flat(Block *block, const df_u8 *p, float sub_yaw, float ox, float oz, df_u16 tag)
 {
     df_u16 bits;
     int archive;
     Flat *fl;
+    Instance at;
 
+    bits = df_ru16(p + 12);
+    archive = (int)(bits >> 7);
+    at.mesh = 0;
+    place_child(&at, sub_yaw, 0.0f, (float)df_ri32(p), -(float)df_ri32(p + 4),
+                (float)df_ri32(p + 8), ox, 0.0f, oz);
+    if (archive == EDITOR_ARCHIVE) {
+        if (block->nmarker < block->mark_cap) {
+            Marker *mk;
+
+            mk = &block->marker[block->nmarker++];
+            mk->x = at.x;
+            mk->y = at.y;
+            mk->z = at.z;
+            mk->record = (df_u16)(bits & 0x7f);
+        }
+        return;
+    }
     if (block->nflat >= block->flat_cap) {
         return;
     }
-    bits = df_ru16(p + 12);
-    archive = (int)(bits >> 7);
-    if (archive == EDITOR_ARCHIVE) {
-        return;
-    }
     fl = &block->flat[block->nflat];
-    fl->x = ox + (float)df_ri32(p);
-    fl->y = -(float)df_ri32(p + 4);
-    fl->z = oz + (float)df_ri32(p + 8);
+    fl->x = at.x;
+    fl->y = at.y;
+    fl->z = at.z;
     fl->w = 0.0f;
     fl->h = 0.0f;
     fl->file = (df_u16)archive;
@@ -119,13 +158,20 @@ static void add_flat(Block *block, const df_u8 *p, float ox, float oz)
     fl->slot = 0xffff;
     /* TEXTURE.210: lamps and fires give light. */
     fl->glow = (df_u16)(archive == 210);
+    fl->tag = tag;
     block->nflat++;
+}
+
+/* A people record's flat: FLAT_PERSON and its faction (i16 at 14). */
+static df_u16 person_tag(const df_u8 *p)
+{
+    return (df_u16)(FLAT_PERSON | ((df_u16)df_ri16(p + 14) & 0x7fffu));
 }
 
 /* Exterior lists only. The interior list is inside the same size span. */
 static void read_exterior(Block *block, ArchEnt *cache, int *ncache, Bsa *arch,
                           const df_u8 *rmb, df_u32 end, df_u32 at,
-                          float sx, float sub_yaw, float sz)
+                          float sx, float sub_yaw, float sz, int record)
 {
     int n3d;
     int nflat;
@@ -144,11 +190,15 @@ static void read_exterior(Block *block, ArchEnt *cache, int *ncache, Bsa *arch,
     at += 17;
     oz = RMB_SIDE - sz;
     for (i = 0; i < n3d && at + MODEL_BYTES <= end; i++) {
-        read_model(block, cache, ncache, arch, rmb + at, sub_yaw, sx, 0.0f, oz);
+        read_model(block, cache, ncache, arch, rmb + at, sub_yaw, sx, 0.0f, oz, record, 0);
         at += MODEL_BYTES;
     }
+    /*
+     * A building's outside flats and people sit at their file point from
+     * the block, not turned with the building, as they always have here.
+     */
     for (i = 0; i < nflat && at + FLAT_BYTES <= end; i++) {
-        add_flat(block, rmb + at, sx, oz);
+        add_flat(block, rmb + at, 0.0f, sx, oz, 0);
         at += FLAT_BYTES;
     }
     if ((df_u32)nsec > 256 || at + (df_u32)nsec * 16u > end) {
@@ -156,7 +206,7 @@ static void read_exterior(Block *block, ArchEnt *cache, int *ncache, Bsa *arch,
     }
     at += (df_u32)nsec * 16u;
     for (i = 0; i < npeople && at + FLAT_BYTES <= end; i++) {
-        add_flat(block, rmb + at, sx, oz);
+        add_flat(block, rmb + at, 0.0f, sx, oz, person_tag(rmb + at));
         at += FLAT_BYTES;
     }
 }
@@ -463,16 +513,173 @@ Block *rmb_load(const df_u8 *rmb, df_u32 size, Bsa *arch, int ground_file,
         sx = (float)df_ri32(bp + 8);
         sz = (float)df_ri32(bp + 12);
         syaw = (float)df_ri32(bp + 16) * ROT_STEP;
-        read_exterior(block, cache, ncache, arch, rmb, pos + (df_u32)span, pos, sx, syaw, sz);
+        read_exterior(block, cache, ncache, arch, rmb, pos + (df_u32)span, pos, sx, syaw, sz, i);
         pos += (df_u32)span;
     }
     for (i = 0; i < (int)rmb[1] && pos + MODEL_BYTES <= size; i++) {
-        read_model(block, cache, ncache, arch, rmb + pos, 0.0f, 0.0f, -PROP_DROP, RMB_SIDE);
+        read_model(block, cache, ncache, arch, rmb + pos, 0.0f, 0.0f, -PROP_DROP, RMB_SIDE, -1, 0);
         pos += MODEL_BYTES;
     }
     for (i = 0; i < (int)rmb[2] && pos + FLAT_BYTES <= size; i++) {
-        add_flat(block, rmb + pos, 0.0f, RMB_SIDE);
+        add_flat(block, rmb + pos, 0.0f, 0.0f, RMB_SIDE, 0);
         pos += FLAT_BYTES;
+    }
+    return block;
+}
+
+/*
+ * A subrecord's list header: models, flats, section 3, people and doors,
+ * then 12 bytes. The doors are 19 bytes each (Daggerfall Unity's
+ * RmbBlockDoorRecord): x, y, z (i32), yaw (i16 at 12), an open turn
+ * (i16, unused), the door model (byte at 16), two bytes more.
+ */
+#define DOOR_BYTES 19
+/* An interior's hinged doors are models 9000 to 9004, by the record's model byte mod 5. */
+#define DOOR_MODEL 9000
+
+/* Where the list after the one at `at` begins: the interior follows the exterior. */
+static df_u32 skip_list(const df_u8 *rmb, df_u32 end, df_u32 at)
+{
+    df_u32 bytes;
+
+    if (at + 17 > end) {
+        return end;
+    }
+    bytes = 17u + (df_u32)rmb[at] * MODEL_BYTES + (df_u32)rmb[at + 1] * FLAT_BYTES
+        + (df_u32)rmb[at + 2] * 16u + (df_u32)rmb[at + 3] * FLAT_BYTES
+        + (df_u32)rmb[at + 4] * DOOR_BYTES;
+    return at + bytes > end ? end : at + bytes;
+}
+
+/* Where subrecord record's lists begin and end, from the block's sizes. 0 when it has none. */
+static int find_record(const df_u8 *rmb, df_u32 size, int record, df_u32 *start, df_u32 *end)
+{
+    df_u32 pos;
+    int i;
+
+    if (record < 0 || record >= (int)rmb[0] || record >= 32) {
+        return 0;
+    }
+    pos = (df_u32)FLD_BYTES;
+    for (i = 0; i <= record; i++) {
+        df_i32 span;
+
+        span = df_ri32(rmb + FLD_SIZES + i * 4);
+        if (span < 17 || pos + (df_u32)span > size) {
+            return 0;
+        }
+        if (i == record) {
+            *start = pos;
+            *end = pos + (df_u32)span;
+            return 1;
+        }
+        pos += (df_u32)span;
+    }
+    return 0;
+}
+
+int rmb_building(const df_u8 *rmb, df_u32 size, int record, int *type, int *faction)
+{
+    const df_u8 *bd;
+
+    if (!rmb || size < (df_u32)FLD_BYTES || record < 0 || record >= 32 || record >= (int)rmb[0]) {
+        return 0;
+    }
+    /* BuildingDataList, 26 bytes each, after the 640 bytes of positions. */
+    bd = rmb + 3 + 640 + record * 26;
+    *faction = (int)df_ru16(bd + 18);
+    *type = (int)bd[24];
+    return 1;
+}
+
+Block *rmb_load_interior(const df_u8 *rmb, df_u32 size, Bsa *arch, int record,
+                         ArchEnt *cache, int *ncache)
+{
+    Block *block;
+    df_u32 start;
+    df_u32 end;
+    df_u32 at;
+    const df_u8 *bp;
+    int n3d, nflat, nsec, npeople, ndoor;
+    int nmark;
+    int nkeep;
+    int i;
+    float sx, sz, syaw, oz;
+
+    if (!rmb || !arch || !cache || !ncache || size < (df_u32)FLD_BYTES
+        || !find_record(rmb, size, record, &start, &end)) {
+        return 0;
+    }
+    at = skip_list(rmb, end, start);
+    if (at + 17 > end) {
+        return 0;
+    }
+    n3d = (int)rmb[at];
+    nflat = (int)rmb[at + 1];
+    nsec = (int)rmb[at + 2];
+    npeople = (int)rmb[at + 3];
+    ndoor = (int)rmb[at + 4];
+    if (n3d < 1) {
+        return 0;
+    }
+    /* Markers are kept apart, so count them out of the flats. */
+    nmark = 0;
+    {
+        df_u32 f;
+
+        f = at + 17u + (df_u32)n3d * MODEL_BYTES;
+        for (i = 0; i < nflat && f + FLAT_BYTES <= end; i++) {
+            if ((int)(df_ru16(rmb + f + 12) >> 7) == EDITOR_ARCHIVE) {
+                nmark++;
+            }
+            f += FLAT_BYTES;
+        }
+    }
+    nkeep = nflat - nmark + npeople;
+    block = (Block *)mem_alloc(sizeof(Block));
+    if (!block) {
+        return 0;
+    }
+    mem_zero(block, sizeof(Block));
+    if (!block_reserve(block, n3d + ndoor, nkeep, nmark)) {
+        return 0;
+    }
+    /* The building's place in the block, as its outside is placed (read_exterior). */
+    bp = rmb + 3 + record * 20;
+    sx = (float)df_ri32(bp + 8);
+    sz = (float)df_ri32(bp + 12);
+    syaw = (float)df_ri32(bp + 16) * ROT_STEP;
+    oz = RMB_SIDE - sz;
+    at += 17;
+    for (i = 0; i < n3d && at + MODEL_BYTES <= end; i++) {
+        read_model(block, cache, ncache, arch, rmb + at, syaw, sx, 0.0f, oz, record, 1);
+        at += MODEL_BYTES;
+    }
+    for (i = 0; i < nflat && at + FLAT_BYTES <= end; i++) {
+        add_flat(block, rmb + at, syaw, sx, oz, 0);
+        at += FLAT_BYTES;
+    }
+    if (nsec > 256 || at + (df_u32)nsec * 16u > end) {
+        return block;
+    }
+    at += (df_u32)nsec * 16u;
+    for (i = 0; i < npeople && at + FLAT_BYTES <= end; i++) {
+        add_flat(block, rmb + at, syaw, sx, oz, person_tag(rmb + at));
+        at += FLAT_BYTES;
+    }
+    for (i = 0; i < ndoor && at + DOOR_BYTES <= end; i++) {
+        const df_u8 *p;
+        int m;
+
+        p = rmb + at;
+        m = add_model(block, cache, ncache, arch, DOOR_MODEL + (int)p[16] % 5,
+                      syaw, (float)df_ri16(p + 12) * ROT_STEP,
+                      (float)df_ri32(p), -(float)df_ri32(p + 4), (float)df_ri32(p + 8),
+                      sx, 0.0f, oz, record, 0);
+        if (m >= 0) {
+            block->act[m].hinged = 1;
+        }
+        at += DOOR_BYTES;
     }
     return block;
 }

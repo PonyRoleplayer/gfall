@@ -56,6 +56,7 @@ GFALL_SRC := \
 	src/engine/scene/weather.c \
 	src/engine/scene/collide.c \
 	src/engine/scene/walker.c \
+	src/engine/scene/interact.c \
 	src/engine/platform/winmm.c \
 	src/engine/sound/mixer.c \
 	src/engine/sound/audio.c \
@@ -85,6 +86,7 @@ GFALL_SRC := \
 	src/game/dagger/dungeon.c \
 	src/game/dagger/bind.c \
 	src/game/dagger/world.c \
+	src/game/dagger/doors.c \
 	src/game/dagger/skyfile.c \
 	src/game/dagger/forecast.c \
 	src/game/dagger/player.c \
@@ -108,6 +110,7 @@ RENDER_SRC := \
 	src/engine/scene/weather.c \
 	src/engine/scene/collide.c \
 	src/engine/scene/walker.c \
+	src/engine/scene/interact.c \
 	src/engine/platform/winmm.c \
 	src/engine/sound/mixer.c \
 	src/engine/sound/audio.c \
@@ -148,6 +151,7 @@ LEVEL_SRC := \
 	src/engine/scene/weather.c \
 	src/engine/scene/collide.c \
 	src/engine/scene/walker.c \
+	src/engine/scene/interact.c \
 	src/engine/platform/winmm.c \
 	src/engine/sound/mixer.c \
 	src/engine/sound/audio.c \
@@ -176,6 +180,7 @@ LEVEL_SRC := \
 	src/game/dagger/dungeon.c \
 	src/game/dagger/bind.c \
 	src/game/dagger/world.c \
+	src/game/dagger/doors.c \
 	src/game/dagger/skyfile.c \
 	src/game/dagger/forecast.c \
 	src/game/dagger/sndfile.c \
@@ -196,6 +201,7 @@ HOST_SRC := \
 	src/engine/scene/weather.c \
 	src/engine/scene/collide.c \
 	src/engine/scene/walker.c \
+	src/engine/scene/interact.c \
 	src/engine/sound/mixer.c \
 	src/engine/sound/audio.c \
 	src/engine/sound/sound.c \
@@ -212,6 +218,7 @@ HOST_SRC := \
 	src/game/dagger/dungeon.c \
 	src/game/dagger/bind.c \
 	src/game/dagger/world.c \
+	src/game/dagger/doors.c \
 	src/game/dagger/skyfile.c \
 	src/game/dagger/forecast.c \
 	src/game/dagger/player.c \

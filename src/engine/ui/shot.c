@@ -189,6 +189,21 @@ static void note_begin(const char *name)
     df_copy(g_status, g_note, (int)sizeof(g_status));
 }
 
+const df_u8 *shot_grab(int *stride)
+{
+    if (!g_snap) {
+        /* Kept for the process: not the temp heap a viewer draws inside. */
+        g_snap = (df_u8 *)mem_keep((df_u32)SHOT_STRIDE * (df_u32)DF_VIEW_H);
+    }
+    if (!g_snap || !glide_lfb_read(g_snap, SHOT_STRIDE)) {
+        return 0;
+    }
+    if (stride) {
+        *stride = SHOT_STRIDE;
+    }
+    return g_snap;
+}
+
 static int write_bmp(const char *name)
 {
     df_u8 hdr[54];
@@ -197,11 +212,7 @@ static int write_bmp(const char *name)
     int y;
     int x;
 
-    if (!g_snap) {
-        /* Kept for the process: not the temp heap a viewer draws inside. */
-        g_snap = (df_u8 *)mem_keep((df_u32)SHOT_STRIDE * (df_u32)DF_VIEW_H);
-    }
-    if (!g_snap || !glide_lfb_read(g_snap, SHOT_STRIDE)) {
+    if (!shot_grab(0)) {
         return 0;
     }
     mem_zero(hdr, 54);

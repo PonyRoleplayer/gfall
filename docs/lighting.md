@@ -25,6 +25,8 @@ What the data says, from all of `BLOCKS.BSA`:
 
 Flats from `TEXTURE.210` are marked `Flat.glow` by `rdb.c` and `rmb.c`, and drawn full bright.
 
+A model that moves (a door, a lever, a lift: `Scene.movers`, `docs/interact.md`) gets no decals, since they are cut where it stood and would stay there when it swings. It is drawn in one colour instead, the ambient raised by the lights round its box as the place built it, the sum a sprite gets (`light_model_rgb`). A house's inside has no light records: each `TEXTURE.210` flat there is a light, as outdoors, but always lit.
+
 `lightview 512` in the console draws the lights within 512 units of the camera, the 64 nearest at most (`lightview` takes 0, which is off, to 2048): a square at each, and a ring as wide as its reach at its distance. Yellow when its decals passed this frame's cull, dim orange when not. It draws over walls, so a light behind one still shows. A light is drawn only when its centre is on the glass, and its ring only when at most 480 pixels wide. The first version drew every light up to the far clip: in LEVELFALL at 8192 the glass filled with rings, and a light beside the camera projected thousands of pixels off the glass, so its ring sent the card line coordinates past the SST-1's +/-2048. The card hung and took the machine with it. Anything drawn straight to the card has to stay inside that range; the scene's own polygons are clipped for the same reason (`docs/culling.md`).
 
 ## How it is drawn
@@ -57,9 +59,17 @@ A flame's light wavers. The records do not say which lights are flames; the pict
 | `lights` | on | Off draws every place full bright, as before. |
 | `ambient` | 112 | Brightness away from lights, 0..255. A lit wall goes to at most twice this. |
 | `lightrange` | 3 | A light reaches this many times its radius, 1..8, as Daggerfall Unity's range of 3. A change cuts the decals again (`gfx_set_light_range`). |
-| `lightview` | 0 | The squares and rings above, for lights within this many units, up to 2048. 0 is off. |
+| `lightshadow` | on | A light lays no decal on a face it cannot see (below). Off lights through floors and walls, as before. A change cuts the decals again (`gfx_set_light_shadow`). |
+| `lightview` | 0 | The squares and rings above, for lights within this many units, up to 2048. 0 is off; 1 to 63, which hold nothing, turn it on at 512. |
 
 `stats` adds how many lights lit something on screen and how many decals were drawn.
+
+## Line of sight
+
+A decal is cut only where the light can see it: the line from the light to the decal's middle, or to one of four of its corners drawn a fifth of the way in, must not pass through a model on the way (`seen`, `light_reaches`). Without it a light reached through anything inside its reach. A house's ceiling lamps, three storeys of them 129 units apart, each lit all three floors: the alchemist in Daggerfall's `CUSTAA01.RMB` (building 10) cut 2771 decals from 9 lamps and drew 17 fps in LEVELFALL, against 52 with `lights 0`. Seeing only its own storey, it cuts 509. The hold's 71 lights went from 2282 to 1667, the ones that lit the next room through a wall; the Ashwing farmhouse from 1053 to 268.
+
+The test runs once, at load, against the models the light reaches (the ones whose box is within its reach, `g_near`), with their triangles from both sides (`instance_ray`, the use key's test). A model that moves does not shade: it is not in that list. A face partly behind something keeps its whole decal when any one of the five lines is clear. Sprites and moving models still take their colour from every light in reach, through walls (`light_point`).
+
 
 ## Cost
 

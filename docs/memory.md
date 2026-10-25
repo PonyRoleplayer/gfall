@@ -38,6 +38,10 @@ Texture records are not in this cache. `place_image` already keeps one `Image` p
 
 About 1.5 MB on the main heap, kept for the process (`mem_keep`), since a voice may play a clip after the place that asked for it is gone: the clips loaded so far (at most 3 MB, a place's few hundred KB), the song buffers and the MIDI stream. A place's emitters are on its own heap. See `docs/sound.md`.
 
+## Doors and actions
+
+About 520 KB more per place, on its own heap: a `ModelAct` and a block byte for each of the 8192 model slots, 2048 usables and 1024 movers, and a work list while they are built. See `docs/interact.md`.
+
 ## The 2MB texture card
 
 The image table is 384 (`TEX_SLOTS`). Daggerfall names 235 pictures. Wayrest names 273, and a table of 256 rejected that open with `texture count` after the world had loaded. The full squares still do not fit the card: Daggerfall's are about 2.8MB. `gfx_prepare` used to send every full square and fail with `texture memory is full` before the first frame.

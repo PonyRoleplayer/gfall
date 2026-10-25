@@ -23,18 +23,19 @@ From Daggerfall Unity's code (`SongManager`, `AmbientEffectsPlayer`, `RDBLayout`
 The events are MIDI with running status, except:
 - A note-on is followed by a variable-length duration and has no note-off of its own; `hmi.c` makes one.
 - 0xFE begins an HMI event of its own (loop and branch marks), skipped at ZMusic's lengths.
+- SUNNYDAY's fifth track waits 1,192,560 ticks (2.8 hours) after its last note before a reverb setting and its end: the song never came round to its loop in any time a player would wait, and was silent after its first minute. Every other song ends within 200 ticks of its last note. `hmi.c` moves any event more than 960 ticks (8 s) after the last note to that note's tick (`trim_tail`), and SUNNYDAY is 57 s long. hostcheck holds every song to it.
 
 Every Daggerfall track names General MIDI (0xA000), OPL2 (0xA002) and Gravis (0xA00A). The songs whose names end in FM are the FM arrangements.
 
 What the songs need: at most 17 notes at once (in TAVERN, SNEAKING and the long dungeon songs), at most 11,077 events (DUNGEON.HMI), from 30 seconds to 5½ minutes long.
 
 **When things play**, as Daggerfall Unity has it:
-- **Songs.** A dungeon song inside. Outdoors: by day a playlist by the weather (sunny, cloudy, overcast and fog, rain and storm, snow), at night the night songs. A song loops until the playlist changes.
+- **Songs.** A dungeon song in a dungeon. In a building, a song by what it is (a shop, a tavern, the Mages Guild, a palace, a temple, the Fighters' Guild, any other house: `sounds_house`, `docs/interact.md`). Outdoors: by day a playlist by the weather (sunny, cloudy, overcast and fog, rain and storm, snow), at night the night songs. A song loops until the playlist changes.
 - **Weather.** Rain and storm loop the rain (389). A storm plays a thunder clip (348–350) after a burst of lightning flashes. A clear night loops crickets (6). A fair day calls a bird (437, 438) somewhere 10–20 m away every 4–35 s.
 - **Dungeons.** Every 4–35 s, one of fourteen noises (63–76: drips, moans, wind, a far door, a grind, strumming, a roar, coins, a bird) somewhere 10–20 m away. Not in a castle's peaceful blocks: not done here, see the end.
 - **Torches.** The flaming torch flats, `TEXTURE.210` records 0, 1, 6 and 16–20, loop burning (420), linear to 5 m at 0.7. Lanterns, chandeliers and lamp posts are quiet.
 - **Animals.** `TEXTURE.201` flats call now and then within 768 units: a 101 in 32768 chance each sixteenth of a second, about once in 20 s. Horse 0–1, cow 3–4, pig 5–6, cat 7–8, dog 9–10.
-- **Doors and other actions.** An RDB action plays its record's sound id when it runs. Nothing moves yet: not done.
+- **Doors and other actions.** A dungeon's hinged door sounds 25 opening and 24 shutting, a house's 94 and 93. An RDB action plays its record's sound id (a `DAGGER.SND` id) each way it moves. From the model, full within 2 m, silent past 30 (`docs/interact.md`).
 
 ## The layers
 
@@ -137,7 +138,7 @@ On a place's heap: its emitters, 2048 at most (`MAX_EMITTERS`), 32 bytes each.
 | `musdev [n\|auto]` | The MIDI outputs, or play on one. |
 | `song [name\|stop]` | The song, or play one of MIDI.BSA's by name (`song DUNGEON5.HMI`). |
 | `play n` | Play DAGGER.SND clip n. |
-| `sndview n` | Squares, words and rings for the emitters within n units of the camera (0..4096), the 64 nearest: see below. 0 (default) is off. Try 1024. |
+| `sndview n` | Squares, words and rings for the emitters within n units of the camera (0..4096), the 64 nearest: see below. 0 (default) is off; 1 to 63 hold nothing, so they turn it on at 1024. |
 | `sndlist [n]` | The place's emitters by kind ("53 fire"), then the n nearest (10, at most 64): number, word, position, distance, reach, loop or now and then, and whether it plays or is in reach. |
 
 ## Seeing the emitters
@@ -160,7 +161,7 @@ Heard on the 233 with the AWE64 and a Voodoo 2 under Glide: the effects, the wea
 
 ## Not done
 
-- Doors and other RDB actions: nothing moves yet; the sound id is there for it.
+- Locks, bashing and picking have their sounds in the file (316, 7), not played yet.
 - A castle's peaceful blocks still get the dungeon's noises; Daggerfall Unity skips them (a start marker with a magnitude marks the block).
 - The water: Daggerfall Unity plays gentle water near a block's water level, and bubbles under it.
 - Footsteps, the player's own sounds, enemies.

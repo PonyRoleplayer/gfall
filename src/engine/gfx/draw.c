@@ -18,6 +18,7 @@
 #include "engine/scene/daylight.h"
 #include "engine/scene/weather.h"
 #include "engine/scene/walker.h"
+#include "engine/scene/interact.h"
 #include "engine/sound/ambience.h"
 #include "engine/gfx/sky.h"
 
@@ -1627,6 +1628,396 @@ static void draw_sound_view(const Camera *cam, const Basis *basis, const Scene *
     }
 }
 
+/*
+ * The use key: the left button or E, on its edge (docs/interact.md). The
+ * console has its own keys and is not drawn through here while open.
+ */
+static int g_use_was = 1;
+
+static int use_edge(void)
+{
+    int down;
+    int edge;
+
+    down = ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) || (GetAsyncKeyState('E') & 0x8000)) ? 1 : 0;
+    edge = down && !g_use_was;
+    g_use_was = down;
+    return edge;
+}
+
+/* One edge of a box in the world, cut at the near plane, then on the glass. */
+static void view_edge(const Camera *cam, const Basis *basis, const float *a, const float *b,
+                      float r, float g, float bl)
+{
+    float va[3];
+    float vb[3];
+    DrawVert p;
+    DrawVert q;
+    float oow, ooz;
+
+    camera_view(cam, basis, a[0], a[1], a[2], &va[0], &va[1], &va[2]);
+    camera_view(cam, basis, b[0], b[1], b[2], &vb[0], &vb[1], &vb[2]);
+    if (va[2] < DF_NEAR && vb[2] < DF_NEAR) {
+        return;
+    }
+    if (va[2] < DF_NEAR || vb[2] < DF_NEAR) {
+        float *n;
+        const float *f;
+        float t;
+        int k;
+
+        n = va[2] < DF_NEAR ? va : vb;
+        f = va[2] < DF_NEAR ? vb : va;
+        t = (DF_NEAR - n[2]) / (f[2] - n[2]);
+        for (k = 0; k < 3; k++) {
+            n[k] += (f[k] - n[k]) * t;
+        }
+        n[2] = DF_NEAR;
+    }
+    if (!camera_project(va[0], va[1], va[2], &p.x, &p.y, &oow, &ooz)
+        || !camera_project(vb[0], vb[1], vb[2], &q.x, &q.y, &oow, &ooz)) {
+        return;
+    }
+    /*
+     * Cut to the glass (Liang and Barsky): a box corner beside the eye
+     * projects thousands of pixels out, and the SST-1 hangs on a line
+     * past +/-2048 (docs/lighting.md, lightview).
+     */
+    {
+        float t0, t1, dx, dy;
+        float pv[4], qv[4];
+        int k;
+
+        t0 = 0.0f;
+        t1 = 1.0f;
+        dx = q.x - p.x;
+        dy = q.y - p.y;
+        pv[0] = -dx;
+        qv[0] = p.x;
+        pv[1] = dx;
+        qv[1] = (float)DF_VIEW_W - 1.0f - p.x;
+        pv[2] = -dy;
+        qv[2] = p.y;
+        pv[3] = dy;
+        qv[3] = (float)DF_VIEW_H - 1.0f - p.y;
+        for (k = 0; k < 4; k++) {
+            float r;
+
+            if (pv[k] == 0.0f) {
+                if (qv[k] < 0.0f) {
+                    return;
+                }
+                continue;
+            }
+            r = qv[k] / pv[k];
+            if (pv[k] < 0.0f) {
+                if (r > t1) {
+                    return;
+                }
+                if (r > t0) {
+                    t0 = r;
+                }
+            } else {
+                if (r < t0) {
+                    return;
+                }
+                if (r < t1) {
+                    t1 = r;
+                }
+            }
+        }
+        q.x = p.x + dx * t1;
+        q.y = p.y + dy * t1;
+        p.x = p.x + dx * t0;
+        p.y = p.y + dy * t0;
+    }
+    p.oow = q.oow = 1.0f;
+    p.ooz = q.ooz = 1.0f;
+    p.sow = q.sow = 0.0f;
+    p.tow = q.tow = 0.0f;
+    p.r = q.r = r;
+    p.g = q.g = g;
+    p.b = q.b = bl;
+    glide_line(&p, &q);
+}
+
+/*
+ * The box a usable is taken by, as eight world corners: a model's box as
+ * it stands, a sprite's, or the passage's own about its face.
+ */
+static int use_corners(const Scene *scene, const Usable *u, float (*c)[3], float *mid)
+{
+    float ax[3], ay[3], az[3], o[3];
+    float ex, ey, ez;
+    int k;
+
+    if (u->model >= 0) {
+        const Instance *in;
+
+        if (u->model >= scene->nmodels || !scene->models[u->model].mesh) {
+            return 0;
+        }
+        in = &scene->models[u->model];
+        mesh_measure(in->mesh);
+        if (in->mesh->bound_n < 1) {
+            return 0;
+        }
+        instance_point(in, in->mesh->cx, in->mesh->cy, in->mesh->cz, &o[0], &o[1], &o[2]);
+        for (k = 0; k < 3; k++) {
+            ax[k] = in->m[k * 3];
+            ay[k] = in->m[k * 3 + 1];
+            az[k] = in->m[k * 3 + 2];
+        }
+        ex = in->mesh->ex;
+        ey = in->mesh->ey;
+        ez = in->mesh->ez;
+    } else if (u->sprite >= 0) {
+        const Flat *fl;
+
+        if (u->sprite >= scene->nsprites) {
+            return 0;
+        }
+        fl = &scene->sprites[u->sprite];
+        o[0] = fl->x;
+        o[1] = fl->y;
+        o[2] = fl->z;
+        ax[0] = 1.0f; ax[1] = 0.0f; ax[2] = 0.0f;
+        ay[0] = 0.0f; ay[1] = 1.0f; ay[2] = 0.0f;
+        az[0] = 0.0f; az[1] = 0.0f; az[2] = 1.0f;
+        ex = fl->w * 0.5f;
+        ey = fl->h * 0.5f;
+        ez = fl->w * 0.5f;
+    } else {
+        o[0] = u->cx;
+        o[1] = u->cy;
+        o[2] = u->cz;
+        ax[0] = u->nz; ax[1] = 0.0f; ax[2] = -u->nx;
+        ay[0] = 0.0f; ay[1] = 1.0f; ay[2] = 0.0f;
+        az[0] = u->nx; az[1] = 0.0f; az[2] = u->nz;
+        ex = u->hw;
+        ey = u->hh;
+        ez = u->hd;
+    }
+    for (k = 0; k < 8; k++) {
+        float sx, sy, sz;
+        int j;
+
+        sx = (k & 1) ? ex : -ex;
+        sy = (k & 2) ? ey : -ey;
+        sz = (k & 4) ? ez : -ez;
+        for (j = 0; j < 3; j++) {
+            c[k][j] = o[j] + ax[j] * sx + ay[j] * sy + az[j] * sz;
+        }
+    }
+    for (k = 0; k < 3; k++) {
+        mid[k] = o[k];
+    }
+    return 1;
+}
+
+/*
+ * `useview`: what can be used within interact_view() units, as boxes
+ * with their words. Cyan for what moves, gold for a passage to another
+ * place, green for a person, white for the rest; the one the use key
+ * would take now is drawn bright, the rest dim. The nearest
+ * USE_VIEW_COUNT only.
+ */
+#define USE_VIEW_COUNT 48
+
+static void draw_use_view(const Camera *cam, const Basis *basis, const Scene *scene)
+{
+    static const int edges[12][2] = {
+        {0, 1}, {2, 3}, {4, 5}, {6, 7}, {0, 2}, {1, 3},
+        {4, 6}, {5, 7}, {0, 4}, {1, 5}, {2, 6}, {3, 7}
+    };
+    int pick[USE_VIEW_COUNT];
+    float dist2[USE_VIEW_COUNT];
+    float mid[USE_VIEW_COUNT][3];
+    float range2;
+    int npick;
+    int i;
+    int j;
+
+    if (interact_view() < 1 || !scene->usables || scene->nusables < 1) {
+        return;
+    }
+    range2 = (float)interact_view() * (float)interact_view();
+    npick = 0;
+    for (i = 0; i < scene->nusables; i++) {
+        float c[8][3];
+        float m[3];
+        float dx, dy, dz, d2;
+
+        if (!use_corners(scene, &scene->usables[i], c, m)) {
+            continue;
+        }
+        dx = m[0] - cam->x;
+        dy = m[1] - cam->y;
+        dz = m[2] - cam->z;
+        d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 > range2 || (npick == USE_VIEW_COUNT && d2 >= dist2[npick - 1])) {
+            continue;
+        }
+        if (npick < USE_VIEW_COUNT) {
+            npick++;
+        }
+        for (j = npick - 1; j > 0 && dist2[j - 1] > d2; j--) {
+            dist2[j] = dist2[j - 1];
+            pick[j] = pick[j - 1];
+        }
+        dist2[j] = d2;
+        pick[j] = i;
+    }
+    if (npick < 1) {
+        return;
+    }
+    glide_overlay(1);
+    for (j = 0; j < npick; j++) {
+        const Usable *u;
+        float c[8][3];
+        float r, g, b, k;
+        int e;
+
+        u = &scene->usables[pick[j]];
+        if (!use_corners(scene, u, c, mid[j])) {
+            continue;
+        }
+        switch (u->kind) {
+        case USE_MOVER:
+            r = 60.0f;
+            g = 220.0f;
+            b = 255.0f;
+            break;
+        case USE_PASSAGE:
+            r = 255.0f;
+            g = 200.0f;
+            b = 40.0f;
+            break;
+        case USE_TALK:
+            r = 90.0f;
+            g = 255.0f;
+            b = 90.0f;
+            break;
+        default:
+            r = 230.0f;
+            g = 230.0f;
+            b = 230.0f;
+            break;
+        }
+        k = pick[j] == interact_aimed() ? 1.0f : 0.45f;
+        for (e = 0; e < 12; e++) {
+            view_edge(cam, basis, c[edges[e][0]], c[edges[e][1]], r * k, g * k, b * k);
+        }
+    }
+    glide_overlay(0);
+    for (j = 0; j < npick; j++) {
+        const Usable *u;
+        float x, y, z, sx, sy, oow, ooz;
+
+        u = &scene->usables[pick[j]];
+        if (!u->label) {
+            continue;
+        }
+        camera_view(cam, basis, mid[j][0], mid[j][1], mid[j][2], &x, &y, &z);
+        if (z < DF_NEAR || !camera_project(x, y, z, &sx, &sy, &oow, &ooz)) {
+            continue;
+        }
+        if (sx < 0.0f || sx > (float)(DF_VIEW_W - 48) || sy < 0.0f || sy > (float)DF_VIEW_H) {
+            continue;
+        }
+        ui_string(df_iround(sx) - ui_string_width(u->label) / 2, df_iround(sy), u->label);
+    }
+}
+
+static void cover_bar(float x, float y, float w, float h, float r, float g, float b);
+
+/* interact_say's line, at the middle of the glass, a third of the way up. */
+static void draw_saying(void)
+{
+    const char *s;
+    int alpha;
+
+    int wide;
+    int line;
+    int x;
+    int top;
+
+    s = interact_saying(&alpha);
+    if (!s || alpha <= 0) {
+        return;
+    }
+    wide = ui_string_width(s);
+    line = ui_line_height();
+    x = (DF_VIEW_W - wide) / 2;
+    top = DF_VIEW_H / 3;
+    /* On a plate, as the screenshot note is: white on a pale wall is lost. */
+    glide_dim(1, alpha * 3 / 4);
+    cover_bar((float)(x - 6), (float)(top - line - 4), (float)(wide + 12), (float)(line + 8),
+              0.0f, 0.0f, 0.0f);
+    glide_dim(0, 0);
+    ui_string_alpha(x, top, s, alpha);
+}
+
+/* A black wash over the whole glass at opacity alpha 0..255. */
+static void wash_glass(int alpha)
+{
+    DrawVert v[4];
+    int i;
+
+    if (alpha <= 0) {
+        return;
+    }
+    for (i = 0; i < 4; i++) {
+        v[i].oow = 1.0f;
+        v[i].ooz = 1.0f;
+        v[i].sow = 0.0f;
+        v[i].tow = 0.0f;
+        v[i].r = 0.0f;
+        v[i].g = 0.0f;
+        v[i].b = 0.0f;
+    }
+    v[0].x = 0.0f;
+    v[0].y = (float)DF_VIEW_H;
+    v[1].x = (float)DF_VIEW_W;
+    v[1].y = (float)DF_VIEW_H;
+    v[2].x = (float)DF_VIEW_W;
+    v[2].y = 0.0f;
+    v[3].x = 0.0f;
+    v[3].y = 0.0f;
+    glide_dim(1, alpha > 255 ? 255 : alpha);
+    glide_polygon(v, 4);
+    glide_dim(0, 0);
+}
+
+/* Holding a passage's last frame dims it this much; the next place comes up from black. */
+#define HOLD_DIM 150
+
+static float g_fade_left;
+static float g_fade_total;
+
+void draw_fade_in(float secs)
+{
+    g_fade_total = secs > 0.0f ? secs : 0.0f;
+    g_fade_left = g_fade_total;
+}
+
+void draw_hold(const char *text)
+{
+    const df_u8 *pix;
+    int stride;
+
+    glide_sprite_alpha(0);
+    pix = shot_grab(&stride);
+    if (!pix || !glide_lfb_write(pix, stride)) {
+        glide_clear();
+    }
+    wash_glass(HOLD_DIM);
+    if (text && text[0]) {
+        ui_string((DF_VIEW_W - ui_string_width(text)) / 2, (DF_VIEW_H + ui_line_height()) / 2, text);
+    }
+    glide_swap();
+}
+
 static int g_cap_models;
 static int g_cap_sprites;
 
@@ -1663,6 +2054,8 @@ void draw_frame(const Camera *cam, const Level *level)
     float ky = 0.0f;
     float kz = 0.0f;
     df_u32 sprite_day;
+    df_u32 ambient;
+    df_u32 tinted;
 
     if (!level) {
         return;
@@ -1696,6 +2089,12 @@ void draw_frame(const Camera *cam, const Level *level)
     if (walker_on() && (const Camera *)console_camera() == cam) {
         walker_step(console_camera(), &level->scene, secs);
     }
+    /*
+     * Use what the middle of the view rests on, on the use key's edge,
+     * then move the doors and levers on (docs/interact.md). Before the
+     * cull, which reads the poses they write.
+     */
+    interact_frame(&level->scene, cam, secs, use_edge());
     g_vis_models = 0;
     g_vis_sprites = 0;
     g_faces_kept = 0;
@@ -1793,7 +2192,9 @@ void draw_frame(const Camera *cam, const Level *level)
         }
     }
     /* The place's ambient, white when it is unlit. See docs/lighting.md. */
-    glide_tint(lit ? g_shade[DAYLIGHT_STEPS / 2] : light_ambient_rgb());
+    ambient = lit ? g_shade[DAYLIGHT_STEPS / 2] : light_ambient_rgb();
+    glide_tint(ambient);
+    tinted = ambient;
     g_lights_drawn = 0;
     g_decals_drawn = 0;
     norder = scene_visible_models(&level->scene, cam, order, VIS_MAX);
@@ -1805,6 +2206,16 @@ void draw_frame(const Camera *cam, const Level *level)
         in = &level->scene.models[order[oi]];
         if (!in->mesh) {
             continue;
+        }
+        /* A moving model indoors has no decals: one colour from the lights round it. */
+        if (!lit && level->scene.nmovers > 0) {
+            df_u32 c;
+
+            c = light_model_rgb(order[oi], ambient);
+            if (c != tinted) {
+                glide_tint(c);
+                tinted = c;
+            }
         }
         if (lit) {
             /* The key light in the mesh's frame: one dot product a face. */
@@ -1878,6 +2289,8 @@ void draw_frame(const Camera *cam, const Level *level)
     }
     draw_light_view(cam, &basis);
     draw_sound_view(cam, &basis, &level->scene);
+    draw_use_view(cam, &basis, &level->scene);
+    draw_saying();
     if (g_under) {
         g_under();
     }
@@ -1888,6 +2301,11 @@ void draw_frame(const Camera *cam, const Level *level)
     shot_note();
     build_legend();
     draw_covers();
+    /* Coming through a passage: the new place comes up from black (draw_hold). */
+    if (g_fade_left > 0.0f && g_fade_total > 0.0f) {
+        wash_glass(df_iround(255.0f * g_fade_left / g_fade_total));
+        g_fade_left -= secs;
+    }
     glide_swap();
 }
 

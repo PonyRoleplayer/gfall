@@ -349,6 +349,10 @@ int ambience_emitter_playing(int index)
 
 void ambience_set_view(int units)
 {
+    /* A range too small to hold anything is "on": `sndview 1`. */
+    if (units > 0 && units < AMBIENCE_VIEW_SMALL) {
+        units = AMBIENCE_VIEW_ON;
+    }
     g_view = units < 0 ? 0 : (units > AMBIENCE_VIEW_MAX ? AMBIENCE_VIEW_MAX : units);
 }
 

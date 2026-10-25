@@ -12,7 +12,8 @@
 
 enum {
     SCAPE_DUNGEON,
-    SCAPE_TOWN
+    SCAPE_TOWN,
+    SCAPE_HOUSE
 };
 
 /*
@@ -21,6 +22,12 @@ enum {
  * the engine asks.
  */
 void sounds_scape(Soundscape *sc, int kind, int index);
+/*
+ * The inside of a building: its song by what it is (building, the RMB
+ * BuildingTypes) and whose (faction), as Daggerfall Unity's SongManager
+ * chooses; no weather and no noises round it.
+ */
+void sounds_house(Soundscape *sc, int building, int faction, int index);
 /*
  * The sound a flat of TEXTURE.file, record image makes from (x, y, z):
  * a flaming torch's fire, an animal's call. 1 and out filled, or 0.

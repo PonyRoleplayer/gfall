@@ -47,6 +47,13 @@ typedef struct Decal {
  * out (the place is then unlit). A second call replaces the first.
  */
 int light_build(const Scene *scene);
+/*
+ * 1 (default): a light lays no decal on a face it cannot see, past a
+ * model in the way (a floor, a wall). 0 lights through them, as before.
+ * Read at the next light_build; the console's switch cuts them again.
+ */
+void light_set_shadow(int on);
+int light_shadow(void);
 /* Lights of the built scene; 0 outdoors. */
 int light_count(void);
 /*
@@ -88,6 +95,13 @@ int light_lamps(void);
  * when the scene is not lit.
  */
 df_u32 light_sprite_rgb(int s);
+/*
+ * Indoors, the colour model m is drawn with when a mover moves it: the
+ * ambient raised by the lights round where it stood, as a sprite's is,
+ * since it has no decals (they are cut where it stood and would stay).
+ * base for any other model, outdoors, or when the scene is not lit.
+ */
+df_u32 light_model_rgb(int m, df_u32 base);
 /* The ambient as 0xRRGGBB. White when the scene is not lit, or outdoors. */
 df_u32 light_ambient_rgb(void);
 /*
@@ -136,6 +150,9 @@ int light_range(void);
  * the glass with rings and could send the card a line it hangs on.
  */
 #define LIGHT_VIEW_MAX 2048
+/* 1 to LIGHT_VIEW_SMALL - 1 turns it on at LIGHT_VIEW_ON. */
+#define LIGHT_VIEW_SMALL 64
+#define LIGHT_VIEW_ON 512
 void light_set_view(int units);
 int light_view(void);
 

@@ -40,6 +40,8 @@ typedef struct Flat {
      */
     df_u8 rate;
     df_u8 phase;
+    /* The loader's mark, carried with the flat (a person, say). The engine does not read it. */
+    df_u16 tag;
 } Flat;
 
 /*
@@ -71,6 +73,82 @@ typedef struct Emitter {
     float volume;
     float every;
 } Emitter;
+
+/*
+ * A model that moves when used or set off: a door on its hinge, a
+ * lever, a lift (docs/interact.md). It eases between where the place
+ * put it (start) and that pose turned by rx, ry, rz about its own axes
+ * (the model's origin is the hinge) and moved by tx, ty, tz in the
+ * world (end), linear over secs. Starting it plays it toward whichever
+ * end it is not at, and starts next with it, as Daggerfall's chained
+ * actions do. inst is the scene's model, written as it moves; the rest
+ * is the game's to fill, and state, t and the start pose the engine's.
+ */
+enum {
+    MOVER_START,
+    MOVER_FORWARD,
+    MOVER_END,
+    MOVER_BACK
+};
+
+typedef struct Mover {
+    Instance *inst;
+    int model;
+    float rx, ry, rz;
+    float tx, ty, tz;
+    float secs;
+    /* The mover that starts with this one, -1 for none. */
+    int next;
+    /* Above 0, it will not move when used (a locked door); a chain still moves it. */
+    int lock;
+    /* 1: only ever plays forward (a portcullis that stays up). */
+    df_u8 once;
+    /* 1 for a door: "locked" is said of it, and open and shut are its words. */
+    df_u8 door;
+    /* Played from the model when it starts toward the end, and back. 0 for none. */
+    const SoundClip *go_sound;
+    const SoundClip *back_sound;
+    /* The engine's. */
+    df_u8 state;
+    float t;
+    float x0, y0, z0;
+    float m0[9];
+} Mover;
+
+/*
+ * Something the player can use: look at it within reach and press the
+ * use key (docs/interact.md). It is a model (model >= 0: its box, as it
+ * stands now), a sprite (sprite >= 0), or a box of its own: centre
+ * cx, cy, cz, facing nx, nz across the floor (a door's outward normal),
+ * half sizes hw across that face, hh up, hd along the normal.
+ *
+ * kind says what using it does. USE_MOVER starts mover, which the
+ * engine does itself. The others the engine hands to the game's handler
+ * (interact_set_handler): a passage to another place, a person to talk
+ * to, anything else; what and tag are the game's, to say which.
+ */
+enum {
+    USE_MOVER,
+    USE_PASSAGE,
+    USE_TALK,
+    USE_OTHER
+};
+
+typedef struct Usable {
+    int kind;
+    int model;
+    int sprite;
+    float cx, cy, cz;
+    float nx, nz;
+    float hw, hh, hd;
+    /* From the eye, world units. */
+    float reach;
+    int mover;
+    int what;
+    int tag;
+    /* The game's word for it ("door", "exit"), for useview and uselist. */
+    const char *label;
+} Usable;
 
 /*
  * What a frame can see. models[] is drawn first, then sprites[].
@@ -114,6 +192,11 @@ typedef struct Scene {
     /* Sounds from points (docs/sound.md). */
     const Emitter *emitters;
     int nemitters;
+    /* What can be used, and the models that move (docs/interact.md). */
+    const Usable *usables;
+    int nusables;
+    Mover *movers;
+    int nmovers;
     /*
      * 1 for a place under the sky: lit by daylight, and its lights are
      * street lamps, on only at night (docs/daylight.md).
@@ -140,6 +223,14 @@ int instance_world_box(const Instance *in, Bound *out);
 int instance_faces(const Instance *in, const Camera *cam, const Basis *basis,
                    float nx, float ny, float nz,
                    float lx, float ly, float lz);
+
+/*
+ * Where the segment from o along unit d meets the model's triangles,
+ * from either side, within len: 1 and the distance in *t, the nearest.
+ * Its world box is not tested; a caller with many models does that
+ * first. For the use key's ray and the lights' line of sight.
+ */
+int instance_ray(const Instance *in, const float *o, const float *d, float len, float *t);
 
 /*
  * How far a frame can see. clip_far is the card's far clip, in world

@@ -78,6 +78,79 @@ static const char *const g_night_fm[] = {
     "11FM.HMI", "FCURSE.HMI", "FEERIE.HMI", "FRUINS.HMI", "18FM.HMI", "21FM.HMI"
 };
 
+/* Inside: SongManager's lists by building, General MIDI then FM. */
+static const char *const g_shop[] = { "GSHOP.HMI" };
+static const char *const g_tavern[] = {
+    "SQUARE_2.HMI", "TAVERN.HMI", "FOLK1.HMI", "FOLK2.HMI", "FOLK3.HMI"
+};
+static const char *const g_mages[] = { "GMAGE_3.HMI", "MAGIC_2.HMI" };
+static const char *const g_palace[] = { "06.HMI" };
+static const char *const g_temple[] = { "GNEUT.HMI" };
+static const char *const g_knight[] = { "17.HMI" };
+static const char *const g_inside[] = { "23.HMI" };
+static const char *const g_shop_fm[] = { "FM_SQR_2.HMI" };
+static const char *const g_mages_fm[] = { "FM_NITE3.HMI" };
+static const char *const g_palace_fm[] = { "06FM.HMI" };
+static const char *const g_temple_fm[] = { "FNEUT.HMI" };
+static const char *const g_knight_fm[] = { "17FM.HMI" };
+static const char *const g_inside_fm[] = { "23FM.HMI" };
+
+/* BuildingTypes, and the two guilds whose halls have their own song. */
+#define BLD_TEMPLE 14
+#define BLD_TAVERN 15
+#define BLD_PALACE 16
+#define BLD_GUILD 11
+#define FACTION_MAGES 40
+#define FACTION_FIGHTERS 41
+
+enum {
+    HOUSE_INSIDE,
+    HOUSE_SHOP,
+    HOUSE_TAVERN,
+    HOUSE_MAGES,
+    HOUSE_PALACE,
+    HOUSE_TEMPLE,
+    HOUSE_KNIGHT
+};
+
+static Playlist house_list(int which, int fm)
+{
+    Playlist p;
+
+    switch (which) {
+    case HOUSE_SHOP:
+        p.n = fm ? COUNT(g_shop_fm) : COUNT(g_shop);
+        p.names = fm ? g_shop_fm : g_shop;
+        break;
+    case HOUSE_TAVERN:
+        /* The FM list has the square's tune only, as for a shop. */
+        p.n = fm ? COUNT(g_shop_fm) : COUNT(g_tavern);
+        p.names = fm ? g_shop_fm : g_tavern;
+        break;
+    case HOUSE_MAGES:
+        p.n = fm ? COUNT(g_mages_fm) : COUNT(g_mages);
+        p.names = fm ? g_mages_fm : g_mages;
+        break;
+    case HOUSE_PALACE:
+        p.n = fm ? COUNT(g_palace_fm) : COUNT(g_palace);
+        p.names = fm ? g_palace_fm : g_palace;
+        break;
+    case HOUSE_TEMPLE:
+        p.n = fm ? COUNT(g_temple_fm) : COUNT(g_temple);
+        p.names = fm ? g_temple_fm : g_temple;
+        break;
+    case HOUSE_KNIGHT:
+        p.n = fm ? COUNT(g_knight_fm) : COUNT(g_knight);
+        p.names = fm ? g_knight_fm : g_knight;
+        break;
+    default:
+        p.n = fm ? COUNT(g_inside_fm) : COUNT(g_inside);
+        p.names = fm ? g_inside_fm : g_inside;
+        break;
+    }
+    return p;
+}
+
 static Playlist playlist(int kind, int weather, int night, int fm)
 {
     Playlist p;
@@ -130,12 +203,16 @@ static const char *pick_song(const Soundscape *sc, int weather, int night)
     Playlist p;
     df_u32 h;
 
-    p = playlist(sc->kind, weather, night, music_kind() == MUSIC_FM);
+    if (sc->kind == SCAPE_HOUSE) {
+        p = house_list(sc->detail, music_kind() == MUSIC_FM);
+    } else {
+        p = playlist(sc->kind, weather, night, music_kind() == MUSIC_FM);
+    }
     if (p.n <= 0) {
         return 0;
     }
     h = (df_u32)sc->index * 2654435761u;
-    if (sc->kind != SCAPE_DUNGEON) {
+    if (sc->kind == SCAPE_TOWN) {
         h += (df_u32)(weather + 1) * 40503u + (df_u32)night * 7919u;
     }
     return p.names[(h >> 8) % (df_u32)p.n];
@@ -166,6 +243,10 @@ void sounds_scape(Soundscape *sc, int kind, int index)
     sc->wait_max = WAIT_MAX;
     sc->index = index;
     sc->kind = kind;
+    sc->detail = 0;
+    if (kind == SCAPE_HOUSE) {
+        return;
+    }
     if (kind == SCAPE_DUNGEON) {
         /* The dungeon preset's one-shots, 63 to 76: drips, moans, a door, a roar, coins, a bird. */
         for (i = SND_DRIP_SHORT; i <= SND_DOOR_CLOSE_FAR; i++) {
@@ -182,6 +263,45 @@ void sounds_scape(Soundscape *sc, int kind, int index)
     add(sc->thunder, &sc->nthunder, SND_THUNDER_ROLL);
     add(sc->day, &sc->nday, SND_BIRD_1);
     add(sc->day, &sc->nday, SND_BIRD_2);
+}
+
+void sounds_house(Soundscape *sc, int building, int faction, int index)
+{
+    int which;
+
+    sounds_scape(sc, SCAPE_HOUSE, index);
+    switch (building) {
+    case 0:     /* Alchemist */
+    case 2:     /* Armorer */
+    case 3:     /* Bank */
+    case 5:     /* Bookseller */
+    case 6:     /* Clothing store */
+    case 7:     /* Furniture store */
+    case 8:     /* Gem store */
+    case 9:     /* General store */
+    case 10:    /* Library */
+    case 12:    /* Pawn shop */
+    case 13:    /* Weapon smith */
+        which = HOUSE_SHOP;
+        break;
+    case BLD_TAVERN:
+        which = HOUSE_TAVERN;
+        break;
+    case BLD_GUILD:
+        which = faction == FACTION_MAGES ? HOUSE_MAGES : HOUSE_INSIDE;
+        break;
+    case BLD_PALACE:
+        which = HOUSE_PALACE;
+        break;
+    case BLD_TEMPLE:
+        /* The god's alignment picks good, neutral or bad; the gods are not read yet. */
+        which = faction == FACTION_FIGHTERS ? HOUSE_KNIGHT : HOUSE_TEMPLE;
+        break;
+    default:
+        which = HOUSE_INSIDE;
+        break;
+    }
+    sc->detail = which;
 }
 
 int sounds_flat(int file, int image, float x, float y, float z, Emitter *out)

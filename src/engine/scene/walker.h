@@ -56,6 +56,12 @@ void walker_step(Camera *cam, const Scene *scene, float dt);
  * where it is free, or the last place it stood. Runs on the next step.
  */
 void walker_unstick(void);
+/*
+ * The camera was put somewhere, not walked there: the next step takes
+ * the body to it. A new place (another scene, or another heap) does
+ * this by itself.
+ */
+void walker_place(void);
 
 /* 1 while the body stands on a floor. */
 int walker_grounded(void);

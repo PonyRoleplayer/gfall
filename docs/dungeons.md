@@ -26,7 +26,7 @@ One record, after the door prefix:
 - the location header starts at `at`
 - name: 32 bytes at `at + 71`
 - location id: `u16` at `at + 33`
-- has parent: `u16` at `at + 39`. Parent location id: `u16` at `at + 41`
+- has parent: `u16` at `at + 39`. Parent location id: `u16` at `at + 41`. `Dungeon.exterior_id` and `DunRef.exterior_id` are the parent when there is one, else the record's own id: the outside it lies under. An outside's is its own id. LEVELFALL pairs a dungeon with its outside by it (`docs/interact.md`)
 - dungeon header starts at `at + 112` (`LOC_TAIL`)
 - block count: `u16` at `head + 10`
 - blocks start at `head + 17`, 4 bytes each
@@ -63,7 +63,7 @@ After the shared location header (`at + 112`) an exterior has a `u16` building c
 
 The RMB name is prefix + letter1 + letter2 + number + `.RMB`. Prefixes run `TVRN` through `WITC` (two `TEMP`s). Letter 1 is the location letter when bit `0x10` is set, otherwise `A`. Letter 2 is `A L M S` from `((character * 2) & 0xff) >> 6`. Temples (index 13 and 14) use a letter plus the raw number. Other blocks use at least two digits.
 
-`rmb_load` reads the 6776-byte fixed header, each exterior subrecord, then the misc models and flats. Interiors stay in the file. A building is placed at `(X, 0, 4096 - Z)` with its model at `(X, -Y, Z)` in that frame. Yaw is the RDB 2048-unit circle, negated the same way as `place_model`. Props sit at `(X, -Y - 4, Z + 4096)`. Ground is 16 by 16 quads of 256, textured from climate family + 2 (`TEXTURE.002`, `102`, `302`, `402`). Tile bits `0x40` and `0x80` pick one of four orientations (none, 90 degrees, 180 degrees, the other 90). They are not a horizontal mirror. The camera starts above the bounds, pitched down.
+`rmb_load` reads the 6776-byte fixed header, each exterior subrecord, then the misc models and flats. A building's inside loads on its own, when its door is used (`rmb_load_interior`, `world_load_inside`, `docs/interact.md`). Each model keeps the building it belongs to (`ModelAct.record`), and each people-list flat is marked a person. A building is placed at `(X, 0, 4096 - Z)` with its model at `(X, -Y, Z)` in that frame. Yaw is the RDB 2048-unit circle, negated the same way as `place_model`. Props sit at `(X, -Y - 4, Z + 4096)`. Ground is 16 by 16 quads of 256, textured from climate family + 2 (`TEXTURE.002`, `102`, `302`, `402`). Tile bits `0x40` and `0x80` pick one of four orientations (none, 90 degrees, 180 degrees, the other 90). They are not a horizontal mirror. The camera starts above the bounds, pitched down.
 
 `assemble` owns one `ArchEnt` table (`ARCH_CACHE`, 4096) and passes it into every `rmb_load` and `rdb_load`. A mesh is in model-local space, so two blocks that name the same ARCH3D id share one `Mesh`. Do not put that cache back inside a single block load. How the bytes are sized, and how the 2MB texture card is filled, is `docs/memory.md`.
 

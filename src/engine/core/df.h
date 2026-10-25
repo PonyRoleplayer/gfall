@@ -107,6 +107,27 @@ static float df_cos(float x)
     return r;
 }
 
+/* The angle of (x, y), -pi..pi: fpatan takes y over x and pops x. */
+static float df_atan2(float y, float x)
+{
+    float r;
+
+    __asm__ __volatile__("fpatan" : "=t"(r) : "0"(x), "u"(y) : "st(1)");
+    return r;
+}
+
+/* x87 fsqrt; 0 below 0. */
+static float df_sqrt(float x)
+{
+    float r;
+
+    if (x <= 0.0f) {
+        return 0.0f;
+    }
+    __asm__ __volatile__("fsqrt" : "=t"(r) : "0"(x));
+    return r;
+}
+
 /*
  * Nearest integer, for |v| below 2^22. A C cast on the x87 switches the
  * rounding mode twice (fnstcw, fldcw, fistp, fldcw), about 30 cycles on

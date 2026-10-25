@@ -1,6 +1,7 @@
 #include "engine/scene/walker.h"
 #include "engine/scene/collide.h"
 #include "engine/core/log.h"
+#include "engine/core/mem.h"
 
 /*
  * See walker.h and docs/collision.md. A frame is one gather, one sweep
@@ -25,6 +26,13 @@
 
 static int g_on;
 static int g_ready;
+/*
+ * The place the body is in, and its heap. A door to another place moves
+ * the camera less than TELEPORT (a house's inside is where the house
+ * stands), so a new place is told by these, not by the distance.
+ */
+static const Scene *g_scene;
+static df_u32 g_epoch;
 static int g_grounded;
 static int g_want_unstick;
 static float g_feet[3];
@@ -54,6 +62,11 @@ int walker_on(void)
 int walker_grounded(void)
 {
     return g_on && g_grounded;
+}
+
+void walker_place(void)
+{
+    g_ready = 0;
 }
 
 void walker_unstick(void)
@@ -247,7 +260,16 @@ void walker_step(Camera *cam, const Scene *scene, float dt)
     collide_set_shape(WALK_RADIUS, WALK_UPPER);
     dx = cam->x - g_last[0];
     dz = cam->z - g_last[2];
-    /* First step, or the camera was set (setpos, a new place): take it where it is. */
+    if (scene != g_scene || mem_epoch() != g_epoch) {
+        g_scene = scene;
+        g_epoch = mem_epoch();
+        g_ready = 0;
+    }
+    /*
+     * First step, a new place, or the camera was set (setpos): take it
+     * where it is. Walked there, the body would be swept from where it
+     * stood, through the wall a door is in.
+     */
     if (!g_ready || dx * dx + dz * dz > TELEPORT * TELEPORT
         || df_absf(cam->y - g_last[1]) > TELEPORT) {
         g_feet[0] = cam->x;

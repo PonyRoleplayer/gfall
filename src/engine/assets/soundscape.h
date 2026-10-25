@@ -44,9 +44,10 @@ typedef struct Soundscape {
     /* Seconds between those, at random between the two. */
     float wait_min;
     float wait_max;
-    /* The game's own: which place, which playlist. */
+    /* The game's own: which place, which playlist, and a word more (which building). */
     int index;
     int kind;
+    int detail;
 } Soundscape;
 
 #endif

@@ -38,6 +38,8 @@ A sprite faces yaw and stays upright. Its box is half the width on X and Z and h
 
 With no spans and no bounds (a single renderfall model, or a null camera), the old path remains: measure from the triangles if needed, and list everything when the camera is null.
 
+A model that moves (`docs/interact.md`) has the box of its whole sweep baked in its place, and its block's span grown to hold it, so neither drops it wherever it has swung to.
+
 ## Occlusion
 
 The frustum is a pyramid, so a wall in front of the eye still leaves every box behind it inside the view, out to the fog. The occlusion step removes those. It is a coarse depth picture built on the Pentium, after the frustum and before anything goes to the card.

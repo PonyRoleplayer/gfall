@@ -184,6 +184,83 @@ int instance_world_box(const Instance *in, Bound *out)
     return 1;
 }
 
+/* Both sides: Moller and Trumbore, "Fast, Minimum Storage Ray/Triangle Intersection" (1997). */
+static int ray_tri(const float *o, const float *d, const Tri *tri, float len, float *t)
+{
+    float e1[3], e2[3], p[3], q[3], s[3];
+    float det, inv, u, v, at;
+
+    e1[0] = tri->x[1] - tri->x[0];
+    e1[1] = tri->y[1] - tri->y[0];
+    e1[2] = tri->z[1] - tri->z[0];
+    e2[0] = tri->x[2] - tri->x[0];
+    e2[1] = tri->y[2] - tri->y[0];
+    e2[2] = tri->z[2] - tri->z[0];
+    p[0] = d[1] * e2[2] - d[2] * e2[1];
+    p[1] = d[2] * e2[0] - d[0] * e2[2];
+    p[2] = d[0] * e2[1] - d[1] * e2[0];
+    det = e1[0] * p[0] + e1[1] * p[1] + e1[2] * p[2];
+    if (det > -1.0e-6f && det < 1.0e-6f) {
+        return 0;
+    }
+    inv = 1.0f / det;
+    s[0] = o[0] - tri->x[0];
+    s[1] = o[1] - tri->y[0];
+    s[2] = o[2] - tri->z[0];
+    u = (s[0] * p[0] + s[1] * p[1] + s[2] * p[2]) * inv;
+    if (u < 0.0f || u > 1.0f) {
+        return 0;
+    }
+    q[0] = s[1] * e1[2] - s[2] * e1[1];
+    q[1] = s[2] * e1[0] - s[0] * e1[2];
+    q[2] = s[0] * e1[1] - s[1] * e1[0];
+    v = (d[0] * q[0] + d[1] * q[1] + d[2] * q[2]) * inv;
+    if (v < 0.0f || u + v > 1.0f) {
+        return 0;
+    }
+    at = (e2[0] * q[0] + e2[1] * q[1] + e2[2] * q[2]) * inv;
+    if (at < 0.0f || at > len) {
+        return 0;
+    }
+    *t = at;
+    return 1;
+}
+
+int instance_ray(const Instance *in, const float *o, const float *d, float len, float *t)
+{
+    float lo[3];
+    float ld[3];
+    float rx, ry, rz;
+    float at;
+    int hit;
+    int k;
+
+    if (!in || !in->mesh || !in->mesh->tris) {
+        return 0;
+    }
+    /* Into the model's frame: its axes are m's columns, unit and square. */
+    rx = o[0] - in->x;
+    ry = o[1] - in->y;
+    rz = o[2] - in->z;
+    lo[0] = in->m[0] * rx + in->m[3] * ry + in->m[6] * rz;
+    lo[1] = in->m[1] * rx + in->m[4] * ry + in->m[7] * rz;
+    lo[2] = in->m[2] * rx + in->m[5] * ry + in->m[8] * rz;
+    ld[0] = in->m[0] * d[0] + in->m[3] * d[1] + in->m[6] * d[2];
+    ld[1] = in->m[1] * d[0] + in->m[4] * d[1] + in->m[7] * d[2];
+    ld[2] = in->m[2] * d[0] + in->m[5] * d[1] + in->m[8] * d[2];
+    hit = 0;
+    for (k = 0; k < in->mesh->ntris; k++) {
+        if (ray_tri(lo, ld, &in->mesh->tris[k], len, &at)) {
+            len = at;
+            hit = 1;
+        }
+    }
+    if (hit) {
+        *t = len;
+    }
+    return hit;
+}
+
 int instance_faces(const Instance *in, const Camera *cam, const Basis *basis,
                    float nx, float ny, float nz,
                    float lx, float ly, float lz)

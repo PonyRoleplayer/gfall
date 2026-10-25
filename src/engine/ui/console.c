@@ -27,6 +27,7 @@
 #include "engine/scene/weather.h"
 #include "engine/scene/walker.h"
 #include "engine/scene/collide.h"
+#include "engine/scene/interact.h"
 #include "engine/gfx/sky.h"
 #include "engine/assets/loader.h"
 #include "engine/sound/ambience.h"
@@ -867,6 +868,132 @@ static void c_play(int argc, char **argv)
     log_print(LOG_PRINT, "play: %s, %d ms", argv[1], (int)(clip->frames * 1000u / clip->rate));
 }
 
+static const char *use_kind(int kind)
+{
+    switch (kind) {
+    case USE_MOVER:
+        return "moves";
+    case USE_PASSAGE:
+        return "passage";
+    case USE_TALK:
+        return "person";
+    default:
+        return "other";
+    }
+}
+
+/* Where a usable is: its model's box, its sprite, or its own centre. */
+static void use_spot(const Scene *sc, const Usable *u, float *x, float *y, float *z)
+{
+    Bound b;
+
+    *x = u->cx;
+    *y = u->cy;
+    *z = u->cz;
+    if (u->model >= 0 && u->model < sc->nmodels
+        && instance_world_box(&sc->models[u->model], &b)) {
+        *x = b.cx;
+        *y = b.cy;
+        *z = b.cz;
+    } else if (u->sprite >= 0 && u->sprite < sc->nsprites) {
+        *x = sc->sprites[u->sprite].x;
+        *y = sc->sprites[u->sprite].y;
+        *z = sc->sprites[u->sprite].z;
+    }
+}
+
+/* What can be used here: how many of each word, then the nearest, nearest first. */
+static void c_uselist(int argc, char **argv)
+{
+    enum { KINDS = 16, SHOW_MAX = 64 };
+    const char *kind[KINDS];
+    int count[KINDS];
+    int pick[SHOW_MAX];
+    float dist2[SHOW_MAX];
+    const Scene *sc;
+    const Camera *cam;
+    int nkind;
+    int npick;
+    int show;
+    int i;
+    int j;
+
+    show = 10;
+    if (argc >= 2 && (!cmd_parse_int(argv[1], &show) || show < 1)) {
+        log_text(LOG_PRINT, "uselist: how many, 1..64");
+        return;
+    }
+    if (show > SHOW_MAX) {
+        show = SHOW_MAX;
+    }
+    cam = g_cam ? g_cam : g_player;
+    sc = interact_scene();
+    if (!cam || !sc || sc->nusables < 1) {
+        log_text(LOG_PRINT, "uselist: nothing to use in this place");
+        return;
+    }
+    nkind = 0;
+    for (i = 0; i < sc->nusables; i++) {
+        const char *word;
+
+        word = sc->usables[i].label ? sc->usables[i].label : "?";
+        for (j = 0; j < nkind && !df_eq(kind[j], word); j++) {
+        }
+        if (j == nkind && nkind < KINDS) {
+            kind[nkind] = word;
+            count[nkind++] = 0;
+        }
+        if (j < nkind) {
+            count[j]++;
+        }
+    }
+    log_print(LOG_PRINT, "uselist: %d to use, %d movers", sc->nusables, sc->nmovers);
+    for (j = 0; j < nkind; j++) {
+        log_print(LOG_PRINT, "  %d %s", count[j], kind[j]);
+    }
+    npick = 0;
+    for (i = 0; i < sc->nusables; i++) {
+        float x, y, z, dx, dy, dz, d2;
+
+        use_spot(sc, &sc->usables[i], &x, &y, &z);
+        dx = x - cam->x;
+        dy = y - cam->y;
+        dz = z - cam->z;
+        d2 = dx * dx + dy * dy + dz * dz;
+        if (npick == show && d2 >= dist2[npick - 1]) {
+            continue;
+        }
+        if (npick < show) {
+            npick++;
+        }
+        for (j = npick - 1; j > 0 && dist2[j - 1] > d2; j--) {
+            dist2[j] = dist2[j - 1];
+            pick[j] = pick[j - 1];
+        }
+        dist2[j] = d2;
+        pick[j] = i;
+    }
+    for (j = 0; j < npick; j++) {
+        const Usable *u;
+        float x, y, z;
+        float d;
+        float dist;
+        int lock;
+
+        d = dist2[j];
+        __asm__ __volatile__("fsqrt" : "=t"(dist) : "0"(d));
+        u = &sc->usables[pick[j]];
+        use_spot(sc, u, &x, &y, &z);
+        lock = u->kind == USE_MOVER && u->mover >= 0 && u->mover < sc->nmovers
+            ? sc->movers[u->mover].lock : 0;
+        log_print(LOG_PRINT, "  %d %s (%s%s) at %d %d %d, %d away, reach %d",
+                  pick[j], u->label ? u->label : "?", use_kind(u->kind),
+                  lock > 0 ? ", locked" : "",
+                  df_iround(x), df_iround(y), df_iround(z),
+                  df_iround(dist), df_iround(u->reach));
+    }
+}
+
 /* The place's sound emitters: how many of each, then the nearest, nearest first. */
 static void c_sndlist(int argc, char **argv)
 {
@@ -1135,8 +1262,10 @@ static void commands(void)
             "brightness away from lights, in a lit place");
     cmd_var("lightrange", light_range, gfx_set_light_range, 1, 8,
             "how many times its radius a light reaches; cuts the decals again");
+    cmd_var("lightshadow", light_shadow, gfx_set_light_shadow, 0, 1,
+            "a light does not reach through a floor or a wall; cuts the decals again");
     cmd_var("lightview", light_view, light_set_view, 0, LIGHT_VIEW_MAX,
-            "squares and rings for the lights within this many units; 0 is off");
+            "squares and rings for the lights within this many units; 0 is off, 1 is 512");
     cmd_var("timescale", clock_scale, clock_set_scale, 0, CLOCK_SCALE_MAX,
             "game seconds a real second; 0 stops the clock");
     cmd_var("sky", sky_on, sky_set_on, 0, 1, "the sky behind an outdoor place");
@@ -1156,7 +1285,12 @@ static void commands(void)
     cmd_add("play", c_play, "n", "play the game's sound effect n");
     cmd_add("sndlist", c_sndlist, "[n]", "the place's sound emitters by kind, and the n nearest (10)");
     cmd_var("sndview", ambience_view, ambience_set_view, 0, AMBIENCE_VIEW_MAX,
-            "squares, words and rings for sound emitters within this many units; 0 is off. Try 1024");
+            "squares, words and rings for sound emitters within this many units; 0 is off, 1 is 1024");
+    cmd_add("uselist", c_uselist, "[n]", "what can be used here by kind, and the n nearest (10)");
+    cmd_var("useview", interact_view, interact_set_view, 0, INTERACT_VIEW_MAX,
+            "boxes and words for what can be used within this many units; 0 is off, 1 is 512");
+    cmd_var("locks", interact_locks, interact_set_locks, 0, 1,
+            "locked doors stay shut; 0 opens them as if unlocked");
     cmd_var("sound", sound_on, sound_set_on, 0, 1, "sound effects");
     cmd_var("sndvol", sound_volume, sound_set_volume, 0, 100, "sound effects volume, percent");
     cmd_var("sndrate", sound_rate, sound_set_rate, 8000, 44100,

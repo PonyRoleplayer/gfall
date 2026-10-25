@@ -202,6 +202,50 @@ static void read_track(Build *b, const df_u8 *bytes, df_u32 start, df_u32 end)
     }
 }
 
+/*
+ * A song ends with its music. SUNNYDAY's fifth track ends its last note
+ * at tick 6801 and then waits a delta of 1,192,560 ticks (2.8 hours at
+ * 120 a second) before a reverb setting and its end, so the song took
+ * hours to come round to its loop and was silent the while. Every other
+ * song's last event is within 200 ticks of its last note. So an event
+ * more than TAIL_MAX after the last note moves to that note's tick, and
+ * the song is as long as what is left. In the song's ticks: 8 s at the
+ * 120 a second every Daggerfall song runs at.
+ */
+#define TAIL_MAX 960u
+
+static void trim_tail(Song *song)
+{
+    df_u32 note;
+    df_u32 last;
+    int i;
+
+    note = 0;
+    for (i = 0; i < song->count; i++) {
+        df_u32 m;
+
+        m = song->events[i].msg;
+        if ((m & 0xf0u) == 0x80u && song->events[i].tick > note) {
+            note = song->events[i].tick;
+        }
+    }
+    if (song->length <= note + TAIL_MAX) {
+        return;
+    }
+    last = note;
+    for (i = 0; i < song->count; i++) {
+        if (song->events[i].tick > note + TAIL_MAX) {
+            song->events[i].tick = note;
+        }
+        if (song->events[i].tick > last) {
+            last = song->events[i].tick;
+        }
+    }
+    log_print(LOG_INFO, "hmi: a stray tail of %u ticks after the last note, cut",
+              (unsigned int)(song->length - last));
+    song->length = last;
+}
+
 int hmi_parse(const df_u8 *bytes, df_u32 size, int fm, Song *out)
 {
     Build b;
@@ -262,6 +306,7 @@ int hmi_parse(const df_u8 *bytes, df_u32 size, int fm, Song *out)
     if (out->division <= 0) {
         return 0;
     }
+    trim_tail(out);
     song_sort(out);
     return 1;
 }

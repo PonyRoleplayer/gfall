@@ -15,6 +15,7 @@
 
 /* Used when a block has none of that kind, so the pointer is never null. */
 static Instance g_none_inst;
+static ModelAct g_none_act;
 static Flat g_none_flat;
 static Marker g_none_mark;
 
@@ -123,8 +124,20 @@ int block_reserve(Block *block, int ninst, int nflat, int nmark)
     block->marker = nmark
         ? (Marker *)mem_alloc((df_u32)nmark * (df_u32)sizeof(Marker))
         : &g_none_mark;
-    if (!block->inst || !block->flat || !block->marker) {
+    block->act = ninst
+        ? (ModelAct *)mem_alloc((df_u32)ninst * (df_u32)sizeof(ModelAct))
+        : &g_none_act;
+    if (!block->inst || !block->flat || !block->marker || !block->act) {
         return 0;
+    }
+    if (ninst) {
+        int i;
+
+        mem_zero(block->act, (df_u32)ninst * (df_u32)sizeof(ModelAct));
+        for (i = 0; i < ninst; i++) {
+            block->act[i].record = -1;
+            block->act[i].next = -1;
+        }
     }
     return 1;
 }
@@ -203,6 +216,43 @@ static void place_model(Instance *in, float rx, float ry, float rz)
     in->m[2] = x;
     in->m[5] = y;
     in->m[8] = z;
+}
+
+/*
+ * The model resource past its turn and model index (Daggerfall Unity's
+ * RdbModelResource): the trigger and starting lock (u32 at 14), a sound
+ * id (18), and the offset of an action record in the block file (i32 at
+ * 19), which is the axis, time (u16, twentieths of a second), size (u16),
+ * the next object's offset (i32) and the action's flags. The list of
+ * models gives each a five-digit id and three letters after it.
+ */
+static void read_act(ModelAct *act, const df_u8 *rdb, df_u32 size, df_u32 at, df_u32 res,
+                     df_u16 mindex, df_u32 id)
+{
+    const df_u8 *ref;
+    df_i32 ao;
+
+    act->pos = at;
+    act->id = id;
+    ref = rdb + 20 + (df_u32)mindex * 8;
+    act->tag[0] = (char)ref[5];
+    act->tag[1] = (char)ref[6];
+    act->tag[2] = (char)ref[7];
+    act->tag[3] = 0;
+    act->next = -1;
+    if (res + 23 > size) {
+        return;
+    }
+    act->trigger = df_ru32(rdb + res + 14);
+    act->sound = rdb[res + 18];
+    ao = df_ri32(rdb + res + 19);
+    if (ao > 0 && (df_u32)ao + 10 <= size) {
+        act->axis = rdb[ao];
+        act->duration = df_ru16(rdb + ao + 1);
+        act->magnitude = df_ru16(rdb + ao + 3);
+        act->next = df_ri32(rdb + ao + 5);
+        act->flags = rdb[ao + 9];
+    }
 }
 
 /* Upper bound on what the walk below will place. A missing mesh still counts. */
@@ -331,6 +381,7 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch, ArchEnt *cache, int *n
                 if (mindex < 750 && parse_id(rdb + 20 + (df_u32)mindex * 8, &id)) {
                     mesh = arch_cached(cache, ncache, arch, id);
                     if (mesh) {
+                        read_act(&block->act[block->ninst], rdb, size, at, res, mindex, id);
                         in = &block->inst[block->ninst];
                         in->mesh = mesh;
                         in->x = (float)df_ri32(rdb + at + 8);
@@ -388,6 +439,7 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch, ArchEnt *cache, int *n
                     fl->image = (df_u16)record;
                     fl->slot = 0xffff;
                     fl->glow = (df_u16)(archive == LIGHTS_ARCHIVE);
+                    fl->tag = 0;
                     block->nflat++;
                 }
             }

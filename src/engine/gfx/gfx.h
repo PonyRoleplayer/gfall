@@ -33,7 +33,17 @@ void gfx_set_texcap(int kb);
 int gfx_texcap(void);
 /* How far lights reach, 1..8 times their radius; cuts the decals again. */
 void gfx_set_light_range(int scale);
+/* 1 (default): a light does not reach through a model in its way; cuts the decals again. */
+void gfx_set_light_shadow(int on);
 
+/*
+ * Between places with the card left open: hold the last frame, dimmed,
+ * with text in the middle, while the next one loads (gfx_prepare may be
+ * called again under it); then let its first frames fade in from black
+ * over secs. Only a temp heap ends between them, never the card.
+ */
+void gfx_hold(const char *text);
+void gfx_fade_in(float secs);
 /* Clear, draw what the scene says is visible, overlay, swap. */
 void gfx_frame(const Camera *cam, const Level *level);
 

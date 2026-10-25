@@ -20,6 +20,7 @@
 #include "engine/scene/daylight.h"
 #include "engine/scene/weather.h"
 #include "engine/scene/walker.h"
+#include "engine/scene/interact.h"
 #include "engine/scene/collide.h"
 #include "engine/scene/scene.h"
 #include "engine/ui/cmd.h"
@@ -1148,6 +1149,58 @@ static void check_mip(void)
  * centre. A sprite at the light is brighter than the ambient; a flat
  * that gives light is white; lights off is white.
  */
+/* A light does not reach a face past another model (lightshadow). */
+static void check_light_shadow(void)
+{
+    static const float wx[4] = { -200.0f, 200.0f, 200.0f, -200.0f };
+    static const float wy[4] = { -200.0f, -200.0f, 200.0f, 200.0f };
+    static const float wz[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    Mesh *sheet;
+    Instance models[2];
+    Light light;
+    Scene scene;
+
+    sheet = fan_mesh(wx, wy, wz, 4, 0.0f, 0.0f, -1.0f);
+    check_expect(sheet != 0, "shadow meshes were not allocated");
+    if (!sheet) {
+        return;
+    }
+    /* The lit wall at z 100, the light at z 60, and a wall between at z 80. */
+    place_at(&models[0], sheet, 0.0f, 0.0f, 100.0f);
+    place_at(&models[1], sheet, 0.0f, 0.0f, 80.0f);
+    mem_zero(&light, sizeof(light));
+    light.z = 60.0f;
+    light.radius = 50.0f;
+    mem_zero(&scene, sizeof(scene));
+    scene.models = models;
+    scene.nmodels = 1;
+    scene.lights = &light;
+    scene.nlights = 1;
+    light_set_on(1);
+    light_set_range(3);
+    light_set_shadow(1);
+    check_expect(light_build(&scene) == 1, "a wall in the open did not get its decal");
+    scene.nmodels = 2;
+    check_expect(light_build(&scene) == 1, "a wall in front of the light did not get its own decal");
+    {
+        const Decal *d;
+        int n;
+        int k;
+        int far_lit;
+
+        n = light_decals(0, &d);
+        far_lit = 0;
+        for (k = 0; k < n; k++) {
+            far_lit += d[k].cz > 90.0f;
+        }
+        check_expect(n == 1 && !far_lit, "a light reached a wall through the wall in front of it");
+    }
+    light_set_shadow(0);
+    check_expect(light_build(&scene) == 2, "with lightshadow off the light does not reach through");
+    light_set_shadow(1);
+    light_build(0);
+}
+
 static void check_lights(void)
 {
     static const float wx[4] = { -200.0f, 200.0f, 200.0f, -200.0f };
@@ -1450,6 +1503,26 @@ static void check_collision(void)
                                                 || cam.x > WALK_RADIUS - 1.0f),
                      "a body set inside a block was not moved out");
     }
+    /*
+     * Through a door to another place: the camera lands 100 units on, the
+     * other side of the wall at x 200. Under the teleport distance, so only
+     * the new place tells the walker to take the body there, not walk it.
+     */
+    {
+        Scene next;
+
+        camera_set(&cam, 150.0f, eye, 0.0f, 0.0f, 0.0f);
+        walk(&cam, &scene, 0.0f, 0.0f, 30);
+        next = scene;
+        cam.x = 250.0f;
+        walk(&cam, &next, 0.0f, 0.0f, 1);
+        check_expect(check_near(cam.x, 250.0f, 0.5f),
+                     "a body set past a wall in a new place was walked into the wall");
+        cam.x = 150.0f;
+        walker_place();
+        walk(&cam, &next, 0.0f, 0.0f, 1);
+        check_expect(check_near(cam.x, 150.0f, 0.5f), "walker_place did not take the body to the camera");
+    }
     walker_set_on(0);
 }
 
@@ -1739,6 +1812,160 @@ static void check_sound(void)
     }
 }
 
+static int g_handled;
+static int g_handled_what;
+
+static int take_use(const Scene *scene, const Usable *u, int index)
+{
+    (void)scene;
+    (void)index;
+    g_handled++;
+    g_handled_what = u->what;
+    return 1;
+}
+
+/* Using things and the models that move (docs/interact.md). */
+static void check_interact(void)
+{
+    static const float qx[4] = { 0.0f, 40.0f, 40.0f, 0.0f };
+    static const float qy[4] = { 0.0f, 0.0f, 80.0f, 80.0f };
+    static const float qz[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    static const float wx[4] = { -500.0f, 500.0f, 500.0f, -500.0f };
+    static const float wy[4] = { -10.0f, -10.0f, 200.0f, 200.0f };
+    Mesh *door;
+    Mesh *wall;
+    Instance models[3];
+    Mover movers[2];
+    Usable uses[2];
+    Scene scene;
+    Camera cam;
+    UseHit hit;
+    Bound b;
+
+    door = fan_mesh(qx, qy, qz, 4, 0.0f, 0.0f, -1.0f);
+    wall = fan_mesh(wx, wy, qz, 4, 0.0f, 0.0f, -1.0f);
+    check_expect(door && wall, "interact meshes were not allocated");
+    if (!door || !wall) {
+        return;
+    }
+    /* A door 40 wide hinged at its origin, at z 100; a wall at z 100 behind a passage at x 200. */
+    place_at(&models[0], door, 0.0f, 0.0f, 100.0f);
+    place_at(&models[1], wall, 700.0f, 0.0f, 100.0f);
+    place_at(&models[2], wall, 0.0f, 0.0f, 80.0f);
+    mem_zero(movers, sizeof(movers));
+    movers[0].inst = &models[0];
+    movers[0].model = 0;
+    movers[0].ry = -DF_TAU * 0.25f;
+    movers[0].secs = 1.0f;
+    movers[0].next = -1;
+    movers[0].door = 1;
+    movers[1].inst = &models[0];
+    movers[1].model = 0;
+    movers[1].next = -1;
+    mover_init(movers, 1);
+    mem_zero(uses, sizeof(uses));
+    uses[0].kind = USE_MOVER;
+    uses[0].model = 0;
+    uses[0].sprite = -1;
+    uses[0].mover = 0;
+    uses[0].reach = 128.0f;
+    uses[1].kind = USE_PASSAGE;
+    uses[1].model = -1;
+    uses[1].sprite = -1;
+    uses[1].mover = -1;
+    uses[1].cx = 400.0f;
+    uses[1].cy = 40.0f;
+    uses[1].cz = 100.0f;
+    uses[1].nx = 0.0f;
+    uses[1].nz = -1.0f;
+    uses[1].hw = 20.0f;
+    uses[1].hh = 40.0f;
+    uses[1].hd = 8.0f;
+    uses[1].reach = 128.0f;
+    uses[1].what = 7;
+    mem_zero(&scene, sizeof(scene));
+    scene.models = models;
+    scene.nmodels = 2;
+    scene.usables = uses;
+    scene.nusables = 2;
+    scene.movers = movers;
+    scene.nmovers = 1;
+
+    camera_set(&cam, 20.0f, 40.0f, 50.0f, 0.0f, 0.0f);
+    check_expect(interact_aim(&scene, &cam, &hit) && hit.usable == 0 && check_near(hit.dist, 50.0f, 0.5f),
+                 "the door in the middle of the view, 50 away, was not aimed at");
+    camera_set(&cam, 20.0f, 40.0f, -100.0f, 0.0f, 0.0f);
+    check_expect(!interact_aim(&scene, &cam, &hit), "a door 200 away was in reach");
+    camera_set(&cam, 20.0f, 40.0f, 50.0f, DF_TAU * 0.25f, 0.0f);
+    check_expect(!interact_aim(&scene, &cam, &hit), "a door beside the view was aimed at");
+    /* The passage is a face of the wall: its box is met before the wall behind it. */
+    camera_set(&cam, 400.0f, 40.0f, 30.0f, 0.0f, 0.0f);
+    check_expect(interact_aim(&scene, &cam, &hit) && hit.usable == 1 && hit.model == 1
+                 && hit.dist < hit.wall,
+                 "a door painted on a wall was not used before the wall");
+    /* A wall in front hides the door. */
+    scene.nmodels = 3;
+    camera_set(&cam, 20.0f, 40.0f, 50.0f, 0.0f, 0.0f);
+    check_expect(!interact_aim(&scene, &cam, &hit) && hit.model == 2,
+                 "a door was used through a wall");
+    scene.nmodels = 2;
+
+    /* The passage goes to the handler; nothing happens without one. */
+    g_handled = 0;
+    interact_set_handler(take_use);
+    check_expect(interact_use(&scene, 1) && g_handled == 1 && g_handled_what == 7,
+                 "a passage did not reach the game's handler");
+    interact_set_handler(0);
+    check_expect(!interact_use(&scene, 1) && g_handled == 1, "a passage was taken with no handler");
+
+    /* A locked door says so and stays; with locks off it opens. */
+    movers[0].lock = 10;
+    check_expect(!interact_use(&scene, 0) && movers[0].state == MOVER_START,
+                 "a locked door opened");
+    check_expect(interact_saying(0) != 0, "a locked door said nothing");
+    interact_set_locks(0);
+    check_expect(interact_use(&scene, 0) && movers[0].state == MOVER_FORWARD,
+                 "with locks off a locked door did not open");
+    interact_set_locks(1);
+    movers[0].lock = 0;
+    mover_step(&scene, 0.5f);
+    check_expect(check_near(movers[0].t, 0.5f, 0.001f) && mover_busy(&scene, 0),
+                 "a door is not half open half way");
+    check_expect(!mover_start(&scene, 0), "a moving door started again");
+    mover_step(&scene, 0.6f);
+    check_expect(movers[0].state == MOVER_END && check_near(models[0].m[0], 0.0f, 0.001f)
+                 && check_near(models[0].m[6], 1.0f, 0.001f)
+                 && check_near(models[0].x, 0.0f, 0.001f) && check_near(models[0].z, 100.0f, 0.001f),
+                 "an open door is not a quarter turn about its hinge");
+    /* Open, its box swung back: the eye that met it now misses it. */
+    camera_set(&cam, 20.0f, 40.0f, 50.0f, 0.0f, 0.0f);
+    check_expect(!interact_aim(&scene, &cam, &hit), "an open door is still in the doorway");
+    check_expect(mover_sweep(&movers[0], &b) && b.ex > 19.0f && b.ez > 19.0f
+                 && b.cx - b.ex < 0.5f && b.cz + b.ez > 139.0f,
+                 "a door's sweep box does not hold its quarter turn");
+    mover_start(&scene, 0);
+    mover_step(&scene, 2.0f);
+    check_expect(movers[0].state == MOVER_START && check_near(models[0].m[0], 1.0f, 0.001f),
+                 "a door used again did not shut");
+
+    /* A chain: starting the first starts the second; a once mover stays at its end. */
+    movers[0].next = 1;
+    movers[1].inst = 0;
+    movers[1].once = 1;
+    movers[1].secs = 0.0f;
+    scene.nmovers = 2;
+    check_expect(mover_start(&scene, 0) && movers[1].state == MOVER_FORWARD,
+                 "the next mover in a chain did not start");
+    mover_step(&scene, 1.5f);
+    check_expect(movers[0].state == MOVER_END && movers[1].state == MOVER_END,
+                 "a chain did not reach its end");
+    mover_start(&scene, 0);
+    check_expect(movers[0].state == MOVER_BACK && movers[1].state == MOVER_END,
+                 "a once mover went back");
+    mover_step(&scene, 1.5f);
+    movers[0].next = -1;
+}
+
 void check_engine(void)
 {
     check_rotation();
@@ -1751,8 +1978,10 @@ void check_engine(void)
     check_console();
     check_mip();
     check_lights();
+    check_light_shadow();
     check_daylight();
     check_weather();
     check_collision();
+    check_interact();
     check_sound();
 }

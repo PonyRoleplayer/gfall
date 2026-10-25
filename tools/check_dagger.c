@@ -19,8 +19,11 @@
 #include "game/dagger/forecast.h"
 #include "engine/scene/weather.h"
 #include "engine/scene/collide.h"
+#include "engine/scene/light.h"
 #include "game/dagger/texture.h"
 #include "game/dagger/world.h"
+#include "game/dagger/doors.h"
+#include "engine/scene/interact.h"
 #include "game/dagger/hmi.h"
 #include "game/dagger/sndfile.h"
 #include "game/dagger/sounds.h"
@@ -655,6 +658,28 @@ static void check_sound_files(void)
         if (n == 0) {
             ok = 0;
         }
+        /* No song waits long after its music before it loops (SUNNYDAY's stray tail). */
+        {
+            df_u32 note;
+            int k;
+
+            note = 0;
+            for (k = 0; k < song.count; k++) {
+                if ((song.events[k].msg & 0xf0u) == 0x80u && song.events[k].tick > note) {
+                    note = song.events[k].tick;
+                }
+            }
+            if (song.length > note + 960u) {
+                printf("song %s ends %u ticks after its last note\n", hmi_name(i),
+                       (unsigned int)(song.length - note));
+                ok = 0;
+            }
+            if (df_eq(hmi_name(i), "SUNNYDAY.HMI")) {
+                printf("song SUNNYDAY.HMI %.1f s\n", (double)song.length / 120.0);
+                check_expect(song.length / 120u >= 55u && song.length / 120u <= 58u,
+                             "SUNNYDAY.HMI is not about 57 seconds");
+            }
+        }
         most_events = song.count > most_events ? song.count : most_events;
         most_notes = peak > most_notes ? peak : most_notes;
         stolen_any += stolen;
@@ -745,6 +770,304 @@ static void check_sound_hold(const World *world)
 }
 
 /* A farm: songs for every weather, the rain and thunder of a storm. */
+/* How many of world's usables are of kind and, when what >= 0, lead there. */
+static int count_use(const World *world, int kind, int what)
+{
+    int n;
+    int i;
+
+    n = 0;
+    for (i = 0; i < world_usable_count(world); i++) {
+        const Usable *u;
+
+        u = world_usable(world, i);
+        if (u->kind == kind && (what < 0 || u->what == what)) {
+            n++;
+        }
+    }
+    return n;
+}
+
+/*
+ * Stand d units in front of usable i, facing it, and use what the eye
+ * meets. The index used, or -1.
+ */
+static int use_from_front(const Level *level, const World *world, int i, float d)
+{
+    const Usable *u;
+    Camera cam;
+    UseHit hit;
+    float x, y, z;
+    float nx, nz;
+
+    u = world_usable(world, i);
+    if (u->model >= 0) {
+        Bound b;
+        const Instance *in;
+
+        in = world_instance(world, u->model);
+        if (!instance_world_box(in, &b)) {
+            return -1;
+        }
+        x = b.cx;
+        y = b.cy;
+        z = b.cz;
+        /* A door model is thin along its own Z or X: face it across the thin side. */
+        if (b.ex < b.ez) {
+            nx = 1.0f;
+            nz = 0.0f;
+        } else {
+            nx = 0.0f;
+            nz = 1.0f;
+        }
+    } else {
+        x = u->cx;
+        y = u->cy;
+        z = u->cz;
+        nx = u->nx;
+        nz = u->nz;
+    }
+    camera_set(&cam, x + nx * d, y, z + nz * d, df_atan2(-nx, -nz), 0.0f);
+    if (!interact_aim(&level->scene, &cam, &hit)) {
+        camera_set(&cam, x - nx * d, y, z - nz * d, df_atan2(nx, nz), 0.0f);
+        if (!interact_aim(&level->scene, &cam, &hit)) {
+            return -1;
+        }
+    }
+    interact_use(&level->scene, hit.usable);
+    return hit.usable;
+}
+
+/*
+ * The hold's doors and its lever: what moves, what is locked, the way
+ * out, and a door that swings a quarter turn when used.
+ */
+static void check_doors_hold(const World *world)
+{
+    Level level;
+    int doors, actions, locked, exits;
+    int door;
+    int lever;
+    int i;
+
+    world_as_level(world, &level);
+    doors = count_use(world, USE_MOVER, -1);
+    actions = 0;
+    locked = 0;
+    for (i = 0; i < world_mover_count(world); i++) {
+        const Mover *m;
+
+        m = world_mover(world, i);
+        actions += !m->door;
+        locked += m->lock > 0;
+    }
+    exits = count_use(world, USE_PASSAGE, DOOR_EXIT);
+    printf("hold doors: %d to use, %d movers (%d not doors, %d locked), %d ways out\n",
+           doors, world_mover_count(world), actions, locked, exits);
+    check_expect(world_place(world) == PLACE_DUNGEON, "the hold is not a dungeon");
+    check_expect(exits >= 1, "the hold has no way out");
+    /* A door that is not locked, used from in front: it swings a quarter turn. */
+    door = -1;
+    lever = -1;
+    for (i = 0; i < world_usable_count(world); i++) {
+        const Usable *u;
+        const Mover *m;
+
+        u = world_usable(world, i);
+        if (u->kind != USE_MOVER) {
+            continue;
+        }
+        m = world_mover(world, u->mover);
+        if (m->door && !m->lock && door < 0) {
+            door = i;
+        }
+        if (!m->door && m->next >= 0 && lever < 0) {
+            lever = i;
+        }
+    }
+    check_expect(door >= 0, "the hold has no unlocked door to use");
+    if (door >= 0) {
+        const Usable *u;
+        const Mover *m;
+        float m0[9];
+        int used;
+        int k;
+
+        u = world_usable(world, door);
+        m = world_mover(world, u->mover);
+        for (k = 0; k < 9; k++) {
+            m0[k] = m->inst->m[k];
+        }
+        used = use_from_front(&level, world, door, 64.0f);
+        check_expect(used == door, "a door in front of the eye was not the one used");
+        mover_step(&level.scene, 0.75f);
+        check_expect(m->state == MOVER_FORWARD && m->t > 0.4f && m->t < 0.6f,
+                     "a used door is not half open after 0.75 s");
+        mover_step(&level.scene, 1.0f);
+        /* A quarter turn back about its up: its local X now points where its local Z did. */
+        printf("hold door %d: state %d, x axis %.2f %.2f %.2f was %.2f %.2f %.2f\n", door,
+               m->state, m->inst->m[0], m->inst->m[3], m->inst->m[6], m0[0], m0[3], m0[6]);
+        check_expect(m->state == MOVER_END
+                     && check_near(m->inst->m[0], m0[2], 0.01f)
+                     && check_near(m->inst->m[6], m0[8], 0.01f),
+                     "a used door did not swing a quarter turn");
+        interact_use(&level.scene, door);
+        mover_step(&level.scene, 2.0f);
+        check_expect(m->state == MOVER_START && check_near(m->inst->m[0], m0[0], 0.001f),
+                     "a door used again did not shut");
+    }
+    /* The lever: it starts the chain after it, which moves together. */
+    check_expect(lever >= 0, "the hold has no chained action");
+    if (lever >= 0) {
+        const Usable *u;
+        const Mover *m;
+        const Mover *n;
+
+        u = world_usable(world, lever);
+        m = world_mover(world, u->mover);
+        n = world_mover(world, m->next);
+        interact_use(&level.scene, lever);
+        printf("hold action %d: next %d moving %d, %.2f s, turn %.2f %.2f %.2f\n", lever,
+               m->next, n->state == MOVER_FORWARD, n->secs, n->rx, n->ry, n->rz);
+        check_expect(n->state == MOVER_FORWARD, "a used action did not start the next in its chain");
+        check_expect(!interact_use(&level.scene, lever), "a chain started again while it moved");
+        mover_step(&level.scene, 10.0f);
+        check_expect(n->state == MOVER_END, "a chained action did not finish");
+        /* And back, so the tests after see the hold as it was built. */
+        interact_use(&level.scene, lever);
+        mover_step(&level.scene, 10.0f);
+        check_expect(n->state == MOVER_START, "a chained action used again did not go back");
+    }
+    /* The way out: a face of the exit model, a door's size, upright, and used from in front. */
+    i = world_passage(world, DOOR_EXIT, 0.0f, 0.0f, 0.0f);
+    if (i >= 0) {
+        const Usable *u;
+
+        u = world_usable(world, i);
+        printf("hold exit: at %.0f %.0f %.0f facing %.2f %.2f, %.0f by %.0f\n",
+               u->cx, u->cy, u->cz, u->nx, u->nz, u->hw * 2.0f, u->hh * 2.0f);
+        check_expect(u->hw * 2.0f > 40.0f && u->hw * 2.0f < 200.0f
+                     && u->hh * 2.0f > 60.0f && u->hh * 2.0f < 200.0f,
+                     "the hold's way out is not a door's size");
+        check_expect(use_from_front(&level, world, i, 48.0f) == i,
+                     "the hold's way out was not used from in front of it");
+    }
+}
+
+/*
+ * Stand where a passage lets one out (doors_landing, d out, at eye
+ * height), turn round and use what the eye meets. Its index, or -1.
+ */
+static int turn_and_use(const World *world, const Usable *u, float d)
+{
+    Level level;
+    Camera cam;
+    UseHit hit;
+    float x, y, z, yaw;
+
+    world_as_level(world, &level);
+    doors_landing(u, d, 68.4f, &x, &y, &z, &yaw);
+    camera_set(&cam, x, y, z, yaw + DF_TAU * 0.5f, 0.0f);
+    if (!interact_aim(&level.scene, &cam, &hit)) {
+        return -1;
+    }
+    return hit.usable;
+}
+
+/*
+ * A town's doors: its buildings' doors lead in, and the inside of the
+ * first, loaded where the building stands, has a way out by that door.
+ */
+static void check_doors_town(const World *town, const Dungeon *ext)
+{
+    const Usable *in_door;
+    World *inside;
+    int enter;
+    int people;
+    int leave;
+    int k;
+    float ix, iy, iz;
+
+    enter = count_use(town, USE_PASSAGE, DOOR_ENTER);
+    people = count_use(town, USE_TALK, -1);
+    printf("farm doors: %d into buildings, %d people, %d ways down\n",
+           enter, people, count_use(town, USE_PASSAGE, DOOR_DUNGEON));
+    check_expect(world_place(town) == PLACE_TOWN && enter >= 1, "a farm has no door into a building");
+    k = world_passage(town, DOOR_ENTER, 0.0f, 0.0f, 0.0f);
+    if (k < 0) {
+        return;
+    }
+    in_door = world_usable(town, k);
+    ix = in_door->cx;
+    iy = in_door->cy;
+    iz = in_door->cz;
+    printf("farm door %d: building %d of block %d, at %.0f %.0f %.0f facing %.2f %.2f, %.0f by %.0f\n",
+           k, in_door->tag & 0xff, in_door->tag >> 8, ix, iy, iz, in_door->nx, in_door->nz,
+           in_door->hw * 2.0f, in_door->hh * 2.0f);
+    check_expect(in_door->hw * 2.0f > 20.0f && in_door->hw * 2.0f < 200.0f
+                 && in_door->hh * 2.0f > 40.0f && in_door->hh * 2.0f < 200.0f,
+                 "a farm's door is not a door's size");
+    inside = world_load_inside(ext, in_door->tag >> 8, in_door->tag & 0xff);
+    if (!inside) {
+        fprintf(stderr, "fail: %s\n", world_error());
+    }
+    check_expect(inside != 0, "a farm building's inside did not load");
+    if (!inside) {
+        return;
+    }
+    leave = world_passage(inside, DOOR_LEAVE, ix, iy, iz);
+    {
+        int fac;
+        int bld;
+        float sx, sy, sz, syaw, spitch;
+
+        bld = world_building(inside, &fac);
+        world_start(inside, &sx, &sy, &sz, &syaw, &spitch);
+        printf("farm inside: building type %d faction %d, %d models, %d to use (%d doors, %d out), "
+               "start %.0f %.0f %.0f, song %s\n",
+               bld, fac, world_model_count(inside), world_usable_count(inside),
+               count_use(inside, USE_MOVER, -1), count_use(inside, USE_PASSAGE, DOOR_LEAVE),
+               sx, sy, sz, world_soundscape(inside)->song(world_soundscape(inside), 0, 0));
+    }
+    check_expect(world_place(inside) == PLACE_INSIDE && !world_outdoor(inside) && !world_sky(inside),
+                 "a building's inside is under the sky");
+    {
+        Level il;
+        int lit;
+        int through;
+
+        /* A house's lamps light their own storey, not the ones above and below through the floors. */
+        world_as_level(inside, &il);
+        light_set_shadow(0);
+        through = light_build(&il.scene);
+        light_set_shadow(1);
+        lit = light_build(&il.scene);
+        printf("farm inside: %d lights, %d decals, %d through floors and walls\n",
+               il.scene.nlights, lit, through);
+        check_expect(lit < through, "a house's lamps still light through its floors");
+    }
+    check_expect(leave >= 0, "a building's inside has no way out");
+    if (leave >= 0) {
+        const Usable *out;
+        float dx, dz;
+
+        out = world_usable(inside, leave);
+        dx = out->cx - ix;
+        dz = out->cz - iz;
+        printf("farm way out: at %.0f %.0f %.0f facing %.2f %.2f, %.0f from the street's door\n",
+               out->cx, out->cy, out->cz, out->nx, out->nz, df_sqrt(dx * dx + dz * dz));
+        /* The same door seen from the other side: close by, facing the other way. */
+        check_expect(dx * dx + dz * dz < 64.0f * 64.0f, "a building's way out is not by its door");
+        check_expect(out->nx * in_door->nx + out->nz * in_door->nz < -0.7f,
+                     "a building's way out does not face in");
+        /* Landed in by it as LEVELFALL lands, turned round, the eye meets it. */
+        check_expect(turn_and_use(inside, out, 32.0f) == leave,
+                     "turned round on coming in, the way out is not what is used");
+    }
+    check_expect(turn_and_use(town, in_door, 48.0f) == k,
+                 "turned round on coming out, the street's door is not what is used");
+}
+
 static void check_sound_town(const World *town)
 {
     static df_i16 buf[11025 * 8 * 2];
@@ -1065,9 +1388,23 @@ int check_dagger(const char *root_in)
                 flick += hl.scene.lights[k].flicker;
             }
             printf("hold lights flickering: %d of %d\n", flick, hl.scene.nlights);
+            {
+                int lit;
+                int through;
+
+                /* Through its walls the hold's lights cut 2282 decals; seeing only what they reach, fewer. */
+                light_set_shadow(0);
+                through = light_build(&hl.scene);
+                light_set_shadow(1);
+                lit = light_build(&hl.scene);
+                printf("hold decals: %d, %d through walls\n", lit, through);
+                check_expect(through == 2282 && lit > 1000 && lit < through * 4 / 5,
+                             "the hold's lights still reach through its walls");
+            }
             check_expect(flick > 20 && flick < hl.scene.nlights, "the hold's flames do not flicker, or all do");
         }
         check_sound_hold(world);
+        check_doors_hold(world);
         world_start(world, &sx, &sy, &sz, &syaw, &spitch);
         printf("start %.2f %.2f %.2f yaw %.3f pitch %.3f\n", sx, sy, sz, syaw, spitch);
         check_expect(check_near(sx, 1135.0f, 0.1f) && check_near(sy, 1559.0f, 0.1f) &&
@@ -1216,6 +1553,7 @@ int check_dagger(const char *root_in)
         int i;
         int dagger;
         int farm;
+        int hold_out;
         float sx, sy, sz, syaw, spitch;
         float minx, miny, minz, maxx, maxy, maxz;
 
@@ -1227,6 +1565,7 @@ int check_dagger(const char *root_in)
             check_expect(n == 15251, "outdoor count");
             dagger = -1;
             farm = -1;
+            hold_out = -1;
             for (i = 0; i < n && i < 16384; i++) {
                 if (places[i].region != 17) {
                     continue;
@@ -1236,6 +1575,9 @@ int check_dagger(const char *root_in)
                 }
                 if (df_eq(places[i].name, "The Ashwing Farmstead")) {
                     farm = i;
+                }
+                if (df_eq(places[i].name, "Privateer's Hold")) {
+                    hold_out = i;
                 }
             }
             check_expect(dagger >= 0 && places[dagger].nblocks == 64 && places[dagger].outdoor,
@@ -1249,6 +1591,39 @@ int check_dagger(const char *root_in)
                 check_expect(0, dungeon_error());
             }
             check_expect(farm >= 0 && places[farm].nblocks == 1, "Ashwing Farmstead missing");
+            /* The hold's outside: its way down, by the location the dungeon shares. */
+            check_expect(hold_out >= 0, "Privateer's Hold has no outside");
+            if (hold_out >= 0 && exterior_load_at(places[hold_out].region, places[hold_out].index, &ext)) {
+                World *top;
+
+                top = world_load_dungeon(&ext);
+                check_expect(top != 0, "Privateer's Hold's outside did not load");
+                if (top) {
+                    int down;
+
+                    down = world_passage(top, DOOR_DUNGEON, 0.0f, 0.0f, 0.0f);
+                    printf("hold outside: location %d, %d blocks, %d ways down",
+                           ext.location_id, ext.nblocks, count_use(top, USE_PASSAGE, DOOR_DUNGEON));
+                    if (down >= 0) {
+                        const Usable *u;
+
+                        u = world_usable(top, down);
+                        printf(", at %.0f %.0f %.0f facing %.2f %.2f, %.0f by %.0f",
+                               u->cx, u->cy, u->cz, u->nx, u->nz, u->hw * 2.0f, u->hh * 2.0f);
+                    }
+                    printf("\n");
+                    check_expect(down >= 0, "Privateer's Hold's outside has no way down");
+                }
+                {
+                    Dungeon below;
+
+                    /* The way down leads to the dungeon of the same location: the viewer pairs them so. */
+                    check_expect(dungeon_load(&below), dungeon_error());
+                    printf("hold below: location %d, under %d\n", below.location_id, below.exterior_id);
+                    check_expect(below.exterior_id == ext.exterior_id,
+                                 "Privateer's Hold's dungeon is not under its outside");
+                }
+            }
             if (farm >= 0 && exterior_load_at(places[farm].region, places[farm].index, &ext)) {
                 printf("outdoor %s blocks %d\n", ext.title, ext.nblocks);
                 town = world_load_dungeon(&ext);
@@ -1279,6 +1654,7 @@ int check_dagger(const char *root_in)
                 }
                 if (town) {
                     check_sound_town(town);
+                    check_doors_town(town, &ext);
                 }
                 if (town) {
                     world_start(town, &sx, &sy, &sz, &syaw, &spitch);

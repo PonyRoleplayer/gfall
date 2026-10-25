@@ -163,6 +163,11 @@ static int read_blocks(const df_u8 *rec, df_u32 size, df_u32 at, Dungeon *out)
         out->nblocks++;
     }
     out->location_id = (int)df_ru16(rec + at + LOC_ID);
+    /* The outside it is under: its parent location, or its own number when it has none. */
+    out->exterior_id = out->location_id;
+    if (df_ru16(rec + at + LOC_HAS_PARENT) != 0) {
+        out->exterior_id = (int)df_ru16(rec + at + LOC_PARENT);
+    }
     return 1;
 }
 
@@ -374,6 +379,7 @@ int dungeon_load(Dungeon *out)
     out->nblocks = 0;
     out->title[0] = 0;
     out->location_id = 0;
+    out->exterior_id = 0;
     out->climate = 0;
     out->outdoor = 0;
     maps = bsa_open(MAP_NAME);
@@ -509,6 +515,7 @@ static int list_visit(const df_u8 *rec, df_u32 size, int index, void *user)
         row->index = index;
         row->nblocks = dun.nblocks;
         row->location_id = dun.location_id;
+        row->exterior_id = dun.exterior_id;
         row->outdoor = 0;
     }
     walk->n++;
@@ -588,6 +595,7 @@ int dungeon_load_at(int region, int index, Dungeon *out)
     out->nblocks = 0;
     out->title[0] = 0;
     out->location_id = 0;
+    out->exterior_id = 0;
     out->climate = 0;
     out->outdoor = 0;
     maps = bsa_open(MAP_NAME);
@@ -883,6 +891,7 @@ static int ext_list_visit(const df_u8 *rec, df_u32 size, int index, void *user)
         row->index = index;
         row->nblocks = width * height;
         row->location_id = 0;
+        row->exterior_id = 0;
         if (size >= 4) {
             df_u32 doors;
             df_u32 at;
@@ -893,6 +902,7 @@ static int ext_list_visit(const df_u8 *rec, df_u32 size, int index, void *user)
                 row->location_id = (int)df_ru16(rec + at + LOC_ID);
             }
         }
+        row->exterior_id = row->location_id;
         row->outdoor = 1;
     }
     walk->n++;
@@ -970,6 +980,7 @@ static int ext_one_visit(const df_u8 *rec, df_u32 size, int index, void *user)
     doors = df_ru32(rec);
     at = 4u + doors * 6u;
     one->out->location_id = (int)df_ru16(rec + at + LOC_ID);
+    one->out->exterior_id = one->out->location_id;
     one->out->climate = climate_of_index(one->maps, one->src.region, index);
     if (climate_family(one->out->climate) < 0) {
         why("climate");
@@ -993,6 +1004,7 @@ int exterior_load_at(int region, int index, Dungeon *out)
     out->nblocks = 0;
     out->title[0] = 0;
     out->location_id = 0;
+    out->exterior_id = 0;
     out->climate = 0;
     out->outdoor = 0;
     maps = bsa_open(MAP_NAME);

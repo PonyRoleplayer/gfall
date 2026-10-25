@@ -2,6 +2,7 @@
 #include "game/dagger/bind.h"
 #include "game/dagger/bsa.h"
 #include "game/dagger/climate.h"
+#include "game/dagger/doors.h"
 #include "game/dagger/dungeon.h"
 #include "game/dagger/rdb.h"
 #include "game/dagger/rmb.h"
@@ -13,6 +14,7 @@
 #include "engine/assets/vfs.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
+#include "engine/scene/interact.h"
 
 /*
  * Privateer's Hold. MAPDITEM.017 places S0000999.RDB on the origin
@@ -36,6 +38,12 @@
 #define MAX_FLATS 8192
 #define MAX_LIGHTS 8192
 #define MAX_EMITTERS 2048
+/* Doors, passages, levers and people; and what moves. */
+#define MAX_USABLES 2048
+#define MAX_MOVERS 1024
+/* Editor marker 8 in a house: where a visitor stands on coming in. */
+#define ENTER_RECORD 8
+/* Interiors have no light records: each light flat is one, as outdoors (add_lamps). */
 
 static char g_why[96];
 static char g_title[40];
@@ -73,6 +81,9 @@ static void why_tex(int file, int image)
 
 struct World {
     Instance *inst;
+    /* Beside inst: what the file said of each model, and the block it came from. */
+    ModelAct *act;
+    df_u8 *blk;
     Bound *bounds;
     Span *spans;
     int ninst;
@@ -112,6 +123,20 @@ struct World {
     Soundscape scape;
     Emitter *emit;
     int nemit;
+    /* PLACE_*: a dungeon, a town, the inside of one of a town's buildings. */
+    int place;
+    /* Flats stand on their file point (RMB, outside or in), not about it (RDB). */
+    int base_flats;
+    /* What can be used and what moves (docs/interact.md). */
+    Usable *use;
+    int nuse;
+    Mover *mover;
+    int nmover;
+    /* Inside: the editor markers, and what the building is. */
+    Marker *mark;
+    int nmark;
+    int building;
+    int faction;
 };
 
 static int find_slot(const World *world, df_u16 file, df_u16 image)
@@ -291,7 +316,7 @@ static void cover_span(World *world, int first, int count)
     world->nspans++;
 }
 
-static int append_block(World *world, Block *block)
+static int append_block(World *world, Block *block, int index)
 {
     int i;
     int first;
@@ -306,6 +331,8 @@ static int append_block(World *world, Block *block)
 
         at = world->ninst;
         world->inst[at] = block->inst[i];
+        world->act[at] = block->act[i];
+        world->blk[at] = (df_u8)index;
         if (!instance_world_box(&world->inst[at], &world->bounds[at])) {
             world->bounds[at].cx = world->inst[at].x;
             world->bounds[at].cy = world->inst[at].y;
@@ -698,7 +725,7 @@ static int paint(World *world)
              * in the air. The data agrees: a dungeon flat standing on a
              * floor has its point at mid-height, a town's at its base.
              */
-            if (world->outdoor) {
+            if (world->base_flats) {
                 fl->y += (float)extent_h * 0.5f;
             }
             fl->slot = (df_u16)slot;
@@ -850,7 +877,119 @@ static void add_lamps(World *world)
     }
 }
 
-static World *assemble(const Dungeon *hold, int require_start)
+/*
+ * Every mover's model box covers its whole sweep, for the cull and the
+ * collision grid, and its block's span grows to hold it.
+ */
+static void sweep_movers(World *world)
+{
+    int i;
+
+    for (i = 0; i < world->nmover; i++) {
+        const Mover *m;
+        Bound b;
+        int s;
+
+        m = &world->mover[i];
+        if (!mover_sweep(m, &b)) {
+            continue;
+        }
+        world->bounds[m->model] = b;
+        for (s = 0; s < world->nspans; s++) {
+            Span *sp;
+            float lo, hi;
+
+            sp = &world->spans[s];
+            if (m->model < sp->first || m->model >= sp->first + sp->count) {
+                continue;
+            }
+            lo = sp->cx - sp->ex < b.cx - b.ex ? sp->cx - sp->ex : b.cx - b.ex;
+            hi = sp->cx + sp->ex > b.cx + b.ex ? sp->cx + sp->ex : b.cx + b.ex;
+            sp->cx = (lo + hi) * 0.5f;
+            sp->ex = (hi - lo) * 0.5f;
+            lo = sp->cy - sp->ey < b.cy - b.ey ? sp->cy - sp->ey : b.cy - b.ey;
+            hi = sp->cy + sp->ey > b.cy + b.ey ? sp->cy + sp->ey : b.cy + b.ey;
+            sp->cy = (lo + hi) * 0.5f;
+            sp->ey = (hi - lo) * 0.5f;
+            lo = sp->cz - sp->ez < b.cz - b.ez ? sp->cz - sp->ez : b.cz - b.ez;
+            hi = sp->cz + sp->ez > b.cz + b.ez ? sp->cz + sp->ez : b.cz + b.ez;
+            sp->cz = (lo + hi) * 0.5f;
+            sp->ez = (hi - lo) * 0.5f;
+        }
+    }
+}
+
+/* The doors, passages, levers and people, once the flats are final. */
+static int add_doors(World *world)
+{
+    DoorBuild b;
+
+    world->use = (Usable *)mem_alloc(MAX_USABLES * (df_u32)sizeof(Usable));
+    world->mover = (Mover *)mem_alloc(MAX_MOVERS * (df_u32)sizeof(Mover));
+    if (!world->use || !world->mover) {
+        why("out of memory");
+        return 0;
+    }
+    b.inst = world->inst;
+    b.act = world->act;
+    b.block = world->blk;
+    b.ninst = world->ninst;
+    b.flat = world->flat;
+    b.nflat = world->nflat;
+    b.place = world->place;
+    b.use = world->use;
+    b.use_cap = MAX_USABLES;
+    b.mover = world->mover;
+    b.mover_cap = MAX_MOVERS;
+    if (!doors_build(&b)) {
+        why("out of memory");
+        return 0;
+    }
+    world->nuse = b.nuse;
+    world->nmover = b.nmover;
+    sweep_movers(world);
+    log_print(LOG_DEBUG, "doors: %d to use, %d that move", world->nuse, world->nmover);
+    return 1;
+}
+
+/*
+ * A house's start: its enter marker (199 record 8; any marker if it has
+ * none), a body's eye above the floor point.
+ */
+#define INSIDE_EYE 64.0f
+
+static void note_inside_start(World *world)
+{
+    int i;
+    int pick;
+
+    pick = -1;
+    for (i = 0; i < world->nmark; i++) {
+        if (world->mark[i].record == ENTER_RECORD) {
+            pick = i;
+            break;
+        }
+    }
+    if (pick < 0 && world->nmark > 0) {
+        pick = 0;
+    }
+    if (pick < 0) {
+        return;
+    }
+    world->start_x = world->mark[pick].x;
+    world->start_y = world->mark[pick].y + INSIDE_EYE;
+    world->start_z = world->mark[pick].z;
+    world->start_yaw = 0.0f;
+    world->start_pitch = 0.0f;
+    world->have_start = 1;
+}
+
+/*
+ * One place: every block of hold, or with inside_block >= 0, the inside
+ * of building inside_record of that one RMB block, placed where the
+ * building stands in the town.
+ */
+static World *assemble(const Dungeon *hold, int require_start, int inside_block, int inside_record)
 {
     World *world;
     Bsa *arch;
@@ -873,14 +1012,20 @@ static World *assemble(const Dungeon *hold, int require_start)
         return 0;
     }
     mem_zero(world, sizeof(World));
+    world->place = inside_block >= 0 ? PLACE_INSIDE
+        : (hold->outdoor ? PLACE_TOWN : PLACE_DUNGEON);
+    world->outdoor = world->place == PLACE_TOWN;
     /* Set now: paint places flats by it. */
-    world->outdoor = hold->outdoor;
+    world->base_flats = hold->outdoor;
     world->inst = (Instance *)mem_alloc(MAX_MODELS * (df_u32)sizeof(Instance));
     world->bounds = (Bound *)mem_alloc(MAX_MODELS * (df_u32)sizeof(Bound));
     world->spans = (Span *)mem_alloc(DUN_MAX_BLOCKS * (df_u32)sizeof(Span));
     world->flat = (Flat *)mem_alloc(MAX_FLATS * (df_u32)sizeof(Flat));
     world->light = (Light *)mem_alloc(MAX_LIGHTS * (df_u32)sizeof(Light));
-    if (!world->inst || !world->bounds || !world->spans || !world->flat || !world->light) {
+    world->act = (ModelAct *)mem_alloc(MAX_MODELS * (df_u32)sizeof(ModelAct));
+    world->blk = (df_u8 *)mem_alloc(MAX_MODELS);
+    if (!world->inst || !world->bounds || !world->spans || !world->flat || !world->light
+        || !world->act || !world->blk) {
         why("out of memory");
         return 0;
     }
@@ -909,6 +1054,9 @@ static World *assemble(const Dungeon *hold, int require_start)
         df_u8 *rdb_bytes;
         Block *block;
 
+        if (inside_block >= 0 && b != inside_block) {
+            continue;
+        }
         rec = bsa_find_name(blocks, hold->block[b].name);
         if (!rec) {
             why(hold->block[b].name);
@@ -923,7 +1071,14 @@ static World *assemble(const Dungeon *hold, int require_start)
             bsa_close(arch);
             return 0;
         }
-        if (hold->outdoor) {
+        if (inside_block >= 0) {
+            block = rmb_load_interior(rdb_bytes, rec->size, arch, inside_record, cache, &ncache);
+            if (!rmb_building(rdb_bytes, rec->size, inside_record,
+                              &world->building, &world->faction)) {
+                world->building = -1;
+                world->faction = 0;
+            }
+        } else if (hold->outdoor) {
             block = rmb_load(rdb_bytes, rec->size, arch,
                              climate_family(hold->climate) + TEX_SET_GROUND,
                              cache, &ncache);
@@ -937,13 +1092,17 @@ static World *assemble(const Dungeon *hold, int require_start)
             return 0;
         }
         shift_block(block, hold->block[b].x, hold->block[b].z, tile);
+        if (inside_block >= 0) {
+            world->mark = block->marker;
+            world->nmark = block->nmarker;
+        }
         if (hold->block[b].start) {
             note_start(world, block);
             if (!world->have_start) {
                 note_fall(world, block);
             }
         }
-        if (!append_block(world, block)) {
+        if (!append_block(world, block, b)) {
             bsa_close(blocks);
             bsa_close(arch);
             return 0;
@@ -954,6 +1113,9 @@ static World *assemble(const Dungeon *hold, int require_start)
     if (world->ninst < 1 || world->ntris < 1) {
         why("dungeon has no models");
         return 0;
+    }
+    if (world->place == PLACE_INSIDE) {
+        note_inside_start(world);
     }
     if (!world->have_start) {
         if (require_start) {
@@ -989,7 +1151,7 @@ static World *assemble(const Dungeon *hold, int require_start)
         world->have_start = 1;
     }
     /* Above the roofs, looking down, so a town opens as a map rather than a wall. */
-    if (hold->outdoor) {
+    if (world->place == PLACE_TOWN) {
         world->start_x = (world->minx + world->maxx) * 0.5f;
         world->start_y = world->maxy + 256.0f;
         world->start_z = (world->minz + world->maxz) * 0.5f;
@@ -1010,9 +1172,17 @@ static World *assemble(const Dungeon *hold, int require_start)
     finish_images(world);
     flame_lights(world);
     add_emitters(world);
-    sounds_scape(&world->scape, hold->outdoor ? SCAPE_TOWN : SCAPE_DUNGEON, hold->location_id);
-    if (hold->outdoor) {
-        world->outdoor = 1;
+    if (!add_doors(world)) {
+        return 0;
+    }
+    if (world->place == PLACE_INSIDE) {
+        sounds_house(&world->scape, world->building, world->faction, hold->location_id);
+        /* Indoors, so always lit; a house has no light records, only its candles. */
+        add_lamps(world);
+    } else {
+        sounds_scape(&world->scape, hold->outdoor ? SCAPE_TOWN : SCAPE_DUNGEON, hold->location_id);
+    }
+    if (world->place == PLACE_TOWN) {
         skyfile_open(hold->climate, SEASON_SUMMER, &world->sky);
         /* The climate's odds; the engine's weather rolls them. */
         forecast_set(hold->climate, SEASON_SUMMER);
@@ -1030,12 +1200,21 @@ World *world_load(void)
         why(dungeon_error());
         return 0;
     }
-    return assemble(&hold, 1);
+    return assemble(&hold, 1, -1, -1);
 }
 
 World *world_load_dungeon(const Dungeon *dungeon)
 {
-    return assemble(dungeon, 0);
+    return assemble(dungeon, 0, -1, -1);
+}
+
+World *world_load_inside(const Dungeon *town, int block, int record)
+{
+    if (!town || !town->outdoor || block < 0 || block >= town->nblocks || record < 0) {
+        why("no such building");
+        return 0;
+    }
+    return assemble(town, 0, block, record);
 }
 
 const char *world_error(void)
@@ -1162,6 +1341,10 @@ void world_as_level(const World *world, Level *level)
     level->scene.outdoor = 0;
     level->scene.emitters = 0;
     level->scene.nemitters = 0;
+    level->scene.usables = 0;
+    level->scene.nusables = 0;
+    level->scene.movers = 0;
+    level->scene.nmovers = 0;
     level->sky = 0;
     level->sound = 0;
     if (!world) {
@@ -1184,7 +1367,78 @@ void world_as_level(const World *world, Level *level)
     level->sky = world->outdoor ? &world->sky : 0;
     level->scene.emitters = world->emit;
     level->scene.nemitters = world->nemit;
+    level->scene.usables = world->use;
+    level->scene.nusables = world->nuse;
+    level->scene.movers = world->mover;
+    level->scene.nmovers = world->nmover;
     level->sound = &world->scape;
+}
+
+int world_place(const World *world)
+{
+    return world ? world->place : PLACE_DUNGEON;
+}
+
+int world_usable_count(const World *world)
+{
+    return world ? world->nuse : 0;
+}
+
+const Usable *world_usable(const World *world, int index)
+{
+    if (!world || index < 0 || index >= world->nuse) {
+        return 0;
+    }
+    return &world->use[index];
+}
+
+int world_mover_count(const World *world)
+{
+    return world ? world->nmover : 0;
+}
+
+const Mover *world_mover(const World *world, int index)
+{
+    if (!world || index < 0 || index >= world->nmover) {
+        return 0;
+    }
+    return &world->mover[index];
+}
+
+int world_passage(const World *world, int what, float x, float y, float z)
+{
+    float best;
+    int pick;
+    int i;
+
+    pick = -1;
+    best = 0.0f;
+    for (i = 0; world && i < world->nuse; i++) {
+        const Usable *u;
+        float dx, dy, dz, d2;
+
+        u = &world->use[i];
+        if (u->kind != USE_PASSAGE || u->what != what) {
+            continue;
+        }
+        dx = u->cx - x;
+        dy = u->cy - y;
+        dz = u->cz - z;
+        d2 = dx * dx + dy * dy + dz * dz;
+        if (pick < 0 || d2 < best) {
+            pick = i;
+            best = d2;
+        }
+    }
+    return pick;
+}
+
+int world_building(const World *world, int *faction)
+{
+    if (faction) {
+        *faction = world ? world->faction : 0;
+    }
+    return world && world->place == PLACE_INSIDE ? world->building : -1;
 }
 
 int world_emitter_count(const World *world)

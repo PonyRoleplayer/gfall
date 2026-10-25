@@ -88,6 +88,24 @@ void gfx_set_light_range(int scale)
     }
 }
 
+void gfx_set_light_shadow(int on)
+{
+    light_set_shadow(on);
+    if (g_prepared && g_level) {
+        light_build(&g_level->scene);
+    }
+}
+
+void gfx_hold(const char *text)
+{
+    draw_hold(text);
+}
+
+void gfx_fade_in(float secs)
+{
+    draw_fade_in(secs);
+}
+
 void gfx_frame(const Camera *cam, const Level *level)
 {
     if (g_reload && level) {
