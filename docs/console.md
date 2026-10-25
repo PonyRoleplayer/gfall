@@ -92,7 +92,7 @@ A variable prints its value when typed alone, and takes a new one as an argument
 | `history` | The lines typed, oldest first. |
 | `clear` | Empties the log. |
 | `help [name]`, `find word` | See above. |
-| `sndinfo`, `song`, `play`, `musdev`, `sound`, `sndvol`, `sndrate`, `snddrv`, `sndmmx`, `music`, `musvol`, `musvoices` | The sound and the music: see `docs/sound.md`. |
+| `sndinfo`, `sndlist`, `sndview`, `song`, `play`, `musdev`, `sound`, `sndvol`, `sndrate`, `snddrv`, `sndmmx`, `music`, `musvol`, `musvoices` | The sound and the music: see `docs/sound.md`. |
 
 `autoexec.cfg` beside the program runs on the first frame, when the device is open, if it exists. A missing file is silent, except for a debug line. For example:
 

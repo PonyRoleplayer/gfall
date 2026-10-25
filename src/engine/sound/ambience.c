@@ -322,6 +322,41 @@ void ambience_idle(void)
     music_update();
 }
 
+static int g_view;
+
+int ambience_emitters(const Emitter **list)
+{
+    /* The place heard last may be gone with its heap (LEVELFALL's next place). */
+    if (!g_scene || !g_scene->emitters || mem_epoch() != g_epoch) {
+        if (list) {
+            *list = 0;
+        }
+        return 0;
+    }
+    if (list) {
+        *list = g_scene->emitters;
+    }
+    return g_nemit;
+}
+
+int ambience_emitter_playing(int index)
+{
+    if (index < 0 || index >= g_nemit) {
+        return 0;
+    }
+    return sound_playing(g_handle[index]);
+}
+
+void ambience_set_view(int units)
+{
+    g_view = units < 0 ? 0 : (units > AMBIENCE_VIEW_MAX ? AMBIENCE_VIEW_MAX : units);
+}
+
+int ambience_view(void)
+{
+    return g_view;
+}
+
 void ambience_stats(int *heard, int *loops)
 {
     if (heard) {

@@ -59,6 +59,8 @@ The programs still import only KERNEL32 and USER32. WINMM.DLL and DSOUND.DLL loa
 
 `music_update`, once a frame, gives each finished buffer back to the stream behind the last. That is the loop: the buffers finish in order, so the first goes back in behind the last. A song is always at least two buffers, so one is queued while the other comes back. A stall shorter than what is queued, a place loading, does not stop the music.
 
+How a buffer is known to be done matters on Windows 98. The first version opened the stream with no callback and polled each header's `MHDR_DONE`: the song played once, then never again. The headers of a 32-bit program are thunked to the 16-bit MMSYSTEM, and with `CALLBACK_NULL` the done flag was never seen to come back, so no buffer went back in. Now the stream has a callback (`on_done`, `CALLBACK_FUNCTION`) that does nothing but count MOM_DONE: a MIDI callback may call almost no system function, not `midiStreamOut`. It is the count's only writer, so it adds without a call. `music_update` queues that many buffers again, in order. Each start marks its buffers with a generation in `dwUser`, so the buffers a stop hands back are not counted. After queuing, `midiStreamRestart` wakes a stream that ran dry during a long stall; on one that is playing it does nothing. A buffer that does not go back in logs a warning, once, with its error.
+
 The song is kept (`MUSIC_EVENTS`, 32768 events) so it can be made again: music turned back on, a new voice limit, or a volume change on a device with no volume of its own.
 
 **The voice limit.** An AWE64 has 32 voices in hardware. Past them, its driver plays notes on the CPU. `music_render` keeps at most `music_voices` notes (default 32, `musvoices`) sounding: a note that would be one more ends the oldest first, and the oldest's own note-off is then dropped. The same key again on its channel ends the first. This is all decided when the events are made, so it costs nothing while playing. hostcheck renders all 131 songs: none needs more than 17, so none is cut. A preset layered from two samples takes two voices on the EMU8000, so a song near the limit can still pass 32; lower `musvoices` if `sndinfo` and the card disagree.
@@ -135,18 +137,29 @@ On a place's heap: its emitters, 2048 at most (`MAX_EMITTERS`), 32 bytes each.
 | `musdev [n\|auto]` | The MIDI outputs, or play on one. |
 | `song [name\|stop]` | The song, or play one of MIDI.BSA's by name (`song DUNGEON5.HMI`). |
 | `play n` | Play DAGGER.SND clip n. |
+| `sndview n` | Squares, words and rings for the emitters within n units of the camera (0..4096), the 64 nearest: see below. 0 (default) is off. Try 1024. |
+| `sndlist [n]` | The place's emitters by kind ("53 fire"), then the n nearest (10, at most 64): number, word, position, distance, reach, loop or now and then, and whether it plays or is in reach. |
+
+## Seeing the emitters
+
+`sndview 1024` draws each emitter within 1024 units of the camera, the 64 nearest: a square at it, the game's word for it (`Emitter.label`: "fire", "horse", "cow", "pig", "cat", "dog"), and a ring as wide as its reach at its distance, where it stops being heard. A loop (a fire) is orange and a now-and-then sound (an animal) green, bright while it plays and dim while silent. So walking toward a torch shows it light up when it is among the six nearest loops, and an animal flash bright when it calls. It draws over walls, as `lightview` does, and keeps to the same limits: a square only when its centre is on the glass, a ring only when at most 480 pixels wide, so nothing reaches the SST-1's ±2048.
+
+`sndlist` prints the same from the console, nearest first, with positions to `setpos` to. The hold has 53 fires; the Ashwing Farmstead 6 animals.
 
 ## Tests
 
 hostcheck runs everything but the card:
 - **Engine:** the mixers agree bit for bit; full scale is (s << 8) · g >> 16; the mix saturates; half rate holds each sample two frames. A sound on the right is louder on the right and moves left when the listener turns; one out of reach takes no voice; a loud one takes the quietest voice and a quiet one does not. The sort puts note-offs first at a tick; forty notes under 32 voices end the oldest eight; controller 7 is scaled; the stream opens with the tempo and ends at the song's length.
-- **Dagger:** 459 clips, the rain 31346 signed samples; record id 385 at position 389. 131 songs that all read and render within 32 voices; D1.HMI is 224 s; D1FM's FM tracks read. Every playlist's songs exist. The hold has 53 sounding torches, a dungeon song, and fire beside a torch but none 5000 units off. A farm in a thunderstorm is louder than on a sunny day.
+- **Dagger:** 459 clips, the rain 31346 signed samples; record id 385 at position 389. 131 songs that all read and render within 32 voices; D1.HMI is 224 s; D1FM's FM tracks read. Every playlist's songs exist. The hold has 53 sounding torches, a dungeon song, and fire beside a torch but none 5000 units off; `sndlist`'s view of them matches, and the playing torch is the one held. A farm in a thunderstorm is louder than on a sunny day.
 
 It writes what it mixed, to listen to: `build/snd0.wav` beside a torch in the hold, `build/snd1.wav` the farm in a storm.
 
+## On the card
+
+Heard on the 233 with the AWE64 and a Voodoo 2 under Glide: the effects, the weather's loops and thunder, the torches and the animals, and the songs, which loop since the done callback. A good first version.
+
 ## Not done
 
-- Not yet heard on the card: the AWE64's DirectSound and MIDI drivers, and how a stream behaves while Glide holds the screen.
 - Doors and other RDB actions: nothing moves yet; the sound id is there for it.
 - A castle's peaceful blocks still get the dungeon's noises; Daggerfall Unity skips them (a start marker with a magnitude marks the block).
 - The water: Daggerfall Unity plays gentle water near a block's water level, and bubbles under it.

@@ -40,5 +40,17 @@ void ambience_frame(const Level *level, const Camera *cam, const Weather *w,
 void ambience_idle(void);
 /* Emitters within reach last frame, and loops held. */
 void ambience_stats(int *heard, int *loops);
+/* The emitters of the place heard last frame, and how many; 0 for none. */
+int ambience_emitters(const Emitter **list);
+/* 1 while emitter index is playing a sound. */
+int ambience_emitter_playing(int index);
+/*
+ * The debug picture (sndview): a square, a word and a ring where it is
+ * no longer heard, for emitters within this many world units of the
+ * camera, 0..AMBIENCE_VIEW_MAX. 0 (default) is off.
+ */
+#define AMBIENCE_VIEW_MAX 4096
+void ambience_set_view(int units);
+int ambience_view(void);
 
 #endif

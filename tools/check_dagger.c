@@ -723,6 +723,18 @@ static void check_sound_hold(const World *world)
            music_name(), heard, loops, sound_busy(), rms_of(buf, frames));
     check_expect(loops >= 1 && rms_of(buf, frames) > 50.0, "beside a torch the fire is silent");
     check_expect(df_eq(music_name(), name), "the hold's song did not start");
+    {
+        const Emitter *list;
+        int playing;
+
+        playing = 0;
+        for (k = 0; k < ambience_emitters(&list); k++) {
+            playing += ambience_emitter_playing(k);
+        }
+        check_expect(ambience_emitters(&list) == world_emitter_count(world) && list == hl.scene.emitters
+                     && playing == loops && torch->label && df_eq(torch->label, "fire"),
+                     "sndlist and sndview do not see the hold's emitters, or the playing torch");
+    }
     write_wav("build/snd0.wav", buf, frames);
     camera_set(&cam, torch->x + 5000.0f, torch->y, torch->z, 0.0f, 0.0f);
     run_sound(&hl, &cam, 0.0f, 0, 0.5f, buf, 11025 * 6);
@@ -747,6 +759,16 @@ static void check_sound_town(const World *town)
 
     world_as_level(town, &tl);
     sc = world_soundscape(town);
+    {
+        int animals;
+        int k;
+
+        animals = 0;
+        for (k = 0; k < world_emitter_count(town); k++) {
+            animals += world_emitter_at(town, k)->every > 0.0f;
+        }
+        printf("farm emitters %d, animals %d\n", world_emitter_count(town), animals);
+    }
     check_expect(sc && sc->kind == SCAPE_TOWN && sc->rain && sc->night && sc->wind
                  && sc->nthunder == 3 && sc->nday == 2,
                  "the farm's soundscape lacks rain, crickets, wind, thunder or birds");

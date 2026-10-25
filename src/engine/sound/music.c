@@ -516,6 +516,15 @@ static char g_dev_name[MAXPNAMELEN + 1];
 static MIDIHDR g_hdr[HEADERS];
 static int g_nhdr;
 static int g_next;
+/*
+ * Buffers the driver has given back (MOM_DONE, counted by the callback)
+ * and buffers we have queued again. g_gen marks this start's buffers in
+ * their dwUser, so the ones a stop hands back do not count.
+ */
+static volatile LONG g_done;
+static LONG g_taken;
+static volatile LONG g_gen;
+static int g_warned;
 static char g_at_name[MAXPNAMELEN + 1];
 
 int music_kind(void)
@@ -609,6 +618,25 @@ static int score(const MIDIOUTCAPSA *caps)
     return s;
 }
 
+/*
+ * The driver's "buffer done", on a thread of the system's. A MIDI
+ * callback may call almost nothing (not midiStreamOut), so it only
+ * counts; music_update queues the buffer again. Polling MHDR_DONE with
+ * no callback played each song once on Windows 98: a 32-bit header is
+ * thunked to the 16-bit MMSYSTEM, and with CALLBACK_NULL its done flag
+ * was never seen to come back.
+ */
+static void CALLBACK on_done(HMIDIOUT out, UINT msg, DWORD_PTR user, DWORD_PTR p1, DWORD_PTR p2)
+{
+    (void)out;
+    (void)user;
+    (void)p2;
+    if (msg == MOM_DONE && p1 && ((MIDIHDR *)p1)->dwUser == (DWORD_PTR)g_gen) {
+        /* Its only writer: a plain add, no call (a callback may make almost none). */
+        g_done = g_done + 1;
+    }
+}
+
 static void close_device(void)
 {
     const Winmm *mm;
@@ -664,7 +692,7 @@ static int open_device(void)
         return 0;
     }
     id = (UINT)best;
-    if (mm->midiStreamOpen(&g_strm, &id, 1, 0, 0, CALLBACK_NULL) != MMSYSERR_NOERROR) {
+    if (mm->midiStreamOpen(&g_strm, &id, 1, (DWORD_PTR)on_done, 0, CALLBACK_FUNCTION) != MMSYSERR_NOERROR) {
         log_print(LOG_WARN, "music: midiStreamOpen failed on \"%s\"", caps.szPname);
         return 0;
     }
@@ -717,6 +745,8 @@ static void device_stop(void)
         g_nhdr = 0;
         return;
     }
+    /* What the stop hands back is not to be queued again. */
+    g_gen = g_gen + 1;
     mm->midiStreamStop(g_strm);
     /* Every note off, every controller back: the next song starts clean. */
     mm->midiOutReset((HMIDIOUT)g_strm);
@@ -769,6 +799,8 @@ static int device_start(void)
         }
     }
     g_nhdr = 0;
+    g_done = 0;
+    g_taken = 0;
     for (at = 0; at < g_words && g_nhdr < HEADERS; at += per) {
         MIDIHDR *h;
         int words;
@@ -776,6 +808,7 @@ static int device_start(void)
         words = g_words - at < per ? g_words - at : per;
         h = &g_hdr[g_nhdr];
         mem_zero(h, sizeof(*h));
+        h->dwUser = (DWORD_PTR)g_gen;
         h->lpData = (LPSTR)(g_stream + at);
         h->dwBufferLength = (DWORD)words * 4u;
         h->dwBytesRecorded = (DWORD)words * 4u;
@@ -805,19 +838,48 @@ static int device_start(void)
 void music_update(void)
 {
     const Winmm *mm;
-    int guard;
+    LONG done;
+    int again;
 
     mm = winmm();
     if (!g_open || !g_playing || !mm || g_nhdr == 0) {
         return;
     }
-    /* They finish in order: each goes back in behind the last, which is the loop. */
-    for (guard = 0; guard < g_nhdr && (g_hdr[g_next].dwFlags & MHDR_DONE); guard++) {
-        g_hdr[g_next].dwFlags &= ~(DWORD)MHDR_DONE;
-        if (mm->midiStreamOut(g_strm, &g_hdr[g_next], sizeof(MIDIHDR)) != MMSYSERR_NOERROR) {
+    /*
+     * They come back in order: each goes back in behind the last, which
+     * is the loop. One read of the count; the callback may add to it.
+     */
+    done = g_done;
+    again = 0;
+    while (g_taken < done) {
+        MIDIHDR *h;
+        MMRESULT r;
+
+        h = &g_hdr[g_next];
+        h->dwFlags &= ~(DWORD)(MHDR_DONE | MHDR_INQUEUE);
+        h->dwBytesRecorded = h->dwBufferLength;
+        r = mm->midiStreamOut(g_strm, h, sizeof(MIDIHDR));
+        if (r != MMSYSERR_NOERROR) {
+            if (!g_warned) {
+                log_print(LOG_WARN, "music: buffer %d not queued again (error %d); the loop stops",
+                          g_next, (int)r);
+                g_warned = 1;
+            }
             break;
         }
+        g_taken++;
         g_next = (g_next + 1) % g_nhdr;
+        again = 1;
+        if (g_next == 0) {
+            log_print(LOG_DEBUG, "music: %s round again", g_name);
+        }
+    }
+    /*
+     * A stream that ran dry while a frame stalled is paused waiting; a
+     * restart on one that plays does nothing.
+     */
+    if (again) {
+        mm->midiStreamRestart(g_strm);
     }
 }
 #endif

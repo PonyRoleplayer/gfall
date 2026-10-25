@@ -867,6 +867,94 @@ static void c_play(int argc, char **argv)
     log_print(LOG_PRINT, "play: %s, %d ms", argv[1], (int)(clip->frames * 1000u / clip->rate));
 }
 
+/* The place's sound emitters: how many of each, then the nearest, nearest first. */
+static void c_sndlist(int argc, char **argv)
+{
+    enum { KINDS = 16, SHOW_MAX = 64 };
+    const char *kind[KINDS];
+    int count[KINDS];
+    int pick[SHOW_MAX];
+    float dist2[SHOW_MAX];
+    const Emitter *em;
+    const Camera *cam;
+    int nkind;
+    int npick;
+    int show;
+    int n;
+    int i;
+    int j;
+
+    show = 10;
+    if (argc >= 2 && (!cmd_parse_int(argv[1], &show) || show < 1)) {
+        log_text(LOG_PRINT, "sndlist: how many, 1..64");
+        return;
+    }
+    if (show > SHOW_MAX) {
+        show = SHOW_MAX;
+    }
+    cam = g_cam ? g_cam : g_player;
+    n = ambience_emitters(&em);
+    if (!cam || n < 1) {
+        log_text(LOG_PRINT, "sndlist: no sound emitters in this place");
+        return;
+    }
+    nkind = 0;
+    for (i = 0; i < n; i++) {
+        const char *word;
+
+        word = em[i].label ? em[i].label : "?";
+        for (j = 0; j < nkind && !df_eq(kind[j], word); j++) {
+        }
+        if (j == nkind && nkind < KINDS) {
+            kind[nkind] = word;
+            count[nkind++] = 0;
+        }
+        if (j < nkind) {
+            count[j]++;
+        }
+    }
+    log_print(LOG_PRINT, "sndlist: %d emitters", n);
+    for (j = 0; j < nkind; j++) {
+        log_print(LOG_PRINT, "  %d %s", count[j], kind[j]);
+    }
+    npick = 0;
+    for (i = 0; i < n; i++) {
+        float dx, dy, dz, d2;
+
+        dx = em[i].x - cam->x;
+        dy = em[i].y - cam->y;
+        dz = em[i].z - cam->z;
+        d2 = dx * dx + dy * dy + dz * dz;
+        if (npick == show && d2 >= dist2[npick - 1]) {
+            continue;
+        }
+        if (npick < show) {
+            npick++;
+        }
+        for (j = npick - 1; j > 0 && dist2[j - 1] > d2; j--) {
+            dist2[j] = dist2[j - 1];
+            pick[j] = pick[j - 1];
+        }
+        dist2[j] = d2;
+        pick[j] = i;
+    }
+    for (j = 0; j < npick; j++) {
+        const Emitter *e;
+        float d;
+        float root;
+
+        e = &em[pick[j]];
+        d = dist2[j];
+        __asm__ __volatile__("fsqrt" : "=t"(root) : "0"(d));
+        log_print(LOG_PRINT, "#%d %s at %d %d %d, %d away, heard within %d, %s%s",
+                  pick[j], e->label ? e->label : "?",
+                  df_iround(e->x), df_iround(e->y), df_iround(e->z), df_iround(root),
+                  df_iround(e->reach),
+                  e->every > 0.0f ? "now and then" : "loops",
+                  ambience_emitter_playing(pick[j]) ? ", playing" : (root < e->reach ? ", in reach" : ""));
+    }
+}
+
 static int get_tcl(void)
 {
     return walker_on();
@@ -1066,6 +1154,9 @@ static void commands(void)
     cmd_add("musdev", c_musdev, "[n|auto]", "the MIDI outputs, or play the music on one");
     cmd_add("song", c_song, "[name|stop]", "the song playing, or play one of the game's");
     cmd_add("play", c_play, "n", "play the game's sound effect n");
+    cmd_add("sndlist", c_sndlist, "[n]", "the place's sound emitters by kind, and the n nearest (10)");
+    cmd_var("sndview", ambience_view, ambience_set_view, 0, AMBIENCE_VIEW_MAX,
+            "squares, words and rings for sound emitters within this many units; 0 is off. Try 1024");
     cmd_var("sound", sound_on, sound_set_on, 0, 1, "sound effects");
     cmd_var("sndvol", sound_volume, sound_set_volume, 0, 100, "sound effects volume, percent");
     cmd_var("sndrate", sound_rate, sound_set_rate, 8000, 44100,

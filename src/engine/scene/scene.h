@@ -64,6 +64,8 @@ typedef struct Light {
 typedef struct Emitter {
     float x, y, z;
     const SoundClip *clip;
+    /* The game's word for it ("fire", "pig"), for sndview and sndlist. */
+    const char *label;
     float inner;
     float reach;
     float volume;

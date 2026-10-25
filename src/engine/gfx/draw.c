@@ -11,6 +11,7 @@
 #include "engine/ui/shot.h"
 #include "engine/ui/build.h"
 #include "engine/ui/hud.h"
+#include "engine/ui/font.h"
 #include "engine/gfx/texcache.h"
 #include "engine/scene/light.h"
 #include "engine/scene/clock.h"
@@ -1500,6 +1501,132 @@ static void draw_light_view(const Camera *cam, const Basis *basis)
     glide_overlay(0);
 }
 
+/*
+ * `sndview`: for the emitters within ambience_view() units of the camera,
+ * the SOUND_VIEW_COUNT nearest, a square, its word and a ring as wide as
+ * its reach at its distance. A loop (a fire) is orange, a now-and-then
+ * sound (an animal) green; bright while it plays, dim while silent.
+ * Drawn over walls, and inside the SST-1's +/-2048 as lightview is: the
+ * centre on the glass, the ring at most LIGHT_VIEW_RING pixels wide.
+ * See docs/sound.md.
+ */
+#define SOUND_VIEW_COUNT 64
+
+static void draw_sound_view(const Camera *cam, const Basis *basis, const Scene *scene)
+{
+    int pick[SOUND_VIEW_COUNT];
+    float dist2[SOUND_VIEW_COUNT];
+    const Emitter *em;
+    float range2;
+    int npick;
+    int n;
+    int i;
+    int j;
+
+    if (ambience_view() < 1 || !scene->emitters || scene->nemitters < 1) {
+        return;
+    }
+    em = scene->emitters;
+    n = scene->nemitters;
+    range2 = (float)ambience_view() * (float)ambience_view();
+    npick = 0;
+    for (i = 0; i < n; i++) {
+        float dx, dy, dz, d2;
+
+        dx = em[i].x - cam->x;
+        dy = em[i].y - cam->y;
+        dz = em[i].z - cam->z;
+        d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 > range2 || (npick == SOUND_VIEW_COUNT && d2 >= dist2[npick - 1])) {
+            continue;
+        }
+        if (npick < SOUND_VIEW_COUNT) {
+            npick++;
+        }
+        for (j = npick - 1; j > 0 && dist2[j - 1] > d2; j--) {
+            dist2[j] = dist2[j - 1];
+            pick[j] = pick[j - 1];
+        }
+        dist2[j] = d2;
+        pick[j] = i;
+    }
+    if (npick < 1) {
+        return;
+    }
+    glide_overlay(1);
+    for (j = 0; j < npick; j++) {
+        const Emitter *e;
+        float x, y, z, sx, sy, oow, ooz, rad;
+        float r, g, b;
+        int on;
+        int seg;
+
+        i = pick[j];
+        e = &em[i];
+        camera_view(cam, basis, e->x, e->y, e->z, &x, &y, &z);
+        if (z < DF_NEAR || !camera_project(x, y, z, &sx, &sy, &oow, &ooz)) {
+            continue;
+        }
+        if (sx < 0.0f || sx > (float)DF_VIEW_W || sy < 0.0f || sy > (float)DF_VIEW_H) {
+            continue;
+        }
+        on = ambience_emitter_playing(i);
+        if (e->every <= 0.0f) {
+            r = on ? 255.0f : 130.0f;
+            g = on ? 150.0f : 70.0f;
+            b = on ? 40.0f : 25.0f;
+        } else {
+            r = on ? 140.0f : 40.0f;
+            g = on ? 255.0f : 120.0f;
+            b = on ? 120.0f : 40.0f;
+        }
+        view_quad(sx, sy, 3.0f, r, g, b);
+        rad = e->reach * g_focal / z;
+        if (rad < 4.0f || rad > LIGHT_VIEW_RING) {
+            continue;
+        }
+        for (seg = 0; seg < 32; seg++) {
+            DrawVert a;
+            DrawVert f;
+            float t0, t1;
+
+            t0 = (float)seg * (DF_TAU / 32.0f);
+            t1 = (float)(seg + 1) * (DF_TAU / 32.0f);
+            a.x = sx + rad * df_cos(t0);
+            a.y = sy + rad * df_sin(t0);
+            f.x = sx + rad * df_cos(t1);
+            f.y = sy + rad * df_sin(t1);
+            a.oow = f.oow = 1.0f;
+            a.ooz = f.ooz = 1.0f;
+            a.sow = f.sow = 0.0f;
+            a.tow = f.tow = 0.0f;
+            a.r = f.r = r * 0.6f;
+            a.g = f.g = g * 0.6f;
+            a.b = f.b = b * 0.6f;
+            glide_line(&a, &f);
+        }
+    }
+    glide_overlay(0);
+    /* The words after the squares: the text sets its own state. */
+    for (j = 0; j < npick; j++) {
+        const Emitter *e;
+        float x, y, z, sx, sy, oow, ooz;
+
+        e = &em[pick[j]];
+        if (!e->label) {
+            continue;
+        }
+        camera_view(cam, basis, e->x, e->y, e->z, &x, &y, &z);
+        if (z < DF_NEAR || !camera_project(x, y, z, &sx, &sy, &oow, &ooz)) {
+            continue;
+        }
+        if (sx < 0.0f || sx > (float)(DF_VIEW_W - 48) || sy < 0.0f || sy > (float)DF_VIEW_H) {
+            continue;
+        }
+        ui_string(df_iround(sx) + 6, df_iround(sy) + ui_line_height() / 2, e->label);
+    }
+}
+
 static int g_cap_models;
 static int g_cap_sprites;
 
@@ -1750,6 +1877,7 @@ void draw_frame(const Camera *cam, const Level *level)
         draw_precip(cam, &basis, &w, light + flash, secs);
     }
     draw_light_view(cam, &basis);
+    draw_sound_view(cam, &basis, &level->scene);
     if (g_under) {
         g_under();
     }

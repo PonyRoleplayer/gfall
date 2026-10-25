@@ -187,6 +187,7 @@ void sounds_scape(Soundscape *sc, int kind, int index)
 int sounds_flat(int file, int image, float x, float y, float z, Emitter *out)
 {
     int clip;
+    const char *label;
 
     out->x = x;
     out->y = y;
@@ -207,6 +208,7 @@ int sounds_flat(int file, int image, float x, float y, float z, Emitter *out)
             return 0;
         }
         out->clip = sndfile_clip(SND_BURNING);
+        out->label = "fire";
         out->inner = TORCH_INNER;
         out->reach = TORCH_REACH;
         out->volume = TORCH_VOLUME;
@@ -218,27 +220,33 @@ int sounds_flat(int file, int image, float x, float y, float z, Emitter *out)
         case 0:
         case 1:
             clip = SND_HORSE;
+            label = "horse";
             break;
         case 3:
         case 4:
             clip = SND_COW;
+            label = "cow";
             break;
         case 5:
         case 6:
             clip = SND_PIG;
+            label = "pig";
             break;
         case 7:
         case 8:
             clip = SND_CAT;
+            label = "cat";
             break;
         case 9:
         case 10:
             clip = SND_DOG;
+            label = "dog";
             break;
         default:
             return 0;
         }
         out->clip = sndfile_clip(clip);
+        out->label = label;
         out->inner = ANIMAL_INNER;
         out->reach = ANIMAL_REACH;
         out->volume = 1.0f;
