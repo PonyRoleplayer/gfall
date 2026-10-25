@@ -8,6 +8,7 @@
  * Page Up and Page Down pitch, staying in place.
  * The wheel changes the field of view.
  * The view keeps a title bar and a status bar. F1 opens the rest.
+ * F2 shows the sound panel; F4 steps the engine's sndview range.
  * F5..F9 flip cull, occlude, covers, faces, fog. F12 is a screenshot
  * plus a bookmark in levelfall.log that levelfall.cfg can reopen.
  */
@@ -31,6 +32,8 @@
 #include "engine/scene/light.h"
 #include "engine/scene/scene.h"
 #include "engine/scene/weather.h"
+#include "engine/sound/ambience.h"
+#include "engine/sound/audio.h"
 #include "engine/sound/music.h"
 #include "engine/sound/sound.h"
 #include "engine/ui/console.h"
@@ -145,6 +148,24 @@ static int g_auto_index;
 static int g_auto_cam;
 static int g_auto_row = -1;
 static float g_auto_pose[5];
+
+/*
+ * The sound panel (F2) and its cfg. soundpanel= opens it at start,
+ * sndrows= is how many of the nearest sources it lists. sndview= is the
+ * engine's own marker range at start, which F4 steps through. sound=,
+ * sndvol=, music=, musvol= are the engine's switches, set once the card
+ * is open; -1 leaves the engine's default.
+ */
+#define SND_ROWS_MAX 8
+static int g_sound_panel = 1;
+static int g_snd_rows = 5;
+static int g_sndview_cfg;
+static int g_sound_cfg = -1;
+static int g_sndvol_cfg = -1;
+static int g_music_cfg = -1;
+static int g_musvol_cfg = -1;
+static int g_f2_was;
+static int g_f4_was;
 
 /* F5..F9 flip these engine switches in the fly view. Same names as the console. */
 #define NSWITCH 5
@@ -1530,6 +1551,213 @@ static void weather_lines(char *top, char *low, int cap)
     }
 }
 
+/* x87 fsqrt, as arch3d.c does: no libm. Only for the rows shown, not every emitter. */
+static float lf_sqrt(float v)
+{
+    if (v <= 0.0f) {
+        return 0.0f;
+    }
+    __asm__ __volatile__("fsqrt" : "=t"(v) : "0"(v));
+    return v;
+}
+
+static const char *music_kind_name(int kind)
+{
+    if (kind == MUSIC_SYNTH) return "synth";
+    if (kind == MUSIC_FM) return "fm";
+    if (kind == MUSIC_PORT) return "port";
+    return "no midi";
+}
+
+/*
+ * The sndrows nearest emitters, nearest first, into best. One pass with
+ * an insertion into a short list, on squared distance: no root per
+ * emitter, and no array the size of the place.
+ */
+static int nearest_emitters(const Emitter *list, int count, int *best, float *best_d2, int want)
+{
+    int i;
+    int n;
+    int j;
+
+    n = 0;
+    for (i = 0; i < count; i++) {
+        float dx;
+        float dy;
+        float dz;
+        float d2;
+
+        dx = list[i].x - g_cam->x;
+        dy = list[i].y - g_cam->y;
+        dz = list[i].z - g_cam->z;
+        d2 = dx * dx + dy * dy + dz * dz;
+        if (n == want && d2 >= best_d2[n - 1]) {
+            continue;
+        }
+        j = n < want ? n++ : n - 1;
+        while (j > 0 && best_d2[j - 1] > d2) {
+            best[j] = best[j - 1];
+            best_d2[j] = best_d2[j - 1];
+            j--;
+        }
+        best[j] = i;
+        best_d2[j] = d2;
+    }
+    return n;
+}
+
+/*
+ * One source: its word, distance over reach, loop or now (now and then),
+ * and play (a voice has it), near (in reach, no voice: a loop past the
+ * AMBIENCE_LOOPS nearest, or a call waiting its turn) or out.
+ */
+static void source_line(char *dst, int cap, const Emitter *e, int index, float d2)
+{
+    int n;
+    int d;
+
+    n = 0;
+    dst[0] = 0;
+    add_str(dst, &n, cap, e->label && e->label[0] ? e->label : "?");
+    while (n < 7 && n < cap - 1) {
+        dst[n++] = ' ';
+    }
+    dst[n] = 0;
+    d = df_iround(lf_sqrt(d2));
+    add_num(dst, &n, cap, d, 5);
+    add_str(dst, &n, cap, "/");
+    add_num(dst, &n, cap, df_iround(e->reach), 0);
+    add_str(dst, &n, cap, e->every > 0.0f ? "  now " : "  loop");
+    if (ambience_emitter_playing(index)) {
+        add_str(dst, &n, cap, "  play");
+    } else if ((float)d <= e->reach) {
+        add_str(dst, &n, cap, "  near");
+    } else {
+        add_str(dst, &n, cap, "  out");
+    }
+}
+
+/*
+ * F2: the sound panel, left, under place, bottom edge at top. The way
+ * out and the mix, the song, the place's sources and how many are heard,
+ * the engine's sndview range (F4), then the nearest sources.
+ */
+static void draw_sound(int x, int top)
+{
+    char head[6][48];
+    char rows[SND_ROWS_MAX][48];
+    const char *lines[6 + SND_ROWS_MAX];
+    const Emitter *list;
+    int best[SND_ROWS_MAX];
+    float best_d2[SND_ROWS_MAX];
+    int count;
+    int shown;
+    int heard;
+    int loops;
+    int stolen;
+    int peak;
+    int events;
+    int nlines;
+    int n;
+    int i;
+    int w;
+    int h;
+    const char *song;
+
+    if (!g_sound_panel) {
+        return;
+    }
+    n = 0;
+    head[0][0] = 0;
+    add_str(head[0], &n, 48, "out ");
+    if (sound_ready()) {
+        add_str(head[0], &n, 48, audio_mode_name(audio_mode()));
+        add_str(head[0], &n, 48, " ");
+        add_num(head[0], &n, 48, audio_rate(), 0);
+        add_str(head[0], &n, 48, "  lead ");
+        add_num(head[0], &n, 48, audio_lead_ms(), 0);
+        add_str(head[0], &n, 48, "ms");
+    } else {
+        add_str(head[0], &n, 48, "none, silent");
+    }
+    n = 0;
+    head[1][0] = 0;
+    add_str(head[1], &n, 48, sound_on() ? "fx on " : "fx off ");
+    add_num(head[1], &n, 48, sound_volume(), 0);
+    add_str(head[1], &n, 48, "  voices ");
+    add_num(head[1], &n, 48, sound_busy(), 0);
+    add_str(head[1], &n, 48, "/");
+    add_num(head[1], &n, 48, SOUND_VOICES, 0);
+    n = 0;
+    head[2][0] = 0;
+    add_str(head[2], &n, 48, music_on() ? "music on " : "music off ");
+    add_num(head[2], &n, 48, music_volume(), 0);
+    add_str(head[2], &n, 48, "  ");
+    song = music_name();
+    add_str(head[2], &n, 48, song && song[0] ? song : "no song");
+    if (song && song[0] && !music_playing()) {
+        add_str(head[2], &n, 48, " stopped");
+    }
+    stolen = 0;
+    peak = 0;
+    events = 0;
+    music_stats(&stolen, &peak, &events);
+    n = 0;
+    head[3][0] = 0;
+    add_str(head[3], &n, 48, music_kind_name(music_kind()));
+    add_str(head[3], &n, 48, "  notes ");
+    add_num(head[3], &n, 48, peak, 0);
+    add_str(head[3], &n, 48, "/");
+    add_num(head[3], &n, 48, music_voices(), 0);
+    add_str(head[3], &n, 48, "  cut ");
+    add_num(head[3], &n, 48, stolen, 0);
+    count = ambience_emitters(&list);
+    heard = 0;
+    loops = 0;
+    ambience_stats(&heard, &loops);
+    n = 0;
+    head[4][0] = 0;
+    add_str(head[4], &n, 48, "sources ");
+    add_num(head[4], &n, 48, count, 0);
+    add_str(head[4], &n, 48, "  heard ");
+    add_num(head[4], &n, 48, heard, 0);
+    add_str(head[4], &n, 48, "  loops ");
+    add_num(head[4], &n, 48, loops, 0);
+    add_str(head[4], &n, 48, "/");
+    add_num(head[4], &n, 48, AMBIENCE_LOOPS, 0);
+    n = 0;
+    head[5][0] = 0;
+    add_str(head[5], &n, 48, "sndview ");
+    if (ambience_view() > 0) {
+        add_num(head[5], &n, 48, ambience_view(), 0);
+    } else {
+        add_str(head[5], &n, 48, "off");
+    }
+    add_str(head[5], &n, 48, "  f4");
+    for (i = 0; i < 6; i++) {
+        lines[i] = head[i];
+    }
+    nlines = 6;
+    shown = 0;
+    if (list && count > 0 && g_snd_rows > 0) {
+        shown = nearest_emitters(list, count, best, best_d2, g_snd_rows);
+    }
+    for (i = 0; i < shown; i++) {
+        source_line(rows[i], 48, &list[best[i]], best[i], best_d2[i]);
+        lines[nlines++] = rows[i];
+    }
+    /* The height follows the rows asked for, so it does not jump as sources come and go. */
+    while (nlines < 6 + g_snd_rows) {
+        lines[nlines++] = "";
+    }
+    if (count == 0 && g_snd_rows > 0) {
+        lines[6] = "no sources here";
+    }
+    w = measure_lines("sound", "f2", lines, nlines);
+    h = measure_h(nlines);
+    draw_panel(x, top - h, w, h, "sound", "f2", lines, nlines, 176.0f, 120.0f, 216.0f);
+}
+
 static void draw_overlay(void)
 {
     char place_kind[40];
@@ -1557,16 +1785,16 @@ static void draw_overlay(void)
     char files_v[16];
     char rec_row[7][40];
     char draw_row[9][32];
-    char key_lines[12][48];
+    char key_lines[14][48];
     const char *place_l[6];
     const char *cam_l[3];
     const char *block_l[3];
     const char *frame_l[4];
     const char *rec_l[7];
     const char *draw_l[9];
-    const char *key_l[12];
-    const char *key_name[12];
-    const char *key_act[12];
+    const char *key_l[14];
+    const char *key_name[14];
+    const char *key_act[14];
     int n;
     int i;
     int gx;
@@ -1761,6 +1989,7 @@ static void draw_overlay(void)
     pw = measure_lines("place", g_help ? "f1 hide" : "f1", place_l, 6);
     draw_panel(gap, DF_VIEW_H - gap - ph, pw, ph, "place",
                g_help ? "f1 hide" : "f1", place_l, 6, 204.0f, 160.0f, 64.0f);
+    draw_sound(gap, DF_VIEW_H - gap - ph - gap);
     /* The bottom row is as tall as frame. Camera and block leave a blank last line. */
     ph = measure_h(4);
     cw = measure_lines("camera", 0, cam_l, 3);
@@ -1870,13 +2099,17 @@ static void draw_overlay(void)
     key_act[10] = "console";
     key_name[11] = "f12";
     key_act[11] = "shot, bookmark";
-    for (i = 0; i < 12; i++) {
+    key_name[12] = "f2";
+    key_act[12] = "sound panel";
+    key_name[13] = "f4";
+    key_act[13] = "sndview range";
+    for (i = 0; i < 14; i++) {
         pair_line(key_lines[i], 48, key_name[i], key_act[i]);
         key_l[i] = key_lines[i];
     }
     rw = measure_lines("record", 0, rec_l, 7);
     dw = measure_lines("draw", 0, draw_l, 9);
-    kw = measure_lines("keys", 0, key_l, 12);
+    kw = measure_lines("keys", 0, key_l, 14);
     side_w = rw;
     if (dw > side_w) {
         side_w = dw;
@@ -1886,7 +2119,7 @@ static void draw_overlay(void)
     }
     rh = measure_h(7);
     dh = measure_h(9);
-    kh = measure_h(12);
+    kh = measure_h(14);
     x = DF_VIEW_W - gap - side_w;
     y = DF_VIEW_H - gap - rh;
     draw_panel(x, y, side_w, rh, "record", 0, rec_l, 7, 204.0f, 160.0f, 64.0f);
@@ -1896,7 +2129,7 @@ static void draw_overlay(void)
     if (y < gap + ph) {
         y = gap + ph;
     }
-    draw_panel(x, y, side_w, kh, "keys", 0, key_l, 12, 168.0f, 168.0f, 180.0f);
+    draw_panel(x, y, side_w, kh, "keys", 0, key_l, 14, 168.0f, 168.0f, 180.0f);
 }
 
 static void fly_step(Camera *cam, int dx, int dy, float dt)
@@ -1967,6 +2200,36 @@ static void flip_switch(int i)
     console_log(line);
 }
 
+/*
+ * F4: the engine's emitter markers (sndview) off, then 512, 1024, 2048,
+ * 4096 units round the camera, then off. A cfg range between the steps
+ * goes on to the next one up.
+ */
+static void step_sndview(void)
+{
+    static const int steps[4] = { 512, 1024, 2048, AMBIENCE_VIEW_MAX };
+    char line[24];
+    int cur;
+    int next;
+    int i;
+    int n;
+
+    cur = ambience_view();
+    next = 0;
+    for (i = 0; i < 4; i++) {
+        if (steps[i] > cur) {
+            next = steps[i];
+            break;
+        }
+    }
+    ambience_set_view(next);
+    n = 0;
+    line[0] = 0;
+    add_str(line, &n, (int)sizeof(line), "sndview ");
+    add_num(line, &n, (int)sizeof(line), ambience_view(), 0);
+    console_log(line);
+}
+
 /* Edges are tracked while the console is up too, so a key held through it does not fire. */
 static void switch_keys(int act)
 {
@@ -1980,6 +2243,16 @@ static void switch_keys(int act)
         }
         g_switch_was[i] = down;
     }
+    down = key_down(VK_F2);
+    if (act && down && !g_f2_was) {
+        g_sound_panel = g_sound_panel ? 0 : 1;
+    }
+    g_f2_was = down;
+    down = key_down(VK_F4);
+    if (act && down && !g_f4_was) {
+        step_sndview();
+    }
+    g_f4_was = down;
 }
 
 static void snap_take(const Camera *cam, int valid)
@@ -2135,6 +2408,30 @@ static void bookmark(void)
     add_str(line, &n, (int)sizeof(line), " ");
     add_flag(line, &n, (int)sizeof(line), "fps", g_snap.fps);
     log_line(line);
+    /* What the place sounded like: read now, not snapped, since sound runs on its own clock. */
+    {
+        int heard;
+        int loops;
+
+        heard = 0;
+        loops = 0;
+        ambience_stats(&heard, &loops);
+        n = 0;
+        line[0] = 0;
+        add_str(line, &n, (int)sizeof(line), "# song=");
+        add_str(line, &n, (int)sizeof(line), music_name()[0] ? music_name() : "none");
+        add_str(line, &n, (int)sizeof(line), " ");
+        add_flag(line, &n, (int)sizeof(line), "voices", sound_busy());
+        add_str(line, &n, (int)sizeof(line), " ");
+        add_flag(line, &n, (int)sizeof(line), "sources", ambience_emitters(0));
+        add_str(line, &n, (int)sizeof(line), " ");
+        add_flag(line, &n, (int)sizeof(line), "heard", heard);
+        add_str(line, &n, (int)sizeof(line), " ");
+        add_flag(line, &n, (int)sizeof(line), "loops", loops);
+        add_str(line, &n, (int)sizeof(line), " ");
+        add_flag(line, &n, (int)sizeof(line), "sndview", ambience_view());
+        log_line(line);
+    }
 }
 
 static void run_view(const Level *level, Camera *cam)
@@ -2150,6 +2447,8 @@ static void run_view(const Level *level, Camera *cam)
     for (i = 0; i < NSWITCH; i++) {
         g_switch_was[i] = key_down(g_switch_vk[i]);
     }
+    g_f2_was = key_down(VK_F2);
+    g_f4_was = key_down(VK_F4);
     frames = 0;
     g_snap.valid = 0;
     g_fps_tick = 0;
@@ -2433,6 +2732,17 @@ static int read_int(const char **ps, int *out)
     return 1;
 }
 
+/* A whole number lo..hi into dst. Anything else leaves dst as it was. */
+static void cfg_int(const char *rest, int lo, int hi, int *dst)
+{
+    int v;
+
+    if (!read_int(&rest, &v) || v < lo || v > hi) {
+        return;
+    }
+    *dst = v;
+}
+
 /* An optional minus, digits, and an optional point with more digits. */
 static int read_fixed(const char **ps, float *out)
 {
@@ -2558,6 +2868,34 @@ static void cfg_line(const char *s)
         g_time_cfg = v * 60 + m;
         return;
     }
+    if (key_is(s, "soundpanel", &rest)) {
+        cfg_int(rest, 0, 1, &g_sound_panel);
+        return;
+    }
+    if (key_is(s, "sndrows", &rest)) {
+        cfg_int(rest, 0, SND_ROWS_MAX, &g_snd_rows);
+        return;
+    }
+    if (key_is(s, "sndview", &rest)) {
+        cfg_int(rest, 0, AMBIENCE_VIEW_MAX, &g_sndview_cfg);
+        return;
+    }
+    if (key_is(s, "sound", &rest)) {
+        cfg_int(rest, 0, 1, &g_sound_cfg);
+        return;
+    }
+    if (key_is(s, "sndvol", &rest)) {
+        cfg_int(rest, 0, 100, &g_sndvol_cfg);
+        return;
+    }
+    if (key_is(s, "music", &rest)) {
+        cfg_int(rest, 0, 1, &g_music_cfg);
+        return;
+    }
+    if (key_is(s, "musvol", &rest)) {
+        cfg_int(rest, 0, 100, &g_musvol_cfg);
+        return;
+    }
     if (key_is(s, "weather", &rest)) {
         char word[16];
         int i;
@@ -2612,6 +2950,39 @@ static void cfg_line(const char *s)
     }
 }
 
+/*
+ * The engine's sound switches from the cfg, once the card and the
+ * synthesizer are open, so a volume reaches the device that plays it.
+ */
+static void sound_cfg_apply(void)
+{
+    char line[64];
+    int n;
+
+    if (g_sound_cfg >= 0) {
+        sound_set_on(g_sound_cfg);
+    }
+    if (g_sndvol_cfg >= 0) {
+        sound_set_volume(g_sndvol_cfg);
+    }
+    if (g_music_cfg >= 0) {
+        music_set_on(g_music_cfg);
+    }
+    if (g_musvol_cfg >= 0) {
+        music_set_volume(g_musvol_cfg);
+    }
+    n = 0;
+    line[0] = 0;
+    add_flag(line, &n, (int)sizeof(line), "sound", sound_on());
+    add_str(line, &n, (int)sizeof(line), " ");
+    add_flag(line, &n, (int)sizeof(line), "sndvol", sound_volume());
+    add_str(line, &n, (int)sizeof(line), " ");
+    add_flag(line, &n, (int)sizeof(line), "music", music_on());
+    add_str(line, &n, (int)sizeof(line), " ");
+    add_flag(line, &n, (int)sizeof(line), "musvol", music_volume());
+    log_line(line);
+}
+
 static void cfg_apply(void)
 {
     char line[48];
@@ -2655,6 +3026,7 @@ static void cfg_apply(void)
         add_hm(line, &n, (int)sizeof(line), g_time_cfg / 60, g_time_cfg % 60);
         log_line(line);
     }
+    ambience_set_view(g_sndview_cfg);
     /* Set, so it is there with no blend, then forced, so no roll replaces it. */
     if (g_weather_cfg >= 0) {
         weather_set(g_weather_cfg);
@@ -2692,7 +3064,15 @@ static void cfg_load(void)
         "# camera there. time=21:30 sets the world clock at start (it lights\r\n"
         "# outdoor places). weather=rain starts in that weather and holds it:\r\n"
         "# sunny cloudy overcast fog rain thunder snow. F12 in the view logs\r\n"
-        "# these lines to levelfall.log.\r\n";
+        "# these lines to levelfall.log.\r\n"
+        "# soundpanel=1 shows the sound panel at start (F2 toggles it).\r\n"
+        "# sndrows is how many of the nearest sound sources it lists, 0 to 8.\r\n"
+        "soundpanel=1\r\n"
+        "sndrows=5\r\n"
+        "# sndview draws the sources within that many units, 0 (off) to\r\n"
+        "# 4096; F4 steps it. sound and music are 1 or 0, sndvol and\r\n"
+        "# musvol 0 to 100. Left out, the engine's own defaults stay.\r\n"
+        "sndview=0\r\n";
     char path[260];
     char buf[2048];
     HANDLE file;
@@ -2711,6 +3091,13 @@ static void cfg_load(void)
     g_weather_cfg = -1;
     g_auto_kind = -1;
     g_auto_cam = 0;
+    g_sound_panel = 1;
+    g_snd_rows = 5;
+    g_sndview_cfg = 0;
+    g_sound_cfg = -1;
+    g_sndvol_cfg = -1;
+    g_music_cfg = -1;
+    g_musvol_cfg = -1;
     if (!beside_exe(path, (int)sizeof(path), "levelfall.cfg")) {
         log_line("could not name levelfall.cfg");
         cfg_apply();
@@ -2887,6 +3274,7 @@ static int levelfall_main(void *instance)
         /* Once for the program: each place plays its own sound in it (docs/sound.md). */
         sound_startup(win_hwnd());
         music_startup();
+        sound_cfg_apply();
         if (g_auto_kind >= 0) {
             open_auto();
         }
