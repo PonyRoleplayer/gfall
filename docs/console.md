@@ -54,6 +54,7 @@ A variable prints its value when typed alone, and takes a new one as an argument
 | `faces` | on/off | Off draws ARCH3D faces the normal would drop. |
 | `vsync` | on/off | On waits for the retrace on each swap. Default on. |
 | `wbuffer` | on/off | On is the W-buffer, depth from 1/w. Off is the 16-bit Z-buffer, to compare. Default on. See `docs/glide.md`. |
+| `texcap` | 0..16384 | Debug only. TMU0 holds at most this many KB, as a smaller card would: `texcap 2048` shows on a 4 MB card what a 2 MB Voodoo 1 gets. A change sends the level again. `texmem` says when it is on. Default 0, the card's own. See `docs/memory.md`. |
 | `mipmap` | on/off | On uploads mip chains, off single levels. Both are budgeted to fit the card. A change sends the level again on the next frame. Default on. See `docs/glide.md`. |
 | `lights` | on/off | Dungeon lights: ambient tint and light decals. Off draws every place full bright. Default on. See `docs/lighting.md`. |
 | `ambient` | 0..255 | Brightness away from lights in a lit place. Default 112. |

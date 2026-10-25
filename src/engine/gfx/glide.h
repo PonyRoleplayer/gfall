@@ -78,6 +78,14 @@ int glide_palette(const df_u8 *r, const df_u8 *g, const df_u8 *b);
 /* Bytes still free on TMU0, from the upload cursor to grTexMaxAddress. */
 df_u32 glide_tex_free(void);
 /*
+ * Debug: let TMU0 hold at most kb KB, as a smaller card would; 0 is the
+ * card's own. Takes effect for the next uploads: send the level again
+ * (gfx_set_texcap does). glide_tex_card is the card's own size in KB.
+ */
+void glide_set_tex_cap(df_u32 kb);
+df_u32 glide_tex_cap(void);
+df_u32 glide_tex_card(void);
+/*
  * A square picture, side 1..256, through mip_build: its first level is
  * drop levels below full size, and chain adds the smaller levels down
  * to 1 x 1. handle receives the upload's id for glide_bind. A cutout's
@@ -151,6 +159,11 @@ void glide_decal(int on);
  * same shape to the same place on the card.
  */
 int glide_upload_p8(const df_u8 *pixels, int side, df_u32 *handle);
+/*
+ * The font sheet: ink (nonzero) or clear, ALPHA_INTENSITY_44, one byte a
+ * texel, white; draw it with the ink's colour as the tint.
+ */
+int glide_upload_ai44(const df_u8 *ink, int side, df_u32 *handle);
 int glide_replace(df_u32 handle, const df_u8 *pixels);
 /*
  * The sky pass: rgb (768 bytes) on TMU0 as the palette, no depth test,

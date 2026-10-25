@@ -848,6 +848,10 @@ static void c_texmem(int argc, char **argv)
               gfx_mipmap() ? "on" : "off", texcache_reduced());
     log_print(LOG_PRINT, "TMU0: %u KB free after them",
               (unsigned int)(glide_tex_free() / 1024u));
+    if (glide_tex_cap() > 0u) {
+        log_print(LOG_PRINT, "texcap: the card has %u KB, held to %u KB for this test",
+                  (unsigned int)glide_tex_card(), (unsigned int)glide_tex_cap());
+    }
 }
 
 static void c_mem(int argc, char **argv)
@@ -915,6 +919,8 @@ static void commands(void)
     cmd_var("sky", sky_on, sky_set_on, 0, 1, "the sky behind an outdoor place");
     cmd_var("daylight", daylight_on, daylight_set_on, 0, 1,
             "sun and moon light outdoors; off draws it full bright");
+    cmd_var("texcap", gfx_texcap, gfx_set_texcap, 0, 16384,
+            "debug: TMU0 holds at most this many KB, 2048 a Voodoo 1; 0 is the card's own");
     cmd_var("weathersim", weather_sim, weather_set_sim, 0, 1,
             "the weather sets the far clip and the fog outdoors; far is the ceiling");
     cmd_var("hud", hud_shown, hud_set, 0, 1, "position and fps corners");

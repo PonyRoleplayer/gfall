@@ -62,12 +62,16 @@ int gfx_prepare(const Level *level)
         sky_prepare(level ? level->sky : 0, clock_minute(), w.sky);
     }
     draw_light_upload(level && level->scene.nlights > 0);
+    /*
+     * The font before the level's pictures too: the budget then sees the
+     * exact room, instead of keeping back a guess for it.
+     */
+    if (level && level->palette) {
+        font_upload(level->palette->r, level->palette->g, level->palette->b);
+    }
     if (!texcache_upload(level)) {
         g_why = texcache_error();
         return 0;
-    }
-    if (level->palette) {
-        font_upload(level->palette->r, level->palette->g, level->palette->b);
     }
     glide_mark();
     light_build(&level->scene);
@@ -89,7 +93,7 @@ void gfx_frame(const Camera *cam, const Level *level)
     if (g_reload && level) {
         g_reload = 0;
         if (!gfx_prepare(level)) {
-            log_print(LOG_ERROR, "mipmap: the level did not go back on the card: %s",
+            log_print(LOG_ERROR, "the level did not go back on the card: %s",
                       gfx_error());
         }
     }
@@ -104,6 +108,27 @@ void gfx_set_mipmap(int on)
     }
     glide_set_mipmap(on);
     g_reload = g_prepared;
+}
+
+void gfx_set_texcap(int kb)
+{
+    if (kb < 0) {
+        kb = 0;
+    }
+    /* Under half a megabyte not even the font and the sky fit. */
+    if (kb > 0 && kb < 512) {
+        kb = 512;
+    }
+    if ((df_u32)kb == glide_tex_cap()) {
+        return;
+    }
+    glide_set_tex_cap((df_u32)kb);
+    g_reload = g_prepared;
+}
+
+int gfx_texcap(void)
+{
+    return (int)glide_tex_cap();
 }
 
 int gfx_mipmap(void)

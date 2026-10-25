@@ -61,7 +61,7 @@ Shared edges between faces are unchanged: both faces cut a shared edge from the 
 - A cutout carries alpha as a mean down the chain and is opaque where at least half of a texel's area was. The colour bleed (below) happens on the full level, so every level is bled.
 - The card's sizes come from `glide_texture_bytes`: the larger of `grTexCalcMemRequired` and `grTexTextureMemRequired`, plus the 8-byte pad.
 
-`texcache_upload` budgets the level before it sends anything (`mip_budget`). The room is what TMU0 has free less 192 KB for the font. Starting from full size, the picture that takes the most bytes loses its top level, again and again, until the total fits, never below 8 x 8. Each loss saves three quarters of that picture. Then each picture is uploaded with its chosen `drop`. If a 4 MB TMU's 2 MB edge wastes a gap and one does not fit, that picture alone loses another level. A dropped picture keeps its UVs: Glide maps s, t across 0..256 whatever the largest level is.
+`texcache_upload` budgets the level before it sends anything (`mip_budget`). The room is what TMU0 has free once the sky, the light falloff and the font are on it (`texcap` can hold it to a smaller card's, `docs/memory.md`). Starting from full size, the picture that takes the most bytes loses its top level, again and again, until the total fits, never below 8 x 8. Each loss saves three quarters of that picture. Then each picture is uploaded with its chosen `drop`. If a 4 MB TMU's 2 MB edge wastes a gap and one does not fit, that picture alone loses another level. A dropped picture keeps its UVs: Glide maps s, t across 0..256 whatever the largest level is.
 
 What it does to real places (host estimate, 1856 KB of room):
 

@@ -9,13 +9,15 @@
  * on, each is a chain down to 1 x 1. Before anything is sent, the
  * budget (mip_budget) picks how many top levels each picture loses so
  * the whole level fits: the picture that takes the most bytes loses
- * its top level first, until the total fits in the card less FONT_KEEP.
+ * its top level first, until the total fits in the room left. The sky,
+ * the light falloff and the font are on the card before it runs, so
+ * that room is exact. It used to keep back 192 KB for a font sent
+ * after it, a 128 KB sheet then and 64 KB now.
  * A small place loses nothing. A city's largest pictures go to half
  * size, and every picture is on the card instead of some drawing with
  * the last bound one. See docs/glide.md and docs/memory.md.
  */
 #define TEX_SLOTS 384
-#define FONT_KEEP (192u * 1024u)
 
 /* glide_upload handles. glide_bind skips a repeat, so there is no cache here. */
 static df_u32 g_handle[TEX_SLOTS];
@@ -97,7 +99,6 @@ int texcache_upload(const Level *level)
         g_cut[i] = (df_u8)(level->cutout && level->cutout[i] ? 1 : 0);
     }
     room = glide_tex_free();
-    room = room > FONT_KEEP ? room - FONT_KEEP : 0;
     planned = mip_budget(g_side, g_cut, n, room, card_bytes, g_drop);
     for (i = 0; i < n; i++) {
         const Image *img;
@@ -113,7 +114,7 @@ int texcache_upload(const Level *level)
          * picture takes one more level off, and so on down to 1 x 1.
          */
         for (d = g_drop[i]; (g_side[i] >> d) >= 1; d++) {
-            if (glide_tex_free() >= card_bytes(g_side[i] >> d, g_cut[i]) + FONT_KEEP
+            if (glide_tex_free() >= card_bytes(g_side[i] >> d, g_cut[i])
                 && glide_upload(img->pot, g_side[i], g_cut[i], d, g_chain,
                                 pal->r, pal->g, pal->b, &g_handle[i])) {
                 break;

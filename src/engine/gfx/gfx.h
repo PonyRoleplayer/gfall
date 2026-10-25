@@ -24,6 +24,13 @@ int gfx_prepare(const Level *level);
  */
 void gfx_set_mipmap(int on);
 int gfx_mipmap(void);
+/*
+ * Debug only: TMU0 holds at most kb KB, as a smaller card would. 2048 is
+ * a Voodoo 1's 2 MB; 0 (default) is the card's own. A change sends the
+ * level again on the next frame. See docs/memory.md.
+ */
+void gfx_set_texcap(int kb);
+int gfx_texcap(void);
 /* How far lights reach, 1..8 times their radius; cuts the decals again. */
 void gfx_set_light_range(int scale);
 

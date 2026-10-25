@@ -26,8 +26,9 @@ static int g_gap;
 static int g_uploaded;
 static int g_system;
 static int g_sys_tried;
-/* glide_upload handle of the sheet. */
+/* Upload handle of the sheet, and the colour of its ink as 0xRRGGBB. */
 static df_u32 g_handle;
+static df_u32 g_ink = 0xffffffu;
 
 /*
  * 8x8 Terminal, the EGA OEM strike. The stock OEM_FIXED_FONT on a VGA
@@ -477,7 +478,27 @@ void font_upload(const df_u8 *r, const df_u8 *g, const df_u8 *b)
         pg = g_sys_g;
         pb = g_sys_b;
     }
-    if (!glide_upload(g_pixels, g_side, 1, 0, 0, pr, pg, pb, &g_handle)) {
+    /*
+     * The glyphs are ink or nothing: one byte a texel, ALPHA_INTENSITY_44,
+     * and the ink's colour is the tint the text is drawn with. As ARGB
+     * 1555 the 256 x 256 sheet was 128 KB of the card; now 64 KB.
+     */
+    {
+        int i;
+        int n;
+
+        n = g_side * g_side;
+        for (i = 0; i < n && !g_pixels[i]; i++) {
+        }
+        g_ink = 0xffffffu;
+        if (i < n) {
+            df_u8 c;
+
+            c = g_pixels[i];
+            g_ink = ((df_u32)pr[c] << 16) | ((df_u32)pg[c] << 8) | (df_u32)pb[c];
+        }
+    }
+    if (!glide_upload_ai44(g_pixels, g_side, &g_handle)) {
         return;
     }
     g_uploaded = 1;
@@ -689,8 +710,13 @@ void ui_string_alpha(int x, int top, const char *s, int alpha)
         alpha = 255;
     }
     if (g_uploaded && g_height > 0) {
+        df_u32 was;
+
         glide_ui(1);
         glide_sprite_alpha(1);
+        /* The sheet is white; the ink's colour is the tint. */
+        was = glide_tinted();
+        glide_tint(g_ink);
         if (alpha < 255) {
             glide_opacity(alpha, 1);
         }
@@ -699,6 +725,7 @@ void ui_string_alpha(int x, int top, const char *s, int alpha)
         if (alpha < 255) {
             glide_opacity(-1, 0);
         }
+        glide_tint(was);
         glide_sprite_alpha(0);
         glide_ui(0);
         return;

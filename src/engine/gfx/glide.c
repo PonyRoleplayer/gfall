@@ -183,6 +183,13 @@ static int g_mip = 1;
 static int g_bound = -1;
 static df_u32 g_addr;
 static df_u32 g_addr_max;
+/*
+ * texcap: a debug ceiling on TMU0, in bytes from grTexMinAddress, so a
+ * card with a 4 MB TMU can show what a 2 MB Voodoo 1 gets. 0 is the
+ * card's own grTexMaxAddress. See docs/memory.md.
+ */
+static df_u32 g_tex_cap;
+static df_u32 g_addr_card;
 static int g_ntex;
 static df_u32 g_mark_addr;
 static int g_mark_ntex;
@@ -474,9 +481,38 @@ int glide_open(void *hwnd)
     alpha_apply();
 
     g_addr = glide.tex_min(GR_TMU0);
-    g_addr_max = glide.tex_max(GR_TMU0);
+    g_addr_card = glide.tex_max(GR_TMU0);
+    glide_set_tex_cap(g_tex_cap / 1024u);
     glide_report(LOG_INFO);
     return 1;
+}
+
+void glide_set_tex_cap(df_u32 kb)
+{
+    df_u32 lo;
+
+    g_tex_cap = kb * 1024u;
+    if (!g_opened) {
+        return;
+    }
+    lo = glide.tex_min(GR_TMU0);
+    g_addr_max = g_addr_card;
+    if (g_tex_cap > 0u && lo + g_tex_cap < g_addr_card) {
+        g_addr_max = lo + g_tex_cap;
+    }
+}
+
+df_u32 glide_tex_cap(void)
+{
+    return g_tex_cap / 1024u;
+}
+
+df_u32 glide_tex_card(void)
+{
+    if (!g_opened) {
+        return 0;
+    }
+    return (g_addr_card - glide.tex_min(GR_TMU0)) / 1024u;
 }
 
 static const char *board_name(GrSstType type)
@@ -988,68 +1024,13 @@ df_u32 glide_tex_free(void)
 }
 
 /*
- * A square RGB 565 picture, one level: the light decals' falloff.
- * Not budgeted by texcache; upload it before texcache_upload so the
- * budget sees the room it leaves.
+ * One square picture of one level, in format, from data: what the
+ * falloff, the sky's tiles, the dome and the font send. Not budgeted
+ * by texcache; upload before texcache_upload so the budget sees the
+ * room it leaves. data must stay valid until the call returns; Glide
+ * copies it to the card.
  */
-int glide_upload_565(const df_u16 *pixels, int side, df_u32 *handle)
-{
-    df_u32 size;
-    df_u32 at;
-    GrLOD_t lod;
-    GrAspectRatio_t aspect;
-    GrTexInfo info;
-    int i;
-
-    if (!g_opened || !pixels || !handle || g_ntex >= GPU_SLOTS
-        || !lod_of(side, &lod) || !aspect_of(side, side, &aspect)) {
-        return 0;
-    }
-    info.largeLod = lod;
-    info.smallLod = lod;
-    info.aspectRatio = aspect;
-    info.format = GR_TEXFMT_RGB_565;
-    /* Glide reads the texels little-endian, as df_u16 already is on x86. */
-    for (i = 0; i < side * side; i++) {
-        g_levels[i * 2] = (df_u8)(pixels[i] & 0xff);
-        g_levels[i * 2 + 1] = (df_u8)(pixels[i] >> 8);
-    }
-    info.data = (void *)g_levels;
-    size = glide.tex_calc(lod, lod, aspect, GR_TEXFMT_RGB_565);
-    if (glide.tex_mem) {
-        FxU32 need;
-
-        need = glide.tex_mem(GR_MIPMAPLEVELMASK_BOTH, &info);
-        if (need > size) {
-            size = need;
-        }
-    }
-    size = (size + 7u) & ~7u;
-    at = (g_addr + 7u) & ~7u;
-    if (at + size > ((at & ~0x1fffffu) + 0x200000u)) {
-        at = (at & ~0x1fffffu) + 0x200000u;
-    }
-    if (at + size > g_addr_max) {
-        g_why = "texture memory is full";
-        return 0;
-    }
-    glide.tex_down(GR_TMU0, at, GR_MIPMAPLEVELMASK_BOTH, &info);
-    g_tex[g_ntex].addr = at;
-    g_tex[g_ntex].info = info;
-    g_tex[g_ntex].live = 1;
-    *handle = (df_u32)g_ntex;
-    g_addr = at + size;
-    g_ntex++;
-    return 1;
-}
-
-/*
- * A square P_8 picture, one level, read through whatever palette is on
- * TMU0 when it is drawn: the sky's tiles, drawn under their own palette
- * (glide_sky). Like glide_upload_565, upload it before texcache_upload.
- * pixels must stay valid until the call returns; Glide copies them.
- */
-int glide_upload_p8(const df_u8 *pixels, int side, df_u32 *handle)
+static int upload_one(GrTextureFormat_t format, const void *data, int side, df_u32 *handle)
 {
     df_u32 size;
     df_u32 at;
@@ -1057,16 +1038,16 @@ int glide_upload_p8(const df_u8 *pixels, int side, df_u32 *handle)
     GrAspectRatio_t aspect;
     GrTexInfo info;
 
-    if (!g_opened || !pixels || !handle || g_ntex >= GPU_SLOTS
+    if (!g_opened || !data || !handle || g_ntex >= GPU_SLOTS
         || !lod_of(side, &lod) || !aspect_of(side, side, &aspect)) {
         return 0;
     }
     info.largeLod = lod;
     info.smallLod = lod;
     info.aspectRatio = aspect;
-    info.format = GR_TEXFMT_P_8;
-    info.data = (void *)pixels;
-    size = glide.tex_calc(lod, lod, aspect, GR_TEXFMT_P_8);
+    info.format = format;
+    info.data = (void *)data;
+    size = glide.tex_calc(lod, lod, aspect, format);
     if (glide.tex_mem) {
         FxU32 need;
 
@@ -1093,6 +1074,51 @@ int glide_upload_p8(const df_u8 *pixels, int side, df_u32 *handle)
     g_addr = at + size;
     g_ntex++;
     return 1;
+}
+
+/* RGB 565: the light decals' falloff and the sky's dome. */
+int glide_upload_565(const df_u16 *pixels, int side, df_u32 *handle)
+{
+    int i;
+
+    if (!pixels || side < 1 || side > 256) {
+        return 0;
+    }
+    /* Glide reads the texels little-endian, as df_u16 already is on x86. */
+    for (i = 0; i < side * side; i++) {
+        g_levels[i * 2] = (df_u8)(pixels[i] & 0xff);
+        g_levels[i * 2 + 1] = (df_u8)(pixels[i] >> 8);
+    }
+    return upload_one(GR_TEXFMT_RGB_565, g_levels, side, handle);
+}
+
+/*
+ * P_8, read through whatever palette is on TMU0 when it is drawn: the
+ * sky's tiles, drawn under their own palette (glide_sky).
+ */
+int glide_upload_p8(const df_u8 *pixels, int side, df_u32 *handle)
+{
+    return upload_one(GR_TEXFMT_P_8, pixels, side, handle);
+}
+
+/*
+ * ALPHA_INTENSITY_44, one byte a texel: a texel of ink is white and
+ * opaque (0xff), anything else clear (0x00). The font sheet: its glyphs
+ * are ink or nothing, and the ink's colour comes from the constant
+ * colour (glide_tint) when the text is drawn. Half the bytes of the
+ * ARGB 1555 it was sent as.
+ */
+int glide_upload_ai44(const df_u8 *ink, int side, df_u32 *handle)
+{
+    int i;
+
+    if (!ink || side < 1 || side > 256) {
+        return 0;
+    }
+    for (i = 0; i < side * side; i++) {
+        g_levels[i] = ink[i] ? 0xffu : 0x00u;
+    }
+    return upload_one(GR_TEXFMT_ALPHA_INTENSITY_44, g_levels, side, handle);
 }
 
 int glide_replace(df_u32 handle, const df_u8 *pixels)
