@@ -6,12 +6,13 @@
 /*
  * One image the rasterizer can upload.
  * index[] is the source picture, row 0 at the top, width*height bytes.
- * pot[] is that picture scaled to a power of two, then repeated along the
- * short side until the map is square. A Voodoo 1 samples a square, and a
- * coordinate in [0, 1] is one texel, so the repeat is what keeps the face
- * from collapsing to a solid colour.
- * span_w and span_h are the size before that repeat. One copy of the
- * picture occupies span_w/pot_w of s and span_h/pot_h of t.
+ * pot[] is the square the card gets. For a wall it is the picture
+ * stretched to powers of two, then repeated along the short side until
+ * the map is square, so the face can tile it. For a sprite it is the
+ * picture at its own size in the top-left corner, index 0 around it.
+ * span_w and span_h are the size of one copy: the stretched size for a
+ * wall, width and height for a sprite. One copy occupies span_w/pot_w
+ * of s and span_h/pot_h of t.
  * pot_w and pot_h are equal, powers of two, and at most 256.
  * xscale and yscale are optional source scales. Billboards may use them.
  * The triangle path does not.

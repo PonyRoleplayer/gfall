@@ -198,7 +198,8 @@ static int write_bmp(const char *name)
     int x;
 
     if (!g_snap) {
-        g_snap = (df_u8 *)mem_alloc((df_u32)SHOT_STRIDE * (df_u32)DF_VIEW_H);
+        /* Kept for the process: not the temp heap a viewer draws inside. */
+        g_snap = (df_u8 *)mem_keep((df_u32)SHOT_STRIDE * (df_u32)DF_VIEW_H);
     }
     if (!g_snap || !glide_lfb_read(g_snap, SHOT_STRIDE)) {
         return 0;

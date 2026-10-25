@@ -11,6 +11,7 @@
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
 #include "engine/gfx/camera.h"
+#include "engine/gfx/mip.h"
 #include "engine/scene/scene.h"
 #include "engine/ui/cmd.h"
 
@@ -400,6 +401,17 @@ static void check_cull(void)
     n = scene_visible_models(&scene, &cam, order, 4);
     check_expect(n == 1 && order[0] == 0,
                  "model crossing the fog was dropped");
+
+    /*
+     * The fog table is solid only from its first entry past 1100,
+     * 8192 / 7. Between the two the card shows a few percent of the
+     * model, so the cull keeps it.
+     */
+    check_expect(check_near(df_fog_solid(df_fog_far(DF_FAR)), 8192.0f / 7.0f, 0.01f),
+                 "fog's first solid entry is not 8192 / 7 for the default far clip");
+    place_at(&models[0], mesh, 0.0f, 0.0f, DF_FOG_FAR + 40.0f);
+    n = scene_visible_models(&scene, &cam, order, 4);
+    check_expect(n == 1, "a model fog does not yet hide was culled");
 
     place_at(&models[0], behind, 0.0f, 0.0f, 50.0f);
     instance_set_rotation(&models[0], 0.0f, 3.14159265f, 0.0f);
@@ -1035,6 +1047,86 @@ static void check_console(void)
     log_clear();
 }
 
+/* Bytes of one level-0 upload, no chain, 8-bit: the side squared. */
+static df_u32 square_bytes(int side, int cutout)
+{
+    return (df_u32)side * (df_u32)side * (cutout ? 2u : 1u);
+}
+
+static df_u8 g_mip_out[MIP_MAX_BYTES];
+
+static void check_mip(void)
+{
+    df_u8 pr[256];
+    df_u8 pg[256];
+    df_u8 pb[256];
+    df_u8 pic[16];
+    int side[3];
+    df_u8 cut[3];
+    int drop[3];
+    df_u32 n;
+    int i;
+
+    check_expect(mip_texels(256, 0, 1) == 87381u && mip_texels(256, 1, 0) == 16384u
+                 && mip_texels(4, 0, 1) == 21u && mip_texels(3, 0, 1) == 0u,
+                 "mip_texels counted the levels wrong");
+    check_expect(MIP_MAX_BYTES >= 2u * mip_texels(256, 0, 1), "MIP_MAX_BYTES is short");
+    for (i = 0; i < 256; i++) {
+        pr[i] = 255;
+        pg[i] = 0;
+        pb[i] = (df_u8)i;
+    }
+    pr[1] = 0;   pg[1] = 0;   pb[1] = 0;
+    pr[2] = 255; pg[2] = 255; pb[2] = 255;
+    pr[3] = 128; pg[3] = 128; pb[3] = 128;
+    pr[4] = 200; pg[4] = 0;   pb[4] = 0;
+    /* A 4 x 4 checker of black and white texels. */
+    for (i = 0; i < 16; i++) {
+        pic[i] = (df_u8)((((i & 3) + (i >> 2)) & 1) ? 2 : 1);
+    }
+    n = mip_build(pic, 4, 0, 0, 1, pr, pg, pb, g_mip_out);
+    check_expect(n == 21u, "8-bit chain was not 16 + 4 + 1 bytes");
+    for (i = 0; i < 16 && g_mip_out[i] == pic[i]; i++) {
+    }
+    check_expect(i == 16, "8-bit chain changed the full level");
+    check_expect(g_mip_out[16] == 3 && g_mip_out[19] == 3 && g_mip_out[20] == 3,
+                 "a black and white texel mean did not map to the grey entry");
+    n = mip_build(pic, 4, 0, 1, 0, pr, pg, pb, g_mip_out);
+    check_expect(n == 4u && g_mip_out[0] == 3, "drop 1 without a chain was not one 2 x 2 level");
+    /* A cutout: one red texel in a transparent 4 x 4. */
+    for (i = 0; i < 16; i++) {
+        pic[i] = 0;
+    }
+    pic[5] = 4;
+    n = mip_build(pic, 4, 1, 0, 1, pr, pg, pb, g_mip_out);
+    check_expect(n == 42u, "cutout chain was not (16 + 4 + 1) x 2 bytes");
+    check_expect(g_mip_out[10] == 0x00 && g_mip_out[11] == (0x8000u | (25u << 10)) >> 8,
+                 "the opaque cutout texel lost its colour or alpha");
+    check_expect(g_mip_out[0] == 0x00 && g_mip_out[1] == (25u << 10) >> 8,
+                 "a transparent neighbour did not take the red, or kept alpha");
+    check_expect(g_mip_out[30] == 0x00 && g_mip_out[31] == 0x00,
+                 "a transparent texel two away from the sprite was not black");
+    check_expect((g_mip_out[33] & 0x80) == 0, "a quarter-covered texel came out opaque");
+    /* The budget: the largest picture loses its top level first. */
+    side[0] = 256;
+    side[1] = 256;
+    side[2] = 64;
+    cut[0] = 0;
+    cut[1] = 0;
+    cut[2] = 0;
+    n = mip_budget(side, cut, 3, 65536u + 65536u + 4096u, square_bytes, drop);
+    check_expect(n == 65536u + 65536u + 4096u && drop[0] == 0 && drop[1] == 0 && drop[2] == 0,
+                 "budget shrank pictures that fit");
+    n = mip_budget(side, cut, 3, 65536u + 65536u + 4095u, square_bytes, drop);
+    check_expect(n == 16384u + 65536u + 4096u && drop[0] == 1 && drop[1] == 0 && drop[2] == 0,
+                 "budget did not drop the first largest picture once");
+    cut[2] = 1;
+    side[1] = 0;
+    n = mip_budget(side, cut, 3, 100u, square_bytes, drop);
+    check_expect(drop[0] == 5 && drop[1] == 0 && drop[2] == 3 && n == 64u + 128u,
+                 "budget went below MIP_MIN_SIDE or counted a missing picture");
+}
+
 void check_engine(void)
 {
     check_rotation();
@@ -1045,4 +1137,5 @@ void check_engine(void)
     check_loader();
     check_vfs();
     check_console();
+    check_mip();
 }

@@ -8,6 +8,7 @@
 #include "game/dagger/texture.h"
 #include "engine/assets/loader.h"
 #include "engine/assets/vfs.h"
+#include "engine/core/log.h"
 #include "engine/core/mem.h"
 
 /*
@@ -76,7 +77,9 @@ struct World {
     Image *images[MAX_IMAGES];
     df_u16 key_file[MAX_IMAGES];
     df_u16 key_image[MAX_IMAGES];
+    /* cutout: a sprite uses it, so it uploads with alpha. wall: a model face does. */
     df_u8 cutout[MAX_IMAGES];
+    df_u8 wall[MAX_IMAGES];
     int nimages;
     int files[MAX_FILES];
     int nfiles;
@@ -143,6 +146,8 @@ static int place_image(World *world, int file, int image, int cutout, int *slot_
     if (slot >= 0) {
         if (cutout) {
             world->cutout[slot] = 1;
+        } else {
+            world->wall[slot] = 1;
         }
         *slot_out = slot;
         return 1;
@@ -174,6 +179,7 @@ static int place_image(World *world, int file, int image, int cutout, int *slot_
     world->key_file[slot] = (df_u16)file;
     world->key_image[slot] = (df_u16)image;
     world->cutout[slot] = cutout ? 1 : 0;
+    world->wall[slot] = cutout ? 0 : 1;
     world->nimages++;
     *slot_out = slot;
     return 1;
@@ -551,6 +557,46 @@ static int paint(World *world)
     return 1;
 }
 
+/*
+ * Now that each image's use is known, and the palette is loaded: a
+ * picture only sprites use is padded at its own size, not stretched
+ * and repeated (texture_pad). A wall picture whose sides are not
+ * powers of two gets its stretch redone smoothly (texture_smooth). A
+ * picture both use stays a repeating square, since the wall needs it
+ * to tile; its sprites draw from the first copy as before.
+ */
+static void finish_images(World *world)
+{
+    int i;
+    int padded;
+    int smoothed;
+    int shared;
+
+    padded = 0;
+    smoothed = 0;
+    shared = 0;
+    for (i = 0; i < world->nimages; i++) {
+        Image *img;
+
+        img = world->images[i];
+        if (!img) {
+            continue;
+        }
+        if (world->cutout[i] && world->wall[i]) {
+            shared++;
+        }
+        if (world->cutout[i] && !world->wall[i]) {
+            texture_pad(img);
+            padded++;
+        } else if (img->span_w != img->width || img->span_h != img->height) {
+            texture_smooth(img, world->pal.r, world->pal.g, world->pal.b);
+            smoothed++;
+        }
+    }
+    log_print(LOG_DEBUG, "textures: %d sprites padded, %d walls smoothed, %d used as both",
+              padded, smoothed, shared);
+}
+
 static World *assemble(const Dungeon *hold, int require_start)
 {
     World *world;
@@ -705,6 +751,7 @@ static World *assemble(const Dungeon *hold, int require_start)
             return 0;
         }
     }
+    finish_images(world);
     why("");
     return world;
 }

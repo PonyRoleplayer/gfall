@@ -18,6 +18,18 @@ int texture_record_count(int file);
  */
 void texture_cache_clear(void);
 
+/*
+ * A loaded image's pot is the picture stretched to powers of two by
+ * repeating texels, then repeated until square, so it can tile a wall.
+ * texture_pad makes it a sprite instead: the picture at its own size,
+ * transparent around it, span_w and span_h its width and height.
+ * texture_smooth redoes a wall's stretch bilinearly against the
+ * palette, for an image whose sides are not powers of two. The world
+ * calls them once the palette is loaded and it knows each image's use.
+ */
+void texture_pad(Image *img);
+void texture_smooth(Image *img, const df_u8 *pr, const df_u8 *pg, const df_u8 *pb);
+
 /* What the "texture" loader writes. file and image pick the record. */
 typedef struct TexLoad {
     int file;

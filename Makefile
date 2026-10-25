@@ -53,6 +53,7 @@ GFALL_SRC := \
 	src/engine/gfx/glide.c \
 	src/engine/gfx/camera.c \
 	src/engine/gfx/texcache.c \
+	src/engine/gfx/mip.c \
 	src/engine/gfx/draw.c \
 	src/engine/gfx/gfx.c \
 	src/engine/ui/hud.c \
@@ -85,6 +86,7 @@ RENDER_SRC := \
 	src/engine/gfx/glide.c \
 	src/engine/gfx/camera.c \
 	src/engine/gfx/texcache.c \
+	src/engine/gfx/mip.c \
 	src/engine/gfx/draw.c \
 	src/engine/gfx/gfx.c \
 	src/engine/ui/hud.c \
@@ -111,6 +113,7 @@ LEVEL_SRC := \
 	src/engine/gfx/glide.c \
 	src/engine/gfx/camera.c \
 	src/engine/gfx/texcache.c \
+	src/engine/gfx/mip.c \
 	src/engine/gfx/draw.c \
 	src/engine/gfx/gfx.c \
 	src/engine/ui/hud.c \
@@ -138,6 +141,7 @@ HOST_SRC := \
 	src/engine/assets/loader.c \
 	src/engine/scene/scene.c \
 	src/engine/gfx/camera.c \
+	src/engine/gfx/mip.c \
 	src/game/dagger/bsa.c \
 	src/game/dagger/palette.c \
 	src/game/dagger/texture.c \

@@ -13,8 +13,17 @@ int gfx_startup(void *hwnd);
 void gfx_shutdown(void);
 const char *gfx_error(void);
 
-/* Sends the level palette and every image. The first room fits in 2MB. */
+/*
+ * Sends the level palette and every image, budgeted to fit the 2MB
+ * card. A second call replaces what the first sent.
+ */
 int gfx_prepare(const Level *level);
+/*
+ * Mip chains, default on. A change sends the prepared level again on
+ * the next gfx_frame, so the picture shows it. See docs/glide.md.
+ */
+void gfx_set_mipmap(int on);
+int gfx_mipmap(void);
 
 /* Clear, draw what the scene says is visible, overlay, swap. */
 void gfx_frame(const Camera *cam, const Level *level);

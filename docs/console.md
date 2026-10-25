@@ -53,6 +53,9 @@ A variable prints its value when typed alone, and takes a new one as an argument
 | `covers` | on/off | Washes the occlusion cells of the last frame green. A model or sprite whose box lands only on green, and is behind it, was not drawn. Default off. |
 | `faces` | on/off | Off draws ARCH3D faces the normal would drop. |
 | `vsync` | on/off | On waits for the retrace on each swap. Default on. |
+| `wbuffer` | on/off | On is the W-buffer, depth from 1/w. Off is the 16-bit Z-buffer, to compare. Default on. See `docs/glide.md`. |
+| `mipmap` | on/off | On uploads mip chains, off single levels. Both are budgeted to fit the card. A change sends the level again on the next frame. Default on. See `docs/glide.md`. |
+| `planar` | on/off | On sends each face as one planar polygon, when `glide2x.dll` has `grDrawPlanarPolygonVertexList`. Off sends its triangles. Reads off when the DLL lacks it. Default on. |
 | `hud` | on/off | GFALL's position and fps corners. LEVELFALL draws its own panels and turns this off in the view. |
 | `fps` | on/off | The fps corner alone. F3 flips it too. |
 | `logfile` | on/off | Copies the log to `console.log` beside the program. See Log. |
@@ -67,8 +70,8 @@ A variable prints its value when typed alone, and takes a new one as an argument
 | `setpos x y z [yaw [pitch]]` | Moves the camera. Whole world units and degrees. Works where the program gave the console its camera: GFALL and LEVELFALL's view. RENDERFALL orbits a model and offers none. |
 | `screenshot [name]` | Writes the current picture as a 24-bit BMP beside the program, not inside `ARENA2`. `.bmp` is added when it is missing. A file of that name is replaced. No name uses the F12 name. |
 | `exec file` | Runs the commands in a file beside the program, as if typed, without echoing them. `.cfg` is added when the name has no dot. A file may exec another, four deep. Up to 4095 bytes are read. |
-| `glinfo` | The `glide2x.dll` path and export spelling, the board, the frame buffer and TMU sizes and revisions, the mode, and the texture room. |
-| `texmem` | Pictures on the card, their bytes, how many did not fit, and the TMU room left. |
+| `glinfo` | The `glide2x.dll` path and export spelling, the board, the frame buffer and TMU sizes and revisions, the mode (depth buffer, vsync, planar polygons), and the texture room. |
+| `texmem` | Pictures on the card, their bytes, how many did not fit, whether they are chains, how many the budget shrank, and the TMU room left. |
 | `mem` | Bytes allocated on the engine's main and temp heaps, and the machine's free physical memory. |
 | `log [error|warn|info|debug]` | How much the engine logs. Default `info`. |
 | `version [on|off]` | Prints the compile stamp, `build YYYY-MM-DDTHH:MM:SS`, the local time of the link. on/off sets whether it is drawn in the bottom left. Default on. |
@@ -110,7 +113,7 @@ F12 takes the same picture as `screenshot` without opening the console. The file
 
 The name is drawn at the top right as `name taken...`. It stays solid for about 700 ms, then fades out over about 1.2 s. The saved BMP is the frame that was already on screen, so the note itself is not in that file.
 
-The read is one 640 by 480 picture at 16 bits, allocated on the first shot and kept. The buffer's first row is the top of the glass. The BMP stores the bottom row first, so the file is written from the last row upward. Rows are expanded to 24-bit as they are written. The note's plate uses the same box as the glyphs: `ui_string` takes the top of the line, and the plate's bottom is one line below that. See `docs/memory.md`.
+The read is one 640 by 480 picture at 16 bits, allocated with `mem_keep` on the first shot and kept, so it outlives a viewer's temp heap. The buffer's first row is the top of the glass. The BMP stores the bottom row first, so the file is written from the last row upward. Rows are expanded to 24-bit as they are written. The note's plate uses the same box as the glyphs: `ui_string` takes the top of the line, and the plate's bottom is one line below that. See `docs/memory.md`.
 
 LEVELFALL also flips `cull`, `occlude`, `covers`, `faces`, and `fog` with F5 to F9, without opening the console, so the frame changes as you watch, and its `draw` panel uses these command names. Its F12 also writes a bookmark to `levelfall.log`. See `docs/viewers.md`.
 

@@ -22,7 +22,7 @@ A plane rejects the box when the nearest corner is outside: `dot(normal, center)
 
 `scene_set_limits(clip_far, fog)` is the limit. Defaults are fog on and `DF_FAR` (1400), the same as a fresh device. `gfx_set_far` and `gfx_set_fog` are the callers. Do not set the clip in `draw_set_far` alone; the cull would keep the old distance.
 
-Fog is solid at `clip_far * (DF_FOG_FAR / DF_FAR)`, the same fraction `gfx_set_far` uploads (1100 out of 1400). The clear colour is the fog colour, so a box entirely past that distance is invisible. The distance is never closer than `DF_FOG_NEAR + 1`, because `glide_fog_range` will not put solid fog in front of the fog start. With fog off, the limit is the far clip itself. A box that only straddles the limit is kept, and the clipper cuts it.
+The fog table is uploaded to go solid at `df_fog_far(clip_far)`: `clip_far * (DF_FOG_FAR / DF_FAR)`, 1100 out of 1400, never closer than `DF_FOG_NEAR + 1`, because `glide_fog_range` will not put solid fog in front of the fog start. The card does not reach solid there. Its 64 entries sit at w = 2^(3 + i/4) / (8 - i % 4), and it blends between two, so fog is 255 only from the first entry at or past that distance: `df_fog_solid`, 8192 / 7 = 1170 for 1100. At 1100 itself it is about 95%. The cull limit is `df_fog_solid(df_fog_far(clip_far))`, and so is `draw.c`'s far clip plane when fog is on. They used to differ: the cull dropped boxes from 1100, where a model was still about 5% visible and popped, and the clipper kept polygons out to 1400, filling pixels the fog had already turned to the clear colour. At LEVELFALL's 8192 the solid entry is 6553, a fifth of the range nearer than the clip. The clear colour is the fog colour, so a box entirely past the limit is invisible. With fog off, the limit is the far clip itself. A box that only straddles the limit is kept, and the clipper cuts it.
 
 ## Blocks, then models
 
@@ -67,14 +67,16 @@ Interiors are made of junctions. A room is one model whose walls, floor and ceil
 - While a face fills its cells, every cell it touches but does not hold is listed: up to `OCC_PART` (8) faces per cell, the nearest kept.
 - A listed cell is resolved by cutting. It starts as the cell, grown by `OCC_EDGE`. Each face, nearest first, is cut out of it: what is left of a convex piece outside a convex face is one convex piece per edge, outside that edge and inside the ones before it. An edge with the whole piece on one side cuts nothing. At most `OCC_PIECES` (8) pieces are kept, or the cell stays open.
 - A piece left over is closed only when the card cannot put a pixel in it. Either it is thinner than `OCC_NOISE` (1/4096 pixel), which is only rounding from the cuts, the trace of an edge two faces share: both were snapped to the same 1/16 pixel, and the card's fill rule puts every sample on a shared edge in one of them. Or no sample point lies within `OCC_SNAP` (1/16 pixel) of it. Every half pixel is tried, so this holds whether the SST-1 samples pixel centres or corners. The test walks each half-pixel row of the piece and solves its x run, so a long sliver costs one step per half pixel of its height.
-- A T-junction stays open. Where a wall ends partway along the floor's longer edge, the wall's corner snaps a hair off the floor's line, and the wedge between them is a crack the card leaves, a pixel here and there. Anything behind can show through it. The same goes for a wall split into pieces behind a pillar.
+- A T-junction stays open. Where a wall ends partway along the floor's longer edge, the wall's corner snaps a hair off the floor's line, and the wedge between them is a crack the card leaves, a pixel here and there. Anything behind can show through it. The ARCH3D loader now welds them inside a model (see T-junctions below); one between two placed models is still a T-junction.
+- A loader point that lies along an edge snaps up to 1/32 pixel off it, so an outline can turn the wrong way by a hair. `poly_convex` lets a dent pass when it is no deeper than `OCC_SNAP` (1/16 pixel) from the chord. `occ_fill` and the seam pass treat an outline as the meet of its edges' half-planes, which for such a dent is the dented face itself, never more.
 - The pass is lazy. A cell matters only when a box test lands on it, and a visible box stops at its first open cell, so `occ_hides` resolves a listed cell the first time it meets it, once every face is in, and `g_tried` keeps the answer for the frame. Running it on every listed cell up front cost three times as much.
 
 ### What counts as a candidate
 
 - Mesh id 0, the ground, is skipped. Nothing is under it.
-- The model's box has to be nearer than `OCC_NEAR` (640), and its screen rectangle at least 3 x 3 cells, unless the box reaches the eye.
-- The nearest `OCC_MODELS` (32) go first. At most `OCC_FACES` (96) faces are written per frame.
+- The model's box has to be nearer than `OCC_NEAR` (4096), and its screen rectangle at least 3 x 3 cells, unless the box reaches the eye.
+- The `OCC_MODELS` (48) whose boxes cover the most of the glass are the candidates; a box around the eye counts as more than the whole glass. They are then written nearest first, so one already behind the cells is skipped. At most `OCC_FACES` (128) faces are written per frame.
+- Candidates used to be the nearest 32 within 640 units, with 96 faces. A castle hall's walls are farther than 640, so they never covered anything, and in a hall the budget went to the chairs and torches by the camera. One room in the castle drew 603 of 1235 models with 49 occluders; it now draws 133. Ranking by screen area and raising the budget were measured separately on the host: area alone, at 32 and 96, took that room to 184; nearest-first with 2048, 64 and 192 took it to 114 but doubled the cull's time. Area with 48 and 128 is between them in both.
 - A face needs `OCC_FACE_AREA`, an eighth of a cell, after clipping. Alone it covers no cell, but a door jamb or a beam end still closes a seam. Faces are clipped to the near plane and to the picture plus `OCC_MARGIN` (16 pixels), so a wall that fills the glass also fills the border cells. A face wholly behind the eye or off one side is dropped before its normal is worked out. There is no far plane: a wall that runs into the fog still hides what is farther.
 - Floors and ceilings are covers like any other face. A model under a floor, seen from above, goes.
 
@@ -84,10 +86,28 @@ These figures come from a host run of 3000 views beside random models in each pl
 
 | Place | Frustum kept | Occlusion dropped | Sprites dropped | Lost pixels |
 |---|---|---|---|---|
-| Privateer's Hold | 55294 | 26370 (47.7%) | 7514 | 0 |
-| Daggerfall castle, far 1400 | 64309 | 29896 (46.5%) | 7316 | 0 |
-| Daggerfall castle, far 8192 | 633923 | 442990 (69.9%) | 145360 | 0 |
-| Daggerfall city | 37413 | 4902 (13.1%) | 594 | 0 |
+| Privateer's Hold | 60110 | 29971 (49.9%) | 8640 | 0 |
+| Daggerfall castle, far 1400 | 71188 | 34620 (48.6%) | 8620 | 0 |
+| Daggerfall castle, far 8192 | 636880 | 465045 (73.0%) | 154928 | 0 |
+| Daggerfall city | 40220 | 5607 (13.9%) | 722 | 0 |
+
+The frustum counts are higher than the first run's because the cull now reaches the fog's first solid table entry (the fog paragraph near the top), not 1100.
+
+The second round of LEVELFALL screenshots, castle, far 8192, models drawn out of 1235. "Before" is the card's own count with the nearest-640 candidates; "now" is the host, with poses rounded to whole units.
+
+| View | Before | Now | Occluders before, now |
+|---|---|---|---|
+| Door | 33 | 28 | 43, 128 |
+| Stair hall | 251 | 79 | 27, 128 |
+| Thrones | 38 | 16 | 70, 128 |
+| Corridor | 8 | 9 | 64, 128 |
+| Room | 21 | 23 | 68, 128 |
+| Large storeroom | 603 | 133 | 49, 128 |
+| Long corridor | 21 | 16 | 10, 128 |
+| Corridor to a far room | 73 | 38 | 26, 128 |
+| Outside the rooms, in the void | 106 | 108 | 96, 128 |
+
+From outside the rooms every wall is seen from its back, which `draw_frame` does not draw and so is never a cover. A player is never there.
 
 The three castle views from LEVELFALL's screenshots. Tris are front faces only.
 
@@ -100,9 +120,9 @@ The three castle views from LEVELFALL's screenshots. Tris are front faces only.
 | Hall | 1400 | 30, 551 | 29, 535 | 23, 444 | 15, 352 |
 | Corridor | 1400 | 38, 521 | 28, 455 | 6, 78 | 5, 72 |
 
-What is left at far 8192 is mostly T-junctions: the floor line of a room and the split walls behind pillars.
+What was left at far 8192 was mostly T-junctions: the floor line of a room and the split walls behind pillars. See T-junctions below for what welding them inside each model did.
 
-On the host, per frame in the hold, the whole cull took about 0.020 ms, against 0.011 ms of vertex work for the frustum's list, of which it removed 0.005 ms. Each removed triangle also skips Glide's triangle setup on the Pentium and the fill on the Voodoo, which a hidden room still pays for when the Z test rejects it. In the castle at far 8192 the cull took 0.034 ms and removed 0.065 ms of vertex work. Outdoors it is about even. These are host numbers, not a measurement on a Pentium MMX 233.
+On the host, per frame in the hold, the whole cull took about 0.021 ms (0.017 with the old candidates), against 0.011 ms of vertex work for the frustum's list, of which it removed 0.005 ms. In the castle at far 8192 it takes 0.044 ms (0.028 before), worst 0.125. Each removed triangle also skips Glide's triangle setup on the Pentium and the fill on the Voodoo, which a hidden room still pays for when the Z test rejects it. It removes about 0.060 ms of vertex work there. Outdoors it is about even. These are host numbers, not a measurement on a Pentium MMX 233.
 
 What keeps it cheap:
 
@@ -119,9 +139,33 @@ What keeps it cheap:
 - `covers on` washes the covered cells green, seam cells included; with it on, every listed cell is resolved so the picture is complete. One quad is drawn per run of cells in a row. A model or sprite whose box lands only on green, and is behind it, was not drawn. Default off.
 - `stats` prints `occluders`, the faces written into the cells, and `occluded`, the models and sprites they dropped, on the last world frame.
 
+### T-junctions
+
+`arch3d.c` builds each face from the file's points:
+
+- A face lists its points as byte offsets into the model's point table, which holds `points` (header offset 4) entries of 12 bytes from the offset at 48. In v2.6 and v2.7 the reference is that byte offset. In v2.5 it counts 4 bytes a point, so the point is `reference / 4`. The loader used to read v2.5 references as indexes and multiply by 12. The 8 v2.5 records (41500-41505, 41509, 41510) then read points from three times past their tables, out in the rest of the file: coordinates in the millions, faces collapsed to one point. Each now reaches exactly the radius in its own header (246 for 41500, 1803 for 41510). A reference outside the point table now skips that face and is counted (`arch3d_bad_refs`); none of the 10,237 records has one. `check_dagger` checks 41500.
+
+- A point that lies on the straight line between its neighbours, within `STRAIGHT_NEAR` (4 file units, 1/64 world unit), is dropped (`straighten`), and so on until only the real corners are left. The old rule measured the turn seen from two points back and dropped anything under 0.6 degrees. A door jamb or frame is 2 units wide, and its real corners turn less than that: 477 faces in `ARCH3D.BSA` lost a triangle-sized piece, up to 16% of their area. That is the door with a chunk missing. With the distance test none loses area. `check_dagger` checks model 457's jambs.
+- Then `weld` looks at every other face of the same model. Where one runs along this face's edge and ends inside it, its corner is inserted into this edge, on the line, with texel coordinates interpolated along the edge. The two faces then share that seam exactly, the card leaves no crack, and the occlusion cells close over it. A corner where a face only touches the edge from another direction is not inserted: it closes no seam.
+- Keeping every file point instead of straightening was tried. It removed three quarters of the in-model T-junctions on its own, but it left corners on a model's outer edges that the next model's face, along the same line, does not have: a new T-junction between models, which opened a row of cells along the stair hall's floor and drew 124 models instead of 79.
+- Faces are fanned from the corner whose first triangle is largest (`fan_apex`), so the face normal comes from a real triangle. An inserted corner next to the apex makes a zero-area triangle that the card skips and that keeps the fan exact. With all points, 2 faces in the archive are not convex, and their fans from that corner still cover them exactly.
+- A face can now have up to 32 corners. `OCC_POLY` is 24, `GLIDE_POLY_MAX` 32, and `draw.c`'s `FACE_MAX` 26.
+
+In the castle, T-junctions inside models went from 196 edges in 87 models to 4 edges in 1. The castle's world load went from 12.0 to 17.7 ms on the host. The weld's tables are static, about 260 KB, sized for model 451's 2720 corners.
+
+| View, castle far 8192 | Old loader | Straightened only | Straightened and welded | Really visible |
+|---|---|---|---|---|
+| Door | 28 | 28 | 4 | 4 |
+| Corridor to a far room | 38 | 38 | 32 | 6 |
+| Stair hall | 79 | 73 | 73 | 22 |
+| Bank vault | 105 | 105 | 104 | 41 |
+
+Over the 3000 random views the weld costs a little: occlusion drops 49.6% of the hold's frustum models (50.0 straightened only), 72.9% of the castle's at far 8192 (73.1), 13.2% of the city's (13.9). A seam welded inside one model can leave a corner on an edge that another model's face also borders. The views above, the ones that were reported slow, gain far more. Lost pixels stay 0 in all four runs.
+
 ### What it does not do
 
-- A T-junction stays open, as above. Welding them in the loader, adding the wall's corner to the floor's edge, would close those cells and also the sparkles the card shows there.
+- A T-junction between two placed models stays open. The loader welds only inside one model; a mesh is shared by every placement, so a weld against a neighbour would need a copy per placement.
+- A window or a grille is a real opening. In the bank vault the cull draws 104 of 125 frustum models against 41 with a pixel on screen: the cells around each barred window are part wall, part bars and cell interior, small separate models no set of large faces covers.
 - There is no portal step and no frame-to-frame reuse. The cells are built again each frame.
 - A mesh that is one rigid object larger than the picture is still one box. Its faces can hide others, but the box itself is hidden only as a whole.
 
@@ -142,9 +186,9 @@ In the seam pass:
 
 ## The clipper
 
-The per-triangle clipper in `draw.c` cuts a triangle that crosses the near plane, the far clip, or the picture. The picture margin is 16 pixels, scaled by `camera_focal()`, and it is computed once per frame. A triangle already inside those six planes is projected directly. A close wall used to be clipped only to a 1600-pixel guard, so a corner was submitted at screen x = -3242. The SST-1 walker then started thousands of pixels off the glass. Distance is the far clip and the fog, not a second test in software.
+The clipper in `draw.c` cuts a polygon that crosses the near plane, the far clip, or the picture: a whole ARCH3D face, a sprite quad, or a lone triangle (see `docs/glide.md`). The picture margin is 16 pixels, scaled by `camera_focal()`, and it is computed once per frame. A polygon already inside those six planes is projected directly. A close wall used to be clipped only to a 1600-pixel guard, so a corner was submitted at screen x = -3242. The SST-1 walker then started thousands of pixels off the glass. Distance is the far clip and the fog, not a second test in software.
 
-`glide.c` snaps every vertex's screen x and y to 1/16 pixel (`df_snap16`) before `grDrawTriangle`, as the Glide 2 guide asks. The SST-1 takes 12.4 fixed point. Unsnapped, two triangles that share an edge reach the card a fraction apart, and its edge walker drops pixels along the seam. Snapped, a shared edge is shared exactly and the fill rule leaves no gap. The occlusion seam pass counts on that. `df_snap16` adds 1.5 * 2^19 and subtracts it again through a `volatile` float: on the x87 the sum would otherwise stay in an 80-bit register and keep every bit.
+`glide.c` snaps every vertex's screen x and y to 1/16 pixel (`df_snap16`) before it reaches the card, as the Glide 2 guide asks. The SST-1 takes 12.4 fixed point. Unsnapped, two triangles that share an edge reach the card a fraction apart, and its edge walker drops pixels along the seam. Snapped, a shared edge is shared exactly and the fill rule leaves no gap. The occlusion seam pass counts on that. `df_snap16` adds 1.5 * 2^19 and subtracts it again through a `volatile` float: on the x87 the sum would otherwise stay in an 80-bit register and keep every bit.
 
 A cut edge is always walked from its inside vertex to its outside one. Two triangles that share an edge see it in opposite orders, and a lerp from either end rounds differently. The two cut points then snap to different 1/16 pixels on the card and leave a crack along a wall that crosses the near plane or the glass. The occlusion check found one such crack, a pixel wide, on the diagonal of a wall in the hold. From the inside end, both triangles do the same arithmetic on the same numbers and meet exactly.
 

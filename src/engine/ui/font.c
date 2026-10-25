@@ -7,7 +7,6 @@
 
 #include "engine/core/mem.h"
 #include "engine/gfx/glide.h"
-#include "engine/gfx/texcache.h"
 
 /*
  * The built-in face is 8x8, row 0 at the top, bit 7 on the left. It is
@@ -27,7 +26,8 @@ static int g_gap;
 static int g_uploaded;
 static int g_system;
 static int g_sys_tried;
-static df_u32 g_addr;
+/* glide_upload handle of the sheet. */
+static df_u32 g_handle;
 
 /*
  * 8x8 Terminal, the EGA OEM strike. The stock OEM_FIXED_FONT on a VGA
@@ -477,7 +477,7 @@ void font_upload(const df_u8 *r, const df_u8 *g, const df_u8 *b)
         pg = g_sys_g;
         pb = g_sys_b;
     }
-    if (!glide_upload(g_pixels, g_side, g_side, 1, pr, pg, pb, &g_addr)) {
+    if (!glide_upload(g_pixels, g_side, 1, 0, 0, pr, pg, pb, &g_handle)) {
         return;
     }
     g_uploaded = 1;
@@ -592,8 +592,12 @@ static void glyph_quad(float x, float y, float w, float h, float s, float t)
     v[3].y = y;
     v[3].sow = s;
     v[3].tow = t + h;
-    glide_triangle(&v[0], &v[1], &v[2]);
-    glide_triangle(&v[0], &v[2], &v[3]);
+    /*
+     * One planar quad, not two triangles: Glide sets up the texture
+     * gradients once. LEVELFALL's panels are some 700 glyphs, more
+     * triangles than a corridor's whole scene.
+     */
+    glide_polygon(v, 4);
 }
 
 static void atlas_text(int x, int top, const char *s)
@@ -690,14 +694,13 @@ void ui_string_alpha(int x, int top, const char *s, int alpha)
         if (alpha < 255) {
             glide_opacity(alpha, 1);
         }
-        glide_bind(g_addr);
+        glide_bind(g_handle);
         atlas_text(x, top, s);
         if (alpha < 255) {
             glide_opacity(-1, 0);
         }
         glide_sprite_alpha(0);
         glide_ui(0);
-        texcache_forget();
         return;
     }
     glide_overlay(1);

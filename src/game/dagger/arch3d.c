@@ -3,14 +3,43 @@
 #include "engine/scene/scene.h"
 
 #define MAX_FACE 24
+/* Corners a face may have once weld has inserted its neighbours' corners. */
+#define WELD_MAX 32
+/*
+ * How far off an edge, in file units (1/256 of a world unit), a point
+ * may sit and still be welded into it, and how far from either end it
+ * has to be. 16 is 1/16 of a world unit, well under any real feature.
+ */
+#define WELD_NEAR 16.0
+/*
+ * Face corners of one model weld looks at; past this the model is not
+ * welded. The most in ARCH3D.BSA is 2720, model 451. The tables below
+ * are static, about 84 bytes a corner: some 260 KB.
+ */
+#define WELD_POINTS 3072
+/*
+ * A file point no farther than this from the straight line between its
+ * neighbours, in file units, is on that edge, not a corner: 4 is 1/64
+ * of a world unit. The thinnest real feature, a 2-unit door jamb, puts
+ * its corners about 100 units off.
+ */
+#define STRAIGHT_NEAR 4.0
 #define POINT_DIV 256.0f
 #define UV_DIV 16.0f
 
 static int g_uv_fail;
+static int g_bad_refs;
+/* decode_plane runs three times a model; it counts bad references once. */
+static int g_counting;
 
 int arch3d_uv_failures(void)
 {
     return g_uv_fail;
+}
+
+int arch3d_bad_refs(void)
+{
+    return g_bad_refs;
 }
 
 typedef struct Pt {
@@ -156,51 +185,47 @@ static int face_uv(const Pt *in, int n, int *ou, int *ov)
     return 1;
 }
 
-static int corners_of(const Pt *pts, int n, int *out)
+/*
+ * The corner to fan from: the one whose triangle with its next two
+ * corners is largest, so push_face takes a real normal from the first
+ * triangle. A corner weld inserted along an edge next to the apex makes
+ * a zero-area triangle; the card skips it, and it keeps the fan exact,
+ * which draw.c and the occlusion pass need. In ARCH3D.BSA 2 faces are
+ * not convex, and their fans from this corner still cover them exactly.
+ */
+static int fan_apex(const Pt *pts, int n)
 {
-    int count;
-    int point;
+    double best;
+    int apex;
+    int k;
 
-    count = 0;
-    for (point = 0; point < n; point++) {
-        int i0, i1, i2, corner;
-        float l0x, l0y, l0z, l1x, l1y, l1z;
-        float cx, cy, cz, l0, l1, cross2;
+    best = -1.0;
+    apex = 0;
+    for (k = 0; k < n; k++) {
+        const Pt *a;
+        const Pt *b;
+        const Pt *c;
+        double ax, ay, az, bx, by, bz, cx, cy, cz, d;
 
-        if (point < n - 2) {
-            i0 = point;
-            i1 = point + 1;
-            i2 = point + 2;
-            corner = point + 1;
-        } else if (point < n - 1) {
-            i0 = point;
-            i1 = point + 1;
-            i2 = 0;
-            corner = point + 1;
-        } else {
-            i0 = point;
-            i1 = 0;
-            i2 = 1;
-            corner = 0;
-        }
-        l0x = (float)(pts[i1].x - pts[i0].x);
-        l0y = (float)(pts[i1].y - pts[i0].y);
-        l0z = (float)(pts[i1].z - pts[i0].z);
-        l1x = (float)(pts[i2].x - pts[i0].x);
-        l1y = (float)(pts[i2].y - pts[i0].y);
-        l1z = (float)(pts[i2].z - pts[i0].z);
-        cx = l0y * l1z - l0z * l1y;
-        cy = l0z * l1x - l0x * l1z;
-        cz = l0x * l1y - l0y * l1x;
-        l0 = l0x * l0x + l0y * l0y + l0z * l0z;
-        l1 = l1x * l1x + l1y * l1y + l1z * l1z;
-        cross2 = cx * cx + cy * cy + cz * cz;
-        /* About 0.6 degrees. Drops points that sit on the previous edge. */
-        if (l0 > 1.0f && l1 > 1.0f && cross2 > l0 * l1 * 1.0e-4f) {
-            out[count++] = corner;
+        a = &pts[k];
+        b = &pts[(k + 1) % n];
+        c = &pts[(k + 2) % n];
+        ax = (double)(b->x - a->x);
+        ay = (double)(b->y - a->y);
+        az = (double)(b->z - a->z);
+        bx = (double)(c->x - a->x);
+        by = (double)(c->y - a->y);
+        bz = (double)(c->z - a->z);
+        cx = ay * bz - az * by;
+        cy = az * bx - ax * bz;
+        cz = ax * by - ay * bx;
+        d = cx * cx + cy * cy + cz * cz;
+        if (d > best) {
+            best = d;
+            apex = k;
         }
     }
-    return count;
+    return apex;
 }
 
 static void emit_tri(Mesh *mesh, int cap, const Pt *pts, const int *uv_u, const int *uv_v,
@@ -234,29 +259,11 @@ static void emit_tri(Mesh *mesh, int cap, const Pt *pts, const int *uv_u, const 
     mesh->ntris++;
 }
 
-/* Triangles emit_tri will accept for this face. */
+/* Triangles emit_fan makes for this face: a fan over every point. */
 static int tri_count(const Pt *pts, int npts)
 {
-    int corners[MAX_FACE];
-    int nc;
-    int k;
-    int n;
-
-    nc = corners_of(pts, npts, corners);
-    if (nc < 3) {
-        for (k = 0; k < npts; k++) {
-            corners[k] = k;
-        }
-        nc = npts;
-    }
-    n = 0;
-    for (k = 1; k < nc - 1; k++) {
-        if (corners[0] != corners[k] && corners[k] != corners[k + 1]
-            && corners[0] != corners[k + 1]) {
-            n++;
-        }
-    }
-    return n;
+    (void)pts;
+    return npts >= 3 ? npts - 2 : 0;
 }
 
 /*
@@ -264,7 +271,7 @@ static int tri_count(const Pt *pts, int npts)
  * skipped and *p advanced. -1 means the record ends here.
  */
 static int decode_plane(const df_u8 *rec, df_u32 size, df_u32 *p_io,
-                        int v25, df_i32 point_off, df_u32 id,
+                        int v25, df_i32 point_off, df_i32 point_end, df_u32 id,
                         Pt *pts, int *npts_out, df_u16 *tex_out)
 {
     df_u32 p;
@@ -302,13 +309,26 @@ static int decode_plane(const df_u8 *rec, df_u32 size, df_u32 *p_io,
             uv_unpack(&u);
             uv_unpack(&v);
         }
+        /*
+         * A point reference is a byte offset into the point table. In
+         * v2.6 and v2.7 the table's points are 12 bytes, so it is the
+         * offset itself. In v2.5 it counts 4 bytes a point: index * 4.
+         * It used to be read as an index, multiplied by 12, which sent
+         * the 8 v2.5 records in ARCH3D.BSA (41500-41505, 41509, 41510)
+         * three times past their tables into the rest of the file:
+         * points in the millions and faces collapsed to one point.
+         * Only points inside the table are taken now.
+         */
         if (v25) {
-            pp = point_off + off * 12;
+            pp = point_off + (off / 4) * 12;
         } else {
             pp = point_off + off;
         }
-        if (pp < 0 || (df_u32)pp + 12 > size) {
-            return -1;
+        if (off < 0 || pp < point_off || pp + 12 > point_end || (df_u32)pp + 12 > size) {
+            /* This face only: the next plane starts after its references. */
+            g_bad_refs += g_counting;
+            *p_io = *p_io + 8u + (df_u32)npts * 8u;
+            return 0;
         }
         pts[k].x = df_ri32(rec + pp);
         pts[k].y = df_ri32(rec + pp + 4);
@@ -353,14 +373,10 @@ static void push_face(Mesh *mesh, int first)
     mesh->nfaces++;
 }
 
-static void emit_plane(Mesh *mesh, int cap, const Pt *pts, int npts, df_u16 tex)
+/* Texel coordinates for each file point, uv_u and uv_v in 1/UV_DIV texel. */
+static void plane_uv(const Pt *pts, int npts, int *uv_u, int *uv_v)
 {
-    int uv_u[MAX_FACE];
-    int uv_v[MAX_FACE];
-    int corners[MAX_FACE];
-    int nc;
     int k;
-    int first;
 
     if (npts == 3) {
         uv_u[0] = pts[0].u;
@@ -382,16 +398,303 @@ static void emit_plane(Mesh *mesh, int cap, const Pt *pts, int npts, df_u16 tex)
             uv_v[k] = uv_v[2];
         }
     }
-    nc = corners_of(pts, npts, corners);
-    if (nc < 3) {
-        for (k = 0; k < npts; k++) {
-            corners[k] = k;
-        }
-        nc = npts;
+}
+
+/* Squared distance of p from the line through a and b, in file units. */
+static double off_line2(const Pt *a, const Pt *b, const Pt *p)
+{
+    double ex, ey, ez, px, py, pz, cx, cy, cz, len2;
+
+    ex = (double)b->x - a->x;
+    ey = (double)b->y - a->y;
+    ez = (double)b->z - a->z;
+    px = (double)p->x - a->x;
+    py = (double)p->y - a->y;
+    pz = (double)p->z - a->z;
+    len2 = ex * ex + ey * ey + ez * ez;
+    if (len2 <= 0.0) {
+        return px * px + py * py + pz * pz;
     }
+    cx = py * ez - pz * ey;
+    cy = pz * ex - px * ez;
+    cz = px * ey - py * ex;
+    return (cx * cx + cy * cy + cz * cz) / len2;
+}
+
+/*
+ * Drops the file points that lie on the straight line between their
+ * neighbours, and repeats, so only the outline's real corners stay.
+ * A point the file puts along an edge is often where the next face
+ * ends; weld puts it back exactly where another face of this model
+ * has a corner. Kept everywhere, it put a corner on a model's outer
+ * edge that the next model's face, along the same line, does not have:
+ * a new T-junction between two models, in the stair hall's floor.
+ *
+ * This is a distance test. The old loader used the turn seen from two
+ * points back, under 0.6 degrees, and on a 2-unit door jamb or frame a
+ * real corner turns less than that: 477 faces lost a triangle-sized
+ * piece, up to 16% of their area. uv_u may be 0.
+ */
+static int straighten(Pt *pts, int n, int *uv_u, int *uv_v)
+{
+    int changed;
+
+    do {
+        int i;
+
+        changed = 0;
+        for (i = 0; i < n && n > 3; i++) {
+            const Pt *a;
+            const Pt *b;
+            int k;
+
+            a = &pts[(i + n - 1) % n];
+            b = &pts[(i + 1) % n];
+            if (off_line2(a, b, &pts[i]) > STRAIGHT_NEAR * STRAIGHT_NEAR) {
+                continue;
+            }
+            /* Only a point between its neighbours, not a spike back along the line. */
+            if (((double)pts[i].x - a->x) * ((double)b->x - pts[i].x)
+                + ((double)pts[i].y - a->y) * ((double)b->y - pts[i].y)
+                + ((double)pts[i].z - a->z) * ((double)b->z - pts[i].z) < 0.0) {
+                continue;
+            }
+            for (k = i; k < n - 1; k++) {
+                pts[k] = pts[k + 1];
+                if (uv_u) {
+                    uv_u[k] = uv_u[k + 1];
+                    uv_v[k] = uv_v[k + 1];
+                }
+            }
+            n--;
+            changed = 1;
+            i--;
+        }
+    } while (changed);
+    return n;
+}
+
+/*
+ * Every face's real corners in one model, and which face each belongs
+ * to, filled before the model's triangles are made. g_corners is -1
+ * when a model has more than WELD_POINTS; it is then not welded.
+ */
+static int g_cx[WELD_POINTS];
+static int g_cy[WELD_POINTS];
+static int g_cz[WELD_POINTS];
+static int g_cface[WELD_POINTS];
+/* The corner before and after each corner in its own face. */
+static Pt g_cprev[WELD_POINTS];
+static Pt g_cnext[WELD_POINTS];
+static int g_corners;
+
+static void corners_add(const Pt *pts, int n, int face)
+{
+    int i;
+
+    for (i = 0; i < n && g_corners >= 0; i++) {
+        if (g_corners >= WELD_POINTS) {
+            g_corners = -1;
+            return;
+        }
+        g_cx[g_corners] = pts[i].x;
+        g_cy[g_corners] = pts[i].y;
+        g_cz[g_corners] = pts[i].z;
+        g_cface[g_corners] = face;
+        g_cprev[g_corners] = pts[(i + n - 1) % n];
+        g_cnext[g_corners] = pts[(i + 1) % n];
+        g_corners++;
+    }
+}
+
+static double g_near_x[WELD_POINTS];
+static double g_near_y[WELD_POINTS];
+static double g_near_z[WELD_POINTS];
+static int g_near_k[WELD_POINTS];
+
+/*
+ * Welds T-junctions inside one model, at load. Where another face of
+ * the same model runs along one of this face's edges and ends inside
+ * it, a corner of that face lies on the edge, within WELD_NEAR of the
+ * line and at least that far from both ends, and the card left a crack
+ * along the seam, a pixel here and there that the occlusion pass also
+ * has to treat as open. A corner where a face only touches the edge
+ * from another direction, such as the end of a crossing wall, closes no
+ * seam; inserting it would only put a corner on the model's outer edge
+ * that the next model's face does not have, so it is left out. weld inserts a corner
+ * there, on the edge itself, in order along it, with the edge's texel
+ * coordinates interpolated, exact for the face's flat mapping. Then the
+ * two faces share the seam exactly. uv_u may be 0 to count only.
+ * Returns the new corner count, never past WELD_MAX. Only one model's
+ * corners are seen: a seam between two placed models is as the file
+ * has it.
+ */
+static int weld(int face, Pt *pts, int n, int *uv_u, int *uv_v)
+{
+    Pt out[WELD_MAX];
+    int ou[WELD_MAX];
+    int ov[WELD_MAX];
+    double nx, ny, nz, nl, d0;
+    int near;
+    int m;
+    int i;
+    int k;
+
+    if (g_corners < 1 || n < 3) {
+        return n;
+    }
+    nx = 0.0;
+    ny = 0.0;
+    nz = 0.0;
+    for (i = 0; i < n; i++) {
+        const Pt *a;
+        const Pt *b;
+
+        a = &pts[i];
+        b = &pts[(i + 1) % n];
+        nx += ((double)a->y - b->y) * ((double)a->z + b->z);
+        ny += ((double)a->z - b->z) * ((double)a->x + b->x);
+        nz += ((double)a->x - b->x) * ((double)a->y + b->y);
+    }
+    nl = nx * nx + ny * ny + nz * nz;
+    if (nl <= 0.0) {
+        return n;
+    }
+    __asm__ __volatile__("fsqrt" : "=t"(nl) : "0"(nl));
+    nx /= nl;
+    ny /= nl;
+    nz /= nl;
+    d0 = nx * pts[0].x + ny * pts[0].y + nz * pts[0].z;
+    /* Only another face's corners on this face's plane can lie on its edges. */
+    near = 0;
+    for (k = 0; k < g_corners; k++) {
+        double x, y, z, d;
+
+        if (g_cface[k] == face) {
+            continue;
+        }
+        x = (double)g_cx[k];
+        y = (double)g_cy[k];
+        z = (double)g_cz[k];
+        d = nx * x + ny * y + nz * z - d0;
+        if (d < -WELD_NEAR || d > WELD_NEAR) {
+            continue;
+        }
+        g_near_x[near] = x;
+        g_near_y[near] = y;
+        g_near_z[near] = z;
+        g_near_k[near] = k;
+        near++;
+    }
+    m = 0;
+    for (i = 0; i < n && m < WELD_MAX; i++) {
+        const Pt *a;
+        const Pt *b;
+        double ex, ey, ez, len2, len;
+        double hit_t[WELD_MAX];
+        int nh;
+        int h;
+
+        a = &pts[i];
+        b = &pts[(i + 1) % n];
+        out[m] = *a;
+        ou[m] = uv_u ? uv_u[i] : 0;
+        ov[m] = uv_v ? uv_v[i] : 0;
+        m++;
+        ex = (double)b->x - a->x;
+        ey = (double)b->y - a->y;
+        ez = (double)b->z - a->z;
+        len2 = ex * ex + ey * ey + ez * ez;
+        if (len2 < 4.0 * WELD_NEAR * WELD_NEAR) {
+            continue;
+        }
+        len = len2;
+        __asm__ __volatile__("fsqrt" : "=t"(len) : "0"(len));
+        nh = 0;
+        for (k = 0; k < near; k++) {
+            double px, py, pz, t, cx, cy, cz;
+
+            px = g_near_x[k] - a->x;
+            py = g_near_y[k] - a->y;
+            pz = g_near_z[k] - a->z;
+            t = (px * ex + py * ey + pz * ez) / len2;
+            if (t * len < WELD_NEAR || (1.0 - t) * len < WELD_NEAR) {
+                continue;
+            }
+            cx = px - t * ex;
+            cy = py - t * ey;
+            cz = pz - t * ez;
+            if (cx * cx + cy * cy + cz * cz > WELD_NEAR * WELD_NEAR) {
+                continue;
+            }
+            /* The other face has to run along this edge from that corner. */
+            if (off_line2(a, b, &g_cprev[g_near_k[k]]) > WELD_NEAR * WELD_NEAR
+                && off_line2(a, b, &g_cnext[g_near_k[k]]) > WELD_NEAR * WELD_NEAR) {
+                continue;
+            }
+            /* Several faces may share that corner: insert it once. */
+            for (h = 0; h < nh; h++) {
+                if ((t - hit_t[h]) * len < 1.0 && (hit_t[h] - t) * len < 1.0) {
+                    break;
+                }
+            }
+            if (h < nh || nh >= WELD_MAX) {
+                continue;
+            }
+            /* In order along the edge. */
+            for (h = nh; h > 0 && hit_t[h - 1] > t; h--) {
+                hit_t[h] = hit_t[h - 1];
+            }
+            hit_t[h] = t;
+            nh++;
+        }
+        for (h = 0; h < nh && m < WELD_MAX; h++) {
+            double t;
+
+            /*
+             * Where the edge passes the corner, not the corner itself,
+             * which may sit up to WELD_NEAR off the line: that would
+             * bend this edge against whatever lies along the rest of it.
+             */
+            t = hit_t[h];
+            out[m].x = a->x + (int)(ex * t + (ex * t >= 0.0 ? 0.5 : -0.5));
+            out[m].y = a->y + (int)(ey * t + (ey * t >= 0.0 ? 0.5 : -0.5));
+            out[m].z = a->z + (int)(ez * t + (ez * t >= 0.0 ? 0.5 : -0.5));
+            out[m].u = 0;
+            out[m].v = 0;
+            if (uv_u) {
+                ou[m] = uv_u[i] + (int)((double)(uv_u[(i + 1) % n] - uv_u[i]) * t
+                                        + (t >= 0.0 ? 0.5 : -0.5));
+                ov[m] = uv_v[i] + (int)((double)(uv_v[(i + 1) % n] - uv_v[i]) * t
+                                        + (t >= 0.0 ? 0.5 : -0.5));
+            }
+            m++;
+        }
+    }
+    if (m == n) {
+        return n;
+    }
+    for (i = 0; i < m; i++) {
+        pts[i] = out[i];
+        if (uv_u) {
+            uv_u[i] = ou[i];
+            uv_v[i] = ov[i];
+        }
+    }
+    return m;
+}
+
+static void emit_fan(Mesh *mesh, int cap, const Pt *pts, int npts,
+                     const int *uv_u, const int *uv_v, df_u16 tex)
+{
+    int apex;
+    int k;
+    int first;
+
+    apex = fan_apex(pts, npts);
     first = mesh->ntris;
-    for (k = 1; k < nc - 1; k++) {
-        emit_tri(mesh, cap, pts, uv_u, uv_v, corners[0], corners[k], corners[k + 1],
+    for (k = 1; k < npts - 1; k++) {
+        emit_tri(mesh, cap, pts, uv_u, uv_v, apex, (apex + k) % npts, (apex + k + 1) % npts,
                  (df_u16)(tex >> 7), (df_u16)(tex & 0x7f));
     }
     push_face(mesh, first);
@@ -401,6 +704,7 @@ Mesh *arch3d_load(const df_u8 *rec, df_u32 size, df_u32 id)
 {
     int v25;
     df_i32 plane_count;
+    df_i32 point_end;
     df_i32 point_off;
     df_i32 plane_off;
     int cap;
@@ -417,6 +721,8 @@ Mesh *arch3d_load(const df_u8 *rec, df_u32 size, df_u32 id)
         return 0;
     }
     v25 = rec[3] == '5';
+    /* The point table: df_ri32(rec + 4) points of 12 bytes from point_off. */
+    point_end = df_ri32(rec + 48) + df_ri32(rec + 4) * 12;
     plane_count = df_ri32(rec + 8);
     point_off = df_ri32(rec + 48);
     plane_off = df_ri32(rec + 60);
@@ -426,6 +732,25 @@ Mesh *arch3d_load(const df_u8 *rec, df_u32 size, df_u32 id)
     if (point_off < 64 || plane_off < 64 || (df_u32)plane_off >= size) {
         return 0;
     }
+    /* Every face's real corners first, for weld. */
+    g_corners = 0;
+    p = (df_u32)plane_off;
+    for (plane = 0; plane < plane_count; plane++) {
+        Pt pts[WELD_MAX];
+        int npts;
+        df_u16 tex;
+        int got;
+
+        got = decode_plane(rec, size, &p, v25, point_off, point_end, id, pts, &npts, &tex);
+        if (got < 0) {
+            break;
+        }
+        if (got == 0) {
+            continue;
+        }
+        npts = straighten(pts, npts, 0, 0);
+        corners_add(pts, npts, plane);
+    }
     /*
      * The old cap was the file length over 8, which reserved a triangle
      * for every few bytes of points. Count the faces, then allocate that.
@@ -434,19 +759,21 @@ Mesh *arch3d_load(const df_u8 *rec, df_u32 size, df_u32 id)
     nface = 0;
     p = (df_u32)plane_off;
     for (plane = 0; plane < plane_count; plane++) {
-        Pt pts[MAX_FACE];
+        Pt pts[WELD_MAX];
         int npts;
         df_u16 tex;
         int got;
         int nt;
 
-        got = decode_plane(rec, size, &p, v25, point_off, id, pts, &npts, &tex);
+        got = decode_plane(rec, size, &p, v25, point_off, point_end, id, pts, &npts, &tex);
         if (got < 0) {
             break;
         }
         if (got == 0) {
             continue;
         }
+        npts = straighten(pts, npts, 0, 0);
+        npts = weld(plane, pts, npts, 0, 0);
         nt = tri_count(pts, npts);
         cap += nt;
         if (nt > 0) {
@@ -474,21 +801,29 @@ Mesh *arch3d_load(const df_u8 *rec, df_u32 size, df_u32 id)
         }
     }
     p = (df_u32)plane_off;
+    g_counting = 1;
     for (plane = 0; plane < plane_count; plane++) {
-        Pt pts[MAX_FACE];
+        Pt pts[WELD_MAX];
+        int uv_u[WELD_MAX];
+        int uv_v[WELD_MAX];
         int npts;
         df_u16 tex;
         int got;
 
-        got = decode_plane(rec, size, &p, v25, point_off, id, pts, &npts, &tex);
+        got = decode_plane(rec, size, &p, v25, point_off, point_end, id, pts, &npts, &tex);
         if (got < 0) {
             break;
         }
         if (got == 0) {
             continue;
         }
-        emit_plane(mesh, cap, pts, npts, tex);
+        /* The file's texel rule reads its first three points, so before straighten. */
+        plane_uv(pts, npts, uv_u, uv_v);
+        npts = straighten(pts, npts, uv_u, uv_v);
+        npts = weld(plane, pts, npts, uv_u, uv_v);
+        emit_fan(mesh, cap, pts, npts, uv_u, uv_v, tex);
     }
+    g_counting = 0;
     mesh_measure(mesh);
     return mesh;
 }

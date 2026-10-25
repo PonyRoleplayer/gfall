@@ -21,6 +21,14 @@ int mem_temp_begin(void);
 void mem_temp_end(void);
 
 /*
+ * Always the main heap, even between mem_temp_begin and mem_temp_end.
+ * For a buffer allocated on first use and kept for the process, such
+ * as the console's frame grab: LEVELFALL and RENDERFALL draw inside a
+ * temp heap, and mem_alloc there would die with the place.
+ */
+void *mem_keep(df_u32 bytes);
+
+/*
  * Bytes allocated so far on the main heap, and on the temp heap since
  * mem_temp_begin. A failed allocation logs an error with its size.
  */

@@ -1,6 +1,7 @@
 #include "game/dagger/texture.h"
 #include "engine/assets/vfs.h"
 #include "engine/core/mem.h"
+#include "engine/gfx/mip.h"
 
 #define COMP_IMAGE_RLE 0x0108
 #define COMP_RECORD_RLE 0x1108
@@ -506,6 +507,126 @@ Image *texture_load(int file, int image)
     img->xscale = xs;
     img->yscale = ys;
     return img;
+}
+
+/*
+ * A sprite: the picture at its own size in the top left of the square,
+ * the rest index 0, which is transparent on a cutout. Nothing is
+ * stretched, and the texels around the picture are transparent at
+ * every mip level, so filtering at an edge reads nothing but the
+ * sprite and clear texels. The square's side does not change.
+ */
+void texture_pad(Image *img)
+{
+    int side;
+    int x;
+    int y;
+
+    if (!img || !img->pot || !img->index || img->pot_w != img->pot_h) {
+        return;
+    }
+    side = img->pot_w;
+    if (img->width > side || img->height > side) {
+        return;
+    }
+    for (y = 0; y < side; y++) {
+        for (x = 0; x < side; x++) {
+            img->pot[y * side + x] = (x < img->width && y < img->height)
+                ? img->index[y * img->width + x] : 0;
+        }
+    }
+    img->span_w = img->width;
+    img->span_h = img->height;
+}
+
+/*
+ * A wall whose side is not a power of two: scale_pot repeated texels
+ * to stretch it, so some columns and rows came out twice as wide. This
+ * redoes that stretch bilinearly, wrapping at the edges because a wall
+ * repeats, and maps each blended colour to the nearest palette entry.
+ * A texel that lands exactly on a source texel keeps its index. The
+ * square still holds whole copies, so span and the face UVs stay.
+ * Load time only: 8-bit fixed point, no float casts.
+ */
+void texture_smooth(Image *img, const df_u8 *pr, const df_u8 *pg, const df_u8 *pb)
+{
+    int side;
+    int tw;
+    int th;
+    int x;
+    int y;
+
+    if (!img || !img->pot || !img->index || !pr || !pg || !pb || img->pot_w != img->pot_h) {
+        return;
+    }
+    side = img->pot_w;
+    tw = img->span_w;
+    th = img->span_h;
+    if (tw < 1 || th < 1 || (tw == img->width && th == img->height)) {
+        return;
+    }
+    mip_palette(pr, pg, pb);
+    for (y = 0; y < side; y++) {
+        int fy;
+        int y0;
+        int y1;
+        int wy;
+
+        /* Source position of this texel's centre, in 1/256 texel. */
+        fy = (((y % th) * 2 + 1) * img->height * 128) / th - 128;
+        if (fy < 0) {
+            fy += img->height * 256;
+        }
+        y0 = (fy >> 8) % img->height;
+        y1 = (y0 + 1) % img->height;
+        wy = fy & 255;
+        for (x = 0; x < side; x++) {
+            int fx;
+            int x0;
+            int x1;
+            int wx;
+            const df_u8 *row0;
+            const df_u8 *row1;
+            int k[4];
+            int w4[4];
+            int r;
+            int g;
+            int b;
+            int i;
+
+            fx = (((x % tw) * 2 + 1) * img->width * 128) / tw - 128;
+            if (fx < 0) {
+                fx += img->width * 256;
+            }
+            x0 = (fx >> 8) % img->width;
+            x1 = (x0 + 1) % img->width;
+            wx = fx & 255;
+            row0 = img->index + y0 * img->width;
+            row1 = img->index + y1 * img->width;
+            if (wx == 0 && wy == 0) {
+                img->pot[y * side + x] = row0[x0];
+                continue;
+            }
+            k[0] = row0[x0];
+            k[1] = row0[x1];
+            k[2] = row1[x0];
+            k[3] = row1[x1];
+            w4[0] = (256 - wx) * (256 - wy);
+            w4[1] = wx * (256 - wy);
+            w4[2] = (256 - wx) * wy;
+            w4[3] = wx * wy;
+            r = 0;
+            g = 0;
+            b = 0;
+            for (i = 0; i < 4; i++) {
+                r += pr[k[i]] * w4[i];
+                g += pg[k[i]] * w4[i];
+                b += pb[k[i]] * w4[i];
+            }
+            img->pot[y * side + x] = mip_nearest((r + 32768) >> 16, (g + 32768) >> 16,
+                                                 (b + 32768) >> 16);
+        }
+    }
 }
 
 void texture_cache_clear(void)

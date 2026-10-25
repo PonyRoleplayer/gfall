@@ -23,7 +23,7 @@ typedef unsigned char df_u8;
 #define DF_FOG_NEAR 280.0f
 #define DF_FOG_FAR 1100.0f
 #define DF_FAR 1400.0f
-/* gfx_set_far will not go past this. 65535/z is still above 1 here. */
+/* gfx_set_far will not go past this. The Z-buffer's ooz, 65535 * DF_NEAR / z, is 16 here. */
 #define DF_FAR_MAX 16384.0f
 #define DF_TAU 6.28318530718f
 
@@ -139,6 +139,46 @@ static float df_snap16(float v)
 
     t = v + 786432.0f;
     return t - 786432.0f;
+}
+
+/*
+ * Where fog is meant to go solid for a far clip: the same fraction of
+ * it as DF_FOG_FAR is of DF_FAR, never nearer than DF_FOG_NEAR + 1.
+ * gfx uploads the fog table with this, and scene and draw read it.
+ */
+static float df_fog_far(float clip_far)
+{
+    float f;
+
+    f = clip_far * (DF_FOG_FAR / DF_FAR);
+    if (f < DF_FOG_NEAR + 1.0f) {
+        f = DF_FOG_NEAR + 1.0f;
+    }
+    return f;
+}
+
+/*
+ * Where the card's fog really is solid. The table's 64 entries sit at
+ * w = 2^(3 + i/4) / (8 - i % 4), and the SST-1 blends between two
+ * entries, so fog only reaches 255 at the first entry at or past
+ * fog_far: 1170 for the default 1100, where 1100 itself is about 95%
+ * fog. Culling or clipping nearer than this cuts off what is still a
+ * few percent visible; drawing past it fills pixels the fog colours
+ * over completely. Past the last entry, fog_far itself.
+ */
+static float df_fog_solid(float fog_far)
+{
+    int i;
+
+    for (i = 0; i < 64; i++) {
+        float w;
+
+        w = (float)(8u << (i >> 2)) / (float)(8 - (i & 3));
+        if (w >= fog_far) {
+            return w;
+        }
+    }
+    return fog_far;
 }
 
 /* Largest integer not above v, for |v| below 2^22. No mode switch. */

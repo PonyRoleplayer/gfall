@@ -110,6 +110,12 @@ int mem_temp_begin(void)
     return 1;
 }
 
+/* The host has one heap, so kept and temp bytes are the same. */
+void *mem_keep(df_u32 bytes)
+{
+    return mem_alloc(bytes);
+}
+
 void mem_temp_end(void)
 {
 }
@@ -170,6 +176,14 @@ void *mem_alloc(df_u32 bytes)
         return 0;
     }
     return counted(HeapAlloc(heap, HEAP_ZERO_MEMORY, bytes), bytes, g_temp != 0);
+}
+
+void *mem_keep(df_u32 bytes)
+{
+    if (!g_heap || bytes == 0) {
+        return 0;
+    }
+    return counted(HeapAlloc(g_heap, HEAP_ZERO_MEMORY, bytes), bytes, 0);
 }
 
 /* GCC emits these for block copies. The exe has no C runtime. */

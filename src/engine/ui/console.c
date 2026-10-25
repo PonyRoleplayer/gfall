@@ -436,7 +436,8 @@ static int grab_frame(void)
 
     if (!g_shot) {
         bytes = (df_u32)SHOT_STRIDE * (df_u32)DF_VIEW_H;
-        g_shot = (df_u8 *)mem_alloc(bytes);
+        /* Kept for the process: not the temp heap a viewer draws inside. */
+        g_shot = (df_u8 *)mem_keep(bytes);
     }
     if (!g_shot) {
         return 0;
@@ -547,7 +548,6 @@ void console_present(const Camera *cam)
     } else {
         glide_clear();
     }
-    texcache_forget();
     draw_panel();
     shot_note();
     build_legend();
@@ -716,6 +716,8 @@ static void c_texmem(int argc, char **argv)
     texcache_stats(&live_n, &unfit, &total, &bytes);
     log_print(LOG_PRINT, "textures: %d of %d on the card, %u KB; %d did not fit",
               live_n, total, (unsigned int)(bytes / 1024u), unfit);
+    log_print(LOG_PRINT, "mip chains %s; %d at half size or less to fit",
+              gfx_mipmap() ? "on" : "off", texcache_reduced());
     log_print(LOG_PRINT, "TMU0: %u KB free after them",
               (unsigned int)(glide_tex_free() / 1024u));
 }
@@ -763,6 +765,12 @@ static void commands(void)
     cmd_var("faces", draw_faces, draw_set_faces, 0, 1, "drop ARCH3D faces that point away");
     cmd_var("vsync", glide_vsync, glide_set_vsync, 0, 1,
             "wait for the retrace; off shows the real frame rate, with tearing");
+    cmd_var("wbuffer", glide_wbuffer, glide_set_wbuffer, 0, 1,
+            "depth from 1/w, fine at any range; off is the 16-bit Z-buffer");
+    cmd_var("planar", glide_planar, glide_set_planar, 0, 1,
+            "send each face as one planar polygon; off sends triangles");
+    cmd_var("mipmap", gfx_mipmap, gfx_set_mipmap, 0, 1,
+            "mip chains on the card; a change sends the level again");
     cmd_var("hud", hud_shown, hud_set, 0, 1, "position and fps corners");
     cmd_var("fps", hud_fps, hud_set_fps, 0, 1, "the fps corner of the hud; F3 flips it");
     cmd_var("logfile", logfile_on, logfile_set, 0, 1,

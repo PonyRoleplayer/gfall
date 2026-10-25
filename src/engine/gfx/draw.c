@@ -42,11 +42,23 @@
  * camera_focal, so a wider field stays inside the SST-1 range.
  */
 #define CLIP_MARGIN 16.0f
-#define CLIP_MAX 16
+#define CLIP_MAX GLIDE_POLY_MAX
+/* A face of more corners than this is drawn as triangles: 6 planes may add 6. 26 holds ARCH3D's 24. */
+#define FACE_MAX (CLIP_MAX - 6)
 
 static void (*g_extra)(void);
 static void (*g_under)(void);
 static float g_far = DF_FAR;
+/*
+ * The far clip plane polygons are cut at: g_far, or with fog on the
+ * fog table's first solid entry when that is nearer (df_fog_solid),
+ * the same distance the scene culls at. Past it the fog paints a pixel
+ * the clear colour exactly, so drawing it would only cost fill.
+ * Recomputed only when the far clip or fog changes.
+ */
+static float g_limit = DF_FAR;
+static float g_limit_far = -1.0f;
+static int g_limit_fog = -1;
 static int g_faces = 1;
 static int g_vis_models;
 static int g_vis_sprites;
@@ -63,6 +75,22 @@ static float g_focal = 417.0f;
 
 static void clip_slopes(void)
 {
+    int fog;
+
+    fog = glide_fog_on();
+    if (g_far != g_limit_far || fog != g_limit_fog) {
+        float solid;
+
+        g_limit_far = g_far;
+        g_limit_fog = fog;
+        g_limit = g_far;
+        if (fog) {
+            solid = df_fog_solid(df_fog_far(g_far));
+            if (solid < g_limit) {
+                g_limit = solid;
+            }
+        }
+    }
     g_focal = camera_focal();
     if (g_focal < 1.0f) {
         g_focal = 1.0f;
@@ -221,7 +249,7 @@ static float plane_side(int plane, const Vtx *v)
     case 0:
         return v->z - DF_NEAR;
     case 1:
-        return g_far - v->z;
+        return g_limit - v->z;
     case 2:
         return v->z * g_clip_x + v->x;
     case 3:
@@ -307,7 +335,8 @@ static int clip_plane(const Vtx *in, int n, Vtx *out, int plane)
     return nout;
 }
 
-static int clip_view(const Vtx *in, Vtx *out)
+/* n corners of a convex polygon, n at most FACE_MAX. */
+static int clip_view(const Vtx *in, int n, Vtx *out)
 {
     Vtx buf[2][CLIP_MAX];
     int src;
@@ -315,11 +344,11 @@ static int clip_view(const Vtx *in, Vtx *out)
     int plane;
     int i;
 
-    buf[0][0] = in[0];
-    buf[0][1] = in[1];
-    buf[0][2] = in[2];
+    for (i = 0; i < n; i++) {
+        buf[0][i] = in[i];
+    }
     src = 0;
-    nsrc = 3;
+    nsrc = n;
     for (plane = 0; plane < 6; plane++) {
         int dst;
         int ndst;
@@ -381,15 +410,15 @@ static void image_inv(const Image *img, float *inv_w, float *inv_h)
 }
 
 /*
- * 1 when every vertex is inside the near plane, the far clip, and the
- * picture. A triangle that crosses the glass is cut to it. One that
- * is already on the glass is projected directly.
+ * 1 when every corner is inside the near plane, the far clip, and the
+ * picture. A polygon that crosses the glass is cut to it. One that is
+ * already on the glass is projected directly.
  */
-static int tri_inside(const Vtx *v)
+static int poly_inside(const Vtx *v, int n)
 {
     int i;
 
-    for (i = 0; i < 3; i++) {
+    for (i = 0; i < n; i++) {
         float x;
         float y;
         float z;
@@ -399,7 +428,7 @@ static int tri_inside(const Vtx *v)
         x = v[i].x;
         y = v[i].y;
         z = v[i].z;
-        if (z < DF_NEAR || z > g_far) {
+        if (z < DF_NEAR || z > g_limit) {
             return 0;
         }
         gx = z * g_clip_x;
@@ -414,21 +443,27 @@ static int tri_inside(const Vtx *v)
 static void submit(const Vtx *poly, int n, float inv_w, float inv_h,
                    float cr, float cg, float cb);
 
-static void emit_tri(const Vtx *view, float inv_w, float inv_h,
-                     float cr, float cg, float cb)
+static void emit_poly(const Vtx *view, int n, float inv_w, float inv_h,
+                      float cr, float cg, float cb)
 {
     Vtx clipped[CLIP_MAX];
     int nout;
 
-    if (tri_inside(view)) {
-        submit(view, 3, inv_w, inv_h, cr, cg, cb);
+    if (poly_inside(view, n)) {
+        submit(view, n, inv_w, inv_h, cr, cg, cb);
         return;
     }
-    nout = clip_view(view, clipped);
+    nout = clip_view(view, n, clipped);
     if (nout < 3) {
         return;
     }
     submit(clipped, nout, inv_w, inv_h, cr, cg, cb);
+}
+
+static void emit_tri(const Vtx *view, float inv_w, float inv_h,
+                     float cr, float cg, float cb)
+{
+    emit_poly(view, 3, inv_w, inv_h, cr, cg, cb);
 }
 
 static void submit(const Vtx *poly, int n, float inv_w, float inv_h,
@@ -451,9 +486,7 @@ static void submit(const Vtx *poly, int n, float inv_w, float inv_h,
     if (!ok) {
         return;
     }
-    for (i = 1; i < n - 1; i++) {
-        glide_triangle(&dv[0], &dv[i], &dv[i + 1]);
-    }
+    glide_polygon(dv, n);
 }
 
 static const Image *level_image(const Level *level, int slot);
@@ -550,6 +583,92 @@ static void draw_tris(const Camera *cam, const Basis *basis, const Level *level,
     }
 }
 
+/*
+ * 1 when a face's triangles are one polygon fanned from its first
+ * corner, as the ARCH3D loader emits them: every triangle starts on
+ * corner 0 and on the corner the last one ended on, with the same
+ * position, the same texel, and the same picture. Checked once per
+ * face and kept in face->fan.
+ */
+static int face_fan(const Mesh *mesh, Face *face)
+{
+    if (face->fan == 0) {
+        const Tri *t0;
+        int t;
+        int ok;
+
+        t0 = &mesh->tris[face->first];
+        ok = face->ntris >= 2 && face->ntris + 2 <= FACE_MAX;
+        for (t = face->first + 1; ok && t < face->first + face->ntris; t++) {
+            const Tri *a;
+            const Tri *b;
+
+            a = &mesh->tris[t - 1];
+            b = &mesh->tris[t];
+            ok = b->slot == t0->slot
+                && b->x[0] == t0->x[0] && b->y[0] == t0->y[0] && b->z[0] == t0->z[0]
+                && b->u[0] == t0->u[0] && b->v[0] == t0->v[0]
+                && b->x[1] == a->x[2] && b->y[1] == a->y[2] && b->z[1] == a->z[2]
+                && b->u[1] == a->u[2] && b->v[1] == a->v[2];
+        }
+        face->fan = ok ? 1 : 2;
+    }
+    return face->fan == 1;
+}
+
+/*
+ * One ARCH3D plane as one polygon: each corner transformed and
+ * projected once (a quad is 4, not 6), clipped once, and sent to the
+ * card as one planar polygon. A face that is not an exact fan goes
+ * triangle by triangle as before.
+ */
+static void draw_face(const Camera *cam, const Basis *basis, const Level *level,
+                      const Instance *in, Face *face)
+{
+    const Tri *tris;
+    const Tri *t0;
+    const Image *img;
+    Vtx poly[FACE_MAX];
+    float inv_w;
+    float inv_h;
+    int n;
+    int t;
+
+    if (face->first + face->ntris > in->mesh->ntris || !face_fan(in->mesh, face)) {
+        draw_tris(cam, basis, level, in, face->first, face->ntris);
+        return;
+    }
+    tris = in->mesh->tris;
+    t0 = &tris[face->first];
+    if (t0->slot == 0xffff) {
+        return;
+    }
+    view_point(in, cam, basis, t0->x[0], t0->y[0], t0->z[0], &poly[0].x, &poly[0].y, &poly[0].z);
+    poly[0].u = t0->u[0];
+    poly[0].v = t0->v[0];
+    view_point(in, cam, basis, t0->x[1], t0->y[1], t0->z[1], &poly[1].x, &poly[1].y, &poly[1].z);
+    poly[1].u = t0->u[1];
+    poly[1].v = t0->v[1];
+    n = 2;
+    for (t = face->first; t < face->first + face->ntris; t++) {
+        view_point(in, cam, basis, tris[t].x[2], tris[t].y[2], tris[t].z[2],
+                   &poly[n].x, &poly[n].y, &poly[n].z);
+        poly[n].u = tris[t].u[2];
+        poly[n].v = tris[t].v[2];
+        n++;
+    }
+    img = level_image(level, (int)t0->slot);
+    if (!img || img->width < 1 || img->height < 1) {
+        glide_flat(1);
+        emit_poly(poly, n, 1.0f, 1.0f, 255.0f, 0.0f, 255.0f);
+        glide_flat(0);
+        return;
+    }
+    texcache_bind((int)t0->slot);
+    image_scale(img, (int)t0->slot, &inv_w, &inv_h);
+    emit_poly(poly, n, inv_w, inv_h, 255.0f, 255.0f, 255.0f);
+}
+
 static void flat_corner(const Camera *cam, const Basis *basis,
                          float wx, float wy, float wz, float u, float v, Vtx *out)
 {
@@ -578,9 +697,9 @@ static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
     float uh;
     float inv_w;
     float inv_h;
-        Vtx corner[4];
-        Vtx tri[3];
-        int pass;
+    float u0;
+    float v0;
+    Vtx corner[4];
 
     if (!flat || flat->slot == 0xffff || flat->w < 1.0f || flat->h < 1.0f) {
         return;
@@ -594,35 +713,34 @@ static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
     rx = basis->rx;
     ry = basis->ry;
     rz = basis->rz;
-    uw = (float)img->width;
-    uh = (float)img->height;
+    /*
+     * Half a card texel in from every edge. Bilinear filtering at the
+     * very edge mixes in the next texel over, which for a sprite is the
+     * opposite edge (the texture wraps) or the next tiled copy: a faint
+     * line along the top or the side. At a texel centre it reads only
+     * the sprite. The picture was rescaled to span_w by span_h, so half
+     * a card texel is width / span_w / 2 source texels.
+     */
+    u0 = img->span_w > 1 ? 0.5f * (float)img->width / (float)img->span_w : 0.0f;
+    v0 = img->span_h > 1 ? 0.5f * (float)img->height / (float)img->span_h : 0.0f;
+    uw = (float)img->width - u0;
+    uh = (float)img->height - v0;
     image_scale(img, (int)flat->slot, &inv_w, &inv_h);
     /* 0 top-left, 1 top-right, 2 bottom-right, 3 bottom-left. v = 0 is the top row. */
     flat_corner(cam, basis,
                 flat->x - rx * hx, flat->y - ry * hx + hy, flat->z - rz * hx,
-                0.0f, 0.0f, &corner[0]);
+                u0, v0, &corner[0]);
     flat_corner(cam, basis,
                 flat->x + rx * hx, flat->y + ry * hx + hy, flat->z + rz * hx,
-                uw, 0.0f, &corner[1]);
+                uw, v0, &corner[1]);
     flat_corner(cam, basis,
                 flat->x + rx * hx, flat->y + ry * hx - hy, flat->z + rz * hx,
                 uw, uh, &corner[2]);
     flat_corner(cam, basis,
                 flat->x - rx * hx, flat->y - ry * hx - hy, flat->z - rz * hx,
-                0.0f, uh, &corner[3]);
+                u0, uh, &corner[3]);
     texcache_bind((int)flat->slot);
-    for (pass = 0; pass < 2; pass++) {
-        if (pass == 0) {
-            tri[0] = corner[0];
-            tri[1] = corner[1];
-            tri[2] = corner[2];
-        } else {
-            tri[0] = corner[0];
-            tri[1] = corner[2];
-            tri[2] = corner[3];
-        }
-        emit_tri(tri, inv_w, inv_h, 255.0f, 255.0f, 255.0f);
-    }
+    emit_poly(corner, 4, inv_w, inv_h, 255.0f, 255.0f, 255.0f);
 }
 
 static void draw_covers(void);
@@ -664,12 +782,6 @@ void draw_frame(const Camera *cam, const Level *level)
     g_faces_kept = 0;
     g_faces_drop = 0;
     glide_clear();
-    /*
-     * Text binds its own sheet through glide_bind. That leaves g_bound
-     * naming a model slot whose texels are no longer current, so the
-     * next frame would paint the font across those faces.
-     */
-    texcache_forget();
     clip_slopes();
     camera_basis(cam, &basis);
     glide_sprite_alpha(0);
@@ -687,7 +799,7 @@ void draw_frame(const Camera *cam, const Level *level)
             int f;
 
             for (f = 0; f < in->mesh->nfaces; f++) {
-                const Face *face;
+                Face *face;
                 const Tri *tri;
 
                 face = &in->mesh->faces[f];
@@ -703,7 +815,7 @@ void draw_frame(const Camera *cam, const Level *level)
                     continue;
                 }
                 g_faces_kept++;
-                draw_tris(cam, &basis, level, in, face->first, face->ntris);
+                draw_face(cam, &basis, level, in, face);
             }
         } else {
             draw_tris(cam, &basis, level, in, 0, in->mesh->ntris);
@@ -755,8 +867,7 @@ static void cover_bar(float x, float y, float w, float h, float r, float g, floa
     v[2].y = y;
     v[3].x = x;
     v[3].y = y;
-    glide_triangle(&v[0], &v[1], &v[2]);
-    glide_triangle(&v[0], &v[2], &v[3]);
+    glide_polygon(v, 4);
 }
 
 /*

@@ -107,7 +107,13 @@ int camera_project(float vx, float vy, float vz,
     }
     w = 1.0f / vz;
     *oow = w;
-    *ooz = 65535.0f * w;
+    /*
+     * The Z-buffer fallback compares ooz. vz is never nearer than
+     * DF_NEAR, so scaling by it uses the whole 16 bits: 65535 at the
+     * near plane. 65535 / z left three quarters of the range unused.
+     * The default W-buffer reads oow instead. See docs/glide.md.
+     */
+    *ooz = (65535.0f * DF_NEAR) * w;
     *sx = (float)DF_VIEW_W * 0.5f + vx * g_focal * w;
     *sy = (float)DF_VIEW_H * 0.5f + vy * g_focal * w;
     return 1;

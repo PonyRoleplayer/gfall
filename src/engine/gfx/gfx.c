@@ -6,6 +6,9 @@
 #include "engine/ui/font.h"
 
 static const char *g_why = "graphics failed";
+/* A level is on the card, and mipmap changed: send it again next frame. */
+static int g_prepared;
+static int g_reload;
 
 int gfx_startup(void *hwnd)
 {
@@ -18,6 +21,8 @@ int gfx_startup(void *hwnd)
 
 void gfx_shutdown(void)
 {
+    g_prepared = 0;
+    g_reload = 0;
     draw_set_extra(0);
     draw_set_under(0);
     glide_close();
@@ -35,6 +40,8 @@ int gfx_prepare(const Level *level)
                   level->scene.nmodels, level->scene.nspans,
                   level->scene.nsprites, level->nimages);
     }
+    /* Start the card from empty, so a second prepare replaces the first. */
+    glide_tex_reset();
     if (!texcache_upload(level)) {
         g_why = texcache_error();
         return 0;
@@ -43,12 +50,35 @@ int gfx_prepare(const Level *level)
         font_upload(level->palette->r, level->palette->g, level->palette->b);
     }
     glide_mark();
+    g_prepared = 1;
     return 1;
 }
 
 void gfx_frame(const Camera *cam, const Level *level)
 {
+    if (g_reload && level) {
+        g_reload = 0;
+        if (!gfx_prepare(level)) {
+            log_print(LOG_ERROR, "mipmap: the level did not go back on the card: %s",
+                      gfx_error());
+        }
+    }
     draw_frame(cam, level);
+}
+
+void gfx_set_mipmap(int on)
+{
+    on = on ? 1 : 0;
+    if (on == glide_mipmap()) {
+        return;
+    }
+    glide_set_mipmap(on);
+    g_reload = g_prepared;
+}
+
+int gfx_mipmap(void)
+{
+    return glide_mipmap();
 }
 
 void gfx_set_extra(void (*fn)(void))
@@ -78,7 +108,7 @@ void gfx_set_far(float far)
 
     draw_set_far(far);
     /* Keep fog solid a little before the clip, same ratio as 1100/1400. */
-    fog_far = draw_far() * (DF_FOG_FAR / DF_FAR);
+    fog_far = df_fog_far(draw_far());
     glide_fog_range(DF_FOG_NEAR, fog_far);
     scene_set_limits(draw_far(), gfx_fog());
 }

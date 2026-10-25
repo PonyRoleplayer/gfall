@@ -31,6 +31,12 @@ typedef struct Face {
     float nx, ny, nz;
     int first;
     int ntris;
+    /*
+     * draw.c's note, set on the first draw: 0 not checked yet, 1 the
+     * triangles are an exact fan of one polygon (drawn as a polygon),
+     * 2 they are not (drawn triangle by triangle). A loader leaves 0.
+     */
+    int fan;
 } Face;
 
 typedef struct Mesh {

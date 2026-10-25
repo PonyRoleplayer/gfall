@@ -260,10 +260,8 @@ static float visible_far(void)
     if (!g_fog) {
         return far;
     }
-    fog_far = g_clip * (DF_FOG_FAR / DF_FAR);
-    if (fog_far < DF_FOG_NEAR + 1.0f) {
-        fog_far = DF_FOG_NEAR + 1.0f;
-    }
+    /* The table's first solid entry, the same distance draw.c clips at. */
+    fog_far = df_fog_solid(df_fog_far(g_clip));
     if (fog_far < far) {
         far = fog_far;
     }
@@ -520,8 +518,13 @@ static int take_visible(const Scene *scene, const Plane *planes,
 #define OCC_INV (1.0f / (float)OCC_CELL)
 #define OCC_W (DF_VIEW_W / OCC_CELL)
 #define OCC_H (DF_VIEW_H / OCC_CELL)
-/* A model is looked at only when part of its box is nearer than this. */
-#define OCC_NEAR 640.0f
+/*
+ * A model is looked at only when part of its box is nearer than this.
+ * It was 640, which kept a castle hall's walls, a few hundred units
+ * past that, from ever covering anything: the rooms behind them drew.
+ * What a candidate is worth is its size on the glass, not its distance.
+ */
+#define OCC_NEAR 4096.0f
 /* A screen box smaller than 3x3 cells cannot fill enough cells to pay. */
 #define OCC_MODEL_AREA (9.0f * OCC_CELL * OCC_CELL)
 /*
@@ -529,9 +532,9 @@ static int take_visible(const Scene *scene, const Plane *planes,
  * cell, but a door jamb or a beam end still closes a seam.
  */
 #define OCC_FACE_AREA (0.125f * OCC_CELL * OCC_CELL)
-/* Nearest models looked at per frame, and faces drawn into the cells. */
-#define OCC_MODELS 32
-#define OCC_FACES 96
+/* Models looked at per frame, the largest on screen, and faces drawn into the cells. */
+#define OCC_MODELS 48
+#define OCC_FACES 128
 /*
  * Faces are clipped this far past the picture, not to its edge, so a
  * wall that fills the glass also fills the border cells.
@@ -551,9 +554,10 @@ static int take_visible(const Scene *scene, const Plane *planes,
 #define OCC_SLACK 1.001f
 /*
  * A plane is rebuilt from its fan as one polygon of at most OCC_POLY
- * corners. Each of the five clip planes adds at most one corner.
+ * corners: ARCH3D's 24, since the loader keeps every point. Each of the
+ * five clip planes adds at most one corner.
  */
-#define OCC_POLY 16
+#define OCC_POLY 24
 #define CV_MAX (OCC_POLY + 6)
 /* Corners closer than this, in pixels, after clipping are one corner. */
 #define OCC_DUP 0.01f
@@ -936,8 +940,18 @@ static int poly_convex(const float *px, const float *py, int n)
         bx = px[k] - px[j];
         by = py[k] - py[j];
         cross = ax * by - ay * bx;
+        /*
+         * A point the loader kept along an edge snaps up to 1/32 pixel
+         * off the line, so it can turn the wrong way by a hair. A dent
+         * no deeper than OCC_SNAP from the chord i..k still passes:
+         * occ_fill and the seam pass take an outline as the meet of its
+         * edges' half-planes, which for such a dent is the dented face,
+         * never more. A real notch is far deeper and is still refused.
+         */
         if (cross < 0.0f &&
-            cross * cross > OCC_BEND * (ax * ax + ay * ay) * (bx * bx + by * by)) {
+            cross * cross > OCC_BEND * (ax * ax + ay * ay) * (bx * bx + by * by) &&
+            cross * cross > OCC_SNAP * OCC_SNAP *
+                ((ax + bx) * (ax + bx) + (ay + by) * (ay + by))) {
             return 0;
         }
         sx = ax > OCC_DUP ? 1 : (ax < -OCC_DUP ? -1 : 0);
@@ -1853,23 +1867,31 @@ static int occ_hides(const View *v, float cx, float cy, float cz,
 
 /*
  * Fills the cells from the visible list. Ground patches are mesh id 0:
- * nothing is under the ground, so they are not worth the time. The
- * nearest OCC_MODELS models go first, so the cap drops the far ones.
+ * nothing is under the ground, so they are not worth the time.
+ *
+ * The OCC_MODELS candidates are the ones whose boxes cover the most of
+ * the glass; a box around the eye counts as all of it. They used to be
+ * the nearest, which in a hall spent the budget on the chairs and
+ * torches by the camera and never reached the walls. The chosen ones
+ * are then written nearest first, so a candidate already behind the
+ * cells is skipped and the face cap drops the far ones.
  */
 static void occ_build(const Scene *scene, const View *v, const int *idx, int n)
 {
     int cand[OCC_MODELS];
     float cz[OCC_MODELS];
+    float carea[OCC_MODELS];
     float hx, hy;
     int nc;
     int i;
+    int j;
 
     nc = 0;
     for (i = 0; i < n; i++) {
         const Instance *in;
         float cx, cy, czz, ex, ey, ez;
         float sx0, sy0, sx1, sy1, z;
-        int j;
+        float area;
 
         in = &scene->models[idx[i]];
         if (!in->mesh || in->mesh->id == 0 || in->mesh->nfaces < 1 ||
@@ -1888,27 +1910,48 @@ static void occ_build(const Scene *scene, const View *v, const int *idx, int n)
             }
             w = clampf(sx1, 0.0f, (float)DF_VIEW_W) - clampf(sx0, 0.0f, (float)DF_VIEW_W);
             h = clampf(sy1, 0.0f, (float)DF_VIEW_H) - clampf(sy0, 0.0f, (float)DF_VIEW_H);
-            if (w * h < OCC_MODEL_AREA) {
+            area = w * h;
+            if (area < OCC_MODEL_AREA) {
                 continue;
             }
         } else {
             /* The eye is in or against the box: the best cover there is. */
             z = 0.0f;
+            area = (float)(DF_VIEW_W * DF_VIEW_H) * 2.0f;
         }
-        if (nc == OCC_MODELS && z >= cz[nc - 1]) {
+        /* Kept largest first; a smaller one than the last of a full list waits. */
+        if (nc == OCC_MODELS && area <= carea[nc - 1]) {
             continue;
         }
         if (nc < OCC_MODELS) {
             nc++;
         }
         j = nc - 1;
-        while (j > 0 && cz[j - 1] > z) {
+        while (j > 0 && carea[j - 1] < area) {
             cand[j] = cand[j - 1];
             cz[j] = cz[j - 1];
+            carea[j] = carea[j - 1];
             j--;
         }
         cand[j] = idx[i];
         cz[j] = z;
+        carea[j] = area;
+    }
+    /* Written nearest first. At most 48: an insertion sort is enough. */
+    for (i = 1; i < nc; i++) {
+        int c0;
+        float z0;
+
+        c0 = cand[i];
+        z0 = cz[i];
+        j = i;
+        while (j > 0 && cz[j - 1] > z0) {
+            cand[j] = cand[j - 1];
+            cz[j] = cz[j - 1];
+            j--;
+        }
+        cand[j] = c0;
+        cz[j] = z0;
     }
     hx = ((float)DF_VIEW_W * 0.5f + OCC_MARGIN) / v->focal;
     hy = ((float)DF_VIEW_H * 0.5f + OCC_MARGIN) / v->focal;
