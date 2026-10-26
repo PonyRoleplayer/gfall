@@ -1138,6 +1138,34 @@ static void check_mip(void)
     n = mip_budget(side, cut, 3, 100u, square_bytes, drop);
     check_expect(drop[0] == 5 && drop[1] == 0 && drop[2] == 3 && n == 64u + 128u,
                  "budget went below MIP_MIN_SIDE or counted a missing picture");
+    /*
+     * Glass: Daggerfall's palette has black at 0 and at MIP_GLASS. A
+     * window's glass must stay MIP_GLASS down the chain, where at least
+     * half a texel is glass, and filtering must never make it elsewhere.
+     */
+    {
+        static df_u8 chain[MIP_MAX_BYTES];
+        df_u8 win[16];
+        int k;
+
+        for (i = 0; i < 256; i++) {
+            pr[i] = (df_u8)i;
+            pg[i] = (df_u8)i;
+            pb[i] = (df_u8)i;
+        }
+        pr[0] = pg[0] = pb[0] = 0;
+        pr[MIP_GLASS] = pg[MIP_GLASS] = pb[MIP_GLASS] = 0;
+        /* Rows of 4: the left half glass, the right half grey 200, and one glass texel there. */
+        for (k = 0; k < 16; k++) {
+            win[k] = (df_u8)((k % 4) < 2 ? MIP_GLASS : 200);
+        }
+        win[3] = MIP_GLASS;
+        n = mip_build(win, 4, 0, 0, 1, pr, pg, pb, chain);
+        check_expect(n == 21u && chain[16] == MIP_GLASS && chain[18] == MIP_GLASS
+                     && chain[17] != MIP_GLASS && chain[19] != MIP_GLASS,
+                     "a window's glass did not stay glass at half size, or a quarter became glass");
+        check_expect(chain[20] == MIP_GLASS || chain[20] == 0, "the last level is not dark");
+    }
 }
 
 /*
@@ -1333,6 +1361,35 @@ static void check_daylight(void)
     int ok;
 
     clock_set_scale(60);
+    /* The calendar: the 1st of Midyear, 3E 405, is summer and a Sundas. */
+    {
+        int y, mo, d, day;
+
+        clock_set_date(405, 5, 0);
+        clock_date(&y, &mo, &d);
+        check_expect(y == 405 && mo == 5 && d == 0 && clock_season() == CLOCK_SUMMER
+                     && df_eq(clock_month_name(mo), "Midyear") && df_eq(clock_weekday_name(d), "Sundas"),
+                     "the 1st of Midyear 405 is not a summer Sundas");
+        day = clock_day();
+        clock_set_minute(1439.0f);
+        clock_advance(1.0f);
+        clock_advance(1.0f);
+        check_expect(clock_day() == day + 1, "midnight did not turn the day");
+        clock_set_minute(-30.0f);
+        check_expect(clock_day() == day + 1, "setting the hour moved the date");
+        clock_set_date(405, 11, 29);
+        clock_set_minute(1439.5f);
+        clock_advance(1.0f);
+        clock_date(&y, &mo, &d);
+        check_expect(y == 406 && mo == 0 && d == 0 && clock_season() == CLOCK_WINTER,
+                     "the last day of Evening Star did not turn into a winter new year");
+        clock_set_season(CLOCK_FALL);
+        clock_date(&y, &mo, &d);
+        check_expect(y == 406 && mo == 8 && d == 0 && clock_season() == CLOCK_FALL
+                     && df_eq(clock_month_name(mo), "Hearthfire"),
+                     "season fall is not the 1st of Hearthfire");
+        clock_set_date(405, 5, 0);
+    }
     clock_set_minute(1439.0f);
     clock_advance(2.0f);
     check_expect(check_near(clock_minute(), 1439.0f, 0.01f), "a two second frame moved the clock");

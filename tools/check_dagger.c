@@ -18,6 +18,7 @@
 #include "game/dagger/climate.h"
 #include "game/dagger/forecast.h"
 #include "engine/scene/weather.h"
+#include "engine/scene/clock.h"
 #include "engine/scene/collide.h"
 #include "engine/scene/light.h"
 #include "game/dagger/texture.h"
@@ -1068,6 +1069,48 @@ static void check_doors_town(const World *town, const Dungeon *ext)
                  "turned round on coming out, the street's door is not what is used");
 }
 
+/* 1 when world loaded pictures of TEXTURE.file. */
+static int uses_file(const World *world, int file)
+{
+    int k;
+
+    for (k = 0; k < world_texture_file_count(world); k++) {
+        if (world_texture_file(world, k) == file) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/*
+ * The seasons: the farm (woodland family) in summer is drawn on ground
+ * 302 and the manor set 338; in winter on 303 and 339, their snowy sets,
+ * and its window still marked. Back to summer after.
+ */
+static void check_seasons(const Dungeon *ext)
+{
+    World *w;
+    int s;
+
+    for (s = 0; s < 2; s++) {
+        clock_set_season(s ? CLOCK_WINTER : CLOCK_SUMMER);
+        w = world_load_dungeon(ext);
+        check_expect(w != 0, "the farm did not load in a season");
+        if (!w) {
+            continue;
+        }
+        printf("farm in %s: ground %d, manor set %d, %d windows\n", clock_season_name(world_season(w)),
+               uses_file(w, 303) ? 303 : (uses_file(w, 302) ? 302 : -1),
+               uses_file(w, 339) ? 339 : (uses_file(w, 338) ? 338 : -1), world_glass_count(w));
+        check_expect(world_season(w) == (s ? CLOCK_WINTER : CLOCK_SUMMER), "the farm was not built in the clock's season");
+        check_expect(s ? (uses_file(w, 303) && uses_file(w, 339) && !uses_file(w, 302) && !uses_file(w, 338))
+                       : (uses_file(w, 302) && uses_file(w, 338) && !uses_file(w, 303) && !uses_file(w, 339)),
+                     "a farm's ground and walls are not its season's");
+        check_expect(world_glass_count(w) >= 1, "a farm's window is not marked to light at night");
+    }
+    clock_set_season(CLOCK_SUMMER);
+}
+
 static void check_sound_town(const World *town)
 {
     static df_i16 buf[11025 * 8 * 2];
@@ -1655,6 +1698,7 @@ int check_dagger(const char *root_in)
                 if (town) {
                     check_sound_town(town);
                     check_doors_town(town, &ext);
+                    check_seasons(&ext);
                 }
                 if (town) {
                     world_start(town, &sx, &sy, &sz, &syaw, &spitch);

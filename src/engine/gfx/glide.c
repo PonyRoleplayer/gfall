@@ -1399,6 +1399,42 @@ void glide_sky(int on, const df_u8 *rgb)
     glide.tex_clamp(GR_TMU0, GR_TEXTURECLAMP_WRAP, GR_TEXTURECLAMP_WRAP);
 }
 
+void glide_glow(int on, df_u32 rgb)
+{
+    FxU32 pal[256];
+    int i;
+
+    if (!g_opened) {
+        return;
+    }
+    if (on) {
+        for (i = 0; i < 256; i++) {
+            pal[i] = 0;
+        }
+        pal[MIP_GLASS] = (FxU32)(rgb & 0xffffffu);
+        glide.tex_table(GR_TMU0, GR_TEXTABLE_PALETTE, pal);
+        glide.color(
+            GR_COMBINE_FUNCTION_SCALE_OTHER,
+            GR_COMBINE_FACTOR_LOCAL,
+            GR_COMBINE_LOCAL_CONSTANT,
+            GR_COMBINE_OTHER_TEXTURE,
+            FXFALSE);
+        glide.blend(GR_BLEND_ONE, GR_BLEND_ONE, GR_BLEND_ZERO, GR_BLEND_ONE);
+        glide.depth_mask(FXFALSE);
+        glide.depth_func(g_wbuf ? GR_CMP_LEQUAL : GR_CMP_GEQUAL);
+        glide.fog_mode(GR_FOG_DISABLE);
+        return;
+    }
+    if (g_have_pal) {
+        glide.tex_table(GR_TMU0, GR_TEXTABLE_PALETTE, g_pal);
+    }
+    glide_blend(g_fade >= 0);
+    glide.depth_mask(FXTRUE);
+    glide.depth_func(g_depth_cmp);
+    glide.fog_mode(g_fog ? GR_FOG_WITH_TABLE : GR_FOG_DISABLE);
+    color_textured();
+}
+
 void glide_flat(int on)
 {
     if (!g_opened) {

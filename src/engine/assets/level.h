@@ -17,6 +17,11 @@
 typedef struct Level {
     Image *const *images;
     const df_u8 *cutout;
+    /*
+     * Beside images, or 0: 1 for a picture whose texels of MIP_GLASS are
+     * a window's glass, lit after dark (docs/daylight.md).
+     */
+    const df_u8 *glass;
     int nimages;
     const Palette *palette;
     /* The sky, for an outdoor place; 0 indoors. See docs/daylight.md. */

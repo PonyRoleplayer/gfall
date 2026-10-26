@@ -17,6 +17,15 @@
 /* Most bytes mip_build writes: a full 256 chain at 16 bits. */
 #define MIP_MAX_BYTES (2u * (256u * 256u + 128u * 128u + 64u * 64u + 32u * 32u \
                              + 16u * 16u + 8u * 8u + 4u * 4u + 2u * 2u + 1u))
+/*
+ * The one index filtering keeps: a window's glass, which a night pass
+ * draws again through a palette of its own (docs/daylight.md). It is
+ * black in Daggerfall's palette, as index 0 is, and the nearest search
+ * always answers 0 for black, so filtering never makes glass. A texel
+ * of a smaller level, or of a wall stretched smoothly, is glass when at
+ * least half of what it was made from was.
+ */
+#define MIP_GLASS 255
 /* The budget never shrinks a picture below this side. */
 #define MIP_MIN_SIDE 8
 

@@ -146,7 +146,15 @@ static void top_level(const df_u8 *index, int side, int cutout,
 
             o = &g_rgba[(y * side + x) * 4];
             c = index[y * side + x];
-            if (!cutout || c != 0) {
+            if (!cutout) {
+                /* An 8-bit picture's alpha is how much of the texel is glass, so halving keeps it. */
+                o[0] = pr[c];
+                o[1] = pg[c];
+                o[2] = pb[c];
+                o[3] = (df_u8)(c == MIP_GLASS ? 255 : 0);
+                continue;
+            }
+            if (c != 0) {
                 o[0] = pr[c];
                 o[1] = pg[c];
                 o[2] = pb[c];
@@ -234,7 +242,7 @@ static df_u32 emit(int side, int cutout, df_u8 *out)
             out[i * 2] = (df_u8)(pix & 0xff);
             out[i * 2 + 1] = (df_u8)(pix >> 8);
         } else {
-            out[i] = mip_nearest(p[0], p[1], p[2]);
+            out[i] = p[3] >= 128 ? (df_u8)MIP_GLASS : mip_nearest(p[0], p[1], p[2]);
         }
     }
     return cutout ? n * 2u : n;

@@ -713,6 +713,69 @@ static void c_time(int argc, char **argv)
               h / 10, h % 10, m / 10, m % 10, clock_scale());
 }
 
+/* "1st", "2nd", "23rd", for the day of a month counted from 1. */
+static const char *ordinal(int n)
+{
+    if (n % 100 >= 11 && n % 100 <= 13) {
+        return "th";
+    }
+    return n % 10 == 1 ? "st" : (n % 10 == 2 ? "nd" : (n % 10 == 3 ? "rd" : "th"));
+}
+
+static void print_date(void)
+{
+    int y;
+    int m;
+    int d;
+
+    clock_date(&y, &m, &d);
+    log_print(LOG_PRINT, "date %s, %d%s of %s, 3E %d, %s", clock_weekday_name(d), d + 1,
+              ordinal(d + 1), clock_month_name(m), y, clock_season_name(clock_season()));
+}
+
+/* The calendar: date, or date day month [year], from 1; a new season shows at the next load. */
+static void c_date(int argc, char **argv)
+{
+    int y;
+    int m;
+    int d;
+
+    clock_date(&y, &m, &d);
+    if (argc == 3 || argc == 4) {
+        if (!cmd_parse_int(argv[1], &d) || !cmd_parse_int(argv[2], &m)
+            || (argc == 4 && !cmd_parse_int(argv[3], &y))
+            || d < 1 || d > CLOCK_MONTH_DAYS || m < 1 || m > CLOCK_MONTHS || y < 0 || y > 9999) {
+            log_text(LOG_PRINT, "usage: date [day 1..30 month 1..12 [year]]");
+            return;
+        }
+        clock_set_date(y, m - 1, d - 1);
+    } else if (argc != 1) {
+        log_text(LOG_PRINT, "usage: date [day 1..30 month 1..12 [year]]");
+        return;
+    }
+    print_date();
+}
+
+/* season [fall|spring|summer|winter]: the first day of that season, this year. */
+static void c_season(int argc, char **argv)
+{
+    int i;
+
+    if (argc == 2) {
+        for (i = 0; i < 4 && !df_eq(argv[1], clock_season_name(i)); i++) {
+        }
+        if (i == 4) {
+            log_text(LOG_PRINT, "usage: season [fall|spring|summer|winter]");
+            return;
+        }
+        clock_set_season(i);
+    } else if (argc != 1) {
+        log_text(LOG_PRINT, "usage: season [fall|spring|summer|winter]");
+        return;
+    }
+    print_date();
+}
+
 /* The far clip and fog the last frame drew, and who set them. */
 static void print_view(void)
 {
@@ -1228,6 +1291,10 @@ static void commands(void)
     cmd_add("stats", c_stats, "", "frame time and what the last world frame drew");
     cmd_add("pos", c_pos, "", "camera position, yaw and pitch in degrees");
     cmd_add("time", c_time, "[hh:mm]", "the hour of the world clock, or set it");
+    cmd_add("date", c_date, "[day month [year]]",
+            "the calendar's date, or set it; a town's pictures and sky follow its season");
+    cmd_add("season", c_season, "[fall|spring|summer|winter]",
+            "the season, or go to its first day");
     cmd_add("stuck", c_stuck, "", "with collision on, move out of whatever the body is caught in");
     cmd_add("weather", c_weather, "[kind|auto|on|off]",
             "the weather now; a kind holds it, auto gives it back to the odds");

@@ -42,6 +42,13 @@ const Emitter *world_emitter_at(const World *world, int index);
 const Soundscape *world_soundscape(const World *world);
 /* PLACE_* (doors.h): a dungeon, a town, or a building's inside. */
 int world_place(const World *world);
+/*
+ * The season the place was built in (CLOCK_*, clock_season at load):
+ * a town's pictures, sky and weather odds are that season's.
+ */
+int world_season(const World *world);
+/* A town's window pictures, whose glass is lit at night. */
+int world_glass_count(const World *world);
 /* What can be used, and what moves (docs/interact.md). */
 int world_usable_count(const World *world);
 const Usable *world_usable(const World *world, int index);

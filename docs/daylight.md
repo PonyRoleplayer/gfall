@@ -1,12 +1,33 @@
 # Daylight
 
-Outdoor places have a clock, a sky, and light by the hour: the sun by day, the moon by night, and street lamps after dark. Read this before editing `src/engine/scene/clock.c`, `daylight.c`, `src/engine/gfx/sky.c`, the sky pass or the outdoor lighting in `draw.c`, `glide_sky` in `glide.c`, `src/game/dagger/skyfile.c`, or the lamps in `world.c`. Dungeon lights are `docs/lighting.md`.
+Outdoor places have a clock and a calendar, a sky, light by the hour (the sun by day, the moon by night, street lamps and lit windows after dark), and the season's pictures. Read this before editing `src/engine/scene/clock.c`, `daylight.c`, `src/engine/gfx/sky.c`, the sky pass, the window pass or the outdoor lighting in `draw.c`, `glide_sky` or `glide_glow` in `glide.c`, `MIP_GLASS` in `mip.c` or `texture_smooth`, `src/game/dagger/skyfile.c`, `swaps.c`, or the lamps and windows in `world.c`. Dungeon lights are `docs/lighting.md`.
 
 ## The clock
 
 `clock.c` keeps minutes since midnight, 0 to 1440, and starts at noon. `draw_frame` advances it by each frame's real time, from the performance counter, times `timescale` game seconds a real second: 12 by default, Daggerfall's. A frame that spans the console panel is not counted, and neither is one over a second (a load, a stall), so the clock stops while the console is open and the sky never jumps. `timescale 0` stops it. `time 21:30` sets it.
 
 Indoors nothing reads the clock.
+
+## The calendar and the seasons
+
+The clock also keeps the date, Tamriel's as Daggerfall keeps it (Daggerfall Unity's `DaggerfallDateTime`): 12 months of 30 days, a year of 360, a week of 7 days that starts again on Sundas each month. It starts on the 1st of Midyear, 3E 405, Daggerfall Unity's start. Running past midnight turns the day; setting the hour (`time`) never moves the date. `clock_day` is the date as one number, days since the 1st of Morning Star 3E 0.
+
+The season is the month's, on whole months, as Daggerfall Unity has it: winter Evening Star, Morning Star and Sun's Dawn; spring First Seed to Second Seed; summer Midyear to Last Seed; fall Hearthfire to Sun's Dusk. `CLOCK_FALL`..`CLOCK_WINTER` are in Daggerfall's order, the one the sky files and the weather odds use.
+
+A town is drawn in the season of the day it loads (`World.season`):
+
+- **Its pictures.** A model names its pictures in whatever climate it was drawn in, so before this a town showed a mix: Daggerfall, a woodland city, drew walls from the desert, mountain and woodland sets side by side. `swaps.c` is Daggerfall Unity's `ClimateSwaps`, rule for rule: the set is the archive's last two digits, the place's climate family replaces the hundreds, and in winter an outside set that has a snowy one takes it (+1: Castle 9 to 10, Farm 26 to 27, the ground 302 to 303). Inside sets (a house's) take the family and never snow; doors take the family; the desert never snows; the sets Daggerfall Unity knows to have no snowy picture keep theirs; a swapped archive without the face's record keeps the original. Daggerfall now draws 216 pictures where it drew 235, all woodland, and in winter 318 walls, 370 roofs and 303 ground. Dungeons keep their own table (`docs/dungeons.md`).
+- **Its sky** (`skyfile_open`) and **its weather odds** (`forecast_set`), by the season, as before by the climate.
+
+A season that turns while a town is shown (a `date`, a `season`, or a fast `timescale`) does not change its pictures under it: they are on the card. LEVELFALL builds the town again where the camera stands, under its "Loading..." frame (`docs/viewers.md`). Nature (the trees of a block's ground, archives 500 and up) has winter pictures too; the ground's scenery is not drawn yet.
+
+## Windows
+
+After dark a town's windows are lit, as in Daggerfall: the glass of a window picture is palette index 255 (`MIP_GLASS`), black in `ART_PAL.COL`, as index 0 is. Which pictures are windows is Daggerfall Unity's `IsExteriorWindow` (`swap_window`): record 3 of the general sets, the gables 75 to 77, records 0 and 2 of the city specials 79 and 80, record 0 of 82 and 83, and a few named ones. 98 of the 308 such pictures have glass; the gables in many climates have none, and do not light. A house's inside is not lit (Daggerfall Unity leaves them).
+
+197 other pictures use index 255 too, as black, so changing that palette entry would light them as well. Instead `draw_windows` (`draw.c`) draws, after the walls and the lamps' decals, every visible face whose picture is a window again, through a palette that is black but for 255 (`glide_glow`), added onto the frame, with the depth test passing on equal so the face lands on itself. Black adds nothing; the glass gets Daggerfall Unity's night window colour, 255 182 56 at 0.8, times how lit the lamps are, so the windows come on with the street lamps at dusk. An added pass is not fogged, so each model's glass fades by hand from the fog's start to its end. A mesh with no window picture is skipped by its slot keys. One palette download on and one off a frame, only while the lamps are lit.
+
+Filtering would lose the glass: a smaller level, or a wall stretched smoothly to a power of two, maps each colour back to the nearest palette entry, and black comes back as 0. So the mips carry how much of each texel is glass in the alpha byte an 8-bit picture does not use, and a texel at least half glass is 255 (`mip.c`); `texture_smooth` keeps 255 where at least half the bilinear weight was. The nearest search never answers 255, so no other picture gains glass.
 
 ## Axes
 
@@ -106,6 +127,8 @@ Sprites near a lamp take the sum of the lamps on them, times the passes, on top 
 |---|---|---|
 | `time` | 12:00 | Prints the clock, or sets it: `time 21`, `time 6:45`. |
 | `timescale` | 12 | Game seconds a real second, 0..2000. 0 stops the clock. |
+| `date` | 1 6 405 | Prints the date (`Sundas, 1st of Midyear, 3E 405, summer`), or sets it: `date 15 12 405` (day, month, year, from 1). |
+| `season` | summer | Prints the date, or goes to the first day of a season this year: `season winter`. |
 | `sky` | on | Off draws outdoor places on the viewer's background, as before. |
 | `daylight` | on | Off draws outdoor places full bright, as before, with no lamps. |
 | `lights` | on | Off also turns off the lamps. |
@@ -118,7 +141,7 @@ Per frame, outdoors:
 
 - The sky: 64 polygons, most cut away by the clip, and its fill: about half the screen looking level, a little over 3 ms at the Voodoo's 45 Mpixels a second. Two palette downloads.
 - The light: a 33-entry table, three dot products a model, one dot product a face, a constant colour write when the colour changes.
-- At night, the decals of the lamps within 3072 units, sent twice.
+- At night, the decals of the lamps within 3072 units, sent twice; and the window faces again, added, with two palette downloads.
 
 Measured on the Voodoo 1 and the 233 before the lamp changes, LEVELFALL at 640 × 480: the Daggerfall square at far 4096 ran 35 fps by day and 29 at night; a street at far 8192, 16 fps by day and 9 at night (16 with `lights off`). Sentinel at far 8192, 19 fps by day and 16 at night. After the merge, the fade and two passes, the same street at night runs 13 fps with the lamps and 14 without: the lamps went from about 50 ms to about 5.
 
@@ -130,7 +153,8 @@ Memory: `sky.c` keeps the circle (220 KB), one tile (64 KB) and the dome (32 KB)
 
 ## Not done
 
-- Seasons: every place is summer until the game has a calendar. The weather picks the rain and snow skies (`docs/weather.md`); a Daggerfall key is the sky file times 128 plus the frame, 64 for the night picture.
+- The rain pictures: Daggerfall Unity draws the ground wet (302 + 2) while it rains; a town loads dry.
+- Holidays, and Daggerfall's season turning part way through a month's last days.
 - The moons are not drawn, only their light. `MOON00I0.CFA` and `MOON01I0.CFA` are probably Masser and Secunda.
-- No windows lit at night, no shadows, no flicker.
+- No shadows from the sun, no flicker of the lamps.
 - The night picture comes in at 18:00 and goes at 06:00 in one step, as in Daggerfall Unity.

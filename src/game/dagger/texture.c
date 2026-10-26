@@ -623,6 +623,7 @@ void texture_smooth(Image *img, const df_u8 *pr, const df_u8 *pg, const df_u8 *p
             int r;
             int g;
             int b;
+            int glass;
             int i;
 
             fx = (((x % tw) * 2 + 1) * img->width * 128) / tw - 128;
@@ -649,10 +650,17 @@ void texture_smooth(Image *img, const df_u8 *pr, const df_u8 *pg, const df_u8 *p
             r = 0;
             g = 0;
             b = 0;
+            glass = 0;
             for (i = 0; i < 4; i++) {
                 r += pr[k[i]] * w4[i];
                 g += pg[k[i]] * w4[i];
                 b += pb[k[i]] * w4[i];
+                glass += k[i] == MIP_GLASS ? w4[i] : 0;
+            }
+            /* Mostly a window's glass stays glass: the night pass lights that index alone. */
+            if (glass >= 32768) {
+                img->pot[y * side + x] = MIP_GLASS;
+                continue;
             }
             img->pot[y * side + x] = mip_nearest((r + 32768) >> 16, (g + 32768) >> 16,
                                                  (b + 32768) >> 16);

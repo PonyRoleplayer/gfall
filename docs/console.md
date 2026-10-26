@@ -94,6 +94,7 @@ A variable prints its value when typed alone, and takes a new one as an argument
 | `clear` | Empties the log. |
 | `help [name]`, `find word` | See above. |
 | `sndinfo`, `sndlist`, `sndview`, `song`, `play`, `musdev`, `sound`, `sndvol`, `sndrate`, `snddrv`, `sndmmx`, `music`, `musvol`, `musvoices` | The sound and the music: see `docs/sound.md`. |
+| `date`, `season` | The calendar and the season a town is drawn in: see `docs/daylight.md`. |
 | `useview`, `uselist`, `locks` | What can be used, and the doors' locks: see `docs/interact.md`. |
 
 `autoexec.cfg` beside the program runs on the first frame, when the device is open, if it exists. A missing file is silent, except for a debug line. For example:

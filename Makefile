@@ -87,6 +87,7 @@ GFALL_SRC := \
 	src/game/dagger/bind.c \
 	src/game/dagger/world.c \
 	src/game/dagger/doors.c \
+	src/game/dagger/swaps.c \
 	src/game/dagger/skyfile.c \
 	src/game/dagger/forecast.c \
 	src/game/dagger/player.c \
@@ -181,6 +182,7 @@ LEVEL_SRC := \
 	src/game/dagger/bind.c \
 	src/game/dagger/world.c \
 	src/game/dagger/doors.c \
+	src/game/dagger/swaps.c \
 	src/game/dagger/skyfile.c \
 	src/game/dagger/forecast.c \
 	src/game/dagger/sndfile.c \
@@ -219,6 +221,7 @@ HOST_SRC := \
 	src/game/dagger/bind.c \
 	src/game/dagger/world.c \
 	src/game/dagger/doors.c \
+	src/game/dagger/swaps.c \
 	src/game/dagger/skyfile.c \
 	src/game/dagger/forecast.c \
 	src/game/dagger/player.c \

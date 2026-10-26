@@ -8,6 +8,7 @@
 #include "game/dagger/rmb.h"
 #include "game/dagger/skyfile.h"
 #include "game/dagger/sounds.h"
+#include "game/dagger/swaps.h"
 #include "game/dagger/forecast.h"
 #include "game/dagger/texture.h"
 #include "engine/assets/loader.h"
@@ -15,6 +16,7 @@
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
 #include "engine/scene/interact.h"
+#include "engine/scene/clock.h"
 
 /*
  * Privateer's Hold. MAPDITEM.017 places S0000999.RDB on the origin
@@ -102,6 +104,9 @@ struct World {
     /* cutout: a sprite uses it, so it uploads with alpha. wall: a model face does. */
     df_u8 cutout[MAX_IMAGES];
     df_u8 wall[MAX_IMAGES];
+    /* A town's window pictures, lit at night (swap_window). */
+    df_u8 glass[MAX_IMAGES];
+    int nglass;
     int nimages;
     int files[MAX_FILES];
     int nfiles;
@@ -125,6 +130,8 @@ struct World {
     int nemit;
     /* PLACE_*: a dungeon, a town, the inside of one of a town's buildings. */
     int place;
+    /* The season it was built in (CLOCK_*): a town's pictures and sky are that season's. */
+    int season;
     /* Flats stand on their file point (RMB, outside or in), not about it (RDB). */
     int base_flats;
     /* What can be used and what moves (docs/interact.md). */
@@ -483,6 +490,13 @@ static int face_archive(const World *world, int archive, int record)
     static const int keys[5] = {119, 120, 122, 123, 124};
     int i;
     int set;
+
+    /* Towns and houses: the place's climate, and a town's season (swaps.c). */
+    if (world->place != PLACE_DUNGEON) {
+        return swap_climate(archive, record, world->tex_family,
+                            world->place == PLACE_TOWN && world->season == CLOCK_WINTER,
+                            texture_record_count);
+    }
 
     if (same_set(archive, TEX_SET_DOOR)) {
         if (record > 2) {
@@ -989,6 +1003,22 @@ static void note_inside_start(World *world)
  * of building inside_record of that one RMB block, placed where the
  * building stands in the town.
  */
+/*
+ * A town's window pictures: their glass is lit after dark (draw.c's
+ * night pass). Not a house's: from inside, Daggerfall Unity leaves them.
+ */
+static void mark_glass(World *world)
+{
+    int i;
+
+    world->nglass = 0;
+    for (i = 0; i < world->nimages; i++) {
+        world->glass[i] = (df_u8)(world->wall[i] && !world->cutout[i]
+                                  && swap_window((int)world->key_file[i], (int)world->key_image[i]));
+        world->nglass += world->glass[i];
+    }
+}
+
 static World *assemble(const Dungeon *hold, int require_start, int inside_block, int inside_record)
 {
     World *world;
@@ -1014,6 +1044,7 @@ static World *assemble(const Dungeon *hold, int require_start, int inside_block,
     mem_zero(world, sizeof(World));
     world->place = inside_block >= 0 ? PLACE_INSIDE
         : (hold->outdoor ? PLACE_TOWN : PLACE_DUNGEON);
+    world->season = clock_season();
     world->outdoor = world->place == PLACE_TOWN;
     /* Set now: paint places flats by it. */
     world->base_flats = hold->outdoor;
@@ -1183,10 +1214,12 @@ static World *assemble(const Dungeon *hold, int require_start, int inside_block,
         sounds_scape(&world->scape, hold->outdoor ? SCAPE_TOWN : SCAPE_DUNGEON, hold->location_id);
     }
     if (world->place == PLACE_TOWN) {
-        skyfile_open(hold->climate, SEASON_SUMMER, &world->sky);
+        /* The clock's season: CLOCK_* and SEASON_* are Daggerfall's one order. */
+        skyfile_open(hold->climate, world->season, &world->sky);
         /* The climate's odds; the engine's weather rolls them. */
-        forecast_set(hold->climate, SEASON_SUMMER);
+        forecast_set(hold->climate, world->season);
         add_lamps(world);
+        mark_glass(world);
     }
     why("");
     return world;
@@ -1327,6 +1360,7 @@ void world_as_level(const World *world, Level *level)
 {
     level->images = 0;
     level->cutout = 0;
+    level->glass = 0;
     level->nimages = 0;
     level->palette = 0;
     level->scene.models = 0;
@@ -1352,6 +1386,7 @@ void world_as_level(const World *world, Level *level)
     }
     level->images = world->images;
     level->cutout = world->cutout;
+    level->glass = world->nglass > 0 ? world->glass : 0;
     level->nimages = world->nimages;
     level->palette = &world->pal;
     level->scene.models = world->inst;
@@ -1372,6 +1407,16 @@ void world_as_level(const World *world, Level *level)
     level->scene.movers = world->mover;
     level->scene.nmovers = world->nmover;
     level->sound = &world->scape;
+}
+
+int world_season(const World *world)
+{
+    return world ? world->season : CLOCK_SUMMER;
+}
+
+int world_glass_count(const World *world)
+{
+    return world ? world->nglass : 0;
 }
 
 int world_place(const World *world)

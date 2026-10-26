@@ -170,5 +170,13 @@ int glide_replace(df_u32 handle, const df_u8 *pixels);
  * no fog, clamped. Off puts the level's palette and the state back.
  */
 void glide_sky(int on, const df_u8 *rgb);
+/*
+ * The windows' night pass: the palette on TMU0 black but for MIP_GLASS,
+ * which is rgb (0xRRGGBB); the texture times the constant colour, added
+ * onto the frame (ONE, ONE); the depth test passing on equal, so the
+ * same face drawn again lands on itself; no depth write, no fog. Off
+ * puts the level's palette and the scene's state back.
+ */
+void glide_glow(int on, df_u32 rgb);
 
 #endif

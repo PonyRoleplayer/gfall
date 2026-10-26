@@ -13,6 +13,7 @@
 #include "engine/ui/hud.h"
 #include "engine/ui/font.h"
 #include "engine/gfx/texcache.h"
+#include "engine/gfx/mip.h"
 #include "engine/scene/light.h"
 #include "engine/scene/clock.h"
 #include "engine/scene/daylight.h"
@@ -2018,6 +2019,119 @@ void draw_hold(const char *text)
     glide_swap();
 }
 
+/*
+ * Windows after dark: Daggerfall Unity's night window colour, (255, 182,
+ * 56) at 0.8, times how lit the lamps are (the hour's), so they come on
+ * with the street lamps at dusk.
+ */
+#define WINDOW_R 204.0f
+#define WINDOW_G 146.0f
+#define WINDOW_B 45.0f
+
+/* 1 when the mesh has a face whose picture has glass (its slot keys, from paint). */
+static int mesh_has_glass(const Mesh *mesh, const df_u8 *glass, int nimages)
+{
+    int k;
+
+    if (!mesh->have_keys) {
+        return 1;
+    }
+    for (k = 0; k < mesh->nslot_keys; k++) {
+        int slot;
+
+        slot = (int)mesh->slot_keys[k];
+        if (slot < nimages && glass[slot]) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/*
+ * The windows' night pass, outdoors (docs/daylight.md): each visible face
+ * whose picture is a window is drawn again, read through a palette that
+ * is black but for the glass (glide_glow), added onto the frame. Black
+ * adds nothing, so only the glass lights, at full strength however dark
+ * the night has made the wall. The fog does not touch an added pass, so
+ * each model is faded by hand toward the fog's far end instead.
+ */
+static void draw_windows(const Camera *cam, const Basis *basis, const Level *level,
+                         const int *order, int norder, float lamps,
+                         float fog_near, float fog_far)
+{
+    df_u32 rgb;
+    int oi;
+    int on;
+
+    if (!level->glass || lamps <= 0.02f) {
+        return;
+    }
+    rgb = ((df_u32)df_iround(WINDOW_R * lamps) << 16) | ((df_u32)df_iround(WINDOW_G * lamps) << 8)
+        | (df_u32)df_iround(WINDOW_B * lamps);
+    on = 0;
+    for (oi = 0; oi < norder; oi++) {
+        const Instance *in;
+        float fade;
+        int f;
+
+        in = &level->scene.models[order[oi]];
+        if (!in->mesh || !in->mesh->faces || !mesh_has_glass(in->mesh, level->glass, level->nimages)) {
+            continue;
+        }
+        fade = 1.0f;
+        if (level->scene.bounds && fog_far > fog_near) {
+            const Bound *b;
+            float dx, dz, d;
+
+            b = &level->scene.bounds[order[oi]];
+            dx = b->cx - cam->x;
+            dz = b->cz - cam->z;
+            d = df_sqrt(dx * dx + dz * dz);
+            fade = d <= fog_near ? 1.0f : (fog_far - d) / (fog_far - fog_near);
+        }
+        if (fade <= 0.02f) {
+            continue;
+        }
+        if (fade > 1.0f) {
+            fade = 1.0f;
+        }
+        for (f = 0; f < in->mesh->nfaces; f++) {
+            Face *face;
+            const Tri *tri;
+            int slot;
+
+            face = &in->mesh->faces[f];
+            if (face->ntris < 1 || face->first < 0) {
+                continue;
+            }
+            tri = &in->mesh->tris[face->first];
+            slot = (int)tri->slot;
+            if (slot >= level->nimages || !level->glass[slot]) {
+                continue;
+            }
+            if (g_faces && face->ntris >= 2 &&
+                !instance_faces(in, cam, basis, face->nx, face->ny, face->nz,
+                                tri->x[0], tri->y[0], tri->z[0])) {
+                continue;
+            }
+            if (!on) {
+                glide_glow(1, rgb);
+                on = 1;
+            }
+            {
+                int g;
+
+                g = df_iround(fade * 255.0f);
+                glide_tint(((df_u32)g << 16) | ((df_u32)g << 8) | (df_u32)g);
+            }
+            draw_face(cam, basis, level, in, face);
+        }
+    }
+    if (on) {
+        glide_glow(0, 0);
+    }
+}
+
 static int g_cap_models;
 static int g_cap_sprites;
 
@@ -2268,6 +2382,10 @@ void draw_frame(const Camera *cam, const Level *level)
         }
     }
     draw_lights(cam, &basis);
+    /* Lit windows: the town's glass, with the lamps. */
+    if (lit) {
+        draw_windows(cam, &basis, level, order, norder, dl.lamps, fog_near, fog_far);
+    }
     glide_sprite_alpha(1);
     norder = scene_visible_sprites(&level->scene, cam, order, VIS_MAX);
     g_vis_sprites = norder;

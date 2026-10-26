@@ -147,6 +147,9 @@ static int g_fov_cfg;
 static int g_time_cfg = -1;
 /* levelfall.cfg weather=kind: there at start and held. -1 follows the odds. */
 static int g_weather_cfg = -1;
+/* levelfall.cfg date=day,month,year (from 1) or season=winter, at start. -1 leaves the clock's. */
+static int g_day_cfg = -1;
+static int g_season_cfg = -1;
 /* levelfall.cfg open=kind,region,index. kind -1 is none, 0 indoor, 1 outdoor. */
 static int g_auto_kind = -1;
 static int g_auto_region;
@@ -186,6 +189,12 @@ typedef struct LfGo {
     Usable door;
 } LfGo;
 static LfGo g_go;
+/*
+ * Not a passage: the season turned under a town (the date, or a fast
+ * clock), and its pictures and sky are the last season's. view_row
+ * builds it again where the camera stands.
+ */
+#define LF_RESEASON (-1)
 /* The row being viewed, and 1 while it is a building's inside. */
 static int g_row_now = -1;
 static int g_inside;
@@ -225,6 +234,8 @@ typedef struct LfSnap {
     int hour;
     int minute;
     int weather;
+    /* clock_day: the date, whose season a town is drawn in. */
+    int day;
 } LfSnap;
 
 static LfSnap g_snap;
@@ -1784,7 +1795,7 @@ static void draw_sound(int x, int top)
 static void draw_overlay(void)
 {
     char place_kind[40];
-    char place_clim[40];
+    char place_clim[48];
     char place_time[48];
     char place_sky[64];
     char place_air[64];
@@ -1891,7 +1902,18 @@ static void draw_overlay(void)
     n = 0;
     place_clim[0] = 0;
     if (g_dun) {
+        int y, m, d;
+
         add_str(place_clim, &n, (int)sizeof(place_clim), climate_name(g_dun->climate));
+        /* The season the place was drawn in, and the date now. */
+        add_str(place_clim, &n, (int)sizeof(place_clim), "  ");
+        add_str(place_clim, &n, (int)sizeof(place_clim),
+                clock_season_name(g_world ? world_season(g_world) : clock_season()));
+        clock_date(&y, &m, &d);
+        add_str(place_clim, &n, (int)sizeof(place_clim), "  ");
+        add_num(place_clim, &n, (int)sizeof(place_clim), d + 1, 0);
+        add_str(place_clim, &n, (int)sizeof(place_clim), " ");
+        add_str(place_clim, &n, (int)sizeof(place_clim), clock_month_name(m));
     }
     time_line(place_time, (int)sizeof(place_time));
     weather_lines(place_sky, place_air, (int)sizeof(place_sky));
@@ -2397,6 +2419,7 @@ static void snap_take(const Camera *cam, int valid)
     g_snap.fov = df_iround(camera_fov());
     g_snap.fps = g_fps_ready ? g_fps : 0;
     clock_hm(&g_snap.hour, &g_snap.minute);
+    g_snap.day = clock_day();
     {
         Weather w;
 
@@ -2489,6 +2512,16 @@ static void bookmark(void)
     line[0] = 0;
     add_str(line, &n, (int)sizeof(line), "time=");
     add_hm(line, &n, (int)sizeof(line), g_snap.hour, g_snap.minute);
+    log_line(line);
+    /* The date's season picks a town's pictures and sky. */
+    n = 0;
+    line[0] = 0;
+    add_str(line, &n, (int)sizeof(line), "date=");
+    add_num(line, &n, (int)sizeof(line), g_snap.day % CLOCK_MONTH_DAYS + 1, 0);
+    add_str(line, &n, (int)sizeof(line), ",");
+    add_num(line, &n, (int)sizeof(line), (g_snap.day % CLOCK_YEAR_DAYS) / CLOCK_MONTH_DAYS + 1, 0);
+    add_str(line, &n, (int)sizeof(line), ",");
+    add_num(line, &n, (int)sizeof(line), g_snap.day / CLOCK_YEAR_DAYS, 0);
     log_line(line);
     /* The kind arrived or arriving. Reopened, it is there at once and held. */
     n = 0;
@@ -2642,6 +2675,11 @@ static void run_view(const Level *level, Camera *cam)
         if (g_go.what) {
             break;
         }
+        if (g_world && world_place(g_world) == PLACE_TOWN && world_season(g_world) != clock_season()) {
+            log_line("the season turned: the town again in its pictures");
+            g_go.what = LF_RESEASON;
+            break;
+        }
         /*
          * shot_pump saw F12 inside that frame and wrote the file, so
          * shot_status already names it. Poll right after for the same edge.
@@ -2676,8 +2714,11 @@ enum {
     LAND_STREET,
     LAND_IN,
     LAND_DOWN,
-    LAND_BELOW
+    LAND_BELOW,
+    LAND_STAY
 };
+/* LAND_STAY: where the camera stood when the season turned. */
+static Camera g_stay;
 /* Out of a door three body radii, into a house a radius and 0.4 m: Daggerfall Unity's. */
 #define LAND_OUT (3.0f * WALK_RADIUS)
 #define LAND_INTO (WALK_RADIUS + 16.0f)
@@ -2816,6 +2857,13 @@ static void view_row(int index)
                 win_fail(gfx_error());
             } else if (glide_up) {
                 land_at(world, land, &street, &x, &y, &z, &yaw, &pitch);
+                if (land == LAND_STAY) {
+                    x = g_stay.x;
+                    y = g_stay.y;
+                    z = g_stay.z;
+                    yaw = g_stay.yaw;
+                    pitch = g_stay.pitch;
+                }
                 /* cam= from the cfg replaces the start marker, once, for open= only. */
                 if (land == LAND_START && g_auto_cam && row == g_auto_row) {
                     x = g_auto_pose[0];
@@ -2856,7 +2904,10 @@ static void view_row(int index)
         texture_cache_clear();
         mem_temp_end();
         /* Where the passage leads, if one was used; Esc and a failed load go back to the list. */
-        if (go.what == DOOR_ENTER) {
+        if (go.what == LF_RESEASON) {
+            g_stay = cam;
+            land = LAND_STAY;
+        } else if (go.what == DOOR_ENTER) {
             street = go.door;
             block = go.tag >> 8;
             record = go.tag & 0xff;
@@ -3161,6 +3212,34 @@ static void cfg_line(const char *s)
         cfg_int(rest, 0, 100, &g_musvol_cfg);
         return;
     }
+    if (key_is(s, "date", &rest)) {
+        int d;
+        int m;
+        int y;
+
+        if (!read_int(&rest, &d) || !next_number(&rest) || !read_int(&rest, &m)
+            || !next_number(&rest) || !read_int(&rest, &y)
+            || d < 1 || d > CLOCK_MONTH_DAYS || m < 1 || m > CLOCK_MONTHS || y > 9999) {
+            return;
+        }
+        g_day_cfg = y * CLOCK_YEAR_DAYS + (m - 1) * CLOCK_MONTH_DAYS + (d - 1);
+        return;
+    }
+    if (key_is(s, "season", &rest)) {
+        for (v = 0; v < 4; v++) {
+            const char *name;
+            int i;
+
+            name = clock_season_name(v);
+            for (i = 0; name[i] && fold_ch((unsigned char)rest[i]) == name[i]; i++) {
+            }
+            if (!name[i]) {
+                g_season_cfg = v;
+                break;
+            }
+        }
+        return;
+    }
     if (key_is(s, "weather", &rest)) {
         char word[16];
         int i;
@@ -3283,6 +3362,17 @@ static void cfg_apply(void)
         add_u(line, &n, (int)sizeof(line), (df_u32)camera_fov());
         log_line(line);
     }
+    if (g_day_cfg >= 0) {
+        clock_set_day(g_day_cfg);
+        log_line("date= from levelfall.cfg");
+    } else if (g_season_cfg >= 0) {
+        clock_set_season(g_season_cfg);
+        n = 0;
+        line[0] = 0;
+        add_str(line, &n, (int)sizeof(line), "season=");
+        add_str(line, &n, (int)sizeof(line), clock_season_name(g_season_cfg));
+        log_line(line);
+    }
     if (g_time_cfg >= 0) {
         clock_set_minute((float)g_time_cfg);
         n = 0;
@@ -3328,8 +3418,10 @@ static void cfg_load(void)
         "# the region, the index. cam=x,y,z,yaw,pitch (degrees) puts the\r\n"
         "# camera there. time=21:30 sets the world clock at start (it lights\r\n"
         "# outdoor places). weather=rain starts in that weather and holds it:\r\n"
-        "# sunny cloudy overcast fog rain thunder snow. F12 in the view logs\r\n"
-        "# these lines to levelfall.log.\r\n"
+        "# sunny cloudy overcast fog rain thunder snow. date=1,6,405 (day,\r\n"
+        "# month, year) or season=winter sets the calendar at start: a town\r\n"
+        "# is drawn in its season. F12 in the view logs these lines to\r\n"
+        "# levelfall.log.\r\n"
         "# soundpanel=1 shows the sound panel at start (F2 toggles it).\r\n"
         "# sndrows is how many of the nearest sound sources it lists, 0 to 8.\r\n"
         "soundpanel=1\r\n"
@@ -3354,6 +3446,8 @@ static void cfg_load(void)
     g_fov_cfg = 0;
     g_time_cfg = -1;
     g_weather_cfg = -1;
+    g_day_cfg = -1;
+    g_season_cfg = -1;
     g_auto_kind = -1;
     g_auto_cam = 0;
     g_sound_panel = 1;
