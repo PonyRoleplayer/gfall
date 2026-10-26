@@ -1514,6 +1514,27 @@ int wild_location_at(double wx, double wz, int *region, int *index, double *ox, 
     return 1;
 }
 
+int wild_crowded(void)
+{
+    return g_open && wres_full();
+}
+
+void wild_restart(Camera *cam)
+{
+    df_u32 had;
+
+    if (!g_open) {
+        return;
+    }
+    wres_stats(0, 0, 0, 0, 0, &had);
+    /* Every chunk first: their models point into the meshes' heap. */
+    stream_reload();
+    wres_meshes_reset();
+    wild_fill(cam);
+    log_print(LOG_INFO, "wild: the meshes passed %u KB (%u KB): read again for what is round the camera",
+              (unsigned int)(WRES_MESH_RAM / 1024u), (unsigned int)(had / 1024u));
+}
+
 int wild_season_turned(void)
 {
     return g_open && clock_season() != g_season;

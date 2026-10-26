@@ -2,6 +2,8 @@
 
 Two different budgets. System RAM is the Win32 heap. Texture memory is the 2MB on the Voodoo. `out of memory` is the heap. `texture memory is full` is the card. A city used to die on the first, then on the second. Read this before changing `assemble`, `rmb_load`, `rdb_load`, `arch3d_load`, or `texcache`.
 
+Copies and fills (`mem_copy`, `mem_fill`, `mem_zero`, and the CRT's `memcpy`, `memmove` forward, `memset`) go a 32-bit word at a time on the target (`rep movsd`, `rep stosd`), the odd bytes after.
+
 There is no `mem_free` on the main or temp heap. Bytes live until `mem_temp_end` destroys the temp heap (a no-op on the host). Do not allocate a size you will not use. A streamed world is the exception, below: private heaps that free.
 
 ## Why a city died on the heap

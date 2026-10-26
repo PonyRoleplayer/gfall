@@ -14,6 +14,7 @@
 #include "engine/ui/hud.h"
 #include "engine/ui/font.h"
 #include "engine/gfx/texcache.h"
+#include "engine/gfx/texres.h"
 #include "engine/gfx/mip.h"
 #include "engine/scene/light.h"
 #include "engine/scene/clock.h"
@@ -426,9 +427,18 @@ static int project_vert(DrawVert *dv, const Vtx *v, float inv_w, float inv_h,
 {
     float sx, sy, oow, ooz;
 
-    if (!camera_project(v->x, v->y, v->z, &sx, &sy, &oow, &ooz)) {
+    /*
+     * camera_project's arithmetic, in place: a call of seven arguments a
+     * vertex was some twenty cycles of pushes on the 233. g_focal is
+     * camera_focal(), set each frame by clip_slopes before anything is drawn.
+     */
+    if (v->z < DF_NEAR) {
         return 0;
     }
+    oow = 1.0f / v->z;
+    ooz = (65535.0f * DF_NEAR) * oow;
+    sx = (float)DF_VIEW_W * 0.5f + v->x * g_focal * oow;
+    sy = (float)DF_VIEW_H * 0.5f + v->y * g_focal * oow;
     if (sx < -2048.0f || sx > 2048.0f || sy < -2048.0f || sy > 2048.0f) {
         return 0;
     }
@@ -737,6 +747,83 @@ static void flat_corner(const Camera *cam, const Basis *basis,
     camera_view(cam, basis, wx, wy, wz, &out->x, &out->y, &out->z);
     out->u = u;
     out->v = v;
+}
+
+/* 1 (default): the render passes run at the x87's single precision (df_fpu_single). */
+static int g_fpu_single = 1;
+
+void draw_set_fpu_single(int on)
+{
+    g_fpu_single = on ? 1 : 0;
+}
+
+int draw_fpu_single(void)
+{
+    return g_fpu_single;
+}
+
+void draw_stream_prime(const Level *level, const Camera *cam)
+{
+    const Scene *sc;
+    float focal;
+    int pass;
+
+    if (!level || !cam || !level->streamed || !texcache_streamed()) {
+        return;
+    }
+    sc = &level->scene;
+    focal = camera_focal();
+    focal = focal < 1.0f ? 1.0f : focal;
+    /*
+     * As a frame notes them, every loaded picture by its nearest use, then
+     * the service with no byte budget; again while it still sends (it sends
+     * at most a few a call, the most needed first). Load time: casts are fine.
+     */
+    for (pass = 0; pass < 256; pass++) {
+        int before;
+        int after;
+        int i;
+
+        for (i = 0; i < sc->nmodels; i++) {
+            const Instance *in;
+            const Bound *b;
+            float dx, dy, dz, d;
+            int k;
+
+            in = &sc->models[i];
+            if (!in->mesh || !in->mesh->have_keys || sc->bounds[i].ex < 0.0f) {
+                continue;
+            }
+            b = &sc->bounds[i];
+            dx = b->cx - cam->x;
+            dy = b->cy - cam->y;
+            dz = b->cz - cam->z;
+            d = df_sqrt(dx * dx + dy * dy + dz * dz) - (b->ex > b->ez ? b->ex : b->ez);
+            for (k = 0; k < in->mesh->nslot_keys; k++) {
+                texcache_note((int)in->mesh->slot_keys[k], d > 0.0f ? d : 0.0f);
+            }
+        }
+        for (i = 0; i < sc->nsprites; i++) {
+            const Flat *fl;
+            float dx, dz;
+
+            fl = &sc->sprites[i];
+            if (fl->w <= 0.0f || fl->slot == 0xffff) {
+                continue;
+            }
+            dx = fl->x - cam->x;
+            dz = fl->z - cam->z;
+            texcache_note((int)fl->slot, df_sqrt(dx * dx + dz * dz));
+        }
+        before = 0;
+        after = 0;
+        texres_stats(0, 0, 0, 0, &before, 0);
+        texcache_stream_service(focal, 0xffffffffu);
+        texres_stats(0, 0, 0, 0, &after, 0);
+        if (after == before) {
+            break;
+        }
+    }
 }
 
 /* Upright quad. It faces yaw and does not tilt with pitch. */
@@ -2158,6 +2245,7 @@ static df_u32 g_shade[DAYLIGHT_STEPS + 1];
 
 void draw_frame(const Camera *cam, const Level *level)
 {
+    unsigned short fpu_was;
     Basis basis;
     Daylight dl;
     int order[VIS_MAX];
@@ -2316,6 +2404,8 @@ void draw_frame(const Camera *cam, const Level *level)
     camera_basis(cam, &basis);
     /* Before the sky: the HUD may have left blending or a fade on. */
     glide_sprite_alpha(0);
+    /* The render passes at the x87's single precision: float all through (df_fpu_single). */
+    fpu_was = g_fpu_single ? df_fpu_single() : 0;
     prof_begin(PROF_SKY);
     if (sky && sky_alpha > 8) {
         if (sky_alpha < 255) {
@@ -2463,6 +2553,10 @@ void draw_frame(const Camera *cam, const Level *level)
         draw_precip(cam, &basis, &w, light + flash, secs);
     }
     prof_end(PROF_PRECIP);
+    /* Back before the overlay: a viewer's panel may print a double (a world position). */
+    if (g_fpu_single) {
+        df_fpu_restore(fpu_was);
+    }
     prof_begin(PROF_OVERLAY);
     draw_light_view(cam, &basis);
     draw_sound_view(cam, &basis, &level->scene);

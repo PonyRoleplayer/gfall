@@ -415,6 +415,21 @@ void wres_paint(Mesh *mesh, int family, int winter)
     mesh->have_keys = 1;
 }
 
+void wres_meshes_reset(void)
+{
+    int i;
+
+    if (!g_on) {
+        return;
+    }
+    mem_heap_delete(g_mesh_heap);
+    g_mesh_heap = mem_heap_new();
+    for (i = 0; i < VARIANTS; i++) {
+        g_mesh[i] = 0;
+        g_nmesh[i] = 0;
+    }
+}
+
 int wres_full(void)
 {
     return g_on && mem_heap_bytes(g_mesh_heap) > WRES_MESH_RAM;

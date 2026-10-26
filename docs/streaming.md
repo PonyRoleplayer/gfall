@@ -172,6 +172,12 @@ Each frame `wild_update` reads the camera's pixel's climate. When it changes (an
 
 LEVELFALL's handler lets a streamed door through when its pixel's town is in the list (`wild_location_at`: the town whose pixel holds the door, and its own frame's origin, the corner of its block 0, 0), into a house (`DOOR_ENTER`) or down into its dungeon (`DOOR_DUNGEON`). The step out of that door (`doors_landing`, three body radii) is kept in world units; the stream closes, and the house opens as a place of its own (`world_load_inside`, with the door moved into the town's frame, where the house is placed against it), or the dungeon. Its way out (`DOOR_LEAVE`, `DOOR_EXIT`) closes it and opens the stream again at the kept step (`wild_open_at`), facing out, the camera's ring loaded before the first frame. The card stays open throughout, each load under the hold and faded in. Tested: 20 of Daggerfall's doors into houses from the stream are where the town loaded whole has them.
 
+### Bookmarks, a sharp start, the meshes' cap
+
+- **Bookmarks.** F12 in the stream writes `stream=x,z,y,yaw,pitch` to `levelfall.log`: the camera's world position in whole units (`stream_world`, up to 32 million, past a float's exact range), its eye's height, its yaw and pitch in degrees, with the usual `fov=`, `time=`, `date=` and `weather=`. `stream=` in `levelfall.cfg` opens the streamed world there at start, without the list (`view_stream` with a pose: `wild_open_at`), and wins over `open=`.
+- **A sharp start.** Under the hold, after a load fills the radius (opening, a door back out, a season's turn, a restart), `gfx_stream_prime` notes every loaded picture by how near its models and sprites stand to the camera, as a frame does, and runs the card's service with no byte budget until it sends nothing more. The first frame is drawn with the sharp copies already on the card, not the 8 × 8 ones.
+- **The meshes' cap.** Every climate's variant of every model met stays read for the session; past 10 MB (`WRES_MESH_RAM`, `wild_crowded`) LEVELFALL holds the frame, and `wild_restart` drops every chunk and every mesh (`wres_meshes_reset`) and loads the radius again, its meshes with it, then primes. Daggerfall and a walk east use 1.4 MB, so it takes a long journey across climates.
+
 ### Tests
 
 `check_stream` in `tools/check_dagger.c`: a stream at Daggerfall fills its 25 chunks, has the town's houses, flats, doors, lamps and sounds; its doors are the town's; a sound is heard beside it; its lamps' pools lie round their lamps and are the same cut chunk by chunk as all at once; its far ground covers the near ground's area in 25 quads, 25 of them baked (`build/far0.ppm` is one); a walk of 40 chunks east keeps ground under the camera, moves the origin twice, keeps the pools with their lamps and the pictures and files under their caps; a jump east into another climate brings its sky; the season's turn loads the ring again in its pictures. `check_wres`: held pictures stay, the least recently released go first, come back when held, and a forgotten dynamic slot is reused. `check_texres` (engine): the buddy allocator, the levels by distance, the budget, the eviction.
@@ -179,12 +185,9 @@ LEVELFALL's handler lets a streamed door through when its pixel's town is in the
 ### Not yet
 
 - Draws grouped by texture, contribution culling, the reading thread, cooked data: each when the 233's profile says it is the cost.
-- `wres_full` (meshes past 10 MB) is reported and not acted on.
-- The soundscape stays a town's everywhere; the wilderness's own (birds, wind) and its songs are to come.
 - The rebase (every 16 chunks) moves every slot's models and decals in one frame; a few milliseconds on the 233, every two map pixels.
-- Pictures start at 8 × 8 after a fill and sharpen at 64 KB a frame: a second or two of blur at the start.
 - Horizon culling is not planned. The far clip is 16k at most, a few chunks of ground, and the fog, the clip and the frustum already cut most of what a hill would hide. The far ground costs 24 triangles a chunk, so there is little left to save.
-- A swamp's own ambience (DFU's frogs); the music is the weather's playlists, as DFU plays them in a town or out of one.
+- A swamp's own ambience (DFU's frogs). The music and the rest of the ambience are already DFU's: it plays the weather's playlists in a town or out of one.
 
 ## Phase 4, as built
 

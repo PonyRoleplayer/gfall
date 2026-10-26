@@ -1729,6 +1729,23 @@ static void check_stream(void)
                      && level.sky->index == skyfile_index(worldmap_climate(px, py), clock_season()),
                      "the sky did not follow the camera into another climate");
     }
+    /* Past the meshes' cap, the stream starts again round the camera: every mesh read again. */
+    {
+        int meshes0;
+        int meshes1;
+        df_u32 ram0;
+        df_u32 ram1;
+
+        wres_stats(0, 0, 0, 0, &meshes0, &ram0);
+        check_expect(!wild_crowded(), "a short walk passed the meshes' cap");
+        wild_restart(&cam);
+        wres_stats(0, 0, 0, 0, &meshes1, &ram1);
+        printf("stream: restarted: meshes %d (%u KB) before, %d (%u KB) after\n",
+               meshes0, (unsigned int)(ram0 / 1024u), meshes1, (unsigned int)(ram1 / 1024u));
+        check_expect(stream_missing(STREAM_RADIUS_MAX) == 0 && ground_under(&level.scene, cam.x, cam.z)
+                     && meshes1 <= meshes0 && ram1 <= ram0,
+                     "a restart did not load the radius again with the meshes it needs");
+    }
     /* The season turns: the chunks load again in its pictures, the camera's ring at once. */
     {
         int was;

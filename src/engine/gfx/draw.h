@@ -48,6 +48,11 @@ void draw_prepare(void);
 void draw_hold(const char *text);
 /* The next secs of frames fade in from black. 0 cancels a fade. */
 void draw_fade_in(float secs);
+/* The render passes at the x87's 24-bit precision: 1 (default), or 0 to compare. */
+void draw_set_fpu_single(int on);
+int draw_fpu_single(void);
+/* See gfx_stream_prime. */
+void draw_stream_prime(const struct Level *level, const Camera *cam);
 /*
  * Uploads the light falloff pictures when want is set (the place has
  * lights). Call after glide_tex_reset and before the level's pictures.

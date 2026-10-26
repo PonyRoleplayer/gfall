@@ -72,6 +72,8 @@ struct MemHeap *wres_mesh_heap(void);
 void wres_paint(Mesh *mesh, int family, int winter);
 /* 1 when the meshes' RAM has passed WRES_MESH_RAM: the stream should start again. */
 int wres_full(void);
+/* Every mesh goes, its heap with it; read again as chunks ask. Only with no chunk holding one. */
+void wres_meshes_reset(void);
 
 /* Slots registered, pictures in RAM, their bytes, pictures held; meshes and their bytes. */
 void wres_stats(int *slots, int *in_ram, df_u32 *ram, int *held, int *meshes, df_u32 *mesh_ram);

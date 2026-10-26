@@ -154,6 +154,31 @@ static int df_iround(float v)
  * otherwise stay in an 80-bit register with every bit. A union read of
  * the same member is not enough, GCC keeps it in the register.
  */
+/*
+ * The x87's precision control, for the render passes (docs/glide.md,
+ * The FPU): at 24 bits a Pentium divides in 19 cycles, not 33 at the 53
+ * Windows sets, as Quake's Sys_LowFPPrecision did. The frame's geometry
+ * is all float, so nothing it computes changes but the time. Rounding
+ * is untouched (df_iround's fistp, df_snap16's store). Never around
+ * double math: 24 bits rounds a double's sums too. df_fpu_single
+ * returns the word to give back to df_fpu_restore.
+ */
+static unsigned short df_fpu_single(void)
+{
+    unsigned short was;
+    unsigned short cw;
+
+    __asm__ __volatile__("fnstcw %0" : "=m"(was));
+    cw = (unsigned short)(was & ~0x0300u);
+    __asm__ __volatile__("fldcw %0" : : "m"(cw));
+    return was;
+}
+
+static void df_fpu_restore(unsigned short was)
+{
+    __asm__ __volatile__("fldcw %0" : : "m"(was));
+}
+
 static float df_snap16(float v)
 {
     volatile float t;

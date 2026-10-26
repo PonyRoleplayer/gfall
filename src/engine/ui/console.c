@@ -1350,6 +1350,8 @@ static void commands(void)
     cmd_var("covers", scene_cover_draw, scene_set_cover_draw, 0, 1,
             "wash the occlusion cells of the last frame green");
     cmd_var("faces", draw_faces, draw_set_faces, 0, 1, "drop ARCH3D faces that point away");
+    cmd_var("fpu24", draw_fpu_single, draw_set_fpu_single, 0, 1,
+            "render passes at the x87's 24-bit precision (faster divides); 0 to compare");
     cmd_var("vsync", glide_vsync, glide_set_vsync, 0, 1,
             "wait for the retrace; off shows the real frame rate, with tearing");
     cmd_var("wbuffer", glide_wbuffer, glide_set_wbuffer, 0, 1,

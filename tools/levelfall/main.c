@@ -175,6 +175,9 @@ static int g_auto_index;
 static int g_auto_cam;
 static int g_auto_row = -1;
 static float g_auto_pose[5];
+/* stream= from the cfg: open the streamed world there at start (world x, z; y, yaw, pitch). */
+static int g_auto_stream;
+static double g_auto_spose[5];
 
 /*
  * The sound panel (F2) and its cfg. soundpanel= opens it at start,
@@ -240,6 +243,9 @@ static int g_switch_was[NSWITCH];
  */
 typedef struct LfSnap {
     Camera cam;
+    /* In a stream, the camera's world position (stream_world), for stream=. */
+    double wx;
+    double wz;
     int valid;
     int models;
     int sprites;
@@ -2584,6 +2590,11 @@ static void snap_take(const Camera *cam, int valid)
 {
     g_snap.cam = *cam;
     g_snap.valid = valid;
+    g_snap.wx = 0.0;
+    g_snap.wz = 0.0;
+    if (g_streaming) {
+        stream_world(cam->x, cam->z, &g_snap.wx, &g_snap.wz);
+    }
     draw_stats(&g_snap.models, &g_snap.sprites, &g_snap.kept, &g_snap.dropped);
     scene_occ_stats(&g_snap.occ_faces, &g_snap.occ_hidden);
     g_snap.cull = scene_cull();
@@ -2646,7 +2657,7 @@ static void bookmark(void)
     int unfit;
     int total;
 
-    if (!g_snap.valid || !g_ref) {
+    if (!g_snap.valid || (!g_ref && !g_streaming)) {
         return;
     }
     /* open= names a row of the list; a building's inside is not one. */
@@ -2661,24 +2672,45 @@ static void bookmark(void)
     log_line(line);
     n = 0;
     line[0] = 0;
-    add_str(line, &n, (int)sizeof(line), g_ref->outdoor ? "open=outdoor," : "open=indoor,");
-    add_num(line, &n, (int)sizeof(line), g_ref->region, 0);
-    add_str(line, &n, (int)sizeof(line), ",");
-    add_num(line, &n, (int)sizeof(line), g_ref->index, 0);
-    log_line(line);
+    if (g_streaming) {
+        /*
+         * The streamed world has no row: stream= is the world position
+         * in whole units (to 32 million, past a float's exact range),
+         * the eye's height, the yaw and pitch.
+         */
+        add_str(line, &n, (int)sizeof(line), "stream=");
+        add_num(line, &n, (int)sizeof(line), (int)(g_snap.wx + 0.5), 0);
+        add_str(line, &n, (int)sizeof(line), ",");
+        add_num(line, &n, (int)sizeof(line), (int)(g_snap.wz + 0.5), 0);
+        add_str(line, &n, (int)sizeof(line), ",");
+        add_fixed(line, &n, (int)sizeof(line), g_snap.cam.y);
+        add_str(line, &n, (int)sizeof(line), ",");
+        add_fixed(line, &n, (int)sizeof(line), g_snap.cam.yaw * (360.0f / DF_TAU));
+        add_str(line, &n, (int)sizeof(line), ",");
+        add_fixed(line, &n, (int)sizeof(line), g_snap.cam.pitch * (360.0f / DF_TAU));
+        log_line(line);
+    } else {
+        add_str(line, &n, (int)sizeof(line), g_ref->outdoor ? "open=outdoor," : "open=indoor,");
+        add_num(line, &n, (int)sizeof(line), g_ref->region, 0);
+        add_str(line, &n, (int)sizeof(line), ",");
+        add_num(line, &n, (int)sizeof(line), g_ref->index, 0);
+        log_line(line);
+    }
     n = 0;
     line[0] = 0;
-    add_str(line, &n, (int)sizeof(line), "cam=");
-    add_fixed(line, &n, (int)sizeof(line), g_snap.cam.x);
-    add_str(line, &n, (int)sizeof(line), ",");
-    add_fixed(line, &n, (int)sizeof(line), g_snap.cam.y);
-    add_str(line, &n, (int)sizeof(line), ",");
-    add_fixed(line, &n, (int)sizeof(line), g_snap.cam.z);
-    add_str(line, &n, (int)sizeof(line), ",");
-    add_fixed(line, &n, (int)sizeof(line), g_snap.cam.yaw * (360.0f / DF_TAU));
-    add_str(line, &n, (int)sizeof(line), ",");
-    add_fixed(line, &n, (int)sizeof(line), g_snap.cam.pitch * (360.0f / DF_TAU));
-    log_line(line);
+    if (!g_streaming) {
+        add_str(line, &n, (int)sizeof(line), "cam=");
+        add_fixed(line, &n, (int)sizeof(line), g_snap.cam.x);
+        add_str(line, &n, (int)sizeof(line), ",");
+        add_fixed(line, &n, (int)sizeof(line), g_snap.cam.y);
+        add_str(line, &n, (int)sizeof(line), ",");
+        add_fixed(line, &n, (int)sizeof(line), g_snap.cam.z);
+        add_str(line, &n, (int)sizeof(line), ",");
+        add_fixed(line, &n, (int)sizeof(line), g_snap.cam.yaw * (360.0f / DF_TAU));
+        add_str(line, &n, (int)sizeof(line), ",");
+        add_fixed(line, &n, (int)sizeof(line), g_snap.cam.pitch * (360.0f / DF_TAU));
+        log_line(line);
+    }
     n = 0;
     line[0] = 0;
     add_flag(line, &n, (int)sizeof(line), "fov", g_snap.fov);
@@ -3147,6 +3179,8 @@ static void view_row(int index)
 #define STREAM_LOG_OVER_MS 8.0f
 #define STREAM_LOG_MAX 64
 static int g_stream_logged;
+/* The streamed level while its view runs, for stream_frame's prime after a reload. */
+static const Level *g_stream_level;
 
 static float stream_budget(void)
 {
@@ -3183,11 +3217,21 @@ static void stream_frame(Camera *cam)
     int py;
 
     stream_set_radius(stream_radius_for_far());
-    /* The season turned: the chunks again in its pictures, behind "Loading..." (docs/streaming.md). */
-    if (wild_season_turned()) {
-        log_line("the season turned: the world again in its pictures");
+    /*
+     * The season turned (the chunks again in its pictures), or the meshes
+     * passed their cap (read again for what is round the camera): behind
+     * "Loading...", sharp before the first frame (docs/streaming.md).
+     */
+    if (wild_season_turned() || wild_crowded()) {
         gfx_hold("Loading...");
-        wild_reseason(cam);
+        if (wild_season_turned()) {
+            log_line("the season turned: the world again in its pictures");
+            wild_reseason(cam);
+        } else {
+            log_line("the meshes passed their cap: the world again round the camera");
+            wild_restart(cam);
+        }
+        gfx_stream_prime(g_stream_level, cam);
         gfx_fade_in(LAND_FADE);
     }
     {
@@ -3346,7 +3390,7 @@ static int stream_inside(int trow, int what, const Usable *door, int *glide_up)
  * way out opens the stream again on the step outside that door
  * (docs/streaming.md, Doors), the card open throughout.
  */
-static void view_stream(int index)
+static void view_stream(int index, const double *pose)
 {
     Level level;
     Camera cam;
@@ -3364,11 +3408,11 @@ static void view_stream(int index)
     if (row >= 0 && row < g_nrows && !g_rows[row].outdoor) {
         row = pair_row(row, 1);
     }
-    if (row < 0 || row >= g_nrows) {
+    if (!pose && (row < 0 || row >= g_nrows)) {
         win_fail("Stream World: this place has no outside on the map.");
         return;
     }
-    if (!worldmap_open() || !worldmap_pixel_of(g_rows[row].region, g_rows[row].index, &px, &py)) {
+    if (!worldmap_open() || (!pose && !worldmap_pixel_of(g_rows[row].region, g_rows[row].index, &px, &py))) {
         log_line("stream: the world map did not read, or the place is not on it");
         win_fail("Stream World: the world map did not read.");
         return;
@@ -3377,6 +3421,15 @@ static void view_stream(int index)
     back = 0;
     back_x = back_z = 0.0;
     back_yaw = 0.0f;
+    if (pose) {
+        /* stream= from a bookmark: there, as if back out of a door, but with its own eye and pitch. */
+        back = 1;
+        back_x = pose[0];
+        back_z = pose[1];
+        back_yaw = (float)pose[3] * (DF_TAU / 360.0f);
+        px = (int)(back_x / (double)(STREAM_CHUNK * WORLDMAP_BLOCKS));
+        py = WORLDMAP_H - 1 - (int)(back_z / (double)(STREAM_CHUNK * WORLDMAP_BLOCKS));
+    }
     for (;;) {
         LfGo go;
         Usable door;
@@ -3419,29 +3472,37 @@ static void view_stream(int index)
 
                 n = 0;
                 line[0] = 0;
-                add_str(line, &n, (int)sizeof(line), back ? "stream again by the door, pixel " : "stream from pixel ");
+                add_str(line, &n, (int)sizeof(line),
+                        pose ? "stream from the bookmark, pixel "
+                             : (back ? "stream again by the door, pixel " : "stream from pixel "));
                 add_num(line, &n, (int)sizeof(line), px, 0);
                 add_str(line, &n, (int)sizeof(line), ",");
                 add_num(line, &n, (int)sizeof(line), py, 0);
                 log_line(line);
-                camera_set(&cam, x, y, z, back ? back_yaw : 0.0f, 0.0f);
+                camera_set(&cam, x, pose ? (float)pose[2] : y, z, back ? back_yaw : 0.0f,
+                           pose ? (float)pose[4] * (DF_TAU / 360.0f) : 0.0f);
+                /* The bookmark's eye and pitch the first time only; a door's way back is the ground's. */
+                pose = 0;
                 g_streaming = 1;
                 g_stream_px = -1;
                 g_stream_py = -1;
                 g_frame_hook = stream_frame;
                 g_stream_logged = 0;
+                g_stream_level = &level;
                 stream_set_radius(stream_radius_for_far());
-                /* Everything within the radius before the first frame: a wait, not a stutter. */
+                /* Everything within the radius before the first frame, sharp: a wait, not a stutter. */
                 wild_fill(&cam);
+                gfx_stream_prime(&level, &cam);
                 stream_frame(&cam);
                 if (back) {
                     gfx_fade_in(LAND_FADE);
                 }
-                g_region = g_rows[row].region;
+                g_region = row >= 0 ? g_rows[row].region : 0;
                 run_view(&level, &cam);
                 go = g_go;
                 g_go.what = 0;
                 g_frame_hook = 0;
+                g_stream_level = 0;
                 g_streaming = 0;
                 music_stop();
                 sound_stop_all();
@@ -3854,6 +3915,28 @@ static void cfg_line(const char *s)
         g_auto_index = v;
         return;
     }
+    if (key_is(s, "stream", &rest)) {
+        int wx;
+        int wz;
+        float rest3[3];
+        int i;
+
+        if (!read_int(&rest, &wx) || !next_number(&rest) || !read_int(&rest, &wz)) {
+            return;
+        }
+        for (i = 0; i < 3; i++) {
+            if (!next_number(&rest) || !read_fixed(&rest, &rest3[i])) {
+                return;
+            }
+        }
+        g_auto_spose[0] = (double)wx;
+        g_auto_spose[1] = (double)wz;
+        g_auto_spose[2] = (double)rest3[0];
+        g_auto_spose[3] = (double)rest3[1];
+        g_auto_spose[4] = (double)rest3[2];
+        g_auto_stream = 1;
+        return;
+    }
     if (key_is(s, "cam", &rest)) {
         float pose[5];
         int i;
@@ -4039,6 +4122,7 @@ static void cfg_load(void)
     g_season_cfg = -1;
     g_auto_kind = -1;
     g_auto_cam = 0;
+    g_auto_stream = 0;
     g_sound_panel = 1;
     g_prof_panel = 0;
     g_snd_rows = 5;
@@ -4227,7 +4311,10 @@ static int levelfall_main(void *instance)
         sound_startup(win_hwnd());
         music_startup();
         sound_cfg_apply();
-        if (g_auto_kind >= 0) {
+        if (g_auto_stream) {
+            g_auto_stream = 0;
+            view_stream(-1, g_auto_spose);
+        } else if (g_auto_kind >= 0) {
             open_auto();
         }
         while (!win_closed() && wait_list()) {
@@ -4238,7 +4325,7 @@ static int levelfall_main(void *instance)
                 continue;
             }
             if (SendMessageA(g_stream_box, BM_GETCHECK_, 0, 0) == BST_CHECKED_) {
-                view_stream(idx);
+                view_stream(idx, 0);
             } else {
                 view_row(idx);
             }

@@ -46,6 +46,14 @@ void wild_update(Camera *cam, float budget_ms);
  */
 int wild_season_turned(void);
 void wild_reseason(Camera *cam);
+/*
+ * 1 when the meshes read for the session (every climate's variant of
+ * every model met) have passed their RAM cap (WRES_MESH_RAM, 10 MB).
+ * wild_restart drops every chunk and every mesh and loads the whole
+ * radius again, its meshes with it: hold the frame first.
+ */
+int wild_crowded(void);
+void wild_restart(Camera *cam);
 /* The ground's y at world point (wx, wz): the land, or a town's level. Needs the stream open. */
 float wild_ground(double wx, double wz);
 /* The map pixel under the camera. */

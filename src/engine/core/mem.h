@@ -78,6 +78,12 @@ void mem_track(void **list, int cap, int *count);
  */
 void *mem_scratch(int slot, df_u32 bytes);
 
+/*
+ * Copies and fills a 32-bit word at a time on the target (rep movsd,
+ * rep stosd: a word a cycle on a Pentium once started, where a byte
+ * loop is a byte a cycle or two), then the odd bytes. Windows keeps the
+ * direction flag clear. The host keeps plain loops.
+ */
 static void mem_copy(void *dst, const void *src, df_u32 n)
 {
     df_u32 i;
@@ -86,20 +92,45 @@ static void mem_copy(void *dst, const void *src, df_u32 n)
 
     d = (df_u8 *)dst;
     s = (const df_u8 *)src;
+#ifndef DF_HOST
+    {
+        df_u32 words;
+
+        words = n >> 2;
+        __asm__ __volatile__("rep movsl" : "+c"(words), "+D"(d), "+S"(s) : : "memory");
+        n &= 3u;
+    }
+#endif
     for (i = 0; i < n; i++) {
         d[i] = s[i];
     }
 }
 
-static void mem_zero(void *dst, df_u32 n)
+static void mem_fill(void *dst, df_u8 value, df_u32 n)
 {
     df_u32 i;
     df_u8 *d;
 
     d = (df_u8 *)dst;
-    for (i = 0; i < n; i++) {
-        d[i] = 0;
+#ifndef DF_HOST
+    {
+        df_u32 words;
+        df_u32 v;
+
+        words = n >> 2;
+        v = (df_u32)value * 0x01010101u;
+        __asm__ __volatile__("rep stosl" : "+c"(words), "+D"(d) : "a"(v) : "memory");
+        n &= 3u;
     }
+#endif
+    for (i = 0; i < n; i++) {
+        d[i] = value;
+    }
+}
+
+static void mem_zero(void *dst, df_u32 n)
+{
+    mem_fill(dst, 0, n);
 }
 
 #pragma GCC diagnostic pop

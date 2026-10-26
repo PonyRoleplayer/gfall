@@ -44,6 +44,14 @@ void gfx_set_light_shadow(int on);
  */
 void gfx_hold(const char *text);
 void gfx_fade_in(float secs);
+/*
+ * A streamed world, before its first frame (under the hold): every
+ * loaded picture's sharper copy sent at once, as near as each one's
+ * models and sprites stand to cam, so the walk does not start in 8 x 8
+ * copies sharpening a frame at a time (docs/streaming.md). A hitch: call
+ * it only while the screen holds.
+ */
+void gfx_stream_prime(const Level *level, const Camera *cam);
 /* Clear, draw what the scene says is visible, overlay, swap. */
 void gfx_frame(const Camera *cam, const Level *level);
 

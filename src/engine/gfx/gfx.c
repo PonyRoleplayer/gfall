@@ -126,6 +126,11 @@ void gfx_fade_in(float secs)
     draw_fade_in(secs);
 }
 
+void gfx_stream_prime(const Level *level, const Camera *cam)
+{
+    draw_stream_prime(level, cam);
+}
+
 void gfx_frame(const Camera *cam, const Level *level)
 {
     /* A streamed world's pictures are the game's to add: a mipmap or texcap change waits for a place. */

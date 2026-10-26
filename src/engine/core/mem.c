@@ -435,9 +435,8 @@ void *memmove(void *dst, const void *src, unsigned int n)
     d = (df_u8 *)dst;
     s = (const df_u8 *)src;
     if (d < s) {
-        for (i = 0; i < n; i++) {
-            d[i] = s[i];
-        }
+        /* Forward, a word at a time: a lower destination never overwrites source not yet read. */
+        mem_copy(d, s, n);
     } else if (d > s) {
         i = n;
         while (i > 0) {
@@ -470,13 +469,7 @@ unsigned int strlen(const char *s)
 
 void *memset(void *dst, int value, unsigned int n)
 {
-    df_u8 *d;
-    df_u32 i;
-
-    d = (df_u8 *)dst;
-    for (i = 0; i < n; i++) {
-        d[i] = (df_u8)value;
-    }
+    mem_fill(dst, (df_u8)value, n);
     return dst;
 }
 

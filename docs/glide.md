@@ -78,6 +78,16 @@ Before the budget the castle and the cities sent full single levels in table ord
 
 `mipmap off` in the console uploads single levels, still budgeted, and `mipmap on` chains again. Either change sends the whole level again on the next frame (`gfx_set_mipmap`, through `gfx_prepare`, which starts the card from empty with `glide_tex_reset`). A chain was tried once before, early on, and the ground came out in bands and the font in the wrong glyphs. The cause was never found; `docs/memory.md` has what is known. If that comes back on hardware, `mipmap off` is the comparison.
 
+## The FPU
+
+The Pentium's x87 divides in 19 cycles at 24-bit precision, 33 at 53, 39 at 64; Windows starts a program at 53. Every vertex takes one divide (1/z), and a clipped edge more. `draw_frame` sets the precision control to 24 bits for the render passes (sky, cull, models, decals, windows, sprites, precipitation: `df_fpu_single`) and gives the old word back before the overlay (`df_fpu_restore`), as Quake did around its renderer. Their arithmetic is float throughout, so nothing they compute changes but the time; rounding is untouched (`df_iround`'s `fistp`, `df_snap16`'s store to a float). Kept at the full precision: the walker and collision (the sim stage, tuned at it), the sound, and the overlay, where a viewer's panel prints doubles (a stream's world position: 32 million units needs 25 bits). Never put a double inside the passes. `fpu24 0` in the console runs them at the full precision, to compare in the profile panel.
+
+A vertex's projection is done in place in `project_vert` (`camera_project`'s arithmetic on draw.c's own copy of the focal length): a call of seven arguments a vertex was some twenty cycles of pushes. The model's view transform was already inline (`view_point`).
+
+MMX does integers only on this chip: the frame's geometry is x87 float, so MMX has nothing to do there. It mixes the sound (`mixer.c`). The CRT replacements copy and fill a 32-bit word at a time (`rep movsd`, `rep stosd` in `mem_copy`, `mem_fill`, `memcpy`, `memset`), where they were byte loops; the frame itself makes no such calls, so that is load time.
+
+Not done, the largest saving left on the CPU's side: a corner of an ARCH3D model is transformed and projected once for each face that has it, 2.9 times on average over every model in ARCH3D.BSA (837,101 face corners, 288,304 distinct). A cache of each drawn model's transformed corners would cut that work by up to about half once back faces are dropped; it needs each mesh's corners indexed, and its clipping kept per face.
+
 ## Kept as they are
 
 - Bilinear filtering costs the SST-1 nothing over point sampling. Text is point sampled so glyph edges stay hard.
