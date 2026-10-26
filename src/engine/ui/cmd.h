@@ -30,6 +30,12 @@ int cmd_add(const char *name, cmd_fn fn, const char *usage, const char *help);
  */
 int cmd_var(const char *name, int (*get)(void), void (*set)(int),
             int lo, int hi, const char *help);
+/*
+ * Switch name's bare name flips it, as Quake's noclip does ("tcl"),
+ * instead of printing it; "name on", "name off" and "name toggle" still
+ * work. 0 when name is not a switch.
+ */
+int cmd_toggles(const char *name);
 
 /*
  * Runs a line. ';' and newlines separate commands. "//" and a '#' at

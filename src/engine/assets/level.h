@@ -26,8 +26,20 @@ typedef struct Level {
     const Palette *palette;
     /* The sky, for an outdoor place; 0 indoors. See docs/daylight.md. */
     const Sky *sky;
+    /*
+     * The game adds one when it changed *sky in place (a streamed world
+     * walked into another climate): the frame then reads the sky again,
+     * into the same places on the card.
+     */
+    int sky_serial;
     /* Its music and ambience, or 0 for none. See docs/sound.md. */
     const Soundscape *sound;
+    /*
+     * 1 for a streamed world (docs/streaming.md): its pictures come and
+     * go with its chunks, through texcache_stream_set and _drop, at the
+     * size their distance needs. gfx_prepare puts none on the card.
+     */
+    int streamed;
     Scene scene;
 } Level;
 

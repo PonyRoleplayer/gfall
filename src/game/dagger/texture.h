@@ -25,6 +25,27 @@ int texture_record_count(int file);
  * Call this just before destroying the heap those bytes came from.
  */
 void texture_cache_clear(void);
+/*
+ * Keep at most bytes of whole TEXTURE files, the least recently read
+ * freed first, in texture.c's own heap (docs/streaming.md: a streamed
+ * world reads files for as long as it runs). 0, the default, keeps
+ * every file read until texture_cache_clear, as a place loaded whole
+ * does. Takes effect from the next file read.
+ */
+void texture_cache_limit(df_u32 bytes);
+df_u32 texture_cache_bytes(void);
+/*
+ * An animated record's frames laid into img (its frame 0, loaded) as
+ * one padded sheet: side by side, TEXTURE_SHEET_GAP texels apart, in the
+ * smallest power-of-two square that holds them (docs/sprites.md). 1
+ * when img is now a sheet; 0 for a still record, or one whose frames do
+ * not all load or do not fit 256.
+ */
+#define TEXTURE_SHEET_GAP 2
+#define TEXTURE_SHEET_FRAMES 64
+int texture_sheet(Image *img, int file, int image);
+/* A flat's size in world units from its picture's pixels and scale. */
+int texture_extent(int pixels, int scale);
 
 /*
  * A loaded image's pot is the picture stretched to powers of two by

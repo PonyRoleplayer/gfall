@@ -29,7 +29,7 @@ Point in triangle is barycentric (Ericson, *Real-Time Collision Detection*, 3.4)
 
 ## The gather
 
-Nothing is copied at load but a grid of model boxes: 512-unit cells over the place, each listing the models whose box reaches into it (`collide_use`, rebuilt when the scene or its heap changes, `mem_epoch`). Daggerfall city is 3545 models in a 51 × 51 grid.
+Nothing is copied at load but a grid of model boxes: 512-unit cells over the place, each listing the models whose box reaches into it (`collide_use`, rebuilt when the scene or its heap changes, `mem_epoch`). Daggerfall city is 3545 models in a 51 × 51 grid. A streamed scene has no grid: the gather walks its slots' spans and their models, since chunks come and go every few seconds and the grid over all 23,000 slots was a hitch each time (`docs/streaming.md`, Collision).
 
 Each frame `collide_gather` takes one box round everything the frame's moves can reach. For each model in its cells whose box meets it (a stamp skips one met twice), the box goes into the model's own frame (the matrix is a rotation, so its transpose undoes it), and each triangle is tested there against its own corners' range: no transform for the many that miss. The few that are left are turned into the world, scaled into ellipsoid space, given their plane, and kept in a static set of up to 1024 (`COLLIDE_SET`). Every query reads that set.
 
@@ -64,7 +64,7 @@ Tried on the card (a Voodoo 2 on the 233 machine): it walks the hold, the castle
 
 | Console | Effect |
 |---|---|
-| `tcl 1` / `tcl 0` | Collision on: the camera walks under gravity. Off (default): it flies free, as before. |
+| `tcl 1` / `tcl 0` | Collision on: the camera walks under gravity. Off (default): it flies free, as before. `tcl` alone flips it. |
 | `stuck` | With collision on, move out of whatever the body is caught in. |
 
 ## Not done

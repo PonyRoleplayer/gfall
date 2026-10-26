@@ -1,6 +1,8 @@
 #ifndef DF_WORLDMAP_H
 #define DF_WORLDMAP_H
 
+#include "engine/core/df.h"
+
 /*
  * Daggerfall's world map, for streaming the world (docs/streaming.md):
  * 1000 x 500 map pixels of 32768 units, each 8 x 8 RMB blocks. Pixel y
@@ -22,6 +24,14 @@
 int worldmap_open(void);
 /* WOODS.WLD's height, 0..255 (the sea is 1 or less); outside the map, the nearest edge's. */
 int worldmap_height(int px, int py);
+/*
+ * A pixel's heights in thirds, from its WOODS.WLD record (the 5 x 5
+ * block's inner 3 x 3), on the height map's scale: out[j * 3 + i] is
+ * the third i east and j north of the pixel's south-west corner. Read
+ * on demand and cached. 0 (and the pixel's height in all nine) when the
+ * record does not read.
+ */
+int worldmap_detail(int px, int py, df_u8 *out);
 /* CLIMATE.PAK's climate id (CLIMATE_*, 223..232); the sea's outside the map. */
 int worldmap_climate(int px, int py);
 /* 1 and the location's region and MAPPITEM index when one is on the pixel. */

@@ -43,6 +43,34 @@ void *mem_keep(df_u32 bytes);
 void mem_stats(df_u32 *main_bytes, df_u32 *temp_bytes);
 
 /*
+ * Heaps that free (docs/streaming.md): a streamed world loads and drops
+ * chunks for as long as it runs, so what a chunk alone owns lives in a
+ * heap of its own, destroyed with it, and what chunks share (a picture,
+ * a mesh) is freed piece by piece by a track of its allocations.
+ *
+ * mem_heap_use points mem_alloc at heap h (0 goes back to the temp or
+ * main heap) and returns the heap it replaces, so calls nest. mem_keep
+ * and mem_scratch never go there. Creating or destroying a heap does not
+ * move mem_epoch: a chunk coming or going is not a new place.
+ */
+typedef struct MemHeap MemHeap;
+MemHeap *mem_heap_new(void);
+void mem_heap_delete(MemHeap *h);
+MemHeap *mem_heap_use(MemHeap *h);
+/* Free one allocation made in h. */
+void mem_heap_free(MemHeap *h, void *p);
+/* Bytes allocated in h and not freed. */
+df_u32 mem_heap_bytes(const MemHeap *h);
+/*
+ * While a track is set, each allocation made in the heap mem_heap_use
+ * had set when the track began (not in one a callee sets inside it) is
+ * written to list, up to cap; *count counts them all, past cap
+ * too (an overflowing track cannot free everything: its owner checks).
+ * 0 for list ends it.
+ */
+void mem_track(void **list, int cap, int *count);
+
+/*
  * A buffer for a record that is parsed and then discarded. slot is 0 or 1,
  * so a block file and a model record can be live together. The pointer is
  * invalid after the next call on that slot. On Win32 it also dies with the

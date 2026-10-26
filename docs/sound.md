@@ -98,7 +98,7 @@ The latency of a new sound is the lead: about 150 ms at 13 frames a second.
 
 ## Each frame: `ambience_frame`
 
-1. A new place (scene, soundscape, heap epoch or emitter count changed): every voice stops, the song is asked again.
+1. A new place (scene, soundscape, heap epoch or emitter count changed): every voice stops, the song is asked again. The count compared is the place's own, not the capped one, or a place past the cap would start again every frame.
 2. **The song.** When the weather's kind or night (the street lamps' share of the hour, over a half) changes, the soundscape names a song. A different name is loaded through the game's `song` loader and played. Indoors the kind is -1.
 3. **Beds.** Loops under everything, outdoors only, each fading at half its volume a second:
    - rain by the weather's rain;
@@ -106,7 +106,7 @@ The latency of a new sound is the lead: about 150 ms at 13 frames a second.
    - the night's crickets by the night × how fair it is (1 − the larger of rain and snow), × 0.7.
 4. **Thunder.** `flash_tick` in `draw.c` raises `g_stroke` on the frame a stroke begins. A thunder clip follows 0.3–2.5 s later (the stroke's distance), from a random side, at 0.6 + 0.4 × the storm. One at a time.
 5. **The odd noise.** Every `wait_min`..`wait_max` seconds: outdoors on a fair day one of the day list, anywhere else one of the around list, from 400–800 units off in a random direction, heard full within 520.
-6. **Emitters.** Each one within reach is heard. A loop is kept if it is among the six nearest (`AMBIENCE_LOOPS`); the rest stop. A loop starts where it would be by now (seconds × rate, plus its index × 7919 samples), so no two torches burn in step and one walked back to sounds as if it never stopped. A now-and-then emitter plays with a chance of secs / every each frame, once at a time.
+6. **Emitters.** Each one within reach is heard. In a streamed world (`Scene.sprite_spans`) only the spans' emitter ranges are walked (`Span.efirst`, `ecount`): its 9680 slots are mostly empty, and reading every one was 390 KB a frame through a 16 KB cache. A loop is kept if it is among the six nearest (`AMBIENCE_LOOPS`); the rest stop. A loop starts where it would be by now (seconds × rate, plus its index × 7919 samples), so no two torches burn in step and one walked back to sounds as if it never stopped. A now-and-then emitter plays with a chance of secs / every each frame, once at a time.
 7. `sound_update` aims the voices from the camera and refills the card; `music_update` gives finished buffers back.
 
 ## Memory
@@ -122,7 +122,7 @@ Kept for the process (`mem_keep`): the voices may play after their place's heap 
 | The stream | 442 KB |
 | Wave blocks (wave path only) | 77 KB |
 
-On a place's heap: its emitters, 2048 at most (`MAX_EMITTERS`), 32 bytes each.
+On a place's heap: its emitters, 2048 at most (`MAX_EMITTERS`), 32 bytes each; a stream's are its slots', 121 × 80. `ambience.c` follows 10240 (`TRACK`, a handle each, 40 KB static); past that the rest are silent.
 
 ## Switches
 

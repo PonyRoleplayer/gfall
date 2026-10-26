@@ -44,6 +44,14 @@ static int parse_id(const df_u8 *s, df_u32 *id)
     return 1;
 }
 
+/* Where a mesh read by arch_cached is allocated: 0 is the current heap. */
+static MemHeap *g_arch_heap;
+
+void arch_cache_heap(MemHeap *h)
+{
+    g_arch_heap = h;
+}
+
 Mesh *arch_cached(ArchEnt *cache, int *ncache, Bsa *arch, df_u32 id)
 {
     int i;
@@ -72,10 +80,17 @@ Mesh *arch_cached(ArchEnt *cache, int *ncache, Bsa *arch, df_u32 id)
     }
     {
         ArchLoad load;
+        MemHeap *was;
+        int ok;
 
         load.id = id;
         load.mesh = 0;
-        if (!loader_call("arch3d", 0, bytes, rec->size, &load)) {
+        was = g_arch_heap ? mem_heap_use(g_arch_heap) : 0;
+        ok = loader_call("arch3d", 0, bytes, rec->size, &load);
+        if (g_arch_heap) {
+            mem_heap_use(was);
+        }
+        if (!ok) {
             return 0;
         }
         mesh = load.mesh;
@@ -440,6 +455,8 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch, ArchEnt *cache, int *n
                     fl->slot = 0xffff;
                     fl->glow = (df_u16)(archive == LIGHTS_ARCHIVE);
                     fl->tag = 0;
+                    fl->sight = 0;
+                    fl->thin = 0;
                     block->nflat++;
                 }
             }

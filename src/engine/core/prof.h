@@ -58,6 +58,8 @@ float prof_ms(int stage);
 float prof_peak_ms(int stage);
 /* The stage's short name ("models"). */
 const char *prof_name(int stage);
+/* The last frame's time in stage, in milliseconds; 0 before calibration. For a budget fitted to the frame. */
+float prof_last_ms(int stage);
 /* The cycle counter's rate as calibrated, in MHz; 0 until it is. */
 int prof_mhz(void);
 /* Frames in the last window. */

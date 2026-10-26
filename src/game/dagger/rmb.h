@@ -15,6 +15,13 @@ struct Bsa;
 
 Block *rmb_load(const df_u8 *rmb, df_u32 size, struct Bsa *arch, int ground_file,
                 ArchEnt *cache, int *ncache);
+/*
+ * The ARCH3D ids of every outside model rmb_load would place, in its
+ * order, repeats included, at most cap. A streamed world parses them
+ * into the cache one a frame (arch_cached) before rmb_load, which then
+ * only places them.
+ */
+int rmb_model_ids(const df_u8 *rmb, df_u32 size, df_u32 *ids, int cap);
 
 /*
  * The inside of building record (its subrecord): models, flats, people,

@@ -43,6 +43,26 @@ const char *gfx_error(void)
 
 int gfx_prepare(const Level *level)
 {
+    if (level && level->streamed) {
+        Weather w;
+
+        /* The fixed pictures, then the rest of the card to the stream's residency. */
+        glide_tex_reset();
+        draw_prepare();
+        weather_state(&w);
+        sky_prepare(level->sky, clock_minute(), w.sky);
+        draw_light_upload(1);
+        if (level->palette) {
+            font_upload(level->palette->r, level->palette->g, level->palette->b);
+        }
+        if (!texcache_stream_begin(level)) {
+            g_why = texcache_error();
+            return 0;
+        }
+        g_level = level;
+        g_prepared = 1;
+        return 1;
+    }
     if (level) {
         log_print(LOG_INFO, "level: %d models in %d blocks, %d sprites, %d pictures",
                   level->scene.nmodels, level->scene.nspans,
@@ -108,6 +128,11 @@ void gfx_fade_in(float secs)
 
 void gfx_frame(const Camera *cam, const Level *level)
 {
+    /* A streamed world's pictures are the game's to add: a mipmap or texcap change waits for a place. */
+    if (g_reload && level && level->streamed) {
+        g_reload = 0;
+        log_text(LOG_WARN, "textures: a streamed world keeps its card as it is");
+    }
     if (g_reload && level) {
         g_reload = 0;
         if (!gfx_prepare(level)) {

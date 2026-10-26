@@ -45,8 +45,25 @@ static const Scene *g_scene;
 static int g_nmodels;
 /* Scene.version the grid was built for. */
 static int g_version;
+/*
+ * The grid's buffers and their room, kept while the heap they came from
+ * lives (cap_epoch): a streamed world rebuilds the grid every time a
+ * chunk comes or goes, and new buffers each time would fill the heap.
+ */
+static int g_first_cap;
+static int g_mark_cap;
+static int g_refs_cap;
+static df_u32 g_cap_epoch;
 static df_u32 g_epoch;
 static int g_built;
+/*
+ * 1 for a streamed scene (Scene.sprite_spans): no grid. The gather walks
+ * the spans, two a chunk slot with their boxes, then the models of those
+ * its box meets. A grid over every slot's models was built again each
+ * time a chunk came or went: 23,000 boxes three times over, a hitch on
+ * the 233 at every chunk crossed (docs/streaming.md).
+ */
+static int g_by_span;
 static float g_x0;
 static float g_z0;
 static float g_cell;
@@ -139,6 +156,29 @@ int collide_use(const Scene *scene)
         return 1;
     }
     g_built = 0;
+    if (scene->sprite_spans && scene->spans) {
+        /* The height the scene spans, from the spans' boxes: a few hundred, not every model. */
+        g_miny = 1.0e30f;
+        g_maxy = -1.0e30f;
+        for (i = 0; i < scene->nspans; i++) {
+            const Span *sp;
+
+            sp = &scene->spans[i];
+            if (sp->count < 1) {
+                continue;
+            }
+            g_miny = sp->cy - sp->ey < g_miny ? sp->cy - sp->ey : g_miny;
+            g_maxy = sp->cy + sp->ey > g_maxy ? sp->cy + sp->ey : g_maxy;
+        }
+        g_by_span = 1;
+        g_scene = scene;
+        g_nmodels = scene->nmodels;
+        g_version = scene->version;
+        g_epoch = mem_epoch();
+        g_built = 1;
+        return 1;
+    }
+    g_by_span = 0;
     minx = minz = g_miny = 1.0e30f;
     maxx = maxz = g_maxy = -1.0e30f;
     for (i = 0; i < scene->nmodels; i++) {
@@ -167,11 +207,26 @@ int collide_use(const Scene *scene)
     g_z0 = minz;
     g_gw = df_ifloor((maxx - minx) / g_cell) + 1;
     g_gh = df_ifloor((maxz - minz) / g_cell) + 1;
-    g_first = (int *)mem_alloc((df_u32)(g_gw * g_gh + 1) * (df_u32)sizeof(int));
-    g_mark = (df_u32 *)mem_alloc((df_u32)scene->nmodels * (df_u32)sizeof(df_u32));
-    if (!g_first || !g_mark) {
+    if (g_cap_epoch != mem_epoch()) {
+        g_first_cap = 0;
+        g_mark_cap = 0;
+        g_refs_cap = 0;
+        g_cap_epoch = mem_epoch();
+    }
+    if (g_gw * g_gh + 1 > g_first_cap) {
+        g_first = (int *)mem_alloc((df_u32)(g_gw * g_gh + 1) * (df_u32)sizeof(int));
+        g_first_cap = g_first ? g_gw * g_gh + 1 : 0;
+    }
+    if (scene->nmodels > g_mark_cap) {
+        g_mark = (df_u32 *)mem_alloc((df_u32)scene->nmodels * (df_u32)sizeof(df_u32));
+        g_mark_cap = g_mark ? scene->nmodels : 0;
+    }
+    if (!g_first || !g_mark || !g_first_cap || !g_mark_cap) {
         log_text(LOG_ERROR, "collide: out of memory for the model grid");
         return 0;
+    }
+    for (i = 0; i <= g_gw * g_gh; i++) {
+        g_first[i] = 0;
     }
     /* Count each cell's models, then lay them out, then fill. */
     nref = 0;
@@ -179,8 +234,11 @@ int collide_use(const Scene *scene)
         if (pass == 1) {
             int run;
 
-            g_refs = (int *)mem_alloc((df_u32)(nref > 0 ? nref : 1) * (df_u32)sizeof(int));
-            if (!g_refs) {
+            if (nref > g_refs_cap || !g_refs) {
+                g_refs = (int *)mem_alloc((df_u32)(nref > 0 ? nref : 1) * (df_u32)sizeof(int));
+                g_refs_cap = g_refs ? (nref > 0 ? nref : 1) : 0;
+            }
+            if (!g_refs || !g_refs_cap) {
                 log_text(LOG_ERROR, "collide: out of memory for the model grid");
                 return 0;
             }
@@ -228,7 +286,8 @@ int collide_use(const Scene *scene)
     g_version = scene->version;
     g_epoch = mem_epoch();
     g_built = 1;
-    log_print(LOG_INFO, "collide: %d models in a %d x %d grid of %d, %d entries",
+    /* A streamed world rebuilds often: its grids are only a debug line. */
+    log_print(scene->version ? LOG_DEBUG : LOG_INFO, "collide: %d models in a %d x %d grid of %d, %d entries",
               scene->nmodels, g_gw, g_gh, df_iround(g_cell), nref);
     return 1;
 }
@@ -335,6 +394,37 @@ int collide_gather(float minx, float miny, float minz,
     we[0] = (maxx - minx) * 0.5f;
     we[1] = (maxy - miny) * 0.5f;
     we[2] = (maxz - minz) * 0.5f;
+    if (g_by_span) {
+        int s;
+
+        /* A model is in one span at a time (its slot's ground, near or far, or the rest): no marks. */
+        for (s = 0; s < g_scene->nspans; s++) {
+            const Span *sp;
+            int i;
+
+            sp = &g_scene->spans[s];
+            if (sp->count < 1 || df_absf(sp->cx - wc[0]) > sp->ex + we[0]
+                || df_absf(sp->cy - wc[1]) > sp->ey + we[1] || df_absf(sp->cz - wc[2]) > sp->ez + we[2]) {
+                continue;
+            }
+            for (i = sp->first; i < sp->first + sp->count; i++) {
+                const Bound *b;
+
+                b = &g_scene->bounds[i];
+                if (!g_scene->models[i].mesh || b->ex < 0.0f
+                    || df_absf(b->cx - wc[0]) > b->ex + we[0] || df_absf(b->cy - wc[1]) > b->ey + we[1]
+                    || df_absf(b->cz - wc[2]) > b->ez + we[2]) {
+                    continue;
+                }
+                gather_model(&g_scene->models[i], wc, we);
+            }
+        }
+        if (g_dropped > 0) {
+            log_print(LOG_WARN, "collide: %d triangles past the %d the set holds were left out",
+                      g_dropped, COLLIDE_SET);
+        }
+        return g_nset;
+    }
     g_stamp++;
     cell_span(minx, minz, maxx, maxz, &x0, &z0, &x1, &z1);
     for (z = z0; z <= z1; z++) {

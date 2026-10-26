@@ -22,6 +22,7 @@
 #include "engine/scene/walker.h"
 #include "engine/scene/interact.h"
 #include "engine/core/prof.h"
+#include "engine/gfx/texres.h"
 #include "engine/scene/collide.h"
 #include "engine/scene/scene.h"
 #include "engine/ui/cmd.h"
@@ -1010,6 +1011,20 @@ static void check_console(void)
     check_expect(g_hits == 3 && same(g_last_arg, "e"), "cmd_run ran the wrong commands");
     cmd_run("probe \"two words\"");
     check_expect(same(g_last_arg, "two words"), "quotes did not keep one argument");
+    /* A toggling switch flips on its bare name; a plain one only says what it is. */
+    check_expect(cmd_var("zflip", get_var, set_var, 0, 1, "test") && cmd_toggles("zflip")
+                 && !cmd_toggles("probe_n"), "cmd_toggles took a number, or refused a switch");
+    g_var = 0;
+    cmd_run("zflip");
+    check_expect(g_var == 1 && same(log_get(0), "zflip on"), "a bare toggling switch did not flip on");
+    cmd_run("zflip");
+    check_expect(g_var == 0 && same(log_get(0), "zflip off"), "a bare toggling switch did not flip off");
+    cmd_run("zflip on");
+    cmd_run("zflip 1");
+    check_expect(g_var == 1, "a toggling switch did not take a value");
+    g_var = 15;
+    cmd_run("probe_n");
+    check_expect(g_var == 15, "a bare plain variable changed");
     cmd_run("nosuch");
     check_expect(same(log_get(0), "unknown command nosuch, help lists them"), "unknown command reply");
 
@@ -2050,6 +2065,97 @@ static void check_prof(void)
                  "the profile's stage names are wrong");
 }
 
+/* A fake card for the residency test: a P8 chain is 4/3 of its top level, a cutout twice that. */
+static int g_fake_h;
+static int g_fake_released;
+
+static df_u32 fake_bytes(int side, int cutout)
+{
+    df_u32 b;
+
+    b = (df_u32)side * (df_u32)side * 4u / 3u + 8u;
+    return cutout ? b * 2u : b;
+}
+
+static int fake_upload(int slot, int drop, df_u32 addr, df_u32 *handle)
+{
+    (void)slot;
+    (void)drop;
+    (void)addr;
+    *handle = (df_u32)++g_fake_h;
+    return 1;
+}
+
+static void fake_release(df_u32 handle)
+{
+    (void)handle;
+    g_fake_released++;
+}
+
+/* The card's residency for a streamed world (docs/streaming.md, The card). */
+static void check_texres(void)
+{
+    TexResOps ops;
+    df_u32 used, room;
+    int added, sharp, uploads, evictions;
+    int i;
+
+    ops.bytes = fake_bytes;
+    ops.upload = fake_upload;
+    ops.release = fake_release;
+    /* 256 KB: one 256 chain (a 128 KB block) beside the small copies, not two. */
+    texres_begin(4096u, 4096u + 256u * 1024u, &ops);
+    for (i = 0; i < 4; i++) {
+        check_expect(texres_add(i, 256, 0, 0.25f), "a picture's small copy did not go on the card");
+    }
+    check_expect(texres_drop(0) == 5, "a 256 picture's small copy is not its 8 x 8 level");
+    /* Near the camera (focal 400, density 0.25: full size within 1600 units). */
+    texres_note(0, 100.0f);
+    texres_service(400.0f, 1024u * 1024u);
+    check_expect(texres_drop(0) == 0, "a picture drawn near did not get its full size");
+    texres_note(1, 3000.0f);
+    texres_service(400.0f, 1024u * 1024u);
+    check_expect(texres_drop(1) == 1, "a picture drawn at 3000 did not get half size");
+    /* Slot 2 near, this frame: the full card frees the copy drawn longest ago, slot 0's. */
+    texres_note(1, 3000.0f);
+    texres_service(400.0f, 1024u * 1024u);
+    texres_note(2, 50.0f);
+    texres_note(1, 3000.0f);
+    texres_service(400.0f, 1024u * 1024u);
+    texres_stats(&added, &sharp, &used, &room, &uploads, &evictions);
+    check_expect(texres_drop(2) == 0 && texres_drop(1) == 1 && texres_drop(0) == 5 && evictions >= 1,
+                 "a full card did not free the sharp copy drawn longest ago");
+    /* Three near at once with room for one: the others settle a level or more down. */
+    texres_note(0, 10.0f);
+    texres_note(1, 10.0f);
+    texres_note(2, 10.0f);
+    texres_service(400.0f, 1024u * 1024u);
+    texres_note(0, 10.0f);
+    texres_note(1, 10.0f);
+    texres_note(2, 10.0f);
+    texres_service(400.0f, 1024u * 1024u);
+    check_expect(texres_drop(0) < 5 && texres_drop(1) < 5 && texres_drop(2) < 5
+                 && texres_drop(0) + texres_drop(1) + texres_drop(2) >= 2,
+                 "three pictures near on a card for one were not downsized to fit");
+    /* A budget too small for a 256 chain still sends one copy a frame, never two. */
+    texres_note(3, 10.0f);
+    texres_service(400.0f, 16u);
+    check_expect(texres_drop(3) < 5, "a small budget sent nothing at all");
+    for (i = 0; i < 4; i++) {
+        texres_remove(i);
+    }
+    texres_stats(&added, &sharp, &used, &room, &uploads, &evictions);
+    check_expect(added == 0 && sharp == 0 && used == 0 && room == 256u * 1024u,
+                 "removing every picture did not give the whole card back");
+    /* Joined again: the small copy in one 128 KB half, the full chain in the other, which was cut up. */
+    check_expect(texres_add(0, 256, 0, 0.25f), "a small copy did not fit an empty card");
+    texres_note(0, 10.0f);
+    texres_service(400.0f, 1024u * 1024u);
+    check_expect(texres_drop(0) == 0, "freed blocks did not join back into a 256 KB block");
+    texres_remove(0);
+    texres_end();
+}
+
 void check_engine(void)
 {
     check_rotation();
@@ -2068,5 +2174,6 @@ void check_engine(void)
     check_collision();
     check_interact();
     check_prof();
+    check_texres();
     check_sound();
 }

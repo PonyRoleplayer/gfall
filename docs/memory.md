@@ -2,7 +2,7 @@
 
 Two different budgets. System RAM is the Win32 heap. Texture memory is the 2MB on the Voodoo. `out of memory` is the heap. `texture memory is full` is the card. A city used to die on the first, then on the second. Read this before changing `assemble`, `rmb_load`, `rdb_load`, `arch3d_load`, or `texcache`.
 
-There is no `mem_free`. Bytes live until `mem_temp_end` destroys the temp heap (a no-op on the host). Do not allocate a size you will not use.
+There is no `mem_free` on the main or temp heap. Bytes live until `mem_temp_end` destroys the temp heap (a no-op on the host). Do not allocate a size you will not use. A streamed world is the exception, below: private heaps that free.
 
 ## Why a city died on the heap
 
@@ -40,7 +40,27 @@ About 1.5 MB on the main heap, kept for the process (`mem_keep`), since a voice 
 
 ## The world map and the stream
 
-`worldmap.c` keeps 2 MB for the process, on the main heap (`mem_keep`): `WOODS.WLD`'s height map (500 KB), the climate a pixel (500 KB), and the location a pixel (1 MB of 16-bit numbers, and the 15,251 locations' region and index). A stream's slots are allocated once on its temp heap: 121 slots of 16 models, about 100 KB of models and boxes; the wilderness's patch meshes are 8, shared. See `docs/streaming.md`.
+`worldmap.c` keeps 2 MB for the process, on the main heap (`mem_keep`): `WOODS.WLD`'s height map (500 KB), the climate a pixel (500 KB), and the location a pixel (1 MB of 16-bit numbers, and the 15,251 locations' region and index). A stream's slots are allocated once on its temp heap (see "A streamed world" below); the wilderness's patch meshes are 8, shared, made again when the season turns. See `docs/streaming.md`.
+
+## A streamed world
+
+The stream can free (`docs/streaming.md`, Memory that can be freed). `mem_heap_new` makes a private heap (`HeapCreate`; malloc with a block list on the host); `mem_heap_use` points `mem_alloc` at it and gives back the one it replaces; `mem_heap_free` frees one block of it, `mem_heap_delete` all of it. `mem_track` lists every allocation made in the heap current when it was set, and no nested heap's, so a picture can be freed piece by piece. Heaps never move `mem_epoch`. `mem_scratch` always takes the main heap.
+
+| What | Where | Cap |
+|---|---|---|
+| A chunk: its block, ground, far quads and baked picture (16 KB), doors' work lists | the chunk's heap, deleted when it drops | a chunk's |
+| A chunk's lamps' decals | a heap per slot in `light.c`, deleted with the chunk | a chunk's |
+| Pictures' pixels | `wres`'s pictures' heap, each under a track | 8 MB of unheld pictures (`wres_trim`) |
+| Their mip chains | `texcache`'s chain heap, freed with the picture | follows the pictures |
+| Meshes, per climate variant | `wres`'s meshes' heap, for the session | 10 MB, reported (`wres_full`) |
+| `TEXTURE` files | `texture.c`'s own heap, least recently used freed | 4 MB (`texture_cache_limit`), the file just read kept |
+| Ground tiles shrunk for far ground | static in `wild.c` | 32 KB |
+| The land's far picture (16 KB) and its near and far meshes (a few KB) | the chunk's heap | a chunk's |
+| WOODS.WLD's finer heights, 1024 pixels' | static in `worldmap.c` | 13 KB |
+| MAPS.BSA kept open, the last region's location records | `dungeon.c`'s own heap (`exterior_keep`) | one region, a few hundred KB |
+| The slots' arrays, light and sound tables | the stream's temp heap | about 4 MB at 121 slots |
+
+On the card, a streamed world's pictures do not go up at load. The sky, falloff and font first; the rest of TMU0 is `texres.c`'s buddy allocator. Every picture has an 8 × 8 copy; sharper ones go up after the frame, at most 64 KB and 8 downloads a frame, chosen by how near each picture was drawn, the least recently drawn freed when short of room. This is not the drip warned against below: nothing is built during the frame (the chains are made when a picture's pixels are read and kept), the downloads come after the frame's last triangle under a byte budget, and the 8 × 8 copy means a face is never left on a wrong texture while it waits.
 
 ## Doors and actions
 

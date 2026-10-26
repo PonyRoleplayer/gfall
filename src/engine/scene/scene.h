@@ -42,6 +42,19 @@ typedef struct Flat {
     df_u8 phase;
     /* The loader's mark, carried with the flat (a person, say). The engine does not read it. */
     df_u16 tag;
+    /*
+     * Drawn only within sight * 16 units of the camera, across the
+     * ground; 0 at any distance. A streamed world's trees and rocks:
+     * there are too many to draw to the far clip (docs/streaming.md).
+     * Such a flat is flora to the console's switches (scene_set_flora).
+     */
+    df_u16 sight;
+    /*
+     * Flora's rank, 0..255, spread evenly: drawn when under the
+     * density's share of 256 (scene_set_flora_density). In the struct's
+     * padding. 0 for anything else.
+     */
+    df_u8 thin;
 } Flat;
 
 /*
@@ -176,6 +189,19 @@ typedef struct Span {
     int count;
     float cx, cy, cz;
     float ex, ey, ez;
+    /*
+     * Its sprites too, when Scene.sprite_spans is 1 (a streamed world's
+     * chunk): the box then holds them as well, and the sprite cull
+     * skips a span the box says is out of view, sprites and all.
+     */
+    int sfirst;
+    int scount;
+    /*
+     * And its emitters (Scene.sprite_spans 1): ambience walks these
+     * ranges, not the whole array, most of whose slots are empty.
+     */
+    int efirst;
+    int ecount;
 } Span;
 
 typedef struct Scene {
@@ -209,6 +235,8 @@ typedef struct Scene {
      * grid) is built again. 0 for a place loaded whole.
      */
     int version;
+    /* 1 when every sprite is in exactly one span's sfirst..scount (docs/streaming.md). */
+    int sprite_spans;
 } Scene;
 
 void instance_set_rotation(Instance *in, float rx, float ry, float rz);
@@ -258,6 +286,20 @@ void scene_set_fog_far(float fog_far);
 /* 1 keeps the frustum. 0 lists every entity, as a null camera does. */
 void scene_set_cull(int on);
 int scene_cull(void);
+/*
+ * Flora, the flats with a sight (Flat.sight), at no cost to reload
+ * (docs/streaming.md, Flora). Off: none drawn. Density: the percent of
+ * what the place stood that draws, 0..100, by each flat's rank
+ * (Flat.thin); default 40. Sight: units across the ground they draw
+ * within, in place of each flat's own; 0 (default) keeps theirs.
+ */
+#define SCENE_FLORA_DENSITY 40
+void scene_set_flora(int on);
+int scene_flora(void);
+void scene_set_flora_density(int percent);
+int scene_flora_density(void);
+void scene_set_flora_sight(int units);
+int scene_flora_sight(void);
 
 /*
  * Visibility. Writes storage indices into out, in storage order, and

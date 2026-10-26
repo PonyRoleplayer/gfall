@@ -22,6 +22,8 @@ typedef struct CmdEntry {
     void (*set)(int);
     int lo;
     int hi;
+    /* A switch whose bare name flips it (cmd_toggles), rather than printing it. */
+    int toggles;
 } CmdEntry;
 
 static CmdEntry g_cmd[CMD_MAX];
@@ -90,6 +92,7 @@ static CmdEntry *add_entry(const char *name)
     e->set = 0;
     e->lo = 0;
     e->hi = 0;
+    e->toggles = 0;
     return e;
 }
 
@@ -128,6 +131,20 @@ int cmd_var(const char *name, int (*get)(void), void (*set)(int),
     e->hi = hi;
     e->usage = (lo == 0 && hi == 1) ? "on|off" : "number";
     e->help = help ? help : "";
+    return 1;
+}
+
+static int is_switch(const CmdEntry *e);
+
+int cmd_toggles(const char *name)
+{
+    CmdEntry *e;
+
+    e = find(name);
+    if (!e || !is_switch(e)) {
+        return 0;
+    }
+    e->toggles = 1;
     return 1;
 }
 
@@ -211,6 +228,10 @@ static void run_var(CmdEntry *e, int argc, char **argv)
     int v;
 
     if (argc < 2) {
+        /* A toggling switch flips; any other variable says what it is. */
+        if (e->toggles) {
+            e->set(e->get() ? 0 : 1);
+        }
         say_var(e);
         return;
     }

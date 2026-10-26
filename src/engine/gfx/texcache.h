@@ -4,6 +4,7 @@
 #include "engine/core/df.h"
 
 struct Level;
+struct Image;
 
 /*
  * Each picture is uploaded once, at load: a mip chain when
@@ -25,5 +26,25 @@ const char *texcache_error(void);
 void texcache_stats(int *live, int *unfit, int *total, df_u32 *bytes);
 /* Pictures the budget put on the card below full size. */
 int texcache_reduced(void);
+
+/*
+ * A streamed world's pictures (docs/streaming.md, The card): pictures
+ * come and go as chunks do, each at the size its distance needs
+ * (engine/gfx/texres.h). Begin takes the card's room past the fixed
+ * uploads and the palette. Set builds slot's mip chain once, kept in
+ * RAM, and puts its small copy on the card; drop frees both. The draw
+ * notes each slot's nearest distance; service sends sharper copies
+ * after the frame, budget bytes at most. texcache_bind binds whichever
+ * copy a slot has.
+ */
+int texcache_stream_begin(const struct Level *level);
+void texcache_stream_end(void);
+int texcache_streamed(void);
+int texcache_stream_set(int slot, const struct Image *img, int cutout, float density);
+void texcache_stream_drop(int slot);
+void texcache_note(int slot, float dist);
+void texcache_stream_service(float focal, df_u32 budget);
+/* RAM held by the streamed pictures' chains. */
+df_u32 texcache_stream_ram(void);
 
 #endif

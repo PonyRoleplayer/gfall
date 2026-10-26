@@ -28,7 +28,8 @@ typedef char gfall_fog_table_is_64[(GR_FOG_TABLE_SIZE == 64) ? 1 : -1];
  * The image table is TEX_SLOTS in texcache.c (384). This array has
  * to hold that table, the font, and the near copies.
  */
-#define GPU_SLOTS 768
+/* Records: a place's pictures, or a streamed world's two copies of each (docs/streaming.md). */
+#define GPU_SLOTS 4608
 
 typedef void (FX_CALL *gr_init_fn)(void);
 typedef void (FX_CALL *gr_shutdown_fn)(void);
@@ -1517,6 +1518,68 @@ void glide_overlay(int on)
  * A bind of the texture already on TMU0 sends nothing, which is why
  * texcache keeps no cache of its own and text needs no forget.
  */
+void glide_tex_range(df_u32 *lo, df_u32 *hi)
+{
+    *lo = g_opened ? g_addr : 0;
+    *hi = g_opened ? g_addr_max : 0;
+}
+
+int glide_upload_chain(const df_u8 *levels, int side, int cutout, int chain, int drop,
+                       df_u32 addr, df_u32 *handle)
+{
+    GrTexInfo info;
+    df_u32 size;
+    df_u32 offset;
+    int bpp;
+    int k;
+    int i;
+
+    if (!g_opened || !levels || !handle || drop < 0 || (side >> drop) < 1) {
+        return 0;
+    }
+    if (!shape_bytes(side >> drop, cutout, chain, &info, &size)) {
+        return 0;
+    }
+    /* The chain from level drop on is the stored one past its larger levels. */
+    bpp = cutout ? 2 : 1;
+    offset = 0;
+    for (k = 0; k < drop; k++) {
+        offset += (df_u32)(side >> k) * (df_u32)(side >> k) * (df_u32)bpp;
+    }
+    info.data = (void *)(levels + offset);
+    /* A free record past the fixed pictures (glide_mark): a released one, or a new one. */
+    for (i = g_mark_ntex; i < g_ntex && g_tex[i].live; i++) {
+    }
+    if (i >= GPU_SLOTS) {
+        g_why = "no texture record free";
+        return 0;
+    }
+    glide.tex_down(GR_TMU0, addr, GR_MIPMAPLEVELMASK_BOTH, &info);
+    g_tex[i].addr = addr;
+    g_tex[i].info = info;
+    g_tex[i].info.data = 0;
+    g_tex[i].live = 1;
+    if (i >= g_ntex) {
+        g_ntex = i + 1;
+    }
+    *handle = (df_u32)i;
+    return 1;
+}
+
+void glide_release(df_u32 handle)
+{
+    int i;
+
+    i = (int)handle;
+    if (i < 0 || i >= g_ntex) {
+        return;
+    }
+    g_tex[i].live = 0;
+    if (g_bound == i) {
+        g_bound = -1;
+    }
+}
+
 void glide_bind(df_u32 handle)
 {
     int i;

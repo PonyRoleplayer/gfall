@@ -88,6 +88,10 @@ Per frame, in the castle at far 1400 (host count, default range):
 
 Testing each decal on its own is what keeps the drawn count low: a visible light's decals are mostly behind the camera, off the glass, or behind a wall. The pass costs its tests, those polygons, and fill only where light lands. None of this is measured on the 233 yet.
 
+## A streamed world
+
+`light_stream_begin` puts `light.c` in stream mode for a stream's scene (`docs/streaming.md`, Lights): each light's decals in a heap of its slot's, freed with the chunk; `light_corners_of(i)` is the corner array light i's decals index (`light_corners()` is 0 then), and `draw_lights` takes it per light. A light with no decals is skipped before anything else in the pass, as most of a stream's 1936 are. The cutting is queued when a chunk comes or goes and done under a budget by `light_stream_service`; a lamp's neighbours' pools are cut again when a chunk arrives or leaves beside them, and the result is the same as cutting all at once (tested). The rebase moves every decal, its box and its plane (`light_stream_shift`). A streamed lamp casts no shadow (`seen` passes everything in stream mode): the rays were 97% of the cut. Daggerfall's middle, 25 chunks: 114 lamps, 4435 decals.
+
 ## Not done
 
 - No player light, no flicker, no light from windows outdoors at night.

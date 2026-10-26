@@ -39,6 +39,44 @@ static void *counted(void *p, df_u32 bytes, int temp)
     return p;
 }
 
+/* The heap mem_alloc is pointed at, 0 for the temp or main heap; and the track. */
+static MemHeap *g_use;
+static void **g_track;
+static int g_track_cap;
+static int *g_track_count;
+/* The heap the track was set in: a nested heap's allocations are not its (texture.c's files). */
+static MemHeap *g_track_heap;
+
+/* mem_alloc as if no heap were set: the temp heap, else the main heap. */
+static void *base_alloc(df_u32 bytes);
+
+static void track(void *p)
+{
+    if (p && g_track && g_track_count && g_use == g_track_heap) {
+        if (*g_track_count < g_track_cap) {
+            g_track[*g_track_count] = p;
+        }
+        (*g_track_count)++;
+    }
+}
+
+MemHeap *mem_heap_use(MemHeap *h)
+{
+    MemHeap *was;
+
+    was = g_use;
+    g_use = h;
+    return was;
+}
+
+void mem_track(void **list, int cap, int *count)
+{
+    g_track = list;
+    g_track_cap = list ? cap : 0;
+    g_track_count = list ? count : 0;
+    g_track_heap = g_use;
+}
+
 static void *g_scratch[SCRATCH_SLOTS];
 static df_u32 g_scratch_cap[SCRATCH_SLOTS];
 
@@ -70,7 +108,8 @@ void *mem_scratch(int slot, df_u32 bytes)
         }
         cap <<= 1;
     }
-    p = mem_alloc(cap);
+    /* Never in a chunk's heap: the buffer outlives the chunk that grew it. */
+    p = base_alloc(cap);
     if (!p) {
         return 0;
     }
@@ -82,6 +121,98 @@ void *mem_scratch(int slot, df_u32 bytes)
 #ifdef DF_HOST
 
 #include <stdlib.h>
+
+/* Each allocation in a heap carries this before it, so the heap can free all of them. */
+typedef struct HostBlock {
+    struct HostBlock *prev;
+    struct HostBlock *next;
+    df_u32 size;
+    df_u32 pad;
+} HostBlock;
+
+struct MemHeap {
+    HostBlock *first;
+    df_u32 bytes;
+};
+
+MemHeap *mem_heap_new(void)
+{
+    MemHeap *h;
+
+    h = (MemHeap *)malloc(sizeof(MemHeap));
+    if (h) {
+        h->first = 0;
+        h->bytes = 0;
+    }
+    return h;
+}
+
+void mem_heap_delete(MemHeap *h)
+{
+    HostBlock *b;
+
+    if (!h) {
+        return;
+    }
+    if (g_use == h) {
+        g_use = 0;
+    }
+    b = h->first;
+    while (b) {
+        HostBlock *next;
+
+        next = b->next;
+        free(b);
+        b = next;
+    }
+    free(h);
+}
+
+static void *heap_alloc(MemHeap *h, df_u32 bytes)
+{
+    HostBlock *b;
+
+    b = (HostBlock *)malloc(sizeof(HostBlock) + bytes);
+    if (!b) {
+        log_print(LOG_ERROR, "out of memory: %u bytes in a heap", (unsigned int)bytes);
+        return 0;
+    }
+    mem_zero(b + 1, bytes);
+    b->size = bytes;
+    b->prev = 0;
+    b->next = h->first;
+    if (h->first) {
+        h->first->prev = b;
+    }
+    h->first = b;
+    h->bytes += bytes;
+    return b + 1;
+}
+
+void mem_heap_free(MemHeap *h, void *p)
+{
+    HostBlock *b;
+
+    if (!h || !p) {
+        return;
+    }
+    b = (HostBlock *)p - 1;
+    if (b->prev) {
+        b->prev->next = b->next;
+    } else {
+        h->first = b->next;
+    }
+    if (b->next) {
+        b->next->prev = b->prev;
+    }
+    h->bytes -= b->size;
+    free(b);
+}
+
+df_u32 mem_heap_bytes(const MemHeap *h)
+{
+    return h ? h->bytes : 0;
+}
 
 void mem_init(void)
 {
@@ -97,7 +228,7 @@ void mem_shutdown(void)
     scratch_drop();
 }
 
-void *mem_alloc(df_u32 bytes)
+static void *base_alloc(df_u32 bytes)
 {
     void *p;
 
@@ -110,6 +241,21 @@ void *mem_alloc(df_u32 bytes)
     }
     mem_zero(p, bytes);
     return p;
+}
+
+void *mem_alloc(df_u32 bytes)
+{
+    void *p;
+
+    if (g_use) {
+        if (bytes == 0) {
+            return 0;
+        }
+        p = heap_alloc(g_use, bytes);
+        track(p);
+        return p;
+    }
+    return base_alloc(bytes);
 }
 
 int mem_temp_begin(void)
@@ -138,6 +284,61 @@ void mem_temp_end(void)
 
 static HANDLE g_heap;
 static HANDLE g_temp;
+
+struct MemHeap {
+    HANDLE h;
+    df_u32 bytes;
+};
+
+MemHeap *mem_heap_new(void)
+{
+    MemHeap *h;
+
+    if (!g_heap) {
+        return 0;
+    }
+    h = (MemHeap *)HeapAlloc(g_heap, HEAP_ZERO_MEMORY, sizeof(MemHeap));
+    if (!h) {
+        return 0;
+    }
+    h->h = HeapCreate(0, 64 * 1024, 0);
+    if (!h->h) {
+        HeapFree(g_heap, 0, h);
+        return 0;
+    }
+    return h;
+}
+
+void mem_heap_delete(MemHeap *h)
+{
+    if (!h) {
+        return;
+    }
+    if (g_use == h) {
+        g_use = 0;
+    }
+    HeapDestroy(h->h);
+    HeapFree(g_heap, 0, h);
+}
+
+void mem_heap_free(MemHeap *h, void *p)
+{
+    DWORD n;
+
+    if (!h || !p) {
+        return;
+    }
+    n = HeapSize(h->h, 0, p);
+    if (n != (DWORD)-1 && n <= h->bytes) {
+        h->bytes -= (df_u32)n;
+    }
+    HeapFree(h->h, 0, p);
+}
+
+df_u32 mem_heap_bytes(const MemHeap *h)
+{
+    return h ? h->bytes : 0;
+}
 
 void mem_init(void)
 {
@@ -178,7 +379,7 @@ void mem_temp_end(void)
     }
 }
 
-void *mem_alloc(df_u32 bytes)
+static void *base_alloc(df_u32 bytes)
 {
     HANDLE heap;
 
@@ -187,6 +388,26 @@ void *mem_alloc(df_u32 bytes)
         return 0;
     }
     return counted(HeapAlloc(heap, HEAP_ZERO_MEMORY, bytes), bytes, g_temp != 0);
+}
+
+void *mem_alloc(df_u32 bytes)
+{
+    void *p;
+
+    if (g_use) {
+        if (bytes == 0) {
+            return 0;
+        }
+        p = HeapAlloc(g_use->h, HEAP_ZERO_MEMORY, bytes);
+        if (!p) {
+            log_print(LOG_ERROR, "out of memory: %u bytes in a heap", (unsigned int)bytes);
+            return 0;
+        }
+        g_use->bytes += bytes;
+        track(p);
+        return p;
+    }
+    return base_alloc(bytes);
 }
 
 void *mem_keep(df_u32 bytes)

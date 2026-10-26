@@ -16,6 +16,8 @@ static df_u32 g_start[PROF_STAGES];
 static df_u32 g_frame[PROF_STAGES];
 static df_u32 g_sum[PROF_STAGES];
 static df_u32 g_worst[PROF_STAGES];
+/* The last closed frame's stages, as they were. */
+static df_u32 g_last[PROF_STAGES];
 static float g_ms[PROF_STAGES];
 static float g_peak[PROF_STAGES];
 static int g_frames;
@@ -60,6 +62,7 @@ static void close_frame(void)
     int i;
 
     for (i = 0; i < PROF_STAGES; i++) {
+        g_last[i] = g_frame[i];
         g_sum[i] += g_frame[i];
         if (g_frame[i] > g_worst[i]) {
             g_worst[i] = g_frame[i];
@@ -155,4 +158,12 @@ df_u32 prof_now(void)
 df_u32 prof_per_ms(void)
 {
     return g_per_ms;
+}
+
+float prof_last_ms(int stage)
+{
+    if (stage < 0 || stage >= PROF_STAGES || g_per_ms == 0) {
+        return 0.0f;
+    }
+    return (float)g_last[stage] / (float)g_per_ms;
 }

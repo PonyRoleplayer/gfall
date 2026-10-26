@@ -814,53 +814,129 @@ struct ExtWalk {
     int n;
 };
 
-static int each_exterior(Bsa *maps, int region, ExtNames *src,
-                         int (*visit)(const df_u8 *rec, df_u32 size, int index, void *user),
-                         void *user)
+/*
+ * exterior_keep: while on, MAPS.BSA stays open and the last region's
+ * MAPNAMES and MAPPITEM stay read, in a heap of their own. A streamed
+ * world asks for town after town of one region; opening the archive and
+ * reading the region again for each was a millisecond on the host, a
+ * dropped frame or two on the 233 (docs/streaming.md).
+ */
+static int g_keep;
+static MemHeap *g_keep_heap;
+static Bsa *g_keep_maps;
+static int g_keep_region = -1;
+static df_u8 *g_keep_names;
+static df_u8 *g_keep_items;
+static df_u32 g_keep_nsize;
+static df_u32 g_keep_isize;
+
+void exterior_keep(int on)
+{
+    if (g_keep_maps) {
+        bsa_close(g_keep_maps);
+    }
+    mem_heap_delete(g_keep_heap);
+    g_keep_maps = 0;
+    g_keep_heap = 0;
+    g_keep_region = -1;
+    g_keep = on ? 1 : 0;
+    /* Opened now, on the caller's heap: a load may run in a heap thrown away after it. */
+    if (g_keep) {
+        g_keep_maps = bsa_open(MAP_NAME);
+        g_keep = g_keep_maps != 0;
+    }
+}
+
+/* The region's names and items: 1 read, -1 when the region has none, 0 when a read failed. */
+static int region_bytes(Bsa *maps, int region, df_u8 **names, df_u32 *nsize,
+                        df_u8 **items, df_u32 *isize)
 {
     char name[16];
     const BsaRec *names_rec;
     const BsaRec *items_rec;
-    df_u8 *names;
-    df_u8 *items;
-    df_u32 count;
-    df_u32 base;
-    df_u32 i;
+    MemHeap *was;
 
+    if (g_keep && region == g_keep_region) {
+        *names = g_keep_names;
+        *nsize = g_keep_nsize;
+        *items = g_keep_items;
+        *isize = g_keep_isize;
+        return 1;
+    }
     map_file(name, "MAPNAMES.", region);
     names_rec = bsa_find_name(maps, name);
     map_file(name, "MAPPITEM.", region);
     items_rec = bsa_find_name(maps, name);
     if (!names_rec || !items_rec || names_rec->size < 4 || items_rec->size < 4) {
-        return 1;
+        return -1;
     }
-    names = bsa_read(maps, names_rec);
-    items = bsa_read(maps, items_rec);
-    if (!names || !items) {
+    was = 0;
+    if (g_keep) {
+        /* The last region's bytes go; this one's are kept instead. */
+        mem_heap_delete(g_keep_heap);
+        g_keep_region = -1;
+        g_keep_heap = mem_heap_new();
+        was = mem_heap_use(g_keep_heap);
+    }
+    *names = bsa_read(maps, names_rec);
+    *items = bsa_read(maps, items_rec);
+    if (g_keep) {
+        mem_heap_use(was);
+    }
+    if (!*names || !*items) {
         why(name);
         return 0;
     }
+    *nsize = names_rec->size;
+    *isize = items_rec->size;
+    if (g_keep) {
+        g_keep_region = region;
+        g_keep_names = *names;
+        g_keep_items = *items;
+        g_keep_nsize = *nsize;
+        g_keep_isize = *isize;
+    }
+    return 1;
+}
+
+static int each_exterior(Bsa *maps, int region, ExtNames *src,
+                         int (*visit)(const df_u8 *rec, df_u32 size, int index, void *user),
+                         void *user)
+{
+    df_u8 *names;
+    df_u8 *items;
+    df_u32 nsize;
+    df_u32 isize;
+    df_u32 count;
+    df_u32 base;
+    df_u32 i;
+    int got;
+
+    got = region_bytes(maps, region, &names, &nsize, &items, &isize);
+    if (got <= 0) {
+        return got < 0;
+    }
     count = df_ru32(names);
     base = count * 4u;
-    if (count < 1 || count > 4096 || items_rec->size < base) {
+    if (count < 1 || count > 4096 || isize < base) {
         return 1;
     }
-    if (4u + count * 32u > names_rec->size) {
+    if (4u + count * 32u > nsize) {
         return 1;
     }
     src->names = names;
-    src->name_bytes = names_rec->size;
+    src->name_bytes = nsize;
     src->region = region;
     for (i = 0; i < count; i++) {
         df_u32 rel;
         df_u32 pos;
 
         rel = df_ru32(items + i * 4u);
-        if (rel > items_rec->size - base) {
+        if (rel > isize - base) {
             continue;
         }
         pos = base + rel;
-        if (!visit(items + pos, items_rec->size - pos, (int)i, user)) {
+        if (!visit(items + pos, isize - pos, (int)i, user)) {
             return 1;
         }
     }
@@ -1007,7 +1083,7 @@ int exterior_load_at(int region, int index, Dungeon *out)
     out->exterior_id = 0;
     out->climate = 0;
     out->outdoor = 0;
-    maps = bsa_open(MAP_NAME);
+    maps = g_keep ? g_keep_maps : bsa_open(MAP_NAME);
     if (!maps) {
         why(MAP_NAME);
         return 0;
@@ -1021,10 +1097,14 @@ int exterior_load_at(int region, int index, Dungeon *out)
     one.found = 0;
     one.bad = 0;
     if (!each_exterior(maps, region, &one.src, ext_one_visit, &one)) {
-        bsa_close(maps);
+        if (!g_keep) {
+            bsa_close(maps);
+        }
         return 0;
     }
-    bsa_close(maps);
+    if (!g_keep) {
+        bsa_close(maps);
+    }
     if (one.bad || !one.found || out->nblocks < 1) {
         if (!one.bad) {
             map_file(name, "MAPPITEM.", region);

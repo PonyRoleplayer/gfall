@@ -69,6 +69,7 @@ GFALL_SRC := \
 	src/engine/gfx/camera.c \
 	src/engine/gfx/texcache.c \
 	src/engine/gfx/mip.c \
+	src/engine/gfx/texres.c \
 	src/engine/gfx/draw.c \
 	src/engine/gfx/sky.c \
 	src/engine/gfx/gfx.c \
@@ -92,6 +93,8 @@ GFALL_SRC := \
 	src/game/dagger/swaps.c \
 	src/game/dagger/worldmap.c \
 	src/game/dagger/wild.c \
+	src/game/dagger/terrain.c \
+	src/game/dagger/wres.c \
 	src/game/dagger/skyfile.c \
 	src/game/dagger/forecast.c \
 	src/game/dagger/player.c \
@@ -128,6 +131,7 @@ RENDER_SRC := \
 	src/engine/gfx/camera.c \
 	src/engine/gfx/texcache.c \
 	src/engine/gfx/mip.c \
+	src/engine/gfx/texres.c \
 	src/engine/gfx/draw.c \
 	src/engine/gfx/sky.c \
 	src/engine/gfx/gfx.c \
@@ -171,6 +175,7 @@ LEVEL_SRC := \
 	src/engine/gfx/camera.c \
 	src/engine/gfx/texcache.c \
 	src/engine/gfx/mip.c \
+	src/engine/gfx/texres.c \
 	src/engine/gfx/draw.c \
 	src/engine/gfx/sky.c \
 	src/engine/gfx/gfx.c \
@@ -193,6 +198,8 @@ LEVEL_SRC := \
 	src/game/dagger/swaps.c \
 	src/game/dagger/worldmap.c \
 	src/game/dagger/wild.c \
+	src/game/dagger/terrain.c \
+	src/game/dagger/wres.c \
 	src/game/dagger/skyfile.c \
 	src/game/dagger/forecast.c \
 	src/game/dagger/sndfile.c \
@@ -223,6 +230,7 @@ HOST_SRC := \
 	src/engine/sound/ambience.c \
 	src/engine/gfx/camera.c \
 	src/engine/gfx/mip.c \
+	src/engine/gfx/texres.c \
 	src/game/dagger/bsa.c \
 	src/game/dagger/palette.c \
 	src/game/dagger/texture.c \
@@ -236,6 +244,8 @@ HOST_SRC := \
 	src/game/dagger/swaps.c \
 	src/game/dagger/worldmap.c \
 	src/game/dagger/wild.c \
+	src/game/dagger/terrain.c \
+	src/game/dagger/wres.c \
 	src/game/dagger/skyfile.c \
 	src/game/dagger/forecast.c \
 	src/game/dagger/player.c \

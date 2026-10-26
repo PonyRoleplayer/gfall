@@ -523,6 +523,45 @@ static void corners_add(const Pt *pts, int n, int face)
     }
 }
 
+/*
+ * The corners in order of x (g_byx, indices into the tables above), so
+ * a face looks only at those inside its own box: a corner on one of its
+ * edges is. Scanning every corner of the model for every face was the
+ * whole cost of a big model, 7 ms on the host for model 451, a quarter
+ * second on the 233, when a streamed town met it (docs/streaming.md).
+ */
+static int g_byx[WELD_POINTS];
+
+static void corners_sort(void)
+{
+    int gap;
+    int i;
+
+    if (g_corners < 1) {
+        return;
+    }
+    for (i = 0; i < g_corners; i++) {
+        g_byx[i] = i;
+    }
+    /* Shell sort: a few thousand, once a model. Ties by index, so the order is the table's. */
+    for (gap = g_corners / 2; gap > 0; gap /= 2) {
+        for (i = gap; i < g_corners; i++) {
+            int v;
+            int j;
+
+            v = g_byx[i];
+            for (j = i; j >= gap && (g_cx[g_byx[j - gap]] > g_cx[v]
+                                      || (g_cx[g_byx[j - gap]] == g_cx[v] && g_byx[j - gap] > v));
+                 j -= gap) {
+                g_byx[j] = g_byx[j - gap];
+            }
+            g_byx[j] = v;
+        }
+    }
+}
+
+static int g_cand[WELD_POINTS];
+static int g_ncand;
 static double g_near_x[WELD_POINTS];
 static double g_near_y[WELD_POINTS];
 static double g_near_z[WELD_POINTS];
@@ -581,11 +620,70 @@ static int weld(int face, Pt *pts, int n, int *uv_u, int *uv_v)
     ny /= nl;
     nz /= nl;
     d0 = nx * pts[0].x + ny * pts[0].y + nz * pts[0].z;
-    /* Only another face's corners on this face's plane can lie on its edges. */
+    /*
+     * Only another face's corners on this face's plane, inside its box,
+     * can lie on its edges: the box's run of the corners by x, then y and
+     * z, then the plane. Gathered in the table's order, as a scan of
+     * every corner had them, so the weld is the same to the bit.
+     */
+    {
+        int bx0, bx1, by0, by1, bz0, bz1;
+        int lo;
+        int hi;
+
+        bx0 = bx1 = pts[0].x;
+        by0 = by1 = pts[0].y;
+        bz0 = bz1 = pts[0].z;
+        for (i = 1; i < n; i++) {
+            bx0 = pts[i].x < bx0 ? pts[i].x : bx0;
+            bx1 = pts[i].x > bx1 ? pts[i].x : bx1;
+            by0 = pts[i].y < by0 ? pts[i].y : by0;
+            by1 = pts[i].y > by1 ? pts[i].y : by1;
+            bz0 = pts[i].z < bz0 ? pts[i].z : bz0;
+            bz1 = pts[i].z > bz1 ? pts[i].z : bz1;
+        }
+        /* WELD_NEAR off a line, and its rounding: a margin of a little more. */
+        bx0 -= (int)WELD_NEAR + 1;
+        bx1 += (int)WELD_NEAR + 1;
+        by0 -= (int)WELD_NEAR + 1;
+        by1 += (int)WELD_NEAR + 1;
+        bz0 -= (int)WELD_NEAR + 1;
+        bz1 += (int)WELD_NEAR + 1;
+        lo = 0;
+        hi = g_corners;
+        while (lo < hi) {
+            int mid;
+
+            mid = (lo + hi) / 2;
+            if (g_cx[g_byx[mid]] < bx0) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        g_ncand = 0;
+        for (i = lo; i < g_corners && g_cx[g_byx[i]] <= bx1; i++) {
+            k = g_byx[i];
+            if (g_cy[k] < by0 || g_cy[k] > by1 || g_cz[k] < bz0 || g_cz[k] > bz1) {
+                continue;
+            }
+            /* In the table's order: an insertion, the run is short. */
+            {
+                int j;
+
+                for (j = g_ncand; j > 0 && g_cand[j - 1] > k; j--) {
+                    g_cand[j] = g_cand[j - 1];
+                }
+                g_cand[j] = k;
+                g_ncand++;
+            }
+        }
+    }
     near = 0;
-    for (k = 0; k < g_corners; k++) {
+    for (i = 0; i < g_ncand; i++) {
         double x, y, z, d;
 
+        k = g_cand[i];
         if (g_cface[k] == face) {
             continue;
         }
@@ -700,6 +798,21 @@ static int weld(int face, Pt *pts, int n, int *uv_u, int *uv_v)
     return m;
 }
 
+/*
+ * Each face as the counting pass left it, straightened and welded with
+ * its texels, for the emitting pass to take instead of welding again:
+ * the weld is most of a big model's load. A model whose faces do not
+ * fit is welded twice, as before. Static, about 115 KB.
+ */
+#define KEPT_POINTS 4096
+#define KEPT_FACES 4096
+static Pt g_kpts[KEPT_POINTS];
+static int g_ku[KEPT_POINTS];
+static int g_kv[KEPT_POINTS];
+static int g_kfirst[KEPT_FACES];
+static signed char g_kn[KEPT_FACES];
+static int g_nkept;
+
 static void emit_fan(Mesh *mesh, int cap, const Pt *pts, int npts,
                      const int *uv_u, const int *uv_v, df_u16 tex)
 {
@@ -767,20 +880,27 @@ Mesh *arch3d_load(const df_u8 *rec, df_u32 size, df_u32 id)
         npts = straighten(pts, npts, 0, 0);
         corners_add(pts, npts, plane);
     }
+    corners_sort();
     /*
      * The old cap was the file length over 8, which reserved a triangle
      * for every few bytes of points. Count the faces, then allocate that.
      */
     cap = 0;
     nface = 0;
+    g_nkept = 0;
     p = (df_u32)plane_off;
     for (plane = 0; plane < plane_count; plane++) {
         Pt pts[WELD_MAX];
+        int uv_u[WELD_MAX];
+        int uv_v[WELD_MAX];
         int npts;
         df_u16 tex;
         int got;
         int nt;
 
+        if (plane < KEPT_FACES) {
+            g_kn[plane] = -1;
+        }
         got = decode_plane(rec, size, &p, v25, point_off, point_end, id, pts, &npts, &tex);
         if (got < 0) {
             break;
@@ -788,8 +908,22 @@ Mesh *arch3d_load(const df_u8 *rec, df_u32 size, df_u32 id)
         if (got == 0) {
             continue;
         }
-        npts = straighten(pts, npts, 0, 0);
-        npts = weld(plane, pts, npts, 0, 0);
+        /* As the emitting pass does it, texels and all, and kept for it. */
+        plane_uv(pts, npts, uv_u, uv_v);
+        npts = straighten(pts, npts, uv_u, uv_v);
+        npts = weld(plane, pts, npts, uv_u, uv_v);
+        if (plane < KEPT_FACES && g_nkept + npts <= KEPT_POINTS) {
+            int q;
+
+            g_kfirst[plane] = g_nkept;
+            g_kn[plane] = (signed char)npts;
+            for (q = 0; q < npts; q++) {
+                g_kpts[g_nkept + q] = pts[q];
+                g_ku[g_nkept + q] = uv_u[q];
+                g_kv[g_nkept + q] = uv_v[q];
+            }
+            g_nkept += npts;
+        }
         nt = tri_count(pts, npts);
         cap += nt;
         if (nt > 0) {
@@ -833,8 +967,20 @@ Mesh *arch3d_load(const df_u8 *rec, df_u32 size, df_u32 id)
         if (got == 0) {
             continue;
         }
+        if (plane < KEPT_FACES && g_kn[plane] >= 0) {
+            emit_fan(mesh, cap, &g_kpts[g_kfirst[plane]], g_kn[plane], &g_ku[g_kfirst[plane]],
+                     &g_kv[g_kfirst[plane]], tex);
+            continue;
+        }
         /* The file's texel rule reads its first three points, so before straighten. */
-        plane_uv(pts, npts, uv_u, uv_v);
+        {
+            int failed;
+
+            /* Its texel failure was counted by the counting pass already. */
+            failed = g_uv_fail;
+            plane_uv(pts, npts, uv_u, uv_v);
+            g_uv_fail = failed;
+        }
         npts = straighten(pts, npts, uv_u, uv_v);
         npts = weld(plane, pts, npts, uv_u, uv_v);
         emit_fan(mesh, cap, pts, npts, uv_u, uv_v, tex);

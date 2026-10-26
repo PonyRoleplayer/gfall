@@ -28,3 +28,7 @@ The sheet's mip levels bring the frames' cells within a texel of each other two 
 ## Flicker
 
 The light a flame casts wavers: see `docs/lighting.md`. Which lights flicker comes from these pictures, not the light records.
+
+## Sight
+
+`Flat.sight`, in 16s of world units: a flat farther than that across the ground from the camera is not drawn (`scene_visible_sprites`). 0, every place's own flats, draws at any distance. A streamed world's flora uses it (3072, `docs/streaming.md`, Flora): there are too many trees to draw out to the far clip.

@@ -30,6 +30,7 @@
 #include "engine/gfx/gfx.h"
 #include "engine/gfx/glide.h"
 #include "engine/gfx/texcache.h"
+#include "engine/gfx/texres.h"
 #include "engine/platform/input.h"
 #include "engine/platform/win32.h"
 #include "engine/scene/clock.h"
@@ -53,6 +54,7 @@
 #include "game/dagger/texture.h"
 #include "game/dagger/world.h"
 #include "game/dagger/wild.h"
+#include "game/dagger/wres.h"
 #include "game/dagger/worldmap.h"
 #include "engine/scene/stream.h"
 
@@ -185,6 +187,10 @@ static float g_auto_pose[5];
 static int g_sound_panel = 1;
 static int g_snd_rows = 5;
 static int g_sndview_cfg;
+/* flora=, floradensity=, florasight=: the console's flora switches at start; -1 unset. */
+static int g_flora_cfg;
+static int g_floradensity_cfg;
+static int g_florasight_cfg;
 static int g_sound_cfg = -1;
 static int g_sndvol_cfg = -1;
 static int g_music_cfg = -1;
@@ -2106,6 +2112,32 @@ static void draw_overlay(void)
      */
     n = 0;
     frame_tex[0] = 0;
+    if (g_streaming) {
+        int added;
+        int sharp;
+        df_u32 used;
+        df_u32 room;
+        df_u32 ram;
+        df_u32 mesh_ram;
+
+        /*
+         * A streamed world: pictures on the card over those the chunks
+         * use, the card's bytes in use, and the RAM the pictures, their
+         * chains, the meshes and the files take (docs/streaming.md).
+         */
+        texres_stats(&added, &sharp, &used, &room, 0, 0);
+        wres_stats(0, 0, &ram, 0, 0, &mesh_ram);
+        ram += texcache_stream_ram() + mesh_ram + texture_cache_bytes();
+        add_str(frame_tex, &n, (int)sizeof(frame_tex), "tex ");
+        add_num(frame_tex, &n, (int)sizeof(frame_tex), sharp, 0);
+        add_str(frame_tex, &n, (int)sizeof(frame_tex), "/");
+        add_num(frame_tex, &n, (int)sizeof(frame_tex), added, 0);
+        add_str(frame_tex, &n, (int)sizeof(frame_tex), "  ");
+        add_u(frame_tex, &n, (int)sizeof(frame_tex), used / 1024u);
+        add_str(frame_tex, &n, (int)sizeof(frame_tex), "K  ram ");
+        add_u(frame_tex, &n, (int)sizeof(frame_tex), ram / (1024u * 1024u));
+        add_str(frame_tex, &n, (int)sizeof(frame_tex), "M");
+    } else {
     add_str(frame_tex, &n, (int)sizeof(frame_tex), "tex ");
     add_num(frame_tex, &n, (int)sizeof(frame_tex), tex_live, 0);
     add_str(frame_tex, &n, (int)sizeof(frame_tex), "/");
@@ -2116,6 +2148,7 @@ static void draw_overlay(void)
     if (tex_unfit > 0) {
         add_str(frame_tex, &n, (int)sizeof(frame_tex), "  unfit ");
         add_num(frame_tex, &n, (int)sizeof(frame_tex), tex_unfit, 0);
+    }
     }
     frame_l[0] = frame_models;
     frame_l[1] = frame_flats;
@@ -2473,6 +2506,29 @@ static int pair_row(int row, int want_outdoor)
     return -1;
 }
 
+/* The list row of the town whose pixel a streamed door is in; -1 for none. */
+static int stream_row_of(const Usable *u)
+{
+    double wx;
+    double wz;
+    double ox;
+    double oz;
+    int region;
+    int index;
+    int i;
+
+    stream_world(u->cx, u->cz, &wx, &wz);
+    if (!wild_location_at(wx, wz, &region, &index, &ox, &oz)) {
+        return -1;
+    }
+    for (i = 0; i < g_nrows; i++) {
+        if (g_rows[i].outdoor && g_rows[i].region == region && g_rows[i].index == index) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 /*
  * The engine's handler while a place is viewed (interact_set_handler):
  * a passage ends the view, once view_row has somewhere to open; a
@@ -2497,8 +2553,18 @@ static int lf_use(const Scene *scene, const Usable *u, int index)
     if (u->kind != USE_PASSAGE) {
         return 0;
     }
-    if ((u->what == DOOR_DUNGEON && pair_row(g_row_now, 0) < 0)
-        || (u->what == DOOR_EXIT && pair_row(g_row_now, 1) < 0)) {
+    if (g_streaming) {
+        int row;
+
+        /* In the stream a door is its town's: into a house, or down into its dungeon. */
+        row = stream_row_of(u);
+        if (row < 0 || (u->what == DOOR_DUNGEON && pair_row(row, 0) < 0)
+            || (u->what != DOOR_ENTER && u->what != DOOR_DUNGEON)) {
+            interact_say("It leads nowhere in the list.");
+            return 1;
+        }
+    } else if ((u->what == DOOR_DUNGEON && pair_row(g_row_now, 0) < 0)
+               || (u->what == DOOR_EXIT && pair_row(g_row_now, 1) < 0)) {
         interact_say("It leads nowhere in the list.");
         return 1;
     }
@@ -3065,8 +3131,41 @@ static void view_row(int index)
     input_clear_quit();
 }
 
-/* The stream's share of a frame on the 233, to start with (docs/streaming.md, docs/profile.md). */
-#define STREAM_BUDGET_MS 4.0f
+/*
+ * The stream's share of a frame (docs/streaming.md, The budget). With
+ * vsync a frame shows on a 60 Hz retrace: one that runs past 16.7 ms
+ * waits for the next and shows at 30 fps, a stutter. So the stream takes
+ * what the last frame left before the retrace it made, less a margin,
+ * between a floor (it never stops loading) and a ceiling. Before the
+ * counter is calibrated, or with vsync off, the floor's double.
+ */
+#define STREAM_PERIOD_MS (1000.0f / 60.0f)
+#define STREAM_MARGIN_MS 1.5f
+#define STREAM_MIN_MS 1.0f
+#define STREAM_MAX_MS 8.0f
+/* A single step that ran past the budget by this much is logged (at most STREAM_LOG_MAX a stream). */
+#define STREAM_LOG_OVER_MS 8.0f
+#define STREAM_LOG_MAX 64
+static int g_stream_logged;
+
+static float stream_budget(void)
+{
+    float busy;
+    float end;
+    float b;
+
+    busy = prof_last_ms(PROF_FRAME) - prof_last_ms(PROF_SWAP);
+    if (prof_per_ms() == 0 || busy <= 0.0f || !glide_vsync()) {
+        return 2.0f * STREAM_MIN_MS;
+    }
+    /* The retrace this frame makes anyway, with room for the floor. */
+    end = STREAM_PERIOD_MS;
+    while (end < busy + STREAM_MIN_MS + STREAM_MARGIN_MS) {
+        end += STREAM_PERIOD_MS;
+    }
+    b = end - busy - STREAM_MARGIN_MS;
+    return b < STREAM_MIN_MS ? STREAM_MIN_MS : (b > STREAM_MAX_MS ? STREAM_MAX_MS : b);
+}
 
 /* The radius of chunks the far clip needs: 4096 a ring, at least one. */
 static int stream_radius_for_far(void)
@@ -3084,7 +3183,47 @@ static void stream_frame(Camera *cam)
     int py;
 
     stream_set_radius(stream_radius_for_far());
-    wild_update(cam, STREAM_BUDGET_MS);
+    /* The season turned: the chunks again in its pictures, behind "Loading..." (docs/streaming.md). */
+    if (wild_season_turned()) {
+        log_line("the season turned: the world again in its pictures");
+        gfx_hold("Loading...");
+        wild_reseason(cam);
+        gfx_fade_in(LAND_FADE);
+    }
+    {
+        float budget;
+        float worst;
+        float lamp;
+        int step;
+
+        budget = stream_budget();
+        wild_update(cam, budget);
+        /* A step past the budget is a stutter: logged, so the 233's are known by name. */
+        stream_worst(&worst, &step);
+        lamp = light_stream_worst();
+        if ((worst > budget + STREAM_LOG_OVER_MS || lamp > budget + STREAM_LOG_OVER_MS)
+            && g_stream_logged < STREAM_LOG_MAX) {
+            char line[96];
+            int n;
+
+            n = 0;
+            line[0] = 0;
+            add_str(line, &n, (int)sizeof(line), "stream: ");
+            if (worst >= lamp) {
+                add_str(line, &n, (int)sizeof(line), "chunk step ");
+                add_num(line, &n, (int)sizeof(line), step, 0);
+                add_str(line, &n, (int)sizeof(line), " took ");
+                add_ms(line, &n, (int)sizeof(line), worst);
+            } else {
+                add_str(line, &n, (int)sizeof(line), "a lamp's pools took ");
+                add_ms(line, &n, (int)sizeof(line), lamp);
+            }
+            add_str(line, &n, (int)sizeof(line), " ms, budget ");
+            add_ms(line, &n, (int)sizeof(line), budget);
+            log_line(line);
+            g_stream_logged++;
+        }
+    }
     wild_here(cam, &px, &py);
     if (px != g_stream_px || py != g_stream_py) {
         int region;
@@ -3120,16 +3259,102 @@ static void stream_frame(Camera *cam)
 }
 
 /*
+ * One place behind a door of the stream: the house the door is of
+ * (DOOR_ENTER, door in the town's own frame), or the town's dungeon
+ * (DOOR_DUNGEON), on its own temp heap, the card kept open. Returns 1
+ * when its way out was used (back to the stream), 0 for Esc or a load
+ * that failed (*glide_up 0 if the card was given back).
+ */
+static int stream_inside(int trow, int what, const Usable *door, int *glide_up)
+{
+    Dungeon dun;
+    World *world;
+    Level level;
+    Camera cam;
+    LfGo go;
+    int row;
+    int block;
+    int record;
+    int ok;
+
+    row = what == DOOR_ENTER ? trow : pair_row(trow, 0);
+    block = what == DOOR_ENTER ? door->tag >> 8 : -1;
+    record = door->tag & 0xff;
+    if (row < 0 || !mem_temp_begin()) {
+        return 0;
+    }
+    go.what = 0;
+    world = 0;
+    if (what == DOOR_ENTER) {
+        ok = exterior_load_at(g_rows[row].region, g_rows[row].index, &dun);
+        world = ok ? world_load_inside(&dun, block, record) : 0;
+    } else {
+        ok = dungeon_load_at(g_rows[row].region, g_rows[row].index, &dun);
+        world = ok ? world_load_dungeon(&dun) : 0;
+    }
+    if (!world) {
+        log_line(ok ? world_error() : dungeon_error());
+        gfx_shutdown();
+        *glide_up = 0;
+        win_fail(ok ? world_error() : dungeon_error());
+    } else {
+        world_as_level(world, &level);
+        if (!gfx_prepare(&level)) {
+            gfx_shutdown();
+            *glide_up = 0;
+            log_line(gfx_error());
+            win_fail(gfx_error());
+        } else {
+            float x, y, z, yaw, pitch;
+
+            land_at(world, what == DOOR_ENTER ? LAND_IN : LAND_BELOW, door, &x, &y, &z, &yaw, &pitch);
+            camera_set(&cam, x, y, z, yaw, pitch);
+            gfx_fade_in(LAND_FADE);
+            df_copy(g_view_name, g_rows[row].name, (int)sizeof(g_view_name));
+            g_region = g_rows[row].region;
+            g_dun = &dun;
+            g_world = world;
+            g_ref = &g_rows[row];
+            g_row_now = row;
+            g_inside = what == DOOR_ENTER;
+            run_view(&level, &cam);
+            go = g_go;
+            g_go.what = 0;
+            music_stop();
+            sound_stop_all();
+            g_ref = 0;
+            g_dun = 0;
+            g_world = 0;
+            g_row_now = -1;
+            g_inside = 0;
+        }
+    }
+    if (go.what && *glide_up) {
+        gfx_hold("Loading...");
+    }
+    texture_cache_clear();
+    mem_temp_end();
+    /* Out of the house, or up out of the dungeon: back to the stream where the door is. */
+    return *glide_up && (go.what == DOOR_LEAVE || go.what == DOOR_EXIT);
+}
+
+/*
  * "Stream World": the row's map pixel as the streamed world, from its
- * middle (an indoor row, its outside's), until Esc. Phase 1: the
- * wilderness, flat, no buildings (docs/streaming.md). One temp heap and
- * one Glide open for the whole walk.
+ * middle (an indoor row, its outside's), until Esc. One temp heap and
+ * one Glide open for the whole walk. A door into a house or down into
+ * a dungeon closes the stream, opens the place (stream_inside), and its
+ * way out opens the stream again on the step outside that door
+ * (docs/streaming.md, Doors), the card open throughout.
  */
 static void view_stream(int index)
 {
     Level level;
     Camera cam;
     float x, y, z;
+    double back_x;
+    double back_z;
+    float back_yaw;
+    int back;
     int row;
     int px;
     int py;
@@ -3143,59 +3368,130 @@ static void view_stream(int index)
         win_fail("Stream World: this place has no outside on the map.");
         return;
     }
-    if (!mem_temp_begin()) {
-        win_fail("Out of memory.");
-        return;
-    }
-    glide_up = 0;
     if (!worldmap_open() || !worldmap_pixel_of(g_rows[row].region, g_rows[row].index, &px, &py)) {
         log_line("stream: the world map did not read, or the place is not on it");
         win_fail("Stream World: the world map did not read.");
-    } else if (!wild_open(px, py, stream_radius_for_far(), &level, &x, &y, &z)) {
-        log_line("stream: the wilderness did not open");
-        win_fail("Stream World: the wilderness did not open.");
-    } else {
-        show_list(0);
-        if (!gfx_startup(win_hwnd())) {
-            log_line(gfx_error());
-            win_fail(gfx_error());
+        return;
+    }
+    glide_up = 0;
+    back = 0;
+    back_x = back_z = 0.0;
+    back_yaw = 0.0f;
+    for (;;) {
+        LfGo go;
+        Usable door;
+        int trow;
+        int opened;
+
+        if (!mem_temp_begin()) {
+            win_fail("Out of memory.");
+            break;
+        }
+        go.what = 0;
+        trow = -1;
+        opened = back ? wild_open_at(back_x, back_z, stream_radius_for_far(), &level, &x, &y, &z)
+                      : wild_open(px, py, stream_radius_for_far(), &level, &x, &y, &z);
+        if (!opened) {
+            log_line("stream: the wilderness did not open");
+            if (glide_up) {
+                gfx_shutdown();
+                glide_up = 0;
+            }
+            win_fail("Stream World: the wilderness did not open.");
         } else {
-            glide_up = 1;
-            if (!gfx_prepare(&level)) {
+            if (!glide_up) {
+                show_list(0);
+                if (!gfx_startup(win_hwnd())) {
+                    log_line(gfx_error());
+                    win_fail(gfx_error());
+                } else {
+                    glide_up = 1;
+                }
+            }
+            if (glide_up && !gfx_prepare(&level)) {
+                gfx_shutdown();
+                glide_up = 0;
                 log_line(gfx_error());
                 win_fail(gfx_error());
-            } else {
+            } else if (glide_up) {
                 char line[64];
                 int n;
 
                 n = 0;
                 line[0] = 0;
-                add_str(line, &n, (int)sizeof(line), "stream from pixel ");
+                add_str(line, &n, (int)sizeof(line), back ? "stream again by the door, pixel " : "stream from pixel ");
                 add_num(line, &n, (int)sizeof(line), px, 0);
                 add_str(line, &n, (int)sizeof(line), ",");
                 add_num(line, &n, (int)sizeof(line), py, 0);
                 log_line(line);
-                camera_set(&cam, x, y, z, 0.0f, 0.0f);
+                camera_set(&cam, x, y, z, back ? back_yaw : 0.0f, 0.0f);
                 g_streaming = 1;
                 g_stream_px = -1;
                 g_stream_py = -1;
                 g_frame_hook = stream_frame;
+                g_stream_logged = 0;
+                stream_set_radius(stream_radius_for_far());
+                /* Everything within the radius before the first frame: a wait, not a stutter. */
+                wild_fill(&cam);
                 stream_frame(&cam);
+                if (back) {
+                    gfx_fade_in(LAND_FADE);
+                }
                 g_region = g_rows[row].region;
                 run_view(&level, &cam);
+                go = g_go;
+                g_go.what = 0;
                 g_frame_hook = 0;
                 g_streaming = 0;
                 music_stop();
                 sound_stop_all();
+                if (go.what == DOOR_ENTER || go.what == DOOR_DUNGEON) {
+                    double dwx;
+                    double dwz;
+                    double ox;
+                    double oz;
+                    float lx;
+                    float ly;
+                    float lz;
+                    int region;
+                    int idx;
+
+                    /* Where to come back: the step out of this door, in world units. */
+                    doors_landing(&go.door, LAND_OUT, WALK_EYE, &lx, &ly, &lz, &back_yaw);
+                    stream_world(lx, lz, &back_x, &back_z);
+                    back = 1;
+                    /* The door in its town's own frame, where the house is placed against it. */
+                    trow = stream_row_of(&go.door);
+                    stream_world(go.door.cx, go.door.cz, &dwx, &dwz);
+                    door = go.door;
+                    if (trow >= 0 && wild_location_at(dwx, dwz, &region, &idx, &ox, &oz)) {
+                        door.cx = (float)(dwx - ox);
+                        door.cz = (float)(dwz - oz);
+                        row = trow;
+                    } else {
+                        trow = -1;
+                    }
+                }
             }
         }
         wild_close();
+        if (trow >= 0 && glide_up) {
+            gfx_hold("Loading...");
+        }
+        texture_cache_clear();
+        mem_temp_end();
+        if (trow < 0 || !glide_up) {
+            break;
+        }
+        px = (int)(back_x / (double)(STREAM_CHUNK * WORLDMAP_BLOCKS));
+        py = WORLDMAP_H - 1 - (int)(back_z / (double)(STREAM_CHUNK * WORLDMAP_BLOCKS));
+        if (!stream_inside(trow, go.what, &door, &glide_up)) {
+            break;
+        }
     }
     if (glide_up) {
         gfx_shutdown();
     }
-    texture_cache_clear();
-    mem_temp_end();
     show_list(1);
     input_clear_quit();
 }
@@ -3463,6 +3759,18 @@ static void cfg_line(const char *s)
         cfg_int(rest, 0, SND_ROWS_MAX, &g_snd_rows);
         return;
     }
+    if (key_is(s, "flora", &rest)) {
+        cfg_int(rest, 0, 1, &g_flora_cfg);
+        return;
+    }
+    if (key_is(s, "floradensity", &rest)) {
+        cfg_int(rest, 0, 100, &g_floradensity_cfg);
+        return;
+    }
+    if (key_is(s, "florasight", &rest)) {
+        cfg_int(rest, 0, (int)DF_FAR_MAX, &g_florasight_cfg);
+        return;
+    }
     if (key_is(s, "sndview", &rest)) {
         cfg_int(rest, 0, AMBIENCE_VIEW_MAX, &g_sndview_cfg);
         return;
@@ -3653,6 +3961,15 @@ static void cfg_apply(void)
         log_line(line);
     }
     ambience_set_view(g_sndview_cfg);
+    if (g_flora_cfg >= 0) {
+        scene_set_flora(g_flora_cfg);
+    }
+    if (g_floradensity_cfg >= 0) {
+        scene_set_flora_density(g_floradensity_cfg);
+    }
+    if (g_florasight_cfg >= 0) {
+        scene_set_flora_sight(g_florasight_cfg);
+    }
     /* Set, so it is there with no blend, then forced, so no roll replaces it. */
     if (g_weather_cfg >= 0) {
         weather_set(g_weather_cfg);
@@ -3726,6 +4043,9 @@ static void cfg_load(void)
     g_prof_panel = 0;
     g_snd_rows = 5;
     g_sndview_cfg = 0;
+    g_flora_cfg = -1;
+    g_floradensity_cfg = -1;
+    g_florasight_cfg = -1;
     g_sound_cfg = -1;
     g_sndvol_cfg = -1;
     g_music_cfg = -1;

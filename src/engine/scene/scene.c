@@ -5,6 +5,40 @@
 /* 0 lists every stored entity, the same path as a null camera. */
 static int g_cull = 1;
 
+static int g_flora = 1;
+static int g_flora_density = SCENE_FLORA_DENSITY;
+static int g_flora_sight;
+
+void scene_set_flora(int on)
+{
+    g_flora = on ? 1 : 0;
+}
+
+int scene_flora(void)
+{
+    return g_flora;
+}
+
+void scene_set_flora_density(int percent)
+{
+    g_flora_density = percent < 0 ? 0 : (percent > 100 ? 100 : percent);
+}
+
+int scene_flora_density(void)
+{
+    return g_flora_density;
+}
+
+void scene_set_flora_sight(int units)
+{
+    g_flora_sight = units < 0 ? 0 : units;
+}
+
+int scene_flora_sight(void)
+{
+    return g_flora_sight;
+}
+
 void scene_set_cull(int on)
 {
     g_cull = on ? 1 : 0;
@@ -2211,6 +2245,29 @@ int scene_visible_models(const Scene *scene, const Camera *cam, int *out, int ca
  * hidden by the cells the model pass of the same frame wrote, so call
  * scene_visible_models first, as draw_frame does.
  */
+/*
+ * Flora (a flat with a sight): drawn when flora is on, its rank is under
+ * the density's share, and it is within its sight (or the console's)
+ * across the ground.
+ */
+static int sprite_in_sight(const Flat *fl, const Camera *cam)
+{
+    float dx;
+    float dz;
+    float r;
+
+    if (!fl->sight) {
+        return 1;
+    }
+    if (!g_flora || (int)fl->thin * 100 >= g_flora_density * 256) {
+        return 0;
+    }
+    dx = fl->x - cam->x;
+    dz = fl->z - cam->z;
+    r = g_flora_sight ? (float)g_flora_sight : (float)fl->sight * 16.0f;
+    return dx * dx + dz * dz <= r * r;
+}
+
 int scene_visible_sprites(const Scene *scene, const Camera *cam, int *out, int cap)
 {
     Plane planes[6];
@@ -2226,19 +2283,44 @@ int scene_visible_sprites(const Scene *scene, const Camera *cam, int *out, int c
     }
     frustum_planes(cam, visible_far(), planes);
     n = 0;
-    for (i = 0; i < scene->nsprites; i++) {
-        float cx, cy, cz, ex, ey, ez;
+    if (scene->sprite_spans && scene->spans) {
+        int s;
 
-        if (!flat_box(&scene->sprites[i], &cx, &cy, &cz, &ex, &ey, &ez)) {
-            continue;
+        /* A streamed world: a chunk out of view is skipped with its sprites. */
+        for (s = 0; s < scene->nspans && n < cap; s++) {
+            const Span *sp;
+
+            sp = &scene->spans[s];
+            if (sp->scount < 1 || !box_visible(planes, sp->cx, sp->cy, sp->cz, sp->ex, sp->ey, sp->ez)) {
+                continue;
+            }
+            for (i = sp->sfirst; i < sp->sfirst + sp->scount && n < cap; i++) {
+                float cx, cy, cz, ex, ey, ez;
+
+                if (!sprite_in_sight(&scene->sprites[i], cam)
+                    || !flat_box(&scene->sprites[i], &cx, &cy, &cz, &ex, &ey, &ez)
+                    || !box_visible(planes, cx, cy, cz, ex, ey, ez)) {
+                    continue;
+                }
+                out[n++] = i;
+            }
         }
-        if (!box_visible(planes, cx, cy, cz, ex, ey, ez)) {
-            continue;
+    } else {
+        for (i = 0; i < scene->nsprites; i++) {
+            float cx, cy, cz, ex, ey, ez;
+
+            if (!sprite_in_sight(&scene->sprites[i], cam)
+                || !flat_box(&scene->sprites[i], &cx, &cy, &cz, &ex, &ey, &ez)) {
+                continue;
+            }
+            if (!box_visible(planes, cx, cy, cz, ex, ey, ez)) {
+                continue;
+            }
+            if (n >= cap) {
+                break;
+            }
+            out[n++] = i;
         }
-        if (n >= cap) {
-            break;
-        }
-        out[n++] = i;
     }
     if (!g_occ_on || g_occ_x0 > g_occ_x1 || n < 1) {
         return n;

@@ -1,6 +1,8 @@
 #include "engine/scene/light.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
+#include "engine/core/prof.h"
+#include "engine/scene/stream.h"
 
 /*
  * See light.h and docs/lighting.md. Everything here runs at load or
@@ -73,6 +75,31 @@ static int g_shadow = 1;
 static df_u32 g_epoch;
 /* Copied, so a question between places never reads the last one's Scene. */
 static int g_outdoor;
+
+/*
+ * A streamed scene (light_stream_begin). Each light's decals are its
+ * own, in a heap per slot of the stream, freed with the chunk; g_decal
+ * and g_corner are then the scratch a light is cut into. Lights to cut
+ * and slots whose sprites to light wait in a queue for the service.
+ */
+#define SCRATCH_DECALS 512
+#define SCRATCH_CORNERS 4096
+static int g_stream;
+static Decal **g_ldecal;
+static float **g_lcorner;
+static df_u8 *g_pending;
+static int *g_queue;
+static int g_qhead;
+static int g_qcount;
+static int g_per_slot;
+static MemHeap *g_slot_heap[STREAM_SLOTS];
+/* A slot's chunk and its box (models and sprites), kept for when it goes. */
+static int g_slot_live[STREAM_SLOTS];
+static float g_slot_box[STREAM_SLOTS][6];
+static df_u8 g_slot_sprites[STREAM_SLOTS];
+static int g_sprite_slots;
+/* The longest light or slot of sprites the service did since light_stream_worst asked. */
+static df_u32 g_unit_worst;
 
 static float root(float x)
 {
@@ -266,18 +293,28 @@ int light_decals(int i, const Decal **out)
         *out = 0;
         return 0;
     }
-    *out = &g_decal[g_first[i]];
+    *out = g_stream ? g_ldecal[i] : &g_decal[g_first[i]];
     return g_count[i];
 }
 
 const float *light_corners(void)
 {
-    return g_corner;
+    return g_stream ? 0 : g_corner;
 }
+
+const float *light_corners_of(int i)
+{
+    if (!g_stream) {
+        return g_corner;
+    }
+    return i >= 0 && i < g_nlights ? g_lcorner[i] : 0;
+}
+
+static int g_stream_decals;
 
 int light_decal_total(void)
 {
-    return g_ndecal;
+    return g_stream ? g_stream_decals : g_ndecal;
 }
 
 /*
@@ -618,7 +655,13 @@ static int seen(const Light *li, const Cut *a, int m)
     int j;
     int k;
 
-    if (!g_shadow || g_nnear < 1) {
+    /*
+     * A streamed world's lamps are street lamps, and its houses have no
+     * insides drawn: the rays were 97% of a lamp's cut (2 ms on the host,
+     * a dropped frame or two on the 233) and changed next to nothing. A
+     * face turned away from the lamp takes no pool anyway (light_frame).
+     */
+    if (!g_shadow || g_stream || g_nnear < 1) {
         return 1;
     }
     cx = cy = cz = 0.0f;
@@ -1113,11 +1156,21 @@ static int light_movers(const Scene *scene)
     return 1;
 }
 
+static void stream_rebuild(void);
+
 int light_build(const Scene *scene)
 {
     int nd;
     int nc;
 
+    if (g_stream) {
+        /* A switch changed (lightrange, lightshadow): every loaded light again, a few a frame. */
+        if (scene == g_scene) {
+            stream_rebuild();
+            return g_stream_decals;
+        }
+        light_stream_end();
+    }
     g_scene = scene;
     g_outdoor = scene ? scene->outdoor : 0;
     g_nlights = 0;
@@ -1274,4 +1327,574 @@ df_u32 light_sprite_over(int s, df_u32 base)
     return rgb(r + r * (l[0] * g_lamps / 255) * LAMP_PASSES * LAMP_R / (255 * 255),
                g + g * (l[1] * g_lamps / 255) * LAMP_PASSES * LAMP_G / (255 * 255),
                b + b * (l[2] * g_lamps / 255) * LAMP_PASSES * LAMP_B / (255 * 255));
+}
+
+/*
+ * A streamed scene (docs/streaming.md, Lights). The chunks come and go
+ * a slot at a time; a slot's lights are cut when it arrives, against the
+ * models of the loaded slots they reach, and so are the lights of its
+ * neighbours that reach into it, before and after it goes. The cutting
+ * is the light's own work, queued and done a few lights a frame under
+ * light_stream_service's budget: a chunk arrives at the edge of the
+ * stream, where its lamps are too far to draw, so a pool a few frames
+ * late is never seen.
+ */
+
+static float slot_reach(void)
+{
+    /* RMB lamps all burn at one radius; the largest a light of the slot has would do as well. */
+    return 160.0f * (float)g_range;
+}
+
+int light_stream_begin(const Scene *scene)
+{
+    int i;
+    int s;
+
+    light_build(0);
+    g_scene = scene;
+    g_outdoor = scene->outdoor;
+    g_epoch = mem_epoch();
+    g_nlights = scene->nlights;
+    g_nsprites = scene->nsprites;
+    g_nmodels = scene->nmodels;
+    g_nmovers = 0;
+    g_count = (int *)mem_alloc((df_u32)g_nlights * (df_u32)sizeof(int));
+    g_first = (int *)mem_alloc((df_u32)g_nlights * (df_u32)sizeof(int));
+    g_box = (float *)mem_alloc((df_u32)g_nlights * 6u * (df_u32)sizeof(float));
+    g_ldecal = (Decal **)mem_alloc((df_u32)g_nlights * (df_u32)sizeof(Decal *));
+    g_lcorner = (float **)mem_alloc((df_u32)g_nlights * (df_u32)sizeof(float *));
+    g_pending = (df_u8 *)mem_alloc((df_u32)g_nlights);
+    g_queue = (int *)mem_alloc((df_u32)(g_nlights + STREAM_SLOTS) * (df_u32)sizeof(int));
+    g_sprite_light = (df_u8 *)mem_alloc((df_u32)(g_nsprites > 0 ? g_nsprites : 1) * 3u);
+    g_moves = (df_u16 *)mem_alloc((df_u32)(g_nmodels > 0 ? g_nmodels : 1) * (df_u32)sizeof(df_u16));
+    g_near = (int *)mem_alloc((df_u32)(g_nmodels > 0 ? g_nmodels : 1) * (df_u32)sizeof(int));
+    g_decal = (Decal *)mem_alloc(SCRATCH_DECALS * (df_u32)sizeof(Decal));
+    g_corner = (float *)mem_alloc(SCRATCH_CORNERS * LIGHT_CORNER * (df_u32)sizeof(float));
+    if (!g_count || !g_first || !g_box || !g_ldecal || !g_lcorner || !g_pending || !g_queue
+        || !g_sprite_light || !g_moves || !g_near || !g_decal || !g_corner) {
+        log_text(LOG_ERROR, "lights: out of memory, the stream is unlit");
+        g_nlights = 0;
+        g_nsprites = 0;
+        g_nmodels = 0;
+        g_epoch = 0;
+        return 0;
+    }
+    g_near_cap = g_nmodels;
+    g_decal_cap = 0;
+    g_corner_cap = 0;
+    g_light_cap = 0;
+    g_sprite_cap = 0;
+    g_moves_cap = 0;
+    g_mover_cap = 0;
+    for (i = 0; i < g_nlights; i++) {
+        g_count[i] = 0;
+        g_first[i] = 0;
+        g_ldecal[i] = 0;
+        g_lcorner[i] = 0;
+        g_pending[i] = 0;
+    }
+    for (i = 0; i < g_nsprites * 3; i++) {
+        g_sprite_light[i] = 0;
+    }
+    for (i = 0; i < g_nmodels; i++) {
+        g_moves[i] = 0;
+    }
+    for (s = 0; s < STREAM_SLOTS; s++) {
+        g_slot_heap[s] = 0;
+        g_slot_live[s] = 0;
+        g_slot_sprites[s] = 0;
+    }
+    /* The stream's arrays are its slots' ranges end to end (stream_open). */
+    g_per_slot = g_nlights / STREAM_SLOTS;
+    g_sprite_slots = g_nsprites / STREAM_SLOTS;
+    g_qhead = 0;
+    g_qcount = 0;
+    g_stream_decals = 0;
+    g_stream = 1;
+    return 1;
+}
+
+void light_stream_end(void)
+{
+    int s;
+
+    if (!g_stream) {
+        return;
+    }
+    for (s = 0; s < STREAM_SLOTS; s++) {
+        mem_heap_delete(g_slot_heap[s]);
+        g_slot_heap[s] = 0;
+    }
+    g_stream = 0;
+    g_nlights = 0;
+    g_nsprites = 0;
+    g_nmodels = 0;
+    g_ndecal = 0;
+    g_ncorner = 0;
+    g_scene = 0;
+    /* What was allocated went with the heap it was on; never reused. */
+    g_epoch = 0;
+}
+
+int light_streaming(void)
+{
+    return g_stream;
+}
+
+/* Queue entries: a light, or STREAM_SLOTS ahead of the lights, a slot whose sprites to light. */
+static void queue_push(int v)
+{
+    if (g_qcount < g_nlights + STREAM_SLOTS) {
+        g_queue[(g_qhead + g_qcount) % (g_nlights + STREAM_SLOTS)] = v;
+        g_qcount++;
+    }
+}
+
+static void queue_light(int i)
+{
+    if (!g_pending[i]) {
+        g_pending[i] = 1;
+        queue_push(i);
+    }
+}
+
+static void queue_sprites(int s)
+{
+    if (!g_slot_sprites[s]) {
+        g_slot_sprites[s] = 1;
+        queue_push(g_nlights + s);
+    }
+}
+
+static int boxes_meet(const float *a, const float *b, float grow)
+{
+    return a[0] - grow <= b[3] && b[0] <= a[3] + grow
+        && a[2] - grow <= b[5] && b[2] <= a[5] + grow;
+}
+
+/* Light i's decals go, and the heap they were in has them back. */
+static void clear_light(int i)
+{
+    MemHeap *h;
+
+    h = g_slot_heap[i / g_per_slot];
+    if (h) {
+        mem_heap_free(h, g_ldecal[i]);
+        mem_heap_free(h, g_lcorner[i]);
+    }
+    g_stream_decals -= g_count[i];
+    g_ldecal[i] = 0;
+    g_lcorner[i] = 0;
+    g_count[i] = 0;
+}
+
+/* Cut light i against the still models of the loaded slots it reaches, into its slot's heap. */
+static void stream_cut(int i)
+{
+    const Light *li;
+    float reach;
+    float lb[6];
+    int s;
+    int n;
+    MemHeap *was;
+    Decal *d;
+    float *c;
+
+    clear_light(i);
+    li = &g_scene->lights[i];
+    reach = li->radius * (float)g_range;
+    s = i / g_per_slot;
+    if (reach < 1.0f || !g_slot_live[s]) {
+        return;
+    }
+    lb[0] = li->x - reach;
+    lb[1] = li->y - reach;
+    lb[2] = li->z - reach;
+    lb[3] = li->x + reach;
+    lb[4] = li->y + reach;
+    lb[5] = li->z + reach;
+    g_nnear = 0;
+    for (n = 0; n < STREAM_SLOTS; n++) {
+        int first;
+        int near;
+        int far;
+        int rest;
+        int pass;
+
+        if (!g_slot_live[n] || !boxes_meet(g_slot_box[n], lb, 0.0f)) {
+            continue;
+        }
+        /* The near ground and the rest: the far ground draws only where a lamp is too far to. */
+        stream_slot_models(n, &first, &near, &far, &rest);
+        for (pass = 0; pass < 2; pass++) {
+            int m;
+            int end;
+
+            m = pass ? first + near + far : first;
+            end = pass ? m + rest : first + near;
+            for (; m < end && g_nnear < g_near_cap; m++) {
+                const Instance *in;
+                const Bound *bd;
+
+                in = &g_scene->models[m];
+                if (!in->mesh || !in->mesh->faces || g_moves[m]) {
+                    continue;
+                }
+                bd = &g_scene->bounds[m];
+                if (df_absf(bd->cx - li->x) > bd->ex + reach
+                    || df_absf(bd->cy - li->y) > bd->ey + reach
+                    || df_absf(bd->cz - li->z) > bd->ez + reach) {
+                    continue;
+                }
+                g_near[g_nnear++] = m;
+            }
+        }
+    }
+    g_decal_cap = SCRATCH_DECALS;
+    g_corner_cap = SCRATCH_CORNERS;
+    g_ndecal = 0;
+    g_ncorner = 0;
+    for (n = 0; n < g_nnear; n++) {
+        light_mesh(&g_scene->models[g_near[n]], li, reach, 1, i);
+    }
+    if (g_ndecal < 1) {
+        g_count[i] = 0;
+        return;
+    }
+    if (!g_slot_heap[s]) {
+        g_slot_heap[s] = mem_heap_new();
+    }
+    was = mem_heap_use(g_slot_heap[s]);
+    d = g_slot_heap[s] ? (Decal *)mem_alloc((df_u32)g_ndecal * (df_u32)sizeof(Decal)) : 0;
+    c = g_slot_heap[s] ? (float *)mem_alloc((df_u32)g_ncorner * LIGHT_CORNER * (df_u32)sizeof(float)) : 0;
+    mem_heap_use(was);
+    if (!d || !c) {
+        if (g_slot_heap[s]) {
+            mem_heap_free(g_slot_heap[s], d);
+            mem_heap_free(g_slot_heap[s], c);
+        }
+        g_count[i] = 0;
+        return;
+    }
+    mem_copy(d, g_decal, (df_u32)g_ndecal * (df_u32)sizeof(Decal));
+    mem_copy(c, g_corner, (df_u32)g_ncorner * LIGHT_CORNER * (df_u32)sizeof(float));
+    g_ldecal[i] = d;
+    g_lcorner[i] = c;
+    g_stream_decals += g_count[i];
+}
+
+/* Slot s's sprites, from the lights of the slots near enough to reach them. */
+static void stream_sprites(int s)
+{
+    float reach;
+    int i;
+
+    g_slot_sprites[s] = 0;
+    if (!g_slot_live[s]) {
+        return;
+    }
+    reach = slot_reach();
+    for (i = s * g_sprite_slots; i < (s + 1) * g_sprite_slots; i++) {
+        const Flat *fl;
+        float r;
+        float g;
+        float b;
+        int n;
+
+        fl = &g_scene->sprites[i];
+        g_sprite_light[i * 3] = 0;
+        g_sprite_light[i * 3 + 1] = 0;
+        g_sprite_light[i * 3 + 2] = 0;
+        if (fl->w <= 0.0f || fl->glow) {
+            continue;
+        }
+        r = g = b = 0.0f;
+        for (n = 0; n < STREAM_SLOTS; n++) {
+            int k;
+
+            if (!g_slot_live[n] || !boxes_meet(g_slot_box[n], g_slot_box[s], reach)) {
+                continue;
+            }
+            for (k = n * g_per_slot; k < (n + 1) * g_per_slot; k++) {
+                const Light *li;
+                float lr, dx, dy, dz, d2, l;
+
+                li = &g_scene->lights[k];
+                lr = li->radius * (float)g_range;
+                if (lr < 1.0f) {
+                    continue;
+                }
+                dx = fl->x - li->x;
+                dy = fl->y - li->y;
+                dz = fl->z - li->z;
+                d2 = dx * dx + dy * dy + dz * dz;
+                if (d2 >= lr * lr) {
+                    continue;
+                }
+                l = falloff(root(d2) / lr, 1.0f);
+                r += l * LIGHT_R;
+                g += l * LIGHT_G;
+                b += l * LIGHT_B;
+            }
+        }
+        g_sprite_light[i * 3] = byte01(r);
+        g_sprite_light[i * 3 + 1] = byte01(g);
+        g_sprite_light[i * 3 + 2] = byte01(b);
+    }
+}
+
+/* The lights of other loaded slots that reach slot s's box, and their slots' sprites. */
+static void queue_neighbours(int s)
+{
+    float reach;
+    int n;
+
+    reach = slot_reach();
+    for (n = 0; n < STREAM_SLOTS; n++) {
+        int k;
+        int any;
+
+        if (n == s || !g_slot_live[n] || !boxes_meet(g_slot_box[n], g_slot_box[s], reach)) {
+            continue;
+        }
+        any = 0;
+        for (k = n * g_per_slot; k < (n + 1) * g_per_slot; k++) {
+            const Light *li;
+            float lr;
+            float lb[6];
+
+            li = &g_scene->lights[k];
+            lr = li->radius * (float)g_range;
+            if (lr < 1.0f) {
+                continue;
+            }
+            lb[0] = li->x - lr;
+            lb[1] = li->y - lr;
+            lb[2] = li->z - lr;
+            lb[3] = li->x + lr;
+            lb[4] = li->y + lr;
+            lb[5] = li->z + lr;
+            if (boxes_meet(g_slot_box[s], lb, 0.0f)) {
+                queue_light(k);
+                any = 1;
+            }
+        }
+        if (any) {
+            queue_sprites(n);
+        }
+    }
+}
+
+void light_stream_changed(int s, int loaded)
+{
+    int first;
+    int near;
+    int far;
+    int rest;
+    int i;
+    int any;
+
+    if (!g_stream || s < 0 || s >= STREAM_SLOTS) {
+        return;
+    }
+    stream_slot_models(s, &first, &near, &far, &rest);
+    if (!loaded) {
+        for (i = s * g_per_slot; i < (s + 1) * g_per_slot; i++) {
+            g_stream_decals -= g_count[i];
+            g_count[i] = 0;
+            g_ldecal[i] = 0;
+            g_lcorner[i] = 0;
+        }
+        mem_heap_delete(g_slot_heap[s]);
+        g_slot_heap[s] = 0;
+        for (i = s * g_sprite_slots; i < (s + 1) * g_sprite_slots; i++) {
+            g_sprite_light[i * 3] = g_sprite_light[i * 3 + 1] = g_sprite_light[i * 3 + 2] = 0;
+        }
+        for (i = s * (g_nmodels / STREAM_SLOTS); i < (s + 1) * (g_nmodels / STREAM_SLOTS); i++) {
+            g_moves[i] = 0;
+        }
+        g_slot_live[s] = 0;
+        /* Its neighbours' pools that lay over it, cut again without it. */
+        queue_neighbours(s);
+        return;
+    }
+    /* The slot's box, models and sprites, for the lights that reach it after it goes too. */
+    any = 0;
+    for (i = first; i < first + near + far + rest; i++) {
+        const Bound *b;
+        float *bx;
+
+        b = &g_scene->bounds[i];
+        if (!g_scene->models[i].mesh || b->ex < 0.0f) {
+            continue;
+        }
+        bx = g_slot_box[s];
+        if (!any) {
+            bx[0] = b->cx - b->ex;
+            bx[1] = b->cy - b->ey;
+            bx[2] = b->cz - b->ez;
+            bx[3] = b->cx + b->ex;
+            bx[4] = b->cy + b->ey;
+            bx[5] = b->cz + b->ez;
+            any = 1;
+            continue;
+        }
+        bx[0] = b->cx - b->ex < bx[0] ? b->cx - b->ex : bx[0];
+        bx[1] = b->cy - b->ey < bx[1] ? b->cy - b->ey : bx[1];
+        bx[2] = b->cz - b->ez < bx[2] ? b->cz - b->ez : bx[2];
+        bx[3] = b->cx + b->ex > bx[3] ? b->cx + b->ex : bx[3];
+        bx[4] = b->cy + b->ey > bx[4] ? b->cy + b->ey : bx[4];
+        bx[5] = b->cz + b->ez > bx[5] ? b->cz + b->ez : bx[5];
+    }
+    for (i = s * g_sprite_slots; i < (s + 1) * g_sprite_slots; i++) {
+        const Flat *fl;
+        float *bx;
+
+        fl = &g_scene->sprites[i];
+        if (fl->w <= 0.0f) {
+            continue;
+        }
+        bx = g_slot_box[s];
+        if (!any) {
+            bx[0] = bx[3] = fl->x;
+            bx[1] = bx[4] = fl->y;
+            bx[2] = bx[5] = fl->z;
+            any = 1;
+        }
+        bx[0] = fl->x < bx[0] ? fl->x : bx[0];
+        bx[1] = fl->y < bx[1] ? fl->y : bx[1];
+        bx[2] = fl->z < bx[2] ? fl->z : bx[2];
+        bx[3] = fl->x > bx[3] ? fl->x : bx[3];
+        bx[4] = fl->y > bx[4] ? fl->y : bx[4];
+        bx[5] = fl->z > bx[5] ? fl->z : bx[5];
+    }
+    if (!any) {
+        return;
+    }
+    /* Its moving models (doors) take no decals: they would stay where the door stood. */
+    for (i = 0; i < g_scene->nmovers; i++) {
+        const Mover *mv;
+
+        mv = &g_scene->movers[i];
+        if (mv->inst && mv->model >= first && mv->model < first + near + far + rest) {
+            g_moves[mv->model] = 1;
+        }
+    }
+    g_slot_live[s] = 1;
+    for (i = s * g_per_slot; i < (s + 1) * g_per_slot; i++) {
+        if (g_scene->lights[i].radius > 0.0f) {
+            queue_light(i);
+        }
+    }
+    queue_sprites(s);
+    queue_neighbours(s);
+}
+
+static void stream_rebuild(void)
+{
+    int i;
+    int s;
+
+    for (s = 0; s < STREAM_SLOTS; s++) {
+        if (!g_slot_live[s]) {
+            continue;
+        }
+        for (i = s * g_per_slot; i < (s + 1) * g_per_slot; i++) {
+            if (g_scene->lights[i].radius > 0.0f) {
+                queue_light(i);
+            }
+        }
+        queue_sprites(s);
+    }
+}
+
+void light_stream_service(float budget_ms)
+{
+    df_u32 start;
+    df_u32 limit;
+
+    if (!g_stream) {
+        return;
+    }
+    start = prof_now();
+    limit = (df_u32)df_iround(budget_ms * (float)prof_per_ms());
+    while (g_qcount > 0) {
+        df_u32 t0;
+        int v;
+
+        v = g_queue[g_qhead];
+        g_qhead = (g_qhead + 1) % (g_nlights + STREAM_SLOTS);
+        g_qcount--;
+        t0 = prof_now();
+        if (v < g_nlights) {
+            g_pending[v] = 0;
+            stream_cut(v);
+        } else {
+            stream_sprites(v - g_nlights);
+        }
+        t0 = prof_now() - t0;
+        g_unit_worst = t0 > g_unit_worst ? t0 : g_unit_worst;
+        /* One at least; uncalibrated, one a call. */
+        if (limit == 0 || prof_now() - start >= limit) {
+            break;
+        }
+    }
+}
+
+float light_stream_worst(void)
+{
+    df_u32 per;
+    float ms;
+
+    per = prof_per_ms();
+    ms = per ? (float)g_unit_worst / (float)per : 0.0f;
+    g_unit_worst = 0;
+    return ms;
+}
+
+int light_stream_pending(void)
+{
+    return g_stream ? g_qcount : 0;
+}
+
+void light_stream_shift(float dx, float dz)
+{
+    int i;
+    int s;
+
+    if (!g_stream) {
+        return;
+    }
+    for (s = 0; s < STREAM_SLOTS; s++) {
+        g_slot_box[s][0] -= dx;
+        g_slot_box[s][3] -= dx;
+        g_slot_box[s][2] -= dz;
+        g_slot_box[s][5] -= dz;
+    }
+    for (i = 0; i < g_nlights; i++) {
+        int k;
+        int q;
+
+        if (g_count[i] < 1) {
+            continue;
+        }
+        g_box[i * 6] -= dx;
+        g_box[i * 6 + 3] -= dx;
+        g_box[i * 6 + 2] -= dz;
+        g_box[i * 6 + 5] -= dz;
+        for (k = 0; k < g_count[i]; k++) {
+            Decal *d;
+
+            d = &g_ldecal[i][k];
+            /* Its plane through the moved points: n . (p - shift) + d' = 0. */
+            d->d += d->nx * dx + d->nz * dz;
+            d->cx -= dx;
+            d->cz -= dz;
+            for (q = d->first; q < d->first + d->n; q++) {
+                g_lcorner[i][q * LIGHT_CORNER] -= dx;
+                g_lcorner[i][q * LIGHT_CORNER + 2] -= dz;
+            }
+        }
+    }
 }

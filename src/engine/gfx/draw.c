@@ -40,6 +40,8 @@
 #define GLIDE_TEXEL 256.0f
 /* Matches the block loader's placement cap. draw.h exports it for viewers. */
 #define VIS_MAX DRAW_VIS_MAX
+/* A streamed world's sharper copies a frame, at most: about a millisecond on the PCI bus. */
+#define STREAM_UPLOAD_BYTES (64u * 1024u)
 
 /*
  * SST-1 screen coordinates live in about +/-2048. Past that the edge
@@ -547,7 +549,7 @@ static const Image *level_image(const Level *level, int slot);
  * can hand out the same addresses, so a picture could take the last
  * place's scale. draw_prepare empties the table for each level.
  */
-#define INV_SLOTS 512
+#define INV_SLOTS 4096
 static const Image *g_inv_img[INV_SLOTS];
 static float g_inv_w[INV_SLOTS];
 static float g_inv_h[INV_SLOTS];
@@ -903,7 +905,6 @@ void draw_light_stats(int *lights, int *decals)
 
 static void draw_lights(const Camera *cam, const Basis *basis)
 {
-    const float *corners;
     df_u32 lamp;
     int outdoor;
     int i;
@@ -911,7 +912,6 @@ static void draw_lights(const Camera *cam, const Basis *basis)
     if (!light_active() || !g_light_ready) {
         return;
     }
-    corners = light_corners();
     outdoor = light_outdoor();
     /* Outdoors the lamps fade in by the hour, flame-coloured, LAMP_PASSES deep. */
     lamp = (df_u32)light_lamps();
@@ -923,11 +923,16 @@ static void draw_lights(const Camera *cam, const Basis *basis)
     glide_decal(1);
     for (i = 0; i < light_count(); i++) {
         const Decal *d;
+        const float *corners;
         float cx, cy, cz, ex, ey, ez;
         int n;
         int k;
         df_u32 flame;
 
+        /* A light with no decals: a streamed scene's empty slots, most of them. */
+        if (!light_box(i, &cx, &cy, &cz, &ex, &ey, &ez)) {
+            continue;
+        }
         /* A flame wavers: its pool dims and brightens on its own (docs/lighting.md). */
         flame = (df_u32)light_flicker(i, g_anim_time);
         if (!outdoor) {
@@ -962,12 +967,12 @@ static void draw_lights(const Camera *cam, const Basis *basis)
             glide_tint(((l * LAMP_R / 255u) << 16) | ((l * LAMP_G / 255u) << 8)
                        | (l * LAMP_B / 255u));
         }
-        if (!light_box(i, &cx, &cy, &cz, &ex, &ey, &ez)
-            || !scene_box_visible(cx, cy, cz, ex, ey, ez)) {
+        if (!scene_box_visible(cx, cy, cz, ex, ey, ez)) {
             continue;
         }
         g_lights_drawn++;
         n = light_decals(i, &d);
+        corners = light_corners_of(i);
         for (k = 0; k < n; k++) {
             const Decal *dc;
             Vtx v[FACE_MAX];
@@ -1295,6 +1300,8 @@ static void weather_light(Daylight *dl, const Weather *w, float flash)
 #define SKY_ROWS_PER_RADIUS ((float)SKY_W / DF_TAU)
 
 static float g_sky_sin[SKY_SEGS + 1];
+/* The level's sky_serial the card's sky was read for (draw_prepare). */
+static int g_sky_serial;
 static float g_sky_cos[SKY_SEGS + 1];
 static int g_sky_trig;
 
@@ -2171,6 +2178,7 @@ void draw_frame(const Camera *cam, const Level *level)
     df_u32 sprite_day;
     df_u32 ambient;
     df_u32 tinted;
+    int streamed;
 
     if (!level) {
         return;
@@ -2185,6 +2193,7 @@ void draw_frame(const Camera *cam, const Level *level)
         return;
     }
     console_release();
+    streamed = level->streamed && texcache_streamed();
     prof_begin(PROF_FRAME);
     prof_begin(PROF_SIM);
     /* Real seconds for the rain and the lightning; game minutes for the clock and the weather. */
@@ -2275,6 +2284,11 @@ void draw_frame(const Camera *cam, const Level *level)
     if (sky) {
         int hr, hg, hb;
 
+        /* The game changed the sky in place (another climate): the same tiles, another picture. */
+        if (level->sky_serial != g_sky_serial) {
+            sky_change(level->sky);
+            g_sky_serial = level->sky_serial;
+        }
         sky_update(clock_minute(), w.sky);
         sky_horizon(&hr, &hg, &hb);
         /*
@@ -2331,6 +2345,21 @@ void draw_frame(const Camera *cam, const Level *level)
         in = &level->scene.models[order[oi]];
         if (!in->mesh) {
             continue;
+        }
+        /* A streamed world's pictures: how near each was drawn decides how sharp it is sent. */
+        if (streamed && in->mesh->have_keys) {
+            const Bound *b;
+            float dx, dy, dz, d;
+            int k;
+
+            b = &level->scene.bounds[order[oi]];
+            dx = b->cx - cam->x;
+            dy = b->cy - cam->y;
+            dz = b->cz - cam->z;
+            d = df_sqrt(dx * dx + dy * dy + dz * dz) - (b->ex > b->ez ? b->ex : b->ez);
+            for (k = 0; k < in->mesh->nslot_keys; k++) {
+                texcache_note((int)in->mesh->slot_keys[k], d > 0.0f ? d : 0.0f);
+            }
         }
         /* A moving model indoors has no decals: one colour from the lights round it. */
         if (!lit && level->scene.nmovers > 0) {
@@ -2412,6 +2441,15 @@ void draw_frame(const Camera *cam, const Level *level)
         /* One colour per sprite from the lights around it; torches full bright. */
         glide_tint(outdoor ? light_sprite_over(order[oi], sprite_day)
                            : light_sprite_rgb(order[oi]));
+        if (streamed) {
+            const Flat *fl;
+            float dx, dz;
+
+            fl = &level->scene.sprites[order[oi]];
+            dx = fl->x - cam->x;
+            dz = fl->z - cam->z;
+            texcache_note((int)fl->slot, df_sqrt(dx * dx + dz * dz));
+        }
         draw_flat(cam, &basis, level, &level->scene.sprites[order[oi]]);
     }
     glide_sprite_alpha(0);
@@ -2446,6 +2484,12 @@ void draw_frame(const Camera *cam, const Level *level)
         g_fade_left -= secs;
     }
     prof_end(PROF_OVERLAY);
+    /* A streamed world: sharper copies of what was drawn near, after the frame (docs/streaming.md). */
+    if (streamed) {
+        prof_begin(PROF_STREAM);
+        texcache_stream_service(g_focal, STREAM_UPLOAD_BYTES);
+        prof_end(PROF_STREAM);
+    }
     prof_begin(PROF_SWAP);
     glide_swap();
     prof_end(PROF_SWAP);

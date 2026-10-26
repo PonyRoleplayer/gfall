@@ -159,6 +159,8 @@ static void add_flat(Block *block, const df_u8 *p, float sub_yaw, float ox, floa
     /* TEXTURE.210: lamps and fires give light. */
     fl->glow = (df_u16)(archive == 210);
     fl->tag = tag;
+    fl->sight = 0;
+    fl->thin = 0;
     block->nflat++;
 }
 
@@ -437,6 +439,61 @@ static void tally_exterior(const df_u8 *rmb, df_u32 end, df_u32 at, int *ninst, 
         }
         at += FLAT_BYTES;
     }
+}
+
+/* The ARCH3D ids of one subrecord's outside models, as read_exterior walks them. */
+static int ids_exterior(const df_u8 *rmb, df_u32 end, df_u32 at, df_u32 *ids, int n, int cap)
+{
+    int n3d;
+    int i;
+
+    if (at + 17 > end) {
+        return n;
+    }
+    n3d = (int)rmb[at];
+    at += 17;
+    for (i = 0; i < n3d && at + MODEL_BYTES <= end; i++) {
+        if (model_id(rmb + at) > 0 && n < cap) {
+            ids[n++] = (df_u32)model_id(rmb + at);
+        }
+        at += MODEL_BYTES;
+    }
+    return n;
+}
+
+int rmb_model_ids(const df_u8 *rmb, df_u32 size, df_u32 *ids, int cap)
+{
+    df_u32 pos;
+    int nsub;
+    int n;
+    int i;
+
+    if (!rmb || size < (df_u32)FLD_BYTES) {
+        return 0;
+    }
+    nsub = (int)rmb[0];
+    if (nsub > 32) {
+        return 0;
+    }
+    n = 0;
+    pos = (df_u32)FLD_BYTES;
+    for (i = 0; i < nsub; i++) {
+        df_i32 span;
+
+        span = df_ri32(rmb + FLD_SIZES + i * 4);
+        if (span < 17 || pos + (df_u32)span > size) {
+            return n;
+        }
+        n = ids_exterior(rmb, pos + (df_u32)span, pos, ids, n, cap);
+        pos += (df_u32)span;
+    }
+    for (i = 0; i < (int)rmb[1] && pos + MODEL_BYTES <= size; i++) {
+        if (model_id(rmb + pos) > 0 && n < cap) {
+            ids[n++] = (df_u32)model_id(rmb + pos);
+        }
+        pos += MODEL_BYTES;
+    }
+    return n;
 }
 
 Block *rmb_load(const df_u8 *rmb, df_u32 size, Bsa *arch, int ground_file,

@@ -45,7 +45,10 @@ A variable prints its value when typed alone, and takes a new one as an argument
 
 | Variable | Range | Effect |
 |---|---|---|
-| `tcl` | 0/1 | Collision. 1: the camera is a body that walks on floors, stops at walls, climbs stairs and falls under gravity; Q and E do nothing. 0 (default): it flies free. Only where the program gave the console its camera (GFALL, LEVELFALL's view). See `docs/collision.md`. |
+| `tcl` | 0/1 | Collision. 1: the camera is a body that walks on floors, stops at walls, climbs stairs and falls under gravity; Q and E do nothing. 0 (default): it flies free. `tcl` alone flips it, as Quake's `noclip` does (`cmd_toggles`); every other switch alone says what it is. Only where the program gave the console its camera (GFALL, LEVELFALL's view). See `docs/collision.md`. |
+| `flora` | 0/1 | A streamed world's trees and rocks (the flats with a sight, `Flat.sight`). `flora` alone flips it. Default on. |
+| `floradensity` | 0..100 | The percent of the flora that stood drawn, by each one's rank (`Flat.thin`); no reload. 40 (default) is 0.12 of Daggerfall Unity's chances; 100 all that stood, 0.3 of them. |
+| `florasight` | 0..far max | Units across the ground the flora is drawn within. 0 (default): each place's own, 3072. |
 | `fov` | 45..120 | Horizontal field of view. Default 75. |
 | `far` | 16..16384 | Far clip in world units. Default 1400. LEVELFALL starts at 8192. |
 | `fog` | on/off | Distance fog. |

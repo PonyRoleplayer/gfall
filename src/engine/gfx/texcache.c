@@ -3,6 +3,8 @@
 #include "engine/gfx/glide.h"
 #include "engine/gfx/mip.h"
 #include "engine/core/log.h"
+#include "engine/core/mem.h"
+#include "engine/gfx/texres.h"
 
 /*
  * One upload per picture, at load, never during the frame. With mipmap
@@ -49,6 +51,9 @@ static df_u32 card_bytes(int side, int cutout)
     return b;
 }
 
+int texcache_stream_begin(const Level *level);
+void texcache_stream_end(void);
+
 int texcache_upload(const Level *level)
 {
     const Palette *pal;
@@ -56,6 +61,9 @@ int texcache_upload(const Level *level)
     df_u32 planned;
     int i;
     int n;
+
+    /* A place loaded whole: whatever was streamed before is gone from the card with the reset. */
+    texcache_stream_end();
 
     g_n = 0;
     g_nlive = 0;
@@ -151,8 +159,182 @@ int texcache_reduced(void)
     return g_reduced;
 }
 
+/* ---- A streamed world's pictures ---------------------------------- */
+
+typedef struct Chain {
+    df_u8 *levels;
+    short side;
+    df_u8 cutout;
+} Chain;
+
+static int g_stream;
+static int g_stream_chain;
+static Chain g_chains[TEXRES_SLOTS];
+/* The chains' own heap: freed one by one as pictures go. */
+static MemHeap *g_chain_heap;
+static const df_u8 *g_pr;
+static const df_u8 *g_pg;
+static const df_u8 *g_pb;
+
+static df_u32 res_bytes(int side, int cutout)
+{
+    df_u32 b;
+
+    if (!glide_texture_bytes(side, cutout, g_stream_chain, &b)) {
+        return 0x7fffffffu;
+    }
+    return b;
+}
+
+static int res_upload(int slot, int drop, df_u32 addr, df_u32 *handle)
+{
+    const Chain *c;
+
+    c = &g_chains[slot];
+    if (!c->levels) {
+        return 0;
+    }
+    return glide_upload_chain(c->levels, c->side, c->cutout, g_stream_chain, drop, addr, handle);
+}
+
+static void res_release(df_u32 handle)
+{
+    glide_release(handle);
+}
+
+int texcache_stream_begin(const Level *level)
+{
+    TexResOps ops;
+    df_u32 lo;
+    df_u32 hi;
+    int i;
+
+    texcache_stream_end();
+    if (!level || !level->palette || !glide_palette(level->palette->r, level->palette->g,
+                                                     level->palette->b)) {
+        g_why = "palette";
+        return 0;
+    }
+    g_pr = level->palette->r;
+    g_pg = level->palette->g;
+    g_pb = level->palette->b;
+    g_chain_heap = mem_heap_new();
+    if (!g_chain_heap) {
+        g_why = "out of memory";
+        return 0;
+    }
+    for (i = 0; i < TEXRES_SLOTS; i++) {
+        g_chains[i].levels = 0;
+    }
+    g_stream_chain = glide_mipmap();
+    glide_mark();
+    glide_tex_range(&lo, &hi);
+    ops.bytes = res_bytes;
+    ops.upload = res_upload;
+    ops.release = res_release;
+    texres_begin(lo, hi, &ops);
+    g_stream = 1;
+    g_n = 0;
+    log_print(LOG_INFO, "textures: streamed, %u KB of the card", (unsigned int)((hi - lo) / 1024u));
+    return 1;
+}
+
+void texcache_stream_end(void)
+{
+    if (!g_stream) {
+        return;
+    }
+    texres_end();
+    mem_heap_delete(g_chain_heap);
+    g_chain_heap = 0;
+    g_stream = 0;
+}
+
+int texcache_streamed(void)
+{
+    return g_stream;
+}
+
+int texcache_stream_set(int slot, const Image *img, int cutout, float density)
+{
+    Chain *c;
+    MemHeap *was;
+    df_u32 n;
+    int side;
+
+    if (!g_stream || slot < 0 || slot >= TEXRES_SLOTS || !img || !img->pot
+        || img->pot_w != img->pot_h || img->pot_w < 1 || img->pot_w > 256
+        || (img->pot_w & (img->pot_w - 1))) {
+        return 0;
+    }
+    texcache_stream_drop(slot);
+    side = img->pot_w;
+    n = mip_texels(side, 0, 1) * (cutout ? 2u : 1u);
+    c = &g_chains[slot];
+    was = mem_heap_use(g_chain_heap);
+    c->levels = (df_u8 *)mem_alloc(n);
+    mem_heap_use(was);
+    if (!c->levels) {
+        return 0;
+    }
+    /* Built once, every level: a sharper copy is then only a download. */
+    if (!mip_build(img->pot, side, cutout, 0, 1, g_pr, g_pg, g_pb, c->levels)) {
+        texcache_stream_drop(slot);
+        return 0;
+    }
+    c->side = (short)side;
+    c->cutout = (df_u8)(cutout ? 1 : 0);
+    if (!texres_add(slot, side, cutout, density)) {
+        texcache_stream_drop(slot);
+        return 0;
+    }
+    return 1;
+}
+
+void texcache_stream_drop(int slot)
+{
+    Chain *c;
+
+    if (!g_stream || slot < 0 || slot >= TEXRES_SLOTS) {
+        return;
+    }
+    texres_remove(slot);
+    c = &g_chains[slot];
+    if (c->levels) {
+        mem_heap_free(g_chain_heap, c->levels);
+        c->levels = 0;
+    }
+}
+
+void texcache_note(int slot, float dist)
+{
+    if (g_stream) {
+        texres_note(slot, dist);
+    }
+}
+
+void texcache_stream_service(float focal, df_u32 budget)
+{
+    if (g_stream) {
+        texres_service(focal, budget);
+    }
+}
+
+df_u32 texcache_stream_ram(void)
+{
+    return g_stream ? mem_heap_bytes(g_chain_heap) : 0;
+}
+
 void texcache_bind(int slot)
 {
+    if (g_stream) {
+        df_u32 h;
+
+        if (texres_handle(slot, &h)) {
+            glide_bind(h);
+        }
+        return;
+    }
     if (slot < 0 || slot >= g_n || !g_live[slot]) {
         return;
     }

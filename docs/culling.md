@@ -157,6 +157,8 @@ What keeps it cheap:
 - Faces are fanned from the corner whose first triangle is largest (`fan_apex`), so the face normal comes from a real triangle. An inserted corner next to the apex makes a zero-area triangle that the card skips and that keeps the fan exact. With all points, 2 faces in the archive are not convex, and their fans from that corner still cover them exactly.
 - A face can now have up to 32 corners. `OCC_POLY` is 24, `GLIDE_POLY_MAX` 32, and `draw.c`'s `FACE_MAX` 26.
 
+A face looks only at the corners inside its own box (WELD_NEAR wider): the model's corners are sorted by x once (`corners_sort`), the box's run of them found by a binary search, and kept in table order, so the weld is the same to the bit as a scan of every corner. The counting pass keeps each welded face (`g_kpts`, up to 4096 points a model; these tables are about 150 KB more, static) and the emitting pass takes it instead of welding again. All of ARCH3D.BSA loads in 158 ms on the host, 442 before; model 451 in 0.8 ms, 6.8 before (a streamed town parses its meshes one a frame, `docs/streaming.md`).
+
 In the castle, T-junctions inside models went from 196 edges in 87 models to 4 edges in 1. The castle's world load went from 12.0 to 17.7 ms on the host. The weld's tables are static, about 260 KB, sized for model 451's 2720 corners.
 
 | View, castle far 8192 | Old loader | Straightened only | Straightened and welded | Really visible |

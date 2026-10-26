@@ -259,6 +259,17 @@ int sky_prepare(const Sky *sky, float minute, int weather)
     return 1;
 }
 
+void sky_change(const Sky *sky)
+{
+    if (!g_ready || !sky || !sky->pick || !sky->read) {
+        return;
+    }
+    g_sky_copy = *sky;
+    g_sky = &g_sky_copy;
+    /* No key is -1: the next update reads the new sky's picture whatever its key. */
+    g_key = -1;
+}
+
 void sky_update(float minute, int weather)
 {
     int key;

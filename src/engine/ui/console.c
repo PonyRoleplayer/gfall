@@ -1333,7 +1333,15 @@ static void commands(void)
     cmd_add("mem", c_mem, "", "engine heaps and the machine's free memory");
     cmd_var("fov", get_fov, set_fov, 45, 120, "horizontal field of view in degrees");
     cmd_var("tcl", get_tcl, set_tcl, 0, 1,
-            "collision: 1 walks the camera under gravity, 0 flies it free");
+            "collision: on walks the camera under gravity, off flies it free; tcl alone flips it");
+    cmd_toggles("tcl");
+    cmd_var("flora", scene_flora, scene_set_flora, 0, 1,
+            "flora (a streamed world's trees and rocks) drawn; flora alone flips it");
+    cmd_toggles("flora");
+    cmd_var("floradensity", scene_flora_density, scene_set_flora_density, 0, 100,
+            "percent of the flora that stood drawn; 40 is the default");
+    cmd_var("florasight", scene_flora_sight, scene_set_flora_sight, 0, (int)DF_FAR_MAX,
+            "units the flora is drawn within; 0 is each place's own (3072)");
     cmd_var("far", get_far, set_far, 16, (int)DF_FAR_MAX, "far clip in world units");
     cmd_var("fog", gfx_fog, gfx_set_fog, 0, 1, "distance fog");
     cmd_var("cull", scene_cull, scene_set_cull, 0, 1, "drop models and sprites out of view");

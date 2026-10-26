@@ -171,6 +171,17 @@ int glide_replace(df_u32 handle, const df_u8 *pixels);
  */
 void glide_sky(int on, const df_u8 *rgb);
 /*
+ * A streamed world's pictures (docs/streaming.md): the card's room past
+ * everything uploaded so far, lo to hi; a chain already built (levels,
+ * every level from side down, largest first, as mip_build writes it)
+ * sent from level drop at addr, into a record of its own; and a record
+ * given back. The caller owns the room: these never move g_addr.
+ */
+void glide_tex_range(df_u32 *lo, df_u32 *hi);
+int glide_upload_chain(const df_u8 *levels, int side, int cutout, int chain, int drop,
+                       df_u32 addr, df_u32 *handle);
+void glide_release(df_u32 handle);
+/*
  * The windows' night pass: the palette on TMU0 black but for MIP_GLASS,
  * which is rgb (0xRRGGBB); the texture times the constant colour, added
  * onto the frame (ONE, ONE); the depth test passing on equal, so the

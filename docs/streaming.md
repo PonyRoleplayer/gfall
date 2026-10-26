@@ -1,6 +1,6 @@
 # Streaming the world (design)
 
-The plan for LEVELFALL's "Stream World": walk Daggerfall's whole map as one place, loaded around the camera as it moves, its ground from the world's height map and its climate. Read this before editing `src/engine/scene/stream.c`, `src/game/dagger/worldmap.c`, `wild.c`, or LEVELFALL's stream view. Phases 0 and 1 are built (below); the rest is the design, and each phase ends in something testable on the 233.
+LEVELFALL's "Stream World": walk Daggerfall's whole map as one place, loaded around the camera as it moves, its ground from the world's height map and its climate. Read this before editing `src/engine/scene/stream.c`, `src/engine/gfx/texres.c`, the stream modes of `texcache.c` and `light.c`, `src/game/dagger/worldmap.c`, `wild.c`, `wres.c`, or LEVELFALL's stream view. Phases 0 to 4 are built (below): the land has its heights, its tiles and its flora; each phase ends in something testable on the 233.
 
 ## What it is
 
@@ -77,9 +77,9 @@ The game's view is 1400 units (fog solid at 1170): a ring of 3 × 3 blocks (12,2
 
 0. **The frame's costs.** Built: the cycle-counter profile (`docs/profile.md`), in the console (`prof`) and a LEVELFALL panel (P). The baseline on the 233 is still to be taken. Every later budget is set from it.
 1. **Flat wilderness.** Built (see "Phase 1, as built"). The world map data. LEVELFALL's list gets a "Stream World" box: opening an outdoor row with it ticked starts the stream at that location's pixel, ground only, no buildings. Chunk slots with generations, the local origin, the time-sliced loader with hysteresis, the ground atlas near and baked chunk pictures far, the walker on the ground. Tests: the pixel and location tables; a walk of many map pixels on the host with the slot counts, the origin shifts and the loader's budget checked.
-2. **Locations.** A location's blocks stream in as chunks: models, flats, lamps, emitters, doors (a house's door still opens its inside as a place of its own, and leaving comes back to the stream). The texture residency manager (buddy allocator, mip streaming by distance). The per-chunk lights. Draws grouped by texture; contribution culling. The reading thread.
-3. **Climate across the map.** Each chunk's ground by its pixel's climate and the season; the sky, the weather odds and the soundscape follow the pixel under the camera. Cooked blocks, models and mip chains, if phase 2's measurements show parsing is the cost.
-4. **Slopes.** Heights from `WOODS.WLD` (Daggerfall Unity's sampler, or one of our own over the same bytes), flattened under locations; prebuilt grids per chunk with skirts, chosen by distance; horizon culling; the walker on slopes; nature flats.
+2. **Locations.** Built (see "Phases 2 and 3, as built"): a location's blocks stream in as chunks: models, flats, lamps, emitters, doors (a house's door opens its inside as a place of its own, and leaving comes back to the stream). The texture residency manager (buddy allocator, mip streaming by distance). The per-chunk lights. Not yet: draws grouped by texture, contribution culling, the reading thread; each waits for the 233's profile to say it is needed.
+3. **Climate across the map.** Built: each chunk's ground by its pixel's climate and the season; the sky and the weather odds follow the pixel under the camera; the season's turn loads the chunks again. Not yet: the soundscape stays a town's; cooked blocks, models and mip chains, if the measurements show parsing is the cost.
+4. **Slopes.** Built (see "Phase 4, as built"): heights from `WOODS.WLD`, Daggerfall Unity's recipe in our own form, towns flat at their level with the land eased to them; near ground as merged tile quads, far ground as a two by two grid with skirts; DFU's tiles and transitions; flora. Horizon culling is left out on purpose (see Not yet).
 
 ## Phase 1, as built
 
@@ -88,10 +88,144 @@ The game's view is 1400 units (fog solid at 1170): a ring of 3 × 3 blocks (12,2
 - **The wilderness** (`wild.c`): a chunk is 4 × 4 patches of 1024 units, one quad each, its picture repeated over its 4 × 4 tiles: 32 triangles a chunk. A patch mesh per picture, shared by every chunk (nothing is allocated as the world streams). The picture is the chunk's map pixel's climate: each family's grass (its ground archive, record 2), the sea's water (record 0) off the coast; winter's archives in winter (the desert never snows). The sky and the weather odds are the start pixel's (phase 3 makes them follow); the soundscape is a town's.
 - **LEVELFALL:** "Stream World" beside the list's Show box. Ticked, Open streams from the row's pixel (an indoor row's outside's), from the middle of the pixel at eye height, the radius from the far clip (8192 gives 2, a 5 × 5 ring), until Esc. The place panel shows the pixel, the location on it or "wilderness", the stream's radius and its chunks loaded and to go, and the pixel's climate.
 - **Tests:** Daggerfall's pixel, climate and height; the sea at the map's corner; a stream opened at Daggerfall fills its 25 chunks; a walk of 40 chunks east keeps ground under the camera all the way, keeps its ring and the ring behind (30), moves the origin twice, and lands the camera on pixel 212 with its world position exact to the unit.
-- **Not yet:** buildings (phase 2), the far ground's baked pictures and the near tiles' variety, the sky following the camera, heights.
+- **Since:** buildings, the far ground and the sky following the camera came with phases 2 and 3 (below). Not yet: the near tiles' variety in the wilderness, heights.
+
+## Phases 2 and 3, as built
+
+Measured over all 920 RMB blocks: at most 167 models (83 on average, ground patches included; a block's ground is 64 patches once its missing tiles are filled, below), 74 flats, 8 light flats; 725 distinct exterior meshes, about 105,000 triangles, 7 MB; 86 texture archives named by them before the climate swap.
+
+### Memory that can be freed
+
+`mem.c` has private heaps (`mem_heap_new`, `mem_heap_use`, `mem_heap_free`, `mem_heap_delete`; `HeapCreate` on Windows, malloc with a list on the host) that `mem_alloc` can be pointed at, and a track (`mem_track`): every allocation made while it is set, in the heap that was current when it was set, is listed, so a thing built (a picture) can be freed piece by piece later. A nested heap's allocations are not listed. Heaps do not move `mem_epoch`, so nothing that guards its caches by the epoch rebuilds when a chunk comes or goes. `mem_scratch` always takes the main heap: its buffers outlive any one chunk. See `docs/memory.md`.
+
+- **A chunk's heap** (`wild.c`): everything a chunk alone owns (its block's arrays, its ground patches, its far quads and baked picture, its doors' work lists) is in a heap of its own, deleted when the chunk drops.
+- **Pictures** (`wres.c`): a registry by archive, record and use (a wall tiles, a sprite is padded or a sheet of frames, so the same record used both ways is two pictures), its slot fixed for the session (meshes keep slot numbers in their triangles); the level's `images`, `cutout` and `glass` arrays are the registry's, 4096 long. A chunk acquires the pictures it draws and releases them when it goes; a picture's pixels are read into the pictures' heap under a track (`texture_load`, `texture_smooth` for a wall, `texture_sheet` or `texture_pad` for a sprite) and stay while any chunk holds it, and after, until `wres_trim` frees the least recently released past 8 MB (`WRES_PICTURE_RAM`). A game-made picture (a far chunk's ground) is `wres_dynamic`: a slot of its own, given back by `wres_forget` for the next one.
+- **Meshes:** cached for the session per climate variant (four families, summer and winter: a mesh's triangles name its climate's pictures, so a desert house is another mesh from a woodland one), in the meshes' heap (`arch_cache_heap` while a block is read), their faces given picture slots once (`wres_paint`). `wres_full` says when they pass 10 MB; nothing acts on it yet (Daggerfall's 25 chunks and a walk east use 1.4 MB).
+- **`TEXTURE` files:** kept whole (one file serves many records) in `texture.c`'s own heap, the least recently used freed past 4 MB (`texture_cache_limit`), the file just read always kept.
+
+### The card
+
+`texcache` in stream mode (`texcache_stream_begin`, from `gfx_prepare` for a level with `streamed`) over `texres.c`, plain C. After the sky, the falloff and the font, the rest of TMU0 is a buddy allocator (blocks of 256 bytes to 2 MB, split and joined, one arena per 2 MB half so no download crosses the edge). Every picture registered gets an 8 × 8 copy at once, kept while it is registered: nothing ever draws untextured. Its mip chain is built once (`mip_build`, every level), when its pixels are read, and kept in RAM: a sharper copy is a download (`glide_upload_chain`), never a rebuild. Each frame the draw notes, per picture, the nearest distance it was drawn at (a model by its mesh's slot keys, its box's distance less its extent; a sprite by its own); the level a picture needs follows from that distance and its density (texels a unit: a wall 0.25, a sprite its width over its world width, a far ground picture 1/32), doubling the distance halves the side. After the frame, `texcache_stream_service` uploads the sharper copies most levels short of their need first, then the nearest, under 64 KB and 8 uploads a frame. Short of room it frees the sharp copies not drawn this frame, least recently drawn first; still short, it sends the next level down: a picture is downsized only as far as the card needs. A picture unregistered (trimmed from RAM) frees both copies. A level loaded whole still goes through `texcache_upload`, which ends the stream mode first.
+
+### The slots
+
+121 slots, each of 192 models, 128 flats, 16 lights, 80 emitters, 128 usables and 8 movers (a chunk holds at most its land's near and far meshes, a block's 64 ground patches and 103 buildings, and its far quad: 170; 74 flats and 64 flora). Two spans a slot: its ground, near or far, and the rest. Sprites (`Span.sfirst`, `scount`) and emitters (`efirst`, `ecount`) are by span too when `Scene.sprite_spans` is 1: the sprite cull skips a span whose box is out of view, and the ambience walks the spans' emitters, not ten thousand records a frame. The rebase moves everything a slot holds, its boxes and spans, and the light decals (the source's `shift`).
+
+### A chunk's contents
+
+A chunk is filled in steps, each one call of its fill (`STEP_*` in `wild.c`). The stream checks its budget between calls, so a frame overruns it by at most one call: no call may be large. The repeated steps do one piece of real work a call (one mesh parsed, one tile shrunk, one picture read) and return until none is left.
+
+- `STEP_START`: its heap; the towns whose ground reaches it (`gather_flats`: its pixel's, and on a pixel's edge ring its neighbours'); which block of its pixel's town, if any, has its corner in it (a location is centred in its pixel, so for an odd width a block's corner falls on a half chunk and the block reaches into the next), and that town's level.
+- `STEP_LAND`: the land's heights and tiles (`terrain_chunk`, "Phase 4" below).
+- `STEP_LIST`: the block's bytes (scratch, read again by each step that needs them), and the ARCH3D ids its models name (`rmb_model_ids`). A ground tile past the archive's records (63: outside a city's walls) becomes the climate's grass, so a block's ground covers its square whole; the land's cells are never needed under a town, nor drawn twice in one plane.
+- `STEP_MESHES`, repeated: the next mesh not in the session's cache parsed into it and given its climate's pictures.
+- `STEP_BLOCK`: `rmb_load` into the chunk's heap, every mesh already cached, so it only places.
+- `STEP_TILES`, repeated: the next ground tile the far pictures need, shrunk: the land's, then the block's.
+- `STEP_NEAR`: the land's near mesh, then the block's ground raised to the town's level.
+- `STEP_FAR`: the land's far mesh under its baked picture, then the block's ground as one quad under its own, at the town's level.
+- `STEP_REST`: the buildings and props, raised to the town's level, their pictures held (counted in, `wres_hold`, not read).
+- `STEP_FLORA`: where the flora stands, its pictures held ("Flora" below).
+- `STEP_HOLD_FLATS`: the flats' pictures held.
+- `STEP_PICTURES`, repeated: the next held picture not in RAM read (`wres_load`: the file, the stretch or the sheet, the mip chain).
+- `STEP_FLATS`: standing on their base at the town's level, padded or as a sheet of frames at their rate, a lamp of each `TEXTURE.210` flat (radius 160), an emitter of each that sounds (`sounds_flat`); then the flora.
+- `STEP_DOORS`: the doors and people (`doors_build`, as a town's), their model and mover numbers counted from the slot.
+
+A chunk with no block skips the block's steps. The `N` in the budget's log line (`stream: chunk step N took ...`) is the step's place in this list, from 0.
+
+Measured on the host walking Daggerfall, the longest single call of each, before and after the steps were split (the 233 is roughly 40 times slower):
+
+| Call | Before | After |
+|---|---|---|
+| A block read, every new mesh parsed in it | 6.5 ms | one mesh: 0.7 ms |
+| A lamp's pools, with shadow rays | 2.0 ms | 0.07 ms (no rays, below) |
+| Collision grid rebuilt per chunk change | 0.2 ms | none (spans, below) |
+| A building step reading its pictures | 0.7 ms | one picture a call |
+| A location record (MAPS.BSA opened, the region read) | 1.0 ms each miss | once a region (`exterior_keep`) |
+
+The mesh parse itself was the weld: each face scanned every corner of its model, twice. The corners are now sorted by x once a model and a face looks only at those in its box, and the counting pass keeps its welded faces for the emitting pass (`docs/culling.md`, T-junctions): every one of ARCH3D.BSA's 10,237 models comes out bit for bit the same, in 158 ms instead of 442 on the host; the slowest, model 451, 0.8 ms instead of 6.8.
+
+Measured on the host at Daggerfall's middle, radius 2 (25 chunks): 646 models past the ground, 301 flats, 505 doors, 114 lamps, 38 sounds; 244 picture slots, 4.2 MB of pictures in RAM, 183 meshes in 1.4 MB, 4.1 MB of files.
+
+### Far ground
+
+Within one ring of the camera's chunk the near ground draws (`STREAM_NEAR`); beyond, the far ground: the land as a two by two grid of 2048 quads under one picture of its tiles, with a skirt under each edge ("Phase 4" below), and a block's ground as one 4096 quad under a picture of its own 16 × 16 tiles. Both pictures are 128 × 128 (`FAR_SIDE`), 8 texels a tile, 32 units a texel, two or three pixels at the nearest a far chunk can be (`bake_tiles`). Each ground tile is shrunk to 8 × 8 once for the session (the mean of each 8 × 8, `mip_nearest`), and laid in turned and flipped as `rmb.c`'s `corner_uv` turns the tile's corners: with a and b the column and row in the tile, none reads (a, b), flip (7 − a, 7 − b), rotate (7 − b, a), both (b, 7 − a). The pictures are dynamic `wres` slots on the card like any other. Daggerfall's middle: 1600 near ground quads, 25 far ones, the same area.
+
+### Lights
+
+`light.c` in stream mode (`light_stream_begin` after `stream_open`, on the stream's heap). A light's decals are its own, in a heap of its slot's, freed with the chunk. When a chunk arrives (the source's `changed`), its lamps are queued, and so are the lamps of loaded neighbours whose reach meets its box (models and sprites, kept so the same test works after it goes); when one goes, its neighbours' lamps that reached into it are queued again, cut without it. `light_stream_service` cuts the queue in what the stream's budget left (a quarter of it at least), a light at a time, each against the still models of the loaded slots its reach box meets (the near ground and the rest, never the far quads; doors, the movers' models, take no decals, as indoors). A streamed lamp casts no shadow (`seen` passes everything): the rays were 97% of a lamp's cut, and outdoors they change next to nothing, since a house's inside is not drawn and a face turned away from the lamp takes no pool anyway. Daggerfall's middle has 4435 decals with them off, 3859 with them on. A sprite's lamplight is worked out per slot, from the lights of the slots near it. A chunk arrives at the stream's edge, where its lamps are too far to draw, so a pool cut a few frames late is never seen. `light_build` on the streamed scene (a switch: `lightrange`, `lightshadow`) queues every loaded light again. Cut chunk by chunk as they came, they are the same as cut all at once (tested).
+
+### Collision
+
+`collide_use` builds no grid for a streamed scene (`Scene.sprite_spans`): `collide_gather` walks the spans, two a slot with their boxes, and the models of those its box meets. A model is in one span at a time, so it needs no marks. The grid over every slot's 23,000 models was built again whenever a chunk came or went.
+
+### The budget
+
+With vsync the card shows a frame on a 60 Hz retrace; a frame that runs past 16.7 ms waits for the next and shows at 30 fps, which reads as a stutter. A fixed 4 ms of loading pushed a 13 ms frame over. LEVELFALL's `stream_budget` takes the last frame's time without its swap (`prof_last_ms(PROF_FRAME) - prof_last_ms(PROF_SWAP)`), finds the retrace that frame made anyway, and gives the stream what is left before it, less 1.5 ms, between 1 and 8 ms (2 ms before calibration or with vsync off). The lamps get what the chunks left. A single call that runs more than 8 ms past the budget is logged to `levelfall.log` (`stream: chunk step N took X ms, budget Y`, N a `STEP_*` number; or a lamp's), at most 64 lines a stream, so the 233's slow steps can be named. The worst calls are kept by `stream_worst` and `light_stream_worst`.
+
+Before the first frame (opening, coming back out of a door, a season's turn) `wild_fill` loads everything within the radius under the hold, so the walk does not start with seconds of loading a millisecond at a time.
+
+### The world follows the camera
+
+Each frame `wild_update` reads the camera's pixel's climate. When it changes (and has a family: the sea keeps the last), the sky file and the weather's odds follow (`skyfile_open`, `forecast_set`), and `Level.sky_serial` goes up: the frame then calls `sky_change`, and the next `sky_update` reads the new sky's picture into the same tiles on the card. The season is checked each frame too (`wild_season_turned`): when it turns, LEVELFALL holds the frame under "Loading...", `wild_reseason` drops every chunk (`stream_reload`), makes the wilderness's patches in the new season's archives, and loads the camera's ring again before it returns (`wild_fill_near`); the rest streams in as on a walk. Meshes are cached per season already.
+
+### Doors from the stream
+
+LEVELFALL's handler lets a streamed door through when its pixel's town is in the list (`wild_location_at`: the town whose pixel holds the door, and its own frame's origin, the corner of its block 0, 0), into a house (`DOOR_ENTER`) or down into its dungeon (`DOOR_DUNGEON`). The step out of that door (`doors_landing`, three body radii) is kept in world units; the stream closes, and the house opens as a place of its own (`world_load_inside`, with the door moved into the town's frame, where the house is placed against it), or the dungeon. Its way out (`DOOR_LEAVE`, `DOOR_EXIT`) closes it and opens the stream again at the kept step (`wild_open_at`), facing out, the camera's ring loaded before the first frame. The card stays open throughout, each load under the hold and faded in. Tested: 20 of Daggerfall's doors into houses from the stream are where the town loaded whole has them.
+
+### Tests
+
+`check_stream` in `tools/check_dagger.c`: a stream at Daggerfall fills its 25 chunks, has the town's houses, flats, doors, lamps and sounds; its doors are the town's; a sound is heard beside it; its lamps' pools lie round their lamps and are the same cut chunk by chunk as all at once; its far ground covers the near ground's area in 25 quads, 25 of them baked (`build/far0.ppm` is one); a walk of 40 chunks east keeps ground under the camera, moves the origin twice, keeps the pools with their lamps and the pictures and files under their caps; a jump east into another climate brings its sky; the season's turn loads the ring again in its pictures. `check_wres`: held pictures stay, the least recently released go first, come back when held, and a forgotten dynamic slot is reused. `check_texres` (engine): the buddy allocator, the levels by distance, the budget, the eviction.
+
+### Not yet
+
+- Draws grouped by texture, contribution culling, the reading thread, cooked data: each when the 233's profile says it is the cost.
+- `wres_full` (meshes past 10 MB) is reported and not acted on.
+- The soundscape stays a town's everywhere; the wilderness's own (birds, wind) and its songs are to come.
+- The rebase (every 16 chunks) moves every slot's models and decals in one frame; a few milliseconds on the 233, every two map pixels.
+- Pictures start at 8 × 8 after a fill and sharpen at 64 KB a frame: a second or two of blur at the start.
+- Horizon culling is not planned. The far clip is 16k at most, a few chunks of ground, and the fog, the clip and the frustum already cut most of what a hill would hide. The far ground costs 24 triangles a chunk, so there is little left to save.
+- A swamp's own ambience (DFU's frogs); the music is the weather's playlists, as DFU plays them in a town or out of one.
+
+## Phase 4, as built
+
+### The land's height
+
+`terrain.c`, plain C, host-tested. Daggerfall Unity's `DefaultTerrainSampler` in our own form: a smooth function of the world position, so two chunks agree on their shared edge to the bit and nothing has to be stitched.
+
+- In DFU's "scaled" units: 8 × the height map's byte, plus 4 × WOODS.WLD's finer heights, plus a little noise, never under the sea floor, 27.2. A world y is 60 units a scaled unit above the sea floor (DFU's terrain scale of 1.5 m, at 40 units a metre), so the sea is y 0. Land bytes run to 109: the highest land is about 77,000 units (1.9 km), Daggerfall 13,374 (334 m).
+- The height map: each byte on its pixel's south-east corner (where DFU's sampler has it), Catmull-Rom between.
+- The finer heights: each pixel's record in WOODS.WLD holds a 5 × 5 block at +22, row 0 north, on the height map's scale. Its inner 3 × 3 are the pixel's thirds (the outer ring repeats the neighbours'), on average 6 above the pixel's own byte. Each is at the middle of its third, Catmull-Rom between. `worldmap_detail` reads a record on demand (two small reads, the 26 MB file never whole) into a cache of 1024 pixels. They put a low hummock on most pixels; DFU's land has them too.
+- The noise: DFU's 10 × low × high, each half of a gradient noise, but at waves of 16 and 8 tiles where DFU's are about 3 and 1: our grid is 4 tiles, and finer bumps would only alias.
+
+### Towns on the land
+
+A town is flat at its level: the mean of the land's heights over its rectangle (9 × 9 samples, `terrain_level`), worked out once a location and kept with its record. Round it the land eases to that level over `TERRAIN_BLEND` (4096, one chunk), with strength (1 − dx/4096)(1 − dz/4096), smoothstepped, where dx and dz are the distances outside the rectangle; the strength is 1 at the rectangle's edge, so the land meets the town's ground there exactly. DFU blends over the whole pixel instead; with a reach of one chunk, a chunk on a pixel's edge ring also takes the neighbour pixel's town (`gather_flats`). Every block of the town, its ground, buildings, flats, lamps, sounds and doors, is raised to the level; the land's cells under the rectangle are not drawn (a town lies on 2048s, so the cells divide cleanly). `wild_ground` is the ground's y anywhere, for the camera's start and the step out of a door.
+
+### The land's tiles
+
+At each tile corner a kind, as DFU's `DefaultTerrainTexturing`: water at the sea floor; dirt up to the beach (scaled 40, ± 1.5 by a hash of the corner); else a three-octave noise (0.05 a tile, amplitudes 0.9, 0.36, 0.144) under 0.5 is dirt, over 0.95 stone, else grass. Each tile then takes DFU's marching table: the four corners' kinds make a shape (bit 0 of each: dirt and stone 1) and a ring (their mean), and those pick the archive's transition record, turned (0x40) and flipped (0x80). The tiles are kept as an RMB block keeps its own (row 0 north), so the near mesh, the far bake and `rmb.c` read them alike; a map of them shows the transitions join (checked by eye, edges continuous). The archive is the pixel's climate family's ground (the sea's swamp's), in winter its snowy one.
+
+### The near ground
+
+A grid of heights 1024 apart (5 × 5 a chunk). Each 1024 cell not under a town is drawn as rectangles of one tile each, found greedily: the first tile not taken, as wide as its row runs, as tall as whole rows of that width run. Its tile repeats across it, turned and flipped as `leaf_uv` says. Each corner's height is bilinear in its cell: along any axis-aligned line in a cell bilinear is straight, so a rectangle's corner on a neighbour's edge lies on that edge and nothing cracks. Each triangle is a face of its own (a quad is not flat, and `draw.c` sends a face as one polygon). Triangles are sorted by picture, one bind a run. Over 1246 land chunks: 122 triangles on average, 224 at most (a quadtree of squares gave 187 and 350). A plain meadow is 32.
+
+### The far ground
+
+The same grid's even points: 2 × 2 quads 2048 apart, under the land's baked picture. Each edge's two 2048 lengths get a skirt hung down by 64 plus twice how far the near grid's middle point stands off the far line, so a near neighbour's edge, bent at its middle, never shows sky under it. 24 triangles a chunk at most.
+
+### Flora
+
+Daggerfall Unity's `DefaultTerrainNature`: a chance on each plain tile of dirt (0.2), grass (0.9) or stone (0.05), times the pixel's height over 128 (between 0.4 and 1), a quarter in the desert; nothing on water, a transition, the beach, ground steeper than 50°, or within 1024 of a town. Records 1 to 31 of the climate's nature archive (500 to 511, the woodland and mountain sets snowy in winter). DFU draws thousands a map pixel as one batch on a modern card; here `FLORA_DENSITY` (0.3) of those chances stand, at most 64 a chunk, about 18 on average, chosen by a hash of each tile's place so a chunk is the same every time it loads. Each stands on the land a little sunk (more on a slope), and is drawn only within `FLORA_SIGHT` (3072) of the camera across the ground: `Flat.sight`, in 16s, which `scene_visible_sprites` checks before anything else.
+
+The console's switches act on what stands, with no reload: `flora` (on, off; alone it flips), `floradensity` (the percent drawn, by each one's rank, `Flat.thin`, an even spread over 0..255 from a hash of its own; 40 by default, so 0.12 of DFU's chances draw), `florasight` (units, in place of each flat's own sight). They are the engine's (`scene_set_flora*`): a flat with a sight is flora to them.
+
+### What the land costs
+
+On the host walking out of Daggerfall: a chunk's heights and tiles 0.03 ms (about 1.3 ms on the 233), its far bakes 0.04 ms. Thirty chunks east of Daggerfall: 3802 near triangles (127 a chunk, but only the camera's ring draws them), 24 far a chunk, 549 flora standing, 40% of them drawn by default. Over 96,000 cells of the map, 88% rise under 0.1 (6°), and only a few cliffs pass the walker's 45°.
 
 ## Open questions
 
 - How long a city takes to stream in on the 233, and whether a block's steps fit the budget, can only be measured there.
 - How sharp the residency manager can keep a city on a 2 MB card at walking speed, and what upload budget a frame can spare.
 - Indoors (dungeons, houses) stays as it is: a place of its own, entered from the stream and left back to it.
+- Whether 128 texels a far chunk reads well enough at 4096 to 8192 units, or a 64 one would do and save the RAM (16 KB and its chain a town chunk now).

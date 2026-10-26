@@ -178,13 +178,7 @@ static int add_file(World *world, int file)
 /* DFU billboard size, in native units. Truncates toward zero, as a cast does. */
 static int flat_extent(int pixels, int scale)
 {
-    int change;
-
-    if (pixels < 1) {
-        return 0;
-    }
-    change = (int)((float)pixels * ((float)scale / 256.0f));
-    return pixels + change;
+    return texture_extent(pixels, scale);
 }
 
 /* A record's frame through the "texture" loader. 0 when it cannot be read. */
@@ -576,92 +570,17 @@ static void note_keys(Mesh *mesh)
  */
 #define FLAME_RATE 12
 #define FLAT_RATE 5
-#define SHEET_GAP 2
-#define SHEET_FRAMES 64
 
-static int pot_up(int v)
-{
-    int p;
-
-    p = 1;
-    while (p < v) {
-        p <<= 1;
-    }
-    return p;
-}
-
-/* The frames of the record in slot into one sheet. 1 when it animates. */
 static int make_sheet(World *world, int slot, int file, int image)
 {
-    Image *frame[SHEET_FRAMES];
     Image *img;
-    df_u8 *pot;
-    int frames;
-    int fw;
-    int fh;
-    int side;
-    int cols;
-    int k;
 
     img = world->images[slot];
     if (world->sheet[slot]) {
         return img->frames > 1;
     }
-    world->sheet[slot] = 0;
-    frames = texture_frame_count(file, image);
-    if (frames < 2 || frames > SHEET_FRAMES) {
-        return 0;
-    }
-    fw = 0;
-    fh = 0;
-    for (k = 0; k < frames; k++) {
-        frame[k] = k == 0 ? img : load_frame(file, image, k);
-        if (!frame[k]) {
-            return 0;
-        }
-        fw = frame[k]->width > fw ? frame[k]->width : fw;
-        fh = frame[k]->height > fh ? frame[k]->height : fh;
-    }
-    /* The smallest square whose grid of cells holds every frame. */
-    for (side = pot_up(fw > fh ? fw : fh); side <= 256; side <<= 1) {
-        int rows;
-
-        cols = (side + SHEET_GAP) / (fw + SHEET_GAP);
-        rows = (side + SHEET_GAP) / (fh + SHEET_GAP);
-        if (cols * rows >= frames) {
-            break;
-        }
-    }
-    if (side > 256) {
-        return 0;
-    }
-    pot = (df_u8 *)mem_alloc((df_u32)side * (df_u32)side);
-    if (!pot) {
-        return 0;
-    }
-    for (k = 0; k < frames; k++) {
-        int x0;
-        int y0;
-        int y;
-
-        x0 = (k % cols) * (fw + SHEET_GAP);
-        y0 = (k / cols) * (fh + SHEET_GAP);
-        for (y = 0; y < frame[k]->height; y++) {
-            mem_copy(pot + (y0 + y) * side + x0, frame[k]->index + y * frame[k]->width,
-                     (df_u32)frame[k]->width);
-        }
-    }
-    img->pot = pot;
-    img->pot_w = side;
-    img->pot_h = side;
-    img->span_w = img->width;
-    img->span_h = img->height;
-    img->frames = frames;
-    img->frame_cols = cols;
-    img->frame_dx = fw + SHEET_GAP;
-    img->frame_dy = fh + SHEET_GAP;
-    world->sheet[slot] = 1;
-    return 1;
+    world->sheet[slot] = (df_u8)texture_sheet(img, file, image);
+    return world->sheet[slot];
 }
 
 static void animate(World *world, Flat *fl, int slot)
@@ -1358,29 +1277,8 @@ int world_texture_file(const World *world, int index)
 
 void world_as_level(const World *world, Level *level)
 {
-    level->images = 0;
-    level->cutout = 0;
-    level->glass = 0;
-    level->nimages = 0;
-    level->palette = 0;
-    level->scene.models = 0;
-    level->scene.bounds = 0;
-    level->scene.nmodels = 0;
-    level->scene.spans = 0;
-    level->scene.nspans = 0;
-    level->scene.sprites = 0;
-    level->scene.nsprites = 0;
-    level->scene.lights = 0;
-    level->scene.nlights = 0;
-    level->scene.outdoor = 0;
-    level->scene.emitters = 0;
-    level->scene.nemitters = 0;
-    level->scene.usables = 0;
-    level->scene.nusables = 0;
-    level->scene.movers = 0;
-    level->scene.nmovers = 0;
-    level->sky = 0;
-    level->sound = 0;
+    /* Every field, those added since too (a stream's sprite_spans, sky_serial): 0 unless set here. */
+    mem_zero(level, sizeof(Level));
     if (!world) {
         return;
     }

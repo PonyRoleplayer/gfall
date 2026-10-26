@@ -33,6 +33,8 @@ int sky_prepare(const Sky *sky, float minute, int weather);
 void sky_reset(void);
 /* Send the picture for minute and weather when its key differs from the one on the card. */
 void sky_update(float minute, int weather);
+/* Another sky for the same tiles (another climate): its picture goes up at the next sky_update. */
+void sky_change(const Sky *sky);
 /* 1 when a sky is on the card. */
 int sky_ready(void);
 df_u32 sky_tile(int i);

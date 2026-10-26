@@ -26,6 +26,8 @@
 #include "game/dagger/doors.h"
 #include "game/dagger/worldmap.h"
 #include "game/dagger/wild.h"
+#include "game/dagger/terrain.h"
+#include "game/dagger/wres.h"
 #include "engine/scene/stream.h"
 #include "engine/scene/interact.h"
 #include "game/dagger/hmi.h"
@@ -1135,6 +1137,188 @@ static int ground_under(const Scene *sc, float x, float z)
 }
 
 /*
+ * Every lit light's decals lie within its reach of it: so a rebase moved
+ * them with the lights. Returns how many lights have decals; *far is set
+ * when one does not.
+ */
+static int stream_pools(int *far)
+{
+    int lit;
+    int i;
+
+    lit = 0;
+    *far = 0;
+    for (i = 0; i < light_count(); i++) {
+        const Decal *d;
+        const Light *li;
+        float reach;
+        int n;
+        int k;
+
+        n = light_decals(i, &d);
+        if (n < 1) {
+            continue;
+        }
+        lit++;
+        li = light_at(i);
+        reach = light_reach(i) * 1.42f + 2.0f;
+        for (k = 0; k < n; k++) {
+            const float *c;
+
+            c = &light_corners_of(i)[d[k].first * LIGHT_CORNER];
+            if (df_absf(c[0] - li->x) > reach || df_absf(c[2] - li->z) > reach
+                || df_absf(d[k].cx - li->x) > reach || df_absf(d[k].cz - li->z) > reach
+                || df_absf(d[k].nx * c[0] + d[k].ny * c[1] + d[k].nz * c[2] + d[k].d) > 1.0f) {
+                *far = 1;
+            }
+        }
+    }
+    return lit;
+}
+
+/* Run stream frames until nothing within the radius is waiting, nor a light to cut (at most a few hundred). */
+static void settle(Camera *cam)
+{
+    int waiting;
+    int filling;
+    int k;
+
+    for (k = 0; k < 400; k++) {
+        wild_update(cam, 50.0f);
+        stream_stats(0, &waiting, &filling, 0);
+        if (!waiting && !filling && !light_stream_pending()) {
+            return;
+        }
+    }
+}
+
+/*
+ * The land (terrain.c): two chunks side by side agree on their shared
+ * edge to the bit; a town's level is the land's at its edge and stays
+ * so a blend away; the sea is water at y 0; the tiles are the archive's.
+ */
+static void check_land(void)
+{
+    static TerrainChunk a;
+    static TerrainChunk b;
+    TerrainFlat town;
+    int seam;
+    int j;
+    int k;
+    int water;
+    int tiles_ok;
+    float edge;
+    float off;
+
+    check_expect(worldmap_open(), "the world map did not read");
+    /* West of Daggerfall, and the chunk east of it. */
+    terrain_chunk(&a, 1640, 2280, 0, 0);
+    terrain_chunk(&b, 1641, 2280, 0, 0);
+    seam = 1;
+    for (j = 0; j <= TERRAIN_CELLS; j++) {
+        seam = seam && a.y[j][TERRAIN_CELLS] == b.y[j][0];
+    }
+    terrain_chunk(&b, 1640, 2281, 0, 0);
+    for (j = 0; j <= TERRAIN_CELLS; j++) {
+        seam = seam && a.y[TERRAIN_CELLS][j] == b.y[0][j];
+    }
+    check_expect(seam, "two chunks' land does not meet on their edge");
+    /* A town of one block at the middle of the chunk area: flat on it, the land's a blend away. */
+    town.x0 = 1640.0 * 4096 + 1024;
+    town.z0 = 2280.0 * 4096 + 1024;
+    town.x1 = town.x0 + 2048;
+    town.z1 = town.z0 + 2048;
+    town.s = terrain_level(town.x0, town.z0, town.x1, town.z1);
+    edge = terrain_y(terrain_scaled(town.x0, town.z0 + 1000.0, &town, 1));
+    off = terrain_y(terrain_scaled(town.x0 - TERRAIN_BLEND - 1.0, town.z0, &town, 1))
+        - terrain_y(terrain_natural(town.x0 - TERRAIN_BLEND - 1.0, town.z0));
+    check_expect(edge == terrain_y(town.s) && off == 0.0f,
+                 "a town is not flat at its level, or its blend reaches past TERRAIN_BLEND");
+    terrain_chunk(&a, 1640, 2280, &town, 1);
+    check_expect(a.covered == (1u << 5 | 1u << 6 | 1u << 9 | 1u << 10)
+                 && a.y[1][1] == terrain_y(town.s) && a.y[3][3] == terrain_y(town.s),
+                 "a chunk under a town does not leave its cells to it, flat at its level");
+    /* The sea at the map's corner: water at y 0, all of it. */
+    terrain_chunk(&a, 2, 2, 0, 0);
+    water = 1;
+    for (k = 0; k < 256; k++) {
+        water = water && a.tiles[k] == TERRAIN_WATER;
+    }
+    check_expect(water && a.y[2][2] == 0.0f, "the sea is not water at y 0");
+    /* Every tile is a record the ground archives have (0..55), turned and flipped as RMB tiles are. */
+    tiles_ok = 1;
+    for (j = 0; j < 64; j++) {
+        terrain_chunk(&a, 1600 + j * 3, 2250 + j, 0, 0);
+        for (k = 0; k < 256; k++) {
+            tiles_ok = tiles_ok && (a.tiles[k] & 0x3f) < 56;
+        }
+    }
+    check_expect(tiles_ok, "a land tile is past the ground archive's 56 records");
+}
+
+/*
+ * The stream's pictures (wres): held ones stay, released ones go the
+ * least recently released first when trimmed, come back when held
+ * again, and a game-made picture's slot is reused once forgotten.
+ */
+static void check_wres(const Palette *pal)
+{
+    Level wl;
+    Image *made;
+    int a;
+    int b;
+    int c;
+    int d;
+    int e;
+    int in_ram;
+    int held;
+    df_u32 ram;
+    df_u32 before;
+
+    mem_zero(&wl, sizeof(wl));
+    check_expect(pal && wres_begin(pal, &wl), "wres did not begin");
+    a = wres_slot(302, 2, WRES_WALL);
+    b = wres_slot(302, 3, WRES_WALL);
+    c = wres_slot(210, 0, WRES_SPRITE);
+    check_expect(a >= 0 && b >= 0 && c >= 0 && a != b && wres_slot(302, 2, WRES_WALL) == a
+                 && wres_slot(302, 2, WRES_SPRITE) != a && wl.nimages >= 4,
+                 "a picture's slot is not its archive, record and use");
+    check_expect(!wres_image(a) && wres_acquire(a) && wres_acquire(b) && wres_acquire(c)
+                 && wres_image(a) && wres_image(c) && wl.images[a] == wres_image(a)
+                 && wres_image(c)->pot_w == wres_image(c)->pot_h,
+                 "held pictures did not load");
+    wres_stats(0, &in_ram, &ram, &held, 0, 0);
+    check_expect(in_ram == 3 && held == 3 && ram > 0, "three held pictures are not counted in RAM");
+    /* b released first, then a: a trim to nothing frees both, c stays held. */
+    wres_release(b);
+    wres_release(a);
+    before = ram;
+    wres_trim(ram - 1);
+    wres_stats(0, &in_ram, &ram, &held, 0, 0);
+    check_expect(!wres_image(b) && wres_image(a) && ram < before,
+                 "the least recently released picture was not the one trimmed");
+    wres_trim(0);
+    wres_stats(0, &in_ram, &ram, &held, 0, 0);
+    check_expect(!wres_image(a) && wres_image(c) && in_ram == 1 && held == 1,
+                 "a trim freed a held picture, or kept a released one");
+    check_expect(wres_acquire(a) && wres_image(a) && wres_image(a)->width > 0,
+                 "a trimmed picture did not come back when held again");
+    /* A game-made picture: a slot of its own, the same slot again once forgotten. */
+    made = (Image *)mem_alloc(sizeof(Image));
+    mem_zero(made, sizeof(Image));
+    made->width = made->height = made->pot_w = made->pot_h = made->span_w = made->span_h = 8;
+    made->pot = made->index = (df_u8 *)mem_alloc(64);
+    d = wres_dynamic(made, 1.0f);
+    check_expect(d >= 0 && wl.images[d] == made && d != a && d != b && d != c, "a made picture got no slot");
+    wres_forget(d);
+    e = wres_dynamic(made, 1.0f);
+    check_expect(!wl.images[d] || e == d, "a forgotten slot was not given back");
+    check_expect(e == d, "the next made picture did not reuse the forgotten slot");
+    wres_forget(e);
+    wres_end();
+}
+
+/*
  * The world map and the stream (docs/streaming.md): Daggerfall's pixel
  * holds Daggerfall; a stream opened there fills its ring, and a walk of
  * 40 chunks east keeps the ground under the camera, moves the origin
@@ -1166,28 +1350,263 @@ static void check_stream(void)
     stream_world(cam.x, cam.z, &wx0, &wz0);
     check_expect(wx0 == 207.0 * 32768.0 + 16384.0 && wz0 == (499.0 - 213.0) * 32768.0 + 16384.0,
                  "the stream did not start in the middle of Daggerfall's pixel");
-    for (step = 0; step < 40; step++) {
-        wild_update(&cam, 0.0f);
-    }
+    /* Frames until the ring is full, as the view's loop would run them. */
+    settle(&cam);
     stream_stats(&loaded, &waiting, &filling, &shifts);
     check_expect(loaded == 25 && waiting == 0 && ground_under(&level.scene, cam.x, cam.z),
                  "a radius 2 stream did not fill its 5 x 5 chunks, or there is no ground under the camera");
-    /* East 40 chunks, 512 units a frame, a chunk loaded a frame. */
+    /* Collision walks the slots' spans (no grid to build again as chunks come): the floor is found. */
+    {
+        double gx;
+        double gz;
+        float g;
+        float fy;
+
+        /* Daggerfall stands on its level, the land's mean over the town: the camera's eye over it. */
+        stream_world(cam.x, cam.z, &gx, &gz);
+        g = wild_ground(gx, gz);
+        printf("stream: Daggerfall's level y %.0f, the camera at %.0f\n", g, cam.y);
+        check_expect(g > 1000.0f && cam.y > g + 60.0f && cam.y < g + 80.0f,
+                     "the stream did not start the camera at eye height over Daggerfall's level");
+        fy = -1000.0f;
+        check_expect(collide_use(&level.scene)
+                     && collide_gather(cam.x - 32.0f, g - 200.0f, cam.z - 32.0f, cam.x + 32.0f, g + 200.0f,
+                                       cam.z + 32.0f) > 0
+                     && collide_floor(cam.x, cam.z, g + 200.0f, g - 200.0f, &fy)
+                     && fy > g - 1.0f && fy < g + 1.0f,
+                     "collision found no floor under the camera in the stream");
+    }
+    /* Beside one of the stream's sounds, it is heard, from its chunk's span among ten thousand slots. */
+    {
+        static df_i16 sbuf[11025 * 2 * 2];
+        Camera ear;
+        int heard;
+        int loops;
+        int frames;
+        int k;
+
+        /* A loop (a fire) if there is one: a cat may not mew in two seconds. */
+        for (k = 0; k < level.scene.nemitters
+                    && (!level.scene.emitters[k].clip || level.scene.emitters[k].every > 0.0f); k++) {
+        }
+        if (k == level.scene.nemitters) {
+            for (k = 0; k < level.scene.nemitters && !level.scene.emitters[k].clip; k++) {
+            }
+        }
+        check_expect(k < level.scene.nemitters && level.scene.nemitters > 2048,
+                     "the stream has no sounds, or fewer slots than the ambience ever followed");
+        if (k < level.scene.nemitters) {
+            const Emitter *e;
+
+            e = &level.scene.emitters[k];
+            camera_set(&ear, e->x + 32.0f, e->y, e->z, 0.0f, 0.0f);
+            frames = run_sound(&level, &ear, 0.0f, 0, 2.0f, sbuf, 11025 * 2);
+            ambience_stats(&heard, &loops);
+            printf("stream: beside a %s, %d heard, %d loops, rms %.0f\n", e->label ? e->label : "sound",
+                   heard, loops, rms_of(sbuf, frames));
+            check_expect(heard > 0 && (e->every > 0.0f || (loops > 0 && rms_of(sbuf, frames) > 50.0)),
+                         "beside a sound of the stream nothing is heard");
+        }
+        sound_stop_all();
+    }
+    /*
+     * The stream's doors are the town's: a door into a house, put in the
+     * town's own frame by wild_location_at, is where the whole town loaded
+     * on its own has the same door (LEVELFALL goes in by it, and comes back).
+     */
+    {
+        Dungeon tdun;
+        World *town;
+        int tried;
+        int matched;
+        int k;
+
+        tried = 0;
+        matched = 0;
+        town = 0;
+        for (k = 0; k < level.scene.nusables && tried < 20; k++) {
+            const Usable *u;
+            double dwx;
+            double dwz;
+            double ox;
+            double oz;
+            int rg;
+            int ix;
+            int t;
+
+            u = &level.scene.usables[k];
+            if (u->reach <= 0.0f || u->kind != USE_PASSAGE || u->what != DOOR_ENTER) {
+                continue;
+            }
+            stream_world(u->cx, u->cz, &dwx, &dwz);
+            if (!wild_location_at(dwx, dwz, &rg, &ix, &ox, &oz)) {
+                continue;
+            }
+            if (!town) {
+                check_expect(exterior_load_at(rg, ix, &tdun), "Daggerfall's record did not read");
+                town = world_load_dungeon(&tdun);
+                check_expect(town != 0, "Daggerfall did not load whole");
+                if (!town) {
+                    break;
+                }
+            }
+            tried++;
+            for (t = 0; t < world_usable_count(town); t++) {
+                const Usable *w;
+
+                w = world_usable(town, t);
+                if (w->what == DOOR_ENTER && w->tag == u->tag
+                    && df_absf(w->cx - (float)(dwx - ox)) < 1.0f && df_absf(w->cz - (float)(dwz - oz)) < 1.0f
+                    && df_absf(w->cy + wild_ground(dwx, dwz) - u->cy) < 1.0f) {
+                    matched++;
+                    break;
+                }
+            }
+        }
+        printf("stream: %d of %d doors into houses are the town's own\n", matched, tried);
+        check_expect(tried == 20 && matched == tried,
+                     "the stream's doors are not where the town loaded whole has them");
+    }
+    /* The middle of Daggerfall: its houses, its flats, its doors, its lamps, its sounds. */
+    {
+        const Scene *sc;
+        int houses;
+        int flats;
+        int doors;
+        int lamps;
+        int sounds;
+        int k;
+
+        sc = &level.scene;
+        houses = flats = doors = lamps = sounds = 0;
+        for (k = 0; k < STREAM_SLOTS; k++) {
+            int f;
+            int n;
+            int fa;
+            int r;
+
+            stream_slot_models(k, &f, &n, &fa, &r);
+            houses += r;
+        }
+        for (k = 0; k < sc->nsprites; k++) {
+            flats += sc->sprites[k].w > 0.0f;
+        }
+        for (k = 0; k < sc->nusables; k++) {
+            doors += sc->usables[k].reach > 0.0f;
+        }
+        for (k = 0; k < sc->nlights; k++) {
+            lamps += sc->lights[k].radius > 0.0f;
+        }
+        for (k = 0; k < sc->nemitters; k++) {
+            sounds += sc->emitters[k].clip != 0;
+        }
+        {
+            int far;
+            int lit;
+
+            lit = stream_pools(&far);
+            printf("stream: Daggerfall's middle 5 x 5: %d models past the ground, %d flats, %d doors, %d lamps (%d with pools, %d decals), %d sounds\n",
+                   houses, flats, doors, lamps, lit, light_decal_total(), sounds);
+            check_expect(houses > 200 && flats > 100 && doors > 50 && lamps > 10,
+                         "the stream's chunks in Daggerfall lack its houses, flats, doors or lamps");
+            check_expect(lit > lamps / 2 && !far,
+                         "the stream's lamps did not lay their pools, or laid them away from the lamp");
+            /* Each chunk's far ground covers what its near ground does, in fewer quads. */
+            {
+                double near_area;
+                double far_area;
+                int near_n;
+                int far_n;
+                int towns;
+                int sl;
+
+                near_area = far_area = 0.0;
+                near_n = far_n = towns = 0;
+                for (sl = 0; sl < STREAM_SLOTS; sl++) {
+                    int f;
+                    int n;
+                    int fa;
+                    int r;
+                    int m;
+
+                    stream_slot_models(sl, &f, &n, &fa, &r);
+                    for (m = f; m < f + n + fa; m++) {
+                        const Bound *bd;
+                        double a;
+
+                        bd = &sc->bounds[m];
+                        a = 4.0 * (double)bd->ex * (double)bd->ez;
+                        if (m < f + n) {
+                            near_area += a;
+                            near_n++;
+                        } else {
+                            far_area += a;
+                            far_n++;
+                            if (sc->models[m].mesh->tris[0].slot < level.nimages
+                                && level.images[sc->models[m].mesh->tris[0].slot]
+                                && level.images[sc->models[m].mesh->tris[0].slot]->width == 128) {
+                                if (!towns) {
+                                    write_ppm(level.images[sc->models[m].mesh->tris[0].slot],
+                                              level.palette, "build/far0.ppm");
+                                }
+                                towns++;
+                            }
+                        }
+                    }
+                }
+                printf("stream: near ground %d quads %.0f units², far %d quads %.0f units², %d baked\n",
+                       near_n, near_area, far_n, far_area, towns);
+                check_expect(near_area > 0.0 && far_area == near_area && far_n * 8 < near_n && towns > 10,
+                             "the far ground does not cover the near ground's square, or is not fewer quads");
+            }
+            /* Cut chunk by chunk as they came, the pools are what cutting them all at once gives. */
+            {
+                int before;
+
+                before = light_decal_total();
+                light_build(&level.scene);
+                settle(&cam);
+                check_expect(light_decal_total() == before,
+                             "the lamps cut as their chunks came differ from the lamps cut all at once");
+            }
+        }
+    }
+    /* East 40 chunks, out of Daggerfall and on, 512 units a frame. */
     under = 1;
     for (step = 0; step < 40 * 8; step++) {
         cam.x += 512.0f;
-        wild_update(&cam, 0.0f);
-        wild_update(&cam, 0.0f);
-        under = under && ground_under(&level.scene, cam.x, cam.z);
+        settle(&cam);
+        if (under && !ground_under(&level.scene, cam.x, cam.z)) {
+            printf("stream: no ground at step %d, local %.0f %.0f\n", step, cam.x, cam.z);
+            under = 0;
+        }
     }
-    for (step = 0; step < 40; step++) {
-        wild_update(&cam, 0.0f);
+    {
+        int far;
+
+        stream_pools(&far);
+        check_expect(!far, "a lamp's pool did not move with the origin");
     }
     stream_stats(&loaded, &waiting, &filling, &shifts);
     stream_world(cam.x, cam.z, &wx, &wz);
     wild_here(&cam, &px, &py);
     printf("stream: 40 chunks east, %d loaded, %d shifts, local x %.0f, world %.0f, pixel %d %d, ground under all the way %d\n",
            loaded, shifts, cam.x, wx, px, py, under);
+    {
+        int slots;
+        int in_ram;
+        int held;
+        int meshes;
+        df_u32 ram;
+        df_u32 mesh_ram;
+
+        wres_stats(&slots, &in_ram, &ram, &held, &meshes, &mesh_ram);
+        printf("stream: %d picture slots, %d in RAM (%u KB, %d held), %d meshes (%u KB), files %u KB, decals %d\n",
+               slots, in_ram, (unsigned int)(ram / 1024u), held, meshes, (unsigned int)(mesh_ram / 1024u),
+               (unsigned int)(texture_cache_bytes() / 1024u), light_decal_total());
+        check_expect(ram <= WRES_PICTURE_RAM + 2u * 1024u * 1024u && texture_cache_bytes() <= 5u * 1024u * 1024u,
+                     "the stream's pictures or files passed their RAM caps");
+    }
     check_expect(under, "a walk east lost the ground under the camera");
     /* The 5 x 5 round the camera, and the column behind it kept one ring longer. */
     check_expect(loaded == 30 && waiting == 0 && shifts >= 2
@@ -1195,7 +1614,154 @@ static void check_stream(void)
                  "the stream did not keep its ring and the ring behind, or the origin did not follow the camera");
     check_expect(wx == wx0 + 40.0 * STREAM_CHUNK && wz == wz0 && px == 212 && py == 213,
                  "the camera's world position drifted as the origin moved");
+    /* The land east of Daggerfall: hills, its tiles, its flora, few triangles. */
+    {
+        const Scene *sc;
+        int near_tris;
+        int far_tris;
+        int near_max;
+        int far_max;
+        int chunks;
+        int flora;
+        int sl;
+        float lo;
+        float hi;
+
+        sc = &level.scene;
+        near_tris = far_tris = near_max = far_max = chunks = flora = 0;
+        lo = 1.0e9f;
+        hi = -1.0e9f;
+        for (sl = 0; sl < STREAM_SLOTS; sl++) {
+            int f;
+            int n;
+            int fa;
+            int r;
+            int m;
+            int nt;
+            int ft;
+
+            stream_slot_models(sl, &f, &n, &fa, &r);
+            if (n + fa + r < 1) {
+                continue;
+            }
+            chunks++;
+            nt = ft = 0;
+            for (m = f; m < f + n; m++) {
+                nt += sc->models[m].mesh ? sc->models[m].mesh->ntris : 0;
+                if (sc->models[m].mesh) {
+                    lo = sc->bounds[m].cy - sc->bounds[m].ey < lo ? sc->bounds[m].cy - sc->bounds[m].ey : lo;
+                    hi = sc->bounds[m].cy + sc->bounds[m].ey > hi ? sc->bounds[m].cy + sc->bounds[m].ey : hi;
+                }
+            }
+            for (m = f + n; m < f + n + fa; m++) {
+                ft += sc->models[m].mesh ? sc->models[m].mesh->ntris : 0;
+            }
+            near_tris += nt;
+            far_tris += ft;
+            near_max = nt > near_max ? nt : near_max;
+            far_max = ft > far_max ? ft : far_max;
+        }
+        for (sl = 0; sl < sc->nsprites; sl++) {
+            flora += sc->sprites[sl].w > 0.0f && sc->sprites[sl].sight > 0;
+        }
+        printf("stream: the land east: %d chunks, near %d triangles (at most %d a chunk), far %d (at most %d), "
+               "%d flora, ground y %.0f..%.0f\n",
+               chunks, near_tris, near_max, far_tris, far_max, flora, lo, hi);
+        /* The console's flora switches: off, a share by rank, a nearer sight; no reload. */
+        {
+            static int vis[4096];
+            int counts[5];
+            int q;
+
+            for (q = 0; q < 5; q++) {
+                int v;
+                int k;
+
+                scene_set_flora(q != 3);
+                scene_set_flora_density(q == 0 ? SCENE_FLORA_DENSITY : (q == 1 ? 100 : (q == 2 ? 0 : 100)));
+                scene_set_flora_sight(q == 4 ? 512 : 0);
+                counts[q] = 0;
+                /* Round the camera, to the far clip the stream was opened for; no cells from another test. */
+                scene_set_limits(8192.0f, 0);
+                scene_set_occlude(0);
+                for (k = 0; k < 4; k++) {
+                    Camera look;
+                    int j;
+
+                    camera_set(&look, cam.x, cam.y, cam.z, (float)k * (DF_TAU / 4.0f), -0.3f);
+                    v = scene_visible_sprites(sc, &look, vis, 4096);
+                    for (j = 0; j < v; j++) {
+                        counts[q] += sc->sprites[vis[j]].sight > 0;
+                    }
+                }
+                scene_set_limits(DF_FAR, 1);
+                scene_set_occlude(1);
+            }
+            scene_set_flora(1);
+            scene_set_flora_density(SCENE_FLORA_DENSITY);
+            scene_set_flora_sight(0);
+            printf("stream: flora in view: %d at the default, %d at 100%%, %d at 0%%, %d off, %d within 512\n",
+                   counts[0], counts[1], counts[2], counts[3], counts[4]);
+            check_expect(counts[1] > counts[0] && counts[0] > 0 && counts[2] == 0 && counts[3] == 0
+                         && counts[4] < counts[1],
+                         "the flora switches did not hide and show the flora");
+        }
+        check_expect(chunks == 30 && near_max > 0 && near_max <= 256 && far_max > 0 && far_max <= 24
+                     && near_tris < chunks * 160 && flora > chunks * 4 && hi - lo > 100.0f,
+                     "the land east of Daggerfall is not hills of few triangles with flora on them");
+    }
+    /* Into another climate, a jump east: its sky and weather odds come with the camera. */
+    {
+        int serial;
+        int to;
+
+        serial = level.sky_serial;
+        for (to = 213; to < WORLDMAP_W && (worldmap_climate(to, 213) == CLIMATE_WOODLANDS
+                                           || climate_family(worldmap_climate(to, 213)) < 0); to++) {
+        }
+        check_expect(to < WORLDMAP_W, "no other climate east of Daggerfall");
+        cam.x += (float)((to - 212) * WORLDMAP_BLOCKS * STREAM_CHUNK);
+        settle(&cam);
+        wild_here(&cam, &px, &py);
+        printf("stream: east to pixel %d %d, climate %d, sky %d, sky changes %d\n", px, py,
+               worldmap_climate(px, py), level.sky ? level.sky->index : -1, level.sky_serial - serial);
+        check_expect(px == to && level.sky_serial > serial && level.sky
+                     && level.sky->index == skyfile_index(worldmap_climate(px, py), clock_season()),
+                     "the sky did not follow the camera into another climate");
+    }
+    /* The season turns: the chunks load again in its pictures, the camera's ring at once. */
+    {
+        int was;
+        int winter_ground;
+        int k;
+
+        was = clock_season();
+        clock_set_season(was == CLOCK_WINTER ? CLOCK_SUMMER : CLOCK_WINTER);
+        check_expect(wild_season_turned(), "the stream did not see the season turn");
+        wild_reseason(&cam);
+        winter_ground = 0;
+        for (k = 0; k < level.scene.nmodels; k++) {
+            const Instance *in;
+
+            in = &level.scene.models[k];
+            if (in->mesh && in->mesh->ntris > 0) {
+                int file;
+                int record;
+
+                /* The land's tiles are the ground archive's, in winter its snowy one (x03). */
+                if (wres_picture((int)in->mesh->tris[0].slot, &file, &record) && file % 100 == 3) {
+                    winter_ground++;
+                }
+            }
+        }
+        check_expect(!wild_season_turned() && stream_missing(STREAM_RADIUS_MAX) == 0
+                     && ground_under(&level.scene, cam.x, cam.z)
+                     && (clock_season() == CLOCK_WINTER) == (winter_ground > 0),
+                     "the season's turn did not load the whole radius again in its pictures");
+        clock_set_season(was);
+    }
     wild_close();
+    check_wres(level.palette);
     mem_temp_end();
 }
 
@@ -1802,6 +2368,7 @@ int check_dagger(const char *root_in)
     }
 
     check_skies();
+    check_land();
     check_stream();
     return check_failed() ? 1 : 0;
 }

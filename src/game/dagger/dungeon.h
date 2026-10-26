@@ -62,6 +62,13 @@ int exterior_list(DunRef *out, int cap);
 
 /* One outdoor location. Blocks are RMB names on a width*height grid. */
 int exterior_load_at(int region, int index, Dungeon *out);
+/*
+ * On: MAPS.BSA stays open and the last region's location records stay
+ * read, for exterior_load_at after exterior_load_at (a streamed world).
+ * Off (or on again) closes and frees them. Both on the current heap's
+ * side: the archive on the current heap, the records in their own.
+ */
+void exterior_keep(int on);
 
 const char *dungeon_error(void);
 

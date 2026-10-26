@@ -210,6 +210,69 @@ int worldmap_open(void)
     return 1;
 }
 
+/*
+ * WOODS.WLD's finer heights: each pixel's record holds a 5 x 5 block at
+ * +22, row 0 north, of which the inner 3 x 3 is a pixel's heights in
+ * thirds (the outer ring repeats the neighbours'). Read on demand, two
+ * small reads a pixel, the file never whole, into a direct-mapped cache
+ * of DETAIL_CACHE pixels (13 KB, static): a chunk needs the few round
+ * it, and its neighbours need the same.
+ */
+#define DETAIL_CACHE 1024
+#define WOODS_OFFSETS 144
+#define WOODS_DETAIL 22
+
+static int g_detail_key[DETAIL_CACHE];
+static df_u8 g_detail[DETAIL_CACHE][9];
+static int g_detail_init;
+
+int worldmap_detail(int px, int py, df_u8 *out)
+{
+    int key;
+    int slot;
+    int k;
+
+    px = clampx(px);
+    py = clampy(py);
+    key = py * WORLDMAP_W + px;
+    if (!g_detail_init) {
+        for (k = 0; k < DETAIL_CACHE; k++) {
+            g_detail_key[k] = -1;
+        }
+        g_detail_init = 1;
+    }
+    slot = (int)(((df_u32)key * 2654435761u) >> 22) & (DETAIL_CACHE - 1);
+    if (g_detail_key[slot] != key) {
+        VfsFile *f;
+        df_u8 word[4];
+        df_u8 block[25];
+        int ok;
+
+        f = vfs_open(WOODS_NAME);
+        ok = f && vfs_read_at(f, WOODS_OFFSETS + (df_u32)key * 4u, word, 4)
+            && vfs_read_at(f, df_ru32(word) + WOODS_DETAIL, block, 25);
+        if (f) {
+            vfs_close(f);
+        }
+        if (!ok) {
+            /* The pixel's own height in every third: the map, without its detail. */
+            for (k = 0; k < 9; k++) {
+                out[k] = (df_u8)worldmap_height(px, py);
+            }
+            return 0;
+        }
+        /* South row first: out[j * 3 + i] is third i east, j north, from file row 3 - j. */
+        for (k = 0; k < 9; k++) {
+            g_detail[slot][k] = block[(3 - k / 3) * 5 + 1 + k % 3];
+        }
+        g_detail_key[slot] = key;
+    }
+    for (k = 0; k < 9; k++) {
+        out[k] = g_detail[slot][k];
+    }
+    return 1;
+}
+
 int worldmap_height(int px, int py)
 {
     if (!g_ok) {

@@ -77,6 +77,13 @@ typedef struct ArchEnt {
 } ArchEnt;
 
 Mesh *arch_cached(ArchEnt *cache, int *ncache, struct Bsa *arch, df_u32 id);
+/*
+ * Meshes arch_cached reads go into h (0, the default: the current heap).
+ * A streamed world keeps them in a heap of their own, apart from the
+ * chunk being loaded (docs/streaming.md).
+ */
+struct MemHeap;
+void arch_cache_heap(struct MemHeap *h);
 
 /* Allocate the slots this block will fill. Caps are the tally, not 2048. */
 int block_reserve(Block *block, int ninst, int nflat, int nmark);

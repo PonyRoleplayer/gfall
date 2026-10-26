@@ -11,6 +11,17 @@
 
 static df_u8 *g_file[FILE_CACHE];
 static df_u32 g_file_size[FILE_CACHE];
+/*
+ * The cap (texture_cache_limit): files then live in g_heap, each read
+ * stamped, the oldest freed when the total passes the cap.
+ */
+static df_u32 g_limit;
+static df_u32 g_total;
+static df_u32 g_stamp;
+static df_u32 g_used_at[FILE_CACHE];
+/* 1 for a file read under the cap, into g_heap: only those can be freed one by one. */
+static df_u8 g_in_heap[FILE_CACHE];
+static MemHeap *g_heap;
 
 void texture_filename(int file, char *dst, int n)
 {
@@ -206,11 +217,46 @@ static const df_u8 *file_bytes(int file, df_u32 *size)
     }
     if (!g_file[file]) {
         texture_filename(file, name, (int)sizeof(name));
-        g_file[file] = vfs_read(name, &g_file_size[file]);
+        if (g_limit) {
+            MemHeap *was;
+
+            if (!g_heap) {
+                g_heap = mem_heap_new();
+            }
+            was = mem_heap_use(g_heap);
+            g_file[file] = vfs_read(name, &g_file_size[file]);
+            mem_heap_use(was);
+            g_in_heap[file] = 1;
+        } else {
+            g_file[file] = vfs_read(name, &g_file_size[file]);
+        }
         if (!g_file[file]) {
             return 0;
         }
+        g_total += g_file_size[file];
+        /* Past the cap: the files read longest ago go, never this one. */
+        while (g_limit && g_heap && g_total > g_limit) {
+            int old;
+            int i;
+
+            old = -1;
+            for (i = 0; i < FILE_CACHE; i++) {
+                if (g_file[i] && g_in_heap[i] && i != file
+                    && (old < 0 || g_used_at[i] < g_used_at[old])) {
+                    old = i;
+                }
+            }
+            if (old < 0) {
+                break;
+            }
+            mem_heap_free(g_heap, g_file[old]);
+            g_total -= g_file_size[old];
+            g_file[old] = 0;
+            g_file_size[old] = 0;
+            g_in_heap[old] = 0;
+        }
     }
+    g_used_at[file] = ++g_stamp;
     if (size) {
         *size = g_file_size[file];
     }
@@ -675,5 +721,113 @@ void texture_cache_clear(void)
     for (i = 0; i < FILE_CACHE; i++) {
         g_file[i] = 0;
         g_file_size[i] = 0;
+        g_used_at[i] = 0;
+        g_in_heap[i] = 0;
     }
+    g_total = 0;
+    if (g_heap) {
+        mem_heap_delete(g_heap);
+        g_heap = 0;
+    }
+}
+
+void texture_cache_limit(df_u32 bytes)
+{
+    g_limit = bytes;
+}
+
+df_u32 texture_cache_bytes(void)
+{
+    return g_total;
+}
+
+int texture_extent(int pixels, int scale)
+{
+    int change;
+
+    if (pixels < 1) {
+        return 0;
+    }
+    change = (int)((float)pixels * ((float)scale / 256.0f));
+    return pixels + change;
+}
+
+static int pot_up(int v)
+{
+    int p;
+
+    p = 1;
+    while (p < v) {
+        p <<= 1;
+    }
+    return p;
+}
+
+int texture_sheet(Image *img, int file, int image)
+{
+    Image *frame[TEXTURE_SHEET_FRAMES];
+    df_u8 *pot;
+    int frames;
+    int fw;
+    int fh;
+    int side;
+    int cols;
+    int k;
+
+    if (!img) {
+        return 0;
+    }
+    frames = texture_frame_count(file, image);
+    if (frames < 2 || frames > TEXTURE_SHEET_FRAMES) {
+        return 0;
+    }
+    fw = 0;
+    fh = 0;
+    for (k = 0; k < frames; k++) {
+        frame[k] = k == 0 ? img : texture_load_frame(file, image, k);
+        if (!frame[k]) {
+            return 0;
+        }
+        fw = frame[k]->width > fw ? frame[k]->width : fw;
+        fh = frame[k]->height > fh ? frame[k]->height : fh;
+    }
+    /* The smallest square whose grid of cells holds every frame. */
+    for (side = pot_up(fw > fh ? fw : fh); side <= 256; side <<= 1) {
+        int rows;
+
+        cols = (side + TEXTURE_SHEET_GAP) / (fw + TEXTURE_SHEET_GAP);
+        rows = (side + TEXTURE_SHEET_GAP) / (fh + TEXTURE_SHEET_GAP);
+        if (cols * rows >= frames) {
+            break;
+        }
+    }
+    if (side > 256) {
+        return 0;
+    }
+    pot = (df_u8 *)mem_alloc((df_u32)side * (df_u32)side);
+    if (!pot) {
+        return 0;
+    }
+    for (k = 0; k < frames; k++) {
+        int x0;
+        int y0;
+        int y;
+
+        x0 = (k % cols) * (fw + TEXTURE_SHEET_GAP);
+        y0 = (k / cols) * (fh + TEXTURE_SHEET_GAP);
+        for (y = 0; y < frame[k]->height; y++) {
+            mem_copy(pot + (y0 + y) * side + x0, frame[k]->index + y * frame[k]->width,
+                     (df_u32)frame[k]->width);
+        }
+    }
+    img->pot = pot;
+    img->pot_w = side;
+    img->pot_h = side;
+    img->span_w = img->width;
+    img->span_h = img->height;
+    img->frames = frames;
+    img->frame_cols = cols;
+    img->frame_dx = fw + TEXTURE_SHEET_GAP;
+    img->frame_dy = fh + TEXTURE_SHEET_GAP;
+    return 1;
 }

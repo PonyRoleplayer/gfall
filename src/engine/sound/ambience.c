@@ -10,8 +10,8 @@
  * hostcheck runs it with no card.
  */
 
-/* Emitters followed; past this many in one place, the rest are silent. */
-#define TRACK 2048
+/* Emitters followed; past this many in one place, the rest are silent. A stream's slots: 121 x 80. */
+#define TRACK 10240
 /* Beds: rain, wind, night. */
 #define BEDS 3
 /* A bed fades this much of its volume a second. */
@@ -26,6 +26,8 @@ static const Scene *g_scene;
 static const Soundscape *g_scape;
 static df_u32 g_epoch;
 static int g_nemit;
+/* The place's own count, uncapped: a change is a new place (or a stream opened). */
+static int g_nlevel;
 static int g_handle[TRACK];
 static int g_held[AMBIENCE_LOOPS];
 static int g_nheld;
@@ -65,6 +67,7 @@ static void enter(const Level *level)
     g_scape = level->sound;
     g_epoch = mem_epoch();
     g_nemit = level->scene.emitters ? level->scene.nemitters : 0;
+    g_nlevel = g_nemit;
     if (g_nemit > TRACK) {
         if (!g_warned) {
             log_print(LOG_WARN, "ambience: %d emitters, only %d heard", g_nemit, TRACK);
@@ -174,19 +177,20 @@ static int is_held(int i)
     return 0;
 }
 
-static void emitters(const Camera *cam, float secs)
+/*
+ * Emitters first..end - 1 heard from cam: a now-and-then sound may play;
+ * a loop goes among the nearest nn (near_i, near_d, nearest first).
+ */
+static void hear(int first, int end, const Camera *cam, float secs,
+                 int *near_i, float *near_d, int *nn)
 {
     const Emitter *em;
-    int near_i[AMBIENCE_LOOPS];
-    float near_d[AMBIENCE_LOOPS];
-    int nn;
     int i;
     int k;
 
     em = g_scene->emitters;
-    nn = 0;
-    g_heard = 0;
-    for (i = 0; i < g_nemit; i++) {
+    end = end < g_nemit ? end : g_nemit;
+    for (i = first; i < end; i++) {
         const Emitter *e;
         float dx;
         float dy;
@@ -213,8 +217,8 @@ static void emitters(const Camera *cam, float secs)
             continue;
         }
         /* A loop: kept among the nearest few. */
-        if (nn < AMBIENCE_LOOPS || d2 < near_d[nn - 1]) {
-            k = nn < AMBIENCE_LOOPS ? nn++ : nn - 1;
+        if (*nn < AMBIENCE_LOOPS || d2 < near_d[*nn - 1]) {
+            k = *nn < AMBIENCE_LOOPS ? (*nn)++ : *nn - 1;
             while (k > 0 && near_d[k - 1] > d2) {
                 near_d[k] = near_d[k - 1];
                 near_i[k] = near_i[k - 1];
@@ -223,6 +227,35 @@ static void emitters(const Camera *cam, float secs)
             near_d[k] = d2;
             near_i[k] = i;
         }
+    }
+}
+
+static void emitters(const Camera *cam, float secs)
+{
+    const Emitter *em;
+    int near_i[AMBIENCE_LOOPS];
+    float near_d[AMBIENCE_LOOPS];
+    int nn;
+    int i;
+    int k;
+
+    em = g_scene->emitters;
+    nn = 0;
+    g_heard = 0;
+    if (g_scene->sprite_spans && g_scene->spans) {
+        /*
+         * A streamed world's emitters are its chunks' ranges, most of each
+         * empty: the spans' ranges, not ten thousand records a frame
+         * (docs/streaming.md).
+         */
+        for (k = 0; k < g_scene->nspans; k++) {
+            if (g_scene->spans[k].ecount > 0) {
+                hear(g_scene->spans[k].efirst, g_scene->spans[k].efirst + g_scene->spans[k].ecount,
+                     cam, secs, near_i, near_d, &nn);
+            }
+        }
+    } else {
+        hear(0, g_nemit, cam, secs, near_i, near_d, &nn);
     }
     /* Loops that fell out of the nearest stop; the nearest start where they are in the loop. */
     for (k = 0; k < g_nheld; k++) {
@@ -264,7 +297,7 @@ void ambience_frame(const Level *level, const Camera *cam, const Weather *w,
         return;
     }
     if (&level->scene != g_scene || level->sound != g_scape || mem_epoch() != g_epoch
-        || (level->scene.emitters ? level->scene.nemitters : 0) != g_nemit) {
+        || (level->scene.emitters ? level->scene.nemitters : 0) != g_nlevel) {
         enter(level);
     }
     g_time += secs;

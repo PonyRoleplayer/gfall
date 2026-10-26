@@ -72,6 +72,8 @@ const Light *light_at(int i);
 /* Light i's decals. Returns how many. */
 int light_decals(int i, const Decal **out);
 const float *light_corners(void);
+/* The corners light i's decals index: light_corners(), or in a stream the light's own. */
+const float *light_corners_of(int i);
 int light_decal_total(void);
 
 /*
@@ -126,6 +128,30 @@ df_u32 light_sprite_over(int s, df_u32 base);
 #define LAMP_R 255
 #define LAMP_G 200
 #define LAMP_B 120
+
+/*
+ * A streamed scene (docs/streaming.md, Lights): its arrays are the
+ * stream's slots end to end, and the lights are cut a slot at a time.
+ * light_stream_begin after stream_open, on the heap the stream's
+ * arrays are on; each light's decals are then in a heap of its slot's,
+ * freed when the slot's chunk goes. The stream's changed and shift
+ * pass on to light_stream_changed and light_stream_shift; the cutting
+ * they ask for (the slot's lights, its sprites' light, the lights of
+ * its neighbours that reach into it) is queued, and done under a
+ * budget by light_stream_service, once a frame. light_build of the
+ * same scene cuts every loaded light again (a switch changed); of
+ * another, or light_stream_end, stops the stream's lighting.
+ */
+int light_stream_begin(const Scene *scene);
+void light_stream_end(void);
+int light_streaming(void);
+void light_stream_changed(int slot, int loaded);
+void light_stream_shift(float dx, float dz);
+void light_stream_service(float budget_ms);
+/* Lights and slots waiting to be cut or lit. */
+int light_stream_pending(void);
+/* The longest single light (or slot of sprites) cut since the last ask, in ms; then forgets it. */
+float light_stream_worst(void);
 
 /* LIGHT_TEX x LIGHT_TEX texels of RGB 565, row 0 first: falloff picture v. */
 void light_texture(int variant, df_u16 *out);
