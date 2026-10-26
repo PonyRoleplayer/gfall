@@ -38,6 +38,10 @@ Texture records are not in this cache. `place_image` already keeps one `Image` p
 
 About 1.5 MB on the main heap, kept for the process (`mem_keep`), since a voice may play a clip after the place that asked for it is gone: the clips loaded so far (at most 3 MB, a place's few hundred KB), the song buffers and the MIDI stream. A place's emitters are on its own heap. See `docs/sound.md`.
 
+## The world map and the stream
+
+`worldmap.c` keeps 2 MB for the process, on the main heap (`mem_keep`): `WOODS.WLD`'s height map (500 KB), the climate a pixel (500 KB), and the location a pixel (1 MB of 16-bit numbers, and the 15,251 locations' region and index). A stream's slots are allocated once on its temp heap: 121 slots of 16 models, about 100 KB of models and boxes; the wilderness's patch meshes are 8, shared. See `docs/streaming.md`.
+
 ## Doors and actions
 
 About 520 KB more per place, on its own heap: a `ModelAct` and a block byte for each of the 8192 model slots, 2048 usables and 1024 movers, and a work list while they are built. See `docs/interact.md`.

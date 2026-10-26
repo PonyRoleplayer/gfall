@@ -21,6 +21,7 @@
 #include "engine/scene/weather.h"
 #include "engine/scene/walker.h"
 #include "engine/scene/interact.h"
+#include "engine/core/prof.h"
 #include "engine/scene/collide.h"
 #include "engine/scene/scene.h"
 #include "engine/ui/cmd.h"
@@ -2023,6 +2024,32 @@ static void check_interact(void)
     movers[0].next = -1;
 }
 
+/* The frame profile's sums (docs/profile.md): fed cycles at a known rate. */
+static void check_prof(void)
+{
+    df_u32 c[PROF_STAGES];
+    int f;
+    int i;
+
+    /* At 100 MHz a millisecond is 100000 cycles. Frames of 10 ms, models 4, one frame of models 9. */
+    for (f = 0; f < 60 && prof_frames() == 0; f++) {
+        for (i = 0; i < PROF_STAGES; i++) {
+            c[i] = 0;
+        }
+        c[PROF_FRAME] = 1000000u;
+        c[PROF_MODELS] = f == 3 ? 900000u : 400000u;
+        prof_feed(c, 100);
+    }
+    check_expect(prof_frames() == 50 && prof_mhz() == 100, "the profile's half second is not 50 frames of 10 ms");
+    check_expect(check_near(prof_ms(PROF_FRAME), 10.0f, 0.01f)
+                 && check_near(prof_ms(PROF_MODELS), 4.1f, 0.01f)
+                 && check_near(prof_peak_ms(PROF_MODELS), 9.0f, 0.01f)
+                 && prof_ms(PROF_SWAP) == 0.0f,
+                 "the profile's means or worst frame are wrong");
+    check_expect(df_eq(prof_name(PROF_MODELS), "models") && df_eq(prof_name(PROF_STREAM), "stream"),
+                 "the profile's stage names are wrong");
+}
+
 void check_engine(void)
 {
     check_rotation();
@@ -2040,5 +2067,6 @@ void check_engine(void)
     check_weather();
     check_collision();
     check_interact();
+    check_prof();
     check_sound();
 }

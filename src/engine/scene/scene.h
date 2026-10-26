@@ -202,6 +202,13 @@ typedef struct Scene {
      * street lamps, on only at night (docs/daylight.md).
      */
     int outdoor;
+    /*
+     * Changes when the contents change without the counts changing: a
+     * streamed chunk loaded or dropped, the origin shifted
+     * (docs/streaming.md). What is built from the scene (the collision
+     * grid) is built again. 0 for a place loaded whole.
+     */
+    int version;
 } Scene;
 
 void instance_set_rotation(Instance *in, float rx, float ry, float rz);

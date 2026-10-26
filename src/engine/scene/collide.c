@@ -43,6 +43,8 @@ static float g_iry = 1.0f / 36.0f;
 /* The model grid: for each cell, the models whose box reaches into it. */
 static const Scene *g_scene;
 static int g_nmodels;
+/* Scene.version the grid was built for. */
+static int g_version;
 static df_u32 g_epoch;
 static int g_built;
 static float g_x0;
@@ -132,7 +134,8 @@ int collide_use(const Scene *scene)
         g_built = 0;
         return 0;
     }
-    if (g_built && scene == g_scene && scene->nmodels == g_nmodels && g_epoch == mem_epoch()) {
+    if (g_built && scene == g_scene && scene->nmodels == g_nmodels && g_epoch == mem_epoch()
+        && scene->version == g_version) {
         return 1;
     }
     g_built = 0;
@@ -222,6 +225,7 @@ int collide_use(const Scene *scene)
     g_stamp = 0;
     g_scene = scene;
     g_nmodels = scene->nmodels;
+    g_version = scene->version;
     g_epoch = mem_epoch();
     g_built = 1;
     log_print(LOG_INFO, "collide: %d models in a %d x %d grid of %d, %d entries",

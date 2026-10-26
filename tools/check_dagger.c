@@ -24,6 +24,9 @@
 #include "game/dagger/texture.h"
 #include "game/dagger/world.h"
 #include "game/dagger/doors.h"
+#include "game/dagger/worldmap.h"
+#include "game/dagger/wild.h"
+#include "engine/scene/stream.h"
 #include "engine/scene/interact.h"
 #include "game/dagger/hmi.h"
 #include "game/dagger/sndfile.h"
@@ -1111,6 +1114,91 @@ static void check_seasons(const Dungeon *ext)
     clock_set_season(CLOCK_SUMMER);
 }
 
+/* 1 when a model of the scene stands under (x, z): its box holds the point across the ground. */
+static int ground_under(const Scene *sc, float x, float z)
+{
+    int i;
+
+    for (i = 0; i < sc->nmodels; i++) {
+        const Bound *b;
+
+        if (!sc->models[i].mesh) {
+            continue;
+        }
+        b = &sc->bounds[i];
+        if (b->ex >= 0.0f && x >= b->cx - b->ex && x <= b->cx + b->ex
+            && z >= b->cz - b->ez && z <= b->cz + b->ez) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/*
+ * The world map and the stream (docs/streaming.md): Daggerfall's pixel
+ * holds Daggerfall; a stream opened there fills its ring, and a walk of
+ * 40 chunks east keeps the ground under the camera, moves the origin
+ * with it, and keeps the camera's world position exact.
+ */
+static void check_stream(void)
+{
+    Level level;
+    Camera cam;
+    float x, y, z;
+    double wx0, wz0, wx, wz;
+    int region, index, px, py;
+    int loaded, waiting, filling, shifts;
+    int step;
+    int under;
+
+    check_expect(worldmap_open(), "the world map did not read");
+    check_expect(worldmap_locations() == 15251, "the world map does not have 15251 locations");
+    check_expect(worldmap_location(207, 213, &region, &index) && region == 17
+                 && worldmap_climate(207, 213) == CLIMATE_WOODLANDS && worldmap_height(207, 213) == 20,
+                 "pixel 207 213 is not Daggerfall's, in the woodlands, at height 20");
+    check_expect(worldmap_pixel_of(region, index, &px, &py) && px == 207 && py == 213,
+                 "Daggerfall's location does not lead back to its pixel");
+    check_expect(worldmap_climate(0, 0) == CLIMATE_OCEAN && worldmap_height(0, 0) <= 1,
+                 "the map's corner is not sea");
+    mem_temp_begin();
+    check_expect(wild_open(207, 213, 2, &level, &x, &y, &z), "the wilderness stream did not open");
+    camera_set(&cam, x, y, z, 0.0f, 0.0f);
+    stream_world(cam.x, cam.z, &wx0, &wz0);
+    check_expect(wx0 == 207.0 * 32768.0 + 16384.0 && wz0 == (499.0 - 213.0) * 32768.0 + 16384.0,
+                 "the stream did not start in the middle of Daggerfall's pixel");
+    for (step = 0; step < 40; step++) {
+        wild_update(&cam, 0.0f);
+    }
+    stream_stats(&loaded, &waiting, &filling, &shifts);
+    check_expect(loaded == 25 && waiting == 0 && ground_under(&level.scene, cam.x, cam.z),
+                 "a radius 2 stream did not fill its 5 x 5 chunks, or there is no ground under the camera");
+    /* East 40 chunks, 512 units a frame, a chunk loaded a frame. */
+    under = 1;
+    for (step = 0; step < 40 * 8; step++) {
+        cam.x += 512.0f;
+        wild_update(&cam, 0.0f);
+        wild_update(&cam, 0.0f);
+        under = under && ground_under(&level.scene, cam.x, cam.z);
+    }
+    for (step = 0; step < 40; step++) {
+        wild_update(&cam, 0.0f);
+    }
+    stream_stats(&loaded, &waiting, &filling, &shifts);
+    stream_world(cam.x, cam.z, &wx, &wz);
+    wild_here(&cam, &px, &py);
+    printf("stream: 40 chunks east, %d loaded, %d shifts, local x %.0f, world %.0f, pixel %d %d, ground under all the way %d\n",
+           loaded, shifts, cam.x, wx, px, py, under);
+    check_expect(under, "a walk east lost the ground under the camera");
+    /* The 5 x 5 round the camera, and the column behind it kept one ring longer. */
+    check_expect(loaded == 30 && waiting == 0 && shifts >= 2
+                 && cam.x < (float)(STREAM_CHUNK * (STREAM_REBASE + 1)),
+                 "the stream did not keep its ring and the ring behind, or the origin did not follow the camera");
+    check_expect(wx == wx0 + 40.0 * STREAM_CHUNK && wz == wz0 && px == 212 && py == 213,
+                 "the camera's world position drifted as the origin moved");
+    wild_close();
+    mem_temp_end();
+}
+
 static void check_sound_town(const World *town)
 {
     static df_i16 buf[11025 * 8 * 2];
@@ -1714,5 +1802,6 @@ int check_dagger(const char *root_in)
     }
 
     check_skies();
+    check_stream();
     return check_failed() ? 1 : 0;
 }

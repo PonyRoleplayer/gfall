@@ -25,6 +25,7 @@
 #include "engine/assets/vfs.h"
 #include "engine/core/df.h"
 #include "engine/core/mem.h"
+#include "engine/core/prof.h"
 #include "engine/gfx/draw.h"
 #include "engine/gfx/gfx.h"
 #include "engine/gfx/glide.h"
@@ -51,6 +52,9 @@
 #include "game/dagger/dungeon.h"
 #include "game/dagger/texture.h"
 #include "game/dagger/world.h"
+#include "game/dagger/wild.h"
+#include "game/dagger/worldmap.h"
+#include "engine/scene/stream.h"
 
 #define MAX_LEVELS 24576
 #define LOOK_SENS 0.003f
@@ -66,6 +70,9 @@
 #define ID_OPEN 2
 #define ID_FIND 3
 #define ID_KIND 4
+#define ID_STREAM 5
+#define BM_GETCHECK_ 0x00F0
+#define BST_CHECKED_ 1
 
 #define LVM_FIRST 0x1000
 #define LVM_GETITEMA (LVM_FIRST + 5)
@@ -112,6 +119,14 @@ static HWND g_find_cap;
 static HWND g_kind;
 static HWND g_kind_cap;
 static HWND g_open;
+/* "Stream World": open the row's map pixel as the streamed world (docs/streaming.md). */
+static HWND g_stream_box;
+/* While the world streams: its frame hook runs before each frame, and the panel says so. */
+static void (*g_frame_hook)(Camera *cam);
+static int g_streaming;
+static int g_stream_px = -1;
+static int g_stream_py = -1;
+static char g_stream_where[40];
 static int g_sort_col;
 static int g_sort_desc;
 static int g_open_req;
@@ -177,6 +192,9 @@ static int g_musvol_cfg = -1;
 static int g_f2_was;
 static int g_f4_was;
 static int g_f11_was;
+/* The profile panel (P), and P's edge (docs/profile.md). */
+static int g_prof_panel;
+static int g_p_was;
 
 /*
  * A passage used in the view (docs/interact.md): what it leads to
@@ -842,6 +860,11 @@ static int make_list(void)
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
         310, 6, 110, 160,
         hwnd, (HMENU)ID_KIND, inst, 0);
+    g_stream_box = CreateWindowExA(
+        0, "BUTTON", "Stream &World",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+        432, 8, 110, 20,
+        hwnd, (HMENU)ID_STREAM, inst, 0);
     g_open = CreateWindowExA(
         0, "BUTTON", "&Open",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
@@ -860,7 +883,7 @@ static int make_list(void)
             | LVS_SHOWSELALWAYS | LVS_OWNERDATA,
         8, y, width, rc.bottom - y - 8,
         hwnd, (HMENU)ID_LIST, inst, 0);
-    if (!g_find || !g_kind || !g_label || !g_list || !g_open) {
+    if (!g_find || !g_kind || !g_label || !g_list || !g_open || !g_stream_box) {
         return 0;
     }
     SendMessageA(g_kind, CB_ADDSTRING, 0, (LPARAM)"All");
@@ -880,6 +903,7 @@ static int make_list(void)
     apply_font(g_label);
     apply_font(g_list);
     apply_font(g_open);
+    apply_font(g_stream_box);
     return 1;
 }
 
@@ -895,6 +919,7 @@ static void show_list(int on)
     ShowWindow(g_label, cmd);
     ShowWindow(g_list, cmd);
     ShowWindow(g_open, cmd);
+    ShowWindow(g_stream_box, cmd);
     if (on) {
         SetFocus(g_find);
     } else if (win_hwnd()) {
@@ -904,7 +929,7 @@ static void show_list(int on)
 
 static void focus_step(int back)
 {
-    HWND order[4];
+    HWND order[5];
     HWND cur;
     int n;
     int i;
@@ -912,9 +937,10 @@ static void focus_step(int back)
 
     order[0] = g_find;
     order[1] = g_kind;
-    order[2] = g_list;
-    order[3] = g_open;
-    n = 4;
+    order[2] = g_stream_box;
+    order[3] = g_list;
+    order[4] = g_open;
+    n = 5;
     cur = GetFocus();
     j = 0;
     for (i = 0; i < n; i++) {
@@ -1479,7 +1505,7 @@ static void time_line(char *dst, int cap)
     } else {
         add_str(dst, &n, cap, "  stopped");
     }
-    if (!g_dun || !g_dun->outdoor) {
+    if ((!g_dun || !g_dun->outdoor) && !g_streaming) {
         add_str(dst, &n, cap, "  unused");
         return;
     }
@@ -1548,7 +1574,7 @@ static void weather_lines(char *top, char *low, int cap)
             add_str(top, &n, cap, "m");
         }
     }
-    if (!g_dun || !g_dun->outdoor) {
+    if ((!g_dun || !g_dun->outdoor) && !g_streaming) {
         add_str(top, &n, cap, "  unused");
         return;
     }
@@ -1792,6 +1818,63 @@ static void draw_sound(int x, int top)
     draw_panel(x, top - h, w, h, "sound", "f2", lines, nlines, 176.0f, 120.0f, 216.0f);
 }
 
+/* Milliseconds to a tenth: "12.3". No C cast: per-frame code. */
+static void add_ms(char *dst, int *n, int cap, float v)
+{
+    int t;
+
+    t = df_iround(v * 10.0f);
+    if (t < 0) {
+        t = 0;
+    }
+    add_num(dst, n, cap, t / 10, 0);
+    add_str(dst, n, cap, ".");
+    add_num(dst, n, cap, t % 10, 0);
+}
+
+/*
+ * The profile panel (P): each stage of the engine's frame, its mean and
+ * its worst over the last half second, in milliseconds, from the cycle
+ * counter (docs/profile.md). The title is the counter's calibrated rate.
+ */
+static void draw_profile(int x, int top)
+{
+    char rows[PROF_STAGES][40];
+    const char *lines[PROF_STAGES];
+    char aside[24];
+    int i;
+    int n;
+    int w;
+    int h;
+
+    if (!g_prof_panel) {
+        return;
+    }
+    for (i = 0; i < PROF_STAGES; i++) {
+        char num[24];
+
+        n = 0;
+        num[0] = 0;
+        add_ms(num, &n, (int)sizeof(num), prof_ms(i));
+        add_str(num, &n, (int)sizeof(num), "  ");
+        add_ms(num, &n, (int)sizeof(num), prof_peak_ms(i));
+        pair_line(rows[i], 40, prof_name(i), num);
+        lines[i] = rows[i];
+    }
+    n = 0;
+    aside[0] = 0;
+    if (prof_mhz() > 0) {
+        add_num(aside, &n, (int)sizeof(aside), prof_mhz(), 0);
+        add_str(aside, &n, (int)sizeof(aside), " mhz  p");
+    } else {
+        add_str(aside, &n, (int)sizeof(aside), "-- mhz  p");
+    }
+    w = measure_lines("ms mean worst", aside, lines, PROF_STAGES);
+    h = measure_h(PROF_STAGES);
+    draw_panel(x, top - h, w, h, "ms mean worst", aside, lines, PROF_STAGES,
+               120.0f, 200.0f, 120.0f);
+}
+
 static void draw_overlay(void)
 {
     char place_kind[40];
@@ -1819,16 +1902,16 @@ static void draw_overlay(void)
     char files_v[16];
     char rec_row[7][40];
     char draw_row[9][32];
-    char key_lines[16][48];
+    char key_lines[17][48];
     const char *place_l[6];
     const char *cam_l[3];
     const char *block_l[3];
     const char *frame_l[4];
     const char *rec_l[7];
     const char *draw_l[9];
-    const char *key_l[16];
-    const char *key_name[16];
-    const char *key_act[16];
+    const char *key_l[17];
+    const char *key_name[17];
+    const char *key_act[17];
     int n;
     int i;
     int gx;
@@ -1893,7 +1976,21 @@ static void draw_overlay(void)
 
     n = 0;
     place_kind[0] = 0;
-    if (g_dun) {
+    if (g_streaming) {
+        int loaded;
+        int waiting;
+        int filling;
+        int shifts;
+
+        stream_stats(&loaded, &waiting, &filling, &shifts);
+        add_str(place_kind, &n, (int)sizeof(place_kind), "stream r");
+        add_num(place_kind, &n, (int)sizeof(place_kind), stream_radius(), 0);
+        add_str(place_kind, &n, (int)sizeof(place_kind), "  ");
+        add_num(place_kind, &n, (int)sizeof(place_kind), loaded, 0);
+        add_str(place_kind, &n, (int)sizeof(place_kind), " in  ");
+        add_num(place_kind, &n, (int)sizeof(place_kind), waiting, 0);
+        add_str(place_kind, &n, (int)sizeof(place_kind), " to go");
+    } else if (g_dun) {
         add_str(place_kind, &n, (int)sizeof(place_kind),
                 g_inside ? "inside" : (g_dun->outdoor ? "outdoor" : "indoor"));
         add_str(place_kind, &n, (int)sizeof(place_kind), "   r");
@@ -1901,7 +1998,12 @@ static void draw_overlay(void)
     }
     n = 0;
     place_clim[0] = 0;
-    if (g_dun) {
+    if (g_streaming) {
+        add_str(place_clim, &n, (int)sizeof(place_clim),
+                climate_name(worldmap_climate(g_stream_px, g_stream_py)));
+        add_str(place_clim, &n, (int)sizeof(place_clim), "  ");
+        add_str(place_clim, &n, (int)sizeof(place_clim), clock_season_name(clock_season()));
+    } else if (g_dun) {
         int y, m, d;
 
         add_str(place_clim, &n, (int)sizeof(place_clim), climate_name(g_dun->climate));
@@ -2034,6 +2136,7 @@ static void draw_overlay(void)
     pw = measure_lines("place", g_help ? "f1 hide" : "f1", place_l, 6);
     draw_panel(gap, DF_VIEW_H - gap - ph, pw, ph, "place",
                g_help ? "f1 hide" : "f1", place_l, 6, 204.0f, 160.0f, 64.0f);
+    draw_profile(gap + pw + gap, DF_VIEW_H - gap);
     draw_sound(gap, DF_VIEW_H - gap - ph - gap);
     /* The bottom row is as tall as frame. Camera and block leave a blank last line. */
     ph = measure_h(4);
@@ -2152,13 +2255,15 @@ static void draw_overlay(void)
     key_act[14] = "use";
     key_name[15] = "f11";
     key_act[15] = "useview range";
-    for (i = 0; i < 16; i++) {
+    key_name[16] = "p";
+    key_act[16] = "frame profile";
+    for (i = 0; i < 17; i++) {
         pair_line(key_lines[i], 48, key_name[i], key_act[i]);
         key_l[i] = key_lines[i];
     }
     rw = measure_lines("record", 0, rec_l, 7);
     dw = measure_lines("draw", 0, draw_l, 9);
-    kw = measure_lines("keys", 0, key_l, 16);
+    kw = measure_lines("keys", 0, key_l, 17);
     side_w = rw;
     if (dw > side_w) {
         side_w = dw;
@@ -2168,7 +2273,7 @@ static void draw_overlay(void)
     }
     rh = measure_h(7);
     dh = measure_h(9);
-    kh = measure_h(16);
+    kh = measure_h(17);
     x = DF_VIEW_W - gap - side_w;
     y = DF_VIEW_H - gap - rh;
     draw_panel(x, y, side_w, rh, "record", 0, rec_l, 7, 204.0f, 160.0f, 64.0f);
@@ -2178,7 +2283,7 @@ static void draw_overlay(void)
     if (y < gap + ph) {
         y = gap + ph;
     }
-    draw_panel(x, y, side_w, kh, "keys", 0, key_l, 16, 168.0f, 168.0f, 180.0f);
+    draw_panel(x, y, side_w, kh, "keys", 0, key_l, 17, 168.0f, 168.0f, 180.0f);
 }
 
 static void fly_step(Camera *cam, int dx, int dy, float dt)
@@ -2333,6 +2438,11 @@ static void switch_keys(int act)
         step_useview();
     }
     g_f11_was = down;
+    down = key_down('P');
+    if (act && down && !g_p_was) {
+        g_prof_panel = g_prof_panel ? 0 : 1;
+    }
+    g_p_was = down;
 }
 
 /*
@@ -2464,7 +2574,7 @@ static void add_flag(char *dst, int *n, int cap, const char *name, int v)
  */
 static void bookmark(void)
 {
-    char line[200];
+    char line[256];
     int n;
     int live;
     int unfit;
@@ -2597,6 +2707,23 @@ static void bookmark(void)
         add_flag(line, &n, (int)sizeof(line), "sndview", ambience_view());
         log_line(line);
     }
+    /* Where the frame's time went, the last half second's means in ms (docs/profile.md). */
+    {
+        int i;
+
+        n = 0;
+        line[0] = 0;
+        add_str(line, &n, (int)sizeof(line), "# prof ");
+        add_num(line, &n, (int)sizeof(line), prof_mhz(), 0);
+        add_str(line, &n, (int)sizeof(line), "mhz");
+        for (i = 0; i < PROF_STAGES; i++) {
+            add_str(line, &n, (int)sizeof(line), " ");
+            add_str(line, &n, (int)sizeof(line), prof_name(i));
+            add_str(line, &n, (int)sizeof(line), "=");
+            add_ms(line, &n, (int)sizeof(line), prof_ms(i));
+        }
+        log_line(line);
+    }
 }
 
 static void run_view(const Level *level, Camera *cam)
@@ -2615,6 +2742,7 @@ static void run_view(const Level *level, Camera *cam)
     g_f2_was = key_down(VK_F2);
     g_f4_was = key_down(VK_F4);
     g_f11_was = key_down(VK_F11);
+    g_p_was = key_down('P');
     g_go.what = 0;
     interact_set_handler(lf_use);
     frames = 0;
@@ -2669,6 +2797,10 @@ static void run_view(const Level *level, Camera *cam)
             fly_step(cam, dx, dy, (float)dt / 1000.0f);
         }
         switch_keys(!console_open());
+        /* The streamed world loads round the camera before the frame reads the scene. */
+        if (g_frame_hook) {
+            g_frame_hook(cam);
+        }
         gfx_frame(cam, level);
         frames++;
         /* A passage was used in that frame: view_row opens where it leads. */
@@ -2933,6 +3065,141 @@ static void view_row(int index)
     input_clear_quit();
 }
 
+/* The stream's share of a frame on the 233, to start with (docs/streaming.md, docs/profile.md). */
+#define STREAM_BUDGET_MS 4.0f
+
+/* The radius of chunks the far clip needs: 4096 a ring, at least one. */
+static int stream_radius_for_far(void)
+{
+    int r;
+
+    r = (df_iround(gfx_far()) + STREAM_CHUNK - 1) / STREAM_CHUNK;
+    return r < 1 ? 1 : (r > STREAM_RADIUS_MAX ? STREAM_RADIUS_MAX : r);
+}
+
+/* Each frame of the stream: its radius from the far clip, its loading, and where the camera is. */
+static void stream_frame(Camera *cam)
+{
+    int px;
+    int py;
+
+    stream_set_radius(stream_radius_for_far());
+    wild_update(cam, STREAM_BUDGET_MS);
+    wild_here(cam, &px, &py);
+    if (px != g_stream_px || py != g_stream_py) {
+        int region;
+        int index;
+        int i;
+        int n;
+
+        g_stream_px = px;
+        g_stream_py = py;
+        n = 0;
+        g_stream_where[0] = 0;
+        /* A pixel's location by name: once when the pixel changes, a pass over the list. */
+        if (worldmap_location(px, py, &region, &index)) {
+            for (i = 0; i < g_nrows; i++) {
+                if (g_rows[i].outdoor && g_rows[i].region == region && g_rows[i].index == index) {
+                    add_str(g_stream_where, &n, (int)sizeof(g_stream_where), g_rows[i].name);
+                    break;
+                }
+            }
+        }
+        if (!g_stream_where[0]) {
+            add_str(g_stream_where, &n, (int)sizeof(g_stream_where), "wilderness");
+        }
+        n = 0;
+        g_view_name[0] = 0;
+        add_str(g_view_name, &n, (int)sizeof(g_view_name), "world ");
+        add_num(g_view_name, &n, (int)sizeof(g_view_name), px, 0);
+        add_str(g_view_name, &n, (int)sizeof(g_view_name), ",");
+        add_num(g_view_name, &n, (int)sizeof(g_view_name), py, 0);
+        add_str(g_view_name, &n, (int)sizeof(g_view_name), "  ");
+        add_str(g_view_name, &n, (int)sizeof(g_view_name), g_stream_where);
+    }
+}
+
+/*
+ * "Stream World": the row's map pixel as the streamed world, from its
+ * middle (an indoor row, its outside's), until Esc. Phase 1: the
+ * wilderness, flat, no buildings (docs/streaming.md). One temp heap and
+ * one Glide open for the whole walk.
+ */
+static void view_stream(int index)
+{
+    Level level;
+    Camera cam;
+    float x, y, z;
+    int row;
+    int px;
+    int py;
+    int glide_up;
+
+    row = index;
+    if (row >= 0 && row < g_nrows && !g_rows[row].outdoor) {
+        row = pair_row(row, 1);
+    }
+    if (row < 0 || row >= g_nrows) {
+        win_fail("Stream World: this place has no outside on the map.");
+        return;
+    }
+    if (!mem_temp_begin()) {
+        win_fail("Out of memory.");
+        return;
+    }
+    glide_up = 0;
+    if (!worldmap_open() || !worldmap_pixel_of(g_rows[row].region, g_rows[row].index, &px, &py)) {
+        log_line("stream: the world map did not read, or the place is not on it");
+        win_fail("Stream World: the world map did not read.");
+    } else if (!wild_open(px, py, stream_radius_for_far(), &level, &x, &y, &z)) {
+        log_line("stream: the wilderness did not open");
+        win_fail("Stream World: the wilderness did not open.");
+    } else {
+        show_list(0);
+        if (!gfx_startup(win_hwnd())) {
+            log_line(gfx_error());
+            win_fail(gfx_error());
+        } else {
+            glide_up = 1;
+            if (!gfx_prepare(&level)) {
+                log_line(gfx_error());
+                win_fail(gfx_error());
+            } else {
+                char line[64];
+                int n;
+
+                n = 0;
+                line[0] = 0;
+                add_str(line, &n, (int)sizeof(line), "stream from pixel ");
+                add_num(line, &n, (int)sizeof(line), px, 0);
+                add_str(line, &n, (int)sizeof(line), ",");
+                add_num(line, &n, (int)sizeof(line), py, 0);
+                log_line(line);
+                camera_set(&cam, x, y, z, 0.0f, 0.0f);
+                g_streaming = 1;
+                g_stream_px = -1;
+                g_stream_py = -1;
+                g_frame_hook = stream_frame;
+                stream_frame(&cam);
+                g_region = g_rows[row].region;
+                run_view(&level, &cam);
+                g_frame_hook = 0;
+                g_streaming = 0;
+                music_stop();
+                sound_stop_all();
+            }
+        }
+        wild_close();
+    }
+    if (glide_up) {
+        gfx_shutdown();
+    }
+    texture_cache_clear();
+    mem_temp_end();
+    show_list(1);
+    input_clear_quit();
+}
+
 static int beside_exe(char *dst, int cap, const char *leaf)
 {
     char exe[260];
@@ -3188,6 +3455,10 @@ static void cfg_line(const char *s)
         cfg_int(rest, 0, 1, &g_sound_panel);
         return;
     }
+    if (key_is(s, "profpanel", &rest)) {
+        cfg_int(rest, 0, 1, &g_prof_panel);
+        return;
+    }
     if (key_is(s, "sndrows", &rest)) {
         cfg_int(rest, 0, SND_ROWS_MAX, &g_snd_rows);
         return;
@@ -3422,6 +3693,7 @@ static void cfg_load(void)
         "# month, year) or season=winter sets the calendar at start: a town\r\n"
         "# is drawn in its season. F12 in the view logs these lines to\r\n"
         "# levelfall.log.\r\n"
+        "# profpanel=1 shows the frame profile at start (P toggles it).\r\n"
         "# soundpanel=1 shows the sound panel at start (F2 toggles it).\r\n"
         "# sndrows is how many of the nearest sound sources it lists, 0 to 8.\r\n"
         "soundpanel=1\r\n"
@@ -3451,6 +3723,7 @@ static void cfg_load(void)
     g_auto_kind = -1;
     g_auto_cam = 0;
     g_sound_panel = 1;
+    g_prof_panel = 0;
     g_snd_rows = 5;
     g_sndview_cfg = 0;
     g_sound_cfg = -1;
@@ -3644,7 +3917,11 @@ static int levelfall_main(void *instance)
             if (idx < 0) {
                 continue;
             }
-            view_row(idx);
+            if (SendMessageA(g_stream_box, BM_GETCHECK_, 0, 0) == BST_CHECKED_) {
+                view_stream(idx);
+            } else {
+                view_row(idx);
+            }
         }
         music_shutdown();
         sound_shutdown();

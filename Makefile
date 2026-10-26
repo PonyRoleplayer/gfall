@@ -47,6 +47,7 @@ GFALL_SRC := \
 	src/engine/platform/fs.c \
 	src/engine/core/mem.c \
 	src/engine/core/log.c \
+	src/engine/core/prof.c \
 	src/engine/assets/vfs.c \
 	src/engine/assets/loader.c \
 	src/engine/scene/scene.c \
@@ -57,6 +58,7 @@ GFALL_SRC := \
 	src/engine/scene/collide.c \
 	src/engine/scene/walker.c \
 	src/engine/scene/interact.c \
+	src/engine/scene/stream.c \
 	src/engine/platform/winmm.c \
 	src/engine/sound/mixer.c \
 	src/engine/sound/audio.c \
@@ -88,6 +90,8 @@ GFALL_SRC := \
 	src/game/dagger/world.c \
 	src/game/dagger/doors.c \
 	src/game/dagger/swaps.c \
+	src/game/dagger/worldmap.c \
+	src/game/dagger/wild.c \
 	src/game/dagger/skyfile.c \
 	src/game/dagger/forecast.c \
 	src/game/dagger/player.c \
@@ -102,6 +106,7 @@ RENDER_SRC := \
 	src/engine/platform/fs.c \
 	src/engine/core/mem.c \
 	src/engine/core/log.c \
+	src/engine/core/prof.c \
 	src/engine/assets/vfs.c \
 	src/engine/assets/loader.c \
 	src/engine/scene/scene.c \
@@ -112,6 +117,7 @@ RENDER_SRC := \
 	src/engine/scene/collide.c \
 	src/engine/scene/walker.c \
 	src/engine/scene/interact.c \
+	src/engine/scene/stream.c \
 	src/engine/platform/winmm.c \
 	src/engine/sound/mixer.c \
 	src/engine/sound/audio.c \
@@ -143,6 +149,7 @@ LEVEL_SRC := \
 	src/engine/platform/fs.c \
 	src/engine/core/mem.c \
 	src/engine/core/log.c \
+	src/engine/core/prof.c \
 	src/engine/assets/vfs.c \
 	src/engine/assets/loader.c \
 	src/engine/scene/scene.c \
@@ -153,6 +160,7 @@ LEVEL_SRC := \
 	src/engine/scene/collide.c \
 	src/engine/scene/walker.c \
 	src/engine/scene/interact.c \
+	src/engine/scene/stream.c \
 	src/engine/platform/winmm.c \
 	src/engine/sound/mixer.c \
 	src/engine/sound/audio.c \
@@ -183,6 +191,8 @@ LEVEL_SRC := \
 	src/game/dagger/world.c \
 	src/game/dagger/doors.c \
 	src/game/dagger/swaps.c \
+	src/game/dagger/worldmap.c \
+	src/game/dagger/wild.c \
 	src/game/dagger/skyfile.c \
 	src/game/dagger/forecast.c \
 	src/game/dagger/sndfile.c \
@@ -192,6 +202,7 @@ LEVEL_SRC := \
 HOST_SRC := \
 	src/engine/core/mem.c \
 	src/engine/core/log.c \
+	src/engine/core/prof.c \
 	src/engine/ui/cmd.c \
 	src/engine/platform/fs.c \
 	src/engine/assets/vfs.c \
@@ -204,6 +215,7 @@ HOST_SRC := \
 	src/engine/scene/collide.c \
 	src/engine/scene/walker.c \
 	src/engine/scene/interact.c \
+	src/engine/scene/stream.c \
 	src/engine/sound/mixer.c \
 	src/engine/sound/audio.c \
 	src/engine/sound/sound.c \
@@ -222,6 +234,8 @@ HOST_SRC := \
 	src/game/dagger/world.c \
 	src/game/dagger/doors.c \
 	src/game/dagger/swaps.c \
+	src/game/dagger/worldmap.c \
+	src/game/dagger/wild.c \
 	src/game/dagger/skyfile.c \
 	src/game/dagger/forecast.c \
 	src/game/dagger/player.c \

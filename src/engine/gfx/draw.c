@@ -6,6 +6,7 @@
 #include "engine/gfx/draw.h"
 #include "engine/assets/level.h"
 #include "engine/core/log.h"
+#include "engine/core/prof.h"
 #include "engine/gfx/glide.h"
 #include "engine/ui/console.h"
 #include "engine/ui/shot.h"
@@ -2184,6 +2185,8 @@ void draw_frame(const Camera *cam, const Level *level)
         return;
     }
     console_release();
+    prof_begin(PROF_FRAME);
+    prof_begin(PROF_SIM);
     /* Real seconds for the rain and the lightning; game minutes for the clock and the weather. */
     secs = frame_time_tick(0);
     if (secs < 0.0f || secs > 1.0f) {
@@ -2209,6 +2212,7 @@ void draw_frame(const Camera *cam, const Level *level)
      * cull, which reads the poses they write.
      */
     interact_frame(&level->scene, cam, secs, use_edge());
+    prof_end(PROF_SIM);
     g_vis_models = 0;
     g_vis_sprites = 0;
     g_faces_kept = 0;
@@ -2233,7 +2237,9 @@ void draw_frame(const Camera *cam, const Level *level)
      * emitters, heard from this camera; then the card is refilled. The
      * night is the lamps' share of the hour. See docs/sound.md.
      */
+    prof_begin(PROF_SOUND);
     ambience_frame(level, cam, &w, lit ? dl.lamps : 0.0f, outdoor && g_stroke, secs);
+    prof_end(PROF_SOUND);
     /*
      * The view. Outdoors the weather closes the fog in; under the
      * simulation it also sets the far clip, ceiling the far setting,
@@ -2296,6 +2302,7 @@ void draw_frame(const Camera *cam, const Level *level)
     camera_basis(cam, &basis);
     /* Before the sky: the HUD may have left blending or a fade on. */
     glide_sprite_alpha(0);
+    prof_begin(PROF_SKY);
     if (sky && sky_alpha > 8) {
         if (sky_alpha < 255) {
             glide_opacity(sky_alpha, 0);
@@ -2305,13 +2312,17 @@ void draw_frame(const Camera *cam, const Level *level)
             glide_opacity(-1, 0);
         }
     }
+    prof_end(PROF_SKY);
     /* The place's ambient, white when it is unlit. See docs/lighting.md. */
     ambient = lit ? g_shade[DAYLIGHT_STEPS / 2] : light_ambient_rgb();
     glide_tint(ambient);
     tinted = ambient;
     g_lights_drawn = 0;
     g_decals_drawn = 0;
+    prof_begin(PROF_CULL);
     norder = scene_visible_models(&level->scene, cam, order, VIS_MAX);
+    prof_end(PROF_CULL);
+    prof_begin(PROF_MODELS);
     g_vis_models = norder;
     cap_warn(&g_cap_models, norder, "models");
     for (oi = 0; oi < norder; oi++) {
@@ -2381,11 +2392,17 @@ void draw_frame(const Camera *cam, const Level *level)
             draw_tris(cam, &basis, level, in, 0, in->mesh->ntris);
         }
     }
+    prof_end(PROF_MODELS);
+    prof_begin(PROF_DECALS);
     draw_lights(cam, &basis);
+    prof_end(PROF_DECALS);
     /* Lit windows: the town's glass, with the lamps. */
+    prof_begin(PROF_WINDOWS);
     if (lit) {
         draw_windows(cam, &basis, level, order, norder, dl.lamps, fog_near, fog_far);
     }
+    prof_end(PROF_WINDOWS);
+    prof_begin(PROF_SPRITES);
     glide_sprite_alpha(1);
     norder = scene_visible_sprites(&level->scene, cam, order, VIS_MAX);
     g_vis_sprites = norder;
@@ -2399,12 +2416,16 @@ void draw_frame(const Camera *cam, const Level *level)
     }
     glide_sprite_alpha(0);
     glide_tint(0xffffffu);
+    prof_end(PROF_SPRITES);
+    prof_begin(PROF_PRECIP);
     if (outdoor) {
         float light;
 
         light = lit ? (dl.ar + dl.ag + dl.ab) * (1.0f / 3.0f) + 0.3f * dl.kg : 1.0f;
         draw_precip(cam, &basis, &w, light + flash, secs);
     }
+    prof_end(PROF_PRECIP);
+    prof_begin(PROF_OVERLAY);
     draw_light_view(cam, &basis);
     draw_sound_view(cam, &basis, &level->scene);
     draw_use_view(cam, &basis, &level->scene);
@@ -2424,7 +2445,17 @@ void draw_frame(const Camera *cam, const Level *level)
         wash_glass(df_iround(255.0f * g_fade_left / g_fade_total));
         g_fade_left -= secs;
     }
+    prof_end(PROF_OVERLAY);
+    prof_begin(PROF_SWAP);
     glide_swap();
+    prof_end(PROF_SWAP);
+    prof_end(PROF_FRAME);
+    {
+        LARGE_INTEGER now;
+
+        frame_time_read(&now);
+        prof_frame(now.LowPart, g_ft_freq);
+    }
 }
 
 static void cover_bar(float x, float y, float w, float h, float r, float g, float b)

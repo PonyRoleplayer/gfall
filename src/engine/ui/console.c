@@ -8,6 +8,7 @@
 #include "engine/core/df.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
+#include "engine/core/prof.h"
 #include "engine/platform/fs.h"
 #include "engine/platform/win32.h"
 #include "engine/ui/build.h"
@@ -713,6 +714,31 @@ static void c_time(int argc, char **argv)
               h / 10, h % 10, m / 10, m % 10, clock_scale());
 }
 
+/* Where the frame's time goes: each stage's mean and worst frame, in milliseconds. */
+static void c_prof(int argc, char **argv)
+{
+    int i;
+
+    (void)argv;
+    if (argc != 1) {
+        log_text(LOG_PRINT, "usage: prof");
+        return;
+    }
+    if (prof_mhz() == 0 || prof_frames() == 0) {
+        log_text(LOG_PRINT, "prof: not measured yet; close the console and let a few frames draw");
+        return;
+    }
+    log_print(LOG_PRINT, "prof: %d MHz, %d frames; ms mean, worst", prof_mhz(), prof_frames());
+    for (i = 0; i < PROF_STAGES; i++) {
+        int mean;
+        int worst;
+
+        mean = df_iround(prof_ms(i) * 10.0f);
+        worst = df_iround(prof_peak_ms(i) * 10.0f);
+        log_print(LOG_PRINT, "  %s %d.%d, %d.%d", prof_name(i), mean / 10, mean % 10, worst / 10, worst % 10);
+    }
+}
+
 /* "1st", "2nd", "23rd", for the day of a month counted from 1. */
 static const char *ordinal(int n)
 {
@@ -1291,6 +1317,7 @@ static void commands(void)
     cmd_add("stats", c_stats, "", "frame time and what the last world frame drew");
     cmd_add("pos", c_pos, "", "camera position, yaw and pitch in degrees");
     cmd_add("time", c_time, "[hh:mm]", "the hour of the world clock, or set it");
+    cmd_add("prof", c_prof, "", "where the frame's time goes, by stage, in ms (P in LEVELFALL)");
     cmd_add("date", c_date, "[day month [year]]",
             "the calendar's date, or set it; a town's pictures and sky follow its season");
     cmd_add("season", c_season, "[fall|spring|summer|winter]",
