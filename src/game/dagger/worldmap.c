@@ -32,6 +32,8 @@ static df_u8 *g_climate;
 static df_u16 *g_loc;
 static df_u8 *g_region;
 static df_u16 *g_index;
+/* Each location's type (WORLDMAP_TOWN_CITY ...), from bits 25..29 of its MAPTABLE word at +4. */
+static df_u8 *g_type;
 static int g_nloc;
 
 static int clampx(int x)
@@ -128,7 +130,8 @@ static int read_locations(void)
     }
     g_region = (df_u8 *)mem_keep((df_u32)(cap > 0 ? cap : 1));
     g_index = (df_u16 *)mem_keep((df_u32)(cap > 0 ? cap : 1) * 2u);
-    if (!g_region || !g_index || cap > 65535) {
+    g_type = (df_u8 *)mem_keep((df_u32)(cap > 0 ? cap : 1));
+    if (!g_region || !g_index || !g_type || cap > 65535) {
         bsa_close(maps);
         return 0;
     }
@@ -154,12 +157,14 @@ static int read_locations(void)
         }
         n = (int)(rec->size / TABLE_BYTES);
         for (i = 0; i < n && g_nloc < cap; i++) {
+            df_u32 word;
             df_u32 lon;
             df_u32 lat;
             int x;
             int y;
 
-            lon = (df_ru32(t + (df_u32)i * TABLE_BYTES + 4u) & 0x1ffffffu) >> 8;
+            word = df_ru32(t + (df_u32)i * TABLE_BYTES + 4u);
+            lon = (word & 0x1ffffffu) >> 8;
             lat = (df_ru32(t + (df_u32)i * TABLE_BYTES + 8u) & 0xffffffu) >> 8;
             x = (int)(lon / LONLAT_DIV);
             y = WORLDMAP_H - 1 - (int)(lat / LONLAT_DIV);
@@ -168,6 +173,7 @@ static int read_locations(void)
             }
             g_region[g_nloc] = (df_u8)region;
             g_index[g_nloc] = (df_u16)i;
+            g_type[g_nloc] = (df_u8)((word << 2) >> 27);
             g_loc[y * WORLDMAP_W + x] = (df_u16)(g_nloc + 1);
             g_nloc++;
         }
@@ -307,6 +313,17 @@ int worldmap_location(int px, int py, int *region, int *index)
         *index = (int)g_index[k - 1];
     }
     return 1;
+}
+
+int worldmap_location_type(int px, int py)
+{
+    int k;
+
+    if (!g_ok || px < 0 || py < 0 || px >= WORLDMAP_W || py >= WORLDMAP_H) {
+        return -1;
+    }
+    k = (int)g_loc[py * WORLDMAP_W + px];
+    return k > 0 ? (int)g_type[k - 1] : -1;
 }
 
 int worldmap_pixel_of(int region, int index, int *px, int *py)

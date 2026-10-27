@@ -24,6 +24,8 @@ typedef struct Pic {
     /* A picture the game made (a far chunk's ground), not read: its image is the game's. */
     df_u8 dynamic;
     Image *img;
+    /* Read and laid out (decode_pic), its chain and card copy not yet made (finish_pic). */
+    Image *pending;
     void **track;
     int ntrack;
     df_u32 bytes;
@@ -136,8 +138,16 @@ int wres_slot(int file, int record, int use)
     return g_npic - 1;
 }
 
-/* Read a picture's pixels into the pictures' heap, every allocation tracked so it can be freed. */
-static int load_pic(int slot)
+/*
+ * A picture is read in two parts, each a call (docs/streaming.md, A
+ * chunk's contents): decode_pic reads the file and lays the picture out
+ * (a wall's smooth stretch, a sprite's sheet of frames or its padding),
+ * about 8 ms of a 256 sheet on the 233; finish_pic builds its mip chain
+ * and puts its small copy on the card, about as much again. Whole, it
+ * was a step past any frame's budget. Between the two it is not drawn:
+ * its image is set only when it is finished.
+ */
+static int decode_pic(int slot)
 {
     void *list[TRACK_MAX];
     Pic *p;
@@ -145,7 +155,6 @@ static int load_pic(int slot)
     Image *img;
     df_u32 before;
     int n;
-    float density;
 
     p = &g_pic[slot];
     before = mem_heap_bytes(g_pic_heap);
@@ -185,9 +194,22 @@ static int load_pic(int slot)
             return 0;
         }
     }
-    p->img = img;
+    p->pending = img;
     p->bytes = mem_heap_bytes(g_pic_heap) - before;
     g_pic_ram += p->bytes;
+    return 1;
+}
+
+static void finish_pic(int slot)
+{
+    Pic *p;
+    Image *img;
+    float density;
+
+    p = &g_pic[slot];
+    img = p->pending;
+    p->pending = 0;
+    p->img = img;
     g_images[slot] = img;
     density = WALL_DENSITY;
     if (p->use == WRES_SPRITE) {
@@ -197,7 +219,6 @@ static int load_pic(int slot)
         density = extent > 0 ? (float)img->width / (float)extent : 1.0f;
     }
     p->card = (df_u8)texcache_stream_set(slot, img, p->use == WRES_SPRITE, density);
-    return 1;
 }
 
 void wres_hold(int slot)
@@ -215,10 +236,18 @@ int wres_load(int slot)
         return 0;
     }
     p = &g_pic[slot];
+    if (p->pending) {
+        finish_pic(slot);
+        return 1;
+    }
     if (p->img || p->failed || p->dynamic) {
         return 0;
     }
-    load_pic(slot);
+    /* Its file first, a piece a call; then its pixels; then its chain. */
+    if (!texture_file_step(p->file)) {
+        return 1;
+    }
+    decode_pic(slot);
     return 1;
 }
 
@@ -228,7 +257,8 @@ int wres_acquire(int slot)
         return 0;
     }
     wres_hold(slot);
-    wres_load(slot);
+    while (wres_load(slot)) {
+    }
     return g_pic[slot].img != 0;
 }
 
@@ -318,6 +348,7 @@ static void free_pic(int slot)
     p->track = 0;
     p->ntrack = 0;
     p->img = 0;
+    p->pending = 0;
     p->card = 0;
     g_images[slot] = 0;
     g_pic_ram -= p->bytes;
@@ -335,7 +366,7 @@ void wres_trim(df_u32 cap)
             const Pic *p;
 
             p = &g_pic[i];
-            if (p->img && p->refs == 0 && p->track
+            if ((p->img || p->pending) && p->refs == 0 && p->track
                 && (best < 0 || p->released < g_pic[best].released)) {
                 best = i;
             }

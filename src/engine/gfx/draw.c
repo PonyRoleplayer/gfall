@@ -17,6 +17,7 @@
 #include "engine/gfx/texres.h"
 #include "engine/gfx/mip.h"
 #include "engine/scene/light.h"
+#include "engine/scene/entity.h"
 #include "engine/scene/clock.h"
 #include "engine/scene/daylight.h"
 #include "engine/scene/weather.h"
@@ -762,13 +763,63 @@ int draw_fpu_single(void)
     return g_fpu_single;
 }
 
-void draw_stream_prime(const Level *level, const Camera *cam)
+/* How much farther than it stands an entity's views not shown are noted: two levels down. */
+#define ENTITY_OTHER_VIEWS 4.0f
+
+/*
+ * An entity's pictures noted for the card (docs/entities.md): the view
+ * shown, fl, at its distance d; the others as if ENTITY_OTHER_VIEWS
+ * farther, two levels down, a sixteenth of the bytes. Each view is its
+ * own picture, and one not noted is the first the card frees, so a turn
+ * landed on its 8 x 8 copy; all at full size, two people close took most
+ * of the card. A turn shows a quarter-size view for a frame or two, then
+ * the sharp one.
+ */
+static void note_entity(const Entity *e, int shown, float d)
+{
+    int k;
+
+    for (k = 0; k < ENTITY_VIEWS; k++) {
+        if (e->walk.slot[k] != 0xffff && e->walk.slot[k] != shown) {
+            texcache_note((int)e->walk.slot[k], d * ENTITY_OTHER_VIEWS);
+        }
+        if (e->idle.slot[k] != 0xffff && e->idle.slot[k] != shown) {
+            texcache_note((int)e->idle.slot[k], d * ENTITY_OTHER_VIEWS);
+        }
+    }
+    texcache_note(shown, d);
+}
+
+/*
+ * The place's song and sounds from cam, as the first frame would start
+ * them: the song read and turned into MIDI buffers here, under the hold,
+ * not in the frame (up to 20 ms on the 233).
+ */
+static void prime_sound(const Level *level, const Camera *cam)
+{
+    Weather w;
+    Daylight dl;
+    int lit;
+
+    weather_state(&w);
+    lit = level->scene.outdoor && daylight_on();
+    if (lit) {
+        daylight_at(clock_minute(), &dl);
+    }
+    ambience_frame(level, cam, &w, lit ? dl.lamps : 0.0f, 0, 0.0f);
+}
+
+void draw_prime(const Level *level, const Camera *cam)
 {
     const Scene *sc;
     float focal;
     int pass;
 
-    if (!level || !cam || !level->streamed || !texcache_streamed()) {
+    if (!level || !cam) {
+        return;
+    }
+    prime_sound(level, cam);
+    if (!texcache_resident()) {
         return;
     }
     sc = &level->scene;
@@ -814,6 +865,20 @@ void draw_stream_prime(const Level *level, const Camera *cam)
             dx = fl->x - cam->x;
             dz = fl->z - cam->z;
             texcache_note((int)fl->slot, df_sqrt(dx * dx + dz * dz));
+        }
+        /* The entities too: townspeople, a dungeon's creatures; as the frame will see them. */
+        for (i = 0; sc->entities && i < sc->nentities; i++) {
+            const Entity *e;
+            Flat fl;
+            float dx, dz;
+
+            e = &sc->entities[i];
+            if (!e->live || !entity_flat(e, cam->x, cam->z, &fl)) {
+                continue;
+            }
+            dx = fl.x - cam->x;
+            dz = fl.z - cam->z;
+            note_entity(e, (int)fl.slot, df_sqrt(dx * dx + dz * dz));
         }
         before = 0;
         after = 0;
@@ -905,6 +970,14 @@ static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
         uh += dv;
     }
     image_scale(img, (int)flat->slot, &inv_w, &inv_h);
+    /* Mirrored: the left edge takes the right's texels, and the other way. */
+    if (flat->flip) {
+        float t;
+
+        t = u0;
+        u0 = uw;
+        uw = t;
+    }
     /* 0 top-left, 1 top-right, 2 bottom-right, 3 bottom-left. v = 0 is the top row. */
     flat_corner(cam, basis,
                 flat->x - rx * hx, flat->y - ry * hx + hy, flat->z - rz * hx,
@@ -923,6 +996,63 @@ static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
 }
 
 static void draw_covers(void);
+
+/*
+ * The scene's entities: each one in view and within the visible far,
+ * as the sprite of the view the camera has of it. g_vis_entities counts
+ * those drawn. noted: their pictures are on the card by distance (a
+ * streamed world, or a place loaded whole: texcache_resident), and each
+ * drawn notes its own.
+ */
+static int g_vis_entities;
+/*
+ * 1 (default): sprites point sampled, crisp texels as Daggerfall drew
+ * them; up close a 110-texel townsperson fills 300 pixels, and bilinear
+ * filtering smeared each texel over three. 0: bilinear, as walls are.
+ */
+static int g_sprite_point = 1;
+
+void draw_set_sprite_point(int on)
+{
+    g_sprite_point = on ? 1 : 0;
+}
+
+int draw_sprite_point(void)
+{
+    return g_sprite_point;
+}
+
+static void draw_entities(const Camera *cam, const Basis *basis, const Level *level, int noted)
+{
+    const Scene *sc;
+    int i;
+
+    sc = &level->scene;
+    g_vis_entities = 0;
+    for (i = 0; i < sc->nentities; i++) {
+        const Entity *e;
+        Flat fl;
+        float dx, dz, d2, r;
+
+        e = &sc->entities[i];
+        if (!e->live || !entity_flat(e, cam->x, cam->z, &fl)) {
+            continue;
+        }
+        dx = fl.x - cam->x;
+        dz = fl.z - cam->z;
+        d2 = dx * dx + dz * dz;
+        r = (fl.w > fl.h ? fl.w : fl.h) * 0.5f;
+        if (d2 > (g_limit + r) * (g_limit + r)
+            || !scene_box_visible(fl.x, fl.y, fl.z, r, fl.h * 0.5f, r)) {
+            continue;
+        }
+        if (noted) {
+            note_entity(e, (int)fl.slot, df_sqrt(d2));
+        }
+        draw_flat(cam, basis, level, &fl);
+        g_vis_entities++;
+    }
+}
 
 /*
  * The falloff pictures the light decals are drawn with, one handle per
@@ -1409,6 +1539,7 @@ static void draw_sky(const Camera *cam, const Basis *basis)
     float r;
     int seg;
     int per_tile;
+    const df_u8 *pal;
 
     if (!g_sky_trig) {
         for (seg = 0; seg <= SKY_SEGS; seg++) {
@@ -1423,7 +1554,8 @@ static void draw_sky(const Camera *cam, const Basis *basis)
         r = g_limit / (SKY_APEX + 1.0f);
     }
     per_tile = SKY_SEGS / SKY_TILES;
-    glide_sky(1, sky_palette());
+    pal = sky_tile_palette(0);
+    glide_sky(1, pal);
     for (seg = 0; seg < SKY_SEGS; seg++) {
         Vtx v[4];
         float u0;
@@ -1431,6 +1563,11 @@ static void draw_sky(const Camera *cam, const Basis *basis)
 
         u0 = (float)((seg % per_tile) * (SKY_TILE / per_tile));
         u1 = u0 + (float)(SKY_TILE / per_tile);
+        /* A tile of a picture coming in has its own palette (sky_update): sent only when it differs. */
+        if (sky_tile_palette(seg / per_tile) != pal) {
+            pal = sky_tile_palette(seg / per_tile);
+            glide_sky(1, pal);
+        }
         glide_bind(sky_tile(seg / per_tile));
         sky_corner(cam, basis, r, seg, SKY_TOP, u0, &v[0]);
         sky_corner(cam, basis, r, seg + 1, SKY_TOP, u1, &v[1]);
@@ -2523,6 +2660,9 @@ void draw_frame(const Camera *cam, const Level *level)
     prof_end(PROF_WINDOWS);
     prof_begin(PROF_SPRITES);
     glide_sprite_alpha(1);
+    if (g_sprite_point) {
+        glide_point_sample(1);
+    }
     norder = scene_visible_sprites(&level->scene, cam, order, VIS_MAX);
     g_vis_sprites = norder;
     cap_warn(&g_cap_sprites, norder, "sprites");
@@ -2542,7 +2682,15 @@ void draw_frame(const Camera *cam, const Level *level)
         }
         draw_flat(cam, &basis, level, &level->scene.sprites[order[oi]]);
     }
+    /* The entities, each as the view of it the camera has (docs/entities.md), in daylight's colour. */
+    if (level->scene.entities) {
+        glide_tint(outdoor ? sprite_day : light_ambient_rgb());
+        draw_entities(cam, &basis, level, streamed || texcache_resident());
+    }
     glide_sprite_alpha(0);
+    if (g_sprite_point) {
+        glide_point_sample(0);
+    }
     glide_tint(0xffffffu);
     prof_end(PROF_SPRITES);
     prof_begin(PROF_PRECIP);
@@ -2578,8 +2726,12 @@ void draw_frame(const Camera *cam, const Level *level)
         g_fade_left -= secs;
     }
     prof_end(PROF_OVERLAY);
-    /* A streamed world: sharper copies of what was drawn near, after the frame (docs/streaming.md). */
-    if (streamed) {
+    /*
+     * A streamed world: sharper copies of what was drawn near, after the
+     * frame (docs/streaming.md); a place loaded whole, of its entities'
+     * pictures (docs/memory.md).
+     */
+    if (texcache_resident()) {
         prof_begin(PROF_STREAM);
         texcache_stream_service(g_focal, STREAM_UPLOAD_BYTES);
         prof_end(PROF_STREAM);

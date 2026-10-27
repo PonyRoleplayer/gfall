@@ -41,6 +41,11 @@ df_u32 sky_tile(int i);
 df_u32 sky_cap(void);
 /* The palette the tiles are drawn with, 768 bytes. */
 const df_u8 *sky_palette(void);
+/*
+ * Tile i's palette: the sky's, or while a new picture is coming in a
+ * tile a frame (sky_update), the new one's for the tiles already sent.
+ */
+const df_u8 *sky_tile_palette(int i);
 /* Mean colour of the bottom rows (the fog) and of the top row (the zenith). */
 void sky_horizon(int *r, int *g, int *b);
 void sky_zenith(int *r, int *g, int *b);

@@ -7,8 +7,13 @@
  * 2y + 1, which are never before it, so the halving can run in place.
  * Alpha is kept as the mean, 0..255, and only thresholded on output,
  * so a half-covered texel two levels down is still half covered.
+ * Words, so the halving sums four channels in two adds; its bytes (r,
+ * g, b, a in memory) through g_px, which may alias anything.
  */
-static df_u8 g_rgba[256 * 256 * 4];
+static df_u32 g_rgba[256 * 256];
+#define g_px ((df_u8 *)g_rgba)
+/* A row of the picture: nonzero where it or the rows above and below have an opaque texel. */
+static df_u8 g_near[256];
 
 /*
  * Nearest palette entry for a 5-bit-per-channel colour, filled the
@@ -126,6 +131,126 @@ df_u8 mip_nearest(int r, int g, int b)
 }
 
 /*
+ * A cutout's clear texels are most of a padded sprite, far from its
+ * picture: they take no colour, and only those beside an opaque one
+ * need the 3 x 3 gather that was most of a sheet's chain (20 ms of a
+ * 256 on the 233, and the card's full-size sharpen ran it in the
+ * frame). So each row's opaque span is found once (g_lo, g_hi, -1 for
+ * none), a row is worked only within its and its two neighbours'
+ * spans and a texel either side, wrapping as the texture does, and
+ * g_near says, within that, where the rows above, at and below have
+ * an opaque texel: a zero at x and its two neighbours, no gather.
+ */
+static short g_lo[256];
+static short g_hi[256];
+
+static void opaque_spans(const df_u8 *index, int side)
+{
+    int y;
+
+    for (y = 0; y < side; y++) {
+        const df_u8 *row;
+        int lo;
+        int hi;
+
+        row = index + y * side;
+        lo = 0;
+        while (lo < side && row[lo] == 0) {
+            lo++;
+        }
+        if (lo == side) {
+            g_lo[y] = -1;
+            g_hi[y] = -1;
+            continue;
+        }
+        hi = side - 1;
+        while (row[hi] == 0) {
+            hi--;
+        }
+        g_lo[y] = (short)lo;
+        g_hi[y] = (short)hi;
+    }
+}
+
+/*
+ * Row y's texels to work, from *from to *to (either may pass the row's
+ * ends: take x & (side - 1)), with g_near set for them and their
+ * neighbours. 0 when no opaque texel is in or beside the row: all clear.
+ */
+static int row_span(const df_u8 *index, int side, int y, int *from, int *to)
+{
+    const df_u8 *a;
+    const df_u8 *b;
+    const df_u8 *c;
+    int m;
+    int k;
+    int lo;
+    int hi;
+    int r;
+
+    m = side - 1;
+    lo = side;
+    hi = -1;
+    for (k = -1; k <= 1; k++) {
+        r = (y + k) & m;
+        if (g_lo[r] >= 0) {
+            lo = g_lo[r] < lo ? g_lo[r] : lo;
+            hi = g_hi[r] > hi ? g_hi[r] : hi;
+        }
+    }
+    if (hi < 0) {
+        return 0;
+    }
+    a = index + ((y - 1) & m) * side;
+    b = index + y * side;
+    c = index + ((y + 1) & m) * side;
+    if (hi - lo + 3 >= side) {
+        /* The span and a texel either side reach round: the whole row, once. */
+        *from = 0;
+        *to = m;
+        for (k = 0; k < side; k++) {
+            g_near[k] = (df_u8)(a[k] | b[k] | c[k]);
+        }
+        return 1;
+    }
+    *from = lo - 1;
+    *to = hi + 1;
+    for (k = lo - 2; k <= hi + 2; k++) {
+        r = k & m;
+        g_near[r] = (df_u8)(a[r] | b[r] | c[r]);
+    }
+    return 1;
+}
+
+/* The mean colour of the opaque texels round clear texel (x, y), wrapping; n 0 for none. */
+static void bleed(const df_u8 *index, int side, int x, int y,
+                  const df_u8 *pr, const df_u8 *pg, const df_u8 *pb, int *r, int *g, int *b, int *n)
+{
+    int m;
+    int dx;
+    int dy;
+
+    m = side - 1;
+    *r = 0;
+    *g = 0;
+    *b = 0;
+    *n = 0;
+    for (dy = -1; dy <= 1; dy++) {
+        for (dx = -1; dx <= 1; dx++) {
+            df_u8 k;
+
+            k = index[((y + dy) & m) * side + ((x + dx) & m)];
+            if (k != 0) {
+                *r += pr[k];
+                *g += pg[k];
+                *b += pb[k];
+                (*n)++;
+            }
+        }
+    }
+}
+
+/*
  * The picture into g_rgba. For a cutout, a transparent texel takes the
  * mean colour of its opaque neighbours, 8 around it, wrapping as the
  * texture does, and keeps alpha 0. One with no opaque neighbour stays
@@ -137,23 +262,49 @@ static void top_level(const df_u8 *index, int side, int cutout,
     int x;
     int y;
     int m;
+    int from;
+    int to;
 
     m = side - 1;
+    if (cutout) {
+        opaque_spans(index, side);
+    }
     for (y = 0; y < side; y++) {
-        for (x = 0; x < side; x++) {
-            df_u8 *o;
-            df_u8 c;
+        const df_u8 *row;
+        df_u8 *o;
 
-            o = &g_rgba[(y * side + x) * 4];
-            c = index[y * side + x];
-            if (!cutout) {
-                /* An 8-bit picture's alpha is how much of the texel is glass, so halving keeps it. */
+        row = index + y * side;
+        o = g_px + y * side * 4;
+        if (!cutout) {
+            /* An 8-bit picture's alpha is how much of the texel is glass, so halving keeps it. */
+            for (x = 0; x < side; x++, o += 4) {
+                df_u8 c;
+
+                c = row[x];
                 o[0] = pr[c];
                 o[1] = pg[c];
                 o[2] = pb[c];
                 o[3] = (df_u8)(c == MIP_GLASS ? 255 : 0);
-                continue;
             }
+            continue;
+        }
+        for (x = 0; x < side; x++) {
+            g_rgba[y * side + x] = 0;
+        }
+        if (!row_span(index, side, y, &from, &to)) {
+            continue;
+        }
+        for (x = from; x <= to; x++) {
+            df_u8 c;
+            int xm;
+            int r;
+            int g;
+            int b;
+            int n;
+
+            xm = x & m;
+            c = row[xm];
+            o = g_px + (y * side + xm) * 4;
             if (c != 0) {
                 o[0] = pr[c];
                 o[1] = pg[c];
@@ -161,41 +312,22 @@ static void top_level(const df_u8 *index, int side, int cutout,
                 o[3] = 255;
                 continue;
             }
-            {
-                int r;
-                int g;
-                int b;
-                int n;
-                int dx;
-                int dy;
-
-                r = 0;
-                g = 0;
-                b = 0;
-                n = 0;
-                for (dy = -1; dy <= 1; dy++) {
-                    for (dx = -1; dx <= 1; dx++) {
-                        df_u8 k;
-
-                        k = index[((y + dy) & m) * side + ((x + dx) & m)];
-                        if (k != 0) {
-                            r += pr[k];
-                            g += pg[k];
-                            b += pb[k];
-                            n++;
-                        }
-                    }
-                }
-                o[0] = (df_u8)(n ? r / n : 0);
-                o[1] = (df_u8)(n ? g / n : 0);
-                o[2] = (df_u8)(n ? b / n : 0);
-                o[3] = 0;
+            if (!(g_near[(xm - 1) & m] | g_near[xm] | g_near[(xm + 1) & m])) {
+                continue;
             }
+            bleed(index, side, xm, y, pr, pg, pb, &r, &g, &b, &n);
+            o[0] = (df_u8)(n ? r / n : 0);
+            o[1] = (df_u8)(n ? g / n : 0);
+            o[2] = (df_u8)(n ? b / n : 0);
         }
     }
 }
 
-/* g_rgba from side to side / 2, in place. */
+/*
+ * g_rgba from side to side / 2, in place: each channel the rounded mean
+ * of its four, (a + b + c + d + 2) >> 2, two channels a word at a time
+ * (16 bits each hold the sum, 1022 at most), the same bit for bit.
+ */
 static void halve(int side)
 {
     int half;
@@ -204,20 +336,94 @@ static void halve(int side)
 
     half = side >> 1;
     for (y = 0; y < half; y++) {
-        for (x = 0; x < half; x++) {
-            const df_u8 *a;
-            const df_u8 *b;
-            df_u8 *o;
-            int k;
+        const df_u32 *a;
+        const df_u32 *b;
+        df_u32 *o;
 
-            a = &g_rgba[((2 * y) * side + 2 * x) * 4];
-            b = a + side * 4;
-            o = &g_rgba[(y * half + x) * 4];
-            for (k = 0; k < 4; k++) {
-                o[k] = (df_u8)((a[k] + a[4 + k] + b[k] + b[4 + k] + 2) >> 2);
-            }
+        a = &g_rgba[(2 * y) * side];
+        b = a + side;
+        o = &g_rgba[y * half];
+        for (x = 0; x < half; x++) {
+            df_u32 p0;
+            df_u32 p1;
+            df_u32 q0;
+            df_u32 q1;
+            df_u32 lo;
+            df_u32 hi;
+
+            p0 = a[2 * x];
+            p1 = a[2 * x + 1];
+            q0 = b[2 * x];
+            q1 = b[2 * x + 1];
+            lo = (p0 & 0x00ff00ffu) + (p1 & 0x00ff00ffu) + (q0 & 0x00ff00ffu)
+                + (q1 & 0x00ff00ffu) + 0x00020002u;
+            hi = ((p0 >> 8) & 0x00ff00ffu) + ((p1 >> 8) & 0x00ff00ffu) + ((q0 >> 8) & 0x00ff00ffu)
+                + ((q1 >> 8) & 0x00ff00ffu) + 0x00020002u;
+            o[x] = ((lo >> 2) & 0x00ff00ffu) | (((hi >> 2) & 0x00ff00ffu) << 8);
         }
     }
+}
+
+/*
+ * A cutout's full level alone, straight to out (the card's full-size
+ * sharpen of a sprite, docs/streaming.md, run in the frame): each texel
+ * as emit would write it from top_level's, without the RGBA pass.
+ */
+static df_u32 cutout_top(const df_u8 *index, int side,
+                         const df_u8 *pr, const df_u8 *pg, const df_u8 *pb, df_u8 *out)
+{
+    df_u16 pal[256];
+    int x;
+    int y;
+    int i;
+    int m;
+    int from;
+    int to;
+
+    for (i = 0; i < 256; i++) {
+        pal[i] = (df_u16)(0x8000u | ((df_u16)(pr[i] >> 3) << 10) | ((df_u16)(pg[i] >> 3) << 5)
+                          | (df_u16)(pb[i] >> 3));
+    }
+    m = side - 1;
+    opaque_spans(index, side);
+    for (y = 0; y < side; y++) {
+        const df_u8 *row;
+        df_u8 *o;
+
+        row = index + y * side;
+        o = out + y * side * 2;
+        for (x = 0; x < side * 2; x++) {
+            o[x] = 0;
+        }
+        if (!row_span(index, side, y, &from, &to)) {
+            continue;
+        }
+        for (x = from; x <= to; x++) {
+            df_u16 pix;
+            df_u8 c;
+            int xm;
+            int r;
+            int g;
+            int b;
+            int n;
+
+            xm = x & m;
+            c = row[xm];
+            if (c != 0) {
+                pix = pal[c];
+            } else if (!(g_near[(xm - 1) & m] | g_near[xm] | g_near[(xm + 1) & m])) {
+                continue;
+            } else {
+                bleed(index, side, xm, y, pr, pg, pb, &r, &g, &b, &n);
+                pix = n ? (df_u16)(((df_u16)((r / n) >> 3) << 10) | ((df_u16)((g / n) >> 3) << 5)
+                                   | (df_u16)((b / n) >> 3))
+                        : 0;
+            }
+            o[xm * 2] = (df_u8)(pix & 0xff);
+            o[xm * 2 + 1] = (df_u8)(pix >> 8);
+        }
+    }
+    return (df_u32)side * (df_u32)side * 2u;
 }
 
 /* One level of g_rgba into out. Returns the bytes written. */
@@ -230,7 +436,7 @@ static df_u32 emit(int side, int cutout, df_u8 *out)
     for (i = 0; i < n; i++) {
         const df_u8 *p;
 
-        p = &g_rgba[i * 4];
+        p = g_px + i * 4;
         if (cutout) {
             df_u16 pix;
 
@@ -278,6 +484,9 @@ df_u32 mip_build(const df_u8 *index, int side, int cutout, int drop, int chain,
             return at;
         }
     }
+    if (cutout && drop == 0 && levels == 1) {
+        return cutout_top(index, side, pr, pg, pb, out);
+    }
     if (!cutout) {
         mip_palette(pr, pg, pb);
     }
@@ -319,24 +528,34 @@ df_u32 mip_budget(const int *side, const df_u8 *cutout, int n, df_u32 room,
     while (total > room) {
         int pick;
         df_u32 most;
+        int pass;
 
+        /*
+         * Sprites last (MIP_WALL_GRACE): first only the walls that have
+         * given fewer than that many levels; then anything, the largest.
+         */
         pick = -1;
         most = 0;
-        for (i = 0; i < n; i++) {
-            int s;
-            df_u32 b;
+        for (pass = 0; pass < 2 && pick < 0; pass++) {
+            for (i = 0; i < n; i++) {
+                int s;
+                df_u32 b;
 
-            if (!pow2_side(side[i])) {
-                continue;
-            }
-            s = side[i] >> drop[i];
-            if (s <= MIP_MIN_SIDE) {
-                continue;
-            }
-            b = table[cutout && cutout[i] ? 1 : 0][level_count(s) - 1];
-            if (b > most) {
-                most = b;
-                pick = i;
+                if (!pow2_side(side[i])) {
+                    continue;
+                }
+                if (pass == 0 && ((cutout && cutout[i]) || drop[i] >= MIP_WALL_GRACE)) {
+                    continue;
+                }
+                s = side[i] >> drop[i];
+                if (s <= MIP_MIN_SIDE) {
+                    continue;
+                }
+                b = table[cutout && cutout[i] ? 1 : 0][level_count(s) - 1];
+                if (b > most) {
+                    most = b;
+                    pick = i;
+                }
             }
         }
         if (pick < 0) {

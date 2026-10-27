@@ -12,6 +12,12 @@
 #define WORDS ((1u << (MAX_ORDER - MIN_ORDER)) / 32u)
 /* Sharp copies sent a frame at most, whatever the budget: each is a download and a bind change. */
 #define UPLOADS_A_FRAME 8
+/*
+ * Sharp copies of walls drawn this frame a sprite may take the room of,
+ * a frame at most: a few, so a street of people never strips the walls
+ * and the ground round them over and over.
+ */
+#define STEALS_A_FRAME 2
 
 typedef struct Arena {
     df_u32 base;
@@ -53,6 +59,8 @@ static int g_added;
 static int g_sharp;
 static int g_uploads;
 static int g_evictions;
+/* Walls drawn this frame whose room a sprite took, this frame. */
+static int g_steals;
 
 static int bit(const Arena *a, int o, df_u32 i)
 {
@@ -110,12 +118,36 @@ static void arena_init(Arena *a, df_u32 base, df_u32 size)
     }
 }
 
+/*
+ * Blocks under this order (16 KB: the 8 x 8 copies, small pictures) come
+ * from the top of the card, the rest from the bottom. Taken from the
+ * bottom alike, the small ones split block after block next to the big
+ * ones and left the card with room to spare and no 128 KB block whole: a
+ * sprite in front of the camera settled for half size (docs/streaming.md).
+ */
+#define HIGH_BELOW 6
+
+/*
+ * A free block of 2^order units: the smallest free order that holds it
+ * (so no big block is split while a small one will do), at the lowest
+ * address for a big block and the highest for a small one, split down
+ * keeping the half on its own side and freeing the other.
+ */
 static int block_alloc(int order, df_u32 *addr)
 {
+    int high;
     int o;
-    int k;
 
+    high = order < HIGH_BELOW;
     for (o = order; o < ORDERS; o++) {
+        int found;
+        int fk;
+        df_u32 fi;
+        int k;
+
+        found = 0;
+        fk = 0;
+        fi = 0;
         for (k = 0; k < g_narena; k++) {
             Arena *a;
             df_u32 words;
@@ -123,30 +155,54 @@ static int block_alloc(int order, df_u32 *addr)
 
             a = &g_arena[k];
             words = ((a->size >> (o + MIN_ORDER)) + 31u) >> 5;
-            for (w = 0; w < words && w < WORDS; w++) {
-                df_u32 i;
+            words = words < WORDS ? words : WORDS;
+            for (w = 0; w < words; w++) {
                 df_u32 bits;
+                df_u32 j;
 
                 bits = a->free[o][w];
-                if (!bits) {
-                    continue;
+                for (j = 0; bits && j < 32u; j++) {
+                    df_u32 at;
+
+                    if (!(bits & (1u << j))) {
+                        continue;
+                    }
+                    at = a->base + (((w << 5) + j) << (o + MIN_ORDER));
+                    if (!found || (high ? at > g_arena[fk].base + (fi << (o + MIN_ORDER))
+                                        : at < g_arena[fk].base + (fi << (o + MIN_ORDER)))) {
+                        found = 1;
+                        fk = k;
+                        fi = (w << 5) + j;
+                    }
+                    if (!high) {
+                        break;
+                    }
                 }
-                i = w << 5;
-                while (!(bits & 1u)) {
-                    bits >>= 1;
+                if (found && !high) {
+                    break;
+                }
+            }
+        }
+        if (found) {
+            Arena *a;
+            df_u32 i;
+
+            a = &g_arena[fk];
+            i = fi;
+            set_bit(a, o, i, 0);
+            while (o > order) {
+                o--;
+                i <<= 1;
+                if (high) {
+                    set_bit(a, o, i, 1);
                     i++;
-                }
-                set_bit(a, o, i, 0);
-                /* Split down to the order asked: each left half kept, its right half freed. */
-                while (o > order) {
-                    o--;
-                    i <<= 1;
+                } else {
                     set_bit(a, o, i + 1u, 1);
                 }
-                *addr = a->base + (i << (order + MIN_ORDER));
-                g_used += TEXRES_MIN << order;
-                return 1;
             }
+            *addr = a->base + (i << (order + MIN_ORDER));
+            g_used += TEXRES_MIN << order;
+            return 1;
         }
     }
     return 0;
@@ -217,22 +273,52 @@ void texres_end(void)
     g_narena = 0;
 }
 
-/* Free the sharp copy of the least recently drawn picture not drawn this frame. 0 when none can go. */
-static int evict_one(void)
+/*
+ * Free a sharp copy to make room (docs/streaming.md, The card). Of the
+ * pictures not drawn this frame, a wall's first, then a sprite's, the
+ * least recently drawn of each: a hand-drawn sprite turned back to is
+ * worth having still sharp. For a sprite drawn sprite_dist away (-1 for
+ * a wall), once none of those is left: a wall drawn this frame farther
+ * than the sprite, the farthest first, STEALS_A_FRAME at most; it shows
+ * its 8 x 8 copy until a smaller sharp one fits round the sprites. The
+ * ground under the camera, nearer than any sprite on it, is never taken.
+ * 0 when none can go.
+ */
+static int evict_one(float sprite_dist)
 {
     int best;
+    int pass;
     int i;
 
     best = -1;
-    for (i = 0; i < TEXRES_SLOTS; i++) {
-        Res *r;
+    for (pass = 0; pass < 2 && best < 0; pass++) {
+        for (i = 0; i < TEXRES_SLOTS; i++) {
+            Res *r;
 
-        r = &g_res[i];
-        if (!r->used || r->big_drop < 0 || r->last_frame >= g_frame) {
-            continue;
+            r = &g_res[i];
+            if (!r->used || r->big_drop < 0 || r->last_frame >= g_frame || (int)r->cutout != pass) {
+                continue;
+            }
+            if (best < 0 || r->last_frame < g_res[best].last_frame) {
+                best = i;
+            }
         }
-        if (best < 0 || r->last_frame < g_res[best].last_frame) {
-            best = i;
+    }
+    if (sprite_dist >= 0.0f && best < 0 && g_steals < STEALS_A_FRAME) {
+        for (i = 0; i < TEXRES_SLOTS; i++) {
+            Res *r;
+
+            r = &g_res[i];
+            if (!r->used || r->big_drop < 0 || r->cutout || r->last_frame < g_frame
+                || r->note_dist <= sprite_dist) {
+                continue;
+            }
+            if (best < 0 || r->note_dist > g_res[best].note_dist) {
+                best = i;
+            }
+        }
+        if (best >= 0) {
+            g_steals++;
         }
     }
     if (best < 0) {
@@ -246,8 +332,129 @@ static int evict_one(void)
     return 1;
 }
 
-/* A block for bytes, freeing old sharp copies until one fits. 0 when nothing more can go. */
-static int room_for(df_u32 bytes, df_u32 *addr, int *order)
+/* Free slot i's sharp copy: its handle released and its block given back. */
+static void drop_big(int i)
+{
+    g_ops.release(g_res[i].big_h);
+    block_free(g_res[i].big_addr, g_res[i].big_order);
+    g_res[i].big_drop = -1;
+    g_sharp--;
+    g_evictions++;
+}
+
+/*
+ * A whole block of 2^o units made by freeing one aligned region of the
+ * card of that size: the region that holds no small copy and only sharp
+ * copies that may go (not drawn this frame; or, for a sprite drawn
+ * sprite_dist away, walls drawn this frame farther than it, within this
+ * frame's STEALS_A_FRAME), the fewest drawn ones first, then the fewest
+ * copies. Freed least recently drawn first one by one, copies land all
+ * over the card and a large block may never join; freed by region, it
+ * does at once. 0 when no region will do.
+ */
+/* Regions a free_region pass weighs at most: 128 an arena (16 KB ones of 2 MB). */
+#define REGIONS (ARENA_MAX * 128)
+
+static int free_region(int o, float sprite_dist)
+{
+    static int cost[REGIONS];
+    static df_u8 drawn[REGIONS];
+    static df_u8 bad[REGIONS];
+    df_u32 size;
+    int per;
+    int best;
+    int freed;
+    int n;
+    int i;
+
+    size = TEXRES_MIN << o;
+    per = (int)((2u * 1024u * 1024u) / size);
+    per = per > REGIONS / ARENA_MAX ? REGIONS / ARENA_MAX : per;
+    n = g_narena * per;
+    for (i = 0; i < n; i++) {
+        cost[i] = 0;
+        drawn[i] = 0;
+        bad[i] = 0;
+    }
+    /* One pass over the pictures: each copy marks the region it lies in. */
+    for (i = 0; i < TEXRES_SLOTS; i++) {
+        const Res *r;
+        int k;
+
+        r = &g_res[i];
+        if (!r->used) {
+            continue;
+        }
+        for (k = 0; k < g_narena; k++) {
+            const Arena *a;
+            int g;
+
+            a = &g_arena[k];
+            if (r->tiny_addr >= a->base && r->tiny_addr < a->base + a->size) {
+                g = k * per + (int)((r->tiny_addr - a->base) / size);
+                if (g < n) {
+                    bad[g] = 1;
+                }
+            }
+            if (r->big_drop >= 0 && r->big_addr >= a->base && r->big_addr < a->base + a->size) {
+                g = k * per + (int)((r->big_addr - a->base) / size);
+                if (g >= n) {
+                    continue;
+                }
+                if (r->last_frame >= g_frame) {
+                    if (sprite_dist < 0.0f || r->cutout || r->note_dist <= sprite_dist) {
+                        bad[g] = 1;
+                    } else if (drawn[g] < 255) {
+                        drawn[g]++;
+                    }
+                }
+                cost[g]++;
+            }
+        }
+    }
+    best = -1;
+    for (i = 0; i < n; i++) {
+        int k;
+        df_u32 at;
+
+        k = i / per;
+        at = (df_u32)(i % per) * size;
+        if (bad[i] || cost[i] == 0 || at + size > g_arena[k].size || g_steals + drawn[i] > STEALS_A_FRAME) {
+            continue;
+        }
+        if (best < 0 || drawn[i] * 1000 + cost[i] < drawn[best] * 1000 + cost[best]) {
+            best = i;
+        }
+    }
+    if (best < 0) {
+        return 0;
+    }
+    /* Every sharp copy in it goes; the region then joins into one block. */
+    freed = 0;
+    for (i = 0; i < TEXRES_SLOTS; i++) {
+        const Res *r;
+        df_u32 lo;
+
+        r = &g_res[i];
+        lo = g_arena[best / per].base + (df_u32)(best % per) * size;
+        if (r->used && r->big_drop >= 0 && r->big_addr >= lo && r->big_addr < lo + size) {
+            if (r->last_frame >= g_frame) {
+                g_steals++;
+            }
+            drop_big(i);
+            freed++;
+        }
+    }
+    return freed;
+}
+
+/*
+ * A block for bytes, freeing sharp copies until one fits: for a large
+ * block (HIGH_BELOW and up) a region freed whole (free_region), for a
+ * small one copies one by one (evict_one; sprite_dist as it takes it).
+ * 0 when nothing more can go.
+ */
+static int room_for(df_u32 bytes, df_u32 *addr, int *order, float sprite_dist)
 {
     int o;
 
@@ -260,7 +467,13 @@ static int room_for(df_u32 bytes, df_u32 *addr, int *order)
             *order = o;
             return 1;
         }
-        if (!evict_one()) {
+        if (o >= HIGH_BELOW) {
+            if (!free_region(o, sprite_dist)) {
+                return 0;
+            }
+            continue;
+        }
+        if (!evict_one(sprite_dist)) {
             return 0;
         }
     }
@@ -283,7 +496,7 @@ int texres_add(int slot, int side, int cutout, float density)
     while ((side >> drop) > TEXRES_TINY) {
         drop++;
     }
-    if (!room_for(g_ops.bytes(side >> drop, cutout), &addr, &order)) {
+    if (!room_for(g_ops.bytes(side >> drop, cutout), &addr, &order, -1.0f)) {
         return 0;
     }
     r = &g_res[slot];
@@ -362,6 +575,7 @@ static int want_drop(const Res *r, float focal)
 void texres_service(float focal, df_u32 budget)
 {
     int sent;
+    int pass;
     df_u32 spent;
 
     if (!g_on) {
@@ -372,93 +586,107 @@ void texres_service(float focal, df_u32 budget)
     }
     sent = 0;
     spent = 0;
-    while (sent < UPLOADS_A_FRAME) {
-        int best;
-        int best_short;
-        int i;
-        Res *r;
-        int want;
-        df_u32 addr;
-        df_u32 bytes;
-        df_u32 h;
-        int order;
+    g_steals = 0;
+    /*
+     * Sprites, then walls (pass 1, then 0): a sprite is the hand-drawn
+     * art, a blurry one breaks the picture where a blurry wall reads as
+     * distance. Each class's first copy goes even past the byte budget
+     * (a 256 sprite is 128 KB alone): so the walls always get a turn,
+     * however many people want sharpening.
+     */
+    for (pass = 1; pass >= 0; pass--) {
+        int class_sent;
 
-        /* The picture most levels short of its need; between equals, the nearest. */
-        best = -1;
-        best_short = 0;
-        for (i = 0; i < g_nnoted; i++) {
-            int s;
-            int have;
-            int lack;
+        class_sent = 0;
+        while (sent < UPLOADS_A_FRAME) {
+            int best;
+            int best_short;
+            int i;
+            Res *r;
+            int want;
+            df_u32 addr;
+            df_u32 bytes;
+            df_u32 h;
+            int order;
 
-            s = g_noted[i];
-            r = &g_res[s];
-            if (!r->used) {
-                continue;
-            }
-            have = r->big_drop >= 0 ? r->big_drop : r->tiny_drop;
-            lack = have - want_drop(r, focal);
-            if (lack <= 0) {
-                continue;
-            }
-            if (best < 0 || lack > best_short
-                || (lack == best_short && r->note_dist < g_res[best].note_dist)) {
-                best = s;
-                best_short = lack;
-            }
-        }
-        if (best < 0) {
-            break;
-        }
-        r = &g_res[best];
-        want = (r->big_drop >= 0 ? r->big_drop : r->tiny_drop) - best_short;
-        /* Short of room, settle for a level down; at the small copy's level there is nothing to send. */
-        for (;;) {
-            bytes = g_ops.bytes(r->side >> want, r->cutout);
-            if (sent > 0 && spent + bytes > budget) {
-                want = -1;
-                break;
-            }
-            if (room_for(bytes, &addr, &order)) {
-                break;
-            }
-            want++;
-            if (want >= r->tiny_drop || (r->big_drop >= 0 && want >= r->big_drop)) {
-                want = -1;
-                break;
-            }
-        }
-        if (want < 0) {
-            /* Its need cannot be met now: leave it until the next frame. */
-            r->note_frame = 0;
+            /* Of this class, the picture most levels short of its need; between equals, the nearest. */
+            best = -1;
+            best_short = 0;
             for (i = 0; i < g_nnoted; i++) {
-                if (g_noted[i] == best) {
-                    g_noted[i] = g_noted[--g_nnoted];
+                int s;
+                int have;
+                int lack;
+
+                s = g_noted[i];
+                r = &g_res[s];
+                if (!r->used || (int)r->cutout != pass) {
+                    continue;
+                }
+                have = r->big_drop >= 0 ? r->big_drop : r->tiny_drop;
+                lack = have - want_drop(r, focal);
+                if (lack <= 0) {
+                    continue;
+                }
+                if (best < 0 || lack > best_short
+                    || (lack == best_short && r->note_dist < g_res[best].note_dist)) {
+                    best = s;
+                    best_short = lack;
+                }
+            }
+            if (best < 0) {
+                break;
+            }
+            r = &g_res[best];
+            want = (r->big_drop >= 0 ? r->big_drop : r->tiny_drop) - best_short;
+            /* Short of room, settle for a level down; at the small copy's level there is nothing to send. */
+            for (;;) {
+                bytes = g_ops.bytes(r->side >> want, r->cutout);
+                if (class_sent > 0 && spent + bytes > budget) {
+                    want = -1;
+                    break;
+                }
+                if (room_for(bytes, &addr, &order, r->cutout ? r->note_dist : -1.0f)) {
+                    break;
+                }
+                want++;
+                if (want >= r->tiny_drop || (r->big_drop >= 0 && want >= r->big_drop)) {
+                    want = -1;
                     break;
                 }
             }
-            if (sent > 0 && spent + bytes > budget) {
+            if (want < 0) {
+                /* Its need cannot be met now: leave it until the next frame. */
+                r->note_frame = 0;
+                for (i = 0; i < g_nnoted; i++) {
+                    if (g_noted[i] == best) {
+                        g_noted[i] = g_noted[--g_nnoted];
+                        break;
+                    }
+                }
+                if (class_sent > 0 && spent + bytes > budget) {
+                    break;
+                }
+                continue;
+            }
+            if (!g_ops.upload(best, want, addr, &h)) {
+                block_free(addr, order);
                 break;
             }
-            continue;
+            if (r->big_drop >= 0) {
+                g_ops.release(r->big_h);
+                block_free(r->big_addr, r->big_order);
+            } else {
+                g_sharp++;
+            }
+            r->big_drop = (short)want;
+            r->big_addr = addr;
+            r->big_order = (df_u8)order;
+            r->big_h = h;
+            g_uploads++;
+            sent++;
+            class_sent++;
+            spent += bytes;
         }
-        if (!g_ops.upload(best, want, addr, &h)) {
-            block_free(addr, order);
-            break;
-        }
-        if (r->big_drop >= 0) {
-            g_ops.release(r->big_h);
-            block_free(r->big_addr, r->big_order);
-        } else {
-            g_sharp++;
-        }
-        r->big_drop = (short)want;
-        r->big_addr = addr;
-        r->big_order = (df_u8)order;
-        r->big_h = h;
-        g_uploads++;
-        sent++;
-        spent += bytes;
     }
     g_nnoted = 0;
     g_frame++;
@@ -508,4 +736,23 @@ void texres_stats(int *added, int *sharp, df_u32 *used, df_u32 *free_bytes,
     if (evictions) {
         *evictions = g_evictions;
     }
+}
+
+df_u32 texres_largest_free(void)
+{
+    int o;
+    int k;
+
+    for (o = ORDERS - 1; o >= 0; o--) {
+        for (k = 0; k < g_narena; k++) {
+            df_u32 w;
+
+            for (w = 0; w < WORDS; w++) {
+                if (g_arena[k].free[o][w]) {
+                    return TEXRES_MIN << o;
+                }
+            }
+        }
+    }
+    return 0;
 }

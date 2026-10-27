@@ -208,6 +208,111 @@ static Image *solid_image(int file, int image)
     return img;
 }
 
+/* A file now read whole: counted in, and past the cap the files read longest ago go, never this one. */
+static void keep_file(int file)
+{
+    g_total += g_file_size[file];
+    while (g_limit && g_heap && g_total > g_limit) {
+        int old;
+        int i;
+
+        old = -1;
+        for (i = 0; i < FILE_CACHE; i++) {
+            if (g_file[i] && g_in_heap[i] && i != file
+                && (old < 0 || g_used_at[i] < g_used_at[old])) {
+                old = i;
+            }
+        }
+        if (old < 0) {
+            break;
+        }
+        mem_heap_free(g_heap, g_file[old]);
+        g_total -= g_file_size[old];
+        g_file[old] = 0;
+        g_file_size[old] = 0;
+        g_in_heap[old] = 0;
+    }
+}
+
+/*
+ * The file being read a piece a call (texture_file_step), one at a time,
+ * into g_heap: its number (-1 none), its bytes so far, its handle.
+ */
+static int g_part_file = -1;
+static df_u8 *g_part;
+static df_u32 g_part_size;
+static df_u32 g_part_at;
+static VfsFile *g_part_f;
+
+static void part_drop(void)
+{
+    if (g_part_f) {
+        vfs_close(g_part_f);
+    }
+    if (g_part && g_heap) {
+        mem_heap_free(g_heap, g_part);
+    }
+    g_part_f = 0;
+    g_part = 0;
+    g_part_file = -1;
+}
+
+int texture_file_step(int file)
+{
+    char name[16];
+    df_u32 n;
+
+    /* Not under the cap (a place loaded whole reads at load), cached, or no such file: nothing to do. */
+    if (!g_limit || file <= 1 || file >= FILE_CACHE || g_file[file]) {
+        return 1;
+    }
+    if (g_part_file != file) {
+        MemHeap *was;
+
+        part_drop();
+        texture_filename(file, name, (int)sizeof(name));
+        g_part_f = vfs_open(name);
+        if (!g_part_f) {
+            return 1;
+        }
+        g_part_size = vfs_size(g_part_f);
+        if (!g_heap) {
+            g_heap = mem_heap_new();
+        }
+        was = mem_heap_use(g_heap);
+        g_part = g_part_size ? (df_u8 *)mem_alloc(g_part_size) : 0;
+        mem_heap_use(was);
+        if (!g_part) {
+            part_drop();
+            return 1;
+        }
+        g_part_file = file;
+        g_part_at = 0;
+    }
+    n = g_part_size - g_part_at;
+    n = n > TEXTURE_FILE_PIECE ? TEXTURE_FILE_PIECE : n;
+    if (!vfs_read_at(g_part_f, g_part_at, g_part + g_part_at, n)) {
+        part_drop();
+        return 1;
+    }
+    g_part_at += n;
+    if (g_part_at < g_part_size) {
+        return 0;
+    }
+    /* Whole: it is the cache's now. */
+    vfs_close(g_part_f);
+    g_part_f = 0;
+    g_file[file] = g_part;
+    g_file_size[file] = g_part_size;
+    g_in_heap[file] = 1;
+    g_used_at[file] = ++g_stamp;
+    g_part = 0;
+    g_part_file = -1;
+    keep_file(file);
+    /* A piece was read this call: the decode is the next call's, not this one's too. */
+    return 0;
+}
+
 static const df_u8 *file_bytes(int file, df_u32 *size)
 {
     char name[16];
@@ -216,6 +321,10 @@ static const df_u8 *file_bytes(int file, df_u32 *size)
         return 0;
     }
     if (!g_file[file]) {
+        if (g_part_file == file) {
+            /* Wanted whole now: the pieces read so far are dropped, it is read at once. */
+            part_drop();
+        }
         texture_filename(file, name, (int)sizeof(name));
         if (g_limit) {
             MemHeap *was;
@@ -233,28 +342,7 @@ static const df_u8 *file_bytes(int file, df_u32 *size)
         if (!g_file[file]) {
             return 0;
         }
-        g_total += g_file_size[file];
-        /* Past the cap: the files read longest ago go, never this one. */
-        while (g_limit && g_heap && g_total > g_limit) {
-            int old;
-            int i;
-
-            old = -1;
-            for (i = 0; i < FILE_CACHE; i++) {
-                if (g_file[i] && g_in_heap[i] && i != file
-                    && (old < 0 || g_used_at[i] < g_used_at[old])) {
-                    old = i;
-                }
-            }
-            if (old < 0) {
-                break;
-            }
-            mem_heap_free(g_heap, g_file[old]);
-            g_total -= g_file_size[old];
-            g_file[old] = 0;
-            g_file_size[old] = 0;
-            g_in_heap[old] = 0;
-        }
+        keep_file(file);
     }
     g_used_at[file] = ++g_stamp;
     if (size) {
@@ -458,23 +546,49 @@ static int read_rle(const df_u8 *file, df_u32 file_size, df_u32 rec_pos, df_u32 
     return 1;
 }
 
+/*
+ * Each file's record count once known (0 none, else count + 1): the
+ * climate swaps ask it of every face a mesh paints, and reading the
+ * whole file for its first two bytes put a file read in a mesh's step.
+ */
+static short g_count[FILE_CACHE];
+
 int texture_record_count(int file)
 {
     const df_u8 *bytes;
+    df_u8 head[2];
     df_u32 size;
     int count;
 
-    if (file <= 1) {
+    if (file <= 1 || file >= FILE_CACHE) {
         return 0;
     }
-    bytes = file_bytes(file, &size);
-    if (!bytes || size < 2) {
-        return 0;
+    if (g_count[file]) {
+        return g_count[file] - 1;
     }
-    count = df_ri16(bytes);
+    if (g_file[file]) {
+        bytes = file_bytes(file, &size);
+        if (!bytes || size < 2) {
+            return 0;
+        }
+        count = df_ri16(bytes);
+    } else {
+        char name[16];
+        VfsFile *f;
+
+        texture_filename(file, name, (int)sizeof(name));
+        f = vfs_open(name);
+        count = 0;
+        /* A file not there, or too short, is remembered as none: the swaps ask of missing ones often. */
+        if (f && vfs_size(f) >= 2 && vfs_read_at(f, 0, head, 2)) {
+            count = df_ri16(head);
+        }
+        vfs_close(f);
+    }
     if (count < 0 || count > 1024) {
-        return 0;
+        count = 0;
     }
+    g_count[file] = (short)(count + 1);
     return count;
 }
 
@@ -625,15 +739,46 @@ void texture_pad(Image *img)
  * square still holds whole copies, so span and the face UVs stay.
  * Load time only: 8-bit fixed point, no float casts.
  */
+/*
+ * One axis of the stretch: for each texel of the square, its source
+ * texel, the next (wrapping), and the weight of the next, 0..255.
+ * Worked once a column or a row, not a texel: two divisions and three
+ * remainders a texel were half the stretch's time on the 233.
+ */
+static void smooth_axis(int side, int span, int size, short *t0, short *t1, short *w)
+{
+    int i;
+
+    for (i = 0; i < side; i++) {
+        int f;
+
+        /* Source position of this texel's centre, in 1/256 texel. */
+        f = (((i % span) * 2 + 1) * size * 128) / span - 128;
+        if (f < 0) {
+            f += size * 256;
+        }
+        t0[i] = (short)((f >> 8) % size);
+        t1[i] = (short)((t0[i] + 1) % size);
+        w[i] = (short)(f & 255);
+    }
+}
+
 void texture_smooth(Image *img, const df_u8 *pr, const df_u8 *pg, const df_u8 *pb)
 {
+    short x0[256];
+    short x1[256];
+    short wxs[256];
+    short y0s[256];
+    short y1s[256];
+    short wys[256];
     int side;
     int tw;
     int th;
     int x;
     int y;
 
-    if (!img || !img->pot || !img->index || !pr || !pg || !pb || img->pot_w != img->pot_h) {
+    if (!img || !img->pot || !img->index || !pr || !pg || !pb || img->pot_w != img->pot_h
+        || img->pot_w > 256) {
         return;
     }
     side = img->pot_w;
@@ -643,73 +788,71 @@ void texture_smooth(Image *img, const df_u8 *pr, const df_u8 *pg, const df_u8 *p
         return;
     }
     mip_palette(pr, pg, pb);
+    smooth_axis(side, tw, img->width, x0, x1, wxs);
+    smooth_axis(side, th, img->height, y0s, y1s, wys);
     for (y = 0; y < side; y++) {
-        int fy;
-        int y0;
-        int y1;
+        const df_u8 *row0;
+        const df_u8 *row1;
+        df_u8 *out;
         int wy;
 
-        /* Source position of this texel's centre, in 1/256 texel. */
-        fy = (((y % th) * 2 + 1) * img->height * 128) / th - 128;
-        if (fy < 0) {
-            fy += img->height * 256;
-        }
-        y0 = (fy >> 8) % img->height;
-        y1 = (y0 + 1) % img->height;
-        wy = fy & 255;
+        row0 = img->index + y0s[y] * img->width;
+        row1 = img->index + y1s[y] * img->width;
+        wy = wys[y];
+        out = img->pot + y * side;
         for (x = 0; x < side; x++) {
-            int fx;
-            int x0;
-            int x1;
             int wx;
-            const df_u8 *row0;
-            const df_u8 *row1;
-            int k[4];
-            int w4[4];
+            int k0;
+            int k1;
+            int k2;
+            int k3;
+            int top;
+            int bot;
             int r;
             int g;
             int b;
-            int glass;
-            int i;
 
-            fx = (((x % tw) * 2 + 1) * img->width * 128) / tw - 128;
-            if (fx < 0) {
-                fx += img->width * 256;
-            }
-            x0 = (fx >> 8) % img->width;
-            x1 = (x0 + 1) % img->width;
-            wx = fx & 255;
-            row0 = img->index + y0 * img->width;
-            row1 = img->index + y1 * img->width;
+            wx = wxs[x];
+            k0 = row0[x0[x]];
             if (wx == 0 && wy == 0) {
-                img->pot[y * side + x] = row0[x0];
+                out[x] = (df_u8)k0;
                 continue;
             }
-            k[0] = row0[x0];
-            k[1] = row0[x1];
-            k[2] = row1[x0];
-            k[3] = row1[x1];
-            w4[0] = (256 - wx) * (256 - wy);
-            w4[1] = wx * (256 - wy);
-            w4[2] = (256 - wx) * wy;
-            w4[3] = wx * wy;
-            r = 0;
-            g = 0;
-            b = 0;
-            glass = 0;
-            for (i = 0; i < 4; i++) {
-                r += pr[k[i]] * w4[i];
-                g += pg[k[i]] * w4[i];
-                b += pb[k[i]] * w4[i];
-                glass += k[i] == MIP_GLASS ? w4[i] : 0;
+            k1 = row0[x1[x]];
+            k2 = row1[x0[x]];
+            k3 = row1[x1[x]];
+            /*
+             * Mostly a window's glass stays glass: the night pass lights
+             * that index alone. Its weight only when a corner is glass.
+             */
+            if (k0 == MIP_GLASS || k1 == MIP_GLASS || k2 == MIP_GLASS || k3 == MIP_GLASS) {
+                int glass;
+
+                glass = (k0 == MIP_GLASS ? (256 - wx) * (256 - wy) : 0)
+                    + (k1 == MIP_GLASS ? wx * (256 - wy) : 0)
+                    + (k2 == MIP_GLASS ? (256 - wx) * wy : 0)
+                    + (k3 == MIP_GLASS ? wx * wy : 0);
+                if (glass >= 32768) {
+                    out[x] = MIP_GLASS;
+                    continue;
+                }
             }
-            /* Mostly a window's glass stays glass: the night pass lights that index alone. */
-            if (glass >= 32768) {
-                img->pot[y * side + x] = MIP_GLASS;
-                continue;
-            }
-            img->pot[y * side + x] = mip_nearest((r + 32768) >> 16, (g + 32768) >> 16,
-                                                 (b + 32768) >> 16);
+            /*
+             * The four weights' sum, (256 - wx)(256 - wy) a + wx(256 - wy) b
+             * + ..., as two lerps across and one down, 256 a + w (b - a):
+             * the same integer in three multiplies a channel, not four
+             * (and the weights' own four): imul is 10 cycles on a Pentium.
+             */
+            top = 256 * pr[k0] + wx * (pr[k1] - pr[k0]);
+            bot = 256 * pr[k2] + wx * (pr[k3] - pr[k2]);
+            r = 256 * top + wy * (bot - top);
+            top = 256 * pg[k0] + wx * (pg[k1] - pg[k0]);
+            bot = 256 * pg[k2] + wx * (pg[k3] - pg[k2]);
+            g = 256 * top + wy * (bot - top);
+            top = 256 * pb[k0] + wx * (pb[k1] - pb[k0]);
+            bot = 256 * pb[k2] + wx * (pb[k3] - pb[k2]);
+            b = 256 * top + wy * (bot - top);
+            out[x] = mip_nearest((r + 32768) >> 16, (g + 32768) >> 16, (b + 32768) >> 16);
         }
     }
 }
@@ -725,6 +868,12 @@ void texture_cache_clear(void)
         g_in_heap[i] = 0;
     }
     g_total = 0;
+    if (g_part_f) {
+        vfs_close(g_part_f);
+    }
+    g_part_f = 0;
+    g_part = 0;
+    g_part_file = -1;
     if (g_heap) {
         mem_heap_delete(g_heap);
         g_heap = 0;

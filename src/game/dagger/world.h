@@ -72,6 +72,17 @@ void world_bounds(const World *world,
 int world_texture_file_count(const World *world);
 int world_texture_file(const World *world, int index);
 
+/*
+ * A dungeon's creatures, one entity each where its block's markers put
+ * it (docs/entities.md); the scene draws them. Their kind is Daggerfall's
+ * mobile id (enemies.h), passive 1 when the file says it attacks only
+ * when attacked; -1 for no such entity. What they do is the game's.
+ */
+struct Entity;
+int world_entity_count(const World *world);
+const struct Entity *world_entity(const World *world, int index);
+int world_entity_kind(const World *world, int index, int *passive);
+
 /* Pointers into this world. Valid until the process exits. */
 void world_as_level(const World *world, Level *level);
 

@@ -8,10 +8,22 @@
  * neditor counts editor markers. They are not entities.
  */
 
-/* Archive 199. record 10 is the new-game start. Not drawn. */
+/*
+ * Archive 199. Not drawn. Record 10 is a block's start (the new-game
+ * start in the hold); 15 a random creature, 16 a fixed one; 8 where a
+ * visitor comes in. The flat's resource bytes after its picture, as
+ * Daggerfall Unity's RdbFlatResource reads them: a creature marker's
+ * gender (fixed) or slot (random) in flags, its type in id's low byte
+ * (fixed), passive when action is 99; a start marker's water level in
+ * sound (8 units each, 0 for none). docs/entities.md.
+ */
 typedef struct Marker {
     float x, y, z;
     df_u16 record;
+    df_u16 flags;
+    /* FactionOrMobileId: magnitude, then the sound byte above it. */
+    df_u16 id;
+    df_u8 action;
 } Marker;
 
 /*

@@ -7,6 +7,7 @@
 #include "game/dagger/forecast.h"
 #include "game/dagger/rmb.h"
 #include "game/dagger/skyfile.h"
+#include "game/dagger/people.h"
 #include "game/dagger/sounds.h"
 #include "game/dagger/swaps.h"
 #include "game/dagger/terrain.h"
@@ -37,8 +38,9 @@
 #define PAL_NAME "ART_PAL.COL"
 /* The ground archive's grass (Daggerfall Unity's tile ids: 0 water, 1 dirt, 2 grass, 3 stone). */
 #define REC_GRASS 2
-/* Where an RMB's 16 x 16 ground tiles start (rmb.c's FLD_GROUND). */
+/* Where an RMB's 16 x 16 ground tiles start (rmb.c's FLD_GROUND), and its 64 x 64 automap. */
 #define RMB_GROUND 1739
+#define RMB_AUTOMAP 2251
 #define FAMILIES 4
 /* The eye above the ground at the start: the walker's. */
 #define START_EYE 68.4f
@@ -87,6 +89,14 @@ typedef struct Chunk {
     MemHeap *heap;
     df_u16 pics[CHUNK_PICS];
     int npics;
+    /*
+     * A settlement's block: its townspeople's clothes, held and read with
+     * its pictures (people_slots), so the first of its chunks to come in
+     * range reads them under the budget, far off. Its location's type.
+     */
+    df_u16 folk[PEOPLE_SLOTS];
+    int nfolk;
+    int town_type;
     /* Its location's block: the location, the block's number in its record, where its corner falls. */
     int has_block;
     const Dungeon *dun;
@@ -99,6 +109,12 @@ typedef struct Chunk {
     int rest;
     /* The block's 16 x 16 ground tiles, for its far picture. */
     df_u8 tiles[256];
+    /*
+     * Where townspeople may walk on the block (docs/entities.md): its
+     * 64 x 64 cells of 64 units, row 0 north, each a weight 0..15 (0 not
+     * walkable). 0 until the block's bytes are read.
+     */
+    df_u8 *nav;
     /* The ARCH3D ids its models use, parsed into the cache one a call; where the steps have got to. */
     df_u32 ids[CHUNK_MESHES];
     int nids;
@@ -381,6 +397,7 @@ static int start_chunk(int cx, int cz, StreamOut *out)
         return 0;
     }
     mem_zero(c, sizeof(Chunk));
+    c->town_type = -1;
     c->heap = heap;
     c->far_slot = -1;
     c->land_slot = -1;
@@ -412,6 +429,7 @@ static int start_chunk(int cx, int cz, StreamOut *out)
                 c->bz = (float)(bz - lz);
                 c->family = climate_family(dun->climate);
                 c->town_y = terrain_y(own.s);
+                c->town_type = worldmap_location_type(px, py);
                 break;
             }
         }
@@ -707,7 +725,65 @@ static df_u8 *block_bytes(Chunk *c, df_u32 *size)
     return bytes;
 }
 
-/* Step: which meshes the block names. */
+/*
+ * A ground tile's walking weight, as Daggerfall Unity's CityNavigation
+ * has it: roads best, then grass, then dirt, stone worst of what can be
+ * walked; water and its edges never. By the tile's record.
+ */
+static int tile_weight(int record)
+{
+    switch (record) {
+    case 0:
+    case 5:
+    case 6:
+    case 20:
+    case 21:
+    case 30:
+    case 31:
+        return 0;
+    case 3:
+        return 4;
+    case 1:
+        return 6;
+    case 2:
+        return 12;
+    case 46:
+    case 47:
+    case 55:
+        return 15;
+    default:
+        return 7;
+    }
+}
+
+/*
+ * The block's walking cells: its automap (64 x 64 at +2251, row 0
+ * north, 0 where nothing stands, a building or a prop elsewhere) and
+ * under each cell its ground tile's weight. In the chunk's heap.
+ */
+static void make_nav(Chunk *c, const df_u8 *bytes, df_u32 size)
+{
+    MemHeap *was;
+    int i;
+
+    if (size < RMB_AUTOMAP + 64u * 64u) {
+        return;
+    }
+    was = mem_heap_use(c->heap);
+    c->nav = (df_u8 *)mem_alloc(64u * 64u);
+    mem_heap_use(was);
+    for (i = 0; c->nav && i < 64 * 64; i++) {
+        int row;
+        int col;
+
+        row = i / 64;
+        col = i % 64;
+        c->nav[i] = bytes[RMB_AUTOMAP + i] != 0
+            ? 0 : (df_u8)tile_weight((int)c->tiles[(row / 4) * 16 + col / 4] & 0x3f);
+    }
+}
+
+/* Step: which meshes the block names, and where its townspeople may walk. */
 static int list_meshes(Chunk *c)
 {
     df_u8 *bytes;
@@ -717,6 +793,7 @@ static int list_meshes(Chunk *c)
     if (!bytes) {
         return 0;
     }
+    make_nav(c, bytes, size);
     c->nids = rmb_model_ids(bytes, size, c->ids, CHUNK_MESHES);
     c->at = 0;
     return 1;
@@ -819,13 +896,17 @@ static int next_tile(Chunk *c)
     return 1;
 }
 
-/* Step, again and again: the next held picture not in RAM is read, one a call. 1 when none is left. */
+/*
+ * Step, again and again: the next part of the next held picture not in
+ * RAM (its pixels, then its chain), one part a call. 1 when none is left.
+ */
 static int next_picture(Chunk *c)
 {
-    while (c->at < c->npics) {
-        if (wres_load((int)c->pics[c->at++])) {
+    while (c->at < c->npics + c->nfolk) {
+        if (wres_load((int)(c->at < c->npics ? c->pics[c->at] : c->folk[c->at - c->npics]))) {
             return 0;
         }
+        c->at++;
     }
     return 1;
 }
@@ -837,6 +918,13 @@ static void hold_flats(Chunk *c)
 
     for (i = 0; i < c->blk->nflat; i++) {
         hold(c, wres_slot((int)c->blk->flat[i].file, (int)c->blk->flat[i].image, WRES_SPRITE));
+    }
+    /* A settlement's people, while the engine lets walkers come (docs/entities.md). */
+    if (people_settle(c->town_type) && entity_population()) {
+        c->nfolk = people_slots(c->dun->climate, c->folk, PEOPLE_SLOTS);
+        for (i = 0; i < c->nfolk; i++) {
+            wres_hold((int)c->folk[i]);
+        }
     }
 }
 
@@ -1303,6 +1391,9 @@ static void drop(void *user, int cx, int cz, void *data)
     for (i = 0; i < c->npics; i++) {
         wres_release((int)c->pics[i]);
     }
+    for (i = 0; i < c->nfolk; i++) {
+        wres_release((int)c->folk[i]);
+    }
     wres_forget(c->far_slot);
     wres_forget(c->land_slot);
     heap = c->heap;
@@ -1320,6 +1411,7 @@ static void shift(void *user, float dx, float dz)
 {
     (void)user;
     light_stream_shift(dx, dz);
+    people_shift(dx, dz);
 }
 
 /* The land's height (a town's level on a town) at world point (wx, wz), its towns eased in. */
@@ -1426,6 +1518,8 @@ int wild_open_at(double wx, double wz, int radius, Level *level, float *x, float
     if (!light_stream_begin(&level->scene)) {
         log_text(LOG_WARN, "wild: the stream's lamps are unlit");
     }
+    /* The townspeople, drawn from the scene (docs/entities.md). */
+    people_begin(&level->scene);
     *x = (float)(wx - (double)cx * (double)STREAM_CHUNK);
     *y = wild_ground(wx, wz) + START_EYE;
     *z = (float)(wz - (double)cz * (double)STREAM_CHUNK);
@@ -1438,6 +1532,7 @@ int wild_open_at(double wx, double wz, int radius, Level *level, float *x, float
 void wild_close(void)
 {
     if (g_open) {
+        people_end();
         light_stream_end();
         stream_close();
         exterior_keep(0);
@@ -1492,6 +1587,8 @@ void wild_fill(Camera *cam)
         stream_update(cam, 50.0f);
         light_stream_service(50.0f);
     }
+    /* A town's people out on its streets before the first frame, not coming one a tick after it. */
+    people_fill(cam);
 }
 
 int wild_location_at(double wx, double wz, int *region, int *index, double *ox, double *oz)
@@ -1533,6 +1630,62 @@ void wild_restart(Camera *cam)
     wild_fill(cam);
     log_print(LOG_INFO, "wild: the meshes passed %u KB (%u KB): read again for what is round the camera",
               (unsigned int)(WRES_MESH_RAM / 1024u), (unsigned int)(had / 1024u));
+}
+
+int wild_town(double wx, double wz, double *x0, double *z0, double *x1, double *z1,
+              int *blocks, int *climate, int *type)
+{
+    TerrainFlat f;
+    const Dungeon *dun;
+    int px;
+    int py;
+
+    if (!g_open || wx < 0.0 || wz < 0.0) {
+        return 0;
+    }
+    px = (int)(wx / (double)(STREAM_CHUNK * WORLDMAP_BLOCKS));
+    py = WORLDMAP_H - 1 - (int)(wz / (double)(STREAM_CHUNK * WORLDMAP_BLOCKS));
+    if (!town_flat(px, py, &f, &dun)) {
+        return 0;
+    }
+    *x0 = f.x0;
+    *z0 = f.z0;
+    *x1 = f.x1;
+    *z1 = f.z1;
+    *blocks = (int)((f.x1 - f.x0) / STREAM_CHUNK) * (int)((f.z1 - f.z0) / STREAM_CHUNK);
+    *climate = dun->climate;
+    *type = worldmap_location_type(px, py);
+    return 1;
+}
+
+int wild_nav(double wx, double wz)
+{
+    double x0, z0, x1, z1;
+    double bx;
+    double bz;
+    const Chunk *c;
+    int blocks;
+    int climate;
+    int type;
+    int col;
+    int row;
+
+    if (!wild_town(wx, wz, &x0, &z0, &x1, &z1, &blocks, &climate, &type)
+        || wx < x0 || wx >= x1 || wz < z0 || wz >= z1) {
+        return 0;
+    }
+    /* The block's corner, and the chunk that holds it (a block's corner is its chunk's). */
+    bx = x0 + (double)((int)((wx - x0) / STREAM_CHUNK) * STREAM_CHUNK);
+    bz = z0 + (double)((int)((wz - z0) / STREAM_CHUNK) * STREAM_CHUNK);
+    c = (const Chunk *)stream_chunk_data((int)(bx / STREAM_CHUNK), (int)(bz / STREAM_CHUNK));
+    if (!c || !c->nav) {
+        return 0;
+    }
+    col = (int)((wx - bx) / 64.0);
+    row = 63 - (int)((wz - bz) / 64.0);
+    col = col < 0 ? 0 : (col > 63 ? 63 : col);
+    row = row < 0 ? 0 : (row > 63 ? 63 : row);
+    return c->nav[row * 64 + col];
 }
 
 int wild_season_turned(void)

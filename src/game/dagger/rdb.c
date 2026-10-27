@@ -443,6 +443,9 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch, ArchEnt *cache, int *n
                         mk->y = -(float)df_ri32(rdb + at + 12);
                         mk->z = (float)df_ri32(rdb + at + 16);
                         mk->record = (df_u16)record;
+                        mk->flags = df_ru16(rdb + res + 2);
+                        mk->id = df_ru16(rdb + res + 4);
+                        mk->action = rdb[res + 10];
                         block->nmarker++;
                     }
                 } else if (block->nflat < block->flat_cap) {
@@ -457,6 +460,7 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch, ArchEnt *cache, int *n
                     fl->tag = 0;
                     fl->sight = 0;
                     fl->thin = 0;
+                    fl->flip = 0;
                     block->nflat++;
                 }
             }

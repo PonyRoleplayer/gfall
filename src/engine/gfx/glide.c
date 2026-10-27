@@ -1448,6 +1448,15 @@ void glide_flat(int on)
     color_textured();
 }
 
+void glide_point_sample(int on)
+{
+    if (!g_opened) {
+        return;
+    }
+    glide.tex_filter(GR_TMU0, on ? GR_TEXTUREFILTER_POINT_SAMPLED : GR_TEXTUREFILTER_BILINEAR,
+                     on ? GR_TEXTUREFILTER_POINT_SAMPLED : GR_TEXTUREFILTER_BILINEAR);
+}
+
 void glide_ui(int on)
 {
     if (!g_opened) {

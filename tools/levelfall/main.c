@@ -54,6 +54,7 @@
 #include "game/dagger/texture.h"
 #include "game/dagger/world.h"
 #include "game/dagger/wild.h"
+#include "game/dagger/people.h"
 #include "game/dagger/wres.h"
 #include "game/dagger/worldmap.h"
 #include "engine/scene/stream.h"
@@ -124,7 +125,7 @@ static HWND g_open;
 /* "Stream World": open the row's map pixel as the streamed world (docs/streaming.md). */
 static HWND g_stream_box;
 /* While the world streams: its frame hook runs before each frame, and the panel says so. */
-static void (*g_frame_hook)(Camera *cam);
+static void (*g_frame_hook)(Camera *cam, float secs);
 static int g_streaming;
 static int g_stream_px = -1;
 static int g_stream_py = -1;
@@ -2002,11 +2003,23 @@ static void draw_overlay(void)
         add_str(place_kind, &n, (int)sizeof(place_kind), " in  ");
         add_num(place_kind, &n, (int)sizeof(place_kind), waiting, 0);
         add_str(place_kind, &n, (int)sizeof(place_kind), " to go");
+        /* The townspeople round the camera (docs/entities.md). */
+        if (people_count() > 0) {
+            add_str(place_kind, &n, (int)sizeof(place_kind), "  ");
+            add_num(place_kind, &n, (int)sizeof(place_kind), people_count(), 0);
+            add_str(place_kind, &n, (int)sizeof(place_kind), " people");
+        }
     } else if (g_dun) {
         add_str(place_kind, &n, (int)sizeof(place_kind),
                 g_inside ? "inside" : (g_dun->outdoor ? "outdoor" : "indoor"));
         add_str(place_kind, &n, (int)sizeof(place_kind), "   r");
         add_num(place_kind, &n, (int)sizeof(place_kind), g_region, 0);
+        /* A dungeon's creatures, where its markers put them (docs/entities.md). */
+        if (world_entity_count(g_world) > 0) {
+            add_str(place_kind, &n, (int)sizeof(place_kind), "  ");
+            add_num(place_kind, &n, (int)sizeof(place_kind), world_entity_count(g_world), 0);
+            add_str(place_kind, &n, (int)sizeof(place_kind), " creatures");
+        }
     }
     n = 0;
     place_clim[0] = 0;
@@ -2897,7 +2910,7 @@ static void run_view(const Level *level, Camera *cam)
         switch_keys(!console_open());
         /* The streamed world loads round the camera before the frame reads the scene. */
         if (g_frame_hook) {
-            g_frame_hook(cam);
+            g_frame_hook(cam, (float)dt / 1000.0f);
         }
         gfx_frame(cam, level);
         frames++;
@@ -3105,6 +3118,7 @@ static void view_row(int index)
                     log_line("cam from levelfall.cfg");
                 }
                 camera_set(&cam, x, y, z, yaw, pitch);
+                gfx_prime(&level, &cam);
                 if (land != LAND_START) {
                     gfx_fade_in(LAND_FADE);
                 }
@@ -3211,7 +3225,7 @@ static int stream_radius_for_far(void)
 }
 
 /* Each frame of the stream: its radius from the far clip, its loading, and where the camera is. */
-static void stream_frame(Camera *cam)
+static void stream_frame(Camera *cam, float secs)
 {
     int px;
     int py;
@@ -3231,7 +3245,7 @@ static void stream_frame(Camera *cam)
             log_line("the meshes passed their cap: the world again round the camera");
             wild_restart(cam);
         }
-        gfx_stream_prime(g_stream_level, cam);
+        gfx_prime(g_stream_level, cam);
         gfx_fade_in(LAND_FADE);
     }
     {
@@ -3242,6 +3256,8 @@ static void stream_frame(Camera *cam)
 
         budget = stream_budget();
         wild_update(cam, budget);
+        /* The townspeople: who comes and goes round the camera, and their steps (docs/entities.md). */
+        people_update(cam, secs);
         /* A step past the budget is a stutter: logged, so the 233's are known by name. */
         stream_worst(&worst, &step);
         lamp = light_stream_worst();
@@ -3309,7 +3325,7 @@ static void stream_frame(Camera *cam)
  * when its way out was used (back to the stream), 0 for Esc or a load
  * that failed (*glide_up 0 if the card was given back).
  */
-static int stream_inside(int trow, int what, const Usable *door, int *glide_up)
+static int stream_inside(int trow, int what, const Usable *door, int *glide_up, int dungeon_row)
 {
     Dungeon dun;
     World *world;
@@ -3321,7 +3337,7 @@ static int stream_inside(int trow, int what, const Usable *door, int *glide_up)
     int record;
     int ok;
 
-    row = what == DOOR_ENTER ? trow : pair_row(trow, 0);
+    row = what == DOOR_ENTER ? trow : (dungeon_row >= 0 ? dungeon_row : pair_row(trow, 0));
     block = what == DOOR_ENTER ? door->tag >> 8 : -1;
     record = door->tag & 0xff;
     if (row < 0 || !mem_temp_begin()) {
@@ -3353,6 +3369,7 @@ static int stream_inside(int trow, int what, const Usable *door, int *glide_up)
 
             land_at(world, what == DOOR_ENTER ? LAND_IN : LAND_BELOW, door, &x, &y, &z, &yaw, &pitch);
             camera_set(&cam, x, y, z, yaw, pitch);
+            gfx_prime(&level, &cam);
             gfx_fade_in(LAND_FADE);
             df_copy(g_view_name, g_rows[row].name, (int)sizeof(g_view_name));
             g_region = g_rows[row].region;
@@ -3403,10 +3420,25 @@ static void view_stream(int index, const double *pose)
     int px;
     int py;
     int glide_up;
+    int first_dungeon;
+    int at_entrance;
 
+    /*
+     * An indoor row (a dungeon) with Stream World ticked: the dungeon
+     * itself first, as if gone down into it from the stream; its way out
+     * then opens the stream on the step outside its entrance. One with no
+     * outside on the map opens on its own, as without the box.
+     */
     row = index;
-    if (row >= 0 && row < g_nrows && !g_rows[row].outdoor) {
+    first_dungeon = -1;
+    at_entrance = 0;
+    if (!pose && row >= 0 && row < g_nrows && !g_rows[row].outdoor) {
+        first_dungeon = row;
         row = pair_row(row, 1);
+        if (row < 0) {
+            view_row(index);
+            return;
+        }
     }
     if (!pose && (row < 0 || row >= g_nrows)) {
         win_fail("Stream World: this place has no outside on the map.");
@@ -3429,6 +3461,29 @@ static void view_stream(int index, const double *pose)
         back_yaw = (float)pose[3] * (DF_TAU / 360.0f);
         px = (int)(back_x / (double)(STREAM_CHUNK * WORLDMAP_BLOCKS));
         py = WORLDMAP_H - 1 - (int)(back_z / (double)(STREAM_CHUNK * WORLDMAP_BLOCKS));
+    }
+    if (first_dungeon >= 0) {
+        Usable none;
+
+        mem_zero(&none, sizeof(none));
+        show_list(0);
+        if (!gfx_startup(win_hwnd())) {
+            log_line(gfx_error());
+            win_fail(gfx_error());
+            show_list(1);
+            input_clear_quit();
+            return;
+        }
+        glide_up = 1;
+        if (!stream_inside(row, DOOR_DUNGEON, &none, &glide_up, first_dungeon)) {
+            if (glide_up) {
+                gfx_shutdown();
+            }
+            show_list(1);
+            input_clear_quit();
+            return;
+        }
+        at_entrance = 1;
     }
     for (;;) {
         LfGo go;
@@ -3492,11 +3547,49 @@ static void view_stream(int index, const double *pose)
                 stream_set_radius(stream_radius_for_far());
                 /* Everything within the radius before the first frame, sharp: a wait, not a stutter. */
                 wild_fill(&cam);
-                gfx_stream_prime(&level, &cam);
-                stream_frame(&cam);
-                if (back) {
+                if (at_entrance) {
+                    /* Up out of the dungeon opened first: on the step outside its nearest way down. */
+                    int u;
+                    int best;
+                    float best_d;
+
+                    best = -1;
+                    best_d = 0.0f;
+                    for (u = 0; u < level.scene.nusables; u++) {
+                        const Usable *e;
+                        float dx;
+                        float dz;
+
+                        e = &level.scene.usables[u];
+                        if (e->reach <= 0.0f || e->kind != USE_PASSAGE || e->what != DOOR_DUNGEON) {
+                            continue;
+                        }
+                        dx = e->cx - cam.x;
+                        dz = e->cz - cam.z;
+                        if (best < 0 || dx * dx + dz * dz < best_d) {
+                            best = u;
+                            best_d = dx * dx + dz * dz;
+                        }
+                    }
+                    if (best >= 0) {
+                        float lx;
+                        float ly;
+                        float lz;
+                        float lyaw;
+
+                        doors_landing(&level.scene.usables[best], LAND_OUT, WALK_EYE, &lx, &ly, &lz, &lyaw);
+                        camera_set(&cam, lx, ly, lz, lyaw, 0.0f);
+                        wild_fill(&cam);
+                    } else {
+                        log_line("stream: no way down near the dungeon's outside; from its middle");
+                    }
+                }
+                gfx_prime(&level, &cam);
+                stream_frame(&cam, 0.0f);
+                if (back || at_entrance) {
                     gfx_fade_in(LAND_FADE);
                 }
+                at_entrance = 0;
                 g_region = row >= 0 ? g_rows[row].region : 0;
                 run_view(&level, &cam);
                 go = g_go;
@@ -3528,6 +3621,8 @@ static void view_stream(int index, const double *pose)
                     if (trow >= 0 && wild_location_at(dwx, dwz, &region, &idx, &ox, &oz)) {
                         door.cx = (float)(dwx - ox);
                         door.cz = (float)(dwz - oz);
+                        /* And in height: a town loaded whole stands at 0, the stream's at its level. */
+                        door.cy -= wild_ground(dwx, dwz);
                         row = trow;
                     } else {
                         trow = -1;
@@ -3546,7 +3641,7 @@ static void view_stream(int index, const double *pose)
         }
         px = (int)(back_x / (double)(STREAM_CHUNK * WORLDMAP_BLOCKS));
         py = WORLDMAP_H - 1 - (int)(back_z / (double)(STREAM_CHUNK * WORLDMAP_BLOCKS));
-        if (!stream_inside(trow, go.what, &door, &glide_up)) {
+        if (!stream_inside(trow, go.what, &door, &glide_up, -1)) {
             break;
         }
     }

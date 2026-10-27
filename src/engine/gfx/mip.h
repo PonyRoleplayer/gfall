@@ -28,6 +28,13 @@
 #define MIP_GLASS 255
 /* The budget never shrinks a picture below this side. */
 #define MIP_MIN_SIDE 8
+/*
+ * Levels each wall gives before any sprite gives one: a blurry wall
+ * reads as distance, a blurry hand-drawn sprite as a fault. Past that
+ * the largest gives first, wall or sprite, so no wall is ruined for a
+ * sprite's sake.
+ */
+#define MIP_WALL_GRACE 2
 
 /*
  * The palette mip_nearest answers for. A different palette empties the
@@ -63,10 +70,12 @@ df_u32 mip_build(const df_u8 *index, int side, int cutout, int drop, int chain,
  * Chooses drop[i] for n pictures so their bytes fit in room. bytes(side,
  * cutout) is what one level-0 upload of that side takes on the card,
  * chain included when the caller uses chains. side[i] < 1 is a picture
- * that is not uploaded. Starting from full size, the picture that
- * currently takes the most bytes loses its top level, until the total
- * fits or every picture is at MIP_MIN_SIDE. Ties go to the lower
- * index. Returns the total bytes chosen.
+ * that is not uploaded. Starting from full size, a wall (cutout 0) that
+ * has lost fewer than MIP_WALL_GRACE levels and takes the most bytes of
+ * those loses its top level; when none is left, the picture that takes
+ * the most bytes, wall or sprite; until the total fits or every picture
+ * is at MIP_MIN_SIDE. Ties go to the lower index. Returns the total
+ * bytes chosen.
  */
 df_u32 mip_budget(const int *side, const df_u8 *cutout, int n, df_u32 room,
                   df_u32 (*bytes)(int side, int cutout), int *drop);

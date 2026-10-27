@@ -135,6 +135,10 @@ void stream_chunk_at(const Camera *cam, int *cx, int *cz);
 void stream_origin(int *cx, int *cz);
 /* A point's world position in units, from a local one: x east, z north. */
 void stream_world(float x, float z, double *wx, double *wz);
+/* And back: a world position in the local frame. */
+void stream_local(double wx, double wz, float *x, float *z);
+/* The source's data (StreamOut.data) of chunk (cx, cz) when it is loaded, else 0. */
+void *stream_chunk_data(int cx, int cz);
 /* The slots: how many, the slot a scene index of each kind is in, the chunk a slot holds (0 if empty). */
 #define STREAM_SLOTS ((2 * (STREAM_RADIUS_MAX + STREAM_KEEP) + 1) * (2 * (STREAM_RADIUS_MAX + STREAM_KEEP) + 1))
 int stream_slot_chunk(int slot, int *cx, int *cz);

@@ -68,6 +68,8 @@ int gfall_main(void *instance)
     music_startup();
     world_start(world, &x, &y, &z, &yaw, &pitch);
     camera_set(&cam, x, y, z, yaw, pitch);
+    /* The hold's song and its creatures' sharp copies before the first frame. */
+    gfx_prime(&level, &cam);
     console_set_camera(&cam);
     input_begin(win_hwnd());
     for (;;) {

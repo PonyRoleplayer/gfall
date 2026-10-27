@@ -5,6 +5,7 @@
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
 #include "engine/gfx/texres.h"
+#include "engine/scene/entity.h"
 
 /*
  * One upload per picture, at load, never during the frame. With mipmap
@@ -20,6 +21,13 @@
  * the last bound one. See docs/glide.md and docs/memory.md.
  */
 #define TEX_SLOTS 512
+/*
+ * A place loaded whole keeps this much of the card back for the pictures
+ * only its entities wear, which come and go by distance as a streamed
+ * world's do (docs/memory.md): about four creatures near at full size.
+ * Less when they need less.
+ */
+#define ENTITY_ROOM (512u * 1024u)
 
 /* glide_upload handles. glide_bind skips a repeat, so there is no cache here. */
 static df_u32 g_handle[TEX_SLOTS];
@@ -53,12 +61,94 @@ static df_u32 card_bytes(int side, int cutout)
 
 int texcache_stream_begin(const Level *level);
 void texcache_stream_end(void);
+static int res_open(const Palette *pal);
+static int chain_set(int slot, const Image *img, int cutout, float density);
+
+/*
+ * The pictures only the scene's entities wear, in g_dyn, with the
+ * texels a world unit each is drawn at: not a flat's, not a face's.
+ * Those go on the card by distance, not all at load: a dungeon's
+ * creatures are ten sheets each, 8.7 MB of them in the hold.
+ */
+static df_u8 g_dyn[TEX_SLOTS];
+static float g_dyn_density[TEX_SLOTS];
+
+static int mark_entity_pictures(const Level *level, int n)
+{
+    const Scene *sc;
+    int count;
+    int i;
+    int k;
+
+    for (i = 0; i < TEX_SLOTS; i++) {
+        g_dyn[i] = 0;
+        g_dyn_density[i] = 0.0f;
+    }
+    sc = &level->scene;
+    if (!sc->entities || sc->nentities < 1) {
+        return 0;
+    }
+    for (i = 0; i < sc->nentities; i++) {
+        const Entity *e;
+        int p;
+
+        e = &sc->entities[i];
+        for (p = 0; p < 2; p++) {
+            const EntityPose *pose;
+
+            pose = p ? &e->idle : &e->walk;
+            for (k = 0; k < ENTITY_VIEWS; k++) {
+                const Image *img;
+                int slot;
+                float d;
+
+                slot = (int)pose->slot[k];
+                if (slot >= n || pose->w[k] < 1) {
+                    continue;
+                }
+                img = level->images[slot];
+                if (!img) {
+                    continue;
+                }
+                g_dyn[slot] = 1;
+                d = (float)img->width / (float)pose->w[k];
+                if (d > g_dyn_density[slot]) {
+                    g_dyn_density[slot] = d;
+                }
+            }
+        }
+    }
+    /* Shared with a flat or a face: that one is drawn unnoted, so it stays with the place's. */
+    for (i = 0; i < sc->nsprites; i++) {
+        if (sc->sprites[i].slot < TEX_SLOTS) {
+            g_dyn[sc->sprites[i].slot] = 0;
+        }
+    }
+    for (i = 0; i < sc->nmodels; i++) {
+        const Mesh *mesh;
+        int t;
+
+        mesh = sc->models[i].mesh;
+        for (t = 0; mesh && t < mesh->ntris; t++) {
+            if (mesh->tris[t].slot < TEX_SLOTS) {
+                g_dyn[mesh->tris[t].slot] = 0;
+            }
+        }
+    }
+    count = 0;
+    for (i = 0; i < n; i++) {
+        count += g_dyn[i];
+    }
+    return count;
+}
 
 int texcache_upload(const Level *level)
 {
     const Palette *pal;
     df_u32 room;
     df_u32 planned;
+    df_u32 reserve;
+    int ndyn;
     int i;
     int n;
 
@@ -107,6 +197,36 @@ int texcache_upload(const Level *level)
         g_cut[i] = (df_u8)(level->cutout && level->cutout[i] ? 1 : 0);
     }
     room = glide_tex_free();
+    /*
+     * The entities' pictures out of the budget, and room kept for them:
+     * as much as they take at full size, one level each, up to
+     * ENTITY_ROOM; never less than every one's smallest copy.
+     */
+    reserve = 0;
+    ndyn = mark_entity_pictures(level, n);
+    if (ndyn > 0) {
+        df_u32 full;
+        df_u32 tiny;
+
+        full = 0;
+        tiny = 0;
+        for (i = 0; i < n; i++) {
+            df_u32 b;
+
+            if (!g_dyn[i] || g_side[i] < 1) {
+                g_dyn[i] = 0;
+                continue;
+            }
+            if (glide_texture_bytes(g_side[i], g_cut[i], 0, &b)) {
+                full += b;
+            }
+            tiny += TEXRES_MIN;
+            g_side[i] = 0;
+        }
+        reserve = full < ENTITY_ROOM ? full : ENTITY_ROOM;
+        reserve = reserve < tiny ? tiny : reserve;
+        room = room > reserve ? room - reserve : 0;
+    }
     planned = mip_budget(g_side, g_cut, n, room, card_bytes, g_drop);
     for (i = 0; i < n; i++) {
         const Image *img;
@@ -141,6 +261,19 @@ int texcache_upload(const Level *level)
         }
     }
     g_n = n;
+    /* The rest of the card: the entities' pictures, by distance. */
+    if (reserve > 0 && res_open(pal)) {
+        int added;
+
+        added = 0;
+        for (i = 0; i < n; i++) {
+            if (g_dyn[i] && chain_set(i, level->images[i], 1, g_dyn_density[i])) {
+                added++;
+            }
+        }
+        log_print(LOG_INFO, "textures: %d entity pictures by distance, %u KB kept for them",
+                  added, (unsigned int)(reserve / 1024u));
+    }
     log_print(LOG_INFO, "textures: %d of %d on the card, %u KB of %u planned, mip chains %s",
               g_nlive, n, (unsigned int)(g_bytes / 1024u), (unsigned int)(planned / 1024u),
               g_chain ? "on" : "off");
@@ -161,13 +294,28 @@ int texcache_reduced(void)
 
 /* ---- A streamed world's pictures ---------------------------------- */
 
+/*
+ * A picture's levels in RAM, from level first down. A cutout keeps them
+ * from half size (first 1): at 16 bits a texel its full level was three
+ * quarters of its chain, 128 KB of a 256 sheet's 171, for a level drawn
+ * only near. That level is made again from the picture (pot, its own
+ * eight bits, kept by its owner while it is set) when it is sent.
+ */
 typedef struct Chain {
     df_u8 *levels;
+    const df_u8 *pot;
     short side;
     df_u8 cutout;
+    df_u8 first;
 } Chain;
 
+/*
+ * g_stream: a streamed world, every picture by distance. g_res: a
+ * residency session is open, the stream's, or a whole place's for its
+ * entities' pictures (g_dyn).
+ */
 static int g_stream;
+static int g_res;
 static int g_stream_chain;
 static Chain g_chains[TEXRES_SLOTS];
 /* The chains' own heap: freed one by one as pictures go. */
@@ -176,25 +324,61 @@ static const df_u8 *g_pr;
 static const df_u8 *g_pg;
 static const df_u8 *g_pb;
 
+/*
+ * Whether a picture goes to the card with its smaller levels. A sprite
+ * does not: it is small on the glass, and the residency already sends
+ * the level its distance needs, so one level is all it uses. A chain is
+ * a third more than its top level, and the card's blocks are powers of
+ * two: a 256 sprite's chain (171 KB) took a 256 KB block, its one level
+ * takes 128. Walls keep their chains: one wall spans near and far.
+ */
+static int card_chain(int cutout)
+{
+    return g_stream_chain && !cutout;
+}
+
 static df_u32 res_bytes(int side, int cutout)
 {
     df_u32 b;
 
-    if (!glide_texture_bytes(side, cutout, g_stream_chain, &b)) {
+    if (!glide_texture_bytes(side, cutout, card_chain(cutout), &b)) {
         return 0x7fffffffu;
     }
     return b;
 }
 
+/* The full level and the stored ones after it, for a cutout's full-size upload: kept for the process. */
+static df_u8 *g_top;
+
 static int res_upload(int slot, int drop, df_u32 addr, df_u32 *handle)
 {
     const Chain *c;
+    df_u32 top;
 
     c = &g_chains[slot];
     if (!c->levels) {
         return 0;
     }
-    return glide_upload_chain(c->levels, c->side, c->cutout, g_stream_chain, drop, addr, handle);
+    if (drop >= c->first) {
+        /* The stored levels are a whole chain of a picture first times halved. */
+        return glide_upload_chain(c->levels, c->side >> c->first, c->cutout, card_chain(c->cutout),
+                                  drop - c->first, addr, handle);
+    }
+    /* The full level, made now from the picture, with the stored ones after it. */
+    if (!g_top) {
+        g_top = (df_u8 *)mem_keep(MIP_MAX_BYTES);
+    }
+    if (!g_top || !c->pot) {
+        return 0;
+    }
+    top = mip_build(c->pot, c->side, c->cutout, 0, 0, g_pr, g_pg, g_pb, g_top);
+    if (!top) {
+        return 0;
+    }
+    if (card_chain(c->cutout)) {
+        mem_copy(g_top + top, c->levels, mip_texels(c->side, 1, 1) * (c->cutout ? 2u : 1u));
+    }
+    return glide_upload_chain(g_top, c->side, c->cutout, card_chain(c->cutout), 0, addr, handle);
 }
 
 static void res_release(df_u32 handle)
@@ -202,22 +386,17 @@ static void res_release(df_u32 handle)
     glide_release(handle);
 }
 
-int texcache_stream_begin(const Level *level)
+/* A residency session over the card from here to its end, under pal. */
+static int res_open(const Palette *pal)
 {
     TexResOps ops;
     df_u32 lo;
     df_u32 hi;
     int i;
 
-    texcache_stream_end();
-    if (!level || !level->palette || !glide_palette(level->palette->r, level->palette->g,
-                                                     level->palette->b)) {
-        g_why = "palette";
-        return 0;
-    }
-    g_pr = level->palette->r;
-    g_pg = level->palette->g;
-    g_pb = level->palette->b;
+    g_pr = pal->r;
+    g_pg = pal->g;
+    g_pb = pal->b;
     g_chain_heap = mem_heap_new();
     if (!g_chain_heap) {
         g_why = "out of memory";
@@ -233,6 +412,25 @@ int texcache_stream_begin(const Level *level)
     ops.upload = res_upload;
     ops.release = res_release;
     texres_begin(lo, hi, &ops);
+    g_res = 1;
+    return 1;
+}
+
+int texcache_stream_begin(const Level *level)
+{
+    df_u32 lo;
+    df_u32 hi;
+
+    texcache_stream_end();
+    if (!level || !level->palette || !glide_palette(level->palette->r, level->palette->g,
+                                                     level->palette->b)) {
+        g_why = "palette";
+        return 0;
+    }
+    if (!res_open(level->palette)) {
+        return 0;
+    }
+    glide_tex_range(&lo, &hi);
     g_stream = 1;
     g_n = 0;
     log_print(LOG_INFO, "textures: streamed, %u KB of the card", (unsigned int)((hi - lo) / 1024u));
@@ -241,13 +439,14 @@ int texcache_stream_begin(const Level *level)
 
 void texcache_stream_end(void)
 {
-    if (!g_stream) {
+    if (!g_res) {
         return;
     }
     texres_end();
     mem_heap_delete(g_chain_heap);
     g_chain_heap = 0;
     g_stream = 0;
+    g_res = 0;
 }
 
 int texcache_streamed(void)
@@ -255,21 +454,37 @@ int texcache_streamed(void)
     return g_stream;
 }
 
+int texcache_resident(void)
+{
+    return g_res;
+}
+
 int texcache_stream_set(int slot, const Image *img, int cutout, float density)
+{
+    if (!g_stream) {
+        return 0;
+    }
+    return chain_set(slot, img, cutout, density);
+}
+
+static int chain_set(int slot, const Image *img, int cutout, float density)
 {
     Chain *c;
     MemHeap *was;
     df_u32 n;
     int side;
+    int first;
 
-    if (!g_stream || slot < 0 || slot >= TEXRES_SLOTS || !img || !img->pot
+    if (!g_res || slot < 0 || slot >= TEXRES_SLOTS || !img || !img->pot
         || img->pot_w != img->pot_h || img->pot_w < 1 || img->pot_w > 256
         || (img->pot_w & (img->pot_w - 1))) {
         return 0;
     }
     texcache_stream_drop(slot);
     side = img->pot_w;
-    n = mip_texels(side, 0, 1) * (cutout ? 2u : 1u);
+    /* A cutout of more than one texel keeps its levels from half size (Chain). */
+    first = cutout && side > 1 ? 1 : 0;
+    n = mip_texels(side, first, 1) * (cutout ? 2u : 1u);
     c = &g_chains[slot];
     was = mem_heap_use(g_chain_heap);
     c->levels = (df_u8 *)mem_alloc(n);
@@ -277,13 +492,15 @@ int texcache_stream_set(int slot, const Image *img, int cutout, float density)
     if (!c->levels) {
         return 0;
     }
-    /* Built once, every level: a sharper copy is then only a download. */
-    if (!mip_build(img->pot, side, cutout, 0, 1, g_pr, g_pg, g_pb, c->levels)) {
+    /* Built once, every level kept: a sharper copy is then only a download. */
+    if (!mip_build(img->pot, side, cutout, first, 1, g_pr, g_pg, g_pb, c->levels)) {
         texcache_stream_drop(slot);
         return 0;
     }
+    c->pot = img->pot;
     c->side = (short)side;
     c->cutout = (df_u8)(cutout ? 1 : 0);
+    c->first = (df_u8)first;
     if (!texres_add(slot, side, cutout, density)) {
         texcache_stream_drop(slot);
         return 0;
@@ -295,7 +512,7 @@ void texcache_stream_drop(int slot)
 {
     Chain *c;
 
-    if (!g_stream || slot < 0 || slot >= TEXRES_SLOTS) {
+    if (!g_res || slot < 0 || slot >= TEXRES_SLOTS) {
         return;
     }
     texres_remove(slot);
@@ -308,26 +525,26 @@ void texcache_stream_drop(int slot)
 
 void texcache_note(int slot, float dist)
 {
-    if (g_stream) {
+    if (g_res) {
         texres_note(slot, dist);
     }
 }
 
 void texcache_stream_service(float focal, df_u32 budget)
 {
-    if (g_stream) {
+    if (g_res) {
         texres_service(focal, budget);
     }
 }
 
 df_u32 texcache_stream_ram(void)
 {
-    return g_stream ? mem_heap_bytes(g_chain_heap) : 0;
+    return g_res ? mem_heap_bytes(g_chain_heap) : 0;
 }
 
 void texcache_bind(int slot)
 {
-    if (g_stream) {
+    if (g_stream || (g_res && slot >= 0 && slot < TEX_SLOTS && g_dyn[slot])) {
         df_u32 h;
 
         if (texres_handle(slot, &h)) {

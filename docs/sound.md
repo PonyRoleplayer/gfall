@@ -99,7 +99,7 @@ The latency of a new sound is the lead: about 150 ms at 13 frames a second.
 ## Each frame: `ambience_frame`
 
 1. A new place (scene, soundscape, heap epoch or emitter count changed): every voice stops, the song is asked again. The count compared is the place's own, not the capped one, or a place past the cap would start again every frame.
-2. **The song.** When the weather's kind or night (the street lamps' share of the hour, over a half) changes, the soundscape names a song. A different name is loaded through the game's `song` loader and played. Indoors the kind is -1.
+2. **The song.** When the weather's kind or night (the street lamps' share of the hour, over a half) changes, the soundscape names a song. A different name is loaded through the game's `song` loader and played. Indoors the kind is -1. A place's first song is read before its first frame: `gfx_prime` runs this step under the hold (`docs/streaming.md`, A sharp start). A change in play is still read in its frame: about 15 ms on the 233, most of it the HMI parse. The events' sort (`song_sort`) is a natural merge, a few passes over the tracks' runs, where merging from runs of one took 14 (9 ms of it); stable, so every one of the 131 songs renders the same words as before.
 3. **Beds.** Loops under everything, outdoors only, each fading at half its volume a second:
    - rain by the weather's rain;
    - wind by its snow, × 0.8;

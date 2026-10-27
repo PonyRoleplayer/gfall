@@ -61,7 +61,7 @@ Shared edges between faces are unchanged: both faces cut a shared edge from the 
 - A cutout carries alpha as a mean down the chain and is opaque where at least half of a texel's area was. The colour bleed (below) happens on the full level, so every level is bled.
 - The card's sizes come from `glide_texture_bytes`: the larger of `grTexCalcMemRequired` and `grTexTextureMemRequired`, plus the 8-byte pad.
 
-`texcache_upload` budgets the level before it sends anything (`mip_budget`). The room is what TMU0 has free once the sky, the light falloff and the font are on it (`texcap` can hold it to a smaller card's, `docs/memory.md`). Starting from full size, the picture that takes the most bytes loses its top level, again and again, until the total fits, never below 8 x 8. Each loss saves three quarters of that picture. Then each picture is uploaded with its chosen `drop`. If a 4 MB TMU's 2 MB edge wastes a gap and one does not fit, that picture alone loses another level. A dropped picture keeps its UVs: Glide maps s, t across 0..256 whatever the largest level is.
+`texcache_upload` budgets the level before it sends anything (`mip_budget`). The room is what TMU0 has free once the sky, the light falloff and the font are on it (`texcap` can hold it to a smaller card's, `docs/memory.md`). Starting from full size, the walls give first: the wall that takes the most bytes of those that have lost fewer than two levels (`MIP_WALL_GRACE`) loses its top level, again and again; once every wall has given two, the picture that takes the most bytes, wall or sprite, until the total fits, never below 8 x 8. Each loss saves three quarters of that picture. A blurry wall reads as distance; a blurry hand-drawn sprite reads as a fault, so the sprites keep their detail longest, but no wall is ruined for them: past the grace it is the largest again. Then each picture is uploaded with its chosen `drop`. If a 4 MB TMU's 2 MB edge wastes a gap and one does not fit, that picture alone loses another level. A dropped picture keeps its UVs: Glide maps s, t across 0..256 whatever the largest level is.
 
 What it does to real places (host estimate, 1856 KB of room; the cities measured before towns took their climate's pictures, which takes Daggerfall from 235 to 216):
 
@@ -74,7 +74,7 @@ What it does to real places (host estimate, 1856 KB of room; the cities measured
 
 Building every chain is load time, never frame time. On the development host it takes 4 ms for the hold and 12 ms for Wayrest; a 233 is perhaps 30 to 60 times slower, so roughly half a second for a city. That has not been measured on the target.
 
-Before the budget the castle and the cities sent full single levels in table order until the card was full, and every picture after that drew with whatever texture was bound last. Now every picture is on the card; the largest ones are softer close up. A cutout costs twice an 8-bit picture of the same side, so large sprites lose a level first.
+Before the budget the castle and the cities sent full single levels in table order until the card was full, and every picture after that drew with whatever texture was bound last. Now every picture is on the card; the largest ones are softer close up. A cutout costs twice an 8-bit picture of the same side, so the largest-first rule alone took the sprites' detail first; the walls' grace (above) turned that round.
 
 `mipmap off` in the console uploads single levels, still budgeted, and `mipmap on` chains again. Either change sends the whole level again on the next frame (`gfx_set_mipmap`, through `gfx_prepare`, which starts the card from empty with `glide_tex_reset`). A chain was tried once before, early on, and the ground came out in bands and the font in the wrong glyphs. The cause was never found; `docs/memory.md` has what is known. If that comes back on hardware, `mipmap off` is the comparison.
 
@@ -90,7 +90,7 @@ Not done, the largest saving left on the CPU's side: a corner of an ARCH3D model
 
 ## Kept as they are
 
-- Bilinear filtering costs the SST-1 nothing over point sampling. Text is point sampled so glyph edges stay hard.
+- Bilinear filtering costs the SST-1 nothing over point sampling. Text is point sampled so glyph edges stay hard, and so are sprites by default (`spritepoint`, `glide_point_sample` around the sprite pass): up close a sprite is magnified three times, and bilinear smeared its hand-drawn texels.
 - The SST-1 has no early depth rejection, so drawing front to back should save little on the card. The occlusion cells are what remove hidden models.
 - `grBufferClear` clears colour and depth every frame. Its cost has not been measured. Skipping it needs a frame where every pixel is drawn, which dungeons with open void do not have.
 - `grSstQueryHardware` comes after `grGlideInit`, as the Glide 2 samples do. LEVELFALL shuts Glide down and starts it again for each place; that works on the boards tried so far, but not every Glide 2 driver promises it.

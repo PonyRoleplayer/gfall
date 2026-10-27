@@ -37,6 +37,8 @@ One block:
 - `u16` bits: letter `(bits >> 11)` over `N W L S B M`, number `bits & 0x3ff`, entrance flag `bits & 0x400`
 - filename is that letter, seven digits, `.RDB`, inside `BLOCKS.BSA` (`S0000999.RDB`)
 
+The dungeon's kind (`Dungeon.dungeon_type`, `DUN_TYPE_*`: crypt 0 … scorpion nest 17, cemetery 18, 255 none) is the byte at `+12` of its `MAPTABLE` row, after the type bits and the latitude: the same row the climate is read from (the outside it lies under), so it costs no second read of `MAPPITEM`. Privateer's Hold is a human stronghold (2). It picks the encounter table its random creature markers draw from (`docs/entities.md`). An outside's is `DUN_TYPE_NONE`.
+
 `dungeon_load_at` fills a stack `Dungeon` (about 2KB) including climate. Do that inside `mem_temp_begin`, because climate reads the whole `MAPPITEM` for the region (region 17 is about 2MB) plus `MAPTABLE` and `CLIMATE.PAK`.
 
 ## Climate and textures
@@ -50,6 +52,8 @@ Climate is the map pixel of the exterior location in the **same region**. `MAPPI
 An RDB flat's point is its centre, an RMB flat's its base: `paint` lifts flats by half their height outdoors only (`docs/sprites.md`).
 
 `rdb_load` keeps an RDB block's lights (object type 2) as `Light` records, and `world.c` shifts and appends them with the block's models and flats, up to 8192 for a place; the hold has 71. RMB blocks have none; for an outdoor place `world.c` makes one per `TEXTURE.210` flat after `paint`, and gives the place its sky (`docs/daylight.md`). The record layout is in `docs/lighting.md`.
+
+`rdb_load` keeps each editor marker (archive 199) as a `Marker`: where it stands, its record, and the bytes of its flat resource after the picture, as Daggerfall Unity's `RdbFlatResource` reads them: `flags` (`u16` at `res + 2`), `id` (FactionOrMobileId, the `u16` at `res + 4`: the magnitude byte, then the sound byte), `action` (`res + 10`). Record 10's sound byte is its block's water level, 8 units a step down (0 none); records 15 and 16 are a random and a fixed creature (`docs/entities.md`).
 
 `world_load` fails when the entrance block has no marker record 10. That marker is the new-game start in `S0000999.RDB` at about (1135, 1559, 496), yaw 0, pitch 0.
 

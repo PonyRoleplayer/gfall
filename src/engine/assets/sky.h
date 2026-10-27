@@ -27,6 +27,13 @@ typedef struct Sky {
     int (*pick)(const struct Sky *sky, float minute, int weather);
     /* Fills pixels (SKY_W * SKY_H) and rgb (768) for a key. 0 on failure. */
     int (*read)(const struct Sky *sky, int key, df_u8 *pixels, df_u8 *rgb);
+    /*
+     * The same a piece a call, part 0 first, so a picture changing as
+     * the hour turns is not 224 KB of the 233's disk in one frame: 1
+     * when more parts are to come, 0 when pixels and rgb are whole, -1
+     * when it failed. 0 (none): the engine reads with read, at once.
+     */
+    int (*read_part)(const struct Sky *sky, int key, int part, df_u8 *pixels, df_u8 *rgb);
     /* The game's own: the fair-weather sky file, the climate's first, the night picture. */
     int index;
     int base;

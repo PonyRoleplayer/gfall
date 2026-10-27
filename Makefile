@@ -58,6 +58,7 @@ GFALL_SRC := \
 	src/engine/scene/collide.c \
 	src/engine/scene/walker.c \
 	src/engine/scene/interact.c \
+	src/engine/scene/entity.c \
 	src/engine/scene/stream.c \
 	src/engine/platform/winmm.c \
 	src/engine/sound/mixer.c \
@@ -93,6 +94,8 @@ GFALL_SRC := \
 	src/game/dagger/swaps.c \
 	src/game/dagger/worldmap.c \
 	src/game/dagger/wild.c \
+	src/game/dagger/people.c \
+	src/game/dagger/enemies.c \
 	src/game/dagger/terrain.c \
 	src/game/dagger/wres.c \
 	src/game/dagger/skyfile.c \
@@ -120,6 +123,7 @@ RENDER_SRC := \
 	src/engine/scene/collide.c \
 	src/engine/scene/walker.c \
 	src/engine/scene/interact.c \
+	src/engine/scene/entity.c \
 	src/engine/scene/stream.c \
 	src/engine/platform/winmm.c \
 	src/engine/sound/mixer.c \
@@ -164,6 +168,7 @@ LEVEL_SRC := \
 	src/engine/scene/collide.c \
 	src/engine/scene/walker.c \
 	src/engine/scene/interact.c \
+	src/engine/scene/entity.c \
 	src/engine/scene/stream.c \
 	src/engine/platform/winmm.c \
 	src/engine/sound/mixer.c \
@@ -198,6 +203,8 @@ LEVEL_SRC := \
 	src/game/dagger/swaps.c \
 	src/game/dagger/worldmap.c \
 	src/game/dagger/wild.c \
+	src/game/dagger/people.c \
+	src/game/dagger/enemies.c \
 	src/game/dagger/terrain.c \
 	src/game/dagger/wres.c \
 	src/game/dagger/skyfile.c \
@@ -222,6 +229,7 @@ HOST_SRC := \
 	src/engine/scene/collide.c \
 	src/engine/scene/walker.c \
 	src/engine/scene/interact.c \
+	src/engine/scene/entity.c \
 	src/engine/scene/stream.c \
 	src/engine/sound/mixer.c \
 	src/engine/sound/audio.c \
@@ -244,6 +252,8 @@ HOST_SRC := \
 	src/game/dagger/swaps.c \
 	src/game/dagger/worldmap.c \
 	src/game/dagger/wild.c \
+	src/game/dagger/people.c \
+	src/game/dagger/enemies.c \
 	src/game/dagger/terrain.c \
 	src/game/dagger/wres.c \
 	src/game/dagger/skyfile.c \

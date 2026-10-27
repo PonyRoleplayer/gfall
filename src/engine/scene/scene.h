@@ -55,6 +55,8 @@ typedef struct Flat {
      * padding. 0 for anything else.
      */
     df_u8 thin;
+    /* 1: drawn mirrored left to right (an entity's view facing the viewer's right). */
+    df_u8 flip;
 } Flat;
 
 /*
@@ -237,6 +239,9 @@ typedef struct Scene {
     int version;
     /* 1 when every sprite is in exactly one span's sfirst..scount (docs/streaming.md). */
     int sprite_spans;
+    /* What walks about on its own: the game's, read to draw (docs/entities.md). 0 for none. */
+    const struct Entity *entities;
+    int nentities;
 } Scene;
 
 void instance_set_rotation(Instance *in, float rx, float ry, float rz);

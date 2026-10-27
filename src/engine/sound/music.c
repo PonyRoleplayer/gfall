@@ -71,12 +71,27 @@ static int before(const SongEvent *a, const SongEvent *b)
     return rank(a->msg) < rank(b->msg);
 }
 
-/* Bottom-up merge sort: stable, so a track's own order holds within a tick. */
+/* The end of the run in order (none of it before the event ahead of it) that starts at lo, at most n. */
+static int run_end(const SongEvent *ev, int lo, int n)
+{
+    int i;
+
+    for (i = lo + 1; i < n && !before(&ev[i], &ev[i - 1]); i++) {
+    }
+    return i;
+}
+
+/*
+ * Natural merge sort: stable, so a track's own order holds within a
+ * tick. Each pass merges neighbouring runs already in order; the
+ * tracks come in order, so a song is a few runs, a few passes, where
+ * merging from runs of one took 14 (9 ms of a song's 15 on the 233,
+ * in the frame the song changed). Stable, so the order is the same.
+ */
 void song_sort(Song *song)
 {
     SongEvent *src;
     SongEvent *dst;
-    int width;
     int n;
 
     n = song ? song->count : 0;
@@ -85,19 +100,21 @@ void song_sort(Song *song)
     }
     src = song->events;
     dst = g_sort_tmp;
-    for (width = 1; width < n; width *= 2) {
-        int lo;
+    for (;;) {
         SongEvent *t;
+        int lo;
+        int runs;
 
-        for (lo = 0; lo < n; lo += 2 * width) {
+        runs = 0;
+        for (lo = 0; lo < n;) {
             int mid;
             int hi;
             int i;
             int j;
             int k;
 
-            mid = lo + width < n ? lo + width : n;
-            hi = lo + 2 * width < n ? lo + 2 * width : n;
+            mid = run_end(src, lo, n);
+            hi = mid < n ? run_end(src, mid, n) : n;
             i = lo;
             j = mid;
             for (k = lo; k < hi; k++) {
@@ -107,10 +124,15 @@ void song_sort(Song *song)
                     dst[k] = src[j++];
                 }
             }
+            runs++;
+            lo = hi;
         }
         t = src;
         src = dst;
         dst = t;
+        if (runs <= 1) {
+            break;
+        }
     }
     if (src != song->events) {
         int i;

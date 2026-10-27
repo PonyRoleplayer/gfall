@@ -24,9 +24,26 @@ typedef struct Dungeon {
      */
     int exterior_id;
     int climate;
+    /*
+     * A dungeon's kind (DUN_TYPE_*, MAPTABLE's byte at +12 for its
+     * location): which creatures its random markers draw from
+     * (docs/entities.md). DUN_TYPE_NONE for an outside.
+     */
+    int dungeon_type;
     /* 0 = RDB tiles of 2048. 1 = RMB tiles of 4096. */
     int outdoor;
 } Dungeon;
+
+/* Daggerfall's dungeon kinds (DFU's DFRegion.DungeonTypes), 0..18; 255 for none. */
+enum {
+    DUN_TYPE_CRYPT, DUN_TYPE_ORC_STRONGHOLD, DUN_TYPE_HUMAN_STRONGHOLD, DUN_TYPE_PRISON,
+    DUN_TYPE_DESECRATED_TEMPLE, DUN_TYPE_MINE, DUN_TYPE_NATURAL_CAVE, DUN_TYPE_COVEN,
+    DUN_TYPE_VAMPIRE_HAUNT, DUN_TYPE_LABORATORY, DUN_TYPE_HARPY_NEST, DUN_TYPE_RUINED_CASTLE,
+    DUN_TYPE_SPIDER_NEST, DUN_TYPE_GIANT_STRONGHOLD, DUN_TYPE_DRAGONS_DEN,
+    DUN_TYPE_BARBARIAN_STRONGHOLD, DUN_TYPE_VOLCANIC_CAVES, DUN_TYPE_SCORPION_NEST,
+    DUN_TYPE_CEMETERY,
+    DUN_TYPE_NONE = 255
+};
 
 /* One place. region is the file number (MAPDITEM.017 is 17).
    index is the record inside that file. outdoor is 0 for MAPDITEM

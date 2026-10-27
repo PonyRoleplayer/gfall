@@ -25,6 +25,7 @@
 #include "engine/gfx/texres.h"
 #include "engine/scene/collide.h"
 #include "engine/scene/scene.h"
+#include "engine/scene/entity.h"
 #include "engine/ui/cmd.h"
 #include "engine/sound/mixer.h"
 #include "engine/sound/music.h"
@@ -1083,6 +1084,110 @@ static df_u32 square_bytes(int side, int cutout)
 }
 
 static df_u8 g_mip_out[MIP_MAX_BYTES];
+static df_u8 g_mip_ref[MIP_MAX_BYTES];
+
+/*
+ * A cutout's full level the plain way, every texel's 3 x 3 gathered,
+ * wrapping: what mip_build's span-limited bleed (only within each row's
+ * opaque span and a texel either side) must write, bit for bit.
+ */
+static void mip_reference(const df_u8 *pic, int side, const df_u8 *pr, const df_u8 *pg,
+                          const df_u8 *pb, df_u8 *out)
+{
+    int m;
+    int x;
+    int y;
+
+    m = side - 1;
+    for (y = 0; y < side; y++) {
+        for (x = 0; x < side; x++) {
+            df_u16 pix;
+            df_u8 c;
+
+            c = pic[y * side + x];
+            if (c) {
+                pix = (df_u16)(0x8000u | ((pr[c] >> 3) << 10) | ((pg[c] >> 3) << 5) | (pb[c] >> 3));
+            } else {
+                int r, g, b, n, dx, dy;
+
+                r = g = b = n = 0;
+                for (dy = -1; dy <= 1; dy++) {
+                    for (dx = -1; dx <= 1; dx++) {
+                        df_u8 k;
+
+                        k = pic[((y + dy) & m) * side + ((x + dx) & m)];
+                        if (k) {
+                            r += pr[k];
+                            g += pg[k];
+                            b += pb[k];
+                            n++;
+                        }
+                    }
+                }
+                pix = n ? (df_u16)((((r / n) >> 3) << 10) | (((g / n) >> 3) << 5) | ((b / n) >> 3)) : 0;
+            }
+            out[(y * side + x) * 2] = (df_u8)(pix & 0xff);
+            out[(y * side + x) * 2 + 1] = (df_u8)(pix >> 8);
+        }
+    }
+}
+
+/*
+ * Sprites made up, of every side, small and wide, in the corner (their
+ * bleed wraps round the edges) and in the middle, with gaps: the full
+ * level alone (the card's sharpen) and the first of a chain are the
+ * reference's.
+ */
+static void check_mip_spans(void)
+{
+    static df_u8 pic[256 * 256];
+    df_u8 pr[256];
+    df_u8 pg[256];
+    df_u8 pb[256];
+    df_u32 seed;
+    int side;
+    int k;
+    int ok;
+
+    seed = 12345u;
+    for (k = 0; k < 256; k++) {
+        pr[k] = (df_u8)(k * 7);
+        pg[k] = (df_u8)(k * 13);
+        pb[k] = (df_u8)(255 - k);
+    }
+    ok = 1;
+    for (side = 1; side <= 256; side <<= 1) {
+        for (k = 0; k < 6; k++) {
+            int x0, y0, w, h, x, y, i;
+
+            for (i = 0; i < side * side; i++) {
+                pic[i] = 0;
+            }
+            seed = seed * 1664525u + 1013904223u;
+            w = 1 + (int)((seed >> 8) % (df_u32)side);
+            h = 1 + (int)((seed >> 16) % (df_u32)side);
+            x0 = (k & 1) ? 0 : (int)((seed >> 4) % (df_u32)side);
+            y0 = (k & 2) ? 0 : (int)((seed >> 12) % (df_u32)side);
+            for (y = 0; y < h; y++) {
+                for (x = 0; x < w; x++) {
+                    seed = seed * 1664525u + 1013904223u;
+                    /* A third clear inside too, as a sprite's outline is. */
+                    pic[((y0 + y) % side) * side + (x0 + x) % side] = (df_u8)((seed >> 24) % 3u ? (seed >> 16) & 255u : 0u);
+                }
+            }
+            mip_reference(pic, side, pr, pg, pb, g_mip_ref);
+            ok = ok && mip_build(pic, side, 1, 0, 0, pr, pg, pb, g_mip_out) == (df_u32)side * (df_u32)side * 2u;
+            for (i = 0; ok && i < side * side * 2; i++) {
+                ok = g_mip_out[i] == g_mip_ref[i];
+            }
+            ok = ok && mip_build(pic, side, 1, 0, 1, pr, pg, pb, g_mip_out) > 0;
+            for (i = 0; ok && i < side * side * 2; i++) {
+                ok = g_mip_out[i] == g_mip_ref[i];
+            }
+        }
+    }
+    check_expect(ok, "a cutout's full level, alone or atop its chain, is not the plain 3 x 3 bleed");
+}
 
 static void check_mip(void)
 {
@@ -1149,6 +1254,25 @@ static void check_mip(void)
     n = mip_budget(side, cut, 3, 65536u + 65536u + 4095u, square_bytes, drop);
     check_expect(n == 16384u + 65536u + 4096u && drop[0] == 1 && drop[1] == 0 && drop[2] == 0,
                  "budget did not drop the first largest picture once");
+    /*
+     * A sprite last: a 256 wall and a 256 sprite (twice its bytes) a
+     * little short of room. The wall gives first, though the sprite is
+     * larger; only past MIP_WALL_GRACE levels does the sprite give one.
+     */
+    side[0] = 256;
+    side[1] = 256;
+    side[2] = 0;
+    cut[0] = 0;
+    cut[1] = 1;
+    n = mip_budget(side, cut, 3, 65536u + 131072u - 1u, square_bytes, drop);
+    check_expect(drop[0] == 1 && drop[1] == 0 && n == 16384u + 131072u,
+                 "the budget took the sprite's level before the wall's");
+    n = mip_budget(side, cut, 3, 4096u + 131072u - 1u, square_bytes, drop);
+    check_expect(drop[0] == MIP_WALL_GRACE && drop[1] == 1 && n == 4096u + 32768u,
+                 "the wall did not give its grace before the sprite gave one level");
+    side[1] = 256;
+    side[2] = 64;
+    cut[1] = 0;
     cut[2] = 1;
     side[1] = 0;
     n = mip_budget(side, cut, 3, 100u, square_bytes, drop);
@@ -2154,6 +2278,186 @@ static void check_texres(void)
     check_expect(texres_drop(0) == 0, "freed blocks did not join back into a 256 KB block");
     texres_remove(0);
     texres_end();
+    /*
+     * A sprite first (docs/streaming.md, The card): a 384 KB card has a
+     * 256 KB block for one sprite's chain or a wall's, not both sharp.
+     * The sprite is served first though the wall is nearer; then a sharp
+     * wall drawn this frame keeps its room from a farther sprite, and
+     * gives it to a nearer one.
+     */
+    texres_begin(4096u, 4096u + 384u * 1024u, &ops);
+    check_expect(texres_add(0, 256, 0, 0.25f) && texres_add(1, 256, 1, 0.25f),
+                 "a wall's or a sprite's small copy did not go on the card");
+    texres_note(0, 10.0f);
+    texres_note(1, 20.0f);
+    texres_service(400.0f, 1024u * 1024u);
+    check_expect(texres_drop(1) == 0 && texres_drop(0) > 0 && texres_drop(0) < 5,
+                 "the nearer wall took the sprite's room, or the wall got nothing");
+    texres_remove(1);
+    texres_note(0, 10.0f);
+    texres_service(400.0f, 1024u * 1024u);
+    check_expect(texres_drop(0) == 0, "alone, the wall did not get its full size");
+    check_expect(texres_add(1, 256, 1, 0.25f), "the sprite's small copy did not come back");
+    /* A nearer wall (the ground under the camera) keeps its room: the sprite settles lower. */
+    texres_note(0, 10.0f);
+    texres_note(1, 500.0f);
+    texres_service(400.0f, 1024u * 1024u);
+    check_expect(texres_drop(0) == 0 && texres_drop(1) > 0 && texres_drop(1) < 5,
+                 "a sprite took the room of a wall nearer than itself");
+    /* A farther wall gives its room to a near sprite. */
+    texres_note(0, 1000.0f);
+    texres_note(1, 10.0f);
+    texres_service(400.0f, 1024u * 1024u);
+    check_expect(texres_drop(1) == 0 && texres_drop(0) > 0,
+                 "a sharp wall farther than a near sprite did not give it its room");
+    texres_remove(0);
+    texres_remove(1);
+    texres_end();
+    /*
+     * A walk's churn: pictures come and go and sharpen at all sizes, in
+     * no order. The small blocks keep to the top of the card, so with
+     * half of it free there is still a whole 128 KB block for a sprite.
+     */
+    {
+        df_u32 seed;
+        df_u32 largest;
+        df_u32 free_bytes;
+        int live[200];
+        int step;
+
+        texres_begin(4096u, 4096u + 1536u * 1024u, &ops);
+        seed = 12345u;
+        for (i = 0; i < 200; i++) {
+            live[i] = 0;
+        }
+        for (step = 0; step < 4000; step++) {
+            int k;
+
+            seed = seed * 1664525u + 1013904223u;
+            k = (int)((seed >> 8) % 200u);
+            if (!live[k]) {
+                live[k] = texres_add(k, 16 << ((seed >> 20) % 4u), (int)((seed >> 24) & 1u), 0.25f);
+            } else if (((seed >> 16) & 7u) == 0) {
+                texres_remove(k);
+                live[k] = 0;
+            } else {
+                texres_note(k, (float)((seed >> 12) % 3000u));
+                texres_service(400.0f, 1024u * 1024u);
+            }
+        }
+        /* Every sharp copy given back, the small copies of 100 or so pictures stay. */
+        for (i = 0; i < 200; i++) {
+            if (live[i] && i % 2) {
+                texres_remove(i);
+                live[i] = 0;
+            }
+        }
+        texres_stats(0, 0, 0, &free_bytes, 0, 0);
+        largest = texres_largest_free();
+        printf("texres: after a walk's churn, %u KB free, the largest block %u KB\n",
+               (unsigned int)(free_bytes / 1024u), (unsigned int)(largest / 1024u));
+        check_expect(free_bytes < 768u * 1024u || largest >= 128u * 1024u,
+                     "half the card free and no 128 KB block whole: the small copies split it all");
+        /* A sprite comes close: a region is freed whole for it, not a copy here and there. */
+        check_expect(texres_add(200, 256, 1, 0.25f), "a sprite's small copy did not go on the card after the churn");
+        texres_note(200, 10.0f);
+        texres_service(400.0f, 1024u * 1024u);
+        check_expect(texres_drop(200) == 0, "after a walk's churn a close sprite could not get its full size");
+        texres_remove(200);
+        for (i = 0; i < 200; i++) {
+            if (live[i]) {
+                texres_remove(i);
+            }
+        }
+        texres_end();
+    }
+    /* Fair: three sprites wanting and a budget for nothing; the wall still gets its copy this frame. */
+    texres_begin(4096u, 4096u + 1024u * 1024u, &ops);
+    for (i = 0; i < 4; i++) {
+        check_expect(texres_add(i, 128, i > 0, 0.25f), "a picture's small copy did not go on the card");
+        texres_note(i, 10.0f);
+    }
+    texres_service(400.0f, 16u);
+    check_expect(texres_drop(0) < 4 && (texres_drop(1) < 4 || texres_drop(2) < 4 || texres_drop(3) < 4),
+                 "with sprites wanting and no budget, the wall or the sprites got no copy this frame");
+    for (i = 0; i < 4; i++) {
+        texres_remove(i);
+    }
+    texres_end();
+}
+
+/*
+ * An entity's view (docs/entities.md): one facing north, seen from each
+ * side, shows the record and mirroring Daggerfall's walking pictures
+ * need; its sprite stands on its feet; idle, it faces the viewer.
+ */
+static void check_entities(void)
+{
+    static const float at[8][2] = {
+        { 0.0f, 100.0f }, { -70.0f, 70.0f }, { -100.0f, 0.0f }, { -70.0f, -70.0f },
+        { 0.0f, -100.0f }, { 70.0f, -70.0f }, { 100.0f, 0.0f }, { 70.0f, 70.0f }
+    };
+    /* From the north (in front), round by the west to the east: front, the left side, back, the right mirrored. */
+    static const int view[8] = { 0, 1, 2, 3, 4, 3, 2, 1 };
+    static const int flip[8] = { 0, 0, 0, 0, 0, 1, 1, 1 };
+    Entity e;
+    Flat fl;
+    int ok;
+    int k;
+
+    mem_zero(&e, sizeof(e));
+    e.yaw = 0.0f;
+    e.moving = 1;
+    e.live = 1;
+    e.y = 10.0f;
+    for (k = 0; k < ENTITY_VIEWS; k++) {
+        e.walk.slot[k] = (df_u16)(100 + k);
+        e.walk.w[k] = 40;
+        e.walk.h[k] = 80;
+        e.idle.slot[k] = 0xffff;
+    }
+    e.idle.slot[0] = 200;
+    e.idle.w[0] = 35;
+    e.idle.h[0] = 78;
+    ok = 1;
+    for (k = 0; k < 8; k++) {
+        int f;
+        int v;
+
+        v = entity_view(&e, at[k][0], at[k][1], &f);
+        ok = ok && v == view[k] && f == flip[k];
+        ok = ok && entity_flat(&e, at[k][0], at[k][1], &fl) && fl.slot == 100 + view[k] && fl.flip == flip[k];
+    }
+    check_expect(ok, "an entity's view does not turn with it");
+    /* Turned to face east, the camera in the east sees its front. */
+    e.yaw = DF_TAU * 0.25f;
+    check_expect(entity_flat(&e, 100.0f, 0.0f, &fl) && fl.slot == 100 && !fl.flip
+                 && fl.y == 10.0f + 40.0f && fl.w == 40.0f,
+                 "an entity turned east is not seen from the front from the east, or not on its feet");
+    e.moving = 0;
+    check_expect(entity_flat(&e, -100.0f, 0.0f, &fl) && fl.slot == 200 && !fl.flip && fl.h == 78.0f,
+                 "an idle entity of one picture does not face the viewer in it");
+    /*
+     * A creature's idle pose turns as its walk does, each view at its own
+     * size; one whose side-on picture faces the viewer's right (the
+     * ghost's record 2) mirrors the other way.
+     */
+    e.yaw = 0.0f;
+    for (k = 0; k < ENTITY_VIEWS; k++) {
+        e.idle.slot[k] = (df_u16)(300 + k);
+        e.idle.w[k] = (df_u16)(30 + k);
+        e.idle.h[k] = 60;
+    }
+    e.idle.right = 1u << 2;
+    ok = entity_flat(&e, -100.0f, 0.0f, &fl) && fl.slot == 302 && fl.flip && fl.w == 32.0f;
+    ok = ok && entity_flat(&e, 100.0f, 0.0f, &fl) && fl.slot == 302 && !fl.flip;
+    ok = ok && entity_flat(&e, -70.0f, 70.0f, &fl) && fl.slot == 301 && !fl.flip;
+    ok = ok && entity_flat(&e, 0.0f, -100.0f, &fl) && fl.slot == 304 && !fl.flip;
+    check_expect(ok, "a standing creature's views do not turn, or a right-facing record is not mirrored the other way");
+    /* With no idle pose it stands in its walking one. */
+    e.idle.slot[0] = 0xffff;
+    check_expect(entity_flat(&e, -100.0f, 0.0f, &fl) && fl.slot == 102 && !fl.flip && fl.h == 80.0f,
+                 "an entity with no idle pose does not stand in its walking pictures");
 }
 
 void check_engine(void)
@@ -2167,6 +2471,7 @@ void check_engine(void)
     check_vfs();
     check_console();
     check_mip();
+    check_mip_spans();
     check_lights();
     check_light_shadow();
     check_daylight();
@@ -2175,5 +2480,6 @@ void check_engine(void)
     check_interact();
     check_prof();
     check_texres();
+    check_entities();
     check_sound();
 }

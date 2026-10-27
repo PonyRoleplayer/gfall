@@ -137,6 +137,8 @@ void glide_dim(int on, int alpha);
  */
 void glide_opacity(int alpha, int texture);
 /* Textured screen quads, point sampled, drawn over the frame. */
+/* Textures point sampled (1) or bilinear (0, the default): sprites drawn crisp. */
+void glide_point_sample(int on);
 void glide_ui(int on);
 /* Untextured iterated colour with the room's depth test left alone. */
 void glide_flat(int on);

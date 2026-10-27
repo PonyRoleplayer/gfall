@@ -46,5 +46,13 @@ void texcache_note(int slot, float dist);
 void texcache_stream_service(float focal, df_u32 budget);
 /* RAM held by the streamed pictures' chains. */
 df_u32 texcache_stream_ram(void);
+/*
+ * 1 while pictures go on the card by distance: a streamed world's, or,
+ * in a place loaded whole, the ones only its entities wear. Those are
+ * kept out of texcache_upload's budget, which leaves them room (up to
+ * 512 KB); the draw notes them as a stream's, and service runs after
+ * the frame (docs/memory.md).
+ */
+int texcache_resident(void);
 
 #endif

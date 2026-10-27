@@ -24,6 +24,19 @@ static int g_ready;
 static int g_on = 1;
 static int g_hr, g_hg, g_hb;
 static int g_zr, g_zg, g_zb;
+/*
+ * A new picture comes in over frames (sky_update), not in one: its
+ * pieces read a part a frame into g_pixels and g_rgb_next (g_part, the
+ * next), then a tile a frame sent (g_tile_at), each drawn under the
+ * palette of the picture it shows (g_tile_new), then the dome and the
+ * horizon's colours. g_next is the key coming, -1 for none. On the 233
+ * the whole change was 224 KB of disk and 256 KB to the card in a frame.
+ */
+static int g_next = -1;
+static int g_part;
+static int g_tile_at;
+static df_u8 g_rgb_next[768];
+static df_u8 g_tile_new[SKY_TILES];
 
 /* The rows the fog colour is the mean of: the last few above the horizon. */
 #define HORIZON_ROWS 6
@@ -40,9 +53,15 @@ int sky_on(void)
 
 void sky_reset(void)
 {
+    int i;
+
     g_ready = 0;
     g_sky = 0;
     g_key = -1;
+    g_next = -1;
+    for (i = 0; i < SKY_TILES; i++) {
+        g_tile_new[i] = 0;
+    }
 }
 
 int sky_ready(void)
@@ -144,6 +163,11 @@ static void make_cap(void)
                                                 c[2] + (zb - c[2]) * t / 256);
         }
     }
+}
+
+const df_u8 *sky_tile_palette(int i)
+{
+    return i >= 0 && i < SKY_TILES && g_tile_new[i] ? g_rgb_next : g_rgb;
 }
 
 const df_u8 *sky_palette(void)
@@ -270,28 +294,69 @@ void sky_change(const Sky *sky)
     g_key = -1;
 }
 
+/* Every tile sent: the new picture's palette is the sky's, and its dome and colours follow. */
+static void finish_change(void)
+{
+    int i;
+
+    for (i = 0; i < 768; i++) {
+        g_rgb[i] = g_rgb_next[i];
+    }
+    for (i = 0; i < SKY_TILES; i++) {
+        g_tile_new[i] = 0;
+    }
+    mean_rows(SKY_H - HORIZON_ROWS, SKY_H, &g_hr, &g_hg, &g_hb);
+    mean_rows(0, 1, &g_zr, &g_zg, &g_zb);
+    /* RGB 565, little-endian as Glide reads it, as df_u16 already is on x86. */
+    make_cap();
+    glide_replace(g_cap, (const df_u8 *)g_cap_px);
+    g_key = g_next;
+    g_next = -1;
+}
+
 void sky_update(float minute, int weather)
 {
     int key;
-    int i;
+    int r;
 
     if (!g_ready || !g_sky) {
         return;
     }
-    key = g_sky->pick(g_sky, minute, weather);
-    if (key == g_key) {
+    if (g_next < 0) {
+        key = g_sky->pick(g_sky, minute, weather);
+        if (key == g_key) {
+            return;
+        }
+        /* A change runs to its end before the next is asked: its tiles are half one picture. */
+        g_next = key;
+        g_part = 0;
+        g_tile_at = -1;
+    }
+    if (g_tile_at < 0) {
+        /* Reading: one piece a frame; a game with no pieces is read at once. */
+        if (g_sky->read_part) {
+            r = g_sky->read_part(g_sky, g_next, g_part++, g_pixels, g_rgb_next);
+        } else {
+            r = g_sky->read(g_sky, g_next, g_pixels, g_rgb_next) ? 0 : -1;
+        }
+        if (r < 0) {
+            /* Marked as had: a picture that fails is not read again every frame. */
+            log_print(LOG_WARN, "sky: picture %d could not be read", g_next);
+            g_key = g_next;
+            g_next = -1;
+            return;
+        }
+        if (r == 0) {
+            g_tile_at = 0;
+        }
         return;
     }
-    /* Mark it first: a picture that fails is not read again every frame. */
-    g_key = key;
-    if (!load_key(key)) {
+    if (g_tile_at < SKY_TILES) {
+        cut_tile(g_tile_at);
+        glide_replace(g_tiles[g_tile_at], g_tile);
+        g_tile_new[g_tile_at] = 1;
+        g_tile_at++;
         return;
     }
-    for (i = 0; i < SKY_TILES; i++) {
-        cut_tile(i);
-        glide_replace(g_tiles[i], g_tile);
-    }
-    /* RGB 565, little-endian as Glide reads it, as df_u16 already is on x86. */
-    make_cap();
-    glide_replace(g_cap, (const df_u8 *)g_cap_px);
+    finish_change();
 }

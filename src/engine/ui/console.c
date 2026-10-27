@@ -18,6 +18,7 @@
 #include "engine/ui/shot.h"
 #include "engine/gfx/camera.h"
 #include "engine/gfx/draw.h"
+#include "engine/scene/entity.h"
 #include "engine/gfx/gfx.h"
 #include "engine/gfx/glide.h"
 #include "engine/gfx/texcache.h"
@@ -1350,6 +1351,11 @@ static void commands(void)
     cmd_var("covers", scene_cover_draw, scene_set_cover_draw, 0, 1,
             "wash the occlusion cells of the last frame green");
     cmd_var("faces", draw_faces, draw_set_faces, 0, 1, "drop ARCH3D faces that point away");
+    cmd_var("population", entity_population, entity_set_population, 0, 1,
+            "walkers come and go on their own (a town's people); population alone flips it");
+    cmd_toggles("population");
+    cmd_var("spritepoint", draw_sprite_point, draw_set_sprite_point, 0, 1,
+            "sprites point sampled, crisp as Daggerfall drew them; 0 bilinear");
     cmd_var("fpu24", draw_fpu_single, draw_set_fpu_single, 0, 1,
             "render passes at the x87's 24-bit precision (faster divides); 0 to compare");
     cmd_var("vsync", glide_vsync, glide_set_vsync, 0, 1,

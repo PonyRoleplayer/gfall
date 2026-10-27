@@ -141,6 +141,9 @@ static void add_flat(Block *block, const df_u8 *p, float sub_yaw, float ox, floa
             mk->y = at.y;
             mk->z = at.z;
             mk->record = (df_u16)(bits & 0x7f);
+            mk->flags = 0;
+            mk->id = 0;
+            mk->action = 0;
         }
         return;
     }
@@ -161,6 +164,7 @@ static void add_flat(Block *block, const df_u8 *p, float sub_yaw, float ox, floa
     fl->tag = tag;
     fl->sight = 0;
     fl->thin = 0;
+    fl->flip = 0;
     block->nflat++;
 }
 

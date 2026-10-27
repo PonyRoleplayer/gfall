@@ -36,6 +36,28 @@ int worldmap_detail(int px, int py, df_u8 *out);
 int worldmap_climate(int px, int py);
 /* 1 and the location's region and MAPPITEM index when one is on the pixel. */
 int worldmap_location(int px, int py, int *region, int *index);
+/*
+ * The type of the location on a pixel, from its MAPTABLE record
+ * (Daggerfall Unity's DFRegion.LocationTypes); -1 for none.
+ */
+enum {
+    WORLDMAP_TOWN_CITY = 0,
+    WORLDMAP_TOWN_HAMLET = 1,
+    WORLDMAP_TOWN_VILLAGE = 2,
+    WORLDMAP_HOME_FARMS = 3,
+    WORLDMAP_DUNGEON_LABYRINTH = 4,
+    WORLDMAP_RELIGION_TEMPLE = 5,
+    WORLDMAP_TAVERN = 6,
+    WORLDMAP_DUNGEON_KEEP = 7,
+    WORLDMAP_HOME_WEALTHY = 8,
+    WORLDMAP_RELIGION_CULT = 9,
+    WORLDMAP_DUNGEON_RUIN = 10,
+    WORLDMAP_HOME_POOR = 11,
+    WORLDMAP_GRAVEYARD = 12,
+    WORLDMAP_COVEN = 13,
+    WORLDMAP_HOME_YOUR_SHIPS = 14
+};
+int worldmap_location_type(int px, int py);
 /* The pixel a location (region, MAPPITEM index) is on. 0 when there is no such. */
 int worldmap_pixel_of(int region, int index, int *px, int *py);
 /* Locations read. */

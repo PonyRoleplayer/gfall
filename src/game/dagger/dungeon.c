@@ -99,7 +99,7 @@ static void read_title(char *dst, const df_u8 *src)
     dst[i] = 0;
 }
 
-static int read_climate(Bsa *maps, int region, int parent, int self_id);
+static int read_climate(Bsa *maps, int region, int parent, int self_id, int *type);
 
 /* Past the door list, or 0 when this is not a location record. */
 static int location_at(const df_u8 *rec, df_u32 size, df_u32 *at_out)
@@ -179,7 +179,7 @@ static int apply_climate(const df_u8 *rec, df_u32 at, Dungeon *out, Bsa *maps, i
     if (df_ru16(rec + at + LOC_HAS_PARENT) != 0) {
         parent = (int)df_ru16(rec + at + LOC_PARENT);
     }
-    out->climate = read_climate(maps, region, parent, out->location_id);
+    out->climate = read_climate(maps, region, parent, out->location_id, &out->dungeon_type);
     if (climate_family(out->climate) < 0) {
         why("climate");
         return 0;
@@ -256,7 +256,7 @@ static int climate_pixel(int x, int y)
  * MAPPITEM. Longitude is bits 8..24 of the first bitfield, latitude
  * bits 8..23 of the next word. A pixel is those values divided by 128.
  */
-static int climate_of_index(Bsa *maps, int region, int index)
+static int climate_of_index(Bsa *maps, int region, int index, int *type)
 {
     const BsaRec *rec;
     df_u8 *table;
@@ -279,6 +279,14 @@ static int climate_of_index(Bsa *maps, int region, int index)
     }
     if ((df_u32)index * TABLE_BYTES + TABLE_BYTES > rec->size) {
         return -1;
+    }
+    /*
+     * Byte +12, after the type bits and the latitude: the kind of the
+     * location's dungeon (DUN_TYPE_*), 255 for none. A dungeon's row is
+     * the outside it lies under, as its climate is.
+     */
+    if (type) {
+        *type = (int)table[(df_u32)index * TABLE_BYTES + 12u];
     }
     bitfield = df_ru32(table + (df_u32)index * TABLE_BYTES + 4u);
     latword = df_ru32(table + (df_u32)index * TABLE_BYTES + 8u);
@@ -347,7 +355,7 @@ static int find_exterior(Bsa *maps, int region, int which)
     return -1;
 }
 
-static int read_climate(Bsa *maps, int region, int parent, int self_id)
+static int read_climate(Bsa *maps, int region, int parent, int self_id, int *type)
 {
     int which;
     int index;
@@ -360,7 +368,7 @@ static int read_climate(Bsa *maps, int region, int parent, int self_id)
     if (index < 0) {
         return -1;
     }
-    return climate_of_index(maps, region, index);
+    return climate_of_index(maps, region, index, type);
 }
 
 int dungeon_load(Dungeon *out)
@@ -381,6 +389,7 @@ int dungeon_load(Dungeon *out)
     out->location_id = 0;
     out->exterior_id = 0;
     out->climate = 0;
+    out->dungeon_type = DUN_TYPE_NONE;
     out->outdoor = 0;
     maps = bsa_open(MAP_NAME);
     if (!maps) {
@@ -597,6 +606,7 @@ int dungeon_load_at(int region, int index, Dungeon *out)
     out->location_id = 0;
     out->exterior_id = 0;
     out->climate = 0;
+    out->dungeon_type = DUN_TYPE_NONE;
     out->outdoor = 0;
     maps = bsa_open(MAP_NAME);
     if (!maps) {
@@ -1057,7 +1067,7 @@ static int ext_one_visit(const df_u8 *rec, df_u32 size, int index, void *user)
     at = 4u + doors * 6u;
     one->out->location_id = (int)df_ru16(rec + at + LOC_ID);
     one->out->exterior_id = one->out->location_id;
-    one->out->climate = climate_of_index(one->maps, one->src.region, index);
+    one->out->climate = climate_of_index(one->maps, one->src.region, index, 0);
     if (climate_family(one->out->climate) < 0) {
         why("climate");
         one->bad = 1;
@@ -1082,6 +1092,7 @@ int exterior_load_at(int region, int index, Dungeon *out)
     out->location_id = 0;
     out->exterior_id = 0;
     out->climate = 0;
+    out->dungeon_type = DUN_TYPE_NONE;
     out->outdoor = 0;
     maps = g_keep ? g_keep_maps : bsa_open(MAP_NAME);
     if (!maps) {

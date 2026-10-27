@@ -56,6 +56,20 @@ int wild_crowded(void);
 void wild_restart(Camera *cam);
 /* The ground's y at world point (wx, wz): the land, or a town's level. Needs the stream open. */
 float wild_ground(double wx, double wz);
+/*
+ * The town whose pixel holds world point (wx, wz): its rectangle in
+ * world units, its blocks, its climate, its type (WORLDMAP_TOWN_CITY
+ * ..., worldmap.h). 0 for none.
+ */
+int wild_town(double wx, double wz, double *x0, double *z0, double *x1, double *z1,
+              int *blocks, int *climate, int *type);
+/*
+ * How good the ground is to walk at world point (wx, wz) of a town, as
+ * its block's chunk has it (docs/entities.md): 0 (not walkable: a
+ * building, a prop, water, outside a town, or a chunk not loaded) to 15
+ * (a road). Cells are 64 units on the town's block grid.
+ */
+int wild_nav(double wx, double wz);
 /* The map pixel under the camera. */
 void wild_here(const Camera *cam, int *px, int *py);
 

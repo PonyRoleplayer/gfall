@@ -51,8 +51,11 @@ void draw_fade_in(float secs);
 /* The render passes at the x87's 24-bit precision: 1 (default), or 0 to compare. */
 void draw_set_fpu_single(int on);
 int draw_fpu_single(void);
-/* See gfx_stream_prime. */
-void draw_stream_prime(const struct Level *level, const Camera *cam);
+/* Sprites point sampled (1, default: crisp, as Daggerfall drew them) or bilinear (0). */
+void draw_set_sprite_point(int on);
+int draw_sprite_point(void);
+/* See gfx_prime. */
+void draw_prime(const struct Level *level, const Camera *cam);
 /*
  * Uploads the light falloff pictures when want is set (the place has
  * lights). Call after glide_tex_reset and before the level's pictures.

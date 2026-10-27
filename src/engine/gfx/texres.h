@@ -59,6 +59,8 @@ void texres_service(float focal, df_u32 budget);
 int texres_handle(int slot, df_u32 *handle);
 /* Slot's level on the card: 0 full size, more halved; -1 when not added. */
 int texres_drop(int slot);
+/* The largest free block: what one picture can still take without anything freed. */
+df_u32 texres_largest_free(void);
 /* Pictures added, sharp copies, bytes in use, bytes free, uploads and evictions so far. */
 void texres_stats(int *added, int *sharp, df_u32 *used, df_u32 *free_bytes,
                   int *uploads, int *evictions);

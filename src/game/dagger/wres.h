@@ -42,11 +42,13 @@ int wres_slot(int file, int record, int use);
 /* Hold slot's picture: its pixels and its card copies are made if they are not. 1 when it is ready. */
 int wres_acquire(int slot);
 /*
- * The same in two halves, so a chunk reads one picture a call (a
- * picture is a file read, a stretch and a mip chain: a frame's budget on
- * the 233): wres_hold counts the chunk in; wres_load reads the pixels
- * if they are not, returning 1 when it did that work, 0 when there was
- * none to do (in RAM already, failed before, or made by the game).
+ * The same in pieces, so a chunk's step is never a whole picture (a
+ * file read, a stretch or a sheet, and a mip chain: past a frame's
+ * budget on the 233): wres_hold counts the chunk in; wres_load does the
+ * next part of reading it, the pixels then the chain and card copy,
+ * returning 1 when it did a part, 0 when there was none left to do (in
+ * RAM already, failed before, or made by the game). Call it until 0;
+ * the picture is not drawn until its last part is done.
  */
 void wres_hold(int slot);
 int wres_load(int slot);

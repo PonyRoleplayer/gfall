@@ -4,6 +4,7 @@
 #include "game/dagger/climate.h"
 #include "game/dagger/doors.h"
 #include "game/dagger/dungeon.h"
+#include "game/dagger/enemies.h"
 #include "game/dagger/rdb.h"
 #include "game/dagger/rmb.h"
 #include "game/dagger/skyfile.h"
@@ -15,6 +16,7 @@
 #include "engine/assets/vfs.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
+#include "engine/scene/entity.h"
 #include "engine/scene/interact.h"
 #include "engine/scene/clock.h"
 
@@ -46,6 +48,23 @@
 /* Editor marker 8 in a house: where a visitor stands on coming in. */
 #define ENTER_RECORD 8
 /* Interiors have no light records: each light flat is one, as outdoors (add_lamps). */
+/* A dungeon's creature markers that place one; the hold has 4. */
+#define MAX_FOES 1024
+/* The player's level the random markers draw for: no player yet. */
+#define FOE_LEVEL 1
+/*
+ * EnemyBasics' frame rates: walking 6 a second, flying 10, standing 4.
+ * A creature with no standing pictures stands in its walking ones.
+ */
+#define FOE_MOVE_RATE 6
+#define FOE_FLY_RATE 10
+#define FOE_IDLE_RATE 4
+/*
+ * DFU's AlignControllerToGround: a ray from 0.2 m above the marker, 3 m
+ * down (8 and 120 units), and the body's feet where it meets a floor.
+ */
+#define FOE_RAY_UP 8.0f
+#define FOE_RAY_LEN 120.0f
 
 static char g_why[96];
 static char g_title[40];
@@ -144,7 +163,25 @@ struct World {
     int nmark;
     int building;
     int faction;
+    /*
+     * A dungeon's creatures: where each marker stands and its kind, as
+     * the blocks are read; then, once their pictures are in the table,
+     * an entity each (docs/entities.md).
+     */
+    struct Foe *foe;
+    int nfoe;
+    Entity *ent;
+    df_i16 *ent_kind;
+    df_u8 *ent_passive;
+    int nent;
 };
+
+typedef struct Foe {
+    float x, y, z;
+    df_i16 kind;
+    df_u8 female;
+    df_u8 passive;
+} Foe;
 
 static int find_slot(const World *world, df_u16 file, df_u16 image)
 {
@@ -383,6 +420,201 @@ static void note_fall(World *world, const Block *block)
     world->fall_y = block->marker[0].y;
     world->fall_z = block->marker[0].z;
     world->have_fall = 1;
+}
+
+static int make_sheet(World *world, int slot, int file, int image);
+
+/*
+ * A dungeon block's creature markers (records 15 and 16), each with the
+ * kind it places: the block's own water level decides a random one's
+ * draw and whether a water dweller has water (enemies.c).
+ */
+static int note_foes(World *world, const Block *block)
+{
+    int water;
+    int i;
+
+    water = enemy_water(block->marker, block->nmarker);
+    for (i = 0; i < block->nmarker; i++) {
+        const Marker *mk;
+        Foe *f;
+        int kind;
+        int female;
+        int passive;
+
+        mk = &block->marker[i];
+        kind = enemy_at(mk, water, &female, &passive);
+        if (kind < 0) {
+            continue;
+        }
+        if (world->nfoe >= MAX_FOES) {
+            log_print(LOG_WARN, "world: more than %d creatures; the rest left out\n", MAX_FOES);
+            return 1;
+        }
+        if (!world->foe) {
+            world->foe = (Foe *)mem_alloc(MAX_FOES * (df_u32)sizeof(Foe));
+            if (!world->foe) {
+                why("out of memory");
+                return 0;
+            }
+        }
+        f = &world->foe[world->nfoe++];
+        f->x = mk->x;
+        f->y = mk->y;
+        f->z = mk->z;
+        f->kind = (df_i16)kind;
+        f->female = (df_u8)female;
+        f->passive = (df_u8)passive;
+    }
+    return 1;
+}
+
+/*
+ * One pose of a creature: records[k] of archive for view k, each a
+ * sprite picture (a sheet of its frames) at its own size. 0 when one
+ * cannot be had (the table full, a record missing): the creature is
+ * left out, the place still opens.
+ */
+static int foe_pose(World *world, int archive, const int *records, int rate, EntityPose *pose)
+{
+    int k;
+
+    mem_zero(pose, sizeof(EntityPose));
+    for (k = 0; k < ENTITY_VIEWS; k++) {
+        const Image *img;
+        int slot;
+        int w;
+        int h;
+
+        if (!place_image(world, archive, records[k], 1, &slot)) {
+            return 0;
+        }
+        make_sheet(world, slot, archive, records[k]);
+        img = world->images[slot];
+        w = flat_extent(img->width, img->xscale);
+        h = flat_extent(img->height, img->yscale);
+        if (w < 1 || h < 1) {
+            return 0;
+        }
+        pose->slot[k] = (df_u16)slot;
+        pose->w[k] = (df_u16)w;
+        pose->h[k] = (df_u16)h;
+    }
+    pose->rate = (df_u8)rate;
+    return 1;
+}
+
+/* The highest floor within FOE_RAY_LEN under (x, y + FOE_RAY_UP, z); 0 when none. */
+static int foe_floor(const World *world, float x, float y, float z, float *floor_y)
+{
+    float o[3];
+    float d[3];
+    float best;
+    int i;
+
+    o[0] = x;
+    o[1] = y + FOE_RAY_UP;
+    o[2] = z;
+    d[0] = 0.0f;
+    d[1] = -1.0f;
+    d[2] = 0.0f;
+    best = FOE_RAY_LEN;
+    for (i = 0; i < world->ninst; i++) {
+        const Bound *b;
+        float t;
+
+        b = &world->bounds[i];
+        if (x < b->cx - b->ex || x > b->cx + b->ex || z < b->cz - b->ez || z > b->cz + b->ez
+            || o[1] < b->cy - b->ey || o[1] - best > b->cy + b->ey) {
+            continue;
+        }
+        if (instance_ray(&world->inst[i], o, d, best, &t) && t < best) {
+            best = t;
+        }
+    }
+    if (best >= FOE_RAY_LEN) {
+        return 0;
+    }
+    *floor_y = o[1] - best;
+    return 1;
+}
+
+/*
+ * The creatures as entities, now the place's pictures are chosen: each
+ * kind's walking records 0..4 and, if it has them, its standing 15..19,
+ * with Daggerfall Unity's exceptions (MobileUnit's animation sets): a
+ * woman of 483 (a thief, a bard, a burglar, an acrobat) stands turned a
+ * little in record 11, as her 16 is broken; a rat's standing 16 to 18
+ * and a ghost's or wraith's side-on 2 face the viewer's right. A flyer
+ * or a ghost hangs where its marker is (the marker its middle); the
+ * rest stand on the floor under it. Each faces one of eight ways, and
+ * starts its frames, by where it stands: the same every load.
+ */
+static int add_foes(World *world)
+{
+    static const int walk[ENTITY_VIEWS] = { 0, 1, 2, 3, 4 };
+    static const int idle[ENTITY_VIEWS] = { 15, 16, 17, 18, 19 };
+    static const int idle_483[ENTITY_VIEWS] = { 15, 11, 17, 18, 19 };
+    int i;
+
+    if (world->nfoe < 1) {
+        return 1;
+    }
+    world->ent = (Entity *)mem_alloc((df_u32)world->nfoe * (df_u32)sizeof(Entity));
+    world->ent_kind = (df_i16 *)mem_alloc((df_u32)world->nfoe * (df_u32)sizeof(df_i16));
+    world->ent_passive = (df_u8 *)mem_alloc((df_u32)world->nfoe);
+    if (!world->ent || !world->ent_kind || !world->ent_passive) {
+        why("out of memory");
+        return 0;
+    }
+    for (i = 0; i < world->nfoe; i++) {
+        const Foe *f;
+        Entity *e;
+        int archive;
+        int kind;
+        int floats;
+        unsigned int hash;
+        float ground;
+
+        f = &world->foe[i];
+        kind = (int)f->kind;
+        archive = enemy_archive(kind, f->female);
+        e = &world->ent[world->nent];
+        mem_zero(e, sizeof(Entity));
+        if (!foe_pose(world, archive, walk, enemy_flies(kind) ? FOE_FLY_RATE : FOE_MOVE_RATE, &e->walk)) {
+            continue;
+        }
+        if (kind == ENEMY_GHOST || kind == ENEMY_WRAITH) {
+            e->walk.right = 1u << 2;
+        }
+        e->idle.slot[0] = 0xffff;
+        if (enemy_has_idle(kind)) {
+            if (!foe_pose(world, archive, f->female && archive == 483 ? idle_483 : idle,
+                          FOE_IDLE_RATE, &e->idle)) {
+                continue;
+            }
+            if (kind == ENEMY_RAT) {
+                e->idle.right = (1u << 1) | (1u << 2) | (1u << 3);
+            }
+        }
+        floats = enemy_flies(kind) || enemy_spectral(kind);
+        e->x = f->x;
+        e->z = f->z;
+        if (!floats && foe_floor(world, f->x, f->y, f->z, &ground)) {
+            e->y = ground;
+        } else {
+            e->y = f->y - (float)entity_pose(e)->h[0] * 0.5f;
+        }
+        hash = (unsigned int)df_iround(f->x) * 7u + (unsigned int)df_iround(f->z) * 13u;
+        e->yaw = (float)(int)((hash >> 3) & 7u) * (DF_TAU / 8.0f);
+        e->phase = (df_u8)(hash & 255u);
+        e->moving = 0;
+        e->live = 1;
+        world->ent_kind[world->nent] = (df_i16)kind;
+        world->ent_passive[world->nent] = f->passive;
+        world->nent++;
+    }
+    return 1;
 }
 
 static void measure(World *world)
@@ -999,6 +1231,10 @@ static World *assemble(const Dungeon *hold, int require_start, int inside_block,
         return 0;
     }
     ncache = 0;
+    if (world->place == PLACE_DUNGEON) {
+        /* Classic's draws for the random markers, before any block is read. */
+        enemy_dungeon(hold->location_id, hold->dungeon_type, FOE_LEVEL);
+    }
     for (b = 0; b < hold->nblocks; b++) {
         const BsaRec *rec;
         df_u8 *rdb_bytes;
@@ -1046,6 +1282,11 @@ static World *assemble(const Dungeon *hold, int require_start, int inside_block,
             world->mark = block->marker;
             world->nmark = block->nmarker;
         }
+        if (world->place == PLACE_DUNGEON && !note_foes(world, block)) {
+            bsa_close(blocks);
+            bsa_close(arch);
+            return 0;
+        }
         if (hold->block[b].start) {
             note_start(world, block);
             if (!world->have_start) {
@@ -1085,6 +1326,9 @@ static World *assemble(const Dungeon *hold, int require_start, int inside_block,
         return 0;
     }
     if (!paint(world)) {
+        return 0;
+    }
+    if (!add_foes(world)) {
         return 0;
     }
     measure(world);
@@ -1305,6 +1549,32 @@ void world_as_level(const World *world, Level *level)
     level->scene.movers = world->mover;
     level->scene.nmovers = world->nmover;
     level->sound = &world->scape;
+    level->scene.entities = world->nent > 0 ? world->ent : 0;
+    level->scene.nentities = world->nent;
+}
+
+int world_entity_count(const World *world)
+{
+    return world ? world->nent : 0;
+}
+
+const Entity *world_entity(const World *world, int index)
+{
+    if (!world || index < 0 || index >= world->nent) {
+        return 0;
+    }
+    return &world->ent[index];
+}
+
+int world_entity_kind(const World *world, int index, int *passive)
+{
+    if (!world || index < 0 || index >= world->nent) {
+        return -1;
+    }
+    if (passive) {
+        *passive = world->ent_passive[index];
+    }
+    return (int)world->ent_kind[index];
 }
 
 int world_season(const World *world)

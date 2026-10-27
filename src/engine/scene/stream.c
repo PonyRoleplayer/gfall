@@ -77,6 +77,7 @@ static void empty_slot(int s)
         g_sprites[i].glow = 0;
         g_sprites[i].sight = 0;
         g_sprites[i].thin = 0;
+        g_sprites[i].flip = 0;
         g_sprites[i].slot = 0xffff;
     }
     for (i = s * g_cap.lights; i < (s + 1) * g_cap.lights; i++) {
@@ -253,6 +254,24 @@ static int missing_within(int rings)
 int stream_missing(int rings)
 {
     return g_open ? missing_within(rings < g_radius ? rings : g_radius) : 0;
+}
+
+void *stream_chunk_data(int cx, int cz)
+{
+    int s;
+
+    for (s = 0; g_open && s < SLOTS; s++) {
+        if (g_slot[s].used && g_slot[s].done && g_slot[s].cx == cx && g_slot[s].cz == cz) {
+            return g_slot[s].data;
+        }
+    }
+    return 0;
+}
+
+void stream_local(double wx, double wz, float *x, float *z)
+{
+    *x = (float)(wx - (double)g_ox * (double)STREAM_CHUNK);
+    *z = (float)(wz - (double)g_oz * (double)STREAM_CHUNK);
 }
 
 void stream_worst(float *ms, int *step)

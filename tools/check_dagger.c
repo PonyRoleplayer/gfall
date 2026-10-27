@@ -26,6 +26,9 @@
 #include "game/dagger/doors.h"
 #include "game/dagger/worldmap.h"
 #include "game/dagger/wild.h"
+#include "game/dagger/people.h"
+#include "engine/scene/entity.h"
+#include "game/dagger/enemies.h"
 #include "game/dagger/terrain.h"
 #include "game/dagger/wres.h"
 #include "engine/scene/stream.h"
@@ -137,6 +140,148 @@ static void check_fly(void)
     in.look_dx = 100;
     player_tick(&cam, &in);
     check_expect(cam.yaw > 0.2f, "mouse right did not increase yaw");
+}
+
+/*
+ * A creature marker's rules (enemies.c), on markers made up: a fixed
+ * one's kind and gender, the invalid kind, a fish out of water and in
+ * it, a random one above and below the surface, and the hold's draws.
+ */
+static void check_enemy_rules(void)
+{
+    Marker mk;
+    int female;
+    int passive;
+    int kind;
+    int i;
+    int low;
+
+    mem_zero(&mk, sizeof(mk));
+    mk.record = ENEMY_FIXED_MARKER;
+    mk.y = -500.0f;
+    /* A mage, garbage in the high byte, the file saying a woman, passive. */
+    mk.id = 0x5a00u | 128u;
+    mk.flags = 1;
+    mk.action = 99;
+    kind = enemy_at(&mk, ENEMY_DRY, &female, &passive);
+    check_expect(kind == 128 && female && passive && enemy_archive(kind, female) == 485,
+                 "a fixed marker's mage, a woman, passive, is not read so");
+    mk.id = 99;
+    check_expect(enemy_at(&mk, ENEMY_DRY, &female, &passive) == -1, "a fixed marker of kind 99 places one");
+    mk.id = 39;
+    check_expect(enemy_at(&mk, ENEMY_DRY, &female, &passive) == -1, "a horse, which has no pictures, is placed");
+    /* A slaughterfish: none in a dry block, nor 30 above the water; one at the surface. */
+    mk.id = ENEMY_SLAUGHTERFISH;
+    mk.flags = 0;
+    mk.action = 0;
+    kind = enemy_at(&mk, ENEMY_DRY, &female, &passive);
+    check_expect(kind == -1, "a slaughterfish is placed in a dry block");
+    check_expect(enemy_at(&mk, 530, &female, &passive) == -1, "a slaughterfish is placed 30 above the water");
+    check_expect(enemy_at(&mk, 500, &female, &passive) == ENEMY_SLAUGHTERFISH,
+                 "a slaughterfish at the water's surface is not placed");
+    /*
+     * Random markers in a crypt, a level-1 player: a dry one draws from
+     * the crypt's first six, one under the water from the underwater
+     * table's first six.
+     */
+    enemy_dungeon(1234, DUN_TYPE_CRYPT, 1);
+    mk.record = ENEMY_RANDOM_MARKER;
+    low = 1;
+    for (i = 1; i < 256; i++) {
+        int dry;
+        int wet;
+
+        mk.flags = (df_u16)i;
+        dry = enemy_at(&mk, ENEMY_DRY, &female, &passive);
+        wet = enemy_at(&mk, 400, &female, &passive);
+        low = low && (dry == 0 || dry == 15 || dry == 3)
+            && (wet == ENEMY_SLAUGHTERFISH || wet == 15 || wet == ENEMY_DREUGH);
+    }
+    check_expect(low, "a level-1 crypt's random markers draw past the tables' first six");
+    check_expect(enemy_has_idle(ENEMY_RAT) && !enemy_has_idle(3) && enemy_flies(3)
+                 && enemy_spectral(ENEMY_GHOST) && !enemy_flies(ENEMY_GHOST)
+                 && enemy_archive(146, 1) == 399 && enemy_archive(40, 0) == 295,
+                 "the kinds' table is not EnemyBasics'");
+}
+
+/*
+ * The hold's creatures (a human stronghold): 42 where its markers are,
+ * each with its five walking views, standing ones when its kind has
+ * them, standing on a floor (a flyer where its marker is), and drawn.
+ */
+static void check_hold_creatures(const World *world, const Dungeon *hold)
+{
+    int count[ENEMY_KINDS];
+    int i;
+    int ok_views;
+    int ok_floor;
+    int floats;
+    int drawn;
+
+    check_expect(hold->dungeon_type == DUN_TYPE_HUMAN_STRONGHOLD,
+                 "the hold is not a human stronghold in MAPTABLE");
+    for (i = 0; i < ENEMY_KINDS; i++) {
+        count[i] = 0;
+    }
+    ok_views = 1;
+    ok_floor = 1;
+    floats = 0;
+    drawn = 0;
+    for (i = 0; i < world_entity_count(world); i++) {
+        const Entity *e;
+        Flat fl;
+        int kind;
+        int passive;
+        int k;
+
+        e = world_entity(world, i);
+        kind = world_entity_kind(world, i, &passive);
+        if (kind < 0 || kind >= ENEMY_KINDS) {
+            ok_views = 0;
+            continue;
+        }
+        count[kind]++;
+        for (k = 0; k < ENTITY_VIEWS; k++) {
+            ok_views = ok_views && e->walk.slot[k] != 0xffff && world_image_cutout(world, e->walk.slot[k])
+                && e->walk.w[k] > 0 && e->walk.h[k] > 0;
+            ok_views = ok_views && (enemy_has_idle(kind) ? e->idle.slot[k] != 0xffff : e->idle.slot[0] == 0xffff);
+        }
+        ok_views = ok_views && e->live && !e->moving;
+        if (enemy_flies(kind) || enemy_spectral(kind)) {
+            floats++;
+        } else {
+            /* A floor just under its feet. */
+            float o[3];
+            float d[3];
+            float t;
+            int m;
+            int under;
+
+            o[0] = e->x;
+            o[1] = e->y + 4.0f;
+            o[2] = e->z;
+            d[0] = 0.0f;
+            d[1] = -1.0f;
+            d[2] = 0.0f;
+            under = 0;
+            for (m = 0; m < world_model_count(world) && !under; m++) {
+                under = instance_ray(world_instance(world, m), o, d, 8.0f, &t);
+            }
+            ok_floor = ok_floor && under;
+        }
+        drawn += entity_flat(e, e->x + 200.0f, e->z, &fl) && fl.y > e->y;
+    }
+    printf("hold creatures: %d (rats %d, imps %d, bats %d, bears %d, orcs %d, skeletons %d, "
+           "rogues %d, thieves %d, archers %d), %d flying, %d drawn\n",
+           world_entity_count(world), count[0], count[1], count[3], count[4], count[7], count[15],
+           count[136], count[138], count[141], floats, drawn);
+    check_expect(world_entity_count(world) == 42, "the hold does not have its 42 creatures");
+    /* The draws are seeded by the location: the same every load. */
+    check_expect(count[0] == 14 && count[3] == 6 && count[141] == 6 && floats == 9,
+                 "the hold's creatures are not its draws (14 rats, 6 bats, 6 archers, 9 flying)");
+    check_expect(ok_views, "a creature lacks a view, or its standing pictures are not its kind's");
+    check_expect(ok_floor, "a creature that walks does not stand on a floor");
+    check_expect(drawn == world_entity_count(world), "a creature is not drawn on its feet");
 }
 
 static void check_view(const World *world)
@@ -1185,6 +1330,8 @@ static void settle(Camera *cam)
 
     for (k = 0; k < 400; k++) {
         wild_update(cam, 50.0f);
+        /* As LEVELFALL's frame: the people come and go, and let their clothes go out of town. */
+        people_update(cam, 0.05f);
         stream_stats(0, &waiting, &filling, 0);
         if (!waiting && !filling && !light_stream_pending()) {
             return;
@@ -1315,6 +1462,24 @@ static void check_wres(const Palette *pal)
     check_expect(!wl.images[d] || e == d, "a forgotten slot was not given back");
     check_expect(e == d, "the next made picture did not reuse the forgotten slot");
     wres_forget(e);
+    /*
+     * In a stream (a cap on the files): a picture is read in parts, its
+     * file a piece a call (an 80 KB TEXTURE.386: three), then its pixels,
+     * then its chain; it is not drawn until the last.
+     */
+    texture_cache_clear();
+    texture_cache_limit(4u * 1024u * 1024u);
+    a = wres_slot(386, 1, WRES_SPRITE);
+    wres_hold(a);
+    for (d = 0; d < 32 && wres_load(a); d++) {
+        if (d == 0) {
+            check_expect(!wres_image(a) && !wl.images[a], "a picture is drawn before it is read whole");
+        }
+    }
+    check_expect(d >= 5 && wres_image(a) && wl.images[a] == wres_image(a) && texture_cache_bytes() > 65536u,
+                 "a picture was not read in parts: its file in pieces, its pixels, its chain");
+    texture_cache_limit(0);
+    texture_cache_clear();
     wres_end();
 }
 
@@ -1337,6 +1502,13 @@ static void check_stream(void)
 
     check_expect(worldmap_open(), "the world map did not read");
     check_expect(worldmap_locations() == 15251, "the world map does not have 15251 locations");
+    /* Location types from MAPTABLE: Daggerfall a city; the hold's outside (109, 158) no settlement. */
+    printf("worldmap: Daggerfall type %d, Privateer's Hold's outside type %d\n",
+           worldmap_location_type(207, 213), worldmap_location_type(109, 158));
+    check_expect(worldmap_location_type(207, 213) == WORLDMAP_TOWN_CITY
+                 && worldmap_location_type(109, 158) > WORLDMAP_TOWN_VILLAGE
+                 && worldmap_location_type(0, 0) == -1,
+                 "Daggerfall is not a city, or the hold's outside is a settlement, or the sea has a location");
     check_expect(worldmap_location(207, 213, &region, &index) && region == 17
                  && worldmap_climate(207, 213) == CLIMATE_WOODLANDS && worldmap_height(207, 213) == 20,
                  "pixel 207 213 is not Daggerfall's, in the woodlands, at height 20");
@@ -1344,6 +1516,8 @@ static void check_stream(void)
                  "Daggerfall's location does not lead back to its pixel");
     check_expect(worldmap_climate(0, 0) == CLIMATE_OCEAN && worldmap_height(0, 0) <= 1,
                  "the map's corner is not sea");
+    /* A new place, as LEVELFALL starts one: the files the places before read are let go. */
+    texture_cache_clear();
     mem_temp_begin();
     check_expect(wild_open(207, 213, 2, &level, &x, &y, &z), "the wilderness stream did not open");
     camera_set(&cam, x, y, z, 0.0f, 0.0f);
@@ -1375,6 +1549,113 @@ static void check_stream(void)
                      && collide_floor(cam.x, cam.z, g + 200.0f, g - 200.0f, &fy)
                      && fy > g - 1.0f && fy < g + 1.0f,
                      "collision found no floor under the camera in the stream");
+    }
+    /*
+     * Daggerfall's streets at noon (docs/entities.md): its people come
+     * round the camera, on walking cells, at the town's level, in their
+     * pictures, and walk.
+     */
+    {
+        const Scene *sc;
+        float before[PEOPLE_MAX][2];
+        float was_minute;
+        int on_cells;
+        int moved;
+        int drawn;
+        int there;
+        int k;
+
+        sc = &level.scene;
+        was_minute = clock_minute();
+        clock_set_minute(12.0f * 60.0f);
+        /*
+         * Landed (wild_fill ends with it): the town's whole population out
+         * at once, in clothes its block chunks already read, before any
+         * frame; not one a tick, their pictures one a frame, after it shows.
+         */
+        people_fill(&cam);
+        {
+            int ahead;
+
+            /* Out where the camera looks too, as if walking there all along: nothing was seen yet. */
+            ahead = 0;
+            for (k = 0; k < sc->nentities; k++) {
+                const Entity *e;
+                float dx;
+                float dz;
+
+                e = &sc->entities[k];
+                dx = e->x - cam.x;
+                dz = e->z - cam.z;
+                ahead += e->live && dx * dx + dz * dz < PEOPLE_POP * PEOPLE_POP
+                    && dx * df_sin(cam.yaw) + dz * df_cos(cam.yaw) > 0.0f;
+            }
+            printf("stream: landed at noon: %d people, %d of them ahead within sight\n", people_count(), ahead);
+            check_expect(people_count() == PEOPLE_MAX && people_pictures() == PEOPLE_SLOTS && ahead > 10,
+                         "landing at noon, Daggerfall's 96 people are not out, ahead too, before the first frame");
+        }
+        for (k = 0; k < 600; k++) {
+            people_update(&cam, 0.05f);
+        }
+        on_cells = 0;
+        drawn = 0;
+        there = people_count();
+        for (k = 0; k < sc->nentities; k++) {
+            const Entity *e;
+            double ex;
+            double ez;
+            Flat fl;
+
+            e = &sc->entities[k];
+            before[k][0] = e->x;
+            before[k][1] = e->z;
+            if (!e->live) {
+                continue;
+            }
+            stream_world(e->x, e->z, &ex, &ez);
+            on_cells += wild_nav(ex, ez) > 0 && e->y == wild_ground(ex, ez);
+            drawn += entity_flat(e, cam.x + 300.0f, cam.z, &fl) && fl.w > 20.0f && fl.h > 60.0f;
+        }
+        for (k = 0; k < 100; k++) {
+            people_update(&cam, 0.05f);
+        }
+        moved = 0;
+        for (k = 0; k < sc->nentities; k++) {
+            moved += sc->entities[k].live && (sc->entities[k].x != before[k][0] || sc->entities[k].z != before[k][1]);
+        }
+        printf("stream: Daggerfall at noon: %d people (%d pictures read), %d on walking cells at the town's level, "
+               "%d drawn, %d walked in 5 s\n",
+               there, people_pictures(), on_cells, drawn, moved);
+        check_expect(sc->entities && there > 40 && on_cells == there && drawn == there && moved > there / 2,
+                     "Daggerfall's streets have no people walking them at noon");
+        /* The engine says no: they go (out of sight), and none come, at noon. */
+        entity_set_population(0);
+        for (k = 0; k < 4; k++) {
+            Camera look;
+
+            camera_set(&look, cam.x, cam.y, cam.z, (float)k * (DF_TAU / 4.0f), 0.0f);
+            people_update(&look, 0.05f);
+        }
+        for (k = 0; k < 40; k++) {
+            people_update(&cam, 0.05f);
+        }
+        check_expect(people_count() == 0, "with population off the people stayed, or came again");
+        entity_set_population(1);
+        for (k = 0; k < 400; k++) {
+            people_update(&cam, 0.05f);
+        }
+        check_expect(people_count() > 40, "with population on again the people did not come back");
+        /* At night they go (out of sight), and none come. */
+        clock_set_minute(23.0f * 60.0f);
+        for (k = 0; k < 4; k++) {
+            Camera look;
+
+            /* Turned round, so everyone is behind the camera at least once. */
+            camera_set(&look, cam.x, cam.y, cam.z, (float)k * (DF_TAU / 4.0f), 0.0f);
+            people_update(&look, 0.05f);
+        }
+        check_expect(people_count() == 0, "the people stayed in the streets at night");
+        clock_set_minute(was_minute);
     }
     /* Beside one of the stream's sounds, it is heard, from its chunk's span among ten thousand slots. */
     {
@@ -1920,7 +2201,42 @@ static void check_skies(void)
     check_expect(sky.read(&sky, 18 * 128 + 64, morning, rgb) && morning[219 * SKY_W] == morning[218 * SKY_W]
                  && morning[10 * SKY_W + 5] == morning[10 * SKY_W + 517],
                  "the night picture does not fill both halves and the last row");
+    /*
+     * A piece a call (read_part, a frame each as the hour turns): the
+     * same picture and palette as read at once, a morning's and an
+     * evening's (its halves swapped); a night's in both halves and its
+     * last row, under its palette (its stars fall anew each read).
+     */
+    {
+        static const int keys[3] = { 18 * 128 + 20, 18 * 128 + 43, 18 * 128 + 64 };
+        int n;
+        int r;
+        int part;
+
+        for (n = 0; n < 3; n++) {
+            same = sky.read(&sky, keys[n], morning, rgb);
+            part = 0;
+            do {
+                r = sky.read_part(&sky, keys[n], part++, evening, rgb2);
+            } while (r > 0 && part < 64);
+            same = same && r == 0 && part <= 10;
+            for (k = 0; same && k < 768; k++) {
+                same = rgb[k] == rgb2[k];
+            }
+            if (n < 2) {
+                for (k = 0; same && k < SKY_W * SKY_H; k++) {
+                    same = morning[k] == evening[k];
+                }
+            } else {
+                same = same && evening[219 * SKY_W] == evening[218 * SKY_W];
+            }
+            check_expect(same, "the sky read a piece a call is not the picture read at once");
+        }
+    }
 }
+
+/* Pictures the hold's creatures wear, by slot. */
+static df_u8 g_worn[1024];
 
 int check_dagger(const char *root_in)
 {
@@ -1932,6 +2248,7 @@ int check_dagger(const char *root_in)
     const Image *shot;
     int i;
     int padded;
+    int worn;
     df_u32 bytes;
 
     const char *root;
@@ -2141,14 +2458,46 @@ int check_dagger(const char *root_in)
         check_expect(outside > 40, "border models were not shifted onto their tiles");
     }
 
+    /*
+     * The pictures the hold's creatures wear go to the card by distance
+     * (texcache_resident), not in the load's budget: counted apart.
+     */
+    {
+        int e;
+
+        for (i = 0; i < images && i < 1024; i++) {
+            g_worn[i] = 0;
+        }
+        for (e = 0; e < world_entity_count(world); e++) {
+            const Entity *ent;
+            int k;
+
+            ent = world_entity(world, e);
+            for (k = 0; k < ENTITY_VIEWS; k++) {
+                if (ent->walk.slot[k] < 1024) {
+                    g_worn[ent->walk.slot[k]] = 1;
+                }
+                if (ent->idle.slot[k] < 1024) {
+                    g_worn[ent->idle.slot[k]] = 1;
+                }
+            }
+        }
+    }
     shot = 0;
     bytes = 0;
     padded = 0;
+    worn = 0;
     for (i = 0; i < images; i++) {
         const Image *img;
         df_u32 n;
 
         img = world_image(world, i);
+        if (g_worn[i]) {
+            /* A creature's record: a sprite, padded at its own size, never a wall's. */
+            worn += world_image_cutout(world, i) && img->span_w == img->width
+                && img->span_h == img->height && img->pot_w == img->pot_h;
+            continue;
+        }
         check_expect(img->pot_w == img->pot_h && img->pot_w >= 1, "upload is not square");
         check_expect(img->span_w >= 1 && img->span_h >= 1 &&
                img->span_w <= img->pot_w && img->span_h <= img->pot_h,
@@ -2183,8 +2532,9 @@ int check_dagger(const char *root_in)
             shot = img;
         }
     }
-    printf("tmu bytes %u, sprites padded %d\n", bytes, padded);
+    printf("tmu bytes %u, sprites padded %d, creatures' pictures %d\n", bytes, padded, worn);
     check_expect(padded == 33, "every sprite in the hold should be padded, none shared with a wall");
+    check_expect(worn == 100, "the hold's creatures do not wear 100 padded sprite pictures");
     check_expect(bytes > 0 && bytes < 1500000, "texture bytes do not fit a 2MB TMU");
     check_expect(shot != 0, "no textured image");
     if (shot) {
@@ -2195,6 +2545,13 @@ int check_dagger(const char *root_in)
         check_expect(write_ppm(shot, world_palette(world), "build/tex0.ppm"), "ppm write failed");
     }
     check_view(world);
+    check_enemy_rules();
+    {
+        Dungeon hold;
+
+        check_expect(dungeon_load(&hold), "the hold's record did not read again");
+        check_hold_creatures(world, &hold);
+    }
 
     {
         Dungeon one;
