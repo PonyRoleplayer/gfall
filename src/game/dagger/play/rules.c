@@ -26,10 +26,20 @@ float rules_run_speed(int speed, int running)
     return ((float)speed + WALK_BASE) / SPEED_RATIO * (1.35f + (float)running / 200.0f);
 }
 
+float rules_gravity(void)
+{
+    return JUMP_GRAVITY;
+}
+
+float rules_jump_speed(int jumping)
+{
+    return JUMP_SPEED * (1.0f + (float)jumping * JUMP_SKILL / 100.0f);
+}
+
 float rules_jump_height(int jumping)
 {
     float v;
 
-    v = JUMP_SPEED * (1.0f + (float)jumping * JUMP_SKILL / 100.0f);
+    v = rules_jump_speed(jumping);
     return v * v / (2.0f * JUMP_GRAVITY);
 }

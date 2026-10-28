@@ -15,6 +15,8 @@
 void player_init(Player *p)
 {
     body_init(&p->body, WALK_RADIUS, WALK_HEIGHT, WALK_STEP, WALK_EYE);
+    /* Classic falls faster than the engine's 9.8: DFU's 20 m/s^2, so a jump is classic's in height and in time. */
+    p->body.gravity = rules_gravity() * RULES_UNITS_PER_M;
     p->yaw = 0.0f;
     p->pitch = 0.0f;
     p->speed = PLAYER_SPEED;
@@ -56,15 +58,7 @@ void player_step(Player *p, const Input *in, const Scene *scene, float dt)
     sy = df_sin(p->yaw);
     cy = df_cos(p->yaw);
     if (in->pressed & INPUT_BIT(INPUT_JUMP)) {
-        float h;
-
-        /*
-         * Classic's height, under the engine's gravity: DFU falls at 20
-         * m/s^2, the body at 9.8, so the jump starts slower to rise as
-         * high (it then hangs a little longer).
-         */
-        h = rules_jump_height(p->jumping) * RULES_UNITS_PER_M;
-        body_jump(&p->body, df_sqrt(2.0f * WALK_GRAVITY * h));
+        body_jump(&p->body, rules_jump_speed(p->jumping) * RULES_UNITS_PER_M);
     }
     body_step(&p->body, scene, (sy * f + cy * r) * step, (cy * f - sy * r) * step, dt);
 }

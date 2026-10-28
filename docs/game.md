@@ -82,7 +82,7 @@ The game adds, as rules on top of the player's body:
   - a jump's height, 4.5 m/s × (1 + Jumping / 200) rising under 20 m/s².
 - **Until P2 the character is a level-1 one:** Speed 50, Running 20, Jumping 20 (`PLAYER_*`). So a walk is 4.43 m/s, 177 units a second.
 - **Forward and sideways at once go no faster than one** (DFU's limitDiagonalSpeed).
-- **The jump keeps classic's height but not its time in the air:** the engine's bodies fall at 9.8 m/s², not DFU's 20, so it starts slower to rise as high and hangs a little longer. A body's own gravity is an engine request if that matters.
+- **The player falls at classic's 20 m/s²** (`Body.gravity`, DFU's AcrobatMotor), not the engine's default 9.8. So a jump is classic's in height and in time in the air.
 - **The landing is taken but does nothing yet:** fall damage comes with the vitals (P2). Swimming comes when a place with water is played.
 
 ### The sheet

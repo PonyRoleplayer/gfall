@@ -21,10 +21,11 @@
 float rules_walk_speed(int speed);
 /* Running: (speed + 150) / 39.5 times 1.35 and the Running skill (0..100) over 200. */
 float rules_run_speed(int speed, int running);
-/*
- * A jump's height, in metres: AcrobatMotor's 4.5 m/s, raised by the
- * Jumping skill (0..100) over 200, under its gravity of 20 m/s^2.
- */
+/* The player's gravity, in metres a second squared: AcrobatMotor's 20. */
+float rules_gravity(void);
+/* A jump's speed up, in metres a second: AcrobatMotor's 4.5, raised by the Jumping skill (0..100) over 200. */
+float rules_jump_speed(int jumping);
+/* The height that jump rises under rules_gravity, in metres. */
 float rules_jump_height(int jumping);
 
 #endif

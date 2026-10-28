@@ -90,13 +90,20 @@ The weather looks are the engine's own defaults, read with `weather_look` when c
    - another `MAINDAT_VERSION`;
    - a `SOURCE` whose size has changed (MONSTER.BSA today);
    - not a record file.
-4. It merges MAIN.DAT, then each name in `DATA\LOADORDR.TXT`, read from `DATA\`:
+4. It merges MAIN.DAT alone and checks it is whole (`maindat_whole`): every table has records, the calendar has its record, and no chunk was refused as damaged. A file that is current but damaged inside (a bad disk, a copy cut short) is cooked again once, quietly.
+5. It merges each name in `DATA\LOADORDR.TXT`, read from `DATA\`:
    - one name per line; blank lines and `#` lines are skipped;
    - MAIN.DAT is skipped if listed, since it always goes first;
    - a missing file is a warning in the log.
 
    A file whose `NEEDS` hasn't been merged yet is skipped whole, with a log line saying why.
-5. `maindat_apply` hands the engine the values it takes from data: the weather looks and the calendar.
+6. `maindat_apply` hands the engine the values it takes from data: the weather looks and the calendar.
+
+**When it can't go on**, `maindat_start` returns 0 and `maindat_error` says what a person should do. GFALL shows it in a message box and stops; LEVELFALL logs it and goes on without the tables.
+- **MAIN.DAT can't be written**, for example when the game runs from a CD or a read-only folder: run it from a folder it may write to, with room on the disk.
+- **It is damaged even as cooked:** delete `DATA\MAIN.DAT` and start again, and it is made anew from ARENA2. If it comes back, check ARENA2 and the disk.
+
+A damaged mod never stops the game: it is skipped, and the log says why.
 
 Mods never cause a re-cook; they are merged at every start. Cooking reads no large file today and takes milliseconds. When the location index and world map come, it will take seconds on the 233, and it gets a held screen (`gfx_hold`).
 

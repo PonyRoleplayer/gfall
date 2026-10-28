@@ -24,6 +24,9 @@ static const char *const g_sources[] = { "MONSTER.BSA" };
 static char g_merged[MERGED_MAX][REC_NAME];
 static int g_nmerged;
 static RecTable g_head;
+/* Chunks refused as damaged since the last reset; the message maindat_start gives a person. */
+static int g_damaged;
+static const char *g_error = "";
 
 static RecTable *table_at(int i)
 {
@@ -228,6 +231,20 @@ void maindat_reset(void)
         rec_table_clear(table_at(i));
     }
     g_nmerged = 0;
+    g_damaged = 0;
+}
+
+int maindat_whole(void)
+{
+    return g_damaged == 0 && enemy_table()->count > 0 && encounter_table()->count > 0
+        && weather_odds_table()->count > 0 && weather_look_table()->count > 0
+        && cal_month_table()->count > 0 && cal_weekday_table()->count > 0
+        && rec_row(cal_info_table(), 0) != 0;
+}
+
+const char *maindat_error(void)
+{
+    return g_error;
 }
 
 static int was_merged(const char *name)
@@ -281,6 +298,7 @@ int maindat_merge(const df_u8 *bytes, df_u32 n, const char *name)
         }
         if (!rec_merge(t, &c, &st)) {
             log_print(LOG_WARN, "data: %s's %s chunk is damaged, skipped", name, c.tag);
+            g_damaged++;
         }
     }
     if (g_nmerged < MERGED_MAX) {
@@ -362,6 +380,37 @@ static int next_name(const df_u8 *text, df_u32 n, df_u32 *pos, char *name)
     return 0;
 }
 
+/* Cooks DATA\MAIN.DAT again and reads it back; 0, with g_error said, when it cannot. */
+static df_u8 *cook(df_u32 *n)
+{
+    char path[2 * REC_NAME];
+    df_u8 *bytes;
+
+    in_data(path, MAINDAT_NAME);
+    if (!fs_make_dir(MAINDAT_DIR) || !fs_create(path) || !maindat_import(put_file, 0)) {
+        fs_abort();
+        log_text(LOG_ERROR, "data: DATA\\MAIN.DAT could not be written beside the program");
+        g_error = "The game could not write DATA\\MAIN.DAT beside itself. "
+                  "Run it from a folder it may write to (not a CD), with room on the disk.";
+        return 0;
+    }
+    fs_finish();
+    bytes = read_beside(MAINDAT_NAME, n);
+    if (!bytes) {
+        log_text(LOG_ERROR, "data: MAIN.DAT could not be read back");
+        g_error = "The game wrote DATA\\MAIN.DAT but could not read it back. "
+                  "Delete DATA\\MAIN.DAT and start the game again.";
+    }
+    return bytes;
+}
+
+/* MAIN.DAT alone into empty tables: 1 when it merged whole. */
+static int merge_main(const df_u8 *bytes, df_u32 n)
+{
+    maindat_reset();
+    return maindat_merge(bytes, n, MAINDAT_NAME) && maindat_whole();
+}
+
 int maindat_start(void)
 {
     df_u8 *bytes;
@@ -369,26 +418,33 @@ int maindat_start(void)
     df_u32 n;
     df_u32 pos;
     char name[REC_NAME];
-    char path[2 * REC_NAME];
+    int cooked;
 
+    g_error = "";
+    cooked = 0;
     bytes = read_beside(MAINDAT_NAME, &n);
     if (!bytes || maindat_stale(bytes, n)) {
         log_text(LOG_INFO, bytes ? "data: MAIN.DAT is stale, cooking it again" : "data: cooking MAIN.DAT");
-        in_data(path, MAINDAT_NAME);
-        if (!fs_make_dir(MAINDAT_DIR) || !fs_create(path) || !maindat_import(put_file, 0)) {
-            fs_abort();
-            log_text(LOG_ERROR, "data: DATA\\MAIN.DAT could not be written beside the program");
-            return 0;
-        }
-        fs_finish();
-        bytes = read_beside(MAINDAT_NAME, &n);
+        bytes = cook(&n);
         if (!bytes) {
-            log_text(LOG_ERROR, "data: MAIN.DAT could not be read back");
             return 0;
         }
+        cooked = 1;
     }
-    maindat_reset();
-    if (!maindat_merge(bytes, n, MAINDAT_NAME)) {
+    /* Damaged inside though current (a bad disk, a cut copy): cooked again once before giving up. */
+    if (!merge_main(bytes, n) && !cooked) {
+        log_text(LOG_WARN, "data: MAIN.DAT is damaged, cooking it again");
+        bytes = cook(&n);
+        if (!bytes) {
+            return 0;
+        }
+        cooked = 1;
+        merge_main(bytes, n);
+    }
+    if (!maindat_whole()) {
+        log_text(LOG_ERROR, "data: MAIN.DAT is damaged even as cooked");
+        g_error = "DATA\\MAIN.DAT is damaged. Delete it and start the game again: "
+                  "it is made anew from ARENA2. If this comes back, check ARENA2 and the disk.";
         return 0;
     }
     order = read_beside(MAINDAT_ORDER, &n);

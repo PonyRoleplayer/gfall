@@ -250,6 +250,35 @@ static void check_data(void)
         free(copy);
     }
 
+    /*
+     * Damaged though current: cut in half, or a chunk's field broken, it
+     * does not merge whole (maindat_start cooks it again, then tells the
+     * person to delete it).
+     */
+    check_expect(maindat_whole(), "MAIN.DAT just merged is not whole");
+    {
+        RecChunk c;
+        df_u32 pos;
+        df_u8 *copy;
+
+        maindat_reset();
+        maindat_merge(g_main.bytes, g_main.n / 2, MAINDAT_NAME);
+        check_expect(!maindat_whole(), "half a MAIN.DAT merges whole");
+        copy = (df_u8 *)malloc(g_main.n);
+        memcpy(copy, g_main.bytes, g_main.n);
+        pos = 0;
+        rec_next(copy, g_main.n, &pos, &c);
+        rec_next(copy, g_main.n, &pos, &c);
+        /* ENEM's first field's offset, past its row. */
+        ((df_u8 *)c.data)[12 + 20] = 0xff;
+        maindat_reset();
+        maindat_merge(copy, g_main.n, MAINDAT_NAME);
+        check_expect(!maindat_whole(), "a MAIN.DAT with a damaged chunk merges whole");
+        free(copy);
+        maindat_reset();
+        maindat_merge(g_main.bytes, g_main.n, MAINDAT_NAME);
+    }
+
     /* A mod: a goblin, kind 200, said in part; the rat's least health alone. */
     memset(&mod, 0, sizeof(mod));
     memset(rows, 0, sizeof(rows));

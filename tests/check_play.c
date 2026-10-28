@@ -25,7 +25,8 @@ static void check_rules(void)
     check_expect(check_near(rules_run_speed(50, 20), 200.0f / 39.5f * 1.45f, 0.001f)
                      && check_near(rules_run_speed(50, 100), 200.0f / 39.5f * 1.85f, 0.001f),
                  "running is not (speed + 150) / 39.5 times 1.35 and running over 200");
-    check_expect(check_near(rules_jump_height(0), 4.5f * 4.5f / 40.0f, 0.001f)
+    check_expect(check_near(rules_jump_speed(20), 4.95f, 0.001f) && check_near(rules_gravity(), 20.0f, 0.001f)
+                     && check_near(rules_jump_height(0), 4.5f * 4.5f / 40.0f, 0.001f)
                      && check_near(rules_jump_height(100), 6.75f * 6.75f / 40.0f, 0.001f),
                  "a jump does not rise as DFU's 4.5 m/s under 20 m/s^2");
 }
@@ -140,8 +141,12 @@ static void check_hold(void)
         landed = body_landed(&p.body, &speed, &height);
     }
     want = rules_jump_height(PLAYER_JUMPING) * RULES_UNITS_PER_M;
-    printf("play: a jump rises %.1f (classic %.1f)\n", (double)(top - floor_y), (double)want);
+    printf("play: a jump rises %.1f (classic %.1f) and lands in %d frames (classic %.0f)\n",
+           (double)(top - floor_y), (double)want, i,
+           (double)(2.0f * rules_jump_speed(PLAYER_JUMPING) / rules_gravity() * 60.0f));
     check_expect(check_near(top - floor_y, want, 2.0f), "play: the jump does not rise classic's height");
+    check_expect(check_near((float)i, 2.0f * rules_jump_speed(PLAYER_JUMPING) / rules_gravity() * 60.0f, 3.0f),
+                 "play: the jump is not as long in the air as classic's");
     check_expect(landed && p.body.grounded && check_near(p.body.feet[1], floor_y, 1.0f),
                  "play: the jump does not land on the floor it left");
 }

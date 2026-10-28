@@ -45,6 +45,12 @@ void maindat_reset(void);
  * record file; the log says why.
  */
 int maindat_merge(const df_u8 *bytes, df_u32 n, const char *name);
+/*
+ * 1 when the tables hold what MAIN.DAT must give (every table some
+ * records, the calendar its record) and no chunk was refused as damaged
+ * since the last reset.
+ */
+int maindat_whole(void);
 /* The files merged so far, in order. */
 int maindat_merged(void);
 const char *maindat_merged_name(int i);
@@ -53,10 +59,13 @@ void maindat_apply(void);
 
 /*
  * A program's start: DATA\MAIN.DAT beside the exe (the folder made when
- * missing), cooked again when missing or stale, then the files
- * DATA\LOADORDR.TXT names, from DATA\, then maindat_apply.
- * 0 when MAIN.DAT can be neither read nor written.
+ * missing), cooked when missing or stale, and cooked again once when it
+ * merges damaged; then the files DATA\LOADORDR.TXT names, from DATA\,
+ * then maindat_apply. A damaged mod is skipped with a log line. 0 when
+ * MAIN.DAT cannot be written, or is damaged even as cooked:
+ * maindat_error says what to do, for a person.
  */
 int maindat_start(void);
+const char *maindat_error(void);
 
 #endif

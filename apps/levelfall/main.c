@@ -4462,7 +4462,8 @@ static int levelfall_main(void *instance)
     }
     /* Daggerfall's tables before any place loads: MAIN.DAT and the mods over it (docs/data.md). */
     if (!maindat_start()) {
-        log_line("MAIN.DAT could not be made beside the program; no creatures, all sun");
+        log_line(maindat_error());
+        log_line("LEVELFALL goes on without Daggerfall's tables: no creatures, all sun");
     }
     vfs_root(root, (int)sizeof(root));
     log_line(root);

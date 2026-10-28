@@ -54,7 +54,7 @@ int gfall_main(void *instance)
     }
     /* Daggerfall's tables: DATA\MAIN.DAT beside the exe, cooked on the first run, and the mods over it (docs/data.md). */
     if (!maindat_start()) {
-        win_fail("MAIN.DAT could not be made beside the program.");
+        win_fail(maindat_error());
         win_shutdown();
         mem_shutdown();
         return 1;
