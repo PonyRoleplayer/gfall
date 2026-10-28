@@ -71,6 +71,8 @@ void input_key_name(int vk, char *dst, int cap);
  * 0: Escape is the INPUT_MENU action and never quits: a game's menu.
  */
 void input_set_escape_quits(int on);
+/* The setting: the window's own Escape (win32.c) quits only while it is 1. */
+int input_escape_quits(void);
 
 /*
  * Pointer mode, for a game's menus: 1 leaves the cursor where the mouse

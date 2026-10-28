@@ -42,7 +42,7 @@ With the console open nothing reaches the program: no movement, no look, nothing
 
 `input_key_name(vk, dst, cap)` names a key for display: "W", "Space", "Left Button", "Shift", "F12", "Num 7", or "Key 233" for one with no name. It is our own table (`keyname.c`), the same on any layout and read by hostcheck. Punctuation is named by a US board's marks. E is also `move_y`'s down for a flying viewer; a game on foot does not read `move_y`.
 
-`input_set_escape_quits(1)`, the default, is the viewers': Escape quits. With 0, Escape never quits: it is `INPUT_MENU`, and the game opens its menu and decides itself when to quit. Either way, an Escape that just closed the console is not counted (`console_take_escape`).
+`input_set_escape_quits(1)`, the default, is the viewers': Escape quits. With 0, Escape never quits: it is `INPUT_MENU`, and the game opens its menu and decides itself when to quit. Either way, an Escape that just closed the console is not counted (`console_take_escape`). Two places see Escape, and both obey the setting: `input_read`, and the window's own key message in `win32.c`, which asks for the quit (`input_escape_quits`). Before that second check, a game's Escape quit the program on its key-down before `input_read` ever saw it as `INPUT_MENU`.
 
 ## A menu's pointer
 

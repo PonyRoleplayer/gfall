@@ -71,6 +71,11 @@ void input_set_escape_quits(int on)
     g_escape_quits = on ? 1 : 0;
 }
 
+int input_escape_quits(void)
+{
+    return g_escape_quits;
+}
+
 /* The actions held now; escape is whether Escape counts (not the console's own). */
 static unsigned int actions_held(int escape)
 {

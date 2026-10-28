@@ -113,7 +113,12 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         break;
     case WM_KEYDOWN:
-        if (wp == VK_ESCAPE && !console_take_escape()) {
+        /*
+         * Escape quits only where it is set to (the viewers'); a game's
+         * Escape is INPUT_MENU (input_set_escape_quits(0)) and must reach
+         * input_read as that, not as a quit (docs/input.md).
+         */
+        if (wp == VK_ESCAPE && input_escape_quits() && !console_take_escape()) {
             input_request_quit();
         }
         return 0;
