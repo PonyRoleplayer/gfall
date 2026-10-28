@@ -1,5 +1,6 @@
 #include "engine/scene/interact.h"
 #include "engine/scene/walker.h"
+#include "engine/scene/body.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
 #include "engine/sound/sound.h"
@@ -338,9 +339,9 @@ int interact_cast(const Scene *scene, float x, float y, float z,
     return 1;
 }
 
-int interact_aim(const Scene *scene, const Camera *cam, UseHit *hit)
+int interact_aim_from(const Scene *scene, float x, float y, float z,
+                      float dx, float dy, float dz, UseHit *hit)
 {
-    Basis basis;
     float len;
     int i;
 
@@ -348,7 +349,7 @@ int interact_aim(const Scene *scene, const Camera *cam, UseHit *hit)
     hit->dist = 0.0f;
     hit->model = -1;
     hit->wall = 0.0f;
-    if (!scene || !cam || scene->nusables < 1) {
+    if (!scene || scene->nusables < 1) {
         return 0;
     }
     len = 0.0f;
@@ -357,10 +358,24 @@ int interact_aim(const Scene *scene, const Camera *cam, UseHit *hit)
             len = scene->usables[i].reach;
         }
     }
+    return interact_cast(scene, x, y, z, dx, dy, dz, len, hit);
+}
+
+int interact_aim(const Scene *scene, const Camera *cam, UseHit *hit)
+{
+    Basis basis;
+
+    if (!cam) {
+        hit->usable = -1;
+        hit->dist = 0.0f;
+        hit->model = -1;
+        hit->wall = 0.0f;
+        return 0;
+    }
     camera_basis(cam, &basis);
     /* Forward with the pitch: the middle of the glass. */
-    return interact_cast(scene, cam->x, cam->y, cam->z,
-                         basis.fx * basis.cp, basis.sp, basis.fz * basis.cp, len, hit);
+    return interact_aim_from(scene, cam->x, cam->y, cam->z,
+                             basis.fx * basis.cp, basis.sp, basis.fz * basis.cp, hit);
 }
 
 /* Each axis in turn, as the place loaders turn a model (rdb.c). */
@@ -674,14 +689,32 @@ static int g_touching = -1;
 static const Scene *g_touch_scene;
 
 /* The first usable with touch whose model's box the body (the walker's, under the eye) is in; -1 none. */
+/* The game's body for walk-into triggers (interact_set_body, below). */
+static const Body *g_toucher;
+
 static int touched(const Scene *scene, const Camera *cam)
 {
     float lo;
     float hi;
+    float x;
+    float z;
+    float r;
     int i;
 
-    lo = cam->y - WALK_EYE;
-    hi = lo + WALK_HEIGHT;
+    /* The game's body, if it named one; else the walker's, under the camera's eye. */
+    if (g_toucher) {
+        x = g_toucher->feet[0];
+        z = g_toucher->feet[2];
+        lo = g_toucher->feet[1];
+        hi = lo + g_toucher->height;
+        r = g_toucher->radius;
+    } else {
+        x = cam->x;
+        z = cam->z;
+        lo = cam->y - WALK_EYE;
+        hi = lo + WALK_HEIGHT;
+        r = WALK_RADIUS;
+    }
     for (i = 0; i < scene->nusables; i++) {
         const Usable *u;
         const Bound *b;
@@ -692,8 +725,8 @@ static int touched(const Scene *scene, const Camera *cam)
         }
         b = &scene->bounds[u->model];
         if (b->ex < 0.0f || hi < b->cy - b->ey || lo > b->cy + b->ey
-            || df_absf(cam->x - b->cx) > b->ex + WALK_RADIUS
-            || df_absf(cam->z - b->cz) > b->ez + WALK_RADIUS) {
+            || df_absf(x - b->cx) > b->ex + r
+            || df_absf(z - b->cz) > b->ez + r) {
             continue;
         }
         return i;
@@ -701,12 +734,37 @@ static int touched(const Scene *scene, const Camera *cam)
     return -1;
 }
 
-/* A use the game asked for (interact_request_use), for the next frame's use edge. */
+/*
+ * A use the game asked for (interact_request_use), for the next frame's
+ * use edge; from its own origin and way (interact_request_use_from) when
+ * g_use_from, else from the camera.
+ */
 static int g_use_request;
+static int g_use_from;
+static float g_use_o[3];
+static float g_use_d[3];
 
 void interact_request_use(void)
 {
     g_use_request = 1;
+    g_use_from = 0;
+}
+
+void interact_request_use_from(float x, float y, float z, float dx, float dy, float dz)
+{
+    g_use_request = 1;
+    g_use_from = 1;
+    g_use_o[0] = x;
+    g_use_o[1] = y;
+    g_use_o[2] = z;
+    g_use_d[0] = dx;
+    g_use_d[1] = dy;
+    g_use_d[2] = dz;
+}
+
+void interact_set_body(const Body *b)
+{
+    g_toucher = b;
 }
 
 int interact_take_use(void)
@@ -737,7 +795,13 @@ void interact_frame(const Scene *scene, const Camera *cam, float secs, int used)
         return;
     }
     if (used || g_view > 0) {
-        interact_aim(scene, cam, &hit);
+        /* A use the game asked for from its own origin (third person: the body's eye, its facing). */
+        if (used && g_use_from) {
+            interact_aim_from(scene, g_use_o[0], g_use_o[1], g_use_o[2], g_use_d[0], g_use_d[1], g_use_d[2], &hit);
+        } else {
+            interact_aim(scene, cam, &hit);
+        }
+        g_use_from = 0;
         g_aimed = hit.usable;
         if (used && hit.usable >= 0) {
             interact_use(scene, hit.usable);

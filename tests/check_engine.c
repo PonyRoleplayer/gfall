@@ -20,6 +20,8 @@
 #include "engine/scene/daylight.h"
 #include "engine/scene/weather.h"
 #include "engine/scene/walker.h"
+#include "engine/scene/body.h"
+#include "engine/gfx/rig.h"
 #include "engine/scene/interact.h"
 #include "engine/core/prof.h"
 #include "engine/gfx/texres.h"
@@ -1770,6 +1772,76 @@ static void check_collision(void)
         scene.entities = 0;
         scene.nentities = 0;
     }
+    /*
+     * Bodies the game owns (body.h): two, each moving its own entity,
+     * stop at each other, their radii apart; a rat's body (8 round, 24
+     * tall, steps of 8) does not climb the 20-unit step a person walks
+     * up. Rigs (rig.h): third person behind a body with a wall behind it
+     * comes in short of the wall; with open ground behind, it is the
+     * whole distance back.
+     */
+    {
+        static Entity ents[2];
+        Body a;
+        Body b;
+        Body rat;
+        Camera rc;
+        int f;
+
+        walker_set_on(0);
+        mem_zero(ents, sizeof(ents));
+        for (f = 0; f < 2; f++) {
+            ents[f].live = 1;
+            ents[f].radius = 16.0f;
+            ents[f].walk.w[0] = 32;
+            ents[f].walk.h[0] = 72;
+            ents[f].idle.slot[0] = 0xffff;
+            ents[f].moving = 1;
+        }
+        scene.entities = ents;
+        scene.nentities = 2;
+        body_init(&a, 16.0f, 72.0f, 24.0f, 68.4f);
+        body_init(&b, 16.0f, 72.0f, 24.0f, 68.4f);
+        a.self = &ents[0];
+        b.self = &ents[1];
+        body_place(&a, 0.0f, 0.0f, 0.0f);
+        body_place(&b, 0.0f, 0.0f, -150.0f);
+        for (f = 0; f < 40; f++) {
+            body_step(&a, &scene, 0.0f, -5.0f, 1.0f / 30.0f);
+            body_step(&b, &scene, 0.0f, 5.0f, 1.0f / 30.0f);
+            ents[0].x = a.feet[0];
+            ents[0].y = a.feet[1];
+            ents[0].z = a.feet[2];
+            ents[1].x = b.feet[0];
+            ents[1].y = b.feet[1];
+            ents[1].z = b.feet[2];
+        }
+        check_expect(a.feet[2] - b.feet[2] > 32.0f - 2.0f && a.feet[2] - b.feet[2] < 32.0f + 6.0f
+                     && a.grounded && b.grounded,
+                     "two bodies walking at each other did not stop their radii apart");
+        scene.entities = 0;
+        scene.nentities = 0;
+        body_init(&rat, 8.0f, 24.0f, 8.0f, 20.0f);
+        body_place(&rat, -250.0f, 0.0f, 0.0f);
+        for (f = 0; f < 40; f++) {
+            body_step(&rat, &scene, -5.0f, 0.0f, 1.0f / 30.0f);
+        }
+        check_expect(rat.feet[0] > -300.0f + 1.0f && rat.feet[1] < 1.0f,
+                     "a rat's body climbed a step a person's height of steps over its own");
+        body_place(&a, 150.0f, 0.0f, 0.0f);
+        body_step(&a, &scene, 0.0f, 0.0f, 1.0f / 30.0f);
+        rig_third(&rc, &a, -DF_TAU * 0.25f, 0.0f, 150.0f, &scene);
+        check_expect(rc.x < 200.0f - RIG_MARGIN + 0.5f && rc.x > 150.0f + RIG_NEAREST - 0.5f
+                     && check_near(rc.y, 68.4f, 0.5f),
+                     "a third-person camera with a wall behind the body went into the wall");
+        rig_third(&rc, &a, DF_TAU * 0.25f, 0.0f, 150.0f, &scene);
+        check_expect(check_near(rc.x, 0.0f, 0.5f) && check_near(rc.z, 0.0f, 0.5f),
+                     "a third-person camera with open ground behind did not sit the whole distance back");
+        rig_first(&rc, &a);
+        check_expect(check_near(rc.x, 150.0f, 0.01f) && check_near(rc.y, 68.4f, 0.01f),
+                     "a first-person camera is not at the body's eye");
+        walker_set_on(1);
+    }
     /* Off the floor's edge: it falls out, and comes back to where it last stood. */
     camera_set(&cam, -50.0f, eye, -450.0f, 0.0f, 0.0f);
     walk(&cam, &scene, 0.0f, 0.0f, 2);
@@ -2213,6 +2285,33 @@ static void check_teleport(void)
     interact_frame(&scene, &cam, 0.016f, 1);
     ok = ok && interact_teleport(&x, &y, &z, &yaw) && x == 1000.0f;
     check_expect(ok, "a teleport by hand went with no reach, or not with one");
+    /*
+     * Third person: a use cast from the body's eye along its facing, not
+     * the camera's (interact_request_use_from); a pad set off by the
+     * game's named body walking into it, the camera elsewhere.
+     */
+    {
+        UseHit hit;
+        Body pb;
+
+        ok = interact_aim_from(&scene, 0.0f, 40.0f, 30.0f, 0.0f, 0.0f, 1.0f, &hit) && hit.usable == 0
+            && !interact_aim_from(&scene, 0.0f, 40.0f, 30.0f, 0.0f, 0.0f, -1.0f, &hit);
+        camera_set(&cam, 5000.0f, 68.0f, 5000.0f, 0.0f, 0.0f);
+        interact_request_use_from(0.0f, 40.0f, 30.0f, 0.0f, 0.0f, 1.0f);
+        interact_frame(&scene, &cam, 0.016f, interact_take_use());
+        ok = ok && interact_teleport(&x, &y, &z, &yaw) && x == 1000.0f;
+        check_expect(ok, "a use from the body's own eye and facing did not take what it faced");
+        interact_frame(&scene, &cam, 0.016f, 0);
+        body_init(&pb, 16.0f, 72.0f, 24.0f, 68.4f);
+        pb.feet[0] = 0.0f;
+        pb.feet[1] = 0.0f;
+        pb.feet[2] = 95.0f;
+        interact_set_body(&pb);
+        interact_frame(&scene, &cam, 0.016f, 0);
+        ok = interact_teleport(&x, &y, &z, &yaw) && x == 1000.0f;
+        interact_set_body(0);
+        check_expect(ok, "a named body walking onto a pad did not set it off, the camera far off");
+    }
 }
 
 /*

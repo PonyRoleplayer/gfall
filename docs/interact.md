@@ -10,7 +10,7 @@ Looking at a thing and pressing the use key does something: a door swings, a lev
 
 ## Using
 
-The use key is the left mouse button or E, on its edge, polled in `draw_frame` (`use_edge`). The console being open stops it, as it stops the camera, and so does the game's pause. A game whose left button attacks turns the poll off (`gfx_set_use_key(0)`) and asks for a use on its own key's edge (`interact_request_use`, `docs/input.md`).
+The use key is the left mouse button or E, on its edge, polled in `draw_frame` (`use_edge`). The console being open stops it, as it stops the camera, and so does the game's pause. A game whose left button attacks turns the poll off (`gfx_set_use_key(0)`) and asks for a use on its own key's edge (`interact_request_use`, `docs/input.md`). In third person the use is cast from the body's eye along its facing, not from the camera behind it (`interact_request_use_from(x, y, z, dx, dy, dz)`; `interact_aim_from` for any origin), and the walk-into triggers are the game's body's (`interact_set_body`: its feet, height and radius; 0, the default, is the camera's eye with the walker's body under it).
 
 The ray starts at the camera's eye and runs along its forward, pitch included: the middle of the glass, as Daggerfall Unity's `PlayerActivate` casts it. It goes as far as the longest reach in the place. `interact_cast` does two passes:
 

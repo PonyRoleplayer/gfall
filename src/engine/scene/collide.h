@@ -78,6 +78,13 @@ int collide_overlap(const float *pos);
  */
 int collide_floor(float x, float z, float y_top, float y_bottom, float *y);
 
+/*
+ * The nearest gathered triangle the segment from o along unit d meets
+ * within len, from either side: 1 and its distance in *t. Gather round
+ * the segment first. For a camera pulled in from a wall (rig_third).
+ */
+int collide_ray(const float *o, const float *d, float len, float *t);
+
 /* Triangles in the last gather, and whether it overflowed. */
 void collide_stats(int *gathered, int *dropped);
 

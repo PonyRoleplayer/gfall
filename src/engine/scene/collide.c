@@ -877,6 +877,73 @@ int collide_overlap(const float *pos)
     return 0;
 }
 
+int collide_ray(const float *o, const float *d, float len, float *t)
+{
+    float p[3];
+    float v[3];
+    float best;
+    int found;
+    int i;
+
+    /*
+     * The segment in the set's space (the shape's 1/radius scale): a
+     * fraction along it is the same fraction in the world.
+     */
+    p[0] = o[0] * g_irx;
+    p[1] = o[1] * g_iry;
+    p[2] = o[2] * g_irx;
+    v[0] = d[0] * len * g_irx;
+    v[1] = d[1] * len * g_iry;
+    v[2] = d[2] * len * g_irx;
+    best = 1.0f;
+    found = 0;
+    for (i = 0; i < g_nset; i++) {
+        const CTri *tr;
+        float e1[3], e2[3], h[3], s[3], q[3];
+        float a, f, u, w, k;
+
+        /* Moller and Trumbore, from either side. */
+        tr = &g_set[i];
+        e1[0] = tr->b[0] - tr->a[0];
+        e1[1] = tr->b[1] - tr->a[1];
+        e1[2] = tr->b[2] - tr->a[2];
+        e2[0] = tr->c[0] - tr->a[0];
+        e2[1] = tr->c[1] - tr->a[1];
+        e2[2] = tr->c[2] - tr->a[2];
+        h[0] = v[1] * e2[2] - v[2] * e2[1];
+        h[1] = v[2] * e2[0] - v[0] * e2[2];
+        h[2] = v[0] * e2[1] - v[1] * e2[0];
+        a = e1[0] * h[0] + e1[1] * h[1] + e1[2] * h[2];
+        if (df_absf(a) < 1.0e-9f) {
+            continue;
+        }
+        f = 1.0f / a;
+        s[0] = p[0] - tr->a[0];
+        s[1] = p[1] - tr->a[1];
+        s[2] = p[2] - tr->a[2];
+        u = f * (s[0] * h[0] + s[1] * h[1] + s[2] * h[2]);
+        if (u < 0.0f || u > 1.0f) {
+            continue;
+        }
+        q[0] = s[1] * e1[2] - s[2] * e1[1];
+        q[1] = s[2] * e1[0] - s[0] * e1[2];
+        q[2] = s[0] * e1[1] - s[1] * e1[0];
+        w = f * (v[0] * q[0] + v[1] * q[1] + v[2] * q[2]);
+        if (w < 0.0f || u + w > 1.0f) {
+            continue;
+        }
+        k = f * (e2[0] * q[0] + e2[1] * q[1] + e2[2] * q[2]);
+        if (k >= 0.0f && k < best) {
+            best = k;
+            found = 1;
+        }
+    }
+    if (found) {
+        *t = best * len;
+    }
+    return found;
+}
+
 int collide_floor(float x, float z, float y_top, float y_bottom, float *y)
 {
     float px;

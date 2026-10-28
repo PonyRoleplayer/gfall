@@ -60,6 +60,7 @@ ENGINE_HOST_SRC := \
 	src/engine/scene/daylight.c \
 	src/engine/scene/weather.c \
 	src/engine/scene/collide.c \
+	src/engine/scene/body.c \
 	src/engine/scene/walker.c \
 	src/engine/scene/interact.c \
 	src/engine/scene/entity.c \
@@ -70,6 +71,7 @@ ENGINE_HOST_SRC := \
 	src/engine/sound/music.c \
 	src/engine/sound/ambience.c \
 	src/engine/gfx/camera.c \
+	src/engine/gfx/rig.c \
 	src/engine/gfx/mip.c \
 	src/engine/gfx/texres.c
 

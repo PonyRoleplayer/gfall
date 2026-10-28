@@ -48,11 +48,22 @@ Faces the loader could not texture (`slot` 0xffff) are not part of the place and
 
 A camera that moved more than 768 units in a frame was set (`setpos`, a new place), not walked: the body is put where it is and freed if it is caught.
 
+### Bodies and cameras
+
+The rules above are a body's (`body.h`), and a game has as many as it wants, each its own size: `body_init(&b, radius, height, step, eye)` (a person 16, 72, 24, 68.4; a rat 8, 24, 8, 20), `body_place` to set its feet, `body_step(&b, scene, want_dx, want_dz, dt)` with the motion across the ground the game wants this frame, then `body_jump`, `body_landed`, `body_eye`, `body_unstick`. `collide_set_shape` takes each body's radius and upper half as it steps. A body stops at solid entities but its own (`Body.self`, the entity it moves, whose position the game copies from it each frame), and at the walker's body when it is not that one; two bodies that each move a solid entity stop at each other. An entity with no body has no physics, as before.
+
+The engine steps none of them but the walker's. The walker is one body of a person's size that follows the console's camera for the viewers (`tcl`): the camera's move across the ground in, `body_step`, the camera back at the eye (`rig_first`). A game steps its own bodies in its frame and puts its camera on one with a rig (`rig.h`):
+
+- `rig_first(cam, &b)`: at the body's eye, the camera's own turn kept. First person: the player has a body and no visible entity.
+- `rig_third(cam, &b, yaw, pitch, distance, scene)`: behind the body, looking at its eye along yaw and pitch. A ray from the eye back to the camera (`collide_ray`, over a gather round it, so a stream's spans serve it as they serve the walker) pulls it in to `RIG_MARGIN` (12) short of the first wall or ceiling, never nearer than `RIG_NEAREST` (16). Third person: the player is an entity the game moves from its body.
+
+Which way the camera turns is the game's. A third person's use and walk-into triggers are its body's, not the camera's (`interact_request_use_from`, `interact_set_body`, `docs/interact.md`).
+
 ### Jumping and landing
 
-`walker_jump(up_speed)` starts a jump from a floor: the body goes up at `up_speed` (world units a second, 40 a metre) and gravity brings it down, about `up_speed² / 2g` high (a little less, stepped at the frame's rate: 260 a second rises 86 in the test, 200 rises 47.7 at 30 frames a second). It returns 0 off the ground. How high is the game's to say (Daggerfall's Jumping skill), and so is how fast it walks: the walker goes where the game moved the camera across the ground, so a run is a longer move.
+`body_jump` (and the walker's `walker_jump(up_speed)`) starts a jump from a floor: the body goes up at `up_speed` (world units a second, 40 a metre) and gravity brings it down, about `up_speed² / 2g` high (a little less, stepped at the frame's rate: 260 a second rises 86 in the test, 200 rises 47.7 at 30 frames a second). It returns 0 off the ground. How high is the game's to say (Daggerfall's Jumping skill), and so is how fast it walks: the walker goes where the game moved the camera across the ground, so a run is a longer move.
 
-`walker_landed(&speed, &height)` is 1 once, on the frame the body comes down on a floor after a fall or a jump: the speed down at the floor and the height fallen from the top of its arc (walking off an edge, from the edge). For the game's fall damage. A body set somewhere (a new place, `walker_place`) owes no landing.
+`body_landed` (`walker_landed(&speed, &height)`) is 1 once, on the frame the body comes down on a floor after a fall or a jump: the speed down at the floor and the height fallen from the top of its arc (walking off an edge, from the edge). For the game's fall damage. A body set somewhere (a new place, `walker_place`) owes no landing.
 
 ### Entities
 

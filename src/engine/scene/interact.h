@@ -45,6 +45,9 @@ typedef struct UseHit {
  */
 int interact_cast(const Scene *scene, float x, float y, float z,
                   float dx, float dy, float dz, float len, UseHit *hit);
+/* The cast from any origin along unit dx, dy, dz, as far as the longest reach: a third person's eye. */
+int interact_aim_from(const Scene *scene, float x, float y, float z,
+                      float dx, float dy, float dz, UseHit *hit);
 /* The cast from the camera's eye along its forward, as far as the longest reach. */
 int interact_aim(const Scene *scene, const Camera *cam, UseHit *hit);
 
@@ -138,6 +141,18 @@ int interact_trigger_view(void);
  */
 void interact_request_use(void);
 int interact_take_use(void);
+/*
+ * The same from the game's own origin along unit dx, dy, dz, not the
+ * camera: third person uses from the body's eye along its facing.
+ */
+void interact_request_use_from(float x, float y, float z, float dx, float dy, float dz);
+/*
+ * The body whose walking into a trigger (Usable.touch) sets it off: the
+ * game's player body (body.h). 0 (default): the camera's eye, the
+ * walker's body under it, as the viewers walk.
+ */
+struct Body;
+void interact_set_body(const struct Body *b);
 /* The touch usable the body is in now (Usable.touch), -1 for none. */
 int interact_touching(void);
 

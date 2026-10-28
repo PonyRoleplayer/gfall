@@ -5,8 +5,10 @@
 #include "engine/scene/scene.h"
 
 /*
- * A body under gravity that follows a camera. Read docs/collision.md
- * before editing.
+ * The viewers' walking: one Body (body.h) of a person's size, under
+ * gravity, that follows a camera. Read docs/collision.md before
+ * editing. A game steps bodies of its own (body_step) and puts its
+ * camera on one (rig.h); the walker is for the console's camera.
  *
  * With the walker on (`tcl 1`), each frame takes how far the viewer
  * moved its camera across the ground as where the body wants to go,
@@ -83,5 +85,8 @@ int walker_jump(float up_speed);
 int walker_landed(float *speed, float *height);
 /* The body's feet, for the game's motors (entity_blocked): 1 while the walker is on and has a body. */
 int walker_body(float *x, float *feet_y, float *z);
+/* The walker's own Body (body.h), so another body does not push off itself through walker_body. */
+struct Body;
+const struct Body *walker_own_body(void);
 
 #endif
