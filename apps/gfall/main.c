@@ -23,7 +23,8 @@
 #include "engine/ui/console.h"
 #include "game/dagger/formats/fnt.h"
 #include "game/dagger/play/game.h"
-#include "game/dagger/places/world.h"
+#include "game/dagger/formats/dungeon.h"
+#include "game/dagger/places/dunstream.h"
 #include "game/dagger/tables/maindat.h"
 
 /* A frame's real seconds by the performance counter (GetTickCount is too coarse on Win9x); a stall counts as a tenth. */
@@ -43,27 +44,34 @@ static float frame_secs(void)
     return secs > 0.1f ? 0.1f : secs;
 }
 
+/* Privateer's Hold's record: the stream reads its blocks as the player walks, so it outlives the load. */
+static Dungeon g_hold;
+
 /*
  * The new game's place, under a held "Loading..." over the menu's last
- * frame: Privateer's Hold, the player at its start, its creatures near
- * the start read and its pictures sharp before it fades in. 0 when it
- * does not load.
+ * frame: Privateer's Hold streamed by block (dunstream.c), the player at
+ * its start, the blocks round it loaded and their lights cut, its
+ * pictures sharp before it fades in. 0 when it does not load.
  */
-static int start_hold(World **world, Level *level, Camera *cam)
+static int start_hold(Level *level, Camera *cam)
 {
+    float x;
+    float y;
+    float z;
+    float yaw;
+    float pitch;
+
     gfx_hold("Loading...");
-    *world = world_load();
-    if (!*world) {
-        win_fail(world_error());
+    if (!dungeon_load(&g_hold) || !dunstream_open(&g_hold, level, &x, &y, &z, &yaw, &pitch)) {
+        win_fail("Privateer's Hold could not be opened.");
         return 0;
     }
-    world_as_level(*world, level);
     if (!gfx_prepare(level)) {
         win_fail(gfx_error());
         return 0;
     }
-    game_enter(*world, level, cam);
-    world_creatures_step(*world, cam, 2048.0f, 0.0f);
+    game_enter(level, cam, x, y, z, yaw, pitch);
+    dunstream_fill(cam);
     gfx_prime(level, cam);
     gfx_fade_in(0.5f);
     return 1;
@@ -71,7 +79,6 @@ static int start_hold(World **world, Level *level, Camera *cam)
 
 int gfall_main(void *instance)
 {
-    World *world;
     Level level;
     Camera cam;
     Input in;
@@ -110,7 +117,6 @@ int gfall_main(void *instance)
     /* The card's sound and its synthesizer; without either the hold is silent. See docs/sound.md. */
     sound_startup(win_hwnd());
     music_startup();
-    world = 0;
     camera_set(&cam, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
     console_set_camera(&cam);
     frame_secs();
@@ -124,13 +130,14 @@ int gfall_main(void *instance)
         if (asked == GAME_QUIT) {
             break;
         }
-        if (asked == GAME_START && !start_hold(&world, &level, &cam)) {
+        if (asked == GAME_START && !start_hold(&level, &cam)) {
             break;
         }
         gfx_frame(&cam, game_playing() ? &level : 0);
     }
     input_end();
     game_shutdown();
+    dunstream_close();
     music_shutdown();
     sound_shutdown();
     gfx_shutdown();

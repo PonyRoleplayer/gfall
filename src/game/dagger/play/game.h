@@ -5,8 +5,6 @@
 #include "engine/gfx/camera.h"
 #include "engine/platform/input.h"
 
-struct World;
-
 /*
  * The game's play state: one frame of it, between the program's input
  * and its gfx_frame. Read docs/game.md (A frame of play) before editing.
@@ -36,8 +34,14 @@ enum {
 void game_setup(void);
 /* 1 while a place is being played (the program draws it), 0 on a screen before one. */
 int game_playing(void);
-/* A place to play in: the player at its start, the overlay and use handler hooked up. */
-void game_enter(struct World *world, const Level *level, Camera *cam);
+/*
+ * A place to play in, streamed by block (dunstream.c): the player at its
+ * start (x, y, z the eye), the overlay and use handler hooked up. The
+ * game steps the stream each frame (GAME_STREAM_MS).
+ */
+void game_enter(const Level *level, Camera *cam, float x, float y, float z, float yaw, float pitch);
+/* Milliseconds a frame gives the dungeon's stream: blocks coming in, lights cut a face at a time. */
+#define GAME_STREAM_MS 3.0f
 /* One frame: GAME_*. dt is real seconds. */
 int game_frame(Camera *cam, const Input *in, float dt);
 void game_shutdown(void);

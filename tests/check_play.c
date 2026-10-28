@@ -432,6 +432,26 @@ static void check_dunstream(void)
         check_expect(same == world_entity_count(whole),
                      "dunstream: a creature of the stream is not the whole hold's, keyed and standing alike");
     }
+    /* The player in the streamed hold: on its floor, and a quarter second's walk goes classic's distance. */
+    {
+        Character sheet;
+        Player p;
+        Input in;
+        float walked;
+        float want;
+
+        if (character_new(&sheet, CHARACTER_START_RACE, CHARACTER_START_CLASS, 0, "Test")) {
+            player_init(&p, &sheet);
+            player_place(&p, x, y, z, yaw, pitch);
+            memset(&in, 0, sizeof(in));
+            walk(&p, &level.scene, &in, 60);
+            in.move_f = 1;
+            walked = walk(&p, &level.scene, &in, 15);
+            want = rules_walk_speed(sheet.attribute[ATTR_SPEED]) * RULES_UNITS_PER_M * 0.25f;
+            check_expect(p.body.grounded && check_near(walked, want, want * 0.05f),
+                         "dunstream: the player does not stand and walk in the streamed hold");
+        }
+    }
     /* A door opened, the camera taken 8 blocks east (the hold dropped) and back: still open. */
     if (door >= 0) {
         key = level.scene.movers[door].key;

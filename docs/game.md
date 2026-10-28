@@ -85,8 +85,9 @@ Tested in the hold: all 105 things keyed, no key twice, a door and a lever left 
 
 **Tested against the hold loaded whole:** the ring round its start holds all of it (365 models, 130 flats, 71 lights, 63 movers, 42 creatures, as the whole load). Each creature is the whole load's, keyed and standing alike. A door opened, its blocks dropped 8 blocks off and come back, is open.
 
+**GFALL plays the hold through it** (`start_hold` in `apps/gfall/main.c`): `dunstream_open` under "Loading...", `gfx_prepare` of the streamed level, the player at its start, `dunstream_fill` (the ring and its lights cut, shadows and all), `gfx_prime`, the fade-in. Each frame `game_frame` steps the stream with `GAME_STREAM_MS` (3 ms), and the blocks' creatures come with them. Tested on the host: the player stands on the streamed hold's floor and walks classic's distance. Not yet run on the 233; its `load:` time and the 3 ms budget are to be measured there.
+
 **Not yet:**
-- GFALL's hold through it waits for the engine's shadowed stream lights (without them a torch lights the next room through its wall);
 - LEVELFALL's indoor rows;
 - a block's meshes parsed in steps (a block is read in one step today).
 

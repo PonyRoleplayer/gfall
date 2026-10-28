@@ -5,7 +5,7 @@
 #include "game/dagger/play/player.h"
 #include "game/dagger/play/rules.h"
 #include "game/dagger/places/doors.h"
-#include "game/dagger/places/world.h"
+#include "game/dagger/places/dunstream.h"
 #include "engine/core/mem.h"
 #include "engine/core/prof.h"
 #include "engine/gfx/gfx.h"
@@ -16,10 +16,6 @@
 
 /* See game.h. */
 
-/* Milliseconds a frame may spend reading the creatures that come near (docs/entities.md). */
-#define CREATURE_BUDGET_MS 2.0f
-
-static struct World *g_world;
 static const Level *g_level;
 static Player g_player;
 static int g_playing;
@@ -86,17 +82,9 @@ int game_playing(void)
     return g_playing;
 }
 
-void game_enter(struct World *world, const Level *level, Camera *cam)
+void game_enter(const Level *level, Camera *cam, float x, float y, float z, float yaw, float pitch)
 {
-    float x;
-    float y;
-    float z;
-    float yaw;
-    float pitch;
-
-    g_world = world;
     g_level = level;
-    world_start(world, &x, &y, &z, &yaw, &pitch);
     g_start[0] = x;
     g_start[1] = y;
     g_start[2] = z;
@@ -187,7 +175,8 @@ int game_frame(Camera *cam, const Input *in, float dt)
             }
         }
         player_camera(&g_player, cam);
-        world_creatures_step(g_world, cam, 0.0f, CREATURE_BUDGET_MS);
+        /* The blocks round the player in and out, their creatures read with them, the lights cut (docs/streaming.md). */
+        dunstream_update(cam, GAME_STREAM_MS);
     }
     overlay_set_yaw(g_player.yaw);
     overlay_set_vitals(g_player.sheet.health, g_player.sheet.health_max, g_player.sheet.fatigue,
