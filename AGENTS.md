@@ -94,6 +94,14 @@ Each game is one folder under `src/game/`, and today there is one, `src/game/dag
 - **Style:** gnu90 C. Comment non-obvious intent, format quirks, and constraints — this codebase is vibe-coded and has to be reviewable. Follow existing naming (snake_case). Keep Windows `WINVER`/`_WIN32_WINNT`/`WIN32_LEAN_AND_MEAN` in Win32/Glide files.
 - **Document the change:** Behavior a later edit has to preserve goes in `docs/` before the commit, and the layout list above gains a line if the doc is new. Update the existing note (`docs/culling.md`, `docs/memory.md`, `docs/dungeons.md`, `docs/viewers.md`) when the change is one of those. A commit that changes what the frame draws, what is loaded, or a budget the next change must respect, without that note, is incomplete.
 
+## Working in parallel
+Several agent sessions work on this repo at once, each in its own checkout. The shared checkout at the repo root has `main`; other sessions use worktrees beside it (`../gfall-engine`).
+- **Never edit another session's checkout.** Two sessions in one working tree break each other's builds mid-edit and sweep each other's files into commits.
+- **Small slices, `main` moves often.** Before committing, rebase onto `main` and run a clean `make all`, which passes the layer check, hostcheck and every PE check.
+- **Standing rule (the user's):** any session may fast-forward `main` to its commit once `make all` passes. Never rewrite `main`'s history (no rebase, reset or force on `main`), and never push; pushing stays the user's.
+- **Stage files by name**, never `git add -A` or `git add .`: another session's files may be lying in the tree.
+- **Say before touching shared files.** AGENTS.md, `docs/game.md`, the Makefile and the tests are edited by every session: message the session that owns the other side first, and after a fast-forward tell it to rebase.
+
 ## Debugging
 - `build/*.dump` from objdump (PE info, imports) are produced during checks. Useful to inspect.
 - `hostcheck` prints counts, bounds, texture info and writes `build/tex0.ppm`. The hardcoded expectations reflect the exact room kept.
