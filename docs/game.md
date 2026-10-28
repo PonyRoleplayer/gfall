@@ -167,6 +167,8 @@ Classic's other slots (turning, crouching, spells, the log...) stay empty until 
 
 On the 233: the title, the start menu, the pointer and the start into the hold run. The options and the controls screen are not tried there yet.
 
+**Escape is the menu's only since the engine's 127d3d3.** Before that, the window's own Escape quit the program whatever the game had set, so the options never opened. Now both places that see Escape obey `input_set_escape_quits` (`docs/input.md`).
+
 ## Creatures and combat
 
 The creatures already stand in a dungeon as entities (`docs/entities.md`): each has a kind (`world_entity_kind`) and a standing and a walking pose. The game adds:
