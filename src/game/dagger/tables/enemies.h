@@ -1,6 +1,7 @@
 #ifndef DF_ENEMIES_H
 #define DF_ENEMIES_H
 
+#include "engine/assets/recfile.h"
 #include "game/dagger/formats/rdb.h"
 
 /*
@@ -14,9 +15,78 @@
  * 128, a knight 145, the city watch 146). Whether one is friend or foe
  * is the game's later business; here they only exist, where the file
  * puts them. Plain C: hostcheck runs it.
+ *
+ * The kinds and the encounter tables are records (docs/data.md): the
+ * ENEM and ENCT chunks of MAIN.DAT, which the first run cooks from
+ * classic's tables (classic.c), and of any mod's .DAT over it. Nothing
+ * here knows a kind's numbers; a mod may add kinds past 146.
  */
 
-/* Mobile ids. */
+/* A kind: EnemyBasics' MobileEnemy, field for field where classic has it. */
+typedef struct EnemyKind {
+    df_u16 id;
+    char name[24];
+    /* ENEMY_GENERAL..ENEMY_GUARD; flying, spectral and aquatic follow from it. */
+    df_u8 behaviour;
+    /* DFU's MobileAffinity and MobileTeams, by number. */
+    df_u8 affinity;
+    df_u8 team;
+    df_u8 has_idle;
+    df_u8 ranged1;
+    df_u8 ranged2;
+    df_u8 opens_doors;
+    df_u8 prefers_ranged;
+    df_u8 parries;
+    df_u8 casts_magic;
+    df_u8 sees_invisible;
+    /* TEXTURE archives: a man's and a woman's (a monster's are the same); 0 for none. */
+    df_u16 male;
+    df_u16 female;
+    df_u16 corpse_archive;
+    df_u16 corpse_record;
+    /* TEXTURE.380's blood splash. */
+    df_u8 blood;
+    /* DAGGER.SND clips, by position. */
+    df_i16 move_sound;
+    df_i16 bark_sound;
+    df_i16 attack_sound;
+    /* The least weapon material that hurts it, -1 for any. */
+    signed char min_metal;
+    /* A swing's first, second and third hit. */
+    df_u8 damage_min[3];
+    df_u8 damage_max[3];
+    df_u16 health_min;
+    df_u16 health_max;
+    df_u8 level;
+    signed char armor;
+    df_u8 map_chance;
+    df_u16 weight;
+    df_u32 soul_points;
+    char loot[4];
+} EnemyKind;
+
+/* EnemyKind.behaviour: DFU's MobileBehaviour. */
+enum { ENEMY_GENERAL, ENEMY_FLYING, ENEMY_AQUATIC, ENEMY_SPECTRAL, ENEMY_GUARD };
+
+/* An encounter table: kinds, weakest first, by dungeon type (DUN_TYPE_*), or the underwater one. */
+#define ENCOUNTER_LEN 20
+#define ENCOUNTER_UNDERWATER 19
+typedef struct Encounter {
+    df_u16 id;
+    /* Kinds in use: 20, but the cemetery's 11. */
+    df_u8 count;
+    df_u16 kind[ENCOUNTER_LEN];
+} Encounter;
+
+extern const RecSchema enemy_schema;
+extern const RecSchema encounter_schema;
+/* The merged tables (docs/data.md), empty until a .DAT is merged. */
+RecTable *enemy_table(void);
+RecTable *encounter_table(void);
+/* A kind's record, or 0. */
+const EnemyKind *enemy_kind(int kind);
+
+/* Mobile ids. Classic's run below ENEMY_KINDS; a mod may add more past it. */
 #define ENEMY_KINDS 147
 #define ENEMY_RAT 0
 #define ENEMY_SLAUGHTERFISH 11

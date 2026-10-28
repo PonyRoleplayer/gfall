@@ -55,10 +55,12 @@ Daggerfall's rules for what a place has, as Daggerfall Unity carries them, read 
 
 | Module | Decides |
 | --- | --- |
-| `forecast` | the weather's odds by climate and season |
+| `maindat` | MAIN.DAT: cooking it, whether it is stale, the load order, merging each `.DAT` into the tables (`docs/data.md`) |
+| `classic` | classic's tables inside FALL.EXE, for cooking MAIN.DAT only |
+| `forecast` | the weather's odds by climate and season, and each kind's look (records) |
 | `swaps` | a face's picture by climate and season, and which ones are windows |
 | `sounds` | a place's songs, ambience and sounding flats |
-| `enemies` | the creature kinds, their pictures, and the encounter tables |
+| `enemies` | the creature kinds and the encounter tables (records), and the rules that place them |
 
 ### `src/game/dagger/places/`
 A place, built: what the engine draws, hears, walks on and uses.
@@ -76,7 +78,16 @@ A place, built: what the engine draws, hears, walks on and uses.
 Daggerfall's game, as `docs/game.md` lays it out: its player, its rules, its screens. Today it is only `player` (the fly camera GFALL uses). Rules that can be written as plain C (stats, combat sums, saves) live here and are host-tested in `tests/`.
 
 ### `apps/`
-One folder per program, each a `main.c` that brings `WinMainCRTStartup`. An app wires the layers together and owns its window, its loop and its keys. LEVELFALL and RENDERFALL are the engine's diagnostic views (`docs/viewers.md`). GFALL is the game. SPINTRI stands alone as the Glide demo.
+One folder per program, each a `main.c` that brings `WinMainCRTStartup`, except `dfrec`, the `.DAT` tool, a native command-line program built beside hostcheck (`docs/data.md`). An app wires the layers together and owns its window, its loop and its keys. LEVELFALL and RENDERFALL are the engine's diagnostic views (`docs/viewers.md`). GFALL is the game. SPINTRI stands alone as the Glide demo.
+
+### Data
+Daggerfall's tables are records, not C arrays (`docs/data.md`):
+- A table's row struct and `RecSchema` live in the module that uses it.
+- Classic's numbers live only in `tables/classic.c`, which cooks MAIN.DAT.
+- The record file itself is the engine's (`engine/assets/recfile.c`), and it knows no game.
+- `apps/dfrec` reads and makes `.DAT` files.
+
+**The engine takes values, the data supplies them.** The engine owns how things work: how weather rolls and blends, how fog draws, how a body walks. Its numbers are defaults, so it runs with no data, and it takes a game's numbers through setters, each with a getter for its default (`weather_set_look` and `weather_look`). The game reads its numbers from MAIN.DAT and the mods, and hands them over (`maindat_apply`). An engine table a game may want to change gets a setter and a getter. A table only the game uses stays in the game.
 
 ## Where new code goes
 
@@ -86,6 +97,8 @@ One folder per program, each a `main.c` that brings `WinMainCRTStartup`. An app 
 4. Does it turn files and tables into a Level, or step a loaded world (the stream, townspeople)? Put it in **places**.
 5. Is it about the player, the rules of play, a screen, a save? Put it in **play**. The engine never gets a player; it gets the generic part the player needs (a key, a hook, a body's rule) as an engine request.
 6. Is it a key, a panel, or a diagnostic for one program? Put it in that program's **apps** folder.
+
+A number Daggerfall decides (a creature's health, a spell's cost, the weather's odds) is a record in a table, never a constant in code: its schema goes beside the module that reads it, and its classic values go in `classic.c`.
 
 When a lower layer needs something from a higher one, the lower layer gains a hook, and the higher one installs it.
 

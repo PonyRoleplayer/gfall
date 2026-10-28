@@ -10,6 +10,7 @@
 #include "check_util.h"
 
 #include "engine/assets/loader.h"
+#include "engine/assets/recfile.h"
 #include "engine/assets/vfs.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
@@ -2844,6 +2845,132 @@ static void check_entities(void)
     }
 }
 
+/* A table of the test's own, and a wider one a file of another program might carry. */
+typedef struct RecT {
+    df_u16 id;
+    char name[8];
+    signed char a;
+    df_u8 arr[3];
+    float f;
+} RecT;
+
+typedef struct RecW {
+    df_u32 id;
+    char name[16];
+    df_i16 a;
+    df_u8 arr[2];
+    df_i32 f;
+    df_u8 extra;
+} RecW;
+
+static const RecField g_rect_fields[] = {
+    REC_FIELD("id", REC_UINT, RecT, id),
+    REC_FIELD("name", REC_TEXT, RecT, name),
+    REC_FIELD("a", REC_INT, RecT, a),
+    REC_ARRAY("arr", REC_UINT, RecT, arr),
+    REC_FIELD("f", REC_FLOAT, RecT, f)
+};
+static const RecSchema g_rect = { "TEST", "test", g_rect_fields, 5, (df_u16)sizeof(RecT), 0 };
+
+static const RecField g_recw_fields[] = {
+    REC_FIELD("id", REC_UINT, RecW, id),
+    REC_FIELD("name", REC_TEXT, RecW, name),
+    REC_FIELD("a", REC_INT, RecW, a),
+    REC_ARRAY("arr", REC_UINT, RecW, arr),
+    REC_FIELD("f", REC_INT, RecW, f),
+    REC_FIELD("extra", REC_UINT, RecW, extra)
+};
+static const RecSchema g_recw = { "TEST", "test", g_recw_fields, 6, (df_u16)sizeof(RecW), 0 };
+
+static df_u8 g_rec_buf[2048];
+static df_u32 g_rec_n;
+
+static int rec_put_test(void *ctx, const void *src, df_u32 n)
+{
+    (void)ctx;
+    if (g_rec_n + n > sizeof(g_rec_buf)) {
+        return 0;
+    }
+    memcpy(g_rec_buf + g_rec_n, src, n);
+    g_rec_n += n;
+    return 1;
+}
+
+/*
+ * Record files (recfile.c, docs/data.md): rows written and merged back
+ * the same; a chunk of some fields changes those alone; another
+ * program's wider types are clamped, converted and cut; a field the
+ * schema lacks is skipped; a damaged chunk is refused.
+ */
+static void check_recfile(void)
+{
+    RecT rows[2];
+    RecW w;
+    RecTable t;
+    RecChunk c;
+    RecMerge st;
+    const RecT *r;
+    df_u32 pos;
+    int some[2];
+
+    memset(rows, 0, sizeof(rows));
+    rows[0].id = 7;
+    strcpy(rows[0].name, "seven");
+    rows[0].a = -5;
+    rows[0].arr[0] = 1;
+    rows[0].arr[1] = 2;
+    rows[0].arr[2] = 3;
+    rows[0].f = 0.25f;
+    rows[1].id = 9;
+    strcpy(rows[1].name, "nine");
+    g_rec_n = 0;
+    check_expect(rec_put_begin(rec_put_test, 0) && rec_put_rows(rec_put_test, 0, &g_rect, rows, 2, 0, 0),
+                 "recfile: rows were not written");
+    /* The id and a alone, for row 7. */
+    rows[0].a = 42;
+    some[0] = 0;
+    some[1] = 2;
+    check_expect(rec_put_rows(rec_put_test, 0, &g_rect, rows, 1, some, 2), "recfile: some fields were not written");
+    check_expect(rec_is_file(g_rec_buf, g_rec_n), "recfile: the bytes are not a record file");
+    rec_table_init(&t, &g_rect, 1);
+    memset(&st, 0, sizeof(st));
+    pos = 0;
+    while (rec_next(g_rec_buf, g_rec_n, &pos, &c)) {
+        check_expect(rec_merge(&t, &c, &st), "recfile: a chunk did not merge");
+    }
+    r = (const RecT *)rec_row(&t, 7);
+    check_expect(t.count == 2 && st.added == 2 && st.changed == 1 && r && strcmp(r->name, "seven") == 0
+                     && r->a == 42 && r->arr[2] == 3 && r->f == 0.25f && rec_row(&t, 9) != 0,
+                 "recfile: the rows did not merge back with a's change alone");
+
+    /* Another program's wider row: clamped, made a float, cut, an array in part, extra skipped. */
+    memset(&w, 0, sizeof(w));
+    w.id = 7;
+    strcpy(w.name, "averylongname");
+    w.a = 300;
+    w.arr[0] = 9;
+    w.f = 3;
+    w.extra = 1;
+    g_rec_n = 0;
+    rec_put_begin(rec_put_test, 0);
+    rec_put_rows(rec_put_test, 0, &g_recw, &w, 1, 0, 0);
+    memset(&st, 0, sizeof(st));
+    pos = 0;
+    check_expect(rec_next(g_rec_buf, g_rec_n, &pos, &c) && rec_merge(&t, &c, &st), "recfile: a wider row did not merge");
+    r = (const RecT *)rec_row(&t, 7);
+    check_expect(r && r->a == 127 && r->f == 3.0f && strcmp(r->name, "averylo") == 0 && r->arr[0] == 9
+                     && r->arr[2] == 3 && st.skipped == 1,
+                 "recfile: a wider row was not clamped, converted, cut and skipped");
+
+    /* Damaged: a chunk running past the bytes, and a field past its row. */
+    pos = 0;
+    check_expect(!rec_next(g_rec_buf, g_rec_n - 4, &pos, &c), "recfile: a chunk past the bytes was read");
+    pos = 0;
+    rec_next(g_rec_buf, g_rec_n, &pos, &c);
+    g_rec_buf[8 + 8 + 12 + 20] = 200;
+    check_expect(!rec_merge(&t, &c, &st), "recfile: a field past its row was merged");
+}
+
 void check_engine(void)
 {
     check_rotation();
@@ -2868,4 +2995,5 @@ void check_engine(void)
     check_texres();
     check_entities();
     check_sound();
+    check_recfile();
 }

@@ -104,7 +104,7 @@ An RDB block's editor markers (archive 199, `docs/dungeons.md`) place them: reco
 - A block's water level is its start marker's (record 10) sound byte, 8 units a step down, 0 for none. A random marker below it draws from the underwater table. A slaughterfish, a dreugh or a lamia is left out where there is no water, or its marker more than 20 above it.
 - `action` 99 is passive: it attacks only when attacked. `world_entity_kind` reports it with the kind; what it means is the game's.
 
-The kinds are Daggerfall's mobile ids: 0..42 monsters (archive 255 + id, but for the horse, 39, which has none, and the other dragonling, the dreugh and the lamia at 295..297), 128..146 people of a class (a man's archive and a woman's, 475..490; the city watch 399). The table is `enemies.c`'s.
+The kinds are Daggerfall's mobile ids: 0..42 monsters (archive 255 + id, but for the horse, 39, which has none, and the other dragonling, the dreugh and the lamia at 295..297), 128..146 people of a class (a man's archive and a woman's, 475..490; the city watch 399). The kinds and the encounter tables are records: the `ENEM` and `ENCT` tables of MAIN.DAT and of any mod over it (`docs/data.md`), with EnemyBasics' full stats. `enemies.c` holds the rules, and `classic.c` holds the numbers only for cooking MAIN.DAT. A mod's kind past 146 is placed like any other wherever a table or a fixed marker names it.
 
 Privateer's Hold, a human stronghold, has 42: 14 rats, 6 giant bats, 3 imps, 2 bears, an orc, 3 skeletons, 4 rogues, 3 thieves, 6 archers. The draws are seeded by the location, so they are the same every load.
 

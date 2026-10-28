@@ -54,6 +54,7 @@ ENGINE_HOST_SRC := \
 	src/engine/platform/fs.c \
 	src/engine/assets/vfs.c \
 	src/engine/assets/loader.c \
+	src/engine/assets/recfile.c \
 	src/engine/scene/scene.c \
 	src/engine/scene/light.c \
 	src/engine/scene/clock.c \
@@ -109,6 +110,8 @@ FORMATS_SRC := \
 
 # Daggerfall's rules for dressing a place.
 TABLES_SRC := \
+	src/game/dagger/tables/maindat.c \
+	src/game/dagger/tables/classic.c \
 	src/game/dagger/tables/swaps.c \
 	src/game/dagger/tables/enemies.c \
 	src/game/dagger/tables/forecast.c \
@@ -145,7 +148,7 @@ LEVEL_SRC := apps/levelfall/main.c $(ENGINE_SRC) \
 HOST_SRC := $(ENGINE_HOST_SRC) \
 	$(filter-out src/game/dagger/formats/fnt.c,$(DAGGER_SRC)) $(PLAY_SRC)
 
-.PHONY: all check clean hostcheck gfall-check renderfall-check levelfall-check deps deps-host layers
+.PHONY: all check clean hostcheck datacheck gfall-check renderfall-check levelfall-check deps deps-host layers
 
 # A bare make builds everything; deps alone is the first rule below.
 .DEFAULT_GOAL := all
@@ -196,12 +199,31 @@ build/cdroot/SPINTRI.EXE: build/SPINTRI.EXE
 build/spintri.iso: build/cdroot/SPINTRI.EXE | deps
 	$(XORRISO) -as mkisofs -o $@ -V SPINTRI -J -iso-level 1 build/cdroot
 
-build/hostcheck: tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_util.c $(HOST_SRC) | deps-host
+build/hostcheck: tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_util.c tests/host_card.c $(HOST_SRC) | deps-host
 	mkdir -p build
-	$(HOST_CC) $(HOST_CFLAGS) -o $@ tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_util.c $(HOST_SRC)
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_util.c tests/host_card.c $(HOST_SRC)
 
-hostcheck: build/hostcheck
+hostcheck: build/hostcheck datacheck
 	./build/hostcheck
+
+# dfrec, the .DAT tool (docs/data.md): native, from the same code as hostcheck.
+build/dfrec: apps/dfrec/main.c tests/host_card.c $(HOST_SRC) | deps-host
+	mkdir -p build
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ apps/dfrec/main.c tests/host_card.c $(HOST_SRC)
+
+# MAIN.DAT cooked, dumped to text, built again from the text and merged
+# to the same records; the example mod built; a misspelled field fails
+# with its line.
+datacheck: build/dfrec
+	mkdir -p build/data
+	./build/dfrec import daggerfall/DAGGER/ARENA2 build/data/MAIN.DAT
+	./build/dfrec dump build/data/MAIN.DAT > build/data/main.txt
+	./build/dfrec build build/data/main.txt build/data/MAIN2.DAT
+	./build/dfrec same build/data/MAIN.DAT build/data/MAIN2.DAT
+	./build/dfrec build tests/data/goblins.txt build/data/GOBLINS.DAT
+	! ./build/dfrec build tests/data/misspelled.txt build/data/BAD.DAT 2> build/data/bad.log
+	grep -q 'misspelled.txt:4: no such field' build/data/bad.log
+	test ! -e build/data/BAD.DAT
 
 build/GFALL.EXE: $(GFALL_SRC) third_party/glide2/include/glide.h | deps
 	mkdir -p build

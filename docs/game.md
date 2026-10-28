@@ -160,6 +160,20 @@ Requests for the engine engineer, each in its smallest form:
 8. **A body apart from the camera**: the walker split into bodies the game steps (as many as wanted, each its own size) and camera rigs that place a camera from a body (first person at the eye; third person behind it, pulled in from walls). The viewers' walker stays as it is, built on one body. The use ray takes an origin and a direction, not only a camera.
 9. **The calendar out of the engine**: the engine keeps minutes and days, and the game installs Tamriel's months and seasons.
 
+## Data
+Daggerfall's tables are records in MAIN.DAT, cooked on the first run, with mods over it in a load order (`docs/data.md`). Built so far: enemy kinds, encounter tables, weather odds and looks. Each table below comes with the system that reads it:
+
+| Tables | Holds | From |
+| --- | --- | --- |
+| `LOCS`, `WMAP`, `CLIM` | the index of 4232 dungeons and 15251 towns; the heights, climates and locations' pixels; each climate's numbers | MAPS.BSA, WOODS.WLD, CLIMATE.PAK (they cut the 233's start-up) |
+| `ITEM`, `MAGI`, `WEAP`, `MATL`, `ARMR`, `LOOT` | items, artifacts, weapons, materials, armour, loot | the exe (via DFU), MAGIC.DEF; pictures stay in ARENA2 |
+| `CALE` | the calendar | the exe; the engine takes it through a setter (request 9) |
+| `RACE`, `CLAS`, `SKIL`, `SPEL`, `EFCT`, `ENCH`, `POTN`, `BIOG` | races, classes, skills, spells, effects, enchantments, potions, background | CLASS*.CFG, SPELLS.STD, BIOG*.TXT, the exe |
+| `FACT`, `NAME`, `PEOP`, `POLI`, `GILD`, `LAW`, `PRIC`, `HOLI`, `FLAT`, `MUSI`, `SWAP`, `DISE`, `CURS` | factions, names, townspeople, politics, guilds, law, prices, holidays, flats, music, swaps, diseases, curses | FACTION.TXT, NAMEGEN.DAT, POLITIC.PAK, FLATS.CFG, the exe |
+| `BOOK`, `TEXT`, `QUES` | indexes of the books, TEXT.RSC and the quests | BOOKS\, TEXT.RSC, QBN/QRC (their text and scripts stay in ARENA2) |
+
+Blocks, models, pictures, sounds and songs are never cooked: they stay in ARENA2.
+
 ## Phases
 
 | Phase | What | Tests (`tests/check_play.c`) |

@@ -1,0 +1,4 @@
+# A mod with a misspelled field: dfrec build must fail on line 4.
+[enemy 0]
+health_min = 30
+helth_max = 40

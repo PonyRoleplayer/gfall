@@ -6,6 +6,7 @@
 #include "check_util.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "engine/assets/vfs.h"
@@ -17,6 +18,8 @@
 #include "game/dagger/formats/skyfile.h"
 #include "game/dagger/formats/climate.h"
 #include "game/dagger/tables/forecast.h"
+#include "game/dagger/tables/maindat.h"
+#include "game/dagger/tables/enemies.h"
 #include "engine/scene/weather.h"
 #include "engine/scene/clock.h"
 #include "engine/scene/collide.h"
@@ -141,6 +144,201 @@ static void check_fly(void)
     in.look_dx = 100;
     player_tick(&cam, &in);
     check_expect(cam.yaw > 0.2f, "mouse right did not increase yaw");
+}
+
+/* A growing buffer for a .DAT made in memory. */
+typedef struct MemDat {
+    df_u8 *bytes;
+    df_u32 n;
+    df_u32 cap;
+} MemDat;
+
+static int put_mem(void *ctx, const void *src, df_u32 n)
+{
+    MemDat *m;
+
+    m = (MemDat *)ctx;
+    if (m->n + n > m->cap) {
+        df_u32 cap;
+        df_u8 *b;
+
+        cap = (m->cap ? m->cap * 2 : 4096) + n;
+        b = (df_u8 *)realloc(m->bytes, cap);
+        if (!b) {
+            return 0;
+        }
+        m->bytes = b;
+        m->cap = cap;
+    }
+    memcpy(m->bytes + m->n, src, n);
+    m->n += n;
+    return 1;
+}
+
+/* A mod's HEAD: its name, and what it needs before it (0 for nothing). */
+static void mod_head(MemDat *m, const char *self, const char *needs)
+{
+    RecHead h[2];
+
+    memset(h, 0, sizeof(h));
+    h[0].role = REC_HEAD_SELF;
+    df_copy(h[0].name, self, REC_NAME);
+    h[1].id = 1;
+    h[1].role = REC_HEAD_NEEDS;
+    df_copy(h[1].name, needs ? needs : "", REC_NAME);
+    rec_put_begin(put_mem, m);
+    rec_put_rows(put_mem, m, &rec_head_schema, h, needs ? 2 : 1, 0, 0);
+}
+
+/* A schema's field index by name, for a mod that carries some fields. */
+static int field_of(const RecSchema *s, const char *name)
+{
+    int i;
+
+    for (i = 0; i < s->nfield; i++) {
+        if (strcmp(s->field[i].name, name) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static MemDat g_main;
+
+/*
+ * MAIN.DAT (docs/data.md): cooked in memory from classic's tables, not
+ * stale for this ARENA2, and its records the numbers the code held.
+ * Then a load order of mods over it: a new kind, a field of the rat
+ * alone, a later file winning, a file whose need is missing. The
+ * tables are left as MAIN.DAT alone for the checks after it.
+ */
+static void check_data(void)
+{
+    const EnemyKind *rat;
+    const EnemyKind *goblin;
+    const Encounter *human;
+    static const df_u16 human_kinds[ENCOUNTER_LEN] = {
+        144, 136, 0, 4, 141, 133, 3, 129, 8, 145, 144, 136, 143, 24, 141, 23, 129, 21, 144, 28
+    };
+    WeatherLook before;
+    WeatherLook after;
+    MemDat mod;
+    MemDat later;
+    MemDat orphan;
+    EnemyKind rows[2];
+    WeatherKindLook look;
+    int fields[6];
+    int ok;
+    int i;
+
+    check_expect(maindat_import(put_mem, &g_main), "MAIN.DAT was not cooked");
+    check_expect(!maindat_stale(g_main.bytes, g_main.n), "a MAIN.DAT just cooked is stale");
+    maindat_reset();
+    check_expect(maindat_merge(g_main.bytes, g_main.n, MAINDAT_NAME), "MAIN.DAT did not merge");
+    weather_look(WEATHER_FOG, &before);
+    maindat_apply();
+    weather_look(WEATHER_FOG, &after);
+    check_expect(enemy_table()->count == 62 && encounter_table()->count == 20
+                     && weather_odds_table()->count == 40 && weather_look_table()->count == WEATHER_KINDS,
+                 "MAIN.DAT does not hold 62 kinds, 20 encounter tables, 40 odds and 7 looks");
+    check_expect(memcmp(&before, &after, sizeof(before)) == 0, "MAIN.DAT's fog is not the engine's own");
+    rat = enemy_kind(ENEMY_RAT);
+    check_expect(rat && strcmp(rat->name, "Rat") == 0 && rat->male == 255 && rat->has_idle
+                     && rat->behaviour == ENEMY_GENERAL && rat->health_min == 9 && rat->health_max == 16
+                     && rat->damage_max[0] == 4 && rat->armor == 6 && rat->move_sound == 115,
+                 "the rat is not EnemyBasics' rat");
+    human = (const Encounter *)rec_row(encounter_table(), DUN_TYPE_HUMAN_STRONGHOLD);
+    ok = human && human->count == 20;
+    for (i = 0; ok && i < ENCOUNTER_LEN; i++) {
+        ok = human->kind[i] == human_kinds[i];
+    }
+    check_expect(ok, "the human stronghold's encounter table is not classic's");
+    human = (const Encounter *)rec_row(encounter_table(), DUN_TYPE_CEMETERY);
+    check_expect(human && human->count == 11, "the cemetery's table does not use eleven kinds");
+
+    /* Stale: another importer's version, or another size of MONSTER.BSA. */
+    {
+        RecChunk c;
+        df_u32 pos;
+        df_u8 *copy;
+
+        copy = (df_u8 *)malloc(g_main.n);
+        memcpy(copy, g_main.bytes, g_main.n);
+        pos = 0;
+        rec_next(copy, g_main.n, &pos, &c);
+        /* HEAD's rows: id 2, role 1, size 4, name 16; the first row's size is the version. */
+        ((df_u8 *)c.data)[12 + 4 * 24 + 3] ^= 1u;
+        check_expect(maindat_stale(copy, g_main.n), "a MAIN.DAT of another importer version is not stale");
+        memcpy(copy, g_main.bytes, g_main.n);
+        ((df_u8 *)c.data)[12 + 4 * 24 + 23 + 3] ^= 1u;
+        check_expect(maindat_stale(copy, g_main.n), "a MAIN.DAT of another MONSTER.BSA is not stale");
+        free(copy);
+    }
+
+    /* A mod: a goblin, kind 200, said in part; the rat's least health alone. */
+    memset(&mod, 0, sizeof(mod));
+    memset(rows, 0, sizeof(rows));
+    rows[0].id = 200;
+    df_copy(rows[0].name, "Goblin", 24);
+    rows[0].male = 255;
+    rows[0].female = 255;
+    rows[0].health_min = 10;
+    rows[0].health_max = 20;
+    fields[0] = 0;
+    fields[1] = field_of(&enemy_schema, "name");
+    fields[2] = field_of(&enemy_schema, "male");
+    fields[3] = field_of(&enemy_schema, "female");
+    fields[4] = field_of(&enemy_schema, "health_min");
+    fields[5] = field_of(&enemy_schema, "health_max");
+    mod_head(&mod, "GOBLINS.DAT", MAINDAT_NAME);
+    rec_put_rows(put_mem, &mod, &enemy_schema, rows, 1, fields, 6);
+    rows[1].id = ENEMY_RAT;
+    rows[1].health_min = 30;
+    rec_put_rows(put_mem, &mod, &enemy_schema, &rows[1], 1, fields, 1);
+    rec_put_rows(put_mem, &mod, &enemy_schema, &rows[1], 1, (fields[1] = fields[4], fields), 2);
+    /* A look: the fog thicker, and nothing else of it. */
+    memset(&look, 0, sizeof(look));
+    look.id = WEATHER_FOG;
+    look.fog = 300.0f;
+    fields[1] = field_of(&weather_look_schema, "fog");
+    rec_put_rows(put_mem, &mod, &weather_look_schema, &look, 1, fields, 2);
+    check_expect(maindat_merge(mod.bytes, mod.n, "GOBLINS.DAT"), "a mod needing MAIN.DAT did not merge after it");
+    maindat_apply();
+    goblin = enemy_kind(200);
+    rat = enemy_kind(ENEMY_RAT);
+    weather_look(WEATHER_FOG, &after);
+    check_expect(goblin && strcmp(goblin->name, "Goblin") == 0 && goblin->health_max == 20
+                     && goblin->move_sound == -1 && goblin->level == 1 && enemy_archive(200, 0) == 255,
+                 "a mod's new kind is not its fields over the defaults");
+    check_expect(rat && rat->health_min == 30 && rat->health_max == 16 && strcmp(rat->name, "Rat") == 0,
+                 "a mod's rat changed more than its least health");
+    check_expect(after.fog == 300.0f && after.cloud == before.cloud && after.view == before.view,
+                 "a mod's fog did not reach the engine alone");
+
+    /* A later file wins the field both set; one needing a file not merged is skipped. */
+    memset(&later, 0, sizeof(later));
+    mod_head(&later, "LATER.DAT", "GOBLINS.DAT");
+    rows[1].health_min = 40;
+    fields[1] = field_of(&enemy_schema, "health_min");
+    rec_put_rows(put_mem, &later, &enemy_schema, &rows[1], 1, fields, 2);
+    memset(&orphan, 0, sizeof(orphan));
+    mod_head(&orphan, "ORPHAN.DAT", "NOPE.DAT");
+    rows[1].health_min = 99;
+    rec_put_rows(put_mem, &orphan, &enemy_schema, &rows[1], 1, fields, 2);
+    check_expect(maindat_merge(later.bytes, later.n, "LATER.DAT") && enemy_kind(ENEMY_RAT)->health_min == 40,
+                 "the later file does not win the rat's health");
+    check_expect(!maindat_merge(orphan.bytes, orphan.n, "ORPHAN.DAT") && enemy_kind(ENEMY_RAT)->health_min == 40,
+                 "a file whose need is missing was merged");
+    printf("data: MAIN.DAT %u bytes, %d kinds, a mod's kind 200 and the rat's health over it\n",
+           g_main.n, 62);
+    free(mod.bytes);
+    free(later.bytes);
+    free(orphan.bytes);
+
+    /* MAIN.DAT alone again, its looks back on the engine. */
+    maindat_reset();
+    maindat_merge(g_main.bytes, g_main.n, MAINDAT_NAME);
+    maindat_apply();
 }
 
 /*
@@ -2290,6 +2488,7 @@ int check_dagger(const char *root_in)
     root = root_in ? root_in : "daggerfall/DAGGER/ARENA2";
     mem_init();
     vfs_mount(root);
+    check_data();
     check_smooth();
     check_jambs();
     check_v25();

@@ -1,0 +1,15 @@
+# An example mod: a new kind, and the rat a little tougher.
+needs = MAIN.DAT
+
+[enemy 200]
+name = Goblin
+male = 262
+female = 262
+has_idle = 1
+health_min = 10
+health_max = 20
+damage_min = 2, 0, 0
+damage_max = 6, 0, 0
+
+[enemy 0]
+health_min = 30

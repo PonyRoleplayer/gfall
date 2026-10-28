@@ -20,6 +20,7 @@
 #include "game/dagger/formats/fnt.h"
 #include "game/dagger/play/player.h"
 #include "game/dagger/places/world.h"
+#include "game/dagger/tables/maindat.h"
 
 int gfall_main(void *instance)
 {
@@ -35,6 +36,13 @@ int gfall_main(void *instance)
 
     mem_init();
     if (!win_startup(instance, "/ARENA2", "gfall", 0)) {
+        mem_shutdown();
+        return 1;
+    }
+    /* Daggerfall's tables: MAIN.DAT beside the exe, cooked on the first run, and the mods over it (docs/data.md). */
+    if (!maindat_start()) {
+        win_fail("MAIN.DAT could not be made beside the program.");
+        win_shutdown();
         mem_shutdown();
         return 1;
     }

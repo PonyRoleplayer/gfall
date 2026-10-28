@@ -42,7 +42,7 @@ When the game sets new odds and the current kind has no chance under them, a rol
 
 ## The odds
 
-The engine defaults to Daggerfall's woodlands in summer. `src/game/dagger/tables/forecast.c` has the whole table from the Daggerfall Chronicles (p. 47), as Daggerfall Unity carries it (`WeatherTable.json`): six climate groups, four seasons each. `world.c` sets the place's odds when an outdoor place loads (`forecast_set`), summer until there is a calendar. Some of it:
+The engine defaults to Daggerfall's woodlands in summer. The game's odds are records: MAIN.DAT's `WTHR` table, one for each climate id and season (`docs/data.md`). The first run cooks it from the Daggerfall Chronicles' table (p. 47), as Daggerfall Unity carries it (`WeatherTable.json`): six climate groups, four seasons each, in `classic.c`. A climate with no record takes the woodlands' odds in that season. The looks of the kinds are records too (`WLOK`): the first run cooks the engine's own defaults, and `maindat_apply` hands them back with `weather_set_look`, so a mod can change them. `world.c` sets the place's odds when an outdoor place loads (`forecast_set`), summer until there is a calendar. Some of it:
 
 | Group (climates) | Season | Sunny | Cloudy | Overcast | Fog | Rain | Thunder | Snow |
 |---|---|---|---|---|---|---|---|---|

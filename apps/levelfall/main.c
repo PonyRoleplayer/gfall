@@ -54,6 +54,7 @@
 #include "game/dagger/formats/dungeon.h"
 #include "game/dagger/formats/texture.h"
 #include "game/dagger/places/world.h"
+#include "game/dagger/tables/maindat.h"
 #include "game/dagger/places/wild.h"
 #include "game/dagger/places/people.h"
 #include "game/dagger/places/wres.h"
@@ -4450,6 +4451,10 @@ static int levelfall_main(void *instance)
         }
         mem_shutdown();
         return 1;
+    }
+    /* Daggerfall's tables before any place loads: MAIN.DAT and the mods over it (docs/data.md). */
+    if (!maindat_start()) {
+        log_line("MAIN.DAT could not be made beside the program; no creatures, all sun");
     }
     vfs_root(root, (int)sizeof(root));
     log_line(root);
