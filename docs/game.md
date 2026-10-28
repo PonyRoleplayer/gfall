@@ -46,6 +46,14 @@ GFALL's loop, once the game is running:
 3. `gfx_frame(cam, level)`, with the HUD drawn by `gfx_set_extra(hud_draw)`.
 4. `travel` changes place between frames, under `gfx_hold`, then calls `gfx_prepare` and `gfx_prime`, and fades in (`gfx_fade_in`).
 
+**Built (P1, `play/game.c`, `apps/gfall/main.c`).** GFALL's loop is `win_pump`, then `input_read`, then `game_frame(cam, in, dt)`, then `gfx_frame`. dt is the performance counter's, at most a tenth of a second. `game_frame`, bracketed as the profile's `play` stage:
+1. Escape toggles the game's pause (`gfx_set_pause`); paused, Q quits.
+2. Unless paused (the game's, or the console's: `gfx_paused`): the use key, the player's step, its landing taken, the camera on its eye (`rig_first`), and the creatures read near it (2 ms).
+3. The compass is turned.
+
+A passage says where it will lead, and a person that talk comes later, through the game's use handler (`interact_set_handler`). The pictures' room on the card is 256 KB (`GAME_PICTURE_KB`), set before the first place.
+
+
 ## Places and travel
 
 A small state machine: **stream** (outside, the whole map), **inside** (one building, loaded whole, where it stands), **dungeon** (loaded whole). Every move between them goes through one passage, kept as a `Usable` (`doors.h`: `DOOR_ENTER`, `DOOR_LEAVE`, `DOOR_DUNGEON`, `DOOR_EXIT`). The landing comes from `doors_landing`, as LEVELFALL does it now.
@@ -57,7 +65,7 @@ A small state machine: **stream** (outside, the whole map), **inside** (one buil
 ## The player
 
 ### The body
-Daggerfall is first person: the player is the camera. The physics is not the camera's, though. It is an engine **body** (requested, item 8 below): 72 units tall, a 24-unit step, gravity and stairs, which the game steps each frame with the motion it wants. A first-person rig then puts the camera at the body's eye. A third-person game would instead draw an entity at the body and put the camera behind it with a third-person rig; the engine allows both, and this game uses the first.
+Daggerfall is first person: the player is the camera. The physics is not the camera's, though. It is an engine **body** (`body.h`): 72 units tall, a 24-unit step, gravity and stairs, which the game steps each frame with the motion it wants. A first-person rig then puts the camera at the body's eye. A third-person game would instead draw an entity at the body and put the camera behind it with a third-person rig; the engine allows both, and this game uses the first.
 
 Entities have no physics of their own. A creature that only stands, or walks a flat town cell, needs none. A creature that chases the player down a stair gets a body of its own size, and the game copies the body's place to the creature's entity each frame.
 
@@ -67,7 +75,15 @@ The game adds, as rules on top of the player's body:
 - **Swim**: when `scene_water_body` says the player is in over the head; Swimming slows the loss of breath.
 - **Fall damage**.
 
-The engine's G1 hooks (on its `engine-game-hooks` branch) give the jump and the landing; the run is the game's longer wanted motion.
+**Built (P1, `play/player.c`, `play/rules.c`).**
+- **The numbers are classic's, as Daggerfall Unity's PlayerSpeedChanger and AcrobatMotor have them:**
+  - walking (Speed + 150 − drag) / 39.5 m/s;
+  - running (Speed + 150) / 39.5 × (1.35 + Running / 200);
+  - a jump's height, 4.5 m/s × (1 + Jumping / 200) rising under 20 m/s².
+- **Until P2 the character is a level-1 one:** Speed 50, Running 20, Jumping 20 (`PLAYER_*`). So a walk is 4.43 m/s, 177 units a second.
+- **Forward and sideways at once go no faster than one** (DFU's limitDiagonalSpeed).
+- **The jump keeps classic's height but not its time in the air:** the engine's bodies fall at 9.8 m/s², not DFU's 20, so it starts slower to rise as high and hangs a little longer. A body's own gravity is an engine request if that matters.
+- **The landing is taken but does nothing yet:** fall damage comes with the vitals (P2). Swimming comes when a place with water is played.
 
 ### The sheet
 Daggerfall's character, per UESP (Character Creation, Attributes, Skills, Leveling):
@@ -92,15 +108,17 @@ Daggerfall's keys on a Win98 keyboard and mouse:
 - keys for the screens (character, inventory, map, rest);
 - Escape for the menu.
 
-The engine's `Input` has only the movement and the look today, so the rest is an engine request.
+The engine's `Input` gives these as actions (`INPUT_*`: held, pressed, released). The game sets Escape as its menu, not a quit (`input_set_escape_quits(0)`), and takes the use key itself (`gfx_set_use_key(0)`, then `interact_request_use` on E), so the left button is free to attack.
 
-The HUD is drawn at the card's 640 × 480 through the engine's text (`fnt_install` puts FONT0000.FNT in):
-- a crosshair;
-- a compass;
-- the three vitals as bars;
-- the engine's `interact_say` line.
+The HUD is drawn at the card's 640 × 480. Classic's 320 × 200 pieces are drawn twice as wide and 2.4 times as tall, where classic put them, with the engine's pictures (`pic.h`, `docs/pictures.md`).
 
-Daggerfall's own screen pictures (IMG and CIF, 320 × 200) need a 2D picture draw from the engine; that is a request too.
+**Built (P1, `play/overlay.c`):**
+- **The compass:** COMPASS.IMG's 322 × 14 strip scrolled under COMPBOX.IMG in the bottom right, as DFU's HUDCompass draws it. It scrolls 258 pixels a turn, with yaw 0 north and growing east. The pictures are read by `formats/img.c` under ART_PAL.COL.
+- **A crosshair:** a "+" in the middle. It is DFU's, not classic's: classic had none. `overlay_set_crosshair` turns it off.
+- **The message line:** the engine's `interact_say`.
+- **The pause line:** shown while paused.
+
+Still to come: the vitals as bars (P2), the weapon (P3).
 
 ## Creatures and combat
 
@@ -175,15 +193,26 @@ Daggerfall's tables are records in MAIN.DAT, cooked on the first run, with mods 
 Blocks, models, pictures, sounds and songs are never cooked: they stay in ARENA2.
 
 ## Phases
+The first goal is a **prototype**: Privateer's Hold played from start to finish as classic, out to the first town and back after a save (P1 to P6). Then the rest of classic (P7 to P11). Then a mode of our own (P12). Each phase:
+- is measured on the 233 with the profile's `play` stage;
+- adds its rules' tests to `tests/check_play.c`;
+- adds its numbers to MAIN.DAT;
+- gets a view in LEVELFALL.
 
-| Phase | What | Tests (`tests/check_play.c`) |
-| --- | --- | --- |
-| G1 | GFALL on foot: start in the hold, walk, use doors, out to the stream and back, in and out of houses; `travel` lifted out of LEVELFALL; the HUD's crosshair, compass and line | the travel machine: each passage lands where LEVELFALL's did |
-| G2 | the sheet and the rules: a pre-made character, derived values, the vitals on the HUD | each derived value against UESP's worked figures |
-| G3 | combat in the hold: the motor, the attack, hurt and death, the player's death | to-hit and damage sums; a creature wakes and closes in |
-| G4 | items, gold, loot, the inventory screen | weights and loot draws |
-| G5 | saves | a round trip; a place's change list replayed |
-| G6 | rest, the travel map | the clock and the vitals across a rest; a trip's landing |
-| G7 | talk, factions, quests | each its own design first |
+| Phase | What | Who | Done when |
+| --- | --- | --- | --- |
+| P0 | Foundation: the layers, MAIN.DAT and mods, dfrec; the engine's keys, bodies and rigs, pause, poses, calendar, `DATA\` | all | built |
+| **P1** | **On foot** (built; the 233 run is still to do). GFALL rewritten as the game's single play state: the player a body under `rig_first`, walk, run, jump and fall, mouse look; the use key on doors and levers; HUD crosshair, compass and message line; Escape pauses | GAME | the hold walked from marker 10 to its exit on the 233 |
+| P2 | A character: a fixed level-1 one, classic's attributes, skills and vitals; vitals bars on the HUD; `RACE`, `CLAS`, `SKIL` | GAME, ENGINE's pictures | derived values match UESP's worked figures |
+| P3 | Combat: the weapon's swing from WEAPON##.CIF (the shown swing's frames only on the card), classic's to-hit and damage; creatures wake, chase on bodies of their size, attack, flinch, die; the player's death restarts; `WEAP`, `MATL` | GAME; LEVELFALL shows each creature's state | the hold can be cleared, or the player killed, from records |
+| P4 | Loot and inventory: corpses, treasure, gold, pick up, equip weapon and armour; `ITEM`, `ARMR`, `LOOT` | GAME, ENGINE's pictures | equipment changes combat |
+| P5 | Out of the hold: `places/travel.c` lifted from LEVELFALL and shared; the hold's outside in the stream, the nearest town, its houses | GAME and LEVELFALL | the trip is one session |
+| P6 | Prototype polish: title screen, loading holds, one save slot in `DATA\`, rest and wait, a 233 profile pass | GAME | title to town and back after a save |
+| P7 | Character creation and levelling: classic's screens, background questions, skill gains, level-ups | GAME | |
+| P8 | Magic: spells, effects, spellbook, casting, potions, enchantments | GAME | |
+| P9 | People: talk from TEXT.RSC, shops, banks, factions, reputation, law | GAME | |
+| P10 | Quests: the QBN interpreter, guild quests | GAME | |
+| P11 | The wider world: travel map, horse and cart, holidays, diseases, lycanthropy and vampirism | GAME | |
+| P12 | Our own mode: a ruleset switch over classic's rules, a mode `.DAT` over MAIN.DAT; classic stays the default and the reference | GAME | |
 
 Each phase updates this page (what is built, what is not) and AGENTS.md's layout list.

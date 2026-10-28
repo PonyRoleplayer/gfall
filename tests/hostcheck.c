@@ -9,6 +9,7 @@
 
 void check_engine(void);
 int check_dagger(const char *root);
+void check_play(void);
 
 int main(int argc, char **argv)
 {
@@ -19,6 +20,8 @@ int main(int argc, char **argv)
     if (check_dagger(root) && !check_failed()) {
         return 1;
     }
+    /* After the dagger checks: ARENA2 mounted, MAIN.DAT merged. */
+    check_play();
     if (check_failed()) {
         fprintf(stderr, "hostcheck failed\n");
         return 1;

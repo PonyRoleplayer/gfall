@@ -14,7 +14,6 @@
 #include "game/dagger/formats/arch3d.h"
 #include "game/dagger/formats/bsa.h"
 #include "game/dagger/formats/dungeon.h"
-#include "game/dagger/play/player.h"
 #include "game/dagger/formats/skyfile.h"
 #include "game/dagger/formats/climate.h"
 #include "game/dagger/tables/forecast.h"
@@ -97,53 +96,18 @@ static int unique_indices(const Image *img)
     return count;
 }
 
+/* The camera's axes, which the player's walking (check_play.c) and the compass turn by. */
 static void check_fly(void)
 {
     Camera cam;
-    Input in;
     Basis basis;
 
-    mem_zero(&in, sizeof(in));
     camera_set(&cam, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
     camera_basis(&cam, &basis);
     check_expect(check_near(basis.fx, 0.0f, 0.02f) && check_near(basis.fz, 1.0f, 0.02f),
            "yaw 0 forward is not +Z");
     check_expect(check_near(basis.rx, 1.0f, 0.02f) && check_near(basis.rz, 0.0f, 0.02f),
            "yaw 0 right is not +X");
-
-    in.move_f = 1;
-    player_tick(&cam, &in);
-    check_expect(cam.z > 1.0f && check_near(cam.x, 0.0f, 0.02f), "W did not move toward +Z");
-
-    camera_set(&cam, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
-    mem_zero(&in, sizeof(in));
-    in.move_r = 1;
-    player_tick(&cam, &in);
-    check_expect(cam.x > 1.0f && check_near(cam.z, 0.0f, 0.02f), "D did not move toward +X");
-
-    camera_set(&cam, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
-    mem_zero(&in, sizeof(in));
-    in.move_y = 1;
-    player_tick(&cam, &in);
-    check_expect(cam.y > 1.0f, "Q did not raise Y");
-
-    camera_set(&cam, 0.0f, 10.0f, 0.0f, 0.0f, 0.0f);
-    mem_zero(&in, sizeof(in));
-    in.move_y = -1;
-    player_tick(&cam, &in);
-    check_expect(cam.y < 10.0f, "E did not lower Y");
-
-    camera_set(&cam, 0.0f, 0.0f, 0.0f, 1.5707963f, 0.0f);
-    mem_zero(&in, sizeof(in));
-    in.move_f = 1;
-    player_tick(&cam, &in);
-    check_expect(cam.x > 1.0f, "W after a right turn did not move toward +X");
-
-    camera_set(&cam, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
-    mem_zero(&in, sizeof(in));
-    in.look_dx = 100;
-    player_tick(&cam, &in);
-    check_expect(cam.yaw > 0.2f, "mouse right did not increase yaw");
 }
 
 /* A growing buffer for a .DAT made in memory. */

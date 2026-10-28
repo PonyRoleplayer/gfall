@@ -107,7 +107,8 @@ FORMATS_SRC := \
 	src/game/dagger/formats/worldmap.c \
 	src/game/dagger/formats/skyfile.c \
 	src/game/dagger/formats/sndfile.c \
-	src/game/dagger/formats/hmi.c
+	src/game/dagger/formats/hmi.c \
+	src/game/dagger/formats/img.c
 
 # Daggerfall's rules for dressing a place.
 TABLES_SRC := \
@@ -132,7 +133,15 @@ DAGGER_SRC := $(FORMATS_SRC) $(TABLES_SRC) $(PLACES_SRC)
 
 # Daggerfall's game: its player, its rules. LEVELFALL does not link it.
 PLAY_SRC := \
-	src/game/dagger/play/player.c
+	src/game/dagger/play/rules.c \
+	src/game/dagger/play/player.c \
+	src/game/dagger/play/overlay.c \
+	src/game/dagger/play/game.c
+
+# What of the game draws or reaches the card: not built for the host.
+PLAY_DRAW_SRC := \
+	src/game/dagger/play/overlay.c \
+	src/game/dagger/play/game.c
 
 GFALL_SRC := apps/gfall/main.c $(ENGINE_SRC) $(DAGGER_SRC) $(PLAY_SRC)
 
@@ -148,7 +157,7 @@ LEVEL_SRC := apps/levelfall/main.c $(ENGINE_SRC) \
 	$(filter-out src/game/dagger/formats/fnt.c,$(DAGGER_SRC))
 
 HOST_SRC := $(ENGINE_HOST_SRC) \
-	$(filter-out src/game/dagger/formats/fnt.c,$(DAGGER_SRC)) $(PLAY_SRC)
+	$(filter-out src/game/dagger/formats/fnt.c,$(DAGGER_SRC)) $(filter-out $(PLAY_DRAW_SRC),$(PLAY_SRC))
 
 .PHONY: all check clean hostcheck datacheck gfall-check renderfall-check levelfall-check deps deps-host layers
 
@@ -201,9 +210,9 @@ build/cdroot/SPINTRI.EXE: build/SPINTRI.EXE
 build/spintri.iso: build/cdroot/SPINTRI.EXE | deps
 	$(XORRISO) -as mkisofs -o $@ -V SPINTRI -J -iso-level 1 build/cdroot
 
-build/hostcheck: tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_util.c tests/host_card.c $(HOST_SRC) | deps-host
+build/hostcheck: tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_play.c tests/check_util.c tests/host_card.c $(HOST_SRC) | deps-host
 	mkdir -p build
-	$(HOST_CC) $(HOST_CFLAGS) -o $@ tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_util.c tests/host_card.c $(HOST_SRC)
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_play.c tests/check_util.c tests/host_card.c $(HOST_SRC)
 
 hostcheck: build/hostcheck datacheck
 	./build/hostcheck

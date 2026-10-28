@@ -1,0 +1,36 @@
+#ifndef DF_IMG_H
+#define DF_IMG_H
+
+#include "engine/assets/palette.h"
+
+/*
+ * Daggerfall's IMG pictures: the screens and the HUD's pieces (the
+ * compass, its box). Read through the VFS from ARENA2.
+ *
+ * Most start with a 12-byte header: x, y (where it sits on the 320 x 200
+ * screen), width, height, compression, pixel bytes, then the pixels a
+ * row at a time, top first. Some have no header and are known by their
+ * size alone (COMPASS.IMG is 4508 bytes: 322 x 14), as Daggerfall
+ * Unity's ImgFile lists them. Their palette is ART_PAL.COL but for a
+ * few (FMAP*, NITE*, DANK02I0, TMAP00I0, and the ones that carry their
+ * own after the pixels): not read here yet.
+ *
+ * Only uncompressed pictures are read for now; a compressed one fails
+ * with a log line.
+ */
+
+typedef struct ImgPicture {
+    int x;
+    int y;
+    int width;
+    int height;
+    /* width * height indices, row 0 at the top: the VFS read's bytes, live until exit. */
+    const df_u8 *pixels;
+} ImgPicture;
+
+/* An IMG from ARENA2 by name. 0 when it is missing, compressed, or short. */
+int img_load(const char *name, ImgPicture *out);
+/* ART_PAL.COL, the palette of most IMGs, as 768 RGB bytes. 0 when it does not read. */
+int img_art_palette(df_u8 *rgb768);
+
+#endif

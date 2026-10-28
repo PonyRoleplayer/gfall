@@ -1,6 +1,7 @@
 /*
- * Privateer's Hold. The platform fills an input snapshot, the game flies
- * the camera, and the engine draws the level. Escape quits.
+ * GFALL: Daggerfall. Starts in Privateer's Hold, on foot. The platform
+ * fills an input snapshot, the game plays one frame of it (play/game.c),
+ * and the engine draws the place. Escape pauses; paused, Q quits.
  * WinMainCRTStartup lives here so renderfall can link the same window
  * code and bring its own entry.
  */
@@ -18,9 +19,26 @@
 #include "engine/sound/sound.h"
 #include "engine/ui/console.h"
 #include "game/dagger/formats/fnt.h"
-#include "game/dagger/play/player.h"
+#include "game/dagger/play/game.h"
 #include "game/dagger/places/world.h"
 #include "game/dagger/tables/maindat.h"
+
+/* A frame's real seconds by the performance counter (GetTickCount is too coarse on Win9x); a stall counts as a tenth. */
+static float frame_secs(void)
+{
+    static LARGE_INTEGER last;
+    static LARGE_INTEGER freq;
+    LARGE_INTEGER now;
+    float secs;
+
+    if (!freq.QuadPart && !QueryPerformanceFrequency(&freq)) {
+        freq.QuadPart = 1;
+    }
+    QueryPerformanceCounter(&now);
+    secs = last.QuadPart ? (float)(now.QuadPart - last.QuadPart) / (float)freq.QuadPart : 0.0f;
+    last = now;
+    return secs > 0.1f ? 0.1f : secs;
+}
 
 int gfall_main(void *instance)
 {
@@ -28,18 +46,13 @@ int gfall_main(void *instance)
     Level level;
     Camera cam;
     Input in;
-    float x;
-    float y;
-    float z;
-    float yaw;
-    float pitch;
 
     mem_init();
     if (!win_startup(instance, "/ARENA2", "gfall", 0)) {
         mem_shutdown();
         return 1;
     }
-    /* Daggerfall's tables: MAIN.DAT beside the exe, cooked on the first run, and the mods over it (docs/data.md). */
+    /* Daggerfall's tables: DATA\MAIN.DAT beside the exe, cooked on the first run, and the mods over it (docs/data.md). */
     if (!maindat_start()) {
         win_fail("MAIN.DAT could not be made beside the program.");
         win_shutdown();
@@ -63,6 +76,8 @@ int gfall_main(void *instance)
         return 1;
     }
     fnt_install();
+    /* The game's keys and its pictures' room, before the place takes the card. */
+    game_setup();
     if (!gfx_prepare(&level)) {
         win_fail(gfx_error());
         gfx_shutdown();
@@ -74,27 +89,23 @@ int gfall_main(void *instance)
     /* The card's sound and its synthesizer; without either the hold is silent. See docs/sound.md. */
     sound_startup(win_hwnd());
     music_startup();
-    world_start(world, &x, &y, &z, &yaw, &pitch);
-    camera_set(&cam, x, y, z, yaw, pitch);
+    game_enter(world, &level, &cam);
     /* The creatures near the start read, then the hold's song and their sharp copies, before the first frame. */
     world_creatures_step(world, &cam, 2048.0f, 0.0f);
     gfx_prime(&level, &cam);
     console_set_camera(&cam);
     input_begin(win_hwnd());
+    frame_secs();
     for (;;) {
         win_pump();
         input_read(&in);
-        if (in.quit) {
+        if (in.quit || !game_frame(&cam, &in, frame_secs())) {
             break;
-        }
-        player_tick(&cam, &in);
-        /* The rest of the hold's creatures, as they come near, a little a frame (docs/entities.md). */
-        if (!gfx_paused()) {
-            world_creatures_step(world, &cam, 0.0f, 2.0f);
         }
         gfx_frame(&cam, &level);
     }
     input_end();
+    game_shutdown();
     music_shutdown();
     sound_shutdown();
     gfx_shutdown();

@@ -40,6 +40,7 @@ One module per Daggerfall file or family of files. Each turns the bytes into eng
 | `texture` | TEXTURE.### pictures and their frames |
 | `palette` | a .COL palette |
 | `fnt` | FONT0000.FNT into the engine's glyph sheet |
+| `img` | IMG pictures, the HUD's and the screens' (uncompressed for now) |
 | `rdb` | an RDB block (a dungeon's): models, flats, lights, actions, markers |
 | `rmb` | an RMB block (a town's or a house's inside) |
 | `dungeon` | the location index (MAPS.BSA): places, their blocks and climates |
@@ -75,7 +76,7 @@ A place, built: what the engine draws, hears, walks on and uses.
 | `doors` | the doors, levers, passages and people a block names, as usables and movers |
 
 ### `src/game/dagger/play/`
-Daggerfall's game, as `docs/game.md` lays it out: its player, its rules, its screens. Today it is only `player` (the fly camera GFALL uses). Rules that can be written as plain C (stats, combat sums, saves) live here and are host-tested in `tests/`.
+Daggerfall's game, as `docs/game.md` lays it out: its player, its rules, its screens. Today: `game` (the play state's frame), `player` (a body under `rig_first`), `rules` (classic's sums), `overlay` (the compass and crosshair). Rules that can be written as plain C (stats, combat sums, saves) live here and are host-tested in `tests/`.
 
 ### `apps/`
 One folder per program, each a `main.c` that brings `WinMainCRTStartup`, except `dfrec`, the `.DAT` tool, a native command-line program built beside hostcheck (`docs/data.md`). An app wires the layers together and owns its window, its loop and its keys. LEVELFALL and RENDERFALL are the engine's diagnostic views (`docs/viewers.md`). GFALL is the game. SPINTRI stands alone as the Glide demo.
@@ -119,7 +120,7 @@ The Makefile groups sources by layer: `ENGINE_HOST_SRC` (plain C), `ENGINE_SRC` 
 | GFALL | engine, all of dagger (play included) |
 | LEVELFALL | engine, dagger's formats, tables and places but `fnt` |
 | RENDERFALL | engine, `bsa` `arch3d` `texture` `palette` |
-| hostcheck | the plain-C engine, all of dagger but `fnt`, and `tests/` |
+| hostcheck | the plain-C engine, all of dagger but `fnt` and play's drawing (`overlay`, `game`), and `tests/` |
 | SPINTRI | its own `main.c` alone |
 
 Every executable passes the same PE check (`pe_check` in the Makefile): PE32, 80386, GUI, Windows 4.0, KERNEL32 and USER32 only, glide2x.dll bound at runtime, no P6 or SSE instruction.
