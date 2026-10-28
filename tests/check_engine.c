@@ -13,6 +13,7 @@
 #include "engine/assets/recfile.h"
 #include "engine/assets/vfs.h"
 #include "engine/platform/fs.h"
+#include "engine/platform/input.h"
 #include "engine/ui/pic.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
@@ -1118,6 +1119,31 @@ static void check_pictures(void)
     check_expect(b && g_pc_texel[0] == 0 && g_pc_texel[1] == 0, "a cutout's clear texel is not 0");
     pic_free(b);
     pic_end();
+}
+
+/* A bind screen's key names: letters, digits, F keys, the pad, the table, the mouse, and a key with none. */
+static void check_key_names(void)
+{
+    char name[16];
+
+    input_key_name('W', name, (int)sizeof(name));
+    check_expect(df_eq(name, "W"), "W is not named W");
+    input_key_name(0x20, name, (int)sizeof(name));
+    check_expect(df_eq(name, "Space"), "the space bar is not Space");
+    input_key_name(0x01, name, (int)sizeof(name));
+    check_expect(df_eq(name, "Left Button"), "the left button is not named");
+    input_key_name(0x7B, name, (int)sizeof(name));
+    check_expect(df_eq(name, "F12"), "F12 is not named");
+    input_key_name(0x67, name, (int)sizeof(name));
+    check_expect(df_eq(name, "Num 7"), "the pad's 7 is not named");
+    input_key_name(0x10, name, (int)sizeof(name));
+    check_expect(df_eq(name, "Shift"), "Shift is not named");
+    input_key_name(0xE9, name, (int)sizeof(name));
+    check_expect(df_eq(name, "Key 233"), "a key with no name is not numbered");
+    input_key_name(0x1B, name, 4);
+    check_expect(df_eq(name, "Esc"), "a short buffer ran past its cap");
+    check_expect(INPUT_FORWARD == 9 && INPUT_RIGHT == 12 && INPUT_ACTIONS == 13,
+                 "the actions moved: a game's saved bindings would mean other keys");
 }
 
 static int same(const char *a, const char *b)
@@ -3300,6 +3326,7 @@ void check_engine(void)
     check_vfs();
     check_beside();
     check_pictures();
+    check_key_names();
     check_console();
     check_mip();
     check_mip_spans();

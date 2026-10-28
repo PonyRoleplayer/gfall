@@ -1,7 +1,8 @@
 #ifndef DF_INPUT_H
 #define DF_INPUT_H
 
-/* One frame. move_f is W minus S, move_r is D minus A, move_y is Q minus E.
+/* One frame. move_f is forward minus back (W, S), move_r right minus left
+   (D, A), as bound (INPUT_FORWARD..INPUT_RIGHT); move_y is Q minus E.
    look_dx positive is look right (mouse, or right arrow). look_dy positive
    is look down (mouse, or down arrow). Arrows add a fixed step per frame. */
 
@@ -10,8 +11,10 @@
  * pressed (went down this frame) and released (went up this frame).
  * Each is a key or a mouse button, rebound with input_bind; the
  * defaults are attack the left button, use E, run Shift, jump Space,
- * the character C, the inventory I, the map M, rest R, and the menu
- * Escape (with input_set_escape_quits(0); else Escape quits).
+ * the character C, the inventory I, the map M, rest R, the menu
+ * Escape (with input_set_escape_quits(0); else Escape quits), and the
+ * walk forward W, back S, left A and right D, which move_f and move_r
+ * are made of. New actions go at the end: a game saves them by number.
  */
 enum {
     INPUT_ATTACK,
@@ -23,6 +26,10 @@ enum {
     INPUT_MAP,
     INPUT_REST,
     INPUT_MENU,
+    INPUT_FORWARD,
+    INPUT_BACK,
+    INPUT_LEFT,
+    INPUT_RIGHT,
     INPUT_ACTIONS
 };
 #define INPUT_BIT(action) (1u << (action))
@@ -40,8 +47,25 @@ typedef struct Input {
     unsigned int released;
 } Input;
 
-/* Action (INPUT_*) to a Windows virtual key (VK_*, a letter's capital, VK_LBUTTON for the left button). */
-void input_bind(int action, int vk);
+/*
+ * Action (INPUT_*) to a Windows virtual key (VK_*, a letter's capital,
+ * VK_LBUTTON for the left button). 0, and nothing changed, for Escape
+ * on any action but INPUT_MENU, or the console's key (the one left of
+ * 1): both belong to the console and the menu.
+ */
+int input_bind(int action, int vk);
+/* The key an action is bound to; 0 for no such action. */
+int input_binding(int action);
+/*
+ * For a screen that binds keys ("press a key"): the virtual key of a key
+ * or mouse button that went down since the last call, the lowest if
+ * several, 0 for none. Call it every frame while the screen waits: the
+ * first call, or one after a frame without a call, only notes what is
+ * already down. Never the console's key; 0 while the console is open.
+ */
+int input_key_pressed(void);
+/* A key's name for display, "W", "Space", "Left Button", "Shift", "Escape", in dst (cap bytes). */
+void input_key_name(int vk, char *dst, int cap);
 /*
  * 1 (default): Escape quits (input_read's quit), as the viewers want.
  * 0: Escape is the INPUT_MENU action and never quits: a game's menu.

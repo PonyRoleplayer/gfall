@@ -23,8 +23,11 @@ static int g_active;
 static int g_quit;
 /* The actions' keys (input_bind), what was held last read, and whether Escape quits. */
 static int g_vk[INPUT_ACTIONS] = {
-    VK_LBUTTON, 'E', VK_SHIFT, VK_SPACE, 'C', 'I', 'M', 'R', VK_ESCAPE
+    VK_LBUTTON, 'E', VK_SHIFT, VK_SPACE, 'C', 'I', 'M', 'R', VK_ESCAPE,
+    'W', 'S', 'A', 'D'
 };
+/* The scan code of the console's key, the one left of 1 (console.c's CON_SCAN). */
+#define CONSOLE_SCAN 0x29
 static unsigned int g_held;
 static int g_escape_quits = 1;
 /*
@@ -40,11 +43,27 @@ static int g_ch = DF_VIEW_H;
 
 static int key_down(int vk);
 
-void input_bind(int action, int vk)
+/* The console's key as a virtual key on this keyboard's layout. */
+static int console_vk(void)
 {
-    if (action >= 0 && action < INPUT_ACTIONS) {
-        g_vk[action] = vk;
+    return (int)MapVirtualKeyA(CONSOLE_SCAN, 1);
+}
+
+int input_bind(int action, int vk)
+{
+    if (action < 0 || action >= INPUT_ACTIONS || vk < 1 || vk > 254) {
+        return 0;
     }
+    if ((vk == VK_ESCAPE && action != INPUT_MENU) || vk == console_vk()) {
+        return 0;
+    }
+    g_vk[action] = vk;
+    return 1;
+}
+
+int input_binding(int action)
+{
+    return action >= 0 && action < INPUT_ACTIONS ? g_vk[action] : 0;
 }
 
 void input_set_escape_quits(int on)
@@ -202,11 +221,15 @@ void input_end(void)
    degrees per second through LOOK_SENS. */
 #define KEY_LOOK 8
 
+/* Frames read, so input_key_pressed knows whether it was called last frame. */
+static unsigned int g_frame;
+
 void input_read(Input *out)
 {
     int escape;
     unsigned int held;
 
+    g_frame++;
     console_pump();
     if (console_open()) {
         g_look_dx = 0;
@@ -224,8 +247,9 @@ void input_read(Input *out)
         g_held = 0;
         return;
     }
-    out->move_f = key_down('W') - key_down('S');
-    out->move_r = key_down('D') - key_down('A');
+    /* The walk from its actions, so a game's bindings move it. */
+    out->move_f = key_down(g_vk[INPUT_FORWARD]) - key_down(g_vk[INPUT_BACK]);
+    out->move_r = key_down(g_vk[INPUT_RIGHT]) - key_down(g_vk[INPUT_LEFT]);
     out->move_y = key_down('Q') - key_down('E');
     out->look_dx = g_look_dx + (key_down(VK_RIGHT) - key_down(VK_LEFT)) * KEY_LOOK;
     out->look_dy = g_look_dy + (key_down(VK_DOWN) - key_down(VK_UP)) * KEY_LOOK;
@@ -298,4 +322,44 @@ void input_pointer(int *x, int *y)
     if (y) {
         *y = sy;
     }
+}
+
+/*
+ * The bind screen's scan: every virtual key but the left/right copies of
+ * Shift, Ctrl and Alt (Windows 98 reports the plain ones) against what
+ * was down at the last call. 254 GetAsyncKeyState a frame, only while a
+ * screen waits for a key.
+ */
+static df_u8 g_down[256];
+static unsigned int g_scan_frame;
+static int g_scan_primed;
+
+int input_key_pressed(void)
+{
+    int vk;
+    int found;
+    int fresh;
+    int con;
+
+    fresh = !g_scan_primed || g_frame - g_scan_frame > 1u;
+    g_scan_primed = 1;
+    g_scan_frame = g_frame;
+    con = console_vk();
+    found = 0;
+    for (vk = 1; vk < 255; vk++) {
+        int down;
+
+        if (vk >= VK_LSHIFT && vk <= VK_RMENU) {
+            continue;
+        }
+        down = key_down(vk);
+        if (down && !g_down[vk] && !found && !fresh && vk != con) {
+            found = vk;
+        }
+        g_down[vk] = (df_u8)down;
+    }
+    if (console_open()) {
+        return 0;
+    }
+    return found;
 }

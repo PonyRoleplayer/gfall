@@ -6,7 +6,7 @@ What `input_read` gives a program once a frame: the movement, the look, quit, an
 
 `Input` is one frame:
 
-- `move_f`, `move_r`, `move_y`: W minus S, D minus A, Q minus E.
+- `move_f`, `move_r`, `move_y`: forward minus back and right minus left, from those actions' keys (W, S, D, A unless rebound), and Q minus E, fixed (a flying viewer's).
 - `look_dx`, `look_dy`: the mouse's pixels since the last read, plus a fixed step a frame for each arrow held.
 - `quit`: Escape (unless a game took it, below), or the window's close.
 - `held`, `pressed`, `released`: the game's actions, one bit each (`INPUT_BIT(INPUT_ATTACK)`). Held is down now; pressed went down this frame, released went up. A game reads edges from these, once a frame, and never polls a key itself.
@@ -26,8 +26,21 @@ With the console open nothing reaches the program: no movement, no look, nothing
 | `INPUT_MAP` | M | the map |
 | `INPUT_REST` | R | rest |
 | `INPUT_MENU` | Escape | the game's menu, with `input_set_escape_quits(0)` |
+| `INPUT_FORWARD` | W | the walk, `move_f` |
+| `INPUT_BACK` | S | the walk, `move_f` |
+| `INPUT_LEFT` | A | the strafe, `move_r` |
+| `INPUT_RIGHT` | D | the strafe, `move_r` |
 
-`input_bind(action, vk)` sets an action's key: a Windows virtual key (`VK_SHIFT`, `VK_LBUTTON`, a letter's capital). E is also `move_y`'s down for a flying viewer; a game on foot does not read `move_y`.
+`input_bind(action, vk)` sets an action's key: a Windows virtual key (`VK_SHIFT`, `VK_LBUTTON`, a letter's capital). It refuses, returning 0, Escape on any action but `INPUT_MENU` and the console's key (the one left of 1, by its scan code on this layout): those are the menu's and the console's. `input_binding(action)` reads a key back. The actions are numbered in a fixed order and new ones go at the end, because a game saves its bindings by number (the test holds `INPUT_FORWARD` at 9).
+
+### A bind screen
+
+`input_key_pressed()` returns a key or mouse button that went down since its last call, the lowest virtual key if several did, or 0. A screen that says "press a key" calls it every frame while it waits.
+- **First frame:** its first call, or one after a frame it was not called, only notes what is already down. So the click that opened the screen is not taken as the key.
+- **What it skips:** the console's key, the left and right copies of Shift, Ctrl and Alt (Windows 98 reports the plain ones), and everything while the console is open. Escape comes back like any key, for the screen to treat as cancel.
+- **Cost:** it reads 254 keys a call, only while a screen waits.
+
+`input_key_name(vk, dst, cap)` names a key for display: "W", "Space", "Left Button", "Shift", "F12", "Num 7", or "Key 233" for one with no name. It is our own table (`keyname.c`), the same on any layout and read by hostcheck. Punctuation is named by a US board's marks. E is also `move_y`'s down for a flying viewer; a game on foot does not read `move_y`.
 
 `input_set_escape_quits(1)`, the default, is the viewers': Escape quits. With 0, Escape never quits: it is `INPUT_MENU`, and the game opens its menu and decides itself when to quit. Either way, an Escape that just closed the console is not counted (`console_take_escape`).
 
