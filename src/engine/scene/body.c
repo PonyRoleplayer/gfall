@@ -32,6 +32,36 @@ static float upper_half(const Body *b)
     return (b->height - b->step) * 0.5f;
 }
 
+/*
+ * Which ellipsoid the sweeps use. On the ground, the upper body: what is
+ * under a step is walked onto (floor_under), not run into. In the air,
+ * the whole body, feet to head: nothing is walked onto there, and with
+ * the upper body alone the legs went into walls and ledges, and the
+ * feet then found a floor behind them, or none.
+ */
+static int g_whole;
+/*
+ * The frame's gather box: the set holds its triangles scaled by the shape
+ * at the time (ellipsoid space), so another shape gathers them again.
+ */
+static float g_box[6];
+static int g_have_box;
+
+static void shape(const Body *b, int whole)
+{
+    g_whole = whole;
+    collide_set_shape(b->radius, whole ? b->height * 0.5f : upper_half(b));
+    if (g_have_box) {
+        collide_gather(g_box[0], g_box[1], g_box[2], g_box[3], g_box[4], g_box[5]);
+    }
+}
+
+/* The swept ellipsoid's centre's height above the feet. */
+static float centre_up(const Body *b)
+{
+    return g_whole ? b->height * 0.5f : b->step + upper_half(b);
+}
+
 void body_init(Body *b, float radius, float height, float step, float eye)
 {
     mem_zero(b, sizeof(Body));
@@ -101,19 +131,25 @@ static void put(float *dst, const float *src)
     dst[2] = src[2];
 }
 
-/* The upper body's centre for feet at f. */
+/* The swept ellipsoid's centre (shape) for feet at f. */
 static void upper(const Body *b, const float *f, float *c)
 {
     c[0] = f[0];
-    c[1] = f[1] + b->step + upper_half(b);
+    c[1] = f[1] + centre_up(b);
     c[2] = f[2];
 }
 
 /* Gather round the whole body at feet f, reaching r across, down below and up above. */
 static void gather_round(const Body *b, const float *f, float r, float below, float above)
 {
-    collide_gather(f[0] - b->radius - r, f[1] - below, f[2] - b->radius - r,
-                   f[0] + b->radius + r, f[1] + b->height + above, f[2] + b->radius + r);
+    g_box[0] = f[0] - b->radius - r;
+    g_box[1] = f[1] - below;
+    g_box[2] = f[2] - b->radius - r;
+    g_box[3] = f[0] + b->radius + r;
+    g_box[4] = f[1] + b->height + above;
+    g_box[5] = f[2] + b->radius + r;
+    g_have_box = 1;
+    collide_gather(g_box[0], g_box[1], g_box[2], g_box[3], g_box[4], g_box[5]);
 }
 
 /*
@@ -178,6 +214,9 @@ static int unstick(Body *b)
     float floor_y;
     int ring;
 
+    /* Free is the upper body clear and a floor under it: the shape a body stands in. */
+    g_have_box = 0;
+    shape(b, 0);
     gather_round(b, b->feet, 4.0f, b->step + 4.0f, 4.0f);
     if (free_at(b, b->feet, &floor_y)) {
         return 1;
@@ -259,7 +298,7 @@ static int rise_to(Body *b, float y)
     /* Sliding off a slope may move the body across: keep where it went. */
     b->feet[0] = c[0];
     b->feet[2] = c[2];
-    b->feet[1] = c[1] - b->step - upper_half(b);
+    b->feet[1] = c[1] - centre_up(b);
     return df_absf(b->feet[1] - y) < 0.05f;
 }
 
@@ -338,11 +377,11 @@ void body_step(Body *b, const Scene *scene, float want_dx, float want_dz, float 
     float maxy;
     float before[3];
     float c[3];
+    int air;
 
     if (!b || !scene || !collide_use(scene)) {
         return;
     }
-    collide_set_shape(b->radius, upper_half(b));
     /* A new place, or another heap: out of whatever it is caught in where it stands. */
     if (scene != b->scene || mem_epoch() != b->epoch) {
         b->scene = scene;
@@ -363,15 +402,44 @@ void body_step(Body *b, const Scene *scene, float want_dx, float want_dz, float 
         }
     }
     dy = b->vy * dt;
-    /* One gather round everything this frame's moves can reach. */
+    /*
+     * One gather round everything this frame's moves can reach: across by
+     * the move, down by a step and the fall, up by a step and the rise. It
+     * reached 2 over the head before: a jump rose through ceilings and
+     * roofs it never gathered, and a step up under a low ceiling put the
+     * head through it.
+     */
     travel = df_absf(want_dx) > df_absf(want_dz) ? df_absf(want_dx) : df_absf(want_dz);
-    gather_round(b, b->feet, travel + 2.0f, b->step - dy + 2.0f, 2.0f);
+    air = !b->grounded;
+    g_have_box = 0;
+    shape(b, air);
+    gather_round(b, b->feet, travel + 2.0f, b->step + (dy < 0.0f ? -dy : 0.0f) + 2.0f,
+                 b->step + (dy > 0.0f ? dy : 0.0f) + 2.0f);
 
-    /* Across: the upper body meets walls; anything under a step it walks over. */
+    /*
+     * Across. On the ground the upper body meets walls, and what is under
+     * a step it walks over. A slope it meets lifts it as it slides; that
+     * lift is undone by sliding back down, so the feet do not go forward
+     * at their own height into what lifted it (a steep ramp, a ladder).
+     * In the air the whole body slides, up a slope and all.
+     */
     put(before, b->feet);
     if (want_dx != 0.0f || want_dz != 0.0f) {
+        float y0;
+
         upper(b, b->feet, c);
+        y0 = c[1];
         collide_slide(c, want_dx, 0.0f, want_dz, 0);
+        if (air) {
+            b->feet[1] = c[1] - centre_up(b);
+        } else if (df_absf(c[1] - y0) > 0.01f) {
+            collide_slide(c, 0.0f, y0 - c[1], 0.0f, 0);
+            if (df_absf(c[1] - y0) > 0.05f) {
+                /* It could not get back down: it stays where it was. */
+                c[0] = before[0];
+                c[2] = before[2];
+            }
+        }
         b->feet[0] = c[0];
         b->feet[2] = c[2];
     }
@@ -387,9 +455,12 @@ void body_step(Body *b, const Scene *scene, float want_dx, float want_dz, float 
             if (rise_to(b, floor_y)) {
                 b->vy = 0.0f;
             } else if (floor_y > before[1]) {
-                /* No room over the step for the head: stay off it. */
-                b->feet[0] = before[0];
-                b->feet[2] = before[2];
+                /*
+                 * No room over the step for the head: stay off it, all of
+                 * the feet. Their height too: the rise got part way, and
+                 * left at it the body hung over the step and jittered.
+                 */
+                put(b->feet, before);
             }
         } else {
             /* Off an edge: the fall counts from here. */
@@ -403,6 +474,8 @@ void body_step(Body *b, const Scene *scene, float want_dx, float want_dz, float 
             float speed;
 
             speed = -b->vy;
+            /* Onto the floor with the upper body, which the floor it lands on never meets. */
+            shape(b, 0);
             rise_to(b, floor_y);
             b->grounded = df_absf(b->feet[1] - floor_y) < 0.05f;
             b->vy = 0.0f;
@@ -413,9 +486,13 @@ void body_step(Body *b, const Scene *scene, float want_dx, float want_dz, float 
                 b->land_height = b->top > b->feet[1] ? b->top - b->feet[1] : 0.0f;
                 b->top = b->feet[1];
             }
-        } else if (!rise_to(b, b->feet[1] + dy)) {
-            /* Struck something on the way: a ceiling, a slope. */
-            b->vy = 0.0f;
+        } else {
+            /* Up or down in the air: the whole body, so its legs go into nothing either. */
+            shape(b, 1);
+            if (!rise_to(b, b->feet[1] + dy)) {
+                /* Struck something on the way: a ceiling, a slope. */
+                b->vy = 0.0f;
+            }
         }
         if (!b->grounded && b->feet[1] > b->top) {
             b->top = b->feet[1];

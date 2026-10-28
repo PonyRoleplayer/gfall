@@ -1470,6 +1470,168 @@ static void check_dungeon_stream(void)
     keep_clear();
 }
 
+/*
+ * The collision fixes from the hold (docs/collision.md): a quad in a
+ * plane, x0..x1 by y0..y1 at z, or flat at y over x0..x1 by z0..z1.
+ */
+static Mesh *upright_quad(float x0, float x1, float y0, float y1, float z)
+{
+    float x[4], y[4], zz[4];
+
+    x[0] = x0; y[0] = y0; zz[0] = z;
+    x[1] = x1; y[1] = y0; zz[1] = z;
+    x[2] = x1; y[2] = y1; zz[2] = z;
+    x[3] = x0; y[3] = y1; zz[3] = z;
+    return fan_mesh(x, y, zz, 4, 0.0f, 0.0f, 1.0f);
+}
+
+static Mesh *side_quad(float z0, float z1, float y0, float y1, float x)
+{
+    float xx[4], y[4], z[4];
+
+    xx[0] = x; y[0] = y0; z[0] = z0;
+    xx[1] = x; y[1] = y0; z[1] = z1;
+    xx[2] = x; y[2] = y1; z[2] = z1;
+    xx[3] = x; y[3] = y1; z[3] = z0;
+    return fan_mesh(xx, y, z, 4, 1.0f, 0.0f, 0.0f);
+}
+
+static Mesh *flat_quad(float x0, float x1, float z0, float z1, float y)
+{
+    float x[4], yy[4], z[4];
+
+    x[0] = x0; yy[0] = y; z[0] = z0;
+    x[1] = x1; yy[1] = y; z[1] = z0;
+    x[2] = x1; yy[2] = y; z[2] = z1;
+    x[3] = x0; yy[3] = y; z[3] = z1;
+    return fan_mesh(x, yy, z, 4, 0.0f, 1.0f, 0.0f);
+}
+
+static void body_scene(Scene *sc, Instance *in, Mesh **m, int n)
+{
+    int i;
+    int k;
+
+    mem_zero(sc, sizeof(*sc));
+    for (i = 0; i < n; i++) {
+        /* Textured, so collision counts them (a picture-less triangle is not part of the place). */
+        for (k = 0; k < m[i]->ntris; k++) {
+            m[i]->tris[k].slot = 1;
+        }
+        place_at(&in[i], m[i], 0.0f, 0.0f, 0.0f);
+    }
+    sc->models = in;
+    sc->nmodels = n;
+    sc->version++;
+}
+
+static void check_body_fixes(void)
+{
+    static Scene sc;
+    static Instance in[8];
+    Mesh *m[8];
+    float c[3];
+    Body b;
+    int f;
+    int ok;
+
+    /*
+     * A wall's end edge (the hold's corridor): a thin wall in the plane z 0,
+     * x 0..200. A body 8 off its plane, beside its end, moves on along x and
+     * a hair away from the plane: the end's edge stops it 16 from it.
+     * Returning on "moving away from the plane" walked it in to 12.8.
+     */
+    m[0] = upright_quad(0.0f, 200.0f, -100.0f, 100.0f, 0.0f);
+    body_scene(&sc, in, m, 1);
+    collide_use(&sc);
+    collide_set_shape(16.0f, 24.0f);
+    collide_gather(-60.0f, -60.0f, -60.0f, 60.0f, 60.0f, 60.0f);
+    c[0] = -20.0f;
+    c[1] = 0.0f;
+    c[2] = 8.0f;
+    collide_slide(c, 10.0f, 0.0f, 0.001f, 0);
+    /* It meets the edge and slides round it: never nearer than its radius. */
+    check_expect(c[0] * c[0] + c[2] * c[2] >= 15.9f * 15.9f && c[0] > -20.0f && !collide_overlap(c),
+                 "sliding past a wall's end, a hair away from its plane, went into its edge");
+    /* Already inside the edge by a unit: on toward it, no deeper; back out, free. */
+    c[0] = -13.0f;
+    c[1] = 0.0f;
+    c[2] = 8.0f;
+    collide_slide(c, 5.0f, 0.0f, 0.0f, 0);
+    ok = c[0] <= -12.99f;
+    c[0] = -13.0f;
+    c[2] = 8.0f;
+    collide_slide(c, -5.0f, 0.0f, 0.0f, 0);
+    check_expect(ok && check_near(c[0], -18.0f, 0.01f), "a body inside an edge went deeper, or could not leave it");
+
+    /* A floor, and a ceiling 100 up: a jump at 600 a second stops under it, every frame. */
+    m[0] = flat_quad(-200.0f, 200.0f, -200.0f, 200.0f, 0.0f);
+    m[1] = flat_quad(-200.0f, 200.0f, -200.0f, 200.0f, 100.0f);
+    body_scene(&sc, in, m, 2);
+    body_init(&b, WALK_RADIUS, WALK_HEIGHT, WALK_STEP, WALK_EYE);
+    body_place(&b, 0.0f, 0.0f, 0.0f);
+    for (f = 0; f < 10; f++) {
+        body_step(&b, &sc, 0.0f, 0.0f, 1.0f / 60.0f);
+    }
+    ok = b.grounded && body_jump(&b, 600.0f);
+    for (f = 0; f < 60; f++) {
+        body_step(&b, &sc, 0.0f, 0.0f, 1.0f / 60.0f);
+        ok = ok && b.feet[1] + b.height <= 100.0f + 0.1f;
+    }
+    check_expect(ok && b.grounded, "a fast jump went through the ceiling: its rise was past the gather");
+
+    /*
+     * A step 20 up at x 40, with a ceiling 70 over the step (no room for the
+     * head): walked into, the body stays off it, its feet at 0 every frame,
+     * never part way up.
+     */
+    m[0] = flat_quad(-200.0f, 40.0f, -200.0f, 200.0f, 0.0f);
+    m[1] = flat_quad(40.0f, 300.0f, -200.0f, 200.0f, 20.0f);
+    m[2] = side_quad(-200.0f, 200.0f, 0.0f, 20.0f, 40.0f);
+    m[3] = flat_quad(30.0f, 300.0f, -200.0f, 200.0f, 90.0f);
+    body_scene(&sc, in, m, 4);
+    body_init(&b, WALK_RADIUS, WALK_HEIGHT, WALK_STEP, WALK_EYE);
+    body_place(&b, 0.0f, 0.0f, 0.0f);
+    ok = 1;
+    for (f = 0; f < 60; f++) {
+        body_step(&b, &sc, 3.0f, 0.0f, 1.0f / 60.0f);
+        if (f > 5) {
+            ok = ok && b.feet[1] == 0.0f && b.grounded;
+        }
+    }
+    check_expect(ok && b.feet[0] < 40.0f, "a step with no room for the head left the body part way up it, or on it");
+
+    /*
+     * A shelf 12 high ahead (x 40 on): a body in the air coming at it with
+     * its feet under the shelf's top stops at its front, legs and all; it
+     * never ends a frame cut into it.
+     */
+    m[0] = flat_quad(-200.0f, 300.0f, -200.0f, 200.0f, 0.0f);
+    m[1] = flat_quad(40.0f, 300.0f, -200.0f, 200.0f, 12.0f);
+    m[2] = side_quad(-200.0f, 200.0f, 0.0f, 12.0f, 40.0f);
+    body_scene(&sc, in, m, 3);
+    body_init(&b, WALK_RADIUS, WALK_HEIGHT, WALK_STEP, WALK_EYE);
+    b.gravity = 800.0f;
+    body_place(&b, 10.0f, 0.0f, 0.0f);
+    for (f = 0; f < 10; f++) {
+        body_step(&b, &sc, 0.0f, 0.0f, 1.0f / 60.0f);
+    }
+    ok = body_jump(&b, 60.0f);
+    for (f = 0; f < 20; f++) {
+        float whole[3];
+
+        body_step(&b, &sc, 4.0f, 0.0f, 1.0f / 60.0f);
+        collide_set_shape(b.radius - 0.5f, b.height * 0.5f - 0.5f);
+        collide_gather(b.feet[0] - 40.0f, b.feet[1] - 40.0f, b.feet[2] - 40.0f,
+                       b.feet[0] + 40.0f, b.feet[1] + 120.0f, b.feet[2] + 40.0f);
+        whole[0] = b.feet[0];
+        whole[1] = b.feet[1] + b.height * 0.5f;
+        whole[2] = b.feet[2];
+        ok = ok && !collide_overlap(whole);
+    }
+    check_expect(ok, "in the air the legs went into a shelf at their height");
+}
+
 static int same(const char *a, const char *b)
 {
     int i;
@@ -3685,6 +3847,7 @@ void check_engine(void)
     check_key_names();
     check_keep();
     check_dungeon_stream();
+    check_body_fixes();
     check_console();
     check_mip();
     check_mip_spans();

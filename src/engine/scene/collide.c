@@ -475,6 +475,21 @@ static int lowest_root(float a, float b, float c, float limit, float *out)
     if (df_absf(a) < 1.0e-12f) {
         return 0;
     }
+    /*
+     * Already inside (a corner's sphere, an edge's cylinder: c and a of
+     * opposite signs, as both quadratics are written). Its roots then are
+     * the way in, past, and the way out: the way out is no contact, and
+     * taking it let a body a unit into a stair's edge walk on through it.
+     * Getting deeper (b and a of opposite signs) is a contact now; getting
+     * out is none.
+     */
+    if (c * a < 0.0f) {
+        if (b * a < 0.0f) {
+            *out = 0.0f;
+            return 1;
+        }
+        return 0;
+    }
     det = b * b - 4.0f * a * c;
     if (det < 0.0f) {
         return 0;
@@ -556,12 +571,23 @@ static void sweep_tri(const CTri *tr, const float *base, const float *vel, float
         dist = -dist;
         ndv = -ndv;
     }
-    /* Moving away: nothing to meet, and an embedded body can leave. */
-    if (ndv > 0.0f) {
-        return;
-    }
     embedded = 0;
-    if (ndv > -1.0e-7f) {
+    if (ndv > 0.0f) {
+        /*
+         * Moving away from the plane: its face cannot be met, and a body in
+         * it can leave. But within reach of the plane (dist < 1) an edge or a
+         * corner of the triangle off to its side still can, until the body
+         * leaves that reach. Returning here let a body that had slid along
+         * one wall walk into the end of the next, a wall's edge facing it
+         * (docs/collision.md, The sweep).
+         */
+        if (dist >= 1.0f) {
+            return;
+        }
+        embedded = 1;
+        t0 = 0.0f;
+        t1 = 1.0f;
+    } else if (ndv > -1.0e-7f) {
         if (dist >= 1.0f) {
             return;
         }
