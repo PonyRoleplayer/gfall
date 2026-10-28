@@ -11,7 +11,9 @@
 /* Allocations one picture may make and still be freed: an image, its pot, a sheet of frames. */
 #define TRACK_MAX 160
 /* Climate variants: four families, summer and winter. */
-#define VARIANTS 8
+/* The four families in summer and winter, and a dungeon's (wres_meshes_dungeon). */
+#define VARIANTS 9
+#define VARIANT_DUNGEON 8
 /* Walls: about a texel for four world units (a 64 tile on a 256 face). */
 #define WALL_DENSITY 0.25f
 
@@ -402,12 +404,48 @@ ArchEnt *wres_meshes(int family, int winter, int **count)
     return g_mesh[v];
 }
 
+ArchEnt *wres_meshes_dungeon(int **count)
+{
+    if (!g_mesh[VARIANT_DUNGEON]) {
+        MemHeap *was;
+
+        was = mem_heap_use(g_mesh_heap);
+        g_mesh[VARIANT_DUNGEON] = (ArchEnt *)mem_alloc((df_u32)ARCH_CACHE * (df_u32)sizeof(ArchEnt));
+        mem_heap_use(was);
+    }
+    *count = &g_nmesh[VARIANT_DUNGEON];
+    return g_mesh[VARIANT_DUNGEON];
+}
+
 MemHeap *wres_mesh_heap(void)
 {
     return g_mesh_heap;
 }
 
+/* The climate's swap (swaps.c), as a rule for paint. */
+typedef struct SwapRule {
+    int family;
+    int winter;
+} SwapRule;
+
+static int swap_rule(void *user, int archive, int record)
+{
+    const SwapRule *r;
+
+    r = (const SwapRule *)user;
+    return swap_climate(archive, record, r->family, r->winter, texture_record_count);
+}
+
 void wres_paint(Mesh *mesh, int family, int winter)
+{
+    SwapRule r;
+
+    r.family = family;
+    r.winter = winter;
+    wres_paint_by(mesh, swap_rule, &r);
+}
+
+void wres_paint_by(Mesh *mesh, int (*face)(void *user, int archive, int record), void *user)
 {
     static df_u8 seen[WRES_PICTURES];
     df_u16 keys[256];
@@ -424,8 +462,7 @@ void wres_paint(Mesh *mesh, int family, int winter)
         int slot;
 
         tri = &mesh->tris[t];
-        archive = swap_climate((int)tri->tex_file, (int)tri->tex_image, family, winter,
-                               texture_record_count);
+        archive = face(user, (int)tri->tex_file, (int)tri->tex_image);
         slot = wres_slot(archive, (int)tri->tex_image, WRES_WALL);
         tri->slot = (df_u16)(slot >= 0 ? slot : 0xffff);
         if (slot >= 0 && !seen[slot] && nkeys < 256) {

@@ -472,3 +472,58 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch, ArchEnt *cache, int *n
     }
     return block;
 }
+
+int rdb_markers(const df_u8 *rdb, df_u32 size, Marker *out, int cap)
+{
+    df_u32 width;
+    df_u32 height;
+    df_u32 root;
+    df_u32 cell;
+    int n;
+
+    if (!rdb || size < 20 + 750 * 8) {
+        return 0;
+    }
+    width = df_ru32(rdb + 4);
+    height = df_ru32(rdb + 8);
+    root = df_ru32(rdb + 12);
+    if (width == 0 || height == 0 || width > 64 || height > 64 || root > size || width * height * 4 > size - root) {
+        return 0;
+    }
+    n = 0;
+    /* The same walk as rdb_load's, its markers alone, in its order. */
+    for (cell = 0; cell < width * height; cell++) {
+        df_i32 off;
+        int guard;
+
+        off = df_ri32(rdb + root + cell * 4);
+        guard = 0;
+        while (off >= 0 && guard < 4096) {
+            df_u32 at;
+            df_u32 res;
+
+            guard++;
+            at = (df_u32)off;
+            if (at + 25 > size) {
+                break;
+            }
+            res = df_ru32(rdb + at + 21);
+            if (rdb[at + 20] == 0x03 && res + 11 <= size && (int)(df_ru16(rdb + res) >> 7) == EDITOR_ARCHIVE
+                && n < cap) {
+                Marker *mk;
+
+                mk = &out[n++];
+                mk->x = (float)df_ri32(rdb + at + 8);
+                mk->y = -(float)df_ri32(rdb + at + 12);
+                mk->z = (float)df_ri32(rdb + at + 16);
+                mk->record = (df_u16)(df_ru16(rdb + res) & 0x7f);
+                mk->flags = df_ru16(rdb + res + 2);
+                mk->id = df_ru16(rdb + res + 4);
+                mk->action = rdb[res + 10];
+                mk->pos = at;
+            }
+            off = df_ri32(rdb + at);
+        }
+    }
+    return n;
+}

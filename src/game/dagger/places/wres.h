@@ -72,6 +72,10 @@ ArchEnt *wres_meshes(int family, int winter, int **count);
 struct MemHeap *wres_mesh_heap(void);
 /* Give a mesh's faces their pictures in family and season, once (its slot keys mark it done). */
 void wres_paint(Mesh *mesh, int family, int winter);
+/* The same with the archive each face shows given by a rule (a dungeon's remap, world_face_archive). */
+void wres_paint_by(Mesh *mesh, int (*face)(void *user, int archive, int record), void *user);
+/* The mesh cache for a dungeon, painted by its own remap (one dungeon a session). */
+ArchEnt *wres_meshes_dungeon(int **count);
 /* 1 when the meshes' RAM has passed WRES_MESH_RAM: the stream should start again. */
 int wres_full(void);
 /* Every mesh goes, its heap with it; read again as chunks ask. Only with no chunk holding one. */

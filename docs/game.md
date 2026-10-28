@@ -71,6 +71,25 @@ Every door, lever and creature of a place loaded whole is keyed for the engine's
 
 Tested in the hold: all 105 things keyed, no key twice, a door and a lever left open come back open after a reload, a door shut again loses its row. Nothing leaves a place in GFALL yet (P6), and the streamed world's towns are not keyed yet (their chunks, with the streamed dungeons).
 
+### A dungeon streamed by block (built: the source)
+`places/dunstream.c` is the chunk source of a dungeon streamed by block (`docs/streaming.md`, Dungeons): each RDB block a chunk of 2048, by its place in the layout, the start block the origin.
+- **Each block's chunk** holds what a whole load holds of it, by the same rules:
+  - its models, painted by the dungeon's picture table (`swap_dungeon`, now shared with `world.c`);
+  - its flats at their centres, its lights flickering by their flames, its sounds;
+  - its doors, levers and teleports (`doors_build`, keyed);
+  - its creatures, on their floors, keyed;
+  - its water.
+- **Pictures and meshes** go through the session's registry (`wres.c`), with a dungeon mesh variant (`wres_meshes_dungeon`, `wres_paint_by`).
+- **Creatures are drawn at open, in the blocks' order.** A random marker's slot 0 and a class's gender take classic's rand, so the order decides who stands where. At open the source reads every block's markers alone (`rdb_markers`: the block's bytes, no models) and draws each creature as a whole load would; a block coming in places its creatures from that table.
+- **Kept state** is the stream's to save and put back. A creature kept dead is hidden again in `changed` (live is "drawn").
+
+**Tested against the hold loaded whole:** the ring round its start holds all of it (365 models, 130 flats, 71 lights, 63 movers, 42 creatures, as the whole load). Each creature is the whole load's, keyed and standing alike. A door opened, its blocks dropped 8 blocks off and come back, is open.
+
+**Not yet:**
+- GFALL's hold through it waits for the engine's shadowed stream lights (without them a torch lights the next room through its wall);
+- LEVELFALL's indoor rows;
+- a block's meshes parsed in steps (a block is read in one step today).
+
 ## The player
 
 ### The body

@@ -14,6 +14,9 @@
 #include "engine/scene/interact.h"
 #include "engine/scene/keep.h"
 #include "game/dagger/places/world.h"
+#include "game/dagger/places/dunstream.h"
+#include "game/dagger/formats/dungeon.h"
+#include "engine/scene/stream.h"
 #include "game/dagger/play/player.h"
 #include "game/dagger/play/rules.h"
 #include "game/dagger/play/character.h"
@@ -322,10 +325,143 @@ static void check_keep(void)
     keep_clear();
 }
 
+/*
+ * The hold streamed by block (dunstream.c, docs/streaming.md Dungeons):
+ * its ring round the start holds every block of it, as many models,
+ * flats, lights, doors and creatures as the hold loaded whole; the start
+ * is the whole load's; a door opened, the camera walked far off (its
+ * blocks dropped) and back, comes back open.
+ */
+static void check_dunstream(void)
+{
+    Dungeon hold;
+    World *whole;
+    Level level;
+    Camera cam;
+    float x, y, z, yaw, pitch;
+    float wx, wy, wz, wyaw, wpitch;
+    int models, sprites, lights, movers, ents, water;
+    int door;
+    KeepKey key;
+    int i;
+
+    keep_clear();
+    whole = world_load();
+    if (!dungeon_load(&hold) || !whole) {
+        check_expect(0, "dunstream: the hold did not load");
+        return;
+    }
+    world_start(whole, &wx, &wy, &wz, &wyaw, &wpitch);
+    /* Every creature of the whole load read, so its live ones can be counted against the stream's. */
+    world_creatures_step(whole, 0, 0.0f, 0.0f);
+    {
+        int live;
+
+        live = 0;
+        for (i = 0; i < world_entity_count(whole); i++) {
+            live += world_entity(whole, i)->live;
+        }
+        printf("dunstream: the whole hold's creatures: %d, %d of them drawn\n", world_entity_count(whole), live);
+    }
+    if (!dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
+        check_expect(0, "dunstream: the hold's stream did not open");
+        return;
+    }
+    camera_set(&cam, x, y, z, yaw, pitch);
+    dunstream_fill(&cam);
+    models = 0;
+    sprites = 0;
+    lights = 0;
+    movers = 0;
+    ents = 0;
+    water = 0;
+    for (i = 0; i < level.scene.nmodels; i++) {
+        models += level.scene.models[i].mesh != 0 && level.scene.models[i].mesh->ntris > 0;
+    }
+    for (i = 0; i < level.scene.nsprites; i++) {
+        sprites += level.scene.sprites[i].w > 0.0f;
+    }
+    for (i = 0; i < level.scene.nlights; i++) {
+        lights += level.scene.lights[i].radius > 0.0f;
+    }
+    door = -1;
+    for (i = 0; i < level.scene.nmovers; i++) {
+        if (level.scene.movers[i].inst) {
+            movers++;
+            if (door < 0 && level.scene.movers[i].door && !level.scene.movers[i].lock
+                && !level.scene.movers[i].teleport) {
+                door = i;
+            }
+        }
+    }
+    for (i = 0; i < level.scene.nentities; i++) {
+        ents += level.scene.entities[i].live;
+    }
+    for (i = 0; i < level.scene.nwater; i++) {
+        water += level.scene.water[i].x1 > level.scene.water[i].x0;
+    }
+    printf("dunstream: the hold's ring: %d models, %d flats, %d lights, %d movers, %d creatures (whole: %d, %d, %d, %d, %d)\n",
+           models, sprites, lights, movers, ents, world_model_count(whole), world_flat_count(whole),
+           world_light_count(whole), world_mover_count(whole), world_entity_count(whole));
+    check_expect(check_near(x, wx, 0.5f) && check_near(z, wz, 0.5f), "dunstream: the stream does not start where the hold does");
+    check_expect(models == world_model_count(whole) && lights == world_light_count(whole)
+                     && movers == world_mover_count(whole) && ents == world_entity_count(whole) && water == 0,
+                 "dunstream: the hold's ring does not hold what the hold loaded whole holds");
+    check_expect(sprites == world_flat_count(whole), "dunstream: the hold's ring has another count of flats");
+    /* Each creature the same one: its key, and where it stands (the hold's start block is the stream's origin). */
+    {
+        int same;
+        int w;
+
+        same = 0;
+        for (w = 0; w < world_entity_count(whole); w++) {
+            const Entity *a;
+
+            a = world_entity(whole, w);
+            for (i = 0; i < level.scene.nentities; i++) {
+                const Entity *b;
+
+                b = &level.scene.entities[i];
+                if (b->live && b->key.place == a->key.place && b->key.thing == a->key.thing) {
+                    same += check_near(a->x, b->x, 0.5f) && check_near(a->y, b->y, 0.5f)
+                            && check_near(a->z, b->z, 0.5f);
+                    break;
+                }
+            }
+        }
+        check_expect(same == world_entity_count(whole),
+                     "dunstream: a creature of the stream is not the whole hold's, keyed and standing alike");
+    }
+    /* A door opened, the camera taken 8 blocks east (the hold dropped) and back: still open. */
+    if (door >= 0) {
+        key = level.scene.movers[door].key;
+        mover_set_end(&level.scene.movers[door], 1);
+        camera_set(&cam, x + 8.0f * 2048.0f, y, z, yaw, pitch);
+        for (i = 0; i < 200; i++) {
+            dunstream_update(&cam, 50.0f);
+        }
+        check_expect(keep_find(key) != 0, "dunstream: a door opened in a dropped block is not kept");
+        camera_set(&cam, x, y, z, yaw, pitch);
+        dunstream_fill(&cam);
+        for (i = 0; i < level.scene.nmovers; i++) {
+            if (level.scene.movers[i].key.place == key.place && level.scene.movers[i].key.thing == key.thing) {
+                break;
+            }
+        }
+        check_expect(i < level.scene.nmovers && mover_at_end(&level.scene.movers[i]),
+                     "dunstream: a door opened comes back shut after its block came back");
+    } else {
+        check_expect(0, "dunstream: no unlocked door in the hold's stream");
+    }
+    dunstream_close();
+    keep_clear();
+}
+
 void check_play(void)
 {
     check_rules();
     check_character();
     check_hold();
     check_keep();
+    check_dunstream();
 }

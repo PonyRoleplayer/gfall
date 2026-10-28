@@ -142,8 +142,8 @@ struct World {
     float fall_x, fall_y, fall_z;
     int have_fall;
     /* Climate family, and the five archives for keys 119, 120, 122, 123, 124. */
-    int tex_family;
-    int tex_arch[5];
+    /* Its pictures' table: a dungeon's remap, or a town's climate family (tex.family). */
+    SwapDungeon tex;
     /* An RMB place: under the sky, lit by the hour, its lamps the lights. */
     int outdoor;
     Sky sky;
@@ -969,97 +969,25 @@ static void measure(World *world)
     }
 }
 
-/*
- * Watcom's rand: seed = seed * 0x41C64E6D + 0x3039, result is the high
- * 15 bits. One dungeon seeds it once with the location id.
- */
-static df_u32 g_rng;
-
-static int watcom(void)
-{
-    g_rng = g_rng * 0x41C64E6Du + 0x3039u;
-    return (int)((g_rng >> 16) & 0x7fffu);
-}
-
-/* True when archive is that set in one of the four real families. */
-static int same_set(int archive, int set)
-{
-    int family;
-
-    if (archive < set) {
-        return 0;
-    }
-    family = archive - set;
-    return family == TEX_DESERT || family == TEX_MOUNTAIN
-        || family == TEX_WOODLAND || family == TEX_SWAMP;
-}
-
-/*
- * Keys 119, 120, 122, 123, 124 each draw an offset 0..4. A draw of 2
- * becomes 4, because archive numbers skip one slot. The offset is added
- * to this climate's crypt base (family + 19). Doors, sewers, and caves
- * take the same family. A door record above 2 stays as stored. A cave
- * record the climate file does not contain stays on the archive the
- * face named, so paint does not abort.
- */
+/* The dungeon's picture table (swaps.c, classic's from the location id and the climate). */
 static int build_tex_table(World *world, const Dungeon *hold)
 {
-    int family;
-    int i;
-
-    family = climate_family(hold->climate);
-    if (family < 0 || hold->location_id <= 0) {
+    if (!swap_dungeon_init(&world->tex, hold->climate, hold->location_id)) {
         why("climate");
         return 0;
-    }
-    world->tex_family = family;
-    g_rng = (df_u32)hold->location_id;
-    for (i = 0; i < 5; i++) {
-        int off;
-
-        off = watcom() % 5;
-        if (off == 2) {
-            off = 4;
-        }
-        world->tex_arch[i] = family + TEX_SET_CRYPT + off;
     }
     return 1;
 }
 
 static int face_archive(const World *world, int archive, int record)
 {
-    static const int keys[5] = {119, 120, 122, 123, 124};
-    int i;
-    int set;
-
     /* Towns and houses: the place's climate, and a town's season (swaps.c). */
     if (world->place != PLACE_DUNGEON) {
-        return swap_climate(archive, record, world->tex_family,
+        return swap_climate(archive, record, world->tex.family,
                             world->place == PLACE_TOWN && world->season == CLOCK_WINTER,
                             texture_record_count);
     }
-
-    if (same_set(archive, TEX_SET_DOOR)) {
-        if (record > 2) {
-            return archive;
-        }
-        return world->tex_family + TEX_SET_DOOR;
-    }
-    for (i = 0; i < 5; i++) {
-        if (archive == keys[i]) {
-            return world->tex_arch[i];
-        }
-    }
-    if (same_set(archive, TEX_SET_SEWER)) {
-        return world->tex_family + TEX_SET_SEWER;
-    }
-    if (same_set(archive, TEX_SET_CAVE)) {
-        set = world->tex_family + TEX_SET_CAVE;
-        if (record >= 0 && record < texture_record_count(set)) {
-            return set;
-        }
-    }
-    return archive;
+    return swap_dungeon(&world->tex, archive, record, texture_record_count);
 }
 
 /* Unique texture slots, so a camera step does not rescan every triangle. */

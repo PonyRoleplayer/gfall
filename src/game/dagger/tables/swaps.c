@@ -1,5 +1,6 @@
 #include "game/dagger/tables/swaps.h"
 #include "game/dagger/formats/climate.h"
+#include "engine/core/df.h"
 
 /* See swaps.h. Set numbers are DFLocation.ClimateTextureSet's. */
 
@@ -133,4 +134,67 @@ int swap_window(int archive, int record)
     default:
         return 0;
     }
+}
+
+/* True when archive is that set in one of the four real families. */
+static int same_set(int archive, int set)
+{
+    int family;
+
+    if (archive < set) {
+        return 0;
+    }
+    family = archive - set;
+    return family == TEX_DESERT || family == TEX_MOUNTAIN || family == TEX_WOODLAND || family == TEX_SWAMP;
+}
+
+int swap_dungeon_init(SwapDungeon *d, int climate, int location_id)
+{
+    df_u32 rng;
+    int i;
+
+    d->family = climate_family(climate);
+    if (d->family < 0 || location_id <= 0) {
+        return 0;
+    }
+    /* Watcom's rand: the high 15 bits of an LCG, seeded with the location id. */
+    rng = (df_u32)location_id;
+    for (i = 0; i < 5; i++) {
+        int off;
+
+        rng = rng * 0x41C64E6Du + 0x3039u;
+        off = (int)((rng >> 16) & 0x7fffu) % 5;
+        if (off == 2) {
+            off = 4;
+        }
+        d->arch[i] = d->family + TEX_SET_CRYPT + off;
+    }
+    return 1;
+}
+
+int swap_dungeon(const SwapDungeon *d, int archive, int record, int (*count)(int file))
+{
+    static const int keys[5] = { 119, 120, 122, 123, 124 };
+    int i;
+    int set;
+
+    if (same_set(archive, TEX_SET_DOOR)) {
+        return record > 2 ? archive : d->family + TEX_SET_DOOR;
+    }
+    for (i = 0; i < 5; i++) {
+        if (archive == keys[i]) {
+            return d->arch[i];
+        }
+    }
+    if (same_set(archive, TEX_SET_SEWER)) {
+        return d->family + TEX_SET_SEWER;
+    }
+    /* A cave record the climate's file lacks stays on the archive the face named. */
+    if (same_set(archive, TEX_SET_CAVE)) {
+        set = d->family + TEX_SET_CAVE;
+        if (record >= 0 && record < count(set)) {
+            return set;
+        }
+    }
+    return archive;
 }

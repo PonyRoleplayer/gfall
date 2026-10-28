@@ -1220,6 +1220,8 @@ static void place_doors(Chunk *c, StreamOut *out)
     act = (ModelAct *)mem_alloc((df_u32)n * (df_u32)sizeof(ModelAct));
     blk = (df_u8 *)mem_alloc((df_u32)n);
     if (act && blk) {
+        /* Every field the build reads: no markers, and no keys until the stream's towns are keyed. */
+        mem_zero(&d, sizeof(d));
         /* What the file said of each building model, in the order they were placed. */
         k = 0;
         for (i = 0; i < b->ninst && k < n; i++) {

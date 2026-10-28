@@ -131,7 +131,8 @@ PLACES_SRC := \
 	src/game/dagger/places/wild.c \
 	src/game/dagger/places/people.c \
 	src/game/dagger/places/terrain.c \
-	src/game/dagger/places/wres.c
+	src/game/dagger/places/wres.c \
+	src/game/dagger/places/dunstream.c
 
 DAGGER_SRC := $(FORMATS_SRC) $(TABLES_SRC) $(PLACES_SRC)
 

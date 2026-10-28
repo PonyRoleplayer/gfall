@@ -104,5 +104,11 @@ int block_reserve(Block *block, int ninst, int nflat, int nmark);
 
 Block *rdb_load(const df_u8 *rdb, df_u32 size, struct Bsa *arch,
                 ArchEnt *cache, int *ncache);
+/*
+ * A block's editor markers alone, in rdb_load's order, into out (cap):
+ * no models parsed, no memory. How many. A streamed dungeon draws its
+ * creatures from them, block by block, as a whole load does.
+ */
+int rdb_markers(const df_u8 *rdb, df_u32 size, Marker *out, int cap);
 
 #endif
