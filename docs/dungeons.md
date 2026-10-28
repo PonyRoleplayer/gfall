@@ -8,7 +8,7 @@ GFALL calls `world_load()`, which still loads only Privateer's Hold and still re
 
 `MAPS.BSA` is a named BSA. Region `N` is `MAPDITEM.NNN` (`MAPDITEM.017` is region 17). There are 62 region files, `000` through `061`. Seventeen of them are 4 bytes and contain no dungeons (002–004, 006–008, 010, 012–015, 024, 025, 027–030).
 
-This `ARENA2` tree has **4232** dungeons. `tools/check_dagger.c` asserts that count. The largest block list is 22, under `DUN_MAX_BLOCKS` (64). Privateer's Hold is region 17, location id 50050, 5 blocks, climate woodlands.
+This `ARENA2` tree has **4232** dungeons. `tests/check_dagger.c` asserts that count. The largest block list is 22, under `DUN_MAX_BLOCKS` (64). Privateer's Hold is region 17, location id 50050, 5 blocks, climate woodlands.
 
 `dungeon_list` copies the name, region, record index, block count, and location id, with `outdoor` 0. It does not resolve climate. Call it once. On the viewer, wrap the scan in `mem_temp_begin` so the map bytes die after the names are copied out. There is no `mem_free`.
 

@@ -1,11 +1,11 @@
 # Interaction
 
-Looking at a thing and pressing the use key does something: a door swings, a lever starts what it is chained to, a house's door takes you inside, a dungeon's exit takes you out, a person says who they are. Read this before editing `src/engine/scene/interact.c`, `src/game/dagger/doors.c`, `rmb_load_interior` in `rmb.c`, the action fields in `rdb.c`, or the passages in `tools/levelfall/main.c`.
+Looking at a thing and pressing the use key does something: a door swings, a lever starts what it is chained to, a house's door takes you inside, a dungeon's exit takes you out, a person says who they are. Read this before editing `src/engine/scene/interact.c`, `src/game/dagger/places/doors.c`, `rmb_load_interior` in `rmb.c`, the action fields in `rdb.c`, or the passages in `apps/levelfall/main.c`.
 
 ## The parts
 
 - **The engine** (`engine/scene/interact.c`, plain C, host-tested) knows two things: a `Usable`, something that can be used, and a `Mover`, a model that moves. Both are lists on the `Scene` (`usables`, `movers`). It casts the ray, picks the usable, starts movers and moves them on each frame. It knows nothing of Daggerfall.
-- **The game** (`game/dagger/doors.c`) builds those lists from the blocks when the place loads: which models are doors, which records are actions, which faces lead somewhere, which flats are people.
+- **The game** (`game/dagger/places/doors.c`) builds those lists from the blocks when the place loads: which models are doors, which records are actions, which faces lead somewhere, which flats are people.
 - **The program** decides what a passage does, through a handler (`interact_set_handler`). LEVELFALL loads the place it leads to. GFALL sets no handler yet: its doors and levers work, and a passage only logs that nothing takes it.
 
 ## Using

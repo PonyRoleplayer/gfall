@@ -1,6 +1,6 @@
 # Viewers
 
-`RENDERFALL.EXE` (`tools/renderfall/main.c`) lists `ARCH3D.BSA` and orbits one model. `LEVELFALL.EXE` (`tools/levelfall/main.c`) lists every indoor and outdoor place and flies through one. Both are PE32 GUI programs on the gfall disc. `ARENA2` is not on the disc. They read it from the directory beside the exe. Neither imports `glide2x.dll`. `comctl32.dll` is `LoadLibrary`'d for `SysListView32`; it is not in the import table. `make renderfall-check` and `make levelfall-check` are the same PE checks as `gfall-check`.
+`RENDERFALL.EXE` (`apps/renderfall/main.c`) lists `ARCH3D.BSA` and orbits one model. `LEVELFALL.EXE` (`apps/levelfall/main.c`) lists every indoor and outdoor place and flies through one. Both are PE32 GUI programs on the gfall disc. `ARENA2` is not on the disc. They read it from the directory beside the exe. Neither imports `glide2x.dll`. `comctl32.dll` is `LoadLibrary`'d for `SysListView32`; it is not in the import table. `make renderfall-check` and `make levelfall-check` are the same PE checks as `gfall-check`.
 
 Read `docs/dungeons.md` before changing what a level is. This file is the UI and the camera.
 
@@ -84,4 +84,4 @@ The key immediately left of 1 toggles the engine console. See `docs/console.md`.
 
 ## Game controls, unchanged
 
-`player_tick` is still what `GFALL.EXE` uses. hostcheck locks it: yaw 0 moves W toward +Z and D toward +X, Q raises Y, E lowers Y, mouse-right increases yaw. A change to spectator flight belongs in `tools/levelfall/main.c`, not in `player.c`.
+`player_tick` is still what `GFALL.EXE` uses. hostcheck locks it: yaw 0 moves W toward +Z and D toward +X, Q raises Y, E lowers Y, mouse-right increases yaw. A change to spectator flight belongs in `apps/levelfall/main.c`, not in `player.c`.

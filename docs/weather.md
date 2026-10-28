@@ -1,6 +1,6 @@
 # Weather
 
-The engine has weather: a kind of weather at a time, rolled from odds every few game hours, blending into the next, and what it does to the light, the fog, the sky, and the air. The game sets the odds for its place and season; the engine does the rest. Read this before editing `src/engine/scene/weather.c`, the weather code in `draw.c` (`fog_apply`, `draw_precip`, `flash_tick`, `weather_light`), `scene_set_fog_far`, or `src/game/dagger/forecast.c`. The hour's light and the sky are `docs/daylight.md`.
+The engine has weather: a kind of weather at a time, rolled from odds every few game hours, blending into the next, and what it does to the light, the fog, the sky, and the air. The game sets the odds for its place and season; the engine does the rest. Read this before editing `src/engine/scene/weather.c`, the weather code in `draw.c` (`fog_apply`, `draw_precip`, `flash_tick`, `weather_light`), `scene_set_fog_far`, or `src/game/dagger/tables/forecast.c`. The hour's light and the sky are `docs/daylight.md`.
 
 ## The kinds
 
@@ -42,7 +42,7 @@ When the game sets new odds and the current kind has no chance under them, a rol
 
 ## The odds
 
-The engine defaults to Daggerfall's woodlands in summer. `src/game/dagger/forecast.c` has the whole table from the Daggerfall Chronicles (p. 47), as Daggerfall Unity carries it (`WeatherTable.json`): six climate groups, four seasons each. `world.c` sets the place's odds when an outdoor place loads (`forecast_set`), summer until there is a calendar. Some of it:
+The engine defaults to Daggerfall's woodlands in summer. `src/game/dagger/tables/forecast.c` has the whole table from the Daggerfall Chronicles (p. 47), as Daggerfall Unity carries it (`WeatherTable.json`): six climate groups, four seasons each. `world.c` sets the place's odds when an outdoor place loads (`forecast_set`), summer until there is a calendar. Some of it:
 
 | Group (climates) | Season | Sunny | Cloudy | Overcast | Fog | Rain | Thunder | Snow |
 |---|---|---|---|---|---|---|---|---|

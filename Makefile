@@ -40,14 +40,18 @@ LDFLAGS := -nostdlib \
 HOST_CC := gcc
 HOST_CFLAGS := -std=gnu90 -Wall -Wextra -O2 -DDF_HOST -Isrc
 
-GFALL_SRC := \
-	game/daggerfall/main.c \
-	src/engine/platform/win32.c \
-	src/engine/platform/input.c \
-	src/engine/platform/fs.c \
+# Sources by layer (docs/architecture.md). A file includes only its own
+# layer and those listed before it: the engine; then Daggerfall's
+# formats, tables, places and play (its game and its player); then the
+# programs in apps/.
+
+# The engine that hostcheck runs: plain C, no Win32 or Glide.
+ENGINE_HOST_SRC := \
 	src/engine/core/mem.c \
 	src/engine/core/log.c \
 	src/engine/core/prof.c \
+	src/engine/ui/cmd.c \
+	src/engine/platform/fs.c \
 	src/engine/assets/vfs.c \
 	src/engine/assets/loader.c \
 	src/engine/scene/scene.c \
@@ -60,238 +64,128 @@ GFALL_SRC := \
 	src/engine/scene/interact.c \
 	src/engine/scene/entity.c \
 	src/engine/scene/stream.c \
-	src/engine/platform/winmm.c \
 	src/engine/sound/mixer.c \
 	src/engine/sound/audio.c \
 	src/engine/sound/sound.c \
 	src/engine/sound/music.c \
 	src/engine/sound/ambience.c \
-	src/engine/gfx/glide.c \
 	src/engine/gfx/camera.c \
-	src/engine/gfx/texcache.c \
 	src/engine/gfx/mip.c \
-	src/engine/gfx/texres.c \
+	src/engine/gfx/texres.c
+
+# The rest of the engine: the window, the card, the screen.
+ENGINE_SRC := $(ENGINE_HOST_SRC) \
+	src/engine/platform/win32.c \
+	src/engine/platform/input.c \
+	src/engine/platform/winmm.c \
+	src/engine/gfx/glide.c \
+	src/engine/gfx/texcache.c \
 	src/engine/gfx/draw.c \
 	src/engine/gfx/sky.c \
 	src/engine/gfx/gfx.c \
 	src/engine/ui/hud.c \
 	src/engine/ui/font.c \
 	src/engine/ui/console.c \
-	src/engine/ui/cmd.c \
 	src/engine/ui/shot.c \
-	src/engine/ui/build.c \
-	src/game/dagger/bsa.c \
-	src/game/dagger/arch3d.c \
-	src/game/dagger/texture.c \
-	src/game/dagger/palette.c \
-	src/game/dagger/fnt.c \
-	src/game/dagger/rdb.c \
-	src/game/dagger/rmb.c \
-	src/game/dagger/dungeon.c \
-	src/game/dagger/bind.c \
-	src/game/dagger/world.c \
-	src/game/dagger/doors.c \
-	src/game/dagger/swaps.c \
-	src/game/dagger/worldmap.c \
-	src/game/dagger/wild.c \
-	src/game/dagger/people.c \
-	src/game/dagger/enemies.c \
-	src/game/dagger/terrain.c \
-	src/game/dagger/wres.c \
-	src/game/dagger/skyfile.c \
-	src/game/dagger/forecast.c \
-	src/game/dagger/player.c \
-	src/game/dagger/sndfile.c \
-	src/game/dagger/hmi.c \
-	src/game/dagger/sounds.c
+	src/engine/ui/build.c
 
-RENDER_SRC := \
-	tools/renderfall/main.c \
-	src/engine/platform/win32.c \
-	src/engine/platform/input.c \
-	src/engine/platform/fs.c \
-	src/engine/core/mem.c \
-	src/engine/core/log.c \
-	src/engine/core/prof.c \
-	src/engine/assets/vfs.c \
-	src/engine/assets/loader.c \
-	src/engine/scene/scene.c \
-	src/engine/scene/light.c \
-	src/engine/scene/clock.c \
-	src/engine/scene/daylight.c \
-	src/engine/scene/weather.c \
-	src/engine/scene/collide.c \
-	src/engine/scene/walker.c \
-	src/engine/scene/interact.c \
-	src/engine/scene/entity.c \
-	src/engine/scene/stream.c \
-	src/engine/platform/winmm.c \
-	src/engine/sound/mixer.c \
-	src/engine/sound/audio.c \
-	src/engine/sound/sound.c \
-	src/engine/sound/music.c \
-	src/engine/sound/ambience.c \
-	src/engine/gfx/glide.c \
-	src/engine/gfx/camera.c \
-	src/engine/gfx/texcache.c \
-	src/engine/gfx/mip.c \
-	src/engine/gfx/texres.c \
-	src/engine/gfx/draw.c \
-	src/engine/gfx/sky.c \
-	src/engine/gfx/gfx.c \
-	src/engine/ui/hud.c \
-	src/engine/ui/font.c \
-	src/engine/ui/console.c \
-	src/engine/ui/cmd.c \
-	src/engine/ui/shot.c \
-	src/engine/ui/build.c \
-	src/game/dagger/bsa.c \
-	src/game/dagger/arch3d.c \
-	src/game/dagger/texture.c \
-	src/game/dagger/palette.c
+# Daggerfall's files, read.
+FORMATS_SRC := \
+	src/game/dagger/formats/bsa.c \
+	src/game/dagger/formats/arch3d.c \
+	src/game/dagger/formats/texture.c \
+	src/game/dagger/formats/palette.c \
+	src/game/dagger/formats/fnt.c \
+	src/game/dagger/formats/rdb.c \
+	src/game/dagger/formats/rmb.c \
+	src/game/dagger/formats/dungeon.c \
+	src/game/dagger/formats/bind.c \
+	src/game/dagger/formats/worldmap.c \
+	src/game/dagger/formats/skyfile.c \
+	src/game/dagger/formats/sndfile.c \
+	src/game/dagger/formats/hmi.c
 
-LEVEL_SRC := \
-	tools/levelfall/main.c \
-	src/engine/platform/win32.c \
-	src/engine/platform/input.c \
-	src/engine/platform/fs.c \
-	src/engine/core/mem.c \
-	src/engine/core/log.c \
-	src/engine/core/prof.c \
-	src/engine/assets/vfs.c \
-	src/engine/assets/loader.c \
-	src/engine/scene/scene.c \
-	src/engine/scene/light.c \
-	src/engine/scene/clock.c \
-	src/engine/scene/daylight.c \
-	src/engine/scene/weather.c \
-	src/engine/scene/collide.c \
-	src/engine/scene/walker.c \
-	src/engine/scene/interact.c \
-	src/engine/scene/entity.c \
-	src/engine/scene/stream.c \
-	src/engine/platform/winmm.c \
-	src/engine/sound/mixer.c \
-	src/engine/sound/audio.c \
-	src/engine/sound/sound.c \
-	src/engine/sound/music.c \
-	src/engine/sound/ambience.c \
-	src/engine/gfx/glide.c \
-	src/engine/gfx/camera.c \
-	src/engine/gfx/texcache.c \
-	src/engine/gfx/mip.c \
-	src/engine/gfx/texres.c \
-	src/engine/gfx/draw.c \
-	src/engine/gfx/sky.c \
-	src/engine/gfx/gfx.c \
-	src/engine/ui/hud.c \
-	src/engine/ui/font.c \
-	src/engine/ui/console.c \
-	src/engine/ui/cmd.c \
-	src/engine/ui/shot.c \
-	src/engine/ui/build.c \
-	src/game/dagger/bsa.c \
-	src/game/dagger/arch3d.c \
-	src/game/dagger/texture.c \
-	src/game/dagger/palette.c \
-	src/game/dagger/rdb.c \
-	src/game/dagger/rmb.c \
-	src/game/dagger/dungeon.c \
-	src/game/dagger/bind.c \
-	src/game/dagger/world.c \
-	src/game/dagger/doors.c \
-	src/game/dagger/swaps.c \
-	src/game/dagger/worldmap.c \
-	src/game/dagger/wild.c \
-	src/game/dagger/people.c \
-	src/game/dagger/enemies.c \
-	src/game/dagger/terrain.c \
-	src/game/dagger/wres.c \
-	src/game/dagger/skyfile.c \
-	src/game/dagger/forecast.c \
-	src/game/dagger/sndfile.c \
-	src/game/dagger/hmi.c \
-	src/game/dagger/sounds.c
+# Daggerfall's rules for dressing a place.
+TABLES_SRC := \
+	src/game/dagger/tables/swaps.c \
+	src/game/dagger/tables/enemies.c \
+	src/game/dagger/tables/forecast.c \
+	src/game/dagger/tables/sounds.c
 
-HOST_SRC := \
-	src/engine/core/mem.c \
-	src/engine/core/log.c \
-	src/engine/core/prof.c \
-	src/engine/ui/cmd.c \
-	src/engine/platform/fs.c \
-	src/engine/assets/vfs.c \
-	src/engine/assets/loader.c \
-	src/engine/scene/scene.c \
-	src/engine/scene/light.c \
-	src/engine/scene/clock.c \
-	src/engine/scene/daylight.c \
-	src/engine/scene/weather.c \
-	src/engine/scene/collide.c \
-	src/engine/scene/walker.c \
-	src/engine/scene/interact.c \
-	src/engine/scene/entity.c \
-	src/engine/scene/stream.c \
-	src/engine/sound/mixer.c \
-	src/engine/sound/audio.c \
-	src/engine/sound/sound.c \
-	src/engine/sound/music.c \
-	src/engine/sound/ambience.c \
-	src/engine/gfx/camera.c \
-	src/engine/gfx/mip.c \
-	src/engine/gfx/texres.c \
-	src/game/dagger/bsa.c \
-	src/game/dagger/palette.c \
-	src/game/dagger/texture.c \
-	src/game/dagger/arch3d.c \
-	src/game/dagger/rdb.c \
-	src/game/dagger/rmb.c \
-	src/game/dagger/dungeon.c \
-	src/game/dagger/bind.c \
-	src/game/dagger/world.c \
-	src/game/dagger/doors.c \
-	src/game/dagger/swaps.c \
-	src/game/dagger/worldmap.c \
-	src/game/dagger/wild.c \
-	src/game/dagger/people.c \
-	src/game/dagger/enemies.c \
-	src/game/dagger/terrain.c \
-	src/game/dagger/wres.c \
-	src/game/dagger/skyfile.c \
-	src/game/dagger/forecast.c \
-	src/game/dagger/player.c \
-	src/game/dagger/sndfile.c \
-	src/game/dagger/hmi.c \
-	src/game/dagger/sounds.c
+# A place built from the files: a Level the engine draws.
+PLACES_SRC := \
+	src/game/dagger/places/world.c \
+	src/game/dagger/places/doors.c \
+	src/game/dagger/places/wild.c \
+	src/game/dagger/places/people.c \
+	src/game/dagger/places/terrain.c \
+	src/game/dagger/places/wres.c
 
-.PHONY: all check clean hostcheck gfall-check renderfall-check levelfall-check deps deps-host
+DAGGER_SRC := $(FORMATS_SRC) $(TABLES_SRC) $(PLACES_SRC)
 
-deps:
+# Daggerfall's game: its player, its rules. LEVELFALL does not link it.
+PLAY_SRC := \
+	src/game/dagger/play/player.c
+
+GFALL_SRC := apps/gfall/main.c $(ENGINE_SRC) $(DAGGER_SRC) $(PLAY_SRC)
+
+# RENDERFALL shows models alone: the readers they need and no place.
+RENDER_SRC := apps/renderfall/main.c $(ENGINE_SRC) \
+	src/game/dagger/formats/bsa.c \
+	src/game/dagger/formats/arch3d.c \
+	src/game/dagger/formats/texture.c \
+	src/game/dagger/formats/palette.c
+
+# LEVELFALL draws with the engine's own face, not FONT0000.FNT.
+LEVEL_SRC := apps/levelfall/main.c $(ENGINE_SRC) \
+	$(filter-out src/game/dagger/formats/fnt.c,$(DAGGER_SRC))
+
+HOST_SRC := $(ENGINE_HOST_SRC) \
+	$(filter-out src/game/dagger/formats/fnt.c,$(DAGGER_SRC)) $(PLAY_SRC)
+
+.PHONY: all check clean hostcheck gfall-check renderfall-check levelfall-check deps deps-host layers
+
+# A bare make builds everything; deps alone is the first rule below.
+.DEFAULT_GOAL := all
+
+# The rules every executable must pass: a PE32 80386 GUI program for
+# Windows 4.0 (95, 98, NT4), importing only KERNEL32 and USER32, binding
+# glide2x.dll at runtime, with no P6 or SSE instruction.
+# $(call pe_check,EXE,DUMP)
+define pe_check
+	file $(1) | grep -q 'PE32'
+	file $(1) | grep -q '80386'
+	file $(1) | grep -q 'GUI'
+	$(OBJDUMP) -p $(1) > $(2)
+	grep -q 'MajorOSystemVersion[[:space:]]*4' $(2)
+	grep -q 'MinorOSystemVersion[[:space:]]*0' $(2)
+	grep -q 'MajorSubsystemVersion[[:space:]]*4' $(2)
+	grep -q 'MinorSubsystemVersion[[:space:]]*0' $(2)
+	grep -q 'Subsystem[[:space:]]*00000002' $(2)
+	awk 'BEGIN{bad=0} /^[[:space:]]*DLL Name:/{name=$$3; if (name!="KERNEL32.dll" && name!="USER32.dll") {print "unexpected import", name; bad=1}} END{exit bad}' $(2)
+	grep -q 'LoadLibraryA' $(2)
+	grep -q 'GetProcAddress' $(2)
+	! grep -q 'glide2x.dll' $(2)
+	! $(OBJDUMP) -d $(1) | grep -E -i -q '(^|[[:space:]])(cmov|fcmov|fucomi|fcomi|movaps|movss|addps|xmm)[[:digit:]]*'
+endef
+
+deps: layers
 	sh tools/check-deps
 
-deps-host:
+deps-host: layers
 	sh tools/check-deps host
+
+layers:
+	sh tools/check-layers
 
 all: deps check build/spintri.iso gfall-check renderfall-check levelfall-check build/gfall.iso
 
-build/SPINTRI.EXE: src/spintri.c third_party/glide2/include/glide.h | deps
+build/SPINTRI.EXE: apps/spintri/main.c third_party/glide2/include/glide.h | deps
 	mkdir -p build
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ src/spintri.c -luser32 -lkernel32 -lgcc
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ apps/spintri/main.c -luser32 -lkernel32 -lgcc
 
 check: build/SPINTRI.EXE
-	file build/SPINTRI.EXE | grep -q 'PE32' 
-	file build/SPINTRI.EXE | grep -q '80386'
-	file build/SPINTRI.EXE | grep -q 'GUI'
-	$(OBJDUMP) -p build/SPINTRI.EXE > build/spintri.dump
-	grep -q 'MajorOSystemVersion[[:space:]]*4' build/spintri.dump
-	grep -q 'MinorOSystemVersion[[:space:]]*0' build/spintri.dump
-	grep -q 'MajorSubsystemVersion[[:space:]]*4' build/spintri.dump
-	grep -q 'MinorSubsystemVersion[[:space:]]*0' build/spintri.dump
-	grep -q 'Subsystem[[:space:]]*00000002' build/spintri.dump
-	awk 'BEGIN{bad=0} /^[[:space:]]*DLL Name:/{name=$$3; if (name!="KERNEL32.dll" && name!="USER32.dll") {print "unexpected import", name; bad=1}} END{exit bad}' build/spintri.dump
-	grep -q 'LoadLibraryA' build/spintri.dump
-	grep -q 'GetProcAddress' build/spintri.dump
-	! grep -q 'glide2x.dll' build/spintri.dump
-	! $(OBJDUMP) -d build/SPINTRI.EXE | grep -E -i -q '(^|[[:space:]])(cmov|fcmov|fucomi|fcomi|movaps|movss|addps|xmm)[[:digit:]]*'
+	$(call pe_check,build/SPINTRI.EXE,build/spintri.dump)
 
 build/cdroot/SPINTRI.EXE: build/SPINTRI.EXE
 	mkdir -p build/cdroot
@@ -300,9 +194,9 @@ build/cdroot/SPINTRI.EXE: build/SPINTRI.EXE
 build/spintri.iso: build/cdroot/SPINTRI.EXE | deps
 	$(XORRISO) -as mkisofs -o $@ -V SPINTRI -J -iso-level 1 build/cdroot
 
-build/hostcheck: tools/hostcheck.c tools/check_engine.c tools/check_dagger.c tools/check_util.c $(HOST_SRC) | deps-host
+build/hostcheck: tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_util.c $(HOST_SRC) | deps-host
 	mkdir -p build
-	$(HOST_CC) $(HOST_CFLAGS) -o $@ tools/hostcheck.c tools/check_engine.c tools/check_dagger.c tools/check_util.c $(HOST_SRC)
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_util.c $(HOST_SRC)
 
 hostcheck: build/hostcheck
 	./build/hostcheck
@@ -312,60 +206,21 @@ build/GFALL.EXE: $(GFALL_SRC) third_party/glide2/include/glide.h | deps
 	$(CC) $(CFLAGS) -DBUILD_STAMP='"$(BUILD_STAMP)"' $(LDFLAGS) -o $@ $(GFALL_SRC) -luser32 -lkernel32 -lgcc
 
 gfall-check: build/GFALL.EXE
-	file build/GFALL.EXE | grep -q 'PE32'
-	file build/GFALL.EXE | grep -q '80386'
-	file build/GFALL.EXE | grep -q 'GUI'
-	$(OBJDUMP) -p build/GFALL.EXE > build/gfall.dump
-	grep -q 'MajorOSystemVersion[[:space:]]*4' build/gfall.dump
-	grep -q 'MinorOSystemVersion[[:space:]]*0' build/gfall.dump
-	grep -q 'MajorSubsystemVersion[[:space:]]*4' build/gfall.dump
-	grep -q 'MinorSubsystemVersion[[:space:]]*0' build/gfall.dump
-	grep -q 'Subsystem[[:space:]]*00000002' build/gfall.dump
-	awk 'BEGIN{bad=0} /^[[:space:]]*DLL Name:/{name=$$3; if (name!="KERNEL32.dll" && name!="USER32.dll") {print "unexpected import", name; bad=1}} END{exit bad}' build/gfall.dump
-	grep -q 'LoadLibraryA' build/gfall.dump
-	grep -q 'GetProcAddress' build/gfall.dump
-	! grep -q 'glide2x.dll' build/gfall.dump
-	! $(OBJDUMP) -d build/GFALL.EXE | grep -E -i -q '(^|[[:space:]])(cmov|fcmov|fucomi|fcomi|movaps|movss|addps|xmm)[[:digit:]]*'
+	$(call pe_check,build/GFALL.EXE,build/gfall.dump)
 
 build/RENDERFALL.EXE: $(RENDER_SRC) third_party/glide2/include/glide.h | deps
 	mkdir -p build
 	$(CC) $(CFLAGS) -DBUILD_STAMP='"$(BUILD_STAMP)"' $(LDFLAGS) -o $@ $(RENDER_SRC) -luser32 -lkernel32 -lgcc
 
 renderfall-check: build/RENDERFALL.EXE
-	file build/RENDERFALL.EXE | grep -q 'PE32'
-	file build/RENDERFALL.EXE | grep -q '80386'
-	file build/RENDERFALL.EXE | grep -q 'GUI'
-	$(OBJDUMP) -p build/RENDERFALL.EXE > build/renderfall.dump
-	grep -q 'MajorOSystemVersion[[:space:]]*4' build/renderfall.dump
-	grep -q 'MinorOSystemVersion[[:space:]]*0' build/renderfall.dump
-	grep -q 'MajorSubsystemVersion[[:space:]]*4' build/renderfall.dump
-	grep -q 'MinorSubsystemVersion[[:space:]]*0' build/renderfall.dump
-	grep -q 'Subsystem[[:space:]]*00000002' build/renderfall.dump
-	awk 'BEGIN{bad=0} /^[[:space:]]*DLL Name:/{name=$$3; if (name!="KERNEL32.dll" && name!="USER32.dll") {print "unexpected import", name; bad=1}} END{exit bad}' build/renderfall.dump
-	grep -q 'LoadLibraryA' build/renderfall.dump
-	grep -q 'GetProcAddress' build/renderfall.dump
-	! grep -q 'glide2x.dll' build/renderfall.dump
-	! $(OBJDUMP) -d build/RENDERFALL.EXE | grep -E -i -q '(^|[[:space:]])(cmov|fcmov|fucomi|fcomi|movaps|movss|addps|xmm)[[:digit:]]*'
+	$(call pe_check,build/RENDERFALL.EXE,build/renderfall.dump)
 
 build/LEVELFALL.EXE: $(LEVEL_SRC) third_party/glide2/include/glide.h | deps
 	mkdir -p build
 	$(CC) $(CFLAGS) -DBUILD_STAMP='"$(BUILD_STAMP)"' $(LDFLAGS) -o $@ $(LEVEL_SRC) -luser32 -lkernel32 -lgcc
 
 levelfall-check: build/LEVELFALL.EXE
-	file build/LEVELFALL.EXE | grep -q 'PE32'
-	file build/LEVELFALL.EXE | grep -q '80386'
-	file build/LEVELFALL.EXE | grep -q 'GUI'
-	$(OBJDUMP) -p build/LEVELFALL.EXE > build/levelfall.dump
-	grep -q 'MajorOSystemVersion[[:space:]]*4' build/levelfall.dump
-	grep -q 'MinorOSystemVersion[[:space:]]*0' build/levelfall.dump
-	grep -q 'MajorSubsystemVersion[[:space:]]*4' build/levelfall.dump
-	grep -q 'MinorSubsystemVersion[[:space:]]*0' build/levelfall.dump
-	grep -q 'Subsystem[[:space:]]*00000002' build/levelfall.dump
-	awk 'BEGIN{bad=0} /^[[:space:]]*DLL Name:/{name=$$3; if (name!="KERNEL32.dll" && name!="USER32.dll") {print "unexpected import", name; bad=1}} END{exit bad}' build/levelfall.dump
-	grep -q 'LoadLibraryA' build/levelfall.dump
-	grep -q 'GetProcAddress' build/levelfall.dump
-	! grep -q 'glide2x.dll' build/levelfall.dump
-	! $(OBJDUMP) -d build/LEVELFALL.EXE | grep -E -i -q '(^|[[:space:]])(cmov|fcmov|fucomi|fcomi|movaps|movss|addps|xmm)[[:digit:]]*'
+	$(call pe_check,build/LEVELFALL.EXE,build/levelfall.dump)
 
 build/gfall.iso: build/GFALL.EXE build/RENDERFALL.EXE build/LEVELFALL.EXE build/hostcheck | deps
 	./build/hostcheck

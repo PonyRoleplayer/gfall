@@ -1,0 +1,95 @@
+#!/bin/sh
+# Fail when a file includes a layer above its own (docs/architecture.md).
+#   sh tools/check-layers
+#
+# The engine is shared. Each game is a folder under src/game/ (today
+# only dagger) with the same layers inside it. Lowest first; a file may
+# include its own layer and any below it, never one above:
+#   0 src/engine/
+#   1 src/game/<game>/formats/
+#   2 src/game/<game>/tables/
+#   3 src/game/<game>/places/
+#   4 src/game/<game>/play/
+#   5 apps/
+# A game never includes another game. tests/ may include anything and
+# is not checked.
+#
+# Also: nothing under src/game/ includes <windows.h>, so hostcheck can
+# build it, but for the files named in WIN32_OK (each with its reason).
+
+set -u
+
+ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd) || exit 1
+cd "$ROOT" || exit 1
+
+# fnt.c writes font0000.bmp with CreateFileA; it is not in hostcheck.
+WIN32_OK="src/game/dagger/formats/fnt.c"
+
+# A path from the repo root, or an include path (relative to src/), as
+# the path under src/ alone, or apps/... as it is.
+under_src() {
+    case $1 in
+        src/*) echo "${1#src/}" ;;
+        *) echo "$1" ;;
+    esac
+}
+
+# The layer of a path. -1 for anything outside the layers.
+layer_of() {
+    case $(under_src "$1") in
+        engine/*) echo 0 ;;
+        game/*/formats/*) echo 1 ;;
+        game/*/tables/*) echo 2 ;;
+        game/*/places/*) echo 3 ;;
+        game/*/play/*) echo 4 ;;
+        apps/*) echo 5 ;;
+        *) echo -1 ;;
+    esac
+}
+
+# The game a path belongs to, or nothing.
+game_of() {
+    case $(under_src "$1") in
+        game/*/*) p=$(under_src "$1"); p=${p#game/}; echo "${p%%/*}" ;;
+        *) echo "" ;;
+    esac
+}
+
+BAD=0
+
+for file in $(find src apps -name '*.[ch]' | sort); do
+    own=$(layer_of "$file")
+    game=$(game_of "$file")
+    # Every quoted include: the path between the quotes.
+    for inc in $(sed -n 's/^[[:space:]]*#[[:space:]]*include[[:space:]]*"\([^"]*\)".*/\1/p' "$file"); do
+        to=$(layer_of "$inc")
+        if [ "$to" -gt "$own" ]; then
+            echo "  upward  $file includes $inc"
+            BAD=1
+        fi
+        other=$(game_of "$inc")
+        if [ -n "$game" ] && [ -n "$other" ] && [ "$game" != "$other" ]; then
+            echo "  across  $file includes $inc (another game)"
+            BAD=1
+        fi
+    done
+    case $file in
+        src/game/*)
+            if grep -q '^[[:space:]]*#[[:space:]]*include[[:space:]]*<windows\.h>' "$file"; then
+                case " $WIN32_OK " in
+                    *" $file "*) ;;
+                    *)
+                        echo "  win32   $file includes <windows.h>"
+                        BAD=1
+                        ;;
+                esac
+            fi
+            ;;
+    esac
+done
+
+if [ "$BAD" -ne 0 ]; then
+    echo "layers: see docs/architecture.md"
+    exit 1
+fi
+echo "layers ok"

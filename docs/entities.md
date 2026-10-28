@@ -1,6 +1,6 @@
 # Entities
 
-Things that move about the world on their own, or stand where the game put them: townspeople, a dungeon's creatures; the player later. Read this before editing `src/engine/scene/entity.c`, `src/game/dagger/people.c`, `src/game/dagger/enemies.c`, the creatures in `world.c`, the walking cells in `wild.c`, or the entity pass in `draw.c`.
+Things that move about the world on their own, or stand where the game put them: townspeople, a dungeon's creatures; the player later. Read this before editing `src/engine/scene/entity.c`, `src/game/dagger/places/people.c`, `src/game/dagger/tables/enemies.c`, the creatures in `world.c`, the walking cells in `wild.c`, or the entity pass in `draw.c`.
 
 The engine does engine things: here is an entity, where it stands, which way it faces, its pictures; it draws it turning as it faces. It does not know friend from foe, or what anything does. That is the game's: the townspeople's walking is `people.c`, a creature's kind is `enemies.c`, and what a creature does about the player is later game logic.
 
@@ -34,7 +34,7 @@ Facing the camera, record 0; a quarter turn to the camera's left, record 2; a qu
 
 ## Townspeople (game)
 
-`game/dagger/people.c`, in a streamed world (LEVELFALL's Stream World). A place loaded whole has none yet: its pictures go up to the card all at once at load (`texcache_upload`), and the people's 54 sheets would shrink every other picture of the town.
+`game/dagger/places/people.c`, in a streamed world (LEVELFALL's Stream World). A place loaded whole has none yet: its pictures go up to the card all at once at load (`texcache_upload`), and the people's 54 sheets would shrink every other picture of the town.
 
 ### Where they walk
 
@@ -77,7 +77,7 @@ The people are local to the stream's frame: the origin's move moves them (`peopl
 
 ## A dungeon's creatures (game)
 
-`game/dagger/enemies.c` and the creatures in `world.c`, for a dungeon loaded whole (LEVELFALL's indoor rows, GFALL's hold). The rules are Daggerfall Unity's (`RDBLayout`, `EnemyBasics`, `RandomEncounters`, `DaggerfallMobileUnit`), classic's where DFU recreates classic.
+`game/dagger/tables/enemies.c` and the creatures in `world.c`, for a dungeon loaded whole (LEVELFALL's indoor rows, GFALL's hold). The rules are Daggerfall Unity's (`RDBLayout`, `EnemyBasics`, `RandomEncounters`, `DaggerfallMobileUnit`), classic's where DFU recreates classic.
 
 ### Where they stand
 

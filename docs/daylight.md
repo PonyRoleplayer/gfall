@@ -1,6 +1,6 @@
 # Daylight
 
-Outdoor places have a clock and a calendar, a sky, light by the hour (the sun by day, the moon by night, street lamps and lit windows after dark), and the season's pictures. Read this before editing `src/engine/scene/clock.c`, `daylight.c`, `src/engine/gfx/sky.c`, the sky pass, the window pass or the outdoor lighting in `draw.c`, `glide_sky` or `glide_glow` in `glide.c`, `MIP_GLASS` in `mip.c` or `texture_smooth`, `src/game/dagger/skyfile.c`, `swaps.c`, or the lamps and windows in `world.c`. Dungeon lights are `docs/lighting.md`.
+Outdoor places have a clock and a calendar, a sky, light by the hour (the sun by day, the moon by night, street lamps and lit windows after dark), and the season's pictures. Read this before editing `src/engine/scene/clock.c`, `daylight.c`, `src/engine/gfx/sky.c`, the sky pass, the window pass or the outdoor lighting in `draw.c`, `glide_sky` or `glide_glow` in `glide.c`, `MIP_GLASS` in `mip.c` or `texture_smooth`, `src/game/dagger/formats/skyfile.c`, `swaps.c`, or the lamps and windows in `world.c`. Dungeon lights are `docs/lighting.md`.
 
 ## The clock
 

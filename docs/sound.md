@@ -1,6 +1,6 @@
 # Sound
 
-Music on the card's synthesizer, effects mixed by the CPU, and what each place sounds like. Read this before editing anything in `src/engine/sound/`, `src/engine/platform/winmm.c`, `src/game/dagger/sndfile.c`, `hmi.c` or `sounds.c`, the sound call in `draw.c`, or the sound commands in `console.c`.
+Music on the card's synthesizer, effects mixed by the CPU, and what each place sounds like. Read this before editing anything in `src/engine/sound/`, `src/engine/platform/winmm.c`, `src/game/dagger/formats/sndfile.c`, `hmi.c` or `sounds.c`, the sound call in `draw.c`, or the sound commands in `console.c`.
 
 The load is split: the AWE64's EMU8000 plays the music by itself, and the CPU only mixes the effects, at 11025 Hz, a few voices at a time, with MMX.
 
@@ -42,7 +42,7 @@ What the songs need: at most 17 notes at once (in TAVERN, SNEAKING and the long 
 | Layer | File | Job |
 |---|---|---|
 | Data | `engine/assets/clip.h`, `song.h`, `soundscape.h`; `Scene.emitters` | A clip, a song, a place's soundscape, sounds from points. The game fills them. |
-| Game | `game/dagger/sndfile.c`, `hmi.c`, `sounds.c`; `world.c`; `bind.c` | Daggerfall's files into those, its playlists and lists, an emitter per sounding flat. The `song` and `sound` loaders. |
+| Game | `game/dagger/formats/sndfile.c`, `hmi.c`, `sounds.c`; `world.c`; `bind.c` | Daggerfall's files into those, its playlists and lists, an emitter per sounding flat. The `song` and `sound` loaders. |
 | When | `engine/sound/ambience.c` | Once a frame: the song, the weather's loops, thunder, the odd noise, the emitters. |
 | Voices | `engine/sound/sound.c` | 16 voices, flat or from a point, gains once a frame, taking the quietest. |
 | Mix | `engine/sound/mixer.c` | Clips into one stereo stream, C or MMX. |

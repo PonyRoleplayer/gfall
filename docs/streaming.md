@@ -1,6 +1,6 @@
 # Streaming the world (design)
 
-LEVELFALL's "Stream World": walk Daggerfall's whole map as one place, loaded around the camera as it moves, its ground from the world's height map and its climate. Read this before editing `src/engine/scene/stream.c`, `src/engine/gfx/texres.c`, the stream modes of `texcache.c` and `light.c`, `src/game/dagger/worldmap.c`, `wild.c`, `wres.c`, or LEVELFALL's stream view. Phases 0 to 4 are built (below): the land has its heights, its tiles and its flora; each phase ends in something testable on the 233.
+LEVELFALL's "Stream World": walk Daggerfall's whole map as one place, loaded around the camera as it moves, its ground from the world's height map and its climate. Read this before editing `src/engine/scene/stream.c`, `src/engine/gfx/texres.c`, the stream modes of `texcache.c` and `light.c`, `src/game/dagger/formats/worldmap.c`, `wild.c`, `wres.c`, or LEVELFALL's stream view. Phases 0 to 4 are built (below): the land has its heights, its tiles and its flora; each phase ends in something testable on the 233.
 
 ## What it is
 
@@ -200,7 +200,7 @@ LEVELFALL's handler lets a streamed door through when its pixel's town is in the
 
 ### Tests
 
-`check_stream` in `tools/check_dagger.c`: a stream at Daggerfall fills its 25 chunks, has the town's houses, flats, doors, lamps and sounds; its doors are the town's; a sound is heard beside it; its lamps' pools lie round their lamps and are the same cut chunk by chunk as all at once; its far ground covers the near ground's area in 25 quads, 25 of them baked (`build/far0.ppm` is one); a walk of 40 chunks east keeps ground under the camera, moves the origin twice, keeps the pools with their lamps and the pictures and files under their caps; a jump east into another climate brings its sky; the season's turn loads the ring again in its pictures. `check_wres`: held pictures stay, the least recently released go first, come back when held, and a forgotten dynamic slot is reused. `check_texres` (engine): the buddy allocator, the levels by distance, the budget, the eviction.
+`check_stream` in `tests/check_dagger.c`: a stream at Daggerfall fills its 25 chunks, has the town's houses, flats, doors, lamps and sounds; its doors are the town's; a sound is heard beside it; its lamps' pools lie round their lamps and are the same cut chunk by chunk as all at once; its far ground covers the near ground's area in 25 quads, 25 of them baked (`build/far0.ppm` is one); a walk of 40 chunks east keeps ground under the camera, moves the origin twice, keeps the pools with their lamps and the pictures and files under their caps; a jump east into another climate brings its sky; the season's turn loads the ring again in its pictures. `check_wres`: held pictures stay, the least recently released go first, come back when held, and a forgotten dynamic slot is reused. `check_texres` (engine): the buddy allocator, the levels by distance, the budget, the eviction.
 
 ### Not yet
 
