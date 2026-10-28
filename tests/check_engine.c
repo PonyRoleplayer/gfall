@@ -1990,6 +1990,52 @@ static void check_collision(void)
         check_expect(walker_landed(&speed, &height) && check_near(speed, 200.0f, 15.0f)
                      && check_near(height, 200.0f * 200.0f / (2.0f * WALK_GRAVITY), 4.0f),
                      "a jump in place did not land at its own speed from its own height");
+        /*
+         * A body's own gravity: two bodies side by side jump at 200, one
+         * at 9.8 m/s², one at Daggerfall Unity's 20; the second rises
+         * about 25 where the first rose 51, and lands in about half the time.
+         */
+        {
+            Body slow;
+            Body fast;
+            int k;
+            int t_slow;
+            int t_fast;
+            float h_slow;
+            float h_fast;
+            float v;
+
+            body_init(&slow, WALK_RADIUS, WALK_HEIGHT, WALK_STEP, WALK_EYE);
+            body_init(&fast, WALK_RADIUS, WALK_HEIGHT, WALK_STEP, WALK_EYE);
+            fast.gravity = 20.0f * WALK_UNITS_PER_M;
+            check_expect(slow.gravity == WALK_GRAVITY, "body_init did not give WALK_GRAVITY");
+            body_place(&slow, -300.0f, 0.0f, 200.0f);
+            body_place(&fast, -300.0f, 0.0f, 260.0f);
+            for (k = 0; k < 30; k++) {
+                body_step(&slow, &scene, 0.0f, 0.0f, 1.0f / 30.0f);
+                body_step(&fast, &scene, 0.0f, 0.0f, 1.0f / 30.0f);
+            }
+            body_landed(&slow, &v, &h_slow);
+            body_landed(&fast, &v, &h_fast);
+            check_expect(body_jump(&slow, 200.0f) && body_jump(&fast, 200.0f), "the bodies could not jump");
+            t_slow = 0;
+            t_fast = 0;
+            h_slow = 0.0f;
+            h_fast = 0.0f;
+            for (k = 0; k < 60; k++) {
+                body_step(&slow, &scene, 0.0f, 0.0f, 1.0f / 30.0f);
+                body_step(&fast, &scene, 0.0f, 0.0f, 1.0f / 30.0f);
+                if (!t_slow && body_landed(&slow, &v, &h_slow)) {
+                    t_slow = k + 1;
+                }
+                if (!t_fast && body_landed(&fast, &v, &h_fast)) {
+                    t_fast = k + 1;
+                }
+            }
+            check_expect(t_slow && t_fast && check_near(h_fast, 25.0f, 4.0f) && check_near(h_slow, 51.0f, 5.0f)
+                         && t_fast * 2 <= t_slow + 2,
+                         "a body's own gravity did not shorten the jump");
+        }
         camera_set(&cam, -50.0f, 48.0f + eye, 350.0f, 0.0f, 0.0f);
         walker_place();
         walk(&cam, &scene, 0.0f, 0.0f, 30);

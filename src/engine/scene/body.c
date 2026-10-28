@@ -39,6 +39,7 @@ void body_init(Body *b, float radius, float height, float step, float eye)
     b->height = height;
     b->step = step;
     b->eye = eye;
+    b->gravity = WALK_GRAVITY;
 }
 
 void body_place(Body *b, float x, float feet_y, float z)
@@ -356,7 +357,7 @@ void body_step(Body *b, const Scene *scene, float want_dx, float want_dz, float 
         }
     }
     if (dt > 0.0f) {
-        b->vy -= WALK_GRAVITY * dt;
+        b->vy -= b->gravity * dt;
         if (b->vy < -WALK_TERMINAL) {
             b->vy = -WALK_TERMINAL;
         }

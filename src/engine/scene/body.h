@@ -33,6 +33,12 @@ typedef struct Body {
     float height;
     float step;
     float eye;
+    /*
+     * Its pull down, units a second squared: WALK_GRAVITY (9.8 m/s²) from
+     * body_init; a game sets its own (Daggerfall Unity's player falls at
+     * 20 m/s², 800). 0 floats.
+     */
+    float gravity;
     /* The entity it moves, skipped when solid entities push it; 0 for none. */
     const struct Entity *self;
     /* The point between its feet, and its fall speed (up positive). */
