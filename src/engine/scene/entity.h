@@ -19,17 +19,36 @@
  * angle between where the entity faces and where the camera stands,
  * as Daggerfall Unity's MobilePersonBillboard and MobileUnit choose it.
  *
- * It has two poses, walking and standing (idle), each five views. A
+ * It has poses, each five views (pose[ENTITY_*]): walking and standing
+ * (idle), which moving picks, and the ones a game shows for a while
+ * instead (act): an attack, being hurt, a spell, a shot, lying dead. A
  * pose of one picture (slot[1] 0xffff) is drawn facing the viewer
- * whichever way the entity faces: a townsperson's idle picture. An
- * entity with no idle pose (idle.slot[0] 0xffff) stands in its walking
- * one: a creature that never stops, a bat or a ghost.
+ * whichever way the entity faces: a townsperson's idle picture, a body.
+ * An entity with no idle pose (idle's slot[0] 0xffff) stands in its
+ * walking one: a creature that never stops, a bat or a ghost. A pose not
+ * filled in (no width) is not shown: the walk or the stand is.
  *
  * The game moves its entities and owns them; the engine only reads
  * them, once a frame, to draw (Scene.entities). Plain C, no Glide.
  */
 
 #define ENTITY_VIEWS 5
+/*
+ * Its poses. Walk and idle are picked by moving; the rest are acts the
+ * game shows instead (Entity.act): Daggerfall's records 5 to 9 (attack),
+ * 10 to 14 (hurt), 20 to 24 (a spell, or a bow's first shot), 25 to 29
+ * (a bow's second), and a corpse.
+ */
+enum {
+    ENTITY_WALK,
+    ENTITY_IDLE,
+    ENTITY_ATTACK,
+    ENTITY_HURT,
+    ENTITY_CAST,
+    ENTITY_SHOOT,
+    ENTITY_DEAD,
+    ENTITY_POSES
+};
 
 typedef struct EntityPose {
     /* Picture slots, one a view (records 0..4 of its kind); 0xffff for none. */
@@ -52,8 +71,7 @@ typedef struct Entity {
     /* Its feet, in the scene's frame; its facing. */
     float x, y, z;
     float yaw;
-    EntityPose walk;
-    EntityPose idle;
+    EntityPose pose[ENTITY_POSES];
     /*
      * How wide it stands, a circle round its feet (world units): the
      * walker's body stops at it, and entity_blocked keeps solid entities
@@ -64,11 +82,29 @@ typedef struct Entity {
     df_u8 phase;
     /* 1 walking, 0 standing. */
     df_u8 moving;
+    /*
+     * A pose the game shows instead of the walk or the stand (ENTITY_
+     * ATTACK and on), each frame it wants it; 0 for none. Set its pose
+     * first: one not filled in is not shown.
+     */
+    df_u8 act;
+    /*
+     * 1: the shown pose stands on frame (a swing played once, a body on
+     * its last frame), the game stepping it; 0 (as zeroed): its frames
+     * run at its rate from phase, round and round.
+     */
+    df_u8 hold;
+    df_u8 frame;
     /* 0 for a free entry: not drawn. */
     df_u8 live;
 } Entity;
 
-/* The pose e shows now: walking, standing, or walking for one with no idle pose. */
+/*
+ * e zeroed, with no picture in any pose (every slot 0xffff): fill in the
+ * poses it has. A zeroed entity's slots are 0, picture 0: start one here.
+ */
+void entity_init(Entity *e);
+/* The pose e shows now: its act, else walking, standing, or walking for one with no idle pose. */
 const EntityPose *entity_pose(const Entity *e);
 
 /*

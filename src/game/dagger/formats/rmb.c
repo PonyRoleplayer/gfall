@@ -166,6 +166,8 @@ static void add_flat(Block *block, const df_u8 *p, float sub_yaw, float ox, floa
     fl->sight = 0;
     fl->thin = 0;
     fl->flip = 0;
+    fl->held = 0;
+    fl->frame = 0;
     block->nflat++;
 }
 

@@ -462,6 +462,8 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch, ArchEnt *cache, int *n
                     fl->sight = 0;
                     fl->thin = 0;
                     fl->flip = 0;
+                    fl->held = 0;
+                    fl->frame = 0;
                     block->nflat++;
                 }
             }

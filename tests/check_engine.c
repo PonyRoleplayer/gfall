@@ -1745,10 +1745,10 @@ static void check_collision(void)
         ents[0].z = -200.0f;
         ents[0].live = 1;
         ents[0].radius = 12.0f;
-        ents[0].walk.slot[0] = 0;
-        ents[0].walk.w[0] = 30;
-        ents[0].walk.h[0] = 70;
-        ents[0].idle.slot[0] = 0xffff;
+        ents[0].pose[ENTITY_WALK].slot[0] = 0;
+        ents[0].pose[ENTITY_WALK].w[0] = 30;
+        ents[0].pose[ENTITY_WALK].h[0] = 70;
+        ents[0].pose[ENTITY_IDLE].slot[0] = 0xffff;
         ents[0].moving = 1;
         ents[1] = ents[0];
         ents[1].z = -320.0f;
@@ -1793,9 +1793,9 @@ static void check_collision(void)
         for (f = 0; f < 2; f++) {
             ents[f].live = 1;
             ents[f].radius = 16.0f;
-            ents[f].walk.w[0] = 32;
-            ents[f].walk.h[0] = 72;
-            ents[f].idle.slot[0] = 0xffff;
+            ents[f].pose[ENTITY_WALK].w[0] = 32;
+            ents[f].pose[ENTITY_WALK].h[0] = 72;
+            ents[f].pose[ENTITY_IDLE].slot[0] = 0xffff;
             ents[f].moving = 1;
         }
         scene.entities = ents;
@@ -2519,7 +2519,8 @@ static void check_prof(void)
                  && check_near(prof_peak_ms(PROF_MODELS), 9.0f, 0.01f)
                  && prof_ms(PROF_SWAP) == 0.0f,
                  "the profile's means or worst frame are wrong");
-    check_expect(df_eq(prof_name(PROF_MODELS), "models") && df_eq(prof_name(PROF_STREAM), "stream"),
+    check_expect(df_eq(prof_name(PROF_MODELS), "models") && df_eq(prof_name(PROF_STREAM), "stream")
+                 && df_eq(prof_name(PROF_PLAY), "play"),
                  "the profile's stage names are wrong");
 }
 
@@ -2745,14 +2746,14 @@ static void check_entities(void)
     e.live = 1;
     e.y = 10.0f;
     for (k = 0; k < ENTITY_VIEWS; k++) {
-        e.walk.slot[k] = (df_u16)(100 + k);
-        e.walk.w[k] = 40;
-        e.walk.h[k] = 80;
-        e.idle.slot[k] = 0xffff;
+        e.pose[ENTITY_WALK].slot[k] = (df_u16)(100 + k);
+        e.pose[ENTITY_WALK].w[k] = 40;
+        e.pose[ENTITY_WALK].h[k] = 80;
+        e.pose[ENTITY_IDLE].slot[k] = 0xffff;
     }
-    e.idle.slot[0] = 200;
-    e.idle.w[0] = 35;
-    e.idle.h[0] = 78;
+    e.pose[ENTITY_IDLE].slot[0] = 200;
+    e.pose[ENTITY_IDLE].w[0] = 35;
+    e.pose[ENTITY_IDLE].h[0] = 78;
     ok = 1;
     for (k = 0; k < 8; k++) {
         int f;
@@ -2778,20 +2779,69 @@ static void check_entities(void)
      */
     e.yaw = 0.0f;
     for (k = 0; k < ENTITY_VIEWS; k++) {
-        e.idle.slot[k] = (df_u16)(300 + k);
-        e.idle.w[k] = (df_u16)(30 + k);
-        e.idle.h[k] = 60;
+        e.pose[ENTITY_IDLE].slot[k] = (df_u16)(300 + k);
+        e.pose[ENTITY_IDLE].w[k] = (df_u16)(30 + k);
+        e.pose[ENTITY_IDLE].h[k] = 60;
     }
-    e.idle.right = 1u << 2;
+    e.pose[ENTITY_IDLE].right = 1u << 2;
     ok = entity_flat(&e, -100.0f, 0.0f, &fl) && fl.slot == 302 && fl.flip && fl.w == 32.0f;
     ok = ok && entity_flat(&e, 100.0f, 0.0f, &fl) && fl.slot == 302 && !fl.flip;
     ok = ok && entity_flat(&e, -70.0f, 70.0f, &fl) && fl.slot == 301 && !fl.flip;
     ok = ok && entity_flat(&e, 0.0f, -100.0f, &fl) && fl.slot == 304 && !fl.flip;
     check_expect(ok, "a standing creature's views do not turn, or a right-facing record is not mirrored the other way");
     /* With no idle pose it stands in its walking one. */
-    e.idle.slot[0] = 0xffff;
+    e.pose[ENTITY_IDLE].slot[0] = 0xffff;
     check_expect(entity_flat(&e, -100.0f, 0.0f, &fl) && fl.slot == 102 && !fl.flip && fl.h == 80.0f,
                  "an entity with no idle pose does not stand in its walking pictures");
+    /*
+     * Acts (Entity.act): an attack pose shows instead, turning as the
+     * walk does, at its own rate; one not filled in is not shown (the
+     * stand or walk is); a body (one picture) faces the viewer; a held
+     * frame goes to the sprite. entity_init leaves no picture anywhere.
+     */
+    {
+        Entity f;
+        int k2;
+
+        entity_init(&f);
+        ok = 1;
+        for (k2 = 0; k2 < ENTITY_POSES; k2++) {
+            int v;
+
+            for (v = 0; v < ENTITY_VIEWS; v++) {
+                ok = ok && f.pose[k2].slot[v] == 0xffff;
+            }
+        }
+        check_expect(ok && f.act == 0 && f.hold == 0 && f.radius == 0.0f, "entity_init left a picture in a pose");
+        f.live = 1;
+        f.moving = 1;
+        for (k2 = 0; k2 < ENTITY_VIEWS; k2++) {
+            f.pose[ENTITY_WALK].slot[k2] = (df_u16)(100 + k2);
+            f.pose[ENTITY_WALK].w[k2] = 40;
+            f.pose[ENTITY_WALK].h[k2] = 80;
+            f.pose[ENTITY_ATTACK].slot[k2] = (df_u16)(500 + k2);
+            f.pose[ENTITY_ATTACK].w[k2] = 50;
+            f.pose[ENTITY_ATTACK].h[k2] = 82;
+        }
+        f.pose[ENTITY_WALK].rate = 6;
+        f.pose[ENTITY_ATTACK].rate = 10;
+        f.pose[ENTITY_DEAD].slot[0] = 900;
+        f.pose[ENTITY_DEAD].w[0] = 90;
+        f.pose[ENTITY_DEAD].h[0] = 30;
+        f.act = ENTITY_ATTACK;
+        ok = entity_flat(&f, -100.0f, 0.0f, &fl) && fl.slot == 502 && !fl.flip && fl.w == 50.0f && fl.rate == 10
+            && entity_flat(&f, 100.0f, 0.0f, &fl) && fl.slot == 502 && fl.flip;
+        check_expect(ok, "an attack does not show its own pose, turning as the walk does");
+        f.act = ENTITY_HURT;
+        check_expect(entity_flat(&f, -100.0f, 0.0f, &fl) && fl.slot == 102,
+                     "a hurt pose not filled in was shown, not the walk");
+        f.act = ENTITY_DEAD;
+        f.hold = 1;
+        f.frame = 3;
+        check_expect(entity_flat(&f, 100.0f, 0.0f, &fl) && fl.slot == 900 && !fl.flip && fl.h == 30.0f
+                     && fl.held && fl.frame == 3,
+                     "a body does not face the viewer, or its held frame does not reach the sprite");
+    }
 }
 
 void check_engine(void)

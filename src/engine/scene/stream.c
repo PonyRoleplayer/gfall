@@ -78,6 +78,8 @@ static void empty_slot(int s)
         g_sprites[i].sight = 0;
         g_sprites[i].thin = 0;
         g_sprites[i].flip = 0;
+        g_sprites[i].held = 0;
+        g_sprites[i].frame = 0;
         g_sprites[i].slot = 0xffff;
     }
     for (i = s * g_cap.lights; i < (s + 1) * g_cap.lights; i++) {

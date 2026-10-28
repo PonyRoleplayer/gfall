@@ -93,10 +93,10 @@ static int mark_entity_pictures(const Level *level, int n)
         int p;
 
         e = &sc->entities[i];
-        for (p = 0; p < 2; p++) {
+        for (p = 0; p < ENTITY_POSES; p++) {
             const EntityPose *pose;
 
-            pose = p ? &e->idle : &e->walk;
+            pose = &e->pose[p];
             for (k = 0; k < ENTITY_VIEWS; k++) {
                 const Image *img;
                 int slot;

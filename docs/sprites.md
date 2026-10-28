@@ -33,6 +33,10 @@ The light a flame casts wavers: see `docs/lighting.md`. Which lights flicker com
 
 `Flat.sight`, in 16s of world units: a flat farther than that across the ground from the camera is not drawn (`scene_visible_sprites`). 0, every place's own flats, draws at any distance. A streamed world's flora uses it (3072, `docs/streaming.md`, Flora): there are too many trees to draw out to the far clip.
 
+## Held
+
+`Flat.held` 1 draws `Flat.frame` of the sheet (modulo its frames), whatever the clock: an entity's held frame (`Entity.hold`, `docs/entities.md`), a swing the game plays once. 0, as every flat a block builds has it, runs the cycle at its rate.
+
 ## Mirrored
 
 `Flat.flip` 1 draws the flat left to right reversed (`draw_flat` swaps its texels' left and right). An entity's view that faces the viewer's right is its left one mirrored (`docs/entities.md`). 0 for every place's own flats.

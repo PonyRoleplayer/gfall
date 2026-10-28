@@ -27,6 +27,7 @@ Each stage is summed over a window of about half a second of frames; at its end 
 | `overlay` | The debug views, the use line, the HUD, a viewer's panels, notes, the build stamp |
 | `swap` | `grBufferSwap` |
 | `stream` | The world stream's loading and uploads (`docs/streaming.md`), when there is one |
+| `play` | The game's own frame, outside `draw_frame`: its rules, bodies and motors, its HUD's sums. The game brackets it with `prof_begin(PROF_PLAY)` and `prof_end`; 0 in the viewers. The game aims at 2 ms or less on the 233 (`docs/game.md`) |
 
 **The card works alongside.** The Voodoo draws from a command FIFO while the CPU goes on. A stage's time is the CPU's own work (transform, clip, project, set up), plus any time it waited because the FIFO was full. The card's fill shows mostly in `swap`, where the CPU waits for the frame to finish before the buffers turn, and with `vsync` on, for the screen's refresh too. So: a big `models` is CPU-bound geometry; a big `swap` with `vsync off` is fill (too many pixels, too many blended passes).
 

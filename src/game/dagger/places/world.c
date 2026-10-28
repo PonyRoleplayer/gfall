@@ -644,21 +644,21 @@ static int add_foes(World *world)
         kind = (int)f->kind;
         archive = enemy_archive(kind, f->female);
         e = &world->ent[world->nent];
-        mem_zero(e, sizeof(Entity));
-        if (!foe_pose(world, archive, walk, enemy_flies(kind) ? FOE_FLY_RATE : FOE_MOVE_RATE, &e->walk)) {
+        entity_init(e);
+        if (!foe_pose(world, archive, walk, enemy_flies(kind) ? FOE_FLY_RATE : FOE_MOVE_RATE, &e->pose[ENTITY_WALK])) {
             continue;
         }
         if (kind == ENEMY_GHOST || kind == ENEMY_WRAITH) {
-            e->walk.right = 1u << 2;
+            e->pose[ENTITY_WALK].right = 1u << 2;
         }
-        e->idle.slot[0] = 0xffff;
+        e->pose[ENTITY_IDLE].slot[0] = 0xffff;
         if (enemy_has_idle(kind)) {
             if (!foe_pose(world, archive, f->female && archive == 483 ? idle_483 : idle,
-                          FOE_IDLE_RATE, &e->idle)) {
+                          FOE_IDLE_RATE, &e->pose[ENTITY_IDLE])) {
                 continue;
             }
             if (kind == ENEMY_RAT) {
-                e->idle.right = (1u << 1) | (1u << 2) | (1u << 3);
+                e->pose[ENTITY_IDLE].right = (1u << 1) | (1u << 2) | (1u << 3);
             }
         }
         e->x = f->x;
@@ -686,7 +686,7 @@ static int foe_slot(const Entity *e, int k)
     if (k >= 2 * ENTITY_VIEWS) {
         return -1;
     }
-    pose = k < ENTITY_VIEWS ? &e->walk : &e->idle;
+    pose = k < ENTITY_VIEWS ? &e->pose[ENTITY_WALK] : &e->pose[ENTITY_IDLE];
     return pose->slot[k % ENTITY_VIEWS] == 0xffff ? -2 : (int)pose->slot[k % ENTITY_VIEWS];
 }
 
@@ -704,7 +704,7 @@ static void foe_finish(World *world, int n)
         EntityPose *pose;
         int k;
 
-        pose = p ? &e->idle : &e->walk;
+        pose = p ? &e->pose[ENTITY_IDLE] : &e->pose[ENTITY_WALK];
         for (k = 0; k < ENTITY_VIEWS; k++) {
             const Image *img;
 

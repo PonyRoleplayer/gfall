@@ -777,14 +777,21 @@ int draw_fpu_single(void)
  */
 static void note_entity(const Entity *e, int shown, float d)
 {
+    int p;
     int k;
 
-    for (k = 0; k < ENTITY_VIEWS; k++) {
-        if (e->walk.slot[k] != 0xffff && e->walk.slot[k] != shown) {
-            texcache_note((int)e->walk.slot[k], d * ENTITY_OTHER_VIEWS);
+    /* Every pose it may turn to or act: a view not noted is the first the card frees. */
+    for (p = 0; p < ENTITY_POSES; p++) {
+        const EntityPose *pose;
+
+        pose = &e->pose[p];
+        if (pose->w[0] == 0 && pose->h[0] == 0) {
+            continue;
         }
-        if (e->idle.slot[k] != 0xffff && e->idle.slot[k] != shown) {
-            texcache_note((int)e->idle.slot[k], d * ENTITY_OTHER_VIEWS);
+        for (k = 0; k < ENTITY_VIEWS; k++) {
+            if (pose->slot[k] != 0xffff && pose->slot[k] != shown) {
+                texcache_note((int)pose->slot[k], d * ENTITY_OTHER_VIEWS);
+            }
         }
     }
     texcache_note(shown, d);
@@ -909,7 +916,14 @@ static float g_anim_time;
 /* The frame an animated flat shows now, 0 for a still one. */
 static int flat_frame(const Flat *flat, const Image *img)
 {
-    if (img->frames < 2 || flat->rate == 0) {
+    if (img->frames < 2) {
+        return 0;
+    }
+    /* Held by the game (an entity's swing played once): that frame, whatever the clock. */
+    if (flat->held) {
+        return (int)flat->frame % img->frames;
+    }
+    if (flat->rate == 0) {
         return 0;
     }
     return (df_ifloor(g_anim_time * (float)flat->rate) + (int)flat->phase) % img->frames;

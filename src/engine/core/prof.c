@@ -9,7 +9,7 @@
 
 static const char *const g_names[PROF_STAGES] = {
     "frame", "sim", "sound", "sky", "cull", "models", "decals", "windows",
-    "sprites", "precip", "overlay", "swap", "stream"
+    "sprites", "precip", "overlay", "swap", "stream", "play"
 };
 
 static df_u32 g_start[PROF_STAGES];

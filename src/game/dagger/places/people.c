@@ -487,25 +487,25 @@ static int spawn(const Camera *cam, double x0, double z0, int climate, int anywh
         }
         e = &g_ent[slot];
         p = &g_per[slot];
-        mem_zero(e, sizeof(Entity));
+        entity_init(e);
         mem_zero(p, sizeof(Person));
         /* Walking, five views; standing, one picture that faces the viewer. */
         for (k = 0; k < ENTITY_VIEWS; k++) {
-            e->walk.slot[k] = (df_u16)g_set[set].slot[k];
-            e->idle.slot[k] = 0xffff;
-            if (!size_of(g_set[set].slot[k], &e->walk.w[k], &e->walk.h[k])) {
+            e->pose[ENTITY_WALK].slot[k] = (df_u16)g_set[set].slot[k];
+            e->pose[ENTITY_IDLE].slot[k] = 0xffff;
+            if (!size_of(g_set[set].slot[k], &e->pose[ENTITY_WALK].w[k], &e->pose[ENTITY_WALK].h[k])) {
                 return 0;
             }
         }
-        e->idle.slot[0] = (df_u16)g_set[set].slot[5];
-        if (!size_of(g_set[set].slot[5], &e->idle.w[0], &e->idle.h[0])) {
+        e->pose[ENTITY_IDLE].slot[0] = (df_u16)g_set[set].slot[5];
+        if (!size_of(g_set[set].slot[5], &e->pose[ENTITY_IDLE].w[0], &e->pose[ENTITY_IDLE].h[0])) {
             return 0;
         }
         e->x = lx;
         e->z = lz;
         e->y = wild_ground(cx, cz);
-        e->walk.rate = 4;
-        e->idle.rate = 1;
+        e->pose[ENTITY_WALK].rate = 4;
+        e->pose[ENTITY_IDLE].rate = 1;
         e->phase = (df_u8)pick(256);
         e->moving = 1;
         e->live = 1;

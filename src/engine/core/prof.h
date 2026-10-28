@@ -43,6 +43,11 @@ enum {
     PROF_SWAP,
     /* The world stream's loading and the card's uploads (docs/streaming.md). */
     PROF_STREAM,
+    /*
+     * The game's own frame, outside draw_frame: its rules, its bodies and
+     * motors, its HUD's sums. The game brackets it (prof_begin, prof_end).
+     */
+    PROF_PLAY,
     PROF_STAGES
 };
 

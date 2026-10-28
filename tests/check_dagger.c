@@ -243,9 +243,9 @@ static void check_hold_creatures(const World *world, const Dungeon *hold)
         }
         count[kind]++;
         for (k = 0; k < ENTITY_VIEWS; k++) {
-            ok_views = ok_views && e->walk.slot[k] != 0xffff && world_image_cutout(world, e->walk.slot[k])
-                && e->walk.w[k] > 0 && e->walk.h[k] > 0;
-            ok_views = ok_views && (enemy_has_idle(kind) ? e->idle.slot[k] != 0xffff : e->idle.slot[0] == 0xffff);
+            ok_views = ok_views && e->pose[ENTITY_WALK].slot[k] != 0xffff && world_image_cutout(world, e->pose[ENTITY_WALK].slot[k])
+                && e->pose[ENTITY_WALK].w[k] > 0 && e->pose[ENTITY_WALK].h[k] > 0;
+            ok_views = ok_views && (enemy_has_idle(kind) ? e->pose[ENTITY_IDLE].slot[k] != 0xffff : e->pose[ENTITY_IDLE].slot[0] == 0xffff);
         }
         ok_views = ok_views && e->live && !e->moving;
         if (enemy_flies(kind) || enemy_spectral(kind)) {
@@ -2524,11 +2524,11 @@ int check_dagger(const char *root_in)
 
             ent = world_entity(world, e);
             for (k = 0; k < ENTITY_VIEWS; k++) {
-                if (ent->walk.slot[k] < 1024) {
-                    g_worn[ent->walk.slot[k]] = 1;
+                if (ent->pose[ENTITY_WALK].slot[k] < 1024) {
+                    g_worn[ent->pose[ENTITY_WALK].slot[k]] = 1;
                 }
-                if (ent->idle.slot[k] < 1024) {
-                    g_worn[ent->idle.slot[k]] = 1;
+                if (ent->pose[ENTITY_IDLE].slot[k] < 1024) {
+                    g_worn[ent->pose[ENTITY_IDLE].slot[k]] = 1;
                 }
             }
         }

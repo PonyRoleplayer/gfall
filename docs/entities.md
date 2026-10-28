@@ -17,7 +17,21 @@ Two kinds of people stand in a town:
 
 `radius` (0, as zeroed, passes through) makes it solid: the walker's body stops at it, and `entity_blocked(scene, self, x, z)` tells a motor whether a step would meet the body or another solid entity (`docs/collision.md`). Its height is its pose's front view (`entity_height`).
 
-A pose (`EntityPose`) is five views: a picture slot each, each view's size in world units (a record is drawn at its own: a rat side on is twice as wide as from the front), a frame rate, and `right`, a bit a view whose picture faces the viewer's right. The walking pose shows while `moving` is 1, the idle pose while it is 0. An idle pose of one picture (`slot[1]` 0xffff) faces the viewer whichever way the entity faces: a townsperson's. An entity with no idle pose (`idle.slot[0]` 0xffff) stands in its walking one: a bat, a ghost, a scorpion.
+A pose (`EntityPose`) is five views: a picture slot each, each view's size in world units (a record is drawn at its own: a rat side on is twice as wide as from the front), a frame rate, and `right`, a bit a view whose picture faces the viewer's right. An entity has `ENTITY_POSES` of them, `pose[ENTITY_*]`:
+
+| Pose | Shows | Daggerfall's records |
+| --- | --- | --- |
+| `ENTITY_WALK` | while `moving` is 1 | 0 to 4 |
+| `ENTITY_IDLE` | while `moving` is 0 | 15 to 19, a townsperson's one |
+| `ENTITY_ATTACK` | as the game's act | 5 to 9 |
+| `ENTITY_HURT` | as the game's act | 10 to 14 |
+| `ENTITY_CAST` | as the game's act | 20 to 24 (a spell, a bow's first shot) |
+| `ENTITY_SHOOT` | as the game's act | 25 to 29 (a bow's second, 475, 489, 490) |
+| `ENTITY_DEAD` | as the game's act | a corpse, one picture |
+
+`act` (0 for none) is a pose the game shows instead of the walk or the stand, each frame it wants it; a pose not filled in (no width) is not shown, and the walk or the stand is. `hold` 1 stands the shown pose on `frame` of its sheet, the game stepping it (a swing played once, a body on its last frame); 0, as zeroed, runs its frames at its rate from `phase`. Which act, when, and for how long is the game's: the engine draws what it is told.
+
+A pose of one picture (`slot[1]` 0xffff) faces the viewer whichever way the entity faces: a townsperson's idle picture, a body. An entity with no idle pose (`pose[ENTITY_IDLE].slot[0]` 0xffff) stands in its walking one: a bat, a ghost, a scorpion. `entity_init` zeroes an entity with no picture in any pose (every slot 0xffff); a zeroed one has picture 0 in all of them, which the card's marking of entity pictures would take from the place's walls (`docs/memory.md`). The townspeople and the creatures start with it. Creatures load their walk and stand today (`world.c`); their other records are the game's to reserve when it gives them motors.
 
 ### Its views
 
@@ -113,6 +127,8 @@ A flyer (an imp, a bat, a harpy, a dragonling) or a ghost or wraith hangs where 
 ## Tests
 
 `check_stream` also lands at noon: 96 people out before any update, 54 pictures read by the chunks, some of them ahead of the camera in sight.
+
+`check_entities` also: an attack shows its own pose and turns as the walk does, at its own rate; a hurt pose not filled in leaves the walk; a body faces the viewer and its held frame reaches the sprite; `entity_init` leaves no picture.
 
 `check_entities` (engine): the eight views and their mirroring, a turned entity seen from the front, an idle one facing the viewer, a standing pose that turns, a right-facing record, no idle pose. `check_enemy_rules` (dagger): a fixed marker's mage, a woman, passive; kind 99 and the horse placed by none; a slaughterfish in a dry block, 30 above the water and at its surface; a level-1 crypt's random markers, dry and under water, within their tables' first six. `check_hold_creatures`: the hold a human stronghold, its 42 creatures and their draws, every one with its views and its kind's standing pictures, those that walk on a floor, every one drawn on its feet; the hold's picture test counts their 100 pictures apart from the load's budget. `check_stream` (dagger): Daggerfall is a city and the hold's outside no settlement; Daggerfall at noon fills to 96 people, every one on a walking cell at the town's level, drawn in its picture, walking; with population off they go and none come, and on again they come back; at night they go, out of sight, and none come.
 

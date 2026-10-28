@@ -7,12 +7,34 @@
 /* An eighth of a turn, and half of it: the edges between views. */
 #define EIGHTH (DF_TAU / 8.0f)
 
+void entity_init(Entity *e)
+{
+    int p;
+    int k;
+
+    mem_zero(e, sizeof(Entity));
+    for (p = 0; p < ENTITY_POSES; p++) {
+        for (k = 0; k < ENTITY_VIEWS; k++) {
+            e->pose[p].slot[k] = 0xffff;
+        }
+    }
+}
+
+/* 1 when the game filled pose p in: a picture and a size. */
+static int posed(const EntityPose *p)
+{
+    return p->slot[0] != 0xffff && (p->w[0] > 0 || p->h[0] > 0);
+}
+
 const EntityPose *entity_pose(const Entity *e)
 {
-    if (e->moving || e->idle.slot[0] == 0xffff) {
-        return &e->walk;
+    if (e->act >= ENTITY_ATTACK && e->act < ENTITY_POSES && posed(&e->pose[e->act])) {
+        return &e->pose[e->act];
     }
-    return &e->idle;
+    if (e->moving || e->pose[ENTITY_IDLE].slot[0] == 0xffff) {
+        return &e->pose[ENTITY_WALK];
+    }
+    return &e->pose[ENTITY_IDLE];
 }
 
 int entity_view(const Entity *e, float cx, float cz, int *flip)
@@ -68,6 +90,8 @@ int entity_flat(const Entity *e, float cx, float cz, Flat *out)
     out->rate = pose->rate;
     out->phase = e->phase;
     out->flip = (df_u8)flip;
+    out->held = e->hold;
+    out->frame = e->frame;
     return 1;
 }
 

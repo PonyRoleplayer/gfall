@@ -57,6 +57,9 @@ typedef struct Flat {
     df_u8 thin;
     /* 1: drawn mirrored left to right (an entity's view facing the viewer's right). */
     df_u8 flip;
+    /* 1: drawn on frame of its sheet, not by its rate (an entity's held frame); 0 for its cycle. */
+    df_u8 held;
+    df_u8 frame;
 } Flat;
 
 /*
