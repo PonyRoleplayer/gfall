@@ -10,6 +10,7 @@
 #include "engine/core/prof.h"
 #include "engine/gfx/gfx.h"
 #include "engine/scene/interact.h"
+#include "engine/scene/walker.h"
 #include "engine/ui/hud.h"
 #include "engine/ui/pic.h"
 
@@ -112,6 +113,13 @@ void game_enter(struct World *world, const Level *level, Camera *cam)
     }
     player_place(&g_player, x, y, z, yaw, pitch);
     camera_set(cam, x, y, z, yaw, pitch);
+    /*
+     * The engine's walker gives the walking to the game's player: it is
+     * not stepped, and the console's tcl is the game's collision switch
+     * (docs/collision.md, A game's player). On by default.
+     */
+    walker_set_game(&g_player.body);
+    walker_set_on(1);
     interact_set_handler(on_use);
     g_playing = 1;
     menu_over_play(MENU_NONE);
@@ -145,7 +153,20 @@ int game_frame(Camera *cam, const Input *in, float dt)
         if (in->pressed & INPUT_BIT(INPUT_USE)) {
             interact_request_use();
         }
-        player_step(&g_player, in, &g_level->scene, dt);
+        {
+            float tx;
+            float ty;
+            float tz;
+            float tyaw;
+
+            /* A teleport the last frame reached (docs/interact.md): the body goes, the eye where it says. */
+            if (interact_teleport(&tx, &ty, &tz, &tyaw)) {
+                body_place(&g_player.body, tx, ty - g_player.body.eye, tz);
+                g_player.yaw = tyaw;
+            }
+        }
+        /* tcl 1 (walker_on): the body walks and collides; tcl 0: it flies through everything. */
+        player_step(&g_player, in, &g_level->scene, dt, walker_on());
         {
             float speed;
             float height;
@@ -178,6 +199,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
 void game_shutdown(void)
 {
     interact_set_handler(0);
+    walker_set_game(0);
     gfx_set_extra(0);
     gfx_set_pause(0);
     input_set_pointer(0);

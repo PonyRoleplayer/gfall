@@ -93,7 +93,7 @@ static float walk(Player *p, const Scene *scene, const Input *in, int n)
     x0 = p->body.feet[0];
     z0 = p->body.feet[2];
     for (i = 0; i < n; i++) {
-        player_step(p, in, scene, 1.0f / 60.0f);
+        player_step(p, in, scene, 1.0f / 60.0f, 1);
     }
     dx = p->body.feet[0] - x0;
     dz = p->body.feet[2] - z0;
@@ -180,18 +180,18 @@ static void check_hold(void)
     memset(&in, 0, sizeof(in));
     yaw = p.yaw;
     in.look_dx = 100;
-    player_step(&p, &in, &level.scene, 1.0f / 60.0f);
+    player_step(&p, &in, &level.scene, 1.0f / 60.0f, 1);
     check_expect(check_near(df_wrap_tau(p.yaw - yaw), 0.3f, 0.001f), "play: the mouse does not turn the player");
 
     /* A jump: up classic's height, then down on the floor with a landing. */
     memset(&in, 0, sizeof(in));
     in.pressed = INPUT_BIT(INPUT_JUMP);
-    player_step(&p, &in, &level.scene, 1.0f / 60.0f);
+    player_step(&p, &in, &level.scene, 1.0f / 60.0f, 1);
     in.pressed = 0;
     top = p.body.feet[1];
     landed = 0;
     for (i = 0; i < 120 && !landed; i++) {
-        player_step(&p, &in, &level.scene, 1.0f / 60.0f);
+        player_step(&p, &in, &level.scene, 1.0f / 60.0f, 1);
         if (p.body.feet[1] > top) {
             top = p.body.feet[1];
         }
@@ -206,6 +206,35 @@ static void check_hold(void)
                  "play: the jump is not as long in the air as classic's");
     check_expect(landed && p.body.grounded && check_near(p.body.feet[1], floor_y, 1.0f),
                  "play: the jump does not land on the floor it left");
+
+    /*
+     * Collision off (tcl 0): two seconds' flight forward goes the whole
+     * way, walls or not, level as the view is; back on, the body comes
+     * out of whatever it is in and stands on a floor.
+     */
+    {
+        float flown;
+        float x0;
+        float z0;
+
+        memset(&in, 0, sizeof(in));
+        in.move_f = 1;
+        x0 = p.body.feet[0];
+        z0 = p.body.feet[2];
+        for (i = 0; i < 120; i++) {
+            player_step(&p, &in, &level.scene, 1.0f / 60.0f, 0);
+        }
+        flown = df_sqrt((p.body.feet[0] - x0) * (p.body.feet[0] - x0) + (p.body.feet[2] - z0) * (p.body.feet[2] - z0));
+        want = rules_walk_speed(sheet.attribute[ATTR_SPEED]) * RULES_UNITS_PER_M * 2.0f;
+        printf("play: two seconds' flight goes %.0f (the walk's %.0f)\n", (double)flown, (double)want);
+        check_expect(p.flying && check_near(flown, want, want * 0.02f) && check_near(p.body.feet[1], floor_y, 0.5f),
+                     "play: flying does not go the walk's distance through everything, level");
+        memset(&in, 0, sizeof(in));
+        for (i = 0; i < 120; i++) {
+            player_step(&p, &in, &level.scene, 1.0f / 60.0f, 1);
+        }
+        check_expect(!p.flying && p.body.grounded, "play: back from flying the body does not stand on a floor");
+    }
 }
 
 void check_play(void)

@@ -20,6 +20,7 @@ void player_init(Player *p, const Character *sheet)
     p->yaw = 0.0f;
     p->pitch = 0.0f;
     p->sheet = *sheet;
+    p->flying = 0;
 }
 
 void player_place(Player *p, float x, float eye_y, float z, float yaw, float pitch)
@@ -29,7 +30,7 @@ void player_place(Player *p, float x, float eye_y, float z, float yaw, float pit
     p->pitch = pitch;
 }
 
-void player_step(Player *p, const Input *in, const Scene *scene, float dt)
+void player_step(Player *p, const Input *in, const Scene *scene, float dt, int collide)
 {
     float pitch;
     float mps;
@@ -56,6 +57,35 @@ void player_step(Player *p, const Input *in, const Scene *scene, float dt)
     /* The camera's basis: forward is (sin yaw, cos yaw), right is (cos yaw, -sin yaw). */
     sy = df_sin(p->yaw);
     cy = df_cos(p->yaw);
+    if (!collide) {
+        float x;
+        float y;
+        float z;
+        float sp;
+        float cp;
+
+        /*
+         * Collision off (tcl 0): the eye flies along the view, pitch and
+         * all, through anything, Q up and E down; no gravity, no floor.
+         * The body is set at it, not walked: back on, it starts there,
+         * out of whatever it is caught in.
+         */
+        sp = df_sin(p->pitch);
+        cp = df_cos(p->pitch);
+        body_eye(&p->body, &x, &y, &z);
+        x += (sy * cp * f + cy * r) * step;
+        y += (sp * f + (float)in->move_y) * step;
+        z += (cy * cp * f - sy * r) * step;
+        body_place(&p->body, x, y - p->body.eye, z);
+        p->body.vy = 0.0f;
+        p->flying = 1;
+        return;
+    }
+    /* Back from flying: the body starts where the eye is, out of any wall, its fall from there. */
+    if (p->flying) {
+        body_unstick(&p->body);
+        p->flying = 0;
+    }
     if (in->pressed & INPUT_BIT(INPUT_JUMP)) {
         body_jump(&p->body, rules_jump_speed(p->sheet.skill[SKILL_JUMPING]) * RULES_UNITS_PER_M);
     }

@@ -111,6 +111,11 @@ Skill advance by use and the level-up rule come from UESP's Leveling page. A pre
   - fatigue is strength and endurance, kept in 64ths;
   - spell points are intelligence times the class's multiplier, rounded down.
 - **Movement:** the walk, run and jump now come from the sheet's Speed, Running and Jumping.
+- **Collision and `tcl`:**
+  - The game hands the engine its player's body (`walker_set_game`): the engine's own walker is never stepped in a game, and creatures, other bodies and `stuck` take the player's body.
+  - The console's `tcl` is the game's collision switch (`walker_on`), on by default. `tcl 0` flies through everything, Oblivion-style: along the view, pitch and all, Q up and E down, at the walk's and run's speeds, with no gravity. Back to `tcl 1`, the body comes out of whatever it is in and falls from there.
+  - Before this, `tcl 1` stood the engine's walker body on the player's, and the two shoved each other: sideways, through walls.
+- **Teleports** are the game's to take: each frame, before the step, `interact_teleport` puts the body where the last frame's teleport sends it, at its eye, facing its way.
 - **A fall** past 5 m costs 5 health a metre (PlayerHealth); "That hurt." A fall to 0 health says "You have died." and, until combat (P4) and the menu's reload (P3), puts the player back at the start, whole.
 
 ## Controls and the HUD
