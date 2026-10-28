@@ -1,6 +1,6 @@
 # Interaction
 
-Looking at a thing and pressing the use key does something: a door swings, a lever starts what it is chained to, a house's door takes you inside, a dungeon's exit takes you out, a person says who they are. Read this before editing `src/engine/scene/interact.c`, `src/game/dagger/places/doors.c`, `rmb_load_interior` in `rmb.c`, the action fields in `rdb.c`, or the passages in `apps/levelfall/main.c`.
+Looking at a thing and pressing the use key does something: a door swings, a lever starts what it is chained to, a house's door takes you inside, a dungeon's exit takes you out, a person says who they are. Read this before editing `src/engine/scene/interact.c`, `src/engine/scene/keep.c`, `src/game/dagger/places/doors.c`, `rmb_load_interior` in `rmb.c`, the action fields in `rdb.c`, or the passages in `apps/levelfall/main.c`.
 
 ## The parts
 
@@ -123,6 +123,30 @@ A way down or out with no pair in the list says "It leads nowhere in the list." 
 
 `useview` stays the use key's picture: what can be used, the aimed one bright.
 
+## State that outlives a load
+
+A door opened, a lock picked or a creature killed stays so when its place is left and come back to, or when a streamed block is dropped and filled again from its file. `keep.c` is one table for the whole game, with a row per thing that is not as its file has it. Written out by the game, the table is a save game's world.
+
+- **Keys.** The game gives each mover and entity a `KeepKey` at build (`Mover.key`, `Entity.key`): two words it composes, `place` and `thing`. Daggerfall's plan:
+  - `place` is a dungeon's MAPDITEM location id, or for a building's inside, the town's id `| (building index + 1) << 24`.
+  - `thing` is `(block index << 24) |` the offset in the block file.
+  - 0, 0 is not kept. Usables, teleports and passages have no state of their own: a door's state is its mover's.
+- **Only what changed.** `keep_save(scene, first_mover, nmovers, ents, nents, ox, oy, oz)` writes rows for the movers and the game's entities in those ranges, and only for those that differ from their file:
+  - a mover at its end, or moving toward it (it is kept at the end it was heading for), or with a lock other than its file's (`Mover.lock0`, noted by `mover_init`);
+  - an entity not live, showing an act, holding a frame, or more than a unit from its home.
+  A thing back as its file has it loses its row. So the table and the save file grow with what the player did, not with how far they walked. A mover that runs once is covered by `at_end`: it never leaves its end.
+- **Put back before it shows.** `keep_restore` (same ranges) runs after the build and `mover_init`, before the first frame:
+  - It notes each entity's home, where the file put it.
+  - A mover with a row goes straight to its end or start, with its lock: no motion, no sound, and its chain is not run again, since each chained mover has its own key.
+  - An entity with a row gets its place, facing, life and shown pose back, so a body stays a body.
+  - The game calls it after every build, an empty table included. An entity it never homed counts as changed.
+- **The place's frame.** A stream draws in a frame whose origin moves by whole chunks. `o` is the scene's origin in the place's frame (0 for a place loaded whole), so positions are kept in the place's frame and survive an origin move.
+- **The game's bytes.** Each row carries 16 bytes the engine never reads: health, a flag. `keep_get(key, kind)` makes a row for them alone, which never moves the thing (`placed` is 0). A row with any set is never dropped. A corpse's or chest's contents are the game's own table under the same key.
+- **Save files.** `keep_count`, `keep_at` (in key order), `keep_put` and `keep_clear`. `Keep` is a fixed-size record, so the game's record files can carry it.
+- **Memory.** About 56 bytes a row, sorted, binary-searched, in a heap of its own that grows by doubling, never a place's heap.
+
+A creature that walked from its home block into another is restored with its home block. In a stream, it may stand where the next block is not loaded yet: it is drawn there, over nothing, until that block comes. This is an edge case, accepted.
+
 ## Switches
 
 | | |
@@ -143,7 +167,7 @@ hostcheck: `check_teleport` walks into a pad and is sent once, lands on the far 
 
 ## Not done
 
-- State that outlives a load: a door opened, a lever pulled, a creature killed stay so when the place is left and come back to, or when a dungeon is streamed by block (a block dropped out of range and read again from its file comes back as the file has it). The design: every mover, usable and entity gets a stable key from the game, Daggerfall Unity's LoadID (the block's place in the location plus the object's offset in its block file, `ModelAct.pos`, `Marker.pos`); the engine keeps a table, key to state (a mover's place along its motion, which end, its lock; an entity's life, place and facing), saved when a block goes (a mover in motion at the end it was going to) and put back when it fills, before it shows. The game gives the keys at build (`doors_build`, `add_foes`) and decides what else to keep; written to disk, the table is a save game. Chains and teleports stay within their block, so none is half loaded. Wanted before dungeons are streamed, or for save games, whichever comes first.
+- Streaming a dungeon by block, which the state above was made for first (`docs/streaming.md`).
 - Triggers by attack (5), and doors setting off their own actions by opening (10) beyond the chain. Walking into (1, 3, 9) is a box: a pad's or a wall's, not its triangles.
 - What text, spells, traps, damage and the quest's actions do; flats with actions, a teleport's target among them only as a destination.
 - Picking and bashing locks; a house locked by the hour or by its type.

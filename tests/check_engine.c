@@ -15,6 +15,8 @@
 #include "engine/platform/fs.h"
 #include "engine/platform/input.h"
 #include "engine/ui/pic.h"
+#include "engine/scene/keep.h"
+#include "engine/scene/interact.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
 #include "engine/gfx/camera.h"
@@ -1144,6 +1146,133 @@ static void check_key_names(void)
     check_expect(df_eq(name, "Esc"), "a short buffer ran past its cap");
     check_expect(INPUT_FORWARD == 9 && INPUT_RIGHT == 12 && INPUT_ACTIONS == 13,
                  "the actions moved: a game's saved bindings would mean other keys");
+}
+
+/*
+ * State that outlives a load (keep.h): a door opened and a lock picked
+ * come back after the place is built again; a door shut again leaves no
+ * row; a creature moved keeps its place across an origin moved by a
+ * chunk, and one killed stays dead; the game's bytes alone keep a row
+ * without moving the creature; the table goes to a save file and back.
+ */
+static void build_keep_place(Scene *sc, Mover *mv, Instance *in, Entity *en)
+{
+    int i;
+
+    mem_zero(mv, 3 * sizeof(Mover));
+    mem_zero(in, 2 * sizeof(Instance));
+    for (i = 0; i < 2; i++) {
+        in[i].m[0] = in[i].m[4] = in[i].m[8] = 1.0f;
+        in[i].x = 100.0f * (float)i;
+        mv[i].inst = &in[i];
+        mv[i].model = -1;
+        mv[i].tx = 0.0f;
+        mv[i].ty = 64.0f;
+        mv[i].secs = 1.0f;
+        mv[i].next = -1;
+        mv[i].key.place = 17;
+        mv[i].key.thing = (df_u32)(1u << 24) | (df_u32)(500 + i);
+    }
+    mv[1].lock = 2;
+    mv[2].teleport = 1;
+    mv[2].next = -1;
+    mv[2].key.place = 17;
+    mv[2].key.thing = 999;
+    mover_init(mv, 3);
+    for (i = 0; i < 3; i++) {
+        entity_init(&en[i]);
+        en[i].live = 1;
+        en[i].x = 300.0f + 10.0f * (float)i;
+        en[i].z = 400.0f;
+        en[i].key.place = 17;
+        en[i].key.thing = (df_u32)(2u << 24) | (df_u32)(700 + i);
+    }
+    mem_zero(sc, sizeof(Scene));
+    sc->movers = mv;
+    sc->nmovers = 3;
+}
+
+static void check_keep(void)
+{
+    static Scene sc;
+    static Mover mv[3];
+    static Instance in[2];
+    static Entity en[3];
+    Keep *g;
+    Keep rows[8];
+    int n;
+    int i;
+
+    keep_clear();
+    build_keep_place(&sc, mv, in, en);
+    keep_restore(&sc, 0, 3, en, 3, 0.0f, 0.0f, 0.0f);
+    check_expect(keep_count() == 0 && mv[0].t == 0.0f && en[0].homed, "an empty table changed a new place");
+    /* Play: door 0 opening (kept at its end), door 1's lock picked, the teleport used. */
+    mv[0].state = MOVER_FORWARD;
+    mv[1].lock = 0;
+    mv[2].state = MOVER_END;
+    /* The stream's origin moves a chunk east: the scene's frame shifts, the place's does not. */
+    for (i = 0; i < 3; i++) {
+        en[i].x -= 2048.0f;
+    }
+    en[0].x += 50.0f;
+    en[1].live = 0;
+    g = keep_get(en[2].key, KEEP_ENTITY);
+    check_expect(g && g->placed == 0, "keep_get did not make a row");
+    g->game[0] = 5;
+    keep_save(&sc, 0, 3, en, 3, 2048.0f, 0.0f, 0.0f);
+    check_expect(keep_count() == 5, "keep_save did not write only what changed (two doors, two creatures, the game's row)");
+    /* Built again from its file, at the old origin. */
+    build_keep_place(&sc, mv, in, en);
+    keep_restore(&sc, 0, 3, en, 3, 0.0f, 0.0f, 0.0f);
+    check_expect(mv[0].state == MOVER_END && mv[0].t == 1.0f && check_near(in[0].y, 64.0f, 0.01f)
+                 && mv[1].state == MOVER_START && mv[1].lock == 0 && mv[2].state == MOVER_START,
+                 "the opened door or the picked lock did not come back, or the teleport was kept");
+    check_expect(check_near(en[0].x, 350.0f, 0.01f) && en[1].live == 0
+                 && check_near(en[2].x, 320.0f, 0.01f) && en[2].live,
+                 "a creature's place across the moved origin, a death, or the game's row moved it");
+    /* Door 0 shut, creature 0 home again: their rows go; the game's row stays. */
+    mover_set_end(&mv[0], 0);
+    en[0].x = 300.0f;
+    keep_save(&sc, 0, 3, en, 3, 0.0f, 0.0f, 0.0f);
+    check_expect(keep_count() == 3 && !keep_find(mv[0].key) && !keep_find(en[0].key)
+                 && keep_find(en[2].key) && keep_find(en[2].key)->game[0] == 5,
+                 "a thing back as its file has it kept its row, or the game's bytes were lost");
+    /* A save file: out, the table cleared, back in, the same rows in key order. */
+    n = keep_count();
+    for (i = 0; i < n && i < 8; i++) {
+        rows[i] = *keep_at(i);
+    }
+    keep_clear();
+    check_expect(keep_count() == 0, "keep_clear left rows");
+    for (i = n - 1; i >= 0; i--) {
+        keep_put(&rows[i]);
+    }
+    for (i = 0; i + 1 < keep_count(); i++) {
+        check_expect(keep_at(i)->key.place < keep_at(i + 1)->key.place
+                     || (keep_at(i)->key.place == keep_at(i + 1)->key.place
+                         && keep_at(i)->key.thing < keep_at(i + 1)->key.thing),
+                     "the table is not in key order");
+    }
+    check_expect(keep_count() == n && keep_find(mv[1].key) && keep_find(mv[1].key)->lock == 0,
+                 "a save file's rows did not come back");
+    /* Many rows: the table grows past its first block. */
+    for (i = 0; i < 600; i++) {
+        KeepKey k;
+
+        k.place = 99;
+        k.thing = (df_u32)(600 - i);
+        keep_get(k, KEEP_MOVER);
+    }
+    {
+        KeepKey k;
+
+        k.place = 99;
+        k.thing = 300;
+        check_expect(keep_count() == n + 600 && keep_find(k) && keep_find(k)->key.thing == 300,
+                     "the table did not grow, or lost a row growing");
+    }
+    keep_clear();
 }
 
 static int same(const char *a, const char *b)
@@ -3359,6 +3488,7 @@ void check_engine(void)
     check_beside();
     check_pictures();
     check_key_names();
+    check_keep();
     check_console();
     check_mip();
     check_mip_spans();

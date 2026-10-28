@@ -97,6 +97,11 @@ typedef struct Entity {
     df_u8 frame;
     /* 0 for a free entry: not drawn. */
     df_u8 live;
+    /* Its key, from the game; 0, 0 is not kept (keep.h). */
+    KeepKey key;
+    /* Where the file put it, noted by keep_restore, so a kept row is only what changed. */
+    float home[3];
+    df_u8 homed;
 } Entity;
 
 /*

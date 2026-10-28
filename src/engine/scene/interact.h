@@ -88,6 +88,13 @@ int interact_teleport(float *x, float *y, float *z, float *yaw);
 int mover_sweep(const Mover *m, Bound *out);
 /* Record each mover's start pose from its model. Once, when the place is built. */
 void mover_init(Mover *movers, int n);
+/*
+ * A mover at rest at its end (1) or its start (0), at once: no motion,
+ * no sound, no chain. After mover_init. keep_restore's.
+ */
+void mover_set_end(Mover *m, int at_end);
+/* 1 at its end or moving toward it. */
+int mover_at_end(const Mover *m);
 
 /*
  * One frame, from draw_frame: when used is 1 (the use key went down),

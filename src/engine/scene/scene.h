@@ -109,6 +109,18 @@ enum {
     MOVER_BACK
 };
 
+/*
+ * Which thing, across the whole game, for the state that outlives a load
+ * (keep.h, docs/interact.md): two words the game composes. 0, 0 is not
+ * kept.
+ */
+typedef struct KeepKey {
+    /* The place: a location's id, a building's inside its own. */
+    df_u32 place;
+    /* The thing in it: a block's index and the offset in its file, say. */
+    df_u32 thing;
+} KeepKey;
+
 typedef struct Mover {
     Instance *inst;
     int model;
@@ -133,11 +145,15 @@ typedef struct Mover {
      */
     df_u8 teleport;
     float to_x, to_y, to_z, to_yaw;
+    /* Its key, from the game; 0, 0 is not kept (keep.h). */
+    KeepKey key;
     /* The engine's. */
     df_u8 state;
     float t;
     float x0, y0, z0;
     float m0[9];
+    /* The lock the file gave it (mover_init), so a kept row is only what changed. */
+    int lock0;
 } Mover;
 
 /*

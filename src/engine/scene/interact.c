@@ -462,6 +462,7 @@ void mover_init(Mover *movers, int n)
         m = &movers[i];
         m->state = MOVER_START;
         m->t = 0.0f;
+        m->lock0 = m->lock;
         if (!m->inst) {
             continue;
         }
@@ -472,6 +473,21 @@ void mover_init(Mover *movers, int n)
             m->m0[k] = m->inst->m[k];
         }
     }
+}
+
+void mover_set_end(Mover *m, int at_end)
+{
+    m->state = at_end ? MOVER_END : MOVER_START;
+    m->t = at_end ? 1.0f : 0.0f;
+    if (m->inst) {
+        pose_at(m, m->t, m->inst);
+    }
+}
+
+int mover_at_end(const Mover *m)
+{
+    /* One in motion counts at the end it is heading for. */
+    return m->state == MOVER_END || m->state == MOVER_FORWARD;
 }
 
 int mover_sweep(const Mover *m, Bound *out)

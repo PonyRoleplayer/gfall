@@ -66,6 +66,7 @@ ENGINE_HOST_SRC := \
 	src/engine/scene/body.c \
 	src/engine/scene/walker.c \
 	src/engine/scene/interact.c \
+	src/engine/scene/keep.c \
 	src/engine/scene/entity.c \
 	src/engine/scene/stream.c \
 	src/engine/sound/mixer.c \
