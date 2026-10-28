@@ -265,6 +265,11 @@ int stream_chunk_size(void)
     return g_chunk;
 }
 
+int stream_slots(void)
+{
+    return SLOTS;
+}
+
 Entity *stream_slot_entities(int slot, int *first, int *n)
 {
     if (!g_open || !g_entities || slot < 0 || slot >= SLOTS || !g_slot[slot].used || !g_slot[slot].done) {

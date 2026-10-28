@@ -301,7 +301,15 @@ Step 1 is built:
   - a slot's entities are in the scene's frame;
   - after walking 6 blocks away and back, a door opened and a creature moved and killed come back so, and an unopened door comes back shut.
 
-Steps 2 to 4 are not built yet.
+Step 2 is built too:
+- A streamed scene that is not outdoor keeps its shadow rays (`seen`), and outdoors stays without them. `light.c` already knows which a scene is, so the source asks for nothing.
+- A light's cut goes a face at a time (`cut_start`, `cut_run`, `cut_finish`), so the service stops within its budget mid-light and goes on at the next call.
+- The light being cut is given up and queued again when a slot drops or the origin moves (`cut_abandon`), since its list of models is stale. A slot coming in needs nothing, because its neighbours' lights are queued again anyway.
+- `light_stream_pending` counts it.
+- `light.c` takes the stream's slot count (`stream_slots`), not `STREAM_SLOTS`. Before this, a dungeon's 25 slots were read as 121, and every slot's lights were the wrong range.
+- `check_dungeon_lights`: Privateer's Hold by block cuts 1667 decals, the same as the hold loaded whole with shadows. Cut again with no budget, a face a call, it takes 8636 calls for 76 lights and slots queued, and comes out the same 1667. Daggerfall's outdoor stream keeps its 4435.
+
+The game's step 3 (`dunstream.c`) is in. Step 4 (GFALL's hold, LEVELFALL) is the game's next.
 
 ### The order of the work
 
@@ -310,7 +318,7 @@ Steps 2 to 4 are not built yet.
    - entities and water in the slots;
    - `keep_save` and `keep_restore` by the stream;
    - host tests with a fake source of 2048 chunks on a sparse layout. These check that blocks fill and drop, that a door opened in a dropped block comes back open, that a creature moved stays moved, and that the water and entities follow their slots.
-2. **Engine:** lights with shadows in steps. Tested against a whole load's decals.
+2. **Engine:** lights with shadows in steps. Tested against a whole load's decals (built).
 3. **Game:** the RDB chunk source, reusing `world.c`'s per-block building, with its keys.
 4. **Game:** GFALL's hold through it, then LEVELFALL's indoor rows.
 

@@ -137,6 +137,8 @@ int stream_open(Scene *scene, const StreamSource *src, int radius, int cx, int c
 int stream_open_sized(Scene *scene, const StreamSource *src, int radius, int cx, int cz, int chunk);
 /* The stream's chunk side in units. */
 int stream_chunk_size(void);
+/* The slots this stream has (STREAM_SLOTS at most): a slot's ranges are this many end to end. */
+int stream_slots(void);
 /* Every chunk goes (the source's drop for each), and the stream stops. */
 void stream_close(void);
 int stream_active(void);

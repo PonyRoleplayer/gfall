@@ -35,6 +35,8 @@
 #include "game/dagger/places/terrain.h"
 #include "game/dagger/places/wres.h"
 #include "engine/scene/stream.h"
+#include "engine/scene/keep.h"
+#include "game/dagger/places/dunstream.h"
 #include "engine/scene/interact.h"
 #include "game/dagger/formats/hmi.h"
 #include "game/dagger/formats/sndfile.h"
@@ -2507,6 +2509,58 @@ static void check_skies(void)
 /* Pictures the hold's creatures wear, by slot. */
 static df_u8 g_worn[1024];
 
+/*
+ * A streamed dungeon's lights keep their shadows (docs/streaming.md,
+ * Dungeons): the hold by block cuts the very decals the hold loaded
+ * whole does, rays and all; and with no budget at all, a face a call,
+ * the cut goes on across calls and comes out the same.
+ */
+static void check_dungeon_lights(void)
+{
+    Dungeon hold;
+    World *whole;
+    Level wl;
+    Level sl;
+    Camera cam;
+    float x, y, z, yaw, pitch;
+    int want;
+    int got;
+    int calls;
+    int lights;
+    int i;
+
+    keep_clear();
+    whole = world_load();
+    if (!whole || !dungeon_load(&hold)) {
+        check_expect(0, "dungeon lights: the hold did not load");
+        return;
+    }
+    world_as_level(whole, &wl);
+    want = light_build(&wl.scene);
+    if (!dunstream_open(&hold, &sl, &x, &y, &z, &yaw, &pitch)) {
+        check_expect(0, "dungeon lights: the hold's stream did not open");
+        return;
+    }
+    camera_set(&cam, x, y, z, yaw, pitch);
+    dunstream_fill(&cam);
+    got = light_decal_total();
+    /* Again, every light, with no time at all: a face a call. */
+    light_build(&sl.scene);
+    lights = light_stream_pending();
+    calls = 0;
+    for (i = 0; i < 2000000 && light_stream_pending() > 0; i++) {
+        light_stream_service(0.0f);
+        calls++;
+    }
+    printf("dungeon lights: the hold whole %d decals, by block %d, again a face a call %d (%d calls for %d queued)\n",
+           want, got, light_decal_total(), calls, lights);
+    check_expect(want > 0 && got == want, "dungeon lights: the hold by block does not cut the whole hold's decals");
+    check_expect(light_decal_total() == want && calls > lights,
+                 "dungeon lights: cut a face a call, the hold's decals came out otherwise, or not across calls");
+    dunstream_close();
+    keep_clear();
+}
+
 int check_dagger(const char *root_in)
 {
     World *world;
@@ -3152,5 +3206,6 @@ int check_dagger(const char *root_in)
     check_skies();
     check_land();
     check_stream();
+    check_dungeon_lights();
     return check_failed() ? 1 : 0;
 }
