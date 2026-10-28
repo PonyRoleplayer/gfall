@@ -19,9 +19,19 @@ int fs_read_at(FsFile *file, df_u32 offset, void *dst, df_u32 n);
 df_u8 *fs_read_all(const char *rel, df_u32 *size);
 
 /*
- * Replace one file in the directory that contains the content root,
- * beside the program rather than inside ARENA2. name is a single
- * component. A file already there is replaced. fs_create opens it,
+ * Beside the program: the directory that contains the content root,
+ * not ARENA2 itself. A name there is a file, or one folder deep
+ * ("DATA\\MAIN.DAT", a backslash on either platform).
+ *
+ * fs_make_dir makes the folder name there; 1 when it is there after,
+ * made now or already (a file of that name is 0).
+ */
+int fs_make_dir(const char *name);
+/* Open or read a file beside the program, as fs_open and fs_read_all do inside the root. */
+FsFile *fs_open_beside(const char *name);
+df_u8 *fs_read_beside(const char *name, df_u32 *size);
+/*
+ * Replace one file beside the program. A file already there is replaced. fs_create opens it,
  * fs_append writes, fs_finish keeps it, fs_abort deletes the partial.
  */
 int fs_create(const char *name);

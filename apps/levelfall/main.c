@@ -2792,11 +2792,18 @@ static void bookmark(void)
     n = 0;
     line[0] = 0;
     add_str(line, &n, (int)sizeof(line), "date=");
-    add_num(line, &n, (int)sizeof(line), g_snap.day % CLOCK_MONTH_DAYS + 1, 0);
-    add_str(line, &n, (int)sizeof(line), ",");
-    add_num(line, &n, (int)sizeof(line), (g_snap.day % CLOCK_YEAR_DAYS) / CLOCK_MONTH_DAYS + 1, 0);
-    add_str(line, &n, (int)sizeof(line), ",");
-    add_num(line, &n, (int)sizeof(line), g_snap.day / CLOCK_YEAR_DAYS, 0);
+    {
+        int y;
+        int m;
+        int d;
+
+        clock_date_of(g_snap.day, &y, &m, &d);
+        add_num(line, &n, (int)sizeof(line), d + 1, 0);
+        add_str(line, &n, (int)sizeof(line), ",");
+        add_num(line, &n, (int)sizeof(line), m + 1, 0);
+        add_str(line, &n, (int)sizeof(line), ",");
+        add_num(line, &n, (int)sizeof(line), y, 0);
+    }
     log_line(line);
     /* The kind arrived or arriving. Reopened, it is there at once and held. */
     n = 0;
@@ -4077,10 +4084,11 @@ static void cfg_line(const char *s)
 
         if (!read_int(&rest, &d) || !next_number(&rest) || !read_int(&rest, &m)
             || !next_number(&rest) || !read_int(&rest, &y)
-            || d < 1 || d > CLOCK_MONTH_DAYS || m < 1 || m > CLOCK_MONTHS || y > 9999) {
+            || m < 1 || m > clock_months() || d < 1 || d > clock_month_days(m - 1)
+            || y < 0 || y > 9999) {
             return;
         }
-        g_day_cfg = y * CLOCK_YEAR_DAYS + (m - 1) * CLOCK_MONTH_DAYS + (d - 1);
+        g_day_cfg = clock_day_of(y, m - 1, d - 1);
         return;
     }
     if (key_is(s, "season", &rest)) {

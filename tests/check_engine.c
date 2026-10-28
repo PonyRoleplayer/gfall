@@ -12,6 +12,7 @@
 #include "engine/assets/loader.h"
 #include "engine/assets/recfile.h"
 #include "engine/assets/vfs.h"
+#include "engine/platform/fs.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
 #include "engine/gfx/camera.h"
@@ -920,6 +921,33 @@ static void check_vfs(void)
                  "vfs mount did not keep the root string");
 }
 
+/*
+ * A game's data folder beside the program: made, made again, written,
+ * read back, and a file where a folder is asked for. The root need not
+ * exist; build/ is the folder beside it.
+ */
+static void check_beside(void)
+{
+    char was[260];
+    static const df_u8 bytes[5] = { 'C', 'A', 'L', 'E', 7 };
+    df_u8 *got;
+    df_u32 n;
+
+    vfs_root(was, (int)sizeof(was));
+    vfs_mount("build/ARENA2");
+    check_expect(fs_make_dir("fsbeside"), "fs_make_dir did not make the folder");
+    check_expect(fs_make_dir("fsbeside"), "fs_make_dir failed on a folder already there");
+    check_expect(fs_create("fsbeside\\T.DAT") && fs_append(bytes, 5), "no file in the new folder");
+    fs_finish();
+    n = 0;
+    got = vfs_read_beside("fsbeside\\T.DAT", &n);
+    check_expect(got && n == 5 && got[3] == 'E' && got[4] == 7,
+                 "vfs_read_beside did not read back what was written");
+    check_expect(!fs_make_dir("fsbeside\\T.DAT"), "fs_make_dir took a file for a folder");
+    check_expect(!vfs_read_beside("fsbeside\\NONE.DAT", &n), "read a file that is not there");
+    vfs_mount(was);
+}
+
 static int same(const char *a, const char *b)
 {
     int i;
@@ -1511,7 +1539,7 @@ static void check_daylight(void)
         clock_set_date(405, 5, 0);
         clock_date(&y, &mo, &d);
         check_expect(y == 405 && mo == 5 && d == 0 && clock_season() == CLOCK_SUMMER
-                     && df_eq(clock_month_name(mo), "Midyear") && df_eq(clock_weekday_name(d), "Sundas"),
+                     && df_eq(clock_month_name(mo), "Midyear") && df_eq(clock_weekday_name(clock_weekday()), "Sundas"),
                      "the 1st of Midyear 405 is not a summer Sundas");
         day = clock_day();
         clock_set_minute(1439.0f);
@@ -1531,6 +1559,70 @@ static void check_daylight(void)
         check_expect(y == 406 && mo == 8 && d == 0 && clock_season() == CLOCK_FALL
                      && df_eq(clock_month_name(mo), "Hearthfire"),
                      "season fall is not the 1st of Hearthfire");
+        clock_set_date(405, 5, 0);
+    }
+    /*
+     * The calendar a game installs: the default is Tamriel's exactly; a
+     * calendar of its own is read through, its week runs on across months,
+     * a broken one is refused, and the default comes back.
+     */
+    {
+        Calendar c;
+        Calendar now;
+        int y, mo, d, day;
+
+        clock_calendar_default(&c);
+        check_expect(c.nmonths == 12 && c.nweekdays == 7 && c.week_restarts == 1
+                     && c.month[0].days == 30 && c.month[11].season == CLOCK_WINTER
+                     && df_eq(c.month[5].name, "Midyear") && df_eq(c.weekday[6], "Loredas")
+                     && df_eq(c.era, "3E") && c.start_year == 405 && c.start_month == 5
+                     && c.start_day == 0 && clock_year_days() == 360,
+                     "the default calendar is not Tamriel's");
+        clock_set_minute(600.0f);
+        /* Three months, 10 + 20 + 5 days, a week of 4 running on; starts on the 3rd of month 1, year 7. */
+        c.nmonths = 3;
+        c.month[0].days = 10;
+        c.month[0].season = CLOCK_WINTER;
+        c.month[1].days = 20;
+        c.month[1].season = CLOCK_SUMMER;
+        c.month[2].days = 5;
+        c.month[2].season = CLOCK_FALL;
+        c.nweekdays = 4;
+        c.week_restarts = 0;
+        c.start_year = 7;
+        c.start_month = 1;
+        c.start_day = 2;
+        check_expect(clock_set_calendar(&c), "a calendar of three months was refused");
+        clock_date(&y, &mo, &d);
+        check_expect(y == 7 && mo == 1 && d == 2 && clock_year_days() == 35
+                     && clock_day() == 7 * 35 + 10 + 2 && clock_season() == CLOCK_SUMMER
+                     && check_near(clock_minute(), 600.0f, 0.01f)
+                     && df_eq(clock_month_name(1), "Sun's Dawn") && df_eq(clock_month_name(3), ""),
+                     "the installed calendar's start date, season or time of day is wrong");
+        check_expect(clock_weekday() == (7 * 35 + 12) % 4, "the week did not run on across months");
+        clock_date_of(clock_day_of(7, 2, 4), &y, &mo, &d);
+        check_expect(y == 7 && mo == 2 && d == 4, "clock_day_of and clock_date_of disagree");
+        clock_date_of(clock_day_of(7, 2, 5), &y, &mo, &d);
+        check_expect(y == 8 && mo == 0 && d == 0, "a day past the year did not carry into the next");
+        clock_set_season(CLOCK_FALL);
+        clock_date(&y, &mo, &d);
+        check_expect(y == 7 && mo == 2 && d == 0, "season fall is not the first fall month");
+        day = clock_day();
+        clock_set_season(CLOCK_SPRING);
+        check_expect(clock_day() == day, "a season no month has moved the date");
+        now = c;
+        now.month[1].days = 0;
+        check_expect(!clock_set_calendar(&now) && clock_year_days() == 35,
+                     "a month of no days was taken");
+        now = c;
+        now.start_day = 20;
+        check_expect(!clock_set_calendar(&now), "a start day past its month was taken");
+        check_expect(clock_set_calendar(0) && clock_year_days() == 360 && clock_months() == 12,
+                     "the default did not come back");
+        clock_calendar(&now);
+        clock_calendar_default(&c);
+        check_expect(now.nmonths == c.nmonths && df_eq(now.month[11].name, c.month[11].name)
+                     && now.week_restarts == 1, "clock_calendar is not the default after a reset");
         clock_set_date(405, 5, 0);
     }
     clock_set_minute(1439.0f);
@@ -2980,6 +3072,7 @@ void check_engine(void)
     check_occlusion();
     check_loader();
     check_vfs();
+    check_beside();
     check_console();
     check_mip();
     check_mip_spans();

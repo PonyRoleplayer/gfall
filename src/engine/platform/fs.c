@@ -38,7 +38,9 @@ void fs_root(char *dst, int n)
 
 #ifdef DF_HOST
 
+#include <errno.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 struct FsFile {
@@ -46,15 +48,11 @@ struct FsFile {
     df_u32 size;
 };
 
-FsFile *fs_open(const char *rel)
+static FsFile *open_path(const char *path)
 {
-    char path[FS_PATH];
     FsFile *file;
     off_t end;
 
-    if (!fs_join(path, FS_PATH, rel)) {
-        return 0;
-    }
     file = (FsFile *)mem_alloc(sizeof(FsFile));
     if (!file) {
         return 0;
@@ -140,7 +138,9 @@ static int beside_path(char *dst, int n, const char *name)
     }
     i = 0;
     while (name[i] && k < n - 1) {
-        dst[k++] = name[i++];
+        /* DATA\\MAIN.DAT as the game writes it: a backslash is a plain character here. */
+        dst[k++] = name[i] == '\\' ? '/' : name[i];
+        i++;
     }
     dst[k] = 0;
     return name[i] == 0;
@@ -149,6 +149,20 @@ static int beside_path(char *dst, int n, const char *name)
 int fs_beside(char *dst, int n, const char *name)
 {
     return beside_path(dst, n, name);
+}
+
+int fs_make_dir(const char *name)
+{
+    char path[FS_PATH];
+    struct stat st;
+
+    if (!beside_path(path, FS_PATH, name)) {
+        return 0;
+    }
+    if (mkdir(path, 0755) == 0) {
+        return 1;
+    }
+    return errno == EEXIST && stat(path, &st) == 0 && S_ISDIR(st.st_mode);
 }
 
 int fs_create(const char *name)
@@ -224,15 +238,11 @@ struct FsFile {
     df_u32 size;
 };
 
-FsFile *fs_open(const char *rel)
+static FsFile *open_path(const char *path)
 {
-    char path[FS_PATH];
     FsFile *file;
     DWORD sz;
 
-    if (!fs_join(path, FS_PATH, rel)) {
-        return 0;
-    }
     file = (FsFile *)mem_alloc(sizeof(FsFile));
     if (!file) {
         return 0;
@@ -339,6 +349,22 @@ int fs_beside(char *dst, int n, const char *name)
     return beside_path(dst, n, name);
 }
 
+int fs_make_dir(const char *name)
+{
+    char path[FS_PATH];
+    DWORD attr;
+
+    if (!beside_path(path, FS_PATH, name)) {
+        return 0;
+    }
+    if (CreateDirectoryA(path, 0)) {
+        return 1;
+    }
+    /* Already there is fine; a file of that name is not. */
+    attr = GetFileAttributesA(path);
+    return attr != 0xffffffff && (attr & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
 int fs_create(const char *name)
 {
     char path[FS_PATH];
@@ -408,13 +434,31 @@ void fs_abort(void)
 
 #endif
 
-df_u8 *fs_read_all(const char *rel, df_u32 *size)
+FsFile *fs_open(const char *rel)
 {
-    FsFile *file;
+    char path[FS_PATH];
+
+    if (!fs_join(path, FS_PATH, rel)) {
+        return 0;
+    }
+    return open_path(path);
+}
+
+FsFile *fs_open_beside(const char *name)
+{
+    char path[FS_PATH];
+
+    if (!beside_path(path, FS_PATH, name)) {
+        return 0;
+    }
+    return open_path(path);
+}
+
+static df_u8 *read_whole(FsFile *file, df_u32 *size)
+{
     df_u8 *bytes;
     df_u32 n;
 
-    file = fs_open(rel);
     if (!file) {
         return 0;
     }
@@ -429,4 +473,14 @@ df_u8 *fs_read_all(const char *rel, df_u32 *size)
         *size = n;
     }
     return bytes;
+}
+
+df_u8 *fs_read_all(const char *rel, df_u32 *size)
+{
+    return read_whole(fs_open(rel), size);
+}
+
+df_u8 *fs_read_beside(const char *name, df_u32 *size)
+{
+    return read_whole(fs_open_beside(name), size);
 }

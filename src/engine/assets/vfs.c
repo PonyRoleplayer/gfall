@@ -39,3 +39,13 @@ df_u8 *vfs_read(const char *rel, df_u32 *size)
 {
     return fs_read_all(rel, size);
 }
+
+VfsFile *vfs_open_beside(const char *name)
+{
+    return (VfsFile *)fs_open_beside(name);
+}
+
+df_u8 *vfs_read_beside(const char *name, df_u32 *size)
+{
+    return fs_read_beside(name, size);
+}

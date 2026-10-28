@@ -10,9 +10,11 @@ Indoors nothing reads the clock.
 
 ## The calendar and the seasons
 
-The clock also keeps the date, Tamriel's as Daggerfall keeps it (Daggerfall Unity's `DaggerfallDateTime`): 12 months of 30 days, a year of 360, a week of 7 days that starts again on Sundas each month. It starts on the 1st of Midyear, 3E 405, Daggerfall Unity's start. Running past midnight turns the day; setting the hour (`time`) never moves the date. `clock_day` is the date as one number, days since the 1st of Morning Star 3E 0.
+The clock also keeps the date. The engine counts days; the months, the week and the start are a `Calendar` a game installs whole (`clock_set_calendar`), up to 16 months of 1 to 400 days, each with its name and one of the engine's four seasons, a week of up to 10 named days, an era for display and a start date. Installing one puts the clock on its start date and keeps the time of day, so a game installs its calendar at start and a save's day goes in after it (`clock_set_day`). A calendar that breaks a limit is refused whole and nothing changes; a null one puts the default back.
 
-The season is the month's, on whole months, as Daggerfall Unity has it: winter Evening Star, Morning Star and Sun's Dawn; spring First Seed to Second Seed; summer Midyear to Last Seed; fall Hearthfire to Sun's Dusk. `CLOCK_FALL`..`CLOCK_WINTER` are in Daggerfall's order, the one the sky files and the weather odds use.
+The default, until a game installs its own, is Tamriel's as Daggerfall keeps it (Daggerfall Unity's `DaggerfallDateTime`): 12 months of 30 days, a year of 360, a week of 7 days that starts again on Sundas each month (`week_restarts`; 0 lets the week run on across months), era 3E, starting on the 1st of Midyear, 3E 405, Daggerfall Unity's start. `clock_calendar_default` gives it exactly, for a game to check its own data against. Running past midnight turns the day; setting the hour (`time`) never moves the date. `clock_day` is the date as one number, days since the 1st of the first month, year 0; `clock_day_of` and `clock_date_of` convert without the clock. Nothing else in the engine reads the year's length: there are no moon phases or sky by day of year yet, and any that come follow `clock_year_days()`, not 360.
+
+The season is the month's, on whole months: in Tamriel's, as Daggerfall Unity has it, winter Evening Star, Morning Star and Sun's Dawn; spring First Seed to Second Seed; summer Midyear to Last Seed; fall Hearthfire to Sun's Dusk. `clock_set_season` goes to the first day of the year's first month of that season (winter is Morning Star), and does nothing when no month has it. `CLOCK_FALL`..`CLOCK_WINTER` are in Daggerfall's order, the one the sky files and the weather odds use.
 
 A town is drawn in the season of the day it loads (`World.season`):
 
@@ -127,7 +129,7 @@ Sprites near a lamp take the sum of the lamps on them, times the passes, on top 
 |---|---|---|
 | `time` | 12:00 | Prints the clock, or sets it: `time 21`, `time 6:45`. |
 | `timescale` | 12 | Game seconds a real second, 0..2000. 0 stops the clock. |
-| `date` | 1 6 405 | Prints the date (`Sundas, 1st of Midyear, 3E 405, summer`), or sets it: `date 15 12 405` (day, month, year, from 1). |
+| `date` | 1 6 405 | Prints the date (`Sundas, 1st of Midyear, 3E 405, summer`), or sets it: `date 15 12 405` (day, month, year, from 1; the day within its month in the calendar installed). |
 | `season` | summer | Prints the date, or goes to the first day of a season this year: `season winter`. |
 | `sky` | on | Off draws outdoor places on the viewer's background, as before. |
 | `daylight` | on | Off draws outdoor places full bright, as before, with no lamps. |

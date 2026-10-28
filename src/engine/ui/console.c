@@ -756,8 +756,9 @@ static void print_date(void)
     int d;
 
     clock_date(&y, &m, &d);
-    log_print(LOG_PRINT, "date %s, %d%s of %s, 3E %d, %s", clock_weekday_name(d), d + 1,
-              ordinal(d + 1), clock_month_name(m), y, clock_season_name(clock_season()));
+    log_print(LOG_PRINT, "date %s, %d%s of %s, %s %d, %s", clock_weekday_name(clock_weekday()),
+              d + 1, ordinal(d + 1), clock_month_name(m), clock_era(), y,
+              clock_season_name(clock_season()));
 }
 
 /* The calendar: date, or date day month [year], from 1; a new season shows at the next load. */
@@ -771,13 +772,16 @@ static void c_date(int argc, char **argv)
     if (argc == 3 || argc == 4) {
         if (!cmd_parse_int(argv[1], &d) || !cmd_parse_int(argv[2], &m)
             || (argc == 4 && !cmd_parse_int(argv[3], &y))
-            || d < 1 || d > CLOCK_MONTH_DAYS || m < 1 || m > CLOCK_MONTHS || y < 0 || y > 9999) {
-            log_text(LOG_PRINT, "usage: date [day 1..30 month 1..12 [year]]");
+            || m < 1 || m > clock_months() || d < 1 || d > clock_month_days(m - 1)
+            || y < 0 || y > 9999) {
+            log_print(LOG_PRINT, "usage: date [day month 1..%d [year]], a day within its month",
+                      clock_months());
             return;
         }
         clock_set_date(y, m - 1, d - 1);
     } else if (argc != 1) {
-        log_text(LOG_PRINT, "usage: date [day 1..30 month 1..12 [year]]");
+        log_print(LOG_PRINT, "usage: date [day month 1..%d [year]], a day within its month",
+                  clock_months());
         return;
     }
     print_date();
