@@ -57,13 +57,17 @@ A small state machine: **stream** (outside, the whole map), **inside** (one buil
 ## The player
 
 ### The body
-The engine's walker (`walker.h`): 72 units tall, a 24-unit step, gravity, and stairs. The game adds, as rules on top:
+Daggerfall is first person: the player is the camera. The physics is not the camera's, though. It is an engine **body** (requested, item 8 below): 72 units tall, a 24-unit step, gravity and stairs, which the game steps each frame with the motion it wants. A first-person rig then puts the camera at the body's eye. A third-person game would instead draw an entity at the body and put the camera behind it with a third-person rig; the engine allows both, and this game uses the first.
+
+Entities have no physics of their own. A creature that only stands, or walks a flat town cell, needs none. A creature that chases the player down a stair gets a body of its own size, and the game copies the body's place to the creature's entity each frame.
+
+The game adds, as rules on top of the player's body:
 - **Run**: speed from Speed and the Running skill.
 - **Jump**: height from the Jumping skill.
 - **Swim**: when `scene_water_body` says the player is in over the head; Swimming slows the loss of breath.
 - **Fall damage**.
 
-The walker today has none of these, so the hooks they need are engine requests.
+The engine's G1 hooks (on its `engine-game-hooks` branch) give the jump and the landing; the run is the game's longer wanted motion.
 
 ### The sheet
 Daggerfall's character, per UESP (Character Creation, Attributes, Skills, Leveling):
@@ -153,6 +157,8 @@ Requests for the engine engineer, each in its smallest form:
 5. **A 2D picture draw** for the screens and the weapon: a picture on the card drawn at a screen rectangle, under or over the HUD's text.
 6. **A pause that is not the console**, for the game's menus: the world stands still (`gfx_paused`) while a screen is up.
 7. **A `play` stage in the frame profile.**
+8. **A body apart from the camera**: the walker split into bodies the game steps (as many as wanted, each its own size) and camera rigs that place a camera from a body (first person at the eye; third person behind it, pulled in from walls). The viewers' walker stays as it is, built on one body. The use ray takes an origin and a direction, not only a camera.
+9. **The calendar out of the engine**: the engine keeps minutes and days, and the game installs Tamriel's months and seasons.
 
 ## Phases
 
