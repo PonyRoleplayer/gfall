@@ -1,4 +1,5 @@
 #include "engine/scene/interact.h"
+#include "engine/scene/walker.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
 #include "engine/sound/sound.h"
@@ -57,6 +58,22 @@ void interact_set_view(int units)
 int interact_view(void)
 {
     return g_view;
+}
+
+/* trigview: its range, 0 off. */
+static int g_trig_view;
+
+void interact_set_trigger_view(int units)
+{
+    if (units > 0 && units < INTERACT_VIEW_SMALL) {
+        units = INTERACT_VIEW_ON;
+    }
+    g_trig_view = units < 0 ? 0 : (units > INTERACT_VIEW_MAX ? INTERACT_VIEW_MAX : units);
+}
+
+int interact_trigger_view(void)
+{
+    return g_trig_view;
 }
 
 int interact_aimed(void)
@@ -517,6 +534,29 @@ static void sound_from(const Mover *m, const SoundClip *clip)
     sound_play_at(clip, x, y, z, MOVER_INNER, MOVER_REACH, 1.0f, 0);
 }
 
+/*
+ * A teleport a chain reached (mover_start), for the frame to take
+ * (interact_teleport); g_tele_arrive until the next interact_frame,
+ * which takes what the body lands in as already entered: a teleporter
+ * at the far end does not send it straight back.
+ */
+static int g_tele;
+static int g_tele_arrive;
+static float g_tele_x, g_tele_y, g_tele_z, g_tele_yaw;
+
+int interact_teleport(float *x, float *y, float *z, float *yaw)
+{
+    if (!g_tele) {
+        return 0;
+    }
+    g_tele = 0;
+    *x = g_tele_x;
+    *y = g_tele_y;
+    *z = g_tele_z;
+    *yaw = g_tele_yaw;
+    return 1;
+}
+
 int mover_start(const Scene *scene, int i)
 {
     int steps;
@@ -530,7 +570,17 @@ int mover_start(const Scene *scene, int i)
         Mover *m;
 
         m = &scene->movers[i];
-        if (m->state == MOVER_START) {
+        if (m->teleport) {
+            /* No pose to toggle: every time it is reached, the player goes. */
+            g_tele = 1;
+            g_tele_arrive = 1;
+            g_tele_x = m->to_x;
+            g_tele_y = m->to_y;
+            g_tele_z = m->to_z;
+            g_tele_yaw = m->to_yaw;
+            sound_from(m, m->go_sound);
+            moved = 1;
+        } else if (m->state == MOVER_START) {
             m->state = MOVER_FORWARD;
             sound_from(m, m->go_sound);
             moved = 1;
@@ -615,6 +665,47 @@ int interact_use(const Scene *scene, int i)
     return 0;
 }
 
+/*
+ * The touch usable the body was in last frame (-1 none), and the scene it
+ * was of: one is used on the frame the body comes into it, not each
+ * frame it stays.
+ */
+static int g_touching = -1;
+static const Scene *g_touch_scene;
+
+/* The first usable with touch whose model's box the body (the walker's, under the eye) is in; -1 none. */
+static int touched(const Scene *scene, const Camera *cam)
+{
+    float lo;
+    float hi;
+    int i;
+
+    lo = cam->y - WALK_EYE;
+    hi = lo + WALK_HEIGHT;
+    for (i = 0; i < scene->nusables; i++) {
+        const Usable *u;
+        const Bound *b;
+
+        u = &scene->usables[i];
+        if (!u->touch || u->model < 0 || u->model >= scene->nmodels || !scene->bounds) {
+            continue;
+        }
+        b = &scene->bounds[u->model];
+        if (b->ex < 0.0f || hi < b->cy - b->ey || lo > b->cy + b->ey
+            || df_absf(cam->x - b->cx) > b->ex + WALK_RADIUS
+            || df_absf(cam->z - b->cz) > b->ez + WALK_RADIUS) {
+            continue;
+        }
+        return i;
+    }
+    return -1;
+}
+
+int interact_touching(void)
+{
+    return g_touching;
+}
+
 void interact_frame(const Scene *scene, const Camera *cam, float secs, int used)
 {
     UseHit hit;
@@ -641,6 +732,25 @@ void interact_frame(const Scene *scene, const Camera *cam, float secs, int used)
                 log_text(LOG_INFO, "use: nothing in reach");
             }
         }
+    }
+    /* Walked into: a collision trigger (Usable.touch), once as the body comes in. */
+    {
+        int t;
+
+        if (scene != g_touch_scene) {
+            g_touching = -1;
+            g_touch_scene = scene;
+        }
+        t = touched(scene, cam);
+        if (g_tele) {
+            /* A teleport waits for the frame to take it: nothing more goes off where the body still is. */
+        } else if (g_tele_arrive) {
+            /* Landed: what the body stands in counts as come into already. */
+            g_tele_arrive = 0;
+        } else if (t >= 0 && t != g_touching) {
+            interact_use(scene, t);
+        }
+        g_touching = t;
     }
     mover_step(scene, secs);
 }

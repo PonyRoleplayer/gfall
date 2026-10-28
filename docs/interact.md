@@ -63,7 +63,13 @@ Axes are 1 −X, 2 +X, 3 −Y, 4 +Y, 5 −Z, 6 +Z. A turn goes the axis's way. A
 
 The sound id names a `DAGGER.SND` record by id (`sndfile_by_id`), and plays both ways.
 
-A chain is found by offset: the next object is the model in the same block whose object offset is the action's next. The trigger's low four bits say how it is set off. 2, 6, 8 and 9 are used by hand, and get a usable; the rest start only from the one before them. In the hold, a lever (41020, an activate relay) starts a stone that turns 83° (41042, 1.7 s); another (61027) turns, and starts a slab that rises, which starts another.
+A chain is found by offset: the next object is the model in the same block whose object offset is the action's next. The trigger's low four bits say how it is set off. 2, 6, 8 and 9 are used by hand, and get a usable; 1, 3 and 9 by walking into the model (below); the rest start only from the one before them.
+
+**Teleports.** Action 14 (`RdbActionFlags.Teleport`) moves nothing: it sends the player to its next object, as DFU's `Teleport` does (the player to `NextObject`'s position and turn), and ends its chain. The next object is found by offset in the same block, an editor marker as a rule (`Marker.pos`; `world.c` hands `doors_build` every block's markers of a dungeon), which has no turn, so the player faces +z, or a model, facing its own +z. The eye goes `WALK_EYE` above the floor under the target (the creatures' floor ray), and the walker starts again from there (`walker_place`). Every time it is reached, the player goes (`Mover.teleport`: it has no pose to toggle). A hinged door whose action is a teleport is a portal: used, it does not swing onto the wall behind it, it sends the player; locked, it says so. A teleport whose target is not found is none: a door swings, an action relays. In 73 dungeons, one in sixty of the list, 15 have teleports, 72 of them: 26 used by hand, 46 walked into, one a door (Daggerfall's castle has the door and one other, both into the castle).
+
+The engine keeps the teleport a use or a chain reached (`interact_teleport`); `draw_frame` takes it right after `interact_frame` and moves the console's camera there, the camera the walker carries.
+
+**Walking into.** A usable with `touch` is used on the frame the body (the walker's, `WALK_RADIUS` round and `WALK_HEIGHT` tall under the eye) comes into its model's box as it stands now, not each frame it stays. With reach 0 it is never aimed at by hand. After a teleport, what the body lands in counts as come into already: a teleporter at the far end does not send it straight back; stepped off and on again, it does. In the hold, a lever (41020, an activate relay) starts a stone that turns 83° (41042, 1.7 s); another (61027) turns, and starts a slab that rises, which starts another.
 
 **Passages.** A face is a door when its texture archive, less its climate hundreds unless it is 331 or 156, is a door set (`MeshReader.LoadVertices`):
 
@@ -105,6 +111,18 @@ The handler (`lf_use`) records the passage and the view ends on that frame. `vie
 
 A way down or out with no pair in the list says "It leads nowhere in the list." and the view stays. Esc goes back to the list from anywhere. F12 does not bookmark inside a building: `open=` names a list row, and an inside is not one. The landings are what Daggerfall Unity's `PlayerEnterExit` does, at 40 units a metre.
 
+## Trigger vision
+
+`trigview N` (the console; F3 in LEVELFALL steps 512, 1024, 2048, off) draws the triggers within N units, the nearest 32 (`draw_trigger_view`):
+
+- **Boxes.** Violet: what the use key takes by hand, as `useview` boxes it. Orange: a walk-into trigger's volume, its model's box grown by the body's radius, the box `touched` tests; red while the body is in it (`interact_touching`). Gold: a passage. Dim blue-grey: a mover only a chain starts. A teleport draws a magenta line from its trigger to where it sends, and a cross there.
+- **Words**, three lines at its middle:
+  1. how it goes off and how far: `u12 walked into  3.2m`, `u4 by hand`, `u7 by hand, walked into`, `u30 passage`, `m9 by a chain`;
+  2. what it does: `teleport to x y z`, `door lock 2`, `turn`, `slide`, `relay`, `once`, `at end` or `moving`, and `> m10` for the mover it starts next; a passage's word;
+  3. the game's own numbers (`Usable.what`, `.tag`): for Daggerfall's movers the action and its trigger (`what 14 tag 1`: a teleport walked into; `act_numbers` in `doors.c`), for a passage its way and building.
+
+`useview` stays the use key's picture: what can be used, the aimed one bright.
+
 ## Switches
 
 | | |
@@ -121,12 +139,13 @@ A use is one pass over the model boxes and the triangles of the few the ray cros
 
 ## Tests
 
-hostcheck: the cast takes a door in front of the eye at its distance, not one out of reach or beside the view; a passage painted on a wall wins over the wall; a wall in front hides a door; a passage reaches the handler and nothing without one; a locked door stays and says so, and opens with locks off; a door is half open half way, turns a quarter about its hinge, leaves its doorway, and its sweep holds the turn; a chain starts together and a once mover stays. The hold: 58 doors and 2 levers, one locked, one way out of a door's size used from in front, a door that swings and shuts, a lever whose chain moves and refuses to start again while it moves. The Ashwing Farmstead: a building's door leads in; its inside loads with 6 doors and a way out by the street's door, facing in, with its own song; turned round on landing either side, the eye meets the door it came through. Privateer's Hold's outside has a way down, and the dungeon lies under it.
+hostcheck: `check_teleport` walks into a pad and is sent once, lands on the far pad and stays, steps off and on and is sent back, and uses a pad by hand only when it has a reach; Daggerfall's castle has its portal door and its other teleport, both to a marker in the castle at a body's eye. Also: the cast takes a door in front of the eye at its distance, not one out of reach or beside the view; a passage painted on a wall wins over the wall; a wall in front hides a door; a passage reaches the handler and nothing without one; a locked door stays and says so, and opens with locks off; a door is half open half way, turns a quarter about its hinge, leaves its doorway, and its sweep holds the turn; a chain starts together and a once mover stays. The hold: 58 doors and 2 levers, one locked, one way out of a door's size used from in front, a door that swings and shuts, a lever whose chain moves and refuses to start again while it moves. The Ashwing Farmstead: a building's door leads in; its inside loads with 6 doors and a way out by the street's door, facing in, with its own song; turned round on landing either side, the eye meets the door it came through. Privateer's Hold's outside has a way down, and the dungeon lies under it.
 
 ## Not done
 
-- Triggers by walking on or into (1, 3, 9 by collision), by attack (5), and doors setting off their own actions by opening (10) beyond the chain.
-- What text, spells, traps, damage, teleports and the quest's actions do; flats with actions.
+- State that outlives a load: a door opened, a lever pulled, a creature killed stay so when the place is left and come back to, or when a dungeon is streamed by block (a block dropped out of range and read again from its file comes back as the file has it). The design: every mover, usable and entity gets a stable key from the game, Daggerfall Unity's LoadID (the block's place in the location plus the object's offset in its block file, `ModelAct.pos`, `Marker.pos`); the engine keeps a table, key to state (a mover's place along its motion, which end, its lock; an entity's life, place and facing), saved when a block goes (a mover in motion at the end it was going to) and put back when it fills, before it shows. The game gives the keys at build (`doors_build`, `add_foes`) and decides what else to keep; written to disk, the table is a save game. Chains and teleports stay within their block, so none is half loaded. Wanted before dungeons are streamed, or for save games, whichever comes first.
+- Triggers by attack (5), and doors setting off their own actions by opening (10) beyond the chain. Walking into (1, 3, 9) is a box: a pad's or a wall's, not its triangles.
+- What text, spells, traps, damage and the quest's actions do; flats with actions, a teleport's target among them only as a destination.
 - Picking and bashing locks; a house locked by the hour or by its type.
 - Doors pushing the body; the body caught in a swing is freed by `stuck`.
 - Talking.

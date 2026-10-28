@@ -55,8 +55,22 @@ void gfx_fade_in(float secs);
  * screen holds, after gfx_prepare and the camera are set.
  */
 void gfx_prime(const Level *level, const Camera *cam);
+/*
+ * The last place's load on the card side, in cycles (prof_now): its
+ * pictures (texcache_upload: sent, or put on residency with their chains
+ * built), its light decals (light_build), and gfx_prime. A viewer turns
+ * them into milliseconds (docs/viewers.md, the load line).
+ */
+void gfx_load_times(df_u32 *card, df_u32 *lights, df_u32 *prime);
 /* Clear, draw what the scene says is visible, overlay, swap. */
 void gfx_frame(const Camera *cam, const Level *level);
+/*
+ * 1 while the world stands still: the console is open, and gfx_frame
+ * runs none of it (the clock, the weather, the doors, the walker, the
+ * flames' frames). A game's own simulation (its people, its creatures)
+ * stands still too while it is: it skips its step, not its loading.
+ */
+int gfx_paused(void);
 
 /* Drawn after the frame and before the swap. 0 clears it. */
 void gfx_set_extra(void (*fn)(void));

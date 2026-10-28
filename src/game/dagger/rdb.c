@@ -446,6 +446,7 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch, ArchEnt *cache, int *n
                         mk->flags = df_ru16(rdb + res + 2);
                         mk->id = df_ru16(rdb + res + 4);
                         mk->action = rdb[res + 10];
+                        mk->pos = at;
                         block->nmarker++;
                     }
                 } else if (block->nflat < block->flat_cap) {

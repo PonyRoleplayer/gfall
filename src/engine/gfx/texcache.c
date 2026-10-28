@@ -103,14 +103,18 @@ static int mark_entity_pictures(const Level *level, int n)
                 float d;
 
                 slot = (int)pose->slot[k];
-                if (slot >= n || pose->w[k] < 1) {
+                if (slot >= n) {
                     continue;
                 }
-                img = level->images[slot];
-                if (!img) {
-                    continue;
-                }
+                /*
+                 * Marked even with no picture yet: the game reads a creature's
+                 * pictures as it comes near, and adds them (texcache_resident_add).
+                 */
                 g_dyn[slot] = 1;
+                img = level->images[slot];
+                if (!img || pose->w[k] < 1) {
+                    continue;
+                }
                 d = (float)img->width / (float)pose->w[k];
                 if (d > g_dyn_density[slot]) {
                     g_dyn_density[slot] = d;
@@ -142,6 +146,61 @@ static int mark_entity_pictures(const Level *level, int n)
     return count;
 }
 
+/* Texels a world unit of a wall in a place loaded whole: a 64 tile on a 256 face, as the stream's (wres.c). */
+#define WALL_DENSITY 0.25f
+
+static int g_all;
+
+/*
+ * Every picture of a place loaded whole by distance (texcache_upload, a
+ * place past the card): a wall at WALL_DENSITY, a flat at its width in
+ * texels over its width in the world, an entity's as marked.
+ */
+static void all_resident(const Level *level, int n, df_u32 need)
+{
+    const Scene *sc;
+    int added;
+    int i;
+
+    sc = &level->scene;
+    for (i = 0; i < sc->nsprites; i++) {
+        const Flat *fl;
+        const Image *img;
+        float d;
+
+        fl = &sc->sprites[i];
+        if (fl->slot >= n || fl->w < 1.0f || g_dyn[fl->slot] || !(img = level->images[fl->slot])) {
+            continue;
+        }
+        d = (float)img->width / fl->w;
+        if (d > g_dyn_density[fl->slot]) {
+            g_dyn_density[fl->slot] = d;
+        }
+    }
+    added = 0;
+    for (i = 0; i < n; i++) {
+        int cut;
+        float density;
+
+        if (g_side[i] < 1 && !g_dyn[i]) {
+            continue;
+        }
+        cut = g_dyn[i] ? 1 : g_cut[i];
+        density = cut ? (g_dyn_density[i] > 0.0f ? g_dyn_density[i] : 1.0f) : WALL_DENSITY;
+        added += chain_set(i, level->images[i], cut, density);
+    }
+    g_all = 1;
+    g_n = n;
+    g_nlive = added;
+    log_print(LOG_INFO, "textures: %u KB at full size past the card: %d pictures by distance",
+              (unsigned int)(need / 1024u), added);
+}
+
+int texcache_resident_all(void)
+{
+    return g_all;
+}
+
 int texcache_upload(const Level *level)
 {
     const Palette *pal;
@@ -149,6 +208,7 @@ int texcache_upload(const Level *level)
     df_u32 planned;
     df_u32 reserve;
     int ndyn;
+    int to_come;
     int i;
     int n;
 
@@ -210,22 +270,49 @@ int texcache_upload(const Level *level)
 
         full = 0;
         tiny = 0;
+        to_come = 0;
         for (i = 0; i < n; i++) {
             df_u32 b;
 
-            if (!g_dyn[i] || g_side[i] < 1) {
-                g_dyn[i] = 0;
+            if (!g_dyn[i]) {
+                continue;
+            }
+            tiny += TEXRES_MIN;
+            if (g_side[i] < 1) {
+                /* No picture yet: one to come, read when its creature comes near. */
+                to_come++;
                 continue;
             }
             if (glide_texture_bytes(g_side[i], g_cut[i], 0, &b)) {
                 full += b;
             }
-            tiny += TEXRES_MIN;
             g_side[i] = 0;
         }
-        reserve = full < ENTITY_ROOM ? full : ENTITY_ROOM;
+        /* With pictures to come their sizes are not known: the whole room for them. */
+        reserve = full < ENTITY_ROOM && !to_come ? full : ENTITY_ROOM;
         reserve = reserve < tiny ? tiny : reserve;
         room = room > reserve ? room - reserve : 0;
+    }
+    /*
+     * A place too large for the card at full size (Daggerfall's castle
+     * needs 5 MB, its flats 3.8 of it): every picture on the card by
+     * distance, as a streamed world's (docs/memory.md), sharp near and
+     * small far. Budgeted at load instead, its walls went to a quarter
+     * size everywhere, before any sprite gave a level.
+     */
+    {
+        df_u32 need;
+
+        need = 0;
+        for (i = 0; i < n; i++) {
+            if (g_side[i] > 0) {
+                need += card_bytes(g_side[i], g_cut[i]);
+            }
+        }
+        if (need > room && res_open(pal)) {
+            all_resident(level, n, need);
+            return 1;
+        }
     }
     planned = mip_budget(g_side, g_cut, n, room, card_bytes, g_drop);
     for (i = 0; i < n; i++) {
@@ -267,7 +354,7 @@ int texcache_upload(const Level *level)
 
         added = 0;
         for (i = 0; i < n; i++) {
-            if (g_dyn[i] && chain_set(i, level->images[i], 1, g_dyn_density[i])) {
+            if (g_dyn[i] && level->images[i] && chain_set(i, level->images[i], 1, g_dyn_density[i])) {
                 added++;
             }
         }
@@ -447,6 +534,7 @@ void texcache_stream_end(void)
     g_chain_heap = 0;
     g_stream = 0;
     g_res = 0;
+    g_all = 0;
 }
 
 int texcache_streamed(void)
@@ -457,6 +545,15 @@ int texcache_streamed(void)
 int texcache_resident(void)
 {
     return g_res;
+}
+
+int texcache_resident_add(int slot, const Image *img, int cutout, float density)
+{
+    if (!g_res || g_stream || slot < 0 || slot >= TEX_SLOTS || !img) {
+        return 0;
+    }
+    g_dyn[slot] = 1;
+    return chain_set(slot, img, cutout, density);
 }
 
 int texcache_stream_set(int slot, const Image *img, int cutout, float density)
@@ -544,7 +641,7 @@ df_u32 texcache_stream_ram(void)
 
 void texcache_bind(int slot)
 {
-    if (g_stream || (g_res && slot >= 0 && slot < TEX_SLOTS && g_dyn[slot])) {
+    if (g_stream || g_all || (g_res && slot >= 0 && slot < TEX_SLOTS && g_dyn[slot])) {
         df_u32 h;
 
         if (texres_handle(slot, &h)) {

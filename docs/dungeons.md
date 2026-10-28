@@ -53,7 +53,7 @@ An RDB flat's point is its centre, an RMB flat's its base: `paint` lifts flats b
 
 `rdb_load` keeps an RDB block's lights (object type 2) as `Light` records, and `world.c` shifts and appends them with the block's models and flats, up to 8192 for a place; the hold has 71. RMB blocks have none; for an outdoor place `world.c` makes one per `TEXTURE.210` flat after `paint`, and gives the place its sky (`docs/daylight.md`). The record layout is in `docs/lighting.md`.
 
-`rdb_load` keeps each editor marker (archive 199) as a `Marker`: where it stands, its record, and the bytes of its flat resource after the picture, as Daggerfall Unity's `RdbFlatResource` reads them: `flags` (`u16` at `res + 2`), `id` (FactionOrMobileId, the `u16` at `res + 4`: the magnitude byte, then the sound byte), `action` (`res + 10`). Record 10's sound byte is its block's water level, 8 units a step down (0 none); records 15 and 16 are a random and a fixed creature (`docs/entities.md`).
+`rdb_load` keeps each editor marker (archive 199) as a `Marker`: where it stands, its record, and the bytes of its flat resource after the picture, as Daggerfall Unity's `RdbFlatResource` reads them: `flags` (`u16` at `res + 2`), `id` (FactionOrMobileId, the `u16` at `res + 4`: the magnitude byte, then the sound byte), `action` (`res + 10`). Record 10's sound byte is its block's water level, 8 units a step down (0 none; the world's y is 8 × the byte, `docs/water.md`); records 15 and 16 are a random and a fixed creature (`docs/entities.md`).
 
 `world_load` fails when the entrance block has no marker record 10. That marker is the new-game start in `S0000999.RDB` at about (1135, 1559, 496), yaw 0, pitch 0.
 

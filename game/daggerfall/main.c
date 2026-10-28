@@ -68,7 +68,8 @@ int gfall_main(void *instance)
     music_startup();
     world_start(world, &x, &y, &z, &yaw, &pitch);
     camera_set(&cam, x, y, z, yaw, pitch);
-    /* The hold's song and its creatures' sharp copies before the first frame. */
+    /* The creatures near the start read, then the hold's song and their sharp copies, before the first frame. */
+    world_creatures_step(world, &cam, 2048.0f, 0.0f);
     gfx_prime(&level, &cam);
     console_set_camera(&cam);
     input_begin(win_hwnd());
@@ -79,6 +80,10 @@ int gfall_main(void *instance)
             break;
         }
         player_tick(&cam, &in);
+        /* The rest of the hold's creatures, as they come near, a little a frame (docs/entities.md). */
+        if (!gfx_paused()) {
+            world_creatures_step(world, &cam, 0.0f, 2.0f);
+        }
         gfx_frame(&cam, &level);
     }
     input_end();

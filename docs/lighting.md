@@ -68,6 +68,8 @@ A flame's light wavers. The records do not say which lights are flames; the pict
 
 A decal is cut only where the light can see it: the line from the light to the decal's middle, or to one of four of its corners drawn a fifth of the way in, must not pass through a model on the way (`seen`, `light_reaches`). Without it a light reached through anything inside its reach. A house's ceiling lamps, three storeys of them 129 units apart, each lit all three floors: the alchemist in Daggerfall's `CUSTAA01.RMB` (building 10) cut 2771 decals from 9 lamps and drew 17 fps in LEVELFALL, against 52 with `lights 0`. Seeing only its own storey, it cuts 509. The hold's 71 lights went from 2282 to 1667, the ones that lit the next room through a wall; the Ashwing farmhouse from 1053 to 268.
 
+`light_build` counts the decals, allocates them, then cuts them. The count skips the rays (`seen` runs only when filling), so it is an upper bound (the castle counts 7710 for its 5238) and the rays, three quarters of the cut, are cast once: before, the count cast them too, and the castle's lights were 0.9 s of its load on the 233 (the host's time ×40), 0.57 s now, the same decals.
+
 The test runs once, at load, against the models the light reaches (the ones whose box is within its reach, `g_near`), with their triangles from both sides (`instance_ray`, the use key's test). A model that moves does not shade: it is not in that list. A face partly behind something keeps its whole decal when any one of the five lines is clear. Sprites and moving models still take their colour from every light in reach, through walls (`light_point`).
 
 

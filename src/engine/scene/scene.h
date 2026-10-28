@@ -123,6 +123,13 @@ typedef struct Mover {
     /* Played from the model when it starts toward the end, and back. 0 for none. */
     const SoundClip *go_sound;
     const SoundClip *back_sound;
+    /*
+     * 1 for a teleport (docs/interact.md): it does not move; used, or a
+     * chain reaching it, sends the player's eye to to_x, to_y, to_z,
+     * facing to_yaw (Camera.yaw), each time.
+     */
+    df_u8 teleport;
+    float to_x, to_y, to_z, to_yaw;
     /* The engine's. */
     df_u8 state;
     float t;
@@ -163,6 +170,13 @@ typedef struct Usable {
     int tag;
     /* The game's word for it ("door", "exit"), for useview and uselist. */
     const char *label;
+    /*
+     * 1: the body walking into it uses it (a collision trigger: a
+     * teleporter, a pressure plate), on the frame it comes in. A model's
+     * box, as it stands now, grown by the body's radius. With reach 0 it
+     * is not used by hand at all.
+     */
+    df_u8 touch;
 } Usable;
 
 /*
@@ -242,7 +256,40 @@ typedef struct Scene {
     /* What walks about on its own: the game's, read to draw (docs/entities.md). 0 for none. */
     const struct Entity *entities;
     int nentities;
+    /* Where the place is flooded, and to what level (docs/water.md). 0 for none. */
+    const struct Water *water;
+    int nwater;
 } Scene;
+
+/*
+ * Water (docs/water.md): the place flooded to y over a rectangle of the
+ * floor plan, x0..x1 by z0..z1. The engine draws its surface as a
+ * translucent layer of color (0xRRGGBB) and, with the eye under it,
+ * closes the fog in to that colour; it says how deep a body stands in
+ * it (scene_water_body). What water does to the player (swimming,
+ * breathing) is the game's.
+ */
+typedef struct Water {
+    float x0, z0, x1, z1;
+    float y;
+    df_u32 color;
+} Water;
+
+/* How deep a body stands in water: dry, its feet in, its waist in, its eye under. */
+enum {
+    WATER_DRY,
+    WATER_FEET,
+    WATER_WAIST,
+    WATER_HEAD
+};
+
+/* The highest water surface over x, z: 1, its level and colour (either may be 0); 0 for none. */
+int scene_water_at(const Scene *scene, float x, float z, float *y, df_u32 *color);
+/*
+ * A body standing with its eye at x, eye_y, z (the walker's: its feet
+ * WALK_EYE below, its waist half WALK_HEIGHT above them): WATER_*.
+ */
+int scene_water_body(const Scene *scene, float x, float eye_y, float z);
 
 void instance_set_rotation(Instance *in, float rx, float ry, float rz);
 void instance_point(const Instance *in, float lx, float ly, float lz,

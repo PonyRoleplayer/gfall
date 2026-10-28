@@ -72,6 +72,12 @@ int mover_busy(const Scene *scene, int i);
 /* Move every mover on by secs and write its model's pose. */
 void mover_step(const Scene *scene, float secs);
 /*
+ * A teleport a use or a chain reached since the last call (Mover.teleport):
+ * 1 and where the player's eye goes, once; 0 for none. draw_frame takes
+ * it for the console's camera, and the walker starts again from there.
+ */
+int interact_teleport(float *x, float *y, float *z, float *yaw);
+/*
  * The world box mover i's model sweeps from start to end, for the cull
  * and the collision grid, which read Scene.bounds: the game writes it
  * there once, before the first frame.
@@ -114,5 +120,18 @@ int interact_locks(void);
 #define INTERACT_VIEW_ON 512
 void interact_set_view(int units);
 int interact_view(void);
+/*
+ * The debug picture of triggers (trigview): within this many world
+ * units, every usable that starts a mover, every passage, and every
+ * mover only a chain starts; how each is set off (by hand, walked
+ * into: its touch volume, red while the body is in it), what it does
+ * (a teleport with a line to its target, a door and its lock, a turn,
+ * a slide, a relay; the mover it starts next), and the game's own
+ * numbers for it (Usable.what, .tag). 0 (default) is off; 1 to 63 is 512.
+ */
+void interact_set_trigger_view(int units);
+int interact_trigger_view(void);
+/* The touch usable the body is in now (Usable.touch), -1 for none. */
+int interact_touching(void);
 
 #endif

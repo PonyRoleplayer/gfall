@@ -35,6 +35,9 @@
 /* Action flags (DFBlock.RdbActionFlags) and triggers (RdbTriggerFlags). */
 #define ACT_TRANSLATE 1
 #define ACT_ROTATE 8
+#define ACT_TELEPORT 14
+#define TRIG_COLLIDE1 1
+#define TRIG_COLLIDE3 3
 #define TRIG_DIRECT 2
 #define TRIG_DIRECT6 6
 #define TRIG_MULTI 8
@@ -321,6 +324,55 @@ static void add_passages(DoorBuild *b, int i)
     }
 }
 
+/*
+ * A teleport's target (DFU's Teleport: the player to its NextObject's
+ * position and turn): the object at the action's next offset in the
+ * same block, an editor marker as a rule (a flat: no turn, so facing
+ * +z), or a model (facing its own +z). It ends its chain. With none
+ * found it is no teleport: it passes nothing on, as before.
+ */
+/*
+ * A mover's usable carries its action record's numbers, for trigview:
+ * what the action's kind (RdbActionFlags: 1 slide, 8 turn, 14 teleport),
+ * tag its trigger (RdbTriggerFlags: 1, 3 walked into; 2, 6, 8 by hand).
+ */
+static void act_numbers(Usable *u, const ModelAct *a)
+{
+    u->what = (int)a->flags;
+    u->tag = (int)(a->trigger & 15);
+}
+
+static void teleport_target(DoorBuild *b, int i, Mover *m)
+{
+    const ModelAct *a;
+    int j;
+
+    a = &b->act[i];
+    for (j = 0; j < b->nmark; j++) {
+        if (b->mark_block[j] == b->block[i] && b->mark[j].pos == (df_u32)a->next) {
+            m->to_x = b->mark[j].x;
+            m->to_y = b->mark[j].y;
+            m->to_z = b->mark[j].z;
+            m->to_yaw = 0.0f;
+            m->teleport = 1;
+            return;
+        }
+    }
+    for (j = 0; j < b->ninst; j++) {
+        if (b->block[j] == b->block[i] && b->act[j].pos == (df_u32)a->next) {
+            float fx, fy, fz;
+
+            m->to_x = b->inst[j].x;
+            m->to_y = b->inst[j].y;
+            m->to_z = b->inst[j].z;
+            instance_point(&b->inst[j], 0.0f, 0.0f, 1.0f, &fx, &fy, &fz);
+            m->to_yaw = df_atan2(fx - b->inst[j].x, fz - b->inst[j].z);
+            m->teleport = 1;
+            return;
+        }
+    }
+}
+
 int doors_build(DoorBuild *b)
 {
     int *mover_of;
@@ -342,6 +394,30 @@ int doors_build(DoorBuild *b)
 
         a = &b->act[i];
         mover_of[i] = -1;
+        /*
+         * A door whose action is a teleport (DFU gives a door its action
+         * record): a portal. Used, it does not swing onto the wall behind
+         * it; it sends the player to its next object (below).
+         */
+        if (hinged_door(a, b->place) && a->flags == ACT_TELEPORT) {
+            m = new_mover(b, i);
+            if (!m) {
+                continue;
+            }
+            /* 2 until its target is found (teleport_target); then 1. */
+            m->teleport = 2;
+            m->door = 1;
+            m->lock = start_lock(a->trigger);
+            m->go_sound = sndfile_clip(SND_DUNGEON_OPEN);
+            mover_of[i] = b->nmover - 1;
+            u = new_use(b, USE_MOVER, "door", DOOR_REACH);
+            if (u) {
+                u->model = i;
+                u->mover = mover_of[i];
+                act_numbers(u, a);
+            }
+            continue;
+        }
         if (hinged_door(a, b->place)) {
             m = new_mover(b, i);
             if (!m) {
@@ -363,6 +439,7 @@ int doors_build(DoorBuild *b)
             if (u) {
                 u->model = i;
                 u->mover = mover_of[i];
+                act_numbers(u, a);
             }
             continue;
         }
@@ -374,15 +451,28 @@ int doors_build(DoorBuild *b)
                 continue;
             }
             action_motion(m, a);
+            m->teleport = (df_u8)(a->flags == ACT_TELEPORT ? 2 : 0);
             mover_of[i] = b->nmover - 1;
-            /* Used by hand; the rest start only from the one before them. */
+            /*
+             * Used by hand (2, 6, 8, 9), or by walking into it (1, 3, 9: a
+             * teleporter, a plate); the rest start only from the one before them.
+             */
             trig = (int)(a->trigger & 15);
-            if (trig == TRIG_DIRECT || trig == TRIG_DIRECT6 || trig == TRIG_MULTI
-                || trig == TRIG_COLLIDE9) {
-                u = new_use(b, USE_MOVER, "action", DOOR_REACH);
-                if (u) {
-                    u->model = i;
-                    u->mover = mover_of[i];
+            {
+                int hand;
+                int touch;
+
+                hand = trig == TRIG_DIRECT || trig == TRIG_DIRECT6 || trig == TRIG_MULTI
+                    || trig == TRIG_COLLIDE9;
+                touch = trig == TRIG_COLLIDE1 || trig == TRIG_COLLIDE3 || trig == TRIG_COLLIDE9;
+                if (hand || touch) {
+                    u = new_use(b, USE_MOVER, "action", hand ? DOOR_REACH : 0.0f);
+                    if (u) {
+                        u->model = i;
+                        u->mover = mover_of[i];
+                        u->touch = (df_u8)touch;
+                        act_numbers(u, a);
+                    }
                 }
             }
             continue;
@@ -398,11 +488,33 @@ int doors_build(DoorBuild *b)
         if (mover_of[i] < 0 || a->next < 0 || !a->flags) {
             continue;
         }
+        if (b->mover[mover_of[i]].teleport) {
+            teleport_target(b, i, &b->mover[mover_of[i]]);
+            continue;
+        }
         for (j = 0; j < b->ninst; j++) {
             if (b->block[j] == b->block[i] && b->act[j].pos == (df_u32)a->next && mover_of[j] >= 0) {
                 b->mover[mover_of[i]].next = mover_of[j];
                 break;
             }
+        }
+    }
+    /*
+     * A teleport whose target was not found is none: a door swings as
+     * any other, an action passes nothing on, as before.
+     */
+    for (i = 0; i < b->nmover; i++) {
+        Mover *m;
+
+        m = &b->mover[i];
+        if (m->teleport != 2) {
+            continue;
+        }
+        m->teleport = 0;
+        if (m->door) {
+            m->ry = DOOR_TURN;
+            m->secs = DOOR_SECS;
+            m->back_sound = sndfile_clip(SND_DUNGEON_CLOSE);
         }
     }
     /* People, by their flats. */

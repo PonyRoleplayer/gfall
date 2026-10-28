@@ -243,13 +243,15 @@ static df_u8 *g_part;
 static df_u32 g_part_size;
 static df_u32 g_part_at;
 static VfsFile *g_part_f;
+/* 1 when the pieces go into g_heap (under the cap); else the current heap, which cannot free them one by one. */
+static int g_part_in_heap;
 
 static void part_drop(void)
 {
     if (g_part_f) {
         vfs_close(g_part_f);
     }
-    if (g_part && g_heap) {
+    if (g_part && g_heap && g_part_in_heap) {
         mem_heap_free(g_heap, g_part);
     }
     g_part_f = 0;
@@ -262,8 +264,8 @@ int texture_file_step(int file)
     char name[16];
     df_u32 n;
 
-    /* Not under the cap (a place loaded whole reads at load), cached, or no such file: nothing to do. */
-    if (!g_limit || file <= 1 || file >= FILE_CACHE || g_file[file]) {
+    /* Cached, or no such file: nothing to do. */
+    if (file <= 1 || file >= FILE_CACHE || g_file[file]) {
         return 1;
     }
     if (g_part_file != file) {
@@ -276,12 +278,16 @@ int texture_file_step(int file)
             return 1;
         }
         g_part_size = vfs_size(g_part_f);
-        if (!g_heap) {
+        /* Under the cap, into the cache's own heap; a place loaded whole, into its heap, as vfs_read would. */
+        g_part_in_heap = g_limit != 0;
+        if (g_part_in_heap && !g_heap) {
             g_heap = mem_heap_new();
         }
-        was = mem_heap_use(g_heap);
+        was = g_part_in_heap ? mem_heap_use(g_heap) : 0;
         g_part = g_part_size ? (df_u8 *)mem_alloc(g_part_size) : 0;
-        mem_heap_use(was);
+        if (g_part_in_heap) {
+            mem_heap_use(was);
+        }
         if (!g_part) {
             part_drop();
             return 1;
@@ -304,7 +310,7 @@ int texture_file_step(int file)
     g_part_f = 0;
     g_file[file] = g_part;
     g_file_size[file] = g_part_size;
-    g_in_heap[file] = 1;
+    g_in_heap[file] = (df_u8)g_part_in_heap;
     g_used_at[file] = ++g_stamp;
     g_part = 0;
     g_part_file = -1;

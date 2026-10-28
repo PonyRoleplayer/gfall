@@ -73,7 +73,7 @@ Sprites are point sampled (`spritepoint`, on by default), crisp texels as Dagger
 
 ### With the stream
 
-The people are local to the stream's frame: the origin's move moves them (`people_shift`, from the stream's shift). `people_update(cam, secs)` runs once a frame before the frame draws (LEVELFALL's stream hook), after the stream's update. LEVELFALL's place panel shows how many walk now.
+The people are local to the stream's frame: the origin's move moves them (`people_shift`, from the stream's shift). `people_update(cam, secs)` runs once a frame before the frame draws (LEVELFALL's stream hook), after the stream's update. Not while the world stands still (`gfx_paused`: the console is open, and the frame runs none of the world then): before, the people walked on behind the console and stood somewhere else when it shut. The stream's loading goes on under it. LEVELFALL's place panel shows how many walk now.
 
 ## A dungeon's creatures (game)
 
@@ -99,6 +99,8 @@ Walking records 0 to 4 at 6 frames a second (10 for a flyer); standing records 1
 A record whose frames do not fit one 256 sheet stays on its first frame: 51 of the 725 creature records (the zombie's, the liches', the scorpion's, the dreugh's and the lamia's walks, a few views of the mages and spellswords). Half-size cells would fit them, at half the sharpness.
 
 On the card they are not sent at load: the hold's creatures wear 100 pictures, 8.7 MB at full size. They go up by distance from a reserve the load's budget leaves (`docs/memory.md`).
+
+Nor are they read at load. A creature's archive is its whole TEXTURE file, and a class's is 300 to 440 KB, of which it wears ten records: the castle's creatures were 6 MB of its 7.5 MB of files and 2.3 s of its load on the 233 (the host's time ×40). At load each creature's picture slots are only reserved (`reserve_image`: its archive and record, no picture), and it is not drawn (`live` 0). `world_creatures_step(world, cam, radius, budget)` reads them, the nearest creature first: its file a 32 KB piece a call (`texture_file_step`), then each picture decoded, laid out as a sheet or padded, and put on the card by distance (`texcache_resident_add`); with all of them read, each view gets its size, it stands on its floor, and it is drawn. LEVELFALL and GFALL read those within a block (2048) of the landing before the first frame, then the rest a little a frame, in what the frame leaves (LEVELFALL's stream budget; GFALL 2 ms), while the world is not paused. The castle reads 38 of its 128 at the door (0.65 s on the 233, 3.4 MB); the world's own load went from 3.0 s to 0.7 s. The residency keeps its 512 KB for creatures still to come, whose sizes it cannot know yet.
 
 ### Standing
 

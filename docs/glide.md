@@ -98,3 +98,7 @@ Not done, the largest saving left on the CPU's side: a corner of an ARCH3D model
 ## Console
 
 `wbuffer`, `planar`, and `mipmap` switch the choices above at run time. `texmem` reports the chains and how many pictures the budget shrank. `vsync`, `stats`, and `glinfo` show what they cost. `glinfo` names the depth buffer and whether planar polygons are in use. See `docs/console.md`.
+
+## Water
+
+`glide_water` is the water's surface (`docs/water.md`): the constant colour's RGB and alpha alone (no texel fetched, no vertex colour), blended source alpha over the frame, depth tested but not written so what is under it still shows, fog left as the scene's. Off restores the depth write, the alpha state (`alpha_apply`) and the textured colour path.

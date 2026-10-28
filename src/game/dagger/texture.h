@@ -35,13 +35,13 @@ void texture_cache_clear(void);
 void texture_cache_limit(df_u32 bytes);
 df_u32 texture_cache_bytes(void);
 /*
- * Under the cap (a streamed world): the next TEXTURE_FILE_PIECE bytes
- * of TEXTURE.file read into the cache, 0; 1, reading nothing, when the
- * file is whole there already (or cannot be read, or no cap is set:
- * then a load reads it at once).
- * One file at a time; asking for another drops the first's pieces. A
- * stream's step reads a file a piece a call, never 80 KB to 300 KB of
- * the 233's disk in one frame (docs/streaming.md).
+ * The next TEXTURE_FILE_PIECE bytes of TEXTURE.file read into the
+ * cache, 0; 1, reading nothing, when the file is whole there already
+ * (or cannot be read). Under the cap (a streamed world) into the cache's
+ * own heap; else into the current one, a place's. One file at a time;
+ * asking for another drops the first's pieces. A step reads a file a
+ * piece a call, never 80 KB to 440 KB of the 233's disk in one frame
+ * (docs/streaming.md; a place's creatures, docs/entities.md).
  */
 #define TEXTURE_FILE_PIECE 32768u
 int texture_file_step(int file);

@@ -103,6 +103,8 @@ A variable prints its value when typed alone, and takes a new one as an argument
 | `prof` | Where the frame's time goes, by stage: see `docs/profile.md`. |
 | `date`, `season` | The calendar and the season a town is drawn in: see `docs/daylight.md`. |
 | `useview`, `uselist`, `locks` | What can be used, and the doors' locks: see `docs/interact.md`. |
+| `water` | Water's surface drawn, and the eye under it in its colour (on; alone it flips); 0 draws a place as if dry. See `docs/water.md`. |
+| `trigview` | The triggers within this many units (0 off, 1 is 512): how each goes off, what it does, a teleport's target, the game's numbers. See `docs/interact.md`. |
 
 `autoexec.cfg` beside the program runs on the first frame, when the device is open, if it exists. A missing file is silent, except for a debug line. For example:
 
@@ -142,3 +144,7 @@ The read is one 640 by 480 picture at 16 bits, allocated with `mem_keep` on the 
 LEVELFALL also flips `cull`, `occlude`, `covers`, `faces`, and `fog` with F5 to F9, without opening the console, so the frame changes as you watch, and its `draw` panel uses these command names. Its F12 also writes a bookmark to `levelfall.log`. See `docs/viewers.md`.
 
 `fov`, `cull` and `occlude` change the cull in `docs/culling.md`. Pictures are one full image each. See `docs/memory.md`.
+
+## The world stands still
+
+While the console is open `draw_frame` runs none of the world: the clock, the weather, the walker, the doors and levers, the flames' frames. `gfx_paused` says so to the game, whose own simulation (LEVELFALL's townspeople, `docs/entities.md`) skips its step too. Loading (the stream) does not stand still: it changes nothing the player sees until the console shuts.

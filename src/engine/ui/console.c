@@ -1399,6 +1399,11 @@ static void commands(void)
     cmd_add("uselist", c_uselist, "[n]", "what can be used here by kind, and the n nearest (10)");
     cmd_var("useview", interact_view, interact_set_view, 0, INTERACT_VIEW_MAX,
             "boxes and words for what can be used within this many units; 0 is off, 1 is 512");
+    cmd_var("water", draw_water, draw_set_water, 0, 1,
+            "water's surface drawn, and the eye under it in its colour; 0 draws a place as if dry");
+    cmd_toggles("water");
+    cmd_var("trigview", interact_trigger_view, interact_set_trigger_view, 0, INTERACT_VIEW_MAX,
+            "triggers within this many units: how each goes off, what it does, a teleport's target; 0 is off, 1 is 512");
     cmd_var("locks", interact_locks, interact_set_locks, 0, 1,
             "locked doors stay shut; 0 opens them as if unlocked");
     cmd_var("sound", sound_on, sound_set_on, 0, 1, "sound effects");

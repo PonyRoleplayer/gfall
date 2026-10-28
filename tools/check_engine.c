@@ -2022,6 +2022,147 @@ static int take_use(const Scene *scene, const Usable *u, int index)
 }
 
 /* Using things and the models that move (docs/interact.md). */
+/*
+ * Teleports (docs/interact.md): a pad walked into sends the eye to its
+ * target, once as the body comes in, not each frame it stays; a pad at
+ * the far end does not send it straight back; a hand use of one does
+ * the same; not in reach of the hand, a walk-into pad is never aimed at.
+ */
+static void check_teleport(void)
+{
+    static const float px[4] = { -40.0f, 40.0f, 40.0f, -40.0f };
+    static const float py[4] = { 0.0f, 0.0f, 80.0f, 80.0f };
+    static const float pz[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    Mesh *pad;
+    Instance models[2];
+    Bound bounds[2];
+    Mover movers[2];
+    Usable uses[2];
+    Scene scene;
+    Camera cam;
+    float x, y, z, yaw;
+    int k;
+    int ok;
+
+    pad = fan_mesh(px, py, pz, 4, 0.0f, 0.0f, -1.0f);
+    check_expect(pad != 0, "the teleport pad was not allocated");
+    if (!pad) {
+        return;
+    }
+    /* Pad 0 at z 100 sends to (1000, 68, 1000) facing +x; pad 1 stands there and sends back. */
+    place_at(&models[0], pad, 0.0f, 0.0f, 100.0f);
+    place_at(&models[1], pad, 1000.0f, 0.0f, 1000.0f);
+    for (k = 0; k < 2; k++) {
+        instance_world_box(&models[k], &bounds[k]);
+    }
+    mem_zero(movers, sizeof(movers));
+    mem_zero(uses, sizeof(uses));
+    for (k = 0; k < 2; k++) {
+        movers[k].inst = &models[k];
+        movers[k].model = k;
+        movers[k].next = -1;
+        movers[k].teleport = 1;
+        uses[k].kind = USE_MOVER;
+        uses[k].model = k;
+        uses[k].sprite = -1;
+        uses[k].mover = k;
+        uses[k].touch = 1;
+    }
+    movers[0].to_x = 1000.0f;
+    movers[0].to_y = 68.0f;
+    movers[0].to_z = 1000.0f;
+    movers[0].to_yaw = DF_TAU * 0.25f;
+    movers[1].to_x = 0.0f;
+    movers[1].to_y = 68.0f;
+    movers[1].to_z = 100.0f;
+    mover_init(movers, 2);
+    mem_zero(&scene, sizeof(scene));
+    scene.models = models;
+    scene.bounds = bounds;
+    scene.nmodels = 2;
+    scene.usables = uses;
+    scene.nusables = 2;
+    scene.movers = movers;
+    scene.nmovers = 2;
+    interact_teleport(&x, &y, &z, &yaw);
+    /* Walking up to the pad: nothing until the body is in its box. */
+    camera_set(&cam, 0.0f, 68.0f, 0.0f, 0.0f, 0.0f);
+    interact_frame(&scene, &cam, 0.016f, 0);
+    ok = !interact_teleport(&x, &y, &z, &yaw);
+    camera_set(&cam, 0.0f, 68.0f, 90.0f, 0.0f, 0.0f);
+    interact_frame(&scene, &cam, 0.016f, 0);
+    ok = ok && interact_teleport(&x, &y, &z, &yaw) && x == 1000.0f && z == 1000.0f && y == 68.0f
+        && yaw == DF_TAU * 0.25f;
+    check_expect(ok, "walking into a teleport pad did not send the eye to its target");
+    /* Taken: the eye is on the far pad, which does not send it back; it stays there. */
+    camera_set(&cam, x, y, z, yaw, 0.0f);
+    ok = 1;
+    for (k = 0; k < 5; k++) {
+        interact_frame(&scene, &cam, 0.016f, 0);
+        ok = ok && !interact_teleport(&x, &y, &z, &yaw);
+    }
+    check_expect(ok, "a teleport landed on another pad, which sent it back, or went again each frame");
+    /* trigview draws the pad the body stands in red: the far one now. */
+    check_expect(interact_touching() == 1, "the pad the body stands in is not the one touched");
+    /* Off it and on again: then it sends back. */
+    camera_set(&cam, 1000.0f, 68.0f, 800.0f, 0.0f, 0.0f);
+    interact_frame(&scene, &cam, 0.016f, 0);
+    camera_set(&cam, 1000.0f, 68.0f, 1000.0f, 0.0f, 0.0f);
+    interact_frame(&scene, &cam, 0.016f, 0);
+    check_expect(interact_teleport(&x, &y, &z, &yaw) && x == 0.0f && z == 100.0f,
+                 "stepping onto the far pad again did not send the eye back");
+    /* By hand: a pad with no reach is never aimed at; given one, a use sends the eye. */
+    camera_set(&cam, 0.0f, 40.0f, 30.0f, 0.0f, 0.0f);
+    interact_frame(&scene, &cam, 0.016f, 1);
+    ok = !interact_teleport(&x, &y, &z, &yaw);
+    uses[0].reach = 128.0f;
+    interact_frame(&scene, &cam, 0.016f, 1);
+    ok = ok && interact_teleport(&x, &y, &z, &yaw) && x == 1000.0f;
+    check_expect(ok, "a teleport by hand went with no reach, or not with one");
+}
+
+/*
+ * Water (docs/water.md): a body's depth by its eye, the walker's heights
+ * (feet WALK_EYE under the eye, waist half WALK_HEIGHT over the feet);
+ * dry off the rectangle; where two meet, the higher wins.
+ */
+static void check_water(void)
+{
+    Water w[2];
+    Scene scene;
+    float y;
+    df_u32 c;
+    int ok;
+
+    mem_zero(w, sizeof(w));
+    w[0].x0 = 0.0f;
+    w[0].x1 = 1000.0f;
+    w[0].z0 = 0.0f;
+    w[0].z1 = 1000.0f;
+    w[0].y = 100.0f;
+    w[0].color = 0x102030u;
+    w[1] = w[0];
+    w[1].x0 = 800.0f;
+    w[1].x1 = 2000.0f;
+    w[1].y = 300.0f;
+    w[1].color = 0x405060u;
+    mem_zero(&scene, sizeof(scene));
+    scene.water = w;
+    scene.nwater = 2;
+    ok = scene_water_body(&scene, 500.0f, 100.0f + WALK_EYE + 1.0f, 500.0f) == WATER_DRY
+        && scene_water_body(&scene, 500.0f, 100.0f + WALK_EYE - 1.0f, 500.0f) == WATER_FEET
+        && scene_water_body(&scene, 500.0f, 100.0f + WALK_EYE - WALK_HEIGHT * 0.5f - 1.0f, 500.0f) == WATER_WAIST
+        && scene_water_body(&scene, 500.0f, 99.0f, 500.0f) == WATER_HEAD
+        && scene_water_body(&scene, -10.0f, 0.0f, 500.0f) == WATER_DRY;
+    check_expect(ok, "a body's depth in water is not dry, feet, waist, head by its eye");
+    ok = scene_water_at(&scene, 900.0f, 500.0f, &y, &c) && y == 300.0f && c == 0x405060u
+        && scene_water_at(&scene, 100.0f, 500.0f, &y, &c) && y == 100.0f
+        && !scene_water_at(&scene, 3000.0f, 500.0f, &y, &c);
+    scene.nwater = 0;
+    ok = ok && !scene_water_at(&scene, 100.0f, 500.0f, &y, &c);
+    check_expect(ok, "the water over a point is not the highest there, or there is some where none is");
+}
+
 static void check_interact(void)
 {
     static const float qx[4] = { 0.0f, 40.0f, 40.0f, 0.0f };
@@ -2478,6 +2619,8 @@ void check_engine(void)
     check_weather();
     check_collision();
     check_interact();
+    check_teleport();
+    check_water();
     check_prof();
     check_texres();
     check_entities();

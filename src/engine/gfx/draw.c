@@ -2162,6 +2162,335 @@ static void draw_use_view(const Camera *cam, const Basis *basis, const Scene *sc
     }
 }
 
+/*
+ * Water (docs/water.md). 1 (default): its surface drawn, and the eye
+ * under it sees through the water's colour, the fog closed in. 0: not
+ * drawn, as if dry; the game still knows it is there.
+ */
+static int g_water = 1;
+
+void draw_set_water(int on)
+{
+    g_water = on ? 1 : 0;
+}
+
+int draw_water(void)
+{
+    return g_water;
+}
+
+/* The surface's opacity, and the fog under it: clear to UNDER_NEAR, solid at UNDER_FAR (16 m). */
+#define WATER_ALPHA 150
+#define UNDER_NEAR 32.0f
+#define UNDER_FAR 640.0f
+
+/*
+ * Each water rectangle in view as one flat polygon at its level, from
+ * above or below, after everything solid and every sprite: under it they
+ * show through its colour, over it they draw in front.
+ */
+static void draw_water_pass(const Camera *cam, const Basis *basis, const Scene *scene)
+{
+    int i;
+
+    if (!g_water || !scene->water || scene->nwater < 1) {
+        return;
+    }
+    for (i = 0; i < scene->nwater; i++) {
+        const Water *w;
+        Vtx v[4];
+        float cx, cz, ex, ez, dx, dz;
+
+        w = &scene->water[i];
+        cx = (w->x0 + w->x1) * 0.5f;
+        cz = (w->z0 + w->z1) * 0.5f;
+        ex = (w->x1 - w->x0) * 0.5f;
+        ez = (w->z1 - w->z0) * 0.5f;
+        /* Its nearest point within the visible far, and its box in the frustum. */
+        dx = df_absf(cam->x - cx) - ex;
+        dz = df_absf(cam->z - cz) - ez;
+        dx = dx > 0.0f ? dx : 0.0f;
+        dz = dz > 0.0f ? dz : 0.0f;
+        if (dx * dx + dz * dz > g_limit * g_limit || !scene_box_visible(cx, w->y, cz, ex, 1.0f, ez)) {
+            continue;
+        }
+        flat_corner(cam, basis, w->x0, w->y, w->z0, 0.0f, 0.0f, &v[0]);
+        flat_corner(cam, basis, w->x1, w->y, w->z0, 0.0f, 0.0f, &v[1]);
+        flat_corner(cam, basis, w->x1, w->y, w->z1, 0.0f, 0.0f, &v[2]);
+        flat_corner(cam, basis, w->x0, w->y, w->z1, 0.0f, 0.0f, &v[3]);
+        glide_water(1, w->color, WATER_ALPHA);
+        emit_poly(v, 4, 1.0f, 1.0f, 255.0f, 255.0f, 255.0f);
+    }
+    glide_water(0, 0, 0);
+}
+
+/*
+ * `trigview`: the triggers within interact_trigger_view() units (see
+ * interact.h). One entry each: a usable that starts a mover or leads
+ * somewhere, or a mover only a chain starts. The nearest TRIG_VIEW_COUNT.
+ */
+#define TRIG_VIEW_COUNT 32
+#define TRIG_MOVERS 4096
+
+typedef struct TrigPick {
+    int use;
+    int mover;
+    float d2;
+    float mid[3];
+} TrigPick;
+
+/* The eight corners of a box about c, half sizes e. */
+static void box_corners(const float *c, const float *e, float (*out)[3])
+{
+    int k;
+
+    for (k = 0; k < 8; k++) {
+        out[k][0] = c[0] + ((k & 1) ? e[0] : -e[0]);
+        out[k][1] = c[1] + ((k & 2) ? e[1] : -e[1]);
+        out[k][2] = c[2] + ((k & 4) ? e[2] : -e[2]);
+    }
+}
+
+static void trig_box(const Camera *cam, const Basis *basis, float (*c)[3], float r, float g, float b)
+{
+    static const int edges[12][2] = {
+        {0, 1}, {2, 3}, {4, 5}, {6, 7}, {0, 2}, {1, 3},
+        {4, 6}, {5, 7}, {0, 4}, {1, 5}, {2, 6}, {3, 7}
+    };
+    int e;
+
+    for (e = 0; e < 12; e++) {
+        view_edge(cam, basis, c[edges[e][0]], c[edges[e][1]], r, g, b);
+    }
+}
+
+/* What a mover does, in a few words: a teleport and its target, a door and its lock, a turn, a slide, a relay; what it starts next. */
+static void mover_words(const Mover *m, char *line, int cap)
+{
+    int n;
+
+    if (m->teleport) {
+        n = log_format(line, cap, "teleport to %d %d %d", df_iround(m->to_x), df_iround(m->to_y),
+                       df_iround(m->to_z));
+    } else {
+        n = log_format(line, cap, "%s%s%s",
+                       m->door ? "door" : (m->rx != 0.0f || m->ry != 0.0f || m->rz != 0.0f ? "turn"
+                                           : (m->tx != 0.0f || m->ty != 0.0f || m->tz != 0.0f ? "slide"
+                                                                                               : "relay")),
+                       m->once ? " once" : "",
+                       m->state == MOVER_START ? "" : (m->state == MOVER_END ? " at end" : " moving"));
+    }
+    if (m->lock > 0) {
+        n += log_format(line + n, cap - n, " lock %d", m->lock);
+    }
+    if (m->next >= 0) {
+        log_format(line + n, cap - n, " > m%d", m->next);
+    }
+}
+
+static void draw_trigger_view(const Camera *cam, const Basis *basis, const Scene *scene)
+{
+    static df_u8 started[TRIG_MOVERS];
+    TrigPick pick[TRIG_VIEW_COUNT];
+    float range2;
+    int npick;
+    int touching;
+    int i;
+    int j;
+
+    if (interact_trigger_view() < 1 || (!scene->usables && !scene->movers)) {
+        return;
+    }
+    range2 = (float)interact_trigger_view() * (float)interact_trigger_view();
+    touching = interact_touching();
+    for (i = 0; i < scene->nmovers && i < TRIG_MOVERS; i++) {
+        started[i] = 0;
+    }
+    npick = 0;
+    /* Usables first, marking the movers they start; then the movers only chains start. */
+    for (i = 0; i < scene->nusables + scene->nmovers; i++) {
+        TrigPick t;
+        float dx, dy, dz;
+
+        t.use = -1;
+        t.mover = -1;
+        if (i < scene->nusables) {
+            const Usable *u;
+            float c[8][3];
+
+            u = &scene->usables[i];
+            if ((u->kind != USE_MOVER && u->kind != USE_PASSAGE) || !use_corners(scene, u, c, t.mid)) {
+                continue;
+            }
+            t.use = i;
+            t.mover = u->kind == USE_MOVER ? u->mover : -1;
+            if (t.mover >= 0 && t.mover < TRIG_MOVERS) {
+                started[t.mover] = 1;
+            }
+        } else {
+            const Mover *m;
+            const Bound *b;
+
+            t.mover = i - scene->nusables;
+            m = &scene->movers[t.mover];
+            if ((t.mover < TRIG_MOVERS && started[t.mover]) || m->model < 0 || m->model >= scene->nmodels
+                || !scene->bounds) {
+                continue;
+            }
+            b = &scene->bounds[m->model];
+            t.mid[0] = b->cx;
+            t.mid[1] = b->cy;
+            t.mid[2] = b->cz;
+        }
+        dx = t.mid[0] - cam->x;
+        dy = t.mid[1] - cam->y;
+        dz = t.mid[2] - cam->z;
+        t.d2 = dx * dx + dy * dy + dz * dz;
+        if (t.d2 > range2 || (npick == TRIG_VIEW_COUNT && t.d2 >= pick[npick - 1].d2)) {
+            continue;
+        }
+        if (npick < TRIG_VIEW_COUNT) {
+            npick++;
+        }
+        for (j = npick - 1; j > 0 && pick[j - 1].d2 > t.d2; j--) {
+            pick[j] = pick[j - 1];
+        }
+        pick[j] = t;
+    }
+    if (npick < 1) {
+        return;
+    }
+    glide_overlay(1);
+    for (j = 0; j < npick; j++) {
+        const Usable *u;
+        const Mover *m;
+        float c[8][3];
+        float mid[3];
+
+        u = pick[j].use >= 0 ? &scene->usables[pick[j].use] : 0;
+        m = pick[j].mover >= 0 && pick[j].mover < scene->nmovers ? &scene->movers[pick[j].mover] : 0;
+        /* By hand: what the use key takes, violet; a passage gold. */
+        if (u && (u->reach > 0.0f || u->kind == USE_PASSAGE) && use_corners(scene, u, c, mid)) {
+            if (u->kind == USE_PASSAGE) {
+                trig_box(cam, basis, c, 255.0f, 200.0f, 40.0f);
+            } else {
+                trig_box(cam, basis, c, 190.0f, 110.0f, 255.0f);
+            }
+        }
+        /* Walked into: the volume the body sets it off in, orange; red while the body is in it. */
+        if (u && u->touch && u->model >= 0 && u->model < scene->nmodels && scene->bounds) {
+            const Bound *b;
+            float ctr[3];
+            float ext[3];
+
+            b = &scene->bounds[u->model];
+            ctr[0] = b->cx;
+            ctr[1] = b->cy;
+            ctr[2] = b->cz;
+            ext[0] = b->ex + WALK_RADIUS;
+            ext[1] = b->ey;
+            ext[2] = b->ez + WALK_RADIUS;
+            box_corners(ctr, ext, c);
+            if (pick[j].use == touching) {
+                trig_box(cam, basis, c, 255.0f, 40.0f, 40.0f);
+            } else {
+                trig_box(cam, basis, c, 255.0f, 140.0f, 0.0f);
+            }
+        }
+        /* Only a chain starts it: its model's box, dim. */
+        if (!u && m && scene->bounds) {
+            const Bound *b;
+            float ctr[3];
+            float ext[3];
+
+            b = &scene->bounds[m->model];
+            ctr[0] = b->cx;
+            ctr[1] = b->cy;
+            ctr[2] = b->cz;
+            ext[0] = b->ex;
+            ext[1] = b->ey;
+            ext[2] = b->ez;
+            box_corners(ctr, ext, c);
+            trig_box(cam, basis, c, 70.0f, 130.0f, 150.0f);
+        }
+        /* A teleport: a line to where it sends, and a cross there. */
+        if (m && m->teleport) {
+            float to[3];
+            float a[3];
+            float b[3];
+            int k;
+
+            to[0] = m->to_x;
+            to[1] = m->to_y;
+            to[2] = m->to_z;
+            view_edge(cam, basis, pick[j].mid, to, 255.0f, 60.0f, 255.0f);
+            for (k = 0; k < 3; k++) {
+                a[0] = to[0];
+                a[1] = to[1];
+                a[2] = to[2];
+                b[0] = to[0];
+                b[1] = to[1];
+                b[2] = to[2];
+                a[k] -= 16.0f;
+                b[k] += 16.0f;
+                view_edge(cam, basis, a, b, 255.0f, 60.0f, 255.0f);
+            }
+        }
+    }
+    glide_overlay(0);
+    for (j = 0; j < npick; j++) {
+        const Usable *u;
+        const Mover *m;
+        char line[3][64];
+        float x, y, z, sx, sy, oow, ooz;
+        int top;
+        int k;
+
+        u = pick[j].use >= 0 ? &scene->usables[pick[j].use] : 0;
+        m = pick[j].mover >= 0 && pick[j].mover < scene->nmovers ? &scene->movers[pick[j].mover] : 0;
+        camera_view(cam, basis, pick[j].mid[0], pick[j].mid[1], pick[j].mid[2], &x, &y, &z);
+        if (z < DF_NEAR || !camera_project(x, y, z, &sx, &sy, &oow, &ooz)) {
+            continue;
+        }
+        /* How it goes off, and how far, in metres (40 units). */
+        if (!u) {
+            log_format(line[0], 64, "m%d by a chain  %.1fm", pick[j].mover, df_sqrt(pick[j].d2) / 40.0f);
+        } else {
+            log_format(line[0], 64, "u%d %s  %.1fm", pick[j].use,
+                       u->kind == USE_PASSAGE ? "passage"
+                                              : (u->touch && u->reach > 0.0f ? "by hand, walked into"
+                                                                            : (u->touch ? "walked into" : "by hand")),
+                       df_sqrt(pick[j].d2) / 40.0f);
+        }
+        /* What it does. */
+        if (m) {
+            mover_words(m, line[1], 64);
+        } else {
+            log_format(line[1], 64, "%s", u && u->label ? u->label : "");
+        }
+        /* The game's own numbers for it (Daggerfall: a mover's action and trigger, a passage's way and building). */
+        line[2][0] = 0;
+        if (u && (u->what || u->tag)) {
+            log_format(line[2], 64, "what %d tag %d", u->what, u->tag);
+        }
+        top = df_iround(sy) - ui_line_height();
+        for (k = 0; k < 3; k++) {
+            int w;
+            int lx;
+
+            if (!line[k][0]) {
+                continue;
+            }
+            w = ui_string_width(line[k]);
+            lx = df_iround(sx) - w / 2;
+            lx = lx < 0 ? 0 : (lx + w > DF_VIEW_W ? DF_VIEW_W - w : lx);
+            if (top + k * ui_line_height() > 0 && top + k * ui_line_height() < DF_VIEW_H) {
+                ui_string(lx, top + k * ui_line_height(), line[k]);
+            }
+        }
+    }
+}
+
 static void cover_bar(float x, float y, float w, float h, float r, float g, float b);
 
 /* interact_say's line, at the middle of the glass, a third of the way up. */
@@ -2403,7 +2732,9 @@ void draw_frame(const Camera *cam, const Level *level)
     df_u32 sprite_day;
     df_u32 ambient;
     df_u32 tinted;
-    int streamed;
+    int noted;
+    int under;
+    df_u32 under_rgb;
 
     if (!level) {
         return;
@@ -2418,7 +2749,8 @@ void draw_frame(const Camera *cam, const Level *level)
         return;
     }
     console_release();
-    streamed = level->streamed && texcache_streamed();
+    /* Pictures on the card by distance (a stream's, a place's): the frame notes how near each was drawn. */
+    noted = texcache_resident();
     prof_begin(PROF_FRAME);
     prof_begin(PROF_SIM);
     /* Real seconds for the rain and the lightning; game minutes for the clock and the weather. */
@@ -2446,6 +2778,18 @@ void draw_frame(const Camera *cam, const Level *level)
      * cull, which reads the poses they write.
      */
     interact_frame(&level->scene, cam, secs, use_edge());
+    /* A teleport used or reached (docs/interact.md): the player's camera goes, the body with it. */
+    {
+        float tx, ty, tz, tyaw;
+
+        if (interact_teleport(&tx, &ty, &tz, &tyaw) && (const Camera *)console_camera() == cam) {
+            Camera *pc;
+
+            pc = console_camera();
+            camera_set(pc, tx, ty, tz, tyaw, pc->pitch);
+            walker_place();
+        }
+    }
     prof_end(PROF_SIM);
     g_vis_models = 0;
     g_vis_sprites = 0;
@@ -2501,10 +2845,23 @@ void draw_frame(const Camera *cam, const Level *level)
         }
         fog_near = DF_FOG_NEAR < fog_far * 0.25f ? DF_FOG_NEAR : fog_far * 0.25f;
     }
+    /*
+     * The eye under water (docs/water.md): the fog closes in to the
+     * water's colour, and the cull with it. Its colour is set below,
+     * after the sky's.
+     */
+    under = 0;
+    under_rgb = 0;
+    if (g_water && scene_water_body(&level->scene, cam->x, cam->y, cam->z) == WATER_HEAD) {
+        under = 1;
+        scene_water_at(&level->scene, cam->x, cam->z, 0, &under_rgb);
+        fog_near = UNDER_NEAR;
+        fog_far = UNDER_FAR < fog_far ? UNDER_FAR : fog_far;
+    }
     /* Two stores; gfx_set_far and gfx_set_fog set it too, so set it every frame. */
     scene_set_limits(g_far_now, glide_fog_on());
     fog_apply(fog_near, fog_far);
-    sky = outdoor && level->sky && sky_on() && sky_ready();
+    sky = outdoor && level->sky && sky_on() && sky_ready() && !under;
     sky_alpha = 255;
     if (sky) {
         int hr, hg, hb;
@@ -2533,6 +2890,10 @@ void draw_frame(const Camera *cam, const Level *level)
          */
         sky_alpha = df_iround(255.0f * (w.fog - 500.0f) * (1.0f / 2100.0f) * (1.0f - flash));
         sky_alpha = sky_alpha < 0 ? 0 : (sky_alpha > 255 ? 255 : sky_alpha);
+    } else if (under) {
+        /* Under water: the clear and the fog are the water's colour. */
+        glide_sky_color(1, (int)((under_rgb >> 16) & 255u), (int)((under_rgb >> 8) & 255u),
+                        (int)(under_rgb & 255u));
     } else {
         glide_sky_color(0, 0, 0, 0);
     }
@@ -2573,8 +2934,11 @@ void draw_frame(const Camera *cam, const Level *level)
         if (!in->mesh) {
             continue;
         }
-        /* A streamed world's pictures: how near each was drawn decides how sharp it is sent. */
-        if (streamed && in->mesh->have_keys) {
+        /*
+         * Pictures on the card by distance (a streamed world, a place past
+         * the card): how near each was drawn decides how sharp it is sent.
+         */
+        if (noted && in->mesh->have_keys) {
             const Bound *b;
             float dx, dy, dz, d;
             int k;
@@ -2671,7 +3035,7 @@ void draw_frame(const Camera *cam, const Level *level)
         /* One colour per sprite from the lights around it; torches full bright. */
         glide_tint(outdoor ? light_sprite_over(order[oi], sprite_day)
                            : light_sprite_rgb(order[oi]));
-        if (streamed) {
+        if (noted) {
             const Flat *fl;
             float dx, dz;
 
@@ -2685,13 +3049,15 @@ void draw_frame(const Camera *cam, const Level *level)
     /* The entities, each as the view of it the camera has (docs/entities.md), in daylight's colour. */
     if (level->scene.entities) {
         glide_tint(outdoor ? sprite_day : light_ambient_rgb());
-        draw_entities(cam, &basis, level, streamed || texcache_resident());
+        draw_entities(cam, &basis, level, noted);
     }
     glide_sprite_alpha(0);
     if (g_sprite_point) {
         glide_point_sample(0);
     }
     glide_tint(0xffffffu);
+    /* The water's surface, over everything under it (docs/water.md). */
+    draw_water_pass(cam, &basis, &level->scene);
     prof_end(PROF_SPRITES);
     prof_begin(PROF_PRECIP);
     if (outdoor) {
@@ -2709,6 +3075,7 @@ void draw_frame(const Camera *cam, const Level *level)
     draw_light_view(cam, &basis);
     draw_sound_view(cam, &basis, &level->scene);
     draw_use_view(cam, &basis, &level->scene);
+    draw_trigger_view(cam, &basis, &level->scene);
     draw_saying();
     if (g_under) {
         g_under();

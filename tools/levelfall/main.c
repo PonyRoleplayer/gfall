@@ -25,6 +25,7 @@
 #include "engine/assets/vfs.h"
 #include "engine/core/df.h"
 #include "engine/core/mem.h"
+#include "engine/core/log.h"
 #include "engine/core/prof.h"
 #include "engine/gfx/draw.h"
 #include "engine/gfx/gfx.h"
@@ -126,6 +127,9 @@ static HWND g_open;
 static HWND g_stream_box;
 /* While the world streams: its frame hook runs before each frame, and the panel says so. */
 static void (*g_frame_hook)(Camera *cam, float secs);
+static float stream_budget(void);
+/* Before a place's first frame, its creatures within this of the landing are read: a block. */
+#define CREATURES_NEAR 2048.0f
 static int g_streaming;
 static int g_stream_px = -1;
 static int g_stream_py = -1;
@@ -202,6 +206,7 @@ static int g_musvol_cfg = -1;
 static int g_f2_was;
 static int g_f4_was;
 static int g_f11_was;
+static int g_f3_was;
 /* The profile panel (P), and P's edge (docs/profile.md). */
 static int g_prof_panel;
 static int g_p_was;
@@ -2125,13 +2130,25 @@ static void draw_overlay(void)
     add_str(frame_fog, &n, (int)sizeof(frame_fog), gfx_fog() ? "on" : "off");
     add_str(frame_fog, &n, (int)sizeof(frame_fog), "  far ");
     add_num(frame_fog, &n, (int)sizeof(frame_fog), (int)gfx_far(), 0);
+    /* A place with water (docs/water.md): how deep the eye's body stands in it. */
+    if (g_world && world_water_count(g_world) > 0) {
+        static const char *depth[4] = { "dry", "feet", "waist", "under" };
+        Scene wsc;
+
+        mem_zero(&wsc, sizeof(wsc));
+        wsc.water = world_water(g_world, 0);
+        wsc.nwater = world_water_count(g_world);
+        add_str(frame_fog, &n, (int)sizeof(frame_fog), "  water ");
+        add_str(frame_fog, &n, (int)sizeof(frame_fog),
+                depth[scene_water_body(&wsc, g_cam->x, g_cam->y, g_cam->z)]);
+    }
     /*
      * Pictures on the card over the level's count, and their size. An
      * unfit picture has no room, so its faces wear the last bound texture.
      */
     n = 0;
     frame_tex[0] = 0;
-    if (g_streaming) {
+    if (g_streaming || texcache_resident_all()) {
         int added;
         int sharp;
         df_u32 used;
@@ -2145,7 +2162,12 @@ static void draw_overlay(void)
          * chains, the meshes and the files take (docs/streaming.md).
          */
         texres_stats(&added, &sharp, &used, &room, 0, 0);
-        wres_stats(0, 0, &ram, 0, 0, &mesh_ram);
+        /* A place past the card is on residency too: its chains only, its pictures are the place's. */
+        ram = 0;
+        mesh_ram = 0;
+        if (g_streaming) {
+            wres_stats(0, 0, &ram, 0, 0, &mesh_ram);
+        }
         ram += texcache_stream_ram() + mesh_ram + texture_cache_bytes();
         add_str(frame_tex, &n, (int)sizeof(frame_tex), "tex ");
         add_num(frame_tex, &n, (int)sizeof(frame_tex), sharp, 0);
@@ -2305,8 +2327,8 @@ static void draw_overlay(void)
     key_act[13] = "sndview range";
     key_name[14] = "click e";
     key_act[14] = "use";
-    key_name[15] = "f11";
-    key_act[15] = "useview range";
+    key_name[15] = "f11 f3";
+    key_act[15] = "use, trig views";
     key_name[16] = "p";
     key_act[16] = "frame profile";
     for (i = 0; i < 17; i++) {
@@ -2462,6 +2484,32 @@ static void step_useview(void)
     console_log(line);
 }
 
+/* F3: the triggers, within 512, 1024, then 2048 units, then off (docs/interact.md, trigview). */
+static void step_trigview(void)
+{
+    static const int steps[3] = { 512, 1024, 2048 };
+    char line[24];
+    int cur;
+    int next;
+    int i;
+    int n;
+
+    cur = interact_trigger_view();
+    next = 0;
+    for (i = 0; i < 3; i++) {
+        if (steps[i] > cur) {
+            next = steps[i];
+            break;
+        }
+    }
+    interact_set_trigger_view(next);
+    n = 0;
+    line[0] = 0;
+    add_str(line, &n, (int)sizeof(line), "trigview ");
+    add_num(line, &n, (int)sizeof(line), interact_trigger_view(), 0);
+    console_log(line);
+}
+
 /* Edges are tracked while the console is up too, so a key held through it does not fire. */
 static void switch_keys(int act)
 {
@@ -2490,6 +2538,11 @@ static void switch_keys(int act)
         step_useview();
     }
     g_f11_was = down;
+    down = key_down(VK_F3);
+    if (act && down && !g_f3_was) {
+        step_trigview();
+    }
+    g_f3_was = down;
     down = key_down('P');
     if (act && down && !g_p_was) {
         g_prof_panel = g_prof_panel ? 0 : 1;
@@ -2853,6 +2906,7 @@ static void run_view(const Level *level, Camera *cam)
     g_f2_was = key_down(VK_F2);
     g_f4_was = key_down(VK_F4);
     g_f11_was = key_down(VK_F11);
+    g_f3_was = key_down(VK_F3);
     g_p_was = key_down('P');
     g_go.what = 0;
     interact_set_handler(lf_use);
@@ -2911,6 +2965,13 @@ static void run_view(const Level *level, Camera *cam)
         /* The streamed world loads round the camera before the frame reads the scene. */
         if (g_frame_hook) {
             g_frame_hook(cam, (float)dt / 1000.0f);
+        }
+        /*
+         * A place's creatures, read as they come near, in what the frame
+         * leaves before its retrace (docs/entities.md); not while paused.
+         */
+        if (g_world && !g_streaming && !gfx_paused()) {
+            world_creatures_step((World *)g_world, cam, 0.0f, stream_budget());
         }
         gfx_frame(cam, level);
         frames++;
@@ -3008,6 +3069,46 @@ static void land_at(const World *world, int land, const Usable *street,
  * (gfx_hold), so a door is not the list and back. A building's inside
  * keeps the town's record (dun), which the street is opened from again.
  */
+/*
+ * The load line (docs/viewers.md): each stage of entering a place, in ms,
+ * logged once it is primed. tick is GetTickCount and rec the record's
+ * cycles, both from when the load began. Cycles become ms by the
+ * counter's calibration, or, before the frames have made it (the first
+ * place from the list), by the load's own cycles over its ticks. What no
+ * stage covers is other.
+ */
+static void log_load(DWORD tick, df_u32 rec)
+{
+    WorldLoadTimes w;
+    df_u32 card;
+    df_u32 lights;
+    df_u32 prime;
+    df_u32 sum;
+    DWORD ms;
+    float per;
+    char line[160];
+    int n;
+
+    world_load_times(&w);
+    gfx_load_times(&card, &lights, &prime);
+    ms = GetTickCount() - tick;
+    sum = rec + w.blocks + w.pictures + w.creatures + w.water + w.doors + w.rest + card + lights + prime;
+    per = (float)prof_per_ms();
+    if (per <= 0.0f) {
+        per = ms > 0 ? (float)sum / (float)ms : 1.0f;
+    }
+    n = log_format(line, (int)sizeof(line),
+                   "load: record %d ms, blocks %d, pictures %d, creatures %d, water %d, doors %d, rest %d, ",
+                   df_iround((float)rec / per), df_iround((float)w.blocks / per),
+                   df_iround((float)w.pictures / per), df_iround((float)w.creatures / per),
+                   df_iround((float)w.water / per), df_iround((float)w.doors / per),
+                   df_iround((float)w.rest / per));
+    log_format(line + n, (int)sizeof(line) - n, "card %d, lights %d, prime %d, other %d, total %d",
+               df_iround((float)card / per), df_iround((float)lights / per), df_iround((float)prime / per),
+               (int)ms - df_iround((float)sum / per), (int)ms);
+    log_line(line);
+}
+
 static void view_row(int index)
 {
     Dungeon dun;
@@ -3016,6 +3117,8 @@ static void view_row(int index)
     Camera cam;
     Usable street;
     LfGo go;
+    DWORD load_tick;
+    df_u32 load_rec;
     int glide_up;
     int row;
     int block;
@@ -3060,6 +3163,8 @@ static void view_row(int index)
         world = 0;
         go.what = 0;
         n = 1;
+        load_tick = GetTickCount();
+        load_rec = prof_now();
         /* Inside, dun is still the town's record from the street. */
         if (block < 0) {
             if (g_rows[row].outdoor) {
@@ -3068,6 +3173,7 @@ static void view_row(int index)
                 n = dungeon_load_at(g_rows[row].region, g_rows[row].index, &dun);
             }
         }
+        load_rec = prof_now() - load_rec;
         if (n) {
             world = block >= 0 ? world_load_inside(&dun, block, record) : world_load_dungeon(&dun);
         }
@@ -3118,7 +3224,9 @@ static void view_row(int index)
                     log_line("cam from levelfall.cfg");
                 }
                 camera_set(&cam, x, y, z, yaw, pitch);
+                world_creatures_step(world, &cam, CREATURES_NEAR, 0.0f);
                 gfx_prime(&level, &cam);
+                log_load(load_tick, load_rec);
                 if (land != LAND_START) {
                     gfx_fade_in(LAND_FADE);
                 }
@@ -3256,8 +3364,14 @@ static void stream_frame(Camera *cam, float secs)
 
         budget = stream_budget();
         wild_update(cam, budget);
-        /* The townspeople: who comes and goes round the camera, and their steps (docs/entities.md). */
-        people_update(cam, secs);
+        /*
+         * The townspeople: who comes and goes round the camera, and their
+         * steps (docs/entities.md); not while the world stands still (the
+         * console), as the frame runs none of it then. The loading goes on.
+         */
+        if (!gfx_paused()) {
+            people_update(cam, secs);
+        }
         /* A step past the budget is a stutter: logged, so the 233's are known by name. */
         stream_worst(&worst, &step);
         lamp = light_stream_worst();
@@ -3332,6 +3446,8 @@ static int stream_inside(int trow, int what, const Usable *door, int *glide_up, 
     Level level;
     Camera cam;
     LfGo go;
+    DWORD load_tick;
+    df_u32 load_rec;
     int row;
     int block;
     int record;
@@ -3345,11 +3461,15 @@ static int stream_inside(int trow, int what, const Usable *door, int *glide_up, 
     }
     go.what = 0;
     world = 0;
+    load_tick = GetTickCount();
+    load_rec = prof_now();
     if (what == DOOR_ENTER) {
         ok = exterior_load_at(g_rows[row].region, g_rows[row].index, &dun);
+        load_rec = prof_now() - load_rec;
         world = ok ? world_load_inside(&dun, block, record) : 0;
     } else {
         ok = dungeon_load_at(g_rows[row].region, g_rows[row].index, &dun);
+        load_rec = prof_now() - load_rec;
         world = ok ? world_load_dungeon(&dun) : 0;
     }
     if (!world) {
@@ -3369,7 +3489,9 @@ static int stream_inside(int trow, int what, const Usable *door, int *glide_up, 
 
             land_at(world, what == DOOR_ENTER ? LAND_IN : LAND_BELOW, door, &x, &y, &z, &yaw, &pitch);
             camera_set(&cam, x, y, z, yaw, pitch);
+            world_creatures_step(world, &cam, CREATURES_NEAR, 0.0f);
             gfx_prime(&level, &cam);
+            log_load(load_tick, load_rec);
             gfx_fade_in(LAND_FADE);
             df_copy(g_view_name, g_rows[row].name, (int)sizeof(g_view_name));
             g_region = g_rows[row].region;

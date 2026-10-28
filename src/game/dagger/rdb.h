@@ -24,6 +24,8 @@ typedef struct Marker {
     /* FactionOrMobileId: magnitude, then the sound byte above it. */
     df_u16 id;
     df_u8 action;
+    /* RDB: the object's offset in its block file, by which an action's next names it (a teleport's target). */
+    df_u32 pos;
 } Marker;
 
 /*

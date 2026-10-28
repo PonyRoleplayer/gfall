@@ -191,5 +191,12 @@ void glide_release(df_u32 handle);
  * puts the level's palette and the scene's state back.
  */
 void glide_glow(int on, df_u32 rgb);
+/*
+ * The water's surface (docs/water.md): rgb (0xRRGGBB) at alpha 0..255
+ * from the constant colour alone, no texel and no vertex colour; blended
+ * over the frame, depth tested but not written, fogged as the scene is.
+ * Off puts the scene's state back.
+ */
+void glide_water(int on, df_u32 rgb, int alpha);
 
 #endif

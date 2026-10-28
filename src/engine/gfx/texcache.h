@@ -54,5 +54,18 @@ df_u32 texcache_stream_ram(void);
  * the frame (docs/memory.md).
  */
 int texcache_resident(void);
+/*
+ * 1 when a place loaded whole was too large for the card at full size,
+ * so every picture of it is on the card by distance, as a stream's.
+ */
+int texcache_resident_all(void);
+/*
+ * A place loaded whole: a picture read after its load (a creature's, as
+ * it comes near: docs/entities.md) put on the card by distance, its
+ * chain built now. Only while a residency session is open (texcache_
+ * resident: a place with entities has one, its room kept for them).
+ * 0 when it could not be.
+ */
+int texcache_resident_add(int slot, const struct Image *img, int cutout, float density);
 
 #endif

@@ -133,11 +133,16 @@ static void drop_slot(int s)
 
 #define ALLOC(type, n) ((type *)mem_alloc((df_u32)(n) * (df_u32)sizeof(type)))
 
+/* Times the camera's chunk was loaded at once (fill_under). Within this of an edge, the next one's too. */
+#define STREAM_UNDER 256.0f
+static int g_outran;
+
 int stream_open(Scene *scene, const StreamSource *src, int radius, int cx, int cz)
 {
     int s;
 
     stream_close();
+    g_outran = 0;
     if (!scene || !src || !src->fill || src->caps.models < 1) {
         return 0;
     }
@@ -424,6 +429,8 @@ static void rebase(Camera *cam, int ccx, int ccz)
             i = s * g_cap.movers + k;
             g_movers[i].x0 -= sx;
             g_movers[i].z0 -= sz;
+            g_movers[i].to_x -= sx;
+            g_movers[i].to_z -= sz;
         }
         move_box(&sl->box_near, sx, sz);
         move_box(&sl->box_far, sx, sz);
@@ -617,6 +624,8 @@ static void finish(int s)
         m->inst = &g_models[m->model];
         m->x0 += ox;
         m->z0 += oz;
+        m->to_x += ox;
+        m->to_z += oz;
         if (m->next >= 0) {
             m->next += s * g_cap.movers;
         }
@@ -736,6 +745,92 @@ static void clamp_out(void)
     g_out.movers_n = g_out.movers_n < g_cap.movers ? g_out.movers_n : g_cap.movers;
 }
 
+/* One call of the filling chunk's fill, its time kept for stream_worst; 1 when the chunk is done (and finished). */
+static int fill_step(void)
+{
+    df_u32 t0;
+    int step;
+    int done;
+
+    step = g_out.step;
+    t0 = prof_now();
+    done = g_src.fill(g_src.user, g_slot[g_filling].cx, g_slot[g_filling].cz, &g_out);
+    t0 = prof_now() - t0;
+    if (t0 > g_worst) {
+        g_worst = t0;
+        g_worst_step = step;
+    }
+    clamp_out();
+    if (done) {
+        int s;
+
+        s = g_filling;
+        g_filling = -1;
+        finish(s);
+    }
+    return done;
+}
+
+/* 1 when chunk cx, cz is loaded and done. */
+static int chunk_done(int cx, int cz)
+{
+    int s;
+
+    for (s = 0; s < SLOTS; s++) {
+        if (g_slot[s].used && g_slot[s].done && g_slot[s].cx == cx && g_slot[s].cz == cz) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/*
+ * The camera's own chunk is not there: it ran past what the budget had
+ * filled (the 233 fills a town's chunk in a second or more; a run
+ * crosses one in a few). Any other chunk being filled is dropped (it
+ * comes again in turn), and the camera's is filled now, whole, whatever
+ * it costs: a wait, logged, never the ground missing under the walker.
+ */
+static void fill_under(int ccx, int ccz)
+{
+    df_u32 t0;
+    int s;
+
+    if (chunk_done(ccx, ccz)) {
+        return;
+    }
+    if (g_filling >= 0 && (g_slot[g_filling].cx != ccx || g_slot[g_filling].cz != ccz)) {
+        s = g_filling;
+        /* Half filled: its data is still the fill's. */
+        g_slot[s].data = g_out.data;
+        g_filling = -1;
+        drop_slot(s);
+    }
+    if (g_filling < 0) {
+        s = free_slot();
+        if (s < 0) {
+            return;
+        }
+        start_fill(s, ccx, ccz);
+    }
+    t0 = prof_now();
+    while (g_filling >= 0 && !fill_step()) {
+    }
+    g_outran++;
+    if (g_outran <= 16) {
+        df_u32 per;
+
+        per = prof_per_ms();
+        log_print(LOG_WARN, "stream: the camera outran the stream; its chunk %d,%d loaded at once (%d ms)",
+                  ccx, ccz, per ? (int)((prof_now() - t0) / per) : -1);
+    }
+}
+
+int stream_outran(void)
+{
+    return g_outran;
+}
+
 void stream_update(Camera *cam, float budget_ms)
 {
     df_u32 start;
@@ -773,11 +868,26 @@ void stream_update(Camera *cam, float budget_ms)
             choose_ground(s, ccx, ccz);
         }
     }
+    /*
+     * The chunks the camera stands on or is within STREAM_UNDER of: the
+     * walker moves in the frame, after this, and a run that stepped onto
+     * a chunk not there yet fell through it before the next frame.
+     */
+    {
+        int k;
+
+        for (k = 0; k < 4; k++) {
+            int ux;
+            int uz;
+
+            ux = g_ox + df_ifloor((cam->x + ((k & 1) ? STREAM_UNDER : -STREAM_UNDER)) / (float)STREAM_CHUNK);
+            uz = g_oz + df_ifloor((cam->z + ((k & 2) ? STREAM_UNDER : -STREAM_UNDER)) / (float)STREAM_CHUNK);
+            fill_under(ux, uz);
+        }
+    }
     start = prof_now();
     budget = budget_ms > 0.0f ? (df_u32)df_iround(budget_ms * (float)prof_per_ms()) : 0u;
     for (;;) {
-        int done;
-
         if (g_filling < 0) {
             int cx;
             int cz;
@@ -791,25 +901,7 @@ void stream_update(Camera *cam, float budget_ms)
             }
             start_fill(s, cx, cz);
         }
-        {
-            df_u32 t0;
-            int step;
-
-            step = g_out.step;
-            t0 = prof_now();
-            done = g_src.fill(g_src.user, g_slot[g_filling].cx, g_slot[g_filling].cz, &g_out);
-            t0 = prof_now() - t0;
-            if (t0 > g_worst) {
-                g_worst = t0;
-                g_worst_step = step;
-            }
-        }
-        clamp_out();
-        if (done) {
-            s = g_filling;
-            g_filling = -1;
-            finish(s);
-        }
+        fill_step();
         /* Uncalibrated, or no budget: one step a frame. */
         if (budget == 0u || prof_now() - start >= budget) {
             break;

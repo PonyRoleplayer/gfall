@@ -144,6 +144,7 @@ static void add_flat(Block *block, const df_u8 *p, float sub_yaw, float ox, floa
             mk->flags = 0;
             mk->id = 0;
             mk->action = 0;
+            mk->pos = 0;
         }
         return;
     }

@@ -128,6 +128,11 @@ int stream_radius(void);
  * calibrated yet).
  */
 void stream_update(Camera *cam, float budget_ms);
+/*
+ * Times the camera's own chunk was not loaded when it got there (it ran
+ * past the budget's filling) and was loaded at once, a wait; since open.
+ */
+int stream_outran(void);
 
 /* The chunk under a camera, in world chunks. */
 void stream_chunk_at(const Camera *cam, int *cx, int *cz);

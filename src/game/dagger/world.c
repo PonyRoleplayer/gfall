@@ -16,8 +16,11 @@
 #include "engine/assets/vfs.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
+#include "engine/core/prof.h"
 #include "engine/scene/entity.h"
 #include "engine/scene/interact.h"
+#include "engine/scene/walker.h"
+#include "engine/gfx/texcache.h"
 #include "engine/scene/clock.h"
 
 /*
@@ -170,10 +173,33 @@ struct World {
      */
     struct Foe *foe;
     int nfoe;
+    /*
+     * A dungeon's water (docs/water.md): each block's level (world y),
+     * read from its start marker as the blocks come; then the wet parts
+     * of each block as rectangles.
+     */
+    float block_water[DUN_MAX_BLOCKS];
+    df_u8 block_wet[DUN_MAX_BLOCKS];
+    int block_gx[DUN_MAX_BLOCKS];
+    int block_gz[DUN_MAX_BLOCKS];
+    Water *water;
+    int nwater;
+    /* A dungeon's editor markers, every block's, and their blocks: teleports' targets. */
+    Marker *dmark;
+    df_u8 *dmark_blk;
+    int ndmark;
     Entity *ent;
     df_i16 *ent_kind;
     df_u8 *ent_passive;
+    /* FOE_*: its pictures still to read, read and drawn, or one did not read. */
+    df_u8 *ent_state;
     int nent;
+};
+
+enum {
+    FOE_PENDING,
+    FOE_READY,
+    FOE_FAILED
 };
 
 typedef struct Foe {
@@ -429,6 +455,29 @@ static int make_sheet(World *world, int slot, int file, int image);
  * kind it places: the block's own water level decides a random one's
  * draw and whether a water dweller has water (enemies.c).
  */
+/* A dungeon's markers, for doors_build's teleports: every block's, as placed. */
+#define MAX_DMARKS 4096
+
+static int note_marks(World *world, const Block *block, int b)
+{
+    int i;
+
+    if (!world->dmark) {
+        world->dmark = (Marker *)mem_alloc(MAX_DMARKS * (df_u32)sizeof(Marker));
+        world->dmark_blk = (df_u8 *)mem_alloc(MAX_DMARKS);
+        if (!world->dmark || !world->dmark_blk) {
+            why("out of memory");
+            return 0;
+        }
+    }
+    for (i = 0; i < block->nmarker && world->ndmark < MAX_DMARKS; i++) {
+        world->dmark[world->ndmark] = block->marker[i];
+        world->dmark_blk[world->ndmark] = (df_u8)b;
+        world->ndmark++;
+    }
+    return 1;
+}
+
 static int note_foes(World *world, const Block *block)
 {
     int water;
@@ -470,10 +519,38 @@ static int note_foes(World *world, const Block *block)
 }
 
 /*
+ * A sprite picture's slot in the table, not read: a creature's, read
+ * when it comes near (world_creatures_step). One already there is used
+ * as it is. 0 when the table is full.
+ */
+static int reserve_image(World *world, int file, int image, int *slot_out)
+{
+    int slot;
+
+    slot = find_slot(world, (df_u16)file, (df_u16)image);
+    if (slot >= 0) {
+        world->cutout[slot] = 1;
+        *slot_out = slot;
+        return 1;
+    }
+    if (world->nimages >= MAX_IMAGES || !add_file(world, file)) {
+        return 0;
+    }
+    slot = world->nimages;
+    world->images[slot] = 0;
+    world->key_file[slot] = (df_u16)file;
+    world->key_image[slot] = (df_u16)image;
+    world->cutout[slot] = 1;
+    world->wall[slot] = 0;
+    world->nimages++;
+    *slot_out = slot;
+    return 1;
+}
+
+/*
  * One pose of a creature: records[k] of archive for view k, each a
- * sprite picture (a sheet of its frames) at its own size. 0 when one
- * cannot be had (the table full, a record missing): the creature is
- * left out, the place still opens.
+ * sprite picture's slot, read later; its sizes come with its pictures.
+ * 0 when the table is full: the creature is left out.
  */
 static int foe_pose(World *world, int archive, const int *records, int rate, EntityPose *pose)
 {
@@ -481,24 +558,12 @@ static int foe_pose(World *world, int archive, const int *records, int rate, Ent
 
     mem_zero(pose, sizeof(EntityPose));
     for (k = 0; k < ENTITY_VIEWS; k++) {
-        const Image *img;
         int slot;
-        int w;
-        int h;
 
-        if (!place_image(world, archive, records[k], 1, &slot)) {
-            return 0;
-        }
-        make_sheet(world, slot, archive, records[k]);
-        img = world->images[slot];
-        w = flat_extent(img->width, img->xscale);
-        h = flat_extent(img->height, img->yscale);
-        if (w < 1 || h < 1) {
+        if (!reserve_image(world, archive, records[k], &slot)) {
             return 0;
         }
         pose->slot[k] = (df_u16)slot;
-        pose->w[k] = (df_u16)w;
-        pose->h[k] = (df_u16)h;
     }
     pose->rate = (df_u8)rate;
     return 1;
@@ -563,7 +628,8 @@ static int add_foes(World *world)
     world->ent = (Entity *)mem_alloc((df_u32)world->nfoe * (df_u32)sizeof(Entity));
     world->ent_kind = (df_i16 *)mem_alloc((df_u32)world->nfoe * (df_u32)sizeof(df_i16));
     world->ent_passive = (df_u8 *)mem_alloc((df_u32)world->nfoe);
-    if (!world->ent || !world->ent_kind || !world->ent_passive) {
+    world->ent_state = (df_u8 *)mem_alloc((df_u32)world->nfoe);
+    if (!world->ent || !world->ent_kind || !world->ent_passive || !world->ent_state) {
         why("out of memory");
         return 0;
     }
@@ -572,9 +638,7 @@ static int add_foes(World *world)
         Entity *e;
         int archive;
         int kind;
-        int floats;
         unsigned int hash;
-        float ground;
 
         f = &world->foe[i];
         kind = (int)f->kind;
@@ -597,22 +661,261 @@ static int add_foes(World *world)
                 e->idle.right = (1u << 1) | (1u << 2) | (1u << 3);
             }
         }
-        floats = enemy_flies(kind) || enemy_spectral(kind);
         e->x = f->x;
+        e->y = f->y;
         e->z = f->z;
-        if (!floats && foe_floor(world, f->x, f->y, f->z, &ground)) {
-            e->y = ground;
-        } else {
-            e->y = f->y - (float)entity_pose(e)->h[0] * 0.5f;
-        }
         hash = (unsigned int)df_iround(f->x) * 7u + (unsigned int)df_iround(f->z) * 13u;
         e->yaw = (float)(int)((hash >> 3) & 7u) * (DF_TAU / 8.0f);
         e->phase = (df_u8)(hash & 255u);
         e->moving = 0;
-        e->live = 1;
+        /* Not drawn until its pictures are read (world_creatures_step). */
+        e->live = 0;
         world->ent_kind[world->nent] = (df_i16)kind;
         world->ent_passive[world->nent] = f->passive;
+        world->ent_state[world->nent] = FOE_PENDING;
         world->nent++;
+    }
+    return 1;
+}
+
+/* Every picture slot of entity e's two poses, in turn: k from 0; -1 past the last. */
+static int foe_slot(const Entity *e, int k)
+{
+    const EntityPose *pose;
+
+    if (k >= 2 * ENTITY_VIEWS) {
+        return -1;
+    }
+    pose = k < ENTITY_VIEWS ? &e->walk : &e->idle;
+    return pose->slot[k % ENTITY_VIEWS] == 0xffff ? -2 : (int)pose->slot[k % ENTITY_VIEWS];
+}
+
+/* Its pictures read: each view's size from its record, standing on its floor (a flyer at its marker), drawn. */
+static void foe_finish(World *world, int n)
+{
+    Entity *e;
+    int kind;
+    int p;
+    float ground;
+
+    e = &world->ent[n];
+    kind = (int)world->ent_kind[n];
+    for (p = 0; p < 2; p++) {
+        EntityPose *pose;
+        int k;
+
+        pose = p ? &e->idle : &e->walk;
+        for (k = 0; k < ENTITY_VIEWS; k++) {
+            const Image *img;
+
+            if (pose->slot[k] == 0xffff) {
+                continue;
+            }
+            img = world->images[pose->slot[k]];
+            pose->w[k] = (df_u16)flat_extent(img->width, img->xscale);
+            pose->h[k] = (df_u16)flat_extent(img->height, img->yscale);
+        }
+    }
+    /* e->y is still its marker's point. */
+    if (!(enemy_flies(kind) || enemy_spectral(kind)) && foe_floor(world, e->x, e->y, e->z, &ground)) {
+        e->y = ground;
+    } else {
+        e->y -= (float)entity_pose(e)->h[0] * 0.5f;
+    }
+    e->live = 1;
+    world->ent_state[n] = FOE_READY;
+}
+
+/*
+ * The next part of reading entity n's pictures: a 32 KB piece of a
+ * TEXTURE file (texture_file_step), or one picture decoded, laid out as
+ * a sheet of its frames or padded, and put on the card by distance
+ * (texcache_resident_add); with every one read, the creature is
+ * finished. A record that does not read leaves the creature out.
+ */
+static void foe_part(World *world, int n)
+{
+    const Entity *e;
+    int k;
+
+    e = &world->ent[n];
+    for (k = 0;; k++) {
+        Image *img;
+        int slot;
+        int file;
+        int image;
+        int extent;
+
+        slot = foe_slot(e, k);
+        if (slot == -1) {
+            break;
+        }
+        if (slot < 0 || world->images[slot]) {
+            continue;
+        }
+        file = (int)world->key_file[slot];
+        image = (int)world->key_image[slot];
+        if (!texture_file_step(file)) {
+            return;
+        }
+        img = load_frame(file, image, 0);
+        if (!img) {
+            world->ent_state[n] = FOE_FAILED;
+            log_print(LOG_WARN, "world: a creature's picture TEXTURE.%d record %d did not read", file, image);
+            return;
+        }
+        world->images[slot] = img;
+        if (!make_sheet(world, slot, file, image)) {
+            texture_pad(img);
+        }
+        extent = flat_extent(img->width, img->xscale);
+        texcache_resident_add(slot, img, 1, extent > 0 ? (float)img->width / (float)extent : 1.0f);
+        return;
+    }
+    foe_finish(world, n);
+}
+
+int world_creatures_step(World *world, const Camera *cam, float radius, float budget_ms)
+{
+    df_u32 start;
+    df_u32 budget;
+    int left;
+
+    if (!world || world->nent < 1) {
+        return 0;
+    }
+    start = prof_now();
+    budget = budget_ms > 0.0f && prof_per_ms() ? (df_u32)df_iround(budget_ms * (float)prof_per_ms()) : 0u;
+    for (;;) {
+        float best_d;
+        int best;
+        int i;
+
+        /* The nearest still to read, within radius (0: any); every one with no camera. */
+        best = -1;
+        best_d = 0.0f;
+        left = 0;
+        for (i = 0; i < world->nent; i++) {
+            float dx;
+            float dz;
+            float d;
+
+            if (world->ent_state[i] != FOE_PENDING) {
+                continue;
+            }
+            d = 0.0f;
+            if (cam) {
+                dx = world->ent[i].x - cam->x;
+                dz = world->ent[i].z - cam->z;
+                d = dx * dx + dz * dz;
+                if (radius > 0.0f && d > radius * radius) {
+                    continue;
+                }
+            }
+            left++;
+            if (best < 0 || d < best_d) {
+                best = i;
+                best_d = d;
+            }
+        }
+        if (best < 0) {
+            return 0;
+        }
+        foe_part(world, best);
+        /* With a budget, until it is spent (a part at least); with none, until all are read. */
+        if (budget_ms > 0.0f && (budget == 0u || prof_now() - start >= budget)) {
+            return left;
+        }
+    }
+}
+
+/*
+ * A block's water over the parts of it that have rooms under its level:
+ * its square in cells of WATER_CELL, a cell wet when a model of the block
+ * meets it and reaches below the level (a room or a passage it floods);
+ * solid rock and rooms above the water have none, so the surface is not
+ * drawn under every floor of the block, a full screen of fill on the
+ * Voodoo. Each row's runs of wet cells are one rectangle.
+ */
+#define WATER_CELL 256
+#define WATER_CELLS (TILE / WATER_CELL)
+/* Dungeon water: a murky green-blue, its surface and the fog under it. */
+#define DUNGEON_WATER 0x1c4652u
+#define MAX_WATER 1024
+
+static int add_water(World *world, int nblocks)
+{
+    int b;
+
+    for (b = 0; b < nblocks; b++) {
+        df_u8 wet[WATER_CELLS][WATER_CELLS];
+        float x0;
+        float z0;
+        int i;
+        int cx;
+        int cz;
+
+        if (!world->block_wet[b]) {
+            continue;
+        }
+        x0 = (float)(world->block_gx[b] * TILE);
+        z0 = (float)(world->block_gz[b] * TILE);
+        for (cz = 0; cz < WATER_CELLS; cz++) {
+            for (cx = 0; cx < WATER_CELLS; cx++) {
+                wet[cz][cx] = 0;
+            }
+        }
+        for (i = 0; i < world->ninst; i++) {
+            const Bound *bd;
+            int ax, az, bx, bz;
+
+            bd = &world->bounds[i];
+            if (world->blk[i] != b || bd->cy - bd->ey >= world->block_water[b]) {
+                continue;
+            }
+            ax = df_ifloor((bd->cx - bd->ex - x0) / (float)WATER_CELL);
+            bx = df_ifloor((bd->cx + bd->ex - x0) / (float)WATER_CELL);
+            az = df_ifloor((bd->cz - bd->ez - z0) / (float)WATER_CELL);
+            bz = df_ifloor((bd->cz + bd->ez - z0) / (float)WATER_CELL);
+            ax = ax < 0 ? 0 : ax;
+            az = az < 0 ? 0 : az;
+            bx = bx >= WATER_CELLS ? WATER_CELLS - 1 : bx;
+            bz = bz >= WATER_CELLS ? WATER_CELLS - 1 : bz;
+            for (cz = az; cz <= bz; cz++) {
+                for (cx = ax; cx <= bx; cx++) {
+                    wet[cz][cx] = 1;
+                }
+            }
+        }
+        for (cz = 0; cz < WATER_CELLS; cz++) {
+            for (cx = 0; cx < WATER_CELLS; cx++) {
+                int run;
+                Water *w;
+
+                if (!wet[cz][cx]) {
+                    continue;
+                }
+                for (run = cx; run < WATER_CELLS && wet[cz][run]; run++) {
+                }
+                if (!world->water) {
+                    world->water = (Water *)mem_alloc(MAX_WATER * (df_u32)sizeof(Water));
+                    if (!world->water) {
+                        why("out of memory");
+                        return 0;
+                    }
+                }
+                if (world->nwater < MAX_WATER) {
+                    w = &world->water[world->nwater++];
+                    w->x0 = x0 + (float)(cx * WATER_CELL);
+                    w->x1 = x0 + (float)(run * WATER_CELL);
+                    w->z0 = z0 + (float)(cz * WATER_CELL);
+                    w->z1 = w->z0 + (float)WATER_CELL;
+                    w->y = world->block_water[b];
+                    w->color = DUNGEON_WATER;
+                }
+                cx = run;
+            }
+        }
     }
     return 1;
 }
@@ -1101,6 +1404,9 @@ static int add_doors(World *world)
     b.ninst = world->ninst;
     b.flat = world->flat;
     b.nflat = world->nflat;
+    b.mark = world->dmark;
+    b.mark_block = world->dmark_blk;
+    b.nmark = world->ndmark;
     b.place = world->place;
     b.use = world->use;
     b.use_cap = MAX_USABLES;
@@ -1112,6 +1418,24 @@ static int add_doors(World *world)
     }
     world->nuse = b.nuse;
     world->nmover = b.nmover;
+    /*
+     * A teleport's target is a marker's point, mid-height of its flat:
+     * the eye goes a body's eye above the floor under it, as a walker
+     * stands there (FOE_RAY's reach; with no floor, the point itself).
+     */
+    {
+        int i;
+
+        for (i = 0; i < world->nmover; i++) {
+            Mover *m;
+            float floor_y;
+
+            m = &world->mover[i];
+            if (m->teleport && foe_floor(world, m->to_x, m->to_y, m->to_z, &floor_y)) {
+                m->to_y = floor_y + WALK_EYE;
+            }
+        }
+    }
     sweep_movers(world);
     log_print(LOG_DEBUG, "doors: %d to use, %d that move", world->nuse, world->nmover);
     return 1;
@@ -1170,6 +1494,27 @@ static void mark_glass(World *world)
     }
 }
 
+/*
+ * The last load's stages in cycles (world_load_times): each lap adds the
+ * cycles since the one before to its stage. LEVELFALL logs them.
+ */
+static WorldLoadTimes g_times;
+static df_u32 g_lap;
+
+static void lap(df_u32 *stage)
+{
+    df_u32 now;
+
+    now = prof_now();
+    *stage += now - g_lap;
+    g_lap = now;
+}
+
+void world_load_times(WorldLoadTimes *out)
+{
+    *out = g_times;
+}
+
 static World *assemble(const Dungeon *hold, int require_start, int inside_block, int inside_record)
 {
     World *world;
@@ -1181,6 +1526,8 @@ static World *assemble(const Dungeon *hold, int require_start, int inside_block,
     int tile;
 
     why("load failed");
+    mem_zero(&g_times, sizeof(g_times));
+    g_lap = prof_now();
     dagger_bind_loaders();
     if (!hold || hold->nblocks < 1) {
         why("dungeon");
@@ -1282,7 +1629,17 @@ static World *assemble(const Dungeon *hold, int require_start, int inside_block,
             world->mark = block->marker;
             world->nmark = block->nmarker;
         }
-        if (world->place == PLACE_DUNGEON && !note_foes(world, block)) {
+        if (world->place == PLACE_DUNGEON) {
+            int level;
+
+            /* Its start marker's water: classic's height, down positive, so the world's y is its negative. */
+            level = enemy_water(block->marker, block->nmarker);
+            world->block_wet[b] = (df_u8)(level != ENEMY_DRY);
+            world->block_water[b] = (float)-level;
+            world->block_gx[b] = hold->block[b].x;
+            world->block_gz[b] = hold->block[b].z;
+        }
+        if (world->place == PLACE_DUNGEON && (!note_foes(world, block) || !note_marks(world, block, b))) {
             bsa_close(blocks);
             bsa_close(arch);
             return 0;
@@ -1301,6 +1658,7 @@ static World *assemble(const Dungeon *hold, int require_start, int inside_block,
     }
     bsa_close(blocks);
     bsa_close(arch);
+    lap(&g_times.blocks);
     if (world->ninst < 1 || world->ntris < 1) {
         why("dungeon has no models");
         return 0;
@@ -1322,15 +1680,22 @@ static World *assemble(const Dungeon *hold, int require_start, int inside_block,
             world->have_start = 1;
         }
     }
+    lap(&g_times.rest);
     if (!build_tex_table(world, hold)) {
         return 0;
     }
     if (!paint(world)) {
         return 0;
     }
+    lap(&g_times.pictures);
     if (!add_foes(world)) {
         return 0;
     }
+    lap(&g_times.creatures);
+    if (world->place == PLACE_DUNGEON && !add_water(world, hold->nblocks)) {
+        return 0;
+    }
+    lap(&g_times.water);
     measure(world);
     if (world->maxx <= world->minx || world->maxy <= world->miny) {
         why("dungeon has no extent");
@@ -1363,12 +1728,16 @@ static World *assemble(const Dungeon *hold, int require_start, int inside_block,
             return 0;
         }
     }
+    lap(&g_times.rest);
     finish_images(world);
+    lap(&g_times.pictures);
     flame_lights(world);
     add_emitters(world);
+    lap(&g_times.rest);
     if (!add_doors(world)) {
         return 0;
     }
+    lap(&g_times.doors);
     if (world->place == PLACE_INSIDE) {
         sounds_house(&world->scape, world->building, world->faction, hold->location_id);
         /* Indoors, so always lit; a house has no light records, only its candles. */
@@ -1384,6 +1753,7 @@ static World *assemble(const Dungeon *hold, int require_start, int inside_block,
         add_lamps(world);
         mark_glass(world);
     }
+    lap(&g_times.rest);
     why("");
     return world;
 }
@@ -1551,6 +1921,21 @@ void world_as_level(const World *world, Level *level)
     level->sound = &world->scape;
     level->scene.entities = world->nent > 0 ? world->ent : 0;
     level->scene.nentities = world->nent;
+    level->scene.water = world->nwater > 0 ? world->water : 0;
+    level->scene.nwater = world->nwater;
+}
+
+int world_water_count(const World *world)
+{
+    return world ? world->nwater : 0;
+}
+
+const Water *world_water(const World *world, int index)
+{
+    if (!world || index < 0 || index >= world->nwater) {
+        return 0;
+    }
+    return &world->water[index];
 }
 
 int world_entity_count(const World *world)

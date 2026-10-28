@@ -1,4 +1,5 @@
 #include "engine/scene/scene.h"
+#include "engine/scene/walker.h"
 #include "engine/core/df.h"
 #include "engine/core/mem.h"
 
@@ -2426,4 +2427,50 @@ void scene_cover_at(int index, float *x0, float *y0, float *x1, float *y1)
     if (y1) {
         *y1 = (float)((g_run[index][2] + 1) * OCC_CELL);
     }
+}
+
+/* ---- Water (docs/water.md) ---------------------------------------- */
+
+int scene_water_at(const Scene *scene, float x, float z, float *y, df_u32 *color)
+{
+    const struct Water *best;
+    int i;
+
+    best = 0;
+    for (i = 0; scene && scene->water && i < scene->nwater; i++) {
+        const struct Water *w;
+
+        w = &scene->water[i];
+        if (x >= w->x0 && x <= w->x1 && z >= w->z0 && z <= w->z1 && (!best || w->y > best->y)) {
+            best = w;
+        }
+    }
+    if (!best) {
+        return 0;
+    }
+    if (y) {
+        *y = best->y;
+    }
+    if (color) {
+        *color = best->color;
+    }
+    return 1;
+}
+
+int scene_water_body(const Scene *scene, float x, float eye_y, float z)
+{
+    float level;
+    float feet;
+
+    if (!scene_water_at(scene, x, z, &level, 0)) {
+        return WATER_DRY;
+    }
+    feet = eye_y - WALK_EYE;
+    if (eye_y < level) {
+        return WATER_HEAD;
+    }
+    if (feet + WALK_HEIGHT * 0.5f < level) {
+        return WATER_WAIST;
+    }
+    return feet < level ? WATER_FEET : WATER_DRY;
 }

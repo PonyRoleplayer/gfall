@@ -28,6 +28,7 @@
 #include "game/dagger/wild.h"
 #include "game/dagger/people.h"
 #include "engine/scene/entity.h"
+#include "engine/scene/walker.h"
 #include "game/dagger/enemies.h"
 #include "game/dagger/terrain.h"
 #include "game/dagger/wres.h"
@@ -431,6 +432,9 @@ static int g_have_region61;
 /* Daggerfall's castle, location 50027: the interior culling case. */
 static DunRef g_castle;
 static int g_have_castle;
+/* Anthor's Web: a dungeon with water in its lower part. */
+static DunRef g_wet;
+static int g_have_wet;
 
 static void check_levels(void)
 {
@@ -464,6 +468,10 @@ static void check_levels(void)
         if (rows[i].location_id == 50027) {
             g_castle = rows[i];
             g_have_castle = 1;
+        }
+        if (df_eq(rows[i].name, "Anthor's Web")) {
+            g_wet = rows[i];
+            g_have_wet = 1;
         }
     }
     check_expect(found >= 0 && rows[found].nblocks == 5 && rows[found].location_id == 50050
@@ -2058,6 +2066,32 @@ static void check_stream(void)
                      "the season's turn did not load the whole radius again in its pictures");
         clock_set_season(was);
     }
+    /*
+     * A run far past the budget (1000 units a frame, a step of filling a
+     * frame): the chunk under the camera, and the next within 256 of an
+     * edge, is loaded at once whenever the filling has not got there.
+     */
+    {
+        double rx;
+        double rz;
+        int outran;
+
+        /* From here, and back after: the tests after it start where the walk ended. */
+        stream_world(cam.x, cam.z, &rx, &rz);
+        outran = stream_outran();
+        under = 1;
+        for (step = 0; step < 60; step++) {
+            cam.x += 1000.0f;
+            wild_update(&cam, 0.0f);
+            under = under && ground_under(&level.scene, cam.x, cam.z)
+                && ground_under(&level.scene, cam.x + 255.0f, cam.z);
+        }
+        printf("stream: a run of 60000 units, the camera's chunk loaded at once %d times, ground under all the way %d\n",
+               stream_outran() - outran, under);
+        check_expect(under && stream_outran() > outran, "a run past the stream's filling fell off its edge");
+        stream_local(rx, rz, &cam.x, &cam.z);
+        settle(&cam);
+    }
     wild_close();
     check_wres(level.palette);
     mem_temp_end();
@@ -2267,6 +2301,22 @@ int check_dagger(const char *root_in)
     if (!world) {
         fprintf(stderr, "fail: %s\n", world_error());
         return 1;
+    }
+    /*
+     * Its creatures are read as they come near (world_creatures_step):
+     * none at load, all of them with no camera and no budget.
+     */
+    {
+        int k;
+        int live;
+
+        live = 0;
+        for (k = 0; k < world_entity_count(world); k++) {
+            live += world_entity(world, k)->live;
+        }
+        check_expect(world_entity_count(world) == 42 && live == 0,
+                     "the hold's creatures were read at load, not as they come near");
+        world_creatures_step(world, 0, 0.0f, 0.0f);
     }
     models = world_model_count(world);
     tris = world_triangle_count(world);
@@ -2546,6 +2596,59 @@ int check_dagger(const char *root_in)
     }
     check_view(world);
     check_enemy_rules();
+    /*
+     * Water (docs/water.md): the hold is dry. Anthor's Web is flooded
+     * low: its level within the place's height, each rectangle over a
+     * model that reaches below it, and the scene says a body under it.
+     */
+    check_expect(world_water_count(world) == 0, "Privateer's Hold has water");
+    {
+        Dungeon wd;
+        World *wet;
+
+        check_expect(g_have_wet, "Anthor's Web is not in the dungeon list");
+        if (g_have_wet && dungeon_load_at(g_wet.region, g_wet.index, &wd)
+            && (wet = world_load_dungeon(&wd)) != 0) {
+            Level wl;
+            float minx, miny, minz, maxx, maxy, maxz;
+            int over;
+            int k;
+
+            world_bounds(wet, &minx, &miny, &minz, &maxx, &maxy, &maxz);
+            world_as_level(wet, &wl);
+            over = 0;
+            for (k = 0; k < world_water_count(wet); k++) {
+                const Water *w;
+                int m;
+
+                w = world_water(wet, k);
+                for (m = 0; m < wl.scene.nmodels; m++) {
+                    const Bound *b;
+
+                    b = &wl.scene.bounds[m];
+                    if (b->cy - b->ey < w->y && b->cx + b->ex > w->x0 && b->cx - b->ex < w->x1
+                        && b->cz + b->ez > w->z0 && b->cz - b->ez < w->z1) {
+                        over++;
+                        break;
+                    }
+                }
+            }
+            if (world_water_count(wet) > 0) {
+                const Water *w0;
+
+                w0 = world_water(wet, 0);
+                printf("Anthor's Web water: %d rectangles, level %.0f, the place %.0f..%.0f\n",
+                       world_water_count(wet), w0->y, miny, maxy);
+                check_expect(w0->y > miny && w0->y < maxy && over == world_water_count(wet)
+                             && wl.scene.nwater == world_water_count(wet)
+                             && scene_water_body(&wl.scene, (w0->x0 + w0->x1) * 0.5f, w0->y - 10.0f,
+                                                 (w0->z0 + w0->z1) * 0.5f) == WATER_HEAD,
+                             "Anthor's Web's water is not over its flooded rooms at a level within it");
+            } else {
+                check_expect(0, "Anthor's Web has no water");
+            }
+        }
+    }
     {
         Dungeon hold;
 
@@ -2601,6 +2704,75 @@ int check_dagger(const char *root_in)
                 int frustum;
 
                 world_as_level(inside, &level);
+                /*
+                 * Its creatures, read as they come near (docs/entities.md):
+                 * from its start, those within a block now, the rest later;
+                 * a step with a budget reads at least a part of one more.
+                 */
+                {
+                    Camera at;
+                    float sx, sy, sz, syaw, spitch;
+                    int near_left;
+                    int live;
+                    int far_live;
+                    int k;
+
+                    world_start(inside, &sx, &sy, &sz, &syaw, &spitch);
+                    camera_set(&at, sx, sy, sz, syaw, spitch);
+                    near_left = world_creatures_step(inside, &at, 2048.0f, 0.0f);
+                    live = 0;
+                    far_live = 0;
+                    for (k = 0; k < world_entity_count(inside); k++) {
+                        const Entity *e;
+                        float dx;
+                        float dz;
+
+                        e = world_entity(inside, k);
+                        dx = e->x - sx;
+                        dz = e->z - sz;
+                        live += e->live;
+                        far_live += e->live && dx * dx + dz * dz > 2048.0f * 2048.0f;
+                    }
+                    printf("castle creatures: %d, %d read near the start, %d left\n",
+                           world_entity_count(inside), live,
+                           world_creatures_step(inside, &at, 0.0f, 0.001f));
+                    check_expect(near_left == 0 && live > 0 && live < world_entity_count(inside) && far_live == 0,
+                                 "the castle's creatures near its start were not read alone");
+                    world_creatures_step(inside, 0, 0.0f, 0.0f);
+                }
+                /*
+                 * Its teleports (docs/interact.md): a portal door and one
+                 * other, each sending to a marker in the castle, a body's
+                 * eye above the floor there.
+                 */
+                {
+                    float minx, miny, minz, maxx, maxy, maxz;
+                    int tele;
+                    int doors;
+                    int inside_box;
+                    int k;
+
+                    world_bounds(inside, &minx, &miny, &minz, &maxx, &maxy, &maxz);
+                    tele = 0;
+                    doors = 0;
+                    inside_box = 0;
+                    for (k = 0; k < world_mover_count(inside); k++) {
+                        const Mover *m;
+
+                        m = world_mover(inside, k);
+                        if (!m->teleport) {
+                            continue;
+                        }
+                        tele++;
+                        doors += m->door;
+                        inside_box += m->to_x > minx && m->to_x < maxx && m->to_z > minz && m->to_z < maxz
+                            && m->to_y > miny + WALK_EYE * 0.5f && m->to_y < maxy;
+                    }
+                    printf("castle teleports: %d, %d of them doors, %d to a place in the castle\n",
+                           tele, doors, inside_box);
+                    check_expect(tele == 2 && doors == 1 && inside_box == 2,
+                                 "the castle's portal door and teleport do not send into the castle");
+                }
                 scene_set_limits(DF_FAR, 1);
                 camera_set(&cam, 2002.0f, 1081.0f, 1022.0f,
                            268.0f * (DF_TAU / 360.0f), 2.0f * (DF_TAU / 360.0f));

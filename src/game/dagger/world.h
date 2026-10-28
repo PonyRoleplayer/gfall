@@ -79,9 +79,46 @@ int world_texture_file(const World *world, int index);
  * when attacked; -1 for no such entity. What they do is the game's.
  */
 struct Entity;
+/*
+ * A dungeon's creatures are read as they come near, not at load (their
+ * archives were 6 MB of the castle's disk and 2.3 s of its load on the
+ * 233; docs/entities.md). Each step reads the nearest still to read
+ * within radius of cam (0: any; no camera: every one), a part at a time
+ * (a file's 32 KB piece, or one picture), for budget_ms (at most; one
+ * part at least), or, with budget_ms 0, until none is left. A creature
+ * is drawn (live) once all its pictures are read. Returns how many are
+ * still to read within radius. Call it before gfx_prime for those near
+ * the landing, then each frame the world is not paused.
+ */
+int world_creatures_step(World *world, const Camera *cam, float radius, float budget_ms);
 int world_entity_count(const World *world);
 const struct Entity *world_entity(const World *world, int index);
 int world_entity_kind(const World *world, int index, int *passive);
+
+/*
+ * A dungeon's water (docs/water.md): rectangles of its blocks flooded to
+ * each block's level, as the scene has them (Scene.water). 0 for a dry
+ * place. Whether the player is in it: scene_water_body.
+ */
+int world_water_count(const World *world);
+const Water *world_water(const World *world, int index);
+
+/*
+ * The last load's stages, in cycles (prof_now): the blocks and their
+ * meshes, the pictures (the archives' table, painting the faces and
+ * flats, the stretches and pads), the creatures, the water, the doors
+ * and actions, and the rest (the palette, lights, sounds, lamps). A
+ * viewer turns them into milliseconds (docs/viewers.md, the load line).
+ */
+typedef struct WorldLoadTimes {
+    df_u32 blocks;
+    df_u32 pictures;
+    df_u32 creatures;
+    df_u32 water;
+    df_u32 doors;
+    df_u32 rest;
+} WorldLoadTimes;
+void world_load_times(WorldLoadTimes *out);
 
 /* Pointers into this world. Valid until the process exits. */
 void world_as_level(const World *world, Level *level);

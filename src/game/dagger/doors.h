@@ -54,6 +54,10 @@ typedef struct DoorBuild {
     int ninst;
     const Flat *flat;
     int nflat;
+    /* A dungeon's editor markers and their blocks: a teleport's target may be one. 0 for none. */
+    const Marker *mark;
+    const df_u8 *mark_block;
+    int nmark;
     int place;
     /* Out, with room for cap of each. */
     Usable *use;

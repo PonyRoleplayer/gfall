@@ -1400,6 +1400,46 @@ void glide_sky(int on, const df_u8 *rgb)
     glide.tex_clamp(GR_TMU0, GR_TEXTURECLAMP_WRAP, GR_TEXTURECLAMP_WRAP);
 }
 
+void glide_water(int on, df_u32 rgb, int alpha)
+{
+    if (!g_opened) {
+        return;
+    }
+    if (on) {
+        alpha = alpha < 0 ? 0 : (alpha > 255 ? 255 : alpha);
+        /* The constant's colour and alpha alone: no texel, no vertex colour. */
+        glide.constant(((GrColor_t)alpha << 24) | (GrColor_t)(rgb & 0xffffffu));
+        glide.color(
+            GR_COMBINE_FUNCTION_LOCAL,
+            GR_COMBINE_FACTOR_NONE,
+            GR_COMBINE_LOCAL_CONSTANT,
+            GR_COMBINE_OTHER_NONE,
+            FXFALSE);
+        glide.alpha(
+            GR_COMBINE_FUNCTION_LOCAL,
+            GR_COMBINE_FACTOR_NONE,
+            GR_COMBINE_LOCAL_CONSTANT,
+            GR_COMBINE_OTHER_NONE,
+            FXFALSE);
+        glide.tex_combine(
+            GR_TMU0,
+            GR_COMBINE_FUNCTION_ZERO,
+            GR_COMBINE_FACTOR_NONE,
+            GR_COMBINE_FUNCTION_ZERO,
+            GR_COMBINE_FACTOR_NONE,
+            FXFALSE,
+            FXFALSE);
+        glide.alpha_test(GR_CMP_ALWAYS);
+        glide_blend(1);
+        glide.depth_func(g_depth_cmp);
+        glide.depth_mask(FXFALSE);
+        return;
+    }
+    glide.depth_mask(FXTRUE);
+    alpha_apply();
+    color_textured();
+}
+
 void glide_glow(int on, df_u32 rgb)
 {
     FxU32 pal[256];

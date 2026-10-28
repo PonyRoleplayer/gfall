@@ -54,6 +54,9 @@ int draw_fpu_single(void);
 /* Sprites point sampled (1, default: crisp, as Daggerfall drew them) or bilinear (0). */
 void draw_set_sprite_point(int on);
 int draw_sprite_point(void);
+/* Water drawn (1, default: its surface, and the eye under it in its colour) or not (docs/water.md). */
+void draw_set_water(int on);
+int draw_water(void);
 /* See gfx_prime. */
 void draw_prime(const struct Level *level, const Camera *cam);
 /*

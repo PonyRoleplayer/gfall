@@ -1,5 +1,7 @@
 #include "engine/gfx/gfx.h"
+#include "engine/ui/console.h"
 #include "engine/core/log.h"
+#include "engine/core/prof.h"
 #include "engine/scene/light.h"
 #include "engine/scene/clock.h"
 #include "engine/scene/weather.h"
@@ -41,8 +43,20 @@ const char *gfx_error(void)
     return g_why;
 }
 
+/*
+ * The last place's load on the card side, in cycles (gfx_load_times):
+ * its pictures sent or put on residency, its light decals cut, and the
+ * prime before its first frame.
+ */
+static df_u32 g_load_card;
+static df_u32 g_load_lights;
+static df_u32 g_load_prime;
+
 int gfx_prepare(const Level *level)
 {
+    g_load_card = 0;
+    g_load_lights = 0;
+    g_load_prime = 0;
     if (level && level->streamed) {
         Weather w;
 
@@ -89,15 +103,26 @@ int gfx_prepare(const Level *level)
     if (level && level->palette) {
         font_upload(level->palette->r, level->palette->g, level->palette->b);
     }
+    g_load_card = prof_now();
     if (!texcache_upload(level)) {
         g_why = texcache_error();
         return 0;
     }
+    g_load_lights = prof_now();
+    g_load_card = g_load_lights - g_load_card;
     glide_mark();
     light_build(&level->scene);
+    g_load_lights = prof_now() - g_load_lights;
     g_level = level;
     g_prepared = 1;
     return 1;
+}
+
+void gfx_load_times(df_u32 *card, df_u32 *lights, df_u32 *prime)
+{
+    *card = g_load_card;
+    *lights = g_load_lights;
+    *prime = g_load_prime;
 }
 
 void gfx_set_light_range(int scale)
@@ -128,7 +153,14 @@ void gfx_fade_in(float secs)
 
 void gfx_prime(const Level *level, const Camera *cam)
 {
+    g_load_prime = prof_now();
     draw_prime(level, cam);
+    g_load_prime = prof_now() - g_load_prime;
+}
+
+int gfx_paused(void)
+{
+    return console_open();
 }
 
 void gfx_frame(const Camera *cam, const Level *level)
