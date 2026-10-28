@@ -57,6 +57,9 @@ Every file starts with a `HEAD` chunk (`rec_head_schema`): rows of role, size an
 | `ENCT` | `encounter` | `Encounter` | `enemies.c` | encounter tables by dungeon type (`DUN_TYPE_*`), plus `ENCOUNTER_UNDERWATER` (19) |
 | `WTHR` | `weather` | `WeatherOdds` | `forecast.c` | weather odds; id = climate × 4 + season |
 | `WLOK` | `look` | `WeatherKindLook` | `forecast.c` | each weather kind's look (`WeatherLook`) |
+| `CMON` | `month` | `CalMonth` | `calendar.c` | the calendar's months by index: name, days, season (`CLOCK_*`) |
+| `CWEK` | `weekday` | `CalWeekday` | `calendar.c` | its weekdays by index: name |
+| `CALE` | `calendar` | `CalInfo` | `calendar.c` | one record, id 0: era, whether each month restarts the week, the start date |
 
 `maindat.c`'s `table_at` lists the tables a `.DAT` may carry. A new table means:
 1. its row struct and `RecSchema` in the module that uses it;
@@ -64,7 +67,7 @@ Every file starts with a `HEAD` chunk (`rec_head_schema`): rows of role, size an
 3. its rows in `maindat_import`;
 4. a test.
 
-MAIN.DAT is about 7.5 KB today. The tables planned next, with their sources and order, are in `docs/game.md` (Data): the location index and world map, climates, items, weapons, spells, races, classes, factions, the calendar.
+MAIN.DAT is about 8.4 KB today. The tables planned next, with their sources and order, are in `docs/game.md` (Data): the location index and world map, climates, items, weapons, spells, races, classes, factions, the calendar.
 
 ### What classic's tables are
 
@@ -73,27 +76,31 @@ MAIN.DAT is about 7.5 KB today. The tables planned next, with their sources and 
 - **RandomEncounters:** 20 tables of 20 kinds; the cemetery uses 11.
 - **The Chronicles' weather odds** (p. 47): six climate groups, expanded at import into one record for each of the 10 climate ids and 4 seasons.
 
+- **Tamriel's calendar**, from DaggerfallDateTime: twelve months of thirty days with their seasons, the seven weekdays that restart each month, and a new game on the 1st of Midyear, 3E 405.
+
 The weather looks are the engine's own defaults, read with `weather_look` when cooking, so the picture is the same until a mod changes them.
+
+**The calendar** goes to the engine as one `Calendar` (`calendar_apply`, `clock_set_calendar`). A record table holds no list of names inside a record, so the months and weekdays are tables of their own, read from id 0 up to the first id missing. The calendar is installed only when it differs from the one in use, so without a calendar mod the clock is never moved; LEVELFALL's `date=` and `time=` from its cfg stay. A different calendar moves the clock to its start date, keeping the time of day.
 
 ## The first run, and when it runs again (`maindat_start`)
 
 1. GFALL and LEVELFALL call `maindat_start` after `win_startup` and before any place loads.
-2. It reads `MAIN.DAT` beside the exe, which is ARENA2's parent: the VFS reads it as `../MAIN.DAT`.
+2. It reads `DATA\MAIN.DAT` beside the exe (`vfs_read_beside`). `DATA\` is made when missing (`fs_make_dir`).
 3. If the file is missing or stale, it cooks it again (`fs_create`) and reads it back. *Stale* means one of:
    - another `MAINDAT_VERSION`;
    - a `SOURCE` whose size has changed (MONSTER.BSA today);
    - not a record file.
-4. It merges MAIN.DAT, then each name in `LOADORDR.TXT` beside the exe:
+4. It merges MAIN.DAT, then each name in `DATA\LOADORDR.TXT`, read from `DATA\`:
    - one name per line; blank lines and `#` lines are skipped;
    - MAIN.DAT is skipped if listed, since it always goes first;
    - a missing file is a warning in the log.
 
    A file whose `NEEDS` hasn't been merged yet is skipped whole, with a log line saying why.
-5. `maindat_apply` hands the engine the values it takes from data: the weather looks.
+5. `maindat_apply` hands the engine the values it takes from data: the weather looks and the calendar.
 
 Mods never cause a re-cook; they are merged at every start. Cooking reads no large file today and takes milliseconds. When the location index and world map come, it will take seconds on the 233, and it gets a held screen (`gfx_hold`).
 
-**Where the files go:** beside the exe, for now. A `DATA\` folder needs a way to make a folder (`fs_make_dir`), which is asked of the engine.
+**Where the files go:** `DATA\` beside the exe holds MAIN.DAT, `LOADORDR.TXT` and every mod.
 
 **hostcheck** cooks MAIN.DAT into memory (`check_data`) and merges it before any dungeon loads. It never writes into the game data's folder.
 
@@ -126,7 +133,7 @@ health_min = 30           # the rat: this field alone
 - An error names the file and line (`goblins.txt:4: no such field: helth_max`), and nothing is written.
 - Out-of-range numbers are errors in `build`; they are clamped only when merging.
 
-Changing a creature: dump it, edit the text, build a mod, and add its name to `LOADORDR.TXT`. The example is `tests/data/goblins.txt`.
+Changing a creature: dump it, edit the text, build a mod into `DATA\`, and add its name to `DATA\LOADORDR.TXT`. The example is `tests/data/goblins.txt`.
 
 `make hostcheck` runs `datacheck`, which:
 - cooks, dumps, builds again, and checks `same`;
@@ -144,11 +151,12 @@ Changing a creature: dump it, edit the text, build a mod, and add its name to `L
 - **`check_dagger.c`, `check_data`:**
   - MAIN.DAT cooked and not stale;
   - 62 kinds, 20 tables, 40 odds and 7 looks;
+  - 12 months and 7 weekdays, equal byte for byte to the engine's own Tamriel (`clock_calendar_default`);
   - the rat is EnemyBasics' rat;
   - the human stronghold's table and the cemetery's 11 are classic's;
   - the fog look is the engine's own;
   - another version or another MONSTER.BSA size is stale;
-  - a mod adds kind 200 over the defaults, changes only the rat's least health and only the fog;
+  - a mod adds kind 200 over the defaults, changes only the rat's least health, only the fog, and only Midyear's name, which reaches the clock;
   - a later file wins the field both set;
   - a file whose need is missing is skipped.
 - hostcheck's lines for the hold's 42 creatures and their draws are unchanged.
@@ -158,11 +166,10 @@ Changing a creature: dump it, edit the text, build a mod, and add its name to `L
 - **The other chunks**, in the order `docs/game.md` gives:
   1. the location index, world map and climates;
   2. items and weapons;
-  3. the calendar;
-  4. the character tables;
-  5. people and society;
-  6. text and quests.
+  3. the character tables;
+  4. people and society;
+  5. text and quests.
 - **MONSTER.BSA's `ENEMY###.CFG` names and stats**, read once their layout is confirmed against UESP.
 - **A mod's pictures over ARENA2** (`TEXTURE.600` beside a mod). This needs the VFS to search several roots, an engine request.
-- **The `DATA\` folder**, and a Win98 console build of dfrec.
+- A Win98 console build of dfrec.
 - **Removing records:** a mod can add and change records, but not delete them yet.

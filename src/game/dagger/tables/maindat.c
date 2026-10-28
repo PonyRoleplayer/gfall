@@ -2,6 +2,7 @@
 #include "game/dagger/tables/classic.h"
 #include "game/dagger/tables/enemies.h"
 #include "game/dagger/tables/forecast.h"
+#include "game/dagger/tables/calendar.h"
 #include "engine/assets/vfs.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
@@ -35,6 +36,12 @@ static RecTable *table_at(int i)
         return weather_odds_table();
     case 3:
         return weather_look_table();
+    case 4:
+        return cal_month_table();
+    case 5:
+        return cal_weekday_table();
+    case 6:
+        return cal_info_table();
     default:
         return 0;
     }
@@ -42,7 +49,7 @@ static RecTable *table_at(int i)
 
 int maindat_table_count(void)
 {
-    return 4;
+    return 7;
 }
 
 RecTable *maindat_table(int i)
@@ -148,7 +155,23 @@ int maindat_import(RecPut put, void *ctx)
         looks[i].view = l.view;
         looks[i].haze = l.haze;
     }
-    return rec_put_rows(put, ctx, &weather_look_schema, looks, WEATHER_KINDS, 0, 0);
+    if (!rec_put_rows(put, ctx, &weather_look_schema, looks, WEATHER_KINDS, 0, 0)) {
+        return 0;
+    }
+    {
+        const CalMonth *months;
+        const CalWeekday *days;
+
+        months = classic_months(&n);
+        if (!rec_put_rows(put, ctx, &cal_month_schema, months, n, 0, 0)) {
+            return 0;
+        }
+        days = classic_weekdays(&n);
+        if (!rec_put_rows(put, ctx, &cal_weekday_schema, days, n, 0, 0)) {
+            return 0;
+        }
+    }
+    return rec_put_rows(put, ctx, &cal_info_schema, classic_calendar(), 1, 0, 0);
 }
 
 /* A file's HEAD rows, into g_head. 0 when it has none. */
@@ -281,18 +304,26 @@ const char *maindat_merged_name(int i)
 void maindat_apply(void)
 {
     forecast_looks();
+    calendar_apply();
 }
 
-/* MAIN.DAT and the mods sit beside the exe, which is ARENA2's parent: the VFS reads them as "../NAME". */
+/* DATA\name beside the exe: MAIN.DAT, LOADORDR.TXT, a mod. */
+static void in_data(char *dst, const char *name)
+{
+    int k;
+
+    df_copy(dst, MAINDAT_DIR "\\", REC_NAME);
+    for (k = 0; dst[k]; k++) {
+    }
+    df_copy(dst + k, name, REC_NAME);
+}
+
 static df_u8 *read_beside(const char *name, df_u32 *n)
 {
-    char rel[REC_NAME + 4];
+    char path[2 * REC_NAME];
 
-    rel[0] = '.';
-    rel[1] = '.';
-    rel[2] = '/';
-    df_copy(rel + 3, name, REC_NAME);
-    return vfs_read(rel, n);
+    in_data(path, name);
+    return vfs_read_beside(path, n);
 }
 
 static int put_file(void *ctx, const void *src, df_u32 n)
@@ -338,13 +369,15 @@ int maindat_start(void)
     df_u32 n;
     df_u32 pos;
     char name[REC_NAME];
+    char path[2 * REC_NAME];
 
     bytes = read_beside(MAINDAT_NAME, &n);
     if (!bytes || maindat_stale(bytes, n)) {
         log_text(LOG_INFO, bytes ? "data: MAIN.DAT is stale, cooking it again" : "data: cooking MAIN.DAT");
-        if (!fs_create(MAINDAT_NAME) || !maindat_import(put_file, 0)) {
+        in_data(path, MAINDAT_NAME);
+        if (!fs_make_dir(MAINDAT_DIR) || !fs_create(path) || !maindat_import(put_file, 0)) {
             fs_abort();
-            log_text(LOG_ERROR, "data: MAIN.DAT could not be written beside the program");
+            log_text(LOG_ERROR, "data: DATA\\MAIN.DAT could not be written beside the program");
             return 0;
         }
         fs_finish();
@@ -369,7 +402,7 @@ int maindat_start(void)
         }
         mod = read_beside(name, &mn);
         if (!mod) {
-            log_print(LOG_WARN, "data: %s is in " MAINDAT_ORDER " but not beside the program", name);
+            log_print(LOG_WARN, "data: %s is in " MAINDAT_ORDER " but not in " MAINDAT_DIR, name);
             continue;
         }
         maindat_merge(mod, mn, name);

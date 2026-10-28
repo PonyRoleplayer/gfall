@@ -7,17 +7,20 @@
  * MAIN.DAT and the .DAT files over it: Daggerfall's tables as records.
  * Read docs/data.md before editing.
  *
- * The first run cooks MAIN.DAT beside the exe: classic's tables that
+ * The first run cooks MAIN.DAT in DATA\ beside the exe: classic's tables that
  * live inside FALL.EXE (classic.c), and later what ARENA2's files hold,
  * read through formats/. Models, pictures, blocks and sounds stay in
  * ARENA2. At every start the game merges MAIN.DAT, then each file
  * LOADORDR.TXT names, into its tables by id (recfile.h): a new id adds a
- * record, an existing one takes the fields that file carries.
+ * record, an existing one takes the fields that file carries. Every one
+ * of them sits in DATA\, LOADORDR.TXT too.
  *
  * Plain C: the programs and hostcheck run it. Reads go through the VFS
  * (ARENA2 must be mounted); maindat_start reads and writes beside it.
  */
 
+/* The folder beside the program that holds MAIN.DAT, LOADORDR.TXT and the mods. */
+#define MAINDAT_DIR "DATA"
 #define MAINDAT_NAME "MAIN.DAT"
 #define MAINDAT_ORDER "LOADORDR.TXT"
 /* The importer's version. A change makes every MAIN.DAT stale, so the next start cooks it again. */
@@ -45,12 +48,13 @@ int maindat_merge(const df_u8 *bytes, df_u32 n, const char *name);
 /* The files merged so far, in order. */
 int maindat_merged(void);
 const char *maindat_merged_name(int i);
-/* After the last merge: hands the engine the values it takes from data (the weather's looks). */
+/* After the last merge: hands the engine the values it takes from data: the weather's looks, the calendar. */
 void maindat_apply(void);
 
 /*
- * A program's start: MAIN.DAT beside the exe, cooked again when missing
- * or stale, then the files LOADORDR.TXT names there, then maindat_apply.
+ * A program's start: DATA\MAIN.DAT beside the exe (the folder made when
+ * missing), cooked again when missing or stale, then the files
+ * DATA\LOADORDR.TXT names, from DATA\, then maindat_apply.
  * 0 when MAIN.DAT can be neither read nor written.
  */
 int maindat_start(void);

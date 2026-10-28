@@ -5,8 +5,9 @@
  * See classic.h and docs/data.md. Classic keeps these tables inside
  * FALL.EXE; Daggerfall Unity carries them in C# (MIT License, Copyright
  * (c) 2009-2023 Daggerfall Workshop, https://github.com/Interkarma/daggerfall-unity):
- * EnemyBasics.Enemies, RandomEncounters.EncounterTables, and
- * WeatherTable.json from the Daggerfall Chronicles, p. 47.
+ * EnemyBasics.Enemies, RandomEncounters.EncounterTables,
+ * WeatherTable.json from the Daggerfall Chronicles, p. 47, and
+ * DaggerfallDateTime's calendar.
  */
 
 /*
@@ -182,6 +183,51 @@ static const int g_climates[] = {
     CLIMATE_OCEAN, CLIMATE_DESERT, CLIMATE_DESERT2, CLIMATE_MOUNTAIN, CLIMATE_RAINFOREST,
     CLIMATE_SWAMP, CLIMATE_SUBTROPICAL, CLIMATE_MOUNTAIN_WOODS, CLIMATE_WOODLANDS, CLIMATE_HAUNTED
 };
+
+/*
+ * DaggerfallDateTime: twelve months of thirty days, their seasons
+ * (winter, winter, spring x3, summer x3, fall x3, winter); a week of
+ * seven days that starts again each month; a new game on the 1st of
+ * Midyear, 3E 405.
+ */
+static const CalMonth g_months[] = {
+    { 0, "Morning Star", 30, CLOCK_WINTER },
+    { 1, "Sun's Dawn", 30, CLOCK_WINTER },
+    { 2, "First Seed", 30, CLOCK_SPRING },
+    { 3, "Rain's Hand", 30, CLOCK_SPRING },
+    { 4, "Second Seed", 30, CLOCK_SPRING },
+    { 5, "Midyear", 30, CLOCK_SUMMER },
+    { 6, "Sun's Height", 30, CLOCK_SUMMER },
+    { 7, "Last Seed", 30, CLOCK_SUMMER },
+    { 8, "Hearthfire", 30, CLOCK_FALL },
+    { 9, "Frostfall", 30, CLOCK_FALL },
+    { 10, "Sun's Dusk", 30, CLOCK_FALL },
+    { 11, "Evening Star", 30, CLOCK_WINTER }
+};
+
+static const CalWeekday g_weekdays[] = {
+    { 0, "Sundas" }, { 1, "Morndas" }, { 2, "Tirdas" }, { 3, "Middas" },
+    { 4, "Turdas" }, { 5, "Fredas" }, { 6, "Loredas" }
+};
+
+static const CalInfo g_calendar = { 0, "3E", 1, 405, 5, 0 };
+
+const CalMonth *classic_months(int *n)
+{
+    *n = (int)(sizeof(g_months) / sizeof(g_months[0]));
+    return g_months;
+}
+
+const CalWeekday *classic_weekdays(int *n)
+{
+    *n = (int)(sizeof(g_weekdays) / sizeof(g_weekdays[0]));
+    return g_weekdays;
+}
+
+const CalInfo *classic_calendar(void)
+{
+    return &g_calendar;
+}
 
 const EnemyKind *classic_enemies(int *n)
 {

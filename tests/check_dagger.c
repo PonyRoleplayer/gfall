@@ -19,7 +19,7 @@
 #include "game/dagger/formats/climate.h"
 #include "game/dagger/tables/forecast.h"
 #include "game/dagger/tables/maindat.h"
-#include "game/dagger/tables/enemies.h"
+#include "game/dagger/tables/calendar.h"
 #include "engine/scene/weather.h"
 #include "engine/scene/clock.h"
 #include "engine/scene/collide.h"
@@ -242,6 +242,17 @@ static void check_data(void)
                      && weather_odds_table()->count == 40 && weather_look_table()->count == WEATHER_KINDS,
                  "MAIN.DAT does not hold 62 kinds, 20 encounter tables, 40 odds and 7 looks");
     check_expect(memcmp(&before, &after, sizeof(before)) == 0, "MAIN.DAT's fog is not the engine's own");
+    /* The calendar: twelve months, seven weekdays, and the engine's own Tamriel byte for byte. */
+    {
+        Calendar cooked;
+        Calendar tamriel;
+
+        memset(&tamriel, 0, sizeof(tamriel));
+        clock_calendar_default(&tamriel);
+        check_expect(cal_month_table()->count == 12 && cal_weekday_table()->count == 7
+                         && calendar_from_records(&cooked) && memcmp(&cooked, &tamriel, sizeof(cooked)) == 0,
+                     "MAIN.DAT's calendar is not the engine's Tamriel");
+    }
     rat = enemy_kind(ENEMY_RAT);
     check_expect(rat && strcmp(rat->name, "Rat") == 0 && rat->male == 255 && rat->has_idle
                      && rat->behaviour == ENEMY_GENERAL && rat->health_min == 9 && rat->health_max == 16
@@ -296,6 +307,16 @@ static void check_data(void)
     rows[1].health_min = 30;
     rec_put_rows(put_mem, &mod, &enemy_schema, &rows[1], 1, fields, 1);
     rec_put_rows(put_mem, &mod, &enemy_schema, &rows[1], 1, (fields[1] = fields[4], fields), 2);
+    /* A calendar mod: Midyear renamed, nothing else of it. */
+    {
+        CalMonth month;
+
+        memset(&month, 0, sizeof(month));
+        month.id = 5;
+        df_copy(month.name, "High Summer", CLOCK_NAME);
+        fields[1] = field_of(&cal_month_schema, "name");
+        rec_put_rows(put_mem, &mod, &cal_month_schema, &month, 1, fields, 2);
+    }
     /* A look: the fog thicker, and nothing else of it. */
     memset(&look, 0, sizeof(look));
     look.id = WEATHER_FOG;
@@ -314,6 +335,9 @@ static void check_data(void)
                  "a mod's rat changed more than its least health");
     check_expect(after.fog == 300.0f && after.cloud == before.cloud && after.view == before.view,
                  "a mod's fog did not reach the engine alone");
+    check_expect(strcmp(clock_month_name(5), "High Summer") == 0 && clock_month_days(5) == 30
+                     && clock_months() == 12,
+                 "a mod's month name did not reach the clock alone");
 
     /* A later file wins the field both set; one needing a file not merged is skipped. */
     memset(&later, 0, sizeof(later));

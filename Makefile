@@ -112,6 +112,7 @@ FORMATS_SRC := \
 TABLES_SRC := \
 	src/game/dagger/tables/maindat.c \
 	src/game/dagger/tables/classic.c \
+	src/game/dagger/tables/calendar.c \
 	src/game/dagger/tables/swaps.c \
 	src/game/dagger/tables/enemies.c \
 	src/game/dagger/tables/forecast.c \

@@ -3,6 +3,7 @@
 
 #include "game/dagger/tables/enemies.h"
 #include "game/dagger/tables/forecast.h"
+#include "game/dagger/tables/calendar.h"
 
 /*
  * Classic's tables that live inside FALL.EXE, not in an ARENA2 file:
@@ -16,5 +17,9 @@ const EnemyKind *classic_enemies(int *n);
 const Encounter *classic_encounters(int *n);
 /* The weather odds for every climate id and season, into out (cap rows); returns the rows. */
 int classic_weather_odds(WeatherOdds *out, int cap);
+/* Tamriel's calendar: its months, its weekdays, and its one CALE record. */
+const CalMonth *classic_months(int *n);
+const CalWeekday *classic_weekdays(int *n);
+const CalInfo *classic_calendar(void);
 
 #endif
