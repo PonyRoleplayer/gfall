@@ -1565,14 +1565,12 @@ void world_keep_restore(World *world)
     keep_scene(world, &scene);
     keep_restore(&scene, 0, world->nmover, world->ent, world->nent, 0.0f, 0.0f, 0.0f);
     /*
-     * The engine's live is "drawn". A creature kept dead stays so; any
-     * other waits for its pictures to be read (world_creatures_step).
+     * The engine's live is "drawn". A creature kept dead (Entity.dead)
+     * stays so; any other waits for its pictures to be read
+     * (world_creatures_step).
      */
     for (i = 0; i < world->nent; i++) {
-        const Keep *row;
-
-        row = keep_find(world->ent[i].key);
-        if (row && row->placed && !row->live) {
+        if (world->ent[i].dead) {
             world->ent_state[i] = FOE_DEAD;
         }
         world->ent[i].live = 0;
@@ -1582,20 +1580,17 @@ void world_keep_restore(World *world)
 void world_keep_save(World *world)
 {
     Scene scene;
-    Entity *alive;
     int i;
 
     if (!world->keep_place) {
         return;
     }
     keep_scene(world, &scene);
-    /* A copy whose live is the game's "alive": one not read yet is not dead. */
-    alive = world->nent ? (Entity *)mem_alloc((df_u32)world->nent * (df_u32)sizeof(Entity)) : 0;
-    for (i = 0; alive && i < world->nent; i++) {
-        alive[i] = world->ent[i];
-        alive[i].live = (df_u8)(world->ent_state[i] != FOE_DEAD);
+    /* Killed is the game's Entity.dead, kept; live is only "drawn", and one not read yet is not dead. */
+    for (i = 0; i < world->nent; i++) {
+        world->ent[i].dead = (df_u8)(world->ent_state[i] == FOE_DEAD);
     }
-    keep_save(&scene, 0, world->nmover, alive, alive ? world->nent : 0, 0.0f, 0.0f, 0.0f);
+    keep_save(&scene, 0, world->nmover, world->ent, world->nent, 0.0f, 0.0f, 0.0f);
 }
 
 static World *assemble(const Dungeon *hold, int require_start, int inside_block, int inside_record)

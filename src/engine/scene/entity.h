@@ -95,8 +95,14 @@ typedef struct Entity {
      */
     df_u8 hold;
     df_u8 frame;
-    /* 0 for a free entry: not drawn. */
+    /* 0 for a free entry: not drawn. Only "drawn": a creature whose pictures are not read yet is not live. */
     df_u8 live;
+    /*
+     * The game's: 1 once it was killed. Kept across a load (keep.h) where
+     * live is not, so a creature saved before its pictures were read is
+     * not taken for dead, nor one restored drawn before they are.
+     */
+    df_u8 dead;
     /* Its key, from the game; 0, 0 is not kept (keep.h). */
     KeepKey key;
     /* Where the file put it, noted by keep_restore, so a kept row is only what changed. */

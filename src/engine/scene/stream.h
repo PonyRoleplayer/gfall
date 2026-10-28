@@ -3,6 +3,7 @@
 
 #include "engine/gfx/camera.h"
 #include "engine/scene/scene.h"
+#include "engine/scene/entity.h"
 
 /*
  * A world loaded around the camera, chunk by chunk. Read
@@ -34,6 +35,10 @@
  * shift, so a float keeps its precision anywhere on a world of 32
  * million units.
  *
+ * When a chunk's fill is done, its movers' and entities' kept state is
+ * put back (keep_restore, docs/interact.md) before it is in the scene;
+ * before it is dropped it is saved (keep_save), in the place's frame.
+ *
  * What a chunk holds is the game's: its fill writes the slot's arrays,
  * in the chunk's own frame (0..STREAM_CHUNK east and north of its
  * corner), the ground's near models first, then its far ones, then the
@@ -62,6 +67,14 @@ typedef struct StreamCaps {
     int emitters;
     int usables;
     int movers;
+    /*
+     * 0 (the world's): the stream leaves Scene.entities and Scene.water
+     * to the game (the townspeople's own array). Above 0, the stream owns
+     * them, a range a slot as for the rest: a dungeon's creatures and
+     * water, block by block.
+     */
+    int entities;
+    int water;
 } StreamCaps;
 
 typedef struct StreamOut {
@@ -72,6 +85,8 @@ typedef struct StreamOut {
     Emitter *emitters;
     Usable *usables;
     Mover *movers;
+    Entity *entities;
+    Water *water;
     /*
      * What is written so far; the fill keeps them between its steps. Not
      * "near" and "far": windows.h defines both as empty macros.
@@ -84,6 +99,8 @@ typedef struct StreamOut {
     int emitters_n;
     int usables_n;
     int movers_n;
+    int entities_n;
+    int water_n;
     /* 0 on the first call for a chunk; the fill keeps it between its steps. */
     int step;
     /* The chunk's own state, the source's; handed back to its drop. */
@@ -106,9 +123,20 @@ typedef struct StreamSource {
 /*
  * Set scene up for a stream round chunk (cx, cz), which becomes the
  * origin, on the current heap: its arrays are the slots'. radius
- * 1..STREAM_RADIUS_MAX. 0 when out of memory.
+ * 1..STREAM_RADIUS_MAX. 0 when out of memory. The world's: chunks of
+ * STREAM_CHUNK, slots for STREAM_RADIUS_MAX.
  */
 int stream_open(Scene *scene, const StreamSource *src, int radius, int cx, int cz);
+/*
+ * The same with chunks of chunk units a side (a dungeon's 2048: one
+ * block a chunk), and slots for radius alone: (2 (radius + STREAM_KEEP)
+ * + 1)^2, 25 at radius 1, so a dungeon block's large caps are not kept
+ * 121 times. stream_set_radius cannot go past it. docs/streaming.md,
+ * Dungeons.
+ */
+int stream_open_sized(Scene *scene, const StreamSource *src, int radius, int cx, int cz, int chunk);
+/* The stream's chunk side in units. */
+int stream_chunk_size(void);
 /* Every chunk goes (the source's drop for each), and the stream stops. */
 void stream_close(void);
 int stream_active(void);
@@ -150,6 +178,12 @@ int stream_slot_chunk(int slot, int *cx, int *cz);
 /* Slot's ranges in the scene's models and lights: first and count, the ground's near and far, and the rest. */
 void stream_slot_models(int slot, int *first, int *near_n, int *far_n, int *rest);
 void stream_slot_lights(int slot, int *first, int *count);
+/*
+ * A slot's entities, writable (the game's motors), when the stream owns
+ * them (StreamCaps.entities): the first, and in *first its index in the
+ * scene's and in *n how many; 0 when it does not or the slot is empty.
+ */
+Entity *stream_slot_entities(int slot, int *first, int *n);
 /*
  * The longest single fill call since the last ask, in ms of the cycle
  * counter, and its step (StreamOut.step before the call); then forgets

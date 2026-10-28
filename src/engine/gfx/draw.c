@@ -2246,6 +2246,10 @@ static void draw_water_pass(const Camera *cam, const Basis *basis, const Scene *
         float cx, cz, ex, ez, dx, dz;
 
         w = &scene->water[i];
+        /* An empty one (a stream's empty slot) is inverted. */
+        if (w->x1 <= w->x0 || w->z1 <= w->z0) {
+            continue;
+        }
         cx = (w->x0 + w->x1) * 0.5f;
         cz = (w->z0 + w->z1) * 0.5f;
         ex = (w->x1 - w->x0) * 0.5f;

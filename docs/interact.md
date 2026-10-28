@@ -133,19 +133,19 @@ A door opened, a lock picked or a creature killed stays so when its place is lef
   - 0, 0 is not kept. Usables, teleports and passages have no state of their own: a door's state is its mover's.
 - **Only what changed.** `keep_save(scene, first_mover, nmovers, ents, nents, ox, oy, oz)` writes rows for the movers and the game's entities in those ranges, and only for those that differ from their file:
   - a mover at its end, or moving toward it (it is kept at the end it was heading for), or with a lock other than its file's (`Mover.lock0`, noted by `mover_init`);
-  - an entity not live, showing an act, holding a frame, or more than a unit from its home.
+  - an entity killed (`Entity.dead`, the game's byte), showing an act, holding a frame, or more than a unit from its home. `Entity.live` is only "drawn" (a creature whose pictures are not read yet is not live), so keep never saves or restores it.
   A thing back as its file has it loses its row. So the table and the save file grow with what the player did, not with how far they walked. A mover that runs once is covered by `at_end`: it never leaves its end.
 - **Put back before it shows.** `keep_restore` (same ranges) runs after the build and `mover_init`, before the first frame:
   - It notes each entity's home, where the file put it.
   - A mover with a row goes straight to its end or start, with its lock: no motion, no sound, and its chain is not run again, since each chained mover has its own key.
-  - An entity with a row gets its place, facing, life and shown pose back, so a body stays a body.
+  - An entity with a row gets its place, facing, `dead` and shown pose back, so a body stays a body.
   - The game calls it after every build, an empty table included. An entity it never homed counts as changed.
 - **The place's frame.** A stream draws in a frame whose origin moves by whole chunks. `o` is the scene's origin in the place's frame (0 for a place loaded whole), so positions are kept in the place's frame and survive an origin move.
 - **The game's bytes.** Each row carries 16 bytes the engine never reads: health, a flag. `keep_get(key, kind)` makes a row for them alone, which never moves the thing (`placed` is 0). A row with any set is never dropped. A corpse's or chest's contents are the game's own table under the same key.
 - **Save files.** `keep_count`, `keep_at` (in key order), `keep_put` and `keep_clear`. `Keep` is a fixed-size record, so the game's record files can carry it.
 - **Memory.** About 56 bytes a row, sorted, binary-searched, in a heap of its own that grows by doubling, never a place's heap.
 
-A creature that walked from its home block into another is restored with its home block. In a stream, it may stand where the next block is not loaded yet: it is drawn there, over nothing, until that block comes. This is an edge case, accepted.
+In a stream, `stream.c` makes both calls itself for each block: `keep_restore` when its fill is done, `keep_save` before it is dropped (`docs/streaming.md`, Dungeons). A creature that walked from its home block into another is restored with its home block. In a stream, it may stand where the next block is not loaded yet: it is drawn there, over nothing, until that block comes. This is an edge case, accepted.
 
 ## Switches
 

@@ -37,9 +37,9 @@ typedef struct Keep {
     df_u8 pad[2];
     /* A mover's lock. */
     df_i32 lock;
-    /* An entity: its feet in the place's frame, its facing, and what it shows (a body stays a body). */
+    /* An entity: its feet in the place's frame, its facing, killed or not, and what it shows (a body stays a body). */
     float x, y, z, yaw;
-    df_u8 live;
+    df_u8 dead;
     df_u8 moving;
     df_u8 act;
     df_u8 hold;
@@ -57,8 +57,9 @@ typedef struct Keep {
  * keyed one that differs from its file gets its row, and one back as its
  * file has it loses its row (unless the game's bytes are set). A mover
  * differs at its end or with another lock than its file's; an entity
- * when it is not live, shows an act, holds a frame, or stands more than
- * a unit from its home. o is the scene's origin in the place's frame.
+ * when it is dead (Entity.dead, the game's), shows an act, holds a
+ * frame, or stands more than a unit from its home. Entity.live, which
+ * is only "drawn", is never kept or put back. o is the scene's origin in the place's frame.
  * Before a place or a block is dropped.
  */
 void keep_save(Scene *scene, int first_mover, int nmovers, const Entity *ents, int nents,
@@ -74,7 +75,7 @@ void keep_restore(Scene *scene, int first_mover, int nmovers, Entity *ents, int 
 
 /* The row for key, or 0. */
 Keep *keep_find(KeepKey key);
-/* The row for key, made (as its file has it: at its start, live, at home) when there is none. 0 with no memory. */
+/* The row for key, made (as its file has it: at its start, alive, at home) when there is none. 0 with no memory. */
 Keep *keep_get(KeepKey key, int kind);
 /* Rows, for a save file: how many, the i-th in key order. */
 int keep_count(void);

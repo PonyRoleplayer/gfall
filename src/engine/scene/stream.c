@@ -2,10 +2,12 @@
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
 #include "engine/core/prof.h"
+#include "engine/scene/keep.h"
 
 /* See stream.h and docs/streaming.md. */
 
-#define SLOTS STREAM_SLOTS
+/* The slots in use: STREAM_SLOTS for the world, fewer for a dungeon's radius (stream_open_sized). */
+#define SLOTS g_nslots
 
 typedef struct Slot {
     int used;
@@ -22,6 +24,8 @@ typedef struct Slot {
     int emitters;
     int usables;
     int movers;
+    int entities;
+    int water;
     /* Boxes of the near ground, the far ground, and the rest with its sprites. */
     Bound box_near;
     Bound box_far;
@@ -31,6 +35,10 @@ typedef struct Slot {
 } Slot;
 
 static int g_open;
+static int g_nslots = STREAM_SLOTS;
+/* The chunk's side, and the largest radius the slots were made for. */
+static int g_chunk = STREAM_CHUNK;
+static int g_radius_max = STREAM_RADIUS_MAX;
 static Scene *g_scene;
 static StreamSource g_src;
 static StreamCaps g_cap;
@@ -40,7 +48,7 @@ static int g_oz;
 static int g_shifts;
 static int g_ccx;
 static int g_ccz;
-static Slot g_slot[SLOTS];
+static Slot g_slot[STREAM_SLOTS];
 static Instance *g_models;
 static Bound *g_bounds;
 static Flat *g_sprites;
@@ -48,6 +56,8 @@ static Light *g_lights;
 static Emitter *g_emitters;
 static Usable *g_usables;
 static Mover *g_movers;
+static Entity *g_entities;
+static Water *g_water;
 static Span *g_spans;
 static int g_filling = -1;
 /* The longest single fill call since stream_worst last asked, and the step it was. */
@@ -101,6 +111,16 @@ static void empty_slot(int s)
         g_movers[i].state = MOVER_START;
         g_movers[i].next = -1;
     }
+    for (i = s * g_cap.entities; g_entities && i < (s + 1) * g_cap.entities; i++) {
+        mem_zero(&g_entities[i], sizeof(Entity));
+    }
+    for (i = s * g_cap.water; g_water && i < (s + 1) * g_cap.water; i++) {
+        /* Inverted: no point is in it, and the water pass skips it. */
+        g_water[i].x0 = 1.0f;
+        g_water[i].x1 = 0.0f;
+        g_water[i].z0 = 1.0f;
+        g_water[i].z1 = 0.0f;
+    }
     g_spans[2 * s].first = s * g_cap.models;
     g_spans[2 * s].count = 0;
     g_spans[2 * s].scount = 0;
@@ -123,6 +143,12 @@ static void drop_slot(int s)
     int was_done;
 
     was_done = g_slot[s].done;
+    /* What the player changed in it, kept for when it comes again (docs/interact.md). */
+    if (was_done) {
+        keep_save(g_scene, s * g_cap.movers, g_slot[s].movers,
+                  g_entities ? &g_entities[s * g_cap.entities] : 0, g_entities ? g_slot[s].entities : 0,
+                  (float)g_ox * (float)g_chunk, 0.0f, (float)g_oz * (float)g_chunk);
+    }
     if (g_src.drop) {
         g_src.drop(g_src.user, g_slot[s].cx, g_slot[s].cz, g_slot[s].data);
     }
@@ -139,15 +165,19 @@ static void drop_slot(int s)
 #define STREAM_UNDER 256.0f
 static int g_outran;
 
-int stream_open(Scene *scene, const StreamSource *src, int radius, int cx, int cz)
+static int open_stream(Scene *scene, const StreamSource *src, int radius, int radius_max,
+                       int cx, int cz, int chunk)
 {
     int s;
 
     stream_close();
     g_outran = 0;
-    if (!scene || !src || !src->fill || src->caps.models < 1) {
+    if (!scene || !src || !src->fill || src->caps.models < 1 || chunk < 1) {
         return 0;
     }
+    g_chunk = chunk;
+    g_radius_max = radius_max < 1 ? 1 : (radius_max > STREAM_RADIUS_MAX ? STREAM_RADIUS_MAX : radius_max);
+    g_nslots = (2 * (g_radius_max + STREAM_KEEP) + 1) * (2 * (g_radius_max + STREAM_KEEP) + 1);
     g_src = *src;
     g_cap = src->caps;
     /* Every kind has room for one at least, so no slot range is empty of storage. */
@@ -164,8 +194,17 @@ int stream_open(Scene *scene, const StreamSource *src, int radius, int cx, int c
     g_usables = ALLOC(Usable, SLOTS * g_cap.usables);
     g_movers = ALLOC(Mover, SLOTS * g_cap.movers);
     g_spans = ALLOC(Span, 2 * SLOTS);
+    /* Entities and water only when the stream owns them (a dungeon's); the world's are the game's. */
+    g_entities = g_cap.entities > 0 ? ALLOC(Entity, SLOTS * g_cap.entities) : 0;
+    g_water = g_cap.water > 0 ? ALLOC(Water, SLOTS * g_cap.water) : 0;
+    if (g_cap.entities < 0) {
+        g_cap.entities = 0;
+    }
+    if (g_cap.water < 0) {
+        g_cap.water = 0;
+    }
     if (!g_models || !g_bounds || !g_sprites || !g_lights || !g_emitters || !g_usables
-        || !g_movers || !g_spans) {
+        || !g_movers || !g_spans || (g_cap.entities && !g_entities) || (g_cap.water && !g_water)) {
         log_text(LOG_ERROR, "stream: out of memory for its slots");
         return 0;
     }
@@ -189,6 +228,14 @@ int stream_open(Scene *scene, const StreamSource *src, int radius, int cx, int c
     scene->nusables = SLOTS * g_cap.usables;
     scene->movers = g_movers;
     scene->nmovers = SLOTS * g_cap.movers;
+    if (g_entities) {
+        scene->entities = g_entities;
+        scene->nentities = SLOTS * g_cap.entities;
+    }
+    if (g_water) {
+        scene->water = g_water;
+        scene->nwater = SLOTS * g_cap.water;
+    }
     scene->version++;
     g_ox = cx;
     g_oz = cz;
@@ -198,9 +245,34 @@ int stream_open(Scene *scene, const StreamSource *src, int radius, int cx, int c
     g_filling = -1;
     stream_set_radius(radius);
     g_open = 1;
-    log_print(LOG_INFO, "stream: %d slots of %d models and %d sprites, radius %d, at chunk %d %d",
-              SLOTS, g_cap.models, g_cap.sprites, g_radius, cx, cz);
+    log_print(LOG_INFO, "stream: %d slots of %d models and %d sprites, chunks of %d, radius %d, at chunk %d %d",
+              SLOTS, g_cap.models, g_cap.sprites, g_chunk, g_radius, cx, cz);
     return 1;
+}
+
+int stream_open(Scene *scene, const StreamSource *src, int radius, int cx, int cz)
+{
+    return open_stream(scene, src, radius, STREAM_RADIUS_MAX, cx, cz, STREAM_CHUNK);
+}
+
+int stream_open_sized(Scene *scene, const StreamSource *src, int radius, int cx, int cz, int chunk)
+{
+    return open_stream(scene, src, radius, radius, cx, cz, chunk);
+}
+
+int stream_chunk_size(void)
+{
+    return g_chunk;
+}
+
+Entity *stream_slot_entities(int slot, int *first, int *n)
+{
+    if (!g_open || !g_entities || slot < 0 || slot >= SLOTS || !g_slot[slot].used || !g_slot[slot].done) {
+        return 0;
+    }
+    *first = slot * g_cap.entities;
+    *n = g_slot[slot].entities;
+    return &g_entities[*first];
 }
 
 void stream_close(void)
@@ -277,8 +349,8 @@ void *stream_chunk_data(int cx, int cz)
 
 void stream_local(double wx, double wz, float *x, float *z)
 {
-    *x = (float)(wx - (double)g_ox * (double)STREAM_CHUNK);
-    *z = (float)(wz - (double)g_oz * (double)STREAM_CHUNK);
+    *x = (float)(wx - (double)g_ox * (double)g_chunk);
+    *z = (float)(wz - (double)g_oz * (double)g_chunk);
 }
 
 void stream_worst(float *ms, int *step)
@@ -299,7 +371,7 @@ int stream_active(void)
 
 void stream_set_radius(int radius)
 {
-    g_radius = radius < 1 ? 1 : (radius > STREAM_RADIUS_MAX ? STREAM_RADIUS_MAX : radius);
+    g_radius = radius < 1 ? 1 : (radius > g_radius_max ? g_radius_max : radius);
 }
 
 int stream_radius(void)
@@ -309,8 +381,8 @@ int stream_radius(void)
 
 void stream_chunk_at(const Camera *cam, int *cx, int *cz)
 {
-    *cx = g_ox + df_ifloor(cam->x / (float)STREAM_CHUNK);
-    *cz = g_oz + df_ifloor(cam->z / (float)STREAM_CHUNK);
+    *cx = g_ox + df_ifloor(cam->x / (float)g_chunk);
+    *cz = g_oz + df_ifloor(cam->z / (float)g_chunk);
 }
 
 void stream_origin(int *cx, int *cz)
@@ -321,8 +393,8 @@ void stream_origin(int *cx, int *cz)
 
 void stream_world(float x, float z, double *wx, double *wz)
 {
-    *wx = (double)g_ox * (double)STREAM_CHUNK + (double)x;
-    *wz = (double)g_oz * (double)STREAM_CHUNK + (double)z;
+    *wx = (double)g_ox * (double)g_chunk + (double)x;
+    *wz = (double)g_oz * (double)g_chunk + (double)z;
 }
 
 int stream_slot_chunk(int slot, int *cx, int *cz)
@@ -389,8 +461,8 @@ static void rebase(Camera *cam, int ccx, int ccz)
     float sz;
     int s;
 
-    sx = (float)((ccx - g_ox) * STREAM_CHUNK);
-    sz = (float)((ccz - g_oz) * STREAM_CHUNK);
+    sx = (float)((ccx - g_ox) * g_chunk);
+    sz = (float)((ccz - g_oz) * g_chunk);
     for (s = 0; s < SLOTS; s++) {
         Slot *sl;
         int i;
@@ -433,6 +505,18 @@ static void rebase(Camera *cam, int ccx, int ccz)
             g_movers[i].z0 -= sz;
             g_movers[i].to_x -= sx;
             g_movers[i].to_z -= sz;
+        }
+        for (k = 0; g_entities && k < sl->entities; k++) {
+            i = s * g_cap.entities + k;
+            g_entities[i].x -= sx;
+            g_entities[i].z -= sz;
+        }
+        for (k = 0; g_water && k < sl->water; k++) {
+            i = s * g_cap.water + k;
+            g_water[i].x0 -= sx;
+            g_water[i].x1 -= sx;
+            g_water[i].z0 -= sz;
+            g_water[i].z1 -= sz;
         }
         move_box(&sl->box_near, sx, sz);
         move_box(&sl->box_far, sx, sz);
@@ -562,8 +646,8 @@ static void finish(int s)
     int base;
 
     sl = &g_slot[s];
-    ox = (float)((sl->cx - g_ox) * STREAM_CHUNK);
-    oz = (float)((sl->cz - g_oz) * STREAM_CHUNK);
+    ox = (float)((sl->cx - g_ox) * g_chunk);
+    oz = (float)((sl->cz - g_oz) * g_chunk);
     base = s * g_cap.models;
     sl->near = g_out.near_n;
     sl->far = g_out.far_n;
@@ -573,6 +657,8 @@ static void finish(int s)
     sl->emitters = g_out.emitters_n;
     sl->usables = g_out.usables_n;
     sl->movers = g_out.movers_n;
+    sl->entities = g_entities ? g_out.entities_n : 0;
+    sl->water = g_water ? g_out.water_n : 0;
     sl->data = g_out.data;
     for (i = base; i < base + sl->models; i++) {
         Bound *b;
@@ -632,6 +718,23 @@ static void finish(int s)
             m->next += s * g_cap.movers;
         }
     }
+    for (i = 0; i < sl->entities; i++) {
+        g_entities[s * g_cap.entities + i].x += ox;
+        g_entities[s * g_cap.entities + i].z += oz;
+    }
+    for (i = 0; i < sl->water; i++) {
+        Water *w;
+
+        w = &g_water[s * g_cap.water + i];
+        w->x0 += ox;
+        w->x1 += ox;
+        w->z0 += oz;
+        w->z1 += oz;
+    }
+    /* What the player changed here before it last went, back before it shows. */
+    keep_restore(g_scene, s * g_cap.movers, sl->movers,
+                 g_entities ? &g_entities[s * g_cap.entities] : 0, sl->entities,
+                 (float)g_ox * (float)g_chunk, 0.0f, (float)g_oz * (float)g_chunk);
     sl->box_near = box_of(base, sl->near);
     sl->box_far = box_of(base + sl->near, sl->far);
     sl->box_rest = box_of(base + sl->near + sl->far, sl->models - sl->near - sl->far);
@@ -721,6 +824,10 @@ static void start_fill(int s, int cx, int cz)
     g_out.emitters = &g_emitters[s * g_cap.emitters];
     g_out.usables = &g_usables[s * g_cap.usables];
     g_out.movers = &g_movers[s * g_cap.movers];
+    g_out.entities = g_entities ? &g_entities[s * g_cap.entities] : 0;
+    g_out.water = g_water ? &g_water[s * g_cap.water] : 0;
+    g_out.entities_n = 0;
+    g_out.water_n = 0;
     g_out.near_n = 0;
     g_out.far_n = 0;
     g_out.models_n = 0;
@@ -745,6 +852,8 @@ static void clamp_out(void)
     g_out.emitters_n = g_out.emitters_n < g_cap.emitters ? g_out.emitters_n : g_cap.emitters;
     g_out.usables_n = g_out.usables_n < g_cap.usables ? g_out.usables_n : g_cap.usables;
     g_out.movers_n = g_out.movers_n < g_cap.movers ? g_out.movers_n : g_cap.movers;
+    g_out.entities_n = g_out.entities_n < g_cap.entities ? g_out.entities_n : g_cap.entities;
+    g_out.water_n = g_out.water_n < g_cap.water ? g_out.water_n : g_cap.water;
 }
 
 /* One call of the filling chunk's fill, its time kept for stream_worst; 1 when the chunk is done (and finished). */
@@ -882,8 +991,8 @@ void stream_update(Camera *cam, float budget_ms)
             int ux;
             int uz;
 
-            ux = g_ox + df_ifloor((cam->x + ((k & 1) ? STREAM_UNDER : -STREAM_UNDER)) / (float)STREAM_CHUNK);
-            uz = g_oz + df_ifloor((cam->z + ((k & 2) ? STREAM_UNDER : -STREAM_UNDER)) / (float)STREAM_CHUNK);
+            ux = g_ox + df_ifloor((cam->x + ((k & 1) ? STREAM_UNDER : -STREAM_UNDER)) / (float)g_chunk);
+            uz = g_oz + df_ifloor((cam->z + ((k & 2) ? STREAM_UNDER : -STREAM_UNDER)) / (float)g_chunk);
             fill_under(ux, uz);
         }
     }

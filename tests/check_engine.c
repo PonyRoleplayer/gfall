@@ -16,6 +16,7 @@
 #include "engine/platform/input.h"
 #include "engine/ui/pic.h"
 #include "engine/scene/keep.h"
+#include "engine/scene/stream.h"
 #include "engine/scene/interact.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
@@ -1216,7 +1217,7 @@ static void check_keep(void)
         en[i].x -= 2048.0f;
     }
     en[0].x += 50.0f;
-    en[1].live = 0;
+    en[1].dead = 1;
     g = keep_get(en[2].key, KEEP_ENTITY);
     check_expect(g && g->placed == 0, "keep_get did not make a row");
     g->game[0] = 5;
@@ -1228,8 +1229,8 @@ static void check_keep(void)
     check_expect(mv[0].state == MOVER_END && mv[0].t == 1.0f && check_near(in[0].y, 64.0f, 0.01f)
                  && mv[1].state == MOVER_START && mv[1].lock == 0 && mv[2].state == MOVER_START,
                  "the opened door or the picked lock did not come back, or the teleport was kept");
-    check_expect(check_near(en[0].x, 350.0f, 0.01f) && en[1].live == 0
-                 && check_near(en[2].x, 320.0f, 0.01f) && en[2].live,
+    check_expect(check_near(en[0].x, 350.0f, 0.01f) && en[1].dead == 1 && en[1].live == 1
+                 && check_near(en[2].x, 320.0f, 0.01f) && !en[2].dead,
                  "a creature's place across the moved origin, a death, or the game's row moved it");
     /* Door 0 shut, creature 0 home again: their rows go; the game's row stays. */
     mover_set_end(&mv[0], 0);
@@ -1272,6 +1273,200 @@ static void check_keep(void)
         check_expect(keep_count() == n + 600 && keep_find(k) && keep_find(k)->key.thing == 300,
                      "the table did not grow, or lost a row growing");
     }
+    keep_clear();
+}
+
+/*
+ * A dungeon streamed by block (docs/streaming.md, Dungeons), on a fake
+ * source: chunks of 2048 on a sparse layout, each block a model, its
+ * door, a creature and a pool. The ring of radius 1 loads the blocks
+ * present round the camera and empty chunks for the rest; walked away,
+ * they drop, and what the player changed in them (a door opened, a
+ * creature moved and killed) comes back with them.
+ */
+static int dun_present(int cx, int cz)
+{
+    return (cx == 0 && cz == 0) || (cx == 1 && cz == 0) || (cx == 2 && cz == 0) || (cx == 0 && cz == 1);
+}
+
+static KeepKey dun_key(int cx, int cz, int what)
+{
+    KeepKey k;
+
+    k.place = 5;
+    k.thing = (df_u32)((cx + 8) << 16) | (df_u32)((cz + 8) << 8) | (df_u32)what;
+    return k;
+}
+
+static int g_dun_fills;
+
+static int dun_fill(void *user, int cx, int cz, StreamOut *out)
+{
+    Instance *in;
+    Mover *m;
+    Entity *e;
+    Water *w;
+
+    (void)user;
+    g_dun_fills++;
+    if (!dun_present(cx, cz)) {
+        return 1;
+    }
+    in = &out->models[0];
+    mem_zero(in, sizeof(Instance));
+    in->m[0] = in->m[4] = in->m[8] = 1.0f;
+    in->x = 1024.0f;
+    in->z = 1024.0f;
+    out->models_n = 1;
+    m = &out->movers[0];
+    mem_zero(m, sizeof(Mover));
+    m->model = 0;
+    m->ty = 64.0f;
+    m->secs = 1.0f;
+    m->next = -1;
+    m->key = dun_key(cx, cz, 1);
+    out->movers_n = 1;
+    /* Its start pose, in the chunk's frame, as doors_build does. */
+    m->inst = in;
+    mover_init(m, 1);
+    e = &out->entities[0];
+    entity_init(e);
+    e->live = 1;
+    e->radius = 12.0f;
+    e->x = 1000.0f;
+    e->z = 900.0f;
+    e->key = dun_key(cx, cz, 2);
+    out->entities_n = 1;
+    w = &out->water[0];
+    w->x0 = 0.0f;
+    w->x1 = 2048.0f;
+    w->z0 = 0.0f;
+    w->z1 = 2048.0f;
+    w->y = -32.0f;
+    w->color = 0x1c4652u;
+    out->water_n = 1;
+    return 1;
+}
+
+static void dun_walk(Camera *cam, float x, float z)
+{
+    int k;
+
+    cam->x = x;
+    cam->z = z;
+    for (k = 0; k < 40; k++) {
+        stream_update(cam, 0.0f);
+    }
+}
+
+static Mover *dun_mover(Scene *sc, int cx, int cz)
+{
+    KeepKey k;
+    int i;
+
+    k = dun_key(cx, cz, 1);
+    for (i = 0; i < sc->nmovers; i++) {
+        if (sc->movers[i].inst && sc->movers[i].key.place == k.place && sc->movers[i].key.thing == k.thing) {
+            return &sc->movers[i];
+        }
+    }
+    return 0;
+}
+
+static Entity *dun_entity(Scene *sc, int cx, int cz)
+{
+    KeepKey k;
+    int i;
+
+    k = dun_key(cx, cz, 2);
+    for (i = 0; i < sc->nentities; i++) {
+        if (sc->entities[i].live && sc->entities[i].key.thing == k.thing) {
+            return (Entity *)&sc->entities[i];
+        }
+    }
+    return 0;
+}
+
+static void check_dungeon_stream(void)
+{
+    static Scene sc;
+    StreamSource src;
+    Camera cam;
+    Mover *m;
+    Entity *e;
+    float y;
+    df_u32 color;
+    int loaded;
+    int live;
+    int i;
+    int ok;
+
+    keep_clear();
+    mem_zero(&sc, sizeof(sc));
+    mem_zero(&src, sizeof(src));
+    src.fill = dun_fill;
+    src.caps.models = 4;
+    src.caps.movers = 2;
+    src.caps.entities = 2;
+    src.caps.water = 2;
+    camera_set(&cam, 1024.0f, 60.0f, 1024.0f, 0.0f, 0.0f);
+    ok = stream_open_sized(&sc, &src, 1, 0, 0, 2048);
+    check_expect(ok && stream_chunk_size() == 2048 && sc.nentities == 25 * 2 && sc.nwater == 25 * 2,
+                 "a dungeon's stream did not open with 25 slots of 2048 chunks, entities and water");
+    stream_set_radius(3);
+    check_expect(stream_radius() == 1, "the radius went past the slots made for it");
+    dun_walk(&cam, 1024.0f, 1024.0f);
+    stream_stats(&loaded, 0, 0, 0);
+    live = 0;
+    for (i = 0; i < sc.nentities; i++) {
+        live += sc.entities[i].live;
+    }
+    check_expect(loaded == 9 && live == 3 && g_dun_fills == 9,
+                 "the ring of 3 x 3 did not load the 3 blocks present and 6 empty chunks");
+    check_expect(scene_water_at(&sc, 2048.0f + 500.0f, 500.0f, &y, &color) && check_near(y, -32.0f, 0.01f)
+                 && !scene_water_at(&sc, -500.0f, 500.0f, &y, &color),
+                 "a block's water is not where its chunk is, or an empty chunk has some");
+    {
+        int s;
+        int first;
+        int n;
+        int cx;
+        int cz;
+        int found;
+
+        found = 0;
+        for (s = 0; s < STREAM_SLOTS; s++) {
+            if (stream_slot_chunk(s, &cx, &cz) && cx == 1 && cz == 0) {
+                found = stream_slot_entities(s, &first, &n) != 0 && n == 1
+                    && check_near(sc.entities[first].x, 2048.0f + 1000.0f, 0.01f);
+            }
+        }
+        check_expect(found, "stream_slot_entities did not give block 1,0's creature, in the scene's frame");
+    }
+    /* Play: block 1,0's door opened; block 0,1's creature moved 100 east and killed. */
+    m = dun_mover(&sc, 1, 0);
+    e = dun_entity(&sc, 0, 1);
+    check_expect(m && e, "the door or the creature is not in the scene");
+    if (!m || !e) {
+        stream_close();
+        return;
+    }
+    mover_set_end(m, 1);
+    e->x += 100.0f;
+    e->dead = 1;
+    /* Walk 6 blocks east: blocks 0..2 drop, their changes kept. */
+    dun_walk(&cam, 1024.0f + 6.0f * 2048.0f, 1024.0f);
+    check_expect(!dun_mover(&sc, 1, 0) && keep_count() == 2, "the dropped blocks' changes were not kept, or were not all");
+    /* And back: they fill again from their file, then what changed is put back. */
+    dun_walk(&cam, 1024.0f, 1024.0f);
+    m = dun_mover(&sc, 1, 0);
+    e = dun_entity(&sc, 0, 1);
+    check_expect(m && m->state == MOVER_END && m->inst && check_near(m->inst->y, 64.0f, 0.01f)
+                 && e && e->dead && check_near(e->x, 1100.0f, 0.01f) && check_near(e->z, 2048.0f + 900.0f, 0.01f),
+                 "a door opened or a creature moved and killed in a dropped block did not come back so");
+    m = dun_mover(&sc, 0, 0);
+    check_expect(m && m->state == MOVER_START, "a door no one opened came back open");
+    stream_close();
     keep_clear();
 }
 
@@ -3489,6 +3684,7 @@ void check_engine(void)
     check_pictures();
     check_key_names();
     check_keep();
+    check_dungeon_stream();
     check_console();
     check_mip();
     check_mip_spans();

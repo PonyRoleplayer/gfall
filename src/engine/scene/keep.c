@@ -115,7 +115,6 @@ Keep *keep_get(KeepKey key, int kind)
     mem_zero(r, sizeof(Keep));
     r->key = key;
     r->kind = (df_u8)kind;
-    r->live = 1;
     return r;
 }
 
@@ -222,7 +221,7 @@ void keep_save(Scene *scene, int first_mover, int nmovers, const Entity *ents, i
         py = e->y + oy;
         pz = e->z + oz;
         /* Without a home noted (no keep_restore at its build), it is kept as it is. */
-        same = e->homed && e->live && !e->act && !e->hold
+        same = e->homed && !e->dead && !e->act && !e->hold
             && df_abs_f(px - e->home[0]) <= 1.0f && df_abs_f(py - e->home[1]) <= 1.0f
             && df_abs_f(pz - e->home[2]) <= 1.0f;
         at = search(e->key);
@@ -246,7 +245,7 @@ void keep_save(Scene *scene, int first_mover, int nmovers, const Entity *ents, i
             r->y = py;
             r->z = pz;
             r->yaw = e->yaw;
-            r->live = e->live;
+            r->dead = e->dead;
             r->moving = e->moving;
             r->act = e->act;
             r->hold = e->hold;
@@ -299,7 +298,7 @@ void keep_restore(Scene *scene, int first_mover, int nmovers, Entity *ents, int 
             e->y = r->y - oy;
             e->z = r->z - oz;
             e->yaw = r->yaw;
-            e->live = r->live;
+            e->dead = r->dead;
             e->moving = r->moving;
             e->act = r->act;
             e->hold = r->hold;

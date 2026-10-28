@@ -248,6 +248,72 @@ The console's switches act on what stands, with no reload: `flora` (on, off; alo
 
 On the host walking out of Daggerfall: a chunk's heights and tiles 0.03 ms (about 1.3 ms on the 233), its far bakes 0.04 ms. Thirty chunks east of Daggerfall: 3802 near triangles (127 a chunk, but only the camera's ring draws them), 24 far a chunk, 549 flora standing, 40% of them drawn by default. Over 96,000 cells of the map, 88% rise under 0.1 (6°), and only a few cliffs pass the walker's 45°.
 
+## Dungeons
+
+A dungeon loaded whole takes about 10 s on the 233 for Daggerfall's castle, down from 20 after the load cuts. Streamed by block, it loads the blocks round the camera under the hold and the rest as it walks. The engine gives the stream's indoor parts (below), and the game a chunk source of RDB blocks (`places/`, like `wild.c`; `docs/game.md`). State that outlives a block's drop is `keep.c`'s (`docs/interact.md`).
+
+### One stream, a chunk a block
+
+A dungeon streams through `stream.c` as the world does: the same slots, budget, fill steps, `changed`, `drop` and the light queue. One thing changes: the chunk's size is the stream's, given at `stream_open`. The world's is `STREAM_CHUNK`, 4096. A dungeon's is 2048, one RDB block a chunk, named by its place in the dungeon's layout (`cx`, `cz` from the block's X and Z). `stream_chunk_size()` reads it back. Everything in `stream.c` that reads `STREAM_CHUNK` reads the stream's size instead.
+
+- **The origin.** A dungeon is at most 64 blocks: 16384 units a side, well inside a float's exact range. Its origin never moves in practice: the rebase is at 16 chunks from the origin, 32768 units, past any dungeon. It is the same code, not a second path. The origin chunk is the layout's (0, 0).
+- **The ring.** Radius 1 (3 × 3 blocks) is enough. The far clip is 1400 and a block is 2048, so from anywhere in the camera's block, the edge of the ring is at least 2048 away. A block is dropped two rings out (`STREAM_KEEP`), so up to 5 × 5 are held.
+- **The slots** are sized by the stream's radius at open, not always `STREAM_RADIUS_MAX`'s 121. That is 25 at radius 1, and `stream_set_radius` cannot go past the open's radius. A dungeon block's caps (models, flats, lights, usables, movers) are larger than a town chunk's, so 25 slots of them, not 121.
+- **A missing block.** A dungeon's layout is not a full grid. A chunk with no block is filled at once with nothing. Its slot is empty and every pass skips it, as a world chunk with no land would be.
+- **No ground and no sky.** A dungeon chunk writes no near or far ground (`near_n`, `far_n` 0), so its ground span is empty. The level has no sky, and the stream's far ground, climate and season-following are `wild.c`'s, not the engine's.
+
+### What a slot holds, two more kinds
+
+A slot already holds models, sprites, lights, emitters, usables and movers. Two kinds join them:
+- **Entities.** `StreamCaps.entities`, `StreamOut.entities`. The stream owns one array of every slot's entities, and the scene's `entities` points at it. An empty slot's entities are not live. The game reaches a slot's entities, writable, for its creatures' motors (`stream_slot_entities(slot, &first, &n)`) and through the chunk's data. The creatures' pictures come in as `world_creatures_step` reads them today, nearest first.
+- **Water.** `StreamCaps.water`, `StreamOut.water`: a block's rectangles (`docs/water.md`). An empty slot's rectangles are 0 wide. `scene_water_at` and the water pass skip them.
+
+Both move with the slot on a rebase, as everything else does.
+
+### Kept state, by the stream
+
+`stream.c` calls `keep_restore` for a slot's movers and entities when its fill is done, before it is in the scene. It calls `keep_save` for them before its `drop`, with the stream's origin in the place's frame as `o` (the origin chunk × the chunk's size). The game only gives the keys at build, as it does for a whole place. A chunk's movers are `mover_init`'s before its fill ends (`doors_build` does that). The world's chunks get the same calls; while they have no keys, the calls do nothing.
+
+### The rest of the engine indoors
+
+- **Lights.** These are already per slot (`light_stream_*`). A streamed lamp casts no shadow: the rays were 97% of a lamp's cut, and outdoors they change little. Indoors they matter: without them a torch lights the next corridor through its wall. So a stream can ask for shadows (`light_stream_shadow(1)`), and then a light's cut is split into calls of a few faces each, picked up again where it left off, because one lamp's rays are tens of ms on the 233. Cut chunk by chunk, the decals must be the same as a whole load's (tested, as the world's are).
+- **Collision.** Already by span for a streamed scene (`collide_gather`). Nothing new.
+- **Occlusion.** The cells are drawn per frame in screen space from the models in view (`docs/culling.md`), not built per block. Nothing new.
+- **Use, chains, teleports.** Movers and usables are per slot already ("Doors from the stream"). A chain and a teleport stay within their block, so neither is ever half loaded. A teleport's destination is in its block's frame, moved into the scene's like its models.
+- **Ambience.** The emitters are per slot already. The song is the place's, set once.
+- **The card.** Pictures by residency, as the world's (`texres`, `wres`): a block's walls and creatures held when it fills, read in steps.
+
+### The first frame
+
+Under the hold, the source fills the camera's ring (3 × 3 blocks, the ones present) before the first frame, then `gfx_prime`, as `wild_fill` does for a town. The rest streams in as the camera walks. The castle then loads 9 of its blocks up front, not all of them. Its `load:` line (`docs/viewers.md`) names what the remaining seconds are.
+
+### Built so far
+
+Step 1 is built:
+- `stream_open_sized(scene, src, radius, cx, cz, chunk)`, `stream_chunk_size()`. `stream_open` stays the world's, with `STREAM_CHUNK` and 121 slots.
+- Slots by the open's radius, which `stream_set_radius` cannot pass.
+- `StreamCaps.entities` and `.water`, `StreamOut.entities`, `.water`, `entities_n` and `water_n`. With caps of 0 (the world's) the stream leaves `Scene.entities` and `Scene.water` to the game.
+- `stream_slot_entities(slot, &first, &n)`.
+- `keep_restore` in `finish` and `keep_save` in `drop_slot`, with the origin chunk × chunk size as `o`. A kept creature's killing is `Entity.dead`, the game's byte. `live` is only "drawn", and keep never touches it, so a creature saved before its pictures were read is not taken for dead.
+- `check_dungeon_stream`: a fake source of 2048 chunks on a sparse layout. It checks:
+  - the 3 × 3 ring loads 3 blocks and 6 empty chunks;
+  - the water is where its block is;
+  - a slot's entities are in the scene's frame;
+  - after walking 6 blocks away and back, a door opened and a creature moved and killed come back so, and an unopened door comes back shut.
+
+Steps 2 to 4 are not built yet.
+
+### The order of the work
+
+1. **Engine:**
+   - the chunk size per stream, slots by radius;
+   - entities and water in the slots;
+   - `keep_save` and `keep_restore` by the stream;
+   - host tests with a fake source of 2048 chunks on a sparse layout. These check that blocks fill and drop, that a door opened in a dropped block comes back open, that a creature moved stays moved, and that the water and entities follow their slots.
+2. **Engine:** lights with shadows in steps. Tested against a whole load's decals.
+3. **Game:** the RDB chunk source, reusing `world.c`'s per-block building, with its keys.
+4. **Game:** GFALL's hold through it, then LEVELFALL's indoor rows.
+
 ## Open questions
 
 - How long a city takes to stream in on the 233, and whether a block's steps fit the budget, can only be measured there.
