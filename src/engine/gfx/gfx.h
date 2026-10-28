@@ -15,7 +15,9 @@ const char *gfx_error(void);
 
 /*
  * Sends the level palette and every image, budgeted to fit the 2MB
- * card. A second call replaces what the first sent.
+ * card. A second call replaces what the first sent. A null level is no
+ * place: a game's screen before any (its menu), with only the font, in
+ * white ink, and the pictures' room on the card (docs/pictures.md).
  */
 int gfx_prepare(const Level *level);
 /*
@@ -62,7 +64,11 @@ void gfx_prime(const Level *level, const Camera *cam);
  * them into milliseconds (docs/viewers.md, the load line).
  */
 void gfx_load_times(df_u32 *card, df_u32 *lights, df_u32 *prime);
-/* Clear, draw what the scene says is visible, overlay, swap. */
+/*
+ * Clear, draw what the scene says is visible, overlay, swap. A null
+ * level is a screen frame: clear to the background, gfx_set_under then
+ * gfx_set_extra (no HUD, no world, no clock), the console over it, swap.
+ */
 void gfx_frame(const Camera *cam, const Level *level);
 /*
  * 1 while the world stands still: the console is open, or the game's

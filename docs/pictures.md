@@ -1,6 +1,6 @@
 # Pictures on the screen
 
-A game's 2D pictures, such as Daggerfall's IMG and CIF screens, the weapon's swing, the compass and the vitals, drawn into a screen rectangle. Read this before editing `src/engine/ui/pic.c`, the picture calls in `gfx.c` (`pictures_prepare`, `g_pic_ops`), `glide_tex_take`, `glide_pic_palette` or `glide_level_palette`.
+A game's 2D pictures, such as Daggerfall's IMG and CIF screens, the weapon's swing, the compass and the vitals, drawn into a screen rectangle. Read this before editing `src/engine/ui/pic.c`, the picture calls in `gfx.c` (`pictures_prepare`, `g_pic_ops`, `gfx_prepare(0)`), `draw_screen` in `draw.c`, `glide_tex_take`, `glide_pic_palette` or `glide_level_palette`.
 
 ## The calls
 
@@ -13,6 +13,27 @@ A game's 2D pictures, such as Daggerfall's IMG and CIF screens, the weapon's swi
 Coordinates are `ui_string`'s: screen pixels from the lower left. A Daggerfall screen of 320 × 200 is drawn at 2×, for example `pic_draw(id, 0, 440, 640, 400)`.
 
 Draw from `gfx_set_under` (under the HUD's text) or `gfx_set_extra` (over it). The order of the calls is the order on the screen.
+
+## A screen before any place
+
+A game's menu comes before any place is loaded. `gfx_prepare(0)` is no place:
+- The card is emptied.
+- The font goes up in white ink, since there is no level palette. A game sheet installed with `font_set` draws white too until a place comes.
+- The pictures' room is taken, and nothing else.
+
+`gfx_frame(cam, 0)` draws a screen frame:
+- It clears to the background and runs `gfx_set_under` then `gfx_set_extra`.
+- There is no HUD, no world and no clock.
+- Notes, the build stamp and a fade in still draw.
+- The console still opens over it, and the sound goes on (`ambience_idle`).
+- `cam` is only for the console and must not be null.
+
+A menu is `pic_set_room(kb)`, `gfx_prepare(0)`, `pic_load` its pictures, then `gfx_frame(&cam, 0)` a frame with the game's overlay drawing them, the pointer read through `input_set_pointer(1)` and `input_pointer` (`docs/input.md`).
+
+Leaving it for a place is as between places:
+1. `gfx_hold("Loading...")` holds the menu's last frame.
+2. The game loads the place, then calls `gfx_prepare(level)`. The pictures it keeps go back on the card in the new room.
+3. It sets the camera, then calls `gfx_prime` and `gfx_fade_in`.
 
 ## On the card
 

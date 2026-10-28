@@ -207,6 +207,24 @@ int gfx_prepare(const Level *level)
     if (level && level->palette) {
         font_upload(level->palette->r, level->palette->g, level->palette->b);
     }
+    /*
+     * No place: a game's screen before any (a menu). The font in white
+     * ink, the pictures' room, and nothing else on the card; gfx_frame
+     * with no level draws the screen (docs/pictures.md).
+     */
+    if (!level) {
+        static df_u8 white[256];
+        int i;
+
+        for (i = 0; i < 256; i++) {
+            white[i] = 255;
+        }
+        font_upload(white, white, white);
+        pictures_prepare();
+        g_level = 0;
+        g_prepared = 0;
+        return 1;
+    }
     pictures_prepare();
     g_load_card = prof_now();
     if (!texcache_upload(level)) {

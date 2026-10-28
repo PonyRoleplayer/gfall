@@ -10,6 +10,7 @@
 #include <windows.h>
 
 #include "engine/platform/input.h"
+#include "engine/core/df.h"
 #include "engine/ui/console.h"
 
 static HWND g_hwnd;
@@ -26,6 +27,16 @@ static int g_vk[INPUT_ACTIONS] = {
 };
 static unsigned int g_held;
 static int g_escape_quits = 1;
+/*
+ * Pointer mode (input_set_pointer): the cursor stays where the mouse
+ * puts it, in client pixels, and nothing is looked; the client's size
+ * turns it into the screen's 640 x 480.
+ */
+static int g_pointer;
+static int g_px;
+static int g_py;
+static int g_cw = DF_VIEW_W;
+static int g_ch = DF_VIEW_H;
 
 static int key_down(int vk);
 
@@ -80,6 +91,14 @@ void input_on_mouse(int x, int y)
 {
     int dx;
     int dy;
+
+    if (g_pointer) {
+        if (g_active && !g_ignore) {
+            g_px = x;
+            g_py = y;
+        }
+        return;
+    }
 
     if (!g_active || g_ignore || console_open()) {
         if (g_active && !g_ignore && console_open()) {
@@ -147,6 +166,10 @@ void input_begin(void *hwnd)
     GetClientRect(g_hwnd, &rc);
     g_cx = (rc.right - rc.left) / 2;
     g_cy = (rc.bottom - rc.top) / 2;
+    g_cw = rc.right - rc.left > 0 ? rc.right - rc.left : DF_VIEW_W;
+    g_ch = rc.bottom - rc.top > 0 ? rc.bottom - rc.top : DF_VIEW_H;
+    g_px = g_cx;
+    g_py = g_cy;
     g_active = 1;
     center_cursor();
     g_look_dx = 0;
@@ -208,6 +231,11 @@ void input_read(Input *out)
     out->look_dy = g_look_dy + (key_down(VK_DOWN) - key_down(VK_UP)) * KEY_LOOK;
     g_look_dx = 0;
     g_look_dy = 0;
+    /* A menu's pointer looks nowhere: not the mouse, not the arrows. */
+    if (g_pointer) {
+        out->look_dx = 0;
+        out->look_dy = 0;
+    }
     /* An Escape that just closed the console is still down. */
     escape = key_down(VK_ESCAPE) && !console_take_escape();
     if (escape && g_escape_quits) {
@@ -219,4 +247,55 @@ void input_read(Input *out)
     out->pressed = held & ~g_held;
     out->released = g_held & ~held;
     g_held = held;
+}
+
+void input_set_pointer(int on)
+{
+    on = on ? 1 : 0;
+    if (on == g_pointer) {
+        return;
+    }
+    g_pointer = on;
+    g_look_dx = 0;
+    g_look_dy = 0;
+    if (!g_active) {
+        return;
+    }
+    /* Either way from the middle: the pointer starts there, and look starts with no jump. */
+    center_cursor();
+    g_px = g_cx;
+    g_py = g_cy;
+}
+
+int input_pointer_on(void)
+{
+    return g_pointer;
+}
+
+void input_pointer(int *x, int *y)
+{
+    int sx;
+    int sy;
+
+    /* Client pixels, row 0 at the top, to the screen's, from the lower left (ui_string's). */
+    sx = g_px * DF_VIEW_W / g_cw;
+    sy = DF_VIEW_H - 1 - g_py * DF_VIEW_H / g_ch;
+    if (sx < 0) {
+        sx = 0;
+    }
+    if (sx > DF_VIEW_W - 1) {
+        sx = DF_VIEW_W - 1;
+    }
+    if (sy < 0) {
+        sy = 0;
+    }
+    if (sy > DF_VIEW_H - 1) {
+        sy = DF_VIEW_H - 1;
+    }
+    if (x) {
+        *x = sx;
+    }
+    if (y) {
+        *y = sy;
+    }
 }

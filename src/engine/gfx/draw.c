@@ -2753,6 +2753,50 @@ static void cap_warn(int *state, int n, const char *what)
 /* This frame's daylight colours by angle to the key light. */
 static df_u32 g_shade[DAYLIGHT_STEPS + 1];
 
+/*
+ * A frame with no place (gfx_frame(cam, 0)): a game's screen before any
+ * place, its menu. The background, the game's overlays, the notes, a
+ * fade in, the console over it. No clock, no world, no HUD; the sound
+ * goes on (docs/pictures.md).
+ */
+static void draw_screen(const Camera *cam)
+{
+    float secs;
+
+    if (!cam) {
+        return;
+    }
+    console_bind(cam);
+    console_pump();
+    if (console_open()) {
+        console_present(cam);
+        g_ft_have = 0;
+        ambience_idle();
+        return;
+    }
+    console_release();
+    secs = frame_time_tick(0);
+    if (secs < 0.0f || secs > 1.0f) {
+        secs = 0.0f;
+    }
+    ambience_idle();
+    glide_clear();
+    if (g_under) {
+        g_under();
+    }
+    if (g_extra) {
+        g_extra();
+    }
+    glide_level_palette();
+    shot_note();
+    build_legend();
+    if (g_fade_left > 0.0f && g_fade_total > 0.0f) {
+        wash_glass(df_iround(255.0f * g_fade_left / g_fade_total));
+        g_fade_left -= secs;
+    }
+    glide_swap();
+}
+
 void draw_frame(const Camera *cam, const Level *level)
 {
     unsigned short fpu_was;
@@ -2781,6 +2825,7 @@ void draw_frame(const Camera *cam, const Level *level)
     df_u32 under_rgb;
 
     if (!level) {
+        draw_screen(cam);
         return;
     }
     console_bind(cam);

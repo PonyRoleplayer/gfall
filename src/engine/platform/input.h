@@ -48,6 +48,17 @@ void input_bind(int action, int vk);
  */
 void input_set_escape_quits(int on);
 
+/*
+ * Pointer mode, for a game's menus: 1 leaves the cursor where the mouse
+ * puts it (still hidden and held to the window; the game draws its own
+ * arrow) and nothing is looked, by mouse or arrows; 0 (default) is mouse
+ * look, recentred, starting with no jump. A click is an action's press,
+ * INPUT_ATTACK's (the left button). Escape is unchanged.
+ */
+void input_set_pointer(int on);
+int input_pointer_on(void);
+/* The pointer in screen pixels, ui_string's frame: from the lower left, 0..639 and 0..479. */
+void input_pointer(int *x, int *y);
 void input_begin(void *hwnd);
 void input_end(void);
 void input_read(Input *out);

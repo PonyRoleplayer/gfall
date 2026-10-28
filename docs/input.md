@@ -31,6 +31,14 @@ With the console open nothing reaches the program: no movement, no look, nothing
 
 `input_set_escape_quits(1)`, the default, is the viewers': Escape quits. With 0, Escape never quits: it is `INPUT_MENU`, and the game opens its menu and decides itself when to quit. Either way, an Escape that just closed the console is not counted (`console_take_escape`).
 
+## A menu's pointer
+
+`input_set_pointer(1)` is for a game's menus. Mouse look normally recentres the cursor after every move. In pointer mode the cursor stays where the mouse puts it, still hidden and held to the window, and nothing is looked: `look_dx` and `look_dy` read 0 for the mouse and the arrows alike. `input_pointer(&x, &y)` gives where it is in screen pixels, in `ui_string`'s frame: from the lower left, 0..639 and 0..479, scaled from the window's client size. The game draws its own arrow there (Daggerfall's is a picture, `docs/pictures.md`).
+
+A click is an action's press: `INPUT_ATTACK`'s, the left button, unless rebound. Escape is unchanged: with `input_set_escape_quits(0)` it is `INPUT_MENU`, and closes a menu.
+
+`input_set_pointer(0)` goes back to mouse look. Both ways start from the window's middle, so look starts with no jump. A game turns it off when play starts.
+
 ## The use key
 
 The engine's own use key, polled by `draw_frame` (`use_edge`: the left button or E), is the viewers'. A game whose left button attacks turns it off with `gfx_set_use_key(0)` and, on its `INPUT_USE` edge, calls `interact_request_use()`: the next frame uses what the middle of the view rests on, as the engine's key would (`docs/interact.md`). With the key on, a request is taken as well.
