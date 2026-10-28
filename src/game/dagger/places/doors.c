@@ -129,6 +129,11 @@ static Mover *new_mover(DoorBuild *b, int model)
     m->inst = &b->inst[model];
     m->model = model;
     m->next = -1;
+    if (b->keep_place) {
+        m->key.place = b->keep_place;
+        m->key.thing = ((df_u32)b->block[model] << 24)
+                       | (b->act[model].pos ? (b->act[model].pos & 0x7FFFFFu) : (0x800000u | ((df_u32)model & 0x7FFFFFu)));
+    }
     return m;
 }
 

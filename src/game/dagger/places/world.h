@@ -120,6 +120,15 @@ typedef struct WorldLoadTimes {
 } WorldLoadTimes;
 void world_load_times(WorldLoadTimes *out);
 
+/*
+ * State that outlives a load (keep.c, docs/interact.md): every door,
+ * lever and creature of the place is keyed, and what the player changed
+ * is put back when the place is built (world_keep_restore, at the end of
+ * every load). world_keep_save writes it before the place is left.
+ */
+void world_keep_save(World *world);
+void world_keep_restore(World *world);
+
 /* Pointers into this world. Valid until the process exits. */
 void world_as_level(const World *world, Level *level);
 

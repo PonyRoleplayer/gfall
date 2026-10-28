@@ -1,4 +1,5 @@
 #include "game/dagger/places/world.h"
+#include "engine/scene/keep.h"
 #include "game/dagger/formats/bind.h"
 #include "game/dagger/formats/bsa.h"
 #include "game/dagger/formats/climate.h"
@@ -194,16 +195,22 @@ struct World {
     /* FOE_*: its pictures still to read, read and drawn, or one did not read. */
     df_u8 *ent_state;
     int nent;
+    /* Its key's place word (keep_place): 0 keeps nothing. */
+    df_u32 keep_place;
 };
 
 enum {
     FOE_PENDING,
     FOE_READY,
-    FOE_FAILED
+    FOE_FAILED,
+    /* Dead when the place was left (keep.c): never read, never drawn. */
+    FOE_DEAD
 };
 
 typedef struct Foe {
     float x, y, z;
+    /* Its key's thing: (its block << 24) | its marker's offset in the block's file. */
+    df_u32 thing;
     df_i16 kind;
     df_u8 female;
     df_u8 passive;
@@ -478,7 +485,7 @@ static int note_marks(World *world, const Block *block, int b)
     return 1;
 }
 
-static int note_foes(World *world, const Block *block)
+static int note_foes(World *world, const Block *block, int b)
 {
     int water;
     int i;
@@ -511,6 +518,7 @@ static int note_foes(World *world, const Block *block)
         f->x = mk->x;
         f->y = mk->y;
         f->z = mk->z;
+        f->thing = ((df_u32)b << 24) | (mk->pos & 0xFFFFFFu);
         f->kind = (df_i16)kind;
         f->female = (df_u8)female;
         f->passive = (df_u8)passive;
@@ -668,6 +676,10 @@ static int add_foes(World *world)
         e->yaw = (float)(int)((hash >> 3) & 7u) * (DF_TAU / 8.0f);
         e->phase = (df_u8)(hash & 255u);
         e->moving = 0;
+        if (world->keep_place) {
+            e->key.place = world->keep_place;
+            e->key.thing = f->thing;
+        }
         /* Not drawn until its pictures are read (world_creatures_step). */
         e->live = 0;
         world->ent_kind[world->nent] = (df_i16)kind;
@@ -1408,6 +1420,7 @@ static int add_doors(World *world)
     b.mark_block = world->dmark_blk;
     b.nmark = world->ndmark;
     b.place = world->place;
+    b.keep_place = world->keep_place;
     b.use = world->use;
     b.use_cap = MAX_USABLES;
     b.mover = world->mover;
@@ -1515,6 +1528,76 @@ void world_load_times(WorldLoadTimes *out)
     *out = g_times;
 }
 
+/*
+ * A place's key word (docs/interact.md, State that outlives a load):
+ * its location's id in the low 24 bits, a building's record and one in
+ * the next 6 (0: not a building), its kind in the top 2 (1 a dungeon,
+ * 2 a town, 3 a building's inside). 0, keeping nothing, without an id.
+ */
+static df_u32 keep_place(const Dungeon *hold, int place, int inside_record)
+{
+    df_u32 kind;
+
+    if (hold->location_id <= 0) {
+        return 0;
+    }
+    kind = place == PLACE_DUNGEON ? 1u : (place == PLACE_TOWN ? 2u : 3u);
+    return (kind << 30) | ((df_u32)(place == PLACE_INSIDE ? (inside_record + 1) & 63 : 0) << 24)
+           | ((df_u32)hold->location_id & 0xFFFFFFu);
+}
+
+/* The place's movers as a scene of their own, for keep.c. */
+static void keep_scene(World *world, Scene *scene)
+{
+    mem_zero(scene, sizeof(*scene));
+    scene->movers = world->mover;
+    scene->nmovers = world->nmover;
+}
+
+void world_keep_restore(World *world)
+{
+    Scene scene;
+    int i;
+
+    if (!world->keep_place) {
+        return;
+    }
+    keep_scene(world, &scene);
+    keep_restore(&scene, 0, world->nmover, world->ent, world->nent, 0.0f, 0.0f, 0.0f);
+    /*
+     * The engine's live is "drawn". A creature kept dead stays so; any
+     * other waits for its pictures to be read (world_creatures_step).
+     */
+    for (i = 0; i < world->nent; i++) {
+        const Keep *row;
+
+        row = keep_find(world->ent[i].key);
+        if (row && row->placed && !row->live) {
+            world->ent_state[i] = FOE_DEAD;
+        }
+        world->ent[i].live = 0;
+    }
+}
+
+void world_keep_save(World *world)
+{
+    Scene scene;
+    Entity *alive;
+    int i;
+
+    if (!world->keep_place) {
+        return;
+    }
+    keep_scene(world, &scene);
+    /* A copy whose live is the game's "alive": one not read yet is not dead. */
+    alive = world->nent ? (Entity *)mem_alloc((df_u32)world->nent * (df_u32)sizeof(Entity)) : 0;
+    for (i = 0; alive && i < world->nent; i++) {
+        alive[i] = world->ent[i];
+        alive[i].live = (df_u8)(world->ent_state[i] != FOE_DEAD);
+    }
+    keep_save(&scene, 0, world->nmover, alive, alive ? world->nent : 0, 0.0f, 0.0f, 0.0f);
+}
+
 static World *assemble(const Dungeon *hold, int require_start, int inside_block, int inside_record)
 {
     World *world;
@@ -1544,6 +1627,7 @@ static World *assemble(const Dungeon *hold, int require_start, int inside_block,
         : (hold->outdoor ? PLACE_TOWN : PLACE_DUNGEON);
     world->season = clock_season();
     world->outdoor = world->place == PLACE_TOWN;
+    world->keep_place = keep_place(hold, world->place, inside_record);
     /* Set now: paint places flats by it. */
     world->base_flats = hold->outdoor;
     world->inst = (Instance *)mem_alloc(MAX_MODELS * (df_u32)sizeof(Instance));
@@ -1639,7 +1723,7 @@ static World *assemble(const Dungeon *hold, int require_start, int inside_block,
             world->block_gx[b] = hold->block[b].x;
             world->block_gz[b] = hold->block[b].z;
         }
-        if (world->place == PLACE_DUNGEON && (!note_foes(world, block) || !note_marks(world, block, b))) {
+        if (world->place == PLACE_DUNGEON && (!note_foes(world, block, b) || !note_marks(world, block, b))) {
             bsa_close(blocks);
             bsa_close(arch);
             return 0;
@@ -1753,6 +1837,8 @@ static World *assemble(const Dungeon *hold, int require_start, int inside_block,
         add_lamps(world);
         mark_glass(world);
     }
+    /* What the player changed here before, put back before it shows (docs/interact.md). */
+    world_keep_restore(world);
     lap(&g_times.rest);
     why("");
     return world;

@@ -11,6 +11,8 @@
 
 #include "engine/core/df.h"
 #include "engine/scene/walker.h"
+#include "engine/scene/interact.h"
+#include "engine/scene/keep.h"
 #include "game/dagger/places/world.h"
 #include "game/dagger/play/player.h"
 #include "game/dagger/play/rules.h"
@@ -237,9 +239,93 @@ static void check_hold(void)
     }
 }
 
+/*
+ * State that outlives a load (keep.c through world.c): in the hold,
+ * every door and creature keyed; a door opened and a lever pulled, the
+ * place saved and loaded again, come back so; one door shut again loses
+ * its row; the others are as the file has them.
+ */
+static void check_keep(void)
+{
+    World *world;
+    const Mover *m;
+    int door;
+    int lever;
+    int keyed;
+    int i;
+
+    keep_clear();
+    world = world_load();
+    if (!world) {
+        check_expect(0, "keep: the hold did not load");
+        return;
+    }
+    door = -1;
+    lever = -1;
+    keyed = 0;
+    for (i = 0; i < world_mover_count(world); i++) {
+        m = world_mover(world, i);
+        keyed += m->key.place != 0 || m->key.thing != 0;
+        if (m->teleport || m->lock) {
+            continue;
+        }
+        if (m->door && door < 0) {
+            door = i;
+        } else if (!m->door && lever < 0) {
+            lever = i;
+        }
+    }
+    for (i = 0; i < world_entity_count(world); i++) {
+        keyed += world_entity(world, i)->key.thing != 0;
+    }
+    check_expect(keyed == world_mover_count(world) + world_entity_count(world),
+                 "keep: not every door, lever and creature of the hold is keyed");
+    {
+        KeepKey keys[256];
+        int n;
+        int j;
+        int twice;
+
+        n = 0;
+        for (i = 0; i < world_mover_count(world) && n < 256; i++) {
+            keys[n++] = world_mover(world, i)->key;
+        }
+        for (i = 0; i < world_entity_count(world) && n < 256; i++) {
+            keys[n++] = world_entity(world, i)->key;
+        }
+        twice = 0;
+        for (i = 0; i < n; i++) {
+            for (j = i + 1; j < n; j++) {
+                twice += keys[i].place == keys[j].place && keys[i].thing == keys[j].thing;
+            }
+        }
+        check_expect(twice == 0, "keep: two of the hold's things share a key");
+    }
+    check_expect(door >= 0 && lever >= 0, "keep: the hold has no unlocked door and lever to try");
+    if (door < 0 || lever < 0) {
+        return;
+    }
+    mover_set_end((Mover *)world_mover(world, door), 1);
+    mover_set_end((Mover *)world_mover(world, lever), 1);
+    world_keep_save(world);
+    check_expect(keep_count() == 2, "keep: leaving the hold kept more or less than its open door and pulled lever");
+    world = world_load();
+    check_expect(world && mover_at_end(world_mover(world, door)) && mover_at_end(world_mover(world, lever))
+                     && !mover_at_end(world_mover(world, door == 0 ? 1 : 0)),
+                 "keep: the door and lever did not come back as left, or another moved");
+    if (world) {
+        mover_set_end((Mover *)world_mover(world, door), 0);
+        world_keep_save(world);
+        check_expect(keep_count() == 1, "keep: a door shut again keeps its row");
+    }
+    printf("keep: the hold's %d things keyed; a door and a lever kept across a reload\n", keyed);
+    keep_clear();
+}
+
 void check_play(void)
 {
     check_rules();
     check_character();
     check_hold();
+    check_keep();
 }

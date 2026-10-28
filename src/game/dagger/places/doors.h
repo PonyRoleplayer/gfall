@@ -59,6 +59,13 @@ typedef struct DoorBuild {
     const df_u8 *mark_block;
     int nmark;
     int place;
+    /*
+     * The place's key (docs/interact.md, State that outlives a load):
+     * each mover's Mover.key is this and its thing, (its block << 24)
+     * and its record's offset in the block's file (an RMB model, which
+     * has none: 0x800000 and its index). 0 keys nothing.
+     */
+    df_u32 keep_place;
     /* Out, with room for cap of each. */
     Usable *use;
     int nuse;

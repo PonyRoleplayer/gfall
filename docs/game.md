@@ -62,6 +62,15 @@ A small state machine: **stream** (outside, the whole map), **inside** (one buil
 - Going in from the stream keeps the stream's position, so going out lands at the same door.
 - The first build starts in Privateer's Hold (`world_load`, marker 10), as Daggerfall does.
 
+### What the player changed (built: the keys)
+Every door, lever and creature of a place loaded whole is keyed for the engine's state table (`keep.c`, `docs/interact.md`, State that outlives a load). A key is two words:
+- **place:** the location's id in the low 24 bits; a building's record and one in the next 6; the kind in the top 2 (1 a dungeon, 2 a town, 3 a building's inside). A place without an id keeps nothing.
+- **thing:** the block's index << 24, and the record's offset in the block's file: an action record's for a mover, a marker's for a creature. An RMB model has no offset, so its thing is 0x800000 and its index.
+
+`world.c` puts back what was kept at the end of every load (`world_keep_restore`); `world_keep_save` writes it before a place is left. A creature kept dead is never read or drawn (`FOE_DEAD`). The engine's `live` means drawn, so a creature not yet read is saved as alive.
+
+Tested in the hold: all 105 things keyed, no key twice, a door and a lever left open come back open after a reload, a door shut again loses its row. Nothing leaves a place in GFALL yet (P6), and the streamed world's towns are not keyed yet (their chunks, with the streamed dungeons).
+
 ## The player
 
 ### The body
