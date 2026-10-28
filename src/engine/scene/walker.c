@@ -19,6 +19,12 @@ static int g_ready;
 static Body g_body;
 static int g_body_made;
 /*
+ * A game's player body (walker_set_game): while set, the walker's own
+ * body is never stepped, and the game's is the one the engine treats as
+ * the player's (solid to creatures and other bodies, freed by stuck).
+ */
+static Body *g_game;
+/*
  * The place the body is in, and its heap. A door to another place moves
  * the camera less than TELEPORT (a house's inside is where the house
  * stands), so a new place is told by these, not by the distance.
@@ -64,20 +70,36 @@ int walker_landed(float *speed, float *height)
     return body_landed(body(), speed, height);
 }
 
+void walker_set_game(Body *player)
+{
+    g_game = player;
+    /* Back to the viewers': the camera is taken where it is on the next step. */
+    g_ready = 0;
+}
+
+Body *walker_game(void)
+{
+    return g_game;
+}
+
 int walker_body(float *x, float *feet_y, float *z)
 {
-    if (!g_on || !g_ready) {
+    const Body *b;
+
+    /* Collision off (tcl 0): no body of the player's is solid, a game's flying eye neither. */
+    if (!g_on || (!g_game && !g_ready)) {
         return 0;
     }
-    *x = g_body.feet[0];
-    *feet_y = g_body.feet[1];
-    *z = g_body.feet[2];
+    b = walker_own_body();
+    *x = b->feet[0];
+    *feet_y = b->feet[1];
+    *z = b->feet[2];
     return 1;
 }
 
 const Body *walker_own_body(void)
 {
-    return &g_body;
+    return g_game ? g_game : body();
 }
 
 int walker_grounded(void)
@@ -92,7 +114,7 @@ void walker_place(void)
 
 void walker_unstick(void)
 {
-    body_unstick(body());
+    body_unstick(g_game ? g_game : body());
 }
 
 void walker_step(Camera *cam, const Scene *scene, float dt)
@@ -100,7 +122,8 @@ void walker_step(Camera *cam, const Scene *scene, float dt)
     float dx;
     float dz;
 
-    if (!g_on || !cam || !scene) {
+    /* A game steps its own player body (walker_set_game). */
+    if (!g_on || g_game || !cam || !scene) {
         g_ready = 0;
         return;
     }

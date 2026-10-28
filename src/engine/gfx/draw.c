@@ -2862,7 +2862,7 @@ void draw_frame(const Camera *cam, const Level *level)
      * the one drawn, and puts it back at its eye before anything reads
      * it. See docs/collision.md.
      */
-    if (walker_on() && (const Camera *)console_camera() == cam && !g_pause) {
+    if (walker_on() && !walker_game() && (const Camera *)console_camera() == cam && !g_pause) {
         walker_step(console_camera(), &level->scene, secs);
     }
     /*
@@ -2878,7 +2878,9 @@ void draw_frame(const Camera *cam, const Level *level)
     {
         float tx, ty, tz, tyaw;
 
-        if (interact_teleport(&tx, &ty, &tz, &tyaw) && (const Camera *)console_camera() == cam) {
+        /* A game with its own player takes its teleports itself (walker_set_game). */
+        if (!walker_game() && (const Camera *)console_camera() == cam
+            && interact_teleport(&tx, &ty, &tz, &tyaw)) {
             Camera *pc;
 
             pc = console_camera();

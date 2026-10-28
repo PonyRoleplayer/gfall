@@ -1,4 +1,5 @@
 #include "engine/scene/entity.h"
+#include "engine/scene/body.h"
 #include "engine/core/mem.h"
 #include "engine/scene/walker.h"
 
@@ -126,8 +127,9 @@ int entity_blocked(const Scene *scene, const Entity *self, float x, float z)
     }
     lo = self->y;
     hi = self->y + entity_height(self);
-    if (walker_body(&bx, &by, &bz) && hi > by && lo < by + WALK_HEIGHT
-        && circles_meet(x, z, self->radius, bx, bz, WALK_RADIUS)) {
+    /* The player's body, by its own size (a game's may not be the walker's). */
+    if (walker_body(&bx, &by, &bz) && hi > by && lo < by + walker_own_body()->height
+        && circles_meet(x, z, self->radius, bx, bz, walker_own_body()->radius)) {
         return 1;
     }
     for (i = 0; scene && scene->entities && i < scene->nentities; i++) {

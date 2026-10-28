@@ -317,7 +317,7 @@ static void push_off(Body *b, const Scene *scene)
         push_from(b, e->x, e->y, e->z, e->radius, entity_height(e), &px, &pz);
     }
     if (b != walker_own_body() && walker_body(&wx, &wy, &wz)) {
-        push_from(b, wx, wy, wz, WALK_RADIUS, WALK_HEIGHT, &px, &pz);
+        push_from(b, wx, wy, wz, walker_own_body()->radius, walker_own_body()->height, &px, &pz);
     }
     if (px != 0.0f || pz != 0.0f) {
         float c[3];

@@ -2114,6 +2114,38 @@ static void check_collision(void)
         ents[0].radius = 0.0f;
         walk(&cam, &scene, 0.0f, -5.0f, 20);
         check_expect(cam.z < -230.0f, "an entity of radius 0 stopped the body");
+        ents[0].radius = 12.0f;
+        /*
+         * A game's player (walker_set_game): a body of radius 30 the game
+         * owns. The frame does not step the walker (the camera stays where
+         * it was put); a creature stops at the game's body by its radius,
+         * 42 from it, not the walker's 28; with collision off it stops at
+         * nothing; given back, the walker steps again.
+         */
+        {
+            Body player;
+            float bx, by, bz;
+
+            body_init(&player, 30.0f, WALK_HEIGHT, WALK_STEP, WALK_EYE);
+            body_place(&player, 0.0f, 0.0f, -165.0f);
+            walker_set_game(&player);
+            camera_set(&cam, 0.0f, eye + 300.0f, -100.0f, 0.0f, 0.0f);
+            walker_step(&cam, &scene, 1.0f / 30.0f);
+            ok = check_near(cam.y, eye + 300.0f, 0.01f) && walker_body(&bx, &by, &bz)
+                && check_near(bz, -165.0f, 0.01f) && walker_own_body() == &player;
+            /* ents[0] at z -200: 40 from the player stops it (30 + 12), 45 does not. */
+            ok = ok && entity_blocked(&scene, &ents[0], 0.0f, -205.0f)
+                && !entity_blocked(&scene, &ents[0], 0.0f, -210.0f);
+            walker_set_on(0);
+            ok = ok && !walker_body(&bx, &by, &bz) && !entity_blocked(&scene, &ents[0], 0.0f, -205.0f);
+            walker_set_on(1);
+            walker_set_game(0);
+            camera_set(&cam, 0.0f, eye, -100.0f, 0.0f, 0.0f);
+            walker_place();
+            walk(&cam, &scene, 0.0f, 0.0f, 2);
+            ok = ok && walker_own_body() != &player && walker_body(&bx, &by, &bz) && check_near(bz, -100.0f, 1.0f);
+            check_expect(ok, "a game's player body did not stand in for the walker's");
+        }
         scene.entities = 0;
         scene.nentities = 0;
     }

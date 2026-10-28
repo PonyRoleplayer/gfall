@@ -59,6 +59,17 @@ The engine steps none of them but the walker's. The walker is one body of a pers
 
 Which way the camera turns is the game's. A third person's use and walk-into triggers are its body's, not the camera's (`interact_request_use_from`, `interact_set_body`, `docs/interact.md`).
 
+### A game's player
+
+The walker is the viewers' body, and it walks the console's camera from inside `draw_frame`. A game puts its camera on a body of its own, so the two must not both walk. When they did, `tcl 1` in GFALL stood the walker's body and the game's on one spot: each was solid to the other, they shoved each other sideways, and the camera took turns at their eyes, through walls.
+
+`walker_set_game(&player)` hands the walking to the game:
+- `draw_frame` steps the walker no longer. It no longer takes a teleport for the console's camera either: the game reads `interact_teleport` and places its body.
+- The game's body is the player's to the engine. Creatures stop at it (`entity_blocked`), other bodies push off it, and `stuck` frees it, each by that body's own radius and height.
+- `tcl` still reads and writes `walker_on()`, and the game reads it each frame as collision on or off. On, it steps its body. Off, it flies its eye through everything, and its body is solid to nothing (`walker_body` answers 0).
+
+`walker_set_game(0)` gives the walking back to the viewers. The viewers never set it, so they walk as before.
+
 ### Jumping and landing
 
 `body_jump` (and the walker's `walker_jump(up_speed)`) starts a jump from a floor: the body goes up at `up_speed` (world units a second, 40 a metre) and gravity brings it down, about `up_speed² / 2g` high (a little less, stepped at the frame's rate: 260 a second rises 86 in the test, 200 rises 47.7 at 30 frames a second). It returns 0 off the ground. How high is the game's to say (Daggerfall's Jumping skill), and so is how fast it walks: the walker goes where the game moved the camera across the ground, so a run is a longer move.

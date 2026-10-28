@@ -83,10 +83,30 @@ int walker_jump(float up_speed);
  * A body set somewhere (a new place, walker_place) owes no landing.
  */
 int walker_landed(float *speed, float *height);
-/* The body's feet, for the game's motors (entity_blocked): 1 while the walker is on and has a body. */
-int walker_body(float *x, float *feet_y, float *z);
-/* The walker's own Body (body.h), so another body does not push off itself through walker_body. */
 struct Body;
+/*
+ * A game's player (docs/collision.md): player is the Body the game steps
+ * and puts its camera on. While it is set:
+ * - draw_frame never steps the walker, and never takes a teleport for
+ *   the console's camera: the game takes it (interact_teleport) and
+ *   places its body;
+ * - player is the player's body to the engine: creatures stop at it
+ *   (entity_blocked), other bodies push off it, stuck frees it, each by
+ *   its own size;
+ * - tcl still sets walker_on(), which the game reads as collision on or
+ *   off; off, its body is solid to nothing.
+ * 0 gives the walking back to the viewers' walker. The game keeps player
+ * alive while it is set.
+ */
+void walker_set_game(struct Body *player);
+struct Body *walker_game(void);
+/*
+ * The player's body's feet, for the game's motors (entity_blocked): 1
+ * while collision is on (walker_on) and there is one: a game's, or the
+ * walker's once it has stepped.
+ */
+int walker_body(float *x, float *feet_y, float *z);
+/* The player's Body (a game's, or the walker's), so a body does not push off itself through walker_body. */
 const struct Body *walker_own_body(void);
 
 #endif
