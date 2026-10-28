@@ -1867,13 +1867,43 @@ static void draw_sound_view(const Camera *cam, const Basis *basis, const Scene *
  */
 static int g_use_was = 1;
 
+/*
+ * 1 (default): the frame polls the use key itself, the left button or
+ * E, as the viewers want. 0: the game owns its keys (its left button
+ * attacks) and asks for a use with interact_request_use.
+ */
+static int g_use_key = 1;
+
+/* The game's pause (gfx_set_pause): the frame is drawn, the world stands still. */
+static int g_pause;
+
+void draw_set_pause(int on)
+{
+    g_pause = on ? 1 : 0;
+}
+
+int draw_pause(void)
+{
+    return g_pause;
+}
+
+void draw_set_use_key(int on)
+{
+    g_use_key = on ? 1 : 0;
+    g_use_was = 0;
+}
+
 static int use_edge(void)
 {
     int down;
     int edge;
 
+    edge = interact_take_use();
+    if (!g_use_key) {
+        return edge;
+    }
     down = ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) || (GetAsyncKeyState('E') & 0x8000)) ? 1 : 0;
-    edge = down && !g_use_was;
+    edge = edge || (down && !g_use_was);
     g_use_was = down;
     return edge;
 }
@@ -2758,6 +2788,10 @@ void draw_frame(const Camera *cam, const Level *level)
     if (secs < 0.0f || secs > 1.0f) {
         secs = 0.0f;
     }
+    /* The game's pause (gfx_set_pause): drawn, but no time passes in the world. */
+    if (g_pause) {
+        secs = 0.0f;
+    }
     weather_advance(clock_advance(secs));
     weather_state(&w);
     g_anim_time += secs;
@@ -2769,15 +2803,18 @@ void draw_frame(const Camera *cam, const Level *level)
      * the one drawn, and puts it back at its eye before anything reads
      * it. See docs/collision.md.
      */
-    if (walker_on() && (const Camera *)console_camera() == cam) {
+    if (walker_on() && (const Camera *)console_camera() == cam && !g_pause) {
         walker_step(console_camera(), &level->scene, secs);
     }
     /*
      * Use what the middle of the view rests on, on the use key's edge,
      * then move the doors and levers on (docs/interact.md). Before the
-     * cull, which reads the poses they write.
+     * cull, which reads the poses they write. Not while paused: nothing
+     * is used, walked into or moved.
      */
-    interact_frame(&level->scene, cam, secs, use_edge());
+    if (!g_pause) {
+        interact_frame(&level->scene, cam, secs, use_edge());
+    }
     /* A teleport used or reached (docs/interact.md): the player's camera goes, the body with it. */
     {
         float tx, ty, tz, tyaw;

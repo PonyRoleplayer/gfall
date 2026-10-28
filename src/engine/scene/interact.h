@@ -131,6 +131,13 @@ int interact_view(void);
  */
 void interact_set_trigger_view(int units);
 int interact_trigger_view(void);
+/*
+ * The game's use key (gfx_set_use_key 0): the next frame uses what the
+ * middle of the view rests on, as the engine's own use key would. The
+ * frame takes it (interact_take_use, 1 once).
+ */
+void interact_request_use(void);
+int interact_take_use(void);
 /* The touch usable the body is in now (Usable.touch), -1 for none. */
 int interact_touching(void);
 

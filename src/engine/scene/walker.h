@@ -65,5 +65,23 @@ void walker_place(void);
 
 /* 1 while the body stands on a floor. */
 int walker_grounded(void);
+/*
+ * A jump: from a floor, the body goes up at up_speed (world units a
+ * second, WALK_UNITS_PER_M a metre) and gravity brings it down; it rises
+ * up_speed^2 / (2 WALK_GRAVITY). 0 when it is not on a floor (or the
+ * walker is off). How high is the game's (Daggerfall's Jumping skill).
+ * How fast it walks is the game's too: the walker goes where the game
+ * moved the camera across the ground, so a run is a longer move.
+ */
+int walker_jump(float up_speed);
+/*
+ * 1 once, on the frame the body comes down on a floor after a fall or a
+ * jump: the speed down at the floor (world units a second) and the
+ * height fallen from the top of its arc. For the game's fall damage.
+ * A body set somewhere (a new place, walker_place) owes no landing.
+ */
+int walker_landed(float *speed, float *height);
+/* The body's feet, for the game's motors (entity_blocked): 1 while the walker is on and has a body. */
+int walker_body(float *x, float *feet_y, float *z);
 
 #endif

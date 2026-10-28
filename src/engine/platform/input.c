@@ -20,6 +20,44 @@ static int g_look_dy;
 static int g_ignore;
 static int g_active;
 static int g_quit;
+/* The actions' keys (input_bind), what was held last read, and whether Escape quits. */
+static int g_vk[INPUT_ACTIONS] = {
+    VK_LBUTTON, 'E', VK_SHIFT, VK_SPACE, 'C', 'I', 'M', 'R', VK_ESCAPE
+};
+static unsigned int g_held;
+static int g_escape_quits = 1;
+
+static int key_down(int vk);
+
+void input_bind(int action, int vk)
+{
+    if (action >= 0 && action < INPUT_ACTIONS) {
+        g_vk[action] = vk;
+    }
+}
+
+void input_set_escape_quits(int on)
+{
+    g_escape_quits = on ? 1 : 0;
+}
+
+/* The actions held now; escape is whether Escape counts (not the console's own). */
+static unsigned int actions_held(int escape)
+{
+    unsigned int held;
+    int a;
+
+    held = 0;
+    for (a = 0; a < INPUT_ACTIONS; a++) {
+        int down;
+
+        down = g_vk[a] == VK_ESCAPE ? escape : key_down(g_vk[a]);
+        if (down) {
+            held |= INPUT_BIT(a);
+        }
+    }
+    return held;
+}
 
 static int key_down(int vk)
 {
@@ -143,6 +181,9 @@ void input_end(void)
 
 void input_read(Input *out)
 {
+    int escape;
+    unsigned int held;
+
     console_pump();
     if (console_open()) {
         g_look_dx = 0;
@@ -153,6 +194,11 @@ void input_read(Input *out)
         out->look_dx = 0;
         out->look_dy = 0;
         out->quit = g_quit;
+        /* The console has the keys: nothing is held, and what was is let go. */
+        out->held = 0;
+        out->pressed = 0;
+        out->released = g_held;
+        g_held = 0;
         return;
     }
     out->move_f = key_down('W') - key_down('S');
@@ -163,8 +209,14 @@ void input_read(Input *out)
     g_look_dx = 0;
     g_look_dy = 0;
     /* An Escape that just closed the console is still down. */
-    if (key_down(VK_ESCAPE) && !console_take_escape()) {
+    escape = key_down(VK_ESCAPE) && !console_take_escape();
+    if (escape && g_escape_quits) {
         g_quit = 1;
     }
     out->quit = g_quit;
+    held = actions_held(escape && !g_escape_quits);
+    out->held = held;
+    out->pressed = held & ~g_held;
+    out->released = g_held & ~held;
+    g_held = held;
 }

@@ -5,6 +5,28 @@
    look_dx positive is look right (mouse, or right arrow). look_dy positive
    is look down (mouse, or down arrow). Arrows add a fixed step per frame. */
 
+/*
+ * A game's actions (docs/input.md): one bit each in Input's held,
+ * pressed (went down this frame) and released (went up this frame).
+ * Each is a key or a mouse button, rebound with input_bind; the
+ * defaults are attack the left button, use E, run Shift, jump Space,
+ * the character C, the inventory I, the map M, rest R, and the menu
+ * Escape (with input_set_escape_quits(0); else Escape quits).
+ */
+enum {
+    INPUT_ATTACK,
+    INPUT_USE,
+    INPUT_RUN,
+    INPUT_JUMP,
+    INPUT_CHARACTER,
+    INPUT_INVENTORY,
+    INPUT_MAP,
+    INPUT_REST,
+    INPUT_MENU,
+    INPUT_ACTIONS
+};
+#define INPUT_BIT(action) (1u << (action))
+
 typedef struct Input {
     int move_f;
     int move_r;
@@ -12,7 +34,19 @@ typedef struct Input {
     int look_dx;
     int look_dy;
     int quit;
+    /* The actions, by INPUT_BIT. With the console open none is held, and what was is released. */
+    unsigned int held;
+    unsigned int pressed;
+    unsigned int released;
 } Input;
+
+/* Action (INPUT_*) to a Windows virtual key (VK_*, a letter's capital, VK_LBUTTON for the left button). */
+void input_bind(int action, int vk);
+/*
+ * 1 (default): Escape quits (input_read's quit), as the viewers want.
+ * 0: Escape is the INPUT_MENU action and never quits: a game's menu.
+ */
+void input_set_escape_quits(int on);
 
 void input_begin(void *hwnd);
 void input_end(void);

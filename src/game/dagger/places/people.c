@@ -20,6 +20,8 @@
 #define TOWN_REACH 2500.0
 /* Walking speed (1.3 m/s), where a person stands still for a close, still camera (2.5 m), and how still. */
 #define WALK_SPEED 52.0f
+/* How wide a person stands (entity_blocked, the walker's push): 0.3 m. */
+#define PERSON_RADIUS 12.0f
 #define IDLE_NEAR 100.0f
 #define STILL_SPEED 8.0f
 /* The motor's chances (MobilePersonMotor): a random turn, and taking a worse cell anyway. */
@@ -431,6 +433,10 @@ static void walk(int i, float secs)
         p->state = SEEK;
         return;
     }
+    /* The walker's body, or another person, in the way: wait for it to pass (entity_blocked). */
+    if (entity_blocked(g_scene, e, e->x + dx / d * step, e->z + dz / d * step)) {
+        return;
+    }
     e->x += dx / d * step;
     e->z += dz / d * step;
 }
@@ -503,6 +509,8 @@ static int spawn(const Camera *cam, double x0, double z0, int climate, int anywh
         e->phase = (df_u8)pick(256);
         e->moving = 1;
         e->live = 1;
+        /* About a person's shoulders, as DFU's capsule: the walker and the others stop at them. */
+        e->radius = PERSON_RADIUS;
         p->set = set;
         p->cx = p->tx = cx;
         p->cz = p->tz = cz;

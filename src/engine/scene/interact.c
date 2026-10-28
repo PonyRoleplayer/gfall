@@ -701,6 +701,23 @@ static int touched(const Scene *scene, const Camera *cam)
     return -1;
 }
 
+/* A use the game asked for (interact_request_use), for the next frame's use edge. */
+static int g_use_request;
+
+void interact_request_use(void)
+{
+    g_use_request = 1;
+}
+
+int interact_take_use(void)
+{
+    int r;
+
+    r = g_use_request;
+    g_use_request = 0;
+    return r;
+}
+
 int interact_touching(void)
 {
     return g_touching;

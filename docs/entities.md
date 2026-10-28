@@ -15,6 +15,8 @@ Two kinds of people stand in a town:
 
 `engine/scene/entity.h`: an entity is its feet (x, y, z in the scene's frame), its facing (`yaw`, the camera's sense: 0 looks along +z, a quarter turn along +x), two poses, and its place in the cycle of frames (`phase`). The game owns and moves its entities; the engine reads them once a frame to draw (`Scene.entities`, `Scene.nentities`; an entry with `live` 0 is skipped).
 
+`radius` (0, as zeroed, passes through) makes it solid: the walker's body stops at it, and `entity_blocked(scene, self, x, z)` tells a motor whether a step would meet the body or another solid entity (`docs/collision.md`). Its height is its pose's front view (`entity_height`).
+
 A pose (`EntityPose`) is five views: a picture slot each, each view's size in world units (a record is drawn at its own: a rat side on is twice as wide as from the front), a frame rate, and `right`, a bit a view whose picture faces the viewer's right. The walking pose shows while `moving` is 1, the idle pose while it is 0. An idle pose of one picture (`slot[1]` 0xffff) faces the viewer whichever way the entity faces: a townsperson's. An entity with no idle pose (`idle.slot[0]` 0xffff) stands in its walking one: a bat, a ghost, a scorpion.
 
 ### Its views
@@ -117,7 +119,7 @@ A flyer (an imp, a bat, a harpy, a dragonling) or a ghost or wraith hangs where 
 ## Not yet
 
 - Static people as entities (they stand as flats: no turning).
-- Collision: people walk through the walker, and the walker through them. Using one (talk) is the static people's only.
+- Using a walking person (talk) is the static people's only. Collision is done: an entity with a radius stops the walker (`docs/collision.md`), and the townspeople, 12 units round (`PERSON_RADIUS`), wait when the body or another person is in their next step (`entity_blocked`).
 - People in a place loaded whole.
 - What a creature does: friend or foe, its motor, its attack, hurt and death records (5 to 14, 20 to 29). The game's.
 - Creatures in a house (DFU's random encounters by building) or in the wilderness at night; a dungeon of a streamed world (an indoor row opened from Stream World is a place loaded whole, and has them).

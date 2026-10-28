@@ -1676,6 +1676,100 @@ static void check_collision(void)
     walk(&cam, &scene, 0.0f, 6.0f, 30);
     check_expect(check_near(cam.y, eye, 1.0f) && cam.z < 300.0f - WALK_RADIUS + 0.5f,
                  "the body walked up a 48-unit block");
+    /*
+     * A jump: up at 260 a second it rises about 86 (260^2 / (2 g), less
+     * a little at 30 frames a second), clears the 48-unit block it moves
+     * onto and lands there, the drop from its top reported once; from the
+     * floor, a jump in place lands at the speed it left with, from its
+     * height; off the block's top, the fall is 48.
+     */
+    {
+        float speed;
+        float height;
+        float top;
+        int f;
+
+        camera_set(&cam, -50.0f, eye, 230.0f, 0.0f, 0.0f);
+        walker_place();
+        walk(&cam, &scene, 0.0f, 0.0f, 30);
+        walker_landed(&speed, &height);
+        check_expect(walker_jump(260.0f) && !walker_jump(260.0f), "a jump did not start, or started again in the air");
+        top = 0.0f;
+        for (f = 0; f < 60 && (f == 0 || !walker_grounded()); f++) {
+            walk(&cam, &scene, 0.0f, 4.0f, 1);
+            top = cam.y - eye > top ? cam.y - eye : top;
+        }
+        check_expect(walker_grounded() && check_near(cam.y, 48.0f + eye, 1.0f) && top > 78.0f && top < 90.0f,
+                     "a jump of 260 a second did not clear the 48-unit block and land on it");
+        check_expect(walker_landed(&speed, &height) && check_near(height, top - 48.0f, 2.0f)
+                     && !walker_landed(&speed, &height),
+                     "landing on the block was not reported once, as the drop from the arc's top");
+        camera_set(&cam, -300.0f, eye, 200.0f, 0.0f, 0.0f);
+        walker_place();
+        walk(&cam, &scene, 0.0f, 0.0f, 30);
+        walker_landed(&speed, &height);
+        walker_jump(200.0f);
+        for (f = 0; f < 60 && (f == 0 || !walker_grounded()); f++) {
+            walk(&cam, &scene, 0.0f, 0.0f, 1);
+        }
+        check_expect(walker_landed(&speed, &height) && check_near(speed, 200.0f, 15.0f)
+                     && check_near(height, 200.0f * 200.0f / (2.0f * WALK_GRAVITY), 4.0f),
+                     "a jump in place did not land at its own speed from its own height");
+        camera_set(&cam, -50.0f, 48.0f + eye, 350.0f, 0.0f, 0.0f);
+        walker_place();
+        walk(&cam, &scene, 0.0f, 0.0f, 30);
+        walker_landed(&speed, &height);
+        speed = 0.0f;
+        height = 0.0f;
+        for (f = 0; f < 40 && !walker_landed(&speed, &height); f++) {
+            walk(&cam, &scene, 0.0f, -6.0f, 1);
+        }
+        check_expect(check_near(cam.y, eye, 1.0f) && check_near(height, 48.0f, 2.0f) && speed > 100.0f,
+                     "walking off the block did not land as a 48-unit fall");
+    }
+    /*
+     * Entities in the way (Entity.radius): walking at one of radius 12,
+     * the body stops its own radius and the entity's short of it; one of
+     * radius 0 is walked through. entity_blocked: a step into the body is
+     * blocked, one away is not; two solid entities do not step into each
+     * other, but two already overlapping may walk apart.
+     */
+    {
+        static Entity ents[2];
+        int ok;
+
+        mem_zero(ents, sizeof(ents));
+        ents[0].x = 0.0f;
+        ents[0].z = -200.0f;
+        ents[0].live = 1;
+        ents[0].radius = 12.0f;
+        ents[0].walk.slot[0] = 0;
+        ents[0].walk.w[0] = 30;
+        ents[0].walk.h[0] = 70;
+        ents[0].idle.slot[0] = 0xffff;
+        ents[0].moving = 1;
+        ents[1] = ents[0];
+        ents[1].z = -320.0f;
+        scene.entities = ents;
+        scene.nentities = 2;
+        camera_set(&cam, 0.0f, eye, -100.0f, 0.0f, 0.0f);
+        walker_place();
+        walk(&cam, &scene, 0.0f, 0.0f, 2);
+        walk(&cam, &scene, 0.0f, -5.0f, 40);
+        check_expect(cam.z > -200.0f + 12.0f + WALK_RADIUS - 1.5f && cam.z < -200.0f + 12.0f + WALK_RADIUS + 1.5f,
+                     "the body did not stop at a solid entity, its radius and the entity's short of it");
+        ok = entity_blocked(&scene, &ents[0], 0.0f, cam.z - 20.0f) && !entity_blocked(&scene, &ents[0], 0.0f, -260.0f)
+            && entity_blocked(&scene, &ents[1], 0.0f, -215.0f) && !entity_blocked(&scene, &ents[1], 0.0f, -260.0f);
+        ents[1].z = -210.0f;
+        ok = ok && !entity_blocked(&scene, &ents[1], 0.0f, -215.0f);
+        ents[1].z = -320.0f;
+        check_expect(ok, "entity_blocked does not see the body, or another solid entity, or holds two that overlap");
+        ents[0].radius = 0.0f;
+        walk(&cam, &scene, 0.0f, -5.0f, 20);
+        check_expect(cam.z < -230.0f, "an entity of radius 0 stopped the body");
+        scene.entities = 0;
+        scene.nentities = 0;
+    }
     /* Off the floor's edge: it falls out, and comes back to where it last stood. */
     camera_set(&cam, -50.0f, eye, -450.0f, 0.0f, 0.0f);
     walk(&cam, &scene, 0.0f, 0.0f, 2);

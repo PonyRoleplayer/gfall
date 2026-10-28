@@ -147,4 +147,4 @@ LEVELFALL also flips `cull`, `occlude`, `covers`, `faces`, and `fog` with F5 to 
 
 ## The world stands still
 
-While the console is open `draw_frame` runs none of the world: the clock, the weather, the walker, the doors and levers, the flames' frames. `gfx_paused` says so to the game, whose own simulation (LEVELFALL's townspeople, `docs/entities.md`) skips its step too. Loading (the stream) does not stand still: it changes nothing the player sees until the console shuts.
+While the console is open `draw_frame` runs none of the world: the clock, the weather, the walker, the doors and levers, the flames' frames. `gfx_paused` says so to the game, whose own simulation (LEVELFALL's townspeople, `docs/entities.md`) skips its step too. A game's screens have a pause of their own, `gfx_set_pause(1)`: the same stillness, `gfx_paused` saying so, but the frame still drawn under the screen and the keys still reaching `input_read` (`docs/input.md`). Loading (the stream) does not stand still: it changes nothing the player sees until the console shuts.

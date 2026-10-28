@@ -57,6 +57,11 @@ int draw_sprite_point(void);
 /* Water drawn (1, default: its surface, and the eye under it in its colour) or not (docs/water.md). */
 void draw_set_water(int on);
 int draw_water(void);
+/* See gfx_set_pause. */
+void draw_set_pause(int on);
+int draw_pause(void);
+/* See gfx_set_use_key. */
+void draw_set_use_key(int on);
 /* See gfx_prime. */
 void draw_prime(const struct Level *level, const Camera *cam);
 /*

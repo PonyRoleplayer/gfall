@@ -48,6 +48,16 @@ Faces the loader could not texture (`slot` 0xffff) are not part of the place and
 
 A camera that moved more than 768 units in a frame was set (`setpos`, a new place), not walked: the body is put where it is and freed if it is caught.
 
+### Jumping and landing
+
+`walker_jump(up_speed)` starts a jump from a floor: the body goes up at `up_speed` (world units a second, 40 a metre) and gravity brings it down, about `up_speed² / 2g` high (a little less, stepped at the frame's rate: 260 a second rises 86 in the test, 200 rises 47.7 at 30 frames a second). It returns 0 off the ground. How high is the game's to say (Daggerfall's Jumping skill), and so is how fast it walks: the walker goes where the game moved the camera across the ground, so a run is a longer move.
+
+`walker_landed(&speed, &height)` is 1 once, on the frame the body comes down on a floor after a fall or a jump: the speed down at the floor and the height fallen from the top of its arc (walking off an edge, from the edge). For the game's fall damage. A body set somewhere (a new place, `walker_place`) owes no landing.
+
+### Entities
+
+An entity with a radius (`Entity.radius`, `docs/entities.md`) stands in the way. After the move across, the body is pushed out of every live solid entity its height meets, its radius and the entity's apart, the push swept through `collide` like any move, so it never goes into a wall (`push_off_entities`). For the game's motors, `entity_blocked(scene, self, x, z)` says whether an entity standing at x, z would meet the body or another solid entity, and `walker_body` gives the body's feet. Two that already overlap (born so) may walk apart.
+
 ## Stuck
 
 `stuck` moves the body to the nearest free place: rings of 16 points 8, 16, 32 … 256 units out, each at the feet's height and 24, 48 and 96 above, nearest first. A place is free when the upper body there cuts into nothing and a floor holds the feet within a step; the feet then go onto that floor. With none, it goes back to the last place it stood on firm floor (a floor under its middle, not just the footprint's edge: a body put back on a ledge's very edge slid off again). The same search runs on its own when collision is turned on and when the camera is set.
@@ -70,6 +80,6 @@ Tried on the card (a Voodoo 2 on the 233 machine): it walks the hold, the castle
 ## Not done
 
 - Doors are models: a closed door blocks, and nothing opens one yet.
-- No jumping, crouching, swimming or climbing; no falling damage.
-- The body does not push or ride anything; nothing in a place moves yet.
+- No crouching, swimming or climbing. Jumping and the landing's speed are here; the damage is the game's.
+- The body does not push or ride anything; an entity stops it, and the game's motors stop at it.
 - Ladders and the steepest stairs (a riser over 24 units) block.

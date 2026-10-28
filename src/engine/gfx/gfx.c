@@ -160,7 +160,17 @@ void gfx_prime(const Level *level, const Camera *cam)
 
 int gfx_paused(void)
 {
-    return console_open();
+    return console_open() || draw_pause();
+}
+
+void gfx_set_pause(int on)
+{
+    draw_set_pause(on);
+}
+
+void gfx_set_use_key(int on)
+{
+    draw_set_use_key(on);
 }
 
 void gfx_frame(const Camera *cam, const Level *level)

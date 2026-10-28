@@ -54,6 +54,12 @@ typedef struct Entity {
     float yaw;
     EntityPose walk;
     EntityPose idle;
+    /*
+     * How wide it stands, a circle round its feet (world units): the
+     * walker's body stops at it, and entity_blocked keeps solid entities
+     * apart. 0 (as zeroed) passes through and is passed through.
+     */
+    float radius;
     /* Its place in the cycle of frames. */
     df_u8 phase;
     /* 1 walking, 0 standing. */
@@ -86,6 +92,15 @@ int entity_flat(const Entity *e, float cx, float cz, Flat *out);
  * population switch.
  */
 void entity_set_population(int on);
+/*
+ * 1 when entity self, standing with its feet at x, z (its own y and
+ * height), would meet the walker's body or another live entity with a
+ * radius: for a motor, before it takes a step. self needs a radius of
+ * its own (0: never blocked). The walker's body only while it is on.
+ */
+int entity_blocked(const Scene *scene, const Entity *self, float x, float z);
+/* How tall entity e stands now: its pose's front view. */
+float entity_height(const Entity *e);
 int entity_population(void);
 
 #endif

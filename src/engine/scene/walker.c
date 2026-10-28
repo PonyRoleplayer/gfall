@@ -1,4 +1,5 @@
 #include "engine/scene/walker.h"
+#include "engine/scene/entity.h"
 #include "engine/scene/collide.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
@@ -37,6 +38,15 @@ static int g_grounded;
 static int g_want_unstick;
 static float g_feet[3];
 static float g_vy;
+/*
+ * The top of the body's arc while it is off the ground (its feet), and
+ * a landing not yet taken (walker_landed): the speed down at the floor,
+ * and the height fallen from the top.
+ */
+static float g_top;
+static int g_landed;
+static float g_land_speed;
+static float g_land_height;
 static float g_last[3];
 static float g_safe[3];
 static int g_have_safe;
@@ -57,6 +67,43 @@ void walker_set_on(int on)
 int walker_on(void)
 {
     return g_on;
+}
+
+int walker_jump(float up_speed)
+{
+    if (!g_on || !g_ready || !g_grounded || up_speed <= 0.0f) {
+        return 0;
+    }
+    g_vy = up_speed;
+    g_grounded = 0;
+    g_top = g_feet[1];
+    return 1;
+}
+
+int walker_landed(float *speed, float *height)
+{
+    if (!g_landed) {
+        return 0;
+    }
+    g_landed = 0;
+    if (speed) {
+        *speed = g_land_speed;
+    }
+    if (height) {
+        *height = g_land_height;
+    }
+    return 1;
+}
+
+int walker_body(float *x, float *feet_y, float *z)
+{
+    if (!g_on || !g_ready) {
+        return 0;
+    }
+    *x = g_feet[0];
+    *feet_y = g_feet[1];
+    *z = g_feet[2];
+    return 1;
 }
 
 int walker_grounded(void)
@@ -241,6 +288,62 @@ static int rise_to(float y)
     return df_absf(g_feet[1] - y) < 0.05f;
 }
 
+/*
+ * The scene's solid entities (Entity.radius) the body meets, pushed out
+ * of round them across the floor, the push swept through collide like
+ * any move so it never goes into a wall. Townspeople and creatures stand
+ * in the way; they are not models, so collide does not see them.
+ */
+static void push_off_entities(const Scene *scene)
+{
+    float px;
+    float pz;
+    int i;
+
+    if (!scene->entities) {
+        return;
+    }
+    px = 0.0f;
+    pz = 0.0f;
+    for (i = 0; i < scene->nentities; i++) {
+        const Entity *e;
+        float dx;
+        float dz;
+        float d2;
+        float reach;
+        float d;
+
+        e = &scene->entities[i];
+        if (!e->live || e->radius <= 0.0f || e->y + entity_height(e) <= g_feet[1]
+            || e->y >= g_feet[1] + WALK_HEIGHT) {
+            continue;
+        }
+        reach = e->radius + WALK_RADIUS;
+        dx = g_feet[0] - e->x;
+        dz = g_feet[2] - e->z;
+        d2 = dx * dx + dz * dz;
+        if (d2 >= reach * reach) {
+            continue;
+        }
+        d = df_sqrt(d2);
+        if (d < 0.01f) {
+            /* Right on it: out along +x, any way will do. */
+            px += reach;
+            continue;
+        }
+        px += dx / d * (reach - d);
+        pz += dz / d * (reach - d);
+    }
+    if (px != 0.0f || pz != 0.0f) {
+        float c[3];
+
+        upper(g_feet, c);
+        collide_slide(c, px, 0.0f, pz, 0);
+        g_feet[0] = c[0];
+        g_feet[2] = c[2];
+    }
+}
+
 void walker_step(Camera *cam, const Scene *scene, float dt)
 {
     float dx;
@@ -277,6 +380,9 @@ void walker_step(Camera *cam, const Scene *scene, float dt)
         g_feet[2] = cam->z;
         g_vy = 0.0f;
         g_grounded = 0;
+        /* Set, not walked: a fall from here counts from here, and no landing is owed. */
+        g_top = g_feet[1];
+        g_landed = 0;
         g_have_safe = 0;
         g_ready = 1;
         g_want_unstick = 1;
@@ -309,6 +415,8 @@ void walker_step(Camera *cam, const Scene *scene, float dt)
         g_feet[2] = c[2];
     }
 
+    push_off_entities(scene);
+
     /*
      * Down: standing, the floor may be a step up or a step down; falling,
      * anywhere in this frame's fall. The highest under the footprint wins.
@@ -323,17 +431,32 @@ void walker_step(Camera *cam, const Scene *scene, float dt)
                 g_feet[2] = before[2];
             }
         } else {
+            /* Off an edge: the fall counts from here. */
             g_grounded = 0;
+            g_top = g_feet[1];
         }
     }
     if (!g_grounded) {
         if (dy <= 0.0f && floor_under(g_feet[0], g_feet[2], g_feet[1] + 0.5f, g_feet[1] + dy - 0.5f, &floor_y)) {
+            float speed;
+
+            speed = -g_vy;
             rise_to(floor_y);
             g_grounded = df_absf(g_feet[1] - floor_y) < 0.05f;
             g_vy = 0.0f;
+            if (g_grounded) {
+                /* Landed: how fast, and from how high (walker_landed, once). */
+                g_landed = 1;
+                g_land_speed = speed > 0.0f ? speed : 0.0f;
+                g_land_height = g_top > g_feet[1] ? g_top - g_feet[1] : 0.0f;
+                g_top = g_feet[1];
+            }
         } else if (!rise_to(g_feet[1] + dy)) {
             /* Struck something on the way: a ceiling, a slope. */
             g_vy = 0.0f;
+        }
+        if (!g_grounded && g_feet[1] > g_top) {
+            g_top = g_feet[1];
         }
     }
 

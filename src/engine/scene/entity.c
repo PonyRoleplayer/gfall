@@ -1,5 +1,6 @@
 #include "engine/scene/entity.h"
 #include "engine/core/mem.h"
+#include "engine/scene/walker.h"
 
 /* See entity.h and docs/entities.md. */
 
@@ -68,6 +69,57 @@ int entity_flat(const Entity *e, float cx, float cz, Flat *out)
     out->phase = e->phase;
     out->flip = (df_u8)flip;
     return 1;
+}
+
+float entity_height(const Entity *e)
+{
+    const EntityPose *pose;
+
+    pose = entity_pose(e);
+    return (float)(pose->h[0] ? pose->h[0] : pose->w[0]);
+}
+
+/* 1 when circles of radii ra and rb at a and b meet across the floor. */
+static int circles_meet(float ax, float az, float ra, float bx, float bz, float rb)
+{
+    float dx;
+    float dz;
+
+    dx = ax - bx;
+    dz = az - bz;
+    return dx * dx + dz * dz < (ra + rb) * (ra + rb);
+}
+
+int entity_blocked(const Scene *scene, const Entity *self, float x, float z)
+{
+    float lo;
+    float hi;
+    float bx, by, bz;
+    int i;
+
+    if (!self || self->radius <= 0.0f) {
+        return 0;
+    }
+    lo = self->y;
+    hi = self->y + entity_height(self);
+    if (walker_body(&bx, &by, &bz) && hi > by && lo < by + WALK_HEIGHT
+        && circles_meet(x, z, self->radius, bx, bz, WALK_RADIUS)) {
+        return 1;
+    }
+    for (i = 0; scene && scene->entities && i < scene->nentities; i++) {
+        const Entity *o;
+
+        o = &scene->entities[i];
+        if (o == self || !o->live || o->radius <= 0.0f) {
+            continue;
+        }
+        if (hi > o->y && lo < o->y + entity_height(o) && circles_meet(x, z, self->radius, o->x, o->z, o->radius)
+            /* Already overlapping (born so): let it walk out, not freeze. */
+            && !circles_meet(self->x, self->z, self->radius, o->x, o->z, o->radius)) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static int g_population = 1;

@@ -65,12 +65,26 @@ void gfx_load_times(df_u32 *card, df_u32 *lights, df_u32 *prime);
 /* Clear, draw what the scene says is visible, overlay, swap. */
 void gfx_frame(const Camera *cam, const Level *level);
 /*
- * 1 while the world stands still: the console is open, and gfx_frame
- * runs none of it (the clock, the weather, the doors, the walker, the
- * flames' frames). A game's own simulation (its people, its creatures)
- * stands still too while it is: it skips its step, not its loading.
+ * 1 while the world stands still: the console is open, or the game's
+ * pause is on, and gfx_frame runs none of it (the clock, the weather,
+ * the doors and their use, the walker, the flames' frames). A game's
+ * own simulation (its people, its creatures) stands still too while it
+ * is: it skips its step, not its loading.
  */
 int gfx_paused(void);
+/*
+ * The game's pause, for its screens and menus: 1 stands the world still
+ * as the console does, but the frame is still drawn under the screen and
+ * the keys still reach input_read. 0 lets it go on. The console's own
+ * pause is apart from it.
+ */
+void gfx_set_pause(int on);
+/*
+ * 1 (default): the frame takes the use key itself (the left button or
+ * E: docs/interact.md). 0: it polls nothing; the game, whose left button
+ * attacks, calls interact_request_use on its own use key's edge.
+ */
+void gfx_set_use_key(int on);
 
 /* Drawn after the frame and before the swap. 0 clears it. */
 void gfx_set_extra(void (*fn)(void));
