@@ -47,7 +47,7 @@ GFALL's loop, once the game is running:
 4. `travel` changes place between frames, under `gfx_hold`, then calls `gfx_prepare` and `gfx_prime`, and fades in (`gfx_fade_in`).
 
 **Built (P1, `play/game.c`, `apps/gfall/main.c`).** GFALL's loop is `win_pump`, then `input_read`, then `game_frame(cam, in, dt)`, then `gfx_frame`. dt is the performance counter's, at most a tenth of a second. `game_frame`, bracketed as the profile's `play` stage:
-1. Escape toggles the game's pause (`gfx_set_pause`); paused, Q quits.
+1. Before any place, the title or the start menu takes the frame (Menus, below). In play, Escape opens the options over the stilled world.
 2. Unless paused (the game's, or the console's: `gfx_paused`): the use key, the player's step, its landing taken, the camera on its eye (`rig_first`), and the creatures read near it (2 ms).
 3. The compass is turned.
 
@@ -138,6 +138,35 @@ The HUD is drawn at the card's 640 × 480. Classic's 320 × 200 pieces are drawn
 
 Still to come: classic's bottom panel (MAIN00I0.IMG, 320 × 46) with the menu work, and the weapon (P4).
 
+## Menus
+
+**Built (P3, `play/menu.c`, `play/keys.c`, `play/screen.c`).** GFALL opens on classic's menus, then starts the hold.
+- **Each menu is classic's own picture, where classic puts it.** Its buttons are where DFU's windows put them. Only the open menu's picture is on the card (`pic_load` on open, `pic_free` on close).
+- **The pointer is classic's ARROW.RAW** (10 × 10, a cutout under ART_PAL.COL), drawn at the engine's pointer (`input_set_pointer`, `input_pointer`). A click is the left button (`INPUT_ATTACK`'s press).
+- **The screens before any place** are the engine's screen frame: `gfx_prepare(0)`, then `gfx_frame(cam, 0)` each frame, with the game drawing through `gfx_set_extra`.
+
+| Menu | Picture | Buttons |
+| --- | --- | --- |
+| Title | TITL00I0.IMG (its own palette) | any key or click goes on |
+| Start | PICK03I0.IMG (its own palette) | Load (72, 45): "There are no saved games yet." (P7); Start a new game (72, 99): loads the hold under "Loading...", which fades in; Exit (125, 145) quits |
+| Options | OPTN00I0.IMG at 85, 40, over the stilled world (`gfx_set_pause`) | Save, Load: later (P7); Exit, clicked twice, quits; Controls; Continue, or Escape, goes back to play. Classic's full screen, head bobbing, sound, music and detail are settings, left out |
+| Controls | CNFG00I0.IMG | each action's key in classic's slot (47 × 7); a click on one waits for a key (`input_key_pressed`), and Escape leaves it be; a key another action has is swapped between them; Escape, the menu's, and the console's are refused (`input_bind`). Default puts classic's keys back; Continue, or Escape, goes back to the options |
+
+**The controls' slots** are classic's for the actions the game has:
+- forward, back, left and right (strafe), in the walk's columns;
+- jump and run;
+- rest;
+- the swing (attack);
+- the character sheet and the inventory;
+- use (activate the centre);
+- the travel map.
+
+Classic's other slots (turning, crouching, spells, the log...) stay empty until their actions come.
+
+**Bindings are saved** in `DATA\KEYS.DAT`, a record file (`docs/data.md`) of one `KEYS` record per action (id `INPUT_*`, its virtual key), when the controls screen closes with a change. They are read at start (`keys_load`) over classic's defaults (`keys_defaults`): W, S, A, D, the left button, E, Shift, Space, C, I, M, R.
+
+None of this has run on the 233 yet.
+
 ## Creatures and combat
 
 The creatures already stand in a dungeon as entities (`docs/entities.md`): each has a kind (`world_entity_kind`) and a standing and a walking pose. The game adds:
@@ -222,7 +251,7 @@ The first goal is a **prototype**: from classic's start menu, Privateer's Hold p
 | P0 | Foundation: the layers, MAIN.DAT and mods, dfrec; the engine's keys, bodies and rigs, pause, poses, calendar, `DATA\` | all | built |
 | **P1** | **On foot** (built, runs on the target). GFALL rewritten as the game's single play state: the player a body under `rig_first`, walk, run, jump and fall, mouse look; the use key on doors and levers; HUD crosshair, compass and message line; Escape pauses | GAME | the hold walked from marker 10 to its exit on the 233 |
 | P2 | A character (built): a fixed level-1 one, classic's attributes, skills and vitals; vitals bars on the HUD; `RACE`, `CLAS`, `SKIL` | GAME, ENGINE's pictures | derived values match UESP's worked figures |
-| P3 | The start menu: classic's main menu (PICK03I0.IMG: load, start, exit) before the hold, the title before it, Escape's menu in play (go on, exit) | GAME, ENGINE's pictures | GFALL opens on the menu, starts the hold, and exits from both |
+| P3 | The start menu (built): classic's main menu (PICK03I0.IMG: load, start, exit) before the hold, the title before it, Escape's menu in play (go on, exit) | GAME, ENGINE's pictures | GFALL opens on the menu, starts the hold, and exits from both |
 | P4 | Combat: the weapon's swing from WEAPON##.CIF (the shown swing's frames only on the card), classic's to-hit and damage; creatures wake, chase on bodies of their size, attack, flinch, die; the player's death; `WEAP`, `MATL` | GAME; LEVELFALL shows each creature's state | the hold can be cleared, or the player killed, from records |
 | P5 | Loot and inventory: corpses, treasure, gold, pick up, equip weapon and armour; `ITEM`, `ARMR`, `LOOT` | GAME, ENGINE's pictures | equipment changes combat |
 | P6 | Out of the hold: `places/travel.c` lifted from LEVELFALL and shared; the hold's outside in the stream, the nearest town, its houses | GAME and LEVELFALL | the trip is one session |

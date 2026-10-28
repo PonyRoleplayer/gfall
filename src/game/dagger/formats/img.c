@@ -43,10 +43,15 @@ int img_load(const char *name, ImgPicture *out)
         log_print(LOG_WARN, "img: %s did not read", name);
         return 0;
     }
+    out->palette = 0;
     if (headerless(n, &out->width, &out->height)) {
         out->x = 0;
         out->y = 0;
         out->pixels = b;
+        /* A full screen and 768 bytes more: its own palette after the pixels. */
+        if (n == (df_u32)out->width * (df_u32)out->height + 768u) {
+            out->palette = b + (df_u32)out->width * (df_u32)out->height;
+        }
         return 1;
     }
     if (n < HEADER) {
@@ -65,6 +70,41 @@ int img_load(const char *name, ImgPicture *out)
         return 0;
     }
     out->pixels = b + HEADER;
+    return 1;
+}
+
+int img_load_raw(const char *name, int width, int height, ImgPicture *out)
+{
+    const df_u8 *b;
+    df_u32 n;
+
+    b = vfs_read(name, &n);
+    if (!b || n < (df_u32)width * (df_u32)height) {
+        log_print(LOG_WARN, "img: %s did not read", name);
+        return 0;
+    }
+    out->x = 0;
+    out->y = 0;
+    out->width = width;
+    out->height = height;
+    out->pixels = b;
+    out->palette = 0;
+    return 1;
+}
+
+int img_palette(const ImgPicture *pic, df_u8 *rgb768)
+{
+    int i;
+
+    if (!pic->palette) {
+        return img_art_palette(rgb768);
+    }
+    for (i = 0; i < 768; i++) {
+        int v;
+
+        v = (int)pic->palette[i] * 4;
+        rgb768[i] = (df_u8)(v > 255 ? 255 : v);
+    }
     return 1;
 }
 

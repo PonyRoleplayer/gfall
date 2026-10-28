@@ -8,7 +8,7 @@
  * bottom left (MAIN03I0, MAIN04I0 and MAIN05I0.IMG: health, fatigue,
  * spell points, each filled from the bottom as DFU's HUDVitals does,
  * where the files put them), a crosshair in the middle
- * (DFU's, not classic's: classic had none), and the pause line. The
+ * (DFU's, not classic's: classic had none). The
  * world's message line is the engine's (interact_say). Read docs/game.md
  * (Controls and the HUD).
  *
@@ -23,8 +23,6 @@ void overlay_free(void);
 void overlay_set_yaw(float yaw);
 /* The vitals the bars show: each now and most. */
 void overlay_set_vitals(int health, int health_max, int fatigue, int fatigue_max, int magicka, int magicka_max);
-/* 1 shows the pause line. */
-void overlay_set_paused(int on);
 /* 1 (default) draws the crosshair. */
 void overlay_set_crosshair(int on);
 /* The overlay, from gfx_set_extra. */

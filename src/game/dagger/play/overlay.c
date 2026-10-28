@@ -1,4 +1,5 @@
 #include "game/dagger/play/overlay.h"
+#include "game/dagger/play/screen.h"
 #include "game/dagger/formats/img.h"
 #include "engine/core/df.h"
 #include "engine/ui/font.h"
@@ -33,24 +34,7 @@ static int g_bar_h[BARS];
 static int g_now[BARS];
 static int g_most[BARS];
 static float g_yaw;
-static int g_paused;
 static int g_crosshair = 1;
-
-/* Classic's screen to the card's: x twice, y 2.4 times, and the card's y counts up from the bottom. */
-static int screen_x(int x)
-{
-    return x * 2;
-}
-
-static int screen_h(int h)
-{
-    return (h * 12 + 2) / 5;
-}
-
-static int screen_top(int y)
-{
-    return DF_VIEW_H - screen_h(y);
-}
 
 int overlay_load(void)
 {
@@ -123,11 +107,6 @@ void overlay_set_yaw(float yaw)
     g_yaw = df_wrap_tau(yaw);
 }
 
-void overlay_set_paused(int on)
-{
-    g_paused = on ? 1 : 0;
-}
-
 void overlay_set_crosshair(int on)
 {
     g_crosshair = on ? 1 : 0;
@@ -186,10 +165,7 @@ void overlay_draw(void)
 {
     draw_compass();
     draw_vitals();
-    if (g_crosshair && !g_paused) {
+    if (g_crosshair) {
         draw_centred("+", DF_VIEW_H / 2 + ui_line_height() / 2);
-    }
-    if (g_paused) {
-        draw_centred("Paused. Escape goes on, Q quits.", DF_VIEW_H / 2 + ui_line_height() / 2);
     }
 }

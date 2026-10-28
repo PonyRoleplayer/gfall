@@ -139,12 +139,18 @@ PLAY_SRC := \
 	src/game/dagger/play/rules.c \
 	src/game/dagger/play/character.c \
 	src/game/dagger/play/player.c \
+	src/game/dagger/play/screen.c \
 	src/game/dagger/play/overlay.c \
+	src/game/dagger/play/menu.c \
+	src/game/dagger/play/keys.c \
 	src/game/dagger/play/game.c
 
-# What of the game draws or reaches the card: not built for the host.
+# What of the game draws, reaches the card or the keys: not built for the host.
 PLAY_DRAW_SRC := \
+	src/game/dagger/play/screen.c \
 	src/game/dagger/play/overlay.c \
+	src/game/dagger/play/menu.c \
+	src/game/dagger/play/keys.c \
 	src/game/dagger/play/game.c
 
 GFALL_SRC := apps/gfall/main.c $(ENGINE_SRC) $(DAGGER_SRC) $(PLAY_SRC)

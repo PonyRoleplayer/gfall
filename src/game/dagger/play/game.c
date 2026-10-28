@@ -1,4 +1,6 @@
 #include "game/dagger/play/game.h"
+#include "game/dagger/play/keys.h"
+#include "game/dagger/play/menu.h"
 #include "game/dagger/play/overlay.h"
 #include "game/dagger/play/player.h"
 #include "game/dagger/play/rules.h"
@@ -19,7 +21,7 @@
 static struct World *g_world;
 static const Level *g_level;
 static Player g_player;
-static int g_paused;
+static int g_playing;
 /* Where the place starts: where a death puts the player back until there is a menu (P3). */
 static float g_start[5];
 
@@ -44,15 +46,43 @@ static int on_use(const Scene *scene, const Usable *u, int index)
     return 0;
 }
 
+/* What the game draws over the frame: the HUD in play, then the open menu and its pointer. */
+static void draw(void)
+{
+    if (g_playing) {
+        overlay_draw();
+    }
+    menu_draw();
+}
+
+/* A menu open over play stills the world and gives the mouse to the pointer; closed, back to play. */
+static void menu_over_play(int which)
+{
+    menu_open(which);
+    gfx_set_pause(which != MENU_NONE);
+    input_set_pointer(which != MENU_NONE);
+}
+
 void game_setup(void)
 {
     /* Escape is the game's menu, not a quit; the left button attacks, so use is the game's own key. */
     input_set_escape_quits(0);
     gfx_set_use_key(0);
+    keys_load();
     /* The engine's position corner is a viewer's; the game has its compass. */
     hud_set(0);
     pic_set_room(GAME_PICTURE_KB);
     overlay_load();
+    menu_setup();
+    gfx_set_extra(draw);
+    g_playing = 0;
+    menu_open(MENU_TITLE);
+    input_set_pointer(1);
+}
+
+int game_playing(void)
+{
+    return g_playing;
 }
 
 void game_enter(struct World *world, const Level *level, Camera *cam)
@@ -83,32 +113,35 @@ void game_enter(struct World *world, const Level *level, Camera *cam)
     player_place(&g_player, x, y, z, yaw, pitch);
     camera_set(cam, x, y, z, yaw, pitch);
     interact_set_handler(on_use);
-    gfx_set_extra(overlay_draw);
-    g_paused = 0;
-    gfx_set_pause(0);
-    overlay_set_paused(0);
-}
-
-static void set_paused(int on)
-{
-    g_paused = on;
-    gfx_set_pause(on);
-    overlay_set_paused(on);
+    g_playing = 1;
+    menu_over_play(MENU_NONE);
 }
 
 int game_frame(Camera *cam, const Input *in, float dt)
 {
+    int asked;
+
     prof_begin(PROF_PLAY);
-    if (in->pressed & INPUT_BIT(INPUT_MENU)) {
-        set_paused(!g_paused);
-    }
-    /* Paused, Q quits: there is no menu yet. */
-    if (g_paused && in->move_y > 0) {
+    /* A screen before any place: the title or the start menu. */
+    if (!g_playing) {
+        asked = menu_frame(in);
         prof_end(PROF_PLAY);
-        return 0;
+        return asked == MENU_QUIT ? GAME_QUIT : (asked == MENU_START ? GAME_START : GAME_GO_ON);
+    }
+    if (menu_current() != MENU_NONE) {
+        asked = menu_frame(in);
+        if (asked == MENU_QUIT) {
+            prof_end(PROF_PLAY);
+            return GAME_QUIT;
+        }
+        if (asked == MENU_CLOSED) {
+            menu_over_play(MENU_NONE);
+        }
+    } else if (in->pressed & INPUT_BIT(INPUT_MENU)) {
+        menu_over_play(MENU_OPTIONS);
     }
     /* The console stands the world still too (gfx_paused): the player stands with it. */
-    if (!g_paused && !gfx_paused()) {
+    if (menu_current() == MENU_NONE && !gfx_paused()) {
         if (in->pressed & INPUT_BIT(INPUT_USE)) {
             interact_request_use();
         }
@@ -139,7 +172,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
     overlay_set_vitals(g_player.sheet.health, g_player.sheet.health_max, g_player.sheet.fatigue,
                        g_player.sheet.fatigue_max, g_player.sheet.magicka, g_player.sheet.magicka_max);
     prof_end(PROF_PLAY);
-    return 1;
+    return GAME_GO_ON;
 }
 
 void game_shutdown(void)
@@ -147,5 +180,7 @@ void game_shutdown(void)
     interact_set_handler(0);
     gfx_set_extra(0);
     gfx_set_pause(0);
+    input_set_pointer(0);
+    menu_shutdown();
     overlay_free();
 }
