@@ -6,8 +6,9 @@
  * FALL.EXE; Daggerfall Unity carries them in C# (MIT License, Copyright
  * (c) 2009-2023 Daggerfall Workshop, https://github.com/Interkarma/daggerfall-unity):
  * EnemyBasics.Enemies, RandomEncounters.EncounterTables,
- * WeatherTable.json from the Daggerfall Chronicles, p. 47, and
- * DaggerfallDateTime's calendar.
+ * WeatherTable.json from the Daggerfall Chronicles, p. 47,
+ * DaggerfallDateTime's calendar, RaceTemplate, and DFCareer and
+ * DaggerfallSkills' skills.
  */
 
 /*
@@ -227,6 +228,87 @@ const CalWeekday *classic_weekdays(int *n)
 const CalInfo *classic_calendar(void)
 {
     return &g_calendar;
+}
+
+/*
+ * RaceTemplate's eight races, by DFU's ids: TEXT.RSC's description, the
+ * clip at their choosing, the paper doll's pictures, and what they resist
+ * (Bretons magic, Nords frost) or are immune to (High Elves paralysis).
+ * Their other gifts (an Argonian's water breathing, infravision) come
+ * with magic.
+ */
+static const CareerRace g_races[] = {
+    { 1, "Breton", 2003, 209, "SCBG00I0.IMG", "BODY00I0.IMG", "BODY00I1.IMG", "BODY10I0.IMG", "BODY10I1.IMG",
+      "FACE00I0.CIF", "FACE10I0.CIF", EFFECT_MAGIC, 0, 0, 0, 0 },
+    { 2, "Redguard", 2002, 210, "SCBG01I0.IMG", "BODY01I0.IMG", "BODY01I1.IMG", "BODY11I0.IMG", "BODY11I1.IMG",
+      "FACE01I0.CIF", "FACE11I0.CIF", 0, 0, 0, 0, 0 },
+    { 3, "Nord", 2000, 211, "SCBG02I0.IMG", "BODY02I0.IMG", "BODY02I1.IMG", "BODY12I0.IMG", "BODY12I1.IMG",
+      "FACE02I0.CIF", "FACE12I0.CIF", EFFECT_FROST, 0, 0, 0, 0 },
+    { 4, "Dark Elf", 2007, 212, "SCBG03I0.IMG", "BODY03I0.IMG", "BODY03I1.IMG", "BODY13I0.IMG", "BODY13I1.IMG",
+      "FACE03I0.CIF", "FACE13I0.CIF", 0, 0, 0, 0, 0 },
+    { 5, "High Elf", 2006, 213, "SCBG04I0.IMG", "BODY04I0.IMG", "BODY04I1.IMG", "BODY14I0.IMG", "BODY14I1.IMG",
+      "FACE04I0.CIF", "FACE14I0.CIF", 0, EFFECT_PARALYSIS, 0, 0, 0 },
+    { 6, "Wood Elf", 2005, 214, "SCBG05I0.IMG", "BODY05I0.IMG", "BODY05I1.IMG", "BODY15I0.IMG", "BODY15I1.IMG",
+      "FACE05I0.CIF", "FACE15I0.CIF", 0, 0, 0, 0, 0 },
+    { 7, "Khajiit", 2001, 215, "SCBG06I0.IMG", "BODY06I0.IMG", "BODY06I1.IMG", "BODY16I0.IMG", "BODY16I1.IMG",
+      "FACE06I0.CIF", "FACE16I0.CIF", 0, 0, 0, 0, 0 },
+    { 8, "Argonian", 2004, 216, "SCBG07I0.IMG", "BODY07I0.IMG", "BODY07I1.IMG", "BODY17I0.IMG", "BODY17I1.IMG",
+      "FACE07I0.CIF", "FACE17I0.CIF", 0, 0, 0, 0, 0 }
+};
+
+/*
+ * The 35 skills (DFCareer.Skills): each one's governing attribute
+ * (DaggerfallSkills.GetPrimaryStat) and how hard it is to advance
+ * (GetAdvancementMultiplier).
+ */
+static const CareerSkill g_skills[] = {
+    { 0, "Medical", ATTR_INTELLIGENCE, 12 },
+    { 1, "Etiquette", ATTR_PERSONALITY, 1 },
+    { 2, "Streetwise", ATTR_PERSONALITY, 1 },
+    { 3, "Jumping", ATTR_STRENGTH, 5 },
+    { 4, "Orcish", ATTR_INTELLIGENCE, 15 },
+    { 5, "Harpy", ATTR_INTELLIGENCE, 15 },
+    { 6, "Giantish", ATTR_INTELLIGENCE, 15 },
+    { 7, "Dragonish", ATTR_INTELLIGENCE, 15 },
+    { 8, "Nymph", ATTR_INTELLIGENCE, 15 },
+    { 9, "Daedric", ATTR_INTELLIGENCE, 15 },
+    { 10, "Spriggan", ATTR_INTELLIGENCE, 15 },
+    { 11, "Centaurian", ATTR_INTELLIGENCE, 15 },
+    { 12, "Impish", ATTR_INTELLIGENCE, 15 },
+    { 13, "Lockpicking", ATTR_INTELLIGENCE, 2 },
+    { 14, "Mercantile", ATTR_PERSONALITY, 1 },
+    { 15, "Pickpocket", ATTR_AGILITY, 2 },
+    { 16, "Stealth", ATTR_AGILITY, 2 },
+    { 17, "Swimming", ATTR_ENDURANCE, 1 },
+    { 18, "Climbing", ATTR_STRENGTH, 2 },
+    { 19, "Backstabbing", ATTR_AGILITY, 1 },
+    { 20, "Dodging", ATTR_SPEED, 4 },
+    { 21, "Running", ATTR_SPEED, 50 },
+    { 22, "Destruction", ATTR_WILLPOWER, 1 },
+    { 23, "Restoration", ATTR_WILLPOWER, 2 },
+    { 24, "Illusion", ATTR_WILLPOWER, 1 },
+    { 25, "Alteration", ATTR_WILLPOWER, 1 },
+    { 26, "Thaumaturgy", ATTR_WILLPOWER, 2 },
+    { 27, "Mysticism", ATTR_WILLPOWER, 1 },
+    { 28, "Short Blade", ATTR_AGILITY, 2 },
+    { 29, "Long Blade", ATTR_AGILITY, 2 },
+    { 30, "Hand-to-Hand", ATTR_AGILITY, 2 },
+    { 31, "Axe", ATTR_STRENGTH, 2 },
+    { 32, "Blunt Weapon", ATTR_STRENGTH, 2 },
+    { 33, "Archery", ATTR_AGILITY, 1 },
+    { 34, "Critical Strike", ATTR_AGILITY, 8 }
+};
+
+const CareerRace *classic_races(int *n)
+{
+    *n = (int)(sizeof(g_races) / sizeof(g_races[0]));
+    return g_races;
+}
+
+const CareerSkill *classic_skills(int *n)
+{
+    *n = (int)(sizeof(g_skills) / sizeof(g_skills[0]));
+    return g_skills;
 }
 
 const EnemyKind *classic_enemies(int *n)

@@ -28,4 +28,26 @@ float rules_jump_speed(int jumping);
 /* The height that jump rises under rules_gravity, in metres. */
 float rules_jump_height(int jumping);
 
+/*
+ * A new character (DFU's StatsRollout and SkillsRollout, classic's
+ * character creation): an attribute is its class's base and a roll of
+ * 0..10; a primary skill 28, a major 18, a minor 13, each and a roll of
+ * 0..3; any other 3..6. Until creation (P8) a character takes the
+ * rolls' middles, below.
+ */
+#define RULES_ATTRIBUTE_ROLL 5
+#define RULES_PRIMARY_SKILL 30
+#define RULES_MAJOR_SKILL 20
+#define RULES_MINOR_SKILL 15
+#define RULES_OTHER_SKILL 4
+
+/* Health at a level: 25, its class's hit points a level, and a roll each level past the first (FormulaHelper.RollMaxHealth). */
+int rules_max_health(int level, int hp_per_level);
+/* Fatigue: strength and endurance (DaggerfallEntity.MaxFatigue, shown; kept in 64ths). */
+int rules_max_fatigue(int strength, int endurance);
+/* Spell points: intelligence times its class's multiplier, rounded down (FormulaHelper.SpellPoints). */
+int rules_max_magicka(int intelligence, float multiplier);
+/* A fall's damage: 5 health a metre past the first 5 (PlayerHealth.ApplyPlayerFallDamage). */
+int rules_fall_damage(float metres);
+
 #endif

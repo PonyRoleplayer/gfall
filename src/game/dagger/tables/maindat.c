@@ -3,6 +3,8 @@
 #include "game/dagger/tables/enemies.h"
 #include "game/dagger/tables/forecast.h"
 #include "game/dagger/tables/calendar.h"
+#include "game/dagger/tables/careers.h"
+#include "game/dagger/formats/classcfg.h"
 #include "engine/assets/vfs.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
@@ -16,10 +18,18 @@
 /*
  * ARENA2 files MAIN.DAT is made from: a different size makes it stale.
  * MONSTER.BSA holds the kinds ENEM describes (read for their names once
- * its layout is confirmed against UESP).
+ * its layout is confirmed against UESP); the class files are CLAS.
  */
-static const char *const g_sources[] = { "MONSTER.BSA" };
-#define SOURCES ((int)(sizeof(g_sources) / sizeof(g_sources[0])))
+#define SOURCES (1 + CLASSCFG_COUNT)
+
+static void source_name(int i, char *dst)
+{
+    if (i == 0) {
+        df_copy(dst, "MONSTER.BSA", REC_NAME);
+    } else {
+        classcfg_name(i - 1, dst);
+    }
+}
 
 static char g_merged[MERGED_MAX][REC_NAME];
 static int g_nmerged;
@@ -45,6 +55,12 @@ static RecTable *table_at(int i)
         return cal_weekday_table();
     case 6:
         return cal_info_table();
+    case 7:
+        return class_table();
+    case 8:
+        return race_table();
+    case 9:
+        return skill_table();
     default:
         return 0;
     }
@@ -52,7 +68,7 @@ static RecTable *table_at(int i)
 
 int maindat_table_count(void)
 {
-    return 7;
+    return 10;
 }
 
 RecTable *maindat_table(int i)
@@ -125,8 +141,8 @@ int maindat_import(RecPut put, void *ctx)
     for (i = 0; i < SOURCES; i++) {
         head[1 + i].id = (df_u16)(1 + i);
         head[1 + i].role = REC_HEAD_SOURCE;
-        head[1 + i].size = source_size(g_sources[i]);
-        df_copy(head[1 + i].name, g_sources[i], REC_NAME);
+        source_name(i, head[1 + i].name);
+        head[1 + i].size = source_size(head[1 + i].name);
     }
     if (!rec_put_begin(put, ctx) || !rec_put_rows(put, ctx, &rec_head_schema, head, 1 + SOURCES, 0, 0)) {
         return 0;
@@ -174,7 +190,40 @@ int maindat_import(RecPut put, void *ctx)
             return 0;
         }
     }
-    return rec_put_rows(put, ctx, &cal_info_schema, classic_calendar(), 1, 0, 0);
+    if (!rec_put_rows(put, ctx, &cal_info_schema, classic_calendar(), 1, 0, 0)) {
+        return 0;
+    }
+    /* The classes from ARENA2's own files; a missing one is left out (a mod may give it). */
+    {
+        CareerClass classes[CLASSCFG_COUNT];
+        const CareerRace *races;
+        const CareerSkill *skills;
+        char name[REC_NAME];
+        int k;
+
+        n = 0;
+        for (k = 0; k < CLASSCFG_COUNT; k++) {
+            const df_u8 *b;
+            df_u32 size;
+
+            classcfg_name(k, name);
+            b = vfs_read(name, &size);
+            if (b && career_from_cfg(k, b, size, &classes[n])) {
+                n++;
+            } else {
+                log_print(LOG_WARN, "data: %s did not read; no class %d", name, k);
+            }
+        }
+        if (!rec_put_rows(put, ctx, &class_schema, classes, n, 0, 0)) {
+            return 0;
+        }
+        races = classic_races(&n);
+        if (!rec_put_rows(put, ctx, &race_schema, races, n, 0, 0)) {
+            return 0;
+        }
+        skills = classic_skills(&n);
+        return rec_put_rows(put, ctx, &skill_schema, skills, n, 0, 0);
+    }
 }
 
 /* A file's HEAD rows, into g_head. 0 when it has none. */
@@ -239,7 +288,8 @@ int maindat_whole(void)
     return g_damaged == 0 && enemy_table()->count > 0 && encounter_table()->count > 0
         && weather_odds_table()->count > 0 && weather_look_table()->count > 0
         && cal_month_table()->count > 0 && cal_weekday_table()->count > 0
-        && rec_row(cal_info_table(), 0) != 0;
+        && rec_row(cal_info_table(), 0) != 0 && class_table()->count > 0 && race_table()->count > 0
+        && skill_table()->count == SKILL_COUNT;
 }
 
 const char *maindat_error(void)

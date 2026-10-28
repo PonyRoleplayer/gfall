@@ -60,6 +60,9 @@ Every file starts with a `HEAD` chunk (`rec_head_schema`): rows of role, size an
 | `CMON` | `month` | `CalMonth` | `calendar.c` | the calendar's months by index: name, days, season (`CLOCK_*`) |
 | `CWEK` | `weekday` | `CalWeekday` | `calendar.c` | its weekdays by index: name |
 | `CALE` | `calendar` | `CalInfo` | `calendar.c` | one record, id 0: era, whether each month restarts the week, the start date |
+| `CLAS` | `class` | `CareerClass` | `careers.c` | the 18 classes, cooked from ARENA2's CLASS00..17.CFG: base attributes, skills, hit points a level, spell points an Intelligence point, resistances |
+| `RACE` | `race` | `CareerRace` | `careers.c` | the 8 races by DFU's ids 1..8: names, the paper doll's pictures, resistances |
+| `SKIL` | `skill` | `CareerSkill` | `careers.c` | the 35 skills: name, governing attribute, how hard to advance |
 
 `maindat.c`'s `table_at` lists the tables a `.DAT` may carry. A new table means:
 1. its row struct and `RecSchema` in the module that uses it;
@@ -67,7 +70,9 @@ Every file starts with a `HEAD` chunk (`rec_head_schema`): rows of role, size an
 3. its rows in `maindat_import`;
 4. a test.
 
-MAIN.DAT is about 8.4 KB today. The tables planned next, with their sources and order, are in `docs/game.md` (Data): the location index and world map, climates, items, weapons, spells, races, classes, factions, the calendar.
+MAIN.DAT is about 12.8 KB today (`MAINDAT_VERSION` 2).
+
+**A field's name is under 16 characters**, or a chunk cuts it and it never matches; `check_data` checks every schema's names. The tables planned next, with their sources and order, are in `docs/game.md` (Data): the location index and world map, climates, items, weapons, spells, races, classes, factions, the calendar.
 
 ### What classic's tables are
 
@@ -76,6 +81,7 @@ MAIN.DAT is about 8.4 KB today. The tables planned next, with their sources and 
 - **RandomEncounters:** 20 tables of 20 kinds; the cemetery uses 11.
 - **The Chronicles' weather odds** (p. 47): six climate groups, expanded at import into one record for each of the 10 climate ids and 4 seasons.
 
+- **RaceTemplate's eight races and the 35 skills** (DFCareer, DaggerfallSkills). The classes are not classic's tables from the exe: they are cooked from ARENA2's CLASS*.CFG.
 - **Tamriel's calendar**, from DaggerfallDateTime: twelve months of thirty days with their seasons, the seven weekdays that restart each month, and a new game on the 1st of Midyear, 3E 405.
 
 The weather looks are the engine's own defaults, read with `weather_look` when cooking, so the picture is the same until a mod changes them.
@@ -88,7 +94,7 @@ The weather looks are the engine's own defaults, read with `weather_look` when c
 2. It reads `DATA\MAIN.DAT` beside the exe (`vfs_read_beside`). `DATA\` is made when missing (`fs_make_dir`).
 3. If the file is missing or stale, it cooks it again (`fs_create`) and reads it back. *Stale* means one of:
    - another `MAINDAT_VERSION`;
-   - a `SOURCE` whose size has changed (MONSTER.BSA today);
+   - a `SOURCE` whose size has changed (MONSTER.BSA and CLASS00..17.CFG today);
    - not a record file.
 4. It merges MAIN.DAT alone and checks it is whole (`maindat_whole`): every table has records, the calendar has its record, and no chunk was refused as damaged. A file that is current but damaged inside (a bad disk, a copy cut short) is cooked again once, quietly.
 5. It merges each name in `DATA\LOADORDR.TXT`, read from `DATA\`:

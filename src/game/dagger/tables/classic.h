@@ -4,6 +4,7 @@
 #include "game/dagger/tables/enemies.h"
 #include "game/dagger/tables/forecast.h"
 #include "game/dagger/tables/calendar.h"
+#include "game/dagger/tables/careers.h"
 
 /*
  * Classic's tables that live inside FALL.EXE, not in an ARENA2 file:
@@ -21,5 +22,8 @@ int classic_weather_odds(WeatherOdds *out, int cap);
 const CalMonth *classic_months(int *n);
 const CalWeekday *classic_weekdays(int *n);
 const CalInfo *classic_calendar(void);
+/* The races (RaceTemplate) and the skills (DFCareer.Skills, DaggerfallSkills); the classes come from ARENA2. */
+const CareerRace *classic_races(int *n);
+const CareerSkill *classic_skills(int *n);
 
 #endif

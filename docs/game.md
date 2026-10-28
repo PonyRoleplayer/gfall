@@ -97,6 +97,22 @@ The derived values (the vitals' maximums, carrying weight, the bonuses) are func
 
 Skill advance by use and the level-up rule come from UESP's Leveling page. A pre-made character comes first, and the creation screens come later.
 
+**Built (P2, `play/character.c`, `play/rules.c`, `tables/careers.c`).**
+- **Where it comes from:** classic builds a character from its **class**, not its race.
+  - MAIN.DAT's `CLAS` table is cooked from ARENA2's own CLASS00 to CLASS17.CFG (`formats/classcfg.c`): base attributes, the 3 primary, 3 major and 6 minor skills, hit points a level, spell points an Intelligence point (bits 10 to 12 of its abilities: 3, 2, 1.75, 1.5, 1 or ½), resistances.
+  - `RACE` holds DFU's RaceTemplate: names, the paper doll's pictures, what each race resists. Bretons resist magic, Nords frost, and High Elves are immune to paralysis; the other racial gifts come with magic.
+  - `SKIL` holds the 35 skills, each with its governing attribute and how hard it is to advance.
+- **The rolls (DFU's StatsRollout and SkillsRollout):**
+  - an attribute is its class's base and a roll of 0 to 10;
+  - a primary skill is 28, a major 18, a minor 13, each and a roll of 0 to 3; any other skill is 3 to 6.
+  - Until creation (P8), the game takes the rolls' middles (`RULES_*`), and starts a **Breton warrior**: strength 65, speed 52, health 45, fatigue 120, 24 spell points.
+- **The vitals (FormulaHelper, DaggerfallEntity):**
+  - health is 25, plus the class's hit points a level, plus a roll each later level;
+  - fatigue is strength and endurance, kept in 64ths;
+  - spell points are intelligence times the class's multiplier, rounded down.
+- **Movement:** the walk, run and jump now come from the sheet's Speed, Running and Jumping.
+- **A fall** past 5 m costs 5 health a metre (PlayerHealth); "That hurt." A fall to 0 health says "You have died." and, until combat (P4) and the menu's reload (P3), puts the player back at the start, whole.
+
 ## Controls and the HUD
 
 Daggerfall's keys on a Win98 keyboard and mouse:
@@ -118,7 +134,9 @@ The HUD is drawn at the card's 640 × 480. Classic's 320 × 200 pieces are drawn
 - **The message line:** the engine's `interact_say`.
 - **The pause line:** shown while paused.
 
-Still to come: the vitals as bars (P2), the weapon (P3).
+- **The vitals (P2):** MAIN03I0, MAIN04I0 and MAIN05I0.IMG (health, fatigue, spell points, 4 × 32 each), filled from the bottom to their share as DFU's HUDVitals does, where their files put them (x 49, 57 and 65, y 161).
+
+Still to come: classic's bottom panel (MAIN00I0.IMG, 320 × 46) with the menu work, and the weapon (P4).
 
 ## Creatures and combat
 
@@ -193,7 +211,7 @@ Daggerfall's tables are records in MAIN.DAT, cooked on the first run, with mods 
 Blocks, models, pictures, sounds and songs are never cooked: they stay in ARENA2.
 
 ## Phases
-The first goal is a **prototype**: Privateer's Hold played from start to finish as classic, out to the first town and back after a save (P1 to P6). Then the rest of classic (P7 to P11). Then a mode of our own (P12). Each phase:
+The first goal is a **prototype**: from classic's start menu, Privateer's Hold played from start to finish, out to the first town and back after a save (P1 to P7). Then the rest of classic (P8 to P12). Then a mode of our own (P13). Each phase:
 - is measured on the 233 with the profile's `play` stage;
 - adds its rules' tests to `tests/check_play.c`;
 - adds its numbers to MAIN.DAT;
@@ -202,17 +220,18 @@ The first goal is a **prototype**: Privateer's Hold played from start to finish 
 | Phase | What | Who | Done when |
 | --- | --- | --- | --- |
 | P0 | Foundation: the layers, MAIN.DAT and mods, dfrec; the engine's keys, bodies and rigs, pause, poses, calendar, `DATA\` | all | built |
-| **P1** | **On foot** (built; the 233 run is still to do). GFALL rewritten as the game's single play state: the player a body under `rig_first`, walk, run, jump and fall, mouse look; the use key on doors and levers; HUD crosshair, compass and message line; Escape pauses | GAME | the hold walked from marker 10 to its exit on the 233 |
-| P2 | A character: a fixed level-1 one, classic's attributes, skills and vitals; vitals bars on the HUD; `RACE`, `CLAS`, `SKIL` | GAME, ENGINE's pictures | derived values match UESP's worked figures |
-| P3 | Combat: the weapon's swing from WEAPON##.CIF (the shown swing's frames only on the card), classic's to-hit and damage; creatures wake, chase on bodies of their size, attack, flinch, die; the player's death restarts; `WEAP`, `MATL` | GAME; LEVELFALL shows each creature's state | the hold can be cleared, or the player killed, from records |
-| P4 | Loot and inventory: corpses, treasure, gold, pick up, equip weapon and armour; `ITEM`, `ARMR`, `LOOT` | GAME, ENGINE's pictures | equipment changes combat |
-| P5 | Out of the hold: `places/travel.c` lifted from LEVELFALL and shared; the hold's outside in the stream, the nearest town, its houses | GAME and LEVELFALL | the trip is one session |
-| P6 | Prototype polish: title screen, loading holds, one save slot in `DATA\`, rest and wait, a 233 profile pass | GAME | title to town and back after a save |
-| P7 | Character creation and levelling: classic's screens, background questions, skill gains, level-ups | GAME | |
-| P8 | Magic: spells, effects, spellbook, casting, potions, enchantments | GAME | |
-| P9 | People: talk from TEXT.RSC, shops, banks, factions, reputation, law | GAME | |
-| P10 | Quests: the QBN interpreter, guild quests | GAME | |
-| P11 | The wider world: travel map, horse and cart, holidays, diseases, lycanthropy and vampirism | GAME | |
-| P12 | Our own mode: a ruleset switch over classic's rules, a mode `.DAT` over MAIN.DAT; classic stays the default and the reference | GAME | |
+| **P1** | **On foot** (built, runs on the target). GFALL rewritten as the game's single play state: the player a body under `rig_first`, walk, run, jump and fall, mouse look; the use key on doors and levers; HUD crosshair, compass and message line; Escape pauses | GAME | the hold walked from marker 10 to its exit on the 233 |
+| P2 | A character (built): a fixed level-1 one, classic's attributes, skills and vitals; vitals bars on the HUD; `RACE`, `CLAS`, `SKIL` | GAME, ENGINE's pictures | derived values match UESP's worked figures |
+| P3 | The start menu: classic's main menu (PICK03I0.IMG: load, start, exit) before the hold, the title before it, Escape's menu in play (go on, exit) | GAME, ENGINE's pictures | GFALL opens on the menu, starts the hold, and exits from both |
+| P4 | Combat: the weapon's swing from WEAPON##.CIF (the shown swing's frames only on the card), classic's to-hit and damage; creatures wake, chase on bodies of their size, attack, flinch, die; the player's death; `WEAP`, `MATL` | GAME; LEVELFALL shows each creature's state | the hold can be cleared, or the player killed, from records |
+| P5 | Loot and inventory: corpses, treasure, gold, pick up, equip weapon and armour; `ITEM`, `ARMR`, `LOOT` | GAME, ENGINE's pictures | equipment changes combat |
+| P6 | Out of the hold: `places/travel.c` lifted from LEVELFALL and shared; the hold's outside in the stream, the nearest town, its houses | GAME and LEVELFALL | the trip is one session |
+| P7 | Prototype polish: loading holds, one save slot in `DATA\`, the menu's load, rest and wait, a 233 profile pass | GAME | from the menu to town and back after a save |
+| P8 | Character creation and levelling: classic's screens, background questions, skill gains, level-ups | GAME | |
+| P9 | Magic: spells, effects, spellbook, casting, potions, enchantments | GAME | |
+| P10 | People: talk from TEXT.RSC, shops, banks, factions, reputation, law | GAME | |
+| P11 | Quests: the QBN interpreter, guild quests | GAME | |
+| P12 | The wider world: travel map, horse and cart, holidays, diseases, lycanthropy and vampirism | GAME | |
+| P13 | Our own mode: a ruleset switch over classic's rules, a mode `.DAT` over MAIN.DAT; classic stays the default and the reference | GAME | |
 
 Each phase updates this page (what is built, what is not) and AGENTS.md's layout list.

@@ -41,6 +41,7 @@ One module per Daggerfall file or family of files. Each turns the bytes into eng
 | `palette` | a .COL palette |
 | `fnt` | FONT0000.FNT into the engine's glyph sheet |
 | `img` | IMG pictures, the HUD's and the screens' (uncompressed for now) |
+| `classcfg` | CLASS*.CFG, the classes |
 | `rdb` | an RDB block (a dungeon's): models, flats, lights, actions, markers |
 | `rmb` | an RMB block (a town's or a house's inside) |
 | `dungeon` | the location index (MAPS.BSA): places, their blocks and climates |
@@ -62,6 +63,8 @@ Daggerfall's rules for what a place has, as Daggerfall Unity carries them, read 
 | `swaps` | a face's picture by climate and season, and which ones are windows |
 | `sounds` | a place's songs, ambience and sounding flats |
 | `enemies` | the creature kinds and the encounter tables (records), and the rules that place them |
+| `calendar` | Tamriel's calendar (records), installed in the clock |
+| `careers` | the classes, races and skills (records) a character is built from |
 
 ### `src/game/dagger/places/`
 A place, built: what the engine draws, hears, walks on and uses.
@@ -76,7 +79,7 @@ A place, built: what the engine draws, hears, walks on and uses.
 | `doors` | the doors, levers, passages and people a block names, as usables and movers |
 
 ### `src/game/dagger/play/`
-Daggerfall's game, as `docs/game.md` lays it out: its player, its rules, its screens. Today: `game` (the play state's frame), `player` (a body under `rig_first`), `rules` (classic's sums), `overlay` (the compass and crosshair). Rules that can be written as plain C (stats, combat sums, saves) live here and are host-tested in `tests/`.
+Daggerfall's game, as `docs/game.md` lays it out: its player, its rules, its screens. Today: `game` (the play state's frame), `player` (a body under `rig_first`), `character` (the sheet), `rules` (classic's sums), `overlay` (the compass, the vitals, the crosshair). Rules that can be written as plain C (stats, combat sums, saves) live here and are host-tested in `tests/`.
 
 ### `apps/`
 One folder per program, each a `main.c` that brings `WinMainCRTStartup`, except `dfrec`, the `.DAT` tool, a native command-line program built beside hostcheck (`docs/data.md`). An app wires the layers together and owns its window, its loop and its keys. LEVELFALL and RENDERFALL are the engine's diagnostic views (`docs/viewers.md`). GFALL is the game. SPINTRI stands alone as the Glide demo.

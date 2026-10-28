@@ -12,16 +12,14 @@
 /* Both keys at once go no faster than one: DFU's limitDiagonalSpeed. */
 #define DIAGONAL 0.70710678f
 
-void player_init(Player *p)
+void player_init(Player *p, const Character *sheet)
 {
     body_init(&p->body, WALK_RADIUS, WALK_HEIGHT, WALK_STEP, WALK_EYE);
     /* Classic falls faster than the engine's 9.8: DFU's 20 m/s^2, so a jump is classic's in height and in time. */
     p->body.gravity = rules_gravity() * RULES_UNITS_PER_M;
     p->yaw = 0.0f;
     p->pitch = 0.0f;
-    p->speed = PLAYER_SPEED;
-    p->running = PLAYER_RUNNING;
-    p->jumping = PLAYER_JUMPING;
+    p->sheet = *sheet;
 }
 
 void player_place(Player *p, float x, float eye_y, float z, float yaw, float pitch)
@@ -51,14 +49,15 @@ void player_step(Player *p, const Input *in, const Scene *scene, float dt)
         f *= DIAGONAL;
         r *= DIAGONAL;
     }
-    mps = (in->held & INPUT_BIT(INPUT_RUN)) ? rules_run_speed(p->speed, p->running)
-                                             : rules_walk_speed(p->speed);
+    mps = (in->held & INPUT_BIT(INPUT_RUN))
+              ? rules_run_speed(p->sheet.attribute[ATTR_SPEED], p->sheet.skill[SKILL_RUNNING])
+              : rules_walk_speed(p->sheet.attribute[ATTR_SPEED]);
     step = mps * RULES_UNITS_PER_M * dt;
     /* The camera's basis: forward is (sin yaw, cos yaw), right is (cos yaw, -sin yaw). */
     sy = df_sin(p->yaw);
     cy = df_cos(p->yaw);
     if (in->pressed & INPUT_BIT(INPUT_JUMP)) {
-        body_jump(&p->body, rules_jump_speed(p->jumping) * RULES_UNITS_PER_M);
+        body_jump(&p->body, rules_jump_speed(p->sheet.skill[SKILL_JUMPING]) * RULES_UNITS_PER_M);
     }
     body_step(&p->body, scene, (sy * f + cy * r) * step, (cy * f - sy * r) * step, dt);
 }

@@ -1,8 +1,10 @@
 #include "game/dagger/play/game.h"
 #include "game/dagger/play/overlay.h"
 #include "game/dagger/play/player.h"
+#include "game/dagger/play/rules.h"
 #include "game/dagger/places/doors.h"
 #include "game/dagger/places/world.h"
+#include "engine/core/mem.h"
 #include "engine/core/prof.h"
 #include "engine/gfx/gfx.h"
 #include "engine/scene/interact.h"
@@ -18,11 +20,13 @@ static struct World *g_world;
 static const Level *g_level;
 static Player g_player;
 static int g_paused;
+/* Where the place starts: where a death puts the player back until there is a menu (P3). */
+static float g_start[5];
 
 /*
  * What the use key does that the engine's doors and levers do not: a
- * passage, until there is somewhere to go (P5), and a person, until
- * there is talk (P9).
+ * passage, until there is somewhere to go (P6), and a person, until
+ * there is talk (P10).
  */
 static int on_use(const Scene *scene, const Usable *u, int index)
 {
@@ -62,7 +66,20 @@ void game_enter(struct World *world, const Level *level, Camera *cam)
     g_world = world;
     g_level = level;
     world_start(world, &x, &y, &z, &yaw, &pitch);
-    player_init(&g_player);
+    g_start[0] = x;
+    g_start[1] = y;
+    g_start[2] = z;
+    g_start[3] = yaw;
+    g_start[4] = pitch;
+    {
+        Character sheet;
+
+        /* Until character creation (P8): a Breton warrior, at the rolls' middles. */
+        if (!character_new(&sheet, CHARACTER_START_RACE, CHARACTER_START_CLASS, 0, "Player")) {
+            mem_zero(&sheet, sizeof(sheet));
+        }
+        player_init(&g_player, &sheet);
+    }
     player_place(&g_player, x, y, z, yaw, pitch);
     camera_set(cam, x, y, z, yaw, pitch);
     interact_set_handler(on_use);
@@ -100,13 +117,27 @@ int game_frame(Camera *cam, const Input *in, float dt)
             float speed;
             float height;
 
-            /* A landing: the fall's damage comes with the character (P2). */
-            body_landed(&g_player.body, &speed, &height);
+            /* A landing past classic's 5 m hurts. */
+            if (body_landed(&g_player.body, &speed, &height)) {
+                int hurt;
+
+                hurt = rules_fall_damage(height / RULES_UNITS_PER_M);
+                if (hurt > 0 && character_hurt(&g_player.sheet, hurt)) {
+                    /* Death, until combat brings its own (P4) and the menu a reload (P3): back at the start, whole. */
+                    interact_say("You have died.");
+                    character_rest_full(&g_player.sheet);
+                    player_place(&g_player, g_start[0], g_start[1], g_start[2], g_start[3], g_start[4]);
+                } else if (hurt > 0) {
+                    interact_say("That hurt.");
+                }
+            }
         }
         player_camera(&g_player, cam);
         world_creatures_step(g_world, cam, 0.0f, CREATURE_BUDGET_MS);
     }
     overlay_set_yaw(g_player.yaw);
+    overlay_set_vitals(g_player.sheet.health, g_player.sheet.health_max, g_player.sheet.fatigue,
+                       g_player.sheet.fatigue_max, g_player.sheet.magicka, g_player.sheet.magicka_max);
     prof_end(PROF_PLAY);
     return 1;
 }

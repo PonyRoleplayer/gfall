@@ -108,13 +108,15 @@ FORMATS_SRC := \
 	src/game/dagger/formats/skyfile.c \
 	src/game/dagger/formats/sndfile.c \
 	src/game/dagger/formats/hmi.c \
-	src/game/dagger/formats/img.c
+	src/game/dagger/formats/img.c \
+	src/game/dagger/formats/classcfg.c
 
 # Daggerfall's rules for dressing a place.
 TABLES_SRC := \
 	src/game/dagger/tables/maindat.c \
 	src/game/dagger/tables/classic.c \
 	src/game/dagger/tables/calendar.c \
+	src/game/dagger/tables/careers.c \
 	src/game/dagger/tables/swaps.c \
 	src/game/dagger/tables/enemies.c \
 	src/game/dagger/tables/forecast.c \
@@ -134,6 +136,7 @@ DAGGER_SRC := $(FORMATS_SRC) $(TABLES_SRC) $(PLACES_SRC)
 # Daggerfall's game: its player, its rules. LEVELFALL does not link it.
 PLAY_SRC := \
 	src/game/dagger/play/rules.c \
+	src/game/dagger/play/character.c \
 	src/game/dagger/play/player.c \
 	src/game/dagger/play/overlay.c \
 	src/game/dagger/play/game.c

@@ -4,32 +4,26 @@
 #include "engine/gfx/camera.h"
 #include "engine/platform/input.h"
 #include "engine/scene/body.h"
+#include "game/dagger/play/character.h"
 
 /*
  * The player in the world: a body that walks the place under gravity,
  * and the way it looks. First person, as classic: the camera is put at
  * the body's eye (rig_first). Read docs/game.md (The player).
  *
- * Its speeds are classic's (rules.c) from its Speed and its Running and
- * Jumping skills. Until there is a character (P2) they are a level-1
- * one's, PLAYER_SPEED and the rest below.
+ * Its speeds are classic's (rules.c) from its character's Speed and its
+ * Running and Jumping skills.
  */
-
-#define PLAYER_SPEED 50
-#define PLAYER_RUNNING 20
-#define PLAYER_JUMPING 20
 
 typedef struct Player {
     Body body;
     float yaw;
     float pitch;
-    int speed;
-    int running;
-    int jumping;
+    Character sheet;
 } Player;
 
-/* A person's body (WALK_* in walker.h), the level-1 numbers above, standing nowhere yet. */
-void player_init(Player *p);
+/* A person's body (WALK_* in walker.h) for this character, standing nowhere yet. */
+void player_init(Player *p, const Character *sheet);
 /* Its eye at x, eye_y, z (a start marker's point, or a landing), looking yaw, pitch. */
 void player_place(Player *p, float x, float eye_y, float z, float yaw, float pitch);
 /*

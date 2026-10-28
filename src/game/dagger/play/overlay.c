@@ -22,6 +22,16 @@ static int g_box_y;
 static int g_box_w;
 static int g_box_h;
 static int g_strip_h;
+/* The vitals' bars: health, fatigue, spell points; each a 4 x 32 picture and where classic puts it. */
+#define BARS 3
+static const char *const g_bar_files[BARS] = { "MAIN03I0.IMG", "MAIN04I0.IMG", "MAIN05I0.IMG" };
+static int g_bar[BARS];
+static int g_bar_x[BARS];
+static int g_bar_y[BARS];
+static int g_bar_w[BARS];
+static int g_bar_h[BARS];
+static int g_now[BARS];
+static int g_most[BARS];
 static float g_yaw;
 static int g_paused;
 static int g_crosshair = 1;
@@ -59,6 +69,20 @@ int overlay_load(void)
     g_box_w = box.width;
     g_box_h = box.height;
     g_strip_h = strip.height;
+    {
+        ImgPicture bar;
+        int i;
+
+        for (i = 0; i < BARS; i++) {
+            if (img_load(g_bar_files[i], &bar)) {
+                g_bar[i] = pic_load(bar.pixels, bar.width, bar.height, rgb, 0);
+                g_bar_x[i] = bar.x;
+                g_bar_y[i] = bar.y;
+                g_bar_w[i] = bar.width;
+                g_bar_h[i] = bar.height;
+            }
+        }
+    }
     return g_strip != 0 && g_box != 0;
 }
 
@@ -72,6 +96,26 @@ void overlay_free(void)
     }
     g_strip = 0;
     g_box = 0;
+    {
+        int i;
+
+        for (i = 0; i < BARS; i++) {
+            if (g_bar[i]) {
+                pic_free(g_bar[i]);
+            }
+            g_bar[i] = 0;
+        }
+    }
+}
+
+void overlay_set_vitals(int health, int health_max, int fatigue, int fatigue_max, int magicka, int magicka_max)
+{
+    g_now[0] = health;
+    g_most[0] = health_max;
+    g_now[1] = fatigue;
+    g_most[1] = fatigue_max;
+    g_now[2] = magicka;
+    g_most[2] = magicka_max;
 }
 
 void overlay_set_yaw(float yaw)
@@ -108,6 +152,31 @@ static void draw_compass(void)
     pic_draw(g_box, screen_x(g_box_x), screen_top(g_box_y), screen_x(g_box_w), screen_h(g_box_h));
 }
 
+/* Each bar filled from the bottom to its share, the picture's own rows from that height down. */
+static void draw_vitals(void)
+{
+    int i;
+
+    for (i = 0; i < BARS; i++) {
+        int rows;
+
+        if (!g_bar[i] || g_most[i] <= 0) {
+            continue;
+        }
+        rows = g_bar_h[i] * (g_now[i] > 0 ? g_now[i] : 0) / g_most[i];
+        if (rows > g_bar_h[i]) {
+            rows = g_bar_h[i];
+        }
+        if (rows <= 0) {
+            continue;
+        }
+        pic_draw_part(g_bar[i], 0, g_bar_h[i] - rows, g_bar_w[i], rows,
+                      screen_x(g_bar_x[i]), screen_top(g_bar_y[i] + g_bar_h[i] - rows),
+                      screen_x(g_bar_w[i]), screen_h(g_bar_y[i] + g_bar_h[i]) - screen_h(g_bar_y[i] + g_bar_h[i] - rows),
+                      255);
+    }
+}
+
 static void draw_centred(const char *s, int top)
 {
     ui_string((DF_VIEW_W - ui_string_width(s)) / 2, top, s);
@@ -116,6 +185,7 @@ static void draw_centred(const char *s, int top)
 void overlay_draw(void)
 {
     draw_compass();
+    draw_vitals();
     if (g_crosshair && !g_paused) {
         draw_centred("+", DF_VIEW_H / 2 + ui_line_height() / 2);
     }

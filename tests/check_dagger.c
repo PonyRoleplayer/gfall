@@ -256,6 +256,26 @@ static void check_data(void)
      * person to delete it).
      */
     check_expect(maindat_whole(), "MAIN.DAT just merged is not whole");
+    /* Every field's name fits a chunk's 16 bytes with its terminator, or it is cut and never matches. */
+    {
+        int k;
+        int f;
+        int short_names;
+
+        short_names = 1;
+        for (k = 0; k < maindat_table_count(); k++) {
+            const RecSchema *s;
+
+            s = maindat_table(k)->schema;
+            for (f = 0; f < s->nfield; f++) {
+                if (strlen(s->field[f].name) >= REC_NAME) {
+                    printf("data: %s's field %s is too long\n", s->tag, s->field[f].name);
+                    short_names = 0;
+                }
+            }
+        }
+        check_expect(short_names, "a table's field name is too long for a chunk");
+    }
     {
         RecChunk c;
         df_u32 pos;
