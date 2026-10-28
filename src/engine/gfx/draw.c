@@ -3135,6 +3135,8 @@ void draw_frame(const Camera *cam, const Level *level)
     if (g_extra) {
         g_extra();
     }
+    /* A picture drawn above may have left its palette on TMU0 (docs/pictures.md). */
+    glide_level_palette();
     shot_note();
     build_legend();
     draw_covers();

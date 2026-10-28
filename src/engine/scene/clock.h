@@ -92,9 +92,13 @@ typedef struct Calendar {
  * default back.
  */
 int clock_set_calendar(const Calendar *c);
-/* The calendar in use. */
+/*
+ * The calendar in use, and Tamriel's, the engine's default. Both come
+ * with every byte not set zero (padding, name tails, unused months and
+ * weekdays), so a game may compare either with a zeroed Calendar of its
+ * own byte for byte. Keep that.
+ */
 void clock_calendar(Calendar *out);
-/* Tamriel's, the engine's default: what a game's own data is checked against. */
 void clock_calendar_default(Calendar *out);
 int clock_months(void);
 /* Days in month 0..clock_months()-1; 0 out of range. */

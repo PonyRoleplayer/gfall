@@ -51,6 +51,7 @@ ENGINE_HOST_SRC := \
 	src/engine/core/log.c \
 	src/engine/core/prof.c \
 	src/engine/ui/cmd.c \
+	src/engine/ui/pic.c \
 	src/engine/platform/fs.c \
 	src/engine/assets/vfs.c \
 	src/engine/assets/loader.c \

@@ -10,8 +10,110 @@
 #include "engine/gfx/glide.h"
 #include "engine/gfx/texcache.h"
 #include "engine/ui/font.h"
+#include "engine/ui/pic.h"
 
 static const char *g_why = "graphics failed";
+
+/* The screen's pictures on the card (pic.c, docs/pictures.md). */
+static df_u32 pic_bytes(int side, int cutout)
+{
+    df_u32 bytes;
+
+    if (!glide_texture_bytes(side, cutout, 0, &bytes)) {
+        return (df_u32)side * (df_u32)side * (cutout ? 2u : 1u);
+    }
+    return bytes;
+}
+
+static int pic_upload(const df_u8 *texels, int side, int cutout, df_u32 addr, df_u32 *handle)
+{
+    return glide_upload_chain(texels, side, cutout, 0, 0, addr, handle);
+}
+
+static df_u32 g_pic_tint;
+static int g_pic_alpha;
+
+static void pic_begin_draw(int cutout, int alpha)
+{
+    g_pic_tint = glide_tinted();
+    g_pic_alpha = alpha;
+    glide_ui(1);
+    glide_tint(0xffffffu);
+    if (cutout) {
+        glide_sprite_alpha(1);
+    }
+    if (alpha < 255) {
+        glide_opacity(alpha, cutout);
+    }
+}
+
+static void pic_quad(df_u32 handle, float x0, float y0, float x1, float y1,
+                     float s0, float t0, float s1, float t1)
+{
+    DrawVert v[4];
+    int i;
+
+    for (i = 0; i < 4; i++) {
+        v[i].oow = 1.0f;
+        v[i].ooz = 1.0f;
+        v[i].r = 255.0f;
+        v[i].g = 255.0f;
+        v[i].b = 255.0f;
+    }
+    v[0].x = x0;
+    v[0].y = y0;
+    v[0].sow = s0;
+    v[0].tow = t0;
+    v[1].x = x1;
+    v[1].y = y0;
+    v[1].sow = s1;
+    v[1].tow = t0;
+    v[2].x = x1;
+    v[2].y = y1;
+    v[2].sow = s1;
+    v[2].tow = t1;
+    v[3].x = x0;
+    v[3].y = y1;
+    v[3].sow = s0;
+    v[3].tow = t1;
+    glide_bind(handle);
+    glide_polygon(v, 4);
+}
+
+static void pic_end_draw(void)
+{
+    if (g_pic_alpha < 255) {
+        glide_opacity(-1, 0);
+    }
+    glide_sprite_alpha(0);
+    glide_tint(g_pic_tint);
+    glide_ui(0);
+}
+
+static const PicOps g_pic_ops = {
+    pic_bytes, pic_upload, glide_release,
+    pic_begin_draw, glide_pic_palette, pic_quad, pic_end_draw
+};
+
+/*
+ * The pictures' room, after the fixed pictures and before the place's,
+ * so the place's budget sees what is left; every picture goes back in.
+ */
+static void pictures_prepare(void)
+{
+    df_u32 bytes;
+    df_u32 lo;
+
+    bytes = (df_u32)pic_room() * 1024u;
+    if (bytes && glide_tex_take(bytes, &lo)) {
+        pic_begin(lo, lo + bytes, &g_pic_ops);
+        return;
+    }
+    if (bytes) {
+        log_print(LOG_WARN, "pictures: no %u KB room left on the card", (unsigned)(bytes / 1024u));
+    }
+    pic_begin(0, 0, &g_pic_ops);
+}
 /* A level is on the card, and mipmap changed: send it again next frame. */
 static int g_prepared;
 static int g_reload;
@@ -35,6 +137,7 @@ void gfx_shutdown(void)
     sky_reset();
     draw_set_extra(0);
     draw_set_under(0);
+    pic_end();
     glide_close();
 }
 
@@ -69,6 +172,7 @@ int gfx_prepare(const Level *level)
         if (level->palette) {
             font_upload(level->palette->r, level->palette->g, level->palette->b);
         }
+        pictures_prepare();
         if (!texcache_stream_begin(level)) {
             g_why = texcache_error();
             return 0;
@@ -103,6 +207,7 @@ int gfx_prepare(const Level *level)
     if (level && level->palette) {
         font_upload(level->palette->r, level->palette->g, level->palette->b);
     }
+    pictures_prepare();
     g_load_card = prof_now();
     if (!texcache_upload(level)) {
         g_why = texcache_error();

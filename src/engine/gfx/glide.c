@@ -148,6 +148,14 @@ static int g_sky_color_on;
 static FxU32 g_pal[256];
 static int g_have_pal;
 /*
+ * Which palette TMU0 holds: PAL_LEVEL the level's, PAL_OTHER the sky's
+ * or the glow's, or a picture's slot (glide_pic_palette), so a run of
+ * pictures under one palette sends it once.
+ */
+#define PAL_LEVEL -1
+#define PAL_OTHER -2
+static int g_pal_on = PAL_LEVEL;
+/*
  * Alpha state. Models take a constant alpha, not the iterated one, so
  * the triangle setup never computes or sends alpha gradients for them.
  * g_cut is on for sprites and text: alpha comes from the texture and
@@ -887,7 +895,34 @@ int glide_palette(const df_u8 *r, const df_u8 *g, const df_u8 *b)
     }
     g_have_pal = 1;
     glide.tex_table(GR_TMU0, GR_TEXTABLE_PALETTE, pal);
+    g_pal_on = PAL_LEVEL;
     return 1;
+}
+
+void glide_pic_palette(int id, const df_u32 *table)
+{
+    FxU32 pal[256];
+    int i;
+
+    if (!g_opened || !table || id < 0 || id == g_pal_on) {
+        return;
+    }
+    for (i = 0; i < 256; i++) {
+        pal[i] = (FxU32)(table[i] & 0xffffffu);
+    }
+    glide.tex_table(GR_TMU0, GR_TEXTABLE_PALETTE, pal);
+    g_pal_on = id;
+}
+
+void glide_level_palette(void)
+{
+    if (!g_opened || g_pal_on == PAL_LEVEL) {
+        return;
+    }
+    if (g_have_pal) {
+        glide.tex_table(GR_TMU0, GR_TEXTABLE_PALETTE, g_pal);
+    }
+    g_pal_on = PAL_LEVEL;
 }
 
 /*
@@ -1022,6 +1057,28 @@ df_u32 glide_tex_free(void)
         return 0;
     }
     return g_addr_max - g_addr;
+}
+
+int glide_tex_take(df_u32 bytes, df_u32 *lo)
+{
+    df_u32 at;
+
+    if (!g_opened || !lo || bytes == 0 || bytes > 0x200000u) {
+        return 0;
+    }
+    bytes = (bytes + 7u) & ~7u;
+    at = (g_addr + 7u) & ~7u;
+    /* Inside one 2 MB half, so no tile placed in it crosses the edge. */
+    if (at + bytes > ((at & ~0x1fffffu) + 0x200000u)) {
+        at = (at & ~0x1fffffu) + 0x200000u;
+    }
+    if (at + bytes > g_addr_max) {
+        g_why = "texture memory is full";
+        return 0;
+    }
+    *lo = at;
+    g_addr = at + bytes;
+    return 1;
 }
 
 /*
@@ -1386,6 +1443,7 @@ void glide_sky(int on, const df_u8 *rgb)
                 | (FxU32)rgb[i * 3 + 2];
         }
         glide.tex_table(GR_TMU0, GR_TEXTABLE_PALETTE, pal);
+        g_pal_on = PAL_OTHER;
         glide_tint(0xffffffu);
         depth_over(1);
         glide.fog_mode(GR_FOG_DISABLE);
@@ -1395,6 +1453,7 @@ void glide_sky(int on, const df_u8 *rgb)
     if (g_have_pal) {
         glide.tex_table(GR_TMU0, GR_TEXTABLE_PALETTE, g_pal);
     }
+    g_pal_on = PAL_LEVEL;
     depth_over(0);
     glide.fog_mode(g_fog ? GR_FOG_WITH_TABLE : GR_FOG_DISABLE);
     glide.tex_clamp(GR_TMU0, GR_TEXTURECLAMP_WRAP, GR_TEXTURECLAMP_WRAP);
@@ -1454,6 +1513,7 @@ void glide_glow(int on, df_u32 rgb)
         }
         pal[MIP_GLASS] = (FxU32)(rgb & 0xffffffu);
         glide.tex_table(GR_TMU0, GR_TEXTABLE_PALETTE, pal);
+        g_pal_on = PAL_OTHER;
         glide.color(
             GR_COMBINE_FUNCTION_SCALE_OTHER,
             GR_COMBINE_FACTOR_LOCAL,
@@ -1469,6 +1529,7 @@ void glide_glow(int on, df_u32 rgb)
     if (g_have_pal) {
         glide.tex_table(GR_TMU0, GR_TEXTABLE_PALETTE, g_pal);
     }
+    g_pal_on = PAL_LEVEL;
     glide_blend(g_fade >= 0);
     glide.depth_mask(FXTRUE);
     glide.depth_func(g_depth_cmp);

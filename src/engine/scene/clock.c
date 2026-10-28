@@ -133,8 +133,19 @@ int clock_set_calendar(const Calendar *c)
 
 void clock_calendar(Calendar *out)
 {
-    if (out) {
-        *out = *cal();
+    const df_u8 *src;
+    int i;
+
+    if (!out) {
+        return;
+    }
+    /*
+     * Byte for byte, not a struct assignment, which C lets skip padding:
+     * a game compares this with a zeroed calendar of its own (clock.h).
+     */
+    src = (const df_u8 *)cal();
+    for (i = 0; i < (int)sizeof(*out); i++) {
+        ((df_u8 *)out)[i] = src[i];
     }
 }
 

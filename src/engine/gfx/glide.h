@@ -72,11 +72,26 @@ void glide_polygon(const DrawVert *v, int n);
 void glide_line(const DrawVert *a, const DrawVert *b);
 int glide_palette(const df_u8 *r, const df_u8 *g, const df_u8 *b);
 /*
+ * A picture's palette on TMU0 (pic.c): table is 0xRRGGBB, id its slot,
+ * sent only when another palette is on. glide_level_palette puts the
+ * level's back, only if it was replaced; draw_frame calls it after the
+ * game's overlays.
+ */
+void glide_pic_palette(int id, const df_u32 *table);
+void glide_level_palette(void);
+/*
  * cutout uploads GR_TEXFMT_ARGB_1555. Index 0 is transparent.
  * pr/pg/pb are the 256-entry palette and are used only for a cutout.
  */
 /* Bytes still free on TMU0, from the upload cursor to grTexMaxAddress. */
 df_u32 glide_tex_free(void);
+/*
+ * A room of bytes on TMU0 past everything uploaded, within one 2 MB
+ * half; the upload cursor moves past it. Its owner places textures in
+ * it with glide_upload_chain: the screen's pictures (pic.c). 0 when it
+ * does not fit.
+ */
+int glide_tex_take(df_u32 bytes, df_u32 *lo);
 /*
  * Debug: let TMU0 hold at most kb KB, as a smaller card would; 0 is the
  * card's own. Takes effect for the next uploads: send the level again

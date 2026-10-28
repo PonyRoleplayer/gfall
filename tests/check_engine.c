@@ -13,6 +13,7 @@
 #include "engine/assets/recfile.h"
 #include "engine/assets/vfs.h"
 #include "engine/platform/fs.h"
+#include "engine/ui/pic.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
 #include "engine/gfx/camera.h"
@@ -948,6 +949,177 @@ static void check_beside(void)
     vfs_mount(was);
 }
 
+/*
+ * The screen's pictures on a fake card: the tiles a Daggerfall screen
+ * is cut in, the quads a draw sends, a shared palette, a cutout's clear
+ * texels, a room too small and then big enough, and the room given back.
+ */
+static df_u32 g_pc_next;
+static int g_pc_uploads;
+static int g_pc_quads;
+static int g_pc_pal;
+static int g_pc_bad;
+static float g_pc_area;
+static float g_pc_x0, g_pc_y0, g_pc_x1, g_pc_y1;
+static df_u8 g_pc_texel[4];
+
+static df_u32 pc_bytes(int side, int cutout)
+{
+    return (df_u32)side * (df_u32)side * (cutout ? 2u : 1u);
+}
+
+static int pc_upload(const df_u8 *texels, int side, int cutout, df_u32 addr, df_u32 *handle)
+{
+    (void)side;
+    (void)cutout;
+    (void)addr;
+    g_pc_uploads++;
+    g_pc_texel[0] = texels[0];
+    g_pc_texel[1] = texels[1];
+    *handle = g_pc_next++;
+    return 1;
+}
+
+static void pc_release(df_u32 handle)
+{
+    (void)handle;
+    g_pc_uploads--;
+}
+
+static void pc_begin(int cutout, int alpha)
+{
+    (void)cutout;
+    (void)alpha;
+    g_pc_quads = 0;
+    g_pc_pal = -1;
+    g_pc_area = 0.0f;
+    g_pc_x0 = 1e9f;
+    g_pc_y0 = -1e9f;
+    g_pc_x1 = -1e9f;
+    g_pc_y1 = 1e9f;
+}
+
+static void pc_palette(int id, const df_u32 *table)
+{
+    (void)table;
+    g_pc_pal = id;
+}
+
+static void pc_quad(df_u32 handle, float x0, float y0, float x1, float y1,
+                    float s0, float t0, float s1, float t1)
+{
+    (void)handle;
+    g_pc_quads++;
+    g_pc_area += (x1 - x0) * (y0 - y1);
+    g_pc_x0 = x0 < g_pc_x0 ? x0 : g_pc_x0;
+    g_pc_x1 = x1 > g_pc_x1 ? x1 : g_pc_x1;
+    g_pc_y0 = y0 > g_pc_y0 ? y0 : g_pc_y0;
+    g_pc_y1 = y1 < g_pc_y1 ? y1 : g_pc_y1;
+    if (s0 < 0.0f || t0 < 0.0f || s1 > 256.0f || t1 > 256.0f || s1 <= s0 || t1 <= t0) {
+        g_pc_bad++;
+    }
+}
+
+static void pc_end(void)
+{
+}
+
+static void check_pictures(void)
+{
+    static const PicOps ops = {
+        pc_bytes, pc_upload, pc_release, pc_begin, pc_palette, pc_quad, pc_end
+    };
+    /* 320 x 200, and 256 x 256 read from the same bytes. */
+    static df_u8 screen[256 * 256];
+    static df_u8 rgb[768];
+    df_u8 sprite[40 * 30];
+    int a;
+    int b;
+    int c;
+    int pics;
+    int on;
+    df_u32 used;
+    df_u32 room;
+    int i;
+
+    for (i = 0; i < 256 * 256; i++) {
+        screen[i] = (df_u8)(i & 0xff);
+    }
+    for (i = 0; i < 768; i++) {
+        rgb[i] = (df_u8)i;
+    }
+    for (i = 0; i < 40 * 30; i++) {
+        sprite[i] = (df_u8)(i % 7 == 0 ? 0 : 9);
+    }
+    g_pc_next = 1;
+    pic_begin(4096, 4096 + 256u * 1024u, &ops);
+    /* 320 x 200: 2 of 128, 2 + 5 of 64, 20 of 16 for the last 8 rows; 66560 bytes, not 128 KB. */
+    a = pic_load(screen, 320, 200, rgb, 0);
+    pic_stats(&pics, &on, &used, &room);
+    check_expect(a && pics == 1 && on == 29 && used == 66560u && room == 256u * 1024u,
+                 "a 320 x 200 screen was not cut in its 29 tiles");
+    pic_draw(a, 0, 440, 640, 400);
+    check_expect(g_pc_quads == 29 && g_pc_bad == 0 && g_pc_pal >= 0
+                 && check_near(g_pc_area, 640.0f * 400.0f, 1.0f)
+                 && check_near(g_pc_x0, 0.0f, 0.01f) && check_near(g_pc_x1, 640.0f, 0.01f)
+                 && check_near(g_pc_y0, 440.0f, 0.01f) && check_near(g_pc_y1, 40.0f, 0.01f),
+                 "the screen did not cover its 640 x 400 exactly");
+    /* A part: 30 x 40 at 10, 20, into 60 x 80 at 100, 300. */
+    pic_draw_part(a, 10, 20, 30, 40, 100, 300, 60, 80, 128);
+    check_expect(g_pc_bad == 0 && check_near(g_pc_area, 60.0f * 80.0f, 0.1f)
+                 && check_near(g_pc_x0, 100.0f, 0.01f) && check_near(g_pc_x1, 160.0f, 0.01f)
+                 && check_near(g_pc_y0, 300.0f, 0.01f) && check_near(g_pc_y1, 220.0f, 0.01f),
+                 "a part of the screen did not land on its rectangle");
+    /* The same palette is the same slot. */
+    b = pic_load(screen, 64, 64, rgb, 0);
+    c = g_pc_pal;
+    pic_draw(b, 0, 64, 64, 64);
+    check_expect(b && g_pc_pal == c && g_pc_quads == 1, "a second picture under one palette took another");
+    pic_free(b);
+    /* A cutout: index 0 clear, the rest 1555 with alpha; no palette. */
+    b = pic_load(sprite, 40, 30, rgb, 1);
+    pic_draw(b, 0, 30, 40, 30);
+    check_expect(b && g_pc_pal == -1 && g_pc_bad == 0
+                 && check_near(g_pc_area, 40.0f * 30.0f, 0.1f),
+                 "a cutout was drawn under a palette or not whole");
+    pic_free(b);
+    pic_free(a);
+    pic_stats(&pics, &on, &used, &room);
+    check_expect(pics == 0 && on == 0 && used == 0 && g_pc_uploads == 0,
+                 "freed pictures left tiles on the card");
+    /* A room too small: kept, not drawn; the next place's room takes it. */
+    pic_begin(0, 32u * 1024u, &ops);
+    a = pic_load(screen, 320, 200, rgb, 0);
+    g_pc_quads = 0;
+    pic_draw(a, 0, 440, 640, 400);
+    check_expect(a && g_pc_quads == 0, "a picture short of room was drawn with holes");
+    pic_begin(0, 128u * 1024u, &ops);
+    pic_draw(a, 0, 440, 640, 400);
+    check_expect(g_pc_quads == 29, "the next place's room did not take the picture");
+    /*
+     * Given back and joined: in 140 KB, two screens, then the first
+     * freed; a 256 x 256 tile (64 KB) fits only where its 29 tiles, the
+     * largest 16 KB, have joined into one.
+     */
+    pic_free(a);
+    pic_begin(0, 140u * 1024u, &ops);
+    a = pic_load(screen, 320, 200, rgb, 0);
+    b = pic_load(screen, 320, 200, rgb, 0);
+    pic_stats(&pics, &on, &used, &room);
+    check_expect(a && b && on == 58 && used == 2u * 66560u, "two screens did not fit in 140 KB");
+    pic_free(a);
+    a = pic_load(screen, 256, 256, rgb, 0);
+    pic_stats(&pics, &on, &used, &room);
+    check_expect(a && on == 30 && used == 66560u + 65536u, "the room did not join what was freed");
+    pic_free(a);
+    pic_free(b);
+    g_pc_texel[1] = 0xff;
+    b = pic_load(sprite, 40, 30, rgb, 1);
+    check_expect(b && g_pc_texel[0] == 0 && g_pc_texel[1] == 0, "a cutout's clear texel is not 0");
+    pic_free(b);
+    pic_end();
+}
+
 static int same(const char *a, const char *b)
 {
     int i;
@@ -1623,6 +1795,14 @@ static void check_daylight(void)
         clock_calendar_default(&c);
         check_expect(now.nmonths == c.nmonths && df_eq(now.month[11].name, c.month[11].name)
                      && now.week_restarts == 1, "clock_calendar is not the default after a reset");
+        /* Byte for byte, padding and name tails included: what a game's check compares. */
+        {
+            int i;
+
+            for (i = 0; i < (int)sizeof(c) && ((df_u8 *)&now)[i] == ((df_u8 *)&c)[i]; i++) {
+            }
+            check_expect(i == (int)sizeof(c), "clock_calendar and the default differ in a byte");
+        }
         clock_set_date(405, 5, 0);
     }
     clock_set_minute(1439.0f);
@@ -3073,6 +3253,7 @@ void check_engine(void)
     check_loader();
     check_vfs();
     check_beside();
+    check_pictures();
     check_console();
     check_mip();
     check_mip_spans();
