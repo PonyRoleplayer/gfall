@@ -291,7 +291,10 @@ int menu_frame(const Input *in)
             g_note = "Click Exit again to leave the game.";
             return MENU_STAY;
         }
-        g_confirm = 0;
+        /* Another button clicked takes the question back; a frame with no click keeps it. */
+        if (what >= 0) {
+            g_confirm = 0;
+        }
         if (what == DO_SAVE || what == DO_LOAD) {
             g_note = "Saving and loading come later.";
         } else if (what == DO_CONTROLS) {
