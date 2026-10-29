@@ -85,7 +85,7 @@ Tested in the hold: all 105 things keyed, no key twice, a door and a lever left 
 
 **Tested against the hold loaded whole:** the ring round its start holds all of it (365 models, 130 flats, 71 lights, 63 movers, 42 creatures, as the whole load). Each creature is the whole load's, keyed and standing alike. A door opened, its blocks dropped 8 blocks off and come back, is open.
 
-**GFALL plays the hold through it** (`start_hold` in `apps/gfall/main.c`): `dunstream_open` under "Loading...", `gfx_prepare` of the streamed level, the player at its start, `dunstream_fill` (the ring and its lights cut, shadows and all), `gfx_prime`, the fade-in. Each frame `game_frame` steps the stream with `GAME_STREAM_MS` (3 ms), and the blocks' creatures come with them. Tested on the host: the player stands on the streamed hold's floor and walks classic's distance. Not yet run on the 233; its `load:` time and the 3 ms budget are to be measured there.
+**GFALL plays the hold through it** (`start_hold` in `apps/gfall/main.c`): `dunstream_open` under "Loading...", `gfx_prepare` of the streamed level, the player at its start, `dunstream_fill` (the ring and its lights cut, shadows and all), `gfx_prime`, the fade-in. Each frame `game_frame` steps the stream with `GAME_STREAM_MS` (3 ms), and the blocks' creatures come with them. Tested on the host: the player stands on the streamed hold's floor and walks classic's distance. On the 233 it plays at a good frame rate. Its first run there found the body going through walls, ceilings and floors in places (a wall's end after a slide, a jump's rise, the legs in the air, a ramp, a step with no headroom); the engine's collision fixes (`c98b0c3`, `docs/collision.md`) cured them, confirmed on the 233. The `load:` time and the 3 ms budget are still to be measured there.
 
 **Not yet:**
 - LEVELFALL's indoor rows;
@@ -199,7 +199,7 @@ Classic's other slots (turning, crouching, spells, the log...) stay empty until 
 
 **Bindings are saved** in `DATA\KEYS.DAT`, a record file (`docs/data.md`) of one `KEYS` record per action (id `INPUT_*`, its virtual key), when the controls screen closes with a change. They are read at start (`keys_load`) over classic's defaults (`keys_defaults`): W, S, A, D, the left button, E, Shift, Space, C, I, M, R.
 
-On the 233: the title, the start menu, the pointer and the start into the hold run. The options and the controls screen are not tried there yet.
+On the 233: the title, the start menu, the pointer, the start into the hold and Escape's options run. The options' Exit did not quit at first: its question ("Click Exit again") was taken back every frame with no click, so the second click only asked again. It is now taken back only by a click on another button (`d403b0f`); not yet tried there. The controls screen is not tried there yet.
 
 **Escape is the menu's only since the engine's 127d3d3.** Before that, the window's own Escape quit the program whatever the game had set, so the options never opened. Now both places that see Escape obey `input_set_escape_quits` (`docs/input.md`).
 
