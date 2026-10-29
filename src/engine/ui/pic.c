@@ -36,7 +36,7 @@ typedef struct Pic {
     int w;
     int h;
     int cutout;
-    /* Its palette slot, -1 for a cutout (its colours are in its texels). */
+    /* Its palette slot; a cutout's has index 0 the key (PIC_KEY). */
     int pal;
     int first;
     /* Tiles of it not on the card: it is drawn only when 0. */
@@ -135,15 +135,53 @@ static void room_give(df_u32 at, df_u32 size)
     g_nfree++;
 }
 
-/* One tile onto the card: room, then the upload. 0 leaves it off. */
-static int tile_send(Tile *t, int cutout)
+/*
+ * A cutout on a card without the chroma key: its tile as ARGB 1555,
+ * little-endian, index 0 clear, the rest opaque in its palette's colour.
+ */
+static df_u8 g_wide[PIC_TILE_MAX * PIC_TILE_MAX * 2];
+
+static const df_u8 *widen(const Tile *t, const df_u32 *table)
+{
+    int i;
+    int n;
+
+    n = t->side * t->side;
+    for (i = 0; i < n; i++) {
+        df_u32 c;
+        df_u32 v;
+
+        if (!t->texels[i]) {
+            g_wide[i * 2] = 0;
+            g_wide[i * 2 + 1] = 0;
+            continue;
+        }
+        c = table[t->texels[i]];
+        v = 0x8000u | (((c >> 19) & 0x1fu) << 10) | (((c >> 11) & 0x1fu) << 5) | ((c >> 3) & 0x1fu);
+        g_wide[i * 2] = (df_u8)(v & 0xffu);
+        g_wide[i * 2 + 1] = (df_u8)(v >> 8);
+    }
+    return g_wide;
+}
+
+/*
+ * One tile onto the card: room, then the upload. Its texels are P_8; a
+ * cutout's go as they are under its keyed palette when the card has the
+ * chroma key, else widened to 1555 (wide). 0 leaves it off.
+ */
+static int tile_send(Tile *t, int wide, const df_u32 *table)
 {
     df_u32 at;
 
-    if (!g_ops || t->on || !room_take(t->bytes, &at)) {
+    if (!g_ops || t->on) {
         return 0;
     }
-    if (!g_ops->upload(t->texels, t->side, cutout, at, &t->handle)) {
+    t->bytes = g_ops->bytes ? g_ops->bytes(t->side, wide)
+                            : (df_u32)t->side * (df_u32)t->side * (wide ? 2u : 1u);
+    if (!room_take(t->bytes, &at)) {
+        return 0;
+    }
+    if (!g_ops->upload(wide ? widen(t, table) : t->texels, t->side, wide, at, &t->handle)) {
         room_give(at, t->bytes);
         return 0;
     }
@@ -164,6 +202,12 @@ static void tile_drop(Tile *t)
     t->on = 0;
 }
 
+/* 1 when p goes on the card as 1555: a cutout, and no chroma key. */
+static int pic_wide(const Pic *p)
+{
+    return p->cutout && !(g_ops && g_ops->chroma);
+}
+
 /* Every tile of p onto the card, as many as fit; how many did not. */
 static int pic_send(Pic *p)
 {
@@ -172,7 +216,7 @@ static int pic_send(Pic *p)
 
     missing = 0;
     for (i = p->first; i != NO_TILE; i = g_tile[i].next) {
-        if (!g_tile[i].on && !tile_send(&g_tile[i], p->cutout)) {
+        if (!g_tile[i].on && !tile_send(&g_tile[i], pic_wide(p), g_pal[p->pal].table)) {
             missing++;
         }
     }
@@ -270,25 +314,23 @@ static int palette_find(const df_u32 *table)
 
 /* The loading picture's source, for tile_fill. */
 static const df_u8 *g_src;
-static const df_u8 *g_rgb;
 static int g_src_w;
 static int g_src_h;
 static int g_src_cut;
 
 /*
- * One tile's texels from the source. Past the picture's edge, a cutout
- * is clear and an opaque one repeats its edge: never drawn, but a point
- * on a tile's edge never samples a stray colour.
+ * One tile's texels from the source, P_8 whatever goes on the card. Past
+ * the picture's edge a cutout is clear (index 0) and an opaque one
+ * repeats its edge: never drawn, but a point on a tile's edge never
+ * samples a stray colour.
  */
 static int tile_fill(Tile *t)
 {
-    int bpp;
     int row;
     int col;
     df_u8 *out;
 
-    bpp = g_src_cut ? 2 : 1;
-    t->texels = (df_u8 *)mem_alloc((df_u32)t->side * (df_u32)t->side * (df_u32)bpp);
+    t->texels = (df_u8 *)mem_alloc((df_u32)t->side * (df_u32)t->side);
     if (!t->texels) {
         return 0;
     }
@@ -303,32 +345,13 @@ static int tile_fill(Tile *t)
         for (col = 0; col < t->side; col++) {
             int sx;
             int past;
-            df_u8 c;
 
             sx = t->x + col;
             past = sx >= g_src_w || t->y + row >= g_src_h;
             if (sx >= g_src_w) {
                 sx = g_src_w - 1;
             }
-            c = g_src[sy * g_src_w + sx];
-            if (!g_src_cut) {
-                *out++ = c;
-                continue;
-            }
-            if (past || c == 0) {
-                *out++ = 0;
-                *out++ = 0;
-                continue;
-            }
-            {
-                df_u32 v;
-
-                /* ARGB 1555 little-endian, alpha set. */
-                v = 0x8000u | ((df_u32)(g_rgb[c * 3] >> 3) << 10)
-                    | ((df_u32)(g_rgb[c * 3 + 1] >> 3) << 5) | (df_u32)(g_rgb[c * 3 + 2] >> 3);
-                *out++ = (df_u8)(v & 0xffu);
-                *out++ = (df_u8)(v >> 8);
-            }
+            *out++ = past && g_src_cut ? 0 : g_src[sy * g_src_w + sx];
         }
     }
     return 1;
@@ -367,8 +390,8 @@ static void tile_add(Pic *p, int x, int y, int side)
     t->on = 0;
     t->used = 1;
     t->texels = 0;
-    t->bytes = g_ops && g_ops->bytes ? g_ops->bytes(side, g_src_cut)
-                                     : (df_u32)side * (df_u32)side * (g_src_cut ? 2u : 1u);
+    /* Its card bytes are known when it is sent: P_8, or 1555 for a cutout on a card with no key. */
+    t->bytes = 0;
     t->next = p->first;
     p->first = i;
     if (!tile_fill(t)) {
@@ -467,7 +490,7 @@ int pic_load(const df_u8 *pixels, int w, int h, const df_u8 *rgb, int cutout)
     p->pal = -1;
     p->first = NO_TILE;
     p->missing = 0;
-    if (!p->cutout) {
+    {
         df_u32 table[256];
         int i;
 
@@ -476,6 +499,20 @@ int pic_load(const df_u8 *pixels, int w, int h, const df_u8 *rgb, int cutout)
             table[i] = ((df_u32)rgb[i * 3] << 16) | ((df_u32)rgb[i * 3 + 1] << 8)
                 | (df_u32)rgb[i * 3 + 2];
         }
+        if (p->cutout) {
+            /*
+             * Index 0 is the key, and no other entry may land on it, in 24
+             * bits or in the card's 565: one that would gets a step of green
+             * (a 64th), unseen, so it stays drawn.
+             */
+            table[0] = PIC_KEY;
+            for (i = 1; i < 256; i++) {
+                if (((table[i] >> 16) & 0xffu) >= 0xf8u && ((table[i] >> 8) & 0xffu) < 0x04u
+                    && (table[i] & 0xffu) >= 0xf8u) {
+                    table[i] = (table[i] & 0xff00ffu) | 0x000400u;
+                }
+            }
+        }
         p->pal = palette_find(table);
         if (p->pal < 0) {
             log_text(LOG_WARN, "pictures: no palette slot free");
@@ -483,7 +520,6 @@ int pic_load(const df_u8 *pixels, int w, int h, const df_u8 *rgb, int cutout)
         }
     }
     g_src = pixels;
-    g_rgb = rgb;
     g_src_w = w;
     g_src_h = h;
     g_src_cut = p->cutout;
@@ -580,8 +616,8 @@ void pic_draw_part(int id, int sx, int sy, int sw, int sh, int x, int top, int w
     }
     kx = (float)w / (float)sw;
     ky = (float)h / (float)sh;
-    g_ops->begin(p->cutout, alpha);
-    if (p->pal >= 0) {
+    g_ops->begin(!p->cutout ? PIC_OPAQUE : (pic_wide(p) ? PIC_ALPHA : PIC_KEYED), alpha);
+    if (!pic_wide(p)) {
         g_ops->palette(p->pal, g_pal[p->pal].table);
     }
     for (i = p->first; i != NO_TILE; i = g_tile[i].next) {

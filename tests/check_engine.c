@@ -966,16 +966,18 @@ static int g_pc_bad;
 static float g_pc_area;
 static float g_pc_x0, g_pc_y0, g_pc_x1, g_pc_y1;
 static df_u8 g_pc_texel[4];
+static int g_pc_how;
+static df_u32 g_pc_entry[256];
 
-static df_u32 pc_bytes(int side, int cutout)
+static df_u32 pc_bytes(int side, int wide)
 {
-    return (df_u32)side * (df_u32)side * (cutout ? 2u : 1u);
+    return (df_u32)side * (df_u32)side * (wide ? 2u : 1u);
 }
 
-static int pc_upload(const df_u8 *texels, int side, int cutout, df_u32 addr, df_u32 *handle)
+static int pc_upload(const df_u8 *texels, int side, int wide, df_u32 addr, df_u32 *handle)
 {
     (void)side;
-    (void)cutout;
+    (void)wide;
     (void)addr;
     g_pc_uploads++;
     g_pc_texel[0] = texels[0];
@@ -990,10 +992,10 @@ static void pc_release(df_u32 handle)
     g_pc_uploads--;
 }
 
-static void pc_begin(int cutout, int alpha)
+static void pc_begin(int how, int alpha)
 {
-    (void)cutout;
     (void)alpha;
+    g_pc_how = how;
     g_pc_quads = 0;
     g_pc_pal = -1;
     g_pc_area = 0.0f;
@@ -1005,8 +1007,12 @@ static void pc_begin(int cutout, int alpha)
 
 static void pc_palette(int id, const df_u32 *table)
 {
-    (void)table;
+    int i;
+
     g_pc_pal = id;
+    for (i = 0; i < 256; i++) {
+        g_pc_entry[i] = table[i];
+    }
 }
 
 static void pc_quad(df_u32 handle, float x0, float y0, float x1, float y1,
@@ -1030,8 +1036,9 @@ static void pc_end(void)
 
 static void check_pictures(void)
 {
-    static const PicOps ops = {
-        pc_bytes, pc_upload, pc_release, pc_begin, pc_palette, pc_quad, pc_end
+    /* A card with the chroma key: cutouts go as P_8 under a keyed palette. */
+    static PicOps ops = {
+        pc_bytes, pc_upload, pc_release, pc_begin, pc_palette, pc_quad, pc_end, 1
     };
     /* 320 x 200, and 256 x 256 read from the same bytes. */
     static df_u8 screen[256 * 256];
@@ -1080,13 +1087,46 @@ static void check_pictures(void)
     pic_draw(b, 0, 64, 64, 64);
     check_expect(b && g_pc_pal == c && g_pc_quads == 1, "a second picture under one palette took another");
     pic_free(b);
-    /* A cutout: index 0 clear, the rest 1555 with alpha; no palette. */
-    b = pic_load(sprite, 40, 30, rgb, 1);
-    pic_draw(b, 0, 30, 40, 30);
-    check_expect(b && g_pc_pal == -1 && g_pc_bad == 0
-                 && check_near(g_pc_area, 40.0f * 30.0f, 0.1f),
-                 "a cutout was drawn under a palette or not whole");
-    pic_free(b);
+    /*
+     * A cutout on a keyed card: P_8, a byte a texel, drawn keyed under its
+     * own palette, entry 0 the key and an entry that was magenta (index
+     * 255's 0xfd00fe here, 565's magenta) nudged off it.
+     */
+    rgb[255 * 3] = 0xfd;
+    rgb[255 * 3 + 1] = 0x00;
+    rgb[255 * 3 + 2] = 0xfe;
+    {
+        df_u32 keyed_bytes;
+
+        b = pic_load(sprite, 40, 30, rgb, 1);
+        pic_stats(&pics, &on, &used, &room);
+        keyed_bytes = used - 66560u;
+        pic_draw(b, 0, 30, 40, 30);
+        check_expect(b && g_pc_how == PIC_KEYED && g_pc_pal >= 0 && g_pc_pal != c
+                     && g_pc_entry[0] == PIC_KEY && g_pc_entry[255] != PIC_KEY
+                     && ((g_pc_entry[255] >> 8) & 0xffu) >= 4u && g_pc_entry[9] == 0x1b1c1du
+                     && g_pc_bad == 0 && check_near(g_pc_area, 40.0f * 30.0f, 0.1f),
+                     "a cutout on a keyed card was not drawn keyed under its own palette, whole");
+        pic_free(b);
+        /* The same on a card with no key: 1555, twice the bytes, alpha-tested, no palette. */
+        ops.chroma = 0;
+        pic_begin(4096, 4096 + 256u * 1024u, &ops);
+        b = pic_load(sprite, 40, 30, rgb, 1);
+        pic_stats(&pics, &on, &used, &room);
+        g_pc_pal = -1;
+        pic_draw(b, 0, 30, 40, 30);
+        check_expect(b && used - 66560u == 2u * keyed_bytes && g_pc_how == PIC_ALPHA && g_pc_pal == -1,
+                     "a cutout on a card with no key did not go as 1555, alpha-tested");
+        pic_free(b);
+        ops.chroma = 1;
+        pic_begin(4096, 4096 + 256u * 1024u, &ops);
+        /* Each pic_begin sent the screen again on a new card: the fake counts what is on it now. */
+        pic_stats(&pics, &on, &used, &room);
+        g_pc_uploads = on;
+    }
+    rgb[255 * 3] = (df_u8)(255 * 3);
+    rgb[255 * 3 + 1] = (df_u8)(255 * 3 + 1);
+    rgb[255 * 3 + 2] = (df_u8)(255 * 3 + 2);
     pic_free(a);
     pic_stats(&pics, &on, &used, &room);
     check_expect(pics == 0 && on == 0 && used == 0 && g_pc_uploads == 0,
@@ -1117,10 +1157,18 @@ static void check_pictures(void)
     check_expect(a && on == 30 && used == 66560u + 65536u, "the room did not join what was freed");
     pic_free(a);
     pic_free(b);
+    /* A clear texel: index 0 on a keyed card, 0x0000 in 1555 on one without the key. */
+    g_pc_texel[0] = 0xff;
+    b = pic_load(sprite, 40, 30, rgb, 1);
+    check_expect(b && g_pc_texel[0] == 0 && g_pc_texel[1] == 9, "a keyed cutout's clear texel is not index 0");
+    pic_free(b);
+    ops.chroma = 0;
+    pic_begin(0, 140u * 1024u, &ops);
     g_pc_texel[1] = 0xff;
     b = pic_load(sprite, 40, 30, rgb, 1);
-    check_expect(b && g_pc_texel[0] == 0 && g_pc_texel[1] == 0, "a cutout's clear texel is not 0");
+    check_expect(b && g_pc_texel[0] == 0 && g_pc_texel[1] == 0, "a 1555 cutout's clear texel is not 0");
     pic_free(b);
+    ops.chroma = 1;
     pic_end();
 }
 

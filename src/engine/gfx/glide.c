@@ -88,6 +88,8 @@ typedef FxBool (FX_CALL *gr_lfb_read_fn)(
 typedef FxBool (FX_CALL *gr_lfb_write_fn)(
     GrBuffer_t dst, FxU32 x, FxU32 y, GrLfbSrcFmt_t fmt,
     FxU32 w, FxU32 h, FxI32 stride, void *src);
+typedef void (FX_CALL *gr_chroma_mode_fn)(GrChromakeyMode_t mode);
+typedef void (FX_CALL *gr_chroma_value_fn)(GrColor_t value);
 
 static struct {
     HMODULE dll;
@@ -128,6 +130,8 @@ static struct {
     gr_constant_fn constant;
     gr_lfb_read_fn lfb_read;
     gr_lfb_write_fn lfb_write;
+    gr_chroma_mode_fn chroma_mode;
+    gr_chroma_value_fn chroma_value;
 } glide;
 
 static int g_inited;
@@ -326,6 +330,11 @@ static int load_glide(void)
         glide.dll, "grLfbReadRegion", "grLfbReadRegion@28", "_grLfbReadRegion@28");
     glide.lfb_write = (gr_lfb_write_fn)(void *)find_export(
         glide.dll, "grLfbWriteRegion", "grLfbWriteRegion@32", "_grLfbWriteRegion@32");
+    /* Optional. Without them a cutout picture goes on the card as ARGB 1555 (docs/pictures.md). */
+    glide.chroma_mode = (gr_chroma_mode_fn)(void *)find_export(
+        glide.dll, "grChromakeyMode", "grChromakeyMode@4", "_grChromakeyMode@4");
+    glide.chroma_value = (gr_chroma_value_fn)(void *)find_export(
+        glide.dll, "grChromakeyValue", "grChromakeyValue@4", "_grChromakeyValue@4");
     return 1;
 }
 #pragma GCC diagnostic pop
@@ -1535,6 +1544,30 @@ void glide_glow(int on, df_u32 rgb)
     glide.depth_func(g_depth_cmp);
     glide.fog_mode(g_fog ? GR_FOG_WITH_TABLE : GR_FOG_DISABLE);
     color_textured();
+}
+
+int glide_chroma_ok(void)
+{
+    return g_opened && glide.chroma_mode && glide.chroma_value;
+}
+
+/*
+ * A pixel whose colour out of the colour combine is rgb is not written.
+ * The screen's cutout pictures (docs/pictures.md): P_8 with index 0 the
+ * key, point sampled, the texel passed through as it is (tint white), so
+ * the key reaches the test unchanged.
+ */
+void glide_chroma(int on, df_u32 rgb)
+{
+    if (!glide_chroma_ok()) {
+        return;
+    }
+    if (on) {
+        glide.chroma_value(pack_rgb((int)((rgb >> 16) & 0xffu), (int)((rgb >> 8) & 0xffu), (int)(rgb & 0xffu)));
+        glide.chroma_mode(GR_CHROMAKEY_ENABLE);
+        return;
+    }
+    glide.chroma_mode(GR_CHROMAKEY_DISABLE);
 }
 
 void glide_flat(int on)

@@ -42,7 +42,14 @@ Leaving it for a place is as between places:
   - `glide_pic_palette` sends a slot's palette only when another is on TMU0, so a run of pictures under one palette costs one download.
   - `draw_frame` puts the level's palette back once, after `g_extra`, and only if a picture replaced it (`glide_level_palette`).
   - The sky and the window glow track the palette the same way, so a picture after them sends its own again.
-- **Cutout pictures** go as ARGB 1555, 2 bytes a texel. Index 0 is clear (0x0000), and the rest have the alpha bit set. They are alpha-tested as sprites and text are. They need no palette.
+- **Cutout pictures** go as P_8 too, 1 byte a texel, under a palette of their own whose entry 0 is the key colour, magenta (`PIC_KEY`, 0xFF00FF).
+  - The draw turns on Glide's chroma key at that colour (`glide_chroma`), so their clear pixels are never written.
+  - Any other entry that would land on magenta, in 24 bits or in the card's 565 (red and blue at 0xF8 or more, green under 0x04), gets a step of green, a 64th, so it stays drawn.
+  - The key compares the colour out of the colour combine. A picture is drawn point sampled with the tint white (`FACTOR_ONE`, the texel passed through) and no light, so the key reaches the test unchanged and no texel is blended into it. The UI's 1/w of 1 puts fog at its nearest, none.
+  - A cutout's palette is not an opaque one's, even for the same colours.
+  - On a card whose DLL has no `grChromakeyMode` and `grChromakeyValue` (`glide_chroma_ok`), a cutout goes as ARGB 1555 instead, 2 bytes a texel: index 0 clear (0x0000), the rest with the alpha bit set, alpha-tested as sprites and text are, and drawn with no palette.
+  - `pic.c` keeps every tile as P_8 in memory and chooses at upload (`PicOps.chroma`, set from the card at each prepare). A picture loaded before any place therefore goes on in the right format once the card is known.
+  - The weapon's largest swing frame takes 40 KB keyed where it took 78 KB as 1555, so a whole swing can stay on the card (`docs/game.md`).
 - **The draw state** is `glide_ui`: point sampled, over the frame with no depth test or write, tint white. An opacity under 255 blends with `glide_opacity`.
 
 ### Tiles
@@ -68,7 +75,7 @@ Each tile is a quad of its own. Every quad edge is computed from an integer pixe
 
 `pic.c` keeps every tile's texels, in card format, in a heap of its own (`mem_heap_new`), not a place's heap. Freeing a picture frees them. Every `gfx_prepare` empties the card (`glide_tex_reset`), and `pic_begin` then sends every loaded picture again into the new room. A picture loaded before any place waits for the first one. `gfx_shutdown` calls `pic_end`.
 
-The RAM cost is the card cost: 65 KB for a full screen as P_8.
+The RAM cost is a byte a texel, cutouts included: 65 KB for a full screen. On a card without the key, a cutout is widened to 1555 as it is sent, in a static buffer of one tile.
 
 ## The 233
 
@@ -82,7 +89,7 @@ The RAM cost is the card cost: 65 KB for a full screen as P_8.
 - a 320 × 200 screen in its 29 tiles and 66560 bytes, covering exactly 640 × 400 when drawn at 2×, with every texel coordinate inside 0..256;
 - a part landing on its rectangle;
 - two pictures under one palette sharing a slot;
-- a cutout drawn with no palette, its clear texel 0;
+- a cutout on a keyed card drawn keyed under its own palette, entry 0 the key and a near-magenta entry nudged off it, its clear texel index 0; on a card with no key, 1555 at twice the bytes, alpha-tested with no palette, its clear texel 0x0000;
 - freed pictures leaving nothing on the card;
 - a picture short of room not drawn, then drawn once the next place's room is bigger;
 - freed tiles joined so that one 64 KB tile fits where a screen's 29 were.

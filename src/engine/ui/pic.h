@@ -9,9 +9,11 @@
  * rectangle. Read docs/pictures.md before editing.
  *
  * A picture is index pixels, row 0 at the top, under a palette of its
- * own (768 bytes, RGB). Opaque, it goes on the card as P_8 and is drawn
- * through its palette; cutout, index 0 is clear and it goes as ARGB
- * 1555, alpha-tested as sprites are. It is cut in square tiles of a
+ * own (768 bytes, RGB). It goes on the card as P_8 and is drawn through
+ * its palette. A cutout's index 0 is clear: its palette's entry 0 is the
+ * key colour (PIC_KEY), which the card's chroma key drops; on a card
+ * without the key it goes as ARGB 1555 instead, alpha-tested as sprites
+ * are, twice the bytes. It is cut in square tiles of a
  * power of two, each its own texture, in a room on the card the game
  * sets (pic_set_room) and the place's pictures do without. The engine
  * keeps the tiles in memory, so they go back on the card with every
@@ -34,6 +36,14 @@
 /* The largest tile a card takes, and the smallest a thin strip is padded to. */
 #define PIC_TILE_MAX 256
 #define PIC_TILE_MIN 16
+/* A cutout's key, its palette's entry 0: magenta, which no other entry is let land on. */
+#define PIC_KEY 0xff00ffu
+/* How a picture is drawn (PicOps.begin): through its palette, keyed through it, or alpha-tested 1555. */
+enum {
+    PIC_OPAQUE,
+    PIC_KEYED,
+    PIC_ALPHA
+};
 
 /*
  * The room on the card for pictures, in KB, 0 (default) to 1024: a
@@ -69,21 +79,27 @@ void pic_stats(int *pics, int *tiles_on, df_u32 *used, df_u32 *room);
 
 /*
  * The card's side, for gfx.c and the host test. Each tile is a square
- * of side, one level: P_8 indices, or ARGB 1555 little-endian (cutout).
+ * of side, one level: P_8 indices, or ARGB 1555 little-endian (wide: a
+ * cutout on a card without the chroma key).
  */
 typedef struct PicOps {
     /* The card's bytes for a tile. */
-    df_u32 (*bytes)(int side, int cutout);
+    df_u32 (*bytes)(int side, int wide);
     /* Send a tile to addr; its handle. 0 when it failed. */
-    int (*upload)(const df_u8 *texels, int side, int cutout, df_u32 addr, df_u32 *handle);
+    int (*upload)(const df_u8 *texels, int side, int wide, df_u32 addr, df_u32 *handle);
     void (*release)(df_u32 handle);
-    /* A draw: its state on, the palette for an opaque one (id 0..PIC_PALETTES-1), quads, off. */
-    void (*begin)(int cutout, int alpha);
+    /*
+     * A draw: its state on (how: PIC_OPAQUE, PIC_KEYED, PIC_ALPHA), its
+     * palette (id 0..PIC_PALETTES-1; not for PIC_ALPHA), quads, off.
+     */
+    void (*begin)(int how, int alpha);
     void (*palette)(int id, const df_u32 *table);
     /* A tile's part: screen left, top, right, bottom; texel s, t (0..256 across the tile) at those edges. */
     void (*quad)(df_u32 handle, float x0, float y0, float x1, float y1,
                  float s0, float t0, float s1, float t1);
     void (*end)(void);
+    /* 1: the card has the chroma key, and a cutout goes as P_8 keyed. */
+    int chroma;
 } PicOps;
 
 /*

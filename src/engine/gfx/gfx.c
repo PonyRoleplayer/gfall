@@ -15,35 +15,45 @@
 static const char *g_why = "graphics failed";
 
 /* The screen's pictures on the card (pic.c, docs/pictures.md). */
-static df_u32 pic_bytes(int side, int cutout)
+static df_u32 pic_bytes(int side, int wide)
 {
     df_u32 bytes;
 
-    if (!glide_texture_bytes(side, cutout, 0, &bytes)) {
-        return (df_u32)side * (df_u32)side * (cutout ? 2u : 1u);
+    if (!glide_texture_bytes(side, wide, 0, &bytes)) {
+        return (df_u32)side * (df_u32)side * (wide ? 2u : 1u);
     }
     return bytes;
 }
 
-static int pic_upload(const df_u8 *texels, int side, int cutout, df_u32 addr, df_u32 *handle)
+static int pic_upload(const df_u8 *texels, int side, int wide, df_u32 addr, df_u32 *handle)
 {
-    return glide_upload_chain(texels, side, cutout, 0, 0, addr, handle);
+    return glide_upload_chain(texels, side, wide, 0, 0, addr, handle);
 }
 
 static df_u32 g_pic_tint;
 static int g_pic_alpha;
+static int g_pic_how;
 
-static void pic_begin_draw(int cutout, int alpha)
+/*
+ * A picture's state: over the frame, point sampled, the tint white so the
+ * colour combine passes the texel through as it is (the key must reach
+ * the chroma test unchanged). A keyed cutout drops its key's pixels; a
+ * 1555 one is alpha-tested as sprites are.
+ */
+static void pic_begin_draw(int how, int alpha)
 {
     g_pic_tint = glide_tinted();
     g_pic_alpha = alpha;
+    g_pic_how = how;
     glide_ui(1);
     glide_tint(0xffffffu);
-    if (cutout) {
+    if (how == PIC_KEYED) {
+        glide_chroma(1, PIC_KEY);
+    } else if (how == PIC_ALPHA) {
         glide_sprite_alpha(1);
     }
     if (alpha < 255) {
-        glide_opacity(alpha, cutout);
+        glide_opacity(alpha, how == PIC_ALPHA);
     }
 }
 
@@ -85,14 +95,18 @@ static void pic_end_draw(void)
     if (g_pic_alpha < 255) {
         glide_opacity(-1, 0);
     }
+    if (g_pic_how == PIC_KEYED) {
+        glide_chroma(0, 0);
+    }
     glide_sprite_alpha(0);
     glide_tint(g_pic_tint);
     glide_ui(0);
 }
 
-static const PicOps g_pic_ops = {
+/* chroma is the card's, set when the room is taken (pictures_prepare). */
+static PicOps g_pic_ops = {
     pic_bytes, pic_upload, glide_release,
-    pic_begin_draw, glide_pic_palette, pic_quad, pic_end_draw
+    pic_begin_draw, glide_pic_palette, pic_quad, pic_end_draw, 0
 };
 
 /*
@@ -105,6 +119,7 @@ static void pictures_prepare(void)
     df_u32 lo;
 
     bytes = (df_u32)pic_room() * 1024u;
+    g_pic_ops.chroma = glide_chroma_ok();
     if (bytes && glide_tex_take(bytes, &lo)) {
         pic_begin(lo, lo + bytes, &g_pic_ops);
         return;

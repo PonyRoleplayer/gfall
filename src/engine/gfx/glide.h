@@ -80,6 +80,13 @@ int glide_palette(const df_u8 *r, const df_u8 *g, const df_u8 *b);
 void glide_pic_palette(int id, const df_u32 *table);
 void glide_level_palette(void);
 /*
+ * The chroma key (docs/pictures.md): 1 when the DLL has it. glide_chroma(1,
+ * rgb) drops every pixel whose colour out of the colour combine is rgb
+ * (0xRRGGBB); 0 turns it off.
+ */
+int glide_chroma_ok(void);
+void glide_chroma(int on, df_u32 rgb);
+/*
  * cutout uploads GR_TEXFMT_ARGB_1555. Index 0 is transparent.
  * pr/pg/pb are the 256-entry palette and are used only for a cutout.
  */

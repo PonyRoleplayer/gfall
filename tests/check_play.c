@@ -658,7 +658,8 @@ static int load_cropped(const CifFrame *f, const df_u8 *rgb)
  */
 static df_u32 largest_swing_frame(df_u32 *whole, int *exact)
 {
-    static const PicOps ops = { wc_bytes, wc_upload, wc_release, wc_begin, wc_palette, wc_quad, wc_end };
+    /* chroma 0: a card without the key, cutouts as 1555 (wc_bytes doubles them). */
+    static const PicOps ops = { wc_bytes, wc_upload, wc_release, wc_begin, wc_palette, wc_quad, wc_end, 0 };
     static df_u8 rgb[768];
     df_u32 most;
     int n;
