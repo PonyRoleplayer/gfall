@@ -547,17 +547,17 @@ static void check_items(void)
     printf("items: %d weapons swung, %d materials; additem, items, equip\n", weapon_table()->count, material_table()->count);
 }
 
-/* A card that takes every tile, for the swing frames' bytes: a tile is its side squared, twice for a cutout. */
-static df_u32 wc_bytes(int side, int cutout)
+/* A card that takes every tile, for the swing frames' bytes: a tile is its side squared, twice when it goes wide (1555). */
+static df_u32 wc_bytes(int side, int wide)
 {
-    return (df_u32)side * (df_u32)side * (cutout ? 2u : 1u);
+    return (df_u32)side * (df_u32)side * (wide ? 2u : 1u);
 }
 
-static int wc_upload(const df_u8 *texels, int side, int cutout, df_u32 addr, df_u32 *handle)
+static int wc_upload(const df_u8 *texels, int side, int wide, df_u32 addr, df_u32 *handle)
 {
     (void)texels;
     (void)side;
-    (void)cutout;
+    (void)wide;
     *handle = addr + 1;
     return 1;
 }
@@ -567,9 +567,9 @@ static void wc_release(df_u32 handle)
     (void)handle;
 }
 
-static void wc_begin(int cutout, int alpha)
+static void wc_begin(int how, int alpha)
 {
-    (void)cutout;
+    (void)how;
     (void)alpha;
 }
 
@@ -651,23 +651,26 @@ static int load_cropped(const CifFrame *f, const df_u8 *rgb)
 
 /*
  * The largest swing frame of WEAPON00..10.CIF as a cutout on the card,
- * cropped as weapon.c sends it (*whole: as stored, uncropped): one shows
- * at a time beside the armed picture and the HUD, inside the game's
- * GAME_PICTURE_KB (docs/game.md, Combat). *exact: every frame's crop
- * loses no pixel and is tight.
+ * cropped as weapon.c sends it (*whole: as stored, uncropped), and the
+ * largest whole swing's cropped frames together (*swing): one frame
+ * shows at a time beside the armed picture and the HUD, inside the
+ * game's GAME_PICTURE_KB (docs/game.md, Combat). chroma 1: the card has
+ * the key and a cutout goes as P_8; 0: as 1555, twice the bytes.
+ * *exact: every frame's crop loses no pixel and is tight.
  */
-static df_u32 largest_swing_frame(df_u32 *whole, int *exact)
+static df_u32 largest_swing_frame(int chroma, df_u32 *whole, df_u32 *swing, int *exact)
 {
-    /* chroma 0: a card without the key, cutouts as 1555 (wc_bytes doubles them). */
-    static const PicOps ops = { wc_bytes, wc_upload, wc_release, wc_begin, wc_palette, wc_quad, wc_end, 0 };
+    static const PicOps keyed = { wc_bytes, wc_upload, wc_release, wc_begin, wc_palette, wc_quad, wc_end, 1 };
+    static const PicOps wide = { wc_bytes, wc_upload, wc_release, wc_begin, wc_palette, wc_quad, wc_end, 0 };
     static df_u8 rgb[768];
     df_u32 most;
     int n;
 
     most = 0;
     *whole = 0;
+    *swing = 0;
     *exact = 1;
-    pic_begin(0, 1024u * 1024u, &ops);
+    pic_begin(0, 1024u * 1024u, chroma ? &keyed : &wide);
     for (n = 0; n <= 10; n++) {
         char name[16];
         CifSet set;
@@ -677,12 +680,22 @@ static df_u32 largest_swing_frame(df_u32 *whole, int *exact)
         if (!cif_open(name, &set)) {
             continue;
         }
+        df_u32 sum;
+        int group;
+
+        sum = 0;
+        group = -1;
         for (i = 0; i < set.n; i++) {
             int id;
             int pics;
             int on;
             df_u32 used;
             df_u32 room;
+
+            if (set.frame[i].group != group) {
+                sum = 0;
+                group = set.frame[i].group;
+            }
 
             id = pic_load(set.frame[i].pixels, set.frame[i].w, set.frame[i].h, rgb, 1);
             pic_stats(&pics, &on, &used, &room);
@@ -696,6 +709,11 @@ static df_u32 largest_swing_frame(df_u32 *whole, int *exact)
                 most = used;
             }
             pic_free(id);
+            /* Group 0 is the armed picture, not a swing. */
+            sum += used;
+            if (group > 0 && sum > *swing) {
+                *swing = sum;
+            }
             if (!bounds_exact(&set.frame[i])) {
                 *exact = 0;
             }
@@ -726,6 +744,7 @@ static void check_weapon(void)
     float each;
     df_u32 most;
     df_u32 whole;
+    df_u32 swing_bytes;
     int exact;
 
     each = rules_swing_frame_time(50);
@@ -770,12 +789,18 @@ static void check_weapon(void)
     check_expect(!weapon_shown(&pic, &left, &top, &w, &h) && weapon_attack() == 1 && weapon_shown(&pic, &left, &top, &w, &h),
                  "weapon: a bow shows at rest, or does not shoot");
     weapon_free();
-    most = largest_swing_frame(&whole, &exact);
+    /* A card with the chroma key: cutouts as P_8. */
+    most = largest_swing_frame(1, &whole, &swing_bytes, &exact);
     check_expect(exact, "weapon: a frame's crop loses a pixel or is not tight");
-    check_expect(most > 0 && most <= 96u * 1024u, "weapon: a cropped swing frame takes more than 96 KB of the card");
-    printf("weapon: swings of 5 frames at %.3f s, all six seen, fists, a bow; the largest frame %u bytes on the card"
-           " cropped, %u whole\n",
-           each, (unsigned)most, (unsigned)whole);
+    check_expect(most > 0 && most <= 48u * 1024u, "weapon: a cropped swing frame takes more than 48 KB of a keyed card");
+    printf("weapon: swings of 5 frames at %.3f s, all six seen, fists, a bow; on a keyed card the largest frame %u bytes"
+           " cropped (%u whole), the largest swing's frames %u together\n",
+           each, (unsigned)most, (unsigned)whole, (unsigned)swing_bytes);
+    /* A card without it: cutouts as 1555, twice. */
+    most = largest_swing_frame(0, &whole, &swing_bytes, &exact);
+    check_expect(most > 0 && most <= 96u * 1024u, "weapon: a cropped swing frame takes more than 96 KB of a 1555 card");
+    printf("weapon: on a card without the key the largest frame %u bytes cropped (%u whole)\n", (unsigned)most,
+           (unsigned)whole);
 }
 
 void check_play(void)
