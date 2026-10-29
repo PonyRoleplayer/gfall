@@ -11,6 +11,7 @@
 #include "engine/gfx/gfx.h"
 #include "engine/scene/interact.h"
 #include "engine/scene/walker.h"
+#include "engine/scene/weather.h"
 #include "engine/ui/hud.h"
 #include "engine/ui/pic.h"
 
@@ -68,6 +69,12 @@ void game_setup(void)
     keys_load();
     /* The engine's position corner is a viewer's; the game has its compass. */
     hud_set(0);
+    /*
+     * Outdoors the weather sets how far one sees and the fog (docs/weather.md,
+     * the simulated view): a clear day long, a storm short. The game's on;
+     * LEVELFALL keeps it off to inspect a place at any distance.
+     */
+    weather_set_sim(1);
     pic_set_room(GAME_PICTURE_KB);
     overlay_load();
     menu_setup();

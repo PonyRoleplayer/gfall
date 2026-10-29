@@ -71,7 +71,7 @@ The fog's colour is the sky's horizon colour exactly (`docs/daylight.md`), so a 
 
 A clear day with no fog at all was tried: a far roof popped at the clip and the town looked pasted on the sky. The light haze is what replaces it.
 
-`weathersim off` gives the clip and the fog back to the far setting. LEVELFALL keeps it off to inspect a place at any distance.
+`weathersim off` gives the clip and the fog back to the far setting. LEVELFALL keeps it off to inspect a place at any distance. GFALL turns it on at start (`game_setup`): the game's view is the weather's.
 
 **The sky.** The weather picks the picture: `Sky.pick` takes the weather's sky (`WEATHER_SKY_CLEAR`, `OVERCAST`, `RAIN`, `STORM`, `SNOW`) and the game maps it to its files. Daggerfall's climate groups each have four after their seasons (`skyfile_weather_index`): +4 a dark storm sky, drawn for rain and thunder; +5 a grey one, for overcast and fog; +6 a pale snow sky; +7 a dark snow storm, not used yet. Bad weather has no stars: its frame 0, the darkest, runs all night, as in Daggerfall Unity.
 
