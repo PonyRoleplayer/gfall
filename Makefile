@@ -120,6 +120,7 @@ TABLES_SRC := \
 	src/game/dagger/tables/classic.c \
 	src/game/dagger/tables/calendar.c \
 	src/game/dagger/tables/careers.c \
+	src/game/dagger/tables/items.c \
 	src/game/dagger/tables/swaps.c \
 	src/game/dagger/tables/enemies.c \
 	src/game/dagger/tables/forecast.c \
@@ -141,6 +142,8 @@ DAGGER_SRC := $(FORMATS_SRC) $(TABLES_SRC) $(PLACES_SRC)
 PLAY_SRC := \
 	src/game/dagger/play/rules.c \
 	src/game/dagger/play/character.c \
+	src/game/dagger/play/inventory.c \
+	src/game/dagger/play/commands.c \
 	src/game/dagger/play/player.c \
 	src/game/dagger/play/screen.c \
 	src/game/dagger/play/overlay.c \
@@ -288,6 +291,7 @@ DAT_SRC := \
 	src/game/dagger/tables/classic.c \
 	src/game/dagger/tables/calendar.c \
 	src/game/dagger/tables/careers.c \
+	src/game/dagger/tables/items.c \
 	src/game/dagger/tables/enemies.c \
 	src/game/dagger/tables/forecast.c \
 	src/game/dagger/formats/texture.c \

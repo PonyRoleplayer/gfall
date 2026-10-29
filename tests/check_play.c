@@ -20,6 +20,10 @@
 #include "game/dagger/play/player.h"
 #include "game/dagger/play/rules.h"
 #include "game/dagger/play/character.h"
+#include "game/dagger/play/commands.h"
+#include "game/dagger/play/inventory.h"
+#include "game/dagger/tables/items.h"
+#include "engine/ui/cmd.h"
 #include "game/dagger/tables/careers.h"
 
 /* Classic's speeds and jump, from Daggerfall Unity's formulas worked by hand. */
@@ -477,10 +481,74 @@ static void check_dunstream(void)
     keep_clear();
 }
 
+/*
+ * Weapons from MAIN.DAT's ITEM, WEAP and MATL by DFU's material rules,
+ * worked by hand; the pack and the hand; the console's commands.
+ */
+static void check_items(void)
+{
+    static Player p;
+    Inventory inv;
+    Item it;
+    char name[48];
+
+    check_expect(item_table()->count == 19 && weapon_table()->count == 18 && material_table()->count == MATERIAL_COUNT,
+                 "items: MAIN.DAT lacks classic's 19 weapon items (18 swung, and arrows) or 10 materials");
+    check_expect(item_make(&it, ITEM_LONGSWORD, MATERIAL_IRON) && check_near(it.weight, 4.5f, 0.001f)
+                     && it.value == 45 && it.condition_max == 800 && it.condition == 800,
+                 "items: an iron longsword is not 4.5 kg, 45 gold, 800");
+    /* 18 quarters times 5 is 22.5 quarters: half to even, 22, 5.5 kg. */
+    check_expect(item_make(&it, ITEM_LONGSWORD, MATERIAL_STEEL) && check_near(it.weight, 5.5f, 0.001f)
+                     && it.value == 90 && it.condition_max == 1200,
+                 "items: a steel longsword is not 5.5 kg, 90 gold, 1200");
+    check_expect(item_make(&it, ITEM_DAGGER, MATERIAL_DAEDRIC) && check_near(it.weight, 0.5f, 0.001f)
+                     && it.value == 1536 && it.condition_max == 400,
+                 "items: a daedric dagger is not 0.5 kg, 1536 gold, 400");
+    item_name(&it, name, (int)sizeof(name));
+    check_expect(strcmp(name, "Daedric Dagger") == 0, "items: the daedric dagger's name");
+    check_expect(!item_make(&it, 9999, MATERIAL_IRON) && !item_make(&it, ITEM_DAGGER, 99),
+                 "items: an unknown template or material made an item");
+    check_expect(item_find_weapon("dai katana") == 123 && item_find_weapon("LONGSWORD") == ITEM_LONGSWORD
+                     && item_find_weapon("potato") < 0 && item_find_material("daedric") == MATERIAL_DAEDRIC,
+                 "items: weapons or materials are not found by name");
+    check_expect(material(MATERIAL_IRON)->modifier == -1 && material(MATERIAL_DAEDRIC)->modifier == 6
+                     && weapon_template(ITEM_LONGSWORD)->damage_min == 2 && weapon_template(ITEM_LONGSWORD)->damage_max == 16,
+                 "items: the longsword's damage or the materials' modifiers are not classic's");
+
+    inventory_clear(&inv);
+    item_make(&it, ITEM_DAGGER, MATERIAL_IRON);
+    inventory_add(&inv, &it);
+    item_make(&it, ITEM_LONGSWORD, MATERIAL_STEEL);
+    inventory_add(&inv, &it);
+    check_expect(inventory_equip(&inv, 1) && inventory_weapon(&inv) == &inv.item[1] && !inventory_equip(&inv, 5),
+                 "items: the hand does not take a weapon from the pack");
+    inventory_remove(&inv, 0);
+    check_expect(inv.weapon == 0 && inventory_weapon(&inv)->template_id == ITEM_LONGSWORD,
+                 "items: the hand loses its weapon when another leaves the pack");
+    inventory_remove(&inv, 0);
+    check_expect(inv.count == 0 && !inventory_weapon(&inv), "items: the hand keeps a weapon that left the pack");
+
+    inventory_clear(&p.pack);
+    commands_setup();
+    commands_player(&p);
+    cmd_run("additem dwarven claymore; additem long sword; additem Dai-Katana Ebony; equip 1");
+    check_expect(p.pack.count == 3 && p.pack.item[0].material == MATERIAL_DWARVEN && p.pack.item[1].material == MATERIAL_IRON
+                     && p.pack.item[2].template_id == 123 && p.pack.item[2].material == MATERIAL_EBONY && p.pack.weapon == 1,
+                 "items: additem and equip did not fill the pack and the hand");
+    check_expect(check_near(inventory_weight(&p.pack), 5.5f + 4.5f + 1.75f, 0.001f), "items: the pack's weight");
+    cmd_run("additem potato; equip 7; equip none");
+    check_expect(p.pack.count == 3 && p.pack.weapon == -1, "items: a bad additem or equip changed the pack");
+    commands_player(0);
+    cmd_run("additem dagger");
+    check_expect(p.pack.count == 3, "items: additem out of play added to a pack");
+    printf("items: %d weapons swung, %d materials; additem, items, equip\n", weapon_table()->count, material_table()->count);
+}
+
 void check_play(void)
 {
     check_rules();
     check_character();
+    check_items();
     check_hold();
     check_keep();
     check_dunstream();

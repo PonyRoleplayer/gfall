@@ -214,6 +214,14 @@ The creatures already stand in a dungeon as entities (`docs/entities.md`): each 
 
 Moving an entity's position and pose from game code, and the walker colliding with entities, are engine requests.
 
+### Weapons and the pack (built: P4's first slice)
+
+- **The records.** `ITEM`, `WEAP` and `MATL` (`tables/items.c`, `docs/data.md`) carry classic's 19 weapon templates, what the 18 swung ones add (damage, skill, CIF), and the 10 materials, as Daggerfall Unity's ItemTemplates, FormulaHelper and ItemBuilder have them.
+- **An item** (`play/inventory.c`) is a template in a material, by ItemBuilder's SetItemPropertiesByMaterial: value × 3 × `value_q`; weight in whole quarter kilograms × `weight_q` / 4, rounded half to even (Unity's `Mathf.Round`: a steel longsword's 22.5 quarters are 22, 5.5 kg), back to kilograms; condition × `condition_q` / 4.
+- **The pack** is the player's (`Player.pack`): up to 64 items and the one in hand. The start gives the warrior an iron longsword in hand, a stand-in until character creation (P8) gives classic's starting kit.
+- **Console** (`play/commands.c`), in play only: `additem [weapon] [material]` (bare, the weapons and materials there are; the material first or last, iron when none; any case, spaces and dashes ignored: `additem dai katana ebony`), `items` (the pack, `*` the one in hand, with weight, value and condition), `equip n|none`.
+- **Not yet:** the swing over the view, to-hit and damage (the next slice), armour and the rest of the items (P5).
+
 ## Items, gold, the inventory
 
 - Item kinds, weights, values and pictures per UESP (Items) and Daggerfall Unity's item templates. Each item's picture comes from its TEXTURE or CIF record.

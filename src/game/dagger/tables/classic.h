@@ -5,6 +5,7 @@
 #include "game/dagger/tables/forecast.h"
 #include "game/dagger/tables/calendar.h"
 #include "game/dagger/tables/careers.h"
+#include "game/dagger/tables/items.h"
 
 /*
  * Classic's tables that live inside FALL.EXE, not in an ARENA2 file:
@@ -25,5 +26,9 @@ const CalInfo *classic_calendar(void);
 /* The races (RaceTemplate) and the skills (DFCareer.Skills, DaggerfallSkills); the classes come from ARENA2. */
 const CareerRace *classic_races(int *n);
 const CareerSkill *classic_skills(int *n);
+/* The weapon templates, their damage, skills and swings, and the materials. */
+const ItemTemplate *classic_items(int *n);
+const WeaponTemplate *classic_weapons(int *n);
+const Material *classic_materials(int *n);
 
 #endif

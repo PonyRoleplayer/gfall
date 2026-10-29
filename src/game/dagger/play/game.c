@@ -1,9 +1,11 @@
 #include "game/dagger/play/game.h"
+#include "game/dagger/play/commands.h"
 #include "game/dagger/play/keys.h"
 #include "game/dagger/play/menu.h"
 #include "game/dagger/play/overlay.h"
 #include "game/dagger/play/player.h"
 #include "game/dagger/play/rules.h"
+#include "game/dagger/tables/items.h"
 #include "game/dagger/places/doors.h"
 #include "game/dagger/places/dunstream.h"
 #include "engine/core/mem.h"
@@ -79,6 +81,7 @@ void game_setup(void)
     overlay_load();
     menu_setup();
     gfx_set_extra(draw);
+    commands_setup();
     g_playing = 0;
     menu_open(MENU_TITLE);
     input_set_pointer(1);
@@ -106,6 +109,18 @@ void game_enter(const Level *level, Camera *cam, float x, float y, float z, floa
         }
         player_init(&g_player, &sheet);
     }
+    /*
+     * Until character creation (P8) gives classic's starting kit: the
+     * warrior's long blade, an iron longsword, in hand.
+     */
+    {
+        Item sword;
+
+        if (item_make(&sword, ITEM_LONGSWORD, MATERIAL_IRON)) {
+            inventory_equip(&g_player.pack, inventory_add(&g_player.pack, &sword));
+        }
+    }
+    commands_player(&g_player);
     player_place(&g_player, x, y, z, yaw, pitch);
     camera_set(cam, x, y, z, yaw, pitch);
     /*
@@ -195,6 +210,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
 void game_shutdown(void)
 {
     interact_set_handler(0);
+    commands_player(0);
     walker_set_game(0);
     gfx_set_extra(0);
     gfx_set_pause(0);

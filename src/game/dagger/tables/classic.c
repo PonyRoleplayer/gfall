@@ -7,8 +7,9 @@
  * (c) 2009-2023 Daggerfall Workshop, https://github.com/Interkarma/daggerfall-unity):
  * EnemyBasics.Enemies, RandomEncounters.EncounterTables,
  * WeatherTable.json from the Daggerfall Chronicles, p. 47,
- * DaggerfallDateTime's calendar, RaceTemplate, and DFCareer and
- * DaggerfallSkills' skills.
+ * DaggerfallDateTime's calendar, RaceTemplate, DFCareer and
+ * DaggerfallSkills' skills, and ItemTemplates, FormulaHelper, ItemBuilder
+ * and WeaponBasics' weapons and materials.
  */
 
 /*
@@ -309,6 +310,97 @@ const CareerSkill *classic_skills(int *n)
 {
     *n = (int)(sizeof(g_skills) / sizeof(g_skills[0]));
     return g_skills;
+}
+
+/*
+ * DFU's ItemTemplates, the weapons (113..131, the arrow last): name,
+ * weight in kg, price, hit points, the picture on the ground and in the
+ * paper doll's hand, one-handed, blunt.
+ */
+static const ItemTemplate g_items[] = {
+    { 113, "Dagger", 0.50f, 1, 50, 207, 5, 234, 5, 1, 0 },
+    { 114, "Tanto", 0.75f, 3, 50, 207, 10, 234, 22, 1, 0 },
+    { 115, "Staff", 2.00f, 5, 300, 207, 7, 234, 21, 0, 1 },
+    { 116, "Shortsword", 2.50f, 5, 300, 207, 3, 234, 19, 1, 0 },
+    { 117, "Wakizashi", 2.00f, 8, 200, 207, 2, 234, 26, 1, 0 },
+    { 118, "Broadsword", 5.00f, 10, 600, 207, 2, 234, 2, 1, 0 },
+    { 119, "Saber", 3.75f, 12, 700, 207, 2, 234, 17, 1, 0 },
+    { 120, "Longsword", 4.50f, 15, 800, 207, 2, 234, 12, 1, 0 },
+    { 121, "Katana", 2.50f, 25, 600, 207, 15, 234, 9, 1, 0 },
+    { 122, "Claymore", 7.50f, 30, 1400, 207, 2, 234, 4, 0, 0 },
+    { 123, "Dai-katana", 3.50f, 50, 800, 207, 2, 234, 7, 0, 0 },
+    { 124, "Mace", 4.50f, 10, 800, 207, 6, 234, 14, 1, 1 },
+    { 125, "Flail", 7.00f, 15, 1000, 207, 6, 234, 8, 0, 1 },
+    { 126, "Warhammer", 7.00f, 20, 1600, 214, 3, 234, 25, 0, 1 },
+    { 127, "Battle Axe", 6.00f, 20, 1200, 207, 4, 234, 0, 1, 0 },
+    { 128, "War Axe", 7.50f, 20, 800, 207, 4, 234, 24, 0, 0 },
+    { 129, "Short Bow", 1.00f, 10, 50, 207, 8, 234, 16, 0, 0 },
+    { 130, "Long Bow", 1.50f, 20, 100, 207, 8, 234, 11, 0, 0 },
+    { 131, "Arrow", 0.25f, 2, 1, 207, 16, 0, 0, 0, 0 }
+};
+
+/*
+ * FormulaHelper.CalculateWeaponMin/MaxDamage, DaggerfallUnityItem's
+ * weapon skills (short blade 28, long blade 29, axe 31, blunt 32,
+ * archery 33), and WeaponBasics' swing files (WEAPON##.CIF: a dagger 02,
+ * a long blade 04, a staff 01, a mace 05, a flail 06, a warhammer 07, an
+ * axe 08, a bow 09). The arrow is no weapon of its own.
+ */
+static const WeaponTemplate g_weapons[] = {
+    { 113, 1, 6, 28, 2 },
+    { 114, 1, 8, 28, 2 },
+    { 115, 1, 8, 32, 1 },
+    { 116, 1, 8, 28, 2 },
+    { 117, 1, 10, 28, 2 },
+    { 118, 1, 12, 29, 4 },
+    { 119, 3, 12, 29, 4 },
+    { 120, 2, 16, 29, 4 },
+    { 121, 3, 16, 29, 4 },
+    { 122, 2, 18, 29, 4 },
+    { 123, 3, 21, 29, 4 },
+    { 124, 1, 12, 32, 5 },
+    { 125, 2, 14, 32, 6 },
+    { 126, 3, 18, 32, 7 },
+    { 127, 2, 12, 31, 8 },
+    { 128, 2, 16, 31, 8 },
+    { 129, 4, 16, 33, 9 },
+    { 130, 4, 18, 33, 9 }
+};
+
+/*
+ * ItemBuilder and GetWeaponMaterialModifier: iron to daedric, the damage
+ * a material adds (ten times it to hit), and its weight, value and
+ * condition multipliers.
+ */
+static const Material g_materials[] = {
+    { 0, "Iron", -1, 4, 1, 4 },
+    { 1, "Steel", 0, 5, 2, 6 },
+    { 2, "Silver", 0, 4, 4, 6 },
+    { 3, "Elven", 1, 4, 8, 8 },
+    { 4, "Dwarven", 2, 3, 16, 12 },
+    { 5, "Mithril", 3, 4, 32, 16 },
+    { 6, "Adamantium", 3, 4, 64, 20 },
+    { 7, "Ebony", 4, 2, 128, 24 },
+    { 8, "Orcish", 5, 4, 256, 28 },
+    { 9, "Daedric", 6, 5, 512, 32 }
+};
+
+const ItemTemplate *classic_items(int *n)
+{
+    *n = (int)(sizeof(g_items) / sizeof(g_items[0]));
+    return g_items;
+}
+
+const WeaponTemplate *classic_weapons(int *n)
+{
+    *n = (int)(sizeof(g_weapons) / sizeof(g_weapons[0]));
+    return g_weapons;
+}
+
+const Material *classic_materials(int *n)
+{
+    *n = (int)(sizeof(g_materials) / sizeof(g_materials[0]));
+    return g_materials;
 }
 
 const EnemyKind *classic_enemies(int *n)

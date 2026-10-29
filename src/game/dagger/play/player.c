@@ -20,6 +20,7 @@ void player_init(Player *p, const Character *sheet)
     p->yaw = 0.0f;
     p->pitch = 0.0f;
     p->sheet = *sheet;
+    inventory_clear(&p->pack);
     p->flying = 0;
 }
 

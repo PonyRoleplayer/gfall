@@ -80,7 +80,7 @@ A place, built: what the engine draws, hears, walks on and uses.
 | `doors` | the doors, levers, passages and people a block names, as usables and movers |
 
 ### `src/game/dagger/play/`
-Daggerfall's game, as `docs/game.md` lays it out: its player, its rules, its screens. Today: `game` (the play state's frame), `player` (a body under `rig_first`), `character` (the sheet), `rules` (classic's sums), `overlay` (the compass, the vitals, the crosshair), `menu` (classic's menus), `keys` (the bindings), `screen` (classic's 320 × 200 on the card). Rules that can be written as plain C (stats, combat sums, saves) live here and are host-tested in `tests/`.
+Daggerfall's game, as `docs/game.md` lays it out: its player, its rules, its screens. Today: `game` (the play state's frame), `player` (a body under `rig_first`), `character` (the sheet), `inventory` (items and the pack), `commands` (the game's console commands), `rules` (classic's sums), `overlay` (the compass, the vitals, the crosshair), `menu` (classic's menus), `keys` (the bindings), `screen` (classic's 320 × 200 on the card). Rules that can be written as plain C (stats, combat sums, saves) live here and are host-tested in `tests/`.
 
 ### `apps/`
 One folder per program, each a `main.c` that brings `WinMainCRTStartup`, except `dfrec`, the `.DAT` tool, a native command-line program built beside hostcheck (`docs/data.md`). An app wires the layers together and owns its window, its loop and its keys. LEVELFALL and RENDERFALL are the engine's diagnostic views (`docs/viewers.md`). GFALL is the game. DATFALL is the race, enemy and weapon browser (`docs/data.md`). SPINTRI stands alone as the Glide demo.

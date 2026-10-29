@@ -63,6 +63,9 @@ Every file starts with a `HEAD` chunk (`rec_head_schema`): rows of role, size an
 | `CLAS` | `class` | `CareerClass` | `careers.c` | the 18 classes, cooked from ARENA2's CLASS00..17.CFG: base attributes, skills, hit points a level, spell points an Intelligence point, resistances |
 | `RACE` | `race` | `CareerRace` | `careers.c` | the 8 races by DFU's ids 1..8: names, the paper doll's pictures, resistances |
 | `SKIL` | `skill` | `CareerSkill` | `careers.c` | the 35 skills: name, governing attribute, how hard to advance |
+| `ITEM` | `item` | `ItemTemplate` | `items.c` | item templates by DFU's ItemTemplates index: name, weight, price, condition, the ground's and the hand's pictures. The 19 weapons, 113..131, for now |
+| `WEAP` | `weapon` | `WeaponTemplate` | `items.c` | what a swung weapon adds, by the same id: its damage range, its skill, its `WEAPON##.CIF`. 18 rows: arrows have none |
+| `MATL` | `material` | `Material` | `items.c` | the 10 materials, iron 0 to daedric 9: the damage modifier (ten times it to hit), and the weight, value and condition multipliers |
 
 `maindat.c`'s `table_at` lists the tables a `.DAT` may carry. A new table means:
 1. its row struct and `RecSchema` in the module that uses it;
@@ -70,7 +73,7 @@ Every file starts with a `HEAD` chunk (`rec_head_schema`): rows of role, size an
 3. its rows in `maindat_import`;
 4. a test.
 
-MAIN.DAT is about 12.8 KB today (`MAINDAT_VERSION` 2).
+MAIN.DAT is about 14.5 KB today (`MAINDAT_VERSION` 3).
 
 **A field's name is under 16 characters**, or a chunk cuts it and it never matches; `check_data` checks every schema's names. The tables planned next, with their sources and order, are in `docs/game.md` (Data): the location index and world map, climates, items, weapons, spells, races, classes, factions, the calendar.
 

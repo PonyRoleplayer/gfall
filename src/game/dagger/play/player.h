@@ -5,6 +5,7 @@
 #include "engine/platform/input.h"
 #include "engine/scene/body.h"
 #include "game/dagger/play/character.h"
+#include "game/dagger/play/inventory.h"
 
 /*
  * The player in the world: a body that walks the place under gravity,
@@ -20,11 +21,13 @@ typedef struct Player {
     float yaw;
     float pitch;
     Character sheet;
+    /* What it carries, and the weapon in hand. */
+    Inventory pack;
     /* 1 while collision is off: the eye flies (player_step's collide 0). */
     int flying;
 } Player;
 
-/* A person's body (WALK_* in walker.h) for this character, standing nowhere yet. */
+/* A person's body (WALK_* in walker.h) for this character, standing nowhere yet, carrying nothing. */
 void player_init(Player *p, const Character *sheet);
 /* Its eye at x, eye_y, z (a start marker's point, or a landing), looking yaw, pitch. */
 void player_place(Player *p, float x, float eye_y, float z, float yaw, float pitch);

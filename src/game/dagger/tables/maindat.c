@@ -4,6 +4,7 @@
 #include "game/dagger/tables/forecast.h"
 #include "game/dagger/tables/calendar.h"
 #include "game/dagger/tables/careers.h"
+#include "game/dagger/tables/items.h"
 #include "game/dagger/formats/classcfg.h"
 #include "engine/assets/vfs.h"
 #include "engine/core/log.h"
@@ -61,6 +62,12 @@ static RecTable *table_at(int i)
         return race_table();
     case 9:
         return skill_table();
+    case 10:
+        return item_table();
+    case 11:
+        return weapon_table();
+    case 12:
+        return material_table();
     default:
         return 0;
     }
@@ -68,7 +75,7 @@ static RecTable *table_at(int i)
 
 int maindat_table_count(void)
 {
-    return 10;
+    return 13;
 }
 
 RecTable *maindat_table(int i)
@@ -222,7 +229,25 @@ int maindat_import(RecPut put, void *ctx)
             return 0;
         }
         skills = classic_skills(&n);
-        return rec_put_rows(put, ctx, &skill_schema, skills, n, 0, 0);
+        if (!rec_put_rows(put, ctx, &skill_schema, skills, n, 0, 0)) {
+            return 0;
+        }
+    }
+    {
+        const ItemTemplate *items;
+        const WeaponTemplate *weapons;
+        const Material *materials;
+
+        items = classic_items(&n);
+        if (!rec_put_rows(put, ctx, &item_schema, items, n, 0, 0)) {
+            return 0;
+        }
+        weapons = classic_weapons(&n);
+        if (!rec_put_rows(put, ctx, &weapon_schema, weapons, n, 0, 0)) {
+            return 0;
+        }
+        materials = classic_materials(&n);
+        return rec_put_rows(put, ctx, &material_schema, materials, n, 0, 0);
     }
 }
 
@@ -289,7 +314,8 @@ int maindat_whole(void)
         && weather_odds_table()->count > 0 && weather_look_table()->count > 0
         && cal_month_table()->count > 0 && cal_weekday_table()->count > 0
         && rec_row(cal_info_table(), 0) != 0 && class_table()->count > 0 && race_table()->count > 0
-        && skill_table()->count == SKILL_COUNT;
+        && skill_table()->count == SKILL_COUNT && item_table()->count > 0 && weapon_table()->count > 0
+        && material_table()->count == MATERIAL_COUNT;
 }
 
 const char *maindat_error(void)
