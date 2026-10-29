@@ -46,6 +46,14 @@ typedef struct CifSet {
 int cif_open(const char *name, CifSet *out);
 void cif_close(CifSet *set);
 const CifFrame *cif_frame(const CifSet *set, int index);
+/*
+ * The smallest rectangle holding every pixel of f that is not 0 (clear):
+ * its left, top, width and height inside the frame. A swing's frames are
+ * all stored at the whole swing's box, and one frame fills about 30% of
+ * it; a picture cropped to this draws the same pixels for less of the
+ * card. 0, and all four 0, when the frame is wholly clear.
+ */
+int cif_bounds(const CifFrame *f, int *x, int *y, int *w, int *h);
 /* Frames of one group. *first is the index of its first frame. */
 int cif_group_span(const CifSet *set, int group, int *first);
 

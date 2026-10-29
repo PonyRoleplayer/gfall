@@ -205,6 +205,57 @@ const CifFrame *cif_frame(const CifSet *set, int index)
     return &set->frame[index];
 }
 
+int cif_bounds(const CifFrame *f, int *x, int *y, int *w, int *h)
+{
+    int x0;
+    int y0;
+    int x1;
+    int y1;
+    int row;
+
+    *x = *y = *w = *h = 0;
+    if (!f || !f->pixels) {
+        return 0;
+    }
+    x0 = f->w;
+    y0 = f->h;
+    x1 = -1;
+    y1 = -1;
+    for (row = 0; row < f->h; row++) {
+        const df_u8 *p;
+        int a;
+        int b;
+
+        p = f->pixels + row * f->w;
+        /* The row's first and last pixel drawn; a clear row is passed over. */
+        for (a = 0; a < f->w && !p[a]; a++) {
+        }
+        if (a == f->w) {
+            continue;
+        }
+        for (b = f->w - 1; !p[b]; b--) {
+        }
+        if (a < x0) {
+            x0 = a;
+        }
+        if (b > x1) {
+            x1 = b;
+        }
+        if (y1 < 0) {
+            y0 = row;
+        }
+        y1 = row;
+    }
+    if (x1 < 0) {
+        return 0;
+    }
+    *x = x0;
+    *y = y0;
+    *w = x1 - x0 + 1;
+    *h = y1 - y0 + 1;
+    return 1;
+}
+
 int cif_group_span(const CifSet *set, int group, int *first)
 {
     int i;

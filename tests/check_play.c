@@ -596,12 +596,67 @@ static void wc_end(void)
 {
 }
 
+/* 1 when every drawn pixel of f lies in its bounds and each edge of them touches one: the crop loses nothing and is tight. */
+static int bounds_exact(const CifFrame *f)
+{
+    int x;
+    int y;
+    int w;
+    int h;
+    int edges;
+    int row;
+    int col;
+
+    if (!cif_bounds(f, &x, &y, &w, &h)) {
+        for (row = 0; row < f->w * f->h; row++) {
+            if (f->pixels[row]) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+    edges = 0;
+    for (row = 0; row < f->h; row++) {
+        for (col = 0; col < f->w; col++) {
+            if (!f->pixels[row * f->w + col]) {
+                continue;
+            }
+            if (col < x || col >= x + w || row < y || row >= y + h) {
+                return 0;
+            }
+            edges |= (col == x) | (col == x + w - 1) << 1 | (row == y) << 2 | (row == y + h - 1) << 3;
+        }
+    }
+    return edges == 15;
+}
+
+/* A frame cropped to its bounds, as weapon.c sends it. */
+static int load_cropped(const CifFrame *f, const df_u8 *rgb)
+{
+    static df_u8 buf[320 * 200];
+    int x;
+    int y;
+    int w;
+    int h;
+    int row;
+
+    if (!cif_bounds(f, &x, &y, &w, &h)) {
+        return 0;
+    }
+    for (row = 0; row < h; row++) {
+        memcpy(buf + row * w, f->pixels + (y + row) * f->w + x, (size_t)w);
+    }
+    return pic_load(buf, w, h, rgb, 1);
+}
+
 /*
- * The largest swing frame of WEAPON00..10.CIF as a cutout on the card:
- * one shows at a time beside the armed picture and the HUD, inside the
- * game's GAME_PICTURE_KB (docs/game.md, Combat).
+ * The largest swing frame of WEAPON00..10.CIF as a cutout on the card,
+ * cropped as weapon.c sends it (*whole: as stored, uncropped): one shows
+ * at a time beside the armed picture and the HUD, inside the game's
+ * GAME_PICTURE_KB (docs/game.md, Combat). *exact: every frame's crop
+ * loses no pixel and is tight.
  */
-static df_u32 largest_swing_frame(void)
+static df_u32 largest_swing_frame(df_u32 *whole, int *exact)
 {
     static const PicOps ops = { wc_bytes, wc_upload, wc_release, wc_begin, wc_palette, wc_quad, wc_end };
     static df_u8 rgb[768];
@@ -609,6 +664,8 @@ static df_u32 largest_swing_frame(void)
     int n;
 
     most = 0;
+    *whole = 0;
+    *exact = 1;
     pic_begin(0, 1024u * 1024u, &ops);
     for (n = 0; n <= 10; n++) {
         char name[16];
@@ -628,10 +685,19 @@ static df_u32 largest_swing_frame(void)
 
             id = pic_load(set.frame[i].pixels, set.frame[i].w, set.frame[i].h, rgb, 1);
             pic_stats(&pics, &on, &used, &room);
+            if (used > *whole) {
+                *whole = used;
+            }
+            pic_free(id);
+            id = load_cropped(&set.frame[i], rgb);
+            pic_stats(&pics, &on, &used, &room);
             if (used > most) {
                 most = used;
             }
             pic_free(id);
+            if (!bounds_exact(&set.frame[i])) {
+                *exact = 0;
+            }
         }
         cif_close(&set);
     }
@@ -658,13 +724,17 @@ static void check_weapon(void)
     int i;
     float each;
     df_u32 most;
+    df_u32 whole;
+    int exact;
 
     each = rules_swing_frame_time(50);
     check_expect(check_near(each, 195.0f / 980.0f, 0.0001f), "weapon: a swing's frame is not 3 (115 - Speed) / 980 s");
     item_make(&it, ITEM_LONGSWORD, MATERIAL_IRON);
     weapon_hold(&it);
-    check_expect(weapon_shown(&pic, &left, &top, &w, &h) && left == 260 && top == 114 && w == 60 && h == 86,
-                 "weapon: the longsword at rest is not WEAPON04.CIF's armed picture at 260, 114");
+    /* WEAPON04.CIF's armed picture is 60 x 86 at 260, 114; it draws cropped inside that. */
+    check_expect(weapon_shown(&pic, &left, &top, &w, &h) && left >= 260 && top >= 114 && left + w <= 320 && top + h <= 200
+                     && w > 30 && h > 40,
+                 "weapon: the longsword at rest is not inside WEAPON04.CIF's armed picture at 260, 114");
     seen = 0;
     ok = 1;
     for (i = 0; i < 40; i++) {
@@ -677,9 +747,9 @@ static void check_weapon(void)
             break;
         }
         seen |= 1 << swing;
-        /* Five frames, each on the screen's bottom, then rest. */
+        /* Five frames, each on classic's screen, then rest. */
         for (f = 0; f < 5; f++) {
-            if (!weapon_shown(&pic, &left, &top, &w, &h) || top + h != 200 || left < 0 || left + w > 320) {
+            if (!weapon_shown(&pic, &left, &top, &w, &h) || top < 0 || top + h > 200 || left < 0 || left + w > 320) {
                 ok = 0;
             }
             weapon_step(each, 50);
@@ -688,21 +758,23 @@ static void check_weapon(void)
             ok = 0;
         }
     }
-    check_expect(ok, "weapon: a swing does not run five frames on the screen's bottom and stop");
+    check_expect(ok, "weapon: a swing does not run five frames on classic's screen and stop");
     check_expect((seen & 0x7E) == 0x7E, "weapon: forty clicks did not show all six swings");
-    check_expect(weapon_shown(&pic, &left, &top, &w, &h) && top == 114, "weapon: the armed picture does not come back");
+    check_expect(weapon_shown(&pic, &left, &top, &w, &h) && top >= 114 && left >= 260, "weapon: the armed picture does not come back");
     weapon_hold(0);
-    check_expect(weapon_shown(&pic, &left, &top, &w, &h) && left == 214 && top == 147 && w == 63 && h == 53,
-                 "weapon: bare hands are not WEAPON10.CIF's fist");
+    check_expect(weapon_shown(&pic, &left, &top, &w, &h) && left >= 214 && top >= 147 && left + w <= 214 + 63 && top + h <= 200,
+                 "weapon: bare hands are not WEAPON10.CIF's fist (63 x 53 at 214, 147)");
     item_make(&it, 129, MATERIAL_IRON);
     weapon_hold(&it);
     check_expect(!weapon_shown(&pic, &left, &top, &w, &h) && weapon_attack() == 1 && weapon_shown(&pic, &left, &top, &w, &h),
                  "weapon: a bow shows at rest, or does not shoot");
     weapon_free();
-    most = largest_swing_frame();
-    check_expect(most > 0 && most <= 160u * 1024u, "weapon: a swing frame takes more than 160 KB of the card");
-    printf("weapon: swings of 5 frames at %.3f s, all six seen, fists, a bow; the largest frame %u bytes on the card\n",
-           each, (unsigned)most);
+    most = largest_swing_frame(&whole, &exact);
+    check_expect(exact, "weapon: a frame's crop loses a pixel or is not tight");
+    check_expect(most > 0 && most <= 96u * 1024u, "weapon: a cropped swing frame takes more than 96 KB of the card");
+    printf("weapon: swings of 5 frames at %.3f s, all six seen, fists, a bow; the largest frame %u bytes on the card"
+           " cropped, %u whole\n",
+           each, (unsigned)most, (unsigned)whole);
 }
 
 void check_play(void)

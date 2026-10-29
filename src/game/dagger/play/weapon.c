@@ -16,13 +16,22 @@
 /* A frame shows at least this long, whatever the Speed. */
 #define FRAME_TIME_MIN 0.02f
 
+/* A picture on the card: its id, and the part of its frame it holds (cif_bounds). */
+typedef struct Shown {
+    int pic;
+    int x;
+    int y;
+    int w;
+    int h;
+} Shown;
+
 static CifSet g_cif;
 /* The file and material held; -1 when none is. */
 static int g_cif_no = -1;
 static int g_metal = -1;
-static int g_idle_pic;
+static Shown g_idle;
 /* The swing frame on the card, and its index in g_cif. */
-static int g_frame_pic;
+static Shown g_frame;
 static int g_frame_at = -1;
 /* The swing running (0: at rest), its first frame, its count, the frame showing, the time on it. */
 static int g_swing;
@@ -37,37 +46,53 @@ static df_u8 *g_buf;
 static df_u32 g_seed = 0x5EED1u;
 static float g_clock;
 
-/* Frame index of g_cif recoloured to the material and sent as a cutout: its picture, or 0. */
-static int load_frame(int index)
+/*
+ * Frame index of g_cif cropped to its drawn pixels (cif_bounds: a swing
+ * frame fills about 30% of the box it is stored in), recoloured to the
+ * material, and sent as a cutout. s->pic is 0 when nothing was sent.
+ */
+static void load_frame(int index, Shown *s)
 {
     const CifFrame *f;
-    int i;
-    int n;
+    int row;
+    int col;
 
+    mem_zero(s, sizeof(*s));
     f = cif_frame(&g_cif, index);
-    if (!f || f->w * f->h > FRAME_MAX) {
-        return 0;
+    if (!f || f->w * f->h > FRAME_MAX || !cif_bounds(f, &s->x, &s->y, &s->w, &s->h)) {
+        return;
     }
     if (!g_buf) {
         g_buf = (df_u8 *)mem_keep(FRAME_MAX);
     }
     if (!g_buf || !g_have_rgb) {
-        return 0;
+        return;
     }
-    n = f->w * f->h;
-    for (i = 0; i < n; i++) {
-        g_buf[i] = (df_u8)cif_metal(f->pixels[i], g_metal);
+    for (row = 0; row < s->h; row++) {
+        const df_u8 *src;
+        df_u8 *dst;
+
+        src = f->pixels + (s->y + row) * f->w + s->x;
+        dst = g_buf + row * s->w;
+        for (col = 0; col < s->w; col++) {
+            dst[col] = (df_u8)cif_metal(src[col], g_metal);
+        }
     }
     /* Index 0 is clear, as round every sprite. */
-    return pic_load(g_buf, f->w, f->h, g_rgb, 1);
+    s->pic = pic_load(g_buf, s->w, s->h, g_rgb, 1);
+}
+
+static void drop(Shown *s)
+{
+    if (s->pic) {
+        pic_free(s->pic);
+    }
+    s->pic = 0;
 }
 
 static void drop_frame(void)
 {
-    if (g_frame_pic) {
-        pic_free(g_frame_pic);
-    }
-    g_frame_pic = 0;
+    drop(&g_frame);
     g_frame_at = -1;
 }
 
@@ -77,17 +102,14 @@ static void show_frame(int index)
         return;
     }
     drop_frame();
-    g_frame_pic = load_frame(index);
+    load_frame(index, &g_frame);
     g_frame_at = index;
 }
 
 void weapon_free(void)
 {
     drop_frame();
-    if (g_idle_pic) {
-        pic_free(g_idle_pic);
-    }
-    g_idle_pic = 0;
+    drop(&g_idle);
     cif_close(&g_cif);
     g_cif_no = -1;
     g_metal = -1;
@@ -121,7 +143,7 @@ void weapon_hold(const Item *it)
     g_metal = metal;
     /* The armed picture, group 0; a bow has none and shows only while it shoots. */
     if (cif_group_span(&g_cif, 0, &first)) {
-        g_idle_pic = load_frame(first);
+        load_frame(first, &g_idle);
     }
 }
 
@@ -187,27 +209,27 @@ int weapon_swinging(void)
 int weapon_shown(int *pic, int *left, int *top, int *w, int *h)
 {
     const CifFrame *f;
-    int id;
+    const Shown *s;
+    int at;
 
-    if (g_swing && g_frame_pic) {
-        id = g_frame_pic;
-        f = cif_frame(&g_cif, g_frame_at);
-    } else if (!g_swing && g_idle_pic) {
-        int first;
-
-        id = g_idle_pic;
-        cif_group_span(&g_cif, 0, &first);
-        f = cif_frame(&g_cif, first);
+    /* The frame's own place on classic's screen, moved by where its crop starts. */
+    if (g_swing && g_frame.pic) {
+        s = &g_frame;
+        at = g_frame_at;
+    } else if (!g_swing && g_idle.pic) {
+        s = &g_idle;
+        cif_group_span(&g_cif, 0, &at);
     } else {
         return 0;
     }
+    f = cif_frame(&g_cif, at);
     if (!f) {
         return 0;
     }
-    *pic = id;
-    *left = f->x;
-    *top = f->y;
-    *w = f->w;
-    *h = f->h;
+    *pic = s->pic;
+    *left = f->x + s->x;
+    *top = f->y + s->y;
+    *w = s->w;
+    *h = s->h;
     return 1;
 }

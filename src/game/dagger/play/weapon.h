@@ -15,8 +15,10 @@
  * (rules_swing_frame_time) and the armed picture comes back.
  *
  * The material recolours the picture (cif_metal on ART_PAL's grey
- * ramp, DATFALL's colours). On the card: the armed picture, and the one
- * frame of the swing showing, sent when it shows (docs/pictures.md).
+ * ramp, DATFALL's colours). Each frame goes on the card cropped to its
+ * drawn pixels (cif_bounds) and is drawn at its place moved by the crop.
+ * On the card: the armed picture, and the one frame of the swing
+ * showing, sent when it shows (docs/pictures.md).
  */
 
 /* Bare hands' file. */
