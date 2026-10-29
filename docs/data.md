@@ -2,7 +2,7 @@
 
 The game's tables are records in small binary files, not C arrays. The first run cooks Daggerfall's own tables into `MAIN.DAT`. Other `.DAT` files, called mods, extend or override them in a load order. Models, pictures, blocks, sounds and songs stay in ARENA2 and are read there as before.
 
-Read this before editing `src/engine/assets/recfile.c`, `src/game/dagger/tables/maindat.c`, `classic.c`, a table's schema (`enemies.c`, `forecast.c`), or `apps/dfrec/`.
+Read this before editing `src/engine/assets/recfile.c`, `src/game/dagger/tables/maindat.c`, `classic.c`, a table's schema (`enemies.c`, `forecast.c`), `apps/dfrec/`, or `apps/datfall/`.
 
 ## The rule
 
@@ -152,6 +152,20 @@ Changing a creature: dump it, edit the text, build a mod into `DATA\`, and add i
 - cooks, dumps, builds again, and checks `same`;
 - builds the example;
 - checks that `tests/data/misspelled.txt` fails on its line 4.
+
+## The viewer: DATFALL
+
+`DATFALL.EXE` (`apps/datfall/main.c`) is a Windows 98 browser of races, enemies and weapons. It is not dfrec, and it is not a chunk editor. It reads. The window is a normal overlapped window, opened maximized, with the system button face, MS Sans Serif, radio buttons, a drop-down, a `SysListView32` and a picture well. The list and the picture are moved in `WM_SIZE`, so a resize reflows them. `comctl32.dll` is loaded at run time for the list (`InitCommonControls`), and GDI the same way for the font and `StretchDIBits`. Neither is a DLL import. The executable imports only `KERNEL32.dll` and `USER32.dll`. It does not use Glide.
+
+`make datfall-check` is the same PE check as `make gfall-check`, then a host program with no window. It still cooks a MAIN.DAT and checks the chunks. It also checks three pictures from `ARENA2`: Breton's body, the rat's front frame, and a dwarven recolour of `WEAPON00.CIF`.
+
+The three views, one at a time:
+
+- **Races.** The eight races from `classic_races` (RaceTemplate, the `RACE` records). The drop-down picks the paper-doll file that race names: `SCBG##I0.IMG` (background), `BODY##I0.IMG` and `BODY##I1.IMG` (body and clothed, male then female), `FACE##I0.CIF` and `FACE##I0`'s female twin. IMG files go through `img_load`. A head is a CIF of several pictures, read by `formats/cif.c`.
+- **Enemies.** Every kind in `classic_enemies` that has pictures (the horse has none). The archive is that kind's `male` field (`TEXTURE.255` for the rat). The drop-down is the view: walking records 0..4, and standing records 15..19 when `has_idle` is set. A frame is `texture_load_frame`. The rat's front record is 8 frames, 65×67.
+- **Weapons.** Every `WEAPON##.CIF` and `WEAPO1##.CIF` in ARENA2. `WEAPON09.CIF` is the bow (it has no armed picture). The others start with the armed picture, an IMG, then the swings. `cif.c` is the reader: there was not one. The drop-down is the material. The armed picture is drawn in ART_PAL indices 112..127, the grey ramp (UESP: iron is grey). `cif_metal` keeps that shade and moves the row: steel and adamantium and ebony stay on the grey row, lighter or darker; silver is row 80, elven a brighter silver, dwarven yellow at 144, mithril blue at 96, orcish green at 160, daedric red at 240. Those rows are the colours UESP names, in `ART_PAL.COL`, not a tint made up for the tool.
+
+Index 0 is drawn as a checker so a cutout reads as empty. A timer (160 ms) advances a picture that has more than one frame. Left and right, while the list has focus, step one frame and leave the timer running. Up and down move the list. Escape quits.
 
 ## Tests
 

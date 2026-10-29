@@ -2,6 +2,7 @@
 # GFALL.EXE: Privateer's Hold, mouse look, WASD, Q up, E down.
 # RENDERFALL.EXE: ARCH3D model list.
 # LEVELFALL.EXE: indoor and outdoor place list. Fly through one.
+# DATFALL.EXE: record-file viewer. DATA\MAIN.DAT, or a file you open.
 # make
 # Mount build/spintri.iso and run D:\SPINTRI.EXE, or mount build/gfall.iso
 # and run D:\GFALL.EXE. The disc is the executables only. ARENA2 stays
@@ -171,7 +172,7 @@ LEVEL_SRC := apps/levelfall/main.c $(ENGINE_SRC) \
 HOST_SRC := $(ENGINE_HOST_SRC) \
 	$(filter-out src/game/dagger/formats/fnt.c,$(DAGGER_SRC)) $(filter-out $(PLAY_DRAW_SRC),$(PLAY_SRC))
 
-.PHONY: all check clean hostcheck datacheck gfall-check renderfall-check levelfall-check deps deps-host layers
+.PHONY: all check clean hostcheck datacheck gfall-check renderfall-check levelfall-check datfall-check deps deps-host layers
 
 # A bare make builds everything; deps alone is the first rule below.
 .DEFAULT_GOAL := all
@@ -206,7 +207,7 @@ deps-host: layers
 layers:
 	sh tools/check-layers
 
-all: deps check build/spintri.iso gfall-check renderfall-check levelfall-check build/gfall.iso
+all: deps check build/spintri.iso gfall-check renderfall-check levelfall-check datfall-check build/gfall.iso
 
 build/SPINTRI.EXE: apps/spintri/main.c third_party/glide2/include/glide.h | deps
 	mkdir -p build
@@ -269,13 +270,52 @@ build/LEVELFALL.EXE: $(LEVEL_SRC) third_party/glide2/include/glide.h | deps
 levelfall-check: build/LEVELFALL.EXE
 	$(call pe_check,build/LEVELFALL.EXE,build/levelfall.dump)
 
-build/gfall.iso: build/GFALL.EXE build/RENDERFALL.EXE build/LEVELFALL.EXE build/hostcheck | deps
+# DATFALL browses races, enemies and weapons (docs/data.md). It does not
+# link Glide. GDI and comctl32 are LoadLibrary'd, so the import table
+# stays KERNEL32 and USER32. The host half checks a Breton body pixel,
+# the rat's front frame and a dwarven weapon colour, without a window.
+DAT_SRC := \
+	apps/datfall/view.c \
+	src/engine/core/mem.c \
+	src/engine/core/log.c \
+	src/engine/assets/recfile.c \
+	src/engine/assets/vfs.c \
+	src/engine/platform/fs.c \
+	src/engine/scene/clock.c \
+	src/engine/scene/weather.c \
+	src/game/dagger/formats/classcfg.c \
+	src/game/dagger/tables/maindat.c \
+	src/game/dagger/tables/classic.c \
+	src/game/dagger/tables/calendar.c \
+	src/game/dagger/tables/careers.c \
+	src/game/dagger/tables/enemies.c \
+	src/game/dagger/tables/forecast.c \
+	src/game/dagger/formats/texture.c \
+	src/game/dagger/formats/palette.c \
+	src/game/dagger/formats/img.c \
+	src/game/dagger/formats/cif.c \
+	src/engine/gfx/mip.c
+
+build/DATFALL.EXE: apps/datfall/main.c $(DAT_SRC) | deps
+	mkdir -p build
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ apps/datfall/main.c $(DAT_SRC) -luser32 -lkernel32 -lgcc
+
+build/datfall-host: apps/datfall/check.c $(DAT_SRC) | deps-host
+	mkdir -p build
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ apps/datfall/check.c $(DAT_SRC)
+
+datfall-check: build/DATFALL.EXE build/datfall-host
+	$(call pe_check,build/DATFALL.EXE,build/datfall.dump)
+	./build/datfall-host
+
+build/gfall.iso: build/GFALL.EXE build/RENDERFALL.EXE build/LEVELFALL.EXE build/DATFALL.EXE build/hostcheck | deps
 	./build/hostcheck
 	$(XORRISO) -as mkisofs -o $@ -V GFALL -J -relaxed-filenames \
 		-graft-points \
 		/GFALL.EXE=build/GFALL.EXE \
 		/RENDERFALL.EXE=build/RENDERFALL.EXE \
-		/LEVELFALL.EXE=build/LEVELFALL.EXE
+		/LEVELFALL.EXE=build/LEVELFALL.EXE \
+		/DATFALL.EXE=build/DATFALL.EXE
 
 clean:
 	rm -rf build
