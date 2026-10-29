@@ -220,7 +220,16 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **An item** (`play/inventory.c`) is a template in a material, by ItemBuilder's SetItemPropertiesByMaterial: value × 3 × `value_q`; weight in whole quarter kilograms × `weight_q` / 4, rounded half to even (Unity's `Mathf.Round`: a steel longsword's 22.5 quarters are 22, 5.5 kg), back to kilograms; condition × `condition_q` / 4.
 - **The pack** is the player's (`Player.pack`): up to 64 items and the one in hand. The start gives the warrior an iron longsword in hand, a stand-in until character creation (P8) gives classic's starting kit.
 - **Console** (`play/commands.c`), in play only: `additem [weapon] [material]` (bare, the weapons and materials there are; the material first or last, iron when none; any case, spaces and dashes ignored: `additem dai katana ebony`), `items` (the pack, `*` the one in hand, with weight, value and condition), `equip n|none`.
-- **Not yet:** the swing over the view, to-hit and damage (the next slice), armour and the rest of the items (P5).
+- **Not yet:** to-hit and damage (the next slice), armour and the rest of the items (P5).
+
+### The weapon on the screen (built: P4's second slice)
+
+- **The file** (`play/weapon.c`): the hand's WEAP `cif`, `WEAPON##.CIF`; bare hands `WEAPON10.CIF`, the fist (`WEAPON11.CIF` is the werecreature's claws). `weapon_hold` follows the pack every frame and reads the file again only when the weapon or its material changes. The file lives in the CIF set's own heap and goes with it (`cif_open`).
+- **Where it stands:** every frame where classic draws it on its 320 × 200 screen, from the file (`CifFrame.x`, `y`: an IMG's own header, a swing's bytes 6 and 8). Every frame's bottom is the screen's. Drawn under the compass and the bars.
+- **A click swings:** one of the file's swings at random (groups 1..6: down, down-left, left, right, down-right, up), not yet the mouse's direction. Its 5 frames show 3 × (115 − Speed) / 980 s each (`rules_swing_frame_time`, DFU's GetMeleeWeaponAnimTime), about a second for Speed 50; then the armed picture, with no frame held (DFU's FPSWeapon). A click during a swing does nothing; the click that closes a menu does not swing. The swing stands still with the world in the console and the menus.
+- **A bow** has no armed picture: nothing shows at rest, and a click plays its one 7-frame shot through. Classic holds the drawn bow until the button is let go: not yet.
+- **The material** recolours ART_PAL's grey ramp, 112..127 (`cif_metal`, DATFALL's colours, which follow UESP's names, not yet classic's dye tables).
+- **The card:** the armed picture is kept; the swing's frame showing is sent when it shows and let go when the next one does (a frame every fifth of a second, at most 130 KB as a cutout: `WEAPON02.CIF`'s widest swing, measured by `check_weapon`). With the HUD (about 25 KB), the armed picture (about 25 KB) and the controls screen (66 KB) that is at most about 246 KB of `GAME_PICTURE_KB`'s 256. A bigger picture the game adds must raise the room.
 
 ## Items, gold, the inventory
 

@@ -5,6 +5,8 @@
 #include "game/dagger/play/overlay.h"
 #include "game/dagger/play/player.h"
 #include "game/dagger/play/rules.h"
+#include "game/dagger/play/screen.h"
+#include "game/dagger/play/weapon.h"
 #include "game/dagger/tables/items.h"
 #include "game/dagger/places/doors.h"
 #include "game/dagger/places/dunstream.h"
@@ -46,10 +48,20 @@ static int on_use(const Scene *scene, const Usable *u, int index)
     return 0;
 }
 
-/* What the game draws over the frame: the HUD in play, then the open menu and its pointer. */
+/* What the game draws over the frame: the weapon and the HUD in play, then the open menu and its pointer. */
 static void draw(void)
 {
     if (g_playing) {
+        int pic;
+        int left;
+        int top;
+        int w;
+        int h;
+
+        /* Under the HUD, as classic: the compass and the bars over the blade. */
+        if (weapon_shown(&pic, &left, &top, &w, &h)) {
+            screen_draw(pic, left, top, w, h);
+        }
         overlay_draw();
     }
     menu_draw();
@@ -138,6 +150,8 @@ void game_enter(const Level *level, Camera *cam, float x, float y, float z, floa
 int game_frame(Camera *cam, const Input *in, float dt)
 {
     int asked;
+    /* The click that closed a menu is not a swing. */
+    int closed;
 
     prof_begin(PROF_PLAY);
     /* A screen before any place: the title or the start menu. */
@@ -146,7 +160,9 @@ int game_frame(Camera *cam, const Input *in, float dt)
         prof_end(PROF_PLAY);
         return asked == MENU_QUIT ? GAME_QUIT : (asked == MENU_START ? GAME_START : GAME_GO_ON);
     }
+    closed = 0;
     if (menu_current() != MENU_NONE) {
+        closed = 1;
         asked = menu_frame(in);
         if (asked == MENU_QUIT) {
             prof_end(PROF_PLAY);
@@ -163,6 +179,12 @@ int game_frame(Camera *cam, const Input *in, float dt)
         if (in->pressed & INPUT_BIT(INPUT_USE)) {
             interact_request_use();
         }
+        /* The weapon in hand follows the pack (equip, additem); a click swings it, at random for now. */
+        weapon_hold(inventory_weapon(&g_player.pack));
+        if (!closed && (in->pressed & INPUT_BIT(INPUT_ATTACK))) {
+            weapon_attack();
+        }
+        weapon_step(dt, g_player.sheet.attribute[ATTR_SPEED]);
         {
             float tx;
             float ty;
@@ -211,6 +233,7 @@ void game_shutdown(void)
 {
     interact_set_handler(0);
     commands_player(0);
+    weapon_free();
     walker_set_game(0);
     gfx_set_extra(0);
     gfx_set_pause(0);

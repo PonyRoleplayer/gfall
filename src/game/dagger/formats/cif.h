@@ -11,6 +11,11 @@
  * frames, as the public image notes describe them. No second IMG reader:
  * the header is the one img.c already reads, repeated.
  *
+ * Each frame knows where classic draws it on its 320 x 200 screen: an
+ * IMG's own left and top (bytes 0 and 2), a swing's from its header
+ * (bytes 6 and 8; byte 4 is the width again in every file seen, 10
+ * unknown). Every weapon frame's bottom is the screen's: top + h = 200.
+ *
  * The armed picture is drawn in ART_PAL's grey ramp, indices 112..127
  * (UESP: iron is grey). cif_metal keeps that shade and moves the row to
  * the palette row of the material's colour (UESP's Weapons table).
@@ -22,6 +27,9 @@
 typedef struct CifFrame {
     int w;
     int h;
+    /* Its left and top on classic's 320 x 200 screen. */
+    int x;
+    int y;
     /* 0 is the armed picture, or every frame of a face file. A swing is 1 and up. */
     int group;
     const df_u8 *pixels;
@@ -34,7 +42,7 @@ typedef struct CifSet {
     void *heap;
 } CifSet;
 
-/* 0 when the file is missing or has no picture. */
+/* 0 when the file is missing or has no picture. The file and its frames live in a heap of the set's own, freed by cif_close. */
 int cif_open(const char *name, CifSet *out);
 void cif_close(CifSet *set);
 const CifFrame *cif_frame(const CifSet *set, int index);

@@ -49,5 +49,11 @@ int rules_max_fatigue(int strength, int endurance);
 int rules_max_magicka(int intelligence, float multiplier);
 /* A fall's damage: 5 health a metre past the first 5 (PlayerHealth.ApplyPlayerFallDamage). */
 int rules_fall_damage(float metres);
+/*
+ * Seconds a frame of a melee swing shows: 3 (115 - Speed) / 980, classic's
+ * frame updates (FormulaHelper.GetMeleeWeaponAnimTime). Every weapon
+ * and bare hands alike; a Speed of 50 swings 5 frames in about a second.
+ */
+float rules_swing_frame_time(int speed);
 
 #endif

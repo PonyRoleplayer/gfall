@@ -42,7 +42,7 @@ static int rle(const df_u8 *src, int n, df_u8 *dst, int need)
     return o == need;
 }
 
-static int add_frame(CifSet *out, int w, int h, int group, const df_u8 *pixels)
+static int add_frame(CifSet *out, int w, int h, int x, int y, int group, const df_u8 *pixels)
 {
     CifFrame *f;
 
@@ -52,6 +52,8 @@ static int add_frame(CifSet *out, int w, int h, int group, const df_u8 *pixels)
     f = &out->frame[out->n++];
     f->w = w;
     f->h = h;
+    f->x = x;
+    f->y = y;
     f->group = group;
     f->pixels = pixels;
     if (group + 1 > out->groups) {
@@ -78,7 +80,7 @@ static int take_images(const df_u8 *b, int n, int *off, CifSet *out)
         if (*off + 12 + len > n) {
             break;
         }
-        if (!add_frame(out, w, h, 0, b + *off + 12)) {
+        if (!add_frame(out, w, h, df_ri16(b + *off), df_ri16(b + *off + 2), 0, b + *off + 12)) {
             break;
         }
         *off += 12 + len;
@@ -132,7 +134,7 @@ static int take_swings(const df_u8 *b, int n, int off, CifSet *out, MemHeap *hea
             if (!pix || !rle(b + off + at, span, pix, w * h)) {
                 continue;
             }
-            add_frame(out, w, h, group, pix);
+            add_frame(out, w, h, df_ri16(b + off + 6), df_ri16(b + off + 8), group, pix);
             used = 1;
         }
         mem_heap_use(prev);
@@ -159,19 +161,21 @@ int cif_open(const char *name, CifSet *out)
     out->n = 0;
     out->groups = 0;
     out->heap = 0;
-    b = vfs_read(name, &n);
-    if (!b || n < 12) {
-        return 0;
-    }
     heap = mem_heap_new();
     if (!heap) {
         return 0;
     }
     out->heap = heap;
-    off = 0;
+    /* The file in the set's heap: the IMG frames point into it, and cif_close frees it. */
     prev = mem_heap_use(heap);
-    take_images(b, (int)n, &off, out);
+    b = vfs_read(name, &n);
     mem_heap_use(prev);
+    if (!b || n < 12) {
+        cif_close(out);
+        return 0;
+    }
+    off = 0;
+    take_images(b, (int)n, &off, out);
     take_swings(b, (int)n, off, out, heap);
     if (out->n < 1) {
         cif_close(out);

@@ -74,6 +74,11 @@ int rules_fall_damage(float metres)
     return metres > FALL_SAFE ? (int)(FALL_PER_METRE * (metres - FALL_SAFE)) : 0;
 }
 
+float rules_swing_frame_time(int speed)
+{
+    return 3.0f * (float)(115 - speed) / 980.0f;
+}
+
 float rules_jump_height(int jumping)
 {
     float v;

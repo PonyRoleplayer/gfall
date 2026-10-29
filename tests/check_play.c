@@ -22,6 +22,9 @@
 #include "game/dagger/play/character.h"
 #include "game/dagger/play/commands.h"
 #include "game/dagger/play/inventory.h"
+#include "game/dagger/play/weapon.h"
+#include "game/dagger/formats/cif.h"
+#include "engine/ui/pic.h"
 #include "game/dagger/tables/items.h"
 #include "engine/ui/cmd.h"
 #include "game/dagger/tables/careers.h"
@@ -544,11 +547,170 @@ static void check_items(void)
     printf("items: %d weapons swung, %d materials; additem, items, equip\n", weapon_table()->count, material_table()->count);
 }
 
+/* A card that takes every tile, for the swing frames' bytes: a tile is its side squared, twice for a cutout. */
+static df_u32 wc_bytes(int side, int cutout)
+{
+    return (df_u32)side * (df_u32)side * (cutout ? 2u : 1u);
+}
+
+static int wc_upload(const df_u8 *texels, int side, int cutout, df_u32 addr, df_u32 *handle)
+{
+    (void)texels;
+    (void)side;
+    (void)cutout;
+    *handle = addr + 1;
+    return 1;
+}
+
+static void wc_release(df_u32 handle)
+{
+    (void)handle;
+}
+
+static void wc_begin(int cutout, int alpha)
+{
+    (void)cutout;
+    (void)alpha;
+}
+
+static void wc_palette(int id, const df_u32 *table)
+{
+    (void)id;
+    (void)table;
+}
+
+static void wc_quad(df_u32 handle, float x0, float y0, float x1, float y1, float s0, float t0, float s1, float t1)
+{
+    (void)handle;
+    (void)x0;
+    (void)y0;
+    (void)x1;
+    (void)y1;
+    (void)s0;
+    (void)t0;
+    (void)s1;
+    (void)t1;
+}
+
+static void wc_end(void)
+{
+}
+
+/*
+ * The largest swing frame of WEAPON00..10.CIF as a cutout on the card:
+ * one shows at a time beside the armed picture and the HUD, inside the
+ * game's GAME_PICTURE_KB (docs/game.md, Combat).
+ */
+static df_u32 largest_swing_frame(void)
+{
+    static const PicOps ops = { wc_bytes, wc_upload, wc_release, wc_begin, wc_palette, wc_quad, wc_end };
+    static df_u8 rgb[768];
+    df_u32 most;
+    int n;
+
+    most = 0;
+    pic_begin(0, 1024u * 1024u, &ops);
+    for (n = 0; n <= 10; n++) {
+        char name[16];
+        CifSet set;
+        int i;
+
+        sprintf(name, "WEAPON%02d.CIF", n);
+        if (!cif_open(name, &set)) {
+            continue;
+        }
+        for (i = 0; i < set.n; i++) {
+            int id;
+            int pics;
+            int on;
+            df_u32 used;
+            df_u32 room;
+
+            id = pic_load(set.frame[i].pixels, set.frame[i].w, set.frame[i].h, rgb, 1);
+            pic_stats(&pics, &on, &used, &room);
+            if (used > most) {
+                most = used;
+            }
+            pic_free(id);
+        }
+        cif_close(&set);
+    }
+    pic_end();
+    return most;
+}
+
+/*
+ * The weapon in hand: its file's armed picture where classic puts it, a
+ * click's random swing on the screen's bottom, its frames at classic's
+ * rate and back to rest; bare hands; a bow at rest shows nothing.
+ */
+static void check_weapon(void)
+{
+    Item it;
+    int pic;
+    int left;
+    int top;
+    int w;
+    int h;
+    int seen;
+    int swing;
+    int ok;
+    int i;
+    float each;
+    df_u32 most;
+
+    each = rules_swing_frame_time(50);
+    check_expect(check_near(each, 195.0f / 980.0f, 0.0001f), "weapon: a swing's frame is not 3 (115 - Speed) / 980 s");
+    item_make(&it, ITEM_LONGSWORD, MATERIAL_IRON);
+    weapon_hold(&it);
+    check_expect(weapon_shown(&pic, &left, &top, &w, &h) && left == 260 && top == 114 && w == 60 && h == 86,
+                 "weapon: the longsword at rest is not WEAPON04.CIF's armed picture at 260, 114");
+    seen = 0;
+    ok = 1;
+    for (i = 0; i < 40; i++) {
+        int f;
+
+        weapon_step(0.013f * (float)(i % 7), 50);
+        swing = weapon_attack();
+        if (swing < 1 || swing > 6 || !weapon_swinging() || weapon_attack()) {
+            ok = 0;
+            break;
+        }
+        seen |= 1 << swing;
+        /* Five frames, each on the screen's bottom, then rest. */
+        for (f = 0; f < 5; f++) {
+            if (!weapon_shown(&pic, &left, &top, &w, &h) || top + h != 200 || left < 0 || left + w > 320) {
+                ok = 0;
+            }
+            weapon_step(each, 50);
+        }
+        if (weapon_swinging()) {
+            ok = 0;
+        }
+    }
+    check_expect(ok, "weapon: a swing does not run five frames on the screen's bottom and stop");
+    check_expect((seen & 0x7E) == 0x7E, "weapon: forty clicks did not show all six swings");
+    check_expect(weapon_shown(&pic, &left, &top, &w, &h) && top == 114, "weapon: the armed picture does not come back");
+    weapon_hold(0);
+    check_expect(weapon_shown(&pic, &left, &top, &w, &h) && left == 214 && top == 147 && w == 63 && h == 53,
+                 "weapon: bare hands are not WEAPON10.CIF's fist");
+    item_make(&it, 129, MATERIAL_IRON);
+    weapon_hold(&it);
+    check_expect(!weapon_shown(&pic, &left, &top, &w, &h) && weapon_attack() == 1 && weapon_shown(&pic, &left, &top, &w, &h),
+                 "weapon: a bow shows at rest, or does not shoot");
+    weapon_free();
+    most = largest_swing_frame();
+    check_expect(most > 0 && most <= 160u * 1024u, "weapon: a swing frame takes more than 160 KB of the card");
+    printf("weapon: swings of 5 frames at %.3f s, all six seen, fists, a bow; the largest frame %u bytes on the card\n",
+           each, (unsigned)most);
+}
+
 void check_play(void)
 {
     check_rules();
     check_character();
     check_items();
+    check_weapon();
     check_hold();
     check_keep();
     check_dunstream();
