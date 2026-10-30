@@ -2325,6 +2325,139 @@ static void check_class_and_wear(void)
     printf("class and wear: limits, expert, groups, condition, swings by the mouse, arrows\n");
 }
 
+/* The senses and the rest of what creatures do beyond sight, by hand and in the hold. */
+static void check_creatures_more(void)
+{
+    Dungeon hold;
+    Level level;
+    Camera cam;
+    float x, y, z, yaw, pitch;
+    Inventory one;
+    Inventory two;
+    int armor[BODY_PARTS];
+    Entity *foe;
+    Entity *classed;
+    Entity *blood;
+    int s;
+    int i;
+
+    /* Stealth: 500 units off, Stealth 30: 500 x 30 >> 10 is 14, doubled. Nearer, or less skilled, less. */
+    check_expect(foes_stealth_chance(500.0f, 30) == 28 && foes_stealth_chance(0.0f, 30) == 0 && foes_stealth_chance(1024.0f, 100) == 200,
+                 "senses: the stealth chance is not classic's");
+    /* Knock-back: at least 15; heavier knocks less far than light, for the same blow. */
+    check_expect(combat_knock_speed(0, 100) == 0 && combat_knock_speed(1, 1000) == 15, "knock: the least is not 15");
+    check_expect(combat_knock_speed(20, 40) >= combat_knock_speed(20, 400), "knock: a heavy creature goes further than a light one");
+
+    keep_clear();
+    combat_reset();
+    foes_reset();
+    if (!dungeon_load(&hold) || !dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
+        check_expect(0, "creatures: the hold's stream did not open");
+        return;
+    }
+    camera_set(&cam, x, y, z, yaw, pitch);
+    dunstream_fill(&cam);
+    loot_new_game(99u);
+
+    foe = 0;
+    classed = 0;
+    for (s = 0; s < stream_slots(); s++) {
+        Entity *ents;
+        int first;
+        int n;
+
+        ents = stream_slot_entities(s, &first, &n);
+        for (i = 0; ents && i < n; i++) {
+            int kind;
+
+            kind = dunstream_kind(&ents[i], 0);
+            if (ents[i].live && kind >= ENEMY_FIRST_CLASS && !classed) {
+                classed = &ents[i];
+            }
+            if (ents[i].live && kind >= 0 && kind < ENEMY_FIRST_CLASS && !foe) {
+                foe = &ents[i];
+            }
+        }
+    }
+    check_expect(foe && classed, "creatures: the hold lacks a monster or a class enemy");
+
+    /* A class enemy's kit: the same each time, a weapon in hand, its armour capped, its level's materials. */
+    if (classed) {
+        loot_class_kit(classed, 5, &one, armor);
+        loot_class_kit(classed, 5, &two, 0);
+        check_expect(one.count == two.count && one.count >= 1 && inventory_weapon(&one) != 0, "creatures: a class enemy's kit is not its own, or has no weapon");
+        for (i = 0; i < BODY_PARTS; i++) {
+            check_expect(armor[i] <= CLASS_ARMOR_CAP, "creatures: a class enemy's armour is past its cap");
+        }
+        /* Its body holds what it wore. */
+        {
+            Inventory on_body;
+            df_u8 origin[INVENTORY_MAX];
+            Keep *row;
+            int worn_found;
+            int k;
+
+            classed->dead = 1;
+            row = keep_get(classed->key, KEEP_ENTITY);
+            row->game[COMBAT_KEEP_LEVEL] = 5;
+            loot_open(classed, 5, &on_body, origin);
+            worn_found = 0;
+            for (k = 0; k < on_body.count; k++) {
+                worn_found += on_body.item[k].template_id == one.item[0].template_id && on_body.item[k].material == one.item[0].material;
+            }
+            check_expect(worn_found > 0, "creatures: a class enemy's body lacks what it wore");
+            classed->dead = 0;
+        }
+    }
+
+    /* Blood: shown on a block's spare effect, its picture read, nothing kept. */
+    if (foe) {
+        const EnemyKind *k;
+
+        k = enemy_kind(dunstream_kind(foe, 0));
+        blood = dunstream_blood(foe->x, foe->y + 30.0f, foe->z, k->blood);
+        check_expect(blood && blood->live && !blood->key.place && !blood->key.thing && blood->pose[ENTITY_WALK].w[0] > 0,
+                     "creatures: no blood showed");
+        check_expect(blood && dunstream_kind(blood, 0) < 0, "creatures: blood was taken for a creature");
+        if (blood) {
+            blood->live = 0;
+        }
+
+        /* A knock-back moves it away from the blow, and it dies away. */
+        foes_alert(foe);
+        {
+            Character sheet;
+            Player p;
+            float was[3];
+            float from[3];
+            float d0;
+            float d1;
+
+            character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Test");
+            player_init(&p, &sheet);
+            /* Far off and out of its sight: only the knock moves it. */
+            player_place(&p, foe->x + 3000.0f, foe->y + 3000.0f, foe->z + 3000.0f, 0.0f, 0.0f);
+            was[0] = foe->x;
+            was[1] = foe->y;
+            was[2] = foe->z;
+            from[0] = foe->x - 20.0f;
+            from[1] = foe->y;
+            from[2] = foe->z;
+            foes_knock(foe, from, 40);
+            for (i = 0; i < 6; i++) {
+                foes_frame(&p, &level.scene, 0.05f);
+            }
+            d0 = foe->x - was[0];
+            d1 = foe->z - was[2];
+            check_expect(d0 * d0 + d1 * d1 > 0.0f && d0 >= 0.0f, "creatures: a knock-back did not move it away from the blow");
+        }
+    }
+    foes_reset();
+    dunstream_close();
+    keep_clear();
+    printf("creatures more: stealth, knock-back, blood, class enemies' kits, bodies with what they wore\n");
+}
+
 /* Rest: its sums by hand, and the three ways driven by clicks and keys. */
 #define REST_WHILE_X 110
 #define REST_HEALED_X 160
@@ -2619,6 +2752,7 @@ void check_play(void)
     check_create();
     check_sheet();
     check_class_and_wear();
+    check_creatures_more();
     check_rest();
     check_save();
     check_hold();

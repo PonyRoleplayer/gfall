@@ -294,7 +294,10 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **Health** is rolled the first time a creature is struck (a monster between ENEM's least and most; a class enemy 10 and a roll of 1..its class's hit points for each level) and kept in its keep row's game bytes (health in two bytes, then 1 once rolled), so it stays wounded or dead as its block goes and comes back.
 - **Struck and living:** it flinches, its hurt pose for half a second. **Killed:** it lies as its body, on the floor under it (a flyer falls), passed through (radius 0); with no body's picture it goes. A body come back with its block is laid again (`combat_frame`).
 - **Sounds** (`play/sfx.c`, DAGGER.SND by DFU's SoundClips): a hit, Hit1..5 (108..112) at the creature; a blow that takes nothing, a parry (Parry1..9, 428..436) from a creature that parries (ENEM's `parries`) struck by a weapon, else the swing; a swing that reaches no creature, the swing: SwingMediumPitch (347) with a weapon, SwingHighPitch (106) bare (DFU's FPSWeapon default and its bare-hands fallback). A creature killed: BodyFall (15) where it lies, our choice; DFU's death sound was not found.
-- **Not yet:** blood and knock-back; creatures of a place loaded whole.
+- **Blood** (`dunstream_blood`): a blow that takes health shows the kind's splash, `ENEM.blood`'s record of TEXTURE.380, at its middle for 0.4 s, on one of its block's 2 spare effects. They have no key, and nothing of them outlives the moment.
+- **Knock-back** (`combat_knock_speed`, `foes_knock`, WeaponManager and EnemyMotor). From the damage and the kind's weight, 15 at least, 40 at most; it slides at up to 25, losing 5 a classic tick, and acts again at 5. The source's summary gave the formula's outline: the inner term of ours is our reading of it, so the shape is classic's, the exact figures unchecked.
+- **Class enemies** wear and carry a kit (`loot_class_kit`, AssignEnemyStartingEquipment), worked out from their key: its armour goes by the part a blow comes at, capped at 60; its weapon sets its blow's damage; its body holds it all. Only two of DFU's variants are used, as EnemyEntity rolls.
+- **Not yet:** creatures of a place loaded whole; a class enemy's poisoned weapon.
 
 ### Creatures awake (built: P4's fourth slice)
 
@@ -309,7 +312,11 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **The console's `tai`** switches them off: no one wakes, moves or strikes, and a swing begun stops. Kept across games.
 - **Far creatures move less often** (`foes_due`). A creature within `FOES_NEAR` (12.8 m) of the player moves every frame; past it every second frame, and past `FOES_FAR` (25.6 m) every fourth, staggered by its mind's number. The time it did not move is kept and spent by its next move, so it covers the same ground. Senses and blows are unaffected: a blow only lands within 2.25 m, and senses keep classic's ticks.
 - **On the 233:** a near mind steps a body (a collision gather and sweep) every frame and looks along a ray every sixth tick; not measured there yet.
-- **Not yet:** hearing, stealth and the give-up search past the last point seen; doors opened or bashed by creatures; ranged attacks and spells; the creature's hurt voice; wandering; creatures of a place loaded whole.
+- **Hearing** (EnemySenses). One that knows of the player, not seeing them, hears them within 25 m, through a door but not a wall, and keeps after them; it cannot swing on hearing alone.
+- **Stealth.** A sleeper within 1024 units may notice the player through anything: once a game minute, a roll against 2 × (distance × Stealth / 1024), so nearness and a poor skill wake it. The roll is worked out from the creature's key and the minute, so nothing is stored. It is one use of Stealth a minute.
+- **The search.** Reaching where the player was last known, and they not there, it walks on along the way they were going, a metre further each time, up to 11, until its give-up count runs out.
+- **Doors.** One that `opens_doors` opens a closed, unlocked door its sight met, from 2 m. Bashing is DFU's Enhanced Combat AI, not classic's: left out.
+- **Not yet:** ranged attacks and spells; the creature's hurt voice. Classic has no wandering.
 
 ### Checked against classic (FALL.EXE, decompiled)
 
@@ -379,14 +386,10 @@ What is built but not whole, and the phase each goes in. Each section above says
 
 | Where | Gap | Phase |
 | --- | --- | --- |
-| Combat | blood and knock-back | P7 |
 | Combat | an arrow lands at once: no missile flies | later |
-| Creatures | hearing and stealth; the search past the last point seen | P7 |
-| Creatures | opening and bashing doors | P7 |
-| Creatures | ranged attacks and spells; a hurt voice; wandering | P9 |
+| Creatures | ranged attacks and spells; a hurt voice | P9 |
 | Creatures | the frame a blow lands on and how often a move sounds are our guesses, not found in classic | - |
 | Creatures | LEVELFALL's view of a creature's state | P7 |
-| Items | class enemies wearing what they carry | P7 |
 | Saves | one slot, overwritten without asking; classic's SAVE00I0.IMG and LOAD00I0.IMG screens, with a slot's name | P7 |
 | Saves | creatures awake come back asleep; the weather is not kept | P8 |
 | Rest | a random encounter while resting; a class with no spell point regeneration | P7, P9 |

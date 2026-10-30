@@ -13,6 +13,12 @@
 #define SEARCH_HALF_MIN 16.0f
 
 #define MAX_ARROWS 20
+/* ItemTemplates' ranges a class enemy's weapon comes from: broadsword to longsword, dagger to shortsword, claymore to battle axe. */
+#define KIT_ONE_HANDED_FIRST 118
+#define KIT_ONE_HANDED_LAST 120
+#define KIT_SHORT_LAST 116
+#define KIT_HEAVY_FIRST 122
+#define KIT_HEAVY_LAST 127
 
 /* RandomArmorMaterial's rolls out of 100: leather up to this, chain up to the next, and plate past it. */
 #define ARMOR_ROLL_LEATHER 69
@@ -152,21 +158,14 @@ static void add_weapon(Inventory *out, int level, Dice *d)
     }
 }
 
-/* A random piece of armour (CreateRandomArmor): any of them alike, leather or chain most often, a variant of those its material has. */
-static void add_armor(Inventory *out, int level, Dice *d)
+/* A piece of this template, in a material by the level (RandomArmorMaterial), a variant of those its material has. 0 when it did not make. */
+static int make_armor(Item *it, int template_id, int level, Dice *d)
 {
-    RecTable *t;
-    const ArmorTemplate *row;
-    Item it;
-    int kind;
     int roll;
     int metal;
     int low;
     int high;
 
-    t = armor_table();
-    kind = dice_roll(d, t->count);
-    row = (const ArmorTemplate *)(t->rows + (df_u32)kind * t->schema->row_size);
     roll = dice_between(d, 1, 100);
     if (roll <= ARMOR_ROLL_LEATHER) {
         metal = MATERIAL_LEATHER;
@@ -175,9 +174,24 @@ static void add_armor(Inventory *out, int level, Dice *d)
     } else {
         metal = loot_metal(level, dice_roll(d, 256));
     }
-    if (item_make(&it, row->id, metal)) {
-        item_variants(&it, &low, &high);
-        it.variant = (df_u8)dice_between(d, low, high);
+    if (!item_make(it, template_id, metal)) {
+        return 0;
+    }
+    item_variants(it, &low, &high);
+    it->variant = (df_u8)dice_between(d, low, high);
+    return 1;
+}
+
+/* A random piece of armour (CreateRandomArmor): any of them alike. */
+static void add_armor(Inventory *out, int level, Dice *d)
+{
+    RecTable *t;
+    const ArmorTemplate *row;
+    Item it;
+
+    t = armor_table();
+    row = (const ArmorTemplate *)(t->rows + (df_u32)dice_roll(d, t->count) * t->schema->row_size);
+    if (make_armor(&it, row->id, level, d)) {
         add_thing(out, &it);
     }
 }
@@ -283,6 +297,66 @@ static df_u32 thing_seed(const Entity *e)
     return mix(g_game_seed ^ e->key.place) ^ e->key.thing;
 }
 
+/* A weapon of a template between these two, in a material by the level, into the pack and worn. */
+static void kit_weapon(Inventory *out, int first, int last, int left_hand, int level, Dice *d)
+{
+    Item it;
+    int i;
+
+    if (!item_make(&it, dice_between(d, first, last), loot_metal(level, dice_roll(d, 256)))) {
+        return;
+    }
+    i = inventory_add(out, &it);
+    if (i >= 0) {
+        out->worn[left_hand ? EQUIP_LEFT_HAND : EQUIP_RIGHT_HAND] = i;
+    }
+}
+
+void loot_class_kit(const Entity *e, int level, Inventory *out, int *armor)
+{
+    /* The pieces rolled for, in EquipSlots' order. */
+    static const short pieces[] = { ITEM_HELM, ITEM_RIGHT_PAULDRON, ITEM_LEFT_PAULDRON, ITEM_CUIRASS, ITEM_GREAVES, ITEM_BOOTS };
+    Dice d;
+    int variant;
+    int chance;
+    int i;
+
+    inventory_clear(out);
+    /* Its own stream of dice: not what the loot table rolls. */
+    dice_seed(&d, thing_seed(e) ^ 0x4B495421u);
+    variant = dice_roll(&d, 2);
+    if (variant == 0) {
+        kit_weapon(out, KIT_ONE_HANDED_FIRST, KIT_ONE_HANDED_LAST, 0, level, &d);
+        if (dice_roll(&d, 2)) {
+            Item shield;
+
+            if (make_armor(&shield, dice_between(&d, ITEM_BUCKLER, ITEM_ROUND_SHIELD), level, &d)) {
+                inventory_wear(out, inventory_add(out, &shield));
+            }
+        } else if (dice_roll(&d, 2)) {
+            kit_weapon(out, ITEM_DAGGER, KIT_SHORT_LAST, 1, level, &d);
+        }
+    } else {
+        kit_weapon(out, KIT_HEAVY_FIRST, KIT_HEAVY_LAST, 0, level, &d);
+    }
+    chance = variant == 0 ? 50 : 75;
+    for (i = 0; i < (int)(sizeof(pieces) / sizeof(pieces[0])); i++) {
+        if (dice_roll(&d, 100) < chance) {
+            Item it;
+
+            if (make_armor(&it, pieces[i], level, &d)) {
+                inventory_wear(out, inventory_add(out, &it));
+            }
+        }
+    }
+    if (armor) {
+        inventory_armor(out, armor);
+        for (i = 0; i < BODY_PARTS; i++) {
+            armor[i] = armor[i] > CLASS_ARMOR_CAP ? CLASS_ARMOR_CAP : armor[i];
+        }
+    }
+}
+
 /* The bits of the things already taken off it. */
 static unsigned taken_bits(const Keep *row)
 {
@@ -322,6 +396,15 @@ int loot_open(Entity *e, int level, Inventory *out, df_u8 *origin)
         row->game[COMBAT_KEEP_LEVEL] = (df_u8)(level > 255 ? 255 : level);
     }
     loot_roll(&rolled, table_of(e), row->game[COMBAT_KEEP_LEVEL], thing_seed(e));
+    /* A class enemy's body also has on it what it wore. */
+    if (!dunstream_treasure(e) && dunstream_kind(e, 0) >= ENEMY_FIRST_CLASS) {
+        Inventory kit;
+
+        loot_class_kit(e, row->game[COMBAT_KEEP_LEVEL], &kit, 0);
+        for (i = 0; i < kit.count; i++) {
+            add_thing(&rolled, &kit.item[i]);
+        }
+    }
     taken = taken_bits(row);
     for (i = 0; i < rolled.count; i++) {
         if (!(taken & (1u << i))) {

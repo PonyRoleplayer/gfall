@@ -61,6 +61,14 @@ int dunstream_spare(const Entity *e);
 #define DUNSTREAM_SPARES 4
 /* The byte of a spare's keep row (Keep.game) that says it is in use: set, it comes back drawn with its block. */
 #define DUNSTREAM_SPARE_USED 15
+/*
+ * A splash of blood at x, y, z, its middle: record of TEXTURE.380, as the kind's
+ * ENEM.blood names it, on one of its block's DUNSTREAM_EFFECTS spare effects.
+ * The entity that shows it, for the game to take down; 0 with none free.
+ * They have no key: nothing about them outlives a moment.
+ */
+#define DUNSTREAM_EFFECTS 2
+Entity *dunstream_blood(float x, float y, float z, int record);
 /* The open dungeon's type (Dungeon.dungeon_type), which names its treasure's loot table; -1 with none open. */
 int dunstream_dungeon_type(void);
 /* A block's side in units: a chunk of the stream, and what stream_origin counts in. */

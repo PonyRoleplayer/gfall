@@ -46,6 +46,17 @@ int loot_metal(int level, int roll);
 /* Rolls a body's things into out, emptied first, from seed: the same seed, table and level give the same things. */
 void loot_roll(Inventory *out, const LootChance *table, int level, df_u32 seed);
 /*
+ * What a class enemy wears and carries (DFU's AssignEnemyStartingEquipment),
+ * worked out from its key like the rest, so it holds the same on its back and
+ * on its body. Variant 0 or 1, even odds: variant 0 a one-handed weapon, half
+ * the time a shield, a quarter a second blade, and each of the helm, pauldrons,
+ * cuirass, greaves and boots at 50%; variant 1 a heavy weapon and each at 75%.
+ * Materials by level, as loot's. armor gets its body parts' values, capped
+ * at CLASS_ARMOR_CAP: EnemyEntity's own cap, so bare is that too.
+ */
+#define CLASS_ARMOR_CAP 60
+void loot_class_kit(const Entity *e, int level, Inventory *out, int *armor);
+/*
  * What the player is looking at within reach and can search, from the eye
  * along the view, no wall between; 0 when nothing. Over the stream's
  * entities.

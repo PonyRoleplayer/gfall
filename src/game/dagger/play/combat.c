@@ -1,5 +1,6 @@
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/foes.h"
+#include "game/dagger/play/loot.h"
 #include "game/dagger/play/sfx.h"
 #include "game/dagger/formats/sndfile.h"
 #include "game/dagger/places/dunstream.h"
@@ -16,8 +17,8 @@
 static const signed char g_swing_hit[7] = { 0, -10, -5, 0, 0, 5, 10 };
 static const signed char g_swing_damage[7] = { 0, 4, 2, 0, 0, -2, -4 };
 
-/* A class enemy wears nothing yet: DFU clamps worn armour to 60, so bare is 60. */
-#define CLASS_ARMOR 60
+/* A class enemy's armour with nothing known of what it wears: DFU's cap, what bare comes to. */
+#define CLASS_ARMOR CLASS_ARMOR_CAP
 /* A body part's armour is five times the kind's ArmorValue (EnemyEntity). */
 #define ARMOR_SCALE 5
 /* The body part a blow comes at (CalculateStruckBodyPart): one of these twenty, alike. */
@@ -33,6 +34,11 @@ static const df_u8 g_struck_part[20] = {
 /* Flinches at once, and how long one shows: the hurt pose's five frames at its ten a second. */
 #define FLINCHES 16
 #define FLINCH_TIME 0.5f
+/* Splashes of blood at once, and how long one shows. */
+#define BLOODS 8
+#define BLOOD_TIME 0.4f
+/* The least a blow knocks back. */
+#define KNOCK_LEAST 15
 /* Off a wall by this much a creature still counts as seen. */
 #define SIGHT_SLACK 4.0f
 
@@ -44,6 +50,13 @@ typedef struct Flinch {
 } Flinch;
 
 static Flinch g_flinch[FLINCHES];
+
+typedef struct Blood {
+    Entity *e;
+    float left;
+} Blood;
+
+static Blood g_blood[BLOODS];
 
 void combat_seed(df_u32 seed)
 {
@@ -80,6 +93,7 @@ void combat_foe(Foe *f, const EnemyKind *kind, int player_level, int behind)
 
     f->kind = kind;
     f->behind = behind;
+    f->weapon = 0;
     if (kind->id >= ENEMY_FIRST_CLASS) {
         f->level = player_level;
         f->armor = CLASS_ARMOR;
@@ -212,6 +226,38 @@ void combat_blow(const Character *pc, const Item *weapon, int swing, const Foe *
     out->damage = damage < 0 ? 0 : damage;
 }
 
+int combat_knock_speed(int damage, int weight)
+{
+    int ten;
+    int two;
+    int amount;
+    int speed;
+
+    if (damage <= 0) {
+        return 0;
+    }
+    weight = weight < 1 ? 1 : weight;
+    ten = damage * 10;
+    two = damage * 2;
+    amount = ((ten - weight) * 256) / (weight + ten) * two;
+    speed = (ten / weight) * (two - amount / 256);
+    return speed < KNOCK_LEAST ? KNOCK_LEAST : speed;
+}
+
+/* A splash of a kind's blood at the creature's middle, taken down again by combat_frame. */
+static void splash(const EnemyKind *kind, const Entity *e, float mid)
+{
+    int i;
+
+    for (i = 0; i < BLOODS; i++) {
+        if (g_blood[i].left <= 0.0f) {
+            g_blood[i].e = dunstream_blood(e->x, mid, e->z, kind->blood);
+            g_blood[i].left = g_blood[i].e ? BLOOD_TIME : 0.0f;
+            return;
+        }
+    }
+}
+
 void combat_foe_blow(const Foe *f, const Character *pc, Blow *out)
 {
     int base;
@@ -235,11 +281,19 @@ void combat_foe_blow(const Foe *f, const Character *pc, Blow *out)
         int hi;
 
         if (f->kind->id >= ENEMY_FIRST_CLASS) {
+            const WeaponTemplate *w;
+            const Material *m;
+
             if (i > 0) {
                 break;
             }
-            lo = f->skill / 10 + 1;
-            hi = f->skill / 5 + 1;
+            /* Its weapon's range and material if it has one, else its bare hands. */
+            w = f->weapon ? weapon_template(f->weapon->template_id) : 0;
+            m = w ? material(f->weapon->material) : 0;
+            lo = w ? w->damage_min + (m ? m->modifier : 0) : f->skill / 10 + 1;
+            hi = w ? w->damage_max + (m ? m->modifier : 0) : f->skill / 5 + 1;
+            lo = lo < 1 ? 1 : lo;
+            hi = hi < lo ? lo : hi;
         } else {
             lo = f->kind->damage_min[i];
             hi = f->kind->damage_max[i];
@@ -323,6 +377,32 @@ int combat_sight(const Scene *scene, const float *a, const float *b)
     return !collide_ray(a, d, len, &t) || t >= len - SIGHT_SLACK;
 }
 
+int combat_ray(const Scene *scene, const float *a, const float *b, float *t)
+{
+    float d[3];
+    float len;
+    int i;
+
+    if (!scene || !collide_use(scene)) {
+        return 0;
+    }
+    collide_set_shape(1.0f, 1.0f);
+    for (i = 0; i < 3; i++) {
+        d[i] = b[i] - a[i];
+    }
+    len = df_sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    if (len < 1.0f) {
+        return 0;
+    }
+    for (i = 0; i < 3; i++) {
+        d[i] /= len;
+    }
+    collide_gather((a[0] < b[0] ? a[0] : b[0]) - 2.0f, (a[1] < b[1] ? a[1] : b[1]) - 2.0f,
+                   (a[2] < b[2] ? a[2] : b[2]) - 2.0f, (a[0] > b[0] ? a[0] : b[0]) + 2.0f,
+                   (a[1] > b[1] ? a[1] : b[1]) + 2.0f, (a[2] > b[2] ? a[2] : b[2]) + 2.0f);
+    return collide_ray(a, d, len, t) && *t < len - SIGHT_SLACK;
+}
+
 /* A creature killed lies as its body, on the floor under it; one with no body's picture goes. */
 static void lay_down(Entity *e)
 {
@@ -389,6 +469,14 @@ static void strike_one(Character *pc, Item *weapon, int swing, Entity *e, const 
     /* Facing away: its forward and the way to the player point apart. */
     behind = df_sin(e->yaw) * (feet[0] - e->x) + df_cos(e->yaw) * (feet[2] - e->z) < 0.0f;
     combat_foe(&f, kind, pc->level, behind);
+    /* A class enemy's armour is what it wears on the part this blow comes at. */
+    if (kind->id >= ENEMY_FIRST_CLASS) {
+        Inventory kit;
+        int armor[BODY_PARTS];
+
+        loot_class_kit(e, pc->level, &kit, armor);
+        f.armor = armor[g_struck_part[combat_roll(20)]];
+    }
     health = health_of(e, &f, &row);
     /* A blow at its back trains the skill, landed or not (FormulaHelper's backstab chance). */
     if (behind) {
@@ -416,6 +504,7 @@ static void strike_one(Character *pc, Item *weapon, int swing, Entity *e, const 
     if (weapon) {
         item_wear_down(weapon, b.damage, combat_roll(100));
     }
+    splash(kind, e, mid);
     if (b.backstab) {
         interact_say("Successful backstab!");
     }
@@ -428,6 +517,7 @@ static void strike_one(Character *pc, Item *weapon, int swing, Entity *e, const 
         sfx_at(SND_BODY_FALL, e->x, e->y, e->z);
     } else {
         flinch(e);
+        foes_knock(e, feet, combat_knock_speed(b.damage, kind->weight));
     }
 }
 
@@ -644,6 +734,14 @@ void combat_frame(float dt)
     int slot;
     int i;
 
+    for (i = 0; i < BLOODS; i++) {
+        if (g_blood[i].left > 0.0f) {
+            g_blood[i].left -= dt;
+            if (g_blood[i].left <= 0.0f && g_blood[i].e) {
+                g_blood[i].e->live = 0;
+            }
+        }
+    }
     for (i = 0; i < FLINCHES; i++) {
         Entity *e;
 
@@ -682,5 +780,8 @@ void combat_reset(void)
 
     for (i = 0; i < FLINCHES; i++) {
         g_flinch[i].left = 0.0f;
+    }
+    for (i = 0; i < BLOODS; i++) {
+        g_blood[i].left = 0.0f;
     }
 }

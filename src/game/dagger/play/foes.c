@@ -1,6 +1,9 @@
 #include "game/dagger/play/foes.h"
 #include "game/dagger/play/combat.h"
+#include "game/dagger/play/loot.h"
 #include "game/dagger/play/rules.h"
+#include "engine/scene/clock.h"
+#include "engine/scene/interact.h"
 #include "game/dagger/play/sfx.h"
 #include "game/dagger/places/dunstream.h"
 #include "game/dagger/formats/sndfile.h"
@@ -20,6 +23,19 @@
 #define POINT_BLANK 10.0f
 /* It stops a little short of reach, so its swing still lands. */
 #define STOP (FOES_MELEE * 0.85f)
+/* A knock-back, classic's speed units (EnemyMotor): the most it starts at, the most it moves at, what a tick takes off, and where it ends. */
+#define KNOCK_MOST 40
+#define KNOCK_MOVES_MOST 25.0f
+#define KNOCK_DECAY 5.0f
+#define KNOCK_ENDS 5
+/* One such unit is 1 / 3.95 m/s (classic's 39.5 to the metre, over ten), in units a second. */
+#define KNOCK_UNITS (RULES_UNITS_PER_M / 3.95f)
+/* Each search goes this much further past the last point, up to the most (a metre a step, EnemyMotor's 11). */
+#define SEARCH_STEP RULES_UNITS_PER_M
+#define SEARCH_MOST 11
+/* A ray that stops within this of a door's sweep stopped at the door; past it, this far on. */
+#define DOOR_SLACK 8.0f
+#define DOOR_THROUGH 48.0f
 /* Sleepers looked at a tick; a mind looks every this many ticks. */
 #define LOOKS_PER_TICK 2
 #define SIGHT_EVERY 6
@@ -51,6 +67,16 @@ typedef struct Mind {
     float move_sound;
     /* Seconds it has not moved for (foes_due): its next move takes them all. */
     float owed;
+    /* The player heard, not seen: it keeps after them but cannot swing. */
+    int hears;
+    /* The way the player was going when last known, across the ground; how far past that it has searched. */
+    float heading[2];
+    int search;
+    /* The door its sight last met, or -1. */
+    int door;
+    /* A knock-back: its speed in classic's units, and which way. */
+    float knock;
+    float knock_dir[2];
 } Mind;
 
 static Mind g_mind[FOES_MINDS];
@@ -58,6 +84,8 @@ static int g_on = 1;
 static float g_ticks;
 /* Frames stepped: which far minds move this one. */
 static int g_frame;
+/* The last game minute a sleeper's notice was rolled against the player: one use of Stealth a minute. */
+static int g_stealth_minute = -1;
 /* The next sleeper to look at, counted across the stream's slots. */
 static int g_scan;
 
@@ -195,6 +223,13 @@ static Mind *wake(Entity *e, int kind)
     m->melee = 0.0f;
     m->swing = -1.0f;
     m->landed = 0;
+    m->hears = 0;
+    m->search = 0;
+    m->heading[0] = 0.0f;
+    m->heading[1] = 0.0f;
+    m->door = -1;
+    m->knock = 0.0f;
+    m->owed = 0.0f;
     m->move_sound = MOVE_SOUND_MIN + (float)combat_roll(100) * (MOVE_SOUND_SPAN / 100.0f);
     k = enemy_kind(kind);
     if (k) {
@@ -221,6 +256,163 @@ void foes_alert(Entity *e)
         m->give_up = FOES_GIVE_UP;
         m->look_in = 0;
     }
+}
+
+void foes_knock(Entity *e, const float *from, int speed)
+{
+    Mind *m;
+    float dx;
+    float dz;
+    float len;
+
+    m = e ? mind_of(e) : 0;
+    if (!m || speed <= KNOCK_ENDS) {
+        return;
+    }
+    dx = e->x - from[0];
+    dz = e->z - from[2];
+    len = df_sqrt(dx * dx + dz * dz);
+    if (len < 1.0f) {
+        return;
+    }
+    m->knock_dir[0] = dx / len;
+    m->knock_dir[1] = dz / len;
+    m->knock = (float)(speed > KNOCK_MOST ? KNOCK_MOST : speed);
+}
+
+int foes_stealth_chance(float distance, int stealth)
+{
+    return 2 * ((df_ifloor(distance) * stealth) >> 10);
+}
+
+/* A number for this creature and this game minute: the same however often it is asked within the minute. */
+static int minute_roll(const Entity *e, int minute)
+{
+    df_u32 h;
+
+    h = e->key.thing ^ ((df_u32)minute * 0x9E3779B1u);
+    h ^= h >> 15;
+    h *= 0x85EBCA6Bu;
+    h ^= h >> 13;
+    return (int)(h % 100u);
+}
+
+/* Whether a sleeper notices the player, sight or no sight, this minute. */
+static int notices(const Entity *e, Player *p, float distance)
+{
+    int minute;
+
+    if (distance > FOES_STEALTH) {
+        return 0;
+    }
+    minute = df_ifloor(clock_minute());
+    /* One use of the skill a game minute that it is rolled against. */
+    if (minute != g_stealth_minute) {
+        g_stealth_minute = minute;
+        character_tally(&p->sheet, SKILL_STEALTH, 1);
+    }
+    return minute_roll(e, minute) >= foes_stealth_chance(distance, p->sheet.skill[SKILL_STEALTH]);
+}
+
+/* The door in the way at a point its ray stopped, by number; -1 for none. */
+static int door_at(const Scene *scene, const float *at)
+{
+    int i;
+
+    for (i = 0; i < scene->nmovers; i++) {
+        const Mover *d;
+        Bound b;
+
+        d = &scene->movers[i];
+        if (!d->inst || !d->door || !mover_sweep(d, &b)) {
+            continue;
+        }
+        if (absf(at[0] - b.cx) <= b.ex + DOOR_SLACK && absf(at[1] - b.cy) <= b.ey + DOOR_SLACK
+            && absf(at[2] - b.cz) <= b.ez + DOOR_SLACK) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/*
+ * Whether it hears the player: within reach, through a door but not a wall
+ * (EnemySenses' ray meets only static geometry). A ray that stops at a door
+ * is tried again from past it, and the door is remembered.
+ */
+static int hears_player(Mind *m, const Scene *scene, const float *from, const float *peye)
+{
+    float d[3];
+    float len;
+    float t;
+    float at[3];
+    int door;
+    int i;
+
+    for (i = 0; i < 3; i++) {
+        d[i] = peye[i] - from[i];
+    }
+    len = df_sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    if (len > FOES_HEARING || len < 1.0f || !combat_ray(scene, from, peye, &t)) {
+        return len <= FOES_HEARING;
+    }
+    for (i = 0; i < 3; i++) {
+        d[i] /= len;
+        at[i] = from[i] + d[i] * t;
+    }
+    door = door_at(scene, at);
+    if (door < 0) {
+        return 0;
+    }
+    m->door = door;
+    for (i = 0; i < 3; i++) {
+        at[i] += d[i] * DOOR_THROUGH;
+    }
+    return combat_sight(scene, at, peye);
+}
+
+/* A door it knows of within reach, closed and not locked, opens, if it is a creature that can. */
+static void open_door(Mind *m, const Scene *scene, const EnemyKind *k)
+{
+    const Mover *d;
+    Bound b;
+    float dx;
+    float dz;
+
+    if (!k || !k->opens_doors || m->door < 0 || m->door >= scene->nmovers) {
+        return;
+    }
+    d = &scene->movers[m->door];
+    if (!d->inst || !d->door || d->lock > 0 || mover_at_end(d) || mover_busy(scene, m->door) || !mover_sweep(d, &b)) {
+        return;
+    }
+    dx = b.cx - m->e->x;
+    dz = b.cz - m->e->z;
+    if (dx * dx + dz * dz <= FOES_DOOR_REACH * FOES_DOOR_REACH) {
+        mover_start(scene, m->door);
+        m->door = -1;
+    }
+}
+
+/* What it knows of the player now: where they are, and the way they were going. */
+static void know_player(Mind *m, const float *pfeet)
+{
+    float dx;
+    float dz;
+    float len;
+
+    dx = pfeet[0] - m->last[0];
+    dz = pfeet[2] - m->last[2];
+    len = df_sqrt(dx * dx + dz * dz);
+    if (len > 1.0f) {
+        m->heading[0] = dx / len;
+        m->heading[1] = dz / len;
+    }
+    m->last[0] = pfeet[0];
+    m->last[1] = pfeet[1];
+    m->last[2] = pfeet[2];
+    m->give_up = FOES_GIVE_UP;
+    m->search = 0;
 }
 
 /* Entity number n across the stream's slots, or 0. */
@@ -251,7 +443,7 @@ static Entity *nth(int n, int *total)
 }
 
 /* A sleeper looks: the player within sight, before it, no wall between their eyes. */
-static void look_for(const Player *p, const Scene *scene, const float *peye)
+static void look_for(Player *p, const Scene *scene, const float *peye)
 {
     int tries;
 
@@ -263,6 +455,8 @@ static void look_for(const Player *p, const Scene *scene, const float *peye)
         float dz;
         int total;
         int kind;
+        int far;
+        int seen;
 
         e = nth(g_scan, &total);
         g_scan = total ? (g_scan + 1) % total : 0;
@@ -277,16 +471,15 @@ static void look_for(const Player *p, const Scene *scene, const float *peye)
         dx = peye[0] - eye[0];
         dy = peye[1] - eye[1];
         dz = peye[2] - eye[2];
-        /* 180 degrees: anything not behind it. */
-        if (dx * dx + dy * dy + dz * dz > FOES_SIGHT * FOES_SIGHT || df_sin(e->yaw) * dx + df_cos(e->yaw) * dz < 0.0f) {
-            continue;
-        }
-        if (combat_sight(scene, eye, peye)) {
+        /* 180 degrees: anything not behind it; or, sight or no sight, it notices the player. */
+        far = dx * dx + dy * dy + dz * dz > FOES_SIGHT * FOES_SIGHT;
+        seen = !far && df_sin(e->yaw) * dx + df_cos(e->yaw) * dz >= 0.0f && combat_sight(scene, eye, peye);
+        if (seen || (!far && notices(e, p, df_sqrt(dx * dx + dz * dz)))) {
             Mind *m;
 
             m = wake(e, kind);
             if (m) {
-                m->sees = 1;
+                m->sees = seen;
                 m->last[0] = p->body.feet[0];
                 m->last[1] = p->body.feet[1];
                 m->last[2] = p->body.feet[2];
@@ -325,12 +518,11 @@ static void think(Mind *m, const Player *p, const Scene *scene, const float *pey
         m->look_in = SIGHT_EVERY;
         eye_of(e, eye);
         m->sees = combat_sight(scene, eye, peye);
+        m->hears = !m->sees && hears_player(m, scene, eye, peye);
     }
-    if (m->sees) {
-        m->give_up = FOES_GIVE_UP;
-        m->last[0] = p->body.feet[0];
-        m->last[1] = p->body.feet[1];
-        m->last[2] = p->body.feet[2];
+    open_door(m, scene, enemy_kind(m->kind));
+    if (m->sees || m->hears) {
+        know_player(m, p->body.feet);
     } else if (--m->give_up <= 0) {
         /* Lost: it stands where it is, asleep again until it sees the player. */
         e->moving = 0;
@@ -370,6 +562,7 @@ static int land(Mind *m, Player *p)
     Entity *e;
     Foe f;
     Blow b;
+    Inventory kit;
     float dx;
     float dz;
     float dist;
@@ -388,6 +581,11 @@ static int land(Mind *m, Player *p)
         return 0;
     }
     combat_foe(&f, k, p->sheet.level, 0);
+    /* A class enemy strikes with what it carries (loot_class_kit). */
+    if (k->id >= ENEMY_FIRST_CLASS) {
+        loot_class_kit(e, p->sheet.level, &kit, 0);
+        f.weapon = inventory_weapon(&kit);
+    }
     combat_foe_blow(&f, &p->sheet, &b);
     /* A blow come at the player trains Dodging, hit or not (EnemyAttack.ApplyDamageToPlayer). */
     character_tally(&p->sheet, SKILL_DODGING, 1);
@@ -415,6 +613,19 @@ static int act(Mind *m, Player *p, const Scene *scene, float dt)
     e = m->e;
     if (m->melee > 0.0f) {
         m->melee -= dt;
+    }
+    /* Knocked back: it slides, dying away a little each classic tick, and does nothing else. */
+    if (m->knock > KNOCK_ENDS) {
+        float ground;
+
+        ground = (m->knock > KNOCK_MOVES_MOST ? KNOCK_MOVES_MOST : m->knock) * KNOCK_UNITS * dt;
+        body_step(&m->body, scene, m->knock_dir[0] * ground, m->knock_dir[1] * ground, dt);
+        e->x = m->body.feet[0];
+        e->y = m->body.feet[1];
+        e->z = m->body.feet[2];
+        m->knock -= KNOCK_DECAY * (dt / FOES_TICK);
+        e->moving = 0;
+        return 0;
     }
     if (m->swing >= 0.0f) {
         int frame;
@@ -449,6 +660,12 @@ static int act(Mind *m, Player *p, const Scene *scene, float dt)
     dist = df_sqrt(dx * dx + dz * dz);
     /* Near enough (in reach of the player, or at where it saw them): it stands and faces. */
     if (dist <= (m->sees ? STOP : m->body.radius)) {
+        /* At where the player was last known and they are not here: on past it, along the way they were going. */
+        if (!m->sees && !m->hears && m->search < SEARCH_MOST) {
+            m->search++;
+            m->last[0] += m->heading[0] * SEARCH_STEP * (float)m->search;
+            m->last[2] += m->heading[1] * SEARCH_STEP * (float)m->search;
+        }
         e->moving = 0;
         return 0;
     }

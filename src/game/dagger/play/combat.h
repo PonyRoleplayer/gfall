@@ -32,8 +32,9 @@
  * A blow's damage wears the weapon down (item_wear_down), a creature's the
  * armour it lands on.
  *
- * Not yet: blood, knock-back, class enemies' worn armour (60, as bare, until
- * they carry things).
+ * A class enemy wears what loot_class_kit says, and a blow comes at one of
+ * its body parts as one comes at the player's. A blow that takes health
+ * throws up its kind's blood and knocks it back.
  */
 
 /*
@@ -67,6 +68,8 @@ typedef struct Foe {
     int dodging;
     /* 1 when it faces away from the attacker. */
     int behind;
+    /* A class enemy's weapon, or 0: its blow rolls that weapon's damage. */
+    const Item *weapon;
 } Foe;
 
 /* What a blow did. */
@@ -84,6 +87,11 @@ typedef struct Blow {
     int part;
 } Blow;
 
+/*
+ * How hard a blow knocks a creature back, classic's speed units (WeaponManager):
+ * from the damage and its weight, 15 at least. foes.c moves it.
+ */
+int combat_knock_speed(int damage, int weight);
 /* The game's dice: 0..n-1. Seeded to make tests repeat. */
 void combat_seed(df_u32 seed);
 int combat_roll(int n);
@@ -135,6 +143,8 @@ int combat_ray_box(const float *eye, const float *dir, const float *low, const f
 int combat_reaches(const Scene *scene, const float *feet, const float *eye, float yaw, const Entity *e);
 /* 1 when no wall of scene stands between a and b (its collision, a thin ray): what sees and strikes. */
 int combat_sight(const Scene *scene, const float *a, const float *b);
+/* 1 when a ray from a to b meets a wall of scene, and how far along in *t. */
+int combat_ray(const Scene *scene, const float *a, const float *b, float *t);
 /* A frame: flinches run out, bodies lie as bodies (a dead creature come back with its block). */
 void combat_frame(float dt);
 /* Every flinch forgotten: a new place. */

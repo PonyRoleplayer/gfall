@@ -46,6 +46,9 @@
 #define ENTER_RECORD 8
 #define START_RECORD 10
 #define MARKER_HALF 20.0f
+/* The archive of blood's splashes, and how fast one plays. */
+#define BLOOD_ARCHIVE 380
+#define BLOOD_RATE 12
 /* As world.c: the flames' frames, a flame's light flickering, the creatures' poses and floors. */
 #define LIGHT_FLATS 210
 #define FLAME_RATE 12
@@ -434,6 +437,9 @@ static void hold_pictures(Chunk *c)
             const EnemyKind *ek;
 
             ek = enemy_kind(kind);
+            if (ek) {
+                hold(c, wres_slot(BLOOD_ARCHIVE, ek->blood, WRES_SPRITE));
+            }
             if (ek && ek->corpse_archive) {
                 hold(c, wres_slot(ek->corpse_archive, ek->corpse_record, WRES_SPRITE));
             }
@@ -745,6 +751,16 @@ static void place_treasure(Chunk *c, StreamOut *out)
         e->z = BLOCK * 0.5f;
         e->key.place = g_keep_place;
         e->key.thing = ((df_u32)c->b << 24) | (SPARE_THING + (df_u32)i);
+        out->entities_n++;
+    }
+    /* A splash's places: not drawn, no key, their pictures chosen when one is shown. */
+    for (i = 0; i < DUNSTREAM_EFFECTS && g_keep_place && out->entities_n < CAP_ENTITIES; i++) {
+        Entity *e;
+
+        e = &out->entities[out->entities_n];
+        entity_init(e);
+        e->x = BLOCK * 0.5f;
+        e->z = BLOCK * 0.5f;
         out->entities_n++;
     }
 }
@@ -1186,6 +1202,61 @@ int dunstream_spare(const Entity *e)
     below = e->key.thing & 0xFFFFFFu;
     return g_open && g_keep_place && e->key.place == g_keep_place && below >= SPARE_THING
            && below < SPARE_THING + DUNSTREAM_SPARES;
+}
+
+Entity *dunstream_blood(float x, float y, float z, int record)
+{
+    Entity *best;
+    float best_at;
+    df_u16 w;
+    df_u16 h;
+    int picture;
+    int slot;
+
+    picture = wres_slot(BLOOD_ARCHIVE, record, WRES_SPRITE);
+    if (!g_open || !g_keep_place || picture < 0 || !size_of(picture, &w, &h)) {
+        return 0;
+    }
+    best = 0;
+    best_at = 0.0f;
+    for (slot = 0; slot < stream_slots(); slot++) {
+        Entity *ents;
+        int first;
+        int n;
+        int i;
+
+        ents = stream_slot_entities(slot, &first, &n);
+        for (i = 0; ents && i < n; i++) {
+            float dx;
+            float dz;
+            float at;
+
+            /* In a keyed dungeon the only entities with no key are these. */
+            if (ents[i].live || ents[i].key.place || ents[i].key.thing) {
+                continue;
+            }
+            dx = ents[i].x - x;
+            dz = ents[i].z - z;
+            at = dx * dx + dz * dz;
+            if (!best || at < best_at) {
+                best = &ents[i];
+                best_at = at;
+            }
+        }
+    }
+    if (!best) {
+        return 0;
+    }
+    entity_init(best);
+    best->pose[ENTITY_WALK].slot[0] = (df_u16)picture;
+    best->pose[ENTITY_WALK].w[0] = w;
+    best->pose[ENTITY_WALK].h[0] = h;
+    best->pose[ENTITY_WALK].rate = BLOOD_RATE;
+    best->x = x;
+    best->y = y - (float)h * 0.5f;
+    best->z = z;
+    best->live = 1;
+    return best;
 }
 
 int dunstream_dungeon_type(void)
