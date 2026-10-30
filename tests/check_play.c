@@ -937,6 +937,8 @@ static void check_combat(void)
         Entity *target;
         KeepKey key;
         const Keep *row;
+        float feet[3];
+        float eye[3];
         int struck;
         int flinched;
         int s;
@@ -966,21 +968,23 @@ static void check_combat(void)
                 }
                 for (side = 0; side < 4 && !target; side++) {
                     float a;
-                    float ex;
-                    float ez;
-                    float ey;
 
                     a = (float)side * (DF_TAU / 4.0f);
-                    ex = ents[i].x - df_sin(a) * 50.0f;
-                    ez = ents[i].z - df_cos(a) * 50.0f;
-                    ey = ents[i].y + entity_height(&ents[i]) * 0.5f;
-                    pc.fatigue = pc.fatigue_max;
-                    if (combat_strike(&pc, &sword, 3, &level.scene, ex, ey, ez, a, 0.0f)) {
+                    feet[0] = ents[i].x - df_sin(a) * 50.0f;
+                    feet[1] = ents[i].y;
+                    feet[2] = ents[i].z - df_cos(a) * 50.0f;
+                    eye[0] = feet[0];
+                    eye[1] = feet[1] + WALK_EYE;
+                    eye[2] = feet[2];
+                    if (combat_reaches(&level.scene, feet, eye, a, &ents[i])) {
+                        /* Classic's arc: 40 degrees off it is out, 30 off it is in. */
+                        check_expect(!combat_reaches(&level.scene, feet, eye, a + 40.0f * DF_TAU / 360.0f, &ents[i])
+                                         && combat_reaches(&level.scene, feet, eye, a - 30.0f * DF_TAU / 360.0f, &ents[i]),
+                                     "combat: the strike's arc is not classic's 35 degrees");
+                        pc.fatigue = pc.fatigue_max;
+                        combat_strike(&pc, &sword, 3, &level.scene, feet, eye, a);
                         target = &ents[i];
                         key = ents[i].key;
-                        x = ex;
-                        y = ey;
-                        z = ez;
                         yaw = a;
                     }
                 }
@@ -995,7 +999,7 @@ static void check_combat(void)
         flinched = 0;
         combat_seed(11);
         for (i = 0; i < 400 && !target->dead; i++) {
-            combat_strike(&pc, &sword, 3, &level.scene, x, y, z, yaw, 0.0f);
+            combat_strike(&pc, &sword, 3, &level.scene, feet, eye, yaw);
             if (!target->dead && target->act == ENTITY_HURT) {
                 flinched = 1;
                 combat_frame(1.0f);
@@ -1011,11 +1015,11 @@ static void check_combat(void)
                      "combat: a dead creature does not lie as its body");
         check_expect(flinched || !target->pose[ENTITY_HURT].w[0], "combat: a creature struck and living did not flinch");
         /* Its block dropped and back: the body still a body. */
-        camera_set(&cam, x + 8.0f * 2048.0f, y, z, yaw, 0.0f);
+        camera_set(&cam, eye[0] + 8.0f * 2048.0f, eye[1], eye[2], yaw, 0.0f);
         for (i = 0; i < 200; i++) {
             dunstream_update(&cam, 50.0f);
         }
-        camera_set(&cam, x, y, z, yaw, 0.0f);
+        camera_set(&cam, eye[0], eye[1], eye[2], yaw, 0.0f);
         dunstream_fill(&cam);
         combat_frame(0.0f);
         target = 0;

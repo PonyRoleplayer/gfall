@@ -14,8 +14,10 @@
  * CalculateSuccessfulHit, CalculateWeaponAttackDamage, EnemyEntity).
  * Read docs/game.md (Combat) before editing.
  *
- * A swing strikes once, on its hit frame (weapon_hit): the nearest
- * creature within reach in front of the eye that no wall hides. The
+ * A swing strikes once, on its hit frame (weapon_hit): every creature
+ * within reach and the arc of the player's facing (COMBAT_REACH,
+ * COMBAT_ARC) that no wall hides from the eye, each its own blow, as
+ * classic's FALL.EXE does. The
  * to-hit and damage rolls are this file's; a creature's health is kept
  * in its keep row's game bytes (keep.h), rolled the first time it is
  * struck, so a wounded or dead creature stays so when its block is
@@ -32,8 +34,14 @@
  * they carry things).
  */
 
-/* Reach: DFU's 2.25 m and its 0.25 m sweep, in units. */
-#define COMBAT_REACH (2.5f * 40.0f)
+/*
+ * Classic's reach (FALL.EXE): feet to feet under 91 units (2.25 m), and
+ * within 200 of a turn's 2048 (35.156 degrees) of the attacker's facing
+ * on the ground; nearer than 11 units, any way.
+ */
+#define COMBAT_REACH 90.0f
+#define COMBAT_POINT_BLANK 10.0f
+#define COMBAT_ARC (200.0f / 2048.0f * DF_TAU)
 /* Fatigue a swing spends, in 64ths (DFU's swingWeaponFatigueLoss, raw). */
 #define COMBAT_SWING_FATIGUE 11
 
@@ -93,13 +101,16 @@ void combat_foe_blow(const Foe *f, const Character *pc, Blow *out);
 #define COMBAT_PLAYER_ARMOR 100
 
 /*
- * The strike on a swing's hit frame: the creature in reach (as above) of
- * the eye looking yaw, pitch, struck by combat_blow, hurt or killed. Its
- * fatigue spent either way. 1 when a creature was in reach. The walls
- * are scene's collision (collide_use), as rig_third's ray reads them.
+ * The strike on a swing's hit frame from the player's feet and eye,
+ * facing yaw: every creature in reach (as above), struck by combat_blow,
+ * hurt or killed. Its fatigue spent either way. How many were struck.
+ * The walls are scene's collision (collide_use), as rig_third's ray
+ * reads them.
  */
-int combat_strike(Character *pc, const Item *weapon, int swing, const Scene *scene, float x, float y, float z,
-                  float yaw, float pitch);
+int combat_strike(Character *pc, const Item *weapon, int swing, const Scene *scene, const float *feet,
+                  const float *eye, float yaw);
+/* 1 when creature e is one combat_strike would strike from feet and eye facing yaw. */
+int combat_reaches(const Scene *scene, const float *feet, const float *eye, float yaw, const Entity *e);
 /* 1 when no wall of scene stands between a and b (its collision, a thin ray): what sees and strikes. */
 int combat_sight(const Scene *scene, const float *a, const float *b);
 /* A frame: flinches run out, bodies lie as bodies (a dead creature come back with its block). */

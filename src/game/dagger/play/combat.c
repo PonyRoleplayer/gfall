@@ -355,14 +355,95 @@ static void flinch(Entity *e)
     }
 }
 
-int combat_strike(Character *pc, const Item *weapon, int swing, const Scene *scene, float x, float y, float z,
-                  float yaw, float pitch)
+/* One creature struck: the blow rolled, its sound, its health; a flinch or its body. */
+static void strike_one(Character *pc, const Item *weapon, int swing, Entity *e, const float *feet)
 {
-    Entity *best;
-    float best_along;
-    float eye[3];
-    float fwd[3];
-    float cp;
+    const EnemyKind *kind;
+    Foe f;
+    Blow b;
+    Keep *row;
+    int health;
+    int behind;
+    float mid;
+
+    kind = enemy_kind(dunstream_kind(e, 0));
+    if (!kind) {
+        return;
+    }
+    mid = e->y + entity_height(e) * 0.5f;
+    /* Facing away: its forward and the way to the player point apart. */
+    behind = df_sin(e->yaw) * (feet[0] - e->x) + df_cos(e->yaw) * (feet[2] - e->z) < 0.0f;
+    combat_foe(&f, kind, pc->level, behind);
+    health = health_of(e, &f, &row);
+    combat_blow(pc, weapon, swing, &f, &b);
+    /* Struck at all, it knows: passive or asleep, it turns on the player. */
+    foes_alert(e);
+    if (b.ineffective) {
+        /* Classic's own line (FALL.EXE); DFU says "This weapon has no effect." */
+        interact_say("The material of the weapon you are using is ineffective.");
+        sfx_play(weapon ? SND_SWING_MEDIUM : SND_SWING_HIGH);
+        return;
+    }
+    if (!b.hit || b.damage <= 0 || !row) {
+        /* Nothing taken: a weapon on a creature that parries rings; anything else whistles. */
+        if (weapon && kind->parries) {
+            sfx_at(sfx_pick(SND_PARRY_FIRST, SND_PARRIES), e->x, mid, e->z);
+        } else {
+            sfx_play(weapon ? SND_SWING_MEDIUM : SND_SWING_HIGH);
+        }
+        return;
+    }
+    sfx_at(sfx_pick(SND_HIT_FIRST, SND_HITS), e->x, mid, e->z);
+    if (b.backstab) {
+        interact_say("Successful backstab!");
+    }
+    health -= b.damage;
+    set_health(row, health);
+    if (health <= 0) {
+        lay_down(e);
+        sfx_at(SND_BODY_FALL, e->x, e->y, e->z);
+    } else {
+        flinch(e);
+    }
+}
+
+int combat_reaches(const Scene *scene, const float *feet, const float *eye, float yaw, const Entity *e)
+{
+    float d[3];
+    float dist;
+    float mid[3];
+
+    if (!e->live || e->dead || dunstream_kind(e, 0) < 0) {
+        return 0;
+    }
+    d[0] = e->x - feet[0];
+    d[1] = e->y - feet[1];
+    d[2] = e->z - feet[2];
+    dist = df_sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    if (dist > COMBAT_REACH) {
+        return 0;
+    }
+    if (dist > COMBAT_POINT_BLANK) {
+        float off;
+
+        off = df_wrap_tau(df_atan2(d[0], d[2]) - yaw);
+        if (off > DF_TAU * 0.5f) {
+            off = DF_TAU - off;
+        }
+        if (off > COMBAT_ARC) {
+            return 0;
+        }
+    }
+    mid[0] = e->x;
+    mid[1] = e->y + entity_height(e) * 0.5f;
+    mid[2] = e->z;
+    return combat_sight(scene, eye, mid);
+}
+
+int combat_strike(Character *pc, const Item *weapon, int swing, const Scene *scene, const float *feet,
+                  const float *eye, float yaw)
+{
+    int struck;
     int slot;
 
     /* The swing tires, struck or not. */
@@ -370,21 +451,17 @@ int combat_strike(Character *pc, const Item *weapon, int swing, const Scene *sce
     if (pc->fatigue < 0) {
         pc->fatigue = 0;
     }
-    eye[0] = x;
-    eye[1] = y;
-    eye[2] = z;
-    cp = df_cos(pitch);
-    fwd[0] = df_sin(yaw) * cp;
-    fwd[1] = df_sin(pitch);
-    fwd[2] = df_cos(yaw) * cp;
-    best = 0;
-    best_along = 0.0f;
+    struck = 0;
     /* Walls by the scene's collision grid, a ray as thin as rig_third's (the body sets its own shape again at its step). */
     if (!scene || !collide_use(scene)) {
         return 0;
     }
     collide_set_shape(1.0f, 1.0f);
-    /* The nearest creature in front, within reach and its own half width of the line of the eye. */
+    /*
+     * Classic's (FALL.EXE): every creature whose feet are within reach of
+     * the player's, and within the arc of its facing on the ground (any
+     * way at point blank), that no wall hides from the eye.
+     */
     for (slot = 0; slot < stream_slots(); slot++) {
         Entity *ents;
         int first;
@@ -393,93 +470,17 @@ int combat_strike(Character *pc, const Item *weapon, int swing, const Scene *sce
 
         ents = stream_slot_entities(slot, &first, &n);
         for (i = 0; ents && i < n; i++) {
-            Entity *e;
-            float c[3];
-            float along;
-            float off[3];
-            float side;
-            float half;
-            int k;
-
-            e = &ents[i];
-            if (!e->live || e->dead || dunstream_kind(e, 0) < 0) {
-                continue;
+            if (combat_reaches(scene, feet, eye, yaw, &ents[i])) {
+                strike_one(pc, weapon, swing, &ents[i], feet);
+                struck++;
             }
-            c[0] = e->x;
-            c[1] = e->y + entity_height(e) * 0.5f;
-            c[2] = e->z;
-            along = 0.0f;
-            for (k = 0; k < 3; k++) {
-                along += (c[k] - eye[k]) * fwd[k];
-            }
-            half = (float)entity_pose(e)->w[0] * 0.5f;
-            if (along <= 0.0f || along > COMBAT_REACH + half || (best && along >= best_along)) {
-                continue;
-            }
-            for (k = 0; k < 3; k++) {
-                off[k] = c[k] - eye[k] - fwd[k] * along;
-            }
-            side = df_sqrt(off[0] * off[0] + off[1] * off[1] + off[2] * off[2]);
-            if (side > half + 10.0f || !combat_sight(scene, eye, c)) {
-                continue;
-            }
-            best = e;
-            best_along = along;
         }
     }
-    if (!best) {
-        /* Nothing in reach: the swing whistles (DFU plays it only when nothing was struck). */
+    if (!struck) {
+        /* Nothing in reach: the swing whistles (classic plays it only when nothing was struck). */
         sfx_play(weapon ? SND_SWING_MEDIUM : SND_SWING_HIGH);
-        return 0;
     }
-    {
-        const EnemyKind *kind;
-        Foe f;
-        Blow b;
-        Keep *row;
-        int health;
-        int behind;
-
-        kind = enemy_kind(dunstream_kind(best, 0));
-        if (!kind) {
-            return 0;
-        }
-        /* Facing away: its forward and the way to the player point apart. */
-        behind = df_sin(best->yaw) * (x - best->x) + df_cos(best->yaw) * (z - best->z) < 0.0f;
-        combat_foe(&f, kind, pc->level, behind);
-        health = health_of(best, &f, &row);
-        combat_blow(pc, weapon, swing, &f, &b);
-        /* Struck at all, it knows: passive or asleep, it turns on the player. */
-        foes_alert(best);
-        if (b.ineffective) {
-            /* Classic's own line (FALL.EXE); DFU says "This weapon has no effect." */
-            interact_say("The material of the weapon you are using is ineffective.");
-            sfx_play(weapon ? SND_SWING_MEDIUM : SND_SWING_HIGH);
-            return 1;
-        }
-        if (!b.hit || b.damage <= 0 || !row) {
-            /* Nothing taken: a weapon on a creature that parries rings; anything else whistles. */
-            if (weapon && kind->parries) {
-                sfx_at(sfx_pick(SND_PARRY_FIRST, SND_PARRIES), best->x, best->y + entity_height(best) * 0.5f, best->z);
-            } else {
-                sfx_play(weapon ? SND_SWING_MEDIUM : SND_SWING_HIGH);
-            }
-            return 1;
-        }
-        sfx_at(sfx_pick(SND_HIT_FIRST, SND_HITS), best->x, best->y + entity_height(best) * 0.5f, best->z);
-        if (b.backstab) {
-            interact_say("Successful backstab!");
-        }
-        health -= b.damage;
-        set_health(row, health);
-        if (health <= 0) {
-            lay_down(best);
-            sfx_at(SND_BODY_FALL, best->x, best->y, best->z);
-        } else {
-            flinch(best);
-        }
-    }
-    return 1;
+    return struck;
 }
 
 /* The entity with key, among the stream's, or 0. */

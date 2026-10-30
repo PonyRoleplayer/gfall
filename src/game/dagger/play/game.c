@@ -235,8 +235,13 @@ int game_frame(Camera *cam, const Input *in, float dt)
         player_camera(&g_player, cam);
         /* The swing's hit frame strikes what is in reach of the eye; flinches run out. */
         if (weapon_hit()) {
-            combat_strike(&g_player.sheet, inventory_weapon(&g_player.pack), weapon_swing(), &g_level->scene, cam->x,
-                          cam->y, cam->z, cam->yaw, cam->pitch);
+            float eye[3];
+
+            eye[0] = cam->x;
+            eye[1] = cam->y;
+            eye[2] = cam->z;
+            combat_strike(&g_player.sheet, inventory_weapon(&g_player.pack), weapon_swing(), &g_level->scene,
+                          g_player.body.feet, eye, g_player.yaw);
         }
         combat_frame(dt);
         /* The creatures see, chase and strike (tai off: they stand); a blow may kill. */
