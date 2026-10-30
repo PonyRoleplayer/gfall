@@ -128,8 +128,16 @@ int screens_is_open(void)
 /* A frame of the inventory. */
 static int bag_frame(const Input *in)
 {
+    int vk;
+
     bag_point(g_point_x, g_point_y);
-    if (in->pressed & (INPUT_BIT(INPUT_MENU) | INPUT_BIT(INPUT_INVENTORY))) {
+    /* The Gold button's question has the keys while it is up. */
+    vk = input_key_pressed();
+    if (bag_asking()) {
+        if (vk) {
+            bag_key(vk);
+        }
+    } else if (in->pressed & (INPUT_BIT(INPUT_MENU) | INPUT_BIT(INPUT_INVENTORY))) {
         return SCREENS_CLOSED;
     }
     if ((in->pressed & INPUT_BIT(INPUT_ATTACK)) && bag_click(g_point_x, g_point_y) == BAG_LEAVE) {

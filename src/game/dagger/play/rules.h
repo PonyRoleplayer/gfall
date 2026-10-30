@@ -63,6 +63,15 @@ int rules_level_health(int hp_per_level, int roll, int endurance);
 int rules_rest_health(int endurance, int medical, int health_max);
 int rules_rest_fatigue(int fatigue_max);
 int rules_rest_magicka(int magicka_max);
+/* A swimmer's speed from a walker's (PlayerSpeedChanger.GetSwimSpeed): a quarter of it, and Swimming / 200 more. */
+float rules_swim_speed(float base, int swimming);
+/* The most breath there is (DaggerfallEntity.MaxBreath): half of Endurance. */
+int rules_max_breath(int endurance);
+/* Fatigue lost, in its 64ths, each game minute (PlayerEntity): just being about, running, and swimming on a failed roll. A jump costs FATIGUE_JUMP. */
+#define RULES_FATIGUE_MINUTE 11
+#define RULES_FATIGUE_RUNNING 88
+#define RULES_FATIGUE_SWIMMING 44
+#define RULES_FATIGUE_JUMP 11
 /* Reflexes (0 very high .. 4 very low): a skill's uses count this many times over, an eighth a step from average. */
 float rules_reflex_uses(int reflexes);
 

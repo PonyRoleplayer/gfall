@@ -27,6 +27,7 @@
 #include "engine/scene/clock.h"
 #include "engine/scene/walker.h"
 #include "engine/scene/weather.h"
+#include "engine/ui/cmd.h"
 #include "engine/ui/hud.h"
 #include "engine/ui/pic.h"
 
@@ -43,6 +44,8 @@ static SaveState g_loaded;
 static int g_load_waiting;
 /* The clock's day when this game began: skills' six hours count game minutes from it. */
 static int g_day_zero;
+/* The last game minute that tired the player. */
+static int g_last_minute;
 
 /*
  * What the use key does that the engine's doors and levers do not: a
@@ -252,6 +255,8 @@ void game_setup(void)
     menu_setup();
     gfx_set_extra(draw);
     commands_setup();
+    cmd_var("panel", overlay_panel, overlay_set_panel, 0, 1, "classic's bottom panel of the HUD; panel alone flips it");
+    cmd_toggles("panel");
     g_playing = 0;
     menu_open(MENU_TITLE);
     input_set_pointer(1);
@@ -274,7 +279,16 @@ void game_enter(const Level *level, Camera *cam, float x, float y, float z, floa
     player_init(&g_player, &g_new_sheet);
     g_player.pack = g_new_pack;
     player_wear_changed(&g_player);
+    {
+        const CareerRace *race;
+
+        race = career_race(g_player.sheet.race);
+        if (race) {
+            overlay_set_face(g_player.sheet.female ? race->heads_female : race->heads_male, g_player.sheet.face);
+        }
+    }
     g_day_zero = clock_day();
+    g_last_minute = df_ifloor(game_minutes());
     if (g_load_waiting) {
         int cx;
         int cz;
@@ -290,6 +304,7 @@ void game_enter(const Level *level, Camera *cam, float x, float y, float z, floa
         clock_set_minute(g_loaded.minute);
         clock_set_day(g_loaded.day);
         g_day_zero = g_loaded.day_zero;
+        g_last_minute = df_ifloor(game_minutes());
         loot_new_game(g_loaded.seed);
     }
     commands_player(&g_player);
@@ -420,6 +435,31 @@ int game_frame(Camera *cam, const Input *in, float dt)
         character_raise_skills(&g_player.sheet, game_minutes());
         if (g_player.sheet.level_due) {
             sheet_over_play();
+        }
+        /* Each game minute that has passed tires the player, and may be too much (docs/game.md, Fatigue). */
+        {
+            int minute;
+
+            minute = df_ifloor(game_minutes());
+            while (g_last_minute < minute) {
+                int how;
+
+                g_last_minute++;
+                how = player_minute(&g_player, foes_awake() > 0);
+                if (how == PLAYER_DIED) {
+                    die();
+                    break;
+                }
+                if (how == PLAYER_COLLAPSED) {
+                    interact_say("You collapse from exhaustion, and wake an hour later.");
+                    clock_set_minute(clock_minute() + 60.0f);
+                }
+            }
+        }
+        /* Under water the breath runs down; none left is the end. */
+        if (player_breath(&g_player, dt)) {
+            interact_say("You have drowned.");
+            die();
         }
         /* The weapon in hand follows the pack (equip, additem, a break); the mouse swings it. */
         player_check_weapon(&g_player);

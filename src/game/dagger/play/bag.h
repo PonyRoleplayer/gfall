@@ -62,6 +62,10 @@ int bag_changed(void);
 void bag_point(int x, int y);
 /* A click at classic's x, y: BAG_*. */
 int bag_click(int x, int y);
+/* A key by its virtual key code: digits for gold to drop, Enter, Backspace, Escape. */
+void bag_key(int vk);
+/* 1 while the Gold button's question is up: Escape and the inventory key answer it, not the screen. */
+int bag_asking(void);
 /* A line to show the player, or 0. */
 const char *bag_note(void);
 

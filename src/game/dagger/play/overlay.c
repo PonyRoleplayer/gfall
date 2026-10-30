@@ -1,5 +1,6 @@
 #include "game/dagger/play/overlay.h"
 #include "game/dagger/play/screen.h"
+#include "game/dagger/formats/cif.h"
 #include "game/dagger/formats/img.h"
 #include "engine/core/df.h"
 #include "engine/ui/font.h"
@@ -35,6 +36,19 @@ static int g_now[BARS];
 static int g_most[BARS];
 static float g_yaw;
 static int g_crosshair = 1;
+/* The bottom panel: its picture, on or off, and the face in it. */
+static int g_panel;
+static int g_panel_on;
+static int g_face;
+/* The panel's place on classic's screen, and the face's place on the panel, stretched to fill it. */
+#define PANEL_X 0
+#define PANEL_Y 154
+#define PANEL_W 320
+#define PANEL_H 46
+#define FACE_X 7
+#define FACE_Y 8
+#define FACE_W 33
+#define FACE_H 30
 
 int overlay_load(void)
 {
@@ -65,6 +79,13 @@ int overlay_load(void)
                 g_bar_w[i] = bar.width;
                 g_bar_h[i] = bar.height;
             }
+        }
+    }
+    {
+        ImgPicture panel;
+
+        if (img_load("MAIN00I0.IMG", &panel)) {
+            g_panel = pic_load(panel.pixels, panel.width, panel.height, rgb, 0);
         }
     }
     return g_strip != 0 && g_box != 0;
@@ -161,8 +182,42 @@ static void draw_centred(const char *s, int top)
     ui_string((DF_VIEW_W - ui_string_width(s)) / 2, top, s);
 }
 
+void overlay_set_panel(int on)
+{
+    g_panel_on = on ? 1 : 0;
+}
+
+int overlay_panel(void)
+{
+    return g_panel_on;
+}
+
+void overlay_set_face(const char *cif, int which)
+{
+    static CifSet faces;
+    const CifFrame *face;
+    df_u8 rgb[768];
+
+    if (g_face) {
+        pic_free(g_face);
+        g_face = 0;
+    }
+    if (!img_art_palette(rgb) || !cif_open(cif, &faces)) {
+        return;
+    }
+    face = cif_frame(&faces, which);
+    if (face) {
+        g_face = pic_load(face->pixels, face->w, face->h, rgb, 1);
+    }
+    cif_close(&faces);
+}
+
 void overlay_draw(void)
 {
+    if (g_panel_on) {
+        screen_draw(g_panel, PANEL_X, PANEL_Y, PANEL_W, PANEL_H);
+        screen_draw(g_face, PANEL_X + FACE_X, PANEL_Y + FACE_Y, FACE_W, FACE_H);
+    }
     draw_compass();
     draw_vitals();
     if (g_crosshair) {

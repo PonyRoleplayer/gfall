@@ -136,6 +136,9 @@ static struct {
     int over_index;
     int changed;
     const char *note;
+    /* The Gold button's question, while it shows, and the digits typed. */
+    int asking_gold;
+    char gold_typed[9];
     /* The info box's lines, while it shows. */
     int info_shown;
     char info[INFO_LINES][INFO_LINE_CHARS];
@@ -558,6 +561,19 @@ void bag_compose(void)
     if (g.info_shown) {
         compose_info();
     }
+    if (g.asking_gold) {
+        char line[40];
+        Rect box;
+
+        box.x = INFO_X;
+        box.y = INFO_Y;
+        box.w = INFO_W;
+        box.h = 2 * LINE_H + 4;
+        canvas_box(&box, CANVAS_DARK);
+        canvas_label(INFO_X + 3, INFO_Y + 2, "How much gold?");
+        log_format(line, (int)sizeof(line), "%s_", g.gold_typed);
+        canvas_label(INFO_X + 3, INFO_Y + 2 + LINE_H, line);
+    }
     g.changed = 0;
 }
 
@@ -781,13 +797,75 @@ static int click_button(int x, int y)
         if (b == BUTTON_WAGON) {
             g.note = "You have no wagon.";
         } else if (b == BUTTON_GOLD) {
-            g.note = "Your gold stays with you for now.";
+            if (g.searched && !loot_takes_things(g.searched)) {
+                g.note = "You cannot leave things here.";
+            } else {
+                g.asking_gold = 1;
+                g.gold_typed[0] = 0;
+            }
         } else {
             g.mode = b;
         }
         return 1;
     }
     return 0;
+}
+
+/* The gold typed goes to the right list, as a thing lying there (DFU: not more than is carried). */
+static void drop_gold(void)
+{
+    Item it;
+    df_u32 coins;
+    int i;
+
+    coins = 0;
+    for (i = 0; g.gold_typed[i]; i++) {
+        coins = coins * 10u + (df_u32)(g.gold_typed[i] - '0');
+    }
+    g.asking_gold = 0;
+    if (coins < 1) {
+        return;
+    }
+    if (coins > g.player->pack.gold || coins > 0xffffu) {
+        g.note = "You do not have that much gold.";
+        return;
+    }
+    if (!pile_room(g.searched, g_remote.count + 1) || !loot_gold_item(&it, (int)coins) || inventory_add(&g_remote, &it) < 0) {
+        g.note = "There is no room to drop it.";
+        return;
+    }
+    g.player->pack.gold -= coins;
+}
+
+int bag_asking(void)
+{
+    return g.asking_gold;
+}
+
+void bag_key(int vk)
+{
+    int n;
+
+    if (!g.asking_gold) {
+        return;
+    }
+    g.changed = 1;
+    n = 0;
+    while (g.gold_typed[n]) {
+        n++;
+    }
+    if (vk == 0x1B) {
+        g.asking_gold = 0;
+    } else if (vk == 0x0D) {
+        drop_gold();
+    } else if (vk == 0x08) {
+        if (n > 0) {
+            g.gold_typed[n - 1] = 0;
+        }
+    } else if (vk >= '0' && vk <= '9' && n < (int)sizeof(g.gold_typed) - 1) {
+        g.gold_typed[n] = (char)vk;
+        g.gold_typed[n + 1] = 0;
+    }
 }
 
 int bag_click(int x, int y)
@@ -797,6 +875,11 @@ int bag_click(int x, int y)
 
     g.note = 0;
     g.changed = 1;
+    /* The question takes the click that puts it away. */
+    if (g.asking_gold) {
+        g.asking_gold = 0;
+        return BAG_STAY;
+    }
     /* An info box shown takes the click that puts it away. */
     if (g.info_shown) {
         g.info_shown = 0;

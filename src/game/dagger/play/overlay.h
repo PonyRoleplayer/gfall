@@ -27,5 +27,15 @@ void overlay_set_vitals(int health, int health_max, int fatigue, int fatigue_max
 void overlay_set_crosshair(int on);
 /* The overlay, from gfx_set_extra. */
 void overlay_draw(void);
+/*
+ * Classic's bottom panel (MAIN00I0.IMG, 320 x 46, at the screen's foot; DFU's
+ * HUDLarge): the character's face in it, the bars and the compass over it.
+ * Off by default; the console's `panel` turns it on. Its buttons are not
+ * clicked: the pointer is the mouse's only in a screen.
+ */
+void overlay_set_panel(int on);
+int overlay_panel(void);
+/* The face it shows, a race's and sex's CIF and which: read when the game starts. */
+void overlay_set_face(const char *cif, int which);
 
 #endif

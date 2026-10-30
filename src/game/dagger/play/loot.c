@@ -116,14 +116,22 @@ static void add_thing(Inventory *out, const Item *it)
     }
 }
 
+int loot_gold_item(Item *it, int coins)
+{
+    if (coins < 1 || !item_make(it, ITEM_GOLD, MATERIAL_IRON)) {
+        return 0;
+    }
+    it->count = (df_u16)(coins > 0xffff ? 0xffff : coins);
+    it->weight = GOLD_KG;
+    it->value = 1u;
+    return 1;
+}
+
 static void add_gold(Inventory *out, int coins)
 {
     Item it;
 
-    if (coins > 0 && item_make(&it, ITEM_GOLD, MATERIAL_IRON)) {
-        it.count = (df_u16)(coins > 0xffff ? 0xffff : coins);
-        it.weight = GOLD_KG;
-        it.value = 1u;
+    if (loot_gold_item(&it, coins)) {
         add_thing(out, &it);
     }
 }

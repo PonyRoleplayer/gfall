@@ -43,6 +43,8 @@ df_u32 loot_seed(void);
  * levels finding better. Plain sums, so tests can walk it.
  */
 int loot_metal(int level, int roll);
+/* A stack of gold as a thing that lies in a list, coins of it: 0 when it could not be made. */
+int loot_gold_item(Item *it, int coins);
 /* Rolls a body's things into out, emptied first, from seed: the same seed, table and level give the same things. */
 void loot_roll(Inventory *out, const LootChance *table, int level, df_u32 seed);
 /*

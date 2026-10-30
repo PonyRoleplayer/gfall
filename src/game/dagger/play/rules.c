@@ -105,6 +105,16 @@ int rules_rest_magicka(int magicka_max)
     return gain < 1 ? 1 : gain;
 }
 
+float rules_swim_speed(float base, int swimming)
+{
+    return base * ((float)swimming / 200.0f) + base / 4.0f;
+}
+
+int rules_max_breath(int endurance)
+{
+    return endurance / 2;
+}
+
 float rules_reflex_uses(int reflexes)
 {
     return 1.0f + 0.125f * (float)(RULES_REFLEX_AVERAGE - reflexes);

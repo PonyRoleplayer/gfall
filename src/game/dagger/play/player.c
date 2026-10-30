@@ -1,4 +1,5 @@
 #include "game/dagger/play/player.h"
+#include "game/dagger/play/combat.h"
 #include "engine/core/log.h"
 #include "engine/scene/interact.h"
 #include "game/dagger/play/rules.h"
@@ -11,6 +12,8 @@
 /* Radians a mouse count turns; looking up or down stops short of straight. */
 /* Seconds of running to a use of the skill: four of classic's 0.0549254 s updates. */
 #define RUN_USE_EVERY 0.2197f
+/* Seconds to a point of breath: 19 of classic's 0.0549254 s ticks. */
+#define BREATH_EVERY 1.0436f
 #define LOOK_SENS 0.003f
 #define PITCH_LIMIT 1.55334303f
 /* Both keys at once go no faster than one: DFU's limitDiagonalSpeed. */
@@ -69,7 +72,8 @@ void player_step(Player *p, const Input *in, const Scene *scene, float dt, int c
               : rules_walk_speed(p->sheet.attribute[ATTR_SPEED]);
     step = mps * RULES_UNITS_PER_M * dt;
     /* Running trains the skill: one use every fourth classic update of it (PlayerEntity). */
-    if ((in->held & INPUT_BIT(INPUT_RUN)) && (f != 0.0f || r != 0.0f)) {
+    p->running = (in->held & INPUT_BIT(INPUT_RUN)) && (f != 0.0f || r != 0.0f);
+    if (p->running) {
         p->run_time += dt;
         if (p->run_time >= RUN_USE_EVERY) {
             p->run_time -= RUN_USE_EVERY;
@@ -108,14 +112,93 @@ void player_step(Player *p, const Input *in, const Scene *scene, float dt, int c
         body_unstick(&p->body);
         p->flying = 0;
     }
+    p->swimming = scene && scene_water_body(scene, p->body.feet[0], p->body.feet[1] + p->body.eye, p->body.feet[2]) == WATER_HEAD;
+    if (p->swimming) {
+        float swim;
+        float sp;
+        float cp;
+        float rise;
+
+        /* No gravity in the water: it goes along the view at a swimmer's speed, and jump rises. */
+        swim = rules_swim_speed(mps, p->sheet.skill[SKILL_SWIMMING]) * RULES_UNITS_PER_M;
+        sp = df_sin(p->pitch);
+        cp = df_cos(p->pitch);
+        rise = (in->held & INPUT_BIT(INPUT_JUMP)) ? 1.0f : 0.0f;
+        p->body.gravity = 0.0f;
+        p->body.vy = (sp * f + rise) * swim;
+        body_step(&p->body, scene, (sy * cp * f + cy * r) * swim * dt, (cy * cp * f - sy * r) * swim * dt, dt);
+        return;
+    }
+    p->body.gravity = rules_gravity() * RULES_UNITS_PER_M;
     if (in->pressed & INPUT_BIT(INPUT_JUMP)) {
-        /* Each jump from the ground trains the skill (PlayerEntity). */
+        /* Each jump from the ground trains the skill, and tires (PlayerEntity). */
         if (p->body.grounded) {
             character_tally(&p->sheet, SKILL_JUMPING, 1);
+            p->sheet.fatigue -= RULES_FATIGUE_JUMP;
+            p->sheet.fatigue = p->sheet.fatigue < 0 ? 0 : p->sheet.fatigue;
         }
         body_jump(&p->body, rules_jump_speed(p->sheet.skill[SKILL_JUMPING]) * RULES_UNITS_PER_M);
     }
     body_step(&p->body, scene, (sy * f + cy * r) * step, (cy * f - sy * r) * step, dt);
+}
+
+int player_breath(Player *p, float dt)
+{
+    if (!p->swimming) {
+        p->breath = 0;
+        p->breath_time = 0.0f;
+        return 0;
+    }
+    /* The first frame under: a full breath. */
+    if (p->breath <= 0) {
+        p->breath = rules_max_breath(p->sheet.attribute[ATTR_ENDURANCE]);
+        p->breath = p->breath < 1 ? 1 : p->breath;
+    }
+    p->breath_time += dt;
+    while (p->breath_time >= BREATH_EVERY) {
+        p->breath_time -= BREATH_EVERY;
+        /* An Argonian keeps it half the time. */
+        if (p->sheet.race == RACE_ARGONIAN && combat_roll(2)) {
+            continue;
+        }
+        p->breath--;
+        if (p->breath <= 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int player_minute(Player *p, int enemies_near)
+{
+    Character *c;
+    int loss;
+
+    c = &p->sheet;
+    loss = p->running ? RULES_FATIGUE_RUNNING : RULES_FATIGUE_MINUTE;
+    if (p->swimming) {
+        character_tally(c, SKILL_SWIMMING, 1);
+        /* A swimmer's roll on the skill, an Argonian's needing none. */
+        if (c->race != RACE_ARGONIAN && combat_roll(100) >= c->skill[SKILL_SWIMMING]) {
+            loss = RULES_FATIGUE_SWIMMING;
+        }
+    }
+    c->fatigue -= loss;
+    if (c->fatigue > 0) {
+        return PLAYER_FINE;
+    }
+    c->fatigue = 0;
+    if (enemies_near || p->swimming) {
+        return PLAYER_DIED;
+    }
+    /* It drops where it is: an hour's rest comes back, and Medical is used. */
+    c->health += rules_rest_health(c->attribute[ATTR_ENDURANCE], c->skill[SKILL_MEDICAL], c->health_max);
+    c->health = c->health > c->health_max ? c->health_max : c->health;
+    c->fatigue = rules_rest_fatigue(c->fatigue_max / CHARACTER_FATIGUE_UNIT) * CHARACTER_FATIGUE_UNIT;
+    c->magicka += rules_rest_magicka(c->magicka_max);
+    c->magicka = c->magicka > c->magicka_max ? c->magicka_max : c->magicka;
+    character_tally(c, SKILL_MEDICAL, 1);
+    return PLAYER_COLLAPSED;
 }
 
 void player_wear_changed(Player *p)

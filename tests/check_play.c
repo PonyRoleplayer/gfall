@@ -1898,6 +1898,30 @@ static void check_bag(void)
     p.sheet.attribute[ATTR_STRENGTH] = 65;
     bag_click(BAG_REMOTE_CELL_X, BAG_ROW_Y);
 
+    /* The Gold button: a sum typed goes to the right list, and comes back to the purse. */
+    {
+        df_u32 purse;
+
+        purse = p.pack.gold;
+        bag_click(BAG_BUTTON_X, 130);
+        check_expect(bag_asking(), "bag: the Gold button did not ask");
+        bag_key('2');
+        bag_key('0');
+        bag_key(0x0D);
+        check_expect(!bag_asking() && p.pack.gold == purse - 20, "bag: dropping gold did not take it from the purse");
+        bag_compose();
+        bag_click(BAG_REMOTE_CELL_X, BAG_ROW_Y);
+        check_expect(p.pack.gold == purse, "bag: dropped gold did not come back");
+        /* More than there is: nothing goes. */
+        bag_click(BAG_BUTTON_X, 130);
+        bag_key('9');
+        bag_key('9');
+        bag_key('9');
+        bag_key(0x0D);
+        check_expect(p.pack.gold == purse && bag_note() != 0, "bag: more gold than there is was dropped");
+        bag_click(BAG_BUTTON_X, BAG_EQUIP_Y);
+    }
+
     /* Info mode's box: it shows, and the next click only puts it away. */
     bag_click(BAG_BUTTON_X, BAG_INFO_Y);
     i = p.pack.count;
@@ -2458,6 +2482,109 @@ static void check_creatures_more(void)
     printf("creatures more: stealth, knock-back, blood, class enemies' kits, bodies with what they wore\n");
 }
 
+/* Swimming, breath, fatigue and exhaustion, by hand and in water laid over the hold's floor. */
+static void check_body_more(void)
+{
+    Dungeon hold;
+    Level level;
+    Camera cam;
+    float x, y, z, yaw, pitch;
+    Character sheet;
+    Player p;
+    Input in;
+    Water *flood;
+    float walk_d;
+    float swim_d;
+    int i;
+
+    check_expect(check_near(rules_swim_speed(4.0f, 0), 1.0f, 0.001f) && check_near(rules_swim_speed(4.0f, 100), 3.0f, 0.001f),
+                 "swim: a swimmer's speed is not classic's");
+    check_expect(rules_max_breath(60) == 30, "swim: the most breath is not half of Endurance");
+
+    character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Test");
+    player_init(&p, &sheet);
+
+    /* A minute tires by 11, running by 88; the skill's roll is an Argonian's to skip. */
+    p.sheet.fatigue = 1000;
+    check_expect(player_minute(&p, 0) == PLAYER_FINE && p.sheet.fatigue == 989, "fatigue: a minute did not take 11");
+    p.running = 1;
+    player_minute(&p, 0);
+    check_expect(p.sheet.fatigue == 901, "fatigue: a running minute did not take 88");
+    p.running = 0;
+
+    /* Out of it: with nothing about, down for an hour and some back; enemies about, or in the water, dead. */
+    p.sheet.fatigue = 5;
+    p.sheet.health = 1;
+    i = p.sheet.skill_uses[SKILL_MEDICAL];
+    check_expect(player_minute(&p, 0) == PLAYER_COLLAPSED && p.sheet.fatigue > 0 && p.sheet.health > 1 && p.sheet.skill_uses[SKILL_MEDICAL] == i + 1,
+                 "fatigue: collapsing did not give an hour's rest");
+    p.sheet.fatigue = 5;
+    check_expect(player_minute(&p, 1) == PLAYER_DIED, "fatigue: exhaustion with enemies about did not kill");
+    p.sheet.fatigue = 5;
+    p.swimming = 1;
+    check_expect(player_minute(&p, 0) == PLAYER_DIED, "fatigue: exhaustion in the water did not kill");
+
+    /* Breath: half of Endurance in points, one each 1.04 s; none left drowns. An Argonian lasts longer. */
+    p.swimming = 1;
+    p.breath = 0;
+    p.breath_time = 0.0f;
+    p.sheet.attribute[ATTR_ENDURANCE] = 10;
+    for (i = 0; i < 4; i++) {
+        check_expect(!player_breath(&p, 1.05f), "breath: it ran out too soon");
+    }
+    check_expect(player_breath(&p, 1.05f), "breath: five points did not run out in five breaths");
+    p.swimming = 0;
+    check_expect(!player_breath(&p, 1.0f) && p.breath == 0, "breath: it did not reset at the surface");
+    {
+        Player q;
+        int spent;
+
+        q = p;
+        q.sheet.race = RACE_ARGONIAN;
+        q.swimming = 1;
+        combat_seed(3);
+        spent = 0;
+        while (!player_breath(&q, 1.05f) && spent < 1000) {
+            spent++;
+        }
+        check_expect(spent > 5, "breath: an Argonian's did not last longer");
+    }
+
+    /* In the water: laid over the hold's start, deep. It floats, and goes slower than it walks. */
+    keep_clear();
+    combat_reset();
+    if (!dungeon_load(&hold) || !dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
+        check_expect(0, "swim: the hold's stream did not open");
+        return;
+    }
+    camera_set(&cam, x, y, z, yaw, pitch);
+    dunstream_fill(&cam);
+    player_init(&p, &sheet);
+    player_place(&p, x, y, z, 3.1416f, 0.0f);
+    memset(&in, 0, sizeof(in));
+    walk(&p, &level.scene, &in, 60);
+    in.move_f = 1;
+    walk_d = walk(&p, &level.scene, &in, 15);
+    check_expect(walk_d > 10.0f, "swim: there is no room to walk at the start");
+    flood = (Water *)&level.scene.water[0];
+    flood->x0 = p.body.feet[0] - 4000.0f;
+    flood->x1 = p.body.feet[0] + 4000.0f;
+    flood->z0 = p.body.feet[2] - 4000.0f;
+    flood->z1 = p.body.feet[2] + 4000.0f;
+    flood->y = p.body.feet[1] + 400.0f;
+    player_place(&p, x, y, z, 3.1416f, 0.0f);
+    memset(&in, 0, sizeof(in));
+    walk(&p, &level.scene, &in, 2);
+    check_expect(p.swimming, "swim: under water it is not swimming");
+    in.move_f = 1;
+    swim_d = walk(&p, &level.scene, &in, 15);
+    check_expect(swim_d > 0.0f && swim_d < walk_d, "swim: it does not swim slower than it walks");
+    flood->x1 = flood->x0;
+    dunstream_close();
+    keep_clear();
+    printf("body: fatigue, collapse, breath, a swimmer's speed in water over the hold's floor\n");
+}
+
 /* Rest: its sums by hand, and the three ways driven by clicks and keys. */
 #define REST_WHILE_X 110
 #define REST_HEALED_X 160
@@ -2753,6 +2880,7 @@ void check_play(void)
     check_sheet();
     check_class_and_wear();
     check_creatures_more();
+    check_body_more();
     check_rest();
     check_save();
     check_hold();

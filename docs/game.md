@@ -117,8 +117,13 @@ Entities have no physics of their own. A creature that only stands, or walks a f
 The game adds, as rules on top of the player's body:
 - **Run**: speed from Speed and the Running skill.
 - **Jump**: height from the Jumping skill.
-- **Swim**: when `scene_water_body` says the player is in over the head; Swimming slows the loss of breath.
 - **Fall damage**.
+
+**Built (P7, `play/player.c`).**
+- **Swimming** (PlayerSpeedChanger.GetSwimSpeed): when `scene_water_body` says the eye is under, there is no gravity, and the player goes along the view at a walk's quarter and Swimming / 200 of it more; jump rises. Each game minute under is a use of Swimming. A place with water is not played yet: it is tested with water laid over the hold's floor.
+- **Breath** (DaggerfallEntity.MaxBreath, PlayerEntity): half of Endurance, a point each 19 classic ticks, an Argonian keeping it half the time. None left drowns, at once. It is full again at each dive.
+- **Fatigue** falls each game minute, in its 64ths (PlayerEntity): 11 about, 88 running, 44 swimming on a failed roll of the skill, which an Argonian does not make; 11 for a jump. Only rest gives it back.
+- **Exhaustion** (PlayerEntity_OnExhausted): at none, with a creature awake or in the water, dead. Otherwise the player drops: an hour passes, an hour's rest comes back, and Medical is used.
 
 **Built (P1, `play/player.c`, `play/rules.c`).**
 - **The numbers are classic's, as Daggerfall Unity's PlayerSpeedChanger and AcrobatMotor have them:**
@@ -218,7 +223,7 @@ The HUD is drawn at the card's 640 × 480. Classic's 320 × 200 pieces are drawn
 
 - **The vitals (P2):** MAIN03I0, MAIN04I0 and MAIN05I0.IMG (health, fatigue, spell points, 4 × 32 each), filled from the bottom to their share as DFU's HUDVitals does, where their files put them (x 49, 57 and 65, y 161).
 
-Still to come: classic's bottom panel (MAIN00I0.IMG, 320 × 46) with the menu work, and the weapon (P4).
+- **The bottom panel** (P7, DFU's HUDLarge): MAIN00I0.IMG, 320 × 46, at the screen's foot, the character's face stretched into it at 7, 8, the bars over it. Off by default, which we chose without knowing classic's own default; the console's `panel` flips it. It costs 15 KB of the picture room and its fill. Its buttons are not clicked, since the mouse only has a pointer in a screen, and its mode icons and DFU's small compass are not drawn: the compass stays in its box.
 
 ## Menus
 
@@ -372,6 +377,7 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **Everything is classic's picture at classic's place,** by DFU's DaggerfallInventoryWindow rectangles: INVE00I0.IMG the screen, INVE01I0.IMG the chosen tab and button in gold, INVE06I0 and INVE07I0 a list's green and red arrows, ITEM00I0 the stone behind the small panel, FONT0003.FNT the labels (`formats/smallfont.c`) in classic's ink, index 146.
 - **The doll** (`doll_compose`, DFU's PaperDollRenderer): the race's SCBG background cropped at 8, 7, the body, its underclothes, the head, then what is worn by the template's draw order. Each picture's own header places it, less classic's doll corner 200, 8. Armour's archive is 245 for a woman and 249 for a man, plus the body shape (Argonian 0, elf 1, human 2, Khajiit 3). A worn picture's index 255 is a mask: it shows the background again, which is how a helm takes off the horns under it. In a list it is only clear.
 - **The lists** show four rows of 50 × 38. A thing worn is on the doll, not in the list. Clicks go by the mode: Equip wears, Remove drops, Info shows a box. A click on the right list takes the thing, a click on the doll takes it off, found by a byte per doll pixel saying which worn place drew it.
+- **The Gold button** asks how much, and that much lies in the right list as a thing, not more than is carried (DFU's). A body or a heap refuses it.
 - **Ours, not classic's:** the "Carrying", "Dropped", "Body", "Treasure" and "Pile" words over the lists, and the info box, a dark box where classic has a scroll of TEXT.RSC lines. Wagon, Use and Gold say why they do nothing yet.
 
 **What it costs the 233.** The whole screen is composed in memory into one 320 × 200 picture, only when something on it changes: a click, or the pointer coming to rest on another thing. An open frame sends nothing to the card and draws that one picture's 29 quads, however full the lists are. It takes the 66560 bytes of `GAME_PICTURE_KB` the controls screen already counts on, not one more. A fitted item picture is kept in one of 8 places, so a list scrolled back reads nothing. While it is open `gfx_frame` gets no level (`game_world_shows`, the controls screen too): no world is drawn only to be covered. All this is by the design's sums and host tests: **none of it has run on the 233 yet.**
@@ -395,18 +401,18 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Rest | a random encounter while resting; a class with no spell point regeneration | P7, P9 |
 | Items | clothing, jewellery, ingredients, books, potions, maps, and the screen's other tabs | P9, P10 |
 | Items | clothing's dyes | with clothing |
-| Inventory | the Wagon button (P12), the Use button (P9), dropping gold (P7) | as named |
+| Inventory | the Wagon button (P12), the Use button (P9) | as named |
 | Inventory | a second weapon in the left hand | P7 |
 | Inventory | the info box is a dark box, not classic's scroll of TEXT.RSC | P7 |
 | Loot | the other columns of `LOOT` wait for their items | P9, P10 |
 | Loot | a body or a heap takes nothing put on it (a choice, see What can be searched) | - |
 | Places | treasure and piles only in a dungeon streamed by block | P8 |
-| Player | swimming, and its skill's uses; classic's bottom panel, MAIN00I0.IMG | P7 |
+| Player | the bottom panel's buttons and mode icons | later |
 | Creation | choosing a class by classic's questions, and a custom class | P7 |
 | Creation | the answers' reputation, history and lasting modifiers (`r`, `#`, `RP`, `TH`...) are read past | P10 |
 | Creation | Save Roll and Load Roll; the race's voice on choosing | P7 |
 | Creation | boxes and the class list are dark boxes, not classic's scrolls and buttons | P7 |
-| Character | the Spellbook, Log, History and Affiliations buttons; Medical's uses from exhaustion and rest | P7, P9, P10 |
+| Character | the Spellbook, Log, History and Affiliations buttons | P9, P10 |
 | Character | starting clothes and spellbook | with clothing, P9 |
 | Engine | `scene/pack.c`, `ui/packview.c`, `scene/rpg.c`, `ui/rpgview.c` are used by no game; the user's line is that the engine is simulation and world | to decide |
 
