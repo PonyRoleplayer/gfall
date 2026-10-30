@@ -474,6 +474,26 @@ static void check_dunstream(void)
             player_place(&p, x, y, z, yaw, pitch);
             memset(&in, 0, sizeof(in));
             walk(&p, &level.scene, &in, 60);
+            /* The cave: the body settles on the floor at the marker, not thrown elsewhere by the stuck search. */
+            check_expect(p.body.grounded && check_near(p.body.feet[0], 510.0f, 1.0f) && check_near(p.body.feet[2], 1672.0f, 1.0f)
+                             && p.body.feet[1] < 25.0f,
+                         "dunstream: the player does not settle at the hold's enter marker");
+            /* The start is at the bottom of the hold, far from the way out. */
+            for (i = 0; i < level.scene.nusables; i++) {
+                const Usable *u;
+
+                u = &level.scene.usables[i];
+                if (u->kind == USE_PASSAGE) {
+                    float dx;
+                    float dy;
+                    float dz;
+
+                    dx = u->cx - p.body.feet[0];
+                    dy = u->cy - p.body.feet[1];
+                    dz = u->cz - p.body.feet[2];
+                    check_expect(dx * dx + dy * dy + dz * dz > 1000.0f * 1000.0f, "dunstream: the hold starts beside its way out");
+                }
+            }
             in.move_f = 1;
             walked = walk(&p, &level.scene, &in, 15);
             want = rules_walk_speed(sheet.attribute[ATTR_SPEED]) * RULES_UNITS_PER_M * 0.25f;

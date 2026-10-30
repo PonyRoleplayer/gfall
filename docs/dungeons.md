@@ -2,7 +2,7 @@
 
 A place is a list of blocks, not a loose file. Indoors (`MAPDITEM`) are RDB blocks on 2048-unit tiles. Outdoors (`MAPPITEM`) are RMB blocks on 4096-unit tiles. GFALL still loads only the hold.
 
-GFALL calls `world_load()`, which still loads only Privateer's Hold and still requires editor marker 10. LEVELFALL calls `dungeon_list` / `dungeon_load_at` / `world_load_dungeon`. Do not fold the viewer fallback into `world_load`.
+`world_load()` still loads only Privateer's Hold and still requires editor marker 8 or 10; GFALL streams the hold (`dunstream.c`), starting at the same marker. LEVELFALL calls `dungeon_list` / `dungeon_load_at` / `world_load_dungeon`. Do not fold the viewer fallback into `world_load`.
 
 ## Where the list comes from
 
@@ -55,9 +55,9 @@ An RDB flat's point is its centre, an RMB flat's its base: `paint` lifts flats b
 
 `rdb_load` keeps each editor marker (archive 199) as a `Marker`: where it stands, its record, and the bytes of its flat resource after the picture, as Daggerfall Unity's `RdbFlatResource` reads them: `flags` (`u16` at `res + 2`), `id` (FactionOrMobileId, the `u16` at `res + 4`: the magnitude byte, then the sound byte), `action` (`res + 10`). Record 10's sound byte is its block's water level, 8 units a step down (0 none; the world's y is 8 × the byte, `docs/water.md`); records 15 and 16 are a random and a fixed creature (`docs/entities.md`).
 
-`world_load` fails when the entrance block has no marker record 10. That marker is the new-game start in `S0000999.RDB` at about (1135, 1559, 496), yaw 0, pitch 0.
+`world_load` fails when the entrance block has neither a marker record 8 nor 10. **The new-game start is record 8**, the enter marker, in `S0000999.RDB` at (510, 25, 1672), yaw 0, pitch 0: the cave by the campfire, at the bottom of the hold (UESP's Privateer's Hold; DFU's `StartDungeonInterior` prefers the enter marker). Record 10 at (1135, 1559, 496) is 45 units from the way out. A marker's point is its centre and it stands 40 tall, so `dunstream.c` puts the feet 20 under it, within a step of the floor: at the centre, 25 over this floor, the body's stuck search took the spot for a bad one and moved it 128 units into a corner.
 
-`world_load_dungeon` uses marker 10 when it is there. Otherwise the first marker on the entrance block. Otherwise the center of the mesh bounds, after `measure`. An outdoor place ignores markers and starts above the bounds, pitched down. Y is up. A floor is constant Y.
+`world_load_dungeon` uses marker 8, then marker 10, when they are there. Otherwise the first marker on the entrance block. Otherwise the center of the mesh bounds, after `measure`. An outdoor place ignores markers and starts above the bounds, pitched down. Y is up. A floor is constant Y.
 
 ## Outdoors
 

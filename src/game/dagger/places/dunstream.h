@@ -36,7 +36,7 @@
 
 /*
  * Opens a stream of dungeon over level, with its origin at the start
- * block. The start: the start block's marker 10 (or its first marker,
+ * block. The start: the start block's enter marker, 8 (or its marker 10, its first marker,
  * or the block's middle) in the stream's frame. 0 when the dungeon
  * cannot be streamed (no start block, no files).
  */

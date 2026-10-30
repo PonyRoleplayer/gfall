@@ -9,9 +9,10 @@
  */
 
 /*
- * Archive 199. Not drawn. Record 10 is a block's start (the new-game
- * start in the hold); 15 a random creature, 16 a fixed one; 8 where a
- * visitor comes in. The flat's resource bytes after its picture, as
+ * Archive 199. Not drawn. Record 8 is where a dungeon is come into, and
+ * the new-game start in the hold, its cave by the campfire; 10 is a block's
+ * start marker, in the hold beside the way out; 15 a random creature, 16 a
+ * fixed one. The flat's resource bytes after its picture, as
  * Daggerfall Unity's RdbFlatResource reads them: a creature marker's
  * gender (fixed) or slot (random) in flags, its type in id's low byte
  * (fixed), passive when action is 99; a start marker's water level in

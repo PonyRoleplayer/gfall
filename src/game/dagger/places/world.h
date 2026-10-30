@@ -8,11 +8,11 @@ typedef struct World World;
 
 World *world_load(void);
 
-/* One already-parsed place. Marker 10 is the start when that block
+/* One already-parsed place. Marker 8, else 10, is the start when that block
    has it. Otherwise the first marker on the entrance block, otherwise
    the center of the bounds. outdoor places are RMB blocks on 4096-unit
    tiles and start above the bounds. The game path stays world_load,
-   which still requires marker 10. */
+   which still requires one of them. */
 World *world_load_dungeon(const Dungeon *dungeon);
 /*
  * The inside of building record of block (an index into town's blocks),

@@ -2813,9 +2813,10 @@ int check_dagger(const char *root_in)
         check_doors_hold(world);
         world_start(world, &sx, &sy, &sz, &syaw, &spitch);
         printf("start %.2f %.2f %.2f yaw %.3f pitch %.3f\n", sx, sy, sz, syaw, spitch);
-        check_expect(check_near(sx, 1135.0f, 0.1f) && check_near(sy, 1559.0f, 0.1f) &&
-               check_near(sz, 496.0f, 0.1f),
-               "start is not the marker in S0000999");
+        /* The enter marker, the cave by the campfire at the bottom of the hold; not marker 10, beside the way out. */
+        check_expect(check_near(sx, 510.0f, 0.1f) && check_near(sy, 25.0f, 0.1f) &&
+               check_near(sz, 1672.0f, 0.1f),
+               "start is not the enter marker in S0000999");
         check_expect(check_near(syaw, 0.0f, 0.001f) && check_near(spitch, 0.0f, 0.001f),
                "start look is not level along +Z");
         world_bounds(world, &minx, &miny, &minz, &maxx, &maxy, &maxz);

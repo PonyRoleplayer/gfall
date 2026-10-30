@@ -28,7 +28,7 @@
  * Privateer's Hold. MAPDITEM.017 places S0000999.RDB on the origin
  * tile and four border blocks around it. A tile is 2048 units. Model
  * and sprite positions in the RDB are relative to that tile. The camera
- * sits on editor marker 10, the new-game marker. File height is
+ * sits on editor marker 8, the new-game start. File height is
  * mirrored so larger Y is up, matching the camera.
  */
 #define PAL_NAME "ART_PAL.COL"
@@ -37,6 +37,7 @@
 /* Family + 2 is the ground archive: 002, 102, 302, 402. */
 #define TEX_SET_GROUND 2
 #define START_RECORD 10
+#define ENTER_RECORD 8
 #define MAX_IMAGES 512
 /* TEXTURE.210: the flats that give light, flames among them. */
 #define LIGHT_FLATS 210
@@ -426,20 +427,30 @@ static int append_block(World *world, Block *block, int index)
     return 1;
 }
 
-static void note_start(World *world, const Block *block)
+/* The start of the block's marker of this record, if it has one. 1 when it did. */
+static int start_at_marker(World *world, const Block *block, int record)
 {
     int i;
 
     for (i = 0; i < block->nmarker; i++) {
-        if ((int)block->marker[i].record == START_RECORD) {
+        if ((int)block->marker[i].record == record) {
             world->start_x = block->marker[i].x;
             world->start_y = block->marker[i].y;
             world->start_z = block->marker[i].z;
             world->start_yaw = 0.0f;
             world->start_pitch = 0.0f;
             world->have_start = 1;
-            return;
+            return 1;
         }
+    }
+    return 0;
+}
+
+/* Its enter marker, as DFU's StartDungeonInterior prefers (the hold's cave by the campfire), else marker 10 (the hold's beside the way out). */
+static void note_start(World *world, const Block *block)
+{
+    if (!start_at_marker(world, block, ENTER_RECORD)) {
+        start_at_marker(world, block, START_RECORD);
     }
 }
 

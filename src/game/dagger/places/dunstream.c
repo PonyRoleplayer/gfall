@@ -37,8 +37,15 @@
 #define CAP_WATER 64
 /* Pictures a block holds: its walls and flats, and its creatures' views. */
 #define CHUNK_PICS 512
-/* Marker 10 is a dungeon's start (world.c's START_RECORD). */
+/*
+ * Where a dungeon starts, as world.c's: its enter marker, 8, as DFU's
+ * StartDungeonInterior prefers; marker 10 only if it has none. In the hold
+ * marker 8 is the cave by the campfire, the bottom of the place, and marker
+ * 10 stands beside the way out.
+ */
+#define ENTER_RECORD 8
 #define START_RECORD 10
+#define MARKER_HALF 20.0f
 /* As world.c: the flames' frames, a flame's light flickering, the creatures' poses and floors. */
 #define LIGHT_FLATS 210
 #define FLAME_RATE 12
@@ -934,7 +941,16 @@ static void shift(void *user, float dx, float dz)
     light_stream_shift(dx, dz);
 }
 
-/* The start block's marker 10, its first marker, or its middle: in its own frame (the stream's origin's). */
+/*
+ * The start block's enter marker, else its marker 10, else its first marker,
+ * else its middle: in its own frame (the stream's origin's). The height
+ * returned is an eye's, over feet at the bottom of the marker: a marker's
+ * point is its centre and it stands 40 tall (DFU's randomTreasureMarkerDim),
+ * so the feet land within a step of the floor it stands on and the body
+ * settles there, as DFU's MovePlayerToMarker snaps it down. Feet at the
+ * centre are over a step up: the body's stuck search then takes the place
+ * for a bad one and moves it away.
+ */
 static int start_point(int b, float *x, float *y, float *z)
 {
     MemHeap *heap;
@@ -950,17 +966,24 @@ static int start_point(int b, float *x, float *y, float *z)
     *y = 0.0f;
     *z = BLOCK * 0.5f;
     if (blk && blk->nmarker > 0) {
-        *x = blk->marker[0].x;
-        *y = blk->marker[0].y;
-        *z = blk->marker[0].z;
+        const Marker *best;
+
+        best = &blk->marker[0];
         for (i = 0; i < blk->nmarker; i++) {
             if ((int)blk->marker[i].record == START_RECORD) {
-                *x = blk->marker[i].x;
-                *y = blk->marker[i].y;
-                *z = blk->marker[i].z;
+                best = &blk->marker[i];
                 break;
             }
         }
+        for (i = 0; i < blk->nmarker; i++) {
+            if ((int)blk->marker[i].record == ENTER_RECORD) {
+                best = &blk->marker[i];
+                break;
+            }
+        }
+        *x = best->x;
+        *y = best->y - MARKER_HALF + WALK_EYE;
+        *z = best->z;
     }
     mem_heap_delete(heap);
     return blk != 0;

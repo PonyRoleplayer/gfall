@@ -74,7 +74,7 @@ A small state machine: **stream** (outside, the whole map), **inside** (one buil
 
 - A place's data lives in its own heap (`docs/memory.md`), freed when the player leaves. What the player carries across (the sheet, the items, the quests later) is kept with `mem_keep` or in the game's own block, never in a place's heap.
 - Going in from the stream keeps the stream's position, so going out lands at the same door.
-- The first build starts in Privateer's Hold (`world_load`, marker 10), as Daggerfall does.
+- The game starts in Privateer's Hold at its enter marker, the cave by the campfire at the bottom of the place, as Daggerfall does (`docs/dungeons.md`).
 
 ### What the player changed (built: the keys)
 Every door, lever and creature of a place loaded whole is keyed for the engine's state table (`keep.c`, `docs/interact.md`, State that outlives a load). A key is two words:
