@@ -341,7 +341,8 @@ static void think(Mind *m, const Player *p, const Scene *scene, const float *pey
         int speed;
 
         speed = k->attribute[ATTR_SPEED] < 8 ? 8 : k->attribute[ATTR_SPEED];
-        if (combat_roll(speed) >= speed / 8 + 6) {
+        /* Classic swings on a roll under Speed / 8 + 6 (FALL.EXE's AI): about one tick in four at Speed 50. */
+        if (combat_roll(speed) < speed / 8 + 6) {
             m->swing = 0.0f;
             m->landed = 0;
             e->act = ENTITY_ATTACK;

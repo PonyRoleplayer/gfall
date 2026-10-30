@@ -16,9 +16,9 @@
  * struck. Awake, it has a mind: a body of its size under gravity (none
  * for a flyer), a give-up count, a melee timer. It turns toward the
  * player 20 degrees a classic tick, walks at (Speed + 150) / 39.5 m/s
- * to melee range, and swings when the timer and a roll on its Speed
- * let it; its swing lands on its attack pose's third frame if the
- * player is still in reach and before it. Out of sight it goes where it
+ * to melee range, and swings when the timer has run out and a roll of
+ * Speed comes under Speed / 8 + 6; its swing lands on its attack
+ * pose's third frame if the player is still in reach and before it. Out of sight it goes where it
  * last saw the player, and after 200 classic ticks unseen it gives up,
  * standing where it is.
  *

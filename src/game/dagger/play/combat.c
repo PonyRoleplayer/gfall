@@ -452,7 +452,8 @@ int combat_strike(Character *pc, const Item *weapon, int swing, const Scene *sce
         /* Struck at all, it knows: passive or asleep, it turns on the player. */
         foes_alert(best);
         if (b.ineffective) {
-            interact_say("This weapon has no effect.");
+            /* Classic's own line (FALL.EXE); DFU says "This weapon has no effect." */
+            interact_say("The material of the weapon you are using is ineffective.");
             sfx_play(weapon ? SND_SWING_MEDIUM : SND_SWING_HIGH);
             return 1;
         }
@@ -466,6 +467,9 @@ int combat_strike(Character *pc, const Item *weapon, int swing, const Scene *sce
             return 1;
         }
         sfx_at(sfx_pick(SND_HIT_FIRST, SND_HITS), best->x, best->y + entity_height(best) * 0.5f, best->z);
+        if (b.backstab) {
+            interact_say("Successful backstab!");
+        }
         health -= b.damage;
         set_health(row, health);
         if (health <= 0) {
