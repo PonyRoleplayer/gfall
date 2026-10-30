@@ -56,6 +56,8 @@ static void send_screen(void)
     } else {
         create_compose();
         pixels = create_pixels();
+        /* The class questions' picture has a palette of its own. */
+        create_palette(g_rgb);
     }
     if (g_pic) {
         pic_free(g_pic);

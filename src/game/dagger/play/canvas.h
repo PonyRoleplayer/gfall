@@ -42,6 +42,9 @@ typedef struct Composer {
     MemHeap *scratch;
     df_u8 *screen;
     SmallFont font;
+    /* SPOP.RCI's nine pieces of a scroll, and BUTTONS.RCI's buttons; 0 when they did not read. */
+    const df_u8 *scroll;
+    const df_u8 *buttons;
 } Composer;
 
 /* Its heaps, its picture and FONT0003.FNT. 0, with everything let go, when any did not come. */
@@ -49,6 +52,8 @@ int composer_open(Composer *c);
 void composer_close(Composer *c);
 /* A whole-screen or any IMG's pixels, in the composer's heap; 0 when it did not read. */
 const df_u8 *composer_read(Composer *c, const char *name);
+/* A file's bytes whole in the composer's heap, for a table read once; 0 when it did not read. */
+const df_u8 *composer_table(Composer *c, const char *name, df_u32 *size);
 /* The scratch heap in use until composer_scratch_end; the old heap back. Let go first, if it has grown too large. */
 MemHeap *composer_scratch_begin(Composer *c);
 void composer_scratch_end(MemHeap *was);
@@ -65,6 +70,24 @@ void canvas_copy_rect(const df_u8 *from, const Rect *r);
 void canvas_copy_part(const df_u8 *from, int w, int sx, int sy, int sw, int sh, int x, int y);
 /* A picture with index 0 clear onto the screen at x, y, clipped to it. */
 void canvas_cutout(const df_u8 *from, int w, int h, int x, int y);
+/*
+ * Classic's parchment over r, its sides rounded up to its 22 x 22 pieces
+ * (DFU's popup style: SPOP.RCI, corners, sides and a middle, three rows of
+ * three). What is under its burnt edges shows.
+ */
+void canvas_scroll(const Rect *r);
+/* One of BUTTONS.RCI's, 32 x 16, by DFU's numbers. */
+enum {
+    CANVAS_BUTTON_YES = 3,
+    CANVAS_BUTTON_NO = 4,
+    CANVAS_BUTTON_MALE = 6,
+    CANVAS_BUTTON_FEMALE = 7
+};
+#define CANVAS_BUTTON_W 32
+#define CANVAS_BUTTON_H 16
+void canvas_button(int which, int x, int y);
+/* The ink of the labels from here on, and its shadow (-1 for none): for a picture under its own palette. canvas_use puts classic's back. */
+void canvas_set_ink(int ink, int shadow);
 /* A filled rectangle of one palette index. */
 void canvas_box(const Rect *r, int index);
 /* A line in classic's ink with its top left at x, y. */
@@ -75,5 +98,7 @@ void canvas_label_centred(const Rect *r, int down, const char *text);
 int canvas_width(const char *text);
 /* Text in r, cut at spaces and at its own line breaks, as many lines as fit. How many lines it took. */
 int canvas_text(const Rect *r, const char *text);
+/* How many lines canvas_text would take for this width, drawing nothing. */
+int canvas_text_lines(int width, const char *text);
 
 #endif

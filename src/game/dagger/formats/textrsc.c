@@ -9,6 +9,7 @@
 #define ENTRY_BYTES 6
 #define HEADER_MAX 16384
 #define LINE_END 0xFD
+#define LINE_END_TOO 0xFC
 #define RECORD_END 0xFE
 
 /* The record's offset, and the next record's after it (the file's end for the last). 0 when it has no such id. */
@@ -52,7 +53,8 @@ static int find_record(VfsFile *file, int id, df_u32 *from, df_u32 *to)
 
 int textrsc_read(int id, char *out, int cap)
 {
-    static df_u8 record[8192];
+    /* The longest record, the class questions', is 29 KB. */
+    static df_u8 record[32768];
     VfsFile *file;
     df_u32 from;
     df_u32 to;
@@ -71,7 +73,7 @@ int textrsc_read(int id, char *out, int cap)
     vfs_close(file);
     n = 0;
     for (i = 0; i < to - from && record[i] != RECORD_END && n < cap - 1; i++) {
-        if (record[i] == LINE_END) {
+        if (record[i] == LINE_END || record[i] == LINE_END_TOO) {
             out[n++] = '\n';
         } else if (record[i] >= 32 && record[i] < 127) {
             out[n++] = (char)record[i];

@@ -12,7 +12,11 @@
  *   the map of Tamriel (TMAP00I0.IMG, a click read through TAMRIEL2.IMG,
  *     whose every pixel is a race), and that race's words to confirm;
  *   a woman or a man;
- *   a class from the list, and its words to confirm;
+ *   how to choose a class (BUTN01I0.IMG): from the list (PICK00I0.IMG), whose
+ *     last entry makes one's own, on CUST00I0.IMG (name, twelve skills, hit
+ *     points, attributes moved about, a harder class advancing faster), or by
+ *     classic's ten questions (CHGN00I0.IMG, TEXT.RSC's 9000 and CLASSES.DAT);
+ *     the class's words to confirm;
  *   the twelve background questions of that class (BIOG00I0.IMG);
  *   a name (CHAR00I0.IMG), a face of the race's ten (CHAR01I0.IMG);
  *   the attributes' rolls and points to place (CHAR02I0.IMG);
@@ -32,8 +36,12 @@ enum {
     CREATE_RACE,
     CREATE_RACE_CONFIRM,
     CREATE_SEX,
+    CREATE_METHOD,
+    CREATE_GENERATE,
     CREATE_CLASS,
     CREATE_CLASS_CONFIRM,
+    CREATE_CUSTOM,
+    CREATE_CUSTOM_PICK,
     CREATE_QUESTIONS,
     CREATE_NAME,
     CREATE_FACE,
@@ -59,6 +67,10 @@ void create_close(void);
 /* The screen now, whatever create_changed says: 320 x 200 under ART_PAL.COL. */
 void create_compose(void);
 const df_u8 *create_pixels(void);
+/* The palette the screen now is under: ART_PAL.COL's, or the class questions' picture's own. 768 RGB bytes. */
+void create_palette(df_u8 *rgb);
+/* The class ten answers come to, from CLASSES.DAT's table, by how many went each way. -1 when none. */
+int create_class_of_answers(int warrior, int rogue, int mage);
 /* 1 once since the last compose if something on it changed. */
 int create_changed(void);
 /* A click at classic's x, y: CREATE_STAY, DONE or SKIPPED. */

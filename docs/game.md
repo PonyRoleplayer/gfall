@@ -175,8 +175,11 @@ Skill advance by use and the level-up rule come from UESP's Leveling page. A pre
 | Step | Picture | What it decides |
 | --- | --- | --- |
 | Province | TMAP00I0.IMG, read under ART_PAL; a click looks up TAMRIEL2.IMG, whose every pixel is a race | the race, its TEXT.RSC words to confirm (`textrsc.c`) |
-| Sex | a box | a woman or a man |
-| Class | a list | one of the 18, its words (2100 and on) to confirm |
+| Sex | a scroll, with BUTTONS.RCI's Female and Male | a woman or a man |
+| Method | BUTN01I0.IMG over the map | the list, or the questions |
+| Class | PICK00I0.IMG, nine rows and its arrows | one of the 18, or Custom last; its words (2100 and on) to confirm |
+| Questions | CHGN00I0.IMG, under its own palette | ten of TEXT.RSC record 9000's forty, none twice, answered by A, B, C or a click; each answer goes warrior, rogue or mage by DFU's table, and CLASSES.DAT's table (from byte 18, threes of counts, four to an entry) says what class the counts make: ten warrior a Knight, ten mage a Mage |
+| Custom | CUST00I0.IMG, CUST08I0.IMG's dagger | a name; twelve skills from a list, none twice; hit points 4 to 30; attributes from 50 moved between 10 and 75, the points given up placed elsewhere. Hit points over 8 add to its hardness, under 8 take off twice that; advancement is 0.3 + 2.7 × (hardness + 12) / 52. Spell points ½ an Intelligence point, an iron longsword, and the background questions of the listed class sharing most skills |
 | Background | BIOG00I0.IMG | twelve questions from `BIOG##T0.TXT` (`biog.c`): skills, gold, weapons and armour |
 | Name | CHAR00I0.IMG | typed; each word begins with a capital |
 | Face | CHAR01I0.IMG | one of the race's ten, and it shows on the paper doll |
@@ -187,7 +190,9 @@ Skill advance by use and the level-up rule come from UESP's Leveling page. A pre
 
 - **Skipping.** Escape on the map starts at once as the default character. Escape during the questions answers the rest at random, as classic's skip does.
 - **The kit** (`play/kit.c`, DFU's AssignStartingGear): the class's weapon in hand, and 100 gold. A Warrior's is an iron broadsword, so the default character no longer starts with a longsword. An Archer also has a steel battle axe and 24 arrows.
-- **Ours, not classic's:** the boxes for words and answers and the class list are dark boxes, not classic's scrolls and buttons; the place of the derived numbers is by eye.
+- **Scrolls and buttons** are classic's on every screen (`canvas_scroll`, `canvas_button`): SPOP.RCI's nine 22 × 22 pieces, as DFU's parchment style, and BUTTONS.RCI's 32 × 16 buttons. The class questions stand on a dark band of their picture's own colours: classic's SCRL00I0.GFX and SCRL01I0.GFX are animated, and not read.
+- **Ours, not classic's:** the place of the derived numbers by eye; the dagger's steps between its ends; a custom class's skill list by number, not alphabetical.
+- **A custom class** is kept apart from the table (`career_set_custom`, `CLASS_CUSTOM`), and a save of one writes it as a `CLAS` chunk.
 
 ### Levelling (built: P6)
 
@@ -197,7 +202,7 @@ Skill advance by use and the level-up rule come from UESP's Leveling page. A pre
 - **A skill rises** at most every 360 game minutes, when its uses reach value × the skill's advancement × the class's × 1.04 ^ level × 0.4, down, plus 1. Reflexes count uses an eighth more or less a step from average. Past 95 only until a primary skill reaches 100. The class's raw word reads as 16.16 fixed point (a Mage's 1.04): inferred from the values, since DFU's conversion was not read.
 - **A level** comes when (sum now − sum at creation + 28) / 15 passes it. The sum is the three primary skills, the two highest major and the highest minor. So the first needs only 2 points, each after 15.
 - **Taking it.** The character sheet (INFO00I0.IMG) opens at once. The level rises, health gains half the class's hit points plus a roll of the other half, with endurance's modifier, at least 1, and 4 to 6 points go on the attributes through the spinner. It cannot close until they are placed.
-- **The sheet** also opens on the character key: who they are, the doll, the skill lists (a dark box, ours), Inventory and Exit.
+- **The sheet** also opens on the character key: who they are, the doll, the skill lists on a scroll, Inventory and Exit.
 - **Reflexes** also set a creature's melee timer, 450 a step past average.
 
 ## Controls and the HUD
@@ -378,7 +383,7 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **The doll** (`doll_compose`, DFU's PaperDollRenderer): the race's SCBG background cropped at 8, 7, the body, its underclothes, the head, then what is worn by the template's draw order. Each picture's own header places it, less classic's doll corner 200, 8. Armour's archive is 245 for a woman and 249 for a man, plus the body shape (Argonian 0, elf 1, human 2, Khajiit 3). A worn picture's index 255 is a mask: it shows the background again, which is how a helm takes off the horns under it. In a list it is only clear.
 - **The lists** show four rows of 50 × 38. A thing worn is on the doll, not in the list. Clicks go by the mode: Equip wears, Remove drops, Info shows a box. A click on the right list takes the thing, a click on the doll takes it off, found by a byte per doll pixel saying which worn place drew it.
 - **The Gold button** asks how much, and that much lies in the right list as a thing, not more than is carried (DFU's). A body or a heap refuses it.
-- **Ours, not classic's:** the "Carrying", "Dropped", "Body", "Treasure" and "Pile" words over the lists, and the info box, a dark box where classic has a scroll of TEXT.RSC lines. Wagon, Use and Gold say why they do nothing yet.
+- **Ours, not classic's:** the "Carrying", "Dropped", "Body", "Treasure" and "Pile" words over the lists, and the info box's lines, on a scroll where classic's are TEXT.RSC's. Wagon and Use say why they do nothing yet.
 
 **What it costs the 233.** The whole screen is composed in memory into one 320 × 200 picture, only when something on it changes: a click, or the pointer coming to rest on another thing. An open frame sends nothing to the card and draws that one picture's 29 quads, however full the lists are. It takes the 66560 bytes of `GAME_PICTURE_KB` the controls screen already counts on, not one more. A fitted item picture is kept in one of 8 places, so a list scrolled back reads nothing. While it is open `gfx_frame` gets no level (`game_world_shows`, the controls screen too): no world is drawn only to be covered. All this is by the design's sums and host tests: **none of it has run on the 233 yet.**
 
@@ -402,15 +407,15 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Items | clothing's dyes | with clothing |
 | Inventory | the Wagon button (P12), the Use button (P9) | as named |
 | Inventory | a left-hand weapon shows the right hand's picture on the doll | later |
-| Inventory | the info box is a dark box, not classic's scroll of TEXT.RSC | P7 |
+| Inventory | the info box's lines are ours, not TEXT.RSC's | later |
 | Loot | the other columns of `LOOT` wait for their items | P9, P10 |
 | Loot | a body or a heap takes nothing put on it (a choice, see What can be searched) | - |
 | Places | treasure and piles only in a dungeon streamed by block | P8 |
 | Player | the bottom panel's buttons and mode icons | later |
-| Creation | choosing a class by classic's questions, and a custom class | P7 |
+| Creation | a custom class's special advantages, disadvantages and reputations; the Help button | P9, P10 |
+| Creation | the class questions' animated scroll and characters | later |
 | Creation | the answers' reputation, history and lasting modifiers (`r`, `#`, `RP`, `TH`...) are read past | P10 |
-| Creation | Save Roll and Load Roll; the race's voice on choosing | P7 |
-| Creation | boxes and the class list are dark boxes, not classic's scrolls and buttons | P7 |
+| Creation | Save Roll and Load Roll; the race's voice on choosing | later |
 | Character | the Spellbook, Log, History and Affiliations buttons | P9, P10 |
 | Character | starting clothes and spellbook | with clothing, P9 |
 | Engine | `scene/pack.c`, `ui/packview.c`, `scene/rpg.c`, `ui/rpgview.c` are used by no game; the user's line is that the engine is simulation and world | to decide |
@@ -502,7 +507,7 @@ The first goal is a **prototype**: from classic's start menu, Privateer's Hold p
 | P4 | Combat (built; the swing runs on the target, striking and creatures awake not tried there yet; the player's death is back to the start until saves; LEVELFALL's view of a creature's state not yet): the weapon's swing from WEAPON##.CIF (the shown swing's frames only on the card), classic's to-hit and damage; creatures wake, chase on bodies of their size, attack, flinch, die; the player's death; `WEAP`, `MATL` | GAME; LEVELFALL shows each creature's state | the hold can be cleared, or the player killed, from records |
 | P5 | Loot and inventory (built, host-tested, not run on the target; the other tabs' items not yet): bodies, treasure, dropped piles, gold, pick up, equip weapon and armour, classic's inventory screen and paper doll, classic's metal colours; `ITEM`, `ARMR`, `LOOT`, `LDUN` | GAME, ENGINE's pictures | equipment changes combat |
 | P6 | Character creation and levelling (built, host-tested, not run on the target; class questions and custom classes not yet): classic's screens, background questions, skill gains, level-ups, the character sheet | GAME | a character made by the screens plays the hold and levels |
-| P7 | Prototype polish (begun: saves, Load, the death screen, rest and wait built, host-tested, not run on the target; the 233 profile pass and the P7 gaps above not done): loading holds, one save slot in `DATA\`, the menu's load, rest and wait, a 233 profile pass | GAME | from the menu through the hold and back after a save |
+| P7 | Prototype polish (built, host-tested, not run on the target; the 233 profile pass not done): loading holds, one save slot in `DATA\`, the menu's load, rest and wait, a 233 profile pass | GAME | from the menu through the hold and back after a save |
 | P8 | Out of the hold: `places/travel.c` lifted from LEVELFALL and shared; the hold's outside in the stream, the nearest town, its houses | GAME and LEVELFALL | from the menu to town and back after a save, in one session |
 | P9 | Magic: spells, effects, spellbook, casting, potions, enchantments | GAME | |
 | P10 | People: talk from TEXT.RSC, shops, banks, factions, reputation, law | GAME | |

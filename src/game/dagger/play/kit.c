@@ -50,7 +50,11 @@ void kit_give(int klass, Inventory *pack)
 
     inventory_clear(pack);
     pack->gold = START_GOLD;
+    /* A class of the player's own: an iron longsword (AssignStartingGear). */
     if (klass < 0 || klass >= 18) {
+        if (item_make(&it, ITEM_LONGSWORD, MATERIAL_IRON)) {
+            inventory_equip(pack, inventory_add(pack, &it));
+        }
         return;
     }
     if (item_make(&it, g_class_weapon[klass].weapon, g_class_weapon[klass].material)) {

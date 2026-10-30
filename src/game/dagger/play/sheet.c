@@ -32,7 +32,7 @@
 #define FATIGUE_AT 57, 54
 #define HEALTH_AT 52, 64
 #define CARRY_AT 90, 74
-/* The skill lists' buttons, and the box one opens (ours: classic draws a scroll). */
+/* The skill lists' buttons, and the scroll one opens. */
 enum {
     LIST_PRIMARY,
     LIST_MAJOR,
@@ -44,10 +44,10 @@ enum {
 static const Rect g_list_button[LISTS] = {
     { 11, 106, 115, 8 }, { 11, 116, 115, 8 }, { 11, 126, 115, 8 }, { 11, 136, 115, 8 }
 };
-static const Rect g_list_box = { 4, 8, 190, 184 };
-#define LIST_TEXT_X 10
-#define LIST_TEXT_Y 11
-#define LIST_VALUE_X 160
+static const Rect g_list_box = { 0, 1, 198, 198 };
+#define LIST_TEXT_X 12
+#define LIST_TEXT_Y 8
+#define LIST_VALUE_X 165
 static const Rect g_inventory_button = { 3, 151, 65, 12 };
 static const Rect g_exit_button = { 50, 179, 39, 19 };
 
@@ -260,7 +260,7 @@ static void compose_list(void)
     if (g.list == LIST_NONE || !k) {
         return;
     }
-    canvas_box(&g_list_box, CANVAS_DARK);
+    canvas_scroll(&g_list_box);
     line = 0;
     if (g.list == LIST_OTHER) {
         for (i = 0; i < SKILL_COUNT; i++) {

@@ -73,6 +73,8 @@ const RecSchema skill_schema = {
 static RecTable g_classes;
 static RecTable g_races;
 static RecTable g_skills;
+static CareerClass g_custom;
+static int g_have_custom;
 
 RecTable *class_table(void)
 {
@@ -100,7 +102,17 @@ RecTable *skill_table(void)
 
 const CareerClass *career_class(int id)
 {
+    if (id == CLASS_CUSTOM) {
+        return g_have_custom ? &g_custom : 0;
+    }
     return id < 0 ? 0 : (const CareerClass *)rec_row(class_table(), id);
+}
+
+void career_set_custom(const CareerClass *c)
+{
+    g_custom = *c;
+    g_custom.id = CLASS_CUSTOM;
+    g_have_custom = 1;
 }
 
 const CareerRace *career_race(int id)

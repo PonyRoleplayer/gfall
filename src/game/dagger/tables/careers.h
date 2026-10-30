@@ -71,6 +71,8 @@ enum {
 /* Class numbers (the CLASS*.CFG files), the ones the code names. */
 #define CLASS_MAGE 0
 #define CLASS_WARRIOR 16
+/* The one class the player made (create.c, career_set_custom): not in the table, nor in MAIN.DAT. */
+#define CLASS_CUSTOM 18
 
 typedef struct CareerClass {
     df_u16 id;
@@ -133,6 +135,8 @@ RecTable *class_table(void);
 RecTable *race_table(void);
 RecTable *skill_table(void);
 const CareerClass *career_class(int id);
+/* The player's own class, by CLASS_CUSTOM's number, until the process ends or another replaces it. */
+void career_set_custom(const CareerClass *c);
 const CareerRace *career_race(int id);
 const CareerSkill *career_skill(int id);
 

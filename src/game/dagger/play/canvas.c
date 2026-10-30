@@ -1,5 +1,6 @@
 #include "game/dagger/play/canvas.h"
 #include "game/dagger/formats/img.h"
+#include "engine/assets/vfs.h"
 
 /* See canvas.h. */
 
@@ -7,8 +8,12 @@
 #define SCRATCH_MAX (512u * 1024u)
 #define WORD_MAX 40
 #define LINE_MAX 96
+#define PIECE 22
+#define BUTTON_BYTES (CANVAS_BUTTON_W * CANVAS_BUTTON_H)
 
 static Composer *g_on;
+static int g_ink = CANVAS_INK;
+static int g_shadow = CANVAS_INK_SHADOW;
 
 int composer_open(Composer *c)
 {
@@ -25,6 +30,12 @@ int composer_open(Composer *c)
     was = mem_heap_use(c->heap);
     c->screen = (df_u8 *)mem_alloc(CANVAS_BYTES);
     ok = c->screen && smallfont_load(&c->font, "FONT0003.FNT");
+    if (ok) {
+        df_u32 size;
+
+        c->scroll = vfs_read("SPOP.RCI", &size);
+        c->buttons = vfs_read("BUTTONS.RCI", &size);
+    }
     mem_heap_use(was);
     if (!ok) {
         composer_close(c);
@@ -59,6 +70,17 @@ const df_u8 *composer_read(Composer *c, const char *name)
     return ok ? pic.pixels : 0;
 }
 
+const df_u8 *composer_table(Composer *c, const char *name, df_u32 *size)
+{
+    MemHeap *was;
+    const df_u8 *bytes;
+
+    was = mem_heap_use(c->heap);
+    bytes = vfs_read(name, size);
+    mem_heap_use(was);
+    return bytes;
+}
+
 MemHeap *composer_scratch_begin(Composer *c)
 {
     if (mem_heap_bytes(c->scratch) > SCRATCH_MAX) {
@@ -77,6 +99,47 @@ void composer_scratch_end(MemHeap *was)
 void canvas_use(Composer *c)
 {
     g_on = c;
+    g_ink = CANVAS_INK;
+    g_shadow = CANVAS_INK_SHADOW;
+}
+
+void canvas_set_ink(int ink, int shadow)
+{
+    g_ink = ink;
+    g_shadow = shadow;
+}
+
+void canvas_scroll(const Rect *r)
+{
+    int across;
+    int down;
+    int row;
+    int col;
+
+    if (!g_on->scroll) {
+        canvas_box(r, CANVAS_DARK);
+        return;
+    }
+    across = (r->w + PIECE - 1) / PIECE;
+    down = (r->h + PIECE - 1) / PIECE;
+    for (row = 0; row < down; row++) {
+        int piece_row;
+
+        piece_row = row == 0 ? 0 : (row == down - 1 ? 2 : 1);
+        for (col = 0; col < across; col++) {
+            int piece_col;
+
+            piece_col = col == 0 ? 0 : (col == across - 1 ? 2 : 1);
+            canvas_cutout(g_on->scroll + (piece_row * 3 + piece_col) * PIECE * PIECE, PIECE, PIECE, r->x + col * PIECE, r->y + row * PIECE);
+        }
+    }
+}
+
+void canvas_button(int which, int x, int y)
+{
+    if (g_on->buttons) {
+        canvas_copy_part(g_on->buttons + which * BUTTON_BYTES, CANVAS_BUTTON_W, 0, 0, CANVAS_BUTTON_W, CANVAS_BUTTON_H, x, y);
+    }
 }
 
 int rect_has(const Rect *r, int x, int y)
@@ -144,7 +207,7 @@ void canvas_box(const Rect *r, int index)
 
 void canvas_label(int x, int y, const char *text)
 {
-    smallfont_draw(&g_on->font, g_on->screen, CANVAS_W, CANVAS_H, x, y, CANVAS_INK, CANVAS_INK_SHADOW, text);
+    smallfont_draw(&g_on->font, g_on->screen, CANVAS_W, CANVAS_H, x, y, g_ink, g_shadow, text);
 }
 
 void canvas_label_centred(const Rect *r, int down, const char *text)
@@ -157,7 +220,11 @@ int canvas_width(const char *text)
     return smallfont_width(&g_on->font, text);
 }
 
-int canvas_text(const Rect *r, const char *text)
+/*
+ * Cuts text into lines of a width at spaces and its own line breaks: each
+ * line to one_line, if given, with its number. As many as max_lines. How many.
+ */
+static int cut_lines(int width, const char *text, int max_lines, const Rect *draw_in)
 {
     char line[LINE_MAX];
     int lines;
@@ -166,7 +233,7 @@ int canvas_text(const Rect *r, const char *text)
     lines = 0;
     at = 0;
     line[0] = 0;
-    while ((lines + 1) * CANVAS_LINE <= r->h) {
+    while (lines < max_lines) {
         char word[WORD_MAX];
         char joined[LINE_MAX + WORD_MAX];
         int n;
@@ -178,10 +245,8 @@ int canvas_text(const Rect *r, const char *text)
         }
         word[n] = 0;
         /* The word on this line, if there is room for it. */
-        i = 0;
-        while (i < at) {
+        for (i = 0; i < at; i++) {
             joined[i] = line[i];
-            i++;
         }
         if (at && n) {
             joined[i++] = ' ';
@@ -190,8 +255,10 @@ int canvas_text(const Rect *r, const char *text)
             joined[i++] = word[n];
         }
         joined[i] = 0;
-        if (at && canvas_width(joined) > r->w) {
-            canvas_label(r->x, r->y + lines * CANVAS_LINE, line);
+        if (at && canvas_width(joined) > width) {
+            if (draw_in) {
+                canvas_label(draw_in->x, draw_in->y + lines * CANVAS_LINE, line);
+            }
             lines++;
             for (at = 0; word[at]; at++) {
                 line[at] = word[at];
@@ -204,8 +271,10 @@ int canvas_text(const Rect *r, const char *text)
             line[at] = 0;
         }
         if (*text == '\n' || !*text) {
-            if ((lines + 1) * CANVAS_LINE <= r->h && at) {
-                canvas_label(r->x, r->y + lines * CANVAS_LINE, line);
+            if (lines < max_lines && at) {
+                if (draw_in) {
+                    canvas_label(draw_in->x, draw_in->y + lines * CANVAS_LINE, line);
+                }
                 lines++;
             }
             at = 0;
@@ -217,4 +286,14 @@ int canvas_text(const Rect *r, const char *text)
         text++;
     }
     return lines;
+}
+
+int canvas_text(const Rect *r, const char *text)
+{
+    return cut_lines(r->w, text, r->h / CANVAS_LINE, r);
+}
+
+int canvas_text_lines(int width, const char *text)
+{
+    return cut_lines(width, text, CANVAS_H, 0);
 }

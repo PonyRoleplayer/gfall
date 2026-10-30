@@ -2034,9 +2034,17 @@ static void check_kit_and_words(void)
 }
 
 /* Creation, driven as a player would: clicks on classic's places, keys for the name. */
-#define CREATE_YES_X 100
-#define CREATE_NO_X 210
-#define CREATE_BOX_Y 155
+#define CREATE_YES_X 120
+#define CREATE_NO_X 190
+#define CREATE_BOX_Y 160
+/* BUTN01I0.IMG's two ways, and PICK00I0.IMG's next arrow and its rows. */
+#define CREATE_METHOD_X 150
+#define CREATE_METHOD_LIST_Y 90
+#define CREATE_METHOD_ASK_Y 145
+#define CREATE_LIST_NEXT_X 243
+#define CREATE_LIST_NEXT_Y 148
+#define CREATE_LIST_X 100
+#define CREATE_LIST_ROW_Y(row) (63 + (row) * 8 + 2)
 #define CREATE_OK_X 280
 #define CREATE_OK_Y 180
 static void check_create(void)
@@ -2080,11 +2088,18 @@ static void check_create(void)
     create_click(CREATE_YES_X, CREATE_BOX_Y);
     check_expect(create_step() == CREATE_SEX, "create: Yes did not go on");
     create_click(CREATE_YES_X, CREATE_BOX_Y);
-    check_expect(create_step() == CREATE_CLASS, "create: choosing a woman did not go on");
+    check_expect(create_step() == CREATE_METHOD, "create: choosing a woman did not go on");
+    create_compose();
+    write_picture(create_pixels(), "build/create11.ppm");
+    create_click(CREATE_METHOD_X, CREATE_METHOD_LIST_Y);
+    check_expect(create_step() == CREATE_CLASS, "create: choosing the list did not bring it");
     create_compose();
     write_picture(create_pixels(), "build/create2.ppm");
-    /* The Warrior, class 16, on the list. */
-    create_click(150, 22 + 16 * 8 + 8 + 2);
+    /* The Warrior, class 16, down the list: eight steps, then the ninth row. */
+    for (i = 0; i < 8; i++) {
+        create_click(CREATE_LIST_NEXT_X, CREATE_LIST_NEXT_Y);
+    }
+    create_click(CREATE_LIST_X, CREATE_LIST_ROW_Y(8));
     check_expect(create_step() == CREATE_CLASS_CONFIRM, "create: a click on the list asked nothing");
     create_click(CREATE_YES_X, CREATE_BOX_Y);
     check_expect(create_step() == CREATE_QUESTIONS, "create: a class did not bring its questions");
@@ -2164,6 +2179,119 @@ static void check_create(void)
     check_expect(inventory_weapon(&pack) != 0 && pack.gold <= 2000u, "create: no kit, or a mad amount of gold");
     check_expect(sheet.health == sheet.health_max && sheet.level_sum_start == character_level_sum(&sheet),
                  "create: the character is not whole, or their level count did not start");
+    create_close();
+
+    /* The ten questions: CLASSES.DAT's table says ten warrior answers make a Knight. */
+    check_expect(create_open(), "create: it did not open for the questions");
+    check_expect(create_class_of_answers(10, 0, 0) == 17, "create: ten warrior answers are not a Knight");
+    i = create_class_of_answers(0, 0, 10);
+    printf("create: ten mage answers make class %d\n", i);
+    check_expect(i >= 0 && i < 18, "create: ten mage answers come to no class");
+    create_click(2, 2);
+    {
+        ImgPicture mask;
+
+        check_expect(img_load("TAMRIEL2.IMG", &mask), "create: no TAMRIEL2.IMG");
+        found = 0;
+        for (y = 0; y < 200 && !found; y++) {
+            for (x = 0; x < 320 && !found; x++) {
+                if (mask.pixels[y * 320 + x] == RACE_NORD) {
+                    create_click(x, y);
+                    found = 1;
+                }
+            }
+        }
+    }
+    create_click(CREATE_YES_X, CREATE_BOX_Y);
+    create_click(CREATE_NO_X, CREATE_BOX_Y);
+    create_click(CREATE_METHOD_X, CREATE_METHOD_ASK_Y);
+    check_expect(create_step() == CREATE_GENERATE, "create: choosing the questions did not ask one");
+    create_compose();
+    {
+        df_u8 rgb[768];
+        ImgPicture art;
+        FILE *f;
+
+        create_palette(rgb);
+        /* Under its own palette, not ART_PAL.COL. */
+        f = fopen("build/create12.ppm", "wb");
+        if (f) {
+            fprintf(f, "P6\n320 200\n255\n");
+            for (i = 0; i < 320 * 200; i++) {
+                fwrite(rgb + create_pixels()[i] * 3, 1, 3, f);
+            }
+            fclose(f);
+        }
+        check_expect(img_load("CHGN00I0.IMG", &art) && art.palette && rgb[3] == (df_u8)(art.palette[3] * 4), "create: the questions' screen is not under its own palette");
+    }
+    for (i = 0; i < 10; i++) {
+        create_key('A' + (i % 3));
+    }
+    check_expect(create_step() == CREATE_CLASS_CONFIRM, "create: ten answers did not come to a class");
+    create_close();
+
+    /* A class of one's own: last on the list. It will not finish until it is whole. */
+    check_expect(create_open(), "create: it did not open for a custom class");
+    {
+        ImgPicture mask;
+
+        img_load("TAMRIEL2.IMG", &mask);
+        found = 0;
+        for (y = 0; y < 200 && !found; y++) {
+            for (x = 0; x < 320 && !found; x++) {
+                if (mask.pixels[y * 320 + x] == RACE_KHAJIIT) {
+                    create_click(x, y);
+                    found = 1;
+                }
+            }
+        }
+    }
+    create_click(CREATE_YES_X, CREATE_BOX_Y);
+    create_click(CREATE_NO_X, CREATE_BOX_Y);
+    create_click(CREATE_METHOD_X, CREATE_METHOD_LIST_Y);
+    for (i = 0; i < 10; i++) {
+        create_click(CREATE_LIST_NEXT_X, CREATE_LIST_NEXT_Y);
+    }
+    create_click(CREATE_LIST_X, CREATE_LIST_ROW_Y(8));
+    check_expect(create_step() == CREATE_CUSTOM, "create: Custom on the list did not begin a class");
+    create_click(280, 180);
+    check_expect(create_step() == CREATE_CUSTOM && create_note() != 0, "create: a class with no name finished");
+    create_key('T');
+    create_key('O');
+    create_key('Y');
+    create_click(280, 180);
+    check_expect(create_step() == CREATE_CUSTOM && create_note() != 0, "create: a class with no skills finished");
+    /* Twelve skills, each from the top of the list: primary, major, minor lines. */
+    {
+        static const df_u8 lines[12] = { 32, 42, 52, 81, 91, 101, 130, 140, 150, 160, 170, 180 };
+
+        for (i = 0; i < 12; i++) {
+            create_click(100, lines[i] + 1);
+            check_expect(create_step() == CREATE_CUSTOM_PICK, "create: a skill's line did not bring the list");
+            create_click(CREATE_LIST_X, CREATE_LIST_ROW_Y(0));
+        }
+    }
+    /* Hit points up by four, the attributes moved about. */
+    for (i = 0; i < 4; i++) {
+        create_click(255, 50);
+    }
+    create_click(25, 30);
+    create_click(50, 37);
+    create_click(25, 52);
+    create_click(50, 46);
+    create_compose();
+    write_picture(create_pixels(), "build/create13.ppm");
+    create_click(280, 180);
+    check_expect(create_step() == CREATE_QUESTIONS || create_step() == CREATE_NAME, "create: a whole class did not go on");
+    {
+        const CareerClass *mine;
+
+        mine = career_class(CLASS_CUSTOM);
+        check_expect(mine && strcmp(mine->name, "Toy") == 0 && mine->hp_per_level == 12, "create: the class is not as made");
+        /* Four hit points over the middle: hardness 4, 0.3 + 2.7 x 16 / 52 is 1.13. */
+        check_expect(mine && check_near(rules_class_advance(mine->advancement), 1.13f, 0.01f), "create: a class's advancement is not by its hardness");
+        check_expect(mine && mine->attribute[ATTR_STRENGTH] == 49 && mine->attribute[ATTR_INTELLIGENCE] == 51, "create: the attributes were not moved");
+    }
     create_close();
 
     /* Escape on the map starts at once as the default. */
@@ -2909,6 +3037,27 @@ static void check_save(void)
         write_picture(slots_pixels(), "build/slots1.ppm");
         check_expect(slots_click(150, 155) == SLOTS_LEAVE, "save: Cancel did not leave");
         slots_close();
+        /* A save of a class of one's own keeps the class. */
+        {
+            CareerClass mine;
+            SaveState a;
+            SaveState b;
+
+            mem_zero(&mine, sizeof(mine));
+            df_copy(mine.name, "Kept Class", 16);
+            mine.hp_per_level = 21;
+            career_set_custom(&mine);
+            mem_zero(&a, sizeof(a));
+            a = out;
+            a.sheet.klass = CLASS_CUSTOM;
+            save_use_slot(4);
+            check_expect(save_write(&a), "save: the custom class's save did not write");
+            mine.hp_per_level = 5;
+            career_set_custom(&mine);
+            check_expect(save_read(&b) && career_class(CLASS_CUSTOM)->hp_per_level == 21, "save: the custom class did not come back");
+            check_expect(fs_beside(path, (int)sizeof(path), "DATA\\TEST4.SAV") && remove(path) == 0, "save: the custom class's file did not go");
+            save_use_slot(2);
+        }
         check_expect(fs_beside(path, (int)sizeof(path), "DATA\\TEST2.SAV") && remove(path) == 0, "save: the test's file did not go");
     }
     check_expect(!save_exists() && !save_any(), "save: a save is there after its file went");

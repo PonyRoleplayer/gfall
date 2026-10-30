@@ -8,7 +8,8 @@
  *
  * The file: a u16 header length, then a u16 id and a u32 offset for each
  * record, then the records. Inside one, 0xFD ends a line and 0xFE ends the
- * record; other bytes past ASCII steer classic's text box, and are dropped.
+ * record, 0xFC ends a line too in the longest ones; other bytes past ASCII
+ * steer classic's text box, and are dropped.
  *
  * Plain C: hostcheck runs it.
  */

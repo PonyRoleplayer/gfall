@@ -24,10 +24,10 @@ static const Rect g_loiter_button = { PANEL_X + 102, PANEL_Y + 13, 48, 24 };
 #define COUNT_X (COUNTER_X + 6)
 #define COUNT_Y (COUNTER_Y + 12)
 static const Rect g_stop_button = { COUNTER_X + 33, COUNTER_Y + 26, 40, 10 };
-/* The question for the hours: a box of ours under the panel, where classic asks in a box. */
-static const Rect g_ask_box = { 83, 95, 154, 24 };
-#define ASK_X 90
-#define ASK_Y 99
+/* The question for the hours: a scroll under the panel. */
+static const Rect g_ask_box = { 83, 95, 154, 44 };
+#define ASK_X 95
+#define ASK_Y 113
 
 #define MINUTES_A_STEP 10.0f
 #define STEPS_AN_HOUR 6
@@ -146,7 +146,7 @@ void rest_compose(void)
     if (g.phase == PHASE_ASK_HOURS) {
         char line[32];
 
-        canvas_box(&g_ask_box, CANVAS_DARK);
+        canvas_scroll(&g_ask_box);
         log_format(line, (int)sizeof(line), "How many hours? %s", g.typed);
         canvas_label(ASK_X, ASK_Y, line);
     }

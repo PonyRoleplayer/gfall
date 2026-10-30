@@ -5,6 +5,7 @@
 #include "game/dagger/play/rules.h"
 #include "game/dagger/formats/biog.h"
 #include "game/dagger/formats/cif.h"
+#include "game/dagger/formats/img.h"
 #include "game/dagger/formats/textrsc.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/tables/items.h"
@@ -19,15 +20,77 @@
 #define NAME_MAX 24
 #define WORDS_MAX 2048
 
-/* A word's box over the map (ours: classic draws a scroll here), and its two answers. */
-static const Rect g_box = { 30, 30, 260, 136 };
-static const Rect g_box_text = { 38, 36, 244, 112 };
-static const Rect g_answer_left = { 70, 150, 70, 12 };
-static const Rect g_answer_right = { 180, 150, 70, 12 };
-/* The class list (ours), a line each, over the map. */
-static const Rect g_list_box = { 90, 16, 140, 168 };
-#define LIST_X 100
-#define LIST_Y 22
+/* A word's scroll over the map, and its two buttons. */
+static const Rect g_box = { 28, 23, 264, 154 };
+static const Rect g_box_text = { 40, 34, 240, 112 };
+static const Rect g_answer_left = { 112, 153, CANVAS_BUTTON_W, CANVAS_BUTTON_H };
+static const Rect g_answer_right = { 176, 153, CANVAS_BUTTON_W, CANVAS_BUTTON_H };
+/* The two ways of choosing a class on BUTN01I0.IMG, which has no header: it stands centred. */
+#define METHOD_W 184
+#define METHOD_H 144
+#define METHOD_X 68
+#define METHOD_Y 28
+static const Rect g_method_select = { METHOD_X + 8, METHOD_Y + 41, 167, 43 };
+static const Rect g_method_generate = { METHOD_X + 8, METHOD_Y + 100, 167, 34 };
+/* A list on PICK00I0.IMG: its place, the rows, and its two arrows (DFU's list picker). */
+#define PICK_W 200
+#define PICK_H 128
+#define PICK_X 60
+#define PICK_Y 36
+#define LIST_X (PICK_X + 26)
+#define LIST_Y (PICK_Y + 27)
+#define LIST_W 138
+#define LIST_ROWS 9
+static const Rect g_list_up = { PICK_X + 179, PICK_Y + 10, 9, 9 };
+static const Rect g_list_down = { PICK_X + 179, PICK_Y + 108, 9, 9 };
+/* The class questions: how many asked of how many, and the band their words stand in over the picture. */
+#define QUESTIONS_ASKED 10
+#define QUESTIONS_THERE 40
+#define QUESTION_RECORD 9000
+#define QUESTION_TEXT_X 20
+#define QUESTION_TEXT_W 280
+#define QUESTION_CHARS 1200
+/* CLASSES.DAT's table: from this offset, threes of counts, four to a class's entry. */
+#define RESULTS_AT 18
+#define RESULTS_SETS 66
+#define RESULTS_A_CLASS 4
+/* A custom class: its screen's name, skill lines, hit points and dagger, DFU's. */
+#define CUSTOM_NAME_X 100
+#define CUSTOM_SKILL_X 66
+#define CUSTOM_SKILL_W 108
+#define CUSTOM_SKILL_H 8
+#define CUSTOM_DAGGER_X 220
+#define CUSTOM_DAGGER_MIDDLE 115
+#define CUSTOM_DAGGER_TOP 46
+#define CUSTOM_DAGGER_BOTTOM 186
+#define CUSTOM_DAGGER_W 24
+#define CUSTOM_DAGGER_H 9
+#define CUSTOM_HP_LOW 4
+#define CUSTOM_HP_HIGH 30
+#define CUSTOM_HP_MIDDLE 8
+#define CUSTOM_HARD_LOW (-12)
+#define CUSTOM_HARD_HIGH 40
+#define CUSTOM_ATTR_START 50
+#define CUSTOM_ATTR_LOW 10
+#define CUSTOM_ATTR_HIGH 75
+/* A custom class's spell points an Intelligence point. */
+#define CUSTOM_MAGICKA 0.5f
+static const Rect g_custom_hp_up = { 252, 46, 8, 10 };
+static const Rect g_custom_hp_down = { 252, 57, 8, 10 };
+static const Rect g_custom_exit = { 263, 172, 38, 21 };
+#define CUSTOM_HP_X 285
+#define CUSTOM_HP_Y 55
+
+/*
+ * DFU's table: which way each of the three answers of each of the forty
+ * questions goes. 0 warrior, 1 rogue, 2 mage.
+ */
+static const df_u8 g_answer_way[QUESTIONS_THERE][3] = {
+    { 0, 2, 1 }, { 0, 2, 1 }, { 0, 1, 2 }, { 2, 0, 1 }, { 0, 1, 2 }, { 1, 0, 2 }, { 0, 1, 2 }, { 2, 0, 1 }, { 0, 2, 1 }, { 0, 1, 2 },
+    { 0, 1, 2 }, { 0, 1, 2 }, { 0, 2, 1 }, { 0, 1, 2 }, { 1, 0, 2 }, { 1, 2, 0 }, { 2, 0, 1 }, { 1, 0, 2 }, { 0, 1, 2 }, { 2, 0, 1 },
+    { 1, 0, 2 }, { 0, 1, 2 }, { 0, 2, 1 }, { 2, 1, 0 }, { 1, 0, 2 }, { 0, 2, 1 }, { 2, 1, 0 }, { 2, 0, 1 }, { 2, 1, 0 }, { 2, 1, 0 },
+    { 2, 0, 1 }, { 1, 0, 2 }, { 0, 2, 1 }, { 2, 1, 0 }, { 1, 2, 0 }, { 2, 0, 1 }, { 2, 0, 1 }, { 1, 2, 0 }, { 0, 1, 2 }, { 1, 2, 0 }
+};
 
 static const Rect g_ok = { 263, 172, 39, 22 };
 static const Rect g_restart = { 263, 147, 39, 22 };
@@ -133,6 +196,26 @@ static struct {
     int skill_gain[SKILL_COUNT];
     int gold_gain;
     Inventory answered_items;
+    /* The picture lists' art, and where the list on it has scrolled to. */
+    const df_u8 *method_picture;
+    const df_u8 *pick_picture;
+    int list_top;
+    /* The class questions: their words, which ten, how far, which way so far; where the answers' lines stand. */
+    char *question_words;
+    int question_order[QUESTIONS_ASKED];
+    int question_at;
+    int ways[3];
+    int answer_top[4];
+    int question_ink;
+    int question_dark;
+    /* 1 when the class being confirmed came of the questions: No goes back there. */
+    int class_asked;
+    /* A class of the player's own, being made. */
+    char custom_name[16];
+    int custom_skill[SKILLS_SHOWN];
+    int custom_hp;
+    int custom_slot;
+    const df_u8 *dagger;
     /* The race's and sex's faces, open while they are wanted. */
     CifSet faces;
     int faces_open;
@@ -220,6 +303,39 @@ static void read_words(int id)
     }
 }
 
+/* The class of the list nearest the custom one, by the skills they share: whose background questions it answers (DFU's GetClassAffinityIndex). */
+static int nearest_class(void)
+{
+    int best;
+    int best_shared;
+    int k;
+
+    best = 0;
+    best_shared = -1;
+    for (k = 0; k < CLASSES; k++) {
+        const CareerClass *c;
+        int shared;
+        int i;
+        int j;
+
+        c = career_class(k);
+        shared = 0;
+        for (i = 0; c && i < 12; i++) {
+            int theirs;
+
+            theirs = i < 3 ? c->primary[i] : (i < 6 ? c->major[i - 3] : c->minor[i - 6]);
+            for (j = 0; j < SKILLS_SHOWN; j++) {
+                shared += g.custom_skill[j] == theirs;
+            }
+        }
+        if (shared > best_shared) {
+            best = k;
+            best_shared = shared;
+        }
+    }
+    return best;
+}
+
 /* The class's questions, read now; with none, on to the name. */
 static void begin_questions(void)
 {
@@ -234,7 +350,7 @@ static void begin_questions(void)
     if (!g.biog) {
         g.biog = (Biog *)mem_alloc(sizeof(Biog));
     }
-    ok = g.biog && biog_load(g.klass, g.biog);
+    ok = g.biog && biog_load(g.klass == CLASS_CUSTOM ? nearest_class() : g.klass, g.biog);
     mem_heap_use(was);
     go_to(ok ? CREATE_QUESTIONS : CREATE_NAME);
 }
@@ -299,28 +415,167 @@ static void show_back(int step, const char *name)
     }
 }
 
-/* A box over the map with words in it, and two answers under them. */
-static void compose_box(const char *left, const char *right)
+/* A scroll over the map with words on it, and two of classic's buttons under them. */
+static void compose_box(int left, int right)
 {
     show_back(CREATE_RACE, "TMAP00I0.IMG");
-    canvas_box(&g_box, CANVAS_DARK);
+    canvas_scroll(&g_box);
     canvas_text(&g_box_text, g.words);
-    canvas_label_centred(&g_answer_left, 2, left);
-    canvas_label_centred(&g_answer_right, 2, right);
+    canvas_button(left, g_answer_left.x, g_answer_left.y);
+    canvas_button(right, g_answer_right.x, g_answer_right.y);
+}
+
+/* The list's picture over the map: PICK00I0.IMG, which holds its own arrows. */
+static void compose_pick(void)
+{
+    show_back(CREATE_RACE, "TMAP00I0.IMG");
+    if (g.pick_picture) {
+        canvas_copy_part(g.pick_picture, PICK_W, 0, 0, PICK_W, PICK_H, PICK_X, PICK_Y);
+    }
 }
 
 static void compose_class_list(void)
 {
     int i;
 
-    show_back(CREATE_RACE, "TMAP00I0.IMG");
-    canvas_box(&g_list_box, CANVAS_DARK);
-    for (i = 0; i < CLASSES; i++) {
+    compose_pick();
+    for (i = 0; i < LIST_ROWS && g.list_top + i <= CLASSES; i++) {
         const CareerClass *k;
+        int row;
 
-        k = career_class(i);
-        canvas_label(LIST_X, LIST_Y + i * CANVAS_LINE + i / 2, k ? k->name : "?");
+        row = g.list_top + i;
+        k = row < CLASSES ? career_class(row) : 0;
+        canvas_label(LIST_X, LIST_Y + i * CANVAS_LINE, row < CLASSES ? (k ? k->name : "?") : "Custom");
     }
+}
+
+/* The method: its picture over the map. */
+static void compose_method(void)
+{
+    show_back(CREATE_RACE, "TMAP00I0.IMG");
+    if (g.method_picture) {
+        canvas_copy_part(g.method_picture, METHOD_W, 0, 0, METHOD_W, METHOD_H, METHOD_X, METHOD_Y);
+    }
+}
+
+/* The palette index nearest a colour, in a palette of 6-bit values. */
+static int nearest_index(const df_u8 *six_bit, int r, int g_want, int b)
+{
+    int best;
+    int best_at;
+    int i;
+
+    best = 1;
+    best_at = 0x7fffffff;
+    for (i = 1; i < 256; i++) {
+        int dr;
+        int dg;
+        int db;
+        int at;
+
+        dr = six_bit[i * 3] * 4 - r;
+        dg = six_bit[i * 3 + 1] * 4 - g_want;
+        db = six_bit[i * 3 + 2] * 4 - b;
+        at = dr * dr + dg * dg + db * db;
+        if (at < best_at) {
+            best = i;
+            best_at = at;
+        }
+    }
+    return best;
+}
+
+/* Question q of the forty, 0 up, its words into out: what lies between its brace and the next, its number cut off. */
+static void question_words(int q, char *out, int cap)
+{
+    const char *at;
+    int n;
+
+    at = g.question_words;
+    for (n = 0; n <= q && at; n++) {
+        while (*at && *at != '{') {
+            at++;
+        }
+        at = *at ? at + 1 : 0;
+    }
+    out[0] = 0;
+    if (!at) {
+        return;
+    }
+    /* Past "12." and its spaces. */
+    while (*at >= '0' && *at <= '9') {
+        at++;
+    }
+    if (*at == '.') {
+        at++;
+    }
+    while (*at == ' ') {
+        at++;
+    }
+    n = 0;
+    while (*at && *at != '{' && n < cap - 1) {
+        out[n++] = *at++;
+    }
+    out[n] = 0;
+}
+
+/*
+ * The question up: its words and three answers in a dark band at the screen's
+ * foot, as tall as it needs, in the picture's own nearest yellow. Each
+ * answer's top is noted, so a click on its lines takes it.
+ */
+static void compose_generate(void)
+{
+    char words[QUESTION_CHARS];
+    const char *marks[4];
+    Rect band;
+    Rect part;
+    int lines;
+    int top;
+    int i;
+
+    show_back(CREATE_GENERATE, "CHGN00I0.IMG");
+    question_words(g.question_order[g.question_at], words, (int)sizeof(words));
+    lines = canvas_text_lines(QUESTION_TEXT_W, words);
+    top = CANVAS_H - (lines + 1) * CANVAS_LINE;
+    top = top < 0 ? 0 : top;
+    band.x = 0;
+    band.y = (df_u16)top;
+    band.w = CANVAS_W;
+    band.h = (df_u16)(CANVAS_H - top);
+    canvas_box(&band, g.question_dark);
+    canvas_set_ink(g.question_ink, -1);
+    /* Cut at "a)", "b)" and "c)": each part drawn alone, under the last. */
+    marks[0] = words;
+    marks[1] = 0;
+    marks[2] = 0;
+    marks[3] = 0;
+    for (i = 0; words[i]; i++) {
+        if (words[i + 1] == ')' && words[i] >= 'a' && words[i] <= 'c' && (i == 0 || words[i - 1] == ' ' || words[i - 1] == '\n')) {
+            marks[words[i] - 'a' + 1] = &words[i];
+        }
+    }
+    part.x = QUESTION_TEXT_X;
+    part.w = QUESTION_TEXT_W;
+    part.y = (df_u16)(top + CANVAS_LINE / 2);
+    part.h = (df_u16)(CANVAS_H - part.y);
+    for (i = 3; i >= 1; i--) {
+        if (marks[i]) {
+            /* End the part before it, from the last back: the string is ours. */
+            *(char *)(marks[i] - (marks[i] > words ? 1 : 0)) = 0;
+        }
+    }
+    for (i = 0; i < 4; i++) {
+        int taken;
+
+        g.answer_top[i] = part.y;
+        if (!marks[i]) {
+            continue;
+        }
+        taken = canvas_text(&part, marks[i]);
+        part.y = (df_u16)(part.y + taken * CANVAS_LINE);
+    }
+    canvas_set_ink(CANVAS_INK, CANVAS_INK_SHADOW);
 }
 
 static void compose_questions(void)
@@ -447,6 +702,100 @@ static void compose_skills(void)
     canvas_label_centred(&line, 0, number);
 }
 
+/* The hardness of the custom class: hit points over the middle add, under it take off twice (DFU's). */
+static int custom_hardness(void)
+{
+    int d;
+
+    d = g.custom_hp - CUSTOM_HP_MIDDLE;
+    return d >= 0 ? d : d * 2;
+}
+
+/* The custom class's screen. */
+static void compose_custom(void)
+{
+    char number[8];
+    int hard;
+    int y;
+    int i;
+
+    show_back(CREATE_CUSTOM, "CUST00I0.IMG");
+    canvas_label(CUSTOM_NAME_X, NAME_Y, g.custom_name);
+    compose_attribute_values();
+    /* The spinner by the chosen attribute, the points moved about between them. */
+    {
+        Rect line;
+        int top;
+
+        top = ATTR_SPINNER_Y + g.attribute_chosen * ATTR_STEP;
+        canvas_cutout(g.updown, UPDOWN_W, UPDOWN_H, ATTR_SPINNER_X, top);
+        line.x = ATTR_SPINNER_X;
+        line.y = (df_u16)(top + UPDOWN_VALUE_Y);
+        line.w = UPDOWN_W;
+        line.h = CANVAS_LINE;
+        log_format(number, (int)sizeof(number), "%d", g.attribute_pool);
+        canvas_label_centred(&line, 0, number);
+    }
+    for (i = 0; i < SKILLS_SHOWN; i++) {
+        if (g.custom_skill[i] >= 0) {
+            const CareerSkill *s;
+
+            s = career_skill(g.custom_skill[i]);
+            canvas_label(CUSTOM_SKILL_X + 2, skill_line_y(i), s ? s->name : "?");
+        }
+    }
+    log_format(number, (int)sizeof(number), "%d", g.custom_hp);
+    canvas_label(CUSTOM_HP_X, CUSTOM_HP_Y, number);
+    /* The dagger on its gauge: up for a harder class, down for an easier. Its ends are DFU's; the steps between, ours. */
+    hard = custom_hardness();
+    y = hard >= 0 ? CUSTOM_DAGGER_MIDDLE - hard * (CUSTOM_DAGGER_MIDDLE - CUSTOM_DAGGER_TOP) / CUSTOM_HARD_HIGH
+                  : CUSTOM_DAGGER_MIDDLE + hard * (CUSTOM_DAGGER_BOTTOM - CUSTOM_DAGGER_MIDDLE) / CUSTOM_HARD_LOW;
+    if (g.dagger) {
+        canvas_cutout(g.dagger, CUSTOM_DAGGER_W, CUSTOM_DAGGER_H, CUSTOM_DAGGER_X, y);
+    }
+}
+
+/* The skills to pick from, by name: those not chosen yet, in order. The i-th of them, or -1. */
+static int pickable_skill(int i)
+{
+    int n;
+    int s;
+
+    n = 0;
+    for (s = 0; s < SKILL_COUNT; s++) {
+        int taken;
+        int k;
+
+        /* DFU's list is alphabetical; this one goes by the skills' numbers. */
+        taken = 0;
+        for (k = 0; k < SKILLS_SHOWN; k++) {
+            taken |= g.custom_skill[k] == s;
+        }
+        if (taken) {
+            continue;
+        }
+        if (n++ == i) {
+            return s;
+        }
+    }
+    return -1;
+}
+
+static void compose_custom_pick(void)
+{
+    int i;
+
+    compose_pick();
+    for (i = 0; i < LIST_ROWS; i++) {
+        int skill;
+
+        skill = pickable_skill(g.list_top + i);
+        if (skill >= 0) {
+            canvas_label(LIST_X, LIST_Y + i * CANVAS_LINE, career_skill(skill)->name);
+        }
+    }
+}
+
 /* The chosen reflexes' slice of CHAR05I1.IMG, over its own line in the list. */
 static void compose_reflex_mark(int x, int y)
 {
@@ -483,13 +832,25 @@ void create_compose(void)
         break;
     case CREATE_RACE_CONFIRM:
     case CREATE_CLASS_CONFIRM:
-        compose_box("Yes", "No");
+        compose_box(CANVAS_BUTTON_YES, CANVAS_BUTTON_NO);
         break;
     case CREATE_SEX:
-        compose_box("Female", "Male");
+        compose_box(CANVAS_BUTTON_FEMALE, CANVAS_BUTTON_MALE);
+        break;
+    case CREATE_METHOD:
+        compose_method();
+        break;
+    case CREATE_GENERATE:
+        compose_generate();
         break;
     case CREATE_CLASS:
         compose_class_list();
+        break;
+    case CREATE_CUSTOM:
+        compose_custom();
+        break;
+    case CREATE_CUSTOM_PICK:
+        compose_custom_pick();
         break;
     case CREATE_QUESTIONS:
         compose_questions();
@@ -533,21 +894,286 @@ static void click_race(int x, int y)
     go_to(CREATE_RACE_CONFIRM);
 }
 
-static void click_class(int y)
+/* A click on a list's arrows, moving it within entries things. 1 when it was on them. */
+static int click_list_arrows(int x, int y, int entries)
+{
+    if (rect_has(&g_list_up, x, y)) {
+        g.list_top -= g.list_top > 0;
+    } else if (rect_has(&g_list_down, x, y)) {
+        g.list_top += g.list_top + LIST_ROWS < entries;
+    } else {
+        return 0;
+    }
+    g.changed = 1;
+    return 1;
+}
+
+/* The list's entry a click falls on, or -1. */
+static int list_row_at(int x, int y)
+{
+    if (x < LIST_X || x >= LIST_X + LIST_W || y < LIST_Y || y >= LIST_Y + LIST_ROWS * CANVAS_LINE) {
+        return -1;
+    }
+    return g.list_top + (y - LIST_Y) / CANVAS_LINE;
+}
+
+/* A class's words to confirm. */
+static void confirm_class(int klass, int asked)
+{
+    g.klass = klass;
+    g.class_asked = asked;
+    read_words(FIRST_CLASS_WORDS + klass);
+    go_to(CREATE_CLASS_CONFIRM);
+}
+
+/* A class of one's own begins: nothing chosen, attributes level, nothing to move yet. */
+static void begin_custom(void)
+{
+    int i;
+
+    for (i = 0; i < SKILLS_SHOWN; i++) {
+        g.custom_skill[i] = -1;
+    }
+    for (i = 0; i < ATTR_COUNT; i++) {
+        g.attribute[i] = CUSTOM_ATTR_START;
+    }
+    g.attribute_pool = 0;
+    g.attribute_chosen = 0;
+    g.custom_hp = CUSTOM_HP_MIDDLE;
+    g.custom_name[0] = 0;
+    go_to(CREATE_CUSTOM);
+}
+
+static void click_class(int x, int y)
 {
     int row;
 
-    if (y < LIST_Y) {
+    if (click_list_arrows(x, y, CLASSES + 1)) {
         return;
     }
-    /* Each line is CANVAS_LINE tall, and half a pixel more on average (compose_class_list). */
-    row = (y - LIST_Y) * 2 / (2 * CANVAS_LINE + 1);
-    if (row < 0 || row >= CLASSES || !career_class(row)) {
+    row = list_row_at(x, y);
+    if (row == CLASSES) {
+        g.list_top = 0;
+        begin_custom();
+    } else if (row >= 0 && career_class(row)) {
+        confirm_class(row, 0);
+    }
+}
+
+/* The ten questions begin: which of the forty, none twice. */
+static void begin_generate(void)
+{
+    MemHeap *was;
+    const df_u8 *back;
+    int chosen[QUESTIONS_THERE];
+    int i;
+
+    was = mem_heap_use(g.composer.heap);
+    if (!g.question_words) {
+        g.question_words = (char *)mem_alloc(32768);
+    }
+    mem_heap_use(was);
+    if (!g.question_words || textrsc_read(QUESTION_RECORD, g.question_words, 32768) < 0) {
+        g.note = "The questions did not read: choose from the list.";
+        g.changed = 1;
         return;
     }
-    g.klass = row;
-    read_words(FIRST_CLASS_WORDS + row);
-    go_to(CREATE_CLASS_CONFIRM);
+    mem_zero(chosen, sizeof(chosen));
+    for (i = 0; i < QUESTIONS_ASKED; i++) {
+        int q;
+
+        do {
+            q = combat_roll(QUESTIONS_THERE);
+        } while (chosen[q]);
+        chosen[q] = 1;
+        g.question_order[i] = q;
+    }
+    g.question_at = 0;
+    g.ways[0] = 0;
+    g.ways[1] = 0;
+    g.ways[2] = 0;
+    /* Its words in the picture's own colours. */
+    back = composer_read(&g.composer, "CHGN00I0.IMG");
+    g.back[CREATE_GENERATE] = back;
+    if (back) {
+        g.question_ink = nearest_index(back + CANVAS_BYTES, 243, 239, 44);
+        g.question_dark = nearest_index(back + CANVAS_BYTES, 8, 8, 8);
+    }
+    go_to(CREATE_GENERATE);
+}
+
+int create_class_of_answers(int warrior, int rogue, int mage)
+{
+    const df_u8 *table;
+    df_u32 size;
+    int i;
+
+    table = composer_table(&g.composer, "CLASSES.DAT", &size);
+    if (!table || size < RESULTS_AT + RESULTS_SETS * 3) {
+        return -1;
+    }
+    for (i = 0; i < RESULTS_SETS; i++) {
+        const df_u8 *set;
+
+        set = table + RESULTS_AT + i * 3;
+        if (set[0] == warrior && set[1] == rogue && set[2] == mage) {
+            int entry;
+
+            /* The class is the file's entry for this group; past the first four only its low bits. */
+            entry = i / RESULTS_A_CLASS;
+            return entry > 3 ? (table[entry] & 0x0F) : table[entry];
+        }
+    }
+    return -1;
+}
+
+/* An answer to the question up, 0..2: which way it goes, then the next, or the class it all comes to. */
+static void answer_generate(int answer)
+{
+    int klass;
+
+    g.ways[g_answer_way[g.question_order[g.question_at]][answer]]++;
+    g.question_at++;
+    g.changed = 1;
+    if (g.question_at < QUESTIONS_ASKED) {
+        return;
+    }
+    klass = create_class_of_answers(g.ways[0], g.ways[1], g.ways[2]);
+    confirm_class(klass >= 0 && klass < CLASSES ? klass : CLASS_WARRIOR, 1);
+}
+
+static void click_generate(int y)
+{
+    int i;
+
+    for (i = 3; i >= 1; i--) {
+        if (y >= g.answer_top[i]) {
+            answer_generate(i - 1);
+            return;
+        }
+    }
+}
+
+/* What the custom class comes to as a class. */
+static void finish_custom(void)
+{
+    CareerClass c;
+    float advance;
+    int i;
+
+    mem_zero(&c, sizeof(c));
+    df_copy(c.name, g.custom_name, 16);
+    c.hp_per_level = (df_u16)g.custom_hp;
+    for (i = 0; i < ATTR_COUNT; i++) {
+        c.attribute[i] = (df_u16)g.attribute[i];
+    }
+    for (i = 0; i < 3; i++) {
+        c.primary[i] = (df_u8)g.custom_skill[i];
+        c.major[i] = (df_u8)g.custom_skill[3 + i];
+    }
+    for (i = 0; i < 6; i++) {
+        c.minor[i] = (df_u8)g.custom_skill[6 + i];
+    }
+    c.magicka = CUSTOM_MAGICKA;
+    /* 0.3 and 2.7 more over the whole range of hardness; kept as a class file keeps it. */
+    advance = 0.3f + 2.7f * (float)(custom_hardness() - CUSTOM_HARD_LOW) / (float)(CUSTOM_HARD_HIGH - CUSTOM_HARD_LOW);
+    c.advancement = (df_u32)df_ifloor(advance * 65536.0f);
+    career_set_custom(&c);
+    g.klass = CLASS_CUSTOM;
+    begin_questions();
+}
+
+/* A point moved on the chosen attribute of a class being made: the pool is what others gave up. */
+static void custom_attribute_point(int more)
+{
+    int *value;
+
+    value = &g.attribute[g.attribute_chosen];
+    if (more && g.attribute_pool > 0 && *value < CUSTOM_ATTR_HIGH) {
+        (*value)++;
+        g.attribute_pool--;
+    } else if (!more && *value > CUSTOM_ATTR_LOW) {
+        (*value)--;
+        g.attribute_pool++;
+    }
+}
+
+static void click_custom(int x, int y)
+{
+    int top;
+    int i;
+
+    g.changed = 1;
+    if (rect_has(&g_custom_exit, x, y)) {
+        g.note = 0;
+        if (!g.custom_name[0]) {
+            g.note = "Your class needs a name.";
+        } else if (g.attribute_pool > 0) {
+            g.note = "You must distribute all of your bonus points.";
+        }
+        for (i = 0; i < SKILLS_SHOWN && !g.note; i++) {
+            if (g.custom_skill[i] < 0) {
+                g.note = "You must choose all twelve skills.";
+            }
+        }
+        if (!g.note) {
+            finish_custom();
+        }
+        return;
+    }
+    if (rect_has(&g_custom_hp_up, x, y) && g.custom_hp < CUSTOM_HP_HIGH) {
+        g.custom_hp++;
+        return;
+    }
+    if (rect_has(&g_custom_hp_down, x, y) && g.custom_hp > CUSTOM_HP_LOW) {
+        g.custom_hp--;
+        return;
+    }
+    top = ATTR_SPINNER_Y + g.attribute_chosen * ATTR_STEP;
+    if (x >= ATTR_SPINNER_X && x < ATTR_SPINNER_X + UPDOWN_W) {
+        if (y >= top && y < top + UPDOWN_ARM) {
+            custom_attribute_point(1);
+        } else if (y >= top + UPDOWN_H - UPDOWN_ARM && y < top + UPDOWN_H) {
+            custom_attribute_point(0);
+        }
+        return;
+    }
+    for (i = 0; i < ATTR_COUNT; i++) {
+        int row;
+
+        row = ATTR_BUTTON_Y + i * ATTR_STEP;
+        if (x >= ATTR_BUTTON_X && x < ATTR_BUTTON_X + ATTR_BUTTON_W && y >= row && y < row + ATTR_BUTTON_H) {
+            g.attribute_chosen = i;
+            return;
+        }
+    }
+    for (i = 0; i < SKILLS_SHOWN; i++) {
+        if (x >= CUSTOM_SKILL_X && x < CUSTOM_SKILL_X + CUSTOM_SKILL_W && y >= skill_line_y(i) - 1
+            && y < skill_line_y(i) - 1 + CUSTOM_SKILL_H) {
+            g.custom_slot = i;
+            g.list_top = 0;
+            /* A skill picked again goes back on the list first. */
+            g.custom_skill[i] = -1;
+            go_to(CREATE_CUSTOM_PICK);
+            return;
+        }
+    }
+}
+
+static void click_custom_pick(int x, int y)
+{
+    int row;
+    int skill;
+
+    if (click_list_arrows(x, y, SKILL_COUNT - SKILLS_SHOWN + 1)) {
+        return;
+    }
+    row = list_row_at(x, y);
+    skill = row >= 0 ? pickable_skill(row) : -1;
+    if (skill >= 0) {
+        g.custom_skill[g.custom_slot] = skill;
+        go_to(CREATE_CUSTOM);
+    }
 }
 
 static void click_questions(int x, int y)
@@ -717,18 +1343,35 @@ int create_click(int x, int y)
         if (rect_has(&g_answer_left, x, y) || rect_has(&g_answer_right, x, y)) {
             g.female = rect_has(&g_answer_left, x, y);
             open_faces();
-            go_to(CREATE_CLASS);
+            go_to(CREATE_METHOD);
         }
         break;
+    case CREATE_METHOD:
+        if (rect_has(&g_method_select, x, y)) {
+            g.list_top = 0;
+            go_to(CREATE_CLASS);
+        } else if (rect_has(&g_method_generate, x, y)) {
+            begin_generate();
+        }
+        break;
+    case CREATE_GENERATE:
+        click_generate(y);
+        break;
     case CREATE_CLASS:
-        click_class(y);
+        click_class(x, y);
         break;
     case CREATE_CLASS_CONFIRM:
         if (rect_has(&g_answer_left, x, y)) {
             begin_questions();
         } else if (rect_has(&g_answer_right, x, y)) {
-            go_to(CREATE_CLASS);
+            go_to(g.class_asked ? CREATE_METHOD : CREATE_CLASS);
         }
+        break;
+    case CREATE_CUSTOM:
+        click_custom(x, y);
+        break;
+    case CREATE_CUSTOM_PICK:
+        click_custom_pick(x, y);
         break;
     case CREATE_QUESTIONS:
         click_questions(x, y);
@@ -786,8 +1429,42 @@ static void name_key(int vk)
     }
 }
 
+/* A key on the custom class's name, as on a character's. */
+static void custom_name_key(int vk)
+{
+    int n;
+
+    n = 0;
+    while (g.custom_name[n]) {
+        n++;
+    }
+    if (vk == 0x08) {
+        if (n > 0) {
+            g.custom_name[n - 1] = 0;
+            g.changed = 1;
+        }
+    } else if (n < (int)sizeof(g.custom_name) - 1 && (vk == 0x20 || (vk >= 'A' && vk <= 'Z'))) {
+        int starts_word;
+
+        starts_word = n == 0 || g.custom_name[n - 1] == ' ';
+        g.custom_name[n] = (char)(vk == 0x20 || starts_word ? vk : vk + ('a' - 'A'));
+        g.custom_name[n + 1] = 0;
+        g.changed = 1;
+    }
+}
+
 int create_key(int vk)
 {
+    if (g.step == CREATE_CUSTOM) {
+        custom_name_key(vk);
+        return CREATE_STAY;
+    }
+    if (g.step == CREATE_GENERATE) {
+        if (vk >= 'A' && vk <= 'C') {
+            answer_generate(vk - 'A');
+        }
+        return CREATE_STAY;
+    }
     if (g.step == CREATE_NAME) {
         if (vk == 0x0D) {
             if (!g.name[0]) {
@@ -832,6 +1509,9 @@ int create_open(void)
     g.updown = composer_read(&g.composer, "CHAR02I1.IMG");
     g.leftright = composer_read(&g.composer, "CHAR03I1.IMG");
     g.reflex_marks = composer_read(&g.composer, "CHAR05I1.IMG");
+    g.method_picture = composer_read(&g.composer, "BUTN01I0.IMG");
+    g.pick_picture = composer_read(&g.composer, "PICK00I0.IMG");
+    g.dagger = composer_read(&g.composer, "CUST08I0.IMG");
     if (!g.race_mask || !g.updown || !g.leftright || !g.reflex_marks) {
         log_text(LOG_WARN, "creation: its pictures did not read");
         create_close();
@@ -851,6 +1531,22 @@ void create_close(void)
         g.faces_open = 0;
     }
     composer_close(&g.composer);
+}
+
+void create_palette(df_u8 *rgb)
+{
+    const df_u8 *own;
+    int i;
+
+    /* The picture of the questions carries its own after its pixels, 6-bit. */
+    own = g.step == CREATE_GENERATE ? g.back[CREATE_GENERATE] : 0;
+    if (!own) {
+        img_art_palette(rgb);
+        return;
+    }
+    for (i = 0; i < 768; i++) {
+        rgb[i] = (df_u8)(own[CANVAS_BYTES + i] * 4);
+    }
 }
 
 const df_u8 *create_pixels(void)

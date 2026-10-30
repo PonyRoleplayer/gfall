@@ -247,7 +247,9 @@ static int write_chunks(const SaveState *state)
            && rec_put_rows(put_file, 0, &g_sheet_schema, &state->sheet, 1, 0, 0)
            && rec_put_rows(put_file, 0, &g_item_schema, items, state->pack.count, 0, 0)
            && rec_put_rows(put_file, 0, &g_keep_schema, keeps, nkeep, 0, 0)
-           && rec_put_rows(put_file, 0, &g_pile_schema, piles, npile, 0, 0);
+           && rec_put_rows(put_file, 0, &g_pile_schema, piles, npile, 0, 0)
+           && (state->sheet.klass != CLASS_CUSTOM || !career_class(CLASS_CUSTOM)
+               || rec_put_rows(put_file, 0, &class_schema, career_class(CLASS_CUSTOM), 1, 0, 0));
 }
 
 int save_write(const SaveState *state)
@@ -312,6 +314,8 @@ static RecTable g_item_table;
 static RecTable g_keep_table;
 static RecTable g_pile_table;
 static RecTable g_head_table;
+/* A custom class, when the save's character has one: the same record as a class of the list. */
+static RecTable g_custom_table;
 
 /* A table ready for a file: made the first time, emptied after. 0 with no memory. */
 static int ready_table(RecTable *t, const RecSchema *s, int cap)
@@ -327,7 +331,7 @@ static int ready_table(RecTable *t, const RecSchema *s, int cap)
 static void merge_chunk(const RecChunk *c)
 {
     static RecTable *const tables[] = {
-        &g_head_table, &g_game_table, &g_sheet_table, &g_item_table, &g_keep_table, &g_pile_table
+        &g_head_table, &g_game_table, &g_sheet_table, &g_item_table, &g_keep_table, &g_pile_table, &g_custom_table
     };
     int i;
 
@@ -370,6 +374,9 @@ static void apply_tables(SaveState *state)
     }
     state->pack.use_left = game->use_left;
     df_copy(state->name, game->name, SAVE_NAME);
+    if (g_custom_table.count) {
+        career_set_custom((const CareerClass *)g_custom_table.rows);
+    }
     keep_clear();
     for (i = 0; i < g_keep_table.count; i++) {
         keep_put(&((const SaveKeepRow *)g_keep_table.rows)[i].keep);
@@ -393,7 +400,8 @@ int save_read(SaveState *state)
 
     if (!ready_table(&g_head_table, &rec_head_schema, 1) || !ready_table(&g_game_table, &g_game_schema, 1)
         || !ready_table(&g_sheet_table, &g_sheet_schema, 1) || !ready_table(&g_item_table, &g_item_schema, INVENTORY_MAX)
-        || !ready_table(&g_keep_table, &g_keep_schema, 256) || !ready_table(&g_pile_table, &g_pile_schema, PILE_ITEMS)) {
+        || !ready_table(&g_keep_table, &g_keep_schema, 256) || !ready_table(&g_pile_table, &g_pile_schema, PILE_ITEMS)
+        || !ready_table(&g_custom_table, &class_schema, 1)) {
         return 0;
     }
     /* The bytes in a heap of its own: a file read beside the program otherwise lives until exit. */

@@ -90,7 +90,9 @@ static const df_u8 g_armor_label[BODY_PARTS][2] = {
 #define INFO_LINE_CHARS 40
 #define INFO_X 54
 #define INFO_Y 60
-#define INFO_W 100
+#define INFO_W 110
+/* From the scroll's burnt edge to its words. */
+#define INFO_MARGIN 10
 #define LINE_H CANVAS_LINE
 
 /* Item pictures kept once fitted to a cell: a list scrolled back reads nothing again. */
@@ -537,11 +539,11 @@ static void compose_info(void)
     while (lines < INFO_LINES && g.info[lines][0]) {
         lines++;
     }
-    box.x = INFO_X;
-    box.y = INFO_Y;
-    box.w = INFO_W;
-    box.h = (df_u16)(lines * LINE_H + 4);
-    canvas_box(&box, CANVAS_DARK);
+    box.x = INFO_X - INFO_MARGIN;
+    box.y = INFO_Y - INFO_MARGIN;
+    box.w = INFO_W + 2 * INFO_MARGIN;
+    box.h = (df_u16)(lines * LINE_H + 2 * INFO_MARGIN);
+    canvas_scroll(&box);
     for (line = 0; line < lines; line++) {
         canvas_label(INFO_X + 3, INFO_Y + 2 + line * LINE_H, g.info[line]);
     }
@@ -565,11 +567,11 @@ void bag_compose(void)
         char line[40];
         Rect box;
 
-        box.x = INFO_X;
-        box.y = INFO_Y;
-        box.w = INFO_W;
-        box.h = 2 * LINE_H + 4;
-        canvas_box(&box, CANVAS_DARK);
+        box.x = INFO_X - INFO_MARGIN;
+        box.y = INFO_Y - INFO_MARGIN;
+        box.w = INFO_W + 2 * INFO_MARGIN;
+        box.h = 2 * LINE_H + 2 * INFO_MARGIN;
+        canvas_scroll(&box);
         canvas_label(INFO_X + 3, INFO_Y + 2, "How much gold?");
         log_format(line, (int)sizeof(line), "%s_", g.gold_typed);
         canvas_label(INFO_X + 3, INFO_Y + 2 + LINE_H, line);
