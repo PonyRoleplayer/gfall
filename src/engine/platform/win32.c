@@ -106,6 +106,10 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_RBUTTONUP:
         mouse_msg(hwnd, msg, lp);
         return 0;
+    case WM_MOUSEWHEEL:
+        /* The high word of wp, signed. LEVELFALL takes its wheel from the queue before this, as its own. */
+        input_on_wheel((int)(short)HIWORD(wp));
+        return 0;
     case WM_SETCURSOR:
         if (g_blank) {
             SetCursor(0);

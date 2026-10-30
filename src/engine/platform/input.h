@@ -47,6 +47,8 @@ typedef struct Input {
     unsigned int held;
     unsigned int pressed;
     unsigned int released;
+    /* The mouse wheel's notches since the last read: above 0 rolled away from the player, below 0 toward. */
+    int wheel;
 } Input;
 
 /*
@@ -98,6 +100,8 @@ int input_quit_requested(void);
 
 /* Client coordinates. The window calls this from WM_MOUSEMOVE. */
 void input_on_mouse(int x, int y);
+/* The wheel's movement from WM_MOUSEWHEEL, in Windows' units: 120 a notch. The window calls this. */
+void input_on_wheel(int delta);
 void input_request_quit(void);
 void input_clear_quit(void);
 

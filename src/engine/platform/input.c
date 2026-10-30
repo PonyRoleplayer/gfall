@@ -111,6 +111,15 @@ static void center_cursor(void)
     g_ignore = 0;
 }
 
+/* Windows' units a wheel notch. A finer wheel sends less: what is short of a notch waits in g_wheel. */
+#define WHEEL_NOTCH 120
+static int g_wheel;
+
+void input_on_wheel(int delta)
+{
+    g_wheel += delta;
+}
+
 void input_on_mouse(int x, int y)
 {
     int dx;
@@ -250,8 +259,14 @@ void input_read(Input *out)
         out->pressed = 0;
         out->released = g_held;
         g_held = 0;
+        /* Nor the wheel: rolled over the console, it does not scroll a list behind it afterwards. */
+        out->wheel = 0;
+        g_wheel = 0;
         return;
     }
+    /* Whole notches go out, either way; C's division leaves the part of one, with its sign. */
+    out->wheel = g_wheel / WHEEL_NOTCH;
+    g_wheel -= out->wheel * WHEEL_NOTCH;
     /* The walk from its actions, so a game's bindings move it. */
     out->move_f = key_down(g_vk[INPUT_FORWARD]) - key_down(g_vk[INPUT_BACK]);
     out->move_r = key_down(g_vk[INPUT_RIGHT]) - key_down(g_vk[INPUT_LEFT]);

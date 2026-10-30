@@ -10,6 +10,7 @@ What `input_read` gives a program once a frame: the movement, the look, quit, an
 - `look_dx`, `look_dy`: the mouse's pixels since the last read, plus a fixed step a frame for each arrow held.
 - `quit`: Escape (unless a game took it, below), or the window's close.
 - `held`, `pressed`, `released`: the game's actions, one bit each (`INPUT_BIT(INPUT_ATTACK)`). Held is down now; pressed went down this frame, released went up. A game reads edges from these, once a frame, and never polls a key itself.
+- `wheel`: the mouse wheel's whole notches since the last read, above 0 rolled away from the player. The window adds Windows' units to it (`WM_MOUSEWHEEL`, 120 a notch, `input_on_wheel`), and part of a notch from a finer wheel waits for the rest. With the console open it is 0, and what was rolled is dropped. A viewer with its own use for the wheel (LEVELFALL's field of view, the lists) takes the message from the queue before `win_pump`, so `Input` never sees it. The Input path has no host test, because `input.c` is not built for the host.
 
 With the console open nothing reaches the program: no movement, no look, nothing held, and what was held is released that frame, so a held attack lets go.
 
