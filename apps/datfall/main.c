@@ -16,15 +16,21 @@
 #include <windows.h>
 
 #include "books.h"
+#include "pics.h"
+#include "engine/assets/palette.h"
+#include "engine/assets/texture.h"
 #include "engine/assets/vfs.h"
 #include "engine/core/df.h"
 #include "engine/core/mem.h"
+#include "game/dagger/formats/palette.h"
+#include "game/dagger/formats/texture.h"
 #include "game/dagger/tables/maindat.h"
 
 #define ID_LIST 4
 #define ID_FIND 6
 #define ID_TREE 7
 #define ID_PROPS 8
+#define ID_TIMER 1
 
 #define LVM_FIRST 0x1000
 #define LVM_SETITEMA (LVM_FIRST + 6)
@@ -73,12 +79,20 @@
 #define ND_MERGED 2
 #define ND_FILE 3
 #define ND_CHUNK 4
+#define ND_PICTURES 5
+#define ND_ARCHIVE 6
 #define ND_MERGED_FILE 4095
 
 #define VIEW_NONE 0
 #define VIEW_DATA 1
 #define VIEW_CHUNKS 2
 #define VIEW_ROWS 3
+#define VIEW_ARCHIVES 4
+#define VIEW_RECS 5
+
+#define ARC_CAP 160
+#define GRID_CELL 32
+#define GRID_COLS 8
 
 #define NODE_MAKE(k, a, b) \
     ((LPARAM)((((unsigned int)(k) & 255u) << 24) | (((unsigned int)(a) & 4095u) << 12) | ((unsigned int)(b) & 4095u)))
@@ -145,6 +159,9 @@ typedef struct TvIns {
 typedef struct Gdi {
     void *(WINAPI *CreateFontA)(int, int, int, int, int, unsigned, unsigned, unsigned,
                                 unsigned, unsigned, unsigned, unsigned, unsigned, const char *);
+    int (WINAPI *SetStretchBltMode)(HDC, int);
+    int (WINAPI *StretchDIBits)(HDC, int, int, int, int, int, int, int, int,
+                                const void *, const BITMAPINFO *, unsigned int, unsigned int);
     void *(WINAPI *GetStockObject)(int);
 } Gdi;
 
@@ -163,11 +180,32 @@ static int g_nd;
 static int g_a;
 static int g_b;
 static int g_view;
-static int g_map[128];
+static int g_map[512];
 static int g_nmap;
 static void *g_pick;
 static RECT g_well;
+static RECT g_large;
 static char g_q[48];
+static WNDPROC g_list_proc;
+static Palette g_pal;
+static int g_pal_ok;
+static TexArc g_arcs[TEX_SCAN];
+static int g_narc;
+static MemHeap *g_arc_heap;
+static MemHeap *g_frame_heap;
+static Image *g_thumb[ARC_CAP];
+static int g_fn[ARC_CAP];
+static int g_thumb_n;
+static int g_arc_file;
+static int g_rec;
+static int g_frame;
+static Image *g_show;
+static unsigned char *g_grid;
+static int g_grid_w;
+static int g_grid_h;
+static int g_grid_rows;
+static int g_scroll;
+static unsigned char *g_dib;
 
 static void *sym(HMODULE dll, const char *name)
 {
@@ -183,8 +221,10 @@ static int gdi_load(void)
         return 0;
     }
     g_gdi.CreateFontA = sym(dll, "CreateFontA");
+    g_gdi.SetStretchBltMode = sym(dll, "SetStretchBltMode");
+    g_gdi.StretchDIBits = sym(dll, "StretchDIBits");
     g_gdi.GetStockObject = sym(dll, "GetStockObject");
-    return g_gdi.CreateFontA && g_gdi.GetStockObject;
+    return g_gdi.CreateFontA && g_gdi.SetStretchBltMode && g_gdi.StretchDIBits && g_gdi.GetStockObject;
 }
 
 static int common_controls(void)
@@ -485,6 +525,15 @@ static void show_fields(DatFile *f, int kind, int row, int with_values)
     }
 }
 
+static void drop_frames(void);
+static void drop_arc(void);
+static int arc_records(int file);
+static void load_archive(int file);
+static void show_frame(void);
+static void pic_status(void);
+static void scroll_to_rec(void);
+static void step_frame(int delta);
+
 static void on_row(int index)
 {
     DatFile *f;
@@ -498,6 +547,63 @@ static void on_row(int index)
         return;
     }
     read_query();
+    if (g_view == VIEW_ARCHIVES) {
+        int file;
+        char name[24];
+        char num[16];
+
+        drop_arc();
+        props_clear();
+        if (index < 0 || index >= g_nmap) {
+            status_set("Pictures", "");
+            InvalidateRect(g_hwnd, &g_well, 1);
+            return;
+        }
+        file = g_map[index];
+        wsprintfA(name, "TEXTURE.%03d", file);
+        wsprintfA(num, "%d", arc_records(file));
+        prop_add(0, "archive", name);
+        prop_add(1, "records", num);
+        status_set(name, "");
+        InvalidateRect(g_hwnd, &g_well, 1);
+        return;
+    }
+    if (g_view == VIEW_RECS) {
+        char num[16];
+        int tw;
+        int th;
+        int frames;
+
+        if (index < 0 || index >= g_nmap) {
+            g_rec = -1;
+            drop_frames();
+            props_clear();
+            pic_status();
+            InvalidateRect(g_hwnd, &g_well, 1);
+            return;
+        }
+        g_rec = g_map[index];
+        g_frame = 0;
+        show_frame();
+        scroll_to_rec();
+        tw = g_show ? g_show->width : 0;
+        th = g_show ? g_show->height : 0;
+        frames = (g_rec >= 0 && g_rec < g_thumb_n) ? g_fn[g_rec] : 0;
+        props_clear();
+        wsprintfA(num, "%d", g_rec);
+        prop_add(0, "record", num);
+        wsprintfA(num, "%d", tw);
+        prop_add(1, "width", num);
+        wsprintfA(num, "%d", th);
+        prop_add(2, "height", num);
+        wsprintfA(num, "%d", frames);
+        prop_add(3, "frames", num);
+        wsprintfA(num, "TEXTURE.%03d", g_arc_file);
+        prop_add(4, "archive", num);
+        pic_status();
+        InvalidateRect(g_hwnd, &g_well, 1);
+        return;
+    }
     if (g_view == VIEW_DATA) {
         if (index < 0 || index >= g_nmap) {
             props_clear();
@@ -552,6 +658,291 @@ static void on_row(int index)
     status_set(file_title(g_a), status_id);
 }
 
+static void drop_frames(void)
+{
+    g_show = 0;
+    if (g_frame_heap) {
+        mem_heap_delete(g_frame_heap);
+        g_frame_heap = 0;
+    }
+}
+
+static void drop_arc(void)
+{
+    int i;
+
+    drop_frames();
+    for (i = 0; i < ARC_CAP; i++) {
+        g_thumb[i] = 0;
+        g_fn[i] = 0;
+    }
+    g_thumb_n = 0;
+    g_grid = 0;
+    g_grid_w = 0;
+    g_grid_h = 0;
+    g_grid_rows = 0;
+    g_scroll = 0;
+    if (g_arc_heap) {
+        mem_heap_delete(g_arc_heap);
+        g_arc_heap = 0;
+    }
+    g_arc_file = -1;
+}
+
+static int arc_records(int file)
+{
+    int i;
+
+    for (i = 0; i < g_narc; i++) {
+        if (g_arcs[i].file == file) {
+            return g_arcs[i].records;
+        }
+    }
+    return 0;
+}
+
+static void write_ix(unsigned char *p, int ix, int x, int y)
+{
+    int r;
+    int g;
+    int b;
+    int on;
+
+    if (ix <= 0) {
+        on = ((x >> 3) ^ (y >> 3)) & 1;
+        r = on ? 255 : 192;
+        g = r;
+        b = r;
+    } else if (g_pal_ok && ix < 256) {
+        r = g_pal.r[ix];
+        g = g_pal.g[ix];
+        b = g_pal.b[ix];
+    } else {
+        r = ix;
+        g = ix;
+        b = ix;
+    }
+    p[0] = (unsigned char)b;
+    p[1] = (unsigned char)g;
+    p[2] = (unsigned char)r;
+}
+
+static void build_grid(void)
+{
+    MemHeap *prev;
+    int rows;
+    int stride;
+    int i;
+    int cell;
+    int margin;
+
+    rows = (g_thumb_n + GRID_COLS - 1) / GRID_COLS;
+    if (rows < 1) {
+        rows = 1;
+    }
+    g_grid_rows = rows;
+    g_grid_w = GRID_COLS * GRID_CELL;
+    g_grid_h = rows * GRID_CELL;
+    stride = (g_grid_w * 3 + 3) & ~3;
+    if (!g_arc_heap) {
+        return;
+    }
+    prev = mem_heap_use(g_arc_heap);
+    g_grid = (unsigned char *)mem_alloc((df_u32)stride * (df_u32)g_grid_h);
+    mem_heap_use(prev);
+    if (!g_grid) {
+        return;
+    }
+    memset(g_grid, 192, (unsigned int)stride * (unsigned int)g_grid_h);
+    cell = GRID_CELL;
+    margin = 2;
+    for (i = 0; i < g_thumb_n; i++) {
+        Image *img;
+        int col;
+        int row;
+        int x0;
+        int y0;
+        int dw;
+        int dh;
+        int iy;
+        const df_u8 *pix;
+        int sw;
+        int sh;
+
+        img = g_thumb[i];
+        col = i % GRID_COLS;
+        row = i / GRID_COLS;
+        x0 = col * cell + margin;
+        y0 = row * cell + margin;
+        dw = cell - margin * 2;
+        dh = dw;
+        if (!img || !img->index || img->width < 1 || img->height < 1) {
+            continue;
+        }
+        pix = img->index;
+        sw = img->width;
+        sh = img->height;
+        for (iy = 0; iy < dh; iy++) {
+            unsigned char *dst;
+            int sy;
+            int ix;
+
+            sy = iy * sh / dh;
+            dst = g_grid + (y0 + iy) * stride + x0 * 3;
+            for (ix = 0; ix < dw; ix++) {
+                int sx;
+                int index;
+
+                sx = ix * sw / dw;
+                index = pix[sy * sw + sx];
+                write_ix(dst + ix * 3, index, x0 + ix, y0 + iy);
+            }
+        }
+    }
+}
+
+static void load_archive(int file)
+{
+    MemHeap *prev;
+    int n;
+    int i;
+
+    if (g_arc_heap && file == g_arc_file) {
+        return;
+    }
+    drop_arc();
+    n = arc_records(file);
+    if (n > ARC_CAP) {
+        n = ARC_CAP;
+    }
+    if (n < 0) {
+        n = 0;
+    }
+    g_arc_heap = mem_heap_new();
+    if (!g_arc_heap) {
+        return;
+    }
+    g_arc_file = file;
+    prev = mem_heap_use(g_arc_heap);
+    for (i = 0; i < n; i++) {
+        g_fn[i] = texture_frame_count(file, i);
+        if (g_fn[i] < 1) {
+            g_fn[i] = 1;
+        }
+        g_thumb[i] = texture_load_frame(file, i, 0);
+    }
+    mem_heap_use(prev);
+    g_thumb_n = n;
+    g_rec = 0;
+    g_frame = 0;
+    g_scroll = 0;
+    build_grid();
+}
+
+static void show_frame(void)
+{
+    int frames;
+    MemHeap *prev;
+
+    drop_frames();
+    if (g_rec < 0 || g_rec >= g_thumb_n) {
+        return;
+    }
+    frames = g_fn[g_rec];
+    if (frames < 1) {
+        frames = 1;
+    }
+    if (g_frame < 0) {
+        g_frame = 0;
+    }
+    if (g_frame >= frames) {
+        g_frame = 0;
+    }
+    if (g_frame == 0) {
+        g_show = g_thumb[g_rec];
+        return;
+    }
+    g_frame_heap = mem_heap_new();
+    if (!g_frame_heap) {
+        g_show = g_thumb[g_rec];
+        return;
+    }
+    prev = mem_heap_use(g_frame_heap);
+    g_show = texture_load_frame(g_arc_file, g_rec, g_frame);
+    mem_heap_use(prev);
+}
+
+static void pic_status(void)
+{
+    char file[24];
+    char id[72];
+    int w;
+    int h;
+    int n;
+
+    w = g_show ? g_show->width : 0;
+    h = g_show ? g_show->height : 0;
+    n = (g_rec >= 0 && g_rec < g_thumb_n) ? g_fn[g_rec] : 0;
+    wsprintfA(file, "TEXTURE.%03d", g_arc_file);
+    wsprintfA(id, "record %d   %d x %d   frame %d / %d", g_rec, w, h, n ? g_frame + 1 : 0, n);
+    status_set(file, id);
+}
+
+static void scroll_to_rec(void)
+{
+    int row;
+    int y;
+    int view;
+
+    if (g_rec < 0) {
+        return;
+    }
+    row = g_rec / GRID_COLS;
+    y = row * GRID_CELL;
+    view = g_well.bottom - g_well.top;
+    view = view / 2;
+    if (view < GRID_CELL) {
+        view = GRID_CELL;
+    }
+    if (y < g_scroll) {
+        g_scroll = y;
+    }
+    if (y + GRID_CELL > g_scroll + view) {
+        g_scroll = y + GRID_CELL - view;
+    }
+    if (g_scroll < 0) {
+        g_scroll = 0;
+    }
+    if (g_grid_h > view && g_scroll > g_grid_h - view) {
+        g_scroll = g_grid_h - view;
+    }
+}
+
+static void step_frame(int delta)
+{
+    int n;
+
+    if (g_view != VIEW_RECS || g_rec < 0 || g_rec >= g_thumb_n) {
+        return;
+    }
+    n = g_fn[g_rec];
+    if (n < 2) {
+        return;
+    }
+    g_frame += delta;
+    while (g_frame < 0) {
+        g_frame += n;
+    }
+    while (g_frame >= n) {
+        g_frame -= n;
+    }
+    show_frame();
+    pic_status();
+    if (g_hwnd) {
+        InvalidateRect(g_hwnd, &g_large, 0);
+    }
+}
+
 static void fill_list(void)
 {
     DatFile *f;
@@ -581,7 +972,7 @@ static void fill_list(void)
         col_add(g_list, "File", width / 2);
         if (g_books) {
             f = books_merged(g_books);
-            if (has_text("Merged", g_q) && g_nmap < 128) {
+            if (has_text("Merged", g_q) && g_nmap < 512) {
                 g_map[g_nmap] = ND_MERGED_FILE;
                 row_text(g_list, shown, 0, "Merged");
                 wsprintfA(b, "%d", f ? dat_kinds(f) : 0);
@@ -591,7 +982,7 @@ static void fill_list(void)
                 shown++;
             }
             n = books_count(g_books);
-            for (i = 0; i < n && g_nmap < 128; i++) {
+            for (i = 0; i < n && g_nmap < 512; i++) {
                 if (!has_text(books_name(g_books, i), g_q)) {
                     continue;
                 }
@@ -611,7 +1002,7 @@ static void fill_list(void)
         col_add(g_list, "Tag", width / 3);
         f = file_at(g_nd == ND_MERGED ? ND_MERGED_FILE : g_a);
         n = f ? dat_kinds(f) : 0;
-        for (i = 0; i < n && g_nmap < 128; i++) {
+        for (i = 0; i < n && g_nmap < 512; i++) {
             dat_kind(f, i, a, (int)sizeof(a), b, (int)sizeof(b));
             if (!has_text(a, g_q) && !has_text(b, g_q)) {
                 continue;
@@ -638,6 +1029,48 @@ static void fill_list(void)
             row_text(g_list, i, 1, b[0] ? b : "");
         }
         shown = n;
+    } else if (g_view == VIEW_ARCHIVES) {
+        col_add(g_list, "Records", width / 4);
+        col_add(g_list, "Archive", width / 2);
+        for (i = 0; i < g_narc && g_nmap < 512; i++) {
+            wsprintfA(a, "TEXTURE.%03d", g_arcs[i].file);
+            if (!has_text(a, g_q)) {
+                continue;
+            }
+            g_map[g_nmap] = g_arcs[i].file;
+            row_text(g_list, shown, 0, a);
+            wsprintfA(b, "%d", g_arcs[i].records);
+            row_text(g_list, shown, 1, b);
+            g_nmap++;
+            shown++;
+        }
+    } else if (g_view == VIEW_RECS) {
+        int recs;
+
+        load_archive(g_a);
+        col_add(g_list, "Frames", width / 5);
+        col_add(g_list, "Size", width / 3);
+        col_add(g_list, "Record", width / 4);
+        recs = g_thumb_n;
+        for (i = 0; i < recs && g_nmap < 512; i++) {
+            int tw;
+            int th;
+
+            wsprintfA(a, "%d", i);
+            if (!has_text(a, g_q)) {
+                continue;
+            }
+            g_map[g_nmap] = i;
+            tw = g_thumb[i] ? g_thumb[i]->width : 0;
+            th = g_thumb[i] ? g_thumb[i]->height : 0;
+            row_text(g_list, shown, 0, a);
+            wsprintfA(b, "%d x %d", tw, th);
+            row_text(g_list, shown, 1, b);
+            wsprintfA(c, "%d", g_fn[i]);
+            row_text(g_list, shown, 2, c);
+            g_nmap++;
+            shown++;
+        }
     }
     g_filling = 0;
     if (shown > 0) {
@@ -688,6 +1121,10 @@ static void on_tree(void *item)
         g_view = VIEW_CHUNKS;
     } else if (nd == ND_CHUNK) {
         g_view = VIEW_ROWS;
+    } else if (nd == ND_PICTURES) {
+        g_view = VIEW_ARCHIVES;
+    } else if (nd == ND_ARCHIVE) {
+        g_view = VIEW_RECS;
     } else {
         g_view = VIEW_NONE;
     }
@@ -746,6 +1183,18 @@ static void build_tree(void)
 
         file = tree_add(data, books_name(g_books, i), ND_FILE, i, 0);
         add_chunks(file, books_file(g_books, i), i);
+    }
+    {
+        void *pics;
+        int i;
+
+        pics = tree_add(0, "Pictures", ND_PICTURES, 0, 0);
+        for (i = 0; i < g_narc; i++) {
+            char line[24];
+
+            wsprintfA(line, "TEXTURE.%03d", g_arcs[i].file);
+            tree_add(pics, line, ND_ARCHIVE, g_arcs[i].file, 0);
+        }
     }
     SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)data);
     SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)merged);
@@ -822,22 +1271,242 @@ static void layout(void)
     InvalidateRect(g_hwnd, &g_well, 1);
 }
 
+static void blit_dib(HDC dc, int dx, int dy, int dw, int dh, const unsigned char *dib,
+                     int full_w, int full_h, int sx, int sy, int sw, int sh)
+{
+    BITMAPINFOHEADER info;
+
+    if (!dib || dw < 1 || dh < 1 || sw < 1 || sh < 1 || !g_gdi.StretchDIBits) {
+        return;
+    }
+    memset(&info, 0, sizeof(info));
+    info.biSize = sizeof(info);
+    info.biWidth = full_w;
+    /* Top-down, so row 0 of dib is the top of the picture. */
+    info.biHeight = -full_h;
+    info.biPlanes = 1;
+    info.biBitCount = 24;
+    info.biCompression = BI_RGB;
+    g_gdi.SetStretchBltMode(dc, 3);
+    g_gdi.StretchDIBits(dc, dx, dy, dw, dh, sx, sy, sw, sh, dib, (const BITMAPINFO *)&info, 0, SRCCOPY);
+}
+
+static void paint_large(HDC dc, const RECT *box)
+{
+    int w;
+    int h;
+    int stride;
+    int y;
+    int dw;
+    int dh;
+    int s;
+    int s2;
+    int dx;
+    int dy;
+    const df_u8 *pix;
+    BITMAPINFOHEADER info;
+
+    g_large = *box;
+    if (!g_show || !g_show->index || g_show->width < 1 || g_show->height < 1) {
+        DrawTextA(dc, "No picture", -1, &g_large, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        return;
+    }
+    w = g_show->width;
+    h = g_show->height;
+    if (w > 512) {
+        w = 512;
+    }
+    if (h > 512) {
+        h = 512;
+    }
+    stride = (w * 3 + 3) & ~3;
+    if (!g_dib) {
+        /* Wide enough for a 512-wide picture, whatever this frame's width is. */
+        g_dib = (unsigned char *)mem_keep(((512 * 3 + 3) & ~3) * 512u);
+    }
+    if (!g_dib) {
+        return;
+    }
+    pix = g_show->index;
+    for (y = 0; y < h; y++) {
+        unsigned char *row;
+        int x;
+        int sy;
+
+        sy = y * g_show->height / h;
+        row = g_dib + y * stride;
+        for (x = 0; x < w; x++) {
+            int sx;
+
+            sx = x * g_show->width / w;
+            write_ix(row + x * 3, pix[sy * g_show->width + sx], x, y);
+        }
+    }
+    dw = box->right - box->left;
+    dh = box->bottom - box->top;
+    if (dw < 1) {
+        dw = 1;
+    }
+    if (dh < 1) {
+        dh = 1;
+    }
+    s = dw / w;
+    s2 = dh / h;
+    if (s2 < s) {
+        s = s2;
+    }
+    if (s < 1) {
+        s = 1;
+        if (dw * h / w > dh) {
+            dw = dh * w / h;
+            if (dw < 1) {
+                dw = 1;
+            }
+        } else {
+            dh = dw * h / w;
+            if (dh < 1) {
+                dh = 1;
+            }
+        }
+    } else {
+        if (s > 4) {
+            s = 4;
+        }
+        dw = w * s;
+        dh = h * s;
+    }
+    dx = box->left + (box->right - box->left - dw) / 2;
+    dy = box->top + (box->bottom - box->top - dh) / 2;
+    memset(&info, 0, sizeof(info));
+    info.biSize = sizeof(info);
+    info.biWidth = w;
+    info.biHeight = -h;
+    info.biPlanes = 1;
+    info.biBitCount = 24;
+    info.biCompression = BI_RGB;
+    g_gdi.SetStretchBltMode(dc, 3);
+    g_gdi.StretchDIBits(dc, dx, dy, dw, dh, 0, 0, w, h, g_dib, (const BITMAPINFO *)&info, 0, SRCCOPY);
+}
+
+static void paint_pics(HDC dc)
+{
+    RECT grid;
+    RECT large;
+    int view;
+    int vis;
+    int dx;
+    RECT mark;
+    int col;
+    int row;
+
+    view = g_well.bottom - g_well.top;
+    grid = g_well;
+    large = g_well;
+    grid.bottom = g_well.top + view / 2;
+    large.top = grid.bottom + 2;
+    g_large = large;
+    if (g_grid && g_grid_h > 0 && g_grid_w > 0) {
+        vis = grid.bottom - grid.top;
+        if (vis > g_grid_h - g_scroll) {
+            vis = g_grid_h - g_scroll;
+        }
+        if (vis < 1) {
+            vis = 1;
+        }
+        dx = grid.left;
+        if (grid.right - grid.left > g_grid_w) {
+            dx += (grid.right - grid.left - g_grid_w) / 2;
+        }
+        blit_dib(dc, dx, grid.top, g_grid_w, vis, g_grid, g_grid_w, g_grid_h, 0, g_scroll, g_grid_w, vis);
+        if (g_rec >= 0 && g_rec < g_thumb_n) {
+            col = g_rec % GRID_COLS;
+            row = g_rec / GRID_COLS;
+            mark.left = dx + col * GRID_CELL;
+            mark.top = grid.top + row * GRID_CELL - g_scroll;
+            mark.right = mark.left + GRID_CELL;
+            mark.bottom = mark.top + GRID_CELL;
+            if (mark.bottom > grid.top && mark.top < grid.bottom) {
+                FrameRect(dc, &mark, (HBRUSH)g_gdi.GetStockObject(BLACK_BRUSH));
+            }
+        }
+    }
+    paint_large(dc, &large);
+}
+
 static void paint_well(HDC dc)
 {
     RECT well;
-    const char *text;
 
     if (g_well.right - g_well.left < 8 || g_well.bottom - g_well.top < 8) {
         return;
     }
     well = g_well;
     DrawEdge(dc, &well, EDGE_SUNKEN, BF_RECT);
-    well.left += 4;
-    well.top += 4;
-    well.right -= 4;
-    well.bottom -= 4;
-    text = "No picture";
-    DrawTextA(dc, text, -1, &well, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    well.left += 2;
+    well.top += 2;
+    well.right -= 2;
+    well.bottom -= 2;
+    if (g_view == VIEW_RECS && g_grid) {
+        paint_pics(dc);
+        return;
+    }
+    DrawTextA(dc, "No picture", -1, &well, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+}
+
+static void well_click(int x, int y)
+{
+    int origin;
+    int view;
+    int col;
+    int row;
+    int rec;
+    int i;
+
+    if (g_view != VIEW_RECS || !g_grid_w) {
+        return;
+    }
+    view = (g_well.bottom - g_well.top) / 2;
+    if (y < g_well.top || y >= g_well.top + view) {
+        return;
+    }
+    origin = g_well.left;
+    if (g_well.right - g_well.left > g_grid_w) {
+        origin += (g_well.right - g_well.left - g_grid_w) / 2;
+    }
+    if (x < origin || x >= origin + g_grid_w) {
+        return;
+    }
+    col = (x - origin) / GRID_CELL;
+    row = (y - g_well.top + g_scroll) / GRID_CELL;
+    rec = row * GRID_COLS + col;
+    if (rec < 0 || rec >= g_thumb_n) {
+        return;
+    }
+    for (i = 0; i < g_nmap; i++) {
+        if (g_map[i] == rec) {
+            select_row(g_list, i);
+            return;
+        }
+    }
+    g_rec = rec;
+    g_frame = 0;
+    show_frame();
+    scroll_to_rec();
+    pic_status();
+    InvalidateRect(g_hwnd, &g_well, 1);
+}
+
+static LRESULT CALLBACK list_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    if (msg == WM_KEYDOWN && (wp == VK_LEFT || wp == VK_RIGHT)) {
+        step_frame(wp == VK_LEFT ? -1 : 1);
+        return 0;
+    }
+    if (msg == WM_KEYDOWN && wp == VK_ESCAPE) {
+        PostQuitMessage(0);
+        return 0;
+    }
+    return CallWindowProcA(g_list_proc, hwnd, msg, wp, lp);
 }
 
 static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
@@ -875,12 +1544,23 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             }
         }
         return 0;
+    case WM_LBUTTONDOWN:
+        well_click((int)(short)LOWORD(lp), (int)(short)HIWORD(lp));
+        return 0;
     case WM_KEYDOWN:
         if (wp == VK_ESCAPE) {
             PostQuitMessage(0);
+        } else if (wp == VK_LEFT) {
+            step_frame(-1);
+        } else if (wp == VK_RIGHT) {
+            step_frame(1);
         }
         return 0;
+    case WM_TIMER:
+        step_frame(1);
+        return 0;
     case WM_DESTROY:
+        KillTimer(hwnd, ID_TIMER);
         PostQuitMessage(0);
         return 0;
     default:
@@ -917,6 +1597,16 @@ static int win_main(HINSTANCE inst)
     if (!mount_arena()) {
         MessageBoxA(0, "ARENA2 was not found beside the program.", "DATFALL", MB_OK | MB_ICONERROR);
         return 1;
+    }
+    {
+        const df_u8 *bytes;
+        df_u32 n;
+
+        bytes = vfs_read("ART_PAL.COL", &n);
+        g_pal_ok = palette_load(bytes, n, &g_pal);
+        texture_cache_limit(2u * 1024u * 1024u);
+        g_narc = tex_list(g_arcs, TEX_SCAN);
+        g_arc_file = -1;
     }
     if (!load_books()) {
         MessageBoxA(0, "The tables did not load.", "DATFALL", MB_OK | MB_ICONERROR);
@@ -978,9 +1668,11 @@ static int win_main(HINSTANCE inst)
     /* col_add inserts at column 0, so the last call is the left column. */
     col_add(g_props, "Value", 160);
     col_add(g_props, "Field", 110);
+    g_list_proc = (WNDPROC)SetWindowLongA(g_list, GWL_WNDPROC, (LONG)list_proc);
     ShowWindow(hwnd, SW_SHOWMAXIMIZED);
     layout();
     build_tree();
+    SetTimer(hwnd, ID_TIMER, 160, 0);
     SetFocus(g_list);
     while (GetMessageA(&msg, 0, 0, 0) > 0) {
         if (msg.message == WM_KEYDOWN && msg.wParam == VK_ESCAPE) {
@@ -990,6 +1682,8 @@ static int win_main(HINSTANCE inst)
         TranslateMessage(&msg);
         DispatchMessageA(&msg);
     }
+    drop_arc();
+    texture_cache_clear();
     books_close(g_books);
     g_books = 0;
     return 0;

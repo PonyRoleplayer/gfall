@@ -171,7 +171,9 @@ The first run cooks `DATA\MAIN.DAT` (`maindat_start`), then the browser reads th
 
 `make datfall-check` is the same PE check as `make gfall-check`, then a host program with no window. It cooks a MAIN.DAT, prints every merged chunk and its field names, and checks that a mod setting the rat's health and adding a `note` field, plus a new `NOTE` table, shows up in the merge while the rat's name stays. It also checks three pictures from `ARENA2`, the readers the later views use: Breton's body, the rat's front frame, and a dwarven recolour of `WEAPON00.CIF`.
 
-The picture views (textures, races and heads, creatures, weapons, the world map and the location list) are not in the window yet. What those readers already do:
+- **Pictures.** Every `TEXTURE.###` in ARENA2, including `TEXTURE.000` and `TEXTURE.001` (solid colours; the engine's record count skips those two). The tree node is the archive. The list is its records, with the size and the frame count. The well is a grid of thumbnails and, under it, the selected record drawn large. Index 0 is a checker. A 160 ms timer advances a record that has more than one frame. Left and right step one frame. Clicking a thumbnail selects that record. `make datfall-check` expects 472 archives and 20 records in `TEXTURE.255`, whose front frame is 65×67.
+
+Races, creatures, weapons, the world map and the location list are not in the window yet. What those readers already do:
 
 - **Races.** The eight races (`RACE`). Paper-doll files: `SCBG##I0.IMG`, `BODY##I0.IMG` and `BODY##I1.IMG` (body and clothed, male then female), `FACE##I0.CIF` and the female file. IMG through `img_load`. A head is a CIF, read by `formats/cif.c`.
 - **Enemies.** A kind's `male` archive (`TEXTURE.255` for the rat). Walking records 0..4, standing 15..19 when `has_idle` is set. A frame is `texture_load_frame`. The rat's front record is 8 frames, 65×67.

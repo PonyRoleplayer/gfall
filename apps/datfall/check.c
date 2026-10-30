@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "books.h"
+#include "pics.h"
 #include "engine/assets/recfile.h"
 #include "engine/assets/vfs.h"
 #include "engine/core/mem.h"
@@ -373,6 +374,23 @@ int main(void)
         expect(count > 0 && enemies && enemies[0].id == 0 && enemies[0].male == 255,
                "the rat's pictures are not TEXTURE.255");
         texture_cache_limit(2u * 1024u * 1024u);
+        {
+            TexArc arcs[TEX_SCAN];
+            int na;
+            int ai;
+            int found;
+
+            na = tex_list(arcs, TEX_SCAN);
+            found = 0;
+            for (ai = 0; ai < na && ai < TEX_SCAN; ai++) {
+                if (arcs[ai].file == 255) {
+                    found = arcs[ai].records;
+                }
+            }
+            expect(na == 472, "ARENA2 does not have 472 TEXTURE archives");
+            expect(found == 20 && texture_record_count(255) == 20,
+                   "TEXTURE.255 does not have 20 records");
+        }
         rat = texture_load_frame(255, 0, 0);
         if (!rat || !rat->index) {
             fprintf(stderr, "datfall: the rat's front frame did not load\n");

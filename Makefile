@@ -318,6 +318,7 @@ levelfall-check: build/LEVELFALL.EXE
 DAT_SRC := \
 	apps/datfall/view.c \
 	apps/datfall/books.c \
+	apps/datfall/pics.c \
 	src/engine/core/mem.c \
 	src/engine/core/log.c \
 	src/engine/assets/recfile.c \
