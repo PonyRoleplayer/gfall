@@ -272,7 +272,7 @@ Both move with the slot on a rebase, as everything else does.
 
 ### Kept state, by the stream
 
-`stream.c` calls `keep_restore` for a slot's movers and entities when its fill is done, before it is in the scene. It calls `keep_save` for them before its `drop`, with the stream's origin in the place's frame as `o` (the origin chunk × the chunk's size). The game only gives the keys at build, as it does for a whole place. A chunk's movers are `mover_init`'s before its fill ends (`doors_build` does that). The world's chunks get the same calls; while they have no keys, the calls do nothing.
+`stream.c` calls `keep_restore` for a slot's movers and entities when its fill is done, before it is in the scene. It calls `keep_save` for them before its `drop`, with the stream's origin in the place's frame as `o` (the origin chunk × the chunk's size). A loaded chunk's changes are only on its own arrays until then, so a save game calls `stream_keep_now` before it writes the keep table: the same `keep_save` for every loaded chunk, nothing dropped, and nothing with no stream open. A chunk still being filled is skipped, since nothing in it has been shown. The game only gives the keys at build, as it does for a whole place. A chunk's movers are `mover_init`'s before its fill ends (`doors_build` does that). The world's chunks get the same calls; while they have no keys, the calls do nothing.
 
 ### The rest of the engine indoors
 

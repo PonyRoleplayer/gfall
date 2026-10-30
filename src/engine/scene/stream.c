@@ -137,6 +137,29 @@ static void empty_slot(int s)
     g_slot[s].data = 0;
 }
 
+/* What the player changed in the loaded chunk in slot s, into the keep table, in the place's frame. */
+static void keep_slot(int s)
+{
+    keep_save(g_scene, s * g_cap.movers, g_slot[s].movers,
+              g_entities ? &g_entities[s * g_cap.entities] : 0, g_entities ? g_slot[s].entities : 0,
+              (float)g_ox * (float)g_chunk, 0.0f, (float)g_oz * (float)g_chunk);
+}
+
+void stream_keep_now(void)
+{
+    int s;
+
+    if (!g_open) {
+        return;
+    }
+    for (s = 0; s < SLOTS; s++) {
+        /* A chunk still being filled has not been shown yet, so nothing in it has changed. */
+        if (g_slot[s].used && g_slot[s].done) {
+            keep_slot(s);
+        }
+    }
+}
+
 /* The chunk in slot s goes: the source lets go of it, then the slot is empty. */
 static void drop_slot(int s)
 {
@@ -145,9 +168,7 @@ static void drop_slot(int s)
     was_done = g_slot[s].done;
     /* What the player changed in it, kept for when it comes again (docs/interact.md). */
     if (was_done) {
-        keep_save(g_scene, s * g_cap.movers, g_slot[s].movers,
-                  g_entities ? &g_entities[s * g_cap.entities] : 0, g_entities ? g_slot[s].entities : 0,
-                  (float)g_ox * (float)g_chunk, 0.0f, (float)g_oz * (float)g_chunk);
+        keep_slot(s);
     }
     if (g_src.drop) {
         g_src.drop(g_src.user, g_slot[s].cx, g_slot[s].cz, g_slot[s].data);

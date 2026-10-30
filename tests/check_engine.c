@@ -1506,6 +1506,29 @@ static void check_dungeon_stream(void)
     mover_set_end(m, 1);
     e->x += 100.0f;
     e->dead = 1;
+    /*
+     * A save game with those blocks still loaded: their changes reach the
+     * keep table, in the place's frame, and every chunk stays as it is.
+     */
+    {
+        const Keep *door;
+        const Keep *creature;
+        int fills;
+        int still_loaded;
+
+        check_expect(keep_count() == 0, "a change in a loaded block was kept before anything asked");
+        fills = g_dun_fills;
+        stream_keep_now();
+        door = keep_find(dun_key(1, 0, 1));
+        creature = keep_find(dun_key(0, 1, 2));
+        check_expect(keep_count() == 2 && door && door->at_end && creature && creature->dead
+                     && check_near(creature->x, 1100.0f, 0.01f) && check_near(creature->z, 2048.0f + 900.0f, 0.01f),
+                     "stream_keep_now did not write the loaded blocks' changes, or wrote more");
+        stream_stats(&still_loaded, 0, 0, 0);
+        check_expect(still_loaded == loaded && g_dun_fills == fills && dun_mover(&sc, 1, 0) == m
+                     && dun_entity(&sc, 0, 1) == e && m->state == MOVER_END && e->dead,
+                     "stream_keep_now disturbed the chunks it saved");
+    }
     /* Walk 6 blocks east: blocks 0..2 drop, their changes kept. */
     dun_walk(&cam, 1024.0f + 6.0f * 2048.0f, 1024.0f);
     check_expect(!dun_mover(&sc, 1, 0) && keep_count() == 2, "the dropped blocks' changes were not kept, or were not all");
@@ -1519,6 +1542,10 @@ static void check_dungeon_stream(void)
     m = dun_mover(&sc, 0, 0);
     check_expect(m && m->state == MOVER_START, "a door no one opened came back open");
     stream_close();
+    /* With no stream open there is nothing to save, and no scene to read. */
+    i = keep_count();
+    stream_keep_now();
+    check_expect(keep_count() == i, "stream_keep_now did something with no stream open");
     keep_clear();
 }
 

@@ -145,7 +145,7 @@ A door opened, a lock picked or a creature killed stays so when its place is lef
 - **Save files.** `keep_count`, `keep_at` (in key order), `keep_put` and `keep_clear`. `Keep` is a fixed-size record, so the game's record files can carry it.
 - **Memory.** About 56 bytes a row, sorted, binary-searched, in a heap of its own that grows by doubling, never a place's heap.
 
-In a stream, `stream.c` makes both calls itself for each block: `keep_restore` when its fill is done, `keep_save` before it is dropped (`docs/streaming.md`, Dungeons). A creature that walked from its home block into another is restored with its home block. In a stream, it may stand where the next block is not loaded yet: it is drawn there, over nothing, until that block comes. This is an edge case, accepted.
+In a stream, `stream.c` makes both calls itself for each block: `keep_restore` when its fill is done, `keep_save` before it is dropped (`docs/streaming.md`, Dungeons). The table therefore lacks what changed in the blocks still loaded, until the game calls `stream_keep_now` before writing a save. A creature that walked from its home block into another is restored with its home block. In a stream, it may stand where the next block is not loaded yet: it is drawn there, over nothing, until that block comes. This is an edge case, accepted.
 
 ## Switches
 

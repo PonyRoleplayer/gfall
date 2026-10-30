@@ -38,6 +38,7 @@
  * When a chunk's fill is done, its movers' and entities' kept state is
  * put back (keep_restore, docs/interact.md) before it is in the scene;
  * before it is dropped it is saved (keep_save), in the place's frame.
+ * stream_keep_now saves the loaded ones too, for a save game.
  *
  * What a chunk holds is the game's: its fill writes the slot's arrays,
  * in the chunk's own frame (0..STREAM_CHUNK east and north of its
@@ -144,6 +145,13 @@ void stream_close(void);
 int stream_active(void);
 /* Every chunk goes, to be loaded again by the updates to come, nearest first (the season turned). */
 void stream_reload(void);
+/*
+ * Every loaded chunk's changes into the keep table now, as if it were
+ * being dropped, and nothing is dropped: a chunk writes its changes only
+ * when it goes, so a save game calls this before it writes the table.
+ * Nothing with no stream open.
+ */
+void stream_keep_now(void);
 /* Chunks within rings of the camera's (at most the radius) not loaded yet, as of the last update. */
 int stream_missing(int rings);
 /* Chunks a side round the camera's (1..STREAM_RADIUS_MAX); takes effect on the next update. */
