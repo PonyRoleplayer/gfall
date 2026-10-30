@@ -311,6 +311,11 @@ void gfx_set_use_key(int on)
     draw_set_use_key(on);
 }
 
+float gfx_stream_budget(float fallback_ms)
+{
+    return prof_spare_ms(glide_vsync(), fallback_ms);
+}
+
 void gfx_frame(const Camera *cam, const Level *level)
 {
     /* A streamed world's pictures are the game's to add: a mipmap or texcap change waits for a place. */

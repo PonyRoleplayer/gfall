@@ -91,6 +91,12 @@ void gfx_set_pause(int on);
  * attacks, calls interact_request_use on its own use key's edge.
  */
 void gfx_set_use_key(int on);
+/*
+ * Milliseconds to give a stream this frame (stream_update's budget): what
+ * the last frame left before its retrace, 1 to 8 ms; fallback_ms with vsync
+ * off or before the counter is calibrated. See prof_spare_ms, docs/profile.md.
+ */
+float gfx_stream_budget(float fallback_ms);
 
 /* Drawn after the frame and before the swap. 0 clears it. */
 void gfx_set_extra(void (*fn)(void));

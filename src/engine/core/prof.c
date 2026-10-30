@@ -167,3 +167,34 @@ float prof_last_ms(int stage)
     }
     return (float)g_last[stage] / (float)g_per_ms;
 }
+
+/* The card shows a frame on this retrace; see prof_spare_ms. */
+#define RETRACE_MS (1000.0f / 60.0f)
+/* Left unspent before the retrace, for what the last frame's time did not foresee. */
+#define SPARE_MARGIN_MS 1.5f
+/* Loading never stops, and never takes so long a single frame stalls. */
+#define SPARE_MIN_MS 1.0f
+#define SPARE_MAX_MS 8.0f
+
+float prof_spare_ms(int vsync, float fallback_ms)
+{
+    float busy;
+    float retrace;
+    float spare;
+
+    /* The swap is the wait for the retrace, not work the next frame must repeat. */
+    busy = prof_last_ms(PROF_FRAME) - prof_last_ms(PROF_SWAP);
+    if (!vsync || g_per_ms == 0 || busy <= 0.0f) {
+        return fallback_ms;
+    }
+    /* The first retrace this frame's work can make with room for the least loading. */
+    retrace = RETRACE_MS;
+    while (retrace < busy + SPARE_MIN_MS + SPARE_MARGIN_MS) {
+        retrace += RETRACE_MS;
+    }
+    spare = retrace - busy - SPARE_MARGIN_MS;
+    if (spare < SPARE_MIN_MS) {
+        return SPARE_MIN_MS;
+    }
+    return spare > SPARE_MAX_MS ? SPARE_MAX_MS : spare;
+}

@@ -264,10 +264,14 @@ int mem_temp_begin(void)
     return 1;
 }
 
-/* The host has one heap, so kept and temp bytes are the same. */
+/*
+ * The host has one base heap, so kept and temp bytes are the same. A heap
+ * set with mem_heap_use is another matter: what is kept must not die with
+ * it, here as on the target, or a test passes or fails unlike the machine.
+ */
 void *mem_keep(df_u32 bytes)
 {
-    return mem_alloc(bytes);
+    return base_alloc(bytes);
 }
 
 void mem_temp_end(void)

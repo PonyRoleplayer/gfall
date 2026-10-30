@@ -73,6 +73,16 @@ int prof_frames(void);
 df_u32 prof_now(void);
 df_u32 prof_per_ms(void);
 
+/*
+ * Milliseconds the next frame can spend loading without missing a retrace
+ * it would have made: what the last frame left before that 60 Hz retrace,
+ * less a margin, held to 1..8 ms so loading never stops or stalls a frame.
+ * fallback_ms when that cannot be known: vsync (1 if the swap waits for the
+ * retrace) is off, the counter is not calibrated, or no frame was timed.
+ * docs/profile.md. A program calls gfx_stream_budget, which knows the vsync.
+ */
+float prof_spare_ms(int vsync, float fallback_ms);
+
 /* For hostcheck: feed a frame's stage times in cycles, at mhz, without the counter. */
 void prof_feed(const df_u32 *cycles, int mhz);
 

@@ -129,7 +129,8 @@ static HWND g_open;
 static HWND g_stream_box;
 /* While the world streams: its frame hook runs before each frame, and the panel says so. */
 static void (*g_frame_hook)(Camera *cam, float secs);
-static float stream_budget(void);
+/* The stream's budget a frame when the spare time cannot be known (gfx_stream_budget). */
+#define STREAM_FALLBACK_MS 2.0f
 /* Before a place's first frame, its creatures within this of the landing are read: a block. */
 #define CREATURES_NEAR 2048.0f
 static int g_streaming;
@@ -2980,7 +2981,7 @@ static void run_view(const Level *level, Camera *cam)
          * leaves before its retrace (docs/entities.md); not while paused.
          */
         if (g_world && !g_streaming && !gfx_paused()) {
-            world_creatures_step((World *)g_world, cam, 0.0f, stream_budget());
+            world_creatures_step((World *)g_world, cam, 0.0f, gfx_stream_budget(STREAM_FALLBACK_MS));
         }
         gfx_frame(cam, level);
         frames++;
@@ -3294,43 +3295,12 @@ static void view_row(int index)
     input_clear_quit();
 }
 
-/*
- * The stream's share of a frame (docs/streaming.md, The budget). With
- * vsync a frame shows on a 60 Hz retrace: one that runs past 16.7 ms
- * waits for the next and shows at 30 fps, a stutter. So the stream takes
- * what the last frame left before the retrace it made, less a margin,
- * between a floor (it never stops loading) and a ceiling. Before the
- * counter is calibrated, or with vsync off, the floor's double.
- */
-#define STREAM_PERIOD_MS (1000.0f / 60.0f)
-#define STREAM_MARGIN_MS 1.5f
-#define STREAM_MIN_MS 1.0f
-#define STREAM_MAX_MS 8.0f
 /* A single step that ran past the budget by this much is logged (at most STREAM_LOG_MAX a stream). */
 #define STREAM_LOG_OVER_MS 8.0f
 #define STREAM_LOG_MAX 64
 static int g_stream_logged;
 /* The streamed level while its view runs, for stream_frame's prime after a reload. */
 static const Level *g_stream_level;
-
-static float stream_budget(void)
-{
-    float busy;
-    float end;
-    float b;
-
-    busy = prof_last_ms(PROF_FRAME) - prof_last_ms(PROF_SWAP);
-    if (prof_per_ms() == 0 || busy <= 0.0f || !glide_vsync()) {
-        return 2.0f * STREAM_MIN_MS;
-    }
-    /* The retrace this frame makes anyway, with room for the floor. */
-    end = STREAM_PERIOD_MS;
-    while (end < busy + STREAM_MIN_MS + STREAM_MARGIN_MS) {
-        end += STREAM_PERIOD_MS;
-    }
-    b = end - busy - STREAM_MARGIN_MS;
-    return b < STREAM_MIN_MS ? STREAM_MIN_MS : (b > STREAM_MAX_MS ? STREAM_MAX_MS : b);
-}
 
 /* The radius of chunks the far clip needs (travel.h). */
 static int stream_radius_for_far(void)
@@ -3368,7 +3338,7 @@ static void stream_frame(Camera *cam, float secs)
         float lamp;
         int step;
 
-        budget = stream_budget();
+        budget = gfx_stream_budget(STREAM_FALLBACK_MS);
         wild_update(cam, budget);
         /*
          * The townspeople: who comes and goes round the camera, and their

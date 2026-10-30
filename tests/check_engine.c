@@ -3441,6 +3441,72 @@ static void check_interact(void)
     movers[0].next = -1;
 }
 
+/*
+ * What is kept outlives a heap set with mem_heap_use, on the host as on
+ * the target: a table first read under a screen's scratch heap died with
+ * that heap on the host alone.
+ */
+static void check_mem_keep(void)
+{
+    MemHeap *heap;
+    MemHeap *was;
+    void *kept;
+    void *inside;
+
+    heap = mem_heap_new();
+    was = mem_heap_use(heap);
+    kept = mem_keep(64);
+    inside = mem_alloc(32);
+    mem_heap_use(was);
+    check_expect(heap && kept && inside && mem_heap_bytes(heap) == 32,
+                 "mem_keep went into the heap that was set, not the main one");
+    mem_heap_delete(heap);
+}
+
+/* One frame fed to the profile: frame_ms long, swap_ms of it the swap, at mhz. */
+static void prof_feed_frame(float frame_ms, float swap_ms, int mhz)
+{
+    df_u32 c[PROF_STAGES];
+    int i;
+
+    for (i = 0; i < PROF_STAGES; i++) {
+        c[i] = 0;
+    }
+    c[PROF_FRAME] = (df_u32)(frame_ms * 1000.0f) * (df_u32)mhz;
+    c[PROF_SWAP] = (df_u32)(swap_ms * 1000.0f) * (df_u32)mhz;
+    prof_feed(c, mhz);
+}
+
+/*
+ * The time spare before the retrace (prof_spare_ms), which the streams load
+ * in. Each case is the last frame's work, its time without the swap.
+ */
+static void check_prof_spare(void)
+{
+    const float fallback = 3.0f;
+
+    /* 10 ms of work: 16.67 - 10, less the 1.5 margin. */
+    prof_feed_frame(12.0f, 2.0f, 100);
+    check_expect(check_near(prof_spare_ms(1, fallback), 5.17f, 0.01f), "the spare time before the retrace is wrong");
+    /* 2 ms of work leaves far more than a frame should spend loading. */
+    prof_feed_frame(4.0f, 2.0f, 100);
+    check_expect(check_near(prof_spare_ms(1, fallback), 8.0f, 0.01f), "the spare time passed its ceiling");
+    /* 14 ms of work just makes this retrace, with little over the floor. */
+    prof_feed_frame(16.0f, 2.0f, 100);
+    check_expect(check_near(prof_spare_ms(1, fallback), 1.17f, 0.01f), "a tight frame's spare time is wrong");
+    /* 15 ms of work has no room for the floor: it counts to the next retrace, under the ceiling. */
+    prof_feed_frame(17.0f, 2.0f, 100);
+    check_expect(check_near(prof_spare_ms(1, fallback), 8.0f, 0.01f), "a frame that misses its retrace did not count to the next");
+    /* What cannot be known: vsync off, no frame timed, the counter not calibrated. */
+    check_expect(prof_spare_ms(0, fallback) == fallback, "with vsync off the spare time is not the fallback");
+    prof_feed_frame(0.0f, 0.0f, 100);
+    check_expect(prof_spare_ms(1, fallback) == fallback, "with no frame timed the spare time is not the fallback");
+    prof_feed_frame(12.0f, 2.0f, 0);
+    check_expect(prof_spare_ms(1, fallback) == fallback, "uncalibrated, the spare time is not the fallback");
+    /* The calibration back as check_prof left it. */
+    prof_feed_frame(0.0f, 0.0f, 100);
+}
+
 /* The frame profile's sums (docs/profile.md): fed cycles at a known rate. */
 static void check_prof(void)
 {
@@ -4215,7 +4281,9 @@ void check_engine(void)
     check_interact();
     check_teleport();
     check_water();
+    check_mem_keep();
     check_prof();
+    check_prof_spare();
     check_texres();
     check_entities();
     check_sound();

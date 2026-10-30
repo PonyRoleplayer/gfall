@@ -38,6 +38,10 @@ The time outside `frame` (the viewer's own loop, Windows' messages) is the diffe
 - `prof` in the console: each stage's mean and worst, in ms, with the calibrated clock.
 - LEVELFALL: P shows the profile panel, top centre (`profpanel=1` in `levelfall.cfg` opens it at start), and each F12 bookmark logs a `# prof` line with the means.
 
+## The time spare before the retrace
+
+`prof_spare_ms(vsync, fallback_ms)` is the one budget worked out here, the time a stream may load in, because it reads the last frame's stages. `gfx_stream_budget(fallback_ms)` is the same with the card's vsync setting, and it is what a program calls. The last frame's work is `frame` less `swap`. The sum finds the first 60 Hz retrace that work can make with 2.5 ms over (the 1 ms floor and the 1.5 ms margin), and gives what is left before it less the margin, held to 1..8 ms. A frame that would miss its retrace counts to the next one, since it shows there anyway. With vsync off, before calibration, or with no frame timed, the answer is the caller's `fallback_ms`, as each program chooses its own. `tests/check_engine.c` holds the sums (`check_prof_spare`).
+
 ## Baseline
 
 To be measured on the 233 with the Voodoo 1 (LEVELFALL, 640 × 480, `vsync off`): Privateer's Hold at the start marker, Daggerfall's square at noon and at night, a Daggerfall street at far 1400 and at 8192.

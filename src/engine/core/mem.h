@@ -29,7 +29,8 @@ void mem_temp_end(void);
 df_u32 mem_epoch(void);
 
 /*
- * Always the main heap, even between mem_temp_begin and mem_temp_end.
+ * Always the main heap, even between mem_temp_begin and mem_temp_end,
+ * or with a heap set by mem_heap_use, on the host as on the target.
  * For a buffer allocated on first use and kept for the process, such
  * as the console's frame grab: LEVELFALL and RENDERFALL draw inside a
  * temp heap, and mem_alloc there would die with the place.
