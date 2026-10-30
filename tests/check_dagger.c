@@ -2510,10 +2510,40 @@ static void check_skies(void)
 static df_u8 g_worn[1024];
 
 /*
+ * How many lights report decals they do not have. The draw pass trusts
+ * light_box and light_decals and walks what they report, so a light
+ * halfway through its cut must report nothing yet (docs/lighting.md).
+ * hostcheck never draws, so this asks what the draw pass would ask.
+ */
+static int lights_misreporting(void)
+{
+    int wrong;
+    int i;
+
+    wrong = 0;
+    for (i = 0; i < light_count(); i++) {
+        const Decal *decals;
+        float cx, cy, cz, ex, ey, ez;
+        int count;
+        int has_box;
+
+        count = light_decals(i, &decals);
+        has_box = light_box(i, &cx, &cy, &cz, &ex, &ey, &ez);
+        if (count > 0 && (!decals || !light_corners_of(i))) {
+            wrong++;
+        } else if (has_box && count < 1) {
+            wrong++;
+        }
+    }
+    return wrong;
+}
+
+/*
  * A streamed dungeon's lights keep their shadows (docs/streaming.md,
  * Dungeons): the hold by block cuts the very decals the hold loaded
  * whole does, rays and all; and with no budget at all, a face a call,
- * the cut goes on across calls and comes out the same.
+ * the cut goes on across calls and comes out the same. Between those
+ * calls the draw pass may run, so every light must be safe to draw then.
  */
 static void check_dungeon_lights(void)
 {
@@ -2527,6 +2557,7 @@ static void check_dungeon_lights(void)
     int got;
     int calls;
     int lights;
+    int misreported;
     int i;
 
     keep_clear();
@@ -2548,12 +2579,16 @@ static void check_dungeon_lights(void)
     light_build(&sl.scene);
     lights = light_stream_pending();
     calls = 0;
+    misreported = 0;
     for (i = 0; i < 2000000 && light_stream_pending() > 0; i++) {
         light_stream_service(0.0f);
         calls++;
+        misreported += lights_misreporting();
     }
     printf("dungeon lights: the hold whole %d decals, by block %d, again a face a call %d (%d calls for %d queued)\n",
            want, got, light_decal_total(), calls, lights);
+    printf("dungeon lights: %d lights misreported their decals between those calls\n", misreported);
+    check_expect(misreported == 0, "dungeon lights: a light halfway through its cut reported decals it does not have");
     check_expect(want > 0 && got == want, "dungeon lights: the hold by block does not cut the whole hold's decals");
     check_expect(light_decal_total() == want && calls > lights,
                  "dungeon lights: cut a face a call, the hold's decals came out otherwise, or not across calls");

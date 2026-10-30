@@ -303,11 +303,11 @@ Step 1 is built:
 
 Step 2 is built too:
 - A streamed scene that is not outdoor keeps its shadow rays (`seen`), and outdoors stays without them. `light.c` already knows which a scene is, so the source asks for nothing.
-- A light's cut goes a face at a time (`cut_start`, `cut_run`, `cut_finish`), so the service stops within its budget mid-light and goes on at the next call.
+- A light's cut goes a face at a time (`cut_start`, `cut_run`, `cut_finish`), so the service stops within its budget mid-light and goes on at the next call. The light reports no decals until `cut_finish` has stored them whole, since a frame may draw between those calls (`docs/lighting.md`).
 - The light being cut is given up and queued again when a slot drops or the origin moves (`cut_abandon`), since its list of models is stale. A slot coming in needs nothing, because its neighbours' lights are queued again anyway.
 - `light_stream_pending` counts it.
 - `light.c` takes the stream's slot count (`stream_slots`), not `STREAM_SLOTS`. Before this, a dungeon's 25 slots were read as 121, and every slot's lights were the wrong range.
-- `check_dungeon_lights`: Privateer's Hold by block cuts 1667 decals, the same as the hold loaded whole with shadows. Cut again with no budget, a face a call, it takes 8636 calls for 76 lights and slots queued, and comes out the same 1667. Daggerfall's outdoor stream keeps its 4435.
+- `check_dungeon_lights`: Privateer's Hold by block cuts 1667 decals, the same as the hold loaded whole with shadows. Cut again with no budget, a face a call, it takes 8636 calls for 76 lights and slots queued, and comes out the same 1667; after every call, no light reports decals it does not have. Daggerfall's outdoor stream keeps its 4435.
 
 The game's step 3 (`dunstream.c`) is in. Step 4 (GFALL's hold, LEVELFALL) is the game's next.
 

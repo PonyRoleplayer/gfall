@@ -33,8 +33,16 @@ static int g_lamps = 255;
 
 static const Scene *g_scene;
 static int g_nlights;
+/* Where each light's decals start in g_decal, while they are being cut and after. */
 static int *g_first;
+/*
+ * Each light's decals that can be drawn now, and nothing else: the draw
+ * pass walks this many, so it is written only once they are all stored
+ * (light_all, cut_finish). A cut in progress counts by g_ndecal instead,
+ * and may span frames in a stream.
+ */
 static int *g_count;
+/* Each light's box round its decals, six floats. Read only while its g_count is above 0. */
 static float *g_box;
 static Decal *g_decal;
 static int g_ndecal;
@@ -828,7 +836,8 @@ static void cut_face(const float (*p)[3], int n, const float *vis, int two_sided
             c[2] = a[k].z;
             c[3] = a[k].u / (2.0f * rr) + 0.5f;
             c[4] = a[k].v / (2.0f * rr) + 0.5f;
-            if (g_count[light] == 0 && k == 0) {
+            /* This light's first decal, first corner: the box starts here. */
+            if (g_ndecal == g_first[light] && k == 0) {
                 bx[0] = bx[3] = c[0];
                 bx[1] = bx[4] = c[1];
                 bx[2] = bx[5] = c[2];
@@ -842,7 +851,6 @@ static void cut_face(const float (*p)[3], int n, const float *vis, int two_sided
             g_ncorner++;
         }
         g_ndecal++;
-        g_count[light]++;
     } else {
         g_ndecal++;
         g_ncorner += m;
@@ -1077,6 +1085,9 @@ static void light_all(const Scene *scene, int fill)
         }
         for (m = 0; m < g_nnear; m++) {
             light_mesh(&scene->models[g_near[m]], li, reach, fill, i);
+        }
+        if (fill) {
+            g_count[i] = g_ndecal - g_first[i];
         }
     }
 }
@@ -1525,6 +1536,10 @@ static void clear_light(int i)
  * into its slot's heap: cut_start finds the models and empties the
  * scratch, cut_run cuts them a face at a time until the deadline,
  * cut_finish keeps what was cut. 0 from cut_start: nothing to cut.
+ *
+ * The cut may span frames, and frames draw between its calls. The light
+ * has no decals from cut_start to cut_finish (g_count 0), so the draw
+ * pass skips it: what is in the scratch is not its to draw yet.
  */
 static int cut_start(int i)
 {
@@ -1586,8 +1601,10 @@ static int cut_start(int i)
     }
     g_decal_cap = SCRATCH_DECALS;
     g_corner_cap = SCRATCH_CORNERS;
+    /* The scratch holds one light's cut at a time, from its start. */
     g_ndecal = 0;
     g_ncorner = 0;
+    g_first[i] = 0;
     g_cut = i;
     g_cut_model = 0;
     g_cut_face = 0;
@@ -1631,8 +1648,8 @@ static void cut_finish(void)
     i = g_cut;
     g_cut = -1;
     s = i / g_per_slot;
+    /* It lit nothing, or below there is no memory: it stays with no decals, as cut_start left it. */
     if (g_ndecal < 1) {
-        g_count[i] = 0;
         return;
     }
     if (!g_slot_heap[s]) {
@@ -1647,14 +1664,15 @@ static void cut_finish(void)
             mem_heap_free(g_slot_heap[s], d);
             mem_heap_free(g_slot_heap[s], c);
         }
-        g_count[i] = 0;
         return;
     }
     mem_copy(d, g_decal, (df_u32)g_ndecal * (df_u32)sizeof(Decal));
     mem_copy(c, g_corner, (df_u32)g_ncorner * LIGHT_CORNER * (df_u32)sizeof(float));
     g_ldecal[i] = d;
     g_lcorner[i] = c;
-    g_stream_decals += g_count[i];
+    /* Stored whole: from here the draw pass may take them. */
+    g_count[i] = g_ndecal;
+    g_stream_decals += g_ndecal;
 }
 
 /* Slot s's sprites, from the lights of the slots near enough to reach them. */
@@ -1940,7 +1958,7 @@ static void cut_abandon(void)
     }
     i = g_cut;
     g_cut = -1;
-    g_count[i] = 0;
+    /* Its g_count is 0 already: nothing of an unfinished cut was ever published. */
     queue_light(i);
 }
 
