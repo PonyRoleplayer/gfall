@@ -115,7 +115,12 @@ typedef struct StreamSource {
     void (*drop)(void *user, int cx, int cz, void *data);
     /* The origin moved: what the source keeps in world units moves by -dx, -dz. May be 0. */
     void (*shift)(void *user, float dx, float dz);
-    /* A chunk finished (it is in the scene) or went: index is its slot. May be 0. */
+    /*
+     * A chunk finished (it is in the scene) or went: index is its slot. May be 0.
+     * Loaded, it runs after keep_restore, so it may read the chunk's kept rows
+     * and restored state; a game relies on this order. Gone, after keep_save
+     * and the source's drop, with the slot already empty.
+     */
     void (*changed)(void *user, int slot, int loaded);
     void *user;
     StreamCaps caps;
