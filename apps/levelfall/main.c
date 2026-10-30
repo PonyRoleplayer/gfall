@@ -515,6 +515,18 @@ static int row_visible(const DunRef *row)
     if (g_kind_filter == 2 && !row->outdoor) {
         return 0;
     }
+    /* A query of digits finds a place by its code too: the number the game's console takes (goto 50026). */
+    if (g_query[0] >= '0' && g_query[0] <= '9') {
+        char code[12];
+        int n;
+
+        n = 0;
+        code[0] = 0;
+        add_u(code, &n, (int)sizeof(code), (df_u32)row->exterior_id);
+        if (has_text(code, g_query)) {
+            return 1;
+        }
+    }
     return has_text(row->name, g_query);
 }
 
@@ -538,6 +550,11 @@ static int row_before(const DunRef *a, const DunRef *b)
     } else if (g_sort_col == 3) {
         if (a->nblocks != b->nblocks) {
             less = a->nblocks < b->nblocks;
+            c = 1;
+        }
+    } else if (g_sort_col == 4) {
+        if (a->exterior_id != b->exterior_id) {
+            less = a->exterior_id < b->exterior_id;
             c = 1;
         }
     } else if (cmp_str(a->name, b->name) != 0) {
@@ -620,7 +637,9 @@ static void sort_caption(void)
     const char *region;
     const char *name;
     const char *blocks;
+    const char *code;
 
+    code = "Code";
     kind = "Kind";
     region = "Region";
     name = "Name";
@@ -631,13 +650,16 @@ static void sort_caption(void)
         region = g_sort_desc ? "Region  -" : "Region  +";
     } else if (g_sort_col == 2) {
         name = g_sort_desc ? "Name  -" : "Name  +";
-    } else {
+    } else if (g_sort_col == 3) {
         blocks = g_sort_desc ? "Blocks  -" : "Blocks  +";
+    } else {
+        code = g_sort_desc ? "Code  -" : "Code  +";
     }
     set_column(0, kind, 0, 0);
     set_column(1, region, 0, 0);
     set_column(2, name, 0, 0);
     set_column(3, blocks, 0, 0);
+    set_column(4, code, 0, 0);
 }
 
 static int selected_view(void)
@@ -713,9 +735,13 @@ static void cell_text(const DunRef *row, int sub, char *dst, int cap)
         }
     } else if (sub == 2) {
         put_text(dst, cap, row->name);
-    } else {
+    } else if (sub == 3) {
         n = 0;
         add_u(dst, &n, cap, (df_u32)row->nblocks);
+    } else {
+        /* The outdoor place's number: a dungeon's is the outside it lies under. GFALL's console goes there (goto 50026). */
+        n = 0;
+        add_u(dst, &n, cap, (df_u32)row->exterior_id);
     }
 }
 
@@ -915,8 +941,9 @@ static int make_list(void)
     SendMessageA(g_list, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, LVS_EX_FULLROWSELECT);
     set_column(0, "Kind", 72, 1);
     set_column(1, "Region", 64, 1);
-    set_column(2, "Name  +", width - 216, 1);
+    set_column(2, "Name  +", width - 280, 1);
     set_column(3, "Blocks", 64, 1);
+    set_column(4, "Code", 64, 1);
     apply_font(g_find_cap);
     apply_font(g_find);
     apply_font(g_kind_cap);

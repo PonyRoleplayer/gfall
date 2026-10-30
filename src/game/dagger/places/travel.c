@@ -23,8 +23,14 @@ enum {
     /* By the nearest passage of g_land_what, a step out from it. */
     LAND_PASSAGE,
     /* Where a save says. */
-    LAND_SAVED
+    LAND_SAVED,
+    /* On the walkable cell nearest the place's start: a town's middle can be inside a building. */
+    LAND_STREET
 };
+
+/* A town's walking cells are 64 units; how many rings of them to look through for a street. */
+#define CELL_SIDE 64.0
+#define STREET_RINGS 32
 
 static TravelWhere g_here;
 static TravelWhere g_next;
@@ -60,6 +66,24 @@ void travel_start_game(void)
     g_next.kind = TRAVEL_DUNGEON;
     g_land = LAND_START;
     g_asked = 0;
+}
+
+int travel_go_to_town(int region, int index)
+{
+    int px;
+    int py;
+
+    if (!worldmap_open() || !worldmap_pixel_of(region, index, &px, &py)) {
+        return 0;
+    }
+    mem_zero(&g_next, sizeof(g_next));
+    g_next.kind = TRAVEL_WORLD;
+    g_next.located = 1;
+    g_next.region = region;
+    g_next.index = index;
+    g_land = LAND_STREET;
+    g_asked = 1;
+    return 1;
 }
 
 void travel_from_save(const TravelWhere *where, const float *feet, const int *origin, float yaw, float pitch)
@@ -368,6 +392,41 @@ static void fill_round(Camera *cam)
     }
 }
 
+/* Moves the pose to the nearest walkable cell, ring by ring out from it. A place with none, a farm in a field, stays. */
+static void land_on_street(TravelPose *p, float eye)
+{
+    double wx;
+    double wz;
+    int ring;
+
+    stream_world(p->x, p->z, &wx, &wz);
+    for (ring = 0; ring <= STREET_RINGS; ring++) {
+        int a;
+        int b;
+
+        for (a = -ring; a <= ring; a++) {
+            for (b = -ring; b <= ring; b++) {
+                double cx;
+                double cz;
+
+                /* The ring's edge alone: what is inside it was looked at already. */
+                if (a != -ring && a != ring && b != -ring && b != ring) {
+                    continue;
+                }
+                cx = wx + (double)a * CELL_SIDE;
+                cz = wz + (double)b * CELL_SIDE;
+                if (wild_nav(cx, cz) > 0) {
+                    p->x += (float)(cx - wx);
+                    p->y = wild_ground(cx, cz) + eye;
+                    p->z += (float)(cz - wz);
+                    return;
+                }
+            }
+        }
+    }
+    log_text(LOG_INFO, "travel: no walking cell near the town's middle");
+}
+
 void travel_land(const Level *level, Camera *cam, float eye, TravelPose *out)
 {
     TravelPose p;
@@ -396,6 +455,11 @@ void travel_land(const Level *level, Camera *cam, float eye, TravelPose *out)
     }
     camera_set(cam, p.x, p.y, p.z, p.yaw, p.pitch);
     fill_round(cam);
+    if (g_land == LAND_STREET) {
+        land_on_street(&p, eye);
+        camera_set(cam, p.x, p.y, p.z, p.yaw, p.pitch);
+        fill_round(cam);
+    }
     if (g_land == LAND_PASSAGE) {
         const Usable *u;
 
@@ -436,9 +500,21 @@ void travel_update(Camera *cam, int radius, float budget_ms, float dt, float *sh
     if (g_here.kind == TRAVEL_DUNGEON) {
         dunstream_update(cam, budget_ms);
     } else {
+        int px;
+        int py;
+        int region;
+        int index;
+
         stream_set_radius(radius);
         wild_update(cam, budget_ms);
         people_update(cam, dt);
+        /* The last town's region is the region: a walk across a border takes the law and the bank with it. */
+        wild_here(cam, &px, &py);
+        if (worldmap_location(px, py, &region, &index)) {
+            g_here.located = 1;
+            g_here.region = region;
+            g_here.index = index;
+        }
     }
     stream_origin(&nx, &nz);
     *shift_x = (float)(nx - ox) * chunk_of(g_here.kind);

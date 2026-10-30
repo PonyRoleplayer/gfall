@@ -13,6 +13,13 @@
  *                                Iron when no material is named.
  *   items                        the pack, the one in hand marked.
  *   equip n|none                 item n in hand, or bare hands.
+ *   goto name|code|region index  to a town's streets, from anywhere, as the
+ *                                console closes. A whole name goes to the
+ *                                largest of that name; a part with several
+ *                                fits lists them with their codes. A code is
+ *                                the place's location number, as LEVELFALL's
+ *                                list shows it.
+ *   where                        the town and region here, and its code.
  *   foes                         the creatures awake: what each is
  *                                doing and how far off.
  *   tgm [on|off]                 god mode: nothing takes the player's

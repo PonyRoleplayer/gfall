@@ -68,6 +68,12 @@ typedef struct TravelPose {
 
 /* The next place is the new game's: Privateer's Hold, at its start. */
 void travel_start_game(void);
+/*
+ * The next place is a town's streets, from anywhere: the console's goto. Asked
+ * at once, travel_asked now 1, on a walkable cell near its middle. 0 for a place
+ * the map does not have.
+ */
+int travel_go_to_town(int region, int index);
 /* The next place is a save's: where, the feet as saved and the stream's origin then (chunks), the way it looked. */
 void travel_from_save(const TravelWhere *where, const float *feet, const int *origin, float yaw, float pitch);
 /*

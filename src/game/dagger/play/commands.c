@@ -2,6 +2,11 @@
 #include "game/dagger/play/foes.h"
 #include "game/dagger/play/inventory.h"
 #include "game/dagger/tables/items.h"
+#include "game/dagger/places/town.h"
+#include "game/dagger/places/travel.h"
+#include "game/dagger/formats/dungeon.h"
+#include "game/dagger/formats/factionfile.h"
+#include "engine/core/mem.h"
 #include "engine/core/log.h"
 #include "engine/ui/cmd.h"
 
@@ -211,6 +216,238 @@ static void c_foes(int argc, char **argv)
     }
 }
 
+/* ---- goto and where. ---- */
+
+/* The most places listed for a name that fits several. */
+#define GOTO_LISTED 12
+/* More than the map's 15251 places. */
+#define GOTO_ROWS 16000
+
+/* A letter in lower case. */
+static char lower(char c)
+{
+    return c >= 'A' && c <= 'Z' ? (char)(c - 'A' + 'a') : c;
+}
+
+/* 1 when word is in text, any case; *whole 1 when it is all of it. */
+static int name_fits(const char *text, const char *word, int *whole)
+{
+    int at;
+    int k;
+
+    for (at = 0; text[at]; at++) {
+        for (k = 0; word[k] && lower(text[at + k]) == lower(word[k]); k++) {
+        }
+        if (!word[k]) {
+            *whole = at == 0 && !text[k];
+            return 1;
+        }
+    }
+    *whole = 0;
+    return 0;
+}
+
+/* The province a region is, by its ruling house's name. */
+static const char *region_word(int region)
+{
+    const Faction *f;
+
+    f = factionfile_open() ? faction_province_of(region) : 0;
+    return f ? f->name : "?";
+}
+
+/* Asks for the place, and says so: the console has to close before anything moves. */
+static void go_to(const char *name, int region, int index)
+{
+    if (!travel_go_to_town(region, index)) {
+        log_print(LOG_PRINT, "%s is not on the map.", name);
+        return;
+    }
+    log_print(LOG_PRINT, "To %s in %s, as the console closes.", name, region_word(region));
+}
+
+/*
+ * The place named, whole if one is, the largest of those of that name; a
+ * part of a name with one fit goes there, with more they are listed. The
+ * list is read and dropped each time: nothing for a command used rarely.
+ */
+static void go_by_name(const char *name)
+{
+    MemHeap *scratch;
+    MemHeap *was;
+    DunRef *rows;
+    int n;
+    int i;
+    int best;
+    int fits;
+    int first;
+
+    scratch = mem_heap_new();
+    if (!scratch) {
+        return;
+    }
+    was = mem_heap_use(scratch);
+    rows = (DunRef *)mem_alloc((df_u32)GOTO_ROWS * (df_u32)sizeof(DunRef));
+    n = rows ? exterior_list(rows, GOTO_ROWS) : 0;
+    best = -1;
+    fits = 0;
+    first = -1;
+    for (i = 0; i < n; i++) {
+        int whole;
+
+        if (!name_fits(rows[i].name, name, &whole)) {
+            continue;
+        }
+        if (whole && (best < 0 || rows[i].nblocks > rows[best].nblocks)) {
+            best = i;
+        }
+        if (first < 0) {
+            first = i;
+        }
+        fits++;
+    }
+    if (best < 0 && fits == 1) {
+        best = first;
+    }
+    if (best >= 0) {
+        go_to(rows[best].name, rows[best].region, rows[best].index);
+    } else if (!fits) {
+        log_print(LOG_PRINT, "No place is called %s.", name);
+    } else {
+        int shown;
+
+        shown = 0;
+        for (i = first; i < n && shown < GOTO_LISTED; i++) {
+            int whole;
+
+            if (name_fits(rows[i].name, name, &whole)) {
+                log_print(LOG_PRINT, "goto %d: %s, %s", rows[i].location_id, rows[i].name, region_word(rows[i].region));
+                shown++;
+            }
+        }
+        log_print(LOG_PRINT, "%d places fit.", fits);
+    }
+    mem_heap_use(was);
+    mem_heap_delete(scratch);
+}
+
+/* The place whose location number is code: the number LEVELFALL's list has, unique over the map. */
+static void go_by_code(int code)
+{
+    MemHeap *scratch;
+    MemHeap *was;
+    DunRef *rows;
+    int n;
+    int i;
+
+    scratch = mem_heap_new();
+    if (!scratch) {
+        return;
+    }
+    was = mem_heap_use(scratch);
+    rows = (DunRef *)mem_alloc((df_u32)GOTO_ROWS * (df_u32)sizeof(DunRef));
+    n = rows ? exterior_list(rows, GOTO_ROWS) : 0;
+    for (i = 0; i < n && rows[i].location_id != code; i++) {
+    }
+    if (i < n) {
+        go_to(rows[i].name, rows[i].region, rows[i].index);
+    } else {
+        log_print(LOG_PRINT, "No place has the code %d.", code);
+    }
+    mem_heap_use(was);
+    mem_heap_delete(scratch);
+}
+
+/* 1 when s is all digits. */
+static int all_digits(const char *s)
+{
+    if (!*s) {
+        return 0;
+    }
+    while (*s >= '0' && *s <= '9') {
+        s++;
+    }
+    return !*s;
+}
+
+static int read_digits(const char *s)
+{
+    int v;
+
+    v = 0;
+    while (*s) {
+        v = v * 10 + (*s++ - '0');
+    }
+    return v;
+}
+
+static void c_goto(int argc, char **argv)
+{
+    char name[CMD_LINE];
+    int at;
+    int i;
+
+    if (!player()) {
+        return;
+    }
+    if (argc < 2) {
+        log_print(LOG_PRINT, "goto name, goto code, or goto region index. where says where you are.");
+        return;
+    }
+    if (argc == 2 && all_digits(argv[1])) {
+        go_by_code(read_digits(argv[1]));
+        return;
+    }
+    if (argc == 3 && all_digits(argv[1]) && all_digits(argv[2])) {
+        log_format(name, (int)sizeof(name), "place %s of region %s", argv[2], argv[1]);
+        go_to(name, read_digits(argv[1]), read_digits(argv[2]));
+        return;
+    }
+    /* A name of several words comes as several arguments. */
+    at = 0;
+    for (i = 1; i < argc; i++) {
+        at += log_format(name + at, (int)sizeof(name) - at, "%s%s", i > 1 ? " " : "", argv[i]);
+    }
+    go_by_name(name);
+}
+
+static void c_where(int argc, char **argv)
+{
+    Player *p;
+    Camera at;
+    TravelWhere here;
+    int origin[2];
+    int region;
+    int index;
+    int block;
+    int record;
+    float x;
+    float z;
+
+    (void)argc;
+    (void)argv;
+    p = player();
+    if (!p) {
+        return;
+    }
+    mem_zero(&at, sizeof(at));
+    at.x = p->body.feet[0];
+    at.z = p->body.feet[2];
+    travel_here(&here, origin);
+    if (travel_town_here(&at, &region, &index, &x, &z, &block, &record)) {
+        Dungeon town;
+        int count;
+
+        town_buildings(region, index, &count);
+        log_print(LOG_PRINT, "%s%s, %s: goto %d, %d buildings", record >= 0 ? "Inside, in " : "", town_name(), region_word(region),
+                  exterior_load_at(region, index, &town) ? town.location_id : 0, count);
+    } else if (here.kind == TRAVEL_DUNGEON) {
+        log_print(LOG_PRINT, "In a dungeon, %s: place %d of region %d.", region_word(here.region), here.index, here.region);
+    } else {
+        log_print(LOG_PRINT, "In the wilds, last in %s.", region_word(here.region));
+    }
+}
+
 static int get_tgm(void)
 {
     return g_player ? g_player->god : 0;
@@ -235,6 +472,8 @@ void commands_setup(void)
     cmd_add("items", c_items, "", "what the player carries, what is worn marked *");
     cmd_add("equip", c_equip, "n|none", "item n of items worn, or bare hands");
     cmd_add("gold", c_gold, "n", "n gold more in the pack");
+    cmd_add("goto", c_goto, "name|code|region index", "to a town's streets, by its name, its code (LEVELFALL's list) or its numbers; a part of a name lists what fits");
+    cmd_add("where", c_where, "", "the town and region you are in, with its code for goto");
     cmd_add("foes", c_foes, "", "the creatures awake: what each is doing and how far off");
     cmd_var("tgm", get_tgm, set_tgm, 0, 1, "god mode: nothing hurts the player; tgm alone flips it");
     cmd_toggles("tgm");

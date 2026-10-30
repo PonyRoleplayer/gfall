@@ -63,6 +63,7 @@
 #include "engine/ui/pic.h"
 #include "game/dagger/tables/items.h"
 #include "engine/ui/cmd.h"
+#include "engine/core/log.h"
 #include "game/dagger/tables/careers.h"
 
 /* Classic's speeds and jump, from Daggerfall Unity's formulas worked by hand. */
@@ -4217,6 +4218,120 @@ static void check_people_in_town(void)
     printf("people in town: Daggerfall's armorer, quality %d, %d shelves, %d people\n", quality, shelves, folk);
 }
 
+/* The console's goto: by a whole name, by numbers, a part of a name, none; on a street, on the ground, from a dungeon or a town. */
+static void check_goto(void)
+{
+    static DunRef towns[16000];
+    Level level;
+    Camera cam;
+    TravelPose at;
+    Player p;
+    Character sheet;
+    float x;
+    float z;
+    int region;
+    int index;
+    int block;
+    int record;
+    int dagger;
+    int n;
+    int i;
+    int stood;
+    int tried;
+
+    character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Test");
+    player_init(&p, &sheet);
+    commands_setup();
+    commands_player(&p);
+    /* Nothing asked by a name that is no place's, nor by numbers past the map. */
+    cmd_run("goto Nowhere At All");
+    check_expect(!travel_asked(), "goto: a name that is no place's");
+    cmd_run("goto 1");
+    check_expect(!travel_asked(), "goto: a code that is no place's");
+    cmd_run("goto 61 99999");
+    check_expect(!travel_asked(), "goto: numbers past the map");
+    /* A part of a name that fits many lists them, and goes nowhere. */
+    cmd_run("goto dagger");
+    check_expect(!travel_asked(), "goto: a part of a name that fits several went somewhere");
+    /* From the hold, to Sentinel by name, any case. */
+    travel_start_game();
+    if (!travel_go(&level, &cam, &at)) {
+        return;
+    }
+    cmd_run("goto SENTINEL");
+    check_expect(travel_asked(), "goto: Sentinel was not found");
+    if (!travel_go(&level, &cam, &at)) {
+        return;
+    }
+    check_expect(travel_town_here(&cam, &region, &index, &x, &z, &block, &record), "goto: not in a town");
+    n = 0;
+    town_buildings(region, index, &n);
+    check_expect(df_eq(town_name(), "Sentinel") && n > 100, "goto: not in Sentinel");
+    check_expect(stands_at(&p, &level, &at, 96.0f), "goto: the player does not stand in Sentinel's street");
+    {
+        double wx;
+        double wz;
+
+        stream_world(at.x, at.z, &wx, &wz);
+        check_expect(wild_nav(wx, wz) > 0, "goto: not landed on a walkable cell");
+    }
+    cmd_run("where");
+    /* By its numbers: Daggerfall. */
+    dagger = daggerfall_index();
+    check_expect(dagger >= 0, "goto: no Daggerfall");
+    {
+        char line[32];
+
+        log_format(line, (int)sizeof(line), "goto 17 %d", dagger);
+        cmd_run(line);
+    }
+    check_expect(travel_asked(), "goto: Daggerfall by its numbers");
+    if (!travel_go(&level, &cam, &at)) {
+        return;
+    }
+    check_expect(travel_town_here(&cam, &region, &index, &x, &z, &block, &record) && region == 17 && index == dagger
+                 && travel_region() == 17, "goto: not in Daggerfall");
+    check_expect(stands_at(&p, &level, &at, 96.0f), "goto: the player does not stand in Daggerfall's street");
+    /* By its code, the number LEVELFALL lists: Daggerfall's outside's own. */
+    {
+        Dungeon town;
+        char line[32];
+
+        check_expect(exterior_load_at(17, dagger, &town), "goto: Daggerfall's record");
+        travel_start_game();
+        if (!travel_go(&level, &cam, &at)) {
+            return;
+        }
+        log_format(line, (int)sizeof(line), "goto %d", town.location_id);
+        cmd_run(line);
+        check_expect(travel_asked(), "goto: Daggerfall by its code");
+        if (!travel_go(&level, &cam, &at)) {
+            return;
+        }
+        check_expect(travel_town_here(&cam, &region, &index, &x, &z, &block, &record) && region == 17 && index == dagger,
+                     "goto: the code did not lead to Daggerfall");
+    }
+    /* A sample of the whole map: footing at every one. */
+    n = exterior_list(towns, 16000);
+    tried = 0;
+    stood = 0;
+    for (i = 0; i < n; i += 1009) {
+        if (!travel_go_to_town(towns[i].region, towns[i].index) || !travel_go(&level, &cam, &at)) {
+            continue;
+        }
+        tried++;
+        if (stands_at(&p, &level, &at, 96.0f)) {
+            stood++;
+        } else {
+            printf("goto: no footing at %s (%d %d)\n", towns[i].name, towns[i].region, towns[i].index);
+        }
+    }
+    travel_leave();
+    commands_player(0);
+    check_expect(tried >= 15 && stood == tried, "goto: a place of the map has no footing");
+    printf("goto: Sentinel by name, Daggerfall by numbers; %d of %d places over the map stood at\n", stood, tried);
+}
+
 /* What the world thinks, through a save file and back. */
 static void check_standing_saved(void)
 {
@@ -4298,5 +4413,6 @@ void check_play(void)
     check_shop_and_court();
     check_bank();
     check_people_in_town();
+    check_goto();
     check_standing_saved();
 }
