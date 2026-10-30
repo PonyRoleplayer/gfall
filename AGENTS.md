@@ -2,7 +2,7 @@
 
 ## Project
 - **Goal:** Recreate Daggerfall for Windows 98 on period hardware (Pentium MMX 233, 64 MB RAM, Voodoo 1, AWE64). Renders via 3dfx Glide 2; **glide2x.dll is loaded at runtime**.
-- **Status:** Single-room block viewer (GFALL) plus tech demo (SPINTRI). This is a "from scratch" recreation for the 90s, not a port of the original source.
+- **Status:** GFALL plays Privateer's Hold, the streamed world, its towns and houses, with combat, loot, saves, talk, shops, banks and a court (phases P1 to P9, `docs/game.md`); LEVELFALL, RENDERFALL and DATFALL are its viewers and SPINTRI the tech demo. This is a "from scratch" recreation for the 90s, not a port of the original source.
 - **Reference:** Prefer public sources for formats and behavior: the [UESP wiki](https://en.uesp.net/wiki/Daggerfall:Daggerfall) (file formats, mechanics), plus community writeups such as the Daggerfall Unity docs and Interkarma's format notes. Do not treat `daggerfall/decompiled/` as authoritative; that decompilation is unreliable.
 
 ## Build (Linux, cross-compile)

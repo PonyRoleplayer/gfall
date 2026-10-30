@@ -6,9 +6,9 @@ What the game layer is, how it is built on the engine and Daggerfall's places, a
 
 The engine draws, hears and walks any place. `src/game/dagger/` loads Daggerfall's places whole (`world_load_dungeon`, `world_load_inside`) or streams the whole map round the camera (`wild_open`, `wild_update`). Its doors swing, its levers run their chains, its creatures stand where their markers put them, and its townspeople walk.
 
-LEVELFALL already goes through every passage: into a house and out, down into a dungeon and up, out of the stream and back. That code lives in the viewer (`lf_use`, `land_at`, `stream_inside`, `view_stream` in `apps/levelfall/main.c`) and leans on the viewer's own list rows (`pair_row`).
+LEVELFALL goes through every passage too: into a house and out, down into a dungeon and up, out of the stream and back. Its landing sums are shared with the game in `places/travel.c`.
 
-GFALL (`apps/gfall/main.c`) is the game: classic's title and start menu, character creation (or, skipped, an Argonian woman), then Privateer's Hold streamed by block, on foot, with a weapon, armour, creatures that fight back, bodies to search, and skills and levels that grow (`src/game/dagger/play/`). It saves, loads and rests. There is no way out of the hold yet: the phases below say what is built.
+GFALL (`apps/gfall/main.c`) is the game: classic's title and start menu, character creation (or, skipped, an Argonian woman), then Privateer's Hold streamed by block, on foot, with a weapon, armour, creatures that fight back, bodies to search and saves; out of the hold into the streamed world, its towns and houses (P8); and people to talk to, shops, banks and a court (P9). The console's `goto` goes to any town, for testing until P12's map.
 
 ## The pieces
 
@@ -466,7 +466,9 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 
 What is built but not whole, and the phase each goes in. Each section above says the detail.
 
-**Not yet run on the 233** (host-tested only): striking and creature AI, the inventory screen, character creation, the sheet and level-ups, saving, loading, the death screen and rest, a frame with no world under a full screen, bodies, treasure and piles, the controls screen and the options' Exit. Not yet measured there: the `play` stage, the 3 ms streaming budget, the load time.
+**The first playtest** (2026-10-30, in the hold) found: sight through walls, creatures that never lost the player, flyers in walls, no rest with the AI off, a swing from Goodbye's click, the view frozen in a swing, two weapons in one hand on the doll, no wheel, a platform not ridden and culled from below, sounds not shown or muffled. All are fixed and host-tested, none yet tried again there. One report stands open: two bats that seemed to load two images. The pictures are shared by archive and record, so if a bat drew doubled on the screen it is another bug.
+
+**Not yet run on the 233** (host-tested only, some of it since played in that test): striking and creature AI, the inventory screen, character creation, the sheet and level-ups, saving, loading, the death screen and rest, a frame with no world under a full screen, bodies, treasure and piles, the controls screen and the options' Exit. Not yet measured there: the `play` stage, the 3 ms streaming budget, the load time.
 
 | Where | Gap | Phase |
 | --- | --- | --- |

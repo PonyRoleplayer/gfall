@@ -181,6 +181,8 @@ Heard on the 233 with the AWE64 and a Voodoo 2 under Glide: the effects, the wea
 
 ## Not done
 
+- **A real muffle, by MMX (an idea, not started).** Behind a wall a voice is only quieter. A wall takes the high frequencies too, and that wants a low-pass filter on the voices marked as walled. A one-pole filter works each sample from the last result, so MMX gains little; a short moving average, four samples say, has no such chain and MMX can do four 16-bit samples at a time (`paddw`, `psraw`). If the clips are about 11 kHz, four samples cuts from about 1 kHz. It needs a C version rounding alike, as the mixer's rule is bit for bit; a few samples kept per voice; and a fade across a few milliseconds when a voice goes behind a wall or comes out, or it clicks. The cost is a guess until the sound stage measures it. Filtering a copy of each clip at load was the other way, cheaper to mix but double the memory.
+
 - Locks, bashing and picking have their sounds in the file (316, 7), not played yet.
 - A castle's peaceful blocks still get the dungeon's noises; Daggerfall Unity skips them (a start marker with a magnitude marks the block).
 - The water: Daggerfall Unity plays gentle water near a block's water level, and bubbles under it.
