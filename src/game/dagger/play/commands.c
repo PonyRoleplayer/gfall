@@ -198,6 +198,19 @@ static void c_gold(int argc, char **argv)
     log_print(LOG_PRINT, "%u gold.", (unsigned)p->pack.gold);
 }
 
+/* The creatures awake: what each is and is doing (LEVELFALL does not link the game). */
+static void c_foes(int argc, char **argv)
+{
+    Player *p;
+
+    (void)argc;
+    (void)argv;
+    p = player();
+    if (p) {
+        foes_report(p->body.feet);
+    }
+}
+
 static int get_tgm(void)
 {
     return g_player ? g_player->god : 0;
@@ -222,6 +235,7 @@ void commands_setup(void)
     cmd_add("items", c_items, "", "what the player carries, what is worn marked *");
     cmd_add("equip", c_equip, "n|none", "item n of items worn, or bare hands");
     cmd_add("gold", c_gold, "n", "n gold more in the pack");
+    cmd_add("foes", c_foes, "", "the creatures awake: what each is doing and how far off");
     cmd_var("tgm", get_tgm, set_tgm, 0, 1, "god mode: nothing hurts the player; tgm alone flips it");
     cmd_toggles("tgm");
     cmd_var("tai", foes_on, foes_set_on, 0, 1, "creatures' AI: off, no one wakes, moves or strikes; tai alone flips it");

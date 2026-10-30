@@ -1,6 +1,7 @@
 #ifndef DF_SAVE_H
 #define DF_SAVE_H
 
+#include "game/dagger/places/travel.h"
 #include "game/dagger/play/character.h"
 #include "game/dagger/play/inventory.h"
 
@@ -11,7 +12,8 @@
  * It is a record file (docs/data.md), like KEYS.DAT: self-describing chunks,
  * so `dfrec dump` reads it, and a later program reading an older save keeps
  * a new field's zero. Its chunks:
- *   GAME  the player's place and facing, the clock, the game's seed
+ *   GAME  which place, the player's place in it and facing, the way back
+ *         out of its door, the clock, the game's seed
  *   CHAR  the character sheet
  *   PACK  what is carried, and GAME says what is worn and the gold
  *   KEEP  every door, lever and creature not as its file has it (keep.h)
@@ -28,7 +30,9 @@
 
 /* Everything a save holds that is not already in a table of its own. */
 typedef struct SaveState {
-    /* The player's feet, in the place's frame: a stream's origin moves. */
+    /* Which place, and the player's feet in its frame, with the stream's origin that frame has (0, 0 with no stream). */
+    TravelWhere where;
+    int origin[2];
     float feet[3];
     float yaw;
     float pitch;

@@ -32,6 +32,9 @@ typedef struct Dungeon {
     int dungeon_type;
     /* 0 = RDB tiles of 2048. 1 = RMB tiles of 4096. */
     int outdoor;
+    /* Where the map's lists have it: dungeon_load_at's or exterior_load_at's two numbers. */
+    int region;
+    int index;
 } Dungeon;
 
 /* Daggerfall's dungeon kinds (DFU's DFRegion.DungeonTypes), 0..18; 255 for none. */
@@ -79,6 +82,13 @@ int exterior_list(DunRef *out, int cap);
 
 /* One outdoor location. Blocks are RMB names on a width*height grid. */
 int exterior_load_at(int region, int index, Dungeon *out);
+/*
+ * The two halves of a location, within one region: the index of the outside
+ * whose number is exterior_id (a dungeon's Dungeon.exterior_id), and of the
+ * dungeon under the town numbered location_id. -1 when the map has none.
+ */
+int dungeon_outside(int region, int exterior_id);
+int dungeon_under(int region, int location_id);
 /*
  * On: MAPS.BSA stays open and the last region's location records stay
  * read, for exterior_load_at after exterior_load_at (a streamed world).

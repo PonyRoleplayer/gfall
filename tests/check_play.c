@@ -16,6 +16,10 @@
 #include "engine/scene/keep.h"
 #include "game/dagger/places/world.h"
 #include "game/dagger/places/dunstream.h"
+#include "game/dagger/places/doors.h"
+#include "game/dagger/places/travel.h"
+#include "game/dagger/places/wild.h"
+#include "game/dagger/formats/worldmap.h"
 #include "game/dagger/formats/dungeon.h"
 #include "engine/scene/stream.h"
 #include "game/dagger/play/player.h"
@@ -3174,6 +3178,379 @@ static void check_blows_in_reach(void)
     keep_clear();
 }
 
+/* One passage's move as the program makes it: the place left, the next opened, stood in. */
+static int travel_go(Level *level, Camera *cam, TravelPose *at)
+{
+    travel_leave();
+    if (!travel_open(level, 2)) {
+        check_expect(0, travel_error());
+        return 0;
+    }
+    travel_land(level, cam, WALK_EYE, at);
+    return 1;
+}
+
+/* The player at the pose, a second to settle: 1 when they stand there, no further than most below it. */
+static int stands_at(Player *p, const Level *level, const TravelPose *at, float most)
+{
+    Input in;
+    float start;
+
+    memset(&in, 0, sizeof(in));
+    player_place(p, at->x, at->y, at->z, at->yaw, at->pitch);
+    start = p->body.feet[1];
+    walk(p, &level->scene, &in, 60);
+    return p->body.grounded && start - p->body.feet[1] <= most && p->body.feet[1] - start <= most;
+}
+
+/* The way out of each of a sample of the map's dungeons: a body put a step from it stands. */
+static void check_every_way_out(void)
+{
+    static DunRef rows[4300];
+    Level level;
+    Camera cam;
+    Player p;
+    Character sheet;
+    int n;
+    int i;
+    int tried;
+    int bad;
+
+    n = dungeon_list(rows, 4300);
+    character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Test");
+    player_init(&p, &sheet);
+    tried = 0;
+    bad = 0;
+    for (i = 0; i < n; i += 197) {
+        Dungeon dun;
+        TravelPose at;
+        const Usable *u;
+
+        if (!dungeon_load_at(rows[i].region, rows[i].index, &dun)
+            || !dunstream_open(&dun, &level, &at.x, &at.y, &at.z, &at.yaw, &at.pitch)) {
+            continue;
+        }
+        camera_set(&cam, at.x, at.y, at.z, at.yaw, at.pitch);
+        dunstream_fill(&cam);
+        u = travel_nearest_passage(&level.scene, DOOR_EXIT, at.x, at.z);
+        tried++;
+        if (u) {
+            doors_landing(u, TRAVEL_LAND_OUT, WALK_EYE, &at.x, &at.y, &at.z, &at.yaw);
+            at.pitch = 0.0f;
+            camera_set(&cam, at.x, at.y, at.z, at.yaw, at.pitch);
+            dunstream_update(&cam, 0.0f);
+        }
+        if (!u || !stands_at(&p, &level, &at, 128.0f)) {
+            bad++;
+            printf("travel: %s (%d, %d): %s\n", rows[i].name, rows[i].region, rows[i].index,
+                   u ? "no footing by its way out" : "no way out by its start");
+        }
+        dunstream_close();
+    }
+    check_expect(tried >= 15 && bad == 0, "travel: a dungeon's way out has no footing");
+    printf("travel: %d dungeons' ways out stood at, %d without\n", tried, bad);
+}
+
+/* Out of the hold, the world, down again, up by the same door; a house and out; saves in each; an origin move. */
+static void check_travel(void)
+{
+    static DunRef towns[16000];
+    Level level;
+    Camera cam;
+    TravelPose at;
+    Player p;
+    Character sheet;
+    TravelWhere here;
+    int origin[2];
+    const Usable *u;
+    double back_x;
+    double back_z;
+    int region;
+    int index;
+    int i;
+
+    save_use_prefix(SAVE_TEST_PREFIX);
+    save_use_slot(3);
+    keep_clear();
+    pile_new_game();
+    combat_reset();
+    foes_reset();
+    character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Test");
+    player_init(&p, &sheet);
+
+    /* A new game: the hold, at its start, its way out named by a location it has by name. */
+    travel_start_game();
+    if (!travel_go(&level, &cam, &at)) {
+        return;
+    }
+    travel_here(&here, origin);
+    check_expect(here.kind == TRAVEL_DUNGEON && here.located && here.region == 17 && !here.has_back,
+                 "travel: a new game is not in the hold");
+    check_expect(stands_at(&p, &level, &at, 64.0f), "travel: the player does not stand at the hold's start");
+    u = travel_nearest_passage(&level.scene, DOOR_EXIT, at.x, at.z);
+    check_expect(u != 0, "travel: the hold has no way out");
+    if (!u) {
+        travel_leave();
+        return;
+    }
+    check_expect(travel_use(u) == 0 && travel_asked(), "travel: the hold's way out leads nowhere");
+
+    /* The world, on the step outside the hold's way down. */
+    if (!travel_go(&level, &cam, &at)) {
+        return;
+    }
+    travel_here(&here, origin);
+    check_expect(here.kind == TRAVEL_WORLD && !travel_asked(), "travel: out of the hold is not the world");
+    u = travel_nearest_passage(&level.scene, DOOR_DUNGEON, at.x, at.z);
+    check_expect(u != 0, "travel: the hold's outside has no way down in reach");
+    if (!u) {
+        travel_leave();
+        return;
+    }
+    {
+        float dx;
+        float dz;
+
+        dx = u->cx - at.x;
+        dz = u->cz - at.z;
+        check_expect(dx * dx + dz * dz < 96.0f * 96.0f, "travel: not landed by the hold's way down");
+    }
+    check_expect(stands_at(&p, &level, &at, 64.0f), "travel: the player does not stand outside the hold");
+    /* Nothing of a dungeon's creatures, bodies or heaps to find out here; and it can be walked. */
+    {
+        Input in;
+        float start;
+
+        check_expect(foes_frame(&p, &level.scene, 0.1f) == 0, "travel: a blow in the world");
+        check_expect(loot_find(&level.scene, &cam) == 0, "travel: something to search outside");
+        memset(&in, 0, sizeof(in));
+        in.move_f = 1;
+        start = p.body.feet[1];
+        walk(&p, &level.scene, &in, 60);
+        check_expect(p.body.grounded && p.body.feet[1] > start - 512.0f && p.body.feet[1] < start + 512.0f,
+                     "travel: the ground outside the hold does not hold the player");
+    }
+
+    /* Down: beside the way out, the way back remembered. */
+    u = travel_nearest_passage(&level.scene, DOOR_DUNGEON, at.x, at.z);
+    {
+        float bx;
+        float by;
+        float bz;
+        float byaw;
+
+        doors_landing(u, TRAVEL_LAND_OUT, 0.0f, &bx, &by, &bz, &byaw);
+        stream_world(bx, bz, &back_x, &back_z);
+    }
+    check_expect(travel_use(u) == 0, "travel: the hold's way down leads nowhere");
+    if (!travel_go(&level, &cam, &at)) {
+        return;
+    }
+    travel_here(&here, origin);
+    check_expect(here.kind == TRAVEL_DUNGEON && here.has_back && here.back_x == back_x && here.back_z == back_z,
+                 "travel: down does not remember the way back");
+    u = travel_nearest_passage(&level.scene, DOOR_EXIT, at.x, at.z);
+    {
+        float dx;
+        float dz;
+
+        dx = u ? u->cx - at.x : 1000.0f;
+        dz = u ? u->cz - at.z : 1000.0f;
+        check_expect(dx * dx + dz * dz < 96.0f * 96.0f, "travel: not landed by the hold's way out");
+    }
+    check_expect(stands_at(&p, &level, &at, 128.0f), "travel: the player does not stand by the hold's way out");
+    /* A door opened here stays open across the world. */
+    {
+        int door;
+        KeepKey key;
+
+        door = -1;
+        for (i = 0; i < level.scene.nmovers && door < 0; i++) {
+            if (level.scene.movers[i].key.place) {
+                door = i;
+            }
+        }
+        check_expect(door >= 0, "travel: nothing keyed in the hold");
+        if (door >= 0) {
+            key = level.scene.movers[door].key;
+            mover_start(&level.scene, door);
+            for (i = 0; i < 300; i++) {
+                mover_step(&level.scene, 0.05f);
+            }
+            check_expect(travel_use(u) == 0, "travel: the hold's way out leads nowhere the second time");
+            if (!travel_go(&level, &cam, &at)) {
+                return;
+            }
+            check_expect(keep_find(key) != 0, "travel: the door opened was not kept on leaving");
+        }
+    }
+    /* Up by the same door. */
+    {
+        double wx;
+        double wz;
+
+        stream_world(at.x, at.z, &wx, &wz);
+        check_expect(wx > back_x - 1.0 && wx < back_x + 1.0 && wz > back_z - 1.0 && wz < back_z + 1.0,
+                     "travel: up is not at the door gone down");
+    }
+
+    /* A save in the world, read again: the same world point, with the same way back. */
+    {
+        SaveState out;
+        SaveState in;
+        double wx0;
+        double wz0;
+        double wx1;
+        double wz1;
+
+        check_expect(stands_at(&p, &level, &at, 64.0f), "travel: the player does not stand at the door gone down");
+        memset(&out, 0, sizeof(out));
+        df_copy(out.name, "Travel", SAVE_NAME);
+        travel_keep_now();
+        travel_here(&out.where, out.origin);
+        out.feet[0] = p.body.feet[0];
+        out.feet[1] = p.body.feet[1];
+        out.feet[2] = p.body.feet[2];
+        out.yaw = p.yaw;
+        out.sheet = sheet;
+        inventory_clear(&out.pack);
+        stream_world(p.body.feet[0], p.body.feet[2], &wx0, &wz0);
+        check_expect(save_write(&out) && save_read(&in), "travel: a save in the world did not go round");
+        check_expect(in.where.kind == TRAVEL_WORLD && in.where.region == out.where.region
+                     && in.where.index == out.where.index && in.where.has_back == out.where.has_back
+                     && in.where.back_x > out.where.back_x - 0.01 && in.where.back_x < out.where.back_x + 0.01
+                     && in.origin[0] == out.origin[0] && in.origin[1] == out.origin[1],
+                     "travel: a save does not hold the place");
+        travel_from_save(&in.where, in.feet, in.origin, in.yaw, in.pitch);
+        if (!travel_go(&level, &cam, &at)) {
+            return;
+        }
+        stream_world(at.x, at.z, &wx1, &wz1);
+        check_expect(wx1 > wx0 - 0.01 && wx1 < wx0 + 0.01 && wz1 > wz0 - 0.01 && wz1 < wz0 + 0.01,
+                     "travel: a loaded save is not where it was saved");
+        check_expect(at.y > in.feet[1] + WALK_EYE - 0.01f && at.y < in.feet[1] + WALK_EYE + 0.01f,
+                     "travel: a loaded save is not at the height it was saved");
+    }
+
+    /* The stream's origin moves: the body stays where it stands in the world. */
+    {
+        double wx0;
+        double wz0;
+        double wx1;
+        double wz1;
+        float sx;
+        float sz;
+
+        /* The player walked 17 chunks east: past where the stream moves its origin. */
+        player_place(&p, at.x + (float)(17 * STREAM_CHUNK), at.y, at.z, at.yaw, at.pitch);
+        stream_world(p.body.feet[0], p.body.feet[2], &wx0, &wz0);
+        cam.x += (float)(17 * STREAM_CHUNK);
+        travel_update(&cam, 2, 0.5f, 0.0f, &sx, &sz);
+        check_expect(sx == (float)(17 * STREAM_CHUNK) && sz == 0.0f, "travel: no origin move at 17 chunks");
+        player_shift(&p, sx, sz);
+        stream_world(p.body.feet[0], p.body.feet[2], &wx1, &wz1);
+        check_expect(wx1 > wx0 - 0.01 && wx1 < wx0 + 0.01 && wz1 > wz0 - 0.01 && wz1 < wz0 + 0.01,
+                     "travel: an origin move took the player with it");
+        check_expect(p.body.feet[0] > -STREAM_CHUNK && p.body.feet[0] < 2 * STREAM_CHUNK,
+                     "travel: an origin move left the player far from it");
+    }
+    travel_leave();
+
+    /* Daggerfall: a house and out by the same door. */
+    index = -1;
+    region = 17;
+    i = exterior_list(towns, 16000);
+    while (--i >= 0) {
+        if (towns[i].region == region && df_eq(towns[i].name, "Daggerfall")) {
+            index = towns[i].index;
+        }
+    }
+    check_expect(index >= 0, "travel: no Daggerfall");
+    if (index >= 0) {
+        TravelWhere where;
+        float feet[3];
+        int chunk[2];
+        int px;
+        int py;
+        Usable door;
+
+        worldmap_pixel_of(region, index, &px, &py);
+        memset(&where, 0, sizeof(where));
+        where.kind = TRAVEL_WORLD;
+        where.located = 1;
+        where.region = region;
+        where.index = index;
+        where.has_back = 1;
+        where.back_x = ((double)px + 0.5) * (double)(STREAM_CHUNK * WORLDMAP_BLOCKS);
+        where.back_z = ((double)(WORLDMAP_H - 1 - py) + 0.5) * (double)(STREAM_CHUNK * WORLDMAP_BLOCKS);
+        chunk[0] = (int)(where.back_x / (double)STREAM_CHUNK);
+        chunk[1] = (int)(where.back_z / (double)STREAM_CHUNK);
+        feet[0] = (float)(where.back_x - (double)chunk[0] * (double)STREAM_CHUNK);
+        feet[1] = 0.0f;
+        feet[2] = (float)(where.back_z - (double)chunk[1] * (double)STREAM_CHUNK);
+        travel_from_save(&where, feet, chunk, 0.0f, 0.0f);
+        if (!travel_go(&level, &cam, &at)) {
+            return;
+        }
+        u = travel_nearest_passage(&level.scene, DOOR_ENTER, at.x, at.z);
+        check_expect(u != 0, "travel: no house by Daggerfall's middle");
+        if (u) {
+            door = *u;
+            doors_landing(&door, TRAVEL_LAND_OUT, 0.0f, &at.x, &at.y, &at.z, &at.yaw);
+            stream_world(at.x, at.z, &back_x, &back_z);
+            check_expect(travel_use(&door) == 0, "travel: Daggerfall's house leads nowhere");
+            if (!travel_go(&level, &cam, &at)) {
+                return;
+            }
+            travel_here(&here, origin);
+            check_expect(here.kind == TRAVEL_INSIDE && here.region == region && here.index == index
+                         && origin[0] == 0 && origin[1] == 0, "travel: the door is not into a house");
+            check_expect(stands_at(&p, &level, &at, 64.0f), "travel: the player does not stand in the house");
+            /* No stream open: nothing to find, nothing to strike, no blow. */
+            check_expect(foes_frame(&p, &level.scene, 0.1f) == 0, "travel: a blow in a house");
+            check_expect(loot_find(&level.scene, &cam) == 0, "travel: something to search in a house");
+            combat_frame(0.1f);
+            {
+                float sx;
+                float sz;
+
+                travel_update(&cam, 2, 1.0f, 0.1f, &sx, &sz);
+                check_expect(sx == 0.0f && sz == 0.0f, "travel: a house has an origin");
+            }
+            u = 0;
+            for (i = 0; i < level.scene.nusables; i++) {
+                if (level.scene.usables[i].kind == USE_PASSAGE && level.scene.usables[i].what == DOOR_LEAVE) {
+                    u = &level.scene.usables[i];
+                }
+            }
+            check_expect(u != 0, "travel: the house has no way out");
+            if (u) {
+                double wx;
+                double wz;
+
+                check_expect(travel_use(u) == 0, "travel: the house's way out leads nowhere");
+                if (!travel_go(&level, &cam, &at)) {
+                    return;
+                }
+                stream_world(at.x, at.z, &wx, &wz);
+                check_expect(wx > back_x - 1.0 && wx < back_x + 1.0 && wz > back_z - 1.0 && wz < back_z + 1.0,
+                             "travel: out of a house is not at its door");
+                check_expect(stands_at(&p, &level, &at, 64.0f), "travel: the player does not stand at the house's door");
+            }
+        }
+        travel_leave();
+    }
+    {
+        char path[260];
+
+        check_expect(fs_beside(path, (int)sizeof(path), "DATA\\TEST3.SAV") && remove(path) == 0,
+                     "travel: the test's file did not go");
+    }
+    keep_clear();
+    pile_new_game();
+    printf("travel: the hold, its outside, down and up by one door; Daggerfall's house and out; a save in the world; an origin move\n");
+}
+
 void check_play(void)
 {
     check_rules();
@@ -3203,4 +3580,6 @@ void check_play(void)
     check_hold();
     check_keep();
     check_dunstream();
+    check_every_way_out();
+    check_travel();
 }

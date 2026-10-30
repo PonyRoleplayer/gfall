@@ -77,6 +77,10 @@ int foes_frame(Player *p, const Scene *scene, float dt);
 void foes_reset(void);
 /* Minds awake now. */
 int foes_awake(void);
+/* The stream's origin moved: every mind's body and what it remembers, by what the stream took off the entities. */
+void foes_shift(float dx, float dz);
+/* A line on the log for each mind awake: what it is, what it is doing, how far from feet. The console's foes. */
+void foes_report(const float *feet);
 /* The furthest any blow at the player has come from since foes_reset, feet to feet, height and all. */
 float foes_blow_reach(void);
 /*

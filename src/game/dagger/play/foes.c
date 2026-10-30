@@ -2,6 +2,7 @@
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/loot.h"
 #include "game/dagger/play/rules.h"
+#include "engine/core/log.h"
 #include "engine/scene/clock.h"
 #include "engine/scene/interact.h"
 #include "game/dagger/play/sfx.h"
@@ -127,6 +128,68 @@ void foes_reset(void)
     }
     g_ticks = 0.0f;
     g_scan = 0;
+}
+
+void foes_shift(float dx, float dz)
+{
+    int i;
+
+    for (i = 0; i < FOES_MINDS; i++) {
+        if (g_mind[i].e) {
+            g_mind[i].body.feet[0] -= dx;
+            g_mind[i].body.feet[2] -= dz;
+            g_mind[i].body.safe[0] -= dx;
+            g_mind[i].body.safe[2] -= dz;
+            g_mind[i].last[0] -= dx;
+            g_mind[i].last[2] -= dz;
+        }
+    }
+}
+
+/* What a mind is about, in a word or two. */
+static const char *mind_doing(const Mind *m)
+{
+    if (m->knock > 0.0f) {
+        return "knocked back";
+    }
+    if (m->swing >= 0.0f) {
+        return "swinging";
+    }
+    if (m->sees) {
+        return "chasing";
+    }
+    if (m->hears) {
+        return "hearing";
+    }
+    return m->search ? "searching" : "looking";
+}
+
+void foes_report(const float *feet)
+{
+    int i;
+    int n;
+
+    n = 0;
+    for (i = 0; i < FOES_MINDS; i++) {
+        const Mind *m;
+        const EnemyKind *kind;
+        float dx;
+        float dy;
+        float dz;
+
+        m = &g_mind[i];
+        if (!m->e) {
+            continue;
+        }
+        kind = enemy_kind(m->kind);
+        dx = m->e->x - feet[0];
+        dy = m->e->y - feet[1];
+        dz = m->e->z - feet[2];
+        log_print(LOG_PRINT, "%s: %s, %d away, gives up in %d", kind ? kind->name : "?", mind_doing(m),
+                  df_iround(df_sqrt(dx * dx + dy * dy + dz * dz)), FOES_GIVE_UP - m->give_up);
+        n++;
+    }
+    log_print(LOG_PRINT, "%d awake of %d, ai %s.", n, FOES_MINDS, g_on ? "on" : "off");
 }
 
 int foes_awake(void)

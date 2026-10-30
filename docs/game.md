@@ -42,7 +42,7 @@ sfx       DAGGER.SND's clips for combat
 commands  the game's console commands
 ```
 
-Still to come: `places/travel.c` (P8), which LEVELFALL's view code has today.
+`places/travel.c` (P8) carries every move between places; LEVELFALL shares its landing sums.
 
 The player is Daggerfall's, so it lives here and not in the engine. So do items and the inventory: the engine is simulation and world. It gives a camera, a walking body (`body`), using things (`interact`) and entities (`entity`), and `play` builds Daggerfall's player out of them. Another game would build its own in its own folder. Each is a module of one `.c` and one `.h`, as in `docs/architecture.md`. What can be plain C is, and is host-tested in `tests/check_play.c`. What draws or reaches the keys (`PLAY_DRAW_SRC`) is checked by running GFALL.
 
@@ -72,11 +72,26 @@ A passage says where it will lead, and a person that talk comes later, through t
 
 ## Places and travel
 
-A small state machine: **stream** (outside, the whole map), **inside** (one building, loaded whole, where it stands), **dungeon** (loaded whole). Every move between them goes through one passage, kept as a `Usable` (`doors.h`: `DOOR_ENTER`, `DOOR_LEAVE`, `DOOR_DUNGEON`, `DOOR_EXIT`). The landing comes from `doors_landing`, as LEVELFALL does it now.
+`places/travel.c` (built: P8) is a small state machine of three kinds of place: **world** (outside, the whole map, `wild.c`), **inside** (one building, loaded whole, where it stands), **dungeon** (streamed by block, `dunstream.c`). Every move between them goes through one passage, kept as a `Usable` (`doors.h`: `DOOR_ENTER`, `DOOR_LEAVE`, `DOOR_DUNGEON`, `DOOR_EXIT`).
 
-- A place's data lives in its own heap (`docs/memory.md`), freed when the player leaves. What the player carries across (the sheet, the items, the quests later) is kept with `mem_keep` or in the game's own block, never in a place's heap.
-- Going in from the stream keeps the stream's position, so going out lands at the same door.
-- The game starts in Privateer's Hold at its enter marker, the cave by the campfire at the bottom of the place, as Daggerfall does (`docs/dungeons.md`).
+A move happens between two frames:
+1. **The use key meets a passage.** `on_use` calls `travel_use`, which finds where it leads while the place is still open: the town's numbers from the door's world point (`wild_location_at`), the dungeon under a town or the outside over a dungeon from the location's id (`dungeon_under`, `dungeon_outside`, one region's records). A way that leads nowhere says so and nothing happens.
+2. **`game_frame` returns `GAME_TRAVEL`.** `enter_place` in `apps/gfall/main.c` holds the frame under "Loading...", then `travel_leave`, sets the far clip for the place (`WORLD_FAR` 8192 outdoors, `DF_FAR` elsewhere), `travel_open`, `gfx_prepare`, `travel_land`, `game_arrive`, `gfx_prime`, the fade-in. A new game or a save takes the same path with `game_enter`, which makes the player first.
+
+Rules a later edit keeps:
+- A place's data lives in its own temp heap (`docs/memory.md`), `travel_open`'s to begin and `travel_leave`'s to end. What the player carries across (the sheet, the items, the quests later) is kept with `mem_keep` or in the game's own block, never in a place's heap. Pictures on the screen have `pic.c`'s own heap.
+- **The way back is a world point:** the step outside the door taken, three body radii out, facing away from it, kept in `TravelWhere` as doubles. Up from a dungeon or out of a house opens the stream there (`wild_open_at`), so going out lands at the same door. A hold first met from within has none: its outside's pixel opens, the camera at the town's middle, and the nearest way down is the landing.
+- **Entering a dungeon from outside lands by its way out** (`DOOR_EXIT`), not at the start marker: the hold's start is the cave at its bottom. A body stood at each of a sample of the map's dungeons' ways out finds footing (`check_every_way_out`, every 197th).
+- **A house that does not read puts the player back on its step** ("It will not open."), not out of the game.
+- **A stream's origin move** (past `STREAM_REBASE` chunks from it) shifts the scene and the camera. What the game keeps in the scene's frame is its own to move: `travel_update` hands back the shift, and `game_frame` gives it to `player_shift` and `foes_shift`.
+- **The budget:** a world's chunks are heavier than a dungeon's blocks, so `game_frame` gives the stream what is spare before the next retrace, as LEVELFALL does (1 to 8 ms; 3 ms when vsync or the calibration is not there).
+- The season turning or the world's meshes filling up reloads under "Loading..." from the program's loop (`travel_must_reload`).
+
+The game starts in Privateer's Hold at its enter marker, the cave by the campfire at the bottom of the place, as Daggerfall does (`docs/dungeons.md`).
+
+Tested on the host (`check_travel`): a new game in the hold; out to the step by its way down; standing and walking on the land; no blow and nothing to search there; down by that door and landing by the way out; a door opened in the hold kept across the world; up at the same door; a save in the world read back at the same point with the same way back; an origin move at 17 chunks leaving the player where they stand in the world; a house in Daggerfall and out at its door, with combat, creatures and loot run harmlessly in a place with no stream.
+
+**Not yet:** run on the 233, where the budget and the load times are to be measured. Saved towns' doors and people are not keyed (see below). Treasure and dropped piles only exist in a dungeon streamed by block, so nothing can be dropped outdoors or in a house. The sea can be walked on.
 
 ### What the player changed (built: the keys)
 Every door, lever and creature of a place loaded whole is keyed for the engine's state table (`keep.c`, `docs/interact.md`, State that outlives a load). A key is two words:
@@ -85,7 +100,7 @@ Every door, lever and creature of a place loaded whole is keyed for the engine's
 
 `world.c` puts back what was kept at the end of every load (`world_keep_restore`); `world_keep_save` writes it before a place is left. A creature kept dead is never read or drawn (`FOE_DEAD`). The engine's `live` means drawn, so a creature not yet read is saved as alive.
 
-Tested in the hold: all 105 things keyed, no key twice, a door and a lever left open come back open after a reload, a door shut again loses its row. Nothing leaves a place in GFALL yet (P8), and the streamed world's towns are not keyed yet (their chunks, with the streamed dungeons).
+Tested in the hold: all 105 things keyed, no key twice, a door and a lever left open come back open after a reload, a door shut again loses its row. GFALL leaves places since P8, and a house's and a dungeon's rows go with them. The streamed world's towns are not keyed yet (their chunks).
 
 ### A dungeon streamed by block (built: the source)
 `places/dunstream.c` is the chunk source of a dungeon streamed by block (`docs/streaming.md`, Dungeons): each RDB block a chunk of 2048, by its place in the layout, the start block the origin.
@@ -101,7 +116,7 @@ Tested in the hold: all 105 things keyed, no key twice, a door and a lever left 
 
 **Tested against the hold loaded whole:** the ring round its start holds all of it (365 models, 130 flats, 71 lights, 63 movers, 42 creatures, as the whole load). Each creature is the whole load's, keyed and standing alike. A door opened, its blocks dropped 8 blocks off and come back, is open.
 
-**GFALL plays the hold through it** (`start_hold` in `apps/gfall/main.c`): `dunstream_open` under "Loading...", `gfx_prepare` of the streamed level, the player at its start, `dunstream_fill` (the ring and its lights cut, shadows and all), `gfx_prime`, the fade-in. Each frame `game_frame` steps the stream with `GAME_STREAM_MS` (3 ms), and the blocks' creatures come with them. Tested on the host: the player stands on the streamed hold's floor and walks classic's distance. On the 233 it plays at a good frame rate. Its first run there found the body going through walls, ceilings and floors in places (a wall's end after a slide, a jump's rise, the legs in the air, a ramp, a step with no headroom); the engine's collision fixes (`c98b0c3`, `docs/collision.md`) cured them, confirmed on the 233. The `load:` time and the 3 ms budget are still to be measured there.
+**GFALL plays every dungeon through it** (`travel.c`, `enter_place` in `apps/gfall/main.c`): `dunstream_open` under "Loading...", `gfx_prepare` of the streamed level, the player at its start, `dunstream_fill` (the ring and its lights cut, shadows and all), `gfx_prime`, the fade-in. Each frame `game_frame` steps the stream (`travel_update`), and the blocks' creatures come with them. Tested on the host: the player stands on the streamed hold's floor and walks classic's distance. On the 233 it plays at a good frame rate. Its first run there found the body going through walls, ceilings and floors in places (a wall's end after a slide, a jump's rise, the legs in the air, a ramp, a step with no headroom); the engine's collision fixes (`c98b0c3`, `docs/collision.md`) cured them, confirmed on the 233. The `load:` time and the 3 ms budget are still to be measured there.
 
 **Not yet:**
 - LEVELFALL's indoor rows;
@@ -400,8 +415,7 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Combat | an arrow lands at once: no missile flies | later |
 | Creatures | ranged attacks and spells; a hurt voice | P9 |
 | Creatures | the frame a blow lands on and how often a move sounds are our guesses, not found in classic | - |
-| Creatures | LEVELFALL's view of a creature's state | P7 |
-| Saves | creatures awake come back asleep; the weather is not kept | P8 |
+| Saves | creatures awake come back asleep; the weather is not kept | later |
 | Rest | an encounter wakes a sleeper, not a new creature; a class with no spell point regeneration | later, P9 |
 | Items | clothing, jewellery, ingredients, books, potions, maps, and the screen's other tabs | P9, P10 |
 | Items | clothing's dyes | with clothing |
@@ -410,7 +424,7 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Inventory | the info box's lines are ours, not TEXT.RSC's | later |
 | Loot | the other columns of `LOOT` wait for their items | P9, P10 |
 | Loot | a body or a heap takes nothing put on it (a choice, see What can be searched) | - |
-| Places | treasure and piles only in a dungeon streamed by block | P8 |
+| Places | treasure and piles only in a dungeon streamed by block; a town's doors not keyed; the sea can be walked on | later |
 | Player | the bottom panel's buttons and mode icons | later |
 | Creation | a custom class's special advantages, disadvantages and reputations; the Help button | P9, P10 |
 | Creation | the class questions' animated scroll and characters | later |
@@ -451,11 +465,14 @@ The travel map comes later, with `worldmap.c`'s pixels and the location index: p
 - **A new game** forgets the last one's keep table and piles, and takes a new seed (`forget_last_game`).
 - **The menus:** the start menu's Load, the options' Save and Load, all through classic's screen (`play/slots.c`, LOAD00I0.IMG, SAVE00I0.IMG's title over it to save, DFU's rectangles). To load, a click on a slot with a save; to save, a click on any slot and a name typed, its old one to start from. Hostcheck uses files of its own (`save_use_prefix`), so it never touches a player's.
 - **Death** shows classic's DIE_00I0.IMG until a key or a click, then the load screen. Put away, or with no saves, it goes back to the start menu.
+- **A save knows its place** (P8): GAME holds the kind of place, its region and index, a house's block and record, and the way back out of its door, as whole chunks and what is left because a record file has no doubles. The feet are in the place's frame with the stream's origin that frame has, so a stream opening on another origin puts them back in the same spot; a save from before P8 reads as the hold with origin 0, which is what its feet already were.
 - **Creatures awake are not saved.** They come back asleep, where they stood, wounded as they were.
 
 ## Later
 
 Talk (the people's lists, `USE_TALK`), factions, quests (QBN/QRC per UESP), spells and spell effects, shops and banks, the law, horses and carts. Each gets its own design here when its phase comes.
+
+**A graphics screen with texture detail (the user's idea, not to start until asked).** Glide's settings on a screen of their own, with a separate texture detail for sprites and for walls, so a player can take blurry walls and crisp sprites. The Voodoo 1's 2 MB is what the game fights: a sprite sheet too large for 256 now loses half its texels (`texture_sheet`), and a Voodoo 2 would not have to. Lowering the walls' detail would also cut the hiccups of pictures coming onto the card.
 
 ## Budgets on the 233
 
@@ -504,11 +521,11 @@ The first goal is a **prototype**: from classic's start menu, Privateer's Hold p
 | **P1** | **On foot** (built, runs on the target). GFALL rewritten as the game's single play state: the player a body under `rig_first`, walk, run, jump and fall, mouse look; the use key on doors and levers; HUD crosshair, compass and message line; Escape pauses | GAME | the hold walked from marker 10 to its exit on the 233 |
 | P2 | A character (built; its bars run on the target): a fixed level-1 one, classic's attributes, skills and vitals; vitals bars on the HUD; `RACE`, `CLAS`, `SKIL` | GAME, ENGINE's pictures | derived values match UESP's worked figures |
 | P3 | The start menu (built; the title, the start menu and the start into the hold run on the target, the options and controls not tried there yet): classic's main menu (PICK03I0.IMG: load, start, exit) before the hold, the title before it, Escape's menu in play (go on, exit) | GAME, ENGINE's pictures | GFALL opens on the menu, starts the hold, and exits from both |
-| P4 | Combat (built; the swing runs on the target, striking and creatures awake not tried there yet; the player's death is back to the start until saves; LEVELFALL's view of a creature's state not yet): the weapon's swing from WEAPON##.CIF (the shown swing's frames only on the card), classic's to-hit and damage; creatures wake, chase on bodies of their size, attack, flinch, die; the player's death; `WEAP`, `MATL` | GAME; LEVELFALL shows each creature's state | the hold can be cleared, or the player killed, from records |
+| P4 | Combat (built; the swing runs on the target, striking and creatures awake not tried there yet; the player's death is back to the start until saves; a creature's state is the console's `foes`, as LEVELFALL does not link the game): the weapon's swing from WEAPON##.CIF (the shown swing's frames only on the card), classic's to-hit and damage; creatures wake, chase on bodies of their size, attack, flinch, die; the player's death; `WEAP`, `MATL` | GAME | the hold can be cleared, or the player killed, from records |
 | P5 | Loot and inventory (built, host-tested, not run on the target; the other tabs' items not yet): bodies, treasure, dropped piles, gold, pick up, equip weapon and armour, classic's inventory screen and paper doll, classic's metal colours; `ITEM`, `ARMR`, `LOOT`, `LDUN` | GAME, ENGINE's pictures | equipment changes combat |
-| P6 | Character creation and levelling (built, host-tested, not run on the target; class questions and custom classes not yet): classic's screens, background questions, skill gains, level-ups, the character sheet | GAME | a character made by the screens plays the hold and levels |
+| P6 | Character creation and levelling (built, host-tested, not run on the target): classic's screens, class questions and custom classes among them, background questions, skill gains, level-ups, the character sheet | GAME | a character made by the screens plays the hold and levels |
 | P7 | Prototype polish (built, host-tested, not run on the target; the 233 profile pass not done): loading holds, one save slot in `DATA\`, the menu's load, rest and wait, a 233 profile pass | GAME | from the menu through the hold and back after a save |
-| P8 | Out of the hold: `places/travel.c` lifted from LEVELFALL and shared; the hold's outside in the stream, the nearest town, its houses | GAME and LEVELFALL | from the menu to town and back after a save, in one session |
+| P8 | Out of the hold (built, host-tested, not run on the target): `places/travel.c` lifted from LEVELFALL and shared; the hold's outside in the stream, the nearest town, its houses | GAME and LEVELFALL | from the menu to town and back after a save, in one session |
 | P9 | Magic: spells, effects, spellbook, casting, potions, enchantments | GAME | |
 | P10 | People: talk from TEXT.RSC, shops, banks, factions, reputation, law | GAME | |
 | P11 | Quests: the QBN interpreter, guild quests | GAME | |

@@ -46,6 +46,8 @@ typedef struct Player {
 void player_init(Player *p, const Character *sheet);
 /* Its eye at x, eye_y, z (a start marker's point, or a landing), looking yaw, pitch. */
 void player_place(Player *p, float x, float eye_y, float z, float yaw, float pitch);
+/* A stream's origin moved by this: the body stays where it stands in the world. */
+void player_shift(Player *p, float dx, float dz);
 /*
  * One frame: the mouse turns it, WASD walk it (run held, faster), jump
  * leaves the floor, then the body steps through the scene. With collide

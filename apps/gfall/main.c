@@ -13,6 +13,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#include "engine/core/df.h"
 #include "engine/core/mem.h"
 #include "engine/platform/input.h"
 #include "engine/gfx/camera.h"
@@ -24,8 +25,6 @@
 #include "game/dagger/formats/fnt.h"
 #include "game/dagger/formats/texture.h"
 #include "game/dagger/play/game.h"
-#include "game/dagger/formats/dungeon.h"
-#include "game/dagger/places/dunstream.h"
 #include "game/dagger/tables/maindat.h"
 
 /* A frame's real seconds by the performance counter (GetTickCount is too coarse on Win9x); a stall counts as a tenth. */
@@ -45,56 +44,41 @@ static float frame_secs(void)
     return secs > 0.1f ? 0.1f : secs;
 }
 
-/* Privateer's Hold's record: the stream reads its blocks as the player walks, so it outlives the load. */
-static Dungeon g_hold;
-
-/* 1 while a place's temp heap is open: what it read and built dies with it. */
-static int g_place_open;
-
-/* The last place gone, its heap with it, as LEVELFALL leaves one: the stream, the file cache's pointers into it, then the heap. */
-static void leave_place(void)
-{
-    dunstream_close();
-    if (g_place_open) {
-        texture_cache_clear();
-        mem_temp_end();
-        g_place_open = 0;
-    }
-}
+/* The far clip each kind of place draws to: a dungeon's own, the world's far enough to see a town across a field. */
+#define WORLD_FAR 8192.0f
 
 /*
- * A game's place, new or loaded (the game set up who and from where), under
- * a held "Loading..." over the last frame: Privateer's Hold streamed by
- * block (dunstream.c), the player at its start or the save's place, the
- * blocks round it loaded and their lights cut, its pictures sharp before it
- * fades in. Each in a temp heap of its own, or every load would leak the
- * stream's arrays. 0 when it does not load.
+ * Where the game asked to go, under a held "Loading..." over the last frame:
+ * the old place left (travel.h), the new one read onto a temp heap of its
+ * own, or every load would leak its arrays; what is round the player loaded
+ * and lit, its pictures sharp before it fades in. arriving 0: a new or a
+ * loaded game; 1: through a passage, the player going on as they are.
+ * 0 when it does not load.
  */
-static int start_hold(Level *level, Camera *cam)
+static int enter_place(Level *level, Camera *cam, int arriving)
 {
-    float x;
-    float y;
-    float z;
-    float yaw;
-    float pitch;
+    TravelPose at;
 
     gfx_hold("Loading...");
-    leave_place();
-    if (!mem_temp_begin()) {
-        win_fail("No memory for the place.");
+    travel_leave();
+    /* What a place may see depends on what it is: decided before the world's radius is. */
+    gfx_set_far(travel_next_is_world() ? WORLD_FAR : DF_FAR);
+    if (!travel_open(level, travel_radius(gfx_far()))) {
+        win_fail(travel_error());
         return 0;
     }
-    g_place_open = 1;
-    if (!dungeon_load(&g_hold) || !dunstream_open(&g_hold, level, &x, &y, &z, &yaw, &pitch)) {
-        win_fail("Privateer's Hold could not be opened.");
-        return 0;
-    }
+    /* A house that would not read has put the player back in the street: the world's clip again. */
+    gfx_set_far(travel_next_is_world() ? WORLD_FAR : DF_FAR);
     if (!gfx_prepare(level)) {
         win_fail(gfx_error());
         return 0;
     }
-    game_enter(level, cam, x, y, z, yaw, pitch);
-    dunstream_fill(cam);
+    travel_land(level, cam, game_eye(), &at);
+    if (arriving) {
+        game_arrive(level, cam, &at);
+    } else {
+        game_enter(level, cam, &at);
+    }
     gfx_prime(level, cam);
     gfx_fade_in(0.5f);
     return 1;
@@ -153,15 +137,22 @@ int gfall_main(void *instance)
         if (asked == GAME_QUIT) {
             break;
         }
-        if (asked == GAME_START && !start_hold(&level, &cam)) {
+        if ((asked == GAME_START || asked == GAME_TRAVEL) && !enter_place(&level, &cam, asked == GAME_TRAVEL)) {
             break;
+        }
+        /* The season turned, or the world's meshes filled up: behind "Loading...", sharp again before the next frame. */
+        if (travel_must_reload()) {
+            gfx_hold("Loading...");
+            travel_reload(&cam);
+            gfx_prime(&level, &cam);
+            gfx_fade_in(0.5f);
         }
         /* A screen that covers everything is drawn with no world under it: the card does nothing it would then hide. */
         gfx_frame(&cam, game_world_shows() ? &level : 0);
     }
     input_end();
     game_shutdown();
-    leave_place();
+    travel_leave();
     music_shutdown();
     sound_shutdown();
     gfx_shutdown();

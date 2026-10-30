@@ -21,6 +21,7 @@
 #include "engine/core/mem.h"
 #include "engine/core/prof.h"
 #include "engine/gfx/gfx.h"
+#include "engine/gfx/glide.h"
 #include "engine/scene/interact.h"
 #include "engine/scene/keep.h"
 #include "engine/scene/stream.h"
@@ -50,17 +51,48 @@ static int g_last_minute;
 static int g_dead;
 
 /*
+ * Milliseconds a frame gives the stream: what is spare before the retrace this
+ * frame makes anyway, within limits, as LEVELFALL's stream_budget. A world's
+ * chunks are heavier than a dungeon's blocks: a fixed few ms falls behind the walk.
+ */
+#define STREAM_PERIOD_MS (1000.0f / 60.0f)
+#define STREAM_MARGIN_MS 1.5f
+#define STREAM_MIN_MS 1.0f
+#define STREAM_MAX_MS 8.0f
+static float stream_budget(void)
+{
+    float busy;
+    float end;
+    float b;
+
+    busy = prof_last_ms(PROF_FRAME) - prof_last_ms(PROF_SWAP);
+    if (prof_per_ms() == 0 || busy <= 0.0f || !glide_vsync()) {
+        return GAME_STREAM_MS;
+    }
+    end = STREAM_PERIOD_MS;
+    while (end < busy + STREAM_MIN_MS + STREAM_MARGIN_MS) {
+        end += STREAM_PERIOD_MS;
+    }
+    b = end - busy - STREAM_MARGIN_MS;
+    return b < STREAM_MIN_MS ? STREAM_MIN_MS : (b > STREAM_MAX_MS ? STREAM_MAX_MS : b);
+}
+
+/*
  * What the use key does that the engine's doors and levers do not: a
- * passage, until there is somewhere to go (P8), and a person, until
- * there is talk (P10).
+ * passage (travel.h), and a person, until there is talk (P10).
  */
 static int on_use(const Scene *scene, const Usable *u, int index)
 {
     (void)scene;
     (void)index;
     if (u->kind == USE_PASSAGE) {
-        interact_say(u->what == DOOR_EXIT ? "The way out. The world beyond comes later."
-                                          : "It leads on. Not yet.");
+        const char *why;
+
+        /* Going somewhere is carried out after this frame's end (game_frame); a shut way says why. */
+        why = travel_use(u);
+        if (why) {
+            interact_say(why);
+        }
         return 1;
     }
     if (u->kind == USE_TALK) {
@@ -141,15 +173,14 @@ static float game_minutes(void)
 static int save_game(const char *name)
 {
     SaveState state;
-    int cx;
-    int cz;
 
     df_copy(state.name, name, SAVE_NAME);
-    stream_keep_now();
-    stream_origin(&cx, &cz);
-    state.feet[0] = g_player.body.feet[0] + (float)cx * DUNSTREAM_BLOCK;
+    travel_keep_now();
+    /* The feet as they are, with the stream's origin that frame has: a stream may open on another. */
+    travel_here(&state.where, state.origin);
+    state.feet[0] = g_player.body.feet[0];
     state.feet[1] = g_player.body.feet[1];
-    state.feet[2] = g_player.body.feet[2] + (float)cz * DUNSTREAM_BLOCK;
+    state.feet[2] = g_player.body.feet[2];
     state.yaw = g_player.yaw;
     state.pitch = g_player.pitch;
     state.minute = clock_minute();
@@ -172,6 +203,7 @@ static int load_game(int slot)
     g_new_pack = g_loaded.pack;
     g_load_waiting = 1;
     g_dead = 0;
+    travel_from_save(&g_loaded.where, g_loaded.feet, g_loaded.origin, g_loaded.yaw, g_loaded.pitch);
     return 1;
 }
 
@@ -182,6 +214,7 @@ static void forget_last_game(void)
     pile_new_game();
     loot_new_game(prof_now());
     g_load_waiting = 0;
+    travel_start_game();
 }
 
 /* The character sheet over the stilled world: a level due is taken there. */
@@ -277,9 +310,39 @@ int game_world_shows(void)
     return g_playing && !screens_is_open() && menu_current() != MENU_CONTROLS;
 }
 
-void game_enter(const Level *level, Camera *cam, float x, float y, float z, float yaw, float pitch)
+/* What every arrival sets up: the frame's creatures gone with the last place, the camera on the player. */
+static void arrive(const Level *level, Camera *cam, const TravelPose *at)
 {
+    const char *said;
+
     g_level = level;
+    combat_reset();
+    foes_reset();
+    player_place(&g_player, at->x, at->y, at->z, at->yaw, at->pitch);
+    camera_set(cam, at->x, at->y, at->z, at->yaw, at->pitch);
+    /*
+     * The engine's walker gives the walking to the game's player: it is
+     * not stepped, and the console's tcl is the game's collision switch
+     * (docs/collision.md, A game's player). On by default.
+     */
+    walker_set_game(&g_player.body);
+    walker_set_on(1);
+    interact_set_handler(on_use);
+    g_playing = 1;
+    menu_over_play(MENU_NONE);
+    said = travel_said();
+    if (said) {
+        interact_say(said);
+    }
+}
+
+float game_eye(void)
+{
+    return WALK_EYE;
+}
+
+void game_enter(const Level *level, Camera *cam, const TravelPose *at)
+{
     /* Who creation made or the save holds, and what they carry (game_frame set these). */
     player_init(&g_player, &g_new_sheet);
     g_player.pack = g_new_pack;
@@ -295,17 +358,8 @@ void game_enter(const Level *level, Camera *cam, float x, float y, float z, floa
     g_day_zero = clock_day();
     g_last_minute = df_ifloor(game_minutes());
     if (g_load_waiting) {
-        int cx;
-        int cz;
-
-        /* The save's place, in this stream's frame; its clock, its seed. */
+        /* The save's clock, its seed. Its place was travel_from_save's. */
         g_load_waiting = 0;
-        stream_origin(&cx, &cz);
-        x = g_loaded.feet[0] - (float)cx * DUNSTREAM_BLOCK;
-        y = g_loaded.feet[1] + g_player.body.eye;
-        z = g_loaded.feet[2] - (float)cz * DUNSTREAM_BLOCK;
-        yaw = g_loaded.yaw;
-        pitch = g_loaded.pitch;
         clock_set_minute(g_loaded.minute);
         clock_set_day(g_loaded.day);
         g_day_zero = g_loaded.day_zero;
@@ -313,20 +367,12 @@ void game_enter(const Level *level, Camera *cam, float x, float y, float z, floa
         loot_new_game(g_loaded.seed);
     }
     commands_player(&g_player);
-    combat_reset();
-    foes_reset();
-    player_place(&g_player, x, y, z, yaw, pitch);
-    camera_set(cam, x, y, z, yaw, pitch);
-    /*
-     * The engine's walker gives the walking to the game's player: it is
-     * not stepped, and the console's tcl is the game's collision switch
-     * (docs/collision.md, A game's player). On by default.
-     */
-    walker_set_game(&g_player.body);
-    walker_set_on(1);
-    interact_set_handler(on_use);
-    g_playing = 1;
-    menu_over_play(MENU_NONE);
+    arrive(level, cam, at);
+}
+
+void game_arrive(const Level *level, Camera *cam, const TravelPose *at)
+{
+    arrive(level, cam, at);
 }
 
 int game_frame(Camera *cam, const Input *in, float dt)
@@ -465,6 +511,11 @@ int game_frame(Camera *cam, const Input *in, float dt)
         if (in->pressed & INPUT_BIT(INPUT_USE)) {
             use_key(cam);
         }
+        /* A passage used: the program loads where it leads, between this frame and the next. */
+        if (travel_asked()) {
+            prof_end(PROF_PLAY);
+            return GAME_TRAVEL;
+        }
     }
     /* The use key may just have opened the inventory: the world stands from this frame. */
     if (menu_current() == MENU_NONE && !screens_is_open() && !gfx_paused()) {
@@ -567,8 +618,18 @@ int game_frame(Camera *cam, const Input *in, float dt)
             die();
             player_camera(&g_player, cam);
         }
-        /* The blocks round the player in and out, their creatures read with them, the lights cut (docs/streaming.md). */
-        dunstream_update(cam, GAME_STREAM_MS);
+        /* What is round the player in and out, a stream's creatures and people with it (travel.h, docs/streaming.md). */
+        {
+            float shift_x;
+            float shift_z;
+
+            travel_update(cam, travel_radius(gfx_far()), stream_budget(), dt, &shift_x, &shift_z);
+            /* A stream's origin moved: it moved the scene and the camera, the game moves what it keeps itself. */
+            if (shift_x != 0.0f || shift_z != 0.0f) {
+                player_shift(&g_player, shift_x, shift_z);
+                foes_shift(shift_x, shift_z);
+            }
+        }
     }
     overlay_set_yaw(g_player.yaw);
     overlay_set_vitals(g_player.sheet.health, g_player.sheet.health_max, g_player.sheet.fatigue,

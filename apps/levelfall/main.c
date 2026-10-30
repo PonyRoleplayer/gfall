@@ -51,6 +51,7 @@
 #include "engine/ui/shot.h"
 #include "game/dagger/formats/climate.h"
 #include "game/dagger/places/doors.h"
+#include "game/dagger/places/travel.h"
 #include "game/dagger/formats/dungeon.h"
 #include "game/dagger/formats/texture.h"
 #include "game/dagger/places/world.h"
@@ -3031,9 +3032,9 @@ enum {
 };
 /* LAND_STAY: where the camera stood when the season turned. */
 static Camera g_stay;
-/* Out of a door three body radii, into a house a radius and 0.4 m: Daggerfall Unity's. */
-#define LAND_OUT (3.0f * WALK_RADIUS)
-#define LAND_INTO (WALK_RADIUS + 16.0f)
+/* The landing's distances are travel.h's, shared with the game. */
+#define LAND_OUT TRAVEL_LAND_OUT
+#define LAND_INTO TRAVEL_LAND_INTO
 
 static void land_at(const World *world, int land, const Usable *street,
                     float *x, float *y, float *z, float *yaw, float *pitch)
@@ -3331,13 +3332,10 @@ static float stream_budget(void)
     return b < STREAM_MIN_MS ? STREAM_MIN_MS : (b > STREAM_MAX_MS ? STREAM_MAX_MS : b);
 }
 
-/* The radius of chunks the far clip needs: 4096 a ring, at least one. */
+/* The radius of chunks the far clip needs (travel.h). */
 static int stream_radius_for_far(void)
 {
-    int r;
-
-    r = (df_iround(gfx_far()) + STREAM_CHUNK - 1) / STREAM_CHUNK;
-    return r < 1 ? 1 : (r > STREAM_RADIUS_MAX ? STREAM_RADIUS_MAX : r);
+    return travel_radius(gfx_far());
 }
 
 /* Each frame of the stream: its radius from the far clip, its loading, and where the camera is. */
@@ -3679,35 +3677,16 @@ static void view_stream(int index, const double *pose)
                 wild_fill(&cam);
                 if (at_entrance) {
                     /* Up out of the dungeon opened first: on the step outside its nearest way down. */
-                    int u;
-                    int best;
-                    float best_d;
+                    const Usable *best;
 
-                    best = -1;
-                    best_d = 0.0f;
-                    for (u = 0; u < level.scene.nusables; u++) {
-                        const Usable *e;
-                        float dx;
-                        float dz;
-
-                        e = &level.scene.usables[u];
-                        if (e->reach <= 0.0f || e->kind != USE_PASSAGE || e->what != DOOR_DUNGEON) {
-                            continue;
-                        }
-                        dx = e->cx - cam.x;
-                        dz = e->cz - cam.z;
-                        if (best < 0 || dx * dx + dz * dz < best_d) {
-                            best = u;
-                            best_d = dx * dx + dz * dz;
-                        }
-                    }
-                    if (best >= 0) {
+                    best = travel_nearest_passage(&level.scene, DOOR_DUNGEON, cam.x, cam.z);
+                    if (best) {
                         float lx;
                         float ly;
                         float lz;
                         float lyaw;
 
-                        doors_landing(&level.scene.usables[best], LAND_OUT, WALK_EYE, &lx, &ly, &lz, &lyaw);
+                        doors_landing(best, LAND_OUT, WALK_EYE, &lx, &ly, &lz, &lyaw);
                         camera_set(&cam, lx, ly, lz, lyaw, 0.0f);
                         wild_fill(&cam);
                     } else {
@@ -3730,10 +3709,6 @@ static void view_stream(int index, const double *pose)
                 music_stop();
                 sound_stop_all();
                 if (go.what == DOOR_ENTER || go.what == DOOR_DUNGEON) {
-                    double dwx;
-                    double dwz;
-                    double ox;
-                    double oz;
                     float lx;
                     float ly;
                     float lz;
@@ -3746,13 +3721,7 @@ static void view_stream(int index, const double *pose)
                     back = 1;
                     /* The door in its town's own frame, where the house is placed against it. */
                     trow = stream_row_of(&go.door);
-                    stream_world(go.door.cx, go.door.cz, &dwx, &dwz);
-                    door = go.door;
-                    if (trow >= 0 && wild_location_at(dwx, dwz, &region, &idx, &ox, &oz)) {
-                        door.cx = (float)(dwx - ox);
-                        door.cz = (float)(dwz - oz);
-                        /* And in height: a town loaded whole stands at 0, the stream's at its level. */
-                        door.cy -= wild_ground(dwx, dwz);
+                    if (trow >= 0 && travel_door_in_town(&go.door, &door, &region, &idx)) {
                         row = trow;
                     } else {
                         trow = -1;

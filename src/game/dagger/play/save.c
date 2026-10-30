@@ -1,4 +1,5 @@
 #include "game/dagger/play/save.h"
+#include "engine/scene/stream.h"
 #include "game/dagger/play/pile.h"
 #include "engine/assets/recfile.h"
 #include "engine/assets/vfs.h"
@@ -40,6 +41,18 @@ void save_use_slot(int slot)
 /* GAME: the one row of what SaveState holds beside the tables. */
 typedef struct SaveGameRow {
     df_u16 id;
+    /* Which place (TravelWhere); a double of the way back as whole chunks and what is left, a record file having no doubles. */
+    df_i32 place;
+    df_i32 located;
+    df_i32 region;
+    df_i32 index;
+    df_i32 block;
+    df_i32 record;
+    df_i32 has_back;
+    df_i32 back_chunk[2];
+    float back_rest[2];
+    float back_yaw;
+    df_i32 origin[2];
     float feet[3];
     float yaw;
     float pitch;
@@ -55,6 +68,17 @@ typedef struct SaveGameRow {
 
 static const RecField g_game_fields[] = {
     REC_FIELD("id", REC_UINT, SaveGameRow, id),
+    REC_FIELD("place", REC_INT, SaveGameRow, place),
+    REC_FIELD("located", REC_INT, SaveGameRow, located),
+    REC_FIELD("region", REC_INT, SaveGameRow, region),
+    REC_FIELD("index", REC_INT, SaveGameRow, index),
+    REC_FIELD("block", REC_INT, SaveGameRow, block),
+    REC_FIELD("record", REC_INT, SaveGameRow, record),
+    REC_FIELD("has_back", REC_INT, SaveGameRow, has_back),
+    REC_ARRAY("back_chunk", REC_INT, SaveGameRow, back_chunk),
+    REC_ARRAY("back_rest", REC_FLOAT, SaveGameRow, back_rest),
+    REC_FIELD("back_yaw", REC_FLOAT, SaveGameRow, back_yaw),
+    REC_ARRAY("origin", REC_INT, SaveGameRow, origin),
     REC_ARRAY("feet", REC_FLOAT, SaveGameRow, feet),
     REC_FIELD("yaw", REC_FLOAT, SaveGameRow, yaw),
     REC_FIELD("pitch", REC_FLOAT, SaveGameRow, pitch),
@@ -207,6 +231,20 @@ static int write_chunks(const SaveState *state)
     df_copy(head.name, "SAVE0.SAV", REC_NAME);
 
     mem_zero(&game, sizeof(game));
+    game.place = state->where.kind;
+    game.located = state->where.located;
+    game.region = state->where.region;
+    game.index = state->where.index;
+    game.block = state->where.block;
+    game.record = state->where.record;
+    game.has_back = state->where.has_back;
+    game.back_chunk[0] = (df_i32)(state->where.back_x / (double)STREAM_CHUNK);
+    game.back_chunk[1] = (df_i32)(state->where.back_z / (double)STREAM_CHUNK);
+    game.back_rest[0] = (float)(state->where.back_x - (double)game.back_chunk[0] * (double)STREAM_CHUNK);
+    game.back_rest[1] = (float)(state->where.back_z - (double)game.back_chunk[1] * (double)STREAM_CHUNK);
+    game.back_yaw = state->where.back_yaw;
+    game.origin[0] = state->origin[0];
+    game.origin[1] = state->origin[1];
     for (i = 0; i < 3; i++) {
         game.feet[i] = state->feet[i];
     }
@@ -354,6 +392,18 @@ static void apply_tables(SaveState *state)
 
     game = (const SaveGameRow *)g_game_table.rows;
     mem_zero(state, sizeof(*state));
+    state->where.kind = game->place;
+    state->where.located = game->located;
+    state->where.region = game->region;
+    state->where.index = game->index;
+    state->where.block = game->block;
+    state->where.record = game->record;
+    state->where.has_back = game->has_back;
+    state->where.back_x = (double)game->back_chunk[0] * (double)STREAM_CHUNK + (double)game->back_rest[0];
+    state->where.back_z = (double)game->back_chunk[1] * (double)STREAM_CHUNK + (double)game->back_rest[1];
+    state->where.back_yaw = game->back_yaw;
+    state->origin[0] = game->origin[0];
+    state->origin[1] = game->origin[1];
     for (i = 0; i < 3; i++) {
         state->feet[i] = game->feet[i];
     }

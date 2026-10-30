@@ -433,6 +433,8 @@ int dungeon_load(Dungeon *out)
                 return 0;
             }
             if (got > 0) {
+                out->region = 17;
+                out->index = (int)i;
                 bsa_close(maps);
                 why("");
                 return 1;
@@ -613,6 +615,8 @@ int dungeon_load_at(int region, int index, Dungeon *out)
         why(MAP_NAME);
         return 0;
     }
+    out->region = region;
+    out->index = index;
     walk.want = index;
     walk.region = region;
     walk.out = out;
@@ -1099,6 +1103,8 @@ int exterior_load_at(int region, int index, Dungeon *out)
         why(MAP_NAME);
         return 0;
     }
+    out->region = region;
+    out->index = index;
     one.src.names = 0;
     one.src.name_bytes = 0;
     one.src.region = region;
@@ -1130,4 +1136,88 @@ int exterior_load_at(int region, int index, Dungeon *out)
 const char *dungeon_error(void)
 {
     return g_why;
+}
+
+/* A walk over one region's records for the location numbered want: found its index, -1 for none. */
+struct PairWalk {
+    int want;
+    int found;
+    ExtNames src;
+};
+
+static int outside_visit(const df_u8 *rec, df_u32 size, int index, void *user)
+{
+    struct PairWalk *walk;
+    df_u32 doors;
+    df_u32 at;
+
+    walk = (struct PairWalk *)user;
+    if (size < 4) {
+        return 1;
+    }
+    doors = df_ru32(rec);
+    at = 4u + doors * 6u;
+    if (doors <= 4096 && at + LOC_ID + 2u <= size && (int)df_ru16(rec + at + LOC_ID) == walk->want) {
+        walk->found = index;
+        return 0;
+    }
+    return 1;
+}
+
+int dungeon_outside(int region, int exterior_id)
+{
+    Bsa *maps;
+    struct PairWalk walk;
+
+    if (region < 0 || region >= DUN_REGIONS) {
+        return -1;
+    }
+    /* A stream open keeps MAPS.BSA and the region it last read: the same file, or a second open of it. */
+    maps = g_keep ? g_keep_maps : bsa_open(MAP_NAME);
+    if (!maps) {
+        return -1;
+    }
+    walk.want = exterior_id;
+    walk.found = -1;
+    each_exterior(maps, region, &walk.src, outside_visit, &walk);
+    if (!g_keep) {
+        bsa_close(maps);
+    }
+    return walk.found;
+}
+
+static int under_visit(const df_u8 *rec, df_u32 size, int index, void *user)
+{
+    struct PairWalk *walk;
+    Dungeon dun;
+    df_u32 at;
+
+    walk = (struct PairWalk *)user;
+    if (!location_at(rec, size, &at) || !read_blocks(rec, size, at, &dun)) {
+        return 1;
+    }
+    if (dun.exterior_id == walk->want) {
+        walk->found = index;
+        return 0;
+    }
+    return 1;
+}
+
+int dungeon_under(int region, int location_id)
+{
+    Bsa *maps;
+    struct PairWalk walk;
+
+    if (region < 0 || region >= DUN_REGIONS) {
+        return -1;
+    }
+    maps = bsa_open(MAP_NAME);
+    if (!maps) {
+        return -1;
+    }
+    walk.want = location_id;
+    walk.found = -1;
+    each_record(maps, region, under_visit, &walk);
+    bsa_close(maps);
+    return walk.found;
 }

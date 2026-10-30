@@ -250,6 +250,14 @@ void player_check_weapon(Player *p)
     }
 }
 
+void player_shift(Player *p, float dx, float dz)
+{
+    p->body.feet[0] -= dx;
+    p->body.feet[2] -= dz;
+    p->body.safe[0] -= dx;
+    p->body.safe[2] -= dz;
+}
+
 void player_camera(const Player *p, Camera *cam)
 {
     cam->yaw = p->yaw;
