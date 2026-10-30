@@ -86,6 +86,8 @@ static float g_ticks;
 static int g_frame;
 /* The last game minute a sleeper's notice was rolled against the player: one use of Stealth a minute. */
 static int g_stealth_minute = -1;
+/* The furthest any blow has come from, feet to feet, since the last reset: what foes_blow_reach reads. */
+static float g_blow_reach;
 /* The next sleeper to look at, counted across the stream's slots. */
 static int g_scan;
 
@@ -119,6 +121,7 @@ void foes_reset(void)
 {
     int i;
 
+    g_blow_reach = 0.0f;
     for (i = 0; i < FOES_MINDS; i++) {
         g_mind[i].e = 0;
     }
@@ -547,6 +550,7 @@ static void think(Mind *m, const Player *p, const Scene *scene, const float *pey
     Entity *e;
     float to;
     float dx;
+    float dy;
     float dz;
     float dist;
 
@@ -574,7 +578,9 @@ static void think(Mind *m, const Player *p, const Scene *scene, const float *pey
     e->yaw = df_wrap_tau(e->yaw + (to > TURN ? TURN : (to < -TURN ? -TURN : to)));
     /* A swing: the player seen, in reach and nearly ahead, the timer run out, a roll on its Speed. */
     k = enemy_kind(m->kind);
-    dist = df_sqrt(dx * dx + dz * dz);
+    /* Feet to feet, height and all: one on the floor above, or a bat overhead, is not in reach. */
+    dy = m->last[1] - e->y;
+    dist = df_sqrt(dx * dx + dy * dy + dz * dz);
     if (k && m->sees && m->swing < 0.0f && e->act == 0 && m->melee <= 0.0f && dist <= FOES_MELEE
         && absf(turn_between(e->yaw, df_atan2(dx, dz))) <= AIM_START && e->pose[ENTITY_ATTACK].w[0]) {
         int speed;
@@ -594,8 +600,12 @@ static void think(Mind *m, const Player *p, const Scene *scene, const float *pey
     }
 }
 
-/* Its blow on the swing's hit frame: the player still in reach and before it. 1 when it killed them. */
-static int land(Mind *m, Player *p)
+/*
+ * Its blow on the swing's hit frame: the player still in reach feet to feet,
+ * height and all, before it, and no wall come between in the moments since it
+ * began. 1 when it killed them.
+ */
+static int land(Mind *m, Player *p, const Scene *scene)
 {
     const EnemyKind *k;
     Entity *e;
@@ -603,8 +613,13 @@ static int land(Mind *m, Player *p)
     Blow b;
     Inventory kit;
     float dx;
+    float dy;
     float dz;
+    float ground;
     float dist;
+    float eye[3];
+    float peye[3];
+    float pfeet[3];
     int died;
 
     e = m->e;
@@ -613,12 +628,20 @@ static int land(Mind *m, Player *p)
         return 0;
     }
     dx = p->body.feet[0] - e->x;
+    dy = p->body.feet[1] - e->y;
     dz = p->body.feet[2] - e->z;
-    dist = df_sqrt(dx * dx + dz * dz);
+    ground = df_sqrt(dx * dx + dz * dz);
+    dist = df_sqrt(ground * ground + dy * dy);
     if (dist > FOES_MELEE + POINT_BLANK
-        || (dist > POINT_BLANK && absf(turn_between(e->yaw, df_atan2(dx, dz))) > AIM_LAND)) {
+        || (ground > POINT_BLANK && absf(turn_between(e->yaw, df_atan2(dx, dz))) > AIM_LAND)) {
         return 0;
     }
+    player_points(p, peye, pfeet);
+    eye_of(e, eye);
+    if (!combat_sight(scene, eye, peye)) {
+        return 0;
+    }
+    g_blow_reach = dist > g_blow_reach ? dist : g_blow_reach;
     combat_foe(&f, k, p->sheet.level, 0);
     /* A class enemy strikes with what it carries (loot_class_kit). */
     if (k->id >= ENEMY_FIRST_CLASS) {
@@ -639,6 +662,15 @@ static int land(Mind *m, Player *p)
         sfx_play(sfx_pain(p->sheet.race, p->sheet.female));
     }
     return died > 0;
+}
+
+/* A flyer keeps level with the player's feet, climbing or sinking at most this far. */
+static void fly_level(Mind *m, float most)
+{
+    float dy;
+
+    dy = m->last[1] - m->body.feet[1];
+    m->body.feet[1] += dy > most ? most : (dy < -most ? -most : dy);
 }
 
 /* A frame of one mind: its swing's frames, or its walk toward where it last saw the player. */
@@ -685,7 +717,7 @@ static int act(Mind *m, Player *p, const Scene *scene, float dt)
         e->frame = (df_u8)frame;
         if (!m->landed && frame >= ATTACK_HIT_FRAME) {
             m->landed = 1;
-            return land(m, p);
+            return land(m, p, scene);
         }
         return 0;
     }
@@ -699,6 +731,14 @@ static int act(Mind *m, Player *p, const Scene *scene, float dt)
     dist = df_sqrt(dx * dx + dz * dz);
     /* Near enough (in reach of the player, or at where it saw them): it stands and faces. */
     if (dist <= (m->sees ? STOP : m->body.radius)) {
+        /* A flyer overhead still comes down to the one it sees, or it would hang out of reach for good. */
+        if (m->flies && m->sees) {
+            const EnemyKind *flyer;
+
+            flyer = enemy_kind(m->kind);
+            fly_level(m, rules_walk_speed(flyer ? flyer->attribute[ATTR_SPEED] : 50) * RULES_UNITS_PER_M * dt);
+            e->y = m->body.feet[1];
+        }
         /* At where the player was last known and they are not here: on past it, along the way they were going. */
         if (!m->sees && !m->hears && m->search < SEARCH_MOST) {
             m->search++;
@@ -723,13 +763,7 @@ static int act(Mind *m, Player *p, const Scene *scene, float dt)
         sx = df_sin(e->yaw) * step;
         sz = df_cos(e->yaw) * step;
         if (m->flies) {
-            float dy;
-            float rise;
-
-            /* A flyer keeps level with the player's middle, climbing at its walking speed. */
-            dy = m->last[1] - m->body.feet[1];
-            rise = step;
-            m->body.feet[1] += dy > rise ? rise : (dy < -rise ? -rise : dy);
+            fly_level(m, step);
         }
         body_step(&m->body, scene, sx, sz, dt);
         e->moving = 1;
@@ -743,6 +777,11 @@ static int act(Mind *m, Player *p, const Scene *scene, float dt)
         }
     }
     return 0;
+}
+
+float foes_blow_reach(void)
+{
+    return g_blow_reach;
 }
 
 int foes_due(float distance, int frame, int index)

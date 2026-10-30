@@ -3066,6 +3066,56 @@ static void check_save(void)
     printf("save: a door, a body, a pile, a sheet and a pack, round the file and back\n");
 }
 
+/*
+ * The bug this guards: a Giant Bat 269 units over the cave's floor and 26 across
+ * the ground kept landing blows, killing a player who never moved in 29 seconds.
+ * Reach ignored height, and a flyer stopped sinking once near across the ground.
+ * A player stands at the hold's start for a minute and a half with the creatures
+ * awake: no blow comes from further than reach, feet to feet.
+ */
+static void check_blows_in_reach(void)
+{
+    Dungeon hold;
+    Level level;
+    Camera cam;
+    float x, y, z, yaw, pitch;
+    Character sheet;
+    Player p;
+    Input in;
+    int i;
+
+    keep_clear();
+    combat_reset();
+    foes_reset();
+    combat_seed(1234);
+    if (!dungeon_load(&hold) || !dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
+        check_expect(0, "reach: the hold's stream did not open");
+        return;
+    }
+    camera_set(&cam, x, y, z, yaw, pitch);
+    dunstream_fill(&cam);
+    character_new(&sheet, RACE_ARGONIAN, CLASS_WARRIOR, 1, "Test");
+    player_init(&p, &sheet);
+    player_place(&p, x, y, z, yaw, pitch);
+    memset(&in, 0, sizeof(in));
+    for (i = 0; i < 30 * 90; i++) {
+        player_step(&p, &in, &level.scene, 1.0f / 30.0f, 1);
+        clock_set_minute(clock_minute() + 0.2f / 30.0f);
+        foes_frame(&p, &level.scene, 1.0f / 30.0f);
+        combat_frame(1.0f / 30.0f);
+        /* Whole again each time: the test is of where blows come from, not of dying. */
+        if (p.sheet.health <= 0) {
+            p.sheet.health = p.sheet.health_max;
+        }
+    }
+    printf("reach: the furthest blow in 90 s at the hold's start came from %.0f units, %d awake\n", foes_blow_reach(), foes_awake());
+    check_expect(foes_blow_reach() > 0.0f, "reach: no creature came to strike at all");
+    check_expect(foes_blow_reach() <= FOES_MELEE + 10.0f, "reach: a blow came from out of reach");
+    foes_reset();
+    dunstream_close();
+    keep_clear();
+}
+
 void check_play(void)
 {
     check_rules();
@@ -3086,6 +3136,7 @@ void check_play(void)
     check_sheet();
     check_class_and_wear();
     check_creatures_more();
+    check_blows_in_reach();
     check_body_more();
     check_hands();
     check_rest();

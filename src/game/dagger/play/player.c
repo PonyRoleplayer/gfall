@@ -30,6 +30,11 @@ void player_init(Player *p, const Character *sheet)
     inventory_clear(&p->pack);
     p->flying = 0;
     p->god = 0;
+    p->run_time = 0.0f;
+    p->swimming = 0;
+    p->breath = 0;
+    p->breath_time = 0.0f;
+    p->running = 0;
 }
 
 int player_hurt(Player *p, int amount)

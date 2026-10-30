@@ -18,7 +18,8 @@
  * player 20 degrees a classic tick, walks at (Speed + 150) / 39.5 m/s
  * to melee range, and swings when the timer has run out and a roll of
  * Speed comes under Speed / 8 + 6; its swing lands on its attack
- * pose's third frame if the player is still in reach and before it. Out of sight it goes where it
+ * pose's third frame if the player is still in reach, height and all, before it
+ * and no wall between. Out of sight it goes where it
  * last saw the player, and after 200 classic ticks unseen it gives up,
  * standing where it is.
  *
@@ -76,6 +77,8 @@ int foes_frame(Player *p, const Scene *scene, float dt);
 void foes_reset(void);
 /* Minds awake now. */
 int foes_awake(void);
+/* The furthest any blow at the player has come from since foes_reset, feet to feet, height and all. */
+float foes_blow_reach(void);
 /*
  * Whether mind number index, this far from the player in units, moves on
  * frame number frame. Near, always; past FOES_NEAR every second frame;
