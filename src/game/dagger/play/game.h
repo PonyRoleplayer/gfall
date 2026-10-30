@@ -50,7 +50,7 @@ void game_enter(const Level *level, Camera *cam, const TravelPose *at);
 void game_arrive(const Level *level, Camera *cam, const TravelPose *at);
 /* The height of the player's eye over their feet, for travel_land. */
 float game_eye(void);
-/* Milliseconds a frame gives a stream when the spare time to the retrace cannot be worked out (game.c's stream_budget). */
+/* Milliseconds a frame gives a stream when the spare time to the retrace cannot be worked out (gfx_stream_budget). */
 #define GAME_STREAM_MS 3.0f
 /* One frame: GAME_*. dt is real seconds. */
 int game_frame(Camera *cam, const Input *in, float dt);

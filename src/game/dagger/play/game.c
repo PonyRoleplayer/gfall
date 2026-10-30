@@ -30,7 +30,6 @@
 #include "engine/core/mem.h"
 #include "engine/core/prof.h"
 #include "engine/gfx/gfx.h"
-#include "engine/gfx/glide.h"
 #include "engine/scene/interact.h"
 #include "engine/scene/keep.h"
 #include "engine/scene/stream.h"
@@ -248,33 +247,6 @@ static void service_chosen(void)
         screens_open_trade(&g_player, &shop, choice == SERVICE_REPAIR ? TRADE_REPAIR : TRADE_SELL, clock_day());
     }
     screen_over_play();
-}
-
-/*
- * Milliseconds a frame gives the stream: what is spare before the retrace this
- * frame makes anyway, within limits, as LEVELFALL's stream_budget. A world's
- * chunks are heavier than a dungeon's blocks: a fixed few ms falls behind the walk.
- */
-#define STREAM_PERIOD_MS (1000.0f / 60.0f)
-#define STREAM_MARGIN_MS 1.5f
-#define STREAM_MIN_MS 1.0f
-#define STREAM_MAX_MS 8.0f
-static float stream_budget(void)
-{
-    float busy;
-    float end;
-    float b;
-
-    busy = prof_last_ms(PROF_FRAME) - prof_last_ms(PROF_SWAP);
-    if (prof_per_ms() == 0 || busy <= 0.0f || !glide_vsync()) {
-        return GAME_STREAM_MS;
-    }
-    end = STREAM_PERIOD_MS;
-    while (end < busy + STREAM_MIN_MS + STREAM_MARGIN_MS) {
-        end += STREAM_PERIOD_MS;
-    }
-    b = end - busy - STREAM_MARGIN_MS;
-    return b < STREAM_MIN_MS ? STREAM_MIN_MS : (b > STREAM_MAX_MS ? STREAM_MAX_MS : b);
 }
 
 /*
@@ -876,7 +848,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
             float shift_x;
             float shift_z;
 
-            travel_update(cam, travel_radius(gfx_far()), stream_budget(), dt, &shift_x, &shift_z);
+            travel_update(cam, travel_radius(gfx_far()), gfx_stream_budget(GAME_STREAM_MS), dt, &shift_x, &shift_z);
             /* A stream's origin moved: it moved the scene and the camera, the game moves what it keeps itself. */
             if (shift_x != 0.0f || shift_z != 0.0f) {
                 player_shift(&g_player, shift_x, shift_z);
