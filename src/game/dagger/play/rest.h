@@ -12,7 +12,7 @@
  * at most), until fully healed, and loitering (the hours pass, nothing heals).
  * Time passes ten game minutes a step, and each whole hour of rest gives back
  * health, fatigue and spell points and is a use of Medical. A creature awake
- * stops it, and refuses it to begin with (foes_awake).
+ * stops it, and refuses it to begin with (foes_hunting).
  *
  * Plain C, drawing nothing: hostcheck drives it. screens.c puts it on the
  * screen and gives it the frame's time.

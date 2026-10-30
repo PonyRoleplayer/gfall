@@ -34,6 +34,7 @@
 #include "game/dagger/formats/worldmap.h"
 #include "game/dagger/formats/dungeon.h"
 #include "engine/scene/stream.h"
+#include "engine/scene/collide.h"
 #include "game/dagger/play/player.h"
 #include "game/dagger/play/rules.h"
 #include "game/dagger/play/character.h"
@@ -3174,6 +3175,41 @@ static void check_blows_in_reach(void)
     player_place(&p, x, y, z, yaw, pitch);
     memset(&in, 0, sizeof(in));
     for (i = 0; i < 30 * 90; i++) {
+        /* Walls keep sleepers from a player who stands still: every 3 s, on to a creature that has a clear way to them, roused. */
+        if (i % (30 * 3) == 0) {
+            int slot;
+            int moved;
+
+            moved = 0;
+            for (slot = 0; slot < stream_slots() && !moved; slot++) {
+                Entity *ents;
+                int first;
+                int n;
+                int k;
+
+                ents = stream_slot_entities(slot, &first, &n);
+                for (k = 0; ents && k < n && !moved; k++) {
+                    float from[3];
+                    float to[3];
+
+                    if (!ents[k].live || ents[k].dead || dunstream_kind(&ents[k], 0) < 0) {
+                        continue;
+                    }
+                    from[0] = ents[k].x;
+                    from[1] = ents[k].y + 40.0f;
+                    from[2] = ents[k].z;
+                    to[0] = ents[k].x + 120.0f;
+                    to[1] = from[1];
+                    to[2] = ents[k].z;
+                    /* A turn of creatures: the one numbered by the time, if it has room beside it. */
+                    if (((first + k) * 7) % 11 == (i / 90) % 11 && combat_sight(&level.scene, from, to)) {
+                        player_place(&p, to[0], from[1] + 28.0f, to[2], p.yaw, 0.0f);
+                        foes_alert(&ents[k]);
+                        moved = 1;
+                    }
+                }
+            }
+        }
         player_step(&p, &in, &level.scene, 1.0f / 30.0f, 1);
         clock_set_minute(clock_minute() + 0.2f / 30.0f);
         foes_frame(&p, &level.scene, 1.0f / 30.0f);
@@ -3182,6 +3218,14 @@ static void check_blows_in_reach(void)
         if (p.sheet.health <= 0) {
             p.sheet.health = p.sheet.health_max;
         }
+    }
+    {
+        int gathered;
+        int dropped;
+
+        /* The last gather of the fight: nothing left out. */
+        collide_stats(&gathered, &dropped);
+        check_expect(dropped == 0, "reach: a sight ray left walls out of its gather");
     }
     printf("reach: the furthest blow in 90 s at the hold's start came from %.0f units, %d awake\n", foes_blow_reach(), foes_awake());
     check_expect(foes_blow_reach() > 0.0f, "reach: no creature came to strike at all");
@@ -4332,6 +4376,143 @@ static void check_goto(void)
     printf("goto: Sentinel by name, Daggerfall by numbers; %d of %d places over the map stood at\n", stood, tried);
 }
 
+/*
+ * Sight and walls: from the hold's start, a ray cut in pieces says the same as one
+ * cut far finer, over the whole ring; and over a long fight no flyer is ever inside
+ * a wall, and few wake who have no way to the player.
+ */
+static void check_senses(void)
+{
+    Dungeon hold;
+    Level level;
+    Camera cam;
+    float x, y, z, yaw, pitch;
+    Character sheet;
+    Player p;
+    Input in;
+    int flyers_in_walls;
+    int rays;
+    int walled;
+    int i;
+    int slot;
+
+    keep_clear();
+    combat_reset();
+    foes_reset();
+    combat_seed(4321);
+    if (!dungeon_load(&hold) || !dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
+        check_expect(0, "senses: the hold's stream did not open");
+        return;
+    }
+    camera_set(&cam, x, y, z, yaw, pitch);
+    dunstream_fill(&cam);
+    character_new(&sheet, RACE_ARGONIAN, CLASS_WARRIOR, 1, "Test");
+    player_init(&p, &sheet);
+    player_place(&p, x, y, z, yaw, pitch);
+    /* Every creature in the ring to the player: most of the hold is walls between them. */
+    rays = 0;
+    walled = 0;
+    for (slot = 0; slot < stream_slots(); slot++) {
+        Entity *ents;
+        int first;
+        int n;
+
+        ents = stream_slot_entities(slot, &first, &n);
+        for (i = 0; ents && i < n; i++) {
+            float eye[3];
+            float to[3];
+            int gathered;
+            int dropped;
+
+            if (dunstream_kind(&ents[i], 0) < 0) {
+                continue;
+            }
+            eye[0] = ents[i].x;
+            eye[1] = ents[i].y + 40.0f;
+            eye[2] = ents[i].z;
+            to[0] = x;
+            to[1] = y;
+            to[2] = z;
+            rays++;
+            walled += !combat_sight(&level.scene, eye, to);
+            collide_stats(&gathered, &dropped);
+            check_expect(dropped == 0, "senses: a sight ray overflowed its gather");
+        }
+    }
+    check_expect(rays >= 40 && walled >= rays - 4, "senses: creatures across the hold see the player's start through walls");
+    /* A long fight: no flyer's body ever cuts a wall, tgm keeping the player up. */
+    flyers_in_walls = 0;
+    p.god = 1;
+    memset(&in, 0, sizeof(in));
+    for (i = 0; i < 30 * 60; i++) {
+        int m;
+
+        player_step(&p, &in, &level.scene, 1.0f / 30.0f, 1);
+        clock_set_minute(clock_minute() + 0.2f / 30.0f);
+        foes_frame(&p, &level.scene, 1.0f / 30.0f);
+        combat_frame(1.0f / 30.0f);
+        m = foes_flyers_in_walls(&level.scene);
+        flyers_in_walls += m;
+    }
+    check_expect(flyers_in_walls == 0, "senses: a flyer's body went into a wall");
+    printf("senses: %d of %d creatures walled from the player's start; %d flyer frames in walls, %d awake after a minute\n",
+           walled, rays, flyers_in_walls, foes_awake());
+    /* With the AI off, nobody hunts: a rest is allowed. */
+    foes_set_on(0);
+    check_expect(!foes_hunting(), "senses: the AI off, someone still hunts");
+    foes_set_on(1);
+    foes_reset();
+    check_expect(!foes_hunting(), "senses: minds let go, someone still hunts");
+    dunstream_close();
+    keep_clear();
+    /* The click that closes a screen is no swing: not while held, not on its release, and the next press is one. */
+    weapon_gate(0, 0);
+    weapon_gate(0, 0);
+    check_expect(!weapon_gate(0, 0), "senses: the gate shut with no screen");
+    check_expect(weapon_gate(1, 1), "senses: the gate open under a screen");
+    check_expect(weapon_gate(0, 1), "senses: the closing click, still held, gets through");
+    check_expect(weapon_gate(0, 0), "senses: the closing click's release gets through");
+    check_expect(!weapon_gate(0, 1), "senses: the next press does not get through");
+    weapon_gate(0, 0);
+    /* Two weapons: the doll holds the one in use, in one hand. */
+    {
+        static df_u8 pixels[DOLL_W * DOLL_H];
+        static df_u8 owner[DOLL_W * DOLL_H];
+        Item it;
+        Character c;
+        Inventory pack;
+        int k;
+        int left;
+        int right;
+
+        character_new(&c, RACE_ARGONIAN, CLASS_WARRIOR, 1, "Test");
+        inventory_clear(&pack);
+        item_make(&it, ITEM_LONGSWORD, 0);
+        check_expect(inventory_wear(&pack, inventory_add(&pack, &it)), "doll: first sword");
+        item_make(&it, ITEM_DAGGER, 0);
+        check_expect(inventory_wear(&pack, inventory_add(&pack, &it)), "doll: second blade");
+        check_expect(pack.worn[EQUIP_RIGHT_HAND] >= 0 && pack.worn[EQUIP_LEFT_HAND] >= 0, "doll: two hands not filled");
+        check_expect(doll_compose(pixels, owner, &c, &pack), "doll: no doll");
+        left = 0;
+        right = 0;
+        for (k = 0; k < DOLL_W * DOLL_H; k++) {
+            left += owner[k] == EQUIP_LEFT_HAND;
+            right += owner[k] == EQUIP_RIGHT_HAND;
+        }
+        check_expect(right > 0 && left == 0, "doll: both weapons drawn in one hand");
+        check_expect(inventory_swap_hands(&pack), "doll: no swap");
+        doll_compose(pixels, owner, &c, &pack);
+        left = 0;
+        right = 0;
+        for (k = 0; k < DOLL_W * DOLL_H; k++) {
+            left += owner[k] == EQUIP_LEFT_HAND;
+            right += owner[k] == EQUIP_RIGHT_HAND;
+        }
+        check_expect(left > 0 && right == 0, "doll: swapping does not show the other weapon");
+        doll_forget_files();
+    }
+}
+
 /* What the world thinks, through a save file and back. */
 static void check_standing_saved(void)
 {
@@ -4413,6 +4594,7 @@ void check_play(void)
     check_shop_and_court();
     check_bank();
     check_people_in_town();
+    check_senses();
     check_goto();
     check_standing_saved();
 }

@@ -40,6 +40,8 @@ static const df_u8 g_struck_part[20] = {
 /* The least a blow knocks back. */
 #define KNOCK_LEAST 15
 /* Off a wall by this much a creature still counts as seen. */
+/* How long a piece of a sight ray is gathered at once: about a room. */
+#define RAY_PIECE 256.0f
 #define SIGHT_SLACK 4.0f
 
 static df_u32 g_dice = 0x2B0F1u;
@@ -350,6 +352,39 @@ static void set_health(Keep *k, int h)
     k->game[COMBAT_KEEP_HEALTH + 1] = (df_u8)((h >> 8) & 0xff);
 }
 
+/*
+ * The nearest wall along unit d from a, within len, gathered a short piece at a
+ * time. One box round a long ray holds whole rooms: past COLLIDE_SET triangles the
+ * rest are left out, and the ray then passes through walls it never gathered. By
+ * pieces no gather comes near that, and a ray stopped early gathers no further.
+ */
+static int ray_by_pieces(const float *a, const float *d, float len, float *t)
+{
+    float along;
+
+    for (along = 0.0f; along < len; along += RAY_PIECE) {
+        float from[3];
+        float to[3];
+        float piece;
+        float hit;
+        int i;
+
+        piece = len - along > RAY_PIECE ? RAY_PIECE : len - along;
+        for (i = 0; i < 3; i++) {
+            from[i] = a[i] + d[i] * along;
+            to[i] = from[i] + d[i] * piece;
+        }
+        collide_gather((from[0] < to[0] ? from[0] : to[0]) - 2.0f, (from[1] < to[1] ? from[1] : to[1]) - 2.0f,
+                       (from[2] < to[2] ? from[2] : to[2]) - 2.0f, (from[0] > to[0] ? from[0] : to[0]) + 2.0f,
+                       (from[1] > to[1] ? from[1] : to[1]) + 2.0f, (from[2] > to[2] ? from[2] : to[2]) + 2.0f);
+        if (collide_ray(from, d, piece, &hit)) {
+            *t = along + hit;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int combat_sight(const Scene *scene, const float *a, const float *b)
 {
     float d[3];
@@ -371,10 +406,7 @@ int combat_sight(const Scene *scene, const float *a, const float *b)
     for (i = 0; i < 3; i++) {
         d[i] /= len;
     }
-    collide_gather((a[0] < b[0] ? a[0] : b[0]) - 2.0f, (a[1] < b[1] ? a[1] : b[1]) - 2.0f,
-                   (a[2] < b[2] ? a[2] : b[2]) - 2.0f, (a[0] > b[0] ? a[0] : b[0]) + 2.0f,
-                   (a[1] > b[1] ? a[1] : b[1]) + 2.0f, (a[2] > b[2] ? a[2] : b[2]) + 2.0f);
-    return !collide_ray(a, d, len, &t) || t >= len - SIGHT_SLACK;
+    return !ray_by_pieces(a, d, len, &t) || t >= len - SIGHT_SLACK;
 }
 
 int combat_ray(const Scene *scene, const float *a, const float *b, float *t)
@@ -397,10 +429,7 @@ int combat_ray(const Scene *scene, const float *a, const float *b, float *t)
     for (i = 0; i < 3; i++) {
         d[i] /= len;
     }
-    collide_gather((a[0] < b[0] ? a[0] : b[0]) - 2.0f, (a[1] < b[1] ? a[1] : b[1]) - 2.0f,
-                   (a[2] < b[2] ? a[2] : b[2]) - 2.0f, (a[0] > b[0] ? a[0] : b[0]) + 2.0f,
-                   (a[1] > b[1] ? a[1] : b[1]) + 2.0f, (a[2] > b[2] ? a[2] : b[2]) + 2.0f);
-    return collide_ray(a, d, len, t) && *t < len - SIGHT_SLACK;
+    return ray_by_pieces(a, d, len, t) && *t < len - SIGHT_SLACK;
 }
 
 /* A creature killed lies as its body, on the floor under it; one with no body's picture goes. */

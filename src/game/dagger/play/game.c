@@ -334,7 +334,7 @@ static void bag_over_play(Entity *searched)
 /* Rest over the stilled world, unless a creature awake forbids it (DFU's rest window). */
 static void rest_over_play(void)
 {
-    if (foes_awake() > 0) {
+    if (foes_hunting()) {
         interact_say("You cannot rest with enemies nearby.");
         return;
     }
@@ -758,7 +758,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
                 int how;
 
                 g_last_minute++;
-                how = player_minute(&g_player, foes_awake() > 0);
+                how = player_minute(&g_player, foes_hunting());
                 if (how == PLAYER_DIED) {
                     die();
                     break;
@@ -777,7 +777,8 @@ int game_frame(Camera *cam, const Input *in, float dt)
         /* The weapon in hand follows the pack (equip, additem, a break); the mouse swings it. */
         player_check_weapon(&g_player);
         weapon_hold(inventory_weapon(&g_player.pack));
-        if (!closed) {
+        /* The button that closed a screen, held or let go after it, is not a swing. */
+        if (!weapon_gate(closed, (in->held & INPUT_BIT(INPUT_ATTACK)) != 0)) {
             attack_input(in, dt);
         }
         weapon_step(dt, g_player.sheet.attribute[ATTR_SPEED]);
@@ -794,17 +795,8 @@ int game_frame(Camera *cam, const Input *in, float dt)
             }
         }
         /* tcl 1 (walker_on): the body walks and collides; tcl 0: it flies through everything. */
-        {
-            Input walking;
-
-            /* A blade's gesture takes the mouse while the button is down; a bow is aimed with it. */
-            walking = *in;
-            if ((in->held & INPUT_BIT(INPUT_ATTACK)) && !weapon_is_bow()) {
-                walking.look_dx = 0;
-                walking.look_dy = 0;
-            }
-            player_step(&g_player, &walking, &g_level->scene, dt, walker_on());
-        }
+        /* The mouse both turns the view and, the button held, chooses a blade's swing: classic stands the view still, which is not liked. */
+        player_step(&g_player, in, &g_level->scene, dt, walker_on());
         {
             float speed;
             float height;

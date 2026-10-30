@@ -237,7 +237,7 @@ static int one_step(void)
     if (combat_roll(ENCOUNTER_ODDS) == 0) {
         foes_rouse_nearest(g.player->body.feet);
     }
-    if (foes_awake() > 0) {
+    if (foes_hunting()) {
         return end_rest("You are awoken by an enemy.");
     }
     if (g.kind == KIND_HEALED) {

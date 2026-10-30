@@ -12,7 +12,9 @@
  *
  * A creature sleeps where its marker stood until it sees the player
  * (within FOES_SIGHT, in front of it, no wall between their eyes) or is
- * struck (foes_alert). A passive one (its marker's) wakes only when
+ * struck (foes_alert). A mind sees only what is in front of it too, as a sleeper.
+ * A flyer's climb is swept like any move, so it stops at ceilings and floors.
+ * A passive one (its marker's) wakes only when
  * struck. Awake, it has a mind: a body of its size under gravity (none
  * for a flyer), a give-up count, a melee timer. It turns toward the
  * player 20 degrees a classic tick, walks at (Speed + 150) / 39.5 m/s
@@ -25,9 +27,11 @@
  *
  * Beyond sight (EnemySenses, EnemyMotor). A creature that knows of the player
  * hears them within FOES_HEARING, through doors but not walls, and keeps
- * after them. A sleeper within FOES_STEALTH may notice them through anything:
- * once a game minute, a roll against 2 x (distance x Stealth / 1024), so the
- * nearer the likelier and the better the skill the less. Having lost the player
+ * after them. A sleeper within FOES_STEALTH may notice them: once a game
+ * minute, a roll against 2 x (distance x Stealth / 1024), so the nearer the
+ * likelier and the better the skill the less. Classic rolls through anything;
+ * here the way to the player must be open or through a door, and the distance
+ * counts height, so a whole level does not wake at once. Having lost the player
  * it walks on past where they were last, along the way they were going, a step
  * further each time. One that can opens an unlocked door in its way.
  * A blow knocks a creature back, standing it still while it slides.
@@ -73,10 +77,14 @@ int foes_stealth_chance(float distance, int stealth);
  * ticks dt brings, moving and striking. 1 when a blow killed the player.
  */
 int foes_frame(Player *p, const Scene *scene, float dt);
+/* How many flyers' bodies cut a wall where they are now. A test's: none should. */
+int foes_flyers_in_walls(const Scene *scene);
 /* Every mind let go: a new place, or the player back at the start. */
 void foes_reset(void);
 /* Minds awake now. */
 int foes_awake(void);
+/* 1 when any mind awake is after the player: none with the AI off. What stops a rest and tires them as a fight. */
+int foes_hunting(void);
 /* The stream's origin moved: every mind's body and what it remembers, by what the stream took off the entities. */
 void foes_shift(float dx, float dz);
 /* A line on the log for each mind awake: what it is, what it is doing, how far from feet. The console's foes. */

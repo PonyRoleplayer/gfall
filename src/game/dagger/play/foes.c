@@ -10,6 +10,7 @@
 #include "game/dagger/formats/sndfile.h"
 #include "game/dagger/tables/enemies.h"
 #include "engine/scene/body.h"
+#include "engine/scene/collide.h"
 #include "engine/scene/stream.h"
 #include "engine/scene/walker.h"
 
@@ -202,6 +203,41 @@ int foes_awake(void)
         n += g_mind[i].e != 0;
     }
     return n;
+}
+
+int foes_flyers_in_walls(const Scene *scene)
+{
+    int n;
+    int i;
+
+    n = 0;
+    if (!collide_use(scene)) {
+        return 0;
+    }
+    for (i = 0; i < FOES_MINDS; i++) {
+        const Mind *m;
+        float c[3];
+        float half;
+
+        m = &g_mind[i];
+        if (!m->e || !m->flies) {
+            continue;
+        }
+        half = m->body.height * 0.5f;
+        c[0] = m->body.feet[0];
+        c[1] = m->body.feet[1] + half;
+        c[2] = m->body.feet[2];
+        collide_set_shape(m->body.radius, half);
+        collide_gather(c[0] - m->body.radius - 2.0f, c[1] - half - 2.0f, c[2] - m->body.radius - 2.0f,
+                       c[0] + m->body.radius + 2.0f, c[1] + half + 2.0f, c[2] + m->body.radius + 2.0f);
+        n += collide_overlap(c);
+    }
+    return n;
+}
+
+int foes_hunting(void)
+{
+    return g_on && foes_awake() > 0;
 }
 
 static Mind *mind_of(const Entity *e)
@@ -402,9 +438,17 @@ static int minute_roll(const Entity *e, int minute)
     return (int)(h % 100u);
 }
 
-/* Whether a sleeper notices the player, sight or no sight, this minute. */
-static int notices(const Entity *e, Player *p, float distance)
+/*
+ * Whether the way between two points is open, or stopped only by one door: what
+ * a sound comes through. *door the door it met, or -1.
+ */
+static int open_way(const Scene *scene, const float *from, const float *to, int *door);
+
+/* Whether a sleeper notices the player this minute: the roll first, it is cheap; then an open way to them. */
+static int notices(const Entity *e, Player *p, const Scene *scene, const float *eye, const float *peye, float distance)
 {
+    int door;
+
     int minute;
 
     if (distance > FOES_STEALTH) {
@@ -416,7 +460,8 @@ static int notices(const Entity *e, Player *p, float distance)
         g_stealth_minute = minute;
         character_tally(&p->sheet, SKILL_STEALTH, 1);
     }
-    return minute_roll(e, minute) >= foes_stealth_chance(distance, p->sheet.skill[SKILL_STEALTH]);
+    return minute_roll(e, minute) >= foes_stealth_chance(distance, p->sheet.skill[SKILL_STEALTH])
+           && open_way(scene, eye, peye, &door);
 }
 
 /* The door in the way at a point its ray stopped, by number; -1 for none. */
@@ -445,35 +490,55 @@ static int door_at(const Scene *scene, const float *at)
  * (EnemySenses' ray meets only static geometry). A ray that stops at a door
  * is tried again from past it, and the door is remembered.
  */
-static int hears_player(Mind *m, const Scene *scene, const float *from, const float *peye)
+static int open_way(const Scene *scene, const float *from, const float *to, int *door)
 {
     float d[3];
     float len;
     float t;
     float at[3];
-    int door;
     int i;
 
+    *door = -1;
     for (i = 0; i < 3; i++) {
-        d[i] = peye[i] - from[i];
+        d[i] = to[i] - from[i];
     }
     len = df_sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
-    if (len > FOES_HEARING || len < 1.0f || !combat_ray(scene, from, peye, &t)) {
-        return len <= FOES_HEARING;
+    if (len < 1.0f || !combat_ray(scene, from, to, &t)) {
+        return 1;
     }
     for (i = 0; i < 3; i++) {
         d[i] /= len;
         at[i] = from[i] + d[i] * t;
     }
-    door = door_at(scene, at);
-    if (door < 0) {
+    *door = door_at(scene, at);
+    if (*door < 0) {
         return 0;
     }
-    m->door = door;
     for (i = 0; i < 3; i++) {
         at[i] += d[i] * DOOR_THROUGH;
     }
-    return combat_sight(scene, at, peye);
+    return combat_sight(scene, at, to);
+}
+
+static int hears_player(Mind *m, const Scene *scene, const float *from, const float *peye)
+{
+    float dx;
+    float dy;
+    float dz;
+    int door;
+    int heard;
+
+    dx = peye[0] - from[0];
+    dy = peye[1] - from[1];
+    dz = peye[2] - from[2];
+    if (dx * dx + dy * dy + dz * dz > FOES_HEARING * FOES_HEARING) {
+        return 0;
+    }
+    heard = open_way(scene, from, peye, &door);
+    if (door >= 0) {
+        m->door = door;
+    }
+    return heard;
 }
 
 /* A door it knows of within reach, closed and not locked, opens, if it is a creature that can. */
@@ -579,7 +644,7 @@ static void look_for(Player *p, const Scene *scene, const float *peye)
         /* 180 degrees: anything not behind it; or, sight or no sight, it notices the player. */
         far = dx * dx + dy * dy + dz * dz > FOES_SIGHT * FOES_SIGHT;
         seen = !far && df_sin(e->yaw) * dx + df_cos(e->yaw) * dz >= 0.0f && combat_sight(scene, eye, peye);
-        if (seen || (!far && notices(e, p, df_sqrt(dx * dx + dz * dz)))) {
+        if (seen || (!far && notices(e, p, scene, eye, peye, df_sqrt(dx * dx + dy * dy + dz * dz)))) {
             Mind *m;
 
             m = wake(e, kind);
@@ -623,7 +688,9 @@ static void think(Mind *m, const Player *p, const Scene *scene, const float *pey
 
         m->look_in = SIGHT_EVERY;
         eye_of(e, eye);
-        m->sees = combat_sight(scene, eye, peye);
+        /* In front of it, as a sleeper's look: one that has turned away has lost the player to its eyes. */
+        m->sees = df_sin(e->yaw) * (peye[0] - eye[0]) + df_cos(e->yaw) * (peye[2] - eye[2]) >= 0.0f
+                  && combat_sight(scene, eye, peye);
         m->hears = !m->sees && hears_player(m, scene, eye, peye);
     }
     open_door(m, scene, enemy_kind(m->kind));
@@ -727,13 +794,33 @@ static int land(Mind *m, Player *p, const Scene *scene)
     return died > 0;
 }
 
-/* A flyer keeps level with the player's feet, climbing or sinking at most this far. */
-static void fly_level(Mind *m, float most)
+/*
+ * A flyer keeps level with the player's feet, climbing or sinking at most this far.
+ * Swept like any move: set straight on its feet it rose through ceilings and sank
+ * through floors, and the body's next step threw it out on the far side of a wall.
+ */
+static void fly_level(Mind *m, const Scene *scene, float most)
 {
+    float c[3];
+    float half;
     float dy;
 
     dy = m->last[1] - m->body.feet[1];
-    m->body.feet[1] += dy > most ? most : (dy < -most ? -most : dy);
+    dy = dy > most ? most : (dy < -most ? -most : dy);
+    if (df_absf(dy) < 0.01f || !collide_use(scene)) {
+        return;
+    }
+    half = m->body.height * 0.5f;
+    c[0] = m->body.feet[0];
+    c[1] = m->body.feet[1] + half;
+    c[2] = m->body.feet[2];
+    collide_set_shape(m->body.radius, half);
+    collide_gather(c[0] - m->body.radius - 2.0f, c[1] - half - df_absf(dy) - 2.0f, c[2] - m->body.radius - 2.0f,
+                   c[0] + m->body.radius + 2.0f, c[1] + half + df_absf(dy) + 2.0f, c[2] + m->body.radius + 2.0f);
+    collide_slide(c, 0.0f, dy, 0.0f, 0);
+    m->body.feet[0] = c[0];
+    m->body.feet[1] = c[1] - half;
+    m->body.feet[2] = c[2];
 }
 
 /* A frame of one mind: its swing's frames, or its walk toward where it last saw the player. */
@@ -799,8 +886,10 @@ static int act(Mind *m, Player *p, const Scene *scene, float dt)
             const EnemyKind *flyer;
 
             flyer = enemy_kind(m->kind);
-            fly_level(m, rules_walk_speed(flyer ? flyer->attribute[ATTR_SPEED] : 50) * RULES_UNITS_PER_M * dt);
+            fly_level(m, scene, rules_walk_speed(flyer ? flyer->attribute[ATTR_SPEED] : 50) * RULES_UNITS_PER_M * dt);
+            e->x = m->body.feet[0];
             e->y = m->body.feet[1];
+            e->z = m->body.feet[2];
         }
         /* At where the player was last known and they are not here: on past it, along the way they were going. */
         if (!m->sees && !m->hears && m->search < SEARCH_MOST) {
@@ -826,7 +915,7 @@ static int act(Mind *m, Player *p, const Scene *scene, float dt)
         sx = df_sin(e->yaw) * step;
         sz = df_cos(e->yaw) * step;
         if (m->flies) {
-            fly_level(m, step);
+            fly_level(m, scene, step);
         }
         body_step(&m->body, scene, sx, sz, dt);
         e->moving = 1;

@@ -845,6 +845,11 @@ static void click_local(int i)
         }
         if (inventory_wear(&g.player->pack, i)) {
             wear_changed();
+            /* The doll shows the hand in use: say where one that went to the other is. */
+            if (g.player->pack.worn[EQUIP_LEFT_HAND] == i && inventory_hand_place(&g.player->pack) != EQUIP_LEFT_HAND
+                && weapon_template(g.player->pack.item[i].template_id)) {
+                g.note = "In your other hand: swap hands to use it.";
+            }
         } else {
             g.note = "You cannot wear that.";
         }

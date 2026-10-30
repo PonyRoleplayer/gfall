@@ -352,7 +352,7 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **The file** (`play/weapon.c`): the hand's WEAP `cif`, `WEAPON##.CIF`; bare hands `WEAPON10.CIF`, the fist (`WEAPON11.CIF` is the werecreature's claws). `weapon_hold` follows the pack every frame and reads the file again only when the weapon or its material changes. The file lives in the CIF set's own heap and goes with it (`cif_open`).
 - **Where it stands:** every frame where classic draws it on its 320 × 200 screen, from the file (`CifFrame.x`, `y`: an IMG's own header, a swing's bytes 6 and 8). Every frame's box sits on the screen's bottom. Drawn under the compass and the bars.
 - **Cropped at load:** a swing's frames are all stored at the whole swing's box, and one frame fills about 30% of it on average. Each frame goes on the card cut to the rectangle of its drawn pixels (`cif_bounds`: index 0 is clear), drawn at its place moved by the crop's corner, so the same pixels land on the same screen pixels. Worked out from the file each time it is read, for any `WEAPON##.CIF` a mod puts in ARENA2; nothing is kept per weapon. `check_weapon` checks every frame's crop loses no pixel and is tight.
-- **The mouse swings** (`weapon_gesture`, DFU's WeaponManager). With the attack button down the view stands still and the mouse's motion counts, the last second's. At 32 counts the swing goes that way, by the motion's angle: right within 15 degrees of level, up from there to 165, left to 195, down-left to 255, down to 285, down-right to 345 (groups 1..6: down, down-left, left, right, down-right, up). A press and release with no such motion swings at random, as a click always did: ours, so a click still works. Its 5 frames show 3 × (115 − Speed) / 980 s each (`rules_swing_frame_time`, DFU's GetMeleeWeaponAnimTime), about a second for Speed 50; then the armed picture, with no frame held (DFU's FPSWeapon). A click during a swing does nothing; the click that closes a menu does not swing. The swing stands still with the world in the console and the menus.
+- **The mouse swings** (`weapon_gesture`, DFU's WeaponManager). With the attack button down, the mouse's motion chooses a blade's swing, and the view keeps turning: classic stands it still, and a tester took that for a bug. `weapon_gate` keeps the click that closes a screen from swinging, held or on its release. A press and release with no motion swings at random.
 - **A bow** has no armed picture: nothing shows at rest. It needs an arrow: the press draws, the drawn frame (3) holds while the button is down, with the view free to aim, and the release looses, an arrow spent. The shot lands at once on the first creature along the view within sight (`combat_shoot`): DFU flies a missile, which needs a thing in the world this does not have yet.
 - **The material** recolours the picture by classic's tables (`cif_metal`; Loot and the inventory, Colours).
 - **The card:** the armed picture is kept; the swing's frame showing is sent when it shows and let go when the next one does (a frame every fifth of a second). A cutout goes as 8-bit P_8 with the chroma key on index 0 (the engine's `cc5ec07`, `docs/pictures.md`), or as 16-bit 1555 on a glide2x.dll without the key. Cropped and keyed, the largest frame is 39 KB, the bow drawn back (`WEAPON09.CIF`, 204 × 179); 65 KB whole, 78 KB cropped as 1555. The largest melee frame is the staff's, 271 × 125. With the HUD, the armed picture (under 13 KB) and the controls screen (66 KB) that is at most about 140 KB of `GAME_PICTURE_KB`'s 256 on a keyed card, about 195 KB without the key. `check_weapon` measures both cards and fails past 48 KB keyed or 96 KB at 1555.
@@ -377,6 +377,10 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **Not yet:** creatures of a place loaded whole; a class enemy's poisoned weapon.
 
 ### Creatures awake (built: P4's fourth slice)
+**Rays go in pieces** (`ray_by_pieces`, `RAY_PIECE` 256). One gather round a long sight ray held whole rooms, passed `COLLIDE_SET`, and left walls out, so creatures saw through them and could not lose the player. No gather a ray makes may come near the limit.
+
+**Noticing needs an open way.** Classic's stealth roll goes through anything. Here the way must be open or through one door, and the distance counts height: a tester found a whole level waking. From the hold's start, 42 of 42 creatures are walled off. A mind only sees in front of it, as a sleeper does. A flyer's climb is swept (`fly_level`), so it stops at ceilings and floors. `foes_hunting` is what stops a rest and tires as a fight: nobody hunts with the AI off.
+
 
 `play/foes.c`, by Daggerfall Unity's EnemySenses, EnemyMotor and EnemyAttack, read for what they do.
 
@@ -472,7 +476,7 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Items | clothing, jewellery, ingredients, books, potions, maps, and the screen's other tabs | P11, later |
 | Items | clothing's dyes | with clothing |
 | Inventory | the Wagon button (P12), the Use button (P11) | as named |
-| Inventory | a left-hand weapon shows the right hand's picture on the doll | later |
+| Inventory | two weapons: the doll shows the one in use, as the pictures have one weapon hand; classic's own way not found | later |
 | Inventory | the info box's lines are ours, not TEXT.RSC's | later |
 | Loot | the other columns of `LOOT` wait for their items | P11, later |
 | Loot | a body or a heap takes nothing put on it (a choice, see What can be searched) | - |

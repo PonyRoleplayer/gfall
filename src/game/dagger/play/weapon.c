@@ -225,6 +225,22 @@ int weapon_swing_of_motion(int dx, int dy)
     return angle < 285.0f ? SWING_DOWN : SWING_DOWN_RIGHT;
 }
 
+int weapon_gate(int screen_up, int held)
+{
+    static int shut;
+
+    if (screen_up) {
+        shut = 1;
+    } else if (!held) {
+        /* Let go: this frame's release is the old click's, the next press a new one. */
+        if (shut) {
+            shut = 0;
+            return 1;
+        }
+    }
+    return shut;
+}
+
 int weapon_gesture(int pressed, int held, int released, int dx, int dy, float dt)
 {
     int begun;

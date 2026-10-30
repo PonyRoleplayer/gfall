@@ -213,6 +213,14 @@ int doll_compose(df_u8 *pixels, df_u8 *owner, const Character *c, const Inventor
     lay_head(&canvas, c->female ? race->heads_female : race->heads_male, c->face);
     worn = places_in_order(pack, order);
     for (i = 0; i < worn; i++) {
+        /*
+         * The pictures have one weapon hand: a weapon's picture is the same in either.
+         * The doll holds the one in use, as both would lie in one hand; swapping hands shows the other.
+         */
+        if ((order[i] == EQUIP_LEFT_HAND || order[i] == EQUIP_RIGHT_HAND) && order[i] != inventory_hand_place(pack)
+            && weapon_template(pack->item[pack->worn[order[i]]].template_id)) {
+            continue;
+        }
         lay_worn(&canvas, c, &pack->item[pack->worn[order[i]]], order[i]);
     }
     return 1;

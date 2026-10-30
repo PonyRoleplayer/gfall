@@ -37,6 +37,12 @@ int weapon_attack(void);
  * draws on the press, holds, and looses on the release.
  */
 #define WEAPON_GESTURE 32
+/*
+ * Whether the attack button is to be ignored this frame: a screen was up this
+ * frame, or it was and the button has not been let go since. Without it the click
+ * that closes a screen swings when let go.
+ */
+int weapon_gate(int screen_up, int held);
 int weapon_gesture(int pressed, int held, int released, int dx, int dy, float dt);
 /* The swing a motion gives: a mouse's dx (right) and dy (down), 1..6 by the swing groups. */
 int weapon_swing_of_motion(int dx, int dy);
