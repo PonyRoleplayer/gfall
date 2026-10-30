@@ -12,23 +12,33 @@ GFALL (`apps/gfall/main.c`) is the game: classic's title and start menu, then Pr
 
 ## The pieces
 
+Built, in `src/game/dagger/play/`:
+
 ```
-apps/gfall/main.c           the window, the loop, the keys: calls play_frame
-src/game/dagger/places/
-  travel    where the player is, and going through a passage (moved here from LEVELFALL's view code)
-src/game/dagger/play/
-  game      the states (title, new character, play, menu, loading) and one frame of play
-  body      the player in the world: the walker, run, jump, swim, fall damage
-  sheet     the character record: attributes, skills, vitals, level
-  rules     the sums: derived values, skill rolls, to-hit, damage (pure functions)
-  foes      what a creature does: wake, chase, attack, hurt, die
-  items     items, gold, the inventory, loot
-  hud       the play screen: crosshair, compass, vitals, the line of text
-  screens   the menus: character, inventory, rest, the map
-  save      writing and reading a game
+game      one frame of play, Escape's pause, the use key
+player    the player in the world: a body under rig_first, walk, run, jump, fall
+character the sheet: attributes, skills, vitals, armour
+rules     the sums: speeds, vitals, carrying (pure functions)
+combat    the player's blows and a creature's, health kept in its keep row
+foes      what a creature does: wake, chase, strike
+inventory items, gold, what is worn and the armour it gives
+loot      what a body or a heap of treasure holds
+pile      what the player drops
+weapon    the weapon in hand over the view
+doll      the paper doll, drawn in memory
+bag       the inventory screen, composed in memory, and its clicks
+bagview   that screen on the card
+overlay   the HUD: compass, vitals, crosshair
+menu      the title, start, options and controls screens
+keys      the bindings in DATA\KEYS.DAT
+screen    classic's 320 x 200 on the card
+sfx       DAGGER.SND's clips for combat
+commands  the game's console commands
 ```
 
-The player is Daggerfall's, so it lives here and not in the engine. The engine gives a camera, a walking body (`walker`), using things (`interact`) and entities (`entity`), and `play` builds Daggerfall's player out of them. Another game would build its own in its own folder. Each is a module of one `.c` and one `.h`, as in `docs/architecture.md`. `rules`, `sheet`, `items`, `save` and `travel`'s state machine are plain C and host-tested in `tests/check_play.c`. `hud` and `screens` draw through the engine and are checked by running GFALL.
+Still to come: `save` (P7), and `places/travel.c` (P8), which LEVELFALL's view code has today.
+
+The player is Daggerfall's, so it lives here and not in the engine. So do items and the inventory: the engine is simulation and world. It gives a camera, a walking body (`body`), using things (`interact`) and entities (`entity`), and `play` builds Daggerfall's player out of them. Another game would build its own in its own folder. Each is a module of one `.c` and one `.h`, as in `docs/architecture.md`. What can be plain C is, and is host-tested in `tests/check_play.c`. What draws or reaches the keys (`PLAY_DRAW_SRC`) is checked by running GFALL.
 
 `travel` is the one piece that is a place's business more than the game's: LEVELFALL needs it too. It goes in `src/game/dagger/places/travel.c`, not in `play/`, so that both GFALL and LEVELFALL use one copy. Its job is to load what a passage leads to and say where the player lands. It finds the other side from the location index (`dungeon.h`), not from a viewer's rows.
 

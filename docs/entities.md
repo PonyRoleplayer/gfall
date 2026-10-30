@@ -142,3 +142,7 @@ A flyer (an imp, a bat, a harpy, a dragonling) or a ghost or wraith hangs where 
 - What a creature does: its spell and shot records (20 to 29). The game's. Its attack, struck and dead poses, and its motor (`docs/game.md`, Creatures awake), are built in a streamed dungeon; a place loaded whole (`world.c`) has none of them yet.
 - Creatures in a house (DFU's random encounters by building) or in the wilderness at night; a dungeon of a streamed world (an indoor row opened from Stream World is a place loaded whole, and has them).
 - The player as an entity.
+
+## Treasure and dropped piles
+
+In a dungeon streamed by block, a slot's entities are more than its creatures: its heaps of treasure (random markers and TEXTURE.216 flats), and `DUNSTREAM_SPARES` spare entities, not drawn until the game puts one down as a dropped pile. They are one picture facing every viewer, with no radius, so nothing stops at them. `dunstream_kind` is -1 for them, so what looks for creatures passes them by. What they mean is the game's: `docs/game.md`, Loot and the inventory.
