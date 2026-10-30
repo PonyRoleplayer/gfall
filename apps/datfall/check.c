@@ -8,6 +8,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "books.h"
+#include "engine/assets/recfile.h"
 #include "engine/assets/vfs.h"
 #include "engine/core/mem.h"
 #include "game/dagger/tables/maindat.h"
@@ -190,6 +192,158 @@ int main(void)
            "a chunk past the end was not reported");
     dat_close(cut);
     dat_close(f);
+
+    /* Every chunk's fields, and a mod's new field and new table over the rat. */
+    {
+        typedef struct EnMod {
+            df_u16 id;
+            df_u16 health_min;
+            char note[8];
+        } EnMod;
+        typedef struct NoteRow {
+            df_u16 id;
+            char note[8];
+        } NoteRow;
+        static const RecField en_fields[] = {
+            REC_FIELD("id", REC_UINT, EnMod, id),
+            REC_FIELD("health_min", REC_UINT, EnMod, health_min),
+            REC_FIELD("note", REC_TEXT, EnMod, note)
+        };
+        static const RecField note_fields[] = {
+            REC_FIELD("id", REC_UINT, NoteRow, id),
+            REC_FIELD("note", REC_TEXT, NoteRow, note)
+        };
+        static const RecSchema en_schema = {
+            "ENEM", "enemy", en_fields, 3, (df_u16)sizeof(EnMod), 0
+        };
+        static const RecSchema note_schema = {
+            "NOTE", "note", note_fields, 2, (df_u16)sizeof(NoteRow), 0
+        };
+        EnMod enem;
+        NoteRow note;
+        Buf mod;
+        Books *books;
+        DatFile *merged;
+        DatFile *alone;
+        const char *names[3];
+        const df_u8 *bytes[3];
+        df_u32 sizes[3];
+        char order_names[4][BOOKS_NAME];
+        const char *order_text;
+        int k;
+        int nf;
+        int fi;
+        int note_f;
+        int ek;
+        int weight_a;
+        int weight_m;
+        char one[64];
+        char two[64];
+        static const char order_src[] = "# comment\n\nMAIN.DAT\nGOBLINS.DAT\n  extra.dat\n";
+
+        order_text = order_src;
+        expect(books_order((const df_u8 *)order_text, (df_u32)strlen(order_text), order_names, 4) == 2
+                   && df_eq(order_names[0], "GOBLINS.DAT") && df_eq(order_names[1], "extra.dat"),
+               "LOADORDR did not keep the two mod names");
+
+        memset(&enem, 0, sizeof(enem));
+        enem.id = 0;
+        enem.health_min = 30;
+        enem.note[0] = 'h';
+        enem.note[1] = 'i';
+        memset(&note, 0, sizeof(note));
+        note.id = 1;
+        note.note[0] = 'm';
+        note.note[1] = 'o';
+        note.note[2] = 'd';
+        mod.p = 0;
+        mod.n = 0;
+        mod.cap = 0;
+        expect(rec_put_begin(put_buf, &mod) && rec_put_rows(put_buf, &mod, &en_schema, &enem, 1, 0, 0)
+                   && rec_put_rows(put_buf, &mod, &note_schema, &note, 1, 0, 0),
+               "the mod was not written");
+        names[0] = "MAIN.DAT";
+        names[1] = "extra.dat";
+        names[2] = "GONE.DAT";
+        bytes[0] = buf.p;
+        bytes[1] = mod.p;
+        bytes[2] = 0;
+        sizes[0] = buf.n;
+        sizes[1] = mod.n;
+        sizes[2] = 0;
+        books = books_open(names, bytes, sizes, 3);
+        if (!books) {
+            fprintf(stderr, "datfall: books did not open\n");
+            g_fail = 1;
+        } else {
+            merged = books_merged(books);
+            alone = books_file(books, 0);
+            expect(merged && dat_ok(merged) && alone && dat_ok(alone), "merged MAIN.DAT did not read");
+            expect(!books_ok(books, 2), "a missing file was merged");
+            expect(strstr(books_status(books), "MAIN.DAT") && strstr(books_status(books), "extra.dat")
+                       && !strstr(books_status(books), "GONE.DAT"),
+                   "the status bar names are not the files that merged");
+            if (merged && alone) {
+                expect(dat_kinds(merged) == dat_kinds(alone) + 1, "the new table was not merged");
+                for (k = 0; k < dat_kinds(merged); k++) {
+                    dat_kind(merged, k, text, (int)sizeof(text), table, (int)sizeof(table));
+                    nf = dat_fields(merged, k);
+                    printf("datfall: %s %s", text, table);
+                    expect(nf > 0 && !dat_damaged(merged, k), "a merged chunk has no fields");
+                    for (fi = 0; fi < nf; fi++) {
+                        char fname[16];
+                        int type;
+                        int size;
+                        int count;
+
+                        expect(dat_field(merged, k, fi, fname, (int)sizeof(fname), &type, &size, &count)
+                                   && fname[0],
+                               "a field has no name");
+                        printf(" %s", fname);
+                    }
+                    printf("\n");
+                }
+                ek = dat_find_tag(merged, "ENEM");
+                expect(ek >= 0 && dat_rows(merged, ek) == 62, "merged ENEM is not 62 rows");
+                if (ek >= 0) {
+                    note_f = field_of(merged, ek, "note");
+                    health = field_of(merged, ek, "health_min");
+                    dat_row_label(merged, ek, 0, id, (int)sizeof(id), label, (int)sizeof(label));
+                    expect(df_eq(label, "Rat"), "the merged rat lost its name");
+                    text[0] = 0;
+                    if (health >= 0) {
+                        dat_value(merged, ek, 0, health, 0, text, (int)sizeof(text));
+                    }
+                    expect(df_eq(text, "30"), "the mod did not set the rat's health to 30");
+                    text[0] = 0;
+                    if (note_f >= 0) {
+                        dat_value(merged, ek, 0, note_f, 0, text, (int)sizeof(text));
+                    }
+                    expect(note_f >= 0 && df_eq(text, "hi"), "the mod's new field did not show up");
+                }
+                k = dat_find_tag(merged, "NOTE");
+                expect(k >= 0 && dat_rows(merged, k) == 1, "the mod's new table is missing");
+                k = dat_find_tag(alone, "ITEM");
+                ek = dat_find_tag(merged, "ITEM");
+                if (k >= 0 && ek >= 0) {
+                    weight_a = field_of(alone, k, "weight");
+                    weight_m = field_of(merged, ek, "weight");
+                    one[0] = 0;
+                    two[0] = 0;
+                    if (weight_a >= 0) {
+                        dat_value(alone, k, 0, weight_a, 0, one, (int)sizeof(one));
+                    }
+                    if (weight_m >= 0) {
+                        dat_value(merged, ek, 0, weight_m, 0, two, (int)sizeof(two));
+                    }
+                    expect(weight_a >= 0 && df_eq(one, two), "a float field did not survive the merge");
+                }
+            }
+            books_close(books);
+        }
+        free(mod.p);
+    }
+
     free(buf.p);
 
     /* Breton's body, the rat's front frame, and a weapon metal pixel.

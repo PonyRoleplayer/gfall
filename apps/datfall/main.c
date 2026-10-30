@@ -1,8 +1,12 @@
 /*
- * DATFALL: a Windows 98 browser of races, enemies and weapons
- * (docs/data.md). A normal window, opened maximized, with the system
- * list, buttons and a picture. comctl32 and GDI are loaded at run time.
- * Escape quits. Left and right step a frame; a timer runs the animation.
+ * DATFALL: a read-only construction set (docs/data.md). A normal
+ * maximized Win98 window. Left, a tree. Middle, the records of the
+ * node. Right, a preview and every field of the record. comctl32 and
+ * GDI load at run time; the import table stays KERNEL32 and USER32.
+ * Escape quits.
+ *
+ * This slice is the tables. Pictures, characters, creatures, items and
+ * the world map hang off the same tree.
  */
 
 #define WINVER 0x0400
@@ -11,30 +15,25 @@
 
 #include <windows.h>
 
-#include "engine/assets/palette.h"
-#include "engine/assets/texture.h"
+#include "books.h"
 #include "engine/assets/vfs.h"
 #include "engine/core/df.h"
 #include "engine/core/mem.h"
-#include "game/dagger/formats/cif.h"
-#include "game/dagger/formats/img.h"
-#include "game/dagger/formats/palette.h"
-#include "game/dagger/formats/texture.h"
-#include "game/dagger/tables/classic.h"
+#include "game/dagger/tables/maindat.h"
 
-#define ID_RACES 1
-#define ID_ENEMIES 2
-#define ID_WEAPONS 3
 #define ID_LIST 4
-#define ID_PART 5
-#define ID_TIMER 1
+#define ID_FIND 6
+#define ID_TREE 7
+#define ID_PROPS 8
 
 #define LVM_FIRST 0x1000
 #define LVM_SETITEMA (LVM_FIRST + 6)
 #define LVM_INSERTITEMA (LVM_FIRST + 7)
 #define LVM_DELETEALLITEMS (LVM_FIRST + 9)
+#define LVM_DELETECOLUMN (LVM_FIRST + 28)
 #define LVM_INSERTCOLUMNA (LVM_FIRST + 27)
 #define LVM_SETCOLUMNA (LVM_FIRST + 26)
+#define LVM_SETEXTENDEDLISTVIEWSTYLE (LVM_FIRST + 54)
 #define LVIF_TEXT 0x0001
 #define LVIF_STATE 0x0008
 #define LVIS_FOCUSED 0x0001
@@ -44,18 +43,45 @@
 #define LVS_REPORT 0x0001
 #define LVS_SINGLESEL 0x0004
 #define LVS_SHOWSELALWAYS 0x0008
-#define LVN_FIRST (-100)
+#define LVS_EX_FULLROWSELECT 0x00000020
+#define LVN_FIRST ((unsigned int)-100)
 #define LVN_ITEMCHANGEDA (LVN_FIRST - 1)
-#define CB_RESETCONTENT 0x014B
-#define CB_ADDSTRING 0x0143
-#define CB_SETCURSEL 0x014E
-#define CB_GETCURSEL 0x0147
-#define CBN_SELCHANGE 1
-#define BM_SETCHECK 0x00F1
 
-#define MODE_RACES 0
-#define MODE_ENEMIES 1
-#define MODE_WEAPONS 2
+#define TV_FIRST 0x1100
+#define TVM_INSERTITEMA (TV_FIRST + 0)
+#define TVM_EXPAND (TV_FIRST + 2)
+#define TVM_GETNEXTITEM (TV_FIRST + 10)
+#define TVM_SELECTITEM (TV_FIRST + 11)
+#define TVM_GETITEMA (TV_FIRST + 12)
+#define TVIF_TEXT 0x0001
+#define TVIF_PARAM 0x0004
+#define TVGN_CARET 0x0009
+#define TVS_HASBUTTONS 0x0001
+#define TVS_HASLINES 0x0002
+#define TVS_LINESATROOT 0x0004
+#define TVS_SHOWSELALWAYS 0x0020
+#define TVE_EXPAND 0x0002
+#define TVN_FIRST ((unsigned int)-400)
+#define TVN_SELCHANGEDA (TVN_FIRST - 2)
+
+#define SB_SETTEXTA (WM_USER + 1)
+#define SB_SETPARTS (WM_USER + 4)
+#define CCS_BOTTOM 0x0003
+
+/* Tree lParam: kind in the top byte, two 12-bit numbers under it. */
+#define ND_DATA 1
+#define ND_MERGED 2
+#define ND_FILE 3
+#define ND_CHUNK 4
+#define ND_MERGED_FILE 4095
+
+#define VIEW_NONE 0
+#define VIEW_DATA 1
+#define VIEW_CHUNKS 2
+#define VIEW_ROWS 3
+
+#define NODE_MAKE(k, a, b) \
+    ((LPARAM)((((unsigned int)(k) & 255u) << 24) | (((unsigned int)(a) & 4095u) << 12) | ((unsigned int)(b) & 4095u)))
 
 typedef struct LvItem {
     unsigned int mask;
@@ -78,6 +104,12 @@ typedef struct LvCol {
     int iSubItem;
 } LvCol;
 
+typedef struct NmHdr {
+    HWND hwndFrom;
+    unsigned int idFrom;
+    unsigned int code;
+} NmHdr;
+
 typedef struct NmLv {
     HWND hwndFrom;
     unsigned int idFrom;
@@ -91,63 +123,51 @@ typedef struct NmLv {
     LPARAM lParam;
 } NmLv;
 
+typedef struct TvItem {
+    unsigned int mask;
+    void *hItem;
+    unsigned int state;
+    unsigned int stateMask;
+    char *pszText;
+    int cchTextMax;
+    int iImage;
+    int iSelectedImage;
+    int cChildren;
+    LPARAM lParam;
+} TvItem;
+
+typedef struct TvIns {
+    void *hParent;
+    void *hInsertAfter;
+    TvItem item;
+} TvIns;
+
 typedef struct Gdi {
     void *(WINAPI *CreateFontA)(int, int, int, int, int, unsigned, unsigned, unsigned,
                                 unsigned, unsigned, unsigned, unsigned, unsigned, const char *);
-    int (WINAPI *SetStretchBltMode)(HDC, int);
-    int (WINAPI *StretchDIBits)(HDC, int, int, int, int, int, int, int, int,
-                                const void *, const BITMAPINFO *, unsigned int, unsigned int);
     void *(WINAPI *GetStockObject)(int);
 } Gdi;
 
-static const char *g_weapon_file[] = {
-    "WEAPON00.CIF", "WEAPON01.CIF", "WEAPON02.CIF", "WEAPON03.CIF",
-    "WEAPON04.CIF", "WEAPON05.CIF", "WEAPON06.CIF", "WEAPON07.CIF",
-    "WEAPON08.CIF", "WEAPON09.CIF", "WEAPON10.CIF", "WEAPON11.CIF",
-    "WEAPO101.CIF", "WEAPO102.CIF", "WEAPO104.CIF", "WEAPO105.CIF",
-    "WEAPO106.CIF", "WEAPO107.CIF", "WEAPO108.CIF"
-};
-
-static const char *g_weapon_name[] = {
-    "WEAPON00", "WEAPON01", "WEAPON02", "WEAPON03",
-    "WEAPON04", "WEAPON05", "WEAPON06", "WEAPON07",
-    "WEAPON08", "Bow", "WEAPON10", "WEAPON11",
-    "WEAPON01 swing", "WEAPON02 swing", "WEAPON04 swing", "WEAPON05 swing",
-    "WEAPON06 swing", "WEAPON07 swing", "WEAPON08 swing"
-};
-
-static const char *g_race_part[] = {
-    "Background", "Body", "Clothed", "Female body", "Female clothed", "Head", "Female head"
-};
-
 static Gdi g_gdi;
 static HWND g_hwnd;
-static HWND g_races;
-static HWND g_enemies;
-static HWND g_weapons;
+static HWND g_tree;
 static HWND g_list;
-static HWND g_part;
+static HWND g_props;
+static HWND g_find;
+static HWND g_find_label;
 static HWND g_status;
-static WNDPROC g_list_proc;
 static void *g_font;
-static int g_mode;
-static int g_sel;
-static int g_part_i;
-static int g_frame;
+static Books *g_books;
 static int g_filling;
-static int g_enemy_n;
-static int g_enemy_id[160];
-static int g_view_n;
-static int g_view_rec[10];
-static Palette g_pal;
-static int g_pal_ok;
-static CifSet g_cif;
-static int g_cif_on;
-static ImgPicture g_img;
-static int g_img_on;
-static MemHeap *g_eheap;
-static Image *g_eimg;
-static unsigned char *g_dib;
+static int g_nd;
+static int g_a;
+static int g_b;
+static int g_view;
+static int g_map[128];
+static int g_nmap;
+static void *g_pick;
+static RECT g_well;
+static char g_q[48];
 
 static void *sym(HMODULE dll, const char *name)
 {
@@ -163,11 +183,8 @@ static int gdi_load(void)
         return 0;
     }
     g_gdi.CreateFontA = sym(dll, "CreateFontA");
-    g_gdi.SetStretchBltMode = sym(dll, "SetStretchBltMode");
-    g_gdi.StretchDIBits = sym(dll, "StretchDIBits");
     g_gdi.GetStockObject = sym(dll, "GetStockObject");
-    return g_gdi.CreateFontA && g_gdi.SetStretchBltMode && g_gdi.StretchDIBits
-        && g_gdi.GetStockObject;
+    return g_gdi.CreateFontA && g_gdi.GetStockObject;
 }
 
 static int common_controls(void)
@@ -187,14 +204,52 @@ static int common_controls(void)
     return 1;
 }
 
-static int boot_data(void)
+static int fold_c(int c)
+{
+    if (c >= 'A' && c <= 'Z') {
+        return c + ('a' - 'A');
+    }
+    return c;
+}
+
+static int has_text(const char *hay, const char *q)
+{
+    int i;
+    int j;
+
+    if (!q || !q[0]) {
+        return 1;
+    }
+    if (!hay) {
+        return 0;
+    }
+    for (i = 0; hay[i]; i++) {
+        for (j = 0; q[j]; j++) {
+            if (!hay[i + j] || fold_c(hay[i + j]) != fold_c(q[j])) {
+                break;
+            }
+        }
+        if (!q[j]) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void read_query(void)
+{
+    g_q[0] = 0;
+    if (g_find) {
+        GetWindowTextA(g_find, g_q, (int)sizeof(g_q));
+    }
+}
+
+static int mount_arena(void)
 {
     char path[260];
     DWORD n;
     int i;
     int slash;
-    const df_u8 *bytes;
-    df_u32 size;
 
     n = GetModuleFileNameA(0, path, (DWORD)sizeof(path));
     if (!n || n >= sizeof(path)) {
@@ -221,518 +276,116 @@ static int boot_data(void)
     path[i++] = '2';
     path[i] = 0;
     vfs_mount(path);
-    texture_cache_limit(2u * 1024u * 1024u);
-    bytes = vfs_read("ART_PAL.COL", &size);
-    g_pal_ok = palette_load(bytes, size, &g_pal);
     return 1;
 }
 
-static void drop_enemy(void)
+static void data_path(char *dst, int cap, const char *name)
 {
-    g_eimg = 0;
-    if (g_eheap) {
-        mem_heap_delete(g_eheap);
-        g_eheap = 0;
+    int i;
+    int k;
+
+    dst[0] = 0;
+    if (cap < 8) {
+        return;
     }
+    dst[0] = 'D';
+    dst[1] = 'A';
+    dst[2] = 'T';
+    dst[3] = 'A';
+    dst[4] = '\\';
+    k = 5;
+    for (i = 0; name && name[i] && k < cap - 1; i++) {
+        dst[k++] = name[i];
+    }
+    dst[k] = 0;
 }
 
-static void drop_pictures(void)
+static int load_books(void)
 {
-    drop_enemy();
-    if (g_cif_on) {
-        cif_close(&g_cif);
-        g_cif_on = 0;
-    }
-    g_img_on = 0;
-}
-
-static const CareerRace *race_at(int index)
-{
-    const CareerRace *races;
+    const df_u8 *bytes[BOOKS_MAX];
+    df_u32 sizes[BOOKS_MAX];
+    const char *names[BOOKS_MAX];
+    char storage[BOOKS_MAX][32];
+    char order[BOOKS_MAX][BOOKS_NAME];
+    const df_u8 *text;
+    df_u32 ntext;
+    int norder;
     int n;
+    int i;
 
-    races = classic_races(&n);
-    if (index < 0 || index >= n) {
-        return 0;
+    if (!maindat_start()) {
+        MessageBoxA(0, maindat_error() ? maindat_error() : "DATA\\MAIN.DAT was not cooked.",
+                    "DATFALL", MB_OK | MB_ICONWARNING);
     }
-    return &races[index];
-}
-
-static int ends_cif(const char *file)
-{
-    int n;
-
     n = 0;
-    if (!file) {
-        return 0;
+    sizes[0] = 0;
+    bytes[0] = vfs_read_beside("DATA\\MAIN.DAT", &sizes[0]);
+    if (!bytes[0]) {
+        sizes[0] = 0;
     }
-    while (file[n]) {
+    names[0] = "MAIN.DAT";
+    n = 1;
+    text = vfs_read_beside("DATA\\LOADORDR.TXT", &ntext);
+    norder = books_order(text, text ? ntext : 0, order, BOOKS_MAX - 1);
+    for (i = 0; i < norder && n < BOOKS_MAX; i++) {
+        char path[64];
+
+        data_path(path, (int)sizeof(path), order[i]);
+        df_copy(storage[n], order[i], (int)sizeof(storage[n]));
+        names[n] = storage[n];
+        sizes[n] = 0;
+        bytes[n] = vfs_read_beside(path, &sizes[n]);
+        if (!bytes[n]) {
+            sizes[n] = 0;
+        }
         n++;
     }
-    return n >= 4 && file[n - 3] == 'C' && file[n - 2] == 'I' && file[n - 1] == 'F';
+    g_books = books_open(names, bytes, sizes, n);
+    return g_books != 0;
 }
 
-static const char *race_file(const CareerRace *race, int part)
+static void font_set(HWND hwnd)
 {
-    if (!race) {
-        return 0;
-    }
-    if (part == 1) {
-        return race->body_male;
-    }
-    if (part == 2) {
-        return race->body_male_clothed;
-    }
-    if (part == 3) {
-        return race->body_female;
-    }
-    if (part == 4) {
-        return race->body_female_clothed;
-    }
-    if (part == 5) {
-        return race->heads_male;
-    }
-    if (part == 6) {
-        return race->heads_female;
-    }
-    return race->background;
-}
-
-static const EnemyKind *listed_kind(int index)
-{
-    const EnemyKind *all;
-    int n;
-    int id;
-
-    if (index < 0 || index >= g_enemy_n) {
-        return 0;
-    }
-    all = classic_enemies(&n);
-    id = g_enemy_id[index];
-    if (id < 0 || id >= n) {
-        return 0;
-    }
-    return &all[id];
-}
-
-static int enemy_record(void)
-{
-    if (g_part_i < 0 || g_part_i >= g_view_n) {
-        return 0;
-    }
-    return g_view_rec[g_part_i];
-}
-
-static void build_views(const EnemyKind *kind)
-{
-    int i;
-
-    g_view_n = 0;
-    for (i = 0; i < 5; i++) {
-        g_view_rec[g_view_n++] = i;
-    }
-    if (kind && kind->has_idle) {
-        for (i = 0; i < 5; i++) {
-            g_view_rec[g_view_n++] = 15 + i;
-        }
+    if (hwnd && g_font) {
+        SendMessageA(hwnd, WM_SETFONT, (WPARAM)g_font, 1);
     }
 }
 
-static int frame_count(void)
+static void cols_clear(HWND list)
 {
-    const EnemyKind *kind;
-    int n;
-
-    if (g_mode == MODE_ENEMIES) {
-        kind = listed_kind(g_sel);
-        if (!kind || !kind->male) {
-            return 0;
-        }
-        n = texture_frame_count((int)kind->male, enemy_record());
-        if (n < 1) {
-            return 0;
-        }
-        return n;
+    while (SendMessageA(list, LVM_DELETECOLUMN, 0, 0)) {
     }
-    if (g_cif_on) {
-        return g_cif.n;
-    }
-    if (g_img_on) {
-        return 1;
-    }
-    return 0;
 }
 
-static void load_current(void)
+/* Inserts at column 0. Call from the rightmost column back to the left. */
+static void col_add(HWND list, const char *text, int width)
 {
-    const CareerRace *race;
-    const EnemyKind *kind;
-    const char *file;
-    MemHeap *prev;
-    int frames;
+    LvCol col;
 
-    drop_pictures();
-    if (g_mode == MODE_RACES) {
-        race = race_at(g_sel);
-        file = race_file(race, g_part_i);
-        if (!file) {
-            return;
-        }
-        if (ends_cif(file)) {
-            g_cif_on = cif_open(file, &g_cif);
-            return;
-        }
-        g_img_on = img_load(file, &g_img);
-        return;
-    }
-    if (g_mode == MODE_ENEMIES) {
-        kind = listed_kind(g_sel);
-        if (!kind || !kind->male) {
-            return;
-        }
-        frames = texture_frame_count((int)kind->male, enemy_record());
-        if (frames < 1) {
-            frames = 1;
-        }
-        if (g_frame >= frames) {
-            g_frame = frames - 1;
-        }
-        if (g_frame < 0) {
-            g_frame = 0;
-        }
-        g_eheap = mem_heap_new();
-        if (!g_eheap) {
-            return;
-        }
-        prev = mem_heap_use(g_eheap);
-        g_eimg = texture_load_frame((int)kind->male, enemy_record(), g_frame);
-        mem_heap_use(prev);
-        return;
-    }
-    if (g_sel < 0 || g_sel >= (int)(sizeof(g_weapon_file) / sizeof(g_weapon_file[0]))) {
-        return;
-    }
-    g_cif_on = cif_open(g_weapon_file[g_sel], &g_cif);
+    memset(&col, 0, sizeof(col));
+    col.mask = LVCF_WIDTH | LVCF_TEXT;
+    col.cx = width;
+    col.pszText = (char *)text;
+    SendMessageA(list, LVM_INSERTCOLUMNA, 0, (LPARAM)&col);
 }
 
-static const df_u8 *current_pixels(int *w, int *h)
+static void row_text(HWND list, int index, int sub, const char *text)
 {
-    const CifFrame *frame;
-    int n;
+    LvItem item;
 
-    *w = 0;
-    *h = 0;
-    if (g_mode == MODE_ENEMIES) {
-        if (!g_eimg || !g_eimg->index) {
-            return 0;
-        }
-        *w = g_eimg->width;
-        *h = g_eimg->height;
-        return g_eimg->index;
-    }
-    if (g_mode == MODE_RACES && g_img_on) {
-        *w = g_img.width;
-        *h = g_img.height;
-        return g_img.pixels;
-    }
-    if (!g_cif_on) {
-        return 0;
-    }
-    n = g_cif.n;
-    if (n < 1) {
-        return 0;
-    }
-    if (g_frame < 0) {
-        g_frame = 0;
-    }
-    if (g_frame >= n) {
-        g_frame = n - 1;
-    }
-    frame = cif_frame(&g_cif, g_frame);
-    if (!frame || !frame->pixels) {
-        return 0;
-    }
-    *w = frame->w;
-    *h = frame->h;
-    return frame->pixels;
-}
-
-static void status_text(void)
-{
-    char line[160];
-    int w;
-    int h;
-    int frames;
-    const CareerRace *race;
-    const EnemyKind *kind;
-
-    line[0] = 0;
-    frames = frame_count();
-    current_pixels(&w, &h);
-    if (g_mode == MODE_RACES) {
-        race = race_at(g_sel);
-        if (race) {
-            lstrcpynA(line, race->name, 24);
-        }
-    } else if (g_mode == MODE_ENEMIES) {
-        kind = listed_kind(g_sel);
-        if (kind) {
-            lstrcpynA(line, kind->name, 32);
-        }
-    } else if (g_sel >= 0 && g_sel < (int)(sizeof(g_weapon_name) / sizeof(g_weapon_name[0]))) {
-        lstrcpynA(line, g_weapon_name[g_sel], 32);
-        lstrcatA(line, "  ");
-        lstrcatA(line, cif_metal_name(g_part_i));
-    }
-    if (w > 0) {
-        char extra[48];
-
-        wsprintfA(extra, "   %d x %d   frame %d / %d", w, h, frames ? g_frame + 1 : 0, frames);
-        lstrcatA(line, extra);
+    memset(&item, 0, sizeof(item));
+    item.mask = LVIF_TEXT;
+    item.iItem = index;
+    item.iSubItem = sub;
+    item.pszText = (char *)(text ? text : "");
+    if (sub == 0) {
+        SendMessageA(list, LVM_INSERTITEMA, 0, (LPARAM)&item);
     } else {
-        lstrcatA(line, "   no picture");
+        SendMessageA(list, LVM_SETITEMA, 0, (LPARAM)&item);
     }
-    if (g_mode == MODE_ENEMIES) {
-        kind = listed_kind(g_sel);
-        if (kind && kind->male) {
-            char extra[32];
-
-            wsprintfA(extra, "   TEXTURE.%03d", (int)kind->male);
-            lstrcatA(line, extra);
-        }
-    }
-    SetWindowTextA(g_status, line);
 }
 
-static void paint_picture(HDC dc)
-{
-    RECT client;
-    RECT well;
-    int w;
-    int h;
-    int stride;
-    int x;
-    int y;
-    int dw;
-    int dh;
-    int dx;
-    int dy;
-    int s;
-    int s2;
-    int metal;
-    const df_u8 *pix;
-    BITMAPINFOHEADER info;
-
-    if (!GetClientRect(g_hwnd, &client)) {
-        return;
-    }
-    well.left = 8;
-    well.top = 40;
-    well.right = client.right - 8;
-    well.bottom = client.bottom - 28;
-    if (g_list) {
-        RECT list;
-
-        GetWindowRect(g_list, &list);
-        MapWindowPoints(0, g_hwnd, (POINT *)&list, 2);
-        well.left = list.right + 8;
-    }
-    if (well.right - well.left < 16 || well.bottom - well.top < 16) {
-        return;
-    }
-    DrawEdge(dc, &well, EDGE_SUNKEN, BF_RECT);
-    well.left += 2;
-    well.top += 2;
-    well.right -= 2;
-    well.bottom -= 2;
-    pix = current_pixels(&w, &h);
-    if (!pix || w < 1 || h < 1 || w > 512 || h > 512) {
-        DrawTextA(dc, pix ? "Picture is too large" : "No picture", -1, &well,
-                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        return;
-    }
-    stride = (w * 3 + 3) & ~3;
-    if (!g_dib) {
-        g_dib = (unsigned char *)mem_keep(800u * 1024u);
-    }
-    if (!g_dib || stride * h > 800 * 1024) {
-        return;
-    }
-    metal = g_mode == MODE_WEAPONS ? g_part_i : -1;
-    for (y = 0; y < h; y++) {
-        unsigned char *row;
-        int sy;
-
-        sy = h - 1 - y;
-        row = g_dib + y * stride;
-        for (x = 0; x < w; x++) {
-            int ix;
-            int r;
-            int g;
-            int b;
-            int checker;
-
-            ix = pix[sy * w + x];
-            if (metal >= 0) {
-                ix = cif_metal(ix, metal);
-            }
-            checker = ix == 0;
-            if (checker) {
-                int on;
-
-                on = ((x >> 3) ^ (sy >> 3)) & 1;
-                r = on ? 255 : 192;
-                g = r;
-                b = r;
-            } else if (g_pal_ok) {
-                r = g_pal.r[ix];
-                g = g_pal.g[ix];
-                b = g_pal.b[ix];
-            } else {
-                r = ix;
-                g = ix;
-                b = ix;
-            }
-            row[x * 3] = (unsigned char)b;
-            row[x * 3 + 1] = (unsigned char)g;
-            row[x * 3 + 2] = (unsigned char)r;
-        }
-    }
-    dw = well.right - well.left - 8;
-    dh = well.bottom - well.top - 8;
-    if (dw < 1) {
-        dw = 1;
-    }
-    if (dh < 1) {
-        dh = 1;
-    }
-    s = dw / w;
-    s2 = dh / h;
-    if (s2 < s) {
-        s = s2;
-    }
-    if (s < 1) {
-        s = 1;
-        if (dw * h / w > dh) {
-            dw = dh * w / h;
-            if (dw < 1) {
-                dw = 1;
-            }
-        } else {
-            dh = dw * h / w;
-            if (dh < 1) {
-                dh = 1;
-            }
-        }
-    } else {
-        if (s > 6) {
-            s = 6;
-        }
-        dw = w * s;
-        dh = h * s;
-    }
-    dx = well.left + (well.right - well.left - dw) / 2;
-    dy = well.top + (well.bottom - well.top - dh) / 2;
-    memset(&info, 0, sizeof(info));
-    info.biSize = sizeof(info);
-    info.biWidth = w;
-    info.biHeight = h;
-    info.biPlanes = 1;
-    info.biBitCount = 24;
-    info.biCompression = BI_RGB;
-    g_gdi.SetStretchBltMode(dc, 3);
-    g_gdi.StretchDIBits(dc, dx, dy, dw, dh, 0, 0, w, h, g_dib,
-                        (const BITMAPINFO *)&info, 0, SRCCOPY);
-}
-
-static void invalidate_picture(void)
-{
-    RECT client;
-    RECT well;
-
-    if (!g_hwnd || !GetClientRect(g_hwnd, &client)) {
-        return;
-    }
-    well.left = 8;
-    well.top = 36;
-    well.right = client.right;
-    well.bottom = client.bottom - 24;
-    InvalidateRect(g_hwnd, &well, 1);
-}
-
-static void show_current(void)
-{
-    int frames;
-
-    load_current();
-    frames = frame_count();
-    if (frames < 1) {
-        g_frame = 0;
-    } else if (g_frame >= frames) {
-        g_frame = frames - 1;
-    }
-    status_text();
-    invalidate_picture();
-}
-
-static void step_frame(int delta)
-{
-    int n;
-
-    n = frame_count();
-    if (n < 2) {
-        return;
-    }
-    g_frame += delta;
-    while (g_frame < 0) {
-        g_frame += n;
-    }
-    while (g_frame >= n) {
-        g_frame -= n;
-    }
-    if (g_mode == MODE_ENEMIES) {
-        load_current();
-    }
-    status_text();
-    invalidate_picture();
-}
-
-static void fill_combo(void)
-{
-    int i;
-    const EnemyKind *kind;
-
-    SendMessageA(g_part, CB_RESETCONTENT, 0, 0);
-    if (g_mode == MODE_RACES) {
-        for (i = 0; i < 7; i++) {
-            SendMessageA(g_part, CB_ADDSTRING, 0, (LPARAM)g_race_part[i]);
-        }
-    } else if (g_mode == MODE_ENEMIES) {
-        static const char *walk[] = { "Front", "Turn", "Side", "Away", "Back" };
-        static const char *stand[] = {
-            "Stand front", "Stand turn", "Stand side", "Stand away", "Stand back"
-        };
-
-        kind = listed_kind(g_sel);
-        build_views(kind);
-        for (i = 0; i < g_view_n; i++) {
-            const char *label;
-
-            label = g_view_rec[i] >= 15 ? stand[g_view_rec[i] - 15] : walk[g_view_rec[i]];
-            SendMessageA(g_part, CB_ADDSTRING, 0, (LPARAM)label);
-        }
-    } else {
-        for (i = 0; i < CIF_METALS; i++) {
-            SendMessageA(g_part, CB_ADDSTRING, 0, (LPARAM)cif_metal_name(i));
-        }
-    }
-    if (g_part_i < 0) {
-        g_part_i = 0;
-    }
-    SendMessageA(g_part, CB_SETCURSEL, (WPARAM)g_part_i, 0);
-}
-
-static void select_row(int index)
+static void select_row(HWND list, int index)
 {
     LvItem item;
 
@@ -741,69 +394,366 @@ static void select_row(int index)
     item.iItem = index;
     item.state = LVIS_SELECTED | LVIS_FOCUSED;
     item.stateMask = LVIS_SELECTED | LVIS_FOCUSED;
-    SendMessageA(g_list, LVM_SETITEMA, 0, (LPARAM)&item);
+    SendMessageA(list, LVM_SETITEMA, 0, (LPARAM)&item);
+}
+
+static void props_clear(void)
+{
+    SendMessageA(g_props, LVM_DELETEALLITEMS, 0, 0);
+}
+
+static void prop_add(int index, const char *name, const char *value)
+{
+    row_text(g_props, index, 0, name);
+    row_text(g_props, index, 1, value);
+}
+
+static DatFile *file_at(int which)
+{
+    if (!g_books) {
+        return 0;
+    }
+    if (which == ND_MERGED_FILE) {
+        return books_merged(g_books);
+    }
+    return books_file(g_books, which);
+}
+
+static const char *file_title(int which)
+{
+    if (which == ND_MERGED_FILE) {
+        return "Merged";
+    }
+    if (!g_books) {
+        return "";
+    }
+    return books_name(g_books, which);
+}
+
+static void status_set(const char *file, const char *id)
+{
+    char mid[96];
+    const char *merged;
+
+    merged = g_books ? books_status(g_books) : "";
+    mid[0] = 0;
+    if (id) {
+        lstrcpynA(mid, id, 80);
+    }
+    if (g_books && books_cut(g_books)) {
+        lstrcatA(mid, "  rows cut");
+    }
+    SendMessageA(g_status, SB_SETTEXTA, 0, (LPARAM)(file ? file : ""));
+    SendMessageA(g_status, SB_SETTEXTA, 1, (LPARAM)mid);
+    SendMessageA(g_status, SB_SETTEXTA, 2, (LPARAM)merged);
+}
+
+static void show_fields(DatFile *f, int kind, int row, int with_values)
+{
+    int n;
+    int i;
+    char name[32];
+    char value[192];
+    int type;
+    int size;
+    int count;
+
+    props_clear();
+    if (!f) {
+        prop_add(0, "file", "no file");
+        return;
+    }
+    if (dat_damaged(f, kind)) {
+        prop_add(0, "chunk", "damaged");
+        if (dat_warning(f)[0]) {
+            prop_add(1, "warning", dat_warning(f));
+        }
+        return;
+    }
+    n = dat_fields(f, kind);
+    for (i = 0; i < n; i++) {
+        if (!dat_field(f, kind, i, name, (int)sizeof(name), &type, &size, &count)) {
+            break;
+        }
+        value[0] = 0;
+        if (with_values) {
+            dat_values(f, kind, row, i, value, (int)sizeof(value));
+        } else {
+            wsprintfA(value, "%c  %d x %d", type ? type : '?', size, count);
+        }
+        prop_add(i, name, value);
+    }
+}
+
+static void on_row(int index)
+{
+    DatFile *f;
+    char id[32];
+    char label[64];
+    char status_id[80];
+    int row;
+    int kind;
+
+    if (g_filling) {
+        return;
+    }
+    read_query();
+    if (g_view == VIEW_DATA) {
+        if (index < 0 || index >= g_nmap) {
+            props_clear();
+            status_set("Data", "");
+            return;
+        }
+        f = file_at(g_map[index]);
+        props_clear();
+        prop_add(0, "file", file_title(g_map[index]));
+        prop_add(1, "state", f && dat_ok(f) ? "read" : (f ? dat_error(f) : "missing"));
+        if (f && dat_warning(f)[0]) {
+            prop_add(2, "warning", dat_warning(f));
+        }
+        if (f) {
+            wsprintfA(label, "%d", dat_kinds(f));
+            prop_add(3, "chunks", label);
+            wsprintfA(label, "%u", (unsigned int)dat_size(f));
+            prop_add(4, "bytes", label);
+        }
+        status_set(file_title(g_map[index]), "");
+        return;
+    }
+    if (g_view == VIEW_CHUNKS) {
+        f = file_at(g_a == ND_MERGED_FILE || g_nd == ND_MERGED ? ND_MERGED_FILE : g_a);
+        if (index < 0 || index >= g_nmap) {
+            props_clear();
+            status_set(file_title(g_nd == ND_MERGED ? ND_MERGED_FILE : g_a), "");
+            return;
+        }
+        kind = g_map[index];
+        show_fields(f, kind, 0, 0);
+        dat_kind(f, kind, id, (int)sizeof(id), label, (int)sizeof(label));
+        wsprintfA(status_id, "%s  %d rows", id, f ? dat_rows(f, kind) : 0);
+        status_set(file_title(g_nd == ND_MERGED ? ND_MERGED_FILE : g_a), status_id);
+        return;
+    }
+    if (g_view != VIEW_ROWS) {
+        props_clear();
+        status_set("", "");
+        return;
+    }
+    f = file_at(g_a);
+    if (!f || index < 0) {
+        props_clear();
+        status_set(file_title(g_a), "");
+        return;
+    }
+    row = dat_filter_row(f, index);
+    show_fields(f, g_b, row, 1);
+    dat_row_label(f, g_b, row, id, (int)sizeof(id), label, (int)sizeof(label));
+    wsprintfA(status_id, "id %s", id);
+    status_set(file_title(g_a), status_id);
 }
 
 static void fill_list(void)
 {
-    const CareerRace *races;
-    const EnemyKind *enemies;
-    int n;
+    DatFile *f;
     int i;
-    LvItem item;
-    char title[8];
+    int n;
+    int shown;
+    char a[64];
+    char b[64];
+    char c[32];
+    RECT rc;
+    int width;
 
+    if (!g_list) {
+        return;
+    }
+    read_query();
     g_filling = 1;
     SendMessageA(g_list, LVM_DELETEALLITEMS, 0, 0);
-    memset(&item, 0, sizeof(item));
-    item.mask = LVIF_TEXT;
-    item.pszText = title;
-    if (g_mode == MODE_RACES) {
-        races = classic_races(&n);
-        for (i = 0; i < n; i++) {
-            item.iItem = i;
-            item.pszText = (char *)races[i].name;
-            SendMessageA(g_list, LVM_INSERTITEMA, 0, (LPARAM)&item);
+    cols_clear(g_list);
+    GetClientRect(g_list, &rc);
+    width = rc.right > 40 ? rc.right : 180;
+    g_nmap = 0;
+    shown = 0;
+    if (g_view == VIEW_DATA) {
+        col_add(g_list, "State", width / 4);
+        col_add(g_list, "Chunks", width / 4);
+        col_add(g_list, "File", width / 2);
+        if (g_books) {
+            f = books_merged(g_books);
+            if (has_text("Merged", g_q) && g_nmap < 128) {
+                g_map[g_nmap] = ND_MERGED_FILE;
+                row_text(g_list, shown, 0, "Merged");
+                wsprintfA(b, "%d", f ? dat_kinds(f) : 0);
+                row_text(g_list, shown, 1, b);
+                row_text(g_list, shown, 2, f && dat_ok(f) ? "merged" : "unread");
+                g_nmap++;
+                shown++;
+            }
+            n = books_count(g_books);
+            for (i = 0; i < n && g_nmap < 128; i++) {
+                if (!has_text(books_name(g_books, i), g_q)) {
+                    continue;
+                }
+                g_map[g_nmap] = i;
+                row_text(g_list, shown, 0, books_name(g_books, i));
+                f = books_file(g_books, i);
+                wsprintfA(b, "%d", f ? dat_kinds(f) : 0);
+                row_text(g_list, shown, 1, b);
+                row_text(g_list, shown, 2, f && dat_ok(f) ? "read" : "skipped");
+                g_nmap++;
+                shown++;
+            }
         }
-    } else if (g_mode == MODE_ENEMIES) {
-        enemies = classic_enemies(&n);
-        g_enemy_n = 0;
-        for (i = 0; i < n && g_enemy_n < 160; i++) {
-            if (!enemies[i].male || !enemies[i].name[0]) {
+    } else if (g_view == VIEW_CHUNKS) {
+        col_add(g_list, "Rows", width / 5);
+        col_add(g_list, "Table", width / 3);
+        col_add(g_list, "Tag", width / 3);
+        f = file_at(g_nd == ND_MERGED ? ND_MERGED_FILE : g_a);
+        n = f ? dat_kinds(f) : 0;
+        for (i = 0; i < n && g_nmap < 128; i++) {
+            dat_kind(f, i, a, (int)sizeof(a), b, (int)sizeof(b));
+            if (!has_text(a, g_q) && !has_text(b, g_q)) {
                 continue;
             }
-            g_enemy_id[g_enemy_n] = i;
-            item.iItem = g_enemy_n;
-            item.pszText = (char *)enemies[i].name;
-            SendMessageA(g_list, LVM_INSERTITEMA, 0, (LPARAM)&item);
-            g_enemy_n++;
+            g_map[g_nmap] = i;
+            row_text(g_list, shown, 0, a);
+            row_text(g_list, shown, 1, b);
+            wsprintfA(c, "%d%s", dat_rows(f, i), dat_damaged(f, i) ? " damaged" : "");
+            row_text(g_list, shown, 2, c);
+            g_nmap++;
+            shown++;
         }
-    } else {
-        n = (int)(sizeof(g_weapon_name) / sizeof(g_weapon_name[0]));
+    } else if (g_view == VIEW_ROWS) {
+        col_add(g_list, "Name", width / 2);
+        col_add(g_list, "Id", width / 3);
+        f = file_at(g_a);
+        n = f ? dat_filter(f, g_b, g_q) : 0;
         for (i = 0; i < n; i++) {
-            item.iItem = i;
-            item.pszText = (char *)g_weapon_name[i];
-            SendMessageA(g_list, LVM_INSERTITEMA, 0, (LPARAM)&item);
+            int row;
+
+            row = dat_filter_row(f, i);
+            dat_row_label(f, g_b, row, a, (int)sizeof(a), b, (int)sizeof(b));
+            row_text(g_list, i, 0, a);
+            row_text(g_list, i, 1, b[0] ? b : "");
         }
+        shown = n;
     }
-    g_sel = 0;
-    g_frame = 0;
     g_filling = 0;
-    select_row(0);
-    fill_combo();
-    show_current();
+    if (shown > 0) {
+        select_row(g_list, 0);
+        on_row(0);
+    } else {
+        props_clear();
+        status_set(g_view == VIEW_ROWS || g_view == VIEW_CHUNKS ? file_title(g_nd == ND_MERGED ? ND_MERGED_FILE : g_a) : "Data", "");
+    }
 }
 
-static void set_mode(int mode)
+static int node_param(void *item, int *a, int *b)
 {
-    g_mode = mode;
-    g_part_i = 0;
-    g_frame = 0;
-    SendMessageA(g_races, BM_SETCHECK, mode == MODE_RACES, 0);
-    SendMessageA(g_enemies, BM_SETCHECK, mode == MODE_ENEMIES, 0);
-    SendMessageA(g_weapons, BM_SETCHECK, mode == MODE_WEAPONS, 0);
+    TvItem tv;
+    unsigned int lp;
+
+    memset(&tv, 0, sizeof(tv));
+    tv.mask = TVIF_PARAM;
+    tv.hItem = item;
+    if (!item || !SendMessageA(g_tree, TVM_GETITEMA, 0, (LPARAM)&tv)) {
+        return 0;
+    }
+    lp = (unsigned int)tv.lParam;
+    *a = (int)((lp >> 12) & 4095u);
+    *b = (int)(lp & 4095u);
+    return (int)(lp >> 24);
+}
+
+static void on_tree(void *item)
+{
+    int a;
+    int b;
+    int nd;
+
+    if (g_filling || !item) {
+        return;
+    }
+    nd = node_param(item, &a, &b);
+    if (!nd) {
+        return;
+    }
+    g_nd = nd;
+    g_a = a;
+    g_b = b;
+    if (nd == ND_DATA) {
+        g_view = VIEW_DATA;
+    } else if (nd == ND_MERGED || nd == ND_FILE) {
+        g_view = VIEW_CHUNKS;
+    } else if (nd == ND_CHUNK) {
+        g_view = VIEW_ROWS;
+    } else {
+        g_view = VIEW_NONE;
+    }
     fill_list();
-    SetFocus(g_list);
+}
+
+static void *tree_add(void *parent, const char *text, int kind, int a, int b)
+{
+    TvIns ins;
+
+    memset(&ins, 0, sizeof(ins));
+    ins.hParent = parent ? parent : (void *)(long)-0x10000;
+    ins.hInsertAfter = (void *)(long)-0x0FFFE;
+    ins.item.mask = TVIF_TEXT | TVIF_PARAM;
+    ins.item.pszText = (char *)text;
+    ins.item.lParam = NODE_MAKE(kind, a, b);
+    return (void *)SendMessageA(g_tree, TVM_INSERTITEMA, 0, (LPARAM)&ins);
+}
+
+static void add_chunks(void *parent, DatFile *f, int which)
+{
+    int i;
+    int n;
+    char tag[8];
+    char table[24];
+    char line[40];
+
+    n = f ? dat_kinds(f) : 0;
+    for (i = 0; i < n; i++) {
+        void *item;
+
+        dat_kind(f, i, tag, (int)sizeof(tag), table, (int)sizeof(table));
+        wsprintfA(line, "%s  %s", tag, table);
+        item = tree_add(parent, line, ND_CHUNK, which, i);
+        if (!g_pick && which == ND_MERGED_FILE && df_eq(tag, "ENEM")) {
+            g_pick = item;
+        }
+    }
+}
+
+static void build_tree(void)
+{
+    void *data;
+    void *merged;
+    int i;
+    int n;
+
+    g_filling = 1;
+    g_pick = 0;
+    data = tree_add(0, "Data", ND_DATA, 0, 0);
+    merged = tree_add(data, "Merged", ND_MERGED, ND_MERGED_FILE, 0);
+    add_chunks(merged, g_books ? books_merged(g_books) : 0, ND_MERGED_FILE);
+    n = g_books ? books_count(g_books) : 0;
+    for (i = 0; i < n; i++) {
+        void *file;
+
+        file = tree_add(data, books_name(g_books, i), ND_FILE, i, 0);
+        add_chunks(file, books_file(g_books, i), i);
+    }
+    SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)data);
+    SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)merged);
+    g_filling = 0;
+    if (!g_pick) {
+        g_pick = data;
+    }
+    SendMessageA(g_tree, TVM_SELECTITEM, TVGN_CARET, (LPARAM)g_pick);
 }
 
 static void layout(void)
@@ -811,52 +761,83 @@ static void layout(void)
     RECT client;
     int w;
     int h;
+    int tree_w;
+    int right_w;
+    int list_x;
     int list_w;
-    LvCol col;
+    int right_x;
+    int top;
+    int body;
+    int well_h;
+    int edges[3];
 
-    if (!g_hwnd || !g_list || !GetClientRect(g_hwnd, &client)) {
+    if (!g_hwnd || !GetClientRect(g_hwnd, &client)) {
         return;
     }
     w = client.right;
     h = client.bottom;
-    if (w < 1) {
-        w = 1;
+    if (w < 32) {
+        w = 32;
     }
-    if (h < 1) {
-        h = 1;
+    if (h < 32) {
+        h = 32;
     }
-    list_w = w / 3;
-    if (list_w < 160) {
-        list_w = 160;
+    SendMessageA(g_status, WM_SIZE, 0, 0);
+    edges[0] = w / 3;
+    edges[1] = (w * 2) / 3;
+    edges[2] = -1;
+    SendMessageA(g_status, SB_SETPARTS, 3, (LPARAM)edges);
+    top = 6;
+    tree_w = 220;
+    right_w = 300;
+    if (tree_w > w / 3) {
+        tree_w = w / 3;
     }
-    if (list_w > w - 120) {
-        list_w = w / 2;
+    if (right_w > w / 3) {
+        right_w = w / 3;
     }
-    MoveWindow(g_races, 8, 8, 88, 22, 1);
-    MoveWindow(g_enemies, 100, 8, 88, 22, 1);
-    MoveWindow(g_weapons, 192, 8, 88, 22, 1);
-    MoveWindow(g_part, 292, 8, w > 520 ? w - 300 : 200, 240, 1);
-    MoveWindow(g_list, 8, 40, list_w, h - 68, 1);
-    MoveWindow(g_status, 8, h - 24, w - 16, 18, 1);
-    memset(&col, 0, sizeof(col));
-    col.mask = LVCF_WIDTH | LVCF_TEXT;
-    col.cx = list_w - 8;
-    col.pszText = "Name";
-    SendMessageA(g_list, LVM_SETCOLUMNA, 0, (LPARAM)&col);
-    invalidate_picture();
+    list_x = tree_w + 6;
+    list_w = w - list_x - right_w - 12;
+    if (list_w < 80) {
+        list_w = 80;
+    }
+    right_x = list_x + list_w + 6;
+    body = h - 28 - top;
+    if (body < 40) {
+        body = 40;
+    }
+    well_h = body * 2 / 5;
+    if (well_h < 48) {
+        well_h = 48;
+    }
+    MoveWindow(g_tree, 4, top, tree_w - 4, h - 28 - top, 1);
+    MoveWindow(g_find_label, list_x, top, 32, 18, 1);
+    MoveWindow(g_find, list_x + 34, top, list_w - 34, 20, 1);
+    MoveWindow(g_list, list_x, top + 24, list_w, h - 28 - top - 24, 1);
+    g_well.left = right_x;
+    g_well.top = top;
+    g_well.right = right_x + right_w;
+    g_well.bottom = top + well_h;
+    MoveWindow(g_props, right_x, top + well_h + 4, right_w, h - 28 - (top + well_h + 4), 1);
+    InvalidateRect(g_hwnd, &g_well, 1);
 }
 
-static LRESULT CALLBACK list_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+static void paint_well(HDC dc)
 {
-    if (msg == WM_KEYDOWN && (wp == VK_LEFT || wp == VK_RIGHT)) {
-        step_frame(wp == VK_LEFT ? -1 : 1);
-        return 0;
+    RECT well;
+    const char *text;
+
+    if (g_well.right - g_well.left < 8 || g_well.bottom - g_well.top < 8) {
+        return;
     }
-    if (msg == WM_KEYDOWN && wp == VK_ESCAPE) {
-        PostQuitMessage(0);
-        return 0;
-    }
-    return CallWindowProcA(g_list_proc, hwnd, msg, wp, lp);
+    well = g_well;
+    DrawEdge(dc, &well, EDGE_SUNKEN, BF_RECT);
+    well.left += 4;
+    well.top += 4;
+    well.right -= 4;
+    well.bottom -= 4;
+    text = "No picture";
+    DrawTextA(dc, text, -1, &well, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
 
 static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
@@ -870,57 +851,36 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         HDC dc;
 
         dc = BeginPaint(hwnd, &ps);
-        paint_picture(dc);
+        paint_well(dc);
         EndPaint(hwnd, &ps);
         return 0;
     }
     case WM_COMMAND:
-        if (HIWORD(wp) == BN_CLICKED && (int)LOWORD(wp) == ID_RACES) {
-            set_mode(MODE_RACES);
-        } else if (HIWORD(wp) == BN_CLICKED && (int)LOWORD(wp) == ID_ENEMIES) {
-            set_mode(MODE_ENEMIES);
-        } else if (HIWORD(wp) == BN_CLICKED && (int)LOWORD(wp) == ID_WEAPONS) {
-            set_mode(MODE_WEAPONS);
-        } else if (HIWORD(wp) == CBN_SELCHANGE && (int)LOWORD(wp) == ID_PART) {
-            g_part_i = (int)SendMessageA(g_part, CB_GETCURSEL, 0, 0);
-            if (g_part_i < 0) {
-                g_part_i = 0;
-            }
-            g_frame = 0;
-            if (g_mode != MODE_WEAPONS) {
-                show_current();
-            } else {
-                status_text();
-                invalidate_picture();
-            }
+        if (HIWORD(wp) == EN_CHANGE && (int)LOWORD(wp) == ID_FIND && !g_filling) {
+            fill_list();
         }
         return 0;
     case WM_NOTIFY:
-        if (((NmLv *)lp)->code == (unsigned int)LVN_ITEMCHANGEDA
-            && ((NmLv *)lp)->uNewState & LVIS_SELECTED && !g_filling) {
-            g_sel = ((NmLv *)lp)->iItem;
-            g_frame = 0;
-            if (g_mode == MODE_ENEMIES) {
-                g_part_i = 0;
-                fill_combo();
+        if (((NmHdr *)lp)->idFrom == ID_TREE && ((NmHdr *)lp)->code == TVN_SELCHANGEDA) {
+            void *item;
+
+            item = (void *)SendMessageA(g_tree, TVM_GETNEXTITEM, TVGN_CARET, 0);
+            on_tree(item);
+        } else if (((NmHdr *)lp)->idFrom == ID_LIST && ((NmHdr *)lp)->code == LVN_ITEMCHANGEDA) {
+            NmLv *nm;
+
+            nm = (NmLv *)lp;
+            if ((nm->uNewState & LVIS_SELECTED) && !g_filling && nm->iItem >= 0) {
+                on_row(nm->iItem);
             }
-            show_current();
         }
-        return 0;
-    case WM_TIMER:
-        step_frame(1);
         return 0;
     case WM_KEYDOWN:
         if (wp == VK_ESCAPE) {
             PostQuitMessage(0);
-        } else if (wp == VK_LEFT) {
-            step_frame(-1);
-        } else if (wp == VK_RIGHT) {
-            step_frame(1);
         }
         return 0;
     case WM_DESTROY:
-        KillTimer(hwnd, ID_TIMER);
         PostQuitMessage(0);
         return 0;
     default:
@@ -929,12 +889,18 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     return DefWindowProcA(hwnd, msg, wp, lp);
 }
 
-static HWND make_button(HINSTANCE inst, const char *text, int id, int group)
+static HWND make_list(HINSTANCE inst, int id)
 {
-    return CreateWindowExA(
-        0, "BUTTON", text,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | (group ? WS_GROUP : 0),
+    HWND hwnd;
+
+    hwnd = CreateWindowExA(
+        WS_EX_CLIENTEDGE, "SysListView32", "",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
         0, 0, 10, 10, g_hwnd, (HMENU)(UINT_PTR)id, inst, 0);
+    if (hwnd) {
+        SendMessageA(hwnd, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, LVS_EX_FULLROWSELECT);
+    }
+    return hwnd;
 }
 
 static int win_main(HINSTANCE inst)
@@ -942,14 +908,20 @@ static int win_main(HINSTANCE inst)
     WNDCLASSA wc;
     HWND hwnd;
     MSG msg;
-    LvCol col;
 
     mem_init();
     if (!gdi_load() || !common_controls()) {
         MessageBoxA(0, "The window controls did not load.", "DATFALL", MB_OK | MB_ICONERROR);
         return 1;
     }
-    boot_data();
+    if (!mount_arena()) {
+        MessageBoxA(0, "ARENA2 was not found beside the program.", "DATFALL", MB_OK | MB_ICONERROR);
+        return 1;
+    }
+    if (!load_books()) {
+        MessageBoxA(0, "The tables did not load.", "DATFALL", MB_OK | MB_ICONERROR);
+        return 1;
+    }
     g_font = g_gdi.CreateFontA(-11, 0, 0, 0, 400, 0, 0, 0, 0, 0, 0, 0, 0, "MS Sans Serif");
     if (!g_font) {
         g_font = g_gdi.GetStockObject(SYSTEM_FONT);
@@ -968,46 +940,47 @@ static int win_main(HINSTANCE inst)
     hwnd = CreateWindowExA(
         0, "DATFALL", "DATFALL",
         WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_VISIBLE,
-        CW_USEDEFAULT, CW_USEDEFAULT, 720, 540,
+        CW_USEDEFAULT, CW_USEDEFAULT, 960, 640,
         0, 0, inst, 0);
     if (!hwnd) {
         return 1;
     }
     g_hwnd = hwnd;
-    g_races = make_button(inst, "Races", ID_RACES, 1);
-    g_enemies = make_button(inst, "Enemies", ID_ENEMIES, 0);
-    g_weapons = make_button(inst, "Weapons", ID_WEAPONS, 0);
-    g_part = CreateWindowExA(
-        0, "COMBOBOX", "",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
-        0, 0, 10, 10, hwnd, (HMENU)ID_PART, inst, 0);
-    g_list = CreateWindowExA(
-        WS_EX_CLIENTEDGE, "SysListView32", "",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
-        0, 0, 10, 10, hwnd, (HMENU)ID_LIST, inst, 0);
-    g_status = CreateWindowExA(
-        0, "STATIC", "",
-        WS_CHILD | WS_VISIBLE | SS_LEFTNOWORDWRAP,
+    g_tree = CreateWindowExA(
+        WS_EX_CLIENTEDGE, "SysTreeView32", "",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | TVS_HASBUTTONS | TVS_HASLINES | TVS_LINESATROOT | TVS_SHOWSELALWAYS,
+        0, 0, 10, 10, hwnd, (HMENU)(UINT_PTR)ID_TREE, inst, 0);
+    g_find_label = CreateWindowExA(
+        0, "STATIC", "Find",
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
         0, 0, 10, 10, hwnd, 0, inst, 0);
-    if (!g_list || !g_part) {
+    g_find = CreateWindowExA(
+        WS_EX_CLIENTEDGE, "EDIT", "",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
+        0, 0, 10, 10, hwnd, (HMENU)(UINT_PTR)ID_FIND, inst, 0);
+    g_list = make_list(inst, ID_LIST);
+    g_props = make_list(inst, ID_PROPS);
+    g_status = CreateWindowExA(
+        0, "msctls_statusbar32", "",
+        WS_CHILD | WS_VISIBLE | CCS_BOTTOM,
+        0, 0, 10, 10, hwnd, 0, inst, 0);
+    if (!g_tree || !g_list || !g_props || !g_status) {
         MessageBoxA(0, "The list did not open.", "DATFALL", MB_OK | MB_ICONERROR);
         return 1;
     }
-    SendMessageA(g_races, WM_SETFONT, (WPARAM)g_font, 1);
-    SendMessageA(g_enemies, WM_SETFONT, (WPARAM)g_font, 1);
-    SendMessageA(g_weapons, WM_SETFONT, (WPARAM)g_font, 1);
-    SendMessageA(g_part, WM_SETFONT, (WPARAM)g_font, 1);
-    SendMessageA(g_list, WM_SETFONT, (WPARAM)g_font, 1);
-    SendMessageA(g_status, WM_SETFONT, (WPARAM)g_font, 1);
-    memset(&col, 0, sizeof(col));
-    col.mask = LVCF_WIDTH | LVCF_TEXT;
-    col.cx = 180;
-    col.pszText = "Name";
-    SendMessageA(g_list, LVM_INSERTCOLUMNA, 0, (LPARAM)&col);
-    g_list_proc = (WNDPROC)SetWindowLongA(g_list, GWL_WNDPROC, (LONG)list_proc);
-    set_mode(MODE_RACES);
+    font_set(g_tree);
+    font_set(g_find_label);
+    font_set(g_find);
+    font_set(g_list);
+    font_set(g_props);
+    font_set(g_status);
+    cols_clear(g_props);
+    /* col_add inserts at column 0, so the last call is the left column. */
+    col_add(g_props, "Value", 160);
+    col_add(g_props, "Field", 110);
     ShowWindow(hwnd, SW_SHOWMAXIMIZED);
-    SetTimer(hwnd, ID_TIMER, 160, 0);
+    layout();
+    build_tree();
     SetFocus(g_list);
     while (GetMessageA(&msg, 0, 0, 0) > 0) {
         if (msg.message == WM_KEYDOWN && msg.wParam == VK_ESCAPE) {
@@ -1017,8 +990,8 @@ static int win_main(HINSTANCE inst)
         TranslateMessage(&msg);
         DispatchMessageA(&msg);
     }
-    drop_pictures();
-    texture_cache_clear();
+    books_close(g_books);
+    g_books = 0;
     return 0;
 }
 
