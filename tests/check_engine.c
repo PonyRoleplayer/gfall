@@ -9,6 +9,8 @@
 
 #include "engine/scene/pack.h"
 #include "engine/ui/packview.h"
+#include "engine/scene/rpg.h"
+#include "engine/ui/rpgview.h"
 #include "check_util.h"
 
 #include "engine/assets/loader.h"
@@ -3996,6 +3998,166 @@ static void check_pack(void)
     printf("pack: stacks, weight, slots, moves and the list screen\n");
 }
 
+/* The text rpgview_draw sends: lines counted, the last top seen. */
+static int g_rv_lines;
+static int g_rv_top;
+
+static void rv_text(int x, int top, const char *s)
+{
+    (void)x;
+    (void)s;
+    g_rv_lines++;
+    g_rv_top = top;
+}
+
+/* A made-up ruleset: creation's points, levels, vitals, a blow's chance and damage, the screen; worked by hand. */
+static void check_rpg(void)
+{
+    static RpgRules r;
+    RpgSheet a;
+    RpgSheet d;
+    RpgBlow b;
+    RpgView v;
+    char line[RPGVIEW_LINE];
+    df_u32 seed;
+    int lo;
+    int hi;
+    int hits;
+    int i;
+
+    memset(&r, 0, sizeof(r));
+    r.nattrs = 4;
+    strcpy(r.attr_name[0], "Might");
+    strcpy(r.attr_name[1], "Agility");
+    strcpy(r.attr_name[2], "Wits");
+    strcpy(r.attr_name[3], "Grit");
+    r.attr_start = 10;
+    r.attr_min = 5;
+    r.attr_max = 30;
+    r.create_points = 10;
+    r.level_points = 2;
+    r.nvitals = 3;
+    strcpy(r.vital[0].name, "Health");
+    r.vital[0].base = 20;
+    r.vital[0].per_level = 5;
+    r.vital[0].weight[3] = 100;
+    strcpy(r.vital[1].name, "Stamina");
+    r.vital[1].base = 10;
+    r.vital[1].per_level = 2;
+    r.vital[1].weight[1] = 50;
+    r.vital[1].weight[3] = 50;
+    strcpy(r.vital[2].name, "Focus");
+    r.vital[2].weight[2] = 200;
+    r.xp_first = 100;
+    r.xp_growth = 150;
+    r.level_max = 4;
+    r.hit_base = 60;
+    r.hit_min = 5;
+    r.hit_max = 95;
+    r.attack_weight[1] = 100;
+    r.defence_weight[1] = 100;
+    r.damage_weight[0] = 50;
+
+    rpg_init(&a, &r);
+    check_expect(a.level == 1 && a.points == 10 && a.vital[0] == 30 && a.vital[1] == 20 && a.vital[2] == 20,
+                 "rpg: a new character is not level 1, 10 points, 30/20/20");
+    for (i = 0; i < 6; i++) {
+        rpg_raise(&a, &r, 0);
+    }
+    for (i = 0; i < 4; i++) {
+        rpg_raise(&a, &r, 1);
+    }
+    check_expect(!a.points && a.attr[0] == 16 && a.attr[1] == 14 && !rpg_raise(&a, &r, 2),
+                 "rpg: points do not spend, or spent past none");
+    /* Creation may lower down to the least, which frees points. */
+    check_expect(rpg_lower(&a, &r, 2) && a.attr[2] == 9 && a.points == 1 && !rpg_commit(&a, &r),
+                 "rpg: a point back out does not free it, or commit took points unspent");
+    rpg_raise(&a, &r, 2);
+    check_expect(rpg_commit(&a, &r) && !rpg_lower(&a, &r, 0) && a.vital[1] == 22,
+                 "rpg: commit does not fix the attributes, or fill Stamina to 10 + 12");
+    check_expect(rpg_xp_next(&r, 1) == 100 && rpg_xp_next(&r, 2) == 150 && rpg_xp_next(&r, 3) == 225
+                     && rpg_xp_next(&r, 4) == 0,
+                 "rpg: experience is not 100, 150, 225, none at the last level");
+    /* 350 is 100 and 150, with 100 toward the next. */
+    check_expect(rpg_gain_xp(&a, &r, 350) == 2 && a.level == 3 && a.xp == 100 && a.points == 4,
+                 "rpg: 350 experience is not two levels, 100 over, 4 points");
+    check_expect(rpg_vital_max(&a, &r, 0) == 40 && a.vital[0] == 40, "rpg: Health at level 3 is not 20 + 10 + 10, full");
+    check_expect(!rpg_hurt(&a, 0, 15) && a.vital[0] == 25 && rpg_hurt(&a, 0, 99) && !a.vital[0],
+                 "rpg: a vital does not fall, or stop at 0");
+    rpg_restore(&a, &r, 0, 10);
+    check_expect(a.vital[0] == 10, "rpg: restore does not raise a vital");
+    rpg_restore(&a, &r, 0, 999);
+    check_expect(a.vital[0] == 40, "rpg: restore goes past the most");
+
+    /* Blows: an Agility of 14 at one of 10, Might 16 giving +8. */
+    rpg_init(&a, &r);
+    a.attr[0] = 16;
+    a.attr[1] = 14;
+    rpg_init(&d, &r);
+    check_expect(rpg_chance(&r, &a, &d, 0, 0) == 64 && rpg_chance(&r, &a, &d, 5, 3) == 66
+                     && rpg_chance(&r, &a, &d, 90, 0) == 95 && rpg_chance(&r, &a, &d, 0, 90) == 5,
+                 "rpg: the chance is not 60 + 14 - 10 and bonuses, held to 5..95");
+    seed = 1;
+    lo = 1000;
+    hi = -1;
+    hits = 0;
+    for (i = 0; i < 4000; i++) {
+        rpg_blow(&r, &a, &d, 4, 8, 0, 0, 0, &seed, &b);
+        if (b.hit) {
+            hits++;
+            lo = b.damage < lo ? b.damage : lo;
+            hi = b.damage > hi ? b.damage : hi;
+        } else if (b.damage) {
+            lo = -1;
+        }
+    }
+    check_expect(lo == 12 && hi == 16, "rpg: a 4..8 weapon at +8 is not 12..16, or a miss did damage");
+    check_expect(check_near((float)hits / 4000.0f, 0.64f, 0.03f), "rpg: blows hit at another rate than their chance");
+    /* Armour: 50 takes 12..16 to 8..10, 100 halves it. */
+    lo = 1000;
+    hi = -1;
+    for (i = 0; i < 2000; i++) {
+        rpg_blow(&r, &a, &d, 4, 8, 90, 0, 50, &seed, &b);
+        if (b.hit) {
+            lo = b.damage < lo ? b.damage : lo;
+            hi = b.damage > hi ? b.damage : hi;
+        }
+    }
+    check_expect(lo == 8 && hi == 10, "rpg: armour 50 does not take 12..16 to 8..10");
+    a.attr[0] = 0;
+    do {
+        rpg_blow(&r, &a, &d, 0, 0, 90, 0, 300, &seed, &b);
+    } while (!b.hit);
+    check_expect(b.damage == 1, "rpg: a blow that hits does less than 1");
+
+    /* The screen. */
+    rpg_init(&a, &r);
+    rpgview_open(&v, &a, &r);
+    check_expect(rpgview_lines(&v) == 8 && rpgview_line(&v, 0, line, (int)sizeof(line))
+                     && strcmp(line, "Level 1  XP 0/100  Points 10") == 0,
+                 "rpgview: the heading is not level, experience and points");
+    check_expect(!rpgview_command(&v, RPGVIEW_UP) && rpgview_command(&v, RPGVIEW_RAISE) && a.attr[0] == 11,
+                 "rpgview: the cursor moved off the top, or raise did not raise");
+    check_expect(rpgview_line(&v, 1, line, (int)sizeof(line)) && strcmp(line, ">Might 11") == 0,
+                 "rpgview: the attribute under the cursor is not marked");
+    for (i = 0; i < 9; i++) {
+        rpgview_command(&v, RPGVIEW_DOWN);
+    }
+    check_expect(v.cursor == 3 && rpgview_command(&v, RPGVIEW_LOWER) && a.attr[3] == 9 && !rpgview_command(&v, RPGVIEW_CONFIRM),
+                 "rpgview: the cursor ran off the attributes, or confirm took points unspent");
+    for (i = 0; i < 10; i++) {
+        rpgview_command(&v, RPGVIEW_RAISE);
+    }
+    check_expect(!a.points && rpgview_command(&v, RPGVIEW_CONFIRM), "rpgview: confirm does not take the points spent");
+    check_expect(rpgview_line(&v, 5, line, (int)sizeof(line)) && strcmp(line, " Health 39/39") == 0
+                     && !rpgview_line(&v, 8, line, (int)sizeof(line)),
+                 "rpgview: a vital's line is wrong, or a line past the end has text");
+    g_rv_lines = 0;
+    rpgview_draw(&v, 0, 400, 10, rv_text);
+    check_expect(g_rv_lines == 8 && g_rv_top == 330, "rpgview: the screen is not eight lines going down");
+    printf("rpg: points, levels, vitals, blows and the screen\n");
+}
+
 void check_engine(void)
 {
     check_rotation();
@@ -4008,6 +4170,7 @@ void check_engine(void)
     check_beside();
     check_pictures();
     check_pack();
+    check_rpg();
     check_key_names();
     check_keep();
     check_dungeon_stream();
