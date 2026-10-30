@@ -241,7 +241,7 @@ void player_check_weapon(Player *p)
     it = inventory_weapon(&p->pack);
     if (it && item_broken(it)) {
         say_broken(it);
-        inventory_take_off(&p->pack, EQUIP_RIGHT_HAND);
+        inventory_take_off(&p->pack, inventory_hand_place(&p->pack));
     }
 }
 

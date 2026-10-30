@@ -231,6 +231,7 @@ void inventory_clear(Inventory *inv)
 
     inv->count = 0;
     inv->gold = 0;
+    inv->use_left = 0;
     for (place = 0; place < EQUIP_COUNT; place++) {
         inv->worn[place] = -1;
     }
@@ -328,6 +329,13 @@ int inventory_wear(Inventory *inv, int i)
     }
     a = armor_template(inv->item[i].template_id);
     if (!a) {
+        /* A one-handed weapon takes a free left hand when the right is full; anything else the right. */
+        if (!is_two_handed(inv, i) && weapon_template(inv->item[i].template_id) && !item_broken(&inv->item[i])
+            && inv->worn[EQUIP_RIGHT_HAND] >= 0 && inv->worn[EQUIP_LEFT_HAND] < 0
+            && !is_two_handed(inv, inv->worn[EQUIP_RIGHT_HAND])) {
+            inv->worn[EQUIP_LEFT_HAND] = i;
+            return 1;
+        }
         return inventory_equip(inv, i);
     }
     if (item_broken(&inv->item[i])) {
@@ -335,8 +343,12 @@ int inventory_wear(Inventory *inv, int i)
     }
     place = place_of_armor(a);
     inv->worn[place] = i;
-    if (place == EQUIP_LEFT_HAND && is_two_handed(inv, inv->worn[EQUIP_RIGHT_HAND])) {
-        inv->worn[EQUIP_RIGHT_HAND] = -1;
+    if (place == EQUIP_LEFT_HAND) {
+        /* A shield is no weapon: the right hand is the one in use. */
+        inv->use_left = 0;
+        if (is_two_handed(inv, inv->worn[EQUIP_RIGHT_HAND])) {
+            inv->worn[EQUIP_RIGHT_HAND] = -1;
+        }
     }
     return 1;
 }
@@ -360,11 +372,28 @@ int inventory_worn_at(const Inventory *inv, int i)
     return -1;
 }
 
+int inventory_swap_hands(Inventory *inv)
+{
+    int left;
+
+    left = inv->worn[EQUIP_LEFT_HAND];
+    if (left >= 0 && armor_template(inv->item[left].template_id)) {
+        return 0;
+    }
+    inv->use_left = !inv->use_left;
+    return 1;
+}
+
+int inventory_hand_place(const Inventory *inv)
+{
+    return inv->use_left ? EQUIP_LEFT_HAND : EQUIP_RIGHT_HAND;
+}
+
 const Item *inventory_weapon(const Inventory *inv)
 {
     int i;
 
-    i = inv->worn[EQUIP_RIGHT_HAND];
+    i = inv->worn[inventory_hand_place(inv)];
     return i >= 0 && i < inv->count ? &inv->item[i] : 0;
 }
 
@@ -372,7 +401,7 @@ Item *inventory_hand(Inventory *inv)
 {
     int i;
 
-    i = inv->worn[EQUIP_RIGHT_HAND];
+    i = inv->worn[inventory_hand_place(inv)];
     return i >= 0 && i < inv->count ? &inv->item[i] : 0;
 }
 

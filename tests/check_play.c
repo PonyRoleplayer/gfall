@@ -31,6 +31,7 @@
 #include "game/dagger/play/sheet.h"
 #include "game/dagger/play/rest.h"
 #include "game/dagger/play/save.h"
+#include "game/dagger/play/slots.h"
 #include "engine/scene/clock.h"
 #include "engine/platform/fs.h"
 #include "game/dagger/formats/biog.h"
@@ -2585,6 +2586,37 @@ static void check_body_more(void)
     printf("body: fatigue, collapse, breath, a swimmer's speed in water over the hold's floor\n");
 }
 
+/* Two weapons, and which hand is in use. */
+static void check_hands(void)
+{
+    Inventory inv;
+    Item it;
+    int i;
+
+    inventory_clear(&inv);
+    item_make(&it, ITEM_LONGSWORD, MATERIAL_IRON);
+    inventory_wear(&inv, inventory_add(&inv, &it));
+    item_make(&it, ITEM_DAGGER, MATERIAL_STEEL);
+    i = inventory_add(&inv, &it);
+    check_expect(inventory_wear(&inv, i) && inv.worn[EQUIP_LEFT_HAND] == i && inv.worn[EQUIP_RIGHT_HAND] == 0,
+                 "hands: a second one-handed weapon did not take the left hand");
+    check_expect(inventory_weapon(&inv) == &inv.item[0], "hands: the right is not in use at first");
+    check_expect(inventory_swap_hands(&inv) && inventory_weapon(&inv) == &inv.item[i] && inventory_hand_place(&inv) == EQUIP_LEFT_HAND,
+                 "hands: swapping did not bring the left in use");
+    check_expect(inventory_swap_hands(&inv) && inventory_weapon(&inv) == &inv.item[0], "hands: swapping back did not bring the right");
+    /* A shield takes the left hand and keeps the right in use. */
+    inventory_swap_hands(&inv);
+    item_make(&it, ITEM_BUCKLER, MATERIAL_IRON);
+    inventory_wear(&inv, inventory_add(&inv, &it));
+    check_expect(!inv.use_left && !inventory_swap_hands(&inv) && inventory_weapon(&inv) == &inv.item[0], "hands: a shield did not keep the right in use");
+    /* A two-handed weapon takes both: the other hand in use is bare. */
+    item_make(&it, 122, MATERIAL_IRON);
+    inventory_wear(&inv, inventory_add(&inv, &it));
+    check_expect(inv.worn[EQUIP_LEFT_HAND] == -1, "hands: a two-handed weapon left the left hand full");
+    check_expect(inventory_swap_hands(&inv) && inventory_weapon(&inv) == 0, "hands: the left is not bare beside a two-handed weapon");
+    printf("hands: two weapons, a shield, a two-handed weapon\n");
+}
+
 /* Rest: its sums by hand, and the three ways driven by clicks and keys. */
 #define REST_WHILE_X 110
 #define REST_HEALED_X 160
@@ -2664,7 +2696,8 @@ static void check_rest(void)
     printf("rest: its sums, until healed, for a while, loitering; build/rest0..2.ppm\n");
 }
 
-#define SAVE_TEST_FILE "DATA\\SAVETEST.SAV"
+/* What the test's saves are called, beside where a player's would be: TEST0.SAV and on, gone after. */
+#define SAVE_TEST_PREFIX "DATA\\TEST"
 
 /*
  * A save's round trip in the streamed hold: a door, a dead creature, a pile
@@ -2693,8 +2726,8 @@ static void check_save(void)
     int s;
     int i;
 
-    /* A file of the test's own, beside where a player's would be, and gone after. */
-    save_use_file(SAVE_TEST_FILE);
+    save_use_prefix(SAVE_TEST_PREFIX);
+    save_use_slot(2);
     keep_clear();
     combat_reset();
     pile_new_game();
@@ -2796,6 +2829,7 @@ static void check_save(void)
     out.day = 12345;
     out.day_zero = 12000;
     out.seed = loot_seed();
+    df_copy(out.name, "Kept Game", SAVE_NAME);
     stream_keep_now();
     check_expect(keep_find(door_key) != 0, "save: a door open in a loaded block was not flushed");
     check_expect(save_write(&out) && save_exists(), "save: it did not write");
@@ -2850,13 +2884,36 @@ static void check_save(void)
     dunstream_close();
     keep_clear();
     pile_new_game();
+    /* The slots' screen: to load, a slot with a save is chosen, an empty one says so; its name is shown. */
     {
+        char name[SAVE_NAME];
         char path[512];
 
-        check_expect(fs_beside(path, (int)sizeof(path), SAVE_TEST_FILE) && remove(path) == 0, "save: the test's file did not go");
+        check_expect(save_any() && save_peek_name(2, name) && strcmp(name, "Kept Game") == 0, "save: the slot's name did not read");
+        check_expect(!save_peek_name(0, name), "save: an empty slot has a name");
+        check_expect(slots_open(0), "save: the load screen did not open");
+        slots_compose();
+        write_picture(slots_pixels(), "build/slots0.ppm");
+        check_expect(slots_click(10, 58) == SLOTS_STAY && slots_note() != 0, "save: an empty slot was chosen to load");
+        /* Slot 2 is the left column's third. */
+        check_expect(slots_click(10, 188) == SLOTS_CHOSEN && slots_chosen() == 2, "save: a slot with a save was not chosen");
+        slots_close();
+        /* To save, a slot asks for a name; Enter chooses it. */
+        check_expect(slots_open(1), "save: the save screen did not open");
+        slots_click(170, 58);
+        slots_key('M');
+        slots_key('Y');
+        check_expect(slots_key(0x0D) == SLOTS_CHOSEN && slots_chosen() == 3 && strcmp(slots_chosen_name(), "My") == 0,
+                     "save: the slot's name was not as typed");
+        slots_compose();
+        write_picture(slots_pixels(), "build/slots1.ppm");
+        check_expect(slots_click(150, 155) == SLOTS_LEAVE, "save: Cancel did not leave");
+        slots_close();
+        check_expect(fs_beside(path, (int)sizeof(path), "DATA\\TEST2.SAV") && remove(path) == 0, "save: the test's file did not go");
     }
-    check_expect(!save_exists(), "save: a save is there after its file went");
-    save_use_file("DATA\\SAVE0.SAV");
+    check_expect(!save_exists() && !save_any(), "save: a save is there after its file went");
+    save_use_prefix("DATA\\SAVE");
+    save_use_slot(0);
     printf("save: a door, a body, a pile, a sheet and a pack, round the file and back\n");
 }
 
@@ -2881,6 +2938,7 @@ void check_play(void)
     check_class_and_wear();
     check_creatures_more();
     check_body_more();
+    check_hands();
     check_rest();
     check_save();
     check_hold();

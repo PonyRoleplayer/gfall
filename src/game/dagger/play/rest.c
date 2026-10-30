@@ -1,5 +1,6 @@
 #include "game/dagger/play/rest.h"
 #include "game/dagger/play/canvas.h"
+#include "game/dagger/play/combat.h"
 #include "game/dagger/play/foes.h"
 #include "game/dagger/play/rules.h"
 #include "engine/core/log.h"
@@ -34,6 +35,7 @@ static const Rect g_ask_box = { 83, 95, 154, 24 };
 #define SECONDS_A_STEP_LOITER 0.125f
 #define HOURS_MOST 99
 #define HOURS_TEXT 3
+#define ENCOUNTER_ODDS 36
 
 enum {
     PHASE_CHOOSE,
@@ -230,6 +232,10 @@ static int one_step(void)
     g.changed = 1;
     if (g.kind != KIND_LOITER) {
         hour_of_rest();
+    }
+    /* An hour's chance of being found (ours, one in 36: DFU's dungeon roll, whose frequency was not read). */
+    if (combat_roll(ENCOUNTER_ODDS) == 0) {
+        foes_rouse_nearest(g.player->body.feet);
     }
     if (foes_awake() > 0) {
         return end_rest("You are awoken by an enemy.");

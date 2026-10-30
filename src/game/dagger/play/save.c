@@ -10,15 +10,29 @@
 /* See save.h. */
 
 #define SAVE_DIR "DATA"
-#define SAVE_FILE "DATA\\SAVE0.SAV"
+#define SAVE_PREFIX "DATA\\SAVE"
 /* What these chunks mean. A change that a zero in a new field cannot carry makes older saves refused. */
 #define SAVE_VERSION 1
 
-static const char *g_file = SAVE_FILE;
+static const char *g_prefix = SAVE_PREFIX;
+static int g_slot;
+static char g_file[32];
 
-void save_use_file(const char *name)
+/* The file of a slot, into g_file. */
+static const char *file_of(int slot)
 {
-    g_file = name;
+    log_format(g_file, (int)sizeof(g_file), "%s%d.SAV", g_prefix, slot);
+    return g_file;
+}
+
+void save_use_prefix(const char *prefix)
+{
+    g_prefix = prefix;
+}
+
+void save_use_slot(int slot)
+{
+    g_slot = slot;
 }
 
 /* ---- The rows: each chunk's first field is its id, as a record file wants. ---- */
@@ -35,6 +49,8 @@ typedef struct SaveGameRow {
     df_u32 seed;
     df_u32 gold;
     df_i32 worn[EQUIP_COUNT];
+    df_i32 use_left;
+    char name[SAVE_NAME];
 } SaveGameRow;
 
 static const RecField g_game_fields[] = {
@@ -47,7 +63,9 @@ static const RecField g_game_fields[] = {
     REC_FIELD("day_zero", REC_INT, SaveGameRow, day_zero),
     REC_FIELD("seed", REC_UINT, SaveGameRow, seed),
     REC_FIELD("gold", REC_UINT, SaveGameRow, gold),
-    REC_ARRAY("worn", REC_INT, SaveGameRow, worn)
+    REC_ARRAY("worn", REC_INT, SaveGameRow, worn),
+    REC_FIELD("use_left", REC_INT, SaveGameRow, use_left),
+    REC_FIELD("name", REC_TEXT, SaveGameRow, name)
 };
 static const RecSchema g_game_schema = {
     "GAME", "game", g_game_fields, (int)(sizeof(g_game_fields) / sizeof(g_game_fields[0])), (df_u16)sizeof(SaveGameRow), 0
@@ -202,6 +220,8 @@ static int write_chunks(const SaveState *state)
     for (i = 0; i < EQUIP_COUNT; i++) {
         game.worn[i] = state->pack.worn[i];
     }
+    game.use_left = state->pack.use_left;
+    df_copy(game.name, state->name, SAVE_NAME);
     for (i = 0; i < state->pack.count; i++) {
         items[i].id = (df_u16)i;
         items[i].item = state->pack.item[i];
@@ -241,12 +261,12 @@ int save_write(const SaveState *state)
         return 0;
     }
     was = mem_heap_use(scratch);
-    ok = fs_make_dir(SAVE_DIR) && fs_create(g_file) && write_chunks(state);
+    ok = fs_make_dir(SAVE_DIR) && fs_create(file_of(g_slot)) && write_chunks(state);
     mem_heap_use(was);
     mem_heap_delete(scratch);
     if (!ok) {
         fs_abort();
-        log_print(LOG_WARN, "save: %s could not be written", g_file);
+        log_print(LOG_WARN, "save: slot %d could not be written", g_slot);
         return 0;
     }
     fs_finish();
@@ -255,16 +275,34 @@ int save_write(const SaveState *state)
 
 /* ---- Reading. ---- */
 
-int save_exists(void)
+/* Whether a slot's file is there. */
+static int slot_exists(int slot)
 {
     VfsFile *file;
 
-    file = vfs_open_beside(g_file);
+    file = vfs_open_beside(file_of(slot));
     if (!file) {
         return 0;
     }
     vfs_close(file);
     return 1;
+}
+
+int save_exists(void)
+{
+    return slot_exists(g_slot);
+}
+
+int save_any(void)
+{
+    int slot;
+
+    for (slot = 0; slot < SAVE_SLOTS; slot++) {
+        if (slot_exists(slot)) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 /* The tables a file is merged into: kept for the process, as a record table is. */
@@ -330,6 +368,8 @@ static void apply_tables(SaveState *state)
     for (i = 0; i < EQUIP_COUNT; i++) {
         state->pack.worn[i] = game->worn[i];
     }
+    state->pack.use_left = game->use_left;
+    df_copy(state->name, game->name, SAVE_NAME);
     keep_clear();
     for (i = 0; i < g_keep_table.count; i++) {
         keep_put(&((const SaveKeepRow *)g_keep_table.rows)[i].keep);
@@ -362,7 +402,7 @@ int save_read(SaveState *state)
         return 0;
     }
     was = mem_heap_use(scratch);
-    bytes = vfs_read_beside(g_file, &size);
+    bytes = vfs_read_beside(file_of(g_slot), &size);
     ok = bytes && rec_is_file(bytes, size);
     if (ok) {
         at = 0;
@@ -374,9 +414,47 @@ int save_read(SaveState *state)
     mem_heap_delete(scratch);
     head = (const RecHead *)g_head_table.rows;
     if (!ok || !g_head_table.count || head->size != SAVE_VERSION || !g_game_table.count || !g_sheet_table.count) {
-        log_print(LOG_WARN, "save: %s is not a save this game reads", g_file);
+        log_print(LOG_WARN, "save: slot %d is not a save this game reads", g_slot);
         return 0;
     }
     apply_tables(state);
     return 1;
+}
+
+int save_peek_name(int slot, char *out)
+{
+    MemHeap *scratch;
+    MemHeap *was;
+    const df_u8 *bytes;
+    RecChunk chunk;
+    df_u32 size;
+    df_u32 at;
+    int found;
+
+    out[0] = 0;
+    if (!slot_exists(slot) || !ready_table(&g_game_table, &g_game_schema, 1)) {
+        return 0;
+    }
+    scratch = mem_heap_new();
+    if (!scratch) {
+        return 0;
+    }
+    was = mem_heap_use(scratch);
+    bytes = vfs_read_beside(file_of(slot), &size);
+    found = 0;
+    if (bytes && rec_is_file(bytes, size)) {
+        at = 0;
+        while (rec_next(bytes, size, &at, &chunk)) {
+            if (chunk.tag[0] == 'G' && chunk.tag[1] == 'A' && chunk.tag[2] == 'M' && chunk.tag[3] == 'E') {
+                rec_merge(&g_game_table, &chunk, 0);
+                found = g_game_table.count > 0;
+            }
+        }
+    }
+    mem_heap_use(was);
+    mem_heap_delete(scratch);
+    if (found) {
+        df_copy(out, ((const SaveGameRow *)g_game_table.rows)->name, SAVE_NAME);
+    }
+    return found;
 }

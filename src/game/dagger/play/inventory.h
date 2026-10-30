@@ -20,9 +20,10 @@
  * goes by body part, and it has more places to be worn than a pack has
  * slots.
  *
- * Weapons, armour and gold, for now. A weapon is held in the right hand,
- * and the left takes only a shield until a second weapon has somewhere to
- * swing from. Clothing, jewellery and the rest come when they mean something.
+ * Weapons, armour and gold, for now. A one-handed weapon goes in the first
+ * free hand, and one hand or the other is the one in use (DFU's WeaponManager):
+ * a shield in the left keeps the right in use. Clothing, jewellery and the
+ * rest come when they mean something.
  */
 
 #define INVENTORY_MAX 64
@@ -61,6 +62,8 @@ typedef struct Inventory {
     /* Each place's item, or -1. */
     int worn[EQUIP_COUNT];
     df_u32 gold;
+    /* 1 when the left hand is the one in use. */
+    int use_left;
 } Inventory;
 
 /* An item of template in material, new. 0 when MAIN.DAT has no such template or material, or the template does not come in it. */
@@ -104,7 +107,11 @@ int inventory_wear(Inventory *inv, int i);
 void inventory_take_off(Inventory *inv, int place);
 /* Where item i is worn (EQUIP_*), or -1. */
 int inventory_worn_at(const Inventory *inv, int i);
-/* The item in hand, or 0. */
+/* The other hand in use. 0, with nothing changed, when a shield in the left keeps it to the right. */
+int inventory_swap_hands(Inventory *inv);
+/* The place of the hand in use: EQUIP_RIGHT_HAND or EQUIP_LEFT_HAND. */
+int inventory_hand_place(const Inventory *inv);
+/* The weapon in the hand in use, or 0: bare hands. */
 const Item *inventory_weapon(const Inventory *inv);
 /* The same, to change: its condition wearing down. */
 Item *inventory_hand(Inventory *inv);

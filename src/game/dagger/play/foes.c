@@ -280,6 +280,45 @@ void foes_knock(Entity *e, const float *from, int speed)
     m->knock = (float)(speed > KNOCK_MOST ? KNOCK_MOST : speed);
 }
 
+int foes_rouse_nearest(const float *at)
+{
+    Entity *best;
+    float best_at;
+    int slot;
+
+    best = 0;
+    best_at = FOES_ROUSE_REACH * FOES_ROUSE_REACH;
+    for (slot = 0; slot < stream_slots(); slot++) {
+        Entity *ents;
+        int first;
+        int n;
+        int i;
+
+        ents = stream_slot_entities(slot, &first, &n);
+        for (i = 0; ents && i < n; i++) {
+            float dx;
+            float dz;
+            float d;
+
+            if (!ents[i].live || ents[i].dead || dunstream_kind(&ents[i], 0) < 0 || dunstream_passive(&ents[i]) || mind_of(&ents[i])) {
+                continue;
+            }
+            dx = ents[i].x - at[0];
+            dz = ents[i].z - at[2];
+            d = dx * dx + dz * dz;
+            if (d < best_at) {
+                best = &ents[i];
+                best_at = d;
+            }
+        }
+    }
+    if (!best) {
+        return 0;
+    }
+    foes_alert(best);
+    return mind_of(best) != 0;
+}
+
 int foes_stealth_chance(float distance, int stealth)
 {
     return 2 * ((df_ifloor(distance) * stealth) >> 10);

@@ -344,7 +344,7 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **Armour** (DaggerfallEntity.UpdateEquippedArmorValues). Each of the seven body parts starts at 100, lower being better. A piece takes 5 × its material's armour (iron 7, steel 9, daedric 21, leather 3, chain 6) off its part. A shield takes 5 × its own (1..4, whatever it is made of) off each part it covers.
 - **Armour changes combat.** A creature's blow comes at one part by classic's odds (of 20: head 2, each arm 3, chest 4, hands 4, legs 3, feet 1), and that part's value goes into its chance to hit. A rat's 83% at a bare warrior is 48% through iron.
 - **Colours** (`cif_metal`, DFU's ImageProcessing.GetMetalColorTable, classic's own tables). Weapons and armour are drawn in the sixteen palette indices from 0x70, which are steel as they stand; each other metal swaps those sixteen by its table, on the doll, in the lists and in the swing alike. Leather and chain keep their picture's colours (ItemHelper.GetArmorDyeColor gives them none). A picture's pixels outside those sixteen stay as drawn: a sword's hilt is always gold, and two of the six helms (variants 0 and 3) are gold all over, whatever they are made of, so `additem helm daedric`, which takes the first variant, shows a gold helm. Clothing's dyes, the sixteen from 0x60, come with clothing. `make hostcheck` writes every metal side by side to `build/dye0.ppm`.
-- **Wearing.** A weapon goes in the right hand. The left hand takes only a shield until a second weapon can swing. A two-handed weapon takes the shield off, and a shield takes a two-handed weapon out of the hand.
+- **Wearing.** A one-handed weapon goes in the first free hand. The swap key (H) changes which is in use, unless a shield holds the left (WeaponManager). A two-handed weapon takes both, and a shield takes it out of the hand. The console's `equip` always uses the right.
 - **Carrying:** Strength × 1.5 kg (UESP); past it a thing cannot be taken. A pack's gold weighs 400 coins a kilogram. Classic's weight does not slow the walk (DFU's PlayerSpeedChanger takes no weight).
 
 - **Wear** (`item_wear_down`, FormulaHelper). A blow that takes health wears the weapon, and a creature's blow what covers the part it lands on, a shield before armour: (10 × damage + 50) / 100, and with none a one in five chance of 1. Worn out it comes off, says so, and cannot go back on.
@@ -396,13 +396,12 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Creatures | ranged attacks and spells; a hurt voice | P9 |
 | Creatures | the frame a blow lands on and how often a move sounds are our guesses, not found in classic | - |
 | Creatures | LEVELFALL's view of a creature's state | P7 |
-| Saves | one slot, overwritten without asking; classic's SAVE00I0.IMG and LOAD00I0.IMG screens, with a slot's name | P7 |
 | Saves | creatures awake come back asleep; the weather is not kept | P8 |
-| Rest | a random encounter while resting; a class with no spell point regeneration | P7, P9 |
+| Rest | an encounter wakes a sleeper, not a new creature; a class with no spell point regeneration | later, P9 |
 | Items | clothing, jewellery, ingredients, books, potions, maps, and the screen's other tabs | P9, P10 |
 | Items | clothing's dyes | with clothing |
 | Inventory | the Wagon button (P12), the Use button (P9) | as named |
-| Inventory | a second weapon in the left hand | P7 |
+| Inventory | a left-hand weapon shows the right hand's picture on the doll | later |
 | Inventory | the info box is a dark box, not classic's scroll of TEXT.RSC | P7 |
 | Loot | the other columns of `LOOT` wait for their items | P9, P10 |
 | Loot | a body or a heap takes nothing put on it (a choice, see What can be searched) | - |
@@ -424,13 +423,14 @@ What is built but not whole, and the phase each goes in. Each section above says
 - **Time** passes ten game minutes a step: a step every 0.075 s of real time resting, every 0.125 s loitering. The clock is set directly and turns the day itself, so a console that stopped the clock's scale cannot hang a rest.
 - **Each whole hour of rest** gives back health (endurance's modifier + (Medical + 60) × its most / 1000, at least 1), fatigue and spell points (an eighth of their most, at least 1), and is a use of Medical. Loitering gives back nothing.
 - **A creature awake** refuses a rest ("You cannot rest with enemies nearby."), and stops one each hour. Skills that have earned it rise when the rest ends, and a level due opens the sheet.
-- **Not yet:** a random encounter while resting; a class with no spell point regeneration; the law on camping, and rented rooms, with towns (P8, P10).
+- **An encounter.** Each hour one chance in 36 (ours: DFU's dungeon roll, how often it rolls not read) of the nearest sleeper within 2048 units waking and coming, which ends the rest (`foes_rouse_nearest`). DFU conjures a creature; there is no way to here yet.
+- **Not yet:** a class with no spell point regeneration; the law on camping, and rented rooms, with towns (P8, P10).
 
 The travel map comes later, with `worldmap.c`'s pixels and the location index: pick a place and land in the stream there, time passing as the trip.
 
 ## Saves (built: P7)
 
-`play/save.c`. One slot, `DATA\SAVE0.SAV`, a record file (`docs/data.md`) as KEYS.DAT is: `dfrec dump` reads it, and a later program reading an older save keeps a new field's zero. Its version, in its head, refuses only a change a zero cannot carry.
+`play/save.c`. Six slots, `DATA\SAVE0.SAV` to `SAVE5.SAV`, each with a name, each a record file (`docs/data.md`) as KEYS.DAT is: `dfrec dump` reads it, and a later program reading an older save keeps a new field's zero. Its version, in its head, refuses only a change a zero cannot carry.
 
 | Chunk | Holds |
 | --- | --- |
@@ -444,8 +444,8 @@ The travel map comes later, with `worldmap.c`'s pixels and the location index: p
 - **Saving** first flushes the blocks loaded now into the keep table (the engine's `stream_keep_now`): a door opened where the player stands has otherwise only been saved in memory on its block's own arrays.
 - **Loading** (`load_game` in `game.c`) reads the file, replaces the keep table and the pool, and returns `GAME_START`, the same path as a new game. `main.c` closes the place and opens it again, each place in a temp heap of its own as LEVELFALL's (`leave_place`), and `game_enter` puts the player at the save's place. Without its own heap every load leaked the stream's arrays.
 - **A new game** forgets the last one's keep table and piles, and takes a new seed (`forget_last_game`).
-- **The menus:** the start menu's Load; the options' Save and Load. There is no save screen yet: one slot, overwritten without asking.
-- **Death** shows classic's DIE_00I0.IMG until a key or a click, then loads the last save, or with none goes back to the start menu.
+- **The menus:** the start menu's Load, the options' Save and Load, all through classic's screen (`play/slots.c`, LOAD00I0.IMG, SAVE00I0.IMG's title over it to save, DFU's rectangles). To load, a click on a slot with a save; to save, a click on any slot and a name typed, its old one to start from. Hostcheck uses files of its own (`save_use_prefix`), so it never touches a player's.
+- **Death** shows classic's DIE_00I0.IMG until a key or a click, then the load screen. Put away, or with no saves, it goes back to the start menu.
 - **Creatures awake are not saved.** They come back asleep, where they stood, wounded as they were.
 
 ## Later

@@ -66,6 +66,7 @@ static const Slot g_slots[] = {
     { INPUT_RUN, 164, 68 },
     { INPUT_REST, 270, 13 },
     { INPUT_ATTACK, 102, 136 },
+    { INPUT_SWAP_HANDS, 102, 147 },
     { INPUT_CHARACTER, 102, 170 },
     { INPUT_INVENTORY, 102, 181 },
     { INPUT_USE, 270, 80 },

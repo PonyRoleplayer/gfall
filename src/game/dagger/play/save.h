@@ -5,7 +5,8 @@
 #include "game/dagger/play/inventory.h"
 
 /*
- * One saved game, DATA\SAVE0.SAV. Read docs/game.md (Saves) before editing.
+ * Saved games, six slots with a name each, DATA\SAVE0.SAV to SAVE5.SAV. Read
+ * docs/game.md (Saves) before editing.
  *
  * It is a record file (docs/data.md), like KEYS.DAT: self-describing chunks,
  * so `dfrec dump` reads it, and a later program reading an older save keeps
@@ -22,6 +23,9 @@
  * Plain C: hostcheck runs a round trip.
  */
 
+#define SAVE_SLOTS 6
+#define SAVE_NAME 24
+
 /* Everything a save holds that is not already in a table of its own. */
 typedef struct SaveState {
     /* The player's feet, in the place's frame: a stream's origin moves. */
@@ -33,14 +37,22 @@ typedef struct SaveState {
     int day;
     int day_zero;
     df_u32 seed;
+    /* What the player called this save. */
+    char name[SAVE_NAME];
     Character sheet;
     Inventory pack;
 } SaveState;
 
-/* The name saves go by, DATA\\SAVE0.SAV until told otherwise: hostcheck's own, so it never touches a player's. */
-void save_use_file(const char *name);
-/* 1 when there is a save to load. */
+/* What the files' names start with, DATA\\SAVE until told otherwise: hostcheck's own, so it never touches a player's. */
+void save_use_prefix(const char *prefix);
+/* The slot the calls below read and write, 0..SAVE_SLOTS-1. */
+void save_use_slot(int slot);
+/* 1 when the slot in use has a save. */
 int save_exists(void);
+/* 1 when any slot has. */
+int save_any(void);
+/* A slot's name, into out (SAVE_NAME); 0, and empty, when it has no save. */
+int save_peek_name(int slot, char *out);
 /*
  * Writes state, and the keep table and the piles as they are now: the caller
  * has flushed what is loaded into the keep table first (stream_keep_now).

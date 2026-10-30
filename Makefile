@@ -161,6 +161,7 @@ PLAY_SRC := \
 	src/game/dagger/play/sheet.c \
 	src/game/dagger/play/rest.c \
 	src/game/dagger/play/save.c \
+	src/game/dagger/play/slots.c \
 	src/game/dagger/play/commands.c \
 	src/game/dagger/play/weapon.c \
 	src/game/dagger/play/combat.c \

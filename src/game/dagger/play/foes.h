@@ -62,6 +62,9 @@ int foes_on(void);
 void foes_alert(Entity *e);
 /* e knocked back from the point from, at this speed in classic's units: it slides, and acts again when that dies away. */
 void foes_knock(Entity *e, const float *from, int speed);
+/* The nearest sleeper within FOES_ROUSE_REACH of the point wakes and comes: what a rest's encounter is, there being no creatures to conjure. 1 when one did. */
+#define FOES_ROUSE_REACH 2048.0f
+int foes_rouse_nearest(const float *at);
 /* The chance in 100 a sleeper this far off does NOT notice someone of this Stealth (FormulaHelper.CalculateStealthChance). */
 int foes_stealth_chance(float distance, int stealth);
 /*

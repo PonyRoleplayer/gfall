@@ -34,7 +34,8 @@ static const KeyBind g_defaults[] = {
     { INPUT_FORWARD, 'W' },
     { INPUT_BACK, 'S' },
     { INPUT_LEFT, 'A' },
-    { INPUT_RIGHT, 'D' }
+    { INPUT_RIGHT, 'D' },
+    { INPUT_SWAP_HANDS, 'H' }
 };
 #define DEFAULTS ((int)(sizeof(g_defaults) / sizeof(g_defaults[0])))
 

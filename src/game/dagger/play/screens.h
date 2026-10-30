@@ -25,7 +25,9 @@ enum {
     /* Creation finished, the character made (create_result), still open until the game has read it. */
     SCREENS_MADE,
     /* Creation skipped for the default character (create_default). */
-    SCREENS_SKIPPED
+    SCREENS_SKIPPED,
+    /* A save slot chosen (screens_slot), closed. */
+    SCREENS_SLOT
 };
 
 /* Opens one, closing any other. Nothing opens when its pictures are missing: is_open says. */
@@ -33,6 +35,11 @@ void screens_open_bag(Player *p, Entity *searched);
 void screens_open_sheet(Player *p);
 void screens_open_create(void);
 void screens_open_rest(Player *p);
+void screens_open_slots(int saving);
+/* The slot chosen and the name typed, after SCREENS_SLOT; whether it was to save. */
+int screens_slot(void);
+const char *screens_slot_name(void);
+int screens_slot_saving(void);
 void screens_close(void);
 int screens_is_open(void);
 /* One frame's pointer, clicks and keys: SCREENS_*. */

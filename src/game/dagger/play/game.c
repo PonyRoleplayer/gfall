@@ -46,6 +46,8 @@ static int g_load_waiting;
 static int g_day_zero;
 /* The last game minute that tired the player. */
 static int g_last_minute;
+/* 1 from the death screen until a save is loaded or the slots put away. */
+static int g_dead;
 
 /*
  * What the use key does that the engine's doors and levers do not: a
@@ -135,13 +137,14 @@ static float game_minutes(void)
     return (float)(clock_day() - g_day_zero) * CLOCK_DAY + clock_minute();
 }
 
-/* The game as it stands, into the one slot. What is loaded goes into the keep table first. */
-static int save_game(void)
+/* The game as it stands, into the slot in use, by this name. What is loaded goes into the keep table first. */
+static int save_game(const char *name)
 {
     SaveState state;
     int cx;
     int cz;
 
+    df_copy(state.name, name, SAVE_NAME);
     stream_keep_now();
     stream_origin(&cx, &cz);
     state.feet[0] = g_player.body.feet[0] + (float)cx * DUNSTREAM_BLOCK;
@@ -158,15 +161,17 @@ static int save_game(void)
     return save_write(&state);
 }
 
-/* The save read, to start from at the next place. 1 when there was one. */
-static int load_game(void)
+/* A slot's save read, to start from at the next place. 1 when there was one. */
+static int load_game(int slot)
 {
+    save_use_slot(slot);
     if (!save_exists() || !save_read(&g_loaded)) {
         return 0;
     }
     g_new_sheet = g_loaded.sheet;
     g_new_pack = g_loaded.pack;
     g_load_waiting = 1;
+    g_dead = 0;
     return 1;
 }
 
@@ -347,16 +352,23 @@ int game_frame(Camera *cam, const Input *in, float dt)
                 forget_last_game();
                 return GAME_START;
             }
+            if (asked == SCREENS_SLOT) {
+                return load_game(screens_slot()) ? GAME_START : GAME_GO_ON;
+            }
+            /* The slots put away: the start menu again. */
+            if (asked == SCREENS_CLOSED) {
+                menu_open(MENU_MAIN);
+            }
             return GAME_GO_ON;
         }
         asked = menu_frame(in);
         if (asked == MENU_LOAD) {
-            if (load_game()) {
+            if (save_any()) {
                 menu_open(MENU_NONE);
-                prof_end(PROF_PLAY);
-                return GAME_START;
+                screens_open_slots(0);
+            } else {
+                menu_say("There is no saved game.");
             }
-            menu_say("There is no saved game.");
         }
         if (asked == MENU_START) {
             screens_open_create();
@@ -374,11 +386,30 @@ int game_frame(Camera *cam, const Input *in, float dt)
     closed = 0;
     if (screens_is_open()) {
         closed = 1;
-        if (screens_frame(in, dt) == SCREENS_CLOSED) {
+        asked = screens_frame(in, dt);
+        if (asked == SCREENS_SLOT && !screens_slot_saving()) {
+            prof_end(PROF_PLAY);
+            return load_game(screens_slot()) ? GAME_START : GAME_GO_ON;
+        }
+        if (asked == SCREENS_SLOT || asked == SCREENS_CLOSED) {
             const char *said;
 
+            /* The dead, having put the slots away, have only the start menu. */
+            if (g_dead) {
+                g_dead = 0;
+                g_playing = 0;
+                gfx_set_pause(0);
+                input_set_pointer(1);
+                menu_open(MENU_MAIN);
+                prof_end(PROF_PLAY);
+                return GAME_GO_ON;
+            }
             gfx_set_pause(0);
             input_set_pointer(0);
+            if (asked == SCREENS_SLOT) {
+                save_use_slot(screens_slot());
+                interact_say(save_game(screens_slot_name()) ? "Game saved." : "The game could not be saved.");
+            }
             said = screens_said();
             if (said) {
                 interact_say(said);
@@ -394,18 +425,20 @@ int game_frame(Camera *cam, const Input *in, float dt)
         if (asked == MENU_CLOSED) {
             menu_over_play(MENU_NONE);
         } else if (asked == MENU_SAVE) {
-            menu_say(save_game() ? "Game saved." : "The game could not be saved.");
+            menu_open(MENU_NONE);
+            screens_open_slots(1);
         } else if (asked == MENU_LOAD || asked == MENU_DEATH_OVER) {
-            /* From the options, or dead: the last save, if there is one. */
-            if (load_game()) {
+            /* From the options, or dead: which save, if there is any. */
+            g_dead = asked == MENU_DEATH_OVER;
+            if (save_any()) {
                 menu_open(MENU_NONE);
-                prof_end(PROF_PLAY);
-                return GAME_START;
-            }
-            if (asked == MENU_LOAD) {
+                input_set_pointer(1);
+                screens_open_slots(0);
+            } else if (asked == MENU_LOAD) {
                 menu_say("There is no saved game.");
             } else {
                 /* Dead with nothing saved: back to the start menu, the place left for the next start to replace. */
+                g_dead = 0;
                 g_playing = 0;
                 gfx_set_pause(0);
                 input_set_pointer(1);
@@ -422,6 +455,10 @@ int game_frame(Camera *cam, const Input *in, float dt)
         sheet_over_play();
     } else if ((in->pressed & INPUT_BIT(INPUT_REST)) && !gfx_paused()) {
         rest_over_play();
+    } else if ((in->pressed & INPUT_BIT(INPUT_SWAP_HANDS)) && !gfx_paused()) {
+        if (!inventory_swap_hands(&g_player.pack)) {
+            interact_say("A shield keeps your left hand.");
+        }
     }
     /* The console stands the world still too (gfx_paused): the player stands with it. */
     if (menu_current() == MENU_NONE && !screens_is_open() && !gfx_paused()) {
