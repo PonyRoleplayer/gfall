@@ -337,6 +337,14 @@ int instance_faces(const Instance *in, const Camera *cam, const Basis *basis,
  * first. For the use key's ray and the lights' line of sight.
  */
 int instance_ray(const Instance *in, const float *o, const float *d, float len, float *t);
+/*
+ * 1 when a model's drawn triangle lies on the line from one point to
+ * another, stopping stop_short before the end (a sound sits against its own
+ * wall). Sprites do not count, and a mover counts where it stands now. It
+ * walks the spans' boxes, then the models' boxes, and stops at the first
+ * triangle met. Cheap for a line, dear for many: docs/sound.md, Through walls.
+ */
+int scene_line_blocked(const Scene *scene, const float *from, const float *to, float stop_short);
 
 /*
  * How far a frame can see. clip_far is the card's far clip, in world

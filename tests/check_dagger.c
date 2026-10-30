@@ -2599,6 +2599,28 @@ static void check_dungeon_lights(void)
 }
 
 /*
+ * A sound's line through the streamed hold (docs/sound.md, Through walls):
+ * the floor under the eye stops a line going down, the room's own air does
+ * not stop a short one going up, and a line shorter than it stops short of
+ * is never blocked.
+ */
+static void check_dungeon_lines(const Scene *scene, const Camera *cam)
+{
+    float eye[3];
+    float below[3];
+    float above[3];
+
+    eye[0] = below[0] = above[0] = cam->x;
+    eye[1] = cam->y;
+    eye[2] = below[2] = above[2] = cam->z;
+    below[1] = cam->y - 400.0f;
+    above[1] = cam->y + 8.0f;
+    check_expect(scene_line_blocked(scene, eye, below, 16.0f), "dungeon lines: a line through the hold's floor was not blocked");
+    check_expect(!scene_line_blocked(scene, eye, above, 0.0f), "dungeon lines: a short line in the hold's air was blocked");
+    check_expect(!scene_line_blocked(scene, eye, below, 500.0f), "dungeon lines: a line shorter than its stop was blocked");
+}
+
+/*
  * The playtest's two reports on the hold's rising platform, mover index
  * lift of the streamed scene: a body stood on it is carried to the top,
  * and once up, it still draws when looked at from below it.
@@ -2698,6 +2720,7 @@ static void check_dungeon_movers(void)
     printf("dungeon movers: %d movers, %d boxes short of their sweep\n", checked, short_boxes);
     check_expect(checked > 0 && short_boxes == 0, "dungeon movers: a streamed mover's box does not hold its whole sweep");
     check_expect(lift >= 0, "dungeon movers: the hold has no platform that rises");
+    check_dungeon_lines(&level.scene, &cam);
     if (lift >= 0) {
         check_platform(&level.scene, lift);
     }

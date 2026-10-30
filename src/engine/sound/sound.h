@@ -71,6 +71,35 @@ void sound_stop_all(void);
 int sound_busy(void);
 
 /*
+ * Walls (docs/sound.md, Through walls). A positioned voice with a model
+ * between it and the listener is heard at this percent of its gain. The
+ * engine owns how; a game may set how much. 100 is no wall, and casts no
+ * rays. It is a volume cut alone: a 233 mixing 16 voices filters none.
+ */
+#define SOUND_MUFFLE 35
+void sound_set_muffle(int percent);
+int sound_muffle(void);
+
+/* A positioned voice as it plays now, for the ray and for sndview. */
+typedef struct SoundSpot {
+    float x, y, z;
+    float reach;
+    /* What it is heard at, 0..1, distance and walls included. */
+    float gain;
+    /* How far behind a wall, 0 clear..1 behind. */
+    float muffled;
+    int looping;
+    /* 1 once a ray has answered for it. */
+    int checked;
+} SoundSpot;
+/* Voice i, 0..SOUND_VOICES-1: 1 and out when it plays from a point; 0 when free or flat. */
+int sound_voice_at(int i, SoundSpot *out);
+/* The ray's answer for voice i. Its first takes effect at once; later ones ease in (sound_ease). */
+void sound_voice_walled(int i, int walled);
+/* Move each voice on toward what the rays last said, by secs of real time. */
+void sound_ease(float secs);
+
+/*
  * The mix itself: frames stereo frames added into dst. audio.c calls it;
  * hostcheck calls it to hear the voices without a card.
  */

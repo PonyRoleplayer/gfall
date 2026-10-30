@@ -20,6 +20,11 @@ typedef struct Voice {
     float pan;
     /* The gain worked out last, 0..1, for choosing a voice to take. */
     float level;
+    /* How far behind a wall it sounds now, 0 clear..1 behind, easing toward walled. */
+    float muffled;
+    float walled;
+    /* 1 once a ray has answered for it (sound_voice_walled). */
+    int checked;
 } Voice;
 
 static Voice g_voice[SOUND_VOICES];
@@ -34,6 +39,10 @@ static void *g_hwnd;
 static float g_lx, g_ly, g_lz;
 static float g_rx = 1.0f;
 static float g_rz;
+/* Percent of a positioned voice's gain that comes through a wall; 100 is no wall at all. */
+static int g_muffle = SOUND_MUFFLE;
+/* A voice goes behind a wall or comes out from it over this long, so its gain does not click. */
+#define MUFFLE_SECS 0.25f
 
 static float sq_root(float v)
 {
@@ -213,6 +222,10 @@ static void aim(Voice *v)
         pan = 1.0f;
     }
     g *= v->volume * (float)g_volume * 0.01f;
+    /* Behind a wall: the share that comes through, in step with how far it has gone behind. */
+    if (v->positional) {
+        g *= 1.0f - v->muffled * (float)(100 - g_muffle) * 0.01f;
+    }
     v->level = g;
     a = (pan + 1.0f) * (DF_TAU / 8.0f);
     v->mix.gl = q15(g * 1.41421356f * df_cos(a));
@@ -253,6 +266,10 @@ static int start(Voice *v, const SoundClip *clip, int flags)
     v->mix.step = g_mix_rate > 0 ? (df_u32)(((df_u32)clip->rate << 16) / (df_u32)g_mix_rate) : MIX_ONE;
     v->mix.loop = (flags & SOUND_LOOP) ? 1 : 0;
     v->mix.on = 1;
+    /* A taken voice must not hand its wall on to the new sound. */
+    v->muffled = 0.0f;
+    v->walled = 0.0f;
+    v->checked = 0;
     g_serial = (g_serial + 1) & 0x3ffffff;
     if (g_serial == 0) {
         g_serial = 1;
@@ -297,6 +314,8 @@ int sound_play_at(const SoundClip *clip, float x, float y, float z,
         reach = inner + 1.0f;
     }
     probe.positional = 1;
+    /* Its loudness to choose a voice by, before any ray has answered for it. */
+    probe.muffled = 0.0f;
     probe.x = x;
     probe.y = y;
     probe.z = z;
@@ -397,6 +416,72 @@ void sound_mix(df_i16 *dst, int frames)
         mix_voice(&v->mix, dst, frames);
         if (!v->mix.on) {
             v->handle = 0;
+        }
+    }
+}
+
+void sound_set_muffle(int percent)
+{
+    g_muffle = percent < 0 ? 0 : (percent > 100 ? 100 : percent);
+}
+
+int sound_muffle(void)
+{
+    return g_muffle;
+}
+
+int sound_voice_at(int i, SoundSpot *out)
+{
+    const Voice *v;
+
+    if (i < 0 || i >= SOUND_VOICES) {
+        return 0;
+    }
+    v = &g_voice[i];
+    if (!v->mix.on || !v->positional) {
+        return 0;
+    }
+    out->x = v->x;
+    out->y = v->y;
+    out->z = v->z;
+    out->reach = v->reach;
+    out->gain = v->level;
+    out->muffled = v->muffled;
+    out->looping = v->mix.loop;
+    out->checked = v->checked;
+    return 1;
+}
+
+void sound_voice_walled(int i, int walled)
+{
+    Voice *v;
+
+    if (i < 0 || i >= SOUND_VOICES) {
+        return;
+    }
+    v = &g_voice[i];
+    v->walled = walled ? 1.0f : 0.0f;
+    /* The first answer holds from its first sample: there is nothing to ease from. */
+    if (!v->checked) {
+        v->muffled = v->walled;
+        v->checked = 1;
+    }
+}
+
+void sound_ease(float secs)
+{
+    float step;
+    int i;
+
+    step = secs / MUFFLE_SECS;
+    for (i = 0; i < SOUND_VOICES; i++) {
+        Voice *v;
+
+        v = &g_voice[i];
+        if (v->muffled < v->walled) {
+            v->muffled = v->muffled + step > v->walled ? v->walled : v->muffled + step;
+        } else if (v->muffled > v->walled) {
+            v->muffled = v->muffled - step < v->walled ? v->walled : v->muffled - step;
         }
     }
 }

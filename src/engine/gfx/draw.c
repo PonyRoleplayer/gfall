@@ -24,6 +24,7 @@
 #include "engine/scene/walker.h"
 #include "engine/scene/interact.h"
 #include "engine/sound/ambience.h"
+#include "engine/sound/sound.h"
 #include "engine/gfx/sky.h"
 
 /*
@@ -1760,6 +1761,106 @@ static void draw_light_view(const Camera *cam, const Basis *basis)
  */
 #define SOUND_VIEW_COUNT 64
 
+/* A ring round sx, sy where a sound stops being heard. Too small to read or too wide for the card, none. */
+static void view_ring(float sx, float sy, float rad, float r, float g, float b)
+{
+    int seg;
+
+    if (rad < 4.0f || rad > LIGHT_VIEW_RING) {
+        return;
+    }
+    for (seg = 0; seg < 32; seg++) {
+        DrawVert from;
+        DrawVert to;
+        float t0, t1;
+
+        t0 = (float)seg * (DF_TAU / 32.0f);
+        t1 = (float)(seg + 1) * (DF_TAU / 32.0f);
+        from.x = sx + rad * df_cos(t0);
+        from.y = sy + rad * df_sin(t0);
+        to.x = sx + rad * df_cos(t1);
+        to.y = sy + rad * df_sin(t1);
+        from.oow = to.oow = 1.0f;
+        from.ooz = to.ooz = 1.0f;
+        from.sow = to.sow = 0.0f;
+        from.tow = to.tow = 0.0f;
+        from.r = to.r = r;
+        from.g = to.g = g;
+        from.b = to.b = b;
+        glide_line(&from, &to);
+    }
+}
+
+/* A point on the glass from the camera: 1, its pixel, and its depth; 0 when behind or off the picture. */
+static int sound_view_spot(const Camera *cam, const Basis *basis, float wx, float wy, float wz,
+                           float *sx, float *sy, float *depth)
+{
+    float x, y, oow, ooz;
+
+    camera_view(cam, basis, wx, wy, wz, &x, &y, depth);
+    if (*depth < DF_NEAR || !camera_project(x, y, *depth, sx, sy, &oow, &ooz)) {
+        return 0;
+    }
+    return *sx >= 0.0f && *sx <= (float)DF_VIEW_W && *sy >= 0.0f && *sy <= (float)DF_VIEW_H;
+}
+
+/*
+ * `sndview`'s other half: every voice playing from a point, within the same
+ * range, whoever started it, so a creature's one-shot shows as well as a
+ * fire. A larger square than an emitter's, cyan when clear and magenta when
+ * behind a wall, its ring, and what it is heard at. See docs/sound.md.
+ */
+static void draw_sound_voices(const Camera *cam, const Basis *basis)
+{
+    SoundSpot spot;
+    float range2;
+    int i;
+
+    if (ambience_view() < 1) {
+        return;
+    }
+    range2 = (float)ambience_view() * (float)ambience_view();
+    glide_overlay(1);
+    for (i = 0; i < SOUND_VOICES; i++) {
+        float dx, dy, dz, sx, sy, depth;
+        float r, g, b;
+
+        if (!sound_voice_at(i, &spot)) {
+            continue;
+        }
+        dx = spot.x - cam->x;
+        dy = spot.y - cam->y;
+        dz = spot.z - cam->z;
+        if (dx * dx + dy * dy + dz * dz > range2 || !sound_view_spot(cam, basis, spot.x, spot.y, spot.z, &sx, &sy, &depth)) {
+            continue;
+        }
+        r = spot.muffled > 0.5f ? 230.0f : 90.0f;
+        g = spot.muffled > 0.5f ? 80.0f : 220.0f;
+        b = spot.muffled > 0.5f ? 230.0f : 255.0f;
+        view_quad(sx, sy, 5.0f, r, g, b);
+        view_ring(sx, sy, spot.reach * g_focal / depth, r * 0.6f, g * 0.6f, b * 0.6f);
+    }
+    glide_overlay(0);
+    /* The words after the squares: the text sets its own state. */
+    for (i = 0; i < SOUND_VOICES; i++) {
+        char word[16];
+        float dx, dy, dz, sx, sy, depth;
+
+        if (!sound_voice_at(i, &spot)) {
+            continue;
+        }
+        dx = spot.x - cam->x;
+        dy = spot.y - cam->y;
+        dz = spot.z - cam->z;
+        if (dx * dx + dy * dy + dz * dz > range2 || !sound_view_spot(cam, basis, spot.x, spot.y, spot.z, &sx, &sy, &depth)
+            || sx > (float)(DF_VIEW_W - 64)) {
+            continue;
+        }
+        log_format(word, (int)sizeof(word), "%d%%%s", df_iround(spot.gain * 100.0f), spot.muffled > 0.5f ? " wall" : "");
+        ui_string(df_iround(sx) + 8, df_iround(sy) - 4, word);
+    }
+}
+
 static void draw_sound_view(const Camera *cam, const Basis *basis, const Scene *scene)
 {
     int pick[SOUND_VIEW_COUNT];
@@ -1804,10 +1905,9 @@ static void draw_sound_view(const Camera *cam, const Basis *basis, const Scene *
     glide_overlay(1);
     for (j = 0; j < npick; j++) {
         const Emitter *e;
-        float x, y, z, sx, sy, oow, ooz, rad;
+        float x, y, z, sx, sy, oow, ooz;
         float r, g, b;
         int on;
-        int seg;
 
         i = pick[j];
         e = &em[i];
@@ -1829,30 +1929,7 @@ static void draw_sound_view(const Camera *cam, const Basis *basis, const Scene *
             b = on ? 120.0f : 40.0f;
         }
         view_quad(sx, sy, 3.0f, r, g, b);
-        rad = e->reach * g_focal / z;
-        if (rad < 4.0f || rad > LIGHT_VIEW_RING) {
-            continue;
-        }
-        for (seg = 0; seg < 32; seg++) {
-            DrawVert a;
-            DrawVert f;
-            float t0, t1;
-
-            t0 = (float)seg * (DF_TAU / 32.0f);
-            t1 = (float)(seg + 1) * (DF_TAU / 32.0f);
-            a.x = sx + rad * df_cos(t0);
-            a.y = sy + rad * df_sin(t0);
-            f.x = sx + rad * df_cos(t1);
-            f.y = sy + rad * df_sin(t1);
-            a.oow = f.oow = 1.0f;
-            a.ooz = f.ooz = 1.0f;
-            a.sow = f.sow = 0.0f;
-            a.tow = f.tow = 0.0f;
-            a.r = f.r = r * 0.6f;
-            a.g = f.g = g * 0.6f;
-            a.b = f.b = b * 0.6f;
-            glide_line(&a, &f);
-        }
+        view_ring(sx, sy, e->reach * g_focal / z, r * 0.6f, g * 0.6f, b * 0.6f);
     }
     glide_overlay(0);
     /* The words after the squares: the text sets its own state. */
@@ -3176,6 +3253,7 @@ void draw_frame(const Camera *cam, const Level *level)
     prof_begin(PROF_OVERLAY);
     draw_light_view(cam, &basis);
     draw_sound_view(cam, &basis, &level->scene);
+    draw_sound_voices(cam, &basis);
     draw_use_view(cam, &basis, &level->scene);
     draw_trigger_view(cam, &basis, &level->scene);
     draw_saying();

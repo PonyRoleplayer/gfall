@@ -99,7 +99,7 @@ A variable prints its value when typed alone, and takes a new one as an argument
 | `history` | The lines typed, oldest first. |
 | `clear` | Empties the log. |
 | `help [name]`, `find word` | See above. |
-| `sndinfo`, `sndlist`, `sndview`, `song`, `play`, `musdev`, `sound`, `sndvol`, `sndrate`, `snddrv`, `sndmmx`, `music`, `musvol`, `musvoices` | The sound and the music: see `docs/sound.md`. |
+| `sndinfo`, `sndlist`, `sndview`, `song`, `play`, `musdev`, `sound`, `sndvol`, `sndmuffle`, `sndrate`, `snddrv`, `sndmmx`, `music`, `musvol`, `musvoices` | The sound and the music: see `docs/sound.md`. |
 | `prof` | Where the frame's time goes, by stage: see `docs/profile.md`. |
 | `date`, `season` | The calendar and the season a town is drawn in: see `docs/daylight.md`. |
 | `useview`, `uselist`, `locks` | What can be used, and the doors' locks: see `docs/interact.md`. |

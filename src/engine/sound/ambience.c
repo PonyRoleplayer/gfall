@@ -286,6 +286,65 @@ static void emitters(const Camera *cam, float secs)
     g_nheld = nn;
 }
 
+/*
+ * Rays from the listener to the voices, for what is between them (docs/sound.md,
+ * Through walls). A ray is the one cost here that scales with the place, so a
+ * frame casts few. A voice new this frame goes first, or a short grunt would be
+ * over before its turn came round; with none new, the next audible voice in turn.
+ */
+#define WALL_RAYS_NEW 2
+/* The ray stops this far short of the sound: a torch sits against its own wall. */
+#define WALL_SHORT 16.0f
+
+/* The voice whose turn it is next, so sixteen share the frames evenly. */
+static int g_wall_turn;
+
+static void wall_ray(int i, const SoundSpot *spot, const Camera *cam)
+{
+    float from[3];
+    float to[3];
+
+    from[0] = cam->x;
+    from[1] = cam->y;
+    from[2] = cam->z;
+    to[0] = spot->x;
+    to[1] = spot->y;
+    to[2] = spot->z;
+    sound_voice_walled(i, scene_line_blocked(g_scene, from, to, WALL_SHORT));
+}
+
+static void walls(const Camera *cam)
+{
+    SoundSpot spot;
+    int cast;
+    int i;
+
+    if (sound_muffle() >= 100) {
+        return;
+    }
+    cast = 0;
+    for (i = 0; i < SOUND_VOICES && cast < WALL_RAYS_NEW; i++) {
+        if (sound_voice_at(i, &spot) && !spot.checked) {
+            wall_ray(i, &spot, cam);
+            cast++;
+        }
+    }
+    if (cast > 0) {
+        return;
+    }
+    for (i = 0; i < SOUND_VOICES; i++) {
+        int v;
+
+        v = (g_wall_turn + i) % SOUND_VOICES;
+        /* Out of reach it is silent either way: no ray for it. */
+        if (sound_voice_at(v, &spot) && spot.gain > 0.0f) {
+            wall_ray(v, &spot, cam);
+            g_wall_turn = (v + 1) % SOUND_VOICES;
+            return;
+        }
+    }
+}
+
 void ambience_frame(const Level *level, const Camera *cam, const Weather *w,
                     float night, int stroke, float secs)
 {
@@ -345,6 +404,9 @@ void ambience_frame(const Level *level, const Camera *cam, const Weather *w,
     if (g_scene->emitters && g_nemit > 0) {
         emitters(cam, secs);
     }
+    /* After everything that starts a voice, so a new one is answered before its first mix. */
+    walls(cam);
+    sound_ease(secs);
     sound_update();
     music_update();
 }

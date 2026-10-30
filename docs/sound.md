@@ -107,7 +107,24 @@ The latency of a new sound is the lead: about 150 ms at 13 frames a second.
 4. **Thunder.** `flash_tick` in `draw.c` raises `g_stroke` on the frame a stroke begins. A thunder clip follows 0.3–2.5 s later (the stroke's distance), from a random side, at 0.6 + 0.4 × the storm. One at a time.
 5. **The odd noise.** Every `wait_min`..`wait_max` seconds: outdoors on a fair day one of the day list, anywhere else one of the around list, from 400–800 units off in a random direction, heard full within 520.
 6. **Emitters.** Each one within reach is heard. In a streamed world (`Scene.sprite_spans`) only the spans' emitter ranges are walked (`Span.efirst`, `ecount`): its 9680 slots are mostly empty, and reading every one was 390 KB a frame through a 16 KB cache. A loop is kept if it is among the six nearest (`AMBIENCE_LOOPS`); the rest stop. A loop starts where it would be by now (seconds × rate, plus its index × 7919 samples), so no two torches burn in step and one walked back to sounds as if it never stopped. A now-and-then emitter plays with a chance of secs / every each frame, once at a time.
-7. `sound_update` aims the voices from the camera and refills the card; `music_update` gives finished buffers back.
+7. **Walls.** A ray or two from the listener to the positioned voices: see Through walls, below.
+8. `sound_update` aims the voices from the camera and refills the card; `music_update` gives finished buffers back.
+
+## Through walls
+
+A positioned voice with a model between it and the listener is heard at `sndmuffle` percent of its gain, 35 by default. It is a volume cut and nothing more: a filter on 16 voices is more than the 233 should pay. The line is straight, so a sound round a corner counts as behind a wall even when the way to it is open. A closed door blocks, since a mover counts where it stands now. Sprites and entities do not block.
+
+`scene_line_blocked` asks the question: spans' boxes, then models' boxes, then triangles, stopping at the first triangle met. The line stops 16 units short of the sound, because a torch sits against its own wall.
+
+**The stagger.** The ray is the one cost in the sound that grows with the place, so a frame casts few (`walls` in `ambience.c`):
+- Voices no ray has answered for go first, two a frame. This runs after everything that starts a voice and before the mix, so a voice started by then is answered before its first sample unless more than two start at once. Otherwise a short grunt would be heard whole through the wall before its turn came.
+- With none new, one audible voice a frame, in turn. Sixteen voices each get a fresh answer about every half second at 30 fps.
+- A voice out of reach is silent either way and gets no ray. `sndmuffle 100` casts none at all.
+
+A voice's first answer holds at once. Later ones ease over a quarter of a second (`sound_ease`), so the gain does not click as the listener passes a doorway.
+
+**What it costs.** Counted on Privateer's Hold streamed by block, 1164 lines between torches within 1400 units (the longest a voice is likely to be heard), 86% of them blocked: 118 boxes and 73 triangles a line on average, 221 and 483 at worst. Reckoned at about 150 to 250 cycles a box and 150 a triangle, that is about 0.13 ms on the 233 on average and 0.55 ms at worst. That is an estimate from counts, not a measurement. The real figure is in `prof`'s `sound` stage, and `sndmuffle 100` takes the rays away to compare.
+
 
 ## Memory
 
@@ -138,7 +155,8 @@ On a place's heap: its emitters, 2048 at most (`MAX_EMITTERS`), 32 bytes each; a
 | `musdev [n\|auto]` | The MIDI outputs, or play on one. |
 | `song [name\|stop]` | The song, or play one of MIDI.BSA's by name (`song DUNGEON5.HMI`). |
 | `play n` | Play DAGGER.SND clip n. |
-| `sndview n` | Squares, words and rings for the emitters within n units of the camera (0..4096), the 64 nearest: see below. 0 (default) is off; 1 to 63 hold nothing, so they turn it on at 1024. |
+| `sndmuffle 0..100` | Percent of a positioned sound heard through a wall (35). 100 is no walls, and casts no rays. |
+| `sndview n` | Squares, words and rings for the emitters and the positioned voices within n units of the camera (0..4096): see below. 0 (default) is off; 1 to 63 hold nothing, so they turn it on at 1024. |
 | `sndlist [n]` | The place's emitters by kind ("53 fire"), then the n nearest (10, at most 64): number, word, position, distance, reach, loop or now and then, and whether it plays or is in reach. |
 
 ## Seeing the emitters
@@ -146,6 +164,8 @@ On a place's heap: its emitters, 2048 at most (`MAX_EMITTERS`), 32 bytes each; a
 `sndview 1024` draws each emitter within 1024 units of the camera, the 64 nearest: a square at it, the game's word for it (`Emitter.label`: "fire", "horse", "cow", "pig", "cat", "dog"), and a ring as wide as its reach at its distance, where it stops being heard. A loop (a fire) is orange and a now-and-then sound (an animal) green, bright while it plays and dim while silent. So walking toward a torch shows it light up when it is among the six nearest loops, and an animal flash bright when it calls. It draws over walls, as `lightview` does, and keeps to the same limits: a square only when its centre is on the glass, a ring only when at most 480 pixels wide, so nothing reaches the SST-1's ±2048.
 
 `sndlist` prints the same from the console, nearest first, with positions to `setpos` to. The hold has 53 fires; the Ashwing Farmstead 6 animals.
+
+An emitter is only a place a sound may come from. A game's one-shots (`sound_play_at`: a creature's grunt, a door) have none, so `sndview` also draws every voice playing from a point within the same range, whoever started it (`draw_sound_voices`, read through `sound_voice_at`). Each gets a larger square, a ring, and what it is heard at as a percent, distance and walls included. It is cyan when clear, and magenta with "wall" beside the percent when behind one. A square with no emitter under it is a one-shot. It lasts as long as its voice, so a sound still playing after what made it has gone shows here.
 
 ## Tests
 

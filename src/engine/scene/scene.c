@@ -261,19 +261,11 @@ static int ray_tri(const float *o, const float *d, const Tri *tri, float len, fl
     return 1;
 }
 
-int instance_ray(const Instance *in, const float *o, const float *d, float len, float *t)
+/* A ray into the model's frame: its axes are m's columns, unit and square. */
+static void ray_into_model(const Instance *in, const float *o, const float *d, float *lo, float *ld)
 {
-    float lo[3];
-    float ld[3];
     float rx, ry, rz;
-    float at;
-    int hit;
-    int k;
 
-    if (!in || !in->mesh || !in->mesh->tris) {
-        return 0;
-    }
-    /* Into the model's frame: its axes are m's columns, unit and square. */
     rx = o[0] - in->x;
     ry = o[1] - in->y;
     rz = o[2] - in->z;
@@ -283,6 +275,20 @@ int instance_ray(const Instance *in, const float *o, const float *d, float len, 
     ld[0] = in->m[0] * d[0] + in->m[3] * d[1] + in->m[6] * d[2];
     ld[1] = in->m[1] * d[0] + in->m[4] * d[1] + in->m[7] * d[2];
     ld[2] = in->m[2] * d[0] + in->m[5] * d[1] + in->m[8] * d[2];
+}
+
+int instance_ray(const Instance *in, const float *o, const float *d, float len, float *t)
+{
+    float lo[3];
+    float ld[3];
+    float at;
+    int hit;
+    int k;
+
+    if (!in || !in->mesh || !in->mesh->tris) {
+        return 0;
+    }
+    ray_into_model(in, o, d, lo, ld);
     hit = 0;
     for (k = 0; k < in->mesh->ntris; k++) {
         if (ray_tri(lo, ld, &in->mesh->tris[k], len, &at)) {
@@ -554,6 +560,120 @@ static int model_box(const Scene *scene, int index,
         return 1;
     }
     return instance_box(&scene->models[index], cx, cy, cz, ex, ey, ez);
+}
+
+/* 1 when the segment from o along unit d, len long, meets the box of half sizes ex, ey, ez about cx, cy, cz. */
+static int segment_meets_box(const float *o, const float *d, float len,
+                             float cx, float cy, float cz, float ex, float ey, float ez)
+{
+    float c[3];
+    float e[3];
+    float t0;
+    float t1;
+    int k;
+
+    c[0] = cx;
+    c[1] = cy;
+    c[2] = cz;
+    e[0] = ex;
+    e[1] = ey;
+    e[2] = ez;
+    t0 = 0.0f;
+    t1 = len;
+    for (k = 0; k < 3; k++) {
+        float near_t;
+        float far_t;
+
+        /* Along the slab: inside it or never. */
+        if (d[k] > -1.0e-6f && d[k] < 1.0e-6f) {
+            if (o[k] < c[k] - e[k] || o[k] > c[k] + e[k]) {
+                return 0;
+            }
+            continue;
+        }
+        near_t = (c[k] - e[k] - o[k]) / d[k];
+        far_t = (c[k] + e[k] - o[k]) / d[k];
+        if (near_t > far_t) {
+            float swap;
+
+            swap = near_t;
+            near_t = far_t;
+            far_t = swap;
+        }
+        t0 = near_t > t0 ? near_t : t0;
+        t1 = far_t < t1 ? far_t : t1;
+        if (t0 > t1) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* 1 when model i has a drawn triangle on the segment. The first one found answers: which is nearest does not matter. */
+static int model_on_segment(const Scene *scene, int i, const float *o, const float *d, float len)
+{
+    const Instance *in;
+    float cx, cy, cz, ex, ey, ez;
+    float lo[3];
+    float ld[3];
+    float at;
+    int k;
+
+    in = &scene->models[i];
+    if (!in->mesh || !in->mesh->tris || !model_box(scene, i, &cx, &cy, &cz, &ex, &ey, &ez)
+        || !segment_meets_box(o, d, len, cx, cy, cz, ex, ey, ez)) {
+        return 0;
+    }
+    ray_into_model(in, o, d, lo, ld);
+    for (k = 0; k < in->mesh->ntris; k++) {
+        if (in->mesh->tris[k].slot != 0xffff && ray_tri(lo, ld, &in->mesh->tris[k], len, &at)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int scene_line_blocked(const Scene *scene, const float *from, const float *to, float stop_short)
+{
+    float d[3];
+    float len;
+    int i;
+    int s;
+
+    d[0] = to[0] - from[0];
+    d[1] = to[1] - from[1];
+    d[2] = to[2] - from[2];
+    len = df_sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    if (!scene || !scene->models || len <= stop_short) {
+        return 0;
+    }
+    d[0] /= len;
+    d[1] /= len;
+    d[2] /= len;
+    len -= stop_short;
+    if (scene->nspans < 1 || !scene->spans) {
+        for (i = 0; i < scene->nmodels; i++) {
+            if (model_on_segment(scene, i, from, d, len)) {
+                return 1;
+            }
+        }
+        return 0;
+    }
+    /* A span's box first: a stream's thousands of model slots are mostly in spans the line misses. */
+    for (s = 0; s < scene->nspans; s++) {
+        const Span *sp;
+
+        sp = &scene->spans[s];
+        if (sp->count < 1 || !segment_meets_box(from, d, len, sp->cx, sp->cy, sp->cz, sp->ex, sp->ey, sp->ez)) {
+            continue;
+        }
+        for (i = sp->first; i < sp->first + sp->count && i < scene->nmodels; i++) {
+            if (model_on_segment(scene, i, from, d, len)) {
+                return 1;
+            }
+        }
+    }
+    return 0;
 }
 
 static int take_visible(const Scene *scene, const Plane *planes,

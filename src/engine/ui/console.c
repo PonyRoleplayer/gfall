@@ -1412,6 +1412,8 @@ static void commands(void)
             "locked doors stay shut; 0 opens them as if unlocked");
     cmd_var("sound", sound_on, sound_set_on, 0, 1, "sound effects");
     cmd_var("sndvol", sound_volume, sound_set_volume, 0, 100, "sound effects volume, percent");
+    cmd_var("sndmuffle", sound_muffle, sound_set_muffle, 0, 100,
+            "percent of a sound heard through a wall; 100 is no walls, and casts no rays");
     cmd_var("sndrate", sound_rate, sound_set_rate, 8000, 44100,
             "the card's rate; 11025 is the effects' own, more only steps through them");
     cmd_var("snddrv", sound_mode, sound_set_mode, AUDIO_AUTO, AUDIO_NONE,

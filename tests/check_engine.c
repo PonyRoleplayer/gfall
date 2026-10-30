@@ -42,6 +42,7 @@
 #include "engine/ui/cmd.h"
 #include "engine/sound/mixer.h"
 #include "engine/sound/music.h"
+#include "engine/sound/ambience.h"
 #include "engine/sound/sound.h"
 
 static int probe_hits;
@@ -3509,6 +3510,81 @@ static void check_interact(void)
     movers[0].next = -1;
 }
 
+/* A positioned voice's state by the handle's slot, the low five bits (sound.c). */
+static SoundSpot voice_spot(int handle)
+{
+    SoundSpot spot;
+
+    mem_zero(&spot, sizeof(spot));
+    sound_voice_at(handle & 31, &spot);
+    return spot;
+}
+
+/*
+ * Through walls (docs/sound.md): a wall in the plane z 100 between the
+ * listener at the origin and a sound at z 200, at the default 80% volume,
+ * with the sound's inner radius past it so distance takes nothing.
+ */
+static void check_sound_walls(void)
+{
+    static Level level;
+    static Instance in[1];
+    static signed char data[64];
+    SoundClip clip;
+    SoundSpot free_voice;
+    Weather weather;
+    Camera cam;
+    Mesh *wall;
+    int behind;
+    int beside;
+    int f;
+
+    clip.data = data;
+    clip.frames = 64;
+    clip.rate = 11025;
+    mem_zero(&weather, sizeof(weather));
+    mem_zero(&level, sizeof(level));
+    wall = upright_quad(-100.0f, 100.0f, -100.0f, 100.0f, 100.0f);
+    body_scene(&level.scene, in, &wall, 1);
+    camera_set(&cam, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    sound_set_on(1);
+    sound_set_mix_rate(11025);
+    /* A new place stops every voice, so the first frame comes before the sounds. */
+    ambience_frame(&level, &cam, &weather, 0.0f, 0, LIFT_DT);
+    behind = sound_play_at(&clip, 0.0f, 0.0f, 200.0f, 400.0f, 1000.0f, 1.0f, SOUND_LOOP);
+    beside = sound_play_at(&clip, -300.0f, 0.0f, 0.0f, 400.0f, 1000.0f, 1.0f, SOUND_LOOP);
+    /* Answered on their first frame, before they are ever mixed: a grunt is not heard through the wall. */
+    ambience_frame(&level, &cam, &weather, 0.0f, 0, LIFT_DT);
+    check_expect(check_near(voice_spot(behind).gain, 0.8f * 0.35f, 0.01f) && voice_spot(behind).muffled == 1.0f,
+                 "a sound behind a wall is not cut on its first frame");
+    check_expect(check_near(voice_spot(beside).gain, 0.8f, 0.01f) && voice_spot(beside).muffled == 0.0f,
+                 "a sound with nothing in the way was cut");
+    /* The listener comes past the wall: it clears within sixteen voices' turns and an ease. */
+    cam.z = 150.0f;
+    for (f = 0; f < 30; f++) {
+        ambience_frame(&level, &cam, &weather, 0.0f, 0, LIFT_DT);
+    }
+    check_expect(voice_spot(behind).muffled == 0.0f && check_near(voice_spot(behind).gain, 0.8f, 0.01f),
+                 "past the wall the sound stayed muffled");
+    sound_stop_all();
+    /* A sound against its own wall, as a torch is: the ray stops short of it. */
+    cam.z = 0.0f;
+    behind = sound_play_at(&clip, 0.0f, 0.0f, 104.0f, 400.0f, 1000.0f, 1.0f, SOUND_LOOP);
+    ambience_frame(&level, &cam, &weather, 0.0f, 0, LIFT_DT);
+    check_expect(voice_spot(behind).muffled == 0.0f, "a sound against its own wall was taken as behind it");
+    sound_stop_all();
+    /* Switched off: no walls at all, and no ray answers. */
+    sound_set_muffle(100);
+    behind = sound_play_at(&clip, 0.0f, 0.0f, 200.0f, 400.0f, 1000.0f, 1.0f, SOUND_LOOP);
+    ambience_frame(&level, &cam, &weather, 0.0f, 0, LIFT_DT);
+    check_expect(check_near(voice_spot(behind).gain, 0.8f, 0.01f) && !voice_spot(behind).checked,
+                 "with sndmuffle 100 a ray was still cast");
+    sound_set_muffle(SOUND_MUFFLE);
+    sound_stop_all();
+    /* A free voice is not reported as a point. */
+    check_expect(!sound_voice_at(0, &free_voice), "a free voice was reported as playing from a point");
+}
+
 /*
  * What is kept outlives a heap set with mem_heap_use, on the host as on
  * the target: a table first read under a screen's scratch heap died with
@@ -4350,6 +4426,7 @@ void check_engine(void)
     check_interact();
     check_teleport();
     check_water();
+    check_sound_walls();
     check_mem_keep();
     check_prof();
     check_prof_spare();
