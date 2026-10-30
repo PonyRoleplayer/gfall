@@ -40,7 +40,7 @@ The model's origin is the pivot. For a door model that is its hinge.
 
 `mover_step` runs each frame from `interact_frame`, after the walker and before the cull, and writes the model's matrix and position. Nothing in the engine keeps a model's pose from one frame to the next: the cull, the occlusion cells and the collision gather all read the live instance. Three things are fixed at load, and are taken care of:
 
-- **Its box.** `Scene.bounds` is read by the cull and by the collision grid. `world.c` writes the mover's whole sweep there (`mover_sweep`, nine poses along the way) and grows its block's span to hold it.
+- **Its box.** `Scene.bounds` is read by the cull and by the collision grid. `world.c` writes the mover's whole sweep there (`mover_sweep`, nine poses along the way) and grows its block's span to hold it; `stream.c` does the same when a chunk's fill is done, before it makes the chunk's spans. A box of the start pose alone sent the cull and the gather to where a raised platform had been: looked at from below it vanished, and the body walked through it.
 - **Its light.** Light decals are cut at load where the model stood. A moving model gets none (`light.c` marks it); instead the whole model is drawn in one colour, the ambient raised by the lights round its box, as a sprite is lit (`light_model_rgb`). See `docs/lighting.md`.
 - **Its collision.** The walker meets a door's triangles where the door is now. A door that swings into the body does not push it; the body may be caught, and `stuck` frees it (`docs/collision.md`).
 

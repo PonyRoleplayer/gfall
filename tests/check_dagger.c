@@ -38,6 +38,8 @@
 #include "engine/scene/keep.h"
 #include "game/dagger/places/dunstream.h"
 #include "engine/scene/interact.h"
+#include "engine/gfx/draw.h"
+#include "engine/scene/body.h"
 #include "game/dagger/formats/hmi.h"
 #include "game/dagger/formats/sndfile.h"
 #include "game/dagger/tables/sounds.h"
@@ -2596,6 +2598,113 @@ static void check_dungeon_lights(void)
     keep_clear();
 }
 
+/*
+ * The playtest's two reports on the hold's rising platform, mover index
+ * lift of the streamed scene: a body stood on it is carried to the top,
+ * and once up, it still draws when looked at from below it.
+ */
+static void check_platform(const Scene *scene, int lift)
+{
+    static int order[DRAW_VIS_MAX];
+    const Mover *m;
+    Bound start;
+    Body body;
+    Camera cam;
+    float top;
+    int visible;
+    int n;
+    int i;
+
+    m = &scene->movers[lift];
+    if (!instance_world_box(m->inst, &start)) {
+        check_expect(0, "dungeon movers: the platform has no box");
+        return;
+    }
+    top = start.cy + start.ey;
+    /* Toward its near edge: the throne stands on the far half of it. */
+    body_init(&body, WALK_RADIUS, WALK_HEIGHT, WALK_STEP, WALK_EYE);
+    body_place(&body, start.cx - start.ex * 0.66f, top, start.cz);
+    for (i = 0; i < 5; i++) {
+        body_step(&body, scene, 0.0f, 0.0f, 1.0f / 30.0f);
+    }
+    mover_start(scene, lift);
+    for (i = 0; i < 30.0f * m->secs + 10.0f; i++) {
+        body_step(&body, scene, 0.0f, 0.0f, 1.0f / 30.0f);
+        mover_step(scene, 1.0f / 30.0f);
+    }
+    printf("dungeon movers: the platform rose from %d to %d, a body on it to %d\n", df_iround(top),
+           df_iround(m->inst->y - start.cy + top), df_iround(body.feet[1]));
+    check_expect(df_absf(body.feet[1] - (top + m->ty)) < 1.0f, "dungeon movers: a body stood on the hold's platform was not carried up");
+    /* Under it, raised, looking up: the box it started in is behind the eye. */
+    camera_set(&cam, start.cx, start.cy - start.ey + m->ty - 60.0f, start.cz, 0.0f, 1.4f);
+    n = scene_visible_models(scene, &cam, order, DRAW_VIS_MAX);
+    visible = 0;
+    for (i = 0; i < n; i++) {
+        visible |= order[i] == m->model;
+    }
+    check_expect(visible, "dungeon movers: the raised platform is culled when looked at from below");
+}
+
+/*
+ * A streamed block's movers (docs/interact.md, Its box): the cull and the
+ * collision gather read Scene.bounds, so a model that moves must have its
+ * whole sweep there. With only its start pose, a platform that rose was
+ * walked through, and looked for by the cull where it had been.
+ */
+static void check_dungeon_movers(void)
+{
+    Dungeon hold;
+    Level level;
+    Camera cam;
+    float x, y, z, yaw, pitch;
+    float lift_half;
+    int checked;
+    int short_boxes;
+    int lift;
+    int i;
+
+    keep_clear();
+    if (!dungeon_load(&hold) || !dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
+        check_expect(0, "dungeon movers: the hold's stream did not open");
+        return;
+    }
+    camera_set(&cam, x, y, z, yaw, pitch);
+    dunstream_fill(&cam);
+    checked = 0;
+    short_boxes = 0;
+    lift = -1;
+    lift_half = 0.0f;
+    for (i = 0; i < level.scene.nmovers; i++) {
+        const Mover *m;
+        const Bound *b;
+        Bound sweep;
+
+        m = &level.scene.movers[i];
+        if (!m->inst || !mover_sweep(m, &sweep)) {
+            continue;
+        }
+        checked++;
+        b = &level.scene.bounds[m->model];
+        if (df_absf(sweep.cx - b->cx) + sweep.ex > b->ex + 0.5f || df_absf(sweep.cy - b->cy) + sweep.ey > b->ey + 0.5f
+            || df_absf(sweep.cz - b->cz) + sweep.ez > b->ez + 0.5f) {
+            short_boxes++;
+        }
+        /* The throne room's platform: the widest thing that goes up. */
+        if (m->ty > 0.0f && (lift < 0 || sweep.ex > lift_half)) {
+            lift = i;
+            lift_half = sweep.ex;
+        }
+    }
+    printf("dungeon movers: %d movers, %d boxes short of their sweep\n", checked, short_boxes);
+    check_expect(checked > 0 && short_boxes == 0, "dungeon movers: a streamed mover's box does not hold its whole sweep");
+    check_expect(lift >= 0, "dungeon movers: the hold has no platform that rises");
+    if (lift >= 0) {
+        check_platform(&level.scene, lift);
+    }
+    dunstream_close();
+    keep_clear();
+}
+
 int check_dagger(const char *root_in)
 {
     World *world;
@@ -3243,5 +3352,6 @@ int check_dagger(const char *root_in)
     check_land();
     check_stream();
     check_dungeon_lights();
+    check_dungeon_movers();
     return check_failed() ? 1 : 0;
 }

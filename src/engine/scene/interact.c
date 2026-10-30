@@ -625,21 +625,33 @@ int mover_start(const Scene *scene, int i)
     return moved;
 }
 
+/* The most any mover rose in the last mover_step: see mover_rise. */
+static float g_rise;
+
+float mover_rise(void)
+{
+    return g_rise;
+}
+
 void mover_step(const Scene *scene, float secs)
 {
     int i;
 
+    g_rise = 0.0f;
     if (!scene || !scene->movers) {
         return;
     }
     for (i = 0; i < scene->nmovers; i++) {
         Mover *m;
         float step;
+        float was;
+        float rose;
 
         m = &scene->movers[i];
         if (m->state != MOVER_FORWARD && m->state != MOVER_BACK) {
             continue;
         }
+        was = m->t;
         step = m->secs > 0.0f ? secs / m->secs : 1.0f;
         if (m->state == MOVER_FORWARD) {
             m->t += step;
@@ -656,6 +668,10 @@ void mover_step(const Scene *scene, float secs)
         }
         if (m->inst) {
             pose_at(m, m->t, m->inst);
+        }
+        rose = m->ty * (m->t - was);
+        if (rose > g_rise) {
+            g_rise = rose;
         }
     }
 }

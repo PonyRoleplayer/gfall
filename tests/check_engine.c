@@ -1713,6 +1713,74 @@ static void check_body_fixes(void)
     check_expect(ok, "in the air the legs went into a shelf at their height");
 }
 
+/*
+ * A lift (docs/collision.md, Lifts): a floor, and a platform that is a
+ * mover going up by rise in one second. dt is a slow frame's, the 233's.
+ */
+#define LIFT_DT (1.0f / 30.0f)
+
+static void lift_scene(Scene *sc, Instance *in, Mover *lift, float rise)
+{
+    Mesh *m[2];
+
+    m[0] = flat_quad(-400.0f, 400.0f, -400.0f, 400.0f, 0.0f);
+    m[1] = flat_quad(-100.0f, 100.0f, -100.0f, 100.0f, 8.0f);
+    body_scene(sc, in, m, 2);
+    mem_zero(lift, sizeof(Mover));
+    lift->inst = &in[1];
+    lift->model = 1;
+    lift->ty = rise;
+    lift->secs = 1.0f;
+    lift->next = -1;
+    mover_init(lift, 1);
+    sc->movers = lift;
+    sc->nmovers = 1;
+}
+
+/* n frames of the body's step and then the movers', as a game's frame and draw_frame run them. */
+static void lift_frames(Body *b, const Scene *sc, int n)
+{
+    int f;
+
+    for (f = 0; f < n; f++) {
+        body_step(b, sc, 0.0f, 0.0f, LIFT_DT);
+        mover_step(sc, LIFT_DT);
+    }
+}
+
+static void check_body_lifts(void)
+{
+    static Scene sc;
+    static Instance in[2];
+    static Mover lift;
+    Body b;
+
+    /* Stood on it: carried up with it, and down again, on its feet. */
+    lift_scene(&sc, in, &lift, 224.0f);
+    body_init(&b, WALK_RADIUS, WALK_HEIGHT, WALK_STEP, WALK_EYE);
+    body_place(&b, 0.0f, 8.0f, 0.0f);
+    lift_frames(&b, &sc, 5);
+    mover_start(&sc, 0);
+    lift_frames(&b, &sc, 40);
+    check_expect(check_near(b.feet[1], 232.0f, 0.5f) && b.grounded, "a body on a rising platform was not carried up");
+    mover_start(&sc, 0);
+    lift_frames(&b, &sc, 40);
+    check_expect(check_near(b.feet[1], 8.0f, 0.5f) && b.grounded, "a body on a falling platform did not come down with it");
+    /* Beside it, on the floor: it rises past and leaves the body where it stands. */
+    body_place(&b, 300.0f, 0.0f, 0.0f);
+    lift_frames(&b, &sc, 5);
+    mover_start(&sc, 0);
+    lift_frames(&b, &sc, 40);
+    check_expect(check_near(b.feet[1], 0.0f, 0.5f), "a body beside a platform was carried with it");
+    /* In the air over it, as it rises fast into the falling feet: it lands on it, not through it. */
+    lift_scene(&sc, in, &lift, 600.0f);
+    body_init(&b, WALK_RADIUS, WALK_HEIGHT, WALK_STEP, WALK_EYE);
+    body_place(&b, 0.0f, 60.0f, 0.0f);
+    mover_start(&sc, 0);
+    lift_frames(&b, &sc, 40);
+    check_expect(check_near(b.feet[1], 608.0f, 0.5f) && b.grounded, "a body fell through a platform rising into its feet");
+}
+
 static int same(const char *a, const char *b)
 {
     int i;
@@ -4270,6 +4338,7 @@ void check_engine(void)
     check_keep();
     check_dungeon_stream();
     check_body_fixes();
+    check_body_lifts();
     check_console();
     check_mip();
     check_mip_spans();

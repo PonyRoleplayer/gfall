@@ -1,6 +1,7 @@
 #include "engine/scene/body.h"
 #include "engine/scene/collide.h"
 #include "engine/scene/entity.h"
+#include "engine/scene/interact.h"
 #include "engine/scene/walker.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
@@ -469,8 +470,16 @@ void body_step(Body *b, const Scene *scene, float want_dx, float want_dz, float 
         }
     }
     if (!b->grounded) {
-        if (dy <= 0.0f
-            && floor_under(b, b->feet[0], b->feet[2], b->feet[1] + 0.5f, b->feet[1] + dy - 0.5f, &floor_y)) {
+        float rise;
+
+        /*
+         * A lift rising into the feet has passed them by up to this much
+         * since the last frame, and it catches a body still going up more
+         * slowly than it does. docs/collision.md, Lifts.
+         */
+        rise = mover_rise();
+        if (dy <= rise
+            && floor_under(b, b->feet[0], b->feet[2], b->feet[1] + 0.5f + rise, b->feet[1] + dy - 0.5f, &floor_y)) {
             float speed;
 
             speed = -b->vy;

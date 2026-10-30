@@ -75,6 +75,12 @@ int mover_busy(const Scene *scene, int i);
 /* Move every mover on by secs and write its model's pose. */
 void mover_step(const Scene *scene, float secs);
 /*
+ * The most any mover rose in the last mover_step, world units; 0 when none
+ * did. A body in the air looks this much higher for a floor, or a platform
+ * rising into its feet would pass them between frames (docs/collision.md).
+ */
+float mover_rise(void);
+/*
  * A teleport a use or a chain reached since the last call (Mover.teleport):
  * 1 and where the player's eye goes, once; 0 for none. draw_frame takes
  * it for the console's camera, and the walker starts again from there.

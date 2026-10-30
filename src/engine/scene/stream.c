@@ -2,6 +2,7 @@
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
 #include "engine/core/prof.h"
+#include "engine/scene/interact.h"
 #include "engine/scene/keep.h"
 
 /* See stream.h and docs/streaming.md. */
@@ -761,6 +762,20 @@ static void finish(int s)
     keep_restore(g_scene, s * g_cap.movers, sl->movers,
                  g_entities ? &g_entities[s * g_cap.entities] : 0, sl->entities,
                  (float)g_ox * (float)g_chunk, 0.0f, (float)g_oz * (float)g_chunk);
+    /*
+     * A model that moves has its whole sweep as its box, before the spans
+     * are made from the boxes: the cull and the collision gather read them
+     * and would look for a raised platform where it started (docs/interact.md).
+     */
+    for (i = 0; i < sl->movers; i++) {
+        const Mover *m;
+        Bound sweep;
+
+        m = &g_movers[s * g_cap.movers + i];
+        if (m->inst && mover_sweep(m, &sweep)) {
+            g_bounds[m->model] = sweep;
+        }
+    }
     sl->box_near = box_of(base, sl->near);
     sl->box_far = box_of(base + sl->near, sl->far);
     sl->box_rest = box_of(base + sl->near + sl->far, sl->models - sl->near - sl->far);

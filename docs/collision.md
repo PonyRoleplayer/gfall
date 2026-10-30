@@ -90,6 +90,14 @@ The walker is the viewers' body, and it walks the console's camera from inside `
 
 An entity with a radius (`Entity.radius`, `docs/entities.md`) stands in the way. After the move across, the body is pushed out of every live solid entity its height meets, its radius and the entity's apart, the push swept through `collide` like any move, so it never goes into a wall (`push_off_entities`). For the game's motors, `entity_blocked(scene, self, x, z)` says whether an entity standing at x, z would meet the body or another solid entity, and `walker_body` gives the body's feet. Two that already overlap (born so) may walk apart.
 
+### Lifts
+
+A body rides a mover that goes up or down under it, with no special case. The gather reads the model where it is now, so a grounded body finds the platform as the highest floor within a step, up or down, each frame. That needs the mover's `Scene.bounds` to hold its whole sweep (`docs/interact.md`, Its box): with only the start pose, the gather skipped a raised platform and the body walked through it.
+
+A body in the air looks `mover_rise()` higher for a floor than the half unit it otherwise allows, so a platform rising into its feet between frames is landed on. It also looks while going up, if that is more slowly than the rise, since a lift catches a jump before its top. Without this the feet were inside the platform, above the window, and fell through. The rise is the fastest mover's anywhere in the place, not this body's. So while any lift moves, the window can also reach a fixed ledge a few units above the feet, but the whole-body sweep in the air keeps the legs out of ledges anyway.
+
+A body is not carried across: a mover that slides sideways moves out from under it.
+
 ## Stuck
 
 `stuck` moves the body to the nearest free place: rings of 16 points 8, 16, 32 … 256 units out, each at the feet's height and 24, 48 and 96 above, nearest first. A place is free when the upper body there cuts into nothing and a floor holds the feet within a step; the feet then go onto that floor. With none, it goes back to the last place it stood on firm floor (a floor under its middle, not just the footprint's edge: a body put back on a ledge's very edge slid off again). The same search runs on its own when collision is turned on and when the camera is set.
@@ -113,5 +121,5 @@ Tried on the card (a Voodoo 2 on the 233 machine): it walks the hold, the castle
 
 - Doors are models: a closed door blocks, and nothing opens one yet.
 - No crouching, swimming or climbing. Jumping and the landing's speed are here; the damage is the game's.
-- The body does not push or ride anything; an entity stops it, and the game's motors stop at it.
+- The body rides lifts up and down (Lifts, above), but nothing carries it sideways and it pushes nothing; an entity stops it, and the game's motors stop at it.
 - Ladders and the steepest stairs (a riser over 24 units) block.
