@@ -52,6 +52,8 @@ void talk_compose(void);
 const unsigned char *talk_pixels(void);
 int talk_changed(void);
 int talk_click(int x, int y);
+/* The wheel rolled with the pointer at x, y: the list or the conversation under it. Notches above 0 away from the player. */
+void talk_wheel(int x, int y, int notches);
 /* Escape and Enter. */
 int talk_key(int vk);
 

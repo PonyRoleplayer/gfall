@@ -644,6 +644,22 @@ int talk_click(int x, int y)
     return TALK_STAY;
 }
 
+void talk_wheel(int x, int y, int notches)
+{
+    int most;
+
+    if (rect_has(&g_says_rect, x, y)) {
+        most = g.nlines > SAYS_ROWS ? g.nlines - SAYS_ROWS : 0;
+        g.says_scroll -= notches;
+        g.says_scroll = g.says_scroll < 0 ? 0 : (g.says_scroll > most ? most : g.says_scroll);
+    } else if (rect_has(&g_list_rect, x, y)) {
+        most = g.topics > LIST_ROWS ? g.topics - LIST_ROWS : 0;
+        g.scroll -= notches;
+        g.scroll = g.scroll < 0 ? 0 : (g.scroll > most ? most : g.scroll);
+    }
+    g.changed = 1;
+}
+
 int talk_key(int vk)
 {
     g.changed = 1;

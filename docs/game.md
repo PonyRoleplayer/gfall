@@ -447,6 +447,8 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **The card:** each block holds its 4 spare pictures whether used or not, a few KB of its picture residency.
 
 ### The inventory screen
+**The wheel** scrolls the list under the pointer, the pack's when it is over neither (`bag_wheel`). In the talk window it scrolls the topics or the conversation (`talk_wheel`).
+
 
 `play/bag.c` is what the screen shows and what a click does, plain C and host-tested. `play/doll.c` draws the paper doll. `play/screens.c` puts the result on the card, as it does the character sheet and creation, and all three draw through `play/canvas.c`. The inventory key (I) opens it, the use key on a body opens it with the body's things in the right list, and Escape, the inventory key or Exit closes it.
 

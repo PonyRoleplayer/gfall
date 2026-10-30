@@ -984,6 +984,19 @@ void bag_key(int vk)
     }
 }
 
+void bag_wheel(int x, int y, int notches)
+{
+    int list;
+    int i;
+
+    /* Over neither list, the pack's: the one a person most often means. */
+    list = list_at(x, y, &i);
+    list = list < 0 ? LIST_LOCAL : list;
+    g.scroll[list] -= notches;
+    clamp_scroll(list);
+    g.changed = 1;
+}
+
 /* ---- A shop's clicks. ---- */
 
 /* Item i of the shelves into the basket. */

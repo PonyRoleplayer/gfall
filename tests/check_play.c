@@ -3863,6 +3863,10 @@ static void check_talk(void)
     check_expect(talk_lines() > before, "talk: no news said");
     talk_compose();
     write_screen("build/talk1.ppm", talk_pixels());
+    /* The wheel over the conversation: down to the end at most, back to the top at least. */
+    talk_wheel(200, 100, -1000);
+    talk_wheel(200, 100, 1000);
+    talk_compose();
     check_expect(talk_click(goodbye.x + 1, goodbye.y + 1) == TALK_LEAVE, "talk: Goodbye did not leave");
     talk_close();
     /* Hated: no response, whatever is asked. */
@@ -3988,6 +3992,30 @@ static void check_shop_and_court(void)
     bag_close();
     shop_stock(&shop, 1, 100, &again, origin2);
     check_expect(again.count == stock.count - 1, "shop: a thing bought is back on the shelf");
+
+    /* The wheel: a list of more than a screen rolls by notches, within its ends. The top row's item is what a click gets. */
+    {
+        Player many;
+        int k;
+        int first;
+
+        many = p;
+        inventory_clear(&many.pack);
+        for (k = 0; k < 8; k++) {
+            check_expect(item_make(&it, k < 4 ? ITEM_DAGGER : ITEM_LONGSWORD, 0) && inventory_add(&many.pack, &it) >= 0, "wheel: no blades");
+        }
+        check_expect(bag_open_trade(&many, &shop, TRADE_SELL, 100), "wheel: no screen");
+        bag_wheel(177, 60, -1);
+        /* One notch down: the first row is now the pack's second, so a click there lays that one on the counter. */
+        bag_click(177, 60);
+        first = many.pack.count;
+        check_expect(first == 7 && many.pack.item[0].template_id == ITEM_DAGGER, "wheel: no scroll by a notch");
+        bag_wheel(177, 60, 1000);
+        bag_wheel(177, 60, -1000);
+        bag_compose();
+        bag_close();
+        check_expect(many.pack.count == 8, "wheel: what was on the counter did not come back");
+    }
 
     /* Selling by clicks: the thing from the pack, at the sums'. */
     {

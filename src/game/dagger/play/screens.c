@@ -241,6 +241,10 @@ static int talk_frame(const Input *in)
 {
     int vk;
 
+    if (in->wheel) {
+        talk_wheel(g_point_x, g_point_y, in->wheel);
+    }
+
     vk = input_key_pressed();
     if (vk && talk_key(vk) == TALK_LEAVE) {
         return SCREENS_CLOSED;
@@ -314,6 +318,9 @@ static int bag_frame(const Input *in)
     int vk;
 
     bag_point(g_point_x, g_point_y);
+    if (in->wheel) {
+        bag_wheel(g_point_x, g_point_y, in->wheel);
+    }
     /* The Gold button's question has the keys while it is up. */
     vk = input_key_pressed();
     if (bag_asking()) {

@@ -77,6 +77,8 @@ const df_u8 *bag_pixels(void);
 int bag_changed(void);
 /* The pointer at classic's x, y: the small panel names what it is over. */
 void bag_point(int x, int y);
+/* The wheel rolled with the pointer at x, y: notches above 0 away from the player, up the list under it, or the pack's. */
+void bag_wheel(int x, int y, int notches);
 /* A click at classic's x, y: BAG_*. */
 int bag_click(int x, int y);
 /* A key by its virtual key code: digits for gold to drop, Enter, Backspace, Escape. */
