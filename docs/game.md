@@ -453,7 +453,7 @@ The travel map comes later, with `worldmap.c`'s pixels and the location index: p
 
 | Chunk | Holds |
 | --- | --- |
-| `GAME` | the feet, in the place's frame (a stream's origin moves), the facing, the clock's minute and day, the day the game began, the seed, the gold, what is worn |
+| `GAME` | which place and the way back out of its door, the feet in that place's frame with the stream's origin that frame has, the facing, the clock's minute and day, the day the game began, the seed, the gold, what is worn |
 | `CHAR` | the sheet, whole: skill uses and the level's count among it |
 | `PACK` | what is carried, material, variant and condition among it |
 | `KEEP` | every door, lever, creature, heap and pile not as its file has it (`keep.c`) |
