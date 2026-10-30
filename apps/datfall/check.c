@@ -10,6 +10,7 @@
 
 #include "beast.h"
 #include "books.h"
+#include "made.h"
 #include "paper.h"
 #include "pics.h"
 #include "engine/assets/recfile.h"
@@ -422,6 +423,14 @@ int main(void)
                 expect(saw_walk, "the rat's walk is not TEXTURE.255 records 0..4");
                 expect(saw_stand, "the rat's stand is not records 15..19");
                 expect(saw_corpse, "the rat's corpse is not TEXTURE.401 record 1");
+            }
+            {
+                MadeItem made;
+
+                expect(made_of(merged, 120, 1, &made) && made.quarters == 22
+                           && made.value == 90 && made.condition == 1200,
+                       "a steel longsword is not 5.50 kg, value 90, condition 1200");
+                expect(made_cif(merged, 120) == 4, "the longsword's CIF is not WEAPON04.CIF");
             }
             books_close(books);
         }

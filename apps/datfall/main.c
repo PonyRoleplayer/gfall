@@ -7,7 +7,8 @@
  *
  * Data is the tables. Pictures are the texture archives. Characters
  * are the races and their paper dolls. Creatures are each kind's
- * poses. Items and the world map hang off the same tree.
+ * poses. Items are the weapons, recoloured by material. The world
+ * map hangs off the same tree.
  */
 
 #define WINVER 0x0400
@@ -18,6 +19,7 @@
 
 #include "beast.h"
 #include "books.h"
+#include "made.h"
 #include "paper.h"
 #include "pics.h"
 #include "engine/assets/palette.h"
@@ -90,6 +92,8 @@
 #define ND_RACE 8
 #define ND_BEASTS 9
 #define ND_ENEMY 10
+#define ND_ITEMS 11
+#define ND_WEAPON 12
 #define ND_MERGED_FILE 4095
 
 #define VIEW_NONE 0
@@ -102,6 +106,8 @@
 #define VIEW_PARTS 7
 #define VIEW_ENEMIES 8
 #define VIEW_POSES 9
+#define VIEW_WEAPONS 10
+#define VIEW_METALS 11
 
 #define ARC_CAP 160
 #define GRID_CELL 32
@@ -227,6 +233,8 @@ static Image g_fake;
 static char g_part_file[PAPER_NAME];
 static BeastPose g_poses[BEAST_POSES];
 static int g_nposes;
+static int g_metal_on;
+static int g_metal;
 
 static void *sym(HMODULE dll, const char *name)
 {
@@ -557,8 +565,11 @@ static void scroll_to_rec(void);
 static void step_frame(int delta);
 static void drop_paper(void);
 static void load_part(int row, int part);
+static void load_weapon(int weapon_id, int material_id);
 static void show_head(void);
 static void race_status(void);
+static void weapon_status(void);
+static void show_weapon(int weapon_id, int material_id);
 static void step_head(int delta);
 
 static void on_row(int index)
@@ -725,6 +736,48 @@ static void on_row(int index)
         InvalidateRect(g_hwnd, &g_well, 1);
         return;
     }
+    if (g_view == VIEW_WEAPONS) {
+        int wid;
+        char wname[32];
+
+        drop_paper();
+        drop_arc();
+        if (index < 0 || index >= g_nmap) {
+            props_clear();
+            status_set("Items", "");
+            InvalidateRect(g_hwnd, &g_well, 1);
+            return;
+        }
+        wid = 0;
+        wname[0] = 0;
+        made_weapon_at(g_books ? books_merged(g_books) : 0, g_map[index], &wid, wname, (int)sizeof(wname));
+        props_clear();
+        wsprintfA(status_id, "%d", wid);
+        prop_add(0, "id", status_id);
+        prop_add(1, "name", wname);
+        wsprintfA(label, "WEAPON%02d.CIF", made_cif(g_books ? books_merged(g_books) : 0, wid));
+        prop_add(2, "cif", label);
+        status_set("WEAP", status_id);
+        InvalidateRect(g_hwnd, &g_well, 1);
+        return;
+    }
+    if (g_view == VIEW_METALS) {
+        int mat;
+
+        if (index < 0 || index >= g_nmap) {
+            drop_paper();
+            props_clear();
+            status_set("Items", "");
+            InvalidateRect(g_hwnd, &g_well, 1);
+            return;
+        }
+        mat = g_map[index];
+        load_weapon(g_a, mat);
+        show_weapon(g_a, mat);
+        weapon_status();
+        InvalidateRect(g_hwnd, &g_well, 1);
+        return;
+    }
     if (g_view == VIEW_DATA) {
         if (index < 0 || index >= g_nmap) {
             props_clear();
@@ -829,6 +882,9 @@ static void write_ix(unsigned char *p, int ix, int x, int y)
     int b;
     int on;
 
+    if (g_metal_on && ix > 0) {
+        ix = cif_metal(ix, g_metal);
+    }
     if (ix <= 0) {
         on = ((x >> 3) ^ (y >> 3)) & 1;
         r = on ? 255 : 192;
@@ -1141,6 +1197,7 @@ static void drop_paper(void)
     memset(&g_fake, 0, sizeof(g_fake));
     g_head = 0;
     g_part_file[0] = 0;
+    g_metal_on = 0;
     if (g_cif_on) {
         cif_close(&g_cif);
         g_cif_on = 0;
@@ -1200,6 +1257,35 @@ static void load_part(int row, int part)
     g_show = &g_fake;
 }
 
+static void load_weapon(int weapon_id, int material_id)
+{
+    char name[16];
+    int cif;
+    int i;
+    DatFile *f;
+
+    drop_frames();
+    drop_paper();
+    f = g_books ? books_merged(g_books) : 0;
+    cif = made_cif(f, weapon_id);
+    g_metal = material_id;
+    g_metal_on = 1;
+    if (cif < 0) {
+        return;
+    }
+    wsprintfA(name, "WEAPON%02d.CIF", cif);
+    for (i = 0; i < PAPER_NAME - 1 && name[i]; i++) {
+        g_part_file[i] = name[i];
+    }
+    g_part_file[i] = 0;
+    if (!cif_open(name, &g_cif)) {
+        return;
+    }
+    g_cif_on = 1;
+    g_head = 0;
+    show_head();
+}
+
 static void race_status(void)
 {
     DatFile *f;
@@ -1221,11 +1307,132 @@ static void race_status(void)
     status_set(g_part_file[0] ? g_part_file : "Characters", extra);
 }
 
+static int add_fields(DatFile *f, int kind, int row, const char *prefix, int at)
+{
+    int n;
+    int i;
+    char name[32];
+    char shown[48];
+    char value[192];
+    int type;
+    int size;
+    int count;
+
+    if (!f || kind < 0 || row < 0) {
+        return at;
+    }
+    n = dat_fields(f, kind);
+    for (i = 0; i < n; i++) {
+        name[0] = 0;
+        if (!dat_field(f, kind, i, name, (int)sizeof(name), &type, &size, &count)) {
+            break;
+        }
+        value[0] = 0;
+        dat_values(f, kind, row, i, value, (int)sizeof(value));
+        wsprintfA(shown, "%s %s", prefix, name);
+        prop_add(at, shown, value);
+        at++;
+    }
+    return at;
+}
+
+static void show_weapon(int weapon_id, int material_id)
+{
+    DatFile *f;
+    int kind;
+    int row;
+    int at;
+    MadeItem made;
+    char text[32];
+    char id[16];
+
+    props_clear();
+    f = g_books ? books_merged(g_books) : 0;
+    at = 0;
+    wsprintfA(id, "%d", weapon_id);
+    kind = f ? dat_find_tag(f, "ITEM") : -1;
+    row = -1;
+    if (f && kind >= 0) {
+        int i;
+        int n;
+        char got[16];
+
+        n = dat_rows(f, kind);
+        for (i = 0; i < n; i++) {
+            got[0] = 0;
+            dat_value(f, kind, i, 0, 0, got, (int)sizeof(got));
+            if (df_eq(got, id)) {
+                row = i;
+                break;
+            }
+        }
+    }
+    prop_add(at++, "ITEM", id);
+    at = add_fields(f, kind, row, "item", at);
+    kind = f ? dat_find_tag(f, "WEAP") : -1;
+    row = -1;
+    if (f && kind >= 0) {
+        int i;
+        int n;
+        char got[16];
+
+        n = dat_rows(f, kind);
+        for (i = 0; i < n; i++) {
+            got[0] = 0;
+            dat_value(f, kind, i, 0, 0, got, (int)sizeof(got));
+            if (df_eq(got, id)) {
+                row = i;
+                break;
+            }
+        }
+    }
+    at = add_fields(f, kind, row, "weap", at);
+    wsprintfA(id, "%d", material_id);
+    kind = f ? dat_find_tag(f, "MATL") : -1;
+    row = -1;
+    if (f && kind >= 0) {
+        int i;
+        int n;
+        char got[16];
+
+        n = dat_rows(f, kind);
+        for (i = 0; i < n; i++) {
+            got[0] = 0;
+            dat_value(f, kind, i, 0, 0, got, (int)sizeof(got));
+            if (df_eq(got, id)) {
+                row = i;
+                break;
+            }
+        }
+    }
+    at = add_fields(f, kind, row, "matl", at);
+    if (made_of(f, weapon_id, material_id, &made)) {
+        wsprintfA(text, "%d.%02d kg", made.quarters / 4, (made.quarters % 4) * 25);
+        prop_add(at++, "made weight", text);
+        wsprintfA(text, "%d", made.value);
+        prop_add(at++, "made value", text);
+        wsprintfA(text, "%d", made.condition);
+        prop_add(at++, "made condition", text);
+    }
+}
+
+static void weapon_status(void)
+{
+    char extra[80];
+
+    if (g_cif_on && g_cif.n > 0) {
+        wsprintfA(extra, "metal %d  frame %d/%d", g_metal, g_head + 1, g_cif.n);
+    } else {
+        wsprintfA(extra, "metal %d", g_metal);
+    }
+    status_set(g_part_file[0] ? g_part_file : "Items", extra);
+}
+
 static void step_head(int delta)
 {
     int n;
 
-    if (g_view != VIEW_PARTS || !g_cif_on) {
+    if ((g_view != VIEW_PARTS && g_view != VIEW_METALS) || !g_cif_on) {
         return;
     }
     n = g_cif.n;
@@ -1240,7 +1447,11 @@ static void step_head(int delta)
         g_head -= n;
     }
     show_head();
-    race_status();
+    if (g_view == VIEW_METALS) {
+        weapon_status();
+    } else {
+        race_status();
+    }
     if (g_hwnd) {
         InvalidateRect(g_hwnd, &g_well, 0);
     }
@@ -1448,6 +1659,52 @@ static void fill_list(void)
             g_nmap++;
             shown++;
         }
+    } else if (g_view == VIEW_WEAPONS) {
+        int id;
+
+        col_add(g_list, "Cif", width / 5);
+        col_add(g_list, "Name", width / 2);
+        col_add(g_list, "Id", width / 5);
+        f = g_books ? books_merged(g_books) : 0;
+        for (i = 0; g_nmap < 512; i++) {
+            int cif;
+
+            if (!made_weapon_at(f, i, &id, a, (int)sizeof(a))) {
+                break;
+            }
+            wsprintfA(c, "%d", id);
+            cif = made_cif(f, id);
+            wsprintfA(b, "WEAPON%02d.CIF", cif);
+            if (g_q[0] && !has_text(a, g_q) && !has_text(c, g_q) && !has_text(b, g_q)) {
+                continue;
+            }
+            g_map[g_nmap] = i;
+            row_text(g_list, shown, 0, c);
+            row_text(g_list, shown, 1, a);
+            row_text(g_list, shown, 2, b);
+            g_nmap++;
+            shown++;
+        }
+    } else if (g_view == VIEW_METALS) {
+        int id;
+
+        col_add(g_list, "Name", width / 2);
+        col_add(g_list, "Id", width / 5);
+        f = g_books ? books_merged(g_books) : 0;
+        for (i = 0; g_nmap < 512; i++) {
+            if (!made_material_at(f, i, &id, a, (int)sizeof(a))) {
+                break;
+            }
+            wsprintfA(b, "%d", id);
+            if (g_q[0] && !has_text(a, g_q) && !has_text(b, g_q)) {
+                continue;
+            }
+            g_map[g_nmap] = id;
+            row_text(g_list, shown, 0, b);
+            row_text(g_list, shown, 1, a);
+            g_nmap++;
+            shown++;
+        }
     }
     g_filling = 0;
     if (shown > 0) {
@@ -1463,6 +1720,8 @@ static void fill_list(void)
             title = "Characters";
         } else if (g_view == VIEW_ENEMIES || g_view == VIEW_POSES) {
             title = "Creatures";
+        } else if (g_view == VIEW_WEAPONS || g_view == VIEW_METALS) {
+            title = "Items";
         } else if (g_view == VIEW_ROWS || g_view == VIEW_CHUNKS) {
             title = file_title(g_nd == ND_MERGED ? ND_MERGED_FILE : g_a);
         }
@@ -1530,6 +1789,12 @@ static void on_tree(void *item)
         mf = g_books ? books_merged(g_books) : 0;
         g_nposes = beast_poses(mf, a, g_poses, BEAST_POSES);
         g_view = VIEW_POSES;
+    } else if (nd == ND_ITEMS) {
+        drop_paper();
+        drop_arc();
+        g_view = VIEW_WEAPONS;
+    } else if (nd == ND_WEAPON) {
+        g_view = VIEW_METALS;
     } else {
         g_view = VIEW_NONE;
     }
@@ -1639,6 +1904,23 @@ static void build_tree(void)
             dat_row_label(f, kind, row, id, (int)sizeof(id), label, (int)sizeof(label));
             tree_add(beasts, label[0] ? label : id, ND_ENEMY, row, kind);
         }
+    }
+    {
+        void *items;
+        DatFile *f;
+        int i;
+        int id;
+        char name[32];
+
+        items = tree_add(0, "Items", ND_ITEMS, 0, 0);
+        f = g_books ? books_merged(g_books) : 0;
+        for (i = 0; i < 64; i++) {
+            if (!made_weapon_at(f, i, &id, name, (int)sizeof(name))) {
+                break;
+            }
+            tree_add(items, name[0] ? name : "weapon", ND_WEAPON, id, 0);
+        }
+        SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)items);
     }
     SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)data);
     SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)merged);
@@ -2009,7 +2291,7 @@ static void paint_well(HDC dc)
         paint_pics(dc);
         return;
     }
-    if (g_view == VIEW_PARTS && g_show) {
+    if ((g_view == VIEW_PARTS || g_view == VIEW_METALS) && g_show) {
         paint_race(dc);
         return;
     }
@@ -2025,7 +2307,7 @@ static void well_click(int x, int y)
     int rec;
     int i;
 
-    if (g_view == VIEW_PARTS && g_cif_on) {
+    if ((g_view == VIEW_PARTS || g_view == VIEW_METALS) && g_cif_on) {
         int cell;
         int i;
 
@@ -2039,7 +2321,11 @@ static void well_click(int x, int y)
         }
         g_head = i;
         show_head();
-        race_status();
+        if (g_view == VIEW_METALS) {
+            weapon_status();
+        } else {
+            race_status();
+        }
         InvalidateRect(g_hwnd, &g_well, 1);
         return;
     }
@@ -2089,7 +2375,7 @@ static void well_click(int x, int y)
 static LRESULT CALLBACK list_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     if (msg == WM_KEYDOWN && (wp == VK_LEFT || wp == VK_RIGHT)) {
-        if (g_view == VIEW_PARTS && g_cif_on) {
+        if ((g_view == VIEW_PARTS || g_view == VIEW_METALS) && g_cif_on) {
             step_head(wp == VK_LEFT ? -1 : 1);
         } else {
             step_frame(wp == VK_LEFT ? -1 : 1);
@@ -2145,7 +2431,7 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         if (wp == VK_ESCAPE) {
             PostQuitMessage(0);
         } else if (wp == VK_LEFT || wp == VK_RIGHT) {
-            if (g_view == VIEW_PARTS && g_cif_on) {
+            if ((g_view == VIEW_PARTS || g_view == VIEW_METALS) && g_cif_on) {
                 step_head(wp == VK_LEFT ? -1 : 1);
             } else {
                 step_frame(wp == VK_LEFT ? -1 : 1);
@@ -2153,7 +2439,11 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         return 0;
     case WM_TIMER:
-        step_frame(1);
+        if ((g_view == VIEW_PARTS || g_view == VIEW_METALS) && g_cif_on) {
+            step_head(1);
+        } else {
+            step_frame(1);
+        }
         return 0;
     case WM_DESTROY:
         KillTimer(hwnd, ID_TIMER);
