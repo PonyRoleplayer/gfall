@@ -13,6 +13,7 @@
  *   MENU_OPTIONS   OPTN00I0.IMG over the stilled world: save, load, exit,
  *                  controls, continue
  *   MENU_CONTROLS  CNFG00I0.IMG: each action's key, click one to bind it
+ *   MENU_DEATH     DIE_00I0.IMG, until a key or a click
  *
  * A menu's picture is on the card only while it is open (pic_load on
  * open, pic_free on close). The pointer is classic's ARROW.RAW. The
@@ -24,7 +25,8 @@ enum {
     MENU_TITLE,
     MENU_MAIN,
     MENU_OPTIONS,
-    MENU_CONTROLS
+    MENU_CONTROLS,
+    MENU_DEATH
 };
 
 /* What a menu frame asks of the game. */
@@ -32,7 +34,12 @@ enum {
     MENU_STAY,
     MENU_START,
     MENU_QUIT,
-    MENU_CLOSED
+    MENU_CLOSED,
+    /* The game's to do; the menu stays open until the game says otherwise. */
+    MENU_SAVE,
+    MENU_LOAD,
+    /* The death screen was dismissed. */
+    MENU_DEATH_OVER
 };
 
 /* The pointer's picture, before the first gfx_prepare. */
@@ -40,6 +47,8 @@ int menu_setup(void);
 void menu_shutdown(void);
 /* Opens a menu, closing the one open. */
 void menu_open(int which);
+/* A line under the open menu, until the next click: "Game saved." */
+void menu_say(const char *line);
 int menu_current(void);
 /* One frame of the open menu's input: MENU_*. */
 int menu_frame(const Input *in);

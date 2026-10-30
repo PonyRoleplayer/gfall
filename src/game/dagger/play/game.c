@@ -11,6 +11,7 @@
 #include "game/dagger/play/pile.h"
 #include "game/dagger/play/player.h"
 #include "game/dagger/play/rules.h"
+#include "game/dagger/play/save.h"
 #include "game/dagger/play/screen.h"
 #include "game/dagger/play/screens.h"
 #include "game/dagger/play/weapon.h"
@@ -21,6 +22,8 @@
 #include "engine/core/prof.h"
 #include "engine/gfx/gfx.h"
 #include "engine/scene/interact.h"
+#include "engine/scene/keep.h"
+#include "engine/scene/stream.h"
 #include "engine/scene/clock.h"
 #include "engine/scene/walker.h"
 #include "engine/scene/weather.h"
@@ -32,14 +35,14 @@
 static const Level *g_level;
 static Player g_player;
 static int g_playing;
-/* Where the place starts: where a death puts the player back until saves (P7). */
-static float g_start[5];
 /* The character and kit the next place starts with: made in creation, or the default. */
 static Character g_new_sheet;
 static Inventory g_new_pack;
-/* Game minutes since the game began, for skills' six hours: the clock's own wraps at midnight. */
-static float g_minutes;
-static float g_clock_was;
+/* A save read, for the next place to start from; and 1 while it waits to. */
+static SaveState g_loaded;
+static int g_load_waiting;
+/* The clock's day when this game began: skills' six hours count game minutes from it. */
+static int g_day_zero;
 
 /*
  * What the use key does that the engine's doors and levers do not: a
@@ -62,16 +65,13 @@ static int on_use(const Scene *scene, const Usable *u, int index)
     return 0;
 }
 
-/*
- * The player died (a fall, a blow): until the menu's reload (P3, saves)
- * back at the start, whole, every creature asleep again where it stands.
- */
+/* The player died (a fall, a blow): classic's death screen over the stilled world. */
 static void die(void)
 {
     interact_say("You have died.");
-    character_rest_full(&g_player.sheet);
-    player_place(&g_player, g_start[0], g_start[1], g_start[2], g_start[3], g_start[4]);
-    foes_reset();
+    menu_open(MENU_DEATH);
+    gfx_set_pause(1);
+    input_set_pointer(0);
 }
 
 /* What the game draws over the frame: the weapon and the HUD in play, then the open menu and its pointer. */
@@ -112,6 +112,68 @@ static void bag_over_play(Entity *searched)
     screens_open_bag(&g_player, searched);
     gfx_set_pause(screens_is_open());
     input_set_pointer(screens_is_open());
+}
+
+/* Rest over the stilled world, unless a creature awake forbids it (DFU's rest window). */
+static void rest_over_play(void)
+{
+    if (foes_awake() > 0) {
+        interact_say("You cannot rest with enemies nearby.");
+        return;
+    }
+    screens_open_rest(&g_player);
+    gfx_set_pause(screens_is_open());
+    input_set_pointer(screens_is_open());
+}
+
+/* Game minutes since this game began. */
+static float game_minutes(void)
+{
+    return (float)(clock_day() - g_day_zero) * CLOCK_DAY + clock_minute();
+}
+
+/* The game as it stands, into the one slot. What is loaded goes into the keep table first. */
+static int save_game(void)
+{
+    SaveState state;
+    int cx;
+    int cz;
+
+    stream_keep_now();
+    stream_origin(&cx, &cz);
+    state.feet[0] = g_player.body.feet[0] + (float)cx * DUNSTREAM_BLOCK;
+    state.feet[1] = g_player.body.feet[1];
+    state.feet[2] = g_player.body.feet[2] + (float)cz * DUNSTREAM_BLOCK;
+    state.yaw = g_player.yaw;
+    state.pitch = g_player.pitch;
+    state.minute = clock_minute();
+    state.day = clock_day();
+    state.day_zero = g_day_zero;
+    state.seed = loot_seed();
+    state.sheet = g_player.sheet;
+    state.pack = g_player.pack;
+    return save_write(&state);
+}
+
+/* The save read, to start from at the next place. 1 when there was one. */
+static int load_game(void)
+{
+    if (!save_exists() || !save_read(&g_loaded)) {
+        return 0;
+    }
+    g_new_sheet = g_loaded.sheet;
+    g_new_pack = g_loaded.pack;
+    g_load_waiting = 1;
+    return 1;
+}
+
+/* A new character's game: what was changed or dropped in the last one is gone. */
+static void forget_last_game(void)
+{
+    keep_clear();
+    pile_new_game();
+    loot_new_game(prof_now());
+    g_load_waiting = 0;
 }
 
 /* The character sheet over the stilled world: a level due is taken there. */
@@ -178,20 +240,28 @@ int game_world_shows(void)
 void game_enter(const Level *level, Camera *cam, float x, float y, float z, float yaw, float pitch)
 {
     g_level = level;
-    g_start[0] = x;
-    g_start[1] = y;
-    g_start[2] = z;
-    g_start[3] = yaw;
-    g_start[4] = pitch;
-    /* Who creation made, and what they start with (game_frame set these). */
+    /* Who creation made or the save holds, and what they carry (game_frame set these). */
     player_init(&g_player, &g_new_sheet);
     g_player.pack = g_new_pack;
     player_wear_changed(&g_player);
-    g_minutes = 0.0f;
-    g_clock_was = clock_minute();
-    /* Every body's contents hang off this: each new game finds other things. */
-    loot_new_game(prof_now());
-    pile_new_game();
+    g_day_zero = clock_day();
+    if (g_load_waiting) {
+        int cx;
+        int cz;
+
+        /* The save's place, in this stream's frame; its clock, its seed. */
+        g_load_waiting = 0;
+        stream_origin(&cx, &cz);
+        x = g_loaded.feet[0] - (float)cx * DUNSTREAM_BLOCK;
+        y = g_loaded.feet[1] + g_player.body.eye;
+        z = g_loaded.feet[2] - (float)cz * DUNSTREAM_BLOCK;
+        yaw = g_loaded.yaw;
+        pitch = g_loaded.pitch;
+        clock_set_minute(g_loaded.minute);
+        clock_set_day(g_loaded.day);
+        g_day_zero = g_loaded.day_zero;
+        loot_new_game(g_loaded.seed);
+    }
     commands_player(&g_player);
     combat_reset();
     foes_reset();
@@ -220,24 +290,35 @@ int game_frame(Camera *cam, const Input *in, float dt)
     if (!g_playing) {
         /* Creation, once Start is chosen: it ends with a character for the first place. */
         if (screens_is_open()) {
-            asked = screens_frame(in);
+            asked = screens_frame(in, dt);
             prof_end(PROF_PLAY);
             if (asked == SCREENS_MADE && create_result(&g_new_sheet, &g_new_pack)) {
                 screens_close();
+                forget_last_game();
                 return GAME_START;
             }
             if (asked == SCREENS_SKIPPED && create_default(&g_new_sheet, &g_new_pack)) {
                 screens_close();
+                forget_last_game();
                 return GAME_START;
             }
             return GAME_GO_ON;
         }
         asked = menu_frame(in);
+        if (asked == MENU_LOAD) {
+            if (load_game()) {
+                menu_open(MENU_NONE);
+                prof_end(PROF_PLAY);
+                return GAME_START;
+            }
+            menu_say("There is no saved game.");
+        }
         if (asked == MENU_START) {
             screens_open_create();
             /* Its pictures missing: the default character starts, as before creation was built. */
             if (!screens_is_open()) {
                 create_default(&g_new_sheet, &g_new_pack);
+                forget_last_game();
                 prof_end(PROF_PLAY);
                 return GAME_START;
             }
@@ -248,9 +329,15 @@ int game_frame(Camera *cam, const Input *in, float dt)
     closed = 0;
     if (screens_is_open()) {
         closed = 1;
-        if (screens_frame(in) == SCREENS_CLOSED) {
+        if (screens_frame(in, dt) == SCREENS_CLOSED) {
+            const char *said;
+
             gfx_set_pause(0);
             input_set_pointer(0);
+            said = screens_said();
+            if (said) {
+                interact_say(said);
+            }
         }
     } else if (menu_current() != MENU_NONE) {
         closed = 1;
@@ -261,6 +348,26 @@ int game_frame(Camera *cam, const Input *in, float dt)
         }
         if (asked == MENU_CLOSED) {
             menu_over_play(MENU_NONE);
+        } else if (asked == MENU_SAVE) {
+            menu_say(save_game() ? "Game saved." : "The game could not be saved.");
+        } else if (asked == MENU_LOAD || asked == MENU_DEATH_OVER) {
+            /* From the options, or dead: the last save, if there is one. */
+            if (load_game()) {
+                menu_open(MENU_NONE);
+                prof_end(PROF_PLAY);
+                return GAME_START;
+            }
+            if (asked == MENU_LOAD) {
+                menu_say("There is no saved game.");
+            } else {
+                /* Dead with nothing saved: back to the start menu, the place left for the next start to replace. */
+                g_playing = 0;
+                gfx_set_pause(0);
+                input_set_pointer(1);
+                menu_open(MENU_MAIN);
+                prof_end(PROF_PLAY);
+                return GAME_GO_ON;
+            }
         }
     } else if (in->pressed & INPUT_BIT(INPUT_MENU)) {
         menu_over_play(MENU_OPTIONS);
@@ -268,6 +375,8 @@ int game_frame(Camera *cam, const Input *in, float dt)
         bag_over_play(0);
     } else if ((in->pressed & INPUT_BIT(INPUT_CHARACTER)) && !gfx_paused()) {
         sheet_over_play();
+    } else if ((in->pressed & INPUT_BIT(INPUT_REST)) && !gfx_paused()) {
+        rest_over_play();
     }
     /* The console stands the world still too (gfx_paused): the player stands with it. */
     if (menu_current() == MENU_NONE && !screens_is_open() && !gfx_paused()) {
@@ -278,16 +387,9 @@ int game_frame(Camera *cam, const Input *in, float dt)
     /* The use key may just have opened the inventory: the world stands from this frame. */
     if (menu_current() == MENU_NONE && !screens_is_open() && !gfx_paused()) {
         /* Skills look at their uses every six game hours; a level due opens the sheet (PlayerEntity.RaiseSkills). */
-        {
-            float now;
-
-            now = clock_minute();
-            g_minutes += now >= g_clock_was ? now - g_clock_was : now + 1440.0f - g_clock_was;
-            g_clock_was = now;
-            character_raise_skills(&g_player.sheet, g_minutes);
-            if (g_player.sheet.level_due) {
-                sheet_over_play();
-            }
+        character_raise_skills(&g_player.sheet, game_minutes());
+        if (g_player.sheet.level_due) {
+            sheet_over_play();
         }
         /* The weapon in hand follows the pack (equip, additem); a click swings it, at random for now. */
         weapon_hold(inventory_weapon(&g_player.pack));

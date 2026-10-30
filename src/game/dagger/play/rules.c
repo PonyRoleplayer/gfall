@@ -78,6 +78,33 @@ int rules_level_health(int hp_per_level, int roll, int endurance)
     return gain < 1 ? 1 : gain;
 }
 
+int rules_rest_health(int endurance, int medical, int health_max)
+{
+    int gain;
+
+    gain = rules_attribute_modifier(endurance) + (medical + 60) * health_max / 1000;
+    return gain < 1 ? 1 : gain;
+}
+
+int rules_rest_fatigue(int fatigue_max)
+{
+    int gain;
+
+    gain = fatigue_max / 8;
+    return gain < 1 ? 1 : gain;
+}
+
+int rules_rest_magicka(int magicka_max)
+{
+    int gain;
+
+    if (magicka_max <= 0) {
+        return 0;
+    }
+    gain = magicka_max / 8;
+    return gain < 1 ? 1 : gain;
+}
+
 float rules_reflex_uses(int reflexes)
 {
     return 1.0f + 0.125f * (float)(RULES_REFLEX_AVERAGE - reflexes);

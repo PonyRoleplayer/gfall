@@ -55,6 +55,14 @@ float rules_class_advance(df_u32 raw);
 int rules_level_from_sums(int start_sum, int now_sum);
 /* Health a level gives: half the class's hit points plus roll (0..the other half), and endurance's modifier; at least 1. */
 int rules_level_health(int hp_per_level, int roll, int endurance);
+/*
+ * What an hour of rest gives back (FormulaHelper): health, endurance's
+ * modifier and (Medical + 60) x its most / 1000, at least 1; fatigue an eighth
+ * of its most, at least 1; spell points the same, or none with none to have.
+ */
+int rules_rest_health(int endurance, int medical, int health_max);
+int rules_rest_fatigue(int fatigue_max);
+int rules_rest_magicka(int magicka_max);
 /* Reflexes (0 very high .. 4 very low): a skill's uses count this many times over, an eighth a step from average. */
 float rules_reflex_uses(int reflexes);
 

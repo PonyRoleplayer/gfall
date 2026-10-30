@@ -2,6 +2,7 @@
 #include "game/dagger/play/bag.h"
 #include "game/dagger/play/create.h"
 #include "game/dagger/play/menu.h"
+#include "game/dagger/play/rest.h"
 #include "game/dagger/play/screen.h"
 #include "game/dagger/play/sheet.h"
 #include "game/dagger/formats/img.h"
@@ -14,7 +15,8 @@ enum {
     OPEN_NONE,
     OPEN_BAG,
     OPEN_SHEET,
-    OPEN_CREATE
+    OPEN_CREATE,
+    OPEN_REST
 };
 
 static int g_open;
@@ -25,6 +27,7 @@ static int g_pic;
 static df_u8 g_rgb[768];
 static int g_point_x;
 static int g_point_y;
+static const char *g_said;
 
 /* The open screen's composed picture up on the card, in place of the last one. */
 static void send_screen(void)
@@ -37,6 +40,9 @@ static void send_screen(void)
     } else if (g_open == OPEN_SHEET) {
         sheet_compose();
         pixels = sheet_pixels();
+    } else if (g_open == OPEN_REST) {
+        rest_compose();
+        pixels = rest_pixels();
     } else {
         create_compose();
         pixels = create_pixels();
@@ -55,6 +61,9 @@ void screens_close(void)
         sheet_close();
     } else if (g_open == OPEN_CREATE) {
         create_close();
+    } else if (g_open == OPEN_REST) {
+        g_said = rest_said();
+        rest_close();
     }
     g_open = OPEN_NONE;
     if (g_pic) {
@@ -92,6 +101,23 @@ void screens_open_create(void)
     opened(OPEN_CREATE, img_art_palette(g_rgb) && create_open());
     /* Its first call notes what is down already: the click that opened it is not a key. */
     input_key_pressed();
+}
+
+void screens_open_rest(Player *p)
+{
+    screens_close();
+    g_player = p;
+    opened(OPEN_REST, img_art_palette(g_rgb) && rest_open(p));
+    input_key_pressed();
+}
+
+const char *screens_said(void)
+{
+    const char *said;
+
+    said = g_said;
+    g_said = 0;
+    return said;
 }
 
 int screens_is_open(void)
@@ -165,7 +191,28 @@ static int create_frame(const Input *in)
     return SCREENS_STAY;
 }
 
-int screens_frame(const Input *in)
+/* A frame of rest: the keys, the click, then the time that passes. */
+static int rest_frame(const Input *in, float dt)
+{
+    int vk;
+
+    vk = input_key_pressed();
+    if (vk && rest_key(vk) == REST_LEAVE) {
+        return SCREENS_CLOSED;
+    }
+    if ((in->pressed & INPUT_BIT(INPUT_ATTACK)) && rest_click(g_point_x, g_point_y) == REST_LEAVE) {
+        return SCREENS_CLOSED;
+    }
+    if (rest_step(dt) == REST_LEAVE) {
+        return SCREENS_CLOSED;
+    }
+    if (rest_changed()) {
+        send_screen();
+    }
+    return SCREENS_STAY;
+}
+
+int screens_frame(const Input *in, float dt)
 {
     int px;
     int py;
@@ -177,6 +224,8 @@ int screens_frame(const Input *in)
         asked = bag_frame(in);
     } else if (g_open == OPEN_SHEET) {
         asked = sheet_frame(in);
+    } else if (g_open == OPEN_REST) {
+        asked = rest_frame(in, dt);
     } else {
         asked = create_frame(in);
     }
@@ -191,7 +240,15 @@ void screens_draw(void)
     const char *note;
 
     screen_draw(g_pic, 0, 0, SCREEN_W, SCREEN_H);
-    note = g_open == OPEN_BAG ? bag_note() : (g_open == OPEN_SHEET ? sheet_note() : create_note());
+    if (g_open == OPEN_BAG) {
+        note = bag_note();
+    } else if (g_open == OPEN_SHEET) {
+        note = sheet_note();
+    } else if (g_open == OPEN_REST) {
+        note = rest_note();
+    } else {
+        note = create_note();
+    }
     if (note) {
         ui_string((DF_VIEW_W - ui_string_width(note)) / 2, ui_line_height() + 8, note);
     }

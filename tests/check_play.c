@@ -29,6 +29,10 @@
 #include "game/dagger/play/create.h"
 #include "game/dagger/play/kit.h"
 #include "game/dagger/play/sheet.h"
+#include "game/dagger/play/rest.h"
+#include "game/dagger/play/save.h"
+#include "engine/scene/clock.h"
+#include "engine/platform/fs.h"
 #include "game/dagger/formats/biog.h"
 #include "game/dagger/formats/textrsc.h"
 #include "game/dagger/play/doll.h"
@@ -2203,6 +2207,281 @@ static void check_sheet(void)
     printf("sheet: the sheet, a list, a level taken and its points placed; build/sheet0..2.ppm\n");
 }
 
+/* Rest: its sums by hand, and the three ways driven by clicks and keys. */
+#define REST_WHILE_X 110
+#define REST_HEALED_X 160
+#define REST_LOITER_X 210
+#define REST_BUTTON_Y 75
+static void check_rest(void)
+{
+    Player p;
+    Character sheet;
+    Inventory pack;
+    float was;
+    int i;
+
+    /* Endurance 60 adds 1; Medical 40 + 60 is 100, of 100 health over 1000 is 10. */
+    check_expect(rules_rest_health(60, 40, 100) == 11, "rest: an hour's health is not classic's");
+    check_expect(rules_rest_health(0, 0, 10) == 1, "rest: an hour's health is under 1");
+    check_expect(rules_rest_fatigue(120) == 15 && rules_rest_magicka(24) == 3 && rules_rest_magicka(0) == 0,
+                 "rest: an hour's fatigue or spell points are not an eighth");
+
+    if (!create_default(&sheet, &pack)) {
+        check_expect(0, "rest: no default character");
+        return;
+    }
+    memset(&p, 0, sizeof(p));
+    player_init(&p, &sheet);
+    p.pack = pack;
+    foes_reset();
+
+    /* Until fully healed: from half, it ends whole, and time has passed. */
+    p.sheet.health = p.sheet.health_max / 2;
+    p.sheet.fatigue = p.sheet.fatigue_max / 2;
+    was = clock_minute();
+    check_expect(rest_open(&p), "rest: it did not open");
+    rest_compose();
+    write_picture(rest_pixels(), "build/rest0.ppm");
+    rest_click(REST_HEALED_X, REST_BUTTON_Y);
+    rest_compose();
+    write_picture(rest_pixels(), "build/rest1.ppm");
+    for (i = 0; i < 100000 && rest_step(0.1f) == REST_STAY; i++) {
+    }
+    check_expect(p.sheet.health == p.sheet.health_max && p.sheet.fatigue == p.sheet.fatigue_max && rest_said() != 0,
+                 "rest: until healed did not end whole");
+    check_expect(clock_minute() != was && p.sheet.skill_uses[SKILL_MEDICAL] > 0, "rest: no time passed, or Medical was not used");
+    rest_close();
+
+    /* For a while: three hours typed, and it heals for just those. */
+    p.sheet.health = 1;
+    p.sheet.skill_uses[SKILL_MEDICAL] = 0;
+    check_expect(rest_open(&p), "rest: it did not open again");
+    rest_click(REST_WHILE_X, REST_BUTTON_Y);
+    rest_key('3');
+    rest_compose();
+    write_picture(rest_pixels(), "build/rest2.ppm");
+    rest_key(0x0D);
+    for (i = 0; i < 100000 && rest_step(0.1f) == REST_STAY; i++) {
+    }
+    check_expect(p.sheet.skill_uses[SKILL_MEDICAL] == 3, "rest: three hours were not three uses of Medical");
+    check_expect(p.sheet.health == 1 + 3 * rules_rest_health(p.sheet.attribute[ATTR_ENDURANCE], p.sheet.skill[SKILL_MEDICAL], p.sheet.health_max),
+                 "rest: three hours did not give back three hours' health");
+    rest_close();
+
+    /* Loitering: the hours pass, nothing heals. */
+    p.sheet.health = 1;
+    p.sheet.skill_uses[SKILL_MEDICAL] = 0;
+    check_expect(rest_open(&p), "rest: it did not open a third time");
+    rest_click(REST_LOITER_X, REST_BUTTON_Y);
+    rest_key('2');
+    rest_key(0x0D);
+    for (i = 0; i < 100000 && rest_step(0.1f) == REST_STAY; i++) {
+    }
+    check_expect(p.sheet.health == 1 && p.sheet.skill_uses[SKILL_MEDICAL] == 0, "rest: loitering healed, or used Medical");
+    rest_close();
+
+    /* Escape leaves it from the panel. */
+    check_expect(rest_open(&p) && rest_key(0x1B) == REST_LEAVE, "rest: Escape did not leave");
+    rest_close();
+    printf("rest: its sums, until healed, for a while, loitering; build/rest0..2.ppm\n");
+}
+
+#define SAVE_TEST_FILE "DATA\\SAVETEST.SAV"
+
+/*
+ * A save's round trip in the streamed hold: a door, a dead creature, a pile
+ * and a thing taken, written with the sheet and the pack, everything then
+ * wiped, read back, and the hold opened again finding it all as it was.
+ */
+static void check_save(void)
+{
+    Dungeon hold;
+    Level level;
+    Camera cam;
+    float x, y, z, yaw, pitch;
+    SaveState out;
+    SaveState in;
+    Inventory things;
+    Inventory on_it;
+    df_u8 origin[INVENTORY_MAX];
+    Entity *body;
+    Entity *pile;
+    KeepKey body_key;
+    KeepKey pile_key;
+    KeepKey door_key;
+    Item it;
+    int found;
+    int door;
+    int s;
+    int i;
+
+    /* A file of the test's own, beside where a player's would be, and gone after. */
+    save_use_file(SAVE_TEST_FILE);
+    keep_clear();
+    combat_reset();
+    pile_new_game();
+    loot_new_game(4242u);
+    if (!dungeon_load(&hold) || !dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
+        check_expect(0, "save: the hold's stream did not open");
+        return;
+    }
+    camera_set(&cam, x, y, z, yaw, pitch);
+    dunstream_fill(&cam);
+
+    /* A door left open: only stream_keep_now can have saved it, its block is still loaded. */
+    door = -1;
+    for (i = 0; i < level.scene.nmovers; i++) {
+        if (level.scene.movers[i].inst && level.scene.movers[i].door && !level.scene.movers[i].lock
+            && !level.scene.movers[i].teleport) {
+            door = i;
+            break;
+        }
+    }
+    check_expect(door >= 0, "save: no door to open");
+    door_key = level.scene.movers[door].key;
+    mover_set_end(&level.scene.movers[door], 1);
+
+    /* A creature dead, at level 7, with a thing taken off it. */
+    body = 0;
+    for (s = 0; s < stream_slots() && !body; s++) {
+        Entity *ents;
+        int first;
+        int n;
+
+        ents = stream_slot_entities(s, &first, &n);
+        for (i = 0; ents && i < n && !body; i++) {
+            const EnemyKind *kind;
+
+            kind = ents[i].live ? enemy_kind(dunstream_kind(&ents[i], 0)) : 0;
+            if (kind && loot_chance(kind->loot[0]) && ents[i].pose[ENTITY_DEAD].w[0]) {
+                body = &ents[i];
+            }
+        }
+    }
+    check_expect(body != 0, "save: no creature to kill");
+    if (!body) {
+        dunstream_close();
+        return;
+    }
+    body->dead = 1;
+    body_key = body->key;
+    keep_get(body_key, KEEP_ENTITY)->game[COMBAT_KEEP_LEVEL] = 7;
+    found = loot_open(body, 7, &on_it, origin);
+    if (found > 0) {
+        loot_taken(body, origin[0]);
+    }
+
+    /* A pile dropped. */
+    inventory_clear(&things);
+    item_make(&it, ITEM_HELM, MATERIAL_DAEDRIC);
+    inventory_add(&things, &it);
+    {
+        float feet[3];
+
+        feet[0] = x + 30.0f;
+        feet[1] = y - WALK_EYE;
+        feet[2] = z;
+        check_expect(pile_drop(&things, feet), "save: the pile had nowhere to go");
+    }
+    pile = 0;
+    for (i = 0; i < level.scene.nentities; i++) {
+        if (level.scene.entities[i].live && dunstream_spare(&level.scene.entities[i])) {
+            pile = (Entity *)&level.scene.entities[i];
+        }
+    }
+    check_expect(pile != 0, "save: no pile stands");
+    pile_key = pile ? pile->key : body_key;
+
+    /* What the game writes: its own state, then the loaded blocks flushed and the table with it. */
+    mem_zero(&out, sizeof(out));
+    check_expect(character_new(&out.sheet, RACE_KHAJIIT, CLASS_MAGE, 1, "Kept"), "save: no character");
+    out.sheet.level = 3;
+    out.sheet.health = 7;
+    out.sheet.face = 4;
+    out.sheet.skill_uses[5] = 123;
+    out.sheet.attribute[ATTR_LUCK] = 99;
+    inventory_clear(&out.pack);
+    item_make(&it, ITEM_LONGSWORD, MATERIAL_EBONY);
+    inventory_equip(&out.pack, inventory_add(&out.pack, &it));
+    item_make(&it, ITEM_CUIRASS, MATERIAL_CHAIN);
+    inventory_wear(&out.pack, inventory_add(&out.pack, &it));
+    item_make(&it, ITEM_ARROW, MATERIAL_IRON);
+    it.count = 17;
+    inventory_add(&out.pack, &it);
+    out.pack.gold = 4321;
+    out.feet[0] = 111.5f;
+    out.feet[1] = 22.5f;
+    out.feet[2] = 333.5f;
+    out.yaw = 1.5f;
+    out.pitch = -0.25f;
+    out.minute = 600.0f;
+    out.day = 12345;
+    out.day_zero = 12000;
+    out.seed = loot_seed();
+    stream_keep_now();
+    check_expect(keep_find(door_key) != 0, "save: a door open in a loaded block was not flushed");
+    check_expect(save_write(&out) && save_exists(), "save: it did not write");
+    dunstream_close();
+
+    /* Everything wiped, as another game would have left it. */
+    keep_clear();
+    pile_new_game();
+    loot_new_game(1u);
+    mem_zero(&in, sizeof(in));
+    check_expect(save_read(&in), "save: it did not read back");
+    check_expect(strcmp(in.sheet.name, "Kept") == 0 && in.sheet.race == RACE_KHAJIIT && in.sheet.klass == CLASS_MAGE && in.sheet.female
+                     && in.sheet.level == 3 && in.sheet.health == 7 && in.sheet.face == 4 && in.sheet.skill_uses[5] == 123
+                     && in.sheet.attribute[ATTR_LUCK] == 99 && in.sheet.skill[SKILL_MEDICAL] == out.sheet.skill[SKILL_MEDICAL],
+                 "save: the sheet did not come back");
+    check_expect(in.pack.count == 3 && in.pack.gold == 4321 && inventory_weapon(&in.pack) == &in.pack.item[0]
+                     && in.pack.item[0].material == MATERIAL_EBONY && in.pack.worn[EQUIP_CHEST] == 1
+                     && in.pack.item[2].count == 17 && check_near(in.pack.item[0].weight, out.pack.item[0].weight, 0.001f),
+                 "save: the pack did not come back");
+    check_expect(check_near(in.feet[0], 111.5f, 0.01f) && check_near(in.feet[1], 22.5f, 0.01f) && check_near(in.feet[2], 333.5f, 0.01f)
+                     && check_near(in.yaw, 1.5f, 0.001f) && check_near(in.pitch, -0.25f, 0.001f)
+                     && check_near(in.minute, 600.0f, 0.01f) && in.day == 12345 && in.day_zero == 12000,
+                 "save: the place or the clock did not come back");
+    check_expect(in.seed == out.seed, "save: the seed did not come back");
+    loot_new_game(in.seed);
+
+    /* The hold again: the door open, the body a body missing what was taken, the pile where it was with what it held. */
+    if (!dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
+        check_expect(0, "save: the hold did not open again");
+        return;
+    }
+    camera_set(&cam, x, y, z, yaw, pitch);
+    dunstream_fill(&cam);
+    for (i = 0; i < level.scene.nmovers; i++) {
+        if (level.scene.movers[i].key.place == door_key.place && level.scene.movers[i].key.thing == door_key.thing) {
+            break;
+        }
+    }
+    check_expect(i < level.scene.nmovers && mover_at_end(&level.scene.movers[i]), "save: the door came back shut");
+    body = entity_by_key(body_key);
+    check_expect(body && body->dead, "save: the creature came back alive");
+    if (body) {
+        check_expect(loot_open(body, 1, &on_it, origin) == (found > 0 ? found - 1 : 0), "save: the body came back with what was taken");
+    }
+    pile = entity_by_key(pile_key);
+    check_expect(pile && pile->live, "save: the pile did not stand again");
+    if (pile) {
+        check_expect(loot_open(pile, 1, &on_it, origin) == 1 && on_it.item[0].template_id == ITEM_HELM
+                         && on_it.item[0].material == MATERIAL_DAEDRIC,
+                     "save: the pile came back without its helm");
+    }
+    dunstream_close();
+    keep_clear();
+    pile_new_game();
+    {
+        char path[512];
+
+        check_expect(fs_beside(path, (int)sizeof(path), SAVE_TEST_FILE) && remove(path) == 0, "save: the test's file did not go");
+    }
+    check_expect(!save_exists(), "save: a save is there after its file went");
+    save_use_file("DATA\\SAVE0.SAV");
+    printf("save: a door, a body, a pile, a sheet and a pack, round the file and back\n");
+}
+
 void check_play(void)
 {
     check_rules();
@@ -2221,6 +2500,8 @@ void check_play(void)
     check_kit_and_words();
     check_create();
     check_sheet();
+    check_rest();
+    check_save();
     check_hold();
     check_keep();
     check_dunstream();

@@ -12,14 +12,15 @@
  * The game's states: classic's title, then its start menu, before any
  * place (the engine's screen frame, gfx_frame with no level); then play
  * in the hold, where Escape opens the options over the stilled world,
- * and from them the controls. Places and saves come with later phases.
+ * and from them the controls; saving and loading, one slot; the death
+ * screen; the inventory, the sheet and rest. Other places come with P8.
  */
 
 /* What a frame asks of the program. */
 enum {
     GAME_QUIT,
     GAME_GO_ON,
-    /* Load the place to play: the start menu's new game. */
+    /* Load the place to play: a new game, or a saved one, as the game has set up. */
     GAME_START
 };
 
@@ -38,7 +39,8 @@ int game_playing(void);
 int game_world_shows(void);
 /*
  * A place to play in, streamed by block (dunstream.c): the player at its
- * start (x, y, z the eye), the overlay and use handler hooked up. The
+ * start (x, y, z the eye), or where a save just read says, the overlay and
+ * use handler hooked up. The
  * game steps the stream each frame (GAME_STREAM_MS).
  */
 void game_enter(const Level *level, Camera *cam, float x, float y, float z, float yaw, float pitch);

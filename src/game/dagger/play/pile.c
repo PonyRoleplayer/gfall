@@ -8,17 +8,29 @@
 /* Dropping this near a pile joins it: about the width of the heap itself. */
 #define JOIN_DISTANCE 48.0f
 
-typedef struct PileItem {
-    KeepKey pile;
-    Item item;
-} PileItem;
-
 static PileItem g_pool[PILE_ITEMS];
 static int g_used;
 
 void pile_new_game(void)
 {
     g_used = 0;
+}
+
+int pile_count(void)
+{
+    return g_used;
+}
+
+const PileItem *pile_at(int i)
+{
+    return &g_pool[i];
+}
+
+void pile_put(const PileItem *row)
+{
+    if (g_used < PILE_ITEMS) {
+        g_pool[g_used++] = *row;
+    }
 }
 
 static int same_key(KeepKey a, KeepKey b)

@@ -35,6 +35,7 @@ enum {
 #define SKILL_JUMPING 3
 #define SKILL_SWIMMING 17
 #define SKILL_RUNNING 21
+#define SKILL_MEDICAL 0
 /* The ones combat rolls (combat.c). */
 #define SKILL_BACKSTABBING 19
 #define SKILL_DODGING 20

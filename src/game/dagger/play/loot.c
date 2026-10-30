@@ -31,6 +31,11 @@ void loot_new_game(df_u32 seed)
     g_game_seed = seed;
 }
 
+df_u32 loot_seed(void)
+{
+    return g_game_seed;
+}
+
 /*
  * A stream of dice of a body's own. It is not the game's dice
  * (combat_roll): a body's contents must not depend on what else was rolled

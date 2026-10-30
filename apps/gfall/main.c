@@ -22,6 +22,7 @@
 #include "engine/sound/sound.h"
 #include "engine/ui/console.h"
 #include "game/dagger/formats/fnt.h"
+#include "game/dagger/formats/texture.h"
 #include "game/dagger/play/game.h"
 #include "game/dagger/formats/dungeon.h"
 #include "game/dagger/places/dunstream.h"
@@ -47,11 +48,27 @@ static float frame_secs(void)
 /* Privateer's Hold's record: the stream reads its blocks as the player walks, so it outlives the load. */
 static Dungeon g_hold;
 
+/* 1 while a place's temp heap is open: what it read and built dies with it. */
+static int g_place_open;
+
+/* The last place gone, its heap with it, as LEVELFALL leaves one: the stream, the file cache's pointers into it, then the heap. */
+static void leave_place(void)
+{
+    dunstream_close();
+    if (g_place_open) {
+        texture_cache_clear();
+        mem_temp_end();
+        g_place_open = 0;
+    }
+}
+
 /*
- * The new game's place, under a held "Loading..." over the menu's last
- * frame: Privateer's Hold streamed by block (dunstream.c), the player at
- * its start, the blocks round it loaded and their lights cut, its
- * pictures sharp before it fades in. 0 when it does not load.
+ * A game's place, new or loaded (the game set up who and from where), under
+ * a held "Loading..." over the last frame: Privateer's Hold streamed by
+ * block (dunstream.c), the player at its start or the save's place, the
+ * blocks round it loaded and their lights cut, its pictures sharp before it
+ * fades in. Each in a temp heap of its own, or every load would leak the
+ * stream's arrays. 0 when it does not load.
  */
 static int start_hold(Level *level, Camera *cam)
 {
@@ -62,6 +79,12 @@ static int start_hold(Level *level, Camera *cam)
     float pitch;
 
     gfx_hold("Loading...");
+    leave_place();
+    if (!mem_temp_begin()) {
+        win_fail("No memory for the place.");
+        return 0;
+    }
+    g_place_open = 1;
     if (!dungeon_load(&g_hold) || !dunstream_open(&g_hold, level, &x, &y, &z, &yaw, &pitch)) {
         win_fail("Privateer's Hold could not be opened.");
         return 0;
@@ -138,7 +161,7 @@ int gfall_main(void *instance)
     }
     input_end();
     game_shutdown();
-    dunstream_close();
+    leave_place();
     music_shutdown();
     sound_shutdown();
     gfx_shutdown();

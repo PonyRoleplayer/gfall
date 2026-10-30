@@ -140,7 +140,7 @@ void menu_shutdown(void)
 
 void menu_open(int which)
 {
-    static const char *const files[] = { 0, "TITL00I0.IMG", "PICK03I0.IMG", "OPTN00I0.IMG", "CNFG00I0.IMG" };
+    static const char *const files[] = { 0, "TITL00I0.IMG", "PICK03I0.IMG", "OPTN00I0.IMG", "CNFG00I0.IMG", "DIE_00I0.IMG" };
 
     /* Leaving the controls with a binding changed: kept for the next start. */
     if (g_open == MENU_CONTROLS && which != MENU_CONTROLS && g_changed) {
@@ -155,7 +155,16 @@ void menu_open(int which)
         /* Its first call notes what is down already: the click that opened the screen is not a key. */
         input_key_pressed();
     }
-    show(which > MENU_NONE && which <= MENU_CONTROLS ? files[which] : 0);
+    show(which > MENU_NONE && which <= MENU_DEATH ? files[which] : 0);
+    /* The death screen waits for a key, as the title does: what is down already is not it. */
+    if (which == MENU_DEATH) {
+        input_key_pressed();
+    }
+}
+
+void menu_say(const char *line)
+{
+    g_note = line;
 }
 
 int menu_current(void)
@@ -269,7 +278,7 @@ int menu_frame(const Input *in)
             return MENU_QUIT;
         }
         if (what == DO_LOAD) {
-            g_note = "There are no saved games yet.";
+            return MENU_LOAD;
         }
         return MENU_STAY;
     case MENU_OPTIONS:
@@ -295,14 +304,23 @@ int menu_frame(const Input *in)
         if (what >= 0) {
             g_confirm = 0;
         }
-        if (what == DO_SAVE || what == DO_LOAD) {
-            g_note = "Saving and loading come later.";
-        } else if (what == DO_CONTROLS) {
+        if (what == DO_SAVE) {
+            return MENU_SAVE;
+        }
+        if (what == DO_LOAD) {
+            return MENU_LOAD;
+        }
+        if (what == DO_CONTROLS) {
             menu_open(MENU_CONTROLS);
         }
         return MENU_STAY;
     case MENU_CONTROLS:
         return controls_frame(in, click);
+    case MENU_DEATH:
+        if (input_key_pressed() || in->pressed) {
+            return MENU_DEATH_OVER;
+        }
+        return MENU_STAY;
     default:
         return MENU_STAY;
     }
@@ -336,7 +354,7 @@ void menu_draw(void)
     if (g_note) {
         ui_string((DF_VIEW_W - ui_string_width(g_note)) / 2, ui_line_height() + 8, g_note);
     }
-    if (g_open != MENU_TITLE) {
+    if (g_open != MENU_TITLE && g_open != MENU_DEATH) {
         screen_draw(g_arrow, g_point_x, g_point_y, 10, 10);
     }
 }

@@ -24,6 +24,12 @@
 /* Every dropped item in the game at once. */
 #define PILE_ITEMS 256
 
+/* One dropped item, and the key of the pile it lies in. */
+typedef struct PileItem {
+    KeepKey pile;
+    Item item;
+} PileItem;
+
 /* A new game: nothing dropped anywhere. */
 void pile_new_game(void);
 /* 1 when count things can lie in pile e (0: a new pile) with every other pile's still there. */
@@ -32,6 +38,10 @@ int pile_room(const Entity *e, int count);
 int pile_drop(const Inventory *things, const float *feet);
 /* What is in pile e, into out. */
 void pile_read(const Entity *e, Inventory *out);
+/* The pool's rows, for a save: how many, the i-th, and one put back. */
+int pile_count(void);
+const PileItem *pile_at(int i);
+void pile_put(const PileItem *row);
 /* Pile e now holds just these. With nothing in it, it goes from the world and its spare thing is free again. */
 void pile_write(Entity *e, const Inventory *things);
 

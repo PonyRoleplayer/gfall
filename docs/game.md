@@ -8,7 +8,7 @@ The engine draws, hears and walks any place. `src/game/dagger/` loads Daggerfall
 
 LEVELFALL already goes through every passage: into a house and out, down into a dungeon and up, out of the stream and back. That code lives in the viewer (`lf_use`, `land_at`, `stream_inside`, `view_stream` in `apps/levelfall/main.c`) and leans on the viewer's own list rows (`pair_row`).
 
-GFALL (`apps/gfall/main.c`) is the game: classic's title and start menu, character creation (or, skipped, an Argonian woman), then Privateer's Hold streamed by block, on foot, with a weapon, armour, creatures that fight back, bodies to search, and skills and levels that grow (`src/game/dagger/play/`). There are no saves and no way out of the hold yet: the phases below say what is built.
+GFALL (`apps/gfall/main.c`) is the game: classic's title and start menu, character creation (or, skipped, an Argonian woman), then Privateer's Hold streamed by block, on foot, with a weapon, armour, creatures that fight back, bodies to search, and skills and levels that grow (`src/game/dagger/play/`). It saves, loads and rests. There is no way out of the hold yet: the phases below say what is built.
 
 ## The pieces
 
@@ -30,7 +30,9 @@ canvas    classic's 320 x 200 composed in memory: what the next three draw with
 bag       the inventory screen and its clicks
 sheet     the character sheet, and a level taken on it
 create    character creation, screen by screen
-screens   whichever of those three is open, on the card
+rest      resting and loitering
+screens   whichever of those is open, on the card
+save      the one saved game
 kit       what a new character starts with
 overlay   the HUD: compass, vitals, crosshair
 menu      the title, start, options and controls screens
@@ -40,7 +42,7 @@ sfx       DAGGER.SND's clips for combat
 commands  the game's console commands
 ```
 
-Still to come: `save` (P7), and `places/travel.c` (P8), which LEVELFALL's view code has today.
+Still to come: `places/travel.c` (P8), which LEVELFALL's view code has today.
 
 The player is Daggerfall's, so it lives here and not in the engine. So do items and the inventory: the engine is simulation and world. It gives a camera, a walking body (`body`), using things (`interact`) and entities (`entity`), and `play` builds Daggerfall's player out of them. Another game would build its own in its own folder. Each is a module of one `.c` and one `.h`, as in `docs/architecture.md`. What can be plain C is, and is host-tested in `tests/check_play.c`. What draws or reaches the keys (`PLAY_DRAW_SRC`) is checked by running GFALL.
 
@@ -159,7 +161,7 @@ Skill advance by use and the level-up rule come from UESP's Leveling page. A pre
   - The console's `tcl` is the game's collision switch (`walker_on`), on by default. `tcl 0` flies through everything, Oblivion-style: along the view, pitch and all, Q up and E down, at the walk's and run's speeds, with no gravity. Back to `tcl 1`, the body comes out of whatever it is in and falls from there.
   - Before this, `tcl 1` stood the engine's walker body on the player's, and the two shoved each other: sideways, through walls.
 - **Teleports** are the game's to take: each frame, before the step, `interact_teleport` puts the body where the last frame's teleport sends it, at its eye, facing its way.
-- **A fall** past 5 m costs 5 health a metre (PlayerHealth); "That hurt." A fall to 0 health says "You have died." and, until saves (P7), puts the player back at the start, whole.
+- **A fall** past 5 m costs 5 health a metre (PlayerHealth); "That hurt." A fall to 0 health says "You have died." and shows the death screen (Saves, below).
 
 ### Creation (built: P6)
 
@@ -228,8 +230,8 @@ Still to come: classic's bottom panel (MAIN00I0.IMG, 320 × 46) with the menu wo
 | Menu | Picture | Buttons |
 | --- | --- | --- |
 | Title | TITL00I0.IMG (its own palette) | any key or click goes on |
-| Start | PICK03I0.IMG (its own palette) | Load (72, 45): "There are no saved games yet." (P7); Start a new game (72, 99): loads the hold under "Loading...", which fades in; Exit (125, 145) quits |
-| Options | OPTN00I0.IMG at 85, 40, over the stilled world (`gfx_set_pause`) | Save, Load: later (P7); Exit, clicked twice, quits; Controls; Continue, or Escape, goes back to play. Classic's full screen, head bobbing, sound, music and detail are settings, left out |
+| Start | PICK03I0.IMG (its own palette) | Load (72, 45): the saved game, or says there is none; Start a new game (72, 99): character creation, then the hold under "Loading...", which fades in; Exit (125, 145) quits |
+| Options | OPTN00I0.IMG at 85, 40, over the stilled world (`gfx_set_pause`) | Save, and Load, the one slot; Exit, clicked twice, quits; Controls; Continue, or Escape, goes back to play. Classic's full screen, head bobbing, sound, music and detail are settings, left out |
 | Controls | CNFG00I0.IMG | each action's key in classic's slot (47 × 7); a click on one waits for a key (`input_key_pressed`), and Escape leaves it be; a key another action has is swapped between them; Escape, the menu's, and the console's are refused (`input_bind`). Default puts classic's keys back; Continue, or Escape, goes back to the options |
 
 **The controls' slots** are classic's for the actions the game has:
@@ -256,7 +258,7 @@ The creatures already stand in a dungeon as entities (`docs/entities.md`): each 
 - **A motor**: asleep until seen or heard, then turn to the player, walk to them (walking cells in a town, straight with the collider in a dungeon), and attack within reach. One step a frame for the near ones, under a budget.
 - **The attack and the hit**: to-hit and damage per UESP's Combat page, as Daggerfall Unity's formulas have it (read for what they do). The weapon's swing is a picture drawn over the view.
 - **Hurt and death**: the hurt and death records (5 to 14, 20 to 29; `docs/entities.md`, Not yet), and a body left on the floor with its loot.
-- **The player's death**: the menu, load the last save.
+- **The player's death**: classic's death screen, then the last save (Saves, below).
 
 Moving an entity's position and pose from game code, and the walker colliding with entities, are engine requests.
 
@@ -303,7 +305,7 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **Each classic tick** it looks again every sixth (DFU's reacquiring), turns at most 20 degrees toward where it last saw the player, counts down 200 ticks unseen and then gives up (asleep where it stands), and may start a swing: the player seen, within 2.25 m, within 22.5 degrees of its facing, its melee timer run out, and a roll on its Speed (at least 8) under Speed / 8 + 6, as classic's AI has it (about one tick in four at Speed 50; see Checked against classic). It plays its attack sound.
 - **Each frame** it walks along its facing at (Speed + 150) / 39.5 m/s (`rules_walk_speed`) toward where it last saw the player, stopping short of reach (0.85 of 2.25 m) while it sees them; a flyer rises or sinks to the player's feet at the same speed. A move sound every 2 to 5 s while it walks (our interval). A flinch stands it still, and cancels a swing begun.
 - **Its swing** is its attack pose (records 5 to 9) at 10 frames a second, held by the game frame by frame; the blow lands on its third frame (index 2, our choice: DFU takes the frame from each kind's animation) if the player is still within 2.25 m and 0.25 m, and within 35.156 degrees of its facing (or within 0.25 m). Rolled by `combat_foe_blow`: a monster's three attacks each rolled to hit and summed, a class enemy's bare hands. The melee timer: 1500 to 3000, less 50 a player level past 10, reflexes average, over 980: seconds.
-- **The player hit:** Hit1..5 flat and the race's and sex's pain clip (DFU's, three each); missed, the high swing at the creature. Health through `player_hurt`, so `tgm` keeps the player whole. A blow that kills: "You have died.", back at the start whole, every creature asleep again where it stands (`die` in `game.c`, the fall's too), until saves (P7).
+- **The player hit:** Hit1..5 flat and the race's and sex's pain clip (DFU's, three each); missed, the high swing at the creature. Health through `player_hurt`, so `tgm` keeps the player whole. A blow that kills, or a fall: "You have died." and the death screen (`die` in `game.c`; Saves, below).
 - **The console's `tai`** switches them off: no one wakes, moves or strikes, and a swing begun stops. Kept across games.
 - **Far creatures move less often** (`foes_due`). A creature within `FOES_NEAR` (12.8 m) of the player moves every frame; past it every second frame, and past `FOES_FAR` (25.6 m) every fourth, staggered by its mind's number. The time it did not move is kept and spent by its next move, so it covers the same ground. Senses and blows are unaffected: a blow only lands within 2.25 m, and senses keep classic's ticks.
 - **On the 233:** a near mind steps a body (a collision gather and sweep) every frame and looks along a ray every sixth tick; not measured there yet.
@@ -370,7 +372,7 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 
 What is built but not whole, and the phase each goes in. Each section above says the detail.
 
-**Not yet run on the 233** (host-tested only): striking and creature AI, the inventory screen, character creation, the sheet and level-ups, a frame with no world under a full screen, bodies, treasure and piles, the controls screen and the options' Exit. Not yet measured there: the `play` stage, the 3 ms streaming budget, the load time.
+**Not yet run on the 233** (host-tested only): striking and creature AI, the inventory screen, character creation, the sheet and level-ups, saving, loading, the death screen and rest, a frame with no world under a full screen, bodies, treasure and piles, the controls screen and the options' Exit. Not yet measured there: the `play` stage, the 3 ms streaming budget, the load time.
 
 | Where | Gap | Phase |
 | --- | --- | --- |
@@ -386,6 +388,9 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Items | condition wearing down | P7 |
 | Items | a class's forbidden materials and armour | P7 |
 | Items | class enemies wearing what they carry | P7 |
+| Saves | one slot, overwritten without asking; classic's SAVE00I0.IMG and LOAD00I0.IMG screens, with a slot's name | P7 |
+| Saves | creatures awake come back asleep; the weather is not kept | P8 |
+| Rest | a random encounter while resting; a class with no spell point regeneration | P7, P9 |
 | Items | clothing, jewellery, ingredients, books, potions, maps, and the screen's other tabs | P9, P10 |
 | Items | clothing's dyes | with clothing |
 | Inventory | the Wagon button (P12), the Use button (P9), dropping gold (P7) | as named |
@@ -403,22 +408,37 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Character | starting clothes and spellbook | with clothing, P9 |
 | Engine | `scene/pack.c`, `ui/packview.c`, `scene/rpg.c`, `ui/rpgview.c` are used by no game; the user's line is that the engine is simulation and world | to decide |
 
-## Time, rest, travel
+## Rest and time (built: P7)
 
-- The engine's clock and calendar (`clock.c`) is the game's time. A save keeps it.
-- Rest and wait run the clock faster, and give back health and fatigue by the rules. A creature that comes near stops the rest.
-- The travel map comes later, with `worldmap.c`'s pixels and the location index: pick a place and land in the stream there, time passing as the trip.
+`play/rest.c`, by DFU's DaggerfallRestWindow and FormulaHelper. The rest key (R) opens REST00I0.IMG over a black screen, as classic does.
 
-## Saves
+- **Three ways.** For a while (hours typed, 99 at most), until fully healed, and loitering. REST01I0.IMG counts hours past, and REST02I0.IMG hours remaining, each with its Stop.
+- **Time** passes ten game minutes a step: a step every 0.075 s of real time resting, every 0.125 s loitering. The clock is set directly and turns the day itself, so a console that stopped the clock's scale cannot hang a rest.
+- **Each whole hour of rest** gives back health (endurance's modifier + (Medical + 60) × its most / 1000, at least 1), fatigue and spell points (an eighth of their most, at least 1), and is a use of Medical. Loitering gives back nothing.
+- **A creature awake** refuses a rest ("You cannot rest with enemies nearby."), and stops one each hour. Skills that have earned it rise when the rest ends, and a level due opens the sheet.
+- **Not yet:** a random encounter while resting; a class with no spell point regeneration; the law on camping, and rented rooms, with towns (P8, P10).
 
-A small file beside the exe (`SAVE0.SAV`..). It holds:
-- the version;
-- the sheet and the items;
-- the place (stream position, or which building or dungeon and where in it);
-- the clock;
-- the changes the player made to places: open doors, pulled levers, dead creatures and taken loot, as a list per place.
+The travel map comes later, with `worldmap.c`'s pixels and the location index: pick a place and land in the stream there, time passing as the trip.
 
-Plain C, written with the engine's file layer, and host-tested as a round trip.
+## Saves (built: P7)
+
+`play/save.c`. One slot, `DATA\SAVE0.SAV`, a record file (`docs/data.md`) as KEYS.DAT is: `dfrec dump` reads it, and a later program reading an older save keeps a new field's zero. Its version, in its head, refuses only a change a zero cannot carry.
+
+| Chunk | Holds |
+| --- | --- |
+| `GAME` | the feet, in the place's frame (a stream's origin moves), the facing, the clock's minute and day, the day the game began, the seed, the gold, what is worn |
+| `CHAR` | the sheet, whole: skill uses and the level's count among it |
+| `PACK` | what is carried, material, variant and condition among it |
+| `KEEP` | every door, lever, creature, heap and pile not as its file has it (`keep.c`) |
+| `PILE` | what lies dropped (`pile.c`) |
+
+- **What is not written:** a body's and a heap's things, which come again from the seed and their keys (What can be searched). So a save stays small however much of the hold was searched.
+- **Saving** first flushes the blocks loaded now into the keep table (the engine's `stream_keep_now`): a door opened where the player stands has otherwise only been saved in memory on its block's own arrays.
+- **Loading** (`load_game` in `game.c`) reads the file, replaces the keep table and the pool, and returns `GAME_START`, the same path as a new game. `main.c` closes the place and opens it again, each place in a temp heap of its own as LEVELFALL's (`leave_place`), and `game_enter` puts the player at the save's place. Without its own heap every load leaked the stream's arrays.
+- **A new game** forgets the last one's keep table and piles, and takes a new seed (`forget_last_game`).
+- **The menus:** the start menu's Load; the options' Save and Load. There is no save screen yet: one slot, overwritten without asking.
+- **Death** shows classic's DIE_00I0.IMG until a key or a click, then loads the last save, or with none goes back to the start menu.
+- **Creatures awake are not saved.** They come back asleep, where they stood, wounded as they were.
 
 ## Later
 
@@ -474,7 +494,7 @@ The first goal is a **prototype**: from classic's start menu, Privateer's Hold p
 | P4 | Combat (built; the swing runs on the target, striking and creatures awake not tried there yet; the player's death is back to the start until saves; LEVELFALL's view of a creature's state not yet): the weapon's swing from WEAPON##.CIF (the shown swing's frames only on the card), classic's to-hit and damage; creatures wake, chase on bodies of their size, attack, flinch, die; the player's death; `WEAP`, `MATL` | GAME; LEVELFALL shows each creature's state | the hold can be cleared, or the player killed, from records |
 | P5 | Loot and inventory (built, host-tested, not run on the target; the other tabs' items not yet): bodies, treasure, dropped piles, gold, pick up, equip weapon and armour, classic's inventory screen and paper doll, classic's metal colours; `ITEM`, `ARMR`, `LOOT`, `LDUN` | GAME, ENGINE's pictures | equipment changes combat |
 | P6 | Character creation and levelling (built, host-tested, not run on the target; class questions and custom classes not yet): classic's screens, background questions, skill gains, level-ups, the character sheet | GAME | a character made by the screens plays the hold and levels |
-| P7 | Prototype polish: loading holds, one save slot in `DATA\`, the menu's load, rest and wait, a 233 profile pass | GAME | from the menu through the hold and back after a save |
+| P7 | Prototype polish (begun: saves, Load, the death screen, rest and wait built, host-tested, not run on the target; the 233 profile pass and the P7 gaps above not done): loading holds, one save slot in `DATA\`, the menu's load, rest and wait, a 233 profile pass | GAME | from the menu through the hold and back after a save |
 | P8 | Out of the hold: `places/travel.c` lifted from LEVELFALL and shared; the hold's outside in the stream, the nearest town, its houses | GAME and LEVELFALL | from the menu to town and back after a save, in one session |
 | P9 | Magic: spells, effects, spellbook, casting, potions, enchantments | GAME | |
 | P10 | People: talk from TEXT.RSC, shops, banks, factions, reputation, law | GAME | |

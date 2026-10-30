@@ -35,6 +35,8 @@
 
 /* A new game's seed: every body's contents come from it. */
 void loot_new_game(df_u32 seed);
+/* That seed, for a save. */
+df_u32 loot_seed(void);
 /*
  * The material of a random weapon or plate from a roll of 0..255
  * (RandomMaterial): the player's level against 10 moves the roll, higher

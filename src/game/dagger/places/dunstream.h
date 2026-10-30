@@ -63,6 +63,8 @@ int dunstream_spare(const Entity *e);
 #define DUNSTREAM_SPARE_USED 15
 /* The open dungeon's type (Dungeon.dungeon_type), which names its treasure's loot table; -1 with none open. */
 int dunstream_dungeon_type(void);
+/* A block's side in units: a chunk of the stream, and what stream_origin counts in. */
+#define DUNSTREAM_BLOCK 2048.0f
 int dunstream_active(void);
 
 #endif

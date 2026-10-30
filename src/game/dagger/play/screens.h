@@ -7,7 +7,7 @@
 
 /*
  * The screens composed in memory, on the card: the inventory (bag.c), the
- * character sheet (sheet.c) and character creation (create.c). One is
+ * character sheet (sheet.c), character creation (create.c) and rest (rest.c). One is
  * open at a time. Each composes one 320 x 200 picture, and this puts it up,
  * gives it the pointer, the clicks and the keys, and takes it down. Read
  * docs/game.md (The inventory screen, What it costs the 233).
@@ -32,10 +32,13 @@ enum {
 void screens_open_bag(Player *p, Entity *searched);
 void screens_open_sheet(Player *p);
 void screens_open_create(void);
+void screens_open_rest(Player *p);
 void screens_close(void);
 int screens_is_open(void);
 /* One frame's pointer, clicks and keys: SCREENS_*. */
-int screens_frame(const Input *in);
+int screens_frame(const Input *in, float dt);
+/* What a rest just ended said, once, for the game to show now the world is back; 0 for nothing. */
+const char *screens_said(void);
 /* The screen and the pointer, from the game's gfx_set_extra. */
 void screens_draw(void);
 
