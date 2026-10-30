@@ -49,7 +49,8 @@ Leaving it for a place is as between places:
   - A cutout's palette is not an opaque one's, even for the same colours.
   - On a card whose DLL has no `grChromakeyMode` and `grChromakeyValue` (`glide_chroma_ok`), a cutout goes as ARGB 1555 instead, 2 bytes a texel: index 0 clear (0x0000), the rest with the alpha bit set, alpha-tested as sprites and text are, and drawn with no palette.
   - `pic.c` keeps every tile as P_8 in memory and chooses at upload (`PicOps.chroma`, set from the card at each prepare). A picture loaded before any place therefore goes on in the right format once the card is known.
-  - The weapon's largest swing frame takes 40 KB keyed where it took 78 KB as 1555, so a whole swing can stay on the card (`docs/game.md`).
+  - The weapon's largest swing frame takes 39 KB keyed where it took 78 KB as 1555 (`docs/game.md`). The game still keeps one frame on the card at a time: the bow's 7 would be 196 KB.
+  - Verified on the 233's Voodoo 1: the weapon and the compass draw keyed, with no magenta.
 - **The draw state** is `glide_ui`: point sampled, over the frame with no depth test or write, tint white. An opacity under 255 blends with `glide_opacity`.
 
 ### Tiles
