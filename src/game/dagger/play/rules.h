@@ -32,7 +32,7 @@ float rules_jump_height(int jumping);
  * A new character (DFU's StatsRollout and SkillsRollout, classic's
  * character creation): an attribute is its class's base and a roll of
  * 0..10; a primary skill 28, a major 18, a minor 13, each and a roll of
- * 0..3; any other 3..6. Until creation (P8) a character takes the
+ * 0..3; any other 3..6. Until creation (P6) a character takes the
  * rolls' middles, below.
  */
 #define RULES_ATTRIBUTE_ROLL 5

@@ -8,7 +8,7 @@
  * Read docs/game.md (The player) before editing.
  *
  * Built from MAIN.DAT's CLAS, RACE and SKIL records by classic's rules
- * (rules.c). Until character creation (P8) the game starts with a fixed
+ * (rules.c). Until character creation (P6) the game starts with a fixed
  * one, CHARACTER_START_*: a Breton warrior, the rolls at their middles.
  * Fatigue is kept in 64ths as classic keeps it; shown, it is whole.
  */

@@ -69,7 +69,7 @@ Every door, lever and creature of a place loaded whole is keyed for the engine's
 
 `world.c` puts back what was kept at the end of every load (`world_keep_restore`); `world_keep_save` writes it before a place is left. A creature kept dead is never read or drawn (`FOE_DEAD`). The engine's `live` means drawn, so a creature not yet read is saved as alive.
 
-Tested in the hold: all 105 things keyed, no key twice, a door and a lever left open come back open after a reload, a door shut again loses its row. Nothing leaves a place in GFALL yet (P6), and the streamed world's towns are not keyed yet (their chunks, with the streamed dungeons).
+Tested in the hold: all 105 things keyed, no key twice, a door and a lever left open come back open after a reload, a door shut again loses its row. Nothing leaves a place in GFALL yet (P8), and the streamed world's towns are not keyed yet (their chunks, with the streamed dungeons).
 
 ### A dungeon streamed by block (built: the source)
 `places/dunstream.c` is the chunk source of a dungeon streamed by block (`docs/streaming.md`, Dungeons): each RDB block a chunk of 2048, by its place in the layout, the start block the origin.
@@ -134,7 +134,7 @@ Skill advance by use and the level-up rule come from UESP's Leveling page. A pre
 - **The rolls (DFU's StatsRollout and SkillsRollout):**
   - an attribute is its class's base and a roll of 0 to 10;
   - a primary skill is 28, a major 18, a minor 13, each and a roll of 0 to 3; any other skill is 3 to 6.
-  - Until creation (P8), the game takes the rolls' middles (`RULES_*`), and starts a **Breton warrior**: strength 65, speed 52, health 45, fatigue 120, 24 spell points.
+  - Until creation (P6), the game takes the rolls' middles (`RULES_*`), and starts a **Breton warrior**: strength 65, speed 52, health 45, fatigue 120, 24 spell points.
 - **The vitals (FormulaHelper, DaggerfallEntity):**
   - health is 25, plus the class's hit points a level, plus a roll each later level;
   - fatigue is strength and endurance, kept in 64ths;
@@ -218,7 +218,7 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 
 - **The records.** `ITEM`, `WEAP` and `MATL` (`tables/items.c`, `docs/data.md`) carry classic's 19 weapon templates, what the 18 swung ones add (damage, skill, CIF), and the 10 materials, as Daggerfall Unity's ItemTemplates, FormulaHelper and ItemBuilder have them.
 - **An item** (`play/inventory.c`) is a template in a material, by ItemBuilder's SetItemPropertiesByMaterial: value × 3 × `value_q`; weight in whole quarter kilograms × `weight_q` / 4, rounded half to even (Unity's `Mathf.Round`: a steel longsword's 22.5 quarters are 22, 5.5 kg), back to kilograms; condition × `condition_q` / 4.
-- **The pack** is the player's (`Player.pack`): up to 64 items and the one in hand. The start gives the warrior an iron longsword in hand, a stand-in until character creation (P8) gives classic's starting kit.
+- **The pack** is the player's (`Player.pack`): up to 64 items and the one in hand. The start gives the warrior an iron longsword in hand, a stand-in until character creation (P6) gives classic's starting kit.
 - **Console** (`play/commands.c`), in play only: `additem [weapon] [material]` (bare, the weapons and materials there are; the material first or last, iron when none; any case, spaces and dashes ignored: `additem dai katana ebony`), `items` (the pack, `*` the one in hand, with weight, value and condition), `equip n|none`, `tai` (the creatures' AI on or off, below), and `tgm` (god mode: nothing takes the player's health, falls or blows, all through `player_hurt`; alone it flips, as Bethesda's consoles do; off with each new game).
 - **Not yet:** armour and the rest of the items (P5).
 
@@ -334,7 +334,7 @@ Daggerfall's tables are records in MAIN.DAT, cooked on the first run, with mods 
 Blocks, models, pictures, sounds and songs are never cooked: they stay in ARENA2.
 
 ## Phases
-The first goal is a **prototype**: from classic's start menu, Privateer's Hold played from start to finish, out to the first town and back after a save (P1 to P7). Then the rest of classic (P8 to P12). Then a mode of our own (P13). Each phase:
+The first goal is a **prototype**: from classic's start menu, Privateer's Hold played from start to finish, out to the first town and back after a save (P1 to P8). Then the rest of classic (P9 to P12). Then a mode of our own (P13). Each phase:
 - is measured on the 233 with the profile's `play` stage;
 - adds its rules' tests to `tests/check_play.c`;
 - adds its numbers to MAIN.DAT;
@@ -348,9 +348,9 @@ The first goal is a **prototype**: from classic's start menu, Privateer's Hold p
 | P3 | The start menu (built; the title, the start menu and the start into the hold run on the target, the options and controls not tried there yet): classic's main menu (PICK03I0.IMG: load, start, exit) before the hold, the title before it, Escape's menu in play (go on, exit) | GAME, ENGINE's pictures | GFALL opens on the menu, starts the hold, and exits from both |
 | P4 | Combat (built; the swing runs on the target, striking and creatures awake not tried there yet; the player's death is back to the start until saves; LEVELFALL's view of a creature's state not yet): the weapon's swing from WEAPON##.CIF (the shown swing's frames only on the card), classic's to-hit and damage; creatures wake, chase on bodies of their size, attack, flinch, die; the player's death; `WEAP`, `MATL` | GAME; LEVELFALL shows each creature's state | the hold can be cleared, or the player killed, from records |
 | P5 | Loot and inventory: corpses, treasure, gold, pick up, equip weapon and armour; `ITEM`, `ARMR`, `LOOT` | GAME, ENGINE's pictures | equipment changes combat |
-| P6 | Out of the hold: `places/travel.c` lifted from LEVELFALL and shared; the hold's outside in the stream, the nearest town, its houses | GAME and LEVELFALL | the trip is one session |
-| P7 | Prototype polish: loading holds, one save slot in `DATA\`, the menu's load, rest and wait, a 233 profile pass | GAME | from the menu to town and back after a save |
-| P8 | Character creation and levelling: classic's screens, background questions, skill gains, level-ups | GAME | |
+| P6 | Character creation and levelling: classic's screens, background questions, skill gains, level-ups; the character's attributes and the damage rules polished | GAME | |
+| P7 | Prototype polish: loading holds, one save slot in `DATA\`, the menu's load, rest and wait, a 233 profile pass | GAME | from the menu through the hold and back after a save |
+| P8 | Out of the hold: `places/travel.c` lifted from LEVELFALL and shared; the hold's outside in the stream, the nearest town, its houses | GAME and LEVELFALL | from the menu to town and back after a save, in one session |
 | P9 | Magic: spells, effects, spellbook, casting, potions, enchantments | GAME | |
 | P10 | People: talk from TEXT.RSC, shops, banks, factions, reputation, law | GAME | |
 | P11 | Quests: the QBN interpreter, guild quests | GAME | |

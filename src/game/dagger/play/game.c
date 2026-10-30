@@ -31,7 +31,7 @@ static float g_start[5];
 
 /*
  * What the use key does that the engine's doors and levers do not: a
- * passage, until there is somewhere to go (P6), and a person, until
+ * passage, until there is somewhere to go (P8), and a person, until
  * there is talk (P10).
  */
 static int on_use(const Scene *scene, const Usable *u, int index)
@@ -129,14 +129,14 @@ void game_enter(const Level *level, Camera *cam, float x, float y, float z, floa
     {
         Character sheet;
 
-        /* Until character creation (P8): a Breton warrior, at the rolls' middles. */
+        /* Until character creation (P6): a Breton warrior, at the rolls' middles. */
         if (!character_new(&sheet, CHARACTER_START_RACE, CHARACTER_START_CLASS, 0, "Player")) {
             mem_zero(&sheet, sizeof(sheet));
         }
         player_init(&g_player, &sheet);
     }
     /*
-     * Until character creation (P8) gives classic's starting kit: the
+     * Until character creation (P6) gives classic's starting kit: the
      * warrior's long blade, an iron longsword, in hand.
      */
     {

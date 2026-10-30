@@ -50,7 +50,7 @@ int rules_max_health(int level, int hp_per_level)
     h = BASE_HEALTH + hp_per_level;
     /*
      * Each level past the first: a roll of half to all the class's hit
-     * points (and endurance's modifier, with levelling in P8); its middle
+     * points (and endurance's modifier, with levelling in P6); its middle
      * until then.
      */
     for (l = 1; l < level; l++) {
