@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "engine/scene/pack.h"
+#include "engine/ui/packview.h"
 #include "check_util.h"
 
 #include "engine/assets/loader.h"
@@ -3881,6 +3883,119 @@ static void check_recfile(void)
     check_expect(!rec_merge(&t, &c, &st), "recfile: a field past its row was merged");
 }
 
+/* The text packview_draw sends: lines counted, the last top seen. */
+static int g_pv_lines;
+static int g_pv_top;
+
+static void pv_text(int x, int top, const char *s)
+{
+    (void)x;
+    (void)s;
+    g_pv_lines++;
+    g_pv_top = top;
+}
+
+/* A pack: stacks and tags, the weight limit, slots and stats, moving, money; the list screen over two. */
+static void check_pack(void)
+{
+    /* id, name, weight, stack, slot, stats */
+    static const PackItem items[] = {
+        { 1, "Arrow", 0.1f, 20, PACK_NO_SLOT, { 0, 0, 0, 0 } },
+        { 2, "Sword", 3.0f, 1, 0, { 5, 0, 0, 0 } },
+        { 3, "Helmet", 2.0f, 5, 1, { 0, 2, 0, 0 } },
+        { 4, "Shield", 4.0f, 1, 1, { 0, 3, 0, 0 } }
+    };
+    static Pack a;
+    static Pack b;
+    PackView v;
+    char line[PACKVIEW_LINE];
+
+    pack_init(&a, items, 4, 10.0f);
+    check_expect(pack_add(&a, 1, 30, 0) == 30 && a.count == 2 && a.stack[0].count == 20 && a.stack[1].count == 10,
+                 "pack: thirty arrows are not stacks of twenty and ten");
+    check_expect(pack_add(&a, 1, 5, 7) == 5 && a.count == 3, "pack: another tag merged into a stack");
+    check_expect(pack_add(&a, 9, 1, 0) == 0 && pack_add(&a, 1, 0, 0) == 0, "pack: an unknown item or none was added");
+    check_expect(check_near(pack_weight(&a), 3.5f, 0.001f), "pack: thirty-five arrows do not weigh 3.5");
+    /* 6.5 left: two swords fit, a third does not. */
+    check_expect(pack_add(&a, 2, 3, 0) == 2 && a.count == 5, "pack: the weight limit let in the wrong number");
+    check_expect(!pack_equip(&a, 0) && pack_equip(&a, 3) && pack_worn(&a, 3) == 0 && pack_stat(&a, 0) == 5,
+                 "pack: wearing a sword does not add its stat, or arrows were worn");
+    check_expect(pack_equip(&a, 4) && pack_worn(&a, 3) == -1 && pack_stat(&a, 0) == 5,
+                 "pack: a second sword does not take the slot from the first");
+    /* A stack before the worn one goes: the slot follows its stack. */
+    check_expect(pack_remove(&a, 0, 99) == 20 && pack_worn(&a, 3) == 0 && pack_stat(&a, 0) == 5,
+                 "pack: a stack removed lost the worn one's place");
+    check_expect(pack_remove(&a, 3, 1) == 1 && a.worn[0] == -1 && pack_stat(&a, 0) == 0,
+                 "pack: the worn sword gone still counts");
+
+    /* A stack of several: one is split off to wear, and nothing merges into it. */
+    pack_init(&a, items, 4, 0.0f);
+    pack_add(&a, 3, 3, 0);
+    check_expect(pack_equip(&a, 0) && a.count == 2 && a.stack[0].count == 2 && a.stack[1].count == 1
+                     && pack_worn(&a, 1) == 1 && pack_stat(&a, 1) == 2,
+                 "pack: one of a stack is not split off to wear");
+    pack_add(&a, 3, 1, 0);
+    check_expect(a.stack[0].count == 3 && a.stack[1].count == 1, "pack: a new helmet merged into the worn one");
+    pack_unequip(&a, 1);
+    check_expect(pack_stat(&a, 1) == 0 && a.count == 2, "pack: taking it off did not take off its stat");
+
+    /* Between packs: a limit holds some back; all of it, money too. */
+    pack_init(&b, items, 4, 3.0f);
+    a.money = 50;
+    check_expect(pack_move(&a, 0, 2, &b) == 1 && a.stack[0].count == 2 && b.count == 1,
+                 "pack: a move past the other's limit moved too many");
+    b.max_weight = 0.0f;
+    check_expect(pack_move_all(&a, &b) == 3 && a.count == 0 && b.money == 50 && !a.money
+                     && check_near(pack_weight(&b), 8.0f, 0.001f),
+                 "pack: everything and its money did not move");
+    check_expect(pack_pay(&b, 20) && b.money == 30 && !pack_pay(&b, 31) && b.money == 30,
+                 "pack: paying more than there is took money, or paying took none");
+
+    /* The bytes alone, bound again: as a save brings it back. */
+    {
+        static Pack saved;
+
+        saved = b;
+        saved.items = 0;
+        saved.nitems = 0;
+        pack_bind(&saved, items, 4);
+        check_expect(check_near(pack_weight(&saved), 8.0f, 0.001f), "pack: a pack bound again lost its things");
+    }
+
+    /* The list screen, two packs side by side, two rows a side. */
+    pack_init(&a, items, 4, 0.0f);
+    pack_init(&b, items, 4, 0.0f);
+    pack_add(&a, 1, 5, 0);
+    pack_add(&a, 2, 1, 0);
+    pack_add(&a, 4, 1, 0);
+    a.money = 9;
+    packview_open(&v, &a, &b, 2);
+    check_expect(!packview_command(&v, PACKVIEW_UP) && packview_command(&v, PACKVIEW_DOWN) && v.cursor[0] == 1,
+                 "packview: the cursor does not move, or moved off the top");
+    check_expect(packview_command(&v, PACKVIEW_USE) && pack_worn(&a, 1) == 0, "packview: use does not wear it");
+    check_expect(packview_line(&v, 0, 1, line, (int)sizeof(line)) && strcmp(line, ">*Sword x1  3.0") == 0,
+                 "packview: the worn thing under the cursor is not marked");
+    packview_command(&v, PACKVIEW_USE);
+    check_expect(pack_worn(&a, 1) == -1, "packview: use again does not take it off");
+    check_expect(packview_command(&v, PACKVIEW_DOWN) && v.top[0] == 1 && !packview_command(&v, PACKVIEW_DOWN),
+                 "packview: the list does not scroll, or ran off its end");
+    check_expect(packview_line(&v, 0, 1, line, (int)sizeof(line)) && !packview_line(&v, 0, 2, line, (int)sizeof(line)),
+                 "packview: a row past the end has text");
+    check_expect(packview_command(&v, PACKVIEW_MOVE) && a.count == 2 && b.count == 1 && v.cursor[0] == 1,
+                 "packview: move does not cross, or the cursor stayed past the end");
+    packview_heading(&v, 0, line, (int)sizeof(line));
+    check_expect(strcmp(line, "Weight 3.5/0.0  Money 9") == 0, "packview: the heading is not weight and money");
+    g_pv_lines = 0;
+    packview_draw(&v, 0, 400, 640, 10, pv_text);
+    check_expect(g_pv_lines == 5 && g_pv_top == 390, "packview: the screen is not two headings and three things");
+    check_expect(packview_command(&v, PACKVIEW_SWITCH) && packview_command(&v, PACKVIEW_MOVE_ALL) && !b.count && a.count == 3,
+                 "packview: all of it does not come back across");
+    packview_open(&v, &a, 0, 4);
+    check_expect(!packview_command(&v, PACKVIEW_SWITCH) && !packview_command(&v, PACKVIEW_MOVE),
+                 "packview: one pack alone switched or moved");
+    printf("pack: stacks, weight, slots, moves and the list screen\n");
+}
+
 void check_engine(void)
 {
     check_rotation();
@@ -3892,6 +4007,7 @@ void check_engine(void)
     check_vfs();
     check_beside();
     check_pictures();
+    check_pack();
     check_key_names();
     check_keep();
     check_dungeon_stream();

@@ -53,12 +53,14 @@ ENGINE_HOST_SRC := \
 	src/engine/core/prof.c \
 	src/engine/ui/cmd.c \
 	src/engine/ui/pic.c \
+	src/engine/ui/packview.c \
 	src/engine/platform/fs.c \
 	src/engine/platform/keyname.c \
 	src/engine/assets/vfs.c \
 	src/engine/assets/loader.c \
 	src/engine/assets/recfile.c \
 	src/engine/scene/scene.c \
+	src/engine/scene/pack.c \
 	src/engine/scene/light.c \
 	src/engine/scene/clock.c \
 	src/engine/scene/daylight.c \
