@@ -6,8 +6,8 @@
  * Escape quits.
  *
  * Data is the tables. Pictures are the texture archives. Characters
- * are the races and their paper dolls. Creatures, items and the world
- * map hang off the same tree.
+ * are the races and their paper dolls. Creatures are each kind's
+ * poses. Items and the world map hang off the same tree.
  */
 
 #define WINVER 0x0400
@@ -16,6 +16,7 @@
 
 #include <windows.h>
 
+#include "beast.h"
 #include "books.h"
 #include "paper.h"
 #include "pics.h"
@@ -87,6 +88,8 @@
 #define ND_ARCHIVE 6
 #define ND_CHARS 7
 #define ND_RACE 8
+#define ND_BEASTS 9
+#define ND_ENEMY 10
 #define ND_MERGED_FILE 4095
 
 #define VIEW_NONE 0
@@ -97,6 +100,8 @@
 #define VIEW_RECS 5
 #define VIEW_RACES 6
 #define VIEW_PARTS 7
+#define VIEW_ENEMIES 8
+#define VIEW_POSES 9
 
 #define ARC_CAP 160
 #define GRID_CELL 32
@@ -203,6 +208,7 @@ static MemHeap *g_arc_heap;
 static MemHeap *g_frame_heap;
 static Image *g_thumb[ARC_CAP];
 static int g_fn[ARC_CAP];
+static int g_src[ARC_CAP];
 static int g_thumb_n;
 static int g_arc_file;
 static int g_rec;
@@ -219,6 +225,8 @@ static int g_cif_on;
 static int g_head;
 static Image g_fake;
 static char g_part_file[PAPER_NAME];
+static BeastPose g_poses[BEAST_POSES];
+static int g_nposes;
 
 static void *sym(HMODULE dll, const char *name)
 {
@@ -542,6 +550,7 @@ static void drop_frames(void);
 static void drop_arc(void);
 static int arc_records(int file);
 static void load_archive(int file);
+static int load_views(int file, int first, int count);
 static void show_frame(void);
 static void pic_status(void);
 static void scroll_to_rec(void);
@@ -659,6 +668,60 @@ static void on_row(int index)
         f = g_books ? books_merged(g_books) : 0;
         show_fields(f, g_b, g_a, 1);
         race_status();
+        InvalidateRect(g_hwnd, &g_well, 1);
+        return;
+    }
+    if (g_view == VIEW_ENEMIES) {
+        DatFile *mf;
+        int ek;
+        int erow;
+
+        drop_arc();
+        drop_paper();
+        mf = g_books ? books_merged(g_books) : 0;
+        ek = mf ? dat_find_tag(mf, "ENEM") : -1;
+        if (!mf || ek < 0 || index < 0) {
+            props_clear();
+            status_set("Creatures", "");
+            InvalidateRect(g_hwnd, &g_well, 1);
+            return;
+        }
+        erow = dat_filter_row(mf, index);
+        show_fields(mf, ek, erow, 1);
+        dat_row_label(mf, ek, erow, id, (int)sizeof(id), label, (int)sizeof(label));
+        wsprintfA(status_id, "id %s", id);
+        status_set("ENEM", status_id);
+        InvalidateRect(g_hwnd, &g_well, 1);
+        return;
+    }
+    if (g_view == VIEW_POSES) {
+        int pose;
+
+        if (index < 0 || index >= g_nmap || index >= g_nposes) {
+            drop_arc();
+            props_clear();
+            status_set("Creatures", "");
+            InvalidateRect(g_hwnd, &g_well, 1);
+            return;
+        }
+        pose = g_map[index];
+        if (pose < 0 || pose >= g_nposes) {
+            drop_arc();
+            return;
+        }
+        g_rec = 0;
+        g_frame = 0;
+        if (load_views(g_poses[pose].archive, g_poses[pose].record, g_poses[pose].views)) {
+            show_frame();
+            scroll_to_rec();
+        }
+        f = g_books ? books_merged(g_books) : 0;
+        show_fields(f, g_b, g_a, 1);
+        if (g_arc_file > 0) {
+            pic_status();
+        } else {
+            status_set(g_poses[pose].label, "no picture");
+        }
         InvalidateRect(g_hwnd, &g_well, 1);
         return;
     }
@@ -883,6 +946,7 @@ static void load_archive(int file)
     g_arc_file = file;
     prev = mem_heap_use(g_arc_heap);
     for (i = 0; i < n; i++) {
+        g_src[i] = i;
         g_fn[i] = texture_frame_count(file, i);
         if (g_fn[i] < 1) {
             g_fn[i] = 1;
@@ -895,6 +959,42 @@ static void load_archive(int file)
     g_frame = 0;
     g_scroll = 0;
     build_grid();
+}
+
+/* The pose's views only, not the whole archive. g_src maps a thumbnail to the record. */
+static int load_views(int file, int first, int count)
+{
+    MemHeap *prev;
+    int i;
+
+    drop_arc();
+    if (file <= 0 || count < 1) {
+        return 0;
+    }
+    if (count > ARC_CAP) {
+        count = ARC_CAP;
+    }
+    g_arc_heap = mem_heap_new();
+    if (!g_arc_heap) {
+        return 0;
+    }
+    g_arc_file = file;
+    prev = mem_heap_use(g_arc_heap);
+    for (i = 0; i < count; i++) {
+        g_src[i] = first + i;
+        g_fn[i] = texture_frame_count(file, first + i);
+        if (g_fn[i] < 1) {
+            g_fn[i] = 1;
+        }
+        g_thumb[i] = texture_load_frame(file, first + i, 0);
+    }
+    mem_heap_use(prev);
+    g_thumb_n = count;
+    g_rec = 0;
+    g_frame = 0;
+    g_scroll = 0;
+    build_grid();
+    return g_grid != 0;
 }
 
 static void show_frame(void)
@@ -926,7 +1026,7 @@ static void show_frame(void)
         return;
     }
     prev = mem_heap_use(g_frame_heap);
-    g_show = texture_load_frame(g_arc_file, g_rec, g_frame);
+    g_show = texture_load_frame(g_arc_file, g_src[g_rec], g_frame);
     mem_heap_use(prev);
 }
 
@@ -942,7 +1042,9 @@ static void pic_status(void)
     h = g_show ? g_show->height : 0;
     n = (g_rec >= 0 && g_rec < g_thumb_n) ? g_fn[g_rec] : 0;
     wsprintfA(file, "TEXTURE.%03d", g_arc_file);
-    wsprintfA(id, "record %d   %d x %d   frame %d / %d", g_rec, w, h, n ? g_frame + 1 : 0, n);
+    wsprintfA(id, "record %d   %d x %d   frame %d / %d",
+              (g_rec >= 0 && g_rec < ARC_CAP) ? g_src[g_rec] : g_rec,
+              w, h, n ? g_frame + 1 : 0, n);
     status_set(file, id);
 }
 
@@ -980,7 +1082,7 @@ static void step_frame(int delta)
 {
     int n;
 
-    if (g_view != VIEW_RECS || g_rec < 0 || g_rec >= g_thumb_n) {
+    if ((g_view != VIEW_RECS && g_view != VIEW_POSES) || g_rec < 0 || g_rec >= g_thumb_n) {
         return;
     }
     n = g_fn[g_rec];
@@ -1304,6 +1406,48 @@ static void fill_list(void)
             g_nmap++;
             shown++;
         }
+    } else if (g_view == VIEW_ENEMIES) {
+        int kind;
+
+        col_add(g_list, "Name", width / 2);
+        col_add(g_list, "Id", width / 4);
+        f = g_books ? books_merged(g_books) : 0;
+        kind = f ? dat_find_tag(f, "ENEM") : -1;
+        n = (f && kind >= 0) ? dat_filter(f, kind, g_q) : 0;
+        for (i = 0; i < n; i++) {
+            int row;
+
+            row = dat_filter_row(f, i);
+            dat_row_label(f, kind, row, a, (int)sizeof(a), b, (int)sizeof(b));
+            row_text(g_list, i, 0, a);
+            row_text(g_list, i, 1, b[0] ? b : "");
+        }
+        shown = n;
+    } else if (g_view == VIEW_POSES) {
+        col_add(g_list, "Records", width / 3);
+        col_add(g_list, "Archive", width / 4);
+        col_add(g_list, "Pose", width / 3);
+        for (i = 0; i < g_nposes && g_nmap < 512; i++) {
+            if (g_q[0] && !has_text(g_poses[i].label, g_q)) {
+                continue;
+            }
+            g_map[g_nmap] = i;
+            row_text(g_list, shown, 0, g_poses[i].label);
+            if (g_poses[i].archive > 0) {
+                wsprintfA(b, "TEXTURE.%03d", g_poses[i].archive);
+            } else {
+                lstrcpynA(b, "none", (int)sizeof(b));
+            }
+            row_text(g_list, shown, 1, b);
+            if (g_poses[i].views > 1) {
+                wsprintfA(c, "%d-%d", g_poses[i].record, g_poses[i].record + g_poses[i].views - 1);
+            } else {
+                wsprintfA(c, "%d", g_poses[i].record);
+            }
+            row_text(g_list, shown, 2, c);
+            g_nmap++;
+            shown++;
+        }
     }
     g_filling = 0;
     if (shown > 0) {
@@ -1317,6 +1461,8 @@ static void fill_list(void)
             title = "Pictures";
         } else if (g_view == VIEW_RACES || g_view == VIEW_PARTS) {
             title = "Characters";
+        } else if (g_view == VIEW_ENEMIES || g_view == VIEW_POSES) {
+            title = "Creatures";
         } else if (g_view == VIEW_ROWS || g_view == VIEW_CHUNKS) {
             title = file_title(g_nd == ND_MERGED ? ND_MERGED_FILE : g_a);
         }
@@ -1373,6 +1519,17 @@ static void on_tree(void *item)
         g_view = VIEW_RACES;
     } else if (nd == ND_RACE) {
         g_view = VIEW_PARTS;
+    } else if (nd == ND_BEASTS) {
+        drop_arc();
+        drop_paper();
+        g_nposes = 0;
+        g_view = VIEW_ENEMIES;
+    } else if (nd == ND_ENEMY) {
+        DatFile *mf;
+
+        mf = g_books ? books_merged(g_books) : 0;
+        g_nposes = beast_poses(mf, a, g_poses, BEAST_POSES);
+        g_view = VIEW_POSES;
     } else {
         g_view = VIEW_NONE;
     }
@@ -1463,6 +1620,25 @@ static void build_tree(void)
             tree_add(chars, label[0] ? label : id, ND_RACE, row, kind);
         }
         SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)chars);
+    }
+    {
+        void *beasts;
+        DatFile *f;
+        int kind;
+        int rows;
+        int row;
+
+        beasts = tree_add(0, "Creatures", ND_BEASTS, 0, 0);
+        f = g_books ? books_merged(g_books) : 0;
+        kind = f ? dat_find_tag(f, "ENEM") : -1;
+        rows = kind >= 0 ? dat_rows(f, kind) : 0;
+        for (row = 0; row < rows; row++) {
+            char id[32];
+            char label[64];
+
+            dat_row_label(f, kind, row, id, (int)sizeof(id), label, (int)sizeof(label));
+            tree_add(beasts, label[0] ? label : id, ND_ENEMY, row, kind);
+        }
     }
     SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)data);
     SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)merged);
@@ -1829,7 +2005,7 @@ static void paint_well(HDC dc)
     well.top += 2;
     well.right -= 2;
     well.bottom -= 2;
-    if (g_view == VIEW_RECS && g_grid) {
+    if ((g_view == VIEW_RECS || g_view == VIEW_POSES) && g_grid) {
         paint_pics(dc);
         return;
     }
@@ -1867,7 +2043,7 @@ static void well_click(int x, int y)
         InvalidateRect(g_hwnd, &g_well, 1);
         return;
     }
-    if (g_view != VIEW_RECS || !g_grid_w) {
+    if ((g_view != VIEW_RECS && g_view != VIEW_POSES) || !g_grid_w) {
         return;
     }
     view = (g_well.bottom - g_well.top) / 2;
@@ -1885,6 +2061,15 @@ static void well_click(int x, int y)
     row = (y - g_well.top + g_scroll) / GRID_CELL;
     rec = row * GRID_COLS + col;
     if (rec < 0 || rec >= g_thumb_n) {
+        return;
+    }
+    if (g_view == VIEW_POSES) {
+        g_rec = rec;
+        g_frame = 0;
+        show_frame();
+        scroll_to_rec();
+        pic_status();
+        InvalidateRect(g_hwnd, &g_well, 1);
         return;
     }
     for (i = 0; i < g_nmap; i++) {

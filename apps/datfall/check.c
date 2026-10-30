@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "beast.h"
 #include "books.h"
 #include "paper.h"
 #include "pics.h"
@@ -366,6 +367,61 @@ int main(void)
                     expect(paper_heads(file) == 10, "Breton does not have 10 heads");
                 }
                 expect(found, "merged RACE has no Breton");
+            }
+            {
+                int ek;
+                int rows;
+                int row;
+                int found;
+                int pi;
+                char id[32];
+                char label[64];
+                BeastPose poses[BEAST_POSES];
+                int np;
+                int saw_walk;
+                int saw_stand;
+                int saw_corpse;
+
+                ek = dat_find_tag(merged, "ENEM");
+                rows = ek >= 0 ? dat_rows(merged, ek) : 0;
+                found = 0;
+                saw_walk = 0;
+                saw_stand = 0;
+                saw_corpse = 0;
+                for (row = 0; row < rows; row++) {
+                    dat_row_label(merged, ek, row, id, (int)sizeof(id), label, (int)sizeof(label));
+                    if (!df_eq(label, "Rat")) {
+                        continue;
+                    }
+                    found = 1;
+                    np = beast_poses(merged, row, poses, BEAST_POSES);
+                    for (pi = 0; pi < np; pi++) {
+                        if (df_eq(poses[pi].label, "Walk")) {
+                            saw_walk = poses[pi].archive == 255 && poses[pi].record == 0
+                                       && poses[pi].views == 5;
+                        }
+                        if (df_eq(poses[pi].label, "Attack")) {
+                            expect(poses[pi].record == 5 && poses[pi].views == 5,
+                                   "the rat's attack is not records 5..9");
+                        }
+                        if (df_eq(poses[pi].label, "Hurt")) {
+                            expect(poses[pi].record == 10 && poses[pi].views == 5,
+                                   "the rat's hurt is not records 10..14");
+                        }
+                        if (df_eq(poses[pi].label, "Stand")) {
+                            saw_stand = poses[pi].record == 15 && poses[pi].views == 5
+                                        && poses[pi].archive == 255;
+                        }
+                        if (df_eq(poses[pi].label, "Corpse")) {
+                            saw_corpse = poses[pi].archive == 401 && poses[pi].record == 1
+                                         && poses[pi].views == 1;
+                        }
+                    }
+                }
+                expect(found, "merged ENEM has no Rat");
+                expect(saw_walk, "the rat's walk is not TEXTURE.255 records 0..4");
+                expect(saw_stand, "the rat's stand is not records 15..19");
+                expect(saw_corpse, "the rat's corpse is not TEXTURE.401 record 1");
             }
             books_close(books);
         }
