@@ -220,7 +220,7 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **An item** (`play/inventory.c`) is a template in a material, by ItemBuilder's SetItemPropertiesByMaterial: value × 3 × `value_q`; weight in whole quarter kilograms × `weight_q` / 4, rounded half to even (Unity's `Mathf.Round`: a steel longsword's 22.5 quarters are 22, 5.5 kg), back to kilograms; condition × `condition_q` / 4.
 - **The pack** is the player's (`Player.pack`): up to 64 items and the one in hand. The start gives the warrior an iron longsword in hand, a stand-in until character creation (P8) gives classic's starting kit.
 - **Console** (`play/commands.c`), in play only: `additem [weapon] [material]` (bare, the weapons and materials there are; the material first or last, iron when none; any case, spaces and dashes ignored: `additem dai katana ebony`), `items` (the pack, `*` the one in hand, with weight, value and condition), `equip n|none`.
-- **Not yet:** to-hit and damage (the next slice), armour and the rest of the items (P5).
+- **Not yet:** armour and the rest of the items (P5).
 
 ### The weapon on the screen (built: P4's second slice)
 
@@ -232,6 +232,20 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **The material** recolours ART_PAL's grey ramp, 112..127 (`cif_metal`, DATFALL's colours, which follow UESP's names, not yet classic's dye tables).
 - **The card:** the armed picture is kept; the swing's frame showing is sent when it shows and let go when the next one does (a frame every fifth of a second). A cutout goes as 8-bit P_8 with the chroma key on index 0 (the engine's `cc5ec07`, `docs/pictures.md`), or as 16-bit 1555 on a glide2x.dll without the key. Cropped and keyed, the largest frame is 39 KB, the bow drawn back (`WEAPON09.CIF`, 204 × 179); 65 KB whole, 78 KB cropped as 1555. The largest melee frame is the staff's, 271 × 125. With the HUD, the armed picture (under 13 KB) and the controls screen (66 KB) that is at most about 140 KB of `GAME_PICTURE_KB`'s 256 on a keyed card, about 195 KB without the key. `check_weapon` measures both cards and fails past 48 KB keyed or 96 KB at 1555.
 - **Not the whole swing at once:** the largest swing's frames together are 196 KB even keyed (the bow's 7), so a swing stays one frame on the card at a time.
+
+### Striking creatures (built: P4's third slice)
+
+`play/combat.c`, by Daggerfall Unity's FormulaHelper (CalculateAttackDamage, CalculateSuccessfulHit, CalculateWeaponAttackDamage, CalculateHandToHandAttackDamage, RollEnemyClassMaxHealth, DamageModifier), EnemyEntity, WeaponManager and FPSWeapon, read for what they do.
+
+- **When:** once a swing, on its hit frame: frame 2 of a melee swing, 5 of the bow's (`weapon_hit`). The swing costs 11 sixty-fourths of fatigue then, struck or not.
+- **What:** the nearest live creature of the stream in front of the eye (along the view, pitch and all), within 2.5 m (DFU's 2.25 m reach and 0.25 m sweep) and its own half width plus 10 units off the line, that no wall hides: a ray from the eye to its middle on the scene's collision (`collide_use`, `collide_ray`, as `rig_third`'s).
+- **The creature as the sums see it** (`combat_foe`): a monster's level and armour value × 5 from ENEM; a class enemy at the player's level and armour 60 (DFU's cap for worn armour, as it wears nothing yet); Dodging 5 a level and 30, at most 100; its attributes from ENEM (`docs/data.md`).
+- **To hit:** the weapon's skill (Hand-to-Hand bare), the swing's (down −10, down-left −5, left and right 0, down-right +5, up +10), the material's modifier × 10, a Dark Elf's level / 4, a Redguard's level / 3 or a Wood Elf's with a bow, the Backstabbing skill when it faces away, its armour, (Luck − its Luck) / 10, (Agility − its Agility) / 10, less its Dodging / 4, Critical Strike / 10 on a roll under that skill, +40 against a creature, −50; held to 3..97, rolled on 100. A Breton warrior at a rat with an iron longsword swung left: 31%.
+- **Damage:** the weapon's range, the swing's (down +4, down-left +2, down-right −2, up −4) and the race's, a skeletal warrior halving a blunt weapon's and doubling silver's, floor((Strength − 50) / 5), the material's modifier; below 1 is 0. Bare: Hand-to-Hand / 10 + 1 to / 5 + 1, the swing's, the strength's. A backstab triples it on a roll under the skill.
+- **A metal too poor** for the creature (ENEM's `min_metal`: a ghost needs silver) does nothing: "This weapon has no effect."
+- **Health** is rolled the first time a creature is struck (a monster between ENEM's least and most; a class enemy 10 and a roll of 1..its class's hit points for each level) and kept in its keep row's game bytes (health in two bytes, then 1 once rolled), so it stays wounded or dead as its block goes and comes back.
+- **Struck and living:** it flinches, its hurt pose for half a second. **Killed:** it lies as its body, on the floor under it (a flyer falls), passed through (radius 0); with no body's picture it goes. A body come back with its block is laid again (`combat_frame`).
+- **Not yet:** creatures fighting back, waking, chasing (the next slice); the swing's, the hit's and the creature's sounds; blood and knock-back; skills advancing; the class's proficiencies and group bonuses; the player's death in combat; creatures of a place loaded whole.
 
 ## Items, gold, the inventory
 

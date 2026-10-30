@@ -35,6 +35,12 @@ enum {
 #define SKILL_JUMPING 3
 #define SKILL_SWIMMING 17
 #define SKILL_RUNNING 21
+/* The ones combat rolls (combat.c). */
+#define SKILL_BACKSTABBING 19
+#define SKILL_DODGING 20
+#define SKILL_HAND_TO_HAND 30
+#define SKILL_ARCHERY 33
+#define SKILL_CRITICAL_STRIKE 34
 
 /* EffectFlags: what a race or class resists, is immune to, and so on. */
 enum {

@@ -47,6 +47,8 @@
 #define FOE_MOVE_RATE 6
 #define FOE_FLY_RATE 10
 #define FOE_IDLE_RATE 4
+/* A flinch's frames a second: its five frames in half a second. */
+#define FOE_HURT_RATE 10
 #define FOE_RAY_UP 8.0f
 #define FOE_RAY_LEN 120.0f
 /* A block's water in cells of 256 (world.c's), and its colour. */
@@ -239,6 +241,8 @@ enum {
 static const int g_walk[ENTITY_VIEWS] = { 0, 1, 2, 3, 4 };
 static const int g_idle[ENTITY_VIEWS] = { 15, 16, 17, 18, 19 };
 static const int g_idle_483[ENTITY_VIEWS] = { 15, 11, 17, 18, 19 };
+/* Records 10 to 14: struck (DFU's MobileUnit hurt animation). */
+static const int g_hurt[ENTITY_VIEWS] = { 10, 11, 12, 13, 14 };
 
 /* Step: the block's models into the slot, in its frame (an RDB block's own), their pictures held. */
 static void place_models(Chunk *c, StreamOut *out)
@@ -327,6 +331,15 @@ static void hold_pictures(Chunk *c)
             hold(c, wres_slot(archive, g_walk[k], WRES_SPRITE));
             if (enemy_has_idle(kind)) {
                 hold(c, wres_slot(archive, female && archive == 483 ? g_idle_483[k] : g_idle[k], WRES_SPRITE));
+            }
+            hold(c, wres_slot(archive, g_hurt[k], WRES_SPRITE));
+        }
+        {
+            const EnemyKind *ek;
+
+            ek = enemy_kind(kind);
+            if (ek && ek->corpse_archive) {
+                hold(c, wres_slot(ek->corpse_archive, ek->corpse_record, WRES_SPRITE));
             }
         }
     }
@@ -510,6 +523,36 @@ static void place_foes(Chunk *c, StreamOut *out)
         }
         if (!whole) {
             continue;
+        }
+        /*
+         * The acts the game shows instead (docs/entities.md): struck, and
+         * a body. Either missing leaves its pose empty, not shown; the
+         * creature still stands.
+         */
+        {
+            const EnemyKind *ek;
+            int got;
+
+            got = 1;
+            for (k = 0; k < ENTITY_VIEWS; k++) {
+                e->pose[ENTITY_HURT].slot[k] = (df_u16)wres_slot(archive, g_hurt[k], WRES_SPRITE);
+                got = got && size_of(e->pose[ENTITY_HURT].slot[k], &e->pose[ENTITY_HURT].w[k],
+                                     &e->pose[ENTITY_HURT].h[k]);
+            }
+            if (got) {
+                e->pose[ENTITY_HURT].rate = FOE_HURT_RATE;
+                e->pose[ENTITY_HURT].right = e->pose[ENTITY_WALK].right;
+            } else {
+                mem_zero(&e->pose[ENTITY_HURT], sizeof(EntityPose));
+            }
+            /* A body is one picture, facing every viewer (slot[1] none). */
+            ek = enemy_kind(kind);
+            if (ek && ek->corpse_archive) {
+                e->pose[ENTITY_DEAD].slot[0] = (df_u16)wres_slot(ek->corpse_archive, ek->corpse_record, WRES_SPRITE);
+                if (!size_of(e->pose[ENTITY_DEAD].slot[0], &e->pose[ENTITY_DEAD].w[0], &e->pose[ENTITY_DEAD].h[0])) {
+                    mem_zero(&e->pose[ENTITY_DEAD], sizeof(EntityPose));
+                }
+            }
         }
         e->x = mk->x;
         e->y = mk->y;
@@ -878,4 +921,30 @@ void dunstream_close(void)
 int dunstream_active(void)
 {
     return g_open;
+}
+
+int dunstream_kind(const Entity *e, int *female)
+{
+    int b;
+    int i;
+    df_u32 pos;
+
+    if (!g_open || !g_draw || !g_keep_place || e->key.place != g_keep_place) {
+        return -1;
+    }
+    /* The key place_foes gave it: the block above, the marker's offset below. */
+    b = (int)(e->key.thing >> 24);
+    pos = e->key.thing & 0xFFFFFFu;
+    if (b < 0 || b >= g_dun->nblocks) {
+        return -1;
+    }
+    for (i = g_draw_first[b]; i < g_draw_first[b + 1]; i++) {
+        if ((g_draw[i].pos & 0xFFFFFFu) == pos) {
+            if (female) {
+                *female = g_draw[i].female;
+            }
+            return g_draw[i].kind;
+        }
+    }
+    return -1;
 }

@@ -1,4 +1,5 @@
 #include "game/dagger/play/game.h"
+#include "game/dagger/play/combat.h"
 #include "game/dagger/play/commands.h"
 #include "game/dagger/play/keys.h"
 #include "game/dagger/play/menu.h"
@@ -133,6 +134,7 @@ void game_enter(const Level *level, Camera *cam, float x, float y, float z, floa
         }
     }
     commands_player(&g_player);
+    combat_reset();
     player_place(&g_player, x, y, z, yaw, pitch);
     camera_set(cam, x, y, z, yaw, pitch);
     /*
@@ -219,6 +221,12 @@ int game_frame(Camera *cam, const Input *in, float dt)
             }
         }
         player_camera(&g_player, cam);
+        /* The swing's hit frame strikes what is in reach of the eye; flinches run out. */
+        if (weapon_hit()) {
+            combat_strike(&g_player.sheet, inventory_weapon(&g_player.pack), weapon_swing(), &g_level->scene, cam->x,
+                          cam->y, cam->z, cam->yaw, cam->pitch);
+        }
+        combat_frame(dt);
         /* The blocks round the player in and out, their creatures read with them, the lights cut (docs/streaming.md). */
         dunstream_update(cam, GAME_STREAM_MS);
     }

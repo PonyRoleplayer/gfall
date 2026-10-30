@@ -5,6 +5,7 @@
 #include "game/dagger/tables/calendar.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/tables/items.h"
+#include "game/dagger/formats/bsa.h"
 #include "game/dagger/formats/classcfg.h"
 #include "engine/assets/vfs.h"
 #include "engine/core/log.h"
@@ -18,8 +19,9 @@
 
 /*
  * ARENA2 files MAIN.DAT is made from: a different size makes it stale.
- * MONSTER.BSA holds the kinds ENEM describes (read for their names once
- * its layout is confirmed against UESP); the class files are CLAS.
+ * MONSTER.BSA holds the kinds ENEM describes (their attributes, from
+ * each monster's ENEMY###.CFG); the class files are CLAS, and a class
+ * enemy's attributes.
  */
 #define SOURCES (1 + CLASSCFG_COUNT)
 
@@ -29,6 +31,59 @@ static void source_name(int i, char *dst)
         df_copy(dst, "MONSTER.BSA", REC_NAME);
     } else {
         classcfg_name(i - 1, dst);
+    }
+}
+
+/* The most kinds the import fills attributes in for: classic has 62. */
+#define KINDS_MAX 96
+
+/*
+ * Each kind's attributes from its career file, CLASS##.CFG's layout:
+ * a monster (id below 128) its ENEMY###.CFG in MONSTER.BSA, a class
+ * enemy (128 + class) its CLASS##.CFG. A kind whose file is missing
+ * keeps 50 in each, with a warning.
+ */
+static void kind_attributes(EnemyKind *kinds, int n)
+{
+    Bsa *monsters;
+    int i;
+
+    monsters = bsa_open("MONSTER.BSA");
+    for (i = 0; i < n; i++) {
+        char name[REC_NAME];
+        const df_u8 *b;
+        df_u32 size;
+        ClassCfg cfg;
+        int a;
+
+        b = 0;
+        size = 0;
+        if (kinds[i].id < 128) {
+            const BsaRec *rec;
+
+            log_format(name, (int)sizeof(name), "ENEMY%03d.CFG", (int)kinds[i].id);
+            rec = monsters ? bsa_find_name(monsters, name) : 0;
+            if (rec) {
+                b = bsa_read(monsters, rec);
+                size = rec->size;
+            }
+        } else {
+            classcfg_name(kinds[i].id - 128, name);
+            b = vfs_read(name, &size);
+        }
+        if (!b || !classcfg_read(b, size, &cfg)) {
+            log_print(LOG_WARN, "data: %s did not read; kind %d's attributes are 50", name, (int)kinds[i].id);
+            for (a = 0; a < 8; a++) {
+                kinds[i].attribute[a] = 50;
+            }
+            continue;
+        }
+        for (a = 0; a < 8; a++) {
+            kinds[i].attribute[a] = (df_u8)(cfg.attribute[a] > 255 ? 255 : cfg.attribute[a]);
+        }
+    }
+    if (monsters) {
+        bsa_close(monsters);
     }
 }
 
@@ -155,8 +210,17 @@ int maindat_import(RecPut put, void *ctx)
         return 0;
     }
     kinds = classic_enemies(&n);
-    if (!rec_put_rows(put, ctx, &enemy_schema, kinds, n, 0, 0)) {
-        return 0;
+    {
+        static EnemyKind filled[KINDS_MAX];
+
+        if (n > KINDS_MAX) {
+            n = KINDS_MAX;
+        }
+        mem_copy(filled, kinds, (df_u32)n * (df_u32)sizeof(EnemyKind));
+        kind_attributes(filled, n);
+        if (!rec_put_rows(put, ctx, &enemy_schema, filled, n, 0, 0)) {
+            return 0;
+        }
     }
     tables = classic_encounters(&n);
     if (!rec_put_rows(put, ctx, &encounter_schema, tables, n, 0, 0)) {

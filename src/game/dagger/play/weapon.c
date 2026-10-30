@@ -15,6 +15,10 @@
 #define FRAME_MAX (320 * 200)
 /* A frame shows at least this long, whatever the Speed. */
 #define FRAME_TIME_MIN 0.02f
+/* The frame a swing strikes on (DFU's FPSWeapon.GetHitFrame), and the bow's file. */
+#define HIT_FRAME 2
+#define HIT_FRAME_BOW 5
+#define BOW_CIF 9
 
 /* A picture on the card: its id, and the part of its frame it holds (cif_bounds). */
 typedef struct Shown {
@@ -39,6 +43,9 @@ static int g_first;
 static int g_count;
 static int g_step;
 static float g_time;
+/* The hit frame reached this swing, and not yet taken by weapon_hit. */
+static int g_hit_due;
+static int g_hit_done;
 static df_u8 g_rgb[768];
 static int g_have_rgb;
 static df_u8 *g_buf;
@@ -114,6 +121,7 @@ void weapon_free(void)
     g_cif_no = -1;
     g_metal = -1;
     g_swing = 0;
+    g_hit_due = 0;
 }
 
 void weapon_hold(const Item *it)
@@ -171,6 +179,8 @@ int weapon_attack(void)
     g_swing = pick;
     g_step = 0;
     g_time = 0.0f;
+    g_hit_due = 0;
+    g_hit_done = 0;
     show_frame(g_first);
     return pick;
 }
@@ -191,6 +201,10 @@ void weapon_step(float dt, int speed)
     while (g_time >= each) {
         g_time -= each;
         g_step++;
+        if (!g_hit_done && g_step >= (g_cif_no == BOW_CIF ? HIT_FRAME_BOW : HIT_FRAME)) {
+            g_hit_due = 1;
+            g_hit_done = 1;
+        }
         if (g_step >= g_count) {
             /* No frame held at the end: back to rest (DFU's FPSWeapon). */
             g_swing = 0;
@@ -204,6 +218,25 @@ void weapon_step(float dt, int speed)
 int weapon_swinging(void)
 {
     return g_swing != 0;
+}
+
+int weapon_swing(void)
+{
+    return g_swing;
+}
+
+int weapon_hit(void)
+{
+    int due;
+
+    due = g_hit_due;
+    g_hit_due = 0;
+    return due;
+}
+
+int weapon_is_bow(void)
+{
+    return g_cif_no == BOW_CIF;
 }
 
 int weapon_shown(int *pic, int *left, int *top, int *w, int *h)

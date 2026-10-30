@@ -39,6 +39,7 @@ static const RecField g_enemy_fields[] = {
     E("health_max", REC_UINT, health_max),
     E("level", REC_UINT, level),
     E("armor", REC_INT, armor),
+    EA("attributes", REC_UINT, attribute),
     E("map_chance", REC_UINT, map_chance),
     E("weight", REC_UINT, weight),
     E("soul_points", REC_UINT, soul_points),
@@ -47,10 +48,10 @@ static const RecField g_enemy_fields[] = {
 #undef E
 #undef EA
 
-/* A kind a mod adds and leaves half-said: no sounds, hurt by any weapon. */
+/* A kind a mod adds and leaves half-said: no sounds, hurt by any weapon, every attribute 50. */
 static const EnemyKind g_enemy_default = {
     0, "", ENEMY_GENERAL, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    -1, -1, -1, -1, { 0, 0, 0 }, { 0, 0, 0 }, 0, 0, 1, 0, 0, 0, 0u, ""
+    -1, -1, -1, -1, { 0, 0, 0 }, { 0, 0, 0 }, 0, 0, 1, 0, 0, 0, 0u, "", { 50, 50, 50, 50, 50, 50, 50, 50 }
 };
 
 const RecSchema enemy_schema = {

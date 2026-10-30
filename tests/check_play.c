@@ -23,6 +23,8 @@
 #include "game/dagger/play/commands.h"
 #include "game/dagger/play/inventory.h"
 #include "game/dagger/play/weapon.h"
+#include "game/dagger/play/combat.h"
+#include "game/dagger/tables/enemies.h"
 #include "game/dagger/formats/cif.h"
 #include "engine/ui/pic.h"
 #include "game/dagger/tables/items.h"
@@ -803,12 +805,238 @@ static void check_weapon(void)
            (unsigned)whole);
 }
 
+/*
+ * Combat: the creatures' attributes from their CFGs, classic's sums
+ * worked by hand, and in the streamed hold a creature struck from the
+ * eye until it dies, a body after its block is dropped and comes back.
+ */
+static void check_combat(void)
+{
+    const EnemyKind *rat;
+    const EnemyKind *ghost;
+    Character pc;
+    Foe f;
+    Blow b;
+    Item sword;
+    Item silver;
+    int lo;
+    int hi;
+    int hits;
+    int i;
+
+    rat = enemy_kind(ENEMY_RAT);
+    ghost = enemy_kind(ENEMY_GHOST);
+    check_expect(rat && rat->attribute[ATTR_STRENGTH] == 40 && rat->attribute[ATTR_AGILITY] == 80
+                     && rat->attribute[ATTR_LUCK] == 50 && enemy_kind(ENEMY_LAMIA)->attribute[ATTR_AGILITY] == 85,
+                 "combat: a creature's attributes are not its ENEMY###.CFG's");
+    check_expect(enemy_kind(ENEMY_FIRST_CLASS)->attribute[ATTR_INTELLIGENCE] == career_class(0)->attribute[ATTR_INTELLIGENCE],
+                 "combat: a class enemy's attributes are not its CLASS##.CFG's");
+    check_expect(combat_strength_bonus(50) == 0 && combat_strength_bonus(75) == 5 && combat_strength_bonus(42) == -2
+                     && combat_strength_bonus(54) == 0,
+                 "combat: the strength bonus is not floor((STR - 50) / 5)");
+    combat_foe(&f, rat, 1, 0);
+    check_expect(f.level == 1 && f.armor == 30 && f.dodging == 35, "combat: the rat is not level 1, armour 30, Dodging 35");
+    combat_foe(&f, enemy_kind(ENEMY_FIRST_CLASS), 7, 0);
+    check_expect(f.level == 7 && f.armor == 60 && f.dodging == 65, "combat: a class enemy is not at the player's level, bare");
+    for (i = 0; i < 200; i++) {
+        int h;
+
+        h = combat_roll_health(&f);
+        if (h < 17 || h > 10 + 7 * career_class(0)->hp_per_level) {
+            break;
+        }
+    }
+    check_expect(i == 200, "combat: a class enemy's health is not 10 and a roll a level");
+
+    if (!character_new(&pc, CHARACTER_START_RACE, CHARACTER_START_CLASS, 0, "Test")) {
+        check_expect(0, "combat: no starting character");
+        return;
+    }
+    item_make(&sword, ITEM_LONGSWORD, MATERIAL_IRON);
+    /* No critical strike, so the chance is the sum alone. */
+    pc.skill[SKILL_CRITICAL_STRIKE] = 0;
+    combat_foe(&f, rat, 1, 0);
+    combat_blow(&pc, &sword, 3, &f, &b);
+    printf("combat: a Breton warrior's long blade %d, luck %d, agility %d, strength %d; at the rat with an iron longsword "
+           "swung left, %d%% to hit\n",
+           pc.skill[29], pc.attribute[ATTR_LUCK], pc.attribute[ATTR_AGILITY], pc.attribute[ATTR_STRENGTH], b.chance);
+    /*
+     * By hand: long blade 30, swung left 0, iron -10, the rat's armour 30,
+     * luck (55 - 50) / 10 = 0, agility (62 - 80) / 10 = -1 (cut toward 0,
+     * as C# does), its Dodging 35 / 4 = 8, against a creature 40, less 50.
+     */
+    check_expect(b.chance == 31, "combat: a Breton warrior's chance at the rat is not 31");
+    /* Damage: the longsword's 2..16, the strength bonus, iron's -1, swung left (0); never below 0. */
+    lo = 1000;
+    hi = -1;
+    hits = 0;
+    combat_seed(7);
+    for (i = 0; i < 2000; i++) {
+        combat_blow(&pc, &sword, 3, &f, &b);
+        if (b.hit) {
+            hits++;
+            lo = b.damage < lo ? b.damage : lo;
+            hi = b.damage > hi ? b.damage : hi;
+        }
+    }
+    {
+        int bonus;
+
+        bonus = combat_strength_bonus(pc.attribute[ATTR_STRENGTH]) - 1;
+        check_expect(lo == (2 + bonus < 1 ? 0 : 2 + bonus) && hi == 16 + bonus,
+                     "combat: an iron longsword's damage is not 2..16 with strength and iron's -1");
+        check_expect(check_near((float)hits / 2000.0f, (float)b.chance / 100.0f, 0.04f),
+                     "combat: blows hit at another rate than their chance");
+    }
+    /* A ghost takes silver or better: iron does nothing, silver hurts. */
+    combat_foe(&f, ghost, 1, 0);
+    combat_blow(&pc, &sword, 3, &f, &b);
+    check_expect(b.ineffective && !b.hit && !b.damage, "combat: iron hurts a ghost");
+    item_make(&silver, ITEM_LONGSWORD, MATERIAL_SILVER);
+    combat_blow(&pc, &silver, 3, &f, &b);
+    check_expect(!b.ineffective, "combat: silver does not reach a ghost");
+    /* Bare hands: Hand-to-Hand / 10 + 1 to / 5 + 1, with strength. */
+    combat_foe(&f, rat, 1, 0);
+    lo = 1000;
+    hi = -1;
+    for (i = 0; i < 2000; i++) {
+        combat_blow(&pc, 0, 3, &f, &b);
+        if (b.hit) {
+            lo = b.damage < lo ? b.damage : lo;
+            hi = b.damage > hi ? b.damage : hi;
+        }
+    }
+    {
+        int h2h;
+        int str;
+        int want_lo;
+
+        h2h = pc.skill[SKILL_HAND_TO_HAND];
+        str = combat_strength_bonus(pc.attribute[ATTR_STRENGTH]);
+        want_lo = h2h / 10 + 1 + str;
+        check_expect(lo == (want_lo < 0 ? 0 : want_lo) && hi == h2h / 5 + 1 + str,
+                     "combat: bare hands' damage is not Hand-to-Hand's range with strength");
+    }
+
+    /* In the streamed hold: a creature struck from the eye until it dies, kept dead. */
+    {
+        Dungeon hold;
+        Level level;
+        Camera cam;
+        float x, y, z, yaw, pitch;
+        Entity *target;
+        KeepKey key;
+        const Keep *row;
+        int struck;
+        int flinched;
+        int s;
+
+        keep_clear();
+        combat_reset();
+        if (!dungeon_load(&hold) || !dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
+            check_expect(0, "combat: the hold's stream did not open");
+            return;
+        }
+        camera_set(&cam, x, y, z, yaw, pitch);
+        dunstream_fill(&cam);
+        target = 0;
+        struck = 0;
+        /* A creature from any side in turn, a metre and a quarter off: the first a strike reaches. */
+        for (s = 0; s < stream_slots() && !target; s++) {
+            Entity *ents;
+            int first;
+            int n;
+
+            ents = stream_slot_entities(s, &first, &n);
+            for (i = 0; ents && i < n && !target; i++) {
+                int side;
+
+                if (!ents[i].live || ents[i].dead || dunstream_kind(&ents[i], 0) < 0) {
+                    continue;
+                }
+                for (side = 0; side < 4 && !target; side++) {
+                    float a;
+                    float ex;
+                    float ez;
+                    float ey;
+
+                    a = (float)side * (DF_TAU / 4.0f);
+                    ex = ents[i].x - df_sin(a) * 50.0f;
+                    ez = ents[i].z - df_cos(a) * 50.0f;
+                    ey = ents[i].y + entity_height(&ents[i]) * 0.5f;
+                    pc.fatigue = pc.fatigue_max;
+                    if (combat_strike(&pc, &sword, 3, &level.scene, ex, ey, ez, a, 0.0f)) {
+                        target = &ents[i];
+                        key = ents[i].key;
+                        x = ex;
+                        y = ey;
+                        z = ez;
+                        yaw = a;
+                    }
+                }
+            }
+        }
+        check_expect(target != 0, "combat: no creature of the hold could be struck from a metre and a quarter");
+        if (!target) {
+            dunstream_close();
+            return;
+        }
+        check_expect(pc.fatigue == pc.fatigue_max - COMBAT_SWING_FATIGUE, "combat: a swing does not tire by 11");
+        flinched = 0;
+        combat_seed(11);
+        for (i = 0; i < 400 && !target->dead; i++) {
+            combat_strike(&pc, &sword, 3, &level.scene, x, y, z, yaw, 0.0f);
+            if (!target->dead && target->act == ENTITY_HURT) {
+                flinched = 1;
+                combat_frame(1.0f);
+                check_expect(target->act == 0, "combat: a flinch does not run out");
+            }
+            struck++;
+        }
+        row = keep_find(key);
+        printf("combat: %s struck %d times in the hold till it died\n", enemy_kind(dunstream_kind(target, 0))->name, struck);
+        check_expect(target->dead && row && row->game[2] == 1 && row->game[0] == 0 && row->game[1] == 0,
+                     "combat: the creature does not die, or its health is not kept at 0");
+        check_expect(!target->pose[ENTITY_DEAD].w[0] || (target->act == ENTITY_DEAD && target->hold),
+                     "combat: a dead creature does not lie as its body");
+        check_expect(flinched || !target->pose[ENTITY_HURT].w[0], "combat: a creature struck and living did not flinch");
+        /* Its block dropped and back: the body still a body. */
+        camera_set(&cam, x + 8.0f * 2048.0f, y, z, yaw, 0.0f);
+        for (i = 0; i < 200; i++) {
+            dunstream_update(&cam, 50.0f);
+        }
+        camera_set(&cam, x, y, z, yaw, 0.0f);
+        dunstream_fill(&cam);
+        combat_frame(0.0f);
+        target = 0;
+        for (s = 0; s < stream_slots() && !target; s++) {
+            Entity *ents;
+            int first;
+            int n;
+
+            ents = stream_slot_entities(s, &first, &n);
+            for (i = 0; ents && i < n; i++) {
+                if (ents[i].key.place == key.place && ents[i].key.thing == key.thing) {
+                    target = &ents[i];
+                    break;
+                }
+            }
+        }
+        check_expect(target && target->dead && target->radius == 0.0f
+                         && (target->pose[ENTITY_DEAD].w[0] ? target->act == ENTITY_DEAD : !target->live),
+                     "combat: a dead creature comes back alive with its block");
+        dunstream_close();
+        keep_clear();
+    }
+}
+
 void check_play(void)
 {
     check_rules();
     check_character();
     check_items();
     check_weapon();
+    check_combat();
     check_hold();
     check_keep();
     check_dunstream();

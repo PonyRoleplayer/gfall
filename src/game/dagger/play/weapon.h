@@ -32,6 +32,16 @@ int weapon_attack(void);
 void weapon_step(float dt, int speed);
 /* 1 while a swing runs. */
 int weapon_swinging(void);
+/* The swing running (1 down, 2 down-left, 3 left, 4 right, 5 down-right, 6 up), 0 at rest. */
+int weapon_swing(void);
+/*
+ * 1 once a swing, the step its hit frame comes up: frame 2 of a melee
+ * swing, 5 of a bow's shot (DFU's FPSWeapon.GetHitFrame). The game
+ * strikes then (combat.c). Taken: the next call says 0.
+ */
+int weapon_hit(void);
+/* 1 when the file held is the bow's. */
+int weapon_is_bow(void);
 /* The picture to draw and its place on classic's screen; 0 when nothing shows (a bow at rest, no file). */
 int weapon_shown(int *pic, int *left, int *top, int *w, int *h);
 /* Its pictures and file let go. */

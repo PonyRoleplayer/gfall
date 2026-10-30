@@ -58,11 +58,20 @@ typedef struct EnemyKind {
     df_u16 health_min;
     df_u16 health_max;
     df_u8 level;
+    /* Its armour value, as EnemyBasics' ArmorValue: lower is better; a body part's is five times it. */
     signed char armor;
     df_u8 map_chance;
     df_u16 weight;
     df_u32 soul_points;
     char loot[4];
+    /*
+     * Strength, intelligence, willpower, agility, endurance, personality,
+     * speed, luck (ATTR_*): a monster's from its ENEMY###.CFG in
+     * MONSTER.BSA, a class enemy's from its CLASS##.CFG (DFU's
+     * GetMonsterCareerTemplate and the class's career),
+     * filled in by the import: classic.c's rows leave them 0.
+     */
+    df_u8 attribute[8];
 } EnemyKind;
 
 /* EnemyKind.behaviour: DFU's MobileBehaviour. */
@@ -90,6 +99,8 @@ const EnemyKind *enemy_kind(int kind);
 #define ENEMY_KINDS 147
 #define ENEMY_RAT 0
 #define ENEMY_SLAUGHTERFISH 11
+/* Blunt weapons do it half, silver twice (DFU's CalculateWeaponAttackDamage). */
+#define ENEMY_SKELETAL_WARRIOR 15
 #define ENEMY_GHOST 18
 #define ENEMY_WRAITH 23
 #define ENEMY_DREUGH 41

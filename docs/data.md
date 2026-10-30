@@ -53,7 +53,7 @@ Every file starts with a `HEAD` chunk (`rec_head_schema`): rows of role, size an
 
 | Tag | Name in text | Row | Owner | What |
 | --- | --- | --- | --- | --- |
-| `ENEM` | `enemy` | `EnemyKind` | `enemies.c` | creature kinds by mobile id: EnemyBasics field for field |
+| `ENEM` | `enemy` | `EnemyKind` | `enemies.c` | creature kinds by mobile id: EnemyBasics field for field, and `attributes`, the eight attributes cooked from each monster's `ENEMY###.CFG` in MONSTER.BSA and each class enemy's `CLASS##.CFG` (DFU's GetMonsterCareerTemplate; a mod's kind without them has 50 each) |
 | `ENCT` | `encounter` | `Encounter` | `enemies.c` | encounter tables by dungeon type (`DUN_TYPE_*`), plus `ENCOUNTER_UNDERWATER` (19) |
 | `WTHR` | `weather` | `WeatherOdds` | `forecast.c` | weather odds; id = climate × 4 + season |
 | `WLOK` | `look` | `WeatherKindLook` | `forecast.c` | each weather kind's look (`WeatherLook`) |
@@ -73,7 +73,7 @@ Every file starts with a `HEAD` chunk (`rec_head_schema`): rows of role, size an
 3. its rows in `maindat_import`;
 4. a test.
 
-MAIN.DAT is about 14.5 KB today (`MAINDAT_VERSION` 3).
+MAIN.DAT is about 15 KB today (`MAINDAT_VERSION` 4).
 
 **A field's name is under 16 characters**, or a chunk cuts it and it never matches; `check_data` checks every schema's names. The tables planned next, with their sources and order, are in `docs/game.md` (Data): the location index and world map, climates, items, weapons, spells, races, classes, factions, the calendar.
 

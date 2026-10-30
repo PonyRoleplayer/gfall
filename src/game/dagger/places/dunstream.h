@@ -3,6 +3,7 @@
 
 #include "engine/assets/level.h"
 #include "engine/gfx/camera.h"
+#include "engine/scene/entity.h"
 #include "game/dagger/formats/dungeon.h"
 
 /*
@@ -37,6 +38,11 @@ void dunstream_fill(Camera *cam);
 /* One frame: blocks in and out round the camera, within budget_ms. */
 void dunstream_update(Camera *cam, float budget_ms);
 void dunstream_close(void);
+/*
+ * The creature kind (ENEM's id) of an entity the stream made, by its key,
+ * and in *female whether it was drawn a woman; -1 for one it did not make.
+ */
+int dunstream_kind(const Entity *e, int *female);
 int dunstream_active(void);
 
 #endif

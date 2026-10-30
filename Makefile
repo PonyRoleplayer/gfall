@@ -146,6 +146,7 @@ PLAY_SRC := \
 	src/game/dagger/play/inventory.c \
 	src/game/dagger/play/commands.c \
 	src/game/dagger/play/weapon.c \
+	src/game/dagger/play/combat.c \
 	src/game/dagger/play/player.c \
 	src/game/dagger/play/screen.c \
 	src/game/dagger/play/overlay.c \
@@ -289,6 +290,7 @@ DAT_SRC := \
 	src/engine/scene/clock.c \
 	src/engine/scene/weather.c \
 	src/game/dagger/formats/classcfg.c \
+	src/game/dagger/formats/bsa.c \
 	src/game/dagger/tables/maindat.c \
 	src/game/dagger/tables/classic.c \
 	src/game/dagger/tables/calendar.c \
