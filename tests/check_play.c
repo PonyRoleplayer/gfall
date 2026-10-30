@@ -543,6 +543,15 @@ static void check_items(void)
     check_expect(check_near(inventory_weight(&p.pack), 5.5f + 4.5f + 1.75f, 0.001f), "items: the pack's weight");
     cmd_run("additem potato; equip 7; equip none");
     check_expect(p.pack.count == 3 && p.pack.weapon == -1, "items: a bad additem or equip changed the pack");
+    /* tgm: alone it flips; on, a blow takes nothing; off, it does. */
+    p.sheet.health = 10;
+    p.god = 0;
+    cmd_run("tgm");
+    check_expect(p.god == 1 && player_hurt(&p, 50) == -1 && p.sheet.health == 10, "items: tgm on, the player was hurt");
+    cmd_run("tgm");
+    check_expect(p.god == 0 && player_hurt(&p, 3) == 0 && p.sheet.health == 7, "items: tgm off, a blow took nothing");
+    cmd_run("tgm on; tgm off");
+    check_expect(p.god == 0, "items: tgm on and off do not set it");
     commands_player(0);
     cmd_run("additem dagger");
     check_expect(p.pack.count == 3, "items: additem out of play added to a pack");

@@ -22,6 +22,15 @@ void player_init(Player *p, const Character *sheet)
     p->sheet = *sheet;
     inventory_clear(&p->pack);
     p->flying = 0;
+    p->god = 0;
+}
+
+int player_hurt(Player *p, int amount)
+{
+    if (amount <= 0 || p->god) {
+        return -1;
+    }
+    return character_hurt(&p->sheet, amount);
 }
 
 void player_place(Player *p, float x, float eye_y, float z, float yaw, float pitch)

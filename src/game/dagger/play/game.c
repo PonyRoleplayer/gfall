@@ -207,15 +207,16 @@ int game_frame(Camera *cam, const Input *in, float dt)
 
             /* A landing past classic's 5 m hurts. */
             if (body_landed(&g_player.body, &speed, &height)) {
-                int hurt;
+                int died;
 
-                hurt = rules_fall_damage(height / RULES_UNITS_PER_M);
-                if (hurt > 0 && character_hurt(&g_player.sheet, hurt)) {
+                /* tgm on: nothing is taken and nothing said. */
+                died = player_hurt(&g_player, rules_fall_damage(height / RULES_UNITS_PER_M));
+                if (died > 0) {
                     /* Death, until combat brings its own (P4) and the menu a reload (P3): back at the start, whole. */
                     interact_say("You have died.");
                     character_rest_full(&g_player.sheet);
                     player_place(&g_player, g_start[0], g_start[1], g_start[2], g_start[3], g_start[4]);
-                } else if (hurt > 0) {
+                } else if (died == 0) {
                     interact_say("That hurt.");
                 }
             }

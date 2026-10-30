@@ -13,6 +13,10 @@
  *                                Iron when no material is named.
  *   items                        the pack, the one in hand marked.
  *   equip n|none                 item n in hand, or bare hands.
+ *   tgm [on|off]                 god mode: nothing takes the player's
+ *                                health (player_hurt); tgm alone flips
+ *                                it, as Bethesda's consoles do. Off with
+ *                                each new game.
  */
 
 /* Registers them once. */

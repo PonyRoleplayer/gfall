@@ -173,6 +173,18 @@ static void c_equip(int argc, char **argv)
     log_print(LOG_PRINT, "%s in hand.", name);
 }
 
+static int get_tgm(void)
+{
+    return g_player ? g_player->god : 0;
+}
+
+static void set_tgm(int on)
+{
+    if (player()) {
+        g_player->god = on;
+    }
+}
+
 void commands_setup(void)
 {
     static int done;
@@ -184,6 +196,8 @@ void commands_setup(void)
     cmd_add("additem", c_additem, "[weapon] [material]", "a new weapon in the pack; alone, the weapons and materials");
     cmd_add("items", c_items, "", "what the player carries, the weapon in hand marked *");
     cmd_add("equip", c_equip, "n|none", "item n of items in hand, or bare hands");
+    cmd_var("tgm", get_tgm, set_tgm, 0, 1, "god mode: nothing hurts the player; tgm alone flips it");
+    cmd_toggles("tgm");
 }
 
 void commands_player(Player *p)

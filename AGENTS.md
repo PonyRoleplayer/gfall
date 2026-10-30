@@ -54,7 +54,7 @@ Each game is one folder under `src/game/`, and today there is one, `src/game/dag
   - `player.c`: a body under `rig_first`, classic's walk, run and jump;
   - `rules.c`: classic's sums, from DFU's formulas, host-tested (speeds, the vitals, a fall's damage);
   - `character.c` (P2): the character sheet, built by classic's rules from CLAS, RACE and SKIL; until creation, a Breton warrior;
-  - `inventory.c` (P4): items made from ITEM, WEAP and MATL by classic's material rules, the pack and the weapon in hand, host-tested; `commands.c`: the game's console commands (`additem`, `items`, `equip`); `weapon.c`: the weapon in hand over the view from its `WEAPON##.CIF`, a click's random swing at classic's rate, host-tested; `combat.c`: a swing's hit frame strikes the creature in reach by classic's to-hit and damage, health kept in its keep row, flinch and body, host-tested;
+  - `inventory.c` (P4): items made from ITEM, WEAP and MATL by classic's material rules, the pack and the weapon in hand, host-tested; `commands.c`: the game's console commands (`additem`, `items`, `equip`, `tgm`); `weapon.c`: the weapon in hand over the view from its `WEAPON##.CIF`, a click's random swing at classic's rate, host-tested; `combat.c`: a swing's hit frame strikes the creature in reach by classic's to-hit and damage, health kept in its keep row, flinch and body, host-tested;
   - `overlay.c`: classic's compass from COMPASS.IMG and COMPBOX.IMG, the vitals bars from MAIN03 to MAIN05I0.IMG, the crosshair;
   - `menu.c` (P3): classic's title, start menu, options and controls screens with ARROW.RAW's pointer;
   - `keys.c`: the bindings in DATA\KEYS.DAT;
