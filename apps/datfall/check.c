@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "books.h"
+#include "paper.h"
 #include "pics.h"
 #include "engine/assets/recfile.h"
 #include "engine/assets/vfs.h"
@@ -339,6 +340,32 @@ int main(void)
                     }
                     expect(weight_a >= 0 && df_eq(one, two), "a float field did not survive the merge");
                 }
+            }
+            {
+                int rk;
+                int rows;
+                int row;
+                int found;
+                char id[32];
+                char label[64];
+                char file[PAPER_NAME];
+
+                rk = dat_find_tag(merged, "RACE");
+                rows = rk >= 0 ? dat_rows(merged, rk) : 0;
+                found = 0;
+                for (row = 0; row < rows; row++) {
+                    dat_row_label(merged, rk, row, id, (int)sizeof(id), label, (int)sizeof(label));
+                    if (!df_eq(label, "Breton")) {
+                        continue;
+                    }
+                    found = 1;
+                    file[0] = 0;
+                    expect(paper_file(merged, row, 5, file, (int)sizeof(file))
+                               && df_eq(file, "FACE00I0.CIF"),
+                           "Breton's heads_male is not FACE00I0.CIF");
+                    expect(paper_heads(file) == 10, "Breton does not have 10 heads");
+                }
+                expect(found, "merged RACE has no Breton");
             }
             books_close(books);
         }

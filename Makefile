@@ -319,6 +319,7 @@ DAT_SRC := \
 	apps/datfall/view.c \
 	apps/datfall/books.c \
 	apps/datfall/pics.c \
+	apps/datfall/paper.c \
 	src/engine/core/mem.c \
 	src/engine/core/log.c \
 	src/engine/assets/recfile.c \

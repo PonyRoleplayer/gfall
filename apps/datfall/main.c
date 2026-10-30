@@ -5,8 +5,9 @@
  * GDI load at run time; the import table stays KERNEL32 and USER32.
  * Escape quits.
  *
- * This slice is the tables. Pictures, characters, creatures, items and
- * the world map hang off the same tree.
+ * Data is the tables. Pictures are the texture archives. Characters
+ * are the races and their paper dolls. Creatures, items and the world
+ * map hang off the same tree.
  */
 
 #define WINVER 0x0400
@@ -16,12 +17,15 @@
 #include <windows.h>
 
 #include "books.h"
+#include "paper.h"
 #include "pics.h"
 #include "engine/assets/palette.h"
 #include "engine/assets/texture.h"
 #include "engine/assets/vfs.h"
 #include "engine/core/df.h"
 #include "engine/core/mem.h"
+#include "game/dagger/formats/cif.h"
+#include "game/dagger/formats/img.h"
 #include "game/dagger/formats/palette.h"
 #include "game/dagger/formats/texture.h"
 #include "game/dagger/tables/maindat.h"
@@ -81,6 +85,8 @@
 #define ND_CHUNK 4
 #define ND_PICTURES 5
 #define ND_ARCHIVE 6
+#define ND_CHARS 7
+#define ND_RACE 8
 #define ND_MERGED_FILE 4095
 
 #define VIEW_NONE 0
@@ -89,6 +95,8 @@
 #define VIEW_ROWS 3
 #define VIEW_ARCHIVES 4
 #define VIEW_RECS 5
+#define VIEW_RACES 6
+#define VIEW_PARTS 7
 
 #define ARC_CAP 160
 #define GRID_CELL 32
@@ -206,6 +214,11 @@ static int g_grid_h;
 static int g_grid_rows;
 static int g_scroll;
 static unsigned char *g_dib;
+static CifSet g_cif;
+static int g_cif_on;
+static int g_head;
+static Image g_fake;
+static char g_part_file[PAPER_NAME];
 
 static void *sym(HMODULE dll, const char *name)
 {
@@ -533,6 +546,11 @@ static void show_frame(void);
 static void pic_status(void);
 static void scroll_to_rec(void);
 static void step_frame(int delta);
+static void drop_paper(void);
+static void load_part(int row, int part);
+static void show_head(void);
+static void race_status(void);
+static void step_head(int delta);
 
 static void on_row(int index)
 {
@@ -601,6 +619,46 @@ static void on_row(int index)
         wsprintfA(num, "TEXTURE.%03d", g_arc_file);
         prop_add(4, "archive", num);
         pic_status();
+        InvalidateRect(g_hwnd, &g_well, 1);
+        return;
+    }
+    if (g_view == VIEW_RACES) {
+        DatFile *mf;
+        int rk;
+        int race;
+
+        drop_paper();
+        mf = g_books ? books_merged(g_books) : 0;
+        rk = mf ? dat_find_tag(mf, "RACE") : -1;
+        if (!mf || rk < 0 || index < 0) {
+            props_clear();
+            status_set("Characters", "");
+            InvalidateRect(g_hwnd, &g_well, 1);
+            return;
+        }
+        race = dat_filter_row(mf, index);
+        show_fields(mf, rk, race, 1);
+        dat_row_label(mf, rk, race, id, (int)sizeof(id), label, (int)sizeof(label));
+        wsprintfA(status_id, "id %s", id);
+        status_set("RACE", status_id);
+        InvalidateRect(g_hwnd, &g_well, 1);
+        return;
+    }
+    if (g_view == VIEW_PARTS) {
+        int part;
+
+        if (index < 0 || index >= g_nmap) {
+            drop_paper();
+            props_clear();
+            status_set("Characters", "");
+            InvalidateRect(g_hwnd, &g_well, 1);
+            return;
+        }
+        part = g_map[index];
+        load_part(g_a, part);
+        f = g_books ? books_merged(g_books) : 0;
+        show_fields(f, g_b, g_a, 1);
+        race_status();
         InvalidateRect(g_hwnd, &g_well, 1);
         return;
     }
@@ -943,6 +1001,149 @@ static void step_frame(int delta)
     }
 }
 
+static int ends_cif(const char *name)
+{
+    int n;
+    char a;
+    char b;
+    char c;
+
+    n = 0;
+    if (!name) {
+        return 0;
+    }
+    while (name[n]) {
+        n++;
+    }
+    if (n < 4 || name[n - 4] != '.') {
+        return 0;
+    }
+    a = name[n - 3];
+    b = name[n - 2];
+    c = name[n - 1];
+    if (a >= 'a' && a <= 'z') {
+        a = (char)(a - 'a' + 'A');
+    }
+    if (b >= 'a' && b <= 'z') {
+        b = (char)(b - 'a' + 'A');
+    }
+    if (c >= 'a' && c <= 'z') {
+        c = (char)(c - 'a' + 'A');
+    }
+    return a == 'C' && b == 'I' && c == 'F';
+}
+
+static void drop_paper(void)
+{
+    g_show = 0;
+    memset(&g_fake, 0, sizeof(g_fake));
+    g_head = 0;
+    g_part_file[0] = 0;
+    if (g_cif_on) {
+        cif_close(&g_cif);
+        g_cif_on = 0;
+    }
+}
+
+static void show_head(void)
+{
+    const CifFrame *fr;
+
+    fr = cif_frame(&g_cif, g_head);
+    if (!fr || !fr->pixels || fr->w < 1 || fr->h < 1) {
+        g_show = 0;
+        return;
+    }
+    memset(&g_fake, 0, sizeof(g_fake));
+    g_fake.width = fr->w;
+    g_fake.height = fr->h;
+    g_fake.index = (df_u8 *)fr->pixels;
+    g_show = &g_fake;
+}
+
+static void load_part(int row, int part)
+{
+    char name[PAPER_NAME];
+    ImgPicture pic;
+    DatFile *f;
+    int i;
+
+    drop_frames();
+    drop_paper();
+    f = g_books ? books_merged(g_books) : 0;
+    name[0] = 0;
+    if (!paper_file(f, row, part, name, (int)sizeof(name)) || !name[0]) {
+        return;
+    }
+    for (i = 0; i < PAPER_NAME - 1 && name[i]; i++) {
+        g_part_file[i] = name[i];
+    }
+    g_part_file[i] = 0;
+    if (ends_cif(name)) {
+        if (!cif_open(name, &g_cif)) {
+            return;
+        }
+        g_cif_on = 1;
+        g_head = 0;
+        show_head();
+        return;
+    }
+    if (!img_load(name, &pic) || !pic.pixels || pic.width < 1 || pic.height < 1) {
+        return;
+    }
+    memset(&g_fake, 0, sizeof(g_fake));
+    g_fake.width = pic.width;
+    g_fake.height = pic.height;
+    g_fake.index = (df_u8 *)pic.pixels;
+    g_show = &g_fake;
+}
+
+static void race_status(void)
+{
+    DatFile *f;
+    char id[32];
+    char label[64];
+    char extra[80];
+
+    f = g_books ? books_merged(g_books) : 0;
+    id[0] = 0;
+    label[0] = 0;
+    if (f && g_b >= 0) {
+        dat_row_label(f, g_b, g_a, id, (int)sizeof(id), label, (int)sizeof(label));
+    }
+    if (g_cif_on && g_cif.n > 0) {
+        wsprintfA(extra, "id %s  %s  head %d/%d", id, label, g_head + 1, g_cif.n);
+    } else {
+        wsprintfA(extra, "id %s  %s", id, label);
+    }
+    status_set(g_part_file[0] ? g_part_file : "Characters", extra);
+}
+
+static void step_head(int delta)
+{
+    int n;
+
+    if (g_view != VIEW_PARTS || !g_cif_on) {
+        return;
+    }
+    n = g_cif.n;
+    if (n < 2) {
+        return;
+    }
+    g_head += delta;
+    while (g_head < 0) {
+        g_head += n;
+    }
+    while (g_head >= n) {
+        g_head -= n;
+    }
+    show_head();
+    race_status();
+    if (g_hwnd) {
+        InvalidateRect(g_hwnd, &g_well, 0);
+    }
+}
+
 static void fill_list(void)
 {
     DatFile *f;
@@ -1071,14 +1272,56 @@ static void fill_list(void)
             g_nmap++;
             shown++;
         }
+    } else if (g_view == VIEW_RACES) {
+        int kind;
+
+        col_add(g_list, "Name", width / 2);
+        col_add(g_list, "Id", width / 4);
+        f = g_books ? books_merged(g_books) : 0;
+        kind = f ? dat_find_tag(f, "RACE") : -1;
+        n = (f && kind >= 0) ? dat_filter(f, kind, g_q) : 0;
+        for (i = 0; i < n; i++) {
+            int row;
+
+            row = dat_filter_row(f, i);
+            dat_row_label(f, kind, row, a, (int)sizeof(a), b, (int)sizeof(b));
+            row_text(g_list, i, 0, a);
+            row_text(g_list, i, 1, b[0] ? b : "");
+        }
+        shown = n;
+    } else if (g_view == VIEW_PARTS) {
+        col_add(g_list, "File", width / 2);
+        col_add(g_list, "Part", width / 3);
+        f = g_books ? books_merged(g_books) : 0;
+        for (i = 0; i < PAPER_PARTS && g_nmap < 512; i++) {
+            paper_file(f, g_a, i, b, (int)sizeof(b));
+            if (g_q[0] && !has_text(paper_label(i), g_q) && !has_text(b, g_q)) {
+                continue;
+            }
+            g_map[g_nmap] = i;
+            row_text(g_list, shown, 0, paper_label(i));
+            row_text(g_list, shown, 1, b);
+            g_nmap++;
+            shown++;
+        }
     }
     g_filling = 0;
     if (shown > 0) {
         select_row(g_list, 0);
         on_row(0);
     } else {
+        const char *title;
+
+        title = "Data";
+        if (g_view == VIEW_ARCHIVES || g_view == VIEW_RECS) {
+            title = "Pictures";
+        } else if (g_view == VIEW_RACES || g_view == VIEW_PARTS) {
+            title = "Characters";
+        } else if (g_view == VIEW_ROWS || g_view == VIEW_CHUNKS) {
+            title = file_title(g_nd == ND_MERGED ? ND_MERGED_FILE : g_a);
+        }
         props_clear();
-        status_set(g_view == VIEW_ROWS || g_view == VIEW_CHUNKS ? file_title(g_nd == ND_MERGED ? ND_MERGED_FILE : g_a) : "Data", "");
+        status_set(title, "");
     }
 }
 
@@ -1125,6 +1368,11 @@ static void on_tree(void *item)
         g_view = VIEW_ARCHIVES;
     } else if (nd == ND_ARCHIVE) {
         g_view = VIEW_RECS;
+    } else if (nd == ND_CHARS) {
+        drop_paper();
+        g_view = VIEW_RACES;
+    } else if (nd == ND_RACE) {
+        g_view = VIEW_PARTS;
     } else {
         g_view = VIEW_NONE;
     }
@@ -1195,6 +1443,26 @@ static void build_tree(void)
             wsprintfA(line, "TEXTURE.%03d", g_arcs[i].file);
             tree_add(pics, line, ND_ARCHIVE, g_arcs[i].file, 0);
         }
+    }
+    {
+        void *chars;
+        DatFile *f;
+        int kind;
+        int rows;
+        int row;
+
+        chars = tree_add(0, "Characters", ND_CHARS, 0, 0);
+        f = g_books ? books_merged(g_books) : 0;
+        kind = f ? dat_find_tag(f, "RACE") : -1;
+        rows = kind >= 0 ? dat_rows(f, kind) : 0;
+        for (row = 0; row < rows; row++) {
+            char id[32];
+            char label[64];
+
+            dat_row_label(f, kind, row, id, (int)sizeof(id), label, (int)sizeof(label));
+            tree_add(chars, label[0] ? label : id, ND_RACE, row, kind);
+        }
+        SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)chars);
     }
     SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)data);
     SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)merged);
@@ -1433,6 +1701,121 @@ static void paint_pics(HDC dc)
     paint_large(dc, &large);
 }
 
+static int head_cell(void)
+{
+    int n;
+    int gap;
+    int cell;
+
+    n = g_cif_on ? g_cif.n : 0;
+    if (n < 1) {
+        return 40;
+    }
+    gap = g_well.right - g_well.left;
+    cell = 40;
+    if (gap > 0 && n * cell > gap) {
+        cell = gap / n;
+    }
+    if (cell < 8) {
+        cell = 8;
+    }
+    return cell;
+}
+
+static void blit_index(HDC dc, int dx, int dy, int dw, int dh, const df_u8 *pix, int sw, int sh)
+{
+    int w;
+    int h;
+    int stride;
+    int y;
+    BITMAPINFOHEADER info;
+
+    if (!pix || sw < 1 || sh < 1 || dw < 1 || dh < 1 || !g_gdi.StretchDIBits) {
+        return;
+    }
+    w = sw;
+    h = sh;
+    if (w > 128) {
+        w = 128;
+    }
+    if (h > 128) {
+        h = 128;
+    }
+    stride = (w * 3 + 3) & ~3;
+    if (!g_dib) {
+        g_dib = (unsigned char *)mem_keep(((512 * 3 + 3) & ~3) * 512u);
+    }
+    if (!g_dib) {
+        return;
+    }
+    for (y = 0; y < h; y++) {
+        unsigned char *row;
+        int x;
+        int sy;
+
+        sy = y * sh / h;
+        row = g_dib + y * stride;
+        for (x = 0; x < w; x++) {
+            int sx;
+
+            sx = x * sw / w;
+            write_ix(row + x * 3, pix[sy * sw + sx], x, y);
+        }
+    }
+    memset(&info, 0, sizeof(info));
+    info.biSize = sizeof(info);
+    info.biWidth = w;
+    info.biHeight = -h;
+    info.biPlanes = 1;
+    info.biBitCount = 24;
+    info.biCompression = BI_RGB;
+    g_gdi.SetStretchBltMode(dc, 3);
+    g_gdi.StretchDIBits(dc, dx, dy, dw, dh, 0, 0, w, h, g_dib, (const BITMAPINFO *)&info, 0, SRCCOPY);
+}
+
+static void paint_race(HDC dc)
+{
+    RECT large;
+    int n;
+    int i;
+    int cell;
+    int x;
+
+    if (!g_cif_on) {
+        paint_large(dc, &g_well);
+        return;
+    }
+    n = g_cif.n;
+    cell = head_cell();
+    x = g_well.left;
+    for (i = 0; i < n; i++) {
+        const CifFrame *fr;
+        RECT mark;
+
+        if (x + cell > g_well.right) {
+            break;
+        }
+        fr = cif_frame(&g_cif, i);
+        if (fr && fr->pixels) {
+            blit_index(dc, x + 1, g_well.top + 1, cell - 2, 42, fr->pixels, fr->w, fr->h);
+        }
+        if (i == g_head) {
+            mark.left = x;
+            mark.top = g_well.top;
+            mark.right = x + cell;
+            mark.bottom = g_well.top + 44;
+            FrameRect(dc, &mark, (HBRUSH)g_gdi.GetStockObject(BLACK_BRUSH));
+        }
+        x += cell;
+    }
+    large = g_well;
+    large.top = g_well.top + 48;
+    if (large.top >= large.bottom) {
+        large.top = g_well.top;
+    }
+    paint_large(dc, &large);
+}
+
 static void paint_well(HDC dc)
 {
     RECT well;
@@ -1450,6 +1833,10 @@ static void paint_well(HDC dc)
         paint_pics(dc);
         return;
     }
+    if (g_view == VIEW_PARTS && g_show) {
+        paint_race(dc);
+        return;
+    }
     DrawTextA(dc, "No picture", -1, &well, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
 
@@ -1462,6 +1849,24 @@ static void well_click(int x, int y)
     int rec;
     int i;
 
+    if (g_view == VIEW_PARTS && g_cif_on) {
+        int cell;
+        int i;
+
+        cell = head_cell();
+        if (cell < 1 || y < g_well.top || y >= g_well.top + 48 || x < g_well.left) {
+            return;
+        }
+        i = (x - g_well.left) / cell;
+        if (i < 0 || i >= g_cif.n) {
+            return;
+        }
+        g_head = i;
+        show_head();
+        race_status();
+        InvalidateRect(g_hwnd, &g_well, 1);
+        return;
+    }
     if (g_view != VIEW_RECS || !g_grid_w) {
         return;
     }
@@ -1499,7 +1904,11 @@ static void well_click(int x, int y)
 static LRESULT CALLBACK list_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     if (msg == WM_KEYDOWN && (wp == VK_LEFT || wp == VK_RIGHT)) {
-        step_frame(wp == VK_LEFT ? -1 : 1);
+        if (g_view == VIEW_PARTS && g_cif_on) {
+            step_head(wp == VK_LEFT ? -1 : 1);
+        } else {
+            step_frame(wp == VK_LEFT ? -1 : 1);
+        }
         return 0;
     }
     if (msg == WM_KEYDOWN && wp == VK_ESCAPE) {
@@ -1550,10 +1959,12 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_KEYDOWN:
         if (wp == VK_ESCAPE) {
             PostQuitMessage(0);
-        } else if (wp == VK_LEFT) {
-            step_frame(-1);
-        } else if (wp == VK_RIGHT) {
-            step_frame(1);
+        } else if (wp == VK_LEFT || wp == VK_RIGHT) {
+            if (g_view == VIEW_PARTS && g_cif_on) {
+                step_head(wp == VK_LEFT ? -1 : 1);
+            } else {
+                step_frame(wp == VK_LEFT ? -1 : 1);
+            }
         }
         return 0;
     case WM_TIMER:
@@ -1682,6 +2093,7 @@ static int win_main(HINSTANCE inst)
         TranslateMessage(&msg);
         DispatchMessageA(&msg);
     }
+    drop_paper();
     drop_arc();
     texture_cache_clear();
     books_close(g_books);
