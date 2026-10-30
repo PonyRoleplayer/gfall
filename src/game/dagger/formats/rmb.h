@@ -23,6 +23,9 @@ Block *rmb_load(const df_u8 *rmb, df_u32 size, struct Bsa *arch, int ground_file
  */
 int rmb_model_ids(const df_u8 *rmb, df_u32 size, df_u32 *ids, int cap);
 
+/* A building record's type, faction, quality (0..20) and place in its block, as its outside is placed. 0 past the block's records. */
+int rmb_building_at(const df_u8 *rmb, df_u32 size, int record, int *type, int *faction, int *quality, float *x, float *z);
+
 /*
  * The inside of building record (its subrecord): models, flats, people,
  * the editor markers (199: 8 is where a visitor enters), and the hinged

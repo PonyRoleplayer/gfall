@@ -119,4 +119,48 @@ int rules_fall_damage(float metres);
  */
 float rules_swing_frame_time(int speed);
 
+/* ---- People (docs/game.md, People): Daggerfall Unity's FormulaHelper and TalkManager. ---- */
+
+/*
+ * What a shop asks before bargaining: the item's value by the region's prices
+ * (per 1000, at least 1 gold), moved by the shop's quality 0..20 about its
+ * middle, doubled (CalculateCost).
+ */
+int rules_cost(int value, int quality, int prices);
+/* That cost bargained: what is paid or got, by the shop's quality and the player's Mercantile and Personality (CalculateTradePrice). */
+int rules_trade_price(int cost, int quality, int mercantile, int personality, int selling);
+/* A tenth of the value, at least 1, as a cost; 0 for a thing not worn (CalculateItemRepairCost). */
+int rules_repair_cost(int value, int quality, int condition, int condition_max, int prices);
+/* Chance in 100 of being seen stealing: 5..95 (CalculateShopliftingChance). */
+int rules_shoplift_chance(int pickpocket, int quality, int weight_and_count);
+/* Chance in 100 of picking a building's lock of this strength: 5..95 (CalculateExteriorLockpickingChance). */
+int rules_lock_chance(int lockpicking, int lock);
+/* The most a bank lends: a level's 50000 (CalculateMaxBankLoan). */
+int rules_max_loan(int level);
+/* What a loan costs to pay back: a tenth more (CalculateBankLoanRepayment). */
+int rules_loan_repayment(int amount);
+/* The cost of a letter of credit of this much: one part in 100 more. */
+int rules_letter_cost(int amount);
+/*
+ * How a person takes a question: Personality / 5, +5 for a place's whereabouts,
+ * the player's standing with them, and by the tone the social group's liking for
+ * it, with the skill's check (Etiquette if polite, Streetwise if blunt), -10 failed,
+ * +5 passed. skill_roll is 0..99.
+ */
+enum {
+    RULES_TONE_POLITE,
+    RULES_TONE_NORMAL,
+    RULES_TONE_BLUNT,
+    RULES_TONES
+};
+int rules_talk_value(int personality, int is_place, int reaction, int tone, int sgroup, int skill, int skill_roll);
+/* The value against a roll of 0..20: 0 they will not, 1 grudging, 2 glad (TalkManager). */
+int rules_talk_outcome(int value, int roll);
+/* Whether someone of this social group knows where a building is: a roll of 1..20 under TalkManager's table for it. */
+int rules_talk_knows(int sgroup, int roll);
+/* Eight compass words' index from a way to go (x east, z north): 0 east, on anticlockwise by eighths. */
+int rules_compass(float dx, float dz);
+/* What a sentence comes to in gold before it is split: within its crime's limits. */
+int rules_sentence(int base, int per_point, int low, int high, int legal);
+
 #endif

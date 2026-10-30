@@ -41,6 +41,7 @@
 #define ITEM_DAGGER 113
 #define ITEM_LONGSWORD 120
 #define ITEM_ARROW 131
+#define ITEM_LETTER 275
 #define ITEM_GOLD 276
 
 /*

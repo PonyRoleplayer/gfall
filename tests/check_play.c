@@ -18,6 +18,18 @@
 #include "game/dagger/places/dunstream.h"
 #include "game/dagger/places/doors.h"
 #include "game/dagger/places/travel.h"
+#include "game/dagger/places/town.h"
+#include "game/dagger/formats/factionfile.h"
+#include "game/dagger/formats/faces.h"
+#include "game/dagger/tables/commerce.h"
+#include "game/dagger/play/standing.h"
+#include "game/dagger/play/words.h"
+#include "game/dagger/play/talk.h"
+#include "game/dagger/play/canvas.h"
+#include "game/dagger/play/service.h"
+#include "game/dagger/play/shop.h"
+#include "game/dagger/play/bank.h"
+#include "game/dagger/play/court.h"
 #include "game/dagger/places/wild.h"
 #include "game/dagger/formats/worldmap.h"
 #include "game/dagger/formats/dungeon.h"
@@ -546,9 +558,9 @@ static void check_items(void)
     Item it;
     char name[48];
 
-    check_expect(item_table()->count == 31 && weapon_table()->count == 18 && armor_table()->count == 11
+    check_expect(item_table()->count == 32 && weapon_table()->count == 18 && armor_table()->count == 11
                      && material_table()->count == MATERIAL_COUNT && loot_table()->count == 21,
-                 "items: MAIN.DAT lacks classic's 31 items (11 of armour, 18 swung, arrows, gold), 12 materials or 21 loot tables");
+                 "items: MAIN.DAT lacks classic's 32 items (11 of armour, 18 swung, arrows, a letter of credit, gold), 12 materials or 21 loot tables");
     check_expect(item_make(&it, ITEM_LONGSWORD, MATERIAL_IRON) && check_near(it.weight, 4.5f, 0.001f)
                      && it.value == 45 && it.condition_max == 800 && it.condition == 800,
                  "items: an iron longsword is not 4.5 kg, 45 gold, 800");
@@ -3551,8 +3563,677 @@ static void check_travel(void)
     printf("travel: the hold, its outside, down and up by one door; Daggerfall's house and out; a save in the world; an origin move\n");
 }
 
+/* What the screens wrote, for a look at them. */
+static void write_screen(const char *path, const df_u8 *pixels)
+{
+    static df_u8 rgb[768];
+    FILE *f;
+    int i;
+
+    if (!img_art_palette(rgb)) {
+        return;
+    }
+    f = fopen(path, "wb");
+    if (!f) {
+        return;
+    }
+    fprintf(f, "P6\n320 200\n255\n");
+    for (i = 0; i < 320 * 200; i++) {
+        fwrite(&rgb[pixels[i] * 3], 1, 3, f);
+    }
+    fclose(f);
+}
+
+/* The factions' file, and reputation spreading through it, by hand. */
+static void check_standing(void)
+{
+    const Faction *people;
+    const Faction *f;
+
+    check_expect(factionfile_open() && faction_count() == 366, "people: FACTION.TXT does not hold 366 factions");
+    people = faction_people_of(17);
+    check_expect(people && df_eq(people->name, "People of Daggerfall") && people->type == FACTION_PEOPLE
+                 && people->sgroup == SOCIAL_COMMONERS && people->parent != 0,
+                 "people: Daggerfall's people are not as the file has them");
+    f = faction_find(1);
+    check_expect(f && df_eq(f->name, "Clavicus Vile") && f->parent == 17 && f->enemy[0] == 25 && f->flat_archive[0] == 175
+                 && f->flat_record[0] == 2, "people: a child's parent, enemy and flat are not read");
+    f = faction_find(3);
+    check_expect(f && f->ally[0] == 16 && f->enemy[0] == 25 && f->enemy[1] == 15, "people: Molag Bal's ally and two enemies");
+    check_expect(faces_of_flat(175, 0) == FACE_NONE, "people: FLATS.CFG's first flat's face is 410");
+    check_expect(faces_of_flat(999, 0) == FACE_NONE, "people: a flat FLATS.CFG does not name has the fallback");
+
+    standing_new_game(77u);
+    check_expect(standing_rep(1) == faction_find(1)->rep, "people: a new game's reputation is not the file's");
+    /* Clavicus Vile under Oblivion: the whole to it and its root, half to a sibling, half taken from its enemy. */
+    standing_change(1, 20, 1);
+    check_expect(standing_rep(1) == 20 && standing_rep(17) == 20 && standing_rep(2) == 10 && standing_rep(25) == -10,
+                 "people: a reputation's spread is not the whole, the root, half and half off");
+    standing_change(1, 500, 0);
+    check_expect(standing_rep(1) == STANDING_MOST, "people: a reputation is not clamped");
+    check_expect(standing_answers_for(people->id) == people, "people: the people answer for themselves");
+    standing_new_game(77u);
+    standing_social_change(SOCIAL_COMMONERS, 12);
+    standing_set_reaction_bonus(3);
+    standing_change(people->id, 15, 0);
+    check_expect(standing_reaction(people->id) == 12 + 3 + 15, "people: a reaction is not reputation, group and bonus");
+    check_expect(standing_region(17)->prices >= 750 && standing_region(17)->prices <= 1250,
+                 "people: a region's prices are not rolled within 750..1250");
+    printf("standing: %d factions; reputation spreads whole to the root, half to the rest, half off an enemy\n", faction_count());
+}
+
+/* The sums worked by hand from DFU's formulas. */
+static void check_people_sums(void)
+{
+    /* Quality 10, prices at par: twice the value. */
+    check_expect(rules_cost(100, 10, 1000) == 200, "people: a middling shop's cost is not twice the value");
+    /* Quality 20: a tenth on, then doubled. Quality 0: a tenth off, then doubled. */
+    check_expect(rules_cost(100, 20, 1000) == 220 && rules_cost(100, 0, 1000) == 180, "people: quality moves a cost a tenth each way");
+    check_expect(rules_cost(100, 10, 750) == 150, "people: a region's prices do not move a cost");
+    check_expect(rules_cost(0, 10, 1000) == 2, "people: nothing costs under 1 before doubling");
+    /*
+     * Middling shop, skills 50. Each term (64 + 128) * (64 + 128) / 256 = 144.
+     * Buying: 192 * 144 / 256 = 108, and (144 * 64) / 256 = 36: 144 / 256 of 200 is 112.
+     * Selling: 179 * 144 / 256 = 100, 51 * 144 / 256 = 28: 128 / 256 of 200 is 100.
+     */
+    check_expect(rules_trade_price(200, 10, 50, 50, 0) == 112, "people: a middling buy is not 112");
+    check_expect(rules_trade_price(200, 10, 50, 50, 1) == 100, "people: a middling sale is not 100");
+    check_expect(rules_trade_price(200, 10, 100, 100, 0) < 112 && rules_trade_price(200, 10, 100, 100, 1) > 100,
+                 "people: skill does not cheapen a buy and better a sale");
+    check_expect(rules_trade_price(200, 20, 50, 50, 0) > 112 && rules_trade_price(200, 20, 50, 50, 1) < 100,
+                 "people: a fine shop does not ask more and give less");
+    /* A tenth of the value, costed: 10 becomes 20. */
+    check_expect(rules_repair_cost(100, 10, 50, 100, 1000) == 20, "people: a repair is not a tenth of the value, costed");
+    check_expect(rules_repair_cost(100, 10, 100, 100, 1000) == 0, "people: mending the unworn costs");
+    check_expect(rules_shoplift_chance(30, 10, 5) == 85, "people: 100 - 30 + 10 + 5 seen");
+    check_expect(rules_shoplift_chance(100, 0, 0) == 5 && rules_shoplift_chance(0, 20, 50) == 95, "people: seen is not within 5..95");
+    check_expect(rules_lock_chance(50, 5) == 25, "people: a lock's chance is not the skill less five a point");
+    check_expect(rules_max_loan(3) == 150000 && rules_loan_repayment(1000) == 1100 && rules_letter_cost(1000) == 1010,
+                 "people: a loan's cap, a loan's repayment or a letter's fee");
+    /* Personality 50, reaction 10, a place: 10 + 10 + 5. */
+    check_expect(rules_talk_value(50, 1, 10, RULES_TONE_NORMAL, SOCIAL_COMMONERS, 50, 0) == 25, "people: a plain question's value");
+    /* Polite to a commoner, skill passed: -10 + 5. Blunt to one, skill failed: +10 - 10. */
+    check_expect(rules_talk_value(50, 0, 0, RULES_TONE_POLITE, SOCIAL_COMMONERS, 50, 10) == 10 + -10 + 5, "people: polite to a commoner");
+    check_expect(rules_talk_value(50, 0, 0, RULES_TONE_BLUNT, SOCIAL_COMMONERS, 50, 90) == 10 + 10 - 10, "people: blunt to a commoner");
+    check_expect(rules_talk_outcome(5, 10) == 0 && rules_talk_outcome(15, 10) == 1 && rules_talk_outcome(31, 10) == 2,
+                 "people: under the roll, within 20 over it, past that");
+    check_expect(rules_talk_knows(SOCIAL_MERCHANTS, 17) && !rules_talk_knows(SOCIAL_MERCHANTS, 18), "people: a merchant knows by 7 + 10");
+    check_expect(rules_compass(1.0f, 0.0f) == 0 && rules_compass(0.0f, 1.0f) == 2 && rules_compass(-1.0f, 0.0f) == 4
+                 && rules_compass(0.0f, -1.0f) == 6 && rules_compass(1.0f, 1.0f) == 1 && rules_compass(-1.0f, -1.0f) == 5,
+                 "people: the compass's eighths");
+    check_expect(rules_sentence(200, 0, 5, 1000, -40) == 200 && rules_sentence(300, 5, 50, 1000, -40) == 500
+                 && rules_sentence(10000, 10, 9000, 12000, 500) == 12000, "people: a sentence's sums and its limits");
+    check_expect(building_open_at(BUILDING_BANK, 8) && !building_open_at(BUILDING_BANK, 15) && building_open_at(BUILDING_TAVERN, 3)
+                 && !building_open_at(BUILDING_HOUSE1, 12) && building_is_shop(BUILDING_ARMORER) && !building_is_shop(BUILDING_BANK),
+                 "people: the buildings' hours or shops");
+    check_expect(crime_kind(CRIME_THEFT) && crime_kind(CRIME_THEFT)->loss == 8 && df_eq(crime_kind(CRIME_THEFT)->name, "theft"),
+                 "people: theft's record");
+}
+
+/* What people say: no macro left in the words, whichever variant comes. */
+static void check_words(void)
+{
+    static const int records[] = { 7206, 7207, 7208, 7209, 7215, 7218, 7225, 7231, 7333, 7250, 7251, 7266, 7281, 7304, 7261, 7294, 8050, 8055, 8062, 8063 };
+    Character sheet;
+    Words w;
+    char out[512];
+    int r;
+    int i;
+
+    character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Ada Lovel");
+    mem_zero(&w, sizeof(w));
+    w.pc = &sheet;
+    w.key = "the bank";
+    w.loc = "the bank";
+    w.direction = "north";
+    w.hint = "it is north";
+    w.city = "Daggerfall";
+    w.region = "Daggerfall";
+    w.crime = "theft";
+    w.penalty = "a fine";
+    w.tone = RULES_TONE_NORMAL;
+    w.reaction = 5;
+    words_use(&w);
+    for (r = 0; r < (int)(sizeof(records) / sizeof(records[0])); r++) {
+        check_expect(textrsc_variants(records[r]) >= 1, "words: a record of talk does not read");
+        for (i = 0; i < 20; i++) {
+            check_expect(words_say(records[r], out, (int)sizeof(out)) > 0, "words: a record says nothing");
+            check_expect(strchr(out, '%') == 0, "words: a macro is left in what is said");
+        }
+    }
+    /* Every variant of a two-variant record comes up by its number, and a number past wraps round. */
+    {
+        char a[64];
+        char b[64];
+
+        check_expect(textrsc_variants(7221) == 2, "words: 7221 has two variants");
+        textrsc_variant(7221, 0, a, (int)sizeof(a));
+        textrsc_variant(7221, 2, b, (int)sizeof(b));
+        check_expect(strcmp(a, b) == 0, "words: a variant's number does not wrap");
+        textrsc_variant(7221, 1, b, (int)sizeof(b));
+        check_expect(strcmp(a, b) != 0, "words: the variants are one");
+    }
+    words_expand("%pcf the %ra", out, (int)sizeof(out));
+    check_expect(strcmp(out, "Ada the Breton") == 0, "words: the first name and the race");
+    words_use(0);
+}
+
+/* A building of this type in a town, as a door names it; -1 for none. */
+static int building_of_type(int region, int index, int type, int *block, int *record)
+{
+    const TownBuilding *rows;
+    int count;
+    int i;
+
+    rows = town_buildings(region, index, &count);
+    for (i = 0; rows && i < count; i++) {
+        if (rows[i].type == type) {
+            *block = rows[i].block;
+            *record = rows[i].record;
+            return i;
+        }
+    }
+    return -1;
+}
+
+/* Daggerfall's index in its region's list. */
+static int daggerfall_index(void)
+{
+    static DunRef towns[16000];
+    int i;
+
+    i = exterior_list(towns, 16000);
+    while (--i >= 0) {
+        if (towns[i].region == 17 && df_eq(towns[i].name, "Daggerfall")) {
+            return towns[i].index;
+        }
+    }
+    return -1;
+}
+
+/* The talk window, by clicks: a town's list, a question asked, one who will not answer. */
+static void check_talk(void)
+{
+    static const Rect okay = { 4, 186, 107, 10 };
+    static const Rect goodbye = { 118, 183, 67, 10 };
+    Player p;
+    Character sheet;
+    TalkWho who;
+    const Faction *people;
+    char line[64];
+    int index;
+    int count;
+    int before;
+    int i;
+    int found;
+
+    index = daggerfall_index();
+    check_expect(index >= 0, "talk: no Daggerfall");
+    if (index < 0) {
+        return;
+    }
+    town_buildings(17, index, &count);
+    check_expect(count > 100 && df_eq(town_name(), "Daggerfall"), "talk: Daggerfall's buildings did not read");
+    character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Ada Lovel");
+    player_init(&p, &sheet);
+    standing_new_game(5u);
+    people = faction_people_of(17);
+    mem_zero(&who, sizeof(who));
+    who.faction = people->id;
+    who.face = faces_of_flat(people->flat_archive[0], people->flat_record[0]);
+    who.seed = 1234u;
+    who.located = 1;
+    who.region = 17;
+    who.index = index;
+    who.x = 16000.0f;
+    who.z = 16000.0f;
+    who.block = -1;
+    who.record = -1;
+    who.city = "Daggerfall";
+    who.region_name = "Daggerfall";
+    check_expect(talk_open(&p, &who), "talk: it did not open");
+    /* A city has its banks and its smiths; a house is not asked after. */
+    found = 0;
+    for (i = 0; i < talk_topics(); i++) {
+        found += df_eq(talk_topic(i), "Bank") || df_eq(talk_topic(i), "Armorer");
+        check_expect(!df_eq(talk_topic(i), "House"), "talk: a house is listed");
+    }
+    check_expect(found == 2 && talk_lines() > 0, "talk: Daggerfall has no bank or armorer listed, or nobody greeted");
+    /* The first of the list chosen, asked by Okay: more lines, none with a macro left. */
+    before = talk_lines();
+    check_expect(talk_click(10, 73) == TALK_STAY, "talk: choosing is leaving");
+    check_expect(talk_click(okay.x + 1, okay.y + 1) == TALK_STAY, "talk: asking is leaving");
+    check_expect(talk_lines() > before, "talk: asking said nothing");
+    for (i = 0; i < talk_lines(); i++) {
+        check_expect(strchr(talk_line(i), '%') == 0, "talk: a macro is left in the conversation");
+    }
+    talk_compose();
+    write_screen("build/talk0.ppm", talk_pixels());
+    /* Tell me about: the news, once, then none. */
+    talk_click(10, 6);
+    check_expect(talk_topics() == 1, "talk: tell me about has the news alone");
+    talk_click(10, 73);
+    before = talk_lines();
+    talk_click(okay.x + 1, okay.y + 1);
+    check_expect(talk_lines() > before, "talk: no news said");
+    talk_compose();
+    write_screen("build/talk1.ppm", talk_pixels());
+    check_expect(talk_click(goodbye.x + 1, goodbye.y + 1) == TALK_LEAVE, "talk: Goodbye did not leave");
+    talk_close();
+    /* Hated: no response, whatever is asked. */
+    standing_change(people->id, -100, 0);
+    check_expect(talk_open(&p, &who), "talk: it did not open for one who is hated");
+    textrsc_read(7205, line, (int)sizeof(line));
+    check_expect(strcmp(talk_line(0), line) == 0, "talk: someone who hates the player greets them");
+    talk_close();
+    standing_new_game(5u);
+    printf("talk: Daggerfall's %d buildings, a way asked, the news; one who hates says nothing; build/talk0..1.ppm\n", count);
+}
+
+/* A shop: its stock for a day, what it deals in, buying and selling by clicks, a theft seen; the court after it. */
+static void check_shop_and_court(void)
+{
+    static const Rect action = { 226, 134, 31, 14 };
+    static const Rect steal = { 226, 112, 31, 14 };
+    Player p;
+    Character sheet;
+    Shop shop;
+    Inventory stock;
+    Inventory again;
+    df_u8 origin[INVENTORY_MAX];
+    df_u8 origin2[INVENTORY_MAX];
+    Item it;
+    int price;
+    int count;
+    int i;
+
+    keep_clear();
+    standing_new_game(5u);
+    loot_new_game(4242u);
+    character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Ada Lovel");
+    player_init(&p, &sheet);
+    inventory_clear(&p.pack);
+    mem_zero(&shop, sizeof(shop));
+    shop.type = BUILDING_ARMORER;
+    shop.quality = 10;
+    shop.prices = 1000;
+    shop.key.place = (3u << 30) | 123u;
+    shop.key.thing = 0xFE000000u;
+
+    /* Today's stock: the same each look, and something on the shelf; a house has none. */
+    shop_stock(&shop, 1, 100, &stock, origin);
+    shop_stock(&shop, 1, 100, &again, origin2);
+    check_expect(stock.count > 3 && stock.count == again.count && stock.item[0].template_id == again.item[0].template_id
+                 && stock.item[0].material == again.item[0].material, "shop: an armorer's stock is not there, or not the same each look");
+    /* A thing taken stays gone today; tomorrow is a new stock. */
+    shop_taken(&shop, origin[0]);
+    shop_stock(&shop, 1, 100, &again, origin2);
+    check_expect(again.count == stock.count - 1, "shop: a thing taken is back on the shelf");
+    shop_stock(&shop, 1, 101, &again, origin2);
+    check_expect(again.count > 0, "shop: a new day stocks nothing");
+    shop_stock(&shop, 1, 100, &stock, origin);
+    {
+        Shop bank;
+
+        bank = shop;
+        bank.type = BUILDING_BANK;
+        shop_stock(&bank, 1, 100, &again, origin2);
+        check_expect(again.count == 0, "shop: a bank has weapons on its shelves");
+    }
+    /* What it deals in. */
+    check_expect(item_make(&it, ITEM_LONGSWORD, 0), "shop: no longsword");
+    check_expect(shop_buys(&shop, &it), "shop: an armorer will not buy a sword");
+    {
+        Shop other;
+
+        other = shop;
+        other.type = BUILDING_BOOKSELLER;
+        check_expect(!shop_buys(&other, &it), "shop: a bookseller buys a sword");
+    }
+
+    /* Buying by clicks: the shelf's first thing, paid for, at the sums'. Gold weighs: not a fortune. */
+    p.pack.gold = 4000u;
+    check_expect(bag_open_trade(&p, &shop, TRADE_BUY, 100), "shop: its screen did not open");
+    bag_compose();
+    write_screen("build/shop0.ppm", bag_pixels());
+    {
+        int before_gold;
+
+        before_gold = (int)p.pack.gold;
+        /* The right list's first cell. */
+        bag_click(275, 60);
+        bag_compose();
+        write_screen("build/shop1.ppm", bag_pixels());
+        check_expect(bag_click(action.x + 1, action.y + 1) == BAG_STAY, "shop: buying closed the screen");
+        check_expect(p.pack.count == 1, "shop: nothing was bought");
+        if (p.pack.count == 1) {
+            price = shop_trade_price(&shop, shop_cost(&shop, &p.pack.item[0]), &p.sheet, 0);
+            check_expect((int)p.pack.gold == before_gold - price, "shop: the price paid is not the sums'");
+            check_expect(p.pack.item[0].template_id == stock.item[0].template_id, "shop: not the thing clicked");
+        }
+    }
+    bag_close();
+    shop_stock(&shop, 1, 100, &again, origin2);
+    check_expect(again.count == stock.count - 1, "shop: a thing bought is back on the shelf");
+
+    /* Selling by clicks: the thing from the pack, at the sums'. */
+    {
+        int before_gold;
+        int got;
+
+        before_gold = (int)p.pack.gold;
+        check_expect(bag_open_trade(&p, &shop, TRADE_SELL, 100), "shop: its selling screen did not open");
+        got = shop_trade_price(&shop, shop_cost(&shop, &p.pack.item[0]), &p.sheet, 1);
+        /* The left list's first cell. */
+        bag_click(177, 60);
+        check_expect(p.pack.count == 0, "shop: the thing did not go on the counter");
+        bag_click(action.x + 1, action.y + 1);
+        check_expect(p.pack.count == 0 && (int)p.pack.gold == before_gold + got, "shop: the sale is not the sums'");
+        bag_close();
+    }
+    /* A closed screen gives back what was laid on the counter and not sold. */
+    {
+        check_expect(item_make(&it, ITEM_LONGSWORD, 0) && inventory_add(&p.pack, &it) >= 0, "shop: no sword to carry");
+        bag_open_trade(&p, &shop, TRADE_SELL, 100);
+        bag_click(177, 60);
+        check_expect(p.pack.count == 0, "shop: the sword is not on the counter");
+        bag_close();
+        check_expect(p.pack.count == 1, "shop: what was not sold did not come back");
+    }
+    /* Repair: its worn sword, mended and paid for. */
+    {
+        int before_gold;
+        int fee;
+
+        p.pack.item[0].condition = (df_u16)(p.pack.item[0].condition_max / 2);
+        before_gold = (int)p.pack.gold;
+        fee = shop_trade_price(&shop, shop_repair_cost(&shop, &p.pack.item[0]), &p.sheet, 0);
+        check_expect(fee > 0, "shop: a repair is free");
+        bag_open_trade(&p, &shop, TRADE_REPAIR, 100);
+        bag_click(177, 60);
+        bag_click(action.x + 1, action.y + 1);
+        bag_close();
+        check_expect(p.pack.count == 1 && p.pack.item[0].condition == p.pack.item[0].condition_max
+                     && (int)p.pack.gold == before_gold - fee, "shop: the repair is not the sums'");
+    }
+    /* Theft, by the dice until seen: Pickpocket 0 at a shop that sees nearly always. */
+    p.sheet.skill[SKILL_PICKPOCKET] = 0;
+    shop.quality = 20;
+    combat_seed(99u);
+    bag_open_trade(&p, &shop, TRADE_BUY, 100);
+    bag_click(275, 60);
+    check_expect(bag_click(steal.x + 1, steal.y + 1) == BAG_LEAVE, "shop: Steal did not end the visit");
+    check_expect(bag_stole(), "shop: a thief at 95% was not seen");
+    bag_close();
+    check_expect(p.pack.count == 1, "shop: a thief seen kept the goods");
+
+    /* The court: theft's loss, half to the people; its sums; guilty pays half. A good name first: a low one can mean banishment. */
+    standing_region(17)->legal = 50;
+    count = standing_region(17)->legal;
+    i = standing_rep(faction_people_of(17)->id);
+    court_commit(CRIME_THEFT, 17);
+    check_expect(court_pending() && standing_region(17)->legal == count - 8 && standing_rep(faction_people_of(17)->id) == i - 4,
+                 "court: a crime's cost to the law and the people");
+    {
+        Sentence s;
+
+        /* 200 gold's worth of 40 is five pieces: any split comes to five, a piece 40 gold or 3 days. */
+        court_sentence(CRIME_THEFT, 0, 100000, &s);
+        check_expect(s.fine / 40 + s.days / 3 == 5 && !s.banish, "court: theft is not five pieces");
+        /* What cannot be paid is served. */
+        court_sentence(CRIME_THEFT, 0, 0, &s);
+        check_expect(s.fine == 0 && s.days >= 5, "court: no gold, no fine, and days for it");
+    }
+    p.pack.gold = 4000u;
+    check_expect(court_open(&p), "court: it did not open");
+    check_expect(court_words()[0] && strchr(court_words(), '%') == 0, "court: the plea's words have a macro left");
+    check_expect(strstr(court_words(), "theft") != 0, "court: the plea does not name the crime");
+    court_compose();
+    write_screen("build/court0.ppm", court_pixels());
+    {
+        int fine;
+        int days;
+        int minute_day;
+
+        fine = court_given()->fine;
+        days = court_given()->days;
+        minute_day = clock_day();
+        /* Guilty: half of each. */
+        check_expect(court_click(100, 135) == COURT_STAY, "court: Guilty ended it at once");
+        check_expect(court_given()->fine == fine / 2 && court_given()->days == days / 2, "court: guilty is not half");
+        check_expect((int)p.pack.gold == 4000 - fine / 2, "court: the fine was not taken");
+        court_compose();
+        write_screen("build/court1.ppm", court_pixels());
+        /* Past the sentence's words: prison counts down its days, then the street. */
+        if (days / 2 > 0) {
+            check_expect(court_click(150, 135) == COURT_STAY, "court: prison was skipped");
+            court_compose();
+            write_screen("build/court2.ppm", court_pixels());
+            check_expect(!court_pending() || court_step(0.0f) == COURT_STAY, "court: prison is over before it begins");
+            for (i = 0; i < days / 2 + 1 && court_step(0.3f) == COURT_STAY; i++) {
+            }
+            check_expect(clock_day() == minute_day + days / 2, "court: the days were not served");
+        } else {
+            check_expect(court_click(150, 135) == COURT_LEAVE, "court: the fine paid does not end it");
+        }
+    }
+    court_close();
+    check_expect(!court_pending(), "court: the crime is still on the books");
+    /* A sentence done gives some back: theft's 8 less, 8 / 2 - 1 = 3 back. */
+    check_expect(standing_region(17)->legal == count - 8 + 3, "court: a sentence done gives nothing back");
+    keep_clear();
+    standing_new_game(5u);
+    printf("shop and court: stock by day, buying, selling and mending at the sums, a thief seen, guilty's half; build/shop0..1.ppm, court0..2.ppm\n");
+}
+
+/* The bank: its sums, then by clicks and keys. */
+static void check_bank(void)
+{
+    Player p;
+    Character sheet;
+    RegionStanding *r;
+
+    standing_new_game(5u);
+    court_forget();
+    character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Ada Lovel");
+    player_init(&p, &sheet);
+    inventory_clear(&p.pack);
+    p.pack.gold = 1000u;
+    r = standing_region(17);
+    check_expect(bank_deposit(&p, 17, 2000) == BANK_NOT_ENOUGH_GOLD, "bank: a deposit past what is carried");
+    check_expect(bank_deposit(&p, 17, 600) == BANK_DONE && p.pack.gold == 400u && r->gold == 600, "bank: a deposit's sums");
+    check_expect(standing_region(18)->gold == 0, "bank: accounts are not the region's");
+    check_expect(bank_withdraw(&p, 17, 700) == BANK_NOT_ENOUGH_ACCOUNT, "bank: withdrawn past the account");
+    check_expect(bank_withdraw(&p, 17, 100) == BANK_DONE && p.pack.gold == 500u && r->gold == 500, "bank: a withdrawal's sums");
+    check_expect(bank_withdraw(&p, 17, 0) == BANK_DONE, "bank: nothing withdrawn");
+    /* A letter: 1% to write; its worth back when paid in. */
+    check_expect(bank_write_letter(&p, 17, 50) == BANK_LETTER_TOO_SMALL, "bank: a letter under 100");
+    check_expect(bank_write_letter(&p, 17, 499) == BANK_NOT_ENOUGH_ACCOUNT, "bank: a letter past its fee");
+    check_expect(bank_write_letter(&p, 17, 300) == BANK_DONE && r->gold == 500 - 303 && p.pack.count == 1
+                 && p.pack.item[0].template_id == ITEM_LETTER && p.pack.item[0].value == 300u, "bank: a letter's sums");
+    check_expect(bank_deposit_letters(&p, 17) == BANK_DONE && p.pack.count == 0 && r->gold == 497, "bank: a letter paid in");
+    /* A loan: limits, once, a tenth more, a year. */
+    check_expect(bank_borrow(&p, 17, 50, 10) == BANK_LOAN_TOO_LOW, "bank: a loan under 100");
+    check_expect(bank_borrow(&p, 17, rules_max_loan(1) + 1, 10) == BANK_LOAN_TOO_HIGH, "bank: a loan past the level's");
+    check_expect(bank_borrow(&p, 17, 1000, 10) == BANK_DONE && r->gold == 1497 && r->loan == 1100 && r->due_day == 370, "bank: a loan's sums");
+    check_expect(bank_borrow(&p, 17, 1000, 10) == BANK_ALREADY_LOAN, "bank: a second loan");
+    /* Repaying: more than is owed takes what is owed, carried gold first. */
+    check_expect(bank_repay(&p, 17, 100) == BANK_DONE && p.pack.gold == 400u && r->loan == 1000, "bank: carried gold pays first");
+    check_expect(bank_repay(&p, 17, 1000000) == BANK_NOT_ENOUGH_GOLD, "bank: repaid past what there is");
+    check_expect(bank_repay(&p, 17, 1000) == BANK_DONE && p.pack.gold == 0u && r->gold == 897 && r->loan == 0 && r->due_day == 0,
+                 "bank: the rest of a loan from the account");
+    check_expect(bank_repay(&p, 17, 1) == BANK_NO_LOAN, "bank: repaid with no loan");
+    /* Unpaid past its day: a default, a crime in its region. */
+    bank_borrow(&p, 17, 100, 10);
+    check_expect(bank_check_loans(370) == -1 && !court_pending(), "bank: a default on the day itself");
+    check_expect(bank_check_loans(371) == 17 && r->defaulted && court_pending(), "bank: no default past the day");
+    check_expect(bank_borrow(&p, 17, 100, 400) == BANK_DEFAULTED, "bank: a loan after a default");
+    check_expect(bank_check_loans(372) == -1, "bank: one default is two crimes");
+    court_forget();
+    /* The screen: Deposit by click, an amount by keys. */
+    standing_new_game(5u);
+    r = standing_region(17);
+    p.pack.gold = 1000u;
+    check_expect(bank_open(&p, 17), "bank: its screen did not open");
+    /* The Deposit button, inside the panel at 48, 5. */
+    check_expect(bank_click(48 + 121, 5 + 59) == BANK_STAY, "bank: Deposit left");
+    bank_key('2');
+    bank_key('5');
+    bank_key('0');
+    bank_key(0x0D);
+    check_expect(r->gold == 250 && p.pack.gold == 750u, "bank: a deposit by the screen");
+    bank_compose();
+    write_screen("build/bank0.ppm", bank_pixels());
+    check_expect(bank_click(48 + 93, 5 + 160) == BANK_LEAVE, "bank: Exit did not leave");
+    bank_close();
+    /* The merchant's panel over it. */
+    check_expect(service_open(SERVICE_PANEL_BANK), "service: it did not open");
+    check_expect(service_click(95 + 6, 56 + 6) == SERVICE_TALK && service_click(95 + 6, 56 + 15) == SERVICE_BANK
+                 && service_click(95 + 45, 56 + 25) == SERVICE_LEAVE && service_click(0, 0) == SERVICE_STAY,
+                 "service: a bank's panel's rows");
+    service_compose();
+    write_screen("build/service0.ppm", service_pixels());
+    service_close();
+    check_expect(service_open(SERVICE_PANEL_REPAIR), "service: a smith's did not open");
+    check_expect(service_click(95 + 6, 47 + 6) == SERVICE_REPAIR && service_click(95 + 6, 47 + 15) == SERVICE_TALK
+                 && service_click(95 + 6, 47 + 24) == SERVICE_SELL && service_click(95 + 45, 47 + 34) == SERVICE_LEAVE,
+                 "service: a smith's panel's rows");
+    service_close();
+    standing_new_game(5u);
+    printf("bank: gold, letters and loans at the sums, a default a crime; the screen by clicks and keys; build/bank0.ppm, service0.ppm\n");
+}
+
+/* An armorer in Daggerfall, entered through its own door: its shelf, its person, what the building says; a save holds it all. */
+static void check_people_in_town(void)
+{
+    Level level;
+    Camera cam;
+    TravelPose at;
+    TravelWhere where;
+    float feet[3];
+    int chunk[2];
+    int index;
+    int px;
+    int py;
+    int block;
+    int record;
+    int i;
+    int type;
+    int faction;
+    int quality;
+    unsigned place;
+    int shelves;
+    int folk;
+    double wx;
+    double wz;
+
+    index = daggerfall_index();
+    if (index < 0) {
+        return;
+    }
+    if (building_of_type(17, index, BUILDING_ARMORER, &block, &record) < 0) {
+        check_expect(0, "people: Daggerfall has no armorer");
+        return;
+    }
+    worldmap_open();
+    worldmap_pixel_of(17, index, &px, &py);
+    wx = ((double)px + 0.5) * (double)(STREAM_CHUNK * WORLDMAP_BLOCKS);
+    wz = ((double)(WORLDMAP_H - 1 - py) + 0.5) * (double)(STREAM_CHUNK * WORLDMAP_BLOCKS);
+    mem_zero(&where, sizeof(where));
+    where.kind = TRAVEL_INSIDE;
+    where.located = 1;
+    where.region = 17;
+    where.index = index;
+    where.block = block;
+    where.record = record;
+    where.has_back = 1;
+    where.back_x = wx;
+    where.back_z = wz;
+    feet[0] = 0.0f;
+    feet[1] = 0.0f;
+    feet[2] = 0.0f;
+    chunk[0] = 0;
+    chunk[1] = 0;
+    travel_from_save(&where, feet, chunk, 0.0f, 0.0f);
+    if (!travel_go(&level, &cam, &at)) {
+        return;
+    }
+    check_expect(travel_building(&type, &faction, &quality, &place) && type == BUILDING_ARMORER && quality >= 0 && quality <= 20,
+                 "people: the armorer's inside does not say it is one");
+    check_expect(travel_region() == 17, "people: the armorer's region");
+    shelves = 0;
+    folk = 0;
+    for (i = 0; i < level.scene.nusables; i++) {
+        const Usable *u;
+
+        u = &level.scene.usables[i];
+        shelves += u->kind == USE_OTHER && u->what == OTHER_SHELF;
+        folk += u->kind == USE_TALK;
+    }
+    check_expect(shelves > 0, "people: an armorer has no shelves");
+    check_expect(folk > 0, "people: an armorer has no one in it");
+    for (i = 0; i < level.scene.nusables; i++) {
+        const Usable *u;
+
+        u = &level.scene.usables[i];
+        if (u->kind == USE_TALK) {
+            const Faction *f;
+
+            f = faction_find(u->what);
+            check_expect(f != 0, "people: someone in the shop has a faction the file does not");
+            check_expect(faces_of_flat(u->tag >> 7, u->tag & 0x7f) >= 0, "people: a person's flat has no face");
+            break;
+        }
+    }
+    travel_leave();
+    printf("people in town: Daggerfall's armorer, quality %d, %d shelves, %d people\n", quality, shelves, folk);
+}
+
+/* What the world thinks, through a save file and back. */
+static void check_standing_saved(void)
+{
+    SaveState out;
+    SaveState in;
+    char path[260];
+    const Faction *people;
+
+    save_use_prefix(SAVE_TEST_PREFIX);
+    save_use_slot(5);
+    keep_clear();
+    pile_new_game();
+    standing_new_game(5u);
+    people = faction_people_of(17);
+    standing_change(people->id, 33, 0);
+    standing_social_change(SOCIAL_NOBILITY, -7);
+    standing_set_reaction_bonus(4);
+    standing_region(17)->legal = -12;
+    standing_region(17)->gold = 4321;
+    standing_region(17)->loan = 550;
+    standing_region(17)->due_day = 99;
+    standing_region(17)->banished = 1;
+    standing_region(17)->prices = 1111;
+    mem_zero(&out, sizeof(out));
+    df_copy(out.name, "People", SAVE_NAME);
+    character_new(&out.sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Ada");
+    inventory_clear(&out.pack);
+    out.seed = 5u;
+    check_expect(save_write(&out), "people: a save did not write");
+    standing_new_game(6u);
+    check_expect(save_read(&in), "people: a save did not read");
+    check_expect(standing_rep(people->id) == people->rep + 33 && standing_social(SOCIAL_NOBILITY) == -7 && standing_reaction_bonus() == 4,
+                 "people: reputations did not come back");
+    check_expect(standing_region(17)->legal == -12 && standing_region(17)->gold == 4321 && standing_region(17)->loan == 550
+                 && standing_region(17)->due_day == 99 && standing_region(17)->banished && standing_region(17)->prices == 1111,
+                 "people: a region's law and bank did not come back");
+    check_expect(fs_beside(path, (int)sizeof(path), "DATA\\TEST5.SAV") && remove(path) == 0, "people: the test's file did not go");
+    keep_clear();
+    standing_new_game(5u);
+}
+
 void check_play(void)
 {
+    /* As game_setup does: read before any screen's heap is current. */
+    standing_new_game(1u);
     check_rules();
     check_character();
     check_items();
@@ -3582,4 +4263,12 @@ void check_play(void)
     check_dunstream();
     check_every_way_out();
     check_travel();
+    check_standing();
+    check_people_sums();
+    check_words();
+    check_talk();
+    check_shop_and_court();
+    check_bank();
+    check_people_in_town();
+    check_standing_saved();
 }

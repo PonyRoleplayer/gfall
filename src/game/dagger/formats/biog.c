@@ -71,6 +71,25 @@ static void read_effect(BiogAnswer *answer, const char *s, const char *end)
         e->kind = BIOG_GOLD;
         e->a = (short)read_number(&s, end);
         answer->effects++;
+    } else if (end - s > 2 && s[0] == 'r' && s[1] == 'f') {
+        /* rf<faction> <amount>. */
+        s += 2;
+        e->kind = BIOG_FACTION;
+        e->a = (short)read_number(&s, end);
+        e->b = (short)read_number(&s, end);
+        answer->effects++;
+    } else if (end - s > 1 && s[0] == 'r' && s[1] >= '0' && s[1] <= '9') {
+        /* r<group> <amount>. */
+        s += 1;
+        e->kind = BIOG_SOCIAL;
+        e->a = (short)read_number(&s, end);
+        e->b = (short)read_number(&s, end);
+        answer->effects++;
+    } else if (end - s > 2 && s[0] == 'R' && s[1] == 'R') {
+        s += 2;
+        e->kind = BIOG_REACTION;
+        e->a = (short)read_number(&s, end);
+        answer->effects++;
     } else if (end - s > 2 && s[0] == 'I' && s[1] == 'T') {
         s += 2;
         e->kind = BIOG_ITEM;

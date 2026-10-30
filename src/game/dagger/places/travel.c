@@ -2,6 +2,7 @@
 #include "game/dagger/places/doors.h"
 #include "game/dagger/places/dunstream.h"
 #include "game/dagger/places/people.h"
+#include "game/dagger/places/town.h"
 #include "game/dagger/places/wild.h"
 #include "game/dagger/places/world.h"
 #include "game/dagger/formats/dungeon.h"
@@ -468,6 +469,87 @@ void travel_here(TravelWhere *where, int *origin)
     if (g_open && g_here.kind != TRAVEL_INSIDE) {
         stream_origin(&origin[0], &origin[1]);
     }
+}
+
+int travel_town_here(const Camera *cam, int *region, int *index, float *x, float *z, int *block, int *record)
+{
+    double wx;
+    double wz;
+    double ox;
+    double oz;
+
+    *block = -1;
+    *record = -1;
+    if (!g_open) {
+        return 0;
+    }
+    if (g_here.kind == TRAVEL_INSIDE) {
+        *region = g_here.region;
+        *index = g_here.index;
+        *x = cam->x;
+        *z = cam->z;
+        *block = g_here.block;
+        *record = g_here.record;
+        return 1;
+    }
+    if (g_here.kind != TRAVEL_WORLD) {
+        return 0;
+    }
+    stream_world(cam->x, cam->z, &wx, &wz);
+    if (!wild_location_at(wx, wz, region, index, &ox, &oz)) {
+        return 0;
+    }
+    *x = (float)(wx - ox);
+    *z = (float)(wz - oz);
+    return 1;
+}
+
+int travel_region(void)
+{
+    return g_here.region;
+}
+
+int travel_building(int *type, int *faction, int *quality, unsigned *place_key)
+{
+    const TownBuilding *t;
+
+    if (!g_open || g_here.kind != TRAVEL_INSIDE) {
+        return 0;
+    }
+    *type = world_building(g_world, faction);
+    t = town_building(g_here.region, g_here.index, g_here.block, g_here.record);
+    *quality = t ? t->quality : 10;
+    /* As world.c keys a building's things (docs/game.md, What the player changed). */
+    *place_key = (3u << 30) | (((unsigned)g_here.record + 1u) << 24) | ((unsigned)g_town.location_id & 0xFFFFFFu);
+    return 1;
+}
+
+int travel_door_building(const Usable *door, int *type, int *quality)
+{
+    const TownBuilding *t;
+    Usable in;
+    int region;
+    int index;
+
+    if (!travel_door_in_town(door, &in, &region, &index)) {
+        return 0;
+    }
+    t = town_building(region, index, door->tag >> 8, door->tag & 0xff);
+    if (!t) {
+        return 0;
+    }
+    *type = t->type;
+    *quality = t->quality;
+    return 1;
+}
+
+int travel_out_to_street(void)
+{
+    if (!g_open || g_here.kind != TRAVEL_INSIDE) {
+        return 0;
+    }
+    ask_world();
+    return g_asked;
 }
 
 int travel_radius(float far)

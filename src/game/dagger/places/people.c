@@ -63,6 +63,9 @@ typedef struct Set {
     int ready;
 } Set;
 
+/* How far off the line of sight a person can be and still be who the view rests on. */
+#define PEOPLE_WIDTH 32.0f
+
 static int g_on;
 static struct Scene *g_scene;
 static Entity g_ent[PEOPLE_MAX];
@@ -172,6 +175,23 @@ static const int (*people_of(int climate))[4]
         return g_nord;
     }
     return g_breton;
+}
+
+/* 1 for an archive of a woman's outfit, in any climate's list. */
+static int archive_is_woman(int archive)
+{
+    static const int climates[3] = { CLIMATE_DESERT, CLIMATE_MOUNTAIN, CLIMATE_WOODLANDS };
+    int c;
+    int outfit;
+
+    for (c = 0; c < 3; c++) {
+        for (outfit = 0; outfit < 4; outfit++) {
+            if (people_of(climates[c])[1][outfit] == archive) {
+                return 1;
+            }
+        }
+    }
+    return 0;
 }
 
 static int choose_archive(int climate)
@@ -673,4 +693,48 @@ void people_update(const Camera *cam, float secs)
             walk(i, secs);
         }
     }
+}
+
+int people_in_view(const Camera *cam, float reach, int *female, unsigned *who)
+{
+    float fx;
+    float fz;
+    float best;
+    int found;
+    int i;
+
+    if (!g_on) {
+        return 0;
+    }
+    fx = df_sin(cam->yaw);
+    fz = df_cos(cam->yaw);
+    found = -1;
+    best = reach * reach;
+    for (i = 0; i < PEOPLE_MAX; i++) {
+        const Entity *e;
+        float dx;
+        float dz;
+        float d2;
+        float along;
+
+        e = &g_ent[i];
+        if (!e->live) {
+            continue;
+        }
+        dx = e->x - cam->x;
+        dz = e->z - cam->z;
+        d2 = dx * dx + dz * dz;
+        along = dx * fx + dz * fz;
+        /* In front, and within a person's width of the line of sight: side squared is d2 less along squared. */
+        if (along > 0.0f && d2 < best && d2 - along * along < PEOPLE_WIDTH * PEOPLE_WIDTH) {
+            best = d2;
+            found = i;
+        }
+    }
+    if (found < 0) {
+        return 0;
+    }
+    *female = archive_is_woman(g_set[g_per[found].set].archive);
+    *who = (unsigned)found * 2654435761u + (unsigned)g_per[found].set;
+    return 1;
 }

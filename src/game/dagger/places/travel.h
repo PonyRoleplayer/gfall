@@ -110,6 +110,19 @@ void travel_reload(Camera *cam);
 void travel_keep_now(void);
 /* The place now open, and its stream's origin in chunks (0, 0 for one with no stream). */
 void travel_here(TravelWhere *where, int *origin);
+/*
+ * The town the player is in and their place in its frame, and the building by
+ * its block and record, -1 in the street. 0 for no town: a dungeon, or the wild.
+ */
+int travel_town_here(const Camera *cam, int *region, int *index, float *x, float *z, int *block, int *record);
+/* The map's region the player is in: where the law and the bank are. */
+int travel_region(void);
+/* The building now inside, its type, faction and quality 0..20, and its key for the keep table. 0 when not inside. */
+int travel_building(int *type, int *faction, int *quality, unsigned *place_key);
+/* The building a street door opens on: its type and quality. 0 for a door in no town. */
+int travel_door_building(const Usable *door, int *type, int *quality);
+/* Out to the street from a building: 1 when asked, travel_asked now 1; 0 in the street already. */
+int travel_out_to_street(void);
 /* The radius of chunks a far clip needs: 4096 a ring, at least one. */
 int travel_radius(float far);
 /* The nearest usable passage of what (DOOR_*) to x, z in the scene; 0 when none is loaded. */

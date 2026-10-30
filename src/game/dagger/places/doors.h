@@ -35,6 +35,9 @@ enum {
     DOOR_EXIT
 };
 
+/* Usable.what of a USE_OTHER: a shop's shelf (DaggerfallInterior's furniture by its model's number). */
+#define OTHER_SHELF 1
+
 /* What the place is, so which passages it has. */
 enum {
     PLACE_DUNGEON,

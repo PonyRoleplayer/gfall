@@ -32,7 +32,12 @@ enum {
 
 /* Skill numbers (DFU's DFCareer.Skills), the ones the code names. */
 #define SKILL_COUNT 35
+#define SKILL_ETIQUETTE 1
+#define SKILL_STREETWISE 2
 #define SKILL_JUMPING 3
+#define SKILL_LOCKPICKING 13
+#define SKILL_MERCANTILE 14
+#define SKILL_PICKPOCKET 15
 #define SKILL_STEALTH 16
 #define SKILL_SWIMMING 17
 #define SKILL_RUNNING 21

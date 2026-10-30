@@ -5,6 +5,7 @@
 #include "game/dagger/tables/calendar.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/tables/items.h"
+#include "game/dagger/tables/commerce.h"
 #include "game/dagger/formats/bsa.h"
 #include "game/dagger/formats/classcfg.h"
 #include "engine/assets/vfs.h"
@@ -129,6 +130,10 @@ static RecTable *table_at(int i)
         return loot_table();
     case 15:
         return dungeon_loot_table();
+    case 16:
+        return building_table();
+    case 17:
+        return crime_table();
     default:
         return 0;
     }
@@ -136,7 +141,7 @@ static RecTable *table_at(int i)
 
 int maindat_table_count(void)
 {
-    return 16;
+    return 18;
 }
 
 RecTable *maindat_table(int i)
@@ -332,7 +337,20 @@ int maindat_import(RecPut put, void *ctx)
             return 0;
         }
         materials = classic_materials(&n);
-        return rec_put_rows(put, ctx, &material_schema, materials, n, 0, 0);
+        if (!rec_put_rows(put, ctx, &material_schema, materials, n, 0, 0)) {
+            return 0;
+        }
+        {
+            const BuildingKind *buildings;
+            const CrimeKind *crimes;
+
+            buildings = classic_buildings(&n);
+            if (!rec_put_rows(put, ctx, &building_schema, buildings, n, 0, 0)) {
+                return 0;
+            }
+            crimes = classic_crimes(&n);
+            return rec_put_rows(put, ctx, &crime_schema, crimes, n, 0, 0);
+        }
     }
 }
 
@@ -401,6 +419,7 @@ int maindat_whole(void)
         && rec_row(cal_info_table(), 0) != 0 && class_table()->count > 0 && race_table()->count > 0
         && skill_table()->count == SKILL_COUNT && item_table()->count > 0 && weapon_table()->count > 0
         && armor_table()->count > 0 && loot_table()->count > 0
+        && building_table()->count > 0 && crime_table()->count > 0
         && material_table()->count == MATERIAL_COUNT;
 }
 

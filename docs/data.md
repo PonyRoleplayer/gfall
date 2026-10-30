@@ -69,6 +69,8 @@ Every file starts with a `HEAD` chunk (`rec_head_schema`): rows of role, size an
 | `MATL` | `material` | `Material` | `items.c` | the 12 materials, iron 0 to daedric 9, then leather and chain, armour's alone: the damage modifier (ten times it to hit), the weight, value and condition multipliers, and the armour a piece in it gives |
 | `LOOT` | `loot` | `LootChance` | `items.c` | classic's 21 loot tables, by letter 'A'..'U': gold's range and each kind of thing's chance. Only gold, weapons and armour are rolled yet |
 | `LDUN` | `dungeon_loot` | `DungeonLoot` | `items.c` | which loot table each of the 19 dungeon types fills its treasure from |
+| `BLDG` | `building` | `BuildingKind` | `commerce.c` | a building type: its name in talk, its opening hours, its shelves' chance numbers for weapons and armour |
+| `CRIM` | `crime` | `CrimeKind` | `commerce.c` | a crime: what the court calls it, what it costs the legal reputation, its sentence's sums |
 
 `maindat.c`'s `table_at` lists the tables a `.DAT` may carry. A new table means:
 1. its row struct and `RecSchema` in the module that uses it;

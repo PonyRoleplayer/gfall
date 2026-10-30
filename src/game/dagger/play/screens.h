@@ -4,6 +4,8 @@
 #include "engine/platform/input.h"
 #include "engine/scene/entity.h"
 #include "game/dagger/play/player.h"
+#include "game/dagger/play/shop.h"
+#include "game/dagger/play/talk.h"
 
 /*
  * The screens composed in memory, on the card: the inventory (bag.c), the
@@ -27,7 +29,13 @@ enum {
     /* Creation skipped for the default character (create_default). */
     SCREENS_SKIPPED,
     /* A save slot chosen (screens_slot), closed. */
-    SCREENS_SLOT
+    SCREENS_SLOT,
+    /* A merchant's panel answered (screens_service_choice), closed. */
+    SCREENS_SERVICE,
+    /* A theft seen in a shop, closed: the court's to open. */
+    SCREENS_SEEN,
+    /* The court is over, closed: the player goes out to the street. */
+    SCREENS_COURT_OVER
 };
 
 /* Opens one, closing any other. Nothing opens when its pictures are missing: is_open says. */
@@ -36,6 +44,12 @@ void screens_open_sheet(Player *p);
 void screens_open_create(void);
 void screens_open_rest(Player *p);
 void screens_open_slots(int saving);
+void screens_open_talk(Player *p, const TalkWho *who);
+void screens_open_service(int panel);
+int screens_service_choice(void);
+void screens_open_trade(Player *p, const Shop *shop, int trade, int day);
+void screens_open_bank(Player *p, int region);
+void screens_open_court(Player *p);
 /* The slot chosen and the name typed, after SCREENS_SLOT; whether it was to save. */
 int screens_slot(void);
 const char *screens_slot_name(void);

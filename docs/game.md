@@ -70,6 +70,57 @@ GFALL's loop, once the game is running:
 A passage says where it will lead, and a person that talk comes later, through the game's use handler (`interact_set_handler`). The pictures' room on the card is 256 KB (`GAME_PICTURE_KB`), set before the first place.
 
 
+## People (built: P9)
+
+Everything a person does for the player, on Daggerfall Unity's numbers, with classic's own pictures and TEXT.RSC's words, read at run time and never copied.
+
+### What the world thinks
+`play/standing.c` is the game's own block, kept across places, reset at a new game before creation (its answers move it):
+- **Each faction's reputation**, from `FACTION.TXT` (`formats/factionfile.c`, 366 factions, a tree by indentation). A change spreads as DFU's `PersistentFactionData`: half to the allies, half off the enemies, and down from the root of its tree, the whole to the one changed and the root, half to the rest. All within -100..100.
+- **Each social group's reputation**, and the lasting bonus to every reaction (`r`, `rf` and `RR` in the background answers, `biog.c`).
+- **Each region's law and bank:** legal reputation, banished, the account, a loan, and what things cost there (rolled 750..1250 per 1000 at a new game; classic's monthly drift is not built).
+
+A person's reaction is their answering faction's reputation (`standing_answers_for`) plus their own social group's plus the bonus.
+
+### Who is spoken to
+The use key's order: a body or heap first; then a townsperson the view rests on (`people_in_view`, within `TALK_REACH`, the region's People); then the engine's ray. A flat person is `USE_TALK`, its faction in `what` and its flat in `tag`.
+- A merchant (social group 1) in a bank or a shop offers a panel (`service.c`): Talk and Banking, Talk and Sell, or a smith's Repair, Talk and Sell.
+- Anyone else talks. A face is `FLATS.CFG`'s for their flat, in `TFAC00I0.RCI` (`formats/faces.c`); a flat it does not name gets record 410, the fallback DFU uses too.
+
+### Talk
+`play/talk.c`, on `TALK01I0.IMG` at DFU's rectangles. `TALK02I0.IMG` and `TALK03I0.IMG` have no headers, and their bands run top to bottom: Location, People, Things, Work; and Tell me about, Where is.
+- **Where is** lists the kinds of building in this town (`places/town.c`, read from every block once and kept until another town is asked about). The answer gives the nearest one's way by the compass.
+- **Tell me about** has the news: one piece a person, from those whose macros the game can say (`words_say_plain`).
+- **Work** is a question with no list; no one has work yet (P10).
+- **The answer:** `rules_talk_value` against a roll, DFU's: Personality / 5, +5 for a place, the reaction, the tone's liking by social group with its skill check. It picks the record from TalkManager's tables. Rolls are seeded by who is asked, so a person does not change their answer. Under -20 a person says only "no response".
+- **Ours, not DFU's:** adding the reaction into the value (DFU's summary gives Personality and tone; a person who hates you must answer worse), and using the table's first row for where a place is.
+- **`play/words.c`** fills a record's macros. A macro it does not know comes out empty, so a record meant for a person checks for that in the tests (no `%` left in what is said).
+
+### Shops
+`play/shop.c` and the inventory screen's trade modes (`bag_open_trade`).
+- **Shelves are models** (`DaggerfallInterior`'s furniture numbers past 41000), `USE_OTHER`/`OTHER_SHELF` usables in any building; the game asks whether it is a shop.
+- **Stock holds no list.** Today's comes from the game's seed, the shop's key and the day: each template no rarer than the quality, by `BLDG`'s chance number, `chance x 5 x (21 - rarity) / 100`. Its keep row holds the day and a bit for each thing taken, so a town of shops costs no memory, and a new day stocks anew. Only weapons and armour are stocked: nothing else exists yet.
+- **Buying** moves things from the shelves on the right to the basket on the left, then Buy pays `rules_trade_price` of the sums' cost. **Selling** lays things from the pack on the counter on the right, which gives back what is not sold when the screen closes. **Repair** is the same, at a tenth of the value costed; it is instant here, where classic takes days.
+- **Steal:** seen by `rules_shoplift_chance`, the basket left behind and the court next. Unseen, it is taken free.
+- **Hours** are `BLDG`'s. A shut street door says it is locked. Holding the run key while using it picks the lock (`rules_lock_chance`, strength half the quality), because classic's Steal mode has no button yet. A failed lock will not be tried again until the skill has grown. Shelves in a shop broken into refuse Buy but allow Steal.
+
+### Banks
+`play/bank.c`, on `BANK00I0.IMG`, with sums usable without the screen. Each region has its own account. A letter of credit is an item worth what it says, a hundredth more to write, at least 100. A loan is 100 to 50000 a level, a tenth more to repay, due in a year of 360 days; carried gold pays first. A loan past its day is a default, a crime in its region, looked at once a game day (`bank_check_loans`). Houses and ships say none are for sale.
+
+### The law
+`play/court.c`. `court_commit` takes the crime's loss off the legal reputation and half that off the region's People. Being seen is being arrested: **there are no guards yet**, so the court opens at once. The trial is DFU's `DaggerfallCourtWindow`: the sentence from `CRIM`'s sums, split into pieces of 40 gold or three days; what cannot be paid is served; a low standing can mean banishment. Guilty halves it. Not guilty argues by Etiquette or lies by Streetwise, against the standing and the skill, within 5..95; losing moves the fine by the court's mood. Prison ticks a day each 0.3 s on `PRIS00I0.IMG`. Then four hours pass, the player is whole, a sentence served gives back half the loss less one, and they stand in the street (`travel_out_to_street`). Banishment is marked on the region and not yet enforced.
+
+### Tested on the host
+`check_standing`, `check_people_sums`, `check_words`, `check_talk`, `check_shop_and_court`, `check_bank`, `check_people_in_town`, `check_standing_saved`: the tree, a spread by hand, every sum by hand, no macro left in any record of talk, Daggerfall's 647 buildings, a way asked and the news by clicks, one who hates saying nothing; a shop's stock by day, buying, selling and mending by clicks at the sums, a thief seen; guilty's half, prison's days, the reputation back; gold, letters and loans; the bank and the merchant's panels by clicks; an armorer in Daggerfall entered with its shelves and its person; all of it through a save file. `build/talk0..1.ppm`, `shop0..1.ppm`, `court0..2.ppm`, `bank0.ppm`, `service0.ppm` are for a look.
+
+**Not yet:**
+- running on the 233;
+- guards to meet or fight, assault and murder, pickpocketing, and banishment enforced;
+- people's own names (the strip shows their faction) and buildings' names (the list shows their kinds);
+- talk's People and Things lists, Tell me about's organisations, guild greetings, the logbook;
+- taverns' rooms and drinks, guilds' services, houses and ships, shelves in a house or a library;
+- classic's monthly price drift, and repairs taking time.
+
 ## Places and travel
 
 `places/travel.c` (built: P8) is a small state machine of three kinds of place: **world** (outside, the whole map, `wild.c`), **inside** (one building, loaded whole, where it stands), **dungeon** (streamed by block, `dunstream.c`). Every move between them goes through one passage, kept as a `Usable` (`doors.h`: `DOOR_ENTER`, `DOOR_LEAVE`, `DOOR_DUNGEON`, `DOOR_EXIT`).
@@ -417,20 +468,20 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Creatures | the frame a blow lands on and how often a move sounds are our guesses, not found in classic | - |
 | Saves | creatures awake come back asleep; the weather is not kept | later |
 | Rest | an encounter wakes a sleeper, not a new creature; a class with no spell point regeneration | later, P11 |
-| Items | clothing, jewellery, ingredients, books, potions, maps, and the screen's other tabs | P9, P11 |
+| Items | clothing, jewellery, ingredients, books, potions, maps, and the screen's other tabs | P11, later |
 | Items | clothing's dyes | with clothing |
 | Inventory | the Wagon button (P12), the Use button (P11) | as named |
 | Inventory | a left-hand weapon shows the right hand's picture on the doll | later |
 | Inventory | the info box's lines are ours, not TEXT.RSC's | later |
-| Loot | the other columns of `LOOT` wait for their items | P9, P11 |
+| Loot | the other columns of `LOOT` wait for their items | P11, later |
 | Loot | a body or a heap takes nothing put on it (a choice, see What can be searched) | - |
 | Places | treasure and piles only in a dungeon streamed by block; a town's doors not keyed; the sea can be walked on | later |
 | Player | the bottom panel's buttons and mode icons | later |
-| Creation | a custom class's special advantages, disadvantages and reputations; the Help button | P9, P11 |
+| Creation | a custom class's special advantages, disadvantages and reputations; the Help button | P11, later |
 | Creation | the class questions' animated scroll and characters | later |
-| Creation | the answers' reputation, history and lasting modifiers (`r`, `#`, `RP`, `TH`...) are read past | P9 |
+| Creation | the answers' history and lasting modifiers (`#`, `RP`, `TH`...) are read past | later |
 | Creation | Save Roll and Load Roll; the race's voice on choosing | later |
-| Character | the Spellbook, Log, History and Affiliations buttons | P9, P11 |
+| Character | the Spellbook, Log, History and Affiliations buttons | P10, P11 |
 | Character | starting clothes and spellbook | with clothing, P11 |
 | Engine | `scene/pack.c`, `ui/packview.c`, `scene/rpg.c`, `ui/rpgview.c` are used by no game; the user's line is that the engine is simulation and world | to decide |
 
@@ -443,7 +494,7 @@ What is built but not whole, and the phase each goes in. Each section above says
 - **Each whole hour of rest** gives back health (endurance's modifier + (Medical + 60) × its most / 1000, at least 1), fatigue and spell points (an eighth of their most, at least 1), and is a use of Medical. Loitering gives back nothing.
 - **A creature awake** refuses a rest ("You cannot rest with enemies nearby."), and stops one each hour. Skills that have earned it rise when the rest ends, and a level due opens the sheet.
 - **An encounter.** Each hour one chance in 36 (ours: DFU's dungeon roll, how often it rolls not read) of the nearest sleeper within 2048 units waking and coming, which ends the rest (`foes_rouse_nearest`). DFU conjures a creature; there is no way to here yet.
-- **Not yet:** a class with no spell point regeneration; the law on camping, and rented rooms, with people (P9).
+- **Not yet:** a class with no spell point regeneration; the law on camping, and rented rooms.
 
 The travel map comes later, with `worldmap.c`'s pixels and the location index: pick a place and land in the stream there, time passing as the trip.
 
@@ -458,6 +509,9 @@ The travel map comes later, with `worldmap.c`'s pixels and the location index: p
 | `PACK` | what is carried, material, variant and condition among it |
 | `KEEP` | every door, lever, creature, heap and pile not as its file has it (`keep.c`) |
 | `PILE` | what lies dropped (`pile.c`) |
+| `FACT` | each faction whose reputation has moved |
+| `SOCL` | the social groups' reputations and the lasting bonus |
+| `REGN` | each region's law, bank and prices |
 
 - **What is not written:** a body's and a heap's things, which come again from the seed and their keys (What can be searched). So a save stays small however much of the hold was searched.
 - **Saving** first flushes the blocks loaded now into the keep table (the engine's `stream_keep_now`): a door opened where the player stands has otherwise only been saved in memory on its block's own arrays.
@@ -503,7 +557,7 @@ Daggerfall's tables are records in MAIN.DAT, cooked on the first run, with mods 
 | `ITEM`, `MAGI`, `WEAP`, `MATL`, `ARMR`, `LOOT`, `LDUN` | items, artifacts, weapons, materials, armour, loot, each dungeon type's loot table | the exe (via DFU), MAGIC.DEF; pictures stay in ARENA2 |
 | `CMON`, `CWEK`, `CALE` | the calendar (built) | the exe; the engine takes it whole (`clock_set_calendar`, request 9) |
 | `RACE`, `CLAS`, `SKIL`, `SPEL`, `EFCT`, `ENCH`, `POTN`, `BIOG` | races, classes, skills, spells, effects, enchantments, potions, background | CLASS*.CFG, SPELLS.STD, BIOG*.TXT, the exe |
-| `FACT`, `NAME`, `PEOP`, `POLI`, `GILD`, `LAW`, `PRIC`, `HOLI`, `FLAT`, `MUSI`, `SWAP`, `DISE`, `CURS` | factions, names, townspeople, politics, guilds, law, prices, holidays, flats, music, swaps, diseases, curses | FACTION.TXT, NAMEGEN.DAT, POLITIC.PAK, FLATS.CFG, the exe |
+| `BLDG`, `CRIM` (built) and `FACT`, `NAME`, `PEOP`, `POLI`, `GILD`, `LAW`, `PRIC`, `HOLI`, `FLAT`, `MUSI`, `SWAP`, `DISE`, `CURS` | factions, names, townspeople, politics, guilds, law, prices, holidays, flats, music, swaps, diseases, curses | FACTION.TXT, NAMEGEN.DAT, POLITIC.PAK, FLATS.CFG, the exe |
 | `BOOK`, `TEXT`, `QUES` | indexes of the books, TEXT.RSC and the quests | BOOKS\, TEXT.RSC, QBN/QRC (their text and scripts stay in ARENA2) |
 
 Blocks, models, pictures, sounds and songs are never cooked: they stay in ARENA2.
@@ -526,7 +580,7 @@ The first goal is a **prototype**: from classic's start menu, Privateer's Hold p
 | P6 | Character creation and levelling (built, host-tested, not run on the target): classic's screens, class questions and custom classes among them, background questions, skill gains, level-ups, the character sheet | GAME | a character made by the screens plays the hold and levels |
 | P7 | Prototype polish (built, host-tested, not run on the target; the 233 profile pass not done): loading holds, one save slot in `DATA\`, the menu's load, rest and wait, a 233 profile pass | GAME | from the menu through the hold and back after a save |
 | P8 | Out of the hold (built, host-tested, not run on the target): `places/travel.c` lifted from LEVELFALL and shared; the hold's outside in the stream, the nearest town, its houses | GAME and LEVELFALL | from the menu to town and back after a save, in one session |
-| P9 | People: talk from TEXT.RSC, shops, banks, factions, reputation, law | GAME | |
+| P9 | People (built, host-tested, not run on the target; guards, assault and names not yet): talk from TEXT.RSC, shops, banks, factions, reputation, law; `BLDG`, `CRIM` | GAME | a shop bought from, a bank used, a way asked in town, a crime tried |
 | P10 | Quests: the QBN interpreter, guild quests | GAME | |
 | P11 | Magic: spells, effects, spellbook, casting, potions, enchantments | GAME | |
 | P12 | The wider world: travel map, horse and cart, holidays, diseases, lycanthropy and vampirism | GAME | |

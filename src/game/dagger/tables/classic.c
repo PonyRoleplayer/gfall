@@ -314,7 +314,7 @@ const CareerSkill *classic_skills(int *n)
 
 /*
  * DFU's ItemTemplates: the armour (102..112), the weapons (113..131, the
- * arrow last) and gold (276): name, weight in kg, price, hit points, the
+ * arrow last), the letter of credit (275) and gold (276): name, weight in kg, price, hit points, the
  * picture on the ground and on the paper doll, one-handed, blunt, and the
  * paper doll's draw order.
  *
@@ -352,6 +352,7 @@ static const ItemTemplate g_items[] = {
     { 129, "Short Bow", 1.00f, 10, 50, 207, 8, 234, 16, 0, 0, 100 },
     { 130, "Long Bow", 1.50f, 20, 100, 207, 8, 234, 11, 0, 0, 100 },
     { 131, "Arrow", 0.25f, 2, 1, 207, 16, 0, 0, 0, 0, 0 },
+    { 275, "Letter of Credit", 0.25f, 0, 0, 209, 7, 0, 0, 0, 0, 0 },
     { 276, "Gold Pieces", 0.0025f, 1, 0, 216, 1, 0, 0, 0, 0, 0 }
 };
 
@@ -537,4 +538,70 @@ int classic_weather_odds(WeatherOdds *out, int cap)
         }
     }
     return n;
+}
+
+/*
+ * A block's building types (DFU's DFLocation.BuildingTypes), with PlayerActivate's
+ * opening hours and DaggerfallLootDataTables' stock chances for weapons and armour.
+ * Those stock numbers are all the game has items for yet; a temple's 255 for weapons
+ * is DFU's own table, whose group numbers are read as DFU reads them.
+ */
+static const BuildingKind g_buildings[] = {
+    { 0, "Alchemist", 7, 22, 0, 0 },
+    { 1, "House for sale", 8, 16, 0, 0 },
+    { 2, "Armorer", 9, 19, 80, 20 },
+    { 3, "Bank", 8, 15, 0, 0 },
+    { 4, "Town", 0, 25, 0, 0 },
+    { 5, "Bookseller", 9, 21, 0, 0 },
+    { 6, "Clothing store", 10, 19, 0, 0 },
+    { 7, "Furniture store", 10, 20, 0, 0 },
+    { 8, "Gem store", 9, 18, 0, 0 },
+    { 9, "General store", 6, 23, 0, 20 },
+    { 10, "Library", 9, 23, 0, 0 },
+    { 11, "Guild hall", 11, 23, 0, 0 },
+    { 12, "Pawn shop", 9, 20, 10, 10 },
+    { 13, "Weapon smith", 9, 20, 30, 70 },
+    { 14, "Temple", 0, 25, 0, 0 },
+    { 15, "Tavern", 0, 25, 0, 0 },
+    { 16, "Palace", 10, 16, 0, 0 },
+    { 17, "House", 0, 0, 0, 0 },
+    { 18, "House", 6, 18, 0, 0 },
+    { 19, "House", 6, 18, 0, 0 },
+    { 20, "House", 6, 18, 0, 0 },
+    { 21, "House", 6, 18, 0, 0 },
+    { 22, "House", 6, 18, 0, 0 },
+    { 23, "Town", 6, 18, 0, 0 },
+    { 24, "Ship", 0, 25, 0, 0 }
+};
+
+const BuildingKind *classic_buildings(int *n)
+{
+    *n = (int)(sizeof(g_buildings) / sizeof(g_buildings[0]));
+    return g_buildings;
+}
+
+/* PlayerEntity's reputationLossPerCrime, and DaggerfallCourtWindow's sentence: per point, base, low, high. */
+static const CrimeKind g_crimes[] = {
+    { 0, "", 0, 0, 0, 0, 0 },
+    { 1, "attempted breaking and entering", 10, 5, 300, 50, 1000 },
+    { 2, "trespassing", 5, 5, 200, 10, 800 },
+    { 3, "breaking and entering", 10, 6, 600, 80, 1200 },
+    { 4, "assault", 8, 6, 1000, 10, 1500 },
+    { 5, "murder", 20, 10, 10000, 9000, 12000 },
+    { 6, "tax evasion", 10, 5, 200, 10, 12000 },
+    { 7, "criminal conspiracy", 2, 5, 500, 10, 1500 },
+    { 8, "vagrancy", 1, 3, 100, 2, 700 },
+    { 9, "smuggling", 2, 8, 500, 10, 1500 },
+    { 10, "piracy", 2, 8, 500, 10, 1500 },
+    { 11, "high treason", 75, 9, 1200, 160, 2000 },
+    { 12, "pickpocketing", 2, 6, 200, 5, 1000 },
+    { 13, "theft", 8, 0, 200, 5, 1000 },
+    { 14, "treason", 36, 8, 1000, 10, 1500 },
+    { 15, "loan default", 10, 0, 100, 4, 700 }
+};
+
+const CrimeKind *classic_crimes(int *n)
+{
+    *n = (int)(sizeof(g_crimes) / sizeof(g_crimes[0]));
+    return g_crimes;
 }

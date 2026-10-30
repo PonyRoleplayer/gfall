@@ -119,6 +119,8 @@ FORMATS_SRC := \
 	src/game/dagger/formats/cif.c \
 	src/game/dagger/formats/smallfont.c \
 	src/game/dagger/formats/textrsc.c \
+	src/game/dagger/formats/factionfile.c \
+	src/game/dagger/formats/faces.c \
 	src/game/dagger/formats/biog.c \
 	src/game/dagger/formats/classcfg.c
 
@@ -129,6 +131,7 @@ TABLES_SRC := \
 	src/game/dagger/tables/calendar.c \
 	src/game/dagger/tables/careers.c \
 	src/game/dagger/tables/items.c \
+	src/game/dagger/tables/commerce.c \
 	src/game/dagger/tables/swaps.c \
 	src/game/dagger/tables/enemies.c \
 	src/game/dagger/tables/forecast.c \
@@ -143,7 +146,8 @@ PLACES_SRC := \
 	src/game/dagger/places/terrain.c \
 	src/game/dagger/places/wres.c \
 	src/game/dagger/places/dunstream.c \
-	src/game/dagger/places/travel.c
+	src/game/dagger/places/travel.c \
+	src/game/dagger/places/town.c
 
 DAGGER_SRC := $(FORMATS_SRC) $(TABLES_SRC) $(PLACES_SRC)
 
@@ -161,6 +165,13 @@ PLAY_SRC := \
 	src/game/dagger/play/create.c \
 	src/game/dagger/play/sheet.c \
 	src/game/dagger/play/rest.c \
+	src/game/dagger/play/standing.c \
+	src/game/dagger/play/words.c \
+	src/game/dagger/play/talk.c \
+	src/game/dagger/play/service.c \
+	src/game/dagger/play/shop.c \
+	src/game/dagger/play/bank.c \
+	src/game/dagger/play/court.c \
 	src/game/dagger/play/save.c \
 	src/game/dagger/play/slots.c \
 	src/game/dagger/play/commands.c \
@@ -319,6 +330,7 @@ DAT_SRC := \
 	src/game/dagger/tables/calendar.c \
 	src/game/dagger/tables/careers.c \
 	src/game/dagger/tables/items.c \
+	src/game/dagger/tables/commerce.c \
 	src/game/dagger/tables/enemies.c \
 	src/game/dagger/tables/forecast.c \
 	src/game/dagger/formats/texture.c \

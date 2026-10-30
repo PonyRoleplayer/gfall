@@ -174,3 +174,151 @@ float rules_jump_height(int jumping)
     v = rules_jump_speed(jumping);
     return v * v / (2.0f * JUMP_GRAVITY);
 }
+
+int rules_cost(int value, int quality, int prices)
+{
+    int cost;
+
+    cost = value < 1 ? 1 : value;
+    cost = cost * prices / 1000;
+    if (cost < 1) {
+        cost = 1;
+    }
+    return 2 * (cost * (quality - 10) / 100 + cost);
+}
+
+/* A skill or a shop's level as the fixed-point the bargaining sums run on: 128 at 0, 256 at 100. */
+static int bargain_term(int level)
+{
+    return level * 256 / 200 + 128;
+}
+
+int rules_trade_price(int cost, int quality, int mercantile, int personality, int selling)
+{
+    int shop;
+    int by_skill;
+    int by_personality;
+
+    /* The shop's own skill: 0 at quality 0, 100 at quality 20. */
+    shop = 5 * (quality - 10) + 50;
+    if (selling) {
+        by_skill = bargain_term(100 - shop) * bargain_term(mercantile) / 256;
+        by_personality = bargain_term(100 - shop) * bargain_term(personality) / 256;
+        return (179 * by_skill / 256 + 51 * by_personality / 256) * cost / 256;
+    }
+    by_skill = bargain_term(shop) * bargain_term(100 - mercantile) / 256;
+    by_personality = bargain_term(shop) * bargain_term(100 - personality) / 256 * 64;
+    return (192 * by_skill / 256 + by_personality / 256) * cost / 256;
+}
+
+int rules_repair_cost(int value, int quality, int condition, int condition_max, int prices)
+{
+    int base;
+
+    if (condition >= condition_max) {
+        return 0;
+    }
+    base = 10 * value / 100;
+    return rules_cost(base < 1 ? 1 : base, quality, prices);
+}
+
+/* A chance as all of these are given: never certain, never hopeless. */
+static int chance_5_95(int chance)
+{
+    return chance < 5 ? 5 : (chance > 95 ? 95 : chance);
+}
+
+int rules_shoplift_chance(int pickpocket, int quality, int weight_and_count)
+{
+    return chance_5_95(100 - pickpocket + quality + weight_and_count);
+}
+
+int rules_lock_chance(int lockpicking, int lock)
+{
+    return chance_5_95(lockpicking - 5 * lock);
+}
+
+int rules_max_loan(int level)
+{
+    return level * 50000;
+}
+
+int rules_loan_repayment(int amount)
+{
+    return amount + amount / 10;
+}
+
+int rules_letter_cost(int amount)
+{
+    return amount + amount / 100;
+}
+
+/* TalkManager's tables: how much each social group likes polite and blunt talk. */
+static const signed char g_polite_likes[5] = { -10, 5, 10, 15, -15 };
+static const signed char g_blunt_likes[5] = { 10, 5, -10, -15, 15 };
+/* TalkManager's first row of how likely each social group knows: a question of where a place is. */
+static const signed char g_place_known[5] = { 5, 7, 0, 0, 4 };
+
+/* A social group as a table's index: past the groups, a merchant. */
+static int social_row(int sgroup)
+{
+    return sgroup >= 0 && sgroup < 5 ? sgroup : 1;
+}
+
+int rules_talk_value(int personality, int is_place, int reaction, int tone, int sgroup, int skill, int skill_roll)
+{
+    int value;
+
+    value = personality / 5 + reaction;
+    if (is_place) {
+        value += 5;
+    }
+    if (tone != RULES_TONE_NORMAL) {
+        value += tone == RULES_TONE_POLITE ? g_polite_likes[social_row(sgroup)] : g_blunt_likes[social_row(sgroup)];
+        value += skill_roll < skill ? 5 : -10;
+    }
+    return value;
+}
+
+int rules_talk_outcome(int value, int roll)
+{
+    if (value < roll) {
+        return 0;
+    }
+    return value <= roll + 20 ? 1 : 2;
+}
+
+int rules_talk_knows(int sgroup, int roll)
+{
+    return roll <= g_place_known[social_row(sgroup)] + 10;
+}
+
+int rules_compass(float dx, float dz)
+{
+    int east;
+    int north;
+
+    /* Without a tangent: which of the three bands of slope each way falls in. tan(22.5) is about 0.414. */
+    east = dx > 0.0f ? 1 : -1;
+    north = dz > 0.0f ? 1 : -1;
+    dx = dx < 0.0f ? -dx : dx;
+    dz = dz < 0.0f ? -dz : dz;
+    if (dz < dx * 0.414f) {
+        return east > 0 ? 0 : 4;
+    }
+    if (dx < dz * 0.414f) {
+        return north > 0 ? 2 : 6;
+    }
+    if (north > 0) {
+        return east > 0 ? 1 : 3;
+    }
+    return east > 0 ? 7 : 5;
+}
+
+int rules_sentence(int base, int per_point, int low, int high, int legal)
+{
+    int amount;
+
+    amount = base + per_point * (legal < 0 ? -legal : legal);
+    return amount < low ? low : (amount > high ? high : amount);
+}

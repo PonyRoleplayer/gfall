@@ -18,6 +18,9 @@
  *   PACK  what is carried, and GAME says what is worn and the gold
  *   KEEP  every door, lever and creature not as its file has it (keep.h)
  *   PILE  what lies dropped (pile.h)
+ *   FACT  each faction whose reputation has moved
+ *   SOCL  the social groups' reputations and the lasting bonus
+ *   REGN  each region's law and bank (standing.h)
  *
  * A body's and a heap's things are not written: they come again from the
  * seed and their keys (loot.h), and their keep rows say what was taken.

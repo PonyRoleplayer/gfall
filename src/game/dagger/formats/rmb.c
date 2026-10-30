@@ -656,6 +656,22 @@ int rmb_building(const df_u8 *rmb, df_u32 size, int record, int *type, int *fact
     return 1;
 }
 
+int rmb_building_at(const df_u8 *rmb, df_u32 size, int record, int *type, int *faction, int *quality, float *x, float *z)
+{
+    const df_u8 *bd;
+    const df_u8 *bp;
+
+    if (!rmb_building(rmb, size, record, type, faction)) {
+        return 0;
+    }
+    bd = rmb + 3 + 640 + record * 26;
+    *quality = (int)bd[25];
+    bp = rmb + 3 + record * 20;
+    *x = (float)df_ri32(bp + 8);
+    *z = RMB_SIDE - (float)df_ri32(bp + 12);
+    return 1;
+}
+
 Block *rmb_load_interior(const df_u8 *rmb, df_u32 size, Bsa *arch, int record,
                          ArchEnt *cache, int *ncache)
 {

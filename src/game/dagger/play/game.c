@@ -1,5 +1,10 @@
 #include "game/dagger/play/game.h"
 #include "game/dagger/play/bag.h"
+#include "game/dagger/play/bank.h"
+#include "game/dagger/play/court.h"
+#include "game/dagger/play/service.h"
+#include "game/dagger/play/shop.h"
+#include "game/dagger/play/standing.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/commands.h"
 #include "game/dagger/play/create.h"
@@ -17,6 +22,10 @@
 #include "game/dagger/play/weapon.h"
 #include "game/dagger/tables/items.h"
 #include "game/dagger/places/doors.h"
+#include "game/dagger/places/people.h"
+#include "game/dagger/places/town.h"
+#include "game/dagger/formats/faces.h"
+#include "game/dagger/tables/commerce.h"
 #include "game/dagger/places/dunstream.h"
 #include "engine/core/mem.h"
 #include "engine/core/prof.h"
@@ -49,6 +58,197 @@ static int g_day_zero;
 static int g_last_minute;
 /* 1 from the death screen until a save is loaded or the slots put away. */
 static int g_dead;
+/* The camera's frame's, for what the use handler asks about where it stands; the run key held at the use. */
+static const Camera *g_cam;
+static int g_stealing;
+/* The door whose lock last beat the player, and their skill then. */
+static int g_lock_tried = -1;
+static int g_lock_skill;
+/* The merchant whose panel is open, for its Talk. */
+static int g_talk_faction;
+static int g_talk_flat;
+/* The clock's day last looked at for loans past due. */
+static int g_loans_day;
+/* The thing number of a shop's keep row: past any block's things (docs/game.md, What the player changed). */
+#define SHOP_KEY_THING 0xFE000000u
+
+/* A screen over the stilled world, with the pointer. */
+static void screen_over_play(void)
+{
+    gfx_set_pause(screens_is_open());
+    input_set_pointer(screens_is_open());
+}
+
+/* The hour, for a building's opening. */
+static int hour_now(void)
+{
+    int hour;
+    int minute;
+
+    clock_hm(&hour, &minute);
+    return hour;
+}
+
+/*
+ * Whether a street door opens, by its building's hours (PlayerActivate). Shut, it is
+ * locked, its strength half the building's quality; holding the run key is the
+ * player picking it (classic's Steal mode, until the mode buttons come).
+ */
+static int door_lets_in(const Usable *u)
+{
+    int type;
+    int quality;
+    int lock;
+    int skill;
+
+    if (!travel_door_building(u, &type, &quality) || building_open_at(type, hour_now())) {
+        return 1;
+    }
+    if (!g_stealing) {
+        interact_say("The door is locked.");
+        return 0;
+    }
+    lock = quality / 2;
+    skill = g_player.sheet.skill[SKILL_LOCKPICKING];
+    /* A lock beaten once stays beaten until the skill has grown. */
+    if (u->tag == g_lock_tried && skill <= g_lock_skill) {
+        interact_say("The lock is beyond you.");
+        return 0;
+    }
+    character_tally(&g_player.sheet, SKILL_LOCKPICKING, 1);
+    if (combat_roll(100) + 1 >= rules_lock_chance(skill, lock)) {
+        g_lock_tried = u->tag;
+        g_lock_skill = skill;
+        interact_say("You fail to pick the lock.");
+        return 0;
+    }
+    interact_say("The lock clicks open.");
+    return 1;
+}
+
+/* Who is being talked to, from who they are and where the player stands; a face from their flat. */
+static void talk_to(int faction, int flat, unsigned seed)
+{
+    static char region_name[FACTION_NAME];
+    TalkWho who;
+    const Faction *province;
+    int hit;
+
+    mem_zero(&who, sizeof(who));
+    who.faction = faction;
+    who.seed = seed;
+    who.face = flat ? faces_of_flat(flat >> 7, flat & 0x7f) : FACE_NONE;
+    hit = travel_town_here(g_cam, &who.region, &who.index, &who.x, &who.z, &who.block, &who.record);
+    who.located = hit;
+    if (hit) {
+        int count;
+
+        town_buildings(who.region, who.index, &count);
+        who.city = town_name();
+    }
+    province = faction_province_of(travel_region());
+    df_copy(region_name, province ? province->name : "", (int)sizeof(region_name));
+    who.region_name = region_name;
+    screens_open_talk(&g_player, &who);
+    screen_over_play();
+}
+
+/* The shop this building is, for the screens; 0 when it is none. */
+static int shop_here(Shop *shop)
+{
+    RegionStanding *r;
+    int faction;
+    unsigned place;
+
+    if (!travel_building(&shop->type, &faction, &shop->quality, &place)) {
+        return 0;
+    }
+    r = standing_region(travel_region());
+    shop->prices = r ? r->prices : 1000;
+    /* A row of the place's own, past any thing in its blocks. */
+    shop->key.place = place;
+    shop->key.thing = SHOP_KEY_THING;
+    shop->closed = !building_open_at(shop->type, hour_now());
+    return building_is_shop(shop->type);
+}
+
+/* A shelf used: the shop's goods, by its hours; in a house, nothing to buy. */
+static void shelf_used(void)
+{
+    Shop shop;
+
+    if (!shop_here(&shop)) {
+        interact_say("There is nothing here you want.");
+        return;
+    }
+    screens_open_trade(&g_player, &shop, TRADE_BUY, clock_day());
+    screen_over_play();
+}
+
+/*
+ * Someone used: a merchant in a shop or a bank offers their panel, as StaticNPCClick;
+ * anyone else, and anyone in the street, talks.
+ */
+static void person_used(const Usable *u)
+{
+    const Faction *f;
+    int type;
+    int faction;
+    int quality;
+    unsigned place;
+
+    g_talk_faction = u->what;
+    g_talk_flat = u->tag;
+    f = faction_find(u->what);
+    if (f && f->sgroup == SOCIAL_MERCHANTS && travel_building(&type, &faction, &quality, &place)) {
+        if (type == BUILDING_BANK) {
+            screens_open_service(SERVICE_PANEL_BANK);
+            screen_over_play();
+            return;
+        }
+        if (building_is_shop(type)) {
+            screens_open_service(type == BUILDING_ARMORER || type == BUILDING_WEAPONS ? SERVICE_PANEL_REPAIR : SERVICE_PANEL_SELL);
+            screen_over_play();
+            return;
+        }
+    }
+    talk_to(u->what, u->tag, (unsigned)u->tag * 31u + (unsigned)u->what);
+}
+
+/* A townsperson in the view, not a usable: the people of the region answer, with that people's flat. */
+static int street_person_used(const Camera *cam)
+{
+    const Faction *people;
+    int female;
+    unsigned who;
+
+    if (!people_in_view(cam, TALK_REACH, &female, &who)) {
+        return 0;
+    }
+    people = faction_people_of(travel_region());
+    if (!people) {
+        return 0;
+    }
+    talk_to(people->id, ((int)people->flat_archive[female] << 7) + people->flat_record[female], who);
+    return 1;
+}
+
+/* What the merchant's panel chose. */
+static void service_chosen(void)
+{
+    Shop shop;
+    int choice;
+
+    choice = screens_service_choice();
+    if (choice == SERVICE_TALK) {
+        talk_to(g_talk_faction, g_talk_flat, (unsigned)g_talk_flat * 31u + (unsigned)g_talk_faction);
+    } else if (choice == SERVICE_BANK) {
+        screens_open_bank(&g_player, travel_region());
+    } else if (shop_here(&shop)) {
+        screens_open_trade(&g_player, &shop, choice == SERVICE_REPAIR ? TRADE_REPAIR : TRADE_SELL, clock_day());
+    }
+    screen_over_play();
+}
 
 /*
  * Milliseconds a frame gives the stream: what is spare before the retrace this
@@ -88,6 +288,10 @@ static int on_use(const Scene *scene, const Usable *u, int index)
     if (u->kind == USE_PASSAGE) {
         const char *why;
 
+        /* A shut building: locked, unless the player is at its lock. */
+        if (u->what == DOOR_ENTER && !door_lets_in(u)) {
+            return 1;
+        }
         /* Going somewhere is carried out after this frame's end (game_frame); a shut way says why. */
         why = travel_use(u);
         if (why) {
@@ -96,7 +300,11 @@ static int on_use(const Scene *scene, const Usable *u, int index)
         return 1;
     }
     if (u->kind == USE_TALK) {
-        interact_say("They have nothing to say yet.");
+        person_used(u);
+        return 1;
+    }
+    if (u->kind == USE_OTHER && u->what == OTHER_SHELF) {
+        shelf_used();
         return 1;
     }
     return 0;
@@ -210,6 +418,7 @@ static int load_game(int slot)
 /* A new character's game: what was changed or dropped in the last one is gone. */
 static void forget_last_game(void)
 {
+    court_forget();
     keep_clear();
     pile_new_game();
     loot_new_game(prof_now());
@@ -266,7 +475,10 @@ static void use_key(const Camera *cam)
 
     searched = loot_find(&g_level->scene, cam);
     if (!searched) {
-        interact_request_use();
+        /* Someone walking the street, if the view rests on them; else what the engine's ray finds. */
+        if (!street_person_used(cam)) {
+            interact_request_use();
+        }
     } else if (!bag_finds_things(searched, g_player.sheet.level)) {
         interact_say("You find nothing.");
     } else {
@@ -276,6 +488,8 @@ static void use_key(const Camera *cam)
 
 void game_setup(void)
 {
+    /* FACTION.TXT, read once at the start: no screen's heap is current, and no click waits for it. */
+    standing_new_game(0u);
     /* Escape is the game's menu, not a quit; the left button attacks, so use is the game's own key. */
     input_set_escape_quits(0);
     gfx_set_use_key(0);
@@ -382,6 +596,8 @@ int game_frame(Camera *cam, const Input *in, float dt)
     int closed;
 
     prof_begin(PROF_PLAY);
+    g_cam = cam;
+    g_stealing = (in->held & INPUT_BIT(INPUT_RUN)) != 0;
     /* A screen before any place: the title or the start menu. */
     if (!g_playing) {
         /* Creation, once Start is chosen: it ends with a character for the first place. */
@@ -417,6 +633,8 @@ int game_frame(Camera *cam, const Input *in, float dt)
             }
         }
         if (asked == MENU_START) {
+            /* Before creation: its answers move reputations. */
+            standing_new_game(prof_now());
             screens_open_create();
             /* Its pictures missing: the default character starts, as before creation was built. */
             if (!screens_is_open()) {
@@ -436,6 +654,30 @@ int game_frame(Camera *cam, const Input *in, float dt)
         if (asked == SCREENS_SLOT && !screens_slot_saving()) {
             prof_end(PROF_PLAY);
             return load_game(screens_slot()) ? GAME_START : GAME_GO_ON;
+        }
+        if (asked == SCREENS_SERVICE) {
+            service_chosen();
+            prof_end(PROF_PLAY);
+            return GAME_GO_ON;
+        }
+        if (asked == SCREENS_SEEN) {
+            /* Seen stealing: the shop's region's crime, the court next. */
+            court_commit(CRIME_THEFT, travel_region());
+            screens_open_court(&g_player);
+            screen_over_play();
+            prof_end(PROF_PLAY);
+            return GAME_GO_ON;
+        }
+        if (asked == SCREENS_COURT_OVER) {
+            gfx_set_pause(0);
+            input_set_pointer(0);
+            /* Out in the street, whatever the sentence: the crime was in a building, and the court does not send you back. */
+            if (travel_out_to_street()) {
+                prof_end(PROF_PLAY);
+                return GAME_TRAVEL;
+            }
+            prof_end(PROF_PLAY);
+            return GAME_GO_ON;
         }
         if (asked == SCREENS_SLOT || asked == SCREENS_CLOSED) {
             const char *said;
@@ -519,6 +761,17 @@ int game_frame(Camera *cam, const Input *in, float dt)
     }
     /* The use key may just have opened the inventory: the world stands from this frame. */
     if (menu_current() == MENU_NONE && !screens_is_open() && !gfx_paused()) {
+        /* A loan past its day, looked at once a day; a crime waiting is tried now. */
+        if (clock_day() != g_loans_day) {
+            g_loans_day = clock_day();
+            bank_check_loans(g_loans_day);
+        }
+        if (court_pending()) {
+            screens_open_court(&g_player);
+            screen_over_play();
+            prof_end(PROF_PLAY);
+            return GAME_GO_ON;
+        }
         /* Skills look at their uses every six game hours; a level due opens the sheet (PlayerEntity.RaiseSkills). */
         character_raise_skills(&g_player.sheet, game_minutes());
         if (g_player.sheet.level_due) {

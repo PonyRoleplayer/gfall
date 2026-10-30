@@ -190,6 +190,23 @@ static int make_armor(Item *it, int template_id, int level, Dice *d)
     return 1;
 }
 
+int loot_make_for_level(Item *it, int template_id, int level, df_u32 seed)
+{
+    Dice d;
+
+    dice_seed(&d, seed);
+    if (armor_template(template_id)) {
+        return make_armor(it, template_id, level, &d);
+    }
+    if (!item_make(it, template_id, loot_metal(level, dice_roll(&d, 256)))) {
+        return 0;
+    }
+    if (template_id == ITEM_ARROW) {
+        it->count = (df_u16)dice_between(&d, 1, MAX_ARROWS);
+    }
+    return 1;
+}
+
 /* A random piece of armour (CreateRandomArmor): any of them alike. */
 static void add_armor(Inventory *out, int level, Dice *d)
 {

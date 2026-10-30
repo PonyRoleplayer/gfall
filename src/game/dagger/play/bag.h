@@ -3,6 +3,7 @@
 
 #include "engine/scene/entity.h"
 #include "game/dagger/play/player.h"
+#include "game/dagger/play/shop.h"
 
 /*
  * Classic's inventory screen, in memory: what it shows and what a click on
@@ -39,6 +40,14 @@ enum {
     BAG_LEAVE
 };
 
+/* The same screen in a shop: the shelves or the counter on the right (shop.h). */
+enum {
+    TRADE_NONE,
+    TRADE_BUY,
+    TRADE_SELL,
+    TRADE_REPAIR
+};
+
 /*
  * 1 when there is anything to find on what is being searched. A heap of
  * treasure with nothing on it goes, there and then.
@@ -50,6 +59,14 @@ int bag_finds_things(Entity *searched, int level);
  * bag_close. 0 when a picture is missing.
  */
 int bag_open(Player *p, Entity *searched);
+/*
+ * Opens it as a shop: buying, the shelves on the right and the basket on the
+ * left, with Steal; selling or repairing, the pack on the left and the counter
+ * on the right. day is the clock's: it says which stock. 0 when a picture is missing.
+ */
+int bag_open_trade(Player *p, const Shop *shop, int trade, int day);
+/* 1 once a theft was seen: the court is the game's to open when the screen has closed. */
+int bag_stole(void);
 /* Closes it: what was dropped lands, what was searched keeps what is left. */
 void bag_close(void);
 /* Composes the screen, whatever bag_changed says; the pixels are bag_pixels'. */

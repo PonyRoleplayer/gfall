@@ -82,7 +82,9 @@ The engine keeps the teleport a use or a chain reached (`interact_teleport`); `d
 
 A town's own props, which are not a building, have doors painted on them too; those lead nowhere. A face that is not upright is not a door. The box is the face's span across and up, and its centre, in the world.
 
-**People.** The people lists of a town's buildings and of a house's inside are flats marked `FLAT_PERSON` with their faction (`Flat.tag`). Each is a `USE_TALK` usable. Talking is the game's, later; LEVELFALL says the faction.
+**People.** The people lists of a town's buildings and of a house's inside are flats marked `FLAT_PERSON` with their faction (`Flat.tag`). Each is a `USE_TALK` usable, `what` its faction and `tag` its flat as `(archive << 7) + record` (FLATS.CFG's numbering). Talking is the game's (`docs/game.md`, People); LEVELFALL says the faction.
+
+**Shelves.** In a building's inside, a model DFU's furniture list names as a shelf (`DaggerfallInterior`, a number past 41000) is a `USE_OTHER` usable, `what` `OTHER_SHELF`. Whether anyone sells from it is the game's.
 
 ## Inside a building
 

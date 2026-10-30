@@ -30,6 +30,13 @@
 #define PEOPLE_RECYCLE 6000.0f
 #define PEOPLE_POP 4800.0f
 
+/*
+ * Whoever the view from cam rests on within reach, drawn and in front of it:
+ * *female and a number for who they are. 0 for no one. A person in the street
+ * talks, and the game asks this when the use key finds no usable.
+ */
+int people_in_view(const Camera *cam, float reach, int *female, unsigned *who);
+
 /* The stream is open: its scene draws the people. */
 void people_begin(struct Scene *scene);
 void people_end(void);

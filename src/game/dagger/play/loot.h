@@ -43,6 +43,8 @@ df_u32 loot_seed(void);
  * levels finding better. Plain sums, so tests can walk it.
  */
 int loot_metal(int level, int roll);
+/* A weapon or a piece of armour of this template for a shelf, its material by the level, from seed: the same seed, the same thing. 0 when it could not be made. */
+int loot_make_for_level(Item *it, int template_id, int level, df_u32 seed);
 /* A stack of gold as a thing that lies in a list, coins of it: 0 when it could not be made. */
 int loot_gold_item(Item *it, int coins);
 /* Rolls a body's things into out, emptied first, from seed: the same seed, table and level give the same things. */

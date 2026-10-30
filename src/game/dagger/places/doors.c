@@ -137,6 +137,22 @@ static Mover *new_mover(DoorBuild *b, int model)
     return m;
 }
 
+/* DaggerfallInterior's shopShelvesObjectGroupIndices: a shelf is one of these past 41000. */
+static int is_shelf(df_u32 id)
+{
+    static const df_u16 shelves[] = {
+        5, 6, 11, 12, 13, 14, 15, 16, 17, 18, 19, 26, 28, 29, 31, 35, 36, 37, 40, 41, 42, 44, 46, 47, 48, 49, 808
+    };
+    int i;
+
+    for (i = 0; i < (int)(sizeof(shelves) / sizeof(shelves[0])); i++) {
+        if (id == 41000u + shelves[i]) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static Usable *new_use(DoorBuild *b, int kind, const char *label, float reach)
 {
     Usable *u;
@@ -522,6 +538,21 @@ int doors_build(DoorBuild *b)
             m->back_sound = sndfile_clip(SND_DUNGEON_CLOSE);
         }
     }
+    /* A building's shelves, by their models: the game says whether anyone sells from them. */
+    if (b->place == PLACE_INSIDE) {
+        for (i = 0; i < b->ninst; i++) {
+            if (is_shelf(b->act[i].id)) {
+                Usable *u;
+
+                u = new_use(b, USE_OTHER, "shelf", DOOR_REACH);
+                if (!u) {
+                    break;
+                }
+                u->model = i;
+                u->what = OTHER_SHELF;
+            }
+        }
+    }
     /* People, by their flats. */
     for (i = 0; i < b->nflat; i++) {
         Usable *u;
@@ -535,6 +566,8 @@ int doors_build(DoorBuild *b)
         }
         u->sprite = i;
         u->what = (int)(b->flat[i].tag & 0x7fff);
+        /* Which flat they stand as, for their face: DFU's FlatsFile numbers it so. */
+        u->tag = ((int)b->flat[i].file << 7) + (int)b->flat[i].image;
     }
     mover_init(b->mover, b->nmover);
     return 1;

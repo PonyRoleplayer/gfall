@@ -1,4 +1,5 @@
 #include "game/dagger/play/save.h"
+#include "game/dagger/play/standing.h"
 #include "engine/scene/stream.h"
 #include "game/dagger/play/pile.h"
 #include "engine/assets/recfile.h"
@@ -201,6 +202,59 @@ static const RecField g_pile_fields[] = {
     P("count", REC_UINT, item.count)
 };
 #undef P
+/* FACT: a faction whose reputation is not the file's. SOCL: the groups' and the lasting bonus, one row. REGN: a region's law and bank. */
+typedef struct SaveFactionRow {
+    df_u32 id;
+    df_i32 rep;
+} SaveFactionRow;
+static const RecField g_faction_fields[] = {
+    REC_FIELD("id", REC_UINT, SaveFactionRow, id),
+    REC_FIELD("rep", REC_INT, SaveFactionRow, rep)
+};
+static const RecSchema g_faction_schema = {
+    "FACT", "faction", g_faction_fields, 2, (df_u16)sizeof(SaveFactionRow), 0
+};
+
+typedef struct SaveSocialRow {
+    df_u32 id;
+    df_i32 social[SOCIAL_COUNT];
+    df_i32 bonus;
+} SaveSocialRow;
+static const RecField g_social_fields[] = {
+    REC_FIELD("id", REC_UINT, SaveSocialRow, id),
+    REC_ARRAY("social", REC_INT, SaveSocialRow, social),
+    REC_FIELD("bonus", REC_INT, SaveSocialRow, bonus)
+};
+static const RecSchema g_social_schema = {
+    "SOCL", "social", g_social_fields, 3, (df_u16)sizeof(SaveSocialRow), 0
+};
+
+typedef struct SaveRegionRow {
+    df_u32 id;
+    df_i32 legal;
+    df_i32 banished;
+    df_i32 defaulted;
+    df_i32 gold;
+    df_i32 loan;
+    df_i32 due_day;
+    df_i32 prices;
+} SaveRegionRow;
+#define R(name, member) REC_FIELD(name, REC_INT, SaveRegionRow, member)
+static const RecField g_region_fields[] = {
+    REC_FIELD("id", REC_UINT, SaveRegionRow, id),
+    R("legal", legal),
+    R("banished", banished),
+    R("defaulted", defaulted),
+    R("gold", gold),
+    R("loan", loan),
+    R("due_day", due_day),
+    R("prices", prices)
+};
+#undef R
+static const RecSchema g_region_schema = {
+    "REGN", "region", g_region_fields, 8, (df_u16)sizeof(SaveRegionRow), 0
+};
+
 static const RecSchema g_pile_schema = {
     "PILE", "pile", g_pile_fields, (int)(sizeof(g_pile_fields) / sizeof(g_pile_fields[0])), (df_u16)sizeof(SavePileRow), 0
 };
@@ -216,6 +270,10 @@ static int put_file(void *ctx, const void *src, df_u32 n)
 /* The chunks, each built in the scratch heap current. 0 when one did not write or there was no memory. */
 static int write_chunks(const SaveState *state)
 {
+    static SaveRegionRow regions[STANDING_REGIONS];
+    SaveFactionRow *factions;
+    SaveSocialRow social;
+    int nfaction;
     static SaveGameRow game;
     static SaveItemRow items[INVENTORY_MAX];
     SaveKeepRow *keeps;
@@ -272,6 +330,37 @@ static int write_chunks(const SaveState *state)
     if (!keeps || !piles) {
         return 0;
     }
+    nfaction = standing_changed_count();
+    factions = (SaveFactionRow *)mem_alloc((df_u32)(nfaction + 1) * (df_u32)sizeof(SaveFactionRow));
+    if (!factions) {
+        return 0;
+    }
+    for (i = 0; i < nfaction; i++) {
+        int faction;
+        int rep;
+
+        standing_changed_at(i, &faction, &rep);
+        factions[i].id = (df_u32)faction;
+        factions[i].rep = rep;
+    }
+    mem_zero(&social, sizeof(social));
+    for (i = 0; i < SOCIAL_COUNT; i++) {
+        social.social[i] = standing_socials()[i];
+    }
+    social.bonus = standing_reaction_bonus();
+    for (i = 0; i < STANDING_REGIONS; i++) {
+        const RegionStanding *r;
+
+        r = standing_region(i);
+        regions[i].id = (df_u32)i;
+        regions[i].legal = r->legal;
+        regions[i].banished = r->banished;
+        regions[i].defaulted = r->defaulted;
+        regions[i].gold = r->gold;
+        regions[i].loan = r->loan;
+        regions[i].due_day = r->due_day;
+        regions[i].prices = r->prices;
+    }
     for (i = 0; i < nkeep; i++) {
         keeps[i].id = (df_u32)i;
         keeps[i].keep = *keep_at(i);
@@ -286,6 +375,9 @@ static int write_chunks(const SaveState *state)
            && rec_put_rows(put_file, 0, &g_item_schema, items, state->pack.count, 0, 0)
            && rec_put_rows(put_file, 0, &g_keep_schema, keeps, nkeep, 0, 0)
            && rec_put_rows(put_file, 0, &g_pile_schema, piles, npile, 0, 0)
+           && rec_put_rows(put_file, 0, &g_faction_schema, factions, nfaction, 0, 0)
+           && rec_put_rows(put_file, 0, &g_social_schema, &social, 1, 0, 0)
+           && rec_put_rows(put_file, 0, &g_region_schema, regions, STANDING_REGIONS, 0, 0)
            && (state->sheet.klass != CLASS_CUSTOM || !career_class(CLASS_CUSTOM)
                || rec_put_rows(put_file, 0, &class_schema, career_class(CLASS_CUSTOM), 1, 0, 0));
 }
@@ -351,6 +443,9 @@ static RecTable g_sheet_table;
 static RecTable g_item_table;
 static RecTable g_keep_table;
 static RecTable g_pile_table;
+static RecTable g_faction_table;
+static RecTable g_social_table;
+static RecTable g_region_table;
 static RecTable g_head_table;
 /* A custom class, when the save's character has one: the same record as a class of the list. */
 static RecTable g_custom_table;
@@ -369,7 +464,7 @@ static int ready_table(RecTable *t, const RecSchema *s, int cap)
 static void merge_chunk(const RecChunk *c)
 {
     static RecTable *const tables[] = {
-        &g_head_table, &g_game_table, &g_sheet_table, &g_item_table, &g_keep_table, &g_pile_table, &g_custom_table
+        &g_head_table, &g_game_table, &g_sheet_table, &g_item_table, &g_keep_table, &g_pile_table, &g_faction_table, &g_social_table, &g_region_table, &g_custom_table
     };
     int i;
 
@@ -435,6 +530,40 @@ static void apply_tables(SaveState *state)
     for (i = 0; i < g_pile_table.count; i++) {
         pile_put(&((const SavePileRow *)g_pile_table.rows)[i].pile);
     }
+    /* What the world thinks: a new game's, the saved rows over it. A save from before P9 has none, and is that. */
+    standing_new_game(state->seed);
+    for (i = 0; i < g_faction_table.count; i++) {
+        const SaveFactionRow *row;
+
+        row = &((const SaveFactionRow *)g_faction_table.rows)[i];
+        standing_put_rep((int)row->id, row->rep);
+    }
+    if (g_social_table.count) {
+        const SaveSocialRow *row;
+        short social[SOCIAL_COUNT];
+
+        row = (const SaveSocialRow *)g_social_table.rows;
+        for (i = 0; i < SOCIAL_COUNT; i++) {
+            social[i] = (short)row->social[i];
+        }
+        standing_put_socials(social, row->bonus);
+    }
+    for (i = 0; i < g_region_table.count; i++) {
+        const SaveRegionRow *row;
+        RegionStanding *r;
+
+        row = &((const SaveRegionRow *)g_region_table.rows)[i];
+        r = standing_region((int)row->id);
+        if (r) {
+            r->legal = (short)row->legal;
+            r->banished = (df_u8)row->banished;
+            r->defaulted = (df_u8)row->defaulted;
+            r->gold = row->gold;
+            r->loan = row->loan;
+            r->due_day = row->due_day;
+            r->prices = (short)row->prices;
+        }
+    }
 }
 
 int save_read(SaveState *state)
@@ -451,7 +580,8 @@ int save_read(SaveState *state)
     if (!ready_table(&g_head_table, &rec_head_schema, 1) || !ready_table(&g_game_table, &g_game_schema, 1)
         || !ready_table(&g_sheet_table, &g_sheet_schema, 1) || !ready_table(&g_item_table, &g_item_schema, INVENTORY_MAX)
         || !ready_table(&g_keep_table, &g_keep_schema, 256) || !ready_table(&g_pile_table, &g_pile_schema, PILE_ITEMS)
-        || !ready_table(&g_custom_table, &class_schema, 1)) {
+        || !ready_table(&g_custom_table, &class_schema, 1) || !ready_table(&g_faction_table, &g_faction_schema, 64)
+        || !ready_table(&g_social_table, &g_social_schema, 1) || !ready_table(&g_region_table, &g_region_schema, STANDING_REGIONS)) {
         return 0;
     }
     /* The bytes in a heap of its own: a file read beside the program otherwise lives until exit. */

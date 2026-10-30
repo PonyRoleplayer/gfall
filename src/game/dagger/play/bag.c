@@ -1,4 +1,5 @@
 #include "game/dagger/play/bag.h"
+#include "game/dagger/play/combat.h"
 #include "game/dagger/play/canvas.h"
 #include "game/dagger/play/doll.h"
 #include "game/dagger/play/loot.h"
@@ -46,6 +47,21 @@ static const Rect g_button_rect[BUTTONS] = {
     { 226, 126, 31, 14 }
 };
 static const Rect g_exit_rect = { 222, 178, 39, 22 };
+/* A shop's column (INVE08I0.IMG and its like) and the cost panel, where DFU's trade window has them. */
+#define TRADE_COLUMN_X 222
+#define TRADE_COLUMN_Y 10
+#define TRADE_COLUMN_W 39
+#define TRADE_COLUMN_H 190
+#define COST_PANEL_X 49
+#define COST_PANEL_Y 13
+#define COST_PANEL_W 111
+#define COST_PANEL_H 9
+static const Rect g_trade_wagon = { 226, 14, 31, 14 };
+static const Rect g_trade_info = { 226, 36, 31, 14 };
+static const Rect g_trade_select = { 226, 58, 31, 14 };
+static const Rect g_trade_steal = { 226, 112, 31, 14 };
+static const Rect g_trade_action = { 226, 134, 31, 14 };
+static const Rect g_trade_clear = { 226, 156, 31, 14 };
 
 /* The two lists: the player's and what is beside them. */
 enum {
@@ -74,6 +90,9 @@ static const Rect g_target_rect[LISTS] = {
 };
 /* The small panel that names what the pointer is over, and the part of ITEM00I0.IMG behind it. */
 static const Rect g_panel_rect = { 223, 145, 37, 32 };
+/* A shop's column has other buttons: the small panel stands between them, higher up to leave Steal clear. */
+#define PANEL_Y_BUYING 76
+#define PANEL_Y_TRADING 87
 static const Rect g_panel_stone = { 196, 68, 50, 37 };
 /* The doll's place, and each body part's armour number on it (BODY_*, DFU's PaperDoll). */
 #define DOLL_X 49
@@ -145,11 +164,21 @@ static struct {
     int info_shown;
     char info[INFO_LINES][INFO_LINE_CHARS];
     int open;
+    /* TRADE_* (bag.h); 0 for the plain screen. The shop, its action column and its cost panel. */
+    int trade;
+    Shop shop;
+    const df_u8 *trade_column;
+    const df_u8 *cost_panel;
+    /* Trading, 1 after the thief was seen: the game opens the court when this closes. */
+    int stole;
 } g;
 
 /* What the right list shows, and which of the searched thing's rolled things each is (loot.c). */
 static Inventory g_remote;
 static df_u8 g_origin[INVENTORY_MAX];
+/* Buying: what is chosen off the shelves, the left list, and which rolled thing each is. */
+static Inventory g_basket;
+static df_u8 g_basket_origin[INVENTORY_MAX];
 
 int bag_finds_things(Entity *searched, int level)
 {
@@ -183,7 +212,16 @@ void bag_close(void)
         return;
     }
     g.open = 0;
-    if (g.searched) {
+    if (g.trade) {
+        /* What was laid on the counter and not sold goes back; a basket not paid for was never taken. */
+        if (g.trade != TRADE_BUY) {
+            int i;
+
+            for (i = 0; i < g_remote.count; i++) {
+                inventory_add(&g.player->pack, &g_remote.item[i]);
+            }
+        }
+    } else if (g.searched) {
         loot_closed(g.searched, &g_remote);
     } else {
         land_what_was_dropped();
@@ -232,6 +270,29 @@ int bag_open(Player *p, Entity *searched)
     return 1;
 }
 
+int bag_open_trade(Player *p, const Shop *shop, int trade, int day)
+{
+    if (!bag_open(p, 0)) {
+        return 0;
+    }
+    g.trade = trade;
+    g.shop = *shop;
+    g.mode = BUTTON_EQUIP;
+    inventory_clear(&g_basket);
+    inventory_clear(&g_remote);
+    if (trade == TRADE_BUY) {
+        shop_stock(shop, p->sheet.level, day, &g_remote, g_origin);
+    }
+    g.trade_column = composer_read(&g.composer, trade == TRADE_BUY ? "INVE08I0.IMG" : (trade == TRADE_SELL ? "INVE10I0.IMG" : "INVE12I0.IMG"));
+    g.cost_panel = composer_read(&g.composer, "SHOP00I0.IMG");
+    if (!g.trade_column || !g.cost_panel) {
+        log_text(LOG_WARN, "trade: its pictures did not read");
+        bag_close();
+        return 0;
+    }
+    return 1;
+}
+
 const df_u8 *bag_pixels(void)
 {
     return g.composer.screen;
@@ -253,10 +314,20 @@ const char *bag_note(void)
 
 /* ---- The lists: which items each shows, and in what row. ---- */
 
+/* The inventory the left list shows: the player's, or the basket while buying. */
+static Inventory *local_inventory(void)
+{
+    return g.trade == TRADE_BUY ? &g_basket : &g.player->pack;
+}
+
 /* 1 when the player's list shows item i now: not worn, and under the chosen tab. */
 static int local_shows(int i)
 {
     const Item *it;
+
+    if (g.trade == TRADE_BUY) {
+        return g_basket.item[i].count > 0;
+    }
 
     it = &g.player->pack.item[i];
     if (inventory_worn_at(&g.player->pack, i) >= 0) {
@@ -276,7 +347,7 @@ static int list_length(int list)
         return g.remote->count;
     }
     n = 0;
-    for (i = 0; i < g.player->pack.count; i++) {
+    for (i = 0; i < local_inventory()->count; i++) {
         n += local_shows(i);
     }
     return n;
@@ -293,7 +364,7 @@ static int list_item(int list, int place)
     if (list == LIST_REMOTE) {
         return place < g.remote->count ? place : -1;
     }
-    for (i = 0; i < g.player->pack.count; i++) {
+    for (i = 0; i < local_inventory()->count; i++) {
         if (local_shows(i) && place-- == 0) {
             return i;
         }
@@ -304,7 +375,7 @@ static int list_item(int list, int place)
 /* The inventory a list reads. */
 static Inventory *list_inventory(int list)
 {
-    return list == LIST_REMOTE ? g.remote : &g.player->pack;
+    return list == LIST_REMOTE ? g.remote : local_inventory();
 }
 
 /* A list scrolled no further than it has things to show: one that grew shorter comes back. */
@@ -476,7 +547,7 @@ static void compose_targets(void)
                df_iround(rules_max_carry(g.player->sheet.attribute[ATTR_STRENGTH])));
     canvas_label(r->x + 1, r->y + 2 + LINE_H, line);
     r = &g_target_rect[LIST_REMOTE];
-    canvas_label(r->x + 1, r->y + 2, g.searched ? loot_label(g.searched) : "Dropped");
+    canvas_label(r->x + 1, r->y + 2, g.trade == TRADE_BUY ? "Shelves" : (g.trade ? "Counter" : (g.searched ? loot_label(g.searched) : "Dropped")));
     log_format(line, (int)sizeof(line), "%d kg", df_iround(inventory_weight(g.remote)));
     canvas_label(r->x + 1, r->y + 2 + LINE_H, line);
 }
@@ -484,7 +555,10 @@ static void compose_targets(void)
 /* The item the pointer rests on, or 0. */
 static const Item *item_under_pointer(void)
 {
-    if (g.over == OVER_LOCAL || g.over == OVER_DOLL) {
+    if (g.over == OVER_LOCAL) {
+        return g.over_index >= 0 ? &local_inventory()->item[g.over_index] : 0;
+    }
+    if (g.over == OVER_DOLL) {
         return g.over_index >= 0 ? &g.player->pack.item[g.over_index] : 0;
     }
     return g.over == OVER_REMOTE && g.over_index >= 0 ? &g.remote->item[g.over_index] : 0;
@@ -497,7 +571,9 @@ static void compose_panel(void)
     char line[48];
     int row;
     int col;
+    int panel_y;
 
+    panel_y = g.trade == TRADE_BUY ? PANEL_Y_BUYING : (g.trade ? PANEL_Y_TRADING : g_panel_rect.y);
     for (row = 0; row < g_panel_rect.h; row++) {
         for (col = 0; col < g_panel_rect.w; col++) {
             /* The stone is cut larger than the panel: shrunk to it, as DFU scales it. */
@@ -506,7 +582,7 @@ static void compose_panel(void)
 
             sx = g_panel_stone.x + col * g_panel_stone.w / g_panel_rect.w;
             sy = g_panel_stone.y + row * g_panel_stone.h / g_panel_rect.h;
-            g.composer.screen[(g_panel_rect.y + row) * CANVAS_W + g_panel_rect.x + col] = g.stone[sy * CANVAS_W + sx];
+            g.composer.screen[(panel_y + row) * CANVAS_W + g_panel_rect.x + col] = g.stone[sy * CANVAS_W + sx];
         }
     }
     it = item_under_pointer();
@@ -516,16 +592,16 @@ static void compose_panel(void)
             Rect inside;
 
             inside.x = (df_u16)(g_panel_rect.x + 1);
-            inside.y = (df_u16)(g_panel_rect.y + 1);
+            inside.y = (df_u16)(panel_y + 1);
             inside.w = (df_u16)(g_panel_rect.w - 2);
             inside.h = g_panel_rect.h;
             canvas_text(&inside, line);
         }
         return;
     }
-    canvas_label(g_panel_rect.x + 1, g_panel_rect.y + 1, "Gold");
+    canvas_label(g_panel_rect.x + 1, panel_y + 1, "Gold");
     log_format(line, (int)sizeof(line), "%u", (unsigned)g.player->pack.gold);
-    canvas_label(g_panel_rect.x + 1, g_panel_rect.y + 1 + LINE_H, line);
+    canvas_label(g_panel_rect.x + 1, panel_y + 1 + LINE_H, line);
 }
 
 /* The info box, while one shows: a dark box over the doll, and a click anywhere puts it away. */
@@ -549,16 +625,49 @@ static void compose_info(void)
     }
 }
 
+/* What the lists come to, bargained: what is paid while buying or repairing, what is got while selling. */
+static int trade_price(void)
+{
+    const Inventory *list;
+    int cost;
+    int i;
+
+    list = g.trade == TRADE_BUY ? &g_basket : &g_remote;
+    cost = 0;
+    for (i = 0; i < list->count; i++) {
+        cost += g.trade == TRADE_REPAIR ? shop_repair_cost(&g.shop, &list->item[i]) : shop_cost(&g.shop, &list->item[i]);
+    }
+    return cost ? shop_trade_price(&g.shop, cost, &g.player->sheet, g.trade == TRADE_SELL) : 0;
+}
+
+/* The shop's column over the inventory's, and the price and the gold in its cost panel. */
+static void compose_trade(void)
+{
+    char line[16];
+
+    canvas_copy_part(g.trade_column, TRADE_COLUMN_W, 0, 0, TRADE_COLUMN_W, TRADE_COLUMN_H, TRADE_COLUMN_X, TRADE_COLUMN_Y);
+    canvas_copy_part(g.cost_panel, COST_PANEL_W, 0, 0, COST_PANEL_W, COST_PANEL_H, COST_PANEL_X, COST_PANEL_Y);
+    log_format(line, (int)sizeof(line), "%d", trade_price());
+    canvas_label(COST_PANEL_X + 28, COST_PANEL_Y + 2, line);
+    log_format(line, (int)sizeof(line), "%u", (unsigned)g.player->pack.gold);
+    canvas_label(COST_PANEL_X + 68, COST_PANEL_Y + 2, line);
+}
+
 void bag_compose(void)
 {
     canvas_use(&g.composer);
     canvas_copy_all(g.grey);
     canvas_copy_rect(g.gold, &g_tab_rect[g.tab]);
-    canvas_copy_rect(g.gold, &g_button_rect[g.mode]);
+    if (!g.trade) {
+        canvas_copy_rect(g.gold, &g_button_rect[g.mode]);
+    }
     compose_doll();
     compose_targets();
     compose_list(LIST_LOCAL);
     compose_list(LIST_REMOTE);
+    if (g.trade) {
+        compose_trade();
+    }
     compose_panel();
     if (g.info_shown) {
         compose_info();
@@ -870,6 +979,215 @@ void bag_key(int vk)
     }
 }
 
+/* ---- A shop's clicks. ---- */
+
+/* Item i of the shelves into the basket. */
+static void to_basket(int i)
+{
+    int at;
+    int n;
+
+    at = inventory_add(&g_basket, &g_remote.item[i]);
+    if (at < 0) {
+        g.note = "You cannot carry any more.";
+        return;
+    }
+    g_basket_origin[at] = g_origin[i];
+    for (n = i; n + 1 < g_remote.count; n++) {
+        g_origin[n] = g_origin[n + 1];
+    }
+    inventory_remove(&g_remote, i);
+}
+
+/* Item i of the basket back on the shelves. */
+static void from_basket(int i)
+{
+    int at;
+    int n;
+
+    at = inventory_add(&g_remote, &g_basket.item[i]);
+    if (at >= 0) {
+        g_origin[at] = g_basket_origin[i];
+    }
+    for (n = i; n + 1 < g_basket.count; n++) {
+        g_basket_origin[n] = g_basket_origin[n + 1];
+    }
+    inventory_remove(&g_basket, i);
+}
+
+/* Item i of the pack laid on the counter, if the shop deals in it or it is worn enough to mend. */
+static void to_counter(int i)
+{
+    const Item *it;
+
+    it = &g.player->pack.item[i];
+    if (g.trade == TRADE_SELL && !shop_buys(&g.shop, it)) {
+        g.note = "This shop does not deal in that.";
+        return;
+    }
+    if (g.trade == TRADE_REPAIR && it->condition >= it->condition_max) {
+        g.note = "That needs no repair.";
+        return;
+    }
+    if (inventory_add(&g_remote, it) >= 0) {
+        inventory_remove(&g.player->pack, i);
+    }
+}
+
+/* Everything in the basket into the pack, and off the shelves for good. 0, with a note, when it will not all go. */
+static int take_basket(void)
+{
+    float weight;
+    int i;
+
+    weight = inventory_weight(&g.player->pack);
+    for (i = 0; i < g_basket.count; i++) {
+        weight += g_basket.item[i].weight * (float)g_basket.item[i].count;
+    }
+    if (weight > rules_max_carry(g.player->sheet.attribute[ATTR_STRENGTH])
+        || g.player->pack.count + g_basket.count > INVENTORY_MAX) {
+        g.note = "You cannot carry any more.";
+        return 0;
+    }
+    for (i = 0; i < g_basket.count; i++) {
+        inventory_add(&g.player->pack, &g_basket.item[i]);
+        shop_taken(&g.shop, g_basket_origin[i]);
+    }
+    inventory_clear(&g_basket);
+    return 1;
+}
+
+/* The column's action: pay for the basket, or sell, or repair what is on the counter. */
+static void trade_act(void)
+{
+    int price;
+    int i;
+
+    price = trade_price();
+    if (!price) {
+        return;
+    }
+    if (g.trade == TRADE_SELL) {
+        g.player->pack.gold += (df_u32)price;
+        inventory_clear(&g_remote);
+    } else {
+        if (g.shop.closed) {
+            g.note = "The shop is closed.";
+            return;
+        }
+        if (price > (int)g.player->pack.gold) {
+            g.note = "You do not have enough gold.";
+            return;
+        }
+        if (g.trade == TRADE_BUY) {
+            if (!take_basket()) {
+                return;
+            }
+        } else {
+            for (i = g_remote.count - 1; i >= 0; i--) {
+                g_remote.item[i].condition = g_remote.item[i].condition_max;
+                inventory_add(&g.player->pack, &g_remote.item[i]);
+            }
+            inventory_clear(&g_remote);
+        }
+        g.player->pack.gold -= (df_u32)price;
+    }
+    character_tally(&g.player->sheet, SKILL_MERCANTILE, 1);
+    wear_changed();
+}
+
+/* The Steal button: away with the basket, or seen. Either way the screen closes. */
+static int trade_steal(void)
+{
+    float weight;
+    int i;
+
+    if (!g_basket.count) {
+        return BAG_STAY;
+    }
+    weight = 0.0f;
+    for (i = 0; i < g_basket.count; i++) {
+        weight += g_basket.item[i].weight * (float)g_basket.item[i].count;
+    }
+    character_tally(&g.player->sheet, SKILL_PICKPOCKET, 1);
+    if (combat_roll(100) < shop_seen_chance(&g.shop, &g.player->sheet, weight, g_basket.count)) {
+        g.stole = 1;
+        return BAG_LEAVE;
+    }
+    take_basket();
+    return BAG_LEAVE;
+}
+
+static int click_trade(int x, int y)
+{
+    int list;
+    int i;
+
+    if (rect_has(&g_exit_rect, x, y)) {
+        return BAG_LEAVE;
+    }
+    if (rect_has(&g_trade_info, x, y)) {
+        g.mode = BUTTON_INFO;
+        return BAG_STAY;
+    }
+    if (rect_has(&g_trade_select, x, y)) {
+        g.mode = BUTTON_EQUIP;
+        return BAG_STAY;
+    }
+    if (rect_has(&g_trade_wagon, x, y)) {
+        g.note = "You have no wagon.";
+        return BAG_STAY;
+    }
+    if (rect_has(&g_trade_action, x, y)) {
+        trade_act();
+        return BAG_STAY;
+    }
+    if (rect_has(&g_trade_clear, x, y)) {
+        /* Everything back where it came from. */
+        if (g.trade == TRADE_BUY) {
+            while (g_basket.count) {
+                from_basket(g_basket.count - 1);
+            }
+        } else {
+            for (i = 0; i < g_remote.count; i++) {
+                inventory_add(&g.player->pack, &g_remote.item[i]);
+            }
+            inventory_clear(&g_remote);
+        }
+        return BAG_STAY;
+    }
+    if (g.trade == TRADE_BUY && rect_has(&g_trade_steal, x, y)) {
+        return trade_steal();
+    }
+    if (click_arrows(x, y)) {
+        return BAG_STAY;
+    }
+    list = list_at(x, y, &i);
+    if (i < 0) {
+        return BAG_STAY;
+    }
+    if (g.mode == BUTTON_INFO) {
+        show_info(list == LIST_LOCAL ? &local_inventory()->item[i] : &g_remote.item[i]);
+    } else if (g.trade == TRADE_BUY) {
+        if (list == LIST_REMOTE) {
+            to_basket(i);
+        } else {
+            from_basket(i);
+        }
+    } else if (list == LIST_LOCAL) {
+        to_counter(i);
+    } else {
+        inventory_add(&g.player->pack, &g_remote.item[i]);
+        inventory_remove(&g_remote, i);
+    }
+    return BAG_STAY;
+}
+
+int bag_stole(void)
+{
+    return g.stole;
+}
+
 int bag_click(int x, int y)
 {
     int list;
@@ -886,6 +1204,9 @@ int bag_click(int x, int y)
     if (g.info_shown) {
         g.info_shown = 0;
         return BAG_STAY;
+    }
+    if (g.trade) {
+        return click_trade(x, y);
     }
     if (rect_has(&g_exit_rect, x, y)) {
         return BAG_LEAVE;

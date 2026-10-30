@@ -1,4 +1,5 @@
 #include "game/dagger/play/create.h"
+#include "game/dagger/play/standing.h"
 #include "game/dagger/play/canvas.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/kit.h"
@@ -393,6 +394,12 @@ static void answer_question(int answer)
             g.gold_gain += e->a;
         } else if (e->kind == BIOG_ITEM) {
             answer_gives_item(e);
+        } else if (e->kind == BIOG_SOCIAL) {
+            standing_social_change(e->a, e->b);
+        } else if (e->kind == BIOG_FACTION) {
+            standing_change(e->a, e->b, 1);
+        } else if (e->kind == BIOG_REACTION) {
+            standing_set_reaction_bonus(e->a);
         }
     }
     g.question++;
