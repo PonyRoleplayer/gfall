@@ -26,6 +26,11 @@
 #include "game/dagger/play/loot.h"
 #include "game/dagger/play/pile.h"
 #include "game/dagger/play/bag.h"
+#include "game/dagger/play/create.h"
+#include "game/dagger/play/kit.h"
+#include "game/dagger/play/sheet.h"
+#include "game/dagger/formats/biog.h"
+#include "game/dagger/formats/textrsc.h"
 #include "game/dagger/play/doll.h"
 #include "game/dagger/play/weapon.h"
 #include "game/dagger/play/combat.h"
@@ -1743,22 +1748,16 @@ static void check_piles(void)
     printf("piles: heaps and dropped piles stand, are searched, go when emptied, and keep across their block\n");
 }
 
-/* The composed screen to a picture: build/bag0.ppm, for a person to look at against classic's. */
-static void write_screen(const char *path)
+/* A composed 320 x 200 picture under ART_PAL.COL to a file, for a person to look at against classic's. */
+static void write_picture(const df_u8 *pixels, const char *path)
 {
     df_u8 rgb[768];
-    const df_u8 *pixels;
     FILE *f;
     int i;
 
-    pixels = bag_pixels();
-    if (!img_art_palette(rgb)) {
-        check_expect(0, "bag: no ART_PAL.COL");
-        return;
-    }
-    f = fopen(path, "wb");
+    f = img_art_palette(rgb) ? fopen(path, "wb") : 0;
     if (!f) {
-        check_expect(0, "bag: the picture did not write");
+        check_expect(0, "screens: a picture did not write");
         return;
     }
     fprintf(f, "P6\n320 200\n255\n");
@@ -1848,7 +1847,7 @@ static void check_bag(void)
     check_expect(inventory_worn_at(&p.pack, 2) == EQUIP_HEAD && p.sheet.armor[BODY_HEAD] == 100 - 11 * 5,
                  "bag: the helm did not go on");
     bag_compose();
-    write_screen("build/bag0.ppm");
+    write_picture(bag_pixels(), "build/bag0.ppm");
 
     /* A click on the helm, on the doll over the head, takes it off: found by the doll's record of who drew each pixel. */
     bag_click(BAG_DOLL_HELM_X, BAG_DOLL_HELM_Y);
@@ -1878,7 +1877,7 @@ static void check_bag(void)
     i = p.pack.count;
     bag_click(BAG_LOCAL_CELL_X, BAG_ROW_Y);
     bag_compose();
-    write_screen("build/bag1.ppm");
+    write_picture(bag_pixels(), "build/bag1.ppm");
     bag_click(BAG_LOCAL_CELL_X, BAG_ROW_Y);
     check_expect(p.pack.count == i, "bag: the info box's click did something else");
 
@@ -1899,6 +1898,291 @@ static void check_bag(void)
     printf("bag: an Argonian woman in steel and elven; wear, take off, drop, take back, info; build/bag0.ppm, bag1.ppm\n");
 }
 
+/* Skills rising and levels coming, worked by hand. */
+static void check_levelling(void)
+{
+    Character c;
+    int start;
+    int i;
+
+    /* A value of 30, a skill 5 hard, a class 1.0, level 1: 30 x 5 x 1.04 x 0.4 = 62.4, down, plus 1. */
+    check_expect(rules_skill_uses_needed(30, 5, 1.0f, 1) == 63, "levels: a skill's uses needed are not classic's");
+    /* 15 points past the start and 2 to begin with: (gain + 28) / 15. */
+    check_expect(rules_level_from_sums(100, 100) == 1 && rules_level_from_sums(100, 102) == 2 && rules_level_from_sums(100, 117) == 3,
+                 "levels: the level from the sums is not classic's");
+    /* A warrior's 20 hit points, half and a roll of 3, endurance 60 adding 1. */
+    check_expect(rules_level_health(20, 3, 60) == 14 && rules_level_health(2, 0, 0) == 1, "levels: a level's health is not classic's");
+    check_expect(rules_reflex_uses(2) == 1.0f && rules_reflex_uses(0) == 1.25f && rules_reflex_uses(4) == 0.75f,
+                 "levels: reflexes do not move uses an eighth a step");
+    check_expect(check_near(rules_class_advance(0x10A00u), 1.04f, 0.01f), "levels: a Mage's advancement is not 1.04");
+
+    check_expect(character_new(&c, RACE_ARGONIAN, CLASS_WARRIOR, 1, "Test"), "levels: no character");
+    start = character_level_sum(&c);
+    check_expect(start == c.level_sum_start && !c.level_due, "levels: a new character's count does not start here");
+    /* Three primary at 30, two of three major at 20, the highest minor at 15. */
+    check_expect(start == 30 * 3 + 20 * 2 + 15, "levels: the level sum is not three primary, two major and a minor");
+
+    /* Uses count, but nothing moves until six game hours have passed. */
+    character_tally(&c, 29, 100000);
+    check_expect(!character_raise_skills(&c, 359.0f) && c.skill[29] == 30, "levels: a skill rose before six hours");
+    check_expect(character_raise_skills(&c, 360.0f) && c.skill[29] == 31 && c.skill_uses[29] == 0,
+                 "levels: a skill with its uses did not rise at six hours");
+    check_expect(!c.level_due, "levels: one point brought a level");
+    /* A second point in a primary skill: the first level-up needs only 2. */
+    character_tally(&c, 29, 100000);
+    character_raise_skills(&c, 720.0f);
+    check_expect(c.skill[29] == 32 && c.level_due, "levels: two points did not bring level 2");
+    i = c.health_max;
+    character_level_up(&c, 0);
+    check_expect(c.level == 2 && !c.level_due && c.health_max > i, "levels: the level did not come, or its health");
+    /* Past 95 nothing rises unless no primary skill has mastered yet; a mastered one holds the rest at 95. */
+    c.skill[29] = 100;
+    c.skill[0] = 95;
+    character_tally(&c, 0, 100000);
+    character_raise_skills(&c, 1080.0f);
+    check_expect(c.skill[0] == 95, "levels: a skill passed 95 after a primary mastered");
+    printf("levels: uses, six hours, the sum, a level's health, by hand\n");
+}
+
+/* What each class starts with, and TEXT.RSC and BIOG files as they read. */
+static void check_kit_and_words(void)
+{
+    static Biog biog;
+    Inventory pack;
+    char words[2048];
+    int k;
+
+    kit_give(CLASS_WARRIOR, &pack);
+    check_expect(pack.gold == 100 && pack.count == 1 && inventory_weapon(&pack)->template_id == 118
+                     && inventory_weapon(&pack)->material == MATERIAL_IRON,
+                 "kit: a warrior does not start with an iron broadsword and 100 gold");
+    kit_give(13, &pack);
+    check_expect(pack.count == 3 && inventory_weapon(&pack)->template_id == 130 && pack.item[2].template_id == ITEM_ARROW
+                     && pack.item[2].count == 24,
+                 "kit: an archer does not start with a long bow, a battle axe and 24 arrows");
+    for (k = 0; k < 18; k++) {
+        kit_give(k, &pack);
+        check_expect(inventory_weapon(&pack) != 0, "kit: a class starts with nothing in hand");
+    }
+
+    check_expect(textrsc_read(career_race(RACE_ARGONIAN)->description, words, (int)sizeof(words)) > 100,
+                 "words: the Argonian's description did not read");
+    check_expect(textrsc_read(2100 + CLASS_WARRIOR, words, (int)sizeof(words)) > 0, "words: a class's description did not read");
+    check_expect(textrsc_read(65000, words, (int)sizeof(words)) < 0, "words: a record that is not there read");
+
+    /* Every class has its twelve questions, each with answers. */
+    for (k = 0; k < 18; k++) {
+        int q;
+
+        check_expect(biog_load(k, &biog) && biog.questions == BIOG_QUESTIONS, "biog: a class does not have twelve questions");
+        for (q = 0; q < biog.questions; q++) {
+            check_expect(biog.question[q].answers >= 2 && biog.question[q].line[0][0], "biog: a question has no words or too few answers");
+        }
+    }
+    printf("kit and words: 18 classes' kits, TEXT.RSC, 18 BIOG files of twelve questions\n");
+}
+
+/* Creation, driven as a player would: clicks on classic's places, keys for the name. */
+#define CREATE_YES_X 100
+#define CREATE_NO_X 210
+#define CREATE_BOX_Y 155
+#define CREATE_OK_X 280
+#define CREATE_OK_Y 180
+static void check_create(void)
+{
+    Character sheet;
+    Inventory pack;
+    int x;
+    int y;
+    int found;
+    int i;
+
+    check_expect(create_open(), "create: it did not open");
+    create_compose();
+    write_picture(create_pixels(), "build/create0.ppm");
+
+    /* Anywhere over the sea is no race. */
+    create_click(2, 2);
+    check_expect(create_step() == CREATE_RACE, "create: a click off the land chose a race");
+    /* Find Black Marsh by the file's own mask: a click on a pixel of value 8. */
+    found = 0;
+    {
+        ImgPicture mask;
+
+        check_expect(img_load("TAMRIEL2.IMG", &mask), "create: no TAMRIEL2.IMG");
+        for (y = 0; y < 200 && !found; y++) {
+            for (x = 0; x < 320 && !found; x++) {
+                if (mask.pixels[y * 320 + x] == RACE_ARGONIAN) {
+                    create_click(x, y);
+                    found = 1;
+                }
+            }
+        }
+    }
+    check_expect(found && create_step() == CREATE_RACE_CONFIRM, "create: a click on Black Marsh asked nothing");
+    create_compose();
+    write_picture(create_pixels(), "build/create1.ppm");
+    /* No goes back, Yes goes on. */
+    create_click(CREATE_NO_X, CREATE_BOX_Y);
+    check_expect(create_step() == CREATE_RACE, "create: No did not go back to the map");
+    create_click(x - 1, y - 1);
+    create_click(CREATE_YES_X, CREATE_BOX_Y);
+    check_expect(create_step() == CREATE_SEX, "create: Yes did not go on");
+    create_click(CREATE_YES_X, CREATE_BOX_Y);
+    check_expect(create_step() == CREATE_CLASS, "create: choosing a woman did not go on");
+    create_compose();
+    write_picture(create_pixels(), "build/create2.ppm");
+    /* The Warrior, class 16, on the list. */
+    create_click(150, 22 + 16 * 8 + 8 + 2);
+    check_expect(create_step() == CREATE_CLASS_CONFIRM, "create: a click on the list asked nothing");
+    create_click(CREATE_YES_X, CREATE_BOX_Y);
+    check_expect(create_step() == CREATE_QUESTIONS, "create: a class did not bring its questions");
+    create_compose();
+    write_picture(create_pixels(), "build/create3.ppm");
+    /* Twelve answers, the first each time. */
+    for (i = 0; i < BIOG_QUESTIONS; i++) {
+        create_click(40, 80);
+    }
+    check_expect(create_step() == CREATE_NAME, "create: twelve answers did not reach the name");
+    /* No name, no going on. A capital begins each word; backspace takes one off. */
+    create_click(CREATE_OK_X, CREATE_OK_Y);
+    check_expect(create_step() == CREATE_NAME && create_note() != 0, "create: an empty name went on");
+    create_key('S');
+    create_key('E');
+    create_key('E');
+    create_key('X');
+    create_key(0x08);
+    create_key(0x20);
+    create_key('J');
+    create_key('A');
+    create_compose();
+    write_picture(create_pixels(), "build/create4.ppm");
+    create_key(0x0D);
+    check_expect(create_step() == CREATE_FACE, "create: Enter did not take the name");
+    /* The next face, and on. */
+    create_click(300, 73);
+    create_compose();
+    write_picture(create_pixels(), "build/create5.ppm");
+    create_click(CREATE_OK_X, CREATE_OK_Y);
+    check_expect(create_step() == CREATE_ATTRIBUTES, "create: the face's OK did not go on");
+    create_compose();
+    write_picture(create_pixels(), "build/create6.ppm");
+    /* Points must all be placed: OK refuses, then the spinner places them on Strength. */
+    create_click(CREATE_OK_X, CREATE_OK_Y);
+    check_expect(create_step() == CREATE_ATTRIBUTES && create_note() != 0, "create: OK went on with points left");
+    create_click(25, 30);
+    for (i = 0; i < 20; i++) {
+        create_click(50, 24);
+    }
+    create_click(CREATE_OK_X, CREATE_OK_Y);
+    check_expect(create_step() == CREATE_SKILLS, "create: every point placed did not go on");
+    create_compose();
+    write_picture(create_pixels(), "build/create7.ppm");
+    /* Six points a group: the spinner's right on line 0, then on a major and a minor line. */
+    for (i = 0; i < 6; i++) {
+        create_click(235, 33);
+    }
+    create_click(CREATE_OK_X, CREATE_OK_Y);
+    check_expect(create_step() == CREATE_SKILLS && create_note() != 0, "create: OK went on with the major and minor points left");
+    create_click(100, 83);
+    for (i = 0; i < 6; i++) {
+        create_click(235, 82);
+    }
+    create_click(100, 132);
+    for (i = 0; i < 6; i++) {
+        create_click(235, 131);
+    }
+    create_compose();
+    write_picture(create_pixels(), "build/create8.ppm");
+    create_click(CREATE_OK_X, CREATE_OK_Y);
+    check_expect(create_step() == CREATE_REFLEXES, "create: every skill point placed did not go on");
+    /* Very low, the bottom line. */
+    create_click(150, 148 + 40);
+    create_compose();
+    write_picture(create_pixels(), "build/create9.ppm");
+    create_click(CREATE_OK_X, CREATE_OK_Y);
+    check_expect(create_step() == CREATE_SUMMARY, "create: reflexes did not go on");
+    create_compose();
+    write_picture(create_pixels(), "build/create10.ppm");
+    check_expect(create_click(CREATE_OK_X, CREATE_OK_Y) == CREATE_DONE, "create: the summary's OK did not finish");
+    check_expect(create_result(&sheet, &pack), "create: no character came of it");
+    check_expect(sheet.race == RACE_ARGONIAN && sheet.female && sheet.klass == CLASS_WARRIOR && sheet.level == 1,
+                 "create: the character is not who was chosen");
+    check_expect(strcmp(sheet.name, "See Ja") == 0, "create: the name is not as typed");
+    check_expect(sheet.face == 1 && sheet.reflexes == 4, "create: the face or the reflexes were not kept");
+    check_expect(inventory_weapon(&pack) != 0 && pack.gold <= 2000u, "create: no kit, or a mad amount of gold");
+    check_expect(sheet.health == sheet.health_max && sheet.level_sum_start == character_level_sum(&sheet),
+                 "create: the character is not whole, or their level count did not start");
+    create_close();
+
+    /* Escape on the map starts at once as the default. */
+    check_expect(create_open() && create_key(0x1B) == CREATE_SKIPPED, "create: Escape on the map did not skip");
+    create_close();
+    check_expect(create_default(&sheet, &pack) && sheet.race == RACE_ARGONIAN && sheet.female && pack.gold == 100,
+                 "create: the default is not an Argonian woman with her kit");
+    printf("create: map to summary by clicks and keys; build/create0..10.ppm\n");
+}
+
+/* The character sheet, and a level taken on it. */
+static void check_sheet(void)
+{
+    Player p;
+    Character sheet;
+    Inventory pack;
+    int before;
+    int points;
+    int i;
+
+    if (!create_default(&sheet, &pack)) {
+        check_expect(0, "sheet: no default character");
+        return;
+    }
+    memset(&p, 0, sizeof(p));
+    player_init(&p, &sheet);
+    p.pack = pack;
+    player_wear_changed(&p);
+
+    /* No level due: it opens with nothing to place, and Exit leaves. */
+    check_expect(sheet_open(&p) && sheet_points() == 0, "sheet: it opened with points and no level due");
+    sheet_compose();
+    write_picture(sheet_pixels(), "build/sheet0.ppm");
+    /* A list opens, and the next click only puts it away. */
+    sheet_click(50, 110);
+    sheet_compose();
+    write_picture(sheet_pixels(), "build/sheet1.ppm");
+    sheet_click(70, 190);
+    check_expect(sheet_click(70, 190) == SHEET_LEAVE, "sheet: Exit did not leave");
+    sheet_close();
+
+    /* A level due: taken as it opens, and it cannot be left until its points are placed. */
+    p.sheet.level_due = 1;
+    before = p.sheet.health_max;
+    check_expect(sheet_open(&p) && p.sheet.level == 2 && p.sheet.health_max > before && !p.sheet.level_due,
+                 "sheet: the level was not taken as it opened");
+    points = sheet_points();
+    check_expect(points >= RULES_LEVEL_POOL_LOW && points < RULES_LEVEL_POOL_LOW + RULES_LEVEL_POOL_ROLLS,
+                 "sheet: a level's points are not 4 to 6");
+    sheet_compose();
+    write_picture(sheet_pixels(), "build/sheet2.ppm");
+    check_expect(sheet_click(70, 190) == SHEET_STAY && sheet_note() != 0, "sheet: Exit left with points to place");
+    /* The spinner by Strength: one on, one off, then every point. A point cannot come off below where it began. */
+    before = p.sheet.attribute[ATTR_STRENGTH];
+    sheet_click(180, 8);
+    check_expect(p.sheet.attribute[ATTR_STRENGTH] == before + 1 && sheet_points() == points - 1, "sheet: the spinner put no point on");
+    sheet_click(180, 22);
+    check_expect(p.sheet.attribute[ATTR_STRENGTH] == before && sheet_points() == points, "sheet: the spinner took no point off");
+    sheet_click(180, 22);
+    check_expect(p.sheet.attribute[ATTR_STRENGTH] == before, "sheet: a point came off below where it began");
+    for (i = 0; i < points; i++) {
+        sheet_click(180, 8);
+    }
+    check_expect(sheet_points() == 0 && p.sheet.fatigue_max == (p.sheet.attribute[ATTR_STRENGTH] + p.sheet.attribute[ATTR_ENDURANCE]) * CHARACTER_FATIGUE_UNIT,
+                 "sheet: fatigue did not follow Strength");
+    check_expect(sheet_click(70, 190) == SHEET_LEAVE, "sheet: Exit did not leave with every point placed");
+    sheet_close();
+    printf("sheet: the sheet, a list, a level taken and its points placed; build/sheet0..2.ppm\n");
+}
+
 void check_play(void)
 {
     check_rules();
@@ -1913,6 +2197,10 @@ void check_play(void)
     check_loot();
     check_piles();
     check_bag();
+    check_levelling();
+    check_kit_and_words();
+    check_create();
+    check_sheet();
     check_hold();
     check_keep();
     check_dunstream();

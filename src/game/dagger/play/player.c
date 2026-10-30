@@ -7,6 +7,8 @@
 /* See player.h. */
 
 /* Radians a mouse count turns; looking up or down stops short of straight. */
+/* Seconds of running to a use of the skill: four of classic's 0.0549254 s updates. */
+#define RUN_USE_EVERY 0.2197f
 #define LOOK_SENS 0.003f
 #define PITCH_LIMIT 1.55334303f
 /* Both keys at once go no faster than one: DFU's limitDiagonalSpeed. */
@@ -64,6 +66,14 @@ void player_step(Player *p, const Input *in, const Scene *scene, float dt, int c
               ? rules_run_speed(p->sheet.attribute[ATTR_SPEED], p->sheet.skill[SKILL_RUNNING])
               : rules_walk_speed(p->sheet.attribute[ATTR_SPEED]);
     step = mps * RULES_UNITS_PER_M * dt;
+    /* Running trains the skill: one use every fourth classic update of it (PlayerEntity). */
+    if ((in->held & INPUT_BIT(INPUT_RUN)) && (f != 0.0f || r != 0.0f)) {
+        p->run_time += dt;
+        if (p->run_time >= RUN_USE_EVERY) {
+            p->run_time -= RUN_USE_EVERY;
+            character_tally(&p->sheet, SKILL_RUNNING, 1);
+        }
+    }
     /* The camera's basis: forward is (sin yaw, cos yaw), right is (cos yaw, -sin yaw). */
     sy = df_sin(p->yaw);
     cy = df_cos(p->yaw);
@@ -97,6 +107,10 @@ void player_step(Player *p, const Input *in, const Scene *scene, float dt, int c
         p->flying = 0;
     }
     if (in->pressed & INPUT_BIT(INPUT_JUMP)) {
+        /* Each jump from the ground trains the skill (PlayerEntity). */
+        if (p->body.grounded) {
+            character_tally(&p->sheet, SKILL_JUMPING, 1);
+        }
         body_jump(&p->body, rules_jump_speed(p->sheet.skill[SKILL_JUMPING]) * RULES_UNITS_PER_M);
     }
     body_step(&p->body, scene, (sy * f + cy * r) * step, (cy * f - sy * r) * step, dt);

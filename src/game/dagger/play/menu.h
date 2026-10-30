@@ -45,7 +45,7 @@ int menu_current(void);
 int menu_frame(const Input *in);
 /* The open menu and the pointer, from the game's gfx_set_extra. */
 void menu_draw(void);
-/* Classic's pointer alone at classic's x, y, for a screen that is not a menu (bagview.c). */
+/* Classic's pointer alone at classic's x, y, for a screen that is not a menu (screens.c). */
 void menu_draw_pointer(int x, int y);
 
 #endif

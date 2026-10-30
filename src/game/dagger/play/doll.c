@@ -121,8 +121,8 @@ static int lay_background(Canvas *c, const char *name)
     return 1;
 }
 
-/* The head: frame 0 of the race's face file, the first face (no creation screen picks another yet). */
-static void lay_head(Canvas *c, const char *name)
+/* The head: the character's face, a frame of the race's face file. */
+static void lay_head(Canvas *c, const char *name, int which)
 {
     CifSet faces;
     const CifFrame *face;
@@ -130,7 +130,7 @@ static void lay_head(Canvas *c, const char *name)
     if (!cif_open(name, &faces)) {
         return;
     }
-    face = cif_frame(&faces, 0);
+    face = cif_frame(&faces, which);
     if (face) {
         lay(c, face->pixels, face->w, face->h, face->x - ORIGIN_X, face->y - ORIGIN_Y, -1, DOLL_NO_OWNER);
     }
@@ -210,7 +210,7 @@ int doll_compose(df_u8 *pixels, df_u8 *owner, const Character *c, const Inventor
     }
     /* Classic shows the body in its underclothes: they always go on over it. */
     lay_img(&canvas, c->female ? race->body_female_clothed : race->body_male_clothed);
-    lay_head(&canvas, c->female ? race->heads_female : race->heads_male);
+    lay_head(&canvas, c->female ? race->heads_female : race->heads_male, c->face);
     worn = places_in_order(pack, order);
     for (i = 0; i < worn; i++) {
         lay_worn(&canvas, c, &pack->item[pack->worn[order[i]]], order[i]);

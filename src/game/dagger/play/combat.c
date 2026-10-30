@@ -383,6 +383,10 @@ static void strike_one(Character *pc, const Item *weapon, int swing, Entity *e, 
     behind = df_sin(e->yaw) * (feet[0] - e->x) + df_cos(e->yaw) * (feet[2] - e->z) < 0.0f;
     combat_foe(&f, kind, pc->level, behind);
     health = health_of(e, &f, &row);
+    /* A blow at its back trains the skill, landed or not (FormulaHelper's backstab chance). */
+    if (behind) {
+        character_tally(pc, SKILL_BACKSTABBING, 1);
+    }
     combat_blow(pc, weapon, swing, &f, &b);
     /* Struck at all, it knows: passive or asleep, it turns on the player. */
     foes_alert(e);
@@ -489,6 +493,13 @@ int combat_strike(Character *pc, const Item *weapon, int swing, const Scene *sce
     if (!struck) {
         /* Nothing in reach: the swing whistles (classic plays it only when nothing was struck). */
         sfx_play(weapon ? SND_SWING_MEDIUM : SND_SWING_HIGH);
+    } else {
+        /* A swing that reached something trains its skill and Critical Strike, once a swing (WeaponManager). */
+        const WeaponTemplate *w;
+
+        w = weapon ? weapon_template(weapon->template_id) : 0;
+        character_tally(pc, w ? w->skill : SKILL_HAND_TO_HAND, 1);
+        character_tally(pc, SKILL_CRITICAL_STRIKE, 1);
     }
     return struck;
 }

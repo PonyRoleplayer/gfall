@@ -1,7 +1,8 @@
 #include "game/dagger/play/game.h"
-#include "game/dagger/play/bagview.h"
+#include "game/dagger/play/bag.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/commands.h"
+#include "game/dagger/play/create.h"
 #include "game/dagger/play/foes.h"
 #include "game/dagger/play/keys.h"
 #include "game/dagger/play/loot.h"
@@ -11,6 +12,7 @@
 #include "game/dagger/play/player.h"
 #include "game/dagger/play/rules.h"
 #include "game/dagger/play/screen.h"
+#include "game/dagger/play/screens.h"
 #include "game/dagger/play/weapon.h"
 #include "game/dagger/tables/items.h"
 #include "game/dagger/places/doors.h"
@@ -19,6 +21,7 @@
 #include "engine/core/prof.h"
 #include "engine/gfx/gfx.h"
 #include "engine/scene/interact.h"
+#include "engine/scene/clock.h"
 #include "engine/scene/walker.h"
 #include "engine/scene/weather.h"
 #include "engine/ui/hud.h"
@@ -29,8 +32,14 @@
 static const Level *g_level;
 static Player g_player;
 static int g_playing;
-/* Where the place starts: where a death puts the player back until there is a menu (P3). */
+/* Where the place starts: where a death puts the player back until saves (P7). */
 static float g_start[5];
+/* The character and kit the next place starts with: made in creation, or the default. */
+static Character g_new_sheet;
+static Inventory g_new_pack;
+/* Game minutes since the game began, for skills' six hours: the clock's own wraps at midnight. */
+static float g_minutes;
+static float g_clock_was;
 
 /*
  * What the use key does that the engine's doors and levers do not: a
@@ -68,9 +77,9 @@ static void die(void)
 /* What the game draws over the frame: the weapon and the HUD in play, then the open menu and its pointer. */
 static void draw(void)
 {
-    /* The inventory fills the screen: only it and the pointer. */
-    if (bagview_is_open()) {
-        bagview_draw();
+    /* A composed screen fills the screen: only it and the pointer. */
+    if (screens_is_open()) {
+        screens_draw();
         return;
     }
     if (g_playing) {
@@ -100,9 +109,17 @@ static void menu_over_play(int which)
 /* The inventory over the stilled world: the player's own, or with what they are searching beside it. */
 static void bag_over_play(Entity *searched)
 {
-    bagview_open(&g_player, searched);
-    gfx_set_pause(1);
-    input_set_pointer(1);
+    screens_open_bag(&g_player, searched);
+    gfx_set_pause(screens_is_open());
+    input_set_pointer(screens_is_open());
+}
+
+/* The character sheet over the stilled world: a level due is taken there. */
+static void sheet_over_play(void)
+{
+    screens_open_sheet(&g_player);
+    gfx_set_pause(screens_is_open());
+    input_set_pointer(screens_is_open());
 }
 
 /*
@@ -155,7 +172,7 @@ int game_playing(void)
 
 int game_world_shows(void)
 {
-    return g_playing && !bagview_is_open() && menu_current() != MENU_CONTROLS;
+    return g_playing && !screens_is_open() && menu_current() != MENU_CONTROLS;
 }
 
 void game_enter(const Level *level, Camera *cam, float x, float y, float z, float yaw, float pitch)
@@ -166,26 +183,12 @@ void game_enter(const Level *level, Camera *cam, float x, float y, float z, floa
     g_start[2] = z;
     g_start[3] = yaw;
     g_start[4] = pitch;
-    {
-        Character sheet;
-
-        /* Until character creation (P6): an Argonian woman, a warrior, at the rolls' middles. */
-        if (!character_new(&sheet, CHARACTER_START_RACE, CHARACTER_START_CLASS, CHARACTER_START_FEMALE, "Player")) {
-            mem_zero(&sheet, sizeof(sheet));
-        }
-        player_init(&g_player, &sheet);
-    }
-    /*
-     * Until character creation (P6) gives classic's starting kit: the
-     * warrior's long blade, an iron longsword, in hand.
-     */
-    {
-        Item sword;
-
-        if (item_make(&sword, ITEM_LONGSWORD, MATERIAL_IRON)) {
-            inventory_equip(&g_player.pack, inventory_add(&g_player.pack, &sword));
-        }
-    }
+    /* Who creation made, and what they start with (game_frame set these). */
+    player_init(&g_player, &g_new_sheet);
+    g_player.pack = g_new_pack;
+    player_wear_changed(&g_player);
+    g_minutes = 0.0f;
+    g_clock_was = clock_minute();
     /* Every body's contents hang off this: each new game finds other things. */
     loot_new_game(prof_now());
     pile_new_game();
@@ -215,15 +218,37 @@ int game_frame(Camera *cam, const Input *in, float dt)
     prof_begin(PROF_PLAY);
     /* A screen before any place: the title or the start menu. */
     if (!g_playing) {
+        /* Creation, once Start is chosen: it ends with a character for the first place. */
+        if (screens_is_open()) {
+            asked = screens_frame(in);
+            prof_end(PROF_PLAY);
+            if (asked == SCREENS_MADE && create_result(&g_new_sheet, &g_new_pack)) {
+                screens_close();
+                return GAME_START;
+            }
+            if (asked == SCREENS_SKIPPED && create_default(&g_new_sheet, &g_new_pack)) {
+                screens_close();
+                return GAME_START;
+            }
+            return GAME_GO_ON;
+        }
         asked = menu_frame(in);
+        if (asked == MENU_START) {
+            screens_open_create();
+            /* Its pictures missing: the default character starts, as before creation was built. */
+            if (!screens_is_open()) {
+                create_default(&g_new_sheet, &g_new_pack);
+                prof_end(PROF_PLAY);
+                return GAME_START;
+            }
+        }
         prof_end(PROF_PLAY);
-        return asked == MENU_QUIT ? GAME_QUIT : (asked == MENU_START ? GAME_START : GAME_GO_ON);
+        return asked == MENU_QUIT ? GAME_QUIT : GAME_GO_ON;
     }
     closed = 0;
-    if (bagview_is_open()) {
+    if (screens_is_open()) {
         closed = 1;
-        if (bagview_frame(in)) {
-            bagview_close();
+        if (screens_frame(in) == SCREENS_CLOSED) {
             gfx_set_pause(0);
             input_set_pointer(0);
         }
@@ -241,15 +266,29 @@ int game_frame(Camera *cam, const Input *in, float dt)
         menu_over_play(MENU_OPTIONS);
     } else if ((in->pressed & INPUT_BIT(INPUT_INVENTORY)) && !gfx_paused()) {
         bag_over_play(0);
+    } else if ((in->pressed & INPUT_BIT(INPUT_CHARACTER)) && !gfx_paused()) {
+        sheet_over_play();
     }
     /* The console stands the world still too (gfx_paused): the player stands with it. */
-    if (menu_current() == MENU_NONE && !bagview_is_open() && !gfx_paused()) {
+    if (menu_current() == MENU_NONE && !screens_is_open() && !gfx_paused()) {
         if (in->pressed & INPUT_BIT(INPUT_USE)) {
             use_key(cam);
         }
     }
     /* The use key may just have opened the inventory: the world stands from this frame. */
-    if (menu_current() == MENU_NONE && !bagview_is_open() && !gfx_paused()) {
+    if (menu_current() == MENU_NONE && !screens_is_open() && !gfx_paused()) {
+        /* Skills look at their uses every six game hours; a level due opens the sheet (PlayerEntity.RaiseSkills). */
+        {
+            float now;
+
+            now = clock_minute();
+            g_minutes += now >= g_clock_was ? now - g_clock_was : now + 1440.0f - g_clock_was;
+            g_clock_was = now;
+            character_raise_skills(&g_player.sheet, g_minutes);
+            if (g_player.sheet.level_due) {
+                sheet_over_play();
+            }
+        }
         /* The weapon in hand follows the pack (equip, additem); a click swings it, at random for now. */
         weapon_hold(inventory_weapon(&g_player.pack));
         if (!closed && (in->pressed & INPUT_BIT(INPUT_ATTACK))) {
@@ -318,7 +357,7 @@ void game_shutdown(void)
 {
     interact_set_handler(0);
     commands_player(0);
-    bagview_close();
+    screens_close();
     weapon_free();
     walker_set_game(0);
     gfx_set_extra(0);

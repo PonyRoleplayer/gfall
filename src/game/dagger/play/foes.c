@@ -295,12 +295,16 @@ static void look_for(const Player *p, const Scene *scene, const float *peye)
     }
 }
 
-/* DFU's melee timer: 1500 to 3000, less 50 a level past 10, reflexes average; classic's frames to seconds. */
-static float melee_timer(int player_level)
+/*
+ * DFU's melee timer: 1500 to 3000, less 50 a level past 10, 450 a step of
+ * reflexes past average (classic's FALL.EXE, docs/game.md), the slower the
+ * player's reflexes the longer; classic's frames to seconds.
+ */
+static float melee_timer(const Character *pc)
 {
     int t;
 
-    t = 1500 + combat_roll(1501) - 50 * (player_level - 10);
+    t = 1500 + combat_roll(1501) - 50 * (pc->level - 10) + 450 * (pc->reflexes - RULES_REFLEX_AVERAGE);
     return t < 0 ? 0.0f : (float)t / 980.0f;
 }
 
@@ -353,7 +357,7 @@ static void think(Mind *m, const Player *p, const Scene *scene, const float *pey
             e->hold = 1;
             e->frame = 0;
             e->moving = 0;
-            m->melee = melee_timer(p->sheet.level);
+            m->melee = melee_timer(&p->sheet);
             sfx_at(k->attack_sound, e->x, e->y + entity_height(e) * 0.5f, e->z);
         }
     }
@@ -385,6 +389,8 @@ static int land(Mind *m, Player *p)
     }
     combat_foe(&f, k, p->sheet.level, 0);
     combat_foe_blow(&f, &p->sheet, &b);
+    /* A blow come at the player trains Dodging, hit or not (EnemyAttack.ApplyDamageToPlayer). */
+    character_tally(&p->sheet, SKILL_DODGING, 1);
     if (!b.hit || b.damage <= 0) {
         sfx_at(SND_SWING_HIGH, e->x, e->y + entity_height(e) * 0.5f, e->z);
         return 0;

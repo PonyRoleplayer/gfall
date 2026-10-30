@@ -30,7 +30,7 @@
  * (pile.h). An item worn is on the doll, not in the list.
  *
  * Plain C, drawing nothing and reaching no card: hostcheck runs it, and
- * bagview.c puts the result on the screen.
+ * screens.c puts the result on the screen.
  */
 
 /* What a click asks of the game. */

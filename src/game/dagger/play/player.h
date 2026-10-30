@@ -27,6 +27,8 @@ typedef struct Player {
     int flying;
     /* 1: nothing takes its health (the console's tgm). Off at player_init. */
     int god;
+    /* Seconds running towards the next use of Running. */
+    float run_time;
 } Player;
 
 /* A person's body (WALK_* in walker.h) for this character, standing nowhere yet, carrying nothing. */

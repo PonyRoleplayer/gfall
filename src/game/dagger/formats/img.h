@@ -14,8 +14,9 @@
  * Unity's ImgFile lists them. Their palette is ART_PAL.COL but for a
  * few: six full screens carry their own after the pixels, 768 bytes of
  * 6-bit values (CHGN00I0, DIE_00I0, PICK02I0, PICK03I0, PRIS00I0,
- * TITL00I0: ImgPicture.palette), and FMAP*, NITE*, DANK02I0 and
- * TMAP00I0 use other COLs, not read here yet.
+ * TITL00I0: ImgPicture.palette), and FMAP*, NITE* and DANK02I0 use
+ * other COLs, not read here yet. TMAP00I0, the map creation opens on, reads
+ * right under ART_PAL.COL.
  *
  * Only uncompressed pictures are read for now; a compressed one fails
  * with a log line.

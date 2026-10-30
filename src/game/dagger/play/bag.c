@@ -1,28 +1,16 @@
 #include "game/dagger/play/bag.h"
+#include "game/dagger/play/canvas.h"
 #include "game/dagger/play/doll.h"
 #include "game/dagger/play/loot.h"
 #include "game/dagger/play/pile.h"
 #include "game/dagger/play/rules.h"
 #include "game/dagger/formats/cif.h"
 #include "game/dagger/formats/img.h"
-#include "game/dagger/formats/smallfont.h"
 #include "game/dagger/tables/items.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
 
 /* See bag.h. */
-
-#define SCREEN_W 320
-#define SCREEN_H 200
-#define SCREEN_BYTES (SCREEN_W * SCREEN_H)
-
-/* A rectangle on classic's screen. */
-typedef struct Rect {
-    df_u16 x;
-    df_u16 y;
-    df_u16 w;
-    df_u16 h;
-} Rect;
 
 /* The four tabs along the top; only the first has anything in it yet. */
 enum {
@@ -97,19 +85,13 @@ static const df_u8 g_armor_label[BODY_PARTS][2] = {
 #define ARMOR_BARE 100
 #define ARMOR_POINT 5
 
-/* Palette indices under ART_PAL.COL: the ink classic's own labels are drawn in, its shadow, and a dark box. */
-#define INK 146
-#define INK_SHADOW 156
-#define BOX_DARK 222
-
 /* The info box over the doll: its lines. */
 #define INFO_LINES 6
 #define INFO_LINE_CHARS 40
 #define INFO_X 54
 #define INFO_Y 60
 #define INFO_W 100
-/* One line of the small font, and a gap. */
-#define LINE_H 8
+#define LINE_H CANVAS_LINE
 
 /* Item pictures kept once fitted to a cell: a list scrolled back reads nothing again. */
 #define ICONS 8
@@ -122,9 +104,6 @@ typedef struct Icon {
     int h;
     df_u8 pixels[ICON_W * ICON_H];
 } Icon;
-
-/* Scratch pictures are let go when they pass this, and read again when next wanted. */
-#define SCRATCH_MAX (512u * 1024u)
 
 /* What was under the pointer last: which list (or the doll), which row of the items. */
 enum {
@@ -139,10 +118,8 @@ static struct {
     /* What is being searched, or 0: the right list is then what is being dropped. */
     Entity *searched;
     Inventory *remote;
-    /* A heap for the screen's buffers and pictures, another for what is only read to be copied. */
-    MemHeap *heap;
-    MemHeap *scratch;
-    df_u8 *screen;
+    /* The screen, the small font and the heaps. */
+    Composer composer;
     const df_u8 *grey;
     const df_u8 *gold;
     const df_u8 *stone;
@@ -150,7 +127,6 @@ static struct {
     const df_u8 *arrows_red;
     df_u8 *doll;
     df_u8 *doll_owner;
-    SmallFont font;
     Icon *icons;
     int doll_stale;
     int tab;
@@ -177,14 +153,6 @@ int bag_finds_things(Entity *searched, int level)
     }
     loot_closed(searched, &g_remote);
     return 0;
-}
-
-/* An IMG's pixels in the screen's heap, or 0. */
-static const df_u8 *read_pixels(const char *name)
-{
-    ImgPicture pic;
-
-    return img_load(name, &pic) ? pic.pixels : 0;
 }
 
 /*
@@ -216,22 +184,17 @@ void bag_close(void)
         land_what_was_dropped();
     }
     doll_forget_files();
-    mem_heap_delete(g.scratch);
-    mem_heap_delete(g.heap);
-    g.scratch = 0;
-    g.heap = 0;
+    composer_close(&g.composer);
 }
 
 int bag_open(Player *p, Entity *searched)
 {
     MemHeap *was;
-    int ok;
 
     bag_close();
     mem_zero(&g, sizeof(g));
-    g.heap = mem_heap_new();
-    g.scratch = mem_heap_new();
-    if (!g.heap || !g.scratch) {
+    if (!composer_open(&g.composer)) {
+        log_text(LOG_WARN, "inventory: its heaps or its font did not come");
         return 0;
     }
     g.open = 1;
@@ -245,20 +208,17 @@ int bag_open(Player *p, Entity *searched)
     } else {
         inventory_clear(&g_remote);
     }
-    was = mem_heap_use(g.heap);
-    g.screen = (df_u8 *)mem_alloc(SCREEN_BYTES);
+    was = mem_heap_use(g.composer.heap);
     g.doll = (df_u8 *)mem_alloc(DOLL_W * DOLL_H);
     g.doll_owner = (df_u8 *)mem_alloc(DOLL_W * DOLL_H);
     g.icons = (Icon *)mem_alloc(sizeof(Icon) * ICONS);
-    g.grey = read_pixels("INVE00I0.IMG");
-    g.gold = read_pixels("INVE01I0.IMG");
-    g.stone = read_pixels("ITEM00I0.IMG");
-    g.arrows_green = read_pixels("INVE06I0.IMG");
-    g.arrows_red = read_pixels("INVE07I0.IMG");
-    ok = smallfont_load(&g.font, "FONT0003.FNT");
     mem_heap_use(was);
-    if (!ok || !g.screen || !g.doll || !g.doll_owner || !g.icons || !g.grey || !g.gold || !g.stone
-        || !g.arrows_green || !g.arrows_red) {
+    g.grey = composer_read(&g.composer, "INVE00I0.IMG");
+    g.gold = composer_read(&g.composer, "INVE01I0.IMG");
+    g.stone = composer_read(&g.composer, "ITEM00I0.IMG");
+    g.arrows_green = composer_read(&g.composer, "INVE06I0.IMG");
+    g.arrows_red = composer_read(&g.composer, "INVE07I0.IMG");
+    if (!g.doll || !g.doll_owner || !g.icons || !g.grey || !g.gold || !g.stone || !g.arrows_green || !g.arrows_red) {
         log_text(LOG_WARN, "inventory: its pictures did not read");
         bag_close();
         return 0;
@@ -269,7 +229,7 @@ int bag_open(Player *p, Entity *searched)
 
 const df_u8 *bag_pixels(void)
 {
-    return g.screen;
+    return g.composer.screen;
 }
 
 int bag_changed(void)
@@ -354,51 +314,13 @@ static void clamp_scroll(int list)
 
 /* ---- Composing: each piece copied into the screen. ---- */
 
-/* The same rectangle of a whole-screen picture onto the screen. */
-static void copy_rect(const df_u8 *from, const Rect *r)
-{
-    int row;
-
-    for (row = 0; row < r->h; row++) {
-        df_u32 at;
-
-        at = (df_u32)(r->y + row) * SCREEN_W + r->x;
-        mem_copy(g.screen + at, from + at, r->w);
-    }
-}
-
-/* A label in classic's ink. */
-static void label(int x, int y, const char *text)
-{
-    smallfont_draw(&g.font, g.screen, SCREEN_W, SCREEN_H, x, y, INK, INK_SHADOW, text);
-}
-
-/* A picture with index 0 clear onto the screen at x, y. */
-static void lay_cutout(const df_u8 *src, int w, int h, int x, int y)
-{
-    int row;
-    int col;
-
-    for (row = 0; row < h; row++) {
-        for (col = 0; col < w; col++) {
-            int index;
-
-            index = src[row * w + col];
-            if (index) {
-                g.screen[(y + row) * SCREEN_W + x + col] = (df_u8)index;
-            }
-        }
-    }
-}
-
 /* Scratch that has grown is let go: a file read into it goes with it, and is read again when next wanted. */
-static void trim_scratch(void)
+static MemHeap *scratch_begin(void)
 {
-    if (mem_heap_bytes(g.scratch) > SCRATCH_MAX) {
+    if (mem_heap_bytes(g.composer.scratch) > 512u * 1024u) {
         doll_forget_files();
-        mem_heap_delete(g.scratch);
-        g.scratch = mem_heap_new();
     }
+    return composer_scratch_begin(&g.composer);
 }
 
 /*
@@ -425,10 +347,9 @@ static const Icon *icon_of(const Item *it)
     if (icon->archive == archive && icon->record == record && icon->metal == metal) {
         return icon;
     }
-    trim_scratch();
-    was = mem_heap_use(g.scratch);
+    was = scratch_begin();
     picture = doll_read_picture(archive, record);
-    mem_heap_use(was);
+    composer_scratch_end(was);
     if (!picture) {
         return 0;
     }
@@ -484,9 +405,8 @@ static void compose_list(int list)
         up = g.scroll[list] > 0 ? g.arrows_green : g.arrows_red;
         down = g.scroll[list] + ROWS < list_length(list) ? g.arrows_green : g.arrows_red;
         for (y = 0; y < ARROW_H; y++) {
-            mem_copy(g.screen + (LIST_Y + y) * SCREEN_W + x, up + y * ARROW_W, ARROW_W);
-            mem_copy(g.screen + (LIST_Y + LIST_H - ARROW_H + y) * SCREEN_W + x,
-                     down + (LIST_H - ARROW_H + y) * ARROW_W, ARROW_W);
+            canvas_copy_part(up, ARROW_W, 0, y, ARROW_W, 1, x, LIST_Y + y);
+            canvas_copy_part(down, ARROW_W, 0, LIST_H - ARROW_H + y, ARROW_W, 1, x, LIST_Y + LIST_H - ARROW_H + y);
         }
     }
     for (row = 0; row < ROWS; row++) {
@@ -505,14 +425,14 @@ static void compose_list(int list)
         cell_y = LIST_Y + row * CELL_H;
         icon = icon_of(it);
         if (icon) {
-            lay_cutout(icon->pixels, icon->w, icon->h, cell_x + (CELL_W - icon->w) / 2, cell_y + (CELL_H - icon->h) / 2);
+            canvas_cutout(icon->pixels, icon->w, icon->h, cell_x + (CELL_W - icon->w) / 2, cell_y + (CELL_H - icon->h) / 2);
         }
         /* A stack says how many, in its cell's lower right (ItemListScroller). */
         if (it->count > 1) {
             char number[12];
 
             log_format(number, (int)sizeof(number), "%d", it->count);
-            label(cell_x + CELL_W - smallfont_width(&g.font, number) - 1, cell_y + CELL_H - g.font.height - 1, number);
+            canvas_label(cell_x + CELL_W - canvas_width(number) - 1, cell_y + CELL_H - CANVAS_LINE, number);
         }
     }
 }
@@ -520,26 +440,22 @@ static void compose_list(int list)
 /* The doll, read again only when what is worn changed, and each body part's armour on it. */
 static void compose_doll(void)
 {
-    int row;
     int part;
 
     if (g.doll_stale) {
         MemHeap *was;
 
-        trim_scratch();
-        was = mem_heap_use(g.scratch);
+        was = scratch_begin();
         doll_compose(g.doll, g.doll_owner, &g.player->sheet, &g.player->pack);
-        mem_heap_use(was);
+        composer_scratch_end(was);
         g.doll_stale = 0;
     }
-    for (row = 0; row < DOLL_H; row++) {
-        mem_copy(g.screen + (DOLL_Y + row) * SCREEN_W + DOLL_X, g.doll + row * DOLL_W, DOLL_W);
-    }
+    canvas_copy_part(g.doll, DOLL_W, 0, 0, DOLL_W, DOLL_H, DOLL_X, DOLL_Y);
     for (part = 0; part < BODY_PARTS; part++) {
         char number[8];
 
         log_format(number, (int)sizeof(number), "%d", (ARMOR_BARE - g.player->sheet.armor[part]) / ARMOR_POINT);
-        label(DOLL_X + g_armor_label[part][0], DOLL_Y + g_armor_label[part][1], number);
+        canvas_label(DOLL_X + g_armor_label[part][0], DOLL_Y + g_armor_label[part][1], number);
     }
 }
 
@@ -550,49 +466,14 @@ static void compose_targets(void)
     const Rect *r;
 
     r = &g_target_rect[LIST_LOCAL];
-    label(r->x + 1, r->y + 2, "Carrying");
+    canvas_label(r->x + 1, r->y + 2, "Carrying");
     log_format(line, (int)sizeof(line), "%d/%d kg", df_iround(inventory_weight(&g.player->pack)),
                df_iround(rules_max_carry(g.player->sheet.attribute[ATTR_STRENGTH])));
-    label(r->x + 1, r->y + 2 + LINE_H, line);
+    canvas_label(r->x + 1, r->y + 2 + LINE_H, line);
     r = &g_target_rect[LIST_REMOTE];
-    label(r->x + 1, r->y + 2, g.searched ? loot_label(g.searched) : "Dropped");
+    canvas_label(r->x + 1, r->y + 2, g.searched ? loot_label(g.searched) : "Dropped");
     log_format(line, (int)sizeof(line), "%d kg", df_iround(inventory_weight(g.remote)));
-    label(r->x + 1, r->y + 2 + LINE_H, line);
-}
-
-/* Text cut at spaces into the small panel's lines, as many as fit it. */
-static void panel_text(const char *text)
-{
-    char word[24];
-    char line[24];
-    int y;
-    int at;
-
-    y = g_panel_rect.y + 1;
-    line[0] = 0;
-    while (*text && y + LINE_H <= g_panel_rect.y + g_panel_rect.h + 1) {
-        char joined[48];
-
-        at = 0;
-        while (*text && *text != ' ' && at < (int)sizeof(word) - 1) {
-            word[at++] = *text++;
-        }
-        word[at] = 0;
-        while (*text == ' ') {
-            text++;
-        }
-        log_format(joined, (int)sizeof(joined), "%s%s%s", line, line[0] ? " " : "", word);
-        if (line[0] && smallfont_width(&g.font, joined) > g_panel_rect.w - 2) {
-            label(g_panel_rect.x + 1, y, line);
-            y += LINE_H;
-            df_copy(line, word, (int)sizeof(line));
-        } else {
-            df_copy(line, joined, (int)sizeof(line));
-        }
-    }
-    if (line[0] && y + LINE_H <= g_panel_rect.y + g_panel_rect.h + 1) {
-        label(g_panel_rect.x + 1, y, line);
-    }
+    canvas_label(r->x + 1, r->y + 2 + LINE_H, line);
 }
 
 /* The item the pointer rests on, or 0. */
@@ -620,24 +501,32 @@ static void compose_panel(void)
 
             sx = g_panel_stone.x + col * g_panel_stone.w / g_panel_rect.w;
             sy = g_panel_stone.y + row * g_panel_stone.h / g_panel_rect.h;
-            g.screen[(g_panel_rect.y + row) * SCREEN_W + g_panel_rect.x + col] = g.stone[sy * SCREEN_W + sx];
+            g.composer.screen[(g_panel_rect.y + row) * CANVAS_W + g_panel_rect.x + col] = g.stone[sy * CANVAS_W + sx];
         }
     }
     it = item_under_pointer();
     if (it) {
         item_name(it, line, (int)sizeof(line));
-        panel_text(line);
+        {
+            Rect inside;
+
+            inside.x = (df_u16)(g_panel_rect.x + 1);
+            inside.y = (df_u16)(g_panel_rect.y + 1);
+            inside.w = (df_u16)(g_panel_rect.w - 2);
+            inside.h = g_panel_rect.h;
+            canvas_text(&inside, line);
+        }
         return;
     }
-    label(g_panel_rect.x + 1, g_panel_rect.y + 1, "Gold");
+    canvas_label(g_panel_rect.x + 1, g_panel_rect.y + 1, "Gold");
     log_format(line, (int)sizeof(line), "%u", (unsigned)g.player->pack.gold);
-    label(g_panel_rect.x + 1, g_panel_rect.y + 1 + LINE_H, line);
+    canvas_label(g_panel_rect.x + 1, g_panel_rect.y + 1 + LINE_H, line);
 }
 
 /* The info box, while one shows: a dark box over the doll, and a click anywhere puts it away. */
 static void compose_info(void)
 {
-    int row;
+    Rect box;
     int line;
     int lines;
 
@@ -645,23 +534,22 @@ static void compose_info(void)
     while (lines < INFO_LINES && g.info[lines][0]) {
         lines++;
     }
-    for (row = 0; row < lines * LINE_H + 4; row++) {
-        int col;
-
-        for (col = 0; col < INFO_W; col++) {
-            g.screen[(INFO_Y + row) * SCREEN_W + INFO_X + col] = BOX_DARK;
-        }
-    }
+    box.x = INFO_X;
+    box.y = INFO_Y;
+    box.w = INFO_W;
+    box.h = (df_u16)(lines * LINE_H + 4);
+    canvas_box(&box, CANVAS_DARK);
     for (line = 0; line < lines; line++) {
-        label(INFO_X + 3, INFO_Y + 2 + line * LINE_H, g.info[line]);
+        canvas_label(INFO_X + 3, INFO_Y + 2 + line * LINE_H, g.info[line]);
     }
 }
 
 void bag_compose(void)
 {
-    mem_copy(g.screen, g.grey, SCREEN_BYTES);
-    copy_rect(g.gold, &g_tab_rect[g.tab]);
-    copy_rect(g.gold, &g_button_rect[g.mode]);
+    canvas_use(&g.composer);
+    canvas_copy_all(g.grey);
+    canvas_copy_rect(g.gold, &g_tab_rect[g.tab]);
+    canvas_copy_rect(g.gold, &g_button_rect[g.mode]);
     compose_doll();
     compose_targets();
     compose_list(LIST_LOCAL);
@@ -674,11 +562,6 @@ void bag_compose(void)
 }
 
 /* ---- Pointing and clicking. ---- */
-
-static int in_rect(const Rect *r, int x, int y)
-{
-    return x >= r->x && x < r->x + r->w && y >= r->y && y < r->y + r->h;
-}
 
 /* The list row a point falls in: its list (or -1) and the item there (-1 for an empty row). */
 static int list_at(int x, int y, int *item)
@@ -888,7 +771,7 @@ static int click_button(int x, int y)
     int b;
 
     for (b = 0; b < BUTTONS; b++) {
-        if (!in_rect(&g_button_rect[b], x, y)) {
+        if (!rect_has(&g_button_rect[b], x, y)) {
             continue;
         }
         if (b == BUTTON_WAGON) {
@@ -915,11 +798,11 @@ int bag_click(int x, int y)
         g.info_shown = 0;
         return BAG_STAY;
     }
-    if (in_rect(&g_exit_rect, x, y)) {
+    if (rect_has(&g_exit_rect, x, y)) {
         return BAG_LEAVE;
     }
     for (i = 0; i < TABS; i++) {
-        if (in_rect(&g_tab_rect[i], x, y)) {
+        if (rect_has(&g_tab_rect[i], x, y)) {
             g.tab = i;
             g.scroll[LIST_LOCAL] = 0;
             return BAG_STAY;

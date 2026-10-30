@@ -37,6 +37,52 @@ float rules_max_carry(int strength)
     return (float)strength * 1.5f;
 }
 
+int rules_attribute_modifier(int attribute)
+{
+    return attribute / 10 - 5;
+}
+
+int rules_magic_resist(int willpower)
+{
+    return willpower / 10;
+}
+
+int rules_skill_uses_needed(int value, int skill_advance, float class_advance, int level)
+{
+    float growth;
+    int l;
+
+    /* 1.04 to the level, by hand: this game has no libm, and a level is small. */
+    growth = 1.0f;
+    for (l = 0; l < level; l++) {
+        growth *= 1.04f;
+    }
+    return df_ifloor((float)value * (float)skill_advance * class_advance * growth * 0.4f) + 1;
+}
+
+float rules_class_advance(df_u32 raw)
+{
+    return (float)raw / 65536.0f;
+}
+
+int rules_level_from_sums(int start_sum, int now_sum)
+{
+    return (now_sum - start_sum + 28) / 15;
+}
+
+int rules_level_health(int hp_per_level, int roll, int endurance)
+{
+    int gain;
+
+    gain = hp_per_level / 2 + roll + rules_attribute_modifier(endurance);
+    return gain < 1 ? 1 : gain;
+}
+
+float rules_reflex_uses(int reflexes)
+{
+    return 1.0f + 0.125f * (float)(RULES_REFLEX_AVERAGE - reflexes);
+}
+
 float rules_gravity(void)
 {
     return JUMP_GRAVITY;

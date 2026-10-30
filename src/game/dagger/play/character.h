@@ -35,6 +35,17 @@ typedef struct Character {
     int fatigue_max;
     int magicka;
     int magicka_max;
+    /* Which of the race's ten faces. */
+    int face;
+    /* 0 very high .. 4 very low, 2 average: the game's speed against them, and how fast skills come. */
+    int reflexes;
+    /* Each skill's uses since it last rose (character_tally). */
+    int skill_uses[SKILL_COUNT];
+    /* The level sum at creation: a level is earned by what it has grown. */
+    int level_sum_start;
+    /* The game minute skills were last looked at, and 1 once a new level is due. */
+    float skills_checked;
+    int level_due;
     /* Each body part's armour value, BODY_*: 100 bare, lower is better. What is worn sets it (inventory_armor). */
     int armor[BODY_PARTS];
 } Character;
@@ -43,6 +54,30 @@ typedef struct Character {
 int character_new(Character *c, int race, int klass, int female, const char *name);
 /* Health, fatigue and spell points back to their most. */
 void character_rest_full(Character *c);
+/* Fatigue's and spell points' most worked out again from the attributes, after they change. */
+void character_attributes_changed(Character *c);
+
+/*
+ * Skills and levels (PlayerEntity.RaiseSkills, CheckForLevelUp; UESP's
+ * Leveling and Skills). A skill used counts up; at most once in six game
+ * hours each skill with enough uses rises a point and starts counting
+ * again. Past 95 only the first primary skill to get there goes on, to 100.
+ * A level is earned by the sum of the three primary skills, the two
+ * highest major and the highest minor.
+ */
+#define CHARACTER_SKILLS_EVERY 360.0f
+#define CHARACTER_SKILL_CAP 95
+#define CHARACTER_SKILL_MASTERED 100
+/* Used n times more. */
+void character_tally(Character *c, int skill, int n);
+/* The sum a level is earned by. */
+int character_level_sum(const Character *c);
+/* Starts the level's count from what it is now: the end of creation. */
+void character_start_levelling(Character *c);
+/* Skills rise if six hours have passed since the last look, at game minute now. 1 when any rose. */
+int character_raise_skills(Character *c, float now);
+/* The new level taken: level, and health by rules_level_health with roll. The screen places its points. */
+void character_level_up(Character *c, int roll);
 /* Takes health; 1 when it reaches 0. */
 int character_hurt(Character *c, int amount);
 
