@@ -79,7 +79,7 @@ static float stream_budget(void)
 
 /*
  * What the use key does that the engine's doors and levers do not: a
- * passage (travel.h), and a person, until there is talk (P10).
+ * passage (travel.h), and a person, until there is talk (P9).
  */
 static int on_use(const Scene *scene, const Usable *u, int index)
 {

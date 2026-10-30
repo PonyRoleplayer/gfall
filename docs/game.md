@@ -413,25 +413,25 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Where | Gap | Phase |
 | --- | --- | --- |
 | Combat | an arrow lands at once: no missile flies | later |
-| Creatures | ranged attacks and spells; a hurt voice | P9 |
+| Creatures | ranged attacks and spells; a hurt voice | P11 |
 | Creatures | the frame a blow lands on and how often a move sounds are our guesses, not found in classic | - |
 | Saves | creatures awake come back asleep; the weather is not kept | later |
-| Rest | an encounter wakes a sleeper, not a new creature; a class with no spell point regeneration | later, P9 |
-| Items | clothing, jewellery, ingredients, books, potions, maps, and the screen's other tabs | P9, P10 |
+| Rest | an encounter wakes a sleeper, not a new creature; a class with no spell point regeneration | later, P11 |
+| Items | clothing, jewellery, ingredients, books, potions, maps, and the screen's other tabs | P9, P11 |
 | Items | clothing's dyes | with clothing |
-| Inventory | the Wagon button (P12), the Use button (P9) | as named |
+| Inventory | the Wagon button (P12), the Use button (P11) | as named |
 | Inventory | a left-hand weapon shows the right hand's picture on the doll | later |
 | Inventory | the info box's lines are ours, not TEXT.RSC's | later |
-| Loot | the other columns of `LOOT` wait for their items | P9, P10 |
+| Loot | the other columns of `LOOT` wait for their items | P9, P11 |
 | Loot | a body or a heap takes nothing put on it (a choice, see What can be searched) | - |
 | Places | treasure and piles only in a dungeon streamed by block; a town's doors not keyed; the sea can be walked on | later |
 | Player | the bottom panel's buttons and mode icons | later |
-| Creation | a custom class's special advantages, disadvantages and reputations; the Help button | P9, P10 |
+| Creation | a custom class's special advantages, disadvantages and reputations; the Help button | P9, P11 |
 | Creation | the class questions' animated scroll and characters | later |
-| Creation | the answers' reputation, history and lasting modifiers (`r`, `#`, `RP`, `TH`...) are read past | P10 |
+| Creation | the answers' reputation, history and lasting modifiers (`r`, `#`, `RP`, `TH`...) are read past | P9 |
 | Creation | Save Roll and Load Roll; the race's voice on choosing | later |
-| Character | the Spellbook, Log, History and Affiliations buttons | P9, P10 |
-| Character | starting clothes and spellbook | with clothing, P9 |
+| Character | the Spellbook, Log, History and Affiliations buttons | P9, P11 |
+| Character | starting clothes and spellbook | with clothing, P11 |
 | Engine | `scene/pack.c`, `ui/packview.c`, `scene/rpg.c`, `ui/rpgview.c` are used by no game; the user's line is that the engine is simulation and world | to decide |
 
 ## Rest and time (built: P7)
@@ -443,7 +443,7 @@ What is built but not whole, and the phase each goes in. Each section above says
 - **Each whole hour of rest** gives back health (endurance's modifier + (Medical + 60) × its most / 1000, at least 1), fatigue and spell points (an eighth of their most, at least 1), and is a use of Medical. Loitering gives back nothing.
 - **A creature awake** refuses a rest ("You cannot rest with enemies nearby."), and stops one each hour. Skills that have earned it rise when the rest ends, and a level due opens the sheet.
 - **An encounter.** Each hour one chance in 36 (ours: DFU's dungeon roll, how often it rolls not read) of the nearest sleeper within 2048 units waking and coming, which ends the rest (`foes_rouse_nearest`). DFU conjures a creature; there is no way to here yet.
-- **Not yet:** a class with no spell point regeneration; the law on camping, and rented rooms, with towns (P8, P10).
+- **Not yet:** a class with no spell point regeneration; the law on camping, and rented rooms, with people (P9).
 
 The travel map comes later, with `worldmap.c`'s pixels and the location index: pick a place and land in the stream there, time passing as the trip.
 
@@ -526,9 +526,9 @@ The first goal is a **prototype**: from classic's start menu, Privateer's Hold p
 | P6 | Character creation and levelling (built, host-tested, not run on the target): classic's screens, class questions and custom classes among them, background questions, skill gains, level-ups, the character sheet | GAME | a character made by the screens plays the hold and levels |
 | P7 | Prototype polish (built, host-tested, not run on the target; the 233 profile pass not done): loading holds, one save slot in `DATA\`, the menu's load, rest and wait, a 233 profile pass | GAME | from the menu through the hold and back after a save |
 | P8 | Out of the hold (built, host-tested, not run on the target): `places/travel.c` lifted from LEVELFALL and shared; the hold's outside in the stream, the nearest town, its houses | GAME and LEVELFALL | from the menu to town and back after a save, in one session |
-| P9 | Magic: spells, effects, spellbook, casting, potions, enchantments | GAME | |
-| P10 | People: talk from TEXT.RSC, shops, banks, factions, reputation, law | GAME | |
-| P11 | Quests: the QBN interpreter, guild quests | GAME | |
+| P9 | People: talk from TEXT.RSC, shops, banks, factions, reputation, law | GAME | |
+| P10 | Quests: the QBN interpreter, guild quests | GAME | |
+| P11 | Magic: spells, effects, spellbook, casting, potions, enchantments | GAME | |
 | P12 | The wider world: travel map, horse and cart, holidays, diseases, lycanthropy and vampirism | GAME | |
 | P13 | Our own mode: a ruleset switch over classic's rules, a mode `.DAT` over MAIN.DAT; classic stays the default and the reference | GAME | |
 
