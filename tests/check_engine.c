@@ -1197,7 +1197,9 @@ static void check_key_names(void)
     check_expect(df_eq(name, "Key 233"), "a key with no name is not numbered");
     input_key_name(0x1B, name, 4);
     check_expect(df_eq(name, "Esc"), "a short buffer ran past its cap");
-    check_expect(INPUT_FORWARD == 9 && INPUT_RIGHT == 12 && INPUT_ACTIONS == 13,
+    input_key_name('H', name, (int)sizeof(name));
+    check_expect(df_eq(name, "H"), "H, the hands' default key, is not named H");
+    check_expect(INPUT_FORWARD == 9 && INPUT_RIGHT == 12 && INPUT_SWAP_HANDS == 13 && INPUT_ACTIONS == 14,
                  "the actions moved: a game's saved bindings would mean other keys");
 }
 

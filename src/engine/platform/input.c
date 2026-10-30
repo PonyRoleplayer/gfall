@@ -24,7 +24,7 @@ static int g_quit;
 /* The actions' keys (input_bind), what was held last read, and whether Escape quits. */
 static int g_vk[INPUT_ACTIONS] = {
     VK_LBUTTON, 'E', VK_SHIFT, VK_SPACE, 'C', 'I', 'M', 'R', VK_ESCAPE,
-    'W', 'S', 'A', 'D'
+    'W', 'S', 'A', 'D', 'H'
 };
 /* The scan code of the console's key, the one left of 1 (console.c's CON_SCAN). */
 #define CONSOLE_SCAN 0x29

@@ -30,8 +30,9 @@ With the console open nothing reaches the program: no movement, no look, nothing
 | `INPUT_BACK` | S | the walk, `move_f` |
 | `INPUT_LEFT` | A | the strafe, `move_r` |
 | `INPUT_RIGHT` | D | the strafe, `move_r` |
+| `INPUT_SWAP_HANDS` | H | swapping what is in the hands (Daggerfall Unity's key); the engine only reports it |
 
-`input_bind(action, vk)` sets an action's key: a Windows virtual key (`VK_SHIFT`, `VK_LBUTTON`, a letter's capital). It refuses, returning 0, Escape on any action but `INPUT_MENU` and the console's key (the one left of 1, by its scan code on this layout): those are the menu's and the console's. `input_binding(action)` reads a key back. The actions are numbered in a fixed order and new ones go at the end, because a game saves its bindings by number (the test holds `INPUT_FORWARD` at 9).
+`input_bind(action, vk)` sets an action's key: a Windows virtual key (`VK_SHIFT`, `VK_LBUTTON`, a letter's capital). It refuses, returning 0, Escape on any action but `INPUT_MENU` and the console's key (the one left of 1, by its scan code on this layout): those are the menu's and the console's. `input_binding(action)` reads a key back. The actions are numbered in a fixed order and new ones go at the end, because a game saves its bindings by number (the test holds `INPUT_FORWARD` at 9 and `INPUT_SWAP_HANDS` at 13). A bindings file older than an action has no row for it, so that action keeps the engine's default key.
 
 ### A bind screen
 

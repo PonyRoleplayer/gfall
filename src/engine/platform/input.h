@@ -14,7 +14,8 @@
  * the character C, the inventory I, the map M, rest R, the menu
  * Escape (with input_set_escape_quits(0); else Escape quits), and the
  * walk forward W, back S, left A and right D, which move_f and move_r
- * are made of. New actions go at the end: a game saves them by number.
+ * are made of, and swapping the hands H. New actions go at the end: a
+ * game saves them by number.
  */
 enum {
     INPUT_ATTACK,
@@ -30,6 +31,7 @@ enum {
     INPUT_BACK,
     INPUT_LEFT,
     INPUT_RIGHT,
+    INPUT_SWAP_HANDS,
     INPUT_ACTIONS
 };
 #define INPUT_BIT(action) (1u << (action))
