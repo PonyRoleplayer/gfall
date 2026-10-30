@@ -2,6 +2,7 @@
 #define DF_CHARACTER_H
 
 #include "game/dagger/tables/careers.h"
+#include "game/dagger/tables/items.h"
 
 /*
  * The player's character sheet: who they are and what they have left.
@@ -9,12 +10,14 @@
  *
  * Built from MAIN.DAT's CLAS, RACE and SKIL records by classic's rules
  * (rules.c). Until character creation (P6) the game starts with a fixed
- * one, CHARACTER_START_*: a Breton warrior, the rolls at their middles.
+ * one, CHARACTER_START_*: an Argonian woman, a warrior, the rolls at
+ * their middles.
  * Fatigue is kept in 64ths as classic keeps it; shown, it is whole.
  */
 
-#define CHARACTER_START_RACE RACE_BRETON
+#define CHARACTER_START_RACE RACE_ARGONIAN
 #define CHARACTER_START_CLASS CLASS_WARRIOR
+#define CHARACTER_START_FEMALE 1
 #define CHARACTER_FATIGUE_UNIT 64
 
 typedef struct Character {
@@ -32,6 +35,8 @@ typedef struct Character {
     int fatigue_max;
     int magicka;
     int magicka_max;
+    /* Each body part's armour value, BODY_*: 100 bare, lower is better. What is worn sets it (inventory_armor). */
+    int armor[BODY_PARTS];
 } Character;
 
 /* A new level-1 character of race and class, its vitals full. 0 when MAIN.DAT has no such race or class. */

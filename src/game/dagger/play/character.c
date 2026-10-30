@@ -19,6 +19,10 @@ int character_new(Character *c, int race, int klass, int female, const char *nam
     c->klass = klass;
     c->female = female;
     c->level = 1;
+    /* Bare, every part 100 (DFU's), until something is worn (inventory_armor). */
+    for (i = 0; i < BODY_PARTS; i++) {
+        c->armor[i] = 100;
+    }
     for (i = 0; i < ATTR_COUNT; i++) {
         c->attribute[i] = (int)k->attribute[i] + RULES_ATTRIBUTE_ROLL;
     }

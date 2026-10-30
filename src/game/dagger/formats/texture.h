@@ -18,6 +18,12 @@ Image *texture_load(int file, int image);
 Image *texture_load_frame(int file, int image, int frame);
 /* Frames in the record; 1 for a still picture, or when it cannot be read. */
 int texture_frame_count(int file, int image);
+/*
+ * Where a record says it sits on classic's 320 x 200 screen (its header's
+ * first two words). The paper doll's pieces are placed by it. 0 when the
+ * record cannot be read.
+ */
+int texture_offset(int file, int image, int *x, int *y);
 /* Records in TEXTURE.file, or 0 when the file is missing. */
 int texture_record_count(int file);
 /*
@@ -25,6 +31,15 @@ int texture_record_count(int file);
  * Call this just before destroying the heap those bytes came from.
  */
 void texture_cache_clear(void);
+/*
+ * For a screen that reads a few files into a heap of its own and then
+ * deletes the heap. texture_cached says whether a file is cached before
+ * the screen reads it; texture_forget drops the cache's pointer to one it
+ * read (the heap frees the bytes). A file under the cap (below) is the
+ * cache's own and stays.
+ */
+int texture_cached(int file);
+void texture_forget(int file);
 /*
  * Keep at most bytes of whole TEXTURE files, the least recently read
  * freed first, in texture.c's own heap (docs/streaming.md: a streamed

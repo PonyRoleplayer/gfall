@@ -32,6 +32,11 @@ float rules_run_speed(int speed, int running)
     return ((float)speed + WALK_BASE) / SPEED_RATIO * (1.35f + (float)running / 200.0f);
 }
 
+float rules_max_carry(int strength)
+{
+    return (float)strength * 1.5f;
+}
+
 float rules_gravity(void)
 {
     return JUMP_GRAVITY;

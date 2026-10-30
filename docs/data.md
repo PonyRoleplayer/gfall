@@ -63,9 +63,11 @@ Every file starts with a `HEAD` chunk (`rec_head_schema`): rows of role, size an
 | `CLAS` | `class` | `CareerClass` | `careers.c` | the 18 classes, cooked from ARENA2's CLASS00..17.CFG: base attributes, skills, hit points a level, spell points an Intelligence point, resistances |
 | `RACE` | `race` | `CareerRace` | `careers.c` | the 8 races by DFU's ids 1..8: names, the paper doll's pictures, resistances |
 | `SKIL` | `skill` | `CareerSkill` | `careers.c` | the 35 skills: name, governing attribute, how hard to advance |
-| `ITEM` | `item` | `ItemTemplate` | `items.c` | item templates by DFU's ItemTemplates index: name, weight, price, condition, the ground's and the hand's pictures. The 19 weapons, 113..131, for now |
+| `ITEM` | `item` | `ItemTemplate` | `items.c` | item templates by DFU's ItemTemplates index: name, weight, price, condition, the ground's and the paper doll's pictures, its draw order. The 11 pieces of armour 102..112, the 19 weapons 113..131 and gold 276, for now |
 | `WEAP` | `weapon` | `WeaponTemplate` | `items.c` | what a swung weapon adds, by the same id: its damage range, its skill, its `WEAPON##.CIF`. 18 rows: arrows have none |
-| `MATL` | `material` | `Material` | `items.c` | the 10 materials, iron 0 to daedric 9: the damage modifier (ten times it to hit), and the weight, value and condition multipliers |
+| `ARMR` | `armor` | `ArmorTemplate` | `items.c` | what an armour template adds, by the same id: the body part it covers, a shield's value and the parts it covers, which paper doll variants it shows in plate, leather and chain |
+| `MATL` | `material` | `Material` | `items.c` | the 12 materials, iron 0 to daedric 9, then leather and chain, armour's alone: the damage modifier (ten times it to hit), the weight, value and condition multipliers, and the armour a piece in it gives |
+| `LOOT` | `loot` | `LootChance` | `items.c` | classic's 21 loot tables, by letter 'A'..'U': gold's range and each kind of thing's chance. Only gold, weapons and armour are rolled yet |
 
 `maindat.c`'s `table_at` lists the tables a `.DAT` may carry. A new table means:
 1. its row struct and `RecSchema` in the module that uses it;

@@ -1,8 +1,10 @@
 #include "game/dagger/play/game.h"
+#include "game/dagger/play/bagview.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/commands.h"
 #include "game/dagger/play/foes.h"
 #include "game/dagger/play/keys.h"
+#include "game/dagger/play/loot.h"
 #include "game/dagger/play/menu.h"
 #include "game/dagger/play/overlay.h"
 #include "game/dagger/play/player.h"
@@ -65,6 +67,11 @@ static void die(void)
 /* What the game draws over the frame: the weapon and the HUD in play, then the open menu and its pointer. */
 static void draw(void)
 {
+    /* The inventory fills the screen: only it and the pointer. */
+    if (bagview_is_open()) {
+        bagview_draw();
+        return;
+    }
     if (g_playing) {
         int pic;
         int left;
@@ -87,6 +94,33 @@ static void menu_over_play(int which)
     menu_open(which);
     gfx_set_pause(which != MENU_NONE);
     input_set_pointer(which != MENU_NONE);
+}
+
+/* The inventory over the stilled world: the player's own, or with a body's things beside it. */
+static void bag_over_play(const Entity *body)
+{
+    bagview_open(&g_player, body);
+    gfx_set_pause(1);
+    input_set_pointer(1);
+}
+
+/*
+ * The use key: a body the view rests on is searched; anything else is
+ * the engine's to use (doors, levers, passages). An empty body says so
+ * and opens nothing.
+ */
+static void use_key(const Camera *cam)
+{
+    const Entity *body;
+
+    body = loot_find(&g_level->scene, cam);
+    if (!body) {
+        interact_request_use();
+    } else if (!bag_body_has_things(body)) {
+        interact_say("You find nothing.");
+    } else {
+        bag_over_play(body);
+    }
 }
 
 void game_setup(void)
@@ -118,6 +152,11 @@ int game_playing(void)
     return g_playing;
 }
 
+int game_world_shows(void)
+{
+    return g_playing && !bagview_is_open() && menu_current() != MENU_CONTROLS;
+}
+
 void game_enter(const Level *level, Camera *cam, float x, float y, float z, float yaw, float pitch)
 {
     g_level = level;
@@ -129,8 +168,8 @@ void game_enter(const Level *level, Camera *cam, float x, float y, float z, floa
     {
         Character sheet;
 
-        /* Until character creation (P6): a Breton warrior, at the rolls' middles. */
-        if (!character_new(&sheet, CHARACTER_START_RACE, CHARACTER_START_CLASS, 0, "Player")) {
+        /* Until character creation (P6): an Argonian woman, a warrior, at the rolls' middles. */
+        if (!character_new(&sheet, CHARACTER_START_RACE, CHARACTER_START_CLASS, CHARACTER_START_FEMALE, "Player")) {
             mem_zero(&sheet, sizeof(sheet));
         }
         player_init(&g_player, &sheet);
@@ -146,6 +185,9 @@ void game_enter(const Level *level, Camera *cam, float x, float y, float z, floa
             inventory_equip(&g_player.pack, inventory_add(&g_player.pack, &sword));
         }
     }
+    /* Every body's contents hang off this: each new game finds other things. */
+    loot_new_game(prof_now());
+    bag_new_game();
     commands_player(&g_player);
     combat_reset();
     foes_reset();
@@ -177,7 +219,14 @@ int game_frame(Camera *cam, const Input *in, float dt)
         return asked == MENU_QUIT ? GAME_QUIT : (asked == MENU_START ? GAME_START : GAME_GO_ON);
     }
     closed = 0;
-    if (menu_current() != MENU_NONE) {
+    if (bagview_is_open()) {
+        closed = 1;
+        if (bagview_frame(in)) {
+            bagview_close();
+            gfx_set_pause(0);
+            input_set_pointer(0);
+        }
+    } else if (menu_current() != MENU_NONE) {
         closed = 1;
         asked = menu_frame(in);
         if (asked == MENU_QUIT) {
@@ -189,12 +238,17 @@ int game_frame(Camera *cam, const Input *in, float dt)
         }
     } else if (in->pressed & INPUT_BIT(INPUT_MENU)) {
         menu_over_play(MENU_OPTIONS);
+    } else if ((in->pressed & INPUT_BIT(INPUT_INVENTORY)) && !gfx_paused()) {
+        bag_over_play(0);
     }
     /* The console stands the world still too (gfx_paused): the player stands with it. */
-    if (menu_current() == MENU_NONE && !gfx_paused()) {
+    if (menu_current() == MENU_NONE && !bagview_is_open() && !gfx_paused()) {
         if (in->pressed & INPUT_BIT(INPUT_USE)) {
-            interact_request_use();
+            use_key(cam);
         }
+    }
+    /* The use key may just have opened the inventory: the world stands from this frame. */
+    if (menu_current() == MENU_NONE && !bagview_is_open() && !gfx_paused()) {
         /* The weapon in hand follows the pack (equip, additem); a click swings it, at random for now. */
         weapon_hold(inventory_weapon(&g_player.pack));
         if (!closed && (in->pressed & INPUT_BIT(INPUT_ATTACK))) {
@@ -263,6 +317,7 @@ void game_shutdown(void)
 {
     interact_set_handler(0);
     commands_player(0);
+    bagview_close();
     weapon_free();
     walker_set_game(0);
     gfx_set_extra(0);

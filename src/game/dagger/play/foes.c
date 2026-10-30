@@ -49,11 +49,15 @@ typedef struct Mind {
     float swing;
     int landed;
     float move_sound;
+    /* Seconds it has not moved for (foes_due): its next move takes them all. */
+    float owed;
 } Mind;
 
 static Mind g_mind[FOES_MINDS];
 static int g_on = 1;
 static float g_ticks;
+/* Frames stepped: which far minds move this one. */
+static int g_frame;
 /* The next sleeper to look at, counted across the stream's slots. */
 static int g_scan;
 
@@ -478,6 +482,25 @@ static int act(Mind *m, Player *p, const Scene *scene, float dt)
     return 0;
 }
 
+int foes_due(float distance, int frame, int index)
+{
+    int every;
+
+    every = distance > FOES_FAR ? 4 : (distance > FOES_NEAR ? 2 : 1);
+    return ((frame + index) & (every - 1)) == 0;
+}
+
+/* The ground between a mind and the player's feet, on the level: enough to choose how often it moves. */
+static float ground_distance(const Mind *m, const float *pfeet)
+{
+    float dx;
+    float dz;
+
+    dx = m->body.feet[0] - pfeet[0];
+    dz = m->body.feet[2] - pfeet[2];
+    return df_sqrt(dx * dx + dz * dz);
+}
+
 int foes_frame(Player *p, const Scene *scene, float dt)
 {
     float peye[3];
@@ -515,9 +538,23 @@ int foes_frame(Player *p, const Scene *scene, float dt)
         g_ticks = 0.0f;
     }
     died = 0;
+    g_frame++;
     for (i = 0; i < FOES_MINDS; i++) {
-        if (g_mind[i].e && act(&g_mind[i], p, scene, dt)) {
-            died = 1;
+        Mind *m;
+
+        m = &g_mind[i];
+        if (!m->e) {
+            continue;
+        }
+        m->owed += dt;
+        if (foes_due(ground_distance(m, pfeet), g_frame, i)) {
+            float owed;
+
+            owed = m->owed;
+            m->owed = 0.0f;
+            if (act(m, p, scene, owed)) {
+                died = 1;
+            }
         }
     }
     return died;

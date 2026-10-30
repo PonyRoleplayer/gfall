@@ -102,6 +102,11 @@ void player_step(Player *p, const Input *in, const Scene *scene, float dt, int c
     body_step(&p->body, scene, (sy * f + cy * r) * step, (cy * f - sy * r) * step, dt);
 }
 
+void player_wear_changed(Player *p)
+{
+    inventory_armor(&p->pack, p->sheet.armor);
+}
+
 void player_camera(const Player *p, Camera *cam)
 {
     cam->yaw = p->yaw;

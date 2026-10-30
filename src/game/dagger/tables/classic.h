@@ -26,9 +26,11 @@ const CalInfo *classic_calendar(void);
 /* The races (RaceTemplate) and the skills (DFCareer.Skills, DaggerfallSkills); the classes come from ARENA2. */
 const CareerRace *classic_races(int *n);
 const CareerSkill *classic_skills(int *n);
-/* The weapon templates, their damage, skills and swings, and the materials. */
+/* The item templates, what weapons and armour add to them, the materials, and the loot tables. */
 const ItemTemplate *classic_items(int *n);
 const WeaponTemplate *classic_weapons(int *n);
+const ArmorTemplate *classic_armors(int *n);
+const LootChance *classic_loots(int *n);
 const Material *classic_materials(int *n);
 
 #endif

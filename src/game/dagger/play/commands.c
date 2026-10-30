@@ -18,8 +18,8 @@ static Player *player(void)
     return g_player;
 }
 
-/* Every weapon template's name on a line, then every material's. */
-static void list_weapons(void)
+/* Every weapon and armour template's name on a line, then every material's. */
+static void list_gear(void)
 {
     char line[CMD_LINE * 3];
     RecTable *t;
@@ -33,8 +33,8 @@ static void list_weapons(void)
         const ItemTemplate *it;
 
         it = (const ItemTemplate *)(t->rows + (df_u32)i * t->schema->row_size);
-        if (weapon_template(it->id)) {
-            at += log_format(line + at, (int)sizeof(line) - at, "%s%s", at ? ", " : "Weapons: ", it->name);
+        if (weapon_template(it->id) || armor_template(it->id)) {
+            at += log_format(line + at, (int)sizeof(line) - at, "%s%s", at ? ", " : "Items: ", it->name);
         }
     }
     log_text(LOG_PRINT, line);
@@ -67,12 +67,12 @@ static void c_additem(int argc, char **argv)
     char name[CMD_LINE];
     Player *p;
     Item it;
-    int weapon;
+    int gear;
     int metal;
     int i;
 
     if (argc < 2) {
-        list_weapons();
+        list_gear();
         return;
     }
     p = player();
@@ -90,13 +90,13 @@ static void c_additem(int argc, char **argv)
             metal = MATERIAL_IRON;
         }
     }
-    weapon = item_find_weapon(name);
-    if (weapon < 0) {
-        log_print(LOG_PRINT, "No weapon called %s. additem alone lists them.", name);
+    gear = item_find_gear(name);
+    if (gear < 0) {
+        log_print(LOG_PRINT, "No item called %s. additem alone lists them.", name);
         return;
     }
-    if (!item_make(&it, weapon, metal)) {
-        log_print(LOG_PRINT, "MAIN.DAT cannot make that.");
+    if (!item_make(&it, gear, metal)) {
+        log_print(LOG_PRINT, "That does not come in that material.");
         return;
     }
     i = inventory_add(&p->pack, &it);
@@ -105,7 +105,7 @@ static void c_additem(int argc, char **argv)
         return;
     }
     item_name(&it, name, (int)sizeof(name));
-    log_print(LOG_PRINT, "%d: %s added. equip %d takes it in hand.", i, name, i);
+    log_print(LOG_PRINT, "%d: %s added. equip %d wears it.", i, name, i);
 }
 
 static void c_items(int argc, char **argv)
@@ -129,10 +129,10 @@ static void c_items(int argc, char **argv)
 
         it = &p->pack.item[i];
         item_name(it, name, (int)sizeof(name));
-        log_print(LOG_PRINT, "%c%d: %s, %.2f kg, %u gold, %u/%u", i == p->pack.weapon ? '*' : ' ', i, name,
+        log_print(LOG_PRINT, "%c%d: %s, %.2f kg, %u gold, %u/%u", inventory_worn_at(&p->pack, i) >= 0 ? '*' : ' ', i, name,
                   it->weight, (unsigned)it->value, (unsigned)it->condition, (unsigned)it->condition_max);
     }
-    log_print(LOG_PRINT, "%.2f kg in all.", inventory_weight(&p->pack));
+    log_print(LOG_PRINT, "%u gold; %.2f kg in all.", (unsigned)p->pack.gold, inventory_weight(&p->pack));
 }
 
 static void c_equip(int argc, char **argv)
@@ -161,17 +161,37 @@ static void c_equip(int argc, char **argv)
             i = i * 10 + (*s++ - '0');
         }
     }
-    if (*s || !inventory_equip(&p->pack, i)) {
-        log_print(LOG_PRINT, "%s is no weapon in the pack.", argv[1]);
+    if (*s || (i < 0 ? !inventory_equip(&p->pack, -1) : !inventory_wear(&p->pack, i))) {
+        log_print(LOG_PRINT, "%s is nothing to wear in the pack.", argv[1]);
         return;
     }
-    it = inventory_weapon(&p->pack);
-    if (!it) {
+    player_wear_changed(p);
+    if (i < 0) {
         log_print(LOG_PRINT, "Bare hands.");
         return;
     }
+    it = &p->pack.item[i];
     item_name(it, name, (int)sizeof(name));
-    log_print(LOG_PRINT, "%s in hand.", name);
+    log_print(LOG_PRINT, "%s worn.", name);
+}
+
+static void c_gold(int argc, char **argv)
+{
+    Player *p;
+    const char *s;
+    df_u32 coins;
+
+    p = player();
+    if (!p) {
+        return;
+    }
+    coins = 0;
+    s = argc > 1 ? argv[1] : "";
+    while (*s >= '0' && *s <= '9') {
+        coins = coins * 10u + (df_u32)(*s++ - '0');
+    }
+    p->pack.gold += coins;
+    log_print(LOG_PRINT, "%u gold.", (unsigned)p->pack.gold);
 }
 
 static int get_tgm(void)
@@ -194,9 +214,10 @@ void commands_setup(void)
         return;
     }
     done = 1;
-    cmd_add("additem", c_additem, "[weapon] [material]", "a new weapon in the pack; alone, the weapons and materials");
-    cmd_add("items", c_items, "", "what the player carries, the weapon in hand marked *");
-    cmd_add("equip", c_equip, "n|none", "item n of items in hand, or bare hands");
+    cmd_add("additem", c_additem, "[item] [material]", "a new weapon or piece of armour in the pack; alone, what there is");
+    cmd_add("items", c_items, "", "what the player carries, what is worn marked *");
+    cmd_add("equip", c_equip, "n|none", "item n of items worn, or bare hands");
+    cmd_add("gold", c_gold, "n", "n gold more in the pack");
     cmd_var("tgm", get_tgm, set_tgm, 0, 1, "god mode: nothing hurts the player; tgm alone flips it");
     cmd_toggles("tgm");
     cmd_var("tai", foes_on, foes_set_on, 0, 1, "creatures' AI: off, no one wakes, moves or strikes; tai alone flips it");

@@ -123,6 +123,10 @@ static RecTable *table_at(int i)
         return weapon_table();
     case 12:
         return material_table();
+    case 13:
+        return armor_table();
+    case 14:
+        return loot_table();
     default:
         return 0;
     }
@@ -130,7 +134,7 @@ static RecTable *table_at(int i)
 
 int maindat_table_count(void)
 {
-    return 13;
+    return 15;
 }
 
 RecTable *maindat_table(int i)
@@ -300,6 +304,8 @@ int maindat_import(RecPut put, void *ctx)
     {
         const ItemTemplate *items;
         const WeaponTemplate *weapons;
+        const ArmorTemplate *armors;
+        const LootChance *loots;
         const Material *materials;
 
         items = classic_items(&n);
@@ -308,6 +314,14 @@ int maindat_import(RecPut put, void *ctx)
         }
         weapons = classic_weapons(&n);
         if (!rec_put_rows(put, ctx, &weapon_schema, weapons, n, 0, 0)) {
+            return 0;
+        }
+        armors = classic_armors(&n);
+        if (!rec_put_rows(put, ctx, &armor_schema, armors, n, 0, 0)) {
+            return 0;
+        }
+        loots = classic_loots(&n);
+        if (!rec_put_rows(put, ctx, &loot_schema, loots, n, 0, 0)) {
             return 0;
         }
         materials = classic_materials(&n);
@@ -379,6 +393,7 @@ int maindat_whole(void)
         && cal_month_table()->count > 0 && cal_weekday_table()->count > 0
         && rec_row(cal_info_table(), 0) != 0 && class_table()->count > 0 && race_table()->count > 0
         && skill_table()->count == SKILL_COUNT && item_table()->count > 0 && weapon_table()->count > 0
+        && armor_table()->count > 0 && loot_table()->count > 0
         && material_table()->count == MATERIAL_COUNT;
 }
 

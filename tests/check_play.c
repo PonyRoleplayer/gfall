@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "engine/core/df.h"
+#include "engine/core/mem.h"
 #include "engine/scene/walker.h"
 #include "engine/scene/interact.h"
 #include "engine/scene/keep.h"
@@ -22,11 +23,16 @@
 #include "game/dagger/play/character.h"
 #include "game/dagger/play/commands.h"
 #include "game/dagger/play/inventory.h"
+#include "game/dagger/play/loot.h"
+#include "game/dagger/play/bag.h"
+#include "game/dagger/play/doll.h"
 #include "game/dagger/play/weapon.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/foes.h"
 #include "game/dagger/tables/enemies.h"
 #include "game/dagger/formats/cif.h"
+#include "game/dagger/formats/img.h"
+#include "game/dagger/formats/texture.h"
 #include "engine/ui/pic.h"
 #include "game/dagger/tables/items.h"
 #include "engine/ui/cmd.h"
@@ -151,7 +157,7 @@ static void check_hold(void)
     }
     world_as_level(world, &level);
     world_start(world, &x, &y, &z, &yaw, &pitch);
-    if (!character_new(&sheet, CHARACTER_START_RACE, CHARACTER_START_CLASS, 0, "Test")) {
+    if (!character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Test")) {
         check_expect(0, "play: no starting character");
         return;
     }
@@ -450,7 +456,7 @@ static void check_dunstream(void)
         float walked;
         float want;
 
-        if (character_new(&sheet, CHARACTER_START_RACE, CHARACTER_START_CLASS, 0, "Test")) {
+        if (character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Test")) {
             player_init(&p, &sheet);
             player_place(&p, x, y, z, yaw, pitch);
             memset(&in, 0, sizeof(in));
@@ -498,8 +504,9 @@ static void check_items(void)
     Item it;
     char name[48];
 
-    check_expect(item_table()->count == 19 && weapon_table()->count == 18 && material_table()->count == MATERIAL_COUNT,
-                 "items: MAIN.DAT lacks classic's 19 weapon items (18 swung, and arrows) or 10 materials");
+    check_expect(item_table()->count == 31 && weapon_table()->count == 18 && armor_table()->count == 11
+                     && material_table()->count == MATERIAL_COUNT && loot_table()->count == 21,
+                 "items: MAIN.DAT lacks classic's 31 items (11 of armour, 18 swung, arrows, gold), 12 materials or 21 loot tables");
     check_expect(item_make(&it, ITEM_LONGSWORD, MATERIAL_IRON) && check_near(it.weight, 4.5f, 0.001f)
                      && it.value == 45 && it.condition_max == 800 && it.condition == 800,
                  "items: an iron longsword is not 4.5 kg, 45 gold, 800");
@@ -529,7 +536,7 @@ static void check_items(void)
     check_expect(inventory_equip(&inv, 1) && inventory_weapon(&inv) == &inv.item[1] && !inventory_equip(&inv, 5),
                  "items: the hand does not take a weapon from the pack");
     inventory_remove(&inv, 0);
-    check_expect(inv.weapon == 0 && inventory_weapon(&inv)->template_id == ITEM_LONGSWORD,
+    check_expect(inv.worn[EQUIP_RIGHT_HAND] == 0 && inventory_weapon(&inv)->template_id == ITEM_LONGSWORD,
                  "items: the hand loses its weapon when another leaves the pack");
     inventory_remove(&inv, 0);
     check_expect(inv.count == 0 && !inventory_weapon(&inv), "items: the hand keeps a weapon that left the pack");
@@ -539,11 +546,11 @@ static void check_items(void)
     commands_player(&p);
     cmd_run("additem dwarven claymore; additem long sword; additem Dai-Katana Ebony; equip 1");
     check_expect(p.pack.count == 3 && p.pack.item[0].material == MATERIAL_DWARVEN && p.pack.item[1].material == MATERIAL_IRON
-                     && p.pack.item[2].template_id == 123 && p.pack.item[2].material == MATERIAL_EBONY && p.pack.weapon == 1,
+                     && p.pack.item[2].template_id == 123 && p.pack.item[2].material == MATERIAL_EBONY && p.pack.worn[EQUIP_RIGHT_HAND] == 1,
                  "items: additem and equip did not fill the pack and the hand");
     check_expect(check_near(inventory_weight(&p.pack), 5.5f + 4.5f + 1.75f, 0.001f), "items: the pack's weight");
     cmd_run("additem potato; equip 7; equip none");
-    check_expect(p.pack.count == 3 && p.pack.weapon == -1, "items: a bad additem or equip changed the pack");
+    check_expect(p.pack.count == 3 && p.pack.worn[EQUIP_RIGHT_HAND] == -1, "items: a bad additem or equip changed the pack");
     /* tgm: alone it flips; on, a blow takes nothing; off, it does. */
     p.sheet.health = 10;
     p.god = 0;
@@ -858,7 +865,7 @@ static void check_combat(void)
     }
     check_expect(i == 200, "combat: a class enemy's health is not 10 and a roll a level");
 
-    if (!character_new(&pc, CHARACTER_START_RACE, CHARACTER_START_CLASS, 0, "Test")) {
+    if (!character_new(&pc, RACE_BRETON, CLASS_WARRIOR, 0, "Test")) {
         check_expect(0, "combat: no starting character");
         return;
     }
@@ -1058,7 +1065,7 @@ static void check_foes(void)
     int hi;
     int i;
 
-    if (!character_new(&pc, CHARACTER_START_RACE, CHARACTER_START_CLASS, 0, "Test")) {
+    if (!character_new(&pc, RACE_BRETON, CLASS_WARRIOR, 0, "Test")) {
         check_expect(0, "foes: no starting character");
         return;
     }
@@ -1211,6 +1218,377 @@ static void check_foes(void)
     }
 }
 
+/*
+ * Armour: what a piece is made of, where it goes, the two-handed rules,
+ * and what it does to a creature's blow, all worked by hand.
+ */
+static void check_armor(void)
+{
+    Character pc;
+    Inventory inv;
+    Item it;
+    Foe f;
+    Blow b;
+    int armor[BODY_PARTS];
+    int count[BODY_PARTS];
+    int archive;
+    int record;
+    int i;
+
+    /* 12.5 kg is 50 quarters; leather halves them, 25, 6.25 kg. Its price and condition are the template's. */
+    check_expect(item_make(&it, ITEM_CUIRASS, MATERIAL_LEATHER) && check_near(it.weight, 6.25f, 0.001f)
+                     && it.value == 100 && it.condition_max == 4096,
+                 "armor: a leather cuirass is not 6.25 kg, 100 gold, 4096");
+    check_expect(item_make(&it, ITEM_CUIRASS, MATERIAL_CHAIN) && check_near(it.weight, 12.5f, 0.001f) && it.value == 200,
+                 "armor: a chain cuirass is not 12.5 kg, 200 gold");
+    check_expect(item_make(&it, ITEM_CUIRASS, MATERIAL_DAEDRIC) && it.value == 153600 && it.condition_max == 32768,
+                 "armor: a daedric cuirass is not 153600 gold, 32768");
+    check_expect(!item_make(&it, ITEM_LONGSWORD, MATERIAL_LEATHER) && !item_make(&it, ITEM_DAGGER, MATERIAL_CHAIN),
+                 "armor: a sword was made of leather or chain");
+    item_make(&it, ITEM_CUIRASS, MATERIAL_IRON);
+    check_expect(it.variant == 1, "armor: a new iron cuirass does not show its first plate variant");
+
+    /* A woman's Argonian armour is archive 245; a man's Breton 249 and the human shape's 2. */
+    check_expect(item_picture(&it, RACE_ARGONIAN, 1, &archive, &record) && archive == 245 && record == 4,
+                 "armor: an Argonian woman's iron cuirass is not TEXTURE.245, record 4");
+    check_expect(item_picture(&it, RACE_BRETON, 0, &archive, &record) && archive == 251 && record == 4,
+                 "armor: a Breton man's iron cuirass is not TEXTURE.251, record 4");
+
+    /* Iron on the chest, 7 x 5 off; a tower shield 4 x 5 off the head, left arm, hands and legs. */
+    inventory_clear(&inv);
+    item_make(&it, ITEM_CUIRASS, MATERIAL_IRON);
+    inventory_wear(&inv, inventory_add(&inv, &it));
+    item_make(&it, ITEM_TOWER_SHIELD, MATERIAL_IRON);
+    inventory_wear(&inv, inventory_add(&inv, &it));
+    inventory_armor(&inv, armor);
+    check_expect(armor[BODY_CHEST] == 65 && armor[BODY_HEAD] == 80 && armor[BODY_LEFT_ARM] == 80 && armor[BODY_HANDS] == 80
+                     && armor[BODY_LEGS] == 80 && armor[BODY_RIGHT_ARM] == 100 && armor[BODY_FEET] == 100,
+                 "armor: an iron cuirass and a tower shield do not give classic's values");
+
+    /* Hands: a claymore takes the shield off; a shield takes the claymore out of the hand. */
+    item_make(&it, 122, MATERIAL_IRON);
+    i = inventory_add(&inv, &it);
+    check_expect(inventory_wear(&inv, i) && inv.worn[EQUIP_LEFT_HAND] == -1 && inv.worn[EQUIP_RIGHT_HAND] == i,
+                 "armor: a two-handed weapon left the shield on");
+    check_expect(inventory_wear(&inv, 1) && inv.worn[EQUIP_LEFT_HAND] == 1 && inv.worn[EQUIP_RIGHT_HAND] == -1,
+                 "armor: a shield left a two-handed weapon in hand");
+    /* The worn places follow their items down the list. */
+    inventory_remove(&inv, 0);
+    check_expect(inv.worn[EQUIP_CHEST] == -1 && inv.worn[EQUIP_LEFT_HAND] == 0,
+                 "armor: taking an item out left what is worn pointing at the wrong one");
+
+    /* The same rat, 35 better armour everywhere: 83 less 35 is 48 (51 on its critical). */
+    character_new(&pc, RACE_BRETON, CLASS_WARRIOR, 0, "Test");
+    for (i = 0; i < BODY_PARTS; i++) {
+        pc.armor[i] = 65;
+        count[i] = 0;
+    }
+    combat_foe(&f, enemy_kind(ENEMY_RAT), 1, 0);
+    combat_seed(11);
+    for (i = 0; i < 20000; i++) {
+        combat_foe_blow(&f, &pc, &b);
+        check_expect(b.chance == 48 || b.chance == 51, "armor: a rat's chance through iron is not 48 (51 critical)");
+        count[b.part]++;
+    }
+    /* Twenty parts of the body, by DFU's table: 2, 3, 3, 4, 4, 3, 1 of them; within a percent. */
+    check_expect(count[BODY_HEAD] > 1800 && count[BODY_HEAD] < 2200 && count[BODY_CHEST] > 3800 && count[BODY_CHEST] < 4200
+                     && count[BODY_FEET] > 800 && count[BODY_FEET] < 1200,
+                 "armor: blows do not fall on the body's parts by classic's odds");
+    printf("armor: iron and a tower shield, chest 65, head 80; a rat at 48%% through iron\n");
+}
+
+/* How often a mind moves: every frame near, less often far, and never two far ones on the same frame by accident. */
+static void check_foes_due(void)
+{
+    int frame;
+    int near_moves;
+    int middle_moves;
+    int far_moves;
+    int far_on_frame_0;
+
+    near_moves = 0;
+    middle_moves = 0;
+    far_moves = 0;
+    for (frame = 0; frame < 8; frame++) {
+        near_moves += foes_due(100.0f, frame, 3);
+        middle_moves += foes_due(FOES_NEAR + 1.0f, frame, 3);
+        far_moves += foes_due(FOES_FAR + 1.0f, frame, 3);
+    }
+    check_expect(near_moves == 8 && middle_moves == 4 && far_moves == 2,
+                 "foes: a mind does not move every frame near, every 2nd past FOES_NEAR, every 4th past FOES_FAR");
+    far_on_frame_0 = foes_due(FOES_FAR + 1.0f, 0, 0) + foes_due(FOES_FAR + 1.0f, 0, 1)
+                     + foes_due(FOES_FAR + 1.0f, 0, 2) + foes_due(FOES_FAR + 1.0f, 0, 3);
+    check_expect(far_on_frame_0 == 1, "foes: four far minds are not spread over four frames");
+}
+
+/* The default character, what the rolls do and what a body holds, by hand and in the hold. */
+static void check_loot(void)
+{
+    Inventory one;
+    Inventory two;
+    const LootChance *t;
+    int i;
+    int gold;
+
+    check_expect(CHARACTER_START_RACE == RACE_ARGONIAN && CHARACTER_START_FEMALE == 1,
+                 "loot: the game does not start as an Argonian woman");
+
+    /* Level 1 takes 36 off the roll: 0 stays iron, and 255 is 219: past iron 155, steel 27, silver 17, into elven. */
+    check_expect(loot_metal(1, 0) == MATERIAL_IRON && loot_metal(1, 255) == MATERIAL_ELVEN,
+                 "loot: level 1's materials are not classic's");
+    /* Level 30 adds 40 to the roll: 255 clamps to 256, every share taken, daedric. */
+    check_expect(loot_metal(30, 255) == MATERIAL_DAEDRIC, "loot: level 30's best material is not daedric");
+
+    /* Table T: gold 20..80 a level, and always at least one weapon and one piece of armour. */
+    t = loot_chance('T');
+    check_expect(t && t->weapon == 100 && t->armor == 100 && loot_table()->count == 21, "loot: table T is not classic's");
+    if (!t) {
+        return;
+    }
+    for (i = 1; i < 200; i++) {
+        loot_roll(&one, t, 3, (df_u32)i);
+        loot_roll(&two, t, 3, (df_u32)i);
+        check_expect(one.count == two.count && one.count >= 3 && one.count <= LOOT_MAX,
+                     "loot: a seed did not roll the same things, or too few");
+        check_expect(one.item[0].template_id == ITEM_GOLD, "loot: gold does not come first");
+        gold = one.item[0].count;
+        check_expect(gold >= 60 && gold <= 240, "loot: table T's gold at level 3 is not 60..240");
+    }
+    /* Table I has no gold, weapons or armour: nothing rolls. */
+    loot_roll(&one, loot_chance('I'), 5, 1u);
+    check_expect(one.count == 0, "loot: table I rolled something");
+
+    /* A body in the hold: searched by the view, the same each time, what is taken stays gone. */
+    {
+        Dungeon hold;
+        Level level;
+        Camera cam;
+        float x, y, z, yaw, pitch;
+        Entity *body;
+        Keep *row;
+        df_u8 origin[INVENTORY_MAX];
+        int s;
+
+        keep_clear();
+        combat_reset();
+        if (!dungeon_load(&hold) || !dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
+            check_expect(0, "loot: the hold's stream did not open");
+            return;
+        }
+        camera_set(&cam, x, y, z, yaw, pitch);
+        dunstream_fill(&cam);
+        loot_new_game(77u);
+        body = 0;
+        for (s = 0; s < stream_slots() && !body; s++) {
+            Entity *ents;
+            int first;
+            int n;
+
+            ents = stream_slot_entities(s, &first, &n);
+            for (i = 0; ents && i < n && !body; i++) {
+                const EnemyKind *kind;
+
+                kind = ents[i].live ? enemy_kind(dunstream_kind(&ents[i], 0)) : 0;
+                if (kind && loot_chance(kind->loot[0]) && ents[i].pose[ENTITY_DEAD].w[0]) {
+                    body = &ents[i];
+                }
+            }
+        }
+        check_expect(body != 0, "loot: the hold has no creature with a loot table");
+        if (body) {
+            float eye_y;
+            int found;
+            int things;
+
+            /* Killed by hand, at level 20: gold is sure wherever the table has any. */
+            body->dead = 1;
+            row = keep_get(body->key, KEEP_ENTITY);
+            row->game[COMBAT_KEEP_LEVEL] = 20;
+            /* Standing over it, looking down at it. */
+            eye_y = body->y + 60.0f;
+            camera_set(&cam, body->x, eye_y, body->z - 40.0f, 0.0f, 0.0f);
+            /* Pitch straight at the body's middle is found; looking at the sky, it is not. */
+            cam.pitch = -0.9f;
+            check_expect(loot_find(&level.scene, &cam) == body, "loot: looking down at a body did not find it");
+            cam.pitch = 1.2f;
+            check_expect(loot_find(&level.scene, &cam) != body, "loot: looking away still found the body");
+            found = loot_open(body, &one, origin);
+            loot_open(body, &two, origin);
+            check_expect(found == two.count, "loot: a body changed what it holds between two looks");
+            /* Take the first thing, if it has one: it must stay gone, the rest the same. */
+            things = found;
+            if (things > 0) {
+                loot_taken(body, origin[0]);
+                loot_open(body, &two, origin);
+                check_expect(two.count == things - 1 && (things == 1 || two.item[0].template_id == one.item[1].template_id),
+                             "loot: a thing taken off a body came back");
+            }
+            printf("loot: a body in the hold (table %s) held %d things at level 20\n",
+                   enemy_kind(dunstream_kind(body, 0))->loot, found);
+        }
+        dunstream_close();
+        keep_clear();
+    }
+    printf("loot: seeds repeat; materials by level; bodies searched by the view\n");
+}
+
+/* The composed screen to a picture: build/bag0.ppm, for a person to look at against classic's. */
+static void write_screen(const char *path)
+{
+    df_u8 rgb[768];
+    const df_u8 *pixels;
+    FILE *f;
+    int i;
+
+    pixels = bag_pixels();
+    if (!img_art_palette(rgb)) {
+        check_expect(0, "bag: no ART_PAL.COL");
+        return;
+    }
+    f = fopen(path, "wb");
+    if (!f) {
+        check_expect(0, "bag: the picture did not write");
+        return;
+    }
+    fprintf(f, "P6\n320 200\n255\n");
+    for (i = 0; i < 320 * 200; i++) {
+        fwrite(rgb + pixels[i] * 3, 1, 3, f);
+    }
+    fclose(f);
+}
+
+/*
+ * The inventory screen, driven by clicks at classic's own coordinates as
+ * the player would: the cell of a list's row, a button, a point on the doll.
+ */
+#define BAG_LOCAL_CELL_X 190
+#define BAG_REMOTE_CELL_X 288
+#define BAG_ROW_Y 60
+#define BAG_BUTTON_X 240
+#define BAG_INFO_Y 42
+#define BAG_EQUIP_Y 64
+#define BAG_REMOVE_Y 86
+#define BAG_USE_Y 108
+#define BAG_EXIT_X 240
+#define BAG_EXIT_Y 190
+#define BAG_DOLL_HELM_X 103
+#define BAG_DOLL_HELM_Y 30
+static void check_bag(void)
+{
+    Player p;
+    Character sheet;
+    Item it;
+    const df_u8 *grey;
+    const df_u8 *gold;
+    ImgPicture pic;
+    int cached_before;
+    int i;
+    int differs;
+    int x;
+    int y;
+
+    if (!character_new(&sheet, CHARACTER_START_RACE, CHARACTER_START_CLASS, CHARACTER_START_FEMALE, "Test")) {
+        check_expect(0, "bag: no starting character");
+        return;
+    }
+    mem_zero(&p, sizeof(p));
+    player_init(&p, &sheet);
+    bag_new_game();
+    item_make(&it, ITEM_LONGSWORD, MATERIAL_IRON);
+    inventory_equip(&p.pack, inventory_add(&p.pack, &it));
+    item_make(&it, ITEM_CUIRASS, MATERIAL_STEEL);
+    inventory_add(&p.pack, &it);
+    item_make(&it, ITEM_HELM, MATERIAL_ELVEN);
+    inventory_add(&p.pack, &it);
+    item_make(&it, ITEM_DAGGER, MATERIAL_DAEDRIC);
+    inventory_add(&p.pack, &it);
+    p.pack.gold = 123;
+
+    cached_before = texture_cached(245);
+    check_expect(bag_open(&p, 0), "bag: the screen did not open");
+    bag_compose();
+
+    /* The chosen tab and button are cut from the gold picture, all else is the grey one's. */
+    grey = img_load("INVE00I0.IMG", &pic) ? pic.pixels : 0;
+    gold = img_load("INVE01I0.IMG", &pic) ? pic.pixels : 0;
+    check_expect(grey && gold, "bag: its pictures did not read");
+    if (grey && gold) {
+        const df_u8 *screen;
+
+        screen = bag_pixels();
+        /* The Equip button's corner, and the Wagon button's, which is not chosen. */
+        check_expect(screen[58 * 320 + 226] == gold[58 * 320 + 226] && screen[14 * 320 + 226] == grey[14 * 320 + 226],
+                     "bag: the chosen button is not gold and the others grey");
+        /* The Argonian woman stands on the doll: it is not only the background. */
+        differs = 0;
+        for (y = 50; y < 150; y++) {
+            for (x = 80; x < 130; x++) {
+                differs += screen[y * 320 + x] != grey[y * 320 + x];
+            }
+        }
+        check_expect(differs > 2000, "bag: the doll does not show the character");
+    }
+
+    /* Equip mode's default: a click on the pack's first row wears the cuirass. The chest's armour follows. */
+    check_expect(bag_click(BAG_LOCAL_CELL_X, BAG_ROW_Y) == BAG_STAY && inventory_worn_at(&p.pack, 1) == EQUIP_CHEST,
+                 "bag: a click in equip mode did not wear the cuirass");
+    check_expect(p.sheet.armor[BODY_CHEST] == 100 - 9 * 5, "bag: wearing steel did not change the chest's armour");
+    /* The helm next, now first in the list: worn things leave it. */
+    bag_click(BAG_LOCAL_CELL_X, BAG_ROW_Y);
+    check_expect(inventory_worn_at(&p.pack, 2) == EQUIP_HEAD && p.sheet.armor[BODY_HEAD] == 100 - 11 * 5,
+                 "bag: the helm did not go on");
+    bag_compose();
+    write_screen("build/bag0.ppm");
+
+    /* A click on the helm, on the doll over the head, takes it off: found by the doll's record of who drew each pixel. */
+    bag_click(BAG_DOLL_HELM_X, BAG_DOLL_HELM_Y);
+    check_expect(p.pack.worn[EQUIP_HEAD] == -1 && p.sheet.armor[BODY_HEAD] == 100,
+                 "bag: a click on the worn helm did not take it off");
+    bag_compose();
+
+    /* Remove mode: a thing goes to the dropped list, and any click on it there comes back. */
+    bag_click(BAG_BUTTON_X, BAG_REMOVE_Y);
+    i = p.pack.count;
+    bag_click(BAG_LOCAL_CELL_X, BAG_ROW_Y);
+    check_expect(p.pack.count == i - 1, "bag: remove did not drop the thing");
+    bag_compose();
+    bag_click(BAG_REMOTE_CELL_X, BAG_ROW_Y);
+    check_expect(p.pack.count == i, "bag: a dropped thing did not come back");
+    /* Too much to carry: a click takes nothing and says why. */
+    bag_click(BAG_LOCAL_CELL_X, BAG_ROW_Y);
+    p.sheet.attribute[ATTR_STRENGTH] = 1;
+    bag_compose();
+    bag_click(BAG_REMOTE_CELL_X, BAG_ROW_Y);
+    check_expect(p.pack.count == i - 1 && bag_note() != 0, "bag: more than the player can carry was taken");
+    p.sheet.attribute[ATTR_STRENGTH] = 65;
+    bag_click(BAG_REMOTE_CELL_X, BAG_ROW_Y);
+
+    /* Info mode's box: it shows, and the next click only puts it away. */
+    bag_click(BAG_BUTTON_X, BAG_INFO_Y);
+    i = p.pack.count;
+    bag_click(BAG_LOCAL_CELL_X, BAG_ROW_Y);
+    bag_compose();
+    write_screen("build/bag1.ppm");
+    bag_click(BAG_LOCAL_CELL_X, BAG_ROW_Y);
+    check_expect(p.pack.count == i, "bag: the info box's click did something else");
+
+    /* A frame with no change composes nothing. */
+    bag_compose();
+    check_expect(!bag_changed(), "bag: a screen unchanged asked to compose");
+    bag_point(0, 199);
+    bag_changed();
+    bag_point(BAG_LOCAL_CELL_X, BAG_ROW_Y);
+    check_expect(bag_changed(), "bag: the pointer over an item did not change the panel");
+    bag_point(BAG_LOCAL_CELL_X, BAG_ROW_Y);
+    check_expect(!bag_changed(), "bag: a pointer held still changed the screen");
+
+    check_expect(bag_click(BAG_EXIT_X, BAG_EXIT_Y) == BAG_LEAVE, "bag: Exit did not leave");
+    bag_close();
+    /* Nothing it read stays cached pointing into its freed heap. */
+    check_expect(texture_cached(245) == cached_before, "bag: a file stayed cached after its heap went");
+    printf("bag: an Argonian woman in steel and elven; wear, take off, drop, take back, info; build/bag0.ppm, bag1.ppm\n");
+}
+
 void check_play(void)
 {
     check_rules();
@@ -1219,6 +1597,10 @@ void check_play(void)
     check_weapon();
     check_combat();
     check_foes();
+    check_foes_due();
+    check_armor();
+    check_loot();
+    check_bag();
     check_hold();
     check_keep();
     check_dunstream();

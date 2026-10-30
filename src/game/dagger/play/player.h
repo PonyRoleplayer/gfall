@@ -46,6 +46,8 @@ void player_step(Player *p, const Input *in, const Scene *scene, float dt, int c
  * (amount 0 or less, or god on).
  */
 int player_hurt(Player *p, int amount);
+/* What it wears changed: its armour values follow (inventory_armor). */
+void player_wear_changed(Player *p);
 /* The camera at its eye, looking its way. */
 void player_camera(const Player *p, Camera *cam);
 

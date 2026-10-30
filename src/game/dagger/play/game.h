@@ -34,6 +34,8 @@ enum {
 void game_setup(void);
 /* 1 while a place is being played (the program draws it), 0 on a screen before one. */
 int game_playing(void);
+/* 1 when the frame should draw the place: in play, and no screen covers all of it. */
+int game_world_shows(void);
 /*
  * A place to play in, streamed by block (dunstream.c): the player at its
  * start (x, y, z the eye), the overlay and use handler hooked up. The

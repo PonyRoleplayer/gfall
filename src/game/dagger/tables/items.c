@@ -14,7 +14,8 @@ static const RecField g_item_fields[] = {
     I("player_archive", REC_UINT, player_archive),
     I("player_record", REC_UINT, player_record),
     I("one_handed", REC_UINT, one_handed),
-    I("blunt", REC_UINT, blunt)
+    I("blunt", REC_UINT, blunt),
+    I("draw_order", REC_UINT, draw_order)
 };
 #undef I
 const RecSchema item_schema = {
@@ -33,26 +34,74 @@ const RecSchema weapon_schema = {
     "WEAP", "weapon", g_weapon_fields, 5, (df_u16)sizeof(WeaponTemplate), 0
 };
 
+#define A(name, member) REC_FIELD(name, REC_UINT, ArmorTemplate, member)
+static const RecField g_armor_fields[] = {
+    A("id", id),
+    A("part", part),
+    A("shield", shield),
+    A("shield_parts", shield_parts),
+    A("plate_low", plate_low),
+    A("plate_high", plate_high),
+    A("leather_low", leather_low),
+    A("leather_high", leather_high),
+    A("chain_low", chain_low),
+    A("chain_high", chain_high)
+};
+#undef A
+const RecSchema armor_schema = {
+    "ARMR", "armor", g_armor_fields, (int)(sizeof(g_armor_fields) / sizeof(g_armor_fields[0])),
+    (df_u16)sizeof(ArmorTemplate), 0
+};
+
 static const RecField g_material_fields[] = {
     REC_FIELD("id", REC_UINT, Material, id),
     REC_FIELD("name", REC_TEXT, Material, name),
     REC_FIELD("modifier", REC_INT, Material, modifier),
     REC_FIELD("weight_q", REC_UINT, Material, weight_q),
     REC_FIELD("value_q", REC_UINT, Material, value_q),
-    REC_FIELD("condition_q", REC_UINT, Material, condition_q)
+    REC_FIELD("condition_q", REC_UINT, Material, condition_q),
+    REC_FIELD("value_mul", REC_UINT, Material, value_mul),
+    REC_FIELD("armor", REC_UINT, Material, armor)
 };
 const RecSchema material_schema = {
-    "MATL", "material", g_material_fields, 6, (df_u16)sizeof(Material), 0
+    "MATL", "material", g_material_fields, 8, (df_u16)sizeof(Material), 0
+};
+
+#define L(name, member) REC_FIELD(name, REC_UINT, LootChance, member)
+static const RecField g_loot_fields[] = {
+    L("id", id),
+    L("gold_min", gold_min),
+    L("gold_max", gold_max),
+    L("armor", armor),
+    L("weapon", weapon),
+    L("magic", magic),
+    L("clothing", clothing),
+    L("book", book),
+    L("plant1", plant1),
+    L("plant2", plant2),
+    L("creature1", creature1),
+    L("creature2", creature2),
+    L("creature3", creature3),
+    L("misc1", misc1),
+    L("misc2", misc2),
+    L("religious", religious)
+};
+#undef L
+const RecSchema loot_schema = {
+    "LOOT", "loot", g_loot_fields, (int)(sizeof(g_loot_fields) / sizeof(g_loot_fields[0])),
+    (df_u16)sizeof(LootChance), 0
 };
 
 static RecTable g_items;
 static RecTable g_weapons;
+static RecTable g_armors;
 static RecTable g_materials;
+static RecTable g_loots;
 
 RecTable *item_table(void)
 {
     if (!g_items.schema) {
-        rec_table_init(&g_items, &item_schema, 32);
+        rec_table_init(&g_items, &item_schema, 40);
     }
     return &g_items;
 }
@@ -63,6 +112,22 @@ RecTable *weapon_table(void)
         rec_table_init(&g_weapons, &weapon_schema, 32);
     }
     return &g_weapons;
+}
+
+RecTable *armor_table(void)
+{
+    if (!g_armors.schema) {
+        rec_table_init(&g_armors, &armor_schema, 11);
+    }
+    return &g_armors;
+}
+
+RecTable *loot_table(void)
+{
+    if (!g_loots.schema) {
+        rec_table_init(&g_loots, &loot_schema, 21);
+    }
+    return &g_loots;
 }
 
 RecTable *material_table(void)
@@ -81,6 +146,16 @@ const ItemTemplate *item_template(int id)
 const WeaponTemplate *weapon_template(int id)
 {
     return id < 0 ? 0 : (const WeaponTemplate *)rec_row(weapon_table(), id);
+}
+
+const ArmorTemplate *armor_template(int id)
+{
+    return id < 0 ? 0 : (const ArmorTemplate *)rec_row(armor_table(), id);
+}
+
+const LootChance *loot_chance(int letter)
+{
+    return letter <= 0 ? 0 : (const LootChance *)rec_row(loot_table(), letter);
 }
 
 const Material *material(int id)

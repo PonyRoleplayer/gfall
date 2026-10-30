@@ -42,6 +42,15 @@
 #define COMBAT_REACH 90.0f
 #define COMBAT_POINT_BLANK 10.0f
 #define COMBAT_ARC (200.0f / 2048.0f * DF_TAU)
+/*
+ * A creature's keep row's game bytes: its health (two bytes, low first),
+ * 1 once that was rolled; the player's level when it died, and a bit for
+ * each thing taken off its body (two bytes), for loot.c.
+ */
+#define COMBAT_KEEP_HEALTH 0
+#define COMBAT_KEEP_ROLLED 2
+#define COMBAT_KEEP_LEVEL 3
+#define COMBAT_KEEP_TAKEN 4
 /* Fatigue a swing spends, in 64ths (DFU's swingWeaponFatigueLoss, raw). */
 #define COMBAT_SWING_FATIGUE 11
 
@@ -69,6 +78,8 @@ typedef struct Blow {
     int ineffective;
     /* 1 when the backstab tripled it. */
     int backstab;
+    /* A creature's blow at the player: the body part it came at, BODY_*. */
+    int part;
 } Blow;
 
 /* The game's dice: 0..n-1. Seeded to make tests repeat. */
@@ -89,16 +100,17 @@ void combat_blow(const Character *pc, const Item *weapon, int swing, const Foe *
 
 /*
  * A creature's blow at the player (CalculateAttackDamage with the player
- * as target): a monster swings its three attacks (ENEM's damage_min and
+ * as target). It comes at one body part (CalculateStruckBodyPart: of 20,
+ * the head 2, each arm 3, the chest 4, the hands 4, the legs 3, the feet
+ * 1). A monster swings its three attacks (ENEM's damage_min and
  * damage_max, those with a most above 0), each rolled to hit, their
  * damage summed; a class enemy, carrying nothing yet, its bare hands
- * (Hand-to-Hand / 10 + 1 to / 5 + 1). To hit: its skill, the player's
- * armour (100 a part, as bare), the Luck and Agility differences, less
- * the player's Dodging / 4, a critical strike, less 50, held to 3..97.
+ * (Hand-to-Hand / 10 + 1 to / 5 + 1). To hit: its skill, the armour the
+ * player wears on that part (Character.armor: 100 bare, lower is better),
+ * the Luck and Agility differences, less the player's Dodging / 4, a
+ * critical strike, less 50, held to 3..97.
  */
 void combat_foe_blow(const Foe *f, const Character *pc, Blow *out);
-/* The player's unarmoured armour value a body part: DFU's 100. */
-#define COMBAT_PLAYER_ARMOR 100
 
 /*
  * The strike on a swing's hit frame from the player's feet and eye,

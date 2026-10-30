@@ -27,6 +27,8 @@ float rules_gravity(void);
 float rules_jump_speed(int jumping);
 /* The height that jump rises under rules_gravity, in metres. */
 float rules_jump_height(int jumping);
+/* The most a character can carry, kilograms: Strength x 1.5, as DFU has it (UESP's Strength). */
+float rules_max_carry(int strength);
 
 /*
  * A new character (DFU's StatsRollout and SkillsRollout, classic's

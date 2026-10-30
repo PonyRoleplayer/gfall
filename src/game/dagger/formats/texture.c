@@ -648,6 +648,36 @@ static const df_u8 *record_head(int file, int image, df_u32 *size, RecHead *r)
     return bytes;
 }
 
+int texture_offset(int file, int image, int *x, int *y)
+{
+    const df_u8 *bytes;
+    df_u32 size;
+    RecHead r;
+
+    bytes = record_head(file, image, &size, &r);
+    if (!bytes) {
+        return 0;
+    }
+    *x = df_ri16(bytes + r.pos);
+    *y = df_ri16(bytes + r.pos + 2);
+    return 1;
+}
+
+int texture_cached(int file)
+{
+    return file >= 0 && file < FILE_CACHE && g_file[file] != 0;
+}
+
+void texture_forget(int file)
+{
+    if (file < 0 || file >= FILE_CACHE || !g_file[file] || g_in_heap[file]) {
+        return;
+    }
+    g_total -= g_file_size[file];
+    g_file[file] = 0;
+    g_file_size[file] = 0;
+}
+
 int texture_frame_count(int file, int image)
 {
     df_u32 size;

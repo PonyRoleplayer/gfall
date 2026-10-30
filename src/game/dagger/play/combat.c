@@ -20,9 +20,16 @@ static const signed char g_swing_damage[7] = { 0, 4, 2, 0, 0, -2, -4 };
 #define CLASS_ARMOR 60
 /* A body part's armour is five times the kind's ArmorValue (EnemyEntity). */
 #define ARMOR_SCALE 5
-/* The keep row's game bytes: health (two bytes, low first), and 1 once it was rolled. */
-#define KEEP_HEALTH 0
-#define KEEP_ROLLED 2
+/* The body part a blow comes at (CalculateStruckBodyPart): one of these twenty, alike. */
+static const df_u8 g_struck_part[20] = {
+    BODY_HEAD, BODY_HEAD,
+    BODY_RIGHT_ARM, BODY_RIGHT_ARM, BODY_RIGHT_ARM,
+    BODY_LEFT_ARM, BODY_LEFT_ARM, BODY_LEFT_ARM,
+    BODY_CHEST, BODY_CHEST, BODY_CHEST, BODY_CHEST,
+    BODY_HANDS, BODY_HANDS, BODY_HANDS, BODY_HANDS,
+    BODY_LEGS, BODY_LEGS, BODY_LEGS,
+    BODY_FEET
+};
 /* Flinches at once, and how long one shows: the hurt pose's five frames at its ten a second. */
 #define FLINCHES 16
 #define FLINCH_TIME 0.5f
@@ -208,7 +215,8 @@ void combat_foe_blow(const Foe *f, const Character *pc, Blow *out)
     out->damage = 0;
     out->ineffective = 0;
     out->backstab = 0;
-    base = f->skill + COMBAT_PLAYER_ARMOR;
+    out->part = g_struck_part[combat_roll(20)];
+    base = f->skill + pc->armor[out->part];
     base += (f->kind->attribute[ATTR_LUCK] - pc->attribute[ATTR_LUCK]) / 10;
     base += (f->kind->attribute[ATTR_AGILITY] - pc->attribute[ATTR_AGILITY]) / 10;
     base -= pc->skill[SKILL_DODGING] / 4;
@@ -261,15 +269,15 @@ static int health_of(const Entity *e, const Foe *f, Keep **row)
         return -1;
     }
     *row = k;
-    if (!k->game[KEEP_ROLLED]) {
+    if (!k->game[COMBAT_KEEP_ROLLED]) {
         int h;
 
         h = combat_roll_health(f);
-        k->game[KEEP_HEALTH] = (df_u8)(h & 0xff);
-        k->game[KEEP_HEALTH + 1] = (df_u8)((h >> 8) & 0xff);
-        k->game[KEEP_ROLLED] = 1;
+        k->game[COMBAT_KEEP_HEALTH] = (df_u8)(h & 0xff);
+        k->game[COMBAT_KEEP_HEALTH + 1] = (df_u8)((h >> 8) & 0xff);
+        k->game[COMBAT_KEEP_ROLLED] = 1;
     }
-    return k->game[KEEP_HEALTH] | (k->game[KEEP_HEALTH + 1] << 8);
+    return k->game[COMBAT_KEEP_HEALTH] | (k->game[COMBAT_KEEP_HEALTH + 1] << 8);
 }
 
 static void set_health(Keep *k, int h)
@@ -277,8 +285,8 @@ static void set_health(Keep *k, int h)
     if (h < 0) {
         h = 0;
     }
-    k->game[KEEP_HEALTH] = (df_u8)(h & 0xff);
-    k->game[KEEP_HEALTH + 1] = (df_u8)((h >> 8) & 0xff);
+    k->game[COMBAT_KEEP_HEALTH] = (df_u8)(h & 0xff);
+    k->game[COMBAT_KEEP_HEALTH + 1] = (df_u8)((h >> 8) & 0xff);
 }
 
 int combat_sight(const Scene *scene, const float *a, const float *b)
@@ -400,6 +408,8 @@ static void strike_one(Character *pc, const Item *weapon, int swing, Entity *e, 
     health -= b.damage;
     set_health(row, health);
     if (health <= 0) {
+        /* What is on the body goes by the level the player was when it fell (loot.c). */
+        row->game[COMBAT_KEEP_LEVEL] = (df_u8)(pc->level > 255 ? 255 : pc->level);
         lay_down(e);
         sfx_at(SND_BODY_FALL, e->x, e->y, e->z);
     } else {

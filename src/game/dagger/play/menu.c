@@ -308,6 +308,11 @@ int menu_frame(const Input *in)
     }
 }
 
+void menu_draw_pointer(int x, int y)
+{
+    screen_draw(g_arrow, x, y, 10, 10);
+}
+
 void menu_draw(void)
 {
     if (g_open == MENU_NONE) {

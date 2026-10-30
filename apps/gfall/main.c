@@ -133,7 +133,8 @@ int gfall_main(void *instance)
         if (asked == GAME_START && !start_hold(&level, &cam)) {
             break;
         }
-        gfx_frame(&cam, game_playing() ? &level : 0);
+        /* A screen that covers everything is drawn with no world under it: the card does nothing it would then hide. */
+        gfx_frame(&cam, game_world_shows() ? &level : 0);
     }
     input_end();
     game_shutdown();

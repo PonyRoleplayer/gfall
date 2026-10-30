@@ -8,7 +8,7 @@ The engine draws, hears and walks any place. `src/game/dagger/` loads Daggerfall
 
 LEVELFALL already goes through every passage: into a house and out, down into a dungeon and up, out of the stream and back. That code lives in the viewer (`lf_use`, `land_at`, `stream_inside`, `view_stream` in `apps/levelfall/main.c`) and leans on the viewer's own list rows (`pair_row`).
 
-GFALL (`apps/gfall/main.c`) is the game: classic's title and start menu, then Privateer's Hold streamed by block, on foot, with a character, a weapon, and creatures that fight back (`src/game/dagger/play/`). There are no saves, no loot and no way out of the hold yet: the phases below say what is built.
+GFALL (`apps/gfall/main.c`) is the game: classic's title and start menu, then Privateer's Hold streamed by block, on foot, as an Argonian woman, with a weapon, armour, creatures that fight back and bodies to search (`src/game/dagger/play/`). There are no saves and no way out of the hold yet: the phases below say what is built.
 
 ## The pieces
 
@@ -134,7 +134,7 @@ Skill advance by use and the level-up rule come from UESP's Leveling page. A pre
 - **The rolls (DFU's StatsRollout and SkillsRollout):**
   - an attribute is its class's base and a roll of 0 to 10;
   - a primary skill is 28, a major 18, a minor 13, each and a roll of 0 to 3; any other skill is 3 to 6.
-  - Until creation (P6), the game takes the rolls' middles (`RULES_*`), and starts a **Breton warrior**: strength 65, speed 52, health 45, fatigue 120, 24 spell points.
+  - Until creation (P6), the game takes the rolls' middles (`RULES_*`), and starts an **Argonian woman, a warrior** (`CHARACTER_START_*`): strength 65, speed 52, health 45, fatigue 120, 24 spell points. A class sets these numbers, so a Breton warrior has the same ones, and the tests' sums worked by hand stay a Breton's.
 - **The vitals (FormulaHelper, DaggerfallEntity):**
   - health is 25, plus the class's hit points a level, plus a roll each later level;
   - fatigue is strength and endurance, kept in 64ths;
@@ -145,7 +145,7 @@ Skill advance by use and the level-up rule come from UESP's Leveling page. A pre
   - The console's `tcl` is the game's collision switch (`walker_on`), on by default. `tcl 0` flies through everything, Oblivion-style: along the view, pitch and all, Q up and E down, at the walk's and run's speeds, with no gravity. Back to `tcl 1`, the body comes out of whatever it is in and falls from there.
   - Before this, `tcl 1` stood the engine's walker body on the player's, and the two shoved each other: sideways, through walls.
 - **Teleports** are the game's to take: each frame, before the step, `interact_teleport` puts the body where the last frame's teleport sends it, at its eye, facing its way.
-- **A fall** past 5 m costs 5 health a metre (PlayerHealth); "That hurt." A fall to 0 health says "You have died." and, until combat (P4) and the menu's reload (P3), puts the player back at the start, whole.
+- **A fall** past 5 m costs 5 health a metre (PlayerHealth); "That hurt." A fall to 0 health says "You have died." and, until saves (P7), puts the player back at the start, whole.
 
 ## Controls and the HUD
 
@@ -257,9 +257,10 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **Each classic tick** it looks again every sixth (DFU's reacquiring), turns at most 20 degrees toward where it last saw the player, counts down 200 ticks unseen and then gives up (asleep where it stands), and may start a swing: the player seen, within 2.25 m, within 22.5 degrees of its facing, its melee timer run out, and a roll on its Speed (at least 8) under Speed / 8 + 6, as classic's AI has it (about one tick in four at Speed 50; see Checked against classic). It plays its attack sound.
 - **Each frame** it walks along its facing at (Speed + 150) / 39.5 m/s (`rules_walk_speed`) toward where it last saw the player, stopping short of reach (0.85 of 2.25 m) while it sees them; a flyer rises or sinks to the player's feet at the same speed. A move sound every 2 to 5 s while it walks (our interval). A flinch stands it still, and cancels a swing begun.
 - **Its swing** is its attack pose (records 5 to 9) at 10 frames a second, held by the game frame by frame; the blow lands on its third frame (index 2, our choice: DFU takes the frame from each kind's animation) if the player is still within 2.25 m and 0.25 m, and within 35.156 degrees of its facing (or within 0.25 m). Rolled by `combat_foe_blow`: a monster's three attacks each rolled to hit and summed, a class enemy's bare hands. The melee timer: 1500 to 3000, less 50 a player level past 10, reflexes average, over 980: seconds.
-- **The player hit:** Hit1..5 flat and the race's and sex's pain clip (DFU's, three each); missed, the high swing at the creature. Health through `player_hurt`, so `tgm` keeps the player whole. A blow that kills: "You have died.", back at the start whole, every creature asleep again where it stands (`die` in `game.c`, the fall's too), until saves (P3's reload).
+- **The player hit:** Hit1..5 flat and the race's and sex's pain clip (DFU's, three each); missed, the high swing at the creature. Health through `player_hurt`, so `tgm` keeps the player whole. A blow that kills: "You have died.", back at the start whole, every creature asleep again where it stands (`die` in `game.c`, the fall's too), until saves (P7).
 - **The console's `tai`** switches them off: no one wakes, moves or strikes, and a swing begun stops. Kept across games.
-- **On the 233:** a mind steps a body (a collision gather and sweep) every frame and looks along a ray every sixth tick; not measured there yet.
+- **Far creatures move less often** (`foes_due`). A creature within `FOES_NEAR` (12.8 m) of the player moves every frame; past it every second frame, and past `FOES_FAR` (25.6 m) every fourth, staggered by its mind's number. The time it did not move is kept and spent by its next move, so it covers the same ground. Senses and blows are unaffected: a blow only lands within 2.25 m, and senses keep classic's ticks.
+- **On the 233:** a near mind steps a body (a collision gather and sweep) every frame and looks along a ray every sixth tick; not measured there yet.
 - **Not yet:** hearing, stealth and the give-up search past the last point seen; doors opened or bashed by creatures; ranged attacks and spells; the creature's hurt voice; wandering; creatures of a place loaded whole.
 
 ### Checked against classic (FALL.EXE, decompiled)
@@ -272,11 +273,43 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **The player's strike** goes through the same routine: classic strikes every creature within 90 units and 35 degrees of the player's facing (on the ground, not the view's pitch), each counted, and plays the swing only when it counted none. `combat.c` took only the nearest near the line of the view, as DFU's box does; it now strikes as classic does.
 - **Not found:** the frame of a creature's attack its blow lands on (still the third, our choice), and how often a walking creature plays its move sound (still 2 to 5 s, ours).
 
-## Items, gold, the inventory
+## Loot and the inventory (built: P5)
 
-- Item kinds, weights, values and pictures per UESP (Items) and Daggerfall Unity's item templates. Each item's picture comes from its TEXTURE or CIF record.
-- One inventory for the player, a list for each body or chest. Gold is a count.
-- Loot is drawn by the creature's kind, later.
+**Why `inventory.c` and not the engine's pack.** `scene/pack.c` keeps weight per kind of item and 16 slots summed into 4 stats. Here weight and value belong to one item, by its material; there are more places to wear things than slots; and armour counts per body part. So the game keeps its own.
+
+### Items and armour
+
+- **The records.** `ITEM` holds 31 templates: the armour (102..112), the weapons (113..131) and gold (276). `ARMR` says what an armour template adds. `MATL` gains leather and chain, which only armour comes in, what each material's armour gives, and a second value multiplier.
+- **A piece's numbers** (ItemBuilder.ApplyArmorMaterial): plate as a weapon's material; leather half the weight, the template's price; chain the template's weight, twice the price.
+- **Armour** (DaggerfallEntity.UpdateEquippedArmorValues). Each of the seven body parts starts at 100, lower being better. A piece takes 5 × its material's armour (iron 7, steel 9, daedric 21, leather 3, chain 6) off its part. A shield takes 5 × its own (1..4, whatever it is made of) off each part it covers.
+- **Armour changes combat.** A creature's blow comes at one part by classic's odds (of 20: head 2, each arm 3, chest 4, hands 4, legs 3, feet 1), and that part's value goes into its chance to hit. A rat's 83% at a bare warrior is 48% through iron.
+- **Wearing.** A weapon goes in the right hand. The left hand takes only a shield until a second weapon can swing. A two-handed weapon takes the shield off, and a shield takes a two-handed weapon out of the hand.
+- **Carrying:** Strength × 1.5 kg (UESP); past it a thing cannot be taken. A pack's gold weighs 400 coins a kilogram. Classic's weight does not slow the walk (DFU's PlayerSpeedChanger takes no weight).
+
+**Not yet:** condition wearing down, a class's forbidden materials and armour, clothing, jewellery and everything else in the other tabs, class enemies wearing what they carry.
+
+### What a body holds
+
+`play/loot.c`, by LootTables.GenerateRandomLoot and FormulaHelper's RandomMaterial and RandomArmorMaterial.
+
+- **The use key** searches a dead creature the view rests on within 3.2 m (ours), no wall between (`loot_find`); otherwise it does what it always did. A body with nothing says "You find nothing."
+- **The rolls,** under the table the creature's kind names (`ENEM.loot`, `LOOT`): gold between the table's two figures, times the player's level; then weapons, then armour, each rolling again at half the chance after a success. A weapon or piece is any of its kind alike; armour is leather 69%, chain 20%, else plate; plate and weapons take their material from a roll of 0..255 moved by the level.
+- **A body holds no list.** Its things are worked out when it is opened, from the game's seed (`loot_new_game`) and its own key, on its own dice, so nothing else rolled changes them. A dungeon of bodies costs no memory until one is searched. Its keep row holds the rest in its game bytes (`COMBAT_KEEP_*`): the player's level when it died, and a bit for each thing taken. So what was taken stays gone as its block goes and comes back, and a save only has to keep the seed and the rows. The price: a body can only be emptied, not given things.
+- **Not yet:** treasure piles, ingredients, books, potions, maps; the other columns of `LOOT` are read in but not rolled.
+
+### The inventory screen
+
+`play/bag.c` is what the screen shows and what a click does, plain C and host-tested. `play/doll.c` draws the paper doll. `play/bagview.c` puts the result on the card. The inventory key (I) opens it, the use key on a body opens it with the body's things in the right list, and Escape, the inventory key or Exit closes it.
+
+- **Everything is classic's picture at classic's place,** by DFU's DaggerfallInventoryWindow rectangles: INVE00I0.IMG the screen, INVE01I0.IMG the chosen tab and button in gold, INVE06I0 and INVE07I0 a list's green and red arrows, ITEM00I0 the stone behind the small panel, FONT0003.FNT the labels (`formats/smallfont.c`) in classic's ink, index 146.
+- **The doll** (`doll_compose`, DFU's PaperDollRenderer): the race's SCBG background cropped at 8, 7, the body, its underclothes, the head, then what is worn by the template's draw order. Each picture's own header places it, less classic's doll corner 200, 8. Armour's archive is 245 for a woman and 249 for a man, plus the body shape (Argonian 0, elf 1, human 2, Khajiit 3). A worn picture's index 255 is a mask: it shows the background again, which is how a helm takes off the horns under it. In a list it is only clear.
+- **The lists** show four rows of 50 × 38. A thing worn is on the doll, not in the list. Clicks go by the mode: Equip wears, Remove drops, Info shows a box. A click on the right list takes the thing, a click on the doll takes it off, found by a byte per doll pixel saying which worn place drew it.
+- **Dropped things** wait in a list of the screen's own, since no pile lies in the world yet. They do not last past a new game.
+- **Ours, not classic's:** the "Carrying" and "Dropped" words over the lists, and the info box, a dark box where classic has a scroll of TEXT.RSC lines. Wagon, Use and Gold say why they do nothing yet.
+
+**What it costs the 233.** The whole screen is composed in memory into one 320 × 200 picture, only when something on it changes: a click, or the pointer coming to rest on another thing. An open frame sends nothing to the card and draws that one picture's 29 quads, however full the lists are. It takes the 66560 bytes of `GAME_PICTURE_KB` the controls screen already counts on, not one more. A fitted item picture is kept in one of 8 places, so a list scrolled back reads nothing. While it is open `gfx_frame` gets no level (`game_world_shows`, the controls screen too): no world is drawn only to be covered. All this is by the design's sums and host tests: **none of it has run on the 233 yet.**
+
+**Memory:** two heaps of its own while open, one for its 64 KB pictures and buffers, one for what it only reads to copy, let go past 512 KB. Both go at close, and any TEXTURE file read into them leaves the cache with them (`texture_forget`).
 
 ## Time, rest, travel
 
@@ -347,7 +380,7 @@ The first goal is a **prototype**: from classic's start menu, Privateer's Hold p
 | P2 | A character (built; its bars run on the target): a fixed level-1 one, classic's attributes, skills and vitals; vitals bars on the HUD; `RACE`, `CLAS`, `SKIL` | GAME, ENGINE's pictures | derived values match UESP's worked figures |
 | P3 | The start menu (built; the title, the start menu and the start into the hold run on the target, the options and controls not tried there yet): classic's main menu (PICK03I0.IMG: load, start, exit) before the hold, the title before it, Escape's menu in play (go on, exit) | GAME, ENGINE's pictures | GFALL opens on the menu, starts the hold, and exits from both |
 | P4 | Combat (built; the swing runs on the target, striking and creatures awake not tried there yet; the player's death is back to the start until saves; LEVELFALL's view of a creature's state not yet): the weapon's swing from WEAPON##.CIF (the shown swing's frames only on the card), classic's to-hit and damage; creatures wake, chase on bodies of their size, attack, flinch, die; the player's death; `WEAP`, `MATL` | GAME; LEVELFALL shows each creature's state | the hold can be cleared, or the player killed, from records |
-| P5 | Loot and inventory: corpses, treasure, gold, pick up, equip weapon and armour; `ITEM`, `ARMR`, `LOOT` | GAME, ENGINE's pictures | equipment changes combat |
+| P5 | Loot and inventory (built, host-tested, not run on the target; treasure piles and the other tabs' items not yet): bodies, gold, pick up, equip weapon and armour, classic's inventory screen and paper doll; `ITEM`, `ARMR`, `LOOT` | GAME, ENGINE's pictures | equipment changes combat |
 | P6 | Character creation and levelling: classic's screens, background questions, skill gains, level-ups; the character's attributes and the damage rules polished | GAME | |
 | P7 | Prototype polish: loading holds, one save slot in `DATA\`, the menu's load, rest and wait, a 233 profile pass | GAME | from the menu through the hold and back after a save |
 | P8 | Out of the hold: `places/travel.c` lifted from LEVELFALL and shared; the hold's outside in the stream, the nearest town, its houses | GAME and LEVELFALL | from the menu to town and back after a save, in one session |

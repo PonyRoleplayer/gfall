@@ -313,30 +313,46 @@ const CareerSkill *classic_skills(int *n)
 }
 
 /*
- * DFU's ItemTemplates, the weapons (113..131, the arrow last): name,
- * weight in kg, price, hit points, the picture on the ground and in the
- * paper doll's hand, one-handed, blunt.
+ * DFU's ItemTemplates: the armour (102..112), the weapons (113..131, the
+ * arrow last) and gold (276): name, weight in kg, price, hit points, the
+ * picture on the ground and on the paper doll, one-handed, blunt, and the
+ * paper doll's draw order.
+ *
+ * An armour piece's paper doll archive here is the female Argonian's,
+ * 245: the wearer's sex and body shape move it (item_doll_picture).
  */
 static const ItemTemplate g_items[] = {
-    { 113, "Dagger", 0.50f, 1, 50, 207, 5, 234, 5, 1, 0 },
-    { 114, "Tanto", 0.75f, 3, 50, 207, 10, 234, 22, 1, 0 },
-    { 115, "Staff", 2.00f, 5, 300, 207, 7, 234, 21, 0, 1 },
-    { 116, "Shortsword", 2.50f, 5, 300, 207, 3, 234, 19, 1, 0 },
-    { 117, "Wakizashi", 2.00f, 8, 200, 207, 2, 234, 26, 1, 0 },
-    { 118, "Broadsword", 5.00f, 10, 600, 207, 2, 234, 2, 1, 0 },
-    { 119, "Saber", 3.75f, 12, 700, 207, 2, 234, 17, 1, 0 },
-    { 120, "Longsword", 4.50f, 15, 800, 207, 2, 234, 12, 1, 0 },
-    { 121, "Katana", 2.50f, 25, 600, 207, 15, 234, 9, 1, 0 },
-    { 122, "Claymore", 7.50f, 30, 1400, 207, 2, 234, 4, 0, 0 },
-    { 123, "Dai-katana", 3.50f, 50, 800, 207, 2, 234, 7, 0, 0 },
-    { 124, "Mace", 4.50f, 10, 800, 207, 6, 234, 14, 1, 1 },
-    { 125, "Flail", 7.00f, 15, 1000, 207, 6, 234, 8, 0, 1 },
-    { 126, "Warhammer", 7.00f, 20, 1600, 214, 3, 234, 25, 0, 1 },
-    { 127, "Battle Axe", 6.00f, 20, 1200, 207, 4, 234, 0, 1, 0 },
-    { 128, "War Axe", 7.50f, 20, 800, 207, 4, 234, 24, 0, 0 },
-    { 129, "Short Bow", 1.00f, 10, 50, 207, 8, 234, 16, 0, 0 },
-    { 130, "Long Bow", 1.50f, 20, 100, 207, 8, 234, 11, 0, 0 },
-    { 131, "Arrow", 0.25f, 2, 1, 207, 16, 0, 0, 0, 0 }
+    { 102, "Cuirass", 12.5f, 100, 4096, 207, 11, 245, 3, 0, 0, 50 },
+    { 103, "Gauntlets", 1.25f, 50, 2048, 207, 13, 245, 8, 0, 0, 70 },
+    { 104, "Greaves", 2.5f, 80, 3072, 207, 13, 245, 10, 0, 0, 30 },
+    { 105, "Left Pauldron", 2.0f, 60, 2048, 207, 13, 245, 17, 0, 0, 60 },
+    { 106, "Right Pauldron", 2.0f, 60, 2048, 207, 13, 245, 22, 0, 0, 60 },
+    { 107, "Helm", 2.5f, 80, 2560, 207, 12, 245, 27, 0, 0, 0 },
+    { 108, "Boots", 2.0f, 50, 2560, 204, 1, 245, 0, 0, 0, 20 },
+    { 109, "Buckler", 2.0f, 10, 512, 207, 10, 245, 33, 0, 0, 110 },
+    { 110, "Round Shield", 4.5f, 20, 1280, 207, 10, 245, 34, 0, 0, 110 },
+    { 111, "Kite Shield", 7.5f, 30, 2048, 207, 9, 245, 35, 0, 0, 110 },
+    { 112, "Tower Shield", 12.5f, 50, 2560, 207, 9, 245, 36, 0, 0, 110 },
+    { 113, "Dagger", 0.50f, 1, 50, 207, 5, 234, 5, 1, 0, 100 },
+    { 114, "Tanto", 0.75f, 3, 50, 207, 10, 234, 22, 1, 0, 100 },
+    { 115, "Staff", 2.00f, 5, 300, 207, 7, 234, 21, 0, 1, 100 },
+    { 116, "Shortsword", 2.50f, 5, 300, 207, 3, 234, 19, 1, 0, 100 },
+    { 117, "Wakizashi", 2.00f, 8, 200, 207, 2, 234, 26, 1, 0, 100 },
+    { 118, "Broadsword", 5.00f, 10, 600, 207, 2, 234, 2, 1, 0, 100 },
+    { 119, "Saber", 3.75f, 12, 700, 207, 2, 234, 17, 1, 0, 100 },
+    { 120, "Longsword", 4.50f, 15, 800, 207, 2, 234, 12, 1, 0, 100 },
+    { 121, "Katana", 2.50f, 25, 600, 207, 15, 234, 9, 1, 0, 100 },
+    { 122, "Claymore", 7.50f, 30, 1400, 207, 2, 234, 4, 0, 0, 100 },
+    { 123, "Dai-katana", 3.50f, 50, 800, 207, 2, 234, 7, 0, 0, 100 },
+    { 124, "Mace", 4.50f, 10, 800, 207, 6, 234, 14, 1, 1, 100 },
+    { 125, "Flail", 7.00f, 15, 1000, 207, 6, 234, 8, 0, 1, 100 },
+    { 126, "Warhammer", 7.00f, 20, 1600, 214, 3, 234, 25, 0, 1, 100 },
+    { 127, "Battle Axe", 6.00f, 20, 1200, 207, 4, 234, 0, 1, 0, 100 },
+    { 128, "War Axe", 7.50f, 20, 800, 207, 4, 234, 24, 0, 0, 100 },
+    { 129, "Short Bow", 1.00f, 10, 50, 207, 8, 234, 16, 0, 0, 100 },
+    { 130, "Long Bow", 1.50f, 20, 100, 207, 8, 234, 11, 0, 0, 100 },
+    { 131, "Arrow", 0.25f, 2, 1, 207, 16, 0, 0, 0, 0, 0 },
+    { 276, "Gold Pieces", 0.0025f, 1, 0, 216, 1, 0, 0, 0, 0, 0 }
 };
 
 /*
@@ -368,21 +384,79 @@ static const WeaponTemplate g_weapons[] = {
 };
 
 /*
- * ItemBuilder and GetWeaponMaterialModifier: iron to daedric, the damage
- * a material adds (ten times it to hit), and its weight, value and
- * condition multipliers.
+ * ItemBuilder and GetWeaponMaterialModifier: iron to daedric, then the
+ * two only armour comes in. The damage a material adds (ten times it to
+ * hit), its weight, value and condition multipliers, the value's other
+ * multiplier, and the armour it gives (GetMaterialArmorValue).
+ *
+ * Leather's weight_q of 2 is ItemBuilder's halved weight: the same
+ * rounding in quarter kilograms. Leather and chain keep the template's
+ * condition, and leather its price; chain's price is doubled.
  */
 static const Material g_materials[] = {
-    { 0, "Iron", -1, 4, 1, 4 },
-    { 1, "Steel", 0, 5, 2, 6 },
-    { 2, "Silver", 0, 4, 4, 6 },
-    { 3, "Elven", 1, 4, 8, 8 },
-    { 4, "Dwarven", 2, 3, 16, 12 },
-    { 5, "Mithril", 3, 4, 32, 16 },
-    { 6, "Adamantium", 3, 4, 64, 20 },
-    { 7, "Ebony", 4, 2, 128, 24 },
-    { 8, "Orcish", 5, 4, 256, 28 },
-    { 9, "Daedric", 6, 5, 512, 32 }
+    { 0, "Iron", -1, 4, 1, 4, 3, 7 },
+    { 1, "Steel", 0, 5, 2, 6, 3, 9 },
+    { 2, "Silver", 0, 4, 4, 6, 3, 9 },
+    { 3, "Elven", 1, 4, 8, 8, 3, 11 },
+    { 4, "Dwarven", 2, 3, 16, 12, 3, 13 },
+    { 5, "Mithril", 3, 4, 32, 16, 3, 15 },
+    { 6, "Adamantium", 3, 4, 64, 20, 3, 15 },
+    { 7, "Ebony", 4, 2, 128, 24, 3, 17 },
+    { 8, "Orcish", 5, 4, 256, 28, 3, 19 },
+    { 9, "Daedric", 6, 5, 512, 32, 3, 21 },
+    { 10, "Leather", 0, 2, 1, 4, 1, 3 },
+    { 11, "Chain", 0, 4, 1, 4, 2, 6 }
+};
+
+/*
+ * What armour adds (ItemEquipTable, ItemBuilder.SetVariant,
+ * DaggerfallUnityItem's shield rules). The columns: part, shield, shield
+ * parts, then the variants in plate, leather and chain.
+ */
+#define SHIELD_SMALL ((1 << BODY_LEFT_ARM) | (1 << BODY_HANDS))
+#define SHIELD_MIDDLE (SHIELD_SMALL | (1 << BODY_LEGS))
+#define SHIELD_TOWER (SHIELD_MIDDLE | (1 << BODY_HEAD))
+static const ArmorTemplate g_armors[] = {
+    { ITEM_CUIRASS, BODY_CHEST, 0, 0, 1, 3, 0, 0, 4, 4 },
+    { ITEM_GAUNTLETS, BODY_HANDS, 0, 0, 1, 1, 0, 0, 1, 1 },
+    { ITEM_GREAVES, BODY_LEGS, 0, 0, 2, 5, 0, 1, 6, 6 },
+    { ITEM_LEFT_PAULDRON, BODY_LEFT_ARM, 0, 0, 1, 3, 0, 0, 4, 4 },
+    { ITEM_RIGHT_PAULDRON, BODY_RIGHT_ARM, 0, 0, 1, 3, 0, 0, 4, 4 },
+    { ITEM_HELM, BODY_HEAD, 0, 0, 0, 5, 0, 5, 0, 5 },
+    { ITEM_BOOTS, BODY_FEET, 0, 0, 1, 2, 0, 0, 1, 2 },
+    { ITEM_BUCKLER, BODY_LEFT_ARM, 1, SHIELD_SMALL, 0, 0, 0, 0, 0, 0 },
+    { ITEM_ROUND_SHIELD, BODY_LEFT_ARM, 2, SHIELD_MIDDLE, 0, 0, 0, 0, 0, 0 },
+    { ITEM_KITE_SHIELD, BODY_LEFT_ARM, 3, SHIELD_MIDDLE, 0, 0, 0, 0, 0, 0 },
+    { ITEM_TOWER_SHIELD, BODY_LEFT_ARM, 4, SHIELD_TOWER, 0, 0, 0, 0, 0, 0 }
+};
+
+/*
+ * LootTables.DefaultLootTables. The columns: letter, least and most gold,
+ * armour, weapon, magic, clothing, book, plant 1 and 2, creature 1, 2 and
+ * 3, misc 1 and 2, religious.
+ */
+static const LootChance g_loots[] = {
+    { 'A', 1, 10, 5, 5, 2, 4, 0, 0, 0, 0, 0, 0, 0, 2, 0 },
+    { 'B', 0, 0, 0, 0, 0, 0, 0, 10, 10, 0, 0, 0, 0, 0, 0 },
+    { 'C', 2, 20, 5, 25, 3, 0, 2, 10, 10, 5, 5, 5, 5, 2, 2 },
+    { 'D', 1, 4, 0, 0, 0, 0, 0, 6, 6, 6, 6, 6, 6, 0, 4 },
+    { 'E', 20, 80, 10, 10, 3, 4, 2, 0, 0, 0, 0, 0, 0, 1, 15 },
+    { 'F', 4, 30, 50, 50, 1, 0, 0, 2, 2, 5, 5, 5, 2, 3, 0 },
+    { 'G', 3, 15, 50, 50, 1, 5, 0, 0, 0, 0, 0, 0, 0, 3, 0 },
+    { 'H', 2, 10, 0, 100, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+    { 'I', 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5 },
+    { 'J', 50, 150, 5, 5, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+    { 'K', 1, 10, 5, 5, 3, 0, 5, 3, 3, 3, 3, 3, 3, 2, 100 },
+    { 'L', 1, 20, 50, 50, 1, 75, 0, 0, 0, 3, 3, 3, 3, 5, 3 },
+    { 'M', 1, 15, 10, 10, 1, 15, 2, 1, 1, 1, 1, 1, 2, 3, 1 },
+    { 'N', 1, 80, 5, 5, 1, 20, 5, 5, 5, 5, 5, 5, 5, 2, 5 },
+    { 'O', 5, 20, 10, 15, 2, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0 },
+    { 'P', 5, 20, 5, 10, 2, 0, 10, 5, 5, 5, 5, 5, 5, 5, 0 },
+    { 'Q', 20, 80, 10, 25, 3, 35, 5, 2, 2, 8, 8, 8, 2, 3, 0 },
+    { 'R', 5, 20, 5, 15, 2, 0, 0, 0, 0, 3, 3, 3, 5, 0, 0 },
+    { 'S', 50, 125, 10, 10, 3, 0, 5, 5, 5, 5, 5, 5, 15, 5, 0 },
+    { 'T', 20, 80, 100, 100, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+    { 'U', 7, 30, 10, 10, 2, 0, 2, 5, 5, 5, 5, 5, 10, 2, 10 }
 };
 
 const ItemTemplate *classic_items(int *n)
@@ -395,6 +469,18 @@ const WeaponTemplate *classic_weapons(int *n)
 {
     *n = (int)(sizeof(g_weapons) / sizeof(g_weapons[0]));
     return g_weapons;
+}
+
+const ArmorTemplate *classic_armors(int *n)
+{
+    *n = (int)(sizeof(g_armors) / sizeof(g_armors[0]));
+    return g_armors;
+}
+
+const LootChance *classic_loots(int *n)
+{
+    *n = (int)(sizeof(g_loots) / sizeof(g_loots[0]));
+    return g_loots;
 }
 
 const Material *classic_materials(int *n)

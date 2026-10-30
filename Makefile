@@ -117,6 +117,7 @@ FORMATS_SRC := \
 	src/game/dagger/formats/hmi.c \
 	src/game/dagger/formats/img.c \
 	src/game/dagger/formats/cif.c \
+	src/game/dagger/formats/smallfont.c \
 	src/game/dagger/formats/classcfg.c
 
 # Daggerfall's rules for dressing a place.
@@ -148,6 +149,9 @@ PLAY_SRC := \
 	src/game/dagger/play/rules.c \
 	src/game/dagger/play/character.c \
 	src/game/dagger/play/inventory.c \
+	src/game/dagger/play/loot.c \
+	src/game/dagger/play/doll.c \
+	src/game/dagger/play/bag.c \
 	src/game/dagger/play/commands.c \
 	src/game/dagger/play/weapon.c \
 	src/game/dagger/play/combat.c \
@@ -157,6 +161,7 @@ PLAY_SRC := \
 	src/game/dagger/play/screen.c \
 	src/game/dagger/play/overlay.c \
 	src/game/dagger/play/menu.c \
+	src/game/dagger/play/bagview.c \
 	src/game/dagger/play/keys.c \
 	src/game/dagger/play/game.c
 
@@ -165,6 +170,7 @@ PLAY_DRAW_SRC := \
 	src/game/dagger/play/screen.c \
 	src/game/dagger/play/overlay.c \
 	src/game/dagger/play/menu.c \
+	src/game/dagger/play/bagview.c \
 	src/game/dagger/play/keys.c \
 	src/game/dagger/play/game.c
 
