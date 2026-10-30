@@ -948,6 +948,47 @@ static int pot_up(int v)
     return p;
 }
 
+/*
+ * The scale that gives new_pixels texels the extent old_pixels had under
+ * scale. Rounded away from nothing, so texture_extent's truncation lands on
+ * the same whole unit.
+ */
+static int texture_scale_for(int old_pixels, int scale, int new_pixels)
+{
+    int change;
+
+    change = texture_extent(old_pixels, scale) - new_pixels;
+    if (change >= 0) {
+        return (change * 256 + new_pixels - 1) / new_pixels;
+    }
+    return -((-change * 256 + new_pixels - 1) / new_pixels);
+}
+
+/*
+ * A picture now shrink times smaller in texels and the same size in the
+ * world: its first frame's pixels, its sides, and the scale that makes its
+ * extent out of them (texture_extent).
+ */
+static void shrink_keeping_extent(Image *img, int shrink)
+{
+    int w;
+    int h;
+    int y;
+    int x;
+
+    w = (img->width + shrink - 1) / shrink;
+    h = (img->height + shrink - 1) / shrink;
+    for (y = 0; y < h; y++) {
+        for (x = 0; x < w; x++) {
+            img->index[y * w + x] = img->index[y * shrink * img->width + x * shrink];
+        }
+    }
+    img->xscale = texture_scale_for(img->width, img->xscale, w);
+    img->yscale = texture_scale_for(img->height, img->yscale, h);
+    img->width = w;
+    img->height = h;
+}
+
 int texture_sheet(Image *img, int file, int image)
 {
     Image *frame[TEXTURE_SHEET_FRAMES];
@@ -957,6 +998,7 @@ int texture_sheet(Image *img, int file, int image)
     int fh;
     int side;
     int cols;
+    int shrink;
     int k;
 
     if (!img) {
@@ -976,13 +1018,31 @@ int texture_sheet(Image *img, int file, int image)
         fw = frame[k]->width > fw ? frame[k]->width : fw;
         fh = frame[k]->height > fh ? frame[k]->height : fh;
     }
-    /* The smallest square whose grid of cells holds every frame. */
-    for (side = pot_up(fw > fh ? fw : fh); side <= 256; side <<= 1) {
-        int rows;
+    /*
+     * The smallest square whose grid of cells holds every frame. The card
+     * takes 256 at most: frames too large for that are taken at half their
+     * texels, or a quarter, rather than the record going still. A Giant Bat's
+     * front (217 x 167, four frames) and a bear's sides need it.
+     */
+    side = 512;
+    for (shrink = 1; shrink <= TEXTURE_SHEET_SHRINK_MOST; shrink <<= 1) {
+        int cell_w;
+        int cell_h;
 
-        cols = (side + TEXTURE_SHEET_GAP) / (fw + TEXTURE_SHEET_GAP);
-        rows = (side + TEXTURE_SHEET_GAP) / (fh + TEXTURE_SHEET_GAP);
-        if (cols * rows >= frames) {
+        cell_w = (fw + shrink - 1) / shrink;
+        cell_h = (fh + shrink - 1) / shrink;
+        for (side = pot_up(cell_w > cell_h ? cell_w : cell_h); side <= 256; side <<= 1) {
+            int rows;
+
+            cols = (side + TEXTURE_SHEET_GAP) / (cell_w + TEXTURE_SHEET_GAP);
+            rows = (side + TEXTURE_SHEET_GAP) / (cell_h + TEXTURE_SHEET_GAP);
+            if (cols * rows >= frames) {
+                break;
+            }
+        }
+        if (side <= 256) {
+            fw = cell_w;
+            fh = cell_h;
             break;
         }
     }
@@ -1000,10 +1060,17 @@ int texture_sheet(Image *img, int file, int image)
 
         x0 = (k % cols) * (fw + TEXTURE_SHEET_GAP);
         y0 = (k / cols) * (fh + TEXTURE_SHEET_GAP);
-        for (y = 0; y < frame[k]->height; y++) {
-            mem_copy(pot + (y0 + y) * side + x0, frame[k]->index + y * frame[k]->width,
-                     (df_u32)frame[k]->width);
+        /* Every shrink-th texel of every shrink-th row: palette indices cannot be averaged. */
+        for (y = 0; y * shrink < frame[k]->height; y++) {
+            int x;
+
+            for (x = 0; x * shrink < frame[k]->width; x++) {
+                pot[(y0 + y) * side + x0 + x] = frame[k]->index[y * shrink * frame[k]->width + x * shrink];
+            }
         }
+    }
+    if (shrink > 1) {
+        shrink_keeping_extent(img, shrink);
     }
     img->pot = pot;
     img->pot_w = side;

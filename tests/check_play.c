@@ -2745,6 +2745,64 @@ static void check_hands(void)
     printf("hands: two weapons, a shield, a two-handed weapon\n");
 }
 
+/*
+ * The bug this guards: an animated record too large for a 256 sheet went still,
+ * so a Giant Bat flew at the player without moving a wing while its other views
+ * flapped. Every creature's walk, attack, hurt and idle records that have frames
+ * must make a sheet, at the size in the world they had before.
+ */
+static void check_sheets_move(void)
+{
+    int kind;
+    int shrunk;
+    int records;
+
+    shrunk = 0;
+    records = 0;
+    for (kind = 0; kind < ENEMY_KINDS; kind++) {
+        int female;
+
+        if (!enemy_kind(kind)) {
+            continue;
+        }
+        for (female = 0; female < 2; female++) {
+            int archive;
+            int record;
+
+            archive = enemy_archive(kind, female);
+            if (archive <= 0) {
+                continue;
+            }
+            for (record = 0; record < 20; record++) {
+                Image *img;
+                int was_w;
+                int was_h;
+                int texels;
+
+                if (record >= texture_record_count(archive) || texture_frame_count(archive, record) < 2) {
+                    continue;
+                }
+                img = texture_load(archive, record);
+                if (!img) {
+                    continue;
+                }
+                was_w = texture_extent(img->width, img->xscale);
+                was_h = texture_extent(img->height, img->yscale);
+                texels = img->width;
+                records++;
+                check_expect(texture_sheet(img, archive, record), "sheets: a creature's animated record made no sheet");
+                check_expect(img->frames == texture_frame_count(archive, record), "sheets: a sheet lost frames");
+                check_expect(img->pot_w <= 256 && img->pot_h <= 256, "sheets: a sheet is past what the card takes");
+                check_expect(texture_extent(img->width, img->xscale) == was_w && texture_extent(img->height, img->yscale) == was_h,
+                             "sheets: a shrunk picture changed its size in the world");
+                shrunk += img->width < texels;
+            }
+        }
+    }
+    printf("sheets: %d animated creature records all make sheets, %d of them at reduced texels\n", records, shrunk);
+    check_expect(shrunk > 0, "sheets: nothing needed shrinking: this test no longer tests it");
+}
+
 /* Rest: its sums by hand, and the three ways driven by clicks and keys. */
 #define REST_WHILE_X 110
 #define REST_HEALED_X 160
@@ -3137,6 +3195,7 @@ void check_play(void)
     check_class_and_wear();
     check_creatures_more();
     check_blows_in_reach();
+    check_sheets_move();
     check_body_more();
     check_hands();
     check_rest();

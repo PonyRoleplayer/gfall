@@ -65,10 +65,12 @@ int texture_file_step(int file);
  * one padded sheet: side by side, TEXTURE_SHEET_GAP texels apart, in the
  * smallest power-of-two square that holds them (docs/sprites.md). 1
  * when img is now a sheet; 0 for a still record, or one whose frames do
- * not all load or do not fit 256.
+ * not all load or fit 256 even a quarter of their size.
  */
 #define TEXTURE_SHEET_GAP 2
 #define TEXTURE_SHEET_FRAMES 64
+/* Frames too large for a 256 sheet are taken at half or a quarter of their texels, the world size kept. */
+#define TEXTURE_SHEET_SHRINK_MOST 4
 int texture_sheet(Image *img, int file, int image);
 /* A flat's size in world units from its picture's pixels and scale. */
 int texture_extent(int pixels, int scale);
