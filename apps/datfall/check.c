@@ -8,11 +8,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "atlas.h"
 #include "beast.h"
 #include "books.h"
 #include "made.h"
 #include "paper.h"
 #include "pics.h"
+#include "game/dagger/formats/climate.h"
+#include "game/dagger/formats/dungeon.h"
+#include "game/dagger/formats/worldmap.h"
 #include "engine/assets/recfile.h"
 #include "engine/assets/vfs.h"
 #include "engine/core/mem.h"
@@ -509,6 +513,17 @@ int main(void)
         cif_close(&cif);
         texture_cache_clear();
     }
+
+    expect(WORLDMAP_W == 1000 && WORLDMAP_H == 500, "the world map is not 1000 x 500");
+    expect(worldmap_open() && worldmap_height(207, 213) == 20
+               && worldmap_climate(207, 213) == CLIMATE_WOODLANDS
+               && worldmap_location_type(207, 213) == WORLDMAP_TOWN_CITY
+               && worldmap_locations() == 15251,
+           "pixel 207,213 is not Daggerfall, woodlands, height 20, a city");
+    expect(df_eq(atlas_climate_name(CLIMATE_WOODLANDS), "Woodlands"),
+           "woodlands has no climate name");
+    expect(dungeon_list(0, 0) == 4232, "the dungeon index is not 4232");
+    expect(exterior_list(0, 0) == 15251, "the outdoor index is not 15251");
 
     if (g_fail) {
         return 1;

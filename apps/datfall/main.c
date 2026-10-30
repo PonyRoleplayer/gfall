@@ -7,8 +7,8 @@
  *
  * Data is the tables. Pictures are the texture archives. Characters
  * are the races and their paper dolls. Creatures are each kind's
- * poses. Items are the weapons, recoloured by material. The world
- * map hangs off the same tree.
+ * poses. Items are the weapons, recoloured by material. World is
+ * the map and the location list.
  */
 
 #define WINVER 0x0400
@@ -17,11 +17,13 @@
 
 #include <windows.h>
 
+#include "atlas.h"
 #include "beast.h"
 #include "books.h"
 #include "made.h"
 #include "paper.h"
 #include "pics.h"
+#include "game/dagger/formats/dungeon.h"
 #include "engine/assets/palette.h"
 #include "engine/assets/texture.h"
 #include "engine/assets/vfs.h"
@@ -38,6 +40,9 @@
 #define ID_TREE 7
 #define ID_PROPS 8
 #define ID_TIMER 1
+#define ID_CENTRE 20
+#define ID_CLIMATE 21
+#define ID_DOTS 22
 
 #define LVM_FIRST 0x1000
 #define LVM_SETITEMA (LVM_FIRST + 6)
@@ -94,6 +99,9 @@
 #define ND_ENEMY 10
 #define ND_ITEMS 11
 #define ND_WEAPON 12
+#define ND_WORLD 13
+#define ND_MAP 14
+#define ND_PLACES 15
 #define ND_MERGED_FILE 4095
 
 #define VIEW_NONE 0
@@ -108,6 +116,8 @@
 #define VIEW_POSES 9
 #define VIEW_WEAPONS 10
 #define VIEW_METALS 11
+#define VIEW_MAP 12
+#define VIEW_PLACES 13
 
 #define ARC_CAP 160
 #define GRID_CELL 32
@@ -235,6 +245,30 @@ static BeastPose g_poses[BEAST_POSES];
 static int g_nposes;
 static int g_metal_on;
 static int g_metal;
+static DunRef *g_duns;
+static int g_ndun;
+static DunRef *g_towns;
+static int g_ntown;
+static int *g_hit_i;
+static unsigned char *g_hit_out;
+static int g_nhit;
+static unsigned char *g_mapdib;
+static int g_map_ready;
+static int g_ox;
+static int g_oy;
+static int g_zoom;
+static int g_climate_on;
+static int g_dots_on;
+static int g_px;
+static int g_py;
+static int g_focus_on;
+static int g_map_opened;
+static HWND g_btn_climate;
+static HWND g_btn_dots;
+static HWND g_btn_centre;
+static void *g_map_node;
+static Dungeon g_place;
+static int g_place_ok;
 
 static void *sym(HMODULE dll, const char *name)
 {
@@ -571,6 +605,11 @@ static void race_status(void);
 static void weapon_status(void);
 static void show_weapon(int weapon_id, int material_id);
 static void step_head(int delta);
+static void show_pixel(int px, int py);
+static void show_place(int index);
+static void map_rebuild(void);
+static void map_centre(int px, int py);
+static void load_places(void);
 
 static void on_row(int index)
 {
@@ -775,6 +814,11 @@ static void on_row(int index)
         load_weapon(g_a, mat);
         show_weapon(g_a, mat);
         weapon_status();
+        InvalidateRect(g_hwnd, &g_well, 1);
+        return;
+    }
+    if (g_view == VIEW_PLACES) {
+        show_place(index);
         InvalidateRect(g_hwnd, &g_well, 1);
         return;
     }
@@ -1428,6 +1472,220 @@ static void weapon_status(void)
     status_set(g_part_file[0] ? g_part_file : "Items", extra);
 }
 
+static void map_span(int *sw, int *sh)
+{
+    int w;
+    int h;
+
+    if (g_zoom < 1) {
+        g_zoom = 1;
+    }
+    w = g_well.right - g_well.left;
+    h = g_well.bottom - g_well.top;
+    if (w < 1) {
+        w = 1;
+    }
+    if (h < 1) {
+        h = 1;
+    }
+    *sw = w / g_zoom;
+    *sh = h / g_zoom;
+    if (*sw < 1) {
+        *sw = 1;
+    }
+    if (*sh < 1) {
+        *sh = 1;
+    }
+    if (*sw > WORLDMAP_W) {
+        *sw = WORLDMAP_W;
+    }
+    if (*sh > WORLDMAP_H) {
+        *sh = WORLDMAP_H;
+    }
+}
+
+static void map_clamp(void)
+{
+    int sw;
+    int sh;
+
+    map_span(&sw, &sh);
+    if (g_ox < 0) {
+        g_ox = 0;
+    }
+    if (g_oy < 0) {
+        g_oy = 0;
+    }
+    if (g_ox > WORLDMAP_W - sw) {
+        g_ox = WORLDMAP_W - sw;
+    }
+    if (g_oy > WORLDMAP_H - sh) {
+        g_oy = WORLDMAP_H - sh;
+    }
+}
+
+static void map_centre(int px, int py)
+{
+    int sw;
+    int sh;
+
+    map_span(&sw, &sh);
+    g_ox = px - sw / 2;
+    g_oy = py - sh / 2;
+    map_clamp();
+}
+
+static void map_rebuild(void)
+{
+    if (!g_mapdib) {
+        g_mapdib = (unsigned char *)mem_keep((df_u32)ATLAS_STRIDE * (df_u32)WORLDMAP_H);
+    }
+    if (!g_mapdib) {
+        return;
+    }
+    if (!worldmap_open()) {
+        memset(g_mapdib, 40, (unsigned int)ATLAS_STRIDE * (unsigned int)WORLDMAP_H);
+        g_map_ready = 0;
+        return;
+    }
+    atlas_build(g_mapdib, g_climate_on, g_dots_on);
+    g_map_ready = 1;
+}
+
+static void show_pixel(int px, int py)
+{
+    char text[64];
+    char name[40];
+    int region;
+    int index;
+    int type;
+    int i;
+
+    props_clear();
+    if (px < 0 || py < 0 || px >= WORLDMAP_W || py >= WORLDMAP_H || !g_map_ready) {
+        prop_add(0, "map", g_map_ready ? "outside" : "unread");
+        status_set("WOODS.WLD", "");
+        return;
+    }
+    g_px = px;
+    g_py = py;
+    wsprintfA(text, "%d, %d", px, py);
+    prop_add(0, "pixel", text);
+    wsprintfA(text, "%d", worldmap_height(px, py));
+    prop_add(1, "height", text);
+    prop_add(2, "climate", atlas_climate_name(worldmap_climate(px, py)));
+    type = worldmap_location_type(px, py);
+    name[0] = 0;
+    region = -1;
+    index = -1;
+    if (worldmap_location(px, py, &region, &index)) {
+        for (i = 0; i < g_ntown; i++) {
+            if (g_towns[i].region == region && g_towns[i].index == index) {
+                lstrcpynA(name, g_towns[i].name, (int)sizeof(name));
+                break;
+            }
+        }
+        if (!name[0]) {
+            for (i = 0; i < g_ndun; i++) {
+                if (g_duns[i].region == region && g_duns[i].index == index) {
+                    lstrcpynA(name, g_duns[i].name, (int)sizeof(name));
+                    break;
+                }
+            }
+        }
+    }
+    prop_add(3, "location", name[0] ? name : (type >= 0 ? atlas_type_name(type) : "none"));
+    if (region >= 0) {
+        wsprintfA(text, "%d", region);
+    } else {
+        text[0] = 0;
+    }
+    prop_add(4, "region", text);
+    prop_add(5, "type", atlas_type_name(type));
+    wsprintfA(text, "%d, %d", px, py);
+    status_set("WOODS.WLD", text);
+}
+
+static const DunRef *hit_ref(int index)
+{
+    if (index < 0 || index >= g_nhit || !g_hit_i || !g_hit_out) {
+        return 0;
+    }
+    if (g_hit_out[index]) {
+        return &g_towns[g_hit_i[index]];
+    }
+    return &g_duns[g_hit_i[index]];
+}
+
+static void show_place(int index)
+{
+    const DunRef *ref;
+    int px;
+    int py;
+    int at;
+    char text[64];
+
+    props_clear();
+    g_place_ok = 0;
+    ref = hit_ref(index);
+    if (!ref) {
+        status_set("Locations", "");
+        return;
+    }
+    if (ref->outdoor) {
+        g_place_ok = exterior_load_at(ref->region, ref->index, &g_place);
+    } else {
+        g_place_ok = dungeon_load_at(ref->region, ref->index, &g_place);
+    }
+    at = 0;
+    prop_add(at++, "name", ref->name);
+    wsprintfA(text, "%d", ref->region);
+    prop_add(at++, "region", text);
+    if (g_place_ok) {
+        prop_add(at++, "climate", atlas_climate_name(g_place.climate));
+    }
+    px = -1;
+    py = -1;
+    if (worldmap_open() && worldmap_pixel_of(ref->region, ref->index, &px, &py)) {
+        g_px = px;
+        g_py = py;
+        wsprintfA(text, "%d, %d", px, py);
+        prop_add(at++, "pixel", text);
+        prop_add(at++, "type", atlas_type_name(worldmap_location_type(px, py)));
+    } else {
+        prop_add(at++, "pixel", "none");
+    }
+    wsprintfA(text, "%d", g_place_ok ? g_place.nblocks : ref->nblocks);
+    prop_add(at++, "blocks", text);
+    status_set(ref->name, text);
+}
+
+static void load_places(void)
+{
+    int n;
+
+    worldmap_open();
+    n = dungeon_list(0, 0);
+    if (n > 0) {
+        g_duns = (DunRef *)mem_keep((df_u32)n * (df_u32)sizeof(DunRef));
+        if (g_duns) {
+            g_ndun = dungeon_list(g_duns, n);
+        }
+    }
+    n = exterior_list(0, 0);
+    if (n > 0) {
+        g_towns = (DunRef *)mem_keep((df_u32)n * (df_u32)sizeof(DunRef));
+        if (g_towns) {
+            g_ntown = exterior_list(g_towns, n);
+        }
+    }
+    n = g_ndun + g_ntown;
+    if (n > 0) {
+        g_hit_i = (int *)mem_keep((df_u32)n * (df_u32)sizeof(int));
+        g_hit_out = (unsigned char *)mem_keep((df_u32)n);
+    }
+}
+
 static void step_head(int delta)
 {
     int n;
@@ -1705,11 +1963,46 @@ static void fill_list(void)
             g_nmap++;
             shown++;
         }
+    } else if (g_view == VIEW_PLACES && g_hit_i && g_hit_out) {
+        int di;
+        int ti;
+
+        col_add(g_list, "Kind", width / 5);
+        col_add(g_list, "Region", width / 5);
+        col_add(g_list, "Name", width / 2);
+        g_nhit = 0;
+        for (di = 0; di < g_ndun; di++) {
+            wsprintfA(b, "%d", g_duns[di].region);
+            if (g_q[0] && !has_text(g_duns[di].name, g_q) && !has_text(b, g_q)) {
+                continue;
+            }
+            g_hit_out[g_nhit] = 0;
+            g_hit_i[g_nhit] = di;
+            row_text(g_list, g_nhit, 0, g_duns[di].name);
+            row_text(g_list, g_nhit, 1, b);
+            row_text(g_list, g_nhit, 2, "Dungeon");
+            g_nhit++;
+        }
+        for (ti = 0; ti < g_ntown; ti++) {
+            wsprintfA(b, "%d", g_towns[ti].region);
+            if (g_q[0] && !has_text(g_towns[ti].name, g_q) && !has_text(b, g_q)) {
+                continue;
+            }
+            g_hit_out[g_nhit] = 1;
+            g_hit_i[g_nhit] = ti;
+            row_text(g_list, g_nhit, 0, g_towns[ti].name);
+            row_text(g_list, g_nhit, 1, b);
+            row_text(g_list, g_nhit, 2, "Town");
+            g_nhit++;
+        }
+        shown = g_nhit;
     }
     g_filling = 0;
     if (shown > 0) {
         select_row(g_list, 0);
         on_row(0);
+    } else if (g_view == VIEW_MAP) {
+        show_pixel(g_px, g_py);
     } else {
         const char *title;
 
@@ -1722,6 +2015,8 @@ static void fill_list(void)
             title = "Creatures";
         } else if (g_view == VIEW_WEAPONS || g_view == VIEW_METALS) {
             title = "Items";
+        } else if (g_view == VIEW_PLACES) {
+            title = "Locations";
         } else if (g_view == VIEW_ROWS || g_view == VIEW_CHUNKS) {
             title = file_title(g_nd == ND_MERGED ? ND_MERGED_FILE : g_a);
         }
@@ -1795,6 +2090,26 @@ static void on_tree(void *item)
         g_view = VIEW_WEAPONS;
     } else if (nd == ND_WEAPON) {
         g_view = VIEW_METALS;
+    } else if (nd == ND_WORLD || nd == ND_MAP) {
+        g_view = VIEW_MAP;
+        if (!g_map_ready) {
+            map_rebuild();
+        }
+        if (g_focus_on) {
+            map_centre(g_px, g_py);
+            g_focus_on = 0;
+            g_map_opened = 1;
+        } else if (!g_map_opened) {
+            g_px = 207;
+            g_py = 213;
+            g_zoom = 1;
+            map_centre(g_px, g_py);
+            g_map_opened = 1;
+        }
+        SetFocus(g_hwnd);
+    } else if (nd == ND_PLACES) {
+        g_place_ok = 0;
+        g_view = VIEW_PLACES;
     } else {
         g_view = VIEW_NONE;
     }
@@ -1922,6 +2237,14 @@ static void build_tree(void)
         }
         SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)items);
     }
+    {
+        void *world;
+
+        world = tree_add(0, "World", ND_WORLD, 0, 0);
+        g_map_node = tree_add(world, "Map", ND_MAP, 0, 0);
+        tree_add(world, "Locations", ND_PLACES, 0, 0);
+        SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)world);
+    }
     SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)data);
     SendMessageA(g_tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)merged);
     g_filling = 0;
@@ -1977,7 +2300,7 @@ static void layout(void)
         list_w = 80;
     }
     right_x = list_x + list_w + 6;
-    body = h - 28 - top;
+    body = h - 52 - top;
     if (body < 40) {
         body = 40;
     }
@@ -1985,16 +2308,42 @@ static void layout(void)
     if (well_h < 48) {
         well_h = 48;
     }
-    MoveWindow(g_tree, 4, top, tree_w - 4, h - 28 - top, 1);
-    MoveWindow(g_find_label, list_x, top, 32, 18, 1);
-    MoveWindow(g_find, list_x + 34, top, list_w - 34, 20, 1);
-    MoveWindow(g_list, list_x, top + 24, list_w, h - 28 - top - 24, 1);
-    g_well.left = right_x;
-    g_well.top = top;
-    g_well.right = right_x + right_w;
-    g_well.bottom = top + well_h;
-    MoveWindow(g_props, right_x, top + well_h + 4, right_w, h - 28 - (top + well_h + 4), 1);
-    InvalidateRect(g_hwnd, &g_well, 1);
+    MoveWindow(g_tree, 4, top, tree_w - 4, h - 52 - top, 1);
+    if (g_view == VIEW_MAP) {
+        ShowWindow(g_find_label, SW_HIDE);
+        ShowWindow(g_find, SW_HIDE);
+        ShowWindow(g_list, SW_HIDE);
+        g_well.left = list_x;
+        g_well.top = top;
+        g_well.right = right_x - 6;
+        g_well.bottom = top + body;
+        if (g_well.right < g_well.left + 32) {
+            g_well.right = g_well.left + 32;
+        }
+        MoveWindow(g_props, right_x, top, right_w, body, 1);
+    } else {
+        ShowWindow(g_find_label, SW_SHOW);
+        ShowWindow(g_find, SW_SHOW);
+        ShowWindow(g_list, SW_SHOW);
+        MoveWindow(g_find_label, list_x, top, 32, 18, 1);
+        MoveWindow(g_find, list_x + 34, top, list_w - 34, 20, 1);
+        MoveWindow(g_list, list_x, top + 24, list_w, h - 52 - top - 24, 1);
+        g_well.left = right_x;
+        g_well.top = top;
+        g_well.right = right_x + right_w;
+        g_well.bottom = top + well_h;
+        MoveWindow(g_props, right_x, top + well_h + 4, right_w, h - 52 - (top + well_h + 4), 1);
+    }
+    if (g_btn_climate) {
+        MoveWindow(g_btn_climate, list_x, h - 48, 100, 18, 1);
+    }
+    if (g_btn_dots) {
+        MoveWindow(g_btn_dots, list_x + 104, h - 48, 110, 18, 1);
+    }
+    if (g_btn_centre) {
+        MoveWindow(g_btn_centre, list_x + 218, h - 48, 100, 18, 1);
+    }
+    InvalidateRect(g_hwnd, 0, 1);
 }
 
 static void blit_dib(HDC dc, int dx, int dy, int dw, int dh, const unsigned char *dib,
@@ -2274,6 +2623,96 @@ static void paint_race(HDC dc)
     paint_large(dc, &large);
 }
 
+static void paint_map(HDC dc)
+{
+    int sw;
+    int sh;
+    RECT mark;
+
+    if (!g_mapdib || !g_map_ready) {
+        DrawTextA(dc, "No map", -1, &g_well, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        return;
+    }
+    map_clamp();
+    map_span(&sw, &sh);
+    blit_dib(dc, g_well.left, g_well.top, sw * g_zoom, sh * g_zoom, g_mapdib,
+             WORLDMAP_W, WORLDMAP_H, g_ox, g_oy, sw, sh);
+    if (g_px >= g_ox && g_py >= g_oy && g_px < g_ox + sw && g_py < g_oy + sh) {
+        mark.left = g_well.left + (g_px - g_ox) * g_zoom;
+        mark.top = g_well.top + (g_py - g_oy) * g_zoom;
+        mark.right = mark.left + g_zoom;
+        mark.bottom = mark.top + g_zoom;
+        if (mark.right < mark.left + 3) {
+            mark.right = mark.left + 3;
+        }
+        if (mark.bottom < mark.top + 3) {
+            mark.bottom = mark.top + 3;
+        }
+        FrameRect(dc, &mark, (HBRUSH)g_gdi.GetStockObject(WHITE_BRUSH));
+    }
+}
+
+static void paint_blocks(HDC dc)
+{
+    int i;
+    int minx;
+    int maxx;
+    int minz;
+    int maxz;
+    int cols;
+    int rows;
+    int cw;
+    int ch;
+
+    if (!g_place_ok || g_place.nblocks < 1) {
+        DrawTextA(dc, "No blocks", -1, &g_well, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        return;
+    }
+    minx = g_place.block[0].x;
+    maxx = minx;
+    minz = g_place.block[0].z;
+    maxz = minz;
+    for (i = 1; i < g_place.nblocks; i++) {
+        if (g_place.block[i].x < minx) {
+            minx = g_place.block[i].x;
+        }
+        if (g_place.block[i].x > maxx) {
+            maxx = g_place.block[i].x;
+        }
+        if (g_place.block[i].z < minz) {
+            minz = g_place.block[i].z;
+        }
+        if (g_place.block[i].z > maxz) {
+            maxz = g_place.block[i].z;
+        }
+    }
+    cols = maxx - minx + 1;
+    rows = maxz - minz + 1;
+    if (cols < 1) {
+        cols = 1;
+    }
+    if (rows < 1) {
+        rows = 1;
+    }
+    cw = (g_well.right - g_well.left) / cols;
+    ch = (g_well.bottom - g_well.top) / rows;
+    if (cw < 4) {
+        cw = 4;
+    }
+    if (ch < 4) {
+        ch = 4;
+    }
+    for (i = 0; i < g_place.nblocks; i++) {
+        RECT cell;
+
+        cell.left = g_well.left + (g_place.block[i].x - minx) * cw;
+        cell.top = g_well.top + (g_place.block[i].z - minz) * ch;
+        cell.right = cell.left + cw - 1;
+        cell.bottom = cell.top + ch - 1;
+        DrawTextA(dc, g_place.block[i].name, -1, &cell, DT_CENTER | DT_WORDBREAK | 0x00000800);
+    }
+}
+
 static void paint_well(HDC dc)
 {
     RECT well;
@@ -2295,6 +2734,14 @@ static void paint_well(HDC dc)
         paint_race(dc);
         return;
     }
+    if (g_view == VIEW_MAP) {
+        paint_map(dc);
+        return;
+    }
+    if (g_view == VIEW_PLACES) {
+        paint_blocks(dc);
+        return;
+    }
     DrawTextA(dc, "No picture", -1, &well, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
 
@@ -2307,6 +2754,19 @@ static void well_click(int x, int y)
     int rec;
     int i;
 
+    if (g_view == VIEW_MAP && g_zoom > 0) {
+        int px;
+        int py;
+
+        if (x < g_well.left || y < g_well.top || x >= g_well.right || y >= g_well.bottom) {
+            return;
+        }
+        px = g_ox + (x - g_well.left) / g_zoom;
+        py = g_oy + (y - g_well.top) / g_zoom;
+        show_pixel(px, py);
+        InvalidateRect(g_hwnd, &g_well, 0);
+        return;
+    }
     if ((g_view == VIEW_PARTS || g_view == VIEW_METALS) && g_cif_on) {
         int cell;
         int i;
@@ -2407,6 +2867,22 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_COMMAND:
         if (HIWORD(wp) == EN_CHANGE && (int)LOWORD(wp) == ID_FIND && !g_filling) {
             fill_list();
+        } else if (HIWORD(wp) == 0 && (int)LOWORD(wp) == ID_CLIMATE) {
+            g_climate_on = SendMessageA(g_btn_climate, 0x00F0, 0, 0) == 1;
+            map_rebuild();
+            InvalidateRect(hwnd, &g_well, 0);
+        } else if (HIWORD(wp) == 0 && (int)LOWORD(wp) == ID_DOTS) {
+            g_dots_on = SendMessageA(g_btn_dots, 0x00F0, 0, 0) == 1;
+            map_rebuild();
+            InvalidateRect(hwnd, &g_well, 0);
+        } else if (HIWORD(wp) == 0 && (int)LOWORD(wp) == ID_CENTRE && g_px >= 0) {
+            g_focus_on = 1;
+            if (g_map_node) {
+                SendMessageA(g_tree, TVM_SELECTITEM, TVGN_CARET, (LPARAM)g_map_node);
+            } else {
+                map_centre(g_px, g_py);
+                InvalidateRect(hwnd, &g_well, 0);
+            }
         }
         return 0;
     case WM_NOTIFY:
@@ -2430,6 +2906,25 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_KEYDOWN:
         if (wp == VK_ESCAPE) {
             PostQuitMessage(0);
+        } else if (g_view == VIEW_MAP && (wp == VK_LEFT || wp == VK_RIGHT || wp == VK_UP || wp == VK_DOWN
+                                          || wp == '1' || wp == '2' || wp == '4')) {
+            if (wp == VK_LEFT) {
+                g_ox -= 32;
+            } else if (wp == VK_RIGHT) {
+                g_ox += 32;
+            } else if (wp == VK_UP) {
+                g_oy -= 32;
+            } else if (wp == VK_DOWN) {
+                g_oy += 32;
+            } else if (wp == '1') {
+                g_zoom = 1;
+            } else if (wp == '2') {
+                g_zoom = 2;
+            } else if (wp == '4') {
+                g_zoom = 4;
+            }
+            map_clamp();
+            InvalidateRect(hwnd, &g_well, 0);
         } else if (wp == VK_LEFT || wp == VK_RIGHT) {
             if ((g_view == VIEW_PARTS || g_view == VIEW_METALS) && g_cif_on) {
                 step_head(wp == VK_LEFT ? -1 : 1);
@@ -2540,6 +3035,18 @@ static int win_main(HINSTANCE inst)
         0, "msctls_statusbar32", "",
         WS_CHILD | WS_VISIBLE | CCS_BOTTOM,
         0, 0, 10, 10, hwnd, 0, inst, 0);
+    g_btn_climate = CreateWindowExA(
+        0, "BUTTON", "Climate",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | 0x0003,
+        0, 0, 10, 10, hwnd, (HMENU)(UINT_PTR)ID_CLIMATE, inst, 0);
+    g_btn_dots = CreateWindowExA(
+        0, "BUTTON", "Locations",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | 0x0003,
+        0, 0, 10, 10, hwnd, (HMENU)(UINT_PTR)ID_DOTS, inst, 0);
+    g_btn_centre = CreateWindowExA(
+        0, "BUTTON", "Centre",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+        0, 0, 10, 10, hwnd, (HMENU)(UINT_PTR)ID_CENTRE, inst, 0);
     if (!g_tree || !g_list || !g_props || !g_status) {
         MessageBoxA(0, "The list did not open.", "DATFALL", MB_OK | MB_ICONERROR);
         return 1;
@@ -2550,11 +3057,18 @@ static int win_main(HINSTANCE inst)
     font_set(g_list);
     font_set(g_props);
     font_set(g_status);
+    font_set(g_btn_climate);
+    font_set(g_btn_dots);
+    font_set(g_btn_centre);
     cols_clear(g_props);
     /* col_add inserts at column 0, so the last call is the left column. */
     col_add(g_props, "Value", 160);
     col_add(g_props, "Field", 110);
     g_list_proc = (WNDPROC)SetWindowLongA(g_list, GWL_WNDPROC, (LONG)list_proc);
+    g_zoom = 1;
+    g_px = 207;
+    g_py = 213;
+    load_places();
     ShowWindow(hwnd, SW_SHOWMAXIMIZED);
     layout();
     build_tree();
