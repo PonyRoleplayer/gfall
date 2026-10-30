@@ -24,7 +24,7 @@
 #define MAINDAT_NAME "MAIN.DAT"
 #define MAINDAT_ORDER "LOADORDR.TXT"
 /* The importer's version. A change makes every MAIN.DAT stale, so the next start cooks it again. */
-#define MAINDAT_VERSION 7
+#define MAINDAT_VERSION 8
 
 /* The tables a .DAT can carry, in the order the importer writes them. */
 int maindat_table_count(void);

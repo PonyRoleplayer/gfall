@@ -542,25 +542,25 @@ int classic_weather_odds(WeatherOdds *out, int cap)
 
 /*
  * A block's building types (DFU's DFLocation.BuildingTypes), with PlayerActivate's
- * opening hours and DaggerfallLootDataTables' stock chances for weapons and armour.
- * Those stock numbers are all the game has items for yet; a temple's 255 for weapons
- * is DFU's own table, whose group numbers are read as DFU reads them.
+ * opening hours and DaggerfallLootDataTables' stock chances for weapons and armour,
+ * all the game has items for yet. That table goes by item group: 2 is armour and 3
+ * weapons (ItemGroups, as BIOG's IT lines number them), so an armorer's 80 is armour.
  */
 static const BuildingKind g_buildings[] = {
     { 0, "Alchemist", 7, 22, 0, 0 },
     { 1, "House for sale", 8, 16, 0, 0 },
-    { 2, "Armorer", 9, 19, 80, 20 },
+    { 2, "Armorer", 9, 19, 20, 80 },
     { 3, "Bank", 8, 15, 0, 0 },
     { 4, "Town", 0, 25, 0, 0 },
     { 5, "Bookseller", 9, 21, 0, 0 },
     { 6, "Clothing store", 10, 19, 0, 0 },
     { 7, "Furniture store", 10, 20, 0, 0 },
     { 8, "Gem store", 9, 18, 0, 0 },
-    { 9, "General store", 6, 23, 0, 20 },
+    { 9, "General store", 6, 23, 20, 0 },
     { 10, "Library", 9, 23, 0, 0 },
     { 11, "Guild hall", 11, 23, 0, 0 },
     { 12, "Pawn shop", 9, 20, 10, 10 },
-    { 13, "Weapon smith", 9, 20, 30, 70 },
+    { 13, "Weapon smith", 9, 20, 70, 30 },
     { 14, "Temple", 0, 25, 0, 0 },
     { 15, "Tavern", 0, 25, 0, 0 },
     { 16, "Palace", 10, 16, 0, 0 },

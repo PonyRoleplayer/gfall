@@ -3865,6 +3865,34 @@ static void check_shop_and_court(void)
     shop_stock(&shop, 1, 100, &again, origin2);
     check_expect(stock.count > 3 && stock.count == again.count && stock.item[0].template_id == again.item[0].template_id
                  && stock.item[0].material == again.item[0].material, "shop: an armorer's stock is not there, or not the same each look");
+    /* Each trade's own goods, over many days: an armorer mostly armour, a smith mostly weapons, a general store no armour. */
+    {
+        static const int types[3] = { BUILDING_ARMORER, BUILDING_WEAPONS, BUILDING_GENERAL };
+        int armor[3];
+        int weapons[3];
+        int t;
+        int day;
+
+        for (t = 0; t < 3; t++) {
+            Shop one;
+
+            one = shop;
+            one.type = types[t];
+            one.key.thing = 0xFE000001u + (df_u32)t;
+            armor[t] = 0;
+            weapons[t] = 0;
+            for (day = 1000; day < 1040; day++) {
+                shop_stock(&one, 1, day, &again, origin2);
+                for (i = 0; i < again.count; i++) {
+                    armor[t] += armor_template(again.item[i].template_id) != 0;
+                    weapons[t] += armor_template(again.item[i].template_id) == 0;
+                }
+            }
+        }
+        check_expect(armor[0] > weapons[0] * 2, "shop: an armorer does not stock mostly armour");
+        check_expect(weapons[1] > armor[1], "shop: a weapon smith does not stock mostly weapons");
+        check_expect(armor[2] == 0 && weapons[2] > 0, "shop: a general store's goods");
+    }
     /* A thing taken stays gone today; tomorrow is a new stock. */
     shop_taken(&shop, origin[0]);
     shop_stock(&shop, 1, 100, &again, origin2);
