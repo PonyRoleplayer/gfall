@@ -46,6 +46,16 @@
 #define SND_BIRD_1 437
 #define SND_BIRD_2 438
 
+/* Positions combat plays (DFU's SoundClips: swings, hits, parries, a body falling). */
+#define SND_BODY_FALL 15
+#define SND_SWING_LOW 105
+#define SND_SWING_HIGH 106
+#define SND_HIT_FIRST 108
+#define SND_HITS 5
+#define SND_SWING_MEDIUM 347
+#define SND_PARRY_FIRST 428
+#define SND_PARRIES 9
+
 /* Records in the file, 0 when it does not open. */
 int sndfile_count(void);
 /* The clip at a position, 0 when there is none (or it is empty). */

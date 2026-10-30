@@ -114,7 +114,7 @@ Walking records 0 to 4 at 6 frames a second (10 for a flyer); standing records 1
 
 A record whose frames do not fit one 256 sheet stays on its first frame: 51 of the 725 creature records (the zombie's, the liches', the scorpion's, the dreugh's and the lamia's walks, a few views of the mages and spellswords). Half-size cells would fit them, at half the sharpness.
 
-In a dungeon streamed by block (`dunstream.c`, which the game plays), each creature also has its acts: struck, records 10 to 14 at 10 frames a second (`ENTITY_HURT`, its five frames in half a second, mirrored as its walk), and its body, `corpse_archive`/`corpse_record` of its ENEM row, one picture facing every viewer (`ENTITY_DEAD`). Their pictures are held with the block's. A record that is missing leaves that pose empty, and the creature still stands. `dunstream_kind` names a streamed creature's kind and sex from its key. What the game does with them is `docs/game.md` (Combat).
+In a dungeon streamed by block (`dunstream.c`, which the game plays), each creature also has its acts: an attack, records 5 to 9 (`ENTITY_ATTACK`, its frames held and stepped by the game, `foes.c`), struck, records 10 to 14 at 10 frames a second (`ENTITY_HURT`, its five frames in half a second, mirrored as its walk), and its body, `corpse_archive`/`corpse_record` of its ENEM row, one picture facing every viewer (`ENTITY_DEAD`). Their pictures are held with the block's. A record that is missing leaves that pose empty, and the creature still stands. `dunstream_kind` names a streamed creature's kind and sex from its key. What the game does with them is `docs/game.md` (Combat).
 
 On the card they are not sent at load: the hold's creatures wear 100 pictures, 8.7 MB at full size. They go up by distance from a reserve the load's budget leaves (`docs/memory.md`).
 
@@ -139,6 +139,6 @@ A flyer (an imp, a bat, a harpy, a dragonling) or a ghost or wraith hangs where 
 - Static people as entities (they stand as flats: no turning).
 - Using a walking person (talk) is the static people's only. Collision is done: an entity with a radius stops the walker (`docs/collision.md`), and the townspeople, 12 units round (`PERSON_RADIUS`), wait when the body or another person is in their next step (`entity_blocked`).
 - People in a place loaded whole.
-- What a creature does: friend or foe, its motor, its attack and spell records (5 to 9, 20 to 29). The game's. Struck and dead are built in a streamed dungeon; a place loaded whole (`world.c`) has neither yet.
+- What a creature does: its spell and shot records (20 to 29). The game's. Its attack, struck and dead poses, and its motor (`docs/game.md`, Creatures awake), are built in a streamed dungeon; a place loaded whole (`world.c`) has none of them yet.
 - Creatures in a house (DFU's random encounters by building) or in the wilderness at night; a dungeon of a streamed world (an indoor row opened from Stream World is a place loaded whole, and has them).
 - The player as an entity.

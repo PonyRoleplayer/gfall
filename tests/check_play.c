@@ -24,6 +24,7 @@
 #include "game/dagger/play/inventory.h"
 #include "game/dagger/play/weapon.h"
 #include "game/dagger/play/combat.h"
+#include "game/dagger/play/foes.h"
 #include "game/dagger/tables/enemies.h"
 #include "game/dagger/formats/cif.h"
 #include "engine/ui/pic.h"
@@ -1039,6 +1040,173 @@ static void check_combat(void)
     }
 }
 
+/*
+ * Creatures awake: a rat's blow at the player worked by hand; in the
+ * streamed hold a creature that sees the player wakes, comes, faces
+ * them and hurts them; tgm keeps the player whole; tai stands it still.
+ */
+static void check_foes(void)
+{
+    Character pc;
+    Foe f;
+    Blow b;
+    int lo;
+    int hi;
+    int i;
+
+    if (!character_new(&pc, CHARACTER_START_RACE, CHARACTER_START_CLASS, 0, "Test")) {
+        check_expect(0, "foes: no starting character");
+        return;
+    }
+    combat_foe(&f, enemy_kind(ENEMY_RAT), 1, 0);
+    combat_foe_blow(&f, &pc, &b);
+    printf("foes: a rat at a Breton warrior (dodging %d, luck %d, agility %d): %d%% to hit\n", pc.skill[SKILL_DODGING],
+           pc.attribute[ATTR_LUCK], pc.attribute[ATTR_AGILITY], b.chance);
+    /*
+     * By hand: its skill 35, the player's bare armour 100, luck (50 - 55) / 10
+     * = 0, agility (80 - 62) / 10 = 1, the player's Dodging 15 / 4 = 3 off,
+     * less 50: 83, or 86 when its critical strike (35 / 10) comes up.
+     */
+    check_expect(b.chance == 83 || b.chance == 86, "foes: a rat's chance at a Breton warrior is not 83 (86 critical)");
+    lo = 1000;
+    hi = -1;
+    combat_seed(5);
+    for (i = 0; i < 2000; i++) {
+        combat_foe_blow(&f, &pc, &b);
+        if (b.hit) {
+            lo = b.damage < lo ? b.damage : lo;
+            hi = b.damage > hi ? b.damage : hi;
+        }
+    }
+    check_expect(lo == 1 && hi == 4, "foes: a rat's blow is not its 1..4");
+    /* A class enemy at level 1 bare-handed: Hand-to-Hand 35, so 4..8. */
+    combat_foe(&f, enemy_kind(ENEMY_FIRST_CLASS), 1, 0);
+    lo = 1000;
+    hi = -1;
+    for (i = 0; i < 2000; i++) {
+        combat_foe_blow(&f, &pc, &b);
+        if (b.hit) {
+            lo = b.damage < lo ? b.damage : lo;
+            hi = b.damage > hi ? b.damage : hi;
+        }
+    }
+    check_expect(lo == 4 && hi == 8, "foes: a class enemy's bare blow is not 4..8 at level 1");
+
+    {
+        Dungeon hold;
+        Level level;
+        Camera cam;
+        float x, y, z, yaw, pitch;
+        Player p;
+        Input in;
+        Entity *foe;
+        float start;
+        float near;
+        float ex;
+        float ez;
+        int hurt;
+        int s;
+
+        keep_clear();
+        combat_reset();
+        foes_reset();
+        foes_set_on(1);
+        if (!dungeon_load(&hold) || !dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
+            check_expect(0, "foes: the hold's stream did not open");
+            return;
+        }
+        camera_set(&cam, x, y, z, yaw, pitch);
+        dunstream_fill(&cam);
+        player_init(&p, &pc);
+        memset(&in, 0, sizeof(in));
+        /* A walking creature, not passive, the player 4 m before it where it can see them. */
+        foe = 0;
+        for (s = 0; s < stream_slots() && !foe; s++) {
+            Entity *ents;
+            int first;
+            int n;
+
+            ents = stream_slot_entities(s, &first, &n);
+            for (i = 0; ents && i < n && !foe; i++) {
+                Entity *e;
+                int kind;
+                float eye[3];
+                float peye[3];
+
+                e = &ents[i];
+                kind = dunstream_kind(e, 0);
+                if (!e->live || e->dead || kind < 0 || dunstream_passive(e) || enemy_flies(kind)
+                    || enemy_spectral(kind) || !e->pose[ENTITY_ATTACK].w[0]) {
+                    continue;
+                }
+                player_place(&p, e->x + df_sin(e->yaw) * 160.0f, e->y + p.body.eye, e->z + df_cos(e->yaw) * 160.0f,
+                             df_wrap_tau(e->yaw + DF_TAU * 0.5f), 0.0f);
+                walk(&p, &level.scene, &in, 30);
+                if (!p.body.grounded || !check_near(p.body.feet[1], e->y, 8.0f)) {
+                    continue;
+                }
+                eye[0] = e->x;
+                eye[1] = e->y + entity_height(e) * (2.0f / 3.0f);
+                eye[2] = e->z;
+                body_eye(&p.body, &peye[0], &peye[1], &peye[2]);
+                if (combat_sight(&level.scene, eye, peye)) {
+                    foe = e;
+                }
+            }
+        }
+        check_expect(foe != 0, "foes: no creature of the hold stands where it can see the player");
+        if (!foe) {
+            dunstream_close();
+            return;
+        }
+        ex = p.body.feet[0] - foe->x;
+        ez = p.body.feet[2] - foe->z;
+        start = df_sqrt(ex * ex + ez * ez);
+        near = start;
+        hurt = 0;
+        combat_seed(3);
+        p.sheet.health = p.sheet.health_max;
+        for (i = 0; i < 30 * 20 && !hurt; i++) {
+            player_step(&p, &in, &level.scene, 1.0f / 30.0f, 1);
+            if (foes_frame(&p, &level.scene, 1.0f / 30.0f)) {
+                p.sheet.health = p.sheet.health_max;
+            }
+            ex = p.body.feet[0] - foe->x;
+            ez = p.body.feet[2] - foe->z;
+            near = df_sqrt(ex * ex + ez * ez) < near ? df_sqrt(ex * ex + ez * ez) : near;
+            hurt = p.sheet.health < p.sheet.health_max;
+        }
+        printf("foes: %s woke %.0f units off, came to %.0f, struck the player after %.1f s (%d awake)\n",
+               enemy_kind(dunstream_kind(foe, 0))->name, start, near, (float)i / 30.0f, foes_awake());
+        check_expect(foes_awake() >= 1, "foes: a creature that sees the player does not wake");
+        check_expect(near < start - 20.0f && near <= FOES_MELEE + 4.0f, "foes: an awake creature does not come to reach");
+        check_expect(hurt, "foes: a creature in reach for 20 s never hurt the player");
+        /* tgm: ten seconds more, nothing taken. */
+        p.god = 1;
+        p.sheet.health = p.sheet.health_max;
+        for (i = 0; i < 30 * 10; i++) {
+            player_step(&p, &in, &level.scene, 1.0f / 30.0f, 1);
+            foes_frame(&p, &level.scene, 1.0f / 30.0f);
+        }
+        check_expect(p.sheet.health == p.sheet.health_max, "foes: tgm on, a creature hurt the player");
+        p.god = 0;
+        /* tai off: it stands where it is, for all the player walks away. */
+        foes_set_on(0);
+        ex = foe->x;
+        ez = foe->z;
+        in.move_f = -1;
+        for (i = 0; i < 30 * 3; i++) {
+            player_step(&p, &in, &level.scene, 1.0f / 30.0f, 1);
+            foes_frame(&p, &level.scene, 1.0f / 30.0f);
+        }
+        check_expect(foe->x == ex && foe->z == ez && !foe->moving, "foes: tai off, a creature still moves");
+        foes_set_on(1);
+        foes_reset();
+        dunstream_close();
+        keep_clear();
+    }
+}
+
 void check_play(void)
 {
     check_rules();
@@ -1046,6 +1214,7 @@ void check_play(void)
     check_items();
     check_weapon();
     check_combat();
+    check_foes();
     check_hold();
     check_keep();
     check_dunstream();

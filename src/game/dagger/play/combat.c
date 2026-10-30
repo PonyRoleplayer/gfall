@@ -1,4 +1,7 @@
 #include "game/dagger/play/combat.h"
+#include "game/dagger/play/foes.h"
+#include "game/dagger/play/sfx.h"
+#include "game/dagger/formats/sndfile.h"
 #include "game/dagger/places/dunstream.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/tables/items.h"
@@ -78,7 +81,8 @@ void combat_foe(Foe *f, const EnemyKind *kind, int player_level, int behind)
         f->armor = kind->armor * ARMOR_SCALE;
     }
     skill = f->level * 5 + 30;
-    f->dodging = skill > 100 ? 100 : skill;
+    f->skill = skill > 100 ? 100 : skill;
+    f->dodging = f->skill;
 }
 
 int combat_roll_health(const Foe *f)
@@ -194,6 +198,55 @@ void combat_blow(const Character *pc, const Item *weapon, int swing, const Foe *
     out->damage = damage < 0 ? 0 : damage;
 }
 
+void combat_foe_blow(const Foe *f, const Character *pc, Blow *out)
+{
+    int base;
+    int i;
+
+    out->chance = 0;
+    out->hit = 0;
+    out->damage = 0;
+    out->ineffective = 0;
+    out->backstab = 0;
+    base = f->skill + COMBAT_PLAYER_ARMOR;
+    base += (f->kind->attribute[ATTR_LUCK] - pc->attribute[ATTR_LUCK]) / 10;
+    base += (f->kind->attribute[ATTR_AGILITY] - pc->attribute[ATTR_AGILITY]) / 10;
+    base -= pc->skill[SKILL_DODGING] / 4;
+    /* Against the player there is no +40; the biography's avoid-hit is not kept yet. */
+    base -= 50;
+    for (i = 0; i < 3; i++) {
+        int chance;
+        int lo;
+        int hi;
+
+        if (f->kind->id >= ENEMY_FIRST_CLASS) {
+            if (i > 0) {
+                break;
+            }
+            lo = f->skill / 10 + 1;
+            hi = f->skill / 5 + 1;
+        } else {
+            lo = f->kind->damage_min[i];
+            hi = f->kind->damage_max[i];
+            if (hi <= 0) {
+                continue;
+            }
+        }
+        chance = base;
+        if (combat_roll(100) < f->skill) {
+            chance += f->skill / 10;
+        }
+        chance = chance < 3 ? 3 : (chance > 97 ? 97 : chance);
+        if (!out->chance) {
+            out->chance = chance;
+        }
+        if (combat_roll(100) < chance) {
+            out->hit = 1;
+            out->damage += roll_between(lo, hi);
+        }
+    }
+}
+
 /* Its health from its keep row, rolled and written the first time. -1 with no row (no key, no memory). */
 static int health_of(const Entity *e, const Foe *f, Keep **row)
 {
@@ -228,16 +281,19 @@ static void set_health(Keep *k, int h)
     k->game[KEEP_HEALTH + 1] = (df_u8)((h >> 8) & 0xff);
 }
 
-/* 1 when no wall stands between the eye and p (the scene's collision, set up by combat_strike). */
-static int seen(const float *eye, const float *p)
+int combat_sight(const Scene *scene, const float *a, const float *b)
 {
     float d[3];
     float len;
     float t;
     int i;
 
+    if (!scene || !collide_use(scene)) {
+        return 0;
+    }
+    collide_set_shape(1.0f, 1.0f);
     for (i = 0; i < 3; i++) {
-        d[i] = p[i] - eye[i];
+        d[i] = b[i] - a[i];
     }
     len = df_sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
     if (len < 1.0f) {
@@ -246,10 +302,10 @@ static int seen(const float *eye, const float *p)
     for (i = 0; i < 3; i++) {
         d[i] /= len;
     }
-    collide_gather((eye[0] < p[0] ? eye[0] : p[0]) - 2.0f, (eye[1] < p[1] ? eye[1] : p[1]) - 2.0f,
-                   (eye[2] < p[2] ? eye[2] : p[2]) - 2.0f, (eye[0] > p[0] ? eye[0] : p[0]) + 2.0f,
-                   (eye[1] > p[1] ? eye[1] : p[1]) + 2.0f, (eye[2] > p[2] ? eye[2] : p[2]) + 2.0f);
-    return !collide_ray(eye, d, len, &t) || t >= len - SIGHT_SLACK;
+    collide_gather((a[0] < b[0] ? a[0] : b[0]) - 2.0f, (a[1] < b[1] ? a[1] : b[1]) - 2.0f,
+                   (a[2] < b[2] ? a[2] : b[2]) - 2.0f, (a[0] > b[0] ? a[0] : b[0]) + 2.0f,
+                   (a[1] > b[1] ? a[1] : b[1]) + 2.0f, (a[2] > b[2] ? a[2] : b[2]) + 2.0f);
+    return !collide_ray(a, d, len, &t) || t >= len - SIGHT_SLACK;
 }
 
 /* A creature killed lies as its body, on the floor under it; one with no body's picture goes. */
@@ -364,7 +420,7 @@ int combat_strike(Character *pc, const Item *weapon, int swing, const Scene *sce
                 off[k] = c[k] - eye[k] - fwd[k] * along;
             }
             side = df_sqrt(off[0] * off[0] + off[1] * off[1] + off[2] * off[2]);
-            if (side > half + 10.0f || !seen(eye, c)) {
+            if (side > half + 10.0f || !combat_sight(scene, eye, c)) {
                 continue;
             }
             best = e;
@@ -372,6 +428,8 @@ int combat_strike(Character *pc, const Item *weapon, int swing, const Scene *sce
         }
     }
     if (!best) {
+        /* Nothing in reach: the swing whistles (DFU plays it only when nothing was struck). */
+        sfx_play(weapon ? SND_SWING_MEDIUM : SND_SWING_HIGH);
         return 0;
     }
     {
@@ -391,17 +449,28 @@ int combat_strike(Character *pc, const Item *weapon, int swing, const Scene *sce
         combat_foe(&f, kind, pc->level, behind);
         health = health_of(best, &f, &row);
         combat_blow(pc, weapon, swing, &f, &b);
+        /* Struck at all, it knows: passive or asleep, it turns on the player. */
+        foes_alert(best);
         if (b.ineffective) {
             interact_say("This weapon has no effect.");
+            sfx_play(weapon ? SND_SWING_MEDIUM : SND_SWING_HIGH);
             return 1;
         }
         if (!b.hit || b.damage <= 0 || !row) {
+            /* Nothing taken: a weapon on a creature that parries rings; anything else whistles. */
+            if (weapon && kind->parries) {
+                sfx_at(sfx_pick(SND_PARRY_FIRST, SND_PARRIES), best->x, best->y + entity_height(best) * 0.5f, best->z);
+            } else {
+                sfx_play(weapon ? SND_SWING_MEDIUM : SND_SWING_HIGH);
+            }
             return 1;
         }
+        sfx_at(sfx_pick(SND_HIT_FIRST, SND_HITS), best->x, best->y + entity_height(best) * 0.5f, best->z);
         health -= b.damage;
         set_health(row, health);
         if (health <= 0) {
             lay_down(best);
+            sfx_at(SND_BODY_FALL, best->x, best->y, best->z);
         } else {
             flinch(best);
         }

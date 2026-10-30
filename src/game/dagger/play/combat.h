@@ -21,10 +21,15 @@
  * struck, so a wounded or dead creature stays so when its block is
  * dropped and comes back.
  *
- * Not yet: creatures that fight back (the next slice), the swing's and
- * the hit's sounds, blood, knock-back, skills advancing, proficiency
- * and the class's group bonuses, class enemies' worn armour (60, as
- * bare, until they carry things).
+ * Sounds (sfx.h): a hit plays Hit1..5 at the creature; a blow that
+ * takes nothing a parry (Parry1..9) from a creature that parries when a
+ * weapon struck it, else the swing (medium with a weapon, high bare); a
+ * swing that reaches nothing the swing; a creature killed a body's fall.
+ * A creature struck wakes (foes_alert), passive or not.
+ *
+ * Not yet: blood, knock-back, skills advancing, proficiency and the
+ * class's group bonuses, class enemies' worn armour (60, as bare, until
+ * they carry things).
  */
 
 /* Reach: DFU's 2.25 m and its 0.25 m sweep, in units. */
@@ -38,7 +43,8 @@ typedef struct Foe {
     int level;
     /* A body part's armour value: lower is better. */
     int armor;
-    /* Its Dodging, as every skill of a creature: 5 a level and 30, at most 100. */
+    /* Every skill of a creature, its Dodging, Hand-to-Hand and Critical Strike among them: 5 a level and 30, at most 100. */
+    int skill;
     int dodging;
     /* 1 when it faces away from the attacker. */
     int behind;
@@ -74,6 +80,19 @@ int combat_roll_health(const Foe *f);
 void combat_blow(const Character *pc, const Item *weapon, int swing, const Foe *f, Blow *out);
 
 /*
+ * A creature's blow at the player (CalculateAttackDamage with the player
+ * as target): a monster swings its three attacks (ENEM's damage_min and
+ * damage_max, those with a most above 0), each rolled to hit, their
+ * damage summed; a class enemy, carrying nothing yet, its bare hands
+ * (Hand-to-Hand / 10 + 1 to / 5 + 1). To hit: its skill, the player's
+ * armour (100 a part, as bare), the Luck and Agility differences, less
+ * the player's Dodging / 4, a critical strike, less 50, held to 3..97.
+ */
+void combat_foe_blow(const Foe *f, const Character *pc, Blow *out);
+/* The player's unarmoured armour value a body part: DFU's 100. */
+#define COMBAT_PLAYER_ARMOR 100
+
+/*
  * The strike on a swing's hit frame: the creature in reach (as above) of
  * the eye looking yaw, pitch, struck by combat_blow, hurt or killed. Its
  * fatigue spent either way. 1 when a creature was in reach. The walls
@@ -81,6 +100,8 @@ void combat_blow(const Character *pc, const Item *weapon, int swing, const Foe *
  */
 int combat_strike(Character *pc, const Item *weapon, int swing, const Scene *scene, float x, float y, float z,
                   float yaw, float pitch);
+/* 1 when no wall of scene stands between a and b (its collision, a thin ray): what sees and strikes. */
+int combat_sight(const Scene *scene, const float *a, const float *b);
 /* A frame: flinches run out, bodies lie as bodies (a dead creature come back with its block). */
 void combat_frame(float dt);
 /* Every flinch forgotten: a new place. */

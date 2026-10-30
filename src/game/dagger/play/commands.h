@@ -17,6 +17,9 @@
  *                                health (player_hurt); tgm alone flips
  *                                it, as Bethesda's consoles do. Off with
  *                                each new game.
+ *   tai [on|off]                 the creatures' AI (foes.c): off, no
+ *                                one wakes, moves or strikes; tai alone
+ *                                flips it. Kept across games.
  */
 
 /* Registers them once. */

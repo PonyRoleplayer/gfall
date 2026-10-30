@@ -43,6 +43,8 @@ void dunstream_close(void);
  * and in *female whether it was drawn a woman; -1 for one it did not make.
  */
 int dunstream_kind(const Entity *e, int *female);
+/* 1 when its marker says it attacks only when attacked (enemy_at's passive). */
+int dunstream_passive(const Entity *e);
 int dunstream_active(void);
 
 #endif

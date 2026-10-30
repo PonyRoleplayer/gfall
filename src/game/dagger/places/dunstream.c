@@ -243,6 +243,8 @@ static const int g_idle[ENTITY_VIEWS] = { 15, 16, 17, 18, 19 };
 static const int g_idle_483[ENTITY_VIEWS] = { 15, 11, 17, 18, 19 };
 /* Records 10 to 14: struck (DFU's MobileUnit hurt animation). */
 static const int g_hurt[ENTITY_VIEWS] = { 10, 11, 12, 13, 14 };
+/* Records 5 to 9: a melee attack (its primary attack). The game steps its frames (Entity.hold). */
+static const int g_attack[ENTITY_VIEWS] = { 5, 6, 7, 8, 9 };
 
 /* Step: the block's models into the slot, in its frame (an RDB block's own), their pictures held. */
 static void place_models(Chunk *c, StreamOut *out)
@@ -333,6 +335,7 @@ static void hold_pictures(Chunk *c)
                 hold(c, wres_slot(archive, female && archive == 483 ? g_idle_483[k] : g_idle[k], WRES_SPRITE));
             }
             hold(c, wres_slot(archive, g_hurt[k], WRES_SPRITE));
+            hold(c, wres_slot(archive, g_attack[k], WRES_SPRITE));
         }
         {
             const EnemyKind *ek;
@@ -544,6 +547,18 @@ static void place_foes(Chunk *c, StreamOut *out)
                 e->pose[ENTITY_HURT].right = e->pose[ENTITY_WALK].right;
             } else {
                 mem_zero(&e->pose[ENTITY_HURT], sizeof(EntityPose));
+            }
+            got = 1;
+            for (k = 0; k < ENTITY_VIEWS; k++) {
+                e->pose[ENTITY_ATTACK].slot[k] = (df_u16)wres_slot(archive, g_attack[k], WRES_SPRITE);
+                got = got && size_of(e->pose[ENTITY_ATTACK].slot[k], &e->pose[ENTITY_ATTACK].w[k],
+                                     &e->pose[ENTITY_ATTACK].h[k]);
+            }
+            if (got) {
+                e->pose[ENTITY_ATTACK].rate = FOE_HURT_RATE;
+                e->pose[ENTITY_ATTACK].right = e->pose[ENTITY_WALK].right;
+            } else {
+                mem_zero(&e->pose[ENTITY_ATTACK], sizeof(EntityPose));
             }
             /* A body is one picture, facing every viewer (slot[1] none). */
             ek = enemy_kind(kind);
@@ -923,28 +938,48 @@ int dunstream_active(void)
     return g_open;
 }
 
-int dunstream_kind(const Entity *e, int *female)
+/* The draw that made e, by its key; 0 for one the stream did not make. */
+static const Draw *draw_of(const Entity *e)
 {
     int b;
     int i;
     df_u32 pos;
 
     if (!g_open || !g_draw || !g_keep_place || e->key.place != g_keep_place) {
-        return -1;
+        return 0;
     }
     /* The key place_foes gave it: the block above, the marker's offset below. */
     b = (int)(e->key.thing >> 24);
     pos = e->key.thing & 0xFFFFFFu;
     if (b < 0 || b >= g_dun->nblocks) {
-        return -1;
+        return 0;
     }
     for (i = g_draw_first[b]; i < g_draw_first[b + 1]; i++) {
         if ((g_draw[i].pos & 0xFFFFFFu) == pos) {
-            if (female) {
-                *female = g_draw[i].female;
-            }
-            return g_draw[i].kind;
+            return &g_draw[i];
         }
     }
-    return -1;
+    return 0;
+}
+
+int dunstream_kind(const Entity *e, int *female)
+{
+    const Draw *d;
+
+    d = draw_of(e);
+    if (!d) {
+        return -1;
+    }
+    if (female) {
+        *female = d->female;
+    }
+    return d->kind;
+}
+
+int dunstream_passive(const Entity *e)
+{
+    const Draw *d;
+
+    d = draw_of(e);
+    return d ? d->passive : 0;
 }

@@ -1,6 +1,7 @@
 #include "game/dagger/play/game.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/commands.h"
+#include "game/dagger/play/foes.h"
 #include "game/dagger/play/keys.h"
 #include "game/dagger/play/menu.h"
 #include "game/dagger/play/overlay.h"
@@ -47,6 +48,18 @@ static int on_use(const Scene *scene, const Usable *u, int index)
         return 1;
     }
     return 0;
+}
+
+/*
+ * The player died (a fall, a blow): until the menu's reload (P3, saves)
+ * back at the start, whole, every creature asleep again where it stands.
+ */
+static void die(void)
+{
+    interact_say("You have died.");
+    character_rest_full(&g_player.sheet);
+    player_place(&g_player, g_start[0], g_start[1], g_start[2], g_start[3], g_start[4]);
+    foes_reset();
 }
 
 /* What the game draws over the frame: the weapon and the HUD in play, then the open menu and its pointer. */
@@ -135,6 +148,7 @@ void game_enter(const Level *level, Camera *cam, float x, float y, float z, floa
     }
     commands_player(&g_player);
     combat_reset();
+    foes_reset();
     player_place(&g_player, x, y, z, yaw, pitch);
     camera_set(cam, x, y, z, yaw, pitch);
     /*
@@ -212,10 +226,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
                 /* tgm on: nothing is taken and nothing said. */
                 died = player_hurt(&g_player, rules_fall_damage(height / RULES_UNITS_PER_M));
                 if (died > 0) {
-                    /* Death, until combat brings its own (P4) and the menu a reload (P3): back at the start, whole. */
-                    interact_say("You have died.");
-                    character_rest_full(&g_player.sheet);
-                    player_place(&g_player, g_start[0], g_start[1], g_start[2], g_start[3], g_start[4]);
+                    die();
                 } else if (died == 0) {
                     interact_say("That hurt.");
                 }
@@ -228,6 +239,11 @@ int game_frame(Camera *cam, const Input *in, float dt)
                           cam->y, cam->z, cam->yaw, cam->pitch);
         }
         combat_frame(dt);
+        /* The creatures see, chase and strike (tai off: they stand); a blow may kill. */
+        if (foes_frame(&g_player, &g_level->scene, dt)) {
+            die();
+            player_camera(&g_player, cam);
+        }
         /* The blocks round the player in and out, their creatures read with them, the lights cut (docs/streaming.md). */
         dunstream_update(cam, GAME_STREAM_MS);
     }

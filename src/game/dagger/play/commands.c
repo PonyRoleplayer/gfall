@@ -1,4 +1,5 @@
 #include "game/dagger/play/commands.h"
+#include "game/dagger/play/foes.h"
 #include "game/dagger/play/inventory.h"
 #include "game/dagger/tables/items.h"
 #include "engine/core/log.h"
@@ -198,6 +199,8 @@ void commands_setup(void)
     cmd_add("equip", c_equip, "n|none", "item n of items in hand, or bare hands");
     cmd_var("tgm", get_tgm, set_tgm, 0, 1, "god mode: nothing hurts the player; tgm alone flips it");
     cmd_toggles("tgm");
+    cmd_var("tai", foes_on, foes_set_on, 0, 1, "creatures' AI: off, no one wakes, moves or strikes; tai alone flips it");
+    cmd_toggles("tai");
 }
 
 void commands_player(Player *p)
