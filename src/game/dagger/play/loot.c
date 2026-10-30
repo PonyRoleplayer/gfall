@@ -1,5 +1,6 @@
 #include "game/dagger/play/loot.h"
 #include "game/dagger/play/combat.h"
+#include "game/dagger/play/pile.h"
 #include "game/dagger/places/dunstream.h"
 #include "engine/scene/keep.h"
 #include "engine/scene/stream.h"
@@ -238,9 +239,21 @@ static int ray_meets_box(const float *eye, const float *dir, const float *low, c
     return 1;
 }
 
-const Entity *loot_find(const Scene *scene, const Camera *eye)
+/* Whether the view can come to rest on this entity: a body, a heap, or a pile put down. */
+static int searchable(const Entity *e)
 {
-    const Entity *best;
+    if (!e->live) {
+        return 0;
+    }
+    if (e->dead) {
+        return dunstream_kind(e, 0) >= 0;
+    }
+    return dunstream_treasure(e) || dunstream_spare(e);
+}
+
+Entity *loot_find(const Scene *scene, const Camera *eye)
+{
+    Entity *best;
     float best_t;
     float from[3];
     float dir[3];
@@ -265,29 +278,31 @@ const Entity *loot_find(const Scene *scene, const Camera *eye)
 
         ents = stream_slot_entities(slot, &first, &n);
         for (i = 0; ents && i < n; i++) {
-            const Entity *e;
+            Entity *e;
+            const EntityPose *pose;
             float low[3];
             float high[3];
             float half;
             float t;
 
             e = &ents[i];
-            if (!e->live || !e->dead || dunstream_kind(e, 0) < 0) {
+            if (!searchable(e)) {
                 continue;
             }
-            half = (float)e->pose[ENTITY_DEAD].w[0] * 0.5f;
+            pose = entity_pose(e);
+            half = (float)pose->w[0] * 0.5f;
             half = half < SEARCH_HALF_MIN ? SEARCH_HALF_MIN : half;
             low[0] = e->x - half;
             low[1] = e->y;
             low[2] = e->z - half;
             high[0] = e->x + half;
-            high[1] = e->y + (float)e->pose[ENTITY_DEAD].h[0];
+            high[1] = e->y + (float)pose->h[0];
             high[2] = e->z + half;
             if (ray_meets_box(from, dir, low, high, &t) && t < best_t) {
                 float middle[3];
 
                 middle[0] = e->x;
-                middle[1] = e->y + (float)e->pose[ENTITY_DEAD].h[0] * 0.5f;
+                middle[1] = e->y + (float)pose->h[0] * 0.5f;
                 middle[2] = e->z;
                 if (combat_sight(scene, from, middle)) {
                     best = e;
@@ -299,33 +314,51 @@ const Entity *loot_find(const Scene *scene, const Camera *eye)
     return best;
 }
 
-/* A body's seed: the game's and its own key. */
-static df_u32 body_seed(const Entity *e)
+/* A thing's seed: the game's and its own key. */
+static df_u32 thing_seed(const Entity *e)
 {
     return mix(g_game_seed ^ e->key.place) ^ e->key.thing;
 }
 
-/* The bits of the things already taken off a body. */
+/* The bits of the things already taken off it. */
 static unsigned taken_bits(const Keep *row)
 {
     return (unsigned)row->game[COMBAT_KEEP_TAKEN] | ((unsigned)row->game[COMBAT_KEEP_TAKEN + 1] << 8);
 }
 
-int loot_open(const Entity *e, Inventory *out, df_u8 *origin)
+/* The table e is filled from: its kind's for a body, the dungeon's for a heap. */
+static const LootChance *table_of(const Entity *e)
 {
     const EnemyKind *kind;
-    const Keep *row;
+
+    if (dunstream_treasure(e)) {
+        return dungeon_loot(dunstream_dungeon_type());
+    }
+    kind = enemy_kind(dunstream_kind(e, 0));
+    return kind ? loot_chance(kind->loot[0]) : 0;
+}
+
+int loot_open(Entity *e, int level, Inventory *out, df_u8 *origin)
+{
     Inventory rolled;
+    Keep *row;
     unsigned taken;
     int i;
 
+    if (dunstream_spare(e)) {
+        pile_read(e, out);
+        return out->count;
+    }
     inventory_clear(out);
-    kind = enemy_kind(dunstream_kind(e, 0));
-    row = keep_find(e->key);
-    if (!kind || !row) {
+    row = keep_get(e->key, KEEP_ENTITY);
+    if (!row) {
         return 0;
     }
-    loot_roll(&rolled, loot_chance(kind->loot[0]), row->game[COMBAT_KEEP_LEVEL], body_seed(e));
+    /* A heap has no death to take the level from: the first look at it sets it. */
+    if (!row->game[COMBAT_KEEP_LEVEL]) {
+        row->game[COMBAT_KEEP_LEVEL] = (df_u8)(level > 255 ? 255 : level);
+    }
+    loot_roll(&rolled, table_of(e), row->game[COMBAT_KEEP_LEVEL], thing_seed(e));
     taken = taken_bits(row);
     for (i = 0; i < rolled.count; i++) {
         if (!(taken & (1u << i))) {
@@ -341,6 +374,9 @@ void loot_taken(const Entity *e, int origin)
     Keep *row;
     unsigned taken;
 
+    if (dunstream_spare(e)) {
+        return;
+    }
     row = keep_find(e->key);
     if (!row || origin < 0 || origin >= LOOT_MAX) {
         return;
@@ -348,4 +384,28 @@ void loot_taken(const Entity *e, int origin)
     taken = taken_bits(row) | (1u << origin);
     row->game[COMBAT_KEEP_TAKEN] = (df_u8)(taken & 0xffu);
     row->game[COMBAT_KEEP_TAKEN + 1] = (df_u8)(taken >> 8);
+}
+
+int loot_takes_things(const Entity *e)
+{
+    return dunstream_spare(e);
+}
+
+const char *loot_label(const Entity *e)
+{
+    if (dunstream_spare(e)) {
+        return "Pile";
+    }
+    return dunstream_treasure(e) ? "Treasure" : "Body";
+}
+
+void loot_closed(Entity *e, const Inventory *left)
+{
+    if (dunstream_spare(e)) {
+        pile_write(e, left);
+    } else if (!left->count && dunstream_treasure(e)) {
+        /* Emptied, it goes, and stays gone: dead is what the stream's kept state puts back. */
+        e->dead = 1;
+        e->live = 0;
+    }
 }

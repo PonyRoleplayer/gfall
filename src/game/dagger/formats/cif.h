@@ -16,13 +16,16 @@
  * (bytes 6 and 8; byte 4 is the width again in every file seen, 10
  * unknown). Every weapon frame's bottom is the screen's: top + h = 200.
  *
- * The armed picture is drawn in ART_PAL's grey ramp, indices 112..127
- * (UESP: iron is grey). cif_metal keeps that shade and moves the row to
- * the palette row of the material's colour (UESP's Weapons table).
+ * A weapon or a piece of armour is drawn in ART_PAL's grey ramp, the
+ * sixteen indices from CIF_RAMP, which are steel. cif_metal swaps them for
+ * a material's colours by classic's own tables, as Daggerfall Unity's
+ * ImageProcessing carries them.
  */
 
 #define CIF_MAX 160
 #define CIF_METALS 10
+/* The first of the sixteen palette indices a metal's picture is drawn in. */
+#define CIF_RAMP 0x70
 
 typedef struct CifFrame {
     int w;

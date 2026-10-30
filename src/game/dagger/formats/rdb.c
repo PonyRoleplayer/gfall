@@ -473,7 +473,8 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch, ArchEnt *cache, int *n
     return block;
 }
 
-int rdb_markers(const df_u8 *rdb, df_u32 size, Marker *out, int cap)
+/* A block's flats of one archive, in rdb_load's order: the markers and the treasure share this walk. */
+static int flats_of_archive(const df_u8 *rdb, df_u32 size, int archive, Marker *out, int cap)
 {
     df_u32 width;
     df_u32 height;
@@ -508,7 +509,7 @@ int rdb_markers(const df_u8 *rdb, df_u32 size, Marker *out, int cap)
                 break;
             }
             res = df_ru32(rdb + at + 21);
-            if (rdb[at + 20] == 0x03 && res + 11 <= size && (int)(df_ru16(rdb + res) >> 7) == EDITOR_ARCHIVE
+            if (rdb[at + 20] == 0x03 && res + 11 <= size && (int)(df_ru16(rdb + res) >> 7) == archive
                 && n < cap) {
                 Marker *mk;
 
@@ -526,4 +527,14 @@ int rdb_markers(const df_u8 *rdb, df_u32 size, Marker *out, int cap)
         }
     }
     return n;
+}
+
+int rdb_markers(const df_u8 *rdb, df_u32 size, Marker *out, int cap)
+{
+    return flats_of_archive(rdb, size, EDITOR_ARCHIVE, out, cap);
+}
+
+int rdb_treasures(const df_u8 *rdb, df_u32 size, Marker *out, int cap)
+{
+    return flats_of_archive(rdb, size, RDB_TREASURE_ARCHIVE, out, cap);
 }

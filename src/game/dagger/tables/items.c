@@ -94,6 +94,15 @@ const RecSchema loot_schema = {
 
 static RecTable g_items;
 static RecTable g_weapons;
+static const RecField g_dungeon_loot_fields[] = {
+    REC_FIELD("id", REC_UINT, DungeonLoot, id),
+    REC_FIELD("letter", REC_UINT, DungeonLoot, letter)
+};
+const RecSchema dungeon_loot_schema = {
+    "LDUN", "dungeon_loot", g_dungeon_loot_fields, 2, (df_u16)sizeof(DungeonLoot), 0
+};
+
+static RecTable g_dungeon_loots;
 static RecTable g_armors;
 static RecTable g_materials;
 static RecTable g_loots;
@@ -130,6 +139,14 @@ RecTable *loot_table(void)
     return &g_loots;
 }
 
+RecTable *dungeon_loot_table(void)
+{
+    if (!g_dungeon_loots.schema) {
+        rec_table_init(&g_dungeon_loots, &dungeon_loot_schema, 19);
+    }
+    return &g_dungeon_loots;
+}
+
 RecTable *material_table(void)
 {
     if (!g_materials.schema) {
@@ -156,6 +173,14 @@ const ArmorTemplate *armor_template(int id)
 const LootChance *loot_chance(int letter)
 {
     return letter <= 0 ? 0 : (const LootChance *)rec_row(loot_table(), letter);
+}
+
+const LootChance *dungeon_loot(int dungeon_type)
+{
+    const DungeonLoot *row;
+
+    row = dungeon_type < 0 ? 0 : (const DungeonLoot *)rec_row(dungeon_loot_table(), dungeon_type);
+    return row ? loot_chance(row->letter) : 0;
 }
 
 const Material *material(int id)

@@ -110,5 +110,13 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, struct Bsa *arch,
  * creatures from them, block by block, as a whole load does.
  */
 int rdb_markers(const df_u8 *rdb, df_u32 size, Marker *out, int cap);
+/*
+ * A block's treasure flats, TEXTURE.216's pictures standing where the block's
+ * maker put them, the same way: each Marker's record is its picture.
+ */
+#define RDB_TREASURE_ARCHIVE 216
+/* The editor marker record of random treasure (archive 199). */
+#define RDB_MARKER_TREASURE 19
+int rdb_treasures(const df_u8 *rdb, df_u32 size, Marker *out, int cap);
 
 #endif

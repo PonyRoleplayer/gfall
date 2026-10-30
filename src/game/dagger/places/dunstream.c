@@ -1,4 +1,5 @@
 #include "game/dagger/places/dunstream.h"
+#include "engine/scene/keep.h"
 #include "game/dagger/places/doors.h"
 #include "game/dagger/places/wres.h"
 #include "game/dagger/formats/bind.h"
@@ -97,6 +98,30 @@ typedef struct Draw {
 static Draw *g_draw;
 static int g_draw_first[DUN_MAX_BLOCKS + 1];
 static Marker g_marks[MARKS_MAX];
+
+/*
+ * The dungeon's treasure, listed once at open as its creatures are. Block
+ * b's are g_treasure[g_treasure_first[b] .. g_treasure_first[b + 1]).
+ */
+typedef struct Treasure {
+    float x, y, z;
+    df_u32 pos;
+    /* Its picture in TEXTURE.216. */
+    df_u16 record;
+    /* 1 for a flat standing where the block's maker put it; 0 for a random marker's, put on the floor. */
+    df_u8 fixed;
+} Treasure;
+#define TREASURES_MAX 1024
+static Treasure *g_treasure;
+static int g_treasure_first[DUN_MAX_BLOCKS + 1];
+
+/* DFU's randomTreasureIconIndices: the pictures of TEXTURE.216 a heap of treasure can be. */
+static const df_u8 g_treasure_icons[] = {
+    0, 20, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 37, 43, 44, 45, 46, 47
+};
+#define TREASURE_ICONS ((int)(sizeof(g_treasure_icons) / sizeof(g_treasure_icons[0])))
+/* A spare thing's key: its block above as ever, and below this past any offset in a block's file. */
+#define SPARE_THING 0xFFFF00u
 
 /* The dungeon's remap, as a rule for the registry's paint. */
 static int face(void *user, int archive, int record)
@@ -312,11 +337,72 @@ static int draw_creatures(void)
     return 1;
 }
 
+/* Every block's treasure, at open: its random markers' and its fixed flats'. */
+static int list_treasure(void)
+{
+    int b;
+    int n;
+
+    g_treasure = (Treasure *)mem_alloc(TREASURES_MAX * (df_u32)sizeof(Treasure));
+    if (!g_treasure) {
+        return 0;
+    }
+    n = 0;
+    for (b = 0; b < g_dun->nblocks; b++) {
+        const BsaRec *rec;
+        const df_u8 *bytes;
+        int nmark;
+        int i;
+
+        g_treasure_first[b] = n;
+        rec = bsa_find_name(g_blocks, g_dun->block[b].name);
+        bytes = rec ? bsa_read_scratch(g_blocks, rec, BSA_SCRATCH_BLOCK) : 0;
+        nmark = bytes ? rdb_markers(bytes, rec->size, g_marks, MARKS_MAX) : 0;
+        for (i = 0; i < nmark && n < TREASURES_MAX; i++) {
+            if (g_marks[i].record == RDB_MARKER_TREASURE) {
+                g_treasure[n].x = g_marks[i].x;
+                g_treasure[n].y = g_marks[i].y;
+                g_treasure[n].z = g_marks[i].z;
+                g_treasure[n].pos = g_marks[i].pos;
+                /* The marker's own offset picks the picture: the same heap every time it is seen. */
+                g_treasure[n].record = g_treasure_icons[(g_marks[i].pos >> 3) % (df_u32)TREASURE_ICONS];
+                g_treasure[n].fixed = 0;
+                n++;
+            }
+        }
+        nmark = bytes ? rdb_treasures(bytes, rec->size, g_marks, MARKS_MAX) : 0;
+        for (i = 0; i < nmark && n < TREASURES_MAX; i++) {
+            g_treasure[n].x = g_marks[i].x;
+            g_treasure[n].y = g_marks[i].y;
+            g_treasure[n].z = g_marks[i].z;
+            g_treasure[n].pos = g_marks[i].pos;
+            g_treasure[n].record = g_marks[i].record;
+            g_treasure[n].fixed = 1;
+            n++;
+        }
+    }
+    g_treasure_first[g_dun->nblocks] = n;
+    return 1;
+}
+
+/* The picture of a block's spare thing number i: a heap, a different one for each. */
+static int spare_picture(int b, int i)
+{
+    return g_treasure_icons[(b * DUNSTREAM_SPARES + i) % TREASURE_ICONS];
+}
+
 /* Step: the flats' and the creatures' pictures held, read in the next step (they need their sizes). */
 static void hold_pictures(Chunk *c)
 {
     int i;
     int k;
+
+    for (i = g_treasure_first[c->b]; i < g_treasure_first[c->b + 1]; i++) {
+        hold(c, wres_slot(RDB_TREASURE_ARCHIVE, (int)g_treasure[i].record, WRES_SPRITE));
+    }
+    for (i = 0; i < DUNSTREAM_SPARES; i++) {
+        hold(c, wres_slot(RDB_TREASURE_ARCHIVE, spare_picture(c->b, i), WRES_SPRITE));
+    }
 
     for (i = 0; i < c->blk->nflat; i++) {
         hold(c, wres_slot((int)c->blk->flat[i].file, (int)c->blk->flat[i].image, WRES_SPRITE));
@@ -373,6 +459,10 @@ static void place_flats(Chunk *c, StreamOut *out)
         df_u16 w;
         df_u16 h;
 
+        /* A treasure flat is an entity here (place_treasure), so it can be searched and go. */
+        if ((int)c->blk->flat[i].file == RDB_TREASURE_ARCHIVE) {
+            continue;
+        }
         fl = &out->sprites[out->sprites_n];
         *fl = c->blk->flat[i];
         slot = wres_slot((int)fl->file, (int)fl->image, WRES_SPRITE);
@@ -591,6 +681,67 @@ static void place_foes(Chunk *c, StreamOut *out)
     }
 }
 
+/* One picture of TEXTURE.216 as an entity's whole look, facing every viewer. 0 when it did not read. */
+static int pile_look(Entity *e, int record)
+{
+    int slot;
+
+    entity_init(e);
+    slot = wres_slot(RDB_TREASURE_ARCHIVE, record, WRES_SPRITE);
+    e->pose[ENTITY_WALK].slot[0] = (df_u16)slot;
+    return slot >= 0 && size_of(slot, &e->pose[ENTITY_WALK].w[0], &e->pose[ENTITY_WALK].h[0]);
+}
+
+/*
+ * Step: the block's treasure, keyed as its creatures are, then its spare
+ * things. A random marker's heap lies on the floor under it (DFU's RDBLayout);
+ * a fixed flat's point is its centre, as every RDB flat's is.
+ */
+static void place_treasure(Chunk *c, StreamOut *out)
+{
+    int i;
+
+    for (i = g_treasure_first[c->b]; i < g_treasure_first[c->b + 1] && out->entities_n < CAP_ENTITIES; i++) {
+        const Treasure *t;
+        Entity *e;
+        float ground;
+
+        t = &g_treasure[i];
+        e = &out->entities[out->entities_n];
+        if (!pile_look(e, (int)t->record)) {
+            continue;
+        }
+        e->x = t->x;
+        e->y = t->y;
+        e->z = t->z;
+        if (!t->fixed && floor_under(out->models, out->models_n, e->x, e->y, e->z, &ground)) {
+            e->y = ground;
+        } else {
+            e->y -= (float)e->pose[ENTITY_WALK].h[0] * 0.5f;
+        }
+        if (g_keep_place) {
+            e->key.place = g_keep_place;
+            e->key.thing = ((df_u32)c->b << 24) | (t->pos & 0xFFFFFFu);
+        }
+        e->live = 1;
+        out->entities_n++;
+    }
+    /* Not drawn until the game puts one down: they wait at the block's middle. */
+    for (i = 0; i < DUNSTREAM_SPARES && g_keep_place && out->entities_n < CAP_ENTITIES; i++) {
+        Entity *e;
+
+        e = &out->entities[out->entities_n];
+        if (!pile_look(e, spare_picture(c->b, i))) {
+            continue;
+        }
+        e->x = BLOCK * 0.5f;
+        e->z = BLOCK * 0.5f;
+        e->key.place = g_keep_place;
+        e->key.thing = ((df_u32)c->b << 24) | (SPARE_THING + (df_u32)i);
+        out->entities_n++;
+    }
+}
+
 /* Step: the block's water: its start marker's level over its models that reach below it (world.c's). */
 static void place_water(Chunk *c, StreamOut *out)
 {
@@ -720,6 +871,7 @@ static int fill(void *user, int cx, int cz, StreamOut *out)
         return 0;
     case STEP_FOES:
         place_foes(c, out);
+        place_treasure(c, out);
         out->step = STEP_WATER;
         return 0;
     default:
@@ -748,8 +900,9 @@ static void drop(void *user, int cx, int cz, void *data)
 
 /*
  * A chunk came or went: its lights' pools (light.c), and, come, a
- * creature the stream's kept state says is dead is not drawn (live is
- * "drawn"; dead, the game's, is what keep put back).
+ * creature or a heap the stream's kept state says is dead or emptied is
+ * not drawn (live is "drawn"; dead, the game's, is what keep put back),
+ * and a spare thing the game has put down is.
  */
 static void changed(void *user, int slot, int loaded)
 {
@@ -765,6 +918,11 @@ static void changed(void *user, int slot, int loaded)
         for (i = 0; e && i < n; i++) {
             if (e[i].dead) {
                 e[i].live = 0;
+            } else if (dunstream_spare(&e[i])) {
+                const Keep *row;
+
+                row = keep_find(e[i].key);
+                e[i].live = (df_u8)(row && row->game[DUNSTREAM_SPARE_USED]);
             }
         }
     }
@@ -853,8 +1011,8 @@ int dunstream_open(const Dungeon *dungeon, Level *level, float *x, float *y, flo
     }
     /* Classic's draws for the dungeon's random markers, once, by its location id and type; then every creature, in its blocks' order. */
     enemy_dungeon(dungeon->location_id, dungeon->dungeon_type, FOE_LEVEL);
-    if (!draw_creatures()) {
-        log_text(LOG_ERROR, "dunstream: out of memory for the creatures");
+    if (!draw_creatures() || !list_treasure()) {
+        log_text(LOG_ERROR, "dunstream: out of memory for the creatures and the treasure");
         return 0;
     }
     /* Its key's place word, as a whole load's (world.c): a dungeon, its location id. */
@@ -974,6 +1132,42 @@ int dunstream_kind(const Entity *e, int *female)
         *female = d->female;
     }
     return d->kind;
+}
+
+int dunstream_treasure(const Entity *e)
+{
+    int b;
+    int i;
+    df_u32 pos;
+
+    if (!g_open || !g_treasure || !g_keep_place || e->key.place != g_keep_place) {
+        return 0;
+    }
+    b = (int)(e->key.thing >> 24);
+    pos = e->key.thing & 0xFFFFFFu;
+    if (b < 0 || b >= g_dun->nblocks) {
+        return 0;
+    }
+    for (i = g_treasure_first[b]; i < g_treasure_first[b + 1]; i++) {
+        if ((g_treasure[i].pos & 0xFFFFFFu) == pos) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int dunstream_spare(const Entity *e)
+{
+    df_u32 below;
+
+    below = e->key.thing & 0xFFFFFFu;
+    return g_open && g_keep_place && e->key.place == g_keep_place && below >= SPARE_THING
+           && below < SPARE_THING + DUNSTREAM_SPARES;
+}
+
+int dunstream_dungeon_type(void)
+{
+    return g_open && g_dun ? g_dun->dungeon_type : -1;
 }
 
 int dunstream_passive(const Entity *e)

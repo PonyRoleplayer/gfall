@@ -7,6 +7,7 @@
 #include "game/dagger/play/loot.h"
 #include "game/dagger/play/menu.h"
 #include "game/dagger/play/overlay.h"
+#include "game/dagger/play/pile.h"
 #include "game/dagger/play/player.h"
 #include "game/dagger/play/rules.h"
 #include "game/dagger/play/screen.h"
@@ -96,30 +97,30 @@ static void menu_over_play(int which)
     input_set_pointer(which != MENU_NONE);
 }
 
-/* The inventory over the stilled world: the player's own, or with a body's things beside it. */
-static void bag_over_play(const Entity *body)
+/* The inventory over the stilled world: the player's own, or with what they are searching beside it. */
+static void bag_over_play(Entity *searched)
 {
-    bagview_open(&g_player, body);
+    bagview_open(&g_player, searched);
     gfx_set_pause(1);
     input_set_pointer(1);
 }
 
 /*
- * The use key: a body the view rests on is searched; anything else is
- * the engine's to use (doors, levers, passages). An empty body says so
- * and opens nothing.
+ * The use key: a body or a heap the view rests on is searched; anything
+ * else is the engine's to use (doors, levers, passages). With nothing to
+ * find it says so and opens nothing.
  */
 static void use_key(const Camera *cam)
 {
-    const Entity *body;
+    Entity *searched;
 
-    body = loot_find(&g_level->scene, cam);
-    if (!body) {
+    searched = loot_find(&g_level->scene, cam);
+    if (!searched) {
         interact_request_use();
-    } else if (!bag_body_has_things(body)) {
+    } else if (!bag_finds_things(searched, g_player.sheet.level)) {
         interact_say("You find nothing.");
     } else {
-        bag_over_play(body);
+        bag_over_play(searched);
     }
 }
 
@@ -187,7 +188,7 @@ void game_enter(const Level *level, Camera *cam, float x, float y, float z, floa
     }
     /* Every body's contents hang off this: each new game finds other things. */
     loot_new_game(prof_now());
-    bag_new_game();
+    pile_new_game();
     commands_player(&g_player);
     combat_reset();
     foes_reset();

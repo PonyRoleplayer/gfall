@@ -1,6 +1,7 @@
 #include "game/dagger/play/bag.h"
 #include "game/dagger/play/doll.h"
 #include "game/dagger/play/loot.h"
+#include "game/dagger/play/pile.h"
 #include "game/dagger/play/rules.h"
 #include "game/dagger/formats/cif.h"
 #include "game/dagger/formats/img.h"
@@ -135,8 +136,8 @@ enum {
 
 static struct {
     Player *player;
-    const Entity *body;
-    /* A body's things or what was dropped, whichever the right list shows. */
+    /* What is being searched, or 0: the right list is then what is being dropped. */
+    Entity *searched;
     Inventory *remote;
     /* A heap for the screen's buffers and pictures, another for what is only read to be copied. */
     MemHeap *heap;
@@ -165,20 +166,17 @@ static struct {
     int open;
 } g;
 
-/* What the player has dropped: no pile lies in the world yet, so it waits here. */
-static Inventory g_dropped;
-/* A body's things as they stand now, and which of its rolled things each is (loot.c). */
-static Inventory g_on_body;
-static df_u8 g_body_origin[INVENTORY_MAX];
+/* What the right list shows, and which of the searched thing's rolled things each is (loot.c). */
+static Inventory g_remote;
+static df_u8 g_origin[INVENTORY_MAX];
 
-void bag_new_game(void)
+int bag_finds_things(Entity *searched, int level)
 {
-    inventory_clear(&g_dropped);
-}
-
-int bag_body_has_things(const Entity *body)
-{
-    return loot_open(body, &g_on_body, g_body_origin) > 0;
+    if (loot_open(searched, level, &g_remote, g_origin) > 0) {
+        return 1;
+    }
+    loot_closed(searched, &g_remote);
+    return 0;
 }
 
 /* An IMG's pixels in the screen's heap, or 0. */
@@ -189,12 +187,34 @@ static const df_u8 *read_pixels(const char *name)
     return img_load(name, &pic) ? pic.pixels : 0;
 }
 
+/*
+ * What was dropped lands at the player's feet. Should there be nowhere to
+ * put it, with no block loaded round them, it goes back in the pack, so
+ * nothing is ever lost.
+ */
+static void land_what_was_dropped(void)
+{
+    int i;
+
+    if (!g_remote.count || pile_drop(&g_remote, g.player->body.feet)) {
+        return;
+    }
+    for (i = 0; i < g_remote.count; i++) {
+        inventory_add(&g.player->pack, &g_remote.item[i]);
+    }
+}
+
 void bag_close(void)
 {
     if (!g.open) {
         return;
     }
     g.open = 0;
+    if (g.searched) {
+        loot_closed(g.searched, &g_remote);
+    } else {
+        land_what_was_dropped();
+    }
     doll_forget_files();
     mem_heap_delete(g.scratch);
     mem_heap_delete(g.heap);
@@ -202,7 +222,7 @@ void bag_close(void)
     g.heap = 0;
 }
 
-int bag_open(Player *p, const Entity *body)
+int bag_open(Player *p, Entity *searched)
 {
     MemHeap *was;
     int ok;
@@ -216,14 +236,14 @@ int bag_open(Player *p, const Entity *body)
     }
     g.open = 1;
     g.player = p;
-    g.body = body;
+    g.searched = searched;
     g.mode = BUTTON_EQUIP;
     g.doll_stale = 1;
-    if (body) {
-        loot_open(body, &g_on_body, g_body_origin);
-        g.remote = &g_on_body;
+    g.remote = &g_remote;
+    if (searched) {
+        loot_open(searched, p->sheet.level, &g_remote, g_origin);
     } else {
-        g.remote = &g_dropped;
+        inventory_clear(&g_remote);
     }
     was = mem_heap_use(g.heap);
     g.screen = (df_u8 *)mem_alloc(SCREEN_BYTES);
@@ -535,7 +555,7 @@ static void compose_targets(void)
                df_iround(rules_max_carry(g.player->sheet.attribute[ATTR_STRENGTH])));
     label(r->x + 1, r->y + 2 + LINE_H, line);
     r = &g_target_rect[LIST_REMOTE];
-    label(r->x + 1, r->y + 2, g.body ? "Body" : "Dropped");
+    label(r->x + 1, r->y + 2, g.searched ? loot_label(g.searched) : "Dropped");
     log_format(line, (int)sizeof(line), "%d kg", df_iround(inventory_weight(g.remote)));
     label(r->x + 1, r->y + 2 + LINE_H, line);
 }
@@ -750,17 +770,17 @@ static void wear_changed(void)
     g.over_index = -1;
 }
 
-/* A thing out of the pack onto what is beside the player: never onto a body, which is only emptied. */
+/* A thing out of the pack into the right list: never onto a body or treasure, which are only emptied. */
 static void drop_item(int i)
 {
     Inventory *pack;
 
     pack = &g.player->pack;
-    if (g.body) {
-        g.note = "You cannot leave things on a body.";
+    if (g.searched && !loot_takes_things(g.searched)) {
+        g.note = "You cannot leave things here.";
         return;
     }
-    if (inventory_add(&g_dropped, &pack->item[i]) < 0) {
+    if (!pile_room(g.searched, g_remote.count + 1) || inventory_add(&g_remote, &pack->item[i]) < 0) {
         g.note = "There is no room to drop it.";
         return;
     }
@@ -790,10 +810,10 @@ static void take_item(int i)
             return;
         }
     }
-    if (g.body) {
-        loot_taken(g.body, g_body_origin[i]);
+    if (g.searched) {
+        loot_taken(g.searched, g_origin[i]);
         for (n = i; n + 1 < g.remote->count; n++) {
-            g_body_origin[n] = g_body_origin[n + 1];
+            g_origin[n] = g_origin[n + 1];
         }
     }
     inventory_remove(g.remote, i);

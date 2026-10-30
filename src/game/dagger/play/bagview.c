@@ -23,9 +23,9 @@ static void send_screen(void)
     g_pic = pic_load(bag_pixels(), SCREEN_W, SCREEN_H, g_rgb, 0);
 }
 
-void bagview_open(Player *p, const Entity *body)
+void bagview_open(Player *p, Entity *searched)
 {
-    if (g_open || !img_art_palette(g_rgb) || !bag_open(p, body)) {
+    if (g_open || !img_art_palette(g_rgb) || !bag_open(p, searched)) {
         return;
     }
     g_open = 1;

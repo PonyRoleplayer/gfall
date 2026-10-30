@@ -21,6 +21,7 @@
  *         and condition.
  *   LOOT: classic's loot tables, by the letter a creature names (ENEM's
  *         loot): gold, and each kind of thing's chance.
+ *   LDUN: which of those a dungeon of each type fills its treasure from.
  *
  * Read docs/game.md (Combat) before editing.
  */
@@ -144,6 +145,13 @@ typedef struct Material {
     df_u8 armor;
 } Material;
 
+/* Which loot table a dungeon of one type fills its treasure from (LootTables' keys by location). */
+typedef struct DungeonLoot {
+    df_u16 id;
+    /* Its table's letter. */
+    df_u8 letter;
+} DungeonLoot;
+
 /*
  * One loot table (LootTables.DefaultLootTables). Gold is a roll between
  * the two, times the player's level. The rest are percent chances: each
@@ -175,15 +183,19 @@ extern const RecSchema weapon_schema;
 extern const RecSchema armor_schema;
 extern const RecSchema material_schema;
 extern const RecSchema loot_schema;
+extern const RecSchema dungeon_loot_schema;
 RecTable *item_table(void);
 RecTable *weapon_table(void);
 RecTable *armor_table(void);
 RecTable *material_table(void);
 RecTable *loot_table(void);
+RecTable *dungeon_loot_table(void);
 const ItemTemplate *item_template(int id);
 const WeaponTemplate *weapon_template(int id);
 const ArmorTemplate *armor_template(int id);
 const Material *material(int id);
 const LootChance *loot_chance(int letter);
+/* The loot table a dungeon of this type (Dungeon.dungeon_type) fills its treasure from, or 0. */
+const LootChance *dungeon_loot(int dungeon_type);
 
 #endif

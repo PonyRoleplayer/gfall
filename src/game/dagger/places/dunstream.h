@@ -22,6 +22,14 @@
  * over its flooded models). Its doors and creatures are keyed as a
  * whole load's are, and the stream keeps what the player changed.
  *
+ * Beyond a whole load, a block's treasure stands as entities, not flats,
+ * so that the game can search them and they can go when emptied: its
+ * random treasure markers, and its fixed TEXTURE.216 flats. Each block
+ * also holds DUNSTREAM_SPARES spare things, not drawn, for the game to put
+ * down where it likes: a pile the player drops. Being entities of the
+ * block, they keep their place across origin moves and when the block
+ * goes and comes back, with no list of the game's to move.
+ *
  * One stream at a time, in the current temp heap; pictures and meshes
  * by session (wres.c).
  */
@@ -45,6 +53,16 @@ void dunstream_close(void);
 int dunstream_kind(const Entity *e, int *female);
 /* 1 when its marker says it attacks only when attacked (enemy_at's passive). */
 int dunstream_passive(const Entity *e);
+/* 1 for an entity that is one of a block's treasure piles. */
+int dunstream_treasure(const Entity *e);
+/* 1 for an entity that is one of a block's spare things, used or not. */
+int dunstream_spare(const Entity *e);
+/* How many spare things a block holds. */
+#define DUNSTREAM_SPARES 4
+/* The byte of a spare's keep row (Keep.game) that says it is in use: set, it comes back drawn with its block. */
+#define DUNSTREAM_SPARE_USED 15
+/* The open dungeon's type (Dungeon.dungeon_type), which names its treasure's loot table; -1 with none open. */
+int dunstream_dungeon_type(void);
 int dunstream_active(void);
 
 #endif

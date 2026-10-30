@@ -275,7 +275,7 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 
 ## Loot and the inventory (built: P5)
 
-**Why `inventory.c` and not the engine's pack.** `scene/pack.c` keeps weight per kind of item and 16 slots summed into 4 stats. Here weight and value belong to one item, by its material; there are more places to wear things than slots; and armour counts per body part. So the game keeps its own.
+**Inventory is the game's, not the engine's.** The engine is simulation and world: it holds, moves and draws what stands in a place. What an item is, what is carried and what a body holds are the game's, in `play/`. The engine's generic `scene/pack.c` is not used: there weight belongs to a kind of item and wearing is 16 slots summed into 4 stats, where here weight and value belong to one item, by its material, and armour counts per body part.
 
 ### Items and armour
 
@@ -283,19 +283,29 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **A piece's numbers** (ItemBuilder.ApplyArmorMaterial): plate as a weapon's material; leather half the weight, the template's price; chain the template's weight, twice the price.
 - **Armour** (DaggerfallEntity.UpdateEquippedArmorValues). Each of the seven body parts starts at 100, lower being better. A piece takes 5 × its material's armour (iron 7, steel 9, daedric 21, leather 3, chain 6) off its part. A shield takes 5 × its own (1..4, whatever it is made of) off each part it covers.
 - **Armour changes combat.** A creature's blow comes at one part by classic's odds (of 20: head 2, each arm 3, chest 4, hands 4, legs 3, feet 1), and that part's value goes into its chance to hit. A rat's 83% at a bare warrior is 48% through iron.
+- **Colours** (`cif_metal`, DFU's ImageProcessing.GetMetalColorTable, classic's own tables). Weapons and armour are drawn in the sixteen palette indices from 0x70, which are steel as they stand; each other metal swaps those sixteen by its table, on the doll, in the lists and in the swing alike. Leather and chain keep their picture's colours (ItemHelper.GetArmorDyeColor gives them none). A picture's pixels outside those sixteen stay as drawn: a sword's hilt is always gold, and two of the six helms (variants 0 and 3) are gold all over, whatever they are made of, so `additem helm daedric`, which takes the first variant, shows a gold helm. Clothing's dyes, the sixteen from 0x60, come with clothing. `make hostcheck` writes every metal side by side to `build/dye0.ppm`.
 - **Wearing.** A weapon goes in the right hand. The left hand takes only a shield until a second weapon can swing. A two-handed weapon takes the shield off, and a shield takes a two-handed weapon out of the hand.
 - **Carrying:** Strength × 1.5 kg (UESP); past it a thing cannot be taken. A pack's gold weighs 400 coins a kilogram. Classic's weight does not slow the walk (DFU's PlayerSpeedChanger takes no weight).
 
 **Not yet:** condition wearing down, a class's forbidden materials and armour, clothing, jewellery and everything else in the other tabs, class enemies wearing what they carry.
 
-### What a body holds
+### What can be searched
 
 `play/loot.c`, by LootTables.GenerateRandomLoot and FormulaHelper's RandomMaterial and RandomArmorMaterial.
 
-- **The use key** searches a dead creature the view rests on within 3.2 m (ours), no wall between (`loot_find`); otherwise it does what it always did. A body with nothing says "You find nothing."
-- **The rolls,** under the table the creature's kind names (`ENEM.loot`, `LOOT`): gold between the table's two figures, times the player's level; then weapons, then armour, each rolling again at half the chance after a success. A weapon or piece is any of its kind alike; armour is leather 69%, chain 20%, else plate; plate and weapons take their material from a roll of 0..255 moved by the level.
-- **A body holds no list.** Its things are worked out when it is opened, from the game's seed (`loot_new_game`) and its own key, on its own dice, so nothing else rolled changes them. A dungeon of bodies costs no memory until one is searched. Its keep row holds the rest in its game bytes (`COMBAT_KEEP_*`): the player's level when it died, and a bit for each thing taken. So what was taken stays gone as its block goes and comes back, and a save only has to keep the seed and the rows. The price: a body can only be emptied, not given things.
-- **Not yet:** treasure piles, ingredients, books, potions, maps; the other columns of `LOOT` are read in but not rolled.
+- **The use key** searches what the view rests on within 3.2 m (ours), no wall between (`loot_find`): a dead creature, a heap of treasure, a dropped pile. Otherwise it does what it always did. With nothing to find it says "You find nothing."
+- **Treasure** (`dunstream.c`, DFU's RDBLayout). A block's random treasure markers (archive 199, record 19) and its fixed flats of TEXTURE.216 stand as entities, keyed like its creatures, not as flats, so they can be searched and can go. A random marker's heap lies on the floor under it, its picture one of DFU's 20 (`randomTreasureIconIndices`), chosen by the marker's offset so it is the same each time it is seen. It fills from the table the dungeon's type names (`LDUN`, `dungeon_loot`): a human stronghold's is N. Emptied, it goes for good (`Entity.dead`, kept); a body stays where it fell. The hold has 8. A place loaded whole still draws its treasure flats as flats, and nothing searches them: GFALL only plays the stream.
+- **The rolls,** under the table the creature's kind names (`ENEM.loot`, `LOOT`) or the dungeon's type does: gold between the table's two figures, times the player's level; then weapons, then armour, each rolling again at half the chance after a success. A weapon or piece is any of its kind alike; armour is leather 69%, chain 20%, else plate; plate and weapons take their material from a roll of 0..255 moved by the level.
+- **A body or a heap holds no list.** Its things are worked out when it is opened, from the game's seed (`loot_new_game`) and its own key, on its own dice, so nothing else rolled changes them. A dungeon of them costs no memory until one is searched. Its keep row holds the rest in its game bytes (`COMBAT_KEEP_*`): the player's level when it died or was first opened, and a bit for each thing taken. So what was taken stays gone as its block goes and comes back, and a save only has to keep the seed and the rows. The price: they can only be emptied, not given things.
+- **Not yet:** ingredients, books, potions, maps; the other columns of `LOOT` are read in but not rolled.
+
+### Dropped piles
+
+`play/pile.c`. Dropping is classic's: Remove moves a thing to the right list, and when the screen closes those things land as a pile at the player's feet (DFU's CreateDroppedLootContainer). Near a pile already there (48 units, ours) they join it. Searched again, a pile takes things and gives them back, and with nothing in it, it goes.
+
+- **Where it stands.** A pile is one of its block's `DUNSTREAM_SPARES` (4) spare things: entities the stream builds with every block, not drawn until used. Being the block's entities, the stream moves them with the origin and keeps their place when the block goes and comes back, so the game needs no list of positions and the engine no new call. A spare's keep row says it is used (`DUNSTREAM_SPARE_USED`), which `changed` in `dunstream.c` reads to draw it again. A block's fifth pile joins its nearest.
+- **What is in it** is one pool of 256 items in `pile.c`, each marked with its pile's key, so a block gone from memory loses nothing and a save only writes the pool. Past 256 the screen says there is no room. With no block loaded round the player the things go back in the pack: nothing dropped is ever lost.
+- **The card:** each block holds its 4 spare pictures whether used or not, a few KB of its picture residency.
 
 ### The inventory screen
 
@@ -304,8 +314,7 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **Everything is classic's picture at classic's place,** by DFU's DaggerfallInventoryWindow rectangles: INVE00I0.IMG the screen, INVE01I0.IMG the chosen tab and button in gold, INVE06I0 and INVE07I0 a list's green and red arrows, ITEM00I0 the stone behind the small panel, FONT0003.FNT the labels (`formats/smallfont.c`) in classic's ink, index 146.
 - **The doll** (`doll_compose`, DFU's PaperDollRenderer): the race's SCBG background cropped at 8, 7, the body, its underclothes, the head, then what is worn by the template's draw order. Each picture's own header places it, less classic's doll corner 200, 8. Armour's archive is 245 for a woman and 249 for a man, plus the body shape (Argonian 0, elf 1, human 2, Khajiit 3). A worn picture's index 255 is a mask: it shows the background again, which is how a helm takes off the horns under it. In a list it is only clear.
 - **The lists** show four rows of 50 × 38. A thing worn is on the doll, not in the list. Clicks go by the mode: Equip wears, Remove drops, Info shows a box. A click on the right list takes the thing, a click on the doll takes it off, found by a byte per doll pixel saying which worn place drew it.
-- **Dropped things** wait in a list of the screen's own, since no pile lies in the world yet. They do not last past a new game.
-- **Ours, not classic's:** the "Carrying" and "Dropped" words over the lists, and the info box, a dark box where classic has a scroll of TEXT.RSC lines. Wagon, Use and Gold say why they do nothing yet.
+- **Ours, not classic's:** the "Carrying", "Dropped", "Body", "Treasure" and "Pile" words over the lists, and the info box, a dark box where classic has a scroll of TEXT.RSC lines. Wagon, Use and Gold say why they do nothing yet.
 
 **What it costs the 233.** The whole screen is composed in memory into one 320 × 200 picture, only when something on it changes: a click, or the pointer coming to rest on another thing. An open frame sends nothing to the card and draws that one picture's 29 quads, however full the lists are. It takes the 66560 bytes of `GAME_PICTURE_KB` the controls screen already counts on, not one more. A fitted item picture is kept in one of 8 places, so a list scrolled back reads nothing. While it is open `gfx_frame` gets no level (`game_world_shows`, the controls screen too): no world is drawn only to be covered. All this is by the design's sums and host tests: **none of it has run on the 233 yet.**
 
@@ -358,7 +367,7 @@ Daggerfall's tables are records in MAIN.DAT, cooked on the first run, with mods 
 | Tables | Holds | From |
 | --- | --- | --- |
 | `LOCS`, `WMAP`, `CLIM` | the index of 4232 dungeons and 15251 towns; the heights, climates and locations' pixels; each climate's numbers | MAPS.BSA, WOODS.WLD, CLIMATE.PAK (they cut the 233's start-up) |
-| `ITEM`, `MAGI`, `WEAP`, `MATL`, `ARMR`, `LOOT` | items, artifacts, weapons, materials, armour, loot | the exe (via DFU), MAGIC.DEF; pictures stay in ARENA2 |
+| `ITEM`, `MAGI`, `WEAP`, `MATL`, `ARMR`, `LOOT`, `LDUN` | items, artifacts, weapons, materials, armour, loot, each dungeon type's loot table | the exe (via DFU), MAGIC.DEF; pictures stay in ARENA2 |
 | `CMON`, `CWEK`, `CALE` | the calendar (built) | the exe; the engine takes it whole (`clock_set_calendar`, request 9) |
 | `RACE`, `CLAS`, `SKIL`, `SPEL`, `EFCT`, `ENCH`, `POTN`, `BIOG` | races, classes, skills, spells, effects, enchantments, potions, background | CLASS*.CFG, SPELLS.STD, BIOG*.TXT, the exe |
 | `FACT`, `NAME`, `PEOP`, `POLI`, `GILD`, `LAW`, `PRIC`, `HOLI`, `FLAT`, `MUSI`, `SWAP`, `DISE`, `CURS` | factions, names, townspeople, politics, guilds, law, prices, holidays, flats, music, swaps, diseases, curses | FACTION.TXT, NAMEGEN.DAT, POLITIC.PAK, FLATS.CFG, the exe |
@@ -380,7 +389,7 @@ The first goal is a **prototype**: from classic's start menu, Privateer's Hold p
 | P2 | A character (built; its bars run on the target): a fixed level-1 one, classic's attributes, skills and vitals; vitals bars on the HUD; `RACE`, `CLAS`, `SKIL` | GAME, ENGINE's pictures | derived values match UESP's worked figures |
 | P3 | The start menu (built; the title, the start menu and the start into the hold run on the target, the options and controls not tried there yet): classic's main menu (PICK03I0.IMG: load, start, exit) before the hold, the title before it, Escape's menu in play (go on, exit) | GAME, ENGINE's pictures | GFALL opens on the menu, starts the hold, and exits from both |
 | P4 | Combat (built; the swing runs on the target, striking and creatures awake not tried there yet; the player's death is back to the start until saves; LEVELFALL's view of a creature's state not yet): the weapon's swing from WEAPON##.CIF (the shown swing's frames only on the card), classic's to-hit and damage; creatures wake, chase on bodies of their size, attack, flinch, die; the player's death; `WEAP`, `MATL` | GAME; LEVELFALL shows each creature's state | the hold can be cleared, or the player killed, from records |
-| P5 | Loot and inventory (built, host-tested, not run on the target; treasure piles and the other tabs' items not yet): bodies, gold, pick up, equip weapon and armour, classic's inventory screen and paper doll; `ITEM`, `ARMR`, `LOOT` | GAME, ENGINE's pictures | equipment changes combat |
+| P5 | Loot and inventory (built, host-tested, not run on the target; the other tabs' items not yet): bodies, treasure, dropped piles, gold, pick up, equip weapon and armour, classic's inventory screen and paper doll, classic's metal colours; `ITEM`, `ARMR`, `LOOT`, `LDUN` | GAME, ENGINE's pictures | equipment changes combat |
 | P6 | Character creation and levelling: classic's screens, background questions, skill gains, level-ups; the character's attributes and the damage rules polished | GAME | |
 | P7 | Prototype polish: loading holds, one save slot in `DATA\`, the menu's load, rest and wait, a 233 profile pass | GAME | from the menu through the hold and back after a save |
 | P8 | Out of the hold: `places/travel.c` lifted from LEVELFALL and shared; the hold's outside in the stream, the nearest town, its houses | GAME and LEVELFALL | from the menu to town and back after a save, in one session |

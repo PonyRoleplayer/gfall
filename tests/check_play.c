@@ -24,6 +24,7 @@
 #include "game/dagger/play/commands.h"
 #include "game/dagger/play/inventory.h"
 #include "game/dagger/play/loot.h"
+#include "game/dagger/play/pile.h"
 #include "game/dagger/play/bag.h"
 #include "game/dagger/play/doll.h"
 #include "game/dagger/play/weapon.h"
@@ -359,6 +360,7 @@ static void check_dunstream(void)
     int models, sprites, lights, movers, ents, water;
     int door;
     KeepKey key;
+    int fixed_treasure;
     int i;
 
     keep_clear();
@@ -400,6 +402,7 @@ static void check_dunstream(void)
     for (i = 0; i < level.scene.nlights; i++) {
         lights += level.scene.lights[i].radius > 0.0f;
     }
+    fixed_treasure = 0;
     door = -1;
     for (i = 0; i < level.scene.nmovers; i++) {
         if (level.scene.movers[i].inst) {
@@ -410,8 +413,13 @@ static void check_dunstream(void)
             }
         }
     }
+    /* Creatures alone: the stream's entities also hold the block's treasure and spare things. */
     for (i = 0; i < level.scene.nentities; i++) {
-        ents += level.scene.entities[i].live;
+        ents += level.scene.entities[i].live && dunstream_kind(&level.scene.entities[i], 0) >= 0;
+    }
+    /* The whole load draws treasure flats as flats; the stream makes them entities. */
+    for (i = 0; i < world_flat_count(whole); i++) {
+        fixed_treasure += world_flat(whole, i)->file == RDB_TREASURE_ARCHIVE;
     }
     for (i = 0; i < level.scene.nwater; i++) {
         water += level.scene.water[i].x1 > level.scene.water[i].x0;
@@ -423,7 +431,7 @@ static void check_dunstream(void)
     check_expect(models == world_model_count(whole) && lights == world_light_count(whole)
                      && movers == world_mover_count(whole) && ents == world_entity_count(whole) && water == 0,
                  "dunstream: the hold's ring does not hold what the hold loaded whole holds");
-    check_expect(sprites == world_flat_count(whole), "dunstream: the hold's ring has another count of flats");
+    check_expect(sprites + fixed_treasure == world_flat_count(whole), "dunstream: the hold's ring has another count of flats");
     /* Each creature the same one: its key, and where it stands (the hold's start block is the stream's origin). */
     {
         int same;
@@ -1412,14 +1420,14 @@ static void check_loot(void)
             check_expect(loot_find(&level.scene, &cam) == body, "loot: looking down at a body did not find it");
             cam.pitch = 1.2f;
             check_expect(loot_find(&level.scene, &cam) != body, "loot: looking away still found the body");
-            found = loot_open(body, &one, origin);
-            loot_open(body, &two, origin);
+            found = loot_open(body, 20, &one, origin);
+            loot_open(body, 20, &two, origin);
             check_expect(found == two.count, "loot: a body changed what it holds between two looks");
             /* Take the first thing, if it has one: it must stay gone, the rest the same. */
             things = found;
             if (things > 0) {
                 loot_taken(body, origin[0]);
-                loot_open(body, &two, origin);
+                loot_open(body, 20, &two, origin);
                 check_expect(two.count == things - 1 && (things == 1 || two.item[0].template_id == one.item[1].template_id),
                              "loot: a thing taken off a body came back");
             }
@@ -1430,6 +1438,309 @@ static void check_loot(void)
         keep_clear();
     }
     printf("loot: seeds repeat; materials by level; bodies searched by the view\n");
+}
+
+/*
+ * Every metal side by side, for a person to look at against classic's:
+ * build/dye0.ppm, a row a metal, of a cuirass, a helm, greaves and a longsword.
+ * Also says how much of each picture is in the ramp the tables swap.
+ */
+static void write_dye_sheet(void)
+{
+    static const int records[4][2] = { { 245, 4 }, { 245, 29 }, { 245, 12 }, { 234, 12 } };
+    enum { CELL_W = 100, CELL_H = 80, SHEET_W = 4 * CELL_W, SHEET_H = CIF_METALS * CELL_H };
+    static df_u8 sheet[SHEET_W * SHEET_H];
+    df_u8 rgb[768];
+    FILE *f;
+    int metal;
+    int kind;
+    int i;
+
+    if (!img_art_palette(rgb)) {
+        return;
+    }
+    memset(sheet, 0, sizeof(sheet));
+    for (kind = 0; kind < 4; kind++) {
+        const Image *picture;
+        int in_ramp;
+        int drawn;
+
+        picture = texture_load(records[kind][0], records[kind][1]);
+        if (!picture) {
+            check_expect(0, "dye: an armour or weapon picture did not read");
+            continue;
+        }
+        in_ramp = 0;
+        drawn = 0;
+        for (i = 0; i < picture->width * picture->height; i++) {
+            int index;
+
+            index = picture->index[i];
+            if (index && index != DOLL_MASK) {
+                drawn++;
+                in_ramp += index >= CIF_RAMP && index < CIF_RAMP + 16;
+            }
+        }
+        printf("dye: TEXTURE.%d record %d, %d of %d pixels in the metal ramp\n", records[kind][0], records[kind][1], in_ramp, drawn);
+        for (metal = 0; metal < CIF_METALS; metal++) {
+            int row;
+
+            for (row = 0; row < picture->height && row < CELL_H; row++) {
+                int col;
+
+                for (col = 0; col < picture->width && col < CELL_W; col++) {
+                    int index;
+
+                    index = picture->index[row * picture->width + col];
+                    if (index && index != DOLL_MASK) {
+                        sheet[(metal * CELL_H + row) * SHEET_W + kind * CELL_W + col] = (df_u8)cif_metal(index, metal);
+                    }
+                }
+            }
+        }
+    }
+    f = fopen("build/dye0.ppm", "wb");
+    if (!f) {
+        check_expect(0, "dye: the sheet did not write");
+        return;
+    }
+    fprintf(f, "P6\n%d %d\n255\n", SHEET_W, SHEET_H);
+    for (i = 0; i < SHEET_W * SHEET_H; i++) {
+        fwrite(rgb + sheet[i] * 3, 1, 3, f);
+    }
+    fclose(f);
+}
+
+/* The colours by classic's tables: steel as drawn, the rest swapped, nothing else touched. */
+static void check_dye(void)
+{
+    check_expect(cif_metal(0x75, MATERIAL_STEEL) == 0x75, "dye: steel is not the pictures as drawn");
+    check_expect(cif_metal(0x70, MATERIAL_IRON) == 0x77 && cif_metal(0x7F, MATERIAL_IRON) == 0x5F,
+                 "dye: iron's ends are not classic's");
+    check_expect(cif_metal(0x7D, MATERIAL_DWARVEN) == 0x9D, "dye: dwarven is not classic's");
+    check_expect(cif_metal(0x70, MATERIAL_DAEDRIC) == 0xEF && cif_metal(0x7F, MATERIAL_DAEDRIC) == 0xFE,
+                 "dye: daedric's ends are not classic's");
+    check_expect(cif_metal(0x6F, MATERIAL_DAEDRIC) == 0x6F && cif_metal(0x80, MATERIAL_DAEDRIC) == 0x80,
+                 "dye: a colour outside the ramp was swapped");
+    {
+        Item it;
+
+        item_make(&it, ITEM_CUIRASS, MATERIAL_LEATHER);
+        check_expect(item_metal(&it) == -1, "dye: leather was given a metal");
+        item_make(&it, ITEM_CUIRASS, MATERIAL_CHAIN);
+        check_expect(item_metal(&it) == -1, "dye: chain was given a metal");
+        item_make(&it, ITEM_CUIRASS, MATERIAL_EBONY);
+        check_expect(item_metal(&it) == MATERIAL_EBONY, "dye: ebony armour is not ebony");
+    }
+    write_dye_sheet();
+}
+
+/* The first entity of the stream a test asks for: a heap of treasure when treasure is 1, else a spare thing that is free. */
+static Entity *find_in_stream(int treasure)
+{
+    int s;
+
+    for (s = 0; s < stream_slots(); s++) {
+        Entity *ents;
+        int first;
+        int n;
+        int i;
+
+        ents = stream_slot_entities(s, &first, &n);
+        for (i = 0; ents && i < n; i++) {
+            if (treasure ? (ents[i].live && dunstream_treasure(&ents[i])) : (!ents[i].live && dunstream_spare(&ents[i]))) {
+                return &ents[i];
+            }
+        }
+    }
+    return 0;
+}
+
+/* The entity with this key, as it stands after its block came back. */
+static Entity *entity_by_key(KeepKey key)
+{
+    int s;
+
+    for (s = 0; s < stream_slots(); s++) {
+        Entity *ents;
+        int first;
+        int n;
+        int i;
+
+        ents = stream_slot_entities(s, &first, &n);
+        for (i = 0; ents && i < n; i++) {
+            if (ents[i].key.place == key.place && ents[i].key.thing == key.thing) {
+                return &ents[i];
+            }
+        }
+    }
+    return 0;
+}
+
+/* 1 when the view finds e, looking down at it from 40 units off on one of its four sides. */
+static int found_from_a_side(const Scene *scene, const Entity *e)
+{
+    int side;
+
+    for (side = 0; side < 4; side++) {
+        Camera cam;
+        float yaw;
+
+        yaw = (float)side * (DF_TAU / 4.0f);
+        camera_set(&cam, e->x - df_sin(yaw) * 40.0f, e->y + 60.0f, e->z - df_cos(yaw) * 40.0f, yaw, -0.9f);
+        if (loot_find(scene, &cam) == e) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Takes the camera eight blocks off, so the hold drops, and brings it back, so its blocks fill again. */
+static void away_and_back(Camera *cam, float x, float y, float z, float yaw, float pitch)
+{
+    int i;
+
+    camera_set(cam, x + 8.0f * 2048.0f, y, z, yaw, pitch);
+    for (i = 0; i < 200; i++) {
+        dunstream_update(cam, 50.0f);
+    }
+    camera_set(cam, x, y, z, yaw, pitch);
+    dunstream_fill(cam);
+}
+
+/* Heaps of treasure and dropped piles standing in the streamed hold, through what the screen calls. */
+static void check_piles(void)
+{
+    Dungeon hold;
+    Level level;
+    Camera cam;
+    float x, y, z, yaw, pitch;
+    Inventory on_it;
+    df_u8 origin[INVENTORY_MAX];
+    Entity *pile;
+    Entity *heap;
+    KeepKey key;
+    Item it;
+    Inventory things;
+    float feet[3];
+    int heaps;
+    int s;
+
+    keep_clear();
+    combat_reset();
+    pile_new_game();
+    if (!dungeon_load(&hold) || !dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
+        check_expect(0, "piles: the hold's stream did not open");
+        return;
+    }
+    camera_set(&cam, x, y, z, yaw, pitch);
+    dunstream_fill(&cam);
+    loot_new_game(5u);
+
+    check_expect(dunstream_dungeon_type() == hold.dungeon_type && dungeon_loot(hold.dungeon_type) != 0,
+                 "piles: the hold's type names no loot table");
+    /* DFU's keys: a human stronghold, the hold, fills from table N; a dragon's den from S. */
+    check_expect(dungeon_loot(2) == loot_chance('N') && dungeon_loot(14) == loot_chance('S'),
+                 "piles: dungeon types do not name classic's loot tables");
+
+    /* Treasure: every heap on its own key, and none of it taken for a creature. */
+    heaps = 0;
+    for (s = 0; s < level.scene.nentities; s++) {
+        const Entity *e;
+
+        e = &level.scene.entities[s];
+        if (e->live && dunstream_treasure(e)) {
+            heaps++;
+            check_expect(dunstream_kind(e, 0) < 0, "piles: a heap of treasure was taken for a creature");
+            check_expect(e->pose[ENTITY_WALK].w[0] > 0 && e->radius == 0.0f, "piles: a heap has no picture, or stops the player");
+        }
+    }
+    printf("piles: the hold has %d heaps of treasure\n", heaps);
+    check_expect(heaps > 0, "piles: the hold has no treasure");
+
+    heap = find_in_stream(1);
+    if (heap) {
+        int first_look;
+
+        /* The same heap holds the same things at each look, whatever level looks second. */
+        first_look = loot_open(heap, 20, &on_it, origin);
+        check_expect(loot_open(heap, 1, &on_it, origin) == first_look, "piles: a heap changed between two looks");
+        /* Looking down at it from a little way off, from whichever side no wall stands, the view finds it. */
+        check_expect(found_from_a_side(&level.scene, heap), "piles: looking down at a heap from every side found nothing");
+        /* Emptied, it goes, and it stays gone when its block comes back. */
+        key = heap->key;
+        inventory_clear(&on_it);
+        loot_closed(heap, &on_it);
+        check_expect(heap->dead && !heap->live, "piles: a heap emptied still stands");
+        away_and_back(&cam, x, y, z, yaw, pitch);
+        heap = entity_by_key(key);
+        check_expect(heap && heap->dead && !heap->live, "piles: a heap emptied came back with its block");
+    }
+
+    /* A dropped pile: put down where the player stands, drawn, holding what was dropped. */
+    pile = find_in_stream(0);
+    check_expect(pile != 0, "piles: the hold's blocks have no spare things");
+    inventory_clear(&things);
+    item_make(&it, ITEM_LONGSWORD, MATERIAL_STEEL);
+    inventory_add(&things, &it);
+    /* Where a player really stands: the start marker is not on the floor, so let a body fall to it. */
+    {
+        Character sheet;
+        Player p;
+        Input in;
+
+        character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Test");
+        player_init(&p, &sheet);
+        player_place(&p, x, y, z, yaw, pitch);
+        memset(&in, 0, sizeof(in));
+        walk(&p, &level.scene, &in, 60);
+        check_expect(p.body.grounded, "piles: the player did not come to stand on the hold's floor");
+        feet[0] = p.body.feet[0];
+        feet[1] = p.body.feet[1];
+        feet[2] = p.body.feet[2];
+    }
+    check_expect(pile_drop(&things, feet), "piles: dropping found nowhere to put it");
+    pile = 0;
+    for (s = 0; s < level.scene.nentities; s++) {
+        Entity *e;
+
+        e = (Entity *)&level.scene.entities[s];
+        if (e->live && dunstream_spare(e)) {
+            pile = e;
+        }
+    }
+    check_expect(pile && check_near(pile->x, feet[0], 0.5f) && check_near(pile->z, feet[2], 0.5f),
+                 "piles: the pile is not at the player's feet");
+    if (pile) {
+        check_expect(found_from_a_side(&level.scene, pile), "piles: looking down at the pile from every side found nothing");
+        check_expect(loot_takes_things(pile) && strcmp(loot_label(pile), "Pile") == 0, "piles: a pile does not take things");
+        /* Dropping again on the same spot joins it. */
+        check_expect(pile_drop(&things, feet), "piles: a second drop found nowhere to put it");
+        check_expect(loot_open(pile, 1, &on_it, origin) == 2, "piles: a second drop did not join the pile");
+
+        /* It stays, where it was and with what is in it, when its block goes and comes back. */
+        key = pile->key;
+        away_and_back(&cam, x, y, z, yaw, pitch);
+        pile = entity_by_key(key);
+        check_expect(pile && pile->live && check_near(pile->x, feet[0], 0.5f) && check_near(pile->z, feet[2], 0.5f),
+                     "piles: a pile did not come back with its block, where it was");
+        if (pile) {
+            check_expect(loot_open(pile, 1, &on_it, origin) == 2 && on_it.item[0].template_id == ITEM_LONGSWORD,
+                         "piles: a pile came back without its things");
+            /* Emptied, it goes, its spare thing free again, and it does not come back. */
+            inventory_clear(&on_it);
+            loot_closed(pile, &on_it);
+            check_expect(!pile->live, "piles: a pile emptied still stands");
+            away_and_back(&cam, x, y, z, yaw, pitch);
+            pile = entity_by_key(key);
+            check_expect(pile && !pile->live, "piles: a pile emptied came back with its block");
+        }
+    }
+    /* The pool's limit: one more than it holds is refused. */
+    check_expect(pile_room(0, PILE_ITEMS) && !pile_room(0, PILE_ITEMS + 1), "piles: the pool's room is not PILE_ITEMS");
+    dunstream_close();
+    keep_clear();
+    printf("piles: heaps and dropped piles stand, are searched, go when emptied, and keep across their block\n");
 }
 
 /* The composed screen to a picture: build/bag0.ppm, for a person to look at against classic's. */
@@ -1493,7 +1804,6 @@ static void check_bag(void)
     }
     mem_zero(&p, sizeof(p));
     player_init(&p, &sheet);
-    bag_new_game();
     item_make(&it, ITEM_LONGSWORD, MATERIAL_IRON);
     inventory_equip(&p.pack, inventory_add(&p.pack, &it));
     item_make(&it, ITEM_CUIRASS, MATERIAL_STEEL);
@@ -1599,7 +1909,9 @@ void check_play(void)
     check_foes();
     check_foes_due();
     check_armor();
+    check_dye();
     check_loot();
+    check_piles();
     check_bag();
     check_hold();
     check_keep();

@@ -281,6 +281,7 @@ Both move with the slot on a rebase, as everything else does.
 - **Occlusion.** The cells are drawn per frame in screen space from the models in view (`docs/culling.md`), not built per block. Nothing new.
 - **Use, chains, teleports.** Movers and usables are per slot already ("Doors from the stream"). A chain and a teleport stay within their block, so neither is ever half loaded. A teleport's destination is in its block's frame, moved into the scene's like its models.
 - **Ambience.** The emitters are per slot already. The song is the place's, set once.
+- **Treasure and spare things.** A block's random treasure markers and TEXTURE.216 flats are entities in its slot, not flats, and each block adds `DUNSTREAM_SPARES` entities not drawn until the game puts one down (a dropped pile). So a slot's entities are more than its creatures: `dunstream_kind` is -1 for these. See `docs/game.md`, Loot and the inventory.
 - **The card.** Pictures by residency, as the world's (`texres`, `wres`): a block's walls and creatures held when it fills, read in steps.
 
 ### The first frame

@@ -13,8 +13,8 @@
  * changed, so a frame of the open screen costs its quads and no download.
  */
 
-/* Opens it for the player, with a body's things beside theirs when body is not 0. */
-void bagview_open(Player *p, const Entity *body);
+/* Opens it for the player, with what they are searching beside theirs when it is not 0. */
+void bagview_open(Player *p, Entity *searched);
 void bagview_close(void);
 int bagview_is_open(void);
 /* One frame's pointer, clicks and keys. 1 when the screen asks to close. */

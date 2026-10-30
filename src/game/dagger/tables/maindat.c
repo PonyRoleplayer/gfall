@@ -127,6 +127,8 @@ static RecTable *table_at(int i)
         return armor_table();
     case 14:
         return loot_table();
+    case 15:
+        return dungeon_loot_table();
     default:
         return 0;
     }
@@ -134,7 +136,7 @@ static RecTable *table_at(int i)
 
 int maindat_table_count(void)
 {
-    return 15;
+    return 16;
 }
 
 RecTable *maindat_table(int i)
@@ -306,6 +308,7 @@ int maindat_import(RecPut put, void *ctx)
         const WeaponTemplate *weapons;
         const ArmorTemplate *armors;
         const LootChance *loots;
+        const DungeonLoot *dungeon_loots;
         const Material *materials;
 
         items = classic_items(&n);
@@ -322,6 +325,10 @@ int maindat_import(RecPut put, void *ctx)
         }
         loots = classic_loots(&n);
         if (!rec_put_rows(put, ctx, &loot_schema, loots, n, 0, 0)) {
+            return 0;
+        }
+        dungeon_loots = classic_dungeon_loots(&n);
+        if (!rec_put_rows(put, ctx, &dungeon_loot_schema, dungeon_loots, n, 0, 0)) {
             return 0;
         }
         materials = classic_materials(&n);

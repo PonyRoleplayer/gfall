@@ -31,6 +31,7 @@ const ItemTemplate *classic_items(int *n);
 const WeaponTemplate *classic_weapons(int *n);
 const ArmorTemplate *classic_armors(int *n);
 const LootChance *classic_loots(int *n);
+const DungeonLoot *classic_dungeon_loots(int *n);
 const Material *classic_materials(int *n);
 
 #endif

@@ -459,6 +459,24 @@ static const LootChance g_loots[] = {
     { 'U', 7, 30, 10, 10, 2, 0, 2, 5, 5, 5, 5, 5, 10, 2, 10 }
 };
 
+/*
+ * LootTables' key for each dungeon type, by DFU's DFRegion.DungeonTypes:
+ * crypt, orc and human strongholds, prison, desecrated temple, mine,
+ * natural cave, coven, vampire haunt, laboratory, harpy nest, ruined
+ * castle, spider nest, giant stronghold, dragon's den, barbarian
+ * stronghold, volcanic caves, scorpion nest, cemetery.
+ */
+static const DungeonLoot g_dungeon_loots[] = {
+    { 0, 'K' }, { 1, 'N' }, { 2, 'N' }, { 3, 'N' }, { 4, 'K' }, { 5, 'M' }, { 6, 'M' }, { 7, 'Q' }, { 8, 'K' }, { 9, 'U' },
+    { 10, 'D' }, { 11, 'N' }, { 12, 'L' }, { 13, 'F' }, { 14, 'S' }, { 15, 'N' }, { 16, 'M' }, { 17, 'L' }, { 18, 'N' }
+};
+
+const DungeonLoot *classic_dungeon_loots(int *n)
+{
+    *n = (int)(sizeof(g_dungeon_loots) / sizeof(g_dungeon_loots[0]));
+    return g_dungeon_loots;
+}
+
 const ItemTemplate *classic_items(int *n)
 {
     *n = (int)(sizeof(g_items) / sizeof(g_items[0]));
