@@ -308,7 +308,7 @@ int inventory_equip(Inventory *inv, int i)
         inv->worn[EQUIP_RIGHT_HAND] = -1;
         return 1;
     }
-    if (i >= inv->count || !weapon_template(inv->item[i].template_id)) {
+    if (i >= inv->count || !weapon_template(inv->item[i].template_id) || item_broken(&inv->item[i])) {
         return 0;
     }
     inv->worn[EQUIP_RIGHT_HAND] = i;
@@ -329,6 +329,9 @@ int inventory_wear(Inventory *inv, int i)
     a = armor_template(inv->item[i].template_id);
     if (!a) {
         return inventory_equip(inv, i);
+    }
+    if (item_broken(&inv->item[i])) {
+        return 0;
     }
     place = place_of_armor(a);
     inv->worn[place] = i;
@@ -363,6 +366,78 @@ const Item *inventory_weapon(const Inventory *inv)
 
     i = inv->worn[EQUIP_RIGHT_HAND];
     return i >= 0 && i < inv->count ? &inv->item[i] : 0;
+}
+
+Item *inventory_hand(Inventory *inv)
+{
+    int i;
+
+    i = inv->worn[EQUIP_RIGHT_HAND];
+    return i >= 0 && i < inv->count ? &inv->item[i] : 0;
+}
+
+int item_wear_down(Item *it, int damage, int roll)
+{
+    int loss;
+
+    loss = (10 * damage + 50) / 100;
+    if (loss < 1 && roll < 20) {
+        loss = 1;
+    }
+    it->condition = (df_u16)(loss >= it->condition ? 0 : it->condition - loss);
+    return item_broken(it);
+}
+
+int item_broken(const Item *it)
+{
+    return it->condition_max > 0 && it->condition < 1;
+}
+
+int inventory_armor_at_part(const Inventory *inv, int part)
+{
+    static const df_u8 place_of_part[BODY_PARTS] = {
+        EQUIP_HEAD, EQUIP_RIGHT_ARM, EQUIP_LEFT_ARM, EQUIP_CHEST, EQUIP_GLOVES, EQUIP_LEGS, EQUIP_FEET
+    };
+    int shield;
+
+    /* A shield comes first, over the part it covers (FormulaHelper's DamageEquipment). */
+    shield = inv->worn[EQUIP_LEFT_HAND];
+    if (shield >= 0) {
+        const ArmorTemplate *a;
+
+        a = armor_template(inv->item[shield].template_id);
+        if (a && a->shield && (a->shield_parts & (1 << part))) {
+            return EQUIP_LEFT_HAND;
+        }
+    }
+    return inv->worn[place_of_part[part]] >= 0 ? place_of_part[part] : -1;
+}
+
+int inventory_arrows(const Inventory *inv)
+{
+    int i;
+
+    for (i = 0; i < inv->count; i++) {
+        if (inv->item[i].template_id == ITEM_ARROW && inv->item[i].count > 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int inventory_spend_arrow(Inventory *inv)
+{
+    int i;
+
+    i = inventory_arrows(inv);
+    if (i < 0) {
+        return 0;
+    }
+    inv->item[i].count--;
+    if (!inv->item[i].count) {
+        inventory_remove(inv, i);
+    }
+    return 1;
 }
 
 float inventory_weight(const Inventory *inv)

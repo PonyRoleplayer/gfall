@@ -2,6 +2,7 @@
 #define DF_CHARACTER_H
 
 #include "game/dagger/tables/careers.h"
+#include "game/dagger/play/inventory.h"
 #include "game/dagger/tables/items.h"
 
 /*
@@ -78,6 +79,16 @@ void character_start_levelling(Character *c);
 int character_raise_skills(Character *c, float now);
 /* The new level taken: level, and health by rules_level_health with roll. The screen places its points. */
 void character_level_up(Character *c, int roll);
+/*
+ * What a class allows (DFCareer's bits in its CFG, the weapons word and the
+ * forbidden materials). 0 when it may use it: else a word for why, a
+ * thing broken or forbidden its class.
+ */
+const char *character_refuses(const Character *c, const Item *it);
+/* 1 when its class is expert with this weapon skill: a blow with it gains the level to hit, and level / 3 + 1 damage. */
+int character_expert(const Character *c, int skill);
+/* Damage its class's bonus (+ the level) or phobia (- the level) adds against a group, ENEMY_GROUP_*. */
+int character_group_damage(const Character *c, int group);
 /* Takes health; 1 when it reaches 0. */
 int character_hurt(Character *c, int amount);
 

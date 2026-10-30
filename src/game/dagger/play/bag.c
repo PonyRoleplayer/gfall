@@ -712,6 +712,10 @@ static void click_local(int i)
         show_info(&g.player->pack.item[i]);
         break;
     case BUTTON_EQUIP:
+        g.note = character_refuses(&g.player->sheet, &g.player->pack.item[i]);
+        if (g.note) {
+            break;
+        }
         if (inventory_wear(&g.player->pack, i)) {
             wear_changed();
         } else {

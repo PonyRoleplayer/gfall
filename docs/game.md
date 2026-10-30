@@ -275,8 +275,8 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **The file** (`play/weapon.c`): the hand's WEAP `cif`, `WEAPON##.CIF`; bare hands `WEAPON10.CIF`, the fist (`WEAPON11.CIF` is the werecreature's claws). `weapon_hold` follows the pack every frame and reads the file again only when the weapon or its material changes. The file lives in the CIF set's own heap and goes with it (`cif_open`).
 - **Where it stands:** every frame where classic draws it on its 320 × 200 screen, from the file (`CifFrame.x`, `y`: an IMG's own header, a swing's bytes 6 and 8). Every frame's box sits on the screen's bottom. Drawn under the compass and the bars.
 - **Cropped at load:** a swing's frames are all stored at the whole swing's box, and one frame fills about 30% of it on average. Each frame goes on the card cut to the rectangle of its drawn pixels (`cif_bounds`: index 0 is clear), drawn at its place moved by the crop's corner, so the same pixels land on the same screen pixels. Worked out from the file each time it is read, for any `WEAPON##.CIF` a mod puts in ARENA2; nothing is kept per weapon. `check_weapon` checks every frame's crop loses no pixel and is tight.
-- **A click swings:** one of the file's swings at random (groups 1..6: down, down-left, left, right, down-right, up), not yet the mouse's direction. Its 5 frames show 3 × (115 − Speed) / 980 s each (`rules_swing_frame_time`, DFU's GetMeleeWeaponAnimTime), about a second for Speed 50; then the armed picture, with no frame held (DFU's FPSWeapon). A click during a swing does nothing; the click that closes a menu does not swing. The swing stands still with the world in the console and the menus.
-- **A bow** has no armed picture: nothing shows at rest, and a click plays its one 7-frame shot through. Classic holds the drawn bow until the button is let go: not yet.
+- **The mouse swings** (`weapon_gesture`, DFU's WeaponManager). With the attack button down the view stands still and the mouse's motion counts, the last second's. At 32 counts the swing goes that way, by the motion's angle: right within 15 degrees of level, up from there to 165, left to 195, down-left to 255, down to 285, down-right to 345 (groups 1..6: down, down-left, left, right, down-right, up). A press and release with no such motion swings at random, as a click always did: ours, so a click still works. Its 5 frames show 3 × (115 − Speed) / 980 s each (`rules_swing_frame_time`, DFU's GetMeleeWeaponAnimTime), about a second for Speed 50; then the armed picture, with no frame held (DFU's FPSWeapon). A click during a swing does nothing; the click that closes a menu does not swing. The swing stands still with the world in the console and the menus.
+- **A bow** has no armed picture: nothing shows at rest. It needs an arrow: the press draws, the drawn frame (3) holds while the button is down, with the view free to aim, and the release looses, an arrow spent. The shot lands at once on the first creature along the view within sight (`combat_shoot`): DFU flies a missile, which needs a thing in the world this does not have yet.
 - **The material** recolours the picture by classic's tables (`cif_metal`; Loot and the inventory, Colours).
 - **The card:** the armed picture is kept; the swing's frame showing is sent when it shows and let go when the next one does (a frame every fifth of a second). A cutout goes as 8-bit P_8 with the chroma key on index 0 (the engine's `cc5ec07`, `docs/pictures.md`), or as 16-bit 1555 on a glide2x.dll without the key. Cropped and keyed, the largest frame is 39 KB, the bow drawn back (`WEAPON09.CIF`, 204 × 179); 65 KB whole, 78 KB cropped as 1555. The largest melee frame is the staff's, 271 × 125. With the HUD, the armed picture (under 13 KB) and the controls screen (66 KB) that is at most about 140 KB of `GAME_PICTURE_KB`'s 256 on a keyed card, about 195 KB without the key. `check_weapon` measures both cards and fails past 48 KB keyed or 96 KB at 1555.
 - **Not the whole swing at once:** the largest swing's frames together are 196 KB even keyed (the bow's 7), so a swing stays one frame on the card at a time.
@@ -288,13 +288,13 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **When:** once a swing, on its hit frame: frame 2 of a melee swing, 5 of the bow's (`weapon_hit`). The swing costs 11 sixty-fourths of fatigue then, struck or not.
 - **What:** classic's (FALL.EXE): every live creature of the stream whose feet are under 91 units from the player's (2.25 m), within 35.156 degrees (200 of 2048) of the player's facing on the ground (any way nearer than 11 units), that no wall hides: a ray from the eye to its middle on the scene's collision (`combat_reaches`, `collide_use`, `collide_ray`, as `rig_third`'s). Each is struck by its own blow. The view's pitch does not matter. The swing's sound plays only when none was struck.
 - **The creature as the sums see it** (`combat_foe`): a monster's level and armour value × 5 from ENEM; a class enemy at the player's level and armour 60 (DFU's cap for worn armour, as it wears nothing yet); Dodging 5 a level and 30, at most 100; its attributes from ENEM (`docs/data.md`).
-- **To hit:** the weapon's skill (Hand-to-Hand bare), the swing's (down −10, down-left −5, left and right 0, down-right +5, up +10), the material's modifier × 10, a Dark Elf's level / 4, a Redguard's level / 3 or a Wood Elf's with a bow, the Backstabbing skill when it faces away, its armour, (Luck − its Luck) / 10, (Agility − its Agility) / 10, less its Dodging / 4, Critical Strike / 10 on a roll under that skill, +40 against a creature, −50; held to 3..97, rolled on 100. A Breton warrior at a rat with an iron longsword swung left: 31%.
-- **Damage:** the weapon's range, the swing's (down +4, down-left +2, down-right −2, up −4) and the race's, a skeletal warrior halving a blunt weapon's and doubling silver's, floor((Strength − 50) / 5), the material's modifier; below 1 is 0. Bare: Hand-to-Hand / 10 + 1 to / 5 + 1, the swing's, the strength's. A backstab triples it on a roll under the skill.
+- **To hit:** the weapon's skill (Hand-to-Hand bare), the swing's (down −10, down-left −5, left and right 0, down-right +5, up +10), the material's modifier × 10, a Dark Elf's level / 4, a Redguard's level / 3 with anything but a bow or a Wood Elf's with one, the level for a class expert with the weapon, the Backstabbing skill when it faces away, its armour, (Luck − its Luck) / 10, (Agility − its Agility) / 10, less its Dodging / 4, Critical Strike / 10 on a roll under that skill, +40 against a creature, −50; held to 3..97, rolled on 100. A Breton warrior at a rat with an iron longsword swung left: 31%.
+- **Damage:** the weapon's range, the swing's (down +4, down-left +2, down-right −2, up −4), the race's, level / 3 + 1 for a class expert, the level more or less for a class's bonus or phobia against the creature's group (`enemy_group`), a skeletal warrior halving a blunt weapon's and doubling silver's, floor((Strength − 50) / 5), the material's modifier; below 1 is 0. Bare: Hand-to-Hand / 10 + 1 to / 5 + 1, the swing's, the strength's. A backstab triples it on a roll under the skill.
 - **A metal too poor** for the creature (ENEM's `min_metal`: a ghost needs silver) does nothing: "The material of the weapon you are using is ineffective." (classic's line). A backstab says "Successful backstab!"
 - **Health** is rolled the first time a creature is struck (a monster between ENEM's least and most; a class enemy 10 and a roll of 1..its class's hit points for each level) and kept in its keep row's game bytes (health in two bytes, then 1 once rolled), so it stays wounded or dead as its block goes and comes back.
 - **Struck and living:** it flinches, its hurt pose for half a second. **Killed:** it lies as its body, on the floor under it (a flyer falls), passed through (radius 0); with no body's picture it goes. A body come back with its block is laid again (`combat_frame`).
 - **Sounds** (`play/sfx.c`, DAGGER.SND by DFU's SoundClips): a hit, Hit1..5 (108..112) at the creature; a blow that takes nothing, a parry (Parry1..9, 428..436) from a creature that parries (ENEM's `parries`) struck by a weapon, else the swing; a swing that reaches no creature, the swing: SwingMediumPitch (347) with a weapon, SwingHighPitch (106) bare (DFU's FPSWeapon default and its bare-hands fallback). A creature killed: BodyFall (15) where it lies, our choice; DFU's death sound was not found.
-- **Not yet:** blood and knock-back; the class's proficiencies and group bonuses; creatures of a place loaded whole.
+- **Not yet:** blood and knock-back; creatures of a place loaded whole.
 
 ### Creatures awake (built: P4's fourth slice)
 
@@ -335,7 +335,10 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **Wearing.** A weapon goes in the right hand. The left hand takes only a shield until a second weapon can swing. A two-handed weapon takes the shield off, and a shield takes a two-handed weapon out of the hand.
 - **Carrying:** Strength × 1.5 kg (UESP); past it a thing cannot be taken. A pack's gold weighs 400 coins a kilogram. Classic's weight does not slow the walk (DFU's PlayerSpeedChanger takes no weight).
 
-**Not yet:** condition wearing down, a class's forbidden materials and armour, clothing, jewellery and everything else in the other tabs, class enemies wearing what they carry.
+- **Wear** (`item_wear_down`, FormulaHelper). A blow that takes health wears the weapon, and a creature's blow what covers the part it lands on, a shield before armour: (10 × damage + 50) / 100, and with none a one in five chance of 1. Worn out it comes off, says so, and cannot go back on.
+- **What a class allows** (`character_refuses`, DFCareer's bits): forbidden weapon groups, leather, chain and plate, each shield, and metals. The inventory and `equip` refuse them. A class's forbidding does not stop a thing being carried.
+
+**Not yet:** clothing, jewellery and everything else in the other tabs, class enemies wearing what they carry.
 
 ### What can be searched
 
@@ -376,17 +379,13 @@ What is built but not whole, and the phase each goes in. Each section above says
 
 | Where | Gap | Phase |
 | --- | --- | --- |
-| Combat | the swing is random, not the mouse's direction | P7 |
-| Combat | a bow neither holds its draw nor spends arrows | P7 |
 | Combat | blood and knock-back | P7 |
-| Combat | a class's weapon proficiencies and group bonuses | P7 |
+| Combat | an arrow lands at once: no missile flies | later |
 | Creatures | hearing and stealth; the search past the last point seen | P7 |
 | Creatures | opening and bashing doors | P7 |
 | Creatures | ranged attacks and spells; a hurt voice; wandering | P9 |
 | Creatures | the frame a blow lands on and how often a move sounds are our guesses, not found in classic | - |
 | Creatures | LEVELFALL's view of a creature's state | P7 |
-| Items | condition wearing down | P7 |
-| Items | a class's forbidden materials and armour | P7 |
 | Items | class enemies wearing what they carry | P7 |
 | Saves | one slot, overwritten without asking; classic's SAVE00I0.IMG and LOAD00I0.IMG screens, with a slot's name | P7 |
 | Saves | creatures awake come back asleep; the weather is not kept | P8 |

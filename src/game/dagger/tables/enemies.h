@@ -97,6 +97,9 @@ const EnemyKind *enemy_kind(int kind);
 
 /* Mobile ids. Classic's run below ENEMY_KINDS; a mod may add more past it. */
 #define ENEMY_KINDS 147
+/* The groups a class's attack bonus or phobia names (FormulaHelper.GetEnemyEntityEnemyGroup). A class enemy is in none. */
+enum { ENEMY_GROUP_NONE, ENEMY_GROUP_UNDEAD, ENEMY_GROUP_DAEDRA, ENEMY_GROUP_HUMANOID, ENEMY_GROUP_ANIMALS };
+int enemy_group(int kind);
 #define ENEMY_RAT 0
 #define ENEMY_SLAUGHTERFISH 11
 /* Blunt weapons do it half, silver twice (DFU's CalculateWeaponAttackDamage). */

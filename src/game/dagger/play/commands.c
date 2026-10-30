@@ -161,6 +161,10 @@ static void c_equip(int argc, char **argv)
             i = i * 10 + (*s++ - '0');
         }
     }
+    if (!*s && i >= 0 && i < p->pack.count && character_refuses(&p->sheet, &p->pack.item[i])) {
+        log_print(LOG_PRINT, "%s", character_refuses(&p->sheet, &p->pack.item[i]));
+        return;
+    }
     if (*s || (i < 0 ? !inventory_equip(&p->pack, -1) : !inventory_wear(&p->pack, i))) {
         log_print(LOG_PRINT, "%s is nothing to wear in the pack.", argv[1]);
         return;

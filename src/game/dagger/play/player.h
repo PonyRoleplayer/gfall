@@ -50,6 +50,10 @@ void player_step(Player *p, const Input *in, const Scene *scene, float dt, int c
 int player_hurt(Player *p, int amount);
 /* What it wears changed: its armour values follow (inventory_armor). */
 void player_wear_changed(Player *p);
+/* A blow of this much damage at a body part wears down what covers it; broken, it comes off, saying so. */
+void player_armor_struck(Player *p, int part, int damage, int roll);
+/* The weapon in hand, if it just broke, comes off, saying so. */
+void player_check_weapon(Player *p);
 /* The camera at its eye, looking its way. */
 void player_camera(const Player *p, Camera *cam);
 

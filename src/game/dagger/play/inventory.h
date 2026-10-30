@@ -97,7 +97,7 @@ int inventory_equip(Inventory *inv, int i);
 /*
  * Item i worn where it goes, whatever was there coming off. A two-handed
  * weapon takes the left hand's shield off, and a shield a two-handed
- * weapon. 0 when it cannot be worn.
+ * weapon. 0 when it cannot be worn, a broken thing among them.
  */
 int inventory_wear(Inventory *inv, int i);
 /* Off whatever is worn there, into the pack. */
@@ -106,6 +106,22 @@ void inventory_take_off(Inventory *inv, int place);
 int inventory_worn_at(const Inventory *inv, int i);
 /* The item in hand, or 0. */
 const Item *inventory_weapon(const Inventory *inv);
+/* The same, to change: its condition wearing down. */
+Item *inventory_hand(Inventory *inv);
+/*
+ * Condition lost to a blow of this much damage (FormulaHelper's
+ * ApplyConditionDamageThroughPhysicalHit): (10 x damage + 50) / 100, and with
+ * none, a roll of 0..99 under 20 is 1. 1 when the item is broken now.
+ */
+int item_wear_down(Item *it, int damage, int roll);
+/* 1 when it has worn out: condition gone from what had some. Broken things cannot be worn. */
+int item_broken(const Item *it);
+/* What takes a blow at a body part (BODY_*): a shield worn that covers it, else the armour on it. Its place (EQUIP_*), or -1. */
+int inventory_armor_at_part(const Inventory *inv, int part);
+/* The pack's stack of arrows, or -1. */
+int inventory_arrows(const Inventory *inv);
+/* One arrow gone, the stack with it when it was the last. 0 when there were none. */
+int inventory_spend_arrow(Inventory *inv);
 /* Every item's weight together and the gold's, kilograms. */
 float inventory_weight(const Inventory *inv);
 /*

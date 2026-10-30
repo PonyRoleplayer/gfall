@@ -184,6 +184,36 @@ static void sheet_over_play(void)
     input_set_pointer(screens_is_open());
 }
 
+/* The attack button this frame: a blade's gesture, or a bow's draw if there is an arrow to draw. */
+static void attack_input(const Input *in, float dt)
+{
+    int pressed;
+
+    pressed = (in->pressed & INPUT_BIT(INPUT_ATTACK)) != 0;
+    if (pressed && weapon_is_bow() && inventory_arrows(&g_player.pack) < 0) {
+        interact_say("You have no arrows.");
+        return;
+    }
+    weapon_gesture(pressed, (in->held & INPUT_BIT(INPUT_ATTACK)) != 0, (in->released & INPUT_BIT(INPUT_ATTACK)) != 0, in->look_dx,
+                   in->look_dy, dt);
+}
+
+/* The bow looses: an arrow gone, flying along the view. */
+static void shoot_arrow(const Camera *cam, const float *eye)
+{
+    Basis basis;
+    float dir[3];
+
+    if (!inventory_spend_arrow(&g_player.pack)) {
+        return;
+    }
+    camera_basis(cam, &basis);
+    dir[0] = basis.fx * basis.cp;
+    dir[1] = basis.sp;
+    dir[2] = basis.fz * basis.cp;
+    combat_shoot(&g_player.sheet, inventory_hand(&g_player.pack), &g_level->scene, g_player.body.feet, eye, dir);
+}
+
 /*
  * The use key: a body or a heap the view rests on is searched; anything
  * else is the engine's to use (doors, levers, passages). With nothing to
@@ -391,10 +421,11 @@ int game_frame(Camera *cam, const Input *in, float dt)
         if (g_player.sheet.level_due) {
             sheet_over_play();
         }
-        /* The weapon in hand follows the pack (equip, additem); a click swings it, at random for now. */
+        /* The weapon in hand follows the pack (equip, additem, a break); the mouse swings it. */
+        player_check_weapon(&g_player);
         weapon_hold(inventory_weapon(&g_player.pack));
-        if (!closed && (in->pressed & INPUT_BIT(INPUT_ATTACK))) {
-            weapon_attack();
+        if (!closed) {
+            attack_input(in, dt);
         }
         weapon_step(dt, g_player.sheet.attribute[ATTR_SPEED]);
         {
@@ -410,7 +441,17 @@ int game_frame(Camera *cam, const Input *in, float dt)
             }
         }
         /* tcl 1 (walker_on): the body walks and collides; tcl 0: it flies through everything. */
-        player_step(&g_player, in, &g_level->scene, dt, walker_on());
+        {
+            Input walking;
+
+            /* A blade's gesture takes the mouse while the button is down; a bow is aimed with it. */
+            walking = *in;
+            if ((in->held & INPUT_BIT(INPUT_ATTACK)) && !weapon_is_bow()) {
+                walking.look_dx = 0;
+                walking.look_dy = 0;
+            }
+            player_step(&g_player, &walking, &g_level->scene, dt, walker_on());
+        }
         {
             float speed;
             float height;
@@ -436,8 +477,12 @@ int game_frame(Camera *cam, const Input *in, float dt)
             eye[0] = cam->x;
             eye[1] = cam->y;
             eye[2] = cam->z;
-            combat_strike(&g_player.sheet, inventory_weapon(&g_player.pack), weapon_swing(), &g_level->scene,
-                          g_player.body.feet, eye, g_player.yaw);
+            if (weapon_is_bow()) {
+                shoot_arrow(cam, eye);
+            } else {
+                combat_strike(&g_player.sheet, inventory_hand(&g_player.pack), weapon_swing(), &g_level->scene,
+                              g_player.body.feet, eye, g_player.yaw);
+            }
         }
         combat_frame(dt);
         /* The creatures see, chase and strike (tai off: they stand); a blow may kill. */

@@ -138,18 +138,23 @@ void combat_blow(const Character *pc, const Item *weapon, int swing, const Foe *
     skill = pc->skill[w ? w->skill : SKILL_HAND_TO_HAND];
     chance = skill + g_swing_hit[swing];
     bonus = g_swing_damage[swing];
-    /* A race's weapon expertise: a Dark Elf's and a Redguard's, a Wood Elf's with a bow. */
+    /* A race's weapon expertise: a Dark Elf's with any, a Wood Elf's with a bow, a Redguard's with any but a bow. */
     if (w) {
         int race;
 
         race = 0;
         if (pc->race == RACE_DARK_ELF) {
             race = pc->level / 4;
-        } else if (pc->race == RACE_REDGUARD || (pc->race == RACE_WOOD_ELF && w->skill == SKILL_ARCHERY)) {
+        } else if (w->skill == SKILL_ARCHERY ? pc->race == RACE_WOOD_ELF : pc->race == RACE_REDGUARD) {
             race = pc->level / 3;
         }
         chance += race;
         bonus += race;
+    }
+    /* A class's expert proficiency (CalculateProficiencyModifiers), bare hands among them. */
+    if (character_expert(pc, w ? w->skill : SKILL_HAND_TO_HAND)) {
+        chance += pc->level;
+        bonus += pc->level / 3 + 1;
     }
     if (f->behind) {
         chance += pc->skill[SKILL_BACKSTABBING];
@@ -197,6 +202,8 @@ void combat_blow(const Character *pc, const Item *weapon, int swing, const Foe *
         /* CalculateHandToHandAttackDamage: skill / 10 + 1 to skill / 5 + 1. */
         damage = roll_between(skill / 10 + 1, skill / 5 + 1) + bonus + combat_strength_bonus(pc->attribute[ATTR_STRENGTH]);
     }
+    /* A class's bonus or phobia against what this creature is. */
+    damage += character_group_damage(pc, enemy_group(f->kind->id));
     /* A backstab triples it on a roll under the skill. */
     if (f->behind && pc->skill[SKILL_BACKSTABBING] > 1 && combat_roll(100) < pc->skill[SKILL_BACKSTABBING]) {
         damage *= 3;
@@ -364,7 +371,7 @@ static void flinch(Entity *e)
 }
 
 /* One creature struck: the blow rolled, its sound, its health; a flinch or its body. */
-static void strike_one(Character *pc, const Item *weapon, int swing, Entity *e, const float *feet)
+static void strike_one(Character *pc, Item *weapon, int swing, Entity *e, const float *feet)
 {
     const EnemyKind *kind;
     Foe f;
@@ -406,6 +413,9 @@ static void strike_one(Character *pc, const Item *weapon, int swing, Entity *e, 
         return;
     }
     sfx_at(sfx_pick(SND_HIT_FIRST, SND_HITS), e->x, mid, e->z);
+    if (weapon) {
+        item_wear_down(weapon, b.damage, combat_roll(100));
+    }
     if (b.backstab) {
         interact_say("Successful backstab!");
     }
@@ -454,17 +464,121 @@ int combat_reaches(const Scene *scene, const float *feet, const float *eye, floa
     return combat_sight(scene, eye, mid);
 }
 
-int combat_strike(Character *pc, const Item *weapon, int swing, const Scene *scene, const float *feet,
+/* The fatigue a swing or a shot costs. */
+static void tire(Character *pc)
+{
+    pc->fatigue -= COMBAT_SWING_FATIGUE;
+    if (pc->fatigue < 0) {
+        pc->fatigue = 0;
+    }
+}
+
+int combat_ray_box(const float *eye, const float *dir, const float *low, const float *high, float reach, float *t_out)
+{
+    float t_near;
+    float t_far;
+    int axis;
+
+    t_near = 0.0f;
+    t_far = reach;
+    for (axis = 0; axis < 3; axis++) {
+        float t0;
+        float t1;
+
+        if (dir[axis] > -0.0001f && dir[axis] < 0.0001f) {
+            /* Along this axis the ray does not move: it is inside the slab or never will be. */
+            if (eye[axis] < low[axis] || eye[axis] > high[axis]) {
+                return 0;
+            }
+            continue;
+        }
+        t0 = (low[axis] - eye[axis]) / dir[axis];
+        t1 = (high[axis] - eye[axis]) / dir[axis];
+        if (t0 > t1) {
+            float swap;
+
+            swap = t0;
+            t0 = t1;
+            t1 = swap;
+        }
+        t_near = t0 > t_near ? t0 : t_near;
+        t_far = t1 < t_far ? t1 : t_far;
+        if (t_near > t_far) {
+            return 0;
+        }
+    }
+    *t_out = t_near;
+    return 1;
+}
+
+int combat_shoot(Character *pc, Item *weapon, const Scene *scene, const float *feet, const float *eye, const float *dir)
+{
+    Entity *best;
+    float best_t;
+    int slot;
+
+    tire(pc);
+    /* A shot trains its skill and Critical Strike, struck or not (WeaponManager). */
+    character_tally(pc, SKILL_ARCHERY, 1);
+    character_tally(pc, SKILL_CRITICAL_STRIKE, 1);
+    if (!scene || !collide_use(scene)) {
+        return 0;
+    }
+    best = 0;
+    best_t = FOES_SIGHT;
+    for (slot = 0; slot < stream_slots(); slot++) {
+        Entity *ents;
+        int first;
+        int n;
+        int i;
+
+        ents = stream_slot_entities(slot, &first, &n);
+        for (i = 0; ents && i < n; i++) {
+            Entity *e;
+            float low[3];
+            float high[3];
+            float half;
+            float t;
+
+            e = &ents[i];
+            if (!e->live || e->dead || dunstream_kind(e, 0) < 0) {
+                continue;
+            }
+            half = (float)entity_pose(e)->w[0] * 0.25f;
+            low[0] = e->x - half;
+            low[1] = e->y;
+            low[2] = e->z - half;
+            high[0] = e->x + half;
+            high[1] = e->y + entity_height(e);
+            high[2] = e->z + half;
+            if (combat_ray_box(eye, dir, low, high, best_t, &t)) {
+                float at[3];
+
+                at[0] = eye[0] + dir[0] * t;
+                at[1] = eye[1] + dir[1] * t;
+                at[2] = eye[2] + dir[2] * t;
+                if (combat_sight(scene, eye, at)) {
+                    best = e;
+                    best_t = t;
+                }
+            }
+        }
+    }
+    if (!best) {
+        return 0;
+    }
+    strike_one(pc, weapon, 0, best, feet);
+    return 1;
+}
+
+int combat_strike(Character *pc, Item *weapon, int swing, const Scene *scene, const float *feet,
                   const float *eye, float yaw)
 {
     int struck;
     int slot;
 
     /* The swing tires, struck or not. */
-    pc->fatigue -= COMBAT_SWING_FATIGUE;
-    if (pc->fatigue < 0) {
-        pc->fatigue = 0;
-    }
+    tire(pc);
     struck = 0;
     /* Walls by the scene's collision grid, a ray as thin as rig_third's (the body sets its own shape again at its step). */
     if (!scene || !collide_use(scene)) {

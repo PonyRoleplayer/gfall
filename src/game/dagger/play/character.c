@@ -1,5 +1,6 @@
 #include "game/dagger/play/character.h"
 #include "game/dagger/play/rules.h"
+#include "game/dagger/tables/enemies.h"
 #include "engine/core/mem.h"
 
 /* See character.h. */
@@ -61,6 +62,94 @@ void character_attributes_changed(Character *c)
     c->fatigue_max = rules_max_fatigue(c->attribute[ATTR_STRENGTH], c->attribute[ATTR_ENDURANCE])
                      * CHARACTER_FATIGUE_UNIT;
     c->magicka_max = k ? rules_max_magicka(c->attribute[ATTR_INTELLIGENCE], k->magicka) : 0;
+}
+
+/* DFCareer's six weapon groups, by bit: short blade, long blade, hand-to-hand, axe, blunt, missile. The weapon skills are 28.. in that order. */
+#define WEAPON_GROUPS 6
+#define EXPERT_SHIFT 16
+#define FORBID_LEATHER_BIT 6
+#define FORBID_CHAIN_BIT 7
+#define FORBID_PLATE_BIT 8
+#define FORBID_SHIELD_SHIFT 9
+
+/* A weapon skill's group, or -1 for another skill. */
+static int group_of_skill(int skill)
+{
+    int group;
+
+    group = skill - SKILL_SHORT_BLADE;
+    return group >= 0 && group < WEAPON_GROUPS ? group : -1;
+}
+
+int character_expert(const Character *c, int skill)
+{
+    const CareerClass *k;
+    int group;
+
+    k = career_class(c->klass);
+    group = group_of_skill(skill);
+    if (!k || group < 0 || (k->weapons & (1u << group))) {
+        return 0;
+    }
+    return (k->weapons >> (EXPERT_SHIFT + group)) & 1u;
+}
+
+/* Whether the class forbids a piece of armour by what it is. */
+static int forbids_armor(const CareerClass *k, const Item *it, const ArmorTemplate *a)
+{
+    if (a->shield) {
+        return (k->weapons >> (FORBID_SHIELD_SHIFT + (a->shield - 1))) & 1u;
+    }
+    if (it->material == MATERIAL_LEATHER) {
+        return (k->weapons >> FORBID_LEATHER_BIT) & 1u;
+    }
+    if (it->material == MATERIAL_CHAIN) {
+        return (k->weapons >> FORBID_CHAIN_BIT) & 1u;
+    }
+    return (k->weapons >> FORBID_PLATE_BIT) & 1u;
+}
+
+const char *character_refuses(const Character *c, const Item *it)
+{
+    const CareerClass *k;
+    const ArmorTemplate *a;
+    const WeaponTemplate *w;
+
+    if (item_broken(it)) {
+        return "This item is broken.";
+    }
+    k = career_class(c->klass);
+    if (!k) {
+        return 0;
+    }
+    a = armor_template(it->template_id);
+    w = weapon_template(it->template_id);
+    if ((a && forbids_armor(k, it, a)) || (w && group_of_skill(w->skill) >= 0 && (k->weapons & (1u << group_of_skill(w->skill))))) {
+        return "Your class forbids you to use this.";
+    }
+    /* Materials: a metal's bit, leather and chain having none. */
+    if ((a || w) && it->material <= MATERIAL_DAEDRIC && !(a && a->shield) && (k->forbidden_materials & (1u << it->material))) {
+        return "Your class forbids you to use this material.";
+    }
+    return 0;
+}
+
+int character_group_damage(const Character *c, int group)
+{
+    /* The attack modifier byte: a bonus bit and, four up, a phobia bit, a group each; bonus first. */
+    static const df_u8 bit_of_group[] = { 0, 0x01, 0x02, 0x04, 0x08 };
+    const CareerClass *k;
+    int bit;
+
+    k = career_class(c->klass);
+    if (!k || group <= ENEMY_GROUP_NONE || group > ENEMY_GROUP_ANIMALS) {
+        return 0;
+    }
+    bit = bit_of_group[group];
+    if (k->attack_modifier & bit) {
+        return c->level;
+    }
+    return (k->attack_modifier & (bit << 4)) ? -c->level : 0;
 }
 
 void character_tally(Character *c, int skill, int n)

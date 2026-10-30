@@ -28,6 +28,18 @@
 void weapon_hold(const Item *it);
 /* A random swing, unless one runs: its swing (1..6), or 0. */
 int weapon_attack(void);
+/*
+ * A swing by the mouse (DFU's WeaponManager, classic's gesture). Each frame the
+ * attack button is held, what the mouse moved; pressed and released as the
+ * Input says. When a second's motion comes to WEAPON_GESTURE counts, the swing
+ * goes that way; a press and release with no such motion swings at random,
+ * as a click did. The swing begun's group, or 0. A bow takes no gesture: it
+ * draws on the press, holds, and looses on the release.
+ */
+#define WEAPON_GESTURE 32
+int weapon_gesture(int pressed, int held, int released, int dx, int dy, float dt);
+/* The swing a motion gives: a mouse's dx (right) and dy (down), 1..6 by the swing groups. */
+int weapon_swing_of_motion(int dx, int dy);
 /* The swing on by dt seconds at this Speed. */
 void weapon_step(float dt, int speed);
 /* 1 while a swing runs. */

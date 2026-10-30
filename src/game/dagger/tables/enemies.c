@@ -299,3 +299,35 @@ int enemy_at(const Marker *mk, int water, int *female, int *passive)
     *passive = mk->action == PASSIVE;
     return kind;
 }
+
+int enemy_group(int kind)
+{
+    /* Classic's creature numbers, the ENEM ids, by group. */
+    static const df_u8 undead[] = { 15, 17, 18, 19, 23, 28, 30, 32, 33 };
+    static const df_u8 daedra[] = { 25, 26, 27, 29, 31 };
+    static const df_u8 animals[] = { 0, 3, 4, 5, 6, 11, 20, 34 };
+    static const df_u8 humanoid[] = { 1, 2, 7, 8, 9, 10, 12, 13, 14, 16, 21, 22, 24, 41, 42 };
+    int i;
+
+    for (i = 0; i < (int)sizeof(undead); i++) {
+        if (undead[i] == kind) {
+            return ENEMY_GROUP_UNDEAD;
+        }
+    }
+    for (i = 0; i < (int)sizeof(daedra); i++) {
+        if (daedra[i] == kind) {
+            return ENEMY_GROUP_DAEDRA;
+        }
+    }
+    for (i = 0; i < (int)sizeof(animals); i++) {
+        if (animals[i] == kind) {
+            return ENEMY_GROUP_ANIMALS;
+        }
+    }
+    for (i = 0; i < (int)sizeof(humanoid); i++) {
+        if (humanoid[i] == kind) {
+            return ENEMY_GROUP_HUMANOID;
+        }
+    }
+    return ENEMY_GROUP_NONE;
+}

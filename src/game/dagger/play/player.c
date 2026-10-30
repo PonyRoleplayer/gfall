@@ -1,4 +1,6 @@
 #include "game/dagger/play/player.h"
+#include "engine/core/log.h"
+#include "engine/scene/interact.h"
 #include "game/dagger/play/rules.h"
 #include "engine/core/df.h"
 #include "engine/gfx/rig.h"
@@ -119,6 +121,45 @@ void player_step(Player *p, const Input *in, const Scene *scene, float dt, int c
 void player_wear_changed(Player *p)
 {
     inventory_armor(&p->pack, p->sheet.armor);
+}
+
+/* A word that a thing has broken, for the message line. */
+static void say_broken(const Item *it)
+{
+    static char line[64];
+    char name[48];
+
+    item_name(it, name, (int)sizeof(name));
+    log_format(line, (int)sizeof(line), "Your %s has broken.", name);
+    interact_say(line);
+}
+
+void player_armor_struck(Player *p, int part, int damage, int roll)
+{
+    int place;
+    Item *it;
+
+    place = inventory_armor_at_part(&p->pack, part);
+    if (place < 0) {
+        return;
+    }
+    it = &p->pack.item[p->pack.worn[place]];
+    if (item_wear_down(it, damage, roll)) {
+        say_broken(it);
+        inventory_take_off(&p->pack, place);
+        player_wear_changed(p);
+    }
+}
+
+void player_check_weapon(Player *p)
+{
+    const Item *it;
+
+    it = inventory_weapon(&p->pack);
+    if (it && item_broken(it)) {
+        say_broken(it);
+        inventory_take_off(&p->pack, EQUIP_RIGHT_HAND);
+    }
 }
 
 void player_camera(const Player *p, Camera *cam)

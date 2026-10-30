@@ -39,6 +39,7 @@ enum {
 /* The ones combat rolls (combat.c). */
 #define SKILL_BACKSTABBING 19
 #define SKILL_DODGING 20
+#define SKILL_SHORT_BLADE 28
 #define SKILL_HAND_TO_HAND 30
 #define SKILL_ARCHERY 33
 #define SKILL_CRITICAL_STRIKE 34

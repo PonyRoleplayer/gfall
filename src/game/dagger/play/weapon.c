@@ -18,6 +18,11 @@
 /* The frame a swing strikes on (DFU's FPSWeapon.GetHitFrame), and the bow's file. */
 #define HIT_FRAME 2
 #define HIT_FRAME_BOW 5
+/* The bow's drawn frame: held there while the button is. */
+#define BOW_HOLD_FRAME 3
+/* The swing groups of a weapon file. */
+enum { SWING_DOWN = 1, SWING_DOWN_LEFT, SWING_LEFT, SWING_RIGHT, SWING_DOWN_RIGHT, SWING_UP };
+#define GESTURE_SECONDS 1.0f
 #define BOW_CIF 9
 
 /* A picture on the card: its id, and the part of its frame it holds (cif_bounds). */
@@ -52,6 +57,13 @@ static df_u8 *g_buf;
 /* The random swings: a seed stirred by when each click comes. */
 static df_u32 g_seed = 0x5EED1u;
 static float g_clock;
+/* The mouse's motion while the button is held, and how long it has been counting. */
+static int g_gesture_x;
+static int g_gesture_y;
+static float g_gesture_time;
+static int g_gesture_swung;
+/* The bow's button down: its draw holds on BOW_HOLD_FRAME until let go. */
+static int g_bow_held;
 
 /*
  * Frame index of g_cif cropped to its drawn pixels (cif_bounds: a swing
@@ -155,10 +167,28 @@ void weapon_hold(const Item *it)
     }
 }
 
+/* The swing of a group in the file, begun. Its group, or 0 when it has none or one is under way. */
+static int begin_swing(int pick)
+{
+    if (g_cif_no < 0 || g_swing) {
+        return 0;
+    }
+    g_count = cif_group_span(&g_cif, pick, &g_first);
+    if (g_count < 1) {
+        return 0;
+    }
+    g_swing = pick;
+    g_step = 0;
+    g_time = 0.0f;
+    g_hit_due = 0;
+    g_hit_done = 0;
+    show_frame(g_first);
+    return pick;
+}
+
 int weapon_attack(void)
 {
     int swings;
-    int pick;
 
     if (g_cif_no < 0 || g_swing) {
         return 0;
@@ -171,18 +201,69 @@ int weapon_attack(void)
         return 0;
     }
     g_seed = g_seed * 1103515245u + 12345u + (df_u32)df_ifloor(g_clock * 1000.0f);
-    pick = 1 + (int)((g_seed >> 16) % (df_u32)swings);
-    g_count = cif_group_span(&g_cif, pick, &g_first);
-    if (g_count < 1) {
-        return 0;
+    return begin_swing(1 + (int)((g_seed >> 16) % (df_u32)swings));
+}
+
+int weapon_swing_of_motion(int dx, int dy)
+{
+    float angle;
+
+    /* The angle of the motion, up positive, by DFU's segments: right, up all round, left, down-left, down, down-right. */
+    angle = df_wrap_tau(df_atan2((float)-dy, (float)dx)) * (360.0f / DF_TAU);
+    if (angle < 15.0f || angle >= 345.0f) {
+        return SWING_RIGHT;
     }
-    g_swing = pick;
-    g_step = 0;
-    g_time = 0.0f;
-    g_hit_due = 0;
-    g_hit_done = 0;
-    show_frame(g_first);
-    return pick;
+    if (angle < 165.0f) {
+        return SWING_UP;
+    }
+    if (angle < 195.0f) {
+        return SWING_LEFT;
+    }
+    if (angle < 255.0f) {
+        return SWING_DOWN_LEFT;
+    }
+    return angle < 285.0f ? SWING_DOWN : SWING_DOWN_RIGHT;
+}
+
+int weapon_gesture(int pressed, int held, int released, int dx, int dy, float dt)
+{
+    int begun;
+
+    begun = 0;
+    if (g_cif_no == BOW_CIF) {
+        g_bow_held = held;
+        return pressed ? weapon_attack() : 0;
+    }
+    if (pressed) {
+        g_gesture_x = 0;
+        g_gesture_y = 0;
+        g_gesture_time = 0.0f;
+        g_gesture_swung = 0;
+    }
+    if (held) {
+        g_gesture_x += dx;
+        g_gesture_y += dy;
+        g_gesture_time += dt;
+        /* Only the last second's motion counts. */
+        if (g_gesture_time > GESTURE_SECONDS) {
+            g_gesture_x = dx;
+            g_gesture_y = dy;
+            g_gesture_time = 0.0f;
+        }
+        if (g_gesture_x * g_gesture_x + g_gesture_y * g_gesture_y >= WEAPON_GESTURE * WEAPON_GESTURE) {
+            begun = begin_swing(weapon_swing_of_motion(g_gesture_x, g_gesture_y));
+            if (begun) {
+                g_gesture_swung = 1;
+            }
+            g_gesture_x = 0;
+            g_gesture_y = 0;
+            g_gesture_time = 0.0f;
+        }
+    }
+    if (released && !g_gesture_swung) {
+        begun = weapon_attack();
+    }
+    return begun;
 }
 
 void weapon_step(float dt, int speed)
@@ -199,6 +280,11 @@ void weapon_step(float dt, int speed)
     }
     g_time += dt;
     while (g_time >= each) {
+        /* A bow held drawn stays on its frame until the button goes up. */
+        if (g_cif_no == BOW_CIF && g_bow_held && g_step >= BOW_HOLD_FRAME) {
+            g_time = 0.0f;
+            break;
+        }
         g_time -= each;
         g_step++;
         if (!g_hit_done && g_step >= (g_cif_no == BOW_CIF ? HIT_FRAME_BOW : HIT_FRAME)) {

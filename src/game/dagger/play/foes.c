@@ -396,6 +396,7 @@ static int land(Mind *m, Player *p)
         return 0;
     }
     sfx_play(sfx_pick(SND_HIT_FIRST, SND_HITS));
+    player_armor_struck(p, b.part, b.damage, combat_roll(100));
     died = player_hurt(p, b.damage);
     if (died >= 0) {
         sfx_play(sfx_pain(p->sheet.race, p->sheet.female));

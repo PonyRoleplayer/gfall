@@ -578,6 +578,8 @@ static void check_items(void)
     inventory_remove(&inv, 0);
     check_expect(inv.count == 0 && !inventory_weapon(&inv), "items: the hand keeps a weapon that left the pack");
 
+    /* A Warrior: a player of nothing is class 0, a Mage, who may not hold a long blade. */
+    character_new(&p.sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Test");
     inventory_clear(&p.pack);
     commands_setup();
     commands_player(&p);
@@ -2207,6 +2209,122 @@ static void check_sheet(void)
     printf("sheet: the sheet, a list, a level taken and its points placed; build/sheet0..2.ppm\n");
 }
 
+/* What a class allows, proficiency, groups, wear, the mouse's swings and arrows, by hand. */
+static void check_class_and_wear(void)
+{
+    static const signed char motions[][3] = {
+        /* dx, dy, the swing: mouse down is +dy. */
+        { 40, 0, 4 }, { 0, -40, 6 }, { 30, -30, 6 }, { -30, -30, 6 }, { -40, 0, 3 }, { -30, 30, 2 }, { 0, 40, 1 }, { 30, 30, 5 }
+    };
+    Character c;
+    Foe f;
+    Blow b;
+    Item it;
+    Inventory inv;
+    int i;
+
+    /* The Mage's word: long blades, axes and missiles forbidden; chain, plate and all but the buckler. */
+    character_new(&c, RACE_BRETON, CLASS_MAGE, 0, "Test");
+    item_make(&it, ITEM_LONGSWORD, MATERIAL_IRON);
+    check_expect(character_refuses(&c, &it) != 0, "class: a Mage may wield a longsword");
+    item_make(&it, ITEM_DAGGER, MATERIAL_IRON);
+    check_expect(character_refuses(&c, &it) == 0, "class: a Mage may not wield a dagger");
+    item_make(&it, ITEM_CUIRASS, MATERIAL_IRON);
+    check_expect(character_refuses(&c, &it) != 0, "class: a Mage may wear plate");
+    item_make(&it, ITEM_CUIRASS, MATERIAL_CHAIN);
+    check_expect(character_refuses(&c, &it) != 0, "class: a Mage may wear chain");
+    item_make(&it, ITEM_CUIRASS, MATERIAL_LEATHER);
+    check_expect(character_refuses(&c, &it) == 0, "class: a Mage may not wear leather");
+    item_make(&it, ITEM_BUCKLER, MATERIAL_IRON);
+    check_expect(character_refuses(&c, &it) == 0, "class: a Mage may not carry a buckler");
+    item_make(&it, ITEM_TOWER_SHIELD, MATERIAL_IRON);
+    check_expect(character_refuses(&c, &it) != 0, "class: a Mage may carry a tower shield");
+
+    /* The Archer's word: expert with missiles, plate and every shield forbidden. */
+    character_new(&c, RACE_BRETON, 13, 0, "Test");
+    check_expect(character_expert(&c, SKILL_ARCHERY) && !character_expert(&c, SKILL_SHORT_BLADE), "class: an Archer is not expert with a bow alone");
+    /* A Warrior has none of it. */
+    character_new(&c, RACE_BRETON, CLASS_WARRIOR, 0, "Test");
+    check_expect(!character_expert(&c, SKILL_ARCHERY), "class: a Warrior is expert with a bow");
+
+    /* An expert gains the level to hit and level / 3 + 1 damage: level 6, 6 and 3 on the Archer's sum. */
+    character_new(&c, RACE_BRETON, 13, 0, "Test");
+    c.level = 6;
+    c.skill[SKILL_CRITICAL_STRIKE] = 0;
+    combat_foe(&f, enemy_kind(ENEMY_RAT), 6, 0);
+    item_make(&it, 130, MATERIAL_STEEL);
+    combat_blow(&c, &it, 3, &f, &b);
+    i = b.chance;
+    c.klass = CLASS_WARRIOR;
+    c.skill[SKILL_ARCHERY] = career_class(13) ? c.skill[SKILL_ARCHERY] : 0;
+    combat_blow(&c, &it, 3, &f, &b);
+    check_expect(i == b.chance + 6 || i == 97, "class: an expert's chance is not the level more");
+
+    /* Groups: undead, daedra, humanoid, animals, and a class enemy in none. */
+    check_expect(enemy_group(ENEMY_RAT) == ENEMY_GROUP_ANIMALS && enemy_group(ENEMY_SKELETAL_WARRIOR) == ENEMY_GROUP_UNDEAD
+                     && enemy_group(25) == ENEMY_GROUP_DAEDRA && enemy_group(7) == ENEMY_GROUP_HUMANOID
+                     && enemy_group(ENEMY_FIRST_CLASS) == ENEMY_GROUP_NONE,
+                 "class: a creature is in the wrong group");
+
+    /* Wear: 15 damage takes (150 + 50) / 100 = 2; 4 takes none but a roll under 20 takes 1. */
+    item_make(&it, ITEM_LONGSWORD, MATERIAL_IRON);
+    i = it.condition;
+    item_wear_down(&it, 15, 99);
+    check_expect(it.condition == i - 2, "wear: 15 damage did not take 2");
+    i = it.condition;
+    item_wear_down(&it, 4, 99);
+    check_expect(it.condition == i, "wear: 4 damage on a high roll took some");
+    item_wear_down(&it, 4, 0);
+    check_expect(it.condition == i - 1, "wear: 4 damage on a low roll took none");
+    /* Worn right out it is broken, and cannot be worn or wielded. */
+    it.condition = 1;
+    check_expect(item_wear_down(&it, 15, 99) && item_broken(&it), "wear: it did not break");
+    inventory_clear(&inv);
+    check_expect(!inventory_equip(&inv, inventory_add(&inv, &it)), "wear: a broken sword went in hand");
+
+    /* What takes a blow: the shield over the armour on a part it covers. */
+    inventory_clear(&inv);
+    item_make(&it, ITEM_CUIRASS, MATERIAL_IRON);
+    inventory_wear(&inv, inventory_add(&inv, &it));
+    item_make(&it, ITEM_BUCKLER, MATERIAL_IRON);
+    inventory_wear(&inv, inventory_add(&inv, &it));
+    check_expect(inventory_armor_at_part(&inv, BODY_CHEST) == EQUIP_CHEST && inventory_armor_at_part(&inv, BODY_HANDS) == EQUIP_LEFT_HAND
+                     && inventory_armor_at_part(&inv, BODY_HEAD) == -1,
+                 "wear: the blow is not taken by what covers the part");
+
+    /* The mouse's swings, by DFU's segments. */
+    for (i = 0; i < (int)(sizeof(motions) / sizeof(motions[0])); i++) {
+        check_expect(weapon_swing_of_motion(motions[i][0], motions[i][1]) == motions[i][2], "swing: a motion gave the wrong swing");
+    }
+    /* A gesture: the button down and the mouse moved right swings right, the look's distance reached. */
+    weapon_hold(0);
+    weapon_gesture(1, 1, 0, 0, 0, 0.016f);
+    check_expect(!weapon_swinging(), "swing: the press alone swung");
+    check_expect(weapon_gesture(0, 1, 0, WEAPON_GESTURE, 0, 0.016f) == 4 && weapon_swing() == 4, "swing: a move right did not swing right");
+    while (weapon_swinging()) {
+        weapon_step(0.1f, 50);
+    }
+    weapon_hit();
+    /* A click with no motion still swings, at random. */
+    weapon_gesture(1, 1, 0, 0, 0, 0.016f);
+    check_expect(weapon_gesture(0, 0, 1, 0, 0, 0.016f) >= 1 && weapon_swinging(), "swing: a click did not swing");
+    while (weapon_swinging()) {
+        weapon_step(0.1f, 50);
+    }
+    weapon_hit();
+    weapon_free();
+
+    /* Arrows: spent one at a time, the stack gone with the last. */
+    inventory_clear(&inv);
+    check_expect(inventory_arrows(&inv) < 0 && !inventory_spend_arrow(&inv), "arrows: an empty pack shot one");
+    item_make(&it, ITEM_ARROW, MATERIAL_IRON);
+    it.count = 2;
+    inventory_add(&inv, &it);
+    check_expect(inventory_spend_arrow(&inv) && inv.item[0].count == 1 && inventory_spend_arrow(&inv) && inv.count == 0,
+                 "arrows: they were not spent to nothing");
+    printf("class and wear: limits, expert, groups, condition, swings by the mouse, arrows\n");
+}
+
 /* Rest: its sums by hand, and the three ways driven by clicks and keys. */
 #define REST_WHILE_X 110
 #define REST_HEALED_X 160
@@ -2500,6 +2618,7 @@ void check_play(void)
     check_kit_and_words();
     check_create();
     check_sheet();
+    check_class_and_wear();
     check_rest();
     check_save();
     check_hold();

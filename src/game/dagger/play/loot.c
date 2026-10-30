@@ -202,48 +202,6 @@ void loot_roll(Inventory *out, const LootChance *table, int level, df_u32 seed)
     }
 }
 
-/*
- * Whether the view from eye along unit dir passes through the box round
- * a body's picture, and how far along: the slab test, an axis at a time.
- */
-static int ray_meets_box(const float *eye, const float *dir, const float *low, const float *high, float *t_out)
-{
-    float t_near;
-    float t_far;
-    int axis;
-
-    t_near = 0.0f;
-    t_far = SEARCH_REACH;
-    for (axis = 0; axis < 3; axis++) {
-        float t0;
-        float t1;
-
-        if (dir[axis] > -0.0001f && dir[axis] < 0.0001f) {
-            /* Along this axis the view does not move: it is inside the slab or never will be. */
-            if (eye[axis] < low[axis] || eye[axis] > high[axis]) {
-                return 0;
-            }
-            continue;
-        }
-        t0 = (low[axis] - eye[axis]) / dir[axis];
-        t1 = (high[axis] - eye[axis]) / dir[axis];
-        if (t0 > t1) {
-            float swap;
-
-            swap = t0;
-            t0 = t1;
-            t1 = swap;
-        }
-        t_near = t0 > t_near ? t0 : t_near;
-        t_far = t1 < t_far ? t1 : t_far;
-        if (t_near > t_far) {
-            return 0;
-        }
-    }
-    *t_out = t_near;
-    return 1;
-}
-
 /* Whether the view can come to rest on this entity: a body, a heap, or a pile put down. */
 static int searchable(const Entity *e)
 {
@@ -303,7 +261,7 @@ Entity *loot_find(const Scene *scene, const Camera *eye)
             high[0] = e->x + half;
             high[1] = e->y + (float)pose->h[0];
             high[2] = e->z + half;
-            if (ray_meets_box(from, dir, low, high, &t) && t < best_t) {
+            if (combat_ray_box(from, dir, low, high, SEARCH_REACH, &t) && t < best_t) {
                 float middle[3];
 
                 middle[0] = e->x;

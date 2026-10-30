@@ -29,8 +29,10 @@
  * swing that reaches nothing the swing; a creature killed a body's fall.
  * A creature struck wakes (foes_alert), passive or not.
  *
- * Not yet: blood, knock-back, skills advancing, proficiency and the
- * class's group bonuses, class enemies' worn armour (60, as bare, until
+ * A blow's damage wears the weapon down (item_wear_down), a creature's the
+ * armour it lands on.
+ *
+ * Not yet: blood, knock-back, class enemies' worn armour (60, as bare, until
  * they carry things).
  */
 
@@ -119,8 +121,16 @@ void combat_foe_blow(const Foe *f, const Character *pc, Blow *out);
  * The walls are scene's collision (collide_use), as rig_third's ray
  * reads them.
  */
-int combat_strike(Character *pc, const Item *weapon, int swing, const Scene *scene, const float *feet,
+int combat_strike(Character *pc, Item *weapon, int swing, const Scene *scene, const float *feet,
                   const float *eye, float yaw);
+/*
+ * A bow's shot on its release frame, along the view from eye: the first
+ * creature that way within sight and no wall between, struck by combat_blow.
+ * DFU flies an arrow; here it lands at once. 1 when it struck one.
+ */
+int combat_shoot(Character *pc, Item *weapon, const Scene *scene, const float *feet, const float *eye, const float *dir);
+/* The slab test: whether a ray from eye along unit dir meets the box within reach, and how far along. */
+int combat_ray_box(const float *eye, const float *dir, const float *low, const float *high, float reach, float *t_out);
 /* 1 when creature e is one combat_strike would strike from feet and eye facing yaw. */
 int combat_reaches(const Scene *scene, const float *feet, const float *eye, float yaw, const Entity *e);
 /* 1 when no wall of scene stands between a and b (its collision, a thin ray): what sees and strikes. */
