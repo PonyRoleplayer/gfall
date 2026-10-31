@@ -70,6 +70,23 @@ static int content_root(char *dst, int n, const char *suffix)
     return 1;
 }
 
+static void note_button(UINT msg)
+{
+    if (msg == WM_LBUTTONDOWN) {
+        input_note_key(VK_LBUTTON, 1);
+    } else if (msg == WM_LBUTTONUP) {
+        input_note_key(VK_LBUTTON, 0);
+    } else if (msg == WM_RBUTTONDOWN) {
+        input_note_key(VK_RBUTTON, 1);
+    } else if (msg == WM_RBUTTONUP) {
+        input_note_key(VK_RBUTTON, 0);
+    } else if (msg == WM_MBUTTONDOWN) {
+        input_note_key(VK_MBUTTON, 1);
+    } else if (msg == WM_MBUTTONUP) {
+        input_note_key(VK_MBUTTON, 0);
+    }
+}
+
 static void mouse_msg(HWND hwnd, UINT msg, LPARAM lp)
 {
     int x;
@@ -80,9 +97,18 @@ static void mouse_msg(HWND hwnd, UINT msg, LPARAM lp)
     if (msg == WM_MOUSEMOVE) {
         input_on_mouse(x, y);
     }
-    /* Button-up is delivered before ReleaseCapture. Capture release can
-       synthesize a move, and that move must not count as a drag. */
-    if (g_mouse && (msg == WM_LBUTTONUP || msg == WM_RBUTTONUP)) {
+    note_button(msg);
+    /*
+     * Drag capture is only the hook's (a viewer's orbit). input_begin
+     * already captured for mouse look; releasing that on every button-up
+     * let the cursor leave the window, so a click there never arrived.
+     * Button-up is delivered before ReleaseCapture: the release can
+     * synthesize a move, and that move must not count as a drag.
+     */
+    if (!g_mouse) {
+        return;
+    }
+    if (msg == WM_LBUTTONUP || msg == WM_RBUTTONUP) {
         g_mouse(msg, x, y);
     }
     if (msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN) {
@@ -91,7 +117,7 @@ static void mouse_msg(HWND hwnd, UINT msg, LPARAM lp)
     if (msg == WM_LBUTTONUP || msg == WM_RBUTTONUP) {
         ReleaseCapture();
     }
-    if (g_mouse && msg != WM_LBUTTONUP && msg != WM_RBUTTONUP) {
+    if (msg != WM_LBUTTONUP && msg != WM_RBUTTONUP) {
         g_mouse(msg, x, y);
     }
 }
@@ -104,6 +130,8 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_LBUTTONUP:
     case WM_RBUTTONDOWN:
     case WM_RBUTTONUP:
+    case WM_MBUTTONDOWN:
+    case WM_MBUTTONUP:
         mouse_msg(hwnd, msg, lp);
         return 0;
     case WM_MOUSEWHEEL:
@@ -111,20 +139,29 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         input_on_wheel((int)(short)HIWORD(wp));
         return 0;
     case WM_SETCURSOR:
-        if (g_blank) {
+        /* A grabbed cursor stays blank. Otherwise the system arrow shows over the client. */
+        if (g_blank || input_grabs_cursor()) {
             SetCursor(0);
             return TRUE;
         }
         break;
     case WM_KEYDOWN:
+        /* Bit 30: the key was already down. A repeat is not another press. */
+        if (!(lp & 0x40000000L)) {
+            input_note_key((int)wp, 1);
+        }
         /*
          * Escape quits only where it is set to (the viewers'); a game's
          * Escape is INPUT_MENU (input_set_escape_quits(0)) and must reach
-         * input_read as that, not as a quit (docs/input.md).
+         * input_read as that, not as a quit (docs/input.md). The quit here
+         * is the same press input_read reports, for a tap before the poll.
          */
         if (wp == VK_ESCAPE && input_escape_quits() && !console_take_escape()) {
             input_request_quit();
         }
+        return 0;
+    case WM_KEYUP:
+        input_note_key((int)wp, 0);
         return 0;
     case WM_COMMAND:
         if (g_command) {

@@ -9,8 +9,8 @@ What `input_read` gives a program once a frame: the movement, the look, quit, an
 - `move_f`, `move_r`, `move_y`: forward minus back and right minus left, from those actions' keys (W, S, D, A unless rebound), and Q minus E, fixed (a flying viewer's).
 - `look_dx`, `look_dy`: the mouse's pixels since the last read, plus a fixed step a frame for each arrow held.
 - `quit`: Escape (unless a game took it, below), or the window's close.
-- `held`, `pressed`, `released`: the game's actions, one bit each (`INPUT_BIT(INPUT_ATTACK)`). Held is down now; pressed went down this frame, released went up. A game reads edges from these, once a frame, and never polls a key itself.
-- `wheel`: the mouse wheel's whole notches since the last read, above 0 rolled away from the player. The window adds Windows' units to it (`WM_MOUSEWHEEL`, 120 a notch, `input_on_wheel`), and part of a notch from a finer wheel waits for the rest. With the console open it is 0, and what was rolled is dropped. A viewer with its own use for the wheel (LEVELFALL's field of view, the lists) takes the message from the queue before `win_pump`, so `Input` never sees it. The Input path has no host test, because `input.c` is not built for the host.
+- `held`, `pressed`, `released`: the game's actions, one bit each (`INPUT_BIT(INPUT_ATTACK)`). Held is down now; pressed went down this frame, released went up. A game reads edges from these, once a frame, and never polls a key itself. The window remembers each key and button going down and up (`input_note_key`, from `WM_KEYDOWN` / `WM_KEYUP` and the mouse-button messages). A click that goes down and up between two reads is still one press and one release that read: the poll alone used to miss it, so a short click did nothing. A key already held does not press again (a repeat is not a new press). Escape is that same edge. With `input_set_escape_quits(0)` it is `INPUT_MENU` once per press. The engine does not start a game from it.
+- `wheel`: the mouse wheel's whole notches since the last read, above 0 rolled away from the player. The window adds Windows' units to it (`WM_MOUSEWHEEL`, 120 a notch, `input_on_wheel`), and part of a notch from a finer wheel waits for the rest. With the console open it is 0, and what was rolled is dropped. A viewer with its own use for the wheel (LEVELFALL's field of view, the lists) takes the message from the queue before `win_pump`, so `Input` never sees it. `input.c` is not built for the host. The edge rule is `input_fold_edges`, and hostcheck holds it.
 
 With the console open nothing reaches the program: no movement, no look, nothing held, and what was held is released that frame, so a held attack lets go.
 
@@ -39,6 +39,7 @@ With the console open nothing reaches the program: no movement, no look, nothing
 
 `input_key_pressed()` returns a key or mouse button that went down since its last call, the lowest virtual key if several did, or 0. A screen that says "press a key" calls it every frame while it waits.
 - **First frame:** its first call, or one after a frame it was not called, only notes what is already down. So the click that opened the screen is not taken as the key.
+- **A short press:** one the poll missed is still returned, from the same notes as `pressed`, once. `input_fold_edges` is that rule, and hostcheck holds it (a finished click, a held key, a repeat, a second press).
 - **What it skips:** the console's key, the left and right copies of Shift, Ctrl and Alt (Windows 98 reports the plain ones), and everything while the console is open. Escape comes back like any key, for the screen to treat as cancel.
 - **Cost:** it reads 254 keys a call, only while a screen waits.
 
@@ -53,6 +54,8 @@ With the console open nothing reaches the program: no movement, no look, nothing
 A click is an action's press: `INPUT_ATTACK`'s, the left button, unless rebound. Escape is unchanged: with `input_set_escape_quits(0)` it is `INPUT_MENU`, and closes a menu.
 
 `input_set_pointer(0)` goes back to mouse look. Both ways start from the window's middle, so look starts with no jump. A game turns it off when play starts.
+
+`input_begin` captures the mouse and clips it to the window, and the cursor stays blank while that capture is held (`input_grabs_cursor`): `WM_SETCURSOR` draws none, so the system arrow does not sit over the client. A button-up does not release that capture. It used to, on every left or right button-up, which dropped the capture `input_begin` had taken and let the cursor leave the window: the system arrow showed around it, and a click out there never arrived. The drag hook (`win_mouse_hook`, a viewer's orbit) still captures for its own button and releases on the way up, and the button-up is delivered to the hook before that release so the synthesized move is not a drag.
 
 ## The use key
 
