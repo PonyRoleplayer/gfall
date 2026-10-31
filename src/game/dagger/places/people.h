@@ -33,7 +33,9 @@
 /*
  * Whoever the view from cam rests on within reach, drawn and in front of it:
  * *female and a number for who they are. 0 for no one. A person in the street
- * talks, and the game asks this when the use key finds no usable.
+ * talks, and the game asks this when the use key finds no usable. Pitch,
+ * visible height and the nearest model wall are respected, including a
+ * cursor-derived aim camera. One cast per use, none for passive pointing.
  */
 int people_in_view(const Camera *cam, float reach, int *female, unsigned *who);
 

@@ -33,6 +33,25 @@ typedef struct ImgPicture {
     const df_u8 *palette;
 } ImgPicture;
 
+/*
+ * A BSS is one uncompressed animation under ART_PAL.COL: five little-endian
+ * signed words (x, y, width, height, frame count), then tightly packed frames.
+ * CMPA00I0.BSS is classic's 32-direction HUD compass. Keeping the file once
+ * makes selecting a direction a pointer addition, never another disk read.
+ * The pixels have the same lifetime as img_load's VFS read (the current heap).
+ */
+typedef struct ImgAnimation {
+    int x, y, width, height, frames;
+    const df_u8 *pixels;
+} ImgAnimation;
+
+/* Decode borrowed bytes; refuses a short header, invalid size or any missing frame. */
+int img_bss_decode(const void *bytes, df_u32 size, ImgAnimation *out);
+/* Read once through VFS, then decode. Call outside the per-frame drawing path. */
+int img_load_bss(const char *name, ImgAnimation *out);
+/* Borrow frame index as an IMG-shaped view; 0 for an invalid index. No allocation. */
+int img_bss_frame(const ImgAnimation *anim, int index, ImgPicture *out);
+
 /* An IMG from ARENA2 by name. 0 when it is missing, compressed, or short. */
 int img_load(const char *name, ImgPicture *out);
 /* ART_PAL.COL, the palette of most IMGs, as 768 RGB bytes. 0 when it does not read. */

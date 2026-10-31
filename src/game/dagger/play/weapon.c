@@ -136,6 +136,18 @@ void weapon_free(void)
     g_hit_due = 0;
 }
 
+void weapon_cancel(void)
+{
+    drop_frame();
+    g_swing = 0;
+    g_hit_due = 0;
+    g_hit_done = 0;
+    g_bow_held = 0;
+    g_gesture_x = g_gesture_y = 0;
+    g_gesture_time = 0.0f;
+    g_gesture_swung = 0;
+}
+
 void weapon_hold(const Item *it)
 {
     const WeaponTemplate *w;

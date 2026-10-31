@@ -8,7 +8,7 @@ The engine draws, hears and walks any place. `src/game/dagger/` loads Daggerfall
 
 LEVELFALL goes through every passage too: into a house and out, down into a dungeon and up, out of the stream and back. Its landing sums are shared with the game in `places/travel.c`.
 
-GFALL (`apps/gfall/main.c`) is the game: classic's title and start menu, character creation (an Argonian woman only when those pictures did not open), then Privateer's Hold streamed by block, on foot, with a weapon, armour, creatures that fight back, bodies to search and saves; out of the hold into the streamed world, its towns and houses (P8); and people to talk to, shops, banks and a court (P9). The console's `goto` goes to any town, for testing until P12's map.
+GFALL (`apps/gfall/main.c`) is the game: classic's title and start menu, character creation (an Argonian woman only when those pictures did not open), then Privateer's Hold streamed by block, on foot, with a weapon, armour, creatures that fight back, bodies to search and saves; out of the hold into the streamed world, its towns and houses (P8); and people to talk to, shops, banks and a court (P9). The console's `goto` goes to any town, for testing until P10's map.
 
 ## The pieces
 
@@ -36,6 +36,7 @@ save      the one saved game
 kit       what a new character starts with
 overlay   the HUD: compass, vitals, crosshair
 menu      the title, start, options and controls screens
+control   classic cursor movement, view offsets, gesture routing and pointer rays
 keys      the bindings in DATA\KEYS.DAT
 mouse     Cursor or View, the MOUS row in that file
 screen    classic's 320 x 200 on the card
@@ -92,7 +93,7 @@ The use key's order: a body or heap first; then a townsperson the view rests on 
 `play/talk.c`, on `TALK01I0.IMG` at DFU's rectangles. `TALK02I0.IMG` and `TALK03I0.IMG` have no headers, and their bands run top to bottom: Location, People, Things, Work; and Tell me about, Where is.
 - **Where is** lists the kinds of building in this town (`places/town.c`, read from every block once and kept until another town is asked about). The answer gives the nearest one's way by the compass.
 - **Tell me about** has the news: one piece a person, from those whose macros the game can say (`words_say_plain`).
-- **Work** is a question with no list; no one has work yet (P10).
+- **Work** is a question with no list; no one has work yet (P11).
 - **The answer:** `rules_talk_value` against a roll, DFU's: Personality / 5, +5 for a place, the reaction, the tone's liking by social group with its skill check. It picks the record from TalkManager's tables. Rolls are seeded by who is asked, so a person does not change their answer. Under -20 a person says only "no response".
 - **Ours, not DFU's:** adding the reaction into the value (DFU's summary gives Personality and tone; a person who hates you must answer worse), and using the table's first row for where a place is.
 - **`play/words.c`** fills a record's macros. A macro it does not know comes out empty, so a record meant for a person checks for that in the tests (no `%` left in what is said).
@@ -103,7 +104,7 @@ The use key's order: a body or heap first; then a townsperson the view rests on 
 - **Stock holds no list.** Today's comes from the game's seed, the shop's key and the day: each template no rarer than the quality, by `BLDG`'s chance number, `chance x 5 x (21 - rarity) / 100`. Its keep row holds the day and a bit for each thing taken, so a town of shops costs no memory, and a new day stocks anew. Only weapons and armour are stocked: nothing else exists yet.
 - **Buying** moves things from the shelves on the right to the basket on the left, then Buy pays `rules_trade_price` of the sums' cost. **Selling** lays things from the pack on the counter on the right, which gives back what is not sold when the screen closes. **Repair** is the same, at a tenth of the value costed; it is instant here, where classic takes days.
 - **Steal:** seen by `rules_shoplift_chance`, the basket left behind and the court next. Unseen, it is taken free.
-- **Hours** are `BLDG`'s. A shut street door says it is locked. Holding the run key while using it picks the lock (`rules_lock_chance`, strength half the quality), because classic's Steal mode has no button yet. A failed lock will not be tried again until the skill has grown. Shelves in a shop broken into refuse Buy but allow Steal.
+- **Hours** are `BLDG`'s. A shut street door says it is locked. Holding the run key while using it picks the lock (`rules_lock_chance`, strength half the quality), as a retained shortcut; P9-b's Steal mode also selects that lockpicking path (the remaining theft paths are P9-d). A failed lock will not be tried again until the skill has grown. Shelves in a shop broken into refuse Buy but allow Steal.
 
 ### Banks
 `play/bank.c`, on `BANK00I0.IMG`, with sums usable without the screen. Each region has its own account. A letter of credit is an item worth what it says, a hundredth more to write, at least 100. A loan is 100 to 50000 a level, a tenth more to repay, due in a year of 360 days; carried gold pays first. A loan past its day is a default, a crime in its region, looked at once a game day (`bank_check_loans`). Houses and ships say none are for sale.
@@ -116,11 +117,33 @@ The use key's order: a body or heap first; then a townsperson the view rests on 
 
 **Not yet:**
 - running on the 233;
-- guards to meet or fight, assault and murder, pickpocketing, and banishment enforced;
+- guards to meet or fight, assault and murder, and banishment enforced;
+- Steal mode, pickpocketing and the deferred theft mechanics (P9-d);
 - people's own names (the strip shows their faction) and buildings' names (the list shows their kinds);
 - talk's People and Things lists, Tell me about's organisations, guild greetings, the logbook;
 - taverns' rooms and drinks, guilds' services, houses and ships, shelves in a house or a library;
 - classic's monthly price drift, and repairs taking time.
+
+## Classic HUD bar (built: P9-b, host-tested; target acceptance pending)
+
+`play/hudbar.c` owns the plain-C layout, mode names and heading selection; `overlay.c` owns pictures, and `game.c` routes buttons through the same screen-opening functions as the keys. The rectangles and icon order follow [Daggerfall Unity's HUDLarge](https://github.com/Interkarma/daggerfall-unity/blob/master/Assets/Scripts/Game/UserInterface/HUDLarge.cs). The full bar is on by default (`panel` still flips it).
+
+- **Art and portrait:** MAIN00I0.IMG, MCOL00I0.CIF's blue backing, the selected race/sex/face, live vitals, MAIN01I0.IMG's mode sheet and CMPA00I0.BSS's compact compass. The head is refreshed by `game_enter` for a new or loaded character; the picture module owns its pixels across every place change.
+- **Pointer:** Classic Cursor mode starts with a free pointer. Tab (`INPUT_CURSOR`, rebound in the controls screen's cursor slot and kept in KEYS.DAT) switches between the pointer and continuous mouse look without pausing. View mode starts with mouse look; Tab frees its HUD pointer. Character, inventory, options and rest open their existing screens; a hostile creature still forbids rest. The compass reports the date and time. The weapon button sheathes or draws the weapon. Screens and menus temporarily own the pointer; closing one restores the player's cursor choice.
+- **Modes:** the button cycles Grab, Info, Steal, Talk. Grab keeps the general use key; Info reports the aimed usable or building without activating it; Talk only addresses people. Steal enables the existing lockpicking path and never falls through to ordinary dialogue; its missing theft and pickpocket paths are P9-d. The spellbook, magic-item, transport and map buttons give a short response until their systems arrive in P10/P12.
+- **Input handoff:** pointer clicks, including clicks in empty bar pixels, never attack. The attack gate holds through the final release of a click after leaving a screen or the pointer. Entering the pointer or sheathing cancels a drawn bow or pending swing without a hit, keeping its cached idle picture. A pointer handoff discards the old look delta already sampled that frame. A new or loaded character starts in Grab with the weapon drawn; travel preserves the live mode and sheath choice.
+
+**The 233's cost:** pictures are read once at startup (the head once per character/load), not while drawing. The four mode icons share one sheet and cycling changes only UVs. The BSS's 32 uncompressed 48 x 40 frames stay in about 60 KB of RAM; only the current frame is on the card, replaced when the 11.25-degree heading changes. This bounded update is in `overlay_set_yaw`, outside `overlay_draw`; no whole-panel recomposition or upload runs per frame. The unchanged bar just draws its pieces. The tests measure 36 KB for all persistent HUD pictures on a keyed card and 42 KB with 1555 cutouts, including the old strip/box and the pointer. Both leave room inside GAME_PICTURE_KB's 256 KB for the existing worst-case weapon and controls-screen allowances.
+
+**Tests:** `check_hudbar` checks button edges and seams, empty bar pixels, compass wrap, icon rows, the real art, a truncated BSS refused without publishing a partial result, and the fake-card budget in both formats. `check_weapon` also cancels a drawn bow and a pending melee hit and checks the click-release gate. `build/hud0.ppm` and `hud1.ppm` show the selected head, Grab/north/full vitals and Steal/east/half vitals. These are native art previews, not target screenshots. Windows pointer routing and the complete bar still need a playtest on the 233; P9-c supplies the implemented classic cursor movement and world-pointing scheme below, also awaiting target acceptance.
+
+## Steal and theft (planned: P9-d)
+
+Complete the theft mechanics left out of P9: the Steal interaction mode, pickpocketing, theft from eligible owned targets, the skill checks and detection, and the resulting crime and arrest/court consequences. Use P9-b's mode controls and the existing reputation and law systems. Confirm the original rules against public references when designing the details.
+
+P9 already supports a shop's Steal button, shoplifting detection and lockpicking through the run-plus-use shortcut. Those are the starting point; P9-d connects them to the classic interaction mode and fills the missing theft paths.
+
+**Done when:** Steal can be selected from the HUD, successful theft and pickpocketing transfer the intended items, failed or witnessed attempts follow the law's consequences, and the checks, inventory and persistent state are tested.
 
 ## Places and travel
 
@@ -255,7 +278,7 @@ Skill advance by use and the level-up rule come from UESP's Leveling page. A pre
 | Reflexes | CHAR05I0.IMG, CHAR05I1.IMG's slices | very high to very low |
 | Summary | CHAR04I0.IMG | looked over; Restart or OK |
 
-- **Leaving.** Escape on the map cancels creation and returns to the start menu. It does not make a character and it does not enter a place. Escape during the questions answers the rest at random, as classic's skip does. The default Argonian woman is only when creation's pictures did not open.
+- **Leaving.** Escape on the initial race map cancels creation and returns to the start menu. It does not make a character and it does not enter a place. Escape during the questions answers the rest at random, as classic's skip does. The default Argonian woman is only when creation's pictures did not open.
 - **The kit** (`play/kit.c`, DFU's AssignStartingGear): the class's weapon in hand, and 100 gold. A Warrior's is an iron broadsword, so the default character no longer starts with a longsword. An Archer also has a steel battle axe and 24 arrows.
 - **Scrolls and buttons** are classic's on every screen (`canvas_scroll`, `canvas_button`): SPOP.RCI's nine 22 × 22 pieces, as DFU's parchment style, and BUTTONS.RCI's 32 × 16 buttons. The class questions stand on a dark band of their picture's own colours: classic's SCRL00I0.GFX and SCRL01I0.GFX are animated, and not read.
 - **Ours, not classic's:** the place of the derived numbers by eye; the dagger's steps between its ends; a custom class's skill list by number, not alphabetical.
@@ -274,16 +297,18 @@ Skill advance by use and the level-up rule come from UESP's Leveling page. A pre
 
 ## Controls and the HUD
 
-Daggerfall's keys on a Win98 keyboard and mouse:
-- WASD to walk;
-- the mouse to look, in View; Cursor leaves the pointer where it is;
-- the left button to attack, held to swing;
-- the use key;
-- shift to run, space to jump;
-- keys for the screens (character, inventory, map, rest);
-- Escape for the menu.
+GFALL starts in classic Cursor mode on a Win98 keyboard and mouse. View is mouse look and the left button attacks, held to swing; Cursor leaves the pointer where it is.
+- move the pointer freely; hold the left button in an arrow region to move/turn;
+- left-click the central X to use, or right-click anywhere in the world while sheathed;
+- right-button drag swings while armed; Shift-right-click activates instead;
+- WASD also walks/strafes; Left/Right turn, Page Up/Down look, Home centers, Alt moves the view independently;
+- E activates the center; Shift runs, Space jumps;
+- C, I, M and R open character, inventory, map and rest; H swaps hands;
+- Tab switches the free pointer and continuous mouse look; Escape opens the menu.
 
-The engine's `Input` gives these as actions (`INPUT_*`: held, pressed, released). The game sets Escape as its menu, not a quit (`input_set_escape_quits(0)`), and takes the use key itself (`gfx_set_use_key(0)`, then `interact_request_use` on E), so the left button is free to attack.
+The Controls screen's **Mouse: Cursor / Mouse: View** button selects the saved scheme. View mode starts with continuous mouse look and left-button attacks. Existing WASD movement defaults and old binding ids are retained; this is not a wholesale replacement with the original DOS keyboard layout. All available actions can be rebound in classic's slots.
+
+The engine's `Input` supplies actions (`INPUT_*`: held, pressed, released), physical left/right button edges, and raw logical mouse deltas. The game owns their interpretation (`control.c`). Escape is its menu (`input_set_escape_quits(0)`), and it owns use (`gfx_set_use_key(0)`). Both keyboard and pointed use queue an explicit wall-tested ray (`interact_request_use_from`).
 
 The HUD is drawn at the card's 640 × 480. Classic's 320 × 200 pieces are drawn twice as wide and 2.4 times as tall, where classic put them, with the engine's pictures (`pic.h`, `docs/pictures.md`).
 
@@ -295,13 +320,87 @@ The HUD is drawn at the card's 640 × 480. Classic's 320 × 200 pieces are drawn
 
 - **The vitals (P2):** MAIN03I0, MAIN04I0 and MAIN05I0.IMG (health, fatigue, spell points, 4 × 32 each), filled from the bottom to their share as DFU's HUDVitals does, where their files put them (x 49, 57 and 65, y 161).
 
-- **The bottom panel** (P7, DFU's HUDLarge): MAIN00I0.IMG, 320 × 46, at the screen's foot, the character's face stretched into it at 7, 8, the bars over it. Off by default, which we chose without knowing classic's own default; the console's `panel` flips it. It costs 15 KB of the picture room and its fill. Its buttons are not clicked, since the mouse only has a pointer in a screen, and its mode icons and DFU's small compass are not drawn: the compass stays in its box.
+- **The bottom panel** (P7's initial art, completed in P9-b): MAIN00I0.IMG, 320 × 46 at the screen's foot, with the selected head, blue backing, bars, four interaction-mode icons and compact compass. On by default, `panel` flips it. Cursor mode already has its pointer; Tab frees it in View mode; see Classic HUD bar above for routing, resource costs and the remaining target acceptance. With the panel off, the original compass strip remains. P9-c below supplies classic dungeon controls without continuous mouse look.
+
+## Classic dungeon controls without mouse look (P9-c)
+
+**Implemented and host-tested; full target acceptance pending.** `play/control.c`
+is a plain-C controller. `game.c` routes its intent to the existing player,
+weapon, interaction and HUD paths; menus/screens always use physical left-button
+clicks, independently of rebound attack actions.
+
+The behavior follows the original manual's **Cursor Based Interface** (printed
+pp. 34–36), [Bethesda's public manual](https://downloads.ctfassets.net/rporu91m20dc/64TCuMQANyymi2m88GoYQG/a7bf45a208dca3d23fef1fc8825b0c0e/manual_daggerfall_pc_en-us.pdf).
+Slot locations follow [DFU ControlsWindow](https://github.com/Interkarma/daggerfall-unity/blob/master/Assets/Scripts/Game/UserInterfaceWindows/DaggerfallControlsWindow.cs).
+These are behavior references; the numerical regions/rates below are local
+implementation choices, not constants recovered from FALL.EXE.
+
+- **Cursor movement:** the visible world has a 3 × 3 region grid: central X and
+  eight surrounding arrows. Horizontal cuts are x=106/214 on classic's 320-wide
+  screen; vertical cuts are one/two thirds of the visible height (154 with the
+  HUD, 200 without). Hold left on an arrow to move forward/back and turn left/right.
+  Speed increases linearly toward the edge, to the normal character walking/run
+  speed. Maximum turn is 90 degrees/s, keyboard pitch 72 degrees/s. Rates use
+  seconds, with no fixed per-frame keyboard increment. Keyboard strafing remains
+  available. Cursor speed scales movement input, never gravity's timestep.
+- **Activation:** left-click X, sheathed right-click anywhere in the world, or
+  Shift-right-click while armed uses the selected pixel. E still uses the center.
+  The ray is the inverse of the renderer's current 640 × 480 projection and FOV,
+  including pitch; the HUD covers the bottom of that view rather than changing
+  its projection. Loot, doors/levers and people use that aim. Street-person picking
+  now checks height, pitch and the nearest model wall too (`docs/entities.md`).
+- **Weapons:** Cursor uses a separate `INPUT_SWING` action (default right button),
+  View the existing `INPUT_ATTACK` (left). The same tested weapon gestures and
+  bow draw/release code consume physical mouse motion without rotating Cursor's
+  view. A world gesture keeps ownership when dragged over the HUD. A right press
+  starting on the HUD cannot attack; left HUD clicks use the existing buttons.
+- **Independent look:** hold Alt and move the mouse to offset the view while
+  movement keeps its heading; release preserves that offset. Home or Alt-left
+  centers it and levels pitch. Sensitivity is 0.003 rad/logical pixel; pitch is
+  clamped to the camera's limit. `GAME.view_yaw/view_pitch` preserve the offset
+  in saves; older saves take zero. Switching scheme, or loading a classic save with View selected, folds the
+  offset into the player's heading, preserving the visible direction.
+- **Ownership:** a left drag belongs to its starting arrow/X/HUD region class.
+  Dragging a HUD or X press into the world never starts movement. Menus, screens,
+  console, Tab and arrivals block old held buttons until release; pending weapon
+  hits/drawn bows are canceled. `Input.reset` identifies focus/capture and other
+  discontinuities, so synthetic release bits cannot loose a bow or become a swing. Screen clicks remain left-button clicks even if
+  either attack action is rebound. The world runs under the free pointer.
+- **Settings:** Controls' Mouse button selects Cursor (default) or View, saved
+  as a `CTLS` row and a `MOUS` row beside the append-only `KEYS` action rows in DATA\KEYS.DAT.
+  Old files without either row take Cursor; a file with only one of them copies that choice onto the other. Existing movement bindings stay valid.
+  New slots cover turning, pitch, center and Alt; the Swing slot shows the
+  selected scheme's binding. Tab is a temporary pointer switch, not a preference
+  change. Classic Cursor hides the modern crosshair.
+
+**Cost:** no per-frame allocation, table lookup or passive cursor raycast. The
+nine 16 × 16 arrow/X indicators share a startup-built 64 × 48 cutout sheet:
+3 KB keyed / 6 KB 1555 on the card, selected by UVs. These are procedural
+indicators under ART_PAL.COL, not recovered original cursor artwork. The Controls
+button's opaque label tile adds 64 bytes. `player_step_motion` normalizes only
+movement vectors longer than one; ordinary cardinal walking needs no sqrt.
+The full persistent UI plus worst weapon/Controls reserve still fits 256 KB
+in either card format (`check_hudbar`). Target cycle costs remain unmeasured.
+
+**Tests:** `check_controls` covers passive motion, all regions, edge speed,
+X/right activation, gestures, Alt/Home, menu gates, settings, turning at
+30/60/120 Hz, ray reprojection at FOV 45/75/120 and an off-center door behind
+an actual wall mesh. The hold test checks half-speed movement without slowing
+a jump; the save test retains Alt offsets; the Daggerfall town test picks a
+person and refuses a ray above their head. The ENGINE Engineer's focused
+`tests/check_input.c` exercises the real input snapshot with Win32 stand-ins
+(`docs/input.md`), including capture/focus flushing and independent physical clicks.
+
+**Target acceptance still required:** navigate and fight through Privateer's
+Hold, use doors/levers and all HUD modes, save/resume, change/rebind schemes,
+Alt look and Tab, and check capture/focus transitions on Windows 98/the 233.
+Tune region boundaries/rates from that playtest; no target run is claimed here.
 
 ## Menus
 
 **Built (P3, `play/menu.c`, `play/keys.c`, `play/screen.c`).** GFALL opens on classic's menus, then starts the hold.
 - **Each menu is classic's own picture, where classic puts it.** Its buttons are where DFU's windows put them. Only the open menu's picture is on the card (`pic_load` on open, `pic_free` on close).
-- **The pointer is classic's ARROW.RAW** (10 × 10, a cutout under ART_PAL.COL), drawn at the engine's pointer (`input_set_pointer`, `input_pointer`). A click is the left button (`INPUT_ATTACK`'s press).
+- **The pointer is classic's ARROW.RAW** (10 × 10, a cutout under ART_PAL.COL), drawn at the engine's pointer (`input_set_pointer`, `input_pointer`). A click is the physical left button (`mouse_pressed & INPUT_MOUSE_LEFT`), independent of attack bindings.
 - **The screens before any place** are the engine's screen frame: `gfx_prepare(0)`, then `gfx_frame(cam, 0)` each frame, with the game drawing through `gfx_set_extra`.
 
 | Menu | Picture | Buttons |
@@ -312,19 +411,19 @@ The HUD is drawn at the card's 640 × 480. Classic's 320 × 200 pieces are drawn
 | Controls | CNFG00I0.IMG | each action's key in classic's slot (47 × 7); a click on one waits for a key (`input_key_pressed`), and Escape leaves it be; a key another action has is swapped between them; Escape, the menu's, and the console's are refused (`input_bind`). Mouse, the left button along the bottom, switches Cursor and View. Default puts classic's keys and Cursor back; Continue, or Escape, goes back to the options |
 
 **The controls' slots** are classic's for the actions the game has:
-- forward, back, left and right (strafe), in the walk's columns;
+- forward, back, turn left/right and strafe left/right, in the walk's columns;
 - jump and run;
 - rest;
 - the swing (attack);
 - the character sheet and the inventory;
-- use (activate the centre);
+- use (activate the centre), cursor toggle, look up/down, center and Alt look;
 - the travel map.
 
-Classic's other slots (turning, crouching, spells, the log...) stay empty until their actions come.
+Classic's other slots (crouching, spells, the log...) stay empty until their actions come.
 
-**Bindings are saved** in `DATA\KEYS.DAT`, a record file (`docs/data.md`) of one `KEYS` record per action (id `INPUT_*`, its virtual key), when the controls screen closes with a change. They are read at start (`keys_load`) over classic's defaults (`keys_defaults`): W, S, A, D, the left button, E, Shift, Space, C, I, M, R. The same file holds one `MOUS` row, id 0, `cursor` 1 or 0 (`play/mouse.c`). No row means Cursor.
+**Bindings are saved** in `DATA\KEYS.DAT`, a record file (`docs/data.md`) of one `KEYS` record per action (id `INPUT_*`, its virtual key), when the controls screen closes with a change. They are read at start (`keys_load`) over classic's defaults (`keys_defaults`): W, S, A, D, left-button View attack, right-button Cursor swing, E, Shift, Space, C, I, M, R, H, Tab, Left/Right, Page Up/Down, Home and Alt. The same file holds one `MOUS` row, id 0, `cursor` 1 or 0 (`play/mouse.c`), and a `CTLS` row for that same Cursor/View preference (`play/control.c`). No row means Cursor. A file that stored only one of those rows copies it onto the other at load, so the two stay one setting.
 
-**Mouse.** Cursor and View both exist. The controls screen's Mouse button switches them. Cursor keeps the pointer (`input_set_pointer(1)`): the mouse does not turn the view, the crosshair is off, and a click is the attack button at the pointer, so it hits the control drawn under it (a menu, a screen). View is mouse look (`input_set_pointer(0)`): the pointer is not drawn over the world, the crosshair is on, and the attack button swings (`weapon_gesture`; a drag uses the mouse's motion). Opening a menu or a screen shows the pointer either way. Closing it, and starting play, uses the saved mode, not whichever a screen last left. Default puts Cursor back with the keys.
+**Mouse.** Cursor and View both exist. The controls screen's Mouse button switches them, and both rows are written. Cursor keeps the pointer (`input_set_pointer(1)`): the mouse does not turn the view, the crosshair is off, and classic's arrows, X and right-button gesture run (`control.c`). A click is the physical left button, so a menu or a screen takes the control drawn under it. View is mouse look (`input_set_pointer(0)`): the pointer is not drawn over the world, the crosshair is on, and the left button swings (`weapon_gesture`; a drag uses the mouse's motion). Opening a menu or a screen shows the pointer either way. Closing it restores the HUD cursor, and starting play uses the saved mode, not whichever a screen last left. Tab toggles the free pointer without changing the saved scheme. Default puts Cursor back with the keys.
 
 On the 233: the title, the start menu, the pointer, the start into the hold and Escape's options run. The options' Exit did not quit at first: its question ("Click Exit again") was taken back every frame with no click, so the second click only asked again. It is now taken back only by a click on another button (`d403b0f`); not yet tried there. The controls screen is not tried there yet.
 
@@ -346,7 +445,7 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **The records.** `ITEM`, `WEAP` and `MATL` (`tables/items.c`, `docs/data.md`) carry classic's 19 weapon templates, what the 18 swung ones add (damage, skill, CIF), and the 10 materials, as Daggerfall Unity's ItemTemplates, FormulaHelper and ItemBuilder have them.
 - **An item** (`play/inventory.c`) is a template in a material, by ItemBuilder's SetItemPropertiesByMaterial: value × 3 × `value_q`; weight in whole quarter kilograms × `weight_q` / 4, rounded half to even (Unity's `Mathf.Round`: a steel longsword's 22.5 quarters are 22, 5.5 kg), back to kilograms; condition × `condition_q` / 4.
 - **The pack** is the player's (`Player.pack`): up to 64 items and what is worn. The start gives classic's kit (Creation, above).
-- **Going places** (`play/commands.c`, `travel_go_to_town`), for testing until P12's map: `goto Sentinel` (a whole name, any case, the largest of that name), `goto 50026` (a place's code, its location number, unique over the map's 15251 outdoor places, the Code column of LEVELFALL's list) or `goto 17 1231` (region and index) goes to the town's streets from anywhere, once the console closes, the world standing still until then. It lands on the walkable cell nearest the town's middle, which can be inside a building. A part of a name that fits several lists them with their codes. `where` says the town, the region and its code.
+- **Going places** (`play/commands.c`, `travel_go_to_town`), for testing until P10's map: `goto Sentinel` (a whole name, any case, the largest of that name), `goto 50026` (a place's code, its location number, unique over the map's 15251 outdoor places, the Code column of LEVELFALL's list) or `goto 17 1231` (region and index) goes to the town's streets from anywhere, once the console closes, the world standing still until then. It lands on the walkable cell nearest the town's middle, which can be inside a building. A part of a name that fits several lists them with their codes. `where` says the town, the region and its code.
 - **Console** (`play/commands.c`), in play only: `additem [weapon] [material]` (bare, the weapons and materials there are; the material first or last, iron when none; any case, spaces and dashes ignored: `additem dai katana ebony`), `items` (the pack, `*` the one in hand, with weight, value and condition), `equip n|none`, `tai` (the creatures' AI on or off, below), and `tgm` (god mode: nothing takes the player's health, falls or blows, all through `player_hurt`; alone it flips, as Bethesda's consoles do; off with each new game).
 - **Armour and gold** came with P5: Loot and the inventory, below.
 
@@ -476,25 +575,27 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Where | Gap | Phase |
 | --- | --- | --- |
 | Combat | an arrow lands at once: no missile flies | later |
-| Creatures | ranged attacks and spells; a hurt voice | P11 |
+| Creatures | ranged attacks and spells; a hurt voice | P12 |
 | Creatures | the frame a blow lands on and how often a move sounds are our guesses, not found in classic | - |
 | Saves | creatures awake come back asleep; the weather is not kept | later |
-| Rest | an encounter wakes a sleeper, not a new creature; a class with no spell point regeneration | later, P11 |
-| Items | clothing, jewellery, ingredients, books, potions, maps, and the screen's other tabs | P11, later |
+| Rest | an encounter wakes a sleeper, not a new creature; a class with no spell point regeneration | later, P12 |
+| Items | clothing, jewellery, ingredients, books, potions, maps, and the screen's other tabs | P12, later |
 | Items | clothing's dyes | with clothing |
-| Inventory | the Wagon button (P12), the Use button (P11) | as named |
+| Inventory | the Wagon button (P10), the Use button (P12) | as named |
 | Inventory | two weapons: the doll shows the one in use, as the pictures have one weapon hand; classic's own way not found | later |
 | Inventory | the info box's lines are ours, not TEXT.RSC's | later |
-| Loot | the other columns of `LOOT` wait for their items | P11, later |
+| Loot | the other columns of `LOOT` wait for their items | P12, later |
 | Loot | a body or a heap takes nothing put on it (a choice, see What can be searched) | - |
 | Places | treasure and piles only in a dungeon streamed by block; a town's doors not keyed; the sea can be walked on | later |
-| Player | the bottom panel's buttons and mode icons | later |
-| Creation | a custom class's special advantages, disadvantages and reputations; the Help button | P11, later |
+| Player | the completed classic HUD bar needs target acceptance; map and magic buttons await their systems | P9-b, P10, P12 |
+| Player | target acceptance/tuning of the implemented classic cursor controls | P9-c |
+| People | Steal mode, pickpocketing and the deferred theft mechanics | P9-d |
+| Creation | a custom class's special advantages, disadvantages and reputations; the Help button | P12, later |
 | Creation | the class questions' animated scroll and characters | later |
 | Creation | the answers' history and lasting modifiers (`#`, `RP`, `TH`...) are read past | later |
 | Creation | Save Roll and Load Roll; the race's voice on choosing | later |
-| Character | the Spellbook, Log, History and Affiliations buttons | P10, P11 |
-| Character | starting clothes and spellbook | with clothing, P11 |
+| Character | the Spellbook, Log, History and Affiliations buttons | P11, P12 |
+| Character | starting clothes and spellbook | with clothing, P12 |
 | Engine | `scene/pack.c`, `ui/packview.c`, `scene/rpg.c`, `ui/rpgview.c` are used by no game; the user's line is that the engine is simulation and world | to decide |
 
 ## Rest and time (built: P7)
@@ -516,7 +617,7 @@ The travel map comes later, with `worldmap.c`'s pixels and the location index: p
 
 | Chunk | Holds |
 | --- | --- |
-| `GAME` | which place and the way back out of its door, the feet in that place's frame with the stream's origin that frame has, the facing, the clock's minute and day, the day the game began, the seed, the gold, what is worn |
+| `GAME` | which place and the way back out of its door, the feet in that place's frame with the stream's origin that frame has, the movement facing and independent Alt view offsets (P9-c), the clock's minute and day, the day the game began, the seed, the gold, what is worn |
 | `CHAR` | the sheet, whole: skill uses and the level's count among it |
 | `PACK` | what is carried, material, variant and condition among it |
 | `KEEP` | every door, lever, creature, heap and pile not as its file has it (`keep.c`) |
@@ -575,7 +676,7 @@ Daggerfall's tables are records in MAIN.DAT, cooked on the first run, with mods 
 Blocks, models, pictures, sounds and songs are never cooked: they stay in ARENA2.
 
 ## Phases
-The first goal is a **prototype**: from classic's start menu, Privateer's Hold played from start to finish, out to the first town and back after a save (P1 to P8). Then the rest of classic (P9 to P12). Then a mode of our own (P13). Each phase:
+The first goal is a **prototype**: from classic's start menu, Privateer's Hold played from start to finish, out to the first town and back after a save (P1 to P8). Then the rest of classic (P9 to P12), with P9-b completing the HUD, P9-c classic dungeon controls without mouse look, P9-d the theft mechanics, and P10 bringing the travel map before P12 magic. Then a mode of our own (P13). Each phase:
 - is measured on the 233 with the profile's `play` stage;
 - adds its rules' tests to `tests/check_play.c`;
 - adds its numbers to MAIN.DAT;
@@ -593,9 +694,12 @@ The first goal is a **prototype**: from classic's start menu, Privateer's Hold p
 | P7 | Prototype polish (built, host-tested, not run on the target; the 233 profile pass not done): loading holds, one save slot in `DATA\`, the menu's load, rest and wait, a 233 profile pass | GAME | from the menu through the hold and back after a save |
 | P8 | Out of the hold (built, host-tested, not run on the target): `places/travel.c` lifted from LEVELFALL and shared; the hold's outside in the stream, the nearest town, its houses | GAME and LEVELFALL | from the menu to town and back after a save, in one session |
 | P9 | People (built, host-tested, not run on the target; guards, assault and names not yet): talk from TEXT.RSC, shops, banks, factions, reputation, law; `BLDG`, `CRIM` | GAME | a shop bought from, a bank used, a way asked in town, a crime tried |
-| P10 | Quests: the QBN interpreter, guild quests | GAME | |
-| P11 | Magic: spells, effects, spellbook, casting, potions, enchantments | GAME | |
-| P12 | The wider world: travel map, horse and cart, holidays, diseases, lycanthropy and vampirism | GAME | |
+| P9-b | Classic HUD bar (built, host-tested; pointer and target acceptance pending): selected character's head and blue backing, live vitals, clickable buttons, four mode icons and compact compass; Tab frees the pointer, the weapon button sheathes | GAME, ENGINE's input and pictures | the selected character's head and vitals shown correctly, available controls usable by pointer, across saves and place changes |
+| P9-c | Classic dungeon controls without mouse look (implemented, host-tested): free pointer, cursor/keyboard movement and turning, pointed use, right-button gestures, Alt look and saved scheme; target acceptance pending | GAME, ENGINE's input | the hold navigated and fought through, doors and HUD used, and a save resumed without continuous mouse look |
+| P9-d | Steal and theft (planned): classic Steal mode, pickpocketing, deferred theft paths, skill checks, detection and law consequences; build on P9's shoplifting and lockpicking | GAME | theft and pickpocketing can succeed or be detected, with the right items and legal consequences kept and tested |
+| P10 | The wider world: travel map before magic, horse and cart, holidays, diseases, lycanthropy and vampirism | GAME | |
+| P11 | Quests: the QBN interpreter, guild quests | GAME | |
+| P12 | Magic: spells, effects, spellbook, casting, potions, enchantments | GAME | |
 | P13 | Our own mode: a ruleset switch over classic's rules, a mode `.DAT` over MAIN.DAT; classic stays the default and the reference | GAME | |
 
 Each phase updates this page (what is built, what is not) and AGENTS.md's layout list.

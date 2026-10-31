@@ -30,12 +30,14 @@ void overlay_draw(void);
 /*
  * Classic's bottom panel (MAIN00I0.IMG, 320 x 46, at the screen's foot; DFU's
  * HUDLarge): the character's face in it, the bars and the compass over it.
- * Off by default; the console's `panel` turns it on. Its buttons are not
- * clicked: the pointer is the mouse's only in a screen.
+ * On by default; the console's `panel` flips it. hudbar.h owns hit regions
+ * and mode names, game.c routes the commands. This module only draws.
  */
 void overlay_set_panel(int on);
 int overlay_panel(void);
 /* The face it shows, a race's and sex's CIF and which: read when the game starts. */
 void overlay_set_face(const char *cif, int which);
+/* The mode's row in MAIN01I0.IMG, from hudbar.h. A change needs no upload. */
+void overlay_set_mode(int mode);
 
 #endif

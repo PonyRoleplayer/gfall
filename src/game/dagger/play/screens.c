@@ -249,7 +249,7 @@ static int talk_frame(const Input *in)
     if (vk && talk_key(vk) == TALK_LEAVE) {
         return SCREENS_CLOSED;
     }
-    if ((in->pressed & INPUT_BIT(INPUT_ATTACK)) && talk_click(g_point_x, g_point_y) == TALK_LEAVE) {
+    if ((!in->reset && (in->mouse_pressed & INPUT_MOUSE_LEFT)) && talk_click(g_point_x, g_point_y) == TALK_LEAVE) {
         return SCREENS_CLOSED;
     }
     if (talk_changed()) {
@@ -264,7 +264,7 @@ static int service_frame(const Input *in)
     if (in->pressed & INPUT_BIT(INPUT_MENU)) {
         return SCREENS_CLOSED;
     }
-    if (in->pressed & INPUT_BIT(INPUT_ATTACK)) {
+    if (!in->reset && (in->mouse_pressed & INPUT_MOUSE_LEFT)) {
         g_service_choice = service_click(g_point_x, g_point_y);
         if (g_service_choice == SERVICE_LEAVE) {
             return SCREENS_CLOSED;
@@ -285,7 +285,7 @@ static int bank_frame(const Input *in)
     if (vk && bank_key(vk) == BANK_LEAVE) {
         return SCREENS_CLOSED;
     }
-    if ((in->pressed & INPUT_BIT(INPUT_ATTACK)) && bank_click(g_point_x, g_point_y) == BANK_LEAVE) {
+    if ((!in->reset && (in->mouse_pressed & INPUT_MOUSE_LEFT)) && bank_click(g_point_x, g_point_y) == BANK_LEAVE) {
         return SCREENS_CLOSED;
     }
     if (bank_changed()) {
@@ -300,7 +300,7 @@ static int court_frame(const Input *in, float dt)
     int over;
 
     over = court_step(dt) == COURT_LEAVE;
-    if (!over && (in->pressed & INPUT_BIT(INPUT_ATTACK))) {
+    if (!over && (!in->reset && (in->mouse_pressed & INPUT_MOUSE_LEFT))) {
         over = court_click(g_point_x, g_point_y) == COURT_LEAVE;
     }
     if (over) {
@@ -330,7 +330,7 @@ static int bag_frame(const Input *in)
     } else if (in->pressed & (INPUT_BIT(INPUT_MENU) | INPUT_BIT(INPUT_INVENTORY))) {
         return SCREENS_CLOSED;
     }
-    if ((in->pressed & INPUT_BIT(INPUT_ATTACK)) && bag_click(g_point_x, g_point_y) == BAG_LEAVE) {
+    if ((!in->reset && (in->mouse_pressed & INPUT_MOUSE_LEFT)) && bag_click(g_point_x, g_point_y) == BAG_LEAVE) {
         return bag_stole() ? SCREENS_SEEN : SCREENS_CLOSED;
     }
     if (bag_changed()) {
@@ -345,7 +345,7 @@ static int sheet_frame(const Input *in)
     if ((in->pressed & (INPUT_BIT(INPUT_MENU) | INPUT_BIT(INPUT_CHARACTER))) && sheet_may_leave()) {
         return SCREENS_CLOSED;
     }
-    if (in->pressed & INPUT_BIT(INPUT_ATTACK)) {
+    if (!in->reset && (in->mouse_pressed & INPUT_MOUSE_LEFT)) {
         int asked;
 
         asked = sheet_click(g_point_x, g_point_y);
@@ -374,7 +374,7 @@ static int create_frame(const Input *in)
     if (vk) {
         asked = create_key(vk);
     }
-    if (asked == CREATE_STAY && (in->pressed & INPUT_BIT(INPUT_ATTACK))) {
+    if (asked == CREATE_STAY && (!in->reset && (in->mouse_pressed & INPUT_MOUSE_LEFT))) {
         asked = create_click(g_point_x, g_point_y);
     }
     if (asked == CREATE_DONE) {
@@ -399,7 +399,7 @@ static int rest_frame(const Input *in, float dt)
     if (vk && rest_key(vk) == REST_LEAVE) {
         return SCREENS_CLOSED;
     }
-    if ((in->pressed & INPUT_BIT(INPUT_ATTACK)) && rest_click(g_point_x, g_point_y) == REST_LEAVE) {
+    if ((!in->reset && (in->mouse_pressed & INPUT_MOUSE_LEFT)) && rest_click(g_point_x, g_point_y) == REST_LEAVE) {
         return SCREENS_CLOSED;
     }
     if (rest_step(dt) == REST_LEAVE) {
@@ -422,7 +422,7 @@ static int slots_frame(const Input *in)
     if (vk) {
         asked = slots_key(vk);
     }
-    if (asked == SLOTS_STAY && (in->pressed & INPUT_BIT(INPUT_ATTACK))) {
+    if (asked == SLOTS_STAY && (!in->reset && (in->mouse_pressed & INPUT_MOUSE_LEFT))) {
         asked = slots_click(g_point_x, g_point_y);
     }
     if (asked == SLOTS_LEAVE) {

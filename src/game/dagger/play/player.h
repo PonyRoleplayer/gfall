@@ -55,6 +55,12 @@ void player_shift(Player *p, float dx, float dz);
  * the view, Q up and E down, at the same speeds. dt is real seconds.
  */
 void player_step(Player *p, const Input *in, const Scene *scene, float dt, int collide);
+/* Controller-facing entry points. Turn is in radians this frame; motion is
+ * a forward/right fraction (-1..1), normalized together without changing dt.
+ * Actions still supply jump, running and no-clip rise. player_step remains
+ * the legacy relative-look wrapper used by existing callers and tests. */
+void player_turn(Player *p, float yaw, float pitch);
+void player_step_motion(Player *p, const Input *in, const Scene *scene, float dt, int collide, float forward, float right);
 /*
  * Health taken from it, the one way the game hurts the player (a fall,
  * a blow): 1 when it dies, 0 when it lives, -1 when nothing was taken

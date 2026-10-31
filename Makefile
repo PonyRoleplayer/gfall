@@ -160,6 +160,8 @@ PLAY_SRC := \
 	src/game/dagger/play/pile.c \
 	src/game/dagger/play/doll.c \
 	src/game/dagger/play/canvas.c \
+	src/game/dagger/play/hudbar.c \
+	src/game/dagger/play/control.c \
 	src/game/dagger/play/bag.c \
 	src/game/dagger/play/kit.c \
 	src/game/dagger/play/create.c \

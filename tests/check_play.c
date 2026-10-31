@@ -26,6 +26,8 @@
 #include "game/dagger/play/words.h"
 #include "game/dagger/play/talk.h"
 #include "game/dagger/play/canvas.h"
+#include "game/dagger/play/hudbar.h"
+#include "game/dagger/play/control.h"
 #include "game/dagger/play/service.h"
 #include "game/dagger/play/shop.h"
 #include "game/dagger/play/bank.h"
@@ -152,6 +154,270 @@ static float walk(Player *p, const Scene *scene, const Input *in, int n)
     return df_sqrt(dx * dx + dz * dz);
 }
 
+/* Classic control intent, independent of Win32/Glide. The expectations use
+ * manual behavior and worked distances/angles, rather than copying region
+ * implementation: passive movement, edge speed, activation ownership,
+ * Alt view versus body heading, and exactly the pixel selected by a use. */
+typedef struct ControlBytes {
+    df_u8 bytes[2048];
+    df_u32 n;
+} ControlBytes;
+
+static int control_put_test(void *ctx, const void *bytes, df_u32 n)
+{
+    ControlBytes *b;
+
+    b = (ControlBytes *)ctx;
+    if (n > sizeof(b->bytes) - b->n) {
+        return 0;
+    }
+    memcpy(b->bytes + b->n, bytes, n);
+    b->n += n;
+    return 1;
+}
+
+static void check_controls(void)
+{
+    ControlState s;
+    ControlFrame frame;
+    Input in;
+    Camera view, aim;
+    Basis b;
+    ControlBytes bytes;
+    df_u8 pixels[CONTROL_CURSOR_W * CONTROL_CURSOR_H];
+    float turn, slow;
+    int i, j, count;
+
+    memset(&bytes, 0, sizeof(bytes));
+    control_set_classic(0);
+    check_expect(rec_put_begin(control_put_test, &bytes) && control_put_settings(control_put_test, &bytes),
+                 "controls: settings did not write");
+    control_set_classic(1);
+    control_read_settings(bytes.bytes, bytes.n);
+    check_expect(!control_classic(), "controls: View setting did not round trip");
+    control_read_settings(bytes.bytes, 8);
+    check_expect(control_classic(), "controls: older bindings did not default to Cursor");
+    control_read_settings(bytes.bytes, bytes.n - 2);
+    check_expect(control_classic(), "controls: a truncated setting was accepted");
+
+    check_expect(control_region(160, 77, 154) == CONTROL_TARGET && control_region(160, 0, 154) == CONTROL_N
+                     && control_region(319, 0, 154) == CONTROL_NE && control_region(319, 77, 154) == CONTROL_E
+                     && control_region(319, 153, 154) == CONTROL_SE && control_region(160, 153, 154) == CONTROL_S
+                     && control_region(0, 153, 154) == CONTROL_SW && control_region(0, 77, 154) == CONTROL_W
+                     && control_region(0, 0, 154) == CONTROL_NW && control_region(160, 154, 154) == -1
+                     && control_region(320, 100, 200) == -1 && control_region(160, 199, 200) == CONTROL_S,
+                 "controls: arrows, center or HUD region is wrong");
+    control_reset(&s);
+    memset(&in, 0, sizeof(in));
+    in.mouse_dx = 100;
+    in.mouse_dy = -100;
+    control_step(&s, &in, 1, 1, 319, 0, 154, 0, 1.0f / 60.0f, &frame);
+    check_expect(!frame.use && frame.forward == 0.0f && frame.yaw == 0.0f && frame.pitch == 0.0f,
+                 "controls: passive cursor motion moved the body or view");
+    in.mouse_held = in.mouse_pressed = INPUT_MOUSE_LEFT;
+    control_step(&s, &in, 1, 1, 160, 25, 154, 0, 1.0f / 60.0f, &frame);
+    slow = frame.forward;
+    check_expect(slow > 0.4f && slow < 0.6f && !frame.use && frame.yaw == 0.0f,
+                 "controls: held north arrow did not walk at a fraction of full speed");
+    in.mouse_pressed = 0;
+    control_step(&s, &in, 1, 1, 160, 0, 154, 0, 1.0f / 60.0f, &frame);
+    check_expect(frame.forward == 1.0f && frame.forward > slow, "controls: screen edge is not full speed");
+    control_step(&s, &in, 1, 1, 160, 77, 154, 0, 1.0f / 60.0f, &frame);
+    check_expect(frame.forward == 0.0f && !frame.use, "controls: dragging an arrow to X activated something");
+    in.mouse_held = 0;
+    control_step(&s, &in, 1, 1, 160, 77, 154, 0, 0.01f, &frame);
+    in.mouse_pressed = in.mouse_held = INPUT_MOUSE_LEFT;
+    control_step(&s, &in, 1, 1, 160, 77, 154, 0, 0.01f, &frame);
+    check_expect(frame.use && frame.forward == 0.0f, "controls: X did not activate once on press");
+    in.mouse_pressed = 0;
+    control_step(&s, &in, 1, 1, 0, 0, 154, 0, 0.01f, &frame);
+    check_expect(!frame.use && frame.forward == 0.0f && frame.yaw == 0.0f,
+                 "controls: dragging an X click turned into movement");
+    /* The game blocks a HUD/menu click before it reaches the controller. */
+    control_block(&s);
+    control_step(&s, &in, 1, 1, 0, 0, 154, 0, 0.01f, &frame);
+    check_expect(frame.forward == 0.0f && frame.yaw == 0.0f, "controls: held HUD click walked after handoff");
+
+    memset(&in, 0, sizeof(in));
+    control_step(&s, &in, 1, 1, 160, 77, 154, 0, 0.01f, &frame);
+    in.held = in.pressed = INPUT_BIT(INPUT_SWING);
+    in.mouse_dx = 40;
+    in.mouse_dy = -15;
+    control_step(&s, &in, 1, 1, 160, 77, 154, 0, 0.01f, &frame);
+    check_expect(frame.attack_pressed && frame.attack_held && frame.gesture_dx == 40 && frame.gesture_dy == -15
+                     && frame.yaw == 0.0f && frame.pitch == 0.0f && !frame.use,
+                 "controls: a right gesture moved the camera or lost its motion");
+    in.pressed = 0;
+    control_step(&s, &in, 1, 1, 160, 170, 154, 0, 0.01f, &frame);
+    check_expect(frame.attack_held, "controls: a world gesture was released by crossing the HUD");
+    in.held = 0;
+    in.released = INPUT_BIT(INPUT_SWING);
+    control_step(&s, &in, 1, 1, 160, 170, 154, 0, 0.01f, &frame);
+    check_expect(frame.attack_released, "controls: a world gesture lost its release over the HUD");
+    in.released = 0;
+    in.held = in.pressed = INPUT_BIT(INPUT_SWING);
+    control_step(&s, &in, 1, 1, 319, 0, 154, 1, 0.01f, &frame);
+    check_expect(frame.use && !frame.attack_pressed, "controls: sheathed right click did not activate in an arrow region");
+    in.held = in.pressed = 0;
+    control_step(&s, &in, 1, 1, 319, 0, 154, 0, 0.01f, &frame);
+    in.held = INPUT_BIT(INPUT_SWING) | INPUT_BIT(INPUT_RUN);
+    in.pressed = INPUT_BIT(INPUT_SWING);
+    control_step(&s, &in, 1, 1, 319, 0, 154, 0, 0.01f, &frame);
+    check_expect(frame.use && !frame.attack_held, "controls: Shift-right click swung instead of activating");
+    control_block(&s);
+    in.held = INPUT_BIT(INPUT_SWING);
+    in.pressed = 0;
+    control_step(&s, &in, 1, 1, 160, 77, 154, 0, 0.01f, &frame);
+    check_expect(!frame.attack_held && !frame.use, "controls: held attack survived a menu");
+    in.held = 0;
+    in.released = INPUT_BIT(INPUT_SWING);
+    control_step(&s, &in, 1, 1, 160, 77, 154, 0, 0.01f, &frame);
+    check_expect(!frame.attack_released, "controls: old menu button release became a swing");
+
+    in.reset = 1;
+    in.released = INPUT_BIT(INPUT_SWING);
+    control_step(&s, &in, 1, 1, 160, 77, 154, 0, 0.01f, &frame);
+    check_expect(!frame.attack_released && !frame.attack_held && !frame.use,
+                 "controls: focus/capture discontinuity became a bow release or click swing");
+    in.reset = 0;
+    in.released = 0;
+    in.held = INPUT_BIT(INPUT_SWING);
+    control_step(&s, &in, 1, 1, 160, 77, 154, 0, 0.01f, &frame);
+    check_expect(!frame.attack_held, "controls: held pre-discontinuity button resumed a gesture");
+
+    memset(&in, 0, sizeof(in));
+    in.held = INPUT_BIT(INPUT_FREELOOK);
+    in.move_f = 1;
+    in.mouse_dx = 100;
+    in.mouse_dy = -50;
+    control_step(&s, &in, 1, 1, 160, 77, 154, 0, 0.01f, &frame);
+    check_expect(frame.forward == 1.0f && frame.yaw == 0.0f && frame.pitch == 0.0f
+                     && check_near(s.view_yaw, 0.3f, 0.0001f) && check_near(s.view_pitch, 0.15f, 0.0001f),
+                 "controls: Alt look changed the movement heading");
+    camera_set(&view, 0, 0, 0, 1.0f, 0.1f);
+    control_view(&s, &view);
+    check_expect(check_near(view.yaw, 1.3f, 0.0001f) && check_near(view.pitch, 0.25f, 0.0001f),
+                 "controls: Alt offset did not reach the camera");
+    in.mouse_pressed = INPUT_MOUSE_LEFT;
+    control_step(&s, &in, 1, 1, 160, 77, 154, 0, 0.01f, &frame);
+    check_expect(frame.center && s.view_yaw == 0 && s.view_pitch == 0 && !frame.use,
+                 "controls: Alt-left did not center without activating");
+    memset(&in, 0, sizeof(in));
+    in.pressed = INPUT_BIT(INPUT_LOOK_CENTER);
+    control_step(&s, &in, 1, 1, 160, 77, 154, 0, 0.01f, &frame);
+    check_expect(frame.center, "controls: Home did not center");
+    /* One second of arrow turning at 30, 60 and 120 Hz gives the same angle.
+     * The legacy look_dx arrow increment is deliberately ignored by play. */
+    for (j = 0; j < 3; j++) {
+        count = 30 << j;
+        memset(&in, 0, sizeof(in));
+        in.held = INPUT_BIT(INPUT_TURN_RIGHT);
+        in.look_dx = 12;
+        turn = 0;
+        for (i = 0; i < count; i++) {
+            control_step(&s, &in, 1, 1, 160, 77, 154, 0, 1.0f / (float)count, &frame);
+            turn += frame.yaw;
+        }
+        check_expect(check_near(turn, DF_TAU * 0.25f, 0.0001f), "controls: keyboard turning depends on frame rate");
+    }
+    memset(&in, 0, sizeof(in));
+    in.mouse_dx = 100;
+    in.mouse_dy = -50;
+    control_step(&s, &in, 0, 0, 160, 77, 154, 0, 0.01f, &frame);
+    check_expect(check_near(frame.yaw, 0.3f, 0.0001f) && check_near(frame.pitch, 0.15f, 0.0001f),
+                 "controls: View mouse look no longer works");
+    in.mouse_held = in.mouse_pressed = INPUT_MOUSE_LEFT;
+    in.pressed = in.held = INPUT_BIT(INPUT_ATTACK);
+    control_step(&s, &in, 0, 1, 160, 77, 154, 0, 0.01f, &frame);
+    check_expect(frame.use && !frame.attack_held && frame.yaw == 0, "controls: View free pointer attacked or looked");
+
+    /* Reproject an actual ray at multiple fields of view, yaw and pitch.
+     * Screen coordinates are the renderer's full 640x480, even with the HUD. */
+    for (j = 0; j < 3; j++) {
+        camera_set_fov(j == 0 ? 45.0f : (j == 1 ? 75.0f : 120.0f));
+        camera_set(&view, 12, 30, -70, 1.1f, 0.35f);
+        for (i = 0; i < 3; i++) {
+            float vx, vy, vz, sx, sy, w, z;
+            int px, py;
+
+            px = i == 0 ? 100 : (i == 1 ? 320 : 550);
+            py = i == 0 ? 180 : (i == 1 ? 240 : 440);
+            control_point(&view, px, py, &aim);
+            camera_basis(&aim, &b);
+            {
+                Basis original;
+
+                camera_basis(&view, &original);
+                camera_view(&view, &original, view.x + b.fx * b.cp * 100,
+                            view.y + b.sp * 100, view.z + b.fz * b.cp * 100, &vx, &vy, &vz);
+            }
+            check_expect(camera_project(vx, vy, vz, &sx, &sy, &w, &z)
+                             && check_near(sx, (float)px, 0.01f) && check_near(sy, (float)py, 0.01f),
+                         "controls: pointed use did not follow its screen pixel");
+        }
+    }
+    camera_set_fov(75);
+    {
+        Scene scene;
+        Usable door;
+        UseHit hit;
+
+        memset(&scene, 0, sizeof(scene));
+        memset(&door, 0, sizeof(door));
+        door.model = door.sprite = -1;
+        door.kind = USE_OTHER;
+        door.cx = 40;
+        door.cz = 100;
+        door.hw = door.hh = door.hd = 4;
+        door.nx = 0;
+        door.nz = 1;
+        door.reach = 200;
+        scene.usables = &door;
+        scene.nusables = 1;
+        camera_set(&view, 0, 0, 0, 0, 0);
+        check_expect(!interact_aim(&scene, &view, &hit), "controls: off-center door unexpectedly met the center ray");
+        control_point(&view, 320 + df_iround(camera_focal() * 0.4f), 240, &aim);
+        check_expect(interact_aim(&scene, &aim, &hit) && hit.usable == 0,
+                     "controls: pointer ray did not select an off-center door");
+        {
+            Mesh mesh;
+            Tri tri;
+            Instance wall;
+            Bound bound;
+
+            memset(&mesh, 0, sizeof(mesh));
+            memset(&tri, 0, sizeof(tri));
+            memset(&wall, 0, sizeof(wall));
+            tri.x[0] = -100; tri.y[0] = -100; tri.z[0] = 50;
+            tri.x[1] = 100; tri.y[1] = -100; tri.z[1] = 50;
+            tri.x[2] = 0; tri.y[2] = 100; tri.z[2] = 50;
+            mesh.tris = &tri;
+            mesh.ntris = 1;
+            wall.mesh = &mesh;
+            wall.m[0] = wall.m[4] = wall.m[8] = 1;
+            bound.cx = bound.cy = 0;
+            bound.cz = 50;
+            bound.ex = bound.ey = 100;
+            bound.ez = 1;
+            scene.models = &wall;
+            scene.nmodels = 1;
+            scene.bounds = &bound;
+            check_expect(!interact_aim(&scene, &aim, &hit) && hit.model == 0,
+                         "controls: pointed use reached a door through a wall");
+        }
+    }
+    control_cursor_sheet(pixels);
+    for (j = 0; j < 12; j++) {
+        count = 0;
+        for (i = 0; i < 256; i++) {
+            count += pixels[(j / 4 * 16 + i / 16) * CONTROL_CURSOR_W + j % 4 * 16 + i % 16] != 0;
+        }
+        check_expect(j < 9 ? count > 15 : count == 0, "controls: cursor sheet has missing or spilled indicators");
+    }
+    control_set_classic(1);
+    printf("controls: cursor movement, X/right use, gestures, Alt/Home, handoffs, settings, 30/60/120 Hz and pointed rays\n");
+}
+
 /*
  * The player in the hold, from its start marker: it settles on the
  * floor; a quarter second's walk goes classic's walking distance, a run
@@ -199,6 +465,32 @@ static void check_hold(void)
     check_expect(p.body.grounded, "play: the player does not stand on the hold's floor");
     floor_y = p.body.feet[1];
     body_landed(&p.body, &speed, &height);
+
+    /* A cursor fraction scales requested ground motion, not elapsed time.
+     * Use copies so classic's established full-speed checks below still
+     * start at the marker. Half input covers half a walk while the same
+     * jump velocity and gravity advance in both bodies. */
+    {
+        Player half, still;
+        float dx, dz;
+
+        half = still = p;
+        for (i = 0; i < 15; i++) {
+            player_step_motion(&half, &in, &level.scene, 1.0f / 60.0f, 1, 0.5f, 0.0f);
+        }
+        dx = half.body.feet[0] - p.body.feet[0];
+        dz = half.body.feet[2] - p.body.feet[2];
+        want = rules_walk_speed(sheet.attribute[ATTR_SPEED]) * RULES_UNITS_PER_M * 0.125f;
+        check_expect(check_near(df_sqrt(dx * dx + dz * dz), want, 1.0f), "controls: half cursor speed did not cover half a walk");
+        half = p;
+        body_jump(&half.body, 100.0f);
+        body_jump(&still.body, 100.0f);
+        player_step_motion(&half, &in, &level.scene, 1.0f / 60.0f, 1, 0.5f, 0.0f);
+        player_step_motion(&still, &in, &level.scene, 1.0f / 60.0f, 1, 0.0f, 0.0f);
+        check_expect(check_near(half.body.vy, still.body.vy, 0.001f)
+                         && check_near(half.body.feet[1], still.body.feet[1], 0.001f),
+                     "controls: cursor speed changed gravity or jump time");
+    }
 
     /* Forward along the start's facing, then back, then a run the same way. */
     in.move_f = 1;
@@ -867,6 +1159,28 @@ static void check_weapon(void)
     weapon_hold(&it);
     check_expect(!weapon_shown(&pic, &left, &top, &w, &h) && weapon_attack() == 1 && weapon_shown(&pic, &left, &top, &w, &h),
                  "weapon: a bow shows at rest, or does not shoot");
+    /* Tab during a drawn bow cancels it. Opening the HUD is not releasing
+     * a shot; the same invariant protects the sheath button. */
+    weapon_gesture(0, 1, 0, 0, 0, 0.0f);
+    weapon_step(each * 3.0f, 50);
+    weapon_cancel();
+    weapon_step(each * 12.0f, 50);
+    check_expect(!weapon_swinging() && !weapon_hit() && !weapon_shown(&pic, &left, &top, &w, &h),
+                 "hud: cancelling a drawn bow fired or left its frame visible");
+    item_make(&it, ITEM_LONGSWORD, MATERIAL_IRON);
+    weapon_hold(&it);
+    {
+        int idle;
+
+        weapon_shown(&idle, &left, &top, &w, &h);
+        weapon_attack();
+        weapon_step(each * 2.0f, 50);
+        weapon_cancel();
+        check_expect(!weapon_hit() && !weapon_swinging() && weapon_shown(&pic, &left, &top, &w, &h) && pic == idle,
+                     "hud: cancelling a swing lost the cached idle picture or left a hit due");
+        check_expect(weapon_gate(1, 1) && weapon_gate(0, 1) && weapon_gate(0, 0) && !weapon_gate(0, 0),
+                     "hud: a held click or its release escaped the pointer-to-attack gate");
+    }
     weapon_free();
     /* A card with the chroma key: cutouts as P_8. */
     most = largest_swing_frame(1, &whole, &swing_bytes, &exact);
@@ -1814,6 +2128,190 @@ static void write_picture(const df_u8 *pixels, const char *path)
     fclose(f);
 }
 
+/* P9-b: classic's real art, exact button seams, compass wrap and the 256 KB
+ * UI room. This does not assert a copy of overlay_draw's implementation:
+ * it checks the file shapes and input boundaries on which that draw relies,
+ * and writes two native-size panels for inspection against the reference.
+ */
+static void check_hudbar(void)
+{
+    static const PicOps keyed = { wc_bytes, wc_upload, wc_release, wc_begin, wc_palette, wc_quad, wc_end, 1 };
+    static const PicOps wide = { wc_bytes, wc_upload, wc_release, wc_begin, wc_palette, wc_quad, wc_end, 0 };
+    static const char *const art[] = {
+        "MAIN00I0.IMG", "MAIN01I0.IMG", "MAIN03I0.IMG", "MAIN04I0.IMG", "MAIN05I0.IMG",
+        "COMPASS.IMG", "COMPBOX.IMG", "ARROW.RAW"
+    };
+    ImgAnimation compass;
+    ImgAnimation bad;
+    ImgPicture images[8];
+    ImgPicture frame;
+    CifSet colors;
+    CifSet heads;
+    const CareerRace *race;
+    const CifFrame *color;
+    const CifFrame *face;
+    Composer c;
+    df_u8 rgb[768];
+    df_u8 tiny[18];
+    df_u8 cursor_sheet[CONTROL_CURSOR_W * CONTROL_CURSOR_H];
+    static const df_u8 label_color = 222;
+    int ids[16];
+    int i;
+    int pass;
+    int n;
+    int pics;
+    int tiles;
+    df_u32 used;
+    df_u32 room;
+
+    check_expect(hudbar_hit(7, 162) == HUDBAR_CHARACTER && hudbar_hit(39, 191) == HUDBAR_CHARACTER
+                 && hudbar_hit(40, 191) == HUDBAR_NONE, "hud: the portrait's clickable edges");
+    check_expect(hudbar_hit(131, 154) == HUDBAR_MODE && hudbar_hit(177, 176) == HUDBAR_MODE
+                 && hudbar_hit(131, 177) == HUDBAR_TRANSPORT && hudbar_hit(178, 176) == HUDBAR_INVENTORY,
+                 "hud: mode and neighbor buttons overlap or miss their seam");
+    check_expect(hudbar_hit(71, 199) == HUDBAR_OPTIONS && hudbar_hit(83, 154) == HUDBAR_NONE
+                 && hudbar_hit(319, 199) == HUDBAR_NONE && hudbar_hit(319, 153) == HUDBAR_NONE
+                 && hudbar_contains(319, 199) && !hudbar_contains(320, 199) && !hudbar_contains(-1, 154),
+                 "hud: blank bar pixels must consume clicks without issuing a command");
+    check_expect(hudbar_hit(226, 155) == HUDBAR_SHEATH && hudbar_hit(226, 178) == HUDBAR_REST
+                 && hudbar_hit(179, 178) == HUDBAR_MAP && hudbar_hit(276, 157) == HUDBAR_STATUS,
+                 "hud: the lower row or compass buttons");
+    check_expect(hudbar_heading(0.0f) == 0 && hudbar_heading(DF_TAU * 0.25f) == 8
+                 && hudbar_heading(DF_TAU * 0.5f) == 16 && hudbar_heading(-DF_TAU * 0.25f) == 24
+                 && hudbar_heading(DF_TAU) == 0, "hud: compass directions or wrap");
+    check_expect(hudbar_mode_row(HUDBAR_GRAB) == 2 && hudbar_mode_row(HUDBAR_INFO) == 3
+                 && hudbar_mode_row(HUDBAR_STEAL) == 0 && hudbar_mode_row(HUDBAR_TALK) == 1,
+                 "hud: MAIN01I0's four mode rows");
+
+    /* A wholly absent final byte is not a valid animation. Decode must leave
+     * the old result intact, so a bad read cannot publish half an asset. */
+    memset(tiny, 0, sizeof(tiny));
+    tiny[4] = tiny[6] = tiny[8] = 2;
+    bad.frames = 73;
+    check_expect(!img_bss_decode(tiny, 17, &bad) && bad.frames == 73 && img_bss_decode(tiny, 18, &bad),
+                 "hud: BSS accepted a missing final byte or changed a refused result");
+    tiny[8] = 255;
+    tiny[9] = 127;
+    check_expect(!img_bss_decode(tiny, 18, &bad), "hud: BSS accepted frames past the file");
+
+    if (!img_load_bss("CMPA00I0.BSS", &compass) || !img_art_palette(rgb)) {
+        check_expect(0, "hud: the real compass or palette did not read");
+        return;
+    }
+    check_expect(compass.frames == 32 && compass.width == 48 && compass.height == 40
+                 && img_bss_frame(&compass, 31, &frame)
+                 && frame.pixels == compass.pixels + 31 * 48 * 40
+                 && !img_bss_frame(&compass, -1, &frame) && !img_bss_frame(&compass, 32, &frame),
+                 "hud: CMPA00I0's layout or frame bounds");
+    for (i = 0; i < 8; i++) {
+        if (!(i == 7 ? img_load_raw(art[i], 10, 10, &images[i]) : img_load(art[i], &images[i]))) {
+            check_expect(0, "hud: a panel picture did not read");
+            return;
+        }
+    }
+    check_expect(images[0].width == 320 && images[0].height == HUDBAR_HEIGHT
+                 && images[1].width == 47 && images[1].height == 92, "hud: the panel or mode sheet's shape");
+    race = career_race(RACE_BRETON);
+    if (!race || !cif_open("MCOL00I0.CIF", &colors)) {
+        check_expect(0, "hud: the blue portrait backing did not read");
+        return;
+    }
+    if (!cif_open(race->heads_male, &heads)) {
+        check_expect(0, "hud: the character's head did not read");
+        cif_close(&colors);
+        return;
+    }
+    color = cif_frame(&colors, 0);
+    face = cif_frame(&heads, 0);
+    check_expect(color && color->w == 66 && color->h == 36 && face, "hud: the portrait's blue backing or selected face");
+    if (!color || !face) {
+        cif_close(&heads);
+        cif_close(&colors);
+        return;
+    }
+
+    /* Native-size previews: Grab/north/full vitals, then Steal/east/half.
+     * The target scales these same pieces; no generated art enters ARENA2. */
+    if (composer_open(&c)) {
+        canvas_use(&c);
+        for (pass = 0; pass < 2; pass++) {
+            const Rect *r;
+            int x, y;
+
+            memset(c.screen, 0, CANVAS_BYTES);
+            canvas_copy_part(images[0].pixels, 320, 0, 0, 320, 46, 0, HUDBAR_TOP);
+            canvas_copy_part(color->pixels, color->w, 0, 0, 66, 36, 5, 159);
+            /* The HUD intentionally scales the selected face into classic's
+             * 33 x 30 aperture, regardless of the source head's dimensions. */
+            for (y = 0; y < 30; y++) {
+                for (x = 0; x < 33; x++) {
+                    int index;
+
+                    index = face->pixels[(y * face->h / 30) * face->w + x * face->w / 33];
+                    if (index) {
+                        c.screen[(162 + y) * 320 + 7 + x] = (df_u8)index;
+                    }
+                }
+            }
+            r = hudbar_rect(HUDBAR_MODE);
+            canvas_copy_part(images[1].pixels, 47, 0, hudbar_mode_row(pass ? HUDBAR_STEAL : HUDBAR_GRAB) * 23,
+                             47, 23, r->x, r->y);
+            img_bss_frame(&compass, pass ? 8 : 0, &frame);
+            r = hudbar_rect(HUDBAR_STATUS);
+            for (y = 0; y < r->h; y++) {
+                for (x = 0; x < r->w; x++) {
+                    int index;
+
+                    index = frame.pixels[(y * frame.height / r->h) * frame.width + x * frame.width / r->w];
+                    if (index) {
+                        c.screen[(r->y + y) * 320 + r->x + x] = (df_u8)index;
+                    }
+                }
+            }
+            for (i = 2; i < 5; i++) {
+                int rows;
+
+                rows = pass ? images[i].height / 2 : images[i].height;
+                canvas_copy_part(images[i].pixels, images[i].width, 0, images[i].height - rows,
+                                 images[i].width, rows, images[i].x, images[i].y + images[i].height - rows);
+            }
+            write_picture(c.screen, pass ? "build/hud1.ppm" : "build/hud0.ppm");
+        }
+        composer_close(&c);
+    } else {
+        check_expect(0, "hud: the preview composer did not open");
+    }
+
+    /* Keep every persistent HUD piece, including the old overlay's strip,
+     * on a fake 256 KB room in both card formats. Reserve the existing
+     * worst swing, idle weapon and controls screen on top, simultaneously. */
+    control_cursor_sheet(cursor_sheet);
+    for (pass = 0; pass < 2; pass++) {
+        pic_begin(0, 256u * 1024u, pass ? &wide : &keyed);
+        n = 0;
+        for (i = 0; i < 8; i++) {
+            ids[n++] = pic_load(images[i].pixels, images[i].width, images[i].height, rgb, i >= 6);
+        }
+        ids[n++] = pic_load(color->pixels, color->w, color->h, rgb, 0);
+        ids[n++] = pic_load(face->pixels, face->w, face->h, rgb, 1);
+        ids[n++] = pic_load(frame.pixels, frame.width, frame.height, rgb, 1);
+        ids[n++] = pic_load(cursor_sheet, CONTROL_CURSOR_W, CONTROL_CURSOR_H, rgb, 1);
+        ids[n++] = pic_load(&label_color, 1, 1, rgb, 0);
+        pic_stats(&pics, &tiles, &used, &room);
+        check_expect(used + 66560u + (pass ? 96u + 26u : 48u + 13u) * 1024u <= room,
+                     "hud: HUD, controls and the largest weapon frame exceed the 256 KB UI room");
+        printf("hud: %s card, %u HUD bytes, %u bytes left for screens and weapon\n",
+               pass ? "1555" : "keyed", (unsigned)used, (unsigned)(room - used));
+        for (i = 0; i < n; i++) {
+            check_expect(ids[i] != 0, "hud: an asset did not acquire a picture slot");
+            pic_free(ids[i]);
+        }
+        pic_end();
+    }
+    cif_close(&heads);
+    cif_close(&colors);
+}
+
 /*
  * The inventory screen, driven by clicks at classic's own coordinates as
  * the player would: the cell of a list's row, a button, a point on the doll.
@@ -2343,6 +2841,11 @@ static void check_create(void)
     check_expect(found && create_step() == CREATE_RACE_CONFIRM, "create: a race was not waiting to confirm");
     check_expect(create_key(0x1B) == CREATE_STAY && create_step() == CREATE_RACE_CONFIRM,
                  "create: Escape on the confirm left it or started a game");
+    create_close();
+    /* Escape before any race is selected cancels. It creates no character
+     * and leaves no kit for the caller to turn into a new game. */
+    check_expect(create_open() && create_key(0x1B) == CREATE_CANCELLED, "create: Escape on the map did not cancel");
+    check_expect(!create_result(&sheet, &pack), "create: canceled creation produced a character");
     create_close();
     check_expect(create_default(&sheet, &pack) && sheet.race == RACE_ARGONIAN && sheet.female && pack.gold == 100,
                  "create: the default is not an Argonian woman with her kit");
@@ -3058,6 +3561,8 @@ static void check_save(void)
     out.feet[2] = 333.5f;
     out.yaw = 1.5f;
     out.pitch = -0.25f;
+    out.view_yaw = 0.6f;
+    out.view_pitch = -0.2f;
     out.minute = 600.0f;
     out.day = 12345;
     out.day_zero = 12000;
@@ -3086,6 +3591,8 @@ static void check_save(void)
                      && check_near(in.yaw, 1.5f, 0.001f) && check_near(in.pitch, -0.25f, 0.001f)
                      && check_near(in.minute, 600.0f, 0.01f) && in.day == 12345 && in.day_zero == 12000,
                  "save: the place or the clock did not come back");
+    check_expect(check_near(in.view_yaw, 0.6f, 0.0001f) && check_near(in.view_pitch, -0.2f, 0.0001f),
+                 "save: classic Alt view offsets did not come back");
     check_expect(in.seed == out.seed, "save: the seed did not come back");
     loot_new_game(in.seed);
 
@@ -4656,6 +5163,8 @@ void check_play(void)
     check_character();
     check_items();
     check_weapon();
+    check_hudbar();
+    check_controls();
     check_combat();
     check_foes();
     check_foes_due();

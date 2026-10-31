@@ -427,7 +427,7 @@ static void ask(void)
     if (g.rejected) {
         words_say(RECORD_NO_RESPONSE, answer, (int)sizeof(answer));
     } else if (g.chosen == TOPICS) {
-        /* No one has work to give yet (quests, P10): what they say of what they do not know. */
+        /* No one has work to give yet (quests, P11): what they say of what they do not know. */
         row = 3 * (g.sgroup < SOCIAL_COUNT ? g.sgroup : SOCIAL_MERCHANTS) + outcome_for(0);
         words_say(g_answers_other[row], answer, (int)sizeof(answer));
     } else if (g.topic[g.chosen].kind == TOPIC_NEWS) {

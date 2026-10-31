@@ -39,6 +39,10 @@ typedef struct SaveState {
     float feet[3];
     float yaw;
     float pitch;
+    /* Classic Alt look is independent of movement heading. Missing in older
+     * saves means centered (zero), without changing SAVE_VERSION. */
+    float view_yaw;
+    float view_pitch;
     /* The clock: its minute and its day; and the day the game's own count of minutes began. */
     float minute;
     int day;

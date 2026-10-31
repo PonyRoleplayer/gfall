@@ -1488,7 +1488,9 @@ int create_key(int vk)
     if (vk != 0x1B) {
         return CREATE_STAY;
     }
-    /* The map is the first page. Escape goes back to the start menu: no character, and not into a place. */
+    /* The map is the first creation page. Escape goes back to the start menu:
+     * no character, and not into a place. Background questions keep their
+     * explicit skip; that advances an already selected character only. */
     if (g.step == CREATE_RACE) {
         return CREATE_CANCELLED;
     }

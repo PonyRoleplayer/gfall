@@ -64,5 +64,8 @@ int weapon_is_bow(void);
 int weapon_shown(int *pic, int *left, int *top, int *w, int *h);
 /* Its pictures and file let go. */
 void weapon_free(void);
+/* Cancel a gesture or drawn bow without firing or freeing the idle picture.
+ * HUD pointer entry and sheathing use this; no disk read when resumed. */
+void weapon_cancel(void);
 
 #endif

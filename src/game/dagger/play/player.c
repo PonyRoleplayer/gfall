@@ -52,25 +52,37 @@ void player_place(Player *p, float x, float eye_y, float z, float yaw, float pit
     p->pitch = pitch;
 }
 
+void player_turn(Player *p, float yaw, float pitch)
+{
+    p->yaw = df_wrap_tau(p->yaw + yaw);
+    pitch += p->pitch;
+    p->pitch = pitch > PITCH_LIMIT ? PITCH_LIMIT : (pitch < -PITCH_LIMIT ? -PITCH_LIMIT : pitch);
+}
+
 void player_step(Player *p, const Input *in, const Scene *scene, float dt, int collide)
 {
-    float pitch;
+    player_turn(p, (float)in->look_dx * LOOK_SENS, (float)-in->look_dy * LOOK_SENS);
+    player_step_motion(p, in, scene, dt, collide, (float)in->move_f, (float)in->move_r);
+}
+
+void player_step_motion(Player *p, const Input *in, const Scene *scene, float dt, int collide, float f, float r)
+{
     float mps;
     float step;
-    float f;
-    float r;
     float sy;
     float cy;
 
-    p->yaw = df_wrap_tau(p->yaw + (float)in->look_dx * LOOK_SENS);
-    pitch = p->pitch - (float)in->look_dy * LOOK_SENS;
-    p->pitch = pitch > PITCH_LIMIT ? PITCH_LIMIT : (pitch < -PITCH_LIMIT ? -PITCH_LIMIT : pitch);
+    /* Cursor speed is an input fraction, never a shortened physics timestep:
+     * gravity, jumps, breath and fatigue continue at their real elapsed time.
+     * Normalize only vectors longer than one. Ordinary single-key walking
+     * pays no square root; the common full diagonal retains its constant. */
+    if (f * f + r * r > 1.0f) {
+        float scale;
 
-    f = (float)in->move_f;
-    r = (float)in->move_r;
-    if (f != 0.0f && r != 0.0f) {
-        f *= DIAGONAL;
-        r *= DIAGONAL;
+        scale = (f == 1.0f || f == -1.0f) && (r == 1.0f || r == -1.0f)
+                    ? DIAGONAL : 1.0f / df_sqrt(f * f + r * r);
+        f *= scale;
+        r *= scale;
     }
     mps = (in->held & INPUT_BIT(INPUT_RUN))
               ? rules_run_speed(p->sheet.attribute[ATTR_SPEED], p->sheet.skill[SKILL_RUNNING])

@@ -1841,6 +1841,31 @@ static void check_stream(void)
             check_expect(people_count() == PEOPLE_MAX && people_pictures() == PEOPLE_SLOTS && ahead > 10,
                          "landing at noon, Daggerfall's 96 people are not out, ahead too, before the first frame");
         }
+        /* Classic cursor activation supplies a pitched ray. A face within
+         * two units is selectable; aiming above its head must miss. No
+         * population update occurs between these two observations. */
+        {
+            int picked, female;
+            unsigned who;
+            Camera look;
+            const Entity *person;
+
+            person = 0;
+            for (k = 0; k < sc->nentities && !person; k++) {
+                if (sc->entities[k].live && entity_height(&sc->entities[k]) > 0) {
+                    person = &sc->entities[k];
+                }
+            }
+            picked = 0;
+            if (person) {
+                camera_set(&look, person->x, person->y + entity_height(person) * 0.5f, person->z - 1, 0, 0);
+                picked = people_in_view(&look, 2, &female, &who);
+                check_expect(picked, "people: an aimed person at arm's length was not selected");
+                look.y = person->y + entity_height(person) + 10;
+                check_expect(!people_in_view(&look, 2, &female, &who), "people: a ray above a head started talk");
+            }
+            check_expect(person != 0, "people: no person to test cursor picking");
+        }
         for (k = 0; k < 600; k++) {
             people_update(&cam, 0.05f);
         }

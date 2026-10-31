@@ -7,6 +7,60 @@
 
 #define HEADER 12
 
+/* BSS uses a frame count where IMG carries its compression and byte count.
+ * See Daggerfall Unity's BssFile.ReadHeader/ReadImageData (MIT), and img.h. */
+int img_bss_decode(const void *bytes, df_u32 size, ImgAnimation *out)
+{
+    const df_u8 *b;
+    ImgAnimation a;
+    df_u32 frame;
+
+    if (!bytes || !out || size < 10u) {
+        return 0;
+    }
+    b = (const df_u8 *)bytes;
+    a.x = df_ri16(b);
+    a.y = df_ri16(b + 2);
+    a.width = df_ri16(b + 4);
+    a.height = df_ri16(b + 6);
+    a.frames = df_ri16(b + 8);
+    if (a.width < 1 || a.width > 1024 || a.height < 1 || a.height > 1024 || a.frames < 1) {
+        return 0;
+    }
+    frame = (df_u32)a.width * (df_u32)a.height;
+    /* Divide the available bytes: multiplying an untrusted frame count could
+     * wrap and accept a truncated file. Publish nothing until it all fits. */
+    if ((df_u32)a.frames > (size - 10u) / frame) {
+        return 0;
+    }
+    a.pixels = b + 10;
+    *out = a;
+    return 1;
+}
+
+int img_load_bss(const char *name, ImgAnimation *out)
+{
+    const df_u8 *b;
+    df_u32 size;
+
+    b = vfs_read(name, &size);
+    return b && img_bss_decode(b, size, out);
+}
+
+int img_bss_frame(const ImgAnimation *anim, int index, ImgPicture *out)
+{
+    if (!anim || !out || index < 0 || index >= anim->frames) {
+        return 0;
+    }
+    out->x = anim->x;
+    out->y = anim->y;
+    out->width = anim->width;
+    out->height = anim->height;
+    out->palette = 0;
+    out->pixels = anim->pixels + (df_u32)index * (df_u32)anim->width * (df_u32)anim->height;
+    return 1;
+}
+
 /* A headerless IMG's size by its byte count (DFU's ImgFile), or 0. */
 static int headerless(df_u32 n, int *w, int *h)
 {

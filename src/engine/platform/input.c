@@ -11,6 +11,7 @@
 
 #include "engine/platform/input.h"
 #include "engine/core/df.h"
+#include "engine/core/mem.h"
 #include "engine/ui/console.h"
 
 static HWND g_hwnd;
@@ -20,15 +21,19 @@ static int g_look_dx;
 static int g_look_dy;
 static int g_ignore;
 static int g_active;
+static int g_focus = 1;
 static int g_quit;
 /* The actions' keys (input_bind), what was held last read, and whether Escape quits. */
 static int g_vk[INPUT_ACTIONS] = {
     VK_LBUTTON, 'E', VK_SHIFT, VK_SPACE, 'C', 'I', 'M', 'R', VK_ESCAPE,
-    'W', 'S', 'A', 'D', 'H'
+    'W', 'S', 'A', 'D', 'H',
+    /* Append only: saved bindings name these by id, not by this key. */
+    VK_TAB, VK_RBUTTON, VK_LEFT, VK_RIGHT, VK_PRIOR, VK_NEXT, VK_HOME, VK_MENU
 };
 /* The scan code of the console's key, the one left of 1 (console.c's CON_SCAN). */
 #define CONSOLE_SCAN 0x29
 static unsigned int g_held;
+static unsigned int g_mouse_held;
 static int g_escape_quits = 1;
 /*
  * Pointer mode (input_set_pointer): the cursor stays where the mouse
@@ -40,6 +45,23 @@ static int g_px;
 static int g_py;
 static int g_cw = DF_VIEW_W;
 static int g_ch = DF_VIEW_H;
+/* Client motion, kept apart from look so a pointer gesture never rotates a view.
+   The remainder carries subpixel motion when a client is larger than 640x480. */
+static int g_mouse_dx, g_mouse_dy;
+static int g_frac_x, g_frac_y;
+static int g_last_x, g_last_y;
+static int g_have_mouse;
+static int g_wheel;
+/* A boundary is an event, not the duration of a console/focus pause.
+   Coalesce events until input_read consumes them; repeated suppressed
+   reads clear raw motion without manufacturing another boundary. */
+static int g_reset;
+static int g_suppressed;
+/* Lazy cache for one input_read only: 0 unknown, 1 up, 2 down. Movement,
+   physical clicks and all actions agree even when several bind one key.
+   A bind screen's independent scan, outside that read, still polls normally. */
+static df_u8 g_keys[256];
+static int g_reading;
 
 static int key_down(int vk);
 
@@ -116,7 +138,42 @@ static void notes_clear(void)
 
 static int key_down(int vk)
 {
-    return (GetAsyncKeyState(vk) & 0x8000) ? 1 : 0;
+    int down;
+
+    if (g_reading && g_keys[vk]) {
+        return g_keys[vk] == 2;
+    }
+    down = (GetAsyncKeyState(vk) & 0x8000) ? 1 : 0;
+    if (g_reading) {
+        g_keys[vk] = (df_u8)(down ? 2 : 1);
+    }
+    return down;
+}
+
+static void mouse_clear(void)
+{
+    g_mouse_dx = g_mouse_dy = 0;
+    g_frac_x = g_frac_y = 0;
+    g_have_mouse = 0;
+}
+
+void input_mouse_reset(void)
+{
+    mouse_clear();
+    g_reset = 1;
+}
+
+void input_on_focus(int on)
+{
+    g_focus = on ? 1 : 0;
+    input_mouse_reset();
+    g_look_dx = g_look_dy = 0;
+    g_wheel = 0;
+}
+
+int input_mouse_capture(void)
+{
+    return g_active && g_focus;
 }
 
 static void center_cursor(void)
@@ -133,11 +190,12 @@ static void center_cursor(void)
 
 /* Windows' units a wheel notch. A finer wheel sends less: what is short of a notch waits in g_wheel. */
 #define WHEEL_NOTCH 120
-static int g_wheel;
 
 void input_on_wheel(int delta)
 {
-    g_wheel += delta;
+    if (g_focus && !console_open()) {
+        g_wheel += delta;
+    }
 }
 
 void input_on_mouse(int x, int y)
@@ -145,21 +203,41 @@ void input_on_mouse(int x, int y)
     int dx;
     int dy;
 
-    if (g_pointer) {
-        if (g_active && !g_ignore) {
-            g_px = x;
-            g_py = y;
-        }
+    /* Gate before the pointer path too: console motion is never a swing.
+       Reset its baseline so the first later move cannot bridge the gap. */
+    /* A synchronous notification from our own SetCursorPos must leave
+       the real motion already accumulated intact. */
+    if (g_ignore) {
         return;
     }
-
-    if (!g_active || g_ignore || console_open()) {
-        if (g_active && !g_ignore && console_open()) {
+    if (!g_active || !g_focus || console_open()) {
+        mouse_clear();
+        if (g_active && !g_ignore && g_focus && !g_pointer && console_open()) {
             dx = x - g_cx;
             dy = y - g_cy;
             if (dx || dy) {
                 center_cursor();
             }
+        }
+        return;
+    }
+    if (g_pointer) {
+        if (g_have_mouse) {
+            g_mouse_dx += x - g_last_x;
+            g_mouse_dy += y - g_last_y;
+        }
+        g_last_x = g_px = x;
+        g_last_y = g_py = y;
+        g_have_mouse = 1;
+        return;
+    }
+    /* After an external transition, the first centered-mode message may
+       be the old OS cursor position rather than a real move. Reestablish
+       our center before measuring; own begin/toggle warps already did so. */
+    if (!g_have_mouse) {
+        g_have_mouse = 1;
+        if (x != g_cx || y != g_cy) {
+            center_cursor();
         }
         return;
     }
@@ -170,6 +248,8 @@ void input_on_mouse(int x, int y)
     }
     g_look_dx += dx;
     g_look_dy += dy;
+    g_mouse_dx += dx;
+    g_mouse_dy += dy;
     center_cursor();
 }
 
@@ -186,9 +266,10 @@ void input_clear_quit(void)
 void input_look(int *dx, int *dy)
 {
     console_pump();
-    if (console_open()) {
+    if (console_open() || !g_focus) {
         g_look_dx = 0;
         g_look_dy = 0;
+        mouse_clear();
     }
     if (dx) {
         *dx = g_look_dx;
@@ -224,7 +305,14 @@ void input_begin(void *hwnd)
     g_px = g_cx;
     g_py = g_cy;
     g_active = 1;
+    g_focus = 1;
+    input_mouse_reset();
     center_cursor();
+    /* Known after our own warp; a later capture/focus discontinuity
+       instead waits for one real pointer position before taking deltas. */
+    g_last_x = g_cx;
+    g_last_y = g_cy;
+    g_have_mouse = 1;
     g_look_dx = 0;
     g_look_dy = 0;
     while (ShowCursor(FALSE) >= 0) {
@@ -244,6 +332,9 @@ void input_end(void)
 {
     g_active = 0;
     g_ignore = 1;
+    input_mouse_reset();
+    g_look_dx = g_look_dy = 0;
+    g_wheel = 0;
     ReleaseCapture();
     ClipCursor(0);
     while (ShowCursor(TRUE) < 0) {
@@ -261,11 +352,25 @@ static unsigned int g_frame;
 void input_read(Input *out)
 {
     int escape;
+    int suppressed;
     unsigned int held;
 
     g_frame++;
     console_pump();
-    if (console_open()) {
+    suppressed = console_open() || !g_focus;
+    if (suppressed != g_suppressed) {
+        /* Suppressed reads/events already cleared the old motion. On
+           exit, retain the new baseline a resumed mouse message may
+           have established before this read; clearing it twice would
+           throw away the following real move as well. */
+        g_reset = 1;
+        g_suppressed = suppressed;
+    }
+    /* Before either return path: even an unfocused snapshot consumes
+       the pending event, rather than leaving a false release for later. */
+    out->reset = g_reset;
+    g_reset = 0;
+    if (suppressed) {
         g_look_dx = 0;
         g_look_dy = 0;
         out->move_f = 0;
@@ -279,6 +384,12 @@ void input_read(Input *out)
         out->pressed = 0;
         out->released = g_held;
         g_held = 0;
+        out->mouse_held = 0;
+        out->mouse_pressed = 0;
+        out->mouse_released = g_mouse_held;
+        g_mouse_held = 0;
+        out->mouse_dx = out->mouse_dy = 0;
+        mouse_clear();
         /* Nor the wheel: rolled over the console, it does not scroll a list behind it afterwards. */
         out->wheel = 0;
         g_wheel = 0;
@@ -286,6 +397,62 @@ void input_read(Input *out)
         notes_clear();
         return;
     }
+    mem_zero(g_keys, sizeof(g_keys));
+    g_reading = 1;
+    /* Physical buttons and rebound actions read the same samples.
+       GetAsyncKeyState's high bit names the physical button even when
+       Windows swaps primary/secondary in its mouse control panel.
+       A click that finished between reads is still one press, from the
+       same notes as the action edges (input_fold_edges). */
+    {
+        int press;
+        int rel;
+        int now;
+        unsigned int held_m;
+        unsigned int pressed_m;
+        unsigned int released_m;
+
+        held_m = 0;
+        pressed_m = 0;
+        released_m = 0;
+        input_fold_edges((g_mouse_held & INPUT_MOUSE_LEFT) ? 1 : 0,
+                         g_note_down[VK_LBUTTON], g_note_up[VK_LBUTTON],
+                         key_down(VK_LBUTTON), &press, &rel, &now);
+        if (now) {
+            held_m |= INPUT_MOUSE_LEFT;
+        }
+        if (press) {
+            pressed_m |= INPUT_MOUSE_LEFT;
+        }
+        if (rel) {
+            released_m |= INPUT_MOUSE_LEFT;
+        }
+        input_fold_edges((g_mouse_held & INPUT_MOUSE_RIGHT) ? 1 : 0,
+                         g_note_down[VK_RBUTTON], g_note_up[VK_RBUTTON],
+                         key_down(VK_RBUTTON), &press, &rel, &now);
+        if (now) {
+            held_m |= INPUT_MOUSE_RIGHT;
+        }
+        if (press) {
+            pressed_m |= INPUT_MOUSE_RIGHT;
+        }
+        if (rel) {
+            released_m |= INPUT_MOUSE_RIGHT;
+        }
+        out->mouse_held = held_m;
+        out->mouse_pressed = pressed_m;
+        out->mouse_released = released_m;
+        g_mouse_held = held_m;
+    }
+    /* One scale per axis per snapshot, rather than divisions in every
+       WM_MOUSEMOVE. C's signed remainder preserves either direction. */
+    g_frac_x += g_mouse_dx * DF_VIEW_W;
+    g_frac_y += g_mouse_dy * DF_VIEW_H;
+    out->mouse_dx = g_frac_x / g_cw;
+    out->mouse_dy = g_frac_y / g_ch;
+    g_frac_x -= out->mouse_dx * g_cw;
+    g_frac_y -= out->mouse_dy * g_ch;
+    g_mouse_dx = g_mouse_dy = 0;
     /* Whole notches go out, either way; C's division leaves the part of one, with its sign. */
     out->wheel = g_wheel / WHEEL_NOTCH;
     g_wheel -= out->wheel * WHEEL_NOTCH;
@@ -370,6 +537,7 @@ void input_read(Input *out)
         }
     }
     g_held = held;
+    g_reading = 0;
 }
 
 void input_set_pointer(int on)
@@ -381,6 +549,7 @@ void input_set_pointer(int on)
     g_pointer = on;
     g_look_dx = 0;
     g_look_dy = 0;
+    input_mouse_reset();
     if (!g_active) {
         return;
     }
@@ -388,6 +557,9 @@ void input_set_pointer(int on)
     center_cursor();
     g_px = g_cx;
     g_py = g_cy;
+    g_last_x = g_cx;
+    g_last_y = g_cy;
+    g_have_mouse = 1;
 }
 
 int input_pointer_on(void)

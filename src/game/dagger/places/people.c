@@ -8,6 +8,7 @@
 #include "engine/core/mem.h"
 #include "engine/scene/clock.h"
 #include "engine/scene/stream.h"
+#include "engine/scene/interact.h"
 
 /* See people.h and docs/entities.md. */
 
@@ -697,25 +698,36 @@ void people_update(const Camera *cam, float secs)
 
 int people_in_view(const Camera *cam, float reach, int *female, unsigned *who)
 {
-    float fx;
-    float fz;
+    Basis b;
+    float fx, fy, fz;
     float best;
+    UseHit hit;
     int found;
     int i;
 
-    if (!g_on) {
+    if (!g_on || !cam || reach <= 0.0f) {
         return 0;
     }
-    fx = df_sin(cam->yaw);
-    fz = df_cos(cam->yaw);
+    camera_basis(cam, &b);
+    fx = b.fx * b.cp;
+    fy = b.sp;
+    fz = b.fz * b.cp;
+    /* Near-vertical rays cannot cross a standing person's facing plane.
+     * Aim cameras may reach exactly +/-90 degrees, unlike drawn cameras. */
+    if (b.cp < 0.0001f) {
+        return 0;
+    }
     found = -1;
-    best = reach * reach;
+    best = reach;
+    /* One wall cast per activation, never per person or passive cursor
+     * movement. Cursor rays must not talk through houses or above heads. */
+    interact_cast(g_scene, cam->x, cam->y, cam->z, fx, fy, fz, reach, &hit);
+    if (hit.wall < best) {
+        best = hit.wall;
+    }
     for (i = 0; i < PEOPLE_MAX; i++) {
         const Entity *e;
-        float dx;
-        float dz;
-        float d2;
-        float along;
+        float dx, dz, along, side, height;
 
         e = &g_ent[i];
         if (!e->live) {
@@ -723,11 +735,14 @@ int people_in_view(const Camera *cam, float reach, int *female, unsigned *who)
         }
         dx = e->x - cam->x;
         dz = e->z - cam->z;
-        d2 = dx * dx + dz * dz;
-        along = dx * fx + dz * fz;
-        /* In front, and within a person's width of the line of sight: side squared is d2 less along squared. */
-        if (along > 0.0f && d2 < best && d2 - along * along < PEOPLE_WIDTH * PEOPLE_WIDTH) {
-            best = d2;
+        /* Intersect the person's vertical billboard plane, then test its
+         * horizontal width and visible height. No sqrt or per-person trig. */
+        along = (dx * b.fx + dz * b.fz) / b.cp;
+        side = dx * b.rx + dz * b.rz;
+        height = cam->y + along * fy - e->y;
+        if (along > 0.0f && along < best && side > -PEOPLE_WIDTH && side < PEOPLE_WIDTH
+            && height >= 0.0f && height <= entity_height(e)) {
+            best = along;
             found = i;
         }
     }

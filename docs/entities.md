@@ -87,6 +87,15 @@ On the card they are sprites, so they come first: the residency manager sharpens
 
 Sprites are point sampled (`spritepoint`, on by default), crisp texels as Daggerfall drew them: a townsperson is 110 texels tall and fills 300 pixels at arm's length, and bilinear filtering smeared each texel over three.
 
+### Picking a townsperson
+
+`people_in_view` uses the supplied camera ray, including pitch and a classic
+cursor's pointed direction. It intersects each live person's vertical plane,
+checks the 32-unit half width and `entity_height`, and chooses the nearest one
+within reach before the first model wall. There is one wall cast per activation,
+no per-person square root and no work while the cursor merely moves. A ray above
+a head, below the feet or through a house cannot start talk.
+
 ### With the stream
 
 The people are local to the stream's frame: the origin's move moves them (`people_shift`, from the stream's shift). `people_update(cam, secs)` runs once a frame before the frame draws (LEVELFALL's stream hook), after the stream's update. Not while the world stands still (`gfx_paused`: the console is open, and the frame runs none of the world then): before, the people walked on behind the console and stood somewhere else when it shut. The stream's loading goes on under it. LEVELFALL's place panel shows how many walk now.

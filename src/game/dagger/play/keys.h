@@ -4,9 +4,10 @@
 /*
  * The player's key bindings: saved in DATA\KEYS.DAT beside the exe as a
  * record file (docs/data.md), one KEYS record an action (id INPUT_*, its
- * Windows virtual key), and one MOUS row for Cursor or View (mouse.h).
- * Applied with input_bind at start. A missing or damaged file keeps
- * classic's defaults. Read docs/game.md (Menus).
+ * Windows virtual key), one MOUS row for Cursor or View (mouse.h), and
+ * CTLS for that same preference (control.h). Applied with input_bind,
+ * mouse_read and control_read_settings at start. A missing or damaged
+ * file keeps classic's defaults. Read docs/game.md (Menus).
  *
  * Escape stays the menu and is not bound here; the console's key is
  * the engine's.
@@ -14,11 +15,12 @@
 
 #define KEYS_FILE "DATA\\KEYS.DAT"
 
-/* Classic's keys (WASD, E to use, the left button to swing...) on every action. */
+/* Default bindings (WASD, E, right Cursor swing, left View attack, turn/look)
+ * and Cursor scheme. Existing action ids remain append-only. */
 void keys_defaults(void);
-/* DATA\KEYS.DAT's bindings over the defaults: 1 when it read. */
+/* DATA\KEYS.DAT's bindings and scheme over the defaults: 1 when it read. */
 int keys_load(void);
-/* Every action's binding into DATA\KEYS.DAT: 1 when written. */
+/* Every binding and the scheme into DATA\KEYS.DAT: 1 when written. */
 int keys_save(void);
 
 #endif

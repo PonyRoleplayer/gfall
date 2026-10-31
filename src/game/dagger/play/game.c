@@ -1,4 +1,5 @@
 #include "game/dagger/play/game.h"
+#include "game/dagger/play/control.h"
 #include "game/dagger/play/bag.h"
 #include "game/dagger/play/bank.h"
 #include "game/dagger/play/court.h"
@@ -14,6 +15,7 @@
 #include "game/dagger/play/menu.h"
 #include "game/dagger/play/mouse.h"
 #include "game/dagger/play/overlay.h"
+#include "game/dagger/play/hudbar.h"
 #include "game/dagger/play/pile.h"
 #include "game/dagger/play/player.h"
 #include "game/dagger/play/rules.h"
@@ -29,6 +31,7 @@
 #include "game/dagger/tables/commerce.h"
 #include "game/dagger/places/dunstream.h"
 #include "engine/core/mem.h"
+#include "engine/core/log.h"
 #include "engine/core/prof.h"
 #include "engine/gfx/gfx.h"
 #include "engine/scene/interact.h"
@@ -61,6 +64,15 @@ static int g_dead;
 /* The camera's frame's, for what the use handler asks about where it stands; the run key held at the use. */
 static const Camera *g_cam;
 static int g_stealing;
+/* The HUD cursor is a play preference, distinct from a paused screen's
+ * pointer. Screens temporarily own input; closing one restores this choice.
+ * It survives place changes, and a new/loaded character starts in Grab.
+ * The saved Cursor/View scheme supplies its initial value. */
+static int g_hud_cursor;
+static int g_control_scheme;
+static ControlState g_control;
+static int g_mode;
+static int g_sheathed;
 /* The door whose lock last beat the player, and their skill then. */
 static int g_lock_tried = -1;
 static int g_lock_skill;
@@ -72,19 +84,22 @@ static int g_loans_day;
 /* The thing number of a shop's keep row: past any block's things (docs/game.md, What the player changed). */
 #define SHOP_KEY_THING 0xFE000000u
 
-/*
- * A menu or a screen shows the pointer. In play, the saved mouse mode
- * decides: Cursor keeps it, View looks. The crosshair is the view's centre.
- */
 static void apply_pointer(int ui_up)
 {
-    input_set_pointer(mouse_pointer(ui_up));
-    overlay_set_crosshair(mouse_cursor() ? 0 : 1);
+    /*
+     * A menu or a screen shows the pointer. In play, the HUD cursor
+     * (the saved Cursor scheme, or Tab) keeps it; View looks.
+     * The crosshair is the view's centre, off while that pointer is up.
+     */
+    input_set_pointer(ui_up || g_hud_cursor);
+    overlay_set_crosshair(g_hud_cursor ? 0 : 1);
 }
 
 /* A screen over the stilled world, with the pointer. */
 static void screen_over_play(void)
 {
+    control_block(&g_control);
+    weapon_cancel();
     gfx_set_pause(screens_is_open());
     apply_pointer(screens_is_open());
 }
@@ -283,6 +298,12 @@ static int on_use(const Scene *scene, const Usable *u, int index)
         return 1;
     }
     if (u->kind == USE_TALK) {
+        if (g_mode == HUDBAR_STEAL) {
+            /* P9-d supplies pickpocketing. Never start an ordinary
+             * conversation when the player explicitly selected Steal. */
+            interact_say("You cannot steal from this person.");
+            return 1;
+        }
         person_used(u);
         return 1;
     }
@@ -318,12 +339,13 @@ static void draw(void)
         int h;
 
         /* Under the HUD, as classic: the compass and the bars over the blade. */
-        if (weapon_shown(&pic, &left, &top, &w, &h)) {
+        if (!g_sheathed && weapon_shown(&pic, &left, &top, &w, &h)) {
             screen_draw(pic, left, top, w, h);
         }
         overlay_draw();
-        /* Cursor mode: the pointer over the world. A menu or a screen draws its own. */
-        if (mouse_cursor() && menu_current() == MENU_NONE) {
+        /* Cursor, or Tab's free pointer: over the world. A menu or a screen draws its own.
+           Classic Cursor uses the arrow or X for the region; otherwise ARROW.RAW. */
+        if (g_hud_cursor && menu_current() == MENU_NONE) {
             int px;
             int py;
             int x;
@@ -331,7 +353,7 @@ static void draw(void)
 
             input_pointer(&px, &py);
             screen_from_pointer(px, py, &x, &y);
-            menu_draw_pointer(x, y);
+            menu_draw_world_pointer(control_classic() ? control_region(x, y, overlay_panel() ? HUDBAR_TOP : 200) : -1, x, y);
         }
     }
     menu_draw();
@@ -340,6 +362,8 @@ static void draw(void)
 /* A menu open over play stills the world and gives the mouse to the pointer; closed, back to play. */
 static void menu_over_play(int which)
 {
+    control_block(&g_control);
+    weapon_cancel();
     menu_open(which);
     gfx_set_pause(which != MENU_NONE);
     apply_pointer(which != MENU_NONE);
@@ -349,8 +373,7 @@ static void menu_over_play(int which)
 static void bag_over_play(Entity *searched)
 {
     screens_open_bag(&g_player, searched);
-    gfx_set_pause(screens_is_open());
-    apply_pointer(screens_is_open());
+    screen_over_play();
 }
 
 /* Rest over the stilled world, unless a creature awake forbids it (DFU's rest window). */
@@ -361,8 +384,7 @@ static void rest_over_play(void)
         return;
     }
     screens_open_rest(&g_player);
-    gfx_set_pause(screens_is_open());
-    apply_pointer(screens_is_open());
+    screen_over_play();
 }
 
 /* Game minutes since this game began. */
@@ -385,6 +407,8 @@ static int save_game(const char *name)
     state.feet[2] = g_player.body.feet[2];
     state.yaw = g_player.yaw;
     state.pitch = g_player.pitch;
+    state.view_yaw = g_control.view_yaw;
+    state.view_pitch = g_control.view_pitch;
     state.minute = clock_minute();
     state.day = clock_day();
     state.day_zero = g_day_zero;
@@ -424,22 +448,77 @@ static void forget_last_game(void)
 static void sheet_over_play(void)
 {
     screens_open_sheet(&g_player);
-    gfx_set_pause(screens_is_open());
-    apply_pointer(screens_is_open());
+    screen_over_play();
+}
+
+/* A HUD intention is dispatched here, beside its keyboard equivalent, so
+ * neither path duplicates a screen's ownership, pause or creature checks.
+ * The caller consumes the click even on the bar's gaps: never an attack. */
+static void hud_command(int action)
+{
+    switch (action) {
+    case HUDBAR_CHARACTER:
+        sheet_over_play();
+        break;
+    case HUDBAR_OPTIONS:
+        menu_over_play(MENU_OPTIONS);
+        break;
+    case HUDBAR_INVENTORY:
+        bag_over_play(0);
+        break;
+    case HUDBAR_REST:
+        rest_over_play();
+        break;
+    case HUDBAR_MODE:
+        g_mode = (g_mode + 1) % HUDBAR_MODES;
+        overlay_set_mode(g_mode);
+        interact_say(hudbar_mode_name(g_mode));
+        break;
+    case HUDBAR_SHEATH:
+        g_sheathed = !g_sheathed;
+        weapon_cancel();
+        break;
+    case HUDBAR_STATUS:
+        {
+            char line[96];
+            int hour, minute;
+            int year, month, day;
+
+            clock_hm(&hour, &minute);
+            clock_date(&year, &month, &day);
+            log_format(line, (int)sizeof(line), "%s, %d %s %d, %02d:%02d",
+                       clock_weekday_name(clock_weekday()), day + 1, clock_month_name(month), year, hour, minute);
+            interact_say(line);
+        }
+        break;
+    /* The original art stays visible. Its future features do not silently
+     * perform another action; their screens are connected in P10/P12. */
+    case HUDBAR_MAP:
+        interact_say("The map is not available yet.");
+        break;
+    case HUDBAR_SPELLBOOK:
+        interact_say("The spellbook is not available yet.");
+        break;
+    case HUDBAR_MAGIC_ITEM:
+        interact_say("No magic item can be used.");
+        break;
+    case HUDBAR_TRANSPORT:
+        interact_say("You are travelling on foot.");
+        break;
+    }
 }
 
 /* The attack button this frame: a blade's gesture, or a bow's draw if there is an arrow to draw. */
-static void attack_input(const Input *in, float dt)
+static void attack_input(const ControlFrame *in, float dt)
 {
     int pressed;
 
-    pressed = (in->pressed & INPUT_BIT(INPUT_ATTACK)) != 0;
+    pressed = in->attack_pressed;
     if (pressed && weapon_is_bow() && inventory_arrows(&g_player.pack) < 0) {
         interact_say("You have no arrows.");
         return;
     }
-    weapon_gesture(pressed, (in->held & INPUT_BIT(INPUT_ATTACK)) != 0, (in->released & INPUT_BIT(INPUT_ATTACK)) != 0, in->look_dx,
-                   in->look_dy, dt);
+    weapon_gesture(pressed, in->attack_held, in->attack_released, in->gesture_dx, in->gesture_dy, dt);
 }
 
 /* The bow looses: an arrow gone, flying along the view. */
@@ -467,11 +546,48 @@ static void use_key(const Camera *cam)
 {
     Entity *searched;
 
+    /* Info is observational: do not queue the engine's use, open a pack,
+     * change a lock or walk through a passage while asking what it is. */
+    if (g_mode == HUDBAR_INFO) {
+        UseHit hit;
+
+        if (interact_aim(&g_level->scene, cam, &hit)) {
+            const Usable *u;
+            int type, quality;
+            const BuildingKind *b;
+
+            u = &g_level->scene.usables[hit.usable];
+            b = travel_door_building(u, &type, &quality) ? building_kind(type) : 0;
+            interact_say(b ? b->name : (u->label ? u->label : "You see nothing unusual."));
+        } else {
+            interact_say("You see nothing unusual.");
+        }
+        return;
+    }
+    if (g_mode == HUDBAR_TALK) {
+        UseHit hit;
+
+        if (street_person_used(cam)) {
+            return;
+        }
+        if (interact_aim(&g_level->scene, cam, &hit) && g_level->scene.usables[hit.usable].kind == USE_TALK) {
+            person_used(&g_level->scene.usables[hit.usable]);
+        } else {
+            interact_say("There is no one to talk to.");
+        }
+        return;
+    }
+
     searched = loot_find(&g_level->scene, cam);
     if (!searched) {
         /* Someone walking the street, if the view rests on them; else what the engine's ray finds. */
-        if (!street_person_used(cam)) {
-            interact_request_use();
+        if (g_mode == HUDBAR_STEAL || !street_person_used(cam)) {
+            Basis b;
+
+            /* Use the exact camera supplied by keyboard or pointer picking.
+             * The engine must not fall back to the center of the drawn view. */
+            camera_basis(cam, &b);
+            interact_request_use_from(cam->x, cam->y, cam->z, b.fx * b.cp, b.sp, b.fz * b.cp);
         }
     } else if (!bag_finds_things(searched, g_player.sheet.level)) {
         interact_say("You find nothing.");
@@ -527,7 +643,15 @@ static void arrive(const Level *level, Camera *cam, const TravelPose *at)
     combat_reset();
     foes_reset();
     player_place(&g_player, at->x, at->y, at->z, at->yaw, at->pitch);
-    camera_set(cam, at->x, at->y, at->z, at->yaw, at->pitch);
+    if (!g_control_scheme) {
+        /* A classic save may be resumed with View selected in settings.
+         * Preserve its visible direction, while View movement follows that
+         * same direction rather than inheriting classic's side-look offset. */
+        player_turn(&g_player, g_control.view_yaw, g_control.view_pitch);
+        g_control.view_yaw = g_control.view_pitch = 0.0f;
+    }
+    camera_set(cam, at->x, at->y, at->z, g_player.yaw, g_player.pitch);
+    control_view(&g_control, cam);
     /*
      * The engine's walker gives the walking to the game's player: it is
      * not stepped, and the console's tcl is the game's collision switch
@@ -551,6 +675,17 @@ float game_eye(void)
 
 void game_enter(const Level *level, Camera *cam, const TravelPose *at)
 {
+    /* A saved character's first frame must not finish the previous game's
+     * drawn bow or queued hit, even when both use the same weapon picture. */
+    weapon_cancel();
+    g_mode = HUDBAR_GRAB;
+    g_sheathed = 0;
+    g_control_scheme = control_classic();
+    g_hud_cursor = g_control_scheme;
+    mouse_set_cursor(g_control_scheme);
+    control_reset(&g_control);
+    overlay_set_crosshair(!g_control_scheme);
+    overlay_set_mode(g_mode);
     /* Who creation made or the save holds, and what they carry (game_frame set these). */
     player_init(&g_player, &g_new_sheet);
     g_player.pack = g_new_pack;
@@ -573,6 +708,8 @@ void game_enter(const Level *level, Camera *cam, const TravelPose *at)
         g_day_zero = g_loaded.day_zero;
         g_last_minute = df_ifloor(game_minutes());
         loot_new_game(g_loaded.seed);
+        g_control.view_yaw = g_loaded.view_yaw;
+        g_control.view_pitch = g_loaded.view_pitch;
     }
     commands_player(&g_player);
     arrive(level, cam, at);
@@ -588,10 +725,17 @@ int game_frame(Camera *cam, const Input *in, float dt)
     int asked;
     /* The click that closed a menu is not a swing. */
     int closed;
+    ControlFrame controls;
 
     prof_begin(PROF_PLAY);
     g_cam = cam;
-    g_stealing = (in->held & INPUT_BIT(INPUT_RUN)) != 0;
+    if (in->reset) {
+        /* Engine discontinuities retain release bits for other consumers.
+         * Never let focus/capture loss loose a bow or finish a click swing. */
+        control_block(&g_control);
+        weapon_cancel();
+    }
+    g_stealing = g_mode == HUDBAR_STEAL || (in->held & INPUT_BIT(INPUT_RUN)) != 0;
     /* A screen before any place: the title or the start menu. */
     if (!g_playing) {
         /* Creation, once Start is chosen: it ends with a character for the first place. */
@@ -636,7 +780,21 @@ int game_frame(Camera *cam, const Input *in, float dt)
         prof_end(PROF_PLAY);
         return asked == MENU_QUIT ? GAME_QUIT : GAME_GO_ON;
     }
-    closed = 0;
+    mem_zero(&controls, sizeof(controls));
+    closed = in->reset != 0;
+    /* The controls menu can change scheme while paused. Adopt it once,
+     * preserving the actual view by folding Alt offsets into body facing. */
+    if (g_control_scheme != control_classic()) {
+        g_control_scheme = control_classic();
+        player_turn(&g_player, g_control.view_yaw, g_control.view_pitch);
+        control_reset(&g_control);
+        g_hud_cursor = g_control_scheme;
+        mouse_set_cursor(g_control_scheme);
+        overlay_set_crosshair(!g_hud_cursor);
+        input_set_pointer(g_hud_cursor || screens_is_open() || menu_current() != MENU_NONE);
+        weapon_cancel();
+        closed = 1;
+    }
     if (screens_is_open()) {
         closed = 1;
         asked = screens_frame(in, dt);
@@ -724,6 +882,9 @@ int game_frame(Camera *cam, const Input *in, float dt)
                 return GAME_GO_ON;
             }
         }
+    } else if (in->reset) {
+        /* First snapshot after capture/focus ownership changed: held keys
+         * can appear pressed again, but no play shortcut belongs to it. */
     } else if (in->pressed & INPUT_BIT(INPUT_MENU)) {
         menu_over_play(MENU_OPTIONS);
     } else if ((in->pressed & INPUT_BIT(INPUT_INVENTORY)) && !gfx_paused()) {
@@ -736,10 +897,43 @@ int game_frame(Camera *cam, const Input *in, float dt)
         if (!inventory_swap_hands(&g_player.pack)) {
             interact_say("A shield keeps your left hand.");
         }
+    } else if ((in->pressed & INPUT_BIT(INPUT_CURSOR)) && !gfx_paused()) {
+        /* Cancel any pending bow/gesture on entry. Closing the HUD cursor
+         * never turns the release of its last click into a random swing. */
+        g_hud_cursor = !g_hud_cursor;
+        apply_pointer(0);
+        weapon_cancel();
+        closed = 1;
+    } else if (g_hud_cursor && (in->mouse_pressed & INPUT_MOUSE_LEFT) && !gfx_paused()) {
+        int px, py, x, y;
+
+        input_pointer(&px, &py);
+        screen_from_pointer(px, py, &x, &y);
+        if (overlay_panel() && hudbar_contains(x, y)) {
+            hud_command(hudbar_hit(x, y));
+            closed = 1;
+        }
+    }
+    if (closed || menu_current() != MENU_NONE || screens_is_open() || gfx_paused()) {
+        control_block(&g_control);
+        weapon_cancel();
+    } else {
+        int px, py, x, y;
+
+        input_pointer(&px, &py);
+        screen_from_pointer(px, py, &x, &y);
+        control_step(&g_control, in, control_classic(), g_hud_cursor, x, y,
+                     overlay_panel() ? HUDBAR_TOP : 200, g_sheathed, dt, &controls);
+        if (controls.use) {
+            Camera aim;
+
+            control_point(cam, px, py, &aim);
+            use_key(&aim);
+        }
     }
     /* The console stands the world still too (gfx_paused): the player stands with it. */
     if (menu_current() == MENU_NONE && !screens_is_open() && !gfx_paused()) {
-        if (in->pressed & INPUT_BIT(INPUT_USE)) {
+        if (!closed && (in->pressed & INPUT_BIT(INPUT_USE))) {
             use_key(cam);
         }
         /* A passage used: the program loads where it leads, between this frame and the next. */
@@ -795,8 +989,8 @@ int game_frame(Camera *cam, const Input *in, float dt)
         player_check_weapon(&g_player);
         weapon_hold(inventory_weapon(&g_player.pack));
         /* The button that closed a screen, held or let go after it, is not a swing. */
-        if (!weapon_gate(closed, (in->held & INPUT_BIT(INPUT_ATTACK)) != 0)) {
-            attack_input(in, dt);
+        if (!weapon_gate(closed || g_sheathed || (!control_classic() && g_hud_cursor), controls.attack_held)) {
+            attack_input(&controls, dt);
         }
         weapon_step(dt, g_player.sheet.attribute[ATTR_SPEED]);
         {
@@ -812,8 +1006,24 @@ int game_frame(Camera *cam, const Input *in, float dt)
             }
         }
         /* tcl 1 (walker_on): the body walks and collides; tcl 0: it flies through everything. */
-        /* The mouse both turns the view and, the button held, chooses a blade's swing: classic stands the view still, which is not liked. */
-        player_step(&g_player, in, &g_level->scene, dt, walker_on());
+        /* Cursor steering supplies fractions and dt-scaled angles. Physical
+         * mouse motion only looks in View mode or under Alt; a right drag in
+         * classic Cursor mode belongs exclusively to the weapon gesture. */
+        if (controls.center) {
+            g_player.pitch = 0.0f;
+        }
+        player_turn(&g_player, controls.yaw, controls.pitch);
+        if (closed) {
+            Input move;
+
+            /* A rebound jump may share a menu key or physical UI button.
+             * The handoff frame still advances gravity, with no jump edge. */
+            move = *in;
+            move.pressed = 0;
+            player_step_motion(&g_player, &move, &g_level->scene, dt, walker_on(), 0, 0);
+        } else {
+            player_step_motion(&g_player, in, &g_level->scene, dt, walker_on(), controls.forward, controls.right);
+        }
         {
             float speed;
             float height;
@@ -832,6 +1042,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
             }
         }
         player_camera(&g_player, cam);
+        control_view(&g_control, cam);
         /* The swing's hit frame strikes what is in reach of the eye; flinches run out. */
         if (weapon_hit()) {
             float eye[3];
@@ -843,7 +1054,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
                 shoot_arrow(cam, eye);
             } else {
                 combat_strike(&g_player.sheet, inventory_hand(&g_player.pack), weapon_swing(), &g_level->scene,
-                              g_player.body.feet, eye, g_player.yaw);
+                              g_player.body.feet, eye, cam->yaw);
             }
         }
         combat_frame(dt);
@@ -851,6 +1062,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
         if (foes_frame(&g_player, &g_level->scene, dt)) {
             die();
             player_camera(&g_player, cam);
+            control_view(&g_control, cam);
         }
         /* What is round the player in and out, a stream's creatures and people with it (travel.h, docs/streaming.md). */
         {
@@ -865,7 +1077,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
             }
         }
     }
-    overlay_set_yaw(g_player.yaw);
+    overlay_set_yaw(cam->yaw);
     overlay_set_vitals(g_player.sheet.health, g_player.sheet.health_max, g_player.sheet.fatigue,
                        g_player.sheet.fatigue_max, g_player.sheet.magicka, g_player.sheet.magicka_max);
     prof_end(PROF_PLAY);

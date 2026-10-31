@@ -115,7 +115,13 @@ static void mouse_msg(HWND hwnd, UINT msg, LPARAM lp)
         SetCapture(hwnd);
     }
     if (msg == WM_LBUTTONUP || msg == WM_RBUTTONUP) {
-        ReleaseCapture();
+        /* input_begin owns capture for the whole walking session. An
+           ordinary button-up must not become a capture discontinuity:
+           that would discard a short gesture before input_read saw it.
+           GUI viewers install no session and keep their drag behavior. */
+        if (!input_mouse_capture()) {
+            ReleaseCapture();
+        }
     }
     if (msg != WM_LBUTTONUP && msg != WM_RBUTTONUP) {
         g_mouse(msg, x, y);
@@ -125,6 +131,15 @@ static void mouse_msg(HWND hwnd, UINT msg, LPARAM lp)
 static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     switch (msg) {
+    case WM_SETFOCUS:
+    case WM_KILLFOCUS:
+        input_on_focus(msg == WM_SETFOCUS);
+        break;
+    case WM_CAPTURECHANGED:
+    case WM_CANCELMODE:
+        /* A cursor jump after another window took capture is no drag. */
+        input_mouse_reset();
+        break;
     case WM_MOUSEMOVE:
     case WM_LBUTTONDOWN:
     case WM_LBUTTONUP:
@@ -397,6 +412,10 @@ void win_pump(void)
             input_request_quit();
         }
         take = console_message(msg.message, (unsigned int)msg.wParam, (long)msg.lParam);
+        if (take != CONSOLE_PASS) {
+            /* Also catches a console toggle between two snapshots. */
+            input_mouse_reset();
+        }
         if (take == CONSOLE_KEEP) {
             continue;
         }

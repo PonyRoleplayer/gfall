@@ -57,5 +57,7 @@ int menu_frame(const Input *in);
 void menu_draw(void);
 /* Classic's pointer alone at classic's x, y, for a screen that is not a menu (screens.c). */
 void menu_draw_pointer(int x, int y);
+/* Classic world arrow/X, centered on its hotspot; invalid shape uses ARROW.RAW. */
+void menu_draw_world_pointer(int shape, int x, int y);
 
 #endif

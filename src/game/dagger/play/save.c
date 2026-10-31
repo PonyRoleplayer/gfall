@@ -57,6 +57,8 @@ typedef struct SaveGameRow {
     float feet[3];
     float yaw;
     float pitch;
+    float view_yaw;
+    float view_pitch;
     float minute;
     df_i32 day;
     df_i32 day_zero;
@@ -83,6 +85,8 @@ static const RecField g_game_fields[] = {
     REC_ARRAY("feet", REC_FLOAT, SaveGameRow, feet),
     REC_FIELD("yaw", REC_FLOAT, SaveGameRow, yaw),
     REC_FIELD("pitch", REC_FLOAT, SaveGameRow, pitch),
+    REC_FIELD("view_yaw", REC_FLOAT, SaveGameRow, view_yaw),
+    REC_FIELD("view_pitch", REC_FLOAT, SaveGameRow, view_pitch),
     REC_FIELD("minute", REC_FLOAT, SaveGameRow, minute),
     REC_FIELD("day", REC_INT, SaveGameRow, day),
     REC_FIELD("day_zero", REC_INT, SaveGameRow, day_zero),
@@ -308,6 +312,8 @@ static int write_chunks(const SaveState *state)
     }
     game.yaw = state->yaw;
     game.pitch = state->pitch;
+    game.view_yaw = state->view_yaw;
+    game.view_pitch = state->view_pitch;
     game.minute = state->minute;
     game.day = state->day;
     game.day_zero = state->day_zero;
@@ -504,6 +510,8 @@ static void apply_tables(SaveState *state)
     }
     state->yaw = game->yaw;
     state->pitch = game->pitch;
+    state->view_yaw = game->view_yaw;
+    state->view_pitch = game->view_pitch;
     state->minute = game->minute;
     state->day = game->day;
     state->day_zero = game->day_zero;
