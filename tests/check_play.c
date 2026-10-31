@@ -62,6 +62,8 @@
 #include "engine/assets/recfile.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/foes.h"
+#include "game/dagger/play/watch.h"
+#include "game/dagger/places/people.h"
 #include "game/dagger/tables/enemies.h"
 #include "game/dagger/formats/cif.h"
 #include "game/dagger/formats/img.h"
@@ -5261,6 +5263,144 @@ static void check_mouse(void)
     printf("mouse: cursor and view, stored\n");
 }
 
+/*
+ * A street citizen has 1 health. The to-hit roll is made at 100, so it cannot
+ * miss, and the damage is the weapon's: the same rolls as a blow that is not
+ * sure, when that blow also hits. One such blow in Daggerfall kills them and
+ * the city watch comes, with three HALT lines queued.
+ */
+static void check_citizen(void)
+{
+    Character pc;
+    Foe citizen;
+    Foe plain;
+    Blow sure;
+    Blow rolled;
+    Item sword;
+    int i;
+    int misses;
+    int matched;
+    int index;
+    Level level;
+    Camera cam;
+    TravelPose at;
+    Player ply;
+    Entity *who;
+    Entity *guard;
+    float feet[3];
+    float eye[3];
+    float yaw;
+    float before;
+    float after;
+    int hp;
+    int k;
+    int guards;
+
+    if (!character_new(&pc, RACE_BRETON, CLASS_WARRIOR, 0, "Test")) {
+        check_expect(0, "citizen: no character");
+        return;
+    }
+    item_make(&sword, ITEM_LONGSWORD, MATERIAL_IRON);
+    pc.skill[SKILL_CRITICAL_STRIKE] = 0;
+    combat_citizen(&citizen, 0);
+    plain = citizen;
+    plain.citizen = 0;
+    misses = 0;
+    matched = 0;
+    for (i = 1; i <= 200; i++) {
+        combat_seed((df_u32)i);
+        combat_blow(&pc, &sword, 3, &citizen, &sure);
+        if (sure.chance != 100 || !sure.hit || sure.damage < 1) {
+            break;
+        }
+        combat_seed((df_u32)i);
+        combat_blow(&pc, &sword, 3, &plain, &rolled);
+        if (!rolled.hit) {
+            misses++;
+            continue;
+        }
+        if (rolled.damage != sure.damage || rolled.chance > 97) {
+            break;
+        }
+        matched++;
+    }
+    check_expect(i == 201 && misses > 0 && matched > 0,
+                 "citizen: a blow is not a sure hit at 100, or its damage is not the weapon's");
+    check_expect(PEOPLE_CITIZEN_HP == 1, "citizen: health is not 1");
+
+    index = daggerfall_index();
+    if (index < 0) {
+        return;
+    }
+    clock_set_minute(12.0f * 60.0f);
+    entity_set_population(1);
+    foes_set_on(1);
+    foes_reset();
+    watch_reset();
+    if (!travel_go_to_town(17, index) || !travel_go(&level, &cam, &at)) {
+        return;
+    }
+    who = 0;
+    guards = 0;
+    for (i = 0; i < PEOPLE_MAX; i++) {
+        Entity *e;
+
+        e = people_at(i);
+        if (e && people_is_guard(e)) {
+            guards++;
+        }
+        if (e && people_is_citizen(e) && !who) {
+            who = e;
+        }
+    }
+    check_expect(people_count() > 40 && who && people_health(who) == 1, "citizen: Daggerfall has no citizen at 1 health");
+    if (!who || people_health(who) != 1) {
+        travel_leave();
+        return;
+    }
+    feet[0] = who->x;
+    feet[1] = who->y;
+    feet[2] = who->z;
+    eye[0] = feet[0];
+    eye[1] = feet[1] + WALK_EYE;
+    eye[2] = feet[2];
+    yaw = 0.0f;
+    combat_seed(3u);
+    check_expect(combat_strike(&pc, &sword, 3, &level.scene, feet, eye, yaw) > 0 && !who->live && who->dead,
+                 "citizen: one blow did not kill them");
+    check_expect(combat_citizen_struck(&sure, &hp) && hp == 1 && sure.chance == 100 && sure.hit && sure.damage >= 1
+                     && 1 - sure.damage <= 0,
+                 "citizen: the killing blow was not 1 health taken by a sure hit");
+    guard = watch_guard();
+    check_expect(watch_halts() == 3 && watch_halt(0) && watch_halt(1) && watch_halt(2)
+                     && strcmp(watch_halt(0), "HALT") == 0 && strcmp(watch_halt(1), "HALT") == 0
+                     && strcmp(watch_halt(2), "HALT") == 0,
+                 "citizen: the killing did not queue three HALT lines");
+    check_expect(guard && people_is_guard(guard) && foes_minding(guard)
+                     && enemy_kind(ENEMY_CITY_WATCH) && enemy_kind(ENEMY_CITY_WATCH)->bark_sound == 456
+                     && enemy_kind(ENEMY_CITY_WATCH)->male == 399,
+                 "citizen: no city watch (kind 146, archive 399) came");
+    if (guard) {
+        before = df_sqrt((guard->x - feet[0]) * (guard->x - feet[0]) + (guard->z - feet[2]) * (guard->z - feet[2]));
+        character_new(&pc, RACE_BRETON, CLASS_WARRIOR, 0, "Test");
+        player_init(&ply, &pc);
+        player_place(&ply, feet[0], feet[1], feet[2], yaw, 0.0f);
+        for (k = 0; k < 60; k++) {
+            foes_frame(&ply, &level.scene, 0.05f);
+            watch_frame(0.05f);
+        }
+        after = df_sqrt((guard->x - feet[0]) * (guard->x - feet[0]) + (guard->z - feet[2]) * (guard->z - feet[2]));
+        check_expect(foes_minding(guard) && (after < before - 8.0f || before < FOES_MELEE),
+                     "citizen: the guard did not come for the player");
+    }
+    travel_leave();
+    foes_reset();
+    watch_reset();
+    printf("citizen: 1 health, sure hit, weapon damage; %d ordinary misses, %d damages matched; "
+           "%d guards in Daggerfall, three HALTs\n",
+           misses, matched, guards);
+}
+
 void check_play(void)
 {
     /* As game_setup does: read before any screen's heap is current. */
@@ -5305,6 +5445,7 @@ void check_play(void)
     check_shop_and_court();
     check_bank();
     check_people_in_town();
+    check_citizen();
     check_senses();
     check_goto();
     check_standing_saved();

@@ -55,6 +55,10 @@ typedef struct Person {
     double cz;
     double tx;
     double tz;
+    /* 1: the game's watch owns the step. The street motor does not. */
+    int held;
+    /* A citizen's PEOPLE_CITIZEN_HP. A guard's -1 until a blow rolls it. */
+    int health;
 } Person;
 
 typedef struct Set {
@@ -73,6 +77,9 @@ static Entity g_ent[PEOPLE_MAX];
 static Person g_per[PEOPLE_MAX];
 static Set g_set[SETS];
 static int g_nset;
+/* Archive 399's attack records 5..9, held once a guard is called to a fight. */
+static int g_attack[5];
+static int g_attack_on;
 static int g_pictures;
 static float g_tick;
 static df_u32 g_seed = 0x6d2b79f5u;
@@ -114,12 +121,28 @@ void people_begin(struct Scene *scene)
     g_on = 1;
 }
 
+static void release_attack(void)
+{
+    int k;
+
+    if (!g_attack_on) {
+        return;
+    }
+    for (k = 0; k < 5; k++) {
+        if (g_attack[k] >= 0) {
+            wres_release(g_attack[k]);
+        }
+    }
+    g_attack_on = 0;
+}
+
 void people_end(void)
 {
     if (g_on && g_scene) {
         g_scene->entities = 0;
         g_scene->nentities = 0;
     }
+    release_attack();
     /* The pictures are the stream's: they go with it (wres_end). */
     g_on = 0;
     g_scene = 0;
@@ -462,6 +485,49 @@ static void walk(int i, float secs)
     e->z += dz / d * step;
 }
 
+/* Pictures on, health set: a citizen's 1, a guard's not rolled yet. 0 when a picture has no size. */
+static int embody(int slot, int set, float lx, float lz, double cx, double cz)
+{
+    Entity *e;
+    Person *p;
+    int k;
+
+    e = &g_ent[slot];
+    p = &g_per[slot];
+    entity_init(e);
+    mem_zero(p, sizeof(Person));
+    /* Walking, five views; standing, one picture that faces the viewer. */
+    for (k = 0; k < ENTITY_VIEWS; k++) {
+        e->pose[ENTITY_WALK].slot[k] = (df_u16)g_set[set].slot[k];
+        e->pose[ENTITY_IDLE].slot[k] = 0xffff;
+        if (!size_of(g_set[set].slot[k], &e->pose[ENTITY_WALK].w[k], &e->pose[ENTITY_WALK].h[k])) {
+            return 0;
+        }
+    }
+    e->pose[ENTITY_IDLE].slot[0] = (df_u16)g_set[set].slot[5];
+    if (!size_of(g_set[set].slot[5], &e->pose[ENTITY_IDLE].w[0], &e->pose[ENTITY_IDLE].h[0])) {
+        return 0;
+    }
+    e->x = lx;
+    e->z = lz;
+    e->y = wild_ground(cx, cz);
+    e->pose[ENTITY_WALK].rate = 4;
+    e->pose[ENTITY_IDLE].rate = 1;
+    e->phase = (df_u8)pick(256);
+    e->moving = 1;
+    e->live = 1;
+    /* About a person's shoulders, as DFU's capsule: the walker and the others stop at them. */
+    e->radius = PERSON_RADIUS;
+    p->set = set;
+    p->cx = p->tx = cx;
+    p->cz = p->tz = cz;
+    p->dir = pick(4);
+    e->yaw = g_dir_yaw[p->dir];
+    p->state = SEEK;
+    p->health = g_set[set].archive == GUARD_ARCHIVE ? -1 : PEOPLE_CITIZEN_HP;
+    return 1;
+}
+
 /*
  * A new person on a free walking cell round the camera, out of its
  * sight; anywhere round it when the frame is not up yet (people_fill).
@@ -474,7 +540,6 @@ static int spawn(const Camera *cam, double x0, double z0, int climate, int anywh
     int slot;
     int attempt;
     int set;
-    int k;
 
     for (slot = 0; slot < PEOPLE_MAX && g_ent[slot].live; slot++) {
     }
@@ -494,8 +559,6 @@ static int spawn(const Camera *cam, double x0, double z0, int climate, int anywh
         double cz;
         float lx;
         float lz;
-        Entity *e;
-        Person *p;
 
         wx = cwx + (double)((rnd() * 2.0f - 1.0f) * PEOPLE_SPAWN);
         wz = cwz + (double)((rnd() * 2.0f - 1.0f) * PEOPLE_SPAWN);
@@ -506,39 +569,7 @@ static int spawn(const Camera *cam, double x0, double z0, int climate, int anywh
             || wild_nav(cx, cz) == 0 || taken(-1, cx, cz) || (!anywhere && !out_of_sight(cam, lx, lz))) {
             continue;
         }
-        e = &g_ent[slot];
-        p = &g_per[slot];
-        entity_init(e);
-        mem_zero(p, sizeof(Person));
-        /* Walking, five views; standing, one picture that faces the viewer. */
-        for (k = 0; k < ENTITY_VIEWS; k++) {
-            e->pose[ENTITY_WALK].slot[k] = (df_u16)g_set[set].slot[k];
-            e->pose[ENTITY_IDLE].slot[k] = 0xffff;
-            if (!size_of(g_set[set].slot[k], &e->pose[ENTITY_WALK].w[k], &e->pose[ENTITY_WALK].h[k])) {
-                return 0;
-            }
-        }
-        e->pose[ENTITY_IDLE].slot[0] = (df_u16)g_set[set].slot[5];
-        if (!size_of(g_set[set].slot[5], &e->pose[ENTITY_IDLE].w[0], &e->pose[ENTITY_IDLE].h[0])) {
-            return 0;
-        }
-        e->x = lx;
-        e->z = lz;
-        e->y = wild_ground(cx, cz);
-        e->pose[ENTITY_WALK].rate = 4;
-        e->pose[ENTITY_IDLE].rate = 1;
-        e->phase = (df_u8)pick(256);
-        e->moving = 1;
-        e->live = 1;
-        /* About a person's shoulders, as DFU's capsule: the walker and the others stop at them. */
-        e->radius = PERSON_RADIUS;
-        p->set = set;
-        p->cx = p->tx = cx;
-        p->cz = p->tz = cz;
-        p->dir = pick(4);
-        e->yaw = g_dir_yaw[p->dir];
-        p->state = SEEK;
-        return 1;
+        return embody(slot, set, lx, lz, cx, cz);
     }
     return 0;
 }
@@ -640,6 +671,7 @@ void people_update(const Camera *cam, float secs)
                 wres_release(g_set[s].slot[k]);
             }
         }
+        release_attack();
         g_nset = 0;
     }
     /* A picture of the clothes asked for, one a frame. */
@@ -667,10 +699,16 @@ void people_update(const Camera *cam, float secs)
         dx = e->x - cam->x;
         dz = e->z - cam->z;
         d2 = dx * dx + dz * dz;
-        /* Taken away far off, at dusk, out of the town, or stuck; never in sight. */
-        if ((d2 > PEOPLE_RECYCLE * PEOPLE_RECYCLE || !day || !in_town || p->seeks > STUCK)
+        /*
+         * Taken away far off, at dusk, out of the town, or stuck; never in sight.
+         * A guard the watch holds is not stuck: the street motor is not seeking.
+         */
+        if ((d2 > PEOPLE_RECYCLE * PEOPLE_RECYCLE || !day || !in_town || (!p->held && p->seeks > STUCK))
             && out_of_sight(cam, e->x, e->z)) {
             e->live = 0;
+            continue;
+        }
+        if (p->held) {
             continue;
         }
         /* A close, still camera: they stop and face it. */
@@ -694,6 +732,221 @@ void people_update(const Camera *cam, float secs)
             walk(i, secs);
         }
     }
+}
+
+static int slot_of(const Entity *e)
+{
+    if (!g_on || !e || e < g_ent || e >= g_ent + PEOPLE_MAX) {
+        return -1;
+    }
+    return (int)(e - g_ent);
+}
+
+static int living(int i)
+{
+    return i >= 0 && i < PEOPLE_MAX && g_ent[i].live && !g_ent[i].dead;
+}
+
+Entity *people_at(int index)
+{
+    if (!g_on || index < 0 || index >= PEOPLE_MAX) {
+        return 0;
+    }
+    return &g_ent[index];
+}
+
+int people_index(const Entity *e)
+{
+    return slot_of(e);
+}
+
+int people_is_guard(const Entity *e)
+{
+    int i;
+
+    i = slot_of(e);
+    return living(i) && g_set[g_per[i].set].archive == GUARD_ARCHIVE;
+}
+
+int people_is_citizen(const Entity *e)
+{
+    int i;
+
+    i = slot_of(e);
+    return living(i) && g_set[g_per[i].set].archive != GUARD_ARCHIVE;
+}
+
+int people_health(const Entity *e)
+{
+    int i;
+
+    i = slot_of(e);
+    if (i < 0) {
+        return 0;
+    }
+    return g_per[i].health;
+}
+
+void people_set_health(Entity *e, int health)
+{
+    int i;
+
+    i = slot_of(e);
+    if (i >= 0) {
+        g_per[i].health = health;
+    }
+}
+
+void people_fell(Entity *e)
+{
+    int i;
+
+    i = slot_of(e);
+    if (i < 0) {
+        return;
+    }
+    g_ent[i].dead = 1;
+    g_ent[i].radius = 0.0f;
+    g_ent[i].live = 0;
+    g_per[i].held = 0;
+}
+
+int people_nearest_guard(float x, float z)
+{
+    int i;
+    int best;
+    float best_d;
+
+    best = -1;
+    best_d = 0.0f;
+    for (i = 0; g_on && i < PEOPLE_MAX; i++) {
+        float dx;
+        float dz;
+        float d;
+
+        if (!living(i) || g_set[g_per[i].set].archive != GUARD_ARCHIVE) {
+            continue;
+        }
+        dx = g_ent[i].x - x;
+        dz = g_ent[i].z - z;
+        d = dx * dx + dz * dz;
+        if (best < 0 || d < best_d) {
+            best = i;
+            best_d = d;
+        }
+    }
+    return best;
+}
+
+/* Records 5..9, the five attack views, so the existing foe swing can play. */
+static void arm_guard(Entity *e)
+{
+    int k;
+
+    if (!g_attack_on) {
+        for (k = 0; k < 5; k++) {
+            int spins;
+
+            g_attack[k] = wres_slot(GUARD_ARCHIVE, 5 + k, WRES_SPRITE);
+            if (g_attack[k] < 0) {
+                continue;
+            }
+            wres_hold(g_attack[k]);
+            spins = 0;
+            while (wres_load(g_attack[k]) && spins < 16) {
+                spins++;
+            }
+        }
+        g_attack_on = 1;
+    }
+    for (k = 0; k < 5; k++) {
+        e->pose[ENTITY_ATTACK].slot[k] = g_attack[k] >= 0 ? (df_u16)g_attack[k] : 0xffff;
+        e->pose[ENTITY_ATTACK].w[k] = 0;
+        e->pose[ENTITY_ATTACK].h[k] = 0;
+        if (g_attack[k] >= 0) {
+            size_of(g_attack[k], &e->pose[ENTITY_ATTACK].w[k], &e->pose[ENTITY_ATTACK].h[k]);
+        }
+    }
+    e->pose[ENTITY_ATTACK].rate = 4;
+}
+
+void people_hold(int index)
+{
+    if (!living(index)) {
+        return;
+    }
+    g_per[index].held = 1;
+    if (g_set[g_per[index].set].archive == GUARD_ARCHIVE) {
+        arm_guard(&g_ent[index]);
+    }
+}
+
+int people_spawn_guard(const Camera *cam)
+{
+    double x0;
+    double z0;
+    double cwx;
+    double cwz;
+    int most;
+    int climate;
+    int day;
+    int set;
+    int slot;
+    int anywhere;
+    int attempt;
+
+    if (!g_on || !cam || !town_near(cam, &x0, &z0, &most, &climate, &day)) {
+        return -1;
+    }
+    set = set_of(GUARD_ARCHIVE);
+    if (set < 0) {
+        return -1;
+    }
+    while (load_one()) {
+    }
+    if (!g_set[set].ready) {
+        return -1;
+    }
+    for (slot = 0; slot < PEOPLE_MAX && g_ent[slot].live; slot++) {
+    }
+    if (slot == PEOPLE_MAX) {
+        return -1;
+    }
+    stream_world(cam->x, cam->z, &cwx, &cwz);
+    /* Out of sight first, as every other person appears; then a cell that is merely not underfoot. */
+    for (anywhere = 0; anywhere < 2; anywhere++) {
+        for (attempt = 0; attempt < 12; attempt++) {
+            double wx;
+            double wz;
+            double cx;
+            double cz;
+            float lx;
+            float lz;
+            float dx;
+            float dz;
+
+            wx = cwx + (double)((rnd() * 2.0f - 1.0f) * PEOPLE_SPAWN);
+            wz = cwz + (double)((rnd() * 2.0f - 1.0f) * PEOPLE_SPAWN);
+            cell_centre(x0, z0, wx, wz, &cx, &cz);
+            stream_local(cx, cz, &lx, &lz);
+            dx = lx - cam->x;
+            dz = lz - cam->z;
+            if (dx * dx + dz * dz > PEOPLE_RECYCLE * PEOPLE_RECYCLE || wild_nav(cx, cz) == 0 || taken(-1, cx, cz)) {
+                continue;
+            }
+            if (!anywhere && !out_of_sight(cam, lx, lz)) {
+                continue;
+            }
+            if (anywhere && dx * dx + dz * dz < 64.0f * 64.0f) {
+                continue;
+            }
+            if (!embody(slot, set, lx, lz, cx, cz)) {
+                return -1;
+            }
+            return slot;
+        }
+    }
+    return -1;
 }
 
 int people_in_view(const Camera *cam, float reach, int *female, unsigned *who)

@@ -284,7 +284,7 @@ static float absf(float v)
 }
 
 /* A mind for e, its body its size where it stands. 0 when every mind is taken. */
-static Mind *wake(Entity *e, int kind)
+static Mind *wake(Entity *e, int kind, int bark)
 {
     const EnemyKind *k;
     Mind *m;
@@ -334,10 +334,37 @@ static Mind *wake(Entity *e, int kind)
     m->owed = 0.0f;
     m->move_sound = MOVE_SOUND_MIN + (float)combat_roll(100) * (MOVE_SOUND_SPAN / 100.0f);
     k = enemy_kind(kind);
-    if (k) {
+    if (bark && k) {
         sfx_at(k->bark_sound, e->x, e->y + h * 0.5f, e->z);
     }
     return m;
+}
+
+int foes_summon(Entity *e, int kind, const float *at)
+{
+    Mind *m;
+
+    if (!g_on || !e || e->dead || kind < 0) {
+        return 0;
+    }
+    m = wake(e, kind, 0);
+    if (!m) {
+        return 0;
+    }
+    if (at) {
+        m->last[0] = at[0];
+        m->last[1] = at[1];
+        m->last[2] = at[2];
+        m->give_up = FOES_GIVE_UP;
+        m->search = 0;
+        m->look_in = 0;
+    }
+    return 1;
+}
+
+int foes_minding(const Entity *e)
+{
+    return mind_of(e) != 0;
 }
 
 void foes_alert(Entity *e)
@@ -352,7 +379,7 @@ void foes_alert(Entity *e)
     if (kind < 0) {
         return;
     }
-    m = wake(e, kind);
+    m = wake(e, kind, 1);
     if (m) {
         /* It knows where the blow came from: as if it saw, a full give-up count. */
         m->give_up = FOES_GIVE_UP;
@@ -647,7 +674,7 @@ static void look_for(Player *p, const Scene *scene, const float *peye)
         if (seen || (!far && notices(e, p, scene, eye, peye, df_sqrt(dx * dx + dy * dy + dz * dz)))) {
             Mind *m;
 
-            m = wake(e, kind);
+            m = wake(e, kind, 1);
             if (m) {
                 m->sees = seen;
                 m->last[0] = p->body.feet[0];

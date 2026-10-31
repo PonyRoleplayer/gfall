@@ -2,10 +2,13 @@
 #include "game/dagger/play/foes.h"
 #include "game/dagger/play/loot.h"
 #include "game/dagger/play/sfx.h"
+#include "game/dagger/play/watch.h"
 #include "game/dagger/formats/sndfile.h"
 #include "game/dagger/places/dunstream.h"
+#include "game/dagger/places/people.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/tables/items.h"
+#include "engine/gfx/camera.h"
 #include "engine/scene/collide.h"
 #include "engine/scene/interact.h"
 #include "engine/scene/keep.h"
@@ -106,6 +109,43 @@ void combat_foe(Foe *f, const EnemyKind *kind, int player_level, int behind)
     skill = f->level * 5 + 30;
     f->skill = skill > 100 ? 100 : skill;
     f->dodging = f->skill;
+    f->citizen = 0;
+}
+
+/*
+ * Not a mobile id. 65535 is past every class, so a group bonus does not
+ * apply and combat_foe must not be used on it (it would take them for a class).
+ */
+static const EnemyKind *citizen_kind(void)
+{
+    static EnemyKind kind;
+    static int ready;
+
+    if (!ready) {
+        kind.id = 65535;
+        kind.min_metal = -1;
+        kind.name[0] = 'C';
+        kind.name[1] = 'i';
+        kind.name[2] = 't';
+        kind.name[3] = 'i';
+        kind.name[4] = 'z';
+        kind.name[5] = 'e';
+        kind.name[6] = 'n';
+        ready = 1;
+    }
+    return &kind;
+}
+
+void combat_citizen(Foe *f, int behind)
+{
+    f->kind = citizen_kind();
+    f->level = 1;
+    f->armor = 0;
+    f->skill = 0;
+    f->dodging = 0;
+    f->behind = behind ? 1 : 0;
+    f->weapon = 0;
+    f->citizen = 1;
 }
 
 int combat_roll_health(const Foe *f)
@@ -189,7 +229,16 @@ void combat_blow(const Character *pc, const Item *weapon, int swing, const Foe *
     }
     /* Against a creature, not the player: 40; and always less 50. */
     chance += 40 - 50;
-    chance = chance < 3 ? 3 : (chance > 97 ? 97 : chance);
+    /*
+     * A street citizen: the roll below is still made. At 100 it cannot miss,
+     * because combat_roll(100) is 0..99. Damage after the hit is the weapon's.
+     * A creature stays clamped to 3..97.
+     */
+    if (f->citizen) {
+        chance = 100;
+    } else {
+        chance = chance < 3 ? 3 : (chance > 97 ? 97 : chance);
+    }
     out->chance = chance;
     if (combat_roll(100) >= chance) {
         return;
@@ -690,15 +739,138 @@ int combat_shoot(Character *pc, Item *weapon, const Scene *scene, const float *f
     return 1;
 }
 
+static Blow g_citizen_blow;
+static int g_citizen_hp;
+static int g_citizen_have;
+
+int combat_citizen_struck(Blow *out, int *health_before)
+{
+    if (!g_citizen_have) {
+        return 0;
+    }
+    if (out) {
+        *out = g_citizen_blow;
+    }
+    if (health_before) {
+        *health_before = g_citizen_hp;
+    }
+    return 1;
+}
+
+/* Same reach as a creature, for a living citizen or guard. */
+static int person_reaches(const Scene *scene, const float *feet, const float *eye, float yaw, const Entity *e)
+{
+    float d[3];
+    float dist;
+    float mid[3];
+
+    if (!e || !e->live || e->dead || (!people_is_citizen(e) && !people_is_guard(e))) {
+        return 0;
+    }
+    d[0] = e->x - feet[0];
+    d[1] = e->y - feet[1];
+    d[2] = e->z - feet[2];
+    dist = df_sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    if (dist > COMBAT_REACH) {
+        return 0;
+    }
+    if (dist > COMBAT_POINT_BLANK) {
+        float off;
+
+        off = df_wrap_tau(df_atan2(d[0], d[2]) - yaw);
+        if (off > DF_TAU * 0.5f) {
+            off = DF_TAU - off;
+        }
+        if (off > COMBAT_ARC) {
+            return 0;
+        }
+    }
+    mid[0] = e->x;
+    mid[1] = e->y + entity_height(e) * 0.5f;
+    mid[2] = e->z;
+    return combat_sight(scene, eye, mid);
+}
+
+/* 1 when a citizen's 1 health was taken by the weapon's damage. */
+static int strike_person(Character *pc, Item *weapon, int swing, Entity *e, const float *feet)
+{
+    const EnemyKind *watch;
+    Foe f;
+    Blow b;
+    int behind;
+    int hp;
+    int citizen;
+    float mid;
+
+    citizen = people_is_citizen(e);
+    watch = enemy_kind(ENEMY_CITY_WATCH);
+    mid = e->y + entity_height(e) * 0.5f;
+    behind = df_sin(e->yaw) * (feet[0] - e->x) + df_cos(e->yaw) * (feet[2] - e->z) < 0.0f;
+    if (citizen) {
+        hp = people_health(e);
+        combat_citizen(&f, behind);
+        g_citizen_hp = hp;
+    } else {
+        if (!watch) {
+            return 0;
+        }
+        combat_foe(&f, watch, pc->level, behind);
+        hp = people_health(e);
+        if (hp < 0) {
+            hp = combat_roll_health(&f);
+        }
+    }
+    if (behind) {
+        character_tally(pc, SKILL_BACKSTABBING, 1);
+    }
+    combat_blow(pc, weapon, swing, &f, &b);
+    if (citizen) {
+        g_citizen_blow = b;
+        g_citizen_have = 1;
+    }
+    if (b.ineffective) {
+        interact_say("The material of the weapon you are using is ineffective.");
+        sfx_play(weapon ? SND_SWING_MEDIUM : SND_SWING_HIGH);
+        return 0;
+    }
+    if (!b.hit || b.damage <= 0) {
+        if (!citizen && weapon && watch && watch->parries) {
+            sfx_at(sfx_pick(SND_PARRY_FIRST, SND_PARRIES), e->x, mid, e->z);
+        } else {
+            sfx_play(weapon ? SND_SWING_MEDIUM : SND_SWING_HIGH);
+        }
+        return 0;
+    }
+    sfx_at(sfx_pick(SND_HIT_FIRST, SND_HITS), e->x, mid, e->z);
+    if (weapon) {
+        item_wear_down(weapon, b.damage, combat_roll(100));
+    }
+    hp -= b.damage;
+    if (hp <= 0) {
+        people_fell(e);
+        sfx_at(SND_BODY_FALL, e->x, e->y, e->z);
+        return citizen;
+    }
+    people_set_health(e, hp);
+    if (!citizen) {
+        flinch(e);
+        foes_knock(e, feet, combat_knock_speed(b.damage, watch ? watch->weight : 1));
+    }
+    return 0;
+}
+
 int combat_strike(Character *pc, Item *weapon, int swing, const Scene *scene, const float *feet,
                   const float *eye, float yaw)
 {
     int struck;
+    int killed;
     int slot;
 
     /* The swing tires, struck or not. */
     tire(pc);
     struck = 0;
+    killed = 0;
+    g_citizen_have = 0;
     /* Walls by the scene's collision grid, a ray as thin as rig_third's (the body sets its own shape again at its step). */
     if (!scene || !collide_use(scene)) {
         return 0;
@@ -722,6 +894,24 @@ int combat_strike(Character *pc, Item *weapon, int swing, const Scene *scene, co
                 struck++;
             }
         }
+    }
+    for (slot = 0; slot < PEOPLE_MAX; slot++) {
+        Entity *person;
+
+        person = people_at(slot);
+        if (!person_reaches(scene, feet, eye, yaw, person)) {
+            continue;
+        }
+        if (strike_person(pc, weapon, swing, person, feet)) {
+            killed = 1;
+        }
+        struck++;
+    }
+    if (killed) {
+        Camera cam;
+
+        camera_set(&cam, eye[0], eye[1], eye[2], yaw, 0.0f);
+        watch_on_kill(&cam, feet);
     }
     if (!struck) {
         /* Nothing in reach: the swing whistles (classic plays it only when nothing was struck). */

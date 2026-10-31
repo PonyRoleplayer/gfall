@@ -70,11 +70,17 @@ typedef struct Foe {
     int behind;
     /* A class enemy's weapon, or 0: its blow rolls that weapon's damage. */
     const Item *weapon;
+    /*
+     * 1 for a street citizen. Health is PEOPLE_CITIZEN_HP, kept by the caller.
+     * The to-hit roll is still made, at 100, so it cannot miss. Damage is the
+     * weapon's. combat_foe clears this: a creature is never a citizen.
+     */
+    int citizen;
 } Foe;
 
 /* What a blow did. */
 typedef struct Blow {
-    /* The clamped chance to hit, 3..97. */
+    /* The chance to hit: 3..97, or 100 against a street citizen. */
     int chance;
     int hit;
     /* Health it takes: 0 on a miss. */
@@ -100,6 +106,8 @@ int combat_roll(int n);
 int combat_strength_bonus(int strength);
 /* A creature's level, armour and Dodging: a monster's own, a class enemy at the player's level. */
 void combat_foe(Foe *f, const EnemyKind *kind, int player_level, int behind);
+/* A street citizen: no armour, no dodge, citizen set. Not a creature kind. */
+void combat_citizen(Foe *f, int behind);
 /* A creature's most health, rolled: a monster between its least and most, a class enemy 10 and a roll of its class's hit points a level. */
 int combat_roll_health(const Foe *f);
 /*
@@ -131,6 +139,12 @@ void combat_foe_blow(const Foe *f, const Character *pc, Blow *out);
  */
 int combat_strike(Character *pc, Item *weapon, int swing, const Scene *scene, const float *feet,
                   const float *eye, float yaw);
+/*
+ * The last street citizen combat_strike rolled at, and their health before it.
+ * 0 when that strike reached no citizen. The blow is combat_blow's: chance 100,
+ * and the weapon's damage.
+ */
+int combat_citizen_struck(Blow *out, int *health_before);
 /*
  * A bow's shot on its release frame, along the view from eye: the first
  * creature that way within sight and no wall between, struck by combat_blow.

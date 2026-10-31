@@ -10,6 +10,7 @@
 #include "game/dagger/play/commands.h"
 #include "game/dagger/play/create.h"
 #include "game/dagger/play/foes.h"
+#include "game/dagger/play/watch.h"
 #include "game/dagger/play/keys.h"
 #include "game/dagger/play/loot.h"
 #include "game/dagger/play/menu.h"
@@ -300,7 +301,7 @@ static int on_use(const Scene *scene, const Usable *u, int index)
     }
     if (u->kind == USE_TALK) {
         if (g_mode == HUDBAR_STEAL) {
-            /* P9-d supplies pickpocketing. Never start an ordinary
+            /* P12-a supplies pickpocketing. Never start an ordinary
              * conversation when the player explicitly selected Steal. */
             interact_say("You cannot steal from this person.");
             return 1;
@@ -649,6 +650,7 @@ static void arrive(const Level *level, Camera *cam, const TravelPose *at)
     g_level = level;
     combat_reset();
     foes_reset();
+    watch_reset();
     player_place(&g_player, at->x, at->y, at->z, at->yaw, at->pitch);
     if (!g_control_scheme) {
         /* A classic save may be resumed with View selected in settings.
@@ -1065,6 +1067,8 @@ int game_frame(Camera *cam, const Input *in, float dt)
             }
         }
         combat_frame(dt);
+        /* A killing's HALT lines, one a second, while the guard closes. */
+        watch_frame(dt);
         /* The creatures see, chase and strike (tai off: they stand); a blow may kill. */
         if (foes_frame(&g_player, &g_level->scene, dt)) {
             die();

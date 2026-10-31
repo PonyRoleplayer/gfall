@@ -29,6 +29,8 @@
 #define PEOPLE_SPAWN 6144.0f
 #define PEOPLE_RECYCLE 6000.0f
 #define PEOPLE_POP 4800.0f
+/* A street citizen's health. A guard's is the city watch's, rolled when struck. */
+#define PEOPLE_CITIZEN_HP 1
 
 /*
  * Whoever the view from cam rests on within reach, drawn and in front of it:
@@ -66,5 +68,27 @@ void people_shift(float dx, float dz);
 /* People walking now, and the pictures of them read so far. */
 int people_count(void);
 int people_pictures(void);
+
+/* The pool entry, or 0. A dead one is still the same pointer until the slot is reused. */
+Entity *people_at(int index);
+int people_index(const Entity *e);
+/* 1 for a living street citizen, or a living guard (archive 399). */
+int people_is_citizen(const Entity *e);
+int people_is_guard(const Entity *e);
+/* A citizen's is PEOPLE_CITIZEN_HP. A guard's is -1 until a blow rolls the city watch's. */
+int people_health(const Entity *e);
+void people_set_health(Entity *e, int health);
+/* Dead, and gone: the street set has no corpse picture. */
+void people_fell(Entity *e);
+/* The nearest living guard, or -1. The pool is the town round the camera. */
+int people_nearest_guard(float x, float z);
+/*
+ * One guard on a walking cell round cam, out of sight when a cell allows it.
+ * The same pictures the population already wears (archive 399). -1 when the
+ * town has no free slot or no cell. Does not start them chasing: the game does.
+ */
+int people_spawn_guard(const Camera *cam);
+/* The street motor leaves index alone. A guard is given the attack records. */
+void people_hold(int index);
 
 #endif

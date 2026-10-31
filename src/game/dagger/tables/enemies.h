@@ -109,6 +109,8 @@ int enemy_group(int kind);
 #define ENEMY_DREUGH 41
 #define ENEMY_LAMIA 42
 #define ENEMY_FIRST_CLASS 128
+/* City Watch: archive 399, bark DAGGER.SND 456 (Halt). */
+#define ENEMY_CITY_WATCH 146
 
 /* Editor records: a random creature, a fixed one. */
 #define ENEMY_RANDOM_MARKER 15

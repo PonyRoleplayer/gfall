@@ -65,6 +65,14 @@ void foes_set_on(int on);
 int foes_on(void);
 /* e struck or otherwise roused: awake now, after the player, passive or not. */
 void foes_alert(Entity *e);
+/*
+ * A town guard, not a dungeon creature: a mind of this kind (the city watch),
+ * already knowing the player stands at `at`. No bark; the watch shouts.
+ * 1 when a mind took them. 0 with the AI off, or no mind free.
+ */
+int foes_summon(Entity *e, int kind, const float *at);
+/* 1 when a mind is on e. */
+int foes_minding(const Entity *e);
 /* e knocked back from the point from, at this speed in classic's units: it slides, and acts again when that dies away. */
 void foes_knock(Entity *e, const float *from, int speed);
 /* The nearest sleeper within FOES_ROUSE_REACH of the point wakes and comes: what a rest's encounter is, there being no creatures to conjure. 1 when one did. */

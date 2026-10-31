@@ -8,7 +8,7 @@ The engine draws, hears and walks any place. `src/game/dagger/` loads Daggerfall
 
 LEVELFALL goes through every passage too: into a house and out, down into a dungeon and up, out of the stream and back. Its landing sums are shared with the game in `places/travel.c`.
 
-GFALL (`apps/gfall/main.c`) is the game: classic's title and start menu, character creation (an Argonian woman only when those pictures did not open), then Privateer's Hold streamed by block, on foot, with a weapon, armour, creatures that fight back, bodies to search and saves; out of the hold into the streamed world, its towns and houses (P8); and people to talk to, shops, banks and a court (P9). The console's `goto` goes to any town, for testing until P10's map.
+GFALL (`apps/gfall/main.c`) is the game: classic's title and start menu, character creation (an Argonian woman only when those pictures did not open), then Privateer's Hold streamed by block, on foot, with a weapon, armour, creatures that fight back, bodies to search and saves; out of the hold into the streamed world, its towns and houses (P8); and people to talk to, shops, banks, a court, and a street killing that draws the guard (P9). The console's `goto` goes to any town, for testing until P10's map.
 
 ## The pieces
 
@@ -105,21 +105,26 @@ The use key's order: a body or heap first; then a townsperson the view rests on 
 - **Stock holds no list.** Today's comes from the game's seed, the shop's key and the day: each template no rarer than the quality, by `BLDG`'s chance number, `chance x 5 x (21 - rarity) / 100`. Its keep row holds the day and a bit for each thing taken, so a town of shops costs no memory, and a new day stocks anew. Only weapons and armour are stocked: nothing else exists yet.
 - **Buying** moves things from the shelves on the right to the basket on the left, then Buy pays `rules_trade_price` of the sums' cost. **Selling** lays things from the pack on the counter on the right, which gives back what is not sold when the screen closes. **Repair** is the same, at a tenth of the value costed; it is instant here, where classic takes days.
 - **Steal:** seen by `rules_shoplift_chance`, the basket left behind and the court next. Unseen, it is taken free.
-- **Hours** are `BLDG`'s. A shut street door says it is locked. Holding the run key while using it picks the lock (`rules_lock_chance`, strength half the quality), as a retained shortcut; P9-b's Steal mode also selects that lockpicking path (the remaining theft paths are P9-d). A failed lock will not be tried again until the skill has grown. Shelves in a shop broken into refuse Buy but allow Steal.
+- **Hours** are `BLDG`'s. A shut street door says it is locked. Holding the run key while using it picks the lock (`rules_lock_chance`, strength half the quality), as a retained shortcut; P9-b's Steal mode also selects that lockpicking path (the remaining theft paths are P12-a). A failed lock will not be tried again until the skill has grown. Shelves in a shop broken into refuse Buy but allow Steal.
 
 ### Banks
 `play/bank.c`, on `BANK00I0.IMG`, with sums usable without the screen. Each region has its own account. A letter of credit is an item worth what it says, a hundredth more to write, at least 100. A loan is 100 to 50000 a level, a tenth more to repay, due in a year of 360 days; carried gold pays first. A loan past its day is a default, a crime in its region, looked at once a game day (`bank_check_loans`). Houses and ships say none are for sale.
 
 ### The law
-`play/court.c`. `court_commit` takes the crime's loss off the legal reputation and half that off the region's People. Being seen is being arrested: **there are no guards yet**, so the court opens at once. The trial is DFU's `DaggerfallCourtWindow`: the sentence from `CRIM`'s sums, split into pieces of 40 gold or three days; what cannot be paid is served; a low standing can mean banishment. Guilty halves it. Not guilty argues by Etiquette or lies by Streetwise, against the standing and the skill, within 5..95; losing moves the fine by the court's mood. Prison ticks a day each 0.3 s on `PRIS00I0.IMG`. Then four hours pass, the player is whole, a sentence served gives back half the loss less one, and they stand in the street (`travel_out_to_street`). Banishment is marked on the region and not yet enforced.
+`play/court.c`. `court_commit` takes the crime's loss off the legal reputation and half that off the region's People. Shoplifting and a defaulted loan still open the court at once. A citizen killed in the street does not: the watch comes, below, and the court for that killing is not built. The trial is DFU's `DaggerfallCourtWindow`: the sentence from `CRIM`'s sums, split into pieces of 40 gold or three days; what cannot be paid is served; a low standing can mean banishment. Guilty halves it. Not guilty argues by Etiquette or lies by Streetwise, against the standing and the skill, within 5..95; losing moves the fine by the court's mood. Prison ticks a day each 0.3 s on `PRIS00I0.IMG`. Then four hours pass, the player is whole, a sentence served gives back half the loss less one, and they stand in the street (`travel_out_to_street`). Banishment is marked on the region and not yet enforced.
 
 ### Tested on the host
-`check_standing`, `check_people_sums`, `check_words`, `check_talk`, `check_shop_and_court`, `check_bank`, `check_people_in_town`, `check_standing_saved`: the tree, a spread by hand, every sum by hand, no macro left in any record of talk, Daggerfall's 647 buildings, a way asked and the news by clicks, one who hates saying nothing; a shop's stock by day, buying, selling and mending by clicks at the sums, a thief seen; guilty's half, prison's days, the reputation back; gold, letters and loans; the bank and the merchant's panels by clicks; an armorer in Daggerfall entered with its shelves and its person; all of it through a save file. `build/talk0..1.ppm`, `shop0..1.ppm`, `court0..2.ppm`, `bank0.ppm`, `service0.ppm` are for a look.
+`check_standing`, `check_people_sums`, `check_words`, `check_talk`, `check_shop_and_court`, `check_bank`, `check_people_in_town`, `check_citizen`, `check_standing_saved`: the tree, a spread by hand, every sum by hand, no macro left in any record of talk, Daggerfall's 647 buildings, a way asked and the news by clicks, one who hates saying nothing; a shop's stock by day, buying, selling and mending by clicks at the sums, a thief seen; guilty's half, prison's days, the reputation back; gold, letters and loans; the bank and the merchant's panels by clicks; an armorer in Daggerfall entered with its shelves and its person; all of it through a save file. `build/talk0..1.ppm`, `shop0..1.ppm`, `court0..2.ppm`, `bank0.ppm`, `service0.ppm` are for a look.
+
+### A killing in the street
+`play/watch.c`, from the swing in `play/combat.c`. A street citizen's health is 1 (`PEOPLE_CITIZEN_HP`). The blow is `combat_blow`: the to-hit roll is made at 100, so it cannot miss (`combat_roll(100)` is 0..99), and the damage is the weapon's ordinary damage. That 1 health is what the damage takes. There is no separate "dead at once" flag. A guard, and every creature, keeps the 3..97 roll and its own health.
+
+The killing draws the city watch, ENEM kind 146 (archive 399, the bark at DAGGER.SND 456). A guard already walking in the town (the population's one in 32, the same archive) is held out of the street motor and woken with `foes_summon`, so the existing chase brings them and they can strike once their attack records (5..9) are on. If the town has none in the pool, one is spawned on a walking cell, out of sight when a cell allows it, the same way the population appears. Three lines, each `HALT`, are queued at the kill and spoken one a second as the guard closes, each with that bark. Not one line of three words. `tai` stands the guard with the other minds. The court, the fine and the bounty are not opened by this.
 
 **Not yet:**
 - running on the 233;
-- guards to meet or fight, assault and murder, and banishment enforced;
-- Steal mode, pickpocketing and the deferred theft mechanics (P9-d);
+- the court and the bounty for that killing, and banishment enforced;
+- Steal mode, pickpocketing and the deferred theft mechanics (P12-a);
 - people's own names (the strip shows their faction) and buildings' names (the list shows their kinds);
 - talk's People and Things lists, Tell me about's organisations, guild greetings, the logbook;
 - taverns' rooms and drinks, guilds' services, houses and ships, shelves in a house or a library;
@@ -131,18 +136,18 @@ The use key's order: a body or heap first; then a townsperson the view rests on 
 
 - **Art and portrait:** MAIN00I0.IMG, MCOL00I0.CIF's blue backing, the selected race/sex/face, live vitals, MAIN01I0.IMG's mode sheet and CMPA00I0.BSS's compact compass. The head is refreshed by `game_enter` for a new or loaded character; the picture module owns its pixels across every place change.
 - **Pointer:** Classic Cursor mode starts with a free pointer. Tab (`INPUT_CURSOR`, rebound in the controls screen's cursor slot and kept in KEYS.DAT) switches between the pointer and continuous mouse look without pausing. View mode starts with mouse look; Tab frees its HUD pointer. Character, inventory, options and rest open their existing screens; a hostile creature still forbids rest. The compass reports the date and time. The weapon button sheathes or draws the weapon. Screens and menus temporarily own the pointer; closing one restores the player's cursor choice.
-- **Modes:** the button cycles Grab, Info, Steal, Talk. Grab keeps the general use key; Info reports the aimed usable or building without activating it; Talk only addresses people. Steal enables the existing lockpicking path and never falls through to ordinary dialogue; its missing theft and pickpocket paths are P9-d. The spellbook, magic-item, transport and map buttons give a short response until their systems arrive in P10/P12.
+- **Modes:** the button cycles Grab, Info, Steal, Talk. Grab keeps the general use key; Info reports the aimed usable or building without activating it; Talk only addresses people. Steal enables the existing lockpicking path and never falls through to ordinary dialogue; its missing theft and pickpocket paths are P12-a. The spellbook, magic-item, transport and map buttons give a short response until their systems arrive in P10/P12-b.
 - **Input handoff:** pointer clicks, including clicks in empty bar pixels, never attack. The attack gate holds through the final release of a click after leaving a screen or the pointer. Entering the pointer or sheathing cancels a drawn bow or pending swing without a hit, keeping its cached idle picture. A pointer handoff discards the old look delta already sampled that frame. A new or loaded character starts in Grab with the weapon drawn; travel preserves the live mode and sheath choice.
 
 **The 233's cost:** pictures are read once at startup (the head once per character/load), not while drawing. The four mode icons share one sheet and cycling changes only UVs. The BSS's 32 uncompressed 48 x 40 frames stay in about 60 KB of RAM; only the current frame is on the card, replaced when the 11.25-degree heading changes. This bounded update is in `overlay_set_yaw`, outside `overlay_draw`; no whole-panel recomposition or upload runs per frame. The unchanged bar just draws its pieces. The tests measure 36 KB for all persistent HUD pictures on a keyed card and 42 KB with 1555 cutouts, including the old strip/box and the pointer. Both leave room inside GAME_PICTURE_KB's 256 KB for the existing worst-case weapon and controls-screen allowances.
 
 **Tests:** `check_hudbar` checks button edges and seams, empty bar pixels, compass wrap, icon rows, the real art, a truncated BSS refused without publishing a partial result, and the fake-card budget in both formats. `check_weapon` also cancels a drawn bow and a pending melee hit and checks the click-release gate. `build/hud0.ppm` and `hud1.ppm` show the selected head, Grab/north/full vitals and Steal/east/half vitals. These are native art previews, not target screenshots. Windows pointer routing and the complete bar still need a playtest on the 233; P9-c supplies the implemented classic cursor movement and world-pointing scheme below, also awaiting target acceptance.
 
-## Steal and theft (planned: P9-d)
+## Steal and theft (planned: P12-a)
 
 Complete the theft mechanics left out of P9: the Steal interaction mode, pickpocketing, theft from eligible owned targets, the skill checks and detection, and the resulting crime and arrest/court consequences. Use P9-b's mode controls and the existing reputation and law systems. Confirm the original rules against public references when designing the details.
 
-P9 already supports a shop's Steal button, shoplifting detection and lockpicking through the run-plus-use shortcut. Those are the starting point; P9-d connects them to the classic interaction mode and fills the missing theft paths.
+P9 already supports a shop's Steal button, shoplifting detection and lockpicking through the run-plus-use shortcut. Those are the starting point; P12-a connects them to the classic interaction mode and fills the missing theft paths.
 
 **Done when:** Steal can be selected from the HUD, successful theft and pickpocketing transfer the intended items, failed or witnessed attempts follow the law's consequences, and the checks, inventory and persistent state are tested.
 
@@ -476,7 +481,7 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **When:** once a swing, on its hit frame: frame 2 of a melee swing, 5 of the bow's (`weapon_hit`). The swing costs 11 sixty-fourths of fatigue then, struck or not.
 - **What:** classic's (FALL.EXE): every live creature of the stream whose feet are under 91 units from the player's (2.25 m), within 35.156 degrees (200 of 2048) of the player's facing on the ground (any way nearer than 11 units), that no wall hides: a ray from the eye to its middle on the scene's collision (`combat_reaches`, `collide_use`, `collide_ray`, as `rig_third`'s). Each is struck by its own blow. The view's pitch does not matter. The swing's sound plays only when none was struck.
 - **The creature as the sums see it** (`combat_foe`): a monster's level and armour value × 5 from ENEM; a class enemy at the player's level and armour 60 (DFU's cap for worn armour, as it wears nothing yet); Dodging 5 a level and 30, at most 100; its attributes from ENEM (`docs/data.md`).
-- **To hit:** the weapon's skill (Hand-to-Hand bare), the swing's (down −10, down-left −5, left and right 0, down-right +5, up +10), the material's modifier × 10, a Dark Elf's level / 4, a Redguard's level / 3 with anything but a bow or a Wood Elf's with one, the level for a class expert with the weapon, the Backstabbing skill when it faces away, its armour, (Luck − its Luck) / 10, (Agility − its Agility) / 10, less its Dodging / 4, Critical Strike / 10 on a roll under that skill, +40 against a creature, −50; held to 3..97, rolled on 100. A Breton warrior at a rat with an iron longsword swung left: 31%.
+- **To hit:** the weapon's skill (Hand-to-Hand bare), the swing's (down −10, down-left −5, left and right 0, down-right +5, up +10), the material's modifier × 10, a Dark Elf's level / 4, a Redguard's level / 3 with anything but a bow or a Wood Elf's with one, the level for a class expert with the weapon, the Backstabbing skill when it faces away, its armour, (Luck − its Luck) / 10, (Agility − its Agility) / 10, less its Dodging / 4, Critical Strike / 10 on a roll under that skill, +40 against a creature, −50; held to 3..97, rolled on 100. A Breton warrior at a rat with an iron longsword swung left: 31%. A street citizen is the same blow with the roll made at 100 and with 1 health (A killing in the street, above).
 - **Damage:** the weapon's range, the swing's (down +4, down-left +2, down-right −2, up −4), the race's, level / 3 + 1 for a class expert, the level more or less for a class's bonus or phobia against the creature's group (`enemy_group`), a skeletal warrior halving a blunt weapon's and doubling silver's, floor((Strength − 50) / 5), the material's modifier; below 1 is 0. Bare: Hand-to-Hand / 10 + 1 to / 5 + 1, the swing's, the strength's. A backstab triples it on a roll under the skill.
 - **A metal too poor** for the creature (ENEM's `min_metal`: a ghost needs silver) does nothing: "The material of the weapon you are using is ineffective." (classic's line). A backstab says "Successful backstab!"
 - **Health** is rolled the first time a creature is struck (a monster between ENEM's least and most; a class enemy 10 and a roll of 1..its class's hit points for each level) and kept in its keep row's game bytes (health in two bytes, then 1 once rolled), so it stays wounded or dead as its block goes and comes back.
@@ -584,27 +589,27 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Where | Gap | Phase |
 | --- | --- | --- |
 | Combat | an arrow lands at once: no missile flies | later |
-| Creatures | ranged attacks and spells; a hurt voice | P12 |
+| Creatures | ranged attacks and spells; a hurt voice | P12-b |
 | Creatures | the frame a blow lands on and how often a move sounds are our guesses, not found in classic | - |
 | Saves | creatures awake come back asleep; the weather is not kept | later |
-| Rest | an encounter wakes a sleeper, not a new creature; a class with no spell point regeneration | later, P12 |
-| Items | clothing, jewellery, ingredients, books, potions, maps, and the screen's other tabs | P12, later |
+| Rest | an encounter wakes a sleeper, not a new creature; a class with no spell point regeneration | later, P12-b |
+| Items | clothing, jewellery, ingredients, books, potions, maps, and the screen's other tabs | P12-b, later |
 | Items | clothing's dyes | with clothing |
-| Inventory | the Wagon button (P10), the Use button (P12) | as named |
+| Inventory | the Wagon button (P10), the Use button (P12-b) | as named |
 | Inventory | two weapons: the doll shows the one in use, as the pictures have one weapon hand; classic's own way not found | later |
 | Inventory | the info box's lines are ours, not TEXT.RSC's | later |
-| Loot | the other columns of `LOOT` wait for their items | P12, later |
+| Loot | the other columns of `LOOT` wait for their items | P12-b, later |
 | Loot | a body or a heap takes nothing put on it (a choice, see What can be searched) | - |
 | Places | treasure and piles only in a dungeon streamed by block; a town's doors not keyed; the sea can be walked on | later |
-| Player | the completed classic HUD bar needs target acceptance; map and magic buttons await their systems | P9-b, P10, P12 |
+| Player | the completed classic HUD bar needs target acceptance; map and magic buttons await their systems | P9-b, P10, P12-b |
 | Player | target acceptance/tuning of the implemented classic cursor controls | P9-c |
-| People | Steal mode, pickpocketing and the deferred theft mechanics | P9-d |
-| Creation | a custom class's special advantages, disadvantages and reputations; the Help button | P12, later |
+| People | Steal mode, pickpocketing and the deferred theft mechanics | P12-a |
+| Creation | a custom class's special advantages, disadvantages and reputations; the Help button | P12-b, later |
 | Creation | the class questions' animated scroll and characters | later |
 | Creation | the answers' history and lasting modifiers (`#`, `RP`, `TH`...) are read past | later |
 | Creation | Save Roll and Load Roll; the race's voice on choosing | later |
-| Character | the Spellbook, Log, History and Affiliations buttons | P11, P12 |
-| Character | starting clothes and spellbook | with clothing, P12 |
+| Character | the Spellbook, Log, History and Affiliations buttons | P11, P12-b |
+| Character | starting clothes and spellbook | with clothing, P12-b |
 | Engine | `scene/pack.c`, `ui/packview.c`, `scene/rpg.c`, `ui/rpgview.c` are used by no game; the user's line is that the engine is simulation and world | to decide |
 
 ## Rest and time (built: P7)
@@ -685,7 +690,7 @@ Daggerfall's tables are records in MAIN.DAT, cooked on the first run, with mods 
 Blocks, models, pictures, sounds and songs are never cooked: they stay in ARENA2.
 
 ## Phases
-The first goal is a **prototype**: from classic's start menu, Privateer's Hold played from start to finish, out to the first town and back after a save (P1 to P8). Then the rest of classic (P9 to P12), with P9-b completing the HUD, P9-c classic dungeon controls without mouse look, P9-d the theft mechanics, and P10 bringing the travel map before P12 magic. Then a mode of our own (P13). Each phase:
+The first goal is a **prototype**: from classic's start menu, Privateer's Hold played from start to finish, out to the first town and back after a save (P1 to P8). Then the rest of classic (P9 to P12-b), with P9-b completing the HUD, P9-c classic dungeon controls without mouse look, P12-a the theft mechanics, and P10 bringing the travel map before P12-b magic. Then a mode of our own (P13). Each phase:
 - is measured on the 233 with the profile's `play` stage;
 - adds its rules' tests to `tests/check_play.c`;
 - adds its numbers to MAIN.DAT;
@@ -702,13 +707,13 @@ The first goal is a **prototype**: from classic's start menu, Privateer's Hold p
 | P6 | Character creation and levelling (built, host-tested, not run on the target): classic's screens, class questions and custom classes among them, background questions, skill gains, level-ups, the character sheet | GAME | a character made by the screens plays the hold and levels |
 | P7 | Prototype polish (built, host-tested, not run on the target; the 233 profile pass not done): loading holds, one save slot in `DATA\`, the menu's load, rest and wait, a 233 profile pass | GAME | from the menu through the hold and back after a save |
 | P8 | Out of the hold (built, host-tested, not run on the target): `places/travel.c` lifted from LEVELFALL and shared; the hold's outside in the stream, the nearest town, its houses | GAME and LEVELFALL | from the menu to town and back after a save, in one session |
-| P9 | People (built, host-tested, not run on the target; guards, assault and names not yet): talk from TEXT.RSC, shops, banks, factions, reputation, law; `BLDG`, `CRIM` | GAME | a shop bought from, a bank used, a way asked in town, a crime tried |
+| P9 | People and assault (built, host-tested, not run on the target; names, and the court for a street killing, not yet): talk from TEXT.RSC, shops, banks, factions, reputation, law; a street citizen at 1 health, a blow at 100 that the weapon's damage kills, and the city watch shouting HALT and coming; `BLDG`, `CRIM` | GAME | a shop bought from, a bank used, a way asked in town, a citizen killed and the guard on them |
 | P9-b | Classic HUD bar (built, host-tested; pointer and target acceptance pending): selected character's head and blue backing, live vitals, clickable buttons, four mode icons and compact compass; Tab frees the pointer, the weapon button sheathes | GAME, ENGINE's input and pictures | the selected character's head and vitals shown correctly, available controls usable by pointer, across saves and place changes |
 | P9-c | Classic dungeon controls without mouse look (implemented, host-tested): free pointer, cursor/keyboard movement and turning, pointed use, right-button gestures, Alt look and saved scheme; target acceptance pending | GAME, ENGINE's input | the hold navigated and fought through, doors and HUD used, and a save resumed without continuous mouse look |
-| P9-d | Steal and theft (planned): classic Steal mode, pickpocketing, deferred theft paths, skill checks, detection and law consequences; build on P9's shoplifting and lockpicking | GAME | theft and pickpocketing can succeed or be detected, with the right items and legal consequences kept and tested |
 | P10 | The wider world: travel map before magic, horse and cart, holidays, diseases, lycanthropy and vampirism | GAME | |
 | P11 | Quests: the QBN interpreter, guild quests | GAME | |
-| P12 | Magic: spells, effects, spellbook, casting, potions, enchantments | GAME | |
+| P12-a | Steal and theft (planned): classic Steal mode, pickpocketing, deferred theft paths, skill checks, detection and law consequences; build on P9's shoplifting and lockpicking | GAME | theft and pickpocketing can succeed or be detected, with the right items and legal consequences kept and tested |
+| P12-b | Magic: spells, effects, spellbook, casting, potions, enchantments | GAME | |
 | P13 | Our own mode: a ruleset switch over classic's rules, a mode `.DAT` over MAIN.DAT; classic stays the default and the reference | GAME | |
 
 Each phase updates this page (what is built, what is not) and AGENTS.md's layout list.

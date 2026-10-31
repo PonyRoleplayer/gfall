@@ -8,8 +8,9 @@
  * for a prison sentence). Read docs/game.md (People, The law) before editing.
  *
  * A crime costs the region's legal reputation what its record says, and half that
- * with its people. Being seen is being arrested: there are no guards to fight yet,
- * so the court opens at once. The trial is DFU's DaggerfallCourtWindow's: a sentence
+ * with its people. Shoplifting and a defaulted loan still open the court at once.
+ * A citizen killed in the street draws the watch instead (watch.c); that killing
+ * does not come here. The trial is DFU's DaggerfallCourtWindow's: a sentence
  * from the crime's sums, split into 40 gold or three days by the piece, guilty for
  * half of it, not guilty to argue or lie, or banished by a very low standing. The
  * fine is taken, the days pass, and the player is put out in the street, a sentence

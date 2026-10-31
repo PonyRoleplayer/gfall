@@ -79,6 +79,8 @@ DFU's motor, cell to cell, north, south, east or west, at 52 units a second (1.3
 
 DFU also casts a ray to the next cell against walls; here the automap already marks every building and prop, so the cells are the walls.
 
+A guard the game has called (`people_hold`) is not walked by this motor. The game's foes move that one. Everyone else still walks here. A street citizen's health is the game's, 1 (`PEOPLE_CITIZEN_HP`); this module only stores it.
+
 ### Their pictures
 
 Each archive's six pictures are the stream's (`wres`, sprites, sheets of frames). A settlement's block chunks hold all of its climate's (`people_slots`: the four outfits of each gender and the guard's, 54 pictures) and read them with their own pictures, under the stream's budget, a part a call (`docs/streaming.md`, A chunk's contents): the first of a town's chunks to come in range, at the stream's edge, reads them, long before anyone is near. People hold the sets they wear too, and let them go once the camera has left the town and everyone has gone, so the RAM cap can free them when the chunks have gone as well. A set not read yet (population turned on in a town) is read a part a frame (`load_one`). A city of four outfits a gender and a guard is 54 sheets of 256 × 256: about 4 MB of pixels and, since cutout chains are kept from half size (`docs/memory.md`), 2.3 MB of mip levels.
