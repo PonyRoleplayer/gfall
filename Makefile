@@ -311,12 +311,23 @@ build/LEVELFALL.EXE: $(LEVEL_SRC) third_party/glide2/include/glide.h | deps
 levelfall-check: build/LEVELFALL.EXE
 	$(call pe_check,build/LEVELFALL.EXE,build/levelfall.dump)
 
-# DATFALL browses races, enemies and weapons (docs/data.md). It does not
-# link Glide. GDI and comctl32 are LoadLibrary'd, so the import table
-# stays KERNEL32 and USER32. The host half checks a Breton body pixel,
-# the rat's front frame and a dwarven weapon colour, without a window.
+# DATFALL browses MAIN.DAT (docs/data.md). It does not link Glide.
+# GDI and comctl32 are LoadLibrary'd, so the import table stays
+# KERNEL32 and USER32. The host half lists every chunk's fields, then
+# checks a Breton body pixel, the rat's front frame and a dwarven
+# weapon colour, without a window.
 DAT_SRC := \
 	apps/datfall/view.c \
+	apps/datfall/books.c \
+	apps/datfall/pics.c \
+	apps/datfall/paper.c \
+	apps/datfall/beast.c \
+	apps/datfall/made.c \
+	apps/datfall/atlas.c \
+	apps/datfall/look.c \
+	apps/datfall/means.c \
+	src/game/dagger/formats/dungeon.c \
+	src/game/dagger/formats/worldmap.c \
 	src/engine/core/mem.c \
 	src/engine/core/log.c \
 	src/engine/assets/recfile.c \
