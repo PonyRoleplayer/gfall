@@ -4,8 +4,9 @@
 /*
  * The player's key bindings: saved in DATA\KEYS.DAT beside the exe as a
  * record file (docs/data.md), one KEYS record an action (id INPUT_*, its
- * Windows virtual key), and applied with input_bind at start. A missing
- * or damaged file keeps classic's defaults. Read docs/game.md (Menus).
+ * Windows virtual key), and one MOUS row for Cursor or View (mouse.h).
+ * Applied with input_bind at start. A missing or damaged file keeps
+ * classic's defaults. Read docs/game.md (Menus).
  *
  * Escape stays the menu and is not bound here; the console's key is
  * the engine's.

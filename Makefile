@@ -180,6 +180,7 @@ PLAY_SRC := \
 	src/game/dagger/play/foes.c \
 	src/game/dagger/play/sfx.c \
 	src/game/dagger/play/player.c \
+	src/game/dagger/play/mouse.c \
 	src/game/dagger/play/screen.c \
 	src/game/dagger/play/overlay.c \
 	src/game/dagger/play/menu.c \

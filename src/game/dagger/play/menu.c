@@ -1,4 +1,5 @@
 #include "game/dagger/play/menu.h"
+#include "game/dagger/play/mouse.h"
 #include "game/dagger/play/screen.h"
 #include "game/dagger/play/keys.h"
 #include "game/dagger/formats/img.h"
@@ -23,7 +24,8 @@ enum {
     DO_SAVE,
     DO_CONTINUE,
     DO_CONTROLS,
-    DO_DEFAULTS
+    DO_DEFAULTS,
+    DO_MOUSE
 };
 
 /* DFU's StartWindow: on PICK03I0.IMG. */
@@ -76,7 +78,9 @@ static const Slot g_slots[] = {
 #define SLOT_W 47
 #define SLOT_H 7
 
+/* The three along the bottom of CNFG00I0.IMG: Mouse, Default, Continue. */
 static const Button g_controls_buttons[] = {
+    { 80, 190, 80, 10, DO_MOUSE },
     { 160, 190, 80, 10, DO_DEFAULTS },
     { 240, 190, 80, 10, DO_CONTINUE }
 };
@@ -238,10 +242,16 @@ static int controls_frame(const Input *in, int click)
             return MENU_STAY;
         }
     }
-    switch (hit(g_controls_buttons, 2, 0, 0)) {
+    switch (hit(g_controls_buttons, 3, 0, 0)) {
+    case DO_MOUSE:
+        mouse_set_cursor(!mouse_cursor());
+        g_changed = 1;
+        g_note = mouse_cursor() ? "Mouse: Cursor. The pointer stays." : "Mouse: View. The mouse looks.";
+        break;
     case DO_DEFAULTS:
         keys_defaults();
         g_changed = 1;
+        g_note = "Mouse: Cursor. The pointer stays.";
         break;
     case DO_CONTINUE:
         menu_open(MENU_OPTIONS);
@@ -351,6 +361,8 @@ void menu_draw(void)
             input_key_name(input_binding(g_slots[i].action), name, (int)sizeof(name));
             screen_text(g_slots[i].x + 1, g_slots[i].y, name);
         }
+        /* The Mouse button's own word: Cursor or View, over the art. */
+        screen_text(84, 191, mouse_cursor() ? "Cursor" : "View");
     }
     if (g_note) {
         ui_string((DF_VIEW_W - ui_string_width(g_note)) / 2, ui_line_height() + 8, g_note);

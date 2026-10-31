@@ -12,7 +12,8 @@
  *   MENU_MAIN      PICK03I0.IMG: load a game, start a new one, exit
  *   MENU_OPTIONS   OPTN00I0.IMG over the stilled world: save, load, exit,
  *                  controls, continue
- *   MENU_CONTROLS  CNFG00I0.IMG: each action's key, click one to bind it
+ *   MENU_CONTROLS  CNFG00I0.IMG: each action's key, click one to bind it;
+ *                  Mouse, the left button, switches Cursor and View
  *   MENU_DEATH     DIE_00I0.IMG, until a key or a click
  *
  * A menu's picture is on the card only while it is open (pic_load on

@@ -1,4 +1,5 @@
 #include "game/dagger/play/keys.h"
+#include "game/dagger/play/mouse.h"
 #include "engine/assets/recfile.h"
 #include "engine/assets/vfs.h"
 #include "engine/core/log.h"
@@ -43,6 +44,7 @@ void keys_defaults(void)
 {
     int i;
 
+    mouse_defaults();
     for (i = 0; i < DEFAULTS; i++) {
         input_bind(g_defaults[i].id, g_defaults[i].vk);
     }
@@ -62,6 +64,7 @@ int keys_load(void)
     if (!b || !rec_is_file(b, n)) {
         return 0;
     }
+    mouse_read(b, n);
     if (!table.schema && !rec_table_init(&table, &g_key_schema, INPUT_ACTIONS)) {
         return 0;
     }
@@ -112,7 +115,8 @@ int keys_save(void)
     df_copy(head.name, "KEYS.DAT", REC_NAME);
     if (!fs_make_dir("DATA") || !fs_create(KEYS_FILE) || !rec_put_begin(put_file, 0)
         || !rec_put_rows(put_file, 0, &rec_head_schema, &head, 1, 0, 0)
-        || !rec_put_rows(put_file, 0, &g_key_schema, rows, n, 0, 0)) {
+        || !rec_put_rows(put_file, 0, &g_key_schema, rows, n, 0, 0)
+        || !mouse_write(put_file, 0)) {
         fs_abort();
         log_text(LOG_WARN, "keys: DATA\\KEYS.DAT could not be written");
         return 0;
