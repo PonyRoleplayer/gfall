@@ -26,8 +26,6 @@ enum {
     SCREENS_CLOSED,
     /* Creation finished, the character made (create_result), still open until the game has read it. */
     SCREENS_MADE,
-    /* Creation skipped for the default character (create_default). */
-    SCREENS_SKIPPED,
     /* A save slot chosen (screens_slot), closed. */
     SCREENS_SLOT,
     /* A merchant's panel answered (screens_service_choice), closed. */

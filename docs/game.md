@@ -8,7 +8,7 @@ The engine draws, hears and walks any place. `src/game/dagger/` loads Daggerfall
 
 LEVELFALL goes through every passage too: into a house and out, down into a dungeon and up, out of the stream and back. Its landing sums are shared with the game in `places/travel.c`.
 
-GFALL (`apps/gfall/main.c`) is the game: classic's title and start menu, character creation (or, skipped, an Argonian woman), then Privateer's Hold streamed by block, on foot, with a weapon, armour, creatures that fight back, bodies to search and saves; out of the hold into the streamed world, its towns and houses (P8); and people to talk to, shops, banks and a court (P9). The console's `goto` goes to any town, for testing until P12's map.
+GFALL (`apps/gfall/main.c`) is the game: classic's title and start menu, character creation (an Argonian woman only when those pictures did not open), then Privateer's Hold streamed by block, on foot, with a weapon, armour, creatures that fight back, bodies to search and saves; out of the hold into the streamed world, its towns and houses (P8); and people to talk to, shops, banks and a court (P9). The console's `goto` goes to any town, for testing until P12's map.
 
 ## The pieces
 
@@ -254,7 +254,7 @@ Skill advance by use and the level-up rule come from UESP's Leveling page. A pre
 | Reflexes | CHAR05I0.IMG, CHAR05I1.IMG's slices | very high to very low |
 | Summary | CHAR04I0.IMG | looked over; Restart or OK |
 
-- **Skipping.** Escape on the map starts at once as the default character. Escape during the questions answers the rest at random, as classic's skip does.
+- **Leaving.** Escape on the map cancels creation and returns to the start menu. It does not make a character and it does not enter a place. Escape during the questions answers the rest at random, as classic's skip does. The default Argonian woman is only when creation's pictures did not open.
 - **The kit** (`play/kit.c`, DFU's AssignStartingGear): the class's weapon in hand, and 100 gold. A Warrior's is an iron broadsword, so the default character no longer starts with a longsword. An Archer also has a steel battle axe and 24 arrows.
 - **Scrolls and buttons** are classic's on every screen (`canvas_scroll`, `canvas_button`): SPOP.RCI's nine 22 × 22 pieces, as DFU's parchment style, and BUTTONS.RCI's 32 × 16 buttons. The class questions stand on a dark band of their picture's own colours: classic's SCRL00I0.GFX and SCRL01I0.GFX are animated, and not read.
 - **Ours, not classic's:** the place of the derived numbers by eye; the dagger's steps between its ends; a custom class's skill list by number, not alphabetical.

@@ -380,8 +380,9 @@ static int create_frame(const Input *in)
     if (asked == CREATE_DONE) {
         return SCREENS_MADE;
     }
-    if (asked == CREATE_SKIPPED) {
-        return SCREENS_SKIPPED;
+    /* Escape on the race map: the screen closes and the game puts the start menu back. */
+    if (asked == CREATE_CANCELLED) {
+        return SCREENS_CLOSED;
     }
     if (create_changed()) {
         send_screen();

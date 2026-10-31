@@ -581,15 +581,10 @@ int game_frame(Camera *cam, const Input *in, float dt)
                 forget_last_game();
                 return GAME_START;
             }
-            if (asked == SCREENS_SKIPPED && create_default(&g_new_sheet, &g_new_pack)) {
-                screens_close();
-                forget_last_game();
-                return GAME_START;
-            }
             if (asked == SCREENS_SLOT) {
                 return load_game(screens_slot()) ? GAME_START : GAME_GO_ON;
             }
-            /* The slots put away: the start menu again. */
+            /* The slots put away, or Escape on the race map: the start menu again. Not a new game. */
             if (asked == SCREENS_CLOSED) {
                 menu_open(MENU_MAIN);
             }

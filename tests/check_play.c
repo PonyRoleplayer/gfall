@@ -2312,8 +2312,35 @@ static void check_create(void)
     }
     create_close();
 
-    /* Escape on the map starts at once as the default. */
-    check_expect(create_open() && create_key(0x1B) == CREATE_SKIPPED, "create: Escape on the map did not skip");
+    /*
+     * Escape on the race map cancels. The step stays the map, nobody is made,
+     * and the game's answer is the start menu (screens turns CANCELLED into
+     * CLOSED; that file is not on the host). A page after the map does not
+     * take the same way out.
+     */
+    check_expect(create_open() && create_key(0x1B) == CREATE_CANCELLED, "create: Escape on the map did not cancel");
+    check_expect(create_step() == CREATE_RACE, "create: Escape left the race map");
+    check_expect(!create_result(&sheet, &pack), "create: Escape on the map made a character");
+    create_close();
+    check_expect(create_open(), "create: it did not open again after Escape");
+    {
+        ImgPicture mask;
+
+        found = 0;
+        if (img_load("TAMRIEL2.IMG", &mask)) {
+            for (y = 0; y < 200 && !found; y++) {
+                for (x = 0; x < 320 && !found; x++) {
+                    if (mask.pixels[y * 320 + x] == RACE_BRETON) {
+                        create_click(x, y);
+                        found = 1;
+                    }
+                }
+            }
+        }
+    }
+    check_expect(found && create_step() == CREATE_RACE_CONFIRM, "create: a race was not waiting to confirm");
+    check_expect(create_key(0x1B) == CREATE_STAY && create_step() == CREATE_RACE_CONFIRM,
+                 "create: Escape on the confirm left it or started a game");
     create_close();
     check_expect(create_default(&sheet, &pack) && sheet.race == RACE_ARGONIAN && sheet.female && pack.gold == 100,
                  "create: the default is not an Argonian woman with her kit");
