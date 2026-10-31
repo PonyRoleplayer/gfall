@@ -323,6 +323,8 @@ DAT_SRC := \
 	apps/datfall/beast.c \
 	apps/datfall/made.c \
 	apps/datfall/atlas.c \
+	apps/datfall/look.c \
+	apps/datfall/means.c \
 	src/game/dagger/formats/dungeon.c \
 	src/game/dagger/formats/worldmap.c \
 	src/engine/core/mem.c \

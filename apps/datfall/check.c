@@ -11,7 +11,9 @@
 #include "atlas.h"
 #include "beast.h"
 #include "books.h"
+#include "look.h"
 #include "made.h"
+#include "means.h"
 #include "paper.h"
 #include "pics.h"
 #include "game/dagger/formats/climate.h"
@@ -26,6 +28,8 @@
 #include "game/dagger/formats/img.h"
 #include "game/dagger/formats/palette.h"
 #include "game/dagger/formats/texture.h"
+#include "engine/scene/clock.h"
+#include "game/dagger/tables/careers.h"
 #include "game/dagger/tables/classic.h"
 #include "view.h"
 
@@ -436,6 +440,251 @@ int main(void)
                        "a steel longsword is not 5.50 kg, value 90, condition 1200");
                 expect(made_cif(merged, 120) == 4, "the longsword's CIF is not WEAPON04.CIF");
             }
+            {
+                MadeItem made;
+                int arch;
+                int rec;
+                int low;
+                int high;
+
+                arch = 0;
+                rec = 0;
+                low = 0;
+                high = 0;
+                expect(made_armour(merged, 102, 0, &made) && made.quarters == 50 && made.value == 300
+                           && made.condition == 4096,
+                       "an iron cuirass is not 12.50 kg, value 300, condition 4096");
+                expect(made_variant(merged, 102, 0, &low, &high)
+                           && made_picture(merged, 102, 0, low, 1, 2, &arch, &rec)
+                           && arch == 251 && rec == 3 + low,
+                       "a Breton man's iron cuirass is not archive 251 at player_record plus plate_low");
+                expect(cif_metal(125, 10) == 125, "leather recoloured a metal index");
+            }
+            {
+                int nd;
+                int nt;
+                int n;
+                int i;
+                int more;
+                int place;
+                int px;
+                int py;
+                LookHit hits[64];
+                DunRef *duns;
+                DunRef *towns;
+                char tag[8];
+                char table[24];
+                char name[64];
+
+                nd = dungeon_list(0, 0);
+                nt = exterior_list(0, 0);
+                duns = (DunRef *)mem_alloc((df_u32)nd * (df_u32)sizeof(DunRef));
+                towns = (DunRef *)mem_alloc((df_u32)nt * (df_u32)sizeof(DunRef));
+                expect(duns && towns && dungeon_list(duns, nd) == nd && exterior_list(towns, nt) == nt,
+                       "lookup had no place index");
+                if (duns && towns) {
+                    n = look_search(merged, duns, nd, towns, nt, 0, 0, "breton", hits, 64, &more);
+                    expect(n > 0 && hits[0].where == LOOK_RACE && hits[0].id == 1,
+                           "breton did not return the race");
+                    n = look_search(merged, duns, nd, towns, nt, 0, 0, "rat", hits, 64, &more);
+                    look_hit_name(merged, duns, towns, n > 0 ? &hits[0] : 0, name, (int)sizeof(name));
+                    expect(n > 0 && hits[0].where == LOOK_CREATURE && df_eq(name, "Rat"),
+                           "rat did not return the creature");
+                    n = look_search(merged, duns, nd, towns, nt, 0, 0, "longsword", hits, 64, &more);
+                    expect(n > 0 && hits[0].where == LOOK_WEAPON && hits[0].id == 120,
+                           "longsword did not return the weapon template");
+                    n = look_search(merged, duns, nd, towns, nt, 0, 0, "daggerfall", hits, 64, &more);
+                    px = -1;
+                    py = -1;
+                    place = 0;
+                    if (worldmap_open()) {
+                        for (i = 0; i < n; i++) {
+                            if (hits[i].where != LOOK_PLACE || !hits[i].id || hits[i].extra != 17) {
+                                continue;
+                            }
+                            if (worldmap_pixel_of(towns[hits[i].row].region, towns[hits[i].row].index, &px, &py)
+                                && px == 207 && py == 213) {
+                                place = 1;
+                            }
+                        }
+                    }
+                    expect(place, "daggerfall did not return the place at 207,213");
+                    n = look_search(merged, duns, nd, towns, nt, 0, 0, "midyear", hits, 64, &more);
+                    tag[0] = 0;
+                    if (n > 0 && hits[0].where == LOOK_TABLE) {
+                        dat_kind(merged, hits[0].id, tag, (int)sizeof(tag), table, (int)sizeof(table));
+                    }
+                    expect(n > 0 && hits[0].where == LOOK_TABLE && df_eq(tag, "CMON"),
+                           "midyear was not found as a CMON row");
+                    n = look_search(merged, duns, nd, towns, nt, 0, 0, "warrior", hits, 64, &more);
+                    /* Skeletal Warrior contains the text, so it follows the two exact rows. */
+                    expect(n >= 2 && hits[0].where == LOOK_CREATURE && hits[0].id == 144
+                               && hits[1].where == LOOK_CLASS && hits[1].id == 16,
+                           "warrior is not the creature then the class");
+                    n = look_search(merged, duns, nd, towns, nt, 0, 0, "d", hits, 64, &more);
+                    place = 0;
+                    for (i = 0; i < n; i++) {
+                        if (hits[i].where == LOOK_PLACE) {
+                            place = 1;
+                        }
+                    }
+                    expect(!place, "a one-character query returned a place");
+                    {
+                        int hi;
+                        int out;
+                        int other;
+                        Dungeon hold;
+                        char line[80];
+                        char want[80];
+
+                        hi = -1;
+                        for (i = 0; i < nd; i++) {
+                            if (duns[i].region == 17 && df_eq(duns[i].name, "Privateer's Hold")) {
+                                hi = i;
+                            }
+                        }
+                        expect(hi >= 0 && dungeon_load_at(17, duns[hi].index, &hold),
+                               "Privateer's Hold did not load");
+                        other = -1;
+                        line[0] = 0;
+                        if (hi >= 0) {
+                            out = dungeon_outside(17, hold.exterior_id);
+                            expect(atlas_other_line(duns, nd, towns, nt, 17, 0, hold.location_id,
+                                                    hold.exterior_id, line, (int)sizeof(line), &other)
+                                       && other == out,
+                                   "the hold's outside line does not match dungeon_outside");
+                            want[0] = 0;
+                            for (i = 0; i < nt; i++) {
+                                if (towns[i].region == 17 && towns[i].index == out) {
+                                    snprintf(want, sizeof(want), "Above: %s", towns[i].name);
+                                }
+                            }
+                            expect(want[0] && df_eq(line, want), "the hold's Above line is not that town");
+                        }
+                        expect(df_eq(means_dungeon_type(2), "Human stronghold"),
+                               "dungeon type 2 is not Human stronghold");
+                    }
+                }
+            }
+            {
+                int count;
+                int first;
+                int attr;
+                int kind;
+                int row;
+                int sf;
+                char name[64];
+                char season[16];
+                char word[16];
+
+                count = 0;
+                first = -1;
+                expect(means_encounter(merged, 2, &count, &first) && count == 20 && first == 144,
+                       "encounter 2 is not 20 kinds starting at 144");
+                name[0] = 0;
+                expect(means_creature_name(merged, 144, name, (int)sizeof(name)) && df_eq(name, "Warrior"),
+                       "kind 144 is not Warrior");
+                name[0] = 0;
+                expect(means_class_name(merged, 16, name, (int)sizeof(name)) && df_eq(name, "Warrior"),
+                       "class 16 is not Warrior");
+                attr = -1;
+                name[0] = 0;
+                expect(means_skill(merged, 21, name, (int)sizeof(name), &attr)
+                           && df_eq(name, "Running") && attr == ATTR_SPEED,
+                       "skill 21 is not Running, governed by Speed");
+                kind = dat_find_tag(merged, "CMON");
+                row = -1;
+                sf = -1;
+                if (kind >= 0) {
+                    int i;
+                    int n;
+                    char id[16];
+                    char label[32];
+
+                    n = dat_rows(merged, kind);
+                    for (i = 0; i < n; i++) {
+                        label[0] = 0;
+                        dat_row_label(merged, kind, i, id, (int)sizeof(id), label, (int)sizeof(label));
+                        if (df_eq(label, "Midyear")) {
+                            row = i;
+                        }
+                    }
+                    sf = field_of(merged, kind, "season");
+                }
+                season[0] = 0;
+                if (sf >= 0 && row >= 0) {
+                    dat_value(merged, kind, row, sf, 0, season, (int)sizeof(season));
+                }
+                word[0] = 0;
+                {
+                    const char *got;
+
+                    got = clock_season_name(season[0] ? atoi(season) : -1);
+                    if (got && got[0]) {
+                        word[0] = got[0] >= 'a' && got[0] <= 'z' ? (char)(got[0] - 'a' + 'A') : got[0];
+                        word[1] = 0;
+                        if (got[1]) {
+                            strncat(word, got + 1, (size_t)sizeof(word) - 2);
+                        }
+                    }
+                }
+                expect(df_eq(clock_season_name(CLOCK_SUMMER), "summer") && df_eq(word, "Summer"),
+                       "a month's season did not come from clock_season_name");
+            }
+            {
+                int ck;
+                int sk;
+                int warrior;
+                int i;
+                int n;
+                int fi;
+                int grp;
+                int type;
+                int size;
+                int count;
+                int elem;
+                char id[16];
+                char label[64];
+                char fname[32];
+                char text[16];
+                char skill[64];
+                static const char *groups[3] = { "primary", "major", "minor" };
+
+                ck = dat_find_tag(merged, "CLAS");
+                sk = dat_find_tag(merged, "SKIL");
+                expect(ck >= 0 && dat_rows(merged, ck) == 18, "CLAS is not 18 rows");
+                expect(sk >= 0 && dat_rows(merged, sk) == 35, "SKIL is not 35 rows");
+                warrior = -1;
+                if (ck >= 0) {
+                    n = dat_rows(merged, ck);
+                    for (i = 0; i < n; i++) {
+                        id[0] = 0;
+                        dat_row_label(merged, ck, i, id, (int)sizeof(id), label, (int)sizeof(label));
+                        if (df_eq(id, "16")) {
+                            warrior = i;
+                        }
+                    }
+                }
+                expect(warrior >= 0, "class 16 has no row");
+                if (warrior >= 0) {
+                    for (grp = 0; grp < 3; grp++) {
+                        fi = field_of(merged, ck, groups[grp]);
+                        expect(fi >= 0, "a Warrior skill group is missing");
+                        if (fi < 0) {
+                            continue;
+                        }
+                        dat_field(merged, ck, fi, fname, (int)sizeof(fname), &type, &size, &count);
+                        expect(count > 0, "a Warrior skill group is empty");
+                        for (elem = 0; elem < count; elem++) {
+                            text[0] = 0;
+                            skill[0] = 0;
+                            dat_value(merged, ck, warrior, fi, elem, text, (int)sizeof(text));
+                            expect(means_skill(merged, atoi(text), skill, (int)sizeof(skill), 0) && skill[0],
+                                   "a Warrior skill id did not resolve to a name");
+                        }
+                    }
+                }
+            }
             books_close(books);
         }
         free(mod.p);
@@ -524,6 +773,37 @@ int main(void)
            "woodlands has no climate name");
     expect(dungeon_list(0, 0) == 4232, "the dungeon index is not 4232");
     expect(exterior_list(0, 0) == 15251, "the outdoor index is not 15251");
+    {
+        int nd;
+        int nt;
+        int n;
+        int i;
+        int found;
+        DunRef *duns;
+        DunRef *towns;
+        int *hi;
+        unsigned char *ho;
+
+        nd = 4232;
+        nt = 15251;
+        duns = (DunRef *)mem_alloc((df_u32)nd * (df_u32)sizeof(DunRef));
+        towns = (DunRef *)mem_alloc((df_u32)nt * (df_u32)sizeof(DunRef));
+        hi = (int *)mem_alloc((df_u32)(nd + nt) * (df_u32)sizeof(int));
+        ho = (unsigned char *)mem_alloc((df_u32)(nd + nt));
+        expect(duns && towns && hi && ho, "the place index was not allocated");
+        if (duns && towns && hi && ho) {
+            expect(dungeon_list(duns, nd) == nd && exterior_list(towns, nt) == nt,
+                   "the place lists did not fill");
+            n = atlas_place_hits(duns, nd, towns, nt, "Daggerfall", hi, ho, nd + nt);
+            found = 0;
+            for (i = 0; i < n; i++) {
+                if (ho[i] && towns[hi[i]].region == 17 && df_eq(towns[hi[i]].name, "Daggerfall")) {
+                    found = 1;
+                }
+            }
+            expect(found, "Daggerfall was not in the place hits");
+        }
+    }
 
     if (g_fail) {
         return 1;

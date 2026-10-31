@@ -2,6 +2,181 @@
 
 #include "game/dagger/formats/climate.h"
 
+static int fold_c(int c)
+{
+    if (c >= 'A' && c <= 'Z') {
+        return c + ('a' - 'A');
+    }
+    return c;
+}
+
+static int has_q(const char *hay, const char *q)
+{
+    int i;
+    int j;
+
+    if (!q || !q[0]) {
+        return 1;
+    }
+    if (!hay) {
+        return 0;
+    }
+    for (i = 0; hay[i]; i++) {
+        for (j = 0; q[j]; j++) {
+            if (!hay[i + j] || fold_c(hay[i + j]) != fold_c(q[j])) {
+                break;
+            }
+        }
+        if (!q[j]) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void put_u(char *dst, int n)
+{
+    char tmp[16];
+    int i;
+    int k;
+    unsigned u;
+
+    if (n < 0) {
+        n = 0;
+    }
+    u = (unsigned)n;
+    if (u == 0) {
+        dst[0] = '0';
+        dst[1] = 0;
+        return;
+    }
+    i = 0;
+    while (u && i < 15) {
+        tmp[i++] = (char)('0' + (u % 10u));
+        u /= 10u;
+    }
+    for (k = 0; k < i; k++) {
+        dst[k] = tmp[i - 1 - k];
+    }
+    dst[i] = 0;
+}
+
+int atlas_place_hits(const DunRef *duns, int ndun, const DunRef *towns, int ntown,
+                     const char *q, int *hit_i, unsigned char *hit_out, int cap)
+{
+    int n;
+    int i;
+    char reg[16];
+
+    if (!q) {
+        q = "";
+    }
+    if (cap < 0) {
+        cap = 0;
+    }
+    n = 0;
+    for (i = 0; duns && i < ndun; i++) {
+        put_u(reg, duns[i].region);
+        if (!has_q(duns[i].name, q) && !has_q(reg, q)) {
+            continue;
+        }
+        if (n < cap && hit_i && hit_out) {
+            hit_i[n] = i;
+            hit_out[n] = 0;
+        }
+        n++;
+        if (hit_i && n >= cap) {
+            return n;
+        }
+    }
+    for (i = 0; towns && i < ntown; i++) {
+        put_u(reg, towns[i].region);
+        if (!has_q(towns[i].name, q) && !has_q(reg, q)) {
+            continue;
+        }
+        if (n < cap && hit_i && hit_out) {
+            hit_i[n] = i;
+            hit_out[n] = 1;
+        }
+        n++;
+        if (hit_i && n >= cap) {
+            return n;
+        }
+    }
+    return n;
+}
+
+static void copy_two(char *dst, int cap, const char *a, const char *b)
+{
+    int n;
+    int i;
+
+    if (!dst || cap < 1) {
+        return;
+    }
+    dst[0] = 0;
+    n = 0;
+    for (i = 0; a && a[i] && n < cap - 1; i++) {
+        dst[n++] = a[i];
+    }
+    for (i = 0; b && b[i] && n < cap - 1; i++) {
+        dst[n++] = b[i];
+    }
+    dst[n] = 0;
+}
+
+int atlas_other_line(const DunRef *duns, int ndun, const DunRef *towns, int ntown,
+                     int region, int outdoor, int location_id, int exterior_id,
+                     char *dst, int cap, int *other_index)
+{
+    int idx;
+    int i;
+    const DunRef *hit;
+
+    if (dst && cap > 0) {
+        dst[0] = 0;
+    }
+    if (other_index) {
+        *other_index = -1;
+    }
+    hit = 0;
+    if (outdoor) {
+        idx = dungeon_under(region, location_id);
+        if (idx < 0) {
+            return 0;
+        }
+        for (i = 0; duns && i < ndun; i++) {
+            if (duns[i].region == region && duns[i].index == idx) {
+                hit = &duns[i];
+                break;
+            }
+        }
+        if (!hit) {
+            return 0;
+        }
+        copy_two(dst, cap, "Below: ", hit->name);
+    } else {
+        idx = dungeon_outside(region, exterior_id);
+        if (idx < 0) {
+            return 0;
+        }
+        for (i = 0; towns && i < ntown; i++) {
+            if (towns[i].region == region && towns[i].index == idx) {
+                hit = &towns[i];
+                break;
+            }
+        }
+        if (!hit) {
+            return 0;
+        }
+        copy_two(dst, cap, "Above: ", hit->name);
+    }
+    if (other_index) {
+        *other_index = idx;
+    }
+    return 1;
+}
+
 const char *atlas_climate_name(int id)
 {
     switch (id) {

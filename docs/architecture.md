@@ -83,14 +83,14 @@ A place, built: what the engine draws, hears, walks on and uses.
 Daggerfall's game, as `docs/game.md` lays it out: its player, its rules, its screens. Today: `game` (the play state's frame), `player` (a body under `rig_first`), `character` (the sheet), `inventory` (items, gold, what is worn), `loot` (what a body or a heap of treasure holds), `pile` (what the player drops), `combat` and `foes` (blows and creatures awake), `weapon` (the weapon in hand), `doll` (the paper doll), `canvas` (classic's screen composed in memory), `bag`, `sheet`, `create` and `rest` (the inventory, the character sheet, creation and rest, on it), `screens` (whichever is open, on the card), `kit` (what a new character starts with), `save` (the one saved game), `commands` (the game's console commands), `rules` (classic's sums), `overlay` (the compass, the vitals, the crosshair), `menu` (classic's menus), `keys` (the bindings), `screen` (classic's 320 × 200 on the card). Rules that can be written as plain C (stats, combat sums, saves) live here and are host-tested in `tests/`.
 
 ### `apps/`
-One folder per program, each a `main.c` that brings `WinMainCRTStartup`, except `dfrec`, the `.DAT` tool, a native command-line program built beside hostcheck (`docs/data.md`). An app wires the layers together and owns its window, its loop and its keys. LEVELFALL and RENDERFALL are the engine's diagnostic views (`docs/viewers.md`). GFALL is the game. DATFALL is the race, enemy and weapon browser (`docs/data.md`). SPINTRI stands alone as the Glide demo.
+One folder per program, each a `main.c` that brings `WinMainCRTStartup`, except `dfrec`, the `.DAT` tool, a native command-line program built beside hostcheck (`docs/data.md`). An app wires the layers together and owns its window, its loop and its keys. LEVELFALL and RENDERFALL are the engine's diagnostic views (`docs/viewers.md`). GFALL is the game. DATFALL is the construction set, titled cd-gfall (`docs/data.md`). SPINTRI stands alone as the Glide demo.
 
 ### Data
 Daggerfall's tables are records, not C arrays (`docs/data.md`):
 - A table's row struct and `RecSchema` live in the module that uses it.
 - Classic's numbers live only in `tables/classic.c`, which cooks MAIN.DAT.
 - The record file itself is the engine's (`engine/assets/recfile.c`), and it knows no game.
-- `apps/dfrec` reads and makes `.DAT` files. `apps/datfall` browses races, enemies and weapons.
+- `apps/dfrec` reads and makes `.DAT` files. `apps/datfall` is cd-gfall: the tables, the pictures, the characters, the creatures, the items and the world map.
 
 **The engine takes values, the data supplies them.** The engine owns how things work: how weather rolls and blends, how fog draws, how a body walks. Its numbers are defaults, so it runs with no data, and it takes a game's numbers through setters, each with a getter for its default (`weather_set_look` and `weather_look`). The game reads its numbers from MAIN.DAT and the mods, and hands them over (`maindat_apply`). An engine table a game may want to change gets a setter and a getter. A table only the game uses stays in the game.
 
@@ -126,6 +126,6 @@ The Makefile groups sources by layer: `ENGINE_HOST_SRC` (plain C), `ENGINE_SRC` 
 | RENDERFALL | engine, `bsa` `arch3d` `texture` `palette` |
 | hostcheck | the plain-C engine, all of dagger but `fnt` and play's drawing (`overlay`, `game`), and `tests/` |
 | SPINTRI | its own `main.c` alone |
-| DATFALL | `classic`'s races and enemies, `img`, `cif`, `texture`, `palette`, `mip`, plus `recfile` and `maindat` for the host check. No Glide. GDI and comctl32 are loaded at run time |
+| DATFALL | cd-gfall. The tables, pictures, characters, creatures, items and the map. No Glide. GDI and comctl32 are loaded at run time |
 
 Every executable passes the same PE check (`pe_check` in the Makefile): PE32, 80386, GUI, Windows 4.0, KERNEL32 and USER32 only, glide2x.dll bound at runtime, no P6 or SSE instruction.
