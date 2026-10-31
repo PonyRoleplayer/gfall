@@ -24,8 +24,9 @@
  *   reflexes (CHAR05I0.IMG);
  *   all of it to look over, or start again (CHAR04I0.IMG).
  *
- * Escape on the map starts at once as the default character. Escape during
- * the questions answers the rest at random, as classic's skip does.
+ * Escape on the map cancels creation and goes back to the start menu. It
+ * does not make a character. Escape during the questions answers the rest
+ * at random, as classic's skip does.
  *
  * Plain C, drawing nothing: hostcheck drives it by clicks and keys, and
  * screens.c puts it on the screen.
@@ -57,8 +58,8 @@ enum {
     CREATE_STAY,
     /* The character is made: create_result. */
     CREATE_DONE,
-    /* Skipped: create_default. */
-    CREATE_SKIPPED
+    /* The map was cancelled: close creation and return to the start menu. */
+    CREATE_CANCELLED
 };
 
 /* 0 when its heaps or font did not come. */
@@ -73,7 +74,7 @@ void create_palette(df_u8 *rgb);
 int create_class_of_answers(int warrior, int rogue, int mage);
 /* 1 once since the last compose if something on it changed. */
 int create_changed(void);
-/* A click at classic's x, y: CREATE_STAY, DONE or SKIPPED. */
+/* A click at classic's x, y: CREATE_STAY or DONE. */
 int create_click(int x, int y);
 /* A key pressed, by its virtual key code: the name, Enter, Escape. As a click. */
 int create_key(int vk);

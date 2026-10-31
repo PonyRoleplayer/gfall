@@ -12,6 +12,7 @@
 #include "game/dagger/play/keys.h"
 #include "game/dagger/play/loot.h"
 #include "game/dagger/play/menu.h"
+#include "game/dagger/play/mouse.h"
 #include "game/dagger/play/overlay.h"
 #include "game/dagger/play/pile.h"
 #include "game/dagger/play/player.h"
@@ -71,11 +72,21 @@ static int g_loans_day;
 /* The thing number of a shop's keep row: past any block's things (docs/game.md, What the player changed). */
 #define SHOP_KEY_THING 0xFE000000u
 
+/*
+ * A menu or a screen shows the pointer. In play, the saved mouse mode
+ * decides: Cursor keeps it, View looks. The crosshair is the view's centre.
+ */
+static void apply_pointer(int ui_up)
+{
+    input_set_pointer(mouse_pointer(ui_up));
+    overlay_set_crosshair(mouse_cursor() ? 0 : 1);
+}
+
 /* A screen over the stilled world, with the pointer. */
 static void screen_over_play(void)
 {
     gfx_set_pause(screens_is_open());
-    input_set_pointer(screens_is_open());
+    apply_pointer(screens_is_open());
 }
 
 /* The hour, for a building's opening. */
@@ -288,7 +299,7 @@ static void die(void)
     interact_say("You have died.");
     menu_open(MENU_DEATH);
     gfx_set_pause(1);
-    input_set_pointer(0);
+    apply_pointer(1);
 }
 
 /* What the game draws over the frame: the weapon and the HUD in play, then the open menu and its pointer. */
@@ -311,6 +322,17 @@ static void draw(void)
             screen_draw(pic, left, top, w, h);
         }
         overlay_draw();
+        /* Cursor mode: the pointer over the world. A menu or a screen draws its own. */
+        if (mouse_cursor() && menu_current() == MENU_NONE) {
+            int px;
+            int py;
+            int x;
+            int y;
+
+            input_pointer(&px, &py);
+            screen_from_pointer(px, py, &x, &y);
+            menu_draw_pointer(x, y);
+        }
     }
     menu_draw();
 }
@@ -320,7 +342,7 @@ static void menu_over_play(int which)
 {
     menu_open(which);
     gfx_set_pause(which != MENU_NONE);
-    input_set_pointer(which != MENU_NONE);
+    apply_pointer(which != MENU_NONE);
 }
 
 /* The inventory over the stilled world: the player's own, or with what they are searching beside it. */
@@ -328,7 +350,7 @@ static void bag_over_play(Entity *searched)
 {
     screens_open_bag(&g_player, searched);
     gfx_set_pause(screens_is_open());
-    input_set_pointer(screens_is_open());
+    apply_pointer(screens_is_open());
 }
 
 /* Rest over the stilled world, unless a creature awake forbids it (DFU's rest window). */
@@ -340,7 +362,7 @@ static void rest_over_play(void)
     }
     screens_open_rest(&g_player);
     gfx_set_pause(screens_is_open());
-    input_set_pointer(screens_is_open());
+    apply_pointer(screens_is_open());
 }
 
 /* Game minutes since this game began. */
@@ -403,7 +425,7 @@ static void sheet_over_play(void)
 {
     screens_open_sheet(&g_player);
     gfx_set_pause(screens_is_open());
-    input_set_pointer(screens_is_open());
+    apply_pointer(screens_is_open());
 }
 
 /* The attack button this frame: a blade's gesture, or a bow's draw if there is an arrow to draw. */
@@ -483,7 +505,7 @@ void game_setup(void)
     cmd_toggles("panel");
     g_playing = 0;
     menu_open(MENU_TITLE);
-    input_set_pointer(1);
+    apply_pointer(1);
 }
 
 int game_playing(void)
@@ -581,15 +603,10 @@ int game_frame(Camera *cam, const Input *in, float dt)
                 forget_last_game();
                 return GAME_START;
             }
-            if (asked == SCREENS_SKIPPED && create_default(&g_new_sheet, &g_new_pack)) {
-                screens_close();
-                forget_last_game();
-                return GAME_START;
-            }
             if (asked == SCREENS_SLOT) {
                 return load_game(screens_slot()) ? GAME_START : GAME_GO_ON;
             }
-            /* The slots put away: the start menu again. */
+            /* The slots put away, or Escape on the race map: the start menu again. Not a new game. */
             if (asked == SCREENS_CLOSED) {
                 menu_open(MENU_MAIN);
             }
@@ -642,7 +659,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
         }
         if (asked == SCREENS_COURT_OVER) {
             gfx_set_pause(0);
-            input_set_pointer(0);
+            apply_pointer(0);
             /* Out in the street, whatever the sentence: the crime was in a building, and the court does not send you back. */
             if (travel_out_to_street()) {
                 prof_end(PROF_PLAY);
@@ -659,13 +676,13 @@ int game_frame(Camera *cam, const Input *in, float dt)
                 g_dead = 0;
                 g_playing = 0;
                 gfx_set_pause(0);
-                input_set_pointer(1);
+                apply_pointer(1);
                 menu_open(MENU_MAIN);
                 prof_end(PROF_PLAY);
                 return GAME_GO_ON;
             }
             gfx_set_pause(0);
-            input_set_pointer(0);
+            apply_pointer(0);
             if (asked == SCREENS_SLOT) {
                 save_use_slot(screens_slot());
                 interact_say(save_game(screens_slot_name()) ? "Game saved." : "The game could not be saved.");
@@ -692,7 +709,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
             g_dead = asked == MENU_DEATH_OVER;
             if (save_any()) {
                 menu_open(MENU_NONE);
-                input_set_pointer(1);
+                apply_pointer(1);
                 screens_open_slots(0);
             } else if (asked == MENU_LOAD) {
                 menu_say("There is no saved game.");
@@ -701,7 +718,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
                 g_dead = 0;
                 g_playing = 0;
                 gfx_set_pause(0);
-                input_set_pointer(1);
+                apply_pointer(1);
                 menu_open(MENU_MAIN);
                 prof_end(PROF_PLAY);
                 return GAME_GO_ON;

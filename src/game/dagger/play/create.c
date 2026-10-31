@@ -1488,10 +1488,11 @@ int create_key(int vk)
     if (vk != 0x1B) {
         return CREATE_STAY;
     }
-    /* Escape on the map starts at once as the default; in the questions it answers the rest at random. */
+    /* The map is the first page. Escape goes back to the start menu: no character, and not into a place. */
     if (g.step == CREATE_RACE) {
-        return CREATE_SKIPPED;
+        return CREATE_CANCELLED;
     }
+    /* Escape during the background questions answers the rest at random, and stays on creation. */
     if (g.step == CREATE_QUESTIONS) {
         while (g.step == CREATE_QUESTIONS) {
             answer_question(combat_roll(g.biog->question[g.question].answers));

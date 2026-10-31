@@ -8,7 +8,7 @@ The engine draws, hears and walks any place. `src/game/dagger/` loads Daggerfall
 
 LEVELFALL goes through every passage too: into a house and out, down into a dungeon and up, out of the stream and back. Its landing sums are shared with the game in `places/travel.c`.
 
-GFALL (`apps/gfall/main.c`) is the game: classic's title and start menu, character creation (or, skipped, an Argonian woman), then Privateer's Hold streamed by block, on foot, with a weapon, armour, creatures that fight back, bodies to search and saves; out of the hold into the streamed world, its towns and houses (P8); and people to talk to, shops, banks and a court (P9). The console's `goto` goes to any town, for testing until P12's map.
+GFALL (`apps/gfall/main.c`) is the game: classic's title and start menu, character creation (an Argonian woman only when those pictures did not open), then Privateer's Hold streamed by block, on foot, with a weapon, armour, creatures that fight back, bodies to search and saves; out of the hold into the streamed world, its towns and houses (P8); and people to talk to, shops, banks and a court (P9). The console's `goto` goes to any town, for testing until P12's map.
 
 ## The pieces
 
@@ -37,6 +37,7 @@ kit       what a new character starts with
 overlay   the HUD: compass, vitals, crosshair
 menu      the title, start, options and controls screens
 keys      the bindings in DATA\KEYS.DAT
+mouse     Cursor or View, the MOUS row in that file
 screen    classic's 320 x 200 on the card
 sfx       DAGGER.SND's clips for combat
 commands  the game's console commands
@@ -254,7 +255,7 @@ Skill advance by use and the level-up rule come from UESP's Leveling page. A pre
 | Reflexes | CHAR05I0.IMG, CHAR05I1.IMG's slices | very high to very low |
 | Summary | CHAR04I0.IMG | looked over; Restart or OK |
 
-- **Skipping.** Escape on the map starts at once as the default character. Escape during the questions answers the rest at random, as classic's skip does.
+- **Leaving.** Escape on the map cancels creation and returns to the start menu. It does not make a character and it does not enter a place. Escape during the questions answers the rest at random, as classic's skip does. The default Argonian woman is only when creation's pictures did not open.
 - **The kit** (`play/kit.c`, DFU's AssignStartingGear): the class's weapon in hand, and 100 gold. A Warrior's is an iron broadsword, so the default character no longer starts with a longsword. An Archer also has a steel battle axe and 24 arrows.
 - **Scrolls and buttons** are classic's on every screen (`canvas_scroll`, `canvas_button`): SPOP.RCI's nine 22 × 22 pieces, as DFU's parchment style, and BUTTONS.RCI's 32 × 16 buttons. The class questions stand on a dark band of their picture's own colours: classic's SCRL00I0.GFX and SCRL01I0.GFX are animated, and not read.
 - **Ours, not classic's:** the place of the derived numbers by eye; the dagger's steps between its ends; a custom class's skill list by number, not alphabetical.
@@ -275,7 +276,7 @@ Skill advance by use and the level-up rule come from UESP's Leveling page. A pre
 
 Daggerfall's keys on a Win98 keyboard and mouse:
 - WASD to walk;
-- the mouse to look;
+- the mouse to look, in View; Cursor leaves the pointer where it is;
 - the left button to attack, held to swing;
 - the use key;
 - shift to run, space to jump;
@@ -308,7 +309,7 @@ The HUD is drawn at the card's 640 × 480. Classic's 320 × 200 pieces are drawn
 | Title | TITL00I0.IMG (its own palette) | any key or click goes on |
 | Start | PICK03I0.IMG (its own palette) | Load (72, 45): the saved game, or says there is none; Start a new game (72, 99): character creation, then the hold under "Loading...", which fades in; Exit (125, 145) quits |
 | Options | OPTN00I0.IMG at 85, 40, over the stilled world (`gfx_set_pause`) | Save, and Load, the one slot; Exit, clicked twice, quits; Controls; Continue, or Escape, goes back to play. Classic's full screen, head bobbing, sound, music and detail are settings, left out |
-| Controls | CNFG00I0.IMG | each action's key in classic's slot (47 × 7); a click on one waits for a key (`input_key_pressed`), and Escape leaves it be; a key another action has is swapped between them; Escape, the menu's, and the console's are refused (`input_bind`). Default puts classic's keys back; Continue, or Escape, goes back to the options |
+| Controls | CNFG00I0.IMG | each action's key in classic's slot (47 × 7); a click on one waits for a key (`input_key_pressed`), and Escape leaves it be; a key another action has is swapped between them; Escape, the menu's, and the console's are refused (`input_bind`). Mouse, the left button along the bottom, switches Cursor and View. Default puts classic's keys and Cursor back; Continue, or Escape, goes back to the options |
 
 **The controls' slots** are classic's for the actions the game has:
 - forward, back, left and right (strafe), in the walk's columns;
@@ -321,7 +322,9 @@ The HUD is drawn at the card's 640 × 480. Classic's 320 × 200 pieces are drawn
 
 Classic's other slots (turning, crouching, spells, the log...) stay empty until their actions come.
 
-**Bindings are saved** in `DATA\KEYS.DAT`, a record file (`docs/data.md`) of one `KEYS` record per action (id `INPUT_*`, its virtual key), when the controls screen closes with a change. They are read at start (`keys_load`) over classic's defaults (`keys_defaults`): W, S, A, D, the left button, E, Shift, Space, C, I, M, R.
+**Bindings are saved** in `DATA\KEYS.DAT`, a record file (`docs/data.md`) of one `KEYS` record per action (id `INPUT_*`, its virtual key), when the controls screen closes with a change. They are read at start (`keys_load`) over classic's defaults (`keys_defaults`): W, S, A, D, the left button, E, Shift, Space, C, I, M, R. The same file holds one `MOUS` row, id 0, `cursor` 1 or 0 (`play/mouse.c`). No row means Cursor.
+
+**Mouse.** Cursor and View both exist. The controls screen's Mouse button switches them. Cursor keeps the pointer (`input_set_pointer(1)`): the mouse does not turn the view, the crosshair is off, and a click is the attack button at the pointer, so it hits the control drawn under it (a menu, a screen). View is mouse look (`input_set_pointer(0)`): the pointer is not drawn over the world, the crosshair is on, and the attack button swings (`weapon_gesture`; a drag uses the mouse's motion). Opening a menu or a screen shows the pointer either way. Closing it, and starting play, uses the saved mode, not whichever a screen last left. Default puts Cursor back with the keys.
 
 On the 233: the title, the start menu, the pointer, the start into the hold and Escape's options run. The options' Exit did not quit at first: its question ("Click Exit again") was taken back every frame with no click, so the second click only asked again. It is now taken back only by a click on another button (`d403b0f`); not yet tried there. The controls screen is not tried there yet.
 
@@ -352,7 +355,7 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **The file** (`play/weapon.c`): the hand's WEAP `cif`, `WEAPON##.CIF`; bare hands `WEAPON10.CIF`, the fist (`WEAPON11.CIF` is the werecreature's claws). `weapon_hold` follows the pack every frame and reads the file again only when the weapon or its material changes. The file lives in the CIF set's own heap and goes with it (`cif_open`).
 - **Where it stands:** every frame where classic draws it on its 320 × 200 screen, from the file (`CifFrame.x`, `y`: an IMG's own header, a swing's bytes 6 and 8). Every frame's box sits on the screen's bottom. Drawn under the compass and the bars.
 - **Cropped at load:** a swing's frames are all stored at the whole swing's box, and one frame fills about 30% of it on average. Each frame goes on the card cut to the rectangle of its drawn pixels (`cif_bounds`: index 0 is clear), drawn at its place moved by the crop's corner, so the same pixels land on the same screen pixels. Worked out from the file each time it is read, for any `WEAPON##.CIF` a mod puts in ARENA2; nothing is kept per weapon. `check_weapon` checks every frame's crop loses no pixel and is tight.
-- **The mouse swings** (`weapon_gesture`, DFU's WeaponManager). With the attack button down, the mouse's motion chooses a blade's swing, and the view keeps turning: classic stands it still, and a tester took that for a bug. `weapon_gate` keeps the click that closes a screen from swinging, held or on its release. A press and release with no motion swings at random.
+- **The mouse swings** (`weapon_gesture`, DFU's WeaponManager). With the attack button down, in View the mouse's motion chooses a blade's swing, and the view keeps turning: classic stands it still, and a tester took that for a bug. Cursor reports no motion, so that click swings at random. `weapon_gate` keeps the click that closes a screen from swinging, held or on its release.
 - **A bow** has no armed picture: nothing shows at rest. It needs an arrow: the press draws, the drawn frame (3) holds while the button is down, with the view free to aim, and the release looses, an arrow spent. The shot lands at once on the first creature along the view within sight (`combat_shoot`): DFU flies a missile, which needs a thing in the world this does not have yet.
 - **The material** recolours the picture by classic's tables (`cif_metal`; Loot and the inventory, Colours).
 - **The card:** the armed picture is kept; the swing's frame showing is sent when it shows and let go when the next one does (a frame every fifth of a second). A cutout goes as 8-bit P_8 with the chroma key on index 0 (the engine's `cc5ec07`, `docs/pictures.md`), or as 16-bit 1555 on a glide2x.dll without the key. Cropped and keyed, the largest frame is 39 KB, the bow drawn back (`WEAPON09.CIF`, 204 × 179); 65 KB whole, 78 KB cropped as 1555. The largest melee frame is the staff's, 271 × 125. With the HUD, the armed picture (under 13 KB) and the controls screen (66 KB) that is at most about 140 KB of `GAME_PICTURE_KB`'s 256 on a keyed card, about 195 KB without the key. `check_weapon` measures both cards and fails past 48 KB keyed or 96 KB at 1555.

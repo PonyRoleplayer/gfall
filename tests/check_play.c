@@ -55,6 +55,8 @@
 #include "game/dagger/formats/textrsc.h"
 #include "game/dagger/play/doll.h"
 #include "game/dagger/play/weapon.h"
+#include "game/dagger/play/mouse.h"
+#include "engine/assets/recfile.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/foes.h"
 #include "game/dagger/tables/enemies.h"
@@ -2312,8 +2314,35 @@ static void check_create(void)
     }
     create_close();
 
-    /* Escape on the map starts at once as the default. */
-    check_expect(create_open() && create_key(0x1B) == CREATE_SKIPPED, "create: Escape on the map did not skip");
+    /*
+     * Escape on the race map cancels. The step stays the map, nobody is made,
+     * and the game's answer is the start menu (screens turns CANCELLED into
+     * CLOSED; that file is not on the host). A page after the map does not
+     * take the same way out.
+     */
+    check_expect(create_open() && create_key(0x1B) == CREATE_CANCELLED, "create: Escape on the map did not cancel");
+    check_expect(create_step() == CREATE_RACE, "create: Escape left the race map");
+    check_expect(!create_result(&sheet, &pack), "create: Escape on the map made a character");
+    create_close();
+    check_expect(create_open(), "create: it did not open again after Escape");
+    {
+        ImgPicture mask;
+
+        found = 0;
+        if (img_load("TAMRIEL2.IMG", &mask)) {
+            for (y = 0; y < 200 && !found; y++) {
+                for (x = 0; x < 320 && !found; x++) {
+                    if (mask.pixels[y * 320 + x] == RACE_BRETON) {
+                        create_click(x, y);
+                        found = 1;
+                    }
+                }
+            }
+        }
+    }
+    check_expect(found && create_step() == CREATE_RACE_CONFIRM, "create: a race was not waiting to confirm");
+    check_expect(create_key(0x1B) == CREATE_STAY && create_step() == CREATE_RACE_CONFIRM,
+                 "create: Escape on the confirm left it or started a game");
     create_close();
     check_expect(create_default(&sheet, &pack) && sheet.race == RACE_ARGONIAN && sheet.female && pack.gold == 100,
                  "create: the default is not an Argonian woman with her kit");
@@ -4582,10 +4611,47 @@ static void check_standing_saved(void)
     standing_new_game(5u);
 }
 
+/* Cursor or View, in memory the way KEYS.DAT stores it, and which pointer play asks for. */
+static df_u8 g_mouse_file[1024];
+static int g_mouse_at;
+
+static int mouse_put(void *ctx, const void *src, df_u32 n)
+{
+    (void)ctx;
+    if (g_mouse_at + (int)n > (int)sizeof(g_mouse_file)) {
+        return 0;
+    }
+    mem_copy(g_mouse_file + g_mouse_at, src, n);
+    g_mouse_at += (int)n;
+    return 1;
+}
+
+static void check_mouse(void)
+{
+    mouse_defaults();
+    check_expect(mouse_cursor() && mouse_pointer(0) == 1 && mouse_pointer(1) == 1,
+                 "mouse: play does not start in cursor, or a screen has no pointer");
+    mouse_set_cursor(0);
+    check_expect(!mouse_cursor() && mouse_pointer(0) == 0 && mouse_pointer(1) == 1,
+                 "mouse: view does not look in play, or a screen lost the pointer");
+    g_mouse_at = 0;
+    check_expect(rec_put_begin(mouse_put, 0) && mouse_write(mouse_put, 0), "mouse: view did not store");
+    mouse_defaults();
+    mouse_read(g_mouse_file, (df_u32)g_mouse_at);
+    check_expect(!mouse_cursor() && mouse_pointer(0) == 0, "mouse: entering play did not take the stored view");
+    g_mouse_at = 0;
+    check_expect(rec_put_begin(mouse_put, 0), "mouse: an older file did not start");
+    mouse_defaults();
+    mouse_read(g_mouse_file, (df_u32)g_mouse_at);
+    check_expect(mouse_cursor() && mouse_pointer(0) == 1, "mouse: a file without the row did not stay cursor");
+    printf("mouse: cursor and view, stored\n");
+}
+
 void check_play(void)
 {
     /* As game_setup does: read before any screen's heap is current. */
     standing_new_game(1u);
+    check_mouse();
     check_rules();
     check_character();
     check_items();
