@@ -4,9 +4,10 @@
 /*
  * The player's key bindings: saved in DATA\KEYS.DAT beside the exe as a
  * record file (docs/data.md), one KEYS record an action (id INPUT_*, its
- * Windows virtual key), one MOUS row for Cursor or View (mouse.h), and
- * CTLS for that same preference (control.h). Applied with input_bind,
- * mouse_read and control_read_settings at start. A missing or damaged
+ * Windows virtual key), one MOUS row for Cursor or View (mouse.h),
+ * CTLS for that same preference (control.h), and one OPTS row for full
+ * screen and head bobbing (viewopt.h). Applied with input_bind,
+ * mouse_read, control_read_settings and viewopt_read at start. A missing or damaged
  * file keeps classic's defaults. Read docs/game.md (Menus).
  *
  * Escape stays the menu and is not bound here; the console's key is

@@ -14,6 +14,7 @@
 #include "game/dagger/play/loot.h"
 #include "game/dagger/play/menu.h"
 #include "game/dagger/play/mouse.h"
+#include "game/dagger/play/viewopt.h"
 #include "game/dagger/play/overlay.h"
 #include "game/dagger/play/hudbar.h"
 #include "game/dagger/play/pile.h"
@@ -323,6 +324,12 @@ static void die(void)
     apply_pointer(1);
 }
 
+/* The bottom bar takes clicks only while it is drawn. Full screen hides it. */
+static int hud_bar(void)
+{
+    return overlay_panel() && !viewopt_full();
+}
+
 /* What the game draws over the frame: the weapon and the HUD in play, then the open menu and its pointer. */
 static void draw(void)
 {
@@ -353,7 +360,7 @@ static void draw(void)
 
             input_pointer(&px, &py);
             screen_from_pointer(px, py, &x, &y);
-            menu_draw_world_pointer(control_classic() ? control_region(x, y, overlay_panel() ? HUDBAR_TOP : 200) : -1, x, y);
+            menu_draw_world_pointer(control_classic() ? control_region(x, y, hud_bar() ? HUDBAR_TOP : 200) : -1, x, y);
         }
     }
     menu_draw();
@@ -909,7 +916,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
 
         input_pointer(&px, &py);
         screen_from_pointer(px, py, &x, &y);
-        if (overlay_panel() && hudbar_contains(x, y)) {
+        if (hud_bar() && hudbar_contains(x, y)) {
             hud_command(hudbar_hit(x, y));
             closed = 1;
         }
@@ -923,7 +930,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
         input_pointer(&px, &py);
         screen_from_pointer(px, py, &x, &y);
         control_step(&g_control, in, control_classic(), g_hud_cursor, x, y,
-                     overlay_panel() ? HUDBAR_TOP : 200, g_sheathed, dt, &controls);
+                     hud_bar() ? HUDBAR_TOP : 200, g_sheathed, dt, &controls);
         if (controls.use) {
             Camera aim;
 

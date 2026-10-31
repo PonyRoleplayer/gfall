@@ -16,7 +16,7 @@ Built, in `src/game/dagger/play/`:
 
 ```
 game      one frame of play, Escape's pause, the use key
-player    the player in the world: a body under rig_first, walk, run, jump, fall
+player    the player in the world: a body under rig_first, walk, run, jump, fall; the eye bobs when that option is on
 character the sheet: attributes, skills, vitals, armour
 rules     the sums: speeds, vitals, carrying (pure functions)
 combat    the player's blows and a creature's, health kept in its keep row
@@ -39,6 +39,7 @@ menu      the title, start, options and controls screens
 control   classic cursor movement, view offsets, gesture routing and pointer rays
 keys      the bindings in DATA\KEYS.DAT
 mouse     Cursor or View, the MOUS row in that file
+viewopt   full screen and head bobbing, the OPTS row in that file
 screen    classic's 320 x 200 on the card
 sfx       DAGGER.SND's clips for combat
 commands  the game's console commands
@@ -204,6 +205,8 @@ Daggerfall is first person: the player is the camera. The physics is not the cam
 
 Entities have no physics of their own. A creature that only stands, or walks a flat town cell, needs none. A creature that chases the player down a stair gets a body of its own size, and the game copies the body's place to the creature's entity each frame.
 
+With head bobbing on, a walk on the ground moves the camera off that eye (`viewopt_eye`, `player_camera`). Standing, swimming, flying and a jump do not. The wave is Daggerfall Unity's HeadBobber: along the body's right by cos(phase) × 0.045 m walking or 0.09 m running, and up by |sin(phase)| × 0.062 m walking or 0.11 m running, plus that file's nod. Phase advances by the horizontal speed in metres a second times 1.25, and rests at π/2. The setting off leaves the eye on the body.
+
 The game adds, as rules on top of the player's body:
 - **Run**: speed from Speed and the Running skill.
 - **Jump**: height from the Jumping skill.
@@ -320,7 +323,7 @@ The HUD is drawn at the card's 640 × 480. Classic's 320 × 200 pieces are drawn
 
 - **The vitals (P2):** MAIN03I0, MAIN04I0 and MAIN05I0.IMG (health, fatigue, spell points, 4 × 32 each), filled from the bottom to their share as DFU's HUDVitals does, where their files put them (x 49, 57 and 65, y 161).
 
-- **The bottom panel** (P7's initial art, completed in P9-b): MAIN00I0.IMG, 320 × 46 at the screen's foot, with the selected head, blue backing, bars, four interaction-mode icons and compact compass. On by default, `panel` flips it. Cursor mode already has its pointer; Tab frees it in View mode; see Classic HUD bar above for routing, resource costs and the remaining target acceptance. With the panel off, the original compass strip remains. P9-c below supplies classic dungeon controls without continuous mouse look.
+- **The bottom panel** (P7's initial art, completed in P9-b): MAIN00I0.IMG, 320 × 46 at the screen's foot, with the selected head, blue backing, bars, four interaction-mode icons and compact compass. On by default, `panel` flips it. Cursor mode already has its pointer; Tab frees it in View mode; see Classic HUD bar above for routing, resource costs and the remaining target acceptance. With the panel off, the original compass strip remains. Full screen, the options checkbox, hides only that stone bar: the face frame, its backing and the icon buttons. The three vital bars and the compact compass stay where the bar puts them. Clicks on the hidden buttons fall through to the world. The crosshair and the weapon stay, and the view is not resized. P9-c below supplies classic dungeon controls without continuous mouse look.
 
 ## Classic dungeon controls without mouse look (P9-c)
 
@@ -407,7 +410,7 @@ Tune region boundaries/rates from that playtest; no target run is claimed here.
 | --- | --- | --- |
 | Title | TITL00I0.IMG (its own palette) | any key or click goes on |
 | Start | PICK03I0.IMG (its own palette) | Load (72, 45): the saved game, or says there is none; Start a new game (72, 99): character creation, then the hold under "Loading...", which fades in; Exit (125, 145) quits |
-| Options | OPTN00I0.IMG at 85, 40, over the stilled world (`gfx_set_pause`) | Save, and Load, the one slot; Exit, clicked twice, quits; Controls; Continue, or Escape, goes back to play. Classic's full screen, head bobbing, sound, music and detail are settings, left out |
+| Options | OPTN00I0.IMG at 85, 40, over the stilled world (`gfx_set_pause`) | Save, and Load, the one slot; Exit, clicked twice, quits; Controls; Continue, or Escape, goes back to play. Full screen and head bobbing are the picture's black squares (see below). Sound, music and detail are still left out |
 | Controls | CNFG00I0.IMG | each action's key in classic's slot (47 × 7); a click on one waits for a key (`input_key_pressed`), and Escape leaves it be; a key another action has is swapped between them; Escape, the menu's, and the console's are refused (`input_bind`). Mouse, the left button along the bottom, switches Cursor and View. Default puts classic's keys and Cursor back; Continue, or Escape, goes back to the options |
 
 **The controls' slots** are classic's for the actions the game has:
@@ -421,7 +424,13 @@ Tune region boundaries/rates from that playtest; no target run is claimed here.
 
 Classic's other slots (crouching, spells, the log...) stay empty until their actions come.
 
-**Bindings are saved** in `DATA\KEYS.DAT`, a record file (`docs/data.md`) of one `KEYS` record per action (id `INPUT_*`, its virtual key), when the controls screen closes with a change. They are read at start (`keys_load`) over classic's defaults (`keys_defaults`): W, S, A, D, left-button View attack, right-button Cursor swing, E, Shift, Space, C, I, M, R, H, Tab, Left/Right, Page Up/Down, Home and Alt. The same file holds one `MOUS` row, id 0, `cursor` 1 or 0 (`play/mouse.c`), and a `CTLS` row for that same Cursor/View preference (`play/control.c`). No row means Cursor. A file that stored only one of those rows copies it onto the other at load, so the two stay one setting.
+**Bindings are saved** in `DATA\KEYS.DAT`, a record file (`docs/data.md`) of one `KEYS` record per action (id `INPUT_*`, its virtual key), when the controls screen closes with a change. They are read at start (`keys_load`) over classic's defaults (`keys_defaults`): W, S, A, D, left-button View attack, right-button Cursor swing, E, Shift, Space, C, I, M, R, H, Tab, Left/Right, Page Up/Down, Home and Alt. The same file holds one `MOUS` row, id 0, `cursor` 1 or 0 (`play/mouse.c`), and a `CTLS` row for that same Cursor/View preference (`play/control.c`). No row means Cursor. A file that stored only one of those rows copies it onto the other at load, so the two stay one setting. It also holds one `OPTS` row, id 0, `full` and `bob` each 1 or 0 (`play/viewopt.c`). No row means both off. Closing the options screen after a change writes the file, and so does confirming Exit.
+
+**Full screen and head bobbing** are the two black squares painted on OPTN00I0.IMG, each three by three pixels of index 0. On the picture they are (69, 50) and (140, 50); the picture's own place is (85, 40), so a click is classic (154, 90) or (225, 90). The hit target is that square. A yellow tick (palette index 146) is drawn in it while the setting is on. Both start off. Full screen off is classic's: UESP's User Interface page says a new game begins with the interface visible. Head bobbing's classic default was not found; Daggerfall Unity's `defaults.ini` sets `HeadBobbing` true (changed to true in 2018), and that is DFU's own default, so this game starts with the box clear.
+
+Full screen hides only the bottom stone bar: the face frame, its blue backing, and the icon buttons. It does not hide the vitals or the compass. Health, fatigue and spell points stay at x 49, 57 and 65, y 161, filled from the bottom as when the bar is showing. The compact compass stays in the status slot (275, 156, 43 × 42). It does not change the video mode or the size of the 3D view. The crosshair and the weapon in hand stay. The console's `panel` is a separate switch: with the panel off and full screen clear, the old compass strip and the vitals remain.
+
+Head bobbing, while the player walks on the ground, moves the camera off the body's eye. The wave is Daggerfall Unity's HeadBobber (`PlotPath` and `PlotRotation` in `HeadBobber.cs`, and `WalkStepInterval` 2.5 in `PlayerFootsteps.cs`): to the body's right by cos(phase) × 0.045 m walking or 0.09 m running, and up by |sin(phase)| × 0.062 m walking or 0.11 m running (40 units a metre). The nod is that file's degrees, absolute for the phase: |sin| × 0.25° of pitch and −sin × 0.1° of yaw while walking, 0.6° and 0.15° while running. Phase advances by the horizontal speed in metres a second times 1.25, and a stop puts it back at π/2, where a step is at its crest. Standing, swimming, flying and leaving the ground do not bob. The setting off, the offset is zero. Hostcheck compares that offset at phase 0, π/2 and π, for a walk and a run, and that the eye on the rig follows it only while the setting is on and the step is a walk. The tick itself is drawn by the menu, which the host does not build.
 
 **Mouse.** Cursor and View both exist. The controls screen's Mouse button switches them, and both rows are written. Cursor keeps the pointer (`input_set_pointer(1)`): the mouse does not turn the view, the crosshair is off, and classic's arrows, X and right-button gesture run (`control.c`). A click is the physical left button, so a menu or a screen takes the control drawn under it. View is mouse look (`input_set_pointer(0)`): the pointer is not drawn over the world, the crosshair is on, and the left button swings (`weapon_gesture`; a drag uses the mouse's motion). Opening a menu or a screen shows the pointer either way. Closing it restores the HUD cursor, and starting play uses the saved mode, not whichever a screen last left. Tab toggles the free pointer without changing the saved scheme. Default puts Cursor back with the keys.
 

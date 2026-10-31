@@ -1,4 +1,5 @@
 #include "game/dagger/play/overlay.h"
+#include "game/dagger/play/viewopt.h"
 #include "game/dagger/play/hudbar.h"
 #include "game/dagger/play/screen.h"
 #include "game/dagger/formats/cif.h"
@@ -177,7 +178,8 @@ void overlay_set_yaw(float yaw)
 
     g_yaw = df_wrap_tau(yaw);
     frame = hudbar_heading(g_yaw);
-    if (!g_panel_on || frame == g_compass_at || !img_bss_frame(&g_compass_frames, frame, &p)) {
+    /* The bar's compass, and full screen's, which keeps that same picture. */
+    if ((!g_panel_on && !viewopt_full()) || frame == g_compass_at || !img_bss_frame(&g_compass_frames, frame, &p)) {
         return;
     }
     /* Service once in game_frame, never in overlay_draw. The picture module
@@ -279,9 +281,13 @@ void overlay_set_face(const char *cif, int which)
 
 void overlay_draw(void)
 {
-    if (g_panel_on) {
-        const Rect *r;
+    const Rect *r;
 
+    /*
+     * Full screen drops the stone bar, the face and the icon buttons.
+     * The vitals and the bar's compass stay in the places the bar gives them.
+     */
+    if (g_panel_on && !viewopt_full()) {
         screen_draw(g_panel, PANEL_X, PANEL_Y, PANEL_W, PANEL_H);
         screen_draw(g_color, 5, HUDBAR_TOP + 5, 66, 36);
         screen_draw(g_face, PANEL_X + FACE_X, PANEL_Y + FACE_Y, FACE_W, FACE_H);
@@ -289,6 +295,9 @@ void overlay_draw(void)
         pic_draw_part(g_modes, 0, hudbar_mode_row(g_mode) * 23, 47, 23,
                       screen_x(r->x), screen_top(r->y), screen_x(r->w),
                       screen_h(r->y + r->h) - screen_h(r->y), 255);
+        r = hudbar_rect(HUDBAR_STATUS);
+        screen_draw(g_compass, r->x, r->y, r->w, r->h);
+    } else if (viewopt_full()) {
         r = hudbar_rect(HUDBAR_STATUS);
         screen_draw(g_compass, r->x, r->y, r->w, r->h);
     } else {

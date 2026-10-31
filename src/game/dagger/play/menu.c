@@ -1,5 +1,6 @@
 #include "game/dagger/play/menu.h"
 #include "game/dagger/play/mouse.h"
+#include "game/dagger/play/viewopt.h"
 #include "game/dagger/play/control.h"
 #include "game/dagger/play/screen.h"
 #include "game/dagger/play/keys.h"
@@ -26,7 +27,9 @@ enum {
     DO_CONTINUE,
     DO_CONTROLS,
     DO_DEFAULTS,
-    DO_MOUSE
+    DO_MOUSE,
+    DO_FULL,
+    DO_BOB
 };
 
 /* DFU's StartWindow: on PICK03I0.IMG. */
@@ -37,8 +40,11 @@ static const Button g_main_buttons[] = {
 };
 
 /*
- * DFU's PauseOptionsWindow, from OPTN00I0.IMG's top left. Its full
- * screen, head bobbing, sound, music and detail are settings: not yet.
+ * DFU's PauseOptionsWindow, from OPTN00I0.IMG's top left. Sound, music
+ * and detail are still not settings. Full screen and head bobbing are
+ * the picture's own black squares (index 0, three by three): columns
+ * 69..71 and 140..142, rows 50..52. The image sits at 85, 40, so those
+ * are classic 154, 90 and 225, 90.
  */
 static const Button g_options_buttons[] = {
     { 4, 4, 45, 16, DO_SAVE },
@@ -46,6 +52,10 @@ static const Button g_options_buttons[] = {
     { 101, 4, 45, 16, DO_EXIT },
     { 5, 60, 70, 17, DO_CONTROLS },
     { 76, 60, 70, 17, DO_CONTINUE }
+};
+static const Button g_checks[] = {
+    { 69, 50, 3, 3, DO_FULL },
+    { 140, 50, 3, 3, DO_BOB }
 };
 
 /*
@@ -111,6 +121,8 @@ static int g_control_label;
 static int g_point_x;
 static int g_point_y;
 static const char *g_note;
+/* A yellow tick (ART_PAL 146) in a checkbox, index 0 clear. */
+static int g_tick;
 
 /* A menu's picture on the card, from ARENA2, under its own palette or ART_PAL.COL's. */
 static void show(const char *file)
@@ -149,12 +161,25 @@ int menu_setup(void)
     control_cursor_sheet(cursors);
     g_world_cursor = pic_load(cursors, CONTROL_CURSOR_W, CONTROL_CURSOR_H, rgb, 1);
     g_control_label = pic_load(&label_color, 1, 1, rgb, 0);
-    return g_arrow != 0 && g_world_cursor != 0 && g_control_label != 0;
+    {
+        static const df_u8 tick[9] = {
+            0, 0, 146,
+            0, 146, 146,
+            146, 0, 0
+        };
+
+        g_tick = pic_load(tick, 3, 3, rgb, 1);
+    }
+    return g_arrow != 0 && g_world_cursor != 0 && g_control_label != 0 && g_tick != 0;
 }
 
 void menu_shutdown(void)
 {
     menu_open(MENU_NONE);
+    if (g_tick) {
+        pic_free(g_tick);
+        g_tick = 0;
+    }
     if (g_control_label) {
         pic_free(g_control_label);
         g_control_label = 0;
@@ -173,8 +198,8 @@ void menu_open(int which)
 {
     static const char *const files[] = { 0, "TITL00I0.IMG", "PICK03I0.IMG", "OPTN00I0.IMG", "CNFG00I0.IMG", "DIE_00I0.IMG" };
 
-    /* Leaving the controls with a binding changed: kept for the next start. */
-    if (g_open == MENU_CONTROLS && which != MENU_CONTROLS && g_changed) {
+    /* Leaving the controls or the options with a change: kept for the next start. */
+    if (g_changed && which != g_open && (g_open == MENU_CONTROLS || g_open == MENU_OPTIONS)) {
         keys_save();
     }
     g_open = which;
@@ -346,6 +371,9 @@ int menu_frame(const Input *in)
         /* In play, Exit asks once: a stray click does not end the game. */
         if (what == DO_EXIT) {
             if (g_confirm) {
+                if (g_changed) {
+                    keys_save();
+                }
                 return MENU_QUIT;
             }
             g_confirm = 1;
@@ -364,6 +392,20 @@ int menu_frame(const Input *in)
         }
         if (what == DO_CONTROLS) {
             menu_open(MENU_CONTROLS);
+        }
+        if (click && what < 0) {
+            int box;
+
+            box = hit(g_checks, 2, g_pic_x, g_pic_y);
+            if (box == DO_FULL) {
+                viewopt_set_full(!viewopt_full());
+                g_changed = 1;
+                g_confirm = 0;
+            } else if (box == DO_BOB) {
+                viewopt_set_bob(!viewopt_bob());
+                g_changed = 1;
+                g_confirm = 0;
+            }
         }
         return MENU_STAY;
     case MENU_CONTROLS:
@@ -401,6 +443,14 @@ void menu_draw(void)
         return;
     }
     screen_draw(g_pic, g_pic_x, g_pic_y, g_pic_w, g_pic_h);
+    if (g_open == MENU_OPTIONS && g_tick) {
+        if (viewopt_full()) {
+            screen_draw(g_tick, g_pic_x + g_checks[0].x, g_pic_y + g_checks[0].y, g_checks[0].w, g_checks[0].h);
+        }
+        if (viewopt_bob()) {
+            screen_draw(g_tick, g_pic_x + g_checks[1].x, g_pic_y + g_checks[1].y, g_checks[1].w, g_checks[1].h);
+        }
+    }
     if (g_open == MENU_CONTROLS) {
         int i;
 

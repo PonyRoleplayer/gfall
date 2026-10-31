@@ -58,6 +58,7 @@
 #include "game/dagger/play/doll.h"
 #include "game/dagger/play/weapon.h"
 #include "game/dagger/play/mouse.h"
+#include "game/dagger/play/viewopt.h"
 #include "engine/assets/recfile.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/foes.h"
@@ -5118,6 +5119,112 @@ static void check_standing_saved(void)
     standing_new_game(5u);
 }
 
+/* Full screen and head bobbing: the eye's offset at a walk's phase, and the OPTS row. */
+static df_u8 g_opt_file[1024];
+static int g_opt_at;
+
+static int opt_put(void *ctx, const void *src, df_u32 n)
+{
+    (void)ctx;
+    if (g_opt_at + (int)n > (int)sizeof(g_opt_file)) {
+        return 0;
+    }
+    mem_copy(g_opt_file + g_opt_at, src, n);
+    g_opt_at += (int)n;
+    return 1;
+}
+
+static void check_viewopt(void)
+{
+    Player p;
+    Character sheet;
+    Camera cam;
+    float phase;
+    float s;
+    float c;
+    float deg;
+    float right;
+    float up;
+    float pitch;
+    float yaw;
+
+    viewopt_defaults();
+    check_expect(!viewopt_full() && !viewopt_bob(), "view: full screen or head bobbing does not start off");
+    viewopt_eye(0.0f, 1, 0, &right, &up, &pitch, &yaw);
+    check_expect(right == 0.0f && up == 0.0f && pitch == 0.0f && yaw == 0.0f,
+                 "view: head bobbing off still moves the eye");
+    viewopt_set_bob(1);
+    viewopt_eye(0.0f, 0, 0, &right, &up, &pitch, &yaw);
+    check_expect(right == 0.0f && up == 0.0f && pitch == 0.0f && yaw == 0.0f, "view: standing still bobs");
+    phase = 0.0f;
+    s = df_sin(phase);
+    c = df_cos(phase);
+    viewopt_eye(phase, 1, 0, &right, &up, &pitch, &yaw);
+    check_expect(check_near(right, c * 0.045f * RULES_UNITS_PER_M, 0.001f)
+                     && check_near(up, df_absf(s * 0.062f) * RULES_UNITS_PER_M, 0.001f),
+                 "view: a walk's phase 0 is not HeadBobber's sideways step");
+    phase = DF_TAU / 4.0f;
+    s = df_sin(phase);
+    c = df_cos(phase);
+    deg = DF_TAU / 360.0f;
+    viewopt_eye(phase, 1, 0, &right, &up, &pitch, &yaw);
+    check_expect(check_near(right, c * 0.045f * RULES_UNITS_PER_M, 0.001f)
+                     && check_near(up, df_absf(s * 0.062f) * RULES_UNITS_PER_M, 0.001f)
+                     && check_near(pitch, df_absf(s * 0.25f) * deg, 0.0001f)
+                     && check_near(yaw, -s * 0.1f * deg, 0.0001f),
+                 "view: the crest of a walk is not the rise and the nod");
+    viewopt_eye(phase, 1, 1, &right, &up, &pitch, &yaw);
+    check_expect(check_near(right, c * 0.09f * RULES_UNITS_PER_M, 0.001f)
+                     && check_near(up, df_absf(s * 0.11f) * RULES_UNITS_PER_M, 0.001f),
+                 "view: a run does not use HeadBobber's run amounts");
+    phase = DF_TAU / 2.0f;
+    viewopt_eye(phase, 1, 0, &right, &up, &pitch, &yaw);
+    check_expect(check_near(right, df_cos(phase) * 0.045f * RULES_UNITS_PER_M, 0.001f) && check_near(up, 0.0f, 0.001f),
+                 "view: half a walk does not sway the other way");
+    viewopt_set_bob(0);
+    viewopt_eye(DF_TAU / 4.0f, 1, 0, &right, &up, &pitch, &yaw);
+    check_expect(right == 0.0f && up == 0.0f, "view: turning head bobbing off left the offset");
+
+    if (character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Test")) {
+        player_init(&p, &sheet);
+        player_place(&p, 10.0f, 80.0f, 20.0f, 0.0f, 0.0f);
+        p.bob_walk = 1;
+        p.bob_phase = 0.0f;
+        p.running = 0;
+        player_camera(&p, &cam);
+        check_expect(check_near(cam.x, 10.0f, 0.001f) && check_near(cam.y, 80.0f, 0.001f) && check_near(cam.z, 20.0f, 0.001f),
+                     "view: the setting off, the eye left the body");
+        viewopt_set_bob(1);
+        player_camera(&p, &cam);
+        check_expect(check_near(cam.x, 10.0f + df_cos(0.0f) * 0.045f * RULES_UNITS_PER_M, 0.001f)
+                         && check_near(cam.y, 80.0f, 0.001f) && check_near(cam.z, 20.0f, 0.001f),
+                     "view: phase 0 did not shift the eye along the body's right");
+        p.bob_walk = 0;
+        player_camera(&p, &cam);
+        check_expect(check_near(cam.x, 10.0f, 0.001f) && check_near(cam.y, 80.0f, 0.001f),
+                     "view: standing still left the eye off the body");
+    } else {
+        check_expect(0, "view: no walker");
+    }
+
+    viewopt_set_full(1);
+    viewopt_set_bob(1);
+    g_opt_at = 0;
+    check_expect(rec_put_begin(opt_put, 0) && viewopt_write(opt_put, 0), "view: the options did not store");
+    viewopt_defaults();
+    viewopt_read(g_opt_file, (df_u32)g_opt_at);
+    check_expect(viewopt_full() && viewopt_bob(), "view: a stored full screen and head bobbing did not come back");
+    g_opt_at = 0;
+    check_expect(rec_put_begin(opt_put, 0), "view: an older file did not start");
+    viewopt_set_full(1);
+    viewopt_set_bob(1);
+    viewopt_defaults();
+    viewopt_read(g_opt_file, (df_u32)g_opt_at);
+    check_expect(!viewopt_full() && !viewopt_bob(), "view: a file without the row did not stay off");
+    viewopt_defaults();
+    printf("view: full screen off, head bob at a walk's phase\n");
+}
+
 /* Cursor or View, in memory the way KEYS.DAT stores it, and which pointer play asks for. */
 static df_u8 g_mouse_file[1024];
 static int g_mouse_at;
@@ -5159,6 +5266,7 @@ void check_play(void)
     /* As game_setup does: read before any screen's heap is current. */
     standing_new_game(1u);
     check_mouse();
+    check_viewopt();
     check_rules();
     check_character();
     check_items();

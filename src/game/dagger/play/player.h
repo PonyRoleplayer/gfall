@@ -10,7 +10,8 @@
 /*
  * The player in the world: a body that walks the place under gravity,
  * and the way it looks. First person, as classic: the camera is put at
- * the body's eye (rig_first). Read docs/game.md (The player).
+ * the body's eye (rig_first). With head bobbing on, a walk shifts that
+ * eye (viewopt.h). Read docs/game.md (The player).
  *
  * Its speeds are classic's (rules.c) from its character's Speed and its
  * Running and Jumping skills.
@@ -40,6 +41,12 @@ typedef struct Player {
     float breath_time;
     /* 1 while the run key takes it along: the minute's fatigue goes by it. */
     int running;
+    /*
+     * Head bobbing's phase (radians) and 1 while this step is a walk on
+     * the ground. The camera reads them; standing still leaves the eye.
+     */
+    float bob_phase;
+    int bob_walk;
 } Player;
 
 /* A person's body (WALK_* in walker.h) for this character, standing nowhere yet, carrying nothing. */
@@ -93,7 +100,7 @@ enum {
  * hour's rest given back and Medical used (PlayerEntity_OnExhausted).
  */
 int player_minute(Player *p, int enemies_near);
-/* The camera at its eye, looking its way. */
+/* The camera at its eye, looking its way. A walk with head bobbing on shifts it. */
 void player_camera(const Player *p, Camera *cam);
 
 #endif

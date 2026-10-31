@@ -30,7 +30,10 @@ void overlay_draw(void);
 /*
  * Classic's bottom panel (MAIN00I0.IMG, 320 x 46, at the screen's foot; DFU's
  * HUDLarge): the character's face in it, the bars and the compass over it.
- * On by default; the console's `panel` flips it. hudbar.h owns hit regions
+ * On by default; the console's `panel` flips it. Full screen
+ * (`viewopt_full`) hides the stone, the face and the icon buttons.
+ * The vitals and the bar's compass stay where the bar puts them, and
+ * the crosshair stays. hudbar.h owns hit regions
  * and mode names, game.c routes the commands. This module only draws.
  */
 void overlay_set_panel(int on);

@@ -1,5 +1,6 @@
 #include "game/dagger/play/keys.h"
 #include "game/dagger/play/mouse.h"
+#include "game/dagger/play/viewopt.h"
 #include "game/dagger/play/control.h"
 #include "engine/assets/recfile.h"
 #include "engine/assets/vfs.h"
@@ -74,6 +75,7 @@ int keys_load(void)
     int i;
 
     keys_defaults();
+    viewopt_defaults();
     b = vfs_read_beside(KEYS_FILE, &n);
     if (!b || !rec_is_file(b, n)) {
         return 0;
@@ -105,6 +107,7 @@ int keys_load(void)
             control_set_classic(mouse_cursor());
         }
     }
+    viewopt_read(b, n);
     if (!table.schema && !rec_table_init(&table, &g_key_schema, INPUT_ACTIONS)) {
         return 0;
     }
@@ -157,7 +160,8 @@ int keys_save(void)
         || !rec_put_rows(put_file, 0, &rec_head_schema, &head, 1, 0, 0)
         || !rec_put_rows(put_file, 0, &g_key_schema, rows, n, 0, 0)
         || !mouse_write(put_file, 0)
-        || !control_put_settings(put_file, 0)) {
+        || !control_put_settings(put_file, 0)
+        || !viewopt_write(put_file, 0)) {
         fs_abort();
         log_text(LOG_WARN, "keys: DATA\\KEYS.DAT could not be written");
         return 0;

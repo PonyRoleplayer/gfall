@@ -11,7 +11,8 @@
  *   MENU_TITLE     TITL00I0.IMG, until a key or a click
  *   MENU_MAIN      PICK03I0.IMG: load a game, start a new one, exit
  *   MENU_OPTIONS   OPTN00I0.IMG over the stilled world: save, load, exit,
- *                  controls, continue
+ *                  controls, continue, and the full-screen and head-bobbing
+ *                  checkboxes (the picture's black squares)
  *   MENU_CONTROLS  CNFG00I0.IMG: each action's key, click one to bind it;
  *                  Mouse, the left button, switches Cursor and View
  *   MENU_DEATH     DIE_00I0.IMG, until a key or a click

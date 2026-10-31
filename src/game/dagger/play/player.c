@@ -1,4 +1,5 @@
 #include "game/dagger/play/player.h"
+#include "game/dagger/play/viewopt.h"
 #include "game/dagger/play/combat.h"
 #include "engine/core/log.h"
 #include "engine/scene/interact.h"
@@ -35,6 +36,8 @@ void player_init(Player *p, const Character *sheet)
     p->breath = 0;
     p->breath_time = 0.0f;
     p->running = 0;
+    p->bob_phase = VIEWOPT_CREST;
+    p->bob_walk = 0;
 }
 
 int player_hurt(Player *p, int amount)
@@ -57,6 +60,21 @@ void player_turn(Player *p, float yaw, float pitch)
     p->yaw = df_wrap_tau(p->yaw + yaw);
     pitch += p->pitch;
     p->pitch = pitch > PITCH_LIMIT ? PITCH_LIMIT : (pitch < -PITCH_LIMIT ? -PITCH_LIMIT : pitch);
+}
+
+/* A walk on the ground advances HeadBobber's phase. Still, swimming or flying does not. */
+static void note_bob(Player *p, float f, float r, float mps, float dt)
+{
+    float horiz;
+
+    horiz = f * f + r * r;
+    if (!p->body.grounded || p->swimming || p->flying || horiz <= 0.0f) {
+        p->bob_walk = 0;
+        p->bob_phase = VIEWOPT_CREST;
+        return;
+    }
+    p->bob_walk = 1;
+    p->bob_phase = df_wrap_tau(p->bob_phase + mps * df_sqrt(horiz) * VIEWOPT_RATE * dt);
 }
 
 void player_step(Player *p, const Input *in, const Scene *scene, float dt, int collide)
@@ -122,6 +140,7 @@ void player_step_motion(Player *p, const Input *in, const Scene *scene, float dt
         body_place(&p->body, x, y - p->body.eye, z);
         p->body.vy = 0.0f;
         p->flying = 1;
+        note_bob(p, f, r, mps, dt);
         return;
     }
     /* Back from flying: the body starts where the eye is, out of any wall, its fall from there. */
@@ -144,6 +163,7 @@ void player_step_motion(Player *p, const Input *in, const Scene *scene, float dt
         p->body.gravity = 0.0f;
         p->body.vy = (sp * f + rise) * swim;
         body_step(&p->body, scene, (sy * cp * f + cy * r) * swim * dt, (cy * cp * f - sy * r) * swim * dt, dt);
+        note_bob(p, f, r, mps, dt);
         return;
     }
     p->body.gravity = rules_gravity() * RULES_UNITS_PER_M;
@@ -157,6 +177,7 @@ void player_step_motion(Player *p, const Input *in, const Scene *scene, float dt
         body_jump(&p->body, rules_jump_speed(p->sheet.skill[SKILL_JUMPING]) * RULES_UNITS_PER_M);
     }
     body_step(&p->body, scene, (sy * f + cy * r) * step, (cy * f - sy * r) * step, dt);
+    note_bob(p, f, r, mps, dt);
 }
 
 int player_breath(Player *p, float dt)
@@ -272,7 +293,27 @@ void player_shift(Player *p, float dx, float dz)
 
 void player_camera(const Player *p, Camera *cam)
 {
+    float right;
+    float up;
+    float pitch;
+    float yaw;
+    float sy;
+    float cy;
+
     cam->yaw = p->yaw;
     cam->pitch = p->pitch;
     rig_first(cam, &p->body);
+    viewopt_eye(p->bob_phase, p->bob_walk, p->running, &right, &up, &pitch, &yaw);
+    if (right == 0.0f && up == 0.0f && pitch == 0.0f && yaw == 0.0f) {
+        return;
+    }
+    /* The body's right, flat: the bob is not a picture shaken on the screen. */
+    sy = df_sin(p->yaw);
+    cy = df_cos(p->yaw);
+    cam->x += cy * right;
+    cam->z -= sy * right;
+    cam->y += up;
+    pitch += cam->pitch;
+    cam->pitch = pitch > PITCH_LIMIT ? PITCH_LIMIT : (pitch < -PITCH_LIMIT ? -PITCH_LIMIT : pitch);
+    cam->yaw = df_wrap_tau(cam->yaw + yaw);
 }
