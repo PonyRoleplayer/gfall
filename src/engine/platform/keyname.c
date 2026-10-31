@@ -87,3 +87,39 @@ void input_key_name(int vk, char *dst, int cap)
     put(dst, cap, &n, "Key ");
     put_num(dst, cap, &n, vk & 0xff);
 }
+
+void input_fold_edges(int was, int saw_down, int saw_up, int polled, int *press, int *release, int *held)
+{
+    int p;
+    int r;
+
+    /*
+     * A down the poll missed is still a press. One already held is not
+     * pressed again, unless it also came up (a second press this read).
+     */
+    p = 0;
+    r = 0;
+    if (saw_down && !(was && !saw_up)) {
+        p = 1;
+    } else if (polled && !was && !saw_down) {
+        p = 1;
+    }
+    if (saw_up && (was || saw_down)) {
+        r = 1;
+    } else if (was && !polled && !saw_up) {
+        r = 1;
+    }
+    if (press) {
+        *press = p;
+    }
+    if (release) {
+        *release = r;
+    }
+    /* Down now, or a down the poll has not caught and that has not come up. */
+    if (held) {
+        *held = 0;
+        if (polled || (saw_down && !saw_up)) {
+            *held = 1;
+        }
+    }
+}

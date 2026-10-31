@@ -98,8 +98,21 @@ void input_read(Input *out);
 void input_look(int *dx, int *dy);
 int input_quit_requested(void);
 
+/*
+ * Edges of one key since the last read (docs/input.md). was: it was
+ * down then. saw_down and saw_up: the window saw it go down or up.
+ * polled: it is down now. A click that finished between reads is one
+ * press and one release. A key already held does not press again.
+ * *held is down now, including a down the poll has not caught yet.
+ */
+void input_fold_edges(int was, int saw_down, int saw_up, int polled, int *press, int *release, int *held);
+
 /* Client coordinates. The window calls this from WM_MOUSEMOVE. */
 void input_on_mouse(int x, int y);
+/* A key or mouse button went down (1) or up (0). The window calls this. */
+void input_note_key(int vk, int down);
+/* 1 while input_begin has the cursor: the window draws none over the client. */
+int input_grabs_cursor(void);
 /* The wheel's movement from WM_MOUSEWHEEL, in Windows' units: 120 a notch. The window calls this. */
 void input_on_wheel(int delta);
 void input_request_quit(void);

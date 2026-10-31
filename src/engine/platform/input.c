@@ -76,22 +76,42 @@ int input_escape_quits(void)
     return g_escape_quits;
 }
 
-/* The actions held now; escape is whether Escape counts (not the console's own). */
-static unsigned int actions_held(int escape)
+/*
+ * Downs and ups the window saw since the last read (input_note_key).
+ * A click that goes down and up between reads never shows in the poll;
+ * these still make one press and one release. g_tapped is that read's
+ * downs, for input_key_pressed, which runs after input_read.
+ */
+static unsigned char g_note_down[256];
+static unsigned char g_note_up[256];
+static unsigned char g_tapped[256];
+
+void input_note_key(int vk, int down)
 {
-    unsigned int held;
-    int a;
-
-    held = 0;
-    for (a = 0; a < INPUT_ACTIONS; a++) {
-        int down;
-
-        down = g_vk[a] == VK_ESCAPE ? escape : key_down(g_vk[a]);
-        if (down) {
-            held |= INPUT_BIT(a);
-        }
+    if (vk < 1 || vk > 254) {
+        return;
     }
-    return held;
+    if (down) {
+        g_note_down[vk] = 1;
+    } else {
+        g_note_up[vk] = 1;
+    }
+}
+
+int input_grabs_cursor(void)
+{
+    return g_active;
+}
+
+static void notes_clear(void)
+{
+    int i;
+
+    for (i = 0; i < 256; i++) {
+        g_note_down[i] = 0;
+        g_note_up[i] = 0;
+        g_tapped[i] = 0;
+    }
 }
 
 static int key_down(int vk)
@@ -262,6 +282,8 @@ void input_read(Input *out)
         /* Nor the wheel: rolled over the console, it does not scroll a list behind it afterwards. */
         out->wheel = 0;
         g_wheel = 0;
+        /* Nor a click on it: that press is not a swing once the console closes. */
+        notes_clear();
         return;
     }
     /* Whole notches go out, either way; C's division leaves the part of one, with its sign. */
@@ -280,16 +302,73 @@ void input_read(Input *out)
         out->look_dx = 0;
         out->look_dy = 0;
     }
-    /* An Escape that just closed the console is still down. */
-    escape = key_down(VK_ESCAPE) && !console_take_escape();
-    if (escape && g_escape_quits) {
+    /*
+     * An Escape that just closed the console is still down: it is not a
+     * quit and not the menu. A tap between reads is in the notes, so it
+     * still counts once when the poll missed it.
+     */
+    escape = console_take_escape();
+    if (escape) {
+        g_note_down[VK_ESCAPE] = 0;
+        g_note_up[VK_ESCAPE] = 0;
+    }
+    if (!escape && g_escape_quits && (key_down(VK_ESCAPE) || g_note_down[VK_ESCAPE])) {
         g_quit = 1;
     }
     out->quit = g_quit;
-    held = actions_held(escape && !g_escape_quits);
-    out->held = held;
-    out->pressed = held & ~g_held;
-    out->released = g_held & ~held;
+    held = 0;
+    {
+        unsigned int pressed;
+        unsigned int released;
+        int a;
+        int i;
+
+        pressed = 0;
+        released = 0;
+        for (i = 1; i < 255; i++) {
+            g_tapped[i] = g_note_down[i];
+        }
+        for (a = 0; a < INPUT_ACTIONS; a++) {
+            int vk;
+            int was;
+            int saw_down;
+            int saw_up;
+            int polled;
+            int press;
+            int rel;
+            int now;
+
+            vk = g_vk[a];
+            was = (g_held & INPUT_BIT(a)) ? 1 : 0;
+            /* Escape quits, or the console took it: it is not the menu action. */
+            if (vk == VK_ESCAPE && (escape || g_escape_quits)) {
+                saw_down = 0;
+                saw_up = 0;
+                polled = 0;
+            } else {
+                saw_down = g_note_down[vk];
+                saw_up = g_note_up[vk];
+                polled = key_down(vk);
+            }
+            input_fold_edges(was, saw_down, saw_up, polled, &press, &rel, &now);
+            if (press) {
+                pressed |= INPUT_BIT(a);
+            }
+            if (rel) {
+                released |= INPUT_BIT(a);
+            }
+            if (now) {
+                held |= INPUT_BIT(a);
+            }
+        }
+        out->held = held;
+        out->pressed = pressed;
+        out->released = released;
+        for (i = 0; i < 256; i++) {
+            g_note_down[i] = 0;
+            g_note_up[i] = 0;
+        }
+    }
     g_held = held;
 }
 
@@ -372,11 +451,13 @@ int input_key_pressed(void)
         if (vk >= VK_LSHIFT && vk <= VK_RMENU) {
             continue;
         }
-        down = key_down(vk);
+        down = key_down(vk) || g_tapped[vk];
         if (down && !g_down[vk] && !found && !fresh && vk != con) {
             found = vk;
         }
-        g_down[vk] = (df_u8)down;
+        /* The poll, not the tap: a click already up is not stuck down. */
+        g_down[vk] = (df_u8)(key_down(vk) ? 1 : 0);
+        g_tapped[vk] = 0;
     }
     if (console_open()) {
         return 0;

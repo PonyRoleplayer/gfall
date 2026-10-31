@@ -1204,6 +1204,38 @@ static void check_key_names(void)
                  "the actions moved: a game's saved bindings would mean other keys");
 }
 
+/* A click the poll missed, and a key already held. was, saw down, saw up, polled. */
+static void expect_edges(int was, int down, int up, int polled, int want_p, int want_r, int want_h, const char *msg)
+{
+    int press;
+    int release;
+    int held;
+
+    press = -1;
+    release = -1;
+    held = -1;
+    input_fold_edges(was, down, up, polled, &press, &release, &held);
+    check_expect(press == want_p && release == want_r && held == want_h, msg);
+}
+
+static void check_input_edges(void)
+{
+    /* Down and up between reads: one press, one release, not held. */
+    expect_edges(0, 1, 1, 0, 1, 1, 0, "a click between reads was dropped");
+    /* Down, still down. */
+    expect_edges(0, 1, 0, 1, 1, 0, 1, "a press that stayed down was not reported");
+    /* The message arrived and the poll has not caught it yet: held, so the next read is not a second press. */
+    expect_edges(0, 1, 0, 0, 1, 0, 1, "a down the poll has not caught was not held");
+    expect_edges(1, 0, 0, 1, 0, 0, 1, "a held key pressed again");
+    expect_edges(1, 0, 1, 0, 0, 1, 0, "a release was not an edge");
+    expect_edges(0, 0, 0, 1, 1, 0, 1, "the poll's own press was missed");
+    expect_edges(1, 0, 0, 0, 0, 1, 0, "the poll's own release was missed");
+    expect_edges(1, 1, 0, 1, 0, 0, 1, "a repeat was a new press");
+    expect_edges(1, 1, 1, 1, 1, 1, 1, "a second press in one read was dropped");
+    expect_edges(0, 0, 0, 0, 0, 0, 0, "an idle key was an edge");
+    expect_edges(0, 0, 1, 0, 0, 0, 0, "a stray release was an edge");
+}
+
 /*
  * State that outlives a load (keep.h): a door opened and a lock picked
  * come back after the place is built again; a door shut again leaves no
@@ -4411,6 +4443,7 @@ void check_engine(void)
     check_pack();
     check_rpg();
     check_key_names();
+    check_input_edges();
     check_keep();
     check_dungeon_stream();
     check_body_fixes();
