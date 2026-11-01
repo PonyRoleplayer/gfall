@@ -1,0 +1,14 @@
+---
+description: Never use Fast models. They burn the token allowance.
+alwaysApply: true
+---
+
+# No Fast models
+
+Fast is forbidden. It spends far more of the allowance than the same model without Fast.
+
+- Do not pass a model slug or parameter that contains `fast`, including `composer-2.5-fast`, `fast=true`, and any "High Fast" variant.
+- `grok-4.7-high` launches as High Fast. Do not use it. `grok-4.7-medium` is not a launcher slug. Do not use `inherit` when this chat is on Fast, because the subagent copies it.
+- For a subagent, use `composer-2.5`. Do not use `composer-2.5-fast`. Use another slug only when the user names one that is not Fast and the launcher has accepted that exact slug.
+- Do not resume a Fast agent to keep working. Stop it. Start the follow-up on a non-fast model.
+- Effort and Fast are different. "High" means effort. It does not mean Fast.

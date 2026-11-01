@@ -1086,6 +1086,8 @@ int game_frame(Camera *cam, const Input *in, float dt)
                 player_shift(&g_player, shift_x, shift_z);
                 foes_shift(shift_x, shift_z);
             }
+            /* After the people have stepped: a wanted player turns whatever guards are out. */
+            watch_pursue(cam, g_player.body.feet);
         }
     }
     overlay_set_yaw(cam->yaw);

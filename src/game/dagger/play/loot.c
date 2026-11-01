@@ -2,6 +2,8 @@
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/pile.h"
 #include "game/dagger/places/dunstream.h"
+#include "game/dagger/places/people.h"
+#include "game/dagger/tables/enemies.h"
 #include "engine/scene/keep.h"
 #include "engine/scene/stream.h"
 
@@ -244,6 +246,9 @@ void loot_roll(Inventory *out, const LootChance *table, int level, df_u32 seed)
 /* Whether the view can come to rest on this entity: a body, a heap, or a pile put down. */
 static int searchable(const Entity *e)
 {
+    if (people_is_corpse(e)) {
+        return 1;
+    }
     if (!e->live) {
         return 0;
     }
@@ -251,6 +256,38 @@ static int searchable(const Entity *e)
         return dunstream_kind(e, 0) >= 0;
     }
     return dunstream_treasure(e) || dunstream_spare(e);
+}
+
+static void consider(Entity *e, const Scene *scene, const float *from, const float *dir, Entity **best, float *best_t)
+{
+    const EntityPose *pose;
+    float low[3];
+    float high[3];
+    float half;
+    float t;
+    float middle[3];
+
+    if (!e || !searchable(e)) {
+        return;
+    }
+    pose = entity_pose(e);
+    half = (float)pose->w[0] * 0.5f;
+    half = half < SEARCH_HALF_MIN ? SEARCH_HALF_MIN : half;
+    low[0] = e->x - half;
+    low[1] = e->y;
+    low[2] = e->z - half;
+    high[0] = e->x + half;
+    high[1] = e->y + (float)pose->h[0];
+    high[2] = e->z + half;
+    if (combat_ray_box(from, dir, low, high, SEARCH_REACH, &t) && t < *best_t) {
+        middle[0] = e->x;
+        middle[1] = e->y + (float)pose->h[0] * 0.5f;
+        middle[2] = e->z;
+        if (combat_sight(scene, from, middle)) {
+            *best = e;
+            *best_t = t;
+        }
+    }
 }
 
 Entity *loot_find(const Scene *scene, const Camera *eye)
@@ -280,38 +317,11 @@ Entity *loot_find(const Scene *scene, const Camera *eye)
 
         ents = stream_slot_entities(slot, &first, &n);
         for (i = 0; ents && i < n; i++) {
-            Entity *e;
-            const EntityPose *pose;
-            float low[3];
-            float high[3];
-            float half;
-            float t;
-
-            e = &ents[i];
-            if (!searchable(e)) {
-                continue;
-            }
-            pose = entity_pose(e);
-            half = (float)pose->w[0] * 0.5f;
-            half = half < SEARCH_HALF_MIN ? SEARCH_HALF_MIN : half;
-            low[0] = e->x - half;
-            low[1] = e->y;
-            low[2] = e->z - half;
-            high[0] = e->x + half;
-            high[1] = e->y + (float)pose->h[0];
-            high[2] = e->z + half;
-            if (combat_ray_box(from, dir, low, high, SEARCH_REACH, &t) && t < best_t) {
-                float middle[3];
-
-                middle[0] = e->x;
-                middle[1] = e->y + (float)pose->h[0] * 0.5f;
-                middle[2] = e->z;
-                if (combat_sight(scene, from, middle)) {
-                    best = e;
-                    best_t = t;
-                }
-            }
+            consider(&ents[i], scene, from, dir, &best, &best_t);
         }
+    }
+    for (slot = 0; slot < PEOPLE_MAX; slot++) {
+        consider(people_at(slot), scene, from, dir, &best, &best_t);
     }
     return best;
 }
@@ -388,6 +398,15 @@ static unsigned taken_bits(const Keep *row)
     return (unsigned)row->game[COMBAT_KEEP_TAKEN] | ((unsigned)row->game[COMBAT_KEEP_TAKEN + 1] << 8);
 }
 
+/* A dungeon's creature, or a guard's corpse in the street. */
+static int body_kind(const Entity *e)
+{
+    if (people_is_corpse(e)) {
+        return ENEMY_CITY_WATCH;
+    }
+    return dunstream_kind(e, 0);
+}
+
 /* The table e is filled from: its kind's for a body, the dungeon's for a heap. */
 static const LootChance *table_of(const Entity *e)
 {
@@ -396,7 +415,7 @@ static const LootChance *table_of(const Entity *e)
     if (dunstream_treasure(e)) {
         return dungeon_loot(dunstream_dungeon_type());
     }
-    kind = enemy_kind(dunstream_kind(e, 0));
+    kind = enemy_kind(body_kind(e));
     return kind ? loot_chance(kind->loot[0]) : 0;
 }
 
@@ -421,8 +440,8 @@ int loot_open(Entity *e, int level, Inventory *out, df_u8 *origin)
         row->game[COMBAT_KEEP_LEVEL] = (df_u8)(level > 255 ? 255 : level);
     }
     loot_roll(&rolled, table_of(e), row->game[COMBAT_KEEP_LEVEL], thing_seed(e));
-    /* A class enemy's body also has on it what it wore. */
-    if (!dunstream_treasure(e) && dunstream_kind(e, 0) >= ENEMY_FIRST_CLASS) {
+    /* A class enemy's body also has on it what it wore. A guard's letter is empty, so this is all of it. */
+    if (!dunstream_treasure(e) && body_kind(e) >= ENEMY_FIRST_CLASS) {
         Inventory kit;
 
         loot_class_kit(e, row->game[COMBAT_KEEP_LEVEL], &kit, 0);

@@ -64,6 +64,7 @@
 #include "game/dagger/play/foes.h"
 #include "game/dagger/play/watch.h"
 #include "game/dagger/places/people.h"
+#include "game/dagger/places/wres.h"
 #include "game/dagger/tables/enemies.h"
 #include "game/dagger/formats/cif.h"
 #include "game/dagger/formats/img.h"
@@ -5263,11 +5264,48 @@ static void check_mouse(void)
     printf("mouse: cursor and view, stored\n");
 }
 
+/* A camera a step south of e, looking north at their middle. */
+static void aim_person(Camera *cam, const Entity *e)
+{
+    float h;
+
+    h = entity_height(e);
+    if (h < 16.0f) {
+        h = 64.0f;
+    }
+    camera_set(cam, e->x, e->y + h * 0.5f, e->z - 24.0f, 0.0f, 0.0f);
+}
+
+/* The blood billboard standing on the body, or 0. */
+static Entity *splash_near(float x, float z)
+{
+    int i;
+
+    for (i = 0; i < PEOPLE_MAX; i++) {
+        Entity *e;
+        float dx;
+        float dz;
+
+        e = people_at(i);
+        if (!e || !people_is_effect(e)) {
+            continue;
+        }
+        dx = e->x - x;
+        dz = e->z - z;
+        if (dx * dx + dz * dz < 128.0f * 128.0f) {
+            return e;
+        }
+    }
+    return 0;
+}
+
 /*
  * A street citizen has 1 health. The to-hit roll is made at 100, so it cannot
  * miss, and the damage is the weapon's: the same rolls as a blow that is not
- * sure, when that blow also hits. One such blow in Daggerfall kills them and
- * the city watch comes, with three HALT lines queued.
+ * sure, when that blow also hits. One such blow in Daggerfall kills them.
+ * Every guard turns hostile, the splash is TEXTURE.380 record 0, wanted
+ * outlives the people being dropped and built again, a hostile guard is not
+ * talked to, and a killed guard stays as a corpse that can be looted.
  */
 static void check_citizen(void)
 {
@@ -5295,6 +5333,21 @@ static void check_citizen(void)
     int hp;
     int k;
     int guards;
+    int hostile;
+    int seed;
+    int file;
+    int record;
+    int female;
+    int nloot;
+    int nleft;
+    unsigned talk_who;
+    Entity *blood;
+    Entity *body;
+    Inventory found;
+    Inventory pack;
+    df_u8 origin[INVENTORY_MAX];
+    char taken[64];
+    Camera look;
 
     if (!character_new(&pc, RACE_BRETON, CLASS_WARRIOR, 0, "Test")) {
         check_expect(0, "citizen: no character");
@@ -5336,7 +5389,8 @@ static void check_citizen(void)
     entity_set_population(1);
     foes_set_on(1);
     foes_reset();
-    watch_reset();
+    combat_reset();
+    watch_pardon();
     if (!travel_go_to_town(17, index) || !travel_go(&level, &cam, &at)) {
         return;
     }
@@ -5366,11 +5420,31 @@ static void check_citizen(void)
     eye[2] = feet[2];
     yaw = 0.0f;
     combat_seed(3u);
-    check_expect(combat_strike(&pc, &sword, 3, &level.scene, feet, eye, yaw) > 0 && !who->live && who->dead,
+    check_expect(combat_strike(&pc, &sword, 3, &level.scene, feet, eye, yaw) > 0,
                  "citizen: one blow did not kill them");
     check_expect(combat_citizen_struck(&sure, &hp) && hp == 1 && sure.chance == 100 && sure.hit && sure.damage >= 1
                      && 1 - sure.damage <= 0,
                  "citizen: the killing blow was not 1 health taken by a sure hit");
+    blood = splash_near(feet[0], feet[2]);
+    file = 0;
+    record = -1;
+    if (blood) {
+        wres_picture(blood->pose[ENTITY_WALK].slot[0], &file, &record);
+    }
+    check_expect(blood && people_is_effect(blood) && file == 380 && record == 0,
+                 "citizen: the killing blow did not splash TEXTURE.380 record 0");
+    hostile = 0;
+    for (i = 0; i < PEOPLE_MAX; i++) {
+        Entity *e;
+
+        e = people_at(i);
+        if (e && people_is_guard(e) && people_hostile(e) && foes_minding(e)) {
+            hostile++;
+        }
+    }
+    check_expect(watch_wanted() && hostile >= 1 && (guards == 0 ? hostile >= 2 && hostile <= 5 : hostile == guards),
+                 "citizen: not every guard came, or wanted was not set");
+    taken[0] = 0;
     guard = watch_guard();
     check_expect(watch_halts() == 3 && watch_halt(0) && watch_halt(1) && watch_halt(2)
                      && strcmp(watch_halt(0), "HALT") == 0 && strcmp(watch_halt(1), "HALT") == 0
@@ -5392,13 +5466,83 @@ static void check_citizen(void)
         after = df_sqrt((guard->x - feet[0]) * (guard->x - feet[0]) + (guard->z - feet[2]) * (guard->z - feet[2]));
         check_expect(foes_minding(guard) && (after < before - 8.0f || before < FOES_MELEE),
                      "citizen: the guard did not come for the player");
+        people_set_health(guard, 1);
+        feet[0] = guard->x;
+        feet[1] = guard->y;
+        feet[2] = guard->z;
+        eye[0] = feet[0];
+        eye[1] = feet[1] + WALK_EYE;
+        eye[2] = feet[2];
+        for (seed = 1; seed < 80 && !people_is_corpse(guard); seed++) {
+            combat_seed((df_u32)seed);
+            people_set_health(guard, 1);
+            combat_strike(&pc, &sword, 3, &level.scene, feet, eye, yaw);
+        }
+        check_expect(people_is_corpse(guard) && guard->live && guard->act == ENTITY_DEAD
+                         && enemy_kind(ENEMY_CITY_WATCH)->corpse_archive == 380
+                         && enemy_kind(ENEMY_CITY_WATCH)->corpse_record == 1,
+                     "citizen: the guard did not stay as the city watch corpse");
+        file = 0;
+        record = -1;
+        wres_picture(guard->pose[ENTITY_DEAD].slot[0], &file, &record);
+        check_expect(file == 380 && record == 1, "citizen: the corpse is not TEXTURE.380 record 1");
+        aim_person(&look, guard);
+        check_expect(loot_find(&level.scene, &look) == guard, "citizen: the use key did not find the corpse");
+        nloot = loot_open(guard, pc.level, &found, origin);
+        taken[0] = 0;
+        file = nloot > 0 ? found.item[0].template_id : 0;
+        if (nloot > 0) {
+            item_name(&found.item[0], taken, (int)sizeof(taken));
+            inventory_clear(&pack);
+            inventory_add(&pack, &found.item[0]);
+            loot_taken(guard, origin[0]);
+        }
+        nleft = loot_open(guard, pc.level, &found, origin);
+        check_expect(nloot >= 1 && file >= ITEM_DAGGER && file <= 127 && pack.count == 1 && nleft == nloot - 1,
+                     "citizen: the corpse had no weapon to take");
+        aim_person(&look, guard);
+        for (k = 0; k < 30; k++) {
+            people_update(&look, 0.1f);
+        }
+        check_expect(people_is_corpse(guard) && guard->live, "citizen: the corpse went while the player stood over it");
+        keep_forget(guard->key);
     }
+    /* The splash is down before the people are built again, so a later frame does not clear a new person. */
+    combat_frame(2.0f);
+    check_expect(!splash_near(who->x, who->z), "citizen: the blood splash did not end");
+    people_end();
+    people_begin(&level.scene);
+    people_fill(&cam);
+    watch_pursue(&cam, feet);
+    check_expect(watch_wanted(), "citizen: wanted did not survive the people being dropped and built again");
+    body = 0;
+    hostile = 0;
+    for (i = 0; i < PEOPLE_MAX; i++) {
+        Entity *e;
+
+        e = people_at(i);
+        if (e && people_is_guard(e) && people_hostile(e)) {
+            hostile++;
+            if (!body) {
+                body = e;
+            }
+        }
+    }
+    check_expect(hostile >= 1 && body, "citizen: no guard was hostile after the people were built again");
+    if (body) {
+        aim_person(&look, body);
+        check_expect(!people_in_view(&look, TALK_REACH, &female, &talk_who),
+                     "citizen: talk opened on a hostile guard");
+        people_set_hostile(body, 0);
+        check_expect(people_in_view(&look, TALK_REACH, &female, &talk_who),
+                     "citizen: a guard who is not hostile could not be talked to");
+    }
+    watch_pardon();
     travel_leave();
     foes_reset();
-    watch_reset();
     printf("citizen: 1 health, sure hit, weapon damage; %d ordinary misses, %d damages matched; "
-           "%d guards in Daggerfall, three HALTs\n",
-           misses, matched, guards);
+           "%d guards in Daggerfall, %d hostile; corpse gave %s\n",
+           misses, matched, guards, hostile, taken[0] ? taken : "nothing");
 }
 
 void check_play(void)

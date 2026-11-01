@@ -4,9 +4,11 @@
 #include "game/dagger/places/wild.h"
 #include "game/dagger/formats/worldmap.h"
 #include "game/dagger/places/wres.h"
+#include "game/dagger/tables/enemies.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
 #include "engine/scene/clock.h"
+#include "engine/scene/collide.h"
 #include "engine/scene/stream.h"
 #include "engine/scene/interact.h"
 
@@ -57,6 +59,12 @@ typedef struct Person {
     double tz;
     /* 1: the game's watch owns the step. The street motor does not. */
     int held;
+    /* 1: hostile to the player. Talk does not open. */
+    int hostile;
+    /* 1: a killed guard, drawn as the city watch's corpse. */
+    int corpse;
+    /* 1: a blood splash, not a person. */
+    int effect;
     /* A citizen's PEOPLE_CITIZEN_HP. A guard's -1 until a blow rolls it. */
     int health;
 } Person;
@@ -80,6 +88,12 @@ static int g_nset;
 /* Archive 399's attack records 5..9, held once a guard is called to a fight. */
 static int g_attack[5];
 static int g_attack_on;
+/* Corpse keys, so two bodies are not the same row. */
+static df_u32 g_corpse_n;
+/* TEXTURE.380: the human blood splash. */
+#define BLOOD_ARCHIVE 380
+/* A guard corpse's keep place: not a location id. */
+#define CORPSE_PLACE 0x57544348u
 static int g_pictures;
 static float g_tick;
 static df_u32 g_seed = 0x6d2b79f5u;
@@ -699,6 +713,16 @@ void people_update(const Camera *cam, float secs)
         dx = e->x - cam->x;
         dz = e->z - cam->z;
         d2 = dx * dx + dz * dz;
+        if (p->effect) {
+            continue;
+        }
+        /* A body the player is standing over stays. Far and out of sight, it goes with the street. */
+        if (e->dead) {
+            if (d2 > PEOPLE_RECYCLE * PEOPLE_RECYCLE && out_of_sight(cam, e->x, e->z)) {
+                e->live = 0;
+            }
+            continue;
+        }
         /*
          * Taken away far off, at dusk, out of the town, or stuck; never in sight.
          * A guard the watch holds is not stuck: the street motor is not seeking.
@@ -765,7 +789,7 @@ int people_is_guard(const Entity *e)
     int i;
 
     i = slot_of(e);
-    return living(i) && g_set[g_per[i].set].archive == GUARD_ARCHIVE;
+    return living(i) && !g_per[i].effect && !g_per[i].corpse && g_set[g_per[i].set].archive == GUARD_ARCHIVE;
 }
 
 int people_is_citizen(const Entity *e)
@@ -773,7 +797,7 @@ int people_is_citizen(const Entity *e)
     int i;
 
     i = slot_of(e);
-    return living(i) && g_set[g_per[i].set].archive != GUARD_ARCHIVE;
+    return living(i) && !g_per[i].effect && !g_per[i].corpse && g_set[g_per[i].set].archive != GUARD_ARCHIVE;
 }
 
 int people_health(const Entity *e)
@@ -797,6 +821,34 @@ void people_set_health(Entity *e, int health)
     }
 }
 
+int people_hostile(const Entity *e)
+{
+    int i;
+
+    i = slot_of(e);
+    return living(i) && g_per[i].hostile;
+}
+
+void people_set_hostile(Entity *e, int on)
+{
+    int i;
+
+    i = slot_of(e);
+    if (living(i) && !g_per[i].effect) {
+        g_per[i].hostile = on ? 1 : 0;
+    }
+}
+
+void people_unhold(Entity *e)
+{
+    int i;
+
+    i = slot_of(e);
+    if (living(i) && !g_per[i].corpse) {
+        g_per[i].held = 0;
+    }
+}
+
 void people_fell(Entity *e)
 {
     int i;
@@ -809,6 +861,109 @@ void people_fell(Entity *e)
     g_ent[i].radius = 0.0f;
     g_ent[i].live = 0;
     g_per[i].held = 0;
+    g_per[i].hostile = 0;
+}
+
+int people_lay_corpse(Entity *e)
+{
+    const EnemyKind *k;
+    Person *p;
+    int i;
+    int slot;
+    float fy;
+
+    i = slot_of(e);
+    if (!living(i) || g_per[i].effect || g_set[g_per[i].set].archive != GUARD_ARCHIVE) {
+        return 0;
+    }
+    k = enemy_kind(ENEMY_CITY_WATCH);
+    if (!k || !k->corpse_archive) {
+        return 0;
+    }
+    slot = wres_slot(k->corpse_archive, k->corpse_record, WRES_SPRITE);
+    if (slot < 0 || !wres_acquire(slot) || !size_of(slot, &e->pose[ENTITY_DEAD].w[0], &e->pose[ENTITY_DEAD].h[0])) {
+        return 0;
+    }
+    e->pose[ENTITY_DEAD].slot[0] = (df_u16)slot;
+    e->pose[ENTITY_DEAD].slot[1] = 0xffff;
+    e->pose[ENTITY_DEAD].rate = 1;
+    e->act = ENTITY_DEAD;
+    e->hold = 1;
+    e->frame = 0;
+    e->dead = 1;
+    e->moving = 0;
+    e->radius = 0.0f;
+    e->live = 1;
+    p = &g_per[i];
+    p->held = 1;
+    p->hostile = 0;
+    p->corpse = 1;
+    p->health = 0;
+    if (!e->key.place && !e->key.thing) {
+        g_corpse_n++;
+        e->key.place = CORPSE_PLACE;
+        e->key.thing = g_corpse_n;
+    }
+    if (g_scene && collide_use(g_scene)) {
+        collide_gather(e->x - 4.0f, e->y - 4096.0f, e->z - 4.0f, e->x + 4.0f, e->y + 8.0f, e->z + 4.0f);
+        if (collide_floor(e->x, e->z, e->y + 4.0f, e->y - 4096.0f, &fy)) {
+            e->y = fy;
+        }
+    }
+    return e->pose[ENTITY_DEAD].w[0] > 0;
+}
+
+int people_is_corpse(const Entity *e)
+{
+    int i;
+
+    i = slot_of(e);
+    return i >= 0 && g_ent[i].live && g_ent[i].dead && g_per[i].corpse;
+}
+
+Entity *people_blood(float x, float y, float z, int record)
+{
+    Entity *e;
+    int slot;
+    int i;
+    df_u16 w;
+    df_u16 h;
+
+    if (!g_on) {
+        return 0;
+    }
+    slot = wres_slot(BLOOD_ARCHIVE, record, WRES_SPRITE);
+    if (slot < 0 || !wres_acquire(slot) || !size_of(slot, &w, &h)) {
+        return 0;
+    }
+    for (i = 0; i < PEOPLE_MAX && g_ent[i].live; i++) {
+    }
+    if (i == PEOPLE_MAX) {
+        return 0;
+    }
+    e = &g_ent[i];
+    entity_init(e);
+    mem_zero(&g_per[i], sizeof(Person));
+    e->pose[ENTITY_WALK].slot[0] = (df_u16)slot;
+    e->pose[ENTITY_WALK].w[0] = w;
+    e->pose[ENTITY_WALK].h[0] = h;
+    e->pose[ENTITY_WALK].rate = 10;
+    e->x = x;
+    e->y = y - (float)h * 0.5f;
+    e->z = z;
+    e->moving = 1;
+    e->live = 1;
+    g_per[i].effect = 1;
+    g_per[i].held = 1;
+    return e;
+}
+
+int people_is_effect(const Entity *e)
+{
+    int i;
+
+    i = slot_of(e);
+    return i >= 0 && g_ent[i].live && g_per[i].effect;
 }
 
 int people_nearest_guard(float x, float z)
@@ -983,7 +1138,7 @@ int people_in_view(const Camera *cam, float reach, int *female, unsigned *who)
         float dx, dz, along, side, height;
 
         e = &g_ent[i];
-        if (!e->live) {
+        if (!e->live || e->dead || g_per[i].effect) {
             continue;
         }
         dx = e->x - cam->x;
@@ -999,7 +1154,7 @@ int people_in_view(const Camera *cam, float reach, int *female, unsigned *who)
             found = i;
         }
     }
-    if (found < 0) {
+    if (found < 0 || g_per[found].hostile) {
         return 0;
     }
     *female = archive_is_woman(g_set[g_per[found].set].archive);

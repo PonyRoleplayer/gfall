@@ -79,7 +79,7 @@ DFU's motor, cell to cell, north, south, east or west, at 52 units a second (1.3
 
 DFU also casts a ray to the next cell against walls; here the automap already marks every building and prop, so the cells are the walls.
 
-A guard the game has called (`people_hold`) is not walked by this motor. The game's foes move that one. Everyone else still walks here. A street citizen's health is the game's, 1 (`PEOPLE_CITIZEN_HP`); this module only stores it.
+A guard the game has called (`people_hold`) is not walked by this motor. The game's foes move that one. Everyone else still walks here. A street citizen's health is the game's, 1 (`PEOPLE_CITIZEN_HP`); this module only stores it. A guard marked hostile to the player is not a talk target (`people_in_view` takes the nearest person and refuses when that one is hostile). A killed guard stays in the pool as ENEM 146's corpse (TEXTURE.380 record 1, `ENTITY_DEAD`) and is not recycled while the player is within `PEOPLE_RECYCLE` of the body. A blood splash is a short-lived billboard in the same pool (TEXTURE.380 record 0), not a person.
 
 ### Their pictures
 

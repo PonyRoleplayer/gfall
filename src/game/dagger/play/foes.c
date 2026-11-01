@@ -355,7 +355,8 @@ int foes_summon(Entity *e, int kind, const float *at)
         m->last[0] = at[0];
         m->last[1] = at[1];
         m->last[2] = at[2];
-        m->give_up = FOES_GIVE_UP;
+        /* DFU's GiveUpTimer *= 3 for a guard answering a crime. */
+        m->give_up = kind == ENEMY_CITY_WATCH ? FOES_GIVE_UP * 3 : FOES_GIVE_UP;
         m->search = 0;
         m->look_in = 0;
     }
@@ -365,6 +366,16 @@ int foes_summon(Entity *e, int kind, const float *at)
 int foes_minding(const Entity *e)
 {
     return mind_of(e) != 0;
+}
+
+void foes_release(const Entity *e)
+{
+    Mind *m;
+
+    m = e ? mind_of(e) : 0;
+    if (m) {
+        m->e = 0;
+    }
 }
 
 void foes_alert(Entity *e)

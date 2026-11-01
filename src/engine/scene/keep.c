@@ -126,6 +126,16 @@ static void drop(int i)
     g_n--;
 }
 
+void keep_forget(KeepKey key)
+{
+    int i;
+
+    i = search(key);
+    if (i >= 0) {
+        drop(i);
+    }
+}
+
 static int game_set(const Keep *r)
 {
     int i;

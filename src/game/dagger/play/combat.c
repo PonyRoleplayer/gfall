@@ -295,18 +295,35 @@ int combat_knock_speed(int damage, int weight)
     return speed < KNOCK_LEAST ? KNOCK_LEAST : speed;
 }
 
-/* A splash of a kind's blood at the creature's middle, taken down again by combat_frame. */
-static void splash(const EnemyKind *kind, const Entity *e, float mid)
+/* A splash of TEXTURE.380 record at the body's middle. A street uses the people pool. */
+static void splash_at(int record, float x, float y, float z)
 {
     int i;
+    Entity *b;
+    int street;
 
     for (i = 0; i < BLOODS; i++) {
         if (g_blood[i].left <= 0.0f) {
-            g_blood[i].e = dunstream_blood(e->x, mid, e->z, kind->blood);
-            g_blood[i].left = g_blood[i].e ? BLOOD_TIME : 0.0f;
+            /* Town people live in the people pool; stream spares are for dungeons. */
+            b = people_blood(x, y, z, record);
+            if (b) {
+                street = 1;
+            } else {
+                b = dunstream_blood(x, y, z, record);
+                street = 0;
+            }
+            g_blood[i].e = b;
+            /* Street: one second at 10 frames a second. A dungeon splash is the shorter one. */
+            g_blood[i].left = b ? (street ? 1.0f : BLOOD_TIME) : 0.0f;
             return;
         }
     }
+}
+
+/* A splash of a kind's blood at the creature's middle, taken down again by combat_frame. */
+static void splash(const EnemyKind *kind, const Entity *e, float mid)
+{
+    splash_at(kind->blood, e->x, mid, e->z);
 }
 
 void combat_foe_blow(const Foe *f, const Character *pc, Blow *out)
@@ -847,7 +864,24 @@ static int strike_person(Character *pc, Item *weapon, int swing, Entity *e, cons
     }
     hp -= b.damage;
     if (hp <= 0) {
-        people_fell(e);
+        /* Human blood is TEXTURE.380 record 0, ENEM.blood on the city watch and every class. */
+        if (citizen) {
+            /* A citizen leaves no corpse: free the slot before the splash in a full town. */
+            people_fell(e);
+        }
+        splash_at(watch ? watch->blood : 0, e->x, mid, e->z);
+        if (citizen) {
+            /* Already gone. */
+        } else if (!people_lay_corpse(e)) {
+            people_fell(e);
+        } else {
+            Keep *row;
+
+            row = keep_get(e->key, KEEP_ENTITY);
+            if (row) {
+                row->game[COMBAT_KEEP_LEVEL] = (df_u8)(pc->level > 255 ? 255 : pc->level);
+            }
+        }
         sfx_at(SND_BODY_FALL, e->x, e->y, e->z);
         return citizen;
     }

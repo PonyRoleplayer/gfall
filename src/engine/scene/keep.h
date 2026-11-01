@@ -75,6 +75,8 @@ void keep_restore(Scene *scene, int first_mover, int nmovers, Entity *ents, int 
 
 /* The row for key, or 0. */
 Keep *keep_find(KeepKey key);
+/* Drop key's row if it has one. A wanted flag the game no longer keeps. */
+void keep_forget(KeepKey key);
 /* The row for key, made (as its file has it: at its start, alive, at home) when there is none. 0 with no memory. */
 Keep *keep_get(KeepKey key, int kind);
 /* Rows, for a save file: how many, the i-th in key order. */

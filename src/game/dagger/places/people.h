@@ -78,8 +78,27 @@ int people_is_guard(const Entity *e);
 /* A citizen's is PEOPLE_CITIZEN_HP. A guard's is -1 until a blow rolls the city watch's. */
 int people_health(const Entity *e);
 void people_set_health(Entity *e, int health);
-/* Dead, and gone: the street set has no corpse picture. */
+/* 1 when the watch has marked this living person hostile to the player. */
+int people_hostile(const Entity *e);
+void people_set_hostile(Entity *e, int on);
+/* The street motor walks them again. A corpse stays held. */
+void people_unhold(Entity *e);
+/* Dead, and gone: a citizen has no corpse picture. */
 void people_fell(Entity *e);
+/*
+ * A killed guard stays, drawn as the city watch's corpse (ENEM 146,
+ * TEXTURE.380 record 1). 1 when that picture is on them.
+ */
+int people_lay_corpse(Entity *e);
+/* 1 for a guard's body still in the pool. */
+int people_is_corpse(const Entity *e);
+/*
+ * One blood splash at the body's middle: record of TEXTURE.380, a billboard
+ * in a free slot, 10 frames a second. Not a person. 0 with no slot or picture.
+ */
+Entity *people_blood(float x, float y, float z, int record);
+/* 1 for that splash. */
+int people_is_effect(const Entity *e);
 /* The nearest living guard, or -1. The pool is the town round the camera. */
 int people_nearest_guard(float x, float z);
 /*
