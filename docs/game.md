@@ -437,11 +437,21 @@ classic screens' stretched 320 x 200 canvas. It does not change video mode.
    key. The menu/console keys remain reserved by `input_bind`. Mouse: Cursor /
    View switches the draft scheme; the Attack / swing row edits INPUT_SWING
    for Cursor, INPUT_ATTACK for View, preserving the other scheme's binding.
-3. **Graphics**: only the horizontal field of view, 45..120 degrees, default
-   75. Clicking or dragging the track sets the draft value. A drag owns the
-   pointer until release, including outside the track, where it clamps.
-   Focus/input reset cancels capture before any stale press or release acts.
-   The existing `camera_set_fov` API changes projection and culling together.
+3. **Graphics**: player-facing controls only — resolution (only **640 x 480**
+   today, stored as index 0 in the draft), horizontal field of view (45..120,
+   default 75), far clip, distance fog, crisp sprites, vsync, dungeon lights,
+   ambient light, light range, light shadow, weather view, flora, flora density
+   and flora sight. Each maps to the matching engine console variable (`fov`,
+   `far`, `fog`, `spritepoint`, `vsync`, `lights`, `ambient`, `lightrange`,
+   `lightshadow`, `weathersim`, `flora`, `floradensity`, `florasight`). Developer
+   switches such as culling, occlusion, back faces, mip chains, W-buffer,
+   planar polygons, FPU 24-bit, sky, sun and moon, and water stay on the console
+   only. Opening the tab snapshots the live engine into a graphics draft;
+   edits stay in that draft until **Apply** writes them in one step (FOV is
+   persisted in `OPTS` on Apply). Leaving the tab, Back, Escape, or a failed
+   Apply restores the engine to the snapshot from when the tab was first opened
+   in that session; tab changes keep the draft. Resolution does not change
+   video mode yet.
 4. **Audio**: independent SFX and music volume sliders, 0..100 percent,
    each defaulting to 80. Zero mutes that channel without toggling the
    console's separate sound/music enable flags. These use the existing
@@ -476,7 +486,7 @@ retains `full`, `bob` and `fov`, and appends unsigned `sfx_volume` and
 volume fields inherit 80/80. Out-of-range angles or percentages are ignored;
 zero volume is a real mute value. These are user preferences, not part of a
 character's save. Full-screen is exposed inversely as Full HUD in Gameplay,
-alongside head bobbing. Graphics still exposes only FOV.
+alongside head bobbing.
 
 ### Artwork, text and ownership
 
@@ -533,8 +543,8 @@ To add an option backed by an existing game or engine API:
 
 The amount of work is mainly the option's behavior and persistence. A new
 rendering feature that the engine does not already expose is separate work
-for the ENGINE Engineer. The current shell deliberately exposes only FOV in
-Graphics; the reusable styling does not imply other graphics features exist.
+for the ENGINE Engineer. The shell exposes engine graphics console variables
+on the Graphics tab; the reusable styling does not imply other UI exists.
 
 ### Verification
 

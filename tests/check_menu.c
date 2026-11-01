@@ -14,6 +14,44 @@
 #include "engine/sound/music.h"
 #include "game/dagger/play/viewopt.h"
 #include "engine/ui/font.h"
+#include "engine/gfx/gfx.h"
+#include "engine/gfx/glide.h"
+#include "engine/gfx/draw.h"
+#include "engine/gfx/sky.h"
+#include "engine/scene/scene.h"
+#include "engine/scene/light.h"
+#include "engine/scene/daylight.h"
+#include "engine/scene/weather.h"
+
+static int g_stub_fog = 1, g_stub_mipmap = 1, g_stub_vsync = 1, g_stub_wbuffer = 1;
+static int g_stub_planar = 1, g_stub_faces = 1, g_stub_spritepoint = 1, g_stub_fpu24 = 1;
+static int g_stub_water = 1, g_stub_sky = 1;
+static float g_stub_far = 1400.0f;
+
+float gfx_far(void) { return g_stub_far; }
+void gfx_set_far(float far) { g_stub_far = far; }
+int gfx_fog(void) { return g_stub_fog; }
+void gfx_set_fog(int on) { g_stub_fog = on; }
+int gfx_mipmap(void) { return g_stub_mipmap; }
+void gfx_set_mipmap(int on) { g_stub_mipmap = on; }
+void gfx_set_light_range(int scale) { (void)scale; }
+void gfx_set_light_shadow(int on) { (void)on; }
+int draw_faces(void) { return g_stub_faces; }
+void draw_set_faces(int on) { g_stub_faces = on; }
+int draw_sprite_point(void) { return g_stub_spritepoint; }
+void draw_set_sprite_point(int on) { g_stub_spritepoint = on; }
+int draw_fpu_single(void) { return g_stub_fpu24; }
+void draw_set_fpu_single(int on) { g_stub_fpu24 = on; }
+int draw_water(void) { return g_stub_water; }
+void draw_set_water(int on) { g_stub_water = on; }
+int glide_vsync(void) { return g_stub_vsync; }
+void glide_set_vsync(int on) { g_stub_vsync = on; }
+int glide_wbuffer(void) { return g_stub_wbuffer; }
+void glide_set_wbuffer(int on) { g_stub_wbuffer = on; }
+int glide_planar(void) { return g_stub_planar; }
+void glide_set_planar(int on) { g_stub_planar = on; }
+int sky_on(void) { return g_stub_sky; }
+void sky_set_on(int on) { g_stub_sky = on; }
 
 static int g_bind[INPUT_ACTIONS];
 static int g_px, g_py, g_key, g_writes, g_write_ok;
@@ -61,11 +99,11 @@ void check_menu(void)
     check_expect(click_at(230,130)==MENU_LOAD, "menu: Load/Save tab load action");
     check_expect(click_at(430,130)==MENU_SAVE, "menu: Load/Save tab save action");
     click_at(30,200);
-    click_at(516,112);
+    click_at(516,120);
     check_expect(df_iround(camera_fov())==75, "menu: draft FOV changed live projection");
     click_at(200,445);
     check_expect(df_iround(camera_fov())==120 && g_writes==1, "menu: Apply did not commit FOV");
-    click_at(336,112);
+    click_at(336,120);
     click_at(550,445);
     check_expect(menu_current()==MENU_NONE && df_iround(camera_fov())==120, "menu: Back committed unapplied FOV");
     menu_open(MENU_OPTIONS);
@@ -81,7 +119,7 @@ void check_menu(void)
     /* A drag remains owned after leaving its track, and clamps. Focus loss
      * cancels it before the stale held input can change the draft. */
     mem_zero(&in,sizeof(in));
-    g_px=408; g_py=112; in.mouse_pressed=in.mouse_held=INPUT_MOUSE_LEFT;
+    g_px=408; g_py=120; in.mouse_pressed=in.mouse_held=INPUT_MOUSE_LEFT;
     menu_frame(&in);
     g_px=630; in.mouse_pressed=0; menu_frame(&in);
     in.reset=1; menu_frame(&in);

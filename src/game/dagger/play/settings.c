@@ -38,6 +38,9 @@ static const int g_actions[] = {
 #define BODY_W 452
 #define ROW_Y 94
 #define ROW_H 24
+#define GFX_LIST_Y 88
+#define GFX_ROW_H 26
+#define GFX_LIST_H (SETTINGS_GFX_ROWS * GFX_ROW_H)
 #define TRACK_X 336
 #define TRACK_W 180
 /* All slider geometry/ranges live here. Add a descriptor rather than
@@ -47,11 +50,40 @@ typedef struct Slider {
     const char *label;
 } Slider;
 static const Slider g_sliders[] = {
-    { SETTINGS_SLIDER, SETTINGS_GRAPHICS, 112, 45, 120, "FIELD OF VIEW" },
+    { SETTINGS_SLIDER, SETTINGS_GRAPHICS, 0, 45, 120, "FIELD OF VIEW" },
+    { SETTINGS_GFX_FAR_SLIDER, SETTINGS_GRAPHICS, 0, 16, 16384, "FAR CLIP" },
+    { SETTINGS_GFX_AMBIENT_SLIDER, SETTINGS_GRAPHICS, 0, 0, 255, "AMBIENT LIGHT" },
+    { SETTINGS_GFX_LIGHTRANGE_SLIDER, SETTINGS_GRAPHICS, 0, 1, 8, "LIGHT RANGE" },
+    { SETTINGS_GFX_FLORADENSITY_SLIDER, SETTINGS_GRAPHICS, 0, 0, 100, "FLORA DENSITY" },
+    { SETTINGS_GFX_FLORASIGHT_SLIDER, SETTINGS_GRAPHICS, 0, 0, 16384, "FLORA SIGHT" },
     { SETTINGS_SFX_SLIDER, SETTINGS_AUDIO, 112, 0, 100, "SFX VOLUME" },
     { SETTINGS_MUSIC_SLIDER, SETTINGS_AUDIO, 168, 0, 100, "MUSIC VOLUME" }
 };
 #define SLIDERS ((int)(sizeof(g_sliders) / sizeof(g_sliders[0])))
+typedef enum { GFX_ROW_RES, GFX_ROW_SLIDER, GFX_ROW_TOGGLE } GfxRowKind;
+typedef struct GfxRow {
+    GfxRowKind kind;
+    int action;
+    const char *label;
+    int slider_action;
+} GfxRow;
+static const GfxRow g_gfx_rows[] = {
+    { GFX_ROW_RES, SETTINGS_GFX_RESOLUTION, "RESOLUTION", 0 },
+    { GFX_ROW_SLIDER, SETTINGS_SLIDER, "FIELD OF VIEW", SETTINGS_SLIDER },
+    { GFX_ROW_SLIDER, SETTINGS_GFX_FAR_SLIDER, "FAR CLIP", SETTINGS_GFX_FAR_SLIDER },
+    { GFX_ROW_TOGGLE, SETTINGS_GFX_FOG, "DISTANCE FOG", 0 },
+    { GFX_ROW_TOGGLE, SETTINGS_GFX_SPRITEPOINT, "CRISP SPRITES", 0 },
+    { GFX_ROW_TOGGLE, SETTINGS_GFX_VSYNC, "VSYNC", 0 },
+    { GFX_ROW_TOGGLE, SETTINGS_GFX_LIGHTS, "DUNGEON LIGHTS", 0 },
+    { GFX_ROW_SLIDER, SETTINGS_GFX_AMBIENT_SLIDER, "AMBIENT LIGHT", SETTINGS_GFX_AMBIENT_SLIDER },
+    { GFX_ROW_SLIDER, SETTINGS_GFX_LIGHTRANGE_SLIDER, "LIGHT RANGE", SETTINGS_GFX_LIGHTRANGE_SLIDER },
+    { GFX_ROW_TOGGLE, SETTINGS_GFX_LIGHTSHADOW, "LIGHT SHADOW", 0 },
+    { GFX_ROW_TOGGLE, SETTINGS_GFX_WEATHERSIM, "WEATHER VIEW", 0 },
+    { GFX_ROW_TOGGLE, SETTINGS_GFX_FLORA, "FLORA", 0 },
+    { GFX_ROW_SLIDER, SETTINGS_GFX_FLORADENSITY_SLIDER, "FLORA DENSITY", SETTINGS_GFX_FLORADENSITY_SLIDER },
+    { GFX_ROW_SLIDER, SETTINGS_GFX_FLORASIGHT_SLIDER, "FLORA SIGHT", SETTINGS_GFX_FLORASIGHT_SLIDER }
+};
+#define GFX_ROWS SETTINGS_GFX_ITEM_COUNT
 static const char *const g_tab_labels[] = {
     "LOAD/SAVE", "KEYBINDINGS", "GRAPHICS", "AUDIO", "GAMEPLAY"
 };
@@ -282,6 +314,102 @@ int settings_slider_at(int action, int x)
 }
 int settings_fov_at(int x) { return settings_slider_at(SETTINGS_SLIDER, x); }
 
+static int gfx_value(const SettingsView *v, int action)
+{
+    const SettingsGfxDraft *g;
+    g = &v->gfx;
+    switch (action) {
+    case SETTINGS_SLIDER: return g->fov;
+    case SETTINGS_GFX_FAR_SLIDER: return g->far_clip;
+    case SETTINGS_GFX_AMBIENT_SLIDER: return g->ambient;
+    case SETTINGS_GFX_LIGHTRANGE_SLIDER: return g->lightrange;
+    case SETTINGS_GFX_FLORADENSITY_SLIDER: return g->floradensity;
+    case SETTINGS_GFX_FLORASIGHT_SLIDER: return g->florasight;
+    case SETTINGS_GFX_FOG: return g->fog;
+    case SETTINGS_GFX_SPRITEPOINT: return g->spritepoint;
+    case SETTINGS_GFX_VSYNC: return g->vsync;
+    case SETTINGS_GFX_LIGHTS: return g->lights;
+    case SETTINGS_GFX_LIGHTSHADOW: return g->lightshadow;
+    case SETTINGS_GFX_WEATHERSIM: return g->weathersim;
+    case SETTINGS_GFX_FLORA: return g->flora;
+    default: return 0;
+    }
+}
+
+static const Slider *slider_desc(int action)
+{
+    int i;
+    for (i = 0; i < SLIDERS; i++) if (g_sliders[i].action == action) return &g_sliders[i];
+    return 0;
+}
+
+static void gfx_slider_row(const Slider *slider, int y, int value)
+{
+    char number[8];
+    int thumb, n;
+    if (value < slider->minimum) value = slider->minimum;
+    if (value > slider->maximum) value = slider->maximum;
+    panel(174, y, 444, GFX_ROW_H, 0);
+    text(184, y + 8, 132, tr(slider->label), 0);
+    panel(TRACK_X - 5, y + 4, TRACK_W + 10, 18, 0);
+    flat(TRACK_X, y + 9, TRACK_W, 8, 0);
+    thumb = (value - slider->minimum) * TRACK_W / (slider->maximum - slider->minimum);
+    flat(TRACK_X, y + 9, thumb, 8, 4);
+    panel(TRACK_X + thumb - 4, y + 4, 8, 18, 0);
+    n = 0;
+    if (value >= 10000) number[n++] = (char)('0' + value / 10000 % 10);
+    if (value >= 1000) number[n++] = (char)('0' + value / 1000 % 10);
+    if (value >= 100) number[n++] = (char)('0' + value / 100 % 10);
+    if (value >= 10) number[n++] = (char)('0' + value / 10 % 10);
+    number[n++] = (char)('0' + value % 10);
+    number[n] = 0;
+    text(540, y + 6, 64, number, 0);
+}
+
+static void gfx_toggle_row(int y, const char *label, int on, int hot)
+{
+    panel(174, y, 444, GFX_ROW_H, 0);
+    text(184, y + 8, 220, tr(label), 0);
+    button(426, y + 3, 184, 20, on ? "ON" : "OFF", 0, hot);
+}
+
+static void gfx_resolution_row(int y, int hot)
+{
+    panel(174, y, 444, GFX_ROW_H, 0);
+    text(184, y + 8, 220, tr("RESOLUTION"), 0);
+    button(426, y + 3, 184, 20, "640 x 480", 0, hot);
+}
+
+int settings_resolution_w(int index)
+{
+    return index == 0 ? 640 : 0;
+}
+
+int settings_resolution_h(int index)
+{
+    return index == 0 ? 480 : 0;
+}
+
+const char *settings_gfx_console_var(int action)
+{
+    switch (action) {
+    case SETTINGS_SLIDER: return "fov";
+    case SETTINGS_GFX_FAR_SLIDER: return "far";
+    case SETTINGS_GFX_AMBIENT_SLIDER: return "ambient";
+    case SETTINGS_GFX_LIGHTRANGE_SLIDER: return "lightrange";
+    case SETTINGS_GFX_FLORADENSITY_SLIDER: return "floradensity";
+    case SETTINGS_GFX_FLORASIGHT_SLIDER: return "florasight";
+    case SETTINGS_GFX_FOG: return "fog";
+    case SETTINGS_GFX_SPRITEPOINT: return "spritepoint";
+    case SETTINGS_GFX_VSYNC: return "vsync";
+    case SETTINGS_GFX_LIGHTS: return "lights";
+    case SETTINGS_GFX_LIGHTSHADOW: return "lightshadow";
+    case SETTINGS_GFX_WEATHERSIM: return "weathersim";
+    case SETTINGS_GFX_FLORA: return "flora";
+    default: return 0;
+    }
+}
+
 /* Both audio channels reuse the FOV track and thumb. Percentage suffixes
  * and values are runtime text; dragging never regenerates an atlas. */
 static void slider_draw(const Slider *slider, int value)
@@ -331,9 +459,26 @@ int settings_hit(int tab, int scroll, int x, int y)
     } else if (tab == SETTINGS_GAMEPLAY) {
         if (inside(x,y,174,98,444,42)) return SETTINGS_BOB;
         if (inside(x,y,174,154,444,42)) return SETTINGS_FULL_HUD;
+    } else if (tab == SETTINGS_GRAPHICS) {
+        int row, top;
+        if (inside(x, y, 601, GFX_LIST_Y, 18, GFX_LIST_H)) {
+            if (inside(x, y, 601, GFX_LIST_Y, 18, 24)) return SETTINGS_UP;
+            if (inside(x, y, 601, GFX_LIST_Y + GFX_LIST_H - 24, 18, 24)) return SETTINGS_DOWN;
+        }
+        if (y < GFX_LIST_Y || y >= GFX_LIST_Y + GFX_LIST_H) return SETTINGS_NOTHING;
+        row = scroll + (y - GFX_LIST_Y) / GFX_ROW_H;
+        if (row < 0 || row >= GFX_ROWS) return SETTINGS_NOTHING;
+        top = GFX_LIST_Y + (row - scroll) * GFX_ROW_H;
+        if (g_gfx_rows[row].kind == GFX_ROW_SLIDER) {
+            if (inside(x, y, TRACK_X - 8, top + 2, TRACK_W + 16, GFX_ROW_H - 4))
+                return g_gfx_rows[row].slider_action;
+            return SETTINGS_NOTHING;
+        }
+        if (inside(x, y, 174, top, 444, GFX_ROW_H)) return g_gfx_rows[row].action;
     }
     for (i = 0; i < SLIDERS; i++) {
-        if (tab == g_sliders[i].tab && inside(x,y,TRACK_X-8,g_sliders[i].y-10,TRACK_W+16,32)) return g_sliders[i].action;
+        if (tab == g_sliders[i].tab && g_sliders[i].y != 0
+            && inside(x,y,TRACK_X-8,g_sliders[i].y-10,TRACK_W+16,32)) return g_sliders[i].action;
     }
     return SETTINGS_NOTHING;
 }
@@ -390,16 +535,34 @@ void settings_draw(const SettingsView *v, SettingsQuad quad, void *ctx)
         panel(604,ROW_Y+28+v->scroll*20,12,70,0);
         if (!v->note) paragraph(180,388,428,30,"Click an action to bind it. Mouse wheel scrolls. Escape cancels a pending binding.");
     } else if (v->tab == SETTINGS_GRAPHICS) {
-        text(182,68,420,tr("CAMERA"),0);
-        slider_draw(&g_sliders[0], v->fov);
-        panel(180,174,432,170,0);
-        text(194,190,404,tr("FIELD OF VIEW"),0);
-        paragraph(194,218,396,70,"Controls how much of the world you can see from side to side. A wider view shows more of your surroundings; a narrower view makes distant objects appear larger.");
-        paragraph(194,286,396,50,"Horizontal angle: 45 to 120 degrees. Default: 75. Apply to keep your changes.");
+        int row, y, thumb;
+        text(182, 68, 420, tr("DISPLAY AND RENDERING"), 0);
+        for (row = v->gfx_scroll; row < GFX_ROWS && row < v->gfx_scroll + SETTINGS_GFX_ROWS; row++) {
+            y = GFX_LIST_Y + (row - v->gfx_scroll) * GFX_ROW_H;
+            if (g_gfx_rows[row].kind == GFX_ROW_RES)
+                gfx_resolution_row(y, v->hover == SETTINGS_GFX_RESOLUTION);
+            else if (g_gfx_rows[row].kind == GFX_ROW_TOGGLE)
+                gfx_toggle_row(y, g_gfx_rows[row].label, gfx_value(v, g_gfx_rows[row].action),
+                               v->hover == g_gfx_rows[row].action);
+            else {
+                const Slider *slider;
+                slider = slider_desc(g_gfx_rows[row].slider_action);
+                if (slider) gfx_slider_row(slider, y, gfx_value(v, slider->action));
+            }
+        }
+        panel(601, GFX_LIST_Y, 18, GFX_LIST_H, 0);
+        button(601, GFX_LIST_Y, 18, 24, "^", 0, v->hover == SETTINGS_UP);
+        button(601, GFX_LIST_Y + GFX_LIST_H - 24, 18, 24, "v", 0, v->hover == SETTINGS_DOWN);
+        if (GFX_ROWS > SETTINGS_GFX_ROWS) {
+            thumb = v->gfx_scroll * (GFX_LIST_H - 70) / (GFX_ROWS - SETTINGS_GFX_ROWS);
+            panel(604, GFX_LIST_Y + 28 + thumb, 12, 70, 0);
+        }
+        paragraph(180, 360, 420, 28,
+                  "Every control on this tab is a draft until Apply. Resolution does not change video mode yet.");
     } else if (v->tab == SETTINGS_AUDIO) {
         text(182,68,420,tr("VOLUME"),0);
-        slider_draw(&g_sliders[1], v->sfx_volume);
-        slider_draw(&g_sliders[2], v->music_volume);
+        slider_draw(slider_desc(SETTINGS_SFX_SLIDER), v->sfx_volume);
+        slider_draw(slider_desc(SETTINGS_MUSIC_SLIDER), v->music_volume);
         panel(180,224,432,140,0);
         text(194,240,396,tr("SOUND AND MUSIC"),0);
         paragraph(194,266,396,90,"Adjust sound effects and music independently. Zero silences that channel. Default volume is 80 percent. Apply to keep your changes.");

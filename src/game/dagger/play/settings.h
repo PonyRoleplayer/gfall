@@ -25,12 +25,49 @@ enum {
     SETTINGS_SFX_SLIDER, SETTINGS_MUSIC_SLIDER, SETTINGS_BOB, SETTINGS_FULL_HUD,
     SETTINGS_BIND = 32
 };
+enum {
+    SETTINGS_GFX_RESOLUTION = 64,
+    SETTINGS_GFX_FAR_SLIDER,
+    SETTINGS_GFX_AMBIENT_SLIDER,
+    SETTINGS_GFX_LIGHTRANGE_SLIDER,
+    SETTINGS_GFX_FLORADENSITY_SLIDER,
+    SETTINGS_GFX_FLORASIGHT_SLIDER,
+    SETTINGS_GFX_FOG,
+    SETTINGS_GFX_SPRITEPOINT,
+    SETTINGS_GFX_VSYNC,
+    SETTINGS_GFX_LIGHTS,
+    SETTINGS_GFX_LIGHTSHADOW,
+    SETTINGS_GFX_WEATHERSIM,
+    SETTINGS_GFX_FLORA
+};
+#define SETTINGS_GFX_RESOLUTIONS 1
+#define SETTINGS_GFX_ROWS 10
+#define SETTINGS_GFX_ITEM_COUNT 14
+
+/* Graphics tab draft: edited in memory until Apply. menu.c owns hold/commit. */
+typedef struct SettingsGfxDraft {
+    int resolution;              /* Only 0 (640x480) today. */
+    int fov;                     /* Horizontal degrees, 45..120. */
+    int far_clip;                /* World units. */
+    int fog;
+    int spritepoint;
+    int vsync;
+    int lights;
+    int ambient;                 /* 0..255. */
+    int lightrange;              /* 1..8. */
+    int lightshadow;
+    int weathersim;
+    int flora;
+    int floradensity;            /* 0..100. */
+    int florasight;              /* 0..16384; 0 means each place's own. */
+} SettingsGfxDraft;
 
 typedef struct SettingsView {
     int tab;
     int scroll;
     int waiting;                 /* Binding row, or -1. */
-    int fov;                     /* Draft horizontal degrees, 45..120. */
+    SettingsGfxDraft gfx;
+    int gfx_scroll;
     int sfx_volume;              /* Draft percentages, 0..100; zero mutes. */
     int music_volume;
     int bob;                     /* Draft head-bobbing preference. */
@@ -43,31 +80,31 @@ typedef struct SettingsView {
     const char *bindings[SETTINGS_BINDINGS];
 } SettingsView;
 
-/* Atlas 0: 128-square stone/button swatches; 1: 256-square heading font;
- * 2: 128-square compact font. Palettes match, entry zero is transparent.
- * Private heap owns these until settings_close; no allocation during draw. */
+/* Snapshot live engine into draft and remember that snapshot for cancel. */
+void settings_gfx_draft_hold(SettingsGfxDraft *draft);
+/* Write draft to the engine (Apply). */
+void settings_gfx_draft_commit(const SettingsGfxDraft *draft);
+/* Restore the engine to the last hold snapshot (leave tab / failed Apply). */
+void settings_gfx_draft_cancel(void);
+
 int settings_open(void);
 void settings_close(void);
 const df_u8 *settings_atlas(int index, int *side);
 const df_u8 *settings_palette(void);
 
-/* A provider returns translated text for an English source string, or null
- * for the English fallback. Strings use the original font's byte encoding;
- * this hook does not promise Unicode shaping or fonts the game lacks. */
 typedef const char *(*SettingsTranslate)(const char *english);
 void settings_translate(SettingsTranslate translate);
 
-/* A backend draws one atlas rectangle, nearest sampled, clipping index zero
- * only for font atlases. Coordinates are integers with a top-left origin. */
 typedef void (*SettingsQuad)(void *ctx, int atlas, int sx, int sy, int sw, int sh,
                              int x, int y, int w, int h);
 void settings_draw(const SettingsView *view, SettingsQuad quad, void *ctx);
 int settings_hit(int tab, int scroll, int x, int y);
-/* The track is shared by drawing and dragging. Outside endpoints clamp. */
 int settings_fov_at(int x);
-/* Shared slider mapping, or -1 when action is not a slider. The same
- * descriptor supplies drawing, hit testing and drag range. */
 int settings_slider_at(int action, int x);
 int settings_binding_action(int row, int classic);
+
+int settings_resolution_w(int index);
+int settings_resolution_h(int index);
+const char *settings_gfx_console_var(int action);
 
 #endif

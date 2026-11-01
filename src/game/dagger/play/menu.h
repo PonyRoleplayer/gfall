@@ -5,8 +5,7 @@
 
 /*
  * Title/start/death retain classic's pictures. Escape opens settings.c's
- * native 640x480 stone shell: Load/Save, Keybindings, Graphics (FOV only),
- * Audio (SFX/music volume), and Gameplay (head bobbing and Full HUD).
+ * native 640x480 stone shell: Load/Save, Keybindings, Graphics, Audio, and Gameplay.
  * Text is runtime glyphs, never baked into panel art. Read docs/game.md
  * (Menus) for drafts, Apply, persistence and the card budget.
  *

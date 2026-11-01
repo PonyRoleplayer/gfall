@@ -5180,13 +5180,23 @@ static void check_settings(void)
     check_expect(settings_open(), "settings: assets did not open");
     rgb = settings_palette();
     mem_zero(&v, sizeof(v));
-    v.fov = 75; v.classic = 1; v.waiting = -1; v.hover = SETTINGS_NOTHING;
+    v.classic = 1; v.waiting = -1; v.hover = SETTINGS_NOTHING;
     {
         static const char *const names[] = { "W", "S", "Left", "Right", "A", "D", "Space", "Shift", "R", "Right Button", "H", "C", "I", "E", "Tab", "Page Up", "Page Down", "Home", "Alt", "M" };
         for (i = 0; i < SETTINGS_BINDINGS; i++) v.bindings[i] = names[i];
     }
     v.sfx_volume = v.music_volume = 80;
     v.full_hud = 1;
+    v.gfx.resolution = 0;
+    v.gfx.fov = 75;
+    v.gfx.far_clip = 1400;
+    v.gfx.ambient = 112;
+    v.gfx.lightrange = 3;
+    v.gfx.floradensity = 40;
+    v.gfx.florasight = 0;
+    v.gfx.fog = v.gfx.spritepoint = v.gfx.vsync = v.gfx.lights = v.gfx.lightshadow = 1;
+    v.gfx.flora = 1;
+    v.gfx.weathersim = 0;
     for (tab = 0; tab <= SETTINGS_TABS; tab++) {
         v.tab = tab < SETTINGS_TABS ? tab : SETTINGS_GRAPHICS;
         if (tab == SETTINGS_TABS) settings_translate(settings_test_translation);
@@ -5214,8 +5224,17 @@ static void check_settings(void)
     check_expect(settings_fov_at(-100) == 45 && settings_fov_at(336) == 45
         && settings_fov_at(408) == 75 && settings_fov_at(516) == 120
         && settings_fov_at(1000) == 120, "settings: FOV track endpoints or default");
-    check_expect(settings_hit(SETTINGS_GRAPHICS,0,408,112) == SETTINGS_SLIDER
-        && settings_hit(SETTINGS_GRAPHICS,0,408,180) == SETTINGS_NOTHING, "settings: slider hit area");
+    check_expect(settings_hit(SETTINGS_GRAPHICS,0,408,120) == SETTINGS_SLIDER
+        && settings_hit(SETTINGS_GRAPHICS,0,450,166) == SETTINGS_GFX_FOG, "settings: graphics scroll rows");
+    check_expect(settings_hit(SETTINGS_GRAPHICS, 1, 450, 166) == SETTINGS_GFX_SPRITEPOINT
+        && settings_hit(SETTINGS_GRAPHICS, 0, 450, 166) == SETTINGS_GFX_FOG,
+        "settings: graphics hit uses list scroll offset");
+    check_expect(settings_resolution_w(0) == 640 && settings_resolution_h(0) == 480
+        && settings_resolution_w(1) == 0, "settings: only 640x480 resolution");
+    check_expect(settings_gfx_console_var(SETTINGS_GFX_FOG)
+        && settings_gfx_console_var(SETTINGS_GFX_FAR_SLIDER)
+        && settings_gfx_console_var(SETTINGS_GFX_FLORA)
+        && !settings_gfx_console_var(SETTINGS_GFX_RESOLUTION), "settings: engine console names");
     check_expect(settings_hit(SETTINGS_AUDIO,0,408,112) == SETTINGS_SFX_SLIDER
         && settings_hit(SETTINGS_AUDIO,0,408,168) == SETTINGS_MUSIC_SLIDER
         && settings_hit(SETTINGS_GAMEPLAY,0,500,119) == SETTINGS_BOB
