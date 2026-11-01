@@ -8,6 +8,7 @@
 #endif
 
 static int g_want_mmx = 1;
+static int g_want_pack_mmx = 1;
 
 void mip_set_mmx(int on)
 {
@@ -17,6 +18,16 @@ void mip_set_mmx(int on)
 int mip_mmx(void)
 {
     return g_want_mmx && cpu_has_mmx();
+}
+
+void mip_set_pack_mmx(int on)
+{
+    g_want_pack_mmx = on ? 1 : 0;
+}
+
+int mip_pack_mmx(void)
+{
+    return g_want_pack_mmx && cpu_has_mmx();
 }
 
 /*
@@ -550,6 +561,125 @@ static df_u32 cutout_top(const df_u8 *index, int side,
     return (df_u32)side * (df_u32)side * 2u;
 }
 
+#if MIP_HAVE_ASM
+/*
+ * Four RGBA texels become four little-endian ARGB1555 words per
+ * iteration. Work in two 32-bit lanes: move each colour's high five
+ * bits into place, mask off its neighbours, then OR the fields.
+ *
+ * Alpha is the subtle part. Arithmetic shift by 16 sign-extends the
+ * original alpha byte's high bit (alpha >= 128) into the upper half
+ * of each dword. AND with 0xffff8000 keeps that sign extension and
+ * the output alpha bit, clearing the other 15 bits for RGB. The final
+ * dwords are therefore SIGNED representations of the desired words:
+ * -32768..32767, including opaque colours. PACKSSDW then narrows them
+ * exactly. Packing zero-extended 0x8000..0xffff would saturate them to
+ * 0x7fff and silently turn opaque texels into the wrong colour/alpha.
+ *
+ * Masks are loaded once per batch, not per texel. MOVQ accepts any
+ * byte alignment; read exactly 16 source bytes and write exactly 8
+ * output bytes per group, with no speculative vector tail. The caller
+ * handles up to three remaining texels in C after this batch returns.
+ * Only original Pentium MMX instructions, no compiler MMX flags, no
+ * allocation and no calls inside the batch. As with averaging, MMX
+ * shares x87: end in EMMS and declare the whole x87 stack clobbered.
+ * noinline keeps callers' floating-point values outside that boundary.
+ */
+static void __attribute__((noinline)) pack_mmx(const df_u8 *src, df_u8 *dst, df_u32 groups)
+{
+    static const df_u32 masks[4][2] = {
+        { 0x00007c00u, 0x00007c00u }, /* R after shifting left 7. */
+        { 0x000003e0u, 0x000003e0u }, /* G after shifting right 6. */
+        { 0x0000001fu, 0x0000001fu }, /* B after shifting right 19. */
+        { 0xffff8000u, 0xffff8000u }  /* A and its signed extension. */
+    };
+
+    __asm__ __volatile__(
+        "movq %3, %%mm4\n\t"
+        "movq %4, %%mm5\n\t"
+        "movq %5, %%mm6\n\t"
+        "movq %6, %%mm7\n\t"
+        "1:\n\t"
+        /* First pair: keep the original RGBA in mm0 until alpha. */
+        "movq (%0), %%mm0\n\t"
+        "movq %%mm0, %%mm2\n\t"
+        "pslld $7, %%mm2\n\t"
+        "pand %%mm4, %%mm2\n\t"
+        "movq %%mm0, %%mm3\n\t"
+        "psrld $6, %%mm3\n\t"
+        "pand %%mm5, %%mm3\n\t"
+        "por %%mm3, %%mm2\n\t"
+        "movq %%mm0, %%mm3\n\t"
+        "psrld $19, %%mm3\n\t"
+        "pand %%mm6, %%mm3\n\t"
+        "por %%mm3, %%mm2\n\t"
+        "psrad $16, %%mm0\n\t"
+        "pand %%mm7, %%mm0\n\t"
+        "por %%mm2, %%mm0\n\t"
+        /* Second pair; mm0 retains the first two signed results. */
+        "movq 8(%0), %%mm1\n\t"
+        "movq %%mm1, %%mm2\n\t"
+        "pslld $7, %%mm2\n\t"
+        "pand %%mm4, %%mm2\n\t"
+        "movq %%mm1, %%mm3\n\t"
+        "psrld $6, %%mm3\n\t"
+        "pand %%mm5, %%mm3\n\t"
+        "por %%mm3, %%mm2\n\t"
+        "movq %%mm1, %%mm3\n\t"
+        "psrld $19, %%mm3\n\t"
+        "pand %%mm6, %%mm3\n\t"
+        "por %%mm3, %%mm2\n\t"
+        "psrad $16, %%mm1\n\t"
+        "pand %%mm7, %%mm1\n\t"
+        "por %%mm2, %%mm1\n\t"
+        "packssdw %%mm1, %%mm0\n\t"
+        "movq %%mm0, (%1)\n\t"
+        "add $16, %0\n\t"
+        "add $8, %1\n\t"
+        "decl %2\n\t"
+        "jnz 1b\n\t"
+        "emms"
+        : "+&r"(src), "+&r"(dst), "+&r"(groups)
+        : "m"(masks[0]), "m"(masks[1]), "m"(masks[2]), "m"(masks[3])
+        : "memory", "cc",
+          "st", "st(1)", "st(2)", "st(3)", "st(4)", "st(5)", "st(6)", "st(7)");
+}
+#endif
+
+void mip_pack_1555(const df_u8 *rgba, df_u32 count, df_u8 *out)
+{
+    df_u32 i;
+
+    if (!rgba || !out || count == 0) {
+        return;
+    }
+#if MIP_HAVE_ASM
+    if (count >= 4 && mip_pack_mmx()) {
+        df_u32 groups;
+
+        groups = count >> 2;
+        pack_mmx(rgba, out, groups);
+        rgba += groups * 16u;
+        out += groups * 8u;
+        count &= 3u;
+    }
+#endif
+    /* Also the complete fallback on CPUs without MMX and non-x86 hosts. */
+    for (i = 0; i < count; i++) {
+        const df_u8 *p;
+        df_u16 pix;
+
+        p = rgba + i * 4u;
+        pix = (df_u16)(((df_u16)(p[0] >> 3) << 10) | ((df_u16)(p[1] >> 3) << 5)
+                       | (df_u16)(p[2] >> 3));
+        if (p[3] >= 128) {
+            pix |= 0x8000u;
+        }
+        out[i * 2u] = (df_u8)(pix & 0xff);
+        out[i * 2u + 1u] = (df_u8)(pix >> 8);
+    }
+}
+
 /* One level of g_rgba into out. Returns the bytes written. */
 static df_u32 emit(int side, int cutout, df_u8 *out)
 {
@@ -557,25 +687,17 @@ static df_u32 emit(int side, int cutout, df_u8 *out)
     df_u32 i;
 
     n = (df_u32)side * (df_u32)side;
+    if (cutout) {
+        mip_pack_1555(g_px, n, out);
+        return n * 2u;
+    }
     for (i = 0; i < n; i++) {
         const df_u8 *p;
 
         p = g_px + i * 4;
-        if (cutout) {
-            df_u16 pix;
-
-            pix = (df_u16)(((df_u16)(p[0] >> 3) << 10) | ((df_u16)(p[1] >> 3) << 5)
-                           | (df_u16)(p[2] >> 3));
-            if (p[3] >= 128) {
-                pix |= 0x8000u;
-            }
-            out[i * 2] = (df_u8)(pix & 0xff);
-            out[i * 2 + 1] = (df_u8)(pix >> 8);
-        } else {
-            out[i] = p[3] >= 128 ? (df_u8)MIP_GLASS : mip_nearest(p[0], p[1], p[2]);
-        }
+        out[i] = p[3] >= 128 ? (df_u8)MIP_GLASS : mip_nearest(p[0], p[1], p[2]);
     }
-    return cutout ? n * 2u : n;
+    return n;
 }
 
 df_u32 mip_build(const df_u8 *index, int side, int cutout, int drop, int chain,

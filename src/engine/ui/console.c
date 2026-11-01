@@ -1373,6 +1373,8 @@ static void commands(void)
             "mip chains on the card; a change sends the level again");
     cmd_var("mipmmx", mip_mmx, mip_set_mmx, 0, 1,
             "MMX mip averaging when supported; 0 uses C for later builds");
+    cmd_var("mippackmmx", mip_pack_mmx, mip_set_pack_mmx, 0, 1,
+            "MMX cutout packing when supported; 0 uses C for later builds");
     cmd_var("lights", light_on, light_set_on, 0, 1,
             "dungeon lights; off draws every place full bright");
     cmd_var("ambient", light_ambient, light_set_ambient, 0, 255,

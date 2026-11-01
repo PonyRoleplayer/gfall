@@ -2165,10 +2165,145 @@ static void check_mip_rgba_mmx(void)
            cpu_has_mmx() ? "found" : "missing (auto uses scalar)");
 }
 
+/* Independent packing oracle: byte channels, division and multiplication. */
+static void mip_pack_reference(const df_u8 *rgba, df_u32 count, df_u8 *out)
+{
+    df_u32 i;
+
+    for (i = 0; i < count; i++) {
+        const df_u8 *p;
+        unsigned int value;
+
+        p = rgba + i * 4u;
+        value = (p[3] / 128u) * 32768u + (p[0] / 8u) * 1024u
+              + (p[1] / 8u) * 32u + p[2] / 8u;
+        out[i * 2u] = (df_u8)(value % 256u);
+        out[i * 2u + 1u] = (df_u8)(value / 256u);
+    }
+}
+
+static void mip_pack_pattern(df_u8 *rgba, df_u32 count, int pattern)
+{
+    static const df_u8 alpha[8] = { 0, 1, 126, 127, 128, 129, 254, 255 };
+    df_u32 seed;
+    df_u32 i;
+
+    seed = 0x32f870b5u;
+    for (i = 0; i < count; i++) {
+        df_u8 *p;
+        int c;
+
+        p = rgba + i * 4u;
+        switch (pattern) {
+        case 0:
+            for (c = 0; c < 4; c++) {
+                seed = seed * 1664525u + 1013904223u;
+                p[c] = (df_u8)(seed >> 24);
+            }
+            break;
+        case 1:
+            /* At 65536 texels, every alpha meets every red value. */
+            p[0] = (df_u8)i;
+            p[1] = (df_u8)(i * 37u);
+            p[2] = (df_u8)(255u - i);
+            p[3] = (df_u8)(i >> 8);
+            break;
+        case 2:
+            /*
+             * Every possible 1555 output word, with nonzero low colour
+             * bits to discard and alpha 127/128 on either side of its
+             * threshold. In particular, catch signed-pack saturation of
+             * 0x8000..0xffff and swapping R/B or adjacent output words.
+             */
+            p[0] = (df_u8)(((i >> 10) & 31u) * 8u + ((i >> 5) & 7u));
+            p[1] = (df_u8)(((i >> 5) & 31u) * 8u + ((i >> 2) & 7u));
+            p[2] = (df_u8)((i & 31u) * 8u + (i & 7u));
+            p[3] = (i & 32768u) ? 128 : 127;
+            break;
+        default:
+            p[0] = (i & 8u) ? 255 : 0;
+            p[1] = (i & 16u) ? 255 : 0;
+            p[2] = (i & 32u) ? 255 : 0;
+            p[3] = alpha[i & 7u];
+            break;
+        }
+    }
+}
+
+static void check_mip_pack_mmx(void)
+{
+    static const df_u32 counts[] = {
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 255, 256, 257,
+        1023, 1024, 1025, 65533, 65534, 65535, 65536
+    };
+    volatile float nine;
+    unsigned int k;
+    int pattern;
+    int align;
+    int mode;
+    int ok;
+
+    nine = 9.0f;
+    mip_set_mmx(0);
+    mip_set_pack_mmx(1);
+    check_expect(!mip_mmx() && mip_pack_mmx() == cpu_has_mmx(),
+                 "packing MMX depends on the averaging preference or bypasses CPU detection");
+    mip_set_mmx(1);
+    mip_set_pack_mmx(0);
+    check_expect(!mip_pack_mmx() && mip_mmx() == cpu_has_mmx(),
+                 "forcing scalar packing also disabled mip averaging");
+    ok = 1;
+    for (k = 0; k < sizeof(counts) / sizeof(counts[0]); k++) {
+        for (pattern = 0; pattern < 4; pattern++) {
+            for (align = 0; align < 8; align++) {
+                df_u8 *src;
+                int offset;
+
+                /*
+                 * Reuse the raw averaging buffers, with byte offsets:
+                 * each input and output alignment modulo eight occurs.
+                 * All bytes beyond the exact output (including the
+                 * scalar tail), and before it, must keep their sentinel.
+                 */
+                src = (df_u8 *)g_rgba_src + align;
+                offset = (align * 3 + pattern) & 7;
+                memset(g_rgba_src, 0x3c, sizeof(g_rgba_src));
+                mip_pack_pattern(src, counts[k], pattern);
+                memcpy(g_rgba_ref, g_rgba_src, sizeof(g_rgba_src));
+                memset(g_mip_ref, 0xa5, sizeof(g_mip_ref));
+                mip_pack_reference(src, counts[k], g_mip_ref + offset);
+                for (mode = 0; mode < 2; mode++) {
+                    memset(g_mip_out, 0xa5, sizeof(g_mip_out));
+                    mip_set_pack_mmx(mode);
+                    mip_pack_1555(src, counts[k], g_mip_out + offset);
+                    /* No helper call between the MMX batch and x87. */
+                    if (df_sqrt(nine) != 3.0f) {
+                        ok = 0;
+                    }
+                    if (memcmp(g_mip_out, g_mip_ref, sizeof(g_mip_out)) != 0
+                        || memcmp(g_rgba_src, g_rgba_ref, sizeof(g_rgba_src)) != 0) {
+                        ok = 0;
+                    }
+                }
+            }
+        }
+    }
+    check_expect(ok, "scalar/auto 1555 packing differs from the byte oracle or damages source/guards");
+    memcpy(g_mip_ref, g_mip_out, sizeof(g_mip_ref));
+    mip_pack_1555(0, 4, g_mip_out);
+    mip_pack_1555((const df_u8 *)g_rgba_src, 4, 0);
+    check_expect(memcmp(g_mip_ref, g_mip_out, sizeof(g_mip_out)) == 0,
+                 "1555 packing wrote through a null input");
+    mip_set_pack_mmx(1);
+    printf("cutout packing: MMX %s; scalar/auto compared with byte oracle\n",
+           cpu_has_mmx() ? "found" : "missing (auto uses scalar)");
+}
+
 /*
  * Compare every dropped prefix and single level with the scalar full
  * chain, including clear cutouts and MIP_GLASS. This exercises the real
- * build dispatcher, top-level shortcuts, bleed, alpha and palette paths.
+ * build dispatcher, top-level shortcuts, bleed, alpha and palette paths,
+ * with averaging and packing forced scalar or permitted MMX separately.
  */
 static void check_mip_build_mmx(void)
 {
@@ -2182,6 +2317,7 @@ static void check_mip_build_mmx(void)
     int cutout;
     int i;
     int ok;
+    int mode;
 
     for (i = 0; i < 256; i++) {
         pr[i] = (df_u8)i;
@@ -2209,10 +2345,10 @@ static void check_mip_build_mmx(void)
                 int s;
 
                 mip_set_mmx(0);
+                mip_set_pack_mmx(0);
                 bytes = mip_build(pic, side, cutout, 0, 1, pr, pg, pb, g_mip_ref);
                 check_expect(bytes == mip_texels(side, 0, 1) * (cutout ? 2u : 1u),
                              "scalar mip reference chain has the wrong size");
-                mip_set_mmx(1);
                 offset = 0;
                 for (s = side, drop = 0; s > 0; s >>= 1, drop++) {
                     int chain;
@@ -2222,9 +2358,14 @@ static void check_mip_build_mmx(void)
                         df_u32 n;
 
                         expected = mip_texels(side, drop, chain) * (cutout ? 2u : 1u);
-                        n = mip_build(pic, side, cutout, drop, chain, pr, pg, pb, g_mip_out);
-                        if (n != expected || memcmp(g_mip_out, g_mip_ref + offset, expected) != 0) {
-                            ok = 0;
+                        /* Exercise each kernel independently and together. */
+                        for (mode = 0; mode < 4; mode++) {
+                            mip_set_mmx(mode & 1);
+                            mip_set_pack_mmx(mode & 2);
+                            n = mip_build(pic, side, cutout, drop, chain, pr, pg, pb, g_mip_out);
+                            if (n != expected || memcmp(g_mip_out, g_mip_ref + offset, expected) != 0) {
+                                ok = 0;
+                            }
                         }
                     }
                     offset += (df_u32)(s * s) * (cutout ? 2u : 1u);
@@ -2235,6 +2376,7 @@ static void check_mip_build_mmx(void)
     check_expect(ok, "scalar and auto mip builds differ in a chain, dropped level, cutout or glass");
     /* Restore the engine's default preference for the remaining checks. */
     mip_set_mmx(1);
+    mip_set_pack_mmx(1);
 }
 
 /*
@@ -4706,6 +4848,7 @@ void check_engine(void)
     check_mip();
     check_mip_spans();
     check_mip_rgba_mmx();
+    check_mip_pack_mmx();
     check_mip_build_mmx();
     check_lights();
     check_light_shadow();

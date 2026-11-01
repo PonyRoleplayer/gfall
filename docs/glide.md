@@ -80,7 +80,7 @@ Before the budget the castle and the cities sent full single levels in table ord
 
 ### Runtime mip averaging
 
-`mip_halve_rgba` shrinks the RGBA work buffer in place. Both implementations preserve exactly `(a + b + c + d + 2) >> 2` in each byte, including alpha. Round only after all four contributors have been added: rounded pair averages can differ by one, changing a cutout or window's half-coverage test. Bleeding, palette lookup, 1555 packing, budgets and uploads still follow the same paths.
+`mip_halve_rgba` shrinks the RGBA work buffer in place. Both implementations preserve exactly `(a + b + c + d + 2) >> 2` in each byte, including alpha. Round only after all four contributors have been added: rounded pair averages can differ by one, changing a cutout or window's half-coverage test. Averaging does not change bleeding, palette lookup, the alpha threshold, budgets or uploads. Cutout packing has its own independent selection below.
 
 The default selects original Pentium MMX when `cpu_has_mmx` reports it. This shared core helper also serves the sound mixer: on 32-bit x86 it first tests whether EFLAGS.ID can change, restores the flags, then checks the highest basic CPUID leaf before asking leaf 1 for EDX bit 23. Its answer is cached. Non-x86 hosts return false and compile only the scalar mip kernel; a CPU without CPUID or MMX always uses scalar. No compiler MMX or SSE option is needed to enable the optional kernel.
 
@@ -92,13 +92,25 @@ One level is one MMX batch. The integer-only row loop makes no calls and does no
 
 The authored host checks compare scalar and auto output against an independent raw-RGBA byte oracle, covering all sums 0..1020 in each channel, zero/full/random values, rounding ties, alpha near half coverage, both word alignments modulo eight, untouched buffer guards and repeated in-place levels. An x87 `FSQRT` immediately after each batch checks the return state. Integration checks compare single levels and every dropped chain with the scalar full chain, for both cutouts and indexed pictures, including glass. These additions have not been built or run yet.
 
+### Runtime cutout packing
+
+`emit` sends cutout RGBA through `mip_pack_1555`: each colour loses its low three bits, R occupies bits 10..14, G bits 5..9, B bits 0..4, and bit 15 is set exactly when alpha is at least 128. Transparent RGB is retained; it carries the colour bled into a cutout's edge. The two output bytes are little-endian. The indexed full-level-only `cutout_top` shortcut still uses its prepacked palette and does not create an RGBA buffer or enter this packer.
+
+The default permits original Pentium MMX through the same guarded, cached `cpu_has_mmx` as averaging and sound. `mippackmmx 0` forces scalar packing; `mippackmmx 1` permits MMX when available. This preference is independent of `mipmmx` and reports zero on an unsupported CPU. It affects later builds without replacing stored pictures. For a whole-place comparison, change the preference, then toggle `mipmap` off and on across rendered frames so the pictures are rebuilt.
+
+The bulk kernel reads four RGBA texels (16 bytes) and writes four 1555 words (8 bytes) per iteration. Each MMX register holds two 32-bit lanes; colour fields are shifted, masked and joined. For alpha, arithmetic shift right 16 followed by mask `0xffff8000` keeps the original alpha sign bit and its extension. OR in RGB, and the dword is the signed representation of the desired 16-bit word. `PACKSSDW` then narrows it exactly. Zero-extending opaque output before this signed pack would saturate words `0x8000..0xffff` to `0x7fff`, losing alpha and colour.
+
+Four masks are loaded once per batch. `MOVQ` permits any byte alignment for both input and output. The loop handles only complete groups of four; zero to three trailing texels use the unchanged scalar formula after the batch returns. There is no vector read past the given count and no output padding. Input/output buffers must not overlap; null pointers or count zero do nothing. No extra allocation, compiler MMX/SSE options, or newer instructions are required. The non-inlined batch has no calls or floating-point work, declares every x87 register clobbered and ends with one `EMMS` before C tails or the caller resume.
+
+Authored host checks use an independent byte-channel oracle with division and multiplication. They cover all 65536 output words (including opaque black/white), all alpha/red byte pairs, discarded colour bits, transparent RGB, alpha 127/128, empty/small/bulk inputs, all three tail lengths, source and output byte alignments modulo eight, unchanged source bytes and untouched output guards. `FSQRT` follows the packing call to check x87 availability. The chain comparison forces both kernels scalar for its reference, then exercises all four combinations of scalar/auto averaging and packing, including the full-level palette shortcut. No build or test has been run for this addition, and its target speedup is unmeasured.
+
 ## The FPU
 
 The Pentium's x87 divides in 19 cycles at 24-bit precision, 33 at 53, 39 at 64; Windows starts a program at 53. Every vertex takes one divide (1/z), and a clipped edge more. `draw_frame` sets the precision control to 24 bits for the render passes (sky, cull, models, decals, windows, sprites, precipitation: `df_fpu_single`) and gives the old word back before the overlay (`df_fpu_restore`), as Quake did around its renderer. Their arithmetic is float throughout, so nothing they compute changes but the time; rounding is untouched (`df_iround`'s `fistp`, `df_snap16`'s store to a float). Kept at the full precision: the walker and collision (the sim stage, tuned at it), the sound, and the overlay, where a viewer's panel prints doubles (a stream's world position: 32 million units needs 25 bits). Never put a double inside the passes. `fpu24 0` in the console runs them at the full precision, to compare in the profile panel.
 
 A vertex's projection is done in place in `project_vert` (`camera_project`'s arithmetic on draw.c's own copy of the focal length): a call of seven arguments a vertex was some twenty cycles of pushes. The model's view transform was already inline (`view_point`).
 
-MMX does integers only on this chip: the frame's geometry is x87 float, so MMX has nothing to do there. It mixes the sound (`mixer.c`) and can average mip levels (`mip.c`, above). The CRT replacements copy and fill a 32-bit word at a time (`rep movsd`, `rep stosd` in `mem_copy`, `mem_fill`, `memcpy`, `memset`), where they were byte loops; the frame itself makes no such calls, so that is load time.
+MMX does integers only on this chip: the frame's geometry is x87 float, so MMX has nothing to do there. It mixes the sound (`mixer.c`) and can average mip levels and pack cutouts (`mip.c`, above). The CRT replacements copy and fill a 32-bit word at a time (`rep movsd`, `rep stosd` in `mem_copy`, `mem_fill`, `memcpy`, `memset`), where they were byte loops; the frame itself makes no such calls, so that is load time.
 
 Not done, the largest saving left on the CPU's side: a corner of an ARCH3D model is transformed and projected once for each face that has it, 2.9 times on average over every model in ARCH3D.BSA (837,101 face corners, 288,304 distinct). A cache of each drawn model's transformed corners would cut that work by up to about half once back faces are dropped; it needs each mesh's corners indexed, and its clipping kept per face.
 
@@ -111,7 +123,7 @@ Not done, the largest saving left on the CPU's side: a corner of an ARCH3D model
 
 ## Console
 
-`wbuffer`, `planar`, `mipmap`, and `mipmmx` switch the choices above at run time. `texmem` reports the chains and how many pictures the budget shrank. `vsync`, `stats`, and `glinfo` show what they cost. `glinfo` names the depth buffer and whether planar polygons are in use. See `docs/console.md`.
+`wbuffer`, `planar`, `mipmap`, `mipmmx`, and `mippackmmx` switch the choices above at run time. `texmem` reports the chains and how many pictures the budget shrank. `vsync`, `stats`, and `glinfo` show what they cost. `glinfo` names the depth buffer and whether planar polygons are in use. See `docs/console.md`.
 
 ## Water
 

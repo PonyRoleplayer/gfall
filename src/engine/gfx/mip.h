@@ -61,6 +61,21 @@ df_u32 mip_texels(int side, int drop, int chain);
 void mip_set_mmx(int on);
 int mip_mmx(void);
 
+/* Independent of mip_mmx: optional MMX RGBA-to-1555 packing, same defaults. */
+void mip_set_pack_mmx(int on);
+int mip_pack_mmx(void);
+
+/*
+ * Pack count RGBA byte tuples to little-endian ARGB1555: discard the
+ * low three colour bits and set bit 15 exactly when alpha >= 128.
+ * Colour survives even when transparent (the cutout's bleed). Input
+ * has 4*count bytes, output room for 2*count; buffers do not overlap.
+ * Both pointers may have any byte alignment. NULL or count 0 does
+ * nothing. The bulk path and scalar tail never read beyond count.
+ * emit uses this primitive; cutout_top keeps its indexed shortcut.
+ */
+void mip_pack_1555(const df_u8 *rgba, df_u32 count, df_u8 *out);
+
 /*
  * Shrink a square RGBA buffer in place, keeping exactly
  * (a + b + c + d + 2) >> 2 in each byte, including alpha. Each df_u32
