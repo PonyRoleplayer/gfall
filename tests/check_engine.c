@@ -2165,6 +2165,147 @@ static void check_mip_rgba_mmx(void)
            cpu_has_mmx() ? "found" : "missing (auto uses scalar)");
 }
 
+/* Original fixed rectangles, planar palette reads, and one truncating divide. */
+static void mip_box_reference(const df_u8 *index, int w, int h, int cols, int rows,
+                               const df_u8 *pr, const df_u8 *pg, const df_u8 *pb, df_u8 *rgb)
+{
+    int bw;
+    int bh;
+    int x;
+    int y;
+
+    bw = w / cols;
+    bh = h / rows;
+    for (y = 0; y < rows; y++) {
+        for (x = 0; x < cols; x++) {
+            int r, g, b, i, j, at;
+
+            r = g = b = 0;
+            for (j = 0; j < bh; j++) {
+                for (i = 0; i < bw; i++) {
+                    df_u8 c;
+
+                    c = index[(y * bh + j) * w + x * bw + i];
+                    r += pr[c];
+                    g += pg[c];
+                    b += pb[c];
+                }
+            }
+            at = (y * cols + x) * 3;
+            rgb[at] = (df_u8)(r / (bw * bh));
+            rgb[at + 1] = (df_u8)(g / (bw * bh));
+            rgb[at + 2] = (df_u8)(b / (bw * bh));
+        }
+    }
+}
+
+static void check_mip_box_mmx(void)
+{
+    /* w,h,cols,rows: full rows, odd tails, crop, no-op scale and huge sums. */
+    static const int shapes[][4] = {
+        { 1, 1, 1, 1 }, { 1, 256, 1, 1 }, { 2, 1, 1, 1 }, { 8, 8, 1, 1 },
+        { 2, 256, 1, 1 }, { 3, 256, 1, 1 }, { 7, 17, 1, 1 },
+        { 8, 256, 8, 8 }, { 9, 9, 8, 8 }, { 15, 17, 8, 8 },
+        { 17, 9, 8, 8 }, { 31, 33, 8, 8 }, { 63, 65, 8, 8 },
+        { 64, 64, 8, 8 }, { 65, 63, 8, 8 }, { 127, 129, 8, 8 },
+        { 255, 253, 8, 8 }, { 256, 256, 8, 8 }, { 256, 256, 1, 1 },
+        { 256, 255, 1, 1 }, { 256, 256, 256, 256 }
+    };
+    df_u8 pr[256], pg[256], pb[256];
+    volatile float nine;
+    df_u32 seed;
+    unsigned int k;
+    int i, pattern, align, mode, ok;
+
+    for (i = 0; i < 256; i++) {
+        pr[i] = (df_u8)(i * 37);
+        pg[i] = (df_u8)(i * 13 + 29);
+        pb[i] = (df_u8)(255 - i);
+    }
+    pr[0] = 10; pg[0] = 20; pb[0] = 30; /* Index zero is not transparency. */
+    pr[1] = 1; pg[1] = 3; pb[1] = 5;   /* Odd sums distinguish truncation. */
+    pr[255] = pg[255] = pb[255] = 255;
+    nine = 9.0f;
+    mip_set_box_mmx(0);
+    check_expect(!mip_box_mmx(), "mipboxmmx 0 did not select scalar sums");
+    mip_set_mmx(0);
+    mip_set_pack_mmx(0);
+    mip_set_box_mmx(1);
+    check_expect(mip_box_mmx() == cpu_has_mmx() && !mip_mmx() && !mip_pack_mmx(),
+                 "indexed box MMX bypasses CPU detection or depends on another preference");
+    seed = 0xf5e3b921u;
+    ok = 1;
+    for (k = 0; k < sizeof(shapes) / sizeof(shapes[0]); k++) {
+        int w, h, cols, rows;
+
+        w = shapes[k][0]; h = shapes[k][1];
+        cols = shapes[k][2]; rows = shapes[k][3];
+        for (pattern = 0; pattern < 5; pattern++) {
+            for (align = 0; align < 8; align++) {
+                df_u8 *src;
+                int offset;
+
+                src = (df_u8 *)g_rgba_src + align;
+                offset = (align * 3 + pattern) & 7;
+                memset(g_rgba_src, 0x3c, sizeof(g_rgba_src));
+                for (i = 0; i < w * h; i++) {
+                    seed = seed * 1664525u + 1013904223u;
+                    switch (pattern) {
+                    case 0: src[i] = 0; break;
+                    case 1: src[i] = 255; break;
+                    case 2: src[i] = (df_u8)(i & 1); break;
+                    case 3: src[i] = (df_u8)(seed >> 24); break;
+                    default:
+                        /* The right/bottom fringe must never join a block. */
+                        src[i] = i % w >= (w / cols) * cols || i / w >= (h / rows) * rows ? 255 : 1;
+                        break;
+                    }
+                }
+                memset(g_rgba_ref, 0xa5, sizeof(g_rgba_ref));
+                mip_box_reference(src, w, h, cols, rows, pr, pg, pb, (df_u8 *)g_rgba_ref + offset);
+                for (mode = 0; mode < 2; mode++) {
+                    int result;
+
+                    memset(g_rgba_got, 0xa5, sizeof(g_rgba_got));
+                    mip_set_box_mmx(mode);
+                    result = mip_box_rgb(src, w, h, cols, rows, pr, pg, pb, (df_u8 *)g_rgba_got + offset);
+                    if (df_sqrt(nine) != 3.0f || !result
+                        || memcmp(g_rgba_got, g_rgba_ref, sizeof(g_rgba_got)) != 0) {
+                        ok = 0;
+                    }
+                }
+            }
+        }
+    }
+    check_expect(ok, "indexed scalar/auto block means differ in raw RGB, truncation, crop, sums or guards");
+    /* Same caller-owned palette address, changed contents: no stale word LUT. */
+    memset(g_rgba_src, 0, 64);
+    mip_set_box_mmx(1);
+    check_expect(mip_box_rgb((df_u8 *)g_rgba_src, 8, 8, 1, 1, pr, pg, pb, (df_u8 *)g_rgba_got)
+                 && ((df_u8 *)g_rgba_got)[0] == 10 && ((df_u8 *)g_rgba_got)[2] == 30,
+                 "a box did not preserve index zero's ordinary palette colour");
+    pr[0] = 211; pg[0] = 223; pb[0] = 227;
+    check_expect(mip_box_rgb((df_u8 *)g_rgba_src, 8, 8, 1, 1, pr, pg, pb, (df_u8 *)g_rgba_got)
+                 && ((df_u8 *)g_rgba_got)[0] == 211 && ((df_u8 *)g_rgba_got)[1] == 223
+                 && ((df_u8 *)g_rgba_got)[2] == 227, "indexed word palette did not refresh");
+    memcpy(g_rgba_ref, g_rgba_got, sizeof(g_rgba_ref));
+    check_expect(!mip_box_rgb(0, 8, 8, 1, 1, pr, pg, pb, (df_u8 *)g_rgba_got)
+                 && !mip_box_rgb((df_u8 *)g_rgba_src, 257, 8, 1, 1, pr, pg, pb, (df_u8 *)g_rgba_got)
+                 && !mip_box_rgb((df_u8 *)g_rgba_src, 8, 0, 1, 1, pr, pg, pb, (df_u8 *)g_rgba_got)
+                 && !mip_box_rgb((df_u8 *)g_rgba_src, 8, 8, 0, 1, pr, pg, pb, (df_u8 *)g_rgba_got)
+                 && !mip_box_rgb((df_u8 *)g_rgba_src, 8, 8, 9, 1, pr, pg, pb, (df_u8 *)g_rgba_got)
+                 && !mip_box_rgb((df_u8 *)g_rgba_src, 8, 8, 1, 9, pr, pg, pb, (df_u8 *)g_rgba_got)
+                 && !mip_box_rgb((df_u8 *)g_rgba_src, 8, 8, 1, 1, 0, pg, pb, (df_u8 *)g_rgba_got)
+                 && !mip_box_rgb((df_u8 *)g_rgba_src, 8, 8, 1, 1, pr, pg, pb, 0)
+                 && memcmp(g_rgba_ref, g_rgba_got, sizeof(g_rgba_ref)) == 0,
+                 "bad indexed box arguments changed the output");
+    mip_set_mmx(1);
+    mip_set_pack_mmx(1);
+    mip_set_box_mmx(1);
+    printf("indexed box means: MMX %s, scalar/auto raw RGB, crop and wide sums\n",
+           cpu_has_mmx() ? "found" : "missing (auto uses scalar)");
+}
+
 /* Independent packing oracle: byte channels, division and multiplication. */
 static void mip_pack_reference(const df_u8 *rgba, df_u32 count, df_u8 *out)
 {
@@ -4850,6 +4991,7 @@ void check_engine(void)
     check_mip_rgba_mmx();
     check_mip_pack_mmx();
     check_mip_build_mmx();
+    check_mip_box_mmx();
     check_lights();
     check_light_shadow();
     check_daylight();

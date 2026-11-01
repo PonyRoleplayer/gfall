@@ -39,6 +39,8 @@
 #include "game/dagger/places/dunstream.h"
 #include "engine/scene/interact.h"
 #include "engine/gfx/draw.h"
+#include "engine/gfx/mip.h"
+#include "game/dagger/tables/swaps.h"
 #include "engine/scene/body.h"
 #include "game/dagger/formats/hmi.h"
 #include "game/dagger/formats/sndfile.h"
@@ -1731,6 +1733,137 @@ static void check_wres(const Palette *pal)
 }
 
 /*
+ * Ground regression, independent of the engine's packed palette and
+ * summation: keep the original tile_small loops as the RGB oracle.
+ */
+static void far_tile_reference(const Image *src, const Palette *pal, df_u8 *rgb)
+{
+    int bw, bh, x, y;
+
+    bw = src->width / 8;
+    bh = src->height / 8;
+    for (y = 0; y < 8; y++) {
+        for (x = 0; x < 8; x++) {
+            int r, g, b, i, j, at;
+
+            r = g = b = 0;
+            for (j = 0; j < bh; j++) {
+                const df_u8 *row;
+
+                row = src->index + (y * bh + j) * src->width + x * bw;
+                for (i = 0; i < bw; i++) {
+                    r += pal->r[row[i]];
+                    g += pal->g[row[i]];
+                    b += pal->b[row[i]];
+                }
+            }
+            at = (y * 8 + x) * 3;
+            rgb[at] = (df_u8)(r / (bw * bh));
+            rgb[at + 1] = (df_u8)(g / (bw * bh));
+            rgb[at + 2] = (df_u8)(b / (bw * bh));
+        }
+    }
+}
+
+/*
+ * The first baked 128x128 picture in Daggerfall's radius-2 ring must
+ * consist of correct 8x8 woodland ground copies. All these chunks are
+ * within its woodland map pixel. Compare actual source textures in
+ * scalar/auto first, then every baked tile with a reference copy in
+ * one of the four original rotate/flip orientations. No cache clearing
+ * or test-only access to wild.c's private persistent tiles is needed.
+ */
+static void check_far_bake(const Image *baked, const Palette *pal)
+{
+    df_u8 small[64][64];
+    df_u8 valid[64];
+    df_u8 ref[8 * 8 * 3];
+    df_u8 got[8 * 8 * 3];
+    int record, mode, i, n, ok, t, matched;
+
+    check_expect(baked && baked->index && baked->width == 128 && baked->height == 128 && pal,
+                 "far-ground regression has no baked picture");
+    if (!baked || !baked->index || baked->width != 128 || baked->height != 128 || !pal) {
+        return;
+    }
+    memset(valid, 0, sizeof(valid));
+    n = 0;
+    ok = 1;
+    for (record = 0; record < 64; record++) {
+        MemHeap *heap;
+        MemHeap *was;
+        Image *src;
+        int archive;
+
+        archive = swap_climate(302, record, 300, clock_season() == CLOCK_WINTER, texture_record_count);
+        if (record >= texture_record_count(archive)) {
+            continue;
+        }
+        heap = mem_heap_new();
+        check_expect(heap != 0, "far-ground source scratch heap did not open");
+        if (!heap) {
+            break;
+        }
+        was = mem_heap_use(heap);
+        src = texture_load(archive, record);
+        mem_heap_use(was);
+        if (src && src->index && src->width >= 8 && src->height >= 8) {
+            far_tile_reference(src, pal, ref);
+            for (mode = 0; mode < 2; mode++) {
+                mip_set_box_mmx(mode);
+                if (!mip_box_rgb(src->index, src->width, src->height, 8, 8, pal->r, pal->g, pal->b, got)
+                    || memcmp(got, ref, sizeof(ref)) != 0) {
+                    ok = 0;
+                }
+            }
+            for (i = 0; i < 64; i++) {
+                small[record][i] = mip_nearest(ref[i * 3], ref[i * 3 + 1], ref[i * 3 + 2]);
+            }
+            valid[record] = 1;
+            n++;
+        }
+        mem_heap_delete(heap);
+    }
+    check_expect(n > 0 && ok, "real ground texture scalar/auto RGB differs from the original tile means");
+    matched = 0;
+    for (t = 0; t < 256; t++) {
+        int found;
+        int bits;
+
+        found = 0;
+        for (record = 0; record < 64 && !found; record++) {
+            if (!valid[record]) {
+                continue;
+            }
+            for (bits = 0; bits < 4 && !found; bits++) {
+                int x, y, same;
+
+                same = 1;
+                for (y = 0; y < 8 && same; y++) {
+                    for (x = 0; x < 8 && same; x++) {
+                        int sx, sy;
+
+                        switch (bits) {
+                        case 0: sx = x; sy = y; break;
+                        case 1: sx = 7 - y; sy = x; break;
+                        case 2: sx = 7 - x; sy = 7 - y; break;
+                        default: sx = y; sy = 7 - x; break;
+                        }
+                        same = baked->index[((t / 16) * 8 + y) * 128 + (t % 16) * 8 + x]
+                             == small[record][sy * 8 + sx];
+                    }
+                }
+                found = same;
+            }
+        }
+        matched += found;
+    }
+    check_expect(matched == 256, "a streamed far-ground tile is not an original ground mean/orientation");
+    mip_set_box_mmx(1);
+    printf("far ground: %d real textures, %d/256 baked tiles agree with original averages\n", n, matched);
+}
+
+/*
  * The world map and the stream (docs/streaming.md): Daggerfall's pixel
  * holds Daggerfall; a stream opened there fills its ring, and a walk of
  * 40 chunks east keeps the ground under the camera, moves the origin
@@ -2099,6 +2232,7 @@ static void check_stream(void)
                                 && level.images[sc->models[m].mesh->tris[0].slot]
                                 && level.images[sc->models[m].mesh->tris[0].slot]->width == 128) {
                                 if (!towns) {
+                                    check_far_bake(level.images[sc->models[m].mesh->tris[0].slot], level.palette);
                                     write_ppm(level.images[sc->models[m].mesh->tris[0].slot],
                                               level.palette, "build/far0.ppm");
                                 }

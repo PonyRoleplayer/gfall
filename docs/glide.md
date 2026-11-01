@@ -104,13 +104,17 @@ Four masks are loaded once per batch. `MOVQ` permits any byte alignment for both
 
 Authored host checks use an independent byte-channel oracle with division and multiplication. They cover all 65536 output words (including opaque black/white), all alpha/red byte pairs, discarded colour bits, transparent RGB, alpha 127/128, empty/small/bulk inputs, all three tail lengths, source and output byte alignments modulo eight, unchanged source bytes and untouched output guards. `FSQRT` follows the packing call to check x87 availability. The chain comparison forces both kernels scalar for its reference, then exercises all four combinations of scalar/auto averaging and packing, including the full-level palette shortcut. No build or test has been run for this addition, and its target speedup is unmeasured.
 
+### Runtime indexed box reduction
+
+`mip_box_rgb` reduces an indexed image to a grid of raw RGB means without a full-image RGBA conversion. It preserves fixed `width/cols` by `height/rows` source boxes, ignores right/bottom remainders and truncates the sum once. This differs deliberately from rounded 2×2 mip halving. The shared palette keeps 2 KB of word tuples for scalar/MMX gathers. `mipboxmmx` independently permits original MMX for boxes of at least 64 samples with width at least two, using the same CPU guard and x87/EMMS boundary as the other kernels. Smaller boxes and unsupported CPUs use scalar. The far-ground caller, cache lifetime, overflow proof, authored parity/integration tests and unmeasured performance limits are documented in `docs/streaming.md`, Far ground / Indexed block averaging. No build or test has run for this addition.
+
 ## The FPU
 
 The Pentium's x87 divides in 19 cycles at 24-bit precision, 33 at 53, 39 at 64; Windows starts a program at 53. Every vertex takes one divide (1/z), and a clipped edge more. `draw_frame` sets the precision control to 24 bits for the render passes (sky, cull, models, decals, windows, sprites, precipitation: `df_fpu_single`) and gives the old word back before the overlay (`df_fpu_restore`), as Quake did around its renderer. Their arithmetic is float throughout, so nothing they compute changes but the time; rounding is untouched (`df_iround`'s `fistp`, `df_snap16`'s store to a float). Kept at the full precision: the walker and collision (the sim stage, tuned at it), the sound, and the overlay, where a viewer's panel prints doubles (a stream's world position: 32 million units needs 25 bits). Never put a double inside the passes. `fpu24 0` in the console runs them at the full precision, to compare in the profile panel.
 
 A vertex's projection is done in place in `project_vert` (`camera_project`'s arithmetic on draw.c's own copy of the focal length): a call of seven arguments a vertex was some twenty cycles of pushes. The model's view transform was already inline (`view_point`).
 
-MMX does integers only on this chip: the frame's geometry is x87 float, so MMX has nothing to do there. It mixes the sound (`mixer.c`) and can average mip levels and pack cutouts (`mip.c`, above). The CRT replacements copy and fill a 32-bit word at a time (`rep movsd`, `rep stosd` in `mem_copy`, `mem_fill`, `memcpy`, `memset`), where they were byte loops; the frame itself makes no such calls, so that is load time.
+MMX does integers only on this chip: the frame's geometry is x87 float, so MMX has nothing to do there. It mixes the sound (`mixer.c`) and can average mip levels, pack cutouts and sum indexed ground boxes (`mip.c`, above). The CRT replacements copy and fill a 32-bit word at a time (`rep movsd`, `rep stosd` in `mem_copy`, `mem_fill`, `memcpy`, `memset`), where they were byte loops; the frame itself makes no such calls, so that is load time.
 
 Not done, the largest saving left on the CPU's side: a corner of an ARCH3D model is transformed and projected once for each face that has it, 2.9 times on average over every model in ARCH3D.BSA (837,101 face corners, 288,304 distinct). A cache of each drawn model's transformed corners would cut that work by up to about half once back faces are dropped; it needs each mesh's corners indexed, and its clipping kept per face.
 
@@ -123,7 +127,7 @@ Not done, the largest saving left on the CPU's side: a corner of an ARCH3D model
 
 ## Console
 
-`wbuffer`, `planar`, `mipmap`, `mipmmx`, and `mippackmmx` switch the choices above at run time. `texmem` reports the chains and how many pictures the budget shrank. `vsync`, `stats`, and `glinfo` show what they cost. `glinfo` names the depth buffer and whether planar polygons are in use. See `docs/console.md`.
+`wbuffer`, `planar`, `mipmap`, `mipmmx`, `mippackmmx`, and `mipboxmmx` switch the choices above at run time. `texmem` reports the chains and how many pictures the budget shrank. `vsync`, `stats`, and `glinfo` show what they cost. `glinfo` names the depth buffer and whether planar polygons are in use. See `docs/console.md`.
 
 ## Water
 

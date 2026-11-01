@@ -65,6 +65,26 @@ int mip_mmx(void);
 void mip_set_pack_mmx(int on);
 int mip_pack_mmx(void);
 
+/* Independent optional MMX indexed rectangle sums, on when supported. */
+void mip_set_box_mmx(int on);
+int mip_box_mmx(void);
+
+/*
+ * Fixed-box indexed reduction to cols*rows RGB byte tuples. Source is
+ * tightly packed width*height indices, each dimension 1..256; output
+ * dimensions are 1..width and 1..height. Each output covers exactly
+ * floor(width/cols) by floor(height/rows) source pixels. Right/bottom
+ * remainders are IGNORED, not distributed or wrapped. Sum original
+ * palette colours, divide once with truncation; index 0 is ordinary
+ * colour, with no alpha or cutout rule. Installs mip_palette so callers
+ * may map these means through mip_nearest, which remains scalar.
+ * Buffers do not overlap; any byte alignment. No image-sized scratch
+ * or allocation. Returns 1, or 0 for bad shape/null without output.
+ * See docs/streaming.md, Far ground, before changing these semantics.
+ */
+int mip_box_rgb(const df_u8 *index, int width, int height, int cols, int rows,
+                 const df_u8 *pr, const df_u8 *pg, const df_u8 *pb, df_u8 *rgb);
+
 /*
  * Pack count RGBA byte tuples to little-endian ARGB1555: discard the
  * low three colour bits and set bit 15 exactly when alpha >= 128.

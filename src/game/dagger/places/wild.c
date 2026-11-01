@@ -451,7 +451,7 @@ static int start_chunk(int cx, int cz, StreamOut *out)
 #define GROUND_ARCHIVES 8
 #define GROUND_RECORDS 64
 
-/* Each ground tile shrunk to FAR_TILE a side, made once for the session (a quarter of a ms each). */
+/* Existing archive/record cache: keep each FAR_TILE square (and failed reads) across stream loads. */
 static df_u8 g_tile_small[GROUND_ARCHIVES][GROUND_RECORDS][FAR_TILE * FAR_TILE];
 static df_u8 g_tile_have[GROUND_ARCHIVES][GROUND_RECORDS];
 
@@ -492,38 +492,23 @@ static const df_u8 *tile_small(int archive, int record)
     img = texture_load(archive, record);
     mem_heap_use(was);
     if (img && img->index && img->width >= FAR_TILE && img->height >= FAR_TILE) {
-        int bw;
-        int bh;
-        int y;
+        df_u8 rgb[FAR_TILE * FAR_TILE * 3];
+        int i;
 
-        bw = img->width / FAR_TILE;
-        bh = img->height / FAR_TILE;
-        mip_palette(g_pal.r, g_pal.g, g_pal.b);
-        for (y = 0; y < FAR_TILE; y++) {
-            int x;
-
-            for (x = 0; x < FAR_TILE; x++) {
-                int r;
-                int g;
-                int b;
-                int i;
-                int j;
-
-                r = g = b = 0;
-                for (j = 0; j < bh; j++) {
-                    const df_u8 *row;
-
-                    row = img->index + (y * bh + j) * img->width + x * bw;
-                    for (i = 0; i < bw; i++) {
-                        r += g_pal.r[row[i]];
-                        g += g_pal.g[row[i]];
-                        b += g_pal.b[row[i]];
-                    }
-                }
-                out[y * FAR_TILE + x] = mip_nearest(r / (bw * bh), g / (bw * bh), b / (bw * bh));
+        /*
+         * Keep the original fixed rectangles and truncation, including
+         * ignored right/bottom remainders for non-divisible pictures.
+         * The engine gathers palette colours directly (optional MMX),
+         * never expands a whole image. Only these 192 RGB bytes are
+         * temporary; the same 64 nearest-palette indices stay cached.
+         */
+        if (mip_box_rgb(img->index, img->width, img->height, FAR_TILE, FAR_TILE,
+                        g_pal.r, g_pal.g, g_pal.b, rgb)) {
+            for (i = 0; i < FAR_TILE * FAR_TILE; i++) {
+                out[i] = mip_nearest(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]);
             }
+            g_tile_have[a][record] = 1;
         }
-        g_tile_have[a][record] = 1;
     }
     mem_heap_delete(h);
     return g_tile_have[a][record] == 1 ? out : 0;

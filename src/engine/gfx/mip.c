@@ -9,6 +9,7 @@
 
 static int g_want_mmx = 1;
 static int g_want_pack_mmx = 1;
+static int g_want_box_mmx = 1;
 
 void mip_set_mmx(int on)
 {
@@ -28,6 +29,16 @@ void mip_set_pack_mmx(int on)
 int mip_pack_mmx(void)
 {
     return g_want_pack_mmx && cpu_has_mmx();
+}
+
+void mip_set_box_mmx(int on)
+{
+    g_want_box_mmx = on ? 1 : 0;
+}
+
+int mip_box_mmx(void)
+{
+    return g_want_box_mmx && cpu_has_mmx();
 }
 
 /*
@@ -55,6 +66,12 @@ static df_u8 g_near[256];
 static df_u16 g_inv[32768];
 static df_u8 g_inv_pal[768];
 static int g_inv_ready;
+/*
+ * Indexed box sums gather one palette entry per sample. Four unsigned
+ * words (R,G,B,0) let original MMX sum all channels with one PADDW.
+ * 2 KB, refreshed with the palette, never a full-image RGBA conversion.
+ */
+static df_u16 g_box_pal[256][4];
 
 static int level_count(int side)
 {
@@ -109,6 +126,10 @@ void mip_palette(const df_u8 *pr, const df_u8 *pg, const df_u8 *pb)
         g_inv_pal[i] = pr[i];
         g_inv_pal[256 + i] = pg[i];
         g_inv_pal[512 + i] = pb[i];
+        g_box_pal[i][0] = pr[i];
+        g_box_pal[i][1] = pg[i];
+        g_box_pal[i][2] = pb[i];
+        g_box_pal[i][3] = 0;
     }
     for (i = 0; i < 32768; i++) {
         g_inv[i] = 0xffff;
@@ -158,6 +179,166 @@ df_u8 mip_nearest(int r, int g, int b)
     }
     g_inv[key] = (df_u16)best;
     return (df_u8)best;
+}
+
+/* Sum one indexed rectangle, using the same word palette as MMX. */
+static void box_sum_scalar(const df_u8 *src, int stride, int w, int h, df_u32 *sum)
+{
+    int x;
+    int y;
+    df_u32 r;
+    df_u32 g;
+    df_u32 b;
+
+    /* Keep totals local: source byte reads can otherwise alias sum stores. */
+    r = g = b = 0;
+    for (y = 0; y < h; y++) {
+        const df_u8 *row;
+
+        row = src + y * stride;
+        for (x = 0; x < w; x++) {
+            const df_u16 *p;
+
+            p = g_box_pal[row[x]];
+            r += p[0];
+            g += p[1];
+            b += p[2];
+        }
+    }
+    sum[0] = r;
+    sum[1] = g;
+    sum[2] = b;
+}
+
+#if MIP_HAVE_ASM
+/*
+ * One source rectangle is one MMX batch; w >= 2, at most 256 on
+ * either axis. Two independent word accumulators gather alternating
+ * palette entries in each row, then join. A whole ROW fits in a word:
+ * 256*255 = 65280. A whole rectangle need not: after each row, widen
+ * its totals into C's unsigned 32-bit sums (at most 256*256*255).
+ * Never carry word accumulators between rows or use saturating adds.
+ *
+ * There is no MMX gather instruction: scalar MOVZBL finds each index,
+ * then PADDW reads its eight-byte palette entry. This removes three
+ * separate channel lookups/adds without expanding the source picture.
+ * The original indexed stride and any odd row tail stay intact. The
+ * palette is word-aligned; neither source nor palette needs alignment
+ * to eight bytes. Only complete pairs enter the inner assembly loop.
+ *
+ * C between row loops is integer-only, with no calls, until EMMS at
+ * the batch's exit. Both assemblies clobber the entire x87 stack;
+ * noinline keeps this shared-register batch outside float callers.
+ * No newer instructions or compiler MMX options are needed.
+ */
+static void __attribute__((noinline)) box_sum_mmx(const df_u8 *src, int stride,
+                                                 int w, int h, df_u32 *sum)
+{
+    int y;
+
+    sum[0] = sum[1] = sum[2] = 0;
+    for (y = 0; y < h; y++) {
+        const df_u8 *row;
+        const df_u16 *pal;
+        df_u16 words[4];
+        int pairs;
+        /* Pointer-sized index register on both Win32 and x86-64 hosts. */
+        __SIZE_TYPE__ slot;
+
+        row = src + y * stride;
+        pal = &g_box_pal[0][0];
+        pairs = w >> 1;
+        __asm__ __volatile__(
+            "pxor %%mm0, %%mm0\n\t"
+            "pxor %%mm1, %%mm1\n\t"
+            "1:\n\t"
+            "movzbl (%1), %k3\n\t"
+            "paddw (%4,%3,8), %%mm0\n\t"
+            "movzbl 1(%1), %k3\n\t"
+            "paddw (%4,%3,8), %%mm1\n\t"
+            "add $2, %1\n\t"
+            "decl %2\n\t"
+            "jnz 1b\n\t"
+            "paddw %%mm1, %%mm0\n\t"
+            "movq %%mm0, %0"
+            : "=m"(words), "+&r"(row), "+&r"(pairs), "=&r"(slot)
+            : "r"(pal)
+            : "memory", "cc",
+              "st", "st(1)", "st(2)", "st(3)", "st(4)", "st(5)", "st(6)", "st(7)");
+        (void)slot;
+        sum[0] += words[0];
+        sum[1] += words[1];
+        sum[2] += words[2];
+        if (w & 1) {
+            const df_u16 *p;
+
+            p = g_box_pal[*row];
+            sum[0] += p[0];
+            sum[1] += p[1];
+            sum[2] += p[2];
+        }
+    }
+    __asm__ __volatile__("emms"
+        : : : "memory",
+        "st", "st(1)", "st(2)", "st(3)", "st(4)", "st(5)", "st(6)", "st(7)");
+}
+#endif
+
+int mip_box_rgb(const df_u8 *index, int width, int height, int cols, int rows,
+                 const df_u8 *pr, const df_u8 *pg, const df_u8 *pb, df_u8 *rgb)
+{
+    int bw;
+    int bh;
+    int x;
+    int y;
+    df_u32 area;
+#if MIP_HAVE_ASM
+    int use_mmx;
+#endif
+
+    if (!index || !rgb || !pr || !pg || !pb || width < 1 || width > 256
+        || height < 1 || height > 256 || cols < 1 || cols > width || rows < 1 || rows > height) {
+        return 0;
+    }
+    bw = width / cols;
+    bh = height / rows;
+    area = (df_u32)(bw * bh);
+    mip_palette(pr, pg, pb);
+#if MIP_HAVE_ASM
+    /*
+     * Small boxes rarely repay a call and EMMS. 64 samples is a
+     * conservative heuristic, not a measured Pentium crossover.
+     * A one-column rectangle has no pairs however tall it is.
+     */
+    use_mmx = bw >= 2 && area >= 64u && mip_box_mmx();
+#endif
+    for (y = 0; y < rows; y++) {
+        for (x = 0; x < cols; x++) {
+            const df_u8 *src;
+            df_u32 sum[3];
+            int at;
+
+            src = index + (y * bh) * width + x * bw;
+#if MIP_HAVE_ASM
+            if (use_mmx) {
+                box_sum_mmx(src, width, bw, bh, sum);
+            } else
+#endif
+            {
+                box_sum_scalar(src, width, bw, bh, sum);
+            }
+            /*
+             * Truncate exactly ONCE over the original rectangle, not
+             * rounded 2x2 mip steps. Exclude right/bottom remainders.
+             * Palette mapping is the caller's scalar decision.
+             */
+            at = (y * cols + x) * 3;
+            rgb[at] = (df_u8)(sum[0] / area);
+            rgb[at + 1] = (df_u8)(sum[1] / area);
+            rgb[at + 2] = (df_u8)(sum[2] / area);
+        }
+    }
+    return 1;
 }
 
 /*

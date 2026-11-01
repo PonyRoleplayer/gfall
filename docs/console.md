@@ -65,6 +65,7 @@ A variable prints its value when typed alone, and takes a new one as an argument
 | `mipmap` | on/off | On uploads mip chains, off single levels. Both are budgeted to fit the card. A change sends the level again on the next frame. Default on. See `docs/glide.md`. |
 | `mipmmx` | 0/1 | Optional original-MMX mip averaging for later builds. Default 1 when supported; 0 forces C. Reports 0 without MMX. Stored chains are kept; toggle `mipmap` across frames to rebuild a whole place for comparison. See `docs/glide.md`, Runtime mip averaging. |
 | `mippackmmx` | 0/1 | Optional original-MMX RGBA-to-1555 cutout packing for later builds, independent of `mipmmx`. Default 1 when supported; 0 forces C. Reports 0 without MMX. Stored pictures are kept; the full-level indexed palette shortcut stays in use. See `docs/glide.md`, Runtime cutout packing. |
+| `mipboxmmx` | 0/1 | Optional original-MMX indexed block sums, independent of averaging/packing switches. Default 1 when supported; 0 forces C. Affects newly reduced, uncached ground tiles; stored tiles/pictures remain. Tiny boxes stay scalar. See `docs/streaming.md`, Indexed block averaging. |
 | `lights` | on/off | Dungeon lights: ambient tint and light decals. Off draws every place full bright. Default on. See `docs/lighting.md`. |
 | `ambient` | 0..255 | Brightness away from lights in a lit place. Default 112. |
 | `lightrange` | 1..8 | How many times its radius a light reaches. Cuts the decals again. Default 3. |

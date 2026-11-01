@@ -1,6 +1,6 @@
 # MMX suggestions
 
-These are ideas for later alongside the implemented mixer, optional mip averaging and cutout packing. The new mip kernels and their authored parity tests have not been built or run yet; their speed on the target is unmeasured.
+These are ideas for later alongside the implemented mixer, optional mip averaging, cutout packing and indexed far-ground box sums. The new mip kernels and their authored parity tests have not been built or run yet; their speed on the target is unmeasured.
 
 MMX is integer only. The float vertex path is 3DNow and is not in the table below.
 
@@ -15,7 +15,7 @@ A software rasterizer is rejected because the Voodoo already fills triangles in 
 | 2x2 mip average | mip.c, every coarser level | Two RGBA outputs per iteration; widen, sum four, add 2, shift once | Optional runtime dispatch, `mipmmx 0` for scalar; speedup unmeasured (`docs/glide.md`) | Implemented; validation pending |
 | Bilinear wall rebuild | texture_smooth | Blend four neighbors in red, green, and blue, then search the palette | The climate and season rebuilds drop from a stall toward a frame or two. The palette search stays scalar. Pentium MMX has no psadbw | Great |
 | Pack a sprite to 1555 | mip.c emit cutout path; full-level palette shortcut retained | Four RGBA texels per batch iteration; shift/mask colour and alpha, sign-extend then PACKSSDW | Optional runtime dispatch, `mippackmmx 0` for scalar; speedup unmeasured (`docs/glide.md`) | Implemented; validation pending |
-| Far-ground 8x8 shrink | The horizon bake | Pure average of color blocks, no palette search in the inner step | The stream catches up while you walk toward a new city | Great |
+| Far-ground 8x8 shrink | tile_small through mip_box_rgb; existing cache retained | Indexed palette gather/add in RGB word lanes, widened per row; exact truncation | `mipboxmmx 0` for scalar; lookup/search stay scalar, speedup unmeasured (`docs/streaming.md`) | Implemented; validation pending |
 | Average heightmap bytes | Coarser terrain from WOODS.WLD | The heights are bytes. A row average is adds | Faster far terrain. The mesh after that is still float | Some |
 | Copy the long uncompressed texture rows | RLE decode, the rows that are already raw | A wide copy. rep movsl is already strong on this chip | Almost nothing unless a profile says the copy is hot | Little |
 | Fixed-point box tests, four at a time | The cull of many models | Four independent boxes | Only if culling shows up in prof. The bigger win already named is transforming each corner once | Little, until measured |
