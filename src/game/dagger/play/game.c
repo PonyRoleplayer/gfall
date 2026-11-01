@@ -639,7 +639,8 @@ int game_playing(void)
 
 int game_world_shows(void)
 {
-    return g_playing && !screens_is_open() && menu_current() != MENU_CONTROLS;
+    /* All settings tabs now share a framed shell over the paused world. */
+    return g_playing && !screens_is_open();
 }
 
 /* What every arrival sets up: the frame's creatures gone with the last place, the camera on the player. */

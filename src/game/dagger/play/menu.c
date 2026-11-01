@@ -1,6 +1,8 @@
 #include "game/dagger/play/menu.h"
+#include "game/dagger/play/settings.h"
+#include "engine/gfx/camera.h"
+#include "engine/core/mem.h"
 #include "game/dagger/play/mouse.h"
-#include "game/dagger/play/viewopt.h"
 #include "game/dagger/play/control.h"
 #include "game/dagger/play/screen.h"
 #include "game/dagger/play/keys.h"
@@ -22,14 +24,7 @@ typedef struct Button {
 enum {
     DO_LOAD,
     DO_START,
-    DO_EXIT,
-    DO_SAVE,
-    DO_CONTINUE,
-    DO_CONTROLS,
-    DO_DEFAULTS,
-    DO_MOUSE,
-    DO_FULL,
-    DO_BOB
+    DO_EXIT
 };
 
 /* DFU's StartWindow: on PICK03I0.IMG. */
@@ -39,77 +34,17 @@ static const Button g_main_buttons[] = {
     { 125, 145, 41, 15, DO_EXIT }
 };
 
-/*
- * DFU's PauseOptionsWindow, from OPTN00I0.IMG's top left. Sound, music
- * and detail are still not settings. Full screen and head bobbing are
- * the picture's own black squares (index 0, three by three): columns
- * 69..71 and 140..142, rows 50..52. The image sits at 85, 40, so those
- * are classic 154, 90 and 225, 90.
- */
-static const Button g_options_buttons[] = {
-    { 4, 4, 45, 16, DO_SAVE },
-    { 52, 4, 46, 16, DO_LOAD },
-    { 101, 4, 45, 16, DO_EXIT },
-    { 5, 60, 70, 17, DO_CONTROLS },
-    { 76, 60, 70, 17, DO_CONTINUE }
-};
-static const Button g_checks[] = {
-    { 69, 50, 3, 3, DO_FULL },
-    { 140, 50, 3, 3, DO_BOB }
-};
-
-/*
- * DFU's ControlsWindow on CNFG00I0.IMG: classic's slot for each of our
- * actions (47 x 7, its column's left and 11 rows a step from its top),
- * and the buttons along the bottom. Classic's other slots (crouching,
- * spells, the log...) stay empty until their actions come.
- */
-typedef struct Slot {
-    df_u8 action;
-    df_u16 x;
-    df_u16 y;
-} Slot;
-
-static const Slot g_slots[] = {
-    { INPUT_FORWARD, 57, 13 },
-    { INPUT_BACK, 57, 24 },
-    { INPUT_TURN_LEFT, 57, 35 },
-    { INPUT_LEFT, 57, 46 },
-    { INPUT_RIGHT, 57, 68 },
-    { INPUT_TURN_RIGHT, 57, 57 },
-    { INPUT_JUMP, 164, 35 },
-    { INPUT_RUN, 164, 68 },
-    { INPUT_REST, 270, 13 },
-    { INPUT_ATTACK, 102, 136 },
-    { INPUT_SWAP_HANDS, 102, 147 },
-    { INPUT_CHARACTER, 102, 170 },
-    { INPUT_INVENTORY, 102, 181 },
-    { INPUT_USE, 270, 80 },
-    /* Classic's cursor slot: Tab toggles our pointer while the world runs. */
-    { INPUT_CURSOR, 270, 91 },
-    { INPUT_LOOK_UP, 270, 103 },
-    { INPUT_LOOK_DOWN, 270, 114 },
-    { INPUT_LOOK_CENTER, 270, 125 },
-    { INPUT_FREELOOK, 270, 136 },
-    { INPUT_MAP, 270, 181 }
-};
-#define SLOTS ((int)(sizeof(g_slots) / sizeof(g_slots[0])))
-#define SLOT_W 47
-#define SLOT_H 7
-
-/* The three along the bottom of CNFG00I0.IMG: Mouse, Default, Continue. */
-static const Button g_controls_buttons[] = {
-    { 80, 190, 80, 10, DO_MOUSE },
-    { 160, 190, 80, 10, DO_DEFAULTS },
-    { 240, 190, 80, 10, DO_CONTINUE }
-};
-
 static int g_open;
-/* The action waiting for a key on the controls screen, or -1; whether a binding changed since it opened. */
-static int g_waiting = -1;
-static int g_changed;
-/* Exit clicked once in the options. */
-static int g_confirm;
+/* Drafts belong to the open settings session. Apply commits the active
+ * section; Back/Escape cancels its uncommitted edits. The game remains paused. */
+static SettingsView g_settings;
+static int g_settings_pics[SETTINGS_ATLASES];
+static int g_draft_keys[INPUT_ACTIONS];
+static int g_saved_keys[INPUT_ACTIONS];
+static int g_saved_classic;
+static int g_saved_fov;
+static int g_dragging;
+static char g_key_names[SETTINGS_BINDINGS][24];
 static int g_pic;
 static int g_pic_x;
 static int g_pic_y;
@@ -117,12 +52,9 @@ static int g_pic_w;
 static int g_pic_h;
 static int g_arrow;
 static int g_world_cursor;
-static int g_control_label;
 static int g_point_x;
 static int g_point_y;
 static const char *g_note;
-/* A yellow tick (ART_PAL 146) in a checkbox, index 0 clear. */
-static int g_tick;
 
 /* A menu's picture on the card, from ARENA2, under its own palette or ART_PAL.COL's. */
 static void show(const char *file)
@@ -149,7 +81,6 @@ int menu_setup(void)
     ImgPicture arrow;
     df_u8 rgb[768];
     static df_u8 cursors[CONTROL_CURSOR_W * CONTROL_CURSOR_H];
-    static const df_u8 label_color = 222;
 
     if (!img_load_raw("ARROW.RAW", 10, 10, &arrow) || !img_art_palette(rgb)) {
         return 0;
@@ -160,30 +91,12 @@ int menu_setup(void)
      * the pointer between arrow regions. Procedural art uses ART_PAL.COL. */
     control_cursor_sheet(cursors);
     g_world_cursor = pic_load(cursors, CONTROL_CURSOR_W, CONTROL_CURSOR_H, rgb, 1);
-    g_control_label = pic_load(&label_color, 1, 1, rgb, 0);
-    {
-        static const df_u8 tick[9] = {
-            0, 0, 146,
-            0, 146, 146,
-            146, 0, 0
-        };
-
-        g_tick = pic_load(tick, 3, 3, rgb, 1);
-    }
-    return g_arrow != 0 && g_world_cursor != 0 && g_control_label != 0 && g_tick != 0;
+    return g_arrow != 0 && g_world_cursor != 0;
 }
 
 void menu_shutdown(void)
 {
     menu_open(MENU_NONE);
-    if (g_tick) {
-        pic_free(g_tick);
-        g_tick = 0;
-    }
-    if (g_control_label) {
-        pic_free(g_control_label);
-        g_control_label = 0;
-    }
     if (g_world_cursor) {
         pic_free(g_world_cursor);
         g_world_cursor = 0;
@@ -194,33 +107,53 @@ void menu_shutdown(void)
     }
 }
 
+/* Settings textures are present only while the shell is open. Freeing
+ * them before opening a save-slot screen keeps the existing 256 KB budget. */
+static void settings_release(void)
+{
+    int i;
+    for (i = 0; i < SETTINGS_ATLASES; i++) {
+        if (g_settings_pics[i]) pic_free(g_settings_pics[i]);
+        g_settings_pics[i] = 0;
+    }
+    settings_close();
+}
+
 void menu_open(int which)
 {
-    static const char *const files[] = { 0, "TITL00I0.IMG", "PICK03I0.IMG", "OPTN00I0.IMG", "CNFG00I0.IMG", "DIE_00I0.IMG" };
+    static const char *const files[] = { 0, "TITL00I0.IMG", "PICK03I0.IMG", 0, 0, "DIE_00I0.IMG" };
+    int i;
 
-    /* Leaving the controls or the options with a change: kept for the next start. */
-    if (g_changed && which != g_open && (g_open == MENU_CONTROLS || g_open == MENU_OPTIONS)) {
-        keys_save();
-    }
+    settings_release();
     g_open = which;
     g_note = 0;
-    g_waiting = -1;
-    g_changed = 0;
-    g_confirm = 0;
-    if (which == MENU_CONTROLS) {
-        /* Its first call notes what is down already: the click that opened the screen is not a key. */
-        input_key_pressed();
-    }
+    g_dragging = 0;
     show(which > MENU_NONE && which <= MENU_DEATH ? files[which] : 0);
-    /* The death screen waits for a key, as the title does: what is down already is not it. */
-    if (which == MENU_DEATH) {
+    if (which == MENU_OPTIONS || which == MENU_CONTROLS) {
+        mem_zero(&g_settings, sizeof(g_settings));
+        g_settings.tab = which == MENU_CONTROLS ? SETTINGS_KEYS : SETTINGS_FILES;
+        g_settings.waiting = -1;
+        g_settings.hover = SETTINGS_NOTHING;
+        g_settings.fov = g_saved_fov = df_iround(camera_fov());
+        g_settings.classic = g_saved_classic = control_classic();
+        for (i = 0; i < INPUT_ACTIONS; i++) g_draft_keys[i] = g_saved_keys[i] = input_binding(i);
+        if (settings_open()) {
+            for (i = 0; i < SETTINGS_ATLASES; i++) {
+                int side;
+                const df_u8 *pixels;
+                pixels = settings_atlas(i, &side);
+                g_settings_pics[i] = pic_load(pixels, side, side, settings_palette(), i != 0);
+            }
+        }
         input_key_pressed();
     }
+    if (which == MENU_DEATH) input_key_pressed();
 }
 
 void menu_say(const char *line)
 {
-    g_note = line;
+    if (g_open == MENU_OPTIONS || g_open == MENU_CONTROLS) g_settings.note = line;
+    else g_note = line;
 }
 
 int menu_current(void)
@@ -241,89 +174,146 @@ static int hit(const Button *b, int n, int left, int top)
     return -1;
 }
 
-/* The artwork has one Swing slot. Cursor and View keep independent
- * bindings, so switching schemes does not overwrite the other preference. */
-static int slot_action(int i)
+/* Draw callbacks use native pixels. Classic title/start screens and world
+ * pointers retain screen.c's established 320x200 coordinate conversion. */
+static void settings_quad(void *ctx, int atlas, int sx, int sy, int sw, int sh,
+                          int x, int y, int w, int h)
 {
-    return g_slots[i].action == INPUT_ATTACK && control_classic() ? INPUT_SWING : g_slots[i].action;
+    (void)ctx;
+    pic_draw_part(g_settings_pics[atlas], sx, sy, sw, sh,
+                  x * DF_VIEW_W / SETTINGS_W, DF_VIEW_H - y * DF_VIEW_H / SETTINGS_H,
+                  w * DF_VIEW_W / SETTINGS_W, h * DF_VIEW_H / SETTINGS_H, 255);
 }
 
-/* The controls screen: a click on a slot waits for a key; the key, or Escape to leave it be. */
-static int controls_frame(const Input *in, int click)
+static int settings_dirty(void)
 {
-    int vk;
     int i;
+    if (g_settings.tab == SETTINGS_GRAPHICS) return g_settings.fov != g_saved_fov;
+    if (g_settings.tab != SETTINGS_KEYS) return 0;
+    if (g_settings.classic != g_saved_classic) return 1;
+    for (i = 0; i < INPUT_ACTIONS; i++) if (g_draft_keys[i] != g_saved_keys[i]) return 1;
+    return 0;
+}
 
+/* Apply only the displayed section. A failed disk write is reported and
+ * leaves the previous committed values in force; the draft can be retried. */
+static void settings_apply(void)
+{
+    int i;
+    if (g_settings.tab == SETTINGS_GRAPHICS) camera_set_fov((float)g_settings.fov);
+    else {
+        for (i = 0; i < INPUT_ACTIONS; i++) input_bind(i, g_draft_keys[i]);
+        control_set_classic(g_settings.classic);
+        mouse_set_cursor(g_settings.classic);
+    }
+    if (!keys_save()) {
+        camera_set_fov((float)g_saved_fov);
+        for (i = 0; i < INPUT_ACTIONS; i++) input_bind(i, g_saved_keys[i]);
+        control_set_classic(g_saved_classic);
+        mouse_set_cursor(g_saved_classic);
+        g_settings.note = "Could not save settings. Changes were not applied.";
+        return;
+    }
+    if (g_settings.tab == SETTINGS_GRAPHICS) g_saved_fov = g_settings.fov;
+    else {
+        for (i = 0; i < INPUT_ACTIONS; i++) g_saved_keys[i] = g_draft_keys[i];
+        g_saved_classic = g_settings.classic;
+    }
+    g_settings.note = "Settings applied.";
+}
+
+static int settings_frame(const Input *in, int px, int py)
+{
+    int click, hit, vk, i;
     vk = input_key_pressed();
-    if (g_waiting >= 0) {
-        if (!vk) {
-            return MENU_STAY;
+    click = (in->mouse_pressed & INPUT_MOUSE_LEFT) != 0;
+    hit = settings_hit(g_settings.tab, g_settings.scroll, px, py);
+    g_settings.hover = hit;
+    /* Focus loss cancels a drag or key capture BEFORE interpreting releases
+     * or a newly polled held key. A resumed frame needs a fresh click. */
+    if (in->reset) {
+        g_dragging = 0;
+        g_settings.waiting = -1;
+        return MENU_STAY;
+    }
+    if (g_settings.waiting >= 0) {
+        if (vk) {
+            if (vk != 0x1b) {
+                int action, old;
+                action = settings_binding_action(g_settings.waiting, g_settings.classic);
+                old = g_draft_keys[action];
+                /* input_bind owns validation. Restore immediately: drafting
+                 * must not change gameplay bindings until Apply succeeds. */
+                if (input_bind(action, vk)) {
+                    input_bind(action, g_saved_keys[action]);
+                    for (i = 0; i < SETTINGS_BINDINGS; i++) {
+                        int other;
+                        other = settings_binding_action(i, g_settings.classic);
+                        if (other != action && g_draft_keys[other] == vk) g_draft_keys[other] = old;
+                    }
+                    g_draft_keys[action] = vk;
+                    g_settings.note = 0;
+                } else g_settings.note = "That key belongs to the menu or console.";
+            } else g_settings.note = 0;
+            g_settings.waiting = -1;
         }
-        /* Escape (0x1B) cancels. A key another action has goes to them both swapped. */
-        if (vk != 0x1B) {
-            int was;
-            int other;
-
-            was = input_binding(g_waiting);
-            other = -1;
-            for (i = 0; i < SLOTS; i++) {
-                if (slot_action(i) != g_waiting && input_binding(slot_action(i)) == vk) {
-                    other = slot_action(i);
-                }
-            }
-            if (input_bind(g_waiting, vk)) {
-                if (other >= 0 && was) {
-                    input_bind(other, was);
-                }
-                g_changed = 1;
-                g_note = 0;
-            } else {
-                g_note = "That key is the menu's or the console's.";
-            }
-        } else {
-            g_note = 0;
-        }
-        g_waiting = -1;
         return MENU_STAY;
     }
     if (in->pressed & INPUT_BIT(INPUT_MENU)) {
-        menu_open(MENU_OPTIONS);
+        menu_open(MENU_NONE);
+        return MENU_CLOSED;
+    }
+    if (g_settings.tab == SETTINGS_KEYS && in->wheel) {
+        g_settings.scroll -= in->wheel;
+        if (g_settings.scroll < 0) g_settings.scroll = 0;
+        if (g_settings.scroll > SETTINGS_BINDINGS-SETTINGS_ROWS) g_settings.scroll = SETTINGS_BINDINGS-SETTINGS_ROWS;
+    }
+    if (click && hit == SETTINGS_SLIDER) g_dragging = 1;
+    if (g_dragging) {
+        g_settings.fov = settings_fov_at(px);
+        g_settings.note = 0;
+        if (!(in->mouse_held & INPUT_MOUSE_LEFT)) g_dragging = 0;
         return MENU_STAY;
     }
-    if (!click) {
-        return MENU_STAY;
-    }
-    for (i = 0; i < SLOTS; i++) {
-        if (screen_in(g_point_x, g_point_y, g_slots[i].x, g_slots[i].y, SLOT_W, SLOT_H)) {
-            g_waiting = slot_action(i);
-            g_note = "Press a key for it, or Escape to leave it.";
-            return MENU_STAY;
+    if (!click) return MENU_STAY;
+    g_settings.note = 0;
+    if (hit != SETTINGS_EXIT) g_settings.confirm_exit = 0;
+    if (hit >= SETTINGS_TAB_FILES && hit <= SETTINGS_TAB_GRAPHICS) {
+        g_settings.tab = hit - SETTINGS_TAB_FILES;
+        g_open = g_settings.tab == SETTINGS_KEYS ? MENU_CONTROLS : MENU_OPTIONS;
+    } else if (hit >= SETTINGS_BIND) {
+        g_settings.waiting = hit-SETTINGS_BIND;
+    } else switch (hit) {
+    case SETTINGS_LOAD: return MENU_LOAD;
+    case SETTINGS_SAVE: return MENU_SAVE;
+    case SETTINGS_EXIT:
+        if (g_settings.confirm_exit) return MENU_QUIT;
+        g_settings.confirm_exit = 1;
+        g_settings.note = "Click Confirm Exit to leave the game.";
+        break;
+    case SETTINGS_BACK:
+        menu_open(MENU_NONE);
+        return MENU_CLOSED;
+    case SETTINGS_APPLY: settings_apply(); break;
+    case SETTINGS_DEFAULT:
+        if (g_settings.tab == SETTINGS_GRAPHICS) g_settings.fov = 75;
+        else {
+            /* Borrow the one canonical default table, then restore live
+             * preferences. No duplicate binding defaults can drift here. */
+            keys_defaults();
+            for (i = 0; i < INPUT_ACTIONS; i++) {
+                g_draft_keys[i] = input_binding(i);
+                input_bind(i, g_saved_keys[i]);
+            }
+            control_set_classic(g_saved_classic);
+            mouse_set_cursor(g_saved_classic);
+            g_settings.classic = 1;
         }
-    }
-    switch (hit(g_controls_buttons, 3, 0, 0)) {
-    case DO_MOUSE:
-        {
-            int cursor;
-
-            cursor = mouse_cursor() ? 0 : 1;
-            mouse_set_cursor(cursor);
-            control_set_classic(cursor);
-            g_changed = 1;
-            g_note = cursor
-                ? "Mouse: Cursor. The pointer stays. Left arrows move; right drag swings; Alt looks."
-                : "Mouse: View. The mouse looks. Left button swings.";
-        }
         break;
-    case DO_DEFAULTS:
-        keys_defaults();
-        g_changed = 1;
-        g_note = "Mouse: Cursor. The pointer stays.";
-        break;
-    case DO_CONTINUE:
-        menu_open(MENU_OPTIONS);
-        break;
-    default:
-        break;
+    case SETTINGS_MOUSE: g_settings.classic = !g_settings.classic; break;
+    case SETTINGS_UP: if (g_settings.scroll > 0) g_settings.scroll--; break;
+    case SETTINGS_DOWN: if (g_settings.scroll < SETTINGS_BINDINGS-SETTINGS_ROWS) g_settings.scroll++; break;
+    default: break;
     }
     return MENU_STAY;
 }
@@ -359,57 +349,9 @@ int menu_frame(const Input *in)
         }
         return MENU_STAY;
     case MENU_OPTIONS:
-        if (in->pressed & INPUT_BIT(INPUT_MENU)) {
-            menu_open(MENU_NONE);
-            return MENU_CLOSED;
-        }
-        what = click ? hit(g_options_buttons, 5, g_pic_x, g_pic_y) : -1;
-        if (what == DO_CONTINUE) {
-            menu_open(MENU_NONE);
-            return MENU_CLOSED;
-        }
-        /* In play, Exit asks once: a stray click does not end the game. */
-        if (what == DO_EXIT) {
-            if (g_confirm) {
-                if (g_changed) {
-                    keys_save();
-                }
-                return MENU_QUIT;
-            }
-            g_confirm = 1;
-            g_note = "Click Exit again to leave the game.";
-            return MENU_STAY;
-        }
-        /* Another button clicked takes the question back; a frame with no click keeps it. */
-        if (what >= 0) {
-            g_confirm = 0;
-        }
-        if (what == DO_SAVE) {
-            return MENU_SAVE;
-        }
-        if (what == DO_LOAD) {
-            return MENU_LOAD;
-        }
-        if (what == DO_CONTROLS) {
-            menu_open(MENU_CONTROLS);
-        }
-        if (click && what < 0) {
-            int box;
-
-            box = hit(g_checks, 2, g_pic_x, g_pic_y);
-            if (box == DO_FULL) {
-                viewopt_set_full(!viewopt_full());
-                g_changed = 1;
-                g_confirm = 0;
-            } else if (box == DO_BOB) {
-                viewopt_set_bob(!viewopt_bob());
-                g_changed = 1;
-                g_confirm = 0;
-            }
-        }
-        return MENU_STAY;
     case MENU_CONTROLS:
-        return controls_frame(in, click);
+        return settings_frame(in, px * SETTINGS_W / DF_VIEW_W,
+                              (DF_VIEW_H - 1 - py) * SETTINGS_H / DF_VIEW_H);
     case MENU_DEATH:
         if (input_key_pressed() || in->pressed) {
             return MENU_DEATH_OVER;
@@ -443,36 +385,14 @@ void menu_draw(void)
         return;
     }
     screen_draw(g_pic, g_pic_x, g_pic_y, g_pic_w, g_pic_h);
-    if (g_open == MENU_OPTIONS && g_tick) {
-        if (viewopt_full()) {
-            screen_draw(g_tick, g_pic_x + g_checks[0].x, g_pic_y + g_checks[0].y, g_checks[0].w, g_checks[0].h);
-        }
-        if (viewopt_bob()) {
-            screen_draw(g_tick, g_pic_x + g_checks[1].x, g_pic_y + g_checks[1].y, g_checks[1].w, g_checks[1].h);
-        }
-    }
-    if (g_open == MENU_CONTROLS) {
+    if (g_open == MENU_OPTIONS || g_open == MENU_CONTROLS) {
         int i;
-
-        for (i = 0; i < SLOTS; i++) {
-            char name[24];
-
-            if (slot_action(i) == g_waiting) {
-                screen_text(g_slots[i].x + 1, g_slots[i].y, "...");
-                continue;
-            }
-            input_key_name(input_binding(slot_action(i)), name, (int)sizeof(name));
-            screen_text(g_slots[i].x + 1, g_slots[i].y, name);
+        for (i = 0; i < SETTINGS_BINDINGS; i++) {
+            input_key_name(g_draft_keys[settings_binding_action(i, g_settings.classic)], g_key_names[i], 24);
+            g_settings.bindings[i] = g_key_names[i];
         }
-        /* The Mouse button's own word: Cursor or View, over the art. */
-        screen_text(84, 191, mouse_cursor() ? "Cursor" : "View");
-    }
-    if (g_open == MENU_CONTROLS) {
-        /* Cover only the old Mouse label, keeping the original button edge.
-         * A one-texel opaque picture is resident from startup; changing the
-         * preference draws text and never uploads a new screen per frame. */
-        screen_draw(g_control_label, 82, 191, 76, 8);
-        screen_text(83, 192, control_classic() ? "Mouse: Cursor" : "Mouse: View");
+        g_settings.dirty = settings_dirty();
+        settings_draw(&g_settings, settings_quad, 0);
     }
     if (g_note) {
         ui_string((DF_VIEW_W - ui_string_width(g_note)) / 2,

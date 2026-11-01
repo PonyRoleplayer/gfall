@@ -4,7 +4,9 @@
 #include "engine/assets/recfile.h"
 
 /*
- * Full screen and head bobbing, the two checkboxes on OPTN00I0.IMG.
+ * Stored view preferences: full screen, head bobbing, horizontal FOV.
+ * The settings shell currently exposes only FOV; older full/bob values
+ * remain effective and survive writes.
  * Read docs/game.md (Menus) before editing.
  *
  * Full screen hides the bottom stone bar (the face frame and the icon
@@ -17,10 +19,10 @@
  * sets HeadBobbing true; that is DFU's choice, not used here.
  *
  * Stored as one OPTS row in DATA\KEYS.DAT beside the bindings (keys.c
- * writes and reads it with them). No row means both off.
+ * writes and reads it with them). No row means both off and FOV 75. The appended fov field uses the
+ * same default for older OPTS rows; valid stored values are 45..120.
  *
- * Plain C. The check mark on the picture is drawn by the menu, which
- * the host does not build.
+ * Plain C. FOV is read from/applied to camera.c's existing projection API.
  */
 
 /* HeadBobber's timer starts here: sin is 1, the crest of a step. */

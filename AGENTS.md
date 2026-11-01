@@ -62,14 +62,15 @@ Each game is one folder under `src/game/`, and today there is one, `src/game/dag
   - People (P9, `docs/game.md`): `standing.c`, what the world thinks: reputations, each region's law and bank; `words.c`, TEXT.RSC's records with their macros filled in; `talk.c`, classic's talk window; `service.c`, a merchant's panel; `shop.c`, a shop's stock by the day and its prices, on the inventory screen's trade modes; `bank.c`, accounts, letters, loans and their screen; `court.c`, crimes, the trial and prison; `watch.c`, a street citizen at 1 health killed by a sure hit, blood at the body, every loaded guard hostile while wanted (kept across a building), talk refused on a hostile guard, and a killed guard's corpse to loot;
   - `control.c` (P9-c): classic cursor arrows/X, fractional movement, right-button gesture routing, Alt view offsets, Home centering, pointed activation and the saved Cursor/View scheme; no per-frame allocation or passive raycast, host-tested;
   - `hudbar.c` (P9-b): the classic HUD's plain-C button bounds, interaction-mode rows and compass heading, host-tested; `overlay.c`: the default-on bar and character portrait, blue backing, live vitals, four mode icons and compact CMPA00I0.BSS compass (one frame on the card), or COMPASS.IMG/COMPBOX.IMG with the panel off; full screen hides the stone bar, the face and the icon buttons, and leaves the vitals and the bar's compass; Tab frees the pointer for its controls, routed by `game.c`;
-  - `menu.c` (P3): classic's title, start menu, options and controls screens with ARROW.RAW's pointer;
+  - `menu.c` (P3): classic's title/start/death and the native settings shell with ARROW.RAW's pointer; `settings.c`: stone panels, dynamic translatable glyph text and shared hit geometry for Load/Save, Keybindings and Graphics (FOV);
   - `keys.c`: the bindings in DATA\KEYS.DAT; `mouse.c`: Cursor or View, the MOUS row in that file, and whether play wants the pointer (host-tested; it does not bind a key); the same choice is the CTLS row `control.c` reads; `viewopt.c`: full screen and head bobbing, the OPTS row in that file, host-tested;
   - `screen.c`: classic's 320 × 200 on the card.
 
-  What draws or reaches the keys (`screen.c`, `overlay.c`, `menu.c`, `screens.c`, `keys.c`, `game.c`) is not built for the host (`PLAY_DRAW_SRC`).
+  What draws or reaches the keys (`screen.c`, `overlay.c`, `menu.c`, `screens.c`, `keys.c`, `game.c`) is excluded from the shared host sources (`PLAY_DRAW_SRC`); hostcheck additionally links `menu.c` and `screen.c` with `tests/check_menu.c` stand-ins.
 ### Tests and tools
 - `tools/` — scripts: `check-deps` (the build's tools and the game data), `check-layers` (the layer rule).
 - `tests/host_card.c` — the texture cache's host stand-ins, for hostcheck and dfrec. `tests/data/` — dfrec's fixtures: an example mod (`goblins.txt`) and a misspelled one that must fail.
+- `tests/check_menu.c` — host stand-ins driving the real menu controller: settings drafts, Apply/Back, failed writes, focus resets, rebinding, scrolling and Exit confirmation. Linked only into hostcheck.
 - `tests/check_play.c` — the game's tests, run last:
   - classic's walk, run and jump as sums;
   - the character: 18 classes from CLASS*.CFG, the Breton and the Running skill, a Breton warrior's attributes, vitals and skills worked by hand, a Mage's spell points, health a level, a fall's damage;

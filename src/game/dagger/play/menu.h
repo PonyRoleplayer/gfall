@@ -4,22 +4,14 @@
 #include "engine/platform/input.h"
 
 /*
- * Classic's menus, one open at a time, each its own picture where classic
- * puts it and its buttons where DFU's windows put them (StartWindow,
- * PauseOptionsWindow, ControlsWindow). Read docs/game.md (Menus).
+ * Title/start/death retain classic's pictures. Escape opens settings.c's
+ * native 640x480 stone shell: Load/Save, Keybindings, Graphics (FOV only).
+ * Text is runtime glyphs, never baked into panel art. Read docs/game.md
+ * (Menus) for drafts, Apply, persistence and the card budget.
  *
- *   MENU_TITLE     TITL00I0.IMG, until a key or a click
- *   MENU_MAIN      PICK03I0.IMG: load a game, start a new one, exit
- *   MENU_OPTIONS   OPTN00I0.IMG over the stilled world: save, load, exit,
- *                  controls, continue, and the full-screen and head-bobbing
- *                  checkboxes (the picture's black squares)
- *   MENU_CONTROLS  CNFG00I0.IMG: each action's key, click one to bind it;
- *                  Mouse, the left button, switches Cursor and View
- *   MENU_DEATH     DIE_00I0.IMG, until a key or a click
- *
- * A menu's picture is on the card only while it is open (pic_load on
- * open, pic_free on close). The pointer is classic's ARROW.RAW. The
- * game turns the engine's pointer mode on while a menu is open.
+ * MENU_OPTIONS hosts Load/Save and Graphics; MENU_CONTROLS hosts bindings.
+ * The game owns pausing and pointer mode. All menu clicks use physical
+ * mouse edges, independent of attack bindings. ARROW.RAW remains the pointer.
  */
 
 enum {

@@ -185,6 +185,7 @@ PLAY_SRC := \
 	src/game/dagger/play/player.c \
 	src/game/dagger/play/mouse.c \
 	src/game/dagger/play/viewopt.c \
+	src/game/dagger/play/settings.c \
 	src/game/dagger/play/screen.c \
 	src/game/dagger/play/overlay.c \
 	src/game/dagger/play/menu.c \
@@ -268,9 +269,12 @@ build/cdroot/SPINTRI.EXE: build/SPINTRI.EXE
 build/spintri.iso: build/cdroot/SPINTRI.EXE | deps
 	$(XORRISO) -as mkisofs -o $@ -V SPINTRI -J -iso-level 1 build/cdroot
 
-build/hostcheck: tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_play.c tests/check_util.c tests/host_card.c $(HOST_SRC) | deps-host
+# Only hostcheck links the menu against deterministic input/persistence stand-ins.
+MENU_TEST_SRC := tests/check_menu.c src/game/dagger/play/menu.c src/game/dagger/play/screen.c
+
+build/hostcheck: $(MENU_TEST_SRC) tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_play.c tests/check_util.c tests/host_card.c $(HOST_SRC) | deps-host
 	mkdir -p build
-	$(HOST_CC) $(HOST_CFLAGS) -o $@ tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_play.c tests/check_util.c tests/host_card.c $(HOST_SRC)
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ $(MENU_TEST_SRC) tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_play.c tests/check_util.c tests/host_card.c $(HOST_SRC)
 
 hostcheck: build/hostcheck datacheck
 	./build/hostcheck

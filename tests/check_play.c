@@ -59,6 +59,7 @@
 #include "game/dagger/play/weapon.h"
 #include "game/dagger/play/mouse.h"
 #include "game/dagger/play/viewopt.h"
+#include "game/dagger/play/settings.h"
 #include "engine/assets/recfile.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/foes.h"
@@ -5137,6 +5138,86 @@ static int opt_put(void *ctx, const void *src, df_u32 n)
     return 1;
 }
 
+/* Rasterize the actual menu quads: layout/text checks and review pictures
+ * exercise the shipping atlas path rather than an unrelated mockup. */
+static df_u8 g_settings_preview[SETTINGS_W * SETTINGS_H];
+static int g_settings_quads;
+static void settings_preview_quad(void *ctx, int atlas, int sx, int sy, int sw, int sh,
+                                  int x, int y, int w, int h)
+{
+    const df_u8 *pixels;
+    int side, i, j;
+    (void)ctx;
+    pixels = settings_atlas(atlas, &side);
+    check_expect(pixels && sx >= 0 && sy >= 0 && sx+sw <= side && sy+sh <= side,
+                 "settings: quad outside atlas");
+    check_expect(x >= 0 && y >= 0 && x+w <= SETTINGS_W && y+h <= SETTINGS_H,
+                 "settings: quad outside output");
+    if (!pixels || w <= 0 || h <= 0) return;
+    g_settings_quads++;
+    for (j = 0; j < h; j++) for (i = 0; i < w; i++) {
+        df_u8 c;
+        c = pixels[(sy+j*sh/h)*side+sx+i*sw/w];
+        if ((atlas == 0 || c) && x+i >= 0 && x+i < SETTINGS_W && y+j >= 0 && y+j < SETTINGS_H)
+            g_settings_preview[(y+j)*SETTINGS_W+x+i] = c;
+    }
+}
+static const char *settings_test_translation(const char *s)
+{
+    if (df_eq(s, "GRAPHICAL SETTINGS")) return "OPCIONES GRAFICAS";
+    if (df_eq(s, "FIELD OF VIEW")) return "CAMPO DE VISION";
+    return 0;
+}
+static void check_settings(void)
+{
+    SettingsView v;
+    const df_u8 *rgb;
+    int tab, i;
+    FILE *f;
+    static const char *const paths[] = {"build/settings-files.ppm", "build/settings-keys.ppm", "build/settings-graphics.ppm", "build/settings-translated.ppm"};
+    check_expect(settings_open(), "settings: assets did not open");
+    rgb = settings_palette();
+    mem_zero(&v, sizeof(v));
+    v.fov = 75; v.classic = 1; v.waiting = -1; v.hover = SETTINGS_NOTHING;
+    {
+        static const char *const names[] = { "W", "S", "Left", "Right", "A", "D", "Space", "Shift", "R", "Right Button", "H", "C", "I", "E", "Tab", "Page Up", "Page Down", "Home", "Alt", "M" };
+        for (i = 0; i < SETTINGS_BINDINGS; i++) v.bindings[i] = names[i];
+    }
+    for (tab = 0; tab < 4; tab++) {
+        v.tab = tab < 3 ? tab : SETTINGS_GRAPHICS;
+        if (tab == 3) settings_translate(settings_test_translation);
+        mem_fill(g_settings_preview, 18, sizeof(g_settings_preview));
+        g_settings_quads = 0;
+        settings_draw(&v, settings_preview_quad, 0);
+        check_expect(g_settings_quads > 100 && g_settings_quads < 2000, "settings: unexpected draw count");
+        f = fopen(paths[tab], "wb");
+        if (f) {
+            fprintf(f, "P6\n%d %d\n255\n", SETTINGS_W, SETTINGS_H);
+            for (i = 0; i < SETTINGS_W*SETTINGS_H; i++) fwrite(rgb+g_settings_preview[i]*3, 1, 3, f);
+            fclose(f);
+        }
+    }
+    settings_translate(0);
+    check_expect(settings_hit(SETTINGS_FILES,0,30,120) == SETTINGS_TAB_FILES
+        && settings_hit(SETTINGS_FILES,0,30,160) == SETTINGS_TAB_KEYS
+        && settings_hit(SETTINGS_FILES,0,30,200) == SETTINGS_TAB_GRAPHICS, "settings: navigation order");
+    check_expect(settings_hit(SETTINGS_FILES,0,230,130) == SETTINGS_LOAD
+        && settings_hit(SETTINGS_FILES,0,430,130) == SETTINGS_SAVE, "settings: file actions");
+    check_expect(settings_hit(SETTINGS_KEYS,8,450,370) == SETTINGS_BIND+19
+        && settings_binding_action(19,1) == INPUT_MAP, "settings: last scrolled binding inaccessible");
+    check_expect(settings_binding_action(9,1) == INPUT_SWING
+        && settings_binding_action(9,0) == INPUT_ATTACK, "settings: scheme-specific swing binding");
+    check_expect(settings_fov_at(-100) == 45 && settings_fov_at(336) == 45
+        && settings_fov_at(408) == 75 && settings_fov_at(516) == 120
+        && settings_fov_at(1000) == 120, "settings: FOV track endpoints or default");
+    check_expect(settings_hit(SETTINGS_GRAPHICS,0,408,112) == SETTINGS_SLIDER
+        && settings_hit(SETTINGS_GRAPHICS,0,408,180) == SETTINGS_NOTHING, "settings: slider hit area");
+    settings_close();
+    check_expect(settings_open(), "settings: reopen failed");
+    settings_close();
+    printf("settings: native panels, translated labels, binding scroll and FOV endpoints; build/settings-*.ppm\n");
+}
+
 static void check_viewopt(void)
 {
     Player p;
@@ -5213,9 +5294,11 @@ static void check_viewopt(void)
     viewopt_set_full(1);
     viewopt_set_bob(1);
     g_opt_at = 0;
+    camera_set_fov(103.0f);
     check_expect(rec_put_begin(opt_put, 0) && viewopt_write(opt_put, 0), "view: the options did not store");
     viewopt_defaults();
     viewopt_read(g_opt_file, (df_u32)g_opt_at);
+    check_expect(df_iround(camera_fov()) == 103, "view: FOV did not survive settings round trip");
     check_expect(viewopt_full() && viewopt_bob(), "view: a stored full screen and head bobbing did not come back");
     g_opt_at = 0;
     check_expect(rec_put_begin(opt_put, 0), "view: an older file did not start");
@@ -5224,7 +5307,26 @@ static void check_viewopt(void)
     viewopt_defaults();
     viewopt_read(g_opt_file, (df_u32)g_opt_at);
     check_expect(!viewopt_full() && !viewopt_bob(), "view: a file without the row did not stay off");
+    /* An actual old OPTS row, not only an empty file: missing fov must
+     * inherit 75 while its pre-existing full/bob preferences survive. */
+    {
+        typedef struct OldOptions { df_u16 id; df_u8 full, bob; } OldOptions;
+        static const RecField fields[] = {
+            REC_FIELD("id", REC_UINT, OldOptions, id),
+            REC_FIELD("full", REC_UINT, OldOptions, full),
+            REC_FIELD("bob", REC_UINT, OldOptions, bob)
+        };
+        static const RecSchema schema = { "OPTS", "options", fields, 3, sizeof(OldOptions), 0 };
+        OldOptions old;
+        old.id=0; old.full=1; old.bob=1;
+        g_opt_at=0;
+        check_expect(rec_put_begin(opt_put,0) && rec_put_rows(opt_put,0,&schema,&old,1,0,0), "view: old options fixture");
+        viewopt_defaults();
+        viewopt_read(g_opt_file,(df_u32)g_opt_at);
+        check_expect(viewopt_full() && viewopt_bob() && df_iround(camera_fov())==75, "view: old OPTS row lost preferences or FOV default");
+    }
     viewopt_defaults();
+    check_expect(df_iround(camera_fov()) == 75, "view: missing FOV did not keep default");
     printf("view: full screen off, head bob at a walk's phase\n");
 }
 
@@ -5545,11 +5647,15 @@ static void check_citizen(void)
            misses, matched, guards, hostile, taken[0] ? taken : "nothing");
 }
 
+void check_menu(void);
+
 void check_play(void)
 {
+    check_menu();
     /* As game_setup does: read before any screen's heap is current. */
     standing_new_game(1u);
     check_mouse();
+    check_settings();
     check_viewopt();
     check_rules();
     check_character();

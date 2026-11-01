@@ -1,6 +1,7 @@
 #include "game/dagger/play/viewopt.h"
 #include "game/dagger/play/rules.h"
 #include "engine/core/df.h"
+#include "engine/gfx/camera.h"
 
 /* See viewopt.h. HeadBobber.cs (MIT, Daggerfall Workshop): PlotPath and
  * PlotRotation. Metres become this world's units. The decompilation is
@@ -10,15 +11,17 @@ typedef struct ViewRow {
     df_u16 id;
     df_u8 full;
     df_u8 bob;
+    df_u16 fov;
 } ViewRow;
 
-static const ViewRow g_default_row = { 0, 0, 0 };
+static const ViewRow g_default_row = { 0, 0, 0, 75 };
 static const RecField g_fields[] = {
     REC_FIELD("id", REC_UINT, ViewRow, id),
     REC_FIELD("full", REC_UINT, ViewRow, full),
-    REC_FIELD("bob", REC_UINT, ViewRow, bob)
+    REC_FIELD("bob", REC_UINT, ViewRow, bob),
+    REC_FIELD("fov", REC_UINT, ViewRow, fov)
 };
-static const RecSchema g_schema = { "OPTS", "options", g_fields, 3, (df_u16)sizeof(ViewRow), &g_default_row };
+static const RecSchema g_schema = { "OPTS", "options", g_fields, 4, (df_u16)sizeof(ViewRow), &g_default_row };
 
 /* Metres, HeadBobber's walking and running amounts. */
 #define WALK_X 0.045f
@@ -39,6 +42,7 @@ void viewopt_defaults(void)
 {
     g_full = 0;
     g_bob = 0;
+    camera_set_fov(75.0f);
 }
 
 int viewopt_full(void)
@@ -123,6 +127,9 @@ void viewopt_read(const df_u8 *bytes, df_u32 n)
     if (!row) {
         return;
     }
+    /* Missing fields inherit the schema default, so pre-FOV files remain
+     * at 75 degrees. Invalid stored angles cannot corrupt the projection. */
+    if (row->fov >= 45 && row->fov <= 120) camera_set_fov((float)row->fov);
     if (row->full <= 1) {
         g_full = row->full;
     }
@@ -138,5 +145,6 @@ int viewopt_write(RecPut put, void *ctx)
     row.id = 0;
     row.full = (df_u8)g_full;
     row.bob = (df_u8)g_bob;
+    row.fov = (df_u16)df_iround(camera_fov());
     return rec_put_rows(put, ctx, &g_schema, &row, 1, 0, 0);
 }

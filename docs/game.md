@@ -35,11 +35,12 @@ screens   whichever of those is open, on the card
 save      the one saved game
 kit       what a new character starts with
 overlay   the HUD: compass, vitals, crosshair
-menu      the title, start, options and controls screens
+menu      title/start/death and the settings shell
+settings  native stone panels, dynamic text, settings layout and hit targets
 control   classic cursor movement, view offsets, gesture routing and pointer rays
 keys      the bindings in DATA\KEYS.DAT
 mouse     Cursor or View, the MOUS row in that file
-viewopt   full screen and head bobbing, the OPTS row in that file
+viewopt   full screen, head bobbing and FOV, the OPTS row in that file
 screen    classic's 320 x 200 on the card
 sfx       DAGGER.SND's clips for combat
 commands  the game's console commands
@@ -47,7 +48,7 @@ commands  the game's console commands
 
 `places/travel.c` (P8) carries every move between places; LEVELFALL shares its landing sums.
 
-The player is Daggerfall's, so it lives here and not in the engine. So do items and the inventory: the engine is simulation and world. It gives a camera, a walking body (`body`), using things (`interact`) and entities (`entity`), and `play` builds Daggerfall's player out of them. Another game would build its own in its own folder. Each is a module of one `.c` and one `.h`, as in `docs/architecture.md`. What can be plain C is, and is host-tested in `tests/check_play.c`. What draws or reaches the keys (`PLAY_DRAW_SRC`) is checked by running GFALL.
+The player is Daggerfall's, so it lives here and not in the engine. So do items and the inventory: the engine is simulation and world. It gives a camera, a walking body (`body`), using things (`interact`) and entities (`entity`), and `play` builds Daggerfall's player out of them. Another game would build its own in its own folder. Each is a module of one `.c` and one `.h`, as in `docs/architecture.md`. What can be plain C is, and is host-tested in `tests/check_play.c`. What draws or reaches the keys (`PLAY_DRAW_SRC`) is checked by running GFALL; the menu controller also runs in hostcheck with deterministic input stand-ins.
 
 `travel` is the one piece that is a place's business more than the game's: LEVELFALL needs it too. It goes in `src/game/dagger/places/travel.c`, not in `play/`, so that both GFALL and LEVELFALL use one copy. Its job is to load what a passage leads to and say where the player lands. It finds the other side from the location index (`dungeon.h`), not from a viewer's rows.
 
@@ -416,42 +417,116 @@ Tune region boundaries/rates from that playtest; no target run is claimed here.
 
 ## Menus
 
-**Built (P3, `play/menu.c`, `play/keys.c`, `play/screen.c`).** GFALL opens on classic's menus, then starts the hold.
-- **Each menu is classic's own picture, where classic puts it.** Its buttons are where DFU's windows put them. Only the open menu's picture is on the card (`pic_load` on open, `pic_free` on close).
-- **The pointer is classic's ARROW.RAW** (10 × 10, a cutout under ART_PAL.COL), drawn at the engine's pointer (`input_set_pointer`, `input_pointer`). A click is the physical left button (`mouse_pressed & INPUT_MOUSE_LEFT`), independent of attack bindings.
-- **The screens before any place** are the engine's screen frame: `gfx_prepare(0)`, then `gfx_frame(cam, 0)` each frame, with the game drawing through `gfx_set_extra`.
+The title (`TITL00I0.IMG`), start (`PICK03I0.IMG`) and death
+(`DIE_00I0.IMG`) screens retain classic's artwork and coordinates. Escape in
+play opens the stone settings shell (`play/settings.c`, input in `menu.c`),
+over the paused world. Its layout is **640 x 480**, independent of the
+classic screens' stretched 320 x 200 canvas. It does not change video mode.
 
-| Menu | Picture | Buttons |
-| --- | --- | --- |
-| Title | TITL00I0.IMG (its own palette) | any key or click goes on |
-| Start | PICK03I0.IMG (its own palette) | Load (72, 45): the saved game, or says there is none; Start a new game (72, 99): character creation, then the hold under "Loading...", which fades in; Exit (125, 145) quits |
-| Options | OPTN00I0.IMG at 85, 40, over the stilled world (`gfx_set_pause`) | Save, and Load, the one slot; Exit, clicked twice, quits; Controls; Continue, or Escape, goes back to play. Full screen and head bobbing are the picture's black squares (see below). Sound, music and detail are still left out |
-| Controls | CNFG00I0.IMG | each action's key in classic's slot (47 × 7); a click on one waits for a key (`input_key_pressed`), and Escape leaves it be; a key another action has is swapped between them; Escape, the menu's, and the console's are refused (`input_bind`). Mouse, the left button along the bottom, switches Cursor and View. Default puts classic's keys and Cursor back; Continue, or Escape, goes back to the options |
+### The three sections
 
-**The controls' slots** are classic's for the actions the game has:
-- forward, back, turn left/right and strafe left/right, in the walk's columns;
-- jump and run;
-- rest;
-- the swing (attack);
-- the character sheet and the inventory;
-- use (activate the centre), cursor toggle, look up/down, center and Alt look;
-- the travel map.
+1. **Load/Save**: Load Game and Save Game dispatch to the existing six-slot
+   screens (`slots.c`, `screens.c`). Their names, save format and behavior are
+   unchanged. No saved game produces a note in the shell. Exit Game requires
+   a second click; idle frames keep that confirmation. Another control cancels
+   it. Back or Escape returns to play.
+2. **Keybindings**: twelve visible rows, scrolled by mouse wheel or the two
+   arrow buttons. All twenty implemented binding rows are reachable. Clicking
+   a row captures the next key or mouse button; Escape cancels capture without
+   closing the shell. A conflicting key swaps with the selected action's old
+   key. The menu/console keys remain reserved by `input_bind`. Mouse: Cursor /
+   View switches the draft scheme; the Attack / swing row edits INPUT_SWING
+   for Cursor, INPUT_ATTACK for View, preserving the other scheme's binding.
+3. **Graphics**: only the horizontal field of view, 45..120 degrees, default
+   75. Clicking or dragging the track sets the draft value. A drag owns the
+   pointer until release, including outside the track, where it clamps.
+   Focus/input reset cancels capture before any stale press or release acts.
+   The existing `camera_set_fov` API changes projection and culling together.
 
-Classic's other slots (crouching, spells, the log...) stay empty until their actions come.
+Default changes only the displayed section's draft. **Apply** commits that
+section and writes `DATA/KEYS.DAT`; a write failure restores its previous live
+settings, reports the failure, and retains the draft for another attempt.
+Tab changes preserve drafts. Back, Escape, or leaving for a save-slot screen
+abandons any unapplied drafts. A successful Apply remains effective when the
+shell closes. There is no automatic write merely from closing it.
 
-**Bindings are saved** in `DATA\KEYS.DAT`, a record file (`docs/data.md`) of one `KEYS` record per action (id `INPUT_*`, its virtual key), when the controls screen closes with a change. They are read at start (`keys_load`) over classic's defaults (`keys_defaults`): W, S, A, D, left-button View attack, right-button Cursor swing, E, Shift, Space, C, I, M, R, H, Tab, Left/Right, Page Up/Down, Home and Alt. The same file holds one `MOUS` row, id 0, `cursor` 1 or 0 (`play/mouse.c`), and a `CTLS` row for that same Cursor/View preference (`play/control.c`). No row means Cursor. A file that stored only one of those rows copies it onto the other at load, so the two stay one setting. It also holds one `OPTS` row, id 0, `full` and `bob` each 1 or 0 (`play/viewopt.c`). No row means both off. Closing the options screen after a change writes the file, and so does confirming Exit.
+The `KEYS`, `MOUS` and `CTLS` records retain their existing meaning. `OPTS`
+retains `full` and `bob` and appends unsigned `fov`. Old records without that
+field inherit 75; values outside 45..120 are ignored. FOV is a user preference,
+not part of a character's save. Existing full-screen (hide the bottom HUD bar)
+and head-bob preferences remain honored and preserved, but have no control in
+this shell: Graphics currently exposes FOV only.
 
-**Full screen and head bobbing** are the two black squares painted on OPTN00I0.IMG, each three by three pixels of index 0. On the picture they are (69, 50) and (140, 50); the picture's own place is (85, 40), so a click is classic (154, 90) or (225, 90). The hit target is that square. A yellow tick (palette index 146) is drawn in it while the setting is on. Both start off. Full screen off is classic's: UESP's User Interface page says a new game begins with the interface visible. Head bobbing's classic default was not found; Daggerfall Unity's `defaults.ini` sets `HeadBobbing` true (changed to true in 2018), and that is DFU's own default, so this game starts with the box clear.
+### Artwork, text and ownership
 
-Full screen hides only the bottom stone bar: the face frame, its blue backing, and the icon buttons. It does not hide the vitals or the compass. Health, fatigue and spell points stay at x 49, 57 and 65, y 161, filled from the bottom as when the bar is showing. The compact compass stays in the status slot (275, 156, 43 × 42). It does not change the video mode or the size of the 3D view. The crosshair and the weapon in hand stay. The console's `panel` is a separate switch: with the panel off and full screen clear, the old compass strip and the vitals remain.
+`settings.c/.h` is plain C. It emits atlas rectangles through a callback;
+`menu.c` submits them via `pic_draw_part`, and hostcheck rasterizes the exact
+same rectangles for visual review. One coordinate system drives drawing,
+hit targets and the slider endpoints. Menu clicks are physical left-button
+edges, independent of attack bindings. Classic's ARROW.RAW remains the pointer.
 
-Head bobbing, while the player walks on the ground, moves the camera off the body's eye. The wave is Daggerfall Unity's HeadBobber (`PlotPath` and `PlotRotation` in `HeadBobber.cs`, and `WalkStepInterval` 2.5 in `PlayerFootsteps.cs`): to the body's right by cos(phase) × 0.045 m walking or 0.09 m running, and up by |sin(phase)| × 0.062 m walking or 0.11 m running (40 units a metre). The nod is that file's degrees, absolute for the phase: |sin| × 0.25° of pitch and −sin × 0.1° of yaw while walking, 0.6° and 0.15° while running. Phase advances by the horizontal speed in metres a second times 1.25, and a stop puts it back at π/2, where a step is at its crest. Standing, swimming, flying and leaving the ground do not bob. The setting off, the offset is zero. Hostcheck compares that offset at phase 0, π/2 and π, for a walk and a run, and that the eye on the rig follows it only while the setting is on and the step is a walk. The tick itself is drawn by the menu, which the host does not build.
+**No words are baked into panel art.** The three atlases are a 128-square
+stone/rust/moss swatch sheet, a 256-square enlarged block-font sheet and a
+128-square compact-font sheet. Both fonts are built from FONT0003.FNT in the
+user's ARENA2 at open, with gold ink and a one-pixel shadow. Labels, binding
+names, notes and numeric values are runtime strings. `settings_translate`
+accepts a translation provider with English fallback; paragraphs wrap, button
+labels choose a smaller face when necessary, and text is clipped to its panel.
+This is translation-ready rendering, not a language selector or a Unicode
+font system: the existing font's byte encoding and glyph coverage still apply.
 
-**Mouse.** Cursor and View both exist. The controls screen's Mouse button switches them, and both rows are written. Cursor keeps the pointer (`input_set_pointer(1)`): the mouse does not turn the view, the crosshair is off, and classic's arrows, X and right-button gesture run (`control.c`). A click is the physical left button, so a menu or a screen takes the control drawn under it. View is mouse look (`input_set_pointer(0)`): the pointer is not drawn over the world, the crosshair is on, and the left button swings (`weapon_gesture`; a drag uses the mouse's motion). Opening a menu or a screen shows the pointer either way. Closing it restores the HUD cursor, and starting play uses the saved mode, not whichever a screen last left. Tab toggles the free pointer without changing the saved scheme. Default puts Cursor back with the keys.
+The source texels total **96 KB**, three square textures with their own shared
+palette (opaque stone and keyed fonts). The Voodoo's existing 256 KB picture
+room is unchanged. These textures are loaded only while the shell is open and
+freed before any classic save-slot screen is opened. Their private heap dies
+with them. The renderer uses bounded swatch pieces and glyph quads; an idle
+frame, hover, binding edit or slider drag does **no texture upload, disk read
+or allocation**. No full-screen image is rebuilt on a slider tick.
 
-On the 233: the title, the start menu, the pointer, the start into the hold and Escape's options run. The options' Exit did not quit at first: its question ("Click Exit again") was taken back every frame with no click, so the second click only asked again. It is now taken back only by a click on another button (`d403b0f`); not yet tried there. The controls screen is not tried there yet.
+### Adding another option
 
-**Escape is the menu's only since the engine's 127d3d3.** Before that, the window's own Escape quit the program whatever the game had set, so the options never opened. Now both places that see Escape obey `input_set_escape_quits` (`docs/input.md`).
+This is a small game-specific settings UI, not a general widget framework.
+The reusable parts are the panel/button drawing, glyph atlases, text wrapping,
+translation hook and rendering callback. Layout and input dispatch are still
+explicit C; there is no widget registry, automatic layout or option schema
+that generates controls. Adding a toggle or another slider does not require
+new panel artwork or engine rendering code.
+
+To add an option backed by an existing game or engine API:
+
+1. Add its draft value to `SettingsView` and its action to the settings action
+   enum. Define its geometry beside the existing geometry in `settings.c`,
+   and use the same coordinates in `settings_draw` and `settings_hit`.
+2. Draw the control and runtime label, using `tr` for localizable text. For a
+   slider, share its range/position conversion between drawing and dragging,
+   as the FOV track does. Keep text within its panel and preserve hit sizes.
+3. In `menu.c`, snapshot the committed value on open, handle input into the
+   draft, include it in dirty/default handling, and commit only on Apply.
+   Restore the previous live value if writing fails. Back/Escape discards
+   the remaining draft; focus reset must cancel any pointer/key capture.
+4. If persistent, append a named field to the appropriate record schema
+   (`viewopt.c` for view preferences). Give old files a default and validate
+   the stored range. Do not renumber existing actions or record identities.
+5. Add interaction and old-file/round-trip tests, update the host preview,
+   and run hostcheck and the GFALL PE check. Verify the control on the target.
+
+The amount of work is mainly the option's behavior and persistence. A new
+rendering feature that the engine does not already expose is separate work
+for the ENGINE Engineer. The current shell deliberately exposes only FOV in
+Graphics; the reusable styling does not imply other graphics features exist.
+
+### Verification
+
+`make hostcheck` includes the real menu controller with deterministic input
+and persistence stand-ins (`tests/check_menu.c`): dispatch, draft/apply/cancel,
+failed-write retry, focus-loss drag cancellation, binding conflict swaps,
+Escape capture cancellation, last-row scrolling and two-click Exit. The real
+OPTS writer/reader is tested separately, including a pre-FOV record.
+`tests/check_play.c` also checks atlas bounds, output bounds and hit rectangles,
+and writes `build/settings-{files,keys,graphics,translated}.ppm`; the translated
+preview replaces headings without changing artwork. Win32 polling itself
+remains covered by `tests/check_input.c`. Real Voodoo input and appearance
+still require target playtesting; host previews are not hardware captures.
 
 ## Creatures and combat
 
