@@ -78,13 +78,27 @@ Before the budget the castle and the cities sent full single levels in table ord
 
 `mipmap off` in the console uploads single levels, still budgeted, and `mipmap on` chains again. Either change sends the whole level again on the next frame (`gfx_set_mipmap`, through `gfx_prepare`, which starts the card from empty with `glide_tex_reset`). A chain was tried once before, early on, and the ground came out in bands and the font in the wrong glyphs. The cause was never found; `docs/memory.md` has what is known. If that comes back on hardware, `mipmap off` is the comparison.
 
+### Runtime mip averaging
+
+`mip_halve_rgba` shrinks the RGBA work buffer in place. Both implementations preserve exactly `(a + b + c + d + 2) >> 2` in each byte, including alpha. Round only after all four contributors have been added: rounded pair averages can differ by one, changing a cutout or window's half-coverage test. Bleeding, palette lookup, 1555 packing, budgets and uploads still follow the same paths.
+
+The default selects original Pentium MMX when `cpu_has_mmx` reports it. This shared core helper also serves the sound mixer: on 32-bit x86 it first tests whether EFLAGS.ID can change, restores the flags, then checks the highest basic CPUID leaf before asking leaf 1 for EDX bit 23. Its answer is cached. Non-x86 hosts return false and compile only the scalar mip kernel; a CPU without CPUID or MMX always uses scalar. No compiler MMX or SSE option is needed to enable the optional kernel.
+
+The MMX loop writes two RGBA outputs per iteration. It unpacks bytes to words, sums four values, adds 2, shifts by 2 and packs the results; `1022` is the largest intermediate word. All eight source texels are loaded before each output pair is stored, so overlapping input/output and buffers aligned to four bytes are safe. Squares of side 4..256 have an even output width and need no tail; side 2 uses scalar for its sole output. There are no reads outside either source row and no extra work buffer.
+
+One level is one MMX batch. The integer-only row loop makes no calls and does no floating-point work while MMX owns the x87 register file. The assembly declares all eight x87 registers clobbered, and a single `EMMS` releases them before the non-inlined kernel returns. Keep that boundary if the kernel is changed: the engine's next work may be x87.
+
+`mipmmx 0` forces scalar averaging; `mipmmx 1` permits MMX only when supported. The getter reports effective availability, so it stays zero on an unsupported CPU. This changes later chain builds, including streamed rebuilds; it does not invalidate stored chains or upload pictures again. To compare a whole place's rebuild, set `mipmmx`, then change `mipmap` off and on across frames. The result should be byte-identical. No target speedup has been measured for this implementation.
+
+The authored host checks compare scalar and auto output against an independent raw-RGBA byte oracle, covering all sums 0..1020 in each channel, zero/full/random values, rounding ties, alpha near half coverage, both word alignments modulo eight, untouched buffer guards and repeated in-place levels. An x87 `FSQRT` immediately after each batch checks the return state. Integration checks compare single levels and every dropped chain with the scalar full chain, for both cutouts and indexed pictures, including glass. These additions have not been built or run yet.
+
 ## The FPU
 
 The Pentium's x87 divides in 19 cycles at 24-bit precision, 33 at 53, 39 at 64; Windows starts a program at 53. Every vertex takes one divide (1/z), and a clipped edge more. `draw_frame` sets the precision control to 24 bits for the render passes (sky, cull, models, decals, windows, sprites, precipitation: `df_fpu_single`) and gives the old word back before the overlay (`df_fpu_restore`), as Quake did around its renderer. Their arithmetic is float throughout, so nothing they compute changes but the time; rounding is untouched (`df_iround`'s `fistp`, `df_snap16`'s store to a float). Kept at the full precision: the walker and collision (the sim stage, tuned at it), the sound, and the overlay, where a viewer's panel prints doubles (a stream's world position: 32 million units needs 25 bits). Never put a double inside the passes. `fpu24 0` in the console runs them at the full precision, to compare in the profile panel.
 
 A vertex's projection is done in place in `project_vert` (`camera_project`'s arithmetic on draw.c's own copy of the focal length): a call of seven arguments a vertex was some twenty cycles of pushes. The model's view transform was already inline (`view_point`).
 
-MMX does integers only on this chip: the frame's geometry is x87 float, so MMX has nothing to do there. It mixes the sound (`mixer.c`). The CRT replacements copy and fill a 32-bit word at a time (`rep movsd`, `rep stosd` in `mem_copy`, `mem_fill`, `memcpy`, `memset`), where they were byte loops; the frame itself makes no such calls, so that is load time.
+MMX does integers only on this chip: the frame's geometry is x87 float, so MMX has nothing to do there. It mixes the sound (`mixer.c`) and can average mip levels (`mip.c`, above). The CRT replacements copy and fill a 32-bit word at a time (`rep movsd`, `rep stosd` in `mem_copy`, `mem_fill`, `memcpy`, `memset`), where they were byte loops; the frame itself makes no such calls, so that is load time.
 
 Not done, the largest saving left on the CPU's side: a corner of an ARCH3D model is transformed and projected once for each face that has it, 2.9 times on average over every model in ARCH3D.BSA (837,101 face corners, 288,304 distinct). A cache of each drawn model's transformed corners would cut that work by up to about half once back faces are dropped; it needs each mesh's corners indexed, and its clipping kept per face.
 
@@ -97,7 +111,7 @@ Not done, the largest saving left on the CPU's side: a corner of an ARCH3D model
 
 ## Console
 
-`wbuffer`, `planar`, and `mipmap` switch the choices above at run time. `texmem` reports the chains and how many pictures the budget shrank. `vsync`, `stats`, and `glinfo` show what they cost. `glinfo` names the depth buffer and whether planar polygons are in use. See `docs/console.md`.
+`wbuffer`, `planar`, `mipmap`, and `mipmmx` switch the choices above at run time. `texmem` reports the chains and how many pictures the budget shrank. `vsync`, `stats`, and `glinfo` show what they cost. `glinfo` names the depth buffer and whether planar polygons are in use. See `docs/console.md`.
 
 ## Water
 

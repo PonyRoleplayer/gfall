@@ -1,6 +1,6 @@
 # MMX suggestions
 
-These are ideas for later, not work in progress.
+These are ideas for later alongside the implemented mixer and optional mip averaging. The new mip kernel and its authored parity tests have not been built or run yet; its speed on the target is unmeasured.
 
 MMX is integer only. The float vertex path is 3DNow and is not in the table below.
 
@@ -12,7 +12,7 @@ A software rasterizer is rejected because the Voodoo already fills triangles in 
 | Clear the mix buffer | The silence before that mix | A wide fill of 16-bit zeros | A little CPU back, enough for a few more voices of the same clips | Some |
 | Resample 4 voices side by side | The pitched path, still one sample at a time in add_frame | Four voices do not depend on each other | Footsteps and swings at the right pitch without a hitch | Some |
 | Muffle 4 voices side by side | A low-pass in front of the mixer | One voice is a chain. Four voices are four chains | Sounds behind a door go dull. The filter itself is not the MMX win | Some |
-| 2x2 mip average | mip.c, every coarser level | Add four texels and shift, on a whole row | Shorter hitches when a picture is rebuilt or a sharper mip is sent | Great |
+| 2x2 mip average | mip.c, every coarser level | Two RGBA outputs per iteration; widen, sum four, add 2, shift once | Optional runtime dispatch, `mipmmx 0` for scalar; speedup unmeasured (`docs/glide.md`) | Implemented; validation pending |
 | Bilinear wall rebuild | texture_smooth | Blend four neighbors in red, green, and blue, then search the palette | The climate and season rebuilds drop from a stall toward a frame or two. The palette search stays scalar. Pentium MMX has no psadbw | Great |
 | Pack a sprite to 1555 | The cutout path in mip.c | Widen indexes, test clear texels, pack to 16-bit | Faster uploads of creatures and flats. The bus to the Voodoo can still be the limit | Some |
 | Far-ground 8x8 shrink | The horizon bake | Pure average of color blocks, no palette search in the inner step | The stream catches up while you walk toward a new city | Great |

@@ -48,6 +48,7 @@ HOST_CFLAGS := -std=gnu90 -Wall -Wextra -O2 -DDF_HOST -Isrc
 
 # The engine that hostcheck runs: plain C, no Win32 or Glide.
 ENGINE_HOST_SRC := \
+	src/engine/core/cpu.c \
 	src/engine/core/mem.c \
 	src/engine/core/log.c \
 	src/engine/core/prof.c \
@@ -336,6 +337,7 @@ DAT_SRC := \
 	apps/datfall/means.c \
 	src/game/dagger/formats/dungeon.c \
 	src/game/dagger/formats/worldmap.c \
+	src/engine/core/cpu.c \
 	src/engine/core/mem.c \
 	src/engine/core/log.c \
 	src/engine/assets/recfile.c \

@@ -1,4 +1,5 @@
 #include "engine/sound/mixer.h"
+#include "engine/core/cpu.h"
 
 /*
  * See mixer.h and docs/sound.md. The MMX loop exists on x86 (the target,
@@ -12,61 +13,11 @@
 #define MIX_HAVE_ASM 0
 #endif
 
-static int g_cpu = -1;
 static int g_want = 1;
-
-#if MIX_HAVE_ASM
-/*
- * CPUID function 1, EDX bit 23. A 386 or an early 486 has no CPUID: the
- * EFLAGS ID bit (21) does not stay flipped.
- */
-static int cpu_mmx(void)
-{
-    df_u32 eax;
-    df_u32 ebx;
-    df_u32 ecx;
-    df_u32 edx;
-
-#if defined(__i386__)
-    df_u32 a;
-    df_u32 b;
-
-    __asm__ __volatile__(
-        "pushfl\n\t"
-        "popl %0\n\t"
-        "movl %0, %1\n\t"
-        "xorl $0x200000, %0\n\t"
-        "pushl %0\n\t"
-        "popfl\n\t"
-        "pushfl\n\t"
-        "popl %0\n\t"
-        "pushl %1\n\t"
-        "popfl"
-        : "=&r"(a), "=&r"(b)
-        :
-        : "cc");
-    if (((a ^ b) & 0x200000u) == 0) {
-        return 0;
-    }
-#endif
-    eax = 1;
-    __asm__ __volatile__("cpuid" : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
-    (void)ebx;
-    (void)ecx;
-    return (int)((edx >> 23) & 1u);
-}
-#endif
 
 int mix_has_mmx(void)
 {
-    if (g_cpu < 0) {
-#if MIX_HAVE_ASM
-        g_cpu = cpu_mmx();
-#else
-        g_cpu = 0;
-#endif
-    }
-    return g_cpu;
+    return cpu_has_mmx();
 }
 
 void mix_set_mmx(int on)

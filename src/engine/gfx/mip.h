@@ -4,8 +4,8 @@
 #include "engine/core/df.h"
 
 /*
- * Mip chains and the texture budget. Plain C, no Glide, so hostcheck
- * tests it; glide.c uploads what it builds. See docs/glide.md.
+ * Mip chains and the texture budget. No Glide or OS dependencies, so
+ * hostcheck tests it; glide.c uploads what it builds. See docs/glide.md.
  *
  * A picture is a square power-of-two index image, 1..256 on a side.
  * drop is how many levels below full size its first level is: 0 is the
@@ -52,6 +52,24 @@ df_u8 mip_nearest(int r, int g, int b);
 
 /* Texels in the levels mip_build would write. */
 df_u32 mip_texels(int side, int drop, int chain);
+
+/*
+ * Optional original-MMX averaging, on by default when the CPU has it.
+ * The getter reports effective use, so it stays false on unsupported
+ * CPUs even after set(1). Changes affect later builds, not stored chains.
+ */
+void mip_set_mmx(int on);
+int mip_mmx(void);
+
+/*
+ * Shrink a square RGBA buffer in place, keeping exactly
+ * (a + b + c + d + 2) >> 2 in each byte, including alpha. Each df_u32
+ * holds four independent byte lanes; only the first (side/2)^2 words
+ * are overwritten. side is a power of two, 2..256; other sizes (and
+ * NULL) do nothing. No extra buffer or 8-byte alignment is required.
+ * mip_build uses this same primitive for every smaller level.
+ */
+void mip_halve_rgba(df_u32 *rgba, int side);
 
 /*
  * Writes the levels into out, at least MIP_MAX_BYTES. A cutout is

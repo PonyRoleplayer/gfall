@@ -35,6 +35,7 @@
 #include "engine/gfx/rig.h"
 #include "engine/scene/interact.h"
 #include "engine/core/prof.h"
+#include "engine/core/cpu.h"
 #include "engine/gfx/texres.h"
 #include "engine/scene/collide.h"
 #include "engine/scene/scene.h"
@@ -1989,6 +1990,252 @@ static df_u32 square_bytes(int side, int cutout)
 
 static df_u8 g_mip_out[MIP_MAX_BYTES];
 static df_u8 g_mip_ref[MIP_MAX_BYTES];
+
+/*
+ * Independent byte-lane oracle: separate input/output, ordinary integer
+ * division, no packed sums. This catches errors that nearest-palette or
+ * 1555 conversion could hide. The production path still shrinks in place.
+ */
+static void mip_rgba_reference(const df_u32 *src, df_u32 *dst, int side)
+{
+    int x;
+    int y;
+    int c;
+    int half;
+
+    half = side >> 1;
+    for (y = 0; y < half; y++) {
+        for (x = 0; x < half; x++) {
+            int at;
+            df_u32 pixel;
+
+            at = 2 * y * side + 2 * x;
+            pixel = 0;
+            for (c = 0; c < 4; c++) {
+                unsigned int sum;
+
+                sum = ((src[at] >> (8 * c)) & 255u)
+                    + ((src[at + 1] >> (8 * c)) & 255u)
+                    + ((src[at + side] >> (8 * c)) & 255u)
+                    + ((src[at + side + 1] >> (8 * c)) & 255u);
+                pixel |= ((sum + 2u) / 4u) << (8 * c);
+            }
+            dst[y * half + x] = pixel;
+        }
+    }
+}
+
+/* All buffers have guards; only the first half-size square may change. */
+static df_u32 g_rgba_src[256 * 256 + 2];
+static df_u32 g_rgba_ref[256 * 256 + 2];
+static df_u32 g_rgba_got[256 * 256 + 2];
+
+static void mip_rgba_pattern(df_u32 *p, int side, int pattern)
+{
+    df_u32 seed;
+    int i;
+
+    seed = 0x853c49e6u;
+    for (i = 0; i < side * side; i++) {
+        seed = seed * 1664525u + 1013904223u;
+        switch (pattern) {
+        case 0: p[i] = 0; break;
+        case 1: p[i] = 0xffffffffu; break;
+        case 2: p[i] = seed; break;
+        case 3:
+            /* Every lane sums to 2: one final rounding must give 1. */
+            p[i] = ((i / side) % 2 == 0 && i % 2 == 0) ? 0x02020202u : 0;
+            break;
+        case 4:
+            p[i] = (seed & 0x00ffffffu) | ((i & 1) ? 0x7f000000u : 0x80000000u);
+            break;
+        default:
+            p[i] = (i & 1) ? 0xff00ff00u : 0x00ff00ffu;
+            break;
+        }
+    }
+    if (pattern == 6) {
+        int x;
+        int y;
+        int c;
+
+        /*
+         * At side 64 and up, each channel sees every possible sum
+         * 0..1020, including every rounding residue and alpha's 127/128
+         * boundary. Rotate the four contributors to vary lane order.
+         */
+        for (i = 0; i < side * side; i++) {
+            p[i] = 0;
+        }
+        for (y = 0; y < side / 2; y++) {
+            for (x = 0; x < side / 2; x++) {
+                int at;
+                int block;
+
+                at = 2 * y * side + 2 * x;
+                block = y * (side / 2) + x;
+                for (c = 0; c < 4; c++) {
+                    int sum;
+                    int j;
+
+                    sum = (block + c * 257) % 1021;
+                    for (j = 0; j < 4; j++) {
+                        int corner;
+                        int value;
+
+                        corner = (j + block + c) & 3;
+                        value = sum > 255 ? 255 : sum;
+                        p[at + (corner / 2) * side + (corner & 1)] |= (df_u32)value << (8 * c);
+                        sum -= value;
+                    }
+                }
+            }
+        }
+    }
+}
+
+static void check_mip_rgba_mmx(void)
+{
+    volatile float nine;
+    int side;
+    int pattern;
+    int mode;
+    int offset;
+    int ok;
+
+    nine = 9.0f;
+    mip_set_mmx(0);
+    check_expect(!mip_mmx(), "mipmmx 0 did not force the scalar path");
+    mip_set_mmx(1);
+    check_expect(mip_mmx() == cpu_has_mmx() && mix_has_mmx() == cpu_has_mmx(),
+                 "mip averaging and sound do not share the guarded CPU capability");
+    ok = 1;
+    for (side = 2; side <= 256; side <<= 1) {
+        for (pattern = 0; pattern < 7; pattern++) {
+            /*
+             * Offsets 0 and 1 exercise both u32 alignments modulo 8,
+             * independent of the linker's alignment of these arrays.
+             */
+            for (offset = 0; offset < 2; offset++) {
+                memset(g_rgba_src, 0xa5, sizeof(g_rgba_src));
+                mip_rgba_pattern(g_rgba_src + offset, side, pattern);
+                memcpy(g_rgba_ref, g_rgba_src, sizeof(g_rgba_ref));
+                mip_rgba_reference(g_rgba_src + offset, g_rgba_ref + offset, side);
+                for (mode = 0; mode < 2; mode++) {
+                    memcpy(g_rgba_got, g_rgba_src, sizeof(g_rgba_got));
+                    mip_set_mmx(mode);
+                    mip_halve_rgba(g_rgba_got + offset, side);
+                    /* FSQRT must run before any other helper can mask a missing EMMS. */
+                    if (df_sqrt(nine) != 3.0f) {
+                        ok = 0;
+                    }
+                    if (memcmp(g_rgba_got, g_rgba_ref, sizeof(g_rgba_got)) != 0) {
+                        ok = 0;
+                    }
+                }
+            }
+        }
+    }
+    check_expect(ok, "scalar/auto RGBA averaging differs from the byte oracle or overwrites its output");
+
+    /* Feed each result directly to the next level, retaining all guards. */
+    memset(g_rgba_src, 0x5a, sizeof(g_rgba_src));
+    mip_rgba_pattern(g_rgba_src + 1, 256, 2);
+    memcpy(g_rgba_ref, g_rgba_src, sizeof(g_rgba_ref));
+    memcpy(g_rgba_got, g_rgba_src, sizeof(g_rgba_got));
+    mip_set_mmx(1);
+    for (side = 256; side >= 2; side >>= 1) {
+        memcpy(g_rgba_src, g_rgba_ref, sizeof(g_rgba_src));
+        mip_rgba_reference(g_rgba_src + 1, g_rgba_ref + 1, side);
+        mip_halve_rgba(g_rgba_got + 1, side);
+        check_expect(df_sqrt(nine) == 3.0f, "mip averaging did not release the x87 stack");
+        check_expect(memcmp(g_rgba_got, g_rgba_ref, sizeof(g_rgba_got)) == 0,
+                     "successive in-place RGBA levels lost a source texel or guard");
+    }
+    memcpy(g_rgba_src, g_rgba_got, sizeof(g_rgba_src));
+    mip_halve_rgba(g_rgba_got + 1, 1);
+    mip_halve_rgba(g_rgba_got + 1, 0);
+    mip_halve_rgba(g_rgba_got + 1, -2);
+    mip_halve_rgba(g_rgba_got + 1, 3);
+    mip_halve_rgba(g_rgba_got + 1, 512);
+    mip_halve_rgba(0, 4);
+    check_expect(memcmp(g_rgba_src, g_rgba_got, sizeof(g_rgba_src)) == 0,
+                 "RGBA averaging touched a bad shape or the final 1x1 level");
+    printf("mip averaging: MMX %s; scalar/auto compared with byte oracle\n",
+           cpu_has_mmx() ? "found" : "missing (auto uses scalar)");
+}
+
+/*
+ * Compare every dropped prefix and single level with the scalar full
+ * chain, including clear cutouts and MIP_GLASS. This exercises the real
+ * build dispatcher, top-level shortcuts, bleed, alpha and palette paths.
+ */
+static void check_mip_build_mmx(void)
+{
+    static df_u8 pic[256 * 256];
+    df_u8 pr[256];
+    df_u8 pg[256];
+    df_u8 pb[256];
+    df_u32 seed;
+    int side;
+    int pattern;
+    int cutout;
+    int i;
+    int ok;
+
+    for (i = 0; i < 256; i++) {
+        pr[i] = (df_u8)i;
+        pg[i] = (df_u8)(i * 37);
+        pb[i] = (df_u8)(255 - i);
+    }
+    seed = 0x195e43b1u;
+    ok = 1;
+    for (side = 1; side <= 256; side <<= 1) {
+        for (pattern = 0; pattern < 5; pattern++) {
+            for (i = 0; i < side * side; i++) {
+                seed = seed * 1664525u + 1013904223u;
+                switch (pattern) {
+                case 0: pic[i] = 0; break;
+                case 1: pic[i] = MIP_GLASS; break;
+                case 2: pic[i] = (i & 1) ? 0 : MIP_GLASS; break;
+                case 3: pic[i] = (df_u8)(seed >> 24); break;
+                default: pic[i] = i % 17 ? 0 : 173; break;
+                }
+            }
+            for (cutout = 0; cutout < 2; cutout++) {
+                df_u32 bytes;
+                df_u32 offset;
+                int drop;
+                int s;
+
+                mip_set_mmx(0);
+                bytes = mip_build(pic, side, cutout, 0, 1, pr, pg, pb, g_mip_ref);
+                check_expect(bytes == mip_texels(side, 0, 1) * (cutout ? 2u : 1u),
+                             "scalar mip reference chain has the wrong size");
+                mip_set_mmx(1);
+                offset = 0;
+                for (s = side, drop = 0; s > 0; s >>= 1, drop++) {
+                    int chain;
+
+                    for (chain = 0; chain < 2; chain++) {
+                        df_u32 expected;
+                        df_u32 n;
+
+                        expected = mip_texels(side, drop, chain) * (cutout ? 2u : 1u);
+                        n = mip_build(pic, side, cutout, drop, chain, pr, pg, pb, g_mip_out);
+                        if (n != expected || memcmp(g_mip_out, g_mip_ref + offset, expected) != 0) {
+                            ok = 0;
+                        }
+                    }
+                    offset += (df_u32)(s * s) * (cutout ? 2u : 1u);
+                }
+            }
+        }
+    }
+    check_expect(ok, "scalar and auto mip builds differ in a chain, dropped level, cutout or glass");
+    /* Restore the engine's default preference for the remaining checks. */
+    mip_set_mmx(1);
+}
 
 /*
  * A cutout's full level the plain way, every texel's 3 x 3 gathered,
@@ -4458,6 +4705,8 @@ void check_engine(void)
     check_console();
     check_mip();
     check_mip_spans();
+    check_mip_rgba_mmx();
+    check_mip_build_mmx();
     check_lights();
     check_light_shadow();
     check_daylight();

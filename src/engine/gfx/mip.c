@@ -1,4 +1,23 @@
 #include "engine/gfx/mip.h"
+#include "engine/core/cpu.h"
+
+#if defined(__i386__) || defined(__x86_64__)
+#define MIP_HAVE_ASM 1
+#else
+#define MIP_HAVE_ASM 0
+#endif
+
+static int g_want_mmx = 1;
+
+void mip_set_mmx(int on)
+{
+    g_want_mmx = on ? 1 : 0;
+}
+
+int mip_mmx(void)
+{
+    return g_want_mmx && cpu_has_mmx();
+}
 
 /*
  * The work buffer is RGBA, one level at a time. Each smaller level is
@@ -324,11 +343,11 @@ static void top_level(const df_u8 *index, int side, int cutout,
 }
 
 /*
- * g_rgba from side to side / 2, in place: each channel the rounded mean
+ * rgba from side to side / 2, in place: each channel the rounded mean
  * of its four, (a + b + c + d + 2) >> 2, two channels a word at a time
  * (16 bits each hold the sum, 1022 at most), the same bit for bit.
  */
-static void halve(int side)
+static void halve_scalar(df_u32 *rgba, int side)
 {
     int half;
     int x;
@@ -340,9 +359,9 @@ static void halve(int side)
         const df_u32 *b;
         df_u32 *o;
 
-        a = &g_rgba[(2 * y) * side];
+        a = &rgba[(2 * y) * side];
         b = a + side;
-        o = &g_rgba[y * half];
+        o = &rgba[y * half];
         for (x = 0; x < half; x++) {
             df_u32 p0;
             df_u32 p1;
@@ -362,6 +381,111 @@ static void halve(int side)
             o[x] = ((lo >> 2) & 0x00ff00ffu) | (((hi >> 2) & 0x00ff00ffu) << 8);
         }
     }
+}
+
+#if MIP_HAVE_ASM
+/*
+ * One whole level is one MMX batch. Each iteration reads four RGBA
+ * texels from each of two source rows and writes two output texels.
+ * Unpack a pair's low/high bytes to unsigned words, sum horizontally,
+ * then vertically; add 2 ONCE, shift 2, and pack. The largest word is
+ * 4*255+2 = 1022, and after shifting it is at most 255, so neither the
+ * word additions nor packuswb lose information. Alpha uses the same
+ * lanes as colour: rounding two intermediate means would change it.
+ * Only original Pentium MMX instructions are used, with no intrinsics
+ * or compiler MMX flags required (in particular, no pavgb/pshufw).
+ *
+ * MOVQ accepts unaligned memory. All eight source words are read before
+ * the output pair is stored. At row zero output can overlap that pair;
+ * on later rows output trails the unread source. Thus even the 4x4
+ * case is safe in place, without a staging row or a tail read.
+ *
+ * The C row loop does integer address arithmetic only: keep it free of
+ * calls and floating point while MMX owns the x87 register file. Each
+ * asm names the entire x87 stack as clobbered, and the single EMMS at
+ * the end releases it before returning. noinline keeps this batch out
+ * of callers that have live x87 values. Side 2 uses scalar instead of
+ * paying this setup for just one output; side >= 4 has even row width.
+ */
+static void __attribute__((noinline)) halve_mmx(df_u32 *rgba, int side)
+{
+    static const df_u32 round_words[2] = { 0x00020002u, 0x00020002u };
+    int half;
+    int y;
+
+    half = side >> 1;
+    for (y = 0; y < half; y++) {
+        const df_u32 *a;
+        const df_u32 *b;
+        df_u32 *o;
+        int pairs;
+
+        a = rgba + (2 * y) * side;
+        b = a + side;
+        o = rgba + y * half;
+        pairs = half >> 1;
+        __asm__ __volatile__(
+            "pxor %%mm7, %%mm7\n\t"
+            "movq %4, %%mm6\n\t"
+            "1:\n\t"
+            /* First output: sum the left pair on both source rows. */
+            "movq (%1), %%mm0\n\t"
+            "movq %%mm0, %%mm1\n\t"
+            "punpcklbw %%mm7, %%mm0\n\t"
+            "punpckhbw %%mm7, %%mm1\n\t"
+            "paddw %%mm1, %%mm0\n\t"
+            "movq (%2), %%mm2\n\t"
+            "movq %%mm2, %%mm3\n\t"
+            "punpcklbw %%mm7, %%mm2\n\t"
+            "punpckhbw %%mm7, %%mm3\n\t"
+            "paddw %%mm3, %%mm2\n\t"
+            "paddw %%mm2, %%mm0\n\t"
+            "paddw %%mm6, %%mm0\n\t"
+            "psrlw $2, %%mm0\n\t"
+            /* Second output, kept as words until both are ready. */
+            "movq 8(%1), %%mm1\n\t"
+            "movq %%mm1, %%mm2\n\t"
+            "punpcklbw %%mm7, %%mm1\n\t"
+            "punpckhbw %%mm7, %%mm2\n\t"
+            "paddw %%mm2, %%mm1\n\t"
+            "movq 8(%2), %%mm3\n\t"
+            "movq %%mm3, %%mm4\n\t"
+            "punpcklbw %%mm7, %%mm3\n\t"
+            "punpckhbw %%mm7, %%mm4\n\t"
+            "paddw %%mm4, %%mm3\n\t"
+            "paddw %%mm3, %%mm1\n\t"
+            "paddw %%mm6, %%mm1\n\t"
+            "psrlw $2, %%mm1\n\t"
+            "packuswb %%mm1, %%mm0\n\t"
+            "movq %%mm0, (%0)\n\t"
+            "add $16, %1\n\t"
+            "add $16, %2\n\t"
+            "add $8, %0\n\t"
+            "decl %3\n\t"
+            "jnz 1b"
+            : "+&r"(o), "+&r"(a), "+&r"(b), "+&r"(pairs)
+            : "m"(round_words)
+            : "memory", "cc",
+              "st", "st(1)", "st(2)", "st(3)", "st(4)", "st(5)", "st(6)", "st(7)");
+    }
+    __asm__ __volatile__("emms"
+        : : : "memory",
+        "st", "st(1)", "st(2)", "st(3)", "st(4)", "st(5)", "st(6)", "st(7)");
+}
+#endif
+
+void mip_halve_rgba(df_u32 *rgba, int side)
+{
+    if (!rgba || side < 2 || !pow2_side(side)) {
+        return;
+    }
+#if MIP_HAVE_ASM
+    if (side >= 4 && mip_mmx()) {
+        halve_mmx(rgba, side);
+        return;
+    }
+#endif
+    halve_scalar(rgba, side);
 }
 
 /*
@@ -499,7 +623,7 @@ df_u32 mip_build(const df_u8 *index, int side, int cutout, int drop, int chain,
         if (level >= levels || s == 1) {
             break;
         }
-        halve(s);
+        mip_halve_rgba(g_rgba, s);
         s >>= 1;
     }
     return at;
