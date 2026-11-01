@@ -10,6 +10,9 @@
 #include "game/dagger/play/mouse.h"
 #include "engine/core/mem.h"
 #include "engine/gfx/camera.h"
+#include "engine/sound/sound.h"
+#include "engine/sound/music.h"
+#include "game/dagger/play/viewopt.h"
 #include "engine/ui/font.h"
 
 static int g_bind[INPUT_ACTIONS];
@@ -104,10 +107,81 @@ void check_menu(void)
     click_at(450,370); g_key='Z'; in.wheel=0; menu_frame(&in);
     click_at(200,445);
     check_expect(g_bind[INPUT_MAP]=='Z', "menu: last binding inaccessible after scrolling");
+    /* Audio defaults are independent of gameplay. Applying Gameplay must
+     * not commit an audio draft left in another tab. */
+    menu_open(MENU_NONE);
+    sound_set_volume(80); music_set_volume(80); viewopt_set_bob(0);
+    menu_open(MENU_OPTIONS);
+    click_at(30,240);
+    click_at(336,112); /* SFX mute. */
+    click_at(516,168); /* Music full. */
+    check_expect(sound_volume()==80 && music_volume()==80, "menu: audio slider bypassed Apply");
+    click_at(30,280);
+    click_at(500,119);
+    check_expect(!viewopt_bob(), "menu: head bob draft applied early");
+    click_at(200,445);
+    check_expect(viewopt_bob() && sound_volume()==80 && music_volume()==80, "menu: Gameplay Apply committed audio draft");
+    click_at(30,240);
+    g_write_ok=0; click_at(200,445);
+    check_expect(sound_volume()==80 && music_volume()==80 && viewopt_bob(), "menu: audio failure did not restore committed preferences");
+    g_write_ok=1; click_at(200,445);
+    check_expect(sound_volume()==0 && music_volume()==100, "menu: audio retry lost independent drafts");
+    click_at(550,445);
+    menu_open(MENU_OPTIONS);
+    click_at(30,240); click_at(200,445);
+    check_expect(sound_volume()==0 && music_volume()==100, "menu: reopening lost audio values");
+    click_at(40,445);
+    check_expect(sound_volume()==0 && music_volume()==100, "menu: audio Default committed early");
+    click_at(200,445);
+    check_expect(sound_volume()==80 && music_volume()==80 && viewopt_bob(), "menu: audio defaults changed gameplay");
+
+    /* Drag the music thumb across the SFX row, then reset focus while
+     * holding the button. Neither the other row nor later motion may act. */
+    mem_zero(&in,sizeof(in)); g_px=426; g_py=168;
+    in.mouse_pressed=in.mouse_held=INPUT_MOUSE_LEFT; menu_frame(&in);
+    g_px=0; g_py=112; in.mouse_pressed=0; menu_frame(&in);
+    in.reset=1; menu_frame(&in);
+    in.reset=0; g_px=630; menu_frame(&in);
+    click_at(200,445);
+    check_expect(sound_volume()==80 && music_volume()==0, "menu: audio drag transferred rows or survived focus loss");
+    click_at(516,112);
+    mem_zero(&in,sizeof(in)); in.pressed=INPUT_BIT(INPUT_MENU); menu_frame(&in);
+    check_expect(menu_current()==MENU_NONE && sound_volume()==80, "menu: Escape applied audio draft");
+    menu_open(MENU_OPTIONS);
+    click_at(30,280); click_at(40,445);
+    check_expect(viewopt_bob(), "menu: Gameplay Default committed early");
+    g_write_ok=0; click_at(200,445);
+    check_expect(viewopt_bob(), "menu: failed Gameplay Apply changed bob");
+    g_write_ok=1; click_at(200,445);
+    check_expect(!viewopt_bob(), "menu: Gameplay default retry failed");
+    click_at(500,119); click_at(550,445);
+    check_expect(!viewopt_bob(), "menu: Back applied bob draft");
+    menu_open(MENU_OPTIONS);
+    /* Full HUD is the inverse of legacy full-screen. Exercise the
+     * existing saved preference without adding another persisted field. */
+    viewopt_set_full(0);
+    menu_open(MENU_OPTIONS);
+    click_at(30,280); click_at(500,175);
+    check_expect(!viewopt_full(), "menu: Full HUD draft hid the bar before Apply");
+    click_at(200,445);
+    check_expect(viewopt_full(), "menu: Full HUD Off did not hide the bar");
+    menu_open(MENU_NONE); menu_open(MENU_OPTIONS);
+    click_at(30,280); click_at(200,445);
+    check_expect(viewopt_full(), "menu: reopening inverted Full HUD");
+    click_at(40,445);
+    check_expect(viewopt_full(), "menu: Full HUD Default applied early");
+    g_write_ok=0; click_at(200,445);
+    check_expect(viewopt_full(), "menu: failed write changed Full HUD");
+    g_write_ok=1; click_at(200,445);
+    check_expect(!viewopt_full(), "menu: Full HUD default did not show the bar");
+    click_at(500,175); click_at(550,445);
+    check_expect(!viewopt_full(), "menu: Back applied Full HUD draft");
+    menu_open(MENU_OPTIONS);
     click_at(30,120);
     check_expect(click_at(40,445)==MENU_STAY, "menu: exit skipped confirmation");
     mem_zero(&in,sizeof(in)); menu_frame(&in);
     check_expect(click_at(40,445)==MENU_QUIT, "menu: idle frame lost exit confirmation");
     menu_open(MENU_NONE);
     camera_set_fov(75.0f);
+    sound_set_volume(80); music_set_volume(80); viewopt_set_bob(0);
 }

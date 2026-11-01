@@ -40,7 +40,7 @@ settings  native stone panels, dynamic text, settings layout and hit targets
 control   classic cursor movement, view offsets, gesture routing and pointer rays
 keys      the bindings in DATA\KEYS.DAT
 mouse     Cursor or View, the MOUS row in that file
-viewopt   full screen, head bobbing and FOV, the OPTS row in that file
+viewopt   full screen, head bobbing, FOV and audio volumes, the OPTS row in that file
 screen    classic's 320 x 200 on the card
 sfx       DAGGER.SND's clips for combat
 commands  the game's console commands
@@ -423,7 +423,7 @@ play opens the stone settings shell (`play/settings.c`, input in `menu.c`),
 over the paused world. Its layout is **640 x 480**, independent of the
 classic screens' stretched 320 x 200 canvas. It does not change video mode.
 
-### The three sections
+### The five sections
 
 1. **Load/Save**: Load Game and Save Game dispatch to the existing six-slot
    screens (`slots.c`, `screens.c`). Their names, save format and behavior are
@@ -442,6 +442,26 @@ classic screens' stretched 320 x 200 canvas. It does not change video mode.
    pointer until release, including outside the track, where it clamps.
    Focus/input reset cancels capture before any stale press or release acts.
    The existing `camera_set_fov` API changes projection and culling together.
+4. **Audio**: independent SFX and music volume sliders, 0..100 percent,
+   each defaulting to 80. Zero mutes that channel without toggling the
+   console's separate sound/music enable flags. These use the existing
+   `sound_set_volume` and `music_set_volume` APIs. Changes take effect only
+   on Apply: MIDI devices without hardware volume may restart the song when
+   its volume changes, so dragging must not call the music setter each frame.
+5. **Gameplay**: Head Bobbing On/Off, default off. The entire option row is
+   clickable. Apply updates the existing `viewopt_bob` preference; the walk/run
+   camera wave itself is unchanged. Turning it off produces a steady eye.
+   **Full HUD** On/Off, default on, shows or hides the bottom HUD bar and
+   portrait. Vitals and compass remain when it is off. This is the inverse
+   of the existing `OPTS.full` (legacy full-screen) preference, so old files
+   retain their appearance without migration. It shares Gameplay's drafts,
+   Apply, Default, cancellation and failed-write rollback.
+
+FOV and both volume sliders share descriptors for their tab, action, range,
+label and vertical position. Drawing, hit testing and pointer conversion use
+those descriptors. A drag retains the action of the slider where it began:
+crossing another row does not transfer ownership. No additional textures or
+per-frame uploads are needed for Audio or Gameplay.
 
 Default changes only the displayed section's draft. **Apply** commits that
 section and writes `DATA/KEYS.DAT`; a write failure restores its previous live
@@ -451,11 +471,12 @@ abandons any unapplied drafts. A successful Apply remains effective when the
 shell closes. There is no automatic write merely from closing it.
 
 The `KEYS`, `MOUS` and `CTLS` records retain their existing meaning. `OPTS`
-retains `full` and `bob` and appends unsigned `fov`. Old records without that
-field inherit 75; values outside 45..120 are ignored. FOV is a user preference,
-not part of a character's save. Existing full-screen (hide the bottom HUD bar)
-and head-bob preferences remain honored and preserved, but have no control in
-this shell: Graphics currently exposes FOV only.
+retains `full`, `bob` and `fov`, and appends unsigned `sfx_volume` and
+`music_volume` percentages. Old records without FOV inherit 75; those without
+volume fields inherit 80/80. Out-of-range angles or percentages are ignored;
+zero volume is a real mute value. These are user preferences, not part of a
+character's save. Full-screen is exposed inversely as Full HUD in Gameplay,
+alongside head bobbing. Graphics still exposes only FOV.
 
 ### Artwork, text and ownership
 
@@ -499,7 +520,7 @@ To add an option backed by an existing game or engine API:
    and use the same coordinates in `settings_draw` and `settings_hit`.
 2. Draw the control and runtime label, using `tr` for localizable text. For a
    slider, share its range/position conversion between drawing and dragging,
-   as the FOV track does. Keep text within its panel and preserve hit sizes.
+   using the existing slider descriptors. Keep text within its panel and preserve hit sizes.
 3. In `menu.c`, snapshot the committed value on open, handle input into the
    draft, include it in dirty/default handling, and commit only on Apply.
    Restore the previous live value if writing fails. Back/Escape discards
@@ -521,9 +542,11 @@ Graphics; the reusable styling does not imply other graphics features exist.
 and persistence stand-ins (`tests/check_menu.c`): dispatch, draft/apply/cancel,
 failed-write retry, focus-loss drag cancellation, binding conflict swaps,
 Escape capture cancellation, last-row scrolling and two-click Exit. The real
-OPTS writer/reader is tested separately, including a pre-FOV record.
+OPTS writer/reader is tested separately, including a pre-FOV/pre-audio record and muted-volume round trips. Audio and
+Gameplay tests cover independent drafts, section-specific Apply/Default,
+failed-write rollback/retry, drag ownership across rows, and focus cancellation.
 `tests/check_play.c` also checks atlas bounds, output bounds and hit rectangles,
-and writes `build/settings-{files,keys,graphics,translated}.ppm`; the translated
+and writes `build/settings-{files,keys,graphics,audio,gameplay,translated}.ppm`; the translated
 preview replaces headings without changing artwork. Win32 polling itself
 remains covered by `tests/check_input.c`. Real Voodoo input and appearance
 still require target playtesting; host previews are not hardware captures.

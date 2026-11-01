@@ -60,6 +60,8 @@
 #include "game/dagger/play/mouse.h"
 #include "game/dagger/play/viewopt.h"
 #include "game/dagger/play/settings.h"
+#include "engine/sound/sound.h"
+#include "engine/sound/music.h"
 #include "engine/assets/recfile.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/foes.h"
@@ -5174,7 +5176,7 @@ static void check_settings(void)
     const df_u8 *rgb;
     int tab, i;
     FILE *f;
-    static const char *const paths[] = {"build/settings-files.ppm", "build/settings-keys.ppm", "build/settings-graphics.ppm", "build/settings-translated.ppm"};
+    static const char *const paths[] = {"build/settings-files.ppm", "build/settings-keys.ppm", "build/settings-graphics.ppm", "build/settings-audio.ppm", "build/settings-gameplay.ppm", "build/settings-translated.ppm"};
     check_expect(settings_open(), "settings: assets did not open");
     rgb = settings_palette();
     mem_zero(&v, sizeof(v));
@@ -5183,9 +5185,11 @@ static void check_settings(void)
         static const char *const names[] = { "W", "S", "Left", "Right", "A", "D", "Space", "Shift", "R", "Right Button", "H", "C", "I", "E", "Tab", "Page Up", "Page Down", "Home", "Alt", "M" };
         for (i = 0; i < SETTINGS_BINDINGS; i++) v.bindings[i] = names[i];
     }
-    for (tab = 0; tab < 4; tab++) {
-        v.tab = tab < 3 ? tab : SETTINGS_GRAPHICS;
-        if (tab == 3) settings_translate(settings_test_translation);
+    v.sfx_volume = v.music_volume = 80;
+    v.full_hud = 1;
+    for (tab = 0; tab <= SETTINGS_TABS; tab++) {
+        v.tab = tab < SETTINGS_TABS ? tab : SETTINGS_GRAPHICS;
+        if (tab == SETTINGS_TABS) settings_translate(settings_test_translation);
         mem_fill(g_settings_preview, 18, sizeof(g_settings_preview));
         g_settings_quads = 0;
         settings_draw(&v, settings_preview_quad, 0);
@@ -5212,6 +5216,15 @@ static void check_settings(void)
         && settings_fov_at(1000) == 120, "settings: FOV track endpoints or default");
     check_expect(settings_hit(SETTINGS_GRAPHICS,0,408,112) == SETTINGS_SLIDER
         && settings_hit(SETTINGS_GRAPHICS,0,408,180) == SETTINGS_NOTHING, "settings: slider hit area");
+    check_expect(settings_hit(SETTINGS_AUDIO,0,408,112) == SETTINGS_SFX_SLIDER
+        && settings_hit(SETTINGS_AUDIO,0,408,168) == SETTINGS_MUSIC_SLIDER
+        && settings_hit(SETTINGS_GAMEPLAY,0,500,119) == SETTINGS_BOB
+        && settings_hit(SETTINGS_GAMEPLAY,0,500,175) == SETTINGS_FULL_HUD,
+        "settings: new controls unreachable");
+    check_expect(settings_slider_at(SETTINGS_SFX_SLIDER,-10)==0
+        && settings_slider_at(SETTINGS_MUSIC_SLIDER,900)==100
+        && settings_slider_at(SETTINGS_SFX_SLIDER,426)==50,
+        "settings: volume endpoints or midpoint");
     settings_close();
     check_expect(settings_open(), "settings: reopen failed");
     settings_close();
@@ -5295,9 +5308,11 @@ static void check_viewopt(void)
     viewopt_set_bob(1);
     g_opt_at = 0;
     camera_set_fov(103.0f);
+    sound_set_volume(0); music_set_volume(100);
     check_expect(rec_put_begin(opt_put, 0) && viewopt_write(opt_put, 0), "view: the options did not store");
     viewopt_defaults();
     viewopt_read(g_opt_file, (df_u32)g_opt_at);
+    check_expect(sound_volume()==0 && music_volume()==100, "view: muted SFX/full music did not survive settings round trip");
     check_expect(df_iround(camera_fov()) == 103, "view: FOV did not survive settings round trip");
     check_expect(viewopt_full() && viewopt_bob(), "view: a stored full screen and head bobbing did not come back");
     g_opt_at = 0;
@@ -5324,6 +5339,7 @@ static void check_viewopt(void)
         viewopt_defaults();
         viewopt_read(g_opt_file,(df_u32)g_opt_at);
         check_expect(viewopt_full() && viewopt_bob() && df_iround(camera_fov())==75, "view: old OPTS row lost preferences or FOV default");
+        check_expect(sound_volume()==80 && music_volume()==80, "view: old OPTS row did not inherit audio defaults");
     }
     viewopt_defaults();
     check_expect(df_iround(camera_fov()) == 75, "view: missing FOV did not keep default");

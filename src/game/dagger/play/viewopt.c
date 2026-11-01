@@ -2,6 +2,8 @@
 #include "game/dagger/play/rules.h"
 #include "engine/core/df.h"
 #include "engine/gfx/camera.h"
+#include "engine/sound/sound.h"
+#include "engine/sound/music.h"
 
 /* See viewopt.h. HeadBobber.cs (MIT, Daggerfall Workshop): PlotPath and
  * PlotRotation. Metres become this world's units. The decompilation is
@@ -12,16 +14,20 @@ typedef struct ViewRow {
     df_u8 full;
     df_u8 bob;
     df_u16 fov;
+    df_u8 sfx_volume;
+    df_u8 music_volume;
 } ViewRow;
 
-static const ViewRow g_default_row = { 0, 0, 0, 75 };
+static const ViewRow g_default_row = { 0, 0, 0, 75, 80, 80 };
 static const RecField g_fields[] = {
     REC_FIELD("id", REC_UINT, ViewRow, id),
     REC_FIELD("full", REC_UINT, ViewRow, full),
     REC_FIELD("bob", REC_UINT, ViewRow, bob),
-    REC_FIELD("fov", REC_UINT, ViewRow, fov)
+    REC_FIELD("fov", REC_UINT, ViewRow, fov),
+    REC_FIELD("sfx_volume", REC_UINT, ViewRow, sfx_volume),
+    REC_FIELD("music_volume", REC_UINT, ViewRow, music_volume)
 };
-static const RecSchema g_schema = { "OPTS", "options", g_fields, 4, (df_u16)sizeof(ViewRow), &g_default_row };
+static const RecSchema g_schema = { "OPTS", "options", g_fields, 6, (df_u16)sizeof(ViewRow), &g_default_row };
 
 /* Metres, HeadBobber's walking and running amounts. */
 #define WALK_X 0.045f
@@ -43,6 +49,8 @@ void viewopt_defaults(void)
     g_full = 0;
     g_bob = 0;
     camera_set_fov(75.0f);
+    sound_set_volume(80);
+    music_set_volume(80);
 }
 
 int viewopt_full(void)
@@ -130,6 +138,10 @@ void viewopt_read(const df_u8 *bytes, df_u32 n)
     /* Missing fields inherit the schema default, so pre-FOV files remain
      * at 75 degrees. Invalid stored angles cannot corrupt the projection. */
     if (row->fov >= 45 && row->fov <= 120) camera_set_fov((float)row->fov);
+    /* Named-field merging gives pre-audio files 80/80. Zero is a valid
+     * mute level, not an absent field. Invalid percentages keep defaults. */
+    if (row->sfx_volume <= 100) sound_set_volume(row->sfx_volume);
+    if (row->music_volume <= 100) music_set_volume(row->music_volume);
     if (row->full <= 1) {
         g_full = row->full;
     }
@@ -146,5 +158,7 @@ int viewopt_write(RecPut put, void *ctx)
     row.full = (df_u8)g_full;
     row.bob = (df_u8)g_bob;
     row.fov = (df_u16)df_iround(camera_fov());
+    row.sfx_volume = (df_u8)sound_volume();
+    row.music_volume = (df_u8)music_volume();
     return rec_put_rows(put, ctx, &g_schema, &row, 1, 0, 0);
 }

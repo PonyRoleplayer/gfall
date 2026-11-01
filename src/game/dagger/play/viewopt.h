@@ -4,9 +4,10 @@
 #include "engine/assets/recfile.h"
 
 /*
- * Stored view preferences: full screen, head bobbing, horizontal FOV.
- * The settings shell currently exposes only FOV; older full/bob values
- * remain effective and survive writes.
+ * Stored options: full screen, head bobbing, horizontal FOV, SFX/music volume.
+ * Graphics exposes FOV, Gameplay exposes bobbing and Full HUD, and Audio
+ * exposes volumes. Full HUD On means full-screen off: the bottom bar shows.
+ * This inverse UI label preserves existing full-screen values on disk.
  * Read docs/game.md (Menus) before editing.
  *
  * Full screen hides the bottom stone bar (the face frame and the icon
@@ -21,6 +22,9 @@
  * Stored as one OPTS row in DATA\KEYS.DAT beside the bindings (keys.c
  * writes and reads it with them). No row means both off and FOV 75. The appended fov field uses the
  * same default for older OPTS rows; valid stored values are 45..120.
+ * Audio percentages start at 80 each, including in older files without
+ * those fields. Zero mutes; values over 100 are ignored. Setters/getters live
+ * in engine/sound; this module only owns their persisted preferences.
  *
  * Plain C. FOV is read from/applied to camera.c's existing projection API.
  */

@@ -6,7 +6,7 @@
  * record file (docs/data.md), one KEYS record an action (id INPUT_*, its
  * Windows virtual key), one MOUS row for Cursor or View (mouse.h),
  * CTLS for that same preference (control.h), and one OPTS row for full
- * screen, head bobbing and FOV (viewopt.h). Applied with input_bind,
+ * screen, head bobbing, FOV and audio volumes (viewopt.h). Applied with input_bind,
  * mouse_read, control_read_settings and viewopt_read at start. A missing or damaged
  * file keeps classic's defaults. Read docs/game.md (Menus).
  *

@@ -40,7 +40,24 @@ static const int g_actions[] = {
 #define ROW_H 24
 #define TRACK_X 336
 #define TRACK_W 180
-#define TRACK_Y 112
+/* All slider geometry/ranges live here. Add a descriptor rather than
+ * duplicating conversion logic for each new percentage or angle control. */
+typedef struct Slider {
+    int action, tab, y, minimum, maximum;
+    const char *label;
+} Slider;
+static const Slider g_sliders[] = {
+    { SETTINGS_SLIDER, SETTINGS_GRAPHICS, 112, 45, 120, "FIELD OF VIEW" },
+    { SETTINGS_SFX_SLIDER, SETTINGS_AUDIO, 112, 0, 100, "SFX VOLUME" },
+    { SETTINGS_MUSIC_SLIDER, SETTINGS_AUDIO, 168, 0, 100, "MUSIC VOLUME" }
+};
+#define SLIDERS ((int)(sizeof(g_sliders) / sizeof(g_sliders[0])))
+static const char *const g_tab_labels[] = {
+    "LOAD/SAVE", "KEYBINDINGS", "GRAPHICS", "AUDIO", "GAMEPLAY"
+};
+static const char *const g_titles[] = {
+    "LOAD / SAVE", "KEYBINDINGS", "GRAPHICAL SETTINGS", "AUDIO SETTINGS", "GAMEPLAY SETTINGS"
+};
 
 static const char *tr(const char *s)
 {
@@ -250,11 +267,44 @@ int settings_binding_action(int row, int classic)
     if (row < 0 || row >= SETTINGS_BINDINGS) return -1;
     return row == 9 && classic ? INPUT_SWING : g_actions[row];
 }
-int settings_fov_at(int x)
+int settings_slider_at(int action, int x)
 {
-    if (x <= TRACK_X) return 45;
-    if (x >= TRACK_X+TRACK_W) return 120;
-    return 45 + ((x-TRACK_X)*75 + TRACK_W/2)/TRACK_W;
+    int i;
+    for (i = 0; i < SLIDERS; i++) {
+        const Slider *slider;
+        slider = &g_sliders[i];
+        if (slider->action != action) continue;
+        if (x <= TRACK_X) return slider->minimum;
+        if (x >= TRACK_X+TRACK_W) return slider->maximum;
+        return slider->minimum + ((x-TRACK_X)*(slider->maximum-slider->minimum)+TRACK_W/2)/TRACK_W;
+    }
+    return -1;
+}
+int settings_fov_at(int x) { return settings_slider_at(SETTINGS_SLIDER, x); }
+
+/* Both audio channels reuse the FOV track and thumb. Percentage suffixes
+ * and values are runtime text; dragging never regenerates an atlas. */
+static void slider_draw(const Slider *slider, int value)
+{
+    char number[8];
+    int thumb, n, y;
+    y = slider->y;
+    if (value < slider->minimum) value = slider->minimum;
+    if (value > slider->maximum) value = slider->maximum;
+    panel(174,y-14,444,42,0);
+    text(184,y+1,144,tr(slider->label),0);
+    panel(TRACK_X-5,y-5,TRACK_W+10,20,0);
+    flat(TRACK_X,y,TRACK_W,10,0);
+    thumb = (value-slider->minimum)*TRACK_W/(slider->maximum-slider->minimum);
+    flat(TRACK_X,y,thumb,10,4);
+    panel(TRACK_X+thumb-5,y-5,10,20,0);
+    n = 0;
+    if (value >= 100) number[n++] = (char)('0'+value/100);
+    if (value >= 10) number[n++] = (char)('0'+value/10%10);
+    number[n++] = (char)('0'+value%10);
+    if (slider->tab == SETTINGS_AUDIO) number[n++] = '%';
+    number[n] = 0;
+    text(540,y-1,64,number,0);
 }
 static int inside(int x, int y, int left, int top, int w, int h)
 {
@@ -263,7 +313,7 @@ static int inside(int x, int y, int left, int top, int w, int h)
 int settings_hit(int tab, int scroll, int x, int y)
 {
     int i;
-    for (i = 0; i < 3; i++) if (inside(x,y,NAV_X,NAV_Y+i*40,NAV_W,NAV_H)) return SETTINGS_TAB_FILES+i;
+    for (i = 0; i < SETTINGS_TABS; i++) if (inside(x,y,NAV_X,NAV_Y+i*40,NAV_W,NAV_H)) return SETTINGS_TAB_FILES+i;
     if (inside(x,y,500,430,122,32)) return SETTINGS_BACK;
     if (inside(x,y,18,430,136,32)) return tab == SETTINGS_FILES ? SETTINGS_EXIT : SETTINGS_DEFAULT;
     if (tab != SETTINGS_FILES && inside(x,y,170,430,136,32)) return SETTINGS_APPLY;
@@ -278,7 +328,13 @@ int settings_hit(int tab, int scroll, int x, int y)
             i = (y-ROW_Y)/ROW_H+scroll;
             if (i < SETTINGS_BINDINGS) return SETTINGS_BIND+i;
         }
-    } else if (tab == SETTINGS_GRAPHICS && inside(x,y,TRACK_X-8,TRACK_Y-10,TRACK_W+16,32)) return SETTINGS_SLIDER;
+    } else if (tab == SETTINGS_GAMEPLAY) {
+        if (inside(x,y,174,98,444,42)) return SETTINGS_BOB;
+        if (inside(x,y,174,154,444,42)) return SETTINGS_FULL_HUD;
+    }
+    for (i = 0; i < SLIDERS; i++) {
+        if (tab == g_sliders[i].tab && inside(x,y,TRACK_X-8,g_sliders[i].y-10,TRACK_W+16,32)) return g_sliders[i].action;
+    }
     return SETTINGS_NOTHING;
 }
 
@@ -286,19 +342,19 @@ void settings_draw(const SettingsView *v, SettingsQuad quad, void *ctx)
 {
     int i, n;
     const char *title;
-    if (!g_heap || !quad) return;
+    if (!g_heap || !quad || v->tab < 0 || v->tab >= SETTINGS_TABS) return;
     g_quad = quad; g_ctx = ctx;
     panel(8,8,624,464,0);
     panel(14,14,612,32,0);
-    title = v->tab == SETTINGS_FILES ? "LOAD / SAVE" : v->tab == SETTINGS_KEYS ? "KEYBINDINGS" : "GRAPHICAL SETTINGS";
+    title = g_titles[v->tab];
     centered(14,23,612,title);
     panel(14,52,144,370,0);
     panel(18,56,136,44,0);
     text(26,64,120,tr("RENDERER"),1);
     text(26,80,120,tr("GLIDE (VOODOO)"),1);
-    for (i = 0; i < 3; i++) {
+    for (i = 0; i < SETTINGS_TABS; i++) {
         const char *label;
-        label = i == 0 ? "LOAD/SAVE" : i == 1 ? "KEYBINDINGS" : "GRAPHICS";
+        label = g_tab_labels[i];
         button(NAV_X,NAV_Y+i*40,NAV_W,NAV_H,label,0,v->hover == SETTINGS_TAB_FILES+i);
         if (v->tab == i) {
             flat(NAV_X+3,NAV_Y+i*40+3,NAV_W-6,2,5);
@@ -333,28 +389,32 @@ void settings_draw(const SettingsView *v, SettingsQuad quad, void *ctx)
         button(601,ROW_Y+(SETTINGS_ROWS-1)*ROW_H,18,24,"v",0,v->hover == SETTINGS_DOWN);
         panel(604,ROW_Y+28+v->scroll*20,12,70,0);
         if (!v->note) paragraph(180,388,428,30,"Click an action to bind it. Mouse wheel scrolls. Escape cancels a pending binding.");
-    } else {
-        char number[8];
-        int fov, thumb;
-        fov = v->fov < 45 ? 45 : v->fov > 120 ? 120 : v->fov;
+    } else if (v->tab == SETTINGS_GRAPHICS) {
         text(182,68,420,tr("CAMERA"),0);
-        panel(174,98,444,42,0);
-        text(184,113,144,tr("FIELD OF VIEW"),0);
-        panel(TRACK_X-5,TRACK_Y-5,TRACK_W+10,20,0);
-        flat(TRACK_X,TRACK_Y,TRACK_W,10,0);
-        thumb = (fov-45)*TRACK_W/75;
-        flat(TRACK_X,TRACK_Y,thumb,10,4);
-        panel(TRACK_X+thumb-5,TRACK_Y-5,10,20,0);
-        n = 0;
-        if (fov >= 100) number[n++] = '1';
-        number[n++] = (char)('0'+fov/10%10);
-        number[n++] = (char)('0'+fov%10); number[n] = 0;
-        text(540,111,64,number,0);
+        slider_draw(&g_sliders[0], v->fov);
         panel(180,174,432,170,0);
         text(194,190,404,tr("FIELD OF VIEW"),0);
         paragraph(194,218,396,70,"Controls how much of the world you can see from side to side. A wider view shows more of your surroundings; a narrower view makes distant objects appear larger.");
         paragraph(194,286,396,50,"Horizontal angle: 45 to 120 degrees. Default: 75. Apply to keep your changes.");
+    } else if (v->tab == SETTINGS_AUDIO) {
+        text(182,68,420,tr("VOLUME"),0);
+        slider_draw(&g_sliders[1], v->sfx_volume);
+        slider_draw(&g_sliders[2], v->music_volume);
+        panel(180,224,432,140,0);
+        text(194,240,396,tr("SOUND AND MUSIC"),0);
+        paragraph(194,266,396,90,"Adjust sound effects and music independently. Zero silences that channel. Default volume is 80 percent. Apply to keep your changes.");
+    } else if (v->tab == SETTINGS_GAMEPLAY) {
+        text(182,68,420,tr("GAMEPLAY"),0);
+        panel(174,98,444,42,0);
+        text(184,113,210,tr("HEAD BOBBING"),0);
+        button(426,102,184,34,v->bob ? "ON" : "OFF",0,v->hover == SETTINGS_BOB);
+        panel(174,154,444,42,0);
+        text(184,169,210,tr("FULL HUD"),0);
+        button(426,158,184,34,v->full_hud ? "ON" : "OFF",0,v->hover == SETTINGS_FULL_HUD);
+        panel(180,224,432,144,0);
+        paragraph(194,240,396,112,"Head bobbing moves the camera as you walk. Full HUD shows the bottom bar and portrait. Turn it off to hide the bar; vitals and compass remain. Defaults: bobbing off, Full HUD on.");
     }
+
     button(18,430,136,32,v->tab == SETTINGS_FILES ? (v->confirm_exit ? "CONFIRM EXIT" : "EXIT GAME") : "DEFAULT",1,v->hover == (v->tab == SETTINGS_FILES ? SETTINGS_EXIT : SETTINGS_DEFAULT));
     if (v->tab != SETTINGS_FILES) button(170,430,136,32,"APPLY",2,v->hover == SETTINGS_APPLY);
     button(500,430,122,32,"BACK",1,v->hover == SETTINGS_BACK);
