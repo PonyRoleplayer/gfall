@@ -39,7 +39,10 @@ enum {
     ASK_WITHDRAW,
     ASK_LETTER,
     ASK_REPAY,
-    ASK_BORROW
+    ASK_BORROW,
+    /* A ship: 1 small, 2 large; to sell, 1 to say yes. */
+    ASK_SHIP,
+    ASK_SELL_SHIP
 };
 
 /* The buttons, in DFU's order: two columns, five rows. */
@@ -68,6 +71,8 @@ static struct {
     Composer composer;
     const df_u8 *picture;
     int asking;
+    /* The sale's question, with its price. */
+    char sale_line[40];
     char typed[TYPED_MOST + 1];
     const char *note;
     int changed;
@@ -96,6 +101,10 @@ static const char *say_result(int result)
         return "You have no loan here.";
     case BANK_PACK_FULL:
         return "Your pack is full.";
+    case BANK_ALREADY_SHIP:
+        return "You already own a ship.";
+    case BANK_NO_SHIP:
+        return "You do not own a ship.";
     default:
         return 0;
     }
@@ -111,6 +120,63 @@ int bank_deposit(Player *p, int region, int amount)
     }
     r->gold += amount;
     p->pack.gold -= (df_u32)amount;
+    return BANK_DONE;
+}
+
+static int g_ship;
+
+int bank_ship(void)
+{
+    return g_ship;
+}
+
+void bank_set_ship(int ship)
+{
+    g_ship = ship == BANK_SHIP_SMALL || ship == BANK_SHIP_LARGE ? ship : BANK_SHIP_NONE;
+}
+
+int bank_ship_price(int ship)
+{
+    return ship == BANK_SHIP_SMALL ? 100000 : (ship == BANK_SHIP_LARGE ? 200000 : 0);
+}
+
+int bank_ship_sale(int ship)
+{
+    /* DFU's deedSellMult, 0.85, in whole gold. */
+    return bank_ship_price(ship) * 85 / 100;
+}
+
+int bank_buy_ship(Player *p, int region, int ship)
+{
+    RegionStanding *r;
+    int price;
+    int carried;
+
+    if (g_ship != BANK_SHIP_NONE) {
+        return BANK_ALREADY_SHIP;
+    }
+    price = bank_ship_price(ship);
+    r = standing_region(region);
+    if (!price || !r || price > (int)p->pack.gold + r->gold) {
+        return BANK_NOT_ENOUGH_GOLD;
+    }
+    carried = price > (int)p->pack.gold ? (int)p->pack.gold : price;
+    p->pack.gold -= (df_u32)carried;
+    r->gold -= price - carried;
+    g_ship = ship;
+    return BANK_DONE;
+}
+
+int bank_sell_ship(int region)
+{
+    RegionStanding *r;
+
+    r = standing_region(region);
+    if (g_ship == BANK_SHIP_NONE || !r) {
+        return BANK_NO_SHIP;
+    }
+    r->gold += bank_ship_sale(g_ship);
+    g_ship = BANK_SHIP_NONE;
     return BANK_DONE;
 }
 
@@ -350,8 +416,25 @@ static void press(int b)
             g.asking = ASK_BORROW;
         }
         break;
+    case B_SHIP_BUY:
+        if (g_ship != BANK_SHIP_NONE) {
+            g.note = say_result(BANK_ALREADY_SHIP);
+        } else {
+            g.note = "1: a small ship, 100000. 2: a large galley, 200000.";
+            g.asking = ASK_SHIP;
+        }
+        break;
+    case B_SHIP_SELL:
+        if (g_ship == BANK_SHIP_NONE) {
+            g.note = say_result(BANK_NO_SHIP);
+        } else {
+            log_format(g.sale_line, (int)sizeof(g.sale_line), "1 to sell your ship for %d.", bank_ship_sale(g_ship));
+            g.note = g.sale_line;
+            g.asking = ASK_SELL_SHIP;
+        }
+        break;
     default:
-        g.note = b == B_HOUSE_BUY || b == B_HOUSE_SELL ? "No houses are for sale." : "No ships are for sale.";
+        g.note = "No houses are for sale.";
         break;
     }
 }
@@ -415,6 +498,16 @@ static void transact(void)
         case ASK_BORROW:
             result = bank_borrow(g.player, g.region, amount, clock_day());
             break;
+        case ASK_SHIP:
+            result = amount == 1 || amount == 2 ? bank_buy_ship(g.player, g.region, amount) : BANK_DONE;
+            g.note = result == BANK_DONE && g_ship == amount ? "The ship is yours." : say_result(result);
+            g.asking = ASK_NOTHING;
+            return;
+        case ASK_SELL_SHIP:
+            result = amount == 1 ? bank_sell_ship(g.region) : BANK_DONE;
+            g.note = amount == 1 && result == BANK_DONE ? "Your ship is sold." : say_result(result);
+            g.asking = ASK_NOTHING;
+            return;
         default:
             break;
         }

@@ -1,4 +1,5 @@
 #include "game/dagger/play/travelmap.h"
+#include "game/dagger/play/bank.h"
 #include "game/dagger/play/atlas.h"
 #include "game/dagger/play/canvas.h"
 #include "game/dagger/play/words.h"
@@ -527,6 +528,9 @@ static void plan(void)
 {
     /* "Foot/horse": on the horse when one is owned, else the cart, else on foot (ride.h). */
     journey_plan(g.here_px, g.here_py, g.place_px, g.place_py, g.reckless, !g.camp, g.ship, ride_journey(g.player), 0, &g.journey);
+    if (g.ship && bank_ship() != BANK_SHIP_NONE) {
+        journey_own_ship(&g.journey);
+    }
 }
 
 /* A place chosen: ask whether to go. */

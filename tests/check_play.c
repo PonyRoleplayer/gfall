@@ -6585,6 +6585,62 @@ static void check_ills(void)
     ills_new_game();
 }
 
+/* Ships: bought from the gold carried and then the account, one at a time, sold at 85%, no fare at sea, through a save. */
+static void check_ships(void)
+{
+    Player p;
+    Character sheet;
+    RegionStanding *r;
+    Journey j;
+
+    standing_new_game(1);
+    bank_set_ship(BANK_SHIP_NONE);
+    character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Ada");
+    player_init(&p, &sheet);
+    inventory_clear(&p.pack);
+    r = standing_region(17);
+    p.pack.gold = 50000;
+    r->gold = 40000;
+    check_expect(bank_buy_ship(&p, 17, BANK_SHIP_SMALL) == BANK_NOT_ENOUGH_GOLD && bank_ship() == BANK_SHIP_NONE,
+                 "ships: bought with 90000 for 100000");
+    r->gold = 60000;
+    check_expect(bank_buy_ship(&p, 17, BANK_SHIP_SMALL) == BANK_DONE && bank_ship() == BANK_SHIP_SMALL
+                     && p.pack.gold == 0 && r->gold == 10000,
+                 "ships: the small ship not paid from the purse first, then the account");
+    check_expect(bank_buy_ship(&p, 17, BANK_SHIP_LARGE) == BANK_ALREADY_SHIP, "ships: a second ship bought");
+    /* A voyage of 30 sea pixels: 25 x (30 / 24 + 1) = 50 fare, gone on one's own ship. */
+    mem_zero(&j, sizeof(j));
+    j.sea_pixels = 30;
+    j.fare = 50;
+    j.inn_gold = 10;
+    j.cost = 60;
+    journey_own_ship(&j);
+    check_expect(j.fare == 0 && j.cost == 10, "ships: an owned ship still pays a fare");
+    {
+        SaveState out;
+        SaveState in;
+        char path[260];
+
+        save_use_prefix(SAVE_TEST_PREFIX);
+        save_use_slot(4);
+        keep_clear();
+        pile_new_game();
+        mem_zero(&out, sizeof(out));
+        df_copy(out.name, "Ship", SAVE_NAME);
+        out.sheet = sheet;
+        inventory_clear(&out.pack);
+        check_expect(save_write(&out), "ships: a save did not write");
+        bank_set_ship(BANK_SHIP_NONE);
+        check_expect(save_read(&in) && bank_ship() == BANK_SHIP_SMALL, "ships: the ship did not come back from the save");
+        check_expect(fs_beside(path, (int)sizeof(path), "DATA\\TEST4.SAV") && remove(path) == 0, "ships: the test's file did not go");
+    }
+    r = standing_region(17);
+    check_expect(bank_sell_ship(17) == BANK_DONE && bank_ship() == BANK_SHIP_NONE && r->gold == 10000 + 85000,
+                 "ships: not sold back for 85% into the account");
+    check_expect(bank_sell_ship(17) == BANK_NO_SHIP, "ships: sold a ship not owned");
+    standing_new_game(1);
+}
+
 /* Counts the engine's automap polygons. */
 static void count_polygon(void *ctx, const AutomapCorner *corner, int n, df_u32 rgb)
 {
@@ -6794,6 +6850,7 @@ void check_play(void)
     check_wider_world();
     check_holidays();
     check_ills();
+    check_ships();
     check_riding();
     check_wagon();
     check_marker();

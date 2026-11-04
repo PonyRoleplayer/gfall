@@ -2,6 +2,7 @@
 #include "game/dagger/play/standing.h"
 #include "game/dagger/play/atlas.h"
 #include "game/dagger/play/wagon.h"
+#include "game/dagger/play/bank.h"
 #include "game/dagger/play/ills.h"
 #include "engine/scene/automap.h"
 #include "engine/scene/stream.h"
@@ -71,6 +72,8 @@ typedef struct SaveGameRow {
     df_i32 worn[EQUIP_COUNT];
     df_i32 use_left;
     char name[SAVE_NAME];
+    /* The ship owned (bank.h); a save from before has none. */
+    df_i32 ship;
 } SaveGameRow;
 
 static const RecField g_game_fields[] = {
@@ -98,7 +101,8 @@ static const RecField g_game_fields[] = {
     REC_FIELD("gold", REC_UINT, SaveGameRow, gold),
     REC_ARRAY("worn", REC_INT, SaveGameRow, worn),
     REC_FIELD("use_left", REC_INT, SaveGameRow, use_left),
-    REC_FIELD("name", REC_TEXT, SaveGameRow, name)
+    REC_FIELD("name", REC_TEXT, SaveGameRow, name),
+    REC_FIELD("ship", REC_INT, SaveGameRow, ship)
 };
 static const RecSchema g_game_schema = {
     "GAME", "game", g_game_fields, (int)(sizeof(g_game_fields) / sizeof(g_game_fields[0])), (df_u16)sizeof(SaveGameRow), 0
@@ -373,6 +377,7 @@ static int write_chunks(const SaveState *state)
     }
     game.use_left = state->pack.use_left;
     df_copy(game.name, state->name, SAVE_NAME);
+    game.ship = bank_ship();
     for (i = 0; i < state->pack.count; i++) {
         items[i].id = (df_u16)i;
         items[i].item = state->pack.item[i];
@@ -622,6 +627,7 @@ static void apply_tables(SaveState *state)
     }
     state->pack.use_left = game->use_left;
     df_copy(state->name, game->name, SAVE_NAME);
+    bank_set_ship(game->ship);
     if (g_custom_table.count) {
         career_set_custom((const CareerClass *)g_custom_table.rows);
     }

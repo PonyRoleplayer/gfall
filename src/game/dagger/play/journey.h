@@ -40,6 +40,8 @@ typedef struct Journey {
  */
 void journey_plan(int sx, int sy, int ex, int ey, int reckless, int inns, int by_ship, int transport,
                   int (*climate_of)(int px, int py), Journey *out);
+/* A voyage on the player's own ship: no fare (TravelTimeCalculator.CalculateTripCost's hasShip). */
+void journey_own_ship(Journey *j);
 /*
  * When one sets out on day, at minute of the day, and journeys this long: the
  * day and minute one arrives. A cautious traveller rests on the way and arrives

@@ -106,6 +106,12 @@ void journey_plan(int sx, int sy, int ex, int ey, int reckless, int inns, int by
     out->cost = out->inn_gold + out->fare;
 }
 
+void journey_own_ship(Journey *j)
+{
+    j->cost -= j->fare;
+    j->fare = 0;
+}
+
 void journey_arrival(int day, float minute, int minutes, int cautious, int *arrive_day, float *arrive_minute)
 {
     int whole;

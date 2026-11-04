@@ -13,7 +13,11 @@
  * most 50000 a level, a tenth more to pay back within a year; a loan left unpaid
  * is a default, a crime against the region (bank_check_loans).
  *
- * Houses and ships are for sale in classic and not here yet.
+ * A ship is bought here (DaggerfallBankManager): a small ship 100,000 gold or
+ * a large galley 200,000, paid from the gold carried, then the account; sold
+ * back for 85% into the account. One at a time. Owning one, a sea voyage on the
+ * travel map pays no fare. DFU's ship to stand on is not built. Houses are
+ * not for sale yet.
  *
  * Plain C: hostcheck drives it by clicks.
  */
@@ -30,8 +34,27 @@ enum {
     BANK_DEFAULTED,
     BANK_LETTER_TOO_SMALL,
     BANK_NO_LOAN,
-    BANK_PACK_FULL
+    BANK_PACK_FULL,
+    BANK_ALREADY_SHIP,
+    BANK_NO_SHIP
 };
+
+/* The ships (DFU's ShipType, one up). */
+enum {
+    BANK_SHIP_NONE,
+    BANK_SHIP_SMALL,
+    BANK_SHIP_LARGE
+};
+/* The ship owned, BANK_SHIP_*; the game's one, saved with it. */
+int bank_ship(void);
+void bank_set_ship(int ship);
+/* A ship's price, and what the bank gives back for it. */
+int bank_ship_price(int ship);
+int bank_ship_sale(int ship);
+/* Buys one, the gold carried first, then the region's account. */
+int bank_buy_ship(Player *p, int region, int ship);
+/* Sells the one owned into the region's account. */
+int bank_sell_ship(int region);
 
 /* The sums, without the screen. A region's number from the map; amount in gold; day clock_day. */
 int bank_deposit(Player *p, int region, int amount);

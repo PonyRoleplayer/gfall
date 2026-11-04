@@ -128,8 +128,7 @@ Classic's travel map and its fast journeys, on Daggerfall Unity's numbers and cl
   - **Refused:** a horse or a cart never goes in. Without a cart it says there is no wagon, and out of reach that it is too far.
   - **In a shop** (DFU's trade window): the trade window's Wagon button, with the same rules, makes the left list the wagon's while selling or repairing, so things are sold or mended straight out of it; what is laid on the counter and not sold goes back where it came from. Buying with it down, what is paid for goes into the wagon, by its 750 kg.
 - **The cart's picture** in a list is the wagon's container icon, `INVE16I0.CIF`'s fourth frame (DFU's ItemHelper: the cart's template picture is wrong). That file's frames are bones, a body, the ground, the wagon, shelves, a chest, a merchant's hands, a bin, a sparkle, a backpack, a heap of skulls.
-- **Not yet:**
-  - ships.
+- **Not yet:** a ship to stand on (DFU's ship scenes); the ship itself is bought at a bank (Banks).
 
 ### A journey (`play/journey.c`, DFU's TravelTimeCalculator)
 - **The path:** a line of map pixels, a step along the longer axis.
@@ -209,7 +208,7 @@ The use key's order: a body or heap first; then a townsperson the view rests on 
 - The temple cure (First and Second Planting), half-price temple services and free rooms and drink are flagged for when temples and taverns sell them.
 
 ### Banks
-`play/bank.c`, on `BANK00I0.IMG`, with sums usable without the screen. Each region has its own account. A letter of credit is an item worth what it says, a hundredth more to write, at least 100. A loan is 100 to 50000 a level, a tenth more to repay, due in a year of 360 days; carried gold pays first. A loan past its day is a default, a crime in its region, looked at once a game day (`bank_check_loans`). Houses and ships say none are for sale.
+`play/bank.c`, on `BANK00I0.IMG`, with sums usable without the screen. Each region has its own account. A letter of credit is an item worth what it says, a hundredth more to write, at least 100. A loan is 100 to 50000 a level, a tenth more to repay, due in a year of 360 days; carried gold pays first. A loan past its day is a default, a crime in its region, looked at once a game day (`bank_check_loans`). Houses say none are for sale. **Ships** (DaggerfallBankManager): Buy Ship asks 1 for a small ship (100,000) or 2 for a large galley (200,000), paid from the gold carried first, then the region's account; one at a time. Sell Ship asks 1 to sell it back for 85% into the account. Owning one, the travel map's voyages pay no fare (`journey_own_ship`). The ship is the game's one, in the save's `GAME` row. DFU's ship to stand on, its deck and cabin, is not built.
 
 ### The law
 `play/court.c`. `court_commit` takes the crime's loss off the legal reputation and half that off the region's People. Shoplifting and a defaulted loan still open the court at once. A citizen killed in the street does not: the watch comes, below, and the court for that killing is not built. The trial is DFU's `DaggerfallCourtWindow`: the sentence from `CRIM`'s sums, split into pieces of 40 gold or three days; what cannot be paid is served; a low standing can mean banishment. Guilty halves it. Not guilty argues by Etiquette or lies by Streetwise, against the standing and the skill, within 5..95; losing moves the fine by the court's mood. Prison ticks a day each 0.3 s on `PRIS00I0.IMG`. Then four hours pass, the player is whole, a sentence served gives back half the loss less one, and they stand in the street (`travel_out_to_street`). Banishment is marked on the region and not yet enforced.
@@ -840,7 +839,7 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Loot | the other columns of `LOOT` wait for their items | P12-b, later |
 | Loot | a body or a heap takes nothing put on it (a choice, see What can be searched) | - |
 | Places | treasure and piles only in a dungeon streamed by block; a town's doors not keyed; the sea can be walked on | later |
-| World | ships; the indoor automap's marks and notes, the town map's rotation and names; the travel map's Find list, identify flash and neighbouring provinces; places marked by talk; guild travel; regional holidays; the afflictions' cemetery, beast pictures and sounds (Afflictions) | P10 |
+| World | a ship to stand on; the indoor automap's marks and notes, the town map's rotation and names; the travel map's Find list, identify flash and neighbouring provinces; places marked by talk; guild travel; regional holidays; the afflictions' cemetery, beast pictures and sounds (Afflictions) | P10 |
 | Player | the completed classic HUD bar needs target acceptance; the map button opens the travel map outdoors, the automap and magic buttons await their systems | P9-b, P10, P12-b |
 | Player | target acceptance/tuning of the implemented classic cursor controls | P9-c |
 | People | Steal mode, pickpocketing and the deferred theft mechanics | P12-a |

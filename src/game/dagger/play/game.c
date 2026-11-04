@@ -1142,6 +1142,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
             atlas_new_game();
             wagon_new_game();
             ills_new_game();
+            bank_set_ship(BANK_SHIP_NONE);
             automap_clear();
             screens_open_create();
             /* Its pictures missing: the default character starts, as before creation was built. */
