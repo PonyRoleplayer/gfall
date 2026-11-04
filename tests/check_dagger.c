@@ -2958,12 +2958,16 @@ static void check_dungeon_automap(void)
     camera_set(&cam, x, y, z, yaw, pitch);
     seen = automap_count();
 
-    /* Classic's map rectangle (1, 1)..(318, 169) of 320 x 200, doubled and turned to the lower left. */
+    /*
+     * Classic's map rectangle, DFU's (1, 1, 318, 169): its corner at x 1,
+     * y 1 of 320 x 200, 318 wide and 169 high. At 640 x 480 from the lower
+     * left: x 2..638, y 480 - 2.4 * 170 = 72 .. 480 - 2.4 = 477.6.
+     */
     mem_zero(&v, sizeof(v));
     v.mode = AUTOMAP_TOP;
     v.x0 = 2.0f;
-    v.x1 = 636.0f;
-    v.y0 = 480.0f - 2.4f * 169.0f;
+    v.x1 = 2.0f * (1.0f + 318.0f);
+    v.y0 = 480.0f - 2.4f * (1.0f + 169.0f);
     v.y1 = 480.0f - 2.4f;
     v.cx = cam.x;
     v.cz = cam.z;

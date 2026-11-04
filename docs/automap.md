@@ -11,7 +11,7 @@ Classic's dungeon map shows the rooms the player has seen, from above or from a 
 
 ## Seen
 
-The game names the place it is in with `automap_set_place(key)`; 0 is none (outdoors, a menu), and nothing is marked. For Daggerfall the key to use is the place's `KeepKey.place`: the MAPDITEM id, or a building's inside as its town's id `| (building + 1) << 24` (`docs/interact.md`).
+The game names the place it is in with `automap_set_place(key)`; 0 is none (outdoors, a menu), and nothing is marked. Daggerfall names it with the keep table's own place key, as `travel.c` builds it: a dungeon's `(1 << 30) | id`, a building's inside `(3 << 30) | (record + 1) << 24 | town`, and 0 in the world.
 
 Each world frame, a model is seen when:
 
@@ -81,7 +81,7 @@ In a world frame, marking costs a byte read for each drawn model and for each mo
 
 - `automap_set_place` when a place opens; 0 outdoors.
 - The rows in its save file; `automap_clear` on a new game.
-- The window: AMAP00I0's chrome, the keys (turn, zoom, the slice, the view), `AutomapView` from classic's rectangle (1, 1)..(318, 169) of 320 × 200 turned to screen pixels from the lower left, and the marker where `automap_to_screen` says.
+- The window: AMAP00I0's chrome, the keys (turn, zoom, the slice, the view), `AutomapView` from classic's rectangle, DFU's (1, 1, 318, 169) as corner and size in 320 × 200, turned to screen pixels from the lower left (x 2..638, y 72..477.6 at 640 × 480), and the marker where `automap_to_screen` says.
 
 ## Switches
 
