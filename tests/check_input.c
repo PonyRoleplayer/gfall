@@ -97,7 +97,7 @@ static void check_defaults(void)
     int a;
 
     expect(INPUT_CURSOR == 14 && INPUT_SWING == 15 && INPUT_FREELOOK == 21
-           && INPUT_ACTIONS == 22, "saved action ids moved");
+           && INPUT_TRAVEL_MAP == 22 && INPUT_ACTIONS == 23, "saved action ids moved");
     for (a = 0; a < INPUT_ACTIONS; a++) {
         expect(input_binding(a) == defaults[a], "an action's default key changed");
     }

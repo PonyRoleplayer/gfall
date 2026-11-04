@@ -54,6 +54,12 @@ enum {
     INPUT_LOOK_DOWN,      /* Page Down */
     INPUT_LOOK_CENTER,    /* Home */
     INPUT_FREELOOK,       /* Alt */
+    /*
+     * The travel map, default V as Daggerfall Unity's, apart from
+     * INPUT_MAP (M), which a game may give to its automap. Reported
+     * only: the game decides what opens.
+     */
+    INPUT_TRAVEL_MAP,
     INPUT_ACTIONS
 };
 #define INPUT_BIT(action) (1u << (action))
