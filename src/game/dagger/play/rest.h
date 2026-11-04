@@ -14,6 +14,12 @@
  * health, fatigue and spell points and is a use of Medical. A creature awake
  * stops it, and refuses it to begin with (foes_hunting).
  *
+ * Where one may rest is the game's to say (rest_set_rule, DFU's CanRest): in a
+ * town's streets resting is vagrancy, a crime, and the screen closes for the
+ * game to try it; inside a town's building only a rented room allows it (or a
+ * guild that gives rest), and then no longer than the room is held. Loitering
+ * is allowed anywhere. Elsewhere, and in a room, rest is free.
+ *
  * Plain C, drawing nothing: hostcheck drives it. screens.c puts it on the
  * screen and gives it the frame's time.
  */
@@ -24,8 +30,20 @@ enum {
     REST_LEAVE
 };
 
-/* 0 when a picture is missing. */
+/* Where the rest is asked (rest_set_rule). */
+enum {
+    REST_RULE_FREE,
+    REST_RULE_VAGRANCY,
+    REST_RULE_NO_ROOM,
+    REST_RULE_ROOM
+};
+
+/* 0 when a picture is missing. The rule is free until set. */
 int rest_open(Player *p);
+/* The rule here; with REST_RULE_ROOM, the hours the room is held for. */
+void rest_set_rule(int rule, int room_hours);
+/* 1 once a rest was asked where it is vagrancy, the screen closed for the game to try it; read once, it is 0 again. */
+int rest_vagrant(void);
 void rest_close(void);
 void rest_compose(void);
 const df_u8 *rest_pixels(void);

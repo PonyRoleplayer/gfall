@@ -835,7 +835,7 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Loot | the other columns of `LOOT` wait for their items | P12-b, later |
 | Loot | a body or a heap takes nothing put on it (a choice, see What can be searched) | - |
 | Places | treasure and piles only in a dungeon streamed by block; a town's doors not keyed; the sea can be walked on | later |
-| World | a ship to stand on; the indoor automap's marks and notes, the town map's rotation and names; the travel map's neighbouring provinces; places on the travel map marked by talk (a building is marked on the town map); guild travel; regional holidays; the afflictions' cemetery, beast pictures and sounds (Afflictions) | P10 |
+| World | a ship to stand on; the indoor automap's marks and notes, the town map's rotation and names; the travel map's neighbouring provinces; places on the travel map marked by talk; a bed and kept things in a rented room (a building is marked on the town map); guild travel; regional holidays; the afflictions' cemetery, beast pictures and sounds (Afflictions) | P10 |
 | Player | the completed classic HUD bar needs target acceptance; the map button opens the travel map outdoors, the automap and magic buttons await their systems | P9-b, P10, P12-b |
 | Player | target acceptance/tuning of the implemented classic cursor controls | P9-c |
 | People | Steal mode, pickpocketing and the deferred theft mechanics | P12-a |
@@ -856,7 +856,14 @@ What is built but not whole, and the phase each goes in. Each section above says
 - **Each whole hour of rest** gives back health (endurance's modifier + (Medical + 60) × its most / 1000, at least 1), fatigue and spell points (an eighth of their most, at least 1), and is a use of Medical. Loitering gives back nothing.
 - **A creature awake** refuses a rest ("You cannot rest with enemies nearby."), and stops one each hour. Skills that have earned it rise when the rest ends, and a level due opens the sheet.
 - **An encounter.** Each hour one chance in 36 (ours: DFU's dungeon roll, how often it rolls not read) of the nearest sleeper within 2048 units waking and coming, which ends the rest (`foes_rouse_nearest`). DFU conjures a creature; there is no way to here yet.
-- **Not yet:** a class with no spell point regeneration; the law on camping, and rented rooms.
+- **Where** (DFU's CanRest; UESP's Rest: resting in a town is vagrancy), decided by `game.c` when the screen opens (`rest_set_rule`): in a city, hamlet or village (not a farm or a lone tavern), resting in the streets is vagrancy. The screen closes, TEXT.RSC 17 is said, and the crime goes before the court (`CRIME_VAGRANCY`; DFU sends guards to arrest). Inside a town's building, only a room rented there allows it ("You have not rented a room here."), and a rest stops when the room runs out ("Your rented room has expired."); no encounter comes in a rented room. Loitering is allowed everywhere. A dungeon, the wild, a farm and a lone tavern are free. A guild hall's rest for its members waits for the guilds; a house or ship to sleep in is not built.
+- **Not yet:** a class with no spell point regeneration; resting in a guild hall, a house, a ship.
+
+### Taverns (built: rooms, food and drink)
+`play/lodging.c`, with the tavern keeper's panel (`SERVICE_PANEL_TAVERN`, TVRN00I0.IMG: Room, Talk, Food & Drinks, Goodbye), DaggerfallTavernWindow's rules and UESP's Taverns.
+- **A room:** Room asks how many days (one to start, typed, Enter). 7 gold a day, Heart's Day not counted when the days take it in (FormulaHelper.CalculateRoomCost), then bargained by the tavern's quality, Mercantile and Personality (`rules_trade_price`). Renting again adds days to a room held there; 350 days at most. Classic asks before paying; this pays at once and says the price. The rooms are rows in the save (`ROOM`), by the building's town, block and record, and the game minute each runs out. A knightly order's free rooms wait for the guilds; DFU's own bed in the room, and things left in it kept, are not built.
+- **Food and drink:** eleven things at DFU's prices (ale, beer, bread, broth 1; mead, cheese, gruel, pie 2; wine, fowl, stew 3). Each gives back twice its price in health, once in four game hours ("You are not hungry."). Free on the New Life Festival, half (at least 1) on Harvest's End (`HOLIDAY_FOOD_HALF`), as DFU found classic does; the halved price heals half. The last meal's minute is in the save's `GAME` row.
+
 
 The travel map comes later, with `worldmap.c`'s pixels and the location index: pick a place and land in the stream there, time passing as the trip.
 
@@ -869,6 +876,7 @@ The travel map comes later, with `worldmap.c`'s pixels and the location index: p
 | `DISC` | the places the map knows that a new game's does not |
 | `WAGN` | what is in the cart's wagon |
 | `SICK` | a row per disease had: its days left, the day last felt, what it took from each attribute (`play/ills.h`) |
+| `ROOM` | a row per tavern room held: its building, by town, block and record, and when it runs out (`play/lodging.h`) |
 | `CURS` | one row: an infection, a curse, its clan and shape, its times, and its gifts to attributes and skills |
 | `GAME` | which place and the way back out of its door, the feet in that place's frame with the stream's origin that frame has, the movement facing and independent Alt view offsets (P9-c), the clock's minute and day, the day the game began, the seed, the gold, what is worn |
 | `CHAR` | the sheet, whole: skill uses and the level's count among it |

@@ -1,5 +1,6 @@
 #include "game/dagger/play/service.h"
 #include "game/dagger/play/canvas.h"
+#include "game/dagger/play/lodging.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
 
@@ -18,6 +19,21 @@
 #define EXIT_X 44
 #define EXIT_W 43
 #define EXIT_H 15
+/* The tavern's panel (DaggerfallTavernWindow): 130 x 44 at y 50, four rows of 7 from y 5, 9 apart. */
+#define TAVERN_Y 50
+#define TAVERN_H 44
+#define TAVERN_ROW_Y 5
+#define TAVERN_ROW_GAP 9
+/* Its questions: a scroll under the panel; the menu a line a thing. */
+static const Rect g_tavern_scroll = { 95, 98, 130, 100 };
+#define FOOD_LINE 8
+#define DAYS_TEXT 4
+
+enum {
+    MODE_MENU,
+    MODE_DAYS,
+    MODE_FOOD
+};
 
 static struct {
     int open;
@@ -25,6 +41,10 @@ static struct {
     Composer composer;
     const df_u8 *picture;
     int changed;
+    /* A tavern's: the menu, the days asked, or the food listed; the days typed and the thing chosen. */
+    int mode;
+    char typed[DAYS_TEXT];
+    int food;
 } g;
 
 int service_open(int panel)
@@ -36,7 +56,8 @@ int service_open(int panel)
     }
     g.open = 1;
     g.panel = panel;
-    g.picture = composer_read(&g.composer, panel == SERVICE_PANEL_REPAIR ? "REPR01I0.IMG" : "GNRC01I0.IMG");
+    g.picture = composer_read(&g.composer, panel == SERVICE_PANEL_REPAIR ? "REPR01I0.IMG"
+                                           : (panel == SERVICE_PANEL_TAVERN ? "TVRN00I0.IMG" : "GNRC01I0.IMG"));
     if (!g.picture) {
         log_text(LOG_WARN, "service: its picture did not read");
         service_close();
@@ -61,7 +82,28 @@ void service_compose(void)
     canvas_use(&g.composer);
     /* As rest does: classic's panels stand on black here, the world not sent to the card under them. */
     canvas_box(&whole, 0);
-    if (g.panel == SERVICE_PANEL_REPAIR) {
+    if (g.panel == SERVICE_PANEL_TAVERN) {
+        canvas_copy_part(g.picture, PANEL_W, 0, 0, PANEL_W, TAVERN_H, PANEL_X, TAVERN_Y);
+        if (g.mode == MODE_DAYS) {
+            char line[32];
+
+            canvas_scroll(&g_tavern_scroll);
+            log_format(line, (int)sizeof(line), "How many days? %s_", g.typed);
+            canvas_label(g_tavern_scroll.x + 10, g_tavern_scroll.y + 12, line);
+        } else if (g.mode == MODE_FOOD) {
+            int i;
+
+            canvas_scroll(&g_tavern_scroll);
+            for (i = 0; i < LODGING_FOODS; i++) {
+                char line[24];
+
+                log_format(line, (int)sizeof(line), "%s", lodging_food_name(i));
+                canvas_label(g_tavern_scroll.x + 10, g_tavern_scroll.y + 6 + i * FOOD_LINE, line);
+                log_format(line, (int)sizeof(line), "%d", lodging_food_price(i));
+                canvas_label(g_tavern_scroll.x + 100, g_tavern_scroll.y + 6 + i * FOOD_LINE, line);
+            }
+        }
+    } else if (g.panel == SERVICE_PANEL_REPAIR) {
         canvas_copy_part(g.picture, PANEL_W, 0, 0, PANEL_W, REPAIR_H, PANEL_X, REPAIR_Y);
     } else {
         Rect row;
@@ -103,10 +145,105 @@ static int in_row(int x, int y, int y0, int down)
     return rect_has(&r, x, y);
 }
 
+/* The days typed as a number. */
+static int typed_days(void)
+{
+    int n;
+    int i;
+
+    n = 0;
+    for (i = 0; g.typed[i]; i++) {
+        n = n * 10 + (g.typed[i] - '0');
+    }
+    return n;
+}
+
+int service_days(void)
+{
+    return typed_days();
+}
+
+int service_food(void)
+{
+    return g.food;
+}
+
+int service_key(int vk)
+{
+    int n;
+
+    if (g.panel != SERVICE_PANEL_TAVERN || g.mode != MODE_DAYS) {
+        return SERVICE_STAY;
+    }
+    g.changed = 1;
+    for (n = 0; g.typed[n]; n++) {
+    }
+    if (vk >= '0' && vk <= '9' && n < DAYS_TEXT - 1) {
+        g.typed[n] = (char)vk;
+        g.typed[n + 1] = 0;
+    } else if (vk == 0x08 && n > 0) {
+        g.typed[n - 1] = 0;
+    } else if (vk == 0x0D) {
+        g.mode = MODE_MENU;
+        return typed_days() > 0 ? SERVICE_ROOM : SERVICE_STAY;
+    }
+    return SERVICE_STAY;
+}
+
+/* A tavern's click: a row of its menu, a line of the food, or anywhere else back to the rows. */
+static int tavern_click(int x, int y)
+{
+    Rect row;
+    int i;
+
+    g.changed = 1;
+    if (g.mode == MODE_FOOD) {
+        i = (y - (g_tavern_scroll.y + 6)) / FOOD_LINE;
+        g.mode = MODE_MENU;
+        if (rect_has(&g_tavern_scroll, x, y) && y >= g_tavern_scroll.y + 6 && i >= 0 && i < LODGING_FOODS) {
+            g.food = i;
+            return SERVICE_FOOD;
+        }
+        return SERVICE_STAY;
+    }
+    if (g.mode == MODE_DAYS) {
+        g.mode = MODE_MENU;
+        return SERVICE_STAY;
+    }
+    row.x = PANEL_X + ROW_X;
+    row.w = ROW_W;
+    row.h = ROW_H;
+    for (i = 0; i < 4; i++) {
+        row.y = (df_u16)(TAVERN_Y + TAVERN_ROW_Y + i * TAVERN_ROW_GAP);
+        if (!rect_has(&row, x, y)) {
+            continue;
+        }
+        switch (i) {
+        case 0:
+            /* DFU's box starts at one day. */
+            g.mode = MODE_DAYS;
+            g.typed[0] = '1';
+            g.typed[1] = 0;
+            return SERVICE_STAY;
+        case 1:
+            return SERVICE_TALK;
+        case 2:
+            g.mode = MODE_FOOD;
+            return SERVICE_STAY;
+        default:
+            return SERVICE_LEAVE;
+        }
+    }
+    return SERVICE_STAY;
+}
+
 int service_click(int x, int y)
 {
     Rect exit;
 
+    if (g.panel == SERVICE_PANEL_TAVERN) {
+        return tavern_click(x, y);
+    }
     exit.x = PANEL_X + EXIT_X;
     exit.w = EXIT_W;
     exit.h = EXIT_H;

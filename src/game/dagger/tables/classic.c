@@ -626,7 +626,7 @@ static const Holiday g_holidays[] = {
     { HDAY(5, 16), "Mid Year Celebration", HOLIDAY_TEMPLE_HALF },
     { HDAY(6, 10), "Merchants' Festival", HOLIDAY_SHOPS_HALF },
     { HDAY(6, 20), "Sun's Rest", HOLIDAY_SHOPS_SHUT },
-    { HDAY(7, 27), "Harvest's End", HOLIDAY_FREE_DRINK },
+    { HDAY(7, 27), "Harvest's End", HOLIDAY_FOOD_HALF },
     { HDAY(8, 3), "Tales and Tallows", 0 },
     { HDAY(9, 13), "Witches Festival", 0 },
     { HDAY(9, 30), "Emperor's Day", 0 },

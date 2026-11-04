@@ -338,8 +338,18 @@ static int talk_frame(const Input *in)
 /* A frame of the merchant's panel: its choice kept, as it closes. */
 static int service_frame(const Input *in)
 {
+    int vk;
+
     if (in->pressed & INPUT_BIT(INPUT_MENU)) {
         return SCREENS_CLOSED;
+    }
+    /* A tavern's days are typed. */
+    vk = input_key_pressed();
+    if (vk) {
+        g_service_choice = service_key(vk);
+        if (g_service_choice != SERVICE_STAY) {
+            return SCREENS_SERVICE;
+        }
     }
     if (!in->reset && (in->mouse_pressed & INPUT_MOUSE_LEFT)) {
         g_service_choice = service_click(g_point_x, g_point_y);
@@ -349,6 +359,10 @@ static int service_frame(const Input *in)
         if (g_service_choice != SERVICE_STAY) {
             return SCREENS_SERVICE;
         }
+    }
+    /* A tavern's question or menu shown, or the days typed. */
+    if (service_changed()) {
+        send_screen();
     }
     return SCREENS_STAY;
 }

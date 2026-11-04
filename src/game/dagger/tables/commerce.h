@@ -29,6 +29,8 @@
 #define HOLIDAY_TEMPLE_HALF 0x10
 #define HOLIDAY_FREE_ROOM 0x20
 #define HOLIDAY_FREE_DRINK 0x40
+/* A tavern's food and drink at half, at least 1 (Harvest's End, as DFU found classic does). */
+#define HOLIDAY_FOOD_HALF 0x80
 
 typedef struct Holiday {
     df_u16 id;
@@ -67,6 +69,7 @@ enum {
 enum {
     CRIME_NONE = 0,
     CRIME_BREAKING_IN = 3,
+    CRIME_VAGRANCY = 8,
     CRIME_THEFT = 13,
     CRIME_LOAN_DEFAULT = 15,
     CRIME_COUNT = 16

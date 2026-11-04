@@ -4,6 +4,9 @@
 #include "game/dagger/play/atlas.h"
 #include "game/dagger/play/journey.h"
 #include "game/dagger/play/ills.h"
+#include "game/dagger/play/rest.h"
+#include "game/dagger/play/lodging.h"
+#include "game/dagger/formats/textrsc.h"
 #include "game/dagger/play/travelmap.h"
 #include "game/dagger/play/ride.h"
 #include "game/dagger/play/wagon.h"
@@ -387,6 +390,12 @@ static void person_used(const Usable *u)
             screen_over_play();
             return;
         }
+        /* The tavern keeper: a room, food and drink, talk (DaggerfallTavernWindow). */
+        if (type == BUILDING_TAVERN) {
+            screens_open_service(SERVICE_PANEL_TAVERN);
+            screen_over_play();
+            return;
+        }
         if (building_is_shop(type)) {
             screens_open_service(type == BUILDING_ARMORER || type == BUILDING_WEAPONS ? SERVICE_PANEL_REPAIR : SERVICE_PANEL_SELL);
             screen_over_play();
@@ -459,6 +468,72 @@ static void temple_cure(void)
     }
 }
 
+/*
+ * A room for days in this tavern (DaggerfallTavernWindow.RentRoom): 7 gold a
+ * day, Heart's Day free, bargained by its quality; added to a room held here.
+ * Classic asks before paying; this pays at once, saying the price.
+ */
+static void tavern_room(int days)
+{
+    char line[80];
+    int type;
+    int faction;
+    int quality;
+    unsigned place;
+    int region;
+    int index;
+    int block;
+    int record;
+    int year;
+    int month;
+    int day;
+    int cost;
+    int result;
+    float x;
+    float z;
+
+    if (!travel_building(&type, &faction, &quality, &place)
+        || !travel_town_here(g_cam, &region, &index, &x, &z, &block, &record)) {
+        return;
+    }
+    clock_date(&year, &month, &day);
+    cost = lodging_room_cost(days, month * 30 + day + 1);
+    if (cost > 0) {
+        cost = rules_trade_price(cost, quality, g_player.sheet.skill[SKILL_MERCANTILE], g_player.sheet.attribute[ATTR_PERSONALITY], 0);
+    }
+    result = lodging_rent(&g_player, region, index, block, record, days, cost, ills_now(clock_day(), clock_minute()));
+    if (result == LODGING_TOO_MANY_DAYS) {
+        interact_say("You cannot rent a room that far ahead.");
+    } else if (result == LODGING_NOT_ENOUGH_GOLD) {
+        log_format(line, (int)sizeof(line), "The room costs %d gold, more than you have.", cost);
+        interact_say(line);
+    } else if (result == LODGING_FULL) {
+        interact_say("You hold too many rooms already.");
+    } else if (cost == 0) {
+        interact_say("On Heart's Day your room is free.");
+    } else {
+        log_format(line, (int)sizeof(line), "A room for %d day%s, for %d gold. You may rest here.", days, days == 1 ? "" : "s", cost);
+        interact_say(line);
+    }
+}
+
+/* Food or drink off the tavern's menu. */
+static void tavern_food(int which)
+{
+    char line[64];
+    int result;
+
+    result = lodging_eat(&g_player, which, ills_now(clock_day(), clock_minute()), today_holiday_flags());
+    if (result == LODGING_NOT_HUNGRY) {
+        interact_say("You are not hungry.");
+    } else if (result == LODGING_NOT_ENOUGH_GOLD) {
+        interact_say("You do not have enough gold.");
+    } else {
+        log_format(line, (int)sizeof(line), "You have the %s.", lodging_food_name(which));
+        interact_say(line);
+    }
+}
+
 /* What the merchant's panel chose. */
 static void service_chosen(void)
 {
@@ -468,6 +543,10 @@ static void service_chosen(void)
     choice = screens_service_choice();
     if (choice == SERVICE_CURE) {
         temple_cure();
+    } else if (choice == SERVICE_ROOM) {
+        tavern_room(service_days());
+    } else if (choice == SERVICE_FOOD) {
+        tavern_food(service_food());
     } else if (choice == SERVICE_TALK) {
         talk_to(g_talk_faction, g_talk_flat, (unsigned)g_talk_flat * 31u + (unsigned)g_talk_faction);
     } else if (choice == SERVICE_BANK) {
@@ -729,9 +808,60 @@ static void bag_over_play(Entity *searched)
     screen_over_play();
 }
 
+/* TEXT.RSC's word that camping in a town is not allowed (DFU's cityCampingIllegal). */
+#define TEXT_CITY_CAMPING 17
+
+/* 1 when the player stands in a town (a city, a hamlet or a village, not a farm or a lone tavern): DFU's IsPlayerInTown. */
+static int in_a_town(void)
+{
+    int px;
+    int py;
+    int type;
+
+    if (!travel_pixel(g_cam, &px, &py)) {
+        return 0;
+    }
+    type = worldmap_location_type(px, py);
+    return type == WORLDMAP_TOWN_CITY || type == WORLDMAP_TOWN_HAMLET || type == WORLDMAP_TOWN_VILLAGE;
+}
+
+/*
+ * Where the player may rest (DaggerfallRestWindow.CanRest; UESP's Rest): a
+ * town's streets are vagrancy; a town's building wants a room rented there;
+ * a dungeon, the wild, a farm and a lone tavern are free.
+ */
+static int rest_rule_here(int *room_hours)
+{
+    TravelWhere here;
+    int origin[2];
+    int region;
+    int index;
+    int block;
+    int record;
+    float x;
+    float z;
+
+    *room_hours = 0;
+    travel_here(&here, origin);
+    if (here.kind == TRAVEL_DUNGEON || !in_a_town()) {
+        return REST_RULE_FREE;
+    }
+    if (here.kind == TRAVEL_WORLD) {
+        return REST_RULE_VAGRANCY;
+    }
+    if (!travel_town_here(g_cam, &region, &index, &x, &z, &block, &record)) {
+        return REST_RULE_FREE;
+    }
+    *room_hours = lodging_hours_left(region, index, block, record, ills_now(clock_day(), clock_minute()));
+    return *room_hours > 0 ? REST_RULE_ROOM : REST_RULE_NO_ROOM;
+}
+
 /* Rest over the stilled world, unless a creature awake forbids it (DFU's rest window). */
 static void rest_over_play(void)
 {
+    int room_hours;
+    int rule;
+
     if (foes_hunting()) {
         interact_say("You cannot rest with enemies nearby.");
         return;
@@ -742,6 +872,9 @@ static void rest_over_play(void)
         return;
     }
     screens_open_rest(&g_player);
+    /* Two steps: an argument's order of evaluation is not C's to promise. */
+    rule = rest_rule_here(&room_hours);
+    rest_set_rule(rule, room_hours);
     screen_over_play();
 }
 
@@ -1142,6 +1275,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
             atlas_new_game();
             wagon_new_game();
             ills_new_game();
+            lodging_new_game();
             bank_set_ship(BANK_SHIP_NONE);
             automap_clear();
             screens_open_create();
@@ -1181,6 +1315,16 @@ int game_frame(Camera *cam, const Input *in, float dt)
          * leaves the player exhausted (and dead with a creature near).
          */
         g_last_minute = df_ifloor(game_minutes());
+        /* A rest asked in a town's streets: vagrancy, and the guards take the player before the court (DFU spawns them). */
+        if (!screens_is_open() && rest_vagrant()) {
+            char line[160];
+
+            if (textrsc_read(TEXT_CITY_CAMPING, line, (int)sizeof(line)) <= 0) {
+                df_copy(line, "Camping within the city walls is illegal.", (int)sizeof(line));
+            }
+            interact_say(line);
+            court_commit(CRIME_VAGRANCY, travel_region());
+        }
         if (asked == SCREENS_SLOT && !screens_slot_saving()) {
             prof_end(PROF_PLAY);
             return load_game(screens_slot()) ? GAME_START : GAME_GO_ON;

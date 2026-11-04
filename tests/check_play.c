@@ -39,6 +39,7 @@
 #include "game/dagger/play/dunmap.h"
 #include "game/dagger/play/marker.h"
 #include "game/dagger/play/ride.h"
+#include "game/dagger/play/lodging.h"
 #include "game/dagger/play/ills.h"
 #include "game/dagger/formats/sndfile.h"
 #include "game/dagger/play/wagon.h"
@@ -3453,10 +3454,42 @@ static void check_rest(void)
     check_expect(p.sheet.health == 1 && p.sheet.skill_uses[SKILL_MEDICAL] == 0, "rest: loitering healed, or used Medical");
     rest_close();
 
+    /* A town's building with no room: rest refused with a word, loitering allowed. */
+    check_expect(rest_open(&p), "rest: it did not open for the rules");
+    rest_set_rule(REST_RULE_NO_ROOM, 0);
+    check_expect(rest_click(REST_WHILE_X, REST_BUTTON_Y) == REST_STAY && rest_note() && strstr(rest_note(), "rented"),
+                 "rest: no room, and rest was not refused");
+    rest_click(REST_LOITER_X, REST_BUTTON_Y);
+    rest_key('1');
+    rest_key(0x0D);
+    for (i = 0; i < 100000 && rest_step(0.1f) == REST_STAY; i++) {
+    }
+    check_expect(rest_said() && strstr(rest_said(), "loitering"), "rest: loitering was refused without a room");
+    rest_close();
+    /* A town's streets: asking to rest is vagrancy, the screen closing for the game, said once. */
+    check_expect(rest_open(&p), "rest: it did not open in the street");
+    rest_set_rule(REST_RULE_VAGRANCY, 0);
+    check_expect(rest_click(REST_HEALED_X, REST_BUTTON_Y) == REST_LEAVE && rest_vagrant() && !rest_vagrant(),
+                 "rest: vagrancy not tried once");
+    rest_close();
+    /* A room held two hours: a five-hour rest ends when it runs out. */
+    p.sheet.health = 1;
+    p.sheet.skill_uses[SKILL_MEDICAL] = 0;
+    check_expect(rest_open(&p), "rest: it did not open in a room");
+    rest_set_rule(REST_RULE_ROOM, 2);
+    rest_click(REST_WHILE_X, REST_BUTTON_Y);
+    rest_key('5');
+    rest_key(0x0D);
+    for (i = 0; i < 100000 && rest_step(0.1f) == REST_STAY; i++) {
+    }
+    check_expect(p.sheet.skill_uses[SKILL_MEDICAL] == 2 && rest_said() && strstr(rest_said(), "expired"),
+                 "rest: a two-hour room did not end a five-hour rest");
+    rest_close();
+
     /* Escape leaves it from the panel. */
     check_expect(rest_open(&p) && rest_key(0x1B) == REST_LEAVE, "rest: Escape did not leave");
     rest_close();
-    printf("rest: its sums, until healed, for a while, loitering; build/rest0..2.ppm\n");
+    printf("rest: its sums, until healed, for a while, loitering, a town's rules; build/rest0..2.ppm\n");
 }
 
 /* What the test's saves are called, beside where a player's would be: TEST0.SAV and on, gone after. */
@@ -4786,8 +4819,21 @@ static void check_bank(void)
                  && service_click(95 + 6, 47 + 24) == SERVICE_SELL && service_click(95 + 45, 47 + 34) == SERVICE_LEAVE,
                  "service: a smith's panel's rows");
     service_close();
+    /* A tavern's: Room asks the days (one to start), typed and Entered; Food lists the menu, a line clicked. */
+    check_expect(service_open(SERVICE_PANEL_TAVERN), "service: a tavern's did not open");
+    check_expect(service_click(95 + 6, 50 + 5 + 2) == SERVICE_STAY, "service: a tavern's Room row");
+    service_key(0x08);
+    service_key('3');
+    check_expect(service_key(0x0D) == SERVICE_ROOM && service_days() == 3, "service: three days typed for a room");
+    check_expect(service_click(95 + 6, 50 + 14 + 2) == SERVICE_TALK, "service: a tavern's Talk row");
+    check_expect(service_click(95 + 6, 50 + 23 + 2) == SERVICE_STAY, "service: a tavern's Food row");
+    service_compose();
+    write_screen("build/tavern0.ppm", service_pixels());
+    check_expect(service_click(95 + 20, 98 + 6 + 3 * 8 + 2) == SERVICE_FOOD && service_food() == 3, "service: the menu's fourth line is not wine");
+    check_expect(service_click(95 + 6, 50 + 32 + 2) == SERVICE_LEAVE, "service: a tavern's Exit row");
+    service_close();
     standing_new_game(5u);
-    printf("bank: gold, letters and loans at the sums, a default a crime; the screen by clicks and keys; build/bank0.ppm, service0.ppm\n");
+    printf("bank: gold, letters and loans at the sums, a default a crime; the screen by clicks and keys; build/bank0.ppm, service0.ppm, tavern0.ppm\n");
 }
 
 /* An armorer in Daggerfall, entered through its own door: its shelf, its person, what the building says; a save holds it all. */
@@ -6694,6 +6740,61 @@ static void check_ships(void)
     standing_new_game(1);
 }
 
+/* Taverns: a room's price by the day and Heart's Day, renting and adding days, the hours left and their end; the menu's prices, hunger, holidays; through a save. */
+static void check_lodging(void)
+{
+    Player p;
+    Character sheet;
+    int now;
+
+    lodging_new_game();
+    character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Ada");
+    player_init(&p, &sheet);
+    inventory_clear(&p.pack);
+    check_expect(lodging_room_cost(3, 100) == 21 && lodging_room_cost(3, 45) == 14 && lodging_room_cost(1, 46) == 0
+                     && lodging_room_cost(2, 47) == 14,
+                 "lodging: 7 a day, Heart's Day free");
+    now = 500 * 1440 + 600;
+    p.pack.gold = 10;
+    check_expect(lodging_rent(&p, 17, 5, 2, 7, 2, 30, now) == LODGING_NOT_ENOUGH_GOLD, "lodging: rented without the gold");
+    p.pack.gold = 100;
+    check_expect(lodging_rent(&p, 17, 5, 2, 7, 2, 14, now) == LODGING_DONE && p.pack.gold == 86
+                     && lodging_hours_left(17, 5, 2, 7, now) == 48 && lodging_hours_left(17, 5, 2, 8, now) == 0,
+                 "lodging: two days' room not 48 hours, or held in the wrong building");
+    check_expect(lodging_rent(&p, 17, 5, 2, 7, 1, 7, now + 60) == LODGING_DONE && lodging_hours_left(17, 5, 2, 7, now + 60) == 71,
+                 "lodging: a day more did not add to the room");
+    check_expect(lodging_hours_left(17, 5, 2, 7, now + 72 * 60) == 0, "lodging: the room did not run out");
+    check_expect(lodging_rent(&p, 17, 5, 2, 7, 351, 0, now) == LODGING_TOO_MANY_DAYS, "lodging: 351 days ahead rented");
+    /* The menu: wine 3 gold and 6 health; not hungry again for four hours; free on New Life, half on Harvest's End. */
+    p.sheet.health = 1;
+    check_expect(lodging_eat(&p, 3, now, 0) == LODGING_DONE && p.pack.gold == 76 && p.sheet.health == 7, "lodging: wine not 3 gold and 6 health");
+    check_expect(lodging_eat(&p, 0, now + 100, 0) == LODGING_NOT_HUNGRY, "lodging: hungry again within four hours");
+    check_expect(lodging_food_cost(3, HOLIDAY_FREE_DRINK) == 0 && lodging_food_cost(3, HOLIDAY_FOOD_HALF) == 1
+                     && lodging_food_cost(0, HOLIDAY_FOOD_HALF) == 1,
+                 "lodging: the holidays' prices");
+    check_expect(holiday_on(7, 26) && (holiday_on(7, 26)->flags & HOLIDAY_FOOD_HALF), "lodging: Harvest's End does not halve the food");
+    {
+        SaveState out;
+        SaveState in;
+        char path[260];
+
+        save_use_prefix(SAVE_TEST_PREFIX);
+        save_use_slot(4);
+        keep_clear();
+        pile_new_game();
+        mem_zero(&out, sizeof(out));
+        df_copy(out.name, "Inn", SAVE_NAME);
+        out.sheet = sheet;
+        inventory_clear(&out.pack);
+        check_expect(save_write(&out), "lodging: a save did not write");
+        lodging_new_game();
+        check_expect(save_read(&in) && lodging_hours_left(17, 5, 2, 7, now + 60) == 71 && lodging_last_meal() == now,
+                     "lodging: the room or the meal did not come back from the save");
+        check_expect(fs_beside(path, (int)sizeof(path), "DATA\\TEST4.SAV") && remove(path) == 0, "lodging: the test's file did not go");
+    }
+    lodging_new_game();
+}
+
 /* Counts the engine's automap polygons. */
 static void count_polygon(void *ctx, const AutomapCorner *corner, int n, df_u32 rgb)
 {
@@ -6904,6 +7005,7 @@ void check_play(void)
     check_holidays();
     check_ills();
     check_ships();
+    check_lodging();
     check_riding();
     check_wagon();
     check_marker();

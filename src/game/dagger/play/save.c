@@ -3,6 +3,7 @@
 #include "game/dagger/play/atlas.h"
 #include "game/dagger/play/wagon.h"
 #include "game/dagger/play/bank.h"
+#include "game/dagger/play/lodging.h"
 #include "game/dagger/play/ills.h"
 #include "engine/scene/automap.h"
 #include "engine/scene/stream.h"
@@ -74,6 +75,8 @@ typedef struct SaveGameRow {
     char name[SAVE_NAME];
     /* The ship owned (bank.h); a save from before has none. */
     df_i32 ship;
+    /* The game minute the player last ate at a tavern (lodging.h). */
+    df_i32 meal;
 } SaveGameRow;
 
 static const RecField g_game_fields[] = {
@@ -102,7 +105,8 @@ static const RecField g_game_fields[] = {
     REC_ARRAY("worn", REC_INT, SaveGameRow, worn),
     REC_FIELD("use_left", REC_INT, SaveGameRow, use_left),
     REC_FIELD("name", REC_TEXT, SaveGameRow, name),
-    REC_FIELD("ship", REC_INT, SaveGameRow, ship)
+    REC_FIELD("ship", REC_INT, SaveGameRow, ship),
+    REC_FIELD("meal", REC_INT, SaveGameRow, meal)
 };
 static const RecSchema g_game_schema = {
     "GAME", "game", g_game_fields, (int)(sizeof(g_game_fields) / sizeof(g_game_fields[0])), (df_u16)sizeof(SaveGameRow), 0
@@ -319,6 +323,8 @@ static int put_file(void *ctx, const void *src, df_u32 n)
 static int write_chunks(const SaveState *state)
 {
     static IllsSickRow sick[DISEASE_COUNT];
+    static LodgingRoom rooms[LODGING_ROOMS];
+    int nrooms;
     IllsCurseRow curse;
     int nsick;
     SaveItemRow *wagon_rows;
@@ -378,6 +384,7 @@ static int write_chunks(const SaveState *state)
     game.use_left = state->pack.use_left;
     df_copy(game.name, state->name, SAVE_NAME);
     game.ship = bank_ship();
+    game.meal = lodging_last_meal();
     for (i = 0; i < state->pack.count; i++) {
         items[i].id = (df_u16)i;
         items[i].item = state->pack.item[i];
@@ -405,6 +412,10 @@ static int write_chunks(const SaveState *state)
         wagon = wagon_contents();
         nwagon = wagon->count;
         nsick = ills_sick_rows(sick);
+        nrooms = lodging_count();
+        for (i = 0; i < nrooms; i++) {
+            rooms[i] = *lodging_at(i);
+        }
         ills_curse_row(&curse);
         wagon_rows = (SaveItemRow *)mem_alloc((df_u32)(nwagon + 1) * (df_u32)sizeof(SaveItemRow));
         if (!wagon_rows) {
@@ -479,6 +490,7 @@ static int write_chunks(const SaveState *state)
            && rec_put_rows(put_file, 0, &g_seen_schema, seen, nseen, 0, 0)
            && rec_put_rows(put_file, 0, &ills_sick_schema, sick, nsick, 0, 0)
            && rec_put_rows(put_file, 0, &ills_curse_schema, &curse, 1, 0, 0)
+           && rec_put_rows(put_file, 0, &lodging_schema, rooms, nrooms, 0, 0)
            && (state->sheet.klass != CLASS_CUSTOM || !career_class(CLASS_CUSTOM)
                || rec_put_rows(put_file, 0, &class_schema, career_class(CLASS_CUSTOM), 1, 0, 0));
 }
@@ -551,6 +563,7 @@ static RecTable g_known_table;
 static RecTable g_wagon_table;
 static RecTable g_seen_table;
 static RecTable g_sick_table;
+static RecTable g_room_table;
 static RecTable g_curse_table;
 static RecTable g_head_table;
 /* A custom class, when the save's character has one: the same record as a class of the list. */
@@ -570,7 +583,7 @@ static int ready_table(RecTable *t, const RecSchema *s, int cap)
 static void merge_chunk(const RecChunk *c)
 {
     static RecTable *const tables[] = {
-        &g_head_table, &g_game_table, &g_sheet_table, &g_item_table, &g_keep_table, &g_pile_table, &g_faction_table, &g_social_table, &g_region_table, &g_known_table, &g_seen_table, &g_wagon_table, &g_sick_table, &g_curse_table, &g_custom_table
+        &g_head_table, &g_game_table, &g_sheet_table, &g_item_table, &g_keep_table, &g_pile_table, &g_faction_table, &g_social_table, &g_region_table, &g_known_table, &g_seen_table, &g_wagon_table, &g_sick_table, &g_curse_table, &g_room_table, &g_custom_table
     };
     int i;
 
@@ -652,6 +665,13 @@ static void apply_tables(SaveState *state)
     if (g_curse_table.count) {
         ills_put_curse((const IllsCurseRow *)g_curse_table.rows);
     }
+    /* The rooms held: none, then the saved ones. */
+    lodging_new_game();
+    for (i = 0; i < g_room_table.count; i++) {
+        lodging_put(&((const LodgingRoom *)g_room_table.rows)[i]);
+    }
+    /* A save from before has a zero here: a meal long ago enough not to matter. */
+    lodging_set_last_meal(game->meal);
     /* The automap's seen models: none, then the saved ones. A save from before has none. */
     automap_clear();
     for (i = 0; i < g_seen_table.count; i++) {
@@ -716,7 +736,7 @@ int save_read(SaveState *state)
         || !ready_table(&g_social_table, &g_social_schema, 1) || !ready_table(&g_region_table, &g_region_schema, STANDING_REGIONS)
         || !ready_table(&g_known_table, &g_known_schema, 64) || !ready_table(&g_seen_table, &g_seen_schema, 1024)
         || !ready_table(&g_wagon_table, &g_wagon_schema, INVENTORY_MAX) || !ready_table(&g_sick_table, &ills_sick_schema, DISEASE_COUNT)
-        || !ready_table(&g_curse_table, &ills_curse_schema, 1)) {
+        || !ready_table(&g_curse_table, &ills_curse_schema, 1) || !ready_table(&g_room_table, &lodging_schema, LODGING_ROOMS)) {
         return 0;
     }
     /* The bytes in a heap of its own: a file read beside the program otherwise lives until exit. */

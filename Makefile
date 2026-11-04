@@ -177,6 +177,7 @@ PLAY_SRC := \
 	src/game/dagger/play/ride.c \
 	src/game/dagger/play/wagon.c \
 	src/game/dagger/play/ills.c \
+	src/game/dagger/play/lodging.c \
 	src/game/dagger/play/travelmap.c \
 	src/game/dagger/play/townmap.c \
 	src/game/dagger/play/dunmap.c \
@@ -278,7 +279,7 @@ deps-host: layers
 layers:
 	sh tools/check-layers
 
-all: deps check build/spintri.iso gfall-check renderfall-check levelfall-check datfall-check build/gfall.iso
+all: deps check build/spintri.iso gfall-check renderfall-check levelfall-check datfall-check build/gfall.iso pony97-iso
 
 build/SPINTRI.EXE: apps/spintri/main.c third_party/glide2/include/glide.h | deps
 	mkdir -p build
@@ -345,7 +346,7 @@ levelfall-check: build/LEVELFALL.EXE
 	$(call pe_check,build/LEVELFALL.EXE,build/levelfall.dump)
 
 # Standalone demo: intentionally bypass deps, whose game-data checks
-# belong to GFALL. These optional targets never join the default all.
+# belong to GFALL. The default all includes the standalone ISO.
 # The compiler/objdump are the same P55C/Win98 tools as the main viewers.
 build/PONY97.EXE: $(PONY97_SRC) apps/pony97/pony_model.h third_party/glide2/include/glide.h | layers
 	mkdir -p build

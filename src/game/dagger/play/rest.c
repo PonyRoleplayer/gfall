@@ -67,6 +67,10 @@ static struct {
     int changed;
     const char *note;
     const char *said;
+    /* Where it is (REST_RULE_*), the hours a rented room has left, and 1 once vagrancy was tried. */
+    int rule;
+    int room_hours;
+    int vagrant;
 } g;
 
 int rest_open(Player *p)
@@ -109,6 +113,36 @@ int rest_changed(void)
     changed = g.changed;
     g.changed = 0;
     return changed;
+}
+
+void rest_set_rule(int rule, int room_hours)
+{
+    g.rule = rule;
+    g.room_hours = room_hours;
+}
+
+int rest_vagrant(void)
+{
+    int was;
+
+    was = g.vagrant;
+    g.vagrant = 0;
+    return was;
+}
+
+/* 1 when resting (not loitering) may begin here: else the note says why, or the screen closes for vagrancy. */
+static int may_rest(void)
+{
+    if (g.rule == REST_RULE_VAGRANCY) {
+        g.vagrant = 1;
+        return 0;
+    }
+    if (g.rule == REST_RULE_NO_ROOM) {
+        g.note = "You have not rented a room here.";
+        g.changed = 1;
+        return 0;
+    }
+    return 1;
 }
 
 const char *rest_note(void)
@@ -233,8 +267,12 @@ static int one_step(void)
     if (g.kind != KIND_LOITER) {
         hour_of_rest();
     }
-    /* An hour's chance of being found (ours, one in 36: DFU's dungeon roll, whose frequency was not read). */
-    if (combat_roll(ENCOUNTER_ODDS) == 0) {
+    /* A rented room's time run out ends the rest in it (DFU's expiredRentedRoom). */
+    if (g.rule == REST_RULE_ROOM && g.kind != KIND_LOITER && g.hours_done >= g.room_hours) {
+        return end_rest("Your rented room has expired.");
+    }
+    /* An hour's chance of being found (ours, one in 36: DFU's dungeon roll, whose frequency was not read); none in a rented room. */
+    if (g.rule != REST_RULE_ROOM && combat_roll(ENCOUNTER_ODDS) == 0) {
         foes_rouse_nearest(g.player->body.feet);
     }
     if (foes_hunting()) {
@@ -276,10 +314,16 @@ int rest_click(int x, int y)
         return REST_STAY;
     }
     if (rect_has(&g_while_button, x, y)) {
+        if (!may_rest()) {
+            return g.vagrant ? end_rest(0) : REST_STAY;
+        }
         ask_hours(KIND_WHILE);
     } else if (rect_has(&g_loiter_button, x, y)) {
         ask_hours(KIND_LOITER);
     } else if (rect_has(&g_healed_button, x, y)) {
+        if (!may_rest()) {
+            return g.vagrant ? end_rest(0) : REST_STAY;
+        }
         begin_running(KIND_HEALED, 0);
     }
     return REST_STAY;
