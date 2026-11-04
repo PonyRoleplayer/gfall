@@ -60,6 +60,12 @@ enum {
      * only: the game decides what opens.
      */
     INPUT_TRAVEL_MAP,
+    /*
+     * Mount or dismount the horse or cart, default T as Daggerfall
+     * Unity's: the HUD's transport button. Reported only: the game
+     * decides what happens.
+     */
+    INPUT_TRANSPORT,
     INPUT_ACTIONS
 };
 #define INPUT_BIT(action) (1u << (action))

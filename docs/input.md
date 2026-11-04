@@ -42,6 +42,7 @@ With the console open nothing reaches the program: no movement, no look, nothing
 | `INPUT_LOOK_CENTER` | Home | a request to center the view |
 | `INPUT_FREELOOK` | Alt | independent look while held, interpreted by the game |
 | `INPUT_TRAVEL_MAP` | V | the travel map (Daggerfall Unity's key), apart from `INPUT_MAP`, which a game may give to its automap; the engine only reports it |
+| `INPUT_TRANSPORT` | T | mount or dismount the horse or cart (Daggerfall Unity's key, the HUD's transport button); the engine only reports it |
 
 `input_bind(action, vk)` sets an action's key: a Windows virtual key (`VK_SHIFT`, `VK_LBUTTON`, a letter's capital). It refuses, returning 0, Escape on any action but `INPUT_MENU` and the console's key (the one left of 1, by its scan code on this layout): those are the menu's and the console's. `input_binding(action)` reads a key back. The actions are numbered in a fixed order and new ones go at the end, because a game saves its bindings by number (the test holds `INPUT_FORWARD` at 9, `INPUT_SWAP_HANDS` at 13 and `INPUT_CURSOR` at 14). A bindings file older than an action has no row for it, so that action keeps the engine's default key.
 
