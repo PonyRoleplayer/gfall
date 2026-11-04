@@ -227,6 +227,14 @@ HOST_SRC := $(ENGINE_HOST_SRC) \
 # The rules every executable must pass: a PE32 80386 GUI program for
 # Windows 4.0 (95, 98, NT4), importing only KERNEL32 and USER32, binding
 # glide2x.dll at runtime, with no P6 or SSE instruction.
+#
+# The last line refuses what a Pentium MMX (P55C) does not have but that
+# works on MMX registers, so the xmm test alone misses it: SSE's integer
+# additions (pshufw, pavgb ... maskmovq), the fences and prefetch, and
+# AMD's 3DNow (femms, pf*, pi2f*, pavgusb, pmulhrw, pswapd). A mnemonic
+# is matched only between whitespace, in objdump's instruction column,
+# so a symbol such as <_pfadd_x> does not trip it. Proven on a test
+# object holding each of them; the P55C's own MMX passes.
 # $(call pe_check,EXE,DUMP)
 define pe_check
 	file $(1) | grep -q 'PE32'
@@ -243,6 +251,7 @@ define pe_check
 	grep -q 'GetProcAddress' $(2)
 	! grep -q 'glide2x.dll' $(2)
 	! $(OBJDUMP) -d $(1) | grep -E -i -q '(^|[[:space:]])(cmov|fcmov|fucomi|fcomi|movaps|movss|addps|xmm)[[:digit:]]*'
+	! $(OBJDUMP) -d $(1) | grep -E -i -q '[[:space:]](pshufw|pavgb|pavgw|pmaxub|pminub|pmaxsw|pminsw|psadbw|pmulhuw|pextrw|pinsrw|pmovmskb|movntq|maskmovq|sfence|lfence|mfence|prefetch[a-z0-9]*|femms|pf[a-z0-9]+|pi2f[dw]|pavgusb|pmulhrw|pswapd)([[:space:]]|$$)'
 endef
 
 deps: layers

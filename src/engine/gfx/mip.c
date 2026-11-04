@@ -50,8 +50,11 @@ int mip_box_mmx(void)
  * so a half-covered texel two levels down is still half covered.
  * Words, so the halving sums four channels in two adds; its bytes (r,
  * g, b, a in memory) through g_px, which may alias anything.
+ * Eight-byte aligned: the MMX halving reads it a MOVQ at a time, and
+ * on a Pentium MMX an eight-byte access across that boundary costs
+ * extra cycles. GCC usually aligns a large static so; this makes it sure.
  */
-static df_u32 g_rgba[256 * 256];
+static df_u32 g_rgba[256 * 256] __attribute__((aligned(8)));
 #define g_px ((df_u8 *)g_rgba)
 /* A row of the picture: nonzero where it or the rows above and below have an opaque texel. */
 static df_u8 g_near[256];
@@ -70,8 +73,9 @@ static int g_inv_ready;
  * Indexed box sums gather one palette entry per sample. Four unsigned
  * words (R,G,B,0) let original MMX sum all channels with one PADDW.
  * 2 KB, refreshed with the palette, never a full-image RGBA conversion.
+ * Eight-byte aligned, so each PADDW of an entry is one aligned read.
  */
-static df_u16 g_box_pal[256][4];
+static df_u16 g_box_pal[256][4] __attribute__((aligned(8)));
 
 static int level_count(int side)
 {
@@ -212,7 +216,7 @@ static void box_sum_scalar(const df_u8 *src, int stride, int w, int h, df_u32 *s
 
 #if MIP_HAVE_ASM
 /*
- * One source rectangle is one MMX batch; w >= 2, at most 256 on
+ * One source rectangle's sums; w >= 2, at most 256 on
  * either axis. Two independent word accumulators gather alternating
  * palette entries in each row, then join. A whole ROW fits in a word:
  * 256*255 = 65280. A whole rectangle need not: after each row, widen
@@ -223,16 +227,15 @@ static void box_sum_scalar(const df_u8 *src, int stride, int w, int h, df_u32 *s
  * then PADDW reads its eight-byte palette entry. This removes three
  * separate channel lookups/adds without expanding the source picture.
  * The original indexed stride and any odd row tail stay intact. The
- * palette is word-aligned; neither source nor palette needs alignment
- * to eight bytes. Only complete pairs enter the inner assembly loop.
+ * palette is eight-byte aligned; the source needs no alignment. Only
+ * complete pairs enter the inner assembly loop.
  *
- * C between row loops is integer-only, with no calls, until EMMS at
- * the batch's exit. Both assemblies clobber the entire x87 stack;
- * noinline keeps this shared-register batch outside float callers.
- * No newer instructions or compiler MMX options are needed.
+ * It leaves the MMX state set: box_grid_mmx, its only caller, runs one
+ * EMMS after every rectangle of the picture. The C here is integer
+ * only. Each assembly clobbers the entire x87 stack. No newer
+ * instructions or compiler MMX options are needed.
  */
-static void __attribute__((noinline)) box_sum_mmx(const df_u8 *src, int stride,
-                                                 int w, int h, df_u32 *sum)
+static void box_sum_mmx(const df_u8 *src, int stride, int w, int h, df_u32 *sum)
 {
     int y;
 
@@ -278,6 +281,44 @@ static void __attribute__((noinline)) box_sum_mmx(const df_u8 *src, int stride,
             sum[2] += p[2];
         }
     }
+}
+#endif
+
+/*
+ * One rectangle's means into rgb at at, truncated exactly ONCE over the
+ * original rectangle, not rounded 2x2 mip steps. Palette mapping is the
+ * caller's scalar decision.
+ */
+static void box_store(df_u8 *rgb, int at, const df_u32 *sum, df_u32 area)
+{
+    rgb[at] = (df_u8)(sum[0] / area);
+    rgb[at + 1] = (df_u8)(sum[1] / area);
+    rgb[at + 2] = (df_u8)(sum[2] / area);
+}
+
+#if MIP_HAVE_ASM
+/*
+ * Every rectangle of the picture as one MMX batch, then a single EMMS.
+ * EMMS and the switch back to the x87 cost a Pentium MMX tens of cycles,
+ * as much as an 8 x 8 rectangle's sums: one per rectangle wasted the
+ * gain. Between rectangles the C is integer only (the division in
+ * box_store is an integer one) and calls nothing that uses the x87.
+ * noinline keeps this batch out of any caller with live float values.
+ */
+static void __attribute__((noinline)) box_grid_mmx(const df_u8 *index, int width, int bw, int bh,
+                                                  int cols, int rows, df_u32 area, df_u8 *rgb)
+{
+    int x;
+    int y;
+
+    for (y = 0; y < rows; y++) {
+        for (x = 0; x < cols; x++) {
+            df_u32 sum[3];
+
+            box_sum_mmx(index + (y * bh) * width + x * bw, width, bw, bh, sum);
+            box_store(rgb, (y * cols + x) * 3, sum, area);
+        }
+    }
     __asm__ __volatile__("emms"
         : : : "memory",
         "st", "st(1)", "st(2)", "st(3)", "st(4)", "st(5)", "st(6)", "st(7)");
@@ -306,36 +347,23 @@ int mip_box_rgb(const df_u8 *index, int width, int height, int cols, int rows,
     mip_palette(pr, pg, pb);
 #if MIP_HAVE_ASM
     /*
-     * Small boxes rarely repay a call and EMMS. 64 samples is a
-     * conservative heuristic, not a measured Pentium crossover.
-     * A one-column rectangle has no pairs however tall it is.
+     * Small boxes rarely repay entering MMX: 64 samples is a
+     * conservative heuristic, not a measured Pentium crossover. A
+     * one-column rectangle has no pairs however tall it is.
      */
     use_mmx = bw >= 2 && area >= 64u && mip_box_mmx();
+    if (use_mmx) {
+        box_grid_mmx(index, width, bw, bh, cols, rows, area, rgb);
+        return 1;
+    }
 #endif
+    /* Right and bottom remainders are excluded, as in box_grid_mmx. */
     for (y = 0; y < rows; y++) {
         for (x = 0; x < cols; x++) {
-            const df_u8 *src;
             df_u32 sum[3];
-            int at;
 
-            src = index + (y * bh) * width + x * bw;
-#if MIP_HAVE_ASM
-            if (use_mmx) {
-                box_sum_mmx(src, width, bw, bh, sum);
-            } else
-#endif
-            {
-                box_sum_scalar(src, width, bw, bh, sum);
-            }
-            /*
-             * Truncate exactly ONCE over the original rectangle, not
-             * rounded 2x2 mip steps. Exclude right/bottom remainders.
-             * Palette mapping is the caller's scalar decision.
-             */
-            at = (y * cols + x) * 3;
-            rgb[at] = (df_u8)(sum[0] / area);
-            rgb[at + 1] = (df_u8)(sum[1] / area);
-            rgb[at + 2] = (df_u8)(sum[2] / area);
+            box_sum_scalar(index + (y * bh) * width + x * bw, width, bw, bh, sum);
+            box_store(rgb, (y * cols + x) * 3, sum, area);
         }
     }
     return 1;
@@ -601,7 +629,8 @@ static void halve_scalar(df_u32 *rgba, int side)
  */
 static void __attribute__((noinline)) halve_mmx(df_u32 *rgba, int side)
 {
-    static const df_u32 round_words[2] = { 0x00020002u, 0x00020002u };
+    /* Eight-byte aligned, as MOVQ reads it whole: see g_rgba. */
+    static const df_u32 round_words[2] __attribute__((aligned(8))) = { 0x00020002u, 0x00020002u };
     int half;
     int y;
 
@@ -768,7 +797,8 @@ static df_u32 cutout_top(const df_u8 *index, int side,
  */
 static void __attribute__((noinline)) pack_mmx(const df_u8 *src, df_u8 *dst, df_u32 groups)
 {
-    static const df_u32 masks[4][2] = {
+    /* Eight-byte aligned, as MOVQ reads each row whole: see g_rgba. */
+    static const df_u32 masks[4][2] __attribute__((aligned(8))) = {
         { 0x00007c00u, 0x00007c00u }, /* R after shifting left 7. */
         { 0x000003e0u, 0x000003e0u }, /* G after shifting right 6. */
         { 0x0000001fu, 0x0000001fu }, /* B after shifting right 19. */
