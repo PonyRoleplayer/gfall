@@ -1339,6 +1339,28 @@ void quest_tick(Player *p, int now)
     }
 }
 
+int quest_minutes_left(int slot, int now)
+{
+    const Slot *s;
+    int t;
+    int least;
+
+    if (slot < 0 || slot >= QUEST_SLOTS || !g_slots[slot].used || g_slots[slot].offered) {
+        return -1;
+    }
+    s = &g_slots[slot];
+    least = -1;
+    for (t = 0; t < QUEST_TIMERS; t++) {
+        int left;
+
+        left = s->run.timer_end[t] - now;
+        if (s->run.timer_end[t] > 0 && left >= 0 && (least < 0 || left < least)) {
+            least = left;
+        }
+    }
+    return least;
+}
+
 int quest_log_line(int slot, int i, char *out, int cap)
 {
     const Slot *s;

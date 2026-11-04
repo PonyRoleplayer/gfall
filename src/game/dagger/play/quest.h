@@ -145,6 +145,8 @@ void quest_tick(Player *p, int now);
 /* The next message to show, filled in; 0 when none waits. How many wait. */
 int quest_take_message(char *out, int cap);
 int quest_messages_waiting(void);
+/* The least time any of the quest's timers has left, in game minutes, at now; -1 when none runs. */
+int quest_minutes_left(int slot, int now);
 /* A quest's log line i (0..QUEST_LOG-1), filled in; 0 when none. */
 int quest_log_line(int slot, int i, char *out, int cap);
 /* A QRC message of the quest queued (its offer, 1000; its acceptance, 1002). */

@@ -40,6 +40,7 @@
 #include "game/dagger/play/marker.h"
 #include "game/dagger/play/ride.h"
 #include "engine/assets/vfs.h"
+#include "game/dagger/play/logbook.h"
 #include "game/dagger/play/msgbox.h"
 #include "game/dagger/play/quest.h"
 #include "game/dagger/tables/quests.h"
@@ -7268,6 +7269,27 @@ static void check_quest_machine(void)
             }
             check_expect(has == 0 && quest_state(slot, 1), "quest machine: the parcel was not taken, or the delivery not done");
         }
+    }
+    quest_new_game();
+    /* The logbook: two quests, a page each, the first's log and its days left; clicks turn the page and the bottom edge closes. */
+    quest_new_game();
+    {
+        int a;
+        int b;
+
+        a = quest_start(&p, quest_find("M0B00Y00"), &how, now);
+        b = quest_start(&p, quest_find("C0C00Y13"), &how, now);
+        check_expect(a >= 0 && b >= 0 && logbook_open(now + 1440), "quest machine: the logbook did not open");
+        check_expect(logbook_pages() == 2 && logbook_page() == 0, "quest machine: the logbook's pages");
+        logbook_compose();
+        write_screen("build/logbook0.ppm", logbook_pixels());
+        check_expect(logbook_click(250, 100) == LOGBOOK_STAY && logbook_page() == 1 && logbook_click(10, 100) == LOGBOOK_STAY && logbook_page() == 0
+                         && logbook_key(0x27) == LOGBOOK_STAY && logbook_page() == 1 && logbook_click(160, 185) == LOGBOOK_LEAVE
+                         && logbook_key(0x1B) == LOGBOOK_LEAVE,
+                     "quest machine: the logbook's turns and its close");
+        check_expect(quest_minutes_left(a, now + 1440) > 0 && quest_minutes_left(a, now + 1440) < quest_run(a)->timer_end[0],
+                     "quest machine: the days left");
+        logbook_close();
     }
     quest_new_game();
     /* The nobles' N0C00Y10 puts its person in a tavern of this town at the start: they stand there, and meeting them is its trigger. */

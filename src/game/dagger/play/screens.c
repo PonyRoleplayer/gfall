@@ -1,4 +1,7 @@
 #include "game/dagger/play/screens.h"
+#include "game/dagger/play/logbook.h"
+#include "game/dagger/play/ills.h"
+#include "engine/scene/clock.h"
 #include "game/dagger/play/msgbox.h"
 #include "game/dagger/play/bank.h"
 #include "game/dagger/play/court.h"
@@ -35,7 +38,8 @@ enum {
     OPEN_TRAVEL,
     OPEN_TOWNMAP,
     OPEN_DUNMAP,
-    OPEN_MSGBOX
+    OPEN_MSGBOX,
+    OPEN_LOGBOOK
 };
 
 static int g_open;
@@ -110,6 +114,9 @@ static void send_screen(void)
     } else if (g_open == OPEN_MSGBOX) {
         msgbox_compose();
         pixels = msgbox_pixels();
+    } else if (g_open == OPEN_LOGBOOK) {
+        logbook_compose();
+        pixels = logbook_pixels();
     } else if (g_open == OPEN_TRAVEL) {
         travelmap_compose();
         pixels = travelmap_pixels();
@@ -157,6 +164,8 @@ void screens_close(void)
         dunmap_close();
     } else if (g_open == OPEN_MSGBOX) {
         msgbox_close();
+    } else if (g_open == OPEN_LOGBOOK) {
+        logbook_close();
     }
     g_drag = 0;
     g_turning = 0;
@@ -226,6 +235,37 @@ void screens_open_service(int panel)
     g_service_choice = SERVICE_STAY;
     opened(OPEN_SERVICE, img_art_palette(g_rgb) && service_open(panel));
     input_key_pressed();
+}
+
+void screens_open_logbook(int now)
+{
+    screens_close();
+    opened(OPEN_LOGBOOK, img_art_palette(g_rgb) && logbook_open(now));
+    input_key_pressed();
+}
+
+/* A frame of the logbook: keys and clicks. */
+static int logbook_frame(const Input *in)
+{
+    int vk;
+    int asked;
+
+    asked = LOGBOOK_STAY;
+    vk = input_key_pressed();
+    if (vk) {
+        asked = logbook_key(vk);
+    } else if (in->pressed & INPUT_BIT(INPUT_MENU)) {
+        asked = LOGBOOK_LEAVE;
+    } else if (!in->reset && (in->mouse_pressed & INPUT_MOUSE_LEFT)) {
+        asked = logbook_click(g_point_x, g_point_y);
+    }
+    if (asked == LOGBOOK_LEAVE) {
+        return SCREENS_CLOSED;
+    }
+    if (logbook_changed()) {
+        send_screen();
+    }
+    return SCREENS_STAY;
 }
 
 void screens_open_msgbox(const char *text, int yes_no)
@@ -609,6 +649,10 @@ static int sheet_frame(const Input *in)
             screens_open_bag(g_player, 0);
             return SCREENS_STAY;
         }
+        if (asked == SHEET_LOGBOOK) {
+            screens_open_logbook(ills_now(clock_day(), clock_minute()));
+            return SCREENS_STAY;
+        }
     }
     if (sheet_changed()) {
         send_screen();
@@ -725,6 +769,8 @@ int screens_frame(const Input *in, float dt)
         asked = dunmap_frame(in, dt);
     } else if (g_open == OPEN_MSGBOX) {
         asked = msgbox_frame(in);
+    } else if (g_open == OPEN_LOGBOOK) {
+        asked = logbook_frame(in);
     } else {
         asked = create_frame(in);
     }
@@ -777,7 +823,7 @@ void screens_draw(void)
         note = rest_note();
     } else if (g_open == OPEN_SLOTS) {
         note = slots_note();
-    } else if (g_open == OPEN_TALK || g_open == OPEN_SERVICE || g_open == OPEN_COURT || g_open == OPEN_TRAVEL || g_open == OPEN_TOWNMAP || g_open == OPEN_DUNMAP || g_open == OPEN_MSGBOX) {
+    } else if (g_open == OPEN_TALK || g_open == OPEN_SERVICE || g_open == OPEN_COURT || g_open == OPEN_TRAVEL || g_open == OPEN_TOWNMAP || g_open == OPEN_DUNMAP || g_open == OPEN_MSGBOX || g_open == OPEN_LOGBOOK) {
         note = 0;
     } else if (g_open == OPEN_BANK) {
         note = bank_note();

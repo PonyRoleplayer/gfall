@@ -50,6 +50,8 @@ void screens_open_rest(Player *p);
 void screens_open_slots(int saving);
 void screens_open_talk(Player *p, const TalkWho *who);
 void screens_open_service(int panel);
+/* The quest logbook (logbook.h) at game minute now. */
+void screens_open_logbook(int now);
 /* A message box (msgbox.h): words, and Yes and No when it asks. */
 void screens_open_msgbox(const char *text, int yes_no);
 int screens_msgbox_answer(void);

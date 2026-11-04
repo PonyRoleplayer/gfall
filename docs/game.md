@@ -280,9 +280,10 @@ Every quest uses 6 (if a state, end), 12 (start a timer), 23 (a log entry) and n
 - **Places named outright** (a storyline's, by an object id the game does not read) are bound to nowhere (region -1): the quest runs, and nothing it does to that place shows. A person with no place (op 81) is put in a building of another town of the region, in the place spared after the file's own.
 - **Events from play:** speaking to the giver in their building (`quest_met`, from `person_used`) or to a quest person (`quest_met_person`); a creature killed in a dungeon (`quest_killed`, from `combat.c`, by its kind and the dungeon); each game minute (`quest_tick`, for timers).
 - **Messages** (`quest_take_message`): shown whole in classic's message box (`play/msgbox.c`: words on a scroll sized to them, any click or key closes it), one at a time, and in the console's log. A record's QRC message, one of its variants, its symbols filled (`_x_` the thing: a person's name, gold's amount, a place's kind or a dungeon's name, a foe's kind, a timer's minutes; `__x_`/`___x_` its town or dungeon; `=x_` a timer's days; `==x_` a person's faction), `%qdt` the day it began ("Day 11 of Sun's Dawn, 3E 405"), then TEXT.RSC's macros. - **Get Quest** at a guild: a quest of the guild's group, for members or not (a temple's own god's letter for its members), whose least (a rank under 10, a reputation from 10) the player meets, not running, its files in ARENA2; one at random, offered (`quest_offer`: bound, so its offer can name its gold and places, not running) with the person as giver. Its offer (1000) is asked in the message box with Yes and No (Enter, Y; Escape, N): Yes runs it (`quest_accept`) and says its acceptance (1002); No drops it and says its refusal (1001).
+- **The logbook** (`play/logbook.c`, the sheet's Log button at DFU's rectangle): a quest a page on a scroll: its file name and place among the quests, its log lines as the quest wrote them (symbols filled), and the days its soonest timer has left. A click on the right half, Right or Page Down turns to the next, the left half, Left or Page Up to the one before; Escape or a click on its bottom edge closes it.
 - **Saved** as `QUST` rows, a quest a row (its states, fired records, timers, gold, bound places, where its people and foes are, kills, log); the logic is read again from its QBN.
 - **The console:** `quests` lists what is running and its log; `quest M0B00Y00` starts one here, the player its own giver.
-- **Not yet:** a quest person's own name in the talk window; named storyline places, the logbook screen, the dungeon type a place asks for, topics in talk, spawns (9), and the opcodes the offered quests use least.
+- **Not yet:** a quest person's own name in the talk window; named storyline places, the dungeon type a place asks for, topics in talk, spawns (9), and the opcodes the offered quests use least.
 
 ### The plan
 1. **The machine:** built, above.
@@ -885,7 +886,7 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Creation | the class questions' animated scroll and characters | later |
 | Creation | the answers' history and lasting modifiers (`#`, `RP`, `TH`...) are read past | later |
 | Creation | Save Roll and Load Roll; the race's voice on choosing | later |
-| Character | the Spellbook, Log, History and Affiliations buttons | P11, P12-b |
+| Character | the Spellbook, History and Affiliations buttons | P12-b, later |
 | Character | starting clothes and spellbook | with clothing, P12-b |
 | Engine | `scene/pack.c`, `ui/packview.c`, `scene/rpg.c`, `ui/rpgview.c` are used by no game; the user's line is that the engine is simulation and world | to decide |
 
