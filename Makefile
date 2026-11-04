@@ -185,6 +185,7 @@ PLAY_SRC := \
 	src/game/dagger/play/lodging.c \
 	src/game/dagger/play/guild.c \
 	src/game/dagger/play/quest.c \
+	src/game/dagger/play/msgbox.c \
 	src/game/dagger/play/travelmap.c \
 	src/game/dagger/play/townmap.c \
 	src/game/dagger/play/dunmap.c \

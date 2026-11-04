@@ -37,7 +37,9 @@ enum {
     /* A journey on the travel map is over its countdown (travelmap_chosen), closed. */
     SCREENS_JOURNEY,
     /* The town map asked for the travel map instead, closed. */
-    SCREENS_TO_TRAVEL
+    SCREENS_TO_TRAVEL,
+    /* A message box answered (screens_msgbox_answer: MSGBOX_*), closed. */
+    SCREENS_ANSWERED
 };
 
 /* Opens one, closing any other. Nothing opens when its pictures are missing: is_open says. */
@@ -48,6 +50,9 @@ void screens_open_rest(Player *p);
 void screens_open_slots(int saving);
 void screens_open_talk(Player *p, const TalkWho *who);
 void screens_open_service(int panel);
+/* A message box (msgbox.h): words, and Yes and No when it asks. */
+void screens_open_msgbox(const char *text, int yes_no);
+int screens_msgbox_answer(void);
 int screens_service_choice(void);
 void screens_open_trade(Player *p, const Shop *shop, int trade, int day);
 void screens_open_bank(Player *p, int region);

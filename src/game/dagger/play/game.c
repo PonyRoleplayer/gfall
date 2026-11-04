@@ -8,6 +8,7 @@
 #include "game/dagger/play/lodging.h"
 #include "game/dagger/play/guild.h"
 #include "game/dagger/play/quest.h"
+#include "game/dagger/play/msgbox.h"
 #include "game/dagger/tables/quests.h"
 #include "engine/assets/vfs.h"
 #include "game/dagger/play/words.h"
@@ -499,6 +500,8 @@ static const GuildNpc g_guild_npcs[] = {
     { 845, GUILD_SERVICE_OTHER, "RECEIVE ARMOR" }, { 848, GUILD_SERVICE_OTHER, "RECEIVE HOUSE" }
 };
 
+/* A quest offered and waiting for its Yes or No, or -1. */
+static int g_offer_slot = -1;
 /* The guild whose panel is open, the building's faction, and its person's service. */
 static const GuildKind *g_guild;
 static int g_guild_faction;
@@ -733,13 +736,45 @@ static void guild_offer_quest(void)
     r = standing_region(how.region);
     how.prices = r ? r->prices : 1000;
     how.seed = (unsigned)combat_roll(0x7fff) * 65599u + (unsigned)clock_day();
-    slot = quest_start(&g_player, candidates[combat_roll(count)], &how, ills_now(clock_day(), clock_minute()));
+    slot = quest_offer(&g_player, candidates[combat_roll(count)], &how, ills_now(clock_day(), clock_minute()));
     if (slot < 0) {
         interact_say("There is no work for you now.");
         return;
     }
-    quest_say(slot, QUEST_SAY_OFFER);
-    quest_say(slot, QUEST_SAY_ACCEPTED);
+    /* The offer, its people and places named, with Yes and No (quest_answered). */
+    {
+        static char offer[2048];
+
+        if (!quest_text(slot, QUEST_SAY_OFFER, offer, (int)sizeof(offer))) {
+            df_copy(offer, "Will you take this work?", (int)sizeof(offer));
+        }
+        g_offer_slot = slot;
+        screens_open_msgbox(offer, 1);
+    }
+}
+
+/* The offer answered: Yes, the quest runs and its acceptance is said; No, it is dropped, its refusal said. */
+static void quest_answered(int answer)
+{
+    static char line[2048];
+    int slot;
+
+    slot = g_offer_slot;
+    g_offer_slot = -1;
+    if (slot < 0) {
+        return;
+    }
+    if (answer == MSGBOX_YES) {
+        if (quest_accept(&g_player, slot, ills_now(clock_day(), clock_minute())) >= 0) {
+            quest_say(slot, QUEST_SAY_ACCEPTED);
+        }
+        return;
+    }
+    if (quest_text(slot, QUEST_SAY_REFUSED, line, (int)sizeof(line))) {
+        screens_open_msgbox(line, 0);
+        screen_over_play();
+    }
+    quest_drop(slot);
 }
 
 /* A skill picked off training's list: paid, three hours pass, and it is used 10 to 20 times over. */
@@ -1715,6 +1750,12 @@ int game_frame(Camera *cam, const Input *in, float dt)
             prof_end(PROF_PLAY);
             return load_game(screens_slot()) ? GAME_START : GAME_GO_ON;
         }
+        if (asked == SCREENS_ANSWERED) {
+            quest_answered(screens_msgbox_answer());
+            screen_over_play();
+            prof_end(PROF_PLAY);
+            return GAME_GO_ON;
+        }
         if (asked == SCREENS_SERVICE) {
             service_chosen();
             prof_end(PROF_PLAY);
@@ -1902,12 +1943,16 @@ int game_frame(Camera *cam, const Input *in, float dt)
             char line[512];
             int k;
 
+            /* A quest's words in classic's message box, one at a time, whole; also in the console's log. */
             if (quest_take_message(line, (int)sizeof(line))) {
+                screens_open_msgbox(line, 0);
                 for (k = 0; line[k]; k++) {
                     line[k] = line[k] == '\n' ? ' ' : line[k];
                 }
                 log_print(LOG_PRINT, "%s", line);
-                interact_say(line);
+                screen_over_play();
+                prof_end(PROF_PLAY);
+                return GAME_GO_ON;
             }
         }
         if (court_pending()) {

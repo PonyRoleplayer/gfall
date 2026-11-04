@@ -101,8 +101,19 @@ int quest_running(int quest);
 /* A saved run over a new game's (its logic read again). */
 void quest_put(const QuestRun *run);
 
-/* QUES row quest started at minute now; its slot, or -1 (no room, its files missing, a place it needs not found). */
+/*
+ * QUES row quest offered at minute now: bound (its people, places and gold, so
+ * its offer can name them) but not running. Its slot, or -1 (no room, its
+ * files missing, a place it needs not found). Then accepted, its logic
+ * running from now, or dropped (No).
+ */
+int quest_offer(Player *p, int quest, const QuestStart *how, int now);
+int quest_accept(Player *p, int slot, int now);
+void quest_drop(int slot);
+/* Offered and accepted at once. */
 int quest_start(Player *p, int quest, const QuestStart *how, int now);
+/* A QRC message of slot's quest filled in, without the queue (the offer's words). 0 when it has none. */
+int quest_text(int slot, int message, char *out, int cap);
 /* Its file's name, "M0B00Y00". */
 const char *quest_file(int slot);
 

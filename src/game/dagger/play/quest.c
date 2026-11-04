@@ -92,6 +92,8 @@ const RecSchema quest_run_schema = {
 /* A slot: its run, its QBN in a heap of its own, 1 while in use. */
 typedef struct Slot {
     int used;
+    /* Bound and offered, not yet accepted: nothing runs, nothing is saved (quest_offer). */
+    int offered;
     QuestRun run;
     Qbn qbn;
     MemHeap *heap;
@@ -689,6 +691,7 @@ static int is_trigger(int opcode)
 static void end_quest(Slot *s)
 {
     s->used = 0;
+    s->offered = 0;
     if (s->heap) {
         mem_heap_delete(s->heap);
         s->heap = 0;
@@ -772,7 +775,7 @@ void quest_new_game(void)
 
 const QuestRun *quest_run(int slot)
 {
-    return slot >= 0 && slot < QUEST_SLOTS && g_slots[slot].used ? &g_slots[slot].run : 0;
+    return slot >= 0 && slot < QUEST_SLOTS && g_slots[slot].used && !g_slots[slot].offered ? &g_slots[slot].run : 0;
 }
 
 int quest_running(int quest)
@@ -815,6 +818,46 @@ static int load_logic(Slot *s)
 }
 
 int quest_start(Player *p, int quest, const QuestStart *how, int now)
+{
+    int slot;
+
+    slot = quest_offer(p, quest, how, now);
+    return slot >= 0 ? quest_accept(p, slot, now) : -1;
+}
+
+int quest_accept(Player *p, int slot, int now)
+{
+    Slot *s;
+
+    if (slot < 0 || slot >= QUEST_SLOTS || !g_slots[slot].used) {
+        return -1;
+    }
+    s = &g_slots[slot];
+    s->offered = 0;
+    s->run.started = now;
+    g_player = p;
+    run(s, now);
+    return s->used ? slot : -1;
+}
+
+void quest_drop(int slot)
+{
+    if (slot >= 0 && slot < QUEST_SLOTS) {
+        end_quest(&g_slots[slot]);
+    }
+}
+
+int quest_text(int slot, int message, char *out, int cap)
+{
+    out[0] = 0;
+    if (slot < 0 || slot >= QUEST_SLOTS || !g_slots[slot].used) {
+        return 0;
+    }
+    fill_message(&g_slots[slot], message, out, cap);
+    return out[0] != 0;
+}
+
+int quest_offer(Player *p, int quest, const QuestStart *how, int now)
 {
     Slot *s;
     int slot;
@@ -861,9 +904,9 @@ int quest_start(Player *p, int quest, const QuestStart *how, int now)
         }
     }
     s->used = 1;
+    s->offered = 1;
     g_player = p;
-    run(s, now);
-    return s->used ? slot : -1;
+    return slot;
 }
 
 void quest_put(const QuestRun *saved)
@@ -911,7 +954,7 @@ void quest_met(Player *p, int region, int index, int block, int record, int fact
         int i;
 
         s = &g_slots[slot];
-        if (!s->used) {
+        if (!s->used || s->offered) {
             continue;
         }
         for (i = 0; i < s->qbn.count[QBN_LOGIC] && i < QUEST_LOGIC; i++) {
@@ -954,7 +997,7 @@ void quest_killed(Player *p, int kind, int region, int index, int now)
         int i;
 
         s = &g_slots[slot];
-        if (!s->used) {
+        if (!s->used || s->offered) {
             continue;
         }
         for (i = 0; i < s->qbn.count[QBN_FOES] && i < QUEST_FOES; i++) {
@@ -981,7 +1024,7 @@ void quest_tick(Player *p, int now)
         int t;
 
         s = &g_slots[slot];
-        if (!s->used) {
+        if (!s->used || s->offered) {
             continue;
         }
         for (t = 0; t < s->qbn.count[QBN_TIMERS] && t < QUEST_TIMERS; t++) {
@@ -1017,7 +1060,7 @@ int quest_foes_at(int region, int index, int *kinds, int cap)
         int i;
 
         s = &g_slots[slot];
-        for (i = 0; s->used && i < s->qbn.count[QBN_FOES] && i < QUEST_FOES; i++) {
+        for (i = 0; s->used && !s->offered && i < s->qbn.count[QBN_FOES] && i < QUEST_FOES; i++) {
             int at;
             int k;
 

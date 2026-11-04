@@ -40,6 +40,7 @@
 #include "game/dagger/play/marker.h"
 #include "game/dagger/play/ride.h"
 #include "engine/assets/vfs.h"
+#include "game/dagger/play/msgbox.h"
 #include "game/dagger/play/quest.h"
 #include "game/dagger/tables/quests.h"
 #include "game/dagger/formats/qbn.h"
@@ -7119,6 +7120,32 @@ static void check_quest_machine(void)
                      "quest machine: the quest did not come back from the save");
         check_expect(fs_beside(path, (int)sizeof(path), "DATA\\TEST4.SAV") && remove(path) == 0, "quest machine: the test's file did not go");
     }
+    quest_drop(slot);
+    /* Offered: bound, not running, its offer's words filled; No drops it; offered again and Yes runs it. */
+    slot = quest_offer(&p, quest, &how, now);
+    check_expect(slot >= 0 && !quest_run(slot) && quest_running(quest) == slot && quest_text(slot, QUEST_SAY_OFFER, line, (int)sizeof(line))
+                     && strstr(line, "job"),
+                 "quest machine: an offer runs, or says nothing");
+    {
+        int yes_x;
+        int no_x;
+        int by;
+
+        check_expect(msgbox_open(line, 1), "quest machine: the message box did not open");
+        msgbox_compose();
+        write_screen("build/quest0.ppm", msgbox_pixels());
+        msgbox_buttons(&yes_x, &no_x, &by);
+        check_expect(msgbox_click(yes_x + 4, by + 4) == MSGBOX_YES && msgbox_click(no_x + 4, by + 4) == MSGBOX_NO
+                         && msgbox_click(2, 2) == MSGBOX_STAY && msgbox_key('Y') == MSGBOX_YES && msgbox_key(0x1B) == MSGBOX_NO,
+                     "quest machine: the box's Yes and No");
+        msgbox_close();
+        check_expect(msgbox_open("A word.", 0) && msgbox_click(2, 2) == MSGBOX_OK, "quest machine: a box without Yes and No did not close on a click");
+        msgbox_close();
+    }
+    quest_drop(slot);
+    check_expect(quest_running(quest) < 0, "quest machine: No did not drop the offer");
+    slot = quest_offer(&p, quest, &how, now);
+    check_expect(quest_accept(&p, slot, now) == slot && quest_run(slot) && quest_run(slot)->timer_end[0] > now, "quest machine: Yes did not run it");
     /* And the time runs out: over, unpaid. */
     gold = p.pack.gold;
     run = quest_run(slot);

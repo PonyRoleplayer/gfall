@@ -1,4 +1,5 @@
 #include "game/dagger/play/screens.h"
+#include "game/dagger/play/msgbox.h"
 #include "game/dagger/play/bank.h"
 #include "game/dagger/play/court.h"
 #include "game/dagger/play/service.h"
@@ -33,7 +34,8 @@ enum {
     OPEN_COURT,
     OPEN_TRAVEL,
     OPEN_TOWNMAP,
-    OPEN_DUNMAP
+    OPEN_DUNMAP,
+    OPEN_MSGBOX
 };
 
 static int g_open;
@@ -66,8 +68,9 @@ static int g_marker_step = -1;
 #define REPEAT_EVERY 0.05f
 /* The arrow's picture's size on the screen, the engine's pixels. */
 #define MARKER_DRAWN 18
-/* The merchant's panel's answer, kept past its closing. */
+/* The merchant's panel's answer, and a message box's, kept past their closing. */
 static int g_service_choice;
+static int g_msgbox_answer;
 
 /* The open screen's composed picture up on the card, in place of the last one. */
 static void send_screen(void)
@@ -104,6 +107,9 @@ static void send_screen(void)
     } else if (g_open == OPEN_DUNMAP) {
         dunmap_compose();
         pixels = dunmap_pixels();
+    } else if (g_open == OPEN_MSGBOX) {
+        msgbox_compose();
+        pixels = msgbox_pixels();
     } else if (g_open == OPEN_TRAVEL) {
         travelmap_compose();
         pixels = travelmap_pixels();
@@ -149,6 +155,8 @@ void screens_close(void)
         townmap_close();
     } else if (g_open == OPEN_DUNMAP) {
         dunmap_close();
+    } else if (g_open == OPEN_MSGBOX) {
+        msgbox_close();
     }
     g_drag = 0;
     g_turning = 0;
@@ -218,6 +226,39 @@ void screens_open_service(int panel)
     g_service_choice = SERVICE_STAY;
     opened(OPEN_SERVICE, img_art_palette(g_rgb) && service_open(panel));
     input_key_pressed();
+}
+
+void screens_open_msgbox(const char *text, int yes_no)
+{
+    screens_close();
+    g_msgbox_answer = MSGBOX_STAY;
+    opened(OPEN_MSGBOX, img_art_palette(g_rgb) && msgbox_open(text, yes_no));
+    input_key_pressed();
+}
+
+int screens_msgbox_answer(void)
+{
+    return g_msgbox_answer;
+}
+
+/* A frame of a message box: a click or a key answers it. */
+static int msgbox_frame(const Input *in)
+{
+    int vk;
+
+    vk = input_key_pressed();
+    if (vk) {
+        g_msgbox_answer = msgbox_key(vk);
+    } else if (!in->reset && (in->mouse_pressed & INPUT_MOUSE_LEFT)) {
+        g_msgbox_answer = msgbox_click(g_point_x, g_point_y);
+    }
+    if (g_msgbox_answer != MSGBOX_STAY) {
+        return SCREENS_ANSWERED;
+    }
+    if (msgbox_changed()) {
+        send_screen();
+    }
+    return SCREENS_STAY;
 }
 
 int screens_service_choice(void)
@@ -682,11 +723,13 @@ int screens_frame(const Input *in, float dt)
         asked = townmap_frame(in, dt);
     } else if (g_open == OPEN_DUNMAP) {
         asked = dunmap_frame(in, dt);
+    } else if (g_open == OPEN_MSGBOX) {
+        asked = msgbox_frame(in);
     } else {
         asked = create_frame(in);
     }
     if (asked == SCREENS_CLOSED || asked == SCREENS_SERVICE || asked == SCREENS_SEEN || asked == SCREENS_COURT_OVER || asked == SCREENS_JOURNEY
-        || asked == SCREENS_TO_TRAVEL) {
+        || asked == SCREENS_TO_TRAVEL || asked == SCREENS_ANSWERED) {
         screens_close();
     }
     return asked;
@@ -734,7 +777,7 @@ void screens_draw(void)
         note = rest_note();
     } else if (g_open == OPEN_SLOTS) {
         note = slots_note();
-    } else if (g_open == OPEN_TALK || g_open == OPEN_SERVICE || g_open == OPEN_COURT || g_open == OPEN_TRAVEL || g_open == OPEN_TOWNMAP || g_open == OPEN_DUNMAP) {
+    } else if (g_open == OPEN_TALK || g_open == OPEN_SERVICE || g_open == OPEN_COURT || g_open == OPEN_TRAVEL || g_open == OPEN_TOWNMAP || g_open == OPEN_DUNMAP || g_open == OPEN_MSGBOX) {
         note = 0;
     } else if (g_open == OPEN_BANK) {
         note = bank_note();
