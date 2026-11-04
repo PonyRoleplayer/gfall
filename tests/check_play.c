@@ -39,6 +39,7 @@
 #include "game/dagger/play/dunmap.h"
 #include "game/dagger/play/marker.h"
 #include "game/dagger/play/ride.h"
+#include "game/dagger/play/wagon.h"
 #include "engine/scene/automap.h"
 #include "game/dagger/formats/climate.h"
 #include "game/dagger/places/wild.h"
@@ -6225,6 +6226,86 @@ static void check_riding(void)
            rode, walked);
 }
 
+/* The wagon by clicks: none without a cart, too far when out of reach, things in and out, its limit, gold, and through a save. */
+static void check_wagon(void)
+{
+    static const Rect wagon_button = { 226, 14, 31, 14 };
+    static const Rect remove_button = { 226, 80, 31, 14 };
+    Player p;
+    Character sheet;
+    Item it;
+    int sword;
+
+    character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Ada");
+    player_init(&p, &sheet);
+    inventory_clear(&p.pack);
+    wagon_new_game();
+    check_expect(item_make(&it, ITEM_LONGSWORD, 0) && (sword = inventory_add(&p.pack, &it)) >= 0, "wagon: no sword");
+    /* No cart: no wagon. */
+    wagon_set_reachable(1);
+    check_expect(bag_open(&p, 0), "wagon: the inventory did not open");
+    bag_click(wagon_button.x + 2, wagon_button.y + 2);
+    check_expect(!bag_at_wagon() && bag_note() && strstr(bag_note(), "no wagon"), "wagon: opened with no cart");
+    bag_close();
+    /* A cart, but out of reach. */
+    check_expect(item_make(&it, ITEM_CART, 0) && inventory_add(&p.pack, &it) >= 0, "wagon: no cart");
+    wagon_set_reachable(0);
+    bag_open(&p, 0);
+    bag_click(wagon_button.x + 2, wagon_button.y + 2);
+    check_expect(!bag_at_wagon() && bag_note() && strstr(bag_note(), "too far"), "wagon: opened out of reach");
+    bag_close();
+    /* In reach: the sword in, by Remove on it; back out by a click on it. */
+    wagon_set_reachable(1);
+    bag_open(&p, 0);
+    bag_click(wagon_button.x + 2, wagon_button.y + 2);
+    check_expect(bag_at_wagon(), "wagon: not opened in reach with a cart");
+    bag_click(remove_button.x + 2, remove_button.y + 2);
+    bag_click(177, 60);
+    check_expect(wagon_contents()->count == 1 && wagon_contents()->item[0].template_id == ITEM_LONGSWORD
+                 && !inventory_has(&p.pack, ITEM_LONGSWORD), "wagon: the sword did not go in");
+    bag_compose();
+    write_screen("build/wagon0.ppm", bag_pixels());
+    /* The cart itself never goes in: the pack's one thing left is the cart. */
+    bag_click(177, 60);
+    check_expect(inventory_has(&p.pack, ITEM_CART) && wagon_contents()->count == 1, "wagon: the cart went into its own wagon");
+    bag_click(275, 60);
+    check_expect(wagon_contents()->count == 0 && inventory_has(&p.pack, ITEM_LONGSWORD), "wagon: the sword did not come back out");
+    bag_close();
+    /* Its limit: 750 kg, a thing too heavy refused. */
+    it.weight = 800.0f;
+    check_expect(!wagon_fits(&it), "wagon: 800 kg fits");
+    it.weight = 5.0f;
+    check_expect(wagon_fits(&it), "wagon: 5 kg does not fit");
+    check_expect(item_make(&it, ITEM_HORSE, 0) && wagon_refuses(&it), "wagon: a horse is not refused");
+    /* Through a save, with gold in it. */
+    {
+        SaveState out;
+        SaveState in;
+        char path[260];
+
+        loot_gold_item(&it, 250);
+        inventory_add(wagon_contents(), &it);
+        item_make(&it, ITEM_DAGGER, 0);
+        inventory_add(wagon_contents(), &it);
+        save_use_prefix(SAVE_TEST_PREFIX);
+        save_use_slot(4);
+        keep_clear();
+        pile_new_game();
+        mem_zero(&out, sizeof(out));
+        df_copy(out.name, "Wagon", SAVE_NAME);
+        out.sheet = sheet;
+        inventory_clear(&out.pack);
+        check_expect(save_write(&out), "wagon: a save did not write");
+        wagon_new_game();
+        check_expect(save_read(&in) && wagon_contents()->count == 2 && wagon_contents()->item[0].count == 250
+                     && wagon_contents()->item[1].template_id == ITEM_DAGGER, "wagon: what was in it did not come back");
+        check_expect(fs_beside(path, (int)sizeof(path), "DATA\\TEST4.SAV") && remove(path) == 0, "wagon: the test's file did not go");
+    }
+    wagon_new_game();
+    keep_clear();
+    printf("wagon: none without a cart, too far out of reach, a sword in and out by clicks, the cart refused, 750 kg, gold and things through a save; build/wagon0.ppm\n");
+}
+
 /* Counts the engine's automap polygons. */
 static void count_polygon(void *ctx, const AutomapCorner *corner, int n, df_u32 rgb)
 {
@@ -6433,6 +6514,7 @@ void check_play(void)
     check_senses();
     check_wider_world();
     check_riding();
+    check_wagon();
     check_marker();
     check_dunmap();
     check_goto();

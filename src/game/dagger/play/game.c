@@ -5,6 +5,7 @@
 #include "game/dagger/play/journey.h"
 #include "game/dagger/play/travelmap.h"
 #include "game/dagger/play/ride.h"
+#include "game/dagger/play/wagon.h"
 #include "game/dagger/formats/cif.h"
 #include "game/dagger/formats/img.h"
 #include "game/dagger/play/dunmap.h"
@@ -544,8 +545,34 @@ static void menu_over_play(int which)
 }
 
 /* The inventory over the stilled world: the player's own, or with what they are searching beside it. */
+/*
+ * Whether the cart's wagon is there: anywhere outdoors or in a building, in a
+ * dungeon only by its way out (DFU's 5 m), where the cart waits.
+ */
+static int wagon_in_reach(void)
+{
+    TravelWhere here;
+    int origin[2];
+    const Usable *exit;
+    float dx;
+    float dz;
+
+    travel_here(&here, origin);
+    if (here.kind != TRAVEL_DUNGEON) {
+        return 1;
+    }
+    exit = travel_nearest_passage(&g_level->scene, DOOR_EXIT, g_player.body.feet[0], g_player.body.feet[2]);
+    if (!exit) {
+        return 0;
+    }
+    dx = exit->cx - g_player.body.feet[0];
+    dz = exit->cz - g_player.body.feet[2];
+    return dx * dx + dz * dz <= WAGON_EXIT_REACH * WAGON_EXIT_REACH;
+}
+
 static void bag_over_play(Entity *searched)
 {
+    wagon_set_reachable(wagon_in_reach());
     screens_open_bag(&g_player, searched);
     screen_over_play();
 }
@@ -963,6 +990,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
             /* Before creation: its answers move reputations. What the map shows is a new game's too. */
             standing_new_game(prof_now());
             atlas_new_game();
+            wagon_new_game();
             automap_clear();
             screens_open_create();
             /* Its pictures missing: the default character starts, as before creation was built. */

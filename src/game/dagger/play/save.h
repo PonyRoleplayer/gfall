@@ -23,6 +23,7 @@
  *   REGN  each region's law and bank (standing.h)
  *   DISC  the places the map knows that a new game's does not (atlas.h)
  *   AMAP  every place's models the automap has seen (engine/scene/automap.h)
+ *   WAGN  what is in the cart's wagon (wagon.h)
  *
  * A body's and a heap's things are not written: they come again from the
  * seed and their keys (loot.h), and their keep rows say what was taken.

@@ -112,7 +112,7 @@ Classic's travel map and its fast journeys, on Daggerfall Unity's numbers and cl
   - **The slice:** from 64 under the player's feet to 160 over them. A storey is 384, ours: classic and DFU move a camera, not a fixed slice.
   - **Not yet:** classic's door and exit marks and notes (the engine's to come), and a building's own colours.
 
-### Riding (built: the horse and the cart; the wagon not yet)
+### Riding (built: the horse, the cart and its wagon)
 `play/ride.c`, as DFU's TransportManager and PlayerSpeedChanger.
 - **Owning one:** a general store always has a horse (ITEM 94, 1000 gold) and a small cart (93, 150) on its shelves. They are things 0 and 1 of its stock, gone till the next day once bought, and it buys them back. Owned, not carried: neither weighs anything in the pack (`inventory_weight`).
 - **Mounting:** the HUD's transport button mounts the horse if the player owns one, else the cart, and dismounts. Only outdoors. Going into a building or a dungeon gets down: `arrive` in `game.c`, as TransportManager does on entering.
@@ -121,8 +121,13 @@ Classic's travel map and its fast journeys, on Daggerfall Unity's numbers and cl
   - It is drawn at the screen's foot, over the bar when the bar shows: 105 of classic's rows tall and DFU's 0.8 a pixel across.
   - The frame moves every 0.125 s while the player walks on the ground, the first while they stand. The weapon is not shown while riding.
 - **The travel map's "Foot/horse"** goes on the horse when one is owned, else the cart (`ride_journey`): the land at half the minutes on foot by horse, three quarters by cart.
+- **The wagon** (`play/wagon.c`): with a cart, 750 kg of things beside the pack (DFU's WagonKgLimit), the game's own block, in a save's `WAGN` chunk.
+  - **Reach:** the inventory's Wagon button turns its right list into the wagon and back. It works anywhere outdoors or in a building, but in a dungeon only within 5 m of its way out, where the cart waits (`wagon_in_reach` in `game.c`, DFU's rule).
+  - **Moving things:** Remove on a pack item puts it in, if it fits. A click on a wagon item takes it back, if the player can carry it. Gold dropped goes in as a stack of coins.
+  - **Refused:** a horse or a cart never goes in. Without a cart it says there is no wagon, and out of reach that it is too far.
 - **Not yet:**
-  - the cart's wagon, 750 kg of things beside the pack, with the inventory's Wagon button (next);
+  - the cart's own inventory picture (DFU picks another for it: it shows as a red blob);
+  - selling from the wagon in a shop;
   - the riding sounds, whose clips' numbers are not known yet: only the horse's whinny (99) is;
   - a key for mounting;
   - ships.
@@ -142,6 +147,7 @@ Tested on the host (`check_wider_world`):
 - the arrow's picture: an arrow tip up at step 0, outlined, a quarter turn pointing right, the steps of a turn;
 - the indoor automap: the hold's place named on arrival and none after leaving, the hold revealed, the view's rectangle, the player on the map from above and from behind, polygons drawn in both, the stairs, the wheel, the compass, M and Exit, the chrome's hole whole and nothing clear outside it, the arrow on the map pointing up from above, a drag there and back, a right drag turning, which buttons repeat, what was seen through a save, writing `build/dunmap0.ppm` and the polygons' outlines `build/dunmap-top.pgm`, `dunmap-3d.pgm`;
 - the town map: Daggerfall's 8 x 8 blocks fitted at half size, its kinds coloured and its modes, an armorer named under the pointer, the up arrow and zoom by clicks, the wheel, V and Exit, writing `build/townmap0..1.ppm`;
+- the wagon by clicks: none without a cart, too far out of reach, a sword in by Remove and out by a click, the cart refused, its 750 kg, gold and things through a save, writing `build/wagon0.ppm`;
 - riding: a general store's horse and cart, a horse weighing nothing in the pack, no mounting without one or indoors, classic's speeds, a quarter second on the hold's floor at 425 / 175 of a walk's with the run key doing nothing, the journey by horse, `MRED00I0.CFA`'s and `MRED01I0.CFA`'s four frames, the frame's turns;
 - the sums by hand: woodland on foot, recklessly, camping and on a horse, the sea by ship and swimming, a diagonal's steps, and arrivals reckless, before light and after 17:00;
 - the map's 11199 known places, one learnt and kept through a save;
@@ -150,7 +156,7 @@ Tested on the host (`check_wider_world`):
 - `build/travel0..3.ppm` are for a look.
 
 **Not yet:**
-- the cart's wagon, and ships;
+- selling from the wagon, and ships;
 - the indoor automap's door and exit marks and notes;
 - Find's list of several matches;
 - the identify flash;
@@ -802,13 +808,13 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Rest | an encounter wakes a sleeper, not a new creature; a class with no spell point regeneration | later, P12-b |
 | Items | clothing, jewellery, ingredients, books, potions, maps, and the screen's other tabs | P12-b, later |
 | Items | clothing's dyes | with clothing |
-| Inventory | the Wagon button (P10, the cart's wagon next), the Use button (P12-b) | as named |
+| Inventory | the trade window's Wagon button (P10), the Use button (P12-b) | as named |
 | Inventory | two weapons: the doll shows the one in use, as the pictures have one weapon hand; classic's own way not found | later |
 | Inventory | the info box's lines are ours, not TEXT.RSC's | later |
 | Loot | the other columns of `LOOT` wait for their items | P12-b, later |
 | Loot | a body or a heap takes nothing put on it (a choice, see What can be searched) | - |
 | Places | treasure and piles only in a dungeon streamed by block; a town's doors not keyed; the sea can be walked on | later |
-| World | the cart's wagon, the riding sounds, a mounting key, ships; the indoor automap's marks and notes, the town map's rotation and names; the travel map's Find list, identify flash and neighbouring provinces; places marked by talk; guild travel; holidays, diseases, lycanthropy and vampirism | P10 |
+| World | the cart's picture in the pack, selling from the wagon, the riding sounds, a mounting key, ships; the indoor automap's marks and notes, the town map's rotation and names; the travel map's Find list, identify flash and neighbouring provinces; places marked by talk; guild travel; holidays, diseases, lycanthropy and vampirism | P10 |
 | Player | the completed classic HUD bar needs target acceptance; the map button opens the travel map outdoors, the automap and magic buttons await their systems | P9-b, P10, P12-b |
 | Player | target acceptance/tuning of the implemented classic cursor controls | P9-c |
 | People | Steal mode, pickpocketing and the deferred theft mechanics | P12-a |
@@ -840,6 +846,7 @@ The travel map comes later, with `worldmap.c`'s pixels and the location index: p
 | Chunk | Holds |
 | --- | --- |
 | `DISC` | the places the map knows that a new game's does not |
+| `WAGN` | what is in the cart's wagon |
 | `GAME` | which place and the way back out of its door, the feet in that place's frame with the stream's origin that frame has, the movement facing and independent Alt view offsets (P9-c), the clock's minute and day, the day the game began, the seed, the gold, what is worn |
 | `CHAR` | the sheet, whole: skill uses and the level's count among it |
 | `PACK` | what is carried, material, variant and condition among it |

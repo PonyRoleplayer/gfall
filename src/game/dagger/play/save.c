@@ -1,6 +1,7 @@
 #include "game/dagger/play/save.h"
 #include "game/dagger/play/standing.h"
 #include "game/dagger/play/atlas.h"
+#include "game/dagger/play/wagon.h"
 #include "engine/scene/automap.h"
 #include "engine/scene/stream.h"
 #include "game/dagger/play/pile.h"
@@ -152,8 +153,12 @@ static const RecField g_item_fields[] = {
     I("count", REC_UINT, count)
 };
 #undef I
+/* WAGN, below: what is in the cart's wagon (wagon.h), rows as PACK's. */
 static const RecSchema g_item_schema = {
     "PACK", "pack", g_item_fields, (int)(sizeof(g_item_fields) / sizeof(g_item_fields[0])), (df_u16)sizeof(SaveItemRow), 0
+};
+static const RecSchema g_wagon_schema = {
+    "WAGN", "wagon", g_item_fields, (int)(sizeof(g_item_fields) / sizeof(g_item_fields[0])), (df_u16)sizeof(SaveItemRow), 0
 };
 
 /* KEEP: a row of the keep table, numbered as it lies. */
@@ -308,6 +313,8 @@ static int put_file(void *ctx, const void *src, df_u32 n)
 /* The chunks, each built in the scratch heap current. 0 when one did not write or there was no memory. */
 static int write_chunks(const SaveState *state)
 {
+    SaveItemRow *wagon_rows;
+    int nwagon;
     SaveSeenRow *seen;
     int nseen;
     SaveKnownRow *known;
@@ -383,6 +390,20 @@ static int write_chunks(const SaveState *state)
         seen[i].id = (df_u32)i;
         seen[i].seen = *automap_at(i);
     }
+    {
+        const Inventory *wagon;
+
+        wagon = wagon_contents();
+        nwagon = wagon->count;
+        wagon_rows = (SaveItemRow *)mem_alloc((df_u32)(nwagon + 1) * (df_u32)sizeof(SaveItemRow));
+        if (!wagon_rows) {
+            return 0;
+        }
+        for (i = 0; i < nwagon; i++) {
+            wagon_rows[i].id = (df_u16)i;
+            wagon_rows[i].item = wagon->item[i];
+        }
+    }
     nknown = atlas_changed_count();
     known = (SaveKnownRow *)mem_alloc((df_u32)(nknown + 1) * (df_u32)sizeof(SaveKnownRow));
     if (!known) {
@@ -443,6 +464,7 @@ static int write_chunks(const SaveState *state)
            && rec_put_rows(put_file, 0, &g_social_schema, &social, 1, 0, 0)
            && rec_put_rows(put_file, 0, &g_region_schema, regions, STANDING_REGIONS, 0, 0)
            && rec_put_rows(put_file, 0, &g_known_schema, known, nknown, 0, 0)
+           && rec_put_rows(put_file, 0, &g_wagon_schema, wagon_rows, nwagon, 0, 0)
            && rec_put_rows(put_file, 0, &g_seen_schema, seen, nseen, 0, 0)
            && (state->sheet.klass != CLASS_CUSTOM || !career_class(CLASS_CUSTOM)
                || rec_put_rows(put_file, 0, &class_schema, career_class(CLASS_CUSTOM), 1, 0, 0));
@@ -513,6 +535,7 @@ static RecTable g_faction_table;
 static RecTable g_social_table;
 static RecTable g_region_table;
 static RecTable g_known_table;
+static RecTable g_wagon_table;
 static RecTable g_seen_table;
 static RecTable g_head_table;
 /* A custom class, when the save's character has one: the same record as a class of the list. */
@@ -532,7 +555,7 @@ static int ready_table(RecTable *t, const RecSchema *s, int cap)
 static void merge_chunk(const RecChunk *c)
 {
     static RecTable *const tables[] = {
-        &g_head_table, &g_game_table, &g_sheet_table, &g_item_table, &g_keep_table, &g_pile_table, &g_faction_table, &g_social_table, &g_region_table, &g_known_table, &g_seen_table, &g_custom_table
+        &g_head_table, &g_game_table, &g_sheet_table, &g_item_table, &g_keep_table, &g_pile_table, &g_faction_table, &g_social_table, &g_region_table, &g_known_table, &g_seen_table, &g_wagon_table, &g_custom_table
     };
     int i;
 
@@ -600,6 +623,11 @@ static void apply_tables(SaveState *state)
     for (i = 0; i < g_pile_table.count; i++) {
         pile_put(&((const SavePileRow *)g_pile_table.rows)[i].pile);
     }
+    /* The wagon: empty, then what was in it. A save from before has nothing in it. */
+    wagon_new_game();
+    for (i = 0; i < g_wagon_table.count; i++) {
+        inventory_add(wagon_contents(), &((const SaveItemRow *)g_wagon_table.rows)[i].item);
+    }
     /* The automap's seen models: none, then the saved ones. A save from before has none. */
     automap_clear();
     for (i = 0; i < g_seen_table.count; i++) {
@@ -662,7 +690,8 @@ int save_read(SaveState *state)
         || !ready_table(&g_keep_table, &g_keep_schema, 256) || !ready_table(&g_pile_table, &g_pile_schema, PILE_ITEMS)
         || !ready_table(&g_custom_table, &class_schema, 1) || !ready_table(&g_faction_table, &g_faction_schema, 64)
         || !ready_table(&g_social_table, &g_social_schema, 1) || !ready_table(&g_region_table, &g_region_schema, STANDING_REGIONS)
-        || !ready_table(&g_known_table, &g_known_schema, 64) || !ready_table(&g_seen_table, &g_seen_schema, 1024)) {
+        || !ready_table(&g_known_table, &g_known_schema, 64) || !ready_table(&g_seen_table, &g_seen_schema, 1024)
+        || !ready_table(&g_wagon_table, &g_wagon_schema, INVENTORY_MAX)) {
         return 0;
     }
     /* The bytes in a heap of its own: a file read beside the program otherwise lives until exit. */

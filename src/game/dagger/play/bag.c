@@ -1,5 +1,6 @@
 #include "game/dagger/play/bag.h"
 #include "game/dagger/play/combat.h"
+#include "game/dagger/play/wagon.h"
 #include "game/dagger/play/canvas.h"
 #include "game/dagger/play/doll.h"
 #include "game/dagger/play/loot.h"
@@ -171,6 +172,8 @@ static struct {
     const df_u8 *cost_panel;
     /* Trading, 1 after the thief was seen: the game opens the court when this closes. */
     int stole;
+    /* 1 while the right list is the wagon (wagon.h); the list it stood for comes back when it is put away. */
+    int at_wagon;
 } g;
 
 /* What the right list shows, and which of the searched thing's rolled things each is (loot.c). */
@@ -547,8 +550,12 @@ static void compose_targets(void)
                df_iround(rules_max_carry(g.player->sheet.attribute[ATTR_STRENGTH])));
     canvas_label(r->x + 1, r->y + 2 + LINE_H, line);
     r = &g_target_rect[LIST_REMOTE];
-    canvas_label(r->x + 1, r->y + 2, g.trade == TRADE_BUY ? "Shelves" : (g.trade ? "Counter" : (g.searched ? loot_label(g.searched) : "Dropped")));
-    log_format(line, (int)sizeof(line), "%d kg", df_iround(inventory_weight(g.remote)));
+    canvas_label(r->x + 1, r->y + 2, g.at_wagon ? "Wagon" : (g.trade == TRADE_BUY ? "Shelves" : (g.trade ? "Counter" : (g.searched ? loot_label(g.searched) : "Dropped"))));
+    if (g.at_wagon) {
+        log_format(line, (int)sizeof(line), "%d/%d kg", df_iround(inventory_weight(g.remote)), df_iround(WAGON_KG));
+    } else {
+        log_format(line, (int)sizeof(line), "%d kg", df_iround(inventory_weight(g.remote)));
+    }
     canvas_label(r->x + 1, r->y + 2 + LINE_H, line);
 }
 
@@ -781,10 +788,36 @@ static void wear_changed(void)
 }
 
 /* A thing out of the pack into the right list: never onto a body or treasure, which are only emptied. */
+/* Item i of the pack into the wagon, if it fits and may go. */
+static void into_wagon(int i)
+{
+    Inventory *pack;
+
+    pack = &g.player->pack;
+    if (wagon_refuses(&pack->item[i])) {
+        g.note = "That cannot go in the wagon.";
+        return;
+    }
+    if (!wagon_fits(&pack->item[i])) {
+        g.note = "Your wagon cannot hold any more.";
+        return;
+    }
+    if (inventory_add(wagon_contents(), &pack->item[i]) < 0) {
+        g.note = "Your wagon is full.";
+        return;
+    }
+    inventory_remove(pack, i);
+    wear_changed();
+}
+
 static void drop_item(int i)
 {
     Inventory *pack;
 
+    if (g.at_wagon) {
+        into_wagon(i);
+        return;
+    }
     pack = &g.player->pack;
     if (g.searched && !loot_takes_things(g.searched)) {
         g.note = "You cannot leave things here.";
@@ -820,7 +853,8 @@ static void take_item(int i)
             return;
         }
     }
-    if (g.searched) {
+    /* From the wagon nothing is marked taken: it is only moved. */
+    if (g.searched && !g.at_wagon) {
         loot_taken(g.searched, g_origin[i]);
         for (n = i; n + 1 < g.remote->count; n++) {
             g_origin[n] = g_origin[n + 1];
@@ -902,6 +936,27 @@ static int click_arrows(int x, int y)
 }
 
 /* A click on a button, if it was on one: a mode chosen, or a word why not. 1 when it was. */
+/* The Wagon button: the wagon as the right list, or back to what it stood for. */
+static void toggle_wagon(void)
+{
+    if (g.at_wagon) {
+        g.at_wagon = 0;
+        g.remote = &g_remote;
+    } else if (!inventory_has(&g.player->pack, ITEM_CART)) {
+        g.note = "You have no wagon.";
+        return;
+    } else if (!wagon_reachable()) {
+        g.note = "Your wagon is too far away.";
+        return;
+    } else {
+        g.at_wagon = 1;
+        g.remote = wagon_contents();
+    }
+    g.scroll[LIST_REMOTE] = 0;
+    g.over = OVER_NOTHING;
+    g.over_index = -1;
+}
+
 static int click_button(int x, int y)
 {
     int b;
@@ -911,9 +966,9 @@ static int click_button(int x, int y)
             continue;
         }
         if (b == BUTTON_WAGON) {
-            g.note = "You have no wagon.";
+            toggle_wagon();
         } else if (b == BUTTON_GOLD) {
-            if (g.searched && !loot_takes_things(g.searched)) {
+            if (g.searched && !loot_takes_things(g.searched) && !g.at_wagon) {
                 g.note = "You cannot leave things here.";
             } else {
                 g.asking_gold = 1;
@@ -944,6 +999,14 @@ static void drop_gold(void)
     }
     if (coins > g.player->pack.gold || coins > 0xffffu) {
         g.note = "You do not have that much gold.";
+        return;
+    }
+    if (g.at_wagon) {
+        if (!loot_gold_item(&it, (int)coins) || !wagon_fits(&it) || inventory_add(wagon_contents(), &it) < 0) {
+            g.note = "Your wagon cannot hold any more.";
+            return;
+        }
+        g.player->pack.gold -= coins;
         return;
     }
     if (!pile_room(g.searched, g_remote.count + 1) || !loot_gold_item(&it, (int)coins) || inventory_add(&g_remote, &it) < 0) {
@@ -1199,6 +1262,11 @@ static int click_trade(int x, int y)
         inventory_remove(&g_remote, i);
     }
     return BAG_STAY;
+}
+
+int bag_at_wagon(void)
+{
+    return g.at_wagon;
 }
 
 int bag_stole(void)

@@ -65,6 +65,8 @@ int bag_open(Player *p, Entity *searched);
  * on the right. day is the clock's: it says which stock. 0 when a picture is missing.
  */
 int bag_open_trade(Player *p, const Shop *shop, int trade, int day);
+/* 1 while the right list is the wagon (wagon.h), its Wagon button pressed. */
+int bag_at_wagon(void);
 /* 1 once a theft was seen: the court is the game's to open when the screen has closed. */
 int bag_stole(void);
 /* Closes it: what was dropped lands, what was searched keeps what is left. */
