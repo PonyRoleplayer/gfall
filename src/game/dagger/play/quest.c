@@ -29,6 +29,7 @@ enum {
     OP_REWARD = 4,
     OP_END = 6,
     OP_CLEAR = 7,
+    OP_START_QUEST = 8,
     OP_TIMER_START = 12,
     OP_TIMER_STOP = 13,
     OP_TO_MAP = 19,
@@ -47,6 +48,10 @@ enum {
     OP_OR = 53,
     OP_REPUTATION = 61,
     OP_LEGAL = 65,
+    OP_LEVEL = 77,
+    OP_NPC_AVAILABLE = 78,
+    OP_REPUTE_AT_LEAST = 79,
+    OP_NPC_ANYWHERE = 81,
     OP_ITEM_TO_PLAYER = 76,
     OP_ORDINARY = 54
 };
@@ -56,7 +61,7 @@ enum {
 #define FILLER 0xFFFFFFFEu
 /* Passes over the logic at most, each event: a quest's chains settle in a few. */
 #define PASSES 8
-#define MESSAGES 8
+#define MESSAGES 16
 #define MESSAGE_TEXT 512
 #define DAY 1440
 /* A timer whose length the file leaves to the distance, when no place gives one: a week. */
@@ -103,6 +108,62 @@ typedef struct Slot {
 } Slot;
 
 static Slot g_slots[QUEST_SLOTS];
+/* The once-only quests accepted, by QUES row. */
+static df_u32 g_done[8];
+
+static const RecField g_done_fields[] = {
+    REC_FIELD("id", REC_UINT, QuestDone, id),
+    REC_ARRAY("bits", REC_UINT, QuestDone, bits)
+};
+const RecSchema quest_done_schema = {
+    "QDON", "quest_done", g_done_fields, 2, (df_u16)sizeof(QuestDone), 0
+};
+
+int quest_is_done(int quest)
+{
+    return quest >= 0 && quest < 256 && (g_done[quest >> 5] >> (quest & 31)) & 1u;
+}
+
+static void mark_done(int quest)
+{
+    if (quest >= 0 && quest < 256) {
+        g_done[quest >> 5] |= 1u << (quest & 31);
+    }
+}
+
+void quest_done_row(QuestDone *out)
+{
+    int i;
+
+    mem_zero(out, sizeof(*out));
+    for (i = 0; i < 8; i++) {
+        out->bits[i] = g_done[i];
+    }
+}
+
+void quest_put_done(const QuestDone *row)
+{
+    int i;
+
+    for (i = 0; i < 8; i++) {
+        g_done[i] = row->bits[i];
+    }
+}
+
+int quest_find(const char *file)
+{
+    int i;
+
+    for (i = 0; i < quest_table()->count; i++) {
+        const QuestKind *k;
+
+        k = quest_kind(i);
+        if (k && df_eq(k->name, file)) {
+            return i;
+        }
+    }
+    return -1;
+}
 static char g_messages[MESSAGES][MESSAGE_TEXT];
 static int g_message_first;
 static int g_message_count;
@@ -446,46 +507,56 @@ static int pick_building(int region, int index, int type, int *block, int *recor
     return 0;
 }
 
-/* Place i bound by its record: 0 when no such place was found (or the file names one outright, a storyline's). */
-static int bind_place(Slot *s, int i, const QuestStart *how)
+/*
+ * Place i of the run bound as general (1 this town, 2 another of the region,
+ * 0 named outright), fine (1 a dungeon, else a building) and type, in the
+ * town at region and index. 0 when none was found. A place the file names
+ * outright (a storyline's, by an object id this game does not read) is bound
+ * to nowhere (region -1): it is a place a quest's logic can name and nothing
+ * more, and the quest runs.
+ */
+static int bind_at(Slot *s, int i, int general, int fine, int type, int region, int home)
 {
-    const QbnPlace *q;
     QuestRun *r;
     int block;
     int record;
     int index;
     int tries;
 
-    q = &s->qbn.places[i];
     r = &s->run;
-    r->place_region[i] = (df_i16)how->region;
-    if (q->general == 0) {
-        return 0;
+    r->place_region[i] = (df_i16)region;
+    r->place_dungeon[i] = 0;
+    r->place_index[i] = -1;
+    r->place_block[i] = -1;
+    r->place_record[i] = -1;
+    if (general == 0) {
+        r->place_region[i] = -1;
+        return 1;
     }
-    if (q->fine == 1) {
+    if (fine == 1) {
         static Dungeon outside;
 
         /* A dungeon: its map location (place_index, for the map and the journey) and the dungeon under it (place_block, as travel names it inside). */
         r->place_dungeon[i] = 1;
         for (tries = 0; tries < 8; tries++) {
-            if (pick_location(how->region, 1, -1, &index) && exterior_load_at(how->region, index, &outside)
-                && dungeon_under(how->region, outside.location_id) >= 0) {
+            if (pick_location(region, 1, -1, &index) && exterior_load_at(region, index, &outside)
+                && dungeon_under(region, outside.location_id) >= 0) {
                 r->place_index[i] = (df_i16)index;
-                r->place_block[i] = (df_i16)dungeon_under(how->region, outside.location_id);
+                r->place_block[i] = (df_i16)dungeon_under(region, outside.location_id);
                 return 1;
             }
         }
         return 0;
     }
     /* A building: in this town, or in another of the region. */
-    if (q->general == 1) {
-        if (!pick_building(how->region, how->index, q->type, &block, &record)) {
+    if (general == 1) {
+        if (!pick_building(region, home, type, &block, &record)) {
             return 0;
         }
-        r->place_index[i] = (df_i16)how->index;
+        r->place_index[i] = (df_i16)home;
     } else {
         for (tries = 0; tries < 8; tries++) {
-            if (pick_location(how->region, 0, how->index, &index) && pick_building(how->region, index, q->type, &block, &record)) {
+            if (pick_location(region, 0, home, &index) && pick_building(region, index, type, &block, &record)) {
                 break;
             }
         }
@@ -497,6 +568,14 @@ static int bind_place(Slot *s, int i, const QuestStart *how)
     r->place_block[i] = (df_i16)block;
     r->place_record[i] = (df_i16)record;
     return 1;
+}
+
+static int bind_place(Slot *s, int i, const QuestStart *how)
+{
+    const QbnPlace *q;
+
+    q = &s->qbn.places[i];
+    return bind_at(s, i, q->general, q->fine, q->type, how->region, how->index);
 }
 
 /* DFU's Item.CreateGold: 150..200 x (the guild rank + 1, else level / 2 + 1, to 10), by the region's prices and the guild's power. */
@@ -628,6 +707,31 @@ static void reward_item(Slot *s, int i)
     g_player->pack.gold += (df_u32)(50 * level * (2 + combat_roll(3)));
 }
 
+/* Quest file named by number (S0000017) started by the quest running in slot s: what a main quest does to go on (opcode 8). */
+static void start_numbered(Slot *s, int number, int now)
+{
+    QuestStart how;
+    char file[16];
+    int quest;
+
+    log_format(file, (int)sizeof(file), "S%07d", number);
+    quest = quest_find(file);
+    if (quest < 0 || quest_is_done(quest) || quest_running(quest) >= 0) {
+        return;
+    }
+    mem_zero(&how, sizeof(how));
+    how.region = s->run.region;
+    how.index = s->run.index;
+    how.giver_block = s->run.giver_block;
+    how.giver_record = s->run.giver_record;
+    how.giver_faction = s->run.giver_faction;
+    how.prices = 1000;
+    how.power = 50;
+    how.seed = s->run.person_seed + (unsigned)number;
+    /* A main quest's row is once-only: quest_accept marks it, whether it runs on or not. */
+    quest_start(g_player, quest, &how, now);
+}
+
 /* What an action record does, its state now true. 1 when it ended the quest. */
 static int act(Slot *s, const QbnLogic *l, int now)
 {
@@ -639,6 +743,21 @@ static int act(Slot *s, const QbnLogic *l, int now)
     case OP_TIMER_START:
         if (l->arg[1].value < QUEST_TIMERS && (int)l->arg[1].value < s->qbn.count[QBN_TIMERS]) {
             r->timer_end[l->arg[1].value] = now + timer_length(s, (int)l->arg[1].value);
+        }
+        break;
+    case OP_START_QUEST:
+        start_numbered(s, (int)l->arg[1].value, now);
+        break;
+    case OP_NPC_ANYWHERE:
+        /* A person with no place is put in a building of another town of the region, in the place spared for them. */
+        if (l->arg[2].value < QUEST_PEOPLE && (int)l->arg[2].value < s->qbn.count[QBN_PEOPLE] && r->person_at[l->arg[2].value] < 0
+            && s->qbn.count[QBN_PLACES] < QUEST_PLACES) {
+            int spare;
+
+            spare = s->qbn.count[QBN_PLACES];
+            if (bind_at(s, spare, 2, 0, -1, r->region, r->index)) {
+                r->person_at[l->arg[2].value] = (df_i16)spare;
+            }
         }
         break;
     case OP_TIMER_STOP:
@@ -832,6 +951,22 @@ static void run(Slot *s, int now)
                 changed |= set_state(r, (int)l->arg[0].value, on ^ l->arg[0].negate);
                 continue;
             }
+            if (l->opcode == OP_LEVEL || l->opcode == OP_NPC_AVAILABLE || l->opcode == OP_REPUTE_AT_LEAST) {
+                /* Always-on conditions (DFU's LevelCompleted, WhenNpcIsAvailable, WhenReputeWith). */
+                if (l->opcode == OP_LEVEL) {
+                    on = g_player && g_player->sheet.level >= (int)l->arg[1].value;
+                } else if (l->opcode == OP_NPC_AVAILABLE) {
+                    on = factionfile_open() && faction_find((int)l->arg[1].value) != 0;
+                } else {
+                    on = standing_rep((int)l->arg[1].value) >= (int)(df_i32)l->arg[2].value;
+                }
+                /* Set when true and left set: S0000999 sets one state from several levels, and a later action clears it. */
+                if (on && !state_of(r, (int)l->arg[0].value)) {
+                    set_state(r, (int)l->arg[0].value, 1);
+                    changed = 1;
+                }
+                continue;
+            }
             if (is_trigger(l->opcode)) {
                 /* A kill count's state follows the kills; the others are set by quest_met. */
                 if (l->opcode == OP_KILLS && l->arg[1].value < QUEST_FOES && !state_of(r, (int)l->arg[0].value)
@@ -872,6 +1007,7 @@ void quest_new_game(void)
         mem_zero(&g_slots[i].run, sizeof(g_slots[i].run));
     }
     g_message_count = 0;
+    mem_zero(g_done, sizeof(g_done));
 }
 
 const QuestRun *quest_run(int slot)
@@ -936,6 +1072,10 @@ int quest_accept(Player *p, int slot, int now)
     s = &g_slots[slot];
     s->offered = 0;
     s->run.started = now;
+    /* A once-only quest, accepted, is not offered again, finished or not (DFU's oneTimeQuestsAccepted). */
+    if (quest_kind(s->run.quest) && (quest_kind(s->run.quest)->flags & QUEST_ONCE)) {
+        mark_done(s->run.quest);
+    }
     g_player = p;
     run(s, now);
     return s->used ? slot : -1;
@@ -964,7 +1104,7 @@ int quest_offer(Player *p, int quest, const QuestStart *how, int now)
     int slot;
     int i;
 
-    if (!quest_kind(quest) || quest_running(quest) >= 0) {
+    if (!quest_kind(quest) || quest_running(quest) >= 0 || ((quest_kind(quest)->flags & QUEST_ONCE) && quest_is_done(quest))) {
         return -1;
     }
     for (slot = 0; slot < QUEST_SLOTS && g_slots[slot].used; slot++) {

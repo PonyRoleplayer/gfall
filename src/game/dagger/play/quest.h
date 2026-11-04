@@ -31,7 +31,8 @@
  * Plain C: hostcheck runs a guild quest through.
  */
 
-#define QUEST_SLOTS 6
+/* Quests running at once: a guild or two each, the main quest's, a few from people. Memory is a heap each, and a save row. */
+#define QUEST_SLOTS 32
 #define QUEST_STATES 48
 #define QUEST_LOGIC 128
 #define QUEST_ITEMS 16
@@ -98,6 +99,20 @@ void quest_new_game(void);
 /* A quest's run by slot, 0 when the slot is empty; the slot of a QUES row running, -1. */
 const QuestRun *quest_run(int slot);
 int quest_running(int quest);
+/*
+ * The once-only quests accepted (QUES flag QUEST_ONCE), and the main quests
+ * started: never offered or started again. Saved as a row (QDON).
+ */
+typedef struct QuestDone {
+    df_u16 id;
+    df_u32 bits[8];
+} QuestDone;
+extern const RecSchema quest_done_schema;
+int quest_is_done(int quest);
+void quest_done_row(QuestDone *out);
+void quest_put_done(const QuestDone *row);
+/* The QUES row of a quest by its file's name ("S0000999"); -1 for none. */
+int quest_find(const char *file);
 /* A saved run over a new game's (its logic read again). */
 void quest_put(const QuestRun *run);
 

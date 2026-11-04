@@ -22,6 +22,8 @@
  */
 
 #define QUEST_NAME 9
+/* The group of a quest no guild or person offers: the main quest's, the tutorial's, the cures' (started by the game and by each other). */
+#define QUEST_GROUP_MAIN 250
 /* Who offers it, past a guild group: a social group, this plus its sgroup. */
 #define QUEST_SOCIAL 100
 

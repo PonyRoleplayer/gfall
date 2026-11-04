@@ -334,6 +334,7 @@ static int write_chunks(const SaveState *state)
     int nmembers;
     static QuestRun runs[QUEST_SLOTS];
     int nruns;
+    QuestDone done;
     IllsCurseRow curse;
     int nsick;
     SaveItemRow *wagon_rows;
@@ -422,6 +423,7 @@ static int write_chunks(const SaveState *state)
         wagon = wagon_contents();
         nwagon = wagon->count;
         nsick = ills_sick_rows(sick);
+        quest_done_row(&done);
         nruns = 0;
         for (i = 0; i < QUEST_SLOTS; i++) {
             if (quest_run(i)) {
@@ -513,6 +515,7 @@ static int write_chunks(const SaveState *state)
            && rec_put_rows(put_file, 0, &lodging_schema, rooms, nrooms, 0, 0)
            && rec_put_rows(put_file, 0, &guild_membership_schema, members, nmembers, 0, 0)
            && rec_put_rows(put_file, 0, &quest_run_schema, runs, nruns, 0, 0)
+           && rec_put_rows(put_file, 0, &quest_done_schema, &done, 1, 0, 0)
            && (state->sheet.klass != CLASS_CUSTOM || !career_class(CLASS_CUSTOM)
                || rec_put_rows(put_file, 0, &class_schema, career_class(CLASS_CUSTOM), 1, 0, 0));
 }
@@ -588,6 +591,7 @@ static RecTable g_sick_table;
 static RecTable g_room_table;
 static RecTable g_member_table;
 static RecTable g_quest_table;
+static RecTable g_done_table;
 static RecTable g_curse_table;
 static RecTable g_head_table;
 /* A custom class, when the save's character has one: the same record as a class of the list. */
@@ -607,7 +611,7 @@ static int ready_table(RecTable *t, const RecSchema *s, int cap)
 static void merge_chunk(const RecChunk *c)
 {
     static RecTable *const tables[] = {
-        &g_head_table, &g_game_table, &g_sheet_table, &g_item_table, &g_keep_table, &g_pile_table, &g_faction_table, &g_social_table, &g_region_table, &g_known_table, &g_seen_table, &g_wagon_table, &g_sick_table, &g_curse_table, &g_room_table, &g_member_table, &g_quest_table, &g_custom_table
+        &g_head_table, &g_game_table, &g_sheet_table, &g_item_table, &g_keep_table, &g_pile_table, &g_faction_table, &g_social_table, &g_region_table, &g_known_table, &g_seen_table, &g_wagon_table, &g_sick_table, &g_curse_table, &g_room_table, &g_member_table, &g_quest_table, &g_done_table, &g_custom_table
     };
     int i;
 
@@ -704,6 +708,9 @@ static void apply_tables(SaveState *state)
     guild_set_last_training(game->trained);
     /* The quests running: none, then the saved ones, their logic read again from ARENA2. */
     quest_new_game();
+    if (g_done_table.count) {
+        quest_put_done((const QuestDone *)g_done_table.rows);
+    }
     for (i = 0; i < g_quest_table.count; i++) {
         quest_put(&((const QuestRun *)g_quest_table.rows)[i]);
     }
@@ -773,7 +780,7 @@ int save_read(SaveState *state)
         || !ready_table(&g_wagon_table, &g_wagon_schema, INVENTORY_MAX) || !ready_table(&g_sick_table, &ills_sick_schema, DISEASE_COUNT)
         || !ready_table(&g_curse_table, &ills_curse_schema, 1) || !ready_table(&g_room_table, &lodging_schema, LODGING_ROOMS)
         || !ready_table(&g_member_table, &guild_membership_schema, GUILD_MEMBERSHIPS)
-        || !ready_table(&g_quest_table, &quest_run_schema, QUEST_SLOTS)) {
+        || !ready_table(&g_quest_table, &quest_run_schema, QUEST_SLOTS) || !ready_table(&g_done_table, &quest_done_schema, 1)) {
         return 0;
     }
     /* The bytes in a heap of its own: a file read beside the program otherwise lives until exit. */

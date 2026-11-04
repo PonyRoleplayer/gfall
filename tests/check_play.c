@@ -6977,7 +6977,7 @@ static void check_quest_files(void)
     int i;
     df_u32 size;
 
-    check_expect(quest_table()->count == 187, "quests: MAIN.DAT does not list classic's 187 offered quests");
+    check_expect(quest_table()->count == 222, "quests: MAIN.DAT does not list classic's 187 offered quests and 35 of the main quest's, the tutorial's and the cures'");
     k = quest_kind(0);
     check_expect(k && df_eq(k->name, "M0C00Y11") && k->group == GUILD_GROUP_FIGHTERS && k->to == QUEST_TO_OTHERS && k->least == 0,
                  "quests: the first is not the Fighters' M0C00Y11 for others");
@@ -6998,7 +6998,7 @@ static void check_quest_files(void)
             read += qbn_load(name, &q);
         }
     }
-    check_expect(files >= 174 && read == files, "quests: a listed quest's QBN that is there did not read");
+    check_expect(files >= 209 && read == files, "quests: a listed quest's QBN that is there did not read");
     /* The Fighters' M0B00Y00: an item, a person, a place, a timer, a foe, logic and states; its first message read. */
     check_expect(qbn_load("M0B00Y00.QBN", &q), "quests: M0B00Y00.QBN did not read");
     check_expect(q.count[QBN_LOGIC] > 5 && q.count[QBN_STATES] > 0 && q.logic[0].count >= 1 && q.logic[0].count <= QBN_OPERANDS,
@@ -7151,6 +7151,125 @@ static void check_quest_machine(void)
     run = quest_run(slot);
     quest_tick(&p, run ? run->timer_end[0] + 1 : now);
     check_expect(quest_running(quest) < 0 && p.pack.gold == gold, "quest machine: the timer did not end it unpaid");
+    /*
+     * Many at once and the main quest: the new game's _BRISIEN starts the master S0000999 (and S0000977); a guild's
+     * quests run beside them, past six; a once-only quest accepted is not offered again, through a save.
+     */
+    quest_new_game();
+    {
+        QuestStart start;
+        int main_quest;
+        int master;
+        int count;
+        int k;
+
+        mem_zero(&start, sizeof(start));
+        start.region = 17;
+        start.index = -1;
+        start.giver_block = -1;
+        start.giver_record = -1;
+        start.prices = 1000;
+        start.power = 50;
+        main_quest = quest_find("_BRISIEN");
+        master = quest_find("S0000999");
+        check_expect(main_quest >= 0 && master >= 0 && quest_kind(master)->group == QUEST_GROUP_MAIN, "quest machine: the main quest is not in MAIN.DAT");
+        check_expect(quest_start(&p, main_quest, &start, now) >= 0 && quest_running(master) >= 0 && quest_running(quest_find("S0000977")) >= 0,
+                     "quest machine: _BRISIEN did not start the main quest's master");
+        check_expect(quest_is_done(master), "quest machine: the master is not marked started");
+        /* A dozen more guild quests beside it. */
+        count = 0;
+        for (k = 0; k < quest_table()->count && count < 12; k++) {
+            if (quest_kind(k) && quest_kind(k)->group != QUEST_GROUP_MAIN && quest_start(&p, k, &how, now) >= 0) {
+                count++;
+            }
+        }
+        check_expect(count == 12, "quest machine: twelve guild quests did not run at once");
+        n = 0;
+        for (k = 0; k < QUEST_SLOTS; k++) {
+            n += quest_run(k) != 0;
+        }
+        check_expect(n >= 14, "quest machine: the quests running at once are too few");
+    }
+    quest_new_game();
+    /* Once-only: M0B11Y18 (flag 1) accepted, finished or not, is not started again, and the done mark goes through a save. */
+    {
+        int once;
+        int slot2;
+
+        once = quest_find("M0B11Y18");
+        if (once < 0) {
+            once = quest_find("M0B21Y19");
+        }
+        n = -1;
+        for (i = 0; i < quest_table()->count && n < 0; i++) {
+            if (quest_kind(i) && (quest_kind(i)->flags & QUEST_ONCE) && quest_kind(i)->group != QUEST_GROUP_MAIN) {
+                char file[16];
+                df_u32 sz;
+
+                log_format(file, (int)sizeof(file), "%s.QBN", quest_kind(i)->name);
+                if (vfs_read(file, &sz)) {
+                    n = i;
+                }
+            }
+        }
+        once = n;
+        slot2 = quest_start(&p, once, &how, now);
+        check_expect(once >= 0 && slot2 >= 0 && quest_is_done(once), "quest machine: a once-only quest, accepted, is not marked");
+        quest_drop(slot2);
+        check_expect(quest_offer(&p, once, &how, now) < 0, "quest machine: a once-only quest was offered again");
+        {
+            SaveState out;
+            SaveState in;
+            char path[260];
+
+            save_use_prefix(SAVE_TEST_PREFIX);
+            save_use_slot(4);
+            keep_clear();
+            pile_new_game();
+            mem_zero(&out, sizeof(out));
+            df_copy(out.name, "Once", SAVE_NAME);
+            out.sheet = sheet;
+            inventory_clear(&out.pack);
+            check_expect(save_write(&out), "quest machine: a save with a done quest did not write");
+            quest_new_game();
+            check_expect(!quest_is_done(once), "quest machine: a new game remembers a done quest");
+            check_expect(save_read(&in) && quest_is_done(once), "quest machine: the done mark did not come back from the save");
+            check_expect(fs_beside(path, (int)sizeof(path), "DATA\\TEST4.SAV") && remove(path) == 0, "quest machine: the test's file did not go");
+        }
+    }
+    quest_new_game();
+    /* A delivery: C0C00Y13 hands the player a parcel at once and has a person stand in a building of another town, who takes it. */
+    {
+        int deliver;
+        const QuestRun *dr;
+        QuestPersonHere here[4];
+        int has;
+        int k;
+
+        deliver = quest_find("C0C00Y13");
+        slot = quest_start(&p, deliver, &how, now);
+        dr = quest_run(slot);
+        has = 0;
+        for (k = 0; k < p.pack.count; k++) {
+            has += p.pack.item[k].template_id == ITEM_QUEST;
+        }
+        check_expect(slot >= 0 && dr && has == 1, "quest machine: the delivery's parcel is not in the pack");
+        check_expect(dr && dr->person_at[1] >= 0 && !dr->place_dungeon[dr->person_at[1]], "quest machine: the delivery's person is not put in a building");
+        if (dr && dr->person_at[1] >= 0) {
+            int at;
+
+            at = dr->person_at[1];
+            check_expect(quest_people_in(17, dr->place_index[at], dr->place_block[at], dr->place_record[at], here, 4) >= 1,
+                         "quest machine: the delivery's person does not stand in their building");
+            quest_met_person(&p, slot, 1, now + 120);
+            has = 0;
+            for (k = 0; k < p.pack.count; k++) {
+                has += p.pack.item[k].template_id == ITEM_QUEST;
+            }
+            check_expect(has == 0 && quest_state(slot, 1), "quest machine: the parcel was not taken, or the delivery not done");
+        }
+    }
+    quest_new_game();
     /* The nobles' N0C00Y10 puts its person in a tavern of this town at the start: they stand there, and meeting them is its trigger. */
     quest_new_game();
     for (i = 0; i < quest_table()->count; i++) {

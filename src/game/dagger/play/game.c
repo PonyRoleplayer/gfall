@@ -722,7 +722,7 @@ static void guild_offer_quest(void)
         int least_met;
 
         k = quest_kind(i);
-        if (!k || k->group != g_guild->group || quest_running(i) >= 0) {
+        if (!k || k->group != g_guild->group || quest_running(i) >= 0 || ((k->flags & QUEST_ONCE) && quest_is_done(i))) {
             continue;
         }
         if ((k->to == QUEST_TO_MEMBERS && !member) || (k->to == QUEST_TO_OTHERS && member) || k->to == QUEST_TO_PROSPECTS
@@ -1694,6 +1694,29 @@ void game_enter(const Level *level, Camera *cam, const TravelPose *at)
         loot_new_game(g_loaded.seed);
         g_control.view_yaw = g_loaded.view_yaw;
         g_control.view_pitch = g_loaded.view_pitch;
+    } else {
+        /*
+         * A new game starts the main quest where classic does (DFU's
+         * StartGameBehaviour): _BRISIEN, Brisienna's escape from Privateer's
+         * Hold, which starts S0000999, the master of the main quest, that in
+         * turn starts each main quest as the player's level and standing with
+         * their people allow. The tutorial (_TUTOR__) is not started yet.
+         */
+        QuestStart how;
+        int main_quest;
+
+        mem_zero(&how, sizeof(how));
+        how.region = travel_region();
+        how.index = -1;
+        how.giver_block = -1;
+        how.giver_record = -1;
+        how.prices = 1000;
+        how.power = 50;
+        how.seed = 1u;
+        main_quest = quest_find("_BRISIEN");
+        if (main_quest >= 0) {
+            quest_start(&g_player, main_quest, &how, ills_now(clock_day(), clock_minute()));
+        }
     }
     commands_player(&g_player);
     arrive(level, cam, at);
