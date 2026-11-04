@@ -285,7 +285,7 @@ Every quest uses 6 (if a state, end), 12 (start a timer), 23 (a log entry) and n
 - **The logbook** (`play/logbook.c`, the sheet's Log button at DFU's rectangle): a quest a page on a scroll: its file name and place among the quests, its log lines as the quest wrote them (symbols filled), and the days its soonest timer has left. A click on the right half, Right or Page Down turns to the next, the left half, Left or Page Up to the one before; Escape or a click on its bottom edge closes it.
 - **Saved** as `QUST` rows, a quest a row (its states, fired records, timers, gold, bound places, where its people and foes are, kills, log); the logic is read again from its QBN.
 - **The console:** `quests` lists what is running and its log; `quest M0B00Y00` starts one here, the player its own giver.
-- **Not yet:** a quest person's own name in the talk window; named storyline places, topics in talk, spawns (9), and the opcodes the offered quests use least.
+- **Not yet:** repeating spawns (9), foes that find the player on the road (they need creatures made in the player's presence, an engine matter); named storyline places' own locations; "Where is" for a quest's place, and the marks it puts on the map; the tutorial (`_TUTOR__`) at a new game; the Thieves Guild's and the Dark Brotherhood's invitations; the cures' start; and the opcodes the offered quests use least (31, 37, 39, 46's kin, 55, 56, 57, 68 to 73).
 
 ### The plan
 1. **The machine:** built, above.
