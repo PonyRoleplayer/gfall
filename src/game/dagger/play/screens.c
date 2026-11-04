@@ -4,6 +4,7 @@
 #include "game/dagger/play/service.h"
 #include "game/dagger/play/travelmap.h"
 #include "game/dagger/play/townmap.h"
+#include "game/dagger/play/dunmap.h"
 #include "game/dagger/play/bag.h"
 #include "game/dagger/play/create.h"
 #include "game/dagger/play/menu.h"
@@ -30,7 +31,8 @@ enum {
     OPEN_BANK,
     OPEN_COURT,
     OPEN_TRAVEL,
-    OPEN_TOWNMAP
+    OPEN_TOWNMAP,
+    OPEN_DUNMAP
 };
 
 static int g_open;
@@ -81,6 +83,9 @@ static void send_screen(void)
     } else if (g_open == OPEN_TOWNMAP) {
         townmap_compose();
         pixels = townmap_pixels();
+    } else if (g_open == OPEN_DUNMAP) {
+        dunmap_compose();
+        pixels = dunmap_pixels();
     } else if (g_open == OPEN_TRAVEL) {
         travelmap_compose();
         pixels = travelmap_pixels();
@@ -95,7 +100,8 @@ static void send_screen(void)
     if (g_pic) {
         pic_free(g_pic);
     }
-    g_pic = pic_load(pixels, SCREEN_W, SCREEN_H, g_rgb, 0);
+    /* The indoor automap's chrome has a clear hole the engine's map shows through. */
+    g_pic = pic_load(pixels, SCREEN_W, SCREEN_H, g_rgb, g_open == OPEN_DUNMAP);
 }
 
 void screens_close(void)
@@ -123,6 +129,8 @@ void screens_close(void)
         travelmap_close();
     } else if (g_open == OPEN_TOWNMAP) {
         townmap_close();
+    } else if (g_open == OPEN_DUNMAP) {
+        dunmap_close();
     }
     g_open = OPEN_NONE;
     if (g_pic) {
@@ -213,6 +221,18 @@ void screens_open_court(Player *p)
     g_player = p;
     opened(OPEN_COURT, img_art_palette(g_rgb) && court_open(p));
     input_key_pressed();
+}
+
+void screens_open_dunmap(const float *feet, float yaw)
+{
+    screens_close();
+    opened(OPEN_DUNMAP, img_art_palette(g_rgb) && dunmap_open(feet, yaw));
+    input_key_pressed();
+}
+
+int screens_dunmap_open(void)
+{
+    return g_open == OPEN_DUNMAP;
 }
 
 void screens_open_townmap(int region, int index, float x, float z, float yaw)
@@ -351,6 +371,27 @@ static int townmap_frame(const Input *in)
         return SCREENS_TO_TRAVEL;
     }
     if (townmap_changed()) {
+        send_screen();
+    }
+    return SCREENS_STAY;
+}
+
+/* A frame of the indoor automap: its keys, clicks and the wheel; the engine draws the map each frame. */
+static int dunmap_frame(const Input *in)
+{
+    int vk;
+
+    if (in->wheel) {
+        dunmap_wheel(in->wheel);
+    }
+    vk = input_key_pressed();
+    if (vk && dunmap_key(vk) == DUNMAP_LEAVE) {
+        return SCREENS_CLOSED;
+    }
+    if ((in->pressed & INPUT_BIT(INPUT_ATTACK)) && dunmap_click(g_point_x, g_point_y) == DUNMAP_LEAVE) {
+        return SCREENS_CLOSED;
+    }
+    if (dunmap_changed()) {
         send_screen();
     }
     return SCREENS_STAY;
@@ -548,6 +589,8 @@ int screens_frame(const Input *in, float dt)
         asked = travel_frame(in, dt);
     } else if (g_open == OPEN_TOWNMAP) {
         asked = townmap_frame(in);
+    } else if (g_open == OPEN_DUNMAP) {
+        asked = dunmap_frame(in);
     } else {
         asked = create_frame(in);
     }
@@ -571,7 +614,7 @@ void screens_draw(void)
         note = rest_note();
     } else if (g_open == OPEN_SLOTS) {
         note = slots_note();
-    } else if (g_open == OPEN_TALK || g_open == OPEN_SERVICE || g_open == OPEN_COURT || g_open == OPEN_TRAVEL || g_open == OPEN_TOWNMAP) {
+    } else if (g_open == OPEN_TALK || g_open == OPEN_SERVICE || g_open == OPEN_COURT || g_open == OPEN_TRAVEL || g_open == OPEN_TOWNMAP || g_open == OPEN_DUNMAP) {
         note = 0;
     } else if (g_open == OPEN_BANK) {
         note = bank_note();

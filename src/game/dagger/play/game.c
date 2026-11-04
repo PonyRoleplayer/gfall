@@ -4,6 +4,7 @@
 #include "game/dagger/play/atlas.h"
 #include "game/dagger/play/journey.h"
 #include "game/dagger/play/travelmap.h"
+#include "game/dagger/play/dunmap.h"
 #include "game/dagger/play/bank.h"
 #include "game/dagger/play/court.h"
 #include "game/dagger/play/service.h"
@@ -43,6 +44,7 @@
 #include "engine/scene/interact.h"
 #include "engine/scene/keep.h"
 #include "engine/scene/stream.h"
+#include "engine/scene/automap.h"
 #include "engine/scene/clock.h"
 #include "engine/scene/walker.h"
 #include "engine/scene/weather.h"
@@ -154,7 +156,17 @@ static void map_over_play(void)
         travel_map_over_play();
         return;
     }
-    interact_say("The automap is not available yet.");
+    /* Indoors: what the player has seen of this place, the engine's to draw (docs/automap.md). */
+    screens_open_dunmap(g_player.body.feet, g_player.yaw);
+    screen_over_play();
+}
+
+/* Under the screens' picture, before it: the indoor automap's seen geometry, in the hole its chrome leaves. */
+static void draw_under(void)
+{
+    if (screens_dunmap_open() && g_level) {
+        gfx_automap(g_level, dunmap_view(), dunmap_ground());
+    }
 }
 
 /*
@@ -712,6 +724,7 @@ void game_setup(void)
     overlay_load();
     menu_setup();
     gfx_set_extra(draw);
+    gfx_set_under(draw_under);
     commands_setup();
     cmd_var("panel", overlay_panel, overlay_set_panel, 0, 1, "classic's bottom panel of the HUD; panel alone flips it");
     cmd_toggles("panel");
@@ -867,6 +880,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
             /* Before creation: its answers move reputations. What the map shows is a new game's too. */
             standing_new_game(prof_now());
             atlas_new_game();
+            automap_clear();
             screens_open_create();
             /* Its pictures missing: the default character starts, as before creation was built. */
             if (!screens_is_open()) {
@@ -1219,6 +1233,7 @@ void game_shutdown(void)
     weapon_free();
     walker_set_game(0);
     gfx_set_extra(0);
+    gfx_set_under(0);
     gfx_set_pause(0);
     input_set_pointer(0);
     menu_shutdown();

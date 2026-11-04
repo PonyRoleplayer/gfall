@@ -1,6 +1,7 @@
 #include "game/dagger/play/save.h"
 #include "game/dagger/play/standing.h"
 #include "game/dagger/play/atlas.h"
+#include "engine/scene/automap.h"
 #include "engine/scene/stream.h"
 #include "game/dagger/play/pile.h"
 #include "engine/assets/recfile.h"
@@ -260,6 +261,25 @@ static const RecSchema g_region_schema = {
     "REGN", "region", g_region_fields, 8, (df_u16)sizeof(SaveRegionRow), 0
 };
 
+/* AMAP: a model the automap has seen (engine/scene/automap.h), every place's. */
+typedef struct SaveSeenRow {
+    df_u32 id;
+    AutomapRow seen;
+} SaveSeenRow;
+#define A(name, type, member) REC_FIELD(name, type, SaveSeenRow, seen.member)
+static const RecField g_seen_fields[] = {
+    REC_FIELD("id", REC_UINT, SaveSeenRow, id),
+    A("place", REC_UINT, place),
+    A("mesh", REC_UINT, mesh),
+    A("x", REC_INT, x),
+    A("y", REC_INT, y),
+    A("z", REC_INT, z)
+};
+#undef A
+static const RecSchema g_seen_schema = {
+    "AMAP", "seen", g_seen_fields, 6, (df_u16)sizeof(SaveSeenRow), 0
+};
+
 /* DISC: a word of the places known (atlas.h) that is not a new game's. */
 typedef struct SaveKnownRow {
     df_u32 id;
@@ -288,6 +308,8 @@ static int put_file(void *ctx, const void *src, df_u32 n)
 /* The chunks, each built in the scratch heap current. 0 when one did not write or there was no memory. */
 static int write_chunks(const SaveState *state)
 {
+    SaveSeenRow *seen;
+    int nseen;
     SaveKnownRow *known;
     int nknown;
     static SaveRegionRow regions[STANDING_REGIONS];
@@ -352,6 +374,15 @@ static int write_chunks(const SaveState *state)
     if (!keeps || !piles) {
         return 0;
     }
+    nseen = automap_count();
+    seen = (SaveSeenRow *)mem_alloc((df_u32)(nseen + 1) * (df_u32)sizeof(SaveSeenRow));
+    if (!seen) {
+        return 0;
+    }
+    for (i = 0; i < nseen; i++) {
+        seen[i].id = (df_u32)i;
+        seen[i].seen = *automap_at(i);
+    }
     nknown = atlas_changed_count();
     known = (SaveKnownRow *)mem_alloc((df_u32)(nknown + 1) * (df_u32)sizeof(SaveKnownRow));
     if (!known) {
@@ -412,6 +443,7 @@ static int write_chunks(const SaveState *state)
            && rec_put_rows(put_file, 0, &g_social_schema, &social, 1, 0, 0)
            && rec_put_rows(put_file, 0, &g_region_schema, regions, STANDING_REGIONS, 0, 0)
            && rec_put_rows(put_file, 0, &g_known_schema, known, nknown, 0, 0)
+           && rec_put_rows(put_file, 0, &g_seen_schema, seen, nseen, 0, 0)
            && (state->sheet.klass != CLASS_CUSTOM || !career_class(CLASS_CUSTOM)
                || rec_put_rows(put_file, 0, &class_schema, career_class(CLASS_CUSTOM), 1, 0, 0));
 }
@@ -481,6 +513,7 @@ static RecTable g_faction_table;
 static RecTable g_social_table;
 static RecTable g_region_table;
 static RecTable g_known_table;
+static RecTable g_seen_table;
 static RecTable g_head_table;
 /* A custom class, when the save's character has one: the same record as a class of the list. */
 static RecTable g_custom_table;
@@ -499,7 +532,7 @@ static int ready_table(RecTable *t, const RecSchema *s, int cap)
 static void merge_chunk(const RecChunk *c)
 {
     static RecTable *const tables[] = {
-        &g_head_table, &g_game_table, &g_sheet_table, &g_item_table, &g_keep_table, &g_pile_table, &g_faction_table, &g_social_table, &g_region_table, &g_known_table, &g_custom_table
+        &g_head_table, &g_game_table, &g_sheet_table, &g_item_table, &g_keep_table, &g_pile_table, &g_faction_table, &g_social_table, &g_region_table, &g_known_table, &g_seen_table, &g_custom_table
     };
     int i;
 
@@ -567,6 +600,11 @@ static void apply_tables(SaveState *state)
     for (i = 0; i < g_pile_table.count; i++) {
         pile_put(&((const SavePileRow *)g_pile_table.rows)[i].pile);
     }
+    /* The automap's seen models: none, then the saved ones. A save from before has none. */
+    automap_clear();
+    for (i = 0; i < g_seen_table.count; i++) {
+        automap_put(&((const SaveSeenRow *)g_seen_table.rows)[i].seen);
+    }
     /* The places known: a new game's, the saved words over it. A save from before P10 has none. */
     atlas_new_game();
     for (i = 0; i < g_known_table.count; i++) {
@@ -624,7 +662,7 @@ int save_read(SaveState *state)
         || !ready_table(&g_keep_table, &g_keep_schema, 256) || !ready_table(&g_pile_table, &g_pile_schema, PILE_ITEMS)
         || !ready_table(&g_custom_table, &class_schema, 1) || !ready_table(&g_faction_table, &g_faction_schema, 64)
         || !ready_table(&g_social_table, &g_social_schema, 1) || !ready_table(&g_region_table, &g_region_schema, STANDING_REGIONS)
-        || !ready_table(&g_known_table, &g_known_schema, 64)) {
+        || !ready_table(&g_known_table, &g_known_schema, 64) || !ready_table(&g_seen_table, &g_seen_schema, 1024)) {
         return 0;
     }
     /* The bytes in a heap of its own: a file read beside the program otherwise lives until exit. */

@@ -36,6 +36,8 @@
 #include "game/dagger/play/journey.h"
 #include "game/dagger/play/travelmap.h"
 #include "game/dagger/play/townmap.h"
+#include "game/dagger/play/dunmap.h"
+#include "engine/scene/automap.h"
 #include "game/dagger/formats/climate.h"
 #include "game/dagger/places/wild.h"
 #include "game/dagger/formats/worldmap.h"
@@ -6004,6 +6006,179 @@ static void check_wider_world(void)
     }
 }
 
+/* The engine's automap polygons' edges, into a 640 x 480 picture (y from the bottom), for a look. */
+static df_u8 g_poly_pic[640 * 480];
+static void draw_polygon(void *ctx, const AutomapCorner *corner, int n, df_u32 rgb)
+{
+    int i;
+
+    (void)ctx;
+    for (i = 0; i < n; i++) {
+        const AutomapCorner *a;
+        const AutomapCorner *b;
+        int k;
+
+        a = &corner[i];
+        b = &corner[(i + 1) % n];
+        for (k = 0; k <= 32; k++) {
+            int x;
+            int y;
+
+            x = (int)(a->x + (b->x - a->x) * (float)k / 32.0f);
+            y = 479 - (int)(a->y + (b->y - a->y) * (float)k / 32.0f);
+            if (x >= 0 && x < 640 && y >= 0 && y < 480) {
+                g_poly_pic[y * 640 + x] = (df_u8)(1 + ((rgb >> 8) & 0xff) / 2);
+            }
+        }
+    }
+}
+
+static void write_polygons(const char *path, const Scene *scene, const AutomapView *view)
+{
+    FILE *f;
+    int i;
+
+    mem_zero(g_poly_pic, sizeof(g_poly_pic));
+    automap_polygons(scene, view, draw_polygon, 0);
+    f = fopen(path, "wb");
+    if (!f) {
+        return;
+    }
+    fprintf(f, "P5\n640 480\n255\n");
+    for (i = 0; i < 640 * 480; i++) {
+        fputc(g_poly_pic[i] ? 128 + g_poly_pic[i] / 2 : 0, f);
+    }
+    fclose(f);
+}
+
+/* Counts the engine's automap polygons. */
+static void count_polygon(void *ctx, const AutomapCorner *corner, int n, df_u32 rgb)
+{
+    (void)corner;
+    (void)n;
+    (void)rgb;
+    (*(int *)ctx)++;
+}
+
+/*
+ * The indoor automap: the hold's place named on arrival and none outdoors, the
+ * window's view on the player from above and from behind, its clicks, its chrome's
+ * hole and arrow, and what was seen through a save.
+ */
+static void check_dunmap(void)
+{
+    Level level;
+    Camera cam;
+    TravelPose at;
+    Player p;
+    Character sheet;
+    float sx;
+    float sy;
+    int top;
+    int behind;
+    int holes;
+    int arrow;
+    int i;
+    df_u32 place;
+
+    keep_clear();
+    automap_clear();
+    character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Test");
+    player_init(&p, &sheet);
+    travel_start_game();
+    if (!travel_go(&level, &cam, &at)) {
+        return;
+    }
+    place = automap_place();
+    check_expect(place != 0 && (place >> 30) == 1u, "dunmap: the hold's automap place is not named, a dungeon's");
+    player_place(&p, at.x, at.y, at.z, at.yaw, 0.0f);
+    automap_reveal(&level.scene);
+    check_expect(automap_count() > 300, "dunmap: the hold revealed has too few rows");
+    check_expect(dunmap_open(p.body.feet, p.yaw), "dunmap: it did not open");
+    /* Classic's (1, 1)..(318, 169) of 320 x 200 on 640 x 480 from the bottom: the engine's own test's numbers. */
+    /* DFU's (1, 1, 318, 169) is a corner and a size: x 2..638, y from the bottom 480 - 2.4 x 170 .. 480 - 2.4. */
+    check_expect(dunmap_view()->x0 == 2.0f && dunmap_view()->x1 == 638.0f && dunmap_view()->y1 > 477.5f && dunmap_view()->y1 < 477.7f
+                 && dunmap_view()->y0 > 71.9f && dunmap_view()->y0 < 72.1f, "dunmap: the map's rectangle");
+    check_expect(automap_to_screen(dunmap_view(), p.body.feet[0], p.body.feet[1], p.body.feet[2], &sx, &sy),
+                 "dunmap: the player is not on the map from above");
+    top = 0;
+    automap_polygons(&level.scene, dunmap_view(), count_polygon, &top);
+    check_expect(top > 20, "dunmap: the hold from above draws nothing");
+    write_polygons("build/dunmap-top.pgm", &level.scene, dunmap_view());
+    dunmap_compose();
+    holes = 0;
+    arrow = 0;
+    for (i = 0; i < 320 * 200; i++) {
+        int x;
+        int y;
+
+        x = i % 320;
+        y = i / 320;
+        if (!dunmap_pixels()[i]) {
+            holes += x >= 1 && x < 319 && y >= 1 && y < 170;
+            check_expect(x >= 1 && x < 319 && y >= 1 && y < 170, "dunmap: a clear pixel outside the map's hole");
+            if (!(x >= 1 && x < 319 && y >= 1 && y < 170)) {
+                break;
+            }
+        } else if (x >= 1 && x < 319 && y >= 1 && y < 170) {
+            arrow++;
+        }
+    }
+    check_expect(holes > 50000 && arrow > 5 && arrow < 121, "dunmap: the hole, or the player's arrow in it");
+    write_screen("build/dunmap0.ppm", dunmap_pixels());
+    /* From behind and above: the player still in view, every face toward the camera. */
+    dunmap_click(80, 175);
+    check_expect(dunmap_view()->mode == AUTOMAP_3D, "dunmap: the grid did not turn to the 3D view");
+    check_expect(automap_to_screen(dunmap_view(), p.body.feet[0], p.body.feet[1], p.body.feet[2], &sx, &sy),
+                 "dunmap: the player is not in the 3D view");
+    behind = 0;
+    automap_polygons(&level.scene, dunmap_view(), count_polygon, &behind);
+    write_polygons("build/dunmap-3d.pgm", &level.scene, dunmap_view());
+    check_expect(behind > 0, "dunmap: the 3D view draws nothing");
+    /* The stairs move the slice a storey; the compass brings the view back; the wheel zooms; Exit leaves. */
+    dunmap_click(80, 175);
+    dunmap_click(240, 175);
+    check_expect(dunmap_storey() == 1 && dunmap_view()->bottom > p.body.feet[1], "dunmap: upstairs");
+    {
+        float scale;
+
+        scale = dunmap_view()->scale;
+        dunmap_wheel(1);
+        check_expect(dunmap_view()->scale > scale, "dunmap: the wheel did not zoom in");
+    }
+    dunmap_click(110, 175);
+    dunmap_click(5, 175);
+    check_expect(dunmap_storey() == 0 && dunmap_view()->cx == p.body.feet[0], "dunmap: the compass did not come back");
+    check_expect(dunmap_key('M') == DUNMAP_LEAVE && dunmap_click(285, 175) == DUNMAP_LEAVE, "dunmap: M or Exit");
+    dunmap_close();
+    /* What was seen through a save, and none outdoors. */
+    {
+        SaveState out;
+        SaveState in;
+        char path[260];
+        int rows;
+
+        rows = automap_count();
+        save_use_prefix(SAVE_TEST_PREFIX);
+        save_use_slot(4);
+        pile_new_game();
+        mem_zero(&out, sizeof(out));
+        df_copy(out.name, "Map", SAVE_NAME);
+        character_new(&out.sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Ada");
+        inventory_clear(&out.pack);
+        check_expect(save_write(&out), "dunmap: a save did not write");
+        automap_clear();
+        check_expect(save_read(&in) && automap_count() == rows, "dunmap: what was seen did not come back");
+        check_expect(fs_beside(path, (int)sizeof(path), "DATA\\TEST4.SAV") && remove(path) == 0, "dunmap: the test's file did not go");
+    }
+    travel_leave();
+    check_expect(automap_place() == 0, "dunmap: a place is named after leaving it");
+    automap_clear();
+    keep_clear();
+    printf("dunmap: the hold's %d polygons from above, %d from behind; the chrome's hole and arrow; through a save; build/dunmap0.ppm\n",
+           top, behind);
+}
+
 void check_play(void)
 {
     check_menu();
@@ -6053,6 +6228,7 @@ void check_play(void)
     check_citizen();
     check_senses();
     check_wider_world();
+    check_dunmap();
     check_goto();
     check_standing_saved();
 }

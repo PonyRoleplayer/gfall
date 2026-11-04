@@ -11,6 +11,7 @@
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
 #include "engine/scene/stream.h"
+#include "engine/scene/automap.h"
 #include "engine/sound/music.h"
 #include "engine/sound/sound.h"
 
@@ -31,6 +32,8 @@ enum {
 /* A town's walking cells are 64 units; how many rings of them to look through for a street. */
 #define CELL_SIDE 64.0
 #define STREET_RINGS 32
+
+static df_u32 automap_key(void);
 
 static TravelWhere g_here;
 static TravelWhere g_next;
@@ -247,6 +250,7 @@ void travel_leave(void)
     }
     music_stop();
     sound_stop_all();
+    automap_set_place(0);
     /* A stream keeps what its chunks changed as it closes them; a place loaded whole is asked. */
     if (g_here.kind == TRAVEL_DUNGEON) {
         dunstream_close();
@@ -383,6 +387,7 @@ int travel_open(Level *level, int radius)
     }
     g_here = g_next;
     g_open = 1;
+    automap_set_place(automap_key());
     return 1;
 }
 
@@ -647,6 +652,22 @@ int travel_out_to_street(void)
     }
     ask_world();
     return g_asked;
+}
+
+/*
+ * The automap's place (docs/automap.md): as the keep table keys the place, so a
+ * dungeon's seen rows are its own and a building's its own; 0 in the world,
+ * which the town map shows instead.
+ */
+static df_u32 automap_key(void)
+{
+    if (g_here.kind == TRAVEL_DUNGEON) {
+        return g_dungeon.location_id > 0 ? (1u << 30) | ((df_u32)g_dungeon.location_id & 0xFFFFFFu) : 0;
+    }
+    if (g_here.kind == TRAVEL_INSIDE) {
+        return (3u << 30) | ((((df_u32)g_here.record + 1u) & 63u) << 24) | ((df_u32)g_town.location_id & 0xFFFFFFu);
+    }
+    return 0;
 }
 
 int travel_radius(float far)

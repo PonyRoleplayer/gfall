@@ -98,8 +98,14 @@ Classic's travel map and its fast journeys, on Daggerfall Unity's numbers and cl
   - **Zoom and pan:** the town is fitted at the largest zoom that shows it whole: half size for Daggerfall's 8 x 8 blocks, up to four screen pixels a map pixel for a hamlet. The arrows, the arrow keys and the wheel pan and zoom (half, whole, 2, 3, 4), and the compass or Home centres the player.
   - **The pointer** names the building kind under it, by `BLDG`. The player is an arrow along their facing.
   - **Not yet:** rotating, and buildings' own names.
-- **The keys, DFU's:** M is the automap (`INPUT_MAP`): in a town's streets its map, in the wilds, where there is nothing to map, the travel map. V is the travel map (`INPUT_TRAVEL_MAP`), from anywhere outdoors and from the town map. Both have their slots on the controls screen, and V is in `keys.c`'s defaults, so a reset brings it back.
-- **A dungeon's and a building's** (not built): classic draws the place's geometry from above, only what the player has been near. That needs the engine to track what was seen and to draw it on the Voodoo (asked of the ENGINE implementer). The window's chrome, its buttons and the player's marker will be the game's.
+- **The keys, DFU's:** M is the automap (`INPUT_MAP`): indoors what has been seen, in a town's streets its map, in the wilds, where there is nothing to map, the travel map. V is the travel map (`INPUT_TRAVEL_MAP`), from anywhere outdoors and from the town map. Both have their slots on the controls screen, and V is in `keys.c`'s defaults, so a reset brings it back.
+- **A dungeon's and a building's** (built, `play/dunmap.c` over the engine's automap, `docs/automap.md`):
+  - **Marking:** the engine marks the models seen or passed near, rows by place. Travel names the place as it opens (`automap_set_place`: the keep table's own key, a dungeon's or a building's) and none in the world. The rows go in a save's `AMAP` chunk, and a new game clears them.
+  - **Drawing:** the chrome (AMAP00I0.IMG, AMAP01I0.IMG's grid in 3D) is composed with a clear hole where the map goes and sent as a cutout. From the frame's under hook, `gfx_automap` draws the map in that hole over a dark ground of ours, and the chrome's picture goes over it. The player's arrow is drawn into the picture where `automap_to_screen` puts their feet. A screen frame draws no world under it.
+  - **Views:** from above, the player's facing up, starting at 0.15 pixels a unit. The grid button gives the 3D view: behind and well above the player looking steeply down (700 back, 1100 up), so the slice's cut ceilings let it see into the rooms. The wheel zooms both.
+  - **Controls:** the arrows pan along the view; the turn buttons turn it a sixteenth; the stairs or Page Up and Down move the slice a storey; the compass or Home brings it back to the player; M, Escape or Exit leave.
+  - **The slice:** from 64 under the player's feet to 160 over them. A storey is 384, ours: classic and DFU move a camera, not a fixed slice.
+  - **Not yet:** classic's door and exit marks and notes (the engine's to come), and a building's own colours.
 
 ### A journey (`play/journey.c`, DFU's TravelTimeCalculator)
 - **The path:** a line of map pixels, a step along the longer axis.
@@ -113,6 +119,7 @@ Classic's travel map and its fast journeys, on Daggerfall Unity's numbers and cl
 - **When it opens:** outdoors, by the map key or the HUD's map button (in a town, from its automap: Automaps, above). In a dungeon or a building it says the automap is not built yet.
 
 Tested on the host (`check_wider_world`):
+- the indoor automap: the hold's place named on arrival and none after leaving, the hold revealed, the view's rectangle, the player on the map from above and from behind, polygons drawn in both, the stairs, the wheel, the compass, M and Exit, the chrome's hole with the arrow in it and nothing clear outside it, what was seen through a save, writing `build/dunmap0.ppm` and the polygons' outlines `build/dunmap-top.pgm`, `dunmap-3d.pgm`;
 - the town map: Daggerfall's 8 x 8 blocks fitted at half size, its kinds coloured and its modes, an armorer named under the pointer, the up arrow and zoom by clicks, the wheel, V and Exit, writing `build/townmap0..1.ppm`;
 - the sums by hand: woodland on foot, recklessly, camping and on a horse, the sea by ship and swimming, a diagonal's steps, and arrivals reckless, before light and after 17:00;
 - the map's 11199 known places, one learnt and kept through a save;
@@ -122,7 +129,7 @@ Tested on the host (`check_wider_world`):
 
 **Not yet:**
 - horses, carts and ships to own;
-- a dungeon's and a building's automap (the engine's render first);
+- the indoor automap's door and exit marks and notes;
 - Find's list of several matches;
 - the identify flash;
 - talk's marking places on the map;
@@ -779,7 +786,7 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Loot | the other columns of `LOOT` wait for their items | P12-b, later |
 | Loot | a body or a heap takes nothing put on it (a choice, see What can be searched) | - |
 | Places | treasure and piles only in a dungeon streamed by block; a town's doors not keyed; the sea can be walked on | later |
-| World | horses, carts and ships to own; the indoor automap (an engine render first), the town map's rotation and names; the travel map's Find list, identify flash and neighbouring provinces; places marked by talk; guild travel; holidays, diseases, lycanthropy and vampirism | P10 |
+| World | horses, carts and ships to own; the indoor automap's marks and notes, the town map's rotation and names; the travel map's Find list, identify flash and neighbouring provinces; places marked by talk; guild travel; holidays, diseases, lycanthropy and vampirism | P10 |
 | Player | the completed classic HUD bar needs target acceptance; the map button opens the travel map outdoors, the automap and magic buttons await their systems | P9-b, P10, P12-b |
 | Player | target acceptance/tuning of the implemented classic cursor controls | P9-c |
 | People | Steal mode, pickpocketing and the deferred theft mechanics | P12-a |

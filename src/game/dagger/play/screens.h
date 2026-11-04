@@ -52,6 +52,9 @@ int screens_service_choice(void);
 void screens_open_trade(Player *p, const Shop *shop, int trade, int day);
 void screens_open_bank(Player *p, int region);
 void screens_open_court(Player *p);
+/* The automap indoors, round the player's feet, facing yaw; 1 while it is the screen open, for the under hook. */
+void screens_open_dunmap(const float *feet, float yaw);
+int screens_dunmap_open(void);
 /* A town's automap: the town and the player in its frame, facing yaw. */
 void screens_open_townmap(int region, int index, float x, float z, float yaw);
 /* The travel map, the player on pixel (px, py) of region. */
