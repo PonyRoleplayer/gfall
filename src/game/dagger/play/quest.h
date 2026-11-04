@@ -139,9 +139,19 @@ void quest_met(Player *p, int region, int index, int block, int record, int fact
 void quest_met_person(Player *p, int slot, int person, int now);
 /* a creature of kind was killed in the dungeon at region and dungeon index (travel's, TravelWhere.index; any, -1). */
 void quest_killed(Player *p, int kind, int region, int index, int now);
+/* the player arrived at a place: a dungeon (its region and travel's dungeon index) or a building (its town's region and index, block and record); */
+void quest_arrived(Player *p, int dungeon, int region, int index, int block, int record, int now);
+/* a creature of kind was struck, not killed, in the dungeon at region and dungeon index; */
+void quest_hurt(Player *p, int kind, int region, int index, int now);
 /* a minute passed: timers. */
 void quest_tick(Player *p, int now);
 
+/*
+ * A question a quest asks (op 29): its words, to be asked with Yes and No; the answer sets the state the file
+ * names for it. 0 when none waits; the slot and states are kept for quest_answer.
+ */
+int quest_take_prompt(char *out, int cap);
+void quest_answer(Player *p, int yes, int now);
 /* The next message to show, filled in; 0 when none waits. How many wait. */
 int quest_take_message(char *out, int cap);
 int quest_messages_waiting(void);

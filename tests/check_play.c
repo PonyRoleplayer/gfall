@@ -7317,6 +7317,33 @@ static void check_quest_machine(void)
         }
     }
     quest_new_game();
+    /* Arrival (43): M0C00Y14 sets state 4 when the player stands in its place 0; and a question (29): C0C00Y10 asks one at its start. */
+    quest_new_game();
+    {
+        const QuestRun *ar;
+        int asked;
+        char prompt[512];
+
+        slot = quest_start(&p, quest_find("M0C00Y14"), &how, now);
+        ar = quest_run(slot);
+        check_expect(slot >= 0 && ar && !quest_state(slot, 4), "quest machine: M0C00Y14 did not start, or has arrived already");
+        if (ar) {
+            if (ar->place_dungeon[0]) {
+                quest_arrived(&p, 1, ar->place_region[0], ar->place_block[0], 0, 0, now + 10);
+            } else {
+                quest_arrived(&p, 0, ar->place_region[0], ar->place_index[0], ar->place_block[0], ar->place_record[0], now + 10);
+            }
+            check_expect(quest_state(slot, 4), "quest machine: arriving at the place did not set its state");
+        }
+        quest_new_game();
+        slot = quest_start(&p, quest_find("C0C00Y10"), &how, now);
+        asked = quest_take_prompt(prompt, (int)sizeof(prompt));
+        check_expect(slot >= 0 && asked && prompt[0], "quest machine: C0C00Y10 asked no question");
+        quest_answer(&p, 1, now + 5);
+        check_expect(quest_state(slot, 1) && !quest_state(slot, 2) && !quest_take_prompt(prompt, (int)sizeof(prompt)),
+                     "quest machine: Yes did not set its state, or the question stayed");
+    }
+    quest_new_game();
     /* Topics: none opened yet by M0B00Y00, and the call is whole. */
     quest_new_game();
     {

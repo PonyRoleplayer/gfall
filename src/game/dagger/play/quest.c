@@ -46,6 +46,9 @@ enum {
     OP_MESSAGE = 51,
     OP_AND = 52,
     OP_OR = 53,
+    OP_FOE_HURT = 21,
+    OP_PROMPT = 29,
+    OP_AT_PLACE = 43,
     OP_TOPICS_ADD = 10,
     OP_TOPICS_REMOVE = 11,
     OP_REPUTATION = 61,
@@ -169,6 +172,16 @@ int quest_find(const char *file)
 static char g_messages[MESSAGES][MESSAGE_TEXT];
 static int g_message_first;
 static int g_message_count;
+static void run(Slot *s, int now);
+
+/* A question waiting for Yes or No (op 29): the quest's slot, the states to set, and its words. */
+static struct {
+    int slot;
+    int yes;
+    int no;
+    int waiting;
+    char text[MESSAGE_TEXT];
+} g_prompt;
 /* The player the logic acts on while it runs (a reward, a reputation). */
 static Player *g_player;
 
@@ -773,6 +786,17 @@ static int act(Slot *s, const QbnLogic *l, int now)
             r->timer_end[l->arg[1].value] = now + timer_length(s, (int)l->arg[1].value);
         }
         break;
+    case OP_PROMPT:
+        /* One question at a time: the first asked is answered first. */
+        if (!g_prompt.waiting && l->count >= 4 && l->arg[3].value != QBN_NONE) {
+            /* The question's QRC message is its fourth operand, a constant (the record's own message field is empty). */
+            fill_message(s, (int)l->arg[3].value, g_prompt.text, MESSAGE_TEXT);
+            g_prompt.slot = r->id;
+            g_prompt.yes = (int)l->arg[1].value;
+            g_prompt.no = (int)l->arg[2].value;
+            g_prompt.waiting = g_prompt.text[0] != 0;
+        }
+        return 0;
     case OP_START_QUEST:
         start_numbered(s, (int)l->arg[1].value, now);
         break;
@@ -919,10 +943,36 @@ static int act(Slot *s, const QbnLogic *l, int now)
     return 0;
 }
 
+int quest_take_prompt(char *out, int cap)
+{
+    if (!g_prompt.waiting) {
+        return 0;
+    }
+    df_copy(out, g_prompt.text, cap);
+    return 1;
+}
+
+void quest_answer(Player *p, int yes, int now)
+{
+    Slot *s;
+
+    if (!g_prompt.waiting) {
+        return;
+    }
+    g_prompt.waiting = 0;
+    s = &g_slots[g_prompt.slot];
+    if (!s->used) {
+        return;
+    }
+    g_player = p;
+    set_state(&s->run, yes ? g_prompt.yes : g_prompt.no, 1);
+    run(s, now);
+}
+
 /* Whether a record is a trigger: its state is set by an event, not acted on. */
 static int is_trigger(int opcode)
 {
-    return opcode == OP_ITEM_TO_PERSON || opcode == OP_KILLS || opcode == OP_MEET;
+    return opcode == OP_ITEM_TO_PERSON || opcode == OP_KILLS || opcode == OP_MEET || opcode == OP_FOE_HURT || opcode == OP_AT_PLACE;
 }
 
 static void end_quest(Slot *s)
@@ -1338,6 +1388,84 @@ void quest_killed(Player *p, int kind, int region, int index, int now)
                 && (index < 0 || (s->run.place_region[at] == region && s->run.place_block[at] == index))) {
                 s->run.foe_killed[i]++;
                 break;
+            }
+        }
+        run(s, now);
+    }
+}
+
+void quest_arrived(Player *p, int dungeon, int region, int index, int block, int record, int now)
+{
+    int slot;
+
+    g_player = p;
+    for (slot = 0; slot < QUEST_SLOTS; slot++) {
+        Slot *s;
+        int i;
+
+        s = &g_slots[slot];
+        if (!s->used || s->offered) {
+            continue;
+        }
+        for (i = 0; i < s->qbn.count[QBN_LOGIC] && i < QUEST_LOGIC; i++) {
+            const QbnLogic *l;
+            int at;
+
+            l = &s->qbn.logic[i];
+            if (l->opcode != OP_AT_PLACE || l->arg[2].value >= QUEST_PLACES || (int)l->arg[2].value >= s->qbn.count[QBN_PLACES]) {
+                continue;
+            }
+            if (!(l->arg[0].value == NO_STATE || operand_true(&s->run, &l->arg[0]))) {
+                continue;
+            }
+            at = (int)l->arg[2].value;
+            if (s->run.place_region[at] != region || s->run.place_dungeon[at] != dungeon) {
+                continue;
+            }
+            /* A dungeon by its dungeon index (place_block); a building by its town, block and record. */
+            if (dungeon ? s->run.place_block[at] != index : (s->run.place_index[at] != index || s->run.place_block[at] != block
+                                                              || s->run.place_record[at] != record)) {
+                continue;
+            }
+            if (!state_of(&s->run, (int)l->arg[1].value)) {
+                set_state(&s->run, (int)l->arg[1].value, 1);
+                say(s, l->message);
+            }
+        }
+        run(s, now);
+    }
+}
+
+void quest_hurt(Player *p, int kind, int region, int index, int now)
+{
+    int slot;
+
+    if (p) {
+        g_player = p;
+    }
+    for (slot = 0; slot < QUEST_SLOTS; slot++) {
+        Slot *s;
+        int i;
+
+        s = &g_slots[slot];
+        if (!s->used || s->offered) {
+            continue;
+        }
+        for (i = 0; i < s->qbn.count[QBN_LOGIC] && i < QUEST_LOGIC; i++) {
+            const QbnLogic *l;
+            int f;
+            int at;
+
+            l = &s->qbn.logic[i];
+            f = (int)l->arg[1].value;
+            if (l->opcode != OP_FOE_HURT || f < 0 || f >= QUEST_FOES || f >= s->qbn.count[QBN_FOES] || s->qbn.foes[f].kind != kind) {
+                continue;
+            }
+            at = s->run.foe_at[f];
+            if (at >= 0 && s->run.place_dungeon[at] && s->run.place_region[at] == region && s->run.place_block[at] == index
+                && !state_of(&s->run, (int)l->arg[0].value)) {
+                set_state(&s->run, (int)l->arg[0].value, 1);
+                say(s, l->message);
             }
         }
         run(s, now);

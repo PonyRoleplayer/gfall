@@ -524,6 +524,8 @@ static const GuildNpc g_guild_npcs[] = {
     { 845, GUILD_SERVICE_OTHER, "RECEIVE ARMOR" }, { 848, GUILD_SERVICE_OTHER, "RECEIVE HOUSE" }
 };
 
+/* 1 while the message box open is a quest's own question (op 29), not a guild's offer. */
+static int g_asking;
 /* A quest offered and waiting for its Yes or No, or -1. */
 static int g_offer_slot = -1;
 /* The guild whose panel is open, the building's faction, and its person's service. */
@@ -1642,6 +1644,22 @@ static void arrive(const Level *level, Camera *cam, const TravelPose *at)
     combat_reset();
     foes_reset();
     watch_reset();
+    /* A quest waiting for the player at a place (43): a dungeon, or a building of a town. */
+    {
+        TravelWhere here;
+        int origin[2];
+        int type;
+        int faction;
+        int quality;
+        unsigned place;
+
+        travel_here(&here, origin);
+        if (here.kind == TRAVEL_DUNGEON) {
+            quest_arrived(&g_player, 1, here.region, here.index, 0, 0, ills_now(clock_day(), clock_minute()));
+        } else if (here.kind == TRAVEL_INSIDE && travel_building(&type, &faction, &quality, &place)) {
+            quest_arrived(&g_player, 0, here.region, here.index, here.block, here.record, ills_now(clock_day(), clock_minute()));
+        }
+    }
     player_place(&g_player, at->x, at->y, at->z, at->yaw, at->pitch);
     if (!g_control_scheme) {
         /* A classic save may be resumed with View selected in settings.
@@ -1843,6 +1861,13 @@ int game_frame(Camera *cam, const Input *in, float dt)
             prof_end(PROF_PLAY);
             return load_game(screens_slot()) ? GAME_START : GAME_GO_ON;
         }
+        if (asked == SCREENS_ANSWERED && g_asking) {
+            g_asking = 0;
+            quest_answer(&g_player, screens_msgbox_answer() == MSGBOX_YES, ills_now(clock_day(), clock_minute()));
+            screen_over_play();
+            prof_end(PROF_PLAY);
+            return GAME_GO_ON;
+        }
         if (asked == SCREENS_ANSWERED) {
             quest_answered(screens_msgbox_answer());
             screen_over_play();
@@ -2036,6 +2061,14 @@ int game_frame(Camera *cam, const Input *in, float dt)
             char line[512];
             int k;
 
+            /* A question a quest asks (op 29): in the box with Yes and No, answered by quest_asked. */
+            if (!screens_is_open() && quest_take_prompt(line, (int)sizeof(line))) {
+                g_asking = 1;
+                screens_open_msgbox(line, 1);
+                screen_over_play();
+                prof_end(PROF_PLAY);
+                return GAME_GO_ON;
+            }
             /* A quest's words in classic's message box, one at a time, whole; also in the console's log. */
             if (quest_take_message(line, (int)sizeof(line))) {
                 screens_open_msgbox(line, 0);

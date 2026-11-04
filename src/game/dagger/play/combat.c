@@ -625,8 +625,16 @@ static void strike_one(Character *pc, Item *weapon, int swing, Entity *e, const 
             }
         }
     } else {
+        TravelWhere here;
+        int origin[2];
+
         flinch(e);
         foes_knock(e, feet, combat_knock_speed(b.damage, kind->weight));
+        /* Struck and not killed: a quest that waits for its foe to be hurt (21). */
+        travel_here(&here, origin);
+        if (here.kind == TRAVEL_DUNGEON) {
+            quest_hurt(0, kind->id, here.region, here.index, ills_now(clock_day(), clock_minute()));
+        }
     }
 }
 
