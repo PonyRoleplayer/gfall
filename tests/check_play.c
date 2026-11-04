@@ -39,6 +39,8 @@
 #include "game/dagger/play/dunmap.h"
 #include "game/dagger/play/marker.h"
 #include "game/dagger/play/ride.h"
+#include "game/dagger/tables/names.h"
+#include "game/dagger/formats/faces.h"
 #include "game/dagger/play/guild.h"
 #include "game/dagger/play/lodging.h"
 #include "game/dagger/play/ills.h"
@@ -6921,6 +6923,39 @@ static void check_guilds(void)
     guild_new_game();
 }
 
+/* Names: NAMEGEN.DAT's pieces cooked into MAIN.DAT, a name the same for a seed, each race's pattern, the region's bank, a flat's sex. */
+static void check_names(void)
+{
+    char a[48];
+    char b[48];
+    int differ;
+    unsigned seed;
+
+    /* Breton 6 x 13, Redguard 51 + 5 + 26 + 22 + 15 and so on: hundreds of pieces. */
+    check_expect(name_table()->count > 500, "names: NAMEGEN.DAT's pieces are not in MAIN.DAT");
+    name_make(NAME_BANK_BRETON, 0, 1234u, a, (int)sizeof(a));
+    name_make(NAME_BANK_BRETON, 0, 1234u, b, (int)sizeof(b));
+    check_expect(a[0] && df_eq(a, b) && strchr(a, ' '), "names: a Breton's name is not the same twice, or has no surname");
+    differ = 0;
+    for (seed = 1; seed < 20; seed++) {
+        name_make(NAME_BANK_BRETON, 1, seed, b, (int)sizeof(b));
+        differ += !df_eq(a, b);
+    }
+    check_expect(differ >= 18, "names: different people share names too often");
+    name_make(NAME_BANK_NORD, 0, 77u, b, (int)sizeof(b));
+    check_expect(strlen(b) > 4 && df_eq(b + strlen(b) - 3, "sen"), "names: a Nord's surname does not end in sen");
+    name_make(NAME_BANK_REDGUARD, 1, 77u, b, (int)sizeof(b));
+    check_expect(b[0] && !strchr(b, ' '), "names: a Redguard has two names");
+    check_expect(name_bank_of_race(RACE_ARGONIAN) == NAME_BANK_IMPERIAL && name_bank_of_region(17) == NAME_BANK_BRETON
+                     && name_bank_of_region(0) == NAME_BANK_REDGUARD,
+                 "names: the Argonians' or the regions' banks");
+    /* FLATS.CFG: 175 0 a beautiful maiden (2), 175 2 a terrible child (1). */
+    check_expect(faces_female(175, 0) == 1 && faces_female(175, 2) == 0 && faces_female(1, 127) == -1,
+                 "names: a flat's sex from FLATS.CFG");
+    name_make(NAME_BANK_NORD, 0, 77u, b, (int)sizeof(b));
+    printf("names: %d pieces; a Breton man %s, a Nord %s\n", name_table()->count, a, b);
+}
+
 /* Counts the engine's automap polygons. */
 static void count_polygon(void *ctx, const AutomapCorner *corner, int n, df_u32 rgb)
 {
@@ -7133,6 +7168,7 @@ void check_play(void)
     check_ships();
     check_lodging();
     check_guilds();
+    check_names();
     check_riding();
     check_wagon();
     check_marker();

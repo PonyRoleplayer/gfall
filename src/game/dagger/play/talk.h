@@ -35,6 +35,8 @@ typedef struct TalkWho {
     /* The building the talk is in, by its block and record; -1 in the street. */
     int block;
     int record;
+    /* The person's own name (names.h), shown over the talk; empty or 0 shows their faction's. */
+    const char *name;
     /* The town's name, for the macros. */
     const char *city;
     const char *region_name;

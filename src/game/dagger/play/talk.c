@@ -537,7 +537,10 @@ void talk_compose(void)
     }
     band(g.grey, BAND_PEOPLE, &g_people_rect);
     band(g.grey, BAND_THINGS, &g_things_rect);
-    if (g.faction) {
+    /* The person's own name (DFU's talk window names them), else what they are. */
+    if (g.who.name && g.who.name[0]) {
+        canvas_label_centred(&g_name_rect, 1, g.who.name);
+    } else if (g.faction) {
         canvas_label_centred(&g_name_rect, 1, g.faction->name);
     }
     for (i = 0; i < LIST_ROWS; i++) {

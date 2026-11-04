@@ -14,7 +14,11 @@
 typedef struct FlatFace {
     df_u16 id;
     df_u16 face;
+    /* FLATS.CFG's gender: 2 a woman (DFU's FlatsFile), else a man. */
+    df_u8 female;
 } FlatFace;
+/* The block's third line: the gender. */
+#define GENDER_LINE 2
 
 static FlatFace *g_flats;
 static int g_nflats;
@@ -32,7 +36,7 @@ static int line_int(const char *s, const char *end, const char **after)
     int v;
     int sign;
 
-    while (s < end && (*s == ' ' || *s == '\t')) {
+    while (s < end && (*s == ' ' || *s == '\t' || *s == '?')) {
         s++;
     }
     sign = 1;
@@ -60,6 +64,7 @@ static void read_flats(void)
     df_u32 size;
     int line;
     int id;
+    int female;
 
     if (g_tried) {
         return;
@@ -75,6 +80,7 @@ static void read_flats(void)
     end = s + size;
     line = 0;
     id = 0;
+    female = 0;
     while (s < end && g_nflats < FLATS_MOST) {
         const char *start;
         const char *stop;
@@ -99,6 +105,9 @@ static void read_flats(void)
 
             archive = line_int(start, stop, &after);
             id = flat_id(archive, line_int(after, stop, 0));
+            female = 0;
+        } else if (line == GENDER_LINE) {
+            female = line_int(start, stop, 0) == 2;
         } else if (line == BLOCK_LINES - 1) {
             int i;
             int have;
@@ -110,6 +119,7 @@ static void read_flats(void)
             if (!have) {
                 g_flats[g_nflats].id = (df_u16)id;
                 g_flats[g_nflats].face = (df_u16)line_int(start, stop, 0);
+                g_flats[g_nflats].female = (df_u8)female;
                 g_nflats++;
             }
         }
@@ -130,6 +140,21 @@ int faces_of_flat(int archive, int record)
         }
     }
     return FACE_NONE;
+}
+
+int faces_female(int archive, int record)
+{
+    int id;
+    int i;
+
+    read_flats();
+    id = flat_id(archive, record);
+    for (i = 0; i < g_nflats; i++) {
+        if (g_flats[i].id == (df_u16)id) {
+            return g_flats[i].female;
+        }
+    }
+    return -1;
 }
 
 int faces_read(int record, df_u8 *out)

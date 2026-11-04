@@ -8,6 +8,8 @@
 #include "game/dagger/tables/commerce.h"
 #include "game/dagger/tables/diseases.h"
 #include "game/dagger/tables/guilds.h"
+#include "game/dagger/tables/names.h"
+#include "game/dagger/formats/namegen.h"
 #include "game/dagger/formats/bsa.h"
 #include "game/dagger/formats/classcfg.h"
 #include "engine/assets/vfs.h"
@@ -142,6 +144,8 @@ static RecTable *table_at(int i)
         return disease_table();
     case 20:
         return guild_table();
+    case 21:
+        return name_table();
     default:
         return 0;
     }
@@ -149,7 +153,7 @@ static RecTable *table_at(int i)
 
 int maindat_table_count(void)
 {
-    return 21;
+    return 22;
 }
 
 RecTable *maindat_table(int i)
@@ -313,6 +317,29 @@ int maindat_import(RecPut put, void *ctx)
         }
         skills = classic_skills(&n);
         if (!rec_put_rows(put, ctx, &skill_schema, skills, n, 0, 0)) {
+            return 0;
+        }
+    }
+    /* The names' pieces from ARENA2's NAMEGEN.DAT (formats/namegen.h); missing, people go nameless. */
+    {
+        static NamegenPiece read[NAME_BANKS * NAME_SETS * NAME_PER_SET];
+        static NamePiece pieces[NAME_BANKS * NAME_SETS * NAME_PER_SET];
+        const df_u8 *b;
+        df_u32 size;
+        int i;
+
+        b = vfs_read("NAMEGEN.DAT", &size);
+        n = b ? namegen_read(b, size, read, NAME_BANKS * NAME_SETS * NAME_PER_SET) : 0;
+        if (!n) {
+            log_text(LOG_WARN, "data: NAMEGEN.DAT did not read; people have no names");
+        }
+        for (i = 0; i < n; i++) {
+            pieces[i].id = (df_u16)(read[i].bank * 512 + read[i].set * NAME_PER_SET + read[i].index);
+            pieces[i].bank = (df_u8)read[i].bank;
+            pieces[i].set = (df_u8)read[i].set;
+            df_copy(pieces[i].text, read[i].text, NAME_TEXT);
+        }
+        if (n && !rec_put_rows(put, ctx, &name_schema, pieces, n, 0, 0)) {
             return 0;
         }
     }

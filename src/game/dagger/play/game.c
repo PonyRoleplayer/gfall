@@ -9,6 +9,8 @@
 #include "game/dagger/play/guild.h"
 #include "game/dagger/play/words.h"
 #include "game/dagger/formats/textrsc.h"
+#include "game/dagger/formats/faces.h"
+#include "game/dagger/tables/names.h"
 #include "game/dagger/play/travelmap.h"
 #include "game/dagger/play/ride.h"
 #include "game/dagger/play/wagon.h"
@@ -321,6 +323,18 @@ static void talk_to(int faction, int flat, unsigned seed)
     province = faction_province_of(travel_region());
     df_copy(region_name, province ? province->name : "", (int)sizeof(region_name));
     who.region_name = region_name;
+    /* Their name, the same each time: their region's people's bank, their flat's sex, their own seed (DFU's NameHelper). */
+    {
+        static char name[48];
+        int female;
+
+        female = flat ? faces_female(flat >> 7, flat & 0x7f) : -1;
+        if (female < 0) {
+            female = (int)(seed & 1u);
+        }
+        name_make(name_bank_of_region(travel_region()), female, seed, name, (int)sizeof(name));
+        who.name = name;
+    }
     screens_open_talk(&g_player, &who);
     screen_over_play();
 }

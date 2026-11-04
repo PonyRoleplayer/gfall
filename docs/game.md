@@ -189,6 +189,9 @@ The use key's order: a body or heap first; then a townsperson the view rests on 
 - **Ours, not DFU's:** adding the reaction into the value (DFU's summary gives Personality and tone; a person who hates you must answer worse), and using the table's first row for where a place is.
 - **`play/words.c`** fills a record's macros. A macro it does not know comes out empty, so a record meant for a person checks for that in the tests (no `%` left in what is said).
 
+### Names (built: people's)
+MAIN.DAT's `NAME` (`tables/names.c`), cooked on the first run from ARENA2's NAMEGEN.DAT (`formats/namegen.c`): 785 pieces in eleven banks. A person in talk is named over the window instead of their faction: their region's people's bank (FALL.EXE's region races, DFU's `MapsFile.RegionRaces`: Breton or Redguard; kept in `names.c`, not yet in MAIN.DAT), their sex from FLATS.CFG's gender line (2 a woman, `faces_female`; else the seed's), and their own seed, so they keep one name (DFU's NameHelper patterns: a first name of two pieces and a surname of two, a Nord's "...sen", a Redguard's one name of three or four). An Argonian's bank is classic's Imperial one. The names' own dice are not the game's (`combat_roll`).
+
 ### Shops
 `play/shop.c` and the inventory screen's trade modes (`bag_open_trade`).
 - **Shelves are models** (`DaggerfallInterior`'s furniture numbers past 41000), `USE_OTHER`/`OTHER_SHELF` usables in any building; the game asks whether it is a shop.
@@ -231,7 +234,7 @@ A killed guard stays. The pose is ENEM 146's corpse, TEXTURE.380 record 1 (`ENTI
 - running on the 233;
 - the court and the bounty for that killing, and banishment enforced;
 - Steal mode, pickpocketing and the deferred theft mechanics (P12-a);
-- people's own names (the strip shows their faction) and buildings' names (the list shows their kinds);
+- buildings' own names (the list and the map show their kinds; DFU's GenerateBuildingName builds them from TEXT.RSC);
 - talk's People and Things lists, Tell me about's organisations, guild greetings, the logbook;
 - taverns' rooms and drinks, guilds' services, houses, shelves in a house or a library;
 - classic's monthly price drift, and repairs taking time.
@@ -942,7 +945,7 @@ Daggerfall's tables are records in MAIN.DAT, cooked on the first run, with mods 
 | `ITEM`, `MAGI`, `WEAP`, `MATL`, `ARMR`, `LOOT`, `LDUN` | items, artifacts, weapons, materials, armour, loot, each dungeon type's loot table | the exe (via DFU), MAGIC.DEF; pictures stay in ARENA2 |
 | `CMON`, `CWEK`, `CALE` | the calendar (built) | the exe; the engine takes it whole (`clock_set_calendar`, request 9) |
 | `RACE`, `CLAS`, `SKIL`, `SPEL`, `EFCT`, `ENCH`, `POTN`, `BIOG` | races, classes, skills, spells, effects, enchantments, potions, background | CLASS*.CFG, SPELLS.STD, BIOG*.TXT, the exe |
-| `BLDG`, `CRIM`, `HOLI`, `DISE`, `GILD` (built) and `FACT`, `NAME`, `PEOP`, `POLI`, `LAW`, `PRIC`, `FLAT`, `MUSI`, `SWAP`, `CURS` | factions, names, townspeople, politics, guilds, law, prices, holidays, flats, music, swaps, diseases, curses | FACTION.TXT, NAMEGEN.DAT, POLITIC.PAK, FLATS.CFG, the exe |
+| `BLDG`, `CRIM`, `HOLI`, `DISE`, `GILD`, `NAME` (built) and `FACT`, `PEOP`, `POLI`, `LAW`, `PRIC`, `FLAT`, `MUSI`, `SWAP`, `CURS` | factions, names, townspeople, politics, guilds, law, prices, holidays, flats, music, swaps, diseases, curses | FACTION.TXT, NAMEGEN.DAT, POLITIC.PAK, FLATS.CFG, the exe |
 | `BOOK`, `TEXT`, `QUES` | indexes of the books, TEXT.RSC and the quests | BOOKS\, TEXT.RSC, QBN/QRC (their text and scripts stay in ARENA2) |
 
 Blocks, models, pictures, sounds and songs are never cooked: they stay in ARENA2.
@@ -965,7 +968,7 @@ The first goal is a **prototype**: from classic's start menu, Privateer's Hold p
 | P6 | Character creation and levelling (built, host-tested, not run on the target): classic's screens, class questions and custom classes among them, background questions, skill gains, level-ups, the character sheet | GAME | a character made by the screens plays the hold and levels |
 | P7 | Prototype polish (built, host-tested, not run on the target; the 233 profile pass not done): loading holds, one save slot in `DATA\`, the menu's load, rest and wait, a 233 profile pass | GAME | from the menu through the hold and back after a save |
 | P8 | Out of the hold (built, host-tested, not run on the target): `places/travel.c` lifted from LEVELFALL and shared; the hold's outside in the stream, the nearest town, its houses | GAME and LEVELFALL | from the menu to town and back after a save, in one session |
-| P9 | People and assault (built, host-tested, not run on the target; names, and the court for a street killing, not yet): talk from TEXT.RSC, shops, banks, factions, reputation, law; a street citizen at 1 health, a blow at 100 that the weapon's damage kills, blood at the body, every loaded guard hostile and still wanted after a building, talk refused while hostile, and a killed guard's corpse to loot; `BLDG`, `CRIM` | GAME | a shop bought from, a bank used, a way asked in town, a citizen killed and the guards on them |
+| P9 | People and assault (built, host-tested, not run on the target; people's names built in P10; buildings' names and the court for a street killing not yet): talk from TEXT.RSC, shops, banks, factions, reputation, law; a street citizen at 1 health, a blow at 100 that the weapon's damage kills, blood at the body, every loaded guard hostile and still wanted after a building, talk refused while hostile, and a killed guard's corpse to loot; `BLDG`, `CRIM` | GAME | a shop bought from, a bank used, a way asked in town, a citizen killed and the guards on them |
 | P9-b | Classic HUD bar (built, host-tested; pointer and target acceptance pending): selected character's head and blue backing, live vitals, clickable buttons, four mode icons and compact compass; Tab frees the pointer, the weapon button sheathes | GAME, ENGINE's input and pictures | the selected character's head and vitals shown correctly, available controls usable by pointer, across saves and place changes |
 | P9-c | Classic dungeon controls without mouse look (implemented, host-tested): free pointer, cursor/keyboard movement and turning, pointed use, right-button gestures, Alt look and saved scheme; target acceptance pending | GAME, ENGINE's input | the hold navigated and fought through, doors and HUD used, and a save resumed without continuous mouse look |
 | P10 | The wider world (first slice built, host-tested, not run on the target: the travel map, its journeys and the places known): travel map before magic, horse and cart, holidays (built), diseases, lycanthropy and vampirism (built) | GAME | a journey from the map to a town and a dungeon, and back after a save |

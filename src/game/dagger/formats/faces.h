@@ -22,6 +22,8 @@
 
 /* The face of a flat; FACE_NONE for one FLATS.CFG does not name. */
 int faces_of_flat(int archive, int record);
+/* 1 when FLATS.CFG says the flat is a woman (its gender 2), 0 a man, -1 when it does not name the flat. */
+int faces_female(int archive, int record);
 /* Face record's pixels into out, FACE_W x FACE_H. 0 when it does not read. */
 int faces_read(int record, df_u8 *out);
 
