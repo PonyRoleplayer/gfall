@@ -71,6 +71,7 @@ Every file starts with a `HEAD` chunk (`rec_head_schema`): rows of role, size an
 | `LDUN` | `dungeon_loot` | `DungeonLoot` | `items.c` | which loot table each of the 19 dungeon types fills its treasure from |
 | `BLDG` | `building` | `BuildingKind` | `commerce.c` | a building type: its name in talk, its opening hours, its shelves' chance numbers for weapons and armour |
 | `CRIM` | `crime` | `CrimeKind` | `commerce.c` | a crime: what the court calls it, what it costs the legal reputation, its sentence's sums |
+| `DISE` | `disease` | `Disease` | `diseases.c` | a disease by DFU's Diseases number: its name, each attribute's, health's, fatigue's and spell points' weight, the day's damage range, and its days of symptoms (255: until cured) |
 | `HOLI` | `holiday` | `Holiday` | `commerce.c` | a holiday every city keeps, by row id month × 30 + day (from 1): its name and flags (shops shut, prices halved, weapons halved, temple cure, temple half, free room, free drink) |
 
 `maindat.c`'s `table_at` lists the tables a `.DAT` may carry. A new table means:

@@ -63,6 +63,8 @@ typedef struct Faction {
     short flat_record[2];
     short sgroup;
     short ggroup;
+    /* A region's vampire clan, its faction id ("vam:"); 0 for none. */
+    short vampire;
     short ally[FACTION_LINKS];
     short enemy[FACTION_LINKS];
     char name[FACTION_NAME];

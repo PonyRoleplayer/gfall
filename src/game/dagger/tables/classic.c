@@ -618,7 +618,7 @@ const CrimeKind *classic_crimes(int *n)
 #define HDAY(month, day) ((month) * 30 + (day))
 static const Holiday g_holidays[] = {
     { HDAY(0, 1), "New Life Festival", HOLIDAY_FREE_DRINK },
-    { HDAY(0, 15), "South Wind's Prayer", HOLIDAY_TEMPLE_HALF },
+    { HDAY(0, 15), "South Wind's Prayer", HOLIDAY_TEMPLE_CURE },
     { HDAY(1, 16), "Heart's Day", HOLIDAY_FREE_ROOM },
     { HDAY(2, 7), "First Planting", HOLIDAY_TEMPLE_CURE },
     { HDAY(3, 28), "Jester's Day", 0 },
@@ -640,4 +640,38 @@ const Holiday *classic_holidays(int *n)
 {
     *n = (int)(sizeof(g_holidays) / sizeof(g_holidays[0]));
     return g_holidays;
+}
+
+/*
+ * The diseases (DFU's DiseaseEffect.diseaseDataSources, classic's numbers):
+ * each attribute's weight STR INT WIL AGI END PER SPD LUC, then health,
+ * fatigue and spell points, the day's damage range, and the days the
+ * symptoms last (DISEASE_FOREVER: until cured).
+ */
+#define F DISEASE_FOREVER
+static const Disease g_diseases[] = {
+    { DISEASE_WITCHES_POX, "Witches' Pox", { 1, 0, 0, 0, 1, 0, 0, 0 }, 1, 0, 0, 2, 10, F, F },
+    { DISEASE_PLAGUE, "Plague", { 1, 0, 1, 1, 1, 1, 1, 1 }, 1, 1, 1, 3, 30, F, F },
+    { DISEASE_YELLOW_FEVER, "Yellow Fever", { 0, 0, 1, 0, 1, 0, 0, 0 }, 1, 0, 0, 5, 10, F, F },
+    { DISEASE_STOMACH_ROT, "Stomach Rot", { 0, 0, 0, 0, 0, 0, 0, 0 }, 1, 0, 0, 1, 5, F, F },
+    { DISEASE_CONSUMPTION, "Consumption", { 1, 0, 1, 1, 0, 0, 0, 0 }, 0, 0, 0, 2, 10, F, F },
+    { DISEASE_BRAIN_FEVER, "Brain Fever", { 0, 0, 1, 0, 0, 1, 0, 0 }, 1, 0, 0, 1, 5, F, F },
+    { DISEASE_SWAMP_ROT, "Swamp Rot", { 1, 0, 1, 1, 0, 0, 0, 0 }, 0, 0, 0, 2, 10, F, F },
+    { DISEASE_CALIRONS_CURSE, "Caliron's Curse", { 1, 0, 0, 1, 0, 0, 1, 0 }, 0, 0, 0, 5, 10, 3, 18 },
+    { DISEASE_CHOLERA, "Cholera", { 1, 1, 1, 1, 1, 1, 1, 1 }, 1, 1, 1, 5, 30, F, F },
+    { DISEASE_LEPROSY, "Leprosy", { 1, 1, 1, 1, 1, 1, 1, 1 }, 1, 1, 0, 5, 30, F, F },
+    { DISEASE_WOUND_ROT, "Wound Rot", { 1, 0, 0, 0, 1, 0, 0, 0 }, 1, 0, 0, 2, 4, F, F },
+    { DISEASE_RED_DEATH, "Red Death", { 0, 0, 0, 0, 1, 1, 0, 0 }, 0, 1, 0, 2, 10, F, F },
+    { DISEASE_BLOOD_ROT, "Blood Rot", { 0, 0, 1, 0, 0, 1, 0, 0 }, 1, 0, 0, 5, 10, 3, 18 },
+    { DISEASE_TYPHOID_FEVER, "Typhoid Fever", { 0, 1, 0, 0, 1, 0, 0, 0 }, 1, 0, 0, 2, 10, F, F },
+    { DISEASE_DEMENTIA, "Dementia", { 0, 1, 1, 0, 0, 1, 0, 0 }, 0, 0, 0, 2, 10, F, F },
+    { DISEASE_CHRONDIASIS, "Chrondiasis", { 0, 1, 0, 0, 0, 0, 0, 0 }, 0, 0, 1, 5, 10, F, F },
+    { DISEASE_WIZARD_FEVER, "Wizard Fever", { 0, 1, 0, 0, 0, 0, 0, 0 }, 0, 0, 1, 2, 4, 3, 18 }
+};
+#undef F
+
+const Disease *classic_diseases(int *n)
+{
+    *n = (int)(sizeof(g_diseases) / sizeof(g_diseases[0]));
+    return g_diseases;
 }

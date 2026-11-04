@@ -797,6 +797,27 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 
 **Memory:** two heaps of its own while open, one for its 64 KB pictures and buffers, one for what it only reads to copy, let go past 512 KB. Both go at close, and any TEXTURE file read into them leaves the cache with them (`texture_forget`).
 
+## Afflictions (built: diseases, lycanthropy, vampirism; host-tested, not run on the target)
+`play/ills.c`: what ails the player beyond their wounds, the game's one state, saved in its own chunk (`ILLS`). Daggerfall Unity's DiseaseEffect, LycanthropyInfection, VampirismInfection, LycanthropyEffect, VampirismEffect and PassiveSpecialsEffect, as sums over the sheet. Its gifts and drains go into the sheet's own attributes and skills, held to 1..100, and what was really added or taken is kept, so it can be given back exactly.
+
+### Diseases
+- **The seventeen** are MAIN.DAT's `DISE` (`tables/diseases.c`), classic's numbers: each attribute's, health's, fatigue's and spell points' weight, the day's damage range, the days of symptoms (most last until cured; Caliron's Curse, Blood Rot and Wizard Fever 3..18 days).
+- **Caught** from a creature's blow that hurt and did not kill (`ills_struck`, from `foes.c`): a rat 5% and a giant bat 2% (plague, stomach rot or brain fever; DFU takes DF Chronicles' list for the rat), a zombie 2% and a mummy 5% (one of eleven), a vampire's 2% plague. Never at level 1. The saving throw is DFU's: 50, the race's resistance +30, low tolerance -25, weakness -50 (immunity: none caught), the class's immunity +50, resistance +25, low tolerance -25, weakness -50, then a tenth of the Willpower, held to 5..95; a roll within 20 under the save still passes it on (DFU's proration). Nothing is said when it is caught.
+- **Each day** after the one it was caught on, one roll of its damage times each weight, off the attributes, health (it can kill: "Your disease has killed you."), fatigue in its raw 64ths, and spell points. "You feel somewhat bad." Days skipped by rest or travel each count. Passing, it gives back what it took ("You feel better.").
+- **Cured** at a temple: anyone in a temple offers a panel with Cure Disease (`SERVICE_PANEL_CURE`, the general panel). 250 gold a disease and an infection, by the temple's quality and the region's prices (`rules_cost`), then bargained; free on South Wind's Prayer and the two Plantings, half on North Wind's Prayer and the Mid Year Celebration. Classic asks first; this pays at once and says the price.
+
+### The curses
+- **Infection**: a werewolf's or a wereboar's blow 0.6% its lycanthropy, a vampire's 0.6% vampirism (`specialInfectionChance`). A dream the next day; past three days the curse. Not two at once; none while cursed.
+- **Becoming one** cures every disease, and none can be caught after. A lycanthrope gains +40 Strength, Agility, Endurance and Speed; a vampire +20 to every attribute but Intelligence (an Anthotis that too). Both +30 to Running, Stealth, Critical Strike, Climbing, Hand-to-Hand and Jumping, a lycanthrope Swimming too. A vampire's clan is the `vam:` of the region it was caught in (FACTION.TXT, read into `Faction.vampire`), the Lyrezi when none. The HUD's face becomes `VAMP00I0.CIF`'s; the sheet calls the race Vampire, or Werewolf and Wereboar in the beast's shape.
+- **A vampire's turning** is DFU's fake death: two weeks pass and they wake at dusk, whole, "Death is not eternal". DFU carries them to a cemetery of the region; here they wake where they fell (a gap).
+- **A lycanthrope** changes shape once a day into the beast (the console's `morph` until magic gives the spell, P12-b) and back at any time; every full moon by force ("You dream of the moon."). The moons are DFU's lunar phases: Masser full on (day of year + year × 360 + 3) mod 32 = 0, Secunda on (… − 1). Each change heals them whole, as classic. In the beast: both hands empty and bare hands fight, no pack ("You cannot use your inventory while shapechanged."), no talk ("You get no response."), no trade. A month without killing an innocent (a street citizen or a guard, `combat_strike`) and their health is held under a limit falling a point an hour of want, to 4; "You need to hunt the innocent." each half hour of game time.
+- **A vampire** burns 12 health each fourth game minute outdoors from 6 to 18 and inside a temple; any blow that lands feeds them; unfed for a day they cannot rest ("You must feed before you can rest."); by day they cannot set out on the travel map.
+- **Lifted**: `ills_lift_curse` takes back the gifts. Only the console's `cure` does it until P11's quests.
+
+The console: `ills` (what the player has), `catch <disease>|werewolf|wereboar|vampire` (a disease at once; an infection already dreamt, to turn at the next day), `cure`, `morph`.
+
+Not yet: the cemetery; the beast's own weapon picture, head (`WERE00I0.IMG`, `WERE01I0.IMG`) and paper doll (`WOLF00I0.IMG`, `BOAR00I0.IMG`); its sounds; citizens fleeing the beast and the crimes it does not count; silver to hit the player; the dream videos (`ANIM0002.VID`, `ANIM0004.VID`); the cure quests and vampire quests (P11); Hircine's Ring; a vampire's spells and a lycanthrope's (P12-b); poisons; a class's disease biography modifier.
+
 ## Known gaps
 
 What is built but not whole, and the phase each goes in. Each section above says the detail.
@@ -820,7 +841,7 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Loot | the other columns of `LOOT` wait for their items | P12-b, later |
 | Loot | a body or a heap takes nothing put on it (a choice, see What can be searched) | - |
 | Places | treasure and piles only in a dungeon streamed by block; a town's doors not keyed; the sea can be walked on | later |
-| World | the cart's picture in the pack, selling from the wagon, the riding sounds, a mounting key, ships; the indoor automap's marks and notes, the town map's rotation and names; the travel map's Find list, identify flash and neighbouring provinces; places marked by talk; guild travel; holidays, diseases, lycanthropy and vampirism | P10 |
+| World | the cart's picture in the pack, selling from the wagon, the riding sounds, a mounting key, ships; the indoor automap's marks and notes, the town map's rotation and names; the travel map's Find list, identify flash and neighbouring provinces; places marked by talk; guild travel; regional holidays; the afflictions' cemetery, beast pictures and sounds (Afflictions) | P10 |
 | Player | the completed classic HUD bar needs target acceptance; the map button opens the travel map outdoors, the automap and magic buttons await their systems | P9-b, P10, P12-b |
 | Player | target acceptance/tuning of the implemented classic cursor controls | P9-c |
 | People | Steal mode, pickpocketing and the deferred theft mechanics | P12-a |
@@ -853,6 +874,7 @@ The travel map comes later, with `worldmap.c`'s pixels and the location index: p
 | --- | --- |
 | `DISC` | the places the map knows that a new game's does not |
 | `WAGN` | what is in the cart's wagon |
+| `ILLS` | what ails the player: each disease's days and drain, an infection, a curse and its gifts (`play/ills.h`) |
 | `GAME` | which place and the way back out of its door, the feet in that place's frame with the stream's origin that frame has, the movement facing and independent Alt view offsets (P9-c), the clock's minute and day, the day the game began, the seed, the gold, what is worn |
 | `CHAR` | the sheet, whole: skill uses and the level's count among it |
 | `PACK` | what is carried, material, variant and condition among it |
@@ -906,7 +928,7 @@ Daggerfall's tables are records in MAIN.DAT, cooked on the first run, with mods 
 | `ITEM`, `MAGI`, `WEAP`, `MATL`, `ARMR`, `LOOT`, `LDUN` | items, artifacts, weapons, materials, armour, loot, each dungeon type's loot table | the exe (via DFU), MAGIC.DEF; pictures stay in ARENA2 |
 | `CMON`, `CWEK`, `CALE` | the calendar (built) | the exe; the engine takes it whole (`clock_set_calendar`, request 9) |
 | `RACE`, `CLAS`, `SKIL`, `SPEL`, `EFCT`, `ENCH`, `POTN`, `BIOG` | races, classes, skills, spells, effects, enchantments, potions, background | CLASS*.CFG, SPELLS.STD, BIOG*.TXT, the exe |
-| `BLDG`, `CRIM`, `HOLI` (built) and `FACT`, `NAME`, `PEOP`, `POLI`, `GILD`, `LAW`, `PRIC`, `FLAT`, `MUSI`, `SWAP`, `DISE`, `CURS` | factions, names, townspeople, politics, guilds, law, prices, holidays, flats, music, swaps, diseases, curses | FACTION.TXT, NAMEGEN.DAT, POLITIC.PAK, FLATS.CFG, the exe |
+| `BLDG`, `CRIM`, `HOLI`, `DISE` (built) and `FACT`, `NAME`, `PEOP`, `POLI`, `GILD`, `LAW`, `PRIC`, `FLAT`, `MUSI`, `SWAP`, `CURS` | factions, names, townspeople, politics, guilds, law, prices, holidays, flats, music, swaps, diseases, curses | FACTION.TXT, NAMEGEN.DAT, POLITIC.PAK, FLATS.CFG, the exe |
 | `BOOK`, `TEXT`, `QUES` | indexes of the books, TEXT.RSC and the quests | BOOKS\, TEXT.RSC, QBN/QRC (their text and scripts stay in ARENA2) |
 
 Blocks, models, pictures, sounds and songs are never cooked: they stay in ARENA2.
@@ -932,7 +954,7 @@ The first goal is a **prototype**: from classic's start menu, Privateer's Hold p
 | P9 | People and assault (built, host-tested, not run on the target; names, and the court for a street killing, not yet): talk from TEXT.RSC, shops, banks, factions, reputation, law; a street citizen at 1 health, a blow at 100 that the weapon's damage kills, blood at the body, every loaded guard hostile and still wanted after a building, talk refused while hostile, and a killed guard's corpse to loot; `BLDG`, `CRIM` | GAME | a shop bought from, a bank used, a way asked in town, a citizen killed and the guards on them |
 | P9-b | Classic HUD bar (built, host-tested; pointer and target acceptance pending): selected character's head and blue backing, live vitals, clickable buttons, four mode icons and compact compass; Tab frees the pointer, the weapon button sheathes | GAME, ENGINE's input and pictures | the selected character's head and vitals shown correctly, available controls usable by pointer, across saves and place changes |
 | P9-c | Classic dungeon controls without mouse look (implemented, host-tested): free pointer, cursor/keyboard movement and turning, pointed use, right-button gestures, Alt look and saved scheme; target acceptance pending | GAME, ENGINE's input | the hold navigated and fought through, doors and HUD used, and a save resumed without continuous mouse look |
-| P10 | The wider world (first slice built, host-tested, not run on the target: the travel map, its journeys and the places known): travel map before magic, horse and cart, holidays, diseases, lycanthropy and vampirism | GAME | a journey from the map to a town and a dungeon, and back after a save |
+| P10 | The wider world (first slice built, host-tested, not run on the target: the travel map, its journeys and the places known): travel map before magic, horse and cart, holidays (built), diseases, lycanthropy and vampirism (built) | GAME | a journey from the map to a town and a dungeon, and back after a save |
 | P11 | Quests: the QBN interpreter, guild quests | GAME | |
 | P12-a | Steal and theft (planned): classic Steal mode, pickpocketing, deferred theft paths, skill checks, detection and law consequences; build on P9's shoplifting and lockpicking | GAME | theft and pickpocketing can succeed or be detected, with the right items and legal consequences kept and tested |
 | P12-b | Magic: spells, effects, spellbook, casting, potions, enchantments | GAME | |

@@ -1,4 +1,5 @@
 #include "game/dagger/play/sheet.h"
+#include "game/dagger/play/ills.h"
 #include "game/dagger/play/canvas.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/doll.h"
@@ -173,7 +174,8 @@ static void compose_labels(void)
     race = career_race(c->race);
     k = career_class(c->klass);
     canvas_label(NAME_AT, c->name);
-    canvas_label(RACE_AT, race ? race->name : "?");
+    /* A vampire, or a lycanthrope in the beast's shape, is named so (the compound race of DFU's curses). */
+    canvas_label(RACE_AT, race ? ills_race_name(c) : "?");
     canvas_label(CLASS_AT, k ? k->name : "?");
     log_format(text, (int)sizeof(text), "%d", c->level);
     canvas_label(LEVEL_AT, text);

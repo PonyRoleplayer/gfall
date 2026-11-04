@@ -1,4 +1,6 @@
 #include "game/dagger/play/combat.h"
+#include "game/dagger/play/ills.h"
+#include "engine/scene/clock.h"
 #include "game/dagger/play/foes.h"
 #include "game/dagger/play/loot.h"
 #include "game/dagger/play/sfx.h"
@@ -946,6 +948,12 @@ int combat_strike(Character *pc, Item *weapon, int swing, const Scene *scene, co
 
         camera_set(&cam, eye[0], eye[1], eye[2], yaw, 0.0f);
         watch_on_kill(&cam, feet);
+        /* A citizen or a guard: the innocent a lycanthrope must kill (LycanthropyEffect.KilledInnocent). */
+        ills_killed_innocent(ills_now(clock_day(), clock_minute()));
+    }
+    /* A vampire feeds on any blow that lands (VampirismEffect.OnWeaponHitEntity). */
+    if (struck) {
+        ills_fed(ills_now(clock_day(), clock_minute()));
     }
     if (!struck) {
         /* Nothing in reach: the swing whistles (classic plays it only when nothing was struck). */

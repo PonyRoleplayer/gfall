@@ -1,4 +1,6 @@
 #include "game/dagger/play/foes.h"
+#include "game/dagger/play/ills.h"
+#include "game/dagger/places/travel.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/loot.h"
 #include "game/dagger/play/rules.h"
@@ -828,6 +830,10 @@ static int land(Mind *m, Player *p, const Scene *scene)
     died = player_hurt(p, b.damage);
     if (died >= 0) {
         sfx_play(sfx_pain(p->sheet.race, p->sheet.female));
+    }
+    /* Some creatures' blows pass on a disease or a curse (ills.c); classic says nothing of it. */
+    if (died == 0) {
+        ills_struck(&p->sheet, k->id, clock_day(), travel_region());
     }
     return died > 0;
 }

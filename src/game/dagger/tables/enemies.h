@@ -102,6 +102,14 @@ enum { ENEMY_GROUP_NONE, ENEMY_GROUP_UNDEAD, ENEMY_GROUP_DAEDRA, ENEMY_GROUP_HUM
 int enemy_group(int kind);
 #define ENEMY_RAT 0
 #define ENEMY_SLAUGHTERFISH 11
+/* Those whose blow can pass on a disease or a curse (ills.c). */
+#define ENEMY_GIANT_BAT 3
+#define ENEMY_WEREWOLF 9
+#define ENEMY_WEREBOAR 14
+#define ENEMY_ZOMBIE 17
+#define ENEMY_MUMMY 19
+#define ENEMY_VAMPIRE 28
+#define ENEMY_VAMPIRE_ANCIENT 30
 /* Blunt weapons do it half, silver twice (DFU's CalculateWeaponAttackDamage). */
 #define ENEMY_SKELETAL_WARRIOR 15
 #define ENEMY_GHOST 18

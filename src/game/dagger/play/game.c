@@ -3,6 +3,7 @@
 #include "game/dagger/play/bag.h"
 #include "game/dagger/play/atlas.h"
 #include "game/dagger/play/journey.h"
+#include "game/dagger/play/ills.h"
 #include "game/dagger/play/travelmap.h"
 #include "game/dagger/play/ride.h"
 #include "game/dagger/play/wagon.h"
@@ -194,6 +195,17 @@ static int journey_made(void)
     if (region < 0 || !worldmap_pixel_of(region, index, &px, &py)) {
         return 0;
     }
+    /* A vampire does not set out by day (VampirismEffect.CheckFastTravel). */
+    {
+        int hour;
+        int min;
+
+        clock_hm(&hour, &min);
+        if (ills_travel_refused(hour >= 6 && hour < 18)) {
+            interact_say("Travelling by day, the sun would burn you.");
+            return 0;
+        }
+    }
     g_player.pack.gold -= (df_u32)(j.cost > (int)g_player.pack.gold ? (int)g_player.pack.gold : j.cost);
     journey_arrival(clock_day(), clock_minute(), j.minutes, cautious, &day, &minute);
     clock_set_day(day);
@@ -280,6 +292,12 @@ static void talk_to(int faction, int flat, unsigned seed)
     const Faction *province;
     int hit;
 
+    /* A beast gets no answer (LycanthropyEffect.GetSuppressTalk). */
+    if (ills_beast()) {
+        interact_say("You get no response.");
+        return;
+    }
+
     mem_zero(&who, sizeof(who));
     who.faction = faction;
     who.seed = seed;
@@ -329,6 +347,10 @@ static void shelf_used(void)
         interact_say("There is nothing here you want.");
         return;
     }
+    if (ills_beast()) {
+        interact_say("You cannot trade while shapechanged.");
+        return;
+    }
     screens_open_trade(&g_player, &shop, TRADE_BUY, clock_day());
     screen_over_play();
 }
@@ -347,6 +369,16 @@ static void person_used(const Usable *u)
 
     g_talk_faction = u->what;
     g_talk_flat = u->tag;
+    if (ills_beast()) {
+        interact_say("You get no response.");
+        return;
+    }
+    /* Anyone in a temple offers its cure; the guild's other services wait (DFU's guild service). */
+    if (travel_building(&type, &faction, &quality, &place) && type == BUILDING_TEMPLE) {
+        screens_open_service(SERVICE_PANEL_CURE);
+        screen_over_play();
+        return;
+    }
     f = faction_find(u->what);
     if (f && f->sgroup == SOCIAL_MERCHANTS && travel_building(&type, &faction, &quality, &place)) {
         if (type == BUILDING_BANK) {
@@ -381,6 +413,51 @@ static int street_person_used(const Camera *cam)
     return 1;
 }
 
+/*
+ * A temple's cure (DaggerfallGuildServiceCureDisease): every disease and an
+ * infection, 250 gold each by the temple's quality and the region's prices,
+ * free or half on its holidays, then bargained. Classic asks first; this pays
+ * at once, saying what it cost.
+ */
+static void temple_cure(void)
+{
+    RegionStanding *r;
+    char line[64];
+    int type;
+    int faction;
+    int quality;
+    unsigned place;
+    int count;
+    int cost;
+
+    count = ills_curable();
+    if (count == 0) {
+        interact_say("You are not diseased.");
+        return;
+    }
+    if (!travel_building(&type, &faction, &quality, &place)) {
+        quality = 10;
+    }
+    r = standing_region(travel_region());
+    cost = ills_cure_cost(count, quality, r ? r->prices : 1000, today_holiday_flags());
+    if (cost > 0) {
+        cost = rules_trade_price(cost, quality, g_player.sheet.skill[SKILL_MERCANTILE], g_player.sheet.attribute[ATTR_PERSONALITY], 0);
+    }
+    if ((int)g_player.pack.gold < cost) {
+        log_format(line, (int)sizeof(line), "The cure costs %d gold, more than you have.", cost);
+        interact_say(line);
+        return;
+    }
+    g_player.pack.gold -= (df_u32)cost;
+    ills_cure(&g_player.sheet);
+    if (cost == 0) {
+        interact_say("On this holy day, the temple cures you freely.");
+    } else {
+        log_format(line, (int)sizeof(line), "You are cured, for %d gold.", cost);
+        interact_say(line);
+    }
+}
+
 /* What the merchant's panel chose. */
 static void service_chosen(void)
 {
@@ -388,7 +465,9 @@ static void service_chosen(void)
     int choice;
 
     choice = screens_service_choice();
-    if (choice == SERVICE_TALK) {
+    if (choice == SERVICE_CURE) {
+        temple_cure();
+    } else if (choice == SERVICE_TALK) {
         talk_to(g_talk_faction, g_talk_flat, (unsigned)g_talk_flat * 31u + (unsigned)g_talk_faction);
     } else if (choice == SERVICE_BANK) {
         screens_open_bank(&g_player, travel_region());
@@ -444,6 +523,56 @@ static void die(void)
     menu_open(MENU_DEATH);
     gfx_set_pause(1);
     apply_pointer(1);
+}
+
+/* The HUD's face: a vampire's own (VAMP00I0.CIF, a woman's by race from 0, a man's from 8), else the race's. */
+static void show_face(void)
+{
+    const CareerRace *race;
+
+    if (ills_curse() == ILL_VAMPIRE) {
+        overlay_set_face("VAMP00I0.CIF", (g_player.sheet.female ? 0 : 8) + g_player.sheet.race - 1);
+        return;
+    }
+    race = career_race(g_player.sheet.race);
+    if (race) {
+        overlay_set_face(g_player.sheet.female ? race->heads_female : race->heads_male, g_player.sheet.face);
+    }
+}
+
+/*
+ * What a day of afflictions did, said. A vampire's turning is DFU's fake
+ * death: two weeks pass and they wake at dusk (the cemetery it carries them
+ * to is not built: they wake where they fell).
+ */
+static void ills_said_day(int said)
+{
+    if (said & ILLS_DIED) {
+        interact_say("Your disease has killed you.");
+        die();
+        return;
+    }
+    if (said & ILLS_TURNED) {
+        if (ills_curse() == ILL_VAMPIRE) {
+            clock_set_day(clock_day() + 14);
+            clock_set_minute(19.0f * 60.0f);
+            g_last_minute = df_ifloor(game_minutes());
+            character_rest_full(&g_player.sheet);
+            show_face();
+            interact_say("Death is not eternal. You wake two weeks on, at dusk, a vampire.");
+        } else {
+            interact_say(ills_curse() == ILL_WEREWOLF ? "You have become a werewolf." : "You have become a wereboar.");
+        }
+        return;
+    }
+    if (said & ILLS_DREAM) {
+        interact_say(ills()->infection == ILL_VAMPIRE ? "You dream of a cold embrace in the dark."
+                                                       : "You dream of the moon, and of running through the night.");
+    } else if (said & ILLS_PASSED) {
+        interact_say("You feel better.");
+    } else if (said & ILLS_FELT_BAD) {
+        interact_say("You feel somewhat bad.");
+    }
 }
 
 static int hud_bar(void);
@@ -589,6 +718,10 @@ static int wagon_in_reach(void)
 
 static void bag_over_play(Entity *searched)
 {
+    if (ills_beast()) {
+        interact_say("You cannot use your inventory while shapechanged.");
+        return;
+    }
     wagon_set_reachable(wagon_in_reach());
     screens_open_bag(&g_player, searched);
     screen_over_play();
@@ -599,6 +732,11 @@ static void rest_over_play(void)
 {
     if (foes_hunting()) {
         interact_say("You cannot rest with enemies nearby.");
+        return;
+    }
+    /* An unfed vampire cannot rest (VampirismEffect.CheckStartRest). */
+    if (ills_rest_refused(ills_now(clock_day(), clock_minute()))) {
+        interact_say("You must feed before you can rest.");
         return;
     }
     screens_open_rest(&g_player);
@@ -928,14 +1066,7 @@ void game_enter(const Level *level, Camera *cam, const TravelPose *at)
     player_init(&g_player, &g_new_sheet);
     g_player.pack = g_new_pack;
     player_wear_changed(&g_player);
-    {
-        const CareerRace *race;
-
-        race = career_race(g_player.sheet.race);
-        if (race) {
-            overlay_set_face(g_player.sheet.female ? race->heads_female : race->heads_male, g_player.sheet.face);
-        }
-    }
+    show_face();
     g_day_zero = clock_day();
     g_last_minute = df_ifloor(game_minutes());
     if (g_load_waiting) {
@@ -1008,6 +1139,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
             standing_new_game(prof_now());
             atlas_new_game();
             wagon_new_game();
+            ills_new_game();
             automap_clear();
             screens_open_create();
             /* Its pictures missing: the default character starts, as before creation was built. */
@@ -1219,6 +1351,8 @@ int game_frame(Camera *cam, const Input *in, float dt)
                     interact_say(line);
                 }
             }
+            /* Each disease's day, an infection's dream or its curse (docs/game.md, Afflictions). */
+            ills_said_day(ills_day(&g_player, clock_day()));
         }
         if (court_pending()) {
             screens_open_court(&g_player);
@@ -1233,17 +1367,55 @@ int game_frame(Camera *cam, const Input *in, float dt)
         }
         /* Each game minute that has passed tires the player, and may be too much (docs/game.md, Fatigue). */
         {
+            TravelWhere here;
+            int origin[2];
             int minute;
+            int in_sun;
+            int in_holy;
+            int full_moon;
+            int hour;
+            int type;
+            int faction;
+            int quality;
+            unsigned place;
 
+            /* A vampire burns outdoors by day (6 to 18, DFU's IsDay) and in a temple; the moons force a lycanthrope. */
+            travel_here(&here, origin);
+            clock_hm(&hour, &minute);
+            in_sun = here.kind == TRAVEL_WORLD && hour >= 6 && hour < 18;
+            in_holy = here.kind == TRAVEL_INSIDE && travel_building(&type, &faction, &quality, &place) && type == BUILDING_TEMPLE;
+            {
+                int year;
+                int month;
+                int day;
+
+                clock_date(&year, &month, &day);
+                full_moon = ills_full_moon(year, month * 30 + day + 1);
+            }
             minute = df_ifloor(game_minutes());
             while (g_last_minute < minute) {
                 int how;
+                int now;
 
                 g_last_minute++;
                 how = player_minute(&g_player, foes_hunting());
                 if (how == PLAYER_DIED) {
                     die();
                     break;
+                }
+                now = g_day_zero * 1440 + g_last_minute;
+                how = ills_minute(&g_player, now, in_sun, in_holy, full_moon);
+                if (how & ILLS_DIED) {
+                    interact_say(in_sun ? "The sun has burnt you to ash." : "You burn to death on holy ground.");
+                    die();
+                    break;
+                }
+                if (how & ILLS_FORCED) {
+                    interact_say("You dream of the moon.");
+                } else if (how & ILLS_BURNT) {
+                    interact_say(in_sun ? "The sunlight burns you." : "The holy ground burns you.");
+                } else if ((how & ILLS_HUNGER) && now % 30 == 0) {
+                    interact_say("You need to hunt the innocent.");
                 }
                 if (how == PLAYER_COLLAPSED) {
                     interact_say("You collapse from exhaustion, and wake an hour later.");

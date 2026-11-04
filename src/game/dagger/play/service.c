@@ -72,7 +72,7 @@ void service_compose(void)
         row.y = SELL_Y + 14;
         row.w = ROW_W;
         row.h = ROW_H;
-        canvas_label_centred(&row, 0, g.panel == SERVICE_PANEL_BANK ? "BANKING" : "SELL");
+        canvas_label_centred(&row, 0, g.panel == SERVICE_PANEL_BANK ? "BANKING" : (g.panel == SERVICE_PANEL_CURE ? "CURE DISEASE" : "SELL"));
     }
     g.changed = 0;
 }
@@ -131,7 +131,7 @@ int service_click(int x, int y)
         return SERVICE_TALK;
     }
     if (in_row(x, y, SELL_Y, 14)) {
-        return g.panel == SERVICE_PANEL_BANK ? SERVICE_BANK : SERVICE_SELL;
+        return g.panel == SERVICE_PANEL_BANK ? SERVICE_BANK : (g.panel == SERVICE_PANEL_CURE ? SERVICE_CURE : SERVICE_SELL);
     }
     return SERVICE_STAY;
 }

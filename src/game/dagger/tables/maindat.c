@@ -6,6 +6,7 @@
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/tables/items.h"
 #include "game/dagger/tables/commerce.h"
+#include "game/dagger/tables/diseases.h"
 #include "game/dagger/formats/bsa.h"
 #include "game/dagger/formats/classcfg.h"
 #include "engine/assets/vfs.h"
@@ -136,6 +137,8 @@ static RecTable *table_at(int i)
         return crime_table();
     case 18:
         return holiday_table();
+    case 19:
+        return disease_table();
     default:
         return 0;
     }
@@ -143,7 +146,7 @@ static RecTable *table_at(int i)
 
 int maindat_table_count(void)
 {
-    return 19;
+    return 20;
 }
 
 RecTable *maindat_table(int i)
@@ -357,8 +360,14 @@ int maindat_import(RecPut put, void *ctx)
             {
                 const Holiday *holidays;
 
+                const Disease *diseases;
+
                 holidays = classic_holidays(&n);
-                return rec_put_rows(put, ctx, &holiday_schema, holidays, n, 0, 0);
+                if (!rec_put_rows(put, ctx, &holiday_schema, holidays, n, 0, 0)) {
+                    return 0;
+                }
+                diseases = classic_diseases(&n);
+                return rec_put_rows(put, ctx, &disease_schema, diseases, n, 0, 0);
             }
         }
     }
@@ -430,6 +439,7 @@ int maindat_whole(void)
         && skill_table()->count == SKILL_COUNT && item_table()->count > 0 && weapon_table()->count > 0
         && armor_table()->count > 0 && loot_table()->count > 0
         && building_table()->count > 0 && crime_table()->count > 0 && holiday_table()->count > 0
+        && disease_table()->count == DISEASE_COUNT
         && material_table()->count == MATERIAL_COUNT;
 }
 

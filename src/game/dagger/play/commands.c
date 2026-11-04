@@ -1,5 +1,7 @@
 #include "game/dagger/play/commands.h"
 #include "game/dagger/play/foes.h"
+#include "game/dagger/play/ills.h"
+#include "engine/scene/clock.h"
 #include "game/dagger/play/inventory.h"
 #include "game/dagger/tables/items.h"
 #include "game/dagger/places/town.h"
@@ -448,6 +450,110 @@ static void c_where(int argc, char **argv)
     }
 }
 
+/* The console's clock as the afflictions count it. */
+static int ills_now_here(void)
+{
+    return ills_now(clock_day(), clock_minute());
+}
+
+static void c_ills(int argc, char **argv)
+{
+    static const char *const kinds[] = { "none", "werewolf", "wereboar", "vampire" };
+    const Ills *s;
+    int any;
+    int i;
+
+    (void)argc;
+    (void)argv;
+    s = ills();
+    any = 0;
+    for (i = 0; i < DISEASE_COUNT; i++) {
+        const Disease *d;
+
+        if (!s->days_left[i]) {
+            continue;
+        }
+        d = disease_kind(i);
+        if (s->days_left[i] == ILLS_FOREVER) {
+            log_print(LOG_PRINT, "%s, until cured", d ? d->name : "?");
+        } else {
+            log_print(LOG_PRINT, "%s, %d days more", d ? d->name : "?", s->days_left[i]);
+        }
+        any = 1;
+    }
+    if (s->infection) {
+        log_print(LOG_PRINT, "infected: %s, since day %d", kinds[s->infection], s->infected_day);
+        any = 1;
+    }
+    if (s->curse) {
+        log_print(LOG_PRINT, "cursed: %s%s", kinds[s->curse], s->beast ? ", in beast form" : "");
+        any = 1;
+    }
+    if (!any) {
+        log_print(LOG_PRINT, "Nothing ails you.");
+    }
+}
+
+/* catch: a disease by a part of its name, or an infection already four days old, to turn at the next day. */
+static void c_catch(int argc, char **argv)
+{
+    int whole;
+    int i;
+
+    if (argc < 2 || !player()) {
+        log_print(LOG_PRINT, "catch disease|werewolf|wereboar|vampire");
+        return;
+    }
+    if (name_fits("werewolf", argv[1], &whole) || name_fits("wereboar", argv[1], &whole) || name_fits("vampire", argv[1], &whole)) {
+        int kind;
+
+        kind = name_fits("vampire", argv[1], &whole) ? ILL_VAMPIRE : (name_fits("werewolf", argv[1], &whole) ? ILL_WEREWOLF : ILL_WEREBOAR);
+        if (!ills_infect(kind, clock_day() - 4, travel_region())) {
+            log_print(LOG_PRINT, "Already infected or cursed.");
+            return;
+        }
+        ills()->dreamt = 1;
+        log_print(LOG_PRINT, "Infected: the curse comes with the next day.");
+        return;
+    }
+    for (i = 0; i < DISEASE_COUNT; i++) {
+        const Disease *d;
+
+        d = disease_kind(i);
+        if (d && name_fits(d->name, argv[1], &whole)) {
+            log_print(LOG_PRINT, ills_catch(&g_player->sheet, i, clock_day()) ? "Caught %s." : "%s: had already, or kept off.", d->name);
+            return;
+        }
+    }
+    log_print(LOG_PRINT, "No such disease.");
+}
+
+static void c_cure(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+    if (!player()) {
+        return;
+    }
+    ills_cure(&g_player->sheet);
+    ills_lift_curse(g_player);
+    log_print(LOG_PRINT, "Cured of everything.");
+}
+
+static void c_morph(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+    if (!player()) {
+        return;
+    }
+    if (!ills_morph(g_player, ills_now_here(), 0)) {
+        log_print(LOG_PRINT, ills_curse() == ILL_WEREWOLF || ills_curse() == ILL_WEREBOAR ? "You can only change once a day." : "You are no lycanthrope.");
+        return;
+    }
+    log_print(LOG_PRINT, ills_beast() ? "You take the beast's shape." : "You take your own shape again.");
+}
+
 static int get_tgm(void)
 {
     return g_player ? g_player->god : 0;
@@ -474,6 +580,10 @@ void commands_setup(void)
     cmd_add("gold", c_gold, "n", "n gold more in the pack");
     cmd_add("goto", c_goto, "name|code|region index", "to a town's streets, by its name, its code (LEVELFALL's list) or its numbers; a part of a name lists what fits");
     cmd_add("where", c_where, "", "the town and region you are in, with its code for goto");
+    cmd_add("ills", c_ills, "", "the diseases, infection and curse the player has");
+    cmd_add("catch", c_catch, "disease|werewolf|wereboar|vampire", "a disease by part of its name, or an infection that turns at the next day");
+    cmd_add("cure", c_cure, "", "every disease, infection and curse gone");
+    cmd_add("morph", c_morph, "", "a lycanthrope changes shape, once a day into the beast (until magic gives the spell)");
     cmd_add("foes", c_foes, "", "the creatures awake: what each is doing and how far off");
     cmd_var("tgm", get_tgm, set_tgm, 0, 1, "god mode: nothing hurts the player; tgm alone flips it");
     cmd_toggles("tgm");

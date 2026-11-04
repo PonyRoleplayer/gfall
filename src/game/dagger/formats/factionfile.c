@@ -112,6 +112,8 @@ static void read_line(Faction *f, const char *s, const char *end, int *flats)
         f->sgroup = (short)read_int(&v, end);
     } else if (key_is(s, end, "ggroup", &v)) {
         f->ggroup = (short)read_int(&v, end);
+    } else if (key_is(s, end, "vam", &v)) {
+        f->vampire = (short)read_int(&v, end);
     } else if (key_is(s, end, "flat", &v)) {
         /* The first a man's; a second a woman's; one alone both's. */
         if (*flats < 2) {

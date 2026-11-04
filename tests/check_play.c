@@ -39,6 +39,7 @@
 #include "game/dagger/play/dunmap.h"
 #include "game/dagger/play/marker.h"
 #include "game/dagger/play/ride.h"
+#include "game/dagger/play/ills.h"
 #include "game/dagger/play/wagon.h"
 #include "engine/scene/automap.h"
 #include "game/dagger/formats/climate.h"
@@ -6341,6 +6342,201 @@ static void check_holidays(void)
     check_expect(shop_cost(&shop, &shield) == full, "holidays: the Warriors Festival halves a shield");
 }
 
+/*
+ * Afflictions: the diseases' records, the saving throw, a disease's days and its
+ * drain given back, the werewolf's infection turned to its curse and its gifts,
+ * changing shape and the moons, the urge to kill, a vampire's sun, hunger and
+ * travel, a temple's price, a level-1 character kept from disease, and the
+ * state through a save file.
+ */
+static void check_ills(void)
+{
+    Player p;
+    Character sheet;
+    const Disease *d;
+    int before[ATTR_COUNT];
+    int skill_before;
+    int caught;
+    int health;
+    int said;
+    int now;
+    int i;
+
+    combat_seed(7);
+    ills_new_game();
+    check_expect(disease_table()->count == DISEASE_COUNT, "ills: not classic's seventeen diseases");
+    d = disease_kind(DISEASE_PLAGUE);
+    check_expect(d && df_eq(d->name, "Plague") && d->attribute[ATTR_STRENGTH] == 1 && d->attribute[ATTR_INTELLIGENCE] == 0
+                     && d->damage_min == 3 && d->damage_max == 30 && d->days_min == DISEASE_FOREVER,
+                 "ills: plague's record");
+    d = disease_kind(DISEASE_CALIRONS_CURSE);
+    check_expect(d && d->days_min == 3 && d->days_max == 18, "ills: Caliron's Curse does not pass in 3..18 days");
+
+    /* A Breton warrior has no tolerance either way: 50 and a tenth of the Willpower. */
+    character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Ada");
+    sheet.level = 5;
+    player_init(&p, &sheet);
+    inventory_clear(&p.pack);
+    check_expect(ills_disease_save(&p.sheet) == 50 + p.sheet.attribute[ATTR_WILLPOWER] / 10, "ills: the saving throw is not 50 + Willpower / 10");
+    check_expect(ills_saved(60, 30) && !ills_saved(60, 45) && !ills_saved(60, 70) && ills_saved(100, 99),
+                 "ills: a roll within 20 under the save still passes the disease on");
+
+    /* Plague caught on day 100: nothing that day; the next, one roll off each attribute it weighs, and health. */
+    for (i = 0; i < ATTR_COUNT; i++) {
+        before[i] = p.sheet.attribute[i];
+    }
+    check_expect(ills_catch(&p.sheet, DISEASE_PLAGUE, 100) && !ills_catch(&p.sheet, DISEASE_PLAGUE, 100), "ills: plague caught twice");
+    check_expect(ills_day(&p, 100) == 0 && p.sheet.attribute[ATTR_STRENGTH] == before[ATTR_STRENGTH], "ills: plague hurt the day it was caught");
+    health = p.sheet.health;
+    said = ills_day(&p, 101);
+    {
+        int lost;
+
+        lost = before[ATTR_STRENGTH] - p.sheet.attribute[ATTR_STRENGTH];
+        check_expect((said & ILLS_FELT_BAD) && lost >= 3 && lost <= 30, "ills: plague's day did not take 3..30 Strength");
+        check_expect(before[ATTR_AGILITY] - p.sheet.attribute[ATTR_AGILITY] == lost
+                         && p.sheet.attribute[ATTR_INTELLIGENCE] == before[ATTR_INTELLIGENCE],
+                     "ills: plague's one roll is not taken from Agility alike, or touched Intelligence");
+        check_expect(health - p.sheet.health == lost || p.sheet.health == 0, "ills: plague's health is not the same roll");
+        check_expect(ills()->drained[DISEASE_PLAGUE * ATTR_COUNT + ATTR_STRENGTH] == -lost, "ills: the drain is not kept");
+    }
+    check_expect(ills_curable() == 1, "ills: plague is not one to cure");
+    ills_cure(&p.sheet);
+    for (i = 0; i < ATTR_COUNT; i++) {
+        check_expect(p.sheet.attribute[i] == before[i], "ills: the cure did not give the attributes back");
+    }
+    check_expect(ills_curable() == 0, "ills: something left after the cure");
+
+    /* Caliron's Curse passes by itself within 18 days, and gives back what it took. */
+    character_rest_full(&p.sheet);
+    check_expect(ills_catch(&p.sheet, DISEASE_CALIRONS_CURSE, 200), "ills: Caliron's Curse not caught");
+    check_expect(ills()->days_left[DISEASE_CALIRONS_CURSE] >= 3 && ills()->days_left[DISEASE_CALIRONS_CURSE] <= 18, "ills: its days not 3..18");
+    said = ills_day(&p, 220);
+    check_expect((said & ILLS_PASSED) && ills()->days_left[DISEASE_CALIRONS_CURSE] == 0
+                     && p.sheet.attribute[ATTR_SPEED] == before[ATTR_SPEED],
+                 "ills: Caliron's Curse did not pass and give back Speed");
+
+    /* A level-1 character catches nothing from a thousand rats; a level-5 one does, one of the rat's three. */
+    {
+        Character young;
+
+        character_new(&young, RACE_BRETON, CLASS_WARRIOR, 0, "Kid");
+        caught = 0;
+        for (i = 0; i < 1000; i++) {
+            caught += ills_struck(&young, ENEMY_RAT, 300, 17) != ILLS_STRUCK_NOTHING;
+        }
+        check_expect(caught == 0, "ills: a level-1 character caught a disease");
+        caught = ILLS_STRUCK_NOTHING;
+        for (i = 0; i < 5000 && caught == ILLS_STRUCK_NOTHING; i++) {
+            caught = ills_struck(&p.sheet, ENEMY_RAT, 300, 17);
+        }
+        check_expect(caught == DISEASE_PLAGUE || caught == DISEASE_STOMACH_ROT || caught == DISEASE_BRAIN_FEVER,
+                     "ills: five thousand rats gave no plague, stomach rot or brain fever");
+        ills_cure(&p.sheet);
+    }
+
+    /* A werewolf's bite: the dream the next day, the curse past three, every disease gone with it. */
+    character_rest_full(&p.sheet);
+    skill_before = p.sheet.skill[SKILL_RUNNING];
+    ills_catch(&p.sheet, DISEASE_DEMENTIA, 400);
+    check_expect(ills_infect(ILL_WEREWOLF, 400, 17) && !ills_infect(ILL_VAMPIRE, 400, 17), "ills: two infections at once");
+    check_expect(ills_day(&p, 400) == 0 || !(ills_day(&p, 400) & ILLS_DREAM), "ills: a dream the day of the bite");
+    check_expect(ills_day(&p, 401) & ILLS_DREAM, "ills: no dream the next day");
+    check_expect(!(ills_day(&p, 403) & ILLS_TURNED), "ills: the curse before three days");
+    check_expect((ills_day(&p, 404) & ILLS_TURNED) && ills_curse() == ILL_WEREWOLF && ills()->infection == ILL_NONE,
+                 "ills: no werewolf past three days");
+    check_expect(ills()->days_left[DISEASE_DEMENTIA] == 0 && ills_disease_save(&p.sheet) == 100
+                     && !ills_catch(&p.sheet, DISEASE_PLAGUE, 405),
+                 "ills: a lycanthrope still diseased or catching");
+    check_expect(p.sheet.attribute[ATTR_STRENGTH] == (before[ATTR_STRENGTH] + 40 > 100 ? 100 : before[ATTR_STRENGTH] + 40)
+                     && p.sheet.attribute[ATTR_INTELLIGENCE] == before[ATTR_INTELLIGENCE]
+                     && p.sheet.skill[SKILL_RUNNING] == (skill_before + 30 > 100 ? 100 : skill_before + 30),
+                 "ills: a werewolf's +40 Strength and +30 Running");
+
+    /* Into the beast at will, the hands emptied and healed whole; not again within a day; out any time. */
+    {
+        Item sword;
+        int at;
+
+        check_expect(item_make(&sword, ITEM_LONGSWORD, 0) && (at = inventory_add(&p.pack, &sword)) >= 0 && inventory_wear(&p.pack, at),
+                     "ills: no sword in hand");
+        now = 404 * 1440 + 600;
+        p.sheet.health = 1;
+        check_expect(ills_morph(&p, now, 0) && ills_beast() && !inventory_weapon(&p.pack) && p.sheet.health == p.sheet.health_max,
+                     "ills: the change kept a sword in hand, or did not heal");
+        check_expect(df_eq(ills_race_name(&p.sheet), "Werewolf"), "ills: the sheet does not say Werewolf");
+        check_expect(ills_morph(&p, now + 10, 0) && !ills_beast(), "ills: could not change back");
+        check_expect(!ills_morph(&p, now + 20, 0), "ills: into the beast twice in a day");
+        check_expect(ills_minute(&p, now + 30, 0, 0, 1) & ILLS_FORCED, "ills: the full moon did not force the change");
+        check_expect(ills_morph(&p, now + 40, 0) && !ills_beast(), "ills: could not change back after the moon");
+    }
+    /* The moons: Masser full on (day + 405 x 360 + 3) mod 32 == 0, day 21 of 405; Secunda on day 25. */
+    check_expect(ills_full_moon(405, 21) && ills_full_moon(405, 25) && !ills_full_moon(405, 22), "ills: the moons' full days");
+    /* A month without killing an innocent: health held a point an hour under its most. */
+    now = ills()->last_kill + 30 * 1440 + 600;
+    p.sheet.health = p.sheet.health_max;
+    check_expect((ills_minute(&p, now, 0, 0, 0) & ILLS_HUNGER) && p.sheet.health == p.sheet.health_max - 10,
+                 "ills: ten hours of the urge did not hold health 10 under");
+    ills_killed_innocent(now);
+    check_expect(!(ills_minute(&p, now + 1, 0, 0, 0) & ILLS_HUNGER), "ills: a kill did not sate the urge");
+
+    /* Lifted, every gift taken back. */
+    ills_lift_curse(&p);
+    check_expect(ills_curse() == ILL_NONE && p.sheet.attribute[ATTR_STRENGTH] == before[ATTR_STRENGTH]
+                     && p.sheet.skill[SKILL_RUNNING] == skill_before,
+                 "ills: the lifted curse left its gifts");
+
+    /* A vampire: +20 but Intelligence, burnt 12 each fourth minute in the sun, unfed a day no rest, no travel by day. */
+    ills_infect(ILL_VAMPIRE, 500, 17);
+    ills_day(&p, 501);
+    check_expect((ills_day(&p, 504) & ILLS_TURNED) && ills_curse() == ILL_VAMPIRE, "ills: no vampire past three days");
+    check_expect(ills()->clan > 0 && p.sheet.attribute[ATTR_LUCK] == (before[ATTR_LUCK] + 20 > 100 ? 100 : before[ATTR_LUCK] + 20)
+                     && p.sheet.attribute[ATTR_INTELLIGENCE] == before[ATTR_INTELLIGENCE],
+                 "ills: a vampire's clan, +20 Luck, Intelligence untouched");
+    check_expect(df_eq(ills_race_name(&p.sheet), "Vampire"), "ills: the sheet does not say Vampire");
+    character_rest_full(&p.sheet);
+    health = p.sheet.health;
+    now = 504 * 1440 + 720;
+    check_expect((ills_minute(&p, now, 1, 0, 0) & ILLS_BURNT) && p.sheet.health == health - 12, "ills: the sun did not burn 12");
+    check_expect(ills_minute(&p, now + 1, 1, 0, 0) == 0 && ills_minute(&p, now + 4, 0, 0, 0) == 0, "ills: burnt off the fourth minute, or in the shade");
+    check_expect(!ills_rest_refused(504 * 1440 + 100) && ills_rest_refused(506 * 1440), "ills: an unfed vampire's rest");
+    ills_fed(506 * 1440);
+    check_expect(!ills_rest_refused(506 * 1440 + 10), "ills: fed, still no rest");
+    check_expect(ills_travel_refused(1) && !ills_travel_refused(0), "ills: a vampire travels by day");
+
+    /* The temple's price: 250 a disease by quality and prices; nothing on a cure day, half on a half day. */
+    check_expect(ills_cure_cost(2, 10, 1000, 0) == rules_cost(500, 10, 1000) && ills_cure_cost(2, 10, 1000, HOLIDAY_TEMPLE_CURE) == 0
+                     && ills_cure_cost(2, 10, 1000, HOLIDAY_TEMPLE_HALF) == rules_cost(500, 10, 1000) / 2
+                     && ills_cure_cost(0, 10, 1000, 0) == 0,
+                 "ills: the temple's price");
+
+    /* The state goes round a save file. */
+    {
+        SaveState out;
+        SaveState in;
+        char path[260];
+
+        ills_lift_curse(&p);
+        ills_catch(&p.sheet, DISEASE_LEPROSY, 600);
+        ills_infect(ILL_WEREBOAR, 600, 17);
+        save_use_prefix(SAVE_TEST_PREFIX);
+        save_use_slot(4);
+        keep_clear();
+        pile_new_game();
+        mem_zero(&out, sizeof(out));
+        df_copy(out.name, "Ills", SAVE_NAME);
+        out.sheet = p.sheet;
+        inventory_clear(&out.pack);
+        check_expect(save_write(&out), "ills: a save did not write");
+        ills_new_game();
+        check_expect(save_read(&in) && ills()->days_left[DISEASE_LEPROSY] == ILLS_FOREVER && ills()->infection == ILL_WEREBOAR
+                         && ills()->infected_day == 600,
+                     "ills: the state did not come back from the save");
+        check_expect(fs_beside(path, (int)sizeof(path), "DATA\\TEST4.SAV") && remove(path) == 0, "ills: the test's file did not go");
+    }
+    ills_new_game();
+}
+
 /* Counts the engine's automap polygons. */
 static void count_polygon(void *ctx, const AutomapCorner *corner, int n, df_u32 rgb)
 {
@@ -6549,6 +6745,7 @@ void check_play(void)
     check_senses();
     check_wider_world();
     check_holidays();
+    check_ills();
     check_riding();
     check_wagon();
     check_marker();
