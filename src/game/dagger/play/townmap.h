@@ -30,6 +30,12 @@ const unsigned char *townmap_pixels(void);
 int townmap_changed(void);
 void townmap_point(int x, int y);
 int townmap_click(int x, int y);
+/* A left-button drag: the map follows the pointer, classic's pixels. A held arrow button acts again and again. */
+void townmap_drag(int dx, int dy);
+int townmap_repeats(int x, int y);
+int townmap_on_map(int x, int y);
+/* Where the player's arrow goes, in the engine's screen pixels from the lower left, and its way, clockwise from up. 0 off the map. */
+int townmap_marker(float *sx, float *sy, float *angle);
 /* The wheel: notches above 0 zoom in. */
 void townmap_wheel(int notches);
 int townmap_key(int vk);

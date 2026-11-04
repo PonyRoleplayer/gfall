@@ -10,9 +10,9 @@
  *
  * The chrome is composed in memory with a clear hole where the map goes, and
  * sent as a cutout: the engine draws the map under it (gfx_automap from the
- * frame's under hook), the chrome's picture over it, and the player's arrow is
- * drawn into the picture over the hole. So the map costs no download of its own,
- * and the picture changes only when the view does.
+ * frame's under hook), the chrome's picture over it, and the player's arrow over
+ * that, as a picture of its own (marker.h). So the map costs no download of its
+ * own, and the picture changes only when the view's chrome does.
  *
  * Views: from above, the way the player faces up, or from behind and above them
  * (the grid button). The arrows move the view, the turn buttons turn it, the
@@ -36,6 +36,17 @@ int dunmap_changed(void);
 int dunmap_click(int x, int y);
 void dunmap_wheel(int notches);
 int dunmap_key(int vk);
+/*
+ * The mouse: a left-button drag moves the map with the pointer, in classic's
+ * pixels; a right-button drag turns it. A held button over the arrows or the
+ * turns acts again and again (dunmap_repeats); on_map is where a drag starts.
+ */
+void dunmap_drag(int dx, int dy);
+void dunmap_turn_by(int dx);
+int dunmap_repeats(int x, int y);
+int dunmap_on_map(int x, int y);
+/* Where the player's arrow goes, in the engine's screen pixels from the lower left, and its way, clockwise from up. 0 off the map. */
+int dunmap_marker(float *sx, float *sy, float *angle);
 /* The view the engine draws now, in its screen pixels; and the ground's colour (0xRRGGBB). */
 const AutomapView *dunmap_view(void);
 unsigned long dunmap_ground(void);

@@ -46,9 +46,6 @@ static const Rect g_compass_rect = { 3, 172, 76, 17 };
 #define COLOUR_SHOP 240
 #define COLOUR_TAVERN 199
 #define COLOUR_HOUSE 222
-/* The player's arrow and its outline. */
-#define COLOUR_ARROW 145
-#define COLOUR_ARROW_EDGE 0
 
 enum {
     MODE_ORIGINAL,
@@ -56,6 +53,8 @@ enum {
     MODE_ALL,
     MODES
 };
+
+static void pan(int dx, int dy);
 
 static struct {
     int open;
@@ -210,39 +209,34 @@ static int map_at(int sx, int sy, int *mx, int *my)
     return *mx >= 0 && *mx < g.w && *my >= 0 && *my < g.h;
 }
 
-/* The player's arrow: a wedge along their facing, outlined, round their place on the screen. */
-static void compose_arrow(void)
+int townmap_marker(float *sx, float *sy, float *angle)
 {
-    float fx;
-    float fz;
-    int r;
-    int c;
-
-    /* Camera yaw 0 looks along +Z, north, which is up on the map: up the screen is -r. */
-    fx = df_sin(g.yaw);
-    fz = df_cos(g.yaw);
-    for (r = -5; r <= 5; r++) {
-        for (c = -5; c <= 5; c++) {
-            float along;
-            float side;
-            float half;
-            int sx;
-            int sy;
-
-            along = (float)c * fx - (float)r * fz;
-            side = (float)c * fz + (float)r * fx;
-            half = (4.0f - along) * 0.55f;
-            if (along < -2.5f || along > 4.0f || df_absf(side) > half) {
-                continue;
-            }
-            sx = g.arrow_x + c;
-            sy = g.arrow_y + r;
-            if (rect_has(&g_area, sx, sy)) {
-                g.composer.screen[sy * CANVAS_W + sx] =
-                    (df_u8)(df_absf(side) > half - 1.0f || along < -1.5f ? COLOUR_ARROW_EDGE : COLOUR_ARROW);
-            }
-        }
+    if (g.arrow_x < 0) {
+        return 0;
     }
+    /* The middle of the player's cell, from classic's pixels to the engine's, whose y counts up from the bottom. */
+    *sx = ((float)g.arrow_x + 0.5f) * 2.0f;
+    *sy = 480.0f - ((float)g.arrow_y + 0.5f) * 2.4f;
+    /* North is up: the facing, clockwise from north, is the arrow's way on the screen. */
+    *angle = g.yaw;
+    return 1;
+}
+
+void townmap_drag(int dx, int dy)
+{
+    pan(-dx, -dy);
+    g.changed = 1;
+}
+
+int townmap_repeats(int x, int y)
+{
+    return rect_has(&g_up_rect, x, y) || rect_has(&g_down_rect, x, y) || rect_has(&g_left_rect, x, y)
+           || rect_has(&g_right_rect, x, y);
+}
+
+int townmap_on_map(int x, int y)
+{
+    return rect_has(&g_area, x, y);
 }
 
 void townmap_compose(void)
@@ -274,7 +268,7 @@ void townmap_compose(void)
             }
         }
     }
-    compose_arrow();
+    /* The arrow is drawn over this picture, a picture of its own (marker.h): only its place is found here. */
     canvas_label(g_area.x + 3, g_area.y + 2, g.line);
     g.changed = 0;
 }

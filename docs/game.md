@@ -96,7 +96,7 @@ Classic's travel map and its fast journeys, on Daggerfall Unity's numbers and cl
   - **Colours:** under `AMAP00I0.IMG` with `TOWN00I0.IMG`'s caption, the kinds take the caption's own swatches (guilds and temples 101, shops 240, taverns 199, under ART_PAL.COL). Houses are ours (222): the caption has no swatch for them.
   - **View modes:** the grid button cycles DFU's three. Original shows buildings; Extra adds a ship and the special buildings; All adds the props.
   - **Zoom and pan:** the town is fitted at the largest zoom that shows it whole: half size for Daggerfall's 8 x 8 blocks, up to four screen pixels a map pixel for a hamlet. The arrows, the arrow keys and the wheel pan and zoom (half, whole, 2, 3, 4), and the compass or Home centres the player.
-  - **The pointer** names the building kind under it, by `BLDG`. The player is an arrow along their facing.
+  - **The pointer** names the building kind under it, by `BLDG`. A left-button drag moves the map with the pointer, and a held arrow button repeats. The player's arrow is the indoor map's, `marker.c`, north up.
   - **Not yet:** rotating, and buildings' own names.
 - **The keys, DFU's:** M is the automap (`INPUT_MAP`): indoors what has been seen, in a town's streets its map, in the wilds, where there is nothing to map, the travel map. V is the travel map (`INPUT_TRAVEL_MAP`), from anywhere outdoors and from the town map. Both have their slots on the controls screen, and V is in `keys.c`'s defaults, so a reset brings it back.
 - **A dungeon's and a building's** (built, `play/dunmap.c` over the engine's automap, `docs/automap.md`):
@@ -104,6 +104,11 @@ Classic's travel map and its fast journeys, on Daggerfall Unity's numbers and cl
   - **Drawing:** the chrome (AMAP00I0.IMG, AMAP01I0.IMG's grid in 3D) is composed with a clear hole where the map goes and sent as a cutout. From the frame's under hook, `gfx_automap` draws the map in that hole over a dark ground of ours, and the chrome's picture goes over it. The player's arrow is drawn into the picture where `automap_to_screen` puts their feet. A screen frame draws no world under it.
   - **Views:** from above, the player's facing up, starting at 0.15 pixels a unit. The grid button gives the 3D view: behind and well above the player looking steeply down (700 back, 1100 up), so the slice's cut ceilings let it see into the rooms. The wheel zooms both.
   - **Controls:** the arrows pan along the view; the turn buttons turn it a sixteenth; the stairs or Page Up and Down move the slice a storey; the compass or Home brings it back to the player; M, Escape or Exit leave.
+  - **The mouse, ours beside classic's buttons** (the user found classic's map hard to move round):
+    - a left-button drag on the map moves it with the pointer, and a right-button drag turns it;
+    - a button held over the arrows or the turns acts again after 0.3 s, then every 0.05 s;
+    - in 3D a drag pans by the camera's own distance across its field of view, the ground's slant counted, so the map keeps up with the pointer.
+  - **The player's arrow** is a picture of its own (`marker.c`): an arrowhead with a notch and a dark outline, 32 texels a side, drawn 18 screen pixels across, so the card shows it at four times the map picture's detail. Drawn into the 320 x 200 picture it was a blob. It is composed again only when its step of 32 a turn changes. Its way is where a point ahead of the player falls on the screen, so it is right in both views.
   - **The slice:** from 64 under the player's feet to 160 over them. A storey is 384, ours: classic and DFU move a camera, not a fixed slice.
   - **Not yet:** classic's door and exit marks and notes (the engine's to come), and a building's own colours.
 
@@ -119,7 +124,8 @@ Classic's travel map and its fast journeys, on Daggerfall Unity's numbers and cl
 - **When it opens:** outdoors, by the map key or the HUD's map button (in a town, from its automap: Automaps, above). In a dungeon or a building it says the automap is not built yet.
 
 Tested on the host (`check_wider_world`):
-- the indoor automap: the hold's place named on arrival and none after leaving, the hold revealed, the view's rectangle, the player on the map from above and from behind, polygons drawn in both, the stairs, the wheel, the compass, M and Exit, the chrome's hole with the arrow in it and nothing clear outside it, what was seen through a save, writing `build/dunmap0.ppm` and the polygons' outlines `build/dunmap-top.pgm`, `dunmap-3d.pgm`;
+- the arrow's picture: an arrow tip up at step 0, outlined, a quarter turn pointing right, the steps of a turn;
+- the indoor automap: the hold's place named on arrival and none after leaving, the hold revealed, the view's rectangle, the player on the map from above and from behind, polygons drawn in both, the stairs, the wheel, the compass, M and Exit, the chrome's hole whole and nothing clear outside it, the arrow on the map pointing up from above, a drag there and back, a right drag turning, which buttons repeat, what was seen through a save, writing `build/dunmap0.ppm` and the polygons' outlines `build/dunmap-top.pgm`, `dunmap-3d.pgm`;
 - the town map: Daggerfall's 8 x 8 blocks fitted at half size, its kinds coloured and its modes, an armorer named under the pointer, the up arrow and zoom by clicks, the wheel, V and Exit, writing `build/townmap0..1.ppm`;
 - the sums by hand: woodland on foot, recklessly, camping and on a horse, the sea by ship and swimming, a diagonal's steps, and arrivals reckless, before light and after 17:00;
 - the map's 11199 known places, one learnt and kept through a save;

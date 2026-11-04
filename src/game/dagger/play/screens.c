@@ -5,6 +5,7 @@
 #include "game/dagger/play/travelmap.h"
 #include "game/dagger/play/townmap.h"
 #include "game/dagger/play/dunmap.h"
+#include "game/dagger/play/marker.h"
 #include "game/dagger/play/bag.h"
 #include "game/dagger/play/create.h"
 #include "game/dagger/play/menu.h"
@@ -48,6 +49,23 @@ static const char *g_said;
 static int g_slot;
 static int g_slot_saving;
 static char g_slot_name[SAVE_NAME];
+/*
+ * A map's mouse: a drag under way (its last point), a right-button turn under
+ * way, how long the left button has been held over a button that repeats, and
+ * the player's arrow as its own picture (marker.h) with the step it was made at.
+ */
+static int g_drag;
+static int g_drag_x;
+static int g_drag_y;
+static int g_turning;
+static float g_hold;
+static int g_marker_pic;
+static int g_marker_step = -1;
+/* A held button repeats after this, then each this. */
+#define REPEAT_AFTER 0.3f
+#define REPEAT_EVERY 0.05f
+/* The arrow's picture's size on the screen, the engine's pixels. */
+#define MARKER_DRAWN 18
 /* The merchant's panel's answer, kept past its closing. */
 static int g_service_choice;
 
@@ -131,6 +149,14 @@ void screens_close(void)
         townmap_close();
     } else if (g_open == OPEN_DUNMAP) {
         dunmap_close();
+    }
+    g_drag = 0;
+    g_turning = 0;
+    g_hold = 0.0f;
+    if (g_marker_pic) {
+        pic_free(g_marker_pic);
+        g_marker_pic = 0;
+        g_marker_step = -1;
     }
     g_open = OPEN_NONE;
     if (g_pic) {
@@ -349,8 +375,11 @@ static int travel_frame(const Input *in, float dt)
     return SCREENS_STAY;
 }
 
+static void map_mouse(const Input *in, float dt, int (*on_map)(int, int), void (*drag)(int, int),
+                      void (*turn)(int), int (*repeats)(int, int), int (*click)(int, int));
+
 /* A frame of the town map: the pointer names what it is over, the wheel zooms. */
-static int townmap_frame(const Input *in)
+static int townmap_frame(const Input *in, float dt)
 {
     int vk;
     int asked;
@@ -359,6 +388,7 @@ static int townmap_frame(const Input *in)
     if (in->wheel) {
         townmap_wheel(in->wheel);
     }
+    map_mouse(in, dt, townmap_on_map, townmap_drag, 0, townmap_repeats, townmap_click);
     vk = input_key_pressed();
     asked = vk ? townmap_key(vk) : TOWNMAP_STAY;
     if (asked == TOWNMAP_STAY && (in->pressed & INPUT_BIT(INPUT_ATTACK))) {
@@ -376,14 +406,61 @@ static int townmap_frame(const Input *in)
     return SCREENS_STAY;
 }
 
+/*
+ * A map's mouse, either map's: a left press on the map starts a drag and each
+ * frame moves it by the pointer's move; a right-button drag turns (on_map's and
+ * turn 0 for a map that does not turn); a left button held on a button that
+ * repeats acts again after a moment, then often. The click itself is the frame's.
+ */
+static void map_mouse(const Input *in, float dt, int (*on_map)(int, int), void (*drag)(int, int),
+                      void (*turn)(int), int (*repeats)(int, int), int (*click)(int, int))
+{
+    int held;
+    int right;
+
+    held = (in->held & INPUT_BIT(INPUT_ATTACK)) != 0;
+    right = (in->held & INPUT_BIT(INPUT_SWING)) != 0;
+    if ((in->pressed & INPUT_BIT(INPUT_ATTACK)) && on_map(g_point_x, g_point_y)) {
+        g_drag = 1;
+        g_drag_x = g_point_x;
+        g_drag_y = g_point_y;
+    }
+    if (turn && (in->pressed & INPUT_BIT(INPUT_SWING)) && on_map(g_point_x, g_point_y)) {
+        g_turning = 1;
+        g_drag_x = g_point_x;
+    }
+    if (g_drag && held && (g_point_x != g_drag_x || g_point_y != g_drag_y)) {
+        drag(g_point_x - g_drag_x, g_point_y - g_drag_y);
+        g_drag_x = g_point_x;
+        g_drag_y = g_point_y;
+    }
+    if (g_turning && right && g_point_x != g_drag_x) {
+        turn(g_point_x - g_drag_x);
+        g_drag_x = g_point_x;
+    }
+    g_drag = g_drag && held;
+    g_turning = g_turning && right;
+    /* A button held: once by the click, then again and again. */
+    if (held && !g_drag && repeats(g_point_x, g_point_y)) {
+        g_hold += dt;
+        while (g_hold >= REPEAT_AFTER + REPEAT_EVERY) {
+            g_hold -= REPEAT_EVERY;
+            click(g_point_x, g_point_y);
+        }
+    } else {
+        g_hold = 0.0f;
+    }
+}
+
 /* A frame of the indoor automap: its keys, clicks and the wheel; the engine draws the map each frame. */
-static int dunmap_frame(const Input *in)
+static int dunmap_frame(const Input *in, float dt)
 {
     int vk;
 
     if (in->wheel) {
         dunmap_wheel(in->wheel);
     }
+    map_mouse(in, dt, dunmap_on_map, dunmap_drag, dunmap_turn_by, dunmap_repeats, dunmap_click);
     vk = input_key_pressed();
     if (vk && dunmap_key(vk) == DUNMAP_LEAVE) {
         return SCREENS_CLOSED;
@@ -588,9 +665,9 @@ int screens_frame(const Input *in, float dt)
     } else if (g_open == OPEN_TRAVEL) {
         asked = travel_frame(in, dt);
     } else if (g_open == OPEN_TOWNMAP) {
-        asked = townmap_frame(in);
+        asked = townmap_frame(in, dt);
     } else if (g_open == OPEN_DUNMAP) {
-        asked = dunmap_frame(in);
+        asked = dunmap_frame(in, dt);
     } else {
         asked = create_frame(in);
     }
@@ -601,11 +678,40 @@ int screens_frame(const Input *in, float dt)
     return asked;
 }
 
+/* The player's arrow over a map, its own picture composed again only when its step changes. */
+static void draw_marker(void)
+{
+    static unsigned char texels[MARKER_SIDE * MARKER_SIDE];
+    float sx;
+    float sy;
+    float angle;
+    int shown;
+    int step;
+
+    shown = g_open == OPEN_DUNMAP ? dunmap_marker(&sx, &sy, &angle)
+                                  : (g_open == OPEN_TOWNMAP ? townmap_marker(&sx, &sy, &angle) : 0);
+    if (!shown) {
+        return;
+    }
+    step = marker_step(angle);
+    if (step != g_marker_step || !g_marker_pic) {
+        if (g_marker_pic) {
+            pic_free(g_marker_pic);
+        }
+        marker_compose(texels, step);
+        g_marker_pic = pic_load(texels, MARKER_SIDE, MARKER_SIDE, g_rgb, 1);
+        g_marker_step = step;
+    }
+    /* pic_draw's top counts from the bottom, as the engine's y does. */
+    pic_draw(g_marker_pic, df_iround(sx) - MARKER_DRAWN / 2, df_iround(sy) + MARKER_DRAWN / 2, MARKER_DRAWN, MARKER_DRAWN);
+}
+
 void screens_draw(void)
 {
     const char *note;
 
     screen_draw(g_pic, 0, 0, SCREEN_W, SCREEN_H);
+    draw_marker();
     if (g_open == OPEN_BAG) {
         note = bag_note();
     } else if (g_open == OPEN_SHEET) {

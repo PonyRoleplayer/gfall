@@ -37,6 +37,7 @@
 #include "game/dagger/play/travelmap.h"
 #include "game/dagger/play/townmap.h"
 #include "game/dagger/play/dunmap.h"
+#include "game/dagger/play/marker.h"
 #include "engine/scene/automap.h"
 #include "game/dagger/formats/climate.h"
 #include "game/dagger/places/wild.h"
@@ -5998,6 +5999,25 @@ static void check_wider_world(void)
             check_expect(townmap_scale() == -3, "town map: the wheel's zoom");
             townmap_compose();
             write_screen("build/townmap1.ppm", townmap_pixels());
+            {
+                float mx;
+                float my;
+                float angle;
+                int cx2;
+                int cy2;
+                int nx;
+                int ny;
+
+                townmap_compose();
+                townmap_click(5, 175);
+                townmap_compose();
+                check_expect(townmap_marker(&mx, &my, &angle) && angle == 0.0f, "town map: the player's arrow is not placed, or not north");
+                townmap_centre(&cx2, &cy2);
+                townmap_drag(4, 0);
+                townmap_centre(&nx, &ny);
+                check_expect(nx < cx2, "town map: a drag to the right did not move the map with the pointer");
+                check_expect(townmap_repeats(106, 172) && !townmap_repeats(282, 172), "town map: which buttons repeat");
+            }
             check_expect(townmap_key('V') == TOWNMAP_TRAVEL && townmap_click(282, 172) == TOWNMAP_LEAVE, "town map: V or Exit");
             townmap_close();
         }
@@ -6049,6 +6069,40 @@ static void write_polygons(const char *path, const Scene *scene, const AutomapVi
         fputc(g_poly_pic[i] ? 128 + g_poly_pic[i] / 2 : 0, f);
     }
     fclose(f);
+}
+
+/* The player's arrow as its own picture: an arrow, tip up at step 0, outlined, turned at a quarter. */
+static void check_marker(void)
+{
+    static unsigned char up[MARKER_SIDE * MARKER_SIDE];
+    static unsigned char right[MARKER_SIDE * MARKER_SIDE];
+    int fill;
+    int edge;
+    int top_row;
+    int right_col;
+    int i;
+
+    marker_compose(up, 0);
+    marker_compose(right, MARKER_STEPS / 4);
+    fill = 0;
+    edge = 0;
+    top_row = MARKER_SIDE;
+    right_col = -1;
+    for (i = 0; i < MARKER_SIDE * MARKER_SIDE; i++) {
+        fill += up[i] == MARKER_FILL;
+        edge += up[i] == MARKER_EDGE;
+        if (up[i] && i / MARKER_SIDE < top_row) {
+            top_row = i / MARKER_SIDE;
+        }
+        if (right[i] && i % MARKER_SIDE > right_col) {
+            right_col = i % MARKER_SIDE;
+        }
+    }
+    check_expect(fill > 60 && edge > 60, "marker: the arrow has no fill or no outline");
+    check_expect(top_row <= 2 && up[top_row * MARKER_SIDE + MARKER_SIDE / 2 - 1], "marker: step 0's tip is not at the top middle");
+    check_expect(right_col >= MARKER_SIDE - 3 && right[(MARKER_SIDE / 2) * MARKER_SIDE + right_col - 1], "marker: a quarter turn does not point right");
+    check_expect(marker_step(0.0f) == 0 && marker_step(DF_TAU / 4.0f) == MARKER_STEPS / 4 && marker_step(-0.01f) == 0,
+                 "marker: the steps of a turn");
 }
 
 /* Counts the engine's automap polygons. */
@@ -6124,7 +6178,37 @@ static void check_dunmap(void)
             arrow++;
         }
     }
-    check_expect(holes > 50000 && arrow > 5 && arrow < 121, "dunmap: the hole, or the player's arrow in it");
+    /* The hole whole: the arrow is a picture of its own now, over it. */
+    check_expect(holes > 52000 && arrow == 0, "dunmap: the hole is not whole");
+    {
+        float mx;
+        float my;
+        float angle;
+
+        check_expect(dunmap_marker(&mx, &my, &angle) && mx > 2.0f && mx < 638.0f && my > 72.0f && my < 478.0f,
+                     "dunmap: the player's arrow is not on the map");
+        /* From above the facing is up the map. */
+        check_expect(df_absf(df_wrap_tau(angle + 0.05f) - 0.05f) < 0.05f, "dunmap: from above, the arrow does not point up");
+    }
+    /* Dragging: the map follows the pointer, the view's centre the other way; a right drag turns it. */
+    {
+        float cx;
+        float cz;
+        float yaw;
+
+        cx = dunmap_view()->cx;
+        cz = dunmap_view()->cz;
+        yaw = dunmap_view()->yaw;
+        dunmap_drag(10, 0);
+        check_expect(df_absf(dunmap_view()->cx - cx) + df_absf(dunmap_view()->cz - cz) > 1.0f, "dunmap: a drag did not move the view");
+        dunmap_drag(-10, 0);
+        check_expect(df_absf(dunmap_view()->cx - cx) < 0.5f && df_absf(dunmap_view()->cz - cz) < 0.5f, "dunmap: a drag back did not come back");
+        dunmap_turn_by(20);
+        check_expect(df_absf(dunmap_view()->yaw - yaw) > 0.1f, "dunmap: a right drag did not turn");
+        dunmap_turn_by(-20);
+        check_expect(dunmap_repeats(110, 175) && !dunmap_repeats(285, 175) && dunmap_on_map(160, 80) && !dunmap_on_map(160, 180),
+                     "dunmap: which buttons repeat, where the map is");
+    }
     write_screen("build/dunmap0.ppm", dunmap_pixels());
     /* From behind and above: the player still in view, every face toward the camera. */
     dunmap_click(80, 175);
@@ -6228,6 +6312,7 @@ void check_play(void)
     check_citizen();
     check_senses();
     check_wider_world();
+    check_marker();
     check_dunmap();
     check_goto();
     check_standing_saved();

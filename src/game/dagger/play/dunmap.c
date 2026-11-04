@@ -42,6 +42,10 @@ static const Rect g_compass_rect = { 3, 172, 76, 17 };
 #define SCALE_LEAST 0.01f
 #define SCALE_MOST 0.5f
 #define PAN_PIXELS 24.0f
+/* A pixel of a right-button drag turns the view this far; the 3D view's half field of view's tangent; how slanted its ground is. */
+#define DRAG_TURN 0.012f
+#define TAN_HALF_FOV 0.4142f
+#define SLANT 0.84f
 #define TURN_STEP (DF_TAU / 16.0f)
 /*
  * The slice: from a storey under the player's feet to just over their head, a
@@ -62,9 +66,8 @@ static const Rect g_compass_rect = { 3, 172, 76, 17 };
 #define BACK_FOV 45.0f
 /* The ground under the map: near classic's dark, ours. */
 #define GROUND_RGB 0x141418ul
-/* The player's arrow, under ART_PAL.COL, and its outline. */
-#define COLOUR_ARROW 145
-#define COLOUR_ARROW_EDGE 1
+/* What the chrome's own index 0 becomes, so that 0 is clear only in the hole: a near black under ART_PAL.COL. */
+#define CHROME_DARK 1
 
 static struct {
     int open;
@@ -162,46 +165,23 @@ int dunmap_storey(void)
     return g.storey;
 }
 
-/* The player's arrow over the hole, where the engine's projection puts their feet: a wedge along their facing. */
-static void compose_arrow(void)
+int dunmap_marker(float *sx, float *sy, float *angle)
 {
-    float sx;
-    float sy;
-    float fx;
-    float fz;
-    float turn;
-    int ax;
-    int ay;
-    int r;
-    int c;
+    float ax;
+    float ay;
 
-    if (!automap_to_screen(&g.view, g.feet[0], g.feet[1], g.feet[2], &sx, &sy)) {
-        return;
+    if (!automap_to_screen(&g.view, g.feet[0], g.feet[1], g.feet[2], sx, sy)) {
+        return 0;
     }
-    ax = df_ifloor(sx / SCREEN_X_PER);
-    ay = df_ifloor((SCREEN_H_PX - sy) / SCREEN_Y_PER);
-    /* Up the map is the view's yaw: the arrow turns by the player's facing from it. */
-    turn = g.player_yaw - g.view.yaw;
-    fx = df_sin(turn);
-    fz = df_cos(turn);
-    for (r = -5; r <= 5; r++) {
-        for (c = -5; c <= 5; c++) {
-            float along;
-            float side;
-            float half;
-
-            along = (float)c * fx - (float)r * fz;
-            side = (float)c * fz + (float)r * fx;
-            half = (4.0f - along) * 0.55f;
-            if (along < -2.5f || along > 4.0f || df_absf(side) > half) {
-                continue;
-            }
-            if (rect_has(&g_area, ax + c, ay + r)) {
-                g.composer.screen[(ay + r) * CANVAS_W + ax + c] =
-                    (df_u8)(df_absf(side) > half - 1.0f || along < -1.5f ? COLOUR_ARROW_EDGE : COLOUR_ARROW);
-            }
-        }
+    /* Its way on the screen, from where a point a little ahead of the player falls: right in both views. */
+    if (!automap_to_screen(&g.view, g.feet[0] + df_sin(g.player_yaw) * 64.0f, g.feet[1], g.feet[2] + df_cos(g.player_yaw) * 64.0f,
+                           &ax, &ay)) {
+        *angle = g.player_yaw - g.view.yaw;
+        return 1;
     }
+    /* Clockwise from up: x right, the engine's y up the screen. */
+    *angle = df_atan2(ax - *sx, ay - *sy);
+    return 1;
 }
 
 void dunmap_compose(void)
@@ -213,14 +193,13 @@ void dunmap_compose(void)
     /* Index 0 is the cutout's clear: none in the chrome but the hole. */
     for (i = 0; i < CANVAS_BYTES; i++) {
         if (!g.composer.screen[i]) {
-            g.composer.screen[i] = COLOUR_ARROW_EDGE;
+            g.composer.screen[i] = CHROME_DARK;
         }
     }
     canvas_box(&g_area, 0);
     if (g.view.mode == AUTOMAP_3D) {
         canvas_copy_part(g.grid3d, GRID3D_W, 0, 0, GRID3D_W, GRID3D_H, g_grid_rect.x, g_grid_rect.y);
     }
-    compose_arrow();
     g.changed = 0;
 }
 
@@ -238,19 +217,41 @@ int dunmap_changed(void)
     return changed;
 }
 
+/*
+ * Ground units a screen pixel is at the view's centre: from above the scale's
+ * own; from behind, by how far the camera stands from where it looks, across its
+ * field of view, and the ground seen slanting stretched up the screen.
+ */
+static void ground_per_pixel(float *across, float *up)
+{
+    float d;
+
+    if (g.view.mode == AUTOMAP_TOP) {
+        *across = 1.0f / g.view.scale;
+        *up = *across;
+        return;
+    }
+    d = df_sqrt(BACK_DIST * BACK_DIST + BACK_RISE * BACK_RISE) * (SCALE_START / g.view.scale);
+    *across = 2.0f * d * TAN_HALF_FOV / (g.view.x1 - g.view.x0);
+    *up = *across / SLANT;
+}
+
 /* The view moved by screen pixels, up the map and across it, as the view is turned. */
 static void pan(float across, float up)
 {
     float fx;
     float fz;
-    float per;
+    float per_across;
+    float per_up;
 
-    per = g.view.mode == AUTOMAP_TOP ? 1.0f / g.view.scale : 4.0f;
+    ground_per_pixel(&per_across, &per_up);
+    across *= per_across;
+    up *= per_up;
     fx = df_sin(g.view.yaw);
     fz = df_cos(g.view.yaw);
     /* Up is along the yaw; across is a quarter turn clockwise from it. */
-    g.view.cx += (fx * up + fz * across) * per;
-    g.view.cz += (fz * up - fx * across) * per;
+    g.view.cx += fx * up + fz * across;
+    g.view.cz += fz * up - fx * across;
     set_camera();
 }
 
@@ -283,6 +284,30 @@ static void recentre(void)
     g.storey = 0;
     set_slice();
     set_camera();
+}
+
+void dunmap_drag(int dx, int dy)
+{
+    /* The map follows the pointer: the view's centre goes the other way, in screen pixels. */
+    pan(-(float)dx * SCREEN_X_PER, (float)dy * SCREEN_Y_PER);
+    g.changed = 1;
+}
+
+void dunmap_turn_by(int dx)
+{
+    turn((float)dx * DRAG_TURN);
+    g.changed = 1;
+}
+
+int dunmap_repeats(int x, int y)
+{
+    return rect_has(&g_up_rect, x, y) || rect_has(&g_down_rect, x, y) || rect_has(&g_left_rect, x, y)
+           || rect_has(&g_right_rect, x, y) || rect_has(&g_turn_left_rect, x, y) || rect_has(&g_turn_right_rect, x, y);
+}
+
+int dunmap_on_map(int x, int y)
+{
+    return rect_has(&g_area, x, y);
 }
 
 int dunmap_click(int x, int y)
