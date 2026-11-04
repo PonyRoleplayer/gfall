@@ -5217,7 +5217,7 @@ static void check_settings(void)
     mem_zero(&v, sizeof(v));
     v.classic = 1; v.waiting = -1; v.hover = SETTINGS_NOTHING;
     {
-        static const char *const names[] = { "W", "S", "Left", "Right", "A", "D", "Space", "Shift", "R", "Right Button", "H", "C", "I", "E", "Tab", "Page Up", "Page Down", "Home", "Alt", "M", "V" };
+        static const char *const names[] = { "W", "S", "Left", "Right", "A", "D", "Space", "Shift", "R", "Right Button", "H", "C", "I", "E", "Tab", "Page Up", "Page Down", "Home", "Alt", "M", "V", "T" };
         for (i = 0; i < SETTINGS_BINDINGS; i++) v.bindings[i] = names[i];
     }
     v.sfx_volume = v.music_volume = 80;
@@ -6135,6 +6135,15 @@ static void check_riding(void)
     check_expect(ride_hoof_clip(RIDE_HORSE, 1) == SND_HORSE_CLOP && ride_hoof_clip(RIDE_HORSE, 0) == SND_HORSE_CLOP_PACE
                      && ride_hoof_clip(RIDE_CART, 0) == SND_HORSE_AND_CART && ride_hoof_clip(RIDE_FOOT, 0) == -1,
                  "riding: the hooves' clips");
+    /* The cart's picture in the pack: the wagon's container icon, INVE16I0.CIF's fourth, 57 x 30. */
+    {
+        CifSet icons;
+
+        check_expect(cif_open("INVE16I0.CIF", &icons) && cif_frame(&icons, 3) && cif_frame(&icons, 3)->w == 57
+                         && cif_frame(&icons, 3)->h == 30,
+                     "riding: the wagon's icon is not INVE16I0.CIF's fourth");
+        cif_close(&icons);
+    }
     /* The picture steps every 0.125 s while moving, and stands on its first frame. */
     check_expect(ride_frame(0, 0.1f) == 0 && ride_frame(1, 0.13f) == 1 && ride_frame(1, 0.25f) == 3 && ride_frame(0, 0.1f) == 0,
                  "riding: the picture's frames do not step");
@@ -6280,6 +6289,37 @@ static void check_wagon(void)
     bag_click(275, 60);
     check_expect(wagon_contents()->count == 0 && inventory_has(&p.pack, ITEM_LONGSWORD), "wagon: the sword did not come back out");
     bag_close();
+    /* A shop's Wagon button: the left list becomes the wagon, a sword sold out of it, the gold to the pack. */
+    {
+        static const Rect trade_wagon = { 226, 14, 31, 14 };
+        static const Rect trade_action = { 226, 134, 31, 14 };
+        Shop shop;
+        df_u32 gold;
+
+        mem_zero(&shop, sizeof(shop));
+        shop.type = BUILDING_WEAPONS;
+        shop.quality = 10;
+        shop.prices = 1000;
+        check_expect(item_make(&it, ITEM_LONGSWORD, 0) && inventory_add(wagon_contents(), &it) >= 0, "wagon: no sword for the wagon");
+        gold = p.pack.gold;
+        check_expect(bag_open_trade(&p, &shop, TRADE_SELL, 1), "wagon: the trade did not open");
+        bag_click(trade_wagon.x + 2, trade_wagon.y + 2);
+        /* The left list's first row: the wagon's sword onto the counter, then sold. */
+        bag_click(177, 60);
+        check_expect(wagon_contents()->count == 0, "wagon: the sword did not leave the wagon for the counter");
+        bag_click(trade_action.x + 2, trade_action.y + 2);
+        check_expect(p.pack.gold > gold && wagon_contents()->count == 0,
+                     "wagon: selling from the wagon paid nothing");
+        bag_close();
+        /* Laid on the counter and taken back: home to the wagon, not the pack. */
+        check_expect(item_make(&it, ITEM_DAGGER, 0) && inventory_add(wagon_contents(), &it) >= 0, "wagon: no dagger");
+        check_expect(bag_open_trade(&p, &shop, TRADE_SELL, 1), "wagon: the trade did not open again");
+        bag_click(trade_wagon.x + 2, trade_wagon.y + 2);
+        bag_click(177, 60);
+        bag_close();
+        check_expect(wagon_contents()->count == 1 && wagon_contents()->item[0].template_id == ITEM_DAGGER, "wagon: the unsold dagger did not go back to the wagon");
+        inventory_clear(wagon_contents());
+    }
     /* Its limit: 750 kg, a thing too heavy refused. */
     it.weight = 800.0f;
     check_expect(!wagon_fits(&it), "wagon: 800 kg fits");

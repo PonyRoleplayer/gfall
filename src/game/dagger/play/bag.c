@@ -117,6 +117,10 @@ static const df_u8 g_armor_label[BODY_PARTS][2] = {
 
 /* Item pictures kept once fitted to a cell: a list scrolled back reads nothing again. */
 #define ICONS 8
+/* The container icons (INVE16I0.CIF: bones, a body, the ground, the wagon, shelves, a chest...): the wagon's stands for the cart. */
+#define WAGON_ICON_FILE "INVE16I0.CIF"
+#define WAGON_ICON_FRAME 3
+#define WAGON_ICON_ARCHIVE (-16)
 typedef struct Icon {
     /* Which picture, and which metal it is coloured; archive 0 is an empty place. */
     int archive;
@@ -174,6 +178,12 @@ static struct {
     int stole;
     /* 1 while the right list is the wagon (wagon.h); the list it stood for comes back when it is put away. */
     int at_wagon;
+    /*
+     * Trading, 1 while the trade window's Wagon button is down (DFU's trade
+     * window): selling or repairing, the left list is the wagon's, not the
+     * pack's; buying, what is paid for goes into the wagon.
+     */
+    int trade_wagon;
 } g;
 
 /* What the right list shows, and which of the searched thing's rolled things each is (loot.c). */
@@ -182,6 +192,8 @@ static df_u8 g_origin[INVENTORY_MAX];
 /* Buying: what is chosen off the shelves, the left list, and which rolled thing each is. */
 static Inventory g_basket;
 static df_u8 g_basket_origin[INVENTORY_MAX];
+/* Selling or repairing: 1 for each thing on the counter that came out of the wagon, to go back there. */
+static df_u8 g_counter_wagon[INVENTORY_MAX];
 
 int bag_finds_things(Entity *searched, int level)
 {
@@ -209,6 +221,43 @@ static void land_what_was_dropped(void)
     }
 }
 
+/* Item i of the counter back where it came from, the wagon or the pack. */
+static void counter_back(int i)
+{
+    int k;
+
+    inventory_add(g_counter_wagon[i] ? wagon_contents() : &g.player->pack, &g_remote.item[i]);
+    inventory_remove(&g_remote, i);
+    for (k = i; k < g_remote.count; k++) {
+        g_counter_wagon[k] = g_counter_wagon[k + 1];
+    }
+}
+
+/*
+ * The trade window's Wagon button: selling or repairing, the left list
+ * becomes the wagon and back; buying, what is paid for goes into it.
+ * As the inventory's: a cart owned and the wagon in reach.
+ */
+static void toggle_trade_wagon(void)
+{
+    if (g.trade_wagon) {
+        g.trade_wagon = 0;
+        g.note = g.trade == TRADE_BUY ? "What you buy goes in your pack." : 0;
+    } else if (!inventory_has(&g.player->pack, ITEM_CART)) {
+        g.note = "You have no wagon.";
+        return;
+    } else if (!wagon_reachable()) {
+        g.note = "Your wagon is too far away.";
+        return;
+    } else {
+        g.trade_wagon = 1;
+        g.note = g.trade == TRADE_BUY ? "What you buy goes in your wagon." : 0;
+    }
+    g.scroll[LIST_LOCAL] = 0;
+    g.over = OVER_NOTHING;
+    g.over_index = -1;
+}
+
 void bag_close(void)
 {
     if (!g.open) {
@@ -218,10 +267,8 @@ void bag_close(void)
     if (g.trade) {
         /* What was laid on the counter and not sold goes back; a basket not paid for was never taken. */
         if (g.trade != TRADE_BUY) {
-            int i;
-
-            for (i = 0; i < g_remote.count; i++) {
-                inventory_add(&g.player->pack, &g_remote.item[i]);
+            while (g_remote.count) {
+                counter_back(g_remote.count - 1);
             }
         }
     } else if (g.searched) {
@@ -320,7 +367,10 @@ const char *bag_note(void)
 /* The inventory the left list shows: the player's, or the basket while buying. */
 static Inventory *local_inventory(void)
 {
-    return g.trade == TRADE_BUY ? &g_basket : &g.player->pack;
+    if (g.trade == TRADE_BUY) {
+        return &g_basket;
+    }
+    return g.trade && g.trade_wagon ? wagon_contents() : &g.player->pack;
 }
 
 /* 1 when the player's list shows item i now: not worn, and under the chosen tab. */
@@ -332,8 +382,9 @@ static int local_shows(int i)
         return g_basket.item[i].count > 0;
     }
 
-    it = &g.player->pack.item[i];
-    if (inventory_worn_at(&g.player->pack, i) >= 0) {
+    it = &local_inventory()->item[i];
+    /* What is worn stays off the list; nothing in the wagon is worn. */
+    if (local_inventory() == &g.player->pack && inventory_worn_at(&g.player->pack, i) >= 0) {
         return 0;
     }
     /* All there is yet is weapons and armour, the first tab's. */
@@ -410,34 +461,67 @@ static MemHeap *scratch_begin(void)
 static const Icon *icon_of(const Item *it)
 {
     const Image *picture;
+    const df_u8 *source;
+    CifSet set;
+    int opened;
     MemHeap *was;
     Icon *icon;
     int archive;
     int record;
     int metal;
+    int sw;
+    int sh;
     int row;
     int col;
 
-    if (!item_picture(it, g.player->sheet.race, g.player->sheet.female, &archive, &record)) {
+    /* The small cart's own picture is wrong; DFU shows the wagon's container icon instead (ItemHelper). */
+    if (it->template_id == ITEM_CART) {
+        archive = WAGON_ICON_ARCHIVE;
+        record = WAGON_ICON_FRAME;
+    } else if (!item_picture(it, g.player->sheet.race, g.player->sheet.female, &archive, &record)) {
         return 0;
     }
-    metal = item_metal(it);
+    metal = archive == WAGON_ICON_ARCHIVE ? -1 : item_metal(it);
     icon = &g.icons[(df_u32)(record * 31 + archive + metal * 7 + 7) % ICONS];
     if (icon->archive == archive && icon->record == record && icon->metal == metal) {
         return icon;
     }
     was = scratch_begin();
-    picture = doll_read_picture(archive, record);
+    source = 0;
+    sw = 0;
+    sh = 0;
+    opened = 0;
+    if (archive == WAGON_ICON_ARCHIVE) {
+        const CifFrame *f;
+
+        opened = cif_open(WAGON_ICON_FILE, &set);
+        f = opened ? cif_frame(&set, record) : 0;
+        if (f) {
+            source = f->pixels;
+            sw = f->w;
+            sh = f->h;
+        }
+    } else {
+        picture = doll_read_picture(archive, record);
+        if (picture) {
+            source = picture->index;
+            sw = picture->width;
+            sh = picture->height;
+        }
+    }
     composer_scratch_end(was);
-    if (!picture) {
+    if (!source) {
+        if (opened) {
+            cif_close(&set);
+        }
         return 0;
     }
     icon->archive = archive;
     icon->record = record;
     icon->metal = metal;
     /* Fit the box keeping its shape, the tighter side deciding; never larger than it is. */
-    icon->w = picture->width;
-    icon->h = picture->height;
+    icon->w = sw;
+    icon->h = sh;
     if (icon->w > ICON_W) {
         icon->h = icon->h * ICON_W / icon->w;
         icon->w = ICON_W;
@@ -452,7 +536,7 @@ static const Icon *icon_of(const Item *it)
         for (col = 0; col < icon->w; col++) {
             int index;
 
-            index = picture->index[(row * picture->height / icon->h) * picture->width + col * picture->width / icon->w];
+            index = source[(row * sh / icon->h) * sw + col * sw / icon->w];
             /* In a list a mask has nothing to cut away: it is only clear. */
             if (index == DOLL_MASK) {
                 index = 0;
@@ -461,6 +545,9 @@ static const Icon *icon_of(const Item *it)
             }
             icon->pixels[row * icon->w + col] = (df_u8)index;
         }
+    }
+    if (opened) {
+        cif_close(&set);
     }
     return icon;
 }
@@ -545,9 +632,14 @@ static void compose_targets(void)
     const Rect *r;
 
     r = &g_target_rect[LIST_LOCAL];
-    canvas_label(r->x + 1, r->y + 2, "Carrying");
-    log_format(line, (int)sizeof(line), "%d/%d kg", df_iround(inventory_weight(&g.player->pack)),
-               df_iround(rules_max_carry(g.player->sheet.attribute[ATTR_STRENGTH])));
+    if (g.trade && g.trade_wagon) {
+        canvas_label(r->x + 1, r->y + 2, "Wagon");
+        log_format(line, (int)sizeof(line), "%d/%d kg", df_iround(inventory_weight(wagon_contents())), df_iround(WAGON_KG));
+    } else {
+        canvas_label(r->x + 1, r->y + 2, "Carrying");
+        log_format(line, (int)sizeof(line), "%d/%d kg", df_iround(inventory_weight(&g.player->pack)),
+                   df_iround(rules_max_carry(g.player->sheet.attribute[ATTR_STRENGTH])));
+    }
     canvas_label(r->x + 1, r->y + 2 + LINE_H, line);
     r = &g_target_rect[LIST_REMOTE];
     canvas_label(r->x + 1, r->y + 2, g.at_wagon ? "Wagon" : (g.trade == TRADE_BUY ? "Shelves" : (g.trade ? "Counter" : (g.searched ? loot_label(g.searched) : "Dropped"))));
@@ -1100,8 +1192,9 @@ static void from_basket(int i)
 static void to_counter(int i)
 {
     const Item *it;
+    int at;
 
-    it = &g.player->pack.item[i];
+    it = &local_inventory()->item[i];
     if (g.trade == TRADE_SELL && !shop_buys(&g.shop, it)) {
         g.note = "This shop does not deal in that.";
         return;
@@ -1110,8 +1203,10 @@ static void to_counter(int i)
         g.note = "That needs no repair.";
         return;
     }
-    if (inventory_add(&g_remote, it) >= 0) {
-        inventory_remove(&g.player->pack, i);
+    at = inventory_add(&g_remote, it);
+    if (at >= 0) {
+        g_counter_wagon[at] = (df_u8)(local_inventory() != &g.player->pack);
+        inventory_remove(local_inventory(), i);
     }
 }
 
@@ -1121,6 +1216,27 @@ static int take_basket(void)
     float weight;
     int i;
 
+    /* With the Wagon button down, what is bought goes into the wagon, by its 750 kg. */
+    if (g.trade_wagon) {
+        weight = inventory_weight(wagon_contents());
+        for (i = 0; i < g_basket.count; i++) {
+            if (wagon_refuses(&g_basket.item[i])) {
+                g.note = "That cannot go in the wagon.";
+                return 0;
+            }
+            weight += g_basket.item[i].weight * (float)g_basket.item[i].count;
+        }
+        if (weight > WAGON_KG || wagon_contents()->count + g_basket.count > INVENTORY_MAX) {
+            g.note = "Your wagon cannot hold any more.";
+            return 0;
+        }
+        for (i = 0; i < g_basket.count; i++) {
+            inventory_add(wagon_contents(), &g_basket.item[i]);
+            shop_taken(&g.shop, g_basket_origin[i]);
+        }
+        inventory_clear(&g_basket);
+        return 1;
+    }
     weight = inventory_weight(&g.player->pack);
     for (i = 0; i < g_basket.count; i++) {
         weight += g_basket.item[i].weight * (float)g_basket.item[i].count;
@@ -1167,9 +1283,8 @@ static void trade_act(void)
         } else {
             for (i = g_remote.count - 1; i >= 0; i--) {
                 g_remote.item[i].condition = g_remote.item[i].condition_max;
-                inventory_add(&g.player->pack, &g_remote.item[i]);
+                counter_back(i);
             }
-            inventory_clear(&g_remote);
         }
         g.player->pack.gold -= (df_u32)price;
     }
@@ -1216,7 +1331,7 @@ static int click_trade(int x, int y)
         return BAG_STAY;
     }
     if (rect_has(&g_trade_wagon, x, y)) {
-        g.note = "You have no wagon.";
+        toggle_trade_wagon();
         return BAG_STAY;
     }
     if (rect_has(&g_trade_action, x, y)) {
@@ -1230,10 +1345,9 @@ static int click_trade(int x, int y)
                 from_basket(g_basket.count - 1);
             }
         } else {
-            for (i = 0; i < g_remote.count; i++) {
-                inventory_add(&g.player->pack, &g_remote.item[i]);
+            while (g_remote.count) {
+                counter_back(g_remote.count - 1);
             }
-            inventory_clear(&g_remote);
         }
         return BAG_STAY;
     }
@@ -1258,8 +1372,7 @@ static int click_trade(int x, int y)
     } else if (list == LIST_LOCAL) {
         to_counter(i);
     } else {
-        inventory_add(&g.player->pack, &g_remote.item[i]);
-        inventory_remove(&g_remote, i);
+        counter_back(i);
     }
     return BAG_STAY;
 }

@@ -126,9 +126,9 @@ Classic's travel map and its fast journeys, on Daggerfall Unity's numbers and cl
   - **Reach:** the inventory's Wagon button turns its right list into the wagon and back. It works anywhere outdoors or in a building, but in a dungeon only within 5 m of its way out, where the cart waits (`wagon_in_reach` in `game.c`, DFU's rule).
   - **Moving things:** Remove on a pack item puts it in, if it fits. A click on a wagon item takes it back, if the player can carry it. Gold dropped goes in as a stack of coins.
   - **Refused:** a horse or a cart never goes in. Without a cart it says there is no wagon, and out of reach that it is too far.
+  - **In a shop** (DFU's trade window): the trade window's Wagon button, with the same rules, makes the left list the wagon's while selling or repairing, so things are sold or mended straight out of it; what is laid on the counter and not sold goes back where it came from. Buying with it down, what is paid for goes into the wagon, by its 750 kg.
+- **The cart's picture** in a list is the wagon's container icon, `INVE16I0.CIF`'s fourth frame (DFU's ItemHelper: the cart's template picture is wrong). That file's frames are bones, a body, the ground, the wagon, shelves, a chest, a merchant's hands, a bin, a sparkle, a backpack, a heap of skulls.
 - **Not yet:**
-  - the cart's own inventory picture (DFU picks another for it: it shows as a red blob);
-  - selling from the wagon in a shop;
   - ships.
 
 ### A journey (`play/journey.c`, DFU's TravelTimeCalculator)
@@ -834,13 +834,13 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Rest | an encounter wakes a sleeper, not a new creature; a class with no spell point regeneration | later, P12-b |
 | Items | clothing, jewellery, ingredients, books, potions, maps, and the screen's other tabs | P12-b, later |
 | Items | clothing's dyes | with clothing |
-| Inventory | the trade window's Wagon button (P10), the Use button (P12-b) | as named |
+| Inventory | the Use button | P12-b |
 | Inventory | two weapons: the doll shows the one in use, as the pictures have one weapon hand; classic's own way not found | later |
 | Inventory | the info box's lines are ours, not TEXT.RSC's | later |
 | Loot | the other columns of `LOOT` wait for their items | P12-b, later |
 | Loot | a body or a heap takes nothing put on it (a choice, see What can be searched) | - |
 | Places | treasure and piles only in a dungeon streamed by block; a town's doors not keyed; the sea can be walked on | later |
-| World | the cart's picture in the pack, selling from the wagon, ships; the indoor automap's marks and notes, the town map's rotation and names; the travel map's Find list, identify flash and neighbouring provinces; places marked by talk; guild travel; regional holidays; the afflictions' cemetery, beast pictures and sounds (Afflictions) | P10 |
+| World | ships; the indoor automap's marks and notes, the town map's rotation and names; the travel map's Find list, identify flash and neighbouring provinces; places marked by talk; guild travel; regional holidays; the afflictions' cemetery, beast pictures and sounds (Afflictions) | P10 |
 | Player | the completed classic HUD bar needs target acceptance; the map button opens the travel map outdoors, the automap and magic buttons await their systems | P9-b, P10, P12-b |
 | Player | target acceptance/tuning of the implemented classic cursor controls | P9-c |
 | People | Steal mode, pickpocketing and the deferred theft mechanics | P12-a |
