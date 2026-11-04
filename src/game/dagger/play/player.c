@@ -36,6 +36,7 @@ void player_init(Player *p, const Character *sheet)
     p->breath = 0;
     p->breath_time = 0.0f;
     p->running = 0;
+    p->riding = 0;
     p->bob_phase = VIEWOPT_CREST;
     p->bob_walk = 0;
 }
@@ -102,12 +103,17 @@ void player_step_motion(Player *p, const Input *in, const Scene *scene, float dt
         f *= scale;
         r *= scale;
     }
-    mps = (in->held & INPUT_BIT(INPUT_RUN))
-              ? rules_run_speed(p->sheet.attribute[ATTR_SPEED], p->sheet.skill[SKILL_RUNNING])
-              : rules_walk_speed(p->sheet.attribute[ATTR_SPEED]);
+    /* Riding is its own speed, and cannot run (PlayerSpeedChanger). */
+    if (p->riding) {
+        mps = rules_ride_speed(p->sheet.attribute[ATTR_SPEED], p->riding == 2);
+    } else {
+        mps = (in->held & INPUT_BIT(INPUT_RUN))
+                  ? rules_run_speed(p->sheet.attribute[ATTR_SPEED], p->sheet.skill[SKILL_RUNNING])
+                  : rules_walk_speed(p->sheet.attribute[ATTR_SPEED]);
+    }
     step = mps * RULES_UNITS_PER_M * dt;
     /* Running trains the skill: one use every fourth classic update of it (PlayerEntity). */
-    p->running = (in->held & INPUT_BIT(INPUT_RUN)) && (f != 0.0f || r != 0.0f);
+    p->running = !p->riding && (in->held & INPUT_BIT(INPUT_RUN)) && (f != 0.0f || r != 0.0f);
     if (p->running) {
         p->run_time += dt;
         if (p->run_time >= RUN_USE_EVERY) {

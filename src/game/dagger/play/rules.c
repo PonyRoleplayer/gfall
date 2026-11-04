@@ -15,6 +15,9 @@
 /* Classic speed units to metres a second, and the walking base. */
 #define SPEED_RATIO 39.5f
 #define WALK_BASE 150.0f
+/* PlayerSpeedChanger's riding bases: the walk's 150 and 225 more on a horse, 100 more with a cart. */
+#define HORSE_BASE 375.0f
+#define CART_BASE 250.0f
 #define JUMP_SPEED 4.5f
 #define JUMP_SKILL 0.5f
 #define JUMP_GRAVITY 20.0f
@@ -30,6 +33,11 @@ float rules_walk_speed(int speed)
 float rules_run_speed(int speed, int running)
 {
     return ((float)speed + WALK_BASE) / SPEED_RATIO * (1.35f + (float)running / 200.0f);
+}
+
+float rules_ride_speed(int speed, int cart)
+{
+    return ((float)speed + (cart ? CART_BASE : HORSE_BASE)) / SPEED_RATIO;
 }
 
 float rules_max_carry(int strength)

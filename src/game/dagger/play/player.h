@@ -40,6 +40,8 @@ typedef struct Player {
     int breath;
     float breath_time;
     /* 1 while the run key takes it along: the minute's fatigue goes by it. */
+    /* RIDE_* (ride.h): on foot, on a horse, driving a cart. */
+    int riding;
     int running;
     /*
      * Head bobbing's phase (radians) and 1 while this step is a walk on

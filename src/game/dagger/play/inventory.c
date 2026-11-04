@@ -469,6 +469,18 @@ int inventory_spend_arrow(Inventory *inv)
     return 1;
 }
 
+int inventory_has(const Inventory *inv, int template_id)
+{
+    int i;
+
+    for (i = 0; i < inv->count; i++) {
+        if (inv->item[i].template_id == template_id) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 float inventory_weight(const Inventory *inv)
 {
     float kg;
@@ -476,6 +488,10 @@ float inventory_weight(const Inventory *inv)
 
     kg = (float)inv->gold * GOLD_KG;
     for (i = 0; i < inv->count; i++) {
+        /* A horse or a cart is owned, not carried: it weighs nothing in the pack. */
+        if (inv->item[i].template_id == ITEM_HORSE || inv->item[i].template_id == ITEM_CART) {
+            continue;
+        }
         kg += inv->item[i].weight * (float)inv->item[i].count;
     }
     return kg;

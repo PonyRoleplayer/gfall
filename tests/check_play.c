@@ -38,6 +38,7 @@
 #include "game/dagger/play/townmap.h"
 #include "game/dagger/play/dunmap.h"
 #include "game/dagger/play/marker.h"
+#include "game/dagger/play/ride.h"
 #include "engine/scene/automap.h"
 #include "game/dagger/formats/climate.h"
 #include "game/dagger/places/wild.h"
@@ -869,9 +870,9 @@ static void check_items(void)
     Item it;
     char name[48];
 
-    check_expect(item_table()->count == 32 && weapon_table()->count == 18 && armor_table()->count == 11
+    check_expect(item_table()->count == 34 && weapon_table()->count == 18 && armor_table()->count == 11
                      && material_table()->count == MATERIAL_COUNT && loot_table()->count == 21,
-                 "items: MAIN.DAT lacks classic's 32 items (11 of armour, 18 swung, arrows, a letter of credit, gold), 12 materials or 21 loot tables");
+                 "items: MAIN.DAT lacks classic's 34 items (a cart, a horse, 11 of armour, 18 swung, arrows, a letter of credit, gold), 12 materials or 21 loot tables");
     check_expect(item_make(&it, ITEM_LONGSWORD, MATERIAL_IRON) && check_near(it.weight, 4.5f, 0.001f)
                      && it.value == 45 && it.condition_max == 800 && it.condition == 800,
                  "items: an iron longsword is not 4.5 kg, 45 gold, 800");
@@ -6105,6 +6106,125 @@ static void check_marker(void)
                  "marker: the steps of a turn");
 }
 
+/* A horse and a cart: sold by a general store, owned not carried, ridden outdoors at classic's speed, its picture, the journey by horse. */
+static void check_riding(void)
+{
+    Player p;
+    Character sheet;
+    Shop shop;
+    Inventory stock;
+    df_u8 origin[INVENTORY_MAX];
+    Item horse;
+    Input in;
+    CfaPicture cfa;
+    Journey foot;
+    Journey ridden;
+    MemHeap *scratch;
+    MemHeap *was;
+    float x0;
+    float walked;
+    float rode;
+    int i;
+    int horses;
+    int carts;
+
+    walked = 0.0f;
+    rode = 0.0f;
+    keep_clear();
+    loot_new_game(4242u);
+    character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Ada");
+    player_init(&p, &sheet);
+    /* A general store's shelves, any day: one horse and one cart. */
+    mem_zero(&shop, sizeof(shop));
+    shop.type = BUILDING_GENERAL;
+    shop.quality = 10;
+    shop.prices = 1000;
+    shop.key.place = (3u << 30) | 77u;
+    shop.key.thing = 0xFE000000u;
+    shop_stock(&shop, 1, 500, &stock, origin);
+    horses = 0;
+    carts = 0;
+    for (i = 0; i < stock.count; i++) {
+        horses += stock.item[i].template_id == ITEM_HORSE;
+        carts += stock.item[i].template_id == ITEM_CART;
+    }
+    check_expect(horses == 1 && carts == 1, "riding: a general store has not one horse and one cart");
+    check_expect(item_make(&horse, ITEM_HORSE, 0) && shop_buys(&shop, &horse), "riding: a general store does not deal in horses");
+    /* Owned, not carried: a horse weighs nothing in the pack. */
+    inventory_clear(&p.pack);
+    check_expect(ride_toggle(&p, 1) != 0 && p.riding == RIDE_FOOT, "riding: mounted with no horse");
+    inventory_add(&p.pack, &horse);
+    check_expect(inventory_weight(&p.pack) == 0.0f && inventory_has(&p.pack, ITEM_HORSE), "riding: a horse weighs in the pack");
+    check_expect(ride_toggle(&p, 0) != 0 && p.riding == RIDE_FOOT, "riding: mounted indoors");
+    check_expect(ride_toggle(&p, 1) == 0 && p.riding == RIDE_HORSE, "riding: the horse not mounted outdoors");
+    check_expect(ride_toggle(&p, 1) != 0 && p.riding == RIDE_FOOT, "riding: not got down");
+    /* Speed 50: walking (50 + 150 - 25) / 39.5, a horse (50 + 375) / 39.5, a cart (50 + 250) / 39.5. */
+    check_expect(df_absf(rules_ride_speed(50, 0) - 425.0f / 39.5f) < 0.001f && df_absf(rules_ride_speed(50, 1) - 300.0f / 39.5f) < 0.001f,
+                 "riding: classic's speeds");
+    /* On the hold's floor a second's walk and a second's ride: the horse goes 425 / 175 as far, and the run key does nothing on it. */
+    {
+        Dungeon hold;
+        Level level;
+        float x;
+        float y;
+        float z;
+        float yaw;
+        float pitch;
+
+        if (dungeon_load(&hold) && dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
+            Camera cam;
+
+            camera_set(&cam, x, y, z, yaw, pitch);
+            dunstream_fill(&cam);
+            p.sheet.attribute[ATTR_SPEED] = 50;
+            memset(&in, 0, sizeof(in));
+            player_place(&p, x, y, z, yaw, pitch);
+            walk(&p, &level.scene, &in, 60);
+            in.move_f = 1;
+            x0 = p.body.feet[0] + p.body.feet[2];
+            walked = walk(&p, &level.scene, &in, 15);
+            player_place(&p, x, y, z, yaw, pitch);
+            in.move_f = 0;
+            walk(&p, &level.scene, &in, 60);
+            in.move_f = 1;
+            in.held = INPUT_BIT(INPUT_RUN);
+            p.riding = RIDE_HORSE;
+            rode = walk(&p, &level.scene, &in, 15);
+            p.riding = RIDE_FOOT;
+            (void)x0;
+            check_expect(rode > walked * 2.2f && rode < walked * 2.7f && !p.running, "riding: a horse's quarter second is not 425 / 175 of a walk's");
+            dunstream_close();
+        }
+    }
+    /* The travel map's journey: by horse the land takes half the minutes on foot. */
+    check_expect(ride_journey(&p) == JOURNEY_HORSE, "riding: the journey is not by horse");
+    journey_plan(100, 100, 110, 100, 0, 1, 0, JOURNEY_FOOT, 0, &foot);
+    journey_plan(100, 100, 110, 100, 0, 1, 0, ride_journey(&p), 0, &ridden);
+    check_expect(ridden.minutes * 2 <= foot.minutes + 10 && ridden.minutes > 0, "riding: a horse's journey is not half the time");
+    ride_get_down(&p);
+    /* The picture: MRED00I0.CFA, 106 x 105, four frames, the frame moving only while the player does. */
+    scratch = mem_heap_new();
+    was = mem_heap_use(scratch);
+    check_expect(cfa_load("MRED00I0.CFA", &cfa) && cfa.width == 106 && cfa.height == 105 && cfa.frames == 4, "riding: the horse's picture");
+    {
+        int drawn;
+
+        drawn = 0;
+        for (i = 0; cfa.pixels && i < cfa.width * cfa.height; i++) {
+            drawn += cfa.pixels[i] != 0;
+        }
+        check_expect(drawn > 1000, "riding: the horse's first frame is empty");
+    }
+    check_expect(cfa_load("MRED01I0.CFA", &cfa) && cfa.frames == 4, "riding: the cart's picture");
+    mem_heap_use(was);
+    mem_heap_delete(scratch);
+    check_expect(ride_frame(0, 1.0f) == 0 && ride_frame(1, 0.13f) == 1 && ride_frame(1, 0.25f) == 3 && ride_frame(1, 0.125f) == 0
+                 && ride_frame(0, 0.0f) == 0, "riding: the picture's frames");
+    keep_clear();
+    printf("riding: a general store's horse and cart, owned not carried, mounted outdoors, %.1f against %.1f units a quarter second, the journey by horse, MRED00I0.CFA's four frames\n",
+           rode, walked);
+}
+
 /* Counts the engine's automap polygons. */
 static void count_polygon(void *ctx, const AutomapCorner *corner, int n, df_u32 rgb)
 {
@@ -6312,6 +6432,7 @@ void check_play(void)
     check_citizen();
     check_senses();
     check_wider_world();
+    check_riding();
     check_marker();
     check_dunmap();
     check_goto();

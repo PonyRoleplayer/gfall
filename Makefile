@@ -172,6 +172,7 @@ PLAY_SRC := \
 	src/game/dagger/play/standing.c \
 	src/game/dagger/play/atlas.c \
 	src/game/dagger/play/journey.c \
+	src/game/dagger/play/ride.c \
 	src/game/dagger/play/travelmap.c \
 	src/game/dagger/play/townmap.c \
 	src/game/dagger/play/dunmap.c \

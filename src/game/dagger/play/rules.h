@@ -23,6 +23,8 @@
 float rules_walk_speed(int speed);
 /* Running: (speed + 150) / 39.5 times 1.35 and the Running skill (0..100) over 200. */
 float rules_run_speed(int speed, int running);
+/* Riding: (Speed + 375) / 39.5 m/s on a horse, (Speed + 250) / 39.5 driving a cart (PlayerSpeedChanger); no running. */
+float rules_ride_speed(int speed, int cart);
 /* The player's gravity, in metres a second squared: AcrobatMotor's 20. */
 float rules_gravity(void);
 /* A jump's speed up, in metres a second: AcrobatMotor's 4.5, raised by the Jumping skill (0..100) over 200. */

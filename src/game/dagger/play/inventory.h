@@ -129,7 +129,9 @@ int inventory_armor_at_part(const Inventory *inv, int part);
 int inventory_arrows(const Inventory *inv);
 /* One arrow gone, the stack with it when it was the last. 0 when there were none. */
 int inventory_spend_arrow(Inventory *inv);
-/* Every item's weight together and the gold's, kilograms. */
+/* 1 when the pack holds an item of this template: a horse, a cart. */
+int inventory_has(const Inventory *inv, int template_id);
+/* Every item's weight together and the gold's, kilograms; a horse and a cart are owned, not carried, and weigh nothing. */
 float inventory_weight(const Inventory *inv);
 /*
  * Each body part's armour value from what is worn: 100 bare, lower is

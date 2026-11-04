@@ -2,6 +2,7 @@
 #include "game/dagger/play/atlas.h"
 #include "game/dagger/play/canvas.h"
 #include "game/dagger/play/words.h"
+#include "game/dagger/play/ride.h"
 #include "game/dagger/formats/dungeon.h"
 #include "game/dagger/formats/factionfile.h"
 #include "game/dagger/formats/palette.h"
@@ -524,7 +525,8 @@ void travelmap_palette(unsigned char *rgb)
 
 static void plan(void)
 {
-    journey_plan(g.here_px, g.here_py, g.place_px, g.place_py, g.reckless, !g.camp, g.ship, JOURNEY_FOOT, 0, &g.journey);
+    /* "Foot/horse": on the horse when one is owned, else the cart, else on foot (ride.h). */
+    journey_plan(g.here_px, g.here_py, g.place_px, g.place_py, g.reckless, !g.camp, g.ship, ride_journey(g.player), 0, &g.journey);
 }
 
 /* A place chosen: ask whether to go. */

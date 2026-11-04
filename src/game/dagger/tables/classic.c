@@ -313,8 +313,9 @@ const CareerSkill *classic_skills(int *n)
 }
 
 /*
- * DFU's ItemTemplates: the armour (102..112), the weapons (113..131, the
- * arrow last), the letter of credit (275) and gold (276): name, weight in kg, price, hit points, the
+ * DFU's ItemTemplates: the small cart and the horse (93, 94), the armour
+ * (102..112), the weapons (113..131, the arrow last), the letter of credit
+ * (275) and gold (276): name, weight in kg, price, hit points, the
  * picture on the ground and on the paper doll, one-handed, blunt, and the
  * paper doll's draw order.
  *
@@ -322,6 +323,8 @@ const CareerSkill *classic_skills(int *n)
  * 245: the wearer's sex and body shape move it (item_doll_picture).
  */
 static const ItemTemplate g_items[] = {
+    { 93, "Small Cart", 400.0f, 150, 0, 0, 0, 213, 1, 0, 0, 0 },
+    { 94, "Horse", 800.0f, 1000, 0, 0, 0, 201, 0, 0, 0, 0 },
     { 102, "Cuirass", 12.5f, 100, 4096, 207, 11, 245, 3, 0, 0, 50 },
     { 103, "Gauntlets", 1.25f, 50, 2048, 207, 13, 245, 8, 0, 0, 70 },
     { 104, "Greaves", 2.5f, 80, 3072, 207, 13, 245, 10, 0, 0, 30 },

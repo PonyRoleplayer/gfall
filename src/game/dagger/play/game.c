@@ -4,6 +4,9 @@
 #include "game/dagger/play/atlas.h"
 #include "game/dagger/play/journey.h"
 #include "game/dagger/play/travelmap.h"
+#include "game/dagger/play/ride.h"
+#include "game/dagger/formats/cif.h"
+#include "game/dagger/formats/img.h"
 #include "game/dagger/play/dunmap.h"
 #include "game/dagger/play/bank.h"
 #include "game/dagger/play/court.h"
@@ -425,6 +428,67 @@ static void die(void)
     apply_pointer(1);
 }
 
+static int hud_bar(void);
+
+/* The riding pictures, a frame each (MRED00I0.CFA the horse, MRED01I0.CFA the cart), read the first time a mount is ridden. */
+static int g_ride_pic[2][RIDE_FRAMES];
+/* The picture's height in classic's rows; its width before DFU's 0.8 a pixel across. */
+#define RIDE_PICTURE_H 105
+#define RIDE_PICTURE_W 106
+static int g_ride_frame;
+
+/* A mount's frames onto the card, kept with the game's pictures. 0 when its file does not read. */
+static int read_riding(int cart)
+{
+    static const char *const files[2] = { "MRED00I0.CFA", "MRED01I0.CFA" };
+    static df_u8 rgb[768];
+    CfaPicture cfa;
+    MemHeap *scratch;
+    MemHeap *was;
+    int f;
+    int ok;
+
+    if (g_ride_pic[cart][0]) {
+        return 1;
+    }
+    if (!img_art_palette(rgb)) {
+        return 0;
+    }
+    scratch = mem_heap_new();
+    if (!scratch) {
+        return 0;
+    }
+    was = mem_heap_use(scratch);
+    ok = cfa_load(files[cart], &cfa) && cfa.frames >= RIDE_FRAMES;
+    for (f = 0; ok && f < RIDE_FRAMES; f++) {
+        g_ride_pic[cart][f] = pic_load(cfa.pixels + (df_u32)f * (df_u32)cfa.width * (df_u32)cfa.height, cfa.width, cfa.height, rgb, 1);
+        ok = g_ride_pic[cart][f] != 0;
+    }
+    mem_heap_use(was);
+    mem_heap_delete(scratch);
+    return ok;
+}
+
+/*
+ * The horse's head or the cart's reins at the screen's foot, over the bar when it
+ * is shown: 105 of classic's rows tall and 0.8 of that to a pixel across, as DFU
+ * draws it (TransportManager), the frame moving with the player.
+ */
+static void draw_riding(void)
+{
+    int cart;
+    int bottom;
+    int w;
+
+    cart = g_player.riding == RIDE_CART;
+    if (!read_riding(cart)) {
+        return;
+    }
+    bottom = hud_bar() ? HUDBAR_TOP : SCREEN_H;
+    w = RIDE_PICTURE_W * 4 / 5 * 12 / 10;
+    screen_draw(g_ride_pic[cart][g_ride_frame], (SCREEN_W - w) / 2, bottom - RIDE_PICTURE_H, w, RIDE_PICTURE_H);
+}
+
 /* The bottom bar takes clicks only while it is drawn. Full screen hides it. */
 static int hud_bar(void)
 {
@@ -446,8 +510,10 @@ static void draw(void)
         int w;
         int h;
 
-        /* Under the HUD, as classic: the compass and the bars over the blade. */
-        if (!g_sheathed && weapon_shown(&pic, &left, &top, &w, &h)) {
+        /* Under the HUD, as classic: the compass and the bars over the blade, or the horse's head and the reins. */
+        if (g_player.riding) {
+            draw_riding();
+        } else if (!g_sheathed && weapon_shown(&pic, &left, &top, &w, &h)) {
             screen_draw(pic, left, top, w, h);
         }
         overlay_draw();
@@ -611,7 +677,17 @@ static void hud_command(int action)
         interact_say("No magic item can be used.");
         break;
     case HUDBAR_TRANSPORT:
-        interact_say("You are travelling on foot.");
+        {
+            int px;
+            int py;
+            const char *said;
+
+            /* Outdoors only: a horse does not go into a house or down a dungeon. */
+            said = ride_toggle(&g_player, travel_pixel(g_cam, &px, &py));
+            if (said) {
+                interact_say(said);
+            }
+        }
         break;
     }
 }
@@ -747,9 +823,16 @@ int game_world_shows(void)
 /* What every arrival sets up: the frame's creatures gone with the last place, the camera on the player. */
 static void arrive(const Level *level, Camera *cam, const TravelPose *at)
 {
+    int px;
+    int py;
+
     const char *said;
 
     g_level = level;
+    /* Into a building or a dungeon on foot: the horse waits outside (TransportManager). */
+    if (!travel_pixel(cam, &px, &py)) {
+        ride_get_down(&g_player);
+    }
     combat_reset();
     foes_reset();
     watch_reset();

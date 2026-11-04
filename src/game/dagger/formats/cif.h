@@ -64,4 +64,26 @@ const char *cif_metal_name(int metal);
 /* The palette index to draw. Indices outside 112..127 are unchanged. */
 int cif_metal(int index, int metal);
 
+/*
+ * Classic's RLE, as CIF and CFA pictures use it: a byte over 127 repeats the
+ * next byte (that less 127) times, else that and one bytes follow as they are.
+ * n bytes in, need out. 0 when the bytes run out or overflow.
+ */
+int cif_rle(const df_u8 *src, int n, df_u8 *dst, int need);
+
+/*
+ * A CFA picture (MRED00I0.CFA, a riding horse): a 14-byte header (width, height,
+ * the compressed width, two unknowns, bits a pixel, frames, the header's size),
+ * then one RLE stream of every frame one after the other, 8-bit under
+ * ART_PAL.COL. The frames into the current heap.
+ */
+typedef struct CfaPicture {
+    int width;
+    int height;
+    int frames;
+    df_u8 *pixels;
+} CfaPicture;
+/* 0 when the file does not read. */
+int cfa_load(const char *name, CfaPicture *out);
+
 #endif

@@ -6,7 +6,7 @@
  * a byte above 127 repeats the next byte (value - 127) times,
  * and any other byte is a run of (value + 1) literal pixels. */
 
-static int rle(const df_u8 *src, int n, df_u8 *dst, int need)
+int cif_rle(const df_u8 *src, int n, df_u8 *dst, int need)
 {
     int i;
     int o;
@@ -131,7 +131,7 @@ static int take_swings(const df_u8 *b, int n, int off, CifSet *out, MemHeap *hea
             }
             span = next - at;
             pix = (df_u8 *)mem_alloc((df_u32)w * (df_u32)h);
-            if (!pix || !rle(b + off + at, span, pix, w * h)) {
+            if (!pix || !cif_rle(b + off + at, span, pix, w * h)) {
                 continue;
             }
             add_frame(out, w, h, df_ri16(b + off + 6), df_ri16(b + off + 8), group, pix);
@@ -323,4 +323,34 @@ int cif_metal(int index, int metal)
         return index;
     }
     return swap[metal][index - CIF_RAMP];
+}
+
+int cfa_load(const char *name, CfaPicture *out)
+{
+    const df_u8 *b;
+    df_u32 n;
+    int compressed;
+    int header;
+    int need;
+
+    out->pixels = 0;
+    b = vfs_read(name, &n);
+    if (!b || n < 14) {
+        return 0;
+    }
+    out->width = (int)df_ru16(b);
+    out->height = (int)df_ru16(b + 2);
+    compressed = (int)df_ru16(b + 4);
+    out->frames = (int)b[11];
+    header = (int)df_ru16(b + 12);
+    if (out->width < 1 || out->height < 1 || out->frames < 1 || compressed != out->width || header >= (int)n) {
+        return 0;
+    }
+    need = out->width * out->height * out->frames;
+    out->pixels = (df_u8 *)mem_alloc((df_u32)need);
+    if (!out->pixels || !cif_rle(b + header, (int)n - header, out->pixels, need)) {
+        out->pixels = 0;
+        return 0;
+    }
+    return 1;
 }

@@ -78,6 +78,25 @@ void shop_stock(const Shop *shop, int level, int day, Inventory *out, df_u8 *ori
     seed = loot_seed() ^ shop->key.place ^ shop->key.thing ^ ((df_u32)day * 2654435761u);
     t = item_table();
     thing = 0;
+    /* A general store always has a horse and a small cart (StockShopShelf): things 0 and 1, gone till tomorrow once bought. */
+    if (shop->type == BUILDING_GENERAL) {
+        static const int beasts[2] = { ITEM_HORSE, ITEM_CART };
+        int b;
+
+        for (b = 0; b < 2; b++) {
+            Item made;
+
+            if (item_make(&made, beasts[b], 0) && !(taken[0] & (1u << thing))) {
+                int at;
+
+                at = inventory_add(out, &made);
+                if (at >= 0) {
+                    origin[at] = (df_u8)thing;
+                }
+            }
+            thing++;
+        }
+    }
     for (i = 0; i < t->count && thing < SHOP_STOCK_MAX; i++) {
         const ItemTemplate *it;
         int mod;
@@ -105,6 +124,7 @@ void shop_stock(const Shop *shop, int level, int day, Inventory *out, df_u8 *ori
         seed = mix(seed);
         {
             Item made;
+
 
             if (loot_make_for_level(&made, it->id, level, seed)) {
                 if (!(taken[thing >> 5] & (1u << (thing & 31)))) {
@@ -149,7 +169,8 @@ int shop_buys(const Shop *shop, const Item *it)
     case BUILDING_PAWN:
         return weapon || armor;
     case BUILDING_GENERAL:
-        return weapon;
+        /* ItemTypesAccepted's general store: weapons, and transport. */
+        return weapon || it->template_id == ITEM_HORSE || it->template_id == ITEM_CART;
     default:
         return 0;
     }

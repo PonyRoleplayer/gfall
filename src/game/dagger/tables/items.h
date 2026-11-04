@@ -8,9 +8,10 @@
  * inside FALL.EXE as Daggerfall Unity carries them:
  *
  *   ITEM: an item template, by its index (DFU's ItemTemplates): name,
- *         weight, value, condition, pictures. The armour 102..112, the
- *         weapons 113..131 and gold 276 for now; clothing, ingredients
- *         and the rest join when something uses them.
+ *         weight, value, condition, pictures. The small cart 93 and the
+ *         horse 94, the armour 102..112, the weapons 113..131, the letter
+ *         of credit 275 and gold 276 for now; clothing, ingredients and
+ *         the rest join when something uses them.
  *   WEAP: what a weapon template adds: its damage, its skill, and the
  *         WEAPON##.CIF its swing is drawn from.
  *   ARMR: what an armour template adds: the body part it covers or the
@@ -41,6 +42,8 @@
 #define ITEM_DAGGER 113
 #define ITEM_LONGSWORD 120
 #define ITEM_ARROW 131
+#define ITEM_CART 93
+#define ITEM_HORSE 94
 #define ITEM_LETTER 275
 #define ITEM_GOLD 276
 
