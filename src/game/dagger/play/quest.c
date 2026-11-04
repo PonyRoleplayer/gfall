@@ -535,16 +535,42 @@ static int bind_at(Slot *s, int i, int general, int fine, int type, int region, 
     }
     if (fine == 1) {
         static Dungeon outside;
+        static Dungeon inside;
+        int under;
+        int any;
+        int any_index;
 
-        /* A dungeon: its map location (place_index, for the map and the journey) and the dungeon under it (place_block, as travel names it inside). */
+        /*
+         * A dungeon: its map location (place_index, for the map and the journey) and the dungeon
+         * under it (place_block, as travel names it inside), of the kind the file asks for (a
+         * crypt, a mine...; -1 any). With none of that kind found in the region the first any
+         * will do, so the quest still runs.
+         */
         r->place_dungeon[i] = 1;
-        for (tries = 0; tries < 8; tries++) {
-            if (pick_location(region, 1, -1, &index) && exterior_load_at(region, index, &outside)
-                && dungeon_under(region, outside.location_id) >= 0) {
+        any = -1;
+        any_index = -1;
+        for (tries = 0; tries < 40; tries++) {
+            if (!pick_location(region, 1, -1, &index) || !exterior_load_at(region, index, &outside)) {
+                continue;
+            }
+            under = dungeon_under(region, outside.location_id);
+            if (under < 0) {
+                continue;
+            }
+            if (any < 0) {
+                any = under;
+                any_index = index;
+            }
+            if (type < 0 || (dungeon_load_at(region, under, &inside) && inside.dungeon_type == type)) {
                 r->place_index[i] = (df_i16)index;
-                r->place_block[i] = (df_i16)dungeon_under(region, outside.location_id);
+                r->place_block[i] = (df_i16)under;
                 return 1;
             }
+        }
+        if (any >= 0) {
+            r->place_index[i] = (df_i16)any_index;
+            r->place_block[i] = (df_i16)any;
+            return 1;
         }
         return 0;
     }
@@ -1370,6 +1396,16 @@ int quest_log_line(int slot, int i, char *out, int cap)
     }
     s = &g_slots[slot];
     fill_message(s, s->run.log[i], out, cap);
+    return out[0] != 0;
+}
+
+int quest_person_name(int slot, int person, char *out, int cap)
+{
+    out[0] = 0;
+    if (slot < 0 || slot >= QUEST_SLOTS || !g_slots[slot].used || person < 0 || person >= g_slots[slot].qbn.count[QBN_PEOPLE]) {
+        return 0;
+    }
+    person_name(&g_slots[slot], person, out, cap);
     return out[0] != 0;
 }
 

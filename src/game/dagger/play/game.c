@@ -302,6 +302,9 @@ static int door_lets_in(const Usable *u)
 }
 
 /* Who is being talked to, from who they are and where the player stands; a face from their flat. */
+/* A name that overrides the one made from the seed, for the person being talked to (a quest's); 0 for none. */
+static const char *g_talk_name;
+
 static void talk_to(int faction, int flat, unsigned seed)
 {
     static char region_name[FACTION_NAME];
@@ -340,7 +343,7 @@ static void talk_to(int faction, int flat, unsigned seed)
             female = (int)(seed & 1u);
         }
         name_make(name_bank_of_region(travel_region()), female, seed, name, (int)sizeof(name));
-        who.name = name;
+        who.name = g_talk_name ? g_talk_name : name;
     }
     screens_open_talk(&g_player, &who);
     screen_over_play();
@@ -409,10 +412,16 @@ static void person_used(const Usable *u)
 
         quest_met_person(&g_player, (u->what - QUEST_PERSON_MARK) / 16, (u->what - QUEST_PERSON_MARK) % 16,
                          ills_now(clock_day(), clock_minute()));
-        /* Nothing from the quest just now: they talk as one of the region's people. */
+        /* Nothing from the quest just now: they talk as one of the region's people, under the name the quest calls them. */
         people = quest_messages_waiting() ? 0 : faction_people_of(travel_region());
         if (people) {
+            static char quest_name[48];
+
+            if (quest_person_name((u->what - QUEST_PERSON_MARK) / 16, (u->what - QUEST_PERSON_MARK) % 16, quest_name, (int)sizeof(quest_name))) {
+                g_talk_name = quest_name;
+            }
             talk_to(people->id, u->tag, (unsigned)u->what * 31u);
+            g_talk_name = 0;
         }
         return;
     }

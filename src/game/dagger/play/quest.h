@@ -145,6 +145,8 @@ void quest_tick(Player *p, int now);
 /* The next message to show, filled in; 0 when none waits. How many wait. */
 int quest_take_message(char *out, int cap);
 int quest_messages_waiting(void);
+/* A quest person's own name, as its messages call them (the same each time); 0 for none. */
+int quest_person_name(int slot, int person, char *out, int cap);
 /* The least time any of the quest's timers has left, in game minutes, at now; -1 when none runs. */
 int quest_minutes_left(int slot, int now);
 /* A quest's log line i (0..QUEST_LOG-1), filled in; 0 when none. */

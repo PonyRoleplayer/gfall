@@ -7271,6 +7271,52 @@ static void check_quest_machine(void)
         }
     }
     quest_new_game();
+    /* A dungeon of the kind the quest asks for: the first offered quest wanting a crypt (type 0) gets one, and its person's name is the same each time. */
+    quest_new_game();
+    {
+        MemHeap *scratch;
+        MemHeap *was;
+        Qbn qq;
+        int found;
+        int k;
+        int pl;
+        char file[16];
+
+        found = -1;
+        pl = -1;
+        scratch = mem_heap_new();
+        was = mem_heap_use(scratch);
+        for (k = 0; k < 187 && found < 0; k++) {
+            int j;
+
+            log_format(file, (int)sizeof(file), "%s.QBN", quest_kind(k)->name);
+            if (!qbn_load(file, &qq)) {
+                continue;
+            }
+            for (j = 0; j < qq.count[QBN_PLACES]; j++) {
+                if (qq.places[j].general != 0 && qq.places[j].fine == 1 && qq.places[j].type == DUN_TYPE_CRYPT) {
+                    found = k;
+                    pl = j;
+                }
+            }
+        }
+        mem_heap_use(was);
+        mem_heap_delete(scratch);
+        check_expect(found >= 0, "quest machine: no offered quest wants a crypt");
+        slot = found >= 0 ? quest_start(&p, found, &how, now) : -1;
+        if (slot >= 0 && quest_run(slot)) {
+            static Dungeon d;
+            char a1[48];
+            char a2[48];
+
+            check_expect(dungeon_load_at(17, quest_run(slot)->place_block[pl], &d) && d.dungeon_type == DUN_TYPE_CRYPT,
+                         "quest machine: the quest's dungeon is not a crypt");
+            if (quest_person_name(slot, 0, a1, (int)sizeof(a1)) && quest_person_name(slot, 0, a2, (int)sizeof(a2))) {
+                check_expect(df_eq(a1, a2) && a1[0], "quest machine: a quest person has two names");
+            }
+        }
+    }
+    quest_new_game();
     /* The logbook: two quests, a page each, the first's log and its days left; clicks turn the page and the bottom edge closes. */
     quest_new_game();
     {
