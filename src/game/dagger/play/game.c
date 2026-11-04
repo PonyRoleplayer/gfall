@@ -6,6 +6,8 @@
 #include "game/dagger/play/ills.h"
 #include "game/dagger/play/rest.h"
 #include "game/dagger/play/lodging.h"
+#include "game/dagger/play/guild.h"
+#include "game/dagger/play/words.h"
 #include "game/dagger/formats/textrsc.h"
 #include "game/dagger/play/travelmap.h"
 #include "game/dagger/play/ride.h"
@@ -122,6 +124,8 @@ static void screen_over_play(void)
 }
 
 static float game_minutes(void);
+static int guild_panel(int faction, int npc_faction);
+static void temple_cure(void);
 
 /* The travel map, outdoors. */
 static void travel_map_over_play(void)
@@ -337,6 +341,7 @@ static int shop_here(Shop *shop)
     shop->key.place = place;
     shop->key.thing = SHOP_KEY_THING;
     shop->holiday = today_holiday_flags();
+    shop->repair_rank = 0;
     /* Shut out of its hours, and all day on Sun's Rest. */
     shop->closed = !building_open_at(shop->type, hour_now()) || (shop->holiday & HOLIDAY_SHOPS_SHUT);
     return building_is_shop(shop->type);
@@ -377,8 +382,13 @@ static void person_used(const Usable *u)
         interact_say("You get no response.");
         return;
     }
-    /* Anyone in a temple offers its cure; the guild's other services wait (DFU's guild service). */
-    if (travel_building(&type, &faction, &quality, &place) && type == BUILDING_TEMPLE) {
+    /* A guild hall's or a temple's people: its panel, with what this one does (DFU's guild service). */
+    if (travel_building(&type, &faction, &quality, &place) && (type == BUILDING_GUILD_HALL || type == BUILDING_TEMPLE)
+        && guild_panel(faction, u->what)) {
+        return;
+    }
+    /* A temple with no guild in MAIN.DAT still cures. */
+    if (type == BUILDING_TEMPLE) {
         screens_open_service(SERVICE_PANEL_CURE);
         screen_over_play();
         return;
@@ -423,6 +433,226 @@ static int street_person_used(const Camera *cam)
     return 1;
 }
 
+/* ---- Guilds (guild.h): a hall's people, joining, ranks and training. ---- */
+
+/* What a guild hall's person does, by their own faction (DFU's GuildNpcServices). */
+enum {
+    GUILD_SERVICE_NONE,
+    GUILD_SERVICE_TRAINING,
+    GUILD_SERVICE_QUESTS,
+    GUILD_SERVICE_REPAIR,
+    GUILD_SERVICE_CURE,
+    GUILD_SERVICE_OTHER
+};
+typedef struct GuildNpc {
+    short faction;
+    short service;
+    const char *label;
+} GuildNpc;
+static const GuildNpc g_guild_npcs[] = {
+    { 61, GUILD_SERVICE_TRAINING, "TRAINING" }, { 849, GUILD_SERVICE_TRAINING, "TRAINING" },
+    { 241, GUILD_SERVICE_TRAINING, "TRAINING" }, { 243, GUILD_SERVICE_TRAINING, "TRAINING" },
+    { 245, GUILD_SERVICE_TRAINING, "TRAINING" }, { 247, GUILD_SERVICE_TRAINING, "TRAINING" },
+    { 249, GUILD_SERVICE_TRAINING, "TRAINING" }, { 250, GUILD_SERVICE_TRAINING, "TRAINING" },
+    { 252, GUILD_SERVICE_TRAINING, "TRAINING" }, { 254, GUILD_SERVICE_TRAINING, "TRAINING" },
+    { 63, GUILD_SERVICE_QUESTS, "GET QUEST" }, { 851, GUILD_SERVICE_QUESTS, "GET QUEST" },
+    { 240, GUILD_SERVICE_QUESTS, "GET QUEST" }, { 846, GUILD_SERVICE_QUESTS, "GET QUEST" },
+    { 850, GUILD_SERVICE_REPAIR, "REPAIRS" },
+    { 813, GUILD_SERVICE_CURE, "CURE DISEASE" },
+    { 810, GUILD_SERVICE_OTHER, "MAKE DONATION" }, { 801, GUILD_SERVICE_OTHER, "IDENTIFY" },
+    { 60, GUILD_SERVICE_OTHER, "BUY SPELLS" }, { 496, GUILD_SERVICE_OTHER, "BUY SPELLS" },
+    { 64, GUILD_SERVICE_OTHER, "MAKE SPELLS" }, { 497, GUILD_SERVICE_OTHER, "MAKE SPELLS" },
+    { 62, GUILD_SERVICE_OTHER, "TELEPORTATION" }, { 66, GUILD_SERVICE_OTHER, "DAEDRA SUMMONING" },
+    { 65, GUILD_SERVICE_OTHER, "BUY MAGIC ITEMS" }, { 480, GUILD_SERVICE_OTHER, "BUY MAGIC ITEMS" },
+    { 802, GUILD_SERVICE_OTHER, "MAKE MAGIC ITEMS" }, { 481, GUILD_SERVICE_OTHER, "MAKE MAGIC ITEMS" },
+    { 845, GUILD_SERVICE_OTHER, "RECEIVE ARMOR" }, { 848, GUILD_SERVICE_OTHER, "RECEIVE HOUSE" }
+};
+
+/* The guild whose panel is open, the building's faction, and its person's service. */
+static const GuildKind *g_guild;
+static int g_guild_faction;
+static int g_guild_service;
+static const char *g_skill_lines[GUILD_SKILLS];
+static char g_skill_text[GUILD_SKILLS][24];
+
+/* A TEXT.RSC record, its macros filled, said on the screen. */
+static void say_record(int record, const char *fallback)
+{
+    static Words words;
+    char line[256];
+
+    mem_zero(&words, sizeof(words));
+    words.pc = &g_player.sheet;
+    words.amount = guild_training_price(guild_rank(g_guild) >= 0, g_player.sheet.level);
+    words_use(&words);
+    if (record <= 0 || words_say(record, line, (int)sizeof(line)) <= 0) {
+        df_copy(line, fallback, (int)sizeof(line));
+    }
+    interact_say(line);
+}
+
+/*
+ * A guild's panel for a person of npc_faction in a building of faction: its
+ * rank looked at, a temple's member healed, then Join Guild (or not, for a
+ * member), Talk and this person's service. 0 when the building is no guild's.
+ */
+static int guild_panel(int faction, int npc_faction)
+{
+    const GuildNpc *npc;
+    int updated;
+    int i;
+
+    g_guild = guild_of_faction(faction);
+    if (!g_guild) {
+        return 0;
+    }
+    g_guild_faction = faction;
+    npc = 0;
+    for (i = 0; i < (int)(sizeof(g_guild_npcs) / sizeof(g_guild_npcs[0])); i++) {
+        if (g_guild_npcs[i].faction == npc_faction) {
+            npc = &g_guild_npcs[i];
+        }
+    }
+    g_guild_service = npc ? npc->service : GUILD_SERVICE_NONE;
+    /* The rank, 28 days on (Guild.UpdateRank on the window's push). */
+    updated = guild_update(g_guild, &g_player.sheet, standing_rep(g_guild->id), clock_day());
+    if (updated == GUILD_EXPELLED) {
+        say_record(668, "You have been expelled.");
+    } else if (updated >= 0) {
+        char line[64];
+
+        log_format(line, (int)sizeof(line), "You are now %s.", guild_title(g_guild, updated));
+        interact_say(line);
+    }
+    /* A temple's member from its healing rank comes away whole (Temple.FreeHealing). */
+    if (guild_heals(faction) && g_player.sheet.health < g_player.sheet.health_max) {
+        g_player.sheet.health = g_player.sheet.health_max;
+        interact_say("You are healed.");
+    }
+    screens_open_service(guild_rank(g_guild) >= 0 ? SERVICE_PANEL_GUILD_MEMBER : SERVICE_PANEL_GUILD);
+    service_set_label(npc ? npc->label : "");
+    screen_over_play();
+    return 1;
+}
+
+/* Join Guild: in at rank 0 if the name and the skills allow it, TEXT.RSC's words either way. */
+static void guild_join_asked(void)
+{
+    int result;
+
+    if (!g_guild) {
+        return;
+    }
+    result = guild_join(g_guild, &g_player.sheet, standing_rep(g_guild->id), clock_day());
+    if (result == GUILD_JOINED) {
+        say_record(g_guild->text_welcome, "Welcome to the guild.");
+    } else if (result == GUILD_BAD_NAME) {
+        say_record(g_guild->text_bad_name, "Your reputation does not allow you to join.");
+    } else if (result == GUILD_LOW_SKILL) {
+        say_record(g_guild->text_low_skill, "You are not skilled enough to join.");
+    } else if (result == GUILD_ALREADY) {
+        interact_say("You are already a member.");
+    } else if (result == GUILD_OTHER_OF_GROUP) {
+        interact_say("You already belong to another such order.");
+    }
+}
+
+/* The person's service: training's list of skills, a smith's repairs, a cure; what is not built says so. */
+static void guild_service_asked(void)
+{
+    const CareerSkill *s;
+    Shop shop;
+    int i;
+
+    if (!g_guild) {
+        return;
+    }
+    switch (g_guild_service) {
+    case GUILD_SERVICE_TRAINING:
+        if (!guild_trains(g_guild)) {
+            interact_say("Only members are trained here.");
+            return;
+        }
+        for (i = 0; i < GUILD_SKILLS && g_guild->training[i] != GUILD_NO_SKILL; i++) {
+            s = career_skill(g_guild->training[i]);
+            log_format(g_skill_text[i], (int)sizeof(g_skill_text[i]), "%s %d", s ? s->name : "?",
+                       g_guild->training[i] < SKILL_COUNT ? g_player.sheet.skill[g_guild->training[i]] : 0);
+            g_skill_lines[i] = g_skill_text[i];
+        }
+        /* The panel again, its list of skills over it; the price is said first (TEXT.RSC 8's sum). */
+        {
+            char line[64];
+
+            log_format(line, (int)sizeof(line), "Training costs %d gold. Which skill?",
+                       guild_training_price(guild_rank(g_guild) >= 0, g_player.sheet.level));
+            interact_say(line);
+        }
+        screens_open_service(guild_rank(g_guild) >= 0 ? SERVICE_PANEL_GUILD_MEMBER : SERVICE_PANEL_GUILD);
+        service_set_label("TRAINING");
+        service_list(g_skill_lines, i);
+        return;
+    case GUILD_SERVICE_REPAIR:
+        if (guild_rank(g_guild) < 0) {
+            interact_say("Only members have their things repaired here.");
+            return;
+        }
+        /* A hall is no shop (shop_here says 0), but its quality, the region's prices and its key fill in the same. */
+        shop_here(&shop);
+        shop.type = BUILDING_ARMORER;
+        shop.closed = 0;
+        shop.repair_rank = guild_rank(g_guild) + 1;
+        screens_open_trade(&g_player, &shop, TRADE_REPAIR, clock_day());
+        return;
+    case GUILD_SERVICE_CURE:
+        temple_cure();
+        return;
+    case GUILD_SERVICE_QUESTS:
+        interact_say("There is no work for you yet.");
+        return;
+    default:
+        interact_say("That service is not offered yet.");
+        return;
+    }
+}
+
+/* A skill picked off training's list: paid, three hours pass, and it is used 10 to 20 times over. */
+static void guild_training_picked(int line)
+{
+    const CareerSkill *s;
+    char text[80];
+    int skill;
+    int price;
+    int result;
+
+    if (!g_guild || line < 0 || line >= GUILD_SKILLS || g_guild->training[line] == GUILD_NO_SKILL) {
+        return;
+    }
+    skill = g_guild->training[line];
+    price = guild_training_price(guild_rank(g_guild) >= 0, g_player.sheet.level);
+    result = guild_train(&g_player, g_guild, skill, price, ills_now(clock_day(), clock_minute()));
+    if (result == GUILD_TOO_SOON) {
+        say_record(4023, "You must wait before training again.");
+    } else if (result == GUILD_TOO_SKILLED) {
+        say_record(4022, "You are too skilled to be trained here.");
+    } else if (result == GUILD_NOT_ENOUGH_GOLD) {
+        interact_say("You do not have enough gold.");
+    } else if (result == GUILD_TRAINED) {
+        float minute;
+
+        minute = clock_minute() + 180.0f;
+        if (minute >= CLOCK_DAY) {
+            minute -= CLOCK_DAY;
+            clock_set_day(clock_day() + 1);
+        }
+        clock_set_minute(minute);
+        g_last_minute = df_ifloor(game_minutes());
+        s = career_skill(skill);
+        log_format(text, (int)sizeof(text), "You train in %s for three hours, for %d gold.", s ? s->name : "it", price);
+        interact_say(text);
+    }
+    screen_over_play();
+}
+
 /*
  * A temple's cure (DaggerfallGuildServiceCureDisease): every disease and an
  * infection, 250 gold each by the temple's quality and the region's prices,
@@ -450,6 +680,8 @@ static void temple_cure(void)
     }
     r = standing_region(travel_region());
     cost = ills_cure_cost(count, quality, r ? r->prices : 1000, today_holiday_flags());
+    /* An Arkay temple's member pays (10 - rank) tenths (Temple.ReducedCureCost). */
+    cost = guild_cure_price(faction, cost);
     if (cost > 0) {
         cost = rules_trade_price(cost, quality, g_player.sheet.skill[SKILL_MERCANTILE], g_player.sheet.attribute[ATTR_PERSONALITY], 0);
     }
@@ -498,7 +730,11 @@ static void tavern_room(int days)
     }
     clock_date(&year, &month, &day);
     cost = lodging_room_cost(days, month * 30 + day + 1);
-    if (cost > 0) {
+    /* A knight's room is free: from rank 4 anywhere, else in the order's own region (KnightlyOrder.FreeTavernRooms). */
+    if (guild_free_rooms(travel_region())) {
+        interact_say("The room is free for a knight such as you.");
+        cost = 0;
+    } else if (cost > 0) {
         cost = rules_trade_price(cost, quality, g_player.sheet.skill[SKILL_MERCANTILE], g_player.sheet.attribute[ATTR_PERSONALITY], 0);
     }
     result = lodging_rent(&g_player, region, index, block, record, days, cost, ills_now(clock_day(), clock_minute()));
@@ -543,6 +779,13 @@ static void service_chosen(void)
     choice = screens_service_choice();
     if (choice == SERVICE_CURE) {
         temple_cure();
+    } else if (choice == SERVICE_JOIN) {
+        guild_join_asked();
+    } else if (choice == SERVICE_GUILD) {
+        guild_service_asked();
+    } else if (choice == SERVICE_PICKED) {
+        guild_training_picked(service_picked());
+        return;
     } else if (choice == SERVICE_ROOM) {
         tavern_room(service_days());
     } else if (choice == SERVICE_FOOD) {
@@ -853,7 +1096,21 @@ static int rest_rule_here(int *room_hours)
         return REST_RULE_FREE;
     }
     *room_hours = lodging_hours_left(region, index, block, record, ills_now(clock_day(), clock_minute()));
-    return *room_hours > 0 ? REST_RULE_ROOM : REST_RULE_NO_ROOM;
+    if (*room_hours > 0) {
+        return REST_RULE_ROOM;
+    }
+    /* A guild that lets its members rest in its hall: the Fighters (not a tavern, which the data marks theirs too). */
+    {
+        int type;
+        int faction;
+        int quality;
+        unsigned place;
+
+        if (travel_building(&type, &faction, &quality, &place) && type != BUILDING_TAVERN && guild_can_rest_in(faction)) {
+            return REST_RULE_FREE;
+        }
+    }
+    return REST_RULE_NO_ROOM;
 }
 
 /* Rest over the stilled world, unless a creature awake forbids it (DFU's rest window). */
@@ -1276,6 +1533,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
             wagon_new_game();
             ills_new_game();
             lodging_new_game();
+            guild_new_game();
             bank_set_ship(BANK_SHIP_NONE);
             automap_clear();
             screens_open_create();

@@ -136,6 +136,7 @@ TABLES_SRC := \
 	src/game/dagger/tables/items.c \
 	src/game/dagger/tables/commerce.c \
 	src/game/dagger/tables/diseases.c \
+	src/game/dagger/tables/guilds.c \
 	src/game/dagger/tables/swaps.c \
 	src/game/dagger/tables/enemies.c \
 	src/game/dagger/tables/forecast.c \
@@ -178,6 +179,7 @@ PLAY_SRC := \
 	src/game/dagger/play/wagon.c \
 	src/game/dagger/play/ills.c \
 	src/game/dagger/play/lodging.c \
+	src/game/dagger/play/guild.c \
 	src/game/dagger/play/travelmap.c \
 	src/game/dagger/play/townmap.c \
 	src/game/dagger/play/dunmap.c \
@@ -400,6 +402,7 @@ DAT_SRC := \
 	src/game/dagger/tables/items.c \
 	src/game/dagger/tables/commerce.c \
 	src/game/dagger/tables/diseases.c \
+	src/game/dagger/tables/guilds.c \
 	src/game/dagger/tables/enemies.c \
 	src/game/dagger/tables/forecast.c \
 	src/game/dagger/formats/texture.c \

@@ -28,11 +28,16 @@
 static const Rect g_tavern_scroll = { 95, 98, 130, 100 };
 #define FOOD_LINE 8
 #define DAYS_TEXT 4
+/* The guild's panel (DaggerfallGuildServicePopupWindow): 130 x 51 at y 50, rows of 7 from y 5, 9 apart, Exit below. */
+#define GUILD_Y 50
+#define GUILD_H 51
+#define LIST_MOST 12
 
 enum {
     MODE_MENU,
     MODE_DAYS,
-    MODE_FOOD
+    MODE_FOOD,
+    MODE_LIST
 };
 
 static struct {
@@ -45,6 +50,11 @@ static struct {
     int mode;
     char typed[DAYS_TEXT];
     int food;
+    /* A guild's service row, and a list shown over the panel and the line picked. */
+    char label[24];
+    const char *const *list;
+    int listed;
+    int picked;
 } g;
 
 int service_open(int panel)
@@ -57,7 +67,9 @@ int service_open(int panel)
     g.open = 1;
     g.panel = panel;
     g.picture = composer_read(&g.composer, panel == SERVICE_PANEL_REPAIR ? "REPR01I0.IMG"
-                                           : (panel == SERVICE_PANEL_TAVERN ? "TVRN00I0.IMG" : "GNRC01I0.IMG"));
+                                           : panel == SERVICE_PANEL_TAVERN ? "TVRN00I0.IMG"
+                                           : panel == SERVICE_PANEL_GUILD ? "GILD00I0.IMG"
+                                           : panel == SERVICE_PANEL_GUILD_MEMBER ? "GILD01I0.IMG" : "GNRC01I0.IMG");
     if (!g.picture) {
         log_text(LOG_WARN, "service: its picture did not read");
         service_close();
@@ -82,7 +94,25 @@ void service_compose(void)
     canvas_use(&g.composer);
     /* As rest does: classic's panels stand on black here, the world not sent to the card under them. */
     canvas_box(&whole, 0);
-    if (g.panel == SERVICE_PANEL_TAVERN) {
+    if (g.panel == SERVICE_PANEL_GUILD || g.panel == SERVICE_PANEL_GUILD_MEMBER) {
+        Rect row;
+
+        canvas_copy_part(g.picture, PANEL_W, 0, 0, PANEL_W, GUILD_H, PANEL_X, GUILD_Y);
+        /* The third row is bare: the person's service is written on it. */
+        row.x = PANEL_X + ROW_X;
+        row.y = GUILD_Y + TAVERN_ROW_Y + 2 * TAVERN_ROW_GAP;
+        row.w = ROW_W;
+        row.h = ROW_H;
+        canvas_label_centred(&row, 0, g.label);
+        if (g.mode == MODE_LIST) {
+            int i;
+
+            canvas_scroll(&g_tavern_scroll);
+            for (i = 0; i < g.listed; i++) {
+                canvas_label(g_tavern_scroll.x + 10, g_tavern_scroll.y + 6 + i * FOOD_LINE, g.list[i]);
+            }
+        }
+    } else if (g.panel == SERVICE_PANEL_TAVERN) {
         canvas_copy_part(g.picture, PANEL_W, 0, 0, PANEL_W, TAVERN_H, PANEL_X, TAVERN_Y);
         if (g.mode == MODE_DAYS) {
             char line[32];
@@ -237,12 +267,70 @@ static int tavern_click(int x, int y)
     return SERVICE_STAY;
 }
 
+void service_set_label(const char *label)
+{
+    df_copy(g.label, label, (int)sizeof(g.label));
+    g.changed = 1;
+}
+
+void service_list(const char *const *what, int n)
+{
+    g.list = what;
+    g.listed = n > LIST_MOST ? LIST_MOST : n;
+    g.mode = MODE_LIST;
+    g.changed = 1;
+}
+
+int service_picked(void)
+{
+    return g.picked;
+}
+
+/* A guild's click: Join Guild (not shown to a member), Talk, the service, Exit; or a line of a list. */
+static int guild_click(int x, int y)
+{
+    Rect row;
+    Rect exit;
+    int i;
+
+    g.changed = 1;
+    if (g.mode == MODE_LIST) {
+        i = (y - (g_tavern_scroll.y + 6)) / FOOD_LINE;
+        g.mode = MODE_MENU;
+        if (rect_has(&g_tavern_scroll, x, y) && y >= g_tavern_scroll.y + 6 && i >= 0 && i < g.listed) {
+            g.picked = i;
+            return SERVICE_PICKED;
+        }
+        return SERVICE_STAY;
+    }
+    row.x = PANEL_X + ROW_X;
+    row.w = ROW_W;
+    row.h = ROW_H;
+    for (i = 0; i < 3; i++) {
+        row.y = (df_u16)(GUILD_Y + TAVERN_ROW_Y + i * TAVERN_ROW_GAP);
+        if (rect_has(&row, x, y)) {
+            if (i == 0) {
+                return g.panel == SERVICE_PANEL_GUILD ? SERVICE_JOIN : SERVICE_STAY;
+            }
+            return i == 1 ? SERVICE_TALK : SERVICE_GUILD;
+        }
+    }
+    exit.x = PANEL_X + EXIT_X;
+    exit.y = GUILD_Y + 33;
+    exit.w = EXIT_W;
+    exit.h = EXIT_H;
+    return rect_has(&exit, x, y) ? SERVICE_LEAVE : SERVICE_STAY;
+}
+
 int service_click(int x, int y)
 {
     Rect exit;
 
     if (g.panel == SERVICE_PANEL_TAVERN) {
         return tavern_click(x, y);
+    }
+    if (g.panel == SERVICE_PANEL_GUILD || g.panel == SERVICE_PANEL_GUILD_MEMBER) {
+        return guild_click(x, y);
     }
     exit.x = PANEL_X + EXIT_X;
     exit.w = EXIT_W;

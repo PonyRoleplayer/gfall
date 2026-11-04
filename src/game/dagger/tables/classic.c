@@ -675,3 +675,179 @@ const Disease *classic_diseases(int *n)
     *n = (int)(sizeof(g_diseases) / sizeof(g_diseases[0]));
     return g_diseases;
 }
+
+/*
+ * The guilds one can join (DFU's FightersGuild, MagesGuild, Temple and
+ * KnightlyOrder): their ranks' titles (DFU's Internal_Strings), the skills
+ * their ranks ask for and those they train, what they give, the rank a temple
+ * heals from (its RankData's healing), and TEXT.RSC's words. A knightly
+ * order trains nothing; its free rooms come at rank 4, or in its own region.
+ */
+/* DFU's DFCareer.Skills, as the lists name them; E ends a list. */
+enum {
+    K_MEDICAL,
+    K_ETIQUETTE,
+    K_STREETWISE,
+    K_JUMPING,
+    K_ORCISH,
+    K_HARPY,
+    K_GIANTISH,
+    K_DRAGONISH,
+    K_NYMPH,
+    K_DAEDRIC,
+    K_SPRIGGAN,
+    K_CENTAURIAN,
+    K_IMPISH,
+    K_LOCKPICKING,
+    K_MERCANTILE,
+    K_PICKPOCKET,
+    K_STEALTH,
+    K_SWIMMING,
+    K_CLIMBING,
+    K_BACKSTABBING,
+    K_DODGING,
+    K_RUNNING,
+    K_DESTRUCTION,
+    K_RESTORATION,
+    K_ILLUSION,
+    K_ALTERATION,
+    K_THAUMATURGY,
+    K_MYSTICISM,
+    K_SHORT_BLADE,
+    K_LONG_BLADE,
+    K_HAND_TO_HAND,
+    K_AXE,
+    K_BLUNT,
+    K_ARCHERY,
+    K_CRITICAL
+};
+#define E GUILD_NO_SKILL
+static const GuildKind g_guilds[] = {
+    /* The Fighters Guild */
+    { 41, GUILD_GROUP_FIGHTERS, GUILD_GIVES_REST | GUILD_GIVES_CHEAP_REPAIR, E,
+      { "Apprentice", "Journeyman", "Swordsman", "Protector", "Defender", "Warder", "Guardian", "Champion", "Warrior", "Master" },
+      { K_ARCHERY, K_AXE, K_BLUNT, K_GIANTISH, K_LONG_BLADE, K_ORCISH, K_SHORT_BLADE, E, E, E, E, E },
+      { K_ARCHERY, K_AXE, K_BLUNT, K_CRITICAL, K_GIANTISH, K_JUMPING, K_LONG_BLADE, K_ORCISH, K_RUNNING, K_SHORT_BLADE, K_SWIMMING, E },
+      681, 679, 680, 684, 686 },
+    /* The Mages Guild */
+    { 40, GUILD_GROUP_MAGES, 0, E,
+      { "Apprentice", "Journeyman", "Evoker", "Conjurer", "Magician", "Enchanter", "Warlock", "Wizard", "Master Wizard", "Archmage" },
+      { K_ALTERATION, K_DESTRUCTION, K_ILLUSION, K_MYSTICISM, K_RESTORATION, K_THAUMATURGY, E, E, E, E, E, E },
+      { K_ALTERATION, K_DAEDRIC, K_DESTRUCTION, K_DRAGONISH, K_HARPY, K_ILLUSION, K_IMPISH, K_MYSTICISM, K_ORCISH, K_RESTORATION, K_SPRIGGAN, K_THAUMATURGY },
+      606, 612, 611, 5293, 5236 },
+    /* the temple of Akatosh */
+    { 26, GUILD_GROUP_TEMPLE, GUILD_TRAINS_ALL, 1,
+      { "Novice", "Initiate", "Acolyte", "Adept", "Curate", "Disciple", "Brother", "Diviner", "Master", "Patriarch" },
+      { K_ALTERATION, K_DAEDRIC, K_DESTRUCTION, K_DRAGONISH, K_LONG_BLADE, K_RUNNING, K_STEALTH, E, E, E, E, E },
+      { K_ALTERATION, K_ARCHERY, K_DAEDRIC, K_DESTRUCTION, K_DRAGONISH, K_LONG_BLADE, K_RUNNING, K_STEALTH, K_SWIMMING, E, E, E },
+      740, 745, 744, 5290, 5245 },
+    /* the temple of Arkay */
+    { 21, GUILD_GROUP_TEMPLE, GUILD_TRAINS_ALL | GUILD_GIVES_CHEAP_CURE, 0,
+      { "Novice", "Initiate", "Acolyte", "Adept", "Curate", "Disciple", "Brother", "Diviner", "Master", "Patriarch" },
+      { K_AXE, K_BACKSTABBING, K_DAEDRIC, K_DESTRUCTION, K_MEDICAL, K_RESTORATION, K_SHORT_BLADE, E, E, E, E, E },
+      { K_AXE, K_BACKSTABBING, K_CLIMBING, K_CRITICAL, K_DAEDRIC, K_DESTRUCTION, K_MEDICAL, K_RESTORATION, K_SHORT_BLADE, E, E, E },
+      740, 745, 744, 5287, 5242 },
+    /* the temple of Dibella */
+    { 29, GUILD_GROUP_TEMPLE, GUILD_TRAINS_ALL, 2,
+      { "Novice", "Initiate", "Acolyte", "Adept", "Curate", "Disciple", "Brother", "Diviner", "Master", "Patriarch" },
+      { K_DAEDRIC, K_ETIQUETTE, K_ILLUSION, K_LOCKPICKING, K_LONG_BLADE, K_NYMPH, K_ORCISH, K_RESTORATION, E, E, E, E },
+      { K_DAEDRIC, K_ETIQUETTE, K_HARPY, K_ILLUSION, K_LOCKPICKING, K_LONG_BLADE, K_NYMPH, K_ORCISH, K_RESTORATION, K_STREETWISE, E, E },
+      740, 745, 744, 5290, 5247 },
+    /* the temple of Julianos */
+    { 27, GUILD_GROUP_TEMPLE, GUILD_TRAINS_ALL, 2,
+      { "Novice", "Initiate", "Acolyte", "Adept", "Curate", "Disciple", "Brother", "Diviner", "Master", "Patriarch" },
+      { K_ALTERATION, K_DAEDRIC, K_IMPISH, K_LOCKPICKING, K_MYSTICISM, K_SHORT_BLADE, K_THAUMATURGY, E, E, E, E, E },
+      { K_ALTERATION, K_CRITICAL, K_DAEDRIC, K_IMPISH, K_LOCKPICKING, K_MERCANTILE, K_MYSTICISM, K_SHORT_BLADE, K_THAUMATURGY, E, E, E },
+      740, 745, 744, 6610, 5246 },
+    /* the temple of Kynareth */
+    { 35, GUILD_GROUP_TEMPLE, GUILD_TRAINS_ALL, 1,
+      { "Novice", "Initiate", "Acolyte", "Adept", "Curate", "Disciple", "Brother", "Diviner", "Master", "Patriarch" },
+      { K_ARCHERY, K_CLIMBING, K_DAEDRIC, K_DESTRUCTION, K_DODGING, K_DRAGONISH, K_HARPY, K_ILLUSION, K_JUMPING, K_RUNNING, K_STEALTH, E },
+      { K_ARCHERY, K_CLIMBING, K_DAEDRIC, K_DESTRUCTION, K_DODGING, K_DRAGONISH, K_HARPY, K_ILLUSION, K_JUMPING, K_RUNNING, K_STEALTH, E },
+      740, 745, 744, 5290, 5249 },
+    /* the temple of Mara */
+    { 24, GUILD_GROUP_TEMPLE, GUILD_TRAINS_ALL, 1,
+      { "Novice", "Initiate", "Acolyte", "Adept", "Curate", "Disciple", "Brother", "Diviner", "Master", "Patriarch" },
+      { K_ARCHERY, K_CRITICAL, K_DAEDRIC, K_ETIQUETTE, K_HARPY, K_ILLUSION, K_MEDICAL, K_NYMPH, K_RESTORATION, K_STREETWISE, E, E },
+      { K_ARCHERY, K_CRITICAL, K_DAEDRIC, K_ETIQUETTE, K_HARPY, K_ILLUSION, K_MEDICAL, K_NYMPH, K_RESTORATION, K_STREETWISE, E, E },
+      740, 745, 744, 5289, 5244 },
+    /* the temple of Stendarr */
+    { 33, GUILD_GROUP_TEMPLE, GUILD_TRAINS_ALL, 0,
+      { "Novice", "Initiate", "Acolyte", "Adept", "Curate", "Disciple", "Brother", "Diviner", "Master", "Patriarch" },
+      { K_AXE, K_BLUNT, K_CRITICAL, K_DAEDRIC, K_DODGING, K_MEDICAL, K_RESTORATION, E, E, E, E, E },
+      { K_AXE, K_BLUNT, K_CRITICAL, K_DAEDRIC, K_DODGING, K_MEDICAL, K_ORCISH, K_RESTORATION, K_SPRIGGAN, E, E, E },
+      740, 745, 744, 5289, 5248 },
+    /* the temple of Zenithar */
+    { 22, GUILD_GROUP_TEMPLE, GUILD_TRAINS_ALL, 1,
+      { "Novice", "Initiate", "Acolyte", "Adept", "Curate", "Disciple", "Brother", "Diviner", "Master", "Patriarch" },
+      { K_BLUNT, K_CENTAURIAN, K_DAEDRIC, K_ETIQUETTE, K_GIANTISH, K_HARPY, K_MERCANTILE, K_ORCISH, K_PICKPOCKET, K_SPRIGGAN, K_STREETWISE, K_THAUMATURGY },
+      { K_BLUNT, K_CENTAURIAN, K_DAEDRIC, K_ETIQUETTE, K_GIANTISH, K_HARPY, K_MERCANTILE, K_ORCISH, K_PICKPOCKET, K_SPRIGGAN, K_STREETWISE, K_THAUMATURGY },
+      740, 745, 744, 5288, 5243 },
+    /* the order of the Horn */
+    { 411, GUILD_GROUP_KNIGHTLY, GUILD_GIVES_FREE_ROOMS, E,
+      { "Aspirant", "Squire", "Gallant", "Chevalier", "Keeper", "Knight Brother", "Commander", "Marshall", "Seneschal", "Paladin" },
+      { K_ARCHERY, K_CRITICAL, K_DRAGONISH, K_ETIQUETTE, K_GIANTISH, K_LONG_BLADE, K_MEDICAL, E, E, E, E, E },
+      { E, E, E, E, E, E, E, E, E, E, E, E },
+      752, 751, 750, 5291, 5237 },
+    /* the order of the Dragon */
+    { 368, GUILD_GROUP_KNIGHTLY, GUILD_GIVES_FREE_ROOMS, E,
+      { "Aspirant", "Squire", "Gallant", "Chevalier", "Keeper", "Knight Brother", "Commander", "Marshall", "Seneschal", "Paladin" },
+      { K_ARCHERY, K_CRITICAL, K_DRAGONISH, K_ETIQUETTE, K_GIANTISH, K_LONG_BLADE, K_MEDICAL, E, E, E, E, E },
+      { E, E, E, E, E, E, E, E, E, E, E, E },
+      752, 751, 750, 5291, 5237 },
+    /* the order of the Flame */
+    { 410, GUILD_GROUP_KNIGHTLY, GUILD_GIVES_FREE_ROOMS, E,
+      { "Aspirant", "Squire", "Gallant", "Chevalier", "Keeper", "Knight Brother", "Commander", "Marshall", "Seneschal", "Paladin" },
+      { K_ARCHERY, K_CRITICAL, K_DRAGONISH, K_ETIQUETTE, K_GIANTISH, K_LONG_BLADE, K_MEDICAL, E, E, E, E, E },
+      { E, E, E, E, E, E, E, E, E, E, E, E },
+      752, 751, 750, 5291, 5237 },
+    /* the order of the Hawk */
+    { 417, GUILD_GROUP_KNIGHTLY, GUILD_GIVES_FREE_ROOMS, E,
+      { "Aspirant", "Squire", "Gallant", "Chevalier", "Keeper", "Knight Brother", "Commander", "Marshall", "Seneschal", "Paladin" },
+      { K_ARCHERY, K_CRITICAL, K_DRAGONISH, K_ETIQUETTE, K_GIANTISH, K_LONG_BLADE, K_MEDICAL, E, E, E, E, E },
+      { E, E, E, E, E, E, E, E, E, E, E, E },
+      752, 751, 750, 5291, 5237 },
+    /* the order of the Owl */
+    { 413, GUILD_GROUP_KNIGHTLY, GUILD_GIVES_FREE_ROOMS, E,
+      { "Aspirant", "Squire", "Gallant", "Chevalier", "Keeper", "Knight Brother", "Commander", "Marshall", "Seneschal", "Paladin" },
+      { K_ARCHERY, K_CRITICAL, K_DRAGONISH, K_ETIQUETTE, K_GIANTISH, K_LONG_BLADE, K_MEDICAL, E, E, E, E, E },
+      { E, E, E, E, E, E, E, E, E, E, E, E },
+      752, 751, 750, 5291, 5237 },
+    /* the order of the Rose */
+    { 409, GUILD_GROUP_KNIGHTLY, GUILD_GIVES_FREE_ROOMS, E,
+      { "Aspirant", "Squire", "Gallant", "Chevalier", "Keeper", "Knight Brother", "Commander", "Marshall", "Seneschal", "Paladin" },
+      { K_ARCHERY, K_CRITICAL, K_DRAGONISH, K_ETIQUETTE, K_GIANTISH, K_LONG_BLADE, K_MEDICAL, E, E, E, E, E },
+      { E, E, E, E, E, E, E, E, E, E, E, E },
+      752, 751, 750, 5291, 5237 },
+    /* the order of the Wheel */
+    { 415, GUILD_GROUP_KNIGHTLY, GUILD_GIVES_FREE_ROOMS, E,
+      { "Aspirant", "Squire", "Gallant", "Chevalier", "Keeper", "Knight Brother", "Commander", "Marshall", "Seneschal", "Paladin" },
+      { K_ARCHERY, K_CRITICAL, K_DRAGONISH, K_ETIQUETTE, K_GIANTISH, K_LONG_BLADE, K_MEDICAL, E, E, E, E, E },
+      { E, E, E, E, E, E, E, E, E, E, E, E },
+      752, 751, 750, 5291, 5237 },
+    /* the order of the Candle */
+    { 408, GUILD_GROUP_KNIGHTLY, GUILD_GIVES_FREE_ROOMS, E,
+      { "Aspirant", "Squire", "Gallant", "Chevalier", "Keeper", "Knight Brother", "Commander", "Marshall", "Seneschal", "Paladin" },
+      { K_ARCHERY, K_CRITICAL, K_DRAGONISH, K_ETIQUETTE, K_GIANTISH, K_LONG_BLADE, K_MEDICAL, E, E, E, E, E },
+      { E, E, E, E, E, E, E, E, E, E, E, E },
+      752, 751, 750, 5291, 5237 },
+    /* the order of the Raven */
+    { 414, GUILD_GROUP_KNIGHTLY, GUILD_GIVES_FREE_ROOMS, E,
+      { "Aspirant", "Squire", "Gallant", "Chevalier", "Keeper", "Knight Brother", "Commander", "Marshall", "Seneschal", "Paladin" },
+      { K_ARCHERY, K_CRITICAL, K_DRAGONISH, K_ETIQUETTE, K_GIANTISH, K_LONG_BLADE, K_MEDICAL, E, E, E, E, E },
+      { E, E, E, E, E, E, E, E, E, E, E, E },
+      752, 751, 750, 5291, 5237 },
+    /* the order of the Scarab */
+    { 416, GUILD_GROUP_KNIGHTLY, GUILD_GIVES_FREE_ROOMS, E,
+      { "Aspirant", "Squire", "Gallant", "Chevalier", "Keeper", "Knight Brother", "Commander", "Marshall", "Seneschal", "Paladin" },
+      { K_ARCHERY, K_CRITICAL, K_DRAGONISH, K_ETIQUETTE, K_GIANTISH, K_LONG_BLADE, K_MEDICAL, E, E, E, E, E },
+      { E, E, E, E, E, E, E, E, E, E, E, E },
+      752, 751, 750, 5291, 5237 }
+};
+#undef E
+
+const GuildKind *classic_guilds(int *n)
+{
+    *n = (int)(sizeof(g_guilds) / sizeof(g_guilds[0]));
+    return g_guilds;
+}

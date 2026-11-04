@@ -199,7 +199,14 @@ int shop_trade_price(const Shop *shop, int cost, const Character *c, int selling
 
 int shop_repair_cost(const Shop *shop, const Item *it)
 {
-    return rules_repair_cost((int)it->value, shop->quality, it->condition, it->condition_max, shop->prices);
+    int cost;
+
+    cost = rules_repair_cost((int)it->value, shop->quality, it->condition, it->condition_max, shop->prices);
+    /* A guild member's (10 - rank) tenths, as DFU's ((10 - rank) << 8) / 10 x price >> 8. */
+    if (shop->repair_rank > 0) {
+        cost = (((10 - (shop->repair_rank - 1)) << 8) / 10 * cost) >> 8;
+    }
+    return cost;
 }
 
 int shop_seen_chance(const Shop *shop, const Character *c, float weight, int count)

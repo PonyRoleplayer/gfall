@@ -33,6 +33,8 @@ typedef struct Shop {
     int closed;
     /* Today's holiday's flags (HOLIDAY_*, commerce.h): a festival halves its prices. */
     int holiday;
+    /* A Fighters Guild hall's repairs for a member: their rank plus one, 0 for none (FightersGuild.ReducedRepairCost). */
+    int repair_rank;
 } Shop;
 
 /* Today's stock for a player of this level, into out; origin[i] says which rolled thing out's item i is. */

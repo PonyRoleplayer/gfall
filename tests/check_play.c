@@ -39,6 +39,7 @@
 #include "game/dagger/play/dunmap.h"
 #include "game/dagger/play/marker.h"
 #include "game/dagger/play/ride.h"
+#include "game/dagger/play/guild.h"
 #include "game/dagger/play/lodging.h"
 #include "game/dagger/play/ills.h"
 #include "game/dagger/formats/sndfile.h"
@@ -6795,6 +6796,131 @@ static void check_lodging(void)
     lodging_new_game();
 }
 
+/* DFU's skill numbers the guild test names. */
+#define SKILL_LONG_BLADE_ID 29
+#define SKILL_AXE_ID 31
+
+/*
+ * Guilds: MAIN.DAT's twenty, a temple's order under its god, ranks earned by
+ * reputation and skills worked by hand, joining and its refusals, a rank
+ * looked at after 28 days, expulsion, training and its refusals, what members
+ * are given, the guild's panel by clicks, and memberships through a save.
+ */
+static void check_guilds(void)
+{
+    static const char *const lines[] = { "Long Blade 31", "Axe 9" };
+    const GuildKind *fighters;
+    const GuildKind *akatosh;
+    const GuildKind *arkay;
+    const GuildKind *order;
+    Player p;
+    Character sheet;
+    int i;
+    int uses;
+
+    guild_new_game();
+    check_expect(guild_table()->count == 20, "guilds: not the Fighters, the Mages, eight temples and ten orders");
+    fighters = guild_kind(41);
+    check_expect(fighters && fighters->group == GUILD_GROUP_FIGHTERS && df_eq(fighters->rank[0], "Apprentice")
+                     && df_eq(fighters->rank[9], "Master") && fighters->skill[4] == SKILL_LONG_BLADE_ID,
+                 "guilds: the Fighters' titles or skills");
+    akatosh = guild_of_faction(92);
+    check_expect(akatosh && akatosh->id == 26 && akatosh->healing_rank == 1, "guilds: the Akatosh Chantry is not Akatosh's temple");
+    arkay = guild_kind(21);
+    order = guild_kind(368);
+    check_expect(arkay && order && order->group == GUILD_GROUP_KNIGHTLY && df_eq(order->rank[5], "Knight Brother"),
+                 "guilds: Arkay's temple or the Knights of the Dragon");
+    /* By hand: rank 0 wants one guild skill at 22 and another at 4; rank 2, 31 and 9 and a name of 20. */
+    character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Ada");
+    for (i = 0; i < SKILL_COUNT; i++) {
+        sheet.skill[i] = 0;
+    }
+    sheet.skill[SKILL_LONG_BLADE_ID] = 22;
+    check_expect(guild_rank_earned(fighters, &sheet, 0) == -1, "guilds: one skill alone earned a rank");
+    sheet.skill[SKILL_AXE_ID] = 4;
+    check_expect(guild_rank_earned(fighters, &sheet, 0) == 0, "guilds: 22 and 4 did not earn rank 0");
+    sheet.skill[SKILL_LONG_BLADE_ID] = 31;
+    sheet.skill[SKILL_AXE_ID] = 9;
+    check_expect(guild_rank_earned(fighters, &sheet, 20) == 2 && guild_rank_earned(fighters, &sheet, 19) == 1
+                     && guild_rank_earned(fighters, &sheet, -1) == -1,
+                 "guilds: 31 and 9 with a name of 20 is not rank 2");
+    /* Joining: a bad name, too little skill, in, and not twice; one temple at a time. */
+    player_init(&p, &sheet);
+    inventory_clear(&p.pack);
+    check_expect(guild_join(fighters, &p.sheet, -5, 100) == GUILD_BAD_NAME, "guilds: joined with a bad name");
+    p.sheet.skill[SKILL_AXE_ID] = 0;
+    check_expect(guild_join(fighters, &p.sheet, 0, 100) == GUILD_LOW_SKILL, "guilds: joined without the skills");
+    p.sheet.skill[SKILL_AXE_ID] = 9;
+    check_expect(guild_join(fighters, &p.sheet, 0, 100) == GUILD_JOINED && guild_rank(fighters) == 0
+                     && guild_join(fighters, &p.sheet, 0, 100) == GUILD_ALREADY,
+                 "guilds: not joined at rank 0, or joined twice");
+    p.sheet.skill[SKILL_MEDICAL] = 30;
+    p.sheet.skill[SKILL_AXE_ID] = 9;
+    check_expect(guild_join(arkay, &p.sheet, 0, 100) == GUILD_JOINED && guild_join(akatosh, &p.sheet, 0, 100) == GUILD_OTHER_OF_GROUP,
+                 "guilds: two temples at once");
+    /* The rank: the same before 28 days, up after, out with a bad name. */
+    check_expect(guild_update(fighters, &p.sheet, 20, 120) == GUILD_SAME, "guilds: a rank changed within 28 days");
+    check_expect(guild_update(fighters, &p.sheet, 20, 128) == 2 && guild_rank(fighters) == 2 && df_eq(guild_title(fighters, 2), "Swordsman"),
+                 "guilds: not Swordsman after 28 days");
+    /* What members get: the Fighters' hall to rest in; repairs and Arkay's cure at (10 - rank) tenths. */
+    check_expect(guild_can_rest_in(41) && !guild_can_rest_in(40), "guilds: the Fighters' rest, or the Mages'");
+    check_expect(guild_cure_price(21, 1000) == ((10 << 8) / 10 * 1000 >> 8) && guild_cure_price(26, 1000) == 1000,
+                 "guilds: Arkay's rank 0 cure, or a temple not joined");
+    check_expect(guild_heals(21) && !guild_heals(26), "guilds: Arkay heals from rank 0");
+    check_expect(!guild_free_rooms(5), "guilds: free rooms without an order");
+    /* Training: a Fighter's 100 a level, once in 12 hours, a skill to 50, the guild's own skills only. */
+    check_expect(guild_trains(fighters) && guild_trains(akatosh) && !guild_trains(guild_kind(40)), "guilds: who trains whom");
+    check_expect(guild_training_price(1, 3) == 300 && guild_training_price(0, 3) == 1200, "guilds: training's price");
+    p.pack.gold = 1000;
+    uses = p.sheet.skill_uses[SKILL_LONG_BLADE_ID];
+    check_expect(guild_train(&p, fighters, SKILL_MEDICAL, 100, 5000) == GUILD_NOT_TAUGHT, "guilds: Medical taught by the Fighters");
+    check_expect(guild_train(&p, fighters, SKILL_LONG_BLADE_ID, 100, 5000) == GUILD_TRAINED && p.pack.gold == 900
+                     && p.sheet.skill_uses[SKILL_LONG_BLADE_ID] >= uses + 10,
+                 "guilds: training not paid or no uses gained");
+    check_expect(guild_train(&p, fighters, SKILL_AXE_ID, 100, 5100) == GUILD_TOO_SOON, "guilds: trained twice in 12 hours");
+    p.sheet.skill[SKILL_AXE_ID] = 51;
+    check_expect(guild_train(&p, fighters, SKILL_AXE_ID, 100, 6000) == GUILD_TOO_SKILLED, "guilds: trained past 50");
+    p.sheet.skill[SKILL_AXE_ID] = 9;
+    /* The panel: Join Guild, Talk, the service written in, Exit; a member's has no Join; a list's line picked. */
+    check_expect(service_open(SERVICE_PANEL_GUILD), "guilds: the panel did not open");
+    service_set_label("Training");
+    check_expect(service_click(95 + 6, 50 + 5 + 2) == SERVICE_JOIN && service_click(95 + 6, 50 + 14 + 2) == SERVICE_TALK
+                     && service_click(95 + 6, 50 + 23 + 2) == SERVICE_GUILD && service_click(95 + 46, 50 + 33 + 4) == SERVICE_LEAVE,
+                 "guilds: the panel's rows");
+    service_list(lines, 2);
+    service_compose();
+    write_screen("build/guild0.ppm", service_pixels());
+    check_expect(service_click(95 + 20, 98 + 6 + 8 + 2) == SERVICE_PICKED && service_picked() == 1, "guilds: the list's second line");
+    service_close();
+    check_expect(service_open(SERVICE_PANEL_GUILD_MEMBER) && service_click(95 + 6, 50 + 5 + 2) == SERVICE_STAY,
+                 "guilds: a member was offered Join Guild");
+    service_close();
+    /* Through a save. */
+    {
+        SaveState out;
+        SaveState in;
+        char path[260];
+
+        save_use_prefix(SAVE_TEST_PREFIX);
+        save_use_slot(4);
+        keep_clear();
+        pile_new_game();
+        mem_zero(&out, sizeof(out));
+        df_copy(out.name, "Guild", SAVE_NAME);
+        out.sheet = p.sheet;
+        inventory_clear(&out.pack);
+        check_expect(save_write(&out), "guilds: a save did not write");
+        guild_new_game();
+        check_expect(save_read(&in) && guild_rank(fighters) == 2 && guild_rank(arkay) == 0 && guild_last_training() == 5000,
+                     "guilds: the memberships did not come back from the save");
+        check_expect(fs_beside(path, (int)sizeof(path), "DATA\\TEST4.SAV") && remove(path) == 0, "guilds: the test's file did not go");
+    }
+    /* Out with a bad name, 28 days after the last change. */
+    check_expect(guild_update(fighters, &p.sheet, -1, 200) == GUILD_EXPELLED && guild_rank(fighters) == -1,
+                 "guilds: a bad name did not put a member out");
+    guild_new_game();
+}
+
 /* Counts the engine's automap polygons. */
 static void count_polygon(void *ctx, const AutomapCorner *corner, int n, df_u32 rgb)
 {
@@ -7006,6 +7132,7 @@ void check_play(void)
     check_ills();
     check_ships();
     check_lodging();
+    check_guilds();
     check_riding();
     check_wagon();
     check_marker();

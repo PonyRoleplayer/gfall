@@ -8,6 +8,7 @@
 #include "game/dagger/tables/items.h"
 #include "game/dagger/tables/commerce.h"
 #include "game/dagger/tables/diseases.h"
+#include "game/dagger/tables/guilds.h"
 
 /*
  * Classic's tables that live inside FALL.EXE, not in an ARENA2 file:
@@ -37,6 +38,7 @@ const BuildingKind *classic_buildings(int *n);
 const CrimeKind *classic_crimes(int *n);
 const Holiday *classic_holidays(int *n);
 const Disease *classic_diseases(int *n);
+const GuildKind *classic_guilds(int *n);
 const DungeonLoot *classic_dungeon_loots(int *n);
 const Material *classic_materials(int *n);
 
