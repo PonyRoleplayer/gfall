@@ -35,7 +35,9 @@ enum {
     /* The court is over, closed: the player goes out to the street. */
     SCREENS_COURT_OVER,
     /* A journey on the travel map is over its countdown (travelmap_chosen), closed. */
-    SCREENS_JOURNEY
+    SCREENS_JOURNEY,
+    /* The town map asked for the travel map instead, closed. */
+    SCREENS_TO_TRAVEL
 };
 
 /* Opens one, closing any other. Nothing opens when its pictures are missing: is_open says. */
@@ -50,6 +52,8 @@ int screens_service_choice(void);
 void screens_open_trade(Player *p, const Shop *shop, int trade, int day);
 void screens_open_bank(Player *p, int region);
 void screens_open_court(Player *p);
+/* A town's automap: the town and the player in its frame, facing yaw. */
+void screens_open_townmap(int region, int index, float x, float z, float yaw);
 /* The travel map, the player on pixel (px, py) of region. */
 void screens_open_travel(Player *p, int px, int py, int region);
 /* The slot chosen and the name typed, after SCREENS_SLOT; whether it was to save. */

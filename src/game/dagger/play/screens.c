@@ -3,6 +3,7 @@
 #include "game/dagger/play/court.h"
 #include "game/dagger/play/service.h"
 #include "game/dagger/play/travelmap.h"
+#include "game/dagger/play/townmap.h"
 #include "game/dagger/play/bag.h"
 #include "game/dagger/play/create.h"
 #include "game/dagger/play/menu.h"
@@ -28,7 +29,8 @@ enum {
     OPEN_SERVICE,
     OPEN_BANK,
     OPEN_COURT,
-    OPEN_TRAVEL
+    OPEN_TRAVEL,
+    OPEN_TOWNMAP
 };
 
 static int g_open;
@@ -76,6 +78,9 @@ static void send_screen(void)
     } else if (g_open == OPEN_COURT) {
         court_compose();
         pixels = court_pixels();
+    } else if (g_open == OPEN_TOWNMAP) {
+        townmap_compose();
+        pixels = townmap_pixels();
     } else if (g_open == OPEN_TRAVEL) {
         travelmap_compose();
         pixels = travelmap_pixels();
@@ -116,6 +121,8 @@ void screens_close(void)
         court_close();
     } else if (g_open == OPEN_TRAVEL) {
         travelmap_close();
+    } else if (g_open == OPEN_TOWNMAP) {
+        townmap_close();
     }
     g_open = OPEN_NONE;
     if (g_pic) {
@@ -205,6 +212,13 @@ void screens_open_court(Player *p)
     screens_close();
     g_player = p;
     opened(OPEN_COURT, img_art_palette(g_rgb) && court_open(p));
+    input_key_pressed();
+}
+
+void screens_open_townmap(int region, int index, float x, float z, float yaw)
+{
+    screens_close();
+    opened(OPEN_TOWNMAP, img_art_palette(g_rgb) && townmap_open(region, index, x, z, yaw));
     input_key_pressed();
 }
 
@@ -310,6 +324,33 @@ static int travel_frame(const Input *in, float dt)
         return SCREENS_JOURNEY;
     }
     if (travelmap_changed()) {
+        send_screen();
+    }
+    return SCREENS_STAY;
+}
+
+/* A frame of the town map: the pointer names what it is over, the wheel zooms. */
+static int townmap_frame(const Input *in)
+{
+    int vk;
+    int asked;
+
+    townmap_point(g_point_x, g_point_y);
+    if (in->wheel) {
+        townmap_wheel(in->wheel);
+    }
+    vk = input_key_pressed();
+    asked = vk ? townmap_key(vk) : TOWNMAP_STAY;
+    if (asked == TOWNMAP_STAY && (in->pressed & INPUT_BIT(INPUT_ATTACK))) {
+        asked = townmap_click(g_point_x, g_point_y);
+    }
+    if (asked == TOWNMAP_LEAVE) {
+        return SCREENS_CLOSED;
+    }
+    if (asked == TOWNMAP_TRAVEL) {
+        return SCREENS_TO_TRAVEL;
+    }
+    if (townmap_changed()) {
         send_screen();
     }
     return SCREENS_STAY;
@@ -505,10 +546,13 @@ int screens_frame(const Input *in, float dt)
         asked = court_frame(in, dt);
     } else if (g_open == OPEN_TRAVEL) {
         asked = travel_frame(in, dt);
+    } else if (g_open == OPEN_TOWNMAP) {
+        asked = townmap_frame(in);
     } else {
         asked = create_frame(in);
     }
-    if (asked == SCREENS_CLOSED || asked == SCREENS_SERVICE || asked == SCREENS_SEEN || asked == SCREENS_COURT_OVER || asked == SCREENS_JOURNEY) {
+    if (asked == SCREENS_CLOSED || asked == SCREENS_SERVICE || asked == SCREENS_SEEN || asked == SCREENS_COURT_OVER || asked == SCREENS_JOURNEY
+        || asked == SCREENS_TO_TRAVEL) {
         screens_close();
     }
     return asked;
@@ -527,7 +571,7 @@ void screens_draw(void)
         note = rest_note();
     } else if (g_open == OPEN_SLOTS) {
         note = slots_note();
-    } else if (g_open == OPEN_TALK || g_open == OPEN_SERVICE || g_open == OPEN_COURT || g_open == OPEN_TRAVEL) {
+    } else if (g_open == OPEN_TALK || g_open == OPEN_SERVICE || g_open == OPEN_COURT || g_open == OPEN_TRAVEL || g_open == OPEN_TOWNMAP) {
         note = 0;
     } else if (g_open == OPEN_BANK) {
         note = bank_note();

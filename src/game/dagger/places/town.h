@@ -28,6 +28,15 @@ typedef struct TownBuilding {
 
 /* The buildings of the town at region and index, and how many; 0 when it does not read. */
 const TownBuilding *town_buildings(int region, int index, int *count);
+/*
+ * The town's automap: each block's 64 x 64 bytes from its RMB file, laid out
+ * as the town's blocks are, north up, into out (TOWN_MAP_MOST bytes): 0 where
+ * nothing stands, a building's type + 1 where one does, other values for its
+ * props. *w and *h the map's size. 0 when the town does not read.
+ */
+#define TOWN_MAP_SIDE 512
+#define TOWN_MAP_MOST (TOWN_MAP_SIDE * TOWN_MAP_SIDE)
+int town_automap(int region, int index, unsigned char *out, int *w, int *h);
 /* The name of the town last read. */
 const char *town_name(void);
 /* One of them, by what a door's tag names; 0 for none. */

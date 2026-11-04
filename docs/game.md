@@ -91,6 +91,16 @@ Classic's travel map and its fast journeys, on Daggerfall Unity's numbers and cl
 - **A click on a place** asks (TEXT.RSC 31, `%tcn` the place). Yes opens the journey's popup (`TRAV0I04.IMG`): cautious or reckless, foot or ship, inns or camping, the gold, the trip's cost and its days. Begin counts the days down a twentieth of a second each, then goes. Too little gold says so (454).
 - **Palettes:** the maps are under `FMAP_PAL.COL`, the popup, the scroll and the font under `ART_PAL.COL`. One screen is one picture under one palette, so what is drawn in the art palette is mapped to the map's nearest colour where it lies: the popup's rectangle whole, and in the scroll only the pixels it changed, so its burnt edges keep the map under them.
 
+### Automaps
+- **A town's** (built, `play/townmap.c`): classic's flat map. Each RMB block file carries its own 64 x 64 automap at +2251, a byte a cell: 0 for nothing, a building's type + 1, other values for its props. `town_automap` lays the town's blocks out north up, row 0 of a block its north edge.
+  - **Colours:** under `AMAP00I0.IMG` with `TOWN00I0.IMG`'s caption, the kinds take the caption's own swatches (guilds and temples 101, shops 240, taverns 199, under ART_PAL.COL). Houses are ours (222): the caption has no swatch for them.
+  - **View modes:** the grid button cycles DFU's three. Original shows buildings; Extra adds a ship and the special buildings; All adds the props.
+  - **Zoom and pan:** the town is fitted at the largest zoom that shows it whole: half size for Daggerfall's 8 x 8 blocks, up to four screen pixels a map pixel for a hamlet. The arrows, the arrow keys and the wheel pan and zoom (half, whole, 2, 3, 4), and the compass or Home centres the player.
+  - **The pointer** names the building kind under it, by `BLDG`. The player is an arrow along their facing.
+  - **Not yet:** rotating, and buildings' own names.
+- **The map key, for now:** in a town's streets M opens its automap, and M again goes to the travel map. In the wilds it opens the travel map. The travel map gets its own key (DFU's V) once the engine has `INPUT_TRAVEL_MAP`.
+- **A dungeon's and a building's** (not built): classic draws the place's geometry from above, only what the player has been near. That needs the engine to track what was seen and to draw it on the Voodoo (asked of the ENGINE implementer). The window's chrome, its buttons and the player's marker will be the game's.
+
 ### A journey (`play/journey.c`, DFU's TravelTimeCalculator)
 - **The path:** a line of map pixels, a step along the longer axis.
 - **Land:** each pixel is `((102 x transport) >> 8) x (512 - ease) >> 8` minutes. Transport is foot 256, horse 128, cart 192. The ease comes from the climate's terrain row: 240, 220, 200, 200, 230, 250.
@@ -100,9 +110,10 @@ Classic's travel map and its fast journeys, on Daggerfall Unity's numbers and cl
 - **Arriving:** the clock moves on by the journey. A cautious traveller arrives whole and in daylight: before 07:10 waits for it, after 17:00 waits for the next morning's.
   - The minutes on the road are not tired one by one afterwards (`g_last_minute`).
   - The player lands on a town's walkable cell nearest its middle. A dungeon's outside (labyrinth, keep, ruin, graveyard, coven) is landed on by its way down (`travel_go_to_place`).
-- **When it opens:** the map key (`INPUT_MAP`, M) or the HUD's map button, outdoors only. In a dungeon or a building it says the automap is not built yet.
+- **When it opens:** outdoors, by the map key or the HUD's map button (in a town, from its automap: Automaps, above). In a dungeon or a building it says the automap is not built yet.
 
 Tested on the host (`check_wider_world`):
+- the town map: Daggerfall's 8 x 8 blocks fitted at half size, its kinds coloured and its modes, an armorer named under the pointer, the up arrow and zoom by clicks, the wheel, M and Exit, writing `build/townmap0..1.ppm`;
 - the sums by hand: woodland on foot, recklessly, camping and on a horse, the sea by ship and swimming, a diagonal's steps, and arrivals reckless, before light and after 17:00;
 - the map's 11199 known places, one learnt and kept through a save;
 - every province's places on its map;
@@ -111,7 +122,7 @@ Tested on the host (`check_wider_world`):
 
 **Not yet:**
 - horses, carts and ships to own;
-- the automap;
+- a dungeon's and a building's automap (the engine's render first);
 - Find's list of several matches;
 - the identify flash;
 - talk's marking places on the map;
@@ -768,7 +779,7 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Loot | the other columns of `LOOT` wait for their items | P12-b, later |
 | Loot | a body or a heap takes nothing put on it (a choice, see What can be searched) | - |
 | Places | treasure and piles only in a dungeon streamed by block; a town's doors not keyed; the sea can be walked on | later |
-| World | horses, carts and ships to own; the automap; the travel map's Find list, identify flash and neighbouring provinces; places marked by talk; guild travel; holidays, diseases, lycanthropy and vampirism | P10 |
+| World | horses, carts and ships to own; the indoor automap (an engine render first), the town map's rotation and names; the travel map's Find list, identify flash and neighbouring provinces; places marked by talk; guild travel; holidays, diseases, lycanthropy and vampirism | P10 |
 | Player | the completed classic HUD bar needs target acceptance; the map button opens the travel map outdoors, the automap and magic buttons await their systems | P9-b, P10, P12-b |
 | Player | target acceptance/tuning of the implemented classic cursor controls | P9-c |
 | People | Steal mode, pickpocketing and the deferred theft mechanics | P12-a |

@@ -112,18 +112,48 @@ static void screen_over_play(void)
 
 static float game_minutes(void);
 
-/* The map: outdoors, the travel map (P10); in a dungeon or a building, classic's automap, not built yet. */
-static void map_over_play(void)
+/* The travel map, outdoors. */
+static void travel_map_over_play(void)
 {
     int px;
     int py;
 
     if (!travel_pixel(g_cam, &px, &py)) {
-        interact_say("The automap is not available yet.");
+        interact_say("You cannot travel from here.");
         return;
     }
     screens_open_travel(&g_player, px, py, travel_region());
     screen_over_play();
+}
+
+/*
+ * The map key: in a town's streets its automap (P10), the map key again for the
+ * travel map; in the wilds the travel map; in a dungeon or a building, classic's
+ * automap, whose render is the engine's to give.
+ */
+static void map_over_play(void)
+{
+    int region;
+    int index;
+    int block;
+    int record;
+    float x;
+    float z;
+    int px;
+    int py;
+
+    if (travel_pixel(g_cam, &px, &py) && travel_town_here(g_cam, &region, &index, &x, &z, &block, &record)) {
+        screens_open_townmap(region, index, x, z, g_player.yaw);
+        screen_over_play();
+        if (screens_is_open()) {
+            return;
+        }
+    }
+    if (travel_pixel(g_cam, &px, &py)) {
+        travel_map_over_play();
+        return;
+    }
+    interact_say("The automap is not available yet.");
 }
 
 /*
@@ -872,6 +902,11 @@ int game_frame(Camera *cam, const Input *in, float dt)
         }
         if (asked == SCREENS_SERVICE) {
             service_chosen();
+            prof_end(PROF_PLAY);
+            return GAME_GO_ON;
+        }
+        if (asked == SCREENS_TO_TRAVEL) {
+            travel_map_over_play();
             prof_end(PROF_PLAY);
             return GAME_GO_ON;
         }

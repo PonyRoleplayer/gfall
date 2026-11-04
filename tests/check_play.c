@@ -35,6 +35,7 @@
 #include "game/dagger/play/atlas.h"
 #include "game/dagger/play/journey.h"
 #include "game/dagger/play/travelmap.h"
+#include "game/dagger/play/townmap.h"
 #include "game/dagger/formats/climate.h"
 #include "game/dagger/places/wild.h"
 #include "game/dagger/formats/worldmap.h"
@@ -5932,6 +5933,72 @@ static void check_wider_world(void)
         journey_plan(sx, sy, px, py, 1, 1, 0, JOURNEY_FOOT, 0, &j);
         check_expect(region == 17 && index == dagger && !cautious && made.minutes == j.minutes && made.days > 1,
                      "travel map: the journey is not to Daggerfall, reckless, on foot, at the sums");
+        /* The town map of Daggerfall: the whole city fitted, its kinds coloured, an armorer named under the pointer, panned and zoomed by clicks. */
+        {
+            static unsigned char bytes[TOWN_MAP_MOST];
+            const TownBuilding *rows;
+            int w;
+            int h;
+            int n;
+            int i;
+            int cx;
+            int cy;
+            int named;
+
+            check_expect(town_automap(17, dagger, bytes, &w, &h) && w == 512 && h == 512, "town map: Daggerfall's 8 x 8 blocks");
+            named = 0;
+            for (i = 0; i < w * h; i++) {
+                named += townmap_colour(bytes[i], 0) != 0;
+            }
+            check_expect(named > 10000, "town map: Daggerfall's buildings are not on its map");
+            check_expect(townmap_colour(16, 0) && townmap_colour(16, 0) != townmap_colour(3, 0) && townmap_colour(12, 0) != townmap_colour(3, 0)
+                         && !townmap_colour(0, 0) && !townmap_colour(251, 0) && townmap_colour(251, 1), "town map: the kinds' colours or the modes");
+            check_expect(townmap_open(17, dagger, 16000.0f, 16000.0f, 0.0f), "town map: it did not open");
+            check_expect(townmap_scale() == 2, "town map: Daggerfall is not fitted at half size");
+            townmap_compose();
+            write_screen("build/townmap0.ppm", townmap_pixels());
+            /* An armorer under the pointer: its building's cell from the town's own list, on the screen at half size. */
+            rows = town_buildings(17, dagger, &n);
+            named = 0;
+            for (i = 0; rows && i < n && !named; i++) {
+                int sx;
+                int sy;
+
+                if (rows[i].type != BUILDING_ARMORER) {
+                    continue;
+                }
+                townmap_centre(&cx, &cy);
+                /* Each map pixel is 64 units; half size puts two map pixels in each screen pixel. */
+                for (sy = -3; sy <= 3 && !named; sy++) {
+                    for (sx = -3; sx <= 3 && !named; sx++) {
+                        int mx;
+                        int my;
+
+                        mx = df_ifloor(rows[i].x / 64.0f);
+                        my = h - 1 - df_ifloor(rows[i].z / 64.0f);
+                        townmap_point(160 + (mx - cx) / 2 + sx, 85 + (my - cy) / 2 + sy);
+                        named = df_eq(townmap_line(), "Armorer");
+                    }
+                }
+            }
+            check_expect(named, "town map: no armorer named under the pointer");
+            townmap_centre(&cx, &cy);
+            townmap_click(106, 172);
+            townmap_click(238, 172);
+            {
+                int nx;
+                int ny;
+
+                townmap_centre(&nx, &ny);
+                check_expect(ny == cy - 32 && townmap_scale() == 1, "town map: the up arrow at half size or the zoom in");
+            }
+            townmap_wheel(2);
+            check_expect(townmap_scale() == -3, "town map: the wheel's zoom");
+            townmap_compose();
+            write_screen("build/townmap1.ppm", townmap_pixels());
+            check_expect(townmap_key('M') == TOWNMAP_TRAVEL && townmap_click(282, 172) == TOWNMAP_LEAVE, "town map: M or Exit");
+            townmap_close();
+        }
         printf("travel map: Sentinel to Daggerfall reckless on foot, %d days, %d gold; build/travel0..3.ppm\n", made.days, made.cost);
         travelmap_close();
     }
