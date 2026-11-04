@@ -5,6 +5,7 @@
 #include "engine/scene/light.h"
 #include "engine/scene/clock.h"
 #include "engine/scene/weather.h"
+#include "engine/scene/automap.h"
 #include "engine/gfx/sky.h"
 #include "engine/gfx/draw.h"
 #include "engine/gfx/glide.h"
@@ -367,6 +368,78 @@ int gfx_texcap(void)
 int gfx_mipmap(void)
 {
     return glide_mipmap();
+}
+
+/* One automap polygon to the card, fanned into pieces Glide takes. */
+static void automap_emit(void *ctx, const AutomapCorner *corner, int n, df_u32 rgb)
+{
+    DrawVert v[GLIDE_POLY_MAX];
+    float r, g, b;
+    int start;
+
+    (void)ctx;
+    r = (float)((rgb >> 16) & 0xffu);
+    g = (float)((rgb >> 8) & 0xffu);
+    b = (float)(rgb & 0xffu);
+    /* Corner 0, then up to GLIDE_POLY_MAX - 1 more a piece, each piece sharing its first edge with the last. */
+    for (start = 1; start + 1 < n; start += GLIDE_POLY_MAX - 2) {
+        int m;
+        int k;
+
+        m = 0;
+        for (k = -1; k < GLIDE_POLY_MAX - 1 && start + k < n; k++) {
+            const AutomapCorner *c;
+
+            c = k < 0 ? &corner[0] : &corner[start + k];
+            v[m].x = c->x;
+            v[m].y = c->y;
+            v[m].oow = c->oow;
+            /* For a Z-buffer card, camera_project's depth: 65535 * DF_NEAR / z. */
+            v[m].ooz = 65535.0f * DF_NEAR * c->oow;
+            v[m].sow = 0.0f;
+            v[m].tow = 0.0f;
+            v[m].r = r;
+            v[m].g = g;
+            v[m].b = b;
+            m++;
+        }
+        if (m >= 3) {
+            glide_polygon(v, m);
+        }
+    }
+}
+
+void gfx_automap(const Level *level, const AutomapView *view, df_u32 back)
+{
+    DrawVert q[4];
+    int fog;
+    int k;
+
+    if (!level || !view) {
+        return;
+    }
+    fog = glide_fog_on();
+    glide_fog(0);
+    glide_opacity(-1, 0);
+    /* The ground: the rectangle's colour, and its depth as far as the card's W goes. */
+    glide_flat_reset(1);
+    for (k = 0; k < 4; k++) {
+        q[k].x = (k == 1 || k == 2) ? view->x1 : view->x0;
+        q[k].y = k >= 2 ? view->y1 : view->y0;
+        q[k].oow = 1.0f / 60000.0f;
+        q[k].ooz = 65535.0f * DF_NEAR / 60000.0f;
+        q[k].sow = 0.0f;
+        q[k].tow = 0.0f;
+        q[k].r = (float)((back >> 16) & 0xffu);
+        q[k].g = (float)((back >> 8) & 0xffu);
+        q[k].b = (float)(back & 0xffu);
+    }
+    glide_polygon(q, 4);
+    glide_flat_reset(0);
+    glide_flat(1);
+    automap_polygons(&level->scene, view, automap_emit, 0);
+    glide_flat(0);
+    glide_fog(fog);
 }
 
 void gfx_set_extra(void (*fn)(void))

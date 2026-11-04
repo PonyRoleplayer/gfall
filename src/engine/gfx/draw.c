@@ -23,6 +23,7 @@
 #include "engine/scene/weather.h"
 #include "engine/scene/walker.h"
 #include "engine/scene/interact.h"
+#include "engine/scene/automap.h"
 #include "engine/sound/ambience.h"
 #include "engine/sound/sound.h"
 #include "engine/gfx/sky.h"
@@ -3102,6 +3103,10 @@ void draw_frame(const Camera *cam, const Level *level)
     g_decals_drawn = 0;
     prof_begin(PROF_CULL);
     norder = scene_visible_models(&level->scene, cam, order, VIS_MAX);
+    /* What this frame shows goes on the automap, while the game names a place (docs/automap.md). */
+    if (automap_place() && !g_pause) {
+        automap_frame(&level->scene, cam, order, norder);
+    }
     prof_end(PROF_CULL);
     prof_begin(PROF_MODELS);
     g_vis_models = norder;

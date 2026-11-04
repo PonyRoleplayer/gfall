@@ -374,6 +374,16 @@ void *stream_chunk_data(int cx, int cz)
     return 0;
 }
 
+int stream_scene_origin(const Scene *scene, df_i32 *ox, df_i32 *oz)
+{
+    if (!g_open || !scene || scene != g_scene) {
+        return 0;
+    }
+    *ox = (df_i32)g_ox * (df_i32)g_chunk;
+    *oz = (df_i32)g_oz * (df_i32)g_chunk;
+    return 1;
+}
+
 void stream_local(double wx, double wz, float *x, float *z)
 {
     *x = (float)(wx - (double)g_ox * (double)g_chunk);

@@ -75,6 +75,7 @@ ENGINE_HOST_SRC := \
 	src/engine/scene/keep.c \
 	src/engine/scene/entity.c \
 	src/engine/scene/stream.c \
+	src/engine/scene/automap.c \
 	src/engine/sound/mixer.c \
 	src/engine/sound/audio.c \
 	src/engine/sound/sound.c \

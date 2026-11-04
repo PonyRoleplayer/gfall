@@ -181,6 +181,12 @@ int stream_outran(void);
 void stream_chunk_at(const Camera *cam, int *cx, int *cz);
 /* The origin chunk: local (0, 0) is its south-west corner. */
 void stream_origin(int *cx, int *cz);
+/*
+ * Where scene's local (0, 0) sits in the world, in whole units: 1 when
+ * scene is the open stream's, else 0 (a place loaded whole, whose frame
+ * is its own). The automap keys a model by its place-frame position.
+ */
+int stream_scene_origin(const Scene *scene, df_i32 *ox, df_i32 *oz);
 /* A point's world position in units, from a local one: x east, z north. */
 void stream_world(float x, float z, double *wx, double *wz);
 /* And back: a world position in the local frame. */

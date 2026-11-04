@@ -105,6 +105,7 @@ A variable prints its value when typed alone, and takes a new one as an argument
 | `sndinfo`, `sndlist`, `sndview`, `song`, `play`, `musdev`, `sound`, `sndvol`, `sndmuffle`, `sndrate`, `snddrv`, `sndmmx`, `music`, `musvol`, `musvoices` | The sound and the music: see `docs/sound.md`. |
 | `prof` | Where the frame's time goes, by stage: see `docs/profile.md`. |
 | `date`, `season` | The calendar and the season a town is drawn in: see `docs/daylight.md`. |
+| `mapreveal` | Every model of the place on its automap, as if walked: see `docs/automap.md`. |
 | `useview`, `uselist`, `locks` | What can be used, and the doors' locks: see `docs/interact.md`. |
 | `water` | Water's surface drawn, and the eye under it in its colour (on; alone it flips); 0 draws a place as if dry. See `docs/water.md`. |
 | `trigview` | The triggers within this many units (0 off, 1 is 512): how each goes off, what it does, a teleport's target, the game's numbers. See `docs/interact.md`. |

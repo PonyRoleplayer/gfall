@@ -164,6 +164,8 @@ void glide_point_sample(int on);
 void glide_ui(int on);
 /* Untextured iterated colour with the room's depth test left alone. */
 void glide_flat(int on);
+/* Untextured colour that writes its depth over whatever is there: a rectangle cleared. 0 restores the room. */
+void glide_flat_reset(int on);
 /*
  * The light the scene is drawn in, 0xRRGGBB, held in the constant
  * colour. White (default) draws textures as they are. Set white again

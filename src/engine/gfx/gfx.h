@@ -98,6 +98,16 @@ void gfx_set_use_key(int on);
  */
 float gfx_stream_budget(float fallback_ms);
 
+/*
+ * The indoor automap (docs/automap.md): level's seen geometry in view's
+ * rectangle, over a ground of colour back (0xRRGGBB) that also clears the
+ * depth there, so the map never tests against a world drawn behind it.
+ * Call it from the gfx_set_under hook; flat colour, no fog, no texture.
+ * Best in a screen frame (gfx_frame(cam, 0)): the stilled world is not
+ * drawn under the map at all.
+ */
+struct AutomapView;
+void gfx_automap(const Level *level, const struct AutomapView *view, df_u32 back);
 /* Drawn after the frame and before the swap. 0 clears it. */
 void gfx_set_extra(void (*fn)(void));
 /* Drawn after the scene and before the HUD. 0 clears it. */

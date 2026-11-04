@@ -19,7 +19,7 @@ The scene's triangles carry x and y, and s/w, t/w and 1/w for TMU0. Nothing else
 
 The Z-buffer is the fallback, `wbuffer off` in the console: `GR_CMP_GREATER` on `camera_project`'s ooz, cleared to `GR_ZDEPTHVALUE_FARTHEST`. ooz is linear in 1/z, so one depth step is z² / 65535 per unit of range. ooz used to be `65535 / z`. With the near plane at 4 its largest value was 16383, so three quarters of the buffer was never used. A step was 15 units at 1000 and about 1000 at 8192, and door frames, floor edges, and the castle at `far 8192` flickered through each other. It is now `65535 * DF_NEAR / z`, which uses all 16 bits: 4 units at 1000, 256 at 8192. The fallback is there to compare on hardware, not to ship.
 
-Every overlay that turns the depth test off (`glide_ui`, `glide_overlay`, and the modes built on them) restores `g_depth_cmp`, not a fixed compare. A new mode that touches `grDepthBufferFunction` must do the same, or the scene draws with the other buffer's compare after the first HUD string.
+Every overlay that turns the depth test off (`glide_ui`, `glide_overlay`, `glide_flat_reset`, and the modes built on them) restores `g_depth_cmp`, not a fixed compare. `glide_flat_reset` keeps the depth write on: it is how `gfx_automap` clears its rectangle's depth (`docs/automap.md`). A new mode that touches `grDepthBufferFunction` must do the same, or the scene draws with the other buffer's compare after the first HUD string.
 
 ## Lighting
 

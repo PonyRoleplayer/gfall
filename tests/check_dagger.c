@@ -36,6 +36,7 @@
 #include "game/dagger/places/wres.h"
 #include "engine/scene/stream.h"
 #include "engine/scene/keep.h"
+#include "engine/scene/automap.h"
 #include "game/dagger/places/dunstream.h"
 #include "engine/scene/interact.h"
 #include "engine/gfx/draw.h"
@@ -2887,6 +2888,127 @@ static void check_dungeon_movers(void)
     keep_clear();
 }
 
+/* The automap's polygons in the hold: how many, and how many corners left the rectangle. */
+static int g_hm_polys;
+static int g_hm_outside;
+static int g_hm_corners;
+
+static void hm_emit(void *ctx, const AutomapCorner *corner, int n, df_u32 rgb)
+{
+    const AutomapView *v;
+    int k;
+
+    (void)rgb;
+    v = (const AutomapView *)ctx;
+    g_hm_polys++;
+    g_hm_corners += n;
+    for (k = 0; k < n; k++) {
+        if (corner[k].x < v->x0 - 0.01f || corner[k].x > v->x1 + 0.01f || corner[k].y < v->y0 - 0.01f
+            || corner[k].y > v->y1 + 0.01f || corner[k].oow <= 0.0f) {
+            g_hm_outside++;
+        }
+    }
+}
+
+static int hm_count(const Scene *scene, AutomapView *v)
+{
+    g_hm_polys = 0;
+    g_hm_outside = 0;
+    g_hm_corners = 0;
+    return automap_polygons(scene, v, hm_emit, v);
+}
+
+/*
+ * The automap in the streamed hold (docs/automap.md): a look round from
+ * the start sees the cave round it; that geometry draws from above and
+ * from behind the player, inside classic's map rectangle at 640 x 480;
+ * the hold opened again (a new heap, a new scene) knows the same models
+ * seen; revealed, the whole hold draws.
+ */
+static void check_dungeon_automap(void)
+{
+    static int order[DRAW_VIS_MAX];
+    Dungeon hold;
+    Level level;
+    Camera cam;
+    AutomapView v;
+    float x, y, z, yaw, pitch;
+    int seen;
+    int again;
+    int top;
+    int all;
+    int n;
+    int i;
+
+    keep_clear();
+    automap_clear();
+    if (!dungeon_load(&hold) || !dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
+        check_expect(0, "dungeon automap: the hold's stream did not open");
+        return;
+    }
+    camera_set(&cam, x, y, z, yaw, pitch);
+    dunstream_fill(&cam);
+    automap_set_place(17);
+    /* A look round from the start, a quarter turn a frame. */
+    for (i = 0; i < 4; i++) {
+        camera_set(&cam, x, y, z, yaw + (float)i * DF_TAU / 4.0f, 0.0f);
+        n = scene_visible_models(&level.scene, &cam, order, DRAW_VIS_MAX);
+        automap_frame(&level.scene, &cam, order, n);
+    }
+    camera_set(&cam, x, y, z, yaw, pitch);
+    seen = automap_count();
+
+    /* Classic's map rectangle (1, 1)..(318, 169) of 320 x 200, doubled and turned to the lower left. */
+    mem_zero(&v, sizeof(v));
+    v.mode = AUTOMAP_TOP;
+    v.x0 = 2.0f;
+    v.x1 = 636.0f;
+    v.y0 = 480.0f - 2.4f * 169.0f;
+    v.y1 = 480.0f - 2.4f;
+    v.cx = cam.x;
+    v.cz = cam.z;
+    v.yaw = cam.yaw;
+    v.scale = 0.25f;
+    v.bottom = cam.y - 400.0f;
+    v.top = cam.y + 200.0f;
+    top = hm_count(&level.scene, &v);
+    check_expect(seen > 0 && top > 0 && g_hm_outside == 0,
+                 "dungeon automap: the start saw nothing, or its floors did not draw inside the map from above");
+    v.mode = AUTOMAP_3D;
+    v.fov = 75.0f;
+    camera_set(&v.cam, cam.x - 500.0f * df_sin(cam.yaw), cam.y + 400.0f, cam.z - 500.0f * df_cos(cam.yaw), cam.yaw, -0.6f);
+    check_expect(hm_count(&level.scene, &v) > 0 && g_hm_outside == 0,
+                 "dungeon automap: from behind the player nothing drew, or it left the map's rectangle");
+    dunstream_close();
+
+    /* Opened again: a new scene on a new heap, the same models seen by their keys. */
+    if (!dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
+        check_expect(0, "dungeon automap: the hold's stream did not open again");
+        return;
+    }
+    dunstream_fill(&cam);
+    again = 0;
+    for (i = 0; i < level.scene.nmodels; i++) {
+        again += automap_seen(&level.scene, i);
+    }
+    automap_reveal(&level.scene);
+    v.mode = AUTOMAP_TOP;
+    v.scale = 0.02f;
+    v.bottom = -1.0e6f;
+    v.top = 1.0e6f;
+    all = hm_count(&level.scene, &v);
+    printf("dungeon automap: %d models seen at the start (%d floor polygons from above), %d after the hold reopened; "
+           "revealed %d models, %d polygons of %d corners from above\n",
+           seen, top, again, automap_count(), all, g_hm_corners);
+    check_expect(again == seen, "dungeon automap: the hold opened again forgot which models were seen");
+    check_expect(automap_count() > seen && all > top && g_hm_outside == 0,
+                 "dungeon automap: revealed, the hold did not draw more than the start did, inside the map");
+    dunstream_close();
+    automap_clear();
+    automap_set_place(0);
+    keep_clear();
+}
+
 int check_dagger(const char *root_in)
 {
     World *world;
@@ -3535,5 +3657,6 @@ int check_dagger(const char *root_in)
     check_stream();
     check_dungeon_lights();
     check_dungeon_movers();
+    check_dungeon_automap();
     return check_failed() ? 1 : 0;
 }

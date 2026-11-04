@@ -31,6 +31,7 @@
 #include "engine/scene/walker.h"
 #include "engine/scene/collide.h"
 #include "engine/scene/interact.h"
+#include "engine/scene/automap.h"
 #include "engine/gfx/sky.h"
 #include "engine/assets/loader.h"
 #include "engine/sound/ambience.h"
@@ -998,6 +999,24 @@ static void use_spot(const Scene *sc, const Usable *u, float *x, float *y, float
 }
 
 /* What can be used here: how many of each word, then the nearest, nearest first. */
+/* Every model of the place on its automap, as if walked (docs/automap.md). */
+static void c_mapreveal(int argc, char **argv)
+{
+    const Scene *sc;
+    int before;
+
+    (void)argc;
+    (void)argv;
+    sc = interact_scene();
+    if (!automap_place() || !sc) {
+        log_text(LOG_PRINT, "mapreveal: no automap here (the game names none, or no place is open)");
+        return;
+    }
+    before = automap_count();
+    automap_reveal(sc);
+    log_print(LOG_PRINT, "mapreveal: %d models seen, %d new", automap_count(), automap_count() - before);
+}
+
 static void c_uselist(int argc, char **argv)
 {
     enum { KINDS = 16, SHOW_MAX = 64 };
@@ -1407,6 +1426,7 @@ static void commands(void)
     cmd_add("sndlist", c_sndlist, "[n]", "the place's sound emitters by kind, and the n nearest (10)");
     cmd_var("sndview", ambience_view, ambience_set_view, 0, AMBIENCE_VIEW_MAX,
             "squares, words and rings for sound emitters within this many units; 0 is off, 1 is 1024");
+    cmd_add("mapreveal", c_mapreveal, "", "every model of this place on its automap, as if walked");
     cmd_add("uselist", c_uselist, "[n]", "what can be used here by kind, and the n nearest (10)");
     cmd_var("useview", interact_view, interact_set_view, 0, INTERACT_VIEW_MAX,
             "boxes and words for what can be used within this many units; 0 is off, 1 is 512");

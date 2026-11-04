@@ -1582,6 +1582,25 @@ void glide_flat(int on)
     color_textured();
 }
 
+/*
+ * on: untextured iterated colour whose depth is written whatever is there
+ * already, so a rectangle drawn this way is cleared to its colour and its
+ * depth (gfx_automap's ground before its map). 0 restores the room.
+ */
+void glide_flat_reset(int on)
+{
+    if (!g_opened) {
+        return;
+    }
+    glide.depth_func(on ? GR_CMP_ALWAYS : g_depth_cmp);
+    glide.depth_mask(FXTRUE);
+    if (on) {
+        color_flat();
+        return;
+    }
+    color_textured();
+}
+
 void glide_point_sample(int on)
 {
     if (!g_opened) {

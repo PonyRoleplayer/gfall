@@ -21,6 +21,7 @@
 #include "engine/ui/pic.h"
 #include "engine/scene/keep.h"
 #include "engine/scene/stream.h"
+#include "engine/scene/automap.h"
 #include "engine/scene/interact.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
@@ -4967,6 +4968,200 @@ static void check_rpg(void)
     printf("rpg: points, levels, vitals, blows and the screen\n");
 }
 
+/* The automap's polygons, gathered: how many, and whether every corner stayed in the rectangle. */
+static int g_am_polys;
+static int g_am_outside;
+static float g_am_lo_oow;
+static df_u32 g_am_rgb;
+
+static void am_emit(void *ctx, const AutomapCorner *corner, int n, df_u32 rgb)
+{
+    const AutomapView *v;
+    int k;
+
+    v = (const AutomapView *)ctx;
+    g_am_polys++;
+    g_am_rgb = rgb;
+    for (k = 0; k < n; k++) {
+        if (corner[k].x < v->x0 - 0.01f || corner[k].x > v->x1 + 0.01f || corner[k].y < v->y0 - 0.01f
+            || corner[k].y > v->y1 + 0.01f) {
+            g_am_outside++;
+        }
+        if (corner[k].oow < g_am_lo_oow) {
+            g_am_lo_oow = corner[k].oow;
+        }
+    }
+}
+
+static int am_count(const Scene *sc, const AutomapView *v)
+{
+    g_am_polys = 0;
+    g_am_outside = 0;
+    g_am_lo_oow = 1.0e9f;
+    return automap_polygons(sc, v, am_emit, (void *)v);
+}
+
+/*
+ * The automap (docs/automap.md): a floor stood on is seen, one beside it
+ * passed, a far one drawn is not; seen follows a model's key through a
+ * scene rebuilt in another order, a place left and come back to, a save's
+ * rows, and a door swung; from above only floors are drawn, cut to the
+ * slice and the rectangle; from a camera what faces it.
+ */
+static void check_automap(void)
+{
+    static Scene sc;
+    static Instance in[6];
+    static Instance again[6];
+    static Mover mv[1];
+    static AutomapRow saved[8];
+    Mesh *m[6];
+    Camera cam;
+    AutomapView v;
+    float cx[4], cy[4], cz[4];
+    float sx, sy;
+    int drawn[2];
+    int nsaved;
+    int i;
+    int ok;
+
+    /* 0 the floor stood on, 1 a floor beside it, 2 a floor far off, 3 a door, 4 a ceiling, 5 a wall. */
+    m[0] = flat_quad(-100.0f, 100.0f, -100.0f, 100.0f, 0.0f);
+    m[1] = flat_quad(300.0f, 500.0f, -100.0f, 100.0f, 0.0f);
+    m[2] = flat_quad(4900.0f, 5100.0f, -100.0f, 100.0f, 0.0f);
+    m[3] = upright_quad(-20.0f, 20.0f, 0.0f, 80.0f, 0.0f);
+    cx[0] = -100.0f; cy[0] = 100.0f; cz[0] = -100.0f;
+    cx[1] = -100.0f; cy[1] = 100.0f; cz[1] = 100.0f;
+    cx[2] = 100.0f;  cy[2] = 100.0f; cz[2] = 100.0f;
+    cx[3] = 100.0f;  cy[3] = 100.0f; cz[3] = -100.0f;
+    m[4] = fan_mesh(cx, cy, cz, 4, 0.0f, -1.0f, 0.0f);
+    m[5] = upright_quad(-100.0f, 100.0f, 0.0f, 100.0f, -100.0f);
+    for (i = 0; i < 6; i++) {
+        check_expect(m[i] != 0, "automap: meshes were not allocated");
+        if (!m[i]) {
+            return;
+        }
+    }
+    body_scene(&sc, in, m, 6);
+    for (i = 0; i < 6; i++) {
+        m[i]->id = 100u + (df_u32)i;
+    }
+    /* The door stands at x 0, z 60 when shut; a mover's key is where it starts. */
+    in[3].z = 60.0f;
+    mem_zero(mv, sizeof(mv));
+    mv[0].inst = &in[3];
+    mv[0].model = 3;
+    mv[0].x0 = 0.0f;
+    mv[0].y0 = 0.0f;
+    mv[0].z0 = 60.0f;
+    mv[0].next = -1;
+    sc.movers = mv;
+    sc.nmovers = 1;
+
+    automap_clear();
+    automap_set_place(0);
+    camera_set(&cam, 0.0f, 40.0f, 0.0f, 0.0f, 0.0f);
+    drawn[0] = 0;
+    drawn[1] = 2;
+    automap_frame(&sc, &cam, drawn, 2);
+    check_expect(automap_count() == 0, "automap: a frame marked models with no place named");
+
+    automap_set_place(17);
+    automap_frame(&sc, &cam, drawn, 2);
+    /* 0 drawn, 1 passed (200 off), 3 4 5 within reach; 2 drawn but 4800 off. */
+    check_expect(automap_seen(&sc, 0) && automap_seen(&sc, 1) && !automap_seen(&sc, 2) && automap_seen(&sc, 3)
+                     && automap_count() == 5,
+                 "automap: the floor stood on, the one beside it or the room round them is not seen, or the far one is");
+
+    /* The same models in another order, as a stream's slots fill: seen follows each model's key. */
+    for (i = 0; i < 6; i++) {
+        again[i] = in[5 - i];
+    }
+    mv[0].inst = &again[2];
+    mv[0].model = 2;
+    sc.models = again;
+    sc.version++;
+    check_expect(automap_seen(&sc, 5) && automap_seen(&sc, 4) && !automap_seen(&sc, 3) && automap_count() == 5,
+                 "automap: a scene rebuilt in another order lost which models were seen");
+    sc.models = in;
+    mv[0].inst = &in[3];
+    mv[0].model = 3;
+    sc.version++;
+
+    /* The door half open: its model has moved, its key has not. */
+    in[3].x = 30.0f;
+    in[3].z = 40.0f;
+    sc.version++;
+    check_expect(automap_seen(&sc, 3), "automap: a door swung open is no longer seen");
+
+    /* Another place sees none of this one's; coming back, it is all there. */
+    automap_set_place(18);
+    ok = !automap_seen(&sc, 0);
+    automap_set_place(17);
+    check_expect(ok && automap_seen(&sc, 0), "automap: another place shares this one's seen models, or they were lost");
+
+    /* A save's rows: out, cleared, back. */
+    nsaved = automap_count();
+    for (i = 0; i < nsaved && i < 8; i++) {
+        saved[i] = *automap_at(i);
+    }
+    automap_clear();
+    ok = automap_count() == 0 && !automap_seen(&sc, 0);
+    for (i = 0; i < nsaved; i++) {
+        automap_put(&saved[nsaved - 1 - i]);
+    }
+    check_expect(ok && automap_count() == nsaved && automap_seen(&sc, 0) && automap_seen(&sc, 1)
+                     && !automap_seen(&sc, 2) && automap_at(0)->mesh <= automap_at(1)->mesh,
+                 "automap: the rows did not come back from a save in key order");
+
+    /* From above, centred on the player: two floors, not the ceiling, the wall or the door. */
+    mem_zero(&v, sizeof(v));
+    v.mode = AUTOMAP_TOP;
+    v.x0 = 100.0f;
+    v.y0 = 50.0f;
+    v.x1 = 400.0f;
+    v.y1 = 250.0f;
+    v.scale = 0.25f;
+    v.bottom = -100.0f;
+    v.top = 90.0f;
+    check_expect(am_count(&sc, &v) == 2 && g_am_polys == 2 && g_am_outside == 0 && g_am_lo_oow > 0.0f,
+                 "automap: from above it did not draw the two seen floors inside the rectangle, and nothing else");
+    /* The far floor's room, revealed: off the rectangle at this scale, so still two. */
+    automap_reveal(&sc);
+    check_expect(automap_count() == 6 && am_count(&sc, &v) == 2,
+                 "automap: reveal missed a model, or a floor 5000 off was drawn in a rectangle 1200 wide");
+    /* The floor at 300..500 is half past the rectangle's right edge (x 250 + 500 / 4 = 375 .. 400): cut, not dropped. */
+    v.scale = 0.5f;
+    check_expect(am_count(&sc, &v) == 2 && g_am_outside == 0,
+                 "automap: a floor half out of the rectangle was dropped, or not cut to it");
+    /* The slice under the floors: nothing. */
+    v.top = -10.0f;
+    check_expect(am_count(&sc, &v) == 0, "automap: a floor above the slice's top was drawn");
+    v.top = 90.0f;
+    /* The player at the centre; turned a quarter, a point east is up. */
+    ok = automap_to_screen(&v, 0.0f, 0.0f, 0.0f, &sx, &sy) && check_near(sx, 250.0f, 0.01f)
+         && check_near(sy, 150.0f, 0.01f);
+    v.yaw = DF_TAU / 4.0f;
+    ok = ok && automap_to_screen(&v, 100.0f, 0.0f, 0.0f, &sx, &sy) && check_near(sx, 250.0f, 0.01f)
+         && check_near(sy, 200.0f, 0.01f);
+    check_expect(ok && !automap_to_screen(&v, 0.0f, 0.0f, -1000.0f, &sx, &sy),
+                 "automap: the player marker's place on the map is wrong, or a point off it said it was on");
+
+    /* From a camera behind the door and above, looking down at it: what faces it, in the rectangle. */
+    v.mode = AUTOMAP_3D;
+    v.yaw = 0.0f;
+    v.fov = 75.0f;
+    v.top = 200.0f;
+    camera_set(&v.cam, 0.0f, 300.0f, 400.0f, DF_TAU / 2.0f, -0.6f);
+    am_count(&sc, &v);
+    /* The floors, the door and the wall face it; the ceiling (down) does not, and the room at 5000 is off to its side. */
+    check_expect(g_am_polys == 4 && g_am_outside == 0 && g_am_lo_oow > 0.0f,
+                 "automap: from a camera it did not draw the four faces turned to it, inside the rectangle");
+    automap_clear();
+    automap_set_place(0);
+    printf("automap: seen by sight and by passing, kept by key, floors from above, faces from a camera\n");
+}
+
 void check_engine(void)
 {
     check_rotation();
@@ -4983,6 +5178,7 @@ void check_engine(void)
     check_key_names();
     check_input_edges();
     check_keep();
+    check_automap();
     check_dungeon_stream();
     check_body_fixes();
     check_body_lifts();
