@@ -40,6 +40,15 @@ int townmap_marker(float *sx, float *sy, float *angle);
 void townmap_wheel(int notches);
 int townmap_key(int vk);
 
+/*
+ * A building someone gave the way to in talk, marked on the town's map with
+ * a ring and named on the map's line, until another is pointed out (DFU's
+ * talk discovers the building and shows it on the automap). Not saved.
+ */
+void townmap_mark(int region, int index, float x, float z, int type);
+/* 1 and where, in the town's map pixels, when a building in this town is marked. */
+int townmap_marked(int region, int index, int *mx, int *my);
+
 /* What a test reads: the map pixels a screen pixel is (negative: screen pixels a map pixel is, halved); the cell at the view's middle; the line. */
 int townmap_scale(void);
 void townmap_centre(int *x, int *y);

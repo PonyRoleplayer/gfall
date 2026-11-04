@@ -56,6 +56,18 @@ enum {
 
 static void pan(int dx, int dy);
 
+/* The building talk last pointed out: its town, its place in the town's frame, its kind. Kept past the map's closing. */
+static struct {
+    int set;
+    int region;
+    int index;
+    float x;
+    float z;
+    int type;
+} g_mark;
+/* The ring round a marked building: this many screen pixels from its middle, in the talk's yellow ink. */
+#define MARK_RING 4
+
 static struct {
     int open;
     Composer composer;
@@ -75,6 +87,11 @@ static struct {
     /* Where on the screen the player's cell was drawn, for the arrow; -100 when off the area. */
     int arrow_x;
     int arrow_y;
+    /* The town on the map, and the marked building's map pixel there; -1 when none is. */
+    int region;
+    int index;
+    int mark_x;
+    int mark_y;
     char line[48];
     int changed;
 } g;
@@ -176,7 +193,38 @@ int townmap_open(int region, int index, float x, float z, float yaw)
     }
     g.mode = MODE_ORIGINAL;
     df_copy(g.line, town_name(), (int)sizeof(g.line));
+    g.region = region;
+    g.index = index;
+    g.mark_x = -1;
+    g.mark_y = -1;
+    if (townmap_marked(region, index, &g.mark_x, &g.mark_y)) {
+        const BuildingKind *kind;
+
+        kind = building_kind(g_mark.type);
+        log_format(g.line, (int)sizeof(g.line), "%s: marked", kind ? kind->name : town_name());
+    }
     g.changed = 1;
+    return 1;
+}
+
+void townmap_mark(int region, int index, float x, float z, int type)
+{
+    g_mark.set = 1;
+    g_mark.region = region;
+    g_mark.index = index;
+    g_mark.x = x;
+    g_mark.z = z;
+    g_mark.type = type;
+}
+
+int townmap_marked(int region, int index, int *mx, int *my)
+{
+    if (!g_mark.set || g_mark.region != region || g_mark.index != index) {
+        return 0;
+    }
+    /* As the player's cell: 64 units a cell, north at the top. The map's height is the open map's. */
+    *mx = df_ifloor(g_mark.x / 64.0f);
+    *my = (g.open ? g.h : 0) - 1 - df_ifloor(g_mark.z / 64.0f);
     return 1;
 }
 
@@ -265,6 +313,41 @@ void townmap_compose(void)
             if (mx == g.px && my == g.py && g.arrow_x < 0) {
                 g.arrow_x = sx;
                 g.arrow_y = sy;
+            }
+        }
+    }
+    /* A building pointed out in talk: a square ring round its cell, kept inside the map's area. */
+    if (g.mark_x >= 0) {
+        int mid_x;
+        int mid_y;
+        int k;
+
+        mid_x = -1;
+        mid_y = -1;
+        for (sy = g_area.y; sy < g_area.y + g_area.h && mid_x < 0; sy++) {
+            for (sx = g_area.x; sx < g_area.x + g_area.w; sx++) {
+                int mx;
+                int my;
+
+                if (map_at(sx, sy, &mx, &my) && mx == g.mark_x && my == g.mark_y) {
+                    mid_x = sx;
+                    mid_y = sy;
+                    break;
+                }
+            }
+        }
+        for (k = -MARK_RING; mid_x >= 0 && k <= MARK_RING; k++) {
+            int i;
+
+            for (i = 0; i < 4; i++) {
+                int x;
+                int y;
+
+                x = mid_x + (i == 0 ? -MARK_RING : (i == 1 ? MARK_RING : k));
+                y = mid_y + (i == 2 ? -MARK_RING : (i == 3 ? MARK_RING : k));
+                if (rect_has(&g_area, x, y)) {
+                    g.composer.screen[y * CANVAS_W + x] = (df_u8)CANVAS_INK;
+                }
             }
         }
     }

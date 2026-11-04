@@ -6024,6 +6024,27 @@ static void check_wider_world(void)
             }
             check_expect(townmap_key('V') == TOWNMAP_TRAVEL && townmap_click(282, 172) == TOWNMAP_LEAVE, "town map: V or Exit");
             townmap_close();
+            /* Talk pointed out an armorer: opened again, the map says so and rings its cell in the talk's ink. */
+            for (i = 0; rows && i < n && rows[i].type != BUILDING_ARMORER; i++) {
+            }
+            check_expect(rows && i < n, "town map: Daggerfall has no armorer to mark");
+            townmap_mark(17, dagger, rows[i].x, rows[i].z, BUILDING_ARMORER);
+            check_expect(townmap_open(17, dagger, rows[i].x, rows[i].z, 0.0f) && strstr(townmap_line(), "marked"),
+                         "town map: the pointed-out armorer is not named as marked");
+            townmap_compose();
+            {
+                int ink;
+                int k;
+
+                /* Below the map's line of words, which is in the same ink, and above the buttons. */
+                ink = 0;
+                for (k = 14 * CANVAS_W; k < 170 * CANVAS_W; k++) {
+                    ink += townmap_pixels()[k] == CANVAS_INK;
+                }
+                check_expect(ink >= 16, "town map: no ring round the marked building");
+            }
+            townmap_close();
+            check_expect(!townmap_marked(17, dagger + 1, &cx, &cy), "town map: another town shows the mark");
         }
         printf("travel map: Sentinel to Daggerfall reckless on foot, %d days, %d gold; build/travel0..3.ppm\n", made.days, made.cost);
         travelmap_close();

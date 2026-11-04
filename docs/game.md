@@ -186,7 +186,7 @@ The use key's order: a body or heap first; then a townsperson the view rests on 
 
 ### Talk
 `play/talk.c`, on `TALK01I0.IMG` at DFU's rectangles. `TALK02I0.IMG` and `TALK03I0.IMG` have no headers, and their bands run top to bottom: Location, People, Things, Work; and Tell me about, Where is.
-- **Where is** lists the kinds of building in this town (`places/town.c`, read from every block once and kept until another town is asked about). The answer gives the nearest one's way by the compass.
+- **Where is** lists the kinds of building in this town (`places/town.c`, read from every block once and kept until another town is asked about). The answer gives the nearest one's way by the compass. Told the way, gladly or grudgingly, by one who knows (`rules_talk_knows`), the building is marked on the town map: a ring round its cell in the talk's ink, its name with "marked" on the map's line, until another is pointed out (`townmap_mark`; DFU's talk discovers it). The conversation adds "(It is marked on your map.)". The mark is not saved.
 - **Tell me about** has the news: one piece a person, from those whose macros the game can say (`words_say_plain`).
 - **Work** is a question with no list; no one has work yet (P11).
 - **The answer:** `rules_talk_value` against a roll, DFU's: Personality / 5, +5 for a place, the reaction, the tone's liking by social group with its skill check. It picks the record from TalkManager's tables. Rolls are seeded by who is asked, so a person does not change their answer. Under -20 a person says only "no response".
@@ -839,7 +839,7 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Loot | the other columns of `LOOT` wait for their items | P12-b, later |
 | Loot | a body or a heap takes nothing put on it (a choice, see What can be searched) | - |
 | Places | treasure and piles only in a dungeon streamed by block; a town's doors not keyed; the sea can be walked on | later |
-| World | a ship to stand on; the indoor automap's marks and notes, the town map's rotation and names; the travel map's Find list, identify flash and neighbouring provinces; places marked by talk; guild travel; regional holidays; the afflictions' cemetery, beast pictures and sounds (Afflictions) | P10 |
+| World | a ship to stand on; the indoor automap's marks and notes, the town map's rotation and names; the travel map's Find list, identify flash and neighbouring provinces; places on the travel map marked by talk (a building is marked on the town map); guild travel; regional holidays; the afflictions' cemetery, beast pictures and sounds (Afflictions) | P10 |
 | Player | the completed classic HUD bar needs target acceptance; the map button opens the travel map outdoors, the automap and magic buttons await their systems | P9-b, P10, P12-b |
 | Player | target acceptance/tuning of the implemented classic cursor controls | P9-c |
 | People | Steal mode, pickpocketing and the deferred theft mechanics | P12-a |

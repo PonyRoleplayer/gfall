@@ -1,4 +1,5 @@
 #include "game/dagger/play/talk.h"
+#include "game/dagger/play/townmap.h"
 #include "game/dagger/play/canvas.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/rules.h"
@@ -363,8 +364,8 @@ static int outcome_for(int is_place)
     return rules_talk_outcome(value, seeded(7u + (unsigned)g.tone, 21));
 }
 
-/* A place's answer, into out. */
-static void answer_place(const Topic *t, char *out, int cap)
+/* A place's answer, into out. 1 when the way was given and the building is marked on the town map. */
+static int answer_place(const Topic *t, char *out, int cap)
 {
     static char key[TOPIC_TEXT + 8];
     static char hint[256];
@@ -392,6 +393,12 @@ static void answer_place(const Topic *t, char *out, int cap)
     knows = here || rules_talk_knows(g.sgroup, seeded(100u + (unsigned)t->type, 20) + 1);
     outcome = outcome_for(1);
     words_say(g_answers_way[3 * (g.sgroup < SOCIAL_COUNT ? g.sgroup : SOCIAL_MERCHANTS) + outcome + (knows ? 15 : 0)], out, cap);
+    /* Told the way, gladly or grudgingly, by one who knows: the town map shows it. */
+    if (knows && outcome > 0 && !here) {
+        townmap_mark(g.who.region, g.who.index, t->x, t->z, t->type);
+        return 1;
+    }
+    return 0;
 }
 
 /* The news: one piece a person, from those whose macros the game can say. */
@@ -432,8 +439,10 @@ static void ask(void)
         words_say(g_answers_other[row], answer, (int)sizeof(answer));
     } else if (g.topic[g.chosen].kind == TOPIC_NEWS) {
         answer_news(answer, (int)sizeof(answer));
-    } else {
-        answer_place(&g.topic[g.chosen], answer, (int)sizeof(answer));
+    } else if (answer_place(&g.topic[g.chosen], answer, (int)sizeof(answer))) {
+        add_text(answer, 0);
+        add_text("(It is marked on your map.)", 0);
+        return;
     }
     add_text(answer, 0);
 }
