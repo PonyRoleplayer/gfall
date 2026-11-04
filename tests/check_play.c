@@ -3221,6 +3221,14 @@ static void check_body_more(void)
     p.sheet.fatigue = 5;
     p.swimming = 1;
     check_expect(player_minute(&p, 0) == PLAYER_DIED, "fatigue: exhaustion in the water did not kill");
+    /* tgm: nothing wears the player down, in the water with enemies about, nor does breath run out. */
+    p.sheet.fatigue = 5;
+    p.god = 1;
+    check_expect(player_minute(&p, 1) == PLAYER_FINE && p.sheet.fatigue == 5, "fatigue: tgm let exhaustion kill");
+    p.breath = 1;
+    p.breath_time = 0.0f;
+    check_expect(!player_breath(&p, 30.0f), "breath: tgm let the player drown");
+    p.god = 0;
 
     /* Breath: half of Endurance in points, one each 1.04 s; none left drowns. An Argonian lasts longer. */
     p.swimming = 1;

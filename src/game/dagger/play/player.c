@@ -199,6 +199,11 @@ int player_breath(Player *p, float dt)
         p->breath = p->breath < 1 ? 1 : p->breath;
     }
     p->breath_time += dt;
+    /* tgm: the breath holds. */
+    if (p->god) {
+        p->breath_time = 0.0f;
+        return 0;
+    }
     while (p->breath_time >= BREATH_EVERY) {
         p->breath_time -= BREATH_EVERY;
         /* An Argonian keeps it half the time. */
@@ -219,6 +224,10 @@ int player_minute(Player *p, int enemies_near)
     int loss;
 
     c = &p->sheet;
+    /* tgm: nothing wears the player down, fatigue no more than health. */
+    if (p->god) {
+        return PLAYER_FINE;
+    }
     loss = p->running ? RULES_FATIGUE_RUNNING : RULES_FATIGUE_MINUTE;
     if (p->swimming) {
         character_tally(c, SKILL_SWIMMING, 1);

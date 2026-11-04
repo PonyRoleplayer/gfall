@@ -1174,6 +1174,13 @@ int game_frame(Camera *cam, const Input *in, float dt)
     if (screens_is_open()) {
         closed = 1;
         asked = screens_frame(in, dt);
+        /*
+         * Time a screen passes (rest, prison, the travel map's countdown) is
+         * its own: it already gave back or took what those hours do. Play's
+         * minute-by-minute fatigue must not walk them again, or a night's rest
+         * leaves the player exhausted (and dead with a creature near).
+         */
+        g_last_minute = df_ifloor(game_minutes());
         if (asked == SCREENS_SLOT && !screens_slot_saving()) {
             prof_end(PROF_PLAY);
             return load_game(screens_slot()) ? GAME_START : GAME_GO_ON;

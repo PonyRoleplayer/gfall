@@ -326,7 +326,7 @@ The game adds, as rules on top of the player's body:
 **Built (P7, `play/player.c`).**
 - **Swimming** (PlayerSpeedChanger.GetSwimSpeed): when `scene_water_body` says the eye is under, there is no gravity, and the player goes along the view at a walk's quarter and Swimming / 200 of it more; jump rises. Each game minute under is a use of Swimming. A place with water is not played yet: it is tested with water laid over the hold's floor.
 - **Breath** (DaggerfallEntity.MaxBreath, PlayerEntity): half of Endurance, a point each 19 classic ticks, an Argonian keeping it half the time. None left drowns, at once. It is full again at each dive.
-- **Fatigue** falls each game minute, in its 64ths (PlayerEntity): 11 about, 88 running, 44 swimming on a failed roll of the skill, which an Argonian does not make; 11 for a jump. Only rest gives it back.
+- **Fatigue** falls each game minute, in its 64ths (PlayerEntity): 11 about, 88 running, 44 swimming on a failed roll of the skill, which an Argonian does not make; 11 for a jump. Only rest gives it back. The minutes are counted by `game.c` from the game's own clock; time a screen passes (rest, prison, the travel map's countdown) is skipped, as that screen already gave back or took what those hours do (walking them again once emptied fatigue after a night's rest, and killed with a creature near). `tgm` stops fatigue falling and breath running out too.
 - **Exhaustion** (PlayerEntity_OnExhausted): at none, with a creature awake or in the water, dead. Otherwise the player drops: an hour passes, an hour's rest comes back, and Medical is used.
 
 **Built (P1, `play/player.c`, `play/rules.c`).**
