@@ -1,0 +1,24 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Starling — Pony97 preview</title>
+<style>body{margin:0;background:#1b202f;color:#e6eef2;font:16px system-ui}header{padding:16px 24px;display:flex;gap:20px;align-items:center;flex-wrap:wrap}h1{font-size:20px;margin:0}span{color:#b0c8cd}button{background:#35445b;color:white;border:1px solid #66758b;padding:8px 16px;cursor:pointer}canvas{display:block;width:100%;height:calc(100vh - 140px);touch-action:none}footer{padding:8px 24px;color:#b0c8cd}#error{color:#ffdfbc}</style>
+<header><h1>STARLING / PONY97</h1><span>1,068 triangles · 16×16 indexed atlas · static mesh</span><button id="spin">Pause turntable</button><button id="reset">Reset view</button></header><canvas id="view" aria-label="Interactive 3D pony. Drag to orbit and scroll to zoom."></canvas><footer>Drag to orbit · scroll to zoom · Space pauses · R resets. Browser preview uses WebGL; PONY97.EXE uses Glide 2 on 3dfx hardware.<p id="error"></p></footer>
+<script>
+'use strict';
+const model=__MODEL__;
+const canvas=document.getElementById('view'),gl=canvas.getContext('webgl',{antialias:false,alpha:false});
+if(!gl){document.getElementById('error').textContent='WebGL is unavailable. Use the supplied PNG previews or build PONY97.EXE.';}else{
+function shader(type,source){const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s;}
+const program=gl.createProgram();gl.attachShader(program,shader(gl.VERTEX_SHADER,'attribute vec3 p;attribute vec3 c;uniform mat4 m;varying vec3 color;void main(){color=c;gl_Position=m*vec4(p,1.0);}'));gl.attachShader(program,shader(gl.FRAGMENT_SHADER,'precision mediump float;varying vec3 color;void main(){gl_FragColor=vec4(color,1.0);}'));gl.linkProgram(program);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program));gl.useProgram(program);
+const vertices=[];for(const t of model.triangles)for(const i of t.slice(0,3))vertices.push(...model.vertices[i],...model.colors[t[3]].map(v=>v/255));
+gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(vertices),gl.STATIC_DRAW);for(const [name,offset] of [['p',0],['c',12]]){const a=gl.getAttribLocation(program,name);gl.enableVertexAttribArray(a);gl.vertexAttribPointer(a,3,gl.FLOAT,false,24,offset);}gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);gl.clearColor(27/255,32/255,47/255,1);
+let yaw=.66,pitch=.25,distance=6.4,spin=true,down=false,lastX=0,lastY=0,lastTime=0;
+const spinButton=document.getElementById('spin');function toggle(){spin=!spin;spinButton.textContent=spin?'Pause turntable':'Resume turntable';}function reset(){yaw=.66;pitch=.25;distance=6.4;}
+spinButton.onclick=toggle;document.getElementById('reset').onclick=reset;
+canvas.onpointerdown=e=>{down=true;lastX=e.clientX;lastY=e.clientY;canvas.setPointerCapture(e.pointerId);};canvas.onpointerup=()=>down=false;canvas.onpointercancel=()=>down=false;
+canvas.onpointermove=e=>{if(down){yaw-=(e.clientX-lastX)*.008;pitch=Math.max(-.4,Math.min(1.2,pitch+(e.clientY-lastY)*.006));lastX=e.clientX;lastY=e.clientY;}};
+canvas.addEventListener('wheel',e=>{e.preventDefault();distance=Math.max(4,Math.min(12,distance*Math.exp(e.deltaY*.001)));},{passive:false});window.onkeydown=e=>{if(e.code==='Space'){e.preventDefault();toggle();}if(e.key.toLowerCase()==='r')reset();};
+function mul(a,b){const o=new Float32Array(16);for(let c=0;c<4;c++)for(let r=0;r<4;r++)for(let k=0;k<4;k++)o[c*4+r]+=a[k*4+r]*b[c*4+k];return o;}
+function frame(time){const dt=Math.min(.05,(time-lastTime)/1000||0);lastTime=time;if(spin&&!down)yaw+=dt*.24;const width=Math.max(1,canvas.clientWidth),height=Math.max(1,canvas.clientHeight);if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}gl.viewport(0,0,width,height);
+const sy=Math.sin(yaw),cy=Math.cos(yaw),sp=Math.sin(pitch),cp=Math.cos(pitch);const eye=[distance*sy*cp,1.65+distance*sp,distance*cy*cp],r=[cy,0,-sy],u=[-sy*sp,cp,-cy*sp],back=[sy*cp,sp,cy*cp];const dot=(a,b)=>a.reduce((s,x,i)=>s+x*b[i],0);
+const view=[r[0],u[0],back[0],0,r[1],u[1],back[1],0,r[2],u[2],back[2],0,-dot(r,eye),-dot(u,eye),-dot(back,eye),1];const f=1/Math.tan(.55/2),near=.1,far=50;const proj=[f*height/width,0,0,0,0,f,0,0,0,0,(far+near)/(near-far),-1,0,0,2*far*near/(near-far),0];gl.uniformMatrix4fv(gl.getUniformLocation(program,'m'),false,mul(proj,view));gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.drawArrays(gl.TRIANGLES,0,vertices.length/6);requestAnimationFrame(frame);}requestAnimationFrame(frame);
+}
+</script></html>

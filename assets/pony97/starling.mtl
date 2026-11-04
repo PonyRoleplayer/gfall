@@ -1,0 +1,300 @@
+newmtl swatch0
+Kd 0.227451 0.478431 0.462745
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch1
+Kd 0.270588 0.568627 0.549020
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch2
+Kd 0.313725 0.658824 0.635294
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch3
+Kd 0.356863 0.749020 0.721569
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch4
+Kd 0.384314 0.807843 0.780392
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch5
+Kd 0.070588 0.117647 0.227451
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch6
+Kd 0.082353 0.141176 0.270588
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch7
+Kd 0.098039 0.160784 0.313725
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch8
+Kd 0.109804 0.184314 0.356863
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch9
+Kd 0.117647 0.200000 0.384314
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch10
+Kd 0.207843 0.258824 0.435294
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch11
+Kd 0.247059 0.305882 0.513725
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch12
+Kd 0.286275 0.356863 0.596078
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch13
+Kd 0.325490 0.403922 0.678431
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch14
+Kd 0.352941 0.435294 0.733333
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch15
+Kd 0.549020 0.619608 0.588235
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch16
+Kd 0.650980 0.737255 0.698039
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch17
+Kd 0.752941 0.850980 0.807843
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch18
+Kd 0.854902 0.968627 0.917647
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch19
+Kd 0.921569 1.000000 0.992157
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch20
+Kd 0.325490 0.235294 0.486275
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch21
+Kd 0.388235 0.278431 0.576471
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch22
+Kd 0.447059 0.321569 0.666667
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch23
+Kd 0.509804 0.364706 0.756863
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch24
+Kd 0.549020 0.392157 0.815686
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch25
+Kd 0.031373 0.054902 0.105882
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch26
+Kd 0.039216 0.066667 0.125490
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch27
+Kd 0.043137 0.074510 0.145098
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch28
+Kd 0.050980 0.086275 0.164706
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch29
+Kd 0.054902 0.094118 0.176471
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch30
+Kd 0.639216 0.639216 0.611765
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch31
+Kd 0.760784 0.760784 0.725490
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch32
+Kd 0.878431 0.878431 0.843137
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch33
+Kd 1.000000 1.000000 0.956863
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch34
+Kd 1.000000 1.000000 1.000000
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch35
+Kd 0.588235 0.435294 0.486275
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch36
+Kd 0.701961 0.517647 0.576471
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch37
+Kd 0.811765 0.600000 0.666667
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch38
+Kd 0.921569 0.682353 0.756863
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch39
+Kd 0.996078 0.737255 0.815686
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch40
+Kd 0.164706 0.333333 0.356863
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch41
+Kd 0.196078 0.396078 0.423529
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch42
+Kd 0.227451 0.458824 0.490196
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch43
+Kd 0.258824 0.521569 0.556863
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch44
+Kd 0.278431 0.564706 0.600000
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch45
+Kd 0.639216 0.529412 0.282353
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch46
+Kd 0.760784 0.627451 0.333333
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch47
+Kd 0.878431 0.729412 0.388235
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch48
+Kd 1.000000 0.827451 0.439216
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+
+newmtl swatch49
+Kd 1.000000 0.894118 0.474510
+Ka 0 0 0
+Ks 0 0 0
+illum 1
+

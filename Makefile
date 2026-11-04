@@ -3,6 +3,7 @@
 # RENDERFALL.EXE: ARCH3D model list.
 # LEVELFALL.EXE: indoor and outdoor place list. Fly through one.
 # DATFALL.EXE: record-file viewer. DATA\MAIN.DAT, or a file you open.
+# PONY97.EXE: optional embedded-model turntable; no game data.
 # make
 # Mount build/spintri.iso and run D:\SPINTRI.EXE, or mount build/gfall.iso
 # and run D:\GFALL.EXE. The disc is the executables only. ARENA2 stays
@@ -227,10 +228,13 @@ RENDER_SRC := apps/renderfall/main.c $(ENGINE_SRC) \
 LEVEL_SRC := apps/levelfall/main.c $(ENGINE_SRC) \
 	$(filter-out src/game/dagger/formats/fnt.c,$(DAGGER_SRC))
 
+# PONY97 embeds its generated model and links the engine alone.
+PONY97_SRC := apps/pony97/main.c $(ENGINE_SRC)
+
 HOST_SRC := $(ENGINE_HOST_SRC) \
 	$(filter-out src/game/dagger/formats/fnt.c,$(DAGGER_SRC)) $(filter-out $(PLAY_DRAW_SRC),$(PLAY_SRC))
 
-.PHONY: all check clean hostcheck datacheck gfall-check renderfall-check levelfall-check datfall-check deps deps-host layers
+.PHONY: all check clean hostcheck datacheck gfall-check renderfall-check levelfall-check datfall-check pony97-check pony97-iso deps deps-host layers
 
 # A bare make builds everything; deps alone is the first rule below.
 .DEFAULT_GOAL := all
@@ -339,6 +343,27 @@ build/LEVELFALL.EXE: $(LEVEL_SRC) third_party/glide2/include/glide.h | deps
 
 levelfall-check: build/LEVELFALL.EXE
 	$(call pe_check,build/LEVELFALL.EXE,build/levelfall.dump)
+
+# Standalone demo: intentionally bypass deps, whose game-data checks
+# belong to GFALL. These optional targets never join the default all.
+# The compiler/objdump are the same P55C/Win98 tools as the main viewers.
+build/PONY97.EXE: $(PONY97_SRC) apps/pony97/pony_model.h third_party/glide2/include/glide.h | layers
+	mkdir -p build
+	$(CC) $(CFLAGS) -DBUILD_STAMP='"$(BUILD_STAMP)"' $(LDFLAGS) -o $@ $(PONY97_SRC) -luser32 -lkernel32 -lgcc
+
+pony97-check: build/PONY97.EXE
+	$(call pe_check,build/PONY97.EXE,build/pony97.dump)
+
+pony97-iso: build/pony97.iso
+
+# A graft with exactly two files prevents other demos, game data or a
+# locally installed driver from leaking into this standalone disc.
+# The order-only check also validates an existing EXE before packaging.
+build/pony97.iso: build/PONY97.EXE docs/pony97.md | pony97-check
+	$(XORRISO) -as mkisofs -o $@ -V PONY97 -J -iso-level 1 \
+		-graft-points \
+		/PONY97.EXE=build/PONY97.EXE \
+		/README.TXT=docs/pony97.md
 
 # DATFALL browses MAIN.DAT (docs/data.md). It does not link Glide.
 # GDI and comctl32 are LoadLibrary'd, so the import table stays
