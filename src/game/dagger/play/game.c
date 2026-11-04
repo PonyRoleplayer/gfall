@@ -210,6 +210,19 @@ static int journey_made(void)
                                                  || type == WORLDMAP_COVEN);
 }
 
+/* Today's holiday's flags (HOLIDAY_*); 0 on an ordinary day. */
+static int today_holiday_flags(void)
+{
+    const Holiday *h;
+    int year;
+    int month;
+    int day;
+
+    clock_date(&year, &month, &day);
+    h = holiday_on(month, day);
+    return h ? h->flags : 0;
+}
+
 /* The hour, for a building's opening. */
 static int hour_now(void)
 {
@@ -232,7 +245,9 @@ static int door_lets_in(const Usable *u)
     int lock;
     int skill;
 
-    if (!travel_door_building(u, &type, &quality) || building_open_at(type, hour_now())) {
+    /* Shops are locked all Sun's Rest (DFU's BuildingIsUnlocked), whatever the hour. */
+    if (!travel_door_building(u, &type, &quality)
+        || (building_open_at(type, hour_now()) && !(building_is_shop(type) && (today_holiday_flags() & HOLIDAY_SHOPS_SHUT)))) {
         return 1;
     }
     if (!g_stealing) {
@@ -299,7 +314,9 @@ static int shop_here(Shop *shop)
     /* A row of the place's own, past any thing in its blocks. */
     shop->key.place = place;
     shop->key.thing = SHOP_KEY_THING;
-    shop->closed = !building_open_at(shop->type, hour_now());
+    shop->holiday = today_holiday_flags();
+    /* Shut out of its hours, and all day on Sun's Rest. */
+    shop->closed = !building_open_at(shop->type, hour_now()) || (shop->holiday & HOLIDAY_SHOPS_SHUT);
     return building_is_shop(shop->type);
 }
 
@@ -1187,6 +1204,21 @@ int game_frame(Camera *cam, const Input *in, float dt)
         if (clock_day() != g_loans_day) {
             g_loans_day = clock_day();
             bank_check_loans(g_loans_day);
+            /* A holiday is said when its day begins, or the game is come back to on it. */
+            {
+                const Holiday *h;
+                int year;
+                int month;
+                int day;
+                char line[48];
+
+                clock_date(&year, &month, &day);
+                h = holiday_on(month, day);
+                if (h) {
+                    log_format(line, (int)sizeof(line), "Today is %s.", h->name);
+                    interact_say(line);
+                }
+            }
         }
         if (court_pending()) {
             screens_open_court(&g_player);

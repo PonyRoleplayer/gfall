@@ -134,6 +134,8 @@ static RecTable *table_at(int i)
         return building_table();
     case 17:
         return crime_table();
+    case 18:
+        return holiday_table();
     default:
         return 0;
     }
@@ -141,7 +143,7 @@ static RecTable *table_at(int i)
 
 int maindat_table_count(void)
 {
-    return 18;
+    return 19;
 }
 
 RecTable *maindat_table(int i)
@@ -349,7 +351,15 @@ int maindat_import(RecPut put, void *ctx)
                 return 0;
             }
             crimes = classic_crimes(&n);
-            return rec_put_rows(put, ctx, &crime_schema, crimes, n, 0, 0);
+            if (!rec_put_rows(put, ctx, &crime_schema, crimes, n, 0, 0)) {
+                return 0;
+            }
+            {
+                const Holiday *holidays;
+
+                holidays = classic_holidays(&n);
+                return rec_put_rows(put, ctx, &holiday_schema, holidays, n, 0, 0);
+            }
         }
     }
 }
@@ -419,7 +429,7 @@ int maindat_whole(void)
         && rec_row(cal_info_table(), 0) != 0 && class_table()->count > 0 && race_table()->count > 0
         && skill_table()->count == SKILL_COUNT && item_table()->count > 0 && weapon_table()->count > 0
         && armor_table()->count > 0 && loot_table()->count > 0
-        && building_table()->count > 0 && crime_table()->count > 0
+        && building_table()->count > 0 && crime_table()->count > 0 && holiday_table()->count > 0
         && material_table()->count == MATERIAL_COUNT;
 }
 

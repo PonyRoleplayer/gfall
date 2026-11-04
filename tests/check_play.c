@@ -6306,6 +6306,41 @@ static void check_wagon(void)
     printf("wagon: none without a cart, too far out of reach, a sword in and out by clicks, the cart refused, 750 kg, gold and things through a save; build/wagon0.ppm\n");
 }
 
+/* Holidays: the cities' sixteen by date, Sun's Rest shutting shops, the festivals halving prices. */
+static void check_holidays(void)
+{
+    const Holiday *h;
+    Shop shop;
+    Item sword;
+    Item shield;
+    int full;
+
+    check_expect(holiday_table()->count == 16, "holidays: not the cities' sixteen");
+    h = holiday_on(6, 19);
+    check_expect(h && df_eq(h->name, "Sun's Rest") && (h->flags & HOLIDAY_SHOPS_SHUT), "holidays: Sun's Height 20 is not Sun's Rest, shops shut");
+    h = holiday_on(0, 0);
+    check_expect(h && df_eq(h->name, "New Life Festival"), "holidays: Morning Star 1 is not the New Life Festival");
+    check_expect(holiday_on(6, 18) == 0, "holidays: an ordinary day has a holiday");
+    h = holiday_on(2, 6);
+    check_expect(h && (h->flags & HOLIDAY_TEMPLE_CURE), "holidays: First Planting has no temple cure");
+    /* The Merchants' Festival halves every line; the Warriors Festival a weapon's, not a shield's. */
+    mem_zero(&shop, sizeof(shop));
+    shop.type = BUILDING_ARMORER;
+    shop.quality = 10;
+    shop.prices = 1000;
+    item_make(&sword, ITEM_LONGSWORD, 0);
+    item_make(&shield, ITEM_KITE_SHIELD, 0);
+    full = shop_cost(&shop, &sword);
+    shop.holiday = holiday_on(6, 9)->flags;
+    check_expect(shop_cost(&shop, &sword) == full / 2, "holidays: the Merchants' Festival does not halve");
+    shop.holiday = holiday_on(10, 19)->flags;
+    check_expect(shop_cost(&shop, &sword) == full / 2, "holidays: the Warriors Festival does not halve a weapon");
+    shop.holiday = 0;
+    full = shop_cost(&shop, &shield);
+    shop.holiday = holiday_on(10, 19)->flags;
+    check_expect(shop_cost(&shop, &shield) == full, "holidays: the Warriors Festival halves a shield");
+}
+
 /* Counts the engine's automap polygons. */
 static void count_polygon(void *ctx, const AutomapCorner *corner, int n, df_u32 rgb)
 {
@@ -6513,6 +6548,7 @@ void check_play(void)
     check_citizen();
     check_senses();
     check_wider_world();
+    check_holidays();
     check_riding();
     check_wagon();
     check_marker();

@@ -34,6 +34,7 @@ const ArmorTemplate *classic_armors(int *n);
 const LootChance *classic_loots(int *n);
 const BuildingKind *classic_buildings(int *n);
 const CrimeKind *classic_crimes(int *n);
+const Holiday *classic_holidays(int *n);
 const DungeonLoot *classic_dungeon_loots(int *n);
 const Material *classic_materials(int *n);
 

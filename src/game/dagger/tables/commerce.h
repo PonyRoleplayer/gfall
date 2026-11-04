@@ -15,6 +15,32 @@
  *         it costs the legal reputation, and the sums of its sentence.
  */
 
+/*
+ *   HOLI: a holiday, by its day of the year (1..360, month x 30 + day): its
+ *         name and what it does (HOLIDAY_*). Only those kept in every city with
+ *         an effect the game has, from UESP's list; the regions' own wait.
+ */
+
+/* What a holiday does. */
+#define HOLIDAY_SHOPS_SHUT 0x01
+#define HOLIDAY_SHOPS_HALF 0x02
+#define HOLIDAY_WEAPONS_HALF 0x04
+#define HOLIDAY_TEMPLE_CURE 0x08
+#define HOLIDAY_TEMPLE_HALF 0x10
+#define HOLIDAY_FREE_ROOM 0x20
+#define HOLIDAY_FREE_DRINK 0x40
+
+typedef struct Holiday {
+    df_u16 id;
+    char name[28];
+    df_u16 flags;
+} Holiday;
+
+extern const RecSchema holiday_schema;
+RecTable *holiday_table(void);
+/* The holiday on month (0..11) and day (0..29) of the calendar; 0 for an ordinary day. */
+const Holiday *holiday_on(int month, int day);
+
 /* The building types the code names. */
 enum {
     BUILDING_ALCHEMIST = 0,

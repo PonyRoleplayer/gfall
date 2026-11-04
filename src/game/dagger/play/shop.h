@@ -31,6 +31,8 @@ typedef struct Shop {
     /* Who its row belongs to (the building's place key), and 1 if it is shut and being robbed. */
     KeepKey key;
     int closed;
+    /* Today's holiday's flags (HOLIDAY_*, commerce.h): a festival halves its prices. */
+    int holiday;
 } Shop;
 
 /* Today's stock for a player of this level, into out; origin[i] says which rolled thing out's item i is. */

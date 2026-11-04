@@ -178,7 +178,18 @@ int shop_buys(const Shop *shop, const Item *it)
 
 int shop_cost(const Shop *shop, const Item *it)
 {
-    return rules_cost((int)it->value, shop->quality, shop->prices) * (it->count > 0 ? it->count : 1);
+    int cost;
+
+    cost = rules_cost((int)it->value, shop->quality, shop->prices) * (it->count > 0 ? it->count : 1);
+    /*
+     * DFU's trade window halves a line's cost on the Merchants' Festival, and a
+     * weapon's on the Warriors Festival, for a shop with no guild: every shop yet.
+     */
+    if ((shop->holiday & HOLIDAY_SHOPS_HALF)
+        || ((shop->holiday & HOLIDAY_WEAPONS_HALF) && (weapon_template(it->template_id) || it->template_id == ITEM_ARROW))) {
+        cost /= 2;
+    }
+    return cost;
 }
 
 int shop_trade_price(const Shop *shop, int cost, const Character *c, int selling)

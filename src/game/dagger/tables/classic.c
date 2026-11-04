@@ -608,3 +608,36 @@ const CrimeKind *classic_crimes(int *n)
     *n = (int)(sizeof(g_crimes) / sizeof(g_crimes[0]));
     return g_crimes;
 }
+
+/*
+ * The holidays every city keeps (UESP's Holidays), by day of the year, month x 30
+ * + day: Morning Star is month 0. What each does is what the game has the means
+ * for: shops shut or at half, weapons at half, a temple's free cure or half its
+ * donation, an inn's free room, free drinks.
+ */
+#define HDAY(month, day) ((month) * 30 + (day))
+static const Holiday g_holidays[] = {
+    { HDAY(0, 1), "New Life Festival", HOLIDAY_FREE_DRINK },
+    { HDAY(0, 15), "South Wind's Prayer", HOLIDAY_TEMPLE_HALF },
+    { HDAY(1, 16), "Heart's Day", HOLIDAY_FREE_ROOM },
+    { HDAY(2, 7), "First Planting", HOLIDAY_TEMPLE_CURE },
+    { HDAY(3, 28), "Jester's Day", 0 },
+    { HDAY(4, 7), "Second Planting", HOLIDAY_TEMPLE_CURE },
+    { HDAY(5, 16), "Mid Year Celebration", HOLIDAY_TEMPLE_HALF },
+    { HDAY(6, 10), "Merchants' Festival", HOLIDAY_SHOPS_HALF },
+    { HDAY(6, 20), "Sun's Rest", HOLIDAY_SHOPS_SHUT },
+    { HDAY(7, 27), "Harvest's End", HOLIDAY_FREE_DRINK },
+    { HDAY(8, 3), "Tales and Tallows", 0 },
+    { HDAY(9, 13), "Witches Festival", 0 },
+    { HDAY(9, 30), "Emperor's Day", 0 },
+    { HDAY(10, 20), "Warriors Festival", HOLIDAY_WEAPONS_HALF },
+    { HDAY(11, 15), "North Wind's Prayer", HOLIDAY_TEMPLE_HALF },
+    { HDAY(11, 30), "Old Life Festival", 0 }
+};
+#undef HDAY
+
+const Holiday *classic_holidays(int *n)
+{
+    *n = (int)(sizeof(g_holidays) / sizeof(g_holidays[0]));
+    return g_holidays;
+}

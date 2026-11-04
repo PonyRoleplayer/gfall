@@ -203,6 +203,12 @@ The use key's order: a body or heap first; then a townsperson the view rests on 
 - **Steal:** seen by `rules_shoplift_chance`, the basket left behind and the court next. Unseen, it is taken free.
 - **Hours** are `BLDG`'s. A shut street door says it is locked. Holding the run key while using it picks the lock (`rules_lock_chance`, strength half the quality), as a retained shortcut; P9-b's Steal mode also selects that lockpicking path (the remaining theft paths are P12-a). A failed lock will not be tried again until the skill has grown. Shelves in a shop broken into refuse Buy but allow Steal.
 
+### Holidays
+`HOLI` (`commerce.c`) holds the sixteen holidays every city keeps, by row id `month x 30 + day` with the day from 1 (UESP's Holidays; regional ones are not in yet). `holiday_on(month, day)` takes the clock's zero-based day. On the first frame of a day that is one, the game says "Today is <name>." Flags say what a holiday does; built so far:
+- **Sun's Rest** (Sun's Height 20) shuts every shop all day, its street door locked whatever the hour (DFU's `BuildingIsUnlocked`) and its shelves closed, as out of hours.
+- **The Merchants' Festival** (Sun's Height 10) halves every price in a shop; **the Warriors Festival** (Frostfall 20) halves a weapon's (`shop_cost`, `Shop.holiday`).
+- The temple cure (First and Second Planting), half-price temple services and free rooms and drink are flagged for when temples and taverns sell them.
+
 ### Banks
 `play/bank.c`, on `BANK00I0.IMG`, with sums usable without the screen. Each region has its own account. A letter of credit is an item worth what it says, a hundredth more to write, at least 100. A loan is 100 to 50000 a level, a tenth more to repay, due in a year of 360 days; carried gold pays first. A loan past its day is a default, a crime in its region, looked at once a game day (`bank_check_loans`). Houses and ships say none are for sale.
 
@@ -900,7 +906,7 @@ Daggerfall's tables are records in MAIN.DAT, cooked on the first run, with mods 
 | `ITEM`, `MAGI`, `WEAP`, `MATL`, `ARMR`, `LOOT`, `LDUN` | items, artifacts, weapons, materials, armour, loot, each dungeon type's loot table | the exe (via DFU), MAGIC.DEF; pictures stay in ARENA2 |
 | `CMON`, `CWEK`, `CALE` | the calendar (built) | the exe; the engine takes it whole (`clock_set_calendar`, request 9) |
 | `RACE`, `CLAS`, `SKIL`, `SPEL`, `EFCT`, `ENCH`, `POTN`, `BIOG` | races, classes, skills, spells, effects, enchantments, potions, background | CLASS*.CFG, SPELLS.STD, BIOG*.TXT, the exe |
-| `BLDG`, `CRIM` (built) and `FACT`, `NAME`, `PEOP`, `POLI`, `GILD`, `LAW`, `PRIC`, `HOLI`, `FLAT`, `MUSI`, `SWAP`, `DISE`, `CURS` | factions, names, townspeople, politics, guilds, law, prices, holidays, flats, music, swaps, diseases, curses | FACTION.TXT, NAMEGEN.DAT, POLITIC.PAK, FLATS.CFG, the exe |
+| `BLDG`, `CRIM`, `HOLI` (built) and `FACT`, `NAME`, `PEOP`, `POLI`, `GILD`, `LAW`, `PRIC`, `FLAT`, `MUSI`, `SWAP`, `DISE`, `CURS` | factions, names, townspeople, politics, guilds, law, prices, holidays, flats, music, swaps, diseases, curses | FACTION.TXT, NAMEGEN.DAT, POLITIC.PAK, FLATS.CFG, the exe |
 | `BOOK`, `TEXT`, `QUES` | indexes of the books, TEXT.RSC and the quests | BOOKS\, TEXT.RSC, QBN/QRC (their text and scripts stay in ARENA2) |
 
 Blocks, models, pictures, sounds and songs are never cooked: they stay in ARENA2.

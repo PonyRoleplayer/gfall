@@ -73,3 +73,27 @@ int building_open_at(int type, int hour)
     b = building_kind(type);
     return b && hour >= b->open && hour < b->close;
 }
+
+static const RecField g_holiday_fields[] = {
+    REC_FIELD("id", REC_UINT, Holiday, id),
+    REC_FIELD("name", REC_TEXT, Holiday, name),
+    REC_FIELD("flags", REC_UINT, Holiday, flags)
+};
+const RecSchema holiday_schema = {
+    "HOLI", "holiday", g_holiday_fields, 3, (df_u16)sizeof(Holiday), 0
+};
+
+static RecTable g_holidays;
+
+RecTable *holiday_table(void)
+{
+    if (!g_holidays.schema) {
+        rec_table_init(&g_holidays, &holiday_schema, 32);
+    }
+    return &g_holidays;
+}
+
+const Holiday *holiday_on(int month, int day)
+{
+    return (const Holiday *)rec_row(holiday_table(), month * 30 + day + 1);
+}
