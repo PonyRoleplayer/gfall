@@ -47,6 +47,15 @@ void dunstream_fill(Camera *cam);
 void dunstream_update(Camera *cam, float budget_ms);
 void dunstream_close(void);
 /*
+ * A game's own creatures for a dungeon (a quest's): asked at open with the
+ * dungeon's region and index (travel's numbers), it writes creature kinds
+ * (ENEMY_*) into kinds (cap) and says how many. They take the place of the
+ * dungeon's last draws, its deepest, the same ones each time it opens, so the
+ * stream's keys keep the dead ones dead. 0 for none.
+ */
+typedef int (*DunstreamFoesHook)(int region, int index, int *kinds, int cap);
+void dunstream_set_foes_hook(DunstreamFoesHook hook);
+/*
  * The creature kind (ENEM's id) of an entity the stream made, by its key,
  * and in *female whether it was drawn a woman; -1 for one it did not make.
  */

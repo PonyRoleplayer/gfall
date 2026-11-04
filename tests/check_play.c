@@ -7176,6 +7176,53 @@ static void check_quest_machine(void)
     quest_new_game();
 }
 
+/* A quest's foe in its dungeon: the stream's hook asked at open puts an ancient vampire in the hold's last draw. */
+static int g_test_foes_region = -1;
+static int test_foes(int region, int index, int *kinds, int cap)
+{
+    (void)index;
+    if (region != g_test_foes_region || cap < 1) {
+        return 0;
+    }
+    kinds[0] = ENEMY_VAMPIRE_ANCIENT;
+    return 1;
+}
+
+static void check_quest_foes(void)
+{
+    Dungeon hold;
+    Level level;
+    Camera cam;
+    float x, y, z, yaw, pitch;
+    int found;
+    int i;
+
+    keep_clear();
+    if (!dungeon_load(&hold)) {
+        check_expect(0, "quest foes: the hold did not load");
+        return;
+    }
+    g_test_foes_region = hold.region;
+    dunstream_set_foes_hook(test_foes);
+    mem_zero(&level, sizeof(level));
+    if (!dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
+        check_expect(0, "quest foes: the hold's stream did not open");
+        dunstream_set_foes_hook(0);
+        return;
+    }
+    camera_set(&cam, x, y, z, yaw, pitch);
+    dunstream_fill(&cam);
+    found = 0;
+    for (i = 0; i < level.scene.nentities; i++) {
+        found += level.scene.entities[i].live && dunstream_kind(&level.scene.entities[i], 0) == ENEMY_VAMPIRE_ANCIENT;
+    }
+    check_expect(found == 1, "quest foes: the quest's vampire does not stand in the hold");
+    dunstream_close();
+    dunstream_set_foes_hook(0);
+    keep_clear();
+    printf("quest foes: the hook's ancient vampire stands in the hold\n");
+}
+
 /* Counts the engine's automap polygons. */
 static void count_polygon(void *ctx, const AutomapCorner *corner, int n, df_u32 rgb)
 {
@@ -7391,6 +7438,7 @@ void check_play(void)
     check_names();
     check_quest_files();
     check_quest_machine();
+    check_quest_foes();
     check_riding();
     check_wagon();
     check_marker();

@@ -298,6 +298,14 @@ static void place_models(Chunk *c, StreamOut *out)
     }
 }
 
+/* The game's creatures for a dungeon, or 0 (dunstream_set_foes_hook). */
+static DunstreamFoesHook g_foes_hook;
+
+void dunstream_set_foes_hook(DunstreamFoesHook hook)
+{
+    g_foes_hook = hook;
+}
+
 /*
  * At open: every block's markers (their bytes alone, no models), each
  * creature drawn in the blocks' order. 0 when out of memory.
@@ -344,6 +352,19 @@ static int draw_creatures(void)
         }
     }
     g_draw_first[g_dun->nblocks] = n;
+    /* A quest's creatures take the last draws, deepest in the blocks' order, as awake foes. */
+    if (g_foes_hook) {
+        int kinds[16];
+        int k;
+        int i;
+
+        k = g_foes_hook(g_dun->region, g_dun->index, kinds, 16);
+        for (i = 0; i < k && i < n; i++) {
+            g_draw[n - 1 - i].kind = (df_i16)kinds[i];
+            g_draw[n - 1 - i].female = 0;
+            g_draw[n - 1 - i].passive = 0;
+        }
+    }
     return 1;
 }
 

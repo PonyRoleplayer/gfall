@@ -1597,6 +1597,8 @@ void game_setup(void)
     commands_setup();
     /* A quest's people stand in their buildings when they are entered (quest_people_hook). */
     world_set_people_hook(quest_people_hook);
+    /* And a quest's foes take their place in its dungeon (quest_foes_at). */
+    dunstream_set_foes_hook(quest_foes_at);
     cmd_var("panel", overlay_panel, overlay_set_panel, 0, 1, "classic's bottom panel of the HUD; panel alone flips it");
     cmd_toggles("panel");
     g_playing = 0;

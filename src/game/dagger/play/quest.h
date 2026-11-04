@@ -138,7 +138,7 @@ void quest_say(int slot, int message);
 #define QUEST_SAY_OFFER 1000
 #define QUEST_SAY_REFUSED 1001
 #define QUEST_SAY_ACCEPTED 1002
-/* The creature kinds a quest has put in the dungeon at region and dungeon index (travel's), and how many each, into kinds (cap); how many. */
+/* The creature kinds quests have put in the dungeon at region and dungeon index (travel's), as many of each as they are, the dead too, into kinds (cap); how many. */
 int quest_foes_at(int region, int index, int *kinds, int cap);
 
 /* A quest person standing in a building: their quest and place in it, sex and faction. */

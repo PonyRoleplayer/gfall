@@ -1124,7 +1124,8 @@ int quest_foes_at(int region, int index, int *kinds, int cap)
             if (at < 0 || !s->run.place_dungeon[at] || s->run.place_region[at] != region || s->run.place_block[at] != index) {
                 continue;
             }
-            for (k = s->run.foe_killed[i]; k < s->qbn.foes[i].count && n < cap; k++) {
+            /* All of them, the dead too: the dungeon's keys keep a dead one dead, and its draws stay where they were. */
+            for (k = 0; k < s->qbn.foes[i].count && n < cap; k++) {
                 kinds[n++] = s->qbn.foes[i].kind;
             }
         }
