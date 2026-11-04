@@ -55,14 +55,14 @@ static int find_record(VfsFile *file, int id, df_u32 *from, df_u32 *to)
 /* The longest record, the class questions', is 29 KB. */
 static df_u8 g_record[32768];
 
-/* Record id's bytes in g_record; how many, -1 when it does not read. */
-static int read_record(int id)
+/* Record id's bytes of file name in g_record; how many, -1 when it does not read. */
+static int read_record(const char *name, int id)
 {
     VfsFile *file;
     df_u32 from;
     df_u32 to;
 
-    file = vfs_open(FILE_NAME);
+    file = vfs_open(name);
     if (!file) {
         return -1;
     }
@@ -95,21 +95,26 @@ static int plain_text(int i, int size, int stop_at_variant, char *out, int cap)
     return n;
 }
 
-int textrsc_read(int id, char *out, int cap)
+int textrsc_read_in(const char *name, int id, char *out, int cap)
 {
     int size;
 
-    size = read_record(id);
+    size = read_record(name, id);
     return size < 0 ? -1 : plain_text(0, size, 0, out, cap);
 }
 
-int textrsc_variants(int id)
+int textrsc_read(int id, char *out, int cap)
+{
+    return textrsc_read_in(FILE_NAME, id, out, cap);
+}
+
+int textrsc_variants_in(const char *name, int id)
 {
     int size;
     int n;
     int i;
 
-    size = read_record(id);
+    size = read_record(name, id);
     if (size < 0) {
         return 0;
     }
@@ -120,18 +125,23 @@ int textrsc_variants(int id)
     return n;
 }
 
-int textrsc_variant(int id, int which, char *out, int cap)
+int textrsc_variants(int id)
+{
+    return textrsc_variants_in(FILE_NAME, id);
+}
+
+int textrsc_variant_in(const char *name, int id, int which, char *out, int cap)
 {
     int size;
     int n;
     int i;
 
-    n = textrsc_variants(id);
+    n = textrsc_variants_in(name, id);
     if (n < 1) {
         return -1;
     }
     which = which < 0 ? 0 : which % n;
-    size = read_record(id);
+    size = read_record(name, id);
     if (size < 0) {
         return -1;
     }
@@ -141,4 +151,9 @@ int textrsc_variant(int id, int which, char *out, int cap)
         i++;
     }
     return plain_text(i, size, 1, out, cap);
+}
+
+int textrsc_variant(int id, int which, char *out, int cap)
+{
+    return textrsc_variant_in(FILE_NAME, id, which, out, cap);
 }

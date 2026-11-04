@@ -39,6 +39,10 @@
 #include "game/dagger/play/dunmap.h"
 #include "game/dagger/play/marker.h"
 #include "game/dagger/play/ride.h"
+#include "engine/assets/vfs.h"
+#include "game/dagger/tables/quests.h"
+#include "game/dagger/formats/qbn.h"
+#include "game/dagger/formats/textrsc.h"
 #include "game/dagger/tables/names.h"
 #include "game/dagger/formats/faces.h"
 #include "game/dagger/play/guild.h"
@@ -6956,6 +6960,57 @@ static void check_names(void)
     printf("names: %d pieces; a Breton man %s, a Nord %s\n", name_table()->count, a, b);
 }
 
+/* Quests' files: every QBN in ARENA2 parsed, a guild quest's records and logic, its QRC's words, MAIN.DAT's list of what is offered. */
+static void check_quest_files(void)
+{
+    static const char *const sample = "M0B00Y00";
+    MemHeap *scratch;
+    MemHeap *was;
+    Qbn q;
+    char name[16];
+    char text[512];
+    const QuestKind *k;
+    int files;
+    int read;
+    int i;
+    df_u32 size;
+
+    check_expect(quest_table()->count == 187, "quests: MAIN.DAT does not list classic's 187 offered quests");
+    k = quest_kind(0);
+    check_expect(k && df_eq(k->name, "M0C00Y11") && k->group == GUILD_GROUP_FIGHTERS && k->to == QUEST_TO_OTHERS && k->least == 0,
+                 "quests: the first is not the Fighters' M0C00Y11 for others");
+    /* Every quest MAIN.DAT lists has its QBN in ARENA2, and it parses. */
+    scratch = mem_heap_new();
+    was = mem_heap_use(scratch);
+    files = 0;
+    read = 0;
+    for (i = 0; i < quest_table()->count; i++) {
+        k = quest_kind(i);
+        if (!k) {
+            continue;
+        }
+        log_format(name, (int)sizeof(name), "%s.QBN", k->name);
+        /* The Special Edition's 13 are not in every ARENA2: those there must parse. */
+        if (vfs_read(name, &size)) {
+            files++;
+            read += qbn_load(name, &q);
+        }
+    }
+    check_expect(files >= 174 && read == files, "quests: a listed quest's QBN that is there did not read");
+    /* The Fighters' M0B00Y00: an item, a person, a place, a timer, a foe, logic and states; its first message read. */
+    check_expect(qbn_load("M0B00Y00.QBN", &q), "quests: M0B00Y00.QBN did not read");
+    check_expect(q.count[QBN_LOGIC] > 5 && q.count[QBN_STATES] > 0 && q.logic[0].count >= 1 && q.logic[0].count <= QBN_OPERANDS,
+                 "quests: M0B00Y00's logic or states");
+    /* The symbols' hash, UESP's own pairs: reward, oneday, traveltime. And one of M0B00Y00's resources is its reward. */
+    check_expect(qbn_hash("reward") == 0x1B14u && qbn_hash("oneday") == 0x1AB3u && qbn_hash("traveltime") == 0x1C1E3u,
+                 "quests: the symbols' hash");
+    log_format(name, (int)sizeof(name), "%s.QRC", sample);
+    check_expect(textrsc_read_in(name, 1000, text, (int)sizeof(text)) > 0, "quests: M0B00Y00.QRC's message 1000 did not read");
+    mem_heap_use(was);
+    mem_heap_delete(scratch);
+    printf("quests: %d offered here, every QBN read; M0B00Y00 has %d logic records; 1000 says \"%.40s...\"\n", files, q.count[QBN_LOGIC], text);
+}
+
 /* Counts the engine's automap polygons. */
 static void count_polygon(void *ctx, const AutomapCorner *corner, int n, df_u32 rgb)
 {
@@ -7169,6 +7224,7 @@ void check_play(void)
     check_lodging();
     check_guilds();
     check_names();
+    check_quest_files();
     check_riding();
     check_wagon();
     check_marker();

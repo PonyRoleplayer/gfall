@@ -126,7 +126,8 @@ FORMATS_SRC := \
 	src/game/dagger/formats/faces.c \
 	src/game/dagger/formats/biog.c \
 	src/game/dagger/formats/classcfg.c \
-	src/game/dagger/formats/namegen.c
+	src/game/dagger/formats/namegen.c \
+	src/game/dagger/formats/qbn.c
 
 # Daggerfall's rules for dressing a place.
 TABLES_SRC := \
@@ -139,6 +140,7 @@ TABLES_SRC := \
 	src/game/dagger/tables/diseases.c \
 	src/game/dagger/tables/guilds.c \
 	src/game/dagger/tables/names.c \
+	src/game/dagger/tables/quests.c \
 	src/game/dagger/tables/swaps.c \
 	src/game/dagger/tables/enemies.c \
 	src/game/dagger/tables/forecast.c \
@@ -397,6 +399,7 @@ DAT_SRC := \
 	src/engine/scene/weather.c \
 	src/game/dagger/formats/classcfg.c \
 	src/game/dagger/formats/namegen.c \
+	src/game/dagger/formats/qbn.c \
 	src/game/dagger/formats/bsa.c \
 	src/game/dagger/tables/maindat.c \
 	src/game/dagger/tables/classic.c \
@@ -407,6 +410,7 @@ DAT_SRC := \
 	src/game/dagger/tables/diseases.c \
 	src/game/dagger/tables/guilds.c \
 	src/game/dagger/tables/names.c \
+	src/game/dagger/tables/quests.c \
 	src/game/dagger/tables/enemies.c \
 	src/game/dagger/tables/forecast.c \
 	src/game/dagger/formats/texture.c \

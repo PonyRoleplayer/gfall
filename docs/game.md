@@ -252,6 +252,29 @@ A killed guard stays. The pose is ENEM 146's corpse, TEXTURE.380 record 1 (`ENTI
 
 **Tests:** `check_hudbar` checks button edges and seams, empty bar pixels, compass wrap, icon rows, the real art, a truncated BSS refused without publishing a partial result, and the fake-card budget in both formats. `check_weapon` also cancels a drawn bow and a pending melee hit and checks the click-release gate. `build/hud0.ppm` and `hud1.ppm` show the selected head, Grab/north/full vitals and Steal/east/half vitals. These are native art previews, not target screenshots. Windows pointer routing and the complete bar still need a playtest on the 233; P9-c supplies the implemented classic cursor movement and world-pointing scheme below, also awaiting target acceptance.
 
+## Quests (P11: the files read, the list in MAIN.DAT; the machine next)
+
+Classic's quests are a pair of files each in ARENA2, read in place and never copied, as TEXT.RSC is: the `.QRC`, TEXT.RSC's own format, the words by message number (`textrsc_read_in`); and the `.QBN`, the logic (`formats/qbn.c`, from UESP's Quest hacking guide and Quest pseudo-codes). Daggerfall Unity runs its own text versions of them, which are classic's content, so they are not used: the binary is.
+
+### What is in MAIN.DAT, and what is not
+- **`QUES`** (`tables/quests.c`) is the list of what can be offered: Daggerfall Unity's QuestList-Classic, 187 quests by file name, with who offers each (a guild group from FACTION.TXT's ggroup, or a social group), to whom (members, others, prospects, a temple's god), the least it asks (a rank or level under 10, a reputation from 10) and its flags (once only, adult). 13 of them are the Special Edition's and not in every ARENA2: a quest whose files are not there is not offered.
+- **The quests themselves are not cooked.** They are the game's text and scripts, and stay in ARENA2 like the blocks and the pictures. A mod adds a quest by its two files and a `QUES` row.
+
+### The QBN
+- A 60-byte header: at 16 ten record counts, at 36 eleven offsets. Sections: 0 items (19 bytes a record), 3 people (20), 4 places (24), 6 timers (33), 7 foes (14), 8 the logic (87), 9 states (8), 10 the symbols' names (27, in seven files). 1, 2 and 5 are never used. Every one of the 232 quests in ARENA2 parses with every section inside the file.
+- A logic record is an opcode, flags, a count of operands (1..5; eight of classic's files carry bad counts, held to 5), five 15-byte operands (a negation, a constant or a reference to a section's record, a value), and a QRC message.
+- Each resource carries its symbol's hash, `qbn_hash` (UESP's Text Variable Hashes: twice the hash plus each character): "reward" is 0x1B14. The QRC's text names resources by symbol, `_name_` the thing itself (a person's name, a gold amount, a timer's minutes), `__name_` and `___name_` where it is (its town, its dungeon or house), `=name_` a timer's days, `==name_` a person's faction; `%` macros are TEXT.RSC's (`words.c`).
+
+### The survey: what the 174 offered quests here use
+Every quest uses 6 (if a state, end), 12 (start a timer), 23 (a log entry) and nearly every one 4 (the reward). Then 52 (AND of states, 138 quests), 28 (the player meets a person, 116), 51 (a message when a state is set, 105), 7 (a state clears others, 101), 19 (a place onto the map, 93), 22 (a foe at a place, 87), 1 (an item given to a person, 87), 2 (a kill count, 85), 9 (foes spawning, 72), 61 (a reputation change, 70), 26 (an item to a person or the player, 66), 21 (a foe hurt, 64), 34 (a random state, 61), 54 (an item made ordinary, 61), 43 (the player at a place, 53), 81 (50), 30 (a person at a place, 37). Those twenty run most guild quests; the rest come as quests need them.
+
+### The plan
+1. **The machine** (`play/quest.c`): a quest started from its QBN and QRC, its resources bound (a person named and put in a building of the town, a place chosen by its type, a timer's length, a foe's kind), its states, the logic run when something happens (a person met, an item given or found, a foe hurt or killed, a place entered, a timer run out, a day passed), the messages shown with their symbols filled in, saved as rows.
+2. **The world:** a quest person standing in their building, a foe or an item at a dungeon's quest marker, a place put on the travel map (the talk gap from P10), the town map's mark.
+3. **The ways in:** Get Quest at a guild (`GUILD_SERVICE_QUESTS`) and talk's work, choosing from `QUES` by group, membership and what the player has.
+4. **The logbook:** the sheet's Log button, the active quests and their deadlines.
+5. Later: the main quest, the tutorial, the cures, the Thieves Guild's and the Dark Brotherhood's invitations.
+
 ## Steal and theft (planned: P12-a)
 
 Complete the theft mechanics left out of P9: the Steal interaction mode, pickpocketing, theft from eligible owned targets, the skill checks and detection, and the resulting crime and arrest/court consequences. Use P9-b's mode controls and the existing reputation and law systems. Confirm the original rules against public references when designing the details.
@@ -914,6 +937,19 @@ The travel map comes later, with `worldmap.c`'s pixels and the location index: p
 
 Talk (the people's lists, `USE_TALK`), factions, quests (QBN/QRC per UESP), spells and spell effects, shops and banks, the law, horses and carts. Each gets its own design here when its phase comes.
 
+**At the end of the prototype (the user's call, 2026-11-04): P10's leftovers.** Not to start until the prototype plays from start to quests; each is small and lands on its own.
+- buildings' own names, on signs, in talk's Where is list and on the town map (DFU's GenerateBuildingName, from TEXT.RSC's pieces);
+- clicking a neighbouring province from a province's travel map;
+- the indoor automap's door and exit marks, and notes;
+- the town map's rotation;
+- the region races into MAIN.DAT (`names.c` keeps FALL.EXE's table in code);
+- a vampire's turning waking in a cemetery of the region, not where they fell;
+- the beast's own head (`WERE00I0.IMG`, `WERE01I0.IMG`), paper doll (`WOLF00I0.IMG`, `BOAR00I0.IMG`), weapon and sounds; townspeople fleeing it;
+- a bed of one's own in a rented room, and things left there kept;
+- regional holidays;
+- a ship to stand on (DFU's ship scenes);
+- Yes/No before paying for a cure, a room, a guild's welcome, as classic asks.
+
 **A graphics screen with texture detail (the user's idea, not to start until asked).** Glide's settings on a screen of their own, with a separate texture detail for sprites and for walls, so a player can take blurry walls and crisp sprites. The Voodoo 1's 2 MB is what the game fights: a sprite sheet too large for 256 now loses half its texels (`texture_sheet`), and a Voodoo 2 would not have to. Lowering the walls' detail would also cut the hiccups of pictures coming onto the card.
 
 ## Budgets on the 233
@@ -946,7 +982,7 @@ Daggerfall's tables are records in MAIN.DAT, cooked on the first run, with mods 
 | `CMON`, `CWEK`, `CALE` | the calendar (built) | the exe; the engine takes it whole (`clock_set_calendar`, request 9) |
 | `RACE`, `CLAS`, `SKIL`, `SPEL`, `EFCT`, `ENCH`, `POTN`, `BIOG` | races, classes, skills, spells, effects, enchantments, potions, background | CLASS*.CFG, SPELLS.STD, BIOG*.TXT, the exe |
 | `BLDG`, `CRIM`, `HOLI`, `DISE`, `GILD`, `NAME` (built) and `FACT`, `PEOP`, `POLI`, `LAW`, `PRIC`, `FLAT`, `MUSI`, `SWAP`, `CURS` | factions, names, townspeople, politics, guilds, law, prices, holidays, flats, music, swaps, diseases, curses | FACTION.TXT, NAMEGEN.DAT, POLITIC.PAK, FLATS.CFG, the exe |
-| `BOOK`, `TEXT`, `QUES` | indexes of the books, TEXT.RSC and the quests | BOOKS\, TEXT.RSC, QBN/QRC (their text and scripts stay in ARENA2) |
+| `QUES` (built), `BOOK`, `TEXT` | the quests offered (their files stay in ARENA2), indexes of the books and TEXT.RSC | BOOKS\, TEXT.RSC, QBN/QRC (their text and scripts stay in ARENA2) |
 
 Blocks, models, pictures, sounds and songs are never cooked: they stay in ARENA2.
 
