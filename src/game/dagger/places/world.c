@@ -1532,6 +1532,9 @@ void world_keep_save(World *world)
     keep_save(&scene, 0, world->nmover, world->ent, world->nent, 0.0f, 0.0f, 0.0f);
 }
 
+/* The game's people for an inside, or 0 (world_set_people_hook). */
+static WorldPeopleHook g_people_hook;
+
 static World *assemble(const Dungeon *hold, int require_start, int inside_block, int inside_record)
 {
     World *world;
@@ -1698,6 +1701,11 @@ static World *assemble(const Dungeon *hold, int require_start, int inside_block,
             world->have_start = 1;
         }
     }
+    /* A game's own people in a building (a quest's, world_set_people_hook), before the pictures are placed. */
+    if (world->place == PLACE_INSIDE && g_people_hook && world->nflat < MAX_FLATS) {
+        world->nflat += g_people_hook(hold, inside_block, inside_record, world->flat, world->nflat, world->flat + world->nflat,
+                                      MAX_FLATS - world->nflat);
+    }
     lap(&g_times.rest);
     if (!build_tex_table(world, hold)) {
         return 0;
@@ -1792,6 +1800,11 @@ World *world_load(void)
 World *world_load_dungeon(const Dungeon *dungeon)
 {
     return assemble(dungeon, 0, -1, -1);
+}
+
+void world_set_people_hook(WorldPeopleHook hook)
+{
+    g_people_hook = hook;
 }
 
 World *world_load_inside(const Dungeon *town, int block, int record)

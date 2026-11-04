@@ -20,6 +20,15 @@ World *world_load_dungeon(const Dungeon *dungeon);
  * street's. Starts on its enter marker. docs/interact.md.
  */
 World *world_load_inside(const Dungeon *town, int block, int record);
+/*
+ * A game's own people for a building's inside (a quest's): called as it is
+ * built, with the town, the building and the flats its blocks put there
+ * (people among them, FLAT_PERSON), it writes flats of its own into out (cap
+ * of them, an RMB flat's base point) and says how many. They are pictured and
+ * made people to talk to as the block's own are. 0 for none.
+ */
+typedef int (*WorldPeopleHook)(const Dungeon *town, int block, int record, const Flat *flats, int nflat, Flat *out, int cap);
+void world_set_people_hook(WorldPeopleHook hook);
 const char *world_error(void);
 const char *world_block_name(void);
 

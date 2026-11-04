@@ -120,13 +120,16 @@ const char *quest_file(int slot);
 /* Something happened: */
 /* the player spoke to someone in a building (block, record) of the town, of faction; */
 void quest_met(Player *p, int region, int index, int block, int record, int faction, int now);
+/* a quest's own person (quest_people_in) was spoken to; */
+void quest_met_person(Player *p, int slot, int person, int now);
 /* a creature of kind was killed in the dungeon at region and dungeon index (travel's, TravelWhere.index; any, -1). */
 void quest_killed(Player *p, int kind, int region, int index, int now);
 /* a minute passed: timers. */
 void quest_tick(Player *p, int now);
 
-/* The next message to show, filled in; 0 when none waits. */
+/* The next message to show, filled in; 0 when none waits. How many wait. */
 int quest_take_message(char *out, int cap);
+int quest_messages_waiting(void);
 /* A quest's log line i (0..QUEST_LOG-1), filled in; 0 when none. */
 int quest_log_line(int slot, int i, char *out, int cap);
 /* A QRC message of the quest queued (its offer, 1000; its acceptance, 1002). */
@@ -137,6 +140,19 @@ void quest_say(int slot, int message);
 #define QUEST_SAY_ACCEPTED 1002
 /* The creature kinds a quest has put in the dungeon at region and dungeon index (travel's), and how many each, into kinds (cap); how many. */
 int quest_foes_at(int region, int index, int *kinds, int cap);
+
+/* A quest person standing in a building: their quest and place in it, sex and faction. */
+typedef struct QuestPersonHere {
+    int slot;
+    int person;
+    int female;
+    int faction;
+} QuestPersonHere;
+/* The quest people put in the building (block, record) of the town at region and index, not hidden, into out (cap); how many. */
+int quest_people_in(int region, int index, int block, int record, QuestPersonHere *out, int cap);
+/* A person flat's faction mark for quest person (slot, person), and back: the 15 bits under FLAT_PERSON (rmb.c). */
+#define QUEST_PERSON_MARK 0x7000
+#define QUEST_PERSON_TAG(slot, person) (QUEST_PERSON_MARK + (slot) * 16 + (person))
 
 /* For the tests: a state's value, by its record in the QBN. */
 int quest_state(int slot, int state);

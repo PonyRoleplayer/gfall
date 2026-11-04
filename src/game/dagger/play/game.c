@@ -9,6 +9,8 @@
 #include "game/dagger/play/guild.h"
 #include "game/dagger/play/quest.h"
 #include "game/dagger/play/msgbox.h"
+#include "game/dagger/places/world.h"
+#include "game/dagger/formats/rdb.h"
 #include "game/dagger/tables/quests.h"
 #include "engine/assets/vfs.h"
 #include "game/dagger/play/words.h"
@@ -401,7 +403,20 @@ static void person_used(const Usable *u)
         interact_say("You get no response.");
         return;
     }
-    /* A quest's giver or person met here (quest.c): what they say comes from the quest. */
+    /* A quest's own person standing here: met, and what they say comes from the quest. */
+    if (u->what >= QUEST_PERSON_MARK) {
+        const Faction *people;
+
+        quest_met_person(&g_player, (u->what - QUEST_PERSON_MARK) / 16, (u->what - QUEST_PERSON_MARK) % 16,
+                         ills_now(clock_day(), clock_minute()));
+        /* Nothing from the quest just now: they talk as one of the region's people. */
+        people = quest_messages_waiting() ? 0 : faction_people_of(travel_region());
+        if (people) {
+            talk_to(people->id, u->tag, (unsigned)u->what * 31u);
+        }
+        return;
+    }
+    /* A quest's giver met here (quest.c): what they say comes from the quest. */
     {
         int region;
         int index;
@@ -1516,6 +1531,48 @@ static void use_key(const Camera *cam)
     }
 }
 
+/*
+ * The world's hook for a building's inside (world_set_people_hook): each quest
+ * person put in this building stands beside its first person (else its first
+ * flat), as their faction's flat for their sex (else the region's people's),
+ * marked QUEST_PERSON_TAG so a use of them is the quest's (person_used).
+ */
+static int quest_people_hook(const Dungeon *town, int block, int record, const Flat *flats, int nflat, Flat *out, int cap)
+{
+    QuestPersonHere here[8];
+    const Flat *at;
+    int n;
+    int i;
+
+    n = quest_people_in(town->region, town->index, block, record, here, cap < 8 ? cap : 8);
+    if (!n || !nflat) {
+        return 0;
+    }
+    at = &flats[0];
+    for (i = 0; i < nflat; i++) {
+        if (flats[i].tag & FLAT_PERSON) {
+            at = &flats[i];
+            break;
+        }
+    }
+    for (i = 0; i < n; i++) {
+        const Faction *f;
+
+        f = factionfile_open() && here[i].faction ? faction_find(here[i].faction) : 0;
+        if (!f || !f->flat_archive[here[i].female]) {
+            f = faction_people_of(town->region);
+        }
+        mem_zero(&out[i], sizeof(out[i]));
+        out[i].x = at->x + 48.0f * (float)(i + 1);
+        out[i].y = at->y;
+        out[i].z = at->z;
+        out[i].file = (df_u16)(f ? f->flat_archive[here[i].female] : 182);
+        out[i].image = (df_u16)(f ? f->flat_record[here[i].female] : 0);
+        out[i].tag = (df_u16)(FLAT_PERSON | QUEST_PERSON_TAG(here[i].slot, here[i].person));
+    }
+    return n;
+}
+
 void game_setup(void)
 {
     /* FACTION.TXT, read once at the start: no screen's heap is current, and no click waits for it. */
@@ -1538,6 +1595,8 @@ void game_setup(void)
     gfx_set_extra(draw);
     gfx_set_under(draw_under);
     commands_setup();
+    /* A quest's people stand in their buildings when they are entered (quest_people_hook). */
+    world_set_people_hook(quest_people_hook);
     cmd_var("panel", overlay_panel, overlay_set_panel, 0, 1, "classic's bottom panel of the HUD; panel alone flips it");
     cmd_toggles("panel");
     g_playing = 0;

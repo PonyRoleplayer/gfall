@@ -7151,6 +7151,28 @@ static void check_quest_machine(void)
     run = quest_run(slot);
     quest_tick(&p, run ? run->timer_end[0] + 1 : now);
     check_expect(quest_running(quest) < 0 && p.pack.gold == gold, "quest machine: the timer did not end it unpaid");
+    /* The nobles' N0C00Y10 puts its person in a tavern of this town at the start: they stand there, and meeting them is its trigger. */
+    quest_new_game();
+    for (i = 0; i < quest_table()->count; i++) {
+        if (quest_kind(i) && df_eq(quest_kind(i)->name, "N0C00Y10")) {
+            quest = i;
+        }
+    }
+    slot = quest_start(&p, quest, &how, now);
+    run = quest_run(slot);
+    check_expect(slot >= 0 && run && run->person_at[0] == 3 && !run->place_dungeon[3] && run->place_index[3] == dagger,
+                 "quest machine: N0C00Y10's person not put in a building of the town");
+    if (run) {
+        QuestPersonHere here[4];
+
+        n = quest_people_in(17, dagger, run->place_block[3], run->place_record[3], here, 4);
+        check_expect(n >= 1 && here[0].slot == slot && here[0].person == 0, "quest machine: the person does not stand in their building");
+        check_expect(quest_people_in(17, dagger, run->place_block[3], run->place_record[3] + 1000, here, 4) == 0,
+                     "quest machine: the person stands in another building");
+        quest_met_person(&p, slot, 0, now + 60);
+        check_expect(quest_messages_waiting() > 0 || quest_running(quest) != slot || quest_run(slot)->state[0] != run->state[0],
+                     "quest machine: meeting the person did nothing");
+    }
     quest_new_game();
 }
 

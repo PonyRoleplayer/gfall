@@ -342,6 +342,11 @@ static void say(const Slot *s, int message)
     }
 }
 
+int quest_messages_waiting(void)
+{
+    return g_message_count;
+}
+
 int quest_take_message(char *out, int cap)
 {
     if (!g_message_count) {
@@ -924,24 +929,92 @@ void quest_put(const QuestRun *saved)
     s->used = load_logic(s);
 }
 
-/* The person of slot s met here, or -1: the giver by their building and faction; another by the building they were put in. */
+/*
+ * 1 when person i of slot s is the giver, spoken to in their own building as
+ * the faction they were. Other quest people stand as persons of their own
+ * (quest_people_in) and are met by quest_met_person.
+ */
 static int person_here(const Slot *s, int i, int region, int index, int block, int record, int faction)
 {
     const QbnPerson *who;
-    int at;
 
     who = &s->qbn.people[i];
-    if (s->run.person_hidden & (1u << i)) {
+    if ((s->run.person_hidden & (1u << i)) || (who->symbol != qbn_hash("qgiver") && who->symbol != qbn_hash("questgiver"))) {
         return 0;
     }
-    if (who->symbol == qbn_hash("qgiver") || who->symbol == qbn_hash("questgiver")) {
-        return region == s->run.region && index == s->run.index && block == s->run.giver_block && record == s->run.giver_record
-               && faction == s->run.giver_faction;
+    return region == s->run.region && index == s->run.index && block == s->run.giver_block && record == s->run.giver_record
+           && faction == s->run.giver_faction;
+}
+
+/* Person i of slot s met: their meeting and their item given. */
+static void meet(Slot *s, int person)
+{
+    int i;
+
+    for (i = 0; i < s->qbn.count[QBN_LOGIC] && i < QUEST_LOGIC; i++) {
+        const QbnLogic *l;
+        df_u32 who;
+
+        l = &s->qbn.logic[i];
+        if (l->opcode != OP_MEET && l->opcode != OP_ITEM_TO_PERSON) {
+            continue;
+        }
+        who = l->opcode == OP_MEET ? l->arg[1].value : l->arg[2].value;
+        if ((int)who != person || state_of(&s->run, (int)l->arg[0].value)) {
+            continue;
+        }
+        if (l->opcode == OP_ITEM_TO_PERSON) {
+            if (l->arg[1].value >= QUEST_ITEMS || !(s->run.item_held & (1u << l->arg[1].value))) {
+                continue;
+            }
+            s->run.item_held &= ~(1u << l->arg[1].value);
+        }
+        set_state(&s->run, (int)l->arg[0].value, 1);
+        say(s, l->message);
     }
-    at = s->run.person_at[i];
-    /* Until quest people stand in the world, anyone of their faction (any, for none) in their building is them. */
-    return at >= 0 && !s->run.place_dungeon[at] && s->run.place_region[at] == region && s->run.place_index[at] == index
-           && s->run.place_block[at] == block && s->run.place_record[at] == record && (!who->faction || who->faction == faction);
+}
+
+void quest_met_person(Player *p, int slot, int person, int now)
+{
+    Slot *s;
+
+    if (slot < 0 || slot >= QUEST_SLOTS || !g_slots[slot].used || g_slots[slot].offered || person < 0
+        || person >= g_slots[slot].qbn.count[QBN_PEOPLE]) {
+        return;
+    }
+    g_player = p;
+    s = &g_slots[slot];
+    meet(s, person);
+    run(s, now);
+}
+
+int quest_people_in(int region, int index, int block, int record, QuestPersonHere *out, int cap)
+{
+    int n;
+    int slot;
+
+    n = 0;
+    for (slot = 0; slot < QUEST_SLOTS; slot++) {
+        const Slot *s;
+        int i;
+
+        s = &g_slots[slot];
+        for (i = 0; s->used && !s->offered && i < s->qbn.count[QBN_PEOPLE] && i < QUEST_PEOPLE && n < cap; i++) {
+            int at;
+
+            at = s->run.person_at[i];
+            if (at < 0 || s->run.place_dungeon[at] || (s->run.person_hidden & (1u << i)) || s->run.place_region[at] != region
+                || s->run.place_index[at] != index || s->run.place_block[at] != block || s->run.place_record[at] != record) {
+                continue;
+            }
+            out[n].slot = slot;
+            out[n].person = i;
+            out[n].female = s->qbn.people[i].gender == 1 || (s->qbn.people[i].gender == 0xFF && ((s->run.person_seed >> i) & 1u));
+            out[n].faction = s->qbn.people[i].faction;
+            n++;
+        }
+    }
+    return n;
 }
 
 void quest_met(Player *p, int region, int index, int block, int record, int faction, int now)
@@ -957,28 +1030,11 @@ void quest_met(Player *p, int region, int index, int block, int record, int fact
         if (!s->used || s->offered) {
             continue;
         }
-        for (i = 0; i < s->qbn.count[QBN_LOGIC] && i < QUEST_LOGIC; i++) {
-            const QbnLogic *l;
-            df_u32 who;
-
-            l = &s->qbn.logic[i];
-            if (l->opcode != OP_MEET && l->opcode != OP_ITEM_TO_PERSON) {
-                continue;
+        /* The giver, known by their building and faction. */
+        for (i = 0; i < s->qbn.count[QBN_PEOPLE] && i < QUEST_PEOPLE; i++) {
+            if (person_here(s, i, region, index, block, record, faction)) {
+                meet(s, i);
             }
-            who = l->opcode == OP_MEET ? l->arg[1].value : l->arg[2].value;
-            if (who >= QUEST_PEOPLE || (int)who >= s->qbn.count[QBN_PEOPLE] || state_of(&s->run, (int)l->arg[0].value)
-                || !person_here(s, (int)who, region, index, block, record, faction)) {
-                continue;
-            }
-            /* An item given: only one the quest has handed the player, and it is gone. */
-            if (l->opcode == OP_ITEM_TO_PERSON) {
-                if (l->arg[1].value >= QUEST_ITEMS || !(s->run.item_held & (1u << l->arg[1].value))) {
-                    continue;
-                }
-                s->run.item_held &= ~(1u << l->arg[1].value);
-            }
-            set_state(&s->run, (int)l->arg[0].value, 1);
-            say(s, l->message);
         }
         run(s, now);
     }
