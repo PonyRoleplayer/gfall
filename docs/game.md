@@ -87,7 +87,7 @@ Classic's travel map and its fast journeys, on Daggerfall Unity's numbers and cl
   - Betony's is drawn four times larger. Its corner, (82, 244), is fitted to the island: DFU's comes with hover offsets in another form. Every known place of every one-screen province is tested to land on its panel.
   - Known places are one pixel each, coloured by type (DFU's indices). The four filters hide dungeons, temples, homes and towns.
   - A cross marks the player's pixel. "I'm at" brings back the player's province.
-  - Find takes a typed name and goes to the first known place it begins, or says there is none (TEXT.RSC 13).
+  - Find, on the world or a province's bar, takes a typed name and looks among the known places for every one with it in its name, those beginning with it first, eight at most. None: TEXT.RSC 13. One: its province opens on the screen that has it, a ring round its dot flashes for 1.5 s (DFU's identify flash; a click stops it), then the travel question. Several: a scroll lists them, a name a line, and a click on one goes there the same way.
 - **A click on a place** asks (TEXT.RSC 31, `%tcn` the place). Yes opens the journey's popup (`TRAV0I04.IMG`): cautious or reckless, foot or ship, inns or camping, the gold, the trip's cost and its days. Begin counts the days down a twentieth of a second each, then goes. Too little gold says so (454).
 - **Palettes:** the maps are under `FMAP_PAL.COL`, the popup, the scroll and the font under `ART_PAL.COL`. One screen is one picture under one palette, so what is drawn in the art palette is mapped to the map's nearest colour where it lies: the popup's rectangle whole, and in the scroll only the pixels it changed, so its burnt edges keep the map under them.
 
@@ -154,16 +154,12 @@ Tested on the host (`check_wider_world`):
 - `build/travel0..3.ppm` are for a look.
 
 **Not yet:**
-- selling from the wagon, and ships;
+- a ship to stand on;
 - the indoor automap's door and exit marks and notes;
-- Find's list of several matches;
-- the identify flash;
-- talk's marking places on the map;
+- talk's marking places on the travel map (a building is marked on the town map);
 - clicking a neighbouring province from a province's map;
 - the guilds' faster travel;
-- holidays;
-- diseases;
-- lycanthropy and vampirism.
+- regional holidays.
 
 The journey's numbers are in `journey.c`, not MAIN.DAT, as P9's talk tables are.
 
@@ -237,7 +233,7 @@ A killed guard stays. The pose is ENEM 146's corpse, TEXTURE.380 record 1 (`ENTI
 - Steal mode, pickpocketing and the deferred theft mechanics (P12-a);
 - people's own names (the strip shows their faction) and buildings' names (the list shows their kinds);
 - talk's People and Things lists, Tell me about's organisations, guild greetings, the logbook;
-- taverns' rooms and drinks, guilds' services, houses and ships, shelves in a house or a library;
+- taverns' rooms and drinks, guilds' services, houses, shelves in a house or a library;
 - classic's monthly price drift, and repairs taking time.
 
 ## Classic HUD bar (built: P9-b, host-tested; target acceptance pending)
@@ -839,7 +835,7 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Loot | the other columns of `LOOT` wait for their items | P12-b, later |
 | Loot | a body or a heap takes nothing put on it (a choice, see What can be searched) | - |
 | Places | treasure and piles only in a dungeon streamed by block; a town's doors not keyed; the sea can be walked on | later |
-| World | a ship to stand on; the indoor automap's marks and notes, the town map's rotation and names; the travel map's Find list, identify flash and neighbouring provinces; places on the travel map marked by talk (a building is marked on the town map); guild travel; regional holidays; the afflictions' cemetery, beast pictures and sounds (Afflictions) | P10 |
+| World | a ship to stand on; the indoor automap's marks and notes, the town map's rotation and names; the travel map's neighbouring provinces; places on the travel map marked by talk (a building is marked on the town map); guild travel; regional holidays; the afflictions' cemetery, beast pictures and sounds (Afflictions) | P10 |
 | Player | the completed classic HUD bar needs target acceptance; the map button opens the travel map outdoors, the automap and magic buttons await their systems | P9-b, P10, P12-b |
 | Player | target acceptance/tuning of the implemented classic cursor controls | P9-c |
 | People | Steal mode, pickpocketing and the deferred theft mechanics | P12-a |

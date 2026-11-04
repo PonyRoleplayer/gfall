@@ -6046,7 +6046,31 @@ static void check_wider_world(void)
             townmap_close();
             check_expect(!townmap_marked(17, dagger + 1, &cx, &cy), "town map: another town shows the mark");
         }
-        printf("travel map: Sentinel to Daggerfall reckless on foot, %d days, %d gold; build/travel0..3.ppm\n", made.days, made.cost);
+        /* Find: typed "dagger", Daggerfall first of what has it in its name, its ring flashing, then the question. */
+        travelmap_close();
+        check_expect(travelmap_open(&p, sx, sy, 20), "travel map: it did not open again");
+        travelmap_click(4 + 2, 175 + 2);
+        {
+            static const char typed[] = "DAGGER";
+            int c;
+
+            for (c = 0; typed[c]; c++) {
+                travelmap_key(typed[c]);
+            }
+        }
+        travelmap_key(0x0d);
+        check_expect(travelmap_found() >= 2, "travel map: Find listed fewer than two places with dagger in their names");
+        travelmap_compose();
+        write_screen_with("build/travel4.ppm", travelmap_pixels(), 1);
+        /* The list's first line: Daggerfall, whose name begins with it. */
+        travelmap_click(70 + 12, 60 + 6 + 2);
+        check_expect(travelmap_region() == 17 && travelmap_place() < 0, "travel map: the list's first line did not go to Daggerfall's province");
+        for (k = 0; k < 100 && travelmap_place() < 0; k++) {
+            travelmap_step(0.05f);
+        }
+        check_expect(travelmap_place() == worldmap_location_id(px, py) && k > 20,
+                     "travel map: Daggerfall not asked about after its flash");
+        printf("travel map: Sentinel to Daggerfall reckless on foot, %d days, %d gold; Find; build/travel0..4.ppm\n", made.days, made.cost);
         travelmap_close();
     }
 }

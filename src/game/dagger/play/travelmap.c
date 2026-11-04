@@ -134,8 +134,18 @@ enum {
     STEP_ASK,
     STEP_POPUP,
     STEP_COUNTING,
-    STEP_FIND
+    STEP_FIND,
+    /* Several known places fit what was typed: a list of them to choose from. */
+    STEP_FOUND
 };
+/* The most places a Find lists, a line each on the scroll. */
+#define FOUND_MOST 8
+#define FOUND_LINE 9
+/* The found place's ring flashes this long before the question, flipping each FLASH_FLIP seconds. */
+#define FLASH_TIME 1.5f
+#define FLASH_FLIP 0.25f
+/* The ring round a flashing place: this many map pixels from it. */
+#define FLASH_RING 3
 
 #define NAMES_MOST 4096
 #define LINE_TEXT 96
@@ -181,6 +191,12 @@ static struct {
     char line[LINE_TEXT];
     char ask[LINE_TEXT * 2];
     char typed[33];
+    /* A Find's places, by location id, and their names; the one flashing and how long it has left. */
+    int found[FOUND_MOST];
+    char found_name[FOUND_MOST][33];
+    int nfound;
+    int flash_place;
+    float flash;
     const char *note;
     Words words;
     /* The screen as the map left it, before the popup or the scroll: what they did not draw is not mapped again. */
@@ -567,6 +583,22 @@ static void begin(void)
 
 int travelmap_step(float dt)
 {
+    if (g.flash > 0.0f && g.step == STEP_REGION) {
+        int was;
+
+        was = df_ifloor(g.flash / FLASH_FLIP);
+        g.flash -= dt;
+        if (df_ifloor(g.flash / FLASH_FLIP) != was) {
+            g.changed = 1;
+        }
+        /* The flash over, the place found is asked about. */
+        if (g.flash <= 0.0f) {
+            g.flash = 0.0f;
+            choose(g.flash_place);
+            g.changed = 1;
+        }
+        return TRAVELMAP_STAY;
+    }
     if (g.step != STEP_COUNTING) {
         return TRAVELMAP_STAY;
     }
@@ -641,6 +673,25 @@ static void compose_places(void)
             continue;
         }
         g.composer.screen[(PANEL_Y + y) * CANVAS_W + PANEL_X + x] = g_dot_of_type[type];
+        /* The place a Find found: a square ring round it, on for one flip and off for the next. */
+        if (k == g.flash_place && g.flash > 0.0f && (df_ifloor(g.flash / FLASH_FLIP) & 1) == 0) {
+            int i;
+
+            for (i = -FLASH_RING; i <= FLASH_RING; i++) {
+                int c;
+
+                for (c = 0; c < 4; c++) {
+                    int rx;
+                    int ry;
+
+                    rx = x + (c == 0 ? -FLASH_RING : (c == 1 ? FLASH_RING : i));
+                    ry = y + (c == 2 ? -FLASH_RING : (c == 3 ? FLASH_RING : i));
+                    if (rx >= 0 && rx < PANEL_W && ry >= 0 && ry < PANEL_H) {
+                        g.composer.screen[(PANEL_Y + ry) * CANVAS_W + PANEL_X + rx] = CROSS_INDEX;
+                    }
+                }
+            }
+        }
     }
     if (to_panel(g.here_px, g.here_py, &x, &y)) {
         int i;
@@ -724,10 +775,45 @@ static void compose_ask(void)
     }
 }
 
+/* A Find's list on a scroll: a name a line, clicked to go there. */
+static void compose_found(void)
+{
+    Rect line;
+    int i;
+
+    canvas_scroll(&g_ask_rect);
+    canvas_set_ink(CANVAS_INK, CANVAS_INK_SHADOW);
+    for (i = 0; i < g.nfound; i++) {
+        line.x = (df_u16)(g_ask_rect.x + 10);
+        line.y = (df_u16)(g_ask_rect.y + 6 + i * FOUND_LINE);
+        line.w = (df_u16)(g_ask_rect.w - 20);
+        line.h = FOUND_LINE;
+        canvas_label(line.x, line.y, g.found_name[i]);
+    }
+    /* As the question's scroll: what the burnt edges let through stays the map's. */
+    {
+        int y;
+        int x;
+
+        for (y = g_ask_rect.y; y < g_ask_rect.y + g_ask_rect.h + CANVAS_BUTTON_H; y++) {
+            for (x = g_ask_rect.x; x < g_ask_rect.x + g_ask_rect.w + 22; x++) {
+                df_u8 *at;
+
+                if (y >= CANVAS_H || x >= CANVAS_W) {
+                    continue;
+                }
+                at = &g.composer.screen[y * CANVAS_W + x];
+                *at = g.under[y * CANVAS_W + x] == *at ? *at : g.art_to_map[*at];
+            }
+        }
+    }
+}
+
 void travelmap_compose(void)
 {
     canvas_use(&g.composer);
-    if (g.step == STEP_WORLD) {
+    /* A Find begun on the world has no province under it yet: the world stays. */
+    if (g.step == STEP_WORLD || !g.region_pic) {
         canvas_copy_all(g.world);
     } else {
         canvas_box(&g_line_rect, 0);
@@ -754,6 +840,8 @@ void travelmap_compose(void)
     mem_copy(g.under, g.composer.screen, CANVAS_BYTES);
     if (g.step == STEP_ASK) {
         compose_ask();
+    } else if (g.step == STEP_FOUND) {
+        compose_found();
     } else if (g.step == STEP_POPUP || g.step == STEP_COUNTING) {
         compose_popup();
     }
@@ -810,17 +898,73 @@ void travelmap_point(int x, int y)
     }
 }
 
-/* The typed name found among the known places, the first whose name begins with it; on to its province. */
+/* 1 when name has typed in it, any case; *first 1 when it begins with it. */
+static int name_has(const char *name, const char *typed, int *first)
+{
+    int at;
+    int k;
+
+    for (at = 0; name[at]; at++) {
+        for (k = 0; typed[k] && name[at + k] && ((name[at + k] | 32) == (typed[k] | 32)); k++) {
+        }
+        if (!typed[k]) {
+            *first = at == 0;
+            return 1;
+        }
+    }
+    *first = 0;
+    return 0;
+}
+
+/* On to the province of known place k, its screen of the map that has it, and its ring flashing before the question. */
+static void go_to_found(int k)
+{
+    int px;
+    int py;
+    int region;
+    int index;
+    int type;
+    int known;
+    int part;
+
+    if (!worldmap_location_info(k, &px, &py, &region, &index, &type, &known)) {
+        return;
+    }
+    for (part = 0; map_of(region, part); part++) {
+        int x;
+        int y;
+
+        g.region = region;
+        g.part = part;
+        if (to_panel(px, py, &x, &y)) {
+            break;
+        }
+    }
+    if (!show_region(region, map_of(region, part) ? part : 0)) {
+        g.step = STEP_WORLD;
+        return;
+    }
+    /* DFU's identify flash: the place shown before it is asked about (travelmap_step). */
+    g.flash_place = k;
+    g.flash = FLASH_TIME;
+    g.step = STEP_REGION;
+}
+
+/*
+ * The typed name among the known places: every one with it in its name, those
+ * beginning with it first, FOUND_MOST at most. One goes to it; several are
+ * listed to choose from (DFU's Find list); none says so.
+ */
 static void find_typed(void)
 {
     MemHeap *scratch;
     MemHeap *was;
     DunRef *rows;
+    int pass;
     int n;
     int i;
-    int found;
 
-    found = -1;
+    g.nfound = 0;
     scratch = mem_heap_new();
     if (!scratch) {
         return;
@@ -828,58 +972,38 @@ static void find_typed(void)
     was = mem_heap_use(scratch);
     rows = (DunRef *)mem_alloc(16000u * (df_u32)sizeof(DunRef));
     n = rows ? exterior_list(rows, 16000) : 0;
-    for (i = 0; i < n && found < 0 && g.typed[0]; i++) {
-        int k;
-        int px;
-        int py;
+    for (pass = 0; pass < 2; pass++) {
+        for (i = 0; i < n && g.nfound < FOUND_MOST && g.typed[0]; i++) {
+            int first;
+            int px;
+            int py;
+            int k;
 
-        k = 0;
-        while (g.typed[k] && rows[i].name[k] && ((rows[i].name[k] | 32) == (g.typed[k] | 32))) {
-            k++;
-        }
-        if (g.typed[k] || !worldmap_pixel_of(rows[i].region, rows[i].index, &px, &py)) {
-            continue;
-        }
-        k = worldmap_location_id(px, py);
-        if (k >= 0 && atlas_known(k)) {
-            found = k;
+            if (!name_has(rows[i].name, g.typed, &first) || first != (pass == 0)
+                || !worldmap_pixel_of(rows[i].region, rows[i].index, &px, &py)) {
+                continue;
+            }
+            k = worldmap_location_id(px, py);
+            if (k >= 0 && atlas_known(k)) {
+                g.found[g.nfound] = k;
+                df_copy(g.found_name[g.nfound], rows[i].name, (int)sizeof(g.found_name[0]));
+                g.nfound++;
+            }
         }
     }
     mem_heap_use(was);
     mem_heap_delete(scratch);
-    if (found < 0) {
+    if (g.nfound == 0) {
         textrsc_read(RECORD_NO_PLACE, g.line, LINE_TEXT);
         g.note = g.line;
         g.step = g.region >= 0 ? STEP_REGION : STEP_WORLD;
         return;
     }
-    {
-        int px;
-        int py;
-        int region;
-        int index;
-        int type;
-        int known;
-        int part;
-
-        worldmap_location_info(found, &px, &py, &region, &index, &type, &known);
-        /* The screen of the province's map that has it. */
-        for (part = 0; map_of(region, part); part++) {
-            int x;
-            int y;
-
-            g.region = region;
-            g.part = part;
-            if (to_panel(px, py, &x, &y)) {
-                break;
-            }
-        }
-        if (!show_region(region, map_of(region, part) ? part : 0)) {
-            g.step = STEP_WORLD;
-            return;
-        }
-        choose(found);
+    if (g.nfound == 1) {
+        go_to_found(g.found[0]);
+        return;
     }
+    g.step = STEP_FOUND;
 }
 
 static int click_region(int x, int y)
@@ -944,10 +1068,18 @@ int travelmap_click(int x, int y)
 {
     g.changed = 1;
     g.note = 0;
+    /* A click stops a flash: what it clicks is what is wanted now. */
+    g.flash = 0.0f;
     switch (g.step) {
     case STEP_WORLD:
         if (rect_has(&g_exit_rect, x, y)) {
             return TRAVELMAP_LEAVE;
+        }
+        /* The world's picture has the same Find button as a province's bar. */
+        if (rect_has(&g_find_rect, x, y)) {
+            g.typed[0] = 0;
+            g.step = STEP_FIND;
+            return TRAVELMAP_STAY;
         }
         {
             int r;
@@ -960,6 +1092,19 @@ int travelmap_click(int x, int y)
         return TRAVELMAP_STAY;
     case STEP_REGION:
         return click_region(x, y);
+    case STEP_FOUND:
+        /* A name's line goes there; anywhere else on the map goes back. */
+        if (rect_has(&g_ask_rect, x, y)) {
+            int i;
+
+            i = (y - (g_ask_rect.y + 6)) / FOUND_LINE;
+            if (y >= g_ask_rect.y + 6 && i >= 0 && i < g.nfound) {
+                go_to_found(g.found[i]);
+            }
+        } else {
+            g.step = g.region >= 0 ? STEP_REGION : STEP_WORLD;
+        }
+        return TRAVELMAP_STAY;
     case STEP_ASK:
         if (rect_has(&g_yes_rect, x, y)) {
             g.step = STEP_POPUP;
@@ -1022,6 +1167,10 @@ int travelmap_key(int vk)
     if (g.step == STEP_COUNTING) {
         return TRAVELMAP_STAY;
     }
+    if (g.step == STEP_FOUND) {
+        g.step = g.region >= 0 ? STEP_REGION : STEP_WORLD;
+        return TRAVELMAP_STAY;
+    }
     if (g.step == STEP_POPUP || g.step == STEP_ASK) {
         g.step = STEP_REGION;
         g.place = -1;
@@ -1032,6 +1181,11 @@ int travelmap_key(int vk)
         return TRAVELMAP_STAY;
     }
     return TRAVELMAP_LEAVE;
+}
+
+int travelmap_found(void)
+{
+    return g.nfound;
 }
 
 int travelmap_region(void)

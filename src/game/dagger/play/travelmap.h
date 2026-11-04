@@ -43,6 +43,8 @@ void travelmap_chosen(int *region, int *index, Journey *journey, int *cautious);
 
 /* What a test reads: the province shown (-1 the world), the place chosen (-1 none), what the top line says. */
 int travelmap_region(void);
+/* How many places the last Find listed (FOUND_MOST at most). */
+int travelmap_found(void);
 int travelmap_place(void);
 const char *travelmap_line(void);
 /* A region's map's place on the world: its pixel at the panel's top left, and the panel pixels a map pixel is. 0 for a region with no map. */
