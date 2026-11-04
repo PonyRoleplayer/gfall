@@ -14,7 +14,7 @@
 enum {
     TOWNMAP_STAY,
     TOWNMAP_LEAVE,
-    /* The map key again: the travel map instead, until it has a key of its own. */
+    /* The travel map's key (V): the travel map instead. */
     TOWNMAP_TRAVEL
 };
 

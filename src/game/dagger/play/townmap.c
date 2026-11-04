@@ -16,7 +16,8 @@
 #define VK_DOWN_KEY 0x28
 #define VK_PRIOR_KEY 0x21
 #define VK_NEXT_KEY 0x22
-#define VK_M_KEY 'M'
+/* The travel map's default key (DFU's V): from the town map, straight to it. */
+#define VK_V_KEY 'V'
 
 static const Rect g_area = { 1, 1, 318, 169 };
 static const Rect g_grid_rect = { 78, 171, 27, 19 };
@@ -394,7 +395,7 @@ int townmap_key(int vk)
     switch (vk) {
     case VK_ESCAPE_KEY:
         return TOWNMAP_LEAVE;
-    case VK_M_KEY:
+    case VK_V_KEY:
         return TOWNMAP_TRAVEL;
     case VK_UP_KEY:
         pan(0, -PAN_STEP);

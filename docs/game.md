@@ -98,7 +98,7 @@ Classic's travel map and its fast journeys, on Daggerfall Unity's numbers and cl
   - **Zoom and pan:** the town is fitted at the largest zoom that shows it whole: half size for Daggerfall's 8 x 8 blocks, up to four screen pixels a map pixel for a hamlet. The arrows, the arrow keys and the wheel pan and zoom (half, whole, 2, 3, 4), and the compass or Home centres the player.
   - **The pointer** names the building kind under it, by `BLDG`. The player is an arrow along their facing.
   - **Not yet:** rotating, and buildings' own names.
-- **The map key, for now:** in a town's streets M opens its automap, and M again goes to the travel map. In the wilds it opens the travel map. The travel map gets its own key (DFU's V) once the engine has `INPUT_TRAVEL_MAP`.
+- **The keys, DFU's:** M is the automap (`INPUT_MAP`): in a town's streets its map, in the wilds, where there is nothing to map, the travel map. V is the travel map (`INPUT_TRAVEL_MAP`), from anywhere outdoors and from the town map. Both have their slots on the controls screen, and V is in `keys.c`'s defaults, so a reset brings it back.
 - **A dungeon's and a building's** (not built): classic draws the place's geometry from above, only what the player has been near. That needs the engine to track what was seen and to draw it on the Voodoo (asked of the ENGINE implementer). The window's chrome, its buttons and the player's marker will be the game's.
 
 ### A journey (`play/journey.c`, DFU's TravelTimeCalculator)
@@ -113,7 +113,7 @@ Classic's travel map and its fast journeys, on Daggerfall Unity's numbers and cl
 - **When it opens:** outdoors, by the map key or the HUD's map button (in a town, from its automap: Automaps, above). In a dungeon or a building it says the automap is not built yet.
 
 Tested on the host (`check_wider_world`):
-- the town map: Daggerfall's 8 x 8 blocks fitted at half size, its kinds coloured and its modes, an armorer named under the pointer, the up arrow and zoom by clicks, the wheel, M and Exit, writing `build/townmap0..1.ppm`;
+- the town map: Daggerfall's 8 x 8 blocks fitted at half size, its kinds coloured and its modes, an armorer named under the pointer, the up arrow and zoom by clicks, the wheel, V and Exit, writing `build/townmap0..1.ppm`;
 - the sums by hand: woodland on foot, recklessly, camping and on a horse, the sea by ship and swimming, a diagonal's steps, and arrivals reckless, before light and after 17:00;
 - the map's 11199 known places, one learnt and kept through a save;
 - every province's places on its map;

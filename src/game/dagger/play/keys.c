@@ -50,7 +50,9 @@ static const KeyBind g_defaults[] = {
     { INPUT_LOOK_UP, 0x21 },
     { INPUT_LOOK_DOWN, 0x22 },
     { INPUT_LOOK_CENTER, 0x24 },
-    { INPUT_FREELOOK, 0x12 }
+    { INPUT_FREELOOK, 0x12 },
+    /* The travel map's own key, DFU's V: M is the automap. */
+    { INPUT_TRAVEL_MAP, 'V' }
 };
 #define DEFAULTS ((int)(sizeof(g_defaults) / sizeof(g_defaults[0])))
 

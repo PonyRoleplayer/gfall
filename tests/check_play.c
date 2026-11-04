@@ -5210,7 +5210,7 @@ static void check_settings(void)
     mem_zero(&v, sizeof(v));
     v.classic = 1; v.waiting = -1; v.hover = SETTINGS_NOTHING;
     {
-        static const char *const names[] = { "W", "S", "Left", "Right", "A", "D", "Space", "Shift", "R", "Right Button", "H", "C", "I", "E", "Tab", "Page Up", "Page Down", "Home", "Alt", "M" };
+        static const char *const names[] = { "W", "S", "Left", "Right", "A", "D", "Space", "Shift", "R", "Right Button", "H", "C", "I", "E", "Tab", "Page Up", "Page Down", "Home", "Alt", "M", "V" };
         for (i = 0; i < SETTINGS_BINDINGS; i++) v.bindings[i] = names[i];
     }
     v.sfx_volume = v.music_volume = 80;
@@ -5996,7 +5996,7 @@ static void check_wider_world(void)
             check_expect(townmap_scale() == -3, "town map: the wheel's zoom");
             townmap_compose();
             write_screen("build/townmap1.ppm", townmap_pixels());
-            check_expect(townmap_key('M') == TOWNMAP_TRAVEL && townmap_click(282, 172) == TOWNMAP_LEAVE, "town map: M or Exit");
+            check_expect(townmap_key('V') == TOWNMAP_TRAVEL && townmap_click(282, 172) == TOWNMAP_LEAVE, "town map: V or Exit");
             townmap_close();
         }
         printf("travel map: Sentinel to Daggerfall reckless on foot, %d days, %d gold; build/travel0..3.ppm\n", made.days, made.cost);

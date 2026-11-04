@@ -127,9 +127,10 @@ static void travel_map_over_play(void)
 }
 
 /*
- * The map key: in a town's streets its automap (P10), the map key again for the
- * travel map; in the wilds the travel map; in a dungeon or a building, classic's
- * automap, whose render is the engine's to give.
+ * The automap key (M): in a town's streets its automap (P10); in the wilds,
+ * where there is nothing to map, the travel map; in a dungeon or a building,
+ * classic's automap, whose render is the engine's to give. The travel map has
+ * its own key (V).
  */
 static void map_over_play(void)
 {
@@ -1002,6 +1003,8 @@ int game_frame(Camera *cam, const Input *in, float dt)
         sheet_over_play();
     } else if ((in->pressed & INPUT_BIT(INPUT_MAP)) && !gfx_paused()) {
         map_over_play();
+    } else if ((in->pressed & INPUT_BIT(INPUT_TRAVEL_MAP)) && !gfx_paused()) {
+        travel_map_over_play();
     } else if ((in->pressed & INPUT_BIT(INPUT_REST)) && !gfx_paused()) {
         rest_over_play();
     } else if ((in->pressed & INPUT_BIT(INPUT_SWAP_HANDS)) && !gfx_paused()) {

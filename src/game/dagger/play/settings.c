@@ -19,13 +19,13 @@ static const char *const g_names[] = {
     "Move forward", "Move backward", "Turn left", "Turn right",
     "Strafe left", "Strafe right", "Jump", "Run", "Rest", "Attack / swing",
     "Swap hands", "Character sheet", "Inventory", "Activate", "Toggle cursor",
-    "Look up", "Look down", "Center view", "Free look", "Travel map"
+    "Look up", "Look down", "Center view", "Free look", "Automap", "Travel map"
 };
 static const int g_actions[] = {
     INPUT_FORWARD, INPUT_BACK, INPUT_TURN_LEFT, INPUT_TURN_RIGHT,
     INPUT_LEFT, INPUT_RIGHT, INPUT_JUMP, INPUT_RUN, INPUT_REST, INPUT_ATTACK,
     INPUT_SWAP_HANDS, INPUT_CHARACTER, INPUT_INVENTORY, INPUT_USE, INPUT_CURSOR,
-    INPUT_LOOK_UP, INPUT_LOOK_DOWN, INPUT_LOOK_CENTER, INPUT_FREELOOK, INPUT_MAP
+    INPUT_LOOK_UP, INPUT_LOOK_DOWN, INPUT_LOOK_CENTER, INPUT_FREELOOK, INPUT_MAP, INPUT_TRAVEL_MAP
 };
 
 /* Geometry is shared by drawing and hit testing. The entire screen uses
