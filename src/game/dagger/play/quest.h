@@ -145,6 +145,13 @@ void quest_tick(Player *p, int now);
 /* The next message to show, filled in; 0 when none waits. How many wait. */
 int quest_take_message(char *out, int cap);
 int quest_messages_waiting(void);
+/*
+ * The topics the running quests have opened (ops 10 and 11: a person, a place or a thing added to
+ * "Tell me about" while a state is true, taken away by another): for each, the name to list, its quest's
+ * slot and the QRC messages that tell of it (0 for none), into the arrays (cap); how many.
+ */
+#define QUEST_TOPIC_NAME 32
+int quest_topics(char names[][QUEST_TOPIC_NAME], int *slots, int *message_a, int *message_b, int cap);
 /* A quest person's own name, as its messages call them (the same each time); 0 for none. */
 int quest_person_name(int slot, int person, char *out, int cap);
 /* The least time any of the quest's timers has left, in game minutes, at now; -1 when none runs. */

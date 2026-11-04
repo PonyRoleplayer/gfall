@@ -7317,6 +7317,18 @@ static void check_quest_machine(void)
         }
     }
     quest_new_game();
+    /* Topics: none opened yet by M0B00Y00, and the call is whole. */
+    quest_new_game();
+    {
+        static char tnames[4][QUEST_TOPIC_NAME];
+        int tslots[4];
+        int ta[4];
+        int tb[4];
+
+        check_expect(quest_start(&p, quest_find("M0B00Y00"), &how, now) >= 0 && quest_topics(tnames, tslots, ta, tb, 4) == 0,
+                     "quest machine: a quest opened topics at its start");
+    }
+    quest_new_game();
     /* The logbook: two quests, a page each, the first's log and its days left; clicks turn the page and the bottom edge closes. */
     quest_new_game();
     {

@@ -46,6 +46,8 @@ enum {
     OP_MESSAGE = 51,
     OP_AND = 52,
     OP_OR = 53,
+    OP_TOPICS_ADD = 10,
+    OP_TOPICS_REMOVE = 11,
     OP_REPUTATION = 61,
     OP_LEGAL = 65,
     OP_LEVEL = 77,
@@ -1397,6 +1399,86 @@ int quest_log_line(int slot, int i, char *out, int cap)
     s = &g_slots[slot];
     fill_message(s, s->run.log[i], out, cap);
     return out[0] != 0;
+}
+
+int quest_topics(char names[][QUEST_TOPIC_NAME], int *slots, int *message_a, int *message_b, int cap)
+{
+    int n;
+    int slot;
+
+    n = 0;
+    for (slot = 0; slot < QUEST_SLOTS; slot++) {
+        const Slot *s;
+        int i;
+
+        s = &g_slots[slot];
+        if (!s->used || s->offered) {
+            continue;
+        }
+        for (i = 0; i < s->qbn.count[QBN_LOGIC] && i < QUEST_LOGIC; i++) {
+            const QbnLogic *l;
+            int k;
+
+            l = &s->qbn.logic[i];
+            if (l->opcode != OP_TOPICS_ADD || !(l->arg[0].value == NO_STATE || operand_true(&s->run, &l->arg[0]))) {
+                continue;
+            }
+            /* Taken away again by a remove record naming the same state's thing that is true now. */
+            for (k = 1; k < 4 && k < l->count && n < cap; k++) {
+                df_u32 v;
+                int removed;
+                int j;
+                int a;
+                int b;
+
+                v = l->arg[k].value;
+                if (v == NO_STATE || v == FILLER) {
+                    continue;
+                }
+                removed = 0;
+                for (j = 0; j < s->qbn.count[QBN_LOGIC] && j < QUEST_LOGIC; j++) {
+                    const QbnLogic *m;
+
+                    m = &s->qbn.logic[j];
+                    removed |= m->opcode == OP_TOPICS_REMOVE && k < m->count && m->arg[k].value == v
+                               && (m->arg[0].value == NO_STATE || operand_true(&s->run, &m->arg[0]));
+                }
+                if (removed) {
+                    continue;
+                }
+                a = 0;
+                b = 0;
+                names[n][0] = 0;
+                if (k == 1 && (int)v < s->qbn.count[QBN_PLACES] && v < QUEST_PLACES) {
+                    const BuildingKind *kind;
+
+                    a = s->qbn.places[v].text_tell[0];
+                    b = s->qbn.places[v].text_tell[1];
+                    if (s->run.place_dungeon[v] && s->run.place_region[v] >= 0) {
+                        location_name(s->run.place_region[v], s->run.place_index[v], names[n], QUEST_TOPIC_NAME);
+                    } else {
+                        kind = building_kind(s->qbn.places[v].type < 0 ? 0 : s->qbn.places[v].type);
+                        df_copy(names[n], kind ? kind->name : "House", QUEST_TOPIC_NAME);
+                    }
+                } else if (k == 2 && (int)v < s->qbn.count[QBN_PEOPLE] && v < QUEST_PEOPLE) {
+                    a = s->qbn.people[v].text_tell[0];
+                    b = s->qbn.people[v].text_tell[1];
+                    person_name(s, (int)v, names[n], QUEST_TOPIC_NAME);
+                } else if (k == 3 && (int)v < s->qbn.count[QBN_ITEMS]) {
+                    a = s->qbn.items[v].text_given;
+                    b = 0;
+                    df_copy(names[n], "The parcel", QUEST_TOPIC_NAME);
+                }
+                if (names[n][0] && (a > 0 || b > 0)) {
+                    slots[n] = slot;
+                    message_a[n] = a > 0 && a != QBN_NO_MESSAGE ? a : 0;
+                    message_b[n] = b > 0 && b != QBN_NO_MESSAGE ? b : 0;
+                    n++;
+                }
+            }
+        }
+    }
+    return n;
 }
 
 int quest_person_name(int slot, int person, char *out, int cap)

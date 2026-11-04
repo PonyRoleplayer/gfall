@@ -1,4 +1,5 @@
 #include "game/dagger/play/talk.h"
+#include "game/dagger/play/quest.h"
 #include "game/dagger/play/townmap.h"
 #include "game/dagger/play/canvas.h"
 #include "game/dagger/play/combat.h"
@@ -97,7 +98,9 @@ enum {
 enum {
     TOPIC_PLACE,
     TOPIC_NEWS,
-    TOPIC_WORK
+    TOPIC_WORK,
+    /* A topic a quest opened: type its slot, block and record its two messages (quest_topics). */
+    TOPIC_QUEST
 };
 
 typedef struct Topic {
@@ -288,9 +291,26 @@ static void list_places(void)
 
 static void list_tell(void)
 {
+    static char names[8][QUEST_TOPIC_NAME];
+    int slots[8];
+    int a[8];
+    int b[8];
+    int n;
+    int i;
+
     g.topics = 1;
     g.topic[0].kind = TOPIC_NEWS;
     df_copy(g.topic[0].text, "Any news?", TOPIC_TEXT);
+    /* What the quests running have opened: people, places and things to be told of. */
+    n = quest_topics(names, slots, a, b, 8);
+    for (i = 0; i < n && g.topics < TOPICS; i++) {
+        g.topic[g.topics].kind = TOPIC_QUEST;
+        g.topic[g.topics].type = slots[i];
+        g.topic[g.topics].block = a[i];
+        g.topic[g.topics].record = b[i];
+        df_copy(g.topic[g.topics].text, names[i], TOPIC_TEXT);
+        g.topics++;
+    }
 }
 
 /* "The armorer", from "Armorer". */
@@ -319,6 +339,10 @@ static void make_question(void)
 
     g.question[0] = 0;
     g.words.tone = g.tone;
+    if (g.mode == MODE_TELL && g.chosen >= 0 && g.chosen < g.topics && g.topic[g.chosen].kind == TOPIC_QUEST) {
+        log_format(g.question, LONG_TEXT, "Tell me about %s.", g.topic[g.chosen].text);
+        return;
+    }
     if (g.mode == MODE_TELL && g.chosen >= 0 && g.chosen < g.topics) {
         words_use(&g.words);
         words_say(RECORD_QUESTION_NEWS + g.tone, g.question, LONG_TEXT);
@@ -437,6 +461,21 @@ static void ask(void)
         /* No one has work to give yet (quests, P11): what they say of what they do not know. */
         row = 3 * (g.sgroup < SOCIAL_COUNT ? g.sgroup : SOCIAL_MERCHANTS) + outcome_for(0);
         words_say(g_answers_other[row], answer, (int)sizeof(answer));
+    } else if (g.topic[g.chosen].kind == TOPIC_QUEST) {
+        /* What the quest says of it: its message, then the second if it has one. */
+        answer[0] = 0;
+        quest_text(g.topic[g.chosen].type, g.topic[g.chosen].block, answer, (int)sizeof(answer));
+        if (g.topic[g.chosen].record) {
+            static char more[LONG_TEXT];
+
+            if (quest_text(g.topic[g.chosen].type, g.topic[g.chosen].record, more, (int)sizeof(more))) {
+                add_text(answer, 0);
+                df_copy(answer, more, (int)sizeof(answer));
+            }
+        }
+        if (!answer[0]) {
+            words_say(RECORD_NO_NEWS, answer, (int)sizeof(answer));
+        }
     } else if (g.topic[g.chosen].kind == TOPIC_NEWS) {
         answer_news(answer, (int)sizeof(answer));
     } else if (answer_place(&g.topic[g.chosen], answer, (int)sizeof(answer))) {
