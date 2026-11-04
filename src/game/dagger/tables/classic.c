@@ -357,7 +357,9 @@ static const ItemTemplate g_items[] = {
     { 130, "Long Bow", 1.50f, 20, 100, 207, 8, 234, 11, 0, 0, 100 },
     { 131, "Arrow", 0.25f, 2, 1, 207, 16, 0, 0, 0, 0, 0 },
     { 275, "Letter of Credit", 0.25f, 0, 0, 209, 7, 0, 0, 0, 0, 0 },
-    { 276, "Gold Pieces", 0.0025f, 1, 0, 216, 1, 0, 0, 0, 0, 0 }
+    { 276, "Gold Pieces", 0.0025f, 1, 0, 216, 1, 0, 0, 0, 0, 0 },
+    /* Ours: a quest's thing to carry, worth nothing to a shop (items.h, ITEM_QUEST). */
+    { 999, "Parcel", 0.25f, 0, 0, 209, 7, 0, 0, 0, 0, 0 }
 };
 
 /*

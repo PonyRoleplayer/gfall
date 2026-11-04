@@ -883,9 +883,9 @@ static void check_items(void)
     Item it;
     char name[48];
 
-    check_expect(item_table()->count == 34 && weapon_table()->count == 18 && armor_table()->count == 11
+    check_expect(item_table()->count == 35 && weapon_table()->count == 18 && armor_table()->count == 11
                      && material_table()->count == MATERIAL_COUNT && loot_table()->count == 21,
-                 "items: MAIN.DAT lacks classic's 34 items (a cart, a horse, 11 of armour, 18 swung, arrows, a letter of credit, gold), 12 materials or 21 loot tables");
+                 "items: MAIN.DAT lacks classic's 34 items (a cart, a horse, 11 of armour, 18 swung, arrows, a letter of credit, gold) and a quest's parcel, 12 materials or 21 loot tables");
     check_expect(item_make(&it, ITEM_LONGSWORD, MATERIAL_IRON) && check_near(it.weight, 4.5f, 0.001f)
                      && it.value == 45 && it.condition_max == 800 && it.condition == 800,
                  "items: an iron longsword is not 4.5 kg, 45 gold, 800");

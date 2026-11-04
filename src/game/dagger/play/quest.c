@@ -2,6 +2,8 @@
 #include "game/dagger/play/atlas.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/journey.h"
+#include "game/dagger/play/inventory.h"
+#include "game/dagger/tables/items.h"
 #include "game/dagger/play/standing.h"
 #include "game/dagger/play/words.h"
 #include "game/dagger/places/town.h"
@@ -45,7 +47,8 @@ enum {
     OP_OR = 53,
     OP_REPUTATION = 61,
     OP_LEGAL = 65,
-    OP_ITEM_TO_PLAYER = 76
+    OP_ITEM_TO_PLAYER = 76,
+    OP_ORDINARY = 54
 };
 
 /* An operand naming no state, and one that is a filler (AND: true; OR: false). */
@@ -555,6 +558,76 @@ static int timer_length(const Slot *s, int t)
     return TIMER_DEFAULT;
 }
 
+/* QBN item categories (DFU's ItemGroups) a reward can be made in. */
+#define CATEGORY_ARMOR 2
+#define CATEGORY_WEAPONS 3
+
+/* The pack's item that is item i of slot, or -1. */
+static int pack_item(int slot, int i)
+{
+    int k;
+
+    if (!g_player) {
+        return -1;
+    }
+    for (k = 0; k < g_player->pack.count; k++) {
+        if (g_player->pack.item[k].template_id == ITEM_QUEST && g_player->pack.item[k].variant == QUEST_ITEM_TAG(slot, i)) {
+            return k;
+        }
+    }
+    return -1;
+}
+
+/* Item i of slot handed to the player: into the pack as a quest's parcel, and held. */
+static void hand_over(Slot *s, int i)
+{
+    Item it;
+
+    s->run.item_held |= 1u << i;
+    if (!g_player || pack_item(s->run.id, i) >= 0) {
+        return;
+    }
+    mem_zero(&it, sizeof(it));
+    it.template_id = ITEM_QUEST;
+    it.variant = (df_u8)QUEST_ITEM_TAG(s->run.id, i);
+    it.weight = 0.25f;
+    it.count = 1;
+    inventory_add(&g_player->pack, &it);
+}
+
+/*
+ * A reward that is no gold: armour or a weapon made in a material by the
+ * player's level (iron at 1, up a material each three, to dwarven), else, as
+ * the game has none of the rest of classic's things yet, gold to its worth.
+ */
+static void reward_item(Slot *s, int i)
+{
+    const QbnItem *q;
+    Item it;
+    int material;
+    int level;
+    int k;
+
+    q = &s->qbn.items[i];
+    level = g_player->sheet.level;
+    material = level / 3;
+    material = material > 6 ? 6 : material;
+    for (k = 0; k < 8; k++) {
+        int template_id;
+
+        template_id = q->category == CATEGORY_ARMOR ? ITEM_CUIRASS + combat_roll(ITEM_BOOTS - ITEM_CUIRASS + 1)
+                    : q->category == CATEGORY_WEAPONS ? ITEM_DAGGER + combat_roll(ITEM_ARROW - ITEM_DAGGER) : -1;
+        if (template_id < 0) {
+            break;
+        }
+        if (item_make(&it, template_id, material) || item_make(&it, template_id, 0)) {
+            inventory_add(&g_player->pack, &it);
+            return;
+        }
+    }
+    g_player->pack.gold += (df_u32)(50 * level * (2 + combat_roll(3)));
+}
+
 /* What an action record does, its state now true. 1 when it ended the quest. */
 static int act(Slot *s, const QbnLogic *l, int now)
 {
@@ -602,8 +675,9 @@ static int act(Slot *s, const QbnLogic *l, int now)
     case OP_GIVE_ITEM:
     case OP_ITEM_TO_PLAYER:
         /* To the player (no person, or the 0x4C form): held by the quest, shown in its log. */
-        if (l->arg[1].value < QUEST_ITEMS && (l->opcode == OP_ITEM_TO_PLAYER || l->arg[2].value == NO_STATE)) {
-            r->item_held |= 1u << l->arg[1].value;
+        if (l->arg[1].value < QUEST_ITEMS && (int)l->arg[1].value < s->qbn.count[QBN_ITEMS]
+            && (l->opcode == OP_ITEM_TO_PLAYER || l->arg[2].value == NO_STATE)) {
+            hand_over(s, (int)l->arg[1].value);
         }
         break;
     case OP_REWARD:
@@ -611,8 +685,12 @@ static int act(Slot *s, const QbnLogic *l, int now)
             df_u32 v;
 
             v = l->arg[k].value;
-            if (v < QUEST_ITEMS && (int)v < s->qbn.count[QBN_ITEMS] && s->qbn.items[v].reward == 2 && g_player) {
-                g_player->pack.gold += (df_u32)r->gold[v];
+            if (v < QUEST_ITEMS && (int)v < s->qbn.count[QBN_ITEMS] && g_player) {
+                if (s->qbn.items[v].reward == 2) {
+                    g_player->pack.gold += (df_u32)r->gold[v];
+                } else if (s->qbn.items[v].category != 0xFFFF) {
+                    reward_item(s, (int)v);
+                }
             }
         }
         break;
@@ -677,6 +755,13 @@ static int act(Slot *s, const QbnLogic *l, int now)
         }
         break;
     }
+    case OP_ORDINARY:
+        /* Made ordinary: the parcel stays the player's when the quest is over. */
+        k = l->arg[1].value < QUEST_ITEMS ? pack_item(r->id, (int)l->arg[1].value) : -1;
+        if (k >= 0) {
+            g_player->pack.item[k].variant = 0;
+        }
+        break;
     case OP_END:
         say(s, l->message);
         return 1;
@@ -695,6 +780,17 @@ static int is_trigger(int opcode)
 
 static void end_quest(Slot *s)
 {
+    int k;
+
+    /* Its parcels go with it, but those made ordinary (54). */
+    for (k = 0; s->used && g_player && k < QUEST_ITEMS; k++) {
+        int at;
+
+        at = pack_item(s->run.id, k);
+        if (at >= 0) {
+            inventory_remove(&g_player->pack, at);
+        }
+    }
     s->used = 0;
     s->offered = 0;
     if (s->heap) {
@@ -964,8 +1060,18 @@ static void meet(Slot *s, int person)
             continue;
         }
         if (l->opcode == OP_ITEM_TO_PERSON) {
+            int at;
+
+            /* The quest's parcel, carried: given over, gone from the pack. */
             if (l->arg[1].value >= QUEST_ITEMS || !(s->run.item_held & (1u << l->arg[1].value))) {
                 continue;
+            }
+            at = pack_item(s->run.id, (int)l->arg[1].value);
+            if (g_player && at < 0) {
+                continue;
+            }
+            if (at >= 0) {
+                inventory_remove(&g_player->pack, at);
             }
             s->run.item_held &= ~(1u << l->arg[1].value);
         }

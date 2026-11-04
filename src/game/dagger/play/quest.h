@@ -153,6 +153,9 @@ int quest_people_in(int region, int index, int block, int record, QuestPersonHer
 /* A person flat's faction mark for quest person (slot, person), and back: the 15 bits under FLAT_PERSON (rmb.c). */
 #define QUEST_PERSON_MARK 0x7000
 #define QUEST_PERSON_TAG(slot, person) (QUEST_PERSON_MARK + (slot) * 16 + (person))
+/* A quest item's Item.variant: this mark, its quest's slot and its place in the file (ITEM_QUEST, items.h); 0 once made ordinary. */
+#define QUEST_ITEM_MARK 0x80
+#define QUEST_ITEM_TAG(slot, item) (QUEST_ITEM_MARK + (slot) * 16 + (item))
 
 /* For the tests: a state's value, by its record in the QBN. */
 int quest_state(int slot, int state);

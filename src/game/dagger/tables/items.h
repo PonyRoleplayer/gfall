@@ -46,6 +46,11 @@
 #define ITEM_HORSE 94
 #define ITEM_LETTER 275
 #define ITEM_GOLD 276
+/*
+ * A quest's thing to carry (a letter, a parcel, a relic): ours, past DFU's templates, with the
+ * letter of credit's picture. Which quest's it is rides in Item.variant (quest.h, QUEST_ITEM_TAG).
+ */
+#define ITEM_QUEST 999
 
 /*
  * A body's seven parts, each with its own armour value, by DFU's BodyParts.
