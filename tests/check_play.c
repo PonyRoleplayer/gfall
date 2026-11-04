@@ -40,6 +40,7 @@
 #include "game/dagger/play/marker.h"
 #include "game/dagger/play/ride.h"
 #include "engine/assets/vfs.h"
+#include "game/dagger/play/quest.h"
 #include "game/dagger/tables/quests.h"
 #include "game/dagger/formats/qbn.h"
 #include "game/dagger/formats/textrsc.h"
@@ -7011,6 +7012,121 @@ static void check_quest_files(void)
     printf("quests: %d offered here, every QBN read; M0B00Y00 has %d logic records; 1000 says \"%.40s...\"\n", files, q.count[QBN_LOGIC], text);
 }
 
+/*
+ * The quest machine: the Fighters' M0B00Y00 started in Daggerfall, its loup
+ * chosen and put in a dungeon of the region onto the map, its timer and log;
+ * the beast killed, the giver met, the gold paid and the quest over; again,
+ * and left to its timer, failed.
+ */
+static void check_quest_machine(void)
+{
+    static DunRef rows[4096];
+    QuestStart how;
+    Player p;
+    Character sheet;
+    char line[512];
+    int quest;
+    int dagger;
+    int slot;
+    int kinds[8];
+    int nfoes;
+    int now;
+    int n;
+    int i;
+    df_u32 gold;
+    const QuestRun *run;
+
+    quest_new_game();
+    quest = -1;
+    for (i = 0; i < quest_table()->count; i++) {
+        if (quest_kind(i) && df_eq(quest_kind(i)->name, "M0B00Y00")) {
+            quest = i;
+        }
+    }
+    n = exterior_list_region(17, rows, 4096);
+    dagger = -1;
+    for (i = 0; i < n && i < 4096; i++) {
+        if (df_eq(rows[i].name, "Daggerfall")) {
+            dagger = rows[i].index;
+        }
+    }
+    check_expect(quest >= 0 && dagger >= 0, "quest machine: no M0B00Y00, or no Daggerfall");
+    character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Ada");
+    player_init(&p, &sheet);
+    inventory_clear(&p.pack);
+    mem_zero(&how, sizeof(how));
+    how.region = 17;
+    how.index = dagger;
+    how.giver_block = 5;
+    how.giver_record = 7;
+    how.giver_faction = 41;
+    how.guild = 41;
+    how.power = 50;
+    how.prices = 1000;
+    how.seed = 99;
+    combat_seed(3);
+    now = 400 * 1440;
+    slot = quest_start(&p, quest, &how, now);
+    run = quest_run(slot);
+    check_expect(slot >= 0 && run && quest_running(quest) == slot && df_eq(quest_file(slot), "M0B00Y00"), "quest machine: M0B00Y00 did not start");
+    /* At the start: one of the two tellings, one of the three beasts, its dungeon, the timer, the log. */
+    check_expect(run && (quest_state(slot, 9) || quest_state(slot, 10)) && quest_state(slot, 6) + quest_state(slot, 7) + quest_state(slot, 8) == 1,
+                 "quest machine: the start's random choices");
+    check_expect(run && run->place_dungeon[0] && run->place_region[0] == 17 && run->timer_end[0] > now && run->log[0] == 1030,
+                 "quest machine: its dungeon, timer or log entry");
+    nfoes = quest_foes_at(17, run ? run->place_block[0] : -1, kinds, 8);
+    check_expect(nfoes == 1, "quest machine: the loup is not in its dungeon");
+    check_expect(quest_log_line(slot, 0, line, (int)sizeof(line)) && !strchr(line, '_') && !strchr(line, '%') && strstr(line, "Day "),
+                 "quest machine: the log line has symbols left, or no date");
+    printf("quest machine: log \"%.60s...\"\n", line[0] == '\n' ? line + 1 : line);
+    /* The beast killed: state 1 and its message. */
+    quest_killed(&p, kinds[0], 17, run->place_block[0], now + 600);
+    check_expect(quest_state(slot, 1) && quest_take_message(line, (int)sizeof(line)) && !strchr(line, '_'),
+                 "quest machine: the kill did not count, or said nothing");
+    printf("quest machine: killed, \"%.50s...\"\n", line);
+    /* Someone else met: nothing. The giver met: paid, and it is over. */
+    gold = p.pack.gold;
+    quest_met(&p, 17, dagger, 5, 8, 41, now + 900);
+    check_expect(quest_running(quest) == slot, "quest machine: someone else ended it");
+    quest_met(&p, 17, dagger, 5, 7, 41, now + 900);
+    check_expect(quest_running(quest) < 0 && p.pack.gold > gold && p.pack.gold - gold >= 150 * 1 * 1000 / 1000 * 100 / 100 / 2,
+                 "quest machine: the giver did not pay, or the quest went on");
+    printf("quest machine: paid %u gold\n", (unsigned)(p.pack.gold - gold));
+    while (quest_take_message(line, (int)sizeof(line))) {
+    }
+    /* Again, through a save: the same states, timer and dungeon, its logic read again. */
+    slot = quest_start(&p, quest, &how, now);
+    check_expect(slot >= 0, "quest machine: it did not start again");
+    {
+        SaveState out;
+        SaveState in;
+        QuestRun before;
+        char path[260];
+
+        before = *quest_run(slot);
+        save_use_prefix(SAVE_TEST_PREFIX);
+        save_use_slot(4);
+        keep_clear();
+        pile_new_game();
+        mem_zero(&out, sizeof(out));
+        df_copy(out.name, "Quest", SAVE_NAME);
+        out.sheet = sheet;
+        inventory_clear(&out.pack);
+        check_expect(save_write(&out), "quest machine: a save did not write");
+        quest_new_game();
+        check_expect(save_read(&in) && quest_running(quest) == slot && quest_run(slot)->state[0] == before.state[0]
+                         && quest_run(slot)->timer_end[0] == before.timer_end[0] && quest_run(slot)->place_block[0] == before.place_block[0],
+                     "quest machine: the quest did not come back from the save");
+        check_expect(fs_beside(path, (int)sizeof(path), "DATA\\TEST4.SAV") && remove(path) == 0, "quest machine: the test's file did not go");
+    }
+    /* And the time runs out: over, unpaid. */
+    gold = p.pack.gold;
+    run = quest_run(slot);
+    quest_tick(&p, run ? run->timer_end[0] + 1 : now);
+    check_expect(quest_running(quest) < 0 && p.pack.gold == gold, "quest machine: the timer did not end it unpaid");
+    quest_new_game();
+}
+
 /* Counts the engine's automap polygons. */
 static void count_polygon(void *ctx, const AutomapCorner *corner, int n, df_u32 rgb)
 {
@@ -7225,6 +7341,7 @@ void check_play(void)
     check_guilds();
     check_names();
     check_quest_files();
+    check_quest_machine();
     check_riding();
     check_wagon();
     check_marker();

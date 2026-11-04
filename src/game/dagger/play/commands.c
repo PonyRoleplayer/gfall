@@ -1,6 +1,8 @@
 #include "game/dagger/play/commands.h"
 #include "game/dagger/play/foes.h"
 #include "game/dagger/play/ills.h"
+#include "game/dagger/play/quest.h"
+#include "game/dagger/tables/quests.h"
 #include "engine/scene/clock.h"
 #include "game/dagger/play/inventory.h"
 #include "game/dagger/tables/items.h"
@@ -554,6 +556,72 @@ static void c_morph(int argc, char **argv)
     log_print(LOG_PRINT, ills_beast() ? "You take the beast's shape." : "You take your own shape again.");
 }
 
+/* quests: what is running and its log. */
+static void c_quests(int argc, char **argv)
+{
+    char line[512];
+    int any;
+    int slot;
+    int i;
+
+    (void)argc;
+    (void)argv;
+    any = 0;
+    for (slot = 0; slot < QUEST_SLOTS; slot++) {
+        if (!quest_run(slot)) {
+            continue;
+        }
+        any = 1;
+        log_print(LOG_PRINT, "%s, since day %d", quest_file(slot), quest_run(slot)->started / 1440);
+        for (i = 0; i < QUEST_LOG; i++) {
+            if (quest_log_line(slot, i, line, (int)sizeof(line))) {
+                log_print(LOG_PRINT, "  %s", line);
+            }
+        }
+    }
+    if (!any) {
+        log_print(LOG_PRINT, "No quests.");
+    }
+}
+
+/* quest NAME: a quest started here, the player its own giver (for testing; it is usually given at a guild). */
+static void c_quest(int argc, char **argv)
+{
+    QuestStart how;
+    Camera cam;
+    float x;
+    float z;
+    int i;
+    int slot;
+
+    if (argc < 2 || !player()) {
+        log_print(LOG_PRINT, "quest NAME (M0B00Y00): started here");
+        return;
+    }
+    for (i = 0; i < quest_table()->count; i++) {
+        if (quest_kind(i) && df_eq(quest_kind(i)->name, argv[1])) {
+            break;
+        }
+    }
+    mem_zero(&how, sizeof(how));
+    player_camera(g_player, &cam);
+    if (i == quest_table()->count || !travel_town_here(&cam, &how.region, &how.index, &x, &z, &how.giver_block, &how.giver_record)) {
+        log_print(LOG_PRINT, "No such quest, or not in a town.");
+        return;
+    }
+    how.prices = 1000;
+    how.power = 50;
+    how.seed = (unsigned)clock_day() * 7919u;
+    slot = quest_start(g_player, i, &how, ills_now(clock_day(), clock_minute()));
+    if (slot < 0) {
+        log_print(LOG_PRINT, "It did not start (running, its files missing, or a place not found).");
+        return;
+    }
+    quest_say(slot, QUEST_SAY_OFFER);
+    quest_say(slot, QUEST_SAY_ACCEPTED);
+    log_print(LOG_PRINT, "Started %s.", argv[1]);
+}
+
 static int get_tgm(void)
 {
     return g_player ? g_player->god : 0;
@@ -584,6 +652,8 @@ void commands_setup(void)
     cmd_add("catch", c_catch, "disease|werewolf|wereboar|vampire", "a disease by part of its name, or an infection that turns at the next day");
     cmd_add("cure", c_cure, "", "every disease, infection and curse gone");
     cmd_add("morph", c_morph, "", "a lycanthrope changes shape, once a day into the beast (until magic gives the spell)");
+    cmd_add("quests", c_quests, "", "the quests running and their log");
+    cmd_add("quest", c_quest, "NAME", "a quest started here by its file's name (M0B00Y00)");
     cmd_add("foes", c_foes, "", "the creatures awake: what each is doing and how far off");
     cmd_var("tgm", get_tgm, set_tgm, 0, 1, "god mode: nothing hurts the player; tgm alone flips it");
     cmd_toggles("tgm");

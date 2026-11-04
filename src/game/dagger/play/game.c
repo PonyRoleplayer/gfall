@@ -7,6 +7,9 @@
 #include "game/dagger/play/rest.h"
 #include "game/dagger/play/lodging.h"
 #include "game/dagger/play/guild.h"
+#include "game/dagger/play/quest.h"
+#include "game/dagger/tables/quests.h"
+#include "engine/assets/vfs.h"
 #include "game/dagger/play/words.h"
 #include "game/dagger/formats/textrsc.h"
 #include "game/dagger/formats/faces.h"
@@ -128,6 +131,7 @@ static void screen_over_play(void)
 static float game_minutes(void);
 static int guild_panel(int faction, int npc_faction);
 static void temple_cure(void);
+static void guild_offer_quest(void);
 
 /* The travel map, outdoors. */
 static void travel_map_over_play(void)
@@ -396,6 +400,19 @@ static void person_used(const Usable *u)
         interact_say("You get no response.");
         return;
     }
+    /* A quest's giver or person met here (quest.c): what they say comes from the quest. */
+    {
+        int region;
+        int index;
+        int block;
+        int record;
+        float x;
+        float z;
+
+        if (travel_town_here(g_cam, &region, &index, &x, &z, &block, &record) && block >= 0) {
+            quest_met(&g_player, region, index, block, record, u->what, ills_now(clock_day(), clock_minute()));
+        }
+    }
     /* A guild hall's or a temple's people: its panel, with what this one does (DFU's guild service). */
     if (travel_building(&type, &faction, &quality, &place) && (type == BUILDING_GUILD_HALL || type == BUILDING_TEMPLE)
         && guild_panel(faction, u->what)) {
@@ -621,12 +638,108 @@ static void guild_service_asked(void)
         temple_cure();
         return;
     case GUILD_SERVICE_QUESTS:
-        interact_say("There is no work for you yet.");
+        guild_offer_quest();
         return;
     default:
         interact_say("That service is not offered yet.");
         return;
     }
+}
+
+/* A temple's god's letter in the quest list (DFU's QuestList membership): T Akatosh, A Arkay, D Dibella, J Julianos, K Kynareth, R Mara, S Stendarr, Z Zenithar. */
+static int god_letter(int god)
+{
+    switch (god) {
+    case 26:
+        return 'T';
+    case 21:
+        return 'A';
+    case 29:
+        return 'D';
+    case 27:
+        return 'J';
+    case 35:
+        return 'K';
+    case 24:
+        return 'R';
+    case 33:
+        return 'S';
+    case 22:
+        return 'Z';
+    default:
+        return 0;
+    }
+}
+
+/*
+ * Get Quest (DFU's QuestListsManager.GetGuildQuest): a quest of this guild's
+ * group, for a member or not (or for a temple's own god's member), that the
+ * player's rank (under 10) or reputation (from 10) reaches, not running, its
+ * files in ARENA2; one at random, started with this person as its giver. Its
+ * offer and acceptance are said; classic asks Yes or No between them.
+ */
+static void guild_offer_quest(void)
+{
+    int candidates[64];
+    const Faction *f;
+    QuestStart how;
+    RegionStanding *r;
+    float x;
+    float z;
+    int count;
+    int member;
+    int rank;
+    int rep;
+    int slot;
+    int i;
+
+    rank = guild_rank(g_guild);
+    member = rank >= 0;
+    rep = standing_rep(g_guild->id);
+    count = 0;
+    for (i = 0; i < quest_table()->count && count < 64; i++) {
+        const QuestKind *k;
+        char file[16];
+        df_u32 size;
+        int least_met;
+
+        k = quest_kind(i);
+        if (!k || k->group != g_guild->group || quest_running(i) >= 0) {
+            continue;
+        }
+        if ((k->to == QUEST_TO_MEMBERS && !member) || (k->to == QUEST_TO_OTHERS && member) || k->to == QUEST_TO_PROSPECTS
+            || (k->to != QUEST_TO_MEMBERS && k->to != QUEST_TO_OTHERS && (!member || k->to != god_letter(g_guild->id)))) {
+            continue;
+        }
+        least_met = k->least < 10 ? (member ? rank >= k->least : g_player.sheet.level >= k->least) : rep >= k->least;
+        log_format(file, (int)sizeof(file), "%s.QBN", k->name);
+        if (least_met && vfs_read(file, &size)) {
+            candidates[count++] = i;
+        }
+    }
+    if (!count) {
+        interact_say("There is no work for you yet.");
+        return;
+    }
+    mem_zero(&how, sizeof(how));
+    if (!travel_town_here(g_cam, &how.region, &how.index, &x, &z, &how.giver_block, &how.giver_record)) {
+        return;
+    }
+    how.giver_faction = g_talk_faction;
+    how.guild = g_guild->id;
+    how.rank = member ? rank : 0;
+    f = factionfile_open() ? faction_find(g_guild->id) : 0;
+    how.power = f ? f->power : 50;
+    r = standing_region(how.region);
+    how.prices = r ? r->prices : 1000;
+    how.seed = (unsigned)combat_roll(0x7fff) * 65599u + (unsigned)clock_day();
+    slot = quest_start(&g_player, candidates[combat_roll(count)], &how, ills_now(clock_day(), clock_minute()));
+    if (slot < 0) {
+        interact_say("There is no work for you now.");
+        return;
+    }
+    quest_say(slot, QUEST_SAY_OFFER);
+    quest_say(slot, QUEST_SAY_ACCEPTED);
 }
 
 /* A skill picked off training's list: paid, three hours pass, and it is used 10 to 20 times over. */
@@ -1548,6 +1661,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
             ills_new_game();
             lodging_new_game();
             guild_new_game();
+            quest_new_game();
             bank_set_ship(BANK_SHIP_NONE);
             automap_clear();
             screens_open_create();
@@ -1783,6 +1897,19 @@ int game_frame(Camera *cam, const Input *in, float dt)
             /* Each disease's day, an infection's dream or its curse (docs/game.md, Afflictions). */
             ills_said_day(ills_day(&g_player, clock_day()));
         }
+        /* What the quests say, a line at a time on the screen and whole in the log (a message box is to come). */
+        {
+            char line[512];
+            int k;
+
+            if (quest_take_message(line, (int)sizeof(line))) {
+                for (k = 0; line[k]; k++) {
+                    line[k] = line[k] == '\n' ? ' ' : line[k];
+                }
+                log_print(LOG_PRINT, "%s", line);
+                interact_say(line);
+            }
+        }
         if (court_pending()) {
             screens_open_court(&g_player);
             screen_over_play();
@@ -1833,6 +1960,8 @@ int game_frame(Camera *cam, const Input *in, float dt)
                     break;
                 }
                 now = g_day_zero * 1440 + g_last_minute;
+                /* A quest's timers run out by the minute. */
+                quest_tick(&g_player, now);
                 how = ills_minute(&g_player, now, in_sun, in_holy, full_moon);
                 if (how & ILLS_DIED) {
                     interact_say(in_sun ? "The sun has burnt you to ash." : "You burn to death on holy ground.");

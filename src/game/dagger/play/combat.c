@@ -1,5 +1,7 @@
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/ills.h"
+#include "game/dagger/play/quest.h"
+#include "game/dagger/places/travel.h"
 #include "engine/scene/clock.h"
 #include "game/dagger/play/foes.h"
 #include "game/dagger/play/loot.h"
@@ -612,6 +614,16 @@ static void strike_one(Character *pc, Item *weapon, int swing, Entity *e, const 
         row->game[COMBAT_KEEP_LEVEL] = (df_u8)(pc->level > 255 ? 255 : pc->level);
         lay_down(e);
         sfx_at(SND_BODY_FALL, e->x, e->y, e->z);
+        /* A creature a quest wants dead, in the dungeon it was put in, counts (quest.c). */
+        {
+            TravelWhere here;
+            int origin[2];
+
+            travel_here(&here, origin);
+            if (here.kind == TRAVEL_DUNGEON) {
+                quest_killed(0, kind->id, here.region, here.index, ills_now(clock_day(), clock_minute()));
+            }
+        }
     } else {
         flinch(e);
         foes_knock(e, feet, combat_knock_speed(b.damage, kind->weight));
