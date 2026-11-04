@@ -74,6 +74,55 @@ GFALL's loop, once the game is running:
 A passage says where it will lead, and a person that talk comes later, through the game's use handler (`interact_set_handler`). The pictures' room on the card is 256 KB (`GAME_PICTURE_KB`), set before the first place.
 
 
+## The wider world (P10, first slice built: the travel map)
+
+Classic's travel map and its fast journeys, on Daggerfall Unity's numbers and classic's own pictures.
+
+### What the map knows
+`play/atlas.c`: a bit for each of the map's 15251 places. A new game knows what classic's map shows from the start: bit 30 of each place's MAPTABLE word, DFU's Discovered, which is 11199 of them (`worldmap_location_info`). A place is learnt when the player stands on its pixel of the world, or arrives there. The game's own block; a save's `DISC` chunk holds only the words that differ from a new game's.
+
+### The map (`play/travelmap.c`)
+- **The world:** `TRAV0I00.IMG`. The province under the pointer is named from `TRAV0I01.IMG`, whose index less 128 is the region; a click opens its map.
+- **A province:** `FMAP0I##.IMG`, the panel at (0, 12). DFU's table gives each map's world pixel at the panel's top left. Regions 0, 1 and 16 are two or four screens, with arrows between them.
+  - Betony's is drawn four times larger. Its corner, (82, 244), is fitted to the island: DFU's comes with hover offsets in another form. Every known place of every one-screen province is tested to land on its panel.
+  - Known places are one pixel each, coloured by type (DFU's indices). The four filters hide dungeons, temples, homes and towns.
+  - A cross marks the player's pixel. "I'm at" brings back the player's province.
+  - Find takes a typed name and goes to the first known place it begins, or says there is none (TEXT.RSC 13).
+- **A click on a place** asks (TEXT.RSC 31, `%tcn` the place). Yes opens the journey's popup (`TRAV0I04.IMG`): cautious or reckless, foot or ship, inns or camping, the gold, the trip's cost and its days. Begin counts the days down a twentieth of a second each, then goes. Too little gold says so (454).
+- **Palettes:** the maps are under `FMAP_PAL.COL`, the popup, the scroll and the font under `ART_PAL.COL`. One screen is one picture under one palette, so what is drawn in the art palette is mapped to the map's nearest colour where it lies: the popup's rectangle whole, and in the scroll only the pixels it changed, so its burnt edges keep the map under them.
+
+### A journey (`play/journey.c`, DFU's TravelTimeCalculator)
+- **The path:** a line of map pixels, a step along the longer axis.
+- **Land:** each pixel is `((102 x transport) >> 8) x (512 - ease) >> 8` minutes. Transport is foot 256, horse 128, cart 192. The ease comes from the climate's terrain row: 240, 220, 200, 200, 230, 250.
+- **Sea:** 51 minutes a pixel by ship, 255 without one.
+- **Camping and recklessness:** camping out is 300/256 of each pixel; reckless halves the whole.
+- **Gold:** an inn is 5 a night of land plus the first. A ship's fare is 25 x (sea pixels / 24 + 1).
+- **Arriving:** the clock moves on by the journey. A cautious traveller arrives whole and in daylight: before 07:10 waits for it, after 17:00 waits for the next morning's.
+  - The minutes on the road are not tired one by one afterwards (`g_last_minute`).
+  - The player lands on a town's walkable cell nearest its middle. A dungeon's outside (labyrinth, keep, ruin, graveyard, coven) is landed on by its way down (`travel_go_to_place`).
+- **When it opens:** the map key (`INPUT_MAP`, M) or the HUD's map button, outdoors only. In a dungeon or a building it says the automap is not built yet.
+
+Tested on the host (`check_wider_world`):
+- the sums by hand: woodland on foot, recklessly, camping and on a horse, the sea by ship and swimming, a diagonal's steps, and arrivals reckless, before light and after 17:00;
+- the map's 11199 known places, one learnt and kept through a save;
+- every province's places on its map;
+- by clicks: the world, Daggerfall's province picked by its mask, Daggerfall's dot named and chosen, yes, reckless, on foot, the countdown, and the journey chosen at the sums. Sentinel to Daggerfall comes to 17 days and 45 gold.
+- `build/travel0..3.ppm` are for a look.
+
+**Not yet:**
+- horses, carts and ships to own;
+- the automap;
+- Find's list of several matches;
+- the identify flash;
+- talk's marking places on the map;
+- clicking a neighbouring province from a province's map;
+- the guilds' faster travel;
+- holidays;
+- diseases;
+- lycanthropy and vampirism.
+
+The journey's numbers are in `journey.c`, not MAIN.DAT, as P9's talk tables are.
+
 ## People (built: P9)
 
 Everything a person does for the player, on Daggerfall Unity's numbers, with classic's own pictures and TEXT.RSC's words, read at run time and never copied.
@@ -713,13 +762,14 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Rest | an encounter wakes a sleeper, not a new creature; a class with no spell point regeneration | later, P12-b |
 | Items | clothing, jewellery, ingredients, books, potions, maps, and the screen's other tabs | P12-b, later |
 | Items | clothing's dyes | with clothing |
-| Inventory | the Wagon button (P10), the Use button (P12-b) | as named |
+| Inventory | the Wagon button (P10, with carts), the Use button (P12-b) | as named |
 | Inventory | two weapons: the doll shows the one in use, as the pictures have one weapon hand; classic's own way not found | later |
 | Inventory | the info box's lines are ours, not TEXT.RSC's | later |
 | Loot | the other columns of `LOOT` wait for their items | P12-b, later |
 | Loot | a body or a heap takes nothing put on it (a choice, see What can be searched) | - |
 | Places | treasure and piles only in a dungeon streamed by block; a town's doors not keyed; the sea can be walked on | later |
-| Player | the completed classic HUD bar needs target acceptance; map and magic buttons await their systems | P9-b, P10, P12-b |
+| World | horses, carts and ships to own; the automap; the travel map's Find list, identify flash and neighbouring provinces; places marked by talk; guild travel; holidays, diseases, lycanthropy and vampirism | P10 |
+| Player | the completed classic HUD bar needs target acceptance; the map button opens the travel map outdoors, the automap and magic buttons await their systems | P9-b, P10, P12-b |
 | Player | target acceptance/tuning of the implemented classic cursor controls | P9-c |
 | People | Steal mode, pickpocketing and the deferred theft mechanics | P12-a |
 | Creation | a custom class's special advantages, disadvantages and reputations; the Help button | P12-b, later |
@@ -749,6 +799,7 @@ The travel map comes later, with `worldmap.c`'s pixels and the location index: p
 
 | Chunk | Holds |
 | --- | --- |
+| `DISC` | the places the map knows that a new game's does not |
 | `GAME` | which place and the way back out of its door, the feet in that place's frame with the stream's origin that frame has, the movement facing and independent Alt view offsets (P9-c), the clock's minute and day, the day the game began, the seed, the gold, what is worn |
 | `CHAR` | the sheet, whole: skill uses and the level's count among it |
 | `PACK` | what is carried, material, variant and condition among it |
@@ -828,7 +879,7 @@ The first goal is a **prototype**: from classic's start menu, Privateer's Hold p
 | P9 | People and assault (built, host-tested, not run on the target; names, and the court for a street killing, not yet): talk from TEXT.RSC, shops, banks, factions, reputation, law; a street citizen at 1 health, a blow at 100 that the weapon's damage kills, blood at the body, every loaded guard hostile and still wanted after a building, talk refused while hostile, and a killed guard's corpse to loot; `BLDG`, `CRIM` | GAME | a shop bought from, a bank used, a way asked in town, a citizen killed and the guards on them |
 | P9-b | Classic HUD bar (built, host-tested; pointer and target acceptance pending): selected character's head and blue backing, live vitals, clickable buttons, four mode icons and compact compass; Tab frees the pointer, the weapon button sheathes | GAME, ENGINE's input and pictures | the selected character's head and vitals shown correctly, available controls usable by pointer, across saves and place changes |
 | P9-c | Classic dungeon controls without mouse look (implemented, host-tested): free pointer, cursor/keyboard movement and turning, pointed use, right-button gestures, Alt look and saved scheme; target acceptance pending | GAME, ENGINE's input | the hold navigated and fought through, doors and HUD used, and a save resumed without continuous mouse look |
-| P10 | The wider world: travel map before magic, horse and cart, holidays, diseases, lycanthropy and vampirism | GAME | |
+| P10 | The wider world (first slice built, host-tested, not run on the target: the travel map, its journeys and the places known): travel map before magic, horse and cart, holidays, diseases, lycanthropy and vampirism | GAME | a journey from the map to a town and a dungeon, and back after a save |
 | P11 | Quests: the QBN interpreter, guild quests | GAME | |
 | P12-a | Steal and theft (planned): classic Steal mode, pickpocketing, deferred theft paths, skill checks, detection and law consequences; build on P9's shoplifting and lockpicking | GAME | theft and pickpocketing can succeed or be detected, with the right items and legal consequences kept and tested |
 | P12-b | Magic: spells, effects, spellbook, casting, potions, enchantments | GAME | |

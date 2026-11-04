@@ -1,6 +1,9 @@
 #include "game/dagger/play/game.h"
 #include "game/dagger/play/control.h"
 #include "game/dagger/play/bag.h"
+#include "game/dagger/play/atlas.h"
+#include "game/dagger/play/journey.h"
+#include "game/dagger/play/travelmap.h"
 #include "game/dagger/play/bank.h"
 #include "game/dagger/play/court.h"
 #include "game/dagger/play/service.h"
@@ -30,6 +33,7 @@
 #include "game/dagger/places/people.h"
 #include "game/dagger/places/town.h"
 #include "game/dagger/formats/faces.h"
+#include "game/dagger/formats/worldmap.h"
 #include "game/dagger/tables/commerce.h"
 #include "game/dagger/places/dunstream.h"
 #include "engine/core/mem.h"
@@ -104,6 +108,59 @@ static void screen_over_play(void)
     weapon_cancel();
     gfx_set_pause(screens_is_open());
     apply_pointer(screens_is_open());
+}
+
+static float game_minutes(void);
+
+/* The map: outdoors, the travel map (P10); in a dungeon or a building, classic's automap, not built yet. */
+static void map_over_play(void)
+{
+    int px;
+    int py;
+
+    if (!travel_pixel(g_cam, &px, &py)) {
+        interact_say("The automap is not available yet.");
+        return;
+    }
+    screens_open_travel(&g_player, px, py, travel_region());
+    screen_over_play();
+}
+
+/*
+ * The travel map's journey made: paid for, the days passed, the player rested
+ * if it was cautious, the place known, and on the way there. 0 when there was
+ * none to make.
+ */
+static int journey_made(void)
+{
+    Journey j;
+    int region;
+    int index;
+    int cautious;
+    int day;
+    float minute;
+    int px;
+    int py;
+    int type;
+
+    travelmap_chosen(&region, &index, &j, &cautious);
+    if (region < 0 || !worldmap_pixel_of(region, index, &px, &py)) {
+        return 0;
+    }
+    g_player.pack.gold -= (df_u32)(j.cost > (int)g_player.pack.gold ? (int)g_player.pack.gold : j.cost);
+    journey_arrival(clock_day(), clock_minute(), j.minutes, cautious, &day, &minute);
+    clock_set_day(day);
+    clock_set_minute(minute);
+    /* The road's own wear is the journey's choice: the minutes it took are not tired again one by one. */
+    g_last_minute = df_ifloor(game_minutes());
+    if (cautious) {
+        character_rest_full(&g_player.sheet);
+    }
+    atlas_learn(worldmap_location_id(px, py));
+    type = worldmap_location_type(px, py);
+    return travel_go_to_place(region, index, type == WORLDMAP_DUNGEON_LABYRINTH || type == WORLDMAP_DUNGEON_KEEP
+                                                 || type == WORLDMAP_DUNGEON_RUIN || type == WORLDMAP_GRAVEYARD
+                                                 || type == WORLDMAP_COVEN);
 }
 
 /* The hour, for a building's opening. */
@@ -502,7 +559,7 @@ static void hud_command(int action)
     /* The original art stays visible. Its future features do not silently
      * perform another action; their screens are connected in P10/P12. */
     case HUDBAR_MAP:
-        interact_say("The map is not available yet.");
+        map_over_play();
         break;
     case HUDBAR_SPELLBOOK:
         interact_say("The spellbook is not available yet.");
@@ -776,8 +833,9 @@ int game_frame(Camera *cam, const Input *in, float dt)
             }
         }
         if (asked == MENU_START) {
-            /* Before creation: its answers move reputations. */
+            /* Before creation: its answers move reputations. What the map shows is a new game's too. */
             standing_new_game(prof_now());
+            atlas_new_game();
             screens_open_create();
             /* Its pictures missing: the default character starts, as before creation was built. */
             if (!screens_is_open()) {
@@ -816,6 +874,12 @@ int game_frame(Camera *cam, const Input *in, float dt)
             service_chosen();
             prof_end(PROF_PLAY);
             return GAME_GO_ON;
+        }
+        if (asked == SCREENS_JOURNEY) {
+            gfx_set_pause(0);
+            apply_pointer(0);
+            prof_end(PROF_PLAY);
+            return journey_made() ? GAME_TRAVEL : GAME_GO_ON;
         }
         if (asked == SCREENS_SEEN) {
             /* Seen stealing: the shop's region's crime, the court next. */
@@ -901,6 +965,8 @@ int game_frame(Camera *cam, const Input *in, float dt)
         bag_over_play(0);
     } else if ((in->pressed & INPUT_BIT(INPUT_CHARACTER)) && !gfx_paused()) {
         sheet_over_play();
+    } else if ((in->pressed & INPUT_BIT(INPUT_MAP)) && !gfx_paused()) {
+        map_over_play();
     } else if ((in->pressed & INPUT_BIT(INPUT_REST)) && !gfx_paused()) {
         rest_over_play();
     } else if ((in->pressed & INPUT_BIT(INPUT_SWAP_HANDS)) && !gfx_paused()) {
@@ -1082,6 +1148,15 @@ int game_frame(Camera *cam, const Input *in, float dt)
             float shift_z;
 
             travel_update(cam, travel_radius(gfx_far()), gfx_stream_budget(GAME_STREAM_MS), dt, &shift_x, &shift_z);
+            /* A place walked onto in the world is one the map knows now. */
+            {
+                int px;
+                int py;
+
+                if (travel_pixel(cam, &px, &py)) {
+                    atlas_learn(worldmap_location_id(px, py));
+                }
+            }
             /* A stream's origin moved: it moved the scene and the camera, the game moves what it keeps itself. */
             if (shift_x != 0.0f || shift_z != 0.0f) {
                 player_shift(&g_player, shift_x, shift_z);

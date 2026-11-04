@@ -999,6 +999,29 @@ static int ext_list_visit(const df_u8 *rec, df_u32 size, int index, void *user)
     return 1;
 }
 
+int exterior_list_region(int region, DunRef *out, int cap)
+{
+    Bsa *maps;
+    struct ExtWalk walk;
+
+    if (region < 0 || region >= DUN_REGIONS) {
+        return 0;
+    }
+    maps = bsa_open(MAP_NAME);
+    if (!maps) {
+        return 0;
+    }
+    walk.out = out;
+    walk.cap = cap;
+    walk.n = 0;
+    walk.src.names = 0;
+    walk.src.name_bytes = 0;
+    walk.src.region = region;
+    each_exterior(maps, region, &walk.src, ext_list_visit, &walk);
+    bsa_close(maps);
+    return walk.n;
+}
+
 int exterior_list(DunRef *out, int cap)
 {
     Bsa *maps;

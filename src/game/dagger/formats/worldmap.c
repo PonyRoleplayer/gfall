@@ -34,6 +34,10 @@ static df_u8 *g_region;
 static df_u16 *g_index;
 /* Each location's type (WORLDMAP_TOWN_CITY ...), from bits 25..29 of its MAPTABLE word at +4. */
 static df_u8 *g_type;
+/* Each location's pixel, and 1 where its MAPTABLE word's bit 30 says the player knows of it from the start. */
+static df_u16 *g_px;
+static df_u16 *g_py;
+static df_u8 *g_known;
 static int g_nloc;
 
 static int clampx(int x)
@@ -131,7 +135,10 @@ static int read_locations(void)
     g_region = (df_u8 *)mem_keep((df_u32)(cap > 0 ? cap : 1));
     g_index = (df_u16 *)mem_keep((df_u32)(cap > 0 ? cap : 1) * 2u);
     g_type = (df_u8 *)mem_keep((df_u32)(cap > 0 ? cap : 1));
-    if (!g_region || !g_index || !g_type || cap > 65535) {
+    g_px = (df_u16 *)mem_keep((df_u32)(cap > 0 ? cap : 1) * 2u);
+    g_py = (df_u16 *)mem_keep((df_u32)(cap > 0 ? cap : 1) * 2u);
+    g_known = (df_u8 *)mem_keep((df_u32)(cap > 0 ? cap : 1));
+    if (!g_region || !g_index || !g_type || !g_px || !g_py || !g_known || cap > 65535) {
         bsa_close(maps);
         return 0;
     }
@@ -174,6 +181,9 @@ static int read_locations(void)
             g_region[g_nloc] = (df_u8)region;
             g_index[g_nloc] = (df_u16)i;
             g_type[g_nloc] = (df_u8)((word << 2) >> 27);
+            g_px[g_nloc] = (df_u16)x;
+            g_py[g_nloc] = (df_u16)y;
+            g_known[g_nloc] = (df_u8)((word >> 30) & 1u);
             g_loc[y * WORLDMAP_W + x] = (df_u16)(g_nloc + 1);
             g_nloc++;
         }
@@ -350,4 +360,26 @@ int worldmap_pixel_of(int region, int index, int *px, int *py)
 int worldmap_locations(void)
 {
     return g_ok ? g_nloc : 0;
+}
+
+int worldmap_location_info(int k, int *px, int *py, int *region, int *index, int *type, int *known)
+{
+    if (!g_ok || k < 0 || k >= g_nloc) {
+        return 0;
+    }
+    *px = g_px[k];
+    *py = g_py[k];
+    *region = g_region[k];
+    *index = g_index[k];
+    *type = g_type[k];
+    *known = g_known[k];
+    return 1;
+}
+
+int worldmap_location_id(int px, int py)
+{
+    if (!g_ok || px < 0 || py < 0 || px >= WORLDMAP_W || py >= WORLDMAP_H) {
+        return -1;
+    }
+    return (int)g_loc[py * WORLDMAP_W + px] - 1;
 }

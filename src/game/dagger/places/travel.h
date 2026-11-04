@@ -74,6 +74,10 @@ void travel_start_game(void);
  * the map does not have.
  */
 int travel_go_to_town(int region, int index);
+/* The same from the travel map: a dungeon's outside is landed on by its way down, as a hold first left is. */
+int travel_go_to_place(int region, int index, int by_way_down);
+/* The world pixel under cam, in the world; 0 elsewhere. */
+int travel_pixel(const Camera *cam, int *px, int *py);
 /* The next place is a save's: where, the feet as saved and the stream's origin then (chunks), the way it looked. */
 void travel_from_save(const TravelWhere *where, const float *feet, const int *origin, float yaw, float pitch);
 /*

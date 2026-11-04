@@ -135,7 +135,7 @@ static void say_macro(const char *macro, char *out, int cap, int depth)
         text = w->city;
     } else if (df_eq(macro, "rn") || df_eq(macro, "reg")) {
         text = w->region;
-    } else if (df_eq(macro, "cpn")) {
+    } else if (df_eq(macro, "cpn") || df_eq(macro, "tcn")) {
         text = w->place;
     } else if (df_eq(macro, "cri")) {
         text = w->crime;
@@ -195,7 +195,7 @@ static int macro_known(const char *macro)
 {
     static const char *const known[] = {
         "pcn", "pc", "pcf", "pcnf", "ra", "hnr", "pct", "t", "oth", "1com", "2com", "n", "key", "loc",
-        "di", "hnt", "hnt2", "cn", "rn", "reg", "cpn", "cri", "pen", "a", "dip", "fnpc", "fpc"
+        "di", "hnt", "hnt2", "cn", "rn", "reg", "cpn", "tcn", "cri", "pen", "a", "dip", "fnpc", "fpc"
     };
     int i;
 

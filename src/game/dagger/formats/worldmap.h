@@ -62,5 +62,13 @@ int worldmap_location_type(int px, int py);
 int worldmap_pixel_of(int region, int index, int *px, int *py);
 /* Locations read. */
 int worldmap_locations(void);
+/*
+ * Location number k (0..worldmap_locations()-1): its pixel, region, MAPPITEM
+ * index, type, and 1 when classic's map shows it from the start (its MAPTABLE
+ * word's bit 30, DFU's Discovered). 0 past the list.
+ */
+int worldmap_location_info(int k, int *px, int *py, int *region, int *index, int *type, int *known);
+/* The number of the location on a pixel; -1 for none. */
+int worldmap_location_id(int px, int py);
 
 #endif

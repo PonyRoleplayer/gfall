@@ -24,7 +24,7 @@ typedef struct Words {
     /* The way there, in a compass word (%di), and the hint made of it (%hnt). */
     const char *direction;
     const char *hint;
-    /* The town, the region and the shop or house this is in (%cn, %rn, %cpn). */
+    /* The town, the region and the shop or house this is in (%cn, %rn, %cpn); a journey's end (%tcn) is the place too. */
     const char *city;
     const char *region;
     const char *place;

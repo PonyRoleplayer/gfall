@@ -86,6 +86,27 @@ int travel_go_to_town(int region, int index)
     return 1;
 }
 
+int travel_go_to_place(int region, int index, int by_way_down)
+{
+    if (!travel_go_to_town(region, index)) {
+        return 0;
+    }
+    if (by_way_down) {
+        g_land = LAND_PASSAGE;
+        g_land_what = DOOR_DUNGEON;
+    }
+    return 1;
+}
+
+int travel_pixel(const Camera *cam, int *px, int *py)
+{
+    if (!g_open || g_here.kind != TRAVEL_WORLD) {
+        return 0;
+    }
+    wild_here(cam, px, py);
+    return 1;
+}
+
 void travel_from_save(const TravelWhere *where, const float *feet, const int *origin, float yaw, float pitch)
 {
     g_next = *where;

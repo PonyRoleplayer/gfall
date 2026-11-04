@@ -21,6 +21,7 @@
  *   FACT  each faction whose reputation has moved
  *   SOCL  the social groups' reputations and the lasting bonus
  *   REGN  each region's law and bank (standing.h)
+ *   DISC  the places the map knows that a new game's does not (atlas.h)
  *
  * A body's and a heap's things are not written: they come again from the
  * seed and their keys (loot.h), and their keep rows say what was taken.

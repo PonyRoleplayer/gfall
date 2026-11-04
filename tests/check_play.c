@@ -32,6 +32,10 @@
 #include "game/dagger/play/shop.h"
 #include "game/dagger/play/bank.h"
 #include "game/dagger/play/court.h"
+#include "game/dagger/play/atlas.h"
+#include "game/dagger/play/journey.h"
+#include "game/dagger/play/travelmap.h"
+#include "game/dagger/formats/climate.h"
 #include "game/dagger/places/wild.h"
 #include "game/dagger/formats/worldmap.h"
 #include "game/dagger/formats/dungeon.h"
@@ -4172,6 +4176,29 @@ static void write_screen(const char *path, const df_u8 *pixels)
     fclose(f);
 }
 
+/* As write_screen, under the travel map's palette when map is 1. */
+static void write_screen_with(const char *path, const df_u8 *pixels, int map)
+{
+    static df_u8 rgb[768];
+    FILE *f;
+    int i;
+
+    if (map) {
+        travelmap_palette(rgb);
+    } else if (!img_art_palette(rgb)) {
+        return;
+    }
+    f = fopen(path, "wb");
+    if (!f) {
+        return;
+    }
+    fprintf(f, "P6\n320 200\n255\n");
+    for (i = 0; i < 320 * 200; i++) {
+        fwrite(&rgb[pixels[i] * 3], 1, 3, f);
+    }
+    fclose(f);
+}
+
 /* The factions' file, and reputation spreading through it, by hand. */
 static void check_standing(void)
 {
@@ -5684,6 +5711,232 @@ static void check_citizen(void)
 
 void check_menu(void);
 
+/* A world all woodland, and one all sea: the journey's sums worked by hand. */
+static int all_woods(int px, int py)
+{
+    (void)px;
+    (void)py;
+    return CLIMATE_WOODLANDS;
+}
+
+static int all_sea(int px, int py)
+{
+    (void)px;
+    (void)py;
+    return CLIMATE_OCEAN;
+}
+
+/* The journey's sums by hand, then the travel map by clicks, then what the map knows through a save. */
+static void check_wider_world(void)
+{
+    Journey j;
+    int day;
+    float minute;
+
+    /*
+     * Woodland is the climate past the ocean by 8: terrain row 5, ease 250. On foot
+     * ((102 x 256) >> 8) x (512 - 250) >> 8 = 102 x 262 >> 8 = 104 a pixel; ten are 1040.
+     */
+    journey_plan(100, 100, 110, 100, 0, 1, 0, JOURNEY_FOOT, all_woods, &j);
+    check_expect(j.minutes == 1040 && j.hours == 18 && j.days == 1 && j.sea_pixels == 0, "journey: ten woodland pixels on foot");
+    /* 18 hours of land at inns is no whole night past the first: 5 gold. */
+    check_expect(j.inn_gold == 5 && j.fare == 0 && j.cost == 5, "journey: one night's inn");
+    journey_plan(100, 100, 110, 100, 1, 1, 0, JOURNEY_FOOT, all_woods, &j);
+    check_expect(j.minutes == 520, "journey: reckless is half");
+    /* Camping: (300 x 104) >> 8 = 121 a pixel, no inn paid. */
+    journey_plan(100, 100, 110, 100, 0, 0, 0, JOURNEY_FOOT, all_woods, &j);
+    check_expect(j.minutes == 1210 && j.inn_gold == 0, "journey: camping");
+    /* A horse: ((102 x 128) >> 8) x 262 >> 8 = 51 x 262 >> 8 = 52 a pixel. */
+    journey_plan(100, 100, 110, 100, 0, 1, 0, JOURNEY_HORSE, all_woods, &j);
+    check_expect(j.minutes == 520, "journey: a horse");
+    /* Thirty sea pixels by ship: 51 each, 1530 minutes, 26 hours; the fare 25 x (30 / 24 + 1) = 50; the inn's first night. */
+    journey_plan(100, 100, 130, 100, 0, 1, 1, JOURNEY_FOOT, all_sea, &j);
+    check_expect(j.minutes == 1530 && j.sea_pixels == 30 && j.fare == 50 && j.inn_gold == 5 && j.cost == 55, "journey: by sea");
+    journey_plan(100, 100, 130, 100, 0, 1, 0, JOURNEY_FOOT, all_sea, &j);
+    check_expect(j.minutes == 30 * 255 && j.fare == 0, "journey: the sea without a ship");
+    /* The longer axis sets the steps: 40 across and 10 down is 40 pixels. */
+    journey_plan(0, 0, 40, 10, 0, 1, 0, JOURNEY_FOOT, all_woods, &j);
+    check_expect(j.minutes == 40 * 104, "journey: a diagonal's steps");
+    /* Arrival: 10:00 and 1000 minutes is 02:40 the next day; cautious waits for 07:10. */
+    journey_arrival(10, 600.0f, 1000, 0, &day, &minute);
+    check_expect(day == 11 && minute == 160.0f, "journey: a reckless arrival");
+    journey_arrival(10, 600.0f, 1000, 1, &day, &minute);
+    check_expect(day == 11 && minute == 430.0f, "journey: a cautious arrival before light");
+    journey_arrival(10, 900.0f, 300, 1, &day, &minute);
+    check_expect(day == 11 && minute == 430.0f, "journey: a cautious arrival past 17:00");
+
+    /* The map knows classic's places from the start; one learnt stays, through a save. */
+    {
+        int n;
+        int k;
+        int known;
+        int unknown;
+        int px;
+        int py;
+        int region;
+        int index;
+        int type;
+        int start;
+
+        atlas_new_game();
+        n = worldmap_locations();
+        known = 0;
+        unknown = -1;
+        for (k = 0; k < n; k++) {
+            worldmap_location_info(k, &px, &py, &region, &index, &type, &start);
+            known += atlas_known(k);
+            if (!start && unknown < 0) {
+                unknown = k;
+            }
+        }
+        check_expect(n == 15251 && known == 11199 && unknown >= 0, "atlas: a new game knows classic's 11199 places");
+        atlas_learn(unknown);
+        check_expect(atlas_known(unknown) && atlas_changed_count() == 1, "atlas: a place learnt");
+        {
+            SaveState out;
+            SaveState in;
+            char path[260];
+
+            save_use_prefix(SAVE_TEST_PREFIX);
+            save_use_slot(4);
+            keep_clear();
+            pile_new_game();
+            mem_zero(&out, sizeof(out));
+            df_copy(out.name, "Atlas", SAVE_NAME);
+            character_new(&out.sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Ada");
+            inventory_clear(&out.pack);
+            check_expect(save_write(&out), "atlas: a save did not write");
+            atlas_new_game();
+            check_expect(!atlas_known(unknown), "atlas: a new game knows the learnt place");
+            check_expect(save_read(&in) && atlas_known(unknown) && atlas_changed_count() == 1, "atlas: the learnt place did not come back");
+            check_expect(fs_beside(path, (int)sizeof(path), "DATA\\TEST4.SAV") && remove(path) == 0, "atlas: the test's file did not go");
+        }
+        atlas_new_game();
+        /* Every known place of a one-screen province is on its map's panel: the maps' corners are right. */
+        {
+            int off;
+            int checked;
+
+            off = 0;
+            checked = 0;
+            for (k = 0; k < n; k++) {
+                int ox;
+                int oy;
+                int scale;
+                int x;
+                int y;
+
+                worldmap_location_info(k, &px, &py, &region, &index, &type, &start);
+                if (!start || !travelmap_region_origin(region, 0, &ox, &oy, &scale) || travelmap_region_origin(region, 1, &ox, &oy, &scale)) {
+                    continue;
+                }
+                travelmap_region_origin(region, 0, &ox, &oy, &scale);
+                x = (px - ox) * scale;
+                y = (py - oy) * scale;
+                checked++;
+                if (x < 0 || x >= 320 || y < 0 || y >= 160) {
+                    if (off < 6) {
+                        printf("travel map: region %d's place at %d %d is off its map, at %d %d\n", region, px, py, x, y);
+                    }
+                    off++;
+                }
+            }
+            check_expect(checked > 5000 && off == 0, "travel map: a province's places are off its map");
+        }
+    }
+
+    /* The map by clicks: the world, Daggerfall's province, Daggerfall's dot, yes, the popup, begin, the countdown. */
+    {
+        static const Rect begin = { 222, 98, 48, 10 };
+        static const Rect reckless = { 50, 61, 108, 9 };
+        static const Rect foot = { 163, 51, 108, 9 };
+        Player p;
+        Character sheet;
+        int px;
+        int py;
+        int sx;
+        int sy;
+        int region;
+        int index;
+        int cautious;
+        int k;
+        int dagger;
+        int ox;
+        int oy;
+        int scale;
+        int x;
+        int y;
+        int wy;
+        int found;
+        Journey made;
+
+        dagger = daggerfall_index();
+        character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Ada");
+        player_init(&p, &sheet);
+        p.pack.gold = 1000u;
+        worldmap_pixel_of(17, dagger, &px, &py);
+        /* From Sentinel's pixel: far enough for days of road. */
+        {
+            static DunRef rows[4096];
+            int n;
+            int i;
+
+            n = exterior_list_region(20, rows, 4096);
+            n = n > 4096 ? 4096 : n;
+            sx = px;
+            sy = py;
+            for (i = 0; i < n; i++) {
+                if (df_eq(rows[i].name, "Sentinel")) {
+                    worldmap_pixel_of(20, rows[i].index, &sx, &sy);
+                }
+            }
+        }
+        check_expect(travelmap_open(&p, sx, sy, 20), "travel map: it did not open");
+        travelmap_compose();
+        write_screen_with("build/travel0.ppm", travelmap_pixels(), 1);
+        /* The province picker: a point of the world's picture whose mask says Daggerfall. */
+        travelmap_region_origin(17, 0, &ox, &oy, &scale);
+        found = 0;
+        for (wy = 0; wy < 170 && !found; wy++) {
+            for (x = 0; x < 320 && !found; x++) {
+                travelmap_point(x, wy);
+                if (df_eq(travelmap_line(), "Daggerfall")) {
+                    travelmap_click(x, wy);
+                    found = travelmap_region() == 17;
+                }
+            }
+        }
+        check_expect(found, "travel map: Daggerfall's province not picked from the world");
+        travelmap_compose();
+        write_screen_with("build/travel1.ppm", travelmap_pixels(), 1);
+        x = (px - ox) * scale;
+        y = (py - oy) * scale + 12;
+        travelmap_point(x, y);
+        check_expect(df_eq(travelmap_line(), "Daggerfall"), "travel map: Daggerfall's dot is not named under the pointer");
+        travelmap_click(x, y);
+        k = travelmap_place();
+        check_expect(k == worldmap_location_id(px, py), "travel map: Daggerfall's dot is not the place chosen");
+        travelmap_compose();
+        write_screen_with("build/travel2.ppm", travelmap_pixels(), 1);
+        /* Yes: the popup. */
+        travelmap_click(104 + 4, 112 + 4);
+        travelmap_click(reckless.x + 2, reckless.y + 2);
+        travelmap_click(foot.x + 2, foot.y + 2);
+        travelmap_compose();
+        write_screen_with("build/travel3.ppm", travelmap_pixels(), 1);
+        travelmap_click(begin.x + 2, begin.y + 2);
+        for (k = 0; k < 1000 && travelmap_step(0.05f) != TRAVELMAP_GO; k++) {
+        }
+        check_expect(k < 1000, "travel map: the countdown never ended");
+        travelmap_chosen(&region, &index, &made, &cautious);
+        journey_plan(sx, sy, px, py, 1, 1, 0, JOURNEY_FOOT, 0, &j);
+        check_expect(region == 17 && index == dagger && !cautious && made.minutes == j.minutes && made.days > 1,
+                     "travel map: the journey is not to Daggerfall, reckless, on foot, at the sums");
+        printf("travel map: Sentinel to Daggerfall reckless on foot, %d days, %d gold; build/travel0..3.ppm\n", made.days, made.cost);
+        travelmap_close();
+    }
+}
+
 void check_play(void)
 {
     check_menu();
@@ -5732,6 +5985,7 @@ void check_play(void)
     check_people_in_town();
     check_citizen();
     check_senses();
+    check_wider_world();
     check_goto();
     check_standing_saved();
 }

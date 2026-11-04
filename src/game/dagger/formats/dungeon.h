@@ -82,6 +82,8 @@ int exterior_list(DunRef *out, int cap);
 
 /* One outdoor location. Blocks are RMB names on a width*height grid. */
 int exterior_load_at(int region, int index, Dungeon *out);
+/* One region's outdoor places, as exterior_list, in their MAPPITEM order: row i is index i. How many there are, which may be more than cap. */
+int exterior_list_region(int region, DunRef *out, int cap);
 /*
  * The two halves of a location, within one region: the index of the outside
  * whose number is exterior_id (a dungeon's Dungeon.exterior_id), and of the

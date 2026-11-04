@@ -2,6 +2,7 @@
 #include "game/dagger/play/bank.h"
 #include "game/dagger/play/court.h"
 #include "game/dagger/play/service.h"
+#include "game/dagger/play/travelmap.h"
 #include "game/dagger/play/bag.h"
 #include "game/dagger/play/create.h"
 #include "game/dagger/play/menu.h"
@@ -26,7 +27,8 @@ enum {
     OPEN_TALK,
     OPEN_SERVICE,
     OPEN_BANK,
-    OPEN_COURT
+    OPEN_COURT,
+    OPEN_TRAVEL
 };
 
 static int g_open;
@@ -74,6 +76,11 @@ static void send_screen(void)
     } else if (g_open == OPEN_COURT) {
         court_compose();
         pixels = court_pixels();
+    } else if (g_open == OPEN_TRAVEL) {
+        travelmap_compose();
+        pixels = travelmap_pixels();
+        /* The maps' own palette, FMAP_PAL.COL. */
+        travelmap_palette(g_rgb);
     } else {
         create_compose();
         pixels = create_pixels();
@@ -107,6 +114,8 @@ void screens_close(void)
         bank_close();
     } else if (g_open == OPEN_COURT) {
         court_close();
+    } else if (g_open == OPEN_TRAVEL) {
+        travelmap_close();
     }
     g_open = OPEN_NONE;
     if (g_pic) {
@@ -199,6 +208,14 @@ void screens_open_court(Player *p)
     input_key_pressed();
 }
 
+void screens_open_travel(Player *p, int px, int py, int region)
+{
+    screens_close();
+    g_player = p;
+    opened(OPEN_TRAVEL, travelmap_open(p, px, py, region));
+    input_key_pressed();
+}
+
 void screens_open_slots(int saving)
 {
     screens_close();
@@ -272,6 +289,28 @@ static int service_frame(const Input *in)
         if (g_service_choice != SERVICE_STAY) {
             return SCREENS_SERVICE;
         }
+    }
+    return SCREENS_STAY;
+}
+
+/* A frame of the travel map: its pointer, keys and clicks, and a journey's countdown. */
+static int travel_frame(const Input *in, float dt)
+{
+    int vk;
+
+    travelmap_point(g_point_x, g_point_y);
+    vk = input_key_pressed();
+    if (vk && travelmap_key(vk) == TRAVELMAP_LEAVE) {
+        return SCREENS_CLOSED;
+    }
+    if ((in->pressed & INPUT_BIT(INPUT_ATTACK)) && travelmap_click(g_point_x, g_point_y) == TRAVELMAP_LEAVE) {
+        return SCREENS_CLOSED;
+    }
+    if (travelmap_step(dt) == TRAVELMAP_GO) {
+        return SCREENS_JOURNEY;
+    }
+    if (travelmap_changed()) {
+        send_screen();
     }
     return SCREENS_STAY;
 }
@@ -464,10 +503,12 @@ int screens_frame(const Input *in, float dt)
         asked = bank_frame(in);
     } else if (g_open == OPEN_COURT) {
         asked = court_frame(in, dt);
+    } else if (g_open == OPEN_TRAVEL) {
+        asked = travel_frame(in, dt);
     } else {
         asked = create_frame(in);
     }
-    if (asked == SCREENS_CLOSED || asked == SCREENS_SERVICE || asked == SCREENS_SEEN || asked == SCREENS_COURT_OVER) {
+    if (asked == SCREENS_CLOSED || asked == SCREENS_SERVICE || asked == SCREENS_SEEN || asked == SCREENS_COURT_OVER || asked == SCREENS_JOURNEY) {
         screens_close();
     }
     return asked;
@@ -486,7 +527,7 @@ void screens_draw(void)
         note = rest_note();
     } else if (g_open == OPEN_SLOTS) {
         note = slots_note();
-    } else if (g_open == OPEN_TALK || g_open == OPEN_SERVICE || g_open == OPEN_COURT) {
+    } else if (g_open == OPEN_TALK || g_open == OPEN_SERVICE || g_open == OPEN_COURT || g_open == OPEN_TRAVEL) {
         note = 0;
     } else if (g_open == OPEN_BANK) {
         note = bank_note();
