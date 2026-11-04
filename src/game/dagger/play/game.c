@@ -111,6 +111,7 @@ static void apply_pointer(int ui_up)
 /* A screen over the stilled world, with the pointer. */
 static void screen_over_play(void)
 {
+    ride_quiet();
     control_block(&g_control);
     weapon_cancel();
     gfx_set_pause(screens_is_open());
@@ -683,6 +684,7 @@ static void draw(void)
 /* A menu open over play stills the world and gives the mouse to the pointer; closed, back to play. */
 static void menu_over_play(int which)
 {
+    ride_quiet();
     control_block(&g_control);
     weapon_cancel();
     menu_open(which);
@@ -1277,6 +1279,9 @@ int game_frame(Camera *cam, const Input *in, float dt)
         sheet_over_play();
     } else if ((in->pressed & INPUT_BIT(INPUT_MAP)) && !gfx_paused()) {
         map_over_play();
+    } else if ((in->pressed & INPUT_BIT(INPUT_TRANSPORT)) && !gfx_paused()) {
+        /* The transport key is the HUD's transport button (T, as Daggerfall Unity). */
+        hud_command(HUDBAR_TRANSPORT);
     } else if ((in->pressed & INPUT_BIT(INPUT_TRAVEL_MAP)) && !gfx_paused()) {
         travel_map_over_play();
     } else if ((in->pressed & INPUT_BIT(INPUT_REST)) && !gfx_paused()) {
@@ -1483,6 +1488,25 @@ int game_frame(Camera *cam, const Input *in, float dt)
                     interact_say("That hurt.");
                 }
             }
+        }
+        /* A rider's picture steps and the hooves sound while the body moves on the ground (TransportManager). */
+        {
+            static float last[2];
+            float dx;
+            float dz;
+            float pace;
+            int moving;
+            int slow;
+
+            dx = g_player.body.feet[0] - last[0];
+            dz = g_player.body.feet[2] - last[1];
+            last[0] = g_player.body.feet[0];
+            last[1] = g_player.body.feet[2];
+            pace = dt > 0.0f ? df_sqrt(dx * dx + dz * dz) / dt : 0.0f;
+            moving = g_player.riding != RIDE_FOOT && g_player.body.grounded && pace > 1.0f && pace < 50000.0f;
+            slow = pace < 0.5f * rules_ride_speed(g_player.sheet.attribute[ATTR_SPEED], g_player.riding == RIDE_CART) * RULES_UNITS_PER_M;
+            g_ride_frame = ride_frame(moving, dt);
+            ride_sound(g_player.riding, moving, slow, dt);
         }
         player_camera(&g_player, cam);
         control_view(&g_control, cam);

@@ -144,7 +144,7 @@ void check_menu(void)
     mem_zero(&in,sizeof(in)); in.wheel=-100; menu_frame(&in);
     click_at(450,370); g_key='Z'; in.wheel=0; menu_frame(&in);
     click_at(200,445);
-    check_expect(g_bind[INPUT_TRAVEL_MAP]=='Z', "menu: last binding inaccessible after scrolling");
+    check_expect(g_bind[INPUT_TRANSPORT]=='Z', "menu: last binding inaccessible after scrolling");
     /* Audio defaults are independent of gameplay. Applying Gameplay must
      * not commit an audio draft left in another tab. */
     menu_open(MENU_NONE);

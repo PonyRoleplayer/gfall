@@ -314,6 +314,9 @@ static int put_file(void *ctx, const void *src, df_u32 n)
 /* The chunks, each built in the scratch heap current. 0 when one did not write or there was no memory. */
 static int write_chunks(const SaveState *state)
 {
+    static IllsSickRow sick[DISEASE_COUNT];
+    IllsCurseRow curse;
+    int nsick;
     SaveItemRow *wagon_rows;
     int nwagon;
     SaveSeenRow *seen;
@@ -396,6 +399,8 @@ static int write_chunks(const SaveState *state)
 
         wagon = wagon_contents();
         nwagon = wagon->count;
+        nsick = ills_sick_rows(sick);
+        ills_curse_row(&curse);
         wagon_rows = (SaveItemRow *)mem_alloc((df_u32)(nwagon + 1) * (df_u32)sizeof(SaveItemRow));
         if (!wagon_rows) {
             return 0;
@@ -467,7 +472,8 @@ static int write_chunks(const SaveState *state)
            && rec_put_rows(put_file, 0, &g_known_schema, known, nknown, 0, 0)
            && rec_put_rows(put_file, 0, &g_wagon_schema, wagon_rows, nwagon, 0, 0)
            && rec_put_rows(put_file, 0, &g_seen_schema, seen, nseen, 0, 0)
-           && rec_put_rows(put_file, 0, &ills_schema, ills(), 1, 0, 0)
+           && rec_put_rows(put_file, 0, &ills_sick_schema, sick, nsick, 0, 0)
+           && rec_put_rows(put_file, 0, &ills_curse_schema, &curse, 1, 0, 0)
            && (state->sheet.klass != CLASS_CUSTOM || !career_class(CLASS_CUSTOM)
                || rec_put_rows(put_file, 0, &class_schema, career_class(CLASS_CUSTOM), 1, 0, 0));
 }
@@ -539,7 +545,8 @@ static RecTable g_region_table;
 static RecTable g_known_table;
 static RecTable g_wagon_table;
 static RecTable g_seen_table;
-static RecTable g_ills_table;
+static RecTable g_sick_table;
+static RecTable g_curse_table;
 static RecTable g_head_table;
 /* A custom class, when the save's character has one: the same record as a class of the list. */
 static RecTable g_custom_table;
@@ -558,7 +565,7 @@ static int ready_table(RecTable *t, const RecSchema *s, int cap)
 static void merge_chunk(const RecChunk *c)
 {
     static RecTable *const tables[] = {
-        &g_head_table, &g_game_table, &g_sheet_table, &g_item_table, &g_keep_table, &g_pile_table, &g_faction_table, &g_social_table, &g_region_table, &g_known_table, &g_seen_table, &g_wagon_table, &g_ills_table, &g_custom_table
+        &g_head_table, &g_game_table, &g_sheet_table, &g_item_table, &g_keep_table, &g_pile_table, &g_faction_table, &g_social_table, &g_region_table, &g_known_table, &g_seen_table, &g_wagon_table, &g_sick_table, &g_curse_table, &g_custom_table
     };
     int i;
 
@@ -633,8 +640,11 @@ static void apply_tables(SaveState *state)
     }
     /* What ails the player: nothing, then the saved state. A save from before has none. */
     ills_new_game();
-    if (g_ills_table.count) {
-        ills_put((const Ills *)g_ills_table.rows);
+    for (i = 0; i < g_sick_table.count; i++) {
+        ills_put_sick(&((const IllsSickRow *)g_sick_table.rows)[i]);
+    }
+    if (g_curse_table.count) {
+        ills_put_curse((const IllsCurseRow *)g_curse_table.rows);
     }
     /* The automap's seen models: none, then the saved ones. A save from before has none. */
     automap_clear();
@@ -699,7 +709,8 @@ int save_read(SaveState *state)
         || !ready_table(&g_custom_table, &class_schema, 1) || !ready_table(&g_faction_table, &g_faction_schema, 64)
         || !ready_table(&g_social_table, &g_social_schema, 1) || !ready_table(&g_region_table, &g_region_schema, STANDING_REGIONS)
         || !ready_table(&g_known_table, &g_known_schema, 64) || !ready_table(&g_seen_table, &g_seen_schema, 1024)
-        || !ready_table(&g_wagon_table, &g_wagon_schema, INVENTORY_MAX) || !ready_table(&g_ills_table, &ills_schema, 1)) {
+        || !ready_table(&g_wagon_table, &g_wagon_schema, INVENTORY_MAX) || !ready_table(&g_sick_table, &ills_sick_schema, DISEASE_COUNT)
+        || !ready_table(&g_curse_table, &ills_curse_schema, 1)) {
         return 0;
     }
     /* The bytes in a heap of its own: a file read beside the program otherwise lives until exit. */

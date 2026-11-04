@@ -23,13 +23,24 @@
 
 static Ills g_ills;
 
-#define F(name, type, member) REC_FIELD(name, type, Ills, member)
-#define FA(name, type, member) REC_ARRAY(name, type, Ills, member)
-static const RecField g_ills_fields[] = {
+#define F(name, type, member) REC_FIELD(name, type, IllsSickRow, member)
+#define FA(name, type, member) REC_ARRAY(name, type, IllsSickRow, member)
+static const RecField g_sick_fields[] = {
     F("id", REC_UINT, id),
-    FA("days_left", REC_INT, days_left),
-    FA("felt_day", REC_INT, felt_day),
-    FA("drained", REC_INT, drained),
+    F("days_left", REC_INT, days_left),
+    F("felt_day", REC_INT, felt_day),
+    FA("drained", REC_INT, drained)
+};
+#undef F
+#undef FA
+const RecSchema ills_sick_schema = {
+    "SICK", "sick", g_sick_fields, (int)(sizeof(g_sick_fields) / sizeof(g_sick_fields[0])), (df_u16)sizeof(IllsSickRow), 0
+};
+
+#define F(name, type, member) REC_FIELD(name, type, IllsCurseRow, member)
+#define FA(name, type, member) REC_ARRAY(name, type, IllsCurseRow, member)
+static const RecField g_curse_fields[] = {
+    F("id", REC_UINT, id),
     F("infection", REC_INT, infection),
     F("infected_day", REC_INT, infected_day),
     F("dreamt", REC_INT, dreamt),
@@ -45,8 +56,8 @@ static const RecField g_ills_fields[] = {
 };
 #undef F
 #undef FA
-const RecSchema ills_schema = {
-    "ILLS", "ills", g_ills_fields, (int)(sizeof(g_ills_fields) / sizeof(g_ills_fields[0])), (df_u16)sizeof(Ills), 0
+const RecSchema ills_curse_schema = {
+    "CURS", "curse", g_curse_fields, (int)(sizeof(g_curse_fields) / sizeof(g_curse_fields[0])), (df_u16)sizeof(IllsCurseRow), 0
 };
 
 Ills *ills(void)
@@ -59,10 +70,85 @@ void ills_new_game(void)
     mem_zero(&g_ills, sizeof(g_ills));
 }
 
-void ills_put(const Ills *from)
+int ills_sick_rows(IllsSickRow *out)
 {
-    g_ills = *from;
-    g_ills.id = 0;
+    int n;
+    int i;
+    int a;
+
+    n = 0;
+    for (i = 0; i < DISEASE_COUNT; i++) {
+        if (!g_ills.days_left[i]) {
+            continue;
+        }
+        out[n].id = (df_u16)i;
+        out[n].days_left = g_ills.days_left[i];
+        out[n].felt_day = g_ills.felt_day[i];
+        for (a = 0; a < ATTR_COUNT; a++) {
+            out[n].drained[a] = g_ills.drained[i * ATTR_COUNT + a];
+        }
+        n++;
+    }
+    return n;
+}
+
+void ills_curse_row(IllsCurseRow *out)
+{
+    int i;
+
+    mem_zero(out, sizeof(*out));
+    out->infection = g_ills.infection;
+    out->infected_day = g_ills.infected_day;
+    out->dreamt = g_ills.dreamt;
+    out->infected_region = g_ills.infected_region;
+    out->curse = g_ills.curse;
+    out->clan = g_ills.clan;
+    out->beast = g_ills.beast;
+    out->last_kill = g_ills.last_kill;
+    out->last_morph = g_ills.last_morph;
+    out->last_fed = g_ills.last_fed;
+    for (i = 0; i < ATTR_COUNT; i++) {
+        out->boost[i] = g_ills.boost[i];
+    }
+    for (i = 0; i < SKILL_COUNT; i++) {
+        out->skill_boost[i] = g_ills.skill_boost[i];
+    }
+}
+
+void ills_put_sick(const IllsSickRow *row)
+{
+    int a;
+
+    if (row->id >= DISEASE_COUNT) {
+        return;
+    }
+    g_ills.days_left[row->id] = row->days_left;
+    g_ills.felt_day[row->id] = row->felt_day;
+    for (a = 0; a < ATTR_COUNT; a++) {
+        g_ills.drained[row->id * ATTR_COUNT + a] = row->drained[a];
+    }
+}
+
+void ills_put_curse(const IllsCurseRow *row)
+{
+    int i;
+
+    g_ills.infection = row->infection;
+    g_ills.infected_day = row->infected_day;
+    g_ills.dreamt = row->dreamt;
+    g_ills.infected_region = row->infected_region;
+    g_ills.curse = row->curse;
+    g_ills.clan = row->clan;
+    g_ills.beast = row->beast;
+    g_ills.last_kill = row->last_kill;
+    g_ills.last_morph = row->last_morph;
+    g_ills.last_fed = row->last_fed;
+    for (i = 0; i < ATTR_COUNT; i++) {
+        g_ills.boost[i] = row->boost[i];
+    }
+    for (i = 0; i < SKILL_COUNT; i++) {
+        g_ills.skill_boost[i] = row->skill_boost[i];
+    }
 }
 
 int ills_now(int day, float minute)
@@ -125,7 +211,7 @@ int ills_catch(const Character *c, int disease, int day)
     if (d->days_min == DISEASE_FOREVER) {
         g_ills.days_left[disease] = ILLS_FOREVER;
     } else {
-        g_ills.days_left[disease] = (df_i16)(d->days_min + combat_roll(d->days_max - d->days_min + 1));
+        g_ills.days_left[disease] = d->days_min + combat_roll(d->days_max - d->days_min + 1);
     }
     g_ills.felt_day[disease] = day;
     return 1;
@@ -261,7 +347,7 @@ static int symptoms(Player *p, int i)
     damage = d->damage_min + combat_roll(d->damage_max - d->damage_min + 1);
     for (a = 0; a < ATTR_COUNT; a++) {
         if (d->attribute[a]) {
-            g_ills.drained[i * ATTR_COUNT + a] = (signed char)(g_ills.drained[i * ATTR_COUNT + a] + add_attribute(c, a, -(int)d->attribute[a] * damage));
+            g_ills.drained[i * ATTR_COUNT + a] += add_attribute(c, a, -(int)d->attribute[a] * damage);
         }
     }
     character_attributes_changed(c);
@@ -292,18 +378,18 @@ static void bless(Character *c)
     if (g_ills.curse == ILL_VAMPIRE) {
         for (i = 0; i < ATTR_COUNT; i++) {
             if (i != ATTR_INTELLIGENCE || g_ills.clan == ILLS_CLAN_ANTHOTIS) {
-                g_ills.boost[i] = (signed char)(g_ills.boost[i] + add_attribute(c, i, 20));
+                g_ills.boost[i] += add_attribute(c, i, 20);
             }
         }
         for (i = 0; i < (int)(sizeof(vamp_skill) / sizeof(vamp_skill[0])); i++) {
-            g_ills.skill_boost[vamp_skill[i]] = (signed char)(g_ills.skill_boost[vamp_skill[i]] + add_skill(c, vamp_skill[i], 30));
+            g_ills.skill_boost[vamp_skill[i]] += add_skill(c, vamp_skill[i], 30);
         }
     } else {
         for (i = 0; i < (int)(sizeof(were_attr) / sizeof(were_attr[0])); i++) {
-            g_ills.boost[were_attr[i]] = (signed char)(g_ills.boost[were_attr[i]] + add_attribute(c, were_attr[i], 40));
+            g_ills.boost[were_attr[i]] += add_attribute(c, were_attr[i], 40);
         }
         for (i = 0; i < (int)(sizeof(were_skill) / sizeof(were_skill[0])); i++) {
-            g_ills.skill_boost[were_skill[i]] = (signed char)(g_ills.skill_boost[were_skill[i]] + add_skill(c, were_skill[i], 30));
+            g_ills.skill_boost[were_skill[i]] += add_skill(c, were_skill[i], 30);
         }
     }
     character_attributes_changed(c);

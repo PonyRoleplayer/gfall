@@ -34,6 +34,10 @@
 #define SND_BIRD_FAR 75
 #define SND_DOOR_CLOSE_FAR 76
 #define SND_HORSE 99
+/* Riding (DFU's TransportManager): a horse's hooves slow and at a pace, a cart's rattle. */
+#define SND_HORSE_CLOP 97
+#define SND_HORSE_CLOP_PACE 298
+#define SND_HORSE_AND_CART 104
 #define SND_DOG 100
 #define SND_CAT 101
 #define SND_PIG 102

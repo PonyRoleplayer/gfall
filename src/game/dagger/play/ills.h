@@ -28,7 +28,8 @@
  * - A vampire burns in the sun and in temples, 12 health each four minutes;
  *   unfed for a day, they cannot rest; by day, they cannot travel.
  *
- * The state is the game's one, saved in its own chunk (ILLS).
+ * The state is the game's one, saved as rows: SICK a row per disease had, CURS
+ * one row of the rest.
  */
 
 /* An infection or a curse: what it is. */
@@ -45,40 +46,66 @@ enum {
 #define ILLS_CLAN_LYREZI 153
 #define ILLS_CLAN_ANTHOTIS 157
 
-/* One row of a record file, under its 512 bytes: what fits a byte is a byte. */
 typedef struct Ills {
-    df_u16 id;
     /* Each disease's days of symptoms left, ILLS_FOREVER for until cured; 0 when not had. */
-    df_i16 days_left[DISEASE_COUNT];
+    int days_left[DISEASE_COUNT];
     /* The day each was caught, then the last day it was felt. */
-    df_i32 felt_day[DISEASE_COUNT];
+    int felt_day[DISEASE_COUNT];
     /* What each disease took from each attribute (0..-99), [disease x ATTR_COUNT + attribute]. */
-    signed char drained[DISEASE_COUNT * ATTR_COUNT];
+    int drained[DISEASE_COUNT * ATTR_COUNT];
     /* Stage one: ILL_*, the day it was caught, 1 once its dream was had, and where (for a vampire's clan). */
-    df_i32 infection;
-    df_i32 infected_day;
-    df_i32 dreamt;
-    df_i32 infected_region;
+    int infection;
+    int infected_day;
+    int dreamt;
+    int infected_region;
     /* Stage two: ILL_*, a vampire's clan, 1 while in beast form. */
-    df_i32 curse;
-    df_i32 clan;
-    df_i32 beast;
+    int curse;
+    int clan;
+    int beast;
     /* Game minutes (day x 1440 + minute): an innocent last killed, the last change of shape, the last feeding. */
-    df_i32 last_kill;
-    df_i32 last_morph;
-    df_i32 last_fed;
+    int last_kill;
+    int last_morph;
+    int last_fed;
     /* What the curse added to each attribute and skill, as it was given. */
-    signed char boost[ATTR_COUNT];
-    signed char skill_boost[SKILL_COUNT];
+    int boost[ATTR_COUNT];
+    int skill_boost[SKILL_COUNT];
 } Ills;
-
-extern const RecSchema ills_schema;
 
 /* The game's state; nothing ails a new game. */
 Ills *ills(void);
 void ills_new_game(void);
-/* A saved state over it. */
-void ills_put(const Ills *from);
+
+/* A save's row of one disease had (SICK): id its number. */
+typedef struct IllsSickRow {
+    df_u16 id;
+    df_i32 days_left;
+    df_i32 felt_day;
+    df_i32 drained[ATTR_COUNT];
+} IllsSickRow;
+/* A save's one row of the infection and the curse (CURS), id 0. */
+typedef struct IllsCurseRow {
+    df_u16 id;
+    df_i32 infection;
+    df_i32 infected_day;
+    df_i32 dreamt;
+    df_i32 infected_region;
+    df_i32 curse;
+    df_i32 clan;
+    df_i32 beast;
+    df_i32 last_kill;
+    df_i32 last_morph;
+    df_i32 last_fed;
+    df_i32 boost[ATTR_COUNT];
+    df_i32 skill_boost[SKILL_COUNT];
+} IllsCurseRow;
+extern const RecSchema ills_sick_schema;
+extern const RecSchema ills_curse_schema;
+/* The diseases had as rows into out (DISEASE_COUNT of room): how many. */
+int ills_sick_rows(IllsSickRow *out);
+void ills_curse_row(IllsCurseRow *out);
+/* A saved row over a new game's state. */
+void ills_put_sick(const IllsSickRow *row);
+void ills_put_curse(const IllsCurseRow *row);
 
 /* "day x 1440 + minute", the clock's minute as the state counts it. */
 int ills_now(int day, float minute);

@@ -19,6 +19,11 @@
 void sfx_play(int clip);
 /* From a point in the scene's frame. */
 void sfx_at(int clip, float x, float y, float z);
+/* A clip looping flat at volume 0..1: a handle, 0 when nothing plays. */
+int sfx_loop(int clip, float volume);
+/* A loop's volume changed, or stopped. A handle that ended is ignored. */
+void sfx_gain(int handle, float volume);
+void sfx_stop(int handle);
 /* One of first..first+n-1 at random (Hit1..Hit5, Parry1..Parry9). */
 int sfx_pick(int first, int n);
 /* A pain clip of a race (RACE_*) and sex, one of its three at random (DFU's race pain clips); -1 for none. */

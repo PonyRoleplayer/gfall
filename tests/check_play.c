@@ -40,6 +40,7 @@
 #include "game/dagger/play/marker.h"
 #include "game/dagger/play/ride.h"
 #include "game/dagger/play/ills.h"
+#include "game/dagger/formats/sndfile.h"
 #include "game/dagger/play/wagon.h"
 #include "engine/scene/automap.h"
 #include "game/dagger/formats/climate.h"
@@ -6130,6 +6131,13 @@ static void check_riding(void)
     int horses;
     int carts;
 
+    /* The hooves: DFU's HorseClop at half speed or less, HorseClop2 faster, the cart's rattle, none on foot. */
+    check_expect(ride_hoof_clip(RIDE_HORSE, 1) == SND_HORSE_CLOP && ride_hoof_clip(RIDE_HORSE, 0) == SND_HORSE_CLOP_PACE
+                     && ride_hoof_clip(RIDE_CART, 0) == SND_HORSE_AND_CART && ride_hoof_clip(RIDE_FOOT, 0) == -1,
+                 "riding: the hooves' clips");
+    /* The picture steps every 0.125 s while moving, and stands on its first frame. */
+    check_expect(ride_frame(0, 0.1f) == 0 && ride_frame(1, 0.13f) == 1 && ride_frame(1, 0.25f) == 3 && ride_frame(0, 0.1f) == 0,
+                 "riding: the picture's frames do not step");
     walked = 0.0f;
     rode = 0.0f;
     keep_clear();

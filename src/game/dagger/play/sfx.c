@@ -41,6 +41,24 @@ void sfx_at(int clip, float x, float y, float z)
     }
 }
 
+int sfx_loop(int clip, float volume)
+{
+    const SoundClip *c;
+
+    c = clip >= 0 ? sndfile_clip(clip) : 0;
+    return c ? sound_play(c, volume, 0.0f, SOUND_LOOP) : 0;
+}
+
+void sfx_gain(int handle, float volume)
+{
+    sound_set_gain(handle, volume);
+}
+
+void sfx_stop(int handle)
+{
+    sound_stop(handle);
+}
+
 int sfx_pick(int first, int n)
 {
     return first + combat_roll(n);

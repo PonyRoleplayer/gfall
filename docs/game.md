@@ -115,11 +115,12 @@ Classic's travel map and its fast journeys, on Daggerfall Unity's numbers and cl
 ### Riding (built: the horse, the cart and its wagon)
 `play/ride.c`, as DFU's TransportManager and PlayerSpeedChanger.
 - **Owning one:** a general store always has a horse (ITEM 94, 1000 gold) and a small cart (93, 150) on its shelves. They are things 0 and 1 of its stock, gone till the next day once bought, and it buys them back. Owned, not carried: neither weighs anything in the pack (`inventory_weight`).
-- **Mounting:** the HUD's transport button mounts the horse if the player owns one, else the cart, and dismounts. Only outdoors. Going into a building or a dungeon gets down: `arrive` in `game.c`, as TransportManager does on entering.
+- **Mounting:** the transport key (T, DFU's; `INPUT_TRANSPORT`, rebindable in Keybindings) or the HUD's transport button mounts the horse if the player owns one, else the cart, and dismounts. Only outdoors. Going into a building or a dungeon gets down: `arrive` in `game.c`, as TransportManager does on entering.
 - **Speed:** a horse goes at (Speed + 375) / 39.5 m/s and a cart at (Speed + 250) / 39.5, against the walk's (Speed + 150 - drag) / 39.5. Riding cannot run, and does not train Running.
 - **The picture:** `MRED00I0.CFA` for the horse, `MRED01I0.CFA` for the cart: 106 x 105, four frames, read with `cfa_load` (`formats/cif.c`, the CIF's own RLE) into pictures the first time a mount is ridden.
   - It is drawn at the screen's foot, over the bar when the bar shows: 105 of classic's rows tall and DFU's 0.8 a pixel across.
-  - The frame moves every 0.125 s while the player walks on the ground, the first while they stand. The weapon is not shown while riding.
+  - The frame moves every 0.125 s while the player moves on the ground (`ride_frame`, driven from `game.c` by how far the feet went), the first while they stand. The weapon is not shown while riding.
+- **The sounds** (`ride_sound`, TransportManager's): while moving, a loop of the horse's hooves, `HorseClop` (97) at half speed or less and half as loud, `HorseClop2` (298) faster, or the cart's `HorseAndCart` (104); a whinny (99) every 2 to 40 seconds while mounted, the first at once. A screen, a menu or getting down stops the loop (`ride_quiet`). DFU raises the pitch running; the engine's voices have no pitch and a rider cannot run.
 - **The travel map's "Foot/horse"** goes on the horse when one is owned, else the cart (`ride_journey`): the land at half the minutes on foot by horse, three quarters by cart.
 - **The wagon** (`play/wagon.c`): with a cart, 750 kg of things beside the pack (DFU's WagonKgLimit), the game's own block, in a save's `WAGN` chunk.
   - **Reach:** the inventory's Wagon button turns its right list into the wagon and back. It works anywhere outdoors or in a building, but in a dungeon only within 5 m of its way out, where the cart waits (`wagon_in_reach` in `game.c`, DFU's rule).
@@ -128,8 +129,6 @@ Classic's travel map and its fast journeys, on Daggerfall Unity's numbers and cl
 - **Not yet:**
   - the cart's own inventory picture (DFU picks another for it: it shows as a red blob);
   - selling from the wagon in a shop;
-  - the riding sounds, whose clips' numbers are not known yet: only the horse's whinny (99) is;
-  - a key for mounting;
   - ships.
 
 ### A journey (`play/journey.c`, DFU's TravelTimeCalculator)
@@ -798,7 +797,7 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 **Memory:** two heaps of its own while open, one for its 64 KB pictures and buffers, one for what it only reads to copy, let go past 512 KB. Both go at close, and any TEXTURE file read into them leaves the cache with them (`texture_forget`).
 
 ## Afflictions (built: diseases, lycanthropy, vampirism; host-tested, not run on the target)
-`play/ills.c`: what ails the player beyond their wounds, the game's one state, saved in its own chunk (`ILLS`). Daggerfall Unity's DiseaseEffect, LycanthropyInfection, VampirismInfection, LycanthropyEffect, VampirismEffect and PassiveSpecialsEffect, as sums over the sheet. Its gifts and drains go into the sheet's own attributes and skills, held to 1..100, and what was really added or taken is kept, so it can be given back exactly.
+`play/ills.c`: what ails the player beyond their wounds, the game's one state, saved as rows (`SICK` a disease each, `CURS` the rest). Daggerfall Unity's DiseaseEffect, LycanthropyInfection, VampirismInfection, LycanthropyEffect, VampirismEffect and PassiveSpecialsEffect, as sums over the sheet. Its gifts and drains go into the sheet's own attributes and skills, held to 1..100, and what was really added or taken is kept, so it can be given back exactly.
 
 ### Diseases
 - **The seventeen** are MAIN.DAT's `DISE` (`tables/diseases.c`), classic's numbers: each attribute's, health's, fatigue's and spell points' weight, the day's damage range, the days of symptoms (most last until cured; Caliron's Curse, Blood Rot and Wizard Fever 3..18 days).
@@ -841,7 +840,7 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Loot | the other columns of `LOOT` wait for their items | P12-b, later |
 | Loot | a body or a heap takes nothing put on it (a choice, see What can be searched) | - |
 | Places | treasure and piles only in a dungeon streamed by block; a town's doors not keyed; the sea can be walked on | later |
-| World | the cart's picture in the pack, selling from the wagon, the riding sounds, a mounting key, ships; the indoor automap's marks and notes, the town map's rotation and names; the travel map's Find list, identify flash and neighbouring provinces; places marked by talk; guild travel; regional holidays; the afflictions' cemetery, beast pictures and sounds (Afflictions) | P10 |
+| World | the cart's picture in the pack, selling from the wagon, ships; the indoor automap's marks and notes, the town map's rotation and names; the travel map's Find list, identify flash and neighbouring provinces; places marked by talk; guild travel; regional holidays; the afflictions' cemetery, beast pictures and sounds (Afflictions) | P10 |
 | Player | the completed classic HUD bar needs target acceptance; the map button opens the travel map outdoors, the automap and magic buttons await their systems | P9-b, P10, P12-b |
 | Player | target acceptance/tuning of the implemented classic cursor controls | P9-c |
 | People | Steal mode, pickpocketing and the deferred theft mechanics | P12-a |
@@ -874,7 +873,8 @@ The travel map comes later, with `worldmap.c`'s pixels and the location index: p
 | --- | --- |
 | `DISC` | the places the map knows that a new game's does not |
 | `WAGN` | what is in the cart's wagon |
-| `ILLS` | what ails the player: each disease's days and drain, an infection, a curse and its gifts (`play/ills.h`) |
+| `SICK` | a row per disease had: its days left, the day last felt, what it took from each attribute (`play/ills.h`) |
+| `CURS` | one row: an infection, a curse, its clan and shape, its times, and its gifts to attributes and skills |
 | `GAME` | which place and the way back out of its door, the feet in that place's frame with the stream's origin that frame has, the movement facing and independent Alt view offsets (P9-c), the clock's minute and day, the day the game began, the seed, the gold, what is worn |
 | `CHAR` | the sheet, whole: skill uses and the level's count among it |
 | `PACK` | what is carried, material, variant and condition among it |
