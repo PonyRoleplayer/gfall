@@ -1376,6 +1376,10 @@ static void forget_last_game(void)
     keep_clear();
     pile_new_game();
     loot_new_game(prof_now());
+    foes_reset();
+    g_dead = 0;
+    /* The death line, and anything else the last life was saying. */
+    interact_say(0);
     g_load_waiting = 0;
     travel_start_game();
 }

@@ -60,7 +60,14 @@ static int enter_place(Level *level, Camera *cam, int arriving)
     TravelPose at;
 
     gfx_hold("Loading...");
-    travel_leave();
+    if (arriving) {
+        /* The edge they arrive on faces where they were. Noted before the place is dropped. */
+        travel_came_from(cam);
+        travel_leave();
+    } else {
+        /* A new game or a load already set the keep. Do not write this world over it. */
+        travel_drop();
+    }
     /* What a place may see depends on what it is: decided before the world's radius is. */
     gfx_set_far(travel_next_is_world() ? WORLD_FAR : DF_FAR);
     if (!travel_open(level, travel_radius(gfx_far()))) {

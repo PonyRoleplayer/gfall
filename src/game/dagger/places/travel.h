@@ -91,6 +91,13 @@ int travel_next_is_world(void);
 /* What the place left is kept (keep.h), the sound stopped, its pictures and its heap gone. Safe with none open. */
 void travel_leave(void);
 /*
+ * The same close, without writing the live place into the keep, and the
+ * message line cleared. A new game and a load have already set the keep.
+ */
+void travel_drop(void);
+/* Remember where cam stands, in world units, for the next arrival's entrance. Call before travel_leave. */
+void travel_came_from(const Camera *cam);
+/*
  * The next place, on a new temp heap, over level, for gfx_prepare; radius as
  * travel_radius, for a stream of the world. 0 when it cannot be read and there
  * is no way back to the street either, with travel_error saying why. A building

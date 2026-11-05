@@ -10,8 +10,10 @@
 #include "game/dagger/formats/worldmap.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
+#include "engine/core/df.h"
 #include "engine/scene/stream.h"
 #include "engine/scene/automap.h"
+#include "engine/scene/interact.h"
 #include "engine/sound/music.h"
 #include "engine/sound/sound.h"
 
@@ -41,6 +43,10 @@ static int g_asked;
 static int g_open;
 static int g_land;
 static int g_land_what;
+/* Where the journey started, in world units, so the arrival faces that way. */
+static int g_have_from;
+static double g_from_x;
+static double g_from_z;
 /* The door that led in, in the town's frame: where a house's way out is looked for. */
 static Usable g_door;
 /* A save's feet, the origin they were in, the way it looked. */
@@ -243,7 +249,13 @@ void travel_keep_now(void)
     }
 }
 
-void travel_leave(void)
+/*
+ * save 1 writes what the live place changed into the keep, which is how a
+ * door stays open across a load of the next place. save 0 does not: a new
+ * game and a load have already set the keep they want, and the dead world's
+ * doors and bodies must not be written back over that.
+ */
+static void close_place(int save)
 {
     if (!g_open) {
         return;
@@ -251,18 +263,46 @@ void travel_leave(void)
     music_stop();
     sound_stop_all();
     automap_set_place(0);
+    if (!save) {
+        stream_save_keep(0);
+    }
     /* A stream keeps what its chunks changed as it closes them; a place loaded whole is asked. */
     if (g_here.kind == TRAVEL_DUNGEON) {
         dunstream_close();
     } else if (g_here.kind == TRAVEL_WORLD) {
         wild_close();
     } else {
-        world_keep_save(g_world);
+        if (save) {
+            world_keep_save(g_world);
+        }
         g_world = 0;
     }
+    stream_save_keep(1);
     texture_cache_clear();
     mem_temp_end();
     g_open = 0;
+}
+
+void travel_leave(void)
+{
+    close_place(1);
+}
+
+void travel_drop(void)
+{
+    close_place(0);
+    /* "You have died." and anything else the last place was saying. */
+    interact_say(0);
+}
+
+void travel_came_from(const Camera *cam)
+{
+    if (!cam || !g_open || g_here.kind == TRAVEL_INSIDE) {
+        g_have_from = 0;
+        return;
+    }
+    stream_world(cam->x, cam->z, &g_from_x, &g_from_z);
+    g_have_from = 1;
 }
 
 /* The next place's own kind opened over level: 0 when its files do not read. */
@@ -284,6 +324,64 @@ static int open_dungeon(Level *level)
         return 0;
     }
     return 1;
+}
+
+/*
+ * Just outside the location, on the side the journey came from, facing in.
+ * DFU's DirectionFromStartMarker: the entrance is that edge, a tenth of a
+ * block out, not the middle of the blocks. With no origin, the south edge.
+ */
+static void stand_outside(double x0, double z0, double x1, double z1)
+{
+    double cx;
+    double cz;
+    double hx;
+    double hz;
+    double extra;
+    double ex;
+    double ez;
+    int ox;
+    int oz;
+
+    cx = (x0 + x1) * 0.5;
+    cz = (z0 + z1) * 0.5;
+    hx = (x1 - x0) * 0.5;
+    hz = (z1 - z0) * 0.5;
+    extra = (double)STREAM_CHUNK * 0.1;
+    if (!g_have_from) {
+        ex = cx;
+        ez = z0 - extra;
+        g_start.yaw = 0.0f;
+    } else {
+        double dx;
+        double dz;
+
+        dx = g_from_x - cx;
+        dz = g_from_z - cz;
+        if (dx * dx >= dz * dz) {
+            if (dx >= 0.0) {
+                ex = cx + hx + extra;
+                g_start.yaw = -DF_TAU * 0.25f;
+            } else {
+                ex = cx - hx - extra;
+                g_start.yaw = DF_TAU * 0.25f;
+            }
+            ez = cz;
+        } else if (dz >= 0.0) {
+            ex = cx;
+            ez = cz + hz + extra;
+            g_start.yaw = DF_TAU * 0.5f;
+        } else {
+            ex = cx;
+            ez = cz - hz - extra;
+            g_start.yaw = 0.0f;
+        }
+    }
+    stream_origin(&ox, &oz);
+    g_start.x = (float)(ex - (double)ox * (double)STREAM_CHUNK);
+    g_start.z = (float)(ez - (double)oz * (double)STREAM_CHUNK);
+    g_start.y = wild_ground(ex, ez);
+    g_start.pitch = 0.0f;
 }
 
 static int open_world(Level *level, int radius)
@@ -313,19 +411,25 @@ static int open_world(Level *level, int radius)
             g_error = "The world did not open.";
             return 0;
         }
-        /* The town's middle, not its pixel's: its way down has to come within the radius. */
         stream_world(g_start.x, g_start.z, &wx, &wz);
         if (wild_town(wx, wz, &x0, &z0, &x1, &z1, &blocks, &climate, &type)) {
-            double mx;
-            double mz;
+            if (g_land == LAND_STREET) {
+                /* The edge facing the way they came, not the middle of the town. */
+                stand_outside(x0, z0, x1, z1);
+            } else {
+                double mx;
+                double mz;
 
-            mx = (x0 + x1) * 0.5;
-            mz = (z0 + z1) * 0.5;
-            g_start.x += (float)(mx - wx);
-            g_start.y += wild_ground(mx, mz) - wild_ground(wx, wz);
-            g_start.z += (float)(mz - wz);
+                /* The middle, so a dungeon's way down is inside the loaded radius. */
+                mx = (x0 + x1) * 0.5;
+                mz = (z0 + z1) * 0.5;
+                g_start.x += (float)(mx - wx);
+                g_start.y += wild_ground(mx, mz) - wild_ground(wx, wz);
+                g_start.z += (float)(mz - wz);
+            }
         }
     }
+    g_have_from = 0;
     return 1;
 }
 
@@ -503,6 +607,28 @@ void travel_land(const Level *level, Camera *cam, float eye, TravelPose *out)
             p.pitch = 0.0f;
             camera_set(cam, p.x, p.y, p.z, p.yaw, p.pitch);
             fill_round(cam);
+        } else if (g_here.kind == TRAVEL_WORLD) {
+            double wx;
+            double wz;
+            double x0;
+            double z0;
+            double x1;
+            double z1;
+            int blocks;
+            int climate;
+            int type;
+
+            /* No door in range: the location's edge, the same entrance a town uses. */
+            stream_world(p.x, p.z, &wx, &wz);
+            if (wild_town(wx, wz, &x0, &z0, &x1, &z1, &blocks, &climate, &type)) {
+                stand_outside(x0, z0, x1, z1);
+                p = g_start;
+                land_on_street(&p, eye);
+                camera_set(cam, p.x, p.y, p.z, p.yaw, p.pitch);
+                fill_round(cam);
+            } else {
+                log_print(LOG_WARN, "travel: no passage %d near the landing", g_land_what);
+            }
         } else {
             log_print(LOG_WARN, "travel: no passage %d near the landing", g_land_what);
         }

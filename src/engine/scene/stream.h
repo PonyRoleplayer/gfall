@@ -147,6 +147,12 @@ int stream_chunk_size(void);
 int stream_slots(void);
 /* Every chunk goes (the source's drop for each), and the stream stops. */
 void stream_close(void);
+/*
+ * 0: the next stream_close does not write chunks back into the keep.
+ * A new game and a load have already put the keep they want; closing the
+ * live place must not paint over it. stream_close puts this back to 1.
+ */
+void stream_save_keep(int on);
 int stream_active(void);
 /* Every chunk goes, to be loaded again by the updates to come, nearest first (the season turned). */
 void stream_reload(void);

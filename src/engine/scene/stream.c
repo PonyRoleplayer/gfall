@@ -138,6 +138,14 @@ static void empty_slot(int s)
     g_slot[s].data = 0;
 }
 
+/* 0 while a close must not write the live place back (a new game, a load). */
+static int g_save_keep = 1;
+
+void stream_save_keep(int on)
+{
+    g_save_keep = on ? 1 : 0;
+}
+
 /* What the player changed in the loaded chunk in slot s, into the keep table, in the place's frame. */
 static void keep_slot(int s)
 {
@@ -168,7 +176,7 @@ static void drop_slot(int s)
 
     was_done = g_slot[s].done;
     /* What the player changed in it, kept for when it comes again (docs/interact.md). */
-    if (was_done) {
+    if (was_done && g_save_keep) {
         keep_slot(s);
     }
     if (g_src.drop) {
@@ -316,6 +324,7 @@ void stream_close(void)
     g_open = 0;
     g_scene = 0;
     g_filling = -1;
+    g_save_keep = 1;
 }
 
 void stream_reload(void)
