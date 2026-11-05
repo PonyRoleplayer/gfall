@@ -51,5 +51,12 @@ const char *hudbar_mode_name(int mode);
 int hudbar_mode_row(int mode);
 /* Heading -> CMPA00I0.BSS frame, 0 north, 8 east. No divide or trig a frame. */
 int hudbar_heading(float yaw);
+/*
+ * Full screen's vital which (0 health, 1 fatigue, 2 magicka): at the left
+ * edge, DFU's HUDVitals margin of 10, bars 4 wide with a bar of space
+ * between them, 32 tall, sitting on that margin. The compass is not here:
+ * full screen uses COMPBOX.IMG's own place, the N/S/E/W strip.
+ */
+void hudbar_full_vital(int which, int *x, int *y, int *w, int *h);
 
 #endif

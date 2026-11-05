@@ -237,10 +237,25 @@ static void draw_vitals(void)
         if (rows <= 0) {
             continue;
         }
-        pic_draw_part(g_bar[i], 0, g_bar_h[i] - rows, g_bar_w[i], rows,
-                      screen_x(g_bar_x[i]), screen_top(g_bar_y[i] + g_bar_h[i] - rows),
-                      screen_x(g_bar_w[i]), screen_h(g_bar_y[i] + g_bar_h[i]) - screen_h(g_bar_y[i] + g_bar_h[i] - rows),
-                      255);
+        {
+            int x;
+            int y;
+            int w;
+            int h;
+
+            if (viewopt_full()) {
+                hudbar_full_vital(i, &x, &y, &w, &h);
+            } else {
+                x = g_bar_x[i];
+                y = g_bar_y[i];
+                w = g_bar_w[i];
+                h = g_bar_h[i];
+            }
+            pic_draw_part(g_bar[i], 0, g_bar_h[i] - rows, g_bar_w[i], rows,
+                          screen_x(x), screen_top(y + h - rows),
+                          screen_x(w), screen_h(y + h) - screen_h(y + h - rows),
+                          255);
+        }
     }
 }
 
@@ -298,8 +313,8 @@ void overlay_draw(void)
         r = hudbar_rect(HUDBAR_STATUS);
         screen_draw(g_compass, r->x, r->y, r->w, r->h);
     } else if (viewopt_full()) {
-        r = hudbar_rect(HUDBAR_STATUS);
-        screen_draw(g_compass, r->x, r->y, r->w, r->h);
+        /* COMPBOX.IMG at its own place: the N/S/E/W strip, bottom right. */
+        draw_compass();
     } else {
         /* Retain the compact-free overlay for panel off and comparisons. */
         draw_compass();

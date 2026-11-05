@@ -65,6 +65,20 @@ int hudbar_mode_row(int mode)
     return rows[mode >= 0 && mode < HUDBAR_MODES ? mode : HUDBAR_GRAB];
 }
 
+void hudbar_full_vital(int which, int *x, int *y, int *w, int *h)
+{
+    if (which < 0) {
+        which = 0;
+    }
+    if (which > 2) {
+        which = 2;
+    }
+    *x = 10 + which * 8;
+    *y = CANVAS_H - 10 - 32;
+    *w = 4;
+    *h = 32;
+}
+
 int hudbar_heading(float yaw)
 {
     /* df_ifloor avoids GCC's x87 rounding-mode switch for a float-to-int
