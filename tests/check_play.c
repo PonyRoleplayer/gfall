@@ -18,6 +18,8 @@
 #include "game/dagger/places/dunstream.h"
 #include "game/dagger/places/doors.h"
 #include "game/dagger/places/travel.h"
+#include "game/dagger/places/wild.h"
+#include "engine/scene/stream.h"
 #include "game/dagger/places/town.h"
 #include "game/dagger/formats/factionfile.h"
 #include "game/dagger/formats/faces.h"
@@ -52,6 +54,9 @@
 #include "game/dagger/play/lodging.h"
 #include "game/dagger/play/ills.h"
 #include "game/dagger/formats/sndfile.h"
+#include "game/dagger/formats/hmi.h"
+#include "game/dagger/tables/sounds.h"
+#include "engine/assets/song.h"
 #include "game/dagger/play/wagon.h"
 #include "engine/scene/automap.h"
 #include "game/dagger/formats/climate.h"
@@ -2340,6 +2345,19 @@ static void check_hudbar(void)
     }
     cif_close(&heads);
     cif_close(&colors);
+    {
+        int x;
+        int y;
+        int w;
+        int h;
+
+        hudbar_full_vital(0, &x, &y, &w, &h);
+        check_expect(x == 10 && y == 158 && w == 4 && h == 32, "hud: health is not at the left of a full screen");
+        hudbar_full_vital(1, &x, &y, &w, &h);
+        check_expect(x == 18 && y == 158, "hud: fatigue is not beside health");
+        hudbar_full_vital(2, &x, &y, &w, &h);
+        check_expect(x == 26 && y == 158, "hud: magicka is not beside fatigue");
+    }
 }
 
 /*
@@ -2685,27 +2703,23 @@ static void check_create(void)
     create_click(CREATE_OK_X, CREATE_OK_Y);
     check_expect(create_step() == CREATE_ATTRIBUTES && create_note() != 0, "create: OK went on with points left");
     create_click(25, 30);
-    for (i = 0; i < 20; i++) {
-        create_click(50, 24);
-    }
+    create_click(50, 24);
     create_click(CREATE_OK_X, CREATE_OK_Y);
-    check_expect(create_step() == CREATE_SKILLS, "create: every point placed did not go on");
+    check_expect(create_step() == CREATE_ATTRIBUTES && create_note() != 0,
+                 "create: one point did not leave points to place");
+    create_click_bulk(50, 24, 1);
+    create_click(CREATE_OK_X, CREATE_OK_Y);
+    check_expect(create_step() == CREATE_SKILLS, "create: shift did not place the rest of the points");
     create_compose();
     write_picture(create_pixels(), "build/create7.ppm");
-    /* Six points a group: the spinner's right on line 0, then on a major and a minor line. */
-    for (i = 0; i < 6; i++) {
-        create_click(235, 33);
-    }
+    /* Six points a group: Shift on the spinner places the group's pool. */
+    create_click_bulk(235, 33, 1);
     create_click(CREATE_OK_X, CREATE_OK_Y);
     check_expect(create_step() == CREATE_SKILLS && create_note() != 0, "create: OK went on with the major and minor points left");
     create_click(100, 83);
-    for (i = 0; i < 6; i++) {
-        create_click(235, 82);
-    }
+    create_click_bulk(235, 82, 1);
     create_click(100, 132);
-    for (i = 0; i < 6; i++) {
-        create_click(235, 131);
-    }
+    create_click_bulk(235, 131, 1);
     create_compose();
     write_picture(create_pixels(), "build/create8.ppm");
     create_click(CREATE_OK_X, CREATE_OK_Y);
@@ -5006,6 +5020,36 @@ static void check_goto(void)
     check_expect(travel_town_here(&cam, &region, &index, &x, &z, &block, &record) && region == 17 && index == dagger
                  && travel_region() == 17, "goto: not in Daggerfall");
     check_expect(stands_at(&p, &level, &at, 96.0f), "goto: the player does not stand in Daggerfall's street");
+    {
+        double wx;
+        double wz;
+        double x0;
+        double z0;
+        double x1;
+        double z1;
+        double dx;
+        double dz;
+        int blocks;
+        int climate;
+        int type;
+
+        stream_world(at.x, at.z, &wx, &wz);
+        {
+            int px;
+            int py;
+            double pcx;
+            double pcz;
+
+            worldmap_pixel_of(region, index, &px, &py);
+            pcx = ((double)px + 0.5) * (double)(STREAM_CHUNK * WORLDMAP_BLOCKS);
+            pcz = ((double)(WORLDMAP_H - 1 - py) + 0.5) * (double)(STREAM_CHUNK * WORLDMAP_BLOCKS);
+            check_expect(wild_town(pcx, pcz, &x0, &z0, &x1, &z1, &blocks, &climate, &type),
+                         "goto: Daggerfall's town was not read");
+        }
+        dx = wx - (x0 + x1) * 0.5;
+        dz = wz - (z0 + z1) * 0.5;
+        check_expect(dx * dx + dz * dz > 4000.0 * 4000.0, "goto: Daggerfall was not the entrance");
+    }
     /* By its code, the number LEVELFALL lists: Daggerfall's outside's own. */
     {
         Dungeon town;
@@ -5627,7 +5671,31 @@ static void check_citizen(void)
     foes_reset();
     combat_reset();
     watch_pardon();
-    if (!travel_go_to_town(17, index) || !travel_go(&level, &cam, &at)) {
+    /* The watch test stands in the crowded middle. A journey's entrance is checked with goto. */
+    {
+        TravelWhere where;
+        float mid[3];
+        int px;
+        int py;
+        int chunk[2];
+
+        worldmap_pixel_of(17, index, &px, &py);
+        memset(&where, 0, sizeof(where));
+        where.kind = TRAVEL_WORLD;
+        where.located = 1;
+        where.region = 17;
+        where.index = index;
+        where.has_back = 1;
+        where.back_x = ((double)px + 0.5) * (double)(STREAM_CHUNK * WORLDMAP_BLOCKS);
+        where.back_z = ((double)(WORLDMAP_H - 1 - py) + 0.5) * (double)(STREAM_CHUNK * WORLDMAP_BLOCKS);
+        chunk[0] = (int)(where.back_x / (double)STREAM_CHUNK);
+        chunk[1] = (int)(where.back_z / (double)STREAM_CHUNK);
+        mid[0] = (float)(where.back_x - (double)chunk[0] * (double)STREAM_CHUNK);
+        mid[1] = 0.0f;
+        mid[2] = (float)(where.back_z - (double)chunk[1] * (double)STREAM_CHUNK);
+        travel_from_save(&where, mid, chunk, 0.0f, 0.0f);
+    }
+    if (!travel_go(&level, &cam, &at)) {
         return;
     }
     who = 0;
@@ -5966,6 +6034,27 @@ static void check_wider_world(void)
         check_expect(travelmap_open(&p, sx, sy, 20), "travel map: it did not open");
         travelmap_compose();
         write_screen_with("build/travel0.ppm", travelmap_pixels(), 1);
+        {
+            const unsigned char *pix;
+            int i;
+            int dark;
+            int lit;
+
+            pix = travelmap_pixels();
+            dark = 0;
+            for (i = 0; i < 320 * 200; i++) {
+                dark += pix[i] == 244;
+            }
+            travelmap_step(0.5f);
+            check_expect(travelmap_changed(), "travel map: the province blink did not ask to redraw");
+            travelmap_compose();
+            pix = travelmap_pixels();
+            lit = 0;
+            for (i = 0; i < 320 * 200; i++) {
+                lit += pix[i] == 244;
+            }
+            check_expect(lit > dark + 100, "travel map: the player's province did not blink");
+        }
         /* The province picker: a point of the world's picture whose mask says Daggerfall. */
         travelmap_region_origin(17, 0, &ox, &oy, &scale);
         found = 0;
@@ -7607,6 +7696,59 @@ static void check_dunmap(void)
            top, behind);
 }
 
+static void check_title_race_and_biography(void)
+{
+    Song song;
+    char line[64];
+    int i;
+
+    check_expect(df_eq(sounds_title(), "05.HMI"), "title: the theme is not 05.HMI");
+    memset(&song, 0, sizeof(song));
+    check_expect(hmi_load(sounds_title(), 0, &song) && song.count > 0, "title: 05.HMI did not read");
+    for (i = 1; i <= 8; i++) {
+        const CareerRace *race;
+
+        race = career_race(i);
+        check_expect(race && sndfile_by_id(race->clip) == 365 + i, "race: the choosing clip is not that race's sound");
+    }
+    create_reputation_text(1, 10, line, (int)sizeof(line));
+    check_expect(df_eq(line, "Merchants: higher"), "biography: a gain is not higher");
+    create_reputation_text(0, -5, line, (int)sizeof(line));
+    check_expect(df_eq(line, "Commoners: lower"), "biography: a loss is not lower");
+    create_reputation_text(4, 0, line, (int)sizeof(line));
+    check_expect(df_eq(line, "Underworld: unchanged"), "biography: no change is not unchanged");
+    check_expect(create_constellation_blue(0) == 8 && create_constellation_blue(1) == 32
+                 && create_constellation_blue(3) == 80,
+                 "questions: the stars do not light by 24 a leaning");
+}
+
+static void check_death_drops_world(void)
+{
+    Level level;
+    Camera cam;
+    TravelPose at;
+    int i;
+    int opened;
+
+    keep_clear();
+    interact_say("You have died.");
+    travel_start_game();
+    if (!travel_go(&level, &cam, &at)) {
+        return;
+    }
+    opened = 0;
+    for (i = 0; i < level.scene.nmovers; i++) {
+        mover_set_end(&level.scene.movers[i], 1);
+        opened = 1;
+        break;
+    }
+    check_expect(opened, "death: the hold opened no door to leave ajar");
+    keep_clear();
+    travel_drop();
+    check_expect(keep_count() == 0, "death: closing the dead world wrote its doors back into the keep");
+    check_expect(interact_saying(0) == 0, "death: You have died stayed after the world was dropped");
+}
+
 void check_play(void)
 {
     check_menu();
@@ -7632,6 +7774,8 @@ void check_play(void)
     check_levelling();
     check_kit_and_words();
     check_create();
+    check_title_race_and_biography();
+    check_death_drops_world();
     check_sheet();
     check_class_and_wear();
     check_creatures_more();

@@ -86,7 +86,7 @@ Classic's travel map and its fast journeys, on Daggerfall Unity's numbers and cl
 - **A province:** `FMAP0I##.IMG`, the panel at (0, 12). DFU's table gives each map's world pixel at the panel's top left. Regions 0, 1 and 16 are two or four screens, with arrows between them.
   - Betony's is drawn four times larger. Its corner, (82, 244), is fitted to the island: DFU's comes with hover offsets in another form. Every known place of every one-screen province is tested to land on its panel.
   - Known places are one pixel each, coloured by type (DFU's indices). The four filters hide dungeons, temples, homes and towns.
-  - A cross marks the player's pixel. "I'm at" brings back the player's province.
+  - A cross marks the player's pixel on a province map. The world picture has no place for that pixel, so the player's province blinks there (half a second on, half off, palette index 244). "I'm at" brings back the player's province.
   - Find, on the world or a province's bar, takes a typed name and looks among the known places for every one with it in its name, those beginning with it first, eight at most. None: TEXT.RSC 13. One: its province opens on the screen that has it, a ring round its dot flashes for 1.5 s (DFU's identify flash; a click stops it), then the travel question. Several: a scroll lists them, a name a line, and a click on one goes there the same way.
 - **A click on a place** asks (TEXT.RSC 31, `%tcn` the place). Yes opens the journey's popup (`TRAV0I04.IMG`): cautious or reckless, foot or ship, inns or camping, the gold, the trip's cost and its days. Begin counts the days down a twentieth of a second each, then goes. Too little gold says so (454).
 - **Palettes:** the maps are under `FMAP_PAL.COL`, the popup, the scroll and the font under `ART_PAL.COL`. One screen is one picture under one palette, so what is drawn in the art palette is mapped to the map's nearest colour where it lies: the popup's rectangle whole, and in the scroll only the pixels it changed, so its burnt edges keep the map under them.
@@ -138,7 +138,7 @@ Classic's travel map and its fast journeys, on Daggerfall Unity's numbers and cl
 - **Gold:** an inn is 5 a night of land plus the first. A ship's fare is 25 x (sea pixels / 24 + 1).
 - **Arriving:** the clock moves on by the journey. A cautious traveller arrives whole and in daylight: before 07:10 waits for it, after 17:00 waits for the next morning's.
   - The minutes on the road are not tired one by one afterwards (`g_last_minute`).
-  - The player lands on a town's walkable cell nearest its middle. A dungeon's outside (labyrinth, keep, ruin, graveyard, coven) is landed on by its way down (`travel_go_to_place`).
+  - The player lands at the location's entrance: the edge facing the way they came, a tenth of a block outside, then the nearest walkable cell, looking in (`stand_outside`, DFU's `DirectionFromStartMarker`). With no origin, the south edge. A dungeon's outside (labyrinth, keep, ruin, graveyard, coven) is landed on by its way down when that door is loaded (`travel_go_to_place`); otherwise the same edge.
 - **When it opens:** outdoors, by the map key or the HUD's map button (in a town, from its automap: Automaps, above). In a dungeon or a building it says the automap is not built yet.
 
 Tested on the host (`check_wider_world`):
@@ -423,17 +423,17 @@ Skill advance by use and the level-up rule come from UESP's Leveling page. A pre
 
 | Step | Picture | What it decides |
 | --- | --- | --- |
-| Province | TMAP00I0.IMG, read under ART_PAL; a click looks up TAMRIEL2.IMG, whose every pixel is a race | the race, its TEXT.RSC words to confirm (`textrsc.c`) |
-| Sex | a scroll, with BUTTONS.RCI's Female and Male | a woman or a man |
+| Province | TMAP00I0.IMG, read under ART_PAL; a click looks up TAMRIEL2.IMG, whose every pixel is a race | the race, its TEXT.RSC words to confirm (`textrsc.c`), and DAGGER.SND's clip for that race (`CareerRace.clip` is the record id, `sndfile_by_id`) |
+| Sex | a scroll, with BUTTONS.RCI's Female and Male, and the race's two bodies drawn at two fifths of the screen (`canvas_scale`) | a woman or a man; a click on a figure is that button |
 | Method | BUTN01I0.IMG over the map | the list, or the questions |
 | Class | PICK00I0.IMG, nine rows and its arrows | one of the 18, or Custom last; its words (2100 and on) to confirm |
-| Questions | CHGN00I0.IMG, under its own palette | ten of TEXT.RSC record 9000's forty, none twice, answered by A, B, C or a click; each answer goes warrior, rogue or mage by DFU's table, and CLASSES.DAT's table (from byte 18, threes of counts, four to an entry) says what class the counts make: ten warrior a Knight, ten mage a Mage |
+| Questions | CHGN00I0.IMG, under its own palette | ten of TEXT.RSC record 9000's forty, none twice, answered by A, B, C or a click; each answer goes warrior, rogue or mage by DFU's table, and CLASSES.DAT's table (from byte 18, threes of counts, four to an entry) says what class the counts make: ten warrior a Knight, ten mage a Mage. The picture's stars are palette indices 192, 160 and 128 (warrior, rogue, mage). They start at blue 8 and each answer of that way adds 24 (`create_constellation_blue`), which is how classic lights a leaning |
 | Custom | CUST00I0.IMG, CUST08I0.IMG's dagger | a name; twelve skills from a list, none twice; hit points 4 to 30; attributes from 50 moved between 10 and 75, the points given up placed elsewhere. Hit points over 8 add to its hardness, under 8 take off twice that; advancement is 0.3 + 2.7 × (hardness + 12) / 52. Spell points ½ an Intelligence point, an iron longsword, and the background questions of the listed class sharing most skills |
-| Background | BIOG00I0.IMG | twelve questions from `BIOG##T0.TXT` (`biog.c`): skills, gold, weapons and armour |
+| Background | BIOG00I0.IMG | twelve questions from `BIOG##T0.TXT` (`biog.c`): skills, gold, weapons and armour. An answer that moves a social group says so, in TEXT.RSC 35's words: "Merchants: higher", "Commoners: lower" |
 | Name | CHAR00I0.IMG | typed; each word begins with a capital |
 | Face | CHAR01I0.IMG | one of the race's ten, and it shows on the paper doll |
-| Attributes | CHAR02I0.IMG, CHAR02I1.IMG's spinner | class base + 0..10, then 6..14 points to place; Reroll; the derived numbers shown beside classic's words |
-| Skills | CHAR03I0.IMG, CHAR03I1.IMG's spinner | primary 28, major 18, minor 13, each + 0..3, then 6 points a group to place |
+| Attributes | CHAR02I0.IMG, CHAR02I1.IMG's spinner | class base + 0..10, then 6..14 points to place; Reroll; the derived numbers shown beside classic's words. Shift (the run key) on the spinner places that attribute's whole remaining pool |
+| Skills | CHAR03I0.IMG, CHAR03I1.IMG's spinner | primary 28, major 18, minor 13, each + 0..3, then 6 points a group to place. Shift on a group's spinner places that group's whole pool in the chosen skill |
 | Reflexes | CHAR05I0.IMG, CHAR05I1.IMG's slices | very high to very low |
 | Summary | CHAR04I0.IMG | looked over; Restart or OK |
 
@@ -479,7 +479,7 @@ The HUD is drawn at the card's 640 × 480. Classic's 320 × 200 pieces are drawn
 
 - **The vitals (P2):** MAIN03I0, MAIN04I0 and MAIN05I0.IMG (health, fatigue, spell points, 4 × 32 each), filled from the bottom to their share as DFU's HUDVitals does, where their files put them (x 49, 57 and 65, y 161).
 
-- **The bottom panel** (P7's initial art, completed in P9-b): MAIN00I0.IMG, 320 × 46 at the screen's foot, with the selected head, blue backing, bars, four interaction-mode icons and compact compass. On by default, `panel` flips it. Cursor mode already has its pointer; Tab frees it in View mode; see Classic HUD bar above for routing, resource costs and the remaining target acceptance. With the panel off, the original compass strip remains. Full screen, the options checkbox, hides only that stone bar: the face frame, its backing and the icon buttons. The three vital bars and the compact compass stay where the bar puts them. Clicks on the hidden buttons fall through to the world. The crosshair and the weapon stay, and the view is not resized. P9-c below supplies classic dungeon controls without continuous mouse look.
+- **The bottom panel** (P7's initial art, completed in P9-b): MAIN00I0.IMG, 320 × 46 at the screen's foot, with the selected head, blue backing, bars, four interaction-mode icons and compact compass. On by default, `panel` flips it. Cursor mode already has its pointer; Tab frees it in View mode; see Classic HUD bar above for routing, resource costs and the remaining target acceptance. With the panel off, the original compass strip remains. Full screen, the options checkbox, hides the stone bar, the face and the icon buttons. The three vital bars sit at the left, ten pixels in and ten up from the corner, four wide with four between them (`hudbar_full_vital`, DFU's HUDVitals). The compass is COMPBOX.IMG's N/S/E/W strip at the picture's own place, bottom right, not the bar's compact compass. Clicks on the hidden buttons fall through to the world. The crosshair and the weapon stay, and the view is not resized. P9-c below supplies classic dungeon controls without continuous mouse look.
 
 ## Classic dungeon controls without mouse look (P9-c)
 
@@ -708,7 +708,7 @@ The creatures already stand in a dungeon as entities (`docs/entities.md`): each 
 - **A motor**: asleep until seen or heard, then turn to the player, walk to them (walking cells in a town, straight with the collider in a dungeon), and attack within reach. One step a frame for the near ones, under a budget.
 - **The attack and the hit**: to-hit and damage per UESP's Combat page, as Daggerfall Unity's formulas have it (read for what they do). The weapon's swing is a picture drawn over the view.
 - **Hurt and death**: the hurt and death records (5 to 14, 20 to 29; `docs/entities.md`, Not yet), and a body left on the floor with its loot.
-- **The player's death**: classic's death screen, then the last save (Saves, below).
+- **The player's death**: classic's death screen, then the last save (Saves, below). A new game, and a load, close that world with `travel_drop`: the keep is not written back, so doors the dead character opened and enemies they killed do not come with the next life. The line "You have died." is cleared with the other death state (`forget_last_game`, `travel_drop`).
 
 Moving an entity's position and pose from game code, and the walker colliding with entities, are engine requests.
 
