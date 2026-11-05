@@ -23,6 +23,7 @@ enum {
     SETTINGS_DEFAULT, SETTINGS_APPLY, SETTINGS_MOUSE,
     SETTINGS_UP, SETTINGS_DOWN, SETTINGS_SLIDER,
     SETTINGS_SFX_SLIDER, SETTINGS_MUSIC_SLIDER, SETTINGS_BOB, SETTINGS_FULL_HUD,
+    SETTINGS_CROUCH_TOGGLE,
     SETTINGS_BIND = 32
 };
 enum {
@@ -72,6 +73,7 @@ typedef struct SettingsView {
     int music_volume;
     int bob;                     /* Draft head-bobbing preference. */
     int full_hud;                /* On shows the bar; inverse of stored OPTS.full. */
+    int crouch_toggle;           /* Draft: the crouch key flips instead of being held. */
     int classic;
     int hover;                   /* settings_hit(), or SETTINGS_NOTHING. */
     int dirty;

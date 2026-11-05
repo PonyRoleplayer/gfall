@@ -4,8 +4,8 @@
 #include "engine/assets/recfile.h"
 
 /*
- * Stored options: full screen, head bobbing, horizontal FOV, SFX/music volume.
- * Graphics exposes FOV, Gameplay exposes bobbing and Full HUD, and Audio
+ * Stored options: full screen, head bobbing, crouch toggle, horizontal FOV, SFX/music volume.
+ * Graphics exposes FOV, Gameplay exposes bobbing, Full HUD and Toggle Crouch, and Audio
  * exposes volumes. Full HUD On means full-screen off: the bottom bar shows.
  * This inverse UI label preserves existing full-screen values on disk.
  * Read docs/game.md (Menus) before editing.
@@ -20,7 +20,8 @@
  * sets HeadBobbing true; that is DFU's choice, not used here.
  *
  * Stored as one OPTS row in DATA\KEYS.DAT beside the bindings (keys.c
- * writes and reads it with them). No row means both off and FOV 75. The appended fov field uses the
+ * writes and reads it with them). No row means all off and FOV 75; Toggle Crouch
+ * off is a crouch held by its key, as a first-person game does by default. The appended fov field uses the
  * same default for older OPTS rows; valid stored values are 45..120.
  * Audio percentages start at 80 each, including in older files without
  * those fields. Zero mutes; values over 100 are ignored. Setters/getters live
@@ -41,6 +42,9 @@ void viewopt_set_full(int on);
 /* 1 when a walk may move the eye. */
 int viewopt_bob(void);
 void viewopt_set_bob(int on);
+/* 1 when the crouch key flips between crouched and standing; 0 when crouched only while it is held. */
+int viewopt_crouch_toggle(void);
+void viewopt_set_crouch_toggle(int on);
 /*
  * The eye's offset at this walk phase (radians), in world units.
  * right is along the body's right, up is world up, and pitch and yaw

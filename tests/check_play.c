@@ -6695,6 +6695,104 @@ static void check_theft(void)
 }
 
 /*
+ * Crouching: held or toggled by the key, DFU's half height and half walking speed, no running and
+ * no jump while down, a horse no place for it, and the OPTS row that keeps the choice. How the body
+ * stays down under a low ceiling is the engine's test (check_body_crouch); here it is the player's
+ * state and the speed it walks at.
+ */
+static void check_crouch(void)
+{
+    Player p;
+    Character sheet;
+    Input in;
+    Input none;
+    character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Ada");
+    player_init(&p, &sheet);
+    mem_zero(&in, sizeof(in));
+    mem_zero(&none, sizeof(none));
+    check_expect(!p.crouched && p.body.height == WALK_HEIGHT, "crouch: a new player is not standing");
+
+    /* Held: down while the key is, up when it is let go (no scene to ask: room enough). */
+    player_crouch(&p, 0, 0, 1, 1);
+    check_expect(p.crouched && p.body.height == PLAYER_CROUCH_HEIGHT && p.body.eye == PLAYER_CROUCH_EYE, "crouch: held did not crouch the body");
+    player_crouch(&p, 0, 0, 1, 0);
+    check_expect(p.crouched, "crouch: held let the body up while held");
+    player_crouch(&p, 0, 0, 0, 0);
+    check_expect(!p.crouched && p.body.height == WALK_HEIGHT && p.body.eye == WALK_EYE, "crouch: letting go did not stand the body");
+
+    /* Toggled: a press flips it, its being held or let go changes nothing. */
+    player_crouch(&p, 0, 1, 1, 1);
+    player_crouch(&p, 0, 1, 1, 0);
+    player_crouch(&p, 0, 1, 0, 0);
+    check_expect(p.crouched, "crouch: a toggle was let go with the key");
+    player_crouch(&p, 0, 1, 1, 1);
+    player_crouch(&p, 0, 1, 0, 0);
+    check_expect(!p.crouched, "crouch: a second press did not stand them");
+
+    /* A horse is no place to crouch. */
+    player_crouch(&p, 0, 0, 1, 1);
+    p.riding = 1;
+    player_crouch(&p, 0, 0, 1, 0);
+    check_expect(!p.crouched, "crouch: crouched on a horse");
+    p.riding = 0;
+    player_crouch(&p, 0, 0, 0, 0);
+
+    /* Half the walking speed, run held or not, no jump: on the hold's own floor, a quarter second. */
+    {
+        World *world;
+        Level level;
+        float x;
+        float y;
+        float z;
+        float yaw;
+        float pitch;
+        float stood;
+        float down;
+
+        world = world_load();
+        check_expect(world != 0, "crouch: the hold did not load");
+        if (world) {
+            world_as_level(world, &level);
+            world_start(world, &x, &y, &z, &yaw, &pitch);
+            player_place(&p, x, y, z, yaw, pitch);
+            in.move_f = 1;
+            in.held = INPUT_BIT(INPUT_RUN);
+            walk(&p, &level.scene, &none, 60);
+            /* Standing and walking, run held: the run. Crouched, the same keys: half the walk. */
+            stood = walk(&p, &level.scene, &in, 15);
+            in.move_f = -1;
+            in.held = 0;
+            walk(&p, &level.scene, &in, 15);
+            player_crouch(&p, &level.scene, 0, 1, 1);
+            walk(&p, &level.scene, &none, 30);
+            in.move_f = 1;
+            in.held = INPUT_BIT(INPUT_RUN);
+            down = walk(&p, &level.scene, &in, 15);
+            printf("play: a quarter second goes %.1f running, %.1f crouched with run held\n", (double)stood, (double)down);
+            check_expect(check_near(down, rules_walk_speed(p.sheet.attribute[ATTR_SPEED]) * RULES_UNITS_PER_M * 0.25f * PLAYER_CROUCH_SPEED,
+                                    down * 0.1f),
+                         "crouch: crouched with run held is not half the walking speed");
+            check_expect(!p.running, "crouch: crouched and still running");
+            in.move_f = 0;
+            in.held = 0;
+            in.pressed = INPUT_BIT(INPUT_JUMP);
+            player_step_motion(&p, &in, &level.scene, 1.0f / 60.0f, 1, 0, 0);
+            check_expect(p.body.vy <= 0.5f, "crouch: a crouched player jumped");
+            in.pressed = 0;
+            player_crouch(&p, &level.scene, 0, 0, 0);
+            check_expect(!p.crouched, "crouch: in the open, letting go did not stand them");
+        }
+    }
+
+    /* The option: off by default, and settable. */
+    viewopt_defaults();
+    check_expect(!viewopt_crouch_toggle(), "crouch: the toggle is not off by default");
+    viewopt_set_crouch_toggle(1);
+    check_expect(viewopt_crouch_toggle(), "crouch: the toggle did not set");
+    viewopt_set_crouch_toggle(0);
+}
+
+/*
  * Afflictions: the diseases' records, the saving throw, a disease's days and its
  * drain given back, the werewolf's infection turned to its curse and its gifts,
  * changing shape and the moons, the urge to kill, a vampire's sun, hunger and
@@ -7908,6 +8006,7 @@ void check_play(void)
     check_wider_world();
     check_holidays();
     check_theft();
+    check_crouch();
     check_ills();
     check_ships();
     check_lodging();

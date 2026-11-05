@@ -194,6 +194,19 @@ void check_menu(void)
     check_expect(!viewopt_bob(), "menu: Gameplay default retry failed");
     click_at(500,119); click_at(550,445);
     check_expect(!viewopt_bob(), "menu: Back applied bob draft");
+    /* Toggle Crouch is a draft until Apply, is kept when the write fails, and Default turns it off. */
+    viewopt_set_crouch_toggle(0);
+    menu_open(MENU_OPTIONS);
+    click_at(30,280);
+    click_at(500,231);
+    check_expect(!viewopt_crouch_toggle(), "menu: crouch toggle draft applied early");
+    g_write_ok=0; click_at(200,445);
+    check_expect(!viewopt_crouch_toggle(), "menu: failed Apply changed the crouch toggle");
+    g_write_ok=1; click_at(200,445);
+    check_expect(viewopt_crouch_toggle(), "menu: Apply did not commit the crouch toggle");
+    click_at(40,445); click_at(200,445);
+    check_expect(!viewopt_crouch_toggle(), "menu: Gameplay Default did not turn the crouch toggle off");
+    click_at(550,445);
     menu_open(MENU_OPTIONS);
     /* Full HUD is the inverse of legacy full-screen. Exercise the
      * existing saved preference without adding another persisted field. */

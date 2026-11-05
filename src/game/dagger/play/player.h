@@ -44,6 +44,12 @@ typedef struct Player {
     int riding;
     int running;
     /*
+     * Crouching (player_crouch): 1 while the body is at crouch size, and 1 when the player
+     * wants to be, which differs only while a low ceiling keeps them down.
+     */
+    int crouched;
+    int crouch_want;
+    /*
      * Head bobbing's phase (radians) and 1 while this step is a walk on
      * the ground. The camera reads them; standing still leaves the eye.
      */
@@ -70,6 +76,21 @@ void player_step(Player *p, const Input *in, const Scene *scene, float dt, int c
  * the legacy relative-look wrapper used by existing callers and tests. */
 void player_turn(Player *p, float yaw, float pitch);
 void player_step_motion(Player *p, const Input *in, const Scene *scene, float dt, int collide, float forward, float right);
+/*
+ * Crouching, DFU's: half the height, half the walking speed, no running, no jump. The body's size
+ * is the engine's (body_set_size); standing again only where the head has room (body_can_stand),
+ * so under a low ceiling the player stays down and rises when they are out from under it.
+ */
+#define PLAYER_CROUCH_HEIGHT 36.0f
+#define PLAYER_CROUCH_EYE 34.2f
+#define PLAYER_CROUCH_SPEED 0.5f
+/*
+ * One frame's crouch input: held is the crouch key down, pressed its going down this frame. With
+ * toggle the key flips the wish and its release does nothing; without it the wish is the key
+ * held. Riding, and nothing under the player to ask (scene 0), stand them up. Call between
+ * body steps (body_can_stand gathers).
+ */
+void player_crouch(Player *p, const Scene *scene, int toggle, int held, int pressed);
 /*
  * Health taken from it, the one way the game hurts the player (a fall,
  * a blow): 1 when it dies, 0 when it lives, -1 when nothing was taken

@@ -16,18 +16,20 @@ typedef struct ViewRow {
     df_u16 fov;
     df_u8 sfx_volume;
     df_u8 music_volume;
+    df_u8 crouch_toggle;
 } ViewRow;
 
-static const ViewRow g_default_row = { 0, 0, 0, 75, 80, 80 };
+static const ViewRow g_default_row = { 0, 0, 0, 75, 80, 80, 0 };
 static const RecField g_fields[] = {
     REC_FIELD("id", REC_UINT, ViewRow, id),
     REC_FIELD("full", REC_UINT, ViewRow, full),
     REC_FIELD("bob", REC_UINT, ViewRow, bob),
     REC_FIELD("fov", REC_UINT, ViewRow, fov),
     REC_FIELD("sfx_volume", REC_UINT, ViewRow, sfx_volume),
-    REC_FIELD("music_volume", REC_UINT, ViewRow, music_volume)
+    REC_FIELD("music_volume", REC_UINT, ViewRow, music_volume),
+    REC_FIELD("crouch_toggle", REC_UINT, ViewRow, crouch_toggle)
 };
-static const RecSchema g_schema = { "OPTS", "options", g_fields, 6, (df_u16)sizeof(ViewRow), &g_default_row };
+static const RecSchema g_schema = { "OPTS", "options", g_fields, 7, (df_u16)sizeof(ViewRow), &g_default_row };
 
 /* Metres, HeadBobber's walking and running amounts. */
 #define WALK_X 0.045f
@@ -43,11 +45,13 @@ static const RecSchema g_schema = { "OPTS", "options", g_fields, 6, (df_u16)size
 
 static int g_full;
 static int g_bob;
+static int g_crouch_toggle;
 
 void viewopt_defaults(void)
 {
     g_full = 0;
     g_bob = 0;
+    g_crouch_toggle = 0;
     camera_set_fov(75.0f);
     sound_set_volume(80);
     music_set_volume(80);
@@ -71,6 +75,16 @@ int viewopt_bob(void)
 void viewopt_set_bob(int on)
 {
     g_bob = on ? 1 : 0;
+}
+
+int viewopt_crouch_toggle(void)
+{
+    return g_crouch_toggle;
+}
+
+void viewopt_set_crouch_toggle(int on)
+{
+    g_crouch_toggle = on != 0;
 }
 
 void viewopt_eye(float phase, int walking, int running, float *right, float *up, float *pitch, float *yaw)
@@ -148,6 +162,9 @@ void viewopt_read(const df_u8 *bytes, df_u32 n)
     if (row->bob <= 1) {
         g_bob = row->bob;
     }
+    if (row->crouch_toggle <= 1) {
+        g_crouch_toggle = row->crouch_toggle;
+    }
 }
 
 int viewopt_write(RecPut put, void *ctx)
@@ -157,6 +174,7 @@ int viewopt_write(RecPut put, void *ctx)
     row.id = 0;
     row.full = (df_u8)g_full;
     row.bob = (df_u8)g_bob;
+    row.crouch_toggle = (df_u8)g_crouch_toggle;
     row.fov = (df_u16)df_iround(camera_fov());
     row.sfx_volume = (df_u8)sound_volume();
     row.music_volume = (df_u8)music_volume();

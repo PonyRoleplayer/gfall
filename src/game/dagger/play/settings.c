@@ -19,13 +19,13 @@ static const char *const g_names[] = {
     "Move forward", "Move backward", "Turn left", "Turn right",
     "Strafe left", "Strafe right", "Jump", "Run", "Rest", "Attack / swing",
     "Swap hands", "Character sheet", "Inventory", "Activate", "Toggle cursor",
-    "Look up", "Look down", "Center view", "Free look", "Automap", "Travel map", "Transport"
+    "Look up", "Look down", "Center view", "Free look", "Automap", "Travel map", "Transport", "Crouch"
 };
 static const int g_actions[] = {
     INPUT_FORWARD, INPUT_BACK, INPUT_TURN_LEFT, INPUT_TURN_RIGHT,
     INPUT_LEFT, INPUT_RIGHT, INPUT_JUMP, INPUT_RUN, INPUT_REST, INPUT_ATTACK,
     INPUT_SWAP_HANDS, INPUT_CHARACTER, INPUT_INVENTORY, INPUT_USE, INPUT_CURSOR,
-    INPUT_LOOK_UP, INPUT_LOOK_DOWN, INPUT_LOOK_CENTER, INPUT_FREELOOK, INPUT_MAP, INPUT_TRAVEL_MAP, INPUT_TRANSPORT
+    INPUT_LOOK_UP, INPUT_LOOK_DOWN, INPUT_LOOK_CENTER, INPUT_FREELOOK, INPUT_MAP, INPUT_TRAVEL_MAP, INPUT_TRANSPORT, INPUT_CROUCH
 };
 
 /* Geometry is shared by drawing and hit testing. The entire screen uses
@@ -459,6 +459,7 @@ int settings_hit(int tab, int scroll, int x, int y)
     } else if (tab == SETTINGS_GAMEPLAY) {
         if (inside(x,y,174,98,444,42)) return SETTINGS_BOB;
         if (inside(x,y,174,154,444,42)) return SETTINGS_FULL_HUD;
+        if (inside(x,y,174,210,444,42)) return SETTINGS_CROUCH_TOGGLE;
     } else if (tab == SETTINGS_GRAPHICS) {
         int row, top;
         if (inside(x, y, 601, GFX_LIST_Y, 18, GFX_LIST_H)) {
@@ -574,8 +575,11 @@ void settings_draw(const SettingsView *v, SettingsQuad quad, void *ctx)
         panel(174,154,444,42,0);
         text(184,169,210,tr("FULL HUD"),0);
         button(426,158,184,34,v->full_hud ? "ON" : "OFF",0,v->hover == SETTINGS_FULL_HUD);
-        panel(180,224,432,144,0);
-        paragraph(194,240,396,112,"Head bobbing moves the camera as you walk. Full HUD shows the bottom bar and portrait. Turn it off to hide the bar; vitals and compass remain. Defaults: bobbing off, Full HUD on.");
+        panel(174,210,444,42,0);
+        text(184,225,210,tr("TOGGLE CROUCH"),0);
+        button(426,214,184,34,v->crouch_toggle ? "ON" : "OFF",0,v->hover == SETTINGS_CROUCH_TOGGLE);
+        panel(180,266,432,104,0);
+        paragraph(194,280,396,84,"Head bobbing moves the camera as you walk. Full HUD shows the bottom bar and portrait; turn it off to hide the bar (vitals and compass remain). Toggle Crouch makes the crouch key flip between crouched and standing; off, you crouch only while holding it. Defaults: bobbing off, Full HUD on, Toggle Crouch off.");
     }
 
     button(18,430,136,32,v->tab == SETTINGS_FILES ? (v->confirm_exit ? "CONFIRM EXIT" : "EXIT GAME") : "DEFAULT",1,v->hover == (v->tab == SETTINGS_FILES ? SETTINGS_EXIT : SETTINGS_DEFAULT));

@@ -37,6 +37,8 @@ void player_init(Player *p, const Character *sheet)
     p->breath_time = 0.0f;
     p->running = 0;
     p->riding = 0;
+    p->crouched = 0;
+    p->crouch_want = 0;
     p->bob_phase = VIEWOPT_CREST;
     p->bob_walk = 0;
 }
@@ -103,9 +105,11 @@ void player_step_motion(Player *p, const Input *in, const Scene *scene, float dt
         f *= scale;
         r *= scale;
     }
-    /* Riding is its own speed, and cannot run (PlayerSpeedChanger). */
+    /* Riding is its own speed, and cannot run (PlayerSpeedChanger). Crouched, half the walk, whatever is held. */
     if (p->riding) {
         mps = rules_ride_speed(p->sheet.attribute[ATTR_SPEED], p->riding == 2);
+    } else if (p->crouched) {
+        mps = rules_walk_speed(p->sheet.attribute[ATTR_SPEED]) * PLAYER_CROUCH_SPEED;
     } else {
         mps = (in->held & INPUT_BIT(INPUT_RUN))
                   ? rules_run_speed(p->sheet.attribute[ATTR_SPEED], p->sheet.skill[SKILL_RUNNING])
@@ -113,7 +117,7 @@ void player_step_motion(Player *p, const Input *in, const Scene *scene, float dt
     }
     step = mps * RULES_UNITS_PER_M * dt;
     /* Running trains the skill: one use every fourth classic update of it (PlayerEntity). */
-    p->running = !p->riding && (in->held & INPUT_BIT(INPUT_RUN)) && (f != 0.0f || r != 0.0f);
+    p->running = !p->riding && !p->crouched && (in->held & INPUT_BIT(INPUT_RUN)) && (f != 0.0f || r != 0.0f);
     if (p->running) {
         p->run_time += dt;
         if (p->run_time >= RUN_USE_EVERY) {
@@ -173,7 +177,7 @@ void player_step_motion(Player *p, const Input *in, const Scene *scene, float dt
         return;
     }
     p->body.gravity = rules_gravity() * RULES_UNITS_PER_M;
-    if (in->pressed & INPUT_BIT(INPUT_JUMP)) {
+    if ((in->pressed & INPUT_BIT(INPUT_JUMP)) && !p->crouched) {
         /* Each jump from the ground trains the skill, and tires (PlayerEntity). */
         if (p->body.grounded) {
             character_tally(&p->sheet, SKILL_JUMPING, 1);
@@ -184,6 +188,31 @@ void player_step_motion(Player *p, const Input *in, const Scene *scene, float dt
     }
     body_step(&p->body, scene, (sy * f + cy * r) * step, (cy * f - sy * r) * step, dt);
     note_bob(p, f, r, mps, dt);
+}
+
+void player_crouch(Player *p, const Scene *scene, int toggle, int held, int pressed)
+{
+    if (toggle) {
+        if (pressed) {
+            p->crouch_want = !p->crouch_want;
+        }
+    } else {
+        p->crouch_want = held != 0;
+    }
+    /* A horse is no place to crouch. */
+    if (p->riding) {
+        p->crouch_want = 0;
+    }
+    if (p->crouch_want && !p->crouched) {
+        body_set_size(&p->body, PLAYER_CROUCH_HEIGHT, PLAYER_CROUCH_EYE);
+        p->crouched = 1;
+    } else if (!p->crouch_want && p->crouched) {
+        /* Up only with room for the head; else down still, and the next frame asks again. */
+        if (!scene || body_can_stand(&p->body, scene, WALK_HEIGHT)) {
+            body_set_size(&p->body, WALK_HEIGHT, WALK_EYE);
+            p->crouched = 0;
+        }
+    }
 }
 
 int player_breath(Player *p, float dt)

@@ -62,6 +62,7 @@ static int g_saved_sfx;
 static int g_saved_music;
 static int g_saved_bob;
 static int g_saved_full_hud;
+static int g_saved_crouch_toggle;
 static int g_dragging;
 static char g_key_names[SETTINGS_BINDINGS][24];
 static int g_pic;
@@ -284,6 +285,7 @@ void menu_open(int which)
         g_settings.sfx_volume = g_saved_sfx = sound_volume();
         g_settings.music_volume = g_saved_music = music_volume();
         g_settings.bob = g_saved_bob = viewopt_bob();
+        g_settings.crouch_toggle = g_saved_crouch_toggle = viewopt_crouch_toggle();
         g_gfx_draft_open = 0;
         g_saved_fov = df_iround(camera_fov());
         /* Legacy "full screen" hides the bar. The user-facing Full HUD
@@ -355,7 +357,8 @@ static int settings_dirty(void)
     if (g_settings.tab == SETTINGS_AUDIO)
         return g_settings.sfx_volume != g_saved_sfx || g_settings.music_volume != g_saved_music;
     if (g_settings.tab == SETTINGS_GAMEPLAY)
-        return g_settings.bob != g_saved_bob || g_settings.full_hud != g_saved_full_hud;
+        return g_settings.bob != g_saved_bob || g_settings.full_hud != g_saved_full_hud
+               || g_settings.crouch_toggle != g_saved_crouch_toggle;
     if (g_settings.tab != SETTINGS_KEYS) return 0;
     if (g_settings.classic != g_saved_classic) return 1;
     for (i = 0; i < INPUT_ACTIONS; i++) if (g_draft_keys[i] != g_saved_keys[i]) return 1;
@@ -377,6 +380,7 @@ static void settings_apply(void)
     } else if (g_settings.tab == SETTINGS_GAMEPLAY) {
         viewopt_set_bob(g_settings.bob);
         viewopt_set_full(!g_settings.full_hud);
+        viewopt_set_crouch_toggle(g_settings.crouch_toggle);
     } else if (g_settings.tab == SETTINGS_KEYS) {
         for (i = 0; i < INPUT_ACTIONS; i++) input_bind(i, g_draft_keys[i]);
         control_set_classic(g_settings.classic);
@@ -391,12 +395,14 @@ static void settings_apply(void)
         } else if (g_settings.tab == SETTINGS_GAMEPLAY) {
             viewopt_set_bob(g_saved_bob);
             viewopt_set_full(!g_saved_full_hud);
+            viewopt_set_crouch_toggle(g_saved_crouch_toggle);
         } else if (g_settings.tab == SETTINGS_KEYS) {
             camera_set_fov((float)g_saved_fov);
             sound_set_volume(g_saved_sfx);
             music_set_volume(g_saved_music);
             viewopt_set_bob(g_saved_bob);
             viewopt_set_full(!g_saved_full_hud);
+            viewopt_set_crouch_toggle(g_saved_crouch_toggle);
             for (i = 0; i < INPUT_ACTIONS; i++) input_bind(i, g_saved_keys[i]);
             control_set_classic(g_saved_classic);
             mouse_set_cursor(g_saved_classic);
@@ -406,6 +412,7 @@ static void settings_apply(void)
             music_set_volume(g_saved_music);
             viewopt_set_bob(g_saved_bob);
             viewopt_set_full(!g_saved_full_hud);
+            viewopt_set_crouch_toggle(g_saved_crouch_toggle);
         }
         g_settings.note = "Could not save settings. Changes were not applied.";
         return;
@@ -419,6 +426,7 @@ static void settings_apply(void)
     } else if (g_settings.tab == SETTINGS_GAMEPLAY) {
         g_saved_bob = g_settings.bob;
         g_saved_full_hud = g_settings.full_hud;
+        g_saved_crouch_toggle = g_settings.crouch_toggle;
     } else if (g_settings.tab == SETTINGS_KEYS) {
         for (i = 0; i < INPUT_ACTIONS; i++) g_saved_keys[i] = g_draft_keys[i];
         g_saved_classic = g_settings.classic;
@@ -527,6 +535,7 @@ static int settings_frame(const Input *in, int px, int py)
         } else if (g_settings.tab == SETTINGS_GAMEPLAY) {
             g_settings.bob = 0;
             g_settings.full_hud = 1;
+            g_settings.crouch_toggle = 0;
         } else if (g_settings.tab == SETTINGS_KEYS) {
             /* Borrow the one canonical default table, then restore live
              * preferences. No duplicate binding defaults can drift here. */
@@ -542,6 +551,7 @@ static int settings_frame(const Input *in, int px, int py)
         break;
     case SETTINGS_FULL_HUD: g_settings.full_hud = !g_settings.full_hud; break;
     case SETTINGS_BOB: g_settings.bob = !g_settings.bob; break;
+    case SETTINGS_CROUCH_TOGGLE: g_settings.crouch_toggle = !g_settings.crouch_toggle; break;
     case SETTINGS_MOUSE: g_settings.classic = !g_settings.classic; break;
     case SETTINGS_UP:
         if (g_settings.tab == SETTINGS_GRAPHICS) {

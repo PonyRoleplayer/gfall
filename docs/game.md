@@ -298,6 +298,8 @@ Every quest uses 6 (if a state, end), 12 (start a timer), 23 (a log entry) and n
 
 **Decided with the user (2026-11-04):** the player's height becomes variable in the engine and the game builds its crouch on it (asked of the ENGINE implementer); a failed pickpocket brings the guards (done through the watch below); houses have no containers, so they are ours to build (slice 5).
 
+**Built, slice 4's crouch part:** crouching (`player_crouch` in `player.c`, over the engine's `body_set_size` and `body_can_stand`; DFU's sizes: half the height, 36 units, the eye at 34.2, half the walking speed, no running and no jump while down, never on a horse). The key is `INPUT_CROUCH`, default Ctrl (C is the character sheet), on the Keybindings screen. Held by default; the Gameplay checkbox "Toggle Crouch" makes a press flip it. Under a low ceiling the player stays down and rises when the head has room. E stays the one use key, as in a first-person game: used while crouched it is Steal (`steal_intent` in `game.c`, the same as the bar's Steal mode): a street citizen's pocket is picked, a shut door's lock, and a person inside a building is not spoken to. The bar's modes keep their meaning, Info and Talk first. Not assumed: that crouching helps Stealth (DFU's PlayerMotor says nothing of it). Tests: `check_crouch`, `check_menu`'s Toggle Crouch.
+
 **Built, slice 1:** Steal mode on a street citizen. `rules_pickpocket_chance` and `rules_pickpocket_gold`, `play/theft.c` (the attempt, the once-a-person memory, the lines), `court_note` (a crime's cost to the reputation with no court), `watch_alarm` (the watch's wanted, HALTs and guards for a crime that is no killing; `watch_on_kill` calls it) and `CRIME_PICKPOCKETING`. In `game.c` the use key in the bar's Steal mode (a click on the pointer, E) tries `street_person_robbed`: a person within half of talk's reach is robbed; one farther is "too far away"; no one lets the ray go on to doors and shelves as before. A person is known by `people_in_view`'s number; the tried set (64) is dropped with every place entered (`game_enter`), as DFU's flag goes with the person; a slot recycled to a new walker inside one visit can inherit "tried", a known small leak. The run key held no longer means anything for people, only for locks, so a hurried E never robs anyone. Tests: `check_theft`. Guards come as they do for a killing: every loaded guard hostile, or 2..5 spawned (`people_spawn_guard`); there is no arrest to a court yet (that is the killing's gap too), the guards fight.
 
 Complete the theft left out of P9: pickpocketing, the other places a lock or a shelf is robbed, what a failure costs, and a way to do it from the keyboard. P9 already has a shop's Steal button and shoplifting, a street door's lockpicking (the Steal mode or the run key held), `CRIME_THEFT` and the court.
@@ -332,7 +334,7 @@ Everything above runs when the player means to steal: `g_stealing` in `game.c` (
 1. **Pickpocket a citizen (built)**, from the bar's Steal mode and the point-and-click scheme: `rules` (the chance, the gold roll), `theft.c` (the tried set, the attempt), the crime and the guards, Pickpocket's tally. Tests: the chances by hand at the clamps, gold 1..6 at 67%, one try a citizen, a failure's crime to the court, through a save.
 2. **A human enemy:** the level term, gold or hostility. Tests: the 45 and -20 of DFU's own example.
 3. **Locks and shelves:** the alert chance on a failed pick, the dungeon door's formula and the 20 limit.
-4. **The keyboard scheme:** Info on E for creatures and citizens; then, with the engine's crouch, the key, the hold or toggle, the Steal on E.
+4. **The keyboard scheme:** the crouch key, hold or toggle, and Steal on E are built (above); Info on E for creatures, with the aim at a creature of slice 2, is not.
 5. **Containers in houses.** Houses have none today, so this is two jobs: stocking a house's rooms with chests and shelves (loot by the house's quality), then the private-property question and its crime when a stranger's is opened.
 The run key held while using a lock stays until crouching can replace it (open question).
 
@@ -642,6 +644,9 @@ classic screens' stretched 320 x 200 canvas. It does not change video mode.
    of the existing `OPTS.full` (legacy full-screen) preference, so old files
    retain their appearance without migration. It shares Gameplay's drafts,
    Apply, Default, cancellation and failed-write rollback.
+   **Toggle Crouch** On/Off, default off: off, the crouch key crouches the player only while it is held;
+   on, a press crouches and the next press stands (`viewopt_crouch_toggle`, drafted, applied and rolled
+   back with the other two).
 
 FOV and both volume sliders share descriptors for their tab, action, range,
 label and vertical position. Drawing, hit testing and pointer conversion use
@@ -658,11 +663,11 @@ shell closes. There is no automatic write merely from closing it.
 
 The `KEYS`, `MOUS` and `CTLS` records retain their existing meaning. `OPTS`
 retains `full`, `bob` and `fov`, and appends unsigned `sfx_volume` and
-`music_volume` percentages. Old records without FOV inherit 75; those without
+`music_volume` percentages and `crouch_toggle` (0 or 1, older files 0). Old records without FOV inherit 75; those without
 volume fields inherit 80/80. Out-of-range angles or percentages are ignored;
 zero volume is a real mute value. These are user preferences, not part of a
 character's save. Full-screen is exposed inversely as Full HUD in Gameplay,
-alongside head bobbing.
+alongside head bobbing and Toggle Crouch.
 
 ### Artwork, text and ownership
 

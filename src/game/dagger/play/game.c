@@ -490,6 +490,16 @@ static int street_person_used(const Camera *cam)
     return 1;
 }
 
+/*
+ * Whether a use means stealing: the bar's Steal mode, or crouching (the keyboard's way: E is the
+ * one use key, and used crouched it is Steal, as docs/game.md says). A citizen then has their
+ * pocket picked, a shut door its lock, and nobody is spoken to.
+ */
+static int steal_intent(void)
+{
+    return g_mode == HUDBAR_STEAL || g_player.crouched;
+}
+
 /* How near a pocket must be to be picked: half of talking's reach (DFU's PickpocketDistance, 128 to 256). */
 #define THEFT_REACH 128.0f
 
@@ -1044,8 +1054,8 @@ static int on_use(const Scene *scene, const Usable *u, int index)
         return 1;
     }
     if (u->kind == USE_TALK) {
-        if (g_mode == HUDBAR_STEAL) {
-            /* P12-a supplies pickpocketing. Never start an ordinary
+        if (steal_intent()) {
+            /* A person in a building is not robbed (DFU: static NPCs). Never start an ordinary
              * conversation when the player explicitly selected Steal. */
             interact_say("You cannot steal from this person.");
             return 1;
@@ -1567,7 +1577,7 @@ static void use_key(const Camera *cam)
          * Someone walking the street, if the view rests on them: in Steal mode their pocket is
          * picked, else they are spoken to. Otherwise what the engine's ray finds.
          */
-        if (g_mode == HUDBAR_STEAL ? !street_person_robbed(cam) : !street_person_used(cam)) {
+        if (steal_intent() ? !street_person_robbed(cam) : !street_person_used(cam)) {
             Basis b;
 
             /* Use the exact camera supplied by keyboard or pointer picking.
@@ -1811,7 +1821,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
         control_block(&g_control);
         weapon_cancel();
     }
-    g_stealing = g_mode == HUDBAR_STEAL || (in->held & INPUT_BIT(INPUT_RUN)) != 0;
+    g_stealing = steal_intent() || (in->held & INPUT_BIT(INPUT_RUN)) != 0;
     /* A screen before any place: the title or the start menu. */
     if (!g_playing) {
         /* Creation, once Start is chosen: it ends with a character for the first place. */
@@ -2234,8 +2244,11 @@ int game_frame(Camera *cam, const Input *in, float dt)
              * The handoff frame still advances gravity, with no jump edge. */
             move = *in;
             move.pressed = 0;
+            player_crouch(&g_player, &g_level->scene, viewopt_crouch_toggle(), (in->held & INPUT_BIT(INPUT_CROUCH)) != 0, 0);
             player_step_motion(&g_player, &move, &g_level->scene, dt, walker_on(), 0, 0);
         } else {
+            player_crouch(&g_player, &g_level->scene, viewopt_crouch_toggle(), (in->held & INPUT_BIT(INPUT_CROUCH)) != 0,
+                          (in->pressed & INPUT_BIT(INPUT_CROUCH)) != 0);
             player_step_motion(&g_player, in, &g_level->scene, dt, walker_on(), controls.forward, controls.right);
         }
         {

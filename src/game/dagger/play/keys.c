@@ -53,7 +53,9 @@ static const KeyBind g_defaults[] = {
     { INPUT_FREELOOK, 0x12 },
     /* The travel map's own key, DFU's V: M is the automap. */
     { INPUT_TRAVEL_MAP, 'V' },
-    { INPUT_TRANSPORT, 'T' }
+    { INPUT_TRANSPORT, 'T' },
+    /* Crouch, Ctrl (0x11, either key) as a first-person game has it: C is the character sheet. Held, or a toggle by the Gameplay option. */
+    { INPUT_CROUCH, 0x11 }
 };
 #define DEFAULTS ((int)(sizeof(g_defaults) / sizeof(g_defaults[0])))
 
