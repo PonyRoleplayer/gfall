@@ -72,10 +72,16 @@ const df_u8 *create_pixels(void);
 void create_palette(df_u8 *rgb);
 /* The class ten answers come to, from CLASSES.DAT's table, by how many went each way. -1 when none. */
 int create_class_of_answers(int warrior, int rogue, int mage);
+/* A constellation's blue, 0..255, after this many answers leaned that way. 8 at none. */
+int create_constellation_blue(int answers);
+/* "Merchants: higher" and the same for the other social groups. The length written. */
+int create_reputation_text(int group, int amount, char *out, int cap);
 /* 1 once since the last compose if something on it changed. */
 int create_changed(void);
 /* A click at classic's x, y: CREATE_STAY, DONE or CANCELLED. */
 int create_click(int x, int y);
+/* The same. all 1 spends the chosen attribute's or skill group's whole pool in that one click. */
+int create_click_bulk(int x, int y, int all);
 /* A key pressed, by its virtual key code: the name, Enter, Escape. As a click. */
 int create_key(int vk);
 const char *create_note(void);

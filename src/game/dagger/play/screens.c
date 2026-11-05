@@ -672,7 +672,7 @@ static int create_frame(const Input *in)
         asked = create_key(vk);
     }
     if (asked == CREATE_STAY && (!in->reset && (in->mouse_pressed & INPUT_MOUSE_LEFT))) {
-        asked = create_click(g_point_x, g_point_y);
+        asked = create_click_bulk(g_point_x, g_point_y, (in->held & INPUT_BIT(INPUT_RUN)) != 0);
     }
     if (asked == CREATE_DONE) {
         return SCREENS_MADE;

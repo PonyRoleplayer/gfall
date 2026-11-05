@@ -7,7 +7,9 @@
 #include "game/dagger/formats/biog.h"
 #include "game/dagger/formats/cif.h"
 #include "game/dagger/formats/img.h"
+#include "game/dagger/formats/sndfile.h"
 #include "game/dagger/formats/textrsc.h"
+#include "game/dagger/play/sfx.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/tables/items.h"
 #include "engine/core/log.h"
@@ -211,6 +213,13 @@ static struct {
     int question_dark;
     /* 1 when the class being confirmed came of the questions: No goes back there. */
     int class_asked;
+    /* Shift on the attribute or skill spinner: the whole pool in one click. */
+    int bulk;
+    /* What the last biography answer did to a social group, until the next click. */
+    char rep_note[128];
+    /* The sex step's figures, a fraction of the screen, filled when that step is drawn. */
+    Rect sex_left;
+    Rect sex_right;
     /* A class of the player's own, being made. */
     char custom_name[16];
     int custom_skill[SKILLS_SHOWN];
@@ -377,6 +386,58 @@ static void answer_gives_item(const BiogEffect *e)
     }
 }
 
+static const char *social_word(int group)
+{
+    static const char *const names[] = {
+        "Commoners", "Merchants", "Scholars", "Nobility", "Underworld"
+    };
+
+    return group >= 0 && group < 5 ? names[group] : "Them";
+}
+
+int create_reputation_text(int group, int amount, char *out, int cap)
+{
+    const char *way;
+
+    way = amount < 0 ? "lower" : (amount > 0 ? "higher" : "unchanged");
+    return log_format(out, cap, "%s: %s", social_word(group), way);
+}
+
+/* The social groups this answer moved, in classic's words (TEXT.RSC 35's higher/lower). */
+static void note_social(const BiogAnswer *a)
+{
+    int i;
+    int n;
+
+    n = 0;
+    g.rep_note[0] = 0;
+    for (i = 0; i < a->effects; i++) {
+        char bit[48];
+        int len;
+
+        if (a->effect[i].kind != BIOG_SOCIAL) {
+            continue;
+        }
+        len = create_reputation_text(a->effect[i].a, a->effect[i].b, bit, (int)sizeof(bit));
+        if (len < 1) {
+            continue;
+        }
+        if (n > 0 && n + 2 < (int)sizeof(g.rep_note)) {
+            g.rep_note[n++] = ',';
+            g.rep_note[n++] = ' ';
+        }
+        if (n + len >= (int)sizeof(g.rep_note)) {
+            break;
+        }
+        mem_copy(g.rep_note + n, bit, (df_u32)len);
+        n += len;
+        g.rep_note[n] = 0;
+    }
+    if (n > 0) {
+        g.note = g.rep_note;
+    }
+}
+
 /* An answer taken: what it does, then the next question or on to the name. */
 static void answer_question(int answer)
 {
@@ -402,6 +463,7 @@ static void answer_question(int answer)
             standing_set_reaction_bonus(e->a);
         }
     }
+    note_social(a);
     g.question++;
     g.changed = 1;
     if (g.question >= g.biog->questions) {
@@ -420,6 +482,51 @@ static void show_back(int step, const char *name)
     if (g.back[step]) {
         canvas_copy_all(g.back[step]);
     }
+}
+
+/* The race's bodies, each two fifths of the screen tall, not the 144-row bitmap. */
+#define SEX_FIGURE_H (CANVAS_H * 2 / 5)
+
+static void draw_figure(const char *name, int x, int y, Rect *hit)
+{
+    ImgPicture pic;
+    MemHeap *was;
+    int dw;
+    int ok;
+
+    hit->x = 0;
+    hit->y = 0;
+    hit->w = 0;
+    hit->h = 0;
+    was = mem_heap_use(g.composer.heap);
+    ok = name && img_load(name, &pic);
+    mem_heap_use(was);
+    if (!ok || pic.width < 1 || pic.height < 1) {
+        return;
+    }
+    dw = SEX_FIGURE_H * pic.width / pic.height;
+    if (dw < 1) {
+        dw = 1;
+    }
+    canvas_scale(pic.pixels, pic.width, pic.height, x, y, dw, SEX_FIGURE_H);
+    hit->x = (df_u16)x;
+    hit->y = (df_u16)y;
+    hit->w = (df_u16)dw;
+    hit->h = SEX_FIGURE_H;
+}
+
+static void compose_sex_figures(void)
+{
+    const CareerRace *race;
+
+    race = career_race(g.race);
+    if (!race) {
+        g.sex_left.w = 0;
+        g.sex_right.w = 0;
+        return;
+    }
+    draw_figure(race->body_female, 40, 40, &g.sex_left);
+    draw_figure(race->body_male, 188, 40, &g.sex_right);
 }
 
 /* A scroll over the map with words on it, and two of classic's buttons under them. */
@@ -843,6 +950,7 @@ void create_compose(void)
         break;
     case CREATE_SEX:
         compose_box(CANVAS_BUTTON_FEMALE, CANVAS_BUTTON_MALE);
+        compose_sex_figures();
         break;
     case CREATE_METHOD:
         compose_method();
@@ -898,6 +1006,14 @@ static void click_race(int x, int y)
     }
     g.race = race;
     read_words(career_race(race)->description);
+    {
+        int clip;
+
+        clip = sndfile_by_id(career_race(race)->clip);
+        if (clip >= 0) {
+            sfx_play(clip);
+        }
+    }
     go_to(CREATE_RACE_CONFIRM);
 }
 
@@ -1220,6 +1336,13 @@ static void attribute_point(int more)
     int *value;
 
     value = &g.attribute[g.attribute_chosen];
+    if (more && g.bulk) {
+        while (g.attribute_pool > 0 && *value < RULES_ATTRIBUTE_MAX) {
+            (*value)++;
+            g.attribute_pool--;
+        }
+        return;
+    }
     if (more && g.attribute_pool > 0 && *value < RULES_ATTRIBUTE_MAX) {
         (*value)++;
         g.attribute_pool--;
@@ -1275,6 +1398,13 @@ static void skill_point(int more)
 
     group = group_of_line(g.skill_chosen);
     value = &g.skill[g.skill_chosen];
+    if (more && g.bulk) {
+        while (g.skill_pool[group] > 0) {
+            (*value)++;
+            g.skill_pool[group]--;
+        }
+        return;
+    }
     if (more && g.skill_pool[group] > 0) {
         (*value)++;
         g.skill_pool[group]--;
@@ -1330,8 +1460,9 @@ static void click_reflexes(int x, int y)
     }
 }
 
-int create_click(int x, int y)
+int create_click_bulk(int x, int y, int all)
 {
+    g.bulk = all ? 1 : 0;
     g.note = 0;
     switch (g.step) {
     case CREATE_RACE:
@@ -1347,8 +1478,9 @@ int create_click(int x, int y)
         }
         break;
     case CREATE_SEX:
-        if (rect_has(&g_answer_left, x, y) || rect_has(&g_answer_right, x, y)) {
-            g.female = rect_has(&g_answer_left, x, y);
+        if (rect_has(&g_answer_left, x, y) || rect_has(&g.sex_left, x, y)
+            || rect_has(&g_answer_right, x, y) || rect_has(&g.sex_right, x, y)) {
+            g.female = rect_has(&g_answer_left, x, y) || rect_has(&g.sex_left, x, y);
             open_faces();
             go_to(CREATE_METHOD);
         }
@@ -1543,6 +1675,31 @@ void create_close(void)
     composer_close(&g.composer);
 }
 
+int create_constellation_blue(int answers)
+{
+    int b6;
+
+    /* CHGN00I0 stores the stars at blue 2 (8 on the screen). Each answer of that way adds 6, which is DFU's +24 once widened. */
+    if (answers < 0) {
+        answers = 0;
+    }
+    b6 = 2 + answers * 6;
+    if (b6 > 63) {
+        b6 = 63;
+    }
+    return b6 * 4;
+}
+
+static void light_star(df_u8 *rgb, int index, int answers)
+{
+    int blue;
+
+    blue = create_constellation_blue(answers);
+    rgb[index * 3] = 0;
+    rgb[index * 3 + 1] = 0;
+    rgb[index * 3 + 2] = (df_u8)blue;
+}
+
 void create_palette(df_u8 *rgb)
 {
     const df_u8 *own;
@@ -1557,6 +1714,15 @@ void create_palette(df_u8 *rgb)
     for (i = 0; i < 768; i++) {
         rgb[i] = (df_u8)(own[CANVAS_BYTES + i] * 4);
     }
+    /* Mage 128, rogue 160, warrior 192: the constellations in the picture. */
+    light_star(rgb, 128, g.ways[2]);
+    light_star(rgb, 160, g.ways[1]);
+    light_star(rgb, 192, g.ways[0]);
+}
+
+int create_click(int x, int y)
+{
+    return create_click_bulk(x, y, 0);
 }
 
 const df_u8 *create_pixels(void)

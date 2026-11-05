@@ -173,6 +173,39 @@ void canvas_copy_part(const df_u8 *from, int w, int sx, int sy, int sw, int sh, 
     }
 }
 
+void canvas_scale(const df_u8 *from, int sw, int sh, int x, int y, int dw, int dh)
+{
+    int row;
+    int col;
+
+    if (!g_on || !g_on->screen || !from || sw < 1 || sh < 1 || dw < 1 || dh < 1) {
+        return;
+    }
+    for (row = 0; row < dh; row++) {
+        int dy;
+        int sy;
+
+        dy = y + row;
+        if (dy < 0 || dy >= CANVAS_H) {
+            continue;
+        }
+        sy = row * sh / dh;
+        for (col = 0; col < dw; col++) {
+            int dx;
+            int index;
+
+            dx = x + col;
+            if (dx < 0 || dx >= CANVAS_W) {
+                continue;
+            }
+            index = from[sy * sw + col * sw / dw];
+            if (index != 0) {
+                g_on->screen[dy * CANVAS_W + dx] = (df_u8)index;
+            }
+        }
+    }
+}
+
 void canvas_cutout(const df_u8 *from, int w, int h, int x, int y)
 {
     int row;

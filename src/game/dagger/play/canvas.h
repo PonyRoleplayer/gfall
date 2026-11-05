@@ -71,6 +71,12 @@ void canvas_copy_part(const df_u8 *from, int w, int sx, int sy, int sw, int sh, 
 /* A picture with index 0 clear onto the screen at x, y, clipped to it. */
 void canvas_cutout(const df_u8 *from, int w, int h, int x, int y);
 /*
+ * The same picture scaled into the rectangle dw x dh at x, y, nearest
+ * sample, index 0 clear. A selector sized as a fraction of the screen,
+ * not the bitmap's own height.
+ */
+void canvas_scale(const df_u8 *from, int sw, int sh, int x, int y, int dw, int dh);
+/*
  * Classic's parchment over r, its sides rounded up to its 22 x 22 pieces
  * (DFU's popup style: SPOP.RCI, corners, sides and a middle, three rows of
  * three). What is under its burnt edges shows.
