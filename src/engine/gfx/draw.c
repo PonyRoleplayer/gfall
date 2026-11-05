@@ -24,6 +24,7 @@
 #include "engine/scene/walker.h"
 #include "engine/scene/interact.h"
 #include "engine/scene/automap.h"
+#include "engine/scene/spawn.h"
 #include "engine/sound/ambience.h"
 #include "engine/sound/sound.h"
 #include "engine/gfx/sky.h"
@@ -1041,19 +1042,18 @@ int draw_sprite_point(void)
     return g_sprite_point;
 }
 
-static void draw_entities(const Camera *cam, const Basis *basis, const Level *level, int noted)
+/* The live entities of list[0..n-1] the view sees, drawn. */
+static void draw_entity_list(const Camera *cam, const Basis *basis, const Level *level, int noted,
+                             const Entity *list, int n)
 {
-    const Scene *sc;
     int i;
 
-    sc = &level->scene;
-    g_vis_entities = 0;
-    for (i = 0; i < sc->nentities; i++) {
+    for (i = 0; list && i < n; i++) {
         const Entity *e;
         Flat fl;
         float dx, dz, d2, r;
 
-        e = &sc->entities[i];
+        e = &list[i];
         if (!e->live || !entity_flat(e, cam->x, cam->z, &fl)) {
             continue;
         }
@@ -1071,6 +1071,18 @@ static void draw_entities(const Camera *cam, const Basis *basis, const Level *le
         draw_flat(cam, basis, level, &fl);
         g_vis_entities++;
     }
+}
+
+/* The place's own entities, then those spawned while playing (docs/spawn.md). */
+static void draw_entities(const Camera *cam, const Basis *basis, const Level *level, int noted)
+{
+    const Entity *spawned;
+    int nspawned;
+
+    g_vis_entities = 0;
+    draw_entity_list(cam, basis, level, noted, level->scene.entities, level->scene.nentities);
+    spawned = spawn_entities(&level->scene, &nspawned);
+    draw_entity_list(cam, basis, level, noted, spawned, nspawned);
 }
 
 /*
@@ -3110,6 +3122,8 @@ void draw_frame(const Camera *cam, const Level *level)
     if (automap_place() && !g_pause) {
         automap_frame(&level->scene, cam, order, norder);
     }
+    /* Spawns the camera has left behind go (docs/spawn.md). */
+    spawn_frame(&level->scene, cam);
     prof_end(PROF_CULL);
     prof_begin(PROF_MODELS);
     g_vis_models = norder;
@@ -3234,7 +3248,7 @@ void draw_frame(const Camera *cam, const Level *level)
         draw_flat(cam, &basis, level, &level->scene.sprites[order[oi]]);
     }
     /* The entities, each as the view of it the camera has (docs/entities.md), in daylight's colour. */
-    if (level->scene.entities) {
+    if (level->scene.entities || spawn_count() > 0) {
         glide_tint(outdoor ? sprite_day : light_ambient_rgb());
         draw_entities(cam, &basis, level, noted);
     }

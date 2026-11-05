@@ -4,6 +4,7 @@
 #include "engine/core/prof.h"
 #include "engine/scene/interact.h"
 #include "engine/scene/keep.h"
+#include "engine/scene/spawn.h"
 
 /* See stream.h and docs/streaming.md. */
 
@@ -320,6 +321,8 @@ void stream_close(void)
                 drop_slot(s);
             }
         }
+        /* The place is closing: what was spawned in it goes with it (docs/spawn.md). open_stream comes here too. */
+        spawn_clear();
     }
     g_open = 0;
     g_scene = 0;
@@ -575,6 +578,8 @@ static void rebase(Camera *cam, int ccx, int ccz)
     if (g_src.shift) {
         g_src.shift(g_src.user, sx, sz);
     }
+    /* What was spawned while playing stands in the scene's frame too (docs/spawn.md). */
+    spawn_shift(g_scene, sx, sz);
     cam->x -= sx;
     cam->z -= sz;
     log_print(LOG_DEBUG, "stream: origin from chunk %d %d to %d %d", g_ox, g_oz, ccx, ccz);

@@ -22,6 +22,7 @@
 #include "engine/scene/keep.h"
 #include "engine/scene/stream.h"
 #include "engine/scene/automap.h"
+#include "engine/scene/spawn.h"
 #include "engine/scene/interact.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
@@ -1830,6 +1831,201 @@ static void check_body_crouch(void)
     body_set_size(&b, 10.0f, 50.0f);
     check_expect(b.height == WALK_STEP + 1.0f && b.eye == b.height, "a size under a step was taken as asked");
     body_set_size(&b, WALK_HEIGHT, WALK_EYE);
+}
+
+/* A solid entity 64 tall and radius across at x, y, z, for the spawn tests. */
+static void spawn_body(Entity *e, float x, float y, float z, float radius)
+{
+    int p;
+
+    entity_init(e);
+    for (p = 0; p < ENTITY_POSES; p++) {
+        e->pose[p].w[0] = 32;
+        e->pose[p].h[0] = 64;
+    }
+    e->x = x;
+    e->y = y;
+    e->z = z;
+    e->radius = radius;
+    e->live = 1;
+}
+
+/*
+ * Spawned entities (docs/spawn.md) on a floor 1200 across with a wall
+ * at x 200 and water over x < -100: the pool's ids, its cap, leash,
+ * shift and place; where spawn_find puts one, in sight or not, dry or
+ * not; and a spawn solid to what walks.
+ */
+static void check_spawn(void)
+{
+    static Scene sc;
+    static Scene other;
+    static Instance in[2];
+    static Water pond;
+    Mesh *m[2];
+    SpawnSpot want;
+    SpawnId ids[SPAWN_MAX];
+    SpawnId id;
+    SpawnId old;
+    Entity e;
+    Entity me;
+    Camera cam;
+    float x, y, z;
+    float d;
+    int found;
+    int i;
+    int n;
+    int ok;
+
+    spawn_clear();
+    m[0] = flat_quad(-600.0f, 600.0f, -600.0f, 600.0f, 0.0f);
+    m[1] = side_quad(-600.0f, 600.0f, 0.0f, 200.0f, 200.0f);
+    body_scene(&sc, in, m, 2);
+    mem_zero(&other, sizeof(other));
+
+    /* The pool: ids, a full pool, a freed entry's old id gone, the walk over it. */
+    spawn_body(&e, 0.0f, 0.0f, 0.0f, 16.0f);
+    ok = 1;
+    for (i = 0; i < SPAWN_MAX; i++) {
+        ids[i] = spawn_add(&sc, &e, 0.0f);
+        ok = ok && ids[i] != 0 && spawn_get(ids[i]) != 0;
+    }
+    check_expect(ok && spawn_add(&sc, &e, 0.0f) == 0 && spawn_count() == SPAWN_MAX,
+                 "the spawn pool did not hold SPAWN_MAX, or took one more");
+    old = ids[3];
+    spawn_remove(old);
+    id = spawn_add(&sc, &e, 0.0f);
+    check_expect(id != 0 && id != old && spawn_get(old) == 0 && spawn_get(id) == spawn_get(id),
+                 "a freed spawn's old id still read as a spawn");
+    n = 0;
+    for (i = 0; (i = spawn_next(i, &id)) != 0;) {
+        n += spawn_get(id) != 0;
+    }
+    check_expect(n == SPAWN_MAX, "spawn_next did not walk every spawn");
+    spawn_clear();
+    check_expect(spawn_count() == 0 && spawn_get(ids[0]) == 0, "spawn_clear left spawns");
+
+    /* Leash and shift. */
+    id = spawn_add(&sc, &e, 500.0f);
+    old = spawn_add(&sc, &e, 0.0f);
+    camera_set(&cam, 400.0f, 60.0f, 0.0f, 0.0f, 0.0f);
+    spawn_frame(&sc, &cam);
+    check_expect(spawn_get(id) && spawn_get(old), "a spawn inside its leash went");
+    camera_set(&cam, 501.0f, 60.0f, 0.0f, 0.0f, 0.0f);
+    spawn_frame(&sc, &cam);
+    check_expect(!spawn_get(id) && spawn_get(old), "a spawn past its leash stayed, or one with none went");
+    spawn_shift(&sc, 100.0f, -50.0f);
+    check_expect(check_near(spawn_get(old)->x, -100.0f, 0.01f) && check_near(spawn_get(old)->z, 50.0f, 0.01f),
+                 "an origin move did not move a spawn with the scene");
+
+    /* Solid: another entity cannot walk into it; then another place, and another heap, empty the pool. */
+    spawn_body(&me, -140.0f, 0.0f, 50.0f, 16.0f);
+    check_expect(entity_blocked(&sc, &me, -120.0f, 50.0f) && !entity_blocked(&sc, &me, -160.0f, 50.0f),
+                 "a spawned entity was not solid to another");
+    check_expect(spawn_entities(&other, &n) == 0 && n == 0, "the pool answered for a scene it is not in");
+    id = spawn_add(&other, &e, 0.0f);
+    check_expect(spawn_get(old) == 0 && spawn_get(id) && spawn_count() == 1,
+                 "a spawn in another place kept the first place's");
+    mem_temp_begin();
+    mem_temp_end();
+    check_expect(spawn_count() == 0 && spawn_get(id) == 0, "a new heap (a new place) kept the spawns");
+
+    /* Where: in the ring, on the floor; nowhere past the floor's edge. */
+    mem_zero(&want, sizeof(want));
+    want.inner = 100.0f;
+    want.outer = 300.0f;
+    want.radius = 16.0f;
+    want.height = 64.0f;
+    want.climb = 32.0f;
+    found = spawn_find(&sc, 0, &want, &x, &y, &z);
+    d = df_sqrt(x * x + z * z);
+    check_expect(found && y == 0.0f && check_near(d, 100.0f, 0.01f), "spawn_find did not stand one on the near ring's floor");
+    /* Past the square's corners (848 out): no floor anywhere on the ring. */
+    want.inner = 900.0f;
+    want.outer = 1000.0f;
+    check_expect(!spawn_find(&sc, 0, &want, &x, &y, &z), "spawn_find stood one off the floor's edge");
+
+    /* Not in a wall: every try at the wall's x is refused. */
+    want.inner = 100.0f;
+    want.outer = 300.0f;
+    ok = 1;
+    for (i = 0; i < 16; i++) {
+        want.seed = (df_u32)i;
+        if (spawn_find(&sc, 0, &want, &x, &y, &z)) {
+            ok = ok && (x < 200.0f - 16.0f + 0.5f || x > 200.0f + 16.0f - 0.5f);
+        }
+    }
+    check_expect(ok, "spawn_find stood one in a wall");
+
+    /* Crowded: a solid entity on the first spot moves the next spawn off it. */
+    want.seed = 0;
+    spawn_find(&sc, 0, &want, &x, &y, &z);
+    spawn_body(&e, x, y, z, 16.0f);
+    spawn_add(&sc, &e, 0.0f);
+    found = spawn_find(&sc, 0, &want, &e.x, &e.y, &e.z);
+    check_expect(found && (e.x - x) * (e.x - x) + (e.z - z) * (e.z - z) >= 32.0f * 32.0f,
+                 "spawn_find stood one on another solid entity");
+    spawn_clear();
+
+    /* Dry: the pond over x < -100 is refused. */
+    pond.x0 = -600.0f;
+    pond.x1 = -100.0f;
+    pond.z0 = -600.0f;
+    pond.z1 = 600.0f;
+    pond.y = 20.0f;
+    sc.water = &pond;
+    sc.nwater = 1;
+    want.flags = SPAWN_DRY;
+    ok = 1;
+    n = 0;
+    for (i = 0; i < 16; i++) {
+        want.seed = (df_u32)i;
+        if (spawn_find(&sc, 0, &want, &x, &y, &z)) {
+            ok = ok && x > -100.0f;
+            n++;
+        }
+    }
+    check_expect(ok && n == 16, "spawn_find stood one in water, or found no dry spot");
+    sc.water = 0;
+    sc.nwater = 0;
+
+    /*
+     * Unseen, from a camera at the origin looking along +z: every spot
+     * found is outside the view, or east of the wall, where the camera
+     * looking along +x cannot see through it.
+     */
+    camera_set(&cam, 0.0f, 60.0f, 0.0f, 0.0f, 0.0f);
+    want.flags = SPAWN_UNSEEN;
+    ok = 1;
+    n = 0;
+    for (i = 0; i < 16; i++) {
+        float along;
+
+        want.seed = (df_u32)i;
+        if (spawn_find(&sc, &cam, &want, &x, &y, &z)) {
+            along = z / df_sqrt(x * x + z * z);
+            ok = ok && along < df_cos((camera_fov() * 0.5f) * (DF_TAU / 360.0f));
+            n++;
+        }
+    }
+    check_expect(ok && n == 16, "spawn_find stood one in the camera's view, or found nowhere out of it");
+    camera_set(&cam, 0.0f, 60.0f, 0.0f, DF_TAU / 4.0f, 0.0f);
+    want.inner = 250.0f;
+    want.outer = 300.0f;
+    ok = 1;
+    n = 0;
+    for (i = 0; i < 16; i++) {
+        want.seed = (df_u32)i;
+        if (spawn_find(&sc, &cam, &want, &x, &y, &z)) {
+            float along;
+
+            along = x / df_sqrt(x * x + z * z);
+            ok = ok && (along < df_cos((camera_fov() * 0.5f) * (DF_TAU / 360.0f)) || x > 200.0f);
+            n += x > 200.0f;
+        }
+    }
+    check_expect(ok && n > 0, "spawn_find did not take a spot behind the wall, or took one in plain view");
+    spawn_clear();
 }
 
 /*
@@ -5276,6 +5472,7 @@ void check_engine(void)
     check_dungeon_stream();
     check_body_fixes();
     check_body_crouch();
+    check_spawn();
     check_body_lifts();
     check_console();
     check_mip();

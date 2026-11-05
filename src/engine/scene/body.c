@@ -2,6 +2,7 @@
 #include "engine/scene/collide.h"
 #include "engine/scene/entity.h"
 #include "engine/scene/interact.h"
+#include "engine/scene/spawn.h"
 #include "engine/scene/walker.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
@@ -398,24 +399,36 @@ static void push_from(const Body *b, float ox, float oy, float oz, float orad, f
  * them across the floor, the push swept through collide like any move so
  * it never goes into a wall. They are not models: collide does not see them.
  */
-static void push_off(Body *b, const Scene *scene)
+/* The pushes out of the solid entities of list[0..n-1], all but the body's own. */
+static void push_from_list(const Body *b, const Entity *list, int n, float *px, float *pz)
 {
-    float px;
-    float pz;
-    float wx, wy, wz;
     int i;
 
-    px = 0.0f;
-    pz = 0.0f;
-    for (i = 0; scene->entities && i < scene->nentities; i++) {
+    for (i = 0; list && i < n; i++) {
         const Entity *e;
 
-        e = &scene->entities[i];
+        e = &list[i];
         if (e == b->self || !e->live || e->radius <= 0.0f) {
             continue;
         }
-        push_from(b, e->x, e->y, e->z, e->radius, entity_height(e), &px, &pz);
+        push_from(b, e->x, e->y, e->z, e->radius, entity_height(e), px, pz);
     }
+}
+
+static void push_off(Body *b, const Scene *scene)
+{
+    const Entity *spawned;
+    float px;
+    float pz;
+    float wx, wy, wz;
+    int nspawned;
+
+    px = 0.0f;
+    pz = 0.0f;
+    /* The place's own, and those spawned while playing (docs/spawn.md). */
+    push_from_list(b, scene->entities, scene->nentities, &px, &pz);
+    spawned = spawn_entities(scene, &nspawned);
+    push_from_list(b, spawned, nspawned, &px, &pz);
     if (b != walker_own_body() && walker_body(&wx, &wy, &wz)) {
         push_from(b, wx, wy, wz, walker_own_body()->radius, walker_own_body()->height, &px, &pz);
     }

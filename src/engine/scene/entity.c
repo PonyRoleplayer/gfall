@@ -2,6 +2,7 @@
 #include "engine/scene/body.h"
 #include "engine/core/mem.h"
 #include "engine/scene/walker.h"
+#include "engine/scene/spawn.h"
 
 /* See entity.h and docs/entities.md. */
 
@@ -115,12 +116,34 @@ static int circles_meet(float ax, float az, float ra, float bx, float bz, float 
     return dx * dx + dz * dz < (ra + rb) * (ra + rb);
 }
 
+/* 1 when self, moved to x, z and standing lo..hi, would walk into a solid entity of list[0..n-1]. */
+static int blocked_by(const Entity *list, int n, const Entity *self, float x, float z, float lo, float hi)
+{
+    int i;
+
+    for (i = 0; list && i < n; i++) {
+        const Entity *o;
+
+        o = &list[i];
+        if (o == self || !o->live || o->radius <= 0.0f) {
+            continue;
+        }
+        if (hi > o->y && lo < o->y + entity_height(o) && circles_meet(x, z, self->radius, o->x, o->z, o->radius)
+            /* Already overlapping (born so): let it walk out, not freeze. */
+            && !circles_meet(self->x, self->z, self->radius, o->x, o->z, o->radius)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int entity_blocked(const Scene *scene, const Entity *self, float x, float z)
 {
+    const Entity *spawned;
     float lo;
     float hi;
     float bx, by, bz;
-    int i;
+    int nspawned;
 
     if (!self || self->radius <= 0.0f) {
         return 0;
@@ -132,20 +155,15 @@ int entity_blocked(const Scene *scene, const Entity *self, float x, float z)
         && circles_meet(x, z, self->radius, bx, bz, walker_own_body()->radius)) {
         return 1;
     }
-    for (i = 0; scene && scene->entities && i < scene->nentities; i++) {
-        const Entity *o;
-
-        o = &scene->entities[i];
-        if (o == self || !o->live || o->radius <= 0.0f) {
-            continue;
-        }
-        if (hi > o->y && lo < o->y + entity_height(o) && circles_meet(x, z, self->radius, o->x, o->z, o->radius)
-            /* Already overlapping (born so): let it walk out, not freeze. */
-            && !circles_meet(self->x, self->z, self->radius, o->x, o->z, o->radius)) {
-            return 1;
-        }
+    if (!scene) {
+        return 0;
     }
-    return 0;
+    /* The place's own, and those spawned while playing (docs/spawn.md). */
+    if (blocked_by(scene->entities, scene->nentities, self, x, z, lo, hi)) {
+        return 1;
+    }
+    spawned = spawn_entities(scene, &nspawned);
+    return blocked_by(spawned, nspawned, self, x, z, lo, hi);
 }
 
 static int g_population = 1;
