@@ -528,9 +528,32 @@ static int instance_box(const Instance *in, float *cx, float *cy, float *cz,
  * A flat faces yaw and stays upright, so it fits in a box of half the
  * width on X and Z and half the height on Y.
  */
+void flat_facing(float pitch, float fx, float fz, float *ux, float *uy, float *uz)
+{
+    float lean;
+    float s;
+    float c;
+
+    /* Positive pitch looks up. Negating it leans the top toward that camera. */
+    lean = -pitch;
+    if (lean > FLAT_LEAN_MAX) {
+        lean = FLAT_LEAN_MAX;
+    }
+    if (lean < -FLAT_LEAN_MAX) {
+        lean = -FLAT_LEAN_MAX;
+    }
+    s = df_sin(lean);
+    c = df_cos(lean);
+    *ux = -fx * s;
+    *uy = c;
+    *uz = -fz * s;
+}
+
 static int flat_box(const Flat *fl, float *cx, float *cy, float *cz,
                     float *ex, float *ey, float *ez)
 {
+    float lean;
+
     if (!fl || fl->w < 1.0f || fl->h < 1.0f) {
         return 0;
     }
@@ -538,6 +561,11 @@ static int flat_box(const Flat *fl, float *cx, float *cy, float *cz,
     *cy = fl->y;
     *cz = fl->z;
     *ex = fl->w * 0.5f;
+    /* The lean swings the top out past a narrow picture. The box has to hold that. */
+    lean = fl->h * 0.5f * FLAT_LEAN_SIN;
+    if (lean > *ex) {
+        *ex = lean;
+    }
     *ey = fl->h * 0.5f;
     *ez = *ex;
     return 1;

@@ -941,6 +941,7 @@ static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
     float hx;
     float hy;
     float rx, ry, rz;
+    float ux, uy, uz;
     float uw;
     float uh;
     float inv_w;
@@ -958,9 +959,11 @@ static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
     }
     hx = flat->w * 0.5f;
     hy = flat->h * 0.5f;
+    /* Right stays horizontal. Up leans toward the camera, capped (flat_facing). */
     rx = basis->rx;
-    ry = basis->ry;
+    ry = 0.0f;
     rz = basis->rz;
+    flat_facing(cam->pitch, basis->fx, basis->fz, &ux, &uy, &uz);
     /*
      * Half a card texel in from every edge. Bilinear filtering at the
      * very edge mixes in the next texel over, which for a sprite is the
@@ -996,16 +999,16 @@ static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
     }
     /* 0 top-left, 1 top-right, 2 bottom-right, 3 bottom-left. v = 0 is the top row. */
     flat_corner(cam, basis,
-                flat->x - rx * hx, flat->y - ry * hx + hy, flat->z - rz * hx,
+                flat->x - rx * hx + ux * hy, flat->y - ry * hx + uy * hy, flat->z - rz * hx + uz * hy,
                 u0, v0, &corner[0]);
     flat_corner(cam, basis,
-                flat->x + rx * hx, flat->y + ry * hx + hy, flat->z + rz * hx,
+                flat->x + rx * hx + ux * hy, flat->y + ry * hx + uy * hy, flat->z + rz * hx + uz * hy,
                 uw, v0, &corner[1]);
     flat_corner(cam, basis,
-                flat->x + rx * hx, flat->y + ry * hx - hy, flat->z + rz * hx,
+                flat->x + rx * hx - ux * hy, flat->y + ry * hx - uy * hy, flat->z + rz * hx - uz * hy,
                 uw, uh, &corner[2]);
     flat_corner(cam, basis,
-                flat->x - rx * hx, flat->y - ry * hx - hy, flat->z - rz * hx,
+                flat->x - rx * hx - ux * hy, flat->y - ry * hx - uy * hy, flat->z - rz * hx - uz * hy,
                 u0, uh, &corner[3]);
     texcache_bind((int)flat->slot);
     emit_poly(corner, 4, inv_w, inv_h, 255.0f, 255.0f, 255.0f);

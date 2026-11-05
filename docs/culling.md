@@ -34,7 +34,7 @@ Inside a block, each instance has a `Bound` filled once, in `append_block`, afte
 
 The world box is the local box through the instance. The half-size is the local half-size times the absolute columns of `m[]`, so a rotated or scaled model stays inside. The box is larger than the triangles. It can keep a model that is actually just off screen. It does not drop a model that still has a vertex in view.
 
-A sprite faces yaw and stays upright. Its box is half the width on X and Z and half the height on Y, centered on the flat. A flat with `w` or `h` below 1 is omitted. `draw_flat` already skips those. Sprites are not blocked by spans.
+A sprite faces yaw. Level, it stays upright. Looking up or down leans it toward the camera by at most `FLAT_LEAN_MAX` (50 degrees, `flat_facing`), so a steep look does not turn the picture into a line (`docs/sprites.md`). Its box is half the width on X and Z, widened to `h/2 * sin(FLAT_LEAN_MAX)` when that is wider, and half the height on Y, centered on the flat. A flat with `w` or `h` below 1 is omitted. `draw_flat` already skips those. Sprites are not blocked by spans.
 
 With no spans and no bounds (a single renderfall model, or a null camera), the old path remains: measure from the triangles if needed, and list everything when the camera is null.
 

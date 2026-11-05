@@ -2,6 +2,10 @@
 
 Flats: the camera-facing pictures of torches, candles, furniture, plants, people and animals. Read this before editing how `world.c` places and paints flats, `make_sheet`, `draw_flat` in `draw.c`, or the frame code in `texture.c`.
 
+## Lean
+
+A flat faces the camera's yaw. With the camera level its up axis is world up, so a side-on view is the picture as before. Looking up or down leans that axis toward the camera (`flat_facing`), and the lean stops at 50 degrees (`FLAT_LEAN_MAX`). Past that a vertical card is seen on edge and thins to a line; the cap keeps the picture readable from above and does not lay it flat. The cull box is widened by the same cap so the leaned top is not dropped (`docs/culling.md`).
+
 ## Where a flat stands
 
 A flat is drawn as a quad round its centre (`draw_flat`). The file gives one point for it, and that point is not the same in a dungeon and a town:

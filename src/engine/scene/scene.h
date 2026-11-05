@@ -24,7 +24,17 @@ typedef struct Instance {
  * A camera-facing quad, centered on x,y,z. w and h are the full size in
  * world units. slot is 0xffff until a loader assigns a texture.
  * file and image are loader keys. The rasterizer uses slot.
+ *
+ * It faces the camera's yaw and stays upright when the camera is level.
+ * Looking up or down leans it toward the camera, at most FLAT_LEAN_MAX,
+ * so a steep look still shows the picture (docs/sprites.md).
  */
+#define FLAT_LEAN_MAX 0.87266463f
+/* sin(FLAT_LEAN_MAX), for the cull box. */
+#define FLAT_LEAN_SIN 0.76604444f
+
+/* The flat's up axis for this camera pitch: level is (0, 1, 0). fx, fz are the camera's horizontal forward. */
+void flat_facing(float pitch, float fx, float fz, float *ux, float *uy, float *uz);
 
 typedef struct Flat {
     float x, y, z;

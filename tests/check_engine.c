@@ -5162,10 +5162,28 @@ static void check_automap(void)
     printf("automap: seen by sight and by passing, kept by key, floors from above, faces from a camera\n");
 }
 
+static void check_flat_facing(void)
+{
+    float ux;
+    float uy;
+    float uz;
+
+    flat_facing(0.0f, 0.0f, 1.0f, &ux, &uy, &uz);
+    check_expect(uy > 0.99f && ux * ux + uz * uz < 0.0001f, "flat: a level view leans the picture");
+    /* Past the cap: sin(50 deg) is about 0.766, so the top moves toward the camera and stops. */
+    flat_facing(-1.4f, 0.0f, 1.0f, &ux, &uy, &uz);
+    check_expect(uy > 0.60f && uy < 0.70f && uz < -0.70f && uz > -0.82f && ux * ux < 0.0001f,
+                 "flat: looking straight down thins the picture to a line");
+    /* Inside the cap the lean follows the pitch, so a side view is not pulled over. */
+    flat_facing(-0.2f, 0.0f, 1.0f, &ux, &uy, &uz);
+    check_expect(uy > 0.97f && uz < -0.15f && uz > -0.25f, "flat: a small look is pulled to the cap");
+}
+
 void check_engine(void)
 {
     check_rotation();
     check_camera();
+    check_flat_facing();
     check_scene();
     check_cull();
     check_occlusion();
