@@ -66,6 +66,12 @@ enum {
      * decides what happens.
      */
     INPUT_TRANSPORT,
+    /*
+     * Crouch, default Ctrl (either: GetAsyncKeyState's VK_CONTROL reads
+     * both). Reported only: whether it is held or toggled, and how fast
+     * the body goes down, are the game's (body_set_size, docs/collision.md).
+     */
+    INPUT_CROUCH,
     INPUT_ACTIONS
 };
 #define INPUT_BIT(action) (1u << (action))

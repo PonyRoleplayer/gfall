@@ -29,7 +29,7 @@ static int g_vk[INPUT_ACTIONS] = {
     'W', 'S', 'A', 'D', 'H',
     /* Append only: saved bindings name these by id, not by this key. */
     VK_TAB, VK_RBUTTON, VK_LEFT, VK_RIGHT, VK_PRIOR, VK_NEXT, VK_HOME, VK_MENU,
-    'V', 'T'
+    'V', 'T', VK_CONTROL
 };
 /* The scan code of the console's key, the one left of 1 (console.c's CON_SCAN). */
 #define CONSOLE_SCAN 0x29

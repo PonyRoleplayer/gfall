@@ -10,6 +10,7 @@ typedef struct { int left, top, right, bottom; } RECT;
 #define VK_LBUTTON 0x01
 #define VK_RBUTTON 0x02
 #define VK_SHIFT 0x10
+#define VK_CONTROL 0x11
 #define VK_MENU 0x12
 #define VK_ESCAPE 0x1b
 #define VK_SPACE 0x20

@@ -91,13 +91,13 @@ static void check_defaults(void)
     static const int defaults[] = {
         0x01, 'E', 0x10, 0x20, 'C', 'I', 'M', 'R', 0x1b,
         'W', 'S', 'A', 'D', 'H', 0x09, 0x02, 0x25, 0x27,
-        0x21, 0x22, 0x24, 0x12, 'V', 'T'
+        0x21, 0x22, 0x24, 0x12, 'V', 'T', 0x11
     };
     Input in;
     int a;
 
     expect(INPUT_CURSOR == 14 && INPUT_SWING == 15 && INPUT_FREELOOK == 21
-           && INPUT_TRAVEL_MAP == 22 && INPUT_TRANSPORT == 23 && INPUT_ACTIONS == 24,
+           && INPUT_TRAVEL_MAP == 22 && INPUT_TRANSPORT == 23 && INPUT_CROUCH == 24 && INPUT_ACTIONS == 25,
            "saved action ids moved");
     for (a = 0; a < INPUT_ACTIONS; a++) {
         expect(input_binding(a) == defaults[a], "an action's default key changed");
