@@ -94,6 +94,7 @@
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/foes.h"
 #include "game/dagger/play/watch.h"
+#include "game/dagger/play/theft.h"
 #include "game/dagger/places/people.h"
 #include "game/dagger/places/wres.h"
 #include "game/dagger/tables/enemies.h"
@@ -6589,6 +6590,111 @@ static void check_holidays(void)
 }
 
 /*
+ * Theft: the pickpocket chance by hand (a citizen's has no level term, an enemy's five a level,
+ * always within 5..95), the gold roll's edges, an attempt's use of the skill, its gold and its
+ * once-a-person memory, a failure's cost to the reputation with no court, and the dice's spread.
+ */
+static void check_theft(void)
+{
+    Player p;
+    Character sheet;
+    char line[64];
+    int amount[7];
+    int caught;
+    int nothing;
+    int golds;
+    int total;
+    int gold;
+    int legal;
+    int people;
+    int uses;
+    int i;
+
+    /* The sums by hand: DFU's own example, a level 12 thief at a level 3 foe gains 45, a level 2 at a level 6 loses 20. */
+    check_expect(rules_pickpocket_chance(50, 0) == 50, "theft: a citizen's chance is the skill");
+    check_expect(rules_pickpocket_chance(0, 0) == 5 && rules_pickpocket_chance(100, 0) == 95, "theft: the chance is not kept within 5..95");
+    check_expect(rules_pickpocket_chance(30, 12 - 3) == 75 && rules_pickpocket_chance(30, 2 - 6) == 10, "theft: five a level between thief and foe");
+    check_expect(rules_pickpocket_chance(90, 9) == 95 && rules_pickpocket_chance(10, -9) == 5, "theft: a level's term breaks the clamp");
+    /* The lowest 33 of 100 find nothing; the rest 1 to 6. */
+    check_expect(rules_pickpocket_gold(32, 5) == 0 && rules_pickpocket_gold(33, 0) == 1 && rules_pickpocket_gold(99, 5) == 6,
+                 "theft: the gold's edges");
+
+    character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Ada");
+    player_init(&p, &sheet);
+    inventory_clear(&p.pack);
+    p.pack.gold = 0;
+    combat_seed(31u);
+    theft_forget();
+    court_forget();
+
+    /* One try a person: the second rolls nothing and tallies nothing, and forgetting lets it be tried again. */
+    p.sheet.skill[SKILL_PICKPOCKET] = 95;
+    uses = p.sheet.skill_uses[SKILL_PICKPOCKET];
+    theft_pickpocket(&p, 12345u, 0, 17, &gold);
+    check_expect(p.sheet.skill_uses[SKILL_PICKPOCKET] == uses + 1, "theft: an attempt did not count a use of Pickpocket");
+    i = (int)p.pack.gold;
+    check_expect(theft_pickpocket(&p, 12345u, 0, 17, &gold) == THEFT_TRIED && gold == 0 && (int)p.pack.gold == i
+                 && p.sheet.skill_uses[SKILL_PICKPOCKET] == uses + 1,
+                 "theft: a person was tried twice");
+    theft_forget();
+    check_expect(theft_pickpocket(&p, 12345u, 0, 17, &gold) != THEFT_TRIED, "theft: forgetting did not let them be tried again");
+
+    /* The dice at Pickpocket 50: half seen, two in three of the rest with gold, each of 1 to 6 coming. */
+    p.sheet.skill[SKILL_PICKPOCKET] = 50;
+    p.pack.gold = 0;
+    theft_forget();
+    caught = nothing = golds = total = 0;
+    for (i = 0; i < 7; i++) {
+        amount[i] = 0;
+    }
+    for (i = 0; i < 3000; i++) {
+        int r;
+
+        /* The memory holds 64: a new person each time, and it lets the oldest go. */
+        r = theft_pickpocket(&p, 1000u + (unsigned)i, 0, 17, &gold);
+        if (r == THEFT_CAUGHT) {
+            caught++;
+        } else if (r == THEFT_NOTHING) {
+            nothing++;
+        } else if (r == THEFT_GOLD && gold >= 1 && gold <= 6) {
+            golds++;
+            total += gold;
+            amount[gold]++;
+        } else {
+            check_expect(0, "theft: an attempt came to no result");
+        }
+    }
+    check_expect(caught > 1350 && caught < 1650, "theft: Pickpocket 50 is not seen about half the time");
+    check_expect(golds * 100 / (golds + nothing) > 60 && golds * 100 / (golds + nothing) < 74, "theft: gold is not found two times in three");
+    check_expect(amount[1] > 0 && amount[2] > 0 && amount[3] > 0 && amount[4] > 0 && amount[5] > 0 && amount[6] > 0,
+                 "theft: not every sum of 1 to 6 gold came");
+    check_expect((int)p.pack.gold == total, "theft: the gold is not what was found");
+
+    /* Seen: the legal reputation's loss and half with the people, and no court: the watch is the answer. */
+    standing_region(17)->legal = 50;
+    legal = standing_region(17)->legal;
+    /* An earlier test left the people at the floor, where a loss cannot show. */
+    standing_change(faction_people_of(17)->id, 80, 0);
+    people = standing_rep(faction_people_of(17)->id);
+    p.sheet.skill[SKILL_PICKPOCKET] = 5;
+    theft_forget();
+    court_forget();
+    for (i = 0; i < 400 && theft_pickpocket(&p, 9000u + (unsigned)i, 0, 17, &gold) != THEFT_CAUGHT; i++) {
+    }
+    check_expect(i < 400, "theft: Pickpocket 5 was never seen");
+    check_expect(standing_region(17)->legal == legal - 2 && standing_rep(faction_people_of(17)->id) == people - 1,
+                 "theft: the crime's cost is not pickpocketing's 2 and half");
+    check_expect(!court_pending(), "theft: a seen pickpocket opened the court");
+
+    theft_words(THEFT_GOLD, 1, line, (int)sizeof(line));
+    check_expect(df_eq(line, "You take 1 gold piece."), "theft: one gold piece's words");
+    theft_words(THEFT_GOLD, 4, line, (int)sizeof(line));
+    check_expect(df_eq(line, "You take 4 gold pieces."), "theft: gold pieces' words");
+    theft_words(THEFT_NOTHING, 0, line, (int)sizeof(line));
+    check_expect(line[0] != 0, "theft: nothing found has no words");
+}
+
+/*
  * Afflictions: the diseases' records, the saving throw, a disease's days and its
  * drain given back, the werewolf's infection turned to its curse and its gifts,
  * changing shape and the moons, the urge to kill, a vampire's sun, hunger and
@@ -7801,6 +7907,7 @@ void check_play(void)
     check_senses();
     check_wider_world();
     check_holidays();
+    check_theft();
     check_ills();
     check_ships();
     check_lodging();

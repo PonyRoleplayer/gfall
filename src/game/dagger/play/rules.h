@@ -135,6 +135,13 @@ int rules_trade_price(int cost, int quality, int mercantile, int personality, in
 int rules_repair_cost(int value, int quality, int condition, int condition_max, int prices);
 /* Chance in 100 of being seen stealing: 5..95 (CalculateShopliftingChance). */
 int rules_shoplift_chance(int pickpocket, int quality, int weight_and_count);
+/*
+ * Chance in 100 of picking a pocket: the Pickpocket skill, and 5 for each level the thief is above
+ * the one robbed (0 for a citizen: DFU gives them none), within 5..95 (CalculatePickpocketingChance).
+ */
+int rules_pickpocket_chance(int pickpocket, int level_gap);
+/* What a picked pocket held, from a roll 0..99 and a roll 0..5: nothing for the lowest 33, else 1 to 6 gold. */
+int rules_pickpocket_gold(int roll100, int roll6);
 /* Chance in 100 of picking a building's lock of this strength: 5..95 (CalculateExteriorLockpickingChance). */
 int rules_lock_chance(int lockpicking, int lock);
 /* The most a bank lends: a level's 50000 (CalculateMaxBankLoan). */

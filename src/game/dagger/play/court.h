@@ -21,6 +21,8 @@
 
 /* A crime committed in this region, seen. The court opens on the game's next frame. */
 void court_commit(int crime, int region);
+/* The same loss to the legal reputation and the people's, with no court: a crime the watch answers. */
+void court_note(int crime, int region);
 /* 1 while a crime waits to be tried. */
 int court_pending(void);
 /* What is waiting is dropped: a new game, or one loaded. */

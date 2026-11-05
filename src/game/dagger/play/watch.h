@@ -34,6 +34,8 @@ void watch_frame(float dt);
 void watch_pursue(const Camera *cam, const float *at);
 /* A citizen's health reached 0 at `at`. Every guard comes, or 2..5 are spawned. */
 void watch_on_kill(const Camera *cam, const float *at);
+/* A crime seen at `at` that is no killing (a failed pickpocket): the same wanted, HALTs and guards. */
+void watch_alarm(const Camera *cam, const float *at);
 /* How many HALT lines the last killing queued, and line i ("HALT"). */
 int watch_halts(void);
 const char *watch_halt(int i);

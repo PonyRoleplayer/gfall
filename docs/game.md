@@ -210,7 +210,7 @@ MAIN.DAT's `NAME` (`tables/names.c`), cooked on the first run from ARENA2's NAME
 `play/bank.c`, on `BANK00I0.IMG`, with sums usable without the screen. Each region has its own account. A letter of credit is an item worth what it says, a hundredth more to write, at least 100. A loan is 100 to 50000 a level, a tenth more to repay, due in a year of 360 days; carried gold pays first. A loan past its day is a default, a crime in its region, looked at once a game day (`bank_check_loans`). Houses say none are for sale. **Ships** (DaggerfallBankManager): Buy Ship asks 1 for a small ship (100,000) or 2 for a large galley (200,000), paid from the gold carried first, then the region's account; one at a time. Sell Ship asks 1 to sell it back for 85% into the account. Owning one, the travel map's voyages pay no fare (`journey_own_ship`). The ship is the game's one, in the save's `GAME` row. DFU's ship to stand on, its deck and cabin, is not built.
 
 ### The law
-`play/court.c`. `court_commit` takes the crime's loss off the legal reputation and half that off the region's People. Shoplifting and a defaulted loan still open the court at once. A citizen killed in the street does not: the watch comes, below, and the court for that killing is not built. The trial is DFU's `DaggerfallCourtWindow`: the sentence from `CRIM`'s sums, split into pieces of 40 gold or three days; what cannot be paid is served; a low standing can mean banishment. Guilty halves it. Not guilty argues by Etiquette or lies by Streetwise, against the standing and the skill, within 5..95; losing moves the fine by the court's mood. Prison ticks a day each 0.3 s on `PRIS00I0.IMG`. Then four hours pass, the player is whole, a sentence served gives back half the loss less one, and they stand in the street (`travel_out_to_street`). Banishment is marked on the region and not yet enforced.
+`play/court.c`. `court_commit` takes the crime's loss off the legal reputation and half that off the region's People (`court_note` does that alone, for a crime the watch answers: a failed pickpocket). Shoplifting and a defaulted loan still open the court at once. A citizen killed in the street does not: the watch comes, below, and the court for that killing is not built. The trial is DFU's `DaggerfallCourtWindow`: the sentence from `CRIM`'s sums, split into pieces of 40 gold or three days; what cannot be paid is served; a low standing can mean banishment. Guilty halves it. Not guilty argues by Etiquette or lies by Streetwise, against the standing and the skill, within 5..95; losing moves the fine by the court's mood. Prison ticks a day each 0.3 s on `PRIS00I0.IMG`. Then four hours pass, the player is whole, a sentence served gives back half the loss less one, and they stand in the street (`travel_out_to_street`). Banishment is marked on the region and not yet enforced.
 
 ### Tested on the host
 `check_standing`, `check_people_sums`, `check_words`, `check_talk`, `check_shop_and_court`, `check_bank`, `check_people_in_town`, `check_citizen` (the sure blow, every guard hostile, wanted after the people are dropped and built again, a hostile guard not a talk target, the blood splash, the guard's corpse and one thing taken off it), `check_standing_saved`: the tree, a spread by hand, every sum by hand, no macro left in any record of talk, Daggerfall's 647 buildings, a way asked and the news by clicks, one who hates saying nothing; a shop's stock by day, buying, selling and mending by clicks at the sums, a thief seen; guilty's half, prison's days, the reputation back; gold, letters and loans; the bank and the merchant's panels by clicks; an armorer in Daggerfall entered with its shelves and its person; all of it through a save file. `build/talk0..1.ppm`, `shop0..1.ppm`, `court0..2.ppm`, `bank0.ppm`, `service0.ppm` are for a look.
@@ -233,7 +233,7 @@ A killed guard stays. The pose is ENEM 146's corpse, TEXTURE.380 record 1 (`ENTI
 **Not yet:**
 - running on the 233;
 - the court and the bounty for that killing, and banishment enforced;
-- Steal mode, pickpocketing and the deferred theft mechanics (P12-a);
+- Steal mode on enemies, locks' alert chance, the keyboard scheme, containers (P12-a, slices 2 to 5; slice 1 picks a citizen's pocket);
 - buildings' own names (the list and the map show their kinds; DFU's GenerateBuildingName builds them from TEXT.RSC);
 - talk's People and Things lists, Tell me about's organisations, guild greetings, the logbook;
 - taverns' rooms and drinks, guilds' services, houses, shelves in a house or a library;
@@ -294,13 +294,49 @@ Every quest uses 6 (if a state, end), 12 (start a timer), 23 (a log entry) and n
 4. **The logbook:** the sheet's Log button, the active quests and their deadlines.
 5. Later: the main quest, the tutorial, the cures, the Thieves Guild's and the Dark Brotherhood's invitations.
 
-## Steal and theft (planned: P12-a)
+## Steal and theft (P12-a: slice 1 built, host-tested; the rest planned)
 
-Complete the theft mechanics left out of P9: the Steal interaction mode, pickpocketing, theft from eligible owned targets, the skill checks and detection, and the resulting crime and arrest/court consequences. Use P9-b's mode controls and the existing reputation and law systems. Confirm the original rules against public references when designing the details.
+**Decided with the user (2026-11-04):** the player's height becomes variable in the engine and the game builds its crouch on it (asked of the ENGINE implementer); a failed pickpocket brings the guards (done through the watch below); houses have no containers, so they are ours to build (slice 5).
 
-P9 already supports a shop's Steal button, shoplifting detection and lockpicking through the run-plus-use shortcut. Those are the starting point; P12-a connects them to the classic interaction mode and fills the missing theft paths.
+**Built, slice 1:** Steal mode on a street citizen. `rules_pickpocket_chance` and `rules_pickpocket_gold`, `play/theft.c` (the attempt, the once-a-person memory, the lines), `court_note` (a crime's cost to the reputation with no court), `watch_alarm` (the watch's wanted, HALTs and guards for a crime that is no killing; `watch_on_kill` calls it) and `CRIME_PICKPOCKETING`. In `game.c` the use key in the bar's Steal mode (a click on the pointer, E) tries `street_person_robbed`: a person within half of talk's reach is robbed; one farther is "too far away"; no one lets the ray go on to doors and shelves as before. A person is known by `people_in_view`'s number; the tried set (64) is dropped with every place entered (`game_enter`), as DFU's flag goes with the person; a slot recycled to a new walker inside one visit can inherit "tried", a known small leak. The run key held no longer means anything for people, only for locks, so a hurried E never robs anyone. Tests: `check_theft`. Guards come as they do for a killing: every loaded guard hostile, or 2..5 spawned (`people_spawn_guard`); there is no arrest to a court yet (that is the killing's gap too), the guards fight.
 
-**Done when:** Steal can be selected from the HUD, successful theft and pickpocketing transfer the intended items, failed or witnessed attempts follow the law's consequences, and the checks, inventory and persistent state are tested.
+Complete the theft left out of P9: pickpocketing, the other places a lock or a shelf is robbed, what a failure costs, and a way to do it from the keyboard. P9 already has a shop's Steal button and shoplifting, a street door's lockpicking (the Steal mode or the run key held), `CRIME_THEFT` and the court.
+
+### What classic does (UESP; Daggerfall Unity's PlayerActivate and FormulaHelper as the cross-check)
+Steal is one of four interaction modes (Steal, Grab, Info, Talk; F1 to F4 in classic, one button on the bar). What the use does in Steal mode:
+- **A street citizen** (not one inside a building): a pickpocket attempt within reach (DFU: 128 units). Chance in 100 is the live Pickpocket skill, clamped 5..95. Every attempt tallies Pickpocket. Success: a 67% chance of 1 to 6 gold, else a line saying nothing of value was found. Failure: the crime is Pickpocketing and the guards come (DFU's `SpawnCityGuards`).
+- **A human enemy** (a class enemy, not a monster): the same, with `+ 5 x (player level - their level)` before the clamp. Failure turns them hostile (and the ones near them).
+- **A shut building's street door:** a lockpick attempt, built (`door_lets_in`); the lock is half the building's quality, chance `skill - 5 x lock`. Missing: a failed pick's chance of alerting the guards (UESP: `33 x (1 - stealth%)`).
+- **A dungeon door** that is not magically locked: a pick, chance `skill + 5 x (level - lock)`; a lock of 20 or more cannot be picked.
+- **A closed shop's shelves:** the stealing screen, chance of being seen `100 - Pickpocket + quality + weight and count`, clamped 5..95. Built.
+- **A house's container:** an owned property's loot is taken without a prompt; any other asks "private property, enter?" first (DFU). Waits for houses to have containers.
+DFU lets each person be tried once while loaded (its code says classic allows endless tries; not confirmed, so one attempt, which also stops the mode being a tap of gold).
+
+### One intent, two ways to say it
+Everything above runs when the player means to steal: `g_stealing` in `game.c` (today the Steal mode or the run key held). The plan keeps that one flag and gives it two schemes, so the rules are written once:
+- **Point and click** (the Cursor scheme, the bar on; "low reflexes"): the mode button picks Steal, and a click on a citizen, an enemy, a door or a shelf is the attempt, as classic. Info does the looking. Nothing new for the player to learn.
+- **Keyboard** (View scheme, bar off): the use key E is the one verb, and what it does depends on how the player stands:
+  - standing, E on a creature or a citizen says what is seen (Info); on a door, a body or a heap it does what it does now;
+  - crouched, E is Steal: on a citizen or a human enemy a pickpocket, on a shut door a lockpick, on a closed shop's shelf the stealing screen;
+  - an attempt is only ever made on E, never for walking up crouched, since an accident would be a crime.
+  Crouching also keeps Steal's flag for the bar's own mode, so a player who uses both is never in two states.
+
+### What each needs
+- **Crouch is an engine matter.** `docs/collision.md` says there is none: a body has one height and eye. It needs a lower height and eye the game can set, standing again only where the head has room (the walker's ceiling test), and the game owns the speed (`player.c`) and the key (`INPUT_CROUCH`, hold or toggle, a bind slot and an option). Asked of the ENGINE implementer (2026-11-04). Whether crouching also helps Stealth (as DFU's sneaking) is to check, not assumed.
+- **Pickpocketing** a citizen: `people_in_view` already gives who and the sex; a small set of the citizens tried this visit (forgotten when the place is, as DFU's flag is) needs no save. Failure is a Pickpocketing crime (CRIM row 12; `commerce.h` names only `CRIME_THEFT` yet) and the guards hostile through `watch.c`; a town's guards already spawn from its people pool (`people_spawn_guard`), so that is what slice 1 uses; creating creatures where the pool is not (the quests' road ambush, the wild) is the engine matter the quests wait on.
+- **Human enemies** need an aim at a creature (`combat_ray_box` and `combat_reaches` exist), their level from `combat_foe`, and one try each by their keep key; failure wakes them hostile through `foes.c`.
+- **Info on a creature or a citizen:** a line with the kind's name, as Info says a usable's; DFU and classic say little more.
+- **Dungeon doors** need the usable's lock strength from the engine's use ray; a dungeon's locks have a level the RDB gives.
+
+### Slices, each landing alone, tested and documented
+1. **Pickpocket a citizen (built)**, from the bar's Steal mode and the point-and-click scheme: `rules` (the chance, the gold roll), `theft.c` (the tried set, the attempt), the crime and the guards, Pickpocket's tally. Tests: the chances by hand at the clamps, gold 1..6 at 67%, one try a citizen, a failure's crime to the court, through a save.
+2. **A human enemy:** the level term, gold or hostility. Tests: the 45 and -20 of DFU's own example.
+3. **Locks and shelves:** the alert chance on a failed pick, the dungeon door's formula and the 20 limit.
+4. **The keyboard scheme:** Info on E for creatures and citizens; then, with the engine's crouch, the key, the hold or toggle, the Steal on E.
+5. **Containers in houses.** Houses have none today, so this is two jobs: stocking a house's rooms with chests and shelves (loot by the house's quality), then the private-property question and its crime when a stranger's is opened.
+The run key held while using a lock stays until crouching can replace it (open question).
+
+**Done when:** Steal can be chosen from the bar or done crouched on E, successful theft and pickpocketing transfer the intended gold and items, failed or seen attempts follow the law, and the chances, the memory and the saves are tested.
 
 ## Places and travel
 
@@ -883,7 +919,7 @@ What is built but not whole, and the phase each goes in. Each section above says
 | World | a ship to stand on; the indoor automap's marks and notes, the town map's rotation and names; the travel map's neighbouring provinces; places on the travel map marked by talk; a bed and kept things in a rented room (a building is marked on the town map); guild travel; regional holidays; the afflictions' cemetery, beast pictures and sounds (Afflictions) | P10 |
 | Player | the completed classic HUD bar needs target acceptance; the map button opens the travel map outdoors, the automap and magic buttons await their systems | P9-b, P10, P12-b |
 | Player | target acceptance/tuning of the implemented classic cursor controls | P9-c |
-| People | Steal mode, pickpocketing and the deferred theft mechanics | P12-a |
+| People | Steal on human enemies, a failed lock's alert, the keyboard (crouch) scheme, house containers; guards that arrest rather than fight | P12-a |
 | Creation | a custom class's special advantages, disadvantages and reputations; the Help button | P12-b, later |
 | Creation | the class questions' animated scroll and characters | later |
 | Creation | the answers' history and lasting modifiers (`#`, `RP`, `TH`...) are read past | later |
@@ -1030,7 +1066,7 @@ The first goal is a **prototype**: from classic's start menu, Privateer's Hold p
 | P9-c | Classic dungeon controls without mouse look (implemented, host-tested): free pointer, cursor/keyboard movement and turning, pointed use, right-button gestures, Alt look and saved scheme; target acceptance pending | GAME, ENGINE's input | the hold navigated and fought through, doors and HUD used, and a save resumed without continuous mouse look |
 | P10 | The wider world (first slice built, host-tested, not run on the target: the travel map, its journeys and the places known): travel map before magic, horse and cart, holidays (built), diseases, lycanthropy and vampirism (built) | GAME | a journey from the map to a town and a dungeon, and back after a save |
 | P11 | Quests: the QBN interpreter, guild quests | GAME | |
-| P12-a | Steal and theft (planned): classic Steal mode, pickpocketing, deferred theft paths, skill checks, detection and law consequences; build on P9's shoplifting and lockpicking | GAME | theft and pickpocketing can succeed or be detected, with the right items and legal consequences kept and tested |
+| P12-a | Steal and theft (slice 1 built, host-tested: a citizen's pocket; the rest planned): classic Steal mode, pickpocketing, deferred theft paths, skill checks, detection and law consequences; build on P9's shoplifting and lockpicking | GAME | theft and pickpocketing can succeed or be detected, with the right items and legal consequences kept and tested |
 | P12-b | Magic: spells, effects, spellbook, casting, potions, enchantments | GAME | |
 | P13 | Our own mode: a ruleset switch over classic's rules, a mode `.DAT` over MAIN.DAT; classic stays the default and the reference | GAME | |
 

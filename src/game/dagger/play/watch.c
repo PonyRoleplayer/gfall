@@ -175,7 +175,7 @@ void watch_pursue(const Camera *cam, const float *at)
     remember_nearest(at);
 }
 
-void watch_on_kill(const Camera *cam, const float *at)
+void watch_alarm(const Camera *cam, const float *at)
 {
     Keep *row;
     int n;
@@ -209,6 +209,11 @@ void watch_on_kill(const Camera *cam, const float *at)
     remember_nearest(at);
     shout(g_guard);
     g_said = 1;
+}
+
+void watch_on_kill(const Camera *cam, const float *at)
+{
+    watch_alarm(cam, at);
 }
 
 int watch_halts(void)

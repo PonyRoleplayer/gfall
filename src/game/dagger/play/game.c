@@ -33,6 +33,7 @@
 #include "game/dagger/play/create.h"
 #include "game/dagger/play/foes.h"
 #include "game/dagger/play/watch.h"
+#include "game/dagger/play/theft.h"
 #include "game/dagger/play/keys.h"
 #include "game/dagger/play/loot.h"
 #include "game/dagger/play/menu.h"
@@ -486,6 +487,38 @@ static int street_person_used(const Camera *cam)
         return 0;
     }
     talk_to(people->id, ((int)people->flat_archive[female] << 7) + people->flat_record[female], who);
+    return 1;
+}
+
+/* How near a pocket must be to be picked: half of talking's reach (DFU's PickpocketDistance, 128 to 256). */
+#define THEFT_REACH 128.0f
+
+/*
+ * Steal mode on a townsperson in the view: a pocket picked. Seen, the crime is noted
+ * and the watch comes (watch_alarm). 1 when someone was there, who is not then
+ * spoken to nor is anything behind them used; 0 when no one was in reach.
+ */
+static int street_person_robbed(const Camera *cam)
+{
+    char line[64];
+    int female;
+    unsigned who;
+    int result;
+    int gold;
+
+    if (!people_in_view(cam, THEFT_REACH, &female, &who)) {
+        if (people_in_view(cam, TALK_REACH, &female, &who)) {
+            interact_say("You are too far away.");
+            return 1;
+        }
+        return 0;
+    }
+    result = theft_pickpocket(&g_player, who, 0, travel_region(), &gold);
+    theft_words(result, gold, line, (int)sizeof(line));
+    interact_say(line);
+    if (result == THEFT_CAUGHT) {
+        watch_alarm(cam, g_player.body.feet);
+    }
     return 1;
 }
 
@@ -1530,8 +1563,11 @@ static void use_key(const Camera *cam)
 
     searched = loot_find(&g_level->scene, cam);
     if (!searched) {
-        /* Someone walking the street, if the view rests on them; else what the engine's ray finds. */
-        if (g_mode == HUDBAR_STEAL || !street_person_used(cam)) {
+        /*
+         * Someone walking the street, if the view rests on them: in Steal mode their pocket is
+         * picked, else they are spoken to. Otherwise what the engine's ray finds.
+         */
+        if (g_mode == HUDBAR_STEAL ? !street_person_robbed(cam) : !street_person_used(cam)) {
             Basis b;
 
             /* Use the exact camera supplied by keyboard or pointer picking.
@@ -1648,6 +1684,8 @@ static void arrive(const Level *level, Camera *cam, const TravelPose *at)
     combat_reset();
     foes_reset();
     watch_reset();
+    /* The people are built anew, so no one has been tried. */
+    theft_forget();
     /* A quest waiting for the player at a place (43): a dungeon, or a building of a town. */
     {
         TravelWhere here;

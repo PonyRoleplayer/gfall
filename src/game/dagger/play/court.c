@@ -65,7 +65,7 @@ static struct {
     int changed;
 } g;
 
-void court_commit(int crime, int region)
+void court_note(int crime, int region)
 {
     const CrimeKind *kind;
     RegionStanding *r;
@@ -81,6 +81,14 @@ void court_commit(int crime, int region)
     if (people) {
         standing_change(people->id, -(kind->loss / 2), 0);
     }
+}
+
+void court_commit(int crime, int region)
+{
+    if (!crime_kind(crime) || !standing_region(region)) {
+        return;
+    }
+    court_note(crime, region);
     g_crime = crime;
     g_region = region;
 }

@@ -241,6 +241,17 @@ int rules_shoplift_chance(int pickpocket, int quality, int weight_and_count)
     return chance_5_95(100 - pickpocket + quality + weight_and_count);
 }
 
+int rules_pickpocket_chance(int pickpocket, int level_gap)
+{
+    return chance_5_95(pickpocket + 5 * level_gap);
+}
+
+int rules_pickpocket_gold(int roll100, int roll6)
+{
+    /* DFU: Dice100.FailedRoll(33) finds gold, so 67 rolls in 100 do. */
+    return roll100 >= 33 ? 1 + roll6 : 0;
+}
+
 int rules_lock_chance(int lockpicking, int lock)
 {
     return chance_5_95(lockpicking - 5 * lock);
