@@ -70,6 +70,8 @@ void body_init(Body *b, float radius, float height, float step, float eye)
     b->height = height;
     b->step = step;
     b->eye = eye;
+    b->eye_now = eye;
+    b->eye_speed = BODY_EYE_SPEED;
     b->gravity = WALK_GRAVITY;
 }
 
@@ -80,6 +82,8 @@ void body_place(Body *b, float x, float feet_y, float z)
     b->feet[2] = z;
     b->vy = 0.0f;
     b->grounded = 0;
+    /* Set, not walked: the eye too is where it is going, not easing there. */
+    b->eye_now = b->eye;
     /* Set, not walked: a fall from here counts from here, and no landing is owed. */
     b->top = feet_y;
     b->landed = 0;
@@ -116,13 +120,69 @@ int body_landed(Body *b, float *speed, float *height)
 void body_eye(const Body *b, float *x, float *y, float *z)
 {
     *x = b->feet[0];
-    *y = b->feet[1] + b->eye;
+    *y = b->feet[1] + b->eye_now;
     *z = b->feet[2];
 }
 
 void body_unstick(Body *b)
 {
     b->want_unstick = 1;
+}
+
+/* Below this the upper body would have no height: the shape is a step and this, at least. */
+#define LEAST_UPPER 1.0f
+
+void body_set_size(Body *b, float height, float eye)
+{
+    if (height < b->step + LEAST_UPPER) {
+        height = b->step + LEAST_UPPER;
+    }
+    if (eye > height) {
+        eye = height;
+    }
+    b->height = height;
+    b->eye = eye;
+    if (b->eye_speed <= 0.0f) {
+        b->eye_now = eye;
+    }
+}
+
+int body_can_stand(const Body *b, const Scene *scene, float height)
+{
+    float half;
+    float c[3];
+
+    if (height <= b->height || !scene || !collide_use(scene)) {
+        return 1;
+    }
+    /*
+     * The upper body of the taller size, from a step above the feet to the
+     * new head: what a step at that size would sweep. Below the step is
+     * the floor's business, the same at any height.
+     */
+    half = (height - b->step) * 0.5f;
+    collide_set_shape(b->radius, half);
+    collide_gather(b->feet[0] - b->radius - 2.0f, b->feet[1] + b->step - 2.0f, b->feet[2] - b->radius - 2.0f,
+                   b->feet[0] + b->radius + 2.0f, b->feet[1] + height + 2.0f, b->feet[2] + b->radius + 2.0f);
+    c[0] = b->feet[0];
+    c[1] = b->feet[1] + b->step + half;
+    c[2] = b->feet[2];
+    return !collide_overlap(c);
+}
+
+/* The eye eased toward where it is going, eye_speed a second (body_set_size). */
+static void ease_eye(Body *b, float dt)
+{
+    float d;
+    float most;
+
+    d = b->eye - b->eye_now;
+    most = b->eye_speed * dt;
+    if (b->eye_speed <= 0.0f || df_absf(d) <= most) {
+        b->eye_now = b->eye;
+    } else {
+        b->eye_now += d > 0.0f ? most : -most;
+    }
 }
 
 static void put(float *dst, const float *src)
@@ -396,6 +456,7 @@ void body_step(Body *b, const Scene *scene, float want_dx, float want_dz, float 
             log_text(LOG_WARN, "body: no free place near; it stays where it is");
         }
     }
+    ease_eye(b, dt);
     if (dt > 0.0f) {
         b->vy -= b->gravity * dt;
         if (b->vy < -WALK_TERMINAL) {

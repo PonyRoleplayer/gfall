@@ -1757,6 +1757,82 @@ static void check_body_fixes(void)
 }
 
 /*
+ * A crouch (docs/collision.md, A body's size): a floor, a ceiling 50 up
+ * over x 40..300 and a wall at x 400. Standing, the head stops at the
+ * ceiling's edge; crouched (36 tall, Daggerfall Unity's half), the body
+ * walks under it, has no room to stand there, and stands past it, even
+ * pressed to the wall. The eye eases down and up, never a pop.
+ */
+#define CROUCH_HEIGHT 36.0f
+#define CROUCH_EYE 32.4f
+
+static void check_body_crouch(void)
+{
+    static Scene sc;
+    static Instance in[3];
+    Mesh *m[3];
+    Camera cam;
+    Body b;
+    float first;
+    float x;
+    int f;
+    int ok;
+
+    m[0] = flat_quad(-200.0f, 500.0f, -200.0f, 200.0f, 0.0f);
+    m[1] = flat_quad(40.0f, 300.0f, -200.0f, 200.0f, 50.0f);
+    m[2] = side_quad(-200.0f, 200.0f, 0.0f, 200.0f, 400.0f);
+    body_scene(&sc, in, m, 3);
+    body_init(&b, WALK_RADIUS, WALK_HEIGHT, WALK_STEP, WALK_EYE);
+    body_place(&b, 0.0f, 0.0f, 0.0f);
+    for (f = 0; f < 60; f++) {
+        body_step(&b, &sc, 3.0f, 0.0f, 1.0f / 60.0f);
+    }
+    check_expect(b.grounded && b.feet[0] < 40.0f - WALK_RADIUS + 0.5f && b.feet[1] == 0.0f,
+                 "standing, the body walked under a ceiling lower than its head");
+    check_expect(body_can_stand(&b, &sc, WALK_HEIGHT) && body_can_stand(&b, &sc, CROUCH_HEIGHT),
+                 "a body standing in the open had no room to stand");
+
+    /* Crouched: the collision at once, the eye a step at a time. */
+    body_set_size(&b, CROUCH_HEIGHT, CROUCH_EYE);
+    body_step(&b, &sc, 0.0f, 0.0f, 1.0f / 60.0f);
+    first = b.eye_now;
+    for (f = 0; f < 9; f++) {
+        body_step(&b, &sc, 0.0f, 0.0f, 1.0f / 60.0f);
+    }
+    rig_first(&cam, &b);
+    check_expect(check_near(first, WALK_EYE - BODY_EYE_SPEED / 60.0f, 0.01f) && b.eye_now == CROUCH_EYE
+                 && check_near(cam.y, CROUCH_EYE, 0.01f) && b.height == CROUCH_HEIGHT,
+                 "the crouched eye popped, or never got there, or the camera was not at it");
+    ok = 1;
+    for (f = 0; f < 50; f++) {
+        body_step(&b, &sc, 3.0f, 0.0f, 1.0f / 60.0f);
+        ok = ok && b.grounded && b.feet[1] == 0.0f;
+    }
+    check_expect(ok && b.feet[0] > 150.0f, "crouched, the body did not walk under the low ceiling");
+    check_expect(!body_can_stand(&b, &sc, WALK_HEIGHT) && body_can_stand(&b, &sc, 40.0f),
+                 "under a ceiling 50 up, a body had room to stand 72 tall, or none to stand 40");
+
+    /* Past the ceiling and on to the wall: room to stand, pressed to it and all. */
+    for (f = 0; f < 120; f++) {
+        body_step(&b, &sc, 3.0f, 0.0f, 1.0f / 60.0f);
+    }
+    x = b.feet[0];
+    check_expect(x > 400.0f - WALK_RADIUS - 1.0f && x < 400.0f && body_can_stand(&b, &sc, WALK_HEIGHT),
+                 "crouched against a wall in the open, the body had no room to stand");
+    body_set_size(&b, WALK_HEIGHT, WALK_EYE);
+    for (f = 0; f < 20; f++) {
+        body_step(&b, &sc, 0.0f, 0.0f, 1.0f / 60.0f);
+    }
+    check_expect(b.grounded && b.feet[1] == 0.0f && check_near(b.feet[0], x, 0.01f) && b.eye_now == WALK_EYE,
+                 "stood up, the body moved, or its eye did not rise to standing");
+
+    /* Asked too small, the size keeps an upper body; an eye over the head comes down to it. */
+    body_set_size(&b, 10.0f, 50.0f);
+    check_expect(b.height == WALK_STEP + 1.0f && b.eye == b.height, "a size under a step was taken as asked");
+    body_set_size(&b, WALK_HEIGHT, WALK_EYE);
+}
+
+/*
  * A lift (docs/collision.md, Lifts): a floor, and a platform that is a
  * mover going up by rise in one second. dt is a slow frame's, the 233's.
  */
@@ -5199,6 +5275,7 @@ void check_engine(void)
     check_automap();
     check_dungeon_stream();
     check_body_fixes();
+    check_body_crouch();
     check_body_lifts();
     check_console();
     check_mip();

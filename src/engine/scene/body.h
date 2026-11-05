@@ -34,6 +34,14 @@ typedef struct Body {
     float step;
     float eye;
     /*
+     * Where the eye is now (body_eye, so the camera): eye itself but just
+     * after body_set_size, when it eases there at eye_speed units a second
+     * in body_step, so a crouch or a stand does not pop the view.
+     * BODY_EYE_SPEED from body_init; 0 snaps.
+     */
+    float eye_now;
+    float eye_speed;
+    /*
      * Its pull down, units a second squared: WALK_GRAVITY (9.8 m/s²) from
      * body_init; a game sets its own (Daggerfall Unity's player falls at
      * 20 m/s², 800). 0 floats.
@@ -80,5 +88,23 @@ int body_landed(Body *b, float *speed, float *height);
 void body_eye(const Body *b, float *x, float *y, float *z);
 /* Out of whatever it is caught in, on its next step. */
 void body_unstick(Body *b);
+
+/*
+ * A new size, its feet where they are: height tall, the eye eye above the
+ * feet (a crouch, and the stand after it; the game owns the key and the
+ * rules). The collision is the new size at once; the eye eases there
+ * (eye_now). A height under a step and a unit is raised to that, an eye
+ * over the height lowered to it. Taller than it is, ask body_can_stand
+ * first: grown into a low ceiling, it would be caught in it, and its next
+ * unstick would move it out of the room.
+ */
+#define BODY_EYE_SPEED 240.0f
+void body_set_size(Body *b, float height, float eye);
+/*
+ * 1 when the body, height tall where its feet are, is caught in nothing
+ * of scene: the headroom to stand. No taller than it is, always 1.
+ * Uses collide's gather, as a step does; call it outside one.
+ */
+int body_can_stand(const Body *b, const Scene *scene, float height);
 
 #endif

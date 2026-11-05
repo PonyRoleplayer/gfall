@@ -69,6 +69,14 @@ The engine steps none of them but the walker's. The walker is one body of a pers
 
 Which way the camera turns is the game's. A third person's use and walk-into triggers are its body's, not the camera's (`interact_request_use_from`, `interact_set_body`, `docs/interact.md`).
 
+### A body's size
+
+A body's height and eye can change while it plays: `body_set_size(&b, height, eye)` keeps the feet where they are. A crouch is the game's (its key, its speed, its rules); the engine gives the size and the headroom. Daggerfall Unity crouches to half height, 36 units.
+
+- The collision is the new size at once. A height under a step and a unit is raised to that (the upper body needs some height), and an eye over the height comes down to it.
+- The eye eases there: `Body.eye_now` is where the eye is, what `body_eye` and so `rig_first` and `rig_third` read, and `body_step` moves it toward `Body.eye` at `eye_speed`, 240 units a second (`BODY_EYE_SPEED`; a crouch's 36 units in 0.15 s). 0 snaps. `body_place` sets it there, not walked.
+- `body_can_stand(&b, scene, height)` is 1 when the upper body at that height, where the feet are, cuts into nothing (`collide_overlap`, so a body resting against a wall has room). The game asks it before it grows the body: grown into a low ceiling, the body would be caught, and the next unstick would carry it out of the room. No taller than now is always 1. It gathers, as a step does: call it between steps, not inside one.
+
 ### A game's player
 
 The walker is the viewers' body, and it walks the console's camera from inside `draw_frame`. A game puts its camera on a body of its own, so the two must not both walk. When they did, `tcl 1` in GFALL stood the walker's body and the game's on one spot: each was solid to the other, they shoved each other sideways, and the camera took turns at their eyes, through walls.
@@ -120,6 +128,6 @@ Tried on the card (a Voodoo 2 on the 233 machine): it walks the hold, the castle
 ## Not done
 
 - Doors are models: a closed door blocks, and nothing opens one yet.
-- No crouching, swimming or climbing. Jumping and the landing's speed are here; the damage is the game's.
+- No swimming or climbing in the engine; the game swims its own body. A crouch is a size (A body's size, above). Jumping and the landing's speed are here; the damage is the game's.
 - The body rides lifts up and down (Lifts, above), but nothing carries it sideways and it pushes nothing; an entity stops it, and the game's motors stop at it.
 - Ladders and the steepest stairs (a riser over 24 units) block.
