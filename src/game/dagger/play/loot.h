@@ -78,6 +78,19 @@ void loot_taken(const Entity *e, int origin);
 int loot_takes_things(const Entity *e);
 /* A word for what e is: "Body", "Treasure" or "Pile". */
 const char *loot_label(const Entity *e);
+/*
+ * A house's chest, cupboard or drawer (places/doors.h, OTHER_CONTAINER), searched like a body: e is
+ * the game's own Entity standing for it, its key the container's, begun before the screen opens and
+ * ended after. Its things come from one table of our own ('A': a little gold, rarely a weapon or
+ * a plate; DFU's StockHouseContainer was not found), by the keep row's level and the key's seed, so
+ * it holds the same each look and what was taken stays gone. A building's quality is kept for
+ * the theft that taking is.
+ */
+void loot_house_begin(Entity *e, KeepKey key, int quality);
+/* How many things have been taken off it since loot_house_begin, and in *weight their kilograms. */
+int loot_house_taken(float *weight);
+int loot_house_quality(void);
+void loot_house_end(void);
 /* The screen on e closed with left on it: a pile keeps left, and with nothing left a pile or a heap of treasure goes. */
 void loot_closed(Entity *e, const Inventory *left);
 

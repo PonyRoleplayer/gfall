@@ -4966,6 +4966,135 @@ static void check_people_in_town(void)
     printf("people in town: Daggerfall's armorer, quality %d, %d shelves, %d people\n", quality, shelves, folk);
 }
 
+/*
+ * A house's chests and cupboards: a Daggerfall house has some (the furniture ids DFU names), what one
+ * holds is worked out from its key and is the same each look, what was taken stays gone across a
+ * second visit, and what a visit took is counted and weighed for the theft it is.
+ */
+static void check_house_container(void)
+{
+    static Entity box;
+    static Entity other;
+    static Inventory held;
+    Inventory again;
+    df_u8 origin[INVENTORY_MAX];
+    df_u8 origin_again[INVENTORY_MAX];
+    KeepKey key;
+    float weight;
+    int stocked;
+    int first;
+    int n;
+    int i;
+
+    keep_clear();
+    loot_new_game(77u);
+    /* Forty containers: most hold something, and the same one the same each look. */
+    stocked = 0;
+    for (i = 0; i < 40; i++) {
+        key.place = 0x7e570000u + (unsigned)i;
+        key.thing = 0x01000040u + (unsigned)i * 16u;
+        loot_house_begin(&box, key, 8);
+        n = loot_open(&box, 6, &held, origin);
+        loot_open(&box, 6, &again, origin_again);
+        check_expect(n == again.count, "house container: it did not hold the same each look");
+        stocked += n > 0;
+        loot_house_end();
+    }
+    check_expect(stocked > 30, "house container: most should hold gold at least");
+
+    /* One searched, a thing taken: counted, weighed, and gone for the next look and the next visit. */
+    key.place = 0x7e57ffffu;
+    key.thing = 0x03000123u;
+    loot_house_begin(&box, key, 12);
+    check_expect(loot_house_quality() == 12 && df_eq(loot_label(&box), "Container"), "house container: its quality or its label");
+    first = loot_open(&box, 6, &held, origin);
+    check_expect(first > 0, "house container: the one under test is empty");
+    check_expect(loot_house_taken(&weight) == 0, "house container: nothing taken was counted");
+    loot_taken(&box, origin[0]);
+    n = loot_house_taken(&weight);
+    check_expect(n == 1 && weight >= 0.0f, "house container: one thing taken was not counted once");
+    check_expect(loot_open(&box, 6, &again, origin_again) == first - 1, "house container: a thing taken is still in it");
+    loot_house_end();
+    loot_house_begin(&box, key, 12);
+    check_expect(loot_open(&box, 6, &again, origin_again) == first - 1 && loot_house_taken(&weight) == 0,
+                 "house container: a second visit did not find it as left, or counted the first visit's");
+    loot_house_end();
+    /* Another thing is no container. */
+    memset(&other, 0, sizeof(other));
+    check_expect(!df_eq(loot_label(&other), "Container"), "house container: any entity is a container");
+}
+
+/* Daggerfall's houses, entered by their own doors: some of them have furniture that is a container. */
+static void check_house_interiors(void)
+{
+    Level level;
+    Camera cam;
+    TravelPose at;
+    TravelWhere where;
+    float feet[3];
+    int chunk[2];
+    int index;
+    int px;
+    int py;
+    int block;
+    int record;
+    int type;
+    int containers;
+    int visited;
+    int found;
+    int i;
+    double wx;
+    double wz;
+
+    index = daggerfall_index();
+    if (index < 0) {
+        return;
+    }
+    containers = 0;
+    visited = 0;
+    for (type = BUILDING_HOUSE1; type <= BUILDING_HOUSE4; type++) {
+        if (building_of_type(17, index, type, &block, &record) < 0) {
+            continue;
+        }
+        worldmap_open();
+        worldmap_pixel_of(17, index, &px, &py);
+        wx = ((double)px + 0.5) * (double)(STREAM_CHUNK * WORLDMAP_BLOCKS);
+        wz = ((double)(WORLDMAP_H - 1 - py) + 0.5) * (double)(STREAM_CHUNK * WORLDMAP_BLOCKS);
+        mem_zero(&where, sizeof(where));
+        where.kind = TRAVEL_INSIDE;
+        where.located = 1;
+        where.region = 17;
+        where.index = index;
+        where.block = block;
+        where.record = record;
+        where.has_back = 1;
+        where.back_x = wx;
+        where.back_z = wz;
+        feet[0] = feet[1] = feet[2] = 0.0f;
+        chunk[0] = chunk[1] = 0;
+        travel_from_save(&where, feet, chunk, 0.0f, 0.0f);
+        if (!travel_go(&level, &cam, &at)) {
+            continue;
+        }
+        visited++;
+        found = 0;
+        for (i = 0; i < level.scene.nusables; i++) {
+            const Usable *u;
+
+            u = &level.scene.usables[i];
+            if (u->kind == USE_OTHER && u->what == OTHER_CONTAINER) {
+                found++;
+                check_expect(u->tag != 0 && u->label && df_eq(u->label, "container"), "house container: a usable without its key or label");
+            }
+        }
+        containers += found;
+        printf("house: Daggerfall's type %d house has %d containers\n", type, found);
+        travel_leave();
+    }
+    check_expect(visited > 0, "house container: Daggerfall has no house to enter");
+    check_expect(containers > 0, "house container: no house of Daggerfall has a chest or a cupboard");
+}
+
 /* The console's goto: by a whole name, by numbers, a part of a name, none; on a street, on the ground, from a dungeon or a town. */
 static void check_goto(void)
 {
@@ -8068,6 +8197,8 @@ void check_play(void)
     check_shop_and_court();
     check_bank();
     check_people_in_town();
+    check_house_container();
+    check_house_interiors();
     check_citizen();
     check_senses();
     check_wider_world();

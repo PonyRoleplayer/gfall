@@ -153,6 +153,26 @@ static int is_shelf(df_u32 id)
     return 0;
 }
 
+/*
+ * DaggerfallInterior's house containers: a prop model of group 418 (id / 100), or one of these
+ * past 41000. A shelf id is a shelf first, so 35 and 37 are not chests here.
+ */
+static int is_container(df_u32 id)
+{
+    static const df_u8 containers[] = { 3, 4, 7, 8, 27, 32, 33, 34, 35, 37, 38, 50, 51 };
+    int i;
+
+    if (id / 100u == 418u) {
+        return 1;
+    }
+    for (i = 0; i < (int)sizeof(containers); i++) {
+        if (id == 41000u + containers[i]) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static Usable *new_use(DoorBuild *b, int kind, const char *label, float reach)
 {
     Usable *u;
@@ -550,6 +570,18 @@ int doors_build(DoorBuild *b)
                 }
                 u->model = i;
                 u->what = OTHER_SHELF;
+            } else if (is_container(b->act[i].id)) {
+                Usable *c;
+
+                c = new_use(b, USE_OTHER, "container", DOOR_REACH);
+                if (!c) {
+                    break;
+                }
+                c->model = i;
+                c->what = OTHER_CONTAINER;
+                /* Its row in the keep table, as a mover's key is made: its block and its place in it. */
+                c->tag = (int)(((df_u32)b->block[i] << 24)
+                               | (b->act[i].pos ? (b->act[i].pos & 0x7FFFFFu) : (0x800000u | ((df_u32)i & 0x7FFFFFu))));
             }
         }
     }

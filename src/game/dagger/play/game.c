@@ -378,6 +378,94 @@ static int shop_here(Shop *shop)
 }
 
 /* A shelf used: the shop's goods, by its hours; in a house, nothing to buy. */
+/* ---- A house's chests, cupboards and drawers (loot.h, DaggerfallInterior's house containers). ---- */
+
+static void bag_over_play(Entity *searched);
+
+/* TEXT.RSC's record 37, DFU's PrivatePropertyId: "This looks like private property. Do you still want to look through it?" */
+#define TEXT_PRIVATE_PROPERTY 37
+/* Where the container's story is: 0 none, 1 the question is asked, 2 the screen over its things is open. */
+static int g_container_state;
+static Entity g_container;
+
+/*
+ * A container used: nothing in it, nothing happens; else the question, and Yes opens its things
+ * (container_answered). A house of the player's own would skip the question and the theft
+ * (DFU), but nothing here can be bought yet.
+ */
+static void container_used(const Usable *u)
+{
+    static char text[256];
+    static Inventory held;
+    df_u8 origin[INVENTORY_MAX];
+    KeepKey key;
+    int type;
+    int faction;
+    int quality;
+    unsigned place;
+
+    if (!travel_building(&type, &faction, &quality, &place)) {
+        return;
+    }
+    key.place = place;
+    key.thing = (df_u32)u->tag;
+    loot_house_begin(&g_container, key, quality);
+    if (loot_open(&g_container, g_player.sheet.level, &held, origin) <= 0) {
+        loot_house_end();
+        interact_say("You find nothing.");
+        return;
+    }
+    if (textrsc_read(TEXT_PRIVATE_PROPERTY, text, (int)sizeof(text)) <= 0) {
+        df_copy(text, "This looks like private property. Do you still want to look through it?", (int)sizeof(text));
+    }
+    g_container_state = 1;
+    screens_open_msgbox(text, 1);
+    screen_over_play();
+}
+
+/* The question answered: Yes, its things lie on the screen beside the pack; No, it is left alone. */
+static void container_answered(int answer)
+{
+    if (answer != MSGBOX_YES) {
+        g_container_state = 0;
+        loot_house_end();
+        return;
+    }
+    g_container_state = 2;
+    bag_over_play(&g_container);
+    if (!screens_is_open()) {
+        /* A shapechanged player is refused the screen: nothing was taken. */
+        g_container_state = 0;
+        loot_house_end();
+    }
+}
+
+/*
+ * The screen over a container's things closed. What was taken is a theft, as DFU's private
+ * property is: seen by the shoplifting sum at the building's quality over the things' weight and
+ * number, and the court is next; unseen, the Pickpocket skill is used instead.
+ */
+static void container_closed(void)
+{
+    Shop shop;
+    float weight;
+    int count;
+
+    g_container_state = 0;
+    count = loot_house_taken(&weight);
+    mem_zero(&shop, sizeof(shop));
+    shop.quality = loot_house_quality();
+    loot_house_end();
+    if (count <= 0) {
+        return;
+    }
+    if (combat_roll(100) < shop_seen_chance(&shop, &g_player.sheet, weight, count)) {
+        court_commit(CRIME_THEFT, travel_region());
+    } else {
+        character_tally(&g_player.sheet, SKILL_PICKPOCKET, 1);
+    }
+}
+
 static void shelf_used(void)
 {
     Shop shop;
@@ -956,6 +1044,11 @@ static void quest_answered(int answer)
     static char line[2048];
     int slot;
 
+    /* A house container's question has the same box. */
+    if (g_container_state == 1) {
+        container_answered(answer);
+        return;
+    }
     slot = g_offer_slot;
     g_offer_slot = -1;
     if (slot < 0) {
@@ -1193,6 +1286,10 @@ static int on_use(const Scene *scene, const Usable *u, int index)
     }
     if (u->kind == USE_OTHER && u->what == OTHER_SHELF) {
         shelf_used();
+        return 1;
+    }
+    if (u->kind == USE_OTHER && u->what == OTHER_CONTAINER) {
+        container_used(u);
         return 1;
     }
     return 0;
@@ -1832,6 +1929,9 @@ static void arrive(const Level *level, Camera *cam, const TravelPose *at)
     watch_reset();
     /* The people are built anew, so no one has been tried. */
     theft_forget();
+    /* No container is being searched in a place just entered. */
+    g_container_state = 0;
+    loot_house_end();
     /* A quest waiting for the player at a place (43): a dungeon, or a building of a town. */
     {
         TravelWhere here;
@@ -2035,6 +2135,10 @@ int game_frame(Camera *cam, const Input *in, float dt)
          * leaves the player exhausted (and dead with a creature near).
          */
         g_last_minute = df_ifloor(game_minutes());
+        /* The screen over a house container's things closed: what was taken is a theft, seen or not. */
+        if (g_container_state == 2 && !screens_is_open()) {
+            container_closed();
+        }
         /* A rest asked in a town's streets: vagrancy, and the guards take the player before the court (DFU spawns them). */
         if (!screens_is_open() && rest_vagrant()) {
             char line[160];

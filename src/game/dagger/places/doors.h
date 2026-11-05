@@ -37,6 +37,8 @@ enum {
 
 /* Usable.what of a USE_OTHER: a shop's shelf (DaggerfallInterior's furniture by its model's number). */
 #define OTHER_SHELF 1
+/* A house's chest, cupboard or drawer (DaggerfallInterior's houseContainerObjectGroupIndices); tag is its key's thing (keep.h). */
+#define OTHER_CONTAINER 2
 
 /* What the place is, so which passages it has. */
 enum {

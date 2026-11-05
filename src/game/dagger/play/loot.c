@@ -4,6 +4,7 @@
 #include "game/dagger/places/dunstream.h"
 #include "game/dagger/places/people.h"
 #include "game/dagger/tables/enemies.h"
+#include "engine/core/mem.h"
 #include "engine/scene/keep.h"
 #include "engine/scene/stream.h"
 
@@ -407,11 +408,21 @@ static int body_kind(const Entity *e)
     return dunstream_kind(e, 0);
 }
 
-/* The table e is filled from: its kind's for a body, the dungeon's for a heap. */
+/* The house container being searched (loot_house_begin), its building's quality, and what was taken off it before. */
+static const Entity *g_house;
+static int g_house_quality;
+static unsigned g_house_before;
+/* The loot table a house container is filled from: ours. */
+#define HOUSE_TABLE 'A'
+
+/* The table e is filled from: its kind's for a body, the dungeon's for a heap, ours for a house container. */
 static const LootChance *table_of(const Entity *e)
 {
     const EnemyKind *kind;
 
+    if (e == g_house) {
+        return loot_chance(HOUSE_TABLE);
+    }
     if (dunstream_treasure(e)) {
         return dungeon_loot(dunstream_dungeon_type());
     }
@@ -483,6 +494,9 @@ int loot_takes_things(const Entity *e)
 
 const char *loot_label(const Entity *e)
 {
+    if (e == g_house) {
+        return "Container";
+    }
     if (dunstream_spare(e)) {
         return "Pile";
     }
@@ -498,4 +512,53 @@ void loot_closed(Entity *e, const Inventory *left)
         e->dead = 1;
         e->live = 0;
     }
+}
+
+void loot_house_begin(Entity *e, KeepKey key, int quality)
+{
+    Keep *row;
+
+    mem_zero(e, sizeof(Entity));
+    e->key = key;
+    e->live = 1;
+    g_house = e;
+    g_house_quality = quality;
+    row = keep_get(key, KEEP_ENTITY);
+    g_house_before = row ? taken_bits(row) : 0u;
+}
+
+int loot_house_taken(float *weight)
+{
+    Inventory rolled;
+    Keep *row;
+    unsigned fresh;
+    int count;
+    int i;
+
+    *weight = 0.0f;
+    row = g_house ? keep_find(g_house->key) : 0;
+    if (!row) {
+        return 0;
+    }
+    /* What it held is worked out again, as loot_open does, to say what the new bits were. */
+    loot_roll(&rolled, table_of(g_house), row->game[COMBAT_KEEP_LEVEL], thing_seed(g_house));
+    fresh = taken_bits(row) & ~g_house_before;
+    count = 0;
+    for (i = 0; i < rolled.count; i++) {
+        if (fresh & (1u << i)) {
+            count++;
+            *weight += rolled.item[i].weight * (float)rolled.item[i].count;
+        }
+    }
+    return count;
+}
+
+int loot_house_quality(void)
+{
+    return g_house_quality;
+}
+
+void loot_house_end(void)
+{
+    g_house = 0;
 }
