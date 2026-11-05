@@ -197,6 +197,8 @@ static struct {
     int nfound;
     int flash_place;
     float flash;
+    /* The world view's province blink, in seconds. */
+    float blink;
     const char *note;
     Words words;
     /* The screen as the map left it, before the popup or the scroll: what they did not draw is not mapped again. */
@@ -583,6 +585,16 @@ static void begin(void)
 
 int travelmap_step(float dt)
 {
+    int phase;
+
+    phase = df_ifloor(g.blink * 2.0f) & 1;
+    g.blink += dt;
+    if (g.blink > 64.0f) {
+        g.blink -= 64.0f;
+    }
+    if ((df_ifloor(g.blink * 2.0f) & 1) != phase && (g.step == STEP_WORLD || !g.region_pic)) {
+        g.changed = 1;
+    }
     if (g.flash > 0.0f && g.step == STEP_REGION) {
         int was;
 
@@ -809,12 +821,28 @@ static void compose_found(void)
     }
 }
 
+/* The player's province, lit on one half of the blink. The world picture has no pixel for the player, only this mask. */
+static void blink_province(void)
+{
+    int i;
+
+    if (g.here_region < 0 || !g.mask || (df_ifloor(g.blink * 2.0f) & 1) == 0) {
+        return;
+    }
+    for (i = 0; i < CANVAS_BYTES; i++) {
+        if ((int)g.mask[i] - 128 == g.here_region) {
+            g.composer.screen[i] = CROSS_INDEX;
+        }
+    }
+}
+
 void travelmap_compose(void)
 {
     canvas_use(&g.composer);
     /* A Find begun on the world has no province under it yet: the world stays. */
     if (g.step == STEP_WORLD || !g.region_pic) {
         canvas_copy_all(g.world);
+        blink_province();
     } else {
         canvas_box(&g_line_rect, 0);
         {
