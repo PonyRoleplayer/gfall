@@ -33,9 +33,11 @@ enum {
 /* The persons tried are forgotten: a place entered, or a game started. */
 void theft_forget(void);
 /*
- * An attempt on the person who (people_in_view's number), the thief p's level
- * level_gap above theirs (0 for a citizen), in the region. A success's gold is
- * put in the pack and, in *gold, how much (0 for none).
+ * An attempt on the person who (people_in_view's number, or a creature's own
+ * key hashed), the thief p's level level_gap above theirs (0 for a citizen),
+ * in the region. A region under 0 notes no crime: a class enemy's pocket is
+ * no one's law, and a failure only wakes them (DFU). A success's gold is put in
+ * the pack and, in *gold, how much (0 for none).
  */
 int theft_pickpocket(Player *p, unsigned who, int level_gap, int region, int *gold);
 /* The line that tells of a result, into out (cap). */

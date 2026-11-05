@@ -504,6 +504,92 @@ static int steal_intent(void)
 #define THEFT_REACH 128.0f
 
 /*
+ * The living creature the view rests on within reach: the camera's eye and the unit
+ * direction of its view (the use key's ray), no wall between. 0 for none.
+ */
+static Entity *creature_in_view(const Camera *cam, float reach)
+{
+    Basis b;
+    float eye[3];
+    float dir[3];
+
+    camera_basis(cam, &b);
+    eye[0] = cam->x;
+    eye[1] = cam->y;
+    eye[2] = cam->z;
+    dir[0] = b.fx * b.cp;
+    dir[1] = b.sp;
+    dir[2] = b.fz * b.cp;
+    return combat_aim(&g_level->scene, eye, dir, reach);
+}
+
+/* How far E looks at a creature, ours: as far as a creature is a near thing (FOES_NEAR), where Info mode looks as far as it sees. */
+#define LOOK_REACH FOES_NEAR
+
+/*
+ * Info, and E on a creature without stealing: what is seen, said. 1 when a creature was in
+ * reach (nothing behind it is then used).
+ */
+static int creature_looked_at(const Camera *cam, float reach)
+{
+    static char line[48];
+    const EnemyKind *kind;
+    Entity *e;
+    char first;
+
+    e = creature_in_view(cam, reach);
+    kind = e ? enemy_kind(dunstream_kind(e, 0)) : 0;
+    if (!kind) {
+        return 0;
+    }
+    first = kind->name[0];
+    log_format(line, (int)sizeof(line), "You see %s %s.",
+               first == 'A' || first == 'E' || first == 'I' || first == 'O' || first == 'U' ? "an" : "a", kind->name);
+    interact_say(line);
+    return 1;
+}
+
+/*
+ * Steal mode on a creature: a class enemy's pocket (DFU lets only a human be robbed), the
+ * thief's level against theirs, and no law in it. Seen, they wake and come. 1 when a creature
+ * was in reach, who is then the only one tried.
+ */
+static int creature_robbed(const Camera *cam)
+{
+    char line[64];
+    const EnemyKind *kind;
+    Entity *e;
+    Foe foe;
+    unsigned who;
+    int result;
+    int gold;
+
+    e = creature_in_view(cam, THEFT_REACH);
+    if (!e) {
+        if (creature_in_view(cam, TALK_REACH)) {
+            interact_say("You are too far away.");
+            return 1;
+        }
+        return 0;
+    }
+    kind = enemy_kind(dunstream_kind(e, 0));
+    if (!kind || kind->id < ENEMY_FIRST_CLASS) {
+        interact_say("There is nothing to steal from that.");
+        return 1;
+    }
+    combat_foe(&foe, kind, g_player.sheet.level, 0);
+    /* A creature has no number but its key: that, hashed, apart from the people's. */
+    who = 0x80000000u | ((unsigned)e->key.place * 2654435761u + (unsigned)e->key.thing * 40503u);
+    result = theft_pickpocket(&g_player, who, g_player.sheet.level - foe.level, -1, &gold);
+    theft_words(result, gold, line, (int)sizeof(line));
+    interact_say(line);
+    if (result == THEFT_CAUGHT) {
+        foes_alert(e);
+    }
+    return 1;
+}
+
+/*
  * Steal mode on a townsperson in the view: a pocket picked. Seen, the crime is noted
  * and the watch comes (watch_alarm). 1 when someone was there, who is not then
  * spoken to nor is anything behind them used; 0 when no one was in reach.
@@ -1544,6 +1630,9 @@ static void use_key(const Camera *cam)
     if (g_mode == HUDBAR_INFO) {
         UseHit hit;
 
+        if (creature_looked_at(cam, FOES_SIGHT)) {
+            return;
+        }
         if (interact_aim(&g_level->scene, cam, &hit)) {
             const Usable *u;
             int type, quality;
@@ -1577,7 +1666,8 @@ static void use_key(const Camera *cam)
          * Someone walking the street, if the view rests on them: in Steal mode their pocket is
          * picked, else they are spoken to. Otherwise what the engine's ray finds.
          */
-        if (steal_intent() ? !street_person_robbed(cam) : !street_person_used(cam)) {
+        if (steal_intent() ? !(creature_robbed(cam) || street_person_robbed(cam))
+                        : !(creature_looked_at(cam, LOOK_REACH) || street_person_used(cam))) {
             Basis b;
 
             /* Use the exact camera supplied by keyboard or pointer picking.

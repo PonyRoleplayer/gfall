@@ -718,21 +718,15 @@ int combat_ray_box(const float *eye, const float *dir, const float *low, const f
     return 1;
 }
 
-int combat_shoot(Character *pc, Item *weapon, const Scene *scene, const float *feet, const float *eye, const float *dir)
+/* The nearest living creature of the stream the ray from eye along dir enters within reach, no wall between; its distance along the ray in *t_out. */
+static Entity *aim_creature(const Scene *scene, const float *eye, const float *dir, float reach, float *t_out)
 {
     Entity *best;
     float best_t;
     int slot;
 
-    tire(pc);
-    /* A shot trains its skill and Critical Strike, struck or not (WeaponManager). */
-    character_tally(pc, SKILL_ARCHERY, 1);
-    character_tally(pc, SKILL_CRITICAL_STRIKE, 1);
-    if (!scene || !collide_use(scene)) {
-        return 0;
-    }
     best = 0;
-    best_t = FOES_SIGHT;
+    best_t = reach;
     for (slot = 0; slot < stream_slots(); slot++) {
         Entity *ents;
         int first;
@@ -771,6 +765,33 @@ int combat_shoot(Character *pc, Item *weapon, const Scene *scene, const float *f
             }
         }
     }
+    *t_out = best_t;
+    return best;
+}
+
+Entity *combat_aim(const Scene *scene, const float *eye, const float *dir, float reach)
+{
+    float t;
+
+    if (!scene || !collide_use(scene)) {
+        return 0;
+    }
+    return aim_creature(scene, eye, dir, reach, &t);
+}
+
+int combat_shoot(Character *pc, Item *weapon, const Scene *scene, const float *feet, const float *eye, const float *dir)
+{
+    Entity *best;
+    float best_t;
+
+    tire(pc);
+    /* A shot trains its skill and Critical Strike, struck or not (WeaponManager). */
+    character_tally(pc, SKILL_ARCHERY, 1);
+    character_tally(pc, SKILL_CRITICAL_STRIKE, 1);
+    if (!scene || !collide_use(scene)) {
+        return 0;
+    }
+    best = aim_creature(scene, eye, dir, FOES_SIGHT, &best_t);
     if (!best) {
         return 0;
     }

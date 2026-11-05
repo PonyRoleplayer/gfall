@@ -1398,6 +1398,25 @@ static void check_combat(void)
                         check_expect(!combat_reaches(&level.scene, feet, eye, a + 40.0f * DF_TAU / 360.0f, &ents[i])
                                          && combat_reaches(&level.scene, feet, eye, a - 30.0f * DF_TAU / 360.0f, &ents[i]),
                                      "combat: the strike's arc is not classic's 35 degrees");
+                        /* Aimed at: the view that rests on it finds it, and the opposite way does not. */
+                        {
+                            float to[3];
+                            float away[3];
+                            float len;
+
+                            to[0] = ents[i].x - eye[0];
+                            to[1] = ents[i].y + entity_height(&ents[i]) * 0.5f - eye[1];
+                            to[2] = ents[i].z - eye[2];
+                            len = df_sqrt(to[0] * to[0] + to[1] * to[1] + to[2] * to[2]);
+                            to[0] /= len;
+                            to[1] /= len;
+                            to[2] /= len;
+                            away[0] = -to[0];
+                            away[1] = to[1];
+                            away[2] = -to[2];
+                            check_expect(combat_aim(&level.scene, eye, to, 400.0f) == &ents[i], "combat: the view on a creature does not aim at it");
+                            check_expect(combat_aim(&level.scene, eye, away, 400.0f) != &ents[i], "combat: the view away from a creature aims at it");
+                        }
                         pc.fatigue = pc.fatigue_max;
                         combat_strike(&pc, &sword, 3, &level.scene, feet, eye, a);
                         target = &ents[i];
@@ -6685,6 +6704,23 @@ static void check_theft(void)
     check_expect(standing_region(17)->legal == legal - 2 && standing_rep(faction_people_of(17)->id) == people - 1,
                  "theft: the crime's cost is not pickpocketing's 2 and half");
     check_expect(!court_pending(), "theft: a seen pickpocket opened the court");
+
+    /* A class enemy's pocket: no crime on failure (region -1), and the level term moves the chance. */
+    legal = standing_region(17)->legal;
+    p.sheet.skill[SKILL_PICKPOCKET] = 5;
+    theft_forget();
+    caught = 0;
+    for (i = 0; i < 200; i++) {
+        caught += theft_pickpocket(&p, 0x80000000u + (unsigned)i, 0, -1, &gold) == THEFT_CAUGHT;
+    }
+    check_expect(caught > 150 && standing_region(17)->legal == legal, "theft: an enemy's failed pocket noted a crime, or was not mostly failed at 5");
+    p.sheet.skill[SKILL_PICKPOCKET] = 50;
+    theft_forget();
+    caught = 0;
+    for (i = 0; i < 400; i++) {
+        caught += theft_pickpocket(&p, 0x80000000u + (unsigned)i, 9, -1, &gold) == THEFT_CAUGHT;
+    }
+    check_expect(caught < 40, "theft: nine levels above a foe at Pickpocket 50 (95%) was seen too often");
 
     theft_words(THEFT_GOLD, 1, line, (int)sizeof(line));
     check_expect(df_eq(line, "You take 1 gold piece."), "theft: one gold piece's words");

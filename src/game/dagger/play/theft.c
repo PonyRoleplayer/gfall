@@ -65,7 +65,9 @@ int theft_pickpocket(Player *p, unsigned who, int level_gap, int region, int *go
     character_tally(&p->sheet, SKILL_PICKPOCKET, 1);
     chance = rules_pickpocket_chance(p->sheet.skill[SKILL_PICKPOCKET], level_gap);
     if (combat_roll(100) >= chance) {
-        court_note(CRIME_PICKPOCKETING, region);
+        if (region >= 0) {
+            court_note(CRIME_PICKPOCKETING, region);
+        }
         return THEFT_CAUGHT;
     }
     found = rules_pickpocket_gold(combat_roll(100), combat_roll(6));

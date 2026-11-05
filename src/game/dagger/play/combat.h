@@ -150,6 +150,8 @@ int combat_citizen_struck(Blow *out, int *health_before);
  * creature that way within sight and no wall between, struck by combat_blow.
  * DFU flies an arrow; here it lands at once. 1 when it struck one.
  */
+/* The nearest living creature the ray from eye along unit dir meets within reach, no wall between; 0 for none. What a shot, a look and a pickpocket aim with. */
+Entity *combat_aim(const Scene *scene, const float *eye, const float *dir, float reach);
 int combat_shoot(Character *pc, Item *weapon, const Scene *scene, const float *feet, const float *eye, const float *dir);
 /* The slab test: whether a ray from eye along unit dir meets the box within reach, and how far along. */
 int combat_ray_box(const float *eye, const float *dir, const float *low, const float *high, float reach, float *t_out);
