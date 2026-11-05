@@ -30,6 +30,7 @@ Every Daggerfall track names General MIDI (0xA000), OPL2 (0xA002) and Gravis (0x
 What the songs need: at most 17 notes at once (in TAVERN, SNEAKING and the long dungeon songs), at most 11,077 events (DUNGEON.HMI), from 30 seconds to 5½ minutes long.
 
 **When things play**, as Daggerfall Unity has it:
+- **The title.** The title picture and the start menu play `05.HMI` (`05FM.HMI` on an FM device) until a place's own song replaces it. DFU's setup screen uses `song_5strong`; this `MIDI.BSA` has no `5STRONG.HMI`, and `05.HMI` is that number's stock song (`sounds_title`).
 - **Songs.** A dungeon song in a dungeon. In a building, a song by what it is (a shop, a tavern, the Mages Guild, a palace, a temple, the Fighters' Guild, any other house: `sounds_house`, `docs/interact.md`). Outdoors: by day a playlist by the weather (sunny, cloudy, overcast and fog, rain and storm, snow), at night the night songs. A song loops until the playlist changes.
 - **Weather.** Rain and storm loop the rain (389). A storm plays a thunder clip (348–350) after a burst of lightning flashes. A clear night loops crickets (6). A fair day calls a bird (437, 438) somewhere 10–20 m away every 4–35 s.
 - **Dungeons.** Every 4–35 s, one of fourteen noises (63–76: drips, moans, wind, a far door, a grind, strumming, a roar, coins, a bird) somewhere 10–20 m away. Not in a castle's peaceful blocks: not done here, see the end.

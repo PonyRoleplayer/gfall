@@ -10,6 +10,9 @@
 #include "engine/scene/weather.h"
 #include "engine/sound/sound.h"
 #include "engine/sound/music.h"
+#include "engine/assets/loader.h"
+#include "engine/assets/song.h"
+#include "game/dagger/tables/sounds.h"
 #include "game/dagger/play/viewopt.h"
 #include "engine/core/mem.h"
 #include "game/dagger/play/mouse.h"
@@ -246,6 +249,23 @@ static void settings_enter_tab(int tab)
     }
 }
 
+/* The title theme, until a place's song replaces it. Already playing, left alone. */
+static void play_title(void)
+{
+    const char *name;
+    Song song;
+
+    name = sounds_title();
+    if (!name || df_eq(music_name(), name)) {
+        return;
+    }
+    mem_zero(&song, sizeof(song));
+    if (!loader_call("song", name, 0, 0, &song)) {
+        return;
+    }
+    music_play(&song, name);
+}
+
 void menu_open(int which)
 {
     static const char *const files[] = { 0, "TITL00I0.IMG", "PICK03I0.IMG", 0, 0, "DIE_00I0.IMG" };
@@ -282,6 +302,9 @@ void menu_open(int which)
         input_key_pressed();
     }
     if (which == MENU_DEATH) input_key_pressed();
+    if (which == MENU_TITLE || which == MENU_MAIN) {
+        play_title();
+    }
 }
 
 void menu_say(const char *line)

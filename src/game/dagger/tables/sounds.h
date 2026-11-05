@@ -33,5 +33,11 @@ void sounds_house(Soundscape *sc, int building, int faction, int index);
  * a flaming torch's fire, an animal's call. 1 and out filled, or 0.
  */
 int sounds_flat(int file, int image, float x, float y, float z, Emitter *out);
+/*
+ * The title and the start menu. MIDI.BSA has no 5STRONG.HMI (DFU's title
+ * file). 05.HMI is that number's stock song, and 05FM.HMI when the device
+ * is FM. A place's own song replaces it once the world is open.
+ */
+const char *sounds_title(void);
 
 #endif

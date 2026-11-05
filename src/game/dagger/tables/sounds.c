@@ -228,6 +228,11 @@ static void add(const SoundClip **list, int *n, int index)
     }
 }
 
+const char *sounds_title(void)
+{
+    return music_kind() == MUSIC_FM ? "05FM.HMI" : "05.HMI";
+}
+
 void sounds_scape(Soundscape *sc, int kind, int index)
 {
     int i;
