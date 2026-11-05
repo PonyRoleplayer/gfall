@@ -40,6 +40,18 @@ void theft_forget(void);
  * the pack and, in *gold, how much (0 for none).
  */
 int theft_pickpocket(Player *p, unsigned who, int level_gap, int region, int *gold);
+/*
+ * A door inside, of lock level lock, picked by p: the attempt counts a use of Lockpicking, picked or
+ * not (UESP). LOCK_MAGIC, a lock of 20 or more, is no attempt and counts nothing.
+ */
+enum {
+    LOCK_MAGIC,
+    LOCK_PICKED,
+    LOCK_FAILED
+};
+int theft_pick_inside(Player *p, int lock);
+/* 1 when a failed pick was heard by the watch: a roll against rules_lock_alert_chance of p's Stealth. */
+int theft_lock_heard(const Player *p);
 /* The line that tells of a result, into out (cap). */
 void theft_words(int result, int gold, char *out, int cap);
 

@@ -172,7 +172,7 @@ hostcheck: `check_teleport` walks into a pad and is sent once, lands on the far 
 - Streaming a dungeon by block, which the state above was made for first (`docs/streaming.md`).
 - Triggers by attack (5), and doors setting off their own actions by opening (10) beyond the chain. Walking into (1, 3, 9) is a box: a pad's or a wall's, not its triangles.
 - What text, spells, traps, damage and the quest's actions do; flats with actions, a teleport's target among them only as a destination.
-- Picking and bashing locks; a house locked by the hour or by its type.
+- Bashing locks; a house locked by the hour or by its type. Picking a door's lock is the game's (`door_picked` in `play/game.c`: it sets `Mover.lock` to 0, which the keep rows note; docs/game.md, Steal and theft).
 - Doors pushing the body; the body caught in a swing is freed by `stuck`.
 - Talking.
 - GFALL's passages (the game layer).

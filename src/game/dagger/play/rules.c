@@ -252,6 +252,17 @@ int rules_pickpocket_gold(int roll100, int roll6)
     return roll100 >= 33 ? 1 + roll6 : 0;
 }
 
+int rules_inside_lock_chance(int lockpicking, int level, int lock)
+{
+    return chance_5_95(lockpicking + 5 * (level - lock));
+}
+
+int rules_lock_alert_chance(int stealth)
+{
+    stealth = stealth < 0 ? 0 : (stealth > 100 ? 100 : stealth);
+    return 33 * (100 - stealth) / 100;
+}
+
 int rules_lock_chance(int lockpicking, int lock)
 {
     return chance_5_95(lockpicking - 5 * lock);

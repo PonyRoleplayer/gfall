@@ -68,6 +68,7 @@ enum {
 /* The crimes the code names. */
 enum {
     CRIME_NONE = 0,
+    CRIME_ATTEMPTED_BREAKING_IN = 1,
     CRIME_BREAKING_IN = 3,
     CRIME_VAGRANCY = 8,
     CRIME_PICKPOCKETING = 12,

@@ -79,6 +79,23 @@ int theft_pickpocket(Player *p, unsigned who, int level_gap, int region, int *go
     return THEFT_GOLD;
 }
 
+int theft_pick_inside(Player *p, int lock)
+{
+    if (lock >= RULES_LOCK_MAGICAL) {
+        return LOCK_MAGIC;
+    }
+    character_tally(&p->sheet, SKILL_LOCKPICKING, 1);
+    if (combat_roll(100) >= rules_inside_lock_chance(p->sheet.skill[SKILL_LOCKPICKING], p->sheet.level, lock)) {
+        return LOCK_FAILED;
+    }
+    return LOCK_PICKED;
+}
+
+int theft_lock_heard(const Player *p)
+{
+    return combat_roll(100) < rules_lock_alert_chance(p->sheet.skill[SKILL_STEALTH]);
+}
+
 void theft_words(int result, int gold, char *out, int cap)
 {
     switch (result) {

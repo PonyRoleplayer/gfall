@@ -6722,6 +6722,37 @@ static void check_theft(void)
     }
     check_expect(caught < 40, "theft: nine levels above a foe at Pickpocket 50 (95%) was seen too often");
 
+    /* Locks: a door inside is the skill and five a level the thief is above the lock, 5..95; 20 is held by magic. */
+    check_expect(rules_inside_lock_chance(50, 5, 3) == 60 && rules_inside_lock_chance(50, 1, 8) == 15, "theft: the inside lock's sum");
+    check_expect(rules_inside_lock_chance(10, 1, 19) == 5 && rules_inside_lock_chance(90, 10, 1) == 95, "theft: the inside lock's clamp");
+    check_expect(rules_lock_alert_chance(0) == 33 && rules_lock_alert_chance(100) == 0 && rules_lock_alert_chance(50) == 16
+                     && rules_lock_alert_chance(150) == 0,
+                 "theft: a failed pick's alert is not a third less Stealth");
+    p.sheet.level = 5;
+    p.sheet.skill[SKILL_LOCKPICKING] = 50;
+    uses = p.sheet.skill_uses[SKILL_LOCKPICKING];
+    check_expect(theft_pick_inside(&p, RULES_LOCK_MAGICAL) == LOCK_MAGIC && p.sheet.skill_uses[SKILL_LOCKPICKING] == uses,
+                 "theft: a magic lock was tried, or counted a use");
+    caught = golds = 0;
+    for (i = 0; i < 2000; i++) {
+        golds += theft_pick_inside(&p, 3) == LOCK_PICKED;
+        caught++;
+    }
+    check_expect(p.sheet.skill_uses[SKILL_LOCKPICKING] == uses + 2000, "theft: a pick, won or lost, did not count a use");
+    check_expect(golds > 1100 && golds < 1300, "theft: lock 3 at level 5, Lockpicking 50 (60%) is not picked about 60 times in 100");
+    p.sheet.skill[SKILL_STEALTH] = 0;
+    caught = 0;
+    for (i = 0; i < 2000; i++) {
+        caught += theft_lock_heard(&p);
+    }
+    check_expect(caught > 560 && caught < 760, "theft: a failed pick at Stealth 0 is not heard a third of the time");
+    p.sheet.skill[SKILL_STEALTH] = 100;
+    caught = 0;
+    for (i = 0; i < 500; i++) {
+        caught += theft_lock_heard(&p);
+    }
+    check_expect(caught == 0, "theft: a failed pick at Stealth 100 was heard");
+
     theft_words(THEFT_GOLD, 1, line, (int)sizeof(line));
     check_expect(df_eq(line, "You take 1 gold piece."), "theft: one gold piece's words");
     theft_words(THEFT_GOLD, 4, line, (int)sizeof(line));

@@ -296,6 +296,11 @@ static int door_lets_in(const Usable *u)
         g_lock_tried = u->tag;
         g_lock_skill = skill;
         interact_say("You fail to pick the lock.");
+        /* A noise at the door: the watch may hear (UESP), an attempted breaking and entering. */
+        if (theft_lock_heard(&g_player)) {
+            court_note(CRIME_ATTEMPTED_BREAKING_IN, travel_region());
+            watch_alarm(g_cam, g_player.body.feet);
+        }
         return 0;
     }
     interact_say("The lock clicks open.");
@@ -502,6 +507,43 @@ static int steal_intent(void)
 
 /* How near a pocket must be to be picked: half of talking's reach (DFU's PickpocketDistance, 128 to 256). */
 #define THEFT_REACH 128.0f
+
+/*
+ * Steal on a locked door of a dungeon or a house (a mover: a street door's lock is door_lets_in's).
+ * Its lock is a level, picked by theft_pick_inside; picked, the lock is gone for good (the engine's
+ * keep notes a lock other than its file's) and the use goes on to open it. 1 when the door stays
+ * shut (said), 0 when it is no locked door, out of reach, or has just been picked.
+ */
+static int door_picked(const Camera *cam)
+{
+    UseHit hit;
+    const Usable *u;
+    Mover *m;
+
+    if (!interact_locks() || !interact_aim(&g_level->scene, cam, &hit) || hit.usable < 0) {
+        return 0;
+    }
+    u = &g_level->scene.usables[hit.usable];
+    if (u->kind != USE_MOVER || hit.dist > u->reach) {
+        return 0;
+    }
+    m = &g_level->scene.movers[u->mover];
+    if (!m->door || m->lock <= 0 || m->state != MOVER_START) {
+        return 0;
+    }
+    switch (theft_pick_inside(&g_player, m->lock)) {
+    case LOCK_MAGIC:
+        interact_say("The lock is held by magic.");
+        return 1;
+    case LOCK_FAILED:
+        interact_say("You fail to pick the lock.");
+        return 1;
+    default:
+        m->lock = 0;
+        interact_say("The lock clicks open.");
+        return 0;
+    }
+}
 
 /*
  * The living creature the view rests on within reach: the camera's eye and the unit
@@ -1670,6 +1712,10 @@ static void use_key(const Camera *cam)
                         : !(creature_looked_at(cam, LOOK_REACH) || street_person_used(cam))) {
             Basis b;
 
+            /* Stealing at a locked door of a dungeon or a house: picked first, or it stays shut. */
+            if (steal_intent() && door_picked(cam)) {
+                return;
+            }
             /* Use the exact camera supplied by keyboard or pointer picking.
              * The engine must not fall back to the center of the drawn view. */
             camera_basis(cam, &b);

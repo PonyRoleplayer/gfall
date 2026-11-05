@@ -142,6 +142,15 @@ int rules_shoplift_chance(int pickpocket, int quality, int weight_and_count);
 int rules_pickpocket_chance(int pickpocket, int level_gap);
 /* What a picked pocket held, from a roll 0..99 and a roll 0..5: nothing for the lowest 33, else 1 to 6 gold. */
 int rules_pickpocket_gold(int roll100, int roll6);
+/*
+ * Chance in 100 of picking a door inside (a dungeon's, a house's) of lock level lock, a thief of this
+ * level: the skill and 5 for each level the thief is above the lock, within 5..95
+ * (CalculateInteriorLockpickingChance). A lock of RULES_LOCK_MAGICAL or more cannot be picked.
+ */
+#define RULES_LOCK_MAGICAL 20
+int rules_inside_lock_chance(int lockpicking, int level, int lock);
+/* Chance in 100 that a failed pick is heard by the watch: a third, less as Stealth rises (UESP: 33 x (1 - Stealth%)). */
+int rules_lock_alert_chance(int stealth);
 /* Chance in 100 of picking a building's lock of this strength: 5..95 (CalculateExteriorLockpickingChance). */
 int rules_lock_chance(int lockpicking, int lock);
 /* The most a bank lends: a level's 50000 (CalculateMaxBankLoan). */
