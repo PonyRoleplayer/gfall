@@ -21,6 +21,22 @@ const char *gfx_error(void);
  */
 int gfx_prepare(const Level *level);
 /*
+ * The screen's mode, chosen before the card opens: w x h, one of
+ * gfx_mode's (320 x 240, 400 x 300, 512 x 384, 640 x 480, and 800 x 600
+ * on a board with 4 MB of frame buffer). Call it before gfx_startup; it
+ * takes effect there, so a change shows at the next start. A size not
+ * in the list, or one the card refuses, opens 640 x 480 instead, which
+ * gfx_mode_opened then reports. The view (df_view_w, df_view_h) is the
+ * opened mode from gfx_startup on, 640 x 480 before it. The field of
+ * view is kept: the focal length follows the width.
+ */
+void gfx_set_mode(int w, int h);
+/* The modes to list, smallest first: final after gfx_startup (800 x 600 needs the board known). */
+int gfx_mode_count(void);
+int gfx_mode(int i, int *w, int *h);
+/* The mode the card opened in. */
+void gfx_mode_opened(int *w, int *h);
+/*
  * Mip chains, default on. A change sends the prepared level again on
  * the next gfx_frame, so the picture shows it. See docs/glide.md.
  */

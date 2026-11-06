@@ -22,7 +22,21 @@ typedef struct DrawVert {
     float r, g, b;
 } DrawVert;
 
+/*
+ * Opens the card in the mode glide_want_mode asked for, or 640 x 480 if
+ * none was or the card refused it, and sets the view (df_set_view) to
+ * the mode it got.
+ */
 int glide_open(void *hwnd);
+/* The mode for the next glide_open: w x h, one of glide_mode's; any other is 640 x 480. */
+void glide_want_mode(int w, int h);
+/*
+ * The modes this card can be asked for, smallest first. 800 x 600 only
+ * once glide_open has found a board with 4 MB of frame buffer: before
+ * that, and on a 2 MB board, it is not listed.
+ */
+int glide_mode_count(void);
+int glide_mode(int i, int *w, int *h);
 void glide_close(void);
 const char *glide_error(void);
 void glide_clear(void);

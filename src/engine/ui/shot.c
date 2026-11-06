@@ -17,7 +17,7 @@
  * the file stores the last row first.
  */
 
-#define SHOT_STRIDE (DF_VIEW_W * 2)
+#define SHOT_STRIDE (df_view_w() * 2)
 #define SHOT_NAME 64
 #define NOTE_HOLD 700
 #define NOTE_FADE 1200
@@ -193,7 +193,7 @@ const df_u8 *shot_grab(int *stride)
 {
     if (!g_snap) {
         /* Kept for the process: not the temp heap a viewer draws inside. */
-        g_snap = (df_u8 *)mem_keep((df_u32)SHOT_STRIDE * (df_u32)DF_VIEW_H);
+        g_snap = (df_u8 *)mem_keep((df_u32)SHOT_STRIDE * (df_u32)df_view_h());
     }
     if (!g_snap || !glide_lfb_read(g_snap, SHOT_STRIDE)) {
         return 0;
@@ -207,7 +207,7 @@ const df_u8 *shot_grab(int *stride)
 static int write_bmp(const char *name)
 {
     df_u8 hdr[54];
-    static df_u8 row[DF_VIEW_W * 3];
+    static df_u8 row[DF_VIEW_MAX_W * 3];
     df_u32 pixels;
     int y;
     int x;
@@ -216,14 +216,14 @@ static int write_bmp(const char *name)
         return 0;
     }
     mem_zero(hdr, 54);
-    pixels = (df_u32)DF_VIEW_W * (df_u32)DF_VIEW_H;
+    pixels = (df_u32)df_view_w() * (df_u32)df_view_h();
     hdr[0] = 'B';
     hdr[1] = 'M';
     put_u32(hdr + 2, 54u + pixels * 3u);
     put_u32(hdr + 10, 54u);
     put_u32(hdr + 14, 40u);
-    put_u32(hdr + 18, (df_u32)DF_VIEW_W);
-    put_u32(hdr + 22, (df_u32)DF_VIEW_H);
+    put_u32(hdr + 18, (df_u32)df_view_w());
+    put_u32(hdr + 22, (df_u32)df_view_h());
     put_u16(hdr + 26, 1);
     put_u16(hdr + 28, 24);
     put_u32(hdr + 34, pixels * 3u);
@@ -231,11 +231,11 @@ static int write_bmp(const char *name)
         fs_abort();
         return 0;
     }
-    for (y = DF_VIEW_H - 1; y >= 0; y--) {
+    for (y = df_view_h() - 1; y >= 0; y--) {
         const df_u8 *src;
 
         src = g_snap + y * SHOT_STRIDE;
-        for (x = 0; x < DF_VIEW_W; x++) {
+        for (x = 0; x < df_view_w(); x++) {
             df_u16 p;
             int r;
             int g;
@@ -252,7 +252,7 @@ static int write_bmp(const char *name)
             row[x * 3 + 1] = (df_u8)g;
             row[x * 3 + 2] = (df_u8)r;
         }
-        if (!fs_append(row, (df_u32)(DF_VIEW_W * 3))) {
+        if (!fs_append(row, (df_u32)(df_view_w() * 3))) {
             fs_abort();
             return 0;
         }
@@ -372,11 +372,11 @@ void shot_note(void)
     if (line < 1) {
         line = 8;
     }
-    x = DF_VIEW_W - wide - 10;
+    x = df_view_w() - wide - 10;
     if (x < 4) {
         x = 4;
     }
-    top = DF_VIEW_H - line - 6;
+    top = df_view_h() - line - 6;
     /* Glyphs occupy [top - line, top]. wash y is the bottom of the plate. */
     glide_dim(1, alpha);
     wash((float)(x - 4), (float)(top - line - 3), (float)(wide + 8), (float)(line + 6));

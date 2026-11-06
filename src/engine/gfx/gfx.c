@@ -145,7 +145,30 @@ int gfx_startup(void *hwnd)
         g_why = glide_error();
         return 0;
     }
+    /* The view may have a new width: the focal length follows it, the field of view kept. */
+    camera_set_fov(camera_fov());
     return 1;
+}
+
+void gfx_set_mode(int w, int h)
+{
+    glide_want_mode(w, h);
+}
+
+int gfx_mode_count(void)
+{
+    return glide_mode_count();
+}
+
+int gfx_mode(int i, int *w, int *h)
+{
+    return glide_mode(i, w, h);
+}
+
+void gfx_mode_opened(int *w, int *h)
+{
+    *w = df_view_w();
+    *h = df_view_h();
 }
 
 void gfx_shutdown(void)

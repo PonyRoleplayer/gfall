@@ -31,7 +31,7 @@ void camera_set_fov(float degrees)
         s = 0.05f;
     }
     g_fov = degrees;
-    g_focal = ((float)DF_VIEW_W * 0.5f) * (c / s);
+    g_focal = (df_view_cx()) * (c / s);
 }
 
 float camera_fov(void)
@@ -114,7 +114,7 @@ int camera_project(float vx, float vy, float vz,
      * The default W-buffer reads oow instead. See docs/glide.md.
      */
     *ooz = (65535.0f * DF_NEAR) * w;
-    *sx = (float)DF_VIEW_W * 0.5f + vx * g_focal * w;
-    *sy = (float)DF_VIEW_H * 0.5f + vy * g_focal * w;
+    *sx = df_view_cx() + vx * g_focal * w;
+    *sy = df_view_cy() + vy * g_focal * w;
     return 1;
 }

@@ -85,6 +85,39 @@ static void check_rotation(void)
                  "+Y rotation did not take +X toward -Z");
 }
 
+/*
+ * The view at another mode (gfx_set_mode): 320 x 240 as Glide would set
+ * it. The field of view is kept, so the focal length halves with the
+ * width, the centre moves to 160, 120, and the edge of the view is still
+ * the edge of the glass. A size past the largest is refused.
+ */
+static void check_view_size(void)
+{
+    float sx, sy, oow, ooz;
+    float edge;
+
+    check_expect(df_view_w() == 640 && df_view_h() == 480 && df_view_cx() == 320.0f
+                 && df_view_cy() == 240.0f, "the view did not start at 640 x 480");
+    df_set_view(320, 240);
+    camera_set_fov(75.0f);
+    check_expect(df_view_w() == 320 && df_view_h() == 240 && df_view_cx() == 160.0f
+                 && df_view_cy() == 120.0f, "the view did not take 320 x 240");
+    check_expect(check_near(camera_focal(), 417.042f * 0.5f, 0.05f),
+                 "the focal length did not follow the view's width");
+    check_expect(camera_project(0.0f, 0.0f, 100.0f, &sx, &sy, &oow, &ooz)
+                 && check_near(sx, 160.0f, 0.01f) && check_near(sy, 120.0f, 0.01f),
+                 "a point ahead did not land in the small view's middle");
+    /* tan(37.5 degrees) across: the right edge, as at 640. */
+    edge = 100.0f * 0.767327f;
+    check_expect(camera_project(edge, 0.0f, 100.0f, &sx, &sy, &oow, &ooz) && check_near(sx, 320.0f, 0.1f),
+                 "the field of view's edge was not the small view's edge");
+    df_set_view(DF_VIEW_MAX_W + 1, 480);
+    check_expect(df_view_w() == 320, "a view past the largest was taken");
+    df_set_view(640, 480);
+    camera_set_fov(75.0f);
+    check_expect(check_near(camera_focal(), 417.042f, 0.05f), "the focal length did not come back at 640");
+}
+
 static void check_camera(void)
 {
     Camera cam;
@@ -5606,6 +5639,7 @@ void check_engine(void)
 {
     check_rotation();
     check_camera();
+    check_view_size();
     check_flat_facing();
     check_scene();
     check_cull();

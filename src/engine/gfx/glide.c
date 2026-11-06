@@ -19,7 +19,6 @@
 typedef char gfall_two_tmus[(GLIDE_NUM_TMU == 2) ? 1 : -1];
 typedef char gfall_vertex_is_glide2[
     (sizeof(GrVertex) == (9 + 3 * GLIDE_NUM_TMU) * sizeof(float)) ? 1 : -1];
-typedef char gfall_view_is_640[(DF_VIEW_W == 640 && DF_VIEW_H == 480) ? 1 : -1];
 typedef char gfall_fog_table_is_64[(GR_FOG_TABLE_SIZE == 64) ? 1 : -1];
 
 /*
@@ -218,6 +217,108 @@ static int g_form;
 /* What grSstQueryHardware said, for glide_report. */
 static GrHwConfiguration g_hw;
 static int g_have_hw;
+
+/*
+ * The modes the game may ask for, all square pixels on a 4:3 screen: the
+ * view's width over its height is 4/3, so one focal length serves both
+ * axes. 320 x 200 and 640 x 400 have tall pixels and wait for a vertical
+ * focal length of their own. A Voodoo 1 holds two colour buffers and the
+ * depth buffer in its frame buffer, 2 bytes a pixel each: 640 x 480 is
+ * 1.8 MB of a 2 MB board, 800 x 600 2.7 MB, so it needs a 4 MB one. A
+ * board whose Glide lacks a mode's video timing refuses it at open, and
+ * glide_open falls back to 640 x 480. The frame buffer is apart from the
+ * texture memory: a smaller mode leaves the TMU's 2 MB as it was.
+ */
+typedef struct GlideMode {
+    short w;
+    short h;
+    GrScreenResolution_t res;
+    /* MB of frame buffer it needs: 2 for all but 800 x 600. */
+    short fb_mb;
+} GlideMode;
+
+static const GlideMode g_modes[] = {
+    { 320, 240, GR_RESOLUTION_320x240, 2 },
+    { 400, 300, GR_RESOLUTION_400x300, 2 },
+    { 512, 384, GR_RESOLUTION_512x384, 2 },
+    { 640, 480, GR_RESOLUTION_640x480, 2 },
+    { 800, 600, GR_RESOLUTION_800x600, 4 }
+};
+#define MODE_COUNT ((int)(sizeof(g_modes) / sizeof(g_modes[0])))
+/* 640 x 480: what every program opens unless asked. */
+#define MODE_DEFAULT 3
+
+static int g_want_w = 640;
+static int g_want_h = 480;
+
+/* MB of frame buffer on the board found, 0 before glide_open's query. */
+static int board_fb_mb(void)
+{
+    if (!g_have_hw || g_hw.num_sst < 1) {
+        return 0;
+    }
+    if (g_hw.SSTs[0].type == GR_SSTTYPE_VOODOO || g_hw.SSTs[0].type == GR_SSTTYPE_Voodoo2) {
+        return g_hw.SSTs[0].sstBoard.VoodooConfig.fbRam;
+    }
+    if (g_hw.SSTs[0].type == GR_SSTTYPE_SST96) {
+        return g_hw.SSTs[0].sstBoard.SST96Config.fbRam;
+    }
+    return 0;
+}
+
+/* 1 when mode m may be listed and asked for: 2 MB modes always, a larger one on a board known to have it. */
+static int mode_allowed(int m)
+{
+    return g_modes[m].fb_mb <= 2 || board_fb_mb() >= g_modes[m].fb_mb;
+}
+
+void glide_want_mode(int w, int h)
+{
+    g_want_w = w;
+    g_want_h = h;
+}
+
+int glide_mode_count(void)
+{
+    int n;
+    int m;
+
+    n = 0;
+    for (m = 0; m < MODE_COUNT; m++) {
+        n += mode_allowed(m);
+    }
+    return n;
+}
+
+int glide_mode(int i, int *w, int *h)
+{
+    int m;
+
+    for (m = 0; m < MODE_COUNT; m++) {
+        if (!mode_allowed(m)) {
+            continue;
+        }
+        if (i-- == 0) {
+            *w = g_modes[m].w;
+            *h = g_modes[m].h;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* grSstWinOpen in mode m: double buffered, one aux buffer (depth), lower left origin. */
+static int open_mode(void *hwnd, int m)
+{
+    return glide.open(
+        (FxU32)(UINT_PTR)hwnd,
+        g_modes[m].res,
+        GR_REFRESH_60Hz,
+        GR_COLORFORMAT_ARGB,
+        GR_ORIGIN_LOWER_LEFT,
+        2,
+        1) ? 1 : 0;
+}
 
 static struct {
     df_u32 addr;
@@ -442,18 +543,39 @@ int glide_open(void *hwnd)
     g_hw = hw;
     g_have_hw = 1;
     glide.select(0);
-    if (!glide.open(
-            (FxU32)(UINT_PTR)hwnd,
-            GR_RESOLUTION_640x480,
-            GR_REFRESH_60Hz,
-            GR_COLORFORMAT_ARGB,
-            GR_ORIGIN_LOWER_LEFT,
-            2,
-            1)) {
-        g_why = "grSstWinOpen failed. Wanted 640x480 at 60 Hz.";
-        log_text(LOG_ERROR, g_why);
-        glide_close();
-        return 0;
+    {
+        int m;
+        int got;
+
+        /* The mode asked for, if the board may have it; else the default. */
+        for (m = 0; m < MODE_COUNT; m++) {
+            if (g_modes[m].w == g_want_w && g_modes[m].h == g_want_h && mode_allowed(m)) {
+                break;
+            }
+        }
+        if (m == MODE_COUNT) {
+            if (g_want_w != 640 || g_want_h != 480) {
+                log_print(LOG_WARN, "glide: %dx%d is not a mode of this board, 640x480 instead",
+                          g_want_w, g_want_h);
+            }
+            m = MODE_DEFAULT;
+        }
+        got = open_mode(hwnd, m) ? m : -1;
+        /* Refused (no video timing for it on this board): the default, which every Voodoo has. */
+        if (got < 0 && m != MODE_DEFAULT) {
+            log_print(LOG_WARN, "glide: the card refused %dx%d, 640x480 instead",
+                      g_modes[m].w, g_modes[m].h);
+            got = open_mode(hwnd, MODE_DEFAULT) ? MODE_DEFAULT : -1;
+        }
+        if (got < 0) {
+            g_why = "grSstWinOpen failed. Wanted 640x480 at 60 Hz.";
+            log_text(LOG_ERROR, g_why);
+            glide_close();
+            return 0;
+        }
+        df_set_view(g_modes[got].w, g_modes[got].h);
+        log_print(LOG_INFO, "glide: %dx%d at 60 Hz, %d MB of frame buffer",
+                  g_modes[got].w, g_modes[got].h, board_fb_mb());
     }
     g_opened = 1;
 
@@ -769,7 +891,7 @@ int glide_lfb_read(void *dst, int stride_bytes)
     }
     return glide.lfb_read(
         GR_BUFFER_FRONTBUFFER, 0, 0,
-        (FxU32)DF_VIEW_W, (FxU32)DF_VIEW_H,
+        (FxU32)df_view_w(), (FxU32)df_view_h(),
         (FxU32)stride_bytes, dst) ? 1 : 0;
 }
 
@@ -780,7 +902,7 @@ int glide_lfb_write(const void *src, int stride_bytes)
     }
     return glide.lfb_write(
         GR_BUFFER_BACKBUFFER, 0, 0, GR_LFB_SRC_FMT_565,
-        (FxU32)DF_VIEW_W, (FxU32)DF_VIEW_H,
+        (FxU32)df_view_w(), (FxU32)df_view_h(),
         (FxI32)stride_bytes, (void *)src) ? 1 : 0;
 }
 

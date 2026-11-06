@@ -445,8 +445,8 @@ static void frustum_planes(const Camera *cam, float far, Plane *p)
     ux = -basis.sp * basis.fx;
     uy = basis.cp;
     uz = -basis.sp * basis.fz;
-    sx = (float)DF_VIEW_W * 0.5f / camera_focal();
-    sy = (float)DF_VIEW_H * 0.5f / camera_focal();
+    sx = df_view_cx() / camera_focal();
+    sy = df_view_cy() / camera_focal();
 
     /* Far first: a city is mostly past this plane. */
     plane_through(&p[0], -fx, -fy, -fz,
@@ -772,7 +772,8 @@ static int take_visible(const Scene *scene, const Plane *planes,
  * run of open cells, so whatever shows through the gap stays.
  *
  * The cost is held under the work it saves. A cell is 16 pixels, so the
- * grid is 40 x 30 floats and sits in the Pentium's 16 KB data cache. A
+ * grid is 40 x 30 floats at 640 x 480, and its 50 x 38 for the largest
+ * view still sits in the Pentium's 16 KB data cache. A
  * row of cells is a span solved per edge, not a test per cell. A model
  * whose box is already hidden adds no faces. The seam pass runs only on
  * the cells a box test asks about. See docs/culling.md for the numbers.
@@ -784,8 +785,17 @@ static int take_visible(const Scene *scene, const Plane *planes,
  * x87 a cast switches the rounding mode, about 30 cycles a time.
  */
 #define OCC_INV (1.0f / (float)OCC_CELL)
-#define OCC_W (DF_VIEW_W / OCC_CELL)
-#define OCC_H (DF_VIEW_H / OCC_CELL)
+/*
+ * The grid holds the largest view (DF_VIEW_MAX_W x DF_VIEW_MAX_H, 50 x
+ * 38 cells, 7.6 KB of floats); OCC_W is its row stride. A smaller view
+ * uses its top left: every cell is found from pixels clamped to the view
+ * (df_view_w, df_view_h), so the cells past it are never written and stay
+ * open. A view whose height is not a whole number of cells (300, 600)
+ * has a last row partly off the glass: no face covers what is not drawn,
+ * so that row stays open, which errs toward drawing.
+ */
+#define OCC_W ((DF_VIEW_MAX_W + OCC_CELL - 1) / OCC_CELL)
+#define OCC_H ((DF_VIEW_MAX_H + OCC_CELL - 1) / OCC_CELL)
 /*
  * A model is looked at only when part of its box is nearer than this.
  * It was 640, which kept a castle hall's walls, a few hundred units
@@ -1016,16 +1026,16 @@ static int box_screen(const View *v, float cx, float cy, float cz,
     i1 = v->focal / (vz + hz);
     a = (vx - hx) * i0;
     b = (vx - hx) * i1;
-    *sx0 = (float)DF_VIEW_W * 0.5f + (a < b ? a : b);
+    *sx0 = df_view_cx() + (a < b ? a : b);
     a = (vx + hx) * i0;
     b = (vx + hx) * i1;
-    *sx1 = (float)DF_VIEW_W * 0.5f + (a > b ? a : b);
+    *sx1 = df_view_cx() + (a > b ? a : b);
     a = (vy - hy) * i0;
     b = (vy - hy) * i1;
-    *sy0 = (float)DF_VIEW_H * 0.5f + (a < b ? a : b);
+    *sy0 = df_view_cy() + (a < b ? a : b);
     a = (vy + hy) * i0;
     b = (vy + hy) * i1;
-    *sy1 = (float)DF_VIEW_H * 0.5f + (a > b ? a : b);
+    *sy1 = df_view_cy() + (a > b ? a : b);
     *znear = vz - hz;
     return 1;
 }
@@ -1392,21 +1402,21 @@ static void occ_fill(int f, float wa, float wb, float wc, float wfar)
         eb[i] = b;
         ia[i] = a != 0.0f ? 1.0f / a : 0.0f;
     }
-    if (maxx < 0.0f || maxy < 0.0f || minx > (float)DF_VIEW_W || miny > (float)DF_VIEW_H) {
+    if (maxx < 0.0f || maxy < 0.0f || minx > (float)df_view_w() || miny > (float)df_view_h()) {
         return;
     }
     /* Cells wholly inside the outline's box can be covered. */
-    gx0 = df_ifloor((clampf(minx, 0.0f, (float)DF_VIEW_W) + (float)OCC_CELL - 0.001f) * OCC_INV);
-    gy0 = df_ifloor((clampf(miny, 0.0f, (float)DF_VIEW_H) + (float)OCC_CELL - 0.001f) * OCC_INV);
-    gx1 = df_ifloor(clampf(maxx, 0.0f, (float)DF_VIEW_W) * OCC_INV) - 1;
-    gy1 = df_ifloor(clampf(maxy, 0.0f, (float)DF_VIEW_H) * OCC_INV) - 1;
+    gx0 = df_ifloor((clampf(minx, 0.0f, (float)df_view_w()) + (float)OCC_CELL - 0.001f) * OCC_INV);
+    gy0 = df_ifloor((clampf(miny, 0.0f, (float)df_view_h()) + (float)OCC_CELL - 0.001f) * OCC_INV);
+    gx1 = df_ifloor(clampf(maxx, 0.0f, (float)df_view_w()) * OCC_INV) - 1;
+    gy1 = df_ifloor(clampf(maxy, 0.0f, (float)df_view_h()) * OCC_INV) - 1;
     /* Cells that overlap the box can be touched. */
     /* Grown like the cells are, or a face that stops just short of a
        row would never list itself on it. */
-    tx0 = df_ifloor(clampf(minx - OCC_EDGE, 0.0f, (float)DF_VIEW_W - 0.5f) * OCC_INV);
-    ty0 = df_ifloor(clampf(miny - OCC_EDGE, 0.0f, (float)DF_VIEW_H - 0.5f) * OCC_INV);
-    tx1 = df_ifloor(clampf(maxx + OCC_EDGE, 0.0f, (float)DF_VIEW_W - 0.5f) * OCC_INV);
-    ty1 = df_ifloor(clampf(maxy + OCC_EDGE, 0.0f, (float)DF_VIEW_H - 0.5f) * OCC_INV);
+    tx0 = df_ifloor(clampf(minx - OCC_EDGE, 0.0f, (float)df_view_w() - 0.5f) * OCC_INV);
+    ty0 = df_ifloor(clampf(miny - OCC_EDGE, 0.0f, (float)df_view_h() - 0.5f) * OCC_INV);
+    tx1 = df_ifloor(clampf(maxx + OCC_EDGE, 0.0f, (float)df_view_w() - 0.5f) * OCC_INV);
+    ty1 = df_ifloor(clampf(maxy + OCC_EDGE, 0.0f, (float)df_view_h() - 0.5f) * OCC_INV);
     wox = wa > 0.0f ? 0.0f : (float)OCC_CELL;
     woy = wb > 0.0f ? 0.0f : (float)OCC_CELL;
     for (gy = ty0; gy <= ty1; gy++) {
@@ -2086,8 +2096,8 @@ static int occ_face(const Mesh *mesh, const Face *face, const Xf *xf,
         /* Where the card will put the corner: camera_project's sums,
            then the snap glide.c applies. See OCC_PART. */
         iz = 1.0f / poly[src][k].z;
-        x = df_snap16((float)DF_VIEW_W * 0.5f + poly[src][k].x * focal * iz);
-        y = df_snap16((float)DF_VIEW_H * 0.5f + poly[src][k].y * focal * iz);
+        x = df_snap16(df_view_cx() + poly[src][k].x * focal * iz);
+        y = df_snap16(df_view_cy() + poly[src][k].y * focal * iz);
         if (np > 0 && df_absf(x - px[np - 1]) < OCC_DUP && df_absf(y - py[np - 1]) < OCC_DUP) {
             continue;
         }
@@ -2124,8 +2134,8 @@ static int occ_face(const Mesh *mesh, const Face *face, const Xf *xf,
     }
     wa = -nx / (d * focal);
     wb = -ny / (d * focal);
-    wc = -(nz - nx * ((float)DF_VIEW_W * 0.5f) / focal -
-           ny * ((float)DF_VIEW_H * 0.5f) / focal) / d;
+    wc = -(nz - nx * (df_view_cx()) / focal -
+           ny * (df_view_cy()) / focal) / d;
     for (k = 0; k < np; k++) {
         g_face[slot].x[k] = px[k];
         g_face[slot].y[k] = py[k];
@@ -2181,8 +2191,8 @@ static void occ_build(const Scene *scene, const View *v, const int *idx, int n)
             if (z >= OCC_NEAR) {
                 continue;
             }
-            w = clampf(sx1, 0.0f, (float)DF_VIEW_W) - clampf(sx0, 0.0f, (float)DF_VIEW_W);
-            h = clampf(sy1, 0.0f, (float)DF_VIEW_H) - clampf(sy0, 0.0f, (float)DF_VIEW_H);
+            w = clampf(sx1, 0.0f, (float)df_view_w()) - clampf(sx0, 0.0f, (float)df_view_w());
+            h = clampf(sy1, 0.0f, (float)df_view_h()) - clampf(sy0, 0.0f, (float)df_view_h());
             area = w * h;
             if (area < OCC_MODEL_AREA) {
                 continue;
@@ -2190,7 +2200,7 @@ static void occ_build(const Scene *scene, const View *v, const int *idx, int n)
         } else {
             /* The eye is in or against the box: the best cover there is. */
             z = 0.0f;
-            area = (float)(DF_VIEW_W * DF_VIEW_H) * 2.0f;
+            area = (float)(df_view_w() * df_view_h()) * 2.0f;
         }
         /* Kept largest first; a smaller one than the last of a full list waits. */
         if (nc == OCC_MODELS && area <= carea[nc - 1]) {
@@ -2226,8 +2236,8 @@ static void occ_build(const Scene *scene, const View *v, const int *idx, int n)
         cand[j] = c0;
         cz[j] = z0;
     }
-    hx = ((float)DF_VIEW_W * 0.5f + OCC_MARGIN) / v->focal;
-    hy = ((float)DF_VIEW_H * 0.5f + OCC_MARGIN) / v->focal;
+    hx = (df_view_cx() + OCC_MARGIN) / v->focal;
+    hy = (df_view_cy() + OCC_MARGIN) / v->focal;
     for (i = 0; i < nc && g_occ_faces < OCC_FACES; i++) {
         const Instance *in;
         float cx, cy, czz, ex, ey, ez;
@@ -2277,10 +2287,10 @@ static int occ_hides(const View *v, float cx, float cy, float cz,
         return 0;
     }
     /* Off the glass is not a view past the wall. */
-    gx0 = df_ifloor(clampf(sx0, 0.0f, (float)DF_VIEW_W - 0.5f) * OCC_INV);
-    gy0 = df_ifloor(clampf(sy0, 0.0f, (float)DF_VIEW_H - 0.5f) * OCC_INV);
-    gx1 = df_ifloor(clampf(sx1, 0.0f, (float)DF_VIEW_W - 0.5f) * OCC_INV);
-    gy1 = df_ifloor(clampf(sy1, 0.0f, (float)DF_VIEW_H - 0.5f) * OCC_INV);
+    gx0 = df_ifloor(clampf(sx0, 0.0f, (float)df_view_w() - 0.5f) * OCC_INV);
+    gy0 = df_ifloor(clampf(sy0, 0.0f, (float)df_view_h() - 0.5f) * OCC_INV);
+    gx1 = df_ifloor(clampf(sx1, 0.0f, (float)df_view_w() - 0.5f) * OCC_INV);
+    gy1 = df_ifloor(clampf(sy1, 0.0f, (float)df_view_h() - 0.5f) * OCC_INV);
     if (gx0 < g_occ_x0 || gy0 < g_occ_y0 || gx1 > g_occ_x1 || gy1 > g_occ_y1) {
         return 0;
     }

@@ -155,15 +155,15 @@ static void draw_fps(void)
     add_int(fps, &n, (int)sizeof(fps), g_fps);
     wide = ui_string_width(fps);
     line = ui_line_height();
-    top = DF_VIEW_H - MARGIN;
+    top = df_view_h() - MARGIN;
     glide_plate(1);
-    rect((float)(DF_VIEW_W - wide - 16),
+    rect((float)(df_view_w() - wide - 16),
          (float)(top - line - 4),
          (float)(wide + 12),
          (float)(line + 8),
          0.0f, 0.0f, 0.0f);
     glide_plate(0);
-    ui_string(DF_VIEW_W - wide - 10, top, fps);
+    ui_string(df_view_w() - wide - 10, top, fps);
 }
 
 void hud_set(int on)
@@ -220,7 +220,7 @@ void hud_draw(const Camera *cam)
         wide = ui_string_width(look);
     }
     line = ui_line_height();
-    top = DF_VIEW_H - MARGIN;
+    top = df_view_h() - MARGIN;
     glide_plate(1);
     rect(4.0f,
          (float)(top - line - GAP - line - 4),

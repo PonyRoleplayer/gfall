@@ -15,8 +15,31 @@ typedef unsigned short df_u16;
 typedef short df_i16;
 typedef unsigned char df_u8;
 
-#define DF_VIEW_W 640
-#define DF_VIEW_H 480
+/*
+ * The view: the size of the screen the card draws, in pixels, set once
+ * when Glide opens its mode (glide_open, gfx_set_mode) and 640 x 480
+ * until then. df_view_w() and df_view_h() read it, df_view_cx() and
+ * df_view_cy() its centre as floats: each a read, no call, so per-vertex
+ * code pays nothing for it. Only df_set_view writes it (core/view.c).
+ * A static buffer sized by the view takes DF_VIEW_MAX_W x DF_VIEW_MAX_H,
+ * the largest mode (800 x 600, a Voodoo 1 with 4 MB of frame buffer).
+ */
+#define DF_VIEW_MAX_W 800
+#define DF_VIEW_MAX_H 600
+extern int df_view_size[2];
+extern float df_view_centre[2];
+#define df_view_w() (df_view_size[0])
+#define df_view_h() (df_view_size[1])
+#define df_view_cx() (df_view_centre[0])
+#define df_view_cy() (df_view_centre[1])
+/* The view is w x h from now on: Glide opened that mode. Sizes past the largest are refused. */
+void df_set_view(int w, int h);
+/*
+ * The old names, for the game's and the viewers' code until it moves to
+ * the calls above: the view's size, read now, no longer constants.
+ */
+#define DF_VIEW_W df_view_w()
+#define DF_VIEW_H df_view_h()
 #define DF_FOCAL 400.0f
 #define DF_NEAR 4.0f
 /* Fog is solid at DF_FOG_FAR. The default clip is a little farther. */

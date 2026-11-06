@@ -130,8 +130,8 @@ static void clip_slopes(void)
     if (g_focal < 1.0f) {
         g_focal = 1.0f;
     }
-    g_clip_x = ((float)DF_VIEW_W * 0.5f + CLIP_MARGIN) / g_focal;
-    g_clip_y = ((float)DF_VIEW_H * 0.5f + CLIP_MARGIN) / g_focal;
+    g_clip_x = (df_view_cx() + CLIP_MARGIN) / g_focal;
+    g_clip_y = (df_view_cy() + CLIP_MARGIN) / g_focal;
 }
 
 /* Not "far": windows.h defines far and near as empty macros. */
@@ -441,8 +441,8 @@ static int project_vert(DrawVert *dv, const Vtx *v, float inv_w, float inv_h,
     }
     oow = 1.0f / v->z;
     ooz = (65535.0f * DF_NEAR) * oow;
-    sx = (float)DF_VIEW_W * 0.5f + v->x * g_focal * oow;
-    sy = (float)DF_VIEW_H * 0.5f + v->y * g_focal * oow;
+    sx = df_view_cx() + v->x * g_focal * oow;
+    sy = df_view_cy() + v->y * g_focal * oow;
     if (sx < -2048.0f || sx > 2048.0f || sy < -2048.0f || sy > 2048.0f) {
         return 0;
     }
@@ -1472,7 +1472,7 @@ static void draw_precip(const Camera *cam, const Basis *basis, const Weather *w,
                 continue;
             }
             /* Only a flake whose centre is on the glass: every corner stays near it. */
-            if (sx < 0.0f || sx > (float)DF_VIEW_W || sy < 0.0f || sy > (float)DF_VIEW_H) {
+            if (sx < 0.0f || sx > (float)df_view_w() || sy < 0.0f || sy > (float)df_view_h()) {
                 continue;
             }
             half = SNOW_SIZE * g_focal / vz;
@@ -1724,7 +1724,7 @@ static void draw_light_view(const Camera *cam, const Basis *basis)
             continue;
         }
         /* The centre on the glass, or nothing: see above. */
-        if (sx < 0.0f || sx > (float)DF_VIEW_W || sy < 0.0f || sy > (float)DF_VIEW_H) {
+        if (sx < 0.0f || sx > (float)df_view_w() || sy < 0.0f || sy > (float)df_view_h()) {
             continue;
         }
         if (light_box(i, &cx, &cy, &cz, &ex, &ey, &ez)
@@ -1817,7 +1817,7 @@ static int sound_view_spot(const Camera *cam, const Basis *basis, float wx, floa
     if (*depth < DF_NEAR || !camera_project(x, y, *depth, sx, sy, &oow, &ooz)) {
         return 0;
     }
-    return *sx >= 0.0f && *sx <= (float)DF_VIEW_W && *sy >= 0.0f && *sy <= (float)DF_VIEW_H;
+    return *sx >= 0.0f && *sx <= (float)df_view_w() && *sy >= 0.0f && *sy <= (float)df_view_h();
 }
 
 /*
@@ -1869,7 +1869,7 @@ static void draw_sound_voices(const Camera *cam, const Basis *basis)
         dy = spot.y - cam->y;
         dz = spot.z - cam->z;
         if (dx * dx + dy * dy + dz * dz > range2 || !sound_view_spot(cam, basis, spot.x, spot.y, spot.z, &sx, &sy, &depth)
-            || sx > (float)(DF_VIEW_W - 64)) {
+            || sx > (float)(df_view_w() - 64)) {
             continue;
         }
         log_format(word, (int)sizeof(word), "%d%%%s", df_iround(spot.gain * 100.0f), spot.muffled > 0.5f ? " wall" : "");
@@ -1931,7 +1931,7 @@ static void draw_sound_view(const Camera *cam, const Basis *basis, const Scene *
         if (z < DF_NEAR || !camera_project(x, y, z, &sx, &sy, &oow, &ooz)) {
             continue;
         }
-        if (sx < 0.0f || sx > (float)DF_VIEW_W || sy < 0.0f || sy > (float)DF_VIEW_H) {
+        if (sx < 0.0f || sx > (float)df_view_w() || sy < 0.0f || sy > (float)df_view_h()) {
             continue;
         }
         on = ambience_emitter_playing(i);
@@ -1961,7 +1961,7 @@ static void draw_sound_view(const Camera *cam, const Basis *basis, const Scene *
         if (z < DF_NEAR || !camera_project(x, y, z, &sx, &sy, &oow, &ooz)) {
             continue;
         }
-        if (sx < 0.0f || sx > (float)(DF_VIEW_W - 48) || sy < 0.0f || sy > (float)DF_VIEW_H) {
+        if (sx < 0.0f || sx > (float)(df_view_w() - 48) || sy < 0.0f || sy > (float)df_view_h()) {
             continue;
         }
         ui_string(df_iround(sx) + 6, df_iround(sy) + ui_line_height() / 2, e->label);
@@ -2065,11 +2065,11 @@ static void view_edge(const Camera *cam, const Basis *basis, const float *a, con
         pv[0] = -dx;
         qv[0] = p.x;
         pv[1] = dx;
-        qv[1] = (float)DF_VIEW_W - 1.0f - p.x;
+        qv[1] = (float)df_view_w() - 1.0f - p.x;
         pv[2] = -dy;
         qv[2] = p.y;
         pv[3] = dy;
-        qv[3] = (float)DF_VIEW_H - 1.0f - p.y;
+        qv[3] = (float)df_view_h() - 1.0f - p.y;
         for (k = 0; k < 4; k++) {
             float r;
 
@@ -2292,7 +2292,7 @@ static void draw_use_view(const Camera *cam, const Basis *basis, const Scene *sc
         if (z < DF_NEAR || !camera_project(x, y, z, &sx, &sy, &oow, &ooz)) {
             continue;
         }
-        if (sx < 0.0f || sx > (float)(DF_VIEW_W - 48) || sy < 0.0f || sy > (float)DF_VIEW_H) {
+        if (sx < 0.0f || sx > (float)(df_view_w() - 48) || sy < 0.0f || sy > (float)df_view_h()) {
             continue;
         }
         ui_string(df_iround(sx) - ui_string_width(u->label) / 2, df_iround(sy), u->label);
@@ -2624,8 +2624,8 @@ static void draw_trigger_view(const Camera *cam, const Basis *basis, const Scene
             }
             w = ui_string_width(line[k]);
             lx = df_iround(sx) - w / 2;
-            lx = lx < 0 ? 0 : (lx + w > DF_VIEW_W ? DF_VIEW_W - w : lx);
-            if (top + k * ui_line_height() > 0 && top + k * ui_line_height() < DF_VIEW_H) {
+            lx = lx < 0 ? 0 : (lx + w > df_view_w() ? df_view_w() - w : lx);
+            if (top + k * ui_line_height() > 0 && top + k * ui_line_height() < df_view_h()) {
                 ui_string(lx, top + k * ui_line_height(), line[k]);
             }
         }
@@ -2651,8 +2651,8 @@ static void draw_saying(void)
     }
     wide = ui_string_width(s);
     line = ui_line_height();
-    x = (DF_VIEW_W - wide) / 2;
-    top = DF_VIEW_H / 3;
+    x = (df_view_w() - wide) / 2;
+    top = df_view_h() / 3;
     /* On a plate, as the screenshot note is: white on a pale wall is lost. */
     glide_dim(1, alpha * 3 / 4);
     cover_bar((float)(x - 6), (float)(top - line - 4), (float)(wide + 12), (float)(line + 8),
@@ -2680,10 +2680,10 @@ static void wash_glass(int alpha)
         v[i].b = 0.0f;
     }
     v[0].x = 0.0f;
-    v[0].y = (float)DF_VIEW_H;
-    v[1].x = (float)DF_VIEW_W;
-    v[1].y = (float)DF_VIEW_H;
-    v[2].x = (float)DF_VIEW_W;
+    v[0].y = (float)df_view_h();
+    v[1].x = (float)df_view_w();
+    v[1].y = (float)df_view_h();
+    v[2].x = (float)df_view_w();
     v[2].y = 0.0f;
     v[3].x = 0.0f;
     v[3].y = 0.0f;
@@ -2716,7 +2716,7 @@ void draw_hold(const char *text)
     }
     wash_glass(HOLD_DIM);
     if (text && text[0]) {
-        ui_string((DF_VIEW_W - ui_string_width(text)) / 2, (DF_VIEW_H + ui_line_height()) / 2, text);
+        ui_string((df_view_w() - ui_string_width(text)) / 2, (df_view_h() + ui_line_height()) / 2, text);
     }
     glide_swap();
 }

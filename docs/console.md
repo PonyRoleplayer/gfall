@@ -12,7 +12,7 @@ Screenshots are `src/engine/ui/shot.c`. The console calls `shot_save` and `shot_
 
 ## Panel
 
-The key immediately left of 1 toggles it. That is scan code `0x29`, so the physical key is the same on a US or an ABNT board. The panel slides down from the top over about 200 ms and covers half the screen. It slides back up when toggled again. Escape closes it and does not quit. An Escape that closed it is ignored until the key comes up, so a held Escape does not also leave the view. `input_read` and the window's `WM_KEYDOWN` both ask `console_take_escape` before they quit.
+The key immediately left of 1 toggles it. That is scan code `0x29`, so the physical key is the same on a US or an ABNT board. The panel slides down from the top over about 200 ms and covers half the screen, whatever the mode (`CON_H`). It slides back up when toggled again. Escape closes it and does not quit. An Escape that closed it is ignored until the key comes up, so a held Escape does not also leave the view. `input_read` and the window's `WM_KEYDOWN` both ask `console_take_escape` before they quit.
 
 While the panel is on screen, including during the slide, the world is not drawn. The frame that was already on the front buffer is copied once, through `grLfbReadRegion`, and written back to the back buffer each console frame. The 3D pass, the HUD, and texture uploads do not run. The camera does not move: `input_read` and `input_look` report no motion, and the viewer loops skip their own keys. Rendering resumes on the first frame after the panel has shut. A command changes engine state immediately. The picture shows that change when the console closes.
 

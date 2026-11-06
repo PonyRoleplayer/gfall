@@ -14,7 +14,7 @@ Once per call, the yaw and pitch become six inward planes:
 - far, at the distance below
 - left, right, top, bottom, through the eye
 
-The side slopes are the picture. `camera_project` is `sx = 320 + x * focal / z`. The focal length is `camera_focal()`, from the horizontal field of view. The default is 75 degrees, focal about 417, so a point is on the left or right edge when `|x| / z` is about 0.77, and on the top or bottom when `|y| / z` is about 0.58. `fov` in the console changes this on the next world frame, clamped to 45..120. The triangle clipper uses the same picture, plus 16 pixels, which stays far inside the SST-1 range of about +/-2048. `scene_set_cull(0)` lists every entity and skips these planes and the occlusion step.
+The side slopes are the picture. `camera_project` is `sx = df_view_cx() + x * focal / z`, the view's centre, 320 at 640 × 480 (`docs/glide.md`, The screen's mode). The focal length is `camera_focal()`, from the horizontal field of view and the view's width. The default is 75 degrees, focal about 417 at 640 wide (208 at 320), so a point is on the left or right edge when `|x| / z` is about 0.77, and on the top or bottom when `|y| / z` is about 0.58. `fov` in the console changes this on the next world frame, clamped to 45..120. The triangle clipper uses the same picture, plus 16 pixels, which stays far inside the SST-1 range of about +/-2048. `scene_set_cull(0)` lists every entity and skips these planes and the occlusion step.
 
 A plane rejects the box when the nearest corner is outside: `dot(normal, center) + d + radius < 0`. The radius is `ex*|nx| + ey*|ny| + ez*|nz|`. Far is tested first.
 
@@ -44,7 +44,7 @@ A model that moves (`docs/interact.md`) has the box of its whole sweep baked in 
 
 The frustum is a pyramid, so a wall in front of the eye still leaves every box behind it inside the view, out to the fog. The occlusion step removes those. It is a coarse depth picture built on the Pentium, after the frustum and before anything goes to the card.
 
-1. The picture is cut into 40 x 30 cells of 16 x 16 pixels (`OCC_CELL`). Each cell holds one float: 1/z of a cover, or 0 for none.
+1. The picture is cut into cells of 16 x 16 pixels (`OCC_CELL`), 40 x 30 at 640 x 480. Each cell holds one float: 1/z of a cover, or 0 for none. The grid is sized for the largest view (50 x 38 at 800 x 600, `OCC_W` its row stride); a smaller view uses its top left, its cells found from pixels clamped to the view, and the rest never written. A height that is not a whole number of cells (300, 600) leaves a last row partly off the glass, which stays open.
 2. The nearest models in the frustum list put their front faces into the cells. A face that covers all of a cell writes it, with 1/z of the farthest point that face can have in the cell. A face that covers only part of a cell lists itself on that cell instead.
 3. A cell that no one face covers can still be covered by the faces listed on it together: a wall and its floor, two panels, a door leaf in its frame. The seam pass cuts those faces out of the cell. If nothing a pixel could land in is left, the cell is covered, at the farthest bound of the faces that took part.
 4. A model or sprite is dropped when its screen rectangle lands only on covered cells, and every one of them is nearer than the nearest point of its box.
@@ -132,7 +132,7 @@ On the host, per frame in the hold, the whole cull took about 0.021 ms (0.017 wi
 
 What keeps it cheap:
 
-- 16-pixel cells. 8-pixel cells hid more, at about twice the cost. The 40 x 30 grid is 4.8 KB and fits in the Pentium's data cache.
+- 16-pixel cells. 8-pixel cells hid more, at about twice the cost. The 40 x 30 grid is 4.8 KB, and the largest view's 7.6 KB; either fits in the Pentium's data cache.
 - A row of cells is one multiply per edge, not a test per cell. The same solve gives the run a face only touches.
 - A plane is transformed once per corner and clipped once, not per triangle. A plane it does not cross does not clip it.
 - The seam pass is lazy, skips a cell none of whose faces is nearer than its cover, cuts into its output slots instead of copying pieces, and runs the sample test only on what is left at the end.

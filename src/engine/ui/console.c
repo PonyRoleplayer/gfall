@@ -51,13 +51,14 @@
  * between two slow frames is not lost.
  */
 
-#define CON_H 240
+/* Half the view: 240 at 640 x 480, the whole height of a small mode would hide the game. */
+#define CON_H (df_view_h() / 2)
 #define CON_SLIDE_MS 200
 /* win_pump only gives keys to a console some frame loop pumped this recently. */
 #define CON_LIVE_MS 500
 /* Scan code of the key left of 1, on US and ABNT boards alike. */
 #define CON_SCAN 0x29
-#define SHOT_STRIDE (DF_VIEW_W * 2)
+#define SHOT_STRIDE (df_view_w() * 2)
 #define EXEC_DEPTH 4
 #define EXEC_BYTES 4096
 
@@ -458,7 +459,7 @@ static int grab_frame(void)
     df_u32 bytes;
 
     if (!g_shot) {
-        bytes = (df_u32)SHOT_STRIDE * (df_u32)DF_VIEW_H;
+        bytes = (df_u32)SHOT_STRIDE * (df_u32)df_view_h();
         /* Kept for the process: not the temp heap a viewer draws inside. */
         g_shot = (df_u8 *)mem_keep(bytes);
     }
@@ -494,7 +495,7 @@ static void draw_prompt(int y)
             shown[n++] = text[i];
         }
         shown[n] = 0;
-        if (from >= cur || ui_string_width(shown) < DF_VIEW_W - 32) {
+        if (from >= cur || ui_string_width(shown) < df_view_w() - 32) {
             break;
         }
         from++;
@@ -523,7 +524,7 @@ static void draw_panel(void)
         return;
     }
     glide_dim(1, 88);
-    wash(0.0f, (float)(DF_VIEW_H - g_h), (float)DF_VIEW_W, (float)g_h);
+    wash(0.0f, (float)(df_view_h() - g_h), (float)df_view_w(), (float)g_h);
     glide_dim(0, 0);
     line_h = ui_line_height() + 2;
     if (g_h < line_h + 4) {
@@ -535,7 +536,7 @@ static void draw_panel(void)
         scroll_by((int)(serial - g_seen));
     }
     g_seen = serial;
-    base = DF_VIEW_H - g_h + line_h + 2;
+    base = df_view_h() - g_h + line_h + 2;
     draw_prompt(base);
     /* Newest at the bottom, just above the prompt, older lines upward. */
     fit = (g_h - line_h - 8) / line_h;

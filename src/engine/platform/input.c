@@ -39,13 +39,14 @@ static int g_escape_quits = 1;
 /*
  * Pointer mode (input_set_pointer): the cursor stays where the mouse
  * puts it, in client pixels, and nothing is looked; the client's size
- * turns it into the screen's 640 x 480.
+ * turns it into the view's pixels (df_view_w x df_view_h).
  */
 static int g_pointer;
 static int g_px;
 static int g_py;
-static int g_cw = DF_VIEW_W;
-static int g_ch = DF_VIEW_H;
+/* The window's client size, read at each pump; until the first, the default view's. */
+static int g_cw = 640;
+static int g_ch = 480;
 /* Client motion, kept apart from look so a pointer gesture never rotates a view.
    The remainder carries subpixel motion when a client is larger than 640x480. */
 static int g_mouse_dx, g_mouse_dy;
@@ -301,8 +302,8 @@ void input_begin(void *hwnd)
     GetClientRect(g_hwnd, &rc);
     g_cx = (rc.right - rc.left) / 2;
     g_cy = (rc.bottom - rc.top) / 2;
-    g_cw = rc.right - rc.left > 0 ? rc.right - rc.left : DF_VIEW_W;
-    g_ch = rc.bottom - rc.top > 0 ? rc.bottom - rc.top : DF_VIEW_H;
+    g_cw = rc.right - rc.left > 0 ? rc.right - rc.left : df_view_w();
+    g_ch = rc.bottom - rc.top > 0 ? rc.bottom - rc.top : df_view_h();
     g_px = g_cx;
     g_py = g_cy;
     g_active = 1;
@@ -447,8 +448,8 @@ void input_read(Input *out)
     }
     /* One scale per axis per snapshot, rather than divisions in every
        WM_MOUSEMOVE. C's signed remainder preserves either direction. */
-    g_frac_x += g_mouse_dx * DF_VIEW_W;
-    g_frac_y += g_mouse_dy * DF_VIEW_H;
+    g_frac_x += g_mouse_dx * df_view_w();
+    g_frac_y += g_mouse_dy * df_view_h();
     out->mouse_dx = g_frac_x / g_cw;
     out->mouse_dy = g_frac_y / g_ch;
     g_frac_x -= out->mouse_dx * g_cw;
@@ -574,19 +575,19 @@ void input_pointer(int *x, int *y)
     int sy;
 
     /* Client pixels, row 0 at the top, to the screen's, from the lower left (ui_string's). */
-    sx = g_px * DF_VIEW_W / g_cw;
-    sy = DF_VIEW_H - 1 - g_py * DF_VIEW_H / g_ch;
+    sx = g_px * df_view_w() / g_cw;
+    sy = df_view_h() - 1 - g_py * df_view_h() / g_ch;
     if (sx < 0) {
         sx = 0;
     }
-    if (sx > DF_VIEW_W - 1) {
-        sx = DF_VIEW_W - 1;
+    if (sx > df_view_w() - 1) {
+        sx = df_view_w() - 1;
     }
     if (sy < 0) {
         sy = 0;
     }
-    if (sy > DF_VIEW_H - 1) {
-        sy = DF_VIEW_H - 1;
+    if (sy > df_view_h() - 1) {
+        sy = df_view_h() - 1;
     }
     if (x) {
         *x = sx;
