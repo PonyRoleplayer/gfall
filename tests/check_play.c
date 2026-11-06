@@ -99,6 +99,7 @@
 #include "game/dagger/play/files.h"
 #include "game/dagger/tables/magic.h"
 #include "game/dagger/play/spells.h"
+#include "game/dagger/play/effects.h"
 #include "game/dagger/play/projectile.h"
 #include "game/dagger/play/shots.h"
 #include "game/dagger/places/people.h"
@@ -6050,7 +6051,7 @@ static void check_magic_data(void)
                  "magic: not 90 effects and the 89 standard spells");
     sp = magic_standard(1);
     check_expect(sp && df_eq(sp->name, "Fenrik's Door Jam") && sp->element == ELEMENT_MAGIC && sp->target == TARGET_CASTER
-                     && sp->effect[0] == MAGIC_ID(EFFECT_LOCK, 255) && sp->effect[1] == MAGIC_ID(255, 255),
+                     && sp->effect[0] == MAGIC_ID(GROUP_LOCK, 255) && sp->effect[1] == MAGIC_ID(255, 255),
                  "magic: spell 1 is not Fenrik's Door Jam, a magic spell on the caster that locks");
     magic_settings(sp, 0, &es);
     check_expect(es.duration_base == 1 && es.duration_plus == 1 && es.duration_per == 25 && es.chance_base == 6
@@ -6059,7 +6060,7 @@ static void check_magic_data(void)
     sp = magic_standard(3);
     magic_settings(sp, 0, &es);
     check_expect(sp && df_eq(sp->name, "Frostbite") && sp->element == ELEMENT_COLD && sp->target == TARGET_TOUCH
-                     && es.effect == MAGIC_ID(EFFECT_DAMAGE, 0) && es.magnitude_base_low == 1 && es.magnitude_base_high == 9
+                     && es.effect == MAGIC_ID(GROUP_DAMAGE, 0) && es.magnitude_base_low == 1 && es.magnitude_base_high == 9
                      && es.magnitude_plus_low == 1 && es.magnitude_plus_high == 3 && es.magnitude_per == 2,
                  "magic: Frostbite is not cold touch damage to health, 1-9 + 1-3 per 2 levels");
     sp = magic_standard(7);
@@ -6070,17 +6071,17 @@ static void check_magic_data(void)
     sp = magic_standard(14);
     check_expect(sp && df_eq(sp->name, "Fireball") && sp->target == TARGET_AREA_RANGE, "magic: Fireball is not an area at range");
     /* The effect's own numbers: Damage Health is Destruction, supports magnitude only, costs 20 and 28. */
-    e = magic_effect(MAGIC_ID(EFFECT_DAMAGE, 0));
+    e = magic_effect(MAGIC_ID(GROUP_DAMAGE, 0));
     check_expect(e && e->school == SKILL_DESTRUCTION && e->supports == MAGIC_MAGNITUDE && e->magnitude_cost[0] == 20
                      && e->magnitude_cost[1] == 28 && e->targets == MAGIC_TARGET_OTHER && e->elements == MAGIC_ELEMENT_ALL,
                  "magic: Damage Health is not Destruction, magnitude 20 and 28, on others, any element");
-    e = magic_effect(MAGIC_ID(EFFECT_DRAIN, 0));
+    e = magic_effect(MAGIC_ID(GROUP_DRAIN, 0));
     check_expect(e && e->magnitude_cost[0] == 8 && e->magnitude_cost[1] == 100 && e->magnitude_cost[2] == 116,
                  "magic: Drain's flat offset of 116 is lost");
-    e = magic_effect(MAGIC_ID(EFFECT_LIGHT, 255));
+    e = magic_effect(MAGIC_ID(GROUP_LIGHT, 255));
     check_expect(e && e->school == SKILL_ILLUSION && e->supports == MAGIC_DURATION && e->targets == MAGIC_TARGET_CASTER,
                  "magic: Light is not Illusion, duration only, on the caster");
-    e = magic_effect(MAGIC_ID(EFFECT_JUMPING, 255));
+    e = magic_effect(MAGIC_ID(GROUP_JUMPING, 255));
     check_expect(e && df_eq(e->group, "Jumping") && e->school == SKILL_ALTERATION, "magic: Jumping is not number 32, Alteration");
     check_expect(magic_effect(MAGIC_ID(77, 0)) == 0, "magic: an effect of no number is found");
     /* Every effect of every standard spell is in the table, and its target and element are ones the effect allows,
@@ -6170,9 +6171,9 @@ static void check_spells(void)
     {
         char line[48];
 
-        spell_effect_name(MAGIC_ID(EFFECT_DAMAGE, 0), line, (int)sizeof(line));
+        spell_effect_name(MAGIC_ID(GROUP_DAMAGE, 0), line, (int)sizeof(line));
         check_expect(df_eq(line, "Damage Health"), "spells: an effect's name is not group and subgroup");
-        spell_effect_name(MAGIC_ID(EFFECT_LIGHT, 255), line, (int)sizeof(line));
+        spell_effect_name(MAGIC_ID(GROUP_LIGHT, 255), line, (int)sizeof(line));
         check_expect(df_eq(line, "Light"), "spells: an effect with no subgroup is not its group alone");
     }
     /* The book: no two of a name, removal closes up, sorting is by name without case. */
@@ -6205,6 +6206,307 @@ static void check_spells(void)
     spellbook_starting(&book, &pc);
     check_expect(book.count == 1 && spellbook_find(&book, "Slowfalling") == 0, "spells: a Bard does not start with Slowfalling alone");
     printf("spells: costs by hand (Shock 70, 38, 6 points; Wizard's Fire 88; Fireball 330 gold), the book, the starting sets\n");
+}
+
+/* One effect with every parameter at 1 round, a sure chance and a magnitude of 1; the test sets what it needs. */
+static void fx_set(EffectSettings *e, int group, int sub)
+{
+    mem_zero(e, sizeof(*e));
+    e->effect = MAGIC_ID(group, sub);
+    e->duration_base = 1;
+    e->duration_per = 1;
+    e->chance_base = 100;
+    e->chance_per = 1;
+    e->magnitude_base_low = e->magnitude_base_high = 1;
+    e->magnitude_per = 1;
+}
+
+/* A spell of one effect at a target and element. */
+static void fx_spell(Spell *s, const EffectSettings *e, int target, int element)
+{
+    int k;
+
+    mem_zero(s, sizeof(*s));
+    for (k = 0; k < MAGIC_SLOTS; k++) {
+        s->effect[k].effect = SPELL_NO_EFFECT;
+    }
+    s->effect[0] = *e;
+    s->target = (df_u8)target;
+    s->element = (df_u8)element;
+    df_copy(s->name, "Test", SPELL_NAME);
+}
+
+/* What spells do when they land: the sums at the player, the live list, the saving throw, and creatures of the hold. */
+static void check_effects(void)
+{
+    Player p;
+    Player other;
+    Character sheet;
+    EffectSettings e;
+    EffectTarget to;
+    Spell s;
+    int i;
+    int took;
+    int most;
+
+    if (!character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Test")) {
+        check_expect(0, "effects: no starting character");
+        return;
+    }
+    combat_seed(77);
+    player_init(&p, &sheet);
+    player_init(&other, &sheet);
+    effects_reset(1);
+    /* The saving throw's share, by DFU's rule: over the save all lands; under it within 20 the less the nearer; further under none. */
+    check_expect(effects_save_percent(50, 51) == 100 && effects_save_percent(50, 50) == 100 && effects_save_percent(50, 40) == 50
+                     && effects_save_percent(50, 30) == 0 && effects_save_percent(50, 29) == 0 && effects_save_percent(100, 1) == 0
+                     && effects_save_percent(5, 1) == 100 - 5 * 4,
+                 "effects: the saving throw's share is not DFU's (100 at the save, 5 less a point under it, 0 at 20 under)");
+    /* The player's save: 50 and Willpower / 10, 30 more against magic for a Breton, never under 5 or over 95. */
+    check_expect(effects_player_save(&sheet, ELEMENT_FIRE, 0) == 50 + sheet.attribute[ATTR_WILLPOWER] / 10
+                     && effects_player_save(&sheet, ELEMENT_MAGIC, 0) == 50 + 30 + sheet.attribute[ATTR_WILLPOWER] / 10,
+                 "effects: a Breton's save is not 50 + Willpower / 10, and 30 more against magic");
+    /* A heal at the caster: 8 health, no more than the most. */
+    sheet.health_max = p.sheet.health_max = 50;
+    p.sheet.health = 10;
+    fx_set(&e, GROUP_HEAL, 8);
+    e.magnitude_base_low = e.magnitude_base_high = 8;
+    fx_spell(&s, &e, TARGET_CASTER, ELEMENT_MAGIC);
+    check_expect(effects_land_self(&s, &p) == 1 && p.sheet.health == 18, "effects: a heal of 8 at the caster does not give 8 health");
+    e.magnitude_base_low = e.magnitude_base_high = 100;
+    fx_spell(&s, &e, TARGET_CASTER, ELEMENT_MAGIC);
+    effects_land_self(&s, &p);
+    check_expect(p.sheet.health == 50, "effects: a heal passes the most health");
+    /* Damage to health, fatigue (raw 64ths) and spell points on the caster: no save, no chance. */
+    fx_set(&e, GROUP_DAMAGE, 0);
+    e.magnitude_base_low = e.magnitude_base_high = 5;
+    fx_spell(&s, &e, TARGET_CASTER, ELEMENT_FIRE);
+    effects_land_self(&s, &p);
+    check_expect(p.sheet.health == 45, "effects: 5 damage to health at the caster is not 5");
+    p.sheet.fatigue = p.sheet.fatigue_max = 100 * CHARACTER_FATIGUE_UNIT;
+    fx_set(&e, GROUP_DAMAGE, 1);
+    e.magnitude_base_low = e.magnitude_base_high = 3;
+    fx_spell(&s, &e, TARGET_CASTER, ELEMENT_MAGIC);
+    effects_land_self(&s, &p);
+    check_expect(p.sheet.fatigue == 97 * CHARACTER_FATIGUE_UNIT, "effects: 3 damage to fatigue is not 3 x 64 raw");
+    p.sheet.magicka_max = p.sheet.magicka = 40;
+    fx_set(&e, GROUP_DAMAGE, 2);
+    e.magnitude_base_low = e.magnitude_base_high = 7;
+    fx_spell(&s, &e, TARGET_CASTER, ELEMENT_MAGIC);
+    effects_land_self(&s, &p);
+    check_expect(p.sheet.magicka == 33, "effects: 7 damage to spell points is not 7");
+    /* The magnitude's plus is by the caster's level: 2-2 plus 1-1 per 2 levels at level 4 is 2 + 2 = 4. */
+    p.sheet.health = 50;
+    p.sheet.level = 4;
+    fx_set(&e, GROUP_DAMAGE, 0);
+    e.magnitude_base_low = e.magnitude_base_high = 2;
+    e.magnitude_plus_low = e.magnitude_plus_high = 1;
+    e.magnitude_per = 2;
+    fx_spell(&s, &e, TARGET_CASTER, ELEMENT_MAGIC);
+    effects_land_self(&s, &p);
+    check_expect(p.sheet.health == 46, "effects: the magnitude's plus does not come once for each two levels");
+    p.sheet.level = 1;
+    /* Continuous damage: three rounds act three times (the first at once), then it is over; a pass of minutes ends it. */
+    p.sheet.health = 50;
+    fx_set(&e, GROUP_CONTINUOUS_DAMAGE, 0);
+    e.duration_base = 3;
+    e.magnitude_base_low = e.magnitude_base_high = 2;
+    fx_spell(&s, &e, TARGET_CASTER, ELEMENT_MAGIC);
+    effects_land_self(&s, &p);
+    check_expect(p.sheet.health == 48 && effects_count() == 1, "effects: continuous damage does not act at once, and last");
+    effects_round(&p, 0);
+    effects_round(&p, 0);
+    check_expect(p.sheet.health == 44 && effects_count() == 1, "effects: three rounds of 2 are not 6 damage in all");
+    effects_round(&p, 0);
+    check_expect(p.sheet.health == 44 && effects_count() == 0, "effects: continuous damage acts past its rounds");
+    effects_land_self(&s, &p);
+    effects_pass(&p, 0, 30);
+    check_expect(p.sheet.health == 38 && effects_count() == 0, "effects: a half hour passed does not end a 3 round effect after 3 acts");
+    /* Regeneration heals a round at a time. */
+    p.sheet.health = 10;
+    fx_set(&e, GROUP_REGENERATE, 255);
+    e.duration_base = 2;
+    e.magnitude_base_low = e.magnitude_base_high = 3;
+    fx_spell(&s, &e, TARGET_CASTER, ELEMENT_MAGIC);
+    effects_land_self(&s, &p);
+    effects_round(&p, 0);
+    effects_round(&p, 0);
+    check_expect(p.sheet.health == 16, "effects: two rounds of regenerate 3 do not give 6 health");
+    effects_reset(1);
+    /* A flag lasts its rounds in minutes, the first being the one it was cast in: Silence (a chance of 100, a duration of 2). */
+    fx_set(&e, GROUP_SILENCE, 255);
+    e.duration_base = 2;
+    fx_spell(&s, &e, TARGET_CASTER, ELEMENT_MAGIC);
+    effects_land_self(&s, &p);
+    check_expect(effects_player_has(GROUP_SILENCE, -1), "effects: silence is not in force once it lands");
+    effects_round(&p, 0);
+    check_expect(effects_player_has(GROUP_SILENCE, -1), "effects: silence of two rounds ends at the first tick");
+    effects_round(&p, 0);
+    check_expect(!effects_player_has(GROUP_SILENCE, -1), "effects: silence lasts past its two minutes");
+    /* Dispel magic ends every effect on the target. */
+    effects_land_self(&s, &p);
+    fx_set(&e, GROUP_SLOWFALL, 255);
+    e.duration_base = 9;
+    fx_spell(&s, &e, TARGET_CASTER, ELEMENT_MAGIC);
+    effects_land_self(&s, &p);
+    check_expect(effects_count() == 2 && effects_player_has(GROUP_SLOWFALL, -1), "effects: slowfall and silence do not both run");
+    fx_set(&e, GROUP_DISPEL, 0);
+    fx_spell(&s, &e, TARGET_CASTER, ELEMENT_MAGIC);
+    effects_land_self(&s, &p);
+    check_expect(effects_count() == 0, "effects: dispel magic leaves effects on the caster");
+    /* An effect not built does nothing, and the cast says so. */
+    fx_set(&e, GROUP_DRAIN, 0);
+    fx_spell(&s, &e, TARGET_TOUCH, ELEMENT_MAGIC);
+    to.player = &p;
+    to.creature = 0;
+    to.scene = 0;
+    check_expect(effects_land(&s, &to, &p) == 0 && effects_built(MAGIC_ID(GROUP_DRAIN, 0)) == EFFECT_NOT_BUILT
+                     && effects_built(MAGIC_ID(GROUP_LIGHT, 255)) == EFFECT_RECORDED && effects_built(MAGIC_ID(GROUP_DAMAGE, 0)) == EFFECT_BUILT,
+                 "effects: what is built is not what effects_built says");
+    /* Resistance: a sure chance turns every fire spell from another away; cold is not turned. */
+    p.sheet.health = 50;
+    fx_set(&e, GROUP_ELEMENTAL_RESISTANCE, ELEMENT_FIRE);
+    e.duration_base = 20;
+    fx_spell(&s, &e, TARGET_CASTER, ELEMENT_MAGIC);
+    effects_land_self(&s, &p);
+    check_expect(effects_resist_chance(ELEMENT_FIRE) == 100 && effects_resist_chance(ELEMENT_COLD) == 0,
+                 "effects: a resistance to fire is not a chance of 100 against fire alone");
+    fx_set(&e, GROUP_DAMAGE, 0);
+    e.magnitude_base_low = e.magnitude_base_high = 10;
+    fx_spell(&s, &e, TARGET_TOUCH, ELEMENT_FIRE);
+    for (i = 0; i < 40; i++) {
+        effects_land(&s, &to, &other);
+    }
+    check_expect(p.sheet.health == 50, "effects: fire got through a sure resistance to it");
+    fx_spell(&s, &e, TARGET_TOUCH, ELEMENT_COLD);
+    took = 0;
+    most = 0;
+    for (i = 0; i < 200; i++) {
+        int before;
+
+        p.sheet.health = 50;
+        before = p.sheet.health;
+        effects_land(&s, &to, &other);
+        took += before - p.sheet.health;
+        most = before - p.sheet.health > most ? before - p.sheet.health : most;
+    }
+    check_expect(took > 0 && most <= 10, "effects: cold damage of 10 from another was not cut by the saving throw, or passed 10");
+    effects_reset(1);
+    /* Free action is proof against paralysis; without it, a sure chance and a missed save paralyse. */
+    fx_set(&e, GROUP_FREE_ACTION, 255);
+    e.duration_base = 50;
+    fx_spell(&s, &e, TARGET_CASTER, ELEMENT_MAGIC);
+    effects_land_self(&s, &p);
+    fx_set(&e, GROUP_PARALYZE, 255);
+    e.duration_base = 5;
+    fx_spell(&s, &e, TARGET_TOUCH, ELEMENT_MAGIC);
+    for (i = 0; i < 100; i++) {
+        effects_land(&s, &to, &other);
+    }
+    check_expect(!effects_player_has(GROUP_PARALYZE, -1), "effects: paralysis got through a free action");
+    effects_reset(1);
+    for (i = 0; i < 100 && !effects_player_has(GROUP_PARALYZE, -1); i++) {
+        effects_land(&s, &to, &other);
+    }
+    check_expect(effects_player_has(GROUP_PARALYZE, -1), "effects: paralysis never took hold of the player in a hundred tries");
+    /* The cure of paralysis frees. */
+    fx_set(&e, GROUP_CURE, 2);
+    fx_spell(&s, &e, TARGET_CASTER, ELEMENT_MAGIC);
+    effects_land_self(&s, &p);
+    check_expect(!effects_player_has(GROUP_PARALYZE, -1), "effects: the cure of paralysis leaves the player paralysed");
+    /* A spell can kill: damage past the last health says so, once. */
+    effects_reset(1);
+    p.sheet.health = 3;
+    fx_set(&e, GROUP_DAMAGE, 0);
+    e.magnitude_base_low = e.magnitude_base_high = 9;
+    fx_spell(&s, &e, TARGET_CASTER, ELEMENT_MAGIC);
+    effects_land_self(&s, &p);
+    check_expect(p.sheet.health == 0 && effects_died() == 1 && effects_died() == 0, "effects: a killing spell does not say so once");
+    printf("effects: the saving throw, heals and damage to the vitals, rounds, flags, dispel, resistance, free action and paralysis\n");
+}
+
+/* A spell on a creature of the hold: held by paralysis, freed by its cure, and killed by damage. */
+static void check_effects_creature(void)
+{
+    Level level;
+    Camera cam;
+    Dungeon hold;
+    Character sheet;
+    Player p;
+    EffectSettings e;
+    EffectTarget to;
+    Spell s;
+    Entity *target;
+    const Keep *row;
+    float x;
+    float y;
+    float z;
+    float yaw;
+    float pitch;
+    int i;
+    int k;
+    int tries;
+
+    keep_clear();
+    combat_reset();
+    effects_reset(1);
+    foes_reset();
+    if (!character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Test") || !dungeon_load(&hold)
+        || !dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
+        check_expect(0, "effects: the hold's stream did not open");
+        return;
+    }
+    player_init(&p, &sheet);
+    camera_set(&cam, x, y, z, yaw, pitch);
+    dunstream_fill(&cam);
+    target = 0;
+    for (k = 0; k < stream_slots() && !target; k++) {
+        Entity *ents;
+        int first;
+        int n;
+
+        ents = stream_slot_entities(k, &first, &n);
+        for (i = 0; ents && i < n && !target; i++) {
+            if (ents[i].live && !ents[i].dead && dunstream_kind(&ents[i], 0) >= 0) {
+                target = &ents[i];
+            }
+        }
+    }
+    check_expect(target != 0, "effects: no creature in the hold to cast at");
+    if (!target) {
+        dunstream_close();
+        return;
+    }
+    to.player = 0;
+    to.creature = target;
+    to.scene = &level.scene;
+    /* A mind to hold: a creature struck is woken (foes_alert). */
+    foes_alert(target);
+    fx_set(&e, GROUP_PARALYZE, 255);
+    e.duration_base = 4;
+    fx_spell(&s, &e, TARGET_TOUCH, ELEMENT_MAGIC);
+    for (tries = 0; tries < 200 && !foes_frozen(target); tries++) {
+        effects_land(&s, &to, &p);
+    }
+    check_expect(foes_frozen(target), "effects: no spell of paralysis held a creature in two hundred tries");
+    fx_set(&e, GROUP_CURE, 2);
+    fx_spell(&s, &e, TARGET_TOUCH, ELEMENT_MAGIC);
+    effects_land(&s, &to, &p);
+    check_expect(!foes_frozen(target), "effects: the cure of paralysis leaves a creature held");
+    /* Damage: whole, no roll to hit, a creature saved against it in part; it falls in the end and is kept dead. */
+    fx_set(&e, GROUP_DAMAGE, 0);
+    e.magnitude_base_low = e.magnitude_base_high = 30;
+    fx_spell(&s, &e, TARGET_TOUCH, ELEMENT_FIRE);
+    for (tries = 0; tries < 600 && !target->dead; tries++) {
+        effects_land(&s, &to, &p);
+    }
+    row = keep_find(target->key);
+    check_expect(target->dead && row && row->game[2] == 1 && row->game[0] == 0 && row->game[1] == 0,
+                 "effects: damage of 30 did not kill the creature, or its health is not kept at 0");
+    /* Continuous damage on a creature acts each round and is let go when it dies; the minute passes with the player. */
+    printf("effects: a creature of the hold held, freed, and killed by %d spells\n", tries);
+    effects_reset(0);
+    dunstream_close();
 }
 
 /* A world for projectile.c: a wall across x = wall_x, and a ball of radius r at ball. */
@@ -8893,6 +9195,8 @@ void check_play(void)
     check_saves_and_files();
     check_magic_data();
     check_spells();
+    check_effects();
+    check_effects_creature();
     check_projectile();
     check_arrow_flight();
     check_ills();

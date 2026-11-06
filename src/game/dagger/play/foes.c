@@ -81,6 +81,8 @@ typedef struct Mind {
     /* A knock-back: its speed in classic's units, and which way. */
     float knock;
     float knock_dir[2];
+    /* Seconds it is held still, by paralysis (foes_freeze): it neither thinks, moves nor strikes. */
+    float frozen;
 } Mind;
 
 static Mind g_mind[FOES_MINDS];
@@ -297,6 +299,7 @@ static Mind *wake(Entity *e, int kind, int bark)
     /* Solid now: the player and the others stop at it. */
     e->radius = r;
     m->sees = 0;
+    m->frozen = 0.0f;
     m->give_up = FOES_GIVE_UP;
     m->look_in = i % SIGHT_EVERY;
     m->melee = 0.0f;
@@ -373,6 +376,26 @@ void foes_alert(Entity *e)
         m->give_up = FOES_GIVE_UP;
         m->look_in = 0;
     }
+}
+
+void foes_freeze(Entity *e, float seconds)
+{
+    Mind *m;
+
+    m = e ? mind_of(e) : 0;
+    if (m && seconds < 0.0f) {
+        m->frozen = 0.0f;
+    } else if (m && seconds > m->frozen) {
+        m->frozen = seconds;
+    }
+}
+
+int foes_frozen(const Entity *e)
+{
+    Mind *m;
+
+    m = e ? mind_of(e) : 0;
+    return m && m->frozen > 0.0f;
 }
 
 void foes_knock(Entity *e, const float *from, int speed)
@@ -1135,7 +1158,7 @@ int foes_frame(Player *p, const Scene *scene, float dt)
         ticks++;
         look_for(p, scene, peye);
         for (i = 0; i < FOES_MINDS; i++) {
-            if (g_mind[i].e) {
+            if (g_mind[i].e && g_mind[i].frozen <= 0.0f) {
                 think(&g_mind[i], p, scene, peye);
             }
         }
@@ -1150,6 +1173,13 @@ int foes_frame(Player *p, const Scene *scene, float dt)
 
         m = &g_mind[i];
         if (!m->e) {
+            continue;
+        }
+        /* Paralysed: held where it stands, its time running down. */
+        if (m->frozen > 0.0f) {
+            m->frozen -= dt;
+            m->e->moving = 0;
+            m->owed = 0.0f;
             continue;
         }
         m->owed += dt;

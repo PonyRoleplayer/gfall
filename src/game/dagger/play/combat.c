@@ -550,6 +550,46 @@ static void flinch(Entity *e)
 }
 
 /* One creature struck: the blow rolled, its sound, its health; a flinch or its body. */
+/*
+ * A creature has taken a blow or a spell and has health left: what follows. Dead, it lies down
+ * where it fell, its loot rolled by the player's level, a quest that wanted it told; living, it
+ * flinches and (knock, in classic's speed units, 0 for none) is thrown back from feet, a quest that
+ * waits for it to be hurt told.
+ */
+static void settle(Character *pc, const EnemyKind *kind, Entity *e, Keep *row, int health, const float *feet, int knock)
+{
+    set_health(row, health);
+    if (health <= 0) {
+        /* What is on the body goes by the level the player was when it fell (loot.c). */
+        row->game[COMBAT_KEEP_LEVEL] = (df_u8)(pc->level > 255 ? 255 : pc->level);
+        lay_down(e);
+        sfx_at(SND_BODY_FALL, e->x, e->y, e->z);
+        /* A creature a quest wants dead, in the dungeon it was put in, counts (quest.c). */
+        {
+            TravelWhere here;
+            int origin[2];
+
+            travel_here(&here, origin);
+            if (here.kind == TRAVEL_DUNGEON) {
+                quest_killed(0, kind->id, here.region, here.index, ills_now(clock_day(), clock_minute()));
+            }
+        }
+    } else {
+        TravelWhere here;
+        int origin[2];
+
+        flinch(e);
+        if (knock > 0) {
+            foes_knock(e, feet, knock);
+        }
+        /* Struck and not killed: a quest that waits for its foe to be hurt (21). */
+        travel_here(&here, origin);
+        if (here.kind == TRAVEL_DUNGEON) {
+            quest_hurt(0, kind->id, here.region, here.index, ills_now(clock_day(), clock_minute()));
+        }
+    }
+}
+
 static void strike_one(Character *pc, Item *weapon, int swing, Entity *e, const float *feet)
 {
     const EnemyKind *kind;
@@ -607,35 +647,7 @@ static void strike_one(Character *pc, Item *weapon, int swing, Entity *e, const 
     if (b.backstab) {
         interact_say("Successful backstab!");
     }
-    health -= b.damage;
-    set_health(row, health);
-    if (health <= 0) {
-        /* What is on the body goes by the level the player was when it fell (loot.c). */
-        row->game[COMBAT_KEEP_LEVEL] = (df_u8)(pc->level > 255 ? 255 : pc->level);
-        lay_down(e);
-        sfx_at(SND_BODY_FALL, e->x, e->y, e->z);
-        /* A creature a quest wants dead, in the dungeon it was put in, counts (quest.c). */
-        {
-            TravelWhere here;
-            int origin[2];
-
-            travel_here(&here, origin);
-            if (here.kind == TRAVEL_DUNGEON) {
-                quest_killed(0, kind->id, here.region, here.index, ills_now(clock_day(), clock_minute()));
-            }
-        }
-    } else {
-        TravelWhere here;
-        int origin[2];
-
-        flinch(e);
-        foes_knock(e, feet, combat_knock_speed(b.damage, kind->weight));
-        /* Struck and not killed: a quest that waits for its foe to be hurt (21). */
-        travel_here(&here, origin);
-        if (here.kind == TRAVEL_DUNGEON) {
-            quest_hurt(0, kind->id, here.region, here.index, ills_now(clock_day(), clock_minute()));
-        }
-    }
+    settle(pc, kind, e, row, health - b.damage, feet, combat_knock_speed(b.damage, kind->weight));
 }
 
 int combat_reaches(const Scene *scene, const float *feet, const float *eye, float yaw, const Entity *e)
@@ -795,6 +807,42 @@ void combat_loosed(Character *pc)
 void combat_missile_strike(Character *pc, Item *weapon, Entity *e, const float *feet)
 {
     strike_one(pc, weapon, 0, e, feet);
+}
+
+int combat_creature_hurt(Character *pc, const Scene *scene, Entity *e, int damage, const float *feet, int *killed)
+{
+    const EnemyKind *kind;
+    Foe f;
+    Keep *row;
+    int health;
+
+    if (killed) {
+        *killed = 0;
+    }
+    kind = e->live && !e->dead ? enemy_kind(dunstream_kind(e, 0)) : 0;
+    if (!kind || damage < 1 || !scene || !collide_use(scene)) {
+        return 0;
+    }
+    combat_foe(&f, kind, pc->level, 0);
+    health = health_of(e, &f, &row);
+    if (!row) {
+        return 0;
+    }
+    /* Hurt, it knows who: passive or asleep, it turns on the player (the caster is the player). */
+    foes_alert(e);
+    settle(pc, kind, e, row, health - damage, feet, 0);
+    if (killed) {
+        *killed = health - damage <= 0;
+    }
+    return damage;
+}
+
+int combat_creature_will(const Entity *e)
+{
+    const EnemyKind *kind;
+
+    kind = enemy_kind(dunstream_kind(e, 0));
+    return kind ? kind->attribute[ATTR_WILLPOWER] : 50;
 }
 
 static Blow g_citizen_blow;

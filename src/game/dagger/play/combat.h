@@ -157,6 +157,14 @@ Entity *combat_aim_at(const Scene *scene, const float *eye, const float *dir, fl
  */
 void combat_loosed(Character *pc);
 void combat_missile_strike(Character *pc, Item *weapon, Entity *e, const float *feet);
+/*
+ * A spell's damage to a creature: health taken whole, no roll to hit (the spell's saving throw
+ * is the caster's, effects.c), the creature woken. It lies dead at none left, as a blow would
+ * leave it on the floor of scene (which collision is made to use, as every blow does). The damage taken (0 when e is no creature of a dungeon's), and *killed 1 if it fell.
+ */
+int combat_creature_hurt(Character *pc, const Scene *scene, Entity *e, int damage, const float *feet, int *killed);
+/* A creature's Willpower, for its saving throw against a spell (50 when not a kind). */
+int combat_creature_will(const Entity *e);
 /* The slab test: whether a ray from eye along unit dir meets the box within reach, and how far along. */
 int combat_ray_box(const float *eye, const float *dir, const float *low, const float *high, float reach, float *t_out);
 /* 1 when creature e is one combat_strike would strike from feet and eye facing yaw. */
