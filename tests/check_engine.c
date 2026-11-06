@@ -1443,7 +1443,8 @@ static void check_key_names(void)
                  && INPUT_TURN_LEFT == 16 && INPUT_TURN_RIGHT == 17
                  && INPUT_LOOK_UP == 18 && INPUT_LOOK_DOWN == 19
                  && INPUT_LOOK_CENTER == 20 && INPUT_FREELOOK == 21 && INPUT_TRAVEL_MAP == 22
-                 && INPUT_TRANSPORT == 23 && INPUT_CROUCH == 24 && INPUT_ACTIONS == 25,
+                 && INPUT_TRANSPORT == 23 && INPUT_CROUCH == 24 && INPUT_SPELLBOOK == 25
+                 && INPUT_RECAST == 26 && INPUT_ACTIONS == 27,
                  "the actions moved: a game's saved bindings would mean other keys");
 }
 

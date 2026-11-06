@@ -10,7 +10,8 @@
 static const char *const g_action_names[INPUT_ACTIONS] = {
     "attack", "use", "run", "jump", "character", "inventory", "map", "rest", 0,
     "forward", "back", "left", "right", "swap_hands", "cursor", "swing", "turn_left", "turn_right",
-    "look_up", "look_down", "look_center", "freelook", "travel_map", "transport", "crouch"
+    "look_up", "look_down", "look_center", "freelook", "travel_map", "transport", "crouch",
+    "spellbook", "recast"
 };
 
 /*
@@ -33,7 +34,9 @@ static const struct {
     /* The travel map's own key, DFU's V: M is the automap. */
     { INPUT_TRAVEL_MAP, 'V' }, { INPUT_TRANSPORT, 'T' },
     /* Crouch, Ctrl (either key) as a first-person game has it: C is the character sheet. */
-    { INPUT_CROUCH, 0x11 }
+    { INPUT_CROUCH, 0x11 },
+    /* The spellbook and the last spell again, DFU's B and Q. */
+    { INPUT_SPELLBOOK, 'B' }, { INPUT_RECAST, 'Q' }
 };
 
 int config_default_key(int action)

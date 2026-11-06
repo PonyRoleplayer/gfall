@@ -44,6 +44,8 @@ With the console open nothing reaches the program: no movement, no look, nothing
 | `INPUT_TRAVEL_MAP` | V | the travel map (Daggerfall Unity's key), apart from `INPUT_MAP`, which a game may give to its automap; the engine only reports it |
 | `INPUT_TRANSPORT` | T | mount or dismount the horse or cart (Daggerfall Unity's key, the HUD's transport button); the engine only reports it |
 | `INPUT_CROUCH` | Ctrl | crouch; either Ctrl key (`VK_CONTROL`), not C, the character sheet's; held or toggled, and the body's size, are the game's (`body_set_size`, `docs/collision.md`); the engine only reports it |
+| `INPUT_SPELLBOOK` | B | open the spellbook, as Daggerfall Unity's; the engine only reports it |
+| `INPUT_RECAST` | Q | ready the last spell cast again, as Daggerfall Unity's; the engine only reports it. Q is also the viewers' fly camera up (`move_y`, read from the key, not the binding), as E is use and down; a game that walks a body does not read `move_y` |
 
 `input_bind(action, vk)` sets an action's key: a Windows virtual key (`VK_SHIFT`, `VK_LBUTTON`, a letter's capital). It refuses, returning 0, Escape on any action but `INPUT_MENU` and the console's key (the one left of 1, by its scan code on this layout): those are the menu's and the console's. `input_binding(action)` reads a key back. The actions are numbered in a fixed order and new ones go at the end, because a game saves its bindings by number (the test holds `INPUT_FORWARD` at 9, `INPUT_SWAP_HANDS` at 13 and `INPUT_CURSOR` at 14). A bindings file older than an action has no row for it, so that action keeps the engine's default key.
 

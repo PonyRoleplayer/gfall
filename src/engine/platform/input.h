@@ -72,6 +72,18 @@ enum {
      * the body goes down, are the game's (body_set_size, docs/collision.md).
      */
     INPUT_CROUCH,
+    /*
+     * Open the spellbook, default B as Daggerfall Unity's. Reported only:
+     * the game decides what opens.
+     */
+    INPUT_SPELLBOOK,
+    /*
+     * Ready the last spell cast again, default Q as Daggerfall Unity's.
+     * Reported only. Q is also the viewers' fly camera up (move_y, read
+     * from the key, not the binding), as E is use and down: a game that
+     * walks a body does not read move_y.
+     */
+    INPUT_RECAST,
     INPUT_ACTIONS
 };
 #define INPUT_BIT(action) (1u << (action))
