@@ -147,8 +147,24 @@ int combat_strike(Character *pc, Item *weapon, int swing, const Scene *scene, co
 int combat_citizen_struck(Blow *out, int *health_before);
 /* The nearest living creature the ray from eye along unit dir meets within reach, no wall between; 0 for none. What a look and a pickpocket aim with. */
 Entity *combat_aim(const Scene *scene, const float *eye, const float *dir, float reach);
-/* The living creatures within radius of a point with no wall between: up to max into out, how many. What an area spell strikes (cast.c). */
+/* The living creatures, citizens and guards within radius of a point with no wall between: up to max into out, how many. What an area spell strikes (cast.c). */
 int combat_near(const Scene *scene, const float *at, float radius, Entity **out, int max);
+/*
+ * The nearest living citizen or guard of the street the ray from eye along unit dir enters within reach with no wall
+ * between, and how far along in *t (or 0). What an arrow or a spell asks beside combat_aim_at.
+ */
+Entity *combat_aim_person_at(const Scene *scene, const float *eye, const float *dir, float reach, float *t);
+/*
+ * An arrow's arrival at a citizen or a guard: struck as a sword's blow would strike them (a citizen at 1 health
+ * falls to any that lands); when it kills, the watch is told and a lycanthrope's innocent is killed, from the
+ * player's eye and facing. 1 when it killed.
+ */
+int combat_missile_strike_person(Character *pc, Item *weapon, Entity *e, const float *feet, const float *eye, float yaw);
+/*
+ * A spell's damage to a citizen or a guard, whole: a citizen falls to any, a guard has the watch's health; the
+ * same sounds and consequences as a blow that kills. The damage taken, 0 when e is no person of the street.
+ */
+int combat_person_hurt(Character *pc, Entity *e, int damage, const float *feet, const float *eye, float yaw);
 /* The same, and how far along the ray it is in *t (or 0): what an arrow in flight asks of each step (shots.c). */
 Entity *combat_aim_at(const Scene *scene, const float *eye, const float *dir, float reach, float *t);
 /*

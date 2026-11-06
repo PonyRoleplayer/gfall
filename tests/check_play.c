@@ -104,7 +104,9 @@
 #include "game/dagger/play/spellbook.h"
 #include "game/dagger/play/maker.h"
 #include "game/dagger/play/castfx.h"
+#include "game/dagger/play/iteminfo.h"
 #include "engine/scene/spawn.h"
+#include "engine/scene/weather.h"
 #include "game/dagger/play/projectile.h"
 #include "game/dagger/play/shots.h"
 #include "game/dagger/places/people.h"
@@ -6801,6 +6803,7 @@ static void check_magic_save(void)
     pile_new_game();
     mem_zero(&out, sizeof(out));
     out.sheet = sheet;
+    out.weather = WEATHER_THUNDER;
     inventory_clear(&out.pack);
     check_expect(save_write(&out), "magic save: a save did not write");
     /* Gone from the game, then read back into it. */
@@ -6808,6 +6811,7 @@ static void check_magic_save(void)
     save_use_book(&back);
     mem_zero(&back, sizeof(back));
     check_expect(save_read(&in), "magic save: the save did not read");
+    check_expect(in.weather == WEATHER_THUNDER, "magic save: the weather's kind did not come back");
     check_expect(back.count == 6 && df_eq(back.spell[0].name, book.spell[0].name) && df_eq(back.spell[5].name, "Storm of Mine")
                      && back.spell[5].icon == 33 && back.spell[5].element == ELEMENT_SHOCK && back.spell[5].target == TARGET_AREA_RANGE,
                  "magic save: the spellbook did not come back");
@@ -7363,6 +7367,51 @@ static void check_clothing(void)
     check_expect(!shop_buys(&shop, &it), "clothing: an armorer buys a shirt");
 }
 
+/* The info box in classic's own lines. */
+static void check_iteminfo(void)
+{
+    char lines[6][40];
+    Item it;
+    int n;
+
+    /* A weapon: the material and name, the damage with the material's modifier, the condition in words, the weight. */
+    item_make(&it, ITEM_LONGSWORD, MATERIAL_IRON);
+    n = iteminfo_lines(&it, &lines[0][0], 40, 6);
+    check_expect(iteminfo_record(&it) == 1001 && n == 4 && df_eq(lines[0], "Iron Longsword") && df_eq(lines[1], "1-15 points of damage")
+                     && df_eq(lines[2], "Condition: new") && df_eq(lines[3], "Weight: 4.5 kilograms"),
+                 "iteminfo: an iron longsword's four lines are not classic's");
+    it.condition = it.condition_max / 2;
+    iteminfo_lines(&it, &lines[0][0], 40, 6);
+    check_expect(df_eq(lines[2], "Condition: used"), "iteminfo: half-worn is not 'used'");
+    it.condition = 0;
+    iteminfo_lines(&it, &lines[0][0], 40, 6);
+    check_expect(df_eq(lines[2], "Condition: useless"), "iteminfo: worn out is not 'useless'");
+    /* Armour shows its material; a helm and a shield do not. */
+    item_make(&it, ITEM_CUIRASS, MATERIAL_STEEL);
+    n = iteminfo_lines(&it, &lines[0][0], 40, 6);
+    check_expect(iteminfo_record(&it) == 1000 && n == 4 && df_eq(lines[0], "Steel Cuirass") && df_eq(lines[1] + 1, " to armor rating"),
+                 "iteminfo: a steel cuirass does not name its material and its rating");
+    item_make(&it, ITEM_HELM, MATERIAL_STEEL);
+    n = iteminfo_lines(&it, &lines[0][0], 40, 6);
+    check_expect(iteminfo_record(&it) == 1014 && n == 4 && df_eq(lines[0], "Helm"), "iteminfo: a helm names its material");
+    /* An arrow stack: the name and the weight of the lot. */
+    item_make(&it, ITEM_ARROW, MATERIAL_IRON);
+    it.count = 24;
+    n = iteminfo_lines(&it, &lines[0][0], 40, 6);
+    check_expect(iteminfo_record(&it) == 1011 && n == 2 && df_eq(lines[0], "Arrow") && df_eq(lines[1], "Weight: 6 kilograms"),
+                 "iteminfo: 24 arrows are not named and weighed as a lot");
+    /* Clothing and gold: the misc record; gold has no condition. */
+    item_make_clothing(&it, 165, 0);
+    n = iteminfo_lines(&it, &lines[0][0], 40, 6);
+    check_expect(iteminfo_record(&it) == 1003 && n == 4 && df_eq(lines[0], "Short Shirt") && df_eq(lines[1], "Condition: new")
+                     && df_eq(lines[2], "Worth: 5 gold") && df_eq(lines[3], "Weight: 0.5 kilograms"),
+                 "iteminfo: a short shirt's lines are not the misc record's");
+    loot_gold_item(&it, 40);
+    n = iteminfo_lines(&it, &lines[0][0], 40, 6);
+    check_expect(n == 3 && df_eq(lines[0], "Gold Pieces") && df_eq(lines[1], "Worth: 40 gold"), "iteminfo: gold has a condition line, or the wrong worth");
+    printf("iteminfo: weapon, armour (a helm without its material), arrows, clothing and gold in TEXT.RSC's lines\n");
+}
+
 /* A world for projectile.c: a wall across x = wall_x, and a ball of radius r at ball. */
 typedef struct FlightWorld {
     float wall_x;
@@ -7846,6 +7895,111 @@ static void check_citizen(void)
                      "citizen: a guard who is not hostile could not be talked to");
     }
     watch_pardon();
+    /*
+     * From afar: an arrow, a spell at a touch and a burst reach the street's people as a blow does. A line to each
+     * citizen is tried from four sides, 60 units off, until one is clear.
+     */
+    {
+        Item bow;
+        Spell spell;
+        EffectSettings fx;
+        EffectTarget to;
+        Entity *target[3];
+        Entity *seen;
+        int found;
+        int side;
+        int slot;
+        int fell;
+        float cleared[3];
+        float cdir[3];
+        float ceye[3];
+        static const float sides[4][2] = { { 1.0f, 0.0f }, { -1.0f, 0.0f }, { 0.0f, 1.0f }, { 0.0f, -1.0f } };
+
+        item_make(&bow, 130, MATERIAL_IRON);
+        found = 0;
+        target[0] = target[1] = target[2] = 0;
+        for (slot = 0; slot < PEOPLE_MAX && found < 3; slot++) {
+            Entity *e;
+
+            e = people_at(slot);
+            if (!e || !e->live || !people_is_citizen(e)) {
+                continue;
+            }
+            for (side = 0; side < 4; side++) {
+                float t;
+
+                ceye[0] = e->x - sides[side][0] * 60.0f;
+                ceye[1] = e->y + WALK_EYE;
+                ceye[2] = e->z - sides[side][1] * 60.0f;
+                cdir[0] = sides[side][0];
+                cdir[1] = 0.0f;
+                cdir[2] = sides[side][1];
+                seen = combat_aim_person_at(&level.scene, ceye, cdir, 120.0f, &t);
+                if (seen == e) {
+                    break;
+                }
+            }
+            if (side < 4) {
+                target[found++] = e;
+                if (found == 1) {
+                    cleared[0] = ceye[0];
+                    cleared[1] = ceye[1];
+                    cleared[2] = ceye[2];
+                    cdir[0] = sides[side][0];
+                    cdir[2] = sides[side][1];
+                }
+            }
+        }
+        check_expect(found >= 1, "citizen: no citizen with a clear line was found to shoot at");
+        if (found >= 1) {
+            /* An arrow: loosed, it flies, and the citizen falls. */
+            player_init(&ply, &pc);
+            ply.body.feet[0] = cleared[0];
+            ply.body.feet[1] = cleared[1] - ply.body.eye;
+            ply.body.feet[2] = cleared[2];
+            projectile_clear();
+            check_expect(shots_arrow(cleared, cdir, &bow), "citizen: an arrow at a citizen did not fly");
+            for (slot = 0; slot < 120 && projectile_count() > 0; slot++) {
+                shots_frame(1.0f / 60.0f, &level.scene, &ply);
+            }
+            /* Brought down: the slot is no citizen alive now (the watch is called at once and may make a guard in it). */
+            check_expect(!(target[0]->live && people_is_citizen(target[0])), "citizen: an arrow that reached a citizen did not bring them down");
+        }
+        if (found >= 2) {
+            /* A spell of damage at a touch: whole, no roll to hit, a citizen falls to any that is not saved against. */
+            fx_set(&fx, GROUP_DAMAGE, 0);
+            fx.magnitude_base_low = fx.magnitude_base_high = 5;
+            fx_spell(&spell, &fx, TARGET_TOUCH, ELEMENT_FIRE);
+            to.player = 0;
+            to.creature = target[1];
+            to.scene = &level.scene;
+            ply.body.feet[0] = target[1]->x - 60.0f;
+            ply.body.feet[1] = target[1]->y;
+            ply.body.feet[2] = target[1]->z;
+            for (fell = 0; fell < 200 && target[1]->live && people_is_citizen(target[1]); fell++) {
+                effects_land(&spell, &to, &ply);
+            }
+            check_expect(!(target[1]->live && people_is_citizen(target[1])), "citizen: a spell of damage did not bring a citizen down in two hundred tries");
+        }
+        if (found >= 3) {
+            /* A burst round a third: it is among those a burst finds. */
+            Entity *near[CAST_BURST_MAX];
+            int n;
+            int has;
+
+            ceye[0] = target[2]->x;
+            ceye[1] = target[2]->y + WALK_EYE;
+            ceye[2] = target[2]->z;
+            n = combat_near(&level.scene, ceye, CAST_BURST, near, CAST_BURST_MAX);
+            has = 0;
+            for (slot = 0; slot < n; slot++) {
+                has += near[slot] == target[2];
+            }
+            check_expect(has == 1, "citizen: a burst on a citizen does not find them");
+        }
+        projectile_clear();
+        printf("citizen: an arrow and a spell brought down citizens, a burst finds them (%d with a clear line)\n", found);
+    }
     travel_leave();
     foes_reset();
     printf("citizen: 1 health, sure hit, weapon damage; %d ordinary misses, %d damages matched; "
@@ -10059,6 +10213,7 @@ void check_play(void)
     check_magic_save();
     check_spellbook();
     check_clothing();
+    check_iteminfo();
     check_maker();
     check_castfx();
     check_projectile();

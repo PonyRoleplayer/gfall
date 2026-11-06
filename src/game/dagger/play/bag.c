@@ -1,4 +1,5 @@
 #include "game/dagger/play/bag.h"
+#include "game/dagger/play/iteminfo.h"
 #include "game/dagger/formats/texture.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/wagon.h"
@@ -932,31 +933,11 @@ void bag_point(int x, int y)
     }
 }
 
-/* The info box's lines for an item: its name and what it is worth. */
+/* The info box's lines for an item: TEXT.RSC's own (iteminfo.h). */
 static void show_info(const Item *it)
 {
-    const WeaponTemplate *w;
-    const ArmorTemplate *a;
-    const Material *m;
-    int line;
-
     mem_zero(g.info, sizeof(g.info));
-    line = 0;
-    item_name(it, g.info[line++], INFO_LINE_CHARS);
-    log_format(g.info[line++], INFO_LINE_CHARS, "Weight: %.2f kg", it->weight * (float)it->count);
-    log_format(g.info[line++], INFO_LINE_CHARS, "Worth: %u gold", (unsigned)it->value * it->count);
-    w = weapon_template(it->template_id);
-    a = armor_template(it->template_id);
-    m = material(it->material);
-    if (w) {
-        log_format(g.info[line++], INFO_LINE_CHARS, "Damage: %d-%d", w->damage_min + (m ? m->modifier : 0),
-                   w->damage_max + (m ? m->modifier : 0));
-    } else if (a) {
-        log_format(g.info[line++], INFO_LINE_CHARS, "Armor: %d", a->shield ? a->shield : (m ? m->armor : 0));
-    }
-    if (it->condition_max) {
-        log_format(g.info[line++], INFO_LINE_CHARS, "Condition: %d%%", (int)((df_u32)it->condition * 100u / it->condition_max));
-    }
+    iteminfo_lines(it, &g.info[0][0], INFO_LINE_CHARS, INFO_LINES);
     g.info_shown = 1;
 }
 

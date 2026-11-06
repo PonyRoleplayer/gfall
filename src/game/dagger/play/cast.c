@@ -138,7 +138,17 @@ int cast_fire(Player *p, const Scene *scene, const float *eye, const float *dir)
 
         to.player = 0;
         to.scene = scene;
-        to.creature = combat_aim_at(scene, eye, dir, CAST_TOUCH, 0);
+        {
+            Entity *creature;
+            Entity *person;
+            float tc;
+            float tp;
+
+            /* The nearer of a creature and a person of the street within reach. */
+            creature = combat_aim_at(scene, eye, dir, CAST_TOUCH, &tc);
+            person = combat_aim_person_at(scene, eye, dir, CAST_TOUCH, &tp);
+            to.creature = creature && (!person || tc <= tp) ? creature : person;
+        }
         if (!to.creature) {
             interact_say("There is nothing in reach.");
             return 0;

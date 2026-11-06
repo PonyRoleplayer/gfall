@@ -169,6 +169,7 @@ PLAY_SRC := \
 	src/game/dagger/play/rules.c \
 	src/game/dagger/play/character.c \
 	src/game/dagger/play/inventory.c \
+	src/game/dagger/play/iteminfo.c \
 	src/game/dagger/play/loot.c \
 	src/game/dagger/play/pile.c \
 	src/game/dagger/play/doll.c \

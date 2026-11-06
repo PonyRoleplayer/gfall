@@ -817,6 +817,26 @@ int combat_near(const Scene *scene, const float *at, float radius, Entity **out,
             }
         }
     }
+    /* The street's people too: a burst does not choose between a guard and a rat. */
+    for (slot = 0; slot < PEOPLE_MAX && n < max; slot++) {
+        Entity *e;
+        float mid[3];
+        float d[3];
+
+        e = people_at(slot);
+        if (!e || !e->live || e->dead || (!people_is_citizen(e) && !people_is_guard(e))) {
+            continue;
+        }
+        mid[0] = e->x;
+        mid[1] = e->y + entity_height(e) * 0.5f;
+        mid[2] = e->z;
+        d[0] = mid[0] - at[0];
+        d[1] = mid[1] - at[1];
+        d[2] = mid[2] - at[2];
+        if (d[0] * d[0] + d[1] * d[1] + d[2] * d[2] <= radius * radius && combat_sight(scene, at, mid)) {
+            out[n++] = e;
+        }
+    }
     return n;
 }
 
@@ -1019,6 +1039,128 @@ static int strike_person(Character *pc, Item *weapon, int swing, Entity *e, cons
         foes_knock(e, feet, combat_knock_speed(b.damage, watch ? watch->weight : 1));
     }
     return 0;
+}
+
+/* The nearest living citizen or guard the ray enters within reach, no wall between, as aim_creature does for creatures. */
+Entity *combat_aim_person_at(const Scene *scene, const float *eye, const float *dir, float reach, float *t_out)
+{
+    Entity *best;
+    float best_t;
+    int slot;
+
+    best = 0;
+    best_t = reach;
+    if (!scene || !collide_use(scene)) {
+        return 0;
+    }
+    for (slot = 0; slot < PEOPLE_MAX; slot++) {
+        Entity *e;
+        float low[3];
+        float high[3];
+        float half;
+        float t;
+
+        e = people_at(slot);
+        if (!e || !e->live || e->dead || (!people_is_citizen(e) && !people_is_guard(e))) {
+            continue;
+        }
+        half = (float)entity_pose(e)->w[0] * 0.25f;
+        low[0] = e->x - half;
+        low[1] = e->y;
+        low[2] = e->z - half;
+        high[0] = e->x + half;
+        high[1] = e->y + entity_height(e);
+        high[2] = e->z + half;
+        if (combat_ray_box(eye, dir, low, high, best_t, &t)) {
+            float at[3];
+
+            at[0] = eye[0] + dir[0] * t;
+            at[1] = eye[1] + dir[1] * t;
+            at[2] = eye[2] + dir[2] * t;
+            if (combat_sight(scene, eye, at)) {
+                best = e;
+                best_t = t;
+            }
+        }
+    }
+    if (t_out) {
+        *t_out = best_t;
+    }
+    return best;
+}
+
+/* What follows a person's death by a blow, a missile or a spell: the watch is told, a lycanthrope's innocent is killed (as combat_strike does). */
+static void person_killed(const float *feet, const float *eye, float yaw)
+{
+    Camera cam;
+
+    camera_set(&cam, eye[0], eye[1], eye[2], yaw, 0.0f);
+    watch_on_kill(&cam, feet);
+    ills_killed_innocent(ills_now(clock_day(), clock_minute()));
+}
+
+int combat_missile_strike_person(Character *pc, Item *weapon, Entity *e, const float *feet, const float *eye, float yaw)
+{
+    int killed;
+
+    killed = strike_person(pc, weapon, 0, e, feet);
+    if (killed) {
+        person_killed(feet, eye, yaw);
+    }
+    return killed;
+}
+
+int combat_person_hurt(Character *pc, Entity *e, int damage, const float *feet, const float *eye, float yaw)
+{
+    const EnemyKind *watch;
+    int citizen;
+    int hp;
+    float mid;
+
+    if (!e || !e->live || e->dead || damage < 1 || (!people_is_citizen(e) && !people_is_guard(e))) {
+        return 0;
+    }
+    citizen = people_is_citizen(e);
+    watch = enemy_kind(ENEMY_CITY_WATCH);
+    mid = e->y + entity_height(e) * 0.5f;
+    hp = people_health(e);
+    if (hp < 0) {
+        Foe f;
+
+        if (!citizen && !watch) {
+            return 0;
+        }
+        if (citizen) {
+            combat_citizen(&f, 0);
+        } else {
+            combat_foe(&f, watch, pc->level, 0);
+        }
+        hp = combat_roll_health(&f);
+    }
+    hp -= damage;
+    if (hp > 0) {
+        people_set_health(e, hp);
+        if (!citizen) {
+            flinch(e);
+        }
+        return damage;
+    }
+    /* Dead: a citizen leaves no corpse; a guard lies as a blow would leave it, its things for the player's level. */
+    if (citizen) {
+        people_fell(e);
+    } else if (!people_lay_corpse(e)) {
+        people_fell(e);
+    } else {
+        Keep *row;
+
+        row = keep_get(e->key, KEEP_ENTITY);
+        if (row) {
+            row->game[COMBAT_KEEP_LEVEL] = (df_u8)(pc->level > 255 ? 255 : pc->level);
+        }
+    }
+    sfx_at(SND_BODY_FALL, e->x, mid, e->z);
+    person_killed(feet, eye, yaw);
+    return damage;
 }
 
 int combat_strike(Character *pc, Item *weapon, int swing, const Scene *scene, const float *feet,

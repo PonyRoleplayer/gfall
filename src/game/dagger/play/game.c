@@ -1850,6 +1850,12 @@ static int save_game(char *path)
     state.day = clock_day();
     state.day_zero = g_day_zero;
     state.seed = loot_seed();
+    {
+        Weather sky;
+
+        weather_state(&sky);
+        state.weather = sky.kind;
+    }
     state.sheet = g_player.sheet;
     state.pack = g_player.pack;
     return saves_write(&state, path);
@@ -2318,6 +2324,8 @@ void game_enter(const Level *level, Camera *cam, const TravelPose *at)
         g_day_zero = g_loaded.day_zero;
         g_last_minute = df_ifloor(game_minutes());
         loot_new_game(g_loaded.seed);
+        /* The sky it was under, at once (no blend): the rolls go on from here. */
+        weather_set(g_loaded.weather);
         g_control.view_yaw = g_loaded.view_yaw;
         g_control.view_pitch = g_loaded.view_pitch;
     } else {

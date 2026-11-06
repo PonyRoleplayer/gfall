@@ -2,6 +2,7 @@
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/cast.h"
 #include "game/dagger/places/wres.h"
+#include "game/dagger/places/people.h"
 #include "game/dagger/formats/texture.h"
 #include "engine/core/mem.h"
 #include "engine/scene/spawn.h"
@@ -43,7 +44,24 @@ static void *world_target(void *user, const Projectile *p, const float *a, const
         high[2] = w->player->body.feet[2] + w->player->body.radius;
         return combat_ray_box(a, dir, low, high, len, t) ? (void *)w->player : 0;
     }
-    return combat_aim_at(w->scene, a, dir, len, t);
+    /* The nearer of a creature and a person of the street. */
+    {
+        Entity *creature;
+        Entity *person;
+        float tc;
+        float tp;
+
+        creature = combat_aim_at(w->scene, a, dir, len, &tc);
+        person = combat_aim_person_at(w->scene, a, dir, len, &tp);
+        if (creature && (!person || tc <= tp)) {
+            *t = tc;
+            return creature;
+        }
+        if (person) {
+            *t = tp;
+        }
+        return person;
+    }
 }
 
 /* ---- Pictures. ---- */
@@ -250,7 +268,19 @@ int shots_frame(float dt, const Scene *scene, Player *player)
     n = projectile_step(dt, &world, ends, PROJ_MAX);
     for (i = 0; i < n; i++) {
         if (ends[i].kind == PROJ_ARROW && ends[i].result == PROJ_HIT_TARGET && ends[i].target) {
-            combat_missile_strike(pc, bow_for(pack, ends[i].entry), (Entity *)ends[i].target, feet);
+            Entity *hit;
+
+            hit = (Entity *)ends[i].target;
+            if (people_is_citizen(hit) || people_is_guard(hit)) {
+                float eye[3];
+
+                eye[0] = feet[0];
+                eye[1] = feet[1] + player->body.eye;
+                eye[2] = feet[2];
+                combat_missile_strike_person(pc, bow_for(pack, ends[i].entry), hit, feet, eye, player->yaw);
+            } else {
+                combat_missile_strike(pc, bow_for(pack, ends[i].entry), hit, feet);
+            }
         } else if (ends[i].kind == PROJ_SPELL) {
             const Spell *flying;
 

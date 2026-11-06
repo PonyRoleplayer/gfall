@@ -10,6 +10,7 @@
 #include "game/dagger/play/effects.h"
 #include "engine/scene/automap.h"
 #include "engine/scene/stream.h"
+#include "engine/scene/weather.h"
 #include "game/dagger/play/pile.h"
 #include "engine/assets/recfile.h"
 #include "engine/assets/vfs.h"
@@ -126,6 +127,7 @@ typedef struct SaveGameRow {
     df_i32 meal;
     /* The game minute of the last guild training (guild.h). */
     df_i32 trained;
+    df_i32 weather;
 } SaveGameRow;
 
 static const RecField g_game_fields[] = {
@@ -155,7 +157,8 @@ static const RecField g_game_fields[] = {
     REC_FIELD("use_left", REC_INT, SaveGameRow, use_left),
     REC_FIELD("ship", REC_INT, SaveGameRow, ship),
     REC_FIELD("meal", REC_INT, SaveGameRow, meal),
-    REC_FIELD("trained", REC_INT, SaveGameRow, trained)
+    REC_FIELD("trained", REC_INT, SaveGameRow, trained),
+    REC_FIELD("weather", REC_INT, SaveGameRow, weather)
 };
 static const RecSchema g_game_schema = {
     "GAME", "game", g_game_fields, (int)(sizeof(g_game_fields) / sizeof(g_game_fields[0])), (df_u16)sizeof(SaveGameRow), 0
@@ -504,6 +507,7 @@ static int write_chunks(const SaveState *state)
     game.ship = bank_ship();
     game.meal = lodging_last_meal();
     game.trained = guild_last_training();
+    game.weather = state->weather;
     for (i = 0; i < state->pack.count; i++) {
         items[i].id = (df_u16)i;
         items[i].item = state->pack.item[i];
@@ -868,6 +872,7 @@ static void apply_tables(SaveState *state)
     state->day = game->day;
     state->day_zero = game->day_zero;
     state->seed = game->seed;
+    state->weather = game->weather < 0 || game->weather >= WEATHER_KINDS ? 0 : game->weather;
     state->sheet = *(const Character *)g_sheet_table.rows;
     /* The book into the caller's, and the effects that last back in force (effects_put); an older save had neither. */
     if (g_book) {

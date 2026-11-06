@@ -3,6 +3,7 @@
 #include "game/dagger/play/foes.h"
 #include "game/dagger/play/ills.h"
 #include "game/dagger/play/rules.h"
+#include "game/dagger/places/people.h"
 #include "engine/core/mem.h"
 #include "engine/scene/interact.h"
 
@@ -351,7 +352,16 @@ static void take_from(const EffectTarget *to, Player *caster, int vital, int amo
             c->magicka = c->magicka > amount ? c->magicka - amount : 0;
         }
     } else if (vital == VITAL_HEALTH) {
-        combat_creature_hurt(&caster->sheet, to->scene, to->creature, amount, caster->body.feet, 0);
+        if (people_is_citizen(to->creature) || people_is_guard(to->creature)) {
+            float eye[3];
+
+            eye[0] = caster->body.feet[0];
+            eye[1] = caster->body.feet[1] + caster->body.eye;
+            eye[2] = caster->body.feet[2];
+            combat_person_hurt(&caster->sheet, to->creature, amount, caster->body.feet, eye, caster->yaw);
+        } else {
+            combat_creature_hurt(&caster->sheet, to->scene, to->creature, amount, caster->body.feet, 0);
+        }
     }
 }
 

@@ -59,6 +59,12 @@ typedef struct SaveState {
     int day;
     int day_zero;
     df_u32 seed;
+    /*
+     * The weather's kind when it was saved (WEATHER_*, weather.h): the game gives it back with
+     * weather_set once the place is loaded, so a load finds the sky it left. The rolls that follow
+     * are the engine's, from where its sequence is: only the kind is kept.
+     */
+    int weather;
     /* Where the game was, in words, for the list ("Daggerfall, Wayrest"). */
     char where_words[SAVE_WHERE];
     /* The snapshot to keep, SAVE_THUMB_W x SAVE_THUMB_H in RGB 565 with row 0 at the top, or 0 for none. Not read back (save_peek_thumb). */
