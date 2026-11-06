@@ -47,6 +47,9 @@
 #include "game/dagger/play/save.h"
 #include "game/dagger/play/saves.h"
 #include "game/dagger/play/shots.h"
+#include "game/dagger/play/spells.h"
+#include "game/dagger/play/effects.h"
+#include "game/dagger/play/cast.h"
 #include "game/dagger/formats/dungeon.h"
 #include "game/dagger/formats/factionfile.h"
 #include "game/dagger/play/screen.h"
@@ -78,6 +81,8 @@
 /* See game.h. */
 
 static const Level *g_level;
+/* The spells the player knows (spells.h): saved with the game (save_use_book), filled from the class at the start. */
+static Spellbook g_book;
 static Player g_player;
 static int g_playing;
 /* The character and kit the next place starts with: made in creation, or the default. */
@@ -90,6 +95,26 @@ static int g_load_waiting;
 static int g_day_zero;
 /* The last game minute that tired the player. */
 static int g_last_minute;
+
+/*
+ * Game minutes that went by in a screen, a journey or a training are caught up: the spells that last run their rounds
+ * through them (effects.c), though the player's own tiring does not (it was given back or taken whole). The count is then now.
+ */
+/* What a paralysed player is given for input. */
+static const Input g_no_input;
+static float game_minutes(void);
+static void book_over_play(void);
+
+static void catch_up_minutes(void)
+{
+    int now;
+
+    now = df_ifloor(game_minutes());
+    if (now > g_last_minute) {
+        effects_pass(&g_player, g_level ? &g_level->scene : 0, now - g_last_minute);
+    }
+    g_last_minute = now;
+}
 /* 1 from the death screen until a save is loaded or the slots put away. */
 static int g_dead;
 /* The camera's frame's, for what the use handler asks about where it stands; the run key held at the use. */
@@ -233,7 +258,7 @@ static int journey_made(void)
     clock_set_day(day);
     clock_set_minute(minute);
     /* The road's own wear is the journey's choice: the minutes it took are not tired again one by one. */
-    g_last_minute = df_ifloor(game_minutes());
+    catch_up_minutes();
     if (cautious) {
         character_rest_full(&g_player.sheet);
     }
@@ -1222,7 +1247,7 @@ static void guild_training_picked(int line)
             clock_set_day(clock_day() + 1);
         }
         clock_set_minute(minute);
-        g_last_minute = df_ifloor(game_minutes());
+        catch_up_minutes();
         s = career_skill(skill);
         log_format(text, (int)sizeof(text), "You train in %s for three hours, for %d gold.", s ? s->name : "it", price);
         interact_say(text);
@@ -1460,7 +1485,7 @@ static void ills_said_day(int said)
         if (ills_curse() == ILL_VAMPIRE) {
             clock_set_day(clock_day() + 14);
             clock_set_minute(19.0f * 60.0f);
-            g_last_minute = df_ifloor(game_minutes());
+            catch_up_minutes();
             character_rest_full(&g_player.sheet);
             show_face();
             interact_say("Death is not eternal. You wake two weeks on, at dusk, a vampire.");
@@ -1564,7 +1589,7 @@ static void draw(void)
         /* Under the HUD, as classic: the compass and the bars over the blade, or the horse's head and the reins. */
         if (g_player.riding) {
             draw_riding();
-        } else if (!g_sheathed && weapon_shown(&pic, &left, &top, &w, &h)) {
+        } else if (!g_sheathed && !cast_is_ready() && weapon_shown(&pic, &left, &top, &w, &h)) {
             screen_draw(pic, left, top, w, h);
         }
         overlay_draw();
@@ -1815,6 +1840,9 @@ static int load_game(const char *path)
     g_new_pack = g_loaded.pack;
     g_load_waiting = 1;
     g_dead = 0;
+    /* Nothing is ready or in the air after a load; the book and the lasting effects came with the file. */
+    cast_new_game();
+    shots_clear();
     travel_from_save(&g_loaded.where, g_loaded.feet, g_loaded.origin, g_loaded.yaw, g_loaded.pitch);
     return 1;
 }
@@ -1827,6 +1855,8 @@ static void new_character_id(void)
     id = prof_now() * 2654435761u;
     id ^= (df_u32)clock_day() * 40503u;
     g_new_sheet.id = id ? id : 1;
+    /* A caster class starts with its spells (DFU's StartingSpells). */
+    spellbook_starting(&g_book, &g_new_sheet);
 }
 
 /* A new character's game: what was changed or dropped in the last one is gone. */
@@ -1837,6 +1867,11 @@ static void forget_last_game(void)
     pile_new_game();
     loot_new_game(prof_now());
     foes_reset();
+    /* What the last character knew and what lasted on them is gone; the new one's spells come with new_character_id. */
+    mem_zero(&g_book, sizeof(g_book));
+    effects_reset(1);
+    cast_new_game();
+    shots_clear();
     g_dead = 0;
     /* The death line, and anything else the last life was saying. */
     interact_say(0);
@@ -1897,7 +1932,7 @@ static void hud_command(int action)
         map_over_play();
         break;
     case HUDBAR_SPELLBOOK:
-        interact_say("The spellbook is not available yet.");
+        book_over_play();
         break;
     case HUDBAR_MAGIC_ITEM:
         interact_say("No magic item can be used.");
@@ -1931,10 +1966,20 @@ static void attack_input(const ControlFrame *in, float dt)
     weapon_gesture(pressed, in->attack_held, in->attack_released, in->gesture_dx, in->gesture_dy, dt);
 }
 
+/* The unit direction the view looks along. */
+static void view_dir(const Camera *cam, float *dir)
+{
+    Basis basis;
+
+    camera_basis(cam, &basis);
+    dir[0] = basis.fx * basis.cp;
+    dir[1] = basis.sp;
+    dir[2] = basis.fz * basis.cp;
+}
+
 /* The bow looses: an arrow gone, flying along the view (shots.c). */
 static void shoot_arrow(const Camera *cam, const float *eye)
 {
-    Basis basis;
     float dir[3];
     Item *bow;
 
@@ -1942,12 +1987,47 @@ static void shoot_arrow(const Camera *cam, const float *eye)
     if (!bow || !inventory_spend_arrow(&g_player.pack)) {
         return;
     }
-    camera_basis(cam, &basis);
-    dir[0] = basis.fx * basis.cp;
-    dir[1] = basis.sp;
-    dir[2] = basis.fz * basis.cp;
+    view_dir(cam, dir);
     combat_loosed(&g_player.sheet);
     shots_arrow(eye, dir, bow);
+}
+
+/* The ready spell cast along the view from the eye (cast.h); the attack button's when one is ready. */
+static void cast_now(const Camera *cam)
+{
+    float eye[3];
+    float dir[3];
+
+    eye[0] = cam->x;
+    eye[1] = cam->y;
+    eye[2] = cam->z;
+    view_dir(cam, dir);
+    cast_fire(&g_player, &g_level->scene, eye, dir);
+}
+
+/* The spellbook over the stilled world (the HUD's button, the key, the sheet's). */
+static void book_over_play(void)
+{
+    screens_open_spellbook(&g_book, &g_player.sheet);
+    screen_over_play();
+}
+
+/* The cast key: a spell ready is put away, else the last one cast is made ready. */
+static void recast(void)
+{
+    const Spell *s;
+
+    if (cast_is_ready()) {
+        cast_cancel();
+        interact_say("Spell put away.");
+        return;
+    }
+    s = cast_last_spell();
+    if (!s) {
+        interact_say("You have cast no spell.");
+    } else if (cast_ready(s, &g_player)) {
+        interact_say("Press the attack button to cast.");
+    }
 }
 
 /*
@@ -2079,11 +2159,13 @@ void game_setup(void)
      */
     weather_set_sim(1);
     pic_set_room(GAME_PICTURE_KB);
+    save_use_book(&g_book);
     overlay_load();
     menu_setup();
     gfx_set_extra(draw);
     gfx_set_under(draw_under);
     commands_setup();
+    commands_book(&g_book);
     /* A quest's people stand in their buildings when they are entered (quest_people_hook). */
     world_set_people_hook(quest_people_hook);
     /* And a quest's foes take their place in its dungeon (quest_foes_at). */
@@ -2121,6 +2203,8 @@ static void arrive(const Level *level, Camera *cam, const TravelPose *at)
     }
     combat_reset();
     shots_clear();
+    /* What lasted on a creature of the place left is over; the player's go on. */
+    effects_reset(0);
     foes_reset();
     watch_reset();
     /* The people are built anew, so no one has been tried. */
@@ -2246,6 +2330,9 @@ int game_frame(Camera *cam, const Input *in, float dt)
     /* The click that closed a menu is not a swing. */
     int closed;
     ControlFrame controls;
+    /* The attack button this frame, when it is a spell's cast and not a swing. */
+    int cast_press;
+    int paralysed;
 
     prof_begin(PROF_PLAY);
     g_cam = cam;
@@ -2316,6 +2403,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
         return asked == MENU_QUIT ? GAME_QUIT : GAME_GO_ON;
     }
     mem_zero(&controls, sizeof(controls));
+    cast_press = 0;
     closed = in->reset != 0;
     /* The controls menu can change scheme while paused. Adopt it once,
      * preserving the actual view by folding Alt offsets into body facing. */
@@ -2339,7 +2427,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
          * minute-by-minute fatigue must not walk them again, or a night's rest
          * leaves the player exhausted (and dead with a creature near).
          */
-        g_last_minute = df_ifloor(game_minutes());
+        catch_up_minutes();
         /* The screen over a house container's things closed: what was taken is a theft, seen or not. */
         if (g_container_state == 2 && !screens_is_open()) {
             container_closed();
@@ -2353,6 +2441,18 @@ int game_frame(Camera *cam, const Input *in, float dt)
             }
             interact_say(line);
             court_commit(CRIME_VAGRANCY, travel_region());
+        }
+        if (asked == SCREENS_SPELL) {
+            int at;
+
+            at = screens_spell();
+            gfx_set_pause(0);
+            apply_pointer(0);
+            if (at >= 0 && at < g_book.count && cast_ready(&g_book.spell[at], &g_player)) {
+                interact_say("Press the attack button to cast.");
+            }
+            prof_end(PROF_PLAY);
+            return GAME_GO_ON;
         }
         if (asked == SCREENS_ANSWERED && g_asking) {
             g_asking = 0;
@@ -2466,6 +2566,10 @@ int game_frame(Camera *cam, const Input *in, float dt)
          * can appear pressed again, but no play shortcut belongs to it. */
     } else if (in->pressed & INPUT_BIT(INPUT_MENU)) {
         menu_over_play(MENU_OPTIONS);
+    } else if ((in->pressed & INPUT_BIT(INPUT_SPELLBOOK)) && !gfx_paused()) {
+        book_over_play();
+    } else if ((in->pressed & INPUT_BIT(INPUT_RECAST)) && !gfx_paused()) {
+        recast();
     } else if ((in->pressed & INPUT_BIT(INPUT_INVENTORY)) && !gfx_paused()) {
         bag_over_play(0);
     } else if ((in->pressed & INPUT_BIT(INPUT_CHARACTER)) && !gfx_paused()) {
@@ -2517,9 +2621,14 @@ int game_frame(Camera *cam, const Input *in, float dt)
             use_key(&aim);
         }
     }
+    /* Paralysed (a spell): no step, no turn, no swing, no use; the body still falls. */
+    paralysed = effects_player_has(GROUP_PARALYZE, -1);
+    if (paralysed) {
+        mem_zero(&controls, sizeof(controls));
+    }
     /* The console stands the world still too (gfx_paused): the player stands with it. */
     if (menu_current() == MENU_NONE && !screens_is_open() && !gfx_paused()) {
-        if (!closed && (in->pressed & INPUT_BIT(INPUT_USE))) {
+        if (!closed && !paralysed && (in->pressed & INPUT_BIT(INPUT_USE))) {
             use_key(cam);
         }
         /* A passage used: the program loads where it leads, between this frame and the next. */
@@ -2622,6 +2731,13 @@ int game_frame(Camera *cam, const Input *in, float dt)
 
                 g_last_minute++;
                 how = player_minute(&g_player, foes_hunting());
+                /* Spells that last act and count a round a game minute. */
+                effects_round(&g_player, &g_level->scene);
+                if (effects_died()) {
+                    interact_say("Your spell has killed you.");
+                    die();
+                    break;
+                }
                 if (how == PLAYER_DIED) {
                     die();
                     break;
@@ -2649,7 +2765,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
             }
         }
         /* Under water the breath runs down; none left is the end. */
-        if (player_breath(&g_player, dt)) {
+        if (!effects_player_has(GROUP_WATER_BREATHING, -1) && player_breath(&g_player, dt)) {
             interact_say("You have drowned.");
             die();
         }
@@ -2658,7 +2774,12 @@ int game_frame(Camera *cam, const Input *in, float dt)
         weapon_hold(inventory_weapon(&g_player.pack));
         /* The button that closed a screen, held or let go after it, is not a swing. */
         if (!weapon_gate(closed || g_sheathed || (!control_classic() && g_hud_cursor), controls.attack_held)) {
-            attack_input(&controls, dt);
+            if (cast_is_ready()) {
+                /* A spell ready takes the button; it goes once the view is placed for this frame. */
+                cast_press = controls.attack_pressed && !effects_player_has(GROUP_PARALYZE, -1);
+            } else {
+                attack_input(&controls, dt);
+            }
         }
         weapon_step(dt, g_player.sheet.attribute[ATTR_SPEED]);
         {
@@ -2693,7 +2814,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
         } else {
             player_crouch(&g_player, &g_level->scene, viewopt_crouch_toggle(), (in->held & INPUT_BIT(INPUT_CROUCH)) != 0,
                           (in->pressed & INPUT_BIT(INPUT_CROUCH)) != 0);
-            player_step_motion(&g_player, in, &g_level->scene, dt, walker_on(), controls.forward, controls.right);
+            player_step_motion(&g_player, paralysed ? &g_no_input : in, &g_level->scene, dt, walker_on(), controls.forward, controls.right);
         }
         {
             float speed;
@@ -2704,7 +2825,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
                 int died;
 
                 /* tgm on: nothing is taken and nothing said. */
-                died = player_hurt(&g_player, rules_fall_damage(height / RULES_UNITS_PER_M));
+                died = effects_player_has(GROUP_SLOWFALL, -1) ? -1 : player_hurt(&g_player, rules_fall_damage(height / RULES_UNITS_PER_M));
                 if (died > 0) {
                     die();
                 } else if (died == 0) {
@@ -2734,6 +2855,9 @@ int game_frame(Camera *cam, const Input *in, float dt)
         player_camera(&g_player, cam);
         control_view(&g_control, cam);
         /* The swing's hit frame strikes what is in reach of the eye; flinches run out. */
+        if (cast_press) {
+            cast_now(cam);
+        }
         if (weapon_hit()) {
             float eye[3];
 
@@ -2748,7 +2872,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
             }
         }
         combat_frame(dt);
-        shots_frame(dt, &g_level->scene, &g_player.sheet, &g_player.pack, g_player.body.feet);
+        shots_frame(dt, &g_level->scene, &g_player);
         /* A killing's HALT lines, one a second, while the guard closes. */
         watch_frame(dt);
         /* The creatures see, chase and strike (tai off: they stand); a blow may kill. */
@@ -2785,6 +2909,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
     /* Whether a use is stealing, shown: the bar's mode icon says Steal while crouched, and the middle of the screen says it too. */
     overlay_set_mode(g_mode == HUDBAR_GRAB && g_player.crouched ? HUDBAR_STEAL : g_mode);
     overlay_set_stealth(steal_intent());
+    overlay_set_ready(cast_is_ready() ? cast_ready_spell()->name : 0);
     probe_frame(cam, dt);
     overlay_set_vitals(g_player.sheet.health, g_player.sheet.health_max, g_player.sheet.fatigue,
                        g_player.sheet.fatigue_max, g_player.sheet.magicka, g_player.sheet.magicka_max);

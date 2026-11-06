@@ -7,6 +7,7 @@
 #include "game/dagger/play/guild.h"
 #include "game/dagger/play/quest.h"
 #include "game/dagger/play/ills.h"
+#include "game/dagger/play/effects.h"
 #include "engine/scene/automap.h"
 #include "engine/scene/stream.h"
 #include "game/dagger/play/pile.h"
@@ -28,6 +29,13 @@
 #define THUMB_ROWS ((SAVE_THUMB_W * SAVE_THUMB_H) / THUMB_ROW)
 
 static char g_file[SAVE_PATH];
+/* The game's spellbook, written and filled by save_write and save_read (save_use_book); 0 for none. */
+static Spellbook *g_book;
+
+void save_use_book(Spellbook *book)
+{
+    g_book = book;
+}
 
 void save_use_file(const char *name)
 {
@@ -205,6 +213,66 @@ static const RecField g_item_fields[] = {
 };
 #undef I
 /* WAGN, below: what is in the cart's wagon (wagon.h), rows as PACK's. */
+/* SPBK: a spell of the book, in the order of the book. Arrays are flat: a record's array is one kind of integer. */
+typedef struct SaveSpellRow {
+    df_u16 id;
+    char name[SPELL_NAME];
+    df_u8 icon;
+    df_u8 element;
+    df_u8 target;
+    df_u16 effect[MAGIC_SLOTS];
+    df_u8 duration[MAGIC_SLOTS * 3];
+    df_u8 chance[MAGIC_SLOTS * 3];
+    df_u8 magnitude[MAGIC_SLOTS * 5];
+} SaveSpellRow;
+
+static const RecField g_spell_row_fields[] = {
+    REC_FIELD("id", REC_UINT, SaveSpellRow, id),
+    REC_FIELD("name", REC_TEXT, SaveSpellRow, name),
+    REC_FIELD("icon", REC_UINT, SaveSpellRow, icon),
+    REC_FIELD("element", REC_UINT, SaveSpellRow, element),
+    REC_FIELD("target", REC_UINT, SaveSpellRow, target),
+    REC_ARRAY("effect", REC_UINT, SaveSpellRow, effect),
+    REC_ARRAY("duration", REC_UINT, SaveSpellRow, duration),
+    REC_ARRAY("chance", REC_UINT, SaveSpellRow, chance),
+    REC_ARRAY("magnitude", REC_UINT, SaveSpellRow, magnitude)
+};
+static const RecSchema g_spellbook_schema = {
+    "SPBK", "spellbook", g_spell_row_fields, (int)(sizeof(g_spell_row_fields) / sizeof(g_spell_row_fields[0])),
+    (df_u16)sizeof(SaveSpellRow), 0
+};
+
+/* MGIC: an effect that lasts on the player: what it is, its rounds left and the settings it rolls from. */
+typedef struct SaveEffectRow {
+    df_u16 id;
+    df_u16 effect;
+    df_u8 element;
+    df_u8 self;
+    df_u16 level;
+    int rounds;
+    int chance;
+    df_u8 duration[3];
+    df_u8 chances[3];
+    df_u8 magnitude[5];
+} SaveEffectRow;
+
+static const RecField g_effect_row_fields[] = {
+    REC_FIELD("id", REC_UINT, SaveEffectRow, id),
+    REC_FIELD("effect", REC_UINT, SaveEffectRow, effect),
+    REC_FIELD("element", REC_UINT, SaveEffectRow, element),
+    REC_FIELD("self", REC_UINT, SaveEffectRow, self),
+    REC_FIELD("level", REC_UINT, SaveEffectRow, level),
+    REC_FIELD("rounds", REC_INT, SaveEffectRow, rounds),
+    REC_FIELD("chance", REC_INT, SaveEffectRow, chance),
+    REC_ARRAY("duration", REC_UINT, SaveEffectRow, duration),
+    REC_ARRAY("chances", REC_UINT, SaveEffectRow, chances),
+    REC_ARRAY("magnitude", REC_UINT, SaveEffectRow, magnitude)
+};
+static const RecSchema g_effect_schema = {
+    "MGIC", "magic", g_effect_row_fields, (int)(sizeof(g_effect_row_fields) / sizeof(g_effect_row_fields[0])),
+    (df_u16)sizeof(SaveEffectRow), 0
+};
+
 static const RecSchema g_item_schema = {
     "PACK", "pack", g_item_fields, (int)(sizeof(g_item_fields) / sizeof(g_item_fields[0])), (df_u16)sizeof(SaveItemRow), 0
 };
@@ -386,6 +454,10 @@ static int write_chunks(const SaveState *state)
     int nfaction;
     static SaveGameRow game;
     static SaveItemRow items[INVENTORY_MAX];
+    static SaveSpellRow spell_rows[SPELLBOOK_MAX];
+    static SaveEffectRow effect_rows[EFFECTS_LIVE];
+    int nspells;
+    int neffects;
     SaveKeepRow *keeps;
     SavePileRow *piles;
     RecHead head;
@@ -435,6 +507,66 @@ static int write_chunks(const SaveState *state)
     for (i = 0; i < state->pack.count; i++) {
         items[i].id = (df_u16)i;
         items[i].item = state->pack.item[i];
+    }
+    nspells = g_book ? g_book->count : 0;
+    for (i = 0; i < nspells; i++) {
+        const Spell *sp;
+        SaveSpellRow *r;
+        int k;
+
+        sp = &g_book->spell[i];
+        r = &spell_rows[i];
+        mem_zero(r, sizeof(*r));
+        r->id = (df_u16)i;
+        df_copy(r->name, sp->name, SPELL_NAME);
+        r->icon = sp->icon;
+        r->element = sp->element;
+        r->target = sp->target;
+        for (k = 0; k < MAGIC_SLOTS; k++) {
+            r->effect[k] = sp->effect[k].effect;
+            r->duration[3 * k] = sp->effect[k].duration_base;
+            r->duration[3 * k + 1] = sp->effect[k].duration_plus;
+            r->duration[3 * k + 2] = sp->effect[k].duration_per;
+            r->chance[3 * k] = sp->effect[k].chance_base;
+            r->chance[3 * k + 1] = sp->effect[k].chance_plus;
+            r->chance[3 * k + 2] = sp->effect[k].chance_per;
+            r->magnitude[5 * k] = sp->effect[k].magnitude_base_low;
+            r->magnitude[5 * k + 1] = sp->effect[k].magnitude_base_high;
+            r->magnitude[5 * k + 2] = sp->effect[k].magnitude_plus_low;
+            r->magnitude[5 * k + 3] = sp->effect[k].magnitude_plus_high;
+            r->magnitude[5 * k + 4] = sp->effect[k].magnitude_per;
+        }
+    }
+    neffects = 0;
+    for (i = 0; i < effects_count() && neffects < EFFECTS_LIVE; i++) {
+        const LiveEffect *l;
+        SaveEffectRow *r;
+
+        l = effects_get(i);
+        if (!l || l->on_creature) {
+            continue;
+        }
+        r = &effect_rows[neffects];
+        mem_zero(r, sizeof(*r));
+        r->id = (df_u16)neffects;
+        r->effect = l->effect;
+        r->element = l->element;
+        r->self = l->self;
+        r->level = (df_u16)l->level;
+        r->rounds = l->rounds;
+        r->chance = l->chance;
+        r->duration[0] = l->settings.duration_base;
+        r->duration[1] = l->settings.duration_plus;
+        r->duration[2] = l->settings.duration_per;
+        r->chances[0] = l->settings.chance_base;
+        r->chances[1] = l->settings.chance_plus;
+        r->chances[2] = l->settings.chance_per;
+        r->magnitude[0] = l->settings.magnitude_base_low;
+        r->magnitude[1] = l->settings.magnitude_base_high;
+        r->magnitude[2] = l->settings.magnitude_plus_low;
+        r->magnitude[3] = l->settings.magnitude_plus_high;
+        r->magnitude[4] = l->settings.magnitude_per;
+        neffects++;
     }
 
     nkeep = keep_count();
@@ -570,6 +702,8 @@ static int write_chunks(const SaveState *state)
     return rec_put_rows(put_file, 0, &g_game_schema, &game, 1, 0, 0)
            && rec_put_rows(put_file, 0, &g_sheet_schema, &state->sheet, 1, 0, 0)
            && rec_put_rows(put_file, 0, &g_item_schema, items, state->pack.count, 0, 0)
+           && rec_put_rows(put_file, 0, &g_spellbook_schema, spell_rows, nspells, 0, 0)
+           && rec_put_rows(put_file, 0, &g_effect_schema, effect_rows, neffects, 0, 0)
            && rec_put_rows(put_file, 0, &g_keep_schema, keeps, nkeep, 0, 0)
            && rec_put_rows(put_file, 0, &g_pile_schema, piles, npile, 0, 0)
            && rec_put_rows(put_file, 0, &g_faction_schema, factions, nfaction, 0, 0)
@@ -654,6 +788,8 @@ int save_exists(void)
 static RecTable g_game_table;
 static RecTable g_sheet_table;
 static RecTable g_item_table;
+static RecTable g_spellbook_table;
+static RecTable g_effect_table;
 static RecTable g_keep_table;
 static RecTable g_pile_table;
 static RecTable g_faction_table;
@@ -686,7 +822,7 @@ static int ready_table(RecTable *t, const RecSchema *s, int cap)
 static void merge_chunk(const RecChunk *c)
 {
     static RecTable *const tables[] = {
-        &g_head_table, &g_game_table, &g_sheet_table, &g_item_table, &g_keep_table, &g_pile_table, &g_faction_table, &g_social_table, &g_region_table, &g_known_table, &g_seen_table, &g_wagon_table, &g_sick_table, &g_curse_table, &g_room_table, &g_member_table, &g_quest_table, &g_done_table, &g_custom_table
+        &g_head_table, &g_game_table, &g_sheet_table, &g_item_table, &g_spellbook_table, &g_effect_table, &g_keep_table, &g_pile_table, &g_faction_table, &g_social_table, &g_region_table, &g_known_table, &g_seen_table, &g_wagon_table, &g_sick_table, &g_curse_table, &g_room_table, &g_member_table, &g_quest_table, &g_done_table, &g_custom_table
     };
     int i;
 
@@ -733,6 +869,64 @@ static void apply_tables(SaveState *state)
     state->day_zero = game->day_zero;
     state->seed = game->seed;
     state->sheet = *(const Character *)g_sheet_table.rows;
+    /* The book into the caller's, and the effects that last back in force (effects_put); an older save had neither. */
+    if (g_book) {
+        mem_zero(g_book, sizeof(*g_book));
+    }
+    for (i = 0; g_book && i < g_spellbook_table.count && i < SPELLBOOK_MAX; i++) {
+        const SaveSpellRow *r;
+        Spell *sp;
+        int k;
+
+        r = &((const SaveSpellRow *)g_spellbook_table.rows)[i];
+        sp = &g_book->spell[g_book->count++];
+        mem_zero(sp, sizeof(*sp));
+        df_copy(sp->name, r->name, SPELL_NAME);
+        sp->icon = r->icon;
+        sp->element = r->element;
+        sp->target = r->target;
+        for (k = 0; k < MAGIC_SLOTS; k++) {
+            sp->effect[k].effect = r->effect[k];
+            sp->effect[k].duration_base = r->duration[3 * k];
+            sp->effect[k].duration_plus = r->duration[3 * k + 1];
+            sp->effect[k].duration_per = r->duration[3 * k + 2];
+            sp->effect[k].chance_base = r->chance[3 * k];
+            sp->effect[k].chance_plus = r->chance[3 * k + 1];
+            sp->effect[k].chance_per = r->chance[3 * k + 2];
+            sp->effect[k].magnitude_base_low = r->magnitude[5 * k];
+            sp->effect[k].magnitude_base_high = r->magnitude[5 * k + 1];
+            sp->effect[k].magnitude_plus_low = r->magnitude[5 * k + 2];
+            sp->effect[k].magnitude_plus_high = r->magnitude[5 * k + 3];
+            sp->effect[k].magnitude_per = r->magnitude[5 * k + 4];
+        }
+    }
+    effects_reset(1);
+    for (i = 0; i < g_effect_table.count; i++) {
+        const SaveEffectRow *r;
+        LiveEffect l;
+
+        r = &((const SaveEffectRow *)g_effect_table.rows)[i];
+        mem_zero(&l, sizeof(l));
+        l.effect = r->effect;
+        l.element = r->element;
+        l.self = r->self;
+        l.level = r->level;
+        l.rounds = r->rounds;
+        l.chance = r->chance;
+        l.settings.effect = r->effect;
+        l.settings.duration_base = r->duration[0];
+        l.settings.duration_plus = r->duration[1];
+        l.settings.duration_per = r->duration[2];
+        l.settings.chance_base = r->chances[0];
+        l.settings.chance_plus = r->chances[1];
+        l.settings.chance_per = r->chances[2];
+        l.settings.magnitude_base_low = r->magnitude[0];
+        l.settings.magnitude_base_high = r->magnitude[1];
+        l.settings.magnitude_plus_low = r->magnitude[2];
+        l.settings.magnitude_plus_high = r->magnitude[3];
+        l.settings.magnitude_per = r->magnitude[4];
+        effects_put(&l);
+    }
     inventory_clear(&state->pack);
     state->pack.gold = game->gold;
     for (i = 0; i < g_item_table.count; i++) {
@@ -847,6 +1041,7 @@ int save_read(SaveState *state)
 
     if (!ready_table(&g_head_table, &rec_head_schema, 1) || !ready_table(&g_game_table, &g_game_schema, 1)
         || !ready_table(&g_sheet_table, &g_sheet_schema, 1) || !ready_table(&g_item_table, &g_item_schema, INVENTORY_MAX)
+        || !ready_table(&g_spellbook_table, &g_spellbook_schema, SPELLBOOK_MAX) || !ready_table(&g_effect_table, &g_effect_schema, EFFECTS_LIVE)
         || !ready_table(&g_keep_table, &g_keep_schema, 256) || !ready_table(&g_pile_table, &g_pile_schema, PILE_ITEMS)
         || !ready_table(&g_custom_table, &class_schema, 1) || !ready_table(&g_faction_table, &g_faction_schema, 64)
         || !ready_table(&g_social_table, &g_social_schema, 1) || !ready_table(&g_region_table, &g_region_schema, STANDING_REGIONS)

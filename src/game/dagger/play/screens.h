@@ -1,6 +1,7 @@
 #ifndef DF_SCREENS_H
 #define DF_SCREENS_H
 
+#include "game/dagger/play/spells.h"
 #include "engine/platform/input.h"
 #include "engine/scene/entity.h"
 #include "game/dagger/play/player.h"
@@ -37,7 +38,9 @@ enum {
     /* The town map asked for the travel map instead, closed. */
     SCREENS_TO_TRAVEL,
     /* A message box answered (screens_msgbox_answer: MSGBOX_*), closed. */
-    SCREENS_ANSWERED
+    SCREENS_ANSWERED,
+    /* The spellbook closed with a spell to make ready: screens_spell is its place in the book. */
+    SCREENS_SPELL
 };
 
 /* Opens one, closing any other. Nothing opens when its pictures are missing: is_open says. */
@@ -49,6 +52,10 @@ void screens_open_talk(Player *p, const TalkWho *who);
 void screens_open_service(int panel);
 /* The quest logbook (logbook.h) at game minute now. */
 void screens_open_logbook(int now);
+/* The spellbook (spellbook.h) of this character; a spell chosen closes it with SCREENS_SPELL. */
+void screens_open_spellbook(Spellbook *book, const Character *pc);
+/* The spell the spellbook chose, its index in the book. */
+int screens_spell(void);
 /* A message box (msgbox.h): words, and Yes and No when it asks. */
 void screens_open_msgbox(const char *text, int yes_no);
 int screens_msgbox_answer(void);

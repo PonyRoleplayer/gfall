@@ -100,6 +100,8 @@
 #include "game/dagger/tables/magic.h"
 #include "game/dagger/play/spells.h"
 #include "game/dagger/play/effects.h"
+#include "game/dagger/play/cast.h"
+#include "game/dagger/play/spellbook.h"
 #include "game/dagger/play/projectile.h"
 #include "game/dagger/play/shots.h"
 #include "game/dagger/places/people.h"
@@ -6509,6 +6511,364 @@ static void check_effects_creature(void)
     dunstream_close();
 }
 
+/* A creature of the hold with a clear line from dist units out along +x at the height of its middle: eye and the unit dir to it. */
+static Entity *cast_locate(Level *level, float dist, float *eye, float *dir)
+{
+    int k;
+    int i;
+
+    for (k = 0; k < stream_slots(); k++) {
+        Entity *ents;
+        int first;
+        int n;
+
+        ents = stream_slot_entities(k, &first, &n);
+        for (i = 0; ents && i < n; i++) {
+            float t;
+
+            if (!ents[i].live || ents[i].dead || dunstream_kind(&ents[i], 0) < 0) {
+                continue;
+            }
+            eye[0] = ents[i].x - dist;
+            eye[1] = ents[i].y + entity_height(&ents[i]) * 0.5f;
+            eye[2] = ents[i].z;
+            dir[0] = 1.0f;
+            dir[1] = 0.0f;
+            dir[2] = 0.0f;
+            if (combat_aim_at(&level->scene, eye, dir, dist + 50.0f, &t) == &ents[i]) {
+                return &ents[i];
+            }
+        }
+    }
+    return 0;
+}
+
+/* The ready spell cast at a creature of the hold until it falls, flying missiles stepped to their ends. 1 when it died. */
+static int cast_until_dead(Level *level, Player *p, const Spell *s, Entity *target, const float *eye, const float *dir)
+{
+    int tries;
+    int steps;
+
+    for (tries = 0; tries < 400 && !target->dead; tries++) {
+        p->sheet.magicka = p->sheet.magicka_max;
+        if (!cast_ready(s, p) || !cast_fire(p, &level->scene, eye, dir)) {
+            return 0;
+        }
+        for (steps = 0; steps < 600 && projectile_count() > 0; steps++) {
+            shots_frame(1.0f / 60.0f, &level->scene, p);
+        }
+    }
+    return target->dead;
+}
+
+/* Casting: the ready spell, its cost paid, and where each target sends it. */
+static void check_cast(void)
+{
+    Level level;
+    Camera cam;
+    Dungeon hold;
+    Character sheet;
+    Player p;
+    EffectSettings e;
+    Spell s;
+    Entity *target;
+    float eye[3];
+    float dir[3];
+    float x;
+    float y;
+    float z;
+    float yaw;
+    float pitch;
+    int cost;
+    int before;
+
+    keep_clear();
+    combat_reset();
+    effects_reset(1);
+    foes_reset();
+    projectile_clear();
+    cast_new_game();
+    if (!character_new(&sheet, RACE_BRETON, CLASS_MAGE, 0, "Test") || !dungeon_load(&hold)
+        || !dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
+        check_expect(0, "cast: the hold's stream did not open");
+        return;
+    }
+    player_init(&p, &sheet);
+    camera_set(&cam, x, y, z, yaw, pitch);
+    dunstream_fill(&cam);
+    p.sheet.health_max = 80;
+    p.sheet.magicka_max = p.sheet.magicka = 500;
+    /* Ready: needs the points, and a silence forbids it. */
+    fx_set(&e, GROUP_HEAL, 8);
+    e.magnitude_base_low = e.magnitude_base_high = 10;
+    fx_spell(&s, &e, TARGET_CASTER, ELEMENT_MAGIC);
+    cost = spell_cost(&s, &p.sheet, 0);
+    p.sheet.magicka = cost - 1;
+    check_expect(!cast_ready(&s, &p) && !cast_is_ready(), "cast: a spell is ready with too few spell points");
+    p.sheet.magicka = 500;
+    check_expect(cast_ready(&s, &p) && cast_is_ready() && cast_ready_spell() && df_eq(cast_ready_spell()->name, "Test"),
+                 "cast: a spell with the points is not ready");
+    /* On the caster: at once, the points paid, remembered, no longer ready, no missile. */
+    p.sheet.health = 20;
+    eye[0] = eye[1] = eye[2] = 0.0f;
+    dir[0] = 1.0f;
+    dir[1] = dir[2] = 0.0f;
+    check_expect(cast_fire(&p, &level.scene, eye, dir) && p.sheet.health == 30 && p.sheet.magicka == 500 - cost
+                     && !cast_is_ready() && cast_last_spell() && projectile_count() == 0,
+                 "cast: a heal on the caster does not heal, pay its cost, and leave nothing ready");
+    check_expect(!cast_fire(&p, &level.scene, eye, dir), "cast: nothing ready casts");
+    /* Silence forbids both readying and casting. */
+    fx_set(&e, GROUP_SILENCE, 255);
+    e.duration_base = 5;
+    fx_spell(&s, &e, TARGET_CASTER, ELEMENT_MAGIC);
+    effects_land_self(&s, &p);
+    check_expect(!cast_ready(cast_last_spell(), &p), "cast: a silenced caster readies a spell");
+    effects_reset(1);
+    /* Touch: nothing within 3 m casts nothing and costs nothing; a creature 1 m off is struck, 5 m off is not reached. */
+    target = cast_locate(&level, 40.0f, eye, dir);
+    check_expect(target != 0, "cast: no creature in the hold to cast at");
+    if (!target) {
+        dunstream_close();
+        return;
+    }
+    fx_set(&e, GROUP_DAMAGE, 0);
+    e.magnitude_base_low = e.magnitude_base_high = 40;
+    fx_spell(&s, &e, TARGET_TOUCH, ELEMENT_FIRE);
+    p.sheet.magicka = 500;
+    {
+        float far_eye[3];
+
+        far_eye[0] = eye[0] - 200.0f;
+        far_eye[1] = eye[1];
+        far_eye[2] = eye[2];
+        cast_ready(&s, &p);
+        before = p.sheet.magicka;
+        check_expect(!cast_fire(&p, &level.scene, far_eye, dir) && p.sheet.magicka == before && cast_is_ready(),
+                     "cast: a touch spell with nothing in reach is cast, or costs, or is put away");
+    }
+    cast_cancel();
+    check_expect(cast_until_dead(&level, &p, &s, target, eye, dir), "cast: touch damage of 40 did not kill the creature");
+    check_expect(p.sheet.magicka == p.sheet.magicka_max - spell_cost(&s, &p.sheet, 0), "cast: a touch spell's cost is not paid");
+    /* At range: a missile flies; the points are paid at the cast; the creature is struck on arrival. */
+    keep_clear();
+    camera_set(&cam, x, y, z, yaw, pitch);
+    dunstream_fill(&cam);
+    target = cast_locate(&level, 300.0f, eye, dir);
+    check_expect(target != 0, "cast: no creature 300 units from a clear line");
+    if (target) {
+        fx_spell(&s, &e, TARGET_RANGE, ELEMENT_FIRE);
+        p.sheet.magicka = 500;
+        cast_ready(&s, &p);
+        check_expect(cast_fire(&p, &level.scene, eye, dir) && projectile_count() == 1 && !keep_find(target->key),
+                     "cast: a missile of a spell at range does not fly, or has struck at once");
+        check_expect(cast_flying(0) != 0 || cast_flying(1) != 0 || cast_flying(2) != 0, "cast: the missile carries no spell");
+        for (before = 0; before < 600 && projectile_count() > 0; before++) {
+            shots_frame(1.0f / 60.0f, &level.scene, &p);
+        }
+        check_expect(projectile_count() == 0, "cast: a spell's missile never ends");
+        check_expect(cast_until_dead(&level, &p, &s, target, eye, dir), "cast: damage of 40 at range did not kill the creature");
+    }
+    /* An area at range: burst where it ends. Aimed at a creature 300 units out, with its burst within 4 m of the body. */
+    keep_clear();
+    camera_set(&cam, x, y, z, yaw, pitch);
+    dunstream_fill(&cam);
+    target = cast_locate(&level, 300.0f, eye, dir);
+    if (target) {
+        fx_spell(&s, &e, TARGET_AREA_RANGE, ELEMENT_FIRE);
+        check_expect(cast_until_dead(&level, &p, &s, target, eye, dir), "cast: an area spell at range did not kill the creature");
+    }
+    /* An area round the caster: the creature 2 m off, in the open. */
+    keep_clear();
+    camera_set(&cam, x, y, z, yaw, pitch);
+    dunstream_fill(&cam);
+    target = cast_locate(&level, 80.0f, eye, dir);
+    if (target) {
+        fx_spell(&s, &e, TARGET_AREA_CASTER, ELEMENT_FIRE);
+        check_expect(cast_until_dead(&level, &p, &s, target, eye, dir), "cast: an area spell round the caster did not kill the creature");
+    }
+    check_expect(sheet.skill[SKILL_DESTRUCTION] >= 0, "cast: training broke the sheet");
+    printf("cast: ready, paid, silenced; the caster, touch, at range, area at range and area round\n");
+    effects_reset(1);
+    projectile_clear();
+    dunstream_close();
+}
+
+/* The book and the effects that last go round a save file, and come back as they were. */
+static void check_magic_save(void)
+{
+    static Spellbook book;
+    static Spellbook back;
+    Player p;
+    Character sheet;
+    EffectSettings e;
+    Spell s;
+    SaveState out;
+    SaveState in;
+    char path[260];
+    int i;
+
+    if (!character_new(&sheet, RACE_BRETON, CLASS_MAGE, 0, "Test")) {
+        check_expect(0, "magic save: no starting character");
+        return;
+    }
+    player_init(&p, &sheet);
+    mem_zero(&book, sizeof(book));
+    spellbook_starting(&book, &sheet);
+    /* One of the player's own, with three effects and every parameter odd. */
+    fx_set(&e, GROUP_DAMAGE, 0);
+    e.magnitude_base_low = 3;
+    e.magnitude_base_high = 9;
+    e.magnitude_plus_low = 2;
+    e.magnitude_plus_high = 4;
+    e.magnitude_per = 5;
+    fx_spell(&s, &e, TARGET_AREA_RANGE, ELEMENT_SHOCK);
+    fx_set(&e, GROUP_SILENCE, 255);
+    e.duration_base = 7;
+    e.duration_plus = 3;
+    e.duration_per = 2;
+    e.chance_base = 40;
+    e.chance_plus = 5;
+    e.chance_per = 4;
+    s.effect[1] = e;
+    df_copy(s.name, "Storm of Mine", SPELL_NAME);
+    s.icon = 33;
+    spellbook_add(&book, &s);
+    check_expect(book.count == 6, "magic save: the test's book is not five and one");
+    effects_reset(1);
+    fx_set(&e, GROUP_ELEMENTAL_RESISTANCE, ELEMENT_COLD);
+    e.duration_base = 30;
+    fx_spell(&s, &e, TARGET_CASTER, ELEMENT_MAGIC);
+    effects_land_self(&s, &p);
+    fx_set(&e, GROUP_SLOWFALL, 255);
+    e.duration_base = 12;
+    fx_spell(&s, &e, TARGET_CASTER, ELEMENT_MAGIC);
+    effects_land_self(&s, &p);
+    check_expect(effects_count() == 2, "magic save: two effects are not running");
+    save_use_file("DATA\\TEST6.SAV");
+    save_use_book(&book);
+    keep_clear();
+    pile_new_game();
+    mem_zero(&out, sizeof(out));
+    out.sheet = sheet;
+    inventory_clear(&out.pack);
+    check_expect(save_write(&out), "magic save: a save did not write");
+    /* Gone from the game, then read back into it. */
+    effects_reset(1);
+    save_use_book(&back);
+    mem_zero(&back, sizeof(back));
+    check_expect(save_read(&in), "magic save: the save did not read");
+    check_expect(back.count == 6 && df_eq(back.spell[0].name, book.spell[0].name) && df_eq(back.spell[5].name, "Storm of Mine")
+                     && back.spell[5].icon == 33 && back.spell[5].element == ELEMENT_SHOCK && back.spell[5].target == TARGET_AREA_RANGE,
+                 "magic save: the spellbook did not come back");
+    for (i = 0; i < 6; i++) {
+        check_expect(memcmp(&back.spell[i], &book.spell[i], sizeof(Spell)) == 0, "magic save: a spell of the book changed on the way");
+    }
+    check_expect(effects_count() == 2 && effects_resist_chance(ELEMENT_COLD) == 100 && effects_player_has(GROUP_SLOWFALL, -1),
+                 "magic save: the effects that last did not come back");
+    effects_round(&p, 0);
+    check_expect(effects_player_has(GROUP_SLOWFALL, -1), "magic save: a restored effect does not run on");
+    check_expect(fs_beside(path, (int)sizeof(path), "DATA\\TEST6.SAV") && remove(path) == 0, "magic save: the test's file did not go");
+    save_use_book(0);
+    effects_reset(1);
+    printf("magic save: the book (five starting spells and one of three effects) and two lasting effects through a file\n");
+}
+
+/* The spellbook screen driven by clicks and keys: choosing, readying, moving, sorting and deleting. */
+static void check_spellbook(void)
+{
+    static Spellbook book;
+    Character sheet;
+    Spell s;
+    int i;
+    int x0;
+    int y0;
+
+    if (!character_new(&sheet, RACE_BRETON, CLASS_MAGE, 0, "Test")) {
+        check_expect(0, "spellbook: no starting character");
+        return;
+    }
+    mem_zero(&book, sizeof(book));
+    spellbook_starting(&book, &sheet);
+    for (i = 0; i < 12; i++) {
+        const MagicSpell *m;
+
+        m = magic_standard(14 + i);
+        if (m && m->name[0] != '!') {
+            spell_standard(&s, m);
+            spellbook_add(&book, &s);
+        }
+    }
+    check_expect(book.count >= 14, "spellbook: the test's book is short");
+    check_expect(spellbook_open(&book, &sheet), "spellbook: the screen did not open");
+    spellbook_compose();
+    write_screen("build/spellbook0.ppm", spellbook_pixels());
+    /* The picture's corner is (23, 18); a row is 10 high from 13 below it. */
+    x0 = 23;
+    y0 = 18;
+    check_expect(spellbook_selected() == 0 && spellbook_scroll() == 0, "spellbook: the first spell is not chosen at the start");
+    check_expect(spellbook_click(x0 + 20, y0 + 13 + 3 * 10 + 4) == SPELLBOOK_STAY && spellbook_selected() == 3,
+                 "spellbook: a click on the fourth row does not choose it");
+    check_expect(spellbook_click(x0 + 20, y0 + 13 + 3 * 10 + 4) == SPELLBOOK_READY && spellbook_chosen() == 3,
+                 "spellbook: a second click on the chosen spell does not ready it");
+    /* Down and Up buttons move the chosen spell in the book. */
+    {
+        Spell third;
+        Spell fourth;
+
+        third = book.spell[3];
+        fourth = book.spell[4];
+        check_expect(spellbook_click(x0 + 132 + 5, y0 + 152 + 3) == SPELLBOOK_STAY && spellbook_selected() == 4
+                         && memcmp(&book.spell[4], &third, sizeof(Spell)) == 0 && memcmp(&book.spell[3], &fourth, sizeof(Spell)) == 0,
+                     "spellbook: the Down button does not move the chosen spell down");
+        check_expect(spellbook_click(x0 + 48 + 5, y0 + 152 + 3) == SPELLBOOK_STAY && spellbook_selected() == 3
+                         && memcmp(&book.spell[3], &third, sizeof(Spell)) == 0,
+                     "spellbook: the Up button does not move it back");
+    }
+    /* The arrows and the wheel scroll the list, the rows past the screen. */
+    spellbook_click(x0 + 121 + 3, y0 + 132 + 3);
+    check_expect(spellbook_scroll() == 1, "spellbook: the down arrow does not scroll");
+    spellbook_wheel(-3);
+    check_expect(spellbook_scroll() == 4 || spellbook_scroll() == book.count - SPELLBOOK_ROWS, "spellbook: the wheel does not scroll");
+    spellbook_wheel(50);
+    check_expect(spellbook_scroll() == 0, "spellbook: the wheel scrolls above the first spell");
+    /* Sort puts the book in name order and keeps the same spell chosen. */
+    {
+        char keep[SPELL_NAME];
+
+        df_copy(keep, book.spell[spellbook_selected()].name, SPELL_NAME);
+        spellbook_click(x0 + 90 + 5, y0 + 152 + 3);
+        check_expect(df_eq(book.spell[spellbook_selected()].name, keep), "spellbook: the sort loses the chosen spell");
+        for (i = 1; i < book.count; i++) {
+            if (book.spell[i - 1].name[0] > book.spell[i].name[0] && book.spell[i - 1].name[0] - book.spell[i].name[0] != 32
+                && book.spell[i].name[0] - book.spell[i - 1].name[0] != 32) {
+                check_expect(0, "spellbook: the sort leaves the book out of order");
+                break;
+            }
+        }
+    }
+    /* Delete asks once more. */
+    {
+        int before;
+
+        before = book.count;
+        check_expect(spellbook_click(x0 + 3 + 5, y0 + 152 + 3) == SPELLBOOK_STAY && spellbook_confirming() && book.count == before,
+                     "spellbook: Delete does not ask first");
+        spellbook_click(x0 + 3 + 5, y0 + 152 + 3);
+        check_expect(book.count == before - 1 && !spellbook_confirming(), "spellbook: the second Delete does not take the spell out");
+        /* Another control cancels what was asked. */
+        spellbook_click(x0 + 3 + 5, y0 + 152 + 3);
+        spellbook_click(x0 + 20, y0 + 13 + (spellbook_selected() + 1 - spellbook_scroll()) * 10 + 4);
+        check_expect(!spellbook_confirming() && book.count == before - 1, "spellbook: choosing another spell leaves a Delete asked");
+    }
+    check_expect(spellbook_key(0x0D) == SPELLBOOK_READY && spellbook_chosen() == spellbook_selected(), "spellbook: Enter does not ready");
+    check_expect(spellbook_click(x0 + 216 + 5, y0 + 149 + 5) == SPELLBOOK_LEAVE && spellbook_key(0x1B) == SPELLBOOK_LEAVE,
+                 "spellbook: Exit and Escape do not close");
+    spellbook_compose();
+    write_screen("build/spellbook1.ppm", spellbook_pixels());
+    spellbook_close();
+    printf("spellbook: choose, ready by a second click, move, scroll, sort, delete asked twice; build/spellbook0..1.ppm\n");
+}
+
 /* A world for projectile.c: a wall across x = wall_x, and a ball of radius r at ball. */
 typedef struct FlightWorld {
     float wall_x;
@@ -6657,7 +7017,7 @@ static void check_arrow_flight(void)
     Camera cam;
     Dungeon hold;
     Character pc;
-    Inventory pack;
+    Player arrow_player;
     Item bow;
     float x;
     float y;
@@ -6675,7 +7035,7 @@ static void check_arrow_flight(void)
         check_expect(0, "arrow: no starting character");
         return;
     }
-    mem_zero(&pack, sizeof(pack));
+    player_init(&arrow_player, &pc);
     item_make(&bow, 130, MATERIAL_IRON);
     if (!dungeon_load(&hold) || !dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
         check_expect(0, "arrow: the hold's stream did not open");
@@ -6712,13 +7072,16 @@ static void check_arrow_flight(void)
                 continue;
             }
             target = &ents[i];
+            arrow_player.body.feet[0] = eye[0];
+            arrow_player.body.feet[1] = eye[1];
+            arrow_player.body.feet[2] = eye[2];
             check_expect(shots_arrow(eye, to, &bow), "arrow: an arrow does not launch");
             check_expect(projectile_count() == 1, "arrow: a launched arrow is not in the air");
             /* The first frame at 60 Hz carries it 27 units: still flying, nothing struck yet. */
-            shots_frame(1.0f / 60.0f, &level.scene, &pc, &pack, eye);
+            shots_frame(1.0f / 60.0f, &level.scene, &arrow_player);
             check_expect(projectile_count() == 1 && !keep_find(target->key), "arrow: an arrow of 3 m lands in one frame");
             for (s = 0; s < 120 && projectile_count() > 0; s++) {
-                shots_frame(1.0f / 60.0f, &level.scene, &pc, &pack, eye);
+                shots_frame(1.0f / 60.0f, &level.scene, &arrow_player);
             }
             printf("arrow: a %s's flew 120 units and %s\n", enemy_kind(dunstream_kind(target, 0))->name, projectile_count() == 0 ? "reached it" : "was still in the air");
             check_expect(projectile_count() == 0, "arrow: an arrow does not end within two seconds");
@@ -9197,6 +9560,9 @@ void check_play(void)
     check_spells();
     check_effects();
     check_effects_creature();
+    check_cast();
+    check_magic_save();
+    check_spellbook();
     check_projectile();
     check_arrow_flight();
     check_ills();

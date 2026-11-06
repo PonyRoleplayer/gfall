@@ -2,6 +2,9 @@
 #include "game/dagger/play/foes.h"
 #include "game/dagger/play/ills.h"
 #include "game/dagger/play/quest.h"
+#include "game/dagger/play/cast.h"
+#include "game/dagger/play/effects.h"
+#include "game/dagger/play/spells.h"
 #include "game/dagger/tables/quests.h"
 #include "engine/scene/clock.h"
 #include "game/dagger/play/inventory.h"
@@ -17,6 +20,7 @@
 /* See commands.h. */
 
 static Player *g_player;
+static Spellbook *g_book;
 
 /* The player, or 0 with a line saying there is none. */
 static Player *player(void)
@@ -142,6 +146,174 @@ static void c_items(int argc, char **argv)
                   it->weight, (unsigned)it->value, (unsigned)it->condition, (unsigned)it->condition_max);
     }
     log_print(LOG_PRINT, "%u gold; %.2f kg in all.", (unsigned)p->pack.gold, inventory_weight(&p->pack));
+}
+
+/* A decimal number from a word: -1 when it is not all digits. */
+static int number_of(const char *s)
+{
+    int n;
+
+    if (!*s) {
+        return -1;
+    }
+    n = 0;
+    while (*s >= '0' && *s <= '9') {
+        n = n * 10 + (*s++ - '0');
+    }
+    return *s ? -1 : n;
+}
+
+static void c_spells(int argc, char **argv)
+{
+    Player *p;
+    int i;
+
+    (void)argc;
+    (void)argv;
+    p = player();
+    if (!p || !g_book) {
+        return;
+    }
+    if (!g_book->count) {
+        log_print(LOG_PRINT, "The book is empty. learn adds a standard spell.");
+    }
+    for (i = 0; i < g_book->count; i++) {
+        const Spell *s;
+        char effect[48];
+
+        s = &g_book->spell[i];
+        spell_effect_name(s->effect[0].effect, effect, (int)sizeof(effect));
+        log_print(LOG_PRINT, "%d %s: %s%s, target %d, element %d, %d spell points%s", i, s->name, effect,
+                  spell_effects(s) > 1 ? " and more" : "", s->target, s->element, spell_cost(s, &p->sheet, 0),
+                  cast_is_ready() && df_eq(cast_ready_spell()->name, s->name) ? " (ready)" : "");
+    }
+}
+
+static void c_learn(int argc, char **argv)
+{
+    RecTable *t;
+    int number;
+    int i;
+    int found;
+
+    if (!player() || !g_book) {
+        return;
+    }
+    if (argc < 2) {
+        log_print(LOG_PRINT, "learn n|name: a standard spell by its number or part of its name.");
+        return;
+    }
+    t = spell_table();
+    number = number_of(argv[1]);
+    found = 0;
+    for (i = 0; i < t->count; i++) {
+        const MagicSpell *m;
+        int fits;
+        int k;
+
+        m = (const MagicSpell *)(t->rows + (df_u32)i * sizeof(MagicSpell));
+        if (m->name[0] == '!') {
+            continue;
+        }
+        fits = number >= 0 && m->number == number;
+        for (k = 0; !fits && number < 0 && m->name[k]; k++) {
+            int j;
+
+            for (j = 0; argv[1][j] && m->name[k + j]; j++) {
+                int a;
+                int b;
+
+                a = argv[1][j] >= 'A' && argv[1][j] <= 'Z' ? argv[1][j] + 32 : argv[1][j];
+                b = m->name[k + j] >= 'A' && m->name[k + j] <= 'Z' ? m->name[k + j] + 32 : m->name[k + j];
+                if (a != b) {
+                    break;
+                }
+            }
+            fits = !argv[1][j];
+        }
+        if (fits) {
+            Spell s;
+
+            found++;
+            if (found == 1 || number < 0) {
+                log_print(LOG_PRINT, "%d %s", m->number, m->name);
+            }
+            if (number >= 0 || found == 1) {
+                spell_standard(&s, m);
+                if (!spellbook_add(g_book, &s) && number >= 0) {
+                    log_print(LOG_PRINT, "%s is in the book already, or the book is full.", m->name);
+                }
+            }
+        }
+    }
+    if (!found) {
+        log_print(LOG_PRINT, "%s is no standard spell.", argv[1]);
+    } else if (found > 1 && number < 0) {
+        log_print(LOG_PRINT, "%d spells fit; the first is learnt. Use a number for another.", found);
+    }
+}
+
+static void c_forget(int argc, char **argv)
+{
+    int i;
+
+    if (!player() || !g_book) {
+        return;
+    }
+    i = argc > 1 ? number_of(argv[1]) : -1;
+    if (i < 0 || i >= g_book->count) {
+        log_print(LOG_PRINT, "forget n, a number from spells.");
+        return;
+    }
+    log_print(LOG_PRINT, "%s is forgotten.", g_book->spell[i].name);
+    spellbook_remove(g_book, i);
+}
+
+static void c_ready(int argc, char **argv)
+{
+    Player *p;
+    const Spell *s;
+    int i;
+
+    p = player();
+    if (!p || !g_book) {
+        return;
+    }
+    s = 0;
+    if (argc > 1 && df_eq(argv[1], "last")) {
+        s = cast_last_spell();
+    } else if (argc > 1 && (i = number_of(argv[1])) >= 0 && i < g_book->count) {
+        s = &g_book->spell[i];
+    }
+    if (!s) {
+        log_print(LOG_PRINT, "ready n, a number from spells, or ready last.");
+        return;
+    }
+    if (cast_ready(s, p)) {
+        log_print(LOG_PRINT, "%s is ready: the attack button casts it.", s->name);
+    }
+}
+
+static void c_effects(int argc, char **argv)
+{
+    int i;
+
+    (void)argc;
+    (void)argv;
+    if (!player()) {
+        return;
+    }
+    if (!effects_count()) {
+        log_print(LOG_PRINT, "Nothing lasts on you.");
+    }
+    for (i = 0; i < effects_count(); i++) {
+        const LiveEffect *l;
+        char name[48];
+
+        l = effects_get(i);
+        spell_effect_name(l->effect, name, (int)sizeof(name));
+        log_print(LOG_PRINT, "%s, %d rounds left%s", name, l->rounds, l->on_creature ? " (on a creature)" : "");
+    }
 }
 
 static void c_equip(int argc, char **argv)
@@ -644,6 +816,11 @@ void commands_setup(void)
     done = 1;
     cmd_add("additem", c_additem, "[item] [material]", "a new weapon or piece of armour in the pack; alone, what there is");
     cmd_add("items", c_items, "", "what the player carries, what is worn marked *");
+    cmd_add("spells", c_spells, "", "the spellbook, each spell with its cost");
+    cmd_add("learn", c_learn, "n|name", "a standard spell into the book, by its number in SPELLS.STD or part of its name");
+    cmd_add("forget", c_forget, "n", "spell n of spells out of the book");
+    cmd_add("ready", c_ready, "n|last", "spell n of spells made ready; the attack button casts it");
+    cmd_add("effects", c_effects, "", "what lasts on the player, and the rounds left");
     cmd_add("equip", c_equip, "n|none", "item n of items worn, or bare hands");
     cmd_add("gold", c_gold, "n", "n gold more in the pack");
     cmd_add("goto", c_goto, "name|code|region index", "to a town's streets, by its name, its code (LEVELFALL's list) or its numbers; a part of a name lists what fits");
@@ -659,6 +836,11 @@ void commands_setup(void)
     cmd_toggles("tgm");
     cmd_var("tai", foes_on, foes_set_on, 0, 1, "creatures' AI: off, no one wakes, moves or strikes; tai alone flips it");
     cmd_toggles("tai");
+}
+
+void commands_book(Spellbook *b)
+{
+    g_book = b;
 }
 
 void commands_player(Player *p)

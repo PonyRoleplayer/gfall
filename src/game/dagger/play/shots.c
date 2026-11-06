@@ -1,5 +1,6 @@
 #include "game/dagger/play/shots.h"
 #include "game/dagger/play/combat.h"
+#include "game/dagger/play/cast.h"
 
 /* See shots.h and docs/game.md. */
 
@@ -72,8 +73,11 @@ static Item *bow_for(Inventory *pack, int entry)
     return &g_bow[entry];
 }
 
-int shots_frame(float dt, const Scene *scene, Character *pc, Inventory *pack, const float *feet)
+int shots_frame(float dt, const Scene *scene, Player *player)
 {
+    Character *pc;
+    Inventory *pack;
+    const float *feet;
     ProjectileEnd ends[PROJ_MAX];
     ProjectileWorld world;
     ShotsWorld mine;
@@ -83,6 +87,9 @@ int shots_frame(float dt, const Scene *scene, Character *pc, Inventory *pack, co
     if (projectile_count() == 0) {
         return 0;
     }
+    pc = &player->sheet;
+    pack = &player->pack;
+    feet = player->body.feet;
     mine.scene = scene;
     world.user = &mine;
     world.wall = world_wall;
@@ -91,6 +98,8 @@ int shots_frame(float dt, const Scene *scene, Character *pc, Inventory *pack, co
     for (i = 0; i < n; i++) {
         if (ends[i].kind == PROJ_ARROW && ends[i].result == PROJ_HIT_TARGET && ends[i].target) {
             combat_missile_strike(pc, bow_for(pack, ends[i].entry), (Entity *)ends[i].target, feet);
+        } else if (ends[i].kind == PROJ_SPELL) {
+            cast_arrived(&ends[i], player, scene);
         }
     }
     return n;

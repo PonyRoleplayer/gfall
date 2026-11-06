@@ -781,6 +781,45 @@ static Entity *aim_creature(const Scene *scene, const float *eye, const float *d
     return best;
 }
 
+int combat_near(const Scene *scene, const float *at, float radius, Entity **out, int max)
+{
+    int n;
+    int slot;
+
+    n = 0;
+    if (!scene || !collide_use(scene)) {
+        return 0;
+    }
+    for (slot = 0; slot < stream_slots(); slot++) {
+        Entity *ents;
+        int first;
+        int count;
+        int i;
+
+        ents = stream_slot_entities(slot, &first, &count);
+        for (i = 0; ents && i < count && n < max; i++) {
+            Entity *e;
+            float mid[3];
+            float d[3];
+
+            e = &ents[i];
+            if (!e->live || e->dead || dunstream_kind(e, 0) < 0) {
+                continue;
+            }
+            mid[0] = e->x;
+            mid[1] = e->y + entity_height(e) * 0.5f;
+            mid[2] = e->z;
+            d[0] = mid[0] - at[0];
+            d[1] = mid[1] - at[1];
+            d[2] = mid[2] - at[2];
+            if (d[0] * d[0] + d[1] * d[1] + d[2] * d[2] <= radius * radius && combat_sight(scene, at, mid)) {
+                out[n++] = e;
+            }
+        }
+    }
+    return n;
+}
+
 Entity *combat_aim_at(const Scene *scene, const float *eye, const float *dir, float reach, float *t)
 {
     float unused;

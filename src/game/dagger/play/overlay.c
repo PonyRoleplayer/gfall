@@ -45,6 +45,8 @@ static int g_crosshair = 1;
  */
 static int g_cross;
 static int g_stealth;
+/* The ready spell's name, under the middle. */
+static char g_ready[32];
 static int g_target;
 #define CROSS_CELL 16
 #define CROSS_CELLS 4
@@ -211,6 +213,16 @@ void overlay_set_yaw(float yaw)
 void overlay_set_mode(int mode)
 {
     g_mode = mode >= 0 && mode < HUDBAR_MODES ? mode : HUDBAR_GRAB;
+}
+
+void overlay_set_ready(const char *name)
+{
+    int i;
+
+    for (i = 0; name && name[i] && i < (int)sizeof(g_ready) - 1; i++) {
+        g_ready[i] = name[i];
+    }
+    g_ready[name ? i : 0] = 0;
 }
 
 void overlay_set_stealth(int on)
@@ -483,5 +495,9 @@ void overlay_draw(void)
     /* Stealing is said under the middle, with the pointer or without the cross. The ring and the red are the cross's own. */
     if (g_stealth) {
         draw_centred("Stealing", DF_VIEW_H / 2 - CROSS_CELL - 2);
+    }
+    /* A spell ready is named under the cross. */
+    if (g_ready[0]) {
+        draw_centred(g_ready, DF_VIEW_H / 2 + CROSS_CELL + ui_line_height() + 2);
     }
 }

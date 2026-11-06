@@ -31,6 +31,8 @@ void overlay_set_crosshair(int on);
  * "Stealing" stands under it, even with the crosshair hidden for the classic pointer. 0 the ordinary cross.
  */
 void overlay_set_stealth(int on);
+/* The name of the spell ready (spells.h), said under the middle until cast or put away; 0 or "" for none. */
+void overlay_set_ready(const char *name);
 /* 1 when the middle of the view rests on something to steal from, a lock to pick or a back to strike: the crosshair turns red. */
 void overlay_set_target(int on);
 /* The overlay, from gfx_set_extra. */

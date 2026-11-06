@@ -3,6 +3,7 @@
 
 #include "game/dagger/places/travel.h"
 #include "game/dagger/play/character.h"
+#include "game/dagger/play/spells.h"
 #include "game/dagger/play/inventory.h"
 
 /*
@@ -65,6 +66,13 @@ typedef struct SaveState {
     Character sheet;
     Inventory pack;
 } SaveState;
+
+/*
+ * The spellbook the game keeps (spells.h): written into every save and, when a save is read, filled from
+ * it (emptied when it has none). 0, the start, keeps none: a test's. The effects that last on the
+ * player are the game's (effects.h) and go in and out of the file with it.
+ */
+void save_use_book(Spellbook *book);
 
 /* What the list shows of a save, read from the start of its file. */
 typedef struct SaveMeta {

@@ -147,6 +147,8 @@ int combat_strike(Character *pc, Item *weapon, int swing, const Scene *scene, co
 int combat_citizen_struck(Blow *out, int *health_before);
 /* The nearest living creature the ray from eye along unit dir meets within reach, no wall between; 0 for none. What a look and a pickpocket aim with. */
 Entity *combat_aim(const Scene *scene, const float *eye, const float *dir, float reach);
+/* The living creatures within radius of a point with no wall between: up to max into out, how many. What an area spell strikes (cast.c). */
+int combat_near(const Scene *scene, const float *at, float radius, Entity **out, int max);
 /* The same, and how far along the ray it is in *t (or 0): what an arrow in flight asks of each step (shots.c). */
 Entity *combat_aim_at(const Scene *scene, const float *eye, const float *dir, float reach, float *t);
 /*

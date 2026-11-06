@@ -1,5 +1,6 @@
 #include "game/dagger/play/screens.h"
 #include "game/dagger/play/logbook.h"
+#include "game/dagger/play/spellbook.h"
 #include "game/dagger/play/ills.h"
 #include "engine/scene/clock.h"
 #include "game/dagger/play/msgbox.h"
@@ -37,7 +38,8 @@ enum {
     OPEN_TOWNMAP,
     OPEN_DUNMAP,
     OPEN_MSGBOX,
-    OPEN_LOGBOOK
+    OPEN_LOGBOOK,
+    OPEN_SPELLBOOK
 };
 
 static int g_open;
@@ -108,6 +110,9 @@ static void send_screen(void)
     } else if (g_open == OPEN_LOGBOOK) {
         logbook_compose();
         pixels = logbook_pixels();
+    } else if (g_open == OPEN_SPELLBOOK) {
+        spellbook_compose();
+        pixels = spellbook_pixels();
     } else if (g_open == OPEN_TRAVEL) {
         travelmap_compose();
         pixels = travelmap_pixels();
@@ -155,6 +160,8 @@ void screens_close(void)
         msgbox_close();
     } else if (g_open == OPEN_LOGBOOK) {
         logbook_close();
+    } else if (g_open == OPEN_SPELLBOOK) {
+        spellbook_close();
     }
     g_drag = 0;
     g_turning = 0;
@@ -231,6 +238,52 @@ void screens_open_logbook(int now)
     screens_close();
     opened(OPEN_LOGBOOK, img_art_palette(g_rgb) && logbook_open(now));
     input_key_pressed();
+}
+
+void screens_open_spellbook(Spellbook *book, const Character *pc)
+{
+    screens_close();
+    opened(OPEN_SPELLBOOK, img_art_palette(g_rgb) && spellbook_open(book, pc));
+    input_key_pressed();
+}
+
+/* The spell the book chose, kept past the screen's close for the game. */
+static int g_spell_chosen = -1;
+
+int screens_spell(void)
+{
+    return g_spell_chosen;
+}
+
+/* A frame of the spellbook: keys, clicks and the wheel. */
+static int spellbook_frame(const Input *in)
+{
+    int vk;
+    int asked;
+
+    asked = SPELLBOOK_STAY;
+    vk = input_key_pressed();
+    if (vk) {
+        asked = spellbook_key(vk);
+    } else if (in->pressed & INPUT_BIT(INPUT_MENU)) {
+        asked = SPELLBOOK_LEAVE;
+    } else if (!in->reset && (in->mouse_pressed & INPUT_MOUSE_LEFT)) {
+        asked = spellbook_click(g_point_x, g_point_y);
+    }
+    if (in->wheel) {
+        spellbook_wheel(in->wheel);
+    }
+    if (asked == SPELLBOOK_READY) {
+        g_spell_chosen = spellbook_chosen();
+        return SCREENS_SPELL;
+    }
+    if (asked == SPELLBOOK_LEAVE) {
+        return SCREENS_CLOSED;
+    }
+    if (spellbook_changed()) {
+        send_screen();
+    }
+    return SCREENS_STAY;
 }
 
 /* A frame of the logbook: keys and clicks. */
@@ -706,11 +759,13 @@ int screens_frame(const Input *in, float dt)
         asked = msgbox_frame(in);
     } else if (g_open == OPEN_LOGBOOK) {
         asked = logbook_frame(in);
+    } else if (g_open == OPEN_SPELLBOOK) {
+        asked = spellbook_frame(in);
     } else {
         asked = create_frame(in);
     }
     if (asked == SCREENS_CLOSED || asked == SCREENS_SERVICE || asked == SCREENS_SEEN || asked == SCREENS_COURT_OVER || asked == SCREENS_JOURNEY
-        || asked == SCREENS_TO_TRAVEL || asked == SCREENS_ANSWERED) {
+        || asked == SCREENS_TO_TRAVEL || asked == SCREENS_ANSWERED || asked == SCREENS_SPELL) {
         screens_close();
     }
     return asked;
@@ -756,7 +811,7 @@ void screens_draw(void)
         note = sheet_note();
     } else if (g_open == OPEN_REST) {
         note = rest_note();
-    } else if (g_open == OPEN_TALK || g_open == OPEN_SERVICE || g_open == OPEN_COURT || g_open == OPEN_TRAVEL || g_open == OPEN_TOWNMAP || g_open == OPEN_DUNMAP || g_open == OPEN_MSGBOX || g_open == OPEN_LOGBOOK) {
+    } else if (g_open == OPEN_TALK || g_open == OPEN_SERVICE || g_open == OPEN_COURT || g_open == OPEN_TRAVEL || g_open == OPEN_TOWNMAP || g_open == OPEN_DUNMAP || g_open == OPEN_MSGBOX || g_open == OPEN_LOGBOOK || g_open == OPEN_SPELLBOOK) {
         note = 0;
     } else if (g_open == OPEN_BANK) {
         note = bank_note();

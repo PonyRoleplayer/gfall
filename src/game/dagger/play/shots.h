@@ -4,6 +4,7 @@
 #include "engine/scene/scene.h"
 #include "game/dagger/play/character.h"
 #include "game/dagger/play/inventory.h"
+#include "game/dagger/play/player.h"
 #include "game/dagger/play/projectile.h"
 
 /*
@@ -30,10 +31,10 @@ void shots_clear(void);
  */
 int shots_arrow(const float *eye, const float *dir, const Item *bow);
 /*
- * One frame: what flies moves dt seconds in scene; arrows that reach a
- * creature strike it for pc with the hand weapon of pack, feet being the
- * player's. How many ended.
+ * One frame: what flies moves dt seconds in scene; an arrow that reaches a
+ * creature strikes it for the player with the hand weapon, a spell's missile
+ * lands or bursts (cast.h). How many ended.
  */
-int shots_frame(float dt, const Scene *scene, Character *pc, Inventory *pack, const float *feet);
+int shots_frame(float dt, const Scene *scene, Player *player);
 
 #endif
