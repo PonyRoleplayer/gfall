@@ -89,6 +89,8 @@ static void config_gather(Config *c)
     c->full_hud = !viewopt_full();
     c->head_bob = viewopt_bob();
     c->toggle_crouch = viewopt_crouch_toggle();
+    c->show_fps = viewopt_show_fps();
+    c->fps_limit = viewopt_fps_limit();
 }
 
 /* A Config into the live state: what the Settings screens do on Apply, done at the start. */
@@ -127,6 +129,8 @@ static void config_apply(const Config *c)
     viewopt_set_full(!c->full_hud);
     viewopt_set_bob(c->head_bob);
     viewopt_set_crouch_toggle(c->toggle_crouch);
+    viewopt_set_show_fps(c->show_fps);
+    viewopt_set_fps_limit(c->fps_limit);
 }
 
 int keys_load(void)

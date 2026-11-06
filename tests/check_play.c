@@ -5600,6 +5600,19 @@ static void check_settings(void)
 
 static void check_viewopt(void)
 {
+    /* The frame rate options: none, or 20 to 240; a silly number is brought into that. */
+    viewopt_set_fps_limit(60);
+    check_expect(viewopt_fps_limit() == 60, "viewopt: a limit of 60 is not kept");
+    viewopt_set_fps_limit(5);
+    check_expect(viewopt_fps_limit() == VIEWOPT_FPS_LEAST, "viewopt: a limit under 20 is not 20");
+    viewopt_set_fps_limit(1000);
+    check_expect(viewopt_fps_limit() == VIEWOPT_FPS_MOST, "viewopt: a limit over 240 is not 240");
+    viewopt_set_fps_limit(-3);
+    check_expect(viewopt_fps_limit() == 0, "viewopt: a negative limit is not none");
+    viewopt_set_show_fps(1);
+    check_expect(viewopt_show_fps() == 1, "viewopt: Show FPS is not kept");
+    viewopt_defaults();
+    check_expect(!viewopt_show_fps() && viewopt_fps_limit() == 0, "viewopt: the defaults show FPS or limit it");
     Player p;
     Character sheet;
     Camera cam;
@@ -5976,6 +5989,8 @@ static void check_config(void)
     a.full_hud = 0;
     a.head_bob = 1;
     a.toggle_crouch = 1;
+    a.show_fps = 1;
+    a.fps_limit = 72;
     n = config_format(&a, text, (int)sizeof(text));
     check_expect(n > 200 && n < CONFIG_MAX, "config: the file's text is empty or too long");
     memset(&b, 0x55, sizeof(b));
@@ -5986,6 +6001,7 @@ static void check_config(void)
     check_expect(strstr(text, "resolution=320x240") && strstr(text, "texture_detail=medium") && strstr(text, "key.use==")
                      && strstr(text, "key.jump=Num +") && strstr(text, "key.run=Space") && strstr(text, "mouse=view"),
                  "config: the text is not written as it is documented");
+    check_expect(strstr(text, "show_fps=on") && strstr(text, "fps_limit=72"), "config: the FPS settings are not written");
     /* A buffer that cannot hold it is refused, not cut. */
     check_expect(config_format(&a, text, 100) == -1, "config: a small buffer was not refused");
 

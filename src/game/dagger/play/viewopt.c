@@ -24,6 +24,8 @@
 static int g_full;
 static int g_bob;
 static int g_crouch_toggle;
+static int g_show_fps;
+static int g_fps_limit;
 static int g_mode_w = 640;
 static int g_mode_h = 480;
 static int g_tex_detail = 2;
@@ -34,6 +36,8 @@ void viewopt_defaults(void)
     g_full = 0;
     g_bob = 0;
     g_crouch_toggle = 0;
+    g_show_fps = 0;
+    g_fps_limit = 0;
     g_tex_detail = 2;
     g_sprite_detail = 2;
     g_mode_w = 640;
@@ -71,6 +75,30 @@ int viewopt_crouch_toggle(void)
 void viewopt_set_crouch_toggle(int on)
 {
     g_crouch_toggle = on != 0;
+}
+
+int viewopt_show_fps(void)
+{
+    return g_show_fps;
+}
+
+void viewopt_set_show_fps(int on)
+{
+    g_show_fps = on != 0;
+}
+
+int viewopt_fps_limit(void)
+{
+    return g_fps_limit;
+}
+
+void viewopt_set_fps_limit(int fps)
+{
+    if (fps <= 0) {
+        g_fps_limit = 0;
+    } else {
+        g_fps_limit = fps < VIEWOPT_FPS_LEAST ? VIEWOPT_FPS_LEAST : (fps > VIEWOPT_FPS_MOST ? VIEWOPT_FPS_MOST : fps);
+    }
 }
 
 void viewopt_eye(float phase, int walking, int running, float *right, float *up, float *pitch, float *yaw)

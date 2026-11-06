@@ -14,6 +14,8 @@
  *   texture_detail=high          (low, medium, high)
  *   fog=on                       (on, off; 1, 0, yes, no, true, false)
  *   fov=75
+ *   show_fps=off                 (the frame rate in a corner)
+ *   fps_limit=0                  (0 for none, else 20 to 240 frames a second)
  *
  * A line that is no key we know, or whose value is out of range, is skipped
  * and counted; the rest still load. A key left out keeps what the program
@@ -54,6 +56,9 @@ typedef struct Config {
     int full_hud;
     int head_bob;
     int toggle_crouch;
+    /* The frame rate counter shows (1); the frame rate limit, 0 for none (viewopt.h). */
+    int show_fps;
+    int fps_limit;
 } Config;
 
 #define CONFIG_FILE "gfall.cfg"

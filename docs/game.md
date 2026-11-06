@@ -708,6 +708,11 @@ On the right a list: each character a row, their saves under them, newest first,
    **Toggle Crouch** On/Off, default off: off, the crouch key crouches the player only while it is held;
    on, a press crouches and the next press stands (`viewopt_crouch_toggle`, drafted, applied and rolled
    back with the other two).
+   **Show FPS** On/Off, default off, and **FPS Limit** (Off, 30, 60, 72 or 100 a click; the file takes
+   20 to 240): the game's half of the engine's frame counter and frame limiter
+   (`viewopt_show_fps`, `viewopt_fps_limit`; a number outside 20..240 is brought into it, 0 is none).
+   Drafted, applied and rolled back like the rest. The engine calls (`gfx_set_fps_counter`,
+   `gfx_set_fps_limit`) are wired when the engine gives them; until then the two values are only kept.
 
 FOV and both volume sliders share descriptors for their tab, action, range,
 label and vertical position. Drawing, hit testing and pointer conversion use
@@ -759,7 +764,7 @@ Every setting the player can change lives in **`gfall.cfg`** beside the exe, as 
 
 - **The screen:** `resolution=640x480` (512x384, 640x480, and 800x600 on 4 MB, on a Voodoo 1 or 2; it shows at the next start, read before the card opens by `keys_peek_mode`), `fov` (45..120), `far_clip` (16..16384), `texture_detail` and `sprite_detail` (`low`, `medium`, `high`), `fog`, `crisp_sprites`, `vsync`, `dungeon_lights`, `ambient_light` (0..255), `light_range` (1..8), `light_shadow`, `weather_view`, `flora`, `flora_density` (0..100), `flora_sight` (0..16384). The graphics ones were console variables that reset at every start; they are kept now.
 - **Sound:** `sfx_volume`, `music_volume` (0..100).
-- **Play:** `mouse` (`cursor` or `view`), `full_hud`, `head_bob`, `toggle_crouch`.
+- **Play:** `mouse` (`cursor` or `view`), `full_hud`, `head_bob`, `toggle_crouch`, `show_fps` (on or off), `fps_limit` (0 for none, else 20 to 240).
 - **Keys:** `key.<action>=<name>`, the name the Keybindings screen shows ("Space", "Ctrl", "Left Button", "Num +", "="; a plain number is a virtual key too). The actions: attack, use, run, jump, character, inventory, map, rest, forward, back, left, right, swap_hands, cursor, swing, turn_left, turn_right, look_up, look_down, look_center, freelook, travel_map, transport, crouch. Escape is the menu and is not in it.
 - `on` and `off` may be written 1 and 0, yes and no, true and false; case and spaces about `=` do not matter; a `#` at a line's start, or after a space following a value, begins a comment.
 - **What gets logged** (the console's log, or `logfile on`): `keys: gfall.cfg read`, `keys: gfall.cfg asks for 512x384` before the card opens, `gfall: the screen is 512x384` or, when the card opened another, `gfall: gfall.cfg asks for 640x400, the card opened 640x480`, and `keys: gfall.cfg written, the screen's mode 320x240` on every Apply. The Graphics row says `NOW 640 x 480` beside a choice the card did not open.

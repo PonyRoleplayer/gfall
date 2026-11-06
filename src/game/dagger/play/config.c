@@ -259,6 +259,8 @@ static int set_field(Config *c, const char *key, int kn, const char *v, int vn)
     if (same(key, kn, "full_hud")) { return to_bool(v, vn, &c->full_hud); }
     if (same(key, kn, "head_bob")) { return to_bool(v, vn, &c->head_bob); }
     if (same(key, kn, "toggle_crouch")) { return to_bool(v, vn, &c->toggle_crouch); }
+    if (same(key, kn, "show_fps")) { return to_bool(v, vn, &c->show_fps); }
+    if (same(key, kn, "fps_limit")) { return to_int(v, vn, 0, 240, &c->fps_limit); }
     (void)n;
     return 0;
 }
@@ -483,6 +485,8 @@ int config_format(const Config *c, char *out, int cap)
     line_bool(&o, "full_hud", c->full_hud);
     line_bool(&o, "head_bob", c->head_bob);
     line_bool(&o, "toggle_crouch", c->toggle_crouch);
+    line_bool(&o, "show_fps", c->show_fps);
+    line_int(&o, "fps_limit", c->fps_limit, "0 for none, else 20 to 240 frames a second");
     put(&o, "\r\n# Keys, by the names the Keybindings screen shows (Escape is the menu and cannot be changed).\r\n");
     for (i = 0; i < INPUT_ACTIONS; i++) {
         if (!g_action_names[i]) {

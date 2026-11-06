@@ -405,8 +405,21 @@ void settings_draw(const SettingsView *v, UiQuad quad, void *ctx)
         ui_text(184,225,210,ui_tr("TOGGLE CROUCH"),0);
         ui_button(426,214,184,34,v->crouch_toggle ? "ON" : "OFF",0,v->hover == SETTINGS_CROUCH_TOGGLE);
         ui_region(SETTINGS_CROUCH_TOGGLE,174,210,444,42);
-        ui_panel(180,266,432,104,0);
-        ui_paragraph(194,280,396,84,"Head bobbing moves the camera as you walk. Full HUD shows the bottom bar and portrait; turn it off to hide the bar (vitals and compass remain). Toggle Crouch makes the crouch key flip between crouched and standing; off, you crouch only while holding it. Defaults: bobbing off, Full HUD on, Toggle Crouch off.");
+        ui_panel(174,266,444,42,0);
+        ui_text(184,281,210,ui_tr("SHOW FPS"),0);
+        ui_button(426,270,184,34,v->show_fps ? "ON" : "OFF",0,v->hover == SETTINGS_SHOW_FPS);
+        ui_region(SETTINGS_SHOW_FPS,174,266,444,42);
+        ui_panel(174,322,444,42,0);
+        ui_text(184,337,210,ui_tr("FPS LIMIT"),0);
+        {
+            char limit[16];
+
+            if (v->fps_limit > 0) log_format(limit, (int)sizeof(limit), "%d", v->fps_limit);
+            else log_format(limit, (int)sizeof(limit), "OFF");
+            ui_button(426,326,184,34,limit,0,v->hover == SETTINGS_FPS_LIMIT);
+        }
+        ui_region(SETTINGS_FPS_LIMIT,174,322,444,42);
+        ui_paragraph(180,372,432,50,"Show FPS draws the frame rate in a corner. The limit holds it down (OFF is as fast as it goes). Crouch, bobbing and the HUD are as they say. Defaults: bobbing off, Full HUD on, Toggle Crouch off, FPS off.");
     }
 
     ui_button(18,430,136,32,v->tab == SETTINGS_FILES ? (v->confirm_exit ? "CONFIRM EXIT" : "EXIT GAME") : "DEFAULT",1,v->hover == (v->tab == SETTINGS_FILES ? SETTINGS_EXIT : SETTINGS_DEFAULT));

@@ -274,6 +274,34 @@ void check_menu(void)
     check_expect(!viewopt_crouch_toggle(), "menu: Gameplay Default did not turn the crouch toggle off");
     click_at(550,445);
     menu_open(MENU_OPTIONS);
+    /* Show FPS and the FPS limit: drafts until Apply, kept when the write fails, the limit going Off, 30, 60, 72, 100, Off; Default clears both. */
+    viewopt_set_show_fps(0);
+    viewopt_set_fps_limit(0);
+    menu_open(MENU_OPTIONS);
+    click_at(30,280);
+    click_at(500,287);
+    click_at(500,343);
+    click_at(500,343);
+    check_expect(!viewopt_show_fps() && viewopt_fps_limit() == 0, "menu: the FPS drafts applied early");
+    g_write_ok=0; click_at(200,445);
+    check_expect(!viewopt_show_fps() && viewopt_fps_limit() == 0, "menu: a failed Apply changed the FPS settings");
+    g_write_ok=1; click_at(200,445);
+    check_expect(viewopt_show_fps() && viewopt_fps_limit() == 60, "menu: Apply did not commit Show FPS and a limit of 60");
+    click_at(500,343);
+    click_at(500,343);
+    click_at(500,343);
+    click_at(200,445);
+    check_expect(viewopt_fps_limit() == 0, "menu: the limit did not go round to Off (30, 60, 72, 100, Off)");
+    click_at(500,343);
+    click_at(500,343);
+    click_at(500,343);
+    click_at(500,343);
+    click_at(200,445);
+    check_expect(viewopt_fps_limit() == 100, "menu: four clicks from Off are not a limit of 100");
+    click_at(40,445); click_at(200,445);
+    check_expect(!viewopt_show_fps() && viewopt_fps_limit() == 0, "menu: Gameplay Default did not turn the FPS settings off");
+    click_at(550,445);
+    menu_open(MENU_OPTIONS);
     /* Full HUD is the inverse of legacy full-screen. Exercise the
      * existing saved preference without adding another persisted field. */
     viewopt_set_full(0);

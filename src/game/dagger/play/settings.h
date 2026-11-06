@@ -24,6 +24,7 @@ enum {
     SETTINGS_UP, SETTINGS_DOWN, SETTINGS_SLIDER,
     SETTINGS_SFX_SLIDER, SETTINGS_MUSIC_SLIDER, SETTINGS_BOB, SETTINGS_FULL_HUD,
     SETTINGS_CROUCH_TOGGLE,
+    SETTINGS_SHOW_FPS, SETTINGS_FPS_LIMIT,
     SETTINGS_BIND = 32
 };
 enum {
@@ -79,6 +80,8 @@ typedef struct SettingsView {
     int bob;                     /* Draft head-bobbing preference. */
     int full_hud;                /* On shows the bar; inverse of stored OPTS.full. */
     int crouch_toggle;           /* Draft: the crouch key flips instead of being held. */
+    int show_fps;                /* Draft: the frame rate in a corner. */
+    int fps_limit;               /* Draft: 0 none, else a frame rate to hold to (viewopt.h). */
     int classic;
     int hover;                   /* settings_hit(), or SETTINGS_NOTHING. */
     int dirty;

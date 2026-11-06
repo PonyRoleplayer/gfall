@@ -55,6 +55,18 @@ void viewopt_set_mode(int w, int h);
 int viewopt_crouch_toggle(void);
 void viewopt_set_crouch_toggle(int on);
 /*
+ * The frame rate counter and limiter (Gameplay tab): 1 when the counter shows; the limit in frames a second, 0 for none
+ * (as fast as the card goes), else VIEWOPT_FPS_LEAST to VIEWOPT_FPS_MOST. The engine does the drawing and the pacing
+ * (gfx_set_fps_counter, gfx_set_fps_limit); these are the player's choices, kept in gfall.cfg and given to it by keys.c.
+ */
+#define VIEWOPT_FPS_LEAST 20
+#define VIEWOPT_FPS_MOST 240
+int viewopt_show_fps(void);
+void viewopt_set_show_fps(int on);
+int viewopt_fps_limit(void);
+/* A limit under VIEWOPT_FPS_LEAST and over 0 is VIEWOPT_FPS_LEAST (audio is fed from the frame); over the most is the most; 0 or less none. */
+void viewopt_set_fps_limit(int fps);
+/*
  * The eye's offset at this walk phase (radians), in world units.
  * right is along the body's right, up is world up, and pitch and yaw
  * are radians added to the view (HeadBobber's nod, its degrees turned).
