@@ -31,9 +31,10 @@ int glide_open(void *hwnd);
 /* The mode for the next glide_open: w x h, one of glide_mode's; any other is 640 x 480. */
 void glide_want_mode(int w, int h);
 /*
- * The modes this card can be asked for, smallest first. 800 x 600 only
- * once glide_open has found a board with 4 MB of frame buffer: before
- * that, and on a 2 MB board, it is not listed.
+ * The modes this card can be asked for, smallest first: 512 x 384 and
+ * 640 x 480 on every board; 800 x 600 once glide_open has found one with
+ * 4 MB of frame buffer; 320 x 240 and 400 x 300 once it has found one
+ * that is neither an SST-1 nor a Voodoo 2, which have no timing for them.
  */
 int glide_mode_count(void);
 int glide_mode(int i, int *w, int *h);

@@ -224,10 +224,19 @@ static int g_have_hw;
  * axes. 320 x 200 and 640 x 400 have tall pixels and wait for a vertical
  * focal length of their own. A Voodoo 1 holds two colour buffers and the
  * depth buffer in its frame buffer, 2 bytes a pixel each: 640 x 480 is
- * 1.8 MB of a 2 MB board, 800 x 600 2.7 MB, so it needs a 4 MB one. A
- * board whose Glide lacks a mode's video timing refuses it at open, and
- * glide_open falls back to 640 x 480. The frame buffer is apart from the
- * texture memory: a smaller mode leaves the TMU's 2 MB as it was.
+ * 1.8 MB of a 2 MB board, 800 x 600 2.7 MB, so it needs a 4 MB one.
+ *
+ * Which a board shows: the Voodoo Graphics (SST-1) and the Voodoo 2 have
+ * no video timing below 512 x 384 (512 x 256 is an arcade timing), so
+ * for them 320 x 240 and 400 x 300 are not listed: on the user's 86Box
+ * Voodoo 1, 512 x 384 and 640 x 480 opened and those two did not; Glide
+ * 2.46's SST-1 settings offer only 512 x 384, 640 x 480 and 800 x 600.
+ * The small ones are listed only for a board known to be neither (an
+ * SST-96, or a type this table does not know). Before glide_open's query
+ * the board is unknown and only the modes every Voodoo has are listed.
+ * A board that still refuses a listed mode at open gets 640 x 480
+ * (glide_open). The frame buffer is apart from the texture memory: a
+ * smaller mode leaves the TMU's 2 MB as it was.
  */
 typedef struct GlideMode {
     short w;
@@ -235,14 +244,16 @@ typedef struct GlideMode {
     GrScreenResolution_t res;
     /* MB of frame buffer it needs: 2 for all but 800 x 600. */
     short fb_mb;
+    /* 1: below 512 x 384, which an SST-1 or a Voodoo 2 has no timing for. */
+    short low;
 } GlideMode;
 
 static const GlideMode g_modes[] = {
-    { 320, 240, GR_RESOLUTION_320x240, 2 },
-    { 400, 300, GR_RESOLUTION_400x300, 2 },
-    { 512, 384, GR_RESOLUTION_512x384, 2 },
-    { 640, 480, GR_RESOLUTION_640x480, 2 },
-    { 800, 600, GR_RESOLUTION_800x600, 4 }
+    { 320, 240, GR_RESOLUTION_320x240, 2, 1 },
+    { 400, 300, GR_RESOLUTION_400x300, 2, 1 },
+    { 512, 384, GR_RESOLUTION_512x384, 2, 0 },
+    { 640, 480, GR_RESOLUTION_640x480, 2, 0 },
+    { 800, 600, GR_RESOLUTION_800x600, 4, 0 }
 };
 #define MODE_COUNT ((int)(sizeof(g_modes) / sizeof(g_modes[0])))
 /* 640 x 480: what every program opens unless asked. */
@@ -266,9 +277,23 @@ static int board_fb_mb(void)
     return 0;
 }
 
-/* 1 when mode m may be listed and asked for: 2 MB modes always, a larger one on a board known to have it. */
+/* 1 when a board was found and it is neither an SST-1 nor a Voodoo 2: one that may have the modes below 512 x 384. */
+static int board_has_low(void)
+{
+    return g_have_hw && g_hw.num_sst >= 1 && g_hw.SSTs[0].type != GR_SSTTYPE_VOODOO
+        && g_hw.SSTs[0].type != GR_SSTTYPE_Voodoo2;
+}
+
+/*
+ * 1 when mode m may be listed and asked for: a low mode only on a board
+ * that may have it, a mode past 2 MB of frame buffer only on a board
+ * known to have that much, the rest always.
+ */
 static int mode_allowed(int m)
 {
+    if (g_modes[m].low && !board_has_low()) {
+        return 0;
+    }
     return g_modes[m].fb_mb <= 2 || board_fb_mb() >= g_modes[m].fb_mb;
 }
 

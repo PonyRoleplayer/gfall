@@ -22,8 +22,10 @@ const char *gfx_error(void);
 int gfx_prepare(const Level *level);
 /*
  * The screen's mode, chosen before the card opens: w x h, one of
- * gfx_mode's (320 x 240, 400 x 300, 512 x 384, 640 x 480, and 800 x 600
- * on a board with 4 MB of frame buffer). Call it before gfx_startup; it
+ * gfx_mode's (512 x 384 and 640 x 480; 800 x 600 on a board with 4 MB of
+ * frame buffer; 320 x 240 and 400 x 300 only on a board that is neither
+ * a Voodoo 1 nor a Voodoo 2, which have none below 512 x 384). Call it
+ * before gfx_startup; it
  * takes effect there, so a change shows at the next start. A size not
  * in the list, or one the card refuses, opens 640 x 480 instead, which
  * gfx_mode_opened then reports. The view (df_view_w, df_view_h) is the
@@ -31,7 +33,7 @@ int gfx_prepare(const Level *level);
  * view is kept: the focal length follows the width.
  */
 void gfx_set_mode(int w, int h);
-/* The modes to list, smallest first: final after gfx_startup (800 x 600 needs the board known). */
+/* The modes to list, smallest first: final after gfx_startup, which finds the board (before it, 512 x 384 and 640 x 480). */
 int gfx_mode_count(void);
 int gfx_mode(int i, int *w, int *h);
 /* The mode the card opened in. */
