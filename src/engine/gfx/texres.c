@@ -18,6 +18,18 @@
  * and the ground round them over and over.
  */
 #define STEALS_A_FRAME 2
+/*
+ * A near sprite's floor: drawn within NEAR_SPRITE world units (about six
+ * metres, a person being 72 units tall), a sprite is never left below
+ * SPRITE_FLOOR texels a side while a wall holds a sharp copy. In a
+ * dungeon every wall of the room round the camera is drawn at about 0
+ * (its block's box, less its extent), nearer than any creature, so the
+ * steal above never took one, and a skeleton a few metres off stood as
+ * its 8 x 8 copy. Rescued sprites a frame at most: each frees one wall.
+ */
+#define NEAR_SPRITE 256.0f
+#define SPRITE_FLOOR 32
+#define RESCUES_A_FRAME 2
 
 typedef struct Arena {
     df_u32 base;
@@ -61,6 +73,8 @@ static int g_uploads;
 static int g_evictions;
 /* Walls drawn this frame whose room a sprite took, this frame. */
 static int g_steals;
+/* Near sprites given their floor this frame, past the walls' protection. */
+static int g_rescues;
 
 static int bit(const Arena *a, int o, df_u32 i)
 {
@@ -557,6 +571,48 @@ void texres_note(int slot, float dist)
     }
 }
 
+/*
+ * A block for bytes for a near sprite's floor: as room_for, and then any
+ * wall's sharp copy may go, drawn this frame or not, however near, the
+ * farthest first. The wall shows its 8 x 8 copy, and asks again next
+ * frame, settling for a level down where the sprites now stand.
+ */
+static int room_for_floor(df_u32 bytes, df_u32 *addr, int *order, float sprite_dist)
+{
+    int o;
+
+    if (room_for(bytes, addr, order, sprite_dist)) {
+        return 1;
+    }
+    o = order_of(bytes);
+    if (o < 0) {
+        return 0;
+    }
+    for (;;) {
+        int best;
+        int i;
+
+        if (block_alloc(o, addr)) {
+            *order = o;
+            return 1;
+        }
+        best = -1;
+        for (i = 0; i < TEXRES_SLOTS; i++) {
+            const Res *r;
+
+            r = &g_res[i];
+            if (r->used && r->big_drop >= 0 && !r->cutout
+                && (best < 0 || r->note_dist > g_res[best].note_dist)) {
+                best = i;
+            }
+        }
+        if (best < 0) {
+            return 0;
+        }
+        drop_big(best);
+    }
+}
+
 /* The level a picture needs at its distance: a texel a pixel or less. */
 static int want_drop(const Res *r, float focal)
 {
@@ -587,6 +643,7 @@ void texres_service(float focal, df_u32 budget)
     sent = 0;
     spent = 0;
     g_steals = 0;
+    g_rescues = 0;
     /*
      * Sprites, then walls (pass 1, then 0): a sprite is the hand-drawn
      * art, a blurry one breaks the picture where a blurry wall reads as
@@ -652,6 +709,30 @@ void texres_service(float focal, df_u32 budget)
                 if (want >= r->tiny_drop || (r->big_drop >= 0 && want >= r->big_drop)) {
                     want = -1;
                     break;
+                }
+            }
+            /*
+             * A near sprite short of its floor takes a wall's room (NEAR_SPRITE):
+             * its need, or SPRITE_FLOOR a side if that is less, past the budget.
+             */
+            if (want < 0 && r->cutout && r->note_dist <= NEAR_SPRITE && g_rescues < RESCUES_A_FRAME) {
+                int have;
+                int floor_drop;
+
+                have = r->big_drop >= 0 ? r->big_drop : r->tiny_drop;
+                floor_drop = 0;
+                while ((r->side >> floor_drop) > SPRITE_FLOOR) {
+                    floor_drop++;
+                }
+                if (floor_drop < have - best_short) {
+                    floor_drop = have - best_short;
+                }
+                if (floor_drop < have) {
+                    bytes = g_ops.bytes(r->side >> floor_drop, r->cutout);
+                    if (room_for_floor(bytes, &addr, &order, r->note_dist)) {
+                        want = floor_drop;
+                        g_rescues++;
+                    }
                 }
             }
             if (want < 0) {

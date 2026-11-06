@@ -4635,6 +4635,70 @@ static void fake_release(df_u32 handle)
     g_fake_released++;
 }
 
+/*
+ * A near sprite's floor (texres.c, NEAR_SPRITE): a card filled with the
+ * sharp copies of walls drawn this frame at 0, nearer than anything, as
+ * a dungeon room's are. A creature at 100 gets 32 a side at least from a
+ * wall's room; one at 1000 is not rescued; the walls settle round it.
+ */
+static void check_texres_floor(void)
+{
+    TexResOps ops;
+    int frame;
+    int i;
+
+    ops.bytes = fake_bytes;
+    ops.upload = fake_upload;
+    ops.release = fake_release;
+    texres_begin(4096u, 4096u + 128u * 1024u, &ops);
+    for (i = 0; i < 12; i++) {
+        texres_add(i, 128, 0, 0.25f);
+    }
+    texres_add(20, 64, 1, 1.0f);
+    texres_add(21, 64, 1, 1.0f);
+    for (frame = 0; frame < 8; frame++) {
+        for (i = 0; i < 12; i++) {
+            texres_note(i, 0.0f);
+        }
+        texres_service(400.0f, 1024u * 1024u);
+    }
+    check_expect(texres_largest_free() < fake_bytes(32, 1),
+                 "the walls did not fill the card for the floor test");
+    /* The far one first: it is not near, so it stays as it is. */
+    for (frame = 0; frame < 3; frame++) {
+        for (i = 0; i < 12; i++) {
+            texres_note(i, 0.0f);
+        }
+        texres_note(21, 1000.0f);
+        texres_service(400.0f, 1024u * 1024u);
+    }
+    check_expect(texres_drop(21) == 3, "a far sprite took a nearer wall's room");
+    for (frame = 0; frame < 3; frame++) {
+        for (i = 0; i < 12; i++) {
+            texres_note(i, 0.0f);
+        }
+        texres_note(20, 100.0f);
+        texres_service(400.0f, 1024u * 1024u);
+    }
+    check_expect(texres_drop(20) >= 0 && texres_drop(20) <= 1,
+                 "a near sprite was left below 32 a side while walls held the card");
+    {
+        int sharp_walls;
+
+        sharp_walls = 0;
+        for (i = 0; i < 12; i++) {
+            sharp_walls += texres_drop(i) < 4;
+        }
+        check_expect(sharp_walls >= 3, "the walls did not settle round the rescued sprite");
+    }
+    for (i = 0; i < 12; i++) {
+        texres_remove(i);
+    }
+    texres_remove(20);
+    texres_remove(21);
+    texres_end();
+}
+
 /* The card's residency for a streamed world (docs/streaming.md, The card). */
 static void check_texres(void)
 {
@@ -5582,6 +5646,7 @@ void check_engine(void)
     check_prof();
     check_prof_spare();
     check_texres();
+    check_texres_floor();
     check_entities();
     check_sound();
     check_recfile();
