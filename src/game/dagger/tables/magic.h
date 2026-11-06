@@ -19,6 +19,10 @@
  *         number (what a class's starting spells and a shop name), element,
  *         target, the price classic asks and its three effects' settings.
  *
+ *   ESPL: the spells a creature casts (DFU's EnemyEntity lists, classic's): a row a spell, by
+ *         the creature's kind (a monster's id) or, for a class enemy that casts magic, ESPL_CLASS
+ *         plus its list by level (level / 3, at most 6), and the spell's number in SPELLS.STD.
+ *
  * An effect of a spell is its group, its subgroup and the settings of each
  * parameter, EffectSettings. A parameter an effect does not support is left
  * at 1.
@@ -151,6 +155,24 @@ typedef struct MagicSpell {
     df_u8 chance[MAGIC_SLOTS * 3];
     df_u8 magnitude[MAGIC_SLOTS * 5];
 } MagicSpell;
+
+/* The kind number of a class enemy's lists: ESPL_CLASS + level / 3 (6 at most). */
+#define ESPL_CLASS 1000
+#define ESPL_CLASS_LISTS 7
+
+typedef struct FoeSpell {
+    df_u16 id;
+    df_u16 kind;
+    df_u8 number;
+} FoeSpell;
+
+extern const RecSchema foe_spell_schema;
+RecTable *foe_spell_table(void);
+/*
+ * The standard spells (SPELLS.STD numbers) a creature of that kind casts at that level: a monster's own
+ * list, a class enemy that casts magic its level's, else none. Up to max into out; how many.
+ */
+int magic_foe_spells(int kind, int level, df_u8 *out, int max);
 
 extern const RecSchema effect_schema;
 extern const RecSchema spell_schema;

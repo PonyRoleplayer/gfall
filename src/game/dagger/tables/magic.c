@@ -1,4 +1,5 @@
 #include "game/dagger/tables/magic.h"
+#include "game/dagger/tables/enemies.h"
 
 /* See magic.h and docs/data.md. */
 
@@ -37,8 +38,59 @@ const RecSchema spell_schema = {
     (df_u16)sizeof(MagicSpell), 0
 };
 
+static const RecField g_foe_spell_fields[] = {
+    REC_FIELD("id", REC_UINT, FoeSpell, id),
+    REC_FIELD("kind", REC_UINT, FoeSpell, kind),
+    REC_FIELD("number", REC_UINT, FoeSpell, number)
+};
+const RecSchema foe_spell_schema = {
+    "ESPL", "foespell", g_foe_spell_fields, (int)(sizeof(g_foe_spell_fields) / sizeof(g_foe_spell_fields[0])),
+    (df_u16)sizeof(FoeSpell), 0
+};
+
+static RecTable g_foe_spells;
 static RecTable g_effects;
 static RecTable g_spells;
+
+RecTable *foe_spell_table(void)
+{
+    if (!g_foe_spells.schema) {
+        rec_table_init(&g_foe_spells, &foe_spell_schema, 128);
+    }
+    return &g_foe_spells;
+}
+
+int magic_foe_spells(int kind, int level, df_u8 *out, int max)
+{
+    RecTable *t;
+    const EnemyKind *k;
+    int key;
+    int n;
+    int i;
+
+    k = enemy_kind(kind);
+    key = kind;
+    if (kind >= ENEMY_FIRST_CLASS) {
+        int list;
+
+        if (!k || !k->casts_magic) {
+            return 0;
+        }
+        list = level / 3;
+        key = ESPL_CLASS + (list > ESPL_CLASS_LISTS - 1 ? ESPL_CLASS_LISTS - 1 : list);
+    }
+    t = foe_spell_table();
+    n = 0;
+    for (i = 0; i < t->count && n < max; i++) {
+        const FoeSpell *f;
+
+        f = (const FoeSpell *)(t->rows + (df_u32)i * sizeof(FoeSpell));
+        if (f->kind == key) {
+            out[n++] = f->number;
+        }
+    }
+    return n;
+}
 
 RecTable *effect_table(void)
 {

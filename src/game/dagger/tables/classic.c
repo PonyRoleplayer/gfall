@@ -958,6 +958,90 @@ static const MagicEffect g_effects[] = {
 };
 #undef EF
 
+/*
+ * The spells creatures cast (DFU's EnemyEntity lists, classic's), SPELLS.STD's numbers: by monster kind, then a
+ * class enemy's seven lists by level / 3: frost daedra's, daedroth's, orc shaman's, ancient vampire's, daedra
+ * lord's, lich's, ancient lich's.
+ */
+static const FoeSpell g_foe_spell_rows[] = {
+    { 0, 1, 7 },
+    { 1, 1, 10 },
+    { 2, 1, 29 },
+    { 3, 1, 44 },
+    { 4, 18, 34 },
+    { 5, 21, 6 },
+    { 6, 21, 7 },
+    { 7, 21, 22 },
+    { 8, 21, 25 },
+    { 9, 21, 31 },
+    { 10, 23, 28 },
+    { 11, 23, 31 },
+    { 12, 25, 16 },
+    { 13, 25, 20 },
+    { 14, 26, 14 },
+    { 15, 26, 25 },
+    { 16, 27, 22 },
+    { 17, 27, 23 },
+    { 18, 27, 31 },
+    { 19, 28, 51 },
+    { 20, 29, 52 },
+    { 21, 29, 67 },
+    { 22, 30, 8 },
+    { 23, 30, 50 },
+    { 24, 31, 8 },
+    { 25, 31, 10 },
+    { 26, 31, 14 },
+    { 27, 31, 60 },
+    { 28, 31, 67 },
+    { 29, 32, 8 },
+    { 30, 32, 10 },
+    { 31, 32, 14 },
+    { 32, 32, 34 },
+    { 33, 32, 60 },
+    { 34, 33, 8 },
+    { 35, 33, 10 },
+    { 36, 33, 14 },
+    { 37, 33, 29 },
+    { 38, 33, 31 },
+    { 39, 33, 34 },
+    { 40, 33, 60 },
+    { 41, ESPL_CLASS + 0, 16 },
+    { 42, ESPL_CLASS + 0, 20 },
+    { 43, ESPL_CLASS + 1, 22 },
+    { 44, ESPL_CLASS + 1, 23 },
+    { 45, ESPL_CLASS + 1, 31 },
+    { 46, ESPL_CLASS + 2, 6 },
+    { 47, ESPL_CLASS + 2, 7 },
+    { 48, ESPL_CLASS + 2, 22 },
+    { 49, ESPL_CLASS + 2, 25 },
+    { 50, ESPL_CLASS + 2, 31 },
+    { 51, ESPL_CLASS + 3, 8 },
+    { 52, ESPL_CLASS + 3, 50 },
+    { 53, ESPL_CLASS + 4, 8 },
+    { 54, ESPL_CLASS + 4, 10 },
+    { 55, ESPL_CLASS + 4, 14 },
+    { 56, ESPL_CLASS + 4, 60 },
+    { 57, ESPL_CLASS + 4, 67 },
+    { 58, ESPL_CLASS + 5, 8 },
+    { 59, ESPL_CLASS + 5, 10 },
+    { 60, ESPL_CLASS + 5, 14 },
+    { 61, ESPL_CLASS + 5, 34 },
+    { 62, ESPL_CLASS + 5, 60 },
+    { 63, ESPL_CLASS + 6, 8 },
+    { 64, ESPL_CLASS + 6, 10 },
+    { 65, ESPL_CLASS + 6, 14 },
+    { 66, ESPL_CLASS + 6, 29 },
+    { 67, ESPL_CLASS + 6, 31 },
+    { 68, ESPL_CLASS + 6, 34 },
+    { 69, ESPL_CLASS + 6, 60 },
+};
+
+const FoeSpell *classic_foe_spells(int *n)
+{
+    *n = (int)(sizeof(g_foe_spell_rows) / sizeof(g_foe_spell_rows[0]));
+    return g_foe_spell_rows;
+}
+
 const MagicEffect *classic_effects(int *n)
 {
     *n = (int)(sizeof(g_effects) / sizeof(g_effects[0]));

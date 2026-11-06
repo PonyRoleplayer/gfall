@@ -43,6 +43,8 @@ const Disease *classic_diseases(int *n);
 const GuildKind *classic_guilds(int *n);
 /* The effects a spell is made of (the 89 standard spells come from SPELLS.STD). */
 const MagicEffect *classic_effects(int *n);
+/* The spells creatures cast, by kind. */
+const FoeSpell *classic_foe_spells(int *n);
 /* 1 when effects (classic_effects) has the effect of that id. */
 int classic_effect_known(const MagicEffect *effects, int id);
 const QuestKind *classic_quests(int *n);

@@ -2922,7 +2922,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
         /* A killing's HALT lines, one a second, while the guard closes. */
         watch_frame(dt);
         /* The creatures see, chase and strike (tai off: they stand); a blow may kill. */
-        if (foes_frame(&g_player, &g_level->scene, dt)) {
+        if (foes_frame(&g_player, &g_level->scene, dt) || effects_died()) {
             die();
             player_camera(&g_player, cam);
             control_view(&g_control, cam);

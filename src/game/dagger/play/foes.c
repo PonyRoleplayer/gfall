@@ -3,8 +3,13 @@
 #include "game/dagger/places/travel.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/loot.h"
+#include "game/dagger/play/cast.h"
+#include "game/dagger/play/effects.h"
+#include "game/dagger/play/spells.h"
+#include "game/dagger/tables/magic.h"
 #include "game/dagger/play/rules.h"
 #include "engine/core/log.h"
+#include "engine/core/mem.h"
 #include "engine/scene/clock.h"
 #include "engine/scene/interact.h"
 #include "game/dagger/play/sfx.h"
@@ -43,6 +48,13 @@
 /* Sleepers looked at a tick; a mind looks every this many ticks. */
 #define LOOKS_PER_TICK 2
 #define SIGHT_EVERY 6
+/* A spell's pose: five frames at the attack's rate, the spell leaving on the fourth (index 3). */
+#define CAST_FRAMES 5
+#define CAST_RELEASE_FRAME 3
+/* Ranged spells are cast from 6 m to 51.2 m (EnemyAttack's minRangedDistance, maxRangedDistance) at one tick in 40 (EnemyMotor). */
+#define CAST_RANGE_MIN 240.0f
+#define CAST_RANGE_MAX 2048.0f
+#define CAST_ONE_IN 40
 /* Its attack pose's frames a second, and the frame its blow lands on (of five). */
 #define ATTACK_RATE 10.0f
 #define ATTACK_HIT_FRAME 2
@@ -83,6 +95,21 @@ typedef struct Mind {
     float knock_dir[2];
     /* Seconds it is held still, by paralysis (foes_freeze): it neither thinks, moves nor strikes. */
     float frozen;
+    /*
+     * Its spells (ESPL, magic.h), picked the first time it thinks of casting, when the player's level
+     * is known: those it can use, as SPELLS.STD's numbers, ranged ones apart from touch and area-round ones.
+     * Its spell points (10 a level and 100, -1 until then); a cast's seconds (-1 when not casting), the
+     * spell and whether it has left.
+     */
+    int spells_set;
+    df_u8 ranged[8];
+    int ranged_n;
+    df_u8 touch[8];
+    int touch_n;
+    int magicka;
+    float cast;
+    int cast_spell;
+    int cast_done;
 } Mind;
 
 static Mind g_mind[FOES_MINDS];
@@ -300,6 +327,9 @@ static Mind *wake(Entity *e, int kind, int bark)
     e->radius = r;
     m->sees = 0;
     m->frozen = 0.0f;
+    m->spells_set = 0;
+    m->magicka = -1;
+    m->cast = -1.0f;
     m->give_up = FOES_GIVE_UP;
     m->look_in = i % SIGHT_EVERY;
     m->melee = 0.0f;
@@ -841,8 +871,135 @@ static float melee_timer(const Character *pc)
     return t < 0 ? 0.0f : (float)t / 980.0f;
 }
 
+/* What a creature's spells cost: the skills a spell-casting creature has, 80 in each school (EnemyEntity.SetEnemySpells). */
+static const Character *foe_skills(void)
+{
+    static Character c;
+    static int made;
+
+    if (!made) {
+        int s;
+
+        mem_zero(&c, sizeof(c));
+        for (s = SKILL_DESTRUCTION; s <= SKILL_MYSTICISM; s++) {
+            c.skill[s] = 80;
+        }
+        made = 1;
+    }
+    return &c;
+}
+
+/* Its usable spells sorted into those it casts from afar and those it casts when near; a creature with none is left with none. */
+static void pick_spells(Mind *m, int level)
+{
+    df_u8 all[16];
+    int n;
+    int i;
+
+    m->spells_set = 1;
+    m->ranged_n = 0;
+    m->touch_n = 0;
+    n = magic_foe_spells(m->kind, level, all, 16);
+    for (i = 0; i < n; i++) {
+        const MagicSpell *std;
+        Spell s;
+        int built;
+        int k;
+
+        std = magic_standard(all[i]);
+        if (!std) {
+            continue;
+        }
+        spell_standard(&s, std);
+        /* One of its effects must do something here: a spell of effects not built would only spend its points. */
+        built = 0;
+        for (k = 0; k < MAGIC_SLOTS; k++) {
+            if (s.effect[k].effect != SPELL_NO_EFFECT && effects_built(s.effect[k].effect) != EFFECT_NOT_BUILT) {
+                built = 1;
+            }
+        }
+        if (!built) {
+            continue;
+        }
+        if ((s.target == TARGET_RANGE || s.target == TARGET_AREA_RANGE) && m->ranged_n < 8) {
+            m->ranged[m->ranged_n++] = all[i];
+        } else if ((s.target == TARGET_TOUCH || s.target == TARGET_AREA_CASTER) && m->touch_n < 8) {
+            m->touch[m->touch_n++] = all[i];
+        }
+    }
+}
+
+/* The spell leaves its caster, on the cast's release frame: aimed at the player's chest from its eye. 1 when it killed them (never here: effects_died says so). */
+static void release_spell(Mind *m, Player *p, const Scene *scene)
+{
+    const MagicSpell *std;
+    const EnemyKind *k;
+    Spell s;
+    Foe f;
+    float eye[3];
+    float aim[3];
+    float dir[3];
+    float len;
+    float dx;
+    float dy;
+    float dz;
+    int cost;
+    int i;
+
+    std = magic_standard(m->cast_spell);
+    k = enemy_kind(m->kind);
+    if (!std || !k) {
+        return;
+    }
+    spell_standard(&s, std);
+    combat_foe(&f, k, p->sheet.level, 0);
+    eye_of(m->e, eye);
+    for (i = 0; i < 3; i++) {
+        aim[i] = p->body.feet[i];
+    }
+    aim[1] += p->body.eye * 0.8f;
+    dx = aim[0] - eye[0];
+    dy = aim[1] - eye[1];
+    dz = aim[2] - eye[2];
+    len = df_sqrt(dx * dx + dy * dy + dz * dz);
+    if (len < 1.0f) {
+        return;
+    }
+    dir[0] = dx / len;
+    dir[1] = dy / len;
+    dir[2] = dz / len;
+    /* A touch is only a touch if the player is still near: it was begun at reach, and they may have gone. */
+    if (s.target == TARGET_TOUCH && len > FOES_MELEE * 1.5f) {
+        return;
+    }
+    cost = spell_cost(&s, foe_skills(), 0);
+    m->magicka = m->magicka > cost ? m->magicka - cost : 0;
+    cast_foe(&s, f.level, eye, dir, p, scene);
+}
+
+/* A cast begun: its pose, or at once where it has none. */
+static void begin_cast(Mind *m, int number, Player *p, const Scene *scene)
+{
+    Entity *e;
+
+    e = m->e;
+    m->cast = 0.0f;
+    m->cast_spell = number;
+    m->cast_done = 0;
+    e->moving = 0;
+    if (e->pose[ENTITY_CAST].w[0]) {
+        e->act = ENTITY_CAST;
+        e->hold = 1;
+        e->frame = 0;
+    } else {
+        m->cast_done = 1;
+        release_spell(m, p, scene);
+        m->cast = -1.0f;
+    }
+}
+
 /* A classic tick of one mind: its sight now and then, the give-up count, the turn, a swing begun. */
-static void think(Mind *m, const Player *p, const Scene *scene, const float *peye)
+static void think(Mind *m, Player *p, const Scene *scene, const float *peye)
 {
     const EnemyKind *k;
     Entity *e;
@@ -881,6 +1038,30 @@ static void think(Mind *m, const Player *p, const Scene *scene, const float *pey
     /* Feet to feet, height and all: one on the floor above, or a bat overhead, is not in reach. */
     dy = m->last[1] - e->y;
     dist = df_sqrt(dx * dx + dy * dy + dz * dz);
+    /*
+     * A spell (EnemyMotor): a touch or area spell instead of a blow, when it is in reach and its timer is
+     * out; a ranged one from 6 m to 51.2 m, one tick in 40, the player seen and nearly ahead. Each costs
+     * spell points (10 a level and 100), and it casts while it has any.
+     */
+    if (k && m->sees && m->cast < 0.0f && m->swing < 0.0f && e->act == 0) {
+        int ahead;
+
+        if (!m->spells_set) {
+            Foe f;
+
+            combat_foe(&f, k, p->sheet.level, 0);
+            pick_spells(m, f.level);
+            m->magicka = 10 * f.level + 100;
+        }
+        ahead = absf(turn_between(e->yaw, df_atan2(dx, dz))) <= AIM_START;
+        if (m->magicka > 0 && m->touch_n > 0 && m->melee <= 0.0f && dist <= FOES_MELEE && ahead) {
+            m->melee = melee_timer(&p->sheet);
+            begin_cast(m, m->touch[combat_roll(m->touch_n)], p, scene);
+        } else if (m->magicka > 0 && m->ranged_n > 0 && dist >= CAST_RANGE_MIN && dist <= CAST_RANGE_MAX && ahead
+                   && combat_roll(CAST_ONE_IN) == 0) {
+            begin_cast(m, m->ranged[combat_roll(m->ranged_n)], p, scene);
+        }
+    }
     if (k && m->sees && m->swing < 0.0f && e->act == 0 && m->melee <= 0.0f && dist <= FOES_MELEE
         && absf(turn_between(e->yaw, df_atan2(dx, dz))) <= AIM_START && e->pose[ENTITY_ATTACK].w[0]) {
         int speed;
@@ -1020,6 +1201,29 @@ static int act(Mind *m, Player *p, const Scene *scene, float dt)
         e->z = m->body.feet[2];
         m->knock -= KNOCK_DECAY * (dt / FOES_TICK);
         e->moving = 0;
+        return 0;
+    }
+    if (m->cast >= 0.0f) {
+        int frame;
+
+        /* Struck mid-cast, it flinches instead: the spell is lost. */
+        if (e->act != ENTITY_CAST) {
+            m->cast = -1.0f;
+            return 0;
+        }
+        m->cast += dt;
+        frame = df_ifloor(m->cast * ATTACK_RATE);
+        if (frame >= CAST_FRAMES) {
+            m->cast = -1.0f;
+            e->act = 0;
+            e->hold = 0;
+            return 0;
+        }
+        e->frame = (df_u8)frame;
+        if (!m->cast_done && frame >= CAST_RELEASE_FRAME) {
+            m->cast_done = 1;
+            release_spell(m, p, scene);
+        }
         return 0;
     }
     if (m->swing >= 0.0f) {

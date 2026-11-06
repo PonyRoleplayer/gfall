@@ -14,6 +14,7 @@ static Item g_bow[PROJ_MAX];
 /* The projectile's questions, answered by combat's. */
 typedef struct ShotsWorld {
     const Scene *scene;
+    const Player *player;
 } ShotsWorld;
 
 static int world_wall(void *user, const float *a, const float *b, float *t)
@@ -24,14 +25,23 @@ static int world_wall(void *user, const float *a, const float *b, float *t)
     return combat_ray(w->scene, a, b, t);
 }
 
-/* Only the player's arrows are flown so far, and they strike the creatures. */
+/* The player's shots meet creatures; a creature's meet the player, a box about their body. */
 static void *world_target(void *user, const Projectile *p, const float *a, const float *dir, float len, float *t)
 {
     const ShotsWorld *w;
 
     w = (const ShotsWorld *)user;
-    if (p->from != PROJ_FROM_PLAYER) {
-        return 0;
+    if (p->from == PROJ_FROM_FOE) {
+        float low[3];
+        float high[3];
+
+        low[0] = w->player->body.feet[0] - w->player->body.radius;
+        low[1] = w->player->body.feet[1];
+        low[2] = w->player->body.feet[2] - w->player->body.radius;
+        high[0] = w->player->body.feet[0] + w->player->body.radius;
+        high[1] = w->player->body.feet[1] + w->player->body.height;
+        high[2] = w->player->body.feet[2] + w->player->body.radius;
+        return combat_ray_box(a, dir, low, high, len, t) ? (void *)w->player : 0;
     }
     return combat_aim_at(w->scene, a, dir, len, t);
 }
@@ -233,6 +243,7 @@ int shots_frame(float dt, const Scene *scene, Player *player)
     pack = &player->pack;
     feet = player->body.feet;
     mine.scene = scene;
+    mine.player = player;
     world.user = &mine;
     world.wall = world_wall;
     world.target = world_target;
@@ -245,7 +256,7 @@ int shots_frame(float dt, const Scene *scene, Player *player)
 
             /* Its burst where it ended, in its element, before the missile's record is let go. */
             flying = cast_flying(ends[i].entry);
-            if (flying && flying->target != TARGET_AREA_RANGE && ends[i].result == PROJ_HIT_TARGET) {
+            if (flying && ends[i].from == PROJ_FROM_PLAYER && flying->target != TARGET_AREA_RANGE && ends[i].result == PROJ_HIT_TARGET) {
                 shots_flash(scene, flying->element, ends[i].at);
             }
             cast_arrived(&ends[i], player, scene);

@@ -96,6 +96,12 @@ int effects_built(int effect_id);
  * is the caster's already paid. A spell whose target is the caster has the caster as its target.
  */
 int effects_land(const Spell *spell, const EffectTarget *to, Player *caster);
+/*
+ * A creature's spell landed on the player (cast.c's foe casts): the caster is a creature of that level,
+ * whose own sheet nothing here reads or changes, so a transfer gives it nothing and a failure says
+ * nothing of "not worked yet". How many effects took hold.
+ */
+int effects_land_from_foe(const Spell *spell, Player *target, int level);
 /* The spell's own effects (a spell of any target) landed on the caster. */
 int effects_land_self(const Spell *spell, Player *caster);
 

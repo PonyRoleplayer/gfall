@@ -63,6 +63,15 @@ int cast_fire(Player *p, const Scene *scene, const float *eye, const float *dir)
  */
 int cast_arrived(const ProjectileEnd *end, Player *p, const Scene *scene);
 
+/*
+ * A creature's spell cast at the player (foes.c): level is the creature's; eye and unit dir where it aims
+ * from. Touch and area round the caster are the creature's to bring (it calls them when in reach, as the
+ * player's go): here a touch spell lands at once, an area round bursts at eye if the player is within
+ * 4 m with no wall between, one at range or an area at range flies as a missile (PROJ_FROM_FOE) that
+ * lands on the player, or bursts, where it ends. A spell on the caster alone is not cast. 1 when it went.
+ */
+int cast_foe(const Spell *s, int level, const float *eye, const float *dir, Player *p, const Scene *scene);
+
 /* The spell cast by missile entry (its copy), or 0 when none flies there: for the missile's picture. */
 const Spell *cast_flying(int entry);
 

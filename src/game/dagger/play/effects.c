@@ -11,6 +11,8 @@
 /* The effects that last, the player's and the creatures'. */
 static LiveEffect g_live[EFFECTS_LIVE];
 static int g_died;
+/* 1 while a creature's spell is landing: the player's own line about unbuilt magic is not for it. */
+static int g_foe_cast;
 
 /* ---- What is built. ---- */
 
@@ -597,9 +599,26 @@ int effects_land(const Spell *spell, const EffectTarget *to, Player *caster)
         }
         landed += land_one(&spell->effect[k], spell->element, to, caster, self);
     }
-    if (unbuilt && !landed) {
+    if (unbuilt && !landed && !g_foe_cast) {
         interact_say("This magic is not worked yet.");
     }
+    return landed;
+}
+
+int effects_land_from_foe(const Spell *spell, Player *target, int level)
+{
+    static Player foe;
+    EffectTarget to;
+    int landed;
+
+    mem_zero(&foe, sizeof(foe));
+    foe.sheet.level = level;
+    to.player = target;
+    to.creature = 0;
+    to.scene = 0;
+    g_foe_cast = 1;
+    landed = effects_land(spell, &to, &foe);
+    g_foe_cast = 0;
     return landed;
 }
 

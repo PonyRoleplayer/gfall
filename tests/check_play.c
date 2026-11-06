@@ -7097,6 +7097,89 @@ static void check_castfx(void)
     printf("castfx: the five hands read, 0.5 s each, six frames, one release, none left showing\n");
 }
 
+/* What creatures cast: the lists by kind and level, and a lich of the hold's casting at the player. */
+static void check_foe_spells(void)
+{
+    df_u8 list[16];
+    Level level;
+    Camera cam;
+    Dungeon hold;
+    Character sheet;
+    Player p;
+    Entity *target;
+    float eye[3];
+    float dir[3];
+    float x;
+    float y;
+    float z;
+    float yaw;
+    float pitch;
+    int n;
+    int i;
+    int frames;
+    int missiles;
+    int before;
+
+    /* DFU's lists: an imp, an ancient lich, nothing for a rat, a class enemy's by level / 3 (a Mage's), a Warrior's none. */
+    n = magic_foe_spells(1, 1, list, 16);
+    check_expect(n == 4 && list[0] == 7 && list[1] == 10 && list[2] == 29 && list[3] == 44, "foe spells: an imp's are not Wizard's Fire, Free Action, 29 and 44");
+    n = magic_foe_spells(33, 1, list, 16);
+    check_expect(n == 7 && list[6] == 60, "foe spells: an ancient lich does not have seven");
+    check_expect(magic_foe_spells(0, 1, list, 16) == 0, "foe spells: a rat casts");
+    n = magic_foe_spells(ENEMY_FIRST_CLASS + CLASS_MAGE, 1, list, 16);
+    check_expect(n == 2 && list[0] == 16 && list[1] == 20, "foe spells: a level 1 Mage's are not the frost daedra's two");
+    n = magic_foe_spells(ENEMY_FIRST_CLASS + CLASS_MAGE, 10, list, 16);
+    check_expect(n == 2 && list[0] == 8 && list[1] == 50, "foe spells: a level 10 Mage's are not the ancient vampire's");
+    n = magic_foe_spells(ENEMY_FIRST_CLASS + CLASS_MAGE, 60, list, 16);
+    check_expect(n == 7, "foe spells: a level 60 Mage's are not the ancient lich's seven");
+    check_expect(magic_foe_spells(ENEMY_FIRST_CLASS + CLASS_WARRIOR, 5, list, 16) == 0, "foe spells: a Warrior casts");
+    keep_clear();
+    combat_reset();
+    effects_reset(1);
+    foes_reset();
+    projectile_clear();
+    cast_new_game();
+    if (!character_new(&sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Test") || !dungeon_load(&hold)
+        || !dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
+        check_expect(0, "foe spells: the hold's stream did not open");
+        return;
+    }
+    player_init(&p, &sheet);
+    camera_set(&cam, x, y, z, yaw, pitch);
+    dunstream_fill(&cam);
+    target = cast_locate(&level, 300.0f, eye, dir);
+    check_expect(target != 0, "foe spells: no creature to make a caster of");
+    if (!target) {
+        dunstream_close();
+        return;
+    }
+    /* A creature of the hold made a lich, knowing where the player stands, 300 units off along a clear line: it casts. */
+    player_place(&p, eye[0], target->y + p.body.eye, eye[2], 0.0f, 0.0f);
+    p.sheet.health_max = p.sheet.health = 5000;
+    combat_seed(99);
+    check_expect(foes_summon(target, 32, p.body.feet), "foe spells: a lich was not made");
+    missiles = 0;
+    before = p.sheet.health;
+    for (frames = 0; frames < 3600 && (p.sheet.health == before || !missiles); frames++) {
+        foes_frame(&p, &level.scene, 1.0f / 60.0f);
+        shots_frame(1.0f / 60.0f, &level.scene, &p);
+        if (projectile_count() > 0) {
+            missiles = 1;
+        }
+        for (i = 0; i < 1; i++) {
+            if (effects_died()) {
+                break;
+            }
+        }
+    }
+    printf("foe spells: a lich cast at the player in %d frames, %s, health %d of 5000\n", frames, missiles ? "a missile flew" : "no missile", p.sheet.health);
+    check_expect(missiles || p.sheet.health < before, "foe spells: a lich in sight cast nothing in a minute");
+    effects_reset(1);
+    projectile_clear();
+    foes_reset();
+    dunstream_close();
+}
+
 /* A world for projectile.c: a wall across x = wall_x, and a ball of radius r at ball. */
 typedef struct FlightWorld {
     float wall_x;
@@ -9789,6 +9872,7 @@ void check_play(void)
     check_effects();
     check_effects_creature();
     check_cast();
+    check_foe_spells();
     check_magic_save();
     check_spellbook();
     check_maker();

@@ -157,6 +157,8 @@ static RecTable *table_at(int i)
         return effect_table();
     case 24:
         return spell_table();
+    case 25:
+        return foe_spell_table();
     default:
         return 0;
     }
@@ -164,7 +166,7 @@ static RecTable *table_at(int i)
 
 int maindat_table_count(void)
 {
-    return 25;
+    return 26;
 }
 
 RecTable *maindat_table(int i)
@@ -241,6 +243,15 @@ static int put_magic(RecPut put, void *ctx)
     effects = classic_effects(&n);
     if (!rec_put_rows(put, ctx, &effect_schema, effects, n, 0, 0)) {
         return 0;
+    }
+    {
+        const FoeSpell *foe_spells;
+
+        /* Two steps: an argument's order of evaluation is not C's to promise. */
+        foe_spells = classic_foe_spells(&n);
+        if (!rec_put_rows(put, ctx, &foe_spell_schema, foe_spells, n, 0, 0)) {
+            return 0;
+        }
     }
     b = vfs_read("SPELLS.STD", &size);
     count = b ? stdspell_read(b, size, read, STDSPELL_COUNT) : 0;
@@ -559,7 +570,7 @@ int maindat_whole(void)
         && armor_table()->count > 0 && loot_table()->count > 0
         && building_table()->count > 0 && crime_table()->count > 0 && holiday_table()->count > 0
         && disease_table()->count == DISEASE_COUNT && guild_table()->count > 0 && quest_table()->count > 0
-        && material_table()->count == MATERIAL_COUNT && effect_table()->count > 0 && spell_table()->count > 0;
+        && material_table()->count == MATERIAL_COUNT && effect_table()->count > 0 && spell_table()->count > 0 && foe_spell_table()->count > 0;
 }
 
 const char *maindat_error(void)

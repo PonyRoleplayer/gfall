@@ -14,6 +14,8 @@ static int g_have_last;
 /* The spell each missile in the air carries, by its entry in projectile.c. */
 static Spell g_flying[PROJ_MAX];
 static int g_flying_live[PROJ_MAX];
+/* A creature's missile: its caster's level (the player's missiles use the player's). */
+static int g_flying_level[PROJ_MAX];
 
 void cast_new_game(void)
 {
@@ -187,6 +189,65 @@ int cast_fire(Player *p, const Scene *scene, const float *eye, const float *dir)
     return 1;
 }
 
+/* The player within a burst's reach of at, no wall between: where a creature's area spell lands. */
+static int player_in_burst(const Player *p, const float *at, const Scene *scene)
+{
+    float mid[3];
+    float d[3];
+    int k;
+
+    mid[0] = p->body.feet[0];
+    mid[1] = p->body.feet[1] + p->body.eye * 0.5f;
+    mid[2] = p->body.feet[2];
+    for (k = 0; k < 3; k++) {
+        d[k] = mid[k] - at[k];
+    }
+    return d[0] * d[0] + d[1] * d[1] + d[2] * d[2] <= CAST_BURST * CAST_BURST && combat_sight(scene, at, mid);
+}
+
+int cast_foe(const Spell *s, int level, const float *eye, const float *dir, Player *p, const Scene *scene)
+{
+    int k;
+
+    switch (s->target) {
+    case TARGET_TOUCH:
+        effects_land_from_foe(s, p, level);
+        shots_flash(scene, s->element, p->body.feet);
+        return 1;
+    case TARGET_AREA_CASTER:
+        shots_flash(scene, s->element, eye);
+        if (player_in_burst(p, eye, scene)) {
+            effects_land_from_foe(s, p, level);
+        }
+        return 1;
+    case TARGET_RANGE:
+    case TARGET_AREA_RANGE: {
+        ProjectileShot shot;
+        int entry;
+
+        mem_zero(&shot, sizeof(shot));
+        shot.kind = PROJ_SPELL;
+        shot.from = PROJ_FROM_FOE;
+        shot.speed = PROJ_SPELL_SPEED;
+        shot.range = PROJ_SPELL_RANGE;
+        for (k = 0; k < 3; k++) {
+            shot.dir[k] = dir[k];
+            shot.at[k] = eye[k] + dir[k] * CAST_ARM;
+        }
+        entry = projectile_launch(&shot);
+        if (entry < 0) {
+            return 0;
+        }
+        g_flying[entry] = *s;
+        g_flying_live[entry] = 1;
+        g_flying_level[entry] = level;
+        return 1;
+    }
+    default:
+        return 0;
+    }
+}
+
 int cast_arrived(const ProjectileEnd *end, Player *p, const Scene *scene)
 {
     Spell s;
@@ -198,6 +259,25 @@ int cast_arrived(const ProjectileEnd *end, Player *p, const Scene *scene)
     s = g_flying[end->entry];
     g_flying_live[end->entry] = 0;
     landed = 0;
+    /* A creature's missile: the player is its target, and its burst is the player's to stand in. */
+    if (end->from == PROJ_FROM_FOE) {
+        float at[3];
+        int k;
+
+        for (k = 0; k < 3; k++) {
+            at[k] = end->at[k] - end->dir[k] * (end->result == PROJ_HIT_WALL ? 8.0f : 0.0f);
+        }
+        if (s.target == TARGET_AREA_RANGE) {
+            shots_flash(scene, s.element, at);
+            if (player_in_burst(p, at, scene)) {
+                landed = effects_land_from_foe(&s, p, g_flying_level[end->entry]);
+            }
+        } else if (end->result == PROJ_HIT_TARGET) {
+            shots_flash(scene, s.element, at);
+            landed = effects_land_from_foe(&s, p, g_flying_level[end->entry]);
+        }
+        return landed;
+    }
     if (s.target == TARGET_AREA_RANGE) {
         float at[3];
         int k;
