@@ -1,5 +1,6 @@
 #include "game/dagger/play/cast.h"
 #include "game/dagger/play/combat.h"
+#include "game/dagger/play/shots.h"
 #include "game/dagger/tables/magic.h"
 #include "engine/core/mem.h"
 #include "engine/scene/interact.h"
@@ -94,6 +95,7 @@ static int burst(const Spell *s, const float *at, Player *p, const Scene *scene)
     int landed;
 
     landed = 0;
+    shots_flash(scene, s->element, at);
     n = combat_near(scene, at, CAST_BURST, near, CAST_BURST_MAX);
     for (i = 0; i < n; i++) {
         EffectTarget to;
@@ -140,6 +142,14 @@ int cast_fire(Player *p, const Scene *scene, const float *eye, const float *dir)
             return 0;
         }
         landed = effects_land(&s, &to, p);
+        {
+            float mid[3];
+
+            mid[0] = to.creature->x;
+            mid[1] = to.creature->y + entity_height(to.creature) * 0.5f;
+            mid[2] = to.creature->z;
+            shots_flash(scene, s.element, mid);
+        }
         break;
     }
     case TARGET_AREA_CASTER:

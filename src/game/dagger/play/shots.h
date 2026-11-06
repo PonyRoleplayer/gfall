@@ -21,10 +21,22 @@
  *
  * A hit wakes and wounds the creature, so it is the game's: ProjectileEnd
  * carries only where the arrow went.
+ *
+ * A spell's missile is seen as a billboard of the engine's spawn pool (spawn.h): its element's
+ * picture, TEXTURE.375..379 record 0, five frames a second, put where the missile is each frame
+ * and let go where it ends, with a burst (record 1, 15 frames a second) for 0.6 s. The pictures are
+ * made resident once for the stream (wres_acquire; they are small); outside a stream a spell
+ * flies unseen. An arrow has no picture (DFU's is a 3D model).
  */
 
 /* Everything in the air gone: a new game, a place left. */
 void shots_clear(void);
+/*
+ * A burst of an element's own picture where a spell lands, for 0.6 s (DFU's post-impact
+ * life): TEXTURE.375 fire, 376 cold, 377 poison, 378 shock, 379 magic, record 1. Nothing is
+ * shown where the pictures cannot be made resident (outside a stream).
+ */
+void shots_flash(const Scene *scene, int element, const float *at);
 /*
  * An arrow loosed from the eye along unit dir, from the bow bow (copied, for
  * the hit). 1 when it flies, 0 when eight already do.

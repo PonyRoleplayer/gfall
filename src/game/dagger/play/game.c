@@ -50,6 +50,7 @@
 #include "game/dagger/play/spells.h"
 #include "game/dagger/play/effects.h"
 #include "game/dagger/play/cast.h"
+#include "game/dagger/play/castfx.h"
 #include "game/dagger/formats/dungeon.h"
 #include "game/dagger/formats/factionfile.h"
 #include "game/dagger/play/screen.h"
@@ -1598,7 +1599,9 @@ static void draw(void)
         /* Under the HUD, as classic: the compass and the bars over the blade, or the horse's head and the reins. */
         if (g_player.riding) {
             draw_riding();
-        } else if (!g_sheathed && !cast_is_ready() && weapon_shown(&pic, &left, &top, &w, &h)) {
+        } else if (castfx_shown(&pic, &left, &top, &w, &h)) {
+            screen_draw(pic, left, top, w, h);
+        } else if (!g_sheathed && !cast_is_ready() && !castfx_active() && weapon_shown(&pic, &left, &top, &w, &h)) {
             screen_draw(pic, left, top, w, h);
         }
         overlay_draw();
@@ -1852,6 +1855,7 @@ static int load_game(const char *path)
     /* Nothing is ready or in the air after a load; the book and the lasting effects came with the file. */
     cast_new_game();
     shots_clear();
+    castfx_free();
     travel_from_save(&g_loaded.where, g_loaded.feet, g_loaded.origin, g_loaded.yaw, g_loaded.pitch);
     return 1;
 }
@@ -1881,6 +1885,7 @@ static void forget_last_game(void)
     effects_reset(1);
     cast_new_game();
     shots_clear();
+    castfx_free();
     g_dead = 0;
     /* The death line, and anything else the last life was saying. */
     interact_say(0);
@@ -2212,6 +2217,7 @@ static void arrive(const Level *level, Camera *cam, const TravelPose *at)
     }
     combat_reset();
     shots_clear();
+    castfx_free();
     /* What lasted on a creature of the place left is over; the player's go on. */
     effects_reset(0);
     foes_reset();
@@ -2785,7 +2791,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
         if (!weapon_gate(closed || g_sheathed || (!control_classic() && g_hud_cursor), controls.attack_held)) {
             if (cast_is_ready()) {
                 /* A spell ready takes the button; it goes once the view is placed for this frame. */
-                cast_press = controls.attack_pressed && !effects_player_has(GROUP_PARALYZE, -1);
+                cast_press = controls.attack_pressed && !castfx_active() && !effects_player_has(GROUP_PARALYZE, -1);
             } else {
                 attack_input(&controls, dt);
             }
@@ -2864,7 +2870,19 @@ int game_frame(Camera *cam, const Input *in, float dt)
         player_camera(&g_player, cam);
         control_view(&g_control, cam);
         /* The swing's hit frame strikes what is in reach of the eye; flinches run out. */
+        /* A spell on the caster goes at once; any other with the hand's animation, at its release frame. */
         if (cast_press) {
+            const Spell *ready;
+
+            ready = cast_ready_spell();
+            if (ready && ready->target != TARGET_CASTER && castfx_begin(ready->element)) {
+                /* Under way: the release comes below. */
+            } else {
+                cast_now(cam);
+            }
+        }
+        castfx_step(dt);
+        if (castfx_release()) {
             cast_now(cam);
         }
         if (weapon_hit()) {

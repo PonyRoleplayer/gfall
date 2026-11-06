@@ -103,6 +103,8 @@
 #include "game/dagger/play/cast.h"
 #include "game/dagger/play/spellbook.h"
 #include "game/dagger/play/maker.h"
+#include "game/dagger/play/castfx.h"
+#include "engine/scene/spawn.h"
 #include "game/dagger/play/projectile.h"
 #include "game/dagger/play/shots.h"
 #include "game/dagger/places/people.h"
@@ -6659,10 +6661,25 @@ static void check_cast(void)
     if (target) {
         fx_spell(&s, &e, TARGET_RANGE, ELEMENT_FIRE);
         p.sheet.magicka = 500;
+        /* The bursts of the touch casts before have aged out. */
+        shots_frame(2.0f, &level.scene, &p);
+        check_expect(spawn_count() == 0, "cast: a burst outlives its 0.6 s");
         cast_ready(&s, &p);
         check_expect(cast_fire(&p, &level.scene, eye, dir) && projectile_count() == 1 && !keep_find(target->key),
                      "cast: a missile of a spell at range does not fly, or has struck at once");
         check_expect(cast_flying(0) != 0 || cast_flying(1) != 0 || cast_flying(2) != 0, "cast: the missile carries no spell");
+        /* It is seen: a billboard of the pool, which goes when the missile does, leaving a burst that ages out. */
+        shots_frame(1.0f / 60.0f, &level.scene, &p);
+        check_expect(spawn_count() == 1, "cast: a spell's missile in a stream is not shown");
+        for (before = 0; before < 600 && projectile_count() > 0; before++) {
+            shots_frame(1.0f / 60.0f, &level.scene, &p);
+        }
+        check_expect(projectile_count() == 0, "cast: the seen missile never ends");
+        shots_frame(2.0f, &level.scene, &p);
+        check_expect(spawn_count() == 0, "cast: the missile's picture or its burst is left standing");
+        p.sheet.magicka = 500;
+        cast_ready(&s, &p);
+        cast_fire(&p, &level.scene, eye, dir);
         for (before = 0; before < 600 && projectile_count() > 0; before++) {
             shots_frame(1.0f / 60.0f, &level.scene, &p);
         }
@@ -7006,6 +7023,44 @@ static void check_maker(void)
     check_expect(maker_click(244 + 5, 179 + 5) == MAKER_LEAVE, "maker: Exit does not leave");
     maker_close();
     printf("maker: pick an effect, spin it, target and element, refuse a joint with no target, name, buy once, pay; build/maker0..3.ppm\n");
+}
+
+/* The casting hand: its five files read, a cast stepped, the release once, the picture where its frame puts it. */
+static void check_castfx(void)
+{
+    int pic;
+    int left;
+    int top;
+    int w;
+    int h;
+    int element;
+    int released;
+    int steps;
+    int shown;
+
+    for (element = 0; element < ELEMENT_COUNT; element++) {
+        check_expect(castfx_begin(element) && castfx_active() && castfx_frames() == 6, "castfx: a casting hand's file does not hold six frames");
+        shown = castfx_shown(&pic, &left, &top, &w, &h);
+        check_expect(shown && w > 8 && h > 8 && left >= 0 && top >= 0 && left + w <= 320 + 64 && top + h <= 200 + 64,
+                     "castfx: a frame has no picture or is off the screen");
+        released = 0;
+        for (steps = 0; steps < 200 && castfx_active(); steps++) {
+            castfx_step(0.01f);
+            released += castfx_release();
+        }
+        check_expect(!castfx_active() && steps >= 48 && steps <= 52, "castfx: a cast is not 0.5 s");
+        check_expect(released == 1, "castfx: the release is not once");
+        check_expect(!castfx_shown(&pic, &left, &top, &w, &h), "castfx: a finished hand still shows");
+        if (element == ELEMENT_FIRE) {
+            printf("castfx: %d frames of the fire hand, the first %d x %d at %d, %d\n", castfx_frames(), w, h, left, top);
+        }
+    }
+    /* A very slow frame still lets the spell go. */
+    castfx_begin(ELEMENT_COLD);
+    castfx_step(5.0f);
+    check_expect(castfx_release() == 1 && !castfx_active(), "castfx: a slow frame loses the release");
+    castfx_free();
+    printf("castfx: the five hands read, 0.5 s each, six frames, one release, none left showing\n");
 }
 
 /* A world for projectile.c: a wall across x = wall_x, and a ball of radius r at ball. */
@@ -9703,6 +9758,7 @@ void check_play(void)
     check_magic_save();
     check_spellbook();
     check_maker();
+    check_castfx();
     check_projectile();
     check_arrow_flight();
     check_ills();
