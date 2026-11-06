@@ -46,6 +46,7 @@
 #include "game/dagger/play/rules.h"
 #include "game/dagger/play/save.h"
 #include "game/dagger/play/saves.h"
+#include "game/dagger/play/shots.h"
 #include "game/dagger/formats/dungeon.h"
 #include "game/dagger/formats/factionfile.h"
 #include "game/dagger/play/screen.h"
@@ -1930,20 +1931,23 @@ static void attack_input(const ControlFrame *in, float dt)
     weapon_gesture(pressed, in->attack_held, in->attack_released, in->gesture_dx, in->gesture_dy, dt);
 }
 
-/* The bow looses: an arrow gone, flying along the view. */
+/* The bow looses: an arrow gone, flying along the view (shots.c). */
 static void shoot_arrow(const Camera *cam, const float *eye)
 {
     Basis basis;
     float dir[3];
+    Item *bow;
 
-    if (!inventory_spend_arrow(&g_player.pack)) {
+    bow = inventory_hand(&g_player.pack);
+    if (!bow || !inventory_spend_arrow(&g_player.pack)) {
         return;
     }
     camera_basis(cam, &basis);
     dir[0] = basis.fx * basis.cp;
     dir[1] = basis.sp;
     dir[2] = basis.fz * basis.cp;
-    combat_shoot(&g_player.sheet, inventory_hand(&g_player.pack), &g_level->scene, g_player.body.feet, eye, dir);
+    combat_loosed(&g_player.sheet);
+    shots_arrow(eye, dir, bow);
 }
 
 /*
@@ -2116,6 +2120,7 @@ static void arrive(const Level *level, Camera *cam, const TravelPose *at)
         ride_get_down(&g_player);
     }
     combat_reset();
+    shots_clear();
     foes_reset();
     watch_reset();
     /* The people are built anew, so no one has been tried. */
@@ -2743,6 +2748,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
             }
         }
         combat_frame(dt);
+        shots_frame(dt, &g_level->scene, &g_player.sheet, &g_player.pack, g_player.body.feet);
         /* A killing's HALT lines, one a second, while the guard closes. */
         watch_frame(dt);
         /* The creatures see, chase and strike (tai off: they stand); a blow may kill. */

@@ -97,6 +97,8 @@
 #include "game/dagger/play/config.h"
 #include "game/dagger/play/saves.h"
 #include "game/dagger/play/files.h"
+#include "game/dagger/play/projectile.h"
+#include "game/dagger/play/shots.h"
 #include "game/dagger/places/people.h"
 #include "game/dagger/places/wres.h"
 #include "game/dagger/tables/enemies.h"
@@ -6032,6 +6034,227 @@ static Entity *splash_near(float x, float z)
  * outlives the people being dropped and built again, a hostile guard is not
  * talked to, and a killed guard stays as a corpse that can be looted.
  */
+/* A world for projectile.c: a wall across x = wall_x, and a ball of radius r at ball. */
+typedef struct FlightWorld {
+    float wall_x;
+    float ball[3];
+    float r;
+} FlightWorld;
+
+static int flight_wall(void *user, const float *a, const float *b, float *t)
+{
+    const FlightWorld *w;
+
+    w = (const FlightWorld *)user;
+    if (a[0] < w->wall_x && b[0] >= w->wall_x) {
+        *t = (w->wall_x - a[0]) / (b[0] - a[0]) * df_sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1]) + (b[2] - a[2]) * (b[2] - a[2]));
+        return 1;
+    }
+    return 0;
+}
+
+/* The ball, tested along the ray by the usual quadratic. */
+static void *flight_target(void *user, const Projectile *p, const float *a, const float *dir, float len, float *t)
+{
+    FlightWorld *w;
+    float oc[3];
+    float b;
+    float c;
+    float disc;
+    float hit;
+    int k;
+
+    (void)p;
+    w = (FlightWorld *)user;
+    for (k = 0; k < 3; k++) {
+        oc[k] = a[k] - w->ball[k];
+    }
+    b = oc[0] * dir[0] + oc[1] * dir[1] + oc[2] * dir[2];
+    c = oc[0] * oc[0] + oc[1] * oc[1] + oc[2] * oc[2] - w->r * w->r;
+    disc = b * b - c;
+    if (disc < 0.0f) {
+        return 0;
+    }
+    hit = -b - df_sqrt(disc);
+    if (hit < 0.0f || hit > len) {
+        return 0;
+    }
+    *t = hit;
+    return w;
+}
+
+/* Fires one shot along +x from the origin and steps it in frames of dt until it ends or 400 frames. */
+static int fly(FlightWorld *w, float speed, float gravity, float range, float dt, ProjectileEnd *end, int *frames)
+{
+    ProjectileShot shot;
+    ProjectileWorld world;
+    int n;
+
+    mem_zero(&shot, sizeof(shot));
+    shot.kind = PROJ_SPELL;
+    shot.dir[0] = 1.0f;
+    shot.speed = speed;
+    shot.gravity = gravity;
+    shot.range = range;
+    world.user = w;
+    world.wall = flight_wall;
+    world.target = flight_target;
+    projectile_clear();
+    if (projectile_launch(&shot) < 0) {
+        return 0;
+    }
+    for (*frames = 1; *frames <= 400; (*frames)++) {
+        n = projectile_step(dt, &world, end, 1);
+        if (n) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void check_projectile(void)
+{
+    FlightWorld w;
+    ProjectileEnd end;
+    ProjectileShot shot;
+    int frames;
+    int i;
+
+    mem_zero(&w, sizeof(w));
+    /* Nothing in the way: it goes its range and ends there, a step less than the speed's. */
+    w.wall_x = 1.0e9f;
+    w.ball[0] = 1.0e9f;
+    check_expect(fly(&w, 1000.0f, 0.0f, 500.0f, 0.1f, &end, &frames) && end.result == PROJ_EXPIRED && frames == 5
+                     && end.at[0] > 499.9f && end.at[0] < 500.1f,
+                 "projectile: a missile in the open does not end at its range");
+    /* The last step is a shorter one, not a whole one past it. */
+    check_expect(fly(&w, 1000.0f, 0.0f, 450.0f, 0.1f, &end, &frames) && end.result == PROJ_EXPIRED && frames == 5
+                     && end.at[0] > 449.9f && end.at[0] < 450.1f,
+                 "projectile: its last step is not cut to the range that is left");
+    /* A wall: it ends on it, however long the frame (a second, 1000 units, across a thin wall). */
+    w.wall_x = 300.0f;
+    check_expect(fly(&w, 1000.0f, 0.0f, 5000.0f, 1.0f, &end, &frames) && end.result == PROJ_HIT_WALL && frames == 1
+                     && end.at[0] > 299.9f && end.at[0] < 300.1f,
+                 "projectile: a long frame lets a missile through a thin wall");
+    /* A ball in front of the wall takes it, behind it the wall does. */
+    w.ball[0] = 200.0f;
+    w.r = 10.0f;
+    check_expect(fly(&w, 1000.0f, 0.0f, 5000.0f, 0.05f, &end, &frames) && end.result == PROJ_HIT_TARGET && end.target == &w
+                     && end.at[0] > 189.9f && end.at[0] < 190.1f,
+                 "projectile: a body before the wall is not the first thing struck, at its near edge");
+    w.ball[0] = 400.0f;
+    check_expect(fly(&w, 1000.0f, 0.0f, 5000.0f, 0.05f, &end, &frames) && end.result == PROJ_HIT_WALL,
+                 "projectile: a body behind the wall is struck through it");
+    /* A ball off to the side is missed. */
+    w.ball[0] = 200.0f;
+    w.ball[2] = 50.0f;
+    check_expect(fly(&w, 1000.0f, 0.0f, 5000.0f, 0.05f, &end, &frames) && end.result == PROJ_HIT_WALL,
+                 "projectile: a body off the line is struck");
+    /* Gravity bends the flight down: after a second at 400 units a second squared, 200 units lower (the step order adds a little). */
+    w.wall_x = 1.0e9f;
+    w.ball[0] = 1.0e9f;
+    check_expect(fly(&w, 1000.0f, 400.0f, 1000.0f, 0.05f, &end, &frames) && end.result == PROJ_EXPIRED,
+                 "projectile: a flight under gravity does not end");
+    check_expect(end.at[1] < -150.0f && end.at[1] > -300.0f, "projectile: gravity does not pull a missile down by half g t squared");
+    check_expect(end.dir[1] < 0.0f, "projectile: its direction at the end does not point down under gravity");
+    /* Eight fly at once, no ninth, and clear lets all go. */
+    projectile_clear();
+    mem_zero(&shot, sizeof(shot));
+    shot.kind = PROJ_ARROW;
+    shot.dir[2] = 1.0f;
+    shot.speed = 10.0f;
+    shot.range = 100.0f;
+    for (i = 0; i < PROJ_MAX; i++) {
+        check_expect(projectile_launch(&shot) >= 0, "projectile: one of the first eight does not launch");
+    }
+    check_expect(projectile_launch(&shot) < 0 && projectile_count() == PROJ_MAX, "projectile: a ninth launches");
+    projectile_clear();
+    check_expect(projectile_count() == 0 && projectile_get(0) == 0, "projectile: clear leaves some in the air");
+    shot.kind = PROJ_NONE;
+    check_expect(projectile_launch(&shot) < 0, "projectile: a shot of no kind launches");
+    printf("projectile: range, a thin wall under a long frame, a body before and behind it, gravity and the eight\n");
+}
+
+/* An arrow loosed at a creature of the hold reaches it after a flight, not at once, and wounds it. */
+static void check_arrow_flight(void)
+{
+    Level level;
+    Camera cam;
+    Dungeon hold;
+    Character pc;
+    Inventory pack;
+    Item bow;
+    float x;
+    float y;
+    float z;
+    float yaw;
+    float pitch;
+    Entity *target;
+    int s;
+    int i;
+
+    keep_clear();
+    combat_reset();
+    projectile_clear();
+    if (!character_new(&pc, RACE_BRETON, CLASS_WARRIOR, 0, "Test")) {
+        check_expect(0, "arrow: no starting character");
+        return;
+    }
+    mem_zero(&pack, sizeof(pack));
+    item_make(&bow, 130, MATERIAL_IRON);
+    if (!dungeon_load(&hold) || !dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
+        check_expect(0, "arrow: the hold's stream did not open");
+        return;
+    }
+    camera_set(&cam, x, y, z, yaw, pitch);
+    dunstream_fill(&cam);
+    target = 0;
+    for (s = 0; s < stream_slots() && !target; s++) {
+        Entity *ents;
+        int first;
+        int n;
+
+        ents = stream_slot_entities(s, &first, &n);
+        for (i = 0; ents && i < n && !target; i++) {
+            float eye[3];
+            float to[3];
+            float len;
+            float t;
+
+            if (!ents[i].live || ents[i].dead || dunstream_kind(&ents[i], 0) < 0) {
+                continue;
+            }
+            /* From 3 m out, level with its middle, along the floor towards it. */
+            eye[0] = ents[i].x - 120.0f;
+            eye[1] = ents[i].y + entity_height(&ents[i]) * 0.5f;
+            eye[2] = ents[i].z;
+            to[0] = ents[i].x - eye[0];
+            to[1] = 0.0f;
+            to[2] = 0.0f;
+            len = df_sqrt(to[0] * to[0]);
+            to[0] /= len;
+            if (combat_aim_at(&level.scene, eye, to, 400.0f, &t) != &ents[i]) {
+                continue;
+            }
+            target = &ents[i];
+            check_expect(shots_arrow(eye, to, &bow), "arrow: an arrow does not launch");
+            check_expect(projectile_count() == 1, "arrow: a launched arrow is not in the air");
+            /* The first frame at 60 Hz carries it 27 units: still flying, nothing struck yet. */
+            shots_frame(1.0f / 60.0f, &level.scene, &pc, &pack, eye);
+            check_expect(projectile_count() == 1 && !keep_find(target->key), "arrow: an arrow of 3 m lands in one frame");
+            for (s = 0; s < 120 && projectile_count() > 0; s++) {
+                shots_frame(1.0f / 60.0f, &level.scene, &pc, &pack, eye);
+            }
+            printf("arrow: a %s's flew 120 units and %s\n", enemy_kind(dunstream_kind(target, 0))->name, projectile_count() == 0 ? "reached it" : "was still in the air");
+            check_expect(projectile_count() == 0, "arrow: an arrow does not end within two seconds");
+            check_expect(keep_find(target->key) != 0, "arrow: an arrow that reached a creature did not strike it");
+        }
+    }
+    check_expect(target != 0, "arrow: no creature of the hold could be shot at from 3 m");
+    shots_clear();
+    dunstream_close();
+}
+
 static void check_citizen(void)
 {
     Character pc;
@@ -8495,6 +8718,8 @@ void check_play(void)
     check_crouch();
     check_config();
     check_saves_and_files();
+    check_projectile();
+    check_arrow_flight();
     check_ills();
     check_ships();
     check_lodging();

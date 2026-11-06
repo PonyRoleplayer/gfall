@@ -206,6 +206,8 @@ PLAY_SRC := \
 	src/game/dagger/play/commands.c \
 	src/game/dagger/play/weapon.c \
 	src/game/dagger/play/combat.c \
+	src/game/dagger/play/projectile.c \
+	src/game/dagger/play/shots.c \
 	src/game/dagger/play/foes.c \
 	src/game/dagger/play/sfx.c \
 	src/game/dagger/play/player.c \

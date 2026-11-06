@@ -769,34 +769,32 @@ static Entity *aim_creature(const Scene *scene, const float *eye, const float *d
     return best;
 }
 
-Entity *combat_aim(const Scene *scene, const float *eye, const float *dir, float reach)
+Entity *combat_aim_at(const Scene *scene, const float *eye, const float *dir, float reach, float *t)
 {
-    float t;
+    float unused;
 
     if (!scene || !collide_use(scene)) {
         return 0;
     }
-    return aim_creature(scene, eye, dir, reach, &t);
+    return aim_creature(scene, eye, dir, reach, t ? t : &unused);
 }
 
-int combat_shoot(Character *pc, Item *weapon, const Scene *scene, const float *feet, const float *eye, const float *dir)
+Entity *combat_aim(const Scene *scene, const float *eye, const float *dir, float reach)
 {
-    Entity *best;
-    float best_t;
+    return combat_aim_at(scene, eye, dir, reach, 0);
+}
 
+void combat_loosed(Character *pc)
+{
     tire(pc);
     /* A shot trains its skill and Critical Strike, struck or not (WeaponManager). */
     character_tally(pc, SKILL_ARCHERY, 1);
     character_tally(pc, SKILL_CRITICAL_STRIKE, 1);
-    if (!scene || !collide_use(scene)) {
-        return 0;
-    }
-    best = aim_creature(scene, eye, dir, FOES_SIGHT, &best_t);
-    if (!best) {
-        return 0;
-    }
-    strike_one(pc, weapon, 0, best, feet);
-    return 1;
+}
+
+void combat_missile_strike(Character *pc, Item *weapon, Entity *e, const float *feet)
+{
+    strike_one(pc, weapon, 0, e, feet);
 }
 
 static Blow g_citizen_blow;

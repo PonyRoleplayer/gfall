@@ -145,14 +145,18 @@ int combat_strike(Character *pc, Item *weapon, int swing, const Scene *scene, co
  * and the weapon's damage.
  */
 int combat_citizen_struck(Blow *out, int *health_before);
-/*
- * A bow's shot on its release frame, along the view from eye: the first
- * creature that way within sight and no wall between, struck by combat_blow.
- * DFU flies an arrow; here it lands at once. 1 when it struck one.
- */
-/* The nearest living creature the ray from eye along unit dir meets within reach, no wall between; 0 for none. What a shot, a look and a pickpocket aim with. */
+/* The nearest living creature the ray from eye along unit dir meets within reach, no wall between; 0 for none. What a look and a pickpocket aim with. */
 Entity *combat_aim(const Scene *scene, const float *eye, const float *dir, float reach);
-int combat_shoot(Character *pc, Item *weapon, const Scene *scene, const float *feet, const float *eye, const float *dir);
+/* The same, and how far along the ray it is in *t (or 0): what an arrow in flight asks of each step (shots.c). */
+Entity *combat_aim_at(const Scene *scene, const float *eye, const float *dir, float reach, float *t);
+/*
+ * A bow's shot, in two parts as DFU has it: the release (the fatigue and the
+ * training, struck or not) and the arrow's arrival (combat_missile_strike:
+ * the creature it reached struck by combat_blow with the bow in hand then).
+ * The arrow itself flies in projectile.c, steered by shots.c.
+ */
+void combat_loosed(Character *pc);
+void combat_missile_strike(Character *pc, Item *weapon, Entity *e, const float *feet);
 /* The slab test: whether a ray from eye along unit dir meets the box within reach, and how far along. */
 int combat_ray_box(const float *eye, const float *dir, const float *low, const float *high, float reach, float *t_out);
 /* 1 when creature e is one combat_strike would strike from feet and eye facing yaw. */
