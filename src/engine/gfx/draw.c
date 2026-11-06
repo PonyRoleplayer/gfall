@@ -2884,6 +2884,8 @@ static void draw_screen(const Camera *cam)
     if (g_extra) {
         g_extra();
     }
+    /* Over the game's screen: a menu shows the counter too. */
+    hud_counter_draw();
     glide_level_palette();
     shot_note();
     build_legend();
@@ -3286,6 +3288,8 @@ void draw_frame(const Camera *cam, const Level *level)
     if (g_extra) {
         g_extra();
     }
+    /* Above the game's own overlay (its HUD bar), so the counter is never under it. */
+    hud_counter_draw();
     /* A picture drawn above may have left its palette on TMU0 (docs/pictures.md). */
     glide_level_palette();
     shot_note();

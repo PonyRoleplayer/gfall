@@ -6,6 +6,7 @@
 #include <windows.h>
 
 #include "engine/gfx/glide.h"
+#include "engine/gfx/pace.h"
 #include "engine/ui/font.h"
 
 #define GAP 2
@@ -106,16 +107,13 @@ static int pitch_deg(float pitch)
 
 static int g_show = 1;
 static int g_fps_on = 1;
-static int g_fps_ready;
-static int g_fps;
-static int g_fps_frames;
-static DWORD g_fps_tick;
+/* The counter a game shows on its own, with or without the HUD (hud_set_counter). */
+static int g_counter;
 static int g_fps_key;
 
-static void fps_sample(void)
+/* F3 flips the HUD's fps corner; read while the HUD draws. The rate itself is pace.c's, counted at each swap. */
+static void fps_key(void)
 {
-    DWORD now;
-    DWORD dt;
     int down;
 
     down = (GetAsyncKeyState(VK_F3) & 0x8000) ? 1 : 0;
@@ -123,19 +121,6 @@ static void fps_sample(void)
         g_fps_on = g_fps_on ? 0 : 1;
     }
     g_fps_key = down;
-    now = GetTickCount();
-    if (g_fps_tick == 0) {
-        g_fps_tick = now;
-        return;
-    }
-    g_fps_frames++;
-    dt = now - g_fps_tick;
-    if (dt >= 500) {
-        g_fps = (int)(((unsigned int)g_fps_frames * 1000u) / dt);
-        g_fps_frames = 0;
-        g_fps_tick = now;
-        g_fps_ready = 1;
-    }
 }
 
 static void draw_fps(void)
@@ -146,13 +131,14 @@ static void draw_fps(void)
     int line;
     int top;
 
-    if (!g_fps_on || !g_fps_ready) {
+    /* 0 until the first half second is counted. */
+    if (pace_fps() <= 0) {
         return;
     }
     n = 0;
     fps[0] = 0;
     add_str(fps, &n, (int)sizeof(fps), "fps ");
-    add_int(fps, &n, (int)sizeof(fps), g_fps);
+    add_int(fps, &n, (int)sizeof(fps), pace_fps());
     wide = ui_string_width(fps);
     line = ui_line_height();
     top = df_view_h() - MARGIN;
@@ -186,6 +172,24 @@ int hud_fps(void)
     return g_fps_on;
 }
 
+void hud_set_counter(int on)
+{
+    g_counter = on ? 1 : 0;
+}
+
+int hud_counter(void)
+{
+    return g_counter;
+}
+
+void hud_counter_draw(void)
+{
+    /* The HUD's own corner is the same box in the same place: drawn once. */
+    if (g_counter && !(g_show && g_fps_on)) {
+        draw_fps();
+    }
+}
+
 void hud_draw(const Camera *cam)
 {
     char pos[64];
@@ -198,7 +202,7 @@ void hud_draw(const Camera *cam)
     if (!g_show || !cam) {
         return;
     }
-    fps_sample();
+    fps_key();
     n = 0;
     pos[0] = 0;
     add_str(pos, &n, (int)sizeof(pos), "x ");
@@ -230,5 +234,7 @@ void hud_draw(const Camera *cam)
     glide_plate(0);
     ui_string(MARGIN, top, pos);
     ui_string(MARGIN, top - line - GAP, look);
-    draw_fps();
+    if (g_fps_on) {
+        draw_fps();
+    }
 }

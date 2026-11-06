@@ -28,6 +28,7 @@
 #include "engine/core/mem.h"
 #include "engine/gfx/camera.h"
 #include "engine/gfx/mip.h"
+#include "engine/gfx/pace.h"
 #include "engine/scene/light.h"
 #include "engine/scene/clock.h"
 #include "engine/scene/daylight.h"
@@ -116,6 +117,59 @@ static void check_view_size(void)
     df_set_view(640, 480);
     camera_set_fov(75.0f);
     check_expect(check_near(camera_focal(), 417.042f, 0.05f), "the focal length did not come back at 640");
+}
+
+/* The frame's pace (pace.h): the limit's clamp and beat, and the counter, on a counter of 6000 or 1000 ticks a second. */
+static void check_pace(void)
+{
+    int i;
+    int early;
+
+    pace_reset();
+    pace_set_limit(0);
+    check_expect(pace_plan(100u, 6000u, 0) == 0 && pace_plan(101u, 6000u, 0) == 0, "no limit still waited");
+    pace_set_limit(10);
+    check_expect(pace_limit() == PACE_MIN, "a limit under 20 was not held to 20");
+    pace_set_limit(500);
+    check_expect(pace_limit() == PACE_MAX, "a limit over 240 was not held to 240");
+    pace_set_limit(-3);
+    check_expect(pace_limit() == 0, "a negative limit was not off");
+
+    /* 60 a second: a period of 100 ticks. The first swap is not held; the next waits for its time. */
+    pace_set_limit(60);
+    check_expect(pace_plan(1000u, 6000u, 0) == 0, "the first paced swap waited");
+    check_expect(pace_plan(1030u, 6000u, 0) == 70u, "a quick frame did not wait for its period");
+    check_expect(pace_plan(1110u, 6000u, 0) == 90u, "the beat did not follow on from the last swap's time");
+    /* Late by half a frame: no wait, the beat kept (the next due at 1400). */
+    check_expect(pace_plan(1350u, 6000u, 0) == 0, "a late frame waited");
+    check_expect(pace_plan(1380u, 6000u, 0) == 20u, "a frame half late did not keep the beat");
+    /* Late by more than a frame: nothing paid back, the beat from now. */
+    check_expect(pace_plan(1700u, 6000u, 0) == 0, "a frame very late waited");
+    check_expect(pace_plan(1750u, 6000u, 0) == 50u, "after a long frame the pace did not start again from it");
+    /* The vsync at 60 Hz already holds 60: no wait. At 30 it does not, and the swap is paced. */
+    check_expect(pace_plan(1760u, 6000u, 60) == 0 && pace_plan(1770u, 6000u, 60) == 0,
+                 "with vsync at the limit the swap still waited");
+    pace_set_limit(30);
+    early = (int)pace_plan(2000u, 6000u, 60);
+    check_expect(early == 0 && pace_plan(2050u, 6000u, 60) == 150u, "with vsync over the limit the swap was not paced");
+    /* The counter's low half wraps between two swaps: still a short wait. */
+    pace_reset();
+    pace_set_limit(60);
+    pace_plan(0xffffffc0u, 6000u, 0);
+    check_expect(pace_plan(0xfffffff0u, 6000u, 0) == 52u, "the wait went wrong across the counter's wrap");
+    pace_set_limit(0);
+
+    /* The counter: nothing for half a second, then 30 swaps 17 ms apart read 59. */
+    pace_reset();
+    pace_count(0u, 1000u);
+    for (i = 1; i < 30; i++) {
+        pace_count((df_u32)(i * 17), 1000u);
+    }
+    check_expect(pace_fps() == 0, "the counter read before half a second");
+    pace_count(510u, 1000u);
+    check_expect(pace_fps() == 59, "30 swaps in 510 ms did not read 59 frames a second");
+    pace_reset();
+    check_expect(pace_fps() == 0, "the counter was not forgotten");
 }
 
 static void check_camera(void)
@@ -5810,6 +5864,7 @@ void check_engine(void)
     check_rotation();
     check_camera();
     check_view_size();
+    check_pace();
     check_flat_facing();
     check_scene();
     check_cull();

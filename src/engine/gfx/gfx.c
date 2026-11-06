@@ -11,6 +11,8 @@
 #include "engine/gfx/glide.h"
 #include "engine/gfx/texcache.h"
 #include "engine/gfx/mip.h"
+#include "engine/gfx/pace.h"
+#include "engine/ui/hud.h"
 #include "engine/ui/font.h"
 #include "engine/ui/pic.h"
 #include "engine/ui/shot.h"
@@ -209,6 +211,7 @@ void gfx_shutdown(void)
     draw_set_extra(0);
     draw_set_under(0);
     pic_end();
+    pace_close();
     glide_close();
 }
 
@@ -439,6 +442,26 @@ void gfx_set_tex_detail(int level)
 int gfx_tex_detail(void)
 {
     return mip_wall_detail();
+}
+
+void gfx_set_fps_counter(int on)
+{
+    hud_set_counter(on);
+}
+
+int gfx_fps_counter(void)
+{
+    return hud_counter();
+}
+
+void gfx_set_fps_limit(int fps)
+{
+    pace_set_limit(fps);
+}
+
+int gfx_fps_limit(void)
+{
+    return pace_limit();
 }
 
 void gfx_set_sprite_detail(int level)

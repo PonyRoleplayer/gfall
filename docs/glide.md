@@ -132,6 +132,16 @@ The opened mode is the view (`df_set_view`, `core/view.c`): `df_view_w()` and `d
 
 What is fixed in pixels stays so: the engine's text (the 8 × 8 face, a game's glyph sheet), the fps line's and the notes' margins, the occlusion cells' 16 pixels. At 512 × 384 text is a quarter larger on the glass, at 320 × 240 twice; the console covers half the view's height (`CON_H`), 64 columns of the 8 × 8 face at 512 wide. The game's 320 × 200 screens are scaled by the game.
 
+## The frame's pace
+
+`pace.c` sits at the swap: `glide_swap` calls `pace_swap` just before `grBufferSwap`, for every swap there is (a world frame, a menu's `gfx_frame(cam, 0)`, the console, a hold between places).
+
+- **The count.** Each swap is counted on the performance counter, and twice a second the frames over the time since give `pace_fps`. It counts pictures shown, not draws, so with vsync on it reads the retrace's rate (see `docs/console.md` on reading it). The HUD's fps corner and the game's counter (`gfx_set_fps_counter`, `hud_counter_draw` from both of `draw.c`'s frame paths, after the game's overlay) draw that number in the same box, bottom right; with both on it is drawn once. The counter is in the installed text: the game's glyph sheet when one is installed, the engine's face before.
+- **The limit.** `gfx_set_fps_limit(fps)`: 0 is off and the default; anything else is held to 20..240. A swap waits until a period after the last one's time, asleep for all but the last 2 ms (`Sleep`), the rest read off the counter, so the card and the CPU idle instead of drawing frames nobody needs. WINMM's `timeBeginPeriod(1)`, found by `GetProcAddress`, is held while a limit is set so `Sleep` is good to a millisecond, and given back at `pace_close` (`gfx_shutdown`) or when the limit goes off; a WINMM without it leaves the limit sleeping by the default tick and logs it. The beat is steady: a quick frame waits for its time, a frame late by less than a period keeps the beat, one later than that starts it again from now and nothing is paid back. With vsync on and a limit at or above the mode's refresh (60 Hz, 70 for 640 × 400), the retrace already holds the swap and the limit waits for nothing; under it, the limit paces and the swap then waits for the next retrace.
+- **The sound.** Sound is refilled from the frame with no thread (`docs/sound.md`); its lead follows the frame time, so a steady 20 a second (50 ms) is fed. 20 is the floor for that reason.
+
+The sums (`pace_plan`, `pace_count`) are plain C on counter readings; hostcheck runs them (`check_pace`): the clamp, the beat after quick, half-late and very late frames, vsync at and over the limit, the counter's wrap, and 30 swaps in 510 ms reading 59. The sleep's accuracy on Windows 98 and the 233 has not been measured.
+
 ## Kept as they are
 
 - Bilinear filtering costs the SST-1 nothing over point sampling. Text is point sampled so glyph edges stay hard, and so are sprites by default (`spritepoint`, `glide_point_sample` around the sprite pass): up close a sprite is magnified three times, and bilinear smeared its hand-drawn texels.
@@ -141,7 +151,7 @@ What is fixed in pixels stays so: the engine's text (the 8 × 8 face, a game's g
 
 ## Console
 
-`wbuffer`, `planar`, `mipmap`, `mipmmx`, `mippackmmx`, and `mipboxmmx` switch the choices above at run time. `texmem` reports the chains and how many pictures the budget shrank. `vsync`, `stats`, and `glinfo` show what they cost. `glinfo` names the depth buffer and whether planar polygons are in use. See `docs/console.md`.
+`wbuffer`, `planar`, `mipmap`, `mipmmx`, `mippackmmx`, and `mipboxmmx` switch the choices above at run time. `texmem` reports the chains and how many pictures the budget shrank. `vsync`, `stats`, and `glinfo` show what they cost. `fps` shows the counter, `hudfps` the HUD's corner, and `fps_limit` sets the limit. `glinfo` names the depth buffer and whether planar polygons are in use. See `docs/console.md`.
 
 ## Water
 

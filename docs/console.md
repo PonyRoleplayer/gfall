@@ -79,10 +79,12 @@ A variable prints its value when typed alone, and takes a new one as an argument
 | `lightview` | 0..2048 | Squares and rings for the lights within this many units of the camera, the 64 nearest: yellow when its decals were drawn, orange when not. 0 (default) is off; 1 to 63 hold nothing, so they turn it on at 512. |
 | `planar` | on/off | On sends each face as one planar polygon, when `glide2x.dll` has `grDrawPlanarPolygonVertexList`. Off sends its triangles. Reads off when the DLL lacks it. Default on. |
 | `hud` | on/off | GFALL's position and fps corners. LEVELFALL draws its own panels and turns this off in the view. |
-| `fps` | on/off | The fps corner alone. F3 flips it too. |
+| `hudfps` | on/off | The HUD's fps corner alone, drawn while `hud` is on. F3 flips it too. Default on. |
+| `fps` | on/off | The fps counter, drawn with the HUD off and over a game's menu too, in the same box as the HUD's corner (once when both are on). A game turns it on itself (`gfx_set_fps_counter`, GFALL's Gameplay tab). Default off. See `docs/glide.md`, The frame's pace. |
+| `fps_limit` | 0..240 | Frames a second at most, the swap waiting asleep for its time. 0 (default) is off; 1 to 19 are held to 20, as the sound is refilled from the frame. With vsync on, a limit at or above the refresh waits for nothing. |
 | `logfile` | on/off | Copies the log to `console.log` beside the program. See Log. |
 
-`vsync` matters when reading the fps. The card runs at 60 Hz with two colour buffers. A third does not fit in a Voodoo 1's 2 MB frame buffer at 640x480 with depth. With vsync on, a frame that takes 17 ms waits for the next retrace and shows at 30 fps, so the corner's half-second average reads values such as 35 or 45 when frames alternate between one and two retraces. With vsync off the swap is immediate, the picture tears, and the counter reads what the scene costs. Use `vsync off` and `stats` to time a view.
+`vsync` matters when reading the fps. The card runs at 60 Hz with two colour buffers. A third does not fit in a Voodoo 1's 2 MB frame buffer at 640x480 with depth. With vsync on, a frame that takes 17 ms waits for the next retrace and shows at 30 fps, so the counter's half-second average reads values such as 35 or 45 when frames alternate between one and two retraces. With vsync off the swap is immediate, the picture tears, and the counter reads what the scene costs. Use `vsync off` and `stats` to time a view.
 
 | Command | Effect |
 |---|---|

@@ -23,6 +23,7 @@
 #include "engine/gfx/glide.h"
 #include "engine/gfx/texcache.h"
 #include "engine/gfx/mip.h"
+#include "engine/gfx/pace.h"
 #include "engine/scene/scene.h"
 #include "engine/scene/light.h"
 #include "engine/scene/clock.h"
@@ -1421,7 +1422,9 @@ static void commands(void)
     cmd_var("weathersim", weather_sim, weather_set_sim, 0, 1,
             "the weather sets the far clip and the fog outdoors; far is the ceiling");
     cmd_var("hud", hud_shown, hud_set, 0, 1, "position and fps corners");
-    cmd_var("fps", hud_fps, hud_set_fps, 0, 1, "the fps corner of the hud; F3 flips it");
+    cmd_var("hudfps", hud_fps, hud_set_fps, 0, 1, "the fps corner of the hud; F3 flips it");
+    cmd_var("fps", gfx_fps_counter, gfx_set_fps_counter, 0, 1, "the fps counter, with or without the hud");
+    cmd_var("fps_limit", gfx_fps_limit, gfx_set_fps_limit, 0, PACE_MAX, "frames a second at most, 0 off, else 20 and up");
     cmd_var("logfile", logfile_on, logfile_set, 0, 1,
             "copy the log to console.log beside the program");
     cmd_add("sndinfo", c_sndinfo, "", "the sound card's way out, voices, the song and its voice limit");

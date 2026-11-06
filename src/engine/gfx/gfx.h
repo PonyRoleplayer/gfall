@@ -86,6 +86,23 @@ void gfx_set_light_range(int scale);
 void gfx_set_light_shadow(int on);
 
 /*
+ * The frames a second in the bottom right corner, averaged over half a
+ * second of swaps, drawn with the HUD off and over a game's menu too, in
+ * the installed text (the engine's face before a game has one). Default
+ * off; the console's `fps`. docs/glide.md, The frame's pace.
+ */
+void gfx_set_fps_counter(int on);
+int gfx_fps_counter(void);
+/*
+ * At most this many frames a second, the swap waiting asleep for its
+ * time; 0 (the default) is off, anything else is held to 20..240 (20:
+ * the sound is refilled from the frame). With vsync on, a limit at or
+ * above the refresh waits for nothing. The console's `fps_limit`.
+ */
+void gfx_set_fps_limit(int fps);
+int gfx_fps_limit(void);
+
+/*
  * Between places with the card left open: hold the last frame, dimmed,
  * with text in the middle, while the next one loads (gfx_prepare may be
  * called again under it); then let its first frames fade in from black

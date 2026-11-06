@@ -87,6 +87,7 @@ ENGINE_HOST_SRC := \
 	src/engine/gfx/camera.c \
 	src/engine/gfx/rig.c \
 	src/engine/gfx/mip.c \
+	src/engine/gfx/pace.c \
 	src/engine/gfx/texres.c
 
 # The rest of the engine: the window, the card, the screen.

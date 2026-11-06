@@ -13,6 +13,7 @@
 
 #include "engine/gfx/glide.h"
 #include "engine/gfx/mip.h"
+#include "engine/gfx/pace.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
 
@@ -212,6 +213,8 @@ static int g_mark_ntex;
  * tearing, and the counter then reads the real rate.
  */
 static int g_vsync = 1;
+/* The open mode's refresh in hertz: with vsync, what already paces the swap (pace.h). */
+static int g_hz = 60;
 /* Which export spelling find_export matched last: 0 plain, 1 @N, 2 _name@N. */
 static int g_form;
 /* What grSstQueryHardware said, for glide_report. */
@@ -620,6 +623,7 @@ int glide_open(void *hwnd)
             return 0;
         }
         df_set_view(g_modes[got].w, g_modes[got].h);
+        g_hz = g_modes[got].hz;
         /* One line for what opened, and the refusal above for what did not: a probe reads its answer here. */
         log_print(LOG_INFO, "glide: %dx%d at %d Hz opened", g_modes[got].w, g_modes[got].h,
                   g_modes[got].hz);
@@ -929,6 +933,8 @@ void glide_clear(void)
 
 void glide_swap(void)
 {
+    /* Every swap counted, and held to the frame limit (pace.h). */
+    pace_swap(g_vsync ? g_hz : 0);
     glide.swap(g_vsync ? 1 : 0);
 }
 
