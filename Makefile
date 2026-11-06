@@ -192,6 +192,7 @@ PLAY_SRC := \
 	src/game/dagger/play/msgbox.c \
 	src/game/dagger/play/logbook.c \
 	src/game/dagger/play/spellbook.c \
+	src/game/dagger/play/maker.c \
 	src/game/dagger/play/travelmap.c \
 	src/game/dagger/play/townmap.c \
 	src/game/dagger/play/dunmap.c \

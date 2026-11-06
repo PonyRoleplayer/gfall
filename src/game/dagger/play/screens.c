@@ -1,6 +1,7 @@
 #include "game/dagger/play/screens.h"
 #include "game/dagger/play/logbook.h"
 #include "game/dagger/play/spellbook.h"
+#include "game/dagger/play/maker.h"
 #include "game/dagger/play/ills.h"
 #include "engine/scene/clock.h"
 #include "game/dagger/play/msgbox.h"
@@ -39,7 +40,8 @@ enum {
     OPEN_DUNMAP,
     OPEN_MSGBOX,
     OPEN_LOGBOOK,
-    OPEN_SPELLBOOK
+    OPEN_SPELLBOOK,
+    OPEN_MAKER
 };
 
 static int g_open;
@@ -113,6 +115,9 @@ static void send_screen(void)
     } else if (g_open == OPEN_SPELLBOOK) {
         spellbook_compose();
         pixels = spellbook_pixels();
+    } else if (g_open == OPEN_MAKER) {
+        maker_compose();
+        pixels = maker_pixels();
     } else if (g_open == OPEN_TRAVEL) {
         travelmap_compose();
         pixels = travelmap_pixels();
@@ -162,6 +167,8 @@ void screens_close(void)
         logbook_close();
     } else if (g_open == OPEN_SPELLBOOK) {
         spellbook_close();
+    } else if (g_open == OPEN_MAKER) {
+        maker_close();
     }
     g_drag = 0;
     g_turning = 0;
@@ -245,6 +252,35 @@ void screens_open_spellbook(Spellbook *book, const Character *pc)
     screens_close();
     opened(OPEN_SPELLBOOK, img_art_palette(g_rgb) && spellbook_open(book, pc));
     input_key_pressed();
+}
+
+void screens_open_maker(Spellbook *book, Player *player)
+{
+    screens_close();
+    opened(OPEN_MAKER, img_art_palette(g_rgb) && maker_open(book, player));
+    input_key_pressed();
+}
+
+/* A frame of the spell maker: keys (a name is typed) and clicks. */
+static int maker_frame(const Input *in)
+{
+    int vk;
+    int asked;
+
+    asked = MAKER_STAY;
+    vk = input_key_pressed();
+    if (vk) {
+        asked = maker_key(vk);
+    } else if (!in->reset && (in->mouse_pressed & INPUT_MOUSE_LEFT)) {
+        asked = maker_click(g_point_x, g_point_y);
+    }
+    if (asked == MAKER_LEAVE) {
+        return SCREENS_CLOSED;
+    }
+    if (maker_changed()) {
+        send_screen();
+    }
+    return SCREENS_STAY;
 }
 
 /* The spell the book chose, kept past the screen's close for the game. */
@@ -761,6 +797,8 @@ int screens_frame(const Input *in, float dt)
         asked = logbook_frame(in);
     } else if (g_open == OPEN_SPELLBOOK) {
         asked = spellbook_frame(in);
+    } else if (g_open == OPEN_MAKER) {
+        asked = maker_frame(in);
     } else {
         asked = create_frame(in);
     }
@@ -813,6 +851,8 @@ void screens_draw(void)
         note = rest_note();
     } else if (g_open == OPEN_TALK || g_open == OPEN_SERVICE || g_open == OPEN_COURT || g_open == OPEN_TRAVEL || g_open == OPEN_TOWNMAP || g_open == OPEN_DUNMAP || g_open == OPEN_MSGBOX || g_open == OPEN_LOGBOOK || g_open == OPEN_SPELLBOOK) {
         note = 0;
+    } else if (g_open == OPEN_MAKER) {
+        note = maker_note();
     } else if (g_open == OPEN_BANK) {
         note = bank_note();
     } else {

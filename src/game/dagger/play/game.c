@@ -907,6 +907,7 @@ enum {
     GUILD_SERVICE_QUESTS,
     GUILD_SERVICE_REPAIR,
     GUILD_SERVICE_CURE,
+    GUILD_SERVICE_MAKE_SPELLS,
     GUILD_SERVICE_OTHER
 };
 typedef struct GuildNpc {
@@ -926,7 +927,7 @@ static const GuildNpc g_guild_npcs[] = {
     { 813, GUILD_SERVICE_CURE, "CURE DISEASE" },
     { 810, GUILD_SERVICE_OTHER, "MAKE DONATION" }, { 801, GUILD_SERVICE_OTHER, "IDENTIFY" },
     { 60, GUILD_SERVICE_OTHER, "BUY SPELLS" }, { 496, GUILD_SERVICE_OTHER, "BUY SPELLS" },
-    { 64, GUILD_SERVICE_OTHER, "MAKE SPELLS" }, { 497, GUILD_SERVICE_OTHER, "MAKE SPELLS" },
+    { 64, GUILD_SERVICE_MAKE_SPELLS, "MAKE SPELLS" }, { 497, GUILD_SERVICE_MAKE_SPELLS, "MAKE SPELLS" },
     { 62, GUILD_SERVICE_OTHER, "TELEPORTATION" }, { 66, GUILD_SERVICE_OTHER, "DAEDRA SUMMONING" },
     { 65, GUILD_SERVICE_OTHER, "BUY MAGIC ITEMS" }, { 480, GUILD_SERVICE_OTHER, "BUY MAGIC ITEMS" },
     { 802, GUILD_SERVICE_OTHER, "MAKE MAGIC ITEMS" }, { 481, GUILD_SERVICE_OTHER, "MAKE MAGIC ITEMS" },
@@ -1077,6 +1078,14 @@ static void guild_service_asked(void)
         return;
     case GUILD_SERVICE_QUESTS:
         guild_offer_quest();
+        return;
+    case GUILD_SERVICE_MAKE_SPELLS:
+        /* A member of the Mages Guild makes spells (DFU's MagesGuild.CanAccessService: IsMember). */
+        if (guild_rank(g_guild) < 0) {
+            interact_say("Only members make spells here.");
+            return;
+        }
+        screens_open_maker(&g_book, &g_player);
         return;
     default:
         interact_say("That service is not offered yet.");

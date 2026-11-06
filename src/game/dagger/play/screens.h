@@ -52,6 +52,8 @@ void screens_open_talk(Player *p, const TalkWho *who);
 void screens_open_service(int panel);
 /* The quest logbook (logbook.h) at game minute now. */
 void screens_open_logbook(int now);
+/* The spell maker (maker.h): spells paid for by the player and inscribed in the book. */
+void screens_open_maker(Spellbook *book, Player *player);
 /* The spellbook (spellbook.h) of this character; a spell chosen closes it with SCREENS_SPELL. */
 void screens_open_spellbook(Spellbook *book, const Character *pc);
 /* The spell the spellbook chose, its index in the book. */

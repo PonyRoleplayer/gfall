@@ -102,6 +102,7 @@
 #include "game/dagger/play/effects.h"
 #include "game/dagger/play/cast.h"
 #include "game/dagger/play/spellbook.h"
+#include "game/dagger/play/maker.h"
 #include "game/dagger/play/projectile.h"
 #include "game/dagger/play/shots.h"
 #include "game/dagger/places/people.h"
@@ -6869,6 +6870,144 @@ static void check_spellbook(void)
     printf("spellbook: choose, ready by a second click, move, scroll, sort, delete asked twice; build/spellbook0..1.ppm\n");
 }
 
+/* A picker row's name found, and clicked: 1 when it was there. */
+static int maker_pick(const char *name)
+{
+    int i;
+
+    for (i = 0; i < maker_list_count() && i < 14; i++) {
+        if (df_eq(maker_list_name(i), name)) {
+            maker_click(100, 14 + 26 + i * 10 + 4);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* The spell maker driven by clicks and keys: an effect picked, its parameters spun, a target and an element, a name, and the book paid for. */
+static void check_maker(void)
+{
+    static Spellbook book;
+    Character sheet;
+    Player p;
+    const Spell *s;
+    int gold_before;
+    int cost;
+    int gold;
+    int i;
+
+    if (!character_new(&sheet, RACE_BRETON, CLASS_MAGE, 0, "Test")) {
+        check_expect(0, "maker: no starting character");
+        return;
+    }
+    player_init(&p, &sheet);
+    p.pack.gold = 5000;
+    mem_zero(&book, sizeof(book));
+    check_expect(maker_open(&book, &p) && maker_mode() == MAKER_MODE_MAIN, "maker: the screen did not open");
+    maker_compose();
+    write_screen("build/maker0.ppm", maker_pixels());
+    s = maker_spell();
+    check_expect(spell_effects(s) == 0 && s->target == TARGET_CASTER && s->element == ELEMENT_MAGIC, "maker: a new spell is not empty on the caster in magic");
+    /* Add Effect: the groups on a scroll, then Damage, then its subgroups, then Health. */
+    maker_click(244 + 5, 114 + 5);
+    check_expect(maker_mode() == MAKER_MODE_GROUP && maker_list_count() >= 10, "maker: Add Effect does not list the groups");
+    maker_compose();
+    write_screen("build/maker1.ppm", maker_pixels());
+    check_expect(maker_pick("Damage") && maker_mode() == MAKER_MODE_SUB && maker_list_count() == 3, "maker: Damage does not list health, fatigue and spell points");
+    check_expect(maker_pick("Health") && maker_mode() == MAKER_MODE_EDIT && spell_effects(maker_spell()) == 1, "maker: Health does not open the editor");
+    /* Spinners: DFU's defaults of 1; the magnitude's high 1 -> 10 by nine clicks on the top of its spinner; its low to 3; a wheel of clicks below. */
+    for (i = 0; i < 9; i++) {
+        maker_click(104 + 5, 134 + 1);
+    }
+    maker_click(64 + 5, 134 + 1);
+    maker_click(64 + 5, 134 + 1);
+    s = maker_spell();
+    check_expect(s->effect[0].magnitude_base_high == 10 && s->effect[0].magnitude_base_low == 3 && s->effect[0].magnitude_per == 1,
+                 "maker: the magnitude's spinners do not set 3 to 10");
+    /* A low pushed over the high drags it: the low to 12 makes the high 12. */
+    for (i = 0; i < 9; i++) {
+        maker_click(64 + 5, 134 + 1);
+    }
+    s = maker_spell();
+    check_expect(s->effect[0].magnitude_base_low == 12 && s->effect[0].magnitude_base_high == 12, "maker: a low over the high does not drag it");
+    maker_click(104 + 5, 134 + 16 - 1);
+    s = maker_spell();
+    check_expect(s->effect[0].magnitude_base_high == 11 && s->effect[0].magnitude_base_low == 11, "maker: a high under the low does not drag it");
+    /* A spinner of a parameter Damage Health has not does nothing. */
+    maker_click(64 + 5, 94 + 1);
+    check_expect(maker_spell()->effect[0].duration_base == 1, "maker: a duration spinner works on an effect that has none");
+    maker_compose();
+    write_screen("build/maker2.ppm", maker_pixels());
+    maker_click(281 + 5, 94 + 5);
+    check_expect(maker_mode() == MAKER_MODE_MAIN, "maker: the editor's Exit does not come back");
+    s = maker_spell();
+    /* Damage reaches others: the caster is no longer allowed and the target moved to touch; at range and fire may be chosen. */
+    check_expect(s->target == TARGET_TOUCH, "maker: a spell that harms stays on the caster");
+    maker_click(275 + 5, 114 + 2 * 16 + 5);
+    maker_click(299 + 5, 114 + 5);
+    s = maker_spell();
+    check_expect(s->target == TARGET_RANGE && s->element == ELEMENT_FIRE, "maker: the target and element buttons do not choose");
+    maker_click(275 + 5, 114 + 5);
+    check_expect(maker_spell()->target == TARGET_RANGE, "maker: the caster is chosen for a spell that harms");
+    /* The cost is live and is spell_cost's. */
+    cost = maker_cost(&gold);
+    check_expect(cost == spell_cost(maker_spell(), &p.sheet, 0) && gold > 0, "maker: the cost shown is not the spell's");
+    /* An effect with no target in common is refused: Light is the caster's alone. */
+    maker_click(244 + 5, 114 + 5);
+    check_expect(maker_pick("Light") && maker_mode() == MAKER_MODE_MAIN && spell_effects(maker_spell()) == 1 && maker_note(),
+                 "maker: Light was joined to a spell that harms");
+    /* Buy needs a name: refused, then the name typed after a click on its line, then bought. */
+    gold_before = (int)p.pack.gold;
+    maker_click(244 + 5, 147 + 5);
+    check_expect(p.pack.gold == (df_u32)gold_before && book.count == 0 && maker_note(), "maker: a spell with no name was bought");
+    maker_click(100, 184 + 2);
+    check_expect(maker_mode() == MAKER_MODE_NAME, "maker: a click on the name does not start typing");
+    maker_key('B');
+    maker_key('O');
+    maker_key('L');
+    maker_key('T');
+    maker_key(0x08);
+    maker_key('T');
+    maker_key(0x20);
+    maker_key('2');
+    maker_key(0x0D);
+    check_expect(maker_mode() == MAKER_MODE_MAIN, "maker: Enter does not end the name");
+    maker_compose();
+    write_screen("build/maker3.ppm", maker_pixels());
+    maker_click(244 + 5, 147 + 5);
+    check_expect(book.count == 1 && df_eq(book.spell[0].name, "Bolt 2") && book.spell[0].target == TARGET_RANGE
+                     && book.spell[0].element == ELEMENT_FIRE && (int)p.pack.gold == gold_before - gold,
+                 "maker: Buy does not inscribe the spell and charge its gold");
+    check_expect(spell_effects(maker_spell()) == 0, "maker: the maker keeps the spell it sold");
+    /* Another of the same name is refused, and not paid for. */
+    maker_click(244 + 5, 114 + 5);
+    maker_pick("Heal");
+    maker_pick("Health");
+    maker_click(281 + 5, 94 + 5);
+    maker_click(100, 184 + 2);
+    maker_key('B');
+    maker_key('O');
+    maker_key('L');
+    maker_key('T');
+    maker_key(0x20);
+    maker_key('2');
+    maker_key(0x0D);
+    gold_before = (int)p.pack.gold;
+    maker_click(244 + 5, 147 + 5);
+    check_expect(book.count == 1 && (int)p.pack.gold == gold_before, "maker: a second spell of one name was bought");
+    /* Too little gold: no spell, no charge. */
+    p.pack.gold = 0;
+    maker_click(244 + 5, 147 + 5);
+    check_expect(book.count == 1 && p.pack.gold == 0, "maker: a spell was bought with no gold");
+    /* Delete takes the slot last touched out; New clears. */
+    maker_key(0x2E);
+    maker_click(244 + 5, 163 + 5);
+    check_expect(spell_effects(maker_spell()) == 0, "maker: New leaves effects");
+    check_expect(maker_click(244 + 5, 179 + 5) == MAKER_LEAVE, "maker: Exit does not leave");
+    maker_close();
+    printf("maker: pick an effect, spin it, target and element, refuse a joint with no target, name, buy once, pay; build/maker0..3.ppm\n");
+}
+
 /* A world for projectile.c: a wall across x = wall_x, and a ball of radius r at ball. */
 typedef struct FlightWorld {
     float wall_x;
@@ -9563,6 +9702,7 @@ void check_play(void)
     check_cast();
     check_magic_save();
     check_spellbook();
+    check_maker();
     check_projectile();
     check_arrow_flight();
     check_ills();
