@@ -625,8 +625,10 @@ classic screens' stretched 320 x 200 canvas. It does not change video mode.
    View switches the draft scheme; the Attack / swing row edits INPUT_SWING
    for Cursor, INPUT_ATTACK for View, preserving the other scheme's binding.
 3. **Graphics**: player-facing controls only — **resolution** (the engine's `gfx_mode` list, smallest
-   first: 320 x 240, 400 x 300, 512 x 384, 640 x 480, and 800 x 600 on a board with 4 MB of frame buffer;
-   a click goes to the next; kept as `mode_w` and `mode_h` in `OPTS`, 640 x 480 for an older file; it shows at
+   first, and only what the board takes: a Voodoo 1 or 2 has nothing below 512 x 384 (the user's 86Box refused 320 x 240 and
+   400 x 300), so it lists 512 x 384 and 640 x 480, and 800 x 600 with 4 MB of frame buffer; 320 x 240 and 400 x 300 are
+   listed only for another board type;
+   a click goes to the next; kept as `resolution=` in gfall.cfg, 640 x 480 when it says none; it shows at
    the next start, since Glide opens with the mode: `apps/gfall/main.c` reads it with `keys_peek_mode` before
    `gfx_startup` and passes it to `gfx_set_mode`; a mode the card refuses opens 640 x 480, and the row then
    says `NOW 640 x 480` beside the choice), horizontal field of view (45..120,
@@ -647,8 +649,8 @@ classic screens' stretched 320 x 200 canvas. It does not change video mode.
    again, so it is a load-sized pause, and a change is passed on only when it differs). Leaving the tab, Back, Escape, or a failed
    Apply restores the engine to the snapshot from when the tab was first opened
    in that session; tab changes keep the draft. A resolution shows at the next start.
-   The shell is drawn in 640 x 480 coordinates scaled to the view (`menu.c`), so at 320 x 240 its text is
-   half size: not checked for legibility yet. Classic's screens scale through `screen.c` by w / 320 and
+   The shell is drawn in 640 x 480 coordinates scaled to the view (`menu.c`), so at 512 x 384 its text is
+   four fifths size: not checked for legibility yet. Classic's screens scale through `screen.c` by w / 320 and
    h / 200 (a picture's width is taken from its two edges, so a factor that is not whole, 1.25 or 1.6,
    leaves no seam), the map markers (`dunmap.c`, `townmap.c`) by the same factors, the pointer through
    `df_view_w()` and `df_view_h()`. 320 x 200 and 640 x 400, which need a separate vertical focal length,
@@ -722,12 +724,12 @@ or allocation**. No full-screen image is rebuilt on a slider tick.
 
 Every setting the player can change lives in **`gfall.cfg`** beside the exe, as text, one `key=value` a line (`play/config.c`, plain C and host-tested; `keys.c` is the bridge to the live state). It is read at the start and written, whole, by every Apply of the Settings screens; a missing one is written at the first start (from an older program's `DATA\KEYS.DAT`, read once as record rows, else from the defaults). A hand edit of a value lasts; a hand-made comment does not, since the file is written afresh with its own notes. A line that is no key we know or whose value is out of range is skipped, counted, and its line number logged once (`keys: gfall.cfg: 2 lines were not used, the first line 14`); the others still load, and a key left out keeps what the program had.
 
-- **The screen:** `resolution=640x480` (320x240, 400x300, 512x384, 640x480, and 800x600 on 4 MB; it shows at the next start, read before the card opens by `keys_peek_mode`), `fov` (45..120), `far_clip` (16..16384), `texture_detail` and `sprite_detail` (`low`, `medium`, `high`), `fog`, `crisp_sprites`, `vsync`, `dungeon_lights`, `ambient_light` (0..255), `light_range` (1..8), `light_shadow`, `weather_view`, `flora`, `flora_density` (0..100), `flora_sight` (0..16384). The graphics ones were console variables that reset at every start; they are kept now.
+- **The screen:** `resolution=640x480` (512x384, 640x480, and 800x600 on 4 MB, on a Voodoo 1 or 2; it shows at the next start, read before the card opens by `keys_peek_mode`), `fov` (45..120), `far_clip` (16..16384), `texture_detail` and `sprite_detail` (`low`, `medium`, `high`), `fog`, `crisp_sprites`, `vsync`, `dungeon_lights`, `ambient_light` (0..255), `light_range` (1..8), `light_shadow`, `weather_view`, `flora`, `flora_density` (0..100), `flora_sight` (0..16384). The graphics ones were console variables that reset at every start; they are kept now.
 - **Sound:** `sfx_volume`, `music_volume` (0..100).
 - **Play:** `mouse` (`cursor` or `view`), `full_hud`, `head_bob`, `toggle_crouch`.
 - **Keys:** `key.<action>=<name>`, the name the Keybindings screen shows ("Space", "Ctrl", "Left Button", "Num +", "="; a plain number is a virtual key too). The actions: attack, use, run, jump, character, inventory, map, rest, forward, back, left, right, swap_hands, cursor, swing, turn_left, turn_right, look_up, look_down, look_center, freelook, travel_map, transport, crouch. Escape is the menu and is not in it.
 - `on` and `off` may be written 1 and 0, yes and no, true and false; case and spaces about `=` do not matter; a `#` at a line's start, or after a space following a value, begins a comment.
-- **What gets logged** (the console's log, or `logfile on`): `keys: gfall.cfg read`, `keys: gfall.cfg asks for 320x240` before the card opens, `gfall: the screen is 320x240` or, when the card opened another, `gfall: gfall.cfg asks for 320x240, the card opened 640x480`, and `keys: gfall.cfg written, the screen's mode 320x240` on every Apply. The Graphics row says `NOW 640 x 480` beside a choice the card did not open.
+- **What gets logged** (the console's log, or `logfile on`): `keys: gfall.cfg read`, `keys: gfall.cfg asks for 512x384` before the card opens, `gfall: the screen is 512x384` or, when the card opened another, `gfall: gfall.cfg asks for 640x400, the card opened 640x480`, and `keys: gfall.cfg written, the screen's mode 320x240` on every Apply. The Graphics row says `NOW 640 x 480` beside a choice the card did not open.
 - Not in it: saved games (`DATA\SAVE#.SAV`), MAIN.DAT and its mods, and the engine's console variables that are developer switches (they stay on the console, `autoexec.cfg`).
 
 ### Adding another option

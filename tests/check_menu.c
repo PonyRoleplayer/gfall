@@ -37,12 +37,13 @@ void gfx_set_mipmap(int on) { g_stub_mipmap = on; }
 void gfx_set_light_range(int scale) { (void)scale; }
 void gfx_set_light_shadow(int on) { (void)on; }
 static int g_stub_tex_detail = 2, g_stub_sprite_detail = 2;
-static const int g_stub_modes[][2] = { { 320, 240 }, { 400, 300 }, { 512, 384 }, { 640, 480 } };
+/* What a Voodoo 1 lists: nothing below 512 x 384 (the user's 86Box refused 320 x 240 and 400 x 300). */
+static const int g_stub_modes[][2] = { { 512, 384 }, { 640, 480 } };
 void gfx_set_mode(int w, int h) { (void)w; (void)h; }
-int gfx_mode_count(void) { return 4; }
+int gfx_mode_count(void) { return 2; }
 int gfx_mode(int i, int *w, int *h)
 {
-    if (i < 0 || i >= 4) {
+    if (i < 0 || i >= 2) {
         return 0;
     }
     *w = g_stub_modes[i][0];
@@ -161,13 +162,13 @@ void check_menu(void)
     click_at(200,445);
     check_expect(gfx_tex_detail() == 2 && gfx_sprite_detail() == 2 && viewopt_tex_detail() == 2, "menu: Default did not return the details to High");
     click_at(550,445);
-    /* The resolution: the engine's four modes, the saved 640 x 480 first; a click goes to the next (320 x 240); a draft until Apply; kept for the next start; Default is 640 x 480. */
+    /* The resolution: the engine's modes, the saved 640 x 480 the last; a click goes to the next (back to 512 x 384); a draft until Apply; kept for the next start; Default is 640 x 480. */
     viewopt_set_mode(640, 480);
     menu_open(MENU_NONE);
     menu_open(MENU_OPTIONS);
     click_at(30,200);
-    check_expect(settings_resolutions() == 4 && settings_resolution_w(0) == 320 && settings_resolution_h(0) == 240
-                     && settings_resolution_w(3) == 640, "menu: the selector does not list the engine's modes");
+    check_expect(settings_resolutions() == 2 && settings_resolution_w(0) == 512 && settings_resolution_h(0) == 384
+                     && settings_resolution_w(1) == 640, "menu: the selector does not list the engine's modes");
     click_at(516, 100);
     {
         int mw, mh;
@@ -176,7 +177,7 @@ void check_menu(void)
         check_expect(mw == 640 && mh == 480, "menu: a resolution draft was kept early");
         click_at(200,445);
         viewopt_mode(&mw, &mh);
-        check_expect(mw == 320 && mh == 240, "menu: Apply did not keep 320 x 240 for the next start");
+        check_expect(mw == 512 && mh == 384, "menu: Apply did not keep 512 x 384 for the next start");
         click_at(40,445);
         click_at(200,445);
         viewopt_mode(&mw, &mh);
