@@ -17,7 +17,6 @@
 #include "game/dagger/play/screen.h"
 #include "game/dagger/play/save.h"
 #include "game/dagger/play/sheet.h"
-#include "game/dagger/play/slots.h"
 #include "game/dagger/formats/img.h"
 #include "engine/ui/font.h"
 #include "engine/ui/pic.h"
@@ -30,7 +29,6 @@ enum {
     OPEN_SHEET,
     OPEN_CREATE,
     OPEN_REST,
-    OPEN_SLOTS,
     OPEN_TALK,
     OPEN_SERVICE,
     OPEN_BANK,
@@ -51,10 +49,6 @@ static df_u8 g_rgb[768];
 static int g_point_x;
 static int g_point_y;
 static const char *g_said;
-/* The save slot chosen, kept past the screen's closing. */
-static int g_slot;
-static int g_slot_saving;
-static char g_slot_name[SAVE_NAME];
 /*
  * A map's mouse: a drag under way (its last point), a right-button turn under
  * way, how long the left button has been held over a button that repeats, and
@@ -90,9 +84,6 @@ static void send_screen(void)
     } else if (g_open == OPEN_REST) {
         rest_compose();
         pixels = rest_pixels();
-    } else if (g_open == OPEN_SLOTS) {
-        slots_compose();
-        pixels = slots_pixels();
     } else if (g_open == OPEN_TALK) {
         talk_compose();
         pixels = talk_pixels();
@@ -146,8 +137,6 @@ void screens_close(void)
     } else if (g_open == OPEN_REST) {
         g_said = rest_said();
         rest_close();
-    } else if (g_open == OPEN_SLOTS) {
-        slots_close();
     } else if (g_open == OPEN_TALK) {
         talk_close();
     } else if (g_open == OPEN_SERVICE) {
@@ -355,29 +344,6 @@ void screens_open_travel(Player *p, int px, int py, int region)
     g_player = p;
     opened(OPEN_TRAVEL, travelmap_open(p, px, py, region));
     input_key_pressed();
-}
-
-void screens_open_slots(int saving)
-{
-    screens_close();
-    g_slot_saving = saving;
-    opened(OPEN_SLOTS, img_art_palette(g_rgb) && slots_open(saving));
-    input_key_pressed();
-}
-
-int screens_slot(void)
-{
-    return g_slot;
-}
-
-const char *screens_slot_name(void)
-{
-    return g_slot_name;
-}
-
-int screens_slot_saving(void)
-{
-    return g_slot_saving;
 }
 
 const char *screens_said(void)
@@ -708,35 +674,6 @@ static int rest_frame(const Input *in, float dt)
     return SCREENS_STAY;
 }
 
-/* A frame of the save slots: the keys, the click; what is chosen is kept before it closes. */
-static int slots_frame(const Input *in)
-{
-    int asked;
-    int vk;
-
-    asked = SLOTS_STAY;
-    vk = input_key_pressed();
-    if (vk) {
-        asked = slots_key(vk);
-    }
-    if (asked == SLOTS_STAY && (!in->reset && (in->mouse_pressed & INPUT_MOUSE_LEFT))) {
-        asked = slots_click(g_point_x, g_point_y);
-    }
-    if (asked == SLOTS_LEAVE) {
-        return SCREENS_CLOSED;
-    }
-    if (asked == SLOTS_CHOSEN) {
-        g_slot = slots_chosen();
-        df_copy(g_slot_name, slots_chosen_name(), SAVE_NAME);
-        screens_close();
-        return SCREENS_SLOT;
-    }
-    if (slots_changed()) {
-        send_screen();
-    }
-    return SCREENS_STAY;
-}
-
 int screens_frame(const Input *in, float dt)
 {
     int px;
@@ -751,8 +688,6 @@ int screens_frame(const Input *in, float dt)
         asked = sheet_frame(in);
     } else if (g_open == OPEN_REST) {
         asked = rest_frame(in, dt);
-    } else if (g_open == OPEN_SLOTS) {
-        asked = slots_frame(in);
     } else if (g_open == OPEN_TALK) {
         asked = talk_frame(in);
     } else if (g_open == OPEN_SERVICE) {
@@ -821,8 +756,6 @@ void screens_draw(void)
         note = sheet_note();
     } else if (g_open == OPEN_REST) {
         note = rest_note();
-    } else if (g_open == OPEN_SLOTS) {
-        note = slots_note();
     } else if (g_open == OPEN_TALK || g_open == OPEN_SERVICE || g_open == OPEN_COURT || g_open == OPEN_TRAVEL || g_open == OPEN_TOWNMAP || g_open == OPEN_DUNMAP || g_open == OPEN_MSGBOX || g_open == OPEN_LOGBOOK) {
         note = 0;
     } else if (g_open == OPEN_BANK) {

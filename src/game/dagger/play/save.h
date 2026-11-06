@@ -6,12 +6,15 @@
 #include "game/dagger/play/inventory.h"
 
 /*
- * Saved games, six slots with a name each, DATA\SAVE0.SAV to SAVE5.SAV. Read
- * docs/game.md (Saves) before editing.
- *
- * It is a record file (docs/data.md), like KEYS.DAT: self-describing chunks,
- * so `dfrec dump` reads it, and a later program reading an older save keeps
- * a new field's zero. Its chunks:
+ * A saved game: one file, a record file (docs/data.md) of self-describing
+ * chunks, so `dfrec dump` reads it. Where the files are, which character
+ * they belong to and the list screen are saves.h; this module is one file's
+ * content. Read docs/game.md (Saves) before editing. Its chunks:
+ *   META  who and when, for the list: the character's id, name and level, the
+ *         real time it was saved, where the game was and its clock (one row,
+ *         first, so the list reads only the start of each file)
+ *   THMB  the snapshot, a picture of the view, 160 x 120 in RGB 565, as rows
+ *         of 240 pixels (a row holds at most 512 bytes)
  *   GAME  which place, the player's place in it and facing, the way back
  *         out of its door, the clock, the game's seed
  *   CHAR  the character sheet
@@ -31,8 +34,12 @@
  * Plain C: hostcheck runs a round trip.
  */
 
-#define SAVE_SLOTS 6
 #define SAVE_NAME 24
+#define SAVE_WHERE 40
+#define SAVE_THUMB_W 160
+#define SAVE_THUMB_H 120
+/* A file's name beside the program, saves\Anna Smith\S0003.SAV, at most. */
+#define SAVE_PATH 160
 
 /* Everything a save holds that is not already in a table of its own. */
 typedef struct SaveState {
@@ -51,26 +58,46 @@ typedef struct SaveState {
     int day;
     int day_zero;
     df_u32 seed;
-    /* What the player called this save. */
-    char name[SAVE_NAME];
+    /* Where the game was, in words, for the list ("Daggerfall, Wayrest"). */
+    char where_words[SAVE_WHERE];
+    /* The snapshot to keep, SAVE_THUMB_W x SAVE_THUMB_H in RGB 565 with row 0 at the top, or 0 for none. Not read back (save_peek_thumb). */
+    const df_u16 *thumb;
     Character sheet;
     Inventory pack;
 } SaveState;
 
-/* What the files' names start with, DATA\\SAVE until told otherwise: hostcheck's own, so it never touches a player's. */
-void save_use_prefix(const char *prefix);
-/* The slot the calls below read and write, 0..SAVE_SLOTS-1. */
-void save_use_slot(int slot);
-/* 1 when the slot in use has a save. */
+/* What the list shows of a save, read from the start of its file. */
+typedef struct SaveMeta {
+    df_u32 char_id;
+    char name[SAVE_NAME];
+    int level;
+    /* When it was saved, by the clock on the wall. */
+    int year;
+    int month;
+    int day;
+    int hour;
+    int minute;
+    int second;
+    char where[SAVE_WHERE];
+    /* The game's own day and minute of the day. */
+    int game_day;
+    int game_minute;
+    int has_thumb;
+} SaveMeta;
+
+/* The file the calls below read and write: beside the program, e.g. saves\Anna Smith\S0003.SAV. */
+void save_use_file(const char *name);
+/* 1 when that file is there. */
 int save_exists(void);
-/* 1 when any slot has. */
-int save_any(void);
-/* A slot's name, into out (SAVE_NAME); 0, and empty, when it has no save. */
-int save_peek_name(int slot, char *out);
+/* A file's META, only the start of it read: 1 when it is a save of this game, with its meta in out. */
+int save_peek(const char *name, SaveMeta *out);
+/* A file's snapshot into out (SAVE_THUMB_W x SAVE_THUMB_H, RGB 565): 1 when it has one. */
+int save_peek_thumb(const char *name, df_u16 *out);
 /*
  * Writes state, and the keep table and the piles as they are now: the caller
- * has flushed what is loaded into the keep table first (stream_keep_now).
- * 0, with any old save left as it was, when it could not be written.
+ * has flushed what is loaded into the keep table first (stream_keep_now). It
+ * goes to a temporary name and is moved into place, so a failure leaves any
+ * file that was there as it was: 0 then.
  */
 int save_write(const SaveState *state);
 /*

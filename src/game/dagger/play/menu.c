@@ -19,6 +19,9 @@
 #include "game/dagger/play/control.h"
 #include "game/dagger/play/screen.h"
 #include "game/dagger/play/keys.h"
+#include "game/dagger/play/files.h"
+#include "game/dagger/play/save.h"
+#include "engine/core/prof.h"
 #include "game/dagger/formats/img.h"
 #include "engine/ui/font.h"
 #include "engine/ui/pic.h"
@@ -51,7 +54,13 @@ static int g_open;
 /* Drafts belong to the open settings session. Apply commits the active
  * section; Back/Escape cancels its uncommitted edits. The game remains paused. */
 static SettingsView g_settings;
-static int g_settings_pics[SETTINGS_ATLASES];
+static int g_settings_pics[UI_ATLASES];
+/* The saved games' screen: whether the player is in a game (and may save), who plays, the snapshot's picture and which one it is. */
+static int g_files_can_save;
+static df_u32 g_files_current;
+static int g_thumb_pic;
+static df_u32 g_thumb_serial;
+static char g_chosen[SAVE_PATH];
 static int g_draft_keys[INPUT_ACTIONS];
 static int g_saved_keys[INPUT_ACTIONS];
 static int g_saved_classic;
@@ -138,11 +147,14 @@ static void settings_release(void)
     if (g_open == MENU_OPTIONS || g_open == MENU_CONTROLS) {
         if (g_settings.tab == SETTINGS_GRAPHICS) settings_leave_tab(SETTINGS_GRAPHICS);
     }
-    for (i = 0; i < SETTINGS_ATLASES; i++) {
+    for (i = 0; i < UI_ATLASES; i++) {
         if (g_settings_pics[i]) pic_free(g_settings_pics[i]);
         g_settings_pics[i] = 0;
     }
-    settings_close();
+    if (g_thumb_pic) pic_free(g_thumb_pic);
+    g_thumb_pic = 0;
+    g_thumb_serial = 0;
+    ui_close();
 }
 
 /* The engine's modes into the selector, and the mode open now beside them. */
@@ -295,11 +307,29 @@ static void settings_gfx_drag_value(SettingsGfxDraft *draft, int action, int val
 
 static void settings_leave_tab(int tab)
 {
+    if (tab == SETTINGS_FILES && g_thumb_pic) {
+        pic_free(g_thumb_pic);
+        g_thumb_pic = 0;
+        g_thumb_serial = 0;
+    }
     if (tab == SETTINGS_GRAPHICS) settings_gfx_draft_cancel();
+}
+
+/* The snapshot of the save selected on the card, a new picture only when it changed. */
+static void thumb_sync(void)
+{
+    if (files_thumb_serial() == g_thumb_serial) return;
+    g_thumb_serial = files_thumb_serial();
+    if (g_thumb_pic) pic_free(g_thumb_pic);
+    g_thumb_pic = files_thumb() ? pic_load_565(files_thumb(), SAVE_THUMB_W, SAVE_THUMB_H) : 0;
 }
 
 static void settings_enter_tab(int tab)
 {
+    if (tab == SETTINGS_FILES) {
+        files_open(g_files_can_save, g_files_current, 0);
+        thumb_sync();
+    }
     if (tab == SETTINGS_GRAPHICS && !g_gfx_draft_open) {
         settings_gfx_draft_hold(&g_settings.gfx);
         g_gfx_draft_open = 1;
@@ -349,12 +379,13 @@ void menu_open(int which)
         g_settings.full_hud = g_saved_full_hud = !viewopt_full();
         g_settings.classic = g_saved_classic = control_classic();
         for (i = 0; i < INPUT_ACTIONS; i++) g_draft_keys[i] = g_saved_keys[i] = input_binding(i);
-        if (settings_open()) {
-            for (i = 0; i < SETTINGS_ATLASES; i++) {
+        if (g_settings.tab == SETTINGS_FILES) settings_enter_tab(SETTINGS_FILES);
+        if (ui_open()) {
+            for (i = 0; i < UI_ATLASES; i++) {
                 int side;
                 const df_u8 *pixels;
-                pixels = settings_atlas(i, &side);
-                g_settings_pics[i] = pic_load(pixels, side, side, settings_palette(), i != 0);
+                pixels = ui_atlas(i, &side);
+                g_settings_pics[i] = pic_load(pixels, side, side, ui_palette(), i != 0);
             }
         }
         input_key_pressed();
@@ -365,9 +396,30 @@ void menu_open(int which)
     }
 }
 
+void menu_files(int can_save, df_u32 current)
+{
+    g_files_can_save = can_save;
+    g_files_current = current;
+}
+
+const char *menu_chosen_path(void)
+{
+    return g_chosen;
+}
+
+void menu_files_saved(const char *path)
+{
+    if (g_open == MENU_OPTIONS || g_open == MENU_CONTROLS) {
+        files_open(g_files_can_save, g_files_current, path);
+        thumb_sync();
+        files_say(path ? "Game saved." : "The game could not be saved.");
+    }
+}
+
 void menu_say(const char *line)
 {
-    if (g_open == MENU_OPTIONS || g_open == MENU_CONTROLS) g_settings.note = line;
+    if ((g_open == MENU_OPTIONS || g_open == MENU_CONTROLS) && g_settings.tab == SETTINGS_FILES) files_say(line);
+    else if (g_open == MENU_OPTIONS || g_open == MENU_CONTROLS) g_settings.note = line;
     else g_note = line;
 }
 
@@ -507,6 +559,7 @@ static int settings_frame(const Input *in, int px, int py)
         if (g_settings.gfx_scroll > SETTINGS_GFX_ITEM_COUNT - SETTINGS_GFX_ROWS)
             g_settings.gfx_scroll = SETTINGS_GFX_ITEM_COUNT - SETTINGS_GFX_ROWS;
     }
+    if (g_settings.tab == SETTINGS_FILES && in->wheel) files_wheel(in->wheel);
     hit = settings_hit(g_settings.tab, settings_list_scroll(), px, py);
     g_settings.hover = hit;
     /* Focus loss cancels a drag or key capture BEFORE interpreting releases
@@ -543,6 +596,17 @@ static int settings_frame(const Input *in, int px, int py)
         menu_open(MENU_NONE);
         return MENU_CLOSED;
     }
+    /* The saved games' keys: Up and Down, Enter to load, Delete. */
+    if (g_settings.tab == SETTINGS_FILES && vk) {
+        int asked;
+
+        asked = files_key(vk);
+        thumb_sync();
+        if (asked == FILES_LOAD) {
+            df_copy(g_chosen, files_chosen(), SAVE_PATH);
+            return MENU_LOAD;
+        }
+    }
     /* Store the slider action, not just a drag flag: moving vertically
      * across the other audio row must not transfer ownership to it. */
     if (click && settings_slider_at(hit, px) >= 0) g_dragging = hit + 1;
@@ -569,11 +633,20 @@ static int settings_frame(const Input *in, int px, int py)
             settings_enter_tab(g_settings.tab);
         }
         g_open = g_settings.tab == SETTINGS_KEYS ? MENU_CONTROLS : MENU_OPTIONS;
+    } else if (g_settings.tab == SETTINGS_FILES && hit >= FILES_ID_LOAD) {
+        /* A control of the saved games' screen: its own to say what a click does. */
+        int asked;
+
+        asked = files_click(hit, prof_now(), prof_per_ms());
+        thumb_sync();
+        if (asked == FILES_LOAD) {
+            df_copy(g_chosen, files_chosen(), SAVE_PATH);
+            return MENU_LOAD;
+        }
+        if (asked == FILES_SAVE) return MENU_SAVE;
     } else if (hit >= SETTINGS_BIND && hit < SETTINGS_BIND + SETTINGS_BINDINGS) {
         g_settings.waiting = hit-SETTINGS_BIND;
     } else switch (hit) {
-    case SETTINGS_LOAD: return MENU_LOAD;
-    case SETTINGS_SAVE: return MENU_SAVE;
     case SETTINGS_EXIT:
         if (g_settings.confirm_exit) return MENU_QUIT;
         g_settings.confirm_exit = 1;
@@ -709,6 +782,17 @@ void menu_draw(void)
         }
         g_settings.dirty = settings_dirty();
         settings_draw(&g_settings, settings_quad, 0);
+        /* The snapshot of the save selected, over its frame (the same 640 x 480 the shell's quads use). */
+        if (g_settings.tab == SETTINGS_FILES && g_thumb_pic) {
+            int tx;
+            int ty;
+            int tw;
+            int th;
+
+            files_thumb_rect(&tx, &ty, &tw, &th);
+            pic_draw(g_thumb_pic, tx * DF_VIEW_W / SETTINGS_W, DF_VIEW_H - ty * DF_VIEW_H / SETTINGS_H,
+                     tw * DF_VIEW_W / SETTINGS_W, th * DF_VIEW_H / SETTINGS_H);
+        }
     }
     if (g_note) {
         ui_string((DF_VIEW_W - ui_string_width(g_note)) / 2,

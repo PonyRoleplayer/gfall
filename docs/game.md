@@ -32,7 +32,7 @@ sheet     the character sheet, and a level taken on it
 create    character creation, screen by screen
 rest      resting and loitering
 screens   whichever of those is open, on the card
-save      the one saved game
+save      one saved game; saves: where they are and whose; files: their screen; ui: the widgets
 kit       what a new character starts with
 overlay   the HUD: compass, vitals, crosshair
 menu      title/start/death and the settings shell
@@ -71,7 +71,7 @@ GFALL's loop, once the game is running:
 2. Unless paused (the game's, or the console's: `gfx_paused`): the use key, the player's step, its landing taken, the camera on its eye (`rig_first`), and the creatures read near it (2 ms).
 3. The compass is turned.
 
-A passage says where it will lead, and a person that talk comes later, through the game's use handler (`interact_set_handler`). The pictures' room on the card is 256 KB (`GAME_PICTURE_KB`), set before the first place.
+A passage says where it will lead, and a person that talk comes later, through the game's use handler (`interact_set_handler`). The pictures' room on the card is 296 KB (`GAME_PICTURE_KB`: 256, and the saved games' snapshot), set before the first place.
 
 
 ## The wider world (P10, first slice built: the travel map)
@@ -608,13 +608,19 @@ play opens the stone settings shell (`play/settings.c`, input in `menu.c`),
 over the paused world. Its layout is **640 x 480**, independent of the
 classic screens' stretched 320 x 200 canvas. It does not change video mode.
 
+### The widgets (`play/ui.c`)
+
+Every native screen is built of one set of pieces, `ui.h`: `ui_panel` (stone, rust or moss), `ui_button`, `ui_text`, `ui_centered`, `ui_paragraph`, `ui_flat`, and `UiList`, a column of rows with its arrows and thumb at its side. The atlases (stone swatches and FONT0003.FNT enlarged and in a compact face, 96 KB of texels) are built once at `ui_open`; there are no words in the art, so a label is a runtime string (and `ui_translate` lets a provider replace the English). **Drawing and hit-testing share one geometry**: a control draws itself and says where it answers (`ui_region`, an id and a rectangle); `ui_hit` asks which is under a point from what the last draw said, a later region over an earlier one winning. A frame that only needs the hit draws to no target (`ui_begin(0, 0)`), which makes the same regions with no quad, so the settings tests click exactly where a player would. A new screen is a draw function over these and a handler of its ids. `settings.c`, `files.c` use it now; classic's own canvas screens (the inventory, sheet, rest and so on) stay as classic drew them, and move to it only if they are ever redone.
+
+### The saved games' list (`play/files.c`)
+
+On the right a list: each character a row, their saves under them, newest first, each with the real time it was saved. On the left the snapshot of the save selected, with where it was left and when. Underneath: **LOAD** (also a double click on a save, 450 ms), **SAVE** (only from the game: a new save of the character playing, which the list then selects) and **DELETE**, a single save or a whole character with every save they have (asked once more, as Exit Game is). The wheel and the arrows scroll, Up and Down move the selection, Enter loads, Delete deletes. Plain C over `ui.h` and `saves.h`: hostcheck drives it by clicks and keys and rasterizes it.
+
 ### The five sections
 
-1. **Load/Save**: Load Game and Save Game dispatch to the existing six-slot
-   screens (`slots.c`, `screens.c`). Their names, save format and behavior are
-   unchanged. No saved game produces a note in the shell. Exit Game requires
-   a second click; idle frames keep that confirmation. Another control cancels
-   it. Back or Escape returns to play.
+1. **Saved games** (the first tab, `play/files.c`): the list below. Exit Game
+   requires a second click; idle frames keep that confirmation. Another
+   control cancels it. Back or Escape returns to play.
 2. **Keybindings**: twelve visible rows, scrolled by mouse wheel or the two
    arrow buttons. All twenty implemented binding rows are reachable. Clicking
    a row captures the next key or mouse button; Escape cancels capture without
@@ -724,7 +730,7 @@ Every setting the player can change lives in **`gfall.cfg`** beside the exe, as 
 - **Keys:** `key.<action>=<name>`, the name the Keybindings screen shows ("Space", "Ctrl", "Left Button", "Num +", "="; a plain number is a virtual key too). The actions: attack, use, run, jump, character, inventory, map, rest, forward, back, left, right, swap_hands, cursor, swing, turn_left, turn_right, look_up, look_down, look_center, freelook, travel_map, transport, crouch. Escape is the menu and is not in it.
 - `on` and `off` may be written 1 and 0, yes and no, true and false; case and spaces about `=` do not matter; a `#` at a line's start, or after a space following a value, begins a comment.
 - **What gets logged** (the console's log, or `logfile on`): `keys: gfall.cfg read`, `keys: gfall.cfg asks for 512x384` before the card opens, `gfall: the screen is 512x384` or, when the card opened another, `gfall: gfall.cfg asks for 640x400, the card opened 640x480`, and `keys: gfall.cfg written, the screen's mode 320x240` on every Apply. The Graphics row says `NOW 640 x 480` beside a choice the card did not open.
-- Not in it: saved games (`DATA\SAVE#.SAV`), MAIN.DAT and its mods, and the engine's console variables that are developer switches (they stay on the console, `autoexec.cfg`).
+- Not in it: saved games (`saves\<character>\S####.SAV`), MAIN.DAT and its mods, and the engine's console variables that are developer switches (they stay on the console, `autoexec.cfg`).
 
 ### Adding another option
 
@@ -994,9 +1000,15 @@ What is built but not whole, and the phase each goes in. Each section above says
 
 The travel map comes later, with `worldmap.c`'s pixels and the location index: pick a place and land in the stream there, time passing as the trip.
 
-## Saves (built: P7)
+## Saves (built: P7; remade 2026-11-06: a list of characters)
 
-`play/save.c`. Six slots, `DATA\SAVE0.SAV` to `SAVE5.SAV`, each with a name, each a record file (`docs/data.md`) as KEYS.DAT is: `dfrec dump` reads it, and a later program reading an older save keeps a new field's zero. Its version, in its head, refuses only a change a zero cannot carry.
+`play/save.c` writes and reads one save, `play/saves.c` knows where they are. A save is a record file (`docs/data.md`) as KEYS.DAT is: `dfrec dump` reads it. **Nothing older is read**: GFALL's own files are not ported between versions (the user's rule: this is a reimplementation), so a change of format is a change of the version in the head, and an older file is simply not listed. Daggerfall's own files in `ARENA2` are a different matter, read in place as ever.
+
+**Where:** `saves\<character>\S0001.SAV`, `S0002.SAV`, beside the program, numbered, never named by date. The folder is the character's name made safe for a file system (`saves_safe_name`): letters, digits, spaces and hyphens kept, anything else an underscore, trailing spaces dropped, Windows' device names (CON, NUL, COM1...) given an underscore at the end, and " (2)", " (3)" when another character has the name (compared without case). **Who a save is for is inside it**, never in the folder's name: `META` (the character's id, name, level, the real time saved, where the game was, in words) and `THMB` (the snapshot) are its first two chunks, so the list reads only the head of every file. Two Annas are two characters, since their ids differ (`Character.id`, rolled when a game starts, kept in every save). A file written to `.TMP` and moved over (`fs_move`) so a cut-off write never replaces a good save; a stray temporary or a file that is no save is not listed.
+
+**The snapshot:** `gfx_thumbnail` reads the front buffer at 160 x 120, RGB 565, in `menu_over_play` before the menu covers the view (Escape in play). It is kept in memory and goes into the next save. The picture on the screen takes 38 KB of the card's picture room (`GAME_PICTURE_KB`, now 296).
+
+**Where the game was**, in words, made by `place_words` in `game.c`: a town and its province (inside a building, "Inside, in" first), a dungeon and its province, Privateer's Hold, or "The wilds, near" a province.
 
 | Chunk | Holds |
 | --- | --- |
@@ -1021,8 +1033,8 @@ The travel map comes later, with `worldmap.c`'s pixels and the location index: p
 - **Saving** first flushes the blocks loaded now into the keep table (the engine's `stream_keep_now`): a door opened where the player stands has otherwise only been saved in memory on its block's own arrays.
 - **Loading** (`load_game` in `game.c`) reads the file, replaces the keep table and the pool, and returns `GAME_START`, the same path as a new game. `main.c` closes the place and opens it again, each place in a temp heap of its own as LEVELFALL's (`leave_place`), and `game_enter` puts the player at the save's place. Without its own heap every load leaked the stream's arrays.
 - **A new game** forgets the last one's keep table and piles, and takes a new seed (`forget_last_game`).
-- **The menus:** the start menu's Load, the options' Save and Load, all through classic's screen (`play/slots.c`, LOAD00I0.IMG, SAVE00I0.IMG's title over it to save, DFU's rectangles). To load, a click on a slot with a save; to save, a click on any slot and a name typed, its old one to start from. Hostcheck uses files of its own (`save_use_prefix`), so it never touches a player's.
-- **Death** shows classic's DIE_00I0.IMG until a key or a click, then the load screen. Put away, or with no saves, it goes back to the start menu.
+- **The menus:** one screen, the Files tab of the settings shell (below, The list): the title's Load opens the shell on it (nothing to save), Escape in play opens the shell on it (with SAVE). Hostcheck uses a folder of its own (`saves_use_root`, `save_use_file`), so it never touches a player's.
+- **Death** shows classic's DIE_00I0.IMG until a key or a click, then the shell's Files tab (Back, or no saves at all, goes to the start menu).
 - **A save knows its place** (P8): GAME holds the kind of place, its region and index, a house's block and record, and the way back out of its door, as whole chunks and what is left because a record file has no doubles. The feet are in the place's frame with the stream's origin that frame has, so a stream opening on another origin puts them back in the same spot; a save from before P8 reads as the hold with origin 0, which is what its feet already were.
 - **Creatures awake are not saved.** They come back asleep, where they stood, wounded as they were.
 

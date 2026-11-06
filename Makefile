@@ -202,7 +202,7 @@ PLAY_SRC := \
 	src/game/dagger/play/watch.c \
 	src/game/dagger/play/theft.c \
 	src/game/dagger/play/save.c \
-	src/game/dagger/play/slots.c \
+	src/game/dagger/play/saves.c \
 	src/game/dagger/play/commands.c \
 	src/game/dagger/play/weapon.c \
 	src/game/dagger/play/combat.c \
@@ -212,6 +212,8 @@ PLAY_SRC := \
 	src/game/dagger/play/mouse.c \
 	src/game/dagger/play/viewopt.c \
 	src/game/dagger/play/config.c \
+	src/game/dagger/play/ui.c \
+	src/game/dagger/play/files.c \
 	src/game/dagger/play/settings.c \
 	src/game/dagger/play/screen.c \
 	src/game/dagger/play/overlay.c \

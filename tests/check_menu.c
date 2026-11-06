@@ -115,8 +115,16 @@ void check_menu(void)
     g_write_ok=1; g_writes=0;
     camera_set_fov(75.0f);
     menu_open(MENU_OPTIONS);
-    check_expect(click_at(230,130)==MENU_LOAD, "menu: Load/Save tab load action");
-    check_expect(click_at(430,130)==MENU_SAVE, "menu: Load/Save tab save action");
+    /* The saved games' tab (files.c): with no saves LOAD does not answer; in a game SAVE does. */
+    check_expect(click_at(230,400)==MENU_STAY, "menu: Load answered with no saved game");
+    menu_open(MENU_NONE);
+    menu_files(1, 0x1234u);
+    menu_open(MENU_OPTIONS);
+    check_expect(click_at(340,400)==MENU_SAVE, "menu: the saved games tab's Save button did not ask to save");
+    menu_open(MENU_NONE);
+    menu_files(0, 0);
+    menu_open(MENU_OPTIONS);
+    check_expect(click_at(340,400)==MENU_STAY, "menu: Save answered with no game to save");
     click_at(30,200);
     click_at(516,120);
     check_expect(df_iround(camera_fov())==75, "menu: draft FOV changed live projection");

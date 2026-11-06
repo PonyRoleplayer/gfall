@@ -22,6 +22,8 @@
 #define CHARACTER_FATIGUE_UNIT 64
 
 typedef struct Character {
+    /* Who this is among all the characters ever made: rolled when the game starts (never 0), kept in every save, so two Annas stay two. */
+    df_u32 id;
     char name[24];
     int race;
     int klass;

@@ -78,7 +78,6 @@
 #include "game/dagger/play/sheet.h"
 #include "game/dagger/play/rest.h"
 #include "game/dagger/play/save.h"
-#include "game/dagger/play/slots.h"
 #include "engine/scene/clock.h"
 #include "engine/platform/fs.h"
 #include "game/dagger/formats/biog.h"
@@ -96,6 +95,8 @@
 #include "game/dagger/play/watch.h"
 #include "game/dagger/play/theft.h"
 #include "game/dagger/play/config.h"
+#include "game/dagger/play/saves.h"
+#include "game/dagger/play/files.h"
 #include "game/dagger/places/people.h"
 #include "game/dagger/places/wres.h"
 #include "game/dagger/tables/enemies.h"
@@ -3552,7 +3553,8 @@ static void check_rest(void)
 }
 
 /* What the test's saves are called, beside where a player's would be: TEST0.SAV and on, gone after. */
-#define SAVE_TEST_PREFIX "DATA\\TEST"
+/* A snapshot of a known pattern for the save tests. */
+static df_u16 g_test_thumb[SAVE_THUMB_W * SAVE_THUMB_H];
 
 /*
  * A save's round trip in the streamed hold: a door, a dead creature, a pile
@@ -3581,8 +3583,7 @@ static void check_save(void)
     int s;
     int i;
 
-    save_use_prefix(SAVE_TEST_PREFIX);
-    save_use_slot(2);
+    save_use_file("DATA\\TEST2.SAV");
     keep_clear();
     combat_reset();
     pile_new_game();
@@ -3686,9 +3687,15 @@ static void check_save(void)
     out.day = 12345;
     out.day_zero = 12000;
     out.seed = loot_seed();
-    df_copy(out.name, "Kept Game", SAVE_NAME);
     stream_keep_now();
     check_expect(keep_find(door_key) != 0, "save: a door open in a loaded block was not flushed");
+    /* The list's words and a snapshot of a known pattern, and an id for the character. */
+    out.sheet.id = 0xC0FFEEu;
+    df_copy(out.where_words, "Privateer's Hold", SAVE_WHERE);
+    for (i = 0; i < SAVE_THUMB_W * SAVE_THUMB_H; i++) {
+        g_test_thumb[i] = (df_u16)(i * 7 + 3);
+    }
+    out.thumb = g_test_thumb;
     check_expect(save_write(&out) && save_exists(), "save: it did not write");
     dunstream_close();
 
@@ -3743,31 +3750,26 @@ static void check_save(void)
     dunstream_close();
     keep_clear();
     pile_new_game();
-    /* The slots' screen: to load, a slot with a save is chosen, an empty one says so; its name is shown. */
+    /* The list reads only the start of a file: who, where and when, and the snapshot. */
     {
-        char name[SAVE_NAME];
+        SaveMeta meta;
+        static df_u16 thumb_out[SAVE_THUMB_W * SAVE_THUMB_H];
         char path[512];
+        int k;
+        int same;
 
-        check_expect(save_any() && save_peek_name(2, name) && strcmp(name, "Kept Game") == 0, "save: the slot's name did not read");
-        check_expect(!save_peek_name(0, name), "save: an empty slot has a name");
-        check_expect(slots_open(0), "save: the load screen did not open");
-        slots_compose();
-        write_picture(slots_pixels(), "build/slots0.ppm");
-        check_expect(slots_click(10, 58) == SLOTS_STAY && slots_note() != 0, "save: an empty slot was chosen to load");
-        /* Slot 2 is the left column's third. */
-        check_expect(slots_click(10, 188) == SLOTS_CHOSEN && slots_chosen() == 2, "save: a slot with a save was not chosen");
-        slots_close();
-        /* To save, a slot asks for a name; Enter chooses it. */
-        check_expect(slots_open(1), "save: the save screen did not open");
-        slots_click(170, 58);
-        slots_key('M');
-        slots_key('Y');
-        check_expect(slots_key(0x0D) == SLOTS_CHOSEN && slots_chosen() == 3 && strcmp(slots_chosen_name(), "My") == 0,
-                     "save: the slot's name was not as typed");
-        slots_compose();
-        write_picture(slots_pixels(), "build/slots1.ppm");
-        check_expect(slots_click(150, 155) == SLOTS_LEAVE, "save: Cancel did not leave");
-        slots_close();
+        check_expect(save_peek("DATA\\TEST2.SAV", &meta) && meta.char_id == 0xC0FFEEu && strcmp(meta.name, out.sheet.name) == 0
+                         && meta.level == out.sheet.level && strcmp(meta.where, "Privateer's Hold") == 0 && meta.has_thumb
+                         && meta.year >= 2024 && meta.month >= 1 && meta.month <= 12 && meta.day >= 1 && meta.day <= 31
+                         && meta.game_day == out.day,
+                     "save: the list's meta did not read from the start of the file");
+        memset(thumb_out, 0, sizeof(thumb_out));
+        check_expect(save_peek_thumb("DATA\\TEST2.SAV", thumb_out), "save: the snapshot did not read");
+        for (k = 0, same = 1; k < SAVE_THUMB_W * SAVE_THUMB_H; k++) {
+            same = same && thumb_out[k] == (df_u16)(k * 7 + 3);
+        }
+        check_expect(same, "save: the snapshot did not come back pixel for pixel");
+        check_expect(!save_peek("DATA\\NOSUCH.SAV", &meta) && !save_peek_thumb("DATA\\NOSUCH.SAV", thumb_out), "save: a missing file has a meta or a snapshot");
         /* A save of a class of one's own keeps the class. */
         {
             CareerClass mine;
@@ -3781,19 +3783,17 @@ static void check_save(void)
             mem_zero(&a, sizeof(a));
             a = out;
             a.sheet.klass = CLASS_CUSTOM;
-            save_use_slot(4);
+            save_use_file("DATA\\TEST4.SAV");
             check_expect(save_write(&a), "save: the custom class's save did not write");
             mine.hp_per_level = 5;
             career_set_custom(&mine);
             check_expect(save_read(&b) && career_class(CLASS_CUSTOM)->hp_per_level == 21, "save: the custom class did not come back");
             check_expect(fs_beside(path, (int)sizeof(path), "DATA\\TEST4.SAV") && remove(path) == 0, "save: the custom class's file did not go");
-            save_use_slot(2);
+            save_use_file("DATA\\TEST2.SAV");
         }
         check_expect(fs_beside(path, (int)sizeof(path), "DATA\\TEST2.SAV") && remove(path) == 0, "save: the test's file did not go");
     }
-    check_expect(!save_exists() && !save_any(), "save: a save is there after its file went");
-    save_use_prefix("DATA\\SAVE");
-    save_use_slot(0);
+    check_expect(!save_exists(), "save: a save is there after its file went");
     printf("save: a door, a body, a pile, a sheet and a pack, round the file and back\n");
 }
 
@@ -3981,8 +3981,7 @@ static void check_travel(void)
     int index;
     int i;
 
-    save_use_prefix(SAVE_TEST_PREFIX);
-    save_use_slot(3);
+    save_use_file("DATA\\TEST3.SAV");
     keep_clear();
     pile_new_game();
     combat_reset();
@@ -4117,7 +4116,6 @@ static void check_travel(void)
 
         check_expect(stands_at(&p, &level, &at, 64.0f), "travel: the player does not stand at the door gone down");
         memset(&out, 0, sizeof(out));
-        df_copy(out.name, "Travel", SAVE_NAME);
         travel_keep_now();
         travel_here(&out.where, out.origin);
         out.feet[0] = p.body.feet[0];
@@ -5399,8 +5397,7 @@ static void check_standing_saved(void)
     char path[260];
     const Faction *people;
 
-    save_use_prefix(SAVE_TEST_PREFIX);
-    save_use_slot(5);
+    save_use_file("DATA\\TEST5.SAV");
     keep_clear();
     pile_new_game();
     standing_new_game(5u);
@@ -5415,7 +5412,6 @@ static void check_standing_saved(void)
     standing_region(17)->banished = 1;
     standing_region(17)->prices = 1111;
     mem_zero(&out, sizeof(out));
-    df_copy(out.name, "People", SAVE_NAME);
     character_new(&out.sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Ada");
     inventory_clear(&out.pack);
     out.seed = 5u;
@@ -5443,7 +5439,7 @@ static void settings_preview_quad(void *ctx, int atlas, int sx, int sy, int sw, 
     const df_u8 *pixels;
     int side, i, j;
     (void)ctx;
-    pixels = settings_atlas(atlas, &side);
+    pixels = ui_atlas(atlas, &side);
     check_expect(pixels && sx >= 0 && sy >= 0 && sx+sw <= side && sy+sh <= side,
                  "settings: quad outside atlas");
     check_expect(x >= 0 && y >= 0 && x+w <= SETTINGS_W && y+h <= SETTINGS_H,
@@ -5470,8 +5466,8 @@ static void check_settings(void)
     int tab, i;
     FILE *f;
     static const char *const paths[] = {"build/settings-files.ppm", "build/settings-keys.ppm", "build/settings-graphics.ppm", "build/settings-audio.ppm", "build/settings-gameplay.ppm", "build/settings-translated.ppm"};
-    check_expect(settings_open(), "settings: assets did not open");
-    rgb = settings_palette();
+    check_expect(ui_open(), "settings: assets did not open");
+    rgb = ui_palette();
     mem_zero(&v, sizeof(v));
     v.classic = 1; v.waiting = -1; v.hover = SETTINGS_NOTHING;
     {
@@ -5492,7 +5488,7 @@ static void check_settings(void)
     v.gfx.weathersim = 0;
     for (tab = 0; tab <= SETTINGS_TABS; tab++) {
         v.tab = tab < SETTINGS_TABS ? tab : SETTINGS_GRAPHICS;
-        if (tab == SETTINGS_TABS) settings_translate(settings_test_translation);
+        if (tab == SETTINGS_TABS) ui_translate(settings_test_translation);
         mem_fill(g_settings_preview, 18, sizeof(g_settings_preview));
         g_settings_quads = 0;
         settings_draw(&v, settings_preview_quad, 0);
@@ -5504,12 +5500,11 @@ static void check_settings(void)
             fclose(f);
         }
     }
-    settings_translate(0);
+    ui_translate(0);
     check_expect(settings_hit(SETTINGS_FILES,0,30,120) == SETTINGS_TAB_FILES
         && settings_hit(SETTINGS_FILES,0,30,160) == SETTINGS_TAB_KEYS
         && settings_hit(SETTINGS_FILES,0,30,200) == SETTINGS_TAB_GRAPHICS, "settings: navigation order");
-    check_expect(settings_hit(SETTINGS_FILES,0,230,130) == SETTINGS_LOAD
-        && settings_hit(SETTINGS_FILES,0,430,130) == SETTINGS_SAVE, "settings: file actions");
+    /* The saved games' screen is files.c's: its own tests (check_saves, check_files) drive its controls. */
     check_expect(settings_hit(SETTINGS_KEYS,8,450,370) == SETTINGS_BIND+19
         && settings_binding_action(19,1) == INPUT_MAP, "settings: last scrolled binding inaccessible");
     check_expect(settings_binding_action(9,1) == INPUT_SWING
@@ -5552,9 +5547,9 @@ static void check_settings(void)
         && settings_slider_at(SETTINGS_MUSIC_SLIDER,900)==100
         && settings_slider_at(SETTINGS_SFX_SLIDER,426)==50,
         "settings: volume endpoints or midpoint");
-    settings_close();
-    check_expect(settings_open(), "settings: reopen failed");
-    settings_close();
+    ui_close();
+    check_expect(ui_open(), "settings: reopen failed");
+    ui_close();
     printf("settings: native panels, translated labels, binding scroll and FOV endpoints; build/settings-*.ppm\n");
 }
 
@@ -5657,6 +5652,218 @@ static void check_viewopt(void)
     viewopt_defaults();
     check_expect(df_iround(camera_fov()) == 75, "view: missing FOV did not keep default");
     printf("view: full screen off, head bob at a walk's phase\n");
+}
+
+/* 1 when a path ends in .OLD. */
+static int ends_with_old(const char *path)
+{
+    int n;
+
+    n = (int)strlen(path);
+    return n > 4 && strcmp(path + n - 4, ".OLD") == 0;
+}
+
+/*
+ * The saved games' folders and their screen: a character's name made safe for a file system; each character a folder,
+ * each save a numbered file; two of the same name stay two, also when only the case differs; the list by name and each
+ * one's saves newest first; a half-finished move still listed; deletes of a save and of a character; then the screen
+ * driven by clicks and keys: selection, snapshot, LOAD, double click, SAVE only in a game, DELETE asked twice.
+ */
+static void make_test_save(SaveState *st, df_u32 id, const char *name, int level)
+{
+    mem_zero(st, sizeof(*st));
+    character_new(&st->sheet, RACE_BRETON, CLASS_WARRIOR, 0, name);
+    st->sheet.id = id;
+    st->sheet.level = level;
+    inventory_clear(&st->pack);
+    df_copy(st->where_words, "Test place", SAVE_WHERE);
+    st->day = 12345;
+    st->minute = 600.0f;
+}
+
+static void check_saves_and_files(void)
+{
+    static df_u16 pix[SAVE_THUMB_W * SAVE_THUMB_H];
+    SaveState st;
+    char path[SAVE_PATH];
+    char safe[SAVES_FOLDER];
+    int i;
+    int n;
+    const SaveEntry *e;
+    const SaveChar *c;
+
+    /* A name made safe. */
+    saves_safe_name("Anna Smith", safe, (int)sizeof(safe));
+    check_expect(strcmp(safe, "Anna Smith") == 0, "saves: a plain name changed");
+    saves_safe_name("a/b:c*d?e", safe, (int)sizeof(safe));
+    check_expect(strcmp(safe, "a_b_c_d_e") == 0, "saves: punctuation was kept");
+    saves_safe_name("  Bob   ", safe, (int)sizeof(safe));
+    check_expect(strcmp(safe, "Bob") == 0, "saves: a leading or trailing space was kept");
+    saves_safe_name("x.", safe, (int)sizeof(safe));
+    check_expect(strcmp(safe, "x_") == 0, "saves: a dot was kept");
+    saves_safe_name("CON", safe, (int)sizeof(safe));
+    check_expect(strcmp(safe, "CON_") == 0, "saves: a device name was kept");
+    saves_safe_name("lpt3", safe, (int)sizeof(safe));
+    check_expect(strcmp(safe, "lpt3_") == 0, "saves: a device name in lower case was kept");
+    saves_safe_name("Comet", safe, (int)sizeof(safe));
+    check_expect(strcmp(safe, "Comet") == 0, "saves: a name that only starts like a device was changed");
+    saves_safe_name("", safe, (int)sizeof(safe));
+    check_expect(strcmp(safe, "Hero") == 0, "saves: an empty name has no folder name");
+    saves_safe_name("\xC3\x9Cn\xC3\xAF", safe, (int)sizeof(safe));
+    check_expect(strcmp(safe, "__n__") == 0, "saves: bytes past ASCII were kept");
+
+    saves_use_root("hostcheck_saves");
+    saves_scan();
+    check_expect(saves_count() == 0 && !saves_any(), "saves: the test folder was not empty");
+    for (i = 0; i < SAVE_THUMB_W * SAVE_THUMB_H; i++) {
+        pix[i] = (df_u16)i;
+    }
+
+    /* Three saves of Anna, two of Bob, one of another Anna and one of ANNA SMITH (whose folder is the first's by case). */
+    for (i = 0; i < 3; i++) {
+        make_test_save(&st, 0xA001u, "Anna Smith", 2 + i);
+        st.thumb = i == 1 ? 0 : pix;
+        check_expect(saves_write(&st, path), "saves: Anna's save did not write");
+        if (i == 0) {
+            check_expect(strcmp(path, "hostcheck_saves\\Anna Smith\\S0001.SAV") == 0, "saves: the first path is not folder and S0001");
+        }
+    }
+    check_expect(strcmp(path, "hostcheck_saves\\Anna Smith\\S0003.SAV") == 0, "saves: the third save is not S0003");
+    for (i = 0; i < 2; i++) {
+        make_test_save(&st, 0xB002u, "Bob", 5);
+        st.thumb = pix;
+        check_expect(saves_write(&st, path), "saves: Bob's save did not write");
+    }
+    make_test_save(&st, 0xA003u, "Anna Smith", 9);
+    check_expect(saves_write(&st, path) && strcmp(path, "hostcheck_saves\\Anna Smith (2)\\S0001.SAV") == 0,
+                 "saves: another Anna Smith did not get a folder of her own");
+    make_test_save(&st, 0xA004u, "ANNA SMITH", 1);
+    check_expect(saves_write(&st, path) && strcmp(path, "hostcheck_saves\\ANNA SMITH (3)\\S0001.SAV") == 0,
+                 "saves: a name that differs only by case shared a folder, or took a taken number");
+
+    n = saves_scan();
+    check_expect(n == 7 && saves_char_count() == 4, "saves: the list did not find 7 saves of 4 characters");
+    /* By name without case, then id: Anna's three ids, then Bob. */
+    check_expect(saves_char(0)->id == 0xA001u && saves_char(1)->id == 0xA003u && saves_char(2)->id == 0xA004u
+                     && saves_char(3)->id == 0xB002u, "saves: the characters are not by name, then id");
+    c = saves_char(0);
+    check_expect(c->count == 3 && saves_entry(c->first)->number == 3 && saves_entry(c->first + 1)->number == 2
+                     && saves_entry(c->first + 2)->number == 1, "saves: a character's saves are not newest first");
+    e = saves_entry(c->first);
+    check_expect(e->meta.char_id == 0xA001u && e->meta.level == 4 && strcmp(e->meta.name, "Anna Smith") == 0
+                     && strcmp(e->meta.where, "Test place") == 0 && e->meta.game_day == 12345,
+                 "saves: an entry's meta is not what was saved");
+
+    /* A move cut short: only S0002.OLD, no S0002.SAV, still the save; with both, one. */
+    {
+        char from[SAVE_PATH];
+        char to[SAVE_PATH];
+
+        log_format(from, (int)sizeof(from), "%s", saves_entry(c->first + 1)->path);
+        log_format(to, (int)sizeof(to), "hostcheck_saves\\Anna Smith\\S0002.OLD");
+        check_expect(fs_move(from, to), "saves: the test could not move a save aside");
+        saves_scan();
+        check_expect(saves_count() == 7 && ends_with_old(saves_entry(saves_char(0)->first + 1)->path),
+                     "saves: a save left under .OLD was not listed");
+        check_expect(fs_move(to, from), "saves: the test could not move it back");
+        saves_scan();
+    }
+
+    /* The screen over these. */
+    {
+        int row_anna;
+        int row_bob_save;
+        int hit;
+        df_u32 serial;
+
+        files_open(1, 0xA001u, 0);
+        check_expect(files_rows() == 4 + 7, "files: the list is not each character and each save");
+        row_anna = files_selected_row();
+        check_expect(row_anna == 1 && !files_row_is_character(row_anna), "files: the playing character's newest save was not selected");
+        check_expect(files_thumb() != 0 && files_thumb()[100] == 100, "files: the snapshot of the selected save did not read");
+        serial = files_thumb_serial();
+        /* The regions the screen draws answer: a row, the buttons. */
+        ui_begin(0, 0);
+        files_draw(-1);
+        check_expect(ui_hit(400, 88 + 24) == FILES_ID_ROW + 1, "files: a click on the second row is not that row");
+        check_expect(ui_hit(200, 400) == FILES_ID_LOAD && ui_hit(320, 400) == FILES_ID_SAVE && ui_hit(450, 400) == FILES_ID_DELETE,
+                     "files: LOAD, SAVE and DELETE are not where they are drawn");
+        /* Bob's save: its row is after his header; selected by a click; the snapshot is another read. */
+        for (hit = 0, row_bob_save = -1; hit < files_rows(); hit++) {
+            if (files_row_is_character(hit) && hit > 1 + 3) {
+                row_bob_save = hit + 1;
+            }
+        }
+        check_expect(row_bob_save > 0, "files: Bob's rows were not found");
+        check_expect(files_click(FILES_ID_ROW + row_bob_save, 1000, 1) == FILES_NONE && files_selected_row() == row_bob_save,
+                     "files: a click on a save did not select it, or loaded it");
+        check_expect(files_thumb_serial() != serial, "files: another save selected did not change the snapshot");
+        /* A double click on a save loads it: within 450 ms, not after; a character row never loads. */
+        check_expect(files_click(FILES_ID_ROW + row_bob_save, 1200, 1) == FILES_LOAD
+                         && strstr(files_chosen(), "Bob") != 0 && strstr(files_chosen(), ".SAV") != 0,
+                     "files: a double click did not load the save");
+        files_click(FILES_ID_ROW + row_bob_save, 3000, 1);
+        check_expect(files_click(FILES_ID_ROW + row_bob_save, 3600, 1) == FILES_NONE, "files: a slow second click loaded");
+        check_expect(files_click(FILES_ID_ROW + row_bob_save, 3700, 0) == FILES_NONE, "files: a double click with no clock loaded");
+        check_expect(files_click(FILES_ID_LOAD, 5000, 1) == FILES_LOAD, "files: LOAD did not load the selected save");
+        /* A character's row chosen, LOAD takes their newest. */
+        files_click(FILES_ID_ROW + 0, 6000, 1);
+        check_expect(files_row_is_character(files_selected_row()) && files_click(FILES_ID_LOAD, 6100, 1) == FILES_LOAD
+                         && strstr(files_chosen(), "S0003.SAV") != 0, "files: LOAD on a character did not take their newest save");
+        check_expect(files_click(FILES_ID_ROW + 0, 6200, 1) == FILES_NONE && files_click(FILES_ID_ROW + 0, 6300, 1) == FILES_NONE,
+                     "files: a double click on a character loaded");
+        /* SAVE answers in a game and means a new save. */
+        check_expect(files_click(FILES_ID_SAVE, 7000, 1) == FILES_SAVE, "files: SAVE did not ask to save");
+        files_open(0, 0xA001u, 0);
+        ui_begin(0, 0);
+        files_draw(-1);
+        check_expect(ui_hit(320, 400) == UI_NOTHING && files_click(FILES_ID_SAVE, 7100, 1) == FILES_NONE, "files: SAVE answered with no game");
+        /* Keys: Down, Up, Enter loads, Delete asks. */
+        files_open(0, 0xA001u, 0);
+        check_expect(files_selected_row() == 1, "files: not the first save to start");
+        files_key(0x28);
+        check_expect(files_selected_row() == 2, "files: Down did not move the selection");
+        files_key(0x26);
+        files_key(0x26);
+        check_expect(files_selected_row() == 0 && files_key(0x0D) == FILES_LOAD, "files: Up, or Enter on a character's row");
+        /* DELETE asks twice; another click in between calls it off. */
+        files_click(FILES_ID_ROW + 2, 8000, 1);
+        n = saves_count();
+        files_click(FILES_ID_DELETE, 8100, 1);
+        check_expect(files_confirming() && files_note() != 0 && saves_count() == n, "files: the first DELETE deleted, or did not ask");
+        files_click(FILES_ID_ROW + 3, 8200, 1);
+        check_expect(!files_confirming() && saves_count() == n, "files: another click did not call the delete off");
+        files_click(FILES_ID_DELETE, 8300, 1);
+        files_click(FILES_ID_DELETE, 8400, 1);
+        check_expect(saves_count() == n - 1 && !files_confirming(), "files: the second DELETE did not delete the save");
+        check_expect(files_selected_row() >= 0, "files: nothing is selected after a delete");
+        /* A character's row: every save of theirs, and their folder. */
+        files_open(0, 0xB002u, 0);
+        files_click(FILES_ID_ROW + 0, 9000, 1);
+        for (i = 0; i < files_rows(); i++) {
+            if (files_row_is_character(i) && saves_char(0) && i > 0) {
+                break;
+            }
+        }
+        /* Select Bob's header (the last character's). */
+        for (i = files_rows() - 1; i >= 0 && !files_row_is_character(i); i--) {
+        }
+        files_click(FILES_ID_ROW + i, 9100, 1);
+        n = saves_char_count();
+        files_click(FILES_ID_DELETE, 9200, 1);
+        files_click(FILES_ID_DELETE, 9300, 1);
+        check_expect(saves_char_count() == n - 1 && !fs_exists("hostcheck_saves\\Bob"), "files: deleting a character left them or their folder");
+    }
+
+    /* Clean up what the test made, and the folder. */
+    while (saves_char_count() > 0) {
+        saves_delete_char(0);
+    }
+    check_expect(saves_count() == 0, "saves: the test's saves did not all go");
+    fs_remove_dir("hostcheck_saves");
+    check_expect(!fs_exists("hostcheck_saves"), "saves: the test's folder did not go");
+    saves_use_root(0);
+    printf("saves: folders by character, numbered files, same names apart, deleted a save and a character; the list driven by clicks and keys\n");
 }
 
 /*
@@ -6179,12 +6386,10 @@ static void check_wider_world(void)
             SaveState in;
             char path[260];
 
-            save_use_prefix(SAVE_TEST_PREFIX);
-            save_use_slot(4);
+            save_use_file("DATA\\TEST4.SAV");
             keep_clear();
             pile_new_game();
             mem_zero(&out, sizeof(out));
-            df_copy(out.name, "Atlas", SAVE_NAME);
             character_new(&out.sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Ada");
             inventory_clear(&out.pack);
             check_expect(save_write(&out), "atlas: a save did not write");
@@ -6776,12 +6981,10 @@ static void check_wagon(void)
         inventory_add(wagon_contents(), &it);
         item_make(&it, ITEM_DAGGER, 0);
         inventory_add(wagon_contents(), &it);
-        save_use_prefix(SAVE_TEST_PREFIX);
-        save_use_slot(4);
+        save_use_file("DATA\\TEST4.SAV");
         keep_clear();
         pile_new_game();
         mem_zero(&out, sizeof(out));
-        df_copy(out.name, "Wagon", SAVE_NAME);
         out.sheet = sheet;
         inventory_clear(&out.pack);
         check_expect(save_write(&out), "wagon: a save did not write");
@@ -7264,12 +7467,10 @@ static void check_ills(void)
         ills_lift_curse(&p);
         ills_catch(&p.sheet, DISEASE_LEPROSY, 600);
         ills_infect(ILL_WEREBOAR, 600, 17);
-        save_use_prefix(SAVE_TEST_PREFIX);
-        save_use_slot(4);
+        save_use_file("DATA\\TEST4.SAV");
         keep_clear();
         pile_new_game();
         mem_zero(&out, sizeof(out));
-        df_copy(out.name, "Ills", SAVE_NAME);
         out.sheet = p.sheet;
         inventory_clear(&out.pack);
         check_expect(save_write(&out), "ills: a save did not write");
@@ -7318,12 +7519,10 @@ static void check_ships(void)
         SaveState in;
         char path[260];
 
-        save_use_prefix(SAVE_TEST_PREFIX);
-        save_use_slot(4);
+        save_use_file("DATA\\TEST4.SAV");
         keep_clear();
         pile_new_game();
         mem_zero(&out, sizeof(out));
-        df_copy(out.name, "Ship", SAVE_NAME);
         out.sheet = sheet;
         inventory_clear(&out.pack);
         check_expect(save_write(&out), "ships: a save did not write");
@@ -7376,12 +7575,10 @@ static void check_lodging(void)
         SaveState in;
         char path[260];
 
-        save_use_prefix(SAVE_TEST_PREFIX);
-        save_use_slot(4);
+        save_use_file("DATA\\TEST4.SAV");
         keep_clear();
         pile_new_game();
         mem_zero(&out, sizeof(out));
-        df_copy(out.name, "Inn", SAVE_NAME);
         out.sheet = sheet;
         inventory_clear(&out.pack);
         check_expect(save_write(&out), "lodging: a save did not write");
@@ -7498,12 +7695,10 @@ static void check_guilds(void)
         SaveState in;
         char path[260];
 
-        save_use_prefix(SAVE_TEST_PREFIX);
-        save_use_slot(4);
+        save_use_file("DATA\\TEST4.SAV");
         keep_clear();
         pile_new_game();
         mem_zero(&out, sizeof(out));
-        df_copy(out.name, "Guild", SAVE_NAME);
         out.sheet = p.sheet;
         inventory_clear(&out.pack);
         check_expect(save_write(&out), "guilds: a save did not write");
@@ -7694,12 +7889,10 @@ static void check_quest_machine(void)
         char path[260];
 
         before = *quest_run(slot);
-        save_use_prefix(SAVE_TEST_PREFIX);
-        save_use_slot(4);
+        save_use_file("DATA\\TEST4.SAV");
         keep_clear();
         pile_new_game();
         mem_zero(&out, sizeof(out));
-        df_copy(out.name, "Quest", SAVE_NAME);
         out.sheet = sheet;
         inventory_clear(&out.pack);
         check_expect(save_write(&out), "quest machine: a save did not write");
@@ -7811,12 +8004,10 @@ static void check_quest_machine(void)
             SaveState in;
             char path[260];
 
-            save_use_prefix(SAVE_TEST_PREFIX);
-            save_use_slot(4);
+            save_use_file("DATA\\TEST4.SAV");
             keep_clear();
             pile_new_game();
             mem_zero(&out, sizeof(out));
-            df_copy(out.name, "Once", SAVE_NAME);
             out.sheet = sheet;
             inventory_clear(&out.pack);
             check_expect(save_write(&out), "quest machine: a save with a done quest did not write");
@@ -8175,11 +8366,9 @@ static void check_dunmap(void)
         int rows;
 
         rows = automap_count();
-        save_use_prefix(SAVE_TEST_PREFIX);
-        save_use_slot(4);
+        save_use_file("DATA\\TEST4.SAV");
         pile_new_game();
         mem_zero(&out, sizeof(out));
-        df_copy(out.name, "Map", SAVE_NAME);
         character_new(&out.sheet, RACE_BRETON, CLASS_WARRIOR, 0, "Ada");
         inventory_clear(&out.pack);
         check_expect(save_write(&out), "dunmap: a save did not write");
@@ -8305,6 +8494,7 @@ void check_play(void)
     check_theft();
     check_crouch();
     check_config();
+    check_saves_and_files();
     check_ills();
     check_ships();
     check_lodging();

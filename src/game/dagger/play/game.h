@@ -27,8 +27,8 @@ enum {
     GAME_TRAVEL
 };
 
-/* The card's room for the game's pictures (pic_set_room), set before the first place. */
-#define GAME_PICTURE_KB 256
+/* The card's room for the game's pictures (pic_set_room), set before the first place: 256 KB, and the saved games' snapshot (38 KB). */
+#define GAME_PICTURE_KB 296
 
 /*
  * Before the first gfx_prepare: the keys as the game wants them and as

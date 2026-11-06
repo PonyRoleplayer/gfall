@@ -2,6 +2,7 @@
 #define DF_SETTINGS_H
 
 #include "engine/core/df.h"
+#include "game/dagger/play/ui.h"
 
 /* Stone settings shell, in 640 x 480 top-down coordinates. Read docs/game.md
  * (Menus). Plain C: the same quads render on Glide and in hostcheck previews.
@@ -12,14 +13,13 @@
 #define SETTINGS_H 480
 #define SETTINGS_ROWS 12
 #define SETTINGS_BINDINGS 22
-#define SETTINGS_ATLASES 3
 
 enum { SETTINGS_FILES, SETTINGS_KEYS, SETTINGS_GRAPHICS, SETTINGS_AUDIO, SETTINGS_GAMEPLAY, SETTINGS_TABS };
 enum {
     SETTINGS_NOTHING = -1,
     SETTINGS_TAB_FILES, SETTINGS_TAB_KEYS, SETTINGS_TAB_GRAPHICS,
     SETTINGS_TAB_AUDIO, SETTINGS_TAB_GAMEPLAY,
-    SETTINGS_LOAD, SETTINGS_SAVE, SETTINGS_EXIT, SETTINGS_BACK,
+    SETTINGS_EXIT, SETTINGS_BACK,
     SETTINGS_DEFAULT, SETTINGS_APPLY, SETTINGS_MOUSE,
     SETTINGS_UP, SETTINGS_DOWN, SETTINGS_SLIDER,
     SETTINGS_SFX_SLIDER, SETTINGS_MUSIC_SLIDER, SETTINGS_BOB, SETTINGS_FULL_HUD,
@@ -94,17 +94,8 @@ void settings_gfx_draft_commit(const SettingsGfxDraft *draft);
 /* Restore the engine to the last hold snapshot (leave tab / failed Apply). */
 void settings_gfx_draft_cancel(void);
 
-int settings_open(void);
-void settings_close(void);
-const df_u8 *settings_atlas(int index, int *side);
-const df_u8 *settings_palette(void);
-
-typedef const char *(*SettingsTranslate)(const char *english);
-void settings_translate(SettingsTranslate translate);
-
-typedef void (*SettingsQuad)(void *ctx, int atlas, int sx, int sy, int sw, int sh,
-                             int x, int y, int w, int h);
-void settings_draw(const SettingsView *view, SettingsQuad quad, void *ctx);
+/* The shell's controls and its widgets: ui.h. A frame draws to a UiQuad (menu.c, hostcheck's picture), or to none. */
+void settings_draw(const SettingsView *view, UiQuad quad, void *ctx);
 int settings_hit(int tab, int scroll, int x, int y);
 int settings_fov_at(int x);
 int settings_slider_at(int action, int x);

@@ -19,33 +19,71 @@
 
 /* See save.h. */
 
-#define SAVE_DIR "DATA"
-#define SAVE_PREFIX "DATA\\SAVE"
 /* What these chunks mean. A change that a zero in a new field cannot carry makes older saves refused. */
 #define SAVE_VERSION 1
+/* How much of a file's start holds the head and META, for the list: far more than they take. */
+#define PEEK_BYTES 4096
+/* The snapshot's rows: SAVE_THUMB_W x SAVE_THUMB_H pixels, THUMB_ROW to a row. */
+#define THUMB_ROW 240
+#define THUMB_ROWS ((SAVE_THUMB_W * SAVE_THUMB_H) / THUMB_ROW)
 
-static const char *g_prefix = SAVE_PREFIX;
-static int g_slot;
-static char g_file[32];
+static char g_file[SAVE_PATH];
 
-/* The file of a slot, into g_file. */
-static const char *file_of(int slot)
+void save_use_file(const char *name)
 {
-    log_format(g_file, (int)sizeof(g_file), "%s%d.SAV", g_prefix, slot);
-    return g_file;
-}
+    int n;
 
-void save_use_prefix(const char *prefix)
-{
-    g_prefix = prefix;
-}
-
-void save_use_slot(int slot)
-{
-    g_slot = slot;
+    n = 0;
+    while (name[n] && n < SAVE_PATH - 1) {
+        g_file[n] = name[n];
+        n++;
+    }
+    g_file[n] = 0;
 }
 
 /* ---- The rows: each chunk's first field is its id, as a record file wants. ---- */
+
+/* META: the one row the list reads. */
+typedef struct SaveMetaRow {
+    df_u16 id;
+    df_u32 char_id;
+    char name[SAVE_NAME];
+    df_i32 level;
+    df_i32 stamp[6];
+    char where[SAVE_WHERE];
+    df_i32 game_day;
+    df_i32 game_minute;
+    df_i32 has_thumb;
+} SaveMetaRow;
+
+static const RecField g_meta_fields[] = {
+    REC_FIELD("id", REC_UINT, SaveMetaRow, id),
+    REC_FIELD("char_id", REC_UINT, SaveMetaRow, char_id),
+    REC_FIELD("name", REC_TEXT, SaveMetaRow, name),
+    REC_FIELD("level", REC_INT, SaveMetaRow, level),
+    REC_ARRAY("stamp", REC_INT, SaveMetaRow, stamp),
+    REC_FIELD("where", REC_TEXT, SaveMetaRow, where),
+    REC_FIELD("game_day", REC_INT, SaveMetaRow, game_day),
+    REC_FIELD("game_minute", REC_INT, SaveMetaRow, game_minute),
+    REC_FIELD("has_thumb", REC_INT, SaveMetaRow, has_thumb)
+};
+static const RecSchema g_meta_schema = {
+    "META", "meta", g_meta_fields, (int)(sizeof(g_meta_fields) / sizeof(g_meta_fields[0])), (df_u16)sizeof(SaveMetaRow), 0
+};
+
+/* THMB: a row of the snapshot, in order from the top. */
+typedef struct SaveThumbRow {
+    df_u16 id;
+    df_u16 px[THUMB_ROW];
+} SaveThumbRow;
+
+static const RecField g_thumb_fields[] = {
+    REC_FIELD("id", REC_UINT, SaveThumbRow, id),
+    REC_ARRAY("px", REC_UINT, SaveThumbRow, px)
+};
+static const RecSchema g_thumb_schema = {
+    "THMB", "thumb", g_thumb_fields, 2, (df_u16)sizeof(SaveThumbRow), 0
+};
 
 /* GAME: the one row of what SaveState holds beside the tables. */
 typedef struct SaveGameRow {
@@ -74,7 +112,6 @@ typedef struct SaveGameRow {
     df_u32 gold;
     df_i32 worn[EQUIP_COUNT];
     df_i32 use_left;
-    char name[SAVE_NAME];
     /* The ship owned (bank.h); a save from before has none. */
     df_i32 ship;
     /* The game minute the player last ate at a tavern (lodging.h). */
@@ -108,7 +145,6 @@ static const RecField g_game_fields[] = {
     REC_FIELD("gold", REC_UINT, SaveGameRow, gold),
     REC_ARRAY("worn", REC_INT, SaveGameRow, worn),
     REC_FIELD("use_left", REC_INT, SaveGameRow, use_left),
-    REC_FIELD("name", REC_TEXT, SaveGameRow, name),
     REC_FIELD("ship", REC_INT, SaveGameRow, ship),
     REC_FIELD("meal", REC_INT, SaveGameRow, meal),
     REC_FIELD("trained", REC_INT, SaveGameRow, trained)
@@ -121,6 +157,7 @@ static const RecSchema g_game_schema = {
 #define S(name, type, member) REC_FIELD(name, type, Character, member)
 #define SA(name, type, member) REC_ARRAY(name, type, Character, member)
 static const RecField g_sheet_fields[] = {
+    S("id", REC_UINT, id),
     S("race", REC_INT, race),
     S("name", REC_TEXT, name),
     S("class", REC_INT, klass),
@@ -392,7 +429,6 @@ static int write_chunks(const SaveState *state)
         game.worn[i] = state->pack.worn[i];
     }
     game.use_left = state->pack.use_left;
-    df_copy(game.name, state->name, SAVE_NAME);
     game.ship = bank_ship();
     game.meal = lodging_last_meal();
     game.trained = guild_last_training();
@@ -498,8 +534,40 @@ static int write_chunks(const SaveState *state)
         piles[i].id = (df_u32)i;
         piles[i].pile = *pile_at(i);
     }
-    return rec_put_begin(put_file, 0) && rec_put_rows(put_file, 0, &rec_head_schema, &head, 1, 0, 0)
-           && rec_put_rows(put_file, 0, &g_game_schema, &game, 1, 0, 0)
+    /* Who and when, then the snapshot: first, so the list reads only the start of the file. */
+    {
+        FsTime now;
+        static SaveMetaRow meta;
+        static SaveThumbRow thumb[THUMB_ROWS];
+
+        fs_local_time(&now);
+        mem_zero(&meta, sizeof(meta));
+        meta.char_id = state->sheet.id;
+        df_copy(meta.name, state->sheet.name, SAVE_NAME);
+        meta.level = state->sheet.level;
+        meta.stamp[0] = now.year;
+        meta.stamp[1] = now.month;
+        meta.stamp[2] = now.day;
+        meta.stamp[3] = now.hour;
+        meta.stamp[4] = now.minute;
+        meta.stamp[5] = now.second;
+        df_copy(meta.where, state->where_words, SAVE_WHERE);
+        meta.game_day = state->day;
+        meta.game_minute = df_ifloor(state->minute);
+        meta.has_thumb = state->thumb != 0;
+        if (state->thumb) {
+            for (i = 0; i < THUMB_ROWS; i++) {
+                thumb[i].id = (df_u16)i;
+                mem_copy(thumb[i].px, state->thumb + (df_u32)i * THUMB_ROW, THUMB_ROW * sizeof(df_u16));
+            }
+        }
+        if (!rec_put_begin(put_file, 0) || !rec_put_rows(put_file, 0, &rec_head_schema, &head, 1, 0, 0)
+            || !rec_put_rows(put_file, 0, &g_meta_schema, &meta, 1, 0, 0)
+            || (state->thumb && !rec_put_rows(put_file, 0, &g_thumb_schema, thumb, THUMB_ROWS, 0, 0))) {
+            return 0;
+        }
+    }
+    return rec_put_rows(put_file, 0, &g_game_schema, &game, 1, 0, 0)
            && rec_put_rows(put_file, 0, &g_sheet_schema, &state->sheet, 1, 0, 0)
            && rec_put_rows(put_file, 0, &g_item_schema, items, state->pack.count, 0, 0)
            && rec_put_rows(put_file, 0, &g_keep_schema, keeps, nkeep, 0, 0)
@@ -520,59 +588,66 @@ static int write_chunks(const SaveState *state)
                || rec_put_rows(put_file, 0, &class_schema, career_class(CLASS_CUSTOM), 1, 0, 0));
 }
 
+/* The folder part of a path: everything before the last backslash, into out (SAVE_PATH); 0 when there is none. */
+static int folder_of(const char *path, char *out)
+{
+    int last;
+    int i;
+
+    last = -1;
+    for (i = 0; path[i]; i++) {
+        if (path[i] == '\\') {
+            last = i;
+        }
+    }
+    if (last <= 0) {
+        return 0;
+    }
+    for (i = 0; i < last; i++) {
+        out[i] = path[i];
+    }
+    out[last] = 0;
+    return 1;
+}
+
 int save_write(const SaveState *state)
 {
     MemHeap *scratch;
     MemHeap *was;
+    char folder[SAVE_PATH];
+    char temp[SAVE_PATH + 8];
     int ok;
 
     scratch = mem_heap_new();
     if (!scratch) {
         return 0;
     }
+    /* Into a temporary name first, and moved over the real one when it is whole. */
+    log_format(temp, (int)sizeof(temp), "%s.TMP", g_file);
     was = mem_heap_use(scratch);
-    ok = fs_make_dir(SAVE_DIR) && fs_create(file_of(g_slot)) && write_chunks(state);
+    ok = (!folder_of(g_file, folder) || fs_make_dirs(folder)) && fs_create(temp) && write_chunks(state);
     mem_heap_use(was);
     mem_heap_delete(scratch);
     if (!ok) {
         fs_abort();
-        log_print(LOG_WARN, "save: slot %d could not be written", g_slot);
+        log_print(LOG_WARN, "save: %s could not be written", g_file);
         return 0;
     }
     fs_finish();
+    if (!fs_move(temp, g_file)) {
+        fs_delete(temp);
+        log_print(LOG_WARN, "save: %s could not be moved into place", g_file);
+        return 0;
+    }
     return 1;
 }
 
 /* ---- Reading. ---- */
 
 /* Whether a slot's file is there. */
-static int slot_exists(int slot)
-{
-    VfsFile *file;
-
-    file = vfs_open_beside(file_of(slot));
-    if (!file) {
-        return 0;
-    }
-    vfs_close(file);
-    return 1;
-}
-
 int save_exists(void)
 {
-    return slot_exists(g_slot);
-}
-
-int save_any(void)
-{
-    int slot;
-
-    for (slot = 0; slot < SAVE_SLOTS; slot++) {
-        if (slot_exists(slot)) {
-            return 1;
-        }
-    }
-    return 0;
+    return fs_exists(g_file);
 }
 
 /* The tables a file is merged into: kept for the process, as a record table is. */
@@ -667,7 +742,6 @@ static void apply_tables(SaveState *state)
         state->pack.worn[i] = game->worn[i];
     }
     state->pack.use_left = game->use_left;
-    df_copy(state->name, game->name, SAVE_NAME);
     bank_set_ship(game->ship);
     if (g_custom_table.count) {
         career_set_custom((const CareerClass *)g_custom_table.rows);
@@ -789,7 +863,7 @@ int save_read(SaveState *state)
         return 0;
     }
     was = mem_heap_use(scratch);
-    bytes = vfs_read_beside(file_of(g_slot), &size);
+    bytes = vfs_read_beside(g_file, &size);
     ok = bytes && rec_is_file(bytes, size);
     if (ok) {
         at = 0;
@@ -801,25 +875,89 @@ int save_read(SaveState *state)
     mem_heap_delete(scratch);
     head = (const RecHead *)g_head_table.rows;
     if (!ok || !g_head_table.count || head->size != SAVE_VERSION || !g_game_table.count || !g_sheet_table.count) {
-        log_print(LOG_WARN, "save: slot %d is not a save this game reads", g_slot);
+        log_print(LOG_WARN, "save: %s is not a save this game reads", g_file);
         return 0;
     }
     apply_tables(state);
     return 1;
 }
 
-int save_peek_name(int slot, char *out)
+/* The first bytes of a file beside the program into a buffer; its length, 0 when it will not open. */
+static df_u32 read_start(const char *name, df_u8 *buf, df_u32 cap)
 {
-    MemHeap *scratch;
-    MemHeap *was;
-    const df_u8 *bytes;
+    FsFile *file;
+    df_u32 size;
+
+    file = fs_open_beside(name);
+    if (!file) {
+        return 0;
+    }
+    size = fs_size(file);
+    if (size > cap) {
+        size = cap;
+    }
+    if (!fs_read_at(file, 0, buf, size)) {
+        size = 0;
+    }
+    fs_close(file);
+    return size;
+}
+
+int save_peek(const char *name, SaveMeta *out)
+{
+    static df_u8 buf[PEEK_BYTES];
+    static RecTable meta_table;
     RecChunk chunk;
+    const SaveMetaRow *row;
     df_u32 size;
     df_u32 at;
-    int found;
 
-    out[0] = 0;
-    if (!slot_exists(slot) || !ready_table(&g_game_table, &g_game_schema, 1)) {
+    size = read_start(name, buf, sizeof(buf));
+    if (size < 16 || !rec_is_file(buf, size) || !ready_table(&meta_table, &g_meta_schema, 1)) {
+        return 0;
+    }
+    at = 0;
+    while (rec_next(buf, size, &at, &chunk)) {
+        if (chunk.tag[0] == 'M' && chunk.tag[1] == 'E' && chunk.tag[2] == 'T' && chunk.tag[3] == 'A') {
+            rec_merge(&meta_table, &chunk, 0);
+            break;
+        }
+    }
+    if (!meta_table.count) {
+        return 0;
+    }
+    row = (const SaveMetaRow *)meta_table.rows;
+    mem_zero(out, sizeof(*out));
+    out->char_id = row->char_id;
+    df_copy(out->name, row->name, SAVE_NAME);
+    out->level = row->level;
+    out->year = row->stamp[0];
+    out->month = row->stamp[1];
+    out->day = row->stamp[2];
+    out->hour = row->stamp[3];
+    out->minute = row->stamp[4];
+    out->second = row->stamp[5];
+    df_copy(out->where, row->where, SAVE_WHERE);
+    out->game_day = row->game_day;
+    out->game_minute = row->game_minute;
+    out->has_thumb = row->has_thumb;
+    return 1;
+}
+
+int save_peek_thumb(const char *name, df_u16 *out)
+{
+    static RecTable thumb_table;
+    MemHeap *scratch;
+    MemHeap *was;
+    df_u8 *buf;
+    RecChunk chunk;
+    df_u32 cap;
+    df_u32 size;
+    df_u32 at;
+    int i;
+
+    cap = PEEK_BYTES + (df_u32)THUMB_ROWS * (df_u32)(sizeof(SaveThumbRow) + 8) + 64u;
+    if (!ready_table(&thumb_table, &g_thumb_schema, THUMB_ROWS)) {
         return 0;
     }
     scratch = mem_heap_new();
@@ -827,21 +965,30 @@ int save_peek_name(int slot, char *out)
         return 0;
     }
     was = mem_heap_use(scratch);
-    bytes = vfs_read_beside(file_of(slot), &size);
-    found = 0;
-    if (bytes && rec_is_file(bytes, size)) {
+    buf = (df_u8 *)mem_alloc(cap);
+    size = buf ? read_start(name, buf, cap) : 0;
+    if (size >= 16 && rec_is_file(buf, size)) {
         at = 0;
-        while (rec_next(bytes, size, &at, &chunk)) {
-            if (chunk.tag[0] == 'G' && chunk.tag[1] == 'A' && chunk.tag[2] == 'M' && chunk.tag[3] == 'E') {
-                rec_merge(&g_game_table, &chunk, 0);
-                found = g_game_table.count > 0;
+        while (rec_next(buf, size, &at, &chunk)) {
+            if (chunk.tag[0] == 'T' && chunk.tag[1] == 'H' && chunk.tag[2] == 'M' && chunk.tag[3] == 'B') {
+                rec_merge(&thumb_table, &chunk, 0);
+                break;
             }
         }
     }
     mem_heap_use(was);
     mem_heap_delete(scratch);
-    if (found) {
-        df_copy(out, ((const SaveGameRow *)g_game_table.rows)->name, SAVE_NAME);
+    if (thumb_table.count != THUMB_ROWS) {
+        return 0;
     }
-    return found;
+    for (i = 0; i < THUMB_ROWS; i++) {
+        const SaveThumbRow *row;
+
+        row = (const SaveThumbRow *)(thumb_table.rows + (df_u32)i * (df_u32)sizeof(SaveThumbRow));
+        if (row->id >= THUMB_ROWS) {
+            return 0;
+        }
+        mem_copy(out + (df_u32)row->id * THUMB_ROW, row->px, THUMB_ROW * sizeof(df_u16));
+    }
+    return 1;
 }

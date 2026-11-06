@@ -2,6 +2,7 @@
 #define DF_MENU_H
 
 #include "engine/platform/input.h"
+#include "engine/core/df.h"
 
 /*
  * Title/start/death retain classic's pictures. Escape opens settings.c's
@@ -41,8 +42,17 @@ int menu_setup(void);
 void menu_shutdown(void);
 /* Opens a menu, closing the one open. */
 void menu_open(int which);
-/* A line under the open menu, until the next click: "Game saved." */
+/* A line under the open menu, until the next click: "Game saved." (on the saved games' tab, in its own note). */
 void menu_say(const char *line);
+/*
+ * Before opening the shell: whether the player is in a game (the saved games' screen then has a SAVE button) and
+ * the id of the character playing, whose saves are selected first.
+ */
+void menu_files(int can_save, df_u32 current);
+/* After MENU_LOAD: the path of the save chosen. */
+const char *menu_chosen_path(void);
+/* After the game saved from MENU_SAVE: the path it went to (0 if it failed); the list shows it. */
+void menu_files_saved(const char *path);
 int menu_current(void);
 /* One frame of the open menu's input: MENU_*. */
 int menu_frame(const Input *in);

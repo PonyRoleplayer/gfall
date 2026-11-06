@@ -26,8 +26,6 @@ enum {
     SCREENS_CLOSED,
     /* Creation finished, the character made (create_result), still open until the game has read it. */
     SCREENS_MADE,
-    /* A save slot chosen (screens_slot), closed. */
-    SCREENS_SLOT,
     /* A merchant's panel answered (screens_service_choice), closed. */
     SCREENS_SERVICE,
     /* A theft seen in a shop, closed: the court's to open. */
@@ -47,7 +45,6 @@ void screens_open_bag(Player *p, Entity *searched);
 void screens_open_sheet(Player *p);
 void screens_open_create(void);
 void screens_open_rest(Player *p);
-void screens_open_slots(int saving);
 void screens_open_talk(Player *p, const TalkWho *who);
 void screens_open_service(int panel);
 /* The quest logbook (logbook.h) at game minute now. */
@@ -66,10 +63,6 @@ int screens_dunmap_open(void);
 void screens_open_townmap(int region, int index, float x, float z, float yaw);
 /* The travel map, the player on pixel (px, py) of region. */
 void screens_open_travel(Player *p, int px, int py, int region);
-/* The slot chosen and the name typed, after SCREENS_SLOT; whether it was to save. */
-int screens_slot(void);
-const char *screens_slot_name(void);
-int screens_slot_saving(void);
 void screens_close(void);
 int screens_is_open(void);
 /* One frame's pointer, clicks and keys: SCREENS_*. */

@@ -45,6 +45,9 @@
 #include "game/dagger/play/player.h"
 #include "game/dagger/play/rules.h"
 #include "game/dagger/play/save.h"
+#include "game/dagger/play/saves.h"
+#include "game/dagger/formats/dungeon.h"
+#include "game/dagger/formats/factionfile.h"
 #include "game/dagger/play/screen.h"
 #include "game/dagger/play/screens.h"
 #include "game/dagger/play/weapon.h"
@@ -1580,12 +1583,21 @@ static void draw(void)
     menu_draw();
 }
 
+/* The snapshot taken when Escape opened the menu, before it covered the view (menu_over_play), for the next save. */
+static df_u16 g_thumb[SAVE_THUMB_W * SAVE_THUMB_H];
+static int g_thumb_ok;
+
 /* A menu open over play stills the world and gives the mouse to the pointer; closed, back to play. */
 static void menu_over_play(int which)
 {
     ride_quiet();
     control_block(&g_control);
     weapon_cancel();
+    /* The view is still on the glass: a snapshot now is where the player left off. Not when a menu is already up. */
+    if (which != MENU_NONE && menu_current() == MENU_NONE) {
+        g_thumb_ok = gfx_thumbnail(SAVE_THUMB_W, SAVE_THUMB_H, g_thumb) != 0;
+    }
+    menu_files(1, g_player.sheet.id);
     menu_open(which);
     gfx_set_pause(which != MENU_NONE);
     apply_pointer(which != MENU_NONE);
@@ -1718,12 +1730,60 @@ static float game_minutes(void)
     return (float)(clock_day() - g_day_zero) * CLOCK_DAY + clock_minute();
 }
 
-/* The game as it stands, into the slot in use, by this name. What is loaded goes into the keep table first. */
-static int save_game(const char *name)
+/* The province a region is, by its ruling house's name. */
+static const char *province_word(int region)
+{
+    const Faction *f;
+
+    f = factionfile_open() ? faction_province_of(region) : 0;
+    return f ? f->name : "?";
+}
+
+/* Where the player is, in words for the saved games' list: a town (and inside, a building of it), a dungeon, or the wilds. */
+static void place_words(char *out, int cap)
+{
+    TravelWhere here;
+    Camera at;
+    int origin[2];
+    int region;
+    int index;
+    int block;
+    int record;
+    float x;
+    float z;
+
+    mem_zero(&at, sizeof(at));
+    at.x = g_player.body.feet[0];
+    at.z = g_player.body.feet[2];
+    travel_here(&here, origin);
+    if (travel_town_here(&at, &region, &index, &x, &z, &block, &record)) {
+        log_format(out, cap, "%s%s, %s", record >= 0 ? "Inside, in " : "", town_name(), province_word(region));
+    } else if (here.kind == TRAVEL_DUNGEON && !here.located) {
+        log_format(out, cap, "Privateer's Hold");
+    } else if (here.kind == TRAVEL_DUNGEON) {
+        Dungeon d;
+
+        if (dungeon_load_at(here.region, here.index, &d)) {
+            log_format(out, cap, "%s, %s", d.title, province_word(here.region));
+        } else {
+            log_format(out, cap, "A dungeon, %s", province_word(here.region));
+        }
+    } else {
+        log_format(out, cap, "The wilds, near %s", province_word(here.region));
+    }
+}
+
+/*
+ * The game as it stands, a new save of the character playing (saves.h): their folder, the next number. What is loaded
+ * goes into the keep table first. 1 when it was written, with its path in path.
+ */
+static int save_game(char *path)
 {
     SaveState state;
 
-    df_copy(state.name, name, SAVE_NAME);
+    mem_zero(&state, sizeof(state));
+    place_words(state.where_words, SAVE_WHERE);
+    state.thumb = g_thumb_ok ? g_thumb : 0;
     travel_keep_now();
     /* The feet as they are, with the stream's origin that frame has: a stream may open on another. */
     travel_here(&state.where, state.origin);
@@ -1740,13 +1800,13 @@ static int save_game(const char *name)
     state.seed = loot_seed();
     state.sheet = g_player.sheet;
     state.pack = g_player.pack;
-    return save_write(&state);
+    return saves_write(&state, path);
 }
 
-/* A slot's save read, to start from at the next place. 1 when there was one. */
-static int load_game(int slot)
+/* The save at this path read, to start from at the next place. 1 when it read. */
+static int load_game(const char *path)
 {
-    save_use_slot(slot);
+    save_use_file(path);
     if (!save_exists() || !save_read(&g_loaded)) {
         return 0;
     }
@@ -1756,6 +1816,16 @@ static int load_game(int slot)
     g_dead = 0;
     travel_from_save(&g_loaded.where, g_loaded.feet, g_loaded.origin, g_loaded.yaw, g_loaded.pitch);
     return 1;
+}
+
+/* Who a new character is among all there have been (never 0): the cycle counter's low bits, mixed, so two Annas stay two in the saves. */
+static void new_character_id(void)
+{
+    df_u32 id;
+
+    id = prof_now() * 2654435761u;
+    id ^= (df_u32)clock_day() * 40503u;
+    g_new_sheet.id = id ? id : 1;
 }
 
 /* A new character's game: what was changed or dropped in the last one is gone. */
@@ -2166,6 +2236,8 @@ void game_arrive(const Level *level, Camera *cam, const TravelPose *at)
 int game_frame(Camera *cam, const Input *in, float dt)
 {
     int asked;
+    /* The menu that was open before this frame's click (the title's Load opens the shell). */
+    int from;
     /* The click that closed a menu is not a swing. */
     int closed;
     ControlFrame controls;
@@ -2188,25 +2260,31 @@ int game_frame(Camera *cam, const Input *in, float dt)
             if (asked == SCREENS_MADE && create_result(&g_new_sheet, &g_new_pack)) {
                 screens_close();
                 forget_last_game();
+                new_character_id();
                 return GAME_START;
             }
-            if (asked == SCREENS_SLOT) {
-                return load_game(screens_slot()) ? GAME_START : GAME_GO_ON;
-            }
-            /* The slots put away, or Escape on the race map: the start menu again. Not a new game. */
+            /* Escape on the race map: the start menu again. Not a new game. */
             if (asked == SCREENS_CLOSED) {
                 menu_open(MENU_MAIN);
             }
             return GAME_GO_ON;
         }
+        from = menu_current();
         asked = menu_frame(in);
-        if (asked == MENU_LOAD) {
-            if (save_any()) {
+        if (asked == MENU_LOAD && from == MENU_MAIN) {
+            /* The title's Load: the shell on its saved games' tab, with nothing to save. */
+            menu_files(0, 0);
+            menu_open(MENU_OPTIONS);
+        } else if (asked == MENU_LOAD) {
+            if (load_game(menu_chosen_path())) {
                 menu_open(MENU_NONE);
-                screens_open_slots(0);
-            } else {
-                menu_say("There is no saved game.");
+                prof_end(PROF_PLAY);
+                return GAME_START;
             }
+            menu_say("That game could not be read.");
+        } else if (asked == MENU_CLOSED) {
+            /* Back from the shell before any game: the start menu again. */
+            menu_open(MENU_MAIN);
         }
         if (asked == MENU_START) {
             /* Before creation: its answers move reputations. What the map shows is a new game's too. */
@@ -2224,6 +2302,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
             if (!screens_is_open()) {
                 create_default(&g_new_sheet, &g_new_pack);
                 forget_last_game();
+                new_character_id();
                 prof_end(PROF_PLAY);
                 return GAME_START;
             }
@@ -2269,10 +2348,6 @@ int game_frame(Camera *cam, const Input *in, float dt)
             }
             interact_say(line);
             court_commit(CRIME_VAGRANCY, travel_region());
-        }
-        if (asked == SCREENS_SLOT && !screens_slot_saving()) {
-            prof_end(PROF_PLAY);
-            return load_game(screens_slot()) ? GAME_START : GAME_GO_ON;
         }
         if (asked == SCREENS_ANSWERED && g_asking) {
             g_asking = 0;
@@ -2322,25 +2397,11 @@ int game_frame(Camera *cam, const Input *in, float dt)
             prof_end(PROF_PLAY);
             return GAME_GO_ON;
         }
-        if (asked == SCREENS_SLOT || asked == SCREENS_CLOSED) {
+        if (asked == SCREENS_CLOSED) {
             const char *said;
 
-            /* The dead, having put the slots away, have only the start menu. */
-            if (g_dead) {
-                g_dead = 0;
-                g_playing = 0;
-                gfx_set_pause(0);
-                apply_pointer(1);
-                menu_open(MENU_MAIN);
-                prof_end(PROF_PLAY);
-                return GAME_GO_ON;
-            }
             gfx_set_pause(0);
             apply_pointer(0);
-            if (asked == SCREENS_SLOT) {
-                save_use_slot(screens_slot());
-                interact_say(save_game(screens_slot_name()) ? "Game saved." : "The game could not be saved.");
-            }
             said = screens_said();
             if (said) {
                 interact_say(said);
@@ -2353,20 +2414,37 @@ int game_frame(Camera *cam, const Input *in, float dt)
             prof_end(PROF_PLAY);
             return GAME_QUIT;
         }
+        if (asked == MENU_CLOSED && g_dead) {
+            /* The dead, having left the saved games, have only the start menu. */
+            g_dead = 0;
+            g_playing = 0;
+            gfx_set_pause(0);
+            apply_pointer(1);
+            menu_open(MENU_MAIN);
+            prof_end(PROF_PLAY);
+            return GAME_GO_ON;
+        }
         if (asked == MENU_CLOSED) {
             menu_over_play(MENU_NONE);
         } else if (asked == MENU_SAVE) {
-            menu_open(MENU_NONE);
-            screens_open_slots(1);
-        } else if (asked == MENU_LOAD || asked == MENU_DEATH_OVER) {
-            /* From the options, or dead: which save, if there is any. */
-            g_dead = asked == MENU_DEATH_OVER;
-            if (save_any()) {
+            char path[SAVE_PATH];
+
+            /* A new save of the character playing; the list then shows it, selected. */
+            menu_files_saved(save_game(path) ? path : 0);
+        } else if (asked == MENU_LOAD) {
+            if (load_game(menu_chosen_path())) {
                 menu_open(MENU_NONE);
+                prof_end(PROF_PLAY);
+                return GAME_START;
+            }
+            menu_say("That game could not be read.");
+        } else if (asked == MENU_DEATH_OVER) {
+            /* Dead: which save, if there is any. */
+            g_dead = 1;
+            if (saves_any()) {
+                menu_files(0, g_player.sheet.id);
+                menu_open(MENU_OPTIONS);
                 apply_pointer(1);
-                screens_open_slots(0);
-            } else if (asked == MENU_LOAD) {
-                menu_say("There is no saved game.");
             } else {
                 /* Dead with nothing saved: back to the start menu, the place left for the next start to replace. */
                 g_dead = 0;
