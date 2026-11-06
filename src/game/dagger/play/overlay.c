@@ -39,6 +39,12 @@ static int g_now[BARS];
 static int g_most[BARS];
 static float g_yaw;
 static int g_crosshair = 1;
+/* The crosshair's sheet, two 16 x 16 cells side by side (cross_sheet): the ordinary one, then stealing's. */
+static int g_cross;
+static int g_stealth;
+#define CROSS_CELL 16
+#define CROSS_CELLS 2
+static void cross_sheet(df_u8 *px, const df_u8 *rgb);
 /* The bottom panel: its picture, on or off, and the face in it. */
 static int g_panel;
 static int g_panel_on = 1;
@@ -125,6 +131,13 @@ int overlay_load(void)
     /* Keep 60 KB of source frames in RAM, not 32 compass pictures on a 2 MB
      * card. Only a changed heading sends a new, roughly 2 KB, compass frame. */
     img_load_bss("CMPA00I0.BSS", &g_compass_frames);
+    {
+        static df_u8 cross[CROSS_CELL * CROSS_CELL * CROSS_CELLS];
+
+        /* A static sheet, not a stack one: the target disables stack probes. A miss leaves the font's "+". */
+        cross_sheet(cross, rgb);
+        g_cross = pic_load(cross, CROSS_CELL * CROSS_CELLS, CROSS_CELL, rgb, 1);
+    }
     overlay_set_yaw(0.0f);
     return g_strip != 0 && g_box != 0;
 }
@@ -138,7 +151,8 @@ void overlay_free(void)
     pic_free(g_color);
     pic_free(g_modes);
     pic_free(g_compass);
-    g_panel = g_face = g_color = g_modes = g_compass = 0;
+    pic_free(g_cross);
+    g_panel = g_face = g_color = g_modes = g_compass = g_cross = 0;
     g_compass_at = -1;
     mem_zero(&g_compass_frames, sizeof(g_compass_frames));
     if (g_strip) {
@@ -193,6 +207,128 @@ void overlay_set_yaw(float yaw)
 void overlay_set_mode(int mode)
 {
     g_mode = mode >= 0 && mode < HUDBAR_MODES ? mode : HUDBAR_GRAB;
+}
+
+void overlay_set_stealth(int on)
+{
+    g_stealth = on ? 1 : 0;
+}
+
+/* The palette index nearest a colour (never 0, which is clear). */
+static int nearest_colour(const df_u8 *rgb, int r, int g, int b)
+{
+    int best;
+    int best_d;
+    int i;
+
+    best = 1;
+    best_d = 1 << 30;
+    for (i = 1; i < 256; i++) {
+        int dr;
+        int dg;
+        int db;
+        int d;
+
+        dr = (int)rgb[i * 3] - r;
+        dg = (int)rgb[i * 3 + 1] - g;
+        db = (int)rgb[i * 3 + 2] - b;
+        d = dr * dr + dg * dg + db * db;
+        if (d < best_d) {
+            best_d = d;
+            best = i;
+        }
+    }
+    return best;
+}
+
+static void cross_put(df_u8 *px, int cell, int x, int y, int c)
+{
+    if (x >= 0 && x < CROSS_CELL && y >= 0 && y < CROSS_CELL) {
+        px[y * CROSS_CELL * CROSS_CELLS + cell * CROSS_CELL + x] = (df_u8)c;
+    }
+}
+
+/*
+ * The two crosshairs, drawn once at startup under ART_PAL.COL, each with a dark edge so it reads on
+ * snow and on shadow: the ordinary one a dot with four short ticks round it, and stealing's an amber
+ * ring round the dot, which no one can take for the other.
+ */
+static void cross_sheet(df_u8 *px, const df_u8 *rgb)
+{
+    int white;
+    int amber;
+    int dark;
+    int cell;
+    int x;
+    int y;
+    int k;
+    int t;
+
+    white = nearest_colour(rgb, 236, 236, 228);
+    amber = nearest_colour(rgb, 245, 178, 40);
+    dark = nearest_colour(rgb, 16, 16, 16);
+    mem_zero(px, CROSS_CELL * CROSS_CELL * CROSS_CELLS);
+    for (t = 0; t < 2; t++) {
+        for (k = 0; k < 2; k++) {
+            cross_put(px, 0, 7 + t, 7 + k, white);
+            cross_put(px, 1, 7 + t, 7 + k, amber);
+        }
+    }
+    for (k = 0; k < 3; k++) {
+        for (t = 0; t < 2; t++) {
+            cross_put(px, 0, 2 + k, 7 + t, white);
+            cross_put(px, 0, 11 + k, 7 + t, white);
+            cross_put(px, 0, 7 + t, 2 + k, white);
+            cross_put(px, 0, 7 + t, 11 + k, white);
+        }
+    }
+    for (y = 0; y < CROSS_CELL; y++) {
+        for (x = 0; x < CROSS_CELL; x++) {
+            float dx;
+            float dy;
+            float d2;
+
+            dx = (float)x - 7.5f;
+            dy = (float)y - 7.5f;
+            d2 = dx * dx + dy * dy;
+            if (d2 >= 22.0f && d2 <= 36.0f) {
+                cross_put(px, 1, x, y, amber);
+            }
+        }
+    }
+    /* A dark edge round whatever is lit, over clear pixels only. */
+    for (cell = 0; cell < CROSS_CELLS; cell++) {
+        df_u8 lit[CROSS_CELL * CROSS_CELL];
+
+        for (y = 0; y < CROSS_CELL; y++) {
+            for (x = 0; x < CROSS_CELL; x++) {
+                lit[y * CROSS_CELL + x] = px[y * CROSS_CELL * CROSS_CELLS + cell * CROSS_CELL + x] != 0;
+            }
+        }
+        for (y = 0; y < CROSS_CELL; y++) {
+            for (x = 0; x < CROSS_CELL; x++) {
+                int a;
+                int b;
+
+                if (!lit[y * CROSS_CELL + x]) {
+                    continue;
+                }
+                for (a = -1; a <= 1; a++) {
+                    for (b = -1; b <= 1; b++) {
+                        int nx;
+                        int ny;
+
+                        nx = x + a;
+                        ny = y + b;
+                        if (nx >= 0 && nx < CROSS_CELL && ny >= 0 && ny < CROSS_CELL
+                            && px[ny * CROSS_CELL * CROSS_CELLS + cell * CROSS_CELL + nx] == 0) {
+                            cross_put(px, cell, nx, ny, dark);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 void overlay_set_crosshair(int on)
@@ -321,6 +457,16 @@ void overlay_draw(void)
     }
     draw_vitals();
     if (g_crosshair) {
-        draw_centred("+", DF_VIEW_H / 2 + ui_line_height() / 2);
+        if (g_cross) {
+            /* The picture's top is measured up from the screen's foot, as the text's is. */
+            pic_draw_part(g_cross, g_stealth ? CROSS_CELL : 0, 0, CROSS_CELL, CROSS_CELL,
+                          (DF_VIEW_W - CROSS_CELL) / 2, DF_VIEW_H / 2 + CROSS_CELL / 2, CROSS_CELL, CROSS_CELL, 255);
+        } else {
+            draw_centred("+", DF_VIEW_H / 2 + ui_line_height() / 2);
+        }
+    }
+    /* Stealing is said under the middle, with the pointer or without the cross. */
+    if (g_stealth) {
+        draw_centred("Stealth", DF_VIEW_H / 2 - CROSS_CELL - 2);
     }
 }

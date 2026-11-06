@@ -443,7 +443,8 @@ static void container_answered(int answer)
 /*
  * The screen over a container's things closed. What was taken is a theft, as DFU's private
  * property is: seen by the shoplifting sum at the building's quality over the things' weight and
- * number, and the court is next; unseen, the Pickpocket skill is used instead.
+ * number, the crime is noted and the guards come (DFU: Theft and SpawnCityGuards; a pickpocket's
+ * way, not the shop counter's court); unseen, the Pickpocket skill is used instead.
  */
 static void container_closed(void)
 {
@@ -460,7 +461,8 @@ static void container_closed(void)
         return;
     }
     if (combat_roll(100) < shop_seen_chance(&shop, &g_player.sheet, weight, count)) {
-        court_commit(CRIME_THEFT, travel_region());
+        court_note(CRIME_THEFT, travel_region());
+        watch_alarm(g_cam, g_player.body.feet);
     } else {
         character_tally(&g_player.sheet, SKILL_PICKPOCKET, 1);
     }
@@ -590,7 +592,7 @@ static int street_person_used(const Camera *cam)
  */
 static int steal_intent(void)
 {
-    return g_mode == HUDBAR_STEAL || g_player.crouched;
+    return g_mode == HUDBAR_STEAL || (g_mode == HUDBAR_GRAB && g_player.crouched);
 }
 
 /* How near a pocket must be to be picked: half of talking's reach (DFU's PickpocketDistance, 128 to 256). */
@@ -727,17 +729,19 @@ static int creature_robbed(const Camera *cam)
 static int street_person_robbed(const Camera *cam)
 {
     char line[64];
+    float along;
     int female;
     unsigned who;
     int result;
     int gold;
 
-    if (!people_in_view(cam, THEFT_REACH, &female, &who)) {
-        if (people_in_view(cam, TALK_REACH, &female, &who)) {
-            interact_say("You are too far away.");
-            return 1;
-        }
+    /* One cast for both reaches: a person found past the pocket's reach is too far. */
+    if (!people_in_view_at(cam, TALK_REACH, &female, &who, &along)) {
         return 0;
+    }
+    if (along > THEFT_REACH) {
+        interact_say("You are too far away.");
+        return 1;
     }
     result = theft_pickpocket(&g_player, who, 0, travel_region(), &gold);
     theft_words(result, gold, line, (int)sizeof(line));
@@ -2577,6 +2581,9 @@ int game_frame(Camera *cam, const Input *in, float dt)
         }
     }
     overlay_set_yaw(cam->yaw);
+    /* Whether a use is stealing, shown: the bar's mode icon says Steal while crouched, and the middle of the screen says it too. */
+    overlay_set_mode(g_mode == HUDBAR_GRAB && g_player.crouched ? HUDBAR_STEAL : g_mode);
+    overlay_set_stealth(steal_intent());
     overlay_set_vitals(g_player.sheet.health, g_player.sheet.health_max, g_player.sheet.fatigue,
                        g_player.sheet.fatigue_max, g_player.sheet.magicka, g_player.sheet.magicka_max);
     prof_end(PROF_PLAY);

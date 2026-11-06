@@ -5895,7 +5895,8 @@ static void check_citizen(void)
             hostile++;
         }
     }
-    check_expect(watch_wanted() && hostile >= 1 && (guards == 0 ? hostile >= 2 && hostile <= 5 : hostile == guards),
+    /* Every loaded guard comes; when none is near, 2 to 5 more are made near (the street may be full: a citizen makes room). */
+    check_expect(watch_wanted() && hostile >= 1 && hostile >= guards && hostile <= guards + 5 && (guards > 0 || hostile >= 2),
                  "citizen: not every guard came, or wanted was not set");
     taken[0] = 0;
     guard = watch_guard();
@@ -5909,6 +5910,9 @@ static void check_citizen(void)
                  "citizen: no city watch (kind 146, archive 399) came");
     if (guard) {
         before = df_sqrt((guard->x - feet[0]) * (guard->x - feet[0]) + (guard->z - feet[2]) * (guard->z - feet[2]));
+        /* The street's guards may all be far, so some are made near: the nearest is within the near ring doubled, and not out of sight across the town. */
+        printf("citizen: the nearest guard to come stood %.0f units off\n", (double)before);
+        check_expect(before < 2.0f * PEOPLE_GUARD_FAR + 200.0f, "citizen: the nearest guard to come was far across the street");
         character_new(&pc, RACE_BRETON, CLASS_WARRIOR, 0, "Test");
         player_init(&ply, &pc);
         player_place(&ply, feet[0], feet[1], feet[2], yaw, 0.0f);

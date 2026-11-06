@@ -28,6 +28,13 @@
 /* World units: where they appear round the camera, where they go, the range they may pop in sight. */
 #define PEOPLE_SPAWN 6144.0f
 #define PEOPLE_RECYCLE 6000.0f
+/*
+ * A guard spawned for a crime (people_spawn_guard) comes into being this far from the player, out of
+ * sight if a cell there allows: near enough to be on them in a few seconds, as DFU's are, not the
+ * whole street's width away.
+ */
+#define PEOPLE_GUARD_NEAR 700.0f
+#define PEOPLE_GUARD_FAR 1600.0f
 #define PEOPLE_POP 4800.0f
 /* A street citizen's health. A guard's is the city watch's, rolled when struck. */
 #define PEOPLE_CITIZEN_HP 1
@@ -40,6 +47,8 @@
  * cursor-derived aim camera. One cast per use, none for passive pointing.
  */
 int people_in_view(const Camera *cam, float reach, int *female, unsigned *who);
+/* The same, and in *dist how far along the view they stand: one cast serves a nearer reach and a farther. */
+int people_in_view_at(const Camera *cam, float reach, int *female, unsigned *who, float *dist);
 
 /* The stream is open: its scene draws the people. */
 void people_begin(struct Scene *scene);

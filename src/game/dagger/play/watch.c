@@ -18,6 +18,8 @@
 /* DFU spawns 2..5 when no guard was already in the street. */
 #define SPAWN_MIN 2
 #define SPAWN_EXTRA 4
+/* A guard this near the crime is close enough; farther, the street is given its own (units: a few seconds at a run). */
+#define WATCH_CLOSE 1800.0f
 
 static const char *g_line[WATCH_HALTS];
 static int g_n;
@@ -193,6 +195,18 @@ void watch_alarm(const Camera *cam, const float *at)
     g_wait = 0.0f;
     g_guard = 0;
     n = turn_all(at);
+    /* The loaded guards come, but a street's guards may be far off: with none close, some are made near. */
+    remember_nearest(at);
+    if (n > 0 && g_guard && at) {
+        float dx;
+        float dz;
+
+        dx = g_guard->x - at[0];
+        dz = g_guard->z - at[2];
+        if (dx * dx + dz * dz > WATCH_CLOSE * WATCH_CLOSE) {
+            n = 0;
+        }
+    }
     if (n == 0 && cam) {
         int want;
 

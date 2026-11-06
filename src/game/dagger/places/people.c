@@ -1036,6 +1036,74 @@ void people_hold(int index)
     }
 }
 
+/* One set's pictures read now, and no one else's: a guard needed this frame must not wait for the whole street's. */
+static void load_set(int set)
+{
+    Set *s;
+
+    s = &g_set[set];
+    while (s->next < SET_PICTURES) {
+        if (wres_load(s->slot[s->next])) {
+            continue;
+        }
+        if (wres_image(s->slot[s->next])) {
+            g_pictures++;
+        }
+        s->next++;
+    }
+    s->ready = 1;
+}
+
+/*
+ * A slot for a guard: a free one, else a citizen sent away to make room (a busy street fills all
+ * PEOPLE_MAX, and no guard could then come: a crime in Daggerfall brought a shout and no one). The
+ * citizen is the one out of sight before the one in it, and the farthest of those; never a guard, a
+ * hostile, one the watch holds, a body or a splash. -1 when there is no one to send.
+ */
+static int room_for_guard(const Camera *cam)
+{
+    int best;
+    int best_hidden;
+    float best_d;
+    int i;
+
+    for (i = 0; i < PEOPLE_MAX; i++) {
+        if (!g_ent[i].live) {
+            return i;
+        }
+    }
+    best = -1;
+    best_hidden = 0;
+    best_d = 0.0f;
+    for (i = 0; i < PEOPLE_MAX; i++) {
+        const Entity *e;
+        const Person *p;
+        float dx;
+        float dz;
+        float d;
+        int hidden;
+
+        e = &g_ent[i];
+        p = &g_per[i];
+        if (e->dead || p->effect || p->held || p->hostile || g_set[p->set].archive == GUARD_ARCHIVE) {
+            continue;
+        }
+        dx = e->x - cam->x;
+        dz = e->z - cam->z;
+        d = dx * dx + dz * dz;
+        hidden = out_of_sight(cam, e->x, e->z);
+        if (best < 0 || (hidden && !best_hidden) || (hidden == best_hidden && d > best_d)) {
+            best = i;
+            best_d = d;
+            best_hidden = hidden;
+        }
+    }
+    if (best >= 0) {
+        g_ent[best].live = 0;
+    }
+    return best;
+}
+
 int people_spawn_guard(const Camera *cam)
 {
     double x0;
@@ -1047,7 +1115,7 @@ int people_spawn_guard(const Camera *cam)
     int day;
     int set;
     int slot;
-    int anywhere;
+    int pass;
     int attempt;
 
     if (!g_on || !cam || !town_near(cam, &x0, &z0, &most, &climate, &day)) {
@@ -1057,20 +1125,20 @@ int people_spawn_guard(const Camera *cam)
     if (set < 0) {
         return -1;
     }
-    while (load_one()) {
-    }
     if (!g_set[set].ready) {
-        return -1;
+        load_set(set);
     }
-    for (slot = 0; slot < PEOPLE_MAX && g_ent[slot].live; slot++) {
-    }
-    if (slot == PEOPLE_MAX) {
+    slot = room_for_guard(cam);
+    if (slot < 0) {
         return -1;
     }
     stream_world(cam->x, cam->z, &cwx, &cwz);
-    /* Out of sight first, as every other person appears; then a cell that is merely not underfoot. */
-    for (anywhere = 0; anywhere < 2; anywhere++) {
-        for (attempt = 0; attempt < 12; attempt++) {
+    /*
+     * A ring round the player: out of sight first, as every other person appears; then any cell
+     * that is merely not underfoot; then a wider ring, and anywhere not on them.
+     */
+    for (pass = 0; pass < 3; pass++) {
+        for (attempt = 0; attempt < 24; attempt++) {
             double wx;
             double wz;
             double cx;
@@ -1079,9 +1147,16 @@ int people_spawn_guard(const Camera *cam)
             float lz;
             float dx;
             float dz;
+            float angle;
+            float radius;
 
-            wx = cwx + (double)((rnd() * 2.0f - 1.0f) * PEOPLE_SPAWN);
-            wz = cwz + (double)((rnd() * 2.0f - 1.0f) * PEOPLE_SPAWN);
+            angle = rnd() * DF_TAU;
+            radius = PEOPLE_GUARD_NEAR + rnd() * (PEOPLE_GUARD_FAR - PEOPLE_GUARD_NEAR);
+            if (pass == 2) {
+                radius *= 2.0f;
+            }
+            wx = cwx + (double)(df_sin(angle) * radius);
+            wz = cwz + (double)(df_cos(angle) * radius);
             cell_centre(x0, z0, wx, wz, &cx, &cz);
             stream_local(cx, cz, &lx, &lz);
             dx = lx - cam->x;
@@ -1089,10 +1164,10 @@ int people_spawn_guard(const Camera *cam)
             if (dx * dx + dz * dz > PEOPLE_RECYCLE * PEOPLE_RECYCLE || wild_nav(cx, cz) == 0 || taken(-1, cx, cz)) {
                 continue;
             }
-            if (!anywhere && !out_of_sight(cam, lx, lz)) {
+            if (pass == 0 && !out_of_sight(cam, lx, lz)) {
                 continue;
             }
-            if (anywhere && dx * dx + dz * dz < 64.0f * 64.0f) {
+            if (pass > 0 && dx * dx + dz * dz < 400.0f * 400.0f) {
                 continue;
             }
             if (!embody(slot, set, lx, lz, cx, cz)) {
@@ -1105,6 +1180,13 @@ int people_spawn_guard(const Camera *cam)
 }
 
 int people_in_view(const Camera *cam, float reach, int *female, unsigned *who)
+{
+    float along;
+
+    return people_in_view_at(cam, reach, female, who, &along);
+}
+
+int people_in_view_at(const Camera *cam, float reach, int *female, unsigned *who, float *dist)
 {
     Basis b;
     float fx, fy, fz;
@@ -1159,5 +1241,6 @@ int people_in_view(const Camera *cam, float reach, int *female, unsigned *who)
     }
     *female = archive_is_woman(g_set[g_per[found].set].archive);
     *who = (unsigned)found * 2654435761u + (unsigned)g_per[found].set;
+    *dist = best;
     return 1;
 }
