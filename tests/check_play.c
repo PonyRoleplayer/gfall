@@ -195,24 +195,6 @@ static float walk(Player *p, const Scene *scene, const Input *in, int n)
  * manual behavior and worked distances/angles, rather than copying region
  * implementation: passive movement, edge speed, activation ownership,
  * Alt view versus body heading, and exactly the pixel selected by a use. */
-typedef struct ControlBytes {
-    df_u8 bytes[2048];
-    df_u32 n;
-} ControlBytes;
-
-static int control_put_test(void *ctx, const void *bytes, df_u32 n)
-{
-    ControlBytes *b;
-
-    b = (ControlBytes *)ctx;
-    if (n > sizeof(b->bytes) - b->n) {
-        return 0;
-    }
-    memcpy(b->bytes + b->n, bytes, n);
-    b->n += n;
-    return 1;
-}
-
 static void check_controls(void)
 {
     ControlState s;
@@ -220,22 +202,9 @@ static void check_controls(void)
     Input in;
     Camera view, aim;
     Basis b;
-    ControlBytes bytes;
     df_u8 pixels[CONTROL_CURSOR_W * CONTROL_CURSOR_H];
     float turn, slow;
     int i, j, count;
-
-    memset(&bytes, 0, sizeof(bytes));
-    control_set_classic(0);
-    check_expect(rec_put_begin(control_put_test, &bytes) && control_put_settings(control_put_test, &bytes),
-                 "controls: settings did not write");
-    control_set_classic(1);
-    control_read_settings(bytes.bytes, bytes.n);
-    check_expect(!control_classic(), "controls: View setting did not round trip");
-    control_read_settings(bytes.bytes, 8);
-    check_expect(control_classic(), "controls: older bindings did not default to Cursor");
-    control_read_settings(bytes.bytes, bytes.n - 2);
-    check_expect(control_classic(), "controls: a truncated setting was accepted");
 
     check_expect(control_region(160, 77, 154) == CONTROL_TARGET && control_region(160, 0, 154) == CONTROL_N
                      && control_region(319, 0, 154) == CONTROL_NE && control_region(319, 77, 154) == CONTROL_E
@@ -5463,21 +5432,7 @@ static void check_standing_saved(void)
     standing_new_game(5u);
 }
 
-/* Full screen and head bobbing: the eye's offset at a walk's phase, and the OPTS row. */
-static df_u8 g_opt_file[1024];
-static int g_opt_at;
-
-static int opt_put(void *ctx, const void *src, df_u32 n)
-{
-    (void)ctx;
-    if (g_opt_at + (int)n > (int)sizeof(g_opt_file)) {
-        return 0;
-    }
-    mem_copy(g_opt_file + g_opt_at, src, n);
-    g_opt_at += (int)n;
-    return 1;
-}
-
+/* Full screen and head bobbing: the eye's offset at a walk's phase, and the options' defaults. */
 /* Rasterize the actual menu quads: layout/text checks and review pictures
  * exercise the shipping atlas path rather than an unrelated mockup. */
 static df_u8 g_settings_preview[SETTINGS_W * SETTINGS_H];
@@ -5676,75 +5631,28 @@ static void check_viewopt(void)
         check_expect(0, "view: no walker");
     }
 
+    /* The defaults the settings file starts from: the bar shown, no bob, 640 x 480, High, no crouch toggle. */
     viewopt_set_full(1);
     viewopt_set_bob(1);
-    g_opt_at = 0;
+    viewopt_set_mode(400, 300);
+    viewopt_set_tex_detail(0);
+    viewopt_set_sprite_detail(1);
+    viewopt_set_crouch_toggle(1);
     camera_set_fov(103.0f);
-    sound_set_volume(0); music_set_volume(100);
-    check_expect(rec_put_begin(opt_put, 0) && viewopt_write(opt_put, 0), "view: the options did not store");
     viewopt_defaults();
-    viewopt_read(g_opt_file, (df_u32)g_opt_at);
-    check_expect(sound_volume()==0 && music_volume()==100, "view: muted SFX/full music did not survive settings round trip");
     {
         int mw;
         int mh;
 
-        /* The screen's mode chosen: stored, read back, peeked before anything else is applied; an older file says 640 x 480. */
-        viewopt_set_mode(400, 300);
-        viewopt_set_tex_detail(0);
-        viewopt_set_sprite_detail(1);
-        g_opt_at = 0;
-        check_expect(rec_put_begin(opt_put, 0) && viewopt_write(opt_put, 0), "view: the mode did not store");
-        viewopt_defaults();
         viewopt_mode(&mw, &mh);
-        check_expect(mw == 640 && mh == 480 && viewopt_tex_detail() == 2, "view: the defaults are not 640 x 480 and High");
-        check_expect(viewopt_mode_in(g_opt_file, (df_u32)g_opt_at, &mw, &mh) && mw == 400 && mh == 300,
-                     "view: the mode in the file was not peeked");
-        viewopt_read(g_opt_file, (df_u32)g_opt_at);
+        check_expect(!viewopt_full() && !viewopt_bob() && !viewopt_crouch_toggle() && mw == 640 && mh == 480
+                         && viewopt_tex_detail() == 2 && viewopt_sprite_detail() == 2,
+                     "view: the defaults are not the bar shown, no bob, 640 x 480 and High");
+        viewopt_set_mode(10, 10);
         viewopt_mode(&mw, &mh);
-        check_expect(mw == 400 && mh == 300 && viewopt_tex_detail() == 0 && viewopt_sprite_detail() == 1,
-                     "view: the mode and the details did not come back");
-        check_expect(!viewopt_mode_in(0, 0, &mw, &mh), "view: a mode out of no file");
-        viewopt_defaults();
-        /* The earlier test's file went with that row: restore what the checks below expect. */
-        viewopt_set_full(1);
-        viewopt_set_bob(1);
-        camera_set_fov(103.0f);
-        sound_set_volume(0);
-        music_set_volume(100);
-        g_opt_at = 0;
-        rec_put_begin(opt_put, 0);
-        viewopt_write(opt_put, 0);
-        viewopt_defaults();
-        viewopt_read(g_opt_file, (df_u32)g_opt_at);
-    }
-    check_expect(df_iround(camera_fov()) == 103, "view: FOV did not survive settings round trip");
-    check_expect(viewopt_full() && viewopt_bob(), "view: a stored full screen and head bobbing did not come back");
-    g_opt_at = 0;
-    check_expect(rec_put_begin(opt_put, 0), "view: an older file did not start");
-    viewopt_set_full(1);
-    viewopt_set_bob(1);
-    viewopt_defaults();
-    viewopt_read(g_opt_file, (df_u32)g_opt_at);
-    check_expect(!viewopt_full() && !viewopt_bob(), "view: a file without the row did not stay off");
-    /* An actual old OPTS row, not only an empty file: missing fov must
-     * inherit 75 while its pre-existing full/bob preferences survive. */
-    {
-        typedef struct OldOptions { df_u16 id; df_u8 full, bob; } OldOptions;
-        static const RecField fields[] = {
-            REC_FIELD("id", REC_UINT, OldOptions, id),
-            REC_FIELD("full", REC_UINT, OldOptions, full),
-            REC_FIELD("bob", REC_UINT, OldOptions, bob)
-        };
-        static const RecSchema schema = { "OPTS", "options", fields, 3, sizeof(OldOptions), 0 };
-        OldOptions old;
-        old.id=0; old.full=1; old.bob=1;
-        g_opt_at=0;
-        check_expect(rec_put_begin(opt_put,0) && rec_put_rows(opt_put,0,&schema,&old,1,0,0), "view: old options fixture");
-        viewopt_defaults();
-        viewopt_read(g_opt_file,(df_u32)g_opt_at);
-        check_expect(viewopt_full() && viewopt_bob() && df_iround(camera_fov())==75, "view: old OPTS row lost preferences or FOV default");
-        check_expect(sound_volume()==80 && music_volume()==80, "view: old OPTS row did not inherit audio defaults");
+        check_expect(mw == 640 && mh == 480, "view: a silly mode was kept");
+        viewopt_set_tex_detail(9);
+        check_expect(viewopt_tex_detail() == 2, "view: a detail past High was kept");
     }
     viewopt_defaults();
     check_expect(df_iround(camera_fov()) == 75, "view: missing FOV did not keep default");
@@ -5862,21 +5770,7 @@ static void check_config(void)
                  "config: a mode with spaces and a note was not peeked");
 }
 
-/* Cursor or View, in memory the way KEYS.DAT stores it, and which pointer play asks for. */
-static df_u8 g_mouse_file[1024];
-static int g_mouse_at;
-
-static int mouse_put(void *ctx, const void *src, df_u32 n)
-{
-    (void)ctx;
-    if (g_mouse_at + (int)n > (int)sizeof(g_mouse_file)) {
-        return 0;
-    }
-    mem_copy(g_mouse_file + g_mouse_at, src, n);
-    g_mouse_at += (int)n;
-    return 1;
-}
-
+/* Cursor or View, and which pointer play asks for. */
 static void check_mouse(void)
 {
     mouse_defaults();
@@ -5885,17 +5779,7 @@ static void check_mouse(void)
     mouse_set_cursor(0);
     check_expect(!mouse_cursor() && mouse_pointer(0) == 0 && mouse_pointer(1) == 1,
                  "mouse: view does not look in play, or a screen lost the pointer");
-    g_mouse_at = 0;
-    check_expect(rec_put_begin(mouse_put, 0) && mouse_write(mouse_put, 0), "mouse: view did not store");
-    mouse_defaults();
-    mouse_read(g_mouse_file, (df_u32)g_mouse_at);
-    check_expect(!mouse_cursor() && mouse_pointer(0) == 0, "mouse: entering play did not take the stored view");
-    g_mouse_at = 0;
-    check_expect(rec_put_begin(mouse_put, 0), "mouse: an older file did not start");
-    mouse_defaults();
-    mouse_read(g_mouse_file, (df_u32)g_mouse_at);
-    check_expect(mouse_cursor() && mouse_pointer(0) == 1, "mouse: a file without the row did not stay cursor");
-    printf("mouse: cursor and view, stored\n");
+    printf("mouse: cursor and view\n");
 }
 
 /* A camera a step south of e, looking north at their middle. */

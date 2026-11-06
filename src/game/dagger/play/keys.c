@@ -12,25 +12,12 @@
 #include "engine/scene/weather.h"
 #include "engine/sound/sound.h"
 #include "engine/sound/music.h"
-#include "engine/assets/recfile.h"
 #include "engine/assets/vfs.h"
 #include "engine/core/log.h"
 #include "engine/platform/fs.h"
 #include "engine/platform/input.h"
 
-/* See keys.h. Settings live in gfall.cfg (config.h); DATA\KEYS.DAT is only read, once, by a program that has no gfall.cfg yet. */
-
-typedef struct KeyBind {
-    df_u16 id;
-    df_u16 vk;
-} KeyBind;
-
-static const RecField g_key_fields[] = {
-    REC_FIELD("id", REC_UINT, KeyBind, id),
-    REC_FIELD("vk", REC_UINT, KeyBind, vk)
-};
-static const RecSchema g_key_schema = { "KEYS", "key", g_key_fields, 2, (df_u16)sizeof(KeyBind), 0 };
-
+/* See keys.h. Settings live in gfall.cfg (config.h). */
 
 void keys_defaults(void)
 {
@@ -61,22 +48,15 @@ static const char *read_cfg(int *n)
 
 int keys_peek_mode(int *w, int *h)
 {
-    df_u32 n;
-    const df_u8 *b;
     const char *text;
     int len;
 
     text = read_cfg(&len);
-    if (text) {
-        if (config_peek_mode(text, len, w, h)) {
-            log_print(LOG_INFO, "keys: %s asks for %dx%d", CONFIG_FILE, *w, *h);
-            return 1;
-        }
-        return 0;
+    if (text && config_peek_mode(text, len, w, h)) {
+        log_print(LOG_INFO, "keys: %s asks for %dx%d", CONFIG_FILE, *w, *h);
+        return 1;
     }
-    /* No gfall.cfg: an older program's DATA\KEYS.DAT may hold the choice. */
-    b = vfs_read_beside(KEYS_FILE, &n);
-    return b && viewopt_mode_in(b, n, w, h);
+    return 0;
 }
 
 /* The settings as they are now, into c: the engine's and the game's, bindings and all. */
@@ -149,73 +129,6 @@ static void config_apply(const Config *c)
     viewopt_set_crouch_toggle(c->toggle_crouch);
 }
 
-/* DATA\KEYS.DAT, the file an older program kept its settings in: read once when there is no gfall.cfg. */
-static int legacy_load(void)
-{
-    static RecTable table;
-    const df_u8 *b;
-    df_u32 n;
-    df_u32 pos;
-    RecChunk c;
-    int i;
-
-    b = vfs_read_beside(KEYS_FILE, &n);
-    if (!b || !rec_is_file(b, n)) {
-        return 0;
-    }
-    mouse_read(b, n);
-    control_read_settings(b, n);
-    /* One setting, two rows. A file from before both existed keeps the
-       row it has; when both are present, CTLS is what classic controls
-       follow and MOUS is brought to it. */
-    {
-        int saw_mous;
-        int saw_ctls;
-        df_u32 scan;
-
-        saw_mous = 0;
-        saw_ctls = 0;
-        scan = 0;
-        while (rec_next(b, n, &scan, &c)) {
-            if (c.tag[0] == 'M' && c.tag[1] == 'O' && c.tag[2] == 'U' && c.tag[3] == 'S') {
-                saw_mous = 1;
-            }
-            if (c.tag[0] == 'C' && c.tag[1] == 'T' && c.tag[2] == 'L' && c.tag[3] == 'S') {
-                saw_ctls = 1;
-            }
-        }
-        if (saw_ctls) {
-            mouse_set_cursor(control_classic());
-        } else if (saw_mous) {
-            control_set_classic(mouse_cursor());
-        }
-    }
-    viewopt_read(b, n);
-    /* The details chosen, given to the engine before the first place (it starts at High). */
-    gfx_set_tex_detail(viewopt_tex_detail());
-    gfx_set_sprite_detail(viewopt_sprite_detail());
-    if (!table.schema && !rec_table_init(&table, &g_key_schema, INPUT_ACTIONS)) {
-        return 0;
-    }
-    rec_table_clear(&table);
-    pos = 0;
-    while (rec_next(b, n, &pos, &c)) {
-        if (c.tag[0] == 'K' && c.tag[1] == 'E' && c.tag[2] == 'Y' && c.tag[3] == 'S') {
-            rec_merge(&table, &c, 0);
-        }
-    }
-    for (i = 0; i < table.count; i++) {
-        const KeyBind *k;
-
-        k = (const KeyBind *)(table.rows + (df_u32)i * sizeof(KeyBind));
-        /* Escape is never rebound: a file that says so is ignored there. */
-        if (k->id < INPUT_ACTIONS && k->id != INPUT_MENU && k->vk && !input_bind(k->id, k->vk)) {
-            log_print(LOG_WARN, "keys: %s's key %d for action %d is refused", KEYS_FILE, (int)k->vk, (int)k->id);
-        }
-    }
-    return 1;
-}
-
 int keys_load(void)
 {
     static Config c;
@@ -239,14 +152,7 @@ int keys_load(void)
         }
         return 1;
     }
-    /* No gfall.cfg: an older program's file, if there is one, and then the first one is written. */
-    if (legacy_load()) {
-        gfx_set_tex_detail(viewopt_tex_detail());
-        gfx_set_sprite_detail(viewopt_sprite_detail());
-        log_print(LOG_INFO, "keys: no %s; %s read, %s written", CONFIG_FILE, KEYS_FILE, CONFIG_FILE);
-        keys_save();
-        return 1;
-    }
+    /* No gfall.cfg: the defaults, and the first one is written (nothing older is read). */
     log_print(LOG_INFO, "keys: no %s; the defaults, and one written", CONFIG_FILE);
     keys_save();
     return 0;

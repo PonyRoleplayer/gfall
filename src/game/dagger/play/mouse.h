@@ -2,7 +2,6 @@
 #define DF_MOUSE_H
 
 #include "engine/core/df.h"
-#include "engine/assets/recfile.h"
 
 /*
  * Cursor or View, classic's mouse option on the controls screen. Stored
@@ -26,9 +25,5 @@ void mouse_set_cursor(int on);
  * or play is in cursor mode. 0 is mouse look.
  */
 int mouse_pointer(int ui_up);
-/* The MOUS row in a record file, over whatever mouse_defaults set. */
-void mouse_read(const df_u8 *bytes, df_u32 n);
-/* One MOUS row into a file already begun. 1 when it wrote. */
-int mouse_write(RecPut put, void *ctx);
 
 #endif

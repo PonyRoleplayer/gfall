@@ -1,9 +1,9 @@
 #ifndef DF_CONTROL_H
 #define DF_CONTROL_H
 
+#include "engine/core/df.h"
 #include "engine/platform/input.h"
 #include "engine/gfx/camera.h"
-#include "engine/assets/recfile.h"
 
 /*
  * Daggerfall's classic cursor controller, apart from Win32 and drawing.
@@ -52,8 +52,6 @@ typedef struct ControlFrame {
  * transient pointer capture so menus/Tab do not silently change preference. */
 int control_classic(void);
 void control_set_classic(int on);
-void control_read_settings(const df_u8 *bytes, df_u32 size);
-int control_put_settings(RecPut put, void *ctx);
 /* New character/load: offsets centered, held buttons quarantined. */
 void control_reset(ControlState *s);
 /* Screen/console/handoff: preserve the view, consume old held buttons. */

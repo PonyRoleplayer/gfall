@@ -6,20 +6,17 @@
  * a line (config.h): every binding, the pointer scheme, the screen's mode,
  * the graphics, the sound and the play options. Read at the start and written by
  * every Apply of the Settings screens. A missing file is written at the first
- * start, from DATA\KEYS.DAT when an older program left one (read once, as record
- * rows: KEYS an action, MOUS, CTLS, OPTS), else from the defaults. Read
- * docs/game.md (Menus, The settings file).
+ * start from the defaults; no older format is read. Read docs/game.md (Menus,
+ * The settings file).
  *
  * Escape stays the menu and is not bound here; the console's key is
  * the engine's.
  */
 
-#define KEYS_FILE "DATA\\KEYS.DAT"
-
 /* Default bindings (WASD, E, right Cursor swing, left View attack, turn/look)
  * and Cursor scheme. Existing action ids remain append-only. */
 void keys_defaults(void);
-/* gfall.cfg over the defaults (else DATA\KEYS.DAT's, once, and a gfall.cfg written): 1 when a file was read. */
+/* gfall.cfg over the defaults (and a gfall.cfg written when there is none): 1 when a file was read. */
 int keys_load(void);
 /*
  * The screen's mode gfall.cfg holds, for the program to pass to gfx_set_mode before the card opens (it

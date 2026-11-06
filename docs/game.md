@@ -39,8 +39,8 @@ menu      title/start/death and the settings shell
 settings  native stone panels, dynamic text, settings layout and hit targets
 control   classic cursor movement, view offsets, gesture routing and pointer rays
 keys      the settings, bindings among them, in gfall.cfg (config.c, keys.c)
-mouse     Cursor or View, the MOUS row in that file
-viewopt   full screen, head bobbing, FOV and audio volumes, the OPTS row in that file
+mouse     Cursor or View (gfall.cfg: mouse=)
+viewopt   full screen, head bobbing, crouch toggle, texture details, the screen's mode (values kept in gfall.cfg)
 screen    classic's 320 x 200 on the card
 sfx       DAGGER.SND's clips for combat
 commands  the game's console commands
@@ -244,7 +244,7 @@ A killed guard stays. The pose is ENEM 146's corpse, TEXTURE.380 record 1 (`ENTI
 `play/hudbar.c` owns the plain-C layout, mode names and heading selection; `overlay.c` owns pictures, and `game.c` routes buttons through the same screen-opening functions as the keys. The rectangles and icon order follow [Daggerfall Unity's HUDLarge](https://github.com/Interkarma/daggerfall-unity/blob/master/Assets/Scripts/Game/UserInterface/HUDLarge.cs). The full bar is on by default (`panel` still flips it).
 
 - **Art and portrait:** MAIN00I0.IMG, MCOL00I0.CIF's blue backing, the selected race/sex/face, live vitals, MAIN01I0.IMG's mode sheet and CMPA00I0.BSS's compact compass. The head is refreshed by `game_enter` for a new or loaded character; the picture module owns its pixels across every place change.
-- **Pointer:** Classic Cursor mode starts with a free pointer. Tab (`INPUT_CURSOR`, rebound in the controls screen's cursor slot and kept in KEYS.DAT) switches between the pointer and continuous mouse look without pausing. View mode starts with mouse look; Tab frees its HUD pointer. Character, inventory, options and rest open their existing screens; a hostile creature still forbids rest. The compass reports the date and time. The weapon button sheathes or draws the weapon. Screens and menus temporarily own the pointer; closing one restores the player's cursor choice.
+- **Pointer:** Classic Cursor mode starts with a free pointer. Tab (`INPUT_CURSOR`, rebound in the controls screen's cursor slot and kept in gfall.cfg) switches between the pointer and continuous mouse look without pausing. View mode starts with mouse look; Tab frees its HUD pointer. Character, inventory, options and rest open their existing screens; a hostile creature still forbids rest. The compass reports the date and time. The weapon button sheathes or draws the weapon. Screens and menus temporarily own the pointer; closing one restores the player's cursor choice.
 - **Modes:** the button cycles Grab, Info, Steal, Talk. Grab keeps the general use key; Info reports the aimed usable or building without activating it; Talk only addresses people. Steal enables the existing lockpicking path and never falls through to ordinary dialogue; its missing theft and pickpocket paths are P12-a. The spellbook, magic-item, transport and map buttons give a short response until their systems arrive in P10/P12-b.
 - **Input handoff:** pointer clicks, including clicks in empty bar pixels, never attack. The attack gate holds through the final release of a click after leaving a screen or the pointer. Entering the pointer or sheathing cancels a drawn bow or pending swing without a hit, keeping its cached idle picture. A pointer handoff discards the old look delta already sampled that frame. A new or loaded character starts in Grab with the weapon drawn; travel preserves the live mode and sheath choice.
 
@@ -572,9 +572,7 @@ implementation choices, not constants recovered from FALL.EXE.
   discontinuities, so synthetic release bits cannot loose a bow or become a swing. Screen clicks remain left-button clicks even if
   either attack action is rebound. The world runs under the free pointer.
 - **Settings:** Controls' Mouse button selects Cursor (default) or View, saved
-  as `mouse=cursor` or `mouse=view` in gfall.cfg (an older program's DATA\KEYS.DAT kept it as a `CTLS` row and a
-  `MOUS` row beside the append-only `KEYS` action rows).
-  Old files without either row take Cursor; a file with only one of them copies that choice onto the other. Existing movement bindings stay valid.
+  as `mouse=cursor` or `mouse=view` in gfall.cfg; without the line it is Cursor. Existing movement bindings stay valid.
   New slots cover turning, pitch, center and Alt; the Swing slot shows the
   selected scheme's binding. Tab is a temporary pointer switch, not a preference
   change. Classic Cursor hides the modern crosshair.
@@ -643,9 +641,9 @@ classic screens' stretched 320 x 200 canvas. It does not change video mode.
    switches such as culling, occlusion, back faces, mip chains, W-buffer,
    planar polygons, FPU 24-bit, sky, sun and moon, and water stay on the console
    only. Opening the tab snapshots the live engine into a graphics draft;
-   edits stay in that draft until **Apply** writes them in one step (FOV is
-   persisted in `OPTS` on Apply, and so are the two details: `tex_detail` and `sprite_detail`, High for an older
-   file, given to the engine by `keys_load` before the first place; an Apply that changes one sends every picture
+   edits stay in that draft until **Apply** writes them in one step (every
+   setting here is written to gfall.cfg on Apply, the two details `texture_detail` and `sprite_detail`
+   among them, given to the engine by `keys_load` before the first place; an Apply that changes one sends every picture
    again, so it is a load-sized pause, and a change is passed on only when it differs). Leaving the tab, Back, Escape, or a failed
    Apply restores the engine to the snapshot from when the tab was first opened
    in that session; tab changes keep the draft. A resolution shows at the next start.
@@ -665,9 +663,8 @@ classic screens' stretched 320 x 200 canvas. It does not change video mode.
    clickable. Apply updates the existing `viewopt_bob` preference; the walk/run
    camera wave itself is unchanged. Turning it off produces a steady eye.
    **Full HUD** On/Off, default on, shows or hides the bottom HUD bar and
-   portrait. Vitals and compass remain when it is off. This is the inverse
-   of the existing `OPTS.full` (legacy full-screen) preference, so old files
-   retain their appearance without migration. It shares Gameplay's drafts,
+   portrait. Vitals and compass remain when it is off. It is `full_hud` in gfall.cfg
+   (the program's `viewopt_full` is its inverse, the bar hidden). It shares Gameplay's drafts,
    Apply, Default, cancellation and failed-write rollback.
    **Toggle Crouch** On/Off, default off: off, the crouch key crouches the player only while it is held;
    on, a press crouches and the next press stands (`viewopt_crouch_toggle`, drafted, applied and rolled
@@ -686,10 +683,7 @@ Tab changes preserve drafts. Back, Escape, or leaving for a save-slot screen
 abandons any unapplied drafts. A successful Apply remains effective when the
 shell closes. There is no automatic write merely from closing it.
 
-The `KEYS`, `MOUS` and `CTLS` records retain their existing meaning. `OPTS`
-retains `full`, `bob` and `fov`, and appends unsigned `sfx_volume` and
-`music_volume` percentages, `crouch_toggle` (0 or 1, older files 0) and `tex_detail` and `sprite_detail` (0..2, older files 2). Old records without FOV inherit 75; those without
-volume fields inherit 80/80. Out-of-range angles or percentages are ignored;
+Settings are in gfall.cfg (The settings file, below). Out-of-range angles or percentages in it are skipped, and
 zero volume is a real mute value. These are user preferences, not part of a
 character's save. Full-screen is exposed inversely as Full HUD in Gameplay,
 alongside head bobbing and Toggle Crouch.
@@ -722,7 +716,7 @@ or allocation**. No full-screen image is rebuilt on a slider tick.
 
 ### The settings file (gfall.cfg)
 
-Every setting the player can change lives in **`gfall.cfg`** beside the exe, as text, one `key=value` a line (`play/config.c`, plain C and host-tested; `keys.c` is the bridge to the live state). It is read at the start and written, whole, by every Apply of the Settings screens; a missing one is written at the first start (from an older program's `DATA\KEYS.DAT`, read once as record rows, else from the defaults). A hand edit of a value lasts; a hand-made comment does not, since the file is written afresh with its own notes. A line that is no key we know or whose value is out of range is skipped, counted, and its line number logged once (`keys: gfall.cfg: 2 lines were not used, the first line 14`); the others still load, and a key left out keeps what the program had.
+Every setting the player can change lives in **`gfall.cfg`** beside the exe, as text, one `key=value` a line (`play/config.c`, plain C and host-tested; `keys.c` is the bridge to the live state). It is read at the start and written, whole, by every Apply of the Settings screens; a missing one is written at the first start from the defaults. No older format is read: this is a reimplementation, and nothing is ported from earlier files. A hand edit of a value lasts; a hand-made comment does not, since the file is written afresh with its own notes. A line that is no key we know or whose value is out of range is skipped, counted, and its line number logged once (`keys: gfall.cfg: 2 lines were not used, the first line 14`); the others still load, and a key left out keeps what the program had.
 
 - **The screen:** `resolution=640x480` (512x384, 640x480, and 800x600 on 4 MB, on a Voodoo 1 or 2; it shows at the next start, read before the card opens by `keys_peek_mode`), `fov` (45..120), `far_clip` (16..16384), `texture_detail` and `sprite_detail` (`low`, `medium`, `high`), `fog`, `crisp_sprites`, `vsync`, `dungeon_lights`, `ambient_light` (0..255), `light_range` (1..8), `light_shadow`, `weather_view`, `flora`, `flora_density` (0..100), `flora_sight` (0..16384). The graphics ones were console variables that reset at every start; they are kept now.
 - **Sound:** `sfx_volume`, `music_volume` (0..100).
@@ -770,7 +764,7 @@ on the Graphics tab; the reusable styling does not imply other UI exists.
 and persistence stand-ins (`tests/check_menu.c`): dispatch, draft/apply/cancel,
 failed-write retry, focus-loss drag cancellation, binding conflict swaps,
 Escape capture cancellation, last-row scrolling and two-click Exit. The real
-OPTS writer/reader is tested separately, including a pre-FOV/pre-audio record and muted-volume round trips. Audio and
+settings file's text is tested separately (`check_config`: a round trip, a hand-written file, the lines it cannot use). Audio and
 Gameplay tests cover independent drafts, section-specific Apply/Default,
 failed-write rollback/retry, drag ownership across rows, and focus cancellation.
 `tests/check_play.c` also checks atlas bounds, output bounds and hit rectangles,

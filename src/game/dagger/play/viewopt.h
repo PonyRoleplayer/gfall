@@ -1,14 +1,11 @@
 #ifndef DF_VIEWOPT_H
 #define DF_VIEWOPT_H
 
-#include "engine/assets/recfile.h"
-
 /*
  * Stored options: full screen, head bobbing, crouch toggle, horizontal FOV, SFX/music volume.
  * Graphics exposes FOV, Gameplay exposes bobbing, Full HUD and Toggle Crouch, and Audio
  * exposes volumes. Full HUD On means full-screen off: the bottom bar shows.
- * This inverse UI label preserves existing full-screen values on disk.
- * Read docs/game.md (Menus) before editing.
+ *  * Read docs/game.md (Menus) before editing.
  *
  * Full screen hides the bottom stone bar (the face frame and the icon
  * buttons). The vitals and the compass stay. It does not change the
@@ -19,13 +16,10 @@
  * found here says the bob box starts checked. DFU's own defaults.ini
  * sets HeadBobbing true; that is DFU's choice, not used here.
  *
- * Stored as one OPTS row in DATA\KEYS.DAT beside the bindings (keys.c
- * writes and reads it with them). No row means all off and FOV 75; Toggle Crouch
- * off is a crouch held by its key, as a first-person game does by default. The appended fov field uses the
- * same default for older OPTS rows; valid stored values are 45..120.
- * Audio percentages start at 80 each, including in older files without
- * those fields. Zero mutes; values over 100 are ignored. Setters/getters live
- * in engine/sound; this module only owns their persisted preferences.
+ * Kept in gfall.cfg (config.c, keys.c): this module holds the values the game reads
+ * while it runs and starts from the defaults (bar shown, no bob, Toggle Crouch off,
+ * 640 x 480, High). The screen's mode and the two texture details are the player's
+ * choice kept here for the file and for the next start.
  *
  * Plain C. FOV is read from/applied to camera.c's existing projection API.
  */
@@ -53,12 +47,10 @@ int viewopt_sprite_detail(void);
 void viewopt_set_sprite_detail(int level);
 /*
  * The screen's mode the player chose, w x h (the engine's gfx_mode list; 640 x 480 the default and for older
- * files). It takes effect at the next start: apps/gfall reads it with viewopt_mode_in before the card opens.
+ * files). It takes effect at the next start: apps/gfall reads it from gfall.cfg (keys_peek_mode) before the card opens.
  */
 void viewopt_mode(int *w, int *h);
 void viewopt_set_mode(int w, int h);
-/* The mode a file's OPTS row holds, applying nothing else: 1 when it holds one, 0 for no file, no row or no mode. */
-int viewopt_mode_in(const df_u8 *bytes, df_u32 n, int *w, int *h);
 /* 1 when the crouch key flips between crouched and standing; 0 when crouched only while it is held. */
 int viewopt_crouch_toggle(void);
 void viewopt_set_crouch_toggle(int on);
@@ -70,9 +62,5 @@ void viewopt_set_crouch_toggle(int on);
  * bob. running selects the run amounts; otherwise the walk's.
  */
 void viewopt_eye(float phase, int walking, int running, float *right, float *up, float *pitch, float *yaw);
-/* The OPTS row in a record file, over whatever viewopt_defaults set. */
-void viewopt_read(const df_u8 *bytes, df_u32 n);
-/* One OPTS row into a file already begun. 1 when it wrote. */
-int viewopt_write(RecPut put, void *ctx);
 
 #endif

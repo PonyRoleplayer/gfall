@@ -1,53 +1,10 @@
 #include "game/dagger/play/control.h"
 #include "engine/core/mem.h"
 
-/* A personal setting belongs beside bindings, not in MAIN.DAT's game rules.
- * Zero is View and one is Cursor; an older file with no CTLS keeps classic.
- * Record merging is load time only. Never search this table during a frame. */
-typedef struct ControlOption { df_u16 id; df_u8 classic; } ControlOption;
-static const RecField g_fields[] = {
-    REC_FIELD("id", REC_UINT, ControlOption, id),
-    REC_FIELD("classic", REC_UINT, ControlOption, classic)
-};
-static const ControlOption g_default = { 0, 1 };
-static const RecSchema g_schema = { "CTLS", "controls", g_fields, 2, sizeof(ControlOption), &g_default };
 static int g_classic = 1;
 
 int control_classic(void) { return g_classic; }
 void control_set_classic(int on) { g_classic = on != 0; }
-
-void control_read_settings(const df_u8 *bytes, df_u32 size)
-{
-    static RecTable table;
-    RecChunk chunk;
-    df_u32 pos;
-    const ControlOption *row;
-
-    g_classic = 1;
-    if (!rec_is_file(bytes, size) || (!table.schema && !rec_table_init(&table, &g_schema, 1))) {
-        return;
-    }
-    rec_table_clear(&table);
-    pos = 0;
-    while (rec_next(bytes, size, &pos, &chunk)) {
-        if (df_eq(chunk.tag, "CTLS")) {
-            rec_merge(&table, &chunk, 0);
-        }
-    }
-    row = (const ControlOption *)rec_row(&table, 0);
-    if (row && row->classic <= 1) {
-        g_classic = row->classic;
-    }
-}
-
-int control_put_settings(RecPut put, void *ctx)
-{
-    ControlOption row;
-
-    mem_zero(&row, sizeof(row));
-    row.classic = (df_u8)g_classic;
-    return rec_put_rows(put, ctx, &g_schema, &row, 1, 0, 0);
-}
 
 void control_block(ControlState *s)
 {
