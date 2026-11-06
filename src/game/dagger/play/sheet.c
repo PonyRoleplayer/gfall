@@ -53,6 +53,8 @@ static const Rect g_inventory_button = { 3, 151, 65, 12 };
 static const Rect g_exit_button = { 50, 179, 39, 19 };
 /* The Log button (DFU's rectangle). */
 static const Rect g_log_button = { 3, 165, 65, 12 };
+/* The Spellbook button (DFU's rectangle). */
+static const Rect g_spellbook_button = { 69, 151, 65, 12 };
 
 static struct {
     int open;
@@ -387,6 +389,9 @@ int sheet_click(int x, int y)
     }
     if (rect_has(&g_log_button, x, y)) {
         return sheet_may_leave() ? SHEET_LOGBOOK : SHEET_STAY;
+    }
+    if (rect_has(&g_spellbook_button, x, y)) {
+        return sheet_may_leave() ? SHEET_SPELLBOOK : SHEET_STAY;
     }
     for (i = 0; i < LISTS; i++) {
         if (rect_has(&g_list_button[i], x, y)) {

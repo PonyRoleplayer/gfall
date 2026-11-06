@@ -1,6 +1,7 @@
 #include "game/dagger/play/spellbook.h"
 #include "game/dagger/play/canvas.h"
 #include "game/dagger/formats/img.h"
+#include "game/dagger/play/rules.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
 
@@ -45,7 +46,14 @@ static const int g_button_x[4] = { 3, 48, 90, 132 };
 static struct {
     int open;
     Composer composer;
+    /* The spells the list shows: the player's own, or a guild's standard ones for sale (buy mode, SPBK01I0.IMG). */
+    Spellbook *list;
+    /* In buy mode: the player's book the spell is bought into, the player, the shop's quality, and a note. */
     Spellbook *book;
+    Player *buyer;
+    int quality;
+    int buy;
+    const char *note;
     const Character *pc;
     /* The picture's corner on classic's screen, the picture, and the two sheets of icons. */
     int ox;
@@ -58,9 +66,14 @@ static struct {
     int confirm;
     int chosen;
     int changed;
+    char noted[64];
 } g;
 
-int spellbook_open(Spellbook *book, const Character *pc)
+/* The standard spells for sale, kept for the process: a Spellbook is large. */
+static Spellbook g_stock;
+
+/* The screen opened on the picture, whichever mode (g.list, g.pc and g.buy set by the caller after the common part). */
+static int open_picture(const char *picture, const Character *pc)
 {
     df_u32 size;
     MemHeap *was;
@@ -72,10 +85,9 @@ int spellbook_open(Spellbook *book, const Character *pc)
         return 0;
     }
     g.open = 1;
-    g.book = book;
     g.pc = pc;
     was = mem_heap_use(g.composer.heap);
-    ok = img_load("SPBK00I0.IMG", &g.back);
+    ok = img_load(picture, &g.back);
     mem_heap_use(was);
     g.icons = composer_table(&g.composer, "ICON00I0.IMG", &size);
     if (!g.icons || size < (df_u32)(ICON_FILE_W * 64)) {
@@ -91,10 +103,98 @@ int spellbook_open(Spellbook *book, const Character *pc)
     }
     g.ox = g.back.x;
     g.oy = g.back.y;
-    g.selected = book->count ? 0 : -1;
     g.chosen = -1;
     g.changed = 1;
     return 1;
+}
+
+int spellbook_open(Spellbook *book, const Character *pc)
+{
+    if (!open_picture("SPBK00I0.IMG", pc)) {
+        return 0;
+    }
+    g.list = book;
+    g.selected = book->count ? 0 : -1;
+    return 1;
+}
+
+int spellbook_open_buy(Spellbook *book, Player *player, int quality)
+{
+    RecTable *t;
+    int i;
+
+    if (!open_picture("SPBK01I0.IMG", &player->sheet)) {
+        return 0;
+    }
+    mem_zero(&g_stock, sizeof(g_stock));
+    t = spell_table();
+    for (i = 0; i < t->count; i++) {
+        const MagicSpell *m;
+        Spell s;
+
+        m = (const MagicSpell *)(t->rows + (df_u32)i * sizeof(MagicSpell));
+        if (m->name[0] != '!') {
+            spell_standard(&s, m);
+            spellbook_add(&g_stock, &s);
+        }
+    }
+    spellbook_sort(&g_stock);
+    g.buy = 1;
+    g.list = &g_stock;
+    g.book = book;
+    g.buyer = player;
+    g.quality = quality;
+    g.selected = g_stock.count ? 0 : -1;
+    return 1;
+}
+
+const char *spellbook_note(void)
+{
+    return g.note;
+}
+
+/* Four times the cost in spell points for this character, bargained (DFU's presented cost and CalculateTradePrice). */
+int spellbook_price(void)
+{
+    int presented;
+
+    if (!g.buy || g.selected < 0 || g.selected >= g.list->count) {
+        return 0;
+    }
+    presented = spell_cost(&g.list->spell[g.selected], g.pc, 0) * 4;
+    return rules_trade_price(presented, g.quality, g.pc->skill[SKILL_MERCANTILE], g.pc->attribute[ATTR_PERSONALITY], 0);
+}
+
+/* The chosen spell bought: the first click says the price, the second pays. */
+static void buy_selected(void)
+{
+    int price;
+    char line[64];
+
+    price = spellbook_price();
+    if (g.selected < 0) {
+        return;
+    }
+    if ((int)g.buyer->pack.gold < price) {
+        g.note = "You do not have enough gold.";
+        g.confirm = 0;
+    } else if (!g.confirm) {
+        log_format(line, (int)sizeof(line), "Click Buy again to pay %d gold.", price);
+        df_copy(g.noted, line, (int)sizeof(g.noted));
+        g.note = g.noted;
+        g.confirm = 1;
+    } else {
+        g.confirm = 0;
+        g.buyer->pack.gold -= (df_u32)price;
+        /* Classic sells a spell the player has already; the book refuses the same name, so it stays one. */
+        if (spellbook_add(g.book, &g.list->spell[g.selected])) {
+            g.note = "The spell is inscribed in your spellbook.";
+        } else {
+            g.buyer->pack.gold += (df_u32)price;
+            g.note = "That spell is in your book already.";
+        }
+    }
+    g.changed = 1;
 }
 
 void spellbook_close(void)
@@ -192,7 +292,7 @@ void spellbook_compose(void)
         Rect row;
 
         at = g.scroll + i;
-        if (at >= g.book->count) {
+        if (at >= g.list->count) {
             break;
         }
         row.x = (df_u16)(g.ox + LIST_X);
@@ -202,19 +302,19 @@ void spellbook_compose(void)
         if (at == g.selected) {
             canvas_box(&row, CANVAS_DARK);
         }
-        canvas_label(row.x + 2, row.y + 1, g.book->spell[at].name);
+        canvas_label(row.x + 2, row.y + 1, g.list->spell[at].name);
     }
-    if (g.confirm) {
+    if (g.confirm && !g.buy) {
         canvas_label(g.ox + LIST_X, g.oy + BTN_Y - CANVAS_LINE - 2, "Click Delete again");
     }
     /* The chosen spell: name, icon, target, element, effects, cost. */
-    if (g.selected >= 0 && g.selected < g.book->count) {
+    if (g.selected >= 0 && g.selected < g.list->count) {
         const Spell *s;
         int k;
         int y;
         char cost[40];
 
-        s = &g.book->spell[g.selected];
+        s = &g.list->spell[g.selected];
         canvas_label(g.ox + DETAIL_X, g.oy + NAME_Y, s->name);
         if (g.icons && s->icon < 69) {
             canvas_copy_part(g.icons, ICON_FILE_W, (s->icon % ICONS_PER_ROW) * ICON_SIZE, (s->icon / ICONS_PER_ROW) * ICON_SIZE,
@@ -234,7 +334,11 @@ void spellbook_compose(void)
             }
             y += EFFECT_STEP;
         }
+        if (g.buy) {
+        log_format(cost, (int)sizeof(cost), "Price: %d gold", spellbook_price());
+    } else {
         log_format(cost, (int)sizeof(cost), "Cost: %d spell points", spell_cost(s, g.pc, 0));
+    }
         canvas_label(g.ox + DETAIL_X, g.oy + COST_Y, cost);
     }
 }
@@ -255,7 +359,7 @@ static void scroll_by(int rows)
 {
     int most;
 
-    most = g.book->count - SPELLBOOK_ROWS;
+    most = g.list->count - SPELLBOOK_ROWS;
     g.scroll += rows;
     g.scroll = g.scroll > most ? most : g.scroll;
     g.scroll = g.scroll < 0 ? 0 : g.scroll;
@@ -264,11 +368,12 @@ static void scroll_by(int rows)
 
 static void select(int at)
 {
-    if (at < 0 || at >= g.book->count) {
+    if (at < 0 || at >= g.list->count) {
         return;
     }
     g.selected = at;
     g.confirm = 0;
+    g.note = 0;
     show_selected();
     g.changed = 1;
 }
@@ -279,22 +384,22 @@ static void move_selected(int by)
     int to;
 
     to = g.selected + by;
-    if (g.selected < 0 || to < 0 || to >= g.book->count) {
+    if (g.selected < 0 || to < 0 || to >= g.list->count) {
         return;
     }
     {
         Spell swap;
 
-        swap = g.book->spell[to];
-        g.book->spell[to] = g.book->spell[g.selected];
-        g.book->spell[g.selected] = swap;
+        swap = g.list->spell[to];
+        g.list->spell[to] = g.list->spell[g.selected];
+        g.list->spell[g.selected] = swap;
     }
     select(to);
 }
 
 static void delete_selected(void)
 {
-    if (g.selected < 0 || g.selected >= g.book->count) {
+    if (g.selected < 0 || g.selected >= g.list->count) {
         return;
     }
     if (!g.confirm) {
@@ -302,9 +407,9 @@ static void delete_selected(void)
         g.changed = 1;
         return;
     }
-    spellbook_remove(g.book, g.selected);
+    spellbook_remove(g.list, g.selected);
     g.confirm = 0;
-    g.selected = g.selected >= g.book->count ? g.book->count - 1 : g.selected;
+    g.selected = g.selected >= g.list->count ? g.list->count - 1 : g.selected;
     scroll_by(0);
     show_selected();
     g.changed = 1;
@@ -315,11 +420,11 @@ static void sort_book(void)
     char keep[SPELL_NAME];
 
     if (g.selected >= 0) {
-        df_copy(keep, g.book->spell[g.selected].name, SPELL_NAME);
+        df_copy(keep, g.list->spell[g.selected].name, SPELL_NAME);
     }
-    spellbook_sort(g.book);
+    spellbook_sort(g.list);
     if (g.selected >= 0) {
-        select(spellbook_find(g.book, keep));
+        select(spellbook_find(g.list, keep));
     }
     g.changed = 1;
 }
@@ -339,13 +444,15 @@ int spellbook_click(int x, int y)
     for (i = 0; i < 4; i++) {
         if (in_rect(x, y, g_button_x[i], BTN_Y, BTN_W, BTN_H)) {
             if (i == 0) {
-                delete_selected();
-            } else if (i == 1) {
-                move_selected(-1);
+                if (g.buy) {
+                    buy_selected();
+                } else {
+                    delete_selected();
+                }
             } else if (i == 2) {
                 sort_book();
-            } else {
-                move_selected(1);
+            } else if (!g.buy) {
+                move_selected(i == 1 ? -1 : 1);
             }
             return SPELLBOOK_STAY;
         }
@@ -358,9 +465,9 @@ int spellbook_click(int x, int y)
         int at;
 
         at = g.scroll + (y - g.oy - LIST_Y) / SPELLBOOK_ROW_H;
-        if (at >= 0 && at < g.book->count) {
+        if (at >= 0 && at < g.list->count) {
             /* A second click on the chosen spell readies it. */
-            if (at == g.selected) {
+            if (at == g.selected && !g.buy) {
                 g.chosen = at;
                 return SPELLBOOK_READY;
             }
@@ -381,6 +488,10 @@ int spellbook_key(int vk)
         return SPELLBOOK_LEAVE;
     }
     if (vk == 0x0D && g.selected >= 0) {
+        if (g.buy) {
+            buy_selected();
+            return SPELLBOOK_STAY;
+        }
         g.chosen = g.selected;
         return SPELLBOOK_READY;
     }
@@ -392,7 +503,7 @@ int spellbook_key(int vk)
         scroll_by(-SPELLBOOK_ROWS);
     } else if (vk == 0x22) {
         scroll_by(SPELLBOOK_ROWS);
-    } else if (vk == 0x2E) {
+    } else if (vk == 0x2E && !g.buy) {
         delete_selected();
     }
     return SPELLBOOK_STAY;

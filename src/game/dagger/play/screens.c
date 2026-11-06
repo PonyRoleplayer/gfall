@@ -283,6 +283,13 @@ static int maker_frame(const Input *in)
     return SCREENS_STAY;
 }
 
+void screens_open_spellbook_buy(Spellbook *book, Player *player, int quality)
+{
+    screens_close();
+    opened(OPEN_SPELLBOOK, img_art_palette(g_rgb) && spellbook_open_buy(book, player, quality));
+    input_key_pressed();
+}
+
 /* The spell the book chose, kept past the screen's close for the game. */
 static int g_spell_chosen = -1;
 
@@ -708,6 +715,9 @@ static int sheet_frame(const Input *in)
             screens_open_logbook(ills_now(clock_day(), clock_minute()));
             return SCREENS_STAY;
         }
+        if (asked == SHEET_SPELLBOOK) {
+            return SCREENS_BOOK;
+        }
     }
     if (sheet_changed()) {
         send_screen();
@@ -803,7 +813,7 @@ int screens_frame(const Input *in, float dt)
         asked = create_frame(in);
     }
     if (asked == SCREENS_CLOSED || asked == SCREENS_SERVICE || asked == SCREENS_SEEN || asked == SCREENS_COURT_OVER || asked == SCREENS_JOURNEY
-        || asked == SCREENS_TO_TRAVEL || asked == SCREENS_ANSWERED || asked == SCREENS_SPELL) {
+        || asked == SCREENS_TO_TRAVEL || asked == SCREENS_ANSWERED || asked == SCREENS_SPELL || asked == SCREENS_BOOK) {
         screens_close();
     }
     return asked;
@@ -849,8 +859,10 @@ void screens_draw(void)
         note = sheet_note();
     } else if (g_open == OPEN_REST) {
         note = rest_note();
-    } else if (g_open == OPEN_TALK || g_open == OPEN_SERVICE || g_open == OPEN_COURT || g_open == OPEN_TRAVEL || g_open == OPEN_TOWNMAP || g_open == OPEN_DUNMAP || g_open == OPEN_MSGBOX || g_open == OPEN_LOGBOOK || g_open == OPEN_SPELLBOOK) {
+    } else if (g_open == OPEN_TALK || g_open == OPEN_SERVICE || g_open == OPEN_COURT || g_open == OPEN_TRAVEL || g_open == OPEN_TOWNMAP || g_open == OPEN_DUNMAP || g_open == OPEN_MSGBOX || g_open == OPEN_LOGBOOK) {
         note = 0;
+    } else if (g_open == OPEN_SPELLBOOK) {
+        note = spellbook_note();
     } else if (g_open == OPEN_MAKER) {
         note = maker_note();
     } else if (g_open == OPEN_BANK) {

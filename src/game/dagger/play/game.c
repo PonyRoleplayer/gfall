@@ -909,6 +909,7 @@ enum {
     GUILD_SERVICE_REPAIR,
     GUILD_SERVICE_CURE,
     GUILD_SERVICE_MAKE_SPELLS,
+    GUILD_SERVICE_BUY_SPELLS,
     GUILD_SERVICE_OTHER
 };
 typedef struct GuildNpc {
@@ -927,7 +928,7 @@ static const GuildNpc g_guild_npcs[] = {
     { 850, GUILD_SERVICE_REPAIR, "REPAIRS" },
     { 813, GUILD_SERVICE_CURE, "CURE DISEASE" },
     { 810, GUILD_SERVICE_OTHER, "MAKE DONATION" }, { 801, GUILD_SERVICE_OTHER, "IDENTIFY" },
-    { 60, GUILD_SERVICE_OTHER, "BUY SPELLS" }, { 496, GUILD_SERVICE_OTHER, "BUY SPELLS" },
+    { 60, GUILD_SERVICE_BUY_SPELLS, "BUY SPELLS" }, { 496, GUILD_SERVICE_BUY_SPELLS, "BUY SPELLS" },
     { 64, GUILD_SERVICE_MAKE_SPELLS, "MAKE SPELLS" }, { 497, GUILD_SERVICE_MAKE_SPELLS, "MAKE SPELLS" },
     { 62, GUILD_SERVICE_OTHER, "TELEPORTATION" }, { 66, GUILD_SERVICE_OTHER, "DAEDRA SUMMONING" },
     { 65, GUILD_SERVICE_OTHER, "BUY MAGIC ITEMS" }, { 480, GUILD_SERVICE_OTHER, "BUY MAGIC ITEMS" },
@@ -1080,6 +1081,19 @@ static void guild_service_asked(void)
     case GUILD_SERVICE_QUESTS:
         guild_offer_quest();
         return;
+    case GUILD_SERVICE_BUY_SPELLS: {
+        int type;
+        int faction;
+        int quality;
+        unsigned place;
+
+        /* Anyone may buy (DFU's MagesGuild BuySpellsMages); the building's quality bargains the price. */
+        if (!travel_building(&type, &faction, &quality, &place)) {
+            quality = 10;
+        }
+        screens_open_spellbook_buy(&g_book, &g_player, quality);
+        return;
+    }
     case GUILD_SERVICE_MAKE_SPELLS:
         /* A member of the Mages Guild makes spells (DFU's MagesGuild.CanAccessService: IsMember). */
         if (guild_rank(g_guild) < 0) {
@@ -2456,6 +2470,11 @@ int game_frame(Camera *cam, const Input *in, float dt)
             }
             interact_say(line);
             court_commit(CRIME_VAGRANCY, travel_region());
+        }
+        if (asked == SCREENS_BOOK) {
+            book_over_play();
+            prof_end(PROF_PLAY);
+            return GAME_GO_ON;
         }
         if (asked == SCREENS_SPELL) {
             int at;

@@ -24,7 +24,9 @@ enum {
     /* Its Inventory button: on to the inventory screen. */
     SHEET_INVENTORY,
     /* Its Log button: on to the quest logbook. */
-    SHEET_LOGBOOK
+    SHEET_LOGBOOK,
+    /* Its Spellbook button: on to the spellbook. */
+    SHEET_SPELLBOOK
 };
 
 /* Opens over the player; a level due is taken now. 0 when a picture is missing. */

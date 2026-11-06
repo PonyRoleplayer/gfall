@@ -1,6 +1,7 @@
 #ifndef DF_SPELLBOOK_H
 #define DF_SPELLBOOK_H
 
+#include "game/dagger/play/player.h"
 #include "game/dagger/play/spells.h"
 
 /*
@@ -26,6 +27,21 @@ enum {
     /* Leave with a spell chosen to ready: spellbook_chosen. */
     SPELLBOOK_READY
 };
+
+/*
+ * Buy mode (a Mages Guild's Buy Spells, SPBK01I0.IMG as DFU's DaggerfallSpellBookWindow in buy
+ * mode): the list is the standard spells for sale (SPELLS.STD but the ingredients' "!" ones),
+ * by name; the chosen one's price stands where its cost does, four times its cost in spell points
+ * for this character (DFU's presented cost) bargained by the shop's quality and the player's
+ * Mercantile and Personality (rules_trade_price); the Delete button is Buy (a second click pays,
+ * as a delete does), the Up and Down buttons do nothing, a second click on a spell does not ready it.
+ * A spell is bought into the player's book, a duplicate too (classic sells them), the gold paid.
+ */
+int spellbook_open_buy(Spellbook *book, Player *player, int quality);
+/* A line for the screen's top (what was bought or refused), 0 when none. */
+const char *spellbook_note(void);
+/* The price in gold of the chosen spell in buy mode (0 outside it or with none chosen). */
+int spellbook_price(void);
 
 /* The screen's own rectangles on classic's 320 x 200, for the screen and the test. */
 #define SPELLBOOK_ROWS 13

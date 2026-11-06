@@ -40,7 +40,9 @@ enum {
     /* A message box answered (screens_msgbox_answer: MSGBOX_*), closed. */
     SCREENS_ANSWERED,
     /* The spellbook closed with a spell to make ready: screens_spell is its place in the book. */
-    SCREENS_SPELL
+    SCREENS_SPELL,
+    /* The sheet asked for the spellbook: the game opens it (it holds the book). */
+    SCREENS_BOOK
 };
 
 /* Opens one, closing any other. Nothing opens when its pictures are missing: is_open says. */
@@ -58,6 +60,8 @@ void screens_open_maker(Spellbook *book, Player *player);
 void screens_open_spellbook(Spellbook *book, const Character *pc);
 /* The spell the spellbook chose, its index in the book. */
 int screens_spell(void);
+/* The spellbook in buy mode (spellbook.h): the guild's standard spells for sale into this player's book, at a shop of that quality. */
+void screens_open_spellbook_buy(Spellbook *book, Player *player, int quality);
 /* A message box (msgbox.h): words, and Yes and No when it asks. */
 void screens_open_msgbox(const char *text, int yes_no);
 int screens_msgbox_answer(void);

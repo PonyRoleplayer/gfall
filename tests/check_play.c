@@ -5481,7 +5481,7 @@ static void check_settings(void)
     mem_zero(&v, sizeof(v));
     v.classic = 1; v.waiting = -1; v.hover = SETTINGS_NOTHING;
     {
-        static const char *const names[] = { "W", "S", "Left", "Right", "A", "D", "Space", "Shift", "R", "Right Button", "H", "C", "I", "E", "Tab", "Page Up", "Page Down", "Home", "Alt", "M", "V", "T" };
+        static const char *const names[] = { "W", "S", "Left", "Right", "A", "D", "Space", "Shift", "R", "Right Button", "H", "C", "I", "E", "Tab", "Page Up", "Page Down", "Home", "Alt", "M", "V", "T", "Ctrl", "B", "Q" };
         for (i = 0; i < SETTINGS_BINDINGS; i++) v.bindings[i] = names[i];
     }
     v.sfx_volume = v.music_volume = 80;
@@ -6884,7 +6884,41 @@ static void check_spellbook(void)
     spellbook_compose();
     write_screen("build/spellbook1.ppm", spellbook_pixels());
     spellbook_close();
-    printf("spellbook: choose, ready by a second click, move, scroll, sort, delete asked twice; build/spellbook0..1.ppm\n");
+    /* Buy mode: the guild's standard spells by name, a price, a second click to pay, a duplicate refused and refunded. */
+    {
+        Player p;
+        Spellbook mine;
+        int price;
+        int gold;
+
+        player_init(&p, &sheet);
+        p.pack.gold = 100000;
+        mem_zero(&mine, sizeof(mine));
+        check_expect(spellbook_open_buy(&mine, &p, 10), "spellbook: buy mode did not open");
+        spellbook_compose();
+        write_screen("build/spellbook2.ppm", spellbook_pixels());
+        price = spellbook_price();
+        check_expect(price > 0 && spellbook_selected() == 0, "spellbook: a spell for sale has no price");
+        gold = (int)p.pack.gold;
+        check_expect(spellbook_click(x0 + 3 + 5, y0 + 152 + 3) == SPELLBOOK_STAY && spellbook_confirming() && mine.count == 0
+                         && (int)p.pack.gold == gold && spellbook_note(),
+                     "spellbook: the first click on Buy pays or does not say the price");
+        spellbook_click(x0 + 3 + 5, y0 + 152 + 3);
+        check_expect(mine.count == 1 && (int)p.pack.gold == gold - price, "spellbook: the second click on Buy does not buy at the price");
+        /* The same again: kept as one, the gold given back. */
+        spellbook_click(x0 + 3 + 5, y0 + 152 + 3);
+        spellbook_click(x0 + 3 + 5, y0 + 152 + 3);
+        check_expect(mine.count == 1 && (int)p.pack.gold == gold - price, "spellbook: a spell the book has is bought twice");
+        /* The Up and Down buttons do nothing here, a second click on a spell does not ready it. */
+        check_expect(spellbook_click(x0 + 20, y0 + 13 + 4) == SPELLBOOK_STAY && spellbook_click(x0 + 132 + 5, y0 + 152 + 3) == SPELLBOOK_STAY
+                         && spellbook_selected() == 0,
+                     "spellbook: the buy list moves or readies");
+        p.pack.gold = 0;
+        spellbook_click(x0 + 3 + 5, y0 + 152 + 3);
+        check_expect(mine.count == 1 && p.pack.gold == 0, "spellbook: a spell bought with no gold");
+        spellbook_close();
+    }
+    printf("spellbook: choose, ready by a second click, move, scroll, sort, delete asked twice, buy; build/spellbook0..2.ppm\n");
 }
 
 /* A picker row's name found, and clicked: 1 when it was there. */
