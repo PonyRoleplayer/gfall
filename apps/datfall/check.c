@@ -156,7 +156,7 @@ int main(void)
            "cooked MAIN.DAT did not read as a whole record file");
     expect(dat_kinds(f) >= 11, "cooked MAIN.DAT is missing chunks");
 
-    head = kind_rows(f, "HEAD", 1 + 1 + 18);
+    head = kind_rows(f, "HEAD", 1 + 1 + 1 + 18);
     if (head >= 0) {
         dat_kind(f, head, text, (int)sizeof(text), table, (int)sizeof(table));
         expect(df_eq(table, "head"), "HEAD's table name is not head");
@@ -171,6 +171,8 @@ int main(void)
     kind_rows(f, "CLAS", 18);
     kind_rows(f, "RACE", 8);
     kind_rows(f, "SKIL", 35);
+    kind_rows(f, "EFCT", 90);
+    kind_rows(f, "SPEL", 89);
 
     if (enem >= 0) {
         dat_kind(f, enem, text, (int)sizeof(text), table, (int)sizeof(table));

@@ -10,6 +10,7 @@
 #include "game/dagger/tables/diseases.h"
 #include "game/dagger/tables/guilds.h"
 #include "game/dagger/tables/quests.h"
+#include "game/dagger/tables/magic.h"
 
 /*
  * Classic's tables that live inside FALL.EXE, not in an ARENA2 file:
@@ -40,6 +41,10 @@ const CrimeKind *classic_crimes(int *n);
 const Holiday *classic_holidays(int *n);
 const Disease *classic_diseases(int *n);
 const GuildKind *classic_guilds(int *n);
+/* The effects a spell is made of (the 89 standard spells come from SPELLS.STD). */
+const MagicEffect *classic_effects(int *n);
+/* 1 when effects (classic_effects) has the effect of that id. */
+int classic_effect_known(const MagicEffect *effects, int id);
 const QuestKind *classic_quests(int *n);
 const DungeonLoot *classic_dungeon_loots(int *n);
 const Material *classic_materials(int *n);

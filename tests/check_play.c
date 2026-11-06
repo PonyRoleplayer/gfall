@@ -97,6 +97,8 @@
 #include "game/dagger/play/config.h"
 #include "game/dagger/play/saves.h"
 #include "game/dagger/play/files.h"
+#include "game/dagger/tables/magic.h"
+#include "game/dagger/play/spells.h"
 #include "game/dagger/play/projectile.h"
 #include "game/dagger/play/shots.h"
 #include "game/dagger/places/people.h"
@@ -6034,6 +6036,177 @@ static Entity *splash_near(float x, float z)
  * outlives the people being dropped and built again, a hostile guard is not
  * talked to, and a killed guard stays as a corpse that can be looted.
  */
+/* The effects and the standard spells, from classic's code and SPELLS.STD. */
+static void check_magic_data(void)
+{
+    const MagicSpell *sp;
+    const MagicEffect *e;
+    EffectSettings es;
+    int i;
+    int k;
+    int wrong;
+
+    check_expect(effect_table()->count == 90 && spell_table()->count == 89,
+                 "magic: not 90 effects and the 89 standard spells");
+    sp = magic_standard(1);
+    check_expect(sp && df_eq(sp->name, "Fenrik's Door Jam") && sp->element == ELEMENT_MAGIC && sp->target == TARGET_CASTER
+                     && sp->effect[0] == MAGIC_ID(EFFECT_LOCK, 255) && sp->effect[1] == MAGIC_ID(255, 255),
+                 "magic: spell 1 is not Fenrik's Door Jam, a magic spell on the caster that locks");
+    magic_settings(sp, 0, &es);
+    check_expect(es.duration_base == 1 && es.duration_plus == 1 && es.duration_per == 25 && es.chance_base == 6
+                     && es.chance_plus == 1 && es.chance_per == 10,
+                 "magic: Fenrik's Door Jam is not duration 1 + 1 / 25 and chance 6 + 1 / 10");
+    sp = magic_standard(3);
+    magic_settings(sp, 0, &es);
+    check_expect(sp && df_eq(sp->name, "Frostbite") && sp->element == ELEMENT_COLD && sp->target == TARGET_TOUCH
+                     && es.effect == MAGIC_ID(EFFECT_DAMAGE, 0) && es.magnitude_base_low == 1 && es.magnitude_base_high == 9
+                     && es.magnitude_plus_low == 1 && es.magnitude_plus_high == 3 && es.magnitude_per == 2,
+                 "magic: Frostbite is not cold touch damage to health, 1-9 + 1-3 per 2 levels");
+    sp = magic_standard(7);
+    magic_settings(sp, 0, &es);
+    check_expect(sp && df_eq(sp->name, "Wizard's Fire") && sp->element == ELEMENT_FIRE && sp->target == TARGET_RANGE
+                     && es.magnitude_base_high == 15 && es.magnitude_plus_high == 4 && es.magnitude_per == 1,
+                 "magic: Wizard's Fire is not fire at range, 1-15 + 1-4 per level");
+    sp = magic_standard(14);
+    check_expect(sp && df_eq(sp->name, "Fireball") && sp->target == TARGET_AREA_RANGE, "magic: Fireball is not an area at range");
+    /* The effect's own numbers: Damage Health is Destruction, supports magnitude only, costs 20 and 28. */
+    e = magic_effect(MAGIC_ID(EFFECT_DAMAGE, 0));
+    check_expect(e && e->school == SKILL_DESTRUCTION && e->supports == MAGIC_MAGNITUDE && e->magnitude_cost[0] == 20
+                     && e->magnitude_cost[1] == 28 && e->targets == MAGIC_TARGET_OTHER && e->elements == MAGIC_ELEMENT_ALL,
+                 "magic: Damage Health is not Destruction, magnitude 20 and 28, on others, any element");
+    e = magic_effect(MAGIC_ID(EFFECT_DRAIN, 0));
+    check_expect(e && e->magnitude_cost[0] == 8 && e->magnitude_cost[1] == 100 && e->magnitude_cost[2] == 116,
+                 "magic: Drain's flat offset of 116 is lost");
+    e = magic_effect(MAGIC_ID(EFFECT_LIGHT, 255));
+    check_expect(e && e->school == SKILL_ILLUSION && e->supports == MAGIC_DURATION && e->targets == MAGIC_TARGET_CASTER,
+                 "magic: Light is not Illusion, duration only, on the caster");
+    e = magic_effect(MAGIC_ID(EFFECT_JUMPING, 255));
+    check_expect(e && df_eq(e->group, "Jumping") && e->school == SKILL_ALTERATION, "magic: Jumping is not number 32, Alteration");
+    check_expect(magic_effect(MAGIC_ID(77, 0)) == 0, "magic: an effect of no number is found");
+    /* Every effect of every standard spell is in the table, and its target and element are ones the effect allows,
+     * but for the one classic breaks: Buoyancy is a cold spell of water walking, which DFU lets only magic. */
+    wrong = 0;
+    for (i = 0; i < spell_table()->count; i++) {
+        sp = (const MagicSpell *)(spell_table()->rows + (df_u32)i * sizeof(MagicSpell));
+        for (k = 0; k < MAGIC_SLOTS; k++) {
+            if (sp->effect[k] == MAGIC_ID(255, 255)) {
+                continue;
+            }
+            e = magic_effect(sp->effect[k]);
+            if (!e || !(e->targets & (1 << sp->target)) || (!(e->elements & (1 << sp->element)) && !df_eq(sp->name, "Buoyancy"))) {
+                wrong++;
+            }
+        }
+    }
+    check_expect(wrong == 0, "magic: a standard spell has an effect the table lacks, or a target or element it does not allow");
+    printf("magic: 90 effects, %d standard spells, Frostbite, Wizard's Fire and the offsets read\n", spell_table()->count);
+}
+
+/* Spell costs worked by hand, and the book. */
+static void check_spells(void)
+{
+    Character pc;
+    Spell s;
+    Spellbook book;
+    int gold;
+    int i;
+
+    if (!character_new(&pc, RACE_BRETON, CLASS_WARRIOR, 0, "Test")) {
+        check_expect(0, "spells: no starting character");
+        return;
+    }
+    /* Shock, std 8: Damage Health, 1-20 + 1-4 per level, touch. Magnitude costs 20 and 28: start 10, step 2 -> 20 x 10 + 28 x 2 = 256 gold. */
+    spell_standard(&s, magic_standard(8));
+    check_expect(df_eq(s.name, "Shock") && s.target == TARGET_TOUCH && spell_effects(&s) == 1, "spells: Shock is not one effect by touch");
+    pc.skill[SKILL_DESTRUCTION] = 0;
+    check_expect(spell_cost(&s, &pc, &gold) == 70 && gold == 256, "spells: Shock at skill 0 is not 256 gold and 256 x 110 / 400 = 70 points");
+    pc.skill[SKILL_DESTRUCTION] = 50;
+    check_expect(spell_cost(&s, &pc, &gold) == 38 && gold == 256, "spells: Shock at skill 50 is not 38 points, its gold unchanged");
+    pc.skill[SKILL_DESTRUCTION] = 100;
+    check_expect(spell_cost(&s, &pc, &gold) == 6, "spells: Shock at skill 100 is not 6 points");
+    /* Wizard's Fire, std 7: 1-15 + 1-4 -> 160 + 56 = 216, at range x 1.5. */
+    spell_standard(&s, magic_standard(7));
+    pc.skill[SKILL_DESTRUCTION] = 0;
+    check_expect(spell_cost(&s, &pc, &gold) == 88 && gold == 324, "spells: Wizard's Fire is not 324 gold and 59 x 1.5 = 88 points");
+    /* Fireball, std 14: 1-1 + 1-7: 20 x 1 + 28 x 4 = 132, an area at range x 2.5. */
+    spell_standard(&s, magic_standard(14));
+    spell_cost(&s, &pc, &gold);
+    check_expect(gold == 330, "spells: Fireball is not 132 x 2.5 = 330 gold");
+    /* Frostbite, std 3: 1-9 + 1-3 per 2 levels: start 5, step 3 / 2 = 1 -> 100 + 28 = 128. */
+    spell_standard(&s, magic_standard(3));
+    spell_cost(&s, &pc, &gold);
+    check_expect(gold == 128, "spells: Frostbite's gold does not count a step once per two levels");
+    /* Fenrik's Door Jam, std 1: Lock, chance 6 + 1 per 10: 120 + 28 x 6 + 120 x 0 = 288 gold, Mysticism 0: 79 points. */
+    spell_standard(&s, magic_standard(1));
+    pc.skill[SKILL_MYSTICISM] = 0;
+    check_expect(spell_cost(&s, &pc, &gold) == 79 && gold == 288, "spells: Fenrik's Door Jam is not 288 gold and 79 points");
+    /* The floor of 5: Light, std 5: duration 1 + 4: 8 + 160 = 168 gold, 4 points at Illusion 100, so 5. */
+    spell_standard(&s, magic_standard(5));
+    pc.skill[SKILL_ILLUSION] = 100;
+    check_expect(spell_cost(&s, &pc, &gold) == 5 && gold == 168, "spells: a cheap spell at a high skill does not cost 5");
+    /* Recall (Teleport) supports nothing: priced as 160 + 60 + 100 = 320 gold. */
+    {
+        int found;
+
+        found = 0;
+        for (i = 0; i < spell_table()->count; i++) {
+            const MagicSpell *m;
+
+            m = (const MagicSpell *)(spell_table()->rows + (df_u32)i * sizeof(MagicSpell));
+            if (df_eq(m->name, "Recall")) {
+                spell_standard(&s, m);
+                found = 1;
+            }
+        }
+        spell_cost(&s, &pc, &gold);
+        check_expect(found && gold == 320, "spells: Recall is not 320 gold, as an effect of nothing to set");
+    }
+    /* A spell with no effect costs nothing; a spell with an unknown effect id is no cost either. */
+    mem_zero(&s, sizeof(s));
+    for (i = 0; i < MAGIC_SLOTS; i++) {
+        s.effect[i].effect = SPELL_NO_EFFECT;
+    }
+    check_expect(spell_cost(&s, &pc, &gold) == 0 && gold == 0, "spells: an empty spell costs");
+    {
+        char line[48];
+
+        spell_effect_name(MAGIC_ID(EFFECT_DAMAGE, 0), line, (int)sizeof(line));
+        check_expect(df_eq(line, "Damage Health"), "spells: an effect's name is not group and subgroup");
+        spell_effect_name(MAGIC_ID(EFFECT_LIGHT, 255), line, (int)sizeof(line));
+        check_expect(df_eq(line, "Light"), "spells: an effect with no subgroup is not its group alone");
+    }
+    /* The book: no two of a name, removal closes up, sorting is by name without case. */
+    mem_zero(&book, sizeof(book));
+    spell_standard(&s, magic_standard(8));
+    check_expect(spellbook_add(&book, &s) && !spellbook_add(&book, &s) && book.count == 1, "spells: the book takes a spell twice");
+    spell_standard(&s, magic_standard(3));
+    spellbook_add(&book, &s);
+    spell_standard(&s, magic_standard(1));
+    spellbook_add(&book, &s);
+    spellbook_sort(&book);
+    check_expect(book.count == 3 && df_eq(book.spell[0].name, "Fenrik's Door Jam") && df_eq(book.spell[1].name, "Frostbite")
+                     && df_eq(book.spell[2].name, "Shock"),
+                 "spells: the book does not sort by name");
+    check_expect(spellbook_find(&book, "frostbite") == 1 && spellbook_find(&book, "Nothing") == -1, "spells: the book finds by name without case");
+    spellbook_remove(&book, 0);
+    check_expect(book.count == 2 && df_eq(book.spell[0].name, "Frostbite"), "spells: removing closes the book up");
+    /* Starting spells by class. */
+    mem_zero(&book, sizeof(book));
+    character_new(&pc, RACE_BRETON, CLASS_MAGE, 0, "Test");
+    spellbook_starting(&book, &pc);
+    check_expect(book.count == 5 && spellbook_find(&book, "Shock") >= 0 && spellbook_find(&book, "Balyna's Balm") >= 0,
+                 "spells: a Mage does not start with five spells, Shock and Balyna's Balm among them");
+    mem_zero(&book, sizeof(book));
+    character_new(&pc, RACE_BRETON, CLASS_WARRIOR, 0, "Test");
+    spellbook_starting(&book, &pc);
+    check_expect(book.count == 0, "spells: a Warrior starts with spells");
+    mem_zero(&book, sizeof(book));
+    character_new(&pc, RACE_BRETON, 6, 0, "Test");
+    spellbook_starting(&book, &pc);
+    check_expect(book.count == 1 && spellbook_find(&book, "Slowfalling") == 0, "spells: a Bard does not start with Slowfalling alone");
+    printf("spells: costs by hand (Shock 70, 38, 6 points; Wizard's Fire 88; Fireball 330 gold), the book, the starting sets\n");
+}
+
 /* A world for projectile.c: a wall across x = wall_x, and a ball of radius r at ball. */
 typedef struct FlightWorld {
     float wall_x;
@@ -8718,6 +8891,8 @@ void check_play(void)
     check_crouch();
     check_config();
     check_saves_and_files();
+    check_magic_data();
+    check_spells();
     check_projectile();
     check_arrow_flight();
     check_ills();

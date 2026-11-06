@@ -856,6 +856,127 @@ const GuildKind *classic_guilds(int *n)
 }
 
 /*
+ * The effects a spell is made of (DFU's EntityEffect properties: classic's group and
+ * subgroup, the school, the parameters it supports, the targets and elements it
+ * allows, the cost of each parameter as A, B and a flat offset). Classic's
+ * dispel spells reach others and the caster (SPELLS.STD's own Holy Touch and
+ * Null Magicka do), Jumping is 32 as SPELLS.STD has it.
+ */
+#define EF(group, sub, gname, sname, school, sup, tg, el, d0, d1, d2, c0, c1, c2, m0, m1, m2) \
+    { MAGIC_ID(group, sub), gname, sname, school, sup, tg, el, { d0, d1, d2 }, { c0, c1, c2 }, { m0, m1, m2 } }
+static const MagicEffect g_effects[] = {
+    EF(0, 255, "Paralyze", "", 25, 3, 30, 31, 28, 100, 0, 28, 100, 0, 0, 0, 0),
+    EF(1, 0, "Continuous Damage", "Health", 22, 5, 30, 31, 28, 8, 0, 0, 0, 0, 40, 28, 0),
+    EF(1, 1, "Continuous Damage", "Fatigue", 22, 5, 30, 31, 20, 8, 0, 0, 0, 0, 40, 28, 0),
+    EF(1, 2, "Continuous Damage", "Spell Points", 22, 5, 30, 31, 40, 8, 0, 0, 0, 0, 40, 28, 0),
+    EF(2, 255, "Create Item", "", 27, 1, 1, 16, 60, 120, 0, 0, 0, 0, 0, 0, 0),
+    EF(3, 0, "Cure", "Disease", 23, 2, 31, 16, 0, 0, 0, 8, 100, 0, 0, 0, 0),
+    EF(3, 1, "Cure", "Poison", 23, 2, 31, 16, 0, 0, 0, 8, 100, 0, 0, 0, 0),
+    EF(3, 2, "Cure", "Paralyzation", 23, 2, 31, 16, 0, 0, 0, 20, 140, 0, 0, 0, 0),
+    EF(4, 0, "Damage", "Health", 22, 4, 30, 31, 0, 0, 0, 0, 0, 0, 20, 28, 0),
+    EF(4, 1, "Damage", "Fatigue", 22, 4, 30, 31, 0, 0, 0, 0, 0, 0, 20, 28, 0),
+    EF(4, 2, "Damage", "Spell Points", 22, 4, 30, 31, 0, 0, 0, 0, 0, 0, 20, 28, 0),
+    EF(5, 255, "Disintegrate", "", 22, 2, 30, 31, 0, 0, 0, 80, 140, 0, 0, 0, 0),
+    EF(6, 0, "Dispel", "Magic", 27, 2, 31, 16, 0, 0, 0, 120, 180, 0, 0, 0, 0),
+    EF(6, 1, "Dispel", "Undead", 27, 2, 31, 16, 0, 0, 0, 80, 140, 0, 0, 0, 0),
+    EF(6, 2, "Dispel", "Daedra", 27, 2, 31, 16, 0, 0, 0, 120, 180, 0, 0, 0, 0),
+    EF(7, 0, "Drain", "Strength", 22, 4, 30, 31, 0, 0, 0, 0, 0, 0, 8, 100, 116),
+    EF(7, 1, "Drain", "Intelligence", 22, 4, 30, 31, 0, 0, 0, 0, 0, 0, 8, 100, 116),
+    EF(7, 2, "Drain", "Willpower", 22, 4, 30, 31, 0, 0, 0, 0, 0, 0, 8, 100, 116),
+    EF(7, 3, "Drain", "Agility", 22, 4, 30, 31, 0, 0, 0, 0, 0, 0, 8, 100, 116),
+    EF(7, 4, "Drain", "Endurance", 22, 4, 30, 31, 0, 0, 0, 0, 0, 0, 8, 100, 116),
+    EF(7, 5, "Drain", "Personality", 22, 4, 30, 31, 0, 0, 0, 0, 0, 0, 8, 100, 116),
+    EF(7, 6, "Drain", "Speed", 22, 4, 30, 31, 0, 0, 0, 0, 0, 0, 8, 100, 116),
+    EF(7, 7, "Drain", "Luck", 22, 4, 30, 31, 0, 0, 0, 0, 0, 0, 8, 100, 116),
+    EF(8, 0, "Resist", "Fire", 25, 3, 31, 16, 100, 100, 0, 8, 100, 0, 0, 0, 0),
+    EF(8, 1, "Resist", "Cold", 25, 3, 31, 16, 100, 100, 0, 8, 100, 0, 0, 0, 0),
+    EF(8, 2, "Resist", "Poison", 25, 3, 31, 16, 100, 100, 0, 8, 100, 0, 0, 0, 0),
+    EF(8, 3, "Resist", "Shock", 25, 3, 31, 16, 100, 100, 0, 8, 100, 0, 0, 0, 0),
+    EF(8, 4, "Resist", "Magicka", 25, 3, 31, 16, 100, 100, 0, 8, 100, 0, 0, 0, 0),
+    EF(9, 0, "Fortify", "Strength", 23, 5, 31, 16, 28, 100, 0, 0, 0, 0, 40, 120, 0),
+    EF(9, 1, "Fortify", "Intelligence", 23, 5, 31, 16, 28, 100, 0, 0, 0, 0, 40, 120, 0),
+    EF(9, 2, "Fortify", "Willpower", 23, 5, 31, 16, 28, 100, 0, 0, 0, 0, 40, 120, 0),
+    EF(9, 3, "Fortify", "Agility", 23, 5, 31, 16, 28, 100, 0, 0, 0, 0, 40, 120, 0),
+    EF(9, 4, "Fortify", "Endurance", 23, 5, 31, 16, 28, 100, 0, 0, 0, 0, 40, 120, 0),
+    EF(9, 5, "Fortify", "Personality", 23, 5, 31, 16, 28, 100, 0, 0, 0, 0, 40, 120, 0),
+    EF(9, 6, "Fortify", "Speed", 23, 5, 31, 16, 28, 100, 0, 0, 0, 0, 40, 120, 0),
+    EF(9, 7, "Fortify", "Luck", 23, 5, 31, 16, 28, 100, 0, 0, 0, 0, 40, 120, 0),
+    EF(10, 0, "Heal", "Strength", 23, 4, 31, 16, 0, 0, 0, 0, 0, 0, 40, 28, 0),
+    EF(10, 1, "Heal", "Intelligence", 23, 4, 31, 16, 0, 0, 0, 0, 0, 0, 40, 28, 0),
+    EF(10, 2, "Heal", "Willpower", 23, 4, 31, 16, 0, 0, 0, 0, 0, 0, 40, 28, 0),
+    EF(10, 3, "Heal", "Agility", 23, 4, 31, 16, 0, 0, 0, 0, 0, 0, 40, 28, 0),
+    EF(10, 4, "Heal", "Endurance", 23, 4, 31, 16, 0, 0, 0, 0, 0, 0, 40, 28, 0),
+    EF(10, 5, "Heal", "Personality", 23, 4, 31, 16, 0, 0, 0, 0, 0, 0, 40, 28, 0),
+    EF(10, 6, "Heal", "Speed", 23, 4, 31, 16, 0, 0, 0, 0, 0, 0, 40, 28, 0),
+    EF(10, 7, "Heal", "Luck", 23, 4, 31, 16, 0, 0, 0, 0, 0, 0, 40, 28, 0),
+    EF(10, 8, "Heal", "Health", 23, 4, 31, 16, 0, 0, 0, 0, 0, 0, 20, 28, 0),
+    EF(10, 9, "Heal", "Fatigue", 23, 4, 31, 16, 0, 0, 0, 0, 0, 0, 8, 28, 0),
+    EF(11, 0, "Transfer", "Strength", 22, 4, 30, 16, 0, 0, 0, 0, 0, 0, 60, 100, 40),
+    EF(11, 1, "Transfer", "Intelligence", 22, 4, 30, 16, 0, 0, 0, 0, 0, 0, 60, 100, 40),
+    EF(11, 2, "Transfer", "Willpower", 22, 4, 30, 16, 0, 0, 0, 0, 0, 0, 60, 100, 40),
+    EF(11, 3, "Transfer", "Agility", 22, 4, 30, 16, 0, 0, 0, 0, 0, 0, 60, 100, 40),
+    EF(11, 4, "Transfer", "Endurance", 22, 4, 30, 16, 0, 0, 0, 0, 0, 0, 60, 100, 40),
+    EF(11, 5, "Transfer", "Personality", 22, 4, 30, 16, 0, 0, 0, 0, 0, 0, 60, 100, 40),
+    EF(11, 6, "Transfer", "Speed", 22, 4, 30, 16, 0, 0, 0, 0, 0, 0, 60, 100, 40),
+    EF(11, 7, "Transfer", "Luck", 22, 4, 30, 16, 0, 0, 0, 0, 0, 0, 60, 100, 40),
+    EF(11, 8, "Transfer", "Health", 22, 4, 30, 16, 0, 0, 0, 0, 0, 0, 60, 100, 40),
+    EF(11, 9, "Transfer", "Fatigue", 22, 4, 30, 16, 0, 0, 0, 0, 0, 0, 60, 100, 40),
+    EF(12, 255, "Soul Trap", "", 27, 3, 30, 31, 60, 68, 0, 40, 68, 0, 0, 0, 0),
+    EF(13, 0, "Invisibility", "Normal", 24, 1, 31, 16, 40, 120, 0, 0, 0, 0, 0, 0, 0),
+    EF(13, 1, "Invisibility", "True", 24, 1, 31, 16, 60, 140, 0, 0, 0, 0, 0, 0, 0),
+    EF(14, 255, "Levitate", "", 26, 1, 1, 16, 60, 100, 0, 0, 0, 0, 0, 0, 0),
+    EF(15, 255, "Light", "", 24, 1, 1, 16, 8, 40, 0, 0, 0, 0, 0, 0, 0),
+    EF(16, 255, "Lock", "", 27, 2, 1, 16, 0, 0, 0, 28, 120, 120, 0, 0, 0),
+    EF(17, 255, "Open", "", 27, 2, 1, 16, 0, 0, 0, 20, 100, 0, 0, 0, 0),
+    EF(18, 255, "Regenerate", "", 23, 5, 31, 16, 100, 20, 0, 0, 0, 0, 8, 8, 0),
+    EF(19, 255, "Silence", "", 27, 3, 31, 31, 20, 100, 0, 20, 100, 0, 0, 0, 0),
+    EF(20, 255, "Spell Absorption", "", 23, 3, 31, 16, 28, 140, 0, 28, 140, 0, 0, 0, 0),
+    EF(21, 255, "Spell Reflection", "", 26, 3, 31, 16, 28, 140, 0, 28, 140, 0, 0, 0, 0),
+    EF(22, 255, "Spell Resistance", "", 26, 3, 31, 16, 20, 100, 0, 20, 100, 0, 0, 0, 0),
+    EF(23, 0, "Chameleon", "Normal", 24, 1, 31, 16, 20, 80, 0, 0, 0, 0, 0, 0, 0),
+    EF(23, 1, "Chameleon", "True", 24, 1, 31, 16, 40, 120, 0, 0, 0, 0, 0, 0, 0),
+    EF(24, 0, "Shadow", "Normal", 24, 1, 31, 16, 20, 80, 0, 0, 0, 0, 0, 0, 0),
+    EF(24, 1, "Shadow", "True", 24, 1, 31, 16, 40, 120, 0, 0, 0, 0, 0, 0, 0),
+    EF(25, 255, "Slowfall", "", 25, 1, 1, 16, 20, 100, 0, 0, 0, 0, 0, 0, 0),
+    EF(26, 255, "Free Action", "", 23, 1, 31, 16, 20, 8, 0, 0, 0, 0, 0, 0, 0),
+    EF(28, 255, "Climbing", "", 25, 1, 31, 16, 20, 20, 0, 0, 0, 0, 0, 0, 0),
+    EF(29, 255, "Morph Self", "", 24, 0, 1, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+    EF(30, 255, "Water Breathing", "", 25, 1, 31, 16, 20, 8, 0, 0, 0, 0, 0, 0, 0),
+    EF(31, 255, "Water Walking", "", 26, 1, 31, 16, 20, 8, 0, 0, 0, 0, 0, 0, 0),
+    EF(32, 255, "Jumping", "", 25, 1, 31, 16, 20, 8, 0, 0, 0, 0, 0, 0, 0),
+    EF(33, 0, "Calm", "Animal", 26, 2, 30, 16, 0, 0, 0, 60, 100, 160, 0, 0, 0),
+    EF(33, 1, "Calm", "Undead", 26, 2, 30, 16, 0, 0, 0, 60, 120, 36, 0, 0, 0),
+    EF(33, 2, "Calm", "Humanoid", 26, 2, 30, 16, 0, 0, 0, 80, 140, 60, 0, 0, 0),
+    EF(34, 255, "Charm", "", 26, 3, 30, 31, 20, 8, 0, 40, 60, 0, 0, 0, 0),
+    EF(35, 255, "Shield", "", 25, 5, 31, 16, 28, 8, 0, 0, 0, 0, 80, 60, 0),
+    EF(39, 0, "Detect", "Magic", 26, 1, 1, 16, 20, 8, 200, 0, 0, 0, 0, 0, 0),
+    EF(39, 1, "Detect", "Enemy", 26, 1, 1, 16, 20, 8, 200, 0, 0, 0, 0, 0, 0),
+    EF(39, 2, "Detect", "Treasure", 26, 1, 1, 16, 20, 8, 160, 0, 0, 0, 0, 0, 0),
+    EF(40, 255, "Identify", "", 26, 2, 1, 16, 0, 0, 0, 40, 100, 28, 0, 0, 0),
+    EF(43, 255, "Teleport", "", 27, 0, 1, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+    EF(44, 255, "Comprehend Languages", "", 27, 3, 1, 16, 60, 68, 0, 40, 68, 0, 0, 0, 0),
+};
+#undef EF
+
+const MagicEffect *classic_effects(int *n)
+{
+    *n = (int)(sizeof(g_effects) / sizeof(g_effects[0]));
+    return g_effects;
+}
+
+int classic_effect_known(const MagicEffect *effects, int id)
+{
+    int i;
+
+    for (i = 0; i < (int)(sizeof(g_effects) / sizeof(g_effects[0])); i++) {
+        if (effects[i].id == id) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/*
  * The quests offered (DFU's QuestList-Classic: the 187 of classic's that its
  * guilds and people give, by file name): who offers it, to whom, the least it
  * asks, its flags. The group is FACTION.TXT's ggroup (3 the Dark Brotherhood,

@@ -129,7 +129,8 @@ FORMATS_SRC := \
 	src/game/dagger/formats/biog.c \
 	src/game/dagger/formats/classcfg.c \
 	src/game/dagger/formats/namegen.c \
-	src/game/dagger/formats/qbn.c
+	src/game/dagger/formats/qbn.c \
+	src/game/dagger/formats/spells.c
 
 # Daggerfall's rules for dressing a place.
 TABLES_SRC := \
@@ -141,6 +142,7 @@ TABLES_SRC := \
 	src/game/dagger/tables/commerce.c \
 	src/game/dagger/tables/diseases.c \
 	src/game/dagger/tables/guilds.c \
+	src/game/dagger/tables/magic.c \
 	src/game/dagger/tables/names.c \
 	src/game/dagger/tables/quests.c \
 	src/game/dagger/tables/swaps.c \
@@ -206,6 +208,7 @@ PLAY_SRC := \
 	src/game/dagger/play/commands.c \
 	src/game/dagger/play/weapon.c \
 	src/game/dagger/play/combat.c \
+	src/game/dagger/play/spells.c \
 	src/game/dagger/play/projectile.c \
 	src/game/dagger/play/shots.c \
 	src/game/dagger/play/foes.c \
@@ -411,6 +414,7 @@ DAT_SRC := \
 	src/game/dagger/formats/classcfg.c \
 	src/game/dagger/formats/namegen.c \
 	src/game/dagger/formats/qbn.c \
+	src/game/dagger/formats/spells.c \
 	src/game/dagger/formats/bsa.c \
 	src/game/dagger/tables/maindat.c \
 	src/game/dagger/tables/classic.c \
@@ -420,6 +424,7 @@ DAT_SRC := \
 	src/game/dagger/tables/commerce.c \
 	src/game/dagger/tables/diseases.c \
 	src/game/dagger/tables/guilds.c \
+	src/game/dagger/tables/magic.c \
 	src/game/dagger/tables/names.c \
 	src/game/dagger/tables/quests.c \
 	src/game/dagger/tables/enemies.c \

@@ -10,6 +10,8 @@
 #include "game/dagger/tables/guilds.h"
 #include "game/dagger/tables/names.h"
 #include "game/dagger/tables/quests.h"
+#include "game/dagger/tables/magic.h"
+#include "game/dagger/formats/spells.h"
 #include "game/dagger/formats/namegen.h"
 #include "game/dagger/formats/bsa.h"
 #include "game/dagger/formats/classcfg.h"
@@ -27,16 +29,18 @@
  * ARENA2 files MAIN.DAT is made from: a different size makes it stale.
  * MONSTER.BSA holds the kinds ENEM describes (their attributes, from
  * each monster's ENEMY###.CFG); the class files are CLAS, and a class
- * enemy's attributes.
+ * enemy's attributes; SPELLS.STD is SPEL.
  */
-#define SOURCES (1 + CLASSCFG_COUNT)
+#define SOURCES (2 + CLASSCFG_COUNT)
 
 static void source_name(int i, char *dst)
 {
     if (i == 0) {
         df_copy(dst, "MONSTER.BSA", REC_NAME);
+    } else if (i == 1) {
+        df_copy(dst, "SPELLS.STD", REC_NAME);
     } else {
-        classcfg_name(i - 1, dst);
+        classcfg_name(i - 2, dst);
     }
 }
 
@@ -149,6 +153,10 @@ static RecTable *table_at(int i)
         return name_table();
     case 22:
         return quest_table();
+    case 23:
+        return effect_table();
+    case 24:
+        return spell_table();
     default:
         return 0;
     }
@@ -156,7 +164,7 @@ static RecTable *table_at(int i)
 
 int maindat_table_count(void)
 {
-    return 23;
+    return 25;
 }
 
 RecTable *maindat_table(int i)
@@ -209,6 +217,72 @@ static df_u32 source_size(const char *name)
     n = vfs_size(f);
     vfs_close(f);
     return n;
+}
+
+/*
+ * The magic tables: the effects from classic's code, the 89 standard spells
+ * from SPELLS.STD in ARENA2 (a missing file leaves SPEL empty and says so).
+ * A spell of the file that has no effect in the table is left out: it could
+ * not be cast.
+ */
+static int put_magic(RecPut put, void *ctx)
+{
+    static StdSpell read[STDSPELL_COUNT];
+    static MagicSpell spells[STDSPELL_COUNT];
+    const MagicEffect *effects;
+    const df_u8 *b;
+    df_u32 size;
+    int count;
+    int n;
+    int i;
+    int k;
+    int j;
+
+    effects = classic_effects(&n);
+    if (!rec_put_rows(put, ctx, &effect_schema, effects, n, 0, 0)) {
+        return 0;
+    }
+    b = vfs_read("SPELLS.STD", &size);
+    count = b ? stdspell_read(b, size, read, STDSPELL_COUNT) : 0;
+    if (!count) {
+        log_text(LOG_WARN, "data: SPELLS.STD did not read; there are no standard spells");
+        return 1;
+    }
+    n = 0;
+    for (i = 0; i < count; i++) {
+        MagicSpell *s;
+        int known;
+
+        s = &spells[n];
+        mem_zero(s, sizeof(*s));
+        known = 1;
+        for (k = 0; k < STDSPELL_EFFECTS; k++) {
+            s->effect[k] = MAGIC_ID(read[i].group[k], read[i].sub[k]);
+            if (read[i].group[k] != MAGIC_EFFECT_NONE && !classic_effect_known(effects, s->effect[k])) {
+                known = 0;
+            }
+            for (j = 0; j < 3; j++) {
+                s->duration[3 * k + j] = read[i].duration[k][j];
+                s->chance[3 * k + j] = read[i].chance[k][j];
+            }
+            for (j = 0; j < 5; j++) {
+                s->magnitude[5 * k + j] = read[i].magnitude[k][j];
+            }
+        }
+        if (!known) {
+            log_print(LOG_WARN, "data: SPELLS.STD's %s has an effect no table has; left out", read[i].name);
+            continue;
+        }
+        s->id = (df_u16)i;
+        df_copy(s->name, read[i].name, MAGIC_SPELL_NAME);
+        s->icon = read[i].icon;
+        s->number = read[i].number;
+        s->element = read[i].element;
+        s->target = read[i].target;
+        s->price = read[i].price;
+        n++;
+    }
+    return rec_put_rows(put, ctx, &spell_schema, spells, n, 0, 0);
 }
 
 int maindat_import(RecPut put, void *ctx)
@@ -409,7 +483,10 @@ int maindat_import(RecPut put, void *ctx)
                     return 0;
                 }
                 quests = classic_quests(&n);
-                return rec_put_rows(put, ctx, &quest_schema, quests, n, 0, 0);
+                if (!rec_put_rows(put, ctx, &quest_schema, quests, n, 0, 0)) {
+                    return 0;
+                }
+                return put_magic(put, ctx);
             }
         }
     }
@@ -482,7 +559,7 @@ int maindat_whole(void)
         && armor_table()->count > 0 && loot_table()->count > 0
         && building_table()->count > 0 && crime_table()->count > 0 && holiday_table()->count > 0
         && disease_table()->count == DISEASE_COUNT && guild_table()->count > 0 && quest_table()->count > 0
-        && material_table()->count == MATERIAL_COUNT;
+        && material_table()->count == MATERIAL_COUNT && effect_table()->count > 0 && spell_table()->count > 0;
 }
 
 const char *maindat_error(void)

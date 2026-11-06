@@ -43,6 +43,13 @@ enum {
 #define SKILL_SWIMMING 17
 #define SKILL_RUNNING 21
 #define SKILL_MEDICAL 0
+/* The six schools of magic: the skill an effect is cast with, whose level lowers its cost (magic.h). */
+#define SKILL_DESTRUCTION 22
+#define SKILL_RESTORATION 23
+#define SKILL_ILLUSION 24
+#define SKILL_ALTERATION 25
+#define SKILL_THAUMATURGY 26
+#define SKILL_MYSTICISM 27
 /* The ones combat rolls (combat.c). */
 #define SKILL_BACKSTABBING 19
 #define SKILL_DODGING 20
