@@ -1020,7 +1020,7 @@ Talk (the people's lists, `USE_TALK`), factions, quests (QBN/QRC per UESP), spel
 - a ship to stand on (DFU's ship scenes);
 - Yes/No before paying for a cure, a room, a guild's welcome, as classic asks.
 
-**A graphics screen with texture detail (the user's idea, not to start until asked).** Glide's settings on a screen of their own, with a separate texture detail for sprites and for walls, so a player can take blurry walls and crisp sprites. The Voodoo 1's 2 MB is what the game fights: a sprite sheet too large for 256 now loses half its texels (`texture_sheet`), and a Voodoo 2 would not have to. Lowering the walls' detail would also cut the hiccups of pictures coming onto the card.
+**Texture detail for walls and for sprites (asked 2026-11-05, the ENGINE implementer building the engine side).** Two settings, Low / Medium / High each: one for the world's wall, floor and terrain textures, one for the sprites the player meets (creatures, townspeople, billboards, pickups). The weapon, the HUD and every screen picture stay as they are. The user wants walls lowered to keep sprites crisp on the Voodoo 1's 2 MB (a sprite sheet too large for 256 now loses half its texels in `texture_sheet`, and pictures coming onto the card stutter). Their ladder was 100% / 75% / 50% and then 100% / 50% / 25%; 75% is not a power of two, so the engine says what the card allows. The game adds the two rows to the Graphics tab (draft until Apply, kept in OPTS) when the engine's cvars are on main.
 
 ## Budgets on the 233
 
