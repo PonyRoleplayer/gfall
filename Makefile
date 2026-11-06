@@ -211,6 +211,7 @@ PLAY_SRC := \
 	src/game/dagger/play/player.c \
 	src/game/dagger/play/mouse.c \
 	src/game/dagger/play/viewopt.c \
+	src/game/dagger/play/config.c \
 	src/game/dagger/play/settings.c \
 	src/game/dagger/play/screen.c \
 	src/game/dagger/play/overlay.c \

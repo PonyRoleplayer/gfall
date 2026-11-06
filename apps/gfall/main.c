@@ -11,6 +11,7 @@
 #define WINVER 0x0400
 #define _WIN32_WINNT 0x0400
 #define WIN32_LEAN_AND_MEAN
+#include "engine/core/log.h"
 #include <windows.h>
 
 #include "engine/core/df.h"
@@ -98,6 +99,8 @@ int gfall_main(void *instance)
     Camera cam;
     Input in;
     int asked;
+    int asked_w;
+    int asked_h;
 
     mem_init();
     if (!win_startup(instance, "/ARENA2", "gfall", 0)) {
@@ -112,19 +115,28 @@ int gfall_main(void *instance)
         return 1;
     }
     /* The screen's mode the player chose, from DATA\KEYS.DAT, before the card opens: a mode it lacks opens 640 x 480. */
-    {
-        int mode_w;
-        int mode_h;
-
-        if (keys_peek_mode(&mode_w, &mode_h)) {
-            gfx_set_mode(mode_w, mode_h);
-        }
+    asked_w = 0;
+    asked_h = 0;
+    if (keys_peek_mode(&asked_w, &asked_h)) {
+        gfx_set_mode(asked_w, asked_h);
     }
     if (!gfx_startup(win_hwnd())) {
         win_fail(gfx_error());
         win_shutdown();
         mem_shutdown();
         return 1;
+    }
+    /* What the card opened against what gfall.cfg asked: the console's log says so when they differ (the card refused it). */
+    {
+        int got_w;
+        int got_h;
+
+        gfx_mode_opened(&got_w, &got_h);
+        if (asked_w > 0 && (got_w != asked_w || got_h != asked_h)) {
+            log_print(LOG_WARN, "gfall: gfall.cfg asks for %dx%d, the card opened %dx%d", asked_w, asked_h, got_w, got_h);
+        } else {
+            log_print(LOG_INFO, "gfall: the screen is %dx%d", got_w, got_h);
+        }
     }
     fnt_install();
     input_begin(win_hwnd());

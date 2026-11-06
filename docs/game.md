@@ -38,7 +38,7 @@ overlay   the HUD: compass, vitals, crosshair
 menu      title/start/death and the settings shell
 settings  native stone panels, dynamic text, settings layout and hit targets
 control   classic cursor movement, view offsets, gesture routing and pointer rays
-keys      the bindings in DATA\KEYS.DAT
+keys      the settings, bindings among them, in gfall.cfg (config.c, keys.c)
 mouse     Cursor or View, the MOUS row in that file
 viewopt   full screen, head bobbing, FOV and audio volumes, the OPTS row in that file
 screen    classic's 320 x 200 on the card
@@ -572,7 +572,8 @@ implementation choices, not constants recovered from FALL.EXE.
   discontinuities, so synthetic release bits cannot loose a bow or become a swing. Screen clicks remain left-button clicks even if
   either attack action is rebound. The world runs under the free pointer.
 - **Settings:** Controls' Mouse button selects Cursor (default) or View, saved
-  as a `CTLS` row and a `MOUS` row beside the append-only `KEYS` action rows in DATA\KEYS.DAT.
+  as `mouse=cursor` or `mouse=view` in gfall.cfg (an older program's DATA\KEYS.DAT kept it as a `CTLS` row and a
+  `MOUS` row beside the append-only `KEYS` action rows).
   Old files without either row take Cursor; a file with only one of them copies that choice onto the other. Existing movement bindings stay valid.
   New slots cover turning, pitch, center and Alt; the Swing slot shows the
   selected scheme's binding. Tab is a temporary pointer switch, not a preference
@@ -677,7 +678,7 @@ crossing another row does not transfer ownership. No additional textures or
 per-frame uploads are needed for Audio or Gameplay.
 
 Default changes only the displayed section's draft. **Apply** commits that
-section and writes `DATA/KEYS.DAT`; a write failure restores its previous live
+section and writes `gfall.cfg` (every setting, all tabs' included); a write failure restores its previous live
 settings, reports the failure, and retains the draft for another attempt.
 Tab changes preserve drafts. Back, Escape, or leaving for a save-slot screen
 abandons any unapplied drafts. A successful Apply remains effective when the
@@ -716,6 +717,18 @@ freed before any classic save-slot screen is opened. Their private heap dies
 with them. The renderer uses bounded swatch pieces and glyph quads; an idle
 frame, hover, binding edit or slider drag does **no texture upload, disk read
 or allocation**. No full-screen image is rebuilt on a slider tick.
+
+### The settings file (gfall.cfg)
+
+Every setting the player can change lives in **`gfall.cfg`** beside the exe, as text, one `key=value` a line (`play/config.c`, plain C and host-tested; `keys.c` is the bridge to the live state). It is read at the start and written, whole, by every Apply of the Settings screens; a missing one is written at the first start (from an older program's `DATA\KEYS.DAT`, read once as record rows, else from the defaults). A hand edit of a value lasts; a hand-made comment does not, since the file is written afresh with its own notes. A line that is no key we know or whose value is out of range is skipped, counted, and its line number logged once (`keys: gfall.cfg: 2 lines were not used, the first line 14`); the others still load, and a key left out keeps what the program had.
+
+- **The screen:** `resolution=640x480` (320x240, 400x300, 512x384, 640x480, and 800x600 on 4 MB; it shows at the next start, read before the card opens by `keys_peek_mode`), `fov` (45..120), `far_clip` (16..16384), `texture_detail` and `sprite_detail` (`low`, `medium`, `high`), `fog`, `crisp_sprites`, `vsync`, `dungeon_lights`, `ambient_light` (0..255), `light_range` (1..8), `light_shadow`, `weather_view`, `flora`, `flora_density` (0..100), `flora_sight` (0..16384). The graphics ones were console variables that reset at every start; they are kept now.
+- **Sound:** `sfx_volume`, `music_volume` (0..100).
+- **Play:** `mouse` (`cursor` or `view`), `full_hud`, `head_bob`, `toggle_crouch`.
+- **Keys:** `key.<action>=<name>`, the name the Keybindings screen shows ("Space", "Ctrl", "Left Button", "Num +", "="; a plain number is a virtual key too). The actions: attack, use, run, jump, character, inventory, map, rest, forward, back, left, right, swap_hands, cursor, swing, turn_left, turn_right, look_up, look_down, look_center, freelook, travel_map, transport, crouch. Escape is the menu and is not in it.
+- `on` and `off` may be written 1 and 0, yes and no, true and false; case and spaces about `=` do not matter; a `#` at a line's start, or after a space following a value, begins a comment.
+- **What gets logged** (the console's log, or `logfile on`): `keys: gfall.cfg read`, `keys: gfall.cfg asks for 320x240` before the card opens, `gfall: the screen is 320x240` or, when the card opened another, `gfall: gfall.cfg asks for 320x240, the card opened 640x480`, and `keys: gfall.cfg written, the screen's mode 320x240` on every Apply. The Graphics row says `NOW 640 x 480` beside a choice the card did not open.
+- Not in it: saved games (`DATA\SAVE#.SAV`), MAIN.DAT and its mods, and the engine's console variables that are developer switches (they stay on the console, `autoexec.cfg`).
 
 ### Adding another option
 

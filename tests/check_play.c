@@ -95,6 +95,7 @@
 #include "game/dagger/play/foes.h"
 #include "game/dagger/play/watch.h"
 #include "game/dagger/play/theft.h"
+#include "game/dagger/play/config.h"
 #include "game/dagger/places/people.h"
 #include "game/dagger/places/wres.h"
 #include "game/dagger/tables/enemies.h"
@@ -5750,6 +5751,117 @@ static void check_viewopt(void)
     printf("view: full screen off, head bob at a walk's phase\n");
 }
 
+/*
+ * gfall.cfg: every action named and defaulted, a Config through its text and back the same (keys with spaces and an
+ * equals sign among them), a hand-written file read through comments, case, spaces and notes, the lines it cannot use
+ * counted and the rest kept, the screen's mode peeked, a buffer too small refused.
+ */
+static void check_config(void)
+{
+    static char text[CONFIG_MAX];
+    Config a;
+    Config b;
+    int n;
+    int i;
+    int j;
+    int bad;
+    int first;
+    int w;
+    int h;
+
+    /* The actions: each but Escape has a name, none twice, and classic's key. */
+    for (i = 0; i < INPUT_ACTIONS; i++) {
+        const char *name;
+
+        name = config_action_name(i);
+        check_expect((i == INPUT_MENU) == (name == 0), "config: an action lacks a name, or Escape has one");
+        check_expect(i == INPUT_MENU || config_default_key(i) != 0, "config: an action has no default key");
+        for (j = 0; name && j < i; j++) {
+            check_expect(!config_action_name(j) || strcmp(name, config_action_name(j)) != 0, "config: two actions share a name");
+        }
+    }
+    check_expect(config_default_key(INPUT_USE) == 'E' && config_default_key(INPUT_CROUCH) == 0x11
+                     && config_default_key(INPUT_ATTACK) == 0x01 && config_default_key(INPUT_MENU) == 0,
+                 "config: classic's keys are not E, Ctrl and the left button");
+
+    /* A Config with every field its own: out as text and back the same. */
+    memset(&a, 0, sizeof(a));
+    for (i = 0; i < INPUT_ACTIONS; i++) {
+        a.key[i] = i == INPUT_MENU ? 0 : 'A' + i;
+    }
+    a.key[INPUT_USE] = 0xBB;
+    a.key[INPUT_ATTACK] = 0x01;
+    a.key[INPUT_JUMP] = 0x6B;
+    a.key[INPUT_RUN] = 0x20;
+    a.mouse_cursor = 0;
+    a.fov = 101;
+    a.far_clip = 2222;
+    a.fog = 0;
+    a.crisp_sprites = 1;
+    a.vsync = 0;
+    a.dungeon_lights = 1;
+    a.ambient_light = 77;
+    a.light_range = 5;
+    a.light_shadow = 0;
+    a.weather_view = 1;
+    a.flora = 0;
+    a.flora_density = 33;
+    a.flora_sight = 4096;
+    a.texture_detail = 1;
+    a.sprite_detail = 0;
+    a.mode_w = 320;
+    a.mode_h = 240;
+    a.sfx_volume = 12;
+    a.music_volume = 99;
+    a.full_hud = 0;
+    a.head_bob = 1;
+    a.toggle_crouch = 1;
+    n = config_format(&a, text, (int)sizeof(text));
+    check_expect(n > 200 && n < CONFIG_MAX, "config: the file's text is empty or too long");
+    memset(&b, 0x55, sizeof(b));
+    b.key[INPUT_MENU] = 0;
+    bad = config_parse(text, n, &b, &first);
+    check_expect(bad == 0 && first == 0, "config: the program's own text was not all used");
+    check_expect(memcmp(&a, &b, sizeof(a)) == 0, "config: a Config did not come back from its text the same");
+    check_expect(strstr(text, "resolution=320x240") && strstr(text, "texture_detail=medium") && strstr(text, "key.use==")
+                     && strstr(text, "key.jump=Num +") && strstr(text, "key.run=Space") && strstr(text, "mouse=view"),
+                 "config: the text is not written as it is documented");
+    /* A buffer that cannot hold it is refused, not cut. */
+    check_expect(config_format(&a, text, 100) == -1, "config: a small buffer was not refused");
+
+    /* A file written by hand: spaces, case, notes, CRLF and LF, comments, a last line with no newline. */
+    {
+        static const char hand[] =
+            "  FOV = 100   # note\r\n"
+            "Key.Use = Space\n"
+            "# comment\n"
+            "resolution= 512 x 384\n"
+            "fog=NO\n"
+            "bogus=1\n"
+            "fov=5000\n"
+            "texture_detail=ultra\n"
+            "key.forward=Banana\n"
+            "\n"
+            "key.back=left button";
+        memcpy(&b, &a, sizeof(b));
+        bad = config_parse(hand, (int)sizeof(hand) - 1, &b, &first);
+        check_expect(bad == 4 && first == 6, "config: the lines it cannot use were not counted, or not found at the first");
+        check_expect(b.fov == 100 && b.key[INPUT_USE] == 0x20 && b.mode_w == 512 && b.mode_h == 384 && b.fog == 0,
+                     "config: a hand-written file was not read through its notes, case and spaces");
+        check_expect(b.texture_detail == 1 && b.key[INPUT_FORWARD] == a.key[INPUT_FORWARD] && b.key[INPUT_BACK] == 0x01,
+                     "config: a line it could not use changed something, or a last line without a newline was lost");
+    }
+
+    /* The mode alone. */
+    n = config_format(&a, text, (int)sizeof(text));
+    check_expect(config_peek_mode(text, n, &w, &h) && w == 320 && h == 240, "config: the mode was not peeked");
+    check_expect(!config_peek_mode("fov=75\nfog=on\n", 14, &w, &h) && !config_peek_mode("resolution=10x10\n", 17, &w, &h)
+                     && !config_peek_mode("resolution=wide\n", 16, &w, &h) && !config_peek_mode("", 0, &w, &h),
+                 "config: a mode was peeked from a file with none, or a silly one");
+    check_expect(config_peek_mode("# x\r\nresolution = 400 x 300 # why\r\n", 33, &w, &h) && w == 400 && h == 300,
+                 "config: a mode with spaces and a note was not peeked");
+}
+
 /* Cursor or View, in memory the way KEYS.DAT stores it, and which pointer play asks for. */
 static df_u8 g_mouse_file[1024];
 static int g_mouse_at;
@@ -8308,6 +8420,7 @@ void check_play(void)
     check_holidays();
     check_theft();
     check_crouch();
+    check_config();
     check_ills();
     check_ships();
     check_lodging();
