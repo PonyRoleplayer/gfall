@@ -1,4 +1,5 @@
 #include "game/dagger/play/bag.h"
+#include "game/dagger/formats/texture.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/wagon.h"
 #include "game/dagger/play/canvas.h"
@@ -76,6 +77,11 @@ static const int g_list_x[LISTS] = { 163, 261 };
 #define LIST_H 152
 #define ARROW_W 9
 #define ARROW_H 16
+/* The coins animation behind what is for sale (DFU's coinsAnimTextureName and delay): its file, its record, at most this many frames, and seconds a frame. */
+#define COIN_FILE 434
+#define COIN_RECORD 6
+#define COINS_MAX 16
+#define COIN_DELAY 0.08f
 #define CELL_W 50
 #define CELL_H 38
 #define ROWS 4
@@ -184,6 +190,14 @@ static struct {
      * pack's; buying, what is paid for goes into the wagon.
      */
     int trade_wagon;
+    /* The coins behind things while buying: each frame's pixels (index 0 clear) and size, the one showing, the time on it. Read at the first buying compose. */
+    int coins_read;
+    int coin_n;
+    int coin_w[COINS_MAX];
+    int coin_h[COINS_MAX];
+    df_u8 *coin_px[COINS_MAX];
+    int coin_frame;
+    float coin_time;
 } g;
 
 /* What the right list shows, and which of the searched thing's rolled things each is (loot.c). */
@@ -331,7 +345,7 @@ int bag_open_trade(Player *p, const Shop *shop, int trade, int day)
     inventory_clear(&g_basket);
     inventory_clear(&g_remote);
     if (trade == TRADE_BUY) {
-        shop_stock(shop, p->sheet.level, day, &g_remote, g_origin);
+        shop_stock(shop, p->sheet.level, p->sheet.female, day, &g_remote, g_origin);
     }
     g.trade_column = composer_read(&g.composer, trade == TRADE_BUY ? "INVE08I0.IMG" : (trade == TRADE_SELL ? "INVE10I0.IMG" : "INVE12I0.IMG"));
     g.cost_panel = composer_read(&g.composer, "SHOP00I0.IMG");
@@ -387,8 +401,8 @@ static int local_shows(int i)
     if (local_inventory() == &g.player->pack && inventory_worn_at(&g.player->pack, i) >= 0) {
         return 0;
     }
-    /* All there is yet is weapons and armour, the first tab's. */
-    return g.tab == TAB_GEAR && it->count > 0;
+    /* Clothing is the third tab's; weapons, armour and the rest the first's. */
+    return it->count > 0 && g.tab == (item_is_clothing(it->template_id) ? TAB_CLOTHING : TAB_GEAR);
 }
 
 /* How many things a list shows. */
@@ -553,6 +567,72 @@ static const Icon *icon_of(const Item *it)
 }
 
 /* One list: its arrows, green where it can move, then the items in its rows. */
+/* The coins' frames read once into the composer's heap (the file and its pictures go with the scratch). */
+static void coins_read(void)
+{
+    int n;
+    int f;
+
+    g.coins_read = 1;
+    /* Registered with the doll's pictures, so the file is let go with them. */
+    if (!doll_read_picture(COIN_FILE, COIN_RECORD)) {
+        return;
+    }
+    n = texture_frame_count(COIN_FILE, COIN_RECORD);
+    n = n > COINS_MAX ? COINS_MAX : (n < 1 ? 1 : n);
+    for (f = 0; f < n; f++) {
+        const Image *frame;
+        MemHeap *was;
+        df_u8 *copy;
+        int i;
+        int count;
+
+        was = scratch_begin();
+        frame = texture_load_frame(COIN_FILE, COIN_RECORD, f);
+        composer_scratch_end(was);
+        if (!frame || frame->width < 1 || frame->height < 1 || frame->width > CELL_W || frame->height > CELL_H) {
+            continue;
+        }
+        count = frame->width * frame->height;
+        was = mem_heap_use(g.composer.heap);
+        copy = (df_u8 *)mem_alloc((df_u32)count);
+        mem_heap_use(was);
+        if (!copy) {
+            return;
+        }
+        for (i = 0; i < count; i++) {
+            /* A mask has nothing to cut away behind a list's things: it is clear. */
+            copy[i] = frame->index[i] == DOLL_MASK ? 0 : frame->index[i];
+        }
+        g.coin_w[g.coin_n] = frame->width;
+        g.coin_h[g.coin_n] = frame->height;
+        g.coin_px[g.coin_n++] = copy;
+    }
+}
+
+int bag_coin_frames(void)
+{
+    return g.trade == TRADE_BUY ? g.coin_n : 0;
+}
+
+int bag_coin_frame(void)
+{
+    return g.trade == TRADE_BUY && g.coin_n ? g.coin_frame : 0;
+}
+
+void bag_step(float dt)
+{
+    if (!g.open || g.trade != TRADE_BUY || g.coin_n < 2) {
+        return;
+    }
+    g.coin_time += dt;
+    while (g.coin_time >= COIN_DELAY) {
+        g.coin_time -= COIN_DELAY;
+        g.coin_frame = (g.coin_frame + 1) % g.coin_n;
+        g.changed = 1;
+    }
+}
+
 static void compose_list(int list)
 {
     const Inventory *inv;
@@ -589,6 +669,16 @@ static void compose_list(int list)
         it = &inv->item[i];
         cell_x = x + ARROW_W;
         cell_y = LIST_Y + row * CELL_H;
+        /* Buying: coins turn behind each thing, shelf and basket alike (BuyItemBackgroundAnimationHandler). */
+        if (g.trade == TRADE_BUY) {
+            if (!g.coins_read) {
+                coins_read();
+            }
+            if (g.coin_n) {
+                canvas_cutout(g.coin_px[g.coin_frame], g.coin_w[g.coin_frame], g.coin_h[g.coin_frame],
+                              cell_x + (CELL_W - g.coin_w[g.coin_frame]) / 2, cell_y + (CELL_H - g.coin_h[g.coin_frame]) / 2);
+            }
+        }
         icon = icon_of(it);
         if (icon) {
             canvas_cutout(icon->pixels, icon->w, icon->h, cell_x + (CELL_W - icon->w) / 2, cell_y + (CELL_H - icon->h) / 2);

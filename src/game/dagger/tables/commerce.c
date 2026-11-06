@@ -8,7 +8,8 @@ static const RecField g_building_fields[] = {
     REC_FIELD("open", REC_UINT, BuildingKind, open),
     REC_FIELD("close", REC_UINT, BuildingKind, close),
     REC_FIELD("stock_weapons", REC_UINT, BuildingKind, stock_weapons),
-    REC_FIELD("stock_armor", REC_UINT, BuildingKind, stock_armor)
+    REC_FIELD("stock_armor", REC_UINT, BuildingKind, stock_armor),
+    REC_FIELD("stock_clothing", REC_UINT, BuildingKind, stock_clothing)
 };
 const RecSchema building_schema = {
     "BLDG", "building", g_building_fields, (int)(sizeof(g_building_fields) / sizeof(g_building_fields[0])),
@@ -63,7 +64,7 @@ int building_is_shop(int type)
     const BuildingKind *b;
 
     b = building_kind(type);
-    return b && (b->stock_weapons || b->stock_armor);
+    return b && (b->stock_weapons || b->stock_armor || b->stock_clothing);
 }
 
 int building_open_at(int type, int hour)

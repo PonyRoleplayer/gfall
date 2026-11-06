@@ -10,8 +10,9 @@
  *   ITEM: an item template, by its index (DFU's ItemTemplates): name,
  *         weight, value, condition, pictures. The small cart 93 and the
  *         horse 94, the armour 102..112, the weapons 113..131, the letter
- *         of credit 275 and gold 276 for now; clothing, ingredients and
- *         the rest join when something uses them.
+ *         of credit 275 and gold 276, and the clothing 141..216 (men's
+ *         141..181, women's 182..216); ingredients and the rest join when
+ *         something uses them.
  *   WEAP: what a weapon template adds: its damage, its skill, and the
  *         WEAPON##.CIF its swing is drawn from.
  *   ARMR: what an armour template adds: the body part it covers or the
@@ -103,7 +104,26 @@ typedef struct ItemTemplate {
     df_u8 blunt;
     /* Paper doll layers go on lowest first (DFU's drawOrderOrEffect). */
     df_u8 draw_order;
+    /*
+     * How rare it is and how many looks it has (DFU's rarity and variants): a shop stocks it only when its
+     * quality is at least the rarity; its variant 0..variants-1 adds to the paper doll record. Set for
+     * clothing; 0 for the weapons and armour, whose rarity and looks the code knows (shop.c, inventory.c).
+     */
+    df_u8 rarity;
+    df_u8 variants;
 } ItemTemplate;
+
+/* The clothing templates: men's 141..181, women's 182..216. */
+#define ITEM_CLOTHING_FIRST 141
+#define ITEM_CLOTHING_LAST 216
+#define ITEM_WOMENS_FIRST 182
+/* What a new character starts in (DFU's AssignStartingGear): men a short shirt and casual pants, women a closed short shirt and casual pants. */
+#define ITEM_MENS_SHIRT 165
+#define ITEM_MENS_PANTS 151
+#define ITEM_WOMENS_SHIRT 206
+#define ITEM_WOMENS_PANTS 190
+/* 1 for a piece of clothing's template. */
+int item_is_clothing(int template_id);
 
 typedef struct WeaponTemplate {
     df_u16 id;

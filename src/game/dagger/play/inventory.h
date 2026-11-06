@@ -20,10 +20,11 @@
  * goes by body part, and it has more places to be worn than a pack has
  * slots.
  *
- * Weapons, armour and gold, for now. A one-handed weapon goes in the first
+ * Weapons, armour, clothing and gold, for now. A one-handed weapon goes in the first
  * free hand, and one hand or the other is the one in use (DFU's WeaponManager):
- * a shield in the left keeps the right in use. Clothing, jewellery and the
- * rest come when they mean something.
+ * a shield in the left keeps the right in use. Clothing (items.h) is worn over
+ * the body's underclothes in its own places, a cloak in the first free of two;
+ * jewellery and the rest come when they mean something.
  */
 
 #define INVENTORY_MAX 64
@@ -39,6 +40,11 @@ enum {
     EQUIP_LEFT_HAND,
     EQUIP_LEGS,
     EQUIP_FEET,
+    /* Clothing's own places (DFU's ChestClothes, LegsClothes, Cloak1, Cloak2); shoes and boots share the feet with armour's. */
+    EQUIP_CHEST_CLOTHES,
+    EQUIP_LEGS_CLOTHES,
+    EQUIP_CLOAK1,
+    EQUIP_CLOAK2,
     EQUIP_COUNT
 };
 
@@ -66,8 +72,16 @@ typedef struct Inventory {
     int use_left;
 } Inventory;
 
-/* An item of template in material, new. 0 when MAIN.DAT has no such template or material, or the template does not come in it. */
+/*
+ * An item of template in material, new. 0 when MAIN.DAT has no such template or material, or the template does not come in it.
+ * A piece of clothing has no material: whatever is given is let go, its weight, value and condition are its template's, and its look is
+ * variant 0 (item_make_clothing says another).
+ */
 int item_make(Item *it, int template_id, int material_id);
+/* A piece of clothing of template in that look (0..variants-1, clamped). 0 when template is no clothing. */
+int item_make_clothing(Item *it, int template_id, int variant);
+/* The place a piece of clothing goes (EQUIP_*), for the pack inv: a cloak in the first free of its two. -1 when it is none. */
+int item_clothing_place(const Inventory *inv, int template_id);
 /* "Iron Longsword": its material's name and its template's; gold and arrows by their template's alone. */
 void item_name(const Item *it, char *out, int cap);
 /* A weapon template by name, any case, spaces and dashes ignored ("dai katana"); -1 when none. */

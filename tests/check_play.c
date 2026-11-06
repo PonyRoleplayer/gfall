@@ -871,9 +871,9 @@ static void check_items(void)
     Item it;
     char name[48];
 
-    check_expect(item_table()->count == 35 && weapon_table()->count == 18 && armor_table()->count == 11
+    check_expect(item_table()->count == 35 + 76 && weapon_table()->count == 18 && armor_table()->count == 11
                      && material_table()->count == MATERIAL_COUNT && loot_table()->count == 21,
-                 "items: MAIN.DAT lacks classic's 34 items (a cart, a horse, 11 of armour, 18 swung, arrows, a letter of credit, gold) and a quest's parcel, 12 materials or 21 loot tables");
+                 "items: MAIN.DAT lacks classic's 34 items (a cart, a horse, 11 of armour, 18 swung, arrows, a letter of credit, gold), 76 pieces of clothing and a quest's parcel, 12 materials or 21 loot tables");
     check_expect(item_make(&it, ITEM_LONGSWORD, MATERIAL_IRON) && check_near(it.weight, 4.5f, 0.001f)
                      && it.value == 45 && it.condition_max == 800 && it.condition == 800,
                  "items: an iron longsword is not 4.5 kg, 45 gold, 800");
@@ -2570,17 +2570,21 @@ static void check_kit_and_words(void)
     char words[2048];
     int k;
 
-    kit_give(CLASS_WARRIOR, &pack);
-    check_expect(pack.gold == 100 && pack.count == 1 && inventory_weapon(&pack)->template_id == 118
+    kit_give(CLASS_WARRIOR, 0, &pack);
+    check_expect(pack.gold == 100 && pack.count == 3 && inventory_weapon(&pack)->template_id == 118
                      && inventory_weapon(&pack)->material == MATERIAL_IRON,
                  "kit: a warrior does not start with an iron broadsword and 100 gold");
-    kit_give(13, &pack);
-    check_expect(pack.count == 3 && inventory_weapon(&pack)->template_id == 130 && pack.item[2].template_id == ITEM_ARROW
+    kit_give(13, 0, &pack);
+    check_expect(pack.count == 5 && inventory_weapon(&pack)->template_id == 130 && pack.item[2].template_id == ITEM_ARROW
                      && pack.item[2].count == 24,
                  "kit: an archer does not start with a long bow, a battle axe and 24 arrows");
     for (k = 0; k < 18; k++) {
-        kit_give(k, &pack);
+        kit_give(k, k & 1, &pack);
         check_expect(inventory_weapon(&pack) != 0, "kit: a class starts with nothing in hand");
+        check_expect(pack.worn[EQUIP_CHEST_CLOTHES] >= 0 && pack.worn[EQUIP_LEGS_CLOTHES] >= 0
+                         && pack.item[pack.worn[EQUIP_CHEST_CLOTHES]].template_id == ((k & 1) ? ITEM_WOMENS_SHIRT : ITEM_MENS_SHIRT)
+                         && pack.item[pack.worn[EQUIP_LEGS_CLOTHES]].template_id == ((k & 1) ? ITEM_WOMENS_PANTS : ITEM_MENS_PANTS),
+                     "kit: a class does not start in its sex's shirt and pants");
     }
 
     check_expect(textrsc_read(career_race(RACE_ARGONIAN)->description, words, (int)sizeof(words)) > 100,
@@ -4596,8 +4600,8 @@ static void check_shop_and_court(void)
     shop.key.thing = 0xFE000000u;
 
     /* Today's stock: the same each look, and something on the shelf; a house has none. */
-    shop_stock(&shop, 1, 100, &stock, origin);
-    shop_stock(&shop, 1, 100, &again, origin2);
+    shop_stock(&shop, 1, 0, 100, &stock, origin);
+    shop_stock(&shop, 1, 0, 100, &again, origin2);
     check_expect(stock.count > 3 && stock.count == again.count && stock.item[0].template_id == again.item[0].template_id
                  && stock.item[0].material == again.item[0].material, "shop: an armorer's stock is not there, or not the same each look");
     /* Each trade's own goods, over many days: an armorer mostly armour, a smith mostly weapons, a general store no armour. */
@@ -4617,7 +4621,7 @@ static void check_shop_and_court(void)
             armor[t] = 0;
             weapons[t] = 0;
             for (day = 1000; day < 1040; day++) {
-                shop_stock(&one, 1, day, &again, origin2);
+                shop_stock(&one, 1, 0, day, &again, origin2);
                 for (i = 0; i < again.count; i++) {
                     armor[t] += armor_template(again.item[i].template_id) != 0;
                     weapons[t] += armor_template(again.item[i].template_id) == 0;
@@ -4630,17 +4634,17 @@ static void check_shop_and_court(void)
     }
     /* A thing taken stays gone today; tomorrow is a new stock. */
     shop_taken(&shop, origin[0]);
-    shop_stock(&shop, 1, 100, &again, origin2);
+    shop_stock(&shop, 1, 0, 100, &again, origin2);
     check_expect(again.count == stock.count - 1, "shop: a thing taken is back on the shelf");
-    shop_stock(&shop, 1, 101, &again, origin2);
+    shop_stock(&shop, 1, 0, 101, &again, origin2);
     check_expect(again.count > 0, "shop: a new day stocks nothing");
-    shop_stock(&shop, 1, 100, &stock, origin);
+    shop_stock(&shop, 1, 0, 100, &stock, origin);
     {
         Shop bank;
 
         bank = shop;
         bank.type = BUILDING_BANK;
-        shop_stock(&bank, 1, 100, &again, origin2);
+        shop_stock(&bank, 1, 0, 100, &again, origin2);
         check_expect(again.count == 0, "shop: a bank has weapons on its shelves");
     }
     /* What it deals in. */
@@ -4659,6 +4663,35 @@ static void check_shop_and_court(void)
     check_expect(bag_open_trade(&p, &shop, TRADE_BUY, 100), "shop: its screen did not open");
     bag_compose();
     write_screen("build/shop0.ppm", bag_pixels());
+    /* Coins turn behind what is for sale: frames from TEXTURE.434, a new one each 0.08 s, the screen changed by each. */
+    {
+        static df_u8 first[320 * 200];
+        int frames;
+        int differs;
+        int k;
+
+        frames = bag_coin_frames();
+        check_expect(frames >= 2 && bag_coin_frame() == 0, "shop: no coins turn behind the shelf");
+        memcpy(first, bag_pixels(), sizeof(first));
+        bag_changed();
+        bag_step(0.05f);
+        check_expect(!bag_changed() && bag_coin_frame() == 0, "shop: the coins turned before 0.08 s");
+        bag_step(0.05f);
+        check_expect(bag_changed() && bag_coin_frame() == 1, "shop: the coins did not turn at 0.08 s");
+        bag_compose();
+        differs = 0;
+        for (k = 0; k < 320 * 200; k++) {
+            differs += first[k] != bag_pixels()[k];
+        }
+        check_expect(differs > 20, "shop: the next frame of coins draws nothing different");
+        for (k = 0; k < frames * 3; k++) {
+            bag_step(0.081f);
+        }
+        check_expect(bag_coin_frame() < frames, "shop: the coins' frame runs past the last");
+        bag_compose();
+        write_screen("build/shop0_coins.ppm", bag_pixels());
+        printf("shop: %d frames of coins behind the shelf and the basket\n", frames);
+    }
     {
         int before_gold;
 
@@ -4676,7 +4709,7 @@ static void check_shop_and_court(void)
         }
     }
     bag_close();
-    shop_stock(&shop, 1, 100, &again, origin2);
+    shop_stock(&shop, 1, 0, 100, &again, origin2);
     check_expect(again.count == stock.count - 1, "shop: a thing bought is back on the shelf");
 
     /* The wheel: a list of more than a screen rolls by notches, within its ends. The top row's item is what a click gets. */
@@ -7180,6 +7213,156 @@ static void check_foe_spells(void)
     dunstream_close();
 }
 
+/* Clothes: the templates, where each is worn, their pictures by sex and body, the doll in them, a clothing store's shelves. */
+static void check_clothing(void)
+{
+    static df_u8 pixels[DOLL_W * DOLL_H];
+    static df_u8 owner[DOLL_W * DOLL_H];
+    static df_u8 naked[DOLL_W * DOLL_H];
+    Character c;
+    Inventory pack;
+    Inventory stock;
+    Item it;
+    Shop shop;
+    df_u8 origin[INVENTORY_MAX];
+    char name[48];
+    int archive;
+    int record;
+    int k;
+    int n;
+    int day;
+    int women;
+    int cloth;
+
+    /* The templates: DFU's weight, price, rarity, looks and draw order. */
+    check_expect(item_template(165) && df_eq(item_template(165)->name, "Short Shirt") && item_template(165)->weight == 0.5f
+                     && item_template(165)->price == 5 && item_template(165)->rarity == 1 && item_template(165)->variants == 5
+                     && item_template(165)->draw_order == 40 && item_template(165)->player_archive == 239,
+                 "clothing: a men's short shirt is not DFU's");
+    check_expect(item_template(195) && df_eq(item_template(195)->name, "Evening Gown") && item_template(195)->weight == 2.5f
+                     && item_template(195)->player_archive == 235,
+                 "clothing: an evening gown is not DFU's");
+    check_expect(item_is_clothing(141) && item_is_clothing(216) && !item_is_clothing(131) && !item_is_clothing(217), "clothing: the range is not 141 to 216");
+    /* One made: its look clamped, weight and value its template's, no material in its name. */
+    check_expect(item_make_clothing(&it, 165, 3) && it.variant == 3 && it.weight == 0.5f && it.value == 5 && it.condition == it.condition_max
+                     && it.condition > 0,
+                 "clothing: a made shirt is not its template's");
+    item_make_clothing(&it, 165, 99);
+    check_expect(it.variant == 4, "clothing: a look past the last is not the last");
+    item_name(&it, name, (int)sizeof(name));
+    check_expect(df_eq(name, "Short Shirt"), "clothing: a shirt is named with a material");
+    check_expect(!item_make_clothing(&it, 120, 0), "clothing: a sword is made clothing");
+    check_expect(item_make(&it, 151, MATERIAL_EBONY) && it.template_id == 151 && it.value == 5, "clothing: item_make does not make clothes");
+    /* The picture: the template's archive moved by the wearer's body shape, its record by the look. */
+    item_make_clothing(&it, 165, 2);
+    check_expect(item_picture(&it, RACE_BRETON, 0, &archive, &record) && archive == 239 + 2 && record == 50 + 2, "clothing: a Breton man's shirt picture");
+    check_expect(item_picture(&it, RACE_ARGONIAN, 0, &archive, &record) && archive == 239, "clothing: an Argonian's shirt is not archive 239");
+    check_expect(item_picture(&it, RACE_KHAJIIT, 0, &archive, &record) && archive == 239 + 3, "clothing: a Khajiit's shirt is not archive 242");
+    item_make_clothing(&it, 206, 0);
+    check_expect(item_picture(&it, RACE_DARK_ELF, 1, &archive, &record) && archive == 235 + 1, "clothing: a Dark Elf woman's shirt is not archive 236");
+    /* Where each is worn. */
+    inventory_clear(&pack);
+    item_make_clothing(&it, 165, 0);
+    check_expect(inventory_wear(&pack, inventory_add(&pack, &it)) && pack.worn[EQUIP_CHEST_CLOTHES] == 0, "clothing: a shirt is not worn on the chest");
+    item_make_clothing(&it, 151, 0);
+    inventory_wear(&pack, inventory_add(&pack, &it));
+    check_expect(pack.worn[EQUIP_LEGS_CLOTHES] == 1, "clothing: pants are not worn on the legs");
+    item_make_clothing(&it, 149, 0);
+    inventory_wear(&pack, inventory_add(&pack, &it));
+    check_expect(pack.worn[EQUIP_FEET] == 2, "clothing: boots are not worn on the feet");
+    item_make(&it, ITEM_BOOTS, MATERIAL_IRON);
+    inventory_wear(&pack, inventory_add(&pack, &it));
+    check_expect(pack.worn[EQUIP_FEET] == 3 && inventory_worn_at(&pack, 2) == -1, "clothing: armour's boots do not take the feet from a clothing pair");
+    item_make_clothing(&it, 154, 0);
+    inventory_wear(&pack, inventory_add(&pack, &it));
+    item_make_clothing(&it, 155, 0);
+    inventory_wear(&pack, inventory_add(&pack, &it));
+    check_expect(pack.worn[EQUIP_CLOAK2] == 4 && pack.worn[EQUIP_CLOAK1] == 5, "clothing: two cloaks do not take the second place, then the first");
+    item_make_clothing(&it, 154, 1);
+    inventory_wear(&pack, inventory_add(&pack, &it));
+    check_expect(pack.worn[EQUIP_CLOAK2] == 6 && pack.worn[EQUIP_CLOAK1] == 5, "clothing: a third cloak does not replace the second place's");
+    check_expect(item_clothing_place(&pack, 186) == EQUIP_FEET && item_clothing_place(&pack, 213) == EQUIP_LEGS_CLOTHES
+                     && item_clothing_place(&pack, 195) == EQUIP_CHEST_CLOTHES && item_clothing_place(&pack, 120) == -1,
+                 "clothing: a woman's shoes, tights and gown, and a sword, are not placed");
+    /* Broken clothes are not worn. */
+    inventory_clear(&pack);
+    item_make_clothing(&it, 165, 0);
+    it.condition = 0;
+    check_expect(!inventory_wear(&pack, inventory_add(&pack, &it)), "clothing: a worn-out shirt was put on");
+    /* The doll in a shirt: more pixels than the bare doll, and the shirt's own. */
+    character_new(&c, RACE_BRETON, CLASS_WARRIOR, 0, "Test");
+    inventory_clear(&pack);
+    check_expect(doll_compose(naked, owner, &c, &pack), "clothing: no bare doll");
+    item_make_clothing(&it, 165, 0);
+    inventory_wear(&pack, inventory_add(&pack, &it));
+    item_make_clothing(&it, 154, 0);
+    inventory_wear(&pack, inventory_add(&pack, &it));
+    check_expect(doll_compose(pixels, owner, &c, &pack), "clothing: no dressed doll");
+    n = 0;
+    cloth = 0;
+    for (k = 0; k < DOLL_W * DOLL_H; k++) {
+        n += pixels[k] != naked[k];
+        cloth += owner[k] == EQUIP_CHEST_CLOTHES || owner[k] == EQUIP_CLOAK2;
+    }
+    check_expect(n > 200 && cloth > 200, "clothing: a shirt and a cloak do not show on the doll");
+    doll_forget_files();
+    /* A clothing store: a shop now, its shelves the player's sex's clothes only and the same each look, a sword not bought there. */
+    check_expect(building_is_shop(BUILDING_CLOTHING) && building_kind(BUILDING_CLOTHING)->stock_clothing == 50
+                     && building_kind(BUILDING_GENERAL)->stock_clothing == 10,
+                 "clothing: a clothing store is no shop, or its chance number is not 50");
+    keep_clear();
+    standing_new_game(5u);
+    loot_new_game(4242u);
+    mem_zero(&shop, sizeof(shop));
+    shop.type = BUILDING_CLOTHING;
+    shop.quality = 12;
+    shop.prices = 1000;
+    shop.key.place = (3u << 30) | 321u;
+    shop.key.thing = 0xFE000000u;
+    for (women = 0; women < 2; women++) {
+        int wrong;
+        int many;
+
+        shop_stock(&shop, 1, women, 100, &stock, origin);
+        wrong = 0;
+        many = 0;
+        for (k = 0; k < stock.count; k++) {
+            many += item_is_clothing(stock.item[k].template_id)
+                    && stock.item[k].variant < (item_template(stock.item[k].template_id)->variants ? item_template(stock.item[k].template_id)->variants : 1);
+            wrong += !item_is_clothing(stock.item[k].template_id) || (stock.item[k].template_id >= ITEM_WOMENS_FIRST) != (women != 0)
+                     || item_template(stock.item[k].template_id)->rarity > 12;
+        }
+        check_expect(stock.count >= 8 && many == stock.count && wrong == 0,
+                     "clothing: a clothing store's shelves are not its player's sex's clothes in a quality it can have");
+        printf("clothing: a %s's clothing store, quality 12, stocks %d pieces\n", women ? "woman" : "man", stock.count);
+    }
+    {
+        Inventory again;
+        df_u8 origin2[INVENTORY_MAX];
+
+        shop_stock(&shop, 1, 0, 100, &stock, origin);
+        shop_stock(&shop, 1, 0, 100, &again, origin2);
+        check_expect(stock.count == again.count && stock.item[0].template_id == again.item[0].template_id
+                         && stock.item[0].variant == again.item[0].variant,
+                     "clothing: a shelf changes between two looks");
+        n = 0;
+        for (day = 101; day < 110; day++) {
+            shop_stock(&shop, 1, 0, day, &again, origin2);
+            n += again.count != stock.count || again.item[0].template_id != stock.item[0].template_id;
+        }
+        check_expect(n > 0, "clothing: no day's shelf differs from another's");
+    }
+    item_make_clothing(&it, 165, 0);
+    check_expect(shop_buys(&shop, &it), "clothing: a clothing store does not buy a shirt");
+    item_make(&it, ITEM_LONGSWORD, MATERIAL_IRON);
+    check_expect(!shop_buys(&shop, &it), "clothing: a clothing store buys a sword");
+    shop.type = BUILDING_GENERAL;
+    item_make_clothing(&it, 165, 0);
+    check_expect(shop_buys(&shop, &it), "clothing: a general store does not buy a shirt");
+    shop.type = BUILDING_ARMORER;
+    check_expect(!shop_buys(&shop, &it), "clothing: an armorer buys a shirt");
+}
+
 /* A world for projectile.c: a wall across x = wall_x, and a ball of radius r at ball. */
 typedef struct FlightWorld {
     float wall_x;
@@ -8177,7 +8360,7 @@ static void check_riding(void)
     shop.prices = 1000;
     shop.key.place = (3u << 30) | 77u;
     shop.key.thing = 0xFE000000u;
-    shop_stock(&shop, 1, 500, &stock, origin);
+    shop_stock(&shop, 1, 0, 500, &stock, origin);
     horses = 0;
     carts = 0;
     for (i = 0; i < stock.count; i++) {
@@ -9875,6 +10058,7 @@ void check_play(void)
     check_foe_spells();
     check_magic_save();
     check_spellbook();
+    check_clothing();
     check_maker();
     check_castfx();
     check_projectile();

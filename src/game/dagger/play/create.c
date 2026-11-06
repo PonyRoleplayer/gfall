@@ -1777,7 +1777,7 @@ int create_result(Character *sheet, Inventory *pack)
     character_attributes_changed(sheet);
     character_rest_full(sheet);
     character_start_levelling(sheet);
-    kit_give(g.klass, pack);
+    kit_give(g.klass, sheet->female, pack);
     /* Gold never goes below nothing (BiogFile). */
     pack->gold = g.gold_gain < 0 && (df_u32)(-g.gold_gain) > pack->gold ? 0u : pack->gold + (df_u32)g.gold_gain;
     for (i = 0; i < g.answered_items.count; i++) {
@@ -1791,6 +1791,6 @@ int create_default(Character *sheet, Inventory *pack)
     if (!character_new(sheet, CHARACTER_START_RACE, CHARACTER_START_CLASS, CHARACTER_START_FEMALE, "Player")) {
         return 0;
     }
-    kit_give(CHARACTER_START_CLASS, pack);
+    kit_give(CHARACTER_START_CLASS, CHARACTER_START_FEMALE, pack);
     return 1;
 }

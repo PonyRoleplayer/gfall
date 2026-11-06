@@ -24,6 +24,25 @@ static int comes_in(int template_id, int material_id)
     return 1;
 }
 
+int item_make_clothing(Item *it, int template_id, int variant)
+{
+    const ItemTemplate *t;
+
+    t = item_template(template_id);
+    if (!t || !item_is_clothing(template_id)) {
+        return 0;
+    }
+    mem_zero(it, sizeof(*it));
+    it->template_id = t->id;
+    it->count = 1;
+    it->value = t->price;
+    it->weight = t->weight;
+    it->condition_max = t->hit_points;
+    it->condition = it->condition_max;
+    it->variant = (df_u8)(variant < 0 ? 0 : (t->variants && variant >= t->variants ? t->variants - 1 : variant));
+    return 1;
+}
+
 int item_make(Item *it, int template_id, int material_id)
 {
     const ItemTemplate *t;
@@ -35,6 +54,9 @@ int item_make(Item *it, int template_id, int material_id)
     int lowest;
     int highest;
 
+    if (item_is_clothing(template_id)) {
+        return item_make_clothing(it, template_id, 0);
+    }
     t = item_template(template_id);
     m = material(material_id);
     if (!t || !m || !comes_in(template_id, material_id)) {
@@ -72,6 +94,13 @@ void item_variants(const Item *it, int *low, int *high)
 
     *low = 0;
     *high = 0;
+    if (item_is_clothing(it->template_id)) {
+        const ItemTemplate *t;
+
+        t = item_template(it->template_id);
+        *high = t && t->variants ? t->variants - 1 : 0;
+        return;
+    }
     a = armor_template(it->template_id);
     if (!a) {
         return;
@@ -124,6 +153,10 @@ int item_picture(const Item *it, int race, int female, int *archive, int *record
     if (armor_template(it->template_id)) {
         *archive = (female ? ARCHIVE_FEMALE : ARCHIVE_MALE) + body_shape(race);
         *record = t->player_record + it->variant;
+    } else if (item_is_clothing(it->template_id)) {
+        /* The template's archive is the first body shape's; the wearer's moves it (SetRace). */
+        *archive = t->player_archive + body_shape(race);
+        *record = t->player_record + it->variant;
     } else if (t->player_archive) {
         *archive = t->player_archive;
         *record = t->player_record + it->variant;
@@ -141,7 +174,7 @@ void item_name(const Item *it, char *out, int cap)
 
     t = item_template(it->template_id);
     m = material(it->material);
-    if (it->template_id == ITEM_GOLD || it->template_id == ITEM_ARROW) {
+    if (it->template_id == ITEM_GOLD || it->template_id == ITEM_ARROW || item_is_clothing(it->template_id)) {
         log_format(out, cap, "%s", t ? t->name : "?");
         return;
     }
@@ -291,6 +324,33 @@ static int place_of_armor(const ArmorTemplate *a)
     }
 }
 
+int item_clothing_place(const Inventory *inv, int template_id)
+{
+    int kind;
+
+    if (!item_is_clothing(template_id)) {
+        return -1;
+    }
+    /* By DFU's ItemEquipTable: shoes, boots and sandals the feet; trousers, skirts and the like the legs; cloaks; all else the chest. */
+    if (template_id >= ITEM_WOMENS_FIRST) {
+        kind = template_id >= 186 && template_id <= 189 ? EQUIP_FEET
+             : (template_id == 190 || template_id == 193 || template_id == 199 || template_id == 211 || template_id == 212 || template_id == 213)
+                   ? EQUIP_LEGS_CLOTHES
+                   : (template_id == 191 || template_id == 192 ? EQUIP_CLOAK2 : EQUIP_CHEST_CLOTHES);
+    } else {
+        kind = template_id >= 147 && template_id <= 150 ? EQUIP_FEET
+             : (template_id == 151 || template_id == 152 || template_id == 153 || template_id == 156 || template_id == 162
+                || template_id == 174 || template_id == 175)
+                   ? EQUIP_LEGS_CLOTHES
+                   : (template_id == 154 || template_id == 155 ? EQUIP_CLOAK2 : EQUIP_CHEST_CLOTHES);
+    }
+    /* A cloak goes in the first free of its two places, the second to be taken first (GetFirstSlot(Cloak2, Cloak1)). */
+    if (kind == EQUIP_CLOAK2 && inv->worn[EQUIP_CLOAK2] >= 0 && inv->worn[EQUIP_CLOAK1] < 0) {
+        kind = EQUIP_CLOAK1;
+    }
+    return kind;
+}
+
 /* What is in hand takes both: a template that is not one-handed. */
 static int is_two_handed(const Inventory *inv, int i)
 {
@@ -326,6 +386,14 @@ int inventory_wear(Inventory *inv, int i)
 
     if (i < 0 || i >= inv->count) {
         return 0;
+    }
+    if (item_is_clothing(inv->item[i].template_id)) {
+        place = item_clothing_place(inv, inv->item[i].template_id);
+        if (place < 0 || item_broken(&inv->item[i])) {
+            return 0;
+        }
+        inv->worn[place] = i;
+        return 1;
     }
     a = armor_template(inv->item[i].template_id);
     if (!a) {

@@ -224,6 +224,28 @@ static void add_armor(Inventory *out, int level, Dice *d)
     }
 }
 
+/* Whose clothes loot holds: a woman's templates or a man's. */
+static int g_female;
+
+void loot_set_sex(int female)
+{
+    g_female = female != 0;
+}
+
+/* A random piece of clothing of the player's sex (ItemBuilder.CreateRandomClothing): any template alike, in any of its looks. */
+static void add_clothing(Inventory *out, Dice *d)
+{
+    Item it;
+    const ItemTemplate *t;
+    int id;
+
+    id = g_female ? dice_between(d, ITEM_WOMENS_FIRST, ITEM_CLOTHING_LAST) : dice_between(d, ITEM_CLOTHING_FIRST, ITEM_WOMENS_FIRST - 1);
+    t = item_template(id);
+    if (t && item_make_clothing(&it, id, dice_between(d, 0, t->variants > 0 ? t->variants - 1 : 0))) {
+        inventory_add(out, &it);
+    }
+}
+
 void loot_roll(Inventory *out, const LootChance *table, int level, df_u32 seed)
 {
     Dice d;
@@ -241,6 +263,9 @@ void loot_roll(Inventory *out, const LootChance *table, int level, df_u32 seed)
     }
     for (chance = table->armor; chance > 0 && dice_roll(&d, 100) < chance; chance /= 2) {
         add_armor(out, level, &d);
+    }
+    for (chance = table->clothing; chance > 0 && dice_roll(&d, 100) < chance; chance /= 2) {
+        add_clothing(out, &d);
     }
 }
 

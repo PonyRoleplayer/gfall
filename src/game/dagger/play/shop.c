@@ -57,7 +57,7 @@ static Keep *row_for_today(const Shop *shop, int day)
     return row;
 }
 
-void shop_stock(const Shop *shop, int level, int day, Inventory *out, df_u8 *origin)
+void shop_stock(const Shop *shop, int level, int female, int day, Inventory *out, df_u8 *origin)
 {
     const BuildingKind *kind;
     const Keep *row;
@@ -108,6 +108,9 @@ void shop_stock(const Shop *shop, int level, int day, Inventory *out, df_u8 *ori
             mod = kind->stock_weapons;
         } else if (armor_template(it->id)) {
             mod = kind->stock_armor;
+        } else if (item_is_clothing(it->id)) {
+            /* Only the player's sex's clothes; their own pass follows below. */
+            continue;
         } else {
             continue;
         }
@@ -139,6 +142,45 @@ void shop_stock(const Shop *shop, int level, int day, Inventory *out, df_u8 *ori
             }
         }
     }
+    /*
+     * The clothes: the player's sex's templates, each rolled twice (DFU's two clothing groups both turn into the player's own),
+     * no rarer than the shop's quality, at its clothing chance number; each made in a look the roll chooses.
+     */
+    if (kind->stock_clothing) {
+        int pass;
+
+        for (pass = 0; pass < 2; pass++) {
+            for (i = 0; i < t->count && thing < SHOP_STOCK_MAX; i++) {
+                const ItemTemplate *it;
+                int chance;
+
+                it = (const ItemTemplate *)(t->rows + (df_u32)i * t->schema->row_size);
+                if (!item_is_clothing(it->id) || (it->id >= ITEM_WOMENS_FIRST) != (female != 0) || it->rarity > shop->quality) {
+                    continue;
+                }
+                chance = kind->stock_clothing * 5 * (21 - it->rarity) / 100;
+                seed = mix(seed);
+                if ((int)((seed >> 8) % 100u) >= chance) {
+                    continue;
+                }
+                seed = mix(seed);
+                {
+                    Item made;
+
+                    if (item_make_clothing(&made, it->id, it->variants ? (int)((seed >> 8) % (df_u32)it->variants) : 0)
+                        && !(taken[thing >> 5] & (1u << (thing & 31)))) {
+                        int at;
+
+                        at = inventory_add(out, &made);
+                        if (at >= 0) {
+                            origin[at] = (df_u8)thing;
+                        }
+                    }
+                    thing++;
+                }
+            }
+        }
+    }
 }
 
 void shop_taken(const Shop *shop, int origin)
@@ -164,13 +206,16 @@ int shop_buys(const Shop *shop, const Item *it)
     weapon = weapon_template(it->template_id) != 0 || it->template_id == ITEM_ARROW;
     armor = armor_template(it->template_id) != 0;
     switch (shop->type) {
+    case BUILDING_CLOTHING:
+        return item_is_clothing(it->template_id);
     case BUILDING_ARMORER:
     case BUILDING_WEAPONS:
-    case BUILDING_PAWN:
         return weapon || armor;
+    case BUILDING_PAWN:
+        return weapon || armor || item_is_clothing(it->template_id);
     case BUILDING_GENERAL:
-        /* ItemTypesAccepted's general store: weapons, and transport. */
-        return weapon || it->template_id == ITEM_HORSE || it->template_id == ITEM_CART;
+        /* ItemTypesAccepted's general store: weapons, clothing, and transport. */
+        return weapon || item_is_clothing(it->template_id) || it->template_id == ITEM_HORSE || it->template_id == ITEM_CART;
     default:
         return 0;
     }

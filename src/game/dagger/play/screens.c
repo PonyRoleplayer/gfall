@@ -668,11 +668,12 @@ static int court_frame(const Input *in, float dt)
 }
 
 /* A frame of the inventory. */
-static int bag_frame(const Input *in)
+static int bag_frame(const Input *in, float dt)
 {
     int vk;
 
     bag_point(g_point_x, g_point_y);
+    bag_step(dt);
     if (in->wheel) {
         bag_wheel(g_point_x, g_point_y, in->wheel);
     }
@@ -782,7 +783,7 @@ int screens_frame(const Input *in, float dt)
     input_pointer(&px, &py);
     screen_from_pointer(px, py, &g_point_x, &g_point_y);
     if (g_open == OPEN_BAG) {
-        asked = bag_frame(in);
+        asked = bag_frame(in, dt);
     } else if (g_open == OPEN_SHEET) {
         asked = sheet_frame(in);
     } else if (g_open == OPEN_REST) {

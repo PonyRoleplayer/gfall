@@ -84,6 +84,8 @@ typedef struct BuildingKind {
     df_u8 close;
     df_u8 stock_weapons;
     df_u8 stock_armor;
+    /* The chance number of its clothing (DFU's chanceMod: 50 a clothing store, 10 a general store), the player's sex's clothes twice over. */
+    df_u8 stock_clothing;
 } BuildingKind;
 
 typedef struct CrimeKind {

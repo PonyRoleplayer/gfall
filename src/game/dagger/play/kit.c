@@ -1,5 +1,6 @@
 #include "game/dagger/play/kit.h"
 #include "game/dagger/tables/items.h"
+#include "game/dagger/play/combat.h"
 
 /* See kit.h. */
 
@@ -44,7 +45,27 @@ static const ClassWeapon g_class_weapon[18] = {
     { ITEM_LONGSWORD, MATERIAL_IRON }  /* Knight */
 };
 
-void kit_give(int klass, Inventory *pack)
+/* The shirt and pants a new character is dressed in, worn. */
+static void dress(int female, Inventory *pack)
+{
+    Item it;
+    int shirt;
+    int pants;
+    int look;
+
+    shirt = female ? ITEM_WOMENS_SHIRT : ITEM_MENS_SHIRT;
+    pants = female ? ITEM_WOMENS_PANTS : ITEM_MENS_PANTS;
+    if (item_make_clothing(&it, shirt, 0)) {
+        inventory_wear(pack, inventory_add(pack, &it));
+    }
+    /* The pants' look is rolled, among as many as the template has. */
+    look = item_template(pants) && item_template(pants)->variants ? combat_roll(item_template(pants)->variants) : 0;
+    if (item_make_clothing(&it, pants, look)) {
+        inventory_wear(pack, inventory_add(pack, &it));
+    }
+}
+
+void kit_give(int klass, int female, Inventory *pack)
 {
     Item it;
 
@@ -55,6 +76,7 @@ void kit_give(int klass, Inventory *pack)
         if (item_make(&it, ITEM_LONGSWORD, MATERIAL_IRON)) {
             inventory_equip(pack, inventory_add(pack, &it));
         }
+        dress(female, pack);
         return;
     }
     if (item_make(&it, g_class_weapon[klass].weapon, g_class_weapon[klass].material)) {
@@ -69,4 +91,5 @@ void kit_give(int klass, Inventory *pack)
             inventory_add(pack, &it);
         }
     }
+    dress(female, pack);
 }

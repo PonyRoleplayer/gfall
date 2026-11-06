@@ -15,7 +15,9 @@ static const RecField g_item_fields[] = {
     I("player_record", REC_UINT, player_record),
     I("one_handed", REC_UINT, one_handed),
     I("blunt", REC_UINT, blunt),
-    I("draw_order", REC_UINT, draw_order)
+    I("draw_order", REC_UINT, draw_order),
+    I("rarity", REC_UINT, rarity),
+    I("variants", REC_UINT, variants)
 };
 #undef I
 const RecSchema item_schema = {
@@ -186,4 +188,9 @@ const LootChance *dungeon_loot(int dungeon_type)
 const Material *material(int id)
 {
     return id < 0 ? 0 : (const Material *)rec_row(material_table(), id);
+}
+
+int item_is_clothing(int template_id)
+{
+    return template_id >= ITEM_CLOTHING_FIRST && template_id <= ITEM_CLOTHING_LAST;
 }

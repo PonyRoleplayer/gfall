@@ -11,8 +11,9 @@
  *
  * Shelves hold no list. Today's stock is worked out from the game's seed, the
  * shop and the day (DaggerfallLoot's StockShopShelf, for the weapons and armour
- * the game has): each template no rarer than the shop's quality, with its
- * building's chance number. Its keep row (keep.h) holds the only state there
+ * the game has, and the clothes): each template no rarer than the shop's quality, with its
+ * building's chance number. A shop's clothes are the player's sex's, each template rolled twice (DFU turns both of
+ * its clothing groups into the player's own). Its keep row (keep.h) holds the only state there
  * is: the day it was stocked and a bit for each thing bought or stolen. So
  * a town of shops costs no memory until a shelf is looked at, and a new day
  * stocks a shop anew.
@@ -37,8 +38,8 @@ typedef struct Shop {
     int repair_rank;
 } Shop;
 
-/* Today's stock for a player of this level, into out; origin[i] says which rolled thing out's item i is. */
-void shop_stock(const Shop *shop, int level, int day, Inventory *out, df_u8 *origin);
+/* Today's stock for a player of this level, a woman (female) or a man, into out; origin[i] says which rolled thing out's item i is. */
+void shop_stock(const Shop *shop, int level, int female, int day, Inventory *out, df_u8 *origin);
 /* Thing number origin taken: it stays gone until the shop stocks anew. */
 void shop_taken(const Shop *shop, int origin);
 /* 1 when this shop deals in this thing: Daggerfall Unity's ItemTypesAccepted, for what the game has. */

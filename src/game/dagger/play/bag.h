@@ -71,6 +71,16 @@ int bag_at_wagon(void);
 int bag_stole(void);
 /* Closes it: what was dropped lands, what was searched keeps what is left. */
 void bag_close(void);
+/*
+ * Time on: while buying (a shop's shelves and the basket) every thing in either list has coins
+ * turning behind it, DFU's coins animation (TEXTURE.434 record 6, a frame every 0.08 s), which
+ * says that this is a purchase. A step that changes the frame makes the screen changed. Costs a
+ * compose and a send of the screen every 0.08 s while buying; not yet measured on the 233.
+ */
+void bag_step(float dt);
+/* For the tests: how many frames the coins have, and the one showing (0 outside buying). */
+int bag_coin_frames(void);
+int bag_coin_frame(void);
 /* Composes the screen, whatever bag_changed says; the pixels are bag_pixels'. */
 void bag_compose(void);
 /* The composed screen: 320 x 200 palette indices under ART_PAL.COL, row 0 at the top. */

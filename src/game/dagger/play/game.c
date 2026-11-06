@@ -2303,6 +2303,8 @@ void game_enter(const Level *level, Camera *cam, const TravelPose *at)
     overlay_set_mode(g_mode);
     /* Who creation made or the save holds, and what they carry (game_frame set these). */
     player_init(&g_player, &g_new_sheet);
+    /* What loot holds in the way of clothes is this player's sex's. */
+    loot_set_sex(g_new_sheet.female);
     g_player.pack = g_new_pack;
     player_wear_changed(&g_player);
     show_face();

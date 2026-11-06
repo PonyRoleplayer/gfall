@@ -47,7 +47,9 @@ int loot_metal(int level, int roll);
 int loot_make_for_level(Item *it, int template_id, int level, df_u32 seed);
 /* A stack of gold as a thing that lies in a list, coins of it: 0 when it could not be made. */
 int loot_gold_item(Item *it, int coins);
-/* Rolls a body's things into out, emptied first, from seed: the same seed, table and level give the same things. */
+/* Whose sex the clothes found are: 1 for a woman (their clothes are women's templates), 0 for a man. Set when a game starts or loads. */
+void loot_set_sex(int female);
+/* Rolls a body's things into out, emptied first, from seed: the same seed, table and level give the same things. Clothes come last, the player's sex's. */
 void loot_roll(Inventory *out, const LootChance *table, int level, df_u32 seed);
 /*
  * What a class enemy wears and carries (DFU's AssignEnemyStartingEquipment),

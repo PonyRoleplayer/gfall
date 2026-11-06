@@ -195,6 +195,8 @@ MAIN.DAT's `NAME` (`tables/names.c`), cooked on the first run from ARENA2's NAME
 ### Shops
 `play/shop.c` and the inventory screen's trade modes (`bag_open_trade`).
 - **Shelves are models** (`DaggerfallInterior`'s furniture numbers past 41000), `USE_OTHER`/`OTHER_SHELF` usables in any building; the game asks whether it is a shop. A house's chests and cupboards are the same kind of model, `OTHER_CONTAINER` (Steal and theft).
+- **Clothing stores are shops** (`BLDG`'s `stock_clothing`: 50 a clothing store, 10 a general store; `building_is_shop` counts it). A shop's clothes are the player's sex's templates, each rolled twice (DFU's two clothing groups both turn into the player's), no rarer than the quality, at `chance x 5 x (21 - rarity) / 100`, each in a look the roll picks. A clothing store buys clothing; so do a general store and a pawn shop (DFU's accepted groups).
+- **Coins turn behind what is for sale.** While buying, every thing in the shelf's list and the basket has DFU's coins animation behind it (TEXTURE.434 record 6, eight frames, one each 0.08 s: `bag_step`), the sign that this is a purchase. It makes the screen change, so composes it and sends it to the card every 0.08 s while buying: unmeasured on the 233, and the one place the inventory is not still.
 - **Stock holds no list.** Today's comes from the game's seed, the shop's key and the day: each template no rarer than the quality, by `BLDG`'s chance number, `chance x 5 x (21 - rarity) / 100`. Its keep row holds the day and a bit for each thing taken, so a town of shops costs no memory, and a new day stocks anew. Only weapons and armour are stocked: nothing else exists yet.
 - **Buying** moves things from the shelves on the right to the basket on the left, then Buy pays `rules_trade_price` of the sums' cost. **Selling** lays things from the pack on the counter on the right, which gives back what is not sold when the screen closes. **Repair** is the same, at a tenth of the value costed; it is instant here, where classic takes days.
 - **Steal:** seen by `rules_shoplift_chance`, the basket left behind and the court next. Unseen, it is taken free.
@@ -909,7 +911,7 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 - **Wear** (`item_wear_down`, FormulaHelper). A blow that takes health wears the weapon, and a creature's blow what covers the part it lands on, a shield before armour: (10 × damage + 50) / 100, and with none a one in five chance of 1. Worn out it comes off, says so, and cannot go back on.
 - **What a class allows** (`character_refuses`, DFCareer's bits): forbidden weapon groups, leather, chain and plate, each shield, and metals. The inventory and `equip` refuse them. A class's forbidding does not stop a thing being carried.
 
-**Not yet:** clothing, jewellery and everything else in the other tabs, class enemies wearing what they carry.
+**Clothing (built, host-tested, 2026-11-06).** DFU's 76 templates (men's 141 to 181, women's 182 to 216) are rows of `ITEM` with a rarity and a count of looks (variants) each, which weapons and armour leave at 0 (their rarity and looks the code knows). A piece has no material: its weight, price and condition are its template's, its name is the template's alone, `item_make_clothing(template, look)` makes it and `item_make` of a clothing template does the same. **Where it is worn** (DFU's ItemEquipTable, `item_clothing_place`): the chest (shirts, tunics, robes, dresses, straps and the like), the legs (pants, breeches, skirts, loincloths, tights, wraps, the Khajiit suit), the feet (shoes, boots, sandals: the same place armour's boots take, one or the other), and a cloak in the second of two cloak places, the first when the second is full, the second again when both are. They are four new `EQUIP_` places (chest clothes, legs clothes, two cloaks) saved with the rest. **Its picture** is the template's archive (TEXTURE.239 for men, 235 for women) moved by the wearer's body shape (Argonian 0, Elves 1, humans 2, Khajiit 3) and its record by the look; the doll lays it in its draw order over the underclothes (a cloak 90, a shirt 40, a skirt 35, pants 10, shoes 20). The inventory's third tab, Clothing & Misc, lists it; worn things stay off the list. **A new character starts in** a short shirt and casual pants (a woman's closed short shirt and casual pants), the pants' look rolled. **Loot** adds clothing after weapons and armour, a table's clothing chance halved at each success, the player's sex's (`loot_set_sex`). **Not yet:** dyes (DFU gives every shirt and the like a colour: `ChangeDye` over palette ranges; ours are drawn in the file's own colour), clothing's wear (it keeps a condition nothing lowers), jewellery and everything else in the other tabs, class enemies wearing what they carry.
 
 ### What can be searched
 
@@ -981,8 +983,8 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Creatures | the frame a blow lands on and how often a move sounds are our guesses, not found in classic | - |
 | Saves | creatures awake come back asleep; the weather is not kept | later |
 | Rest | an encounter wakes a sleeper, not a new creature; a class with no spell point regeneration | later, P12-b |
-| Items | clothing, jewellery, ingredients, books, potions, maps, and the screen's other tabs | P12-b, later |
-| Items | clothing's dyes | with clothing |
+| Items | jewellery, ingredients, books, potions, maps, and the screen's other tabs (clothing is built) | P12-b, later |
+| Items | clothing's dyes, clothing's wear | later |
 | Inventory | the Use button | P12-b |
 | Inventory | two weapons: the doll shows the one in use, as the pictures have one weapon hand; classic's own way not found | later |
 | Inventory | the info box's lines are ours, not TEXT.RSC's | later |
@@ -998,7 +1000,7 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Creation | the answers' history and lasting modifiers (`#`, `RP`, `TH`...) are read past | later |
 | Creation | Save Roll and Load Roll; the race's voice on choosing | later |
 | Character | the Spellbook, History and Affiliations buttons | P12-b, later |
-| Character | starting clothes and spellbook | with clothing, P12-b |
+| Character | (starting clothes and spellbook are built) | |
 | Engine | `scene/pack.c`, `ui/packview.c`, `scene/rpg.c`, `ui/rpgview.c` are used by no game; the user's line is that the engine is simulation and world | to decide |
 
 ## Rest and time (built: P7)
