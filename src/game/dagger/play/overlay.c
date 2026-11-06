@@ -39,11 +39,15 @@ static int g_now[BARS];
 static int g_most[BARS];
 static float g_yaw;
 static int g_crosshair = 1;
-/* The crosshair's sheet, two 16 x 16 cells side by side (cross_sheet): the ordinary one, then stealing's. */
+/*
+ * The crosshair's sheet, four 16 x 16 cells side by side (cross_sheet): the ordinary cross, stealing's
+ * ring, then each of them red for a target.
+ */
 static int g_cross;
 static int g_stealth;
+static int g_target;
 #define CROSS_CELL 16
-#define CROSS_CELLS 2
+#define CROSS_CELLS 4
 static void cross_sheet(df_u8 *px, const df_u8 *rgb);
 /* The bottom panel: its picture, on or off, and the face in it. */
 static int g_panel;
@@ -214,6 +218,11 @@ void overlay_set_stealth(int on)
     g_stealth = on ? 1 : 0;
 }
 
+void overlay_set_target(int on)
+{
+    g_target = on ? 1 : 0;
+}
+
 /* The palette index nearest a colour (never 0, which is clear). */
 static int nearest_colour(const df_u8 *rgb, int r, int g, int b)
 {
@@ -249,14 +258,13 @@ static void cross_put(df_u8 *px, int cell, int x, int y, int c)
 }
 
 /*
- * The two crosshairs, drawn once at startup under ART_PAL.COL, each with a dark edge so it reads on
+ * The crosshairs, drawn once at startup under ART_PAL.COL, each with a dark edge so it reads on
  * snow and on shadow: the ordinary one a dot with four short ticks round it, and stealing's an amber
- * ring round the dot, which no one can take for the other.
+ * ring round the dot, which no one can take for the other. Each has a red twin for a target.
  */
 static void cross_sheet(df_u8 *px, const df_u8 *rgb)
 {
-    int white;
-    int amber;
+    int colour[CROSS_CELLS];
     int dark;
     int cell;
     int x;
@@ -264,35 +272,42 @@ static void cross_sheet(df_u8 *px, const df_u8 *rgb)
     int k;
     int t;
 
-    white = nearest_colour(rgb, 236, 236, 228);
-    amber = nearest_colour(rgb, 245, 178, 40);
+    colour[0] = nearest_colour(rgb, 236, 236, 228);
+    colour[1] = nearest_colour(rgb, 245, 178, 40);
+    colour[2] = nearest_colour(rgb, 232, 36, 28);
+    colour[3] = colour[2];
     dark = nearest_colour(rgb, 16, 16, 16);
     mem_zero(px, CROSS_CELL * CROSS_CELL * CROSS_CELLS);
-    for (t = 0; t < 2; t++) {
-        for (k = 0; k < 2; k++) {
-            cross_put(px, 0, 7 + t, 7 + k, white);
-            cross_put(px, 1, 7 + t, 7 + k, amber);
-        }
-    }
-    for (k = 0; k < 3; k++) {
+    for (cell = 0; cell < CROSS_CELLS; cell++) {
+        /* Cells 0 and 2 are the cross, 1 and 3 the ring; a dot in the middle of each. */
         for (t = 0; t < 2; t++) {
-            cross_put(px, 0, 2 + k, 7 + t, white);
-            cross_put(px, 0, 11 + k, 7 + t, white);
-            cross_put(px, 0, 7 + t, 2 + k, white);
-            cross_put(px, 0, 7 + t, 11 + k, white);
+            for (k = 0; k < 2; k++) {
+                cross_put(px, cell, 7 + t, 7 + k, colour[cell]);
+            }
         }
-    }
-    for (y = 0; y < CROSS_CELL; y++) {
-        for (x = 0; x < CROSS_CELL; x++) {
-            float dx;
-            float dy;
-            float d2;
+        if (cell % 2 == 0) {
+            for (k = 0; k < 3; k++) {
+                for (t = 0; t < 2; t++) {
+                    cross_put(px, cell, 2 + k, 7 + t, colour[cell]);
+                    cross_put(px, cell, 11 + k, 7 + t, colour[cell]);
+                    cross_put(px, cell, 7 + t, 2 + k, colour[cell]);
+                    cross_put(px, cell, 7 + t, 11 + k, colour[cell]);
+                }
+            }
+        } else {
+            for (y = 0; y < CROSS_CELL; y++) {
+                for (x = 0; x < CROSS_CELL; x++) {
+                    float dx;
+                    float dy;
+                    float d2;
 
-            dx = (float)x - 7.5f;
-            dy = (float)y - 7.5f;
-            d2 = dx * dx + dy * dy;
-            if (d2 >= 22.0f && d2 <= 36.0f) {
-                cross_put(px, 1, x, y, amber);
+                    dx = (float)x - 7.5f;
+                    dy = (float)y - 7.5f;
+                    d2 = dx * dx + dy * dy;
+                    if (d2 >= 22.0f && d2 <= 36.0f) {
+                        cross_put(px, cell, x, y, colour[cell]);
+                    }
+                }
             }
         }
     }
@@ -459,14 +474,14 @@ void overlay_draw(void)
     if (g_crosshair) {
         if (g_cross) {
             /* The picture's top is measured up from the screen's foot, as the text's is. */
-            pic_draw_part(g_cross, g_stealth ? CROSS_CELL : 0, 0, CROSS_CELL, CROSS_CELL,
+            pic_draw_part(g_cross, ((g_stealth ? 1 : 0) + (g_target ? 2 : 0)) * CROSS_CELL, 0, CROSS_CELL, CROSS_CELL,
                           (DF_VIEW_W - CROSS_CELL) / 2, DF_VIEW_H / 2 + CROSS_CELL / 2, CROSS_CELL, CROSS_CELL, 255);
         } else {
             draw_centred("+", DF_VIEW_H / 2 + ui_line_height() / 2);
         }
     }
-    /* Stealing is said under the middle, with the pointer or without the cross. */
+    /* Stealing is said under the middle, with the pointer or without the cross. The ring and the red are the cross's own. */
     if (g_stealth) {
-        draw_centred("Stealth", DF_VIEW_H / 2 - CROSS_CELL - 2);
+        draw_centred("Stealing", DF_VIEW_H / 2 - CROSS_CELL - 2);
     }
 }

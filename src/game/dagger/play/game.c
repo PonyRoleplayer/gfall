@@ -268,16 +268,24 @@ static int hour_now(void)
  * locked, its strength half the building's quality; holding the run key is the
  * player picking it (classic's Steal mode, until the mode buttons come).
  */
-static int door_lets_in(const Usable *u)
+/* 1 when a street door's building is shut now, its quality in *quality: out of its hours, and a shop all Sun's Rest (DFU's BuildingIsUnlocked). */
+static int door_is_shut(const Usable *u, int *quality)
 {
     int type;
+
+    if (!travel_door_building(u, &type, quality)) {
+        return 0;
+    }
+    return !(building_open_at(type, hour_now()) && !(building_is_shop(type) && (today_holiday_flags() & HOLIDAY_SHOPS_SHUT)));
+}
+
+static int door_lets_in(const Usable *u)
+{
     int quality;
     int lock;
     int skill;
 
-    /* Shops are locked all Sun's Rest (DFU's BuildingIsUnlocked), whatever the hour. */
-    if (!travel_door_building(u, &type, &quality)
-        || (building_open_at(type, hour_now()) && !(building_is_shop(type) && (today_holiday_flags() & HOLIDAY_SHOPS_SHUT)))) {
+    if (!door_is_shut(u, &quality)) {
         return 1;
     }
     if (!g_stealing) {
@@ -635,6 +643,12 @@ static int door_picked(const Camera *cam)
     }
 }
 
+/* A creature's own number among the tried, a person's number never collides with it. */
+static unsigned creature_who(const Entity *e)
+{
+    return 0x80000000u | ((unsigned)e->key.place * 2654435761u + (unsigned)e->key.thing * 40503u);
+}
+
 /*
  * The living creature the view rests on within reach: the camera's eye and the unit
  * direction of its view (the use key's ray), no wall between. 0 for none.
@@ -711,7 +725,7 @@ static int creature_robbed(const Camera *cam)
     }
     combat_foe(&foe, kind, g_player.sheet.level, 0);
     /* A creature has no number but its key: that, hashed, apart from the people's. */
-    who = 0x80000000u | ((unsigned)e->key.place * 2654435761u + (unsigned)e->key.thing * 40503u);
+    who = creature_who(e);
     result = theft_pickpocket(&g_player, who, g_player.sheet.level - foe.level, -1, &gold);
     theft_words(result, gold, line, (int)sizeof(line));
     interact_say(line);
@@ -750,6 +764,109 @@ static int street_person_robbed(const Camera *cam)
         watch_alarm(cam, g_player.body.feet);
     }
     return 1;
+}
+
+/* ---- What the middle of the view rests on, for the crosshair's red. ---- */
+
+/* The probe runs this often, one of two dearer questions each time; a creature is asked every time, which costs nothing. */
+#define PROBE_EVERY 0.12f
+static float g_probe_wait;
+static int g_probe_turn;
+static int g_probe_creature;
+static int g_probe_person;
+static int g_probe_other;
+
+/*
+ * Whether a creature is in reach to rob (stealing: a class enemy not yet tried), or, with a weapon
+ * drawn, to strike in the back (DFU's backstab: its back to the player, triple damage on a roll of the skill).
+ */
+static int probe_creature(const Camera *cam, int stealing)
+{
+    const EnemyKind *kind;
+    Entity *e;
+
+    e = creature_in_view(cam, stealing ? THEFT_REACH : COMBAT_REACH + 20.0f);
+    kind = e ? enemy_kind(dunstream_kind(e, 0)) : 0;
+    if (!kind) {
+        return 0;
+    }
+    if (stealing) {
+        return kind->id >= ENEMY_FIRST_CLASS && !theft_tried(creature_who(e));
+    }
+    return !g_sheathed
+           && df_sin(e->yaw) * (g_player.body.feet[0] - e->x) + df_cos(e->yaw) * (g_player.body.feet[2] - e->z) < 0.0f;
+}
+
+/* A townsperson in pocket's reach not yet tried. */
+static int probe_person(const Camera *cam)
+{
+    float along;
+    int female;
+    unsigned who;
+
+    return people_in_view_at(cam, THEFT_REACH, &female, &who, &along) && along <= THEFT_REACH && !theft_tried(who);
+}
+
+/* A lock to pick, a closed shop's shelf, a house's container, in reach. */
+static int probe_other(const Camera *cam)
+{
+    UseHit hit;
+    const Usable *u;
+    Shop shop;
+    int quality;
+
+    if (!interact_aim(&g_level->scene, cam, &hit) || hit.usable < 0) {
+        return 0;
+    }
+    u = &g_level->scene.usables[hit.usable];
+    if (hit.dist > u->reach) {
+        return 0;
+    }
+    if (u->kind == USE_MOVER) {
+        const Mover *m;
+
+        m = &g_level->scene.movers[u->mover];
+        return interact_locks() && m->door && m->lock > 0 && m->state == MOVER_START;
+    }
+    if (u->kind == USE_PASSAGE && u->what == DOOR_ENTER) {
+        return door_is_shut(u, &quality);
+    }
+    if (u->kind == USE_OTHER && u->what == OTHER_CONTAINER) {
+        return 1;
+    }
+    return u->kind == USE_OTHER && u->what == OTHER_SHELF && shop_here(&shop) && shop.closed;
+}
+
+/*
+ * One frame of the crosshair's reading, for overlay_set_target. Only with the cross showing (the
+ * pointer scheme has none), and only as far as it can matter: stealing asks about people, locks and
+ * shelves, a drawn weapon about backs. The two dear questions take turns every PROBE_EVERY, so no frame
+ * pays for both and the reading is never more than a quarter second old.
+ */
+static void probe_frame(const Camera *cam, float dt)
+{
+    int stealing;
+
+    stealing = steal_intent();
+    if (g_hud_cursor || (!stealing && g_sheathed)) {
+        g_probe_creature = g_probe_person = g_probe_other = 0;
+        overlay_set_target(0);
+        return;
+    }
+    g_probe_creature = probe_creature(cam, stealing);
+    g_probe_wait -= dt;
+    if (g_probe_wait <= 0.0f) {
+        g_probe_wait = PROBE_EVERY;
+        g_probe_turn = !g_probe_turn;
+        if (!stealing) {
+            g_probe_person = g_probe_other = 0;
+        } else if (g_probe_turn) {
+            g_probe_person = probe_person(cam);
+        } else {
+            g_probe_other = probe_other(cam);
+        }
+    }
+    overlay_set_target(g_probe_creature || (stealing && (g_probe_person || g_probe_other)));
 }
 
 /* ---- Guilds (guild.h): a hall's people, joining, ranks and training. ---- */
@@ -2584,6 +2701,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
     /* Whether a use is stealing, shown: the bar's mode icon says Steal while crouched, and the middle of the screen says it too. */
     overlay_set_mode(g_mode == HUDBAR_GRAB && g_player.crouched ? HUDBAR_STEAL : g_mode);
     overlay_set_stealth(steal_intent());
+    probe_frame(cam, dt);
     overlay_set_vitals(g_player.sheet.health, g_player.sheet.health_max, g_player.sheet.fatigue,
                        g_player.sheet.fatigue_max, g_player.sheet.magicka, g_player.sheet.magicka_max);
     prof_end(PROF_PLAY);

@@ -30,6 +30,8 @@ enum {
     THEFT_CAUGHT
 };
 
+/* 1 when the person who was tried already (a second try rolls nothing), for the crosshair's reading of what can be robbed. */
+int theft_tried(unsigned who);
 /* The persons tried are forgotten: a place entered, or a game started. */
 void theft_forget(void);
 /*

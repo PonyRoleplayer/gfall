@@ -6833,8 +6833,10 @@ static void check_theft(void)
     check_expect(theft_pickpocket(&p, 12345u, 0, 17, &gold) == THEFT_TRIED && gold == 0 && (int)p.pack.gold == i
                  && p.sheet.skill_uses[SKILL_PICKPOCKET] == uses + 1,
                  "theft: a person was tried twice");
+    check_expect(theft_tried(12345u) && !theft_tried(54321u), "theft: a person tried is not told as tried, or one not tried is");
     theft_forget();
-    check_expect(theft_pickpocket(&p, 12345u, 0, 17, &gold) != THEFT_TRIED, "theft: forgetting did not let them be tried again");
+    check_expect(!theft_tried(12345u) && theft_pickpocket(&p, 12345u, 0, 17, &gold) != THEFT_TRIED,
+                 "theft: forgetting did not let them be tried again");
 
     /* The dice at Pickpocket 50: half seen, two in three of the rest with gold, each of 1 to 6 coming. */
     p.sheet.skill[SKILL_PICKPOCKET] = 50;

@@ -28,9 +28,11 @@ void overlay_set_vitals(int health, int health_max, int fatigue, int fatigue_max
 void overlay_set_crosshair(int on);
 /*
  * 1 while a use is stealing (the bar's Steal mode, or crouched): the crosshair becomes an amber ring and
- * "Stealth" stands under it, even with the crosshair hidden for the classic pointer. 0 the ordinary cross.
+ * "Stealing" stands under it, even with the crosshair hidden for the classic pointer. 0 the ordinary cross.
  */
 void overlay_set_stealth(int on);
+/* 1 when the middle of the view rests on something to steal from, a lock to pick or a back to strike: the crosshair turns red. */
+void overlay_set_target(int on);
 /* The overlay, from gfx_set_extra. */
 void overlay_draw(void);
 /*

@@ -42,6 +42,11 @@ static int was_tried(unsigned who)
     return 0;
 }
 
+int theft_tried(unsigned who)
+{
+    return was_tried(who);
+}
+
 static void remember(unsigned who)
 {
     if (g_count < TRIED_MOST) {
