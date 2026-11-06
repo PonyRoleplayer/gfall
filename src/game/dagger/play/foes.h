@@ -29,7 +29,9 @@
  * hears them within FOES_HEARING, through doors but not walls, and keeps
  * after them. A sleeper within FOES_STEALTH may notice them: once a game
  * minute, a roll against 2 x (distance x Stealth / 1024), so the nearer the
- * likelier and the better the skill the less. Classic rolls through anything;
+ * likelier and the better the skill the less. A player moving at no more than
+ * half a walk (crouched, or still: player_sneaking) is rolled against only every
+ * other minute, DFU's IsMovingLessThanHalfSpeed. Classic rolls through anything;
  * here the way to the player must be open or through a door, and the distance
  * counts height, so a whole level does not wake at once. Having lost the player
  * it walks on past where they were last, along the way they were going, a step
@@ -83,6 +85,8 @@ void foes_knock(Entity *e, const float *from, int speed);
 int foes_rouse_nearest(const float *at);
 /* The chance in 100 a sleeper this far off does NOT notice someone of this Stealth (FormulaHelper.CalculateStealthChance). */
 int foes_stealth_chance(float distance, int stealth);
+/* 1 when sleepers roll to notice player p in this game minute: every one, but for a player at no more than half a walk (player_sneaking), only the even ones. */
+int foes_rolls(const Player *p, int minute);
 /*
  * One frame of every mind against player p in scene: senses on the
  * ticks dt brings, moving and striking. 1 when a blow killed the player.
@@ -99,7 +103,12 @@ int foes_hunting(void);
 /* The stream's origin moved: every mind's body and what it remembers, by what the stream took off the entities. */
 void foes_shift(float dx, float dz);
 /* A line on the log for each mind awake: what it is, what it is doing, how far from feet. The console's foes. */
-void foes_report(const float *feet);
+/*
+ * The console's foes: every creature awake, and the sleepers in sight's range nearest first, each
+ * with what it makes of the player p now (a sleeper: sees them, is too far, has no open way, or its
+ * chance of noticing them in a minute it rolls).
+ */
+void foes_report(const Player *p);
 /* The furthest any blow at the player has come from since foes_reset, feet to feet, height and all. */
 float foes_blow_reach(void);
 /*

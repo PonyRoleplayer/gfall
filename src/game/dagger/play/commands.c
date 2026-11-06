@@ -216,7 +216,7 @@ static void c_foes(int argc, char **argv)
     (void)argv;
     p = player();
     if (p) {
-        foes_report(p->body.feet);
+        foes_report(p);
     }
 }
 
@@ -654,7 +654,7 @@ void commands_setup(void)
     cmd_add("morph", c_morph, "", "a lycanthrope changes shape, once a day into the beast (until magic gives the spell)");
     cmd_add("quests", c_quests, "", "the quests running and their log");
     cmd_add("quest", c_quest, "NAME", "a quest started here by its file's name (M0B00Y00)");
-    cmd_add("foes", c_foes, "", "the creatures awake: what each is doing and how far off");
+    cmd_add("foes", c_foes, "", "the creatures awake, and the sleepers near: what each is doing, how far off, and what it makes of you");
     cmd_var("tgm", get_tgm, set_tgm, 0, 1, "god mode: nothing hurts the player; tgm alone flips it");
     cmd_toggles("tgm");
     cmd_var("tai", foes_on, foes_set_on, 0, 1, "creatures' AI: off, no one wakes, moves or strikes; tai alone flips it");

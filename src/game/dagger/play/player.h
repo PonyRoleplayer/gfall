@@ -49,6 +49,8 @@ typedef struct Player {
      */
     int crouched;
     int crouch_want;
+    /* How fast the feet moved over the ground in the last step, units a second (player_sneaking's measure). */
+    float speed_xz;
     /*
      * Head bobbing's phase (radians) and 1 while this step is a walk on
      * the ground. The camera reads them; standing still leaves the eye.
@@ -91,6 +93,12 @@ void player_step_motion(Player *p, const Input *in, const Scene *scene, float dt
  * body steps (body_can_stand gathers).
  */
 void player_crouch(Player *p, const Scene *scene, int toggle, int held, int pressed);
+/*
+ * 1 while it moves at no more than half a walk, standing still and crouched walking among
+ * that: DFU's PlayerMotor.IsMovingLessThanHalfSpeed, which halves the rolls creatures make
+ * to notice it (foes.h). Measured from where the feet went, so a wall that slows a walk counts.
+ */
+int player_sneaking(const Player *p);
 /*
  * Health taken from it, the one way the game hurts the player (a fall,
  * a blow): 1 when it dies, 0 when it lives, -1 when nothing was taken

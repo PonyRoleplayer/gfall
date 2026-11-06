@@ -3111,6 +3111,24 @@ static void check_creatures_more(void)
     /* Stealth: 500 units off, Stealth 30: 500 x 30 >> 10 is 14, doubled. Nearer, or less skilled, less. */
     check_expect(foes_stealth_chance(500.0f, 30) == 28 && foes_stealth_chance(0.0f, 30) == 0 && foes_stealth_chance(1024.0f, 100) == 200,
                  "senses: the stealth chance is not classic's");
+    /* Sneaking, DFU's IsMovingLessThanHalfSpeed: standing still or crouched at half a walk is rolled against every other minute; walking or running, every one. */
+    {
+        Player sp;
+        Character ssheet;
+        float half;
+
+        character_new(&ssheet, RACE_BRETON, CLASS_WARRIOR, 0, "Ada");
+        player_init(&sp, &ssheet);
+        half = rules_walk_speed(sp.sheet.attribute[ATTR_SPEED]) * RULES_UNITS_PER_M * 0.5f;
+        sp.speed_xz = 0.0f;
+        check_expect(player_sneaking(&sp) && foes_rolls(&sp, 10) && !foes_rolls(&sp, 11), "sneaking: standing still is not rolled every other minute");
+        sp.speed_xz = half;
+        check_expect(player_sneaking(&sp), "sneaking: a crouch's half a walk is not sneaking");
+        sp.speed_xz = half * 2.0f;
+        check_expect(!player_sneaking(&sp) && foes_rolls(&sp, 10) && foes_rolls(&sp, 11), "sneaking: a walk is rolled every minute");
+        sp.speed_xz = half * 4.0f;
+        check_expect(!player_sneaking(&sp), "sneaking: a run is sneaking");
+    }
     /* Knock-back: at least 15; heavier knocks less far than light, for the same blow. */
     check_expect(combat_knock_speed(0, 100) == 0 && combat_knock_speed(1, 1000) == 15, "knock: the least is not 15");
     check_expect(combat_knock_speed(20, 40) >= combat_knock_speed(20, 400), "knock: a heavy creature goes further than a light one");
@@ -3147,6 +3165,33 @@ static void check_creatures_more(void)
         }
     }
     check_expect(foe && classed, "creatures: the hold lacks a monster or a class enemy");
+
+    /* The listing: sleepers near the start, each with what it makes of the player. */
+    {
+        Player lp;
+        Character lsheet;
+        df_u32 before;
+        int added;
+        int lines;
+        int k;
+
+        character_new(&lsheet, RACE_BRETON, CLASS_WARRIOR, 0, "Ada");
+        player_init(&lp, &lsheet);
+        player_place(&lp, x, y, z, yaw, pitch);
+        before = log_serial();
+        foes_report(&lp);
+        /* The log is newest first, and a ring: the lines added are the first few. */
+        added = (int)(log_serial() - before);
+        lines = 0;
+        for (k = 0; k < added && k < log_count(); k++) {
+            const char *line;
+
+            line = log_get(k);
+            lines += line && strstr(line, "asleep") != 0;
+        }
+        printf("foes: the listing added %d lines, %d of sleepers\n", added, lines);
+        check_expect(added >= 2 && lines >= 1, "foes: the listing shows no sleeper near the start");
+    }
 
     /* A class enemy's kit: the same each time, a weapon in hand, its armour capped, its level's materials. */
     if (classed) {
@@ -6960,6 +7005,7 @@ static void check_crouch(void)
             walk(&p, &level.scene, &none, 60);
             /* Standing and walking, run held: the run. Crouched, the same keys: half the walk. */
             stood = walk(&p, &level.scene, &in, 15);
+            check_expect(!player_sneaking(&p), "crouch: running is sneaking");
             in.move_f = -1;
             in.held = 0;
             walk(&p, &level.scene, &in, 15);
@@ -6968,6 +7014,9 @@ static void check_crouch(void)
             in.move_f = 1;
             in.held = INPUT_BIT(INPUT_RUN);
             down = walk(&p, &level.scene, &in, 15);
+            check_expect(player_sneaking(&p), "crouch: crouch-walking is not sneaking");
+            walk(&p, &level.scene, &none, 5);
+            check_expect(player_sneaking(&p), "crouch: standing still is not sneaking");
             printf("play: a quarter second goes %.1f running, %.1f crouched with run held\n", (double)stood, (double)down);
             check_expect(check_near(down, rules_walk_speed(p.sheet.attribute[ATTR_SPEED]) * RULES_UNITS_PER_M * 0.25f * PLAYER_CROUCH_SPEED,
                                     down * 0.1f),

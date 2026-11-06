@@ -88,6 +88,8 @@ static int g_on = 1;
 static float g_ticks;
 /* Frames stepped: which far minds move this one. */
 static int g_frame;
+/* The scene of the last frame, for the listing's sight and way tests; dropped with the place (foes_reset). */
+static const Scene *g_scene;
 /* The last game minute a sleeper's notice was rolled against the player: one use of Stealth a minute. */
 static int g_stealth_minute = -1;
 /* The furthest any blow has come from, feet to feet, since the last reset: what foes_blow_reach reads. */
@@ -125,6 +127,7 @@ void foes_reset(void)
 {
     int i;
 
+    g_scene = 0;
     g_blow_reach = 0.0f;
     for (i = 0; i < FOES_MINDS; i++) {
         g_mind[i].e = 0;
@@ -165,34 +168,6 @@ static const char *mind_doing(const Mind *m)
         return "hearing";
     }
     return m->search ? "searching" : "looking";
-}
-
-void foes_report(const float *feet)
-{
-    int i;
-    int n;
-
-    n = 0;
-    for (i = 0; i < FOES_MINDS; i++) {
-        const Mind *m;
-        const EnemyKind *kind;
-        float dx;
-        float dy;
-        float dz;
-
-        m = &g_mind[i];
-        if (!m->e) {
-            continue;
-        }
-        kind = enemy_kind(m->kind);
-        dx = m->e->x - feet[0];
-        dy = m->e->y - feet[1];
-        dz = m->e->z - feet[2];
-        log_print(LOG_PRINT, "%s: %s, %d away, gives up in %d", kind ? kind->name : "?", mind_doing(m),
-                  df_iround(df_sqrt(dx * dx + dy * dy + dz * dz)), FOES_GIVE_UP - m->give_up);
-        n++;
-    }
-    log_print(LOG_PRINT, "%d awake of %d, ai %s.", n, FOES_MINDS, g_on ? "on" : "off");
 }
 
 int foes_awake(void)
@@ -461,6 +436,11 @@ int foes_rouse_nearest(const float *at)
     return mind_of(best) != 0;
 }
 
+int foes_rolls(const Player *p, int minute)
+{
+    return !((minute & 1) && player_sneaking(p));
+}
+
 int foes_stealth_chance(float distance, int stealth)
 {
     return 2 * ((df_ifloor(distance) * stealth) >> 10);
@@ -495,6 +475,14 @@ static int notices(const Entity *e, Player *p, const Scene *scene, const float *
         return 0;
     }
     minute = df_ifloor(clock_minute());
+    /*
+     * A player at no more than half a walk (crouched, or still) is rolled against every other minute
+     * only, and the skipped minute notices nothing (DFU: the sleeper keeps what it last found). The
+     * skill is used only on a minute it is rolled.
+     */
+    if (!foes_rolls(p, minute)) {
+        return 0;
+    }
     /* One use of the skill a game minute that it is rolled against. */
     if (minute != g_stealth_minute) {
         g_stealth_minute = minute;
@@ -650,6 +638,125 @@ static Entity *nth(int n, int *total)
     }
     *total = at;
     return found;
+}
+
+/* The sleepers the listing shows at most. */
+#define REPORT_SLEEPERS 12
+
+/* One sleeper's line: what it is, how far, which way it faces, and what it makes of the player p. */
+static void report_sleeper(const Entity *e, const Player *p, const float *peye)
+{
+    const EnemyKind *kind;
+    float eye[3];
+    float dx;
+    float dy;
+    float dz;
+    float d;
+    int dist;
+    int front;
+    int door;
+
+    kind = enemy_kind(dunstream_kind(e, 0));
+    eye_of(e, eye);
+    dx = peye[0] - eye[0];
+    dy = peye[1] - eye[1];
+    dz = peye[2] - eye[2];
+    d = df_sqrt(dx * dx + dy * dy + dz * dz);
+    dist = df_iround(d);
+    front = df_sin(e->yaw) * dx + df_cos(e->yaw) * dz >= 0.0f;
+    if (dunstream_passive(e)) {
+        log_print(LOG_PRINT, "%s: asleep, passive, %d away: wakes only when struck", kind ? kind->name : "?", dist);
+    } else if (front && g_scene && combat_sight(g_scene, eye, peye)) {
+        log_print(LOG_PRINT, "%s: asleep, %d away, in front of it: sees you, wakes", kind ? kind->name : "?", dist);
+    } else if (d > FOES_STEALTH) {
+        log_print(LOG_PRINT, "%s: asleep, %d away, %s: too far to notice you", kind ? kind->name : "?", dist,
+                  front ? "in front, no sight" : "behind it");
+    } else if (!g_scene || !open_way(g_scene, eye, peye, &door)) {
+        log_print(LOG_PRINT, "%s: asleep, %d away, %s: no open way to you", kind ? kind->name : "?", dist,
+                  front ? "in front" : "behind it");
+    } else {
+        int chance;
+
+        chance = foes_stealth_chance(d, p->sheet.skill[SKILL_STEALTH]);
+        log_print(LOG_PRINT, "%s: asleep, %d away, %s: notices you %d%% %s (Stealth %d)", kind ? kind->name : "?", dist,
+                  front ? "in front, no sight" : "behind it", chance >= 100 ? 0 : 100 - chance,
+                  player_sneaking(p) ? "every other minute, you sneak" : "a minute", p->sheet.skill[SKILL_STEALTH]);
+    }
+}
+
+void foes_report(const Player *p)
+{
+    const Entity *shown[REPORT_SLEEPERS];
+    float shown_d[REPORT_SLEEPERS];
+    float peye[3];
+    int nshown;
+    int total;
+    int i;
+    int n;
+
+    body_eye(&p->body, &peye[0], &peye[1], &peye[2]);
+    n = 0;
+    for (i = 0; i < FOES_MINDS; i++) {
+        const Mind *m;
+        const EnemyKind *kind;
+        float dx;
+        float dy;
+        float dz;
+
+        m = &g_mind[i];
+        if (!m->e) {
+            continue;
+        }
+        kind = enemy_kind(m->kind);
+        dx = m->e->x - p->body.feet[0];
+        dy = m->e->y - p->body.feet[1];
+        dz = m->e->z - p->body.feet[2];
+        log_print(LOG_PRINT, "%s: %s, %d away, gives up in %d", kind ? kind->name : "?", mind_doing(m),
+                  df_iround(df_sqrt(dx * dx + dy * dy + dz * dz)), FOES_GIVE_UP - m->give_up);
+        n++;
+    }
+    log_print(LOG_PRINT, "%d awake of %d, ai %s.", n, FOES_MINDS, g_on ? "on" : "off");
+    /* The sleepers within sight's range, the nearest few. */
+    nshown = 0;
+    nth(0, &total);
+    for (i = 0; i < total; i++) {
+        Entity *e;
+        float dx;
+        float dy;
+        float dz;
+        float d;
+        int at;
+
+        e = nth(i, &n);
+        if (!e || !e->live || e->dead || dunstream_kind(e, 0) < 0 || mind_of(e)) {
+            continue;
+        }
+        dx = e->x - peye[0];
+        dy = e->y - peye[1];
+        dz = e->z - peye[2];
+        d = dx * dx + dy * dy + dz * dz;
+        if (d > FOES_SIGHT * FOES_SIGHT) {
+            continue;
+        }
+        /* Kept nearest first, at most REPORT_SLEEPERS. */
+        for (at = nshown; at > 0 && shown_d[at - 1] > d; at--) {
+            if (at < REPORT_SLEEPERS) {
+                shown[at] = shown[at - 1];
+                shown_d[at] = shown_d[at - 1];
+            }
+        }
+        if (at < REPORT_SLEEPERS) {
+            shown[at] = e;
+            shown_d[at] = d;
+            if (nshown < REPORT_SLEEPERS) {
+                nshown++;
+            }
+        }
+    }
+    for (i = 0; i < nshown; i++) {
+        report_sleeper(shown[i], p, peye);
+    }
+    log_print(LOG_PRINT, "%d sleepers within sight's range shown%s.", nshown, nshown == REPORT_SLEEPERS ? ", the nearest" : "");
 }
 
 /* A sleeper looks: the player within sight, before it, no wall between their eyes. */
@@ -1010,6 +1117,7 @@ int foes_frame(Player *p, const Scene *scene, float dt)
     if (!g_on || !scene) {
         return 0;
     }
+    g_scene = scene;
     /* A mind whose creature died, or whose block went (its slot holds another now), is let go. */
     for (i = 0; i < FOES_MINDS; i++) {
         Entity *e;

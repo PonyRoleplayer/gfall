@@ -39,6 +39,7 @@ void player_init(Player *p, const Character *sheet)
     p->riding = 0;
     p->crouched = 0;
     p->crouch_want = 0;
+    p->speed_xz = 0.0f;
     p->bob_phase = VIEWOPT_CREST;
     p->bob_walk = 0;
 }
@@ -86,13 +87,34 @@ void player_step(Player *p, const Input *in, const Scene *scene, float dt, int c
     player_step_motion(p, in, scene, dt, collide, (float)in->move_f, (float)in->move_r);
 }
 
+/* How far the feet went over the ground since x0, z0, a second's worth. */
+static void note_speed(Player *p, float x0, float z0, float dt)
+{
+    float dx;
+    float dz;
+
+    dx = p->body.feet[0] - x0;
+    dz = p->body.feet[2] - z0;
+    p->speed_xz = dt > 0.0f ? df_sqrt(dx * dx + dz * dz) / dt : 0.0f;
+}
+
+int player_sneaking(const Player *p)
+{
+    /* Half a walk, with a hair's room: a crouch walks at exactly that, and a wall's slide must not tip it either way. */
+    return p->speed_xz <= rules_walk_speed(p->sheet.attribute[ATTR_SPEED]) * RULES_UNITS_PER_M * 0.5f * 1.02f;
+}
+
 void player_step_motion(Player *p, const Input *in, const Scene *scene, float dt, int collide, float f, float r)
 {
     float mps;
+    float x0;
+    float z0;
     float step;
     float sy;
     float cy;
 
+    x0 = p->body.feet[0];
+    z0 = p->body.feet[2];
     /* Cursor speed is an input fraction, never a shortened physics timestep:
      * gravity, jumps, breath and fatigue continue at their real elapsed time.
      * Normalize only vectors longer than one. Ordinary single-key walking
@@ -150,6 +172,7 @@ void player_step_motion(Player *p, const Input *in, const Scene *scene, float dt
         body_place(&p->body, x, y - p->body.eye, z);
         p->body.vy = 0.0f;
         p->flying = 1;
+        p->speed_xz = 0.0f;
         note_bob(p, f, r, mps, dt);
         return;
     }
@@ -173,6 +196,7 @@ void player_step_motion(Player *p, const Input *in, const Scene *scene, float dt
         p->body.gravity = 0.0f;
         p->body.vy = (sp * f + rise) * swim;
         body_step(&p->body, scene, (sy * cp * f + cy * r) * swim * dt, (cy * cp * f - sy * r) * swim * dt, dt);
+        note_speed(p, x0, z0, dt);
         note_bob(p, f, r, mps, dt);
         return;
     }
@@ -187,6 +211,7 @@ void player_step_motion(Player *p, const Input *in, const Scene *scene, float dt
         body_jump(&p->body, rules_jump_speed(p->sheet.skill[SKILL_JUMPING]) * RULES_UNITS_PER_M);
     }
     body_step(&p->body, scene, (sy * f + cy * r) * step, (cy * f - sy * r) * step, dt);
+    note_speed(p, x0, z0, dt);
     note_bob(p, f, r, mps, dt);
 }
 
