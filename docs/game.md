@@ -1145,7 +1145,7 @@ The first goal is a **prototype**: from classic's start menu, Privateer's Hold p
 | P10 | The wider world (first slice built, host-tested, not run on the target: the travel map, its journeys and the places known): travel map before magic, horse and cart, holidays (built), diseases, lycanthropy and vampirism (built) | GAME | a journey from the map to a town and a dungeon, and back after a save |
 | P11 | Quests: the QBN interpreter, guild quests | GAME | |
 | P12-a | Steal and theft (slice 1 built, host-tested: a citizen's pocket; the rest planned): classic Steal mode, pickpocketing, deferred theft paths, skill checks, detection and law consequences; build on P9's shoplifting and lockpicking | GAME | theft and pickpocketing can succeed or be detected, with the right items and legal consequences kept and tested |
-| P12-b | Magic: spells, effects, spellbook, casting, potions, enchantments | GAME | |
+| P12-b | Magic: spells, effects, spellbook, casting, potions, enchantments | GAME | Built and host-tested, not run on the target: the projectile (arrows fly), the effects and standard spells as tables, costs, the book and its saves, effects by the minute, casting (the hand, missiles, bursts), the spellbook screen with Buy Spells, the spell maker. Left: creatures that cast, the effects not built (attributes, light, levitate, invisibility, teleport, lock and open, detect, charm and the rest), potions, enchanting, magic items |
 | P13 | Our own mode: a ruleset switch over classic's rules, a mode `.DAT` over MAIN.DAT; classic stays the default and the reference | GAME | |
 
 Each phase updates this page (what is built, what is not) and AGENTS.md's layout list.
