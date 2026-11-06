@@ -39,11 +39,13 @@ enum {
     SETTINGS_GFX_LIGHTS,
     SETTINGS_GFX_LIGHTSHADOW,
     SETTINGS_GFX_WEATHERSIM,
-    SETTINGS_GFX_FLORA
+    SETTINGS_GFX_FLORA,
+    SETTINGS_GFX_TEXDETAIL,
+    SETTINGS_GFX_SPRITEDETAIL
 };
 #define SETTINGS_GFX_RESOLUTIONS 1
 #define SETTINGS_GFX_ROWS 10
-#define SETTINGS_GFX_ITEM_COUNT 14
+#define SETTINGS_GFX_ITEM_COUNT 16
 
 /* Graphics tab draft: edited in memory until Apply. menu.c owns hold/commit. */
 typedef struct SettingsGfxDraft {
@@ -61,6 +63,8 @@ typedef struct SettingsGfxDraft {
     int flora;
     int floradensity;            /* 0..100. */
     int florasight;              /* 0..16384; 0 means each place's own. */
+    int texdetail;               /* Walls and the like: 0 Low, 1 Medium, 2 High (GFX_DETAIL_*). */
+    int spritedetail;            /* Sprites: the same. */
 } SettingsGfxDraft;
 
 typedef struct SettingsView {

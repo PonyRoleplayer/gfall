@@ -42,6 +42,15 @@ void viewopt_set_full(int on);
 /* 1 when a walk may move the eye. */
 int viewopt_bob(void);
 void viewopt_set_bob(int on);
+/*
+ * The texture details the player chose, 0 Low, 1 Medium, 2 High (the engine's GFX_DETAIL_*; High
+ * the default): walls and the like, and sprites. Kept here with the other options and given to the
+ * engine by the menu on Apply and by keys.c at the start; this module stays plain C.
+ */
+int viewopt_tex_detail(void);
+void viewopt_set_tex_detail(int level);
+int viewopt_sprite_detail(void);
+void viewopt_set_sprite_detail(int level);
 /* 1 when the crouch key flips between crouched and standing; 0 when crouched only while it is held. */
 int viewopt_crouch_toggle(void);
 void viewopt_set_crouch_toggle(int on);

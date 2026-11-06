@@ -60,7 +60,7 @@ static const Slider g_sliders[] = {
     { SETTINGS_MUSIC_SLIDER, SETTINGS_AUDIO, 168, 0, 100, "MUSIC VOLUME" }
 };
 #define SLIDERS ((int)(sizeof(g_sliders) / sizeof(g_sliders[0])))
-typedef enum { GFX_ROW_RES, GFX_ROW_SLIDER, GFX_ROW_TOGGLE } GfxRowKind;
+typedef enum { GFX_ROW_RES, GFX_ROW_SLIDER, GFX_ROW_TOGGLE, GFX_ROW_CHOICE } GfxRowKind;
 typedef struct GfxRow {
     GfxRowKind kind;
     int action;
@@ -71,6 +71,8 @@ static const GfxRow g_gfx_rows[] = {
     { GFX_ROW_RES, SETTINGS_GFX_RESOLUTION, "RESOLUTION", 0 },
     { GFX_ROW_SLIDER, SETTINGS_SLIDER, "FIELD OF VIEW", SETTINGS_SLIDER },
     { GFX_ROW_SLIDER, SETTINGS_GFX_FAR_SLIDER, "FAR CLIP", SETTINGS_GFX_FAR_SLIDER },
+    { GFX_ROW_CHOICE, SETTINGS_GFX_TEXDETAIL, "TEXTURE DETAIL", 0 },
+    { GFX_ROW_CHOICE, SETTINGS_GFX_SPRITEDETAIL, "SPRITE DETAIL", 0 },
     { GFX_ROW_TOGGLE, SETTINGS_GFX_FOG, "DISTANCE FOG", 0 },
     { GFX_ROW_TOGGLE, SETTINGS_GFX_SPRITEPOINT, "CRISP SPRITES", 0 },
     { GFX_ROW_TOGGLE, SETTINGS_GFX_VSYNC, "VSYNC", 0 },
@@ -332,6 +334,8 @@ static int gfx_value(const SettingsView *v, int action)
     case SETTINGS_GFX_LIGHTSHADOW: return g->lightshadow;
     case SETTINGS_GFX_WEATHERSIM: return g->weathersim;
     case SETTINGS_GFX_FLORA: return g->flora;
+    case SETTINGS_GFX_TEXDETAIL: return g->texdetail;
+    case SETTINGS_GFX_SPRITEDETAIL: return g->spritedetail;
     default: return 0;
     }
 }
@@ -373,6 +377,16 @@ static void gfx_toggle_row(int y, const char *label, int on, int hot)
     button(426, y + 3, 184, 20, on ? "ON" : "OFF", 0, hot);
 }
 
+/* A choice among Low, Medium and High: a click goes to the next (menu.c). */
+static void gfx_choice_row(int y, const char *label, int value, int hot)
+{
+    static const char *const names[] = { "LOW", "MEDIUM", "HIGH" };
+
+    panel(174, y, 444, GFX_ROW_H, 0);
+    text(184, y + 8, 220, tr(label), 0);
+    button(426, y + 3, 184, 20, tr(names[value < 0 ? 0 : (value > 2 ? 2 : value)]), 0, hot);
+}
+
 static void gfx_resolution_row(int y, int hot)
 {
     panel(174, y, 444, GFX_ROW_H, 0);
@@ -406,6 +420,8 @@ const char *settings_gfx_console_var(int action)
     case SETTINGS_GFX_LIGHTSHADOW: return "lightshadow";
     case SETTINGS_GFX_WEATHERSIM: return "weathersim";
     case SETTINGS_GFX_FLORA: return "flora";
+    case SETTINGS_GFX_TEXDETAIL: return "texdetail";
+    case SETTINGS_GFX_SPRITEDETAIL: return "spritedetail";
     default: return 0;
     }
 }
@@ -542,6 +558,9 @@ void settings_draw(const SettingsView *v, SettingsQuad quad, void *ctx)
             y = GFX_LIST_Y + (row - v->gfx_scroll) * GFX_ROW_H;
             if (g_gfx_rows[row].kind == GFX_ROW_RES)
                 gfx_resolution_row(y, v->hover == SETTINGS_GFX_RESOLUTION);
+            else if (g_gfx_rows[row].kind == GFX_ROW_CHOICE)
+                gfx_choice_row(y, g_gfx_rows[row].label, gfx_value(v, g_gfx_rows[row].action),
+                               v->hover == g_gfx_rows[row].action);
             else if (g_gfx_rows[row].kind == GFX_ROW_TOGGLE)
                 gfx_toggle_row(y, g_gfx_rows[row].label, gfx_value(v, g_gfx_rows[row].action),
                                v->hover == g_gfx_rows[row].action);
@@ -559,7 +578,7 @@ void settings_draw(const SettingsView *v, SettingsQuad quad, void *ctx)
             panel(604, GFX_LIST_Y + 28 + thumb, 12, 70, 0);
         }
         paragraph(180, 360, 420, 28,
-                  "Every control on this tab is a draft until Apply. Resolution does not change video mode yet.");
+                  "Every control on this tab is a draft until Apply. Texture and sprite detail (Low a quarter size, Medium half, High full) send the pictures again on Apply. Resolution does not change video mode yet.");
     } else if (v->tab == SETTINGS_AUDIO) {
         text(182,68,420,tr("VOLUME"),0);
         slider_draw(slider_desc(SETTINGS_SFX_SLIDER), v->sfx_volume);

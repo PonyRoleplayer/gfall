@@ -161,6 +161,8 @@ static void settings_gfx_read_engine(SettingsGfxDraft *draft)
     draft->flora = scene_flora();
     draft->floradensity = scene_flora_density();
     draft->florasight = scene_flora_sight();
+    draft->texdetail = gfx_tex_detail();
+    draft->spritedetail = gfx_sprite_detail();
 }
 
 void settings_gfx_draft_hold(SettingsGfxDraft *draft)
@@ -184,6 +186,15 @@ void settings_gfx_draft_commit(const SettingsGfxDraft *draft)
     scene_set_flora(draft->flora);
     scene_set_flora_density(draft->floradensity);
     scene_set_flora_sight(draft->florasight);
+    /* A change sends every picture again: only a real one is passed on, and it is kept for the options file. */
+    if (gfx_tex_detail() != draft->texdetail) {
+        gfx_set_tex_detail(draft->texdetail);
+    }
+    if (gfx_sprite_detail() != draft->spritedetail) {
+        gfx_set_sprite_detail(draft->spritedetail);
+    }
+    viewopt_set_tex_detail(draft->texdetail);
+    viewopt_set_sprite_detail(draft->spritedetail);
 }
 
 void settings_gfx_draft_cancel(void)
@@ -207,6 +218,8 @@ static void settings_gfx_defaults(SettingsGfxDraft *draft)
     draft->flora = 1;
     draft->floradensity = 40;
     draft->florasight = 0;
+    draft->texdetail = 2;
+    draft->spritedetail = 2;
 }
 
 static int settings_gfx_dirty(void)
@@ -549,6 +562,8 @@ static int settings_frame(const Input *in, int px, int py)
             g_settings.classic = 1;
         }
         break;
+    case SETTINGS_GFX_TEXDETAIL: g_settings.gfx.texdetail = (g_settings.gfx.texdetail + 1) % 3; break;
+    case SETTINGS_GFX_SPRITEDETAIL: g_settings.gfx.spritedetail = (g_settings.gfx.spritedetail + 1) % 3; break;
     case SETTINGS_FULL_HUD: g_settings.full_hud = !g_settings.full_hud; break;
     case SETTINGS_BOB: g_settings.bob = !g_settings.bob; break;
     case SETTINGS_CROUCH_TOGGLE: g_settings.crouch_toggle = !g_settings.crouch_toggle; break;

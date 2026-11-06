@@ -36,6 +36,11 @@ int gfx_mipmap(void) { return g_stub_mipmap; }
 void gfx_set_mipmap(int on) { g_stub_mipmap = on; }
 void gfx_set_light_range(int scale) { (void)scale; }
 void gfx_set_light_shadow(int on) { (void)on; }
+static int g_stub_tex_detail = 2, g_stub_sprite_detail = 2;
+void gfx_set_tex_detail(int level) { g_stub_tex_detail = level; }
+int gfx_tex_detail(void) { return g_stub_tex_detail; }
+void gfx_set_sprite_detail(int level) { g_stub_sprite_detail = level; }
+int gfx_sprite_detail(void) { return g_stub_sprite_detail; }
 int draw_faces(void) { return g_stub_faces; }
 void draw_set_faces(int on) { g_stub_faces = on; }
 int draw_sprite_point(void) { return g_stub_spritepoint; }
@@ -127,6 +132,23 @@ void check_menu(void)
     click_at(200,445);
     check_expect(df_iround(camera_fov())==120, "menu: reset did not cancel slider ownership");
 
+    /* Texture and sprite detail: High at the start; a click goes Low, Medium, High; a draft until Apply; Default is High. */
+    menu_open(MENU_NONE);
+    menu_open(MENU_OPTIONS);
+    click_at(30,200);
+    check_expect(gfx_tex_detail() == 2 && gfx_sprite_detail() == 2, "menu: the details do not start at High");
+    click_at(516, 116 + 26 * 2);
+    click_at(516, 116 + 26 * 3);
+    click_at(516, 116 + 26 * 3);
+    check_expect(gfx_tex_detail() == 2 && gfx_sprite_detail() == 2, "menu: a detail draft applied early");
+    click_at(200,445);
+    check_expect(gfx_tex_detail() == 0 && gfx_sprite_detail() == 1 && viewopt_tex_detail() == 0 && viewopt_sprite_detail() == 1,
+                 "menu: Apply did not commit Low walls and Medium sprites to the engine and the options");
+    click_at(40,445);
+    click_at(200,445);
+    check_expect(gfx_tex_detail() == 2 && gfx_sprite_detail() == 2 && viewopt_tex_detail() == 2, "menu: Default did not return the details to High");
+    click_at(550,445);
+    menu_open(MENU_OPTIONS);
     click_at(30,160);
     old=g_bind[INPUT_FORWARD]; other=g_bind[INPUT_BACK];
     click_at(450,104);

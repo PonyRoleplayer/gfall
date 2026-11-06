@@ -1,3 +1,4 @@
+#include "engine/gfx/gfx.h"
 #include "game/dagger/play/keys.h"
 #include "game/dagger/play/mouse.h"
 #include "game/dagger/play/viewopt.h"
@@ -113,6 +114,9 @@ int keys_load(void)
         }
     }
     viewopt_read(b, n);
+    /* The details chosen, given to the engine before the first place (it starts at High). */
+    gfx_set_tex_detail(viewopt_tex_detail());
+    gfx_set_sprite_detail(viewopt_sprite_detail());
     if (!table.schema && !rec_table_init(&table, &g_key_schema, INPUT_ACTIONS)) {
         return 0;
     }

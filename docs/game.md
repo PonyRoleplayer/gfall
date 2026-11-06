@@ -625,7 +625,10 @@ classic screens' stretched 320 x 200 canvas. It does not change video mode.
    for Cursor, INPUT_ATTACK for View, preserving the other scheme's binding.
 3. **Graphics**: player-facing controls only — resolution (only **640 x 480**
    today, stored as index 0 in the draft), horizontal field of view (45..120,
-   default 75), far clip, distance fog, crisp sprites, vsync, dungeon lights,
+   default 75), far clip, **texture detail** and **sprite detail** (Low, Medium or High each, High the
+   default: the engine's `texdetail` and `spritedetail`, a quarter, half or the full side of a picture, walls and
+   the like apart from the sprites the player meets; the weapon, the HUD and every screen are untouched;
+   a click goes to the next; `docs/memory.md`, Detail), distance fog, crisp sprites, vsync, dungeon lights,
    ambient light, light range, light shadow, weather view, flora, flora density
    and flora sight. Each maps to the matching engine console variable (`fov`,
    `far`, `fog`, `spritepoint`, `vsync`, `lights`, `ambient`, `lightrange`,
@@ -634,7 +637,9 @@ classic screens' stretched 320 x 200 canvas. It does not change video mode.
    planar polygons, FPU 24-bit, sky, sun and moon, and water stay on the console
    only. Opening the tab snapshots the live engine into a graphics draft;
    edits stay in that draft until **Apply** writes them in one step (FOV is
-   persisted in `OPTS` on Apply). Leaving the tab, Back, Escape, or a failed
+   persisted in `OPTS` on Apply, and so are the two details: `tex_detail` and `sprite_detail`, High for an older
+   file, given to the engine by `keys_load` before the first place; an Apply that changes one sends every picture
+   again, so it is a load-sized pause, and a change is passed on only when it differs). Leaving the tab, Back, Escape, or a failed
    Apply restores the engine to the snapshot from when the tab was first opened
    in that session; tab changes keep the draft. Resolution does not change
    video mode yet.
@@ -671,7 +676,7 @@ shell closes. There is no automatic write merely from closing it.
 
 The `KEYS`, `MOUS` and `CTLS` records retain their existing meaning. `OPTS`
 retains `full`, `bob` and `fov`, and appends unsigned `sfx_volume` and
-`music_volume` percentages and `crouch_toggle` (0 or 1, older files 0). Old records without FOV inherit 75; those without
+`music_volume` percentages, `crouch_toggle` (0 or 1, older files 0) and `tex_detail` and `sprite_detail` (0..2, older files 2). Old records without FOV inherit 75; those without
 volume fields inherit 80/80. Out-of-range angles or percentages are ignored;
 zero volume is a real mute value. These are user preferences, not part of a
 character's save. Full-screen is exposed inversely as Full HUD in Gameplay,

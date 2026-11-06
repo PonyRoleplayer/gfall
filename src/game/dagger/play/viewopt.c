@@ -17,9 +17,11 @@ typedef struct ViewRow {
     df_u8 sfx_volume;
     df_u8 music_volume;
     df_u8 crouch_toggle;
+    df_u8 tex_detail;
+    df_u8 sprite_detail;
 } ViewRow;
 
-static const ViewRow g_default_row = { 0, 0, 0, 75, 80, 80, 0 };
+static const ViewRow g_default_row = { 0, 0, 0, 75, 80, 80, 0, 2, 2 };
 static const RecField g_fields[] = {
     REC_FIELD("id", REC_UINT, ViewRow, id),
     REC_FIELD("full", REC_UINT, ViewRow, full),
@@ -27,9 +29,11 @@ static const RecField g_fields[] = {
     REC_FIELD("fov", REC_UINT, ViewRow, fov),
     REC_FIELD("sfx_volume", REC_UINT, ViewRow, sfx_volume),
     REC_FIELD("music_volume", REC_UINT, ViewRow, music_volume),
-    REC_FIELD("crouch_toggle", REC_UINT, ViewRow, crouch_toggle)
+    REC_FIELD("crouch_toggle", REC_UINT, ViewRow, crouch_toggle),
+    REC_FIELD("tex_detail", REC_UINT, ViewRow, tex_detail),
+    REC_FIELD("sprite_detail", REC_UINT, ViewRow, sprite_detail)
 };
-static const RecSchema g_schema = { "OPTS", "options", g_fields, 7, (df_u16)sizeof(ViewRow), &g_default_row };
+static const RecSchema g_schema = { "OPTS", "options", g_fields, 9, (df_u16)sizeof(ViewRow), &g_default_row };
 
 /* Metres, HeadBobber's walking and running amounts. */
 #define WALK_X 0.045f
@@ -46,12 +50,16 @@ static const RecSchema g_schema = { "OPTS", "options", g_fields, 7, (df_u16)size
 static int g_full;
 static int g_bob;
 static int g_crouch_toggle;
+static int g_tex_detail = 2;
+static int g_sprite_detail = 2;
 
 void viewopt_defaults(void)
 {
     g_full = 0;
     g_bob = 0;
     g_crouch_toggle = 0;
+    g_tex_detail = 2;
+    g_sprite_detail = 2;
     camera_set_fov(75.0f);
     sound_set_volume(80);
     music_set_volume(80);
@@ -165,6 +173,13 @@ void viewopt_read(const df_u8 *bytes, df_u32 n)
     if (row->crouch_toggle <= 1) {
         g_crouch_toggle = row->crouch_toggle;
     }
+    /* Older files have no detail fields and take High; anything above 2 is ignored. */
+    if (row->tex_detail <= 2) {
+        g_tex_detail = row->tex_detail;
+    }
+    if (row->sprite_detail <= 2) {
+        g_sprite_detail = row->sprite_detail;
+    }
 }
 
 int viewopt_write(RecPut put, void *ctx)
@@ -175,8 +190,30 @@ int viewopt_write(RecPut put, void *ctx)
     row.full = (df_u8)g_full;
     row.bob = (df_u8)g_bob;
     row.crouch_toggle = (df_u8)g_crouch_toggle;
+    row.tex_detail = (df_u8)g_tex_detail;
+    row.sprite_detail = (df_u8)g_sprite_detail;
     row.fov = (df_u16)df_iround(camera_fov());
     row.sfx_volume = (df_u8)sound_volume();
     row.music_volume = (df_u8)music_volume();
     return rec_put_rows(put, ctx, &g_schema, &row, 1, 0, 0);
+}
+
+int viewopt_tex_detail(void)
+{
+    return g_tex_detail;
+}
+
+void viewopt_set_tex_detail(int level)
+{
+    g_tex_detail = level < 0 ? 0 : (level > 2 ? 2 : level);
+}
+
+int viewopt_sprite_detail(void)
+{
+    return g_sprite_detail;
+}
+
+void viewopt_set_sprite_detail(int level)
+{
+    g_sprite_detail = level < 0 ? 0 : (level > 2 ? 2 : level);
 }

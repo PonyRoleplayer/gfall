@@ -5562,15 +5562,19 @@ static void check_settings(void)
         && settings_fov_at(408) == 75 && settings_fov_at(516) == 120
         && settings_fov_at(1000) == 120, "settings: FOV track endpoints or default");
     check_expect(settings_hit(SETTINGS_GRAPHICS,0,408,120) == SETTINGS_SLIDER
-        && settings_hit(SETTINGS_GRAPHICS,0,450,166) == SETTINGS_GFX_FOG, "settings: graphics scroll rows");
-    check_expect(settings_hit(SETTINGS_GRAPHICS, 1, 450, 166) == SETTINGS_GFX_SPRITEPOINT
-        && settings_hit(SETTINGS_GRAPHICS, 0, 450, 166) == SETTINGS_GFX_FOG,
+        && settings_hit(SETTINGS_GRAPHICS,0,450,166) == SETTINGS_GFX_TEXDETAIL
+        && settings_hit(SETTINGS_GRAPHICS,0,450,192) == SETTINGS_GFX_SPRITEDETAIL
+        && settings_hit(SETTINGS_GRAPHICS,0,450,226) == SETTINGS_GFX_FOG, "settings: graphics scroll rows");
+    check_expect(settings_hit(SETTINGS_GRAPHICS, 1, 450, 226) == SETTINGS_GFX_SPRITEPOINT
+        && settings_hit(SETTINGS_GRAPHICS, 0, 450, 226) == SETTINGS_GFX_FOG,
         "settings: graphics hit uses list scroll offset");
     check_expect(settings_resolution_w(0) == 640 && settings_resolution_h(0) == 480
         && settings_resolution_w(1) == 0, "settings: only 640x480 resolution");
     check_expect(settings_gfx_console_var(SETTINGS_GFX_FOG)
         && settings_gfx_console_var(SETTINGS_GFX_FAR_SLIDER)
         && settings_gfx_console_var(SETTINGS_GFX_FLORA)
+        && df_eq(settings_gfx_console_var(SETTINGS_GFX_TEXDETAIL), "texdetail")
+        && df_eq(settings_gfx_console_var(SETTINGS_GFX_SPRITEDETAIL), "spritedetail")
         && !settings_gfx_console_var(SETTINGS_GFX_RESOLUTION), "settings: engine console names");
     check_expect(settings_hit(SETTINGS_AUDIO,0,408,112) == SETTINGS_SFX_SLIDER
         && settings_hit(SETTINGS_AUDIO,0,408,168) == SETTINGS_MUSIC_SLIDER
