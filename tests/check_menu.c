@@ -28,6 +28,12 @@ static int g_stub_planar = 1, g_stub_faces = 1, g_stub_spritepoint = 1, g_stub_f
 static int g_stub_water = 1, g_stub_sky = 1;
 static float g_stub_far = 1400.0f;
 
+static int g_stub_fps_counter, g_stub_fps_limit;
+void gfx_set_fps_counter(int on) { g_stub_fps_counter = on; }
+int gfx_fps_counter(void) { return g_stub_fps_counter; }
+void gfx_set_fps_limit(int fps) { g_stub_fps_limit = fps; }
+int gfx_fps_limit(void) { return g_stub_fps_limit; }
+
 float gfx_far(void) { return g_stub_far; }
 void gfx_set_far(float far) { g_stub_far = far; }
 int gfx_fog(void) { return g_stub_fog; }
@@ -285,8 +291,10 @@ void check_menu(void)
     check_expect(!viewopt_show_fps() && viewopt_fps_limit() == 0, "menu: the FPS drafts applied early");
     g_write_ok=0; click_at(200,445);
     check_expect(!viewopt_show_fps() && viewopt_fps_limit() == 0, "menu: a failed Apply changed the FPS settings");
+    check_expect(!gfx_fps_counter() && gfx_fps_limit() == 0, "menu: a failed Apply reached the engine's FPS counter or limiter");
     g_write_ok=1; click_at(200,445);
     check_expect(viewopt_show_fps() && viewopt_fps_limit() == 60, "menu: Apply did not commit Show FPS and a limit of 60");
+    check_expect(gfx_fps_counter() == 1 && gfx_fps_limit() == 60, "menu: Apply did not hand the counter and the limit to the engine");
     click_at(500,343);
     click_at(500,343);
     click_at(500,343);
@@ -300,6 +308,7 @@ void check_menu(void)
     check_expect(viewopt_fps_limit() == 100, "menu: four clicks from Off are not a limit of 100");
     click_at(40,445); click_at(200,445);
     check_expect(!viewopt_show_fps() && viewopt_fps_limit() == 0, "menu: Gameplay Default did not turn the FPS settings off");
+    check_expect(!gfx_fps_counter() && gfx_fps_limit() == 0, "menu: Default and Apply left the engine's counter or limiter on");
     click_at(550,445);
     menu_open(MENU_OPTIONS);
     /* Full HUD is the inverse of legacy full-screen. Exercise the

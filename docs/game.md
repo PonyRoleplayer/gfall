@@ -711,8 +711,9 @@ On the right a list: each character a row, their saves under them, newest first,
    **Show FPS** On/Off, default off, and **FPS Limit** (Off, 30, 60, 72 or 100 a click; the file takes
    20 to 240): the game's half of the engine's frame counter and frame limiter
    (`viewopt_show_fps`, `viewopt_fps_limit`; a number outside 20..240 is brought into it, 0 is none).
-   Drafted, applied and rolled back like the rest. The engine calls (`gfx_set_fps_counter`,
-   `gfx_set_fps_limit`) are wired when the engine gives them; until then the two values are only kept.
+   Drafted, applied and rolled back like the rest. Apply, a rollback and the start-up read
+   (`keys.c`) hand both to the engine (`gfx_set_fps_counter`, `gfx_set_fps_limit`; with vsync on, a
+   limit of 60, 72 or 100 changes nothing, the retrace paces it), so a change shows at once.
 
 FOV and both volume sliders share descriptors for their tab, action, range,
 label and vertical position. Drawing, hit testing and pointer conversion use

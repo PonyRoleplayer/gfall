@@ -131,6 +131,8 @@ static void config_apply(const Config *c)
     viewopt_set_crouch_toggle(c->toggle_crouch);
     viewopt_set_show_fps(c->show_fps);
     viewopt_set_fps_limit(c->fps_limit);
+    gfx_set_fps_counter(viewopt_show_fps());
+    gfx_set_fps_limit(viewopt_fps_limit());
 }
 
 int keys_load(void)

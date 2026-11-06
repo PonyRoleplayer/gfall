@@ -188,6 +188,14 @@ static int mode_index(int w, int h)
     return -1;
 }
 
+/* The engine draws the frame counter and paces the swaps; the game keeps what the player chose
+ * (viewopt) and hands both over whenever they change. */
+static void fps_to_engine(void)
+{
+    gfx_set_fps_counter(viewopt_show_fps());
+    gfx_set_fps_limit(viewopt_fps_limit());
+}
+
 static void settings_gfx_read_engine(SettingsGfxDraft *draft)
 {
     int w;
@@ -496,6 +504,7 @@ static void settings_apply(void)
         viewopt_set_crouch_toggle(g_settings.crouch_toggle);
         viewopt_set_show_fps(g_settings.show_fps);
         viewopt_set_fps_limit(g_settings.fps_limit);
+        fps_to_engine();
     } else if (g_settings.tab == SETTINGS_KEYS) {
         for (i = 0; i < INPUT_ACTIONS; i++) input_bind(i, g_draft_keys[i]);
         control_set_classic(g_settings.classic);
@@ -513,6 +522,7 @@ static void settings_apply(void)
             viewopt_set_crouch_toggle(g_saved_crouch_toggle);
             viewopt_set_show_fps(g_saved_show_fps);
             viewopt_set_fps_limit(g_saved_fps_limit);
+            fps_to_engine();
         } else if (g_settings.tab == SETTINGS_KEYS) {
             camera_set_fov((float)g_saved_fov);
             sound_set_volume(g_saved_sfx);
@@ -522,6 +532,7 @@ static void settings_apply(void)
             viewopt_set_crouch_toggle(g_saved_crouch_toggle);
             viewopt_set_show_fps(g_saved_show_fps);
             viewopt_set_fps_limit(g_saved_fps_limit);
+            fps_to_engine();
             for (i = 0; i < INPUT_ACTIONS; i++) input_bind(i, g_saved_keys[i]);
             control_set_classic(g_saved_classic);
             mouse_set_cursor(g_saved_classic);
@@ -534,6 +545,7 @@ static void settings_apply(void)
             viewopt_set_crouch_toggle(g_saved_crouch_toggle);
             viewopt_set_show_fps(g_saved_show_fps);
             viewopt_set_fps_limit(g_saved_fps_limit);
+            fps_to_engine();
         }
         g_settings.note = "Could not save settings. Changes were not applied.";
         return;
