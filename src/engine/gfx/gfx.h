@@ -30,7 +30,9 @@ int gfx_prepare(const Level *level);
  * in the list, or one the card refuses, opens 640 x 480 instead, which
  * gfx_mode_opened then reports. The view (df_view_w, df_view_h) is the
  * opened mode from gfx_startup on, 640 x 480 before it. The field of
- * view is kept: the focal length follows the width.
+ * view is kept: the focal length follows the width. 640 x 400 is also
+ * taken though never listed: a probe at 70 Hz, its picture stretched up
+ * and down (docs/glide.md, The screen's mode).
  */
 void gfx_set_mode(int w, int h);
 /* The modes to list, smallest first: final after gfx_startup, which finds the board (before it, 512 x 384 and 640 x 480). */

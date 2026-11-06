@@ -28,7 +28,7 @@ typedef struct DrawVert {
  * the mode it got.
  */
 int glide_open(void *hwnd);
-/* The mode for the next glide_open: w x h, one of glide_mode's; any other is 640 x 480. */
+/* The mode for the next glide_open: w x h, one of glide_mode's or the hidden 640 x 400 probe; any other is 640 x 480. */
 void glide_want_mode(int w, int h);
 /*
  * The modes this card can be asked for, smallest first: 512 x 384 and

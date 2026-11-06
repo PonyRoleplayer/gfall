@@ -246,18 +246,33 @@ typedef struct GlideMode {
     short fb_mb;
     /* 1: below 512 x 384, which an SST-1 or a Voodoo 2 has no timing for. */
     short low;
+    /* 1: a probe, never listed, opened only when asked for by its size. */
+    short hidden;
+    GrScreenRefresh_t refresh;
+    /* The refresh in hertz, for the log. */
+    short hz;
 } GlideMode;
 
+/*
+ * 640 x 400 is a probe (docs/glide.md, The screen's mode): the SST-1's
+ * init code is remembered, not checked, to time it at 70 Hz and up but
+ * not 60, so it is asked for at 70. Its pixels are 1.2 times taller than
+ * wide on a 4:3 screen and nothing corrects that yet: the picture is
+ * stretched up and down. It is opened only when a game asks for it by
+ * hand (gfall.cfg's resolution=640x400), so the log says whether a board
+ * has it before anything is built for it.
+ */
 static const GlideMode g_modes[] = {
-    { 320, 240, GR_RESOLUTION_320x240, 2, 1 },
-    { 400, 300, GR_RESOLUTION_400x300, 2, 1 },
-    { 512, 384, GR_RESOLUTION_512x384, 2, 0 },
-    { 640, 480, GR_RESOLUTION_640x480, 2, 0 },
-    { 800, 600, GR_RESOLUTION_800x600, 4, 0 }
+    { 320, 240, GR_RESOLUTION_320x240, 2, 1, 0, GR_REFRESH_60Hz, 60 },
+    { 400, 300, GR_RESOLUTION_400x300, 2, 1, 0, GR_REFRESH_60Hz, 60 },
+    { 512, 384, GR_RESOLUTION_512x384, 2, 0, 0, GR_REFRESH_60Hz, 60 },
+    { 640, 400, GR_RESOLUTION_640x400, 2, 0, 1, GR_REFRESH_70Hz, 70 },
+    { 640, 480, GR_RESOLUTION_640x480, 2, 0, 0, GR_REFRESH_60Hz, 60 },
+    { 800, 600, GR_RESOLUTION_800x600, 4, 0, 0, GR_REFRESH_60Hz, 60 }
 };
 #define MODE_COUNT ((int)(sizeof(g_modes) / sizeof(g_modes[0])))
 /* 640 x 480: what every program opens unless asked. */
-#define MODE_DEFAULT 3
+#define MODE_DEFAULT 4
 
 static int g_want_w = 640;
 static int g_want_h = 480;
@@ -297,6 +312,12 @@ static int mode_allowed(int m)
     return g_modes[m].fb_mb <= 2 || board_fb_mb() >= g_modes[m].fb_mb;
 }
 
+/* 1 when mode m is shown to a game's selector: allowed, and not a probe. */
+static int mode_listed(int m)
+{
+    return mode_allowed(m) && !g_modes[m].hidden;
+}
+
 void glide_want_mode(int w, int h)
 {
     g_want_w = w;
@@ -310,7 +331,7 @@ int glide_mode_count(void)
 
     n = 0;
     for (m = 0; m < MODE_COUNT; m++) {
-        n += mode_allowed(m);
+        n += mode_listed(m);
     }
     return n;
 }
@@ -320,7 +341,7 @@ int glide_mode(int i, int *w, int *h)
     int m;
 
     for (m = 0; m < MODE_COUNT; m++) {
-        if (!mode_allowed(m)) {
+        if (!mode_listed(m)) {
             continue;
         }
         if (i-- == 0) {
@@ -338,7 +359,7 @@ static int open_mode(void *hwnd, int m)
     return glide.open(
         (FxU32)(UINT_PTR)hwnd,
         g_modes[m].res,
-        GR_REFRESH_60Hz,
+        g_modes[m].refresh,
         GR_COLORFORMAT_ARGB,
         GR_ORIGIN_LOWER_LEFT,
         2,
@@ -572,7 +593,7 @@ int glide_open(void *hwnd)
         int m;
         int got;
 
-        /* The mode asked for, if the board may have it; else the default. */
+        /* The mode asked for, if the board may have it (a probe too); else the default. */
         for (m = 0; m < MODE_COUNT; m++) {
             if (g_modes[m].w == g_want_w && g_modes[m].h == g_want_h && mode_allowed(m)) {
                 break;
@@ -599,8 +620,10 @@ int glide_open(void *hwnd)
             return 0;
         }
         df_set_view(g_modes[got].w, g_modes[got].h);
-        log_print(LOG_INFO, "glide: %dx%d at 60 Hz, %d MB of frame buffer",
-                  g_modes[got].w, g_modes[got].h, board_fb_mb());
+        /* One line for what opened, and the refusal above for what did not: a probe reads its answer here. */
+        log_print(LOG_INFO, "glide: %dx%d at %d Hz opened", g_modes[got].w, g_modes[got].h,
+                  g_modes[got].hz);
+        log_print(LOG_INFO, "glide: %d MB of frame buffer", board_fb_mb());
     }
     g_opened = 1;
 
