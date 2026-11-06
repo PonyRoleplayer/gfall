@@ -51,6 +51,14 @@ int viewopt_tex_detail(void);
 void viewopt_set_tex_detail(int level);
 int viewopt_sprite_detail(void);
 void viewopt_set_sprite_detail(int level);
+/*
+ * The screen's mode the player chose, w x h (the engine's gfx_mode list; 640 x 480 the default and for older
+ * files). It takes effect at the next start: apps/gfall reads it with viewopt_mode_in before the card opens.
+ */
+void viewopt_mode(int *w, int *h);
+void viewopt_set_mode(int w, int h);
+/* The mode a file's OPTS row holds, applying nothing else: 1 when it holds one, 0 for no file, no row or no mode. */
+int viewopt_mode_in(const df_u8 *bytes, df_u32 n, int *w, int *h);
 /* 1 when the crouch key flips between crouched and standing; 0 when crouched only while it is held. */
 int viewopt_crouch_toggle(void);
 void viewopt_set_crouch_toggle(int on);

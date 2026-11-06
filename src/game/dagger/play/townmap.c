@@ -263,8 +263,8 @@ int townmap_marker(float *sx, float *sy, float *angle)
         return 0;
     }
     /* The middle of the player's cell, from classic's pixels to the engine's, whose y counts up from the bottom. */
-    *sx = ((float)g.arrow_x + 0.5f) * 2.0f;
-    *sy = 480.0f - ((float)g.arrow_y + 0.5f) * 2.4f;
+    *sx = ((float)g.arrow_x + 0.5f) * ((float)df_view_w() / 320.0f);
+    *sy = (float)df_view_h() - ((float)g.arrow_y + 0.5f) * ((float)df_view_h() / 200.0f);
     /* North is up: the facing, clockwise from north, is the arrow's way on the screen. */
     *angle = g.yaw;
     return 1;

@@ -35,7 +35,8 @@ int screen_in(int x, int y, int left, int top, int w, int h)
 void screen_draw(int pic, int left, int top, int w, int h)
 {
     if (pic) {
-        pic_draw(pic, screen_x(left), screen_top(top), screen_x(w), screen_h(top + h) - screen_h(top));
+        /* The width from the two edges, as the height is: at 400 x 300 or 512 x 384 a width alone would leave a pixel short of its neighbour. */
+        pic_draw(pic, screen_x(left), screen_top(top), screen_x(left + w) - screen_x(left), screen_h(top + h) - screen_h(top));
     }
 }
 

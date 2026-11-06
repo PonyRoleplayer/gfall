@@ -43,13 +43,14 @@ enum {
     SETTINGS_GFX_TEXDETAIL,
     SETTINGS_GFX_SPRITEDETAIL
 };
-#define SETTINGS_GFX_RESOLUTIONS 1
+/* The modes the selector lists: the engine's (menu.c gives them with settings_set_modes), 640 x 480 alone until then. */
+#define SETTINGS_GFX_MODES_MAX 8
 #define SETTINGS_GFX_ROWS 10
 #define SETTINGS_GFX_ITEM_COUNT 16
 
 /* Graphics tab draft: edited in memory until Apply. menu.c owns hold/commit. */
 typedef struct SettingsGfxDraft {
-    int resolution;              /* Only 0 (640x480) today. */
+    int resolution;              /* Which of the modes listed, smallest first; it takes effect at the next start. */
     int fov;                     /* Horizontal degrees, 45..120. */
     int far_clip;                /* World units. */
     int fog;
@@ -109,6 +110,10 @@ int settings_fov_at(int x);
 int settings_slider_at(int action, int x);
 int settings_binding_action(int row, int classic);
 
+void settings_set_modes(const int *w, const int *h, int count);
+int settings_resolutions(void);
+/* The mode now open, to say so beside the choice when they differ (0 for not known). */
+void settings_set_opened(int w, int h);
 int settings_resolution_w(int index);
 int settings_resolution_h(int index);
 const char *settings_gfx_console_var(int action);

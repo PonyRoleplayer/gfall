@@ -24,6 +24,7 @@
 #include "engine/ui/console.h"
 #include "game/dagger/formats/fnt.h"
 #include "game/dagger/formats/texture.h"
+#include "game/dagger/play/keys.h"
 #include "game/dagger/play/game.h"
 #include "game/dagger/tables/maindat.h"
 
@@ -109,6 +110,15 @@ int gfall_main(void *instance)
         win_shutdown();
         mem_shutdown();
         return 1;
+    }
+    /* The screen's mode the player chose, from DATA\KEYS.DAT, before the card opens: a mode it lacks opens 640 x 480. */
+    {
+        int mode_w;
+        int mode_h;
+
+        if (keys_peek_mode(&mode_w, &mode_h)) {
+            gfx_set_mode(mode_w, mode_h);
+        }
     }
     if (!gfx_startup(win_hwnd())) {
         win_fail(gfx_error());

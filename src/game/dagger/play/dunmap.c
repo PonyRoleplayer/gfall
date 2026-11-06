@@ -32,10 +32,10 @@ static const Rect g_compass_rect = { 3, 172, 76, 17 };
 #define GRID3D_W 27
 #define GRID3D_H 19
 
-/* Classic's 320 x 200 on the engine's 640 x 480, whose y counts from the bottom. */
-#define SCREEN_X_PER 2.0f
-#define SCREEN_Y_PER 2.4f
-#define SCREEN_H_PX 480.0f
+/* Classic's 320 x 200 on the engine's view (640 x 480 unless another mode opened), whose y counts from the bottom. */
+#define SCREEN_X_PER ((float)df_view_w() / 320.0f)
+#define SCREEN_Y_PER ((float)df_view_h() / 200.0f)
+#define SCREEN_H_PX ((float)df_view_h())
 
 /* From above: pixels a unit, the start and its limits; a pan step in screen pixels; a turn's step. */
 #define SCALE_START 0.15f

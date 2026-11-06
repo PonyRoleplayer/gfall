@@ -1,6 +1,7 @@
 #include "game/dagger/play/settings.h"
 #include "game/dagger/formats/smallfont.h"
 #include "engine/core/mem.h"
+#include "engine/core/log.h"
 #include "engine/platform/input.h"
 
 /* A handful of swatches, not a full-screen texture: 96 KB of source texels
@@ -377,6 +378,13 @@ static void gfx_toggle_row(int y, const char *label, int on, int hot)
     button(426, y + 3, 184, 20, on ? "ON" : "OFF", 0, hot);
 }
 
+/* The modes the selector lists and the one open now (settings_set_modes, settings_set_opened). */
+static int g_mode_w[SETTINGS_GFX_MODES_MAX] = { 640 };
+static int g_mode_h[SETTINGS_GFX_MODES_MAX] = { 480 };
+static int g_modes = 1;
+static int g_opened_w;
+static int g_opened_h;
+
 /* A choice among Low, Medium and High: a click goes to the next (menu.c). */
 static void gfx_choice_row(int y, const char *label, int value, int hot)
 {
@@ -387,21 +395,62 @@ static void gfx_choice_row(int y, const char *label, int value, int hot)
     button(426, y + 3, 184, 20, tr(names[value < 0 ? 0 : (value > 2 ? 2 : value)]), 0, hot);
 }
 
-static void gfx_resolution_row(int y, int hot)
+static void gfx_resolution_row(const SettingsView *v, int y, int hot)
 {
+    static char chosen[24];
+    static char now[24];
+    int w;
+    int h;
+
+    w = settings_resolution_w(v->gfx.resolution);
+    h = settings_resolution_h(v->gfx.resolution);
+    log_format(chosen, (int)sizeof(chosen), "%d x %d", w, h);
     panel(174, y, 444, GFX_ROW_H, 0);
-    text(184, y + 8, 220, tr("RESOLUTION"), 0);
-    button(426, y + 3, 184, 20, "640 x 480", 0, hot);
+    text(184, y + 8, 120, tr("RESOLUTION"), 0);
+    /* The change shows at the next start: say what is open now when it is another (a refused mode opens 640 x 480). */
+    if (g_opened_w > 0 && (g_opened_w != w || g_opened_h != h)) {
+        log_format(now, (int)sizeof(now), "NOW %d x %d", g_opened_w, g_opened_h);
+        text(300, y + 8, 120, tr(now), 0);
+    }
+    button(426, y + 3, 184, 20, chosen, 0, hot);
+}
+
+void settings_set_modes(const int *w, const int *h, int count)
+{
+    int i;
+
+    g_modes = 0;
+    for (i = 0; i < count && i < SETTINGS_GFX_MODES_MAX; i++) {
+        g_mode_w[g_modes] = w[i];
+        g_mode_h[g_modes] = h[i];
+        g_modes++;
+    }
+    if (g_modes == 0) {
+        g_mode_w[0] = 640;
+        g_mode_h[0] = 480;
+        g_modes = 1;
+    }
+}
+
+int settings_resolutions(void)
+{
+    return g_modes;
+}
+
+void settings_set_opened(int w, int h)
+{
+    g_opened_w = w;
+    g_opened_h = h;
 }
 
 int settings_resolution_w(int index)
 {
-    return index == 0 ? 640 : 0;
+    return index >= 0 && index < g_modes ? g_mode_w[index] : 0;
 }
 
 int settings_resolution_h(int index)
 {
-    return index == 0 ? 480 : 0;
+    return index >= 0 && index < g_modes ? g_mode_h[index] : 0;
 }
 
 const char *settings_gfx_console_var(int action)
@@ -557,7 +606,7 @@ void settings_draw(const SettingsView *v, SettingsQuad quad, void *ctx)
         for (row = v->gfx_scroll; row < GFX_ROWS && row < v->gfx_scroll + SETTINGS_GFX_ROWS; row++) {
             y = GFX_LIST_Y + (row - v->gfx_scroll) * GFX_ROW_H;
             if (g_gfx_rows[row].kind == GFX_ROW_RES)
-                gfx_resolution_row(y, v->hover == SETTINGS_GFX_RESOLUTION);
+                gfx_resolution_row(v, y, v->hover == SETTINGS_GFX_RESOLUTION);
             else if (g_gfx_rows[row].kind == GFX_ROW_CHOICE)
                 gfx_choice_row(y, g_gfx_rows[row].label, gfx_value(v, g_gfx_rows[row].action),
                                v->hover == g_gfx_rows[row].action);
@@ -578,7 +627,7 @@ void settings_draw(const SettingsView *v, SettingsQuad quad, void *ctx)
             panel(604, GFX_LIST_Y + 28 + thumb, 12, 70, 0);
         }
         paragraph(180, 360, 420, 28,
-                  "Every control on this tab is a draft until Apply. Texture and sprite detail (Low a quarter size, Medium half, High full) send the pictures again on Apply. Resolution does not change video mode yet.");
+                  "Every control on this tab is a draft until Apply. Texture and sprite detail (Low a quarter size, Medium half, High full) send the pictures again on Apply. A resolution shows at the next start.");
     } else if (v->tab == SETTINGS_AUDIO) {
         text(182,68,420,tr("VOLUME"),0);
         slider_draw(slider_desc(SETTINGS_SFX_SLIDER), v->sfx_volume);

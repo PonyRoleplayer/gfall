@@ -145,9 +145,50 @@ static void settings_release(void)
     settings_close();
 }
 
+/* The engine's modes into the selector, and the mode open now beside them. */
+static void settings_load_modes(void)
+{
+    int w[SETTINGS_GFX_MODES_MAX];
+    int h[SETTINGS_GFX_MODES_MAX];
+    int n;
+    int ow;
+    int oh;
+
+    for (n = 0; n < SETTINGS_GFX_MODES_MAX && gfx_mode(n, &w[n], &h[n]); n++) {
+    }
+    settings_set_modes(w, h, n);
+    gfx_mode_opened(&ow, &oh);
+    settings_set_opened(ow, oh);
+}
+
+/* Which of the listed modes is w x h; -1 when none is. */
+static int mode_index(int w, int h)
+{
+    int i;
+
+    for (i = 0; i < settings_resolutions(); i++) {
+        if (settings_resolution_w(i) == w && settings_resolution_h(i) == h) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 static void settings_gfx_read_engine(SettingsGfxDraft *draft)
 {
-    draft->resolution = 0;
+    int w;
+    int h;
+    int at;
+
+    /* The choice kept in the options file; else the mode that opened; else the first listed. */
+    settings_load_modes();
+    viewopt_mode(&w, &h);
+    at = mode_index(w, h);
+    if (at < 0) {
+        gfx_mode_opened(&w, &h);
+        at = mode_index(w, h);
+    }
+    draft->resolution = at < 0 ? 0 : at;
     draft->fov = df_iround(camera_fov());
     draft->far_clip = df_iround(gfx_far());
     draft->fog = gfx_fog();
@@ -186,6 +227,8 @@ void settings_gfx_draft_commit(const SettingsGfxDraft *draft)
     scene_set_flora(draft->flora);
     scene_set_flora_density(draft->floradensity);
     scene_set_flora_sight(draft->florasight);
+    /* The mode is kept for the next start: the card is open at one now. */
+    viewopt_set_mode(settings_resolution_w(draft->resolution), settings_resolution_h(draft->resolution));
     /* A change sends every picture again: only a real one is passed on, and it is kept for the options file. */
     if (gfx_tex_detail() != draft->texdetail) {
         gfx_set_tex_detail(draft->texdetail);
@@ -204,7 +247,7 @@ void settings_gfx_draft_cancel(void)
 
 static void settings_gfx_defaults(SettingsGfxDraft *draft)
 {
-    draft->resolution = 0;
+    draft->resolution = mode_index(640, 480) < 0 ? 0 : mode_index(640, 480);
     draft->fov = 75;
     draft->far_clip = (int)DF_FAR;
     draft->fog = 1;
@@ -578,7 +621,7 @@ static int settings_frame(const Input *in, int px, int py)
             if (g_settings.gfx_scroll < SETTINGS_GFX_ITEM_COUNT - SETTINGS_GFX_ROWS) g_settings.gfx_scroll++;
         } else if (g_settings.scroll < SETTINGS_BINDINGS - SETTINGS_ROWS) g_settings.scroll++;
         break;
-    case SETTINGS_GFX_RESOLUTION: g_settings.gfx.resolution = 0; break;
+    case SETTINGS_GFX_RESOLUTION: g_settings.gfx.resolution = (g_settings.gfx.resolution + 1) % settings_resolutions(); break;
     case SETTINGS_GFX_FOG: g_settings.gfx.fog = !g_settings.gfx.fog; break;
     case SETTINGS_GFX_SPRITEPOINT: g_settings.gfx.spritepoint = !g_settings.gfx.spritepoint; break;
     case SETTINGS_GFX_VSYNC: g_settings.gfx.vsync = !g_settings.gfx.vsync; break;

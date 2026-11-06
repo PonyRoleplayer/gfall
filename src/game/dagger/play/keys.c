@@ -71,6 +71,15 @@ void keys_defaults(void)
     }
 }
 
+int keys_peek_mode(int *w, int *h)
+{
+    df_u32 n;
+    const df_u8 *b;
+
+    b = vfs_read_beside(KEYS_FILE, &n);
+    return b && viewopt_mode_in(b, n, w, h);
+}
+
 int keys_load(void)
 {
     static RecTable table;

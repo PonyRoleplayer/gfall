@@ -21,6 +21,11 @@
 void keys_defaults(void);
 /* DATA\KEYS.DAT's bindings and scheme over the defaults: 1 when it read. */
 int keys_load(void);
+/*
+ * The screen's mode DATA\KEYS.DAT holds, for the program to pass to gfx_set_mode before the card opens (it
+ * is read again with the rest by keys_load once it has): 1 when the file holds one. Nothing else is applied.
+ */
+int keys_peek_mode(int *w, int *h);
 /* Every binding and the scheme into DATA\KEYS.DAT: 1 when written. */
 int keys_save(void);
 

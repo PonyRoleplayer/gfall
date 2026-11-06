@@ -37,6 +37,19 @@ void gfx_set_mipmap(int on) { g_stub_mipmap = on; }
 void gfx_set_light_range(int scale) { (void)scale; }
 void gfx_set_light_shadow(int on) { (void)on; }
 static int g_stub_tex_detail = 2, g_stub_sprite_detail = 2;
+static const int g_stub_modes[][2] = { { 320, 240 }, { 400, 300 }, { 512, 384 }, { 640, 480 } };
+void gfx_set_mode(int w, int h) { (void)w; (void)h; }
+int gfx_mode_count(void) { return 4; }
+int gfx_mode(int i, int *w, int *h)
+{
+    if (i < 0 || i >= 4) {
+        return 0;
+    }
+    *w = g_stub_modes[i][0];
+    *h = g_stub_modes[i][1];
+    return 1;
+}
+void gfx_mode_opened(int *w, int *h) { *w = 640; *h = 480; }
 void gfx_set_tex_detail(int level) { g_stub_tex_detail = level; }
 int gfx_tex_detail(void) { return g_stub_tex_detail; }
 void gfx_set_sprite_detail(int level) { g_stub_sprite_detail = level; }
@@ -147,6 +160,28 @@ void check_menu(void)
     click_at(40,445);
     click_at(200,445);
     check_expect(gfx_tex_detail() == 2 && gfx_sprite_detail() == 2 && viewopt_tex_detail() == 2, "menu: Default did not return the details to High");
+    click_at(550,445);
+    /* The resolution: the engine's four modes, the saved 640 x 480 first; a click goes to the next (320 x 240); a draft until Apply; kept for the next start; Default is 640 x 480. */
+    viewopt_set_mode(640, 480);
+    menu_open(MENU_NONE);
+    menu_open(MENU_OPTIONS);
+    click_at(30,200);
+    check_expect(settings_resolutions() == 4 && settings_resolution_w(0) == 320 && settings_resolution_h(0) == 240
+                     && settings_resolution_w(3) == 640, "menu: the selector does not list the engine's modes");
+    click_at(516, 100);
+    {
+        int mw, mh;
+
+        viewopt_mode(&mw, &mh);
+        check_expect(mw == 640 && mh == 480, "menu: a resolution draft was kept early");
+        click_at(200,445);
+        viewopt_mode(&mw, &mh);
+        check_expect(mw == 320 && mh == 240, "menu: Apply did not keep 320 x 240 for the next start");
+        click_at(40,445);
+        click_at(200,445);
+        viewopt_mode(&mw, &mh);
+        check_expect(mw == 640 && mh == 480, "menu: Default did not return the mode to 640 x 480");
+    }
     click_at(550,445);
     menu_open(MENU_OPTIONS);
     click_at(30,160);

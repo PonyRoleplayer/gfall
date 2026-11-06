@@ -2,7 +2,7 @@
 #define DF_SCREEN_H
 
 /*
- * Classic's 320 x 200 screen on the card's 640 x 480: x twice, y 2.4
+ * Classic's 320 x 200 screen on the card's view (df_view_w x df_view_h, 640 x 480 unless another mode opened): x w / 320 times, y h / 200 times, 2 and 2.4 at 640 x 480
  * times, and the card's y counting up from the bottom (ui_string's and
  * pic_draw's frame). The HUD, the menus and their pointer all place
  * classic's pieces where classic put them through these.

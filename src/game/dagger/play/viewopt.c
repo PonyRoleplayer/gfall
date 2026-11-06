@@ -19,9 +19,11 @@ typedef struct ViewRow {
     df_u8 crouch_toggle;
     df_u8 tex_detail;
     df_u8 sprite_detail;
+    df_u16 mode_w;
+    df_u16 mode_h;
 } ViewRow;
 
-static const ViewRow g_default_row = { 0, 0, 0, 75, 80, 80, 0, 2, 2 };
+static const ViewRow g_default_row = { 0, 0, 0, 75, 80, 80, 0, 2, 2, 640, 480 };
 static const RecField g_fields[] = {
     REC_FIELD("id", REC_UINT, ViewRow, id),
     REC_FIELD("full", REC_UINT, ViewRow, full),
@@ -31,9 +33,11 @@ static const RecField g_fields[] = {
     REC_FIELD("music_volume", REC_UINT, ViewRow, music_volume),
     REC_FIELD("crouch_toggle", REC_UINT, ViewRow, crouch_toggle),
     REC_FIELD("tex_detail", REC_UINT, ViewRow, tex_detail),
-    REC_FIELD("sprite_detail", REC_UINT, ViewRow, sprite_detail)
+    REC_FIELD("sprite_detail", REC_UINT, ViewRow, sprite_detail),
+    REC_FIELD("mode_w", REC_UINT, ViewRow, mode_w),
+    REC_FIELD("mode_h", REC_UINT, ViewRow, mode_h)
 };
-static const RecSchema g_schema = { "OPTS", "options", g_fields, 9, (df_u16)sizeof(ViewRow), &g_default_row };
+static const RecSchema g_schema = { "OPTS", "options", g_fields, 11, (df_u16)sizeof(ViewRow), &g_default_row };
 
 /* Metres, HeadBobber's walking and running amounts. */
 #define WALK_X 0.045f
@@ -50,6 +54,8 @@ static const RecSchema g_schema = { "OPTS", "options", g_fields, 9, (df_u16)size
 static int g_full;
 static int g_bob;
 static int g_crouch_toggle;
+static int g_mode_w = 640;
+static int g_mode_h = 480;
 static int g_tex_detail = 2;
 static int g_sprite_detail = 2;
 
@@ -60,6 +66,8 @@ void viewopt_defaults(void)
     g_crouch_toggle = 0;
     g_tex_detail = 2;
     g_sprite_detail = 2;
+    g_mode_w = 640;
+    g_mode_h = 480;
     camera_set_fov(75.0f);
     sound_set_volume(80);
     music_set_volume(80);
@@ -132,18 +140,18 @@ void viewopt_eye(float phase, int walking, int running, float *right, float *up,
     *yaw = -s * ny * DEG;
 }
 
-void viewopt_read(const df_u8 *bytes, df_u32 n)
+/* The OPTS row of a record file, over the schema's defaults: 0 for no file or no row. One table, reused. */
+static const ViewRow *parse_row(const df_u8 *bytes, df_u32 n)
 {
     static RecTable table;
     RecChunk chunk;
     df_u32 pos;
-    const ViewRow *row;
 
     if (!bytes || !rec_is_file(bytes, n)) {
-        return;
+        return 0;
     }
     if (!table.schema && !rec_table_init(&table, &g_schema, 1)) {
-        return;
+        return 0;
     }
     rec_table_clear(&table);
     pos = 0;
@@ -152,7 +160,27 @@ void viewopt_read(const df_u8 *bytes, df_u32 n)
             rec_merge(&table, &chunk, 0);
         }
     }
-    row = (const ViewRow *)rec_row(&table, 0);
+    return (const ViewRow *)rec_row(&table, 0);
+}
+
+int viewopt_mode_in(const df_u8 *bytes, df_u32 n, int *w, int *h)
+{
+    const ViewRow *row;
+
+    row = parse_row(bytes, n);
+    if (!row || row->mode_w < 64 || row->mode_h < 64) {
+        return 0;
+    }
+    *w = row->mode_w;
+    *h = row->mode_h;
+    return 1;
+}
+
+void viewopt_read(const df_u8 *bytes, df_u32 n)
+{
+    const ViewRow *row;
+
+    row = parse_row(bytes, n);
     /* A missing row leaves the caller's default. Anything but 0 or 1 is ignored. */
     if (!row) {
         return;
@@ -180,6 +208,11 @@ void viewopt_read(const df_u8 *bytes, df_u32 n)
     if (row->sprite_detail <= 2) {
         g_sprite_detail = row->sprite_detail;
     }
+    /* The mode is the engine's to accept: only a sane size is kept; an old file says 640 x 480. */
+    if (row->mode_w >= 64 && row->mode_h >= 64) {
+        g_mode_w = row->mode_w;
+        g_mode_h = row->mode_h;
+    }
 }
 
 int viewopt_write(RecPut put, void *ctx)
@@ -192,6 +225,8 @@ int viewopt_write(RecPut put, void *ctx)
     row.crouch_toggle = (df_u8)g_crouch_toggle;
     row.tex_detail = (df_u8)g_tex_detail;
     row.sprite_detail = (df_u8)g_sprite_detail;
+    row.mode_w = (df_u16)g_mode_w;
+    row.mode_h = (df_u16)g_mode_h;
     row.fov = (df_u16)df_iround(camera_fov());
     row.sfx_volume = (df_u8)sound_volume();
     row.music_volume = (df_u8)music_volume();
@@ -216,4 +251,18 @@ int viewopt_sprite_detail(void)
 void viewopt_set_sprite_detail(int level)
 {
     g_sprite_detail = level < 0 ? 0 : (level > 2 ? 2 : level);
+}
+
+void viewopt_mode(int *w, int *h)
+{
+    *w = g_mode_w;
+    *h = g_mode_h;
+}
+
+void viewopt_set_mode(int w, int h)
+{
+    if (w >= 64 && h >= 64) {
+        g_mode_w = w;
+        g_mode_h = h;
+    }
 }

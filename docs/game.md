@@ -623,8 +623,12 @@ classic screens' stretched 320 x 200 canvas. It does not change video mode.
    key. The menu/console keys remain reserved by `input_bind`. Mouse: Cursor /
    View switches the draft scheme; the Attack / swing row edits INPUT_SWING
    for Cursor, INPUT_ATTACK for View, preserving the other scheme's binding.
-3. **Graphics**: player-facing controls only — resolution (only **640 x 480**
-   today, stored as index 0 in the draft), horizontal field of view (45..120,
+3. **Graphics**: player-facing controls only — **resolution** (the engine's `gfx_mode` list, smallest
+   first: 320 x 240, 400 x 300, 512 x 384, 640 x 480, and 800 x 600 on a board with 4 MB of frame buffer;
+   a click goes to the next; kept as `mode_w` and `mode_h` in `OPTS`, 640 x 480 for an older file; it shows at
+   the next start, since Glide opens with the mode: `apps/gfall/main.c` reads it with `keys_peek_mode` before
+   `gfx_startup` and passes it to `gfx_set_mode`; a mode the card refuses opens 640 x 480, and the row then
+   says `NOW 640 x 480` beside the choice), horizontal field of view (45..120,
    default 75), far clip, **texture detail** and **sprite detail** (Low, Medium or High each, High the
    default: the engine's `texdetail` and `spritedetail`, a quarter, half or the full side of a picture, walls and
    the like apart from the sprites the player meets; the weapon, the HUD and every screen are untouched;
@@ -641,8 +645,13 @@ classic screens' stretched 320 x 200 canvas. It does not change video mode.
    file, given to the engine by `keys_load` before the first place; an Apply that changes one sends every picture
    again, so it is a load-sized pause, and a change is passed on only when it differs). Leaving the tab, Back, Escape, or a failed
    Apply restores the engine to the snapshot from when the tab was first opened
-   in that session; tab changes keep the draft. Resolution does not change
-   video mode yet.
+   in that session; tab changes keep the draft. A resolution shows at the next start.
+   The shell is drawn in 640 x 480 coordinates scaled to the view (`menu.c`), so at 320 x 240 its text is
+   half size: not checked for legibility yet. Classic's screens scale through `screen.c` by w / 320 and
+   h / 200 (a picture's width is taken from its two edges, so a factor that is not whole, 1.25 or 1.6,
+   leaves no seam), the map markers (`dunmap.c`, `townmap.c`) by the same factors, the pointer through
+   `df_view_w()` and `df_view_h()`. 320 x 200 and 640 x 400, which need a separate vertical focal length,
+   and switching live wait on the engine.
 4. **Audio**: independent SFX and music volume sliders, 0..100 percent,
    each defaulting to 80. Zero mutes that channel without toggling the
    console's separate sound/music enable flags. These use the existing

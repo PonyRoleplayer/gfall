@@ -5568,8 +5568,19 @@ static void check_settings(void)
     check_expect(settings_hit(SETTINGS_GRAPHICS, 1, 450, 226) == SETTINGS_GFX_SPRITEPOINT
         && settings_hit(SETTINGS_GRAPHICS, 0, 450, 226) == SETTINGS_GFX_FOG,
         "settings: graphics hit uses list scroll offset");
-    check_expect(settings_resolution_w(0) == 640 && settings_resolution_h(0) == 480
-        && settings_resolution_w(1) == 0, "settings: only 640x480 resolution");
+    {
+        int i;
+        int has_default;
+
+        /* The list is the engine's, smallest first (the menu gives it); 640 x 480 is always among them. */
+        has_default = 0;
+        for (i = 0; i < settings_resolutions(); i++) {
+            has_default |= settings_resolution_w(i) == 640 && settings_resolution_h(i) == 480;
+            check_expect(i == 0 || settings_resolution_w(i) >= settings_resolution_w(i - 1), "settings: the modes are not smallest first");
+        }
+        check_expect(has_default && settings_resolutions() >= 1 && settings_resolution_w(settings_resolutions()) == 0,
+                     "settings: the resolution list lacks 640x480 or does not end");
+    }
     check_expect(settings_gfx_console_var(SETTINGS_GFX_FOG)
         && settings_gfx_console_var(SETTINGS_GFX_FAR_SLIDER)
         && settings_gfx_console_var(SETTINGS_GFX_FLORA)
@@ -5673,6 +5684,39 @@ static void check_viewopt(void)
     viewopt_defaults();
     viewopt_read(g_opt_file, (df_u32)g_opt_at);
     check_expect(sound_volume()==0 && music_volume()==100, "view: muted SFX/full music did not survive settings round trip");
+    {
+        int mw;
+        int mh;
+
+        /* The screen's mode chosen: stored, read back, peeked before anything else is applied; an older file says 640 x 480. */
+        viewopt_set_mode(400, 300);
+        viewopt_set_tex_detail(0);
+        viewopt_set_sprite_detail(1);
+        g_opt_at = 0;
+        check_expect(rec_put_begin(opt_put, 0) && viewopt_write(opt_put, 0), "view: the mode did not store");
+        viewopt_defaults();
+        viewopt_mode(&mw, &mh);
+        check_expect(mw == 640 && mh == 480 && viewopt_tex_detail() == 2, "view: the defaults are not 640 x 480 and High");
+        check_expect(viewopt_mode_in(g_opt_file, (df_u32)g_opt_at, &mw, &mh) && mw == 400 && mh == 300,
+                     "view: the mode in the file was not peeked");
+        viewopt_read(g_opt_file, (df_u32)g_opt_at);
+        viewopt_mode(&mw, &mh);
+        check_expect(mw == 400 && mh == 300 && viewopt_tex_detail() == 0 && viewopt_sprite_detail() == 1,
+                     "view: the mode and the details did not come back");
+        check_expect(!viewopt_mode_in(0, 0, &mw, &mh), "view: a mode out of no file");
+        viewopt_defaults();
+        /* The earlier test's file went with that row: restore what the checks below expect. */
+        viewopt_set_full(1);
+        viewopt_set_bob(1);
+        camera_set_fov(103.0f);
+        sound_set_volume(0);
+        music_set_volume(100);
+        g_opt_at = 0;
+        rec_put_begin(opt_put, 0);
+        viewopt_write(opt_put, 0);
+        viewopt_defaults();
+        viewopt_read(g_opt_file, (df_u32)g_opt_at);
+    }
     check_expect(df_iround(camera_fov()) == 103, "view: FOV did not survive settings round trip");
     check_expect(viewopt_full() && viewopt_bob(), "view: a stored full screen and head bobbing did not come back");
     g_opt_at = 0;
