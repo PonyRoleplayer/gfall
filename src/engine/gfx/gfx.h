@@ -33,6 +33,24 @@ int gfx_mipmap(void);
  */
 void gfx_set_texcap(int kb);
 int gfx_texcap(void);
+/*
+ * Texture detail, the player's: walls (opaque pictures: models' faces,
+ * the land) and sprites (cutouts: flats, creatures, people, flora), each
+ * GFX_DETAIL_LOW, _MEDIUM or _HIGH (0..2, clamped; High at the start).
+ * High is a picture's own size, Medium half its side, Low a quarter;
+ * the smaller levels stay for distance. The sky, the font and the game's
+ * screen pictures (pic.h) are never touched. A change shows on the next
+ * gfx_frame: a place loaded whole is sent again, a stream's pictures are
+ * made again in place (texcache_redetail); with no place it waits for
+ * the next. See docs/memory.md, Detail.
+ */
+#define GFX_DETAIL_LOW 0
+#define GFX_DETAIL_MEDIUM 1
+#define GFX_DETAIL_HIGH 2
+void gfx_set_tex_detail(int level);
+int gfx_tex_detail(void);
+void gfx_set_sprite_detail(int level);
+int gfx_sprite_detail(void);
 /* How far lights reach, 1..8 times their radius; cuts the decals again. */
 void gfx_set_light_range(int scale);
 /* 1 (default): a light does not reach through a model in its way; cuts the decals again. */

@@ -10,6 +10,7 @@
 #include "engine/gfx/draw.h"
 #include "engine/gfx/glide.h"
 #include "engine/gfx/texcache.h"
+#include "engine/gfx/mip.h"
 #include "engine/ui/font.h"
 #include "engine/ui/pic.h"
 
@@ -133,6 +134,8 @@ static void pictures_prepare(void)
 /* A level is on the card, and mipmap changed: send it again next frame. */
 static int g_prepared;
 static int g_reload;
+/* The texture detail changed: the next frame applies it to the prepared place. */
+static int g_redetail;
 /* The prepared level, for a light rebuild. The caller keeps it alive. */
 static const Level *g_level;
 
@@ -319,6 +322,15 @@ float gfx_stream_budget(float fallback_ms)
 
 void gfx_frame(const Camera *cam, const Level *level)
 {
+    /* A detail change: a stream's pictures made again where they are, a whole place sent again. */
+    if (g_redetail && level) {
+        g_redetail = 0;
+        if (level->streamed) {
+            texcache_redetail();
+        } else {
+            g_reload = g_prepared;
+        }
+    }
     /* A streamed world's pictures are the game's to add: a mipmap or texcap change waits for a place. */
     if (g_reload && level && level->streamed) {
         g_reload = 0;
@@ -358,6 +370,39 @@ void gfx_set_texcap(int kb)
     }
     glide_set_tex_cap((df_u32)kb);
     g_reload = g_prepared;
+}
+
+/* The mip layer holds the detail (mip_detail_drop); the card hears of it on the next frame. */
+void gfx_set_tex_detail(int level)
+{
+    int was;
+
+    was = mip_wall_detail();
+    mip_set_detail(level, mip_sprite_detail());
+    if (mip_wall_detail() != was) {
+        g_redetail = g_prepared;
+    }
+}
+
+int gfx_tex_detail(void)
+{
+    return mip_wall_detail();
+}
+
+void gfx_set_sprite_detail(int level)
+{
+    int was;
+
+    was = mip_sprite_detail();
+    mip_set_detail(mip_wall_detail(), level);
+    if (mip_sprite_detail() != was) {
+        g_redetail = g_prepared;
+    }
+}
+
+int gfx_sprite_detail(void)
+{
+    return mip_sprite_detail();
 }
 
 int gfx_texcap(void)

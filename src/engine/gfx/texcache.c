@@ -283,7 +283,7 @@ int texcache_upload(const Level *level)
                 to_come++;
                 continue;
             }
-            if (glide_texture_bytes(g_side[i], g_cut[i], 0, &b)) {
+            if (glide_texture_bytes(g_side[i] >> mip_detail_drop(g_side[i], g_cut[i]), g_cut[i], 0, &b)) {
                 full += b;
             }
             g_side[i] = 0;
@@ -303,10 +303,11 @@ int texcache_upload(const Level *level)
     {
         df_u32 need;
 
+        /* "Full size" is as large as the player's detail allows (mip_detail_drop). */
         need = 0;
         for (i = 0; i < n; i++) {
             if (g_side[i] > 0) {
-                need += card_bytes(g_side[i], g_cut[i]);
+                need += card_bytes(g_side[i] >> mip_detail_drop(g_side[i], g_cut[i]), g_cut[i]);
             }
         }
         if (need > room && res_open(pal)) {
@@ -343,7 +344,8 @@ int texcache_upload(const Level *level)
         g_live[i] = 1;
         g_nlive++;
         g_bytes += card_bytes(g_side[i] >> d, g_cut[i]);
-        if (d > 0) {
+        /* Reduced to fit the card: past what the detail took. */
+        if (d > mip_detail_drop(g_side[i], g_cut[i])) {
             g_reduced++;
         }
     }
@@ -382,17 +384,23 @@ int texcache_reduced(void)
 /* ---- A streamed world's pictures ---------------------------------- */
 
 /*
- * A picture's levels in RAM, from level first down. A cutout keeps them
- * from half size (first 1): at 16 bits a texel its full level was three
- * quarters of its chain, 128 KB of a 256 sheet's 171, for a level drawn
- * only near. That level is made again from the picture (pot, its own
- * eight bits, kept by its owner while it is set) when it is sent.
+ * A picture's levels in RAM, from level first down. base is the level
+ * the player's detail lets it start at (mip_detail_drop): the residency
+ * is told of a picture base times halved, and its levels count from
+ * there. A cutout keeps them from one below base: at 16 bits a texel
+ * that level was three quarters of its chain, 128 KB of a 256 sheet's
+ * 171, for a level drawn only near. That level is made again from the
+ * picture (pot, its own eight bits, kept by its owner while it is set)
+ * when it is sent. density is the caller's, for full size, kept so the
+ * detail can change under a stream (texcache_redetail).
  */
 typedef struct Chain {
     df_u8 *levels;
     const df_u8 *pot;
+    float density;
     short side;
     df_u8 cutout;
+    df_u8 base;
     df_u8 first;
 } Chain;
 
@@ -446,26 +454,28 @@ static int res_upload(int slot, int drop, df_u32 addr, df_u32 *handle)
     if (!c->levels) {
         return 0;
     }
+    /* texres counts levels from the detail's size, base below the picture's own. */
+    drop += c->base;
     if (drop >= c->first) {
         /* The stored levels are a whole chain of a picture first times halved. */
         return glide_upload_chain(c->levels, c->side >> c->first, c->cutout, card_chain(c->cutout),
                                   drop - c->first, addr, handle);
     }
-    /* The full level, made now from the picture, with the stored ones after it. */
+    /* The level above the stored ones (a cutout's base), made now from the picture, with them after it. */
     if (!g_top) {
         g_top = (df_u8 *)mem_keep(MIP_MAX_BYTES);
     }
     if (!g_top || !c->pot) {
         return 0;
     }
-    top = mip_build(c->pot, c->side, c->cutout, 0, 0, g_pr, g_pg, g_pb, g_top);
+    top = mip_build(c->pot, c->side, c->cutout, drop, 0, g_pr, g_pg, g_pb, g_top);
     if (!top) {
         return 0;
     }
     if (card_chain(c->cutout)) {
-        mem_copy(g_top + top, c->levels, mip_texels(c->side, 1, 1) * (c->cutout ? 2u : 1u));
+        mem_copy(g_top + top, c->levels, mip_texels(c->side, c->first, 1) * (c->cutout ? 2u : 1u));
     }
-    return glide_upload_chain(g_top, c->side, c->cutout, card_chain(c->cutout), 0, addr, handle);
+    return glide_upload_chain(g_top, c->side >> drop, c->cutout, card_chain(c->cutout), 0, addr, handle);
 }
 
 static void res_release(df_u32 handle)
@@ -564,23 +574,22 @@ int texcache_stream_set(int slot, const Image *img, int cutout, float density)
     return chain_set(slot, img, cutout, density);
 }
 
-static int chain_set(int slot, const Image *img, int cutout, float density)
+/*
+ * slot's chain from its picture's eight bits, pot, a square of side, at
+ * the player's detail now, and its smallest copy on the card.
+ */
+static int chain_make(int slot, const df_u8 *pot, int side, int cutout, float density)
 {
     Chain *c;
     MemHeap *was;
     df_u32 n;
-    int side;
+    int base;
     int first;
 
-    if (!g_res || slot < 0 || slot >= TEXRES_SLOTS || !img || !img->pot
-        || img->pot_w != img->pot_h || img->pot_w < 1 || img->pot_w > 256
-        || (img->pot_w & (img->pot_w - 1))) {
-        return 0;
-    }
     texcache_stream_drop(slot);
-    side = img->pot_w;
-    /* A cutout of more than one texel keeps its levels from half size (Chain). */
-    first = cutout && side > 1 ? 1 : 0;
+    base = mip_detail_drop(side, cutout);
+    /* A cutout of more than one texel at its base keeps its levels from one below (Chain). */
+    first = cutout && (side >> base) > 1 ? base + 1 : base;
     n = mip_texels(side, first, 1) * (cutout ? 2u : 1u);
     c = &g_chains[slot];
     was = mem_heap_use(g_chain_heap);
@@ -590,19 +599,64 @@ static int chain_set(int slot, const Image *img, int cutout, float density)
         return 0;
     }
     /* Built once, every level kept: a sharper copy is then only a download. */
-    if (!mip_build(img->pot, side, cutout, first, 1, g_pr, g_pg, g_pb, c->levels)) {
+    if (!mip_build(pot, side, cutout, first, 1, g_pr, g_pg, g_pb, c->levels)) {
         texcache_stream_drop(slot);
         return 0;
     }
-    c->pot = img->pot;
+    c->pot = pot;
+    c->density = density;
     c->side = (short)side;
     c->cutout = (df_u8)(cutout ? 1 : 0);
+    c->base = (df_u8)base;
     c->first = (df_u8)first;
-    if (!texres_add(slot, side, cutout, density)) {
+    /*
+     * The residency sees the picture at its base: half the side a level,
+     * so half the texels a world unit, or it would think a level sharper
+     * than it is and ask for too little.
+     */
+    if (!texres_add(slot, side >> base, cutout, density / (float)(1 << base))) {
         texcache_stream_drop(slot);
         return 0;
     }
     return 1;
+}
+
+static int chain_set(int slot, const Image *img, int cutout, float density)
+{
+    if (!g_res || slot < 0 || slot >= TEXRES_SLOTS || !img || !img->pot
+        || img->pot_w != img->pot_h || img->pot_w < 1 || img->pot_w > 256
+        || (img->pot_w & (img->pot_w - 1))) {
+        return 0;
+    }
+    return chain_make(slot, img->pot, img->pot_w, cutout, density);
+}
+
+int texcache_redetail(void)
+{
+    int done;
+    int i;
+
+    if (!g_res) {
+        return 0;
+    }
+    done = 0;
+    for (i = 0; i < TEXRES_SLOTS; i++) {
+        Chain was;
+
+        was = g_chains[i];
+        if (!was.levels || was.base == mip_detail_drop(was.side, was.cutout)) {
+            continue;
+        }
+        /*
+         * Made again from the picture at the new base: the card keeps its
+         * smallest copy, and sharper ones come by distance over the next
+         * frames, as for a picture just streamed in.
+         */
+        done += chain_make(i, was.pot, was.side, was.cutout, was.density);
+    }
+    log_print(LOG_INFO, "textures: %d pictures made again at walls %d, sprites %d",
+              done, mip_wall_detail(), mip_sprite_detail());
+    return done;
 }
 
 void texcache_stream_drop(int slot)

@@ -1177,6 +1177,34 @@ static void check_pictures(void)
     check_expect(b && g_pc_texel[0] == 0 && g_pc_texel[1] == 0, "a 1555 cutout's clear texel is not 0");
     pic_free(b);
     ops.chroma = 1;
+    /*
+     * The player's texture detail at its lowest, walls and sprites: a
+     * screen picture is the game's, never the world's, and goes on the
+     * card as at High, its 29 tiles and every byte, a keyed cutout too.
+     */
+    {
+        df_u32 high_used;
+        int high_on;
+
+        pic_begin(0, 140u * 1024u, &ops);
+        a = pic_load(screen, 320, 200, rgb, 0);
+        b = pic_load(sprite, 40, 30, rgb, 1);
+        pic_stats(&pics, &high_on, &high_used, &room);
+        pic_free(a);
+        pic_free(b);
+        mip_set_detail(MIP_DETAIL_LOW, MIP_DETAIL_LOW);
+        pic_begin(0, 140u * 1024u, &ops);
+        a = pic_load(screen, 320, 200, rgb, 0);
+        b = pic_load(sprite, 40, 30, rgb, 1);
+        pic_stats(&pics, &on, &used, &room);
+        g_pc_quads = 0;
+        pic_draw(a, 0, 440, 640, 400);
+        check_expect(a && b && on == high_on && used == high_used && used > 66560u && g_pc_quads == 29,
+                     "Low texture detail changed a screen picture on the card");
+        pic_free(a);
+        pic_free(b);
+        mip_set_detail(MIP_DETAIL_HIGH, MIP_DETAIL_HIGH);
+    }
     pic_end();
 }
 
@@ -2897,6 +2925,63 @@ static void check_mip_spans(void)
         }
     }
     check_expect(ok, "a cutout's full level, alone or atop its chain, is not the plain 3 x 3 bleed");
+}
+
+/*
+ * The player's texture detail (docs/memory.md, Detail): the levels each
+ * kind of picture gives up, never below MIP_MIN_SIDE, and the load's
+ * budget for a place at each level of walls and sprites, by hand.
+ */
+static void check_detail(void)
+{
+    /* Two 256 walls and a 64 one; a 256 sprite sheet and a 32 one. */
+    static const int side[5] = { 256, 256, 64, 256, 32 };
+    static const df_u8 cut[5] = { 0, 0, 0, 1, 1 };
+    /* Bytes at a picture's own side and its halves, square_bytes: side * side, twice for a cutout. */
+    static const df_u32 walls[3] = { 4096u * 2u + 256u, 16384u * 2u + 1024u, 65536u * 2u + 4096u };
+    static const df_u32 sprites[3] = { 8192u + 128u, 32768u + 512u, 131072u + 2048u };
+    int drop[5];
+    int w;
+    int sp;
+    df_u32 n;
+
+    check_expect(mip_wall_detail() == MIP_DETAIL_HIGH && mip_sprite_detail() == MIP_DETAIL_HIGH,
+                 "texture detail did not start at High");
+    check_expect(mip_detail_drop(256, 0) == 0 && mip_detail_drop(256, 1) == 0,
+                 "High detail took a level off");
+    mip_set_detail(MIP_DETAIL_MEDIUM, MIP_DETAIL_LOW);
+    check_expect(mip_detail_drop(256, 0) == 1 && mip_detail_drop(16, 0) == 1 && mip_detail_drop(8, 0) == 0
+                 && mip_detail_drop(256, 1) == 2 && mip_detail_drop(16, 1) == 1 && mip_detail_drop(4, 1) == 0,
+                 "detail did not take its levels, or went below MIP_MIN_SIDE");
+    mip_set_detail(7, -3);
+    check_expect(mip_wall_detail() == MIP_DETAIL_HIGH && mip_sprite_detail() == MIP_DETAIL_LOW,
+                 "detail out of range was not clamped");
+    /* Room for all at full size: each level of each kind is its own size, the two apart. */
+    for (w = MIP_DETAIL_LOW; w <= MIP_DETAIL_HIGH; w++) {
+        for (sp = MIP_DETAIL_LOW; sp <= MIP_DETAIL_HIGH; sp++) {
+            mip_set_detail(w, sp);
+            n = mip_budget(side, cut, 5, 8u * 1024u * 1024u, square_bytes, drop);
+            check_expect(n == walls[w] + sprites[sp]
+                         && drop[0] == 2 - w && drop[1] == 2 - w && drop[2] == 2 - w
+                         && drop[3] == 2 - sp && drop[4] == 2 - sp,
+                         "the budget at a detail level was not the pictures' sizes at it");
+        }
+    }
+    /*
+     * Short of room at Low walls: the walls still give MIP_WALL_GRACE more
+     * before the sheet gives one, counted from their Low size; then it is
+     * the largest, the sheet.
+     */
+    mip_set_detail(MIP_DETAIL_LOW, MIP_DETAIL_HIGH);
+    n = mip_budget(side, cut, 5, walls[0] + sprites[2] - 1u, square_bytes, drop);
+    check_expect(drop[0] == 3 && drop[1] == 2 && drop[3] == 0 && n == 1024u + 4096u + 256u + sprites[2],
+                 "a Low wall did not give a level before a High sprite");
+    /* The walls at their grace (16, 16, and the 64 one at MIP_MIN_SIDE), and room for the sheet at half. */
+    n = mip_budget(side, cut, 5, 256u * 2u + 64u + 32768u + 2048u, square_bytes, drop);
+    check_expect(drop[0] == 4 && drop[1] == 4 && drop[2] == 3 && drop[3] == 1 && drop[4] == 0
+                 && n == 256u * 2u + 64u + 32768u + 2048u,
+                 "past the walls' grace the largest did not give");
+    mip_set_detail(MIP_DETAIL_HIGH, MIP_DETAIL_HIGH);
 }
 
 static void check_mip(void)
@@ -5478,6 +5563,7 @@ void check_engine(void)
     check_body_lifts();
     check_console();
     check_mip();
+    check_detail();
     check_mip_spans();
     check_mip_rgba_mmx();
     check_mip_pack_mmx();

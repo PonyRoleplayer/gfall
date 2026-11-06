@@ -962,6 +962,43 @@ df_u32 mip_build(const df_u8 *index, int side, int cutout, int drop, int chain,
     return at;
 }
 
+/* The player's detail, walls' and sprites': High until set (mip.h). */
+static int g_wall_detail = MIP_DETAIL_HIGH;
+static int g_sprite_detail = MIP_DETAIL_HIGH;
+
+static int clamp_detail(int level)
+{
+    return level < MIP_DETAIL_LOW ? MIP_DETAIL_LOW : level > MIP_DETAIL_HIGH ? MIP_DETAIL_HIGH : level;
+}
+
+void mip_set_detail(int walls, int sprites)
+{
+    g_wall_detail = clamp_detail(walls);
+    g_sprite_detail = clamp_detail(sprites);
+}
+
+int mip_wall_detail(void)
+{
+    return g_wall_detail;
+}
+
+int mip_sprite_detail(void)
+{
+    return g_sprite_detail;
+}
+
+int mip_detail_drop(int side, int cutout)
+{
+    int want;
+
+    /* High gives nothing, each step down one level more. */
+    want = MIP_DETAIL_HIGH - (cutout ? g_sprite_detail : g_wall_detail);
+    while (want > 0 && (side >> want) < MIP_MIN_SIDE) {
+        want--;
+    }
+    return want;
+}
+
 df_u32 mip_budget(const int *side, const df_u8 *cutout, int n, df_u32 room,
                   df_u32 (*bytes)(int side, int cutout), int *drop)
 {
@@ -975,11 +1012,13 @@ df_u32 mip_budget(const int *side, const df_u8 *cutout, int n, df_u32 room,
         table[0][k] = bytes(1 << k, 0);
         table[1][k] = bytes(1 << k, 1);
     }
+    /* Each picture starts at the size the player's detail allows. */
     total = 0;
     for (i = 0; i < n; i++) {
         drop[i] = 0;
         if (pow2_side(side[i])) {
-            total += table[cutout && cutout[i] ? 1 : 0][level_count(side[i]) - 1];
+            drop[i] = mip_detail_drop(side[i], cutout && cutout[i]);
+            total += table[cutout && cutout[i] ? 1 : 0][level_count(side[i] >> drop[i]) - 1];
         }
     }
     while (total > room) {
@@ -1001,7 +1040,9 @@ df_u32 mip_budget(const int *side, const df_u8 *cutout, int n, df_u32 room,
                 if (!pow2_side(side[i])) {
                     continue;
                 }
-                if (pass == 0 && ((cutout && cutout[i]) || drop[i] >= MIP_WALL_GRACE)) {
+                /* The grace counts from the detail's size: a Low wall still gives two before a sprite. */
+                if (pass == 0 && ((cutout && cutout[i])
+                                  || drop[i] - mip_detail_drop(side[i], 0) >= MIP_WALL_GRACE)) {
                     continue;
                 }
                 s = side[i] >> drop[i];

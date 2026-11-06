@@ -86,6 +86,31 @@ A place too large for the card at full size (its pictures' chains past the room,
 
 What entering a place costs is LEVELFALL's load line (`docs/viewers.md`). Daggerfall's castle took over 20 s on the 233. By the host's measure (×40) its creatures were 2.3 s and 6 MB of its 7.5 MB of files, its lights 0.9 s, its chains 0.7 s; its creatures are now read as they come near (`docs/entities.md`) and its lights' count casts no rays (`docs/lighting.md`): about 2.4 s of work instead of 4.4, and 5.8 MB read. Still to measure on the 233: what the rest of the 20 s is, the disk most likely.
 
+### Detail
+
+The player picks how sharp the world's pictures may be, walls and sprites apart (`gfx_set_tex_detail`, `gfx_set_sprite_detail`; the console's `texdetail` and `spritedetail`; a game's settings screen). Each is Low, Medium or High (0, 1, 2; High at the start), and it is a floor on the mip chain: how many top levels every picture of that kind gives up before any budget runs (`mip_detail_drop` in `mip.c`, plain C). The smaller levels stay below it, so distance still has its chain.
+
+| Level | Side | Bytes | A 256 wall, its chain, 8-bit | A 64 land tile | A 256 sprite sheet, one level, 1555 |
+|---|---|---|---|---|---|
+| High (2) | its own | all | 85 KB | 5.3 KB | 128 KB |
+| Medium (1) | half | a quarter | 21 KB | 1.3 KB | 32 KB |
+| Low (0) | a quarter | a sixteenth | 5.3 KB | 0.3 KB | 8 KB |
+
+A level is a power of two on the card, so the ladder is whole halvings: three quarters of a side is not a size the Voodoo takes. Medium is "drop the top mip level". No picture goes below `MIP_MIN_SIDE` (8) for the setting: an 8 × 8 loses nothing at Low, a 16 one level.
+
+What counts as which: a wall is an opaque picture (a model's walls, floors and ceilings, the land's tiles, a far ground picture), a sprite a cutout (flats, creatures, townspeople, flora, treasure). That is the `cutout` flag the place gives each picture, the same that decides 1555 against 8-bit. The engine's own pictures (the sky, the font, the light falloff) and a game's screen pictures (`pic.c`: the weapon in hand, the HUD, every screen) never pass through `mip.c`'s budget or a `Chain`, and do not change; hostcheck loads a screen and a cutout at Low and finds the same tiles and bytes as at High.
+
+Where it applies:
+
+- **A place loaded whole** (`texcache_upload`): every picture starts at its detail's size, and the budget (`mip_budget`) takes levels from there if the place still does not fit. The walls' grace (`MIP_WALL_GRACE`) counts from the detail's size: a Low wall still gives two levels before a sprite gives one. "Full size" for the choice to go by distance (`all_resident`) and for the entities' reserve is the detail's size too, and `texcache_reduced` counts only what the card took past it.
+- **By distance** (a stream, a place past the card, the entities' pictures): a `Chain` is built from its `base`, the detail's level, and the residency (`texres.c`) is told of a picture `base` times halved, its density halved as often, so its levels count from there: the sharpest copy it ever asks for is the detail's. A cutout's stored levels start one below `base`, as they started one below full size.
+
+No fixed split of the card between walls and sprites follows the setting, and none is needed. In a stream walls and sprites share one allocator by need, sprites served first: walls that need a quarter of the bytes leave the rest to the sprites, so lowering walls is what keeps the sheets at their sharp copy. In a place loaded whole the walls and flats are uploaded first and the entities' residency takes everything after them (`ENTITY_ROOM` is only what the budget keeps back for it), so bytes the walls give up go to the creatures.
+
+A change shows on the next `gfx_frame` after it. A place loaded whole is sent again, as for `mipmap`: the card, then the light decals cut again, a load's hitch. A stream's pictures are made again where they are (`texcache_redetail`): every chain whose base moved is built again from its picture, its 8 × 8 copy sent, and the sharper copies come back by distance over the next frames. That is every resident picture's chain built once, in one frame: for a settings screen's Apply, not to be changed every frame; its time on the 233 is not measured. With no place (a menu), the next place loads at the new detail.
+
+It does not mend a sprite sheet that is larger than 256 when read (`texture_sheet` halves its frames to fit the card's largest side): High is still 256 at most. It does stop the residency settling for a sheet's half size when walls fill the card.
+
 `texcap` in the console holds TMU0 to a smaller card's size for testing, as from `grTexMinAddress`: `texcap 2048` is a 2 MB Voodoo 1, on a card with a 4 MB TMU (a Voodoo 2, or a 6 MB Voodoo 1). Everything the level sends has to fit under it, the font and the sky included, and a change sends the level again. 0, the default, is the card's own. It is a debugging tool: the budget already fits any card, and nothing else should set it. Tested on a Voodoo 2 from the card's own size down to `texcap 512`, the floor: the level still loads and draws, its pictures smaller, and the font draws as before. On a 2 MB card Daggerfall needs 3881 KB at full size and gets 1632 KB: 81 of its pictures go to half size, 3 to a quarter.
 
 That font is one 256 square, uploaded once per `gfx_prepare`, and it is the only glyph sheet. With no `font_set`, the square is the stock OEM fixed font: 256 glyphs in 16-pixel cells, index 0 clear, index 1 white. Those pixels are a static buffer, so `mem_temp_end` does not free them. `GFALL.EXE` calls `font_set` from `FONT0000.FNT` before `gfx_prepare`, and that sheet is uploaded instead. Do not upload both. A stock glyph taller than 16 pixels is not stamped; the HUD then draws the built-in 8x8 rects. `RENDERFALL.EXE` and `LEVELFALL.EXE` leave the OEM sheet in place.

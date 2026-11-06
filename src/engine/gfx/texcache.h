@@ -47,6 +47,15 @@ void texcache_stream_service(float focal, df_u32 budget);
 /* RAM held by the streamed pictures' chains. */
 df_u32 texcache_stream_ram(void);
 /*
+ * The player's detail (mip_set_detail) changed under a residency: every
+ * picture by distance whose base the change moves is made again from its
+ * picture now, its sharper copies sent again by distance over the next
+ * frames. How many were. A stream's pictures are all by distance; a
+ * place loaded whole is sent again instead (gfx_set_detail). A frame's
+ * hitch, for a settings screen's Apply, not for every frame.
+ */
+int texcache_redetail(void);
+/*
  * 1 while pictures go on the card by distance: a streamed world's, or,
  * in a place loaded whole, the ones only its entities wear. Those are
  * kept out of texcache_upload's budget, which leaves them room (up to

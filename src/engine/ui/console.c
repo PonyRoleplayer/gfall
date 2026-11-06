@@ -1390,6 +1390,10 @@ static void commands(void)
             "send each face as one planar polygon; off sends triangles");
     cmd_var("mipmap", gfx_mipmap, gfx_set_mipmap, 0, 1,
             "mip chains on the card; a change sends the level again");
+    cmd_var("texdetail", gfx_tex_detail, gfx_set_tex_detail, GFX_DETAIL_LOW, GFX_DETAIL_HIGH,
+            "walls' and the land's pictures: 0 a quarter, 1 half, 2 full size");
+    cmd_var("spritedetail", gfx_sprite_detail, gfx_set_sprite_detail, GFX_DETAIL_LOW, GFX_DETAIL_HIGH,
+            "flats', creatures' and people's pictures: 0 a quarter, 1 half, 2 full size");
     cmd_var("mipmmx", mip_mmx, mip_set_mmx, 0, 1,
             "MMX mip averaging when supported; 0 uses C for later builds");
     cmd_var("mippackmmx", mip_pack_mmx, mip_set_pack_mmx, 0, 1,

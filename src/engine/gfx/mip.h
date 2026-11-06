@@ -37,6 +37,36 @@
 #define MIP_WALL_GRACE 2
 
 /*
+ * Texture detail, the player's (docs/memory.md, Detail): how sharp the
+ * world's pictures may be, walls and sprites apart. A level is how many
+ * top levels every picture of its kind gives up before any budget runs:
+ * High none, Medium one (half the side, a quarter of the bytes), Low two
+ * (a quarter of the side, a sixteenth of the bytes). The smaller levels
+ * stay below it for distance, as a chain does.
+ *
+ * Walls are opaque pictures: a model's walls, floors and ceilings, the
+ * land's tiles. Sprites are cutouts: flats, creatures, people, flora.
+ * The engine's own pictures (the sky, the font, the light falloff) and
+ * a game's screen pictures (pic.c: the weapon, the HUD, every screen)
+ * never pass through here, so the setting leaves them as they are.
+ */
+#define MIP_DETAIL_LOW 0
+#define MIP_DETAIL_MEDIUM 1
+#define MIP_DETAIL_HIGH 2
+
+/* Each 0..2 (clamped), MIP_DETAIL_HIGH at the start. Later builds and budgets use it. */
+void mip_set_detail(int walls, int sprites);
+int mip_wall_detail(void);
+int mip_sprite_detail(void);
+/*
+ * The top levels the detail takes off a picture of side: a cutout's by
+ * the sprites' detail, else the walls'. Never below MIP_MIN_SIDE, so a
+ * small picture keeps more of itself (an 8 x 8 loses nothing, a 16 one
+ * level at most); 0 at High.
+ */
+int mip_detail_drop(int side, int cutout);
+
+/*
  * The palette mip_nearest answers for. A different palette empties the
  * remembered answers; the same one keeps them. mip_build sets it.
  */
@@ -123,12 +153,13 @@ df_u32 mip_build(const df_u8 *index, int side, int cutout, int drop, int chain,
  * Chooses drop[i] for n pictures so their bytes fit in room. bytes(side,
  * cutout) is what one level-0 upload of that side takes on the card,
  * chain included when the caller uses chains. side[i] < 1 is a picture
- * that is not uploaded. Starting from full size, a wall (cutout 0) that
- * has lost fewer than MIP_WALL_GRACE levels and takes the most bytes of
- * those loses its top level; when none is left, the picture that takes
- * the most bytes, wall or sprite; until the total fits or every picture
- * is at MIP_MIN_SIDE. Ties go to the lower index. Returns the total
- * bytes chosen.
+ * that is not uploaded. Starting from the detail's size (mip_detail_drop;
+ * full size at High), a wall (cutout 0) that has lost fewer than
+ * MIP_WALL_GRACE levels past it and takes the most bytes of those loses
+ * its top level; when none is left, the picture that takes the most
+ * bytes, wall or sprite; until the total fits or every picture is at
+ * MIP_MIN_SIDE. Ties go to the lower index. Returns the total bytes
+ * chosen.
  */
 df_u32 mip_budget(const int *side, const df_u8 *cutout, int n, df_u32 room,
                   df_u32 (*bytes)(int side, int cutout), int *drop);
