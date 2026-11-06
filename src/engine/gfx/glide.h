@@ -221,6 +221,12 @@ void glide_sky(int on, const df_u8 *rgb);
 void glide_tex_range(df_u32 *lo, df_u32 *hi);
 int glide_upload_chain(const df_u8 *levels, int side, int cutout, int chain, int drop,
                        df_u32 addr, df_u32 *handle);
+/*
+ * One level of RGB 565 at addr, little-endian, 2 bytes a texel as 1555
+ * takes (glide_texture_bytes with cutout 1 is its size): a game's full
+ * colour picture (pic.c, a save's snapshot).
+ */
+int glide_upload_565_at(const df_u8 *texels, int side, df_u32 addr, df_u32 *handle);
 void glide_release(df_u32 handle);
 /*
  * The windows' night pass: the palette on TMU0 black but for MIP_GLASS,

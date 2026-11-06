@@ -994,6 +994,109 @@ static void check_beside(void)
     vfs_mount(was);
 }
 
+/* fs_list's callback: counts, and notes whether "Anna Smith" was seen as a folder and S0001.SAV as a file. */
+typedef struct ListSeen {
+    int n;
+    int folder;
+    int file;
+    int old;
+} ListSeen;
+
+static void list_seen(const char *name, int is_dir, void *ctx)
+{
+    ListSeen *s;
+
+    s = (ListSeen *)ctx;
+    s->n++;
+    s->folder |= is_dir && df_eq(name, "Anna Smith");
+    s->file |= !is_dir && df_eq(name, "S0001.SAV");
+    s->old |= df_eq(name, "S0001.SAV.OLD");
+}
+
+/*
+ * A game's saves beside the program (a save screen's files): folders two
+ * deep, a file written under its own name and moved over the real one,
+ * the old one never lost and its ".OLD" gone after, a listing, a partial
+ * read, deletes, an empty folder removed and a full one kept, names that
+ * would leave the folder refused, the local time.
+ */
+static void check_beside_saves(void)
+{
+    char was[260];
+    static const df_u8 one[3] = { 'o', 'n', 'e' };
+    static const df_u8 two[5] = { 't', 'w', 'o', '!', '!' };
+    ListSeen seen;
+    FsFile *f;
+    FsTime now;
+    df_u8 got[8];
+    df_u8 *all;
+    df_u32 n;
+
+    vfs_root(was, (int)sizeof(was));
+    vfs_mount("build/ARENA2");
+    /* What a run before may have left. */
+    fs_delete("fssaves\\Anna Smith\\S0001.SAV");
+    fs_delete("fssaves\\Anna Smith\\S0001.TMP");
+    fs_delete("fssaves\\Anna Smith\\S0001.SAV.OLD");
+    fs_remove_dir("fssaves\\Anna Smith");
+    fs_remove_dir("fssaves");
+    check_expect(!fs_exists("fssaves") && fs_make_dirs("fssaves\\Anna Smith") && fs_exists("fssaves\\Anna Smith"),
+                 "fs_make_dirs did not make two folders deep");
+    check_expect(fs_make_dirs("fssaves\\Anna Smith"), "fs_make_dirs failed on folders already there");
+    check_expect(fs_create("fssaves\\Anna Smith\\S0001.SAV") && fs_append(one, 3), "no file two folders deep");
+    fs_finish();
+    /* Written under a name of its own, then moved over the real one. */
+    check_expect(fs_create("fssaves\\Anna Smith\\S0001.TMP") && fs_append(two, 5), "no temporary file");
+    fs_finish();
+    check_expect(fs_move("fssaves\\Anna Smith\\S0001.TMP", "fssaves\\Anna Smith\\S0001.SAV"),
+                 "fs_move did not replace the file there");
+    all = vfs_read_beside("fssaves\\Anna Smith\\S0001.SAV", &n);
+    check_expect(all && n == 5 && all[0] == 't' && !fs_exists("fssaves\\Anna Smith\\S0001.TMP")
+                 && !fs_exists("fssaves\\Anna Smith\\S0001.SAV.OLD"),
+                 "the moved file was not the new one, or left its temporary or .OLD behind");
+    /* A move from nothing changes nothing; a stale .OLD from a crash is dropped by the next move. */
+    check_expect(!fs_move("fssaves\\Anna Smith\\NONE.TMP", "fssaves\\Anna Smith\\S0001.SAV")
+                 && fs_exists("fssaves\\Anna Smith\\S0001.SAV"), "a move from nothing lost the file");
+    check_expect(fs_create("fssaves\\Anna Smith\\S0001.SAV.OLD") && fs_append(one, 3), "no stale .OLD");
+    fs_finish();
+    check_expect(fs_create("fssaves\\Anna Smith\\S0001.TMP") && fs_append(one, 3), "no second temporary");
+    fs_finish();
+    check_expect(fs_move("fssaves\\Anna Smith\\S0001.TMP", "fssaves\\Anna Smith\\S0001.SAV")
+                 && !fs_exists("fssaves\\Anna Smith\\S0001.SAV.OLD"), "a stale .OLD stopped the move or stayed");
+    /* The listing: the folder in its parent, the file in it, nothing in a folder that is not there. */
+    mem_zero(&seen, sizeof(seen));
+    check_expect(fs_list("fssaves", list_seen, &seen) == 1 && seen.folder, "the character's folder was not listed");
+    mem_zero(&seen, sizeof(seen));
+    check_expect(fs_list("fssaves\\Anna Smith", list_seen, &seen) == 1 && seen.file && !seen.old,
+                 "the save was not listed alone");
+    mem_zero(&seen, sizeof(seen));
+    check_expect(fs_list("fssaves\\Nobody", list_seen, &seen) == 0 && seen.n == 0,
+                 "a folder that is not there listed something");
+    /* Only its first bytes, as a save list reads each save's head. */
+    f = fs_open_beside("fssaves\\Anna Smith\\S0001.SAV");
+    check_expect(f && fs_size(f) == 3 && fs_read_at(f, 1, got, 2) && got[0] == 'n' && got[1] == 'e',
+                 "a partial read of a file beside the program failed");
+    fs_close(f);
+    /* Names that would leave the folder. */
+    check_expect(!fs_create("..\\escape.txt") && !fs_create("fssaves\\..\\..\\escape.txt")
+                 && !fs_create("\\escape.txt") && !fs_create("C:\\escape.txt") && !fs_exists("/etc")
+                 && !fs_make_dirs("fssaves\\..\\..\\up") && !fs_list("..", list_seen, &seen),
+                 "a name outside the program's folder was taken");
+    /* A full folder stays; a folder is not a file to delete; then all gone, twice. */
+    check_expect(!fs_remove_dir("fssaves\\Anna Smith") && fs_exists("fssaves\\Anna Smith"),
+                 "a folder with a save in it was removed");
+    check_expect(!fs_delete("fssaves\\Anna Smith"), "fs_delete took a folder");
+    check_expect(fs_delete("fssaves\\Anna Smith\\S0001.SAV") && !fs_exists("fssaves\\Anna Smith\\S0001.SAV")
+                 && fs_delete("fssaves\\Anna Smith\\S0001.SAV"), "a deleted save was there, or a second delete failed");
+    check_expect(fs_remove_dir("fssaves\\Anna Smith") && fs_remove_dir("fssaves") && !fs_exists("fssaves")
+                 && fs_remove_dir("fssaves"), "the empty folders were not removed");
+    fs_local_time(&now);
+    check_expect(now.year >= 2000 && now.month >= 1 && now.month <= 12 && now.day >= 1 && now.day <= 31
+                 && now.hour >= 0 && now.hour <= 23 && now.minute >= 0 && now.minute <= 59
+                 && now.second >= 0 && now.second <= 60, "the local time is out of range");
+    vfs_mount(was);
+}
+
 /*
  * The screen's pictures on a fake card: the tiles a Daggerfall screen
  * is cut in, the quads a draw sends, a shared palette, a cutout's clear
@@ -1015,11 +1118,14 @@ static df_u32 pc_bytes(int side, int wide)
     return (df_u32)side * (df_u32)side * (wide ? 2u : 1u);
 }
 
-static int pc_upload(const df_u8 *texels, int side, int wide, df_u32 addr, df_u32 *handle)
+/* The format of the last tile sent (PIC_FMT_P8, _1555, _565). */
+static int g_pc_format;
+
+static int pc_upload(const df_u8 *texels, int side, int format, df_u32 addr, df_u32 *handle)
 {
     (void)side;
-    (void)wide;
     (void)addr;
+    g_pc_format = format;
     g_pc_uploads++;
     g_pc_texel[0] = texels[0];
     g_pc_texel[1] = texels[1];
@@ -1238,7 +1344,70 @@ static void check_pictures(void)
         pic_free(b);
         mip_set_detail(MIP_DETAIL_HIGH, MIP_DETAIL_HIGH);
     }
+    /*
+     * A full colour picture, a save's 160 x 120 snapshot: 565 tiles, 2
+     * bytes a texel, 40 KB of room, no palette at the draw, every pixel
+     * covered, its first texel little-endian as given.
+     */
+    {
+        static df_u16 snap[160 * 120];
+        df_u32 before;
+        int tiles_before;
+
+        for (i = 0; i < 160 * 120; i++) {
+            snap[i] = (df_u16)(0xf800u | (df_u16)(i & 0x7ff));
+        }
+        pic_begin(0, 140u * 1024u, &ops);
+        pic_stats(&pics, &tiles_before, &before, &room);
+        a = pic_load_565(snap, 160, 120);
+        pic_stats(&pics, &on, &used, &room);
+        check_expect(a && g_pc_format == PIC_FMT_565 && used - before == 40960u && on - tiles_before == 29,
+                     "a 160 x 120 full colour picture did not take its 29 tiles, 40 KB");
+        g_pc_pal = -1;
+        g_pc_quads = 0;
+        pic_draw(a, 0, 120, 160, 120);
+        check_expect(g_pc_quads == 29 && g_pc_pal == -1 && g_pc_how == PIC_OPAQUE && g_pc_bad == 0
+                     && check_near(g_pc_area, 160.0f * 120.0f, 0.1f),
+                     "a full colour picture was not drawn opaque, whole, without a palette");
+        pic_free(a);
+        /* Tiles go out newest first, so the last sent is the first cut, at the top left: pixel 0, 0xf800. */
+        check_expect(g_pc_texel[0] == 0x00 && g_pc_texel[1] == 0xf8,
+                     "a full colour tile's texels were not the picture's, little-endian");
+    }
     pic_end();
+}
+
+/*
+ * The snapshot's shrink (pic_box_565): each pixel the rounded mean of
+ * its box, a size that divides and one that does not, every source pixel
+ * counted once.
+ */
+static void check_pic_box(void)
+{
+    /* 4 x 2: red, black, white, black on top; all black under. */
+    static const df_u16 four[8] = { 0xf800u, 0x0000u, 0xffffu, 0x0000u, 0, 0, 0, 0 };
+    df_u8 src[64 * 2];
+    df_u16 out[4];
+    int i;
+
+    for (i = 0; i < 8; i++) {
+        src[i * 2] = (df_u8)(four[i] & 0xff);
+        src[i * 2 + 1] = (df_u8)(four[i] >> 8);
+    }
+    check_expect(pic_box_565(src, 4, 2, 8, out, 2, 1), "a 4 x 2 did not shrink to 2 x 1");
+    /* Left box: one red of four, 31 / 4 rounds to 8. Right: one white, 8, 16, 8. */
+    check_expect(out[0] == (df_u16)(8u << 11) && out[1] == (df_u16)((8u << 11) | (16u << 5) | 8u),
+                 "a box's mean was not rounded to the nearest");
+    /* 5 x 3 to 2 x 2, all one grey: boxes of 2 and 3 across, 1 and 2 down, every one that grey. */
+    for (i = 0; i < 15; i++) {
+        src[i * 2] = (df_u8)(0x8410u & 0xff);
+        src[i * 2 + 1] = (df_u8)(0x8410u >> 8);
+    }
+    check_expect(pic_box_565(src, 5, 3, 10, out, 2, 2)
+                 && out[0] == 0x8410u && out[1] == 0x8410u && out[2] == 0x8410u && out[3] == 0x8410u,
+                 "a size that does not divide lost or doubled a source pixel");
+    check_expect(!pic_box_565(src, 5, 3, 10, out, 6, 2) && !pic_box_565(src, 5, 3, 8, out, 2, 2),
+                 "a larger output or a short stride was taken");
 }
 
 /* A bind screen's key names: letters, digits, F keys, the pad, the table, the mouse, and a key with none. */
@@ -5647,6 +5816,8 @@ void check_engine(void)
     check_loader();
     check_vfs();
     check_beside();
+    check_beside_saves();
+    check_pic_box();
     check_pictures();
     check_pack();
     check_rpg();

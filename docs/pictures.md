@@ -51,7 +51,18 @@ Leaving it for a place is as between places:
   - `pic.c` keeps every tile as P_8 in memory and chooses at upload (`PicOps.chroma`, set from the card at each prepare). A picture loaded before any place therefore goes on in the right format once the card is known.
   - The weapon's largest swing frame takes 39 KB keyed where it took 78 KB as 1555 (`docs/game.md`). The game still keeps one frame on the card at a time: the bow's 7 would be 196 KB.
   - Verified on the 233's Voodoo 1: the weapon and the compass draw keyed, with no magenta.
+- **Full colour pictures** (`pic_load_565`: a save's snapshot) go as RGB 565, 2 bytes a texel, opaque, drawn with no palette. Their tiles are kept in memory as 565 already and sent as they are (`PIC_FMT_565`, `glide_upload_565_at`), in the same tiles and room as any picture. A 160 × 120 snapshot is 29 tiles and 40 KB of the room (2 of 64, 7 of 32, 20 of 16 for its last 24 rows). A game that shows one at a time keeps 40 KB of `pic_set_room` for it.
 - **The draw state** is `glide_ui`: point sampled, over the frame with no depth test or write, tint white. An opacity under 255 blends with `glide_opacity`.
+
+### Order
+
+Each `pic_draw` sends its quads when it is called, over the frame with no depth test, so the calls land in their order: a later picture covers an earlier one. A save screen draws the snapshot first and its composed canvas over it as a cutout, clear where the snapshot shows.
+
+### A snapshot of the frame
+
+`gfx_thumbnail(w, h, out)` shrinks the frame on the glass to w × h, RGB 565, row 0 at the top, for `pic_load_565`. It reads the whole front buffer (`shot_grab`, the screenshot's buffer, kept for the process) and averages each box of it (`pic_box_565`: the box edges at `x * sw / w`, so 512 × 384 into 160 × 120 covers every source pixel once with boxes of 3 and 4; the mean rounded to the nearest). It must be called while the play view is still on the glass, before a menu draws over it: GFALL takes it when Escape opens the menu. It answers 0 when the front buffer cannot be read.
+
+What it costs on the 233 is not measured. A linear frame buffer read crosses the PCI bus uncached, and a Voodoo 1 is slow to answer reads: 600 KB at 640 × 480 may take tens of milliseconds or more. The box sums are about 300000 pixels of integer work. Each call logs its time (`thumbnail: 160x120 from 640x480 in N ms`), so the first run on the target answers it. Once per menu, it is a hitch, not a frame rate.
 
 ### Tiles
 
@@ -76,7 +87,7 @@ Each tile is a quad of its own. Every quad edge is computed from an integer pixe
 
 `pic.c` keeps every tile's texels, in card format, in a heap of its own (`mem_heap_new`), not a place's heap. Freeing a picture frees them. Every `gfx_prepare` empties the card (`glide_tex_reset`), and `pic_begin` then sends every loaded picture again into the new room. A picture loaded before any place waits for the first one. `gfx_shutdown` calls `pic_end`.
 
-The RAM cost is a byte a texel, cutouts included: 65 KB for a full screen. On a card without the key, a cutout is widened to 1555 as it is sent, in a static buffer of one tile.
+The RAM cost is a byte a texel, cutouts included: 65 KB for a full screen. A full colour picture takes 2 bytes a texel. On a card without the key, a cutout is widened to 1555 as it is sent, in a static buffer of one tile.
 
 ## The 233
 
@@ -93,7 +104,9 @@ The RAM cost is a byte a texel, cutouts included: 65 KB for a full screen. On a 
 - a cutout on a keyed card drawn keyed under its own palette, entry 0 the key and a near-magenta entry nudged off it, its clear texel index 0; on a card with no key, 1555 at twice the bytes, alpha-tested with no palette, its clear texel 0x0000;
 - freed pictures leaving nothing on the card;
 - a picture short of room not drawn, then drawn once the next place's room is bigger;
-- freed tiles joined so that one 64 KB tile fits where a screen's 29 were.
+- freed tiles joined so that one 64 KB tile fits where a screen's 29 were;
+- a 160 × 120 full colour picture in its 29 tiles of 565 and 40 KB, drawn opaque and whole with no palette, its texels little-endian;
+- `check_pic_box`: a box's mean rounded to the nearest, a size that does not divide covering every source pixel once, a larger output or a short stride refused.
 
 ## Not yet
 

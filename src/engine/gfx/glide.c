@@ -1898,6 +1898,39 @@ int glide_upload_chain(const df_u8 *levels, int side, int cutout, int chain, int
     return 1;
 }
 
+int glide_upload_565_at(const df_u8 *texels, int side, df_u32 addr, df_u32 *handle)
+{
+    GrTexInfo info;
+    df_u32 size;
+    int i;
+
+    if (!g_opened || !texels || !handle) {
+        return 0;
+    }
+    /* 1555's shape and size, then its format: the two are the same bytes a texel. */
+    if (!shape_bytes(side, 1, 0, &info, &size)) {
+        return 0;
+    }
+    info.format = GR_TEXFMT_RGB_565;
+    info.data = (void *)texels;
+    for (i = g_mark_ntex; i < g_ntex && g_tex[i].live; i++) {
+    }
+    if (i >= GPU_SLOTS) {
+        g_why = "no texture record free";
+        return 0;
+    }
+    glide.tex_down(GR_TMU0, addr, GR_MIPMAPLEVELMASK_BOTH, &info);
+    g_tex[i].addr = addr;
+    g_tex[i].info = info;
+    g_tex[i].info.data = 0;
+    g_tex[i].live = 1;
+    if (i >= g_ntex) {
+        g_ntex = i + 1;
+    }
+    *handle = (df_u32)i;
+    return 1;
+}
+
 void glide_release(df_u32 handle)
 {
     int i;

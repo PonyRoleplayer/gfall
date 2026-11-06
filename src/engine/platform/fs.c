@@ -26,6 +26,39 @@ static int fs_join(char *dst, int n, const char *rel)
     return rel[j] == 0 && g_root[0] != 0;
 }
 
+/*
+ * 1 when name stays beside the program: not absolute (a leading slash or
+ * backslash), no drive (a colon anywhere), no ".." folder. Every beside
+ * call asks it, so a game's file name never reaches outside that folder.
+ */
+static int name_stays(const char *name)
+{
+    int i;
+    int start;
+
+    if (!name || !name[0] || name[0] == '/' || name[0] == '\\') {
+        return 0;
+    }
+    start = 0;
+    for (i = 0;; i++) {
+        char c;
+
+        c = name[i];
+        if (c == ':') {
+            return 0;
+        }
+        if (c == '/' || c == '\\' || c == 0) {
+            if (i - start == 2 && name[start] == '.' && name[start + 1] == '.') {
+                return 0;
+            }
+            if (c == 0) {
+                return 1;
+            }
+            start = i + 1;
+        }
+    }
+}
+
 void fs_set_root(const char *root)
 {
     df_copy(g_root, root, FS_PATH);
@@ -38,9 +71,12 @@ void fs_root(char *dst, int n)
 
 #ifdef DF_HOST
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 struct FsFile {
@@ -117,7 +153,7 @@ static int beside_path(char *dst, int n, const char *name)
     int slash;
     int k;
 
-    if (!name || !name[0] || !g_root[0]) {
+    if (!name_stays(name) || !g_root[0]) {
         return 0;
     }
     slash = -1;
@@ -226,6 +262,113 @@ void fs_abort(void)
     g_out_path[0] = 0;
 }
 
+static int path_exists(const char *path)
+{
+    struct stat st;
+
+    return stat(path, &st) == 0;
+}
+
+int fs_exists(const char *name)
+{
+    char path[FS_PATH];
+
+    return beside_path(path, FS_PATH, name) && path_exists(path);
+}
+
+int fs_list(const char *folder, FsListFn fn, void *ctx)
+{
+    char path[FS_PATH];
+    char entry[FS_PATH];
+    DIR *dir;
+    struct dirent *e;
+    int n;
+
+    if (!fn || !beside_path(path, FS_PATH, folder)) {
+        return 0;
+    }
+    dir = opendir(path);
+    if (!dir) {
+        return 0;
+    }
+    n = 0;
+    while ((e = readdir(dir)) != 0) {
+        struct stat st;
+        int k;
+        int i;
+
+        if (df_eq(e->d_name, ".") || df_eq(e->d_name, "..")) {
+            continue;
+        }
+        k = 0;
+        for (i = 0; path[i] && k < FS_PATH - 2; i++) {
+            entry[k++] = path[i];
+        }
+        entry[k++] = '/';
+        for (i = 0; e->d_name[i] && k < FS_PATH - 1; i++) {
+            entry[k++] = e->d_name[i];
+        }
+        entry[k] = 0;
+        fn(e->d_name, stat(entry, &st) == 0 && S_ISDIR(st.st_mode), ctx);
+        n++;
+    }
+    closedir(dir);
+    return n;
+}
+
+int fs_delete(const char *name)
+{
+    char path[FS_PATH];
+    struct stat st;
+
+    if (!beside_path(path, FS_PATH, name)) {
+        return 0;
+    }
+    if (stat(path, &st) != 0) {
+        return 1;
+    }
+    return !S_ISDIR(st.st_mode) && unlink(path) == 0;
+}
+
+int fs_remove_dir(const char *name)
+{
+    char path[FS_PATH];
+
+    if (!beside_path(path, FS_PATH, name)) {
+        return 0;
+    }
+    return rmdir(path) == 0 || !path_exists(path);
+}
+
+/* from to to, failing when to is there, as Windows 98's MoveFile does: fs_move's steps run the same on both. */
+static int rename_plain(const char *from, const char *to)
+{
+    if (path_exists(to)) {
+        return 0;
+    }
+    return rename(from, to) == 0;
+}
+
+static int remove_plain(const char *path)
+{
+    return unlink(path) == 0;
+}
+
+void fs_local_time(FsTime *t)
+{
+    time_t now;
+    struct tm tm;
+
+    now = time(0);
+    localtime_r(&now, &tm);
+    t->year = tm.tm_year + 1900;
+    t->month = tm.tm_mon + 1;
+    t->day = tm.tm_mday;
+    t->hour = tm.tm_hour;
+    t->minute = tm.tm_min;
+    t->second = tm.tm_sec;
+}
+
 #else
 
 #define WINVER 0x0400
@@ -317,7 +460,7 @@ static int beside_path(char *dst, int n, const char *name)
     int slash;
     int k;
 
-    if (!name || !name[0] || !g_root[0]) {
+    if (!name_stays(name) || !g_root[0]) {
         return 0;
     }
     slash = -1;
@@ -432,7 +575,174 @@ void fs_abort(void)
     g_out_path[0] = 0;
 }
 
+static int path_exists(const char *path)
+{
+    return GetFileAttributesA(path) != 0xffffffff;
+}
+
+int fs_exists(const char *name)
+{
+    char path[FS_PATH];
+
+    return beside_path(path, FS_PATH, name) && path_exists(path);
+}
+
+int fs_list(const char *folder, FsListFn fn, void *ctx)
+{
+    char path[FS_PATH];
+    WIN32_FIND_DATAA fd;
+    HANDLE find;
+    int k;
+    int n;
+
+    if (!fn || !beside_path(path, FS_PATH, folder)) {
+        return 0;
+    }
+    /* folder\*: every entry, whatever its name. */
+    for (k = 0; path[k]; k++) {
+    }
+    if (k + 2 >= FS_PATH) {
+        return 0;
+    }
+    path[k] = '\\';
+    path[k + 1] = '*';
+    path[k + 2] = 0;
+    find = FindFirstFileA(path, &fd);
+    if (find == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+    n = 0;
+    do {
+        if (df_eq(fd.cFileName, ".") || df_eq(fd.cFileName, "..")) {
+            continue;
+        }
+        fn(fd.cFileName, (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0, ctx);
+        n++;
+    } while (FindNextFileA(find, &fd));
+    FindClose(find);
+    return n;
+}
+
+int fs_delete(const char *name)
+{
+    char path[FS_PATH];
+    DWORD attr;
+
+    if (!beside_path(path, FS_PATH, name)) {
+        return 0;
+    }
+    attr = GetFileAttributesA(path);
+    if (attr == 0xffffffff) {
+        return 1;
+    }
+    return !(attr & FILE_ATTRIBUTE_DIRECTORY) && DeleteFileA(path);
+}
+
+int fs_remove_dir(const char *name)
+{
+    char path[FS_PATH];
+
+    if (!beside_path(path, FS_PATH, name)) {
+        return 0;
+    }
+    return RemoveDirectoryA(path) || !path_exists(path);
+}
+
+/* MoveFile fails when to is there: fs_move's steps make room first. */
+static int rename_plain(const char *from, const char *to)
+{
+    return MoveFileA(from, to) ? 1 : 0;
+}
+
+static int remove_plain(const char *path)
+{
+    return DeleteFileA(path) ? 1 : 0;
+}
+
+void fs_local_time(FsTime *t)
+{
+    SYSTEMTIME st;
+
+    GetLocalTime(&st);
+    t->year = st.wYear;
+    t->month = st.wMonth;
+    t->day = st.wDay;
+    t->hour = st.wHour;
+    t->minute = st.wMinute;
+    t->second = st.wSecond;
+}
+
 #endif
+
+int fs_make_dirs(const char *path)
+{
+    char part[FS_PATH];
+    int i;
+
+    if (!name_stays(path)) {
+        return 0;
+    }
+    /* Each folder from the first: "saves", then "saves\\Anna Smith". */
+    for (i = 0; path[i] && i < FS_PATH - 1; i++) {
+        if ((path[i] == '\\' || path[i] == '/') && i > 0) {
+            part[i] = 0;
+            if (!fs_make_dir(part)) {
+                return 0;
+            }
+        }
+        part[i] = path[i];
+    }
+    if (path[i]) {
+        return 0;
+    }
+    part[i] = 0;
+    return fs_make_dir(part);
+}
+
+int fs_move(const char *from, const char *to)
+{
+    char src[FS_PATH];
+    char dst[FS_PATH];
+    char old[FS_PATH];
+    int had;
+    int k;
+
+    if (!beside_path(src, FS_PATH, from) || !beside_path(dst, FS_PATH, to) || !path_exists(src)) {
+        return 0;
+    }
+    /* to + ".OLD": where the file being replaced waits until the new one is in. */
+    df_copy(old, dst, FS_PATH);
+    for (k = 0; old[k]; k++) {
+    }
+    if (k + 4 >= FS_PATH) {
+        return 0;
+    }
+    old[k] = '.';
+    old[k + 1] = 'O';
+    old[k + 2] = 'L';
+    old[k + 3] = 'D';
+    old[k + 4] = 0;
+    had = path_exists(dst);
+    if (had) {
+        /* A ".OLD" from a crash before is older than the to now: it goes. */
+        if (path_exists(old) && !remove_plain(old)) {
+            return 0;
+        }
+        if (!rename_plain(dst, old)) {
+            return 0;
+        }
+    }
+    if (!rename_plain(src, dst)) {
+        if (had) {
+            rename_plain(old, dst);
+        }
+        return 0;
+    }
+    if (had) {
+        remove_plain(old);
+    }
+    return 1;
+}
 
 FsFile *fs_open(const char *rel)
 {

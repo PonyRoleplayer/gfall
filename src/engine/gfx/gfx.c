@@ -13,6 +13,7 @@
 #include "engine/gfx/mip.h"
 #include "engine/ui/font.h"
 #include "engine/ui/pic.h"
+#include "engine/ui/shot.h"
 
 static const char *g_why = "graphics failed";
 
@@ -27,9 +28,12 @@ static df_u32 pic_bytes(int side, int wide)
     return bytes;
 }
 
-static int pic_upload(const df_u8 *texels, int side, int wide, df_u32 addr, df_u32 *handle)
+static int pic_upload(const df_u8 *texels, int side, int format, df_u32 addr, df_u32 *handle)
 {
-    return glide_upload_chain(texels, side, wide, 0, 0, addr, handle);
+    if (format == PIC_FMT_565) {
+        return glide_upload_565_at(texels, side, addr, handle);
+    }
+    return glide_upload_chain(texels, side, format == PIC_FMT_1555, 0, 0, addr, handle);
 }
 
 static df_u32 g_pic_tint;
@@ -148,6 +152,31 @@ int gfx_startup(void *hwnd)
     /* The view may have a new width: the focal length follows it, the field of view kept. */
     camera_set_fov(camera_fov());
     return 1;
+}
+
+int gfx_thumbnail(int w, int h, df_u16 *out)
+{
+    const df_u8 *frame;
+    df_u32 start;
+    int stride;
+    int ok;
+
+    if (!out || w < 1 || h < 1 || w > df_view_w() || h > df_view_h()) {
+        return 0;
+    }
+    /* The whole front buffer across the bus (shot_grab's buffer), then boxes of it. */
+    start = prof_now();
+    frame = shot_grab(&stride);
+    if (!frame) {
+        return 0;
+    }
+    ok = pic_box_565(frame, df_view_w(), df_view_h(), stride, out, w, h);
+    /* What it cost, read once per call: the front buffer read is the most of it (docs/pictures.md). */
+    if (prof_mhz() > 0) {
+        log_print(LOG_INFO, "thumbnail: %dx%d from %dx%d in %u ms", w, h, df_view_w(), df_view_h(),
+                  (unsigned int)((prof_now() - start) / ((df_u32)prof_mhz() * 1000u)));
+    }
+    return ok;
 }
 
 void gfx_set_mode(int w, int h)

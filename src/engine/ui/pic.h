@@ -24,6 +24,10 @@
  * screen. Coordinates are ui_string's: screen pixels from the lower
  * left, a rectangle given by its left and its top.
  *
+ * A full colour picture (pic_load_565: a save's snapshot) is RGB 565
+ * texels instead, opaque, no palette, 2 bytes a texel on the card, in
+ * the same tiles and room.
+ *
  * Plain C: the card is reached through PicOps, so hostcheck runs it.
  */
 
@@ -44,6 +48,12 @@ enum {
     PIC_KEYED,
     PIC_ALPHA
 };
+/* A tile's format on the card (PicOps.upload): P_8 indices, ARGB 1555, RGB 565. */
+enum {
+    PIC_FMT_P8,
+    PIC_FMT_1555,
+    PIC_FMT_565
+};
 
 /*
  * The room on the card for pictures, in KB, 0 (default) to 1024: a
@@ -62,6 +72,21 @@ int pic_room(void);
  * when there is room, at the next place otherwise.
  */
 int pic_load(const df_u8 *pixels, int w, int h, const df_u8 *rgb, int cutout);
+/*
+ * A full colour picture of w x h, RGB 565 pixels, row 0 at the top,
+ * copied: opaque, drawn as it is. As pic_load otherwise: its id, a slot
+ * of the same PIC_MAX. Its card bytes are twice a P_8 picture's: 160 x
+ * 120 takes 40 KB of the room (pic_set_room).
+ */
+int pic_load_565(const df_u16 *pixels, int w, int h);
+/*
+ * Shrink a 565 picture into a smaller one: each pixel of out (w x h) the
+ * mean of the source box it covers, sw x sh at src, stride bytes a row,
+ * little-endian 565 as the card's frame buffer reads; the box's edges at
+ * x * sw / w, so a size that does not divide still covers every source
+ * pixel once. w and h 1..sw and 1..sh. 1, or 0 for a bad shape.
+ */
+int pic_box_565(const df_u8 *src, int sw, int sh, int stride, df_u16 *out, int w, int h);
 void pic_free(int id);
 /* Its size; 0 for an id not loaded. */
 int pic_size(int id, int *w, int *h);
@@ -79,14 +104,15 @@ void pic_stats(int *pics, int *tiles_on, df_u32 *used, df_u32 *room);
 
 /*
  * The card's side, for gfx.c and the host test. Each tile is a square
- * of side, one level: P_8 indices, or ARGB 1555 little-endian (wide: a
- * cutout on a card without the chroma key).
+ * of side, one level: P_8 indices, ARGB 1555 little-endian (a cutout on
+ * a card without the chroma key), or RGB 565 little-endian (a full
+ * colour picture).
  */
 typedef struct PicOps {
-    /* The card's bytes for a tile. */
+    /* The card's bytes for a tile; wide: 2 bytes a texel (1555 or 565). */
     df_u32 (*bytes)(int side, int wide);
-    /* Send a tile to addr; its handle. 0 when it failed. */
-    int (*upload)(const df_u8 *texels, int side, int wide, df_u32 addr, df_u32 *handle);
+    /* Send a tile to addr in format (PIC_FMT_P8, _1555, _565); its handle. 0 when it failed. */
+    int (*upload)(const df_u8 *texels, int side, int format, df_u32 addr, df_u32 *handle);
     void (*release)(df_u32 handle);
     /*
      * A draw: its state on (how: PIC_OPAQUE, PIC_KEYED, PIC_ALPHA), its

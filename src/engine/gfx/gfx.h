@@ -35,6 +35,15 @@ int gfx_prepare(const Level *level);
  * and down (docs/glide.md, The screen's mode).
  */
 void gfx_set_mode(int w, int h);
+/*
+ * The frame on the glass now, shrunk to w x h (no larger than the view)
+ * into out, RGB 565, row 0 at the top: each pixel the mean of the box of
+ * the view it covers (pic_box_565). For a save's snapshot: call it while
+ * the play view is on the glass, before a menu covers it. It reads the
+ * whole front buffer across the bus, the slow way on a Voodoo 1 (the log
+ * says how long). 0 when the front buffer cannot be read.
+ */
+int gfx_thumbnail(int w, int h, df_u16 *out);
 /* The modes to list, smallest first: final after gfx_startup, which finds the board (before it, 512 x 384 and 640 x 480). */
 int gfx_mode_count(void);
 int gfx_mode(int i, int *w, int *h);
