@@ -873,9 +873,9 @@ static void check_items(void)
     Item it;
     char name[48];
 
-    check_expect(item_table()->count == 35 + 76 && weapon_table()->count == 18 && armor_table()->count == 11
+    check_expect(item_table()->count == 36 + 76 && weapon_table()->count == 18 && armor_table()->count == 11
                      && material_table()->count == MATERIAL_COUNT && loot_table()->count == 21,
-                 "items: MAIN.DAT lacks classic's 34 items (a cart, a horse, 11 of armour, 18 swung, arrows, a letter of credit, gold), 76 pieces of clothing and a quest's parcel, 12 materials or 21 loot tables");
+                 "items: MAIN.DAT lacks classic's 35 items (a cart, a horse, 11 of armour, 18 swung, arrows, a spellbook, a letter of credit, gold), 76 pieces of clothing and a quest's parcel, 12 materials or 21 loot tables");
     check_expect(item_make(&it, ITEM_LONGSWORD, MATERIAL_IRON) && check_near(it.weight, 4.5f, 0.001f)
                      && it.value == 45 && it.condition_max == 800 && it.condition == 800,
                  "items: an iron longsword is not 4.5 kg, 45 gold, 800");
@@ -2577,12 +2577,13 @@ static void check_kit_and_words(void)
     int k;
 
     kit_give(CLASS_WARRIOR, 0, &pack);
-    check_expect(pack.gold == 100 && pack.count == 3 && inventory_weapon(&pack)->template_id == 118
+    /* A spellbook, the weapon, a shirt and pants. */
+    check_expect(pack.gold == 100 && pack.count == 4 && inventory_has(&pack, ITEM_SPELLBOOK) && inventory_weapon(&pack)->template_id == 118
                      && inventory_weapon(&pack)->material == MATERIAL_IRON,
                  "kit: a warrior does not start with an iron broadsword and 100 gold");
     kit_give(13, 0, &pack);
-    check_expect(pack.count == 5 && inventory_weapon(&pack)->template_id == 130 && pack.item[2].template_id == ITEM_ARROW
-                     && pack.item[2].count == 24,
+    check_expect(pack.count == 6 && inventory_weapon(&pack)->template_id == 130 && pack.item[3].template_id == ITEM_ARROW
+                     && pack.item[3].count == 24,
                  "kit: an archer does not start with a long bow, a battle axe and 24 arrows");
     for (k = 0; k < 18; k++) {
         kit_give(k, k & 1, &pack);

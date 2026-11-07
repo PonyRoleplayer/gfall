@@ -1,6 +1,8 @@
 #include "game/dagger/play/shots.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/cast.h"
+#include "game/dagger/play/sfx.h"
+#include "game/dagger/formats/sndfile.h"
 #include "game/dagger/places/wres.h"
 #include "game/dagger/places/people.h"
 #include "game/dagger/formats/texture.h"
@@ -226,6 +228,7 @@ int shots_arrow(const float *eye, const float *dir, const Item *bow)
         return 0;
     }
     g_bow[i] = *bow;
+    sfx_play(SND_ARROW_SHOOT);
     return 1;
 }
 
@@ -267,6 +270,14 @@ int shots_frame(float dt, const Scene *scene, Player *player)
     world.target = world_target;
     n = projectile_step(dt, &world, ends, PROJ_MAX);
     for (i = 0; i < n; i++) {
+        /* What it struck is heard where it struck: an arrow's thud, a spell's element (playtest 2026-11-07: both silent). */
+        if (ends[i].result == PROJ_HIT_TARGET || ends[i].result == PROJ_HIT_WALL) {
+            const Spell *what;
+
+            what = ends[i].kind == PROJ_SPELL ? cast_flying(ends[i].entry) : 0;
+            sfx_at(ends[i].kind == PROJ_ARROW ? SND_ARROW_HIT : (what ? sfx_impact_clip(what->element) : -1),
+                   ends[i].at[0], ends[i].at[1], ends[i].at[2]);
+        }
         if (ends[i].kind == PROJ_ARROW && ends[i].result == PROJ_HIT_TARGET && ends[i].target) {
             Entity *hit;
 

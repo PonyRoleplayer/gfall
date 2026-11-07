@@ -2094,6 +2094,11 @@ static void cast_now(const Camera *cam)
 /* The spellbook over the stilled world (the HUD's button, the key, the sheet's). */
 static void book_over_play(void)
 {
+    /* The book is a thing carried: sold or dropped, it does not open (playtest 2026-11-07: there was none). */
+    if (!inventory_has(&g_player.pack, ITEM_SPELLBOOK)) {
+        interact_say("You have no spellbook.");
+        return;
+    }
     screens_open_spellbook(&g_book, &g_player.sheet);
     screen_over_play();
 }

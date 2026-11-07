@@ -28,5 +28,8 @@ void sfx_stop(int handle);
 int sfx_pick(int first, int n);
 /* A pain clip of a race (RACE_*) and sex, one of its three at random (DFU's race pain clips); -1 for none. */
 int sfx_pain(int race, int female);
+/* A spell's sounds by its element (ELEMENT_*): the cast, as the hand lets it go, and the missile striking. -1 for none. */
+int sfx_cast_clip(int element);
+int sfx_impact_clip(int element);
 
 #endif

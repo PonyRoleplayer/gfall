@@ -450,6 +450,9 @@ void foes_knock(Entity *e, const float *from, int speed)
     m->knock = (float)(speed > KNOCK_MOST ? KNOCK_MOST : speed);
 }
 
+/* How far above or below the sleeper's feet a creature a rest wakes may stand: a storey, about 3 m. */
+#define FOES_ROUSE_RISE 120.0f
+
 int foes_rouse_nearest(const float *at)
 {
     Entity *best;
@@ -475,6 +478,11 @@ int foes_rouse_nearest(const float *at)
             }
             dx = ents[i].x - at[0];
             dz = ents[i].z - at[2];
+            /* Its own floor: a creature a storey above or below is not the one at the door, and was seen
+             * coming out of the rock (playtest 2026-11-07, "enemies outside the map" after a rest). */
+            if (df_absf(ents[i].y - at[1]) > FOES_ROUSE_RISE) {
+                continue;
+            }
             d = dx * dx + dz * dz;
             if (d < best_at) {
                 best = &ents[i];

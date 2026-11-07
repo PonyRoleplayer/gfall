@@ -31,6 +31,23 @@
 #define SND_WIND_BLOW_B 72
 #define SND_MONSTER_ROAR 73
 #define SND_GOLD 74
+/* What DFU's SoundClips names GoldPieces: a purchase or a sale (DaggerfallTradeWindow). */
+#define SND_GOLD_PIECES 361
+/* An arrow loosed and an arrow striking (SoundClips ArrowShoot, ArrowHit). */
+#define SND_ARROW_SHOOT 3
+#define SND_ARROW_HIT 4
+/* A spell's missile striking, by element (SoundClips SpellImpactMagic..Cold): 86 + ... see SND_IMPACT. */
+#define SND_IMPACT_MAGIC 86
+#define SND_IMPACT_POISON 87
+#define SND_IMPACT_SHOCK 88
+#define SND_IMPACT_FIRE 89
+#define SND_IMPACT_COLD 90
+/* A spell cast, by sound id not position (DFU's EntityEffectManager: magic 349, poison 350, shock 351, fire 352, cold 353). */
+#define SND_ID_CAST_MAGIC 349
+#define SND_ID_CAST_POISON 350
+#define SND_ID_CAST_SHOCK 351
+#define SND_ID_CAST_FIRE 352
+#define SND_ID_CAST_COLD 353
 #define SND_BIRD_FAR 75
 #define SND_DOOR_CLOSE_FAR 76
 #define SND_HORSE 99

@@ -1,5 +1,7 @@
 #include "game/dagger/play/bank.h"
 #include "game/dagger/play/ui.h"
+#include "game/dagger/play/sfx.h"
+#include "game/dagger/formats/sndfile.h"
 #include "game/dagger/play/canvas.h"
 #include "game/dagger/play/court.h"
 #include "game/dagger/play/rules.h"
@@ -518,6 +520,10 @@ static void transact(void)
         default:
             break;
         }
+    }
+    /* Gold that changed hands at the counter is heard, as at a shop. */
+    if (amount >= 1 && result == BANK_DONE) {
+        sfx_play(SND_GOLD_PIECES);
     }
     g.note = say_result(result);
     g.asking = ASK_NOTHING;

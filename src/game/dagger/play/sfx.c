@@ -1,4 +1,5 @@
 #include "game/dagger/play/sfx.h"
+#include "game/dagger/tables/magic.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/formats/sndfile.h"
 #include "game/dagger/tables/careers.h"
@@ -70,4 +71,23 @@ int sfx_pain(int race, int female)
         return -1;
     }
     return female ? g_pain_female[race - RACE_BRETON][combat_roll(3)] : g_pain_male[race - RACE_BRETON][combat_roll(3)];
+}
+
+int sfx_cast_clip(int element)
+{
+    /* By the clip's id, as DFU's GetCastSoundID names them. */
+    static const int ids[ELEMENT_COUNT] = {
+        SND_ID_CAST_FIRE, SND_ID_CAST_COLD, SND_ID_CAST_POISON, SND_ID_CAST_SHOCK, SND_ID_CAST_MAGIC
+    };
+
+    return element >= 0 && element < ELEMENT_COUNT ? sndfile_by_id((df_u32)ids[element]) : -1;
+}
+
+int sfx_impact_clip(int element)
+{
+    static const int clips[ELEMENT_COUNT] = {
+        SND_IMPACT_FIRE, SND_IMPACT_COLD, SND_IMPACT_POISON, SND_IMPACT_SHOCK, SND_IMPACT_MAGIC
+    };
+
+    return element >= 0 && element < ELEMENT_COUNT ? clips[element] : -1;
 }

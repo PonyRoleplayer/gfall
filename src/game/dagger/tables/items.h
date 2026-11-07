@@ -46,6 +46,7 @@
 #define ITEM_CART 93
 #define ITEM_HORSE 94
 #define ITEM_LETTER 275
+#define ITEM_SPELLBOOK 132
 #define ITEM_GOLD 276
 /*
  * A quest's thing to carry (a letter, a parcel, a relic): ours, past DFU's templates, with the

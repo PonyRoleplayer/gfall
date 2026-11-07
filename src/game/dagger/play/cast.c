@@ -1,6 +1,7 @@
 #include "game/dagger/play/cast.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/shots.h"
+#include "game/dagger/play/sfx.h"
 #include "game/dagger/tables/magic.h"
 #include "engine/core/mem.h"
 #include "engine/scene/interact.h"
@@ -128,6 +129,8 @@ int cast_fire(Player *p, const Scene *scene, const float *eye, const float *dir)
         g_have_ready = 0;
         return 0;
     }
+    /* The element's cast, as the hand lets the spell go (DFU's PlayerSpellCasting_OnReleaseFrame). */
+    sfx_play(sfx_cast_clip(s.element));
     landed = 0;
     switch (s.target) {
     case TARGET_CASTER:
@@ -219,6 +222,8 @@ int cast_foe(const Spell *s, int level, const float *eye, const float *dir, Play
 {
     int k;
 
+    /* A creature has no hand to let go: its cast is heard at once (DFU's EnemyCastReadySpell). */
+    sfx_at(sfx_cast_clip(s->element), eye[0], eye[1], eye[2]);
     switch (s->target) {
     case TARGET_TOUCH:
         effects_land_from_foe(s, p, level);

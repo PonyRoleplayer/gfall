@@ -71,6 +71,10 @@ void kit_give(int klass, int female, Inventory *pack)
 
     inventory_clear(pack);
     pack->gold = START_GOLD;
+    /* Every character starts with a spellbook, whether they cast or not (DFU's AssignStartingGear). */
+    if (item_make(&it, ITEM_SPELLBOOK, MATERIAL_IRON)) {
+        inventory_add(pack, &it);
+    }
     /* A class of the player's own: an iron longsword (AssignStartingGear). */
     if (klass < 0 || klass >= 18) {
         if (item_make(&it, ITEM_LONGSWORD, MATERIAL_IRON)) {

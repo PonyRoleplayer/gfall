@@ -315,7 +315,7 @@ const CareerSkill *classic_skills(int *n)
 
 /*
  * DFU's ItemTemplates: the small cart and the horse (93, 94), the armour
- * (102..112), the weapons (113..131, the arrow last), the letter of credit
+ * (102..112), the weapons (113..131, the arrow last), the spellbook (132), the letter of credit
  * (275) and gold (276): name, weight in kg, price, hit points, the
  * picture on the ground and on the paper doll, one-handed, blunt, and the
  * paper doll's draw order.
@@ -356,6 +356,8 @@ static const ItemTemplate g_items[] = {
     { 129, "Short Bow", 1.00f, 10, 50, 207, 8, 234, 16, 0, 0, 100, 0, 0 },
     { 130, "Long Bow", 1.50f, 20, 100, 207, 8, 234, 11, 0, 0, 100, 0, 0 },
     { 131, "Arrow", 0.25f, 2, 1, 207, 16, 0, 0, 0, 0, 0, 0, 0 },
+    /* The spellbook every character starts with; without it the book does not open (DFU's template 132). */
+    { 132, "Spellbook", 0.75f, 50, 75, 209, 4, 0, 0, 0, 0, 0, 1, 0 },
     /*
      * The clothing (men's 141..181, women's 182..216): the picture on the ground (TEXTURE.204) and on the paper
      * doll (TEXTURE.239 for men, 235 for women: the wearer's body shape moves it, 0 to 3), its draw order,

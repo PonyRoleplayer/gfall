@@ -19,8 +19,16 @@
 #define ICON_Y 14
 #define TARGET_X 182
 #define ELEMENT_X 223
-#define NAME_Y 4
-#define COST_Y 31
+/* DFU's DaggerfallSpellBookWindow: the name at 123, 2; the spell points at 214, 2; the price in buy mode at 76, 154. */
+#define NAME_X 123
+#define NAME_Y 2
+#define POINTS_X 214
+#define PRICE_X 76
+#define PRICE_Y 154
+/* An effect's box (118 x 28) holds two lines centred, its group at 5 and its kind at 17. */
+#define EFFECT_H 28
+#define EFFECT_LINE0 5
+#define EFFECT_LINE1 17
 /* Buttons: delete, up, sort, down under the list; the arrows at the list's side; exit. */
 #define BTN_Y 152
 #define BTN_W 38
@@ -66,7 +74,7 @@ static struct {
     int confirm;
     int chosen;
     int changed;
-    char noted[64];
+    char noted[128];
 } g;
 
 /* The standard spells for sale, kept for the process: a Spellbook is large. */
@@ -154,15 +162,21 @@ const char *spellbook_note(void)
 }
 
 /* Four times the cost in spell points for this character, bargained (DFU's presented cost and CalculateTradePrice). */
-int spellbook_price(void)
+/* What spell at in the shop's list costs in gold: four times its spell points, by the trade's sums. */
+static int price_of(int at)
 {
     int presented;
 
+    presented = spell_cost(&g.list->spell[at], g.pc, 0) * 4;
+    return rules_trade_price(presented, g.quality, g.pc->skill[SKILL_MERCANTILE], g.pc->attribute[ATTR_PERSONALITY], 0);
+}
+
+int spellbook_price(void)
+{
     if (!g.buy || g.selected < 0 || g.selected >= g.list->count) {
         return 0;
     }
-    presented = spell_cost(&g.list->spell[g.selected], g.pc, 0) * 4;
-    return rules_trade_price(presented, g.quality, g.pc->skill[SKILL_MERCANTILE], g.pc->attribute[ATTR_PERSONALITY], 0);
+    return price_of(g.selected);
 }
 
 /* The chosen spell bought: the first click says the price, the second pays. */
@@ -251,30 +265,59 @@ static void range_text(char *out, int cap, const char *what, int low, int high, 
     }
 }
 
+/* An effect's two lines, centred in its box: its group and its kind ("Damage", "Health"), as classic's book. */
 static void effect_lines(const EffectSettings *e, int x, int y)
 {
     const MagicEffect *fx;
-    char name[48];
-    char line[64];
+    Rect box;
 
-    spell_effect_name(e->effect, name, (int)sizeof(name));
-    canvas_label(x, y, name);
+    box.x = (df_u16)x;
+    box.y = (df_u16)y;
+    box.w = EFFECT_W;
+    box.h = EFFECT_H;
     fx = magic_effect(e->effect);
-    y += CANVAS_LINE;
+    if (!fx) {
+        return;
+    }
+    canvas_label_centred(&box, EFFECT_LINE0, fx->group);
+    if (fx->sub[0]) {
+        canvas_label_centred(&box, EFFECT_LINE1, fx->sub);
+    }
+}
+
+/* part on the end of out, cut to cap. */
+static void append(char *out, const char *part, int cap)
+{
+    int n;
+
+    for (n = 0; out[n]; n++) {
+    }
+    while (*part && n < cap - 1) {
+        out[n++] = *part++;
+    }
+    out[n] = 0;
+}
+
+/* An effect's numbers, said when its box is clicked: duration, chance and power by the caster's level. */
+static void effect_numbers(const EffectSettings *e, char *out, int cap)
+{
+    const MagicEffect *fx;
+    char part[48];
+
+    out[0] = 0;
+    fx = magic_effect(e->effect);
     if (fx && (fx->supports & MAGIC_DURATION)) {
-        log_format(line, (int)sizeof(line), "Duration %d + %d/%d lvl", e->duration_base, e->duration_plus, e->duration_per);
-        canvas_label(x, y, line);
-        y += CANVAS_LINE;
+        log_format(part, (int)sizeof(part), "Duration %d + %d/%d lvl. ", e->duration_base, e->duration_plus, e->duration_per);
+        append(out, part, cap);
     }
     if (fx && (fx->supports & MAGIC_CHANCE)) {
-        log_format(line, (int)sizeof(line), "Chance %d + %d/%d lvl", e->chance_base, e->chance_plus, e->chance_per);
-        canvas_label(x, y, line);
-        y += CANVAS_LINE;
+        log_format(part, (int)sizeof(part), "Chance %d + %d/%d lvl. ", e->chance_base, e->chance_plus, e->chance_per);
+        append(out, part, cap);
     }
     if (fx && (fx->supports & MAGIC_MAGNITUDE)) {
-        range_text(line, (int)sizeof(line), "Power", e->magnitude_base_low, e->magnitude_base_high, e->magnitude_plus_low,
+        range_text(part, (int)sizeof(part), "Power", e->magnitude_base_low, e->magnitude_base_high, e->magnitude_plus_low,
                    e->magnitude_plus_high, e->magnitude_per);
-        canvas_label(x, y, line);
+        append(out, part, cap);
     }
 }
 
@@ -302,7 +345,14 @@ void spellbook_compose(void)
         if (at == g.selected) {
             canvas_box(&row, CANVAS_DARK);
         }
-        canvas_label(row.x + 2, row.y + 1, g.list->spell[at].name);
+        /* Each spell after its cost, as DFU's list ("25 - Fireball"): spell points in the book, gold in a shop. */
+        {
+            char line[48];
+
+            log_format(line, (int)sizeof(line), "%d - %s", g.buy ? price_of(at) : spell_cost(&g.list->spell[at], g.pc, 0),
+                       g.list->spell[at].name);
+            canvas_label(row.x + 2, row.y + 1, line);
+        }
     }
     if (g.confirm && !g.buy) {
         canvas_label(g.ox + LIST_X, g.oy + BTN_Y - CANVAS_LINE - 2, "Click Delete again");
@@ -315,7 +365,7 @@ void spellbook_compose(void)
         char cost[40];
 
         s = &g.list->spell[g.selected];
-        canvas_label(g.ox + DETAIL_X, g.oy + NAME_Y, s->name);
+        canvas_label(g.ox + NAME_X, g.oy + NAME_Y, s->name);
         if (g.icons && s->icon < 69) {
             canvas_copy_part(g.icons, ICON_FILE_W, (s->icon % ICONS_PER_ROW) * ICON_SIZE, (s->icon / ICONS_PER_ROW) * ICON_SIZE,
                              ICON_SIZE, ICON_SIZE, g.ox + ICON_X, g.oy + ICON_Y);
@@ -335,11 +385,16 @@ void spellbook_compose(void)
             y += EFFECT_STEP;
         }
         if (g.buy) {
-        log_format(cost, (int)sizeof(cost), "Price: %d gold", spellbook_price());
-    } else {
-        log_format(cost, (int)sizeof(cost), "Cost: %d spell points", spell_cost(s, g.pc, 0));
+            log_format(cost, (int)sizeof(cost), "%d", spellbook_price());
+            canvas_label(g.ox + PRICE_X, g.oy + PRICE_Y, cost);
+        }
     }
-        canvas_label(g.ox + DETAIL_X, g.oy + COST_Y, cost);
+    /* The player's spell points, now and most (not in a shop). */
+    if (!g.buy && g.pc) {
+        char points[24];
+
+        log_format(points, (int)sizeof(points), "%d/%d", g.pc->magicka, g.pc->magicka_max);
+        canvas_label(g.ox + POINTS_X, g.oy + NAME_Y, points);
     }
 }
 
@@ -461,6 +516,18 @@ int spellbook_click(int x, int y)
         scroll_by(-1);
     } else if (in_rect(x, y, ARROW_X, DOWN_ARROW_Y, ARROW_W, ARROW_H)) {
         scroll_by(1);
+    } else if (g.selected >= 0 && g.selected < g.list->count && x >= g.ox + DETAIL_X && x < g.ox + DETAIL_X + EFFECT_W
+               && y >= g.oy + EFFECT_Y0 && (y - g.oy - EFFECT_Y0) % EFFECT_STEP < EFFECT_H
+               && (y - g.oy - EFFECT_Y0) / EFFECT_STEP < MAGIC_SLOTS) {
+        const EffectSettings *e;
+
+        /* An effect's box: its numbers in the note. */
+        e = &g.list->spell[g.selected].effect[(y - g.oy - EFFECT_Y0) / EFFECT_STEP];
+        if (e->effect != SPELL_NO_EFFECT) {
+            effect_numbers(e, g.noted, (int)sizeof(g.noted));
+            g.note = g.noted;
+            g.changed = 1;
+        }
     } else if (in_rect(x, y, LIST_X, LIST_Y, LIST_W, SPELLBOOK_ROWS * SPELLBOOK_ROW_H)) {
         int at;
 

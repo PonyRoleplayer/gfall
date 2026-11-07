@@ -1,5 +1,7 @@
 #include "game/dagger/play/bag.h"
 #include "game/dagger/play/ui.h"
+#include "game/dagger/play/sfx.h"
+#include "game/dagger/formats/sndfile.h"
 #include "game/dagger/play/iteminfo.h"
 #include "game/dagger/formats/texture.h"
 #include "game/dagger/play/combat.h"
@@ -1360,6 +1362,8 @@ static void trade_act(void)
         }
         g.player->pack.gold -= (df_u32)price;
     }
+    /* Coins change hands, heard (DFU's trade window plays GoldPieces; playtest 2026-11-07: silent). */
+    sfx_play(SND_GOLD_PIECES);
     character_tally(&g.player->sheet, SKILL_MERCANTILE, 1);
     wear_changed();
 }
