@@ -110,8 +110,6 @@ typedef struct Slot {
     QuestRun run;
     Qbn qbn;
     MemHeap *heap;
-    /* Its words held back (quest_accept: the main quest's master on its first run). */
-    int quiet;
 } Slot;
 
 static Slot g_slots[QUEST_SLOTS];
@@ -409,11 +407,35 @@ static void fill_message(const Slot *s, int message, char *out, int cap)
     words_expand(mid, out, cap);
 }
 
+/* The individual faction of the person the player is clicking, for quest_met's runs only; -1 otherwise. */
+static int g_clicked_faction = -1;
+/* The last person clicked (faction, block, record): clicking the same one again is no new click (DFU's clickMemory). */
+static int g_click_memory[3] = { -1, -1, -1 };
+
+/* 1 when a running quest has a person of that faction: the named person is busy in it, not "available". */
+static int faction_person_busy(int faction)
+{
+    int slot;
+    int i;
+
+    for (slot = 0; slot < QUEST_SLOTS; slot++) {
+        if (!g_slots[slot].used || g_slots[slot].offered) {
+            continue;
+        }
+        for (i = 0; i < g_slots[slot].qbn.count[QBN_PEOPLE] && i < QUEST_PEOPLE; i++) {
+            if (g_slots[slot].qbn.people[i].faction == faction) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
 static void say(const Slot *s, int message)
 {
     char *to;
 
-    if (message == QBN_NO_MESSAGE || message <= 0 || g_message_count == MESSAGES || s->quiet) {
+    if (message == QBN_NO_MESSAGE || message <= 0 || g_message_count == MESSAGES) {
         return;
     }
     to = g_messages[(g_message_first + g_message_count) % MESSAGES];
@@ -1036,7 +1058,14 @@ static void run(Slot *s, int now)
                 if (l->opcode == OP_LEVEL) {
                     on = g_player && g_player->sheet.level >= (int)l->arg[1].value;
                 } else if (l->opcode == OP_NPC_AVAILABLE) {
-                    on = factionfile_open() && faction_find((int)l->arg[1].value) != 0;
+                    /*
+                     * DFU's WhenNpcIsAvailable: true only as the player clicks that named person (their own
+                     * faction: Cyndassa, Lhotun, Helseth...) while no quest running uses them. S0000999's
+                     * "come back when you are better" is said then, not at a new game: it was true whenever
+                     * the faction existed, and every refusal came with the hold's opening (playtest 2026-11-07).
+                     */
+                    on = g_clicked_faction >= 0 && g_clicked_faction == (int)l->arg[1].value
+                         && !faction_person_busy(g_clicked_faction);
                 } else {
                     on = standing_rep((int)l->arg[1].value) >= (int)(df_i32)l->arg[2].value;
                 }
@@ -1088,6 +1117,7 @@ void quest_new_game(void)
     }
     g_message_count = 0;
     mem_zero(g_done, sizeof(g_done));
+    g_click_memory[0] = g_click_memory[1] = g_click_memory[2] = -1;
 }
 
 const QuestRun *quest_run(int slot)
@@ -1157,15 +1187,7 @@ int quest_accept(Player *p, int slot, int now)
         mark_done(s->run.quest);
     }
     g_player = p;
-    /*
-     * S0000999, the main quest's master, looks at once at every next step: each guild of the story whose
-     * level or standing is not yet met says "come back when you are better" (its messages 1033 to 1036).
-     * Those all fired with the hold's opening words at a new game (playtest 2026-11-07). Its first look is
-     * kept quiet; a step that turns later still speaks. Ours: classic's exact gating was not found.
-     */
-    s->quiet = df_eq(file_of(s), "S0000999");
     run(s, now);
-    s->quiet = 0;
     return s->used ? slot : -1;
 }
 
@@ -1356,6 +1378,13 @@ void quest_met(Player *p, int region, int index, int block, int record, int fact
     int slot;
 
     g_player = p;
+    /* A click, unless it is the same person clicked again (they must click someone else first, as DFU). */
+    if (faction != g_click_memory[0] || block != g_click_memory[1] || record != g_click_memory[2]) {
+        g_clicked_faction = faction;
+    }
+    g_click_memory[0] = faction;
+    g_click_memory[1] = block;
+    g_click_memory[2] = record;
     for (slot = 0; slot < QUEST_SLOTS; slot++) {
         Slot *s;
         int i;
@@ -1372,6 +1401,7 @@ void quest_met(Player *p, int region, int index, int block, int record, int fact
         }
         run(s, now);
     }
+    g_clicked_faction = -1;
 }
 
 void quest_killed(Player *p, int kind, int region, int index, int now)

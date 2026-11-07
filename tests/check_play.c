@@ -9707,6 +9707,14 @@ static void check_quest_machine(void)
                 refused += strstr(said, "tough enough") != 0 || strstr(said, "unskilled") != 0;
             }
             check_expect(!refused, "quest machine: a new game's main quest says a guild's refusal at once");
+            /* Clicking the story's person of faction 500 at level 1 (DFU's WhenNpcIsAvailable): their "come back" then. */
+            p.sheet.level = 1;
+            quest_met(&p, 17, 0, 0, 1, 500, now);
+            refused = 0;
+            while (quest_take_message(said, (int)sizeof(said))) {
+                refused += strstr(said, "tough enough") != 0 || strstr(said, "unskilled") != 0;
+            }
+            check_expect(refused == 1, "quest machine: clicking the main quest's person at level 1 did not say they are not ready");
         }
         /* A dozen more guild quests beside it. */
         count = 0;
