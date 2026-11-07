@@ -455,6 +455,31 @@ static int hit(const Button *b, int n, int left, int top)
 
 /* Draw callbacks use native pixels. Classic title/start screens and world
  * pointers retain screen.c's established 320x200 coordinate conversion. */
+/*
+ * Glyphs held back and drawn after every panel (settings_text_flush). The engine keeps a picture draw's
+ * card state on across draws of one kind, and a switch between opaque panels and keyed glyphs costs a
+ * full restore: one switch a frame, not one a word. Text over panels is the only overlap there is.
+ */
+#define SETTINGS_TEXT_MOST 2048
+typedef struct HeldGlyph {
+    short atlas, sx, sy, sw, sh, x, top, w, h;
+} HeldGlyph;
+static HeldGlyph g_held[SETTINGS_TEXT_MOST];
+static int g_held_n;
+
+static void settings_text_flush(void)
+{
+    int i;
+
+    for (i = 0; i < g_held_n; i++) {
+        const HeldGlyph *g;
+
+        g = &g_held[i];
+        pic_draw_part(g_settings_pics[g->atlas], g->sx, g->sy, g->sw, g->sh, g->x, g->top, g->w, g->h, 255);
+    }
+    g_held_n = 0;
+}
+
 static void settings_quad(void *ctx, int atlas, int sx, int sy, int sw, int sh,
                           int x, int y, int w, int h)
 {
@@ -473,6 +498,21 @@ static void settings_quad(void *ctx, int atlas, int sx, int sy, int sw, int sh,
         y1 = (y + h) * DF_VIEW_H / SETTINGS_H;
         if (x1 <= x0) x1 = x0 + 1;
         if (y1 <= y0) y1 = y0 + 1;
+    }
+    if (atlas != 0 && g_held_n < SETTINGS_TEXT_MOST) {
+        HeldGlyph *g;
+
+        g = &g_held[g_held_n++];
+        g->atlas = (short)atlas;
+        g->sx = (short)sx;
+        g->sy = (short)sy;
+        g->sw = (short)sw;
+        g->sh = (short)sh;
+        g->x = (short)x0;
+        g->top = (short)(DF_VIEW_H - y0);
+        g->w = (short)(x1 - x0);
+        g->h = (short)(y1 - y0);
+        return;
     }
     pic_draw_part(g_settings_pics[atlas], sx, sy, sw, sh, x0, DF_VIEW_H - y0, x1 - x0, y1 - y0, 255);
 }
@@ -849,6 +889,7 @@ void menu_draw(void)
         g_settings.dirty = settings_dirty();
         ui_scale(DF_VIEW_W, SETTINGS_W);
         settings_draw(&g_settings, settings_quad, 0);
+        settings_text_flush();
         /* The snapshot of the save selected, over its frame (the same 640 x 480 the shell's quads use). */
         if (g_settings.tab == SETTINGS_FILES && g_thumb_pic) {
             int tx;

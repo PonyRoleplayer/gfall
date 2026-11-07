@@ -21,6 +21,7 @@
 #include "game/dagger/play/sheet.h"
 #include "game/dagger/formats/img.h"
 #include "engine/ui/font.h"
+#include "engine/core/mem.h"
 #include "engine/ui/pic.h"
 
 /* See screens.h. */
@@ -75,9 +76,26 @@ static int g_service_choice;
 static int g_msgbox_answer;
 
 /* The open screen's composed picture up on the card, in place of the last one. */
+/* What the picture on the card was loaded with, to tell an update from a new picture. */
+static int g_pic_cutout;
+static df_u8 g_pic_rgb[768];
+
+static int same_palette(void)
+{
+    int i;
+
+    for (i = 0; i < (int)sizeof(g_rgb); i++) {
+        if (g_rgb[i] != g_pic_rgb[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static void send_screen(void)
 {
     const df_u8 *pixels;
+    int cutout;
 
     if (g_open == OPEN_BAG) {
         bag_compose();
@@ -129,11 +147,23 @@ static void send_screen(void)
         /* The class questions' picture has a palette of its own. */
         create_palette(g_rgb);
     }
+    /* The indoor automap's chrome has a clear hole the engine's map shows through; a popup's index 0 is clear. */
+    cutout = g_open == OPEN_DUNMAP || screens_over_world();
+    /*
+     * The same picture under the same palette: only its changed tiles go to the card again (pic_update). A
+     * scroll step or a coin's frame touches a few tiles; sending the whole screen each time took the
+     * inventory from 180 to 17 frames a second on the 233 (playtest 2026-11-07). A new palette or cutout
+     * is a new picture.
+     */
+    if (g_pic && cutout == g_pic_cutout && same_palette() && pic_update(g_pic, pixels) >= 0) {
+        return;
+    }
     if (g_pic) {
         pic_free(g_pic);
     }
-    /* The indoor automap's chrome has a clear hole the engine's map shows through. */
-    g_pic = pic_load(pixels, SCREEN_W, SCREEN_H, g_rgb, g_open == OPEN_DUNMAP || screens_over_world());
+    g_pic = pic_load(pixels, SCREEN_W, SCREEN_H, g_rgb, cutout);
+    g_pic_cutout = cutout;
+    mem_copy(g_pic_rgb, g_rgb, sizeof(g_rgb));
 }
 
 int screens_over_world(void)
