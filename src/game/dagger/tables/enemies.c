@@ -210,6 +210,21 @@ static int draw_kind(const Encounter *t)
     return (int)t->kind[range_inclusive(lo, hi)];
 }
 
+int enemy_encounter(int dungeon_type, int level, df_u32 seed)
+{
+    const Encounter *t;
+    int kind;
+
+    t = dungeon_type >= 0 && dungeon_type != ENCOUNTER_UNDERWATER ? (const Encounter *)rec_row(encounter_table(), dungeon_type) : 0;
+    if (!t) {
+        return -1;
+    }
+    g_level = level < 1 ? 1 : level;
+    g_rng = seed;
+    kind = draw_kind(t);
+    return kind == INVALID_KIND ? -1 : kind;
+}
+
 void enemy_dungeon(int location_id, int dungeon_type, int level)
 {
     const Encounter *t;

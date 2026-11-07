@@ -60,6 +60,13 @@ void dunstream_set_foes_hook(DunstreamFoesHook hook);
  * and in *female whether it was drawn a woman; -1 for one it did not make.
  */
 int dunstream_kind(const Entity *e, int *female);
+/*
+ * A creature conjured while playing: its look for kind (dunstream_look; 0 when its pictures are missing),
+ * and a key of its own for it (dunstream_conjured_key; 0 with no dungeon open), by which dunstream_kind
+ * knows it and its keep row holds its health and what its body holds.
+ */
+int dunstream_look(Entity *e, int kind, int female);
+int dunstream_conjured_key(int kind, int female, KeepKey *key);
 /* 1 when its marker says it attacks only when attacked (enemy_at's passive). */
 int dunstream_passive(const Entity *e);
 /* 1 for an entity that is one of a block's treasure piles. */

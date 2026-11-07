@@ -106,6 +106,7 @@
 #include "game/dagger/play/castfx.h"
 #include "game/dagger/play/iteminfo.h"
 #include "engine/scene/spawn.h"
+#include "game/dagger/play/conjure.h"
 #include "engine/scene/weather.h"
 #include "game/dagger/play/projectile.h"
 #include "game/dagger/play/shots.h"
@@ -1468,6 +1469,83 @@ static void check_combat(void)
  * streamed hold a creature that sees the player wakes, comes, faces
  * them and hurts them; tgm keeps the player whole; tai stands it still.
  */
+/*
+ * An interrupted rest conjures a creature, as classic and DFU do (playtest 2026-11-07: it woke the dungeon's own):
+ * in the streamed hold, one from its encounter table, 4 to 16 m off, out of the camera's sight, awake and coming,
+ * its kind known by its key, and gone with the place.
+ */
+static void check_conjure(void)
+{
+    Character pc;
+    Dungeon hold;
+    Level level;
+    Camera cam;
+    float x, y, z, yaw, pitch;
+    Player p;
+    Input in;
+    Entity *e;
+    float dx;
+    float dz;
+    float d;
+    float d0;
+    int kind;
+    int i;
+
+    if (!character_new(&pc, RACE_BRETON, CLASS_WARRIOR, 0, "Test")) {
+        check_expect(0, "conjure: no starting character");
+        return;
+    }
+    keep_clear();
+    combat_reset();
+    foes_reset();
+    foes_set_on(1);
+    if (!dungeon_load(&hold) || !dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
+        check_expect(0, "conjure: the hold's stream did not open");
+        return;
+    }
+    camera_set(&cam, x, y, z, yaw, pitch);
+    dunstream_fill(&cam);
+    player_init(&p, &pc);
+    memset(&in, 0, sizeof(in));
+    player_place(&p, x, y, z, yaw, pitch);
+    walk(&p, &level.scene, &in, 30);
+    body_eye(&p.body, &x, &y, &z);
+    camera_set(&cam, x, y, z, p.yaw, p.pitch);
+    collide_use(&level.scene);
+    conjure_use(&level.scene, &cam);
+    e = 0;
+    for (i = 0; i < 8 && !e; i++) {
+        e = conjure_rest_foe(p.body.feet, 1, 1234u + (unsigned)i);
+    }
+    check_expect(e != 0 && spawn_count() == 1, "conjure: an interrupted rest in the hold brought no creature");
+    if (!e) {
+        dunstream_close();
+        return;
+    }
+    kind = dunstream_kind(e, 0);
+    dx = e->x - p.body.feet[0];
+    dz = e->z - p.body.feet[2];
+    d0 = df_sqrt(dx * dx + dz * dz);
+    check_expect(kind >= 0 && enemy_kind(kind) && !enemy_aquatic(kind), "conjure: its kind is not known by its key");
+    check_expect(d0 >= 4.0f * RULES_UNITS_PER_M - 1.0f && d0 <= 16.0f * RULES_UNITS_PER_M + 1.0f, "conjure: it is not 4 to 16 m off");
+    check_expect(foes_hunting(), "conjure: it came asleep, not hunting");
+    /* It comes: a few seconds of its minds bring it nearer. */
+    p.god = 1;
+    for (i = 0; i < 30 * 4; i++) {
+        foes_frame(&p, &level.scene, 1.0f / 30.0f);
+    }
+    dx = e->x - p.body.feet[0];
+    dz = e->z - p.body.feet[2];
+    d = df_sqrt(dx * dx + dz * dz);
+    check_expect(d < d0, "conjure: the creature did not come for the sleeper");
+    printf("conjure: a rest's creature, kind %d, %.1f m off and out of sight, came to %.1f m\n", kind,
+           d0 / RULES_UNITS_PER_M, d / RULES_UNITS_PER_M);
+    dunstream_close();
+    check_expect(spawn_count() == 0, "conjure: the creature outlived its place");
+    foes_reset();
+    keep_clear();
+}
+
 static void check_foes(void)
 {
     Character pc;
@@ -10241,6 +10319,7 @@ void check_play(void)
     check_controls();
     check_combat();
     check_foes();
+    check_conjure();
     check_foes_due();
     check_armor();
     check_dye();

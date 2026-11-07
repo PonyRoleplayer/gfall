@@ -159,6 +159,13 @@ void enemy_dungeon(int location_id, int dungeon_type, int level);
  */
 int enemy_at(const Marker *mk, int water, int *female, int *passive);
 
+/*
+ * One creature from a dungeon type's encounter table (DUN_TYPE_*), by the player's level as the
+ * markers' draws are (ChooseRandomEnemyType), on the game's own seed: what an interrupted rest
+ * brings (DFU's RandomEncounters.ChooseRandomEnemy). -1 for a type with no table.
+ */
+int enemy_encounter(int dungeon_type, int level, df_u32 seed);
+
 /* A block's water level from its start marker (record 10), classic's sense; ENEMY_DRY for none. */
 int enemy_water(const Marker *marks, int n);
 

@@ -997,7 +997,7 @@ On the P55C 233 with a Voodoo 2. The engine's half (picture state batching, `pic
 
 - **Sounds:** a trade at a shop or the bank plays GoldPieces (DAGGER.SND 361); an arrow loosed and striking, ArrowShoot and ArrowHit (3, 4); a spell's cast as the hand lets it go, or at once for a creature, by element by sound id (DFU's EntityEffectManager: magic 349, poison 350, shock 351, fire 352, cold 353); a missile striking, SpellImpact by element (86..90) where it struck. From DFU's `SoundClips.cs`.
 - **The spellbook** is an item (DFU's template 132, TEXTURE.209 record 4, 0.75 kg, 50 gold): every new character starts with one, and the book does not open without it ("You have no spellbook."). The screen follows DFU's DaggerfallSpellBookWindow: the name at 123, 2, the spell points (now/most) at 214, 2, each list line "cost - name" (spell points in the book, gold in a shop), the price at 76, 154 in a shop, and each effect's box two centred lines, its group and its kind; a click on a box puts its duration, chance and power in the note.
-- **A rest's encounter** wakes the nearest sleeper on the sleeper's own floor (within 120 units up or down), not one a storey away seen coming out of the rock. A new creature conjured near, as DFU does, is still to come.
+- **A rest's encounter** conjures a creature, as classic and DFU do (DaggerfallRestWindow, RandomEncounters.ChooseRandomEnemy, a FoeSpawner), not one of the dungeon's own woken: an hour's one-in-36 roll (ours), and then one kind from the dungeon's encounter table by the player's level (`enemy_encounter`, the markers' ChooseRandomEnemyType), never a water dweller on a dry floor, made in the engine's spawn pool 4 to 16 m off across the ground, its floor within 3 m, out of the camera's sight and dry (`spawn_find`), awake and hunting (`conjure.c`). Its key is the dungeon's keep place with block 0xFE and a serial (`dunstream_conjured_key`), so `dunstream_kind`, combat's health, its body's loot and the foes treat it as one of the dungeon's; the play loops over creatures walk the stream's slots and then the pool (`creature_groups`). Freed 64 m off, or with the place; not saved (its keep row stays, unread). Outdoors none yet: the wilderness's tables by climate are to come. Host-tested in the streamed hold: a class enemy 4 m off and out of sight, coming.
 
 Open from the playtest, game side: the shop's coins gone on a second opening (not reproduced on the host: the steps are wanted); Privateer's Hold's song against classic's (which song classic plays there is wanted). And the frame rate: `prof log` numbers are wanted from the 233.
 
@@ -1015,7 +1015,7 @@ What is built but not whole, and the phase each goes in. Each section above says
 | Creatures | ranged attacks and spells; a hurt voice | P12-b |
 | Creatures | the frame a blow lands on and how often a move sounds are our guesses, not found in classic | - |
 | Saves | creatures awake come back asleep; the weather keeps its kind, not the engine's roll sequence or its timer | later |
-| Rest | an encounter wakes a sleeper, not a new creature; a class with no spell point regeneration | later, P12-b |
+| Rest | an encounter outdoors (the wilderness's tables by climate); a class with no spell point regeneration | later, P12-b |
 | Items | jewellery, ingredients, books, potions, maps, and the screen's other tabs (clothing is built) | P12-b, later |
 | Items | clothing's dyes, clothing's wear | later |
 | Inventory | the Use button | P12-b |

@@ -1,4 +1,5 @@
 #include "game/dagger/play/foes.h"
+#include "game/dagger/play/conjure.h"
 #include "game/dagger/play/ills.h"
 #include "game/dagger/places/travel.h"
 #include "game/dagger/play/combat.h"
@@ -453,53 +454,6 @@ void foes_knock(Entity *e, const float *from, int speed)
     m->knock = (float)(speed > KNOCK_MOST ? KNOCK_MOST : speed);
 }
 
-/* How far above or below the sleeper's feet a creature a rest wakes may stand: a storey, about 3 m. */
-#define FOES_ROUSE_RISE 120.0f
-
-int foes_rouse_nearest(const float *at)
-{
-    Entity *best;
-    float best_at;
-    int slot;
-
-    best = 0;
-    best_at = FOES_ROUSE_REACH * FOES_ROUSE_REACH;
-    for (slot = 0; slot < stream_slots(); slot++) {
-        Entity *ents;
-        int first;
-        int n;
-        int i;
-
-        ents = stream_slot_entities(slot, &first, &n);
-        for (i = 0; ents && i < n; i++) {
-            float dx;
-            float dz;
-            float d;
-
-            if (!ents[i].live || ents[i].dead || dunstream_kind(&ents[i], 0) < 0 || dunstream_passive(&ents[i]) || mind_of(&ents[i])) {
-                continue;
-            }
-            dx = ents[i].x - at[0];
-            dz = ents[i].z - at[2];
-            /* Its own floor: a creature a storey above or below is not the one at the door, and was seen
-             * coming out of the rock (playtest 2026-11-07, "enemies outside the map" after a rest). */
-            if (df_absf(ents[i].y - at[1]) > FOES_ROUSE_RISE) {
-                continue;
-            }
-            d = dx * dx + dz * dz;
-            if (d < best_at) {
-                best = &ents[i];
-                best_at = d;
-            }
-        }
-    }
-    if (!best) {
-        return 0;
-    }
-    foes_alert(best);
-    return mind_of(best) != 0;
-}
-
 int foes_rolls(const Player *p, int minute)
 {
     return !((minute & 1) && player_sneaking(p));
@@ -686,12 +640,11 @@ static Entity *nth(int n, int *total)
 
     found = 0;
     at = 0;
-    for (slot = 0; slot < stream_slots(); slot++) {
+    for (slot = 0; slot < creature_groups(); slot++) {
         Entity *ents;
-        int first;
         int count;
 
-        ents = stream_slot_entities(slot, &first, &count);
+        ents = creature_group(slot, &count);
         if (!ents) {
             continue;
         }

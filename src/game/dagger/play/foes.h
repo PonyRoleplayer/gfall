@@ -83,9 +83,6 @@ void foes_knock(Entity *e, const float *from, int speed);
 /* Held still for seconds by paralysis (a mind it has: a sleeper is held already); the longer of this and what was. A negative time frees it. */
 void foes_freeze(Entity *e, float seconds);
 int foes_frozen(const Entity *e);
-/* The nearest sleeper within FOES_ROUSE_REACH of the point wakes and comes: what a rest's encounter is, there being no creatures to conjure. 1 when one did. */
-#define FOES_ROUSE_REACH 2048.0f
-int foes_rouse_nearest(const float *at);
 /* The chance in 100 a sleeper this far off does NOT notice someone of this Stealth (FormulaHelper.CalculateStealthChance). */
 int foes_stealth_chance(float distance, int stealth);
 /* 1 when sleepers roll to notice player p in this game minute: every one, but for a player at no more than half a walk (player_sneaking), only the even ones. */

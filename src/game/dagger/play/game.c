@@ -5,6 +5,7 @@
 #include "game/dagger/play/journey.h"
 #include "game/dagger/play/ills.h"
 #include "game/dagger/play/rest.h"
+#include "game/dagger/play/conjure.h"
 #include "game/dagger/play/lodging.h"
 #include "game/dagger/play/guild.h"
 #include "game/dagger/play/quest.h"
@@ -2432,6 +2433,8 @@ int game_frame(Camera *cam, const Input *in, float dt)
 
     prof_begin(PROF_PLAY);
     g_cam = cam;
+    /* What an interrupted rest conjures needs the place and the view (conjure.c). */
+    conjure_use(g_level ? &g_level->scene : 0, cam);
     if (g_raised_n > 0 && !screens_is_open()) {
         g_raised_time += dt;
         if (g_raised_time >= RAISED_SECONDS) {

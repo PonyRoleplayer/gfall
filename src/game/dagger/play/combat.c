@@ -1,4 +1,5 @@
 #include "game/dagger/play/combat.h"
+#include "game/dagger/play/conjure.h"
 #include "game/dagger/play/ills.h"
 #include "game/dagger/play/quest.h"
 #include "game/dagger/places/travel.h"
@@ -739,13 +740,12 @@ static Entity *aim_creature(const Scene *scene, const float *eye, const float *d
 
     best = 0;
     best_t = reach;
-    for (slot = 0; slot < stream_slots(); slot++) {
+    for (slot = 0; slot < creature_groups(); slot++) {
         Entity *ents;
-        int first;
         int n;
         int i;
 
-        ents = stream_slot_entities(slot, &first, &n);
+        ents = creature_group(slot, &n);
         for (i = 0; ents && i < n; i++) {
             Entity *e;
             float low[3];
@@ -790,13 +790,12 @@ int combat_near(const Scene *scene, const float *at, float radius, Entity **out,
     if (!scene || !collide_use(scene)) {
         return 0;
     }
-    for (slot = 0; slot < stream_slots(); slot++) {
+    for (slot = 0; slot < creature_groups(); slot++) {
         Entity *ents;
-        int first;
         int count;
         int i;
 
-        ents = stream_slot_entities(slot, &first, &count);
+        ents = creature_group(slot, &count);
         for (i = 0; ents && i < count && n < max; i++) {
             Entity *e;
             float mid[3];
@@ -1185,13 +1184,12 @@ int combat_strike(Character *pc, Item *weapon, int swing, const Scene *scene, co
      * the player's, and within the arc of its facing on the ground (any
      * way at point blank), that no wall hides from the eye.
      */
-    for (slot = 0; slot < stream_slots(); slot++) {
+    for (slot = 0; slot < creature_groups(); slot++) {
         Entity *ents;
-        int first;
         int n;
         int i;
 
-        ents = stream_slot_entities(slot, &first, &n);
+        ents = creature_group(slot, &n);
         for (i = 0; ents && i < n; i++) {
             if (combat_reaches(scene, feet, eye, yaw, &ents[i])) {
                 strike_one(pc, weapon, swing, &ents[i], feet);
@@ -1242,13 +1240,12 @@ static Entity *by_key(KeepKey key)
 {
     int slot;
 
-    for (slot = 0; slot < stream_slots(); slot++) {
+    for (slot = 0; slot < creature_groups(); slot++) {
         Entity *ents;
-        int first;
         int n;
         int i;
 
-        ents = stream_slot_entities(slot, &first, &n);
+        ents = creature_group(slot, &n);
         for (i = 0; ents && i < n; i++) {
             if (ents[i].key.place == key.place && ents[i].key.thing == key.thing) {
                 return &ents[i];
@@ -1286,12 +1283,11 @@ void combat_frame(float dt)
         }
     }
     /* A body come back with its block (keep_restore puts dead back, not the radius or a missing picture). */
-    for (slot = 0; slot < stream_slots(); slot++) {
+    for (slot = 0; slot < creature_groups(); slot++) {
         Entity *ents;
-        int first;
         int n;
 
-        ents = stream_slot_entities(slot, &first, &n);
+        ents = creature_group(slot, &n);
         for (i = 0; ents && i < n; i++) {
             if (ents[i].live && ents[i].dead) {
                 ents[i].radius = 0.0f;

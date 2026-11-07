@@ -1,4 +1,5 @@
 #include "game/dagger/play/rest.h"
+#include "game/dagger/play/conjure.h"
 #include "game/dagger/play/ui.h"
 #include "game/dagger/play/canvas.h"
 #include "game/dagger/play/combat.h"
@@ -287,9 +288,13 @@ static int one_step(void)
     if (g.rule == REST_RULE_ROOM && g.kind != KIND_LOITER && g.hours_done >= g.room_hours) {
         return end_rest("Your rented room has expired.");
     }
-    /* An hour's chance of being found (ours, one in 36: DFU's dungeon roll, whose frequency was not read); none in a rented room. */
+    /*
+     * An hour's chance of being found (ours, one in 36: DFU's dungeon roll, whose frequency was not read); none in
+     * a rented room. What finds the sleeper is a creature conjured near, out of sight, from the place's encounter
+     * table by their level, as classic and DFU do (conjure.c); not one of the dungeon's own woken.
+     */
     if (g.rule != REST_RULE_ROOM && combat_roll(ENCOUNTER_ODDS) == 0) {
-        foes_rouse_nearest(g.player->body.feet);
+        conjure_rest_foe(g.player->body.feet, g.player->sheet.level, (unsigned)combat_roll(1 << 30));
     }
     if (foes_hunting()) {
         return end_rest("You are awoken by an enemy.");

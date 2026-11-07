@@ -1,4 +1,5 @@
 #include "game/dagger/play/loot.h"
+#include "game/dagger/play/conjure.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/pile.h"
 #include "game/dagger/places/dunstream.h"
@@ -335,13 +336,12 @@ Entity *loot_find(const Scene *scene, const Camera *eye)
     dir[0] = basis.fx * basis.cp;
     dir[1] = basis.sp;
     dir[2] = basis.fz * basis.cp;
-    for (slot = 0; slot < stream_slots(); slot++) {
+    for (slot = 0; slot < creature_groups(); slot++) {
         Entity *ents;
-        int first;
         int n;
         int i;
 
-        ents = stream_slot_entities(slot, &first, &n);
+        ents = creature_group(slot, &n);
         for (i = 0; ents && i < n; i++) {
             consider(&ents[i], scene, from, dir, &best, &best_t);
         }

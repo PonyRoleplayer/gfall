@@ -602,6 +602,140 @@ static void place_doors(Chunk *c, StreamOut *out)
     out->movers_n = d.nmover;
 }
 
+/*
+ * A creature's look for kind (ENEM's id; female for a class's woman): its walk, its standing, its
+ * struck, attack and dead poses, each view's picture in the world's registry. 0 when its walk or
+ * standing pictures are missing. Shared by the blocks' creatures and a conjured one (dunstream_look).
+ */
+static int creature_look(Entity *e, int kind, int female)
+{
+    int archive;
+    int k;
+    int whole;
+
+    archive = enemy_archive(kind, female);
+    entity_init(e);
+    whole = 1;
+    for (k = 0; k < ENTITY_VIEWS; k++) {
+        e->pose[ENTITY_WALK].slot[k] = (df_u16)wres_slot(archive, g_walk[k], WRES_SPRITE);
+        whole = whole && size_of(e->pose[ENTITY_WALK].slot[k], &e->pose[ENTITY_WALK].w[k],
+                                 &e->pose[ENTITY_WALK].h[k]);
+    }
+    e->pose[ENTITY_WALK].rate = (df_u8)(enemy_flies(kind) ? FOE_FLY_RATE : FOE_MOVE_RATE);
+    if (kind == ENEMY_GHOST || kind == ENEMY_WRAITH) {
+        e->pose[ENTITY_WALK].right = 1u << 2;
+    }
+    if (enemy_has_idle(kind)) {
+        for (k = 0; k < ENTITY_VIEWS; k++) {
+            int rec;
+
+            rec = female && archive == 483 ? g_idle_483[k] : g_idle[k];
+            e->pose[ENTITY_IDLE].slot[k] = (df_u16)wres_slot(archive, rec, WRES_SPRITE);
+            whole = whole && size_of(e->pose[ENTITY_IDLE].slot[k], &e->pose[ENTITY_IDLE].w[k],
+                                     &e->pose[ENTITY_IDLE].h[k]);
+        }
+        e->pose[ENTITY_IDLE].rate = FOE_IDLE_RATE;
+        if (kind == ENEMY_RAT) {
+            e->pose[ENTITY_IDLE].right = (1u << 1) | (1u << 2) | (1u << 3);
+        }
+    }
+    if (!whole) {
+        return 0;
+    }
+    /*
+     * The acts the game shows instead (docs/entities.md): struck, and
+     * a body. Either missing leaves its pose empty, not shown; the
+     * creature still stands.
+     */
+    {
+        const EnemyKind *ek;
+        int got;
+
+        got = 1;
+        for (k = 0; k < ENTITY_VIEWS; k++) {
+            e->pose[ENTITY_HURT].slot[k] = (df_u16)wres_slot(archive, g_hurt[k], WRES_SPRITE);
+            got = got && size_of(e->pose[ENTITY_HURT].slot[k], &e->pose[ENTITY_HURT].w[k],
+                                 &e->pose[ENTITY_HURT].h[k]);
+        }
+        if (got) {
+            e->pose[ENTITY_HURT].rate = FOE_HURT_RATE;
+            e->pose[ENTITY_HURT].right = e->pose[ENTITY_WALK].right;
+        } else {
+            mem_zero(&e->pose[ENTITY_HURT], sizeof(EntityPose));
+        }
+        got = 1;
+        for (k = 0; k < ENTITY_VIEWS; k++) {
+            e->pose[ENTITY_ATTACK].slot[k] = (df_u16)wres_slot(archive, g_attack[k], WRES_SPRITE);
+            got = got && size_of(e->pose[ENTITY_ATTACK].slot[k], &e->pose[ENTITY_ATTACK].w[k],
+                                 &e->pose[ENTITY_ATTACK].h[k]);
+        }
+        if (got) {
+            e->pose[ENTITY_ATTACK].rate = FOE_HURT_RATE;
+            e->pose[ENTITY_ATTACK].right = e->pose[ENTITY_WALK].right;
+        } else {
+            mem_zero(&e->pose[ENTITY_ATTACK], sizeof(EntityPose));
+        }
+        /* A body is one picture, facing every viewer (slot[1] none). */
+        ek = enemy_kind(kind);
+        if (ek && ek->corpse_archive) {
+            e->pose[ENTITY_DEAD].slot[0] = (df_u16)wres_slot(ek->corpse_archive, ek->corpse_record, WRES_SPRITE);
+            if (!size_of(e->pose[ENTITY_DEAD].slot[0], &e->pose[ENTITY_DEAD].w[0], &e->pose[ENTITY_DEAD].h[0])) {
+                mem_zero(&e->pose[ENTITY_DEAD], sizeof(EntityPose));
+            }
+        }
+    }
+    return 1;
+}
+
+int dunstream_look(Entity *e, int kind, int female)
+{
+    return creature_look(e, kind, female);
+}
+
+/*
+ * Creatures conjured while playing (an interrupted rest's): their keys and kinds. The key is in the
+ * dungeon's keep place, block CONJURED_BLOCK (no block has that number) and a serial: health, death and
+ * what the body holds go by keep rows as any creature's, and dunstream_kind answers for them.
+ */
+#define CONJURED_BLOCK 0xFEu
+#define CONJURED_MOST 32
+typedef struct Conjured {
+    df_u32 thing;
+    df_u16 kind;
+    df_u8 female;
+} Conjured;
+static Conjured g_conjured[CONJURED_MOST];
+static df_u32 g_conjured_serial;
+
+int dunstream_conjured_key(int kind, int female, KeepKey *key)
+{
+    Conjured *c;
+
+    if (!g_open || !g_keep_place) {
+        return 0;
+    }
+    g_conjured_serial = (g_conjured_serial + 1u) & 0xFFFFFFu;
+    c = &g_conjured[g_conjured_serial % CONJURED_MOST];
+    c->thing = (CONJURED_BLOCK << 24) | g_conjured_serial;
+    c->kind = (df_u16)kind;
+    c->female = (df_u8)(female != 0);
+    key->place = g_keep_place;
+    key->thing = c->thing;
+    return 1;
+}
+
+/* A conjured creature's record, or 0. */
+static const Conjured *conjured_of(const Entity *e)
+{
+    const Conjured *c;
+
+    if (!g_open || !g_keep_place || e->key.place != g_keep_place || (e->key.thing >> 24) != CONJURED_BLOCK) {
+        return 0;
+    }
+    c = &g_conjured[(e->key.thing & 0xFFFFFFu) % CONJURED_MOST];
+    return c->thing == e->key.thing ? c : 0;
+}
+
 /* Step: the block's creatures, keyed, in their poses, standing on its floors (world.c's rules). */
 static void place_foes(Chunk *c, StreamOut *out)
 {
@@ -612,86 +746,15 @@ static void place_foes(Chunk *c, StreamOut *out)
         Entity *e;
         int kind;
         int female;
-        int archive;
-        int k;
-        int whole;
         unsigned int hash;
         float ground;
 
         mk = &g_draw[i];
         kind = (int)mk->kind;
         female = (int)mk->female;
-        archive = enemy_archive(kind, female);
         e = &out->entities[out->entities_n];
-        entity_init(e);
-        whole = 1;
-        for (k = 0; k < ENTITY_VIEWS; k++) {
-            e->pose[ENTITY_WALK].slot[k] = (df_u16)wres_slot(archive, g_walk[k], WRES_SPRITE);
-            whole = whole && size_of(e->pose[ENTITY_WALK].slot[k], &e->pose[ENTITY_WALK].w[k],
-                                     &e->pose[ENTITY_WALK].h[k]);
-        }
-        e->pose[ENTITY_WALK].rate = (df_u8)(enemy_flies(kind) ? FOE_FLY_RATE : FOE_MOVE_RATE);
-        if (kind == ENEMY_GHOST || kind == ENEMY_WRAITH) {
-            e->pose[ENTITY_WALK].right = 1u << 2;
-        }
-        if (enemy_has_idle(kind)) {
-            for (k = 0; k < ENTITY_VIEWS; k++) {
-                int rec;
-
-                rec = female && archive == 483 ? g_idle_483[k] : g_idle[k];
-                e->pose[ENTITY_IDLE].slot[k] = (df_u16)wres_slot(archive, rec, WRES_SPRITE);
-                whole = whole && size_of(e->pose[ENTITY_IDLE].slot[k], &e->pose[ENTITY_IDLE].w[k],
-                                         &e->pose[ENTITY_IDLE].h[k]);
-            }
-            e->pose[ENTITY_IDLE].rate = FOE_IDLE_RATE;
-            if (kind == ENEMY_RAT) {
-                e->pose[ENTITY_IDLE].right = (1u << 1) | (1u << 2) | (1u << 3);
-            }
-        }
-        if (!whole) {
+        if (!creature_look(e, kind, female)) {
             continue;
-        }
-        /*
-         * The acts the game shows instead (docs/entities.md): struck, and
-         * a body. Either missing leaves its pose empty, not shown; the
-         * creature still stands.
-         */
-        {
-            const EnemyKind *ek;
-            int got;
-
-            got = 1;
-            for (k = 0; k < ENTITY_VIEWS; k++) {
-                e->pose[ENTITY_HURT].slot[k] = (df_u16)wres_slot(archive, g_hurt[k], WRES_SPRITE);
-                got = got && size_of(e->pose[ENTITY_HURT].slot[k], &e->pose[ENTITY_HURT].w[k],
-                                     &e->pose[ENTITY_HURT].h[k]);
-            }
-            if (got) {
-                e->pose[ENTITY_HURT].rate = FOE_HURT_RATE;
-                e->pose[ENTITY_HURT].right = e->pose[ENTITY_WALK].right;
-            } else {
-                mem_zero(&e->pose[ENTITY_HURT], sizeof(EntityPose));
-            }
-            got = 1;
-            for (k = 0; k < ENTITY_VIEWS; k++) {
-                e->pose[ENTITY_ATTACK].slot[k] = (df_u16)wres_slot(archive, g_attack[k], WRES_SPRITE);
-                got = got && size_of(e->pose[ENTITY_ATTACK].slot[k], &e->pose[ENTITY_ATTACK].w[k],
-                                     &e->pose[ENTITY_ATTACK].h[k]);
-            }
-            if (got) {
-                e->pose[ENTITY_ATTACK].rate = FOE_HURT_RATE;
-                e->pose[ENTITY_ATTACK].right = e->pose[ENTITY_WALK].right;
-            } else {
-                mem_zero(&e->pose[ENTITY_ATTACK], sizeof(EntityPose));
-            }
-            /* A body is one picture, facing every viewer (slot[1] none). */
-            ek = enemy_kind(kind);
-            if (ek && ek->corpse_archive) {
-                e->pose[ENTITY_DEAD].slot[0] = (df_u16)wres_slot(ek->corpse_archive, ek->corpse_record, WRES_SPRITE);
-                if (!size_of(e->pose[ENTITY_DEAD].slot[0], &e->pose[ENTITY_DEAD].w[0], &e->pose[ENTITY_DEAD].h[0])) {
-                    mem_zero(&e->pose[ENTITY_DEAD], sizeof(EntityPose));
-                }
-            }
         }
         e->x = mk->x;
         e->y = mk->y;
@@ -1186,7 +1249,16 @@ int dunstream_kind(const Entity *e, int *female)
 
     d = draw_of(e);
     if (!d) {
-        return -1;
+        const Conjured *c;
+
+        c = conjured_of(e);
+        if (!c) {
+            return -1;
+        }
+        if (female) {
+            *female = c->female;
+        }
+        return c->kind;
     }
     if (female) {
         *female = d->female;
