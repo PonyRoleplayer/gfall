@@ -2,6 +2,7 @@
 #include "game/dagger/play/viewopt.h"
 #include "game/dagger/play/combat.h"
 #include "engine/core/log.h"
+#include "engine/core/mem.h"
 #include "engine/scene/interact.h"
 #include "game/dagger/play/rules.h"
 #include "engine/core/df.h"
@@ -19,6 +20,21 @@
 #define PITCH_LIMIT 1.55334303f
 /* Both keys at once go no faster than one: DFU's limitDiagonalSpeed. */
 #define DIAGONAL 0.70710678f
+/*
+ * Swimming, ours (the playtest of 2026-11-07 found classic's slow and tedious): the speed a walk's times
+ * SWIM_LEAST plus the skill's share up to the whole walk at 100, SWIM_STROKE more with the run key; the
+ * velocity eased toward what the keys ask at SWIM_EASE a second, so a stroke glides on; afloat, the eye
+ * SURFACE_EYE above the water, drifting up at SWIM_RISE when nothing is held; a hop out at the surface
+ * at the jump's speed, SWIM_HOP_SECONDS of falling as on land so it can land on the bank; pushed against
+ * a ledge at the surface for SWIM_PUSH_SECONDS, it hops by itself.
+ */
+#define SWIM_LEAST 0.6f
+#define SWIM_STROKE 1.35f
+#define SWIM_EASE 6.0f
+#define SURFACE_EYE 8.0f
+#define SWIM_RISE 24.0f
+#define SWIM_HOP_SECONDS 0.6f
+#define SWIM_PUSH_SECONDS 0.25f
 
 void player_init(Player *p, const Character *sheet)
 {
@@ -33,6 +49,10 @@ void player_init(Player *p, const Character *sheet)
     p->god = 0;
     p->run_time = 0.0f;
     p->swimming = 0;
+    p->under = 0;
+    mem_zero(p->swim_v, sizeof(p->swim_v));
+    p->water_jump = 0.0f;
+    p->push_time = 0.0f;
     p->breath = 0;
     p->breath_time = 0.0f;
     p->running = 0;
@@ -102,6 +122,108 @@ int player_sneaking(const Player *p)
 {
     /* Half a walk, with a hair's room: a crouch walks at exactly that, and a wall's slide must not tip it either way. */
     return p->speed_xz <= rules_walk_speed(p->sheet.attribute[ATTR_SPEED]) * RULES_UNITS_PER_M * 0.5f * 1.02f;
+}
+
+/*
+ * A frame in the water (the SWIM_* note above). 1 when it swam; 0 when it is out of the water, wading on
+ * the floor, or in its hop out, and walks or falls as on land.
+ */
+static int swim_step(Player *p, const Input *in, const Scene *scene, float dt, float f, float r, float sy, float cy)
+{
+    float surface;
+    float eye_y;
+    float want[3];
+    float speed;
+    float sp;
+    float cp;
+    float ease;
+    float wx;
+    float wz;
+    float moved;
+    int depth;
+    int k;
+
+    depth = scene ? scene_water_body(scene, p->body.feet[0], p->body.feet[1] + p->body.eye, p->body.feet[2]) : WATER_DRY;
+    p->under = depth == WATER_HEAD;
+    if (p->water_jump > 0.0f) {
+        p->water_jump -= dt;
+        p->swimming = 0;
+        return 0;
+    }
+    /* Over the head, or over the waist with nothing underfoot: afloat. Standing in it, it wades. */
+    p->swimming = depth == WATER_HEAD || (depth == WATER_WAIST && !p->body.grounded);
+    if (!p->swimming || !scene_water_at(scene, p->body.feet[0], p->body.feet[2], &surface, 0)) {
+        p->swimming = 0;
+        mem_zero(p->swim_v, sizeof(p->swim_v));
+        p->push_time = 0.0f;
+        return 0;
+    }
+    speed = rules_walk_speed(p->sheet.attribute[ATTR_SPEED])
+            * (SWIM_LEAST + (1.0f - SWIM_LEAST) * (float)p->sheet.skill[SKILL_SWIMMING] / 100.0f) * RULES_UNITS_PER_M;
+    if (in->held & INPUT_BIT(INPUT_RUN)) {
+        speed *= SWIM_STROKE;
+    }
+    /* Along the view, pitch and all; jump rises and crouch dives; idle, it drifts up. */
+    sp = df_sin(p->pitch);
+    cp = df_cos(p->pitch);
+    want[0] = (sy * cp * f + cy * r) * speed;
+    want[1] = sp * f * speed;
+    want[2] = (cy * cp * f - sy * r) * speed;
+    if (in->held & INPUT_BIT(INPUT_JUMP)) {
+        want[1] += speed;
+    } else if (in->held & INPUT_BIT(INPUT_CROUCH)) {
+        want[1] -= speed;
+    } else if (f == 0.0f && r == 0.0f) {
+        want[1] = SWIM_RISE;
+    }
+    /* Afloat: the eye stays just above the water, unless it dives. */
+    eye_y = p->body.feet[1] + p->body.eye;
+    if (eye_y + want[1] * dt > surface + SURFACE_EYE) {
+        want[1] = (surface + SURFACE_EYE - eye_y) / (dt > 0.0f ? dt : 1.0f);
+        if (want[1] < -speed) {
+            want[1] = -speed;
+        }
+    }
+    ease = SWIM_EASE * dt > 1.0f ? 1.0f : SWIM_EASE * dt;
+    for (k = 0; k < 3; k++) {
+        p->swim_v[k] += (want[k] - p->swim_v[k]) * ease;
+    }
+    p->body.gravity = 0.0f;
+    p->body.vy = p->swim_v[1];
+    wx = p->swim_v[0] * dt;
+    wz = p->swim_v[2] * dt;
+    {
+        float bx;
+        float bz;
+
+        bx = p->body.feet[0];
+        bz = p->body.feet[2];
+        body_step(&p->body, scene, wx, wz, dt);
+        moved = (p->body.feet[0] - bx) * (p->body.feet[0] - bx) + (p->body.feet[2] - bz) * (p->body.feet[2] - bz);
+    }
+    /*
+     * At the surface: jump hops out, as does swimming on into a ledge for a moment (it went less than a
+     * third of the way it was sent). The hop falls as on land, so it lands on the bank.
+     */
+    if (!p->under && eye_y >= surface - SURFACE_EYE) {
+        int blocked;
+
+        blocked = f > 0.0f && wx * wx + wz * wz > 0.0f && moved < (wx * wx + wz * wz) * 0.1f;
+        p->push_time = blocked ? p->push_time + dt : 0.0f;
+        if ((in->pressed & INPUT_BIT(INPUT_JUMP)) || p->push_time >= SWIM_PUSH_SECONDS) {
+            p->water_jump = SWIM_HOP_SECONDS;
+            p->push_time = 0.0f;
+            p->swimming = 0;
+            p->body.gravity = rules_gravity() * RULES_UNITS_PER_M;
+            /* body_jump asks for the ground, and in water there is none: the jump's speed up is set outright. */
+            p->body.vy = rules_jump_speed(p->sheet.skill[SKILL_JUMPING]) * RULES_UNITS_PER_M;
+            p->body.grounded = 0;
+            p->body.top = p->body.feet[1];
+        }
+    } else {
+        p->push_time = 0.0f;
+    }
+    return 1;
 }
 
 void player_step_motion(Player *p, const Input *in, const Scene *scene, float dt, int collide, float f, float r)
@@ -181,21 +303,7 @@ void player_step_motion(Player *p, const Input *in, const Scene *scene, float dt
         body_unstick(&p->body);
         p->flying = 0;
     }
-    p->swimming = scene && scene_water_body(scene, p->body.feet[0], p->body.feet[1] + p->body.eye, p->body.feet[2]) == WATER_HEAD;
-    if (p->swimming) {
-        float swim;
-        float sp;
-        float cp;
-        float rise;
-
-        /* No gravity in the water: it goes along the view at a swimmer's speed, and jump rises. */
-        swim = rules_swim_speed(mps, p->sheet.skill[SKILL_SWIMMING]) * RULES_UNITS_PER_M;
-        sp = df_sin(p->pitch);
-        cp = df_cos(p->pitch);
-        rise = (in->held & INPUT_BIT(INPUT_JUMP)) ? 1.0f : 0.0f;
-        p->body.gravity = 0.0f;
-        p->body.vy = (sp * f + rise) * swim;
-        body_step(&p->body, scene, (sy * cp * f + cy * r) * swim * dt, (cy * cp * f - sy * r) * swim * dt, dt);
+    if (swim_step(p, in, scene, dt, f, r, sy, cy)) {
         note_speed(p, x0, z0, dt);
         note_bob(p, f, r, mps, dt);
         return;
@@ -242,7 +350,7 @@ void player_crouch(Player *p, const Scene *scene, int toggle, int held, int pres
 
 int player_breath(Player *p, float dt)
 {
-    if (!p->swimming) {
+    if (!p->under) {
         p->breath = 0;
         p->breath_time = 0.0f;
         return 0;

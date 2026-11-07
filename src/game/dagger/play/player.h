@@ -35,8 +35,17 @@ typedef struct Player {
     int god;
     /* Seconds running towards the next use of Running. */
     float run_time;
-    /* 1 while under water over its head; its breath left, and time toward the next breath. */
+    /*
+     * In water (player_step): swimming while the water is over its waist and it stands on nothing, or
+     * over its head; under while over its head (breath goes then). Its velocity in the water, eased:
+     * it glides on and slows. A hop out of the water at the surface, seconds left of it, and seconds
+     * pushed against a ledge at the surface (docs/game.md, Swimming).
+     */
     int swimming;
+    int under;
+    float swim_v[3];
+    float water_jump;
+    float push_time;
     int breath;
     float breath_time;
     /* 1 while the run key takes it along: the minute's fatigue goes by it. */

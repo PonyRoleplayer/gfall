@@ -70,6 +70,8 @@ typedef struct Mind {
     KeepKey key;
     int kind;
     int flies;
+    /* 1: it lives in water (enemy_aquatic): it swims up and down after the player, and never leaves the water. */
+    int swims;
     Body body;
     /* The player seen at its last look; where it last saw them. */
     int sees;
@@ -312,6 +314,7 @@ static Mind *wake(Entity *e, int kind, int bark)
     m->key = e->key;
     m->kind = kind;
     m->flies = enemy_flies(kind) || enemy_spectral(kind);
+    m->swims = enemy_aquatic(kind);
     h = entity_height(e);
     if (h < 16.0f) {
         h = 16.0f;
@@ -320,7 +323,7 @@ static Mind *wake(Entity *e, int kind, int bark)
     r = (float)entity_pose(e)->w[0] * 0.25f;
     r = r < 8.0f ? 8.0f : (r > 24.0f ? 24.0f : r);
     body_init(&m->body, r, h, h * 0.3f < WALK_STEP ? h * 0.3f : WALK_STEP, h * (2.0f / 3.0f));
-    m->body.gravity = m->flies ? 0.0f : rules_gravity() * RULES_UNITS_PER_M;
+    m->body.gravity = m->flies || m->swims ? 0.0f : rules_gravity() * RULES_UNITS_PER_M;
     m->body.self = e;
     body_place(&m->body, e->x, e->y, e->z);
     /* Solid now: the player and the others stop at it. */
@@ -1169,6 +1172,14 @@ static void fly_level(Mind *m, const Scene *scene, float most)
     float dy;
 
     dy = m->last[1] - m->body.feet[1];
+    /* A swimmer keeps its whole body under the surface: it comes up to a floating player, never out. */
+    if (m->swims) {
+        float surface;
+
+        if (scene_water_at(scene, m->body.feet[0], m->body.feet[2], &surface, 0) && m->body.feet[1] + dy > surface - m->body.height) {
+            dy = surface - m->body.height - m->body.feet[1];
+        }
+    }
     dy = dy > most ? most : (dy < -most ? -most : dy);
     if (df_absf(dy) < 0.01f || !collide_use(scene)) {
         return;
@@ -1267,8 +1278,8 @@ static int act(Mind *m, Player *p, const Scene *scene, float dt)
     dist = df_sqrt(dx * dx + dz * dz);
     /* Near enough (in reach of the player, or at where it saw them): it stands and faces. */
     if (dist <= (m->sees ? STOP : m->body.radius)) {
-        /* A flyer overhead still comes down to the one it sees, or it would hang out of reach for good. */
-        if (m->flies && m->sees) {
+        /* A flyer overhead, or a swimmer below, still comes level with the one it sees, or it would hang out of reach for good. */
+        if ((m->flies || m->swims) && m->sees) {
             const EnemyKind *flyer;
 
             flyer = enemy_kind(m->kind);
@@ -1300,8 +1311,21 @@ static int act(Mind *m, Player *p, const Scene *scene, float dt)
         /* Along its facing, as classic walks: it turns first, then goes. */
         sx = df_sin(e->yaw) * step;
         sz = df_cos(e->yaw) * step;
-        if (m->flies) {
+        if (m->flies || m->swims) {
             fly_level(m, scene, step);
+        }
+        /*
+         * A swimmer goes on only where there is water over its head: at the water's edge it stops and
+         * waits, facing the player (playtest 2026-11-07: an eel could neither rise nor stay in the water).
+         */
+        if (m->swims) {
+            float surface;
+
+            if (!scene_water_at(scene, m->body.feet[0] + sx, m->body.feet[2] + sz, &surface, 0)
+                || surface < m->body.feet[1] + m->body.height) {
+                sx = 0.0f;
+                sz = 0.0f;
+            }
         }
         body_step(&m->body, scene, sx, sz, dt);
         e->moving = 1;

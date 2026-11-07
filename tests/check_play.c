@@ -3312,8 +3312,8 @@ static void check_body_more(void)
     check_expect(!player_breath(&p, 30.0f), "breath: tgm let the player drown");
     p.god = 0;
 
-    /* Breath: half of Endurance in points, one each 1.04 s; none left drowns. An Argonian lasts longer. */
-    p.swimming = 1;
+    /* Breath: half of Endurance in points, one each 1.04 s, while the head is under; none left drowns. An Argonian lasts longer. */
+    p.under = 1;
     p.breath = 0;
     p.breath_time = 0.0f;
     p.sheet.attribute[ATTR_ENDURANCE] = 10;
@@ -3321,7 +3321,7 @@ static void check_body_more(void)
         check_expect(!player_breath(&p, 1.05f), "breath: it ran out too soon");
     }
     check_expect(player_breath(&p, 1.05f), "breath: five points did not run out in five breaths");
-    p.swimming = 0;
+    p.under = 0;
     check_expect(!player_breath(&p, 1.0f) && p.breath == 0, "breath: it did not reset at the surface");
     {
         Player q;
@@ -3329,7 +3329,7 @@ static void check_body_more(void)
 
         q = p;
         q.sheet.race = RACE_ARGONIAN;
-        q.swimming = 1;
+        q.under = 1;
         combat_seed(3);
         spent = 0;
         while (!player_breath(&q, 1.05f) && spent < 1000) {
@@ -3367,6 +3367,35 @@ static void check_body_more(void)
     in.move_f = 1;
     swim_d = walk(&p, &level.scene, &in, 15);
     check_expect(swim_d > 0.0f && swim_d < walk_d, "swim: it does not swim slower than it walks");
+    /*
+     * Afloat at the surface (playtest 2026-11-07: it flickered in and out of swimming): with the water a
+     * little over the eye, a second idle drifts it up to float with the eye just above, swimming every
+     * frame of it; then the jump key hops it up out of the water.
+     */
+    {
+        int frames;
+        int always;
+        float eye;
+
+        flood->x1 = flood->x0 + 8000.0f;
+        flood->y = p.body.feet[1] + p.body.eye + 20.0f;
+        memset(&in, 0, sizeof(in));
+        always = 1;
+        for (frames = 0; frames < 240; frames++) {
+            player_step(&p, &in, &level.scene, 1.0f / 60.0f, 1);
+            always = always && (frames < 60 || p.swimming);
+        }
+        eye = p.body.feet[1] + p.body.eye;
+        check_expect(always && !p.under && eye > flood->y && eye < flood->y + 20.0f,
+                     "swim: at the surface it does not float steadily with its eye just above the water");
+        in.pressed = INPUT_BIT(INPUT_JUMP);
+        player_step(&p, &in, &level.scene, 1.0f / 60.0f, 1);
+        in.pressed = 0;
+        for (frames = 0; frames < 12; frames++) {
+            player_step(&p, &in, &level.scene, 1.0f / 60.0f, 1);
+        }
+        check_expect(p.body.feet[1] + p.body.eye > eye + 10.0f, "swim: jump at the surface does not hop out of the water");
+    }
     flood->x1 = flood->x0;
     dunstream_close();
     keep_clear();
