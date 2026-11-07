@@ -76,6 +76,8 @@ int screens_dunmap_open(void);
 void screens_open_townmap(int region, int index, float x, float z, float yaw);
 /* The travel map, the player on pixel (px, py) of region. */
 void screens_open_travel(Player *p, int px, int py, int region);
+/* 1 when the open screen is a popup drawn over the world and the HUD (its index 0 clear), not a whole screen. */
+int screens_over_world(void);
 void screens_close(void);
 int screens_is_open(void);
 /* One frame's pointer, clicks and keys: SCREENS_*. */

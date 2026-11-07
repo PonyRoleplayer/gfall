@@ -1,4 +1,5 @@
 #include "game/dagger/play/travelmap.h"
+#include "game/dagger/play/ui.h"
 #include "game/dagger/play/bank.h"
 #include "game/dagger/play/atlas.h"
 #include "game/dagger/play/canvas.h"
@@ -1182,8 +1183,8 @@ int travelmap_key(int vk)
             if (n > 0) {
                 g.typed[n - 1] = 0;
             }
-        } else if (((vk >= 'A' && vk <= 'Z') || (vk >= '0' && vk <= '9') || vk == VK_SPACE_KEY) && n < 32) {
-            g.typed[n] = (char)vk;
+        } else if (((vk >= 'A' && vk <= 'Z') || ui_digit(vk) || vk == VK_SPACE_KEY) && n < 32) {
+            g.typed[n] = (char)(ui_digit(vk) ? ui_digit(vk) : vk);
             g.typed[n + 1] = 0;
         }
         return TRAVELMAP_STAY;

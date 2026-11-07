@@ -1,6 +1,9 @@
 #include "game/dagger/play/logbook.h"
 #include "game/dagger/play/canvas.h"
 #include "game/dagger/play/quest.h"
+#include "game/dagger/tables/quests.h"
+#include "game/dagger/tables/guilds.h"
+#include "game/dagger/formats/factionfile.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
 
@@ -103,6 +106,43 @@ int logbook_page(void)
     return g.page;
 }
 
+/*
+ * Who a page's quest is for, as a person reads it: the main quest, or the guild or temple that gave it (its
+ * QUES group, a faction). Never the quest's file name, as the head showed before (playtest 2026-11-07).
+ */
+static const char *quest_giver_name(int slot)
+{
+    const QuestRun *run;
+    const QuestKind *k;
+    const Faction *f;
+
+    run = quest_run(slot);
+    k = run ? quest_kind(run->quest) : 0;
+    if (!k) {
+        return "Quest";
+    }
+    if (k->group == QUEST_GROUP_MAIN) {
+        return "Main quest";
+    }
+    /* The faction of the person who gave it (a guild hall's, a temple's), else the guild group's own word. */
+    f = run->giver_faction > 0 && factionfile_open() ? faction_find(run->giver_faction) : 0;
+    if (f && f->name[0]) {
+        return f->name;
+    }
+    switch (k->group) {
+    case GUILD_GROUP_FIGHTERS:
+        return "Fighters Guild";
+    case GUILD_GROUP_MAGES:
+        return "Mages Guild";
+    case GUILD_GROUP_KNIGHTLY:
+        return "Knightly order";
+    case GUILD_GROUP_TEMPLE:
+        return "Temple";
+    default:
+        return "Quest";
+    }
+}
+
 void logbook_compose(void)
 {
     static const Rect whole = { 0, 0, CANVAS_W, CANVAS_H };
@@ -116,7 +156,7 @@ void logbook_compose(void)
     inside.y = BOX_Y + MARGIN + CANVAS_LINE + 4;
     inside.w = BOX_W - 2 * MARGIN;
     inside.h = BOX_H - 2 * MARGIN - CANVAS_LINE - 4 - EDGE_H;
-    log_format(head, (int)sizeof(head), "%s %d / %d", g.count ? quest_file(g.slots[g.page]) : "Logbook", g.count ? g.page + 1 : 0, g.count);
+    log_format(head, (int)sizeof(head), "%s %d / %d", g.count ? quest_giver_name(g.slots[g.page]) : "Logbook", g.count ? g.page + 1 : 0, g.count);
     canvas_label(BOX_X + MARGIN, BOX_Y + MARGIN, head);
     canvas_text(&inside, g.text);
     g.changed = 0;

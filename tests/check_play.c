@@ -2544,13 +2544,17 @@ static void check_levelling(void)
 
     /* Uses count, but nothing moves until six game hours have passed. */
     character_tally(&c, 29, 100000);
-    check_expect(!character_raise_skills(&c, 359.0f) && c.skill[29] == 30, "levels: a skill rose before six hours");
-    check_expect(character_raise_skills(&c, 360.0f) && c.skill[29] == 31 && c.skill_uses[29] == 0,
-                 "levels: a skill with its uses did not rise at six hours");
+    check_expect(!character_raise_skills(&c, 359.0f, 0, 0) && c.skill[29] == 30, "levels: a skill rose before six hours");
+    {
+        int raised[4];
+
+        check_expect(character_raise_skills(&c, 360.0f, raised, 4) == 1 && raised[0] == 29 && c.skill[29] == 31 && c.skill_uses[29] == 0,
+                     "levels: a skill with its uses did not rise at six hours, or is not the one listed");
+    }
     check_expect(!c.level_due, "levels: one point brought a level");
     /* A second point in a primary skill: the first level-up needs only 2. */
     character_tally(&c, 29, 100000);
-    character_raise_skills(&c, 720.0f);
+    character_raise_skills(&c, 720.0f, 0, 0);
     check_expect(c.skill[29] == 32 && c.level_due, "levels: two points did not bring level 2");
     i = c.health_max;
     character_level_up(&c, 0);
@@ -2559,7 +2563,7 @@ static void check_levelling(void)
     c.skill[29] = 100;
     c.skill[0] = 95;
     character_tally(&c, 0, 100000);
-    character_raise_skills(&c, 1080.0f);
+    character_raise_skills(&c, 1080.0f, 0, 0);
     check_expect(c.skill[0] == 95, "levels: a skill passed 95 after a primary mastered");
     printf("levels: uses, six hours, the sum, a level's health, by hand\n");
 }
@@ -3514,6 +3518,8 @@ static void check_rest(void)
     for (i = 0; i < 100000 && rest_step(0.1f) == REST_STAY; i++) {
     }
     check_expect(p.sheet.skill_uses[SKILL_MEDICAL] == 3, "rest: three hours were not three uses of Medical");
+    /* A real rest ended: the game is told once, and looks at the skills then (playtest 2026-11-07). */
+    check_expect(rest_take_slept() && !rest_take_slept(), "rest: three hours' rest not reported once as slept");
     check_expect(p.sheet.health == 1 + 3 * rules_rest_health(p.sheet.attribute[ATTR_ENDURANCE], p.sheet.skill[SKILL_MEDICAL], p.sheet.health_max),
                  "rest: three hours did not give back three hours' health");
     rest_close();
@@ -3528,6 +3534,7 @@ static void check_rest(void)
     for (i = 0; i < 100000 && rest_step(0.1f) == REST_STAY; i++) {
     }
     check_expect(p.sheet.health == 1 && p.sheet.skill_uses[SKILL_MEDICAL] == 0, "rest: loitering healed, or used Medical");
+    check_expect(!rest_take_slept(), "rest: loitering counted as sleep, so the skills would rise");
     rest_close();
 
     /* A town's building with no room: rest refused with a word, loitering allowed. */
@@ -4694,6 +4701,11 @@ static void check_shop_and_court(void)
         write_screen("build/shop0_coins.ppm", bag_pixels());
         printf("shop: %d frames of coins behind the shelf and the basket\n", frames);
     }
+    /* Closed and opened again: the coins still turn (playtest 2026-11-07: they were gone the second time). */
+    bag_close();
+    check_expect(bag_open_trade(&p, &shop, TRADE_BUY, 100), "shop: its screen did not open again");
+    bag_compose();
+    check_expect(bag_coin_frames() >= 2, "shop: no coins behind the shelf when it is opened a second time");
     {
         int before_gold;
 
@@ -8544,6 +8556,8 @@ static void check_riding(void)
     check_expect(ride_toggle(&p, 1) != 0 && p.riding == RIDE_FOOT, "riding: mounted with no horse");
     inventory_add(&p.pack, &horse);
     check_expect(inventory_weight(&p.pack) == 0.0f && inventory_has(&p.pack, ITEM_HORSE), "riding: a horse weighs in the pack");
+    /* The shop's basket checks the load by the same sum: a horse bought by a weak character is not too heavy (playtest 2026-11-07). */
+    check_expect(item_carried_kg(&horse) == 0.0f, "riding: a horse in a shop's basket weighs something");
     check_expect(ride_toggle(&p, 0) != 0 && p.riding == RIDE_FOOT, "riding: mounted indoors");
     check_expect(ride_toggle(&p, 1) == 0 && p.riding == RIDE_HORSE, "riding: the horse not mounted outdoors");
     check_expect(ride_toggle(&p, 1) != 0 && p.riding == RIDE_FOOT, "riding: not got down");
@@ -9683,6 +9697,17 @@ static void check_quest_machine(void)
         check_expect(quest_start(&p, main_quest, &start, now) >= 0 && quest_running(master) >= 0 && quest_running(quest_find("S0000977")) >= 0,
                      "quest machine: _BRISIEN did not start the main quest's master");
         check_expect(quest_is_done(master), "quest machine: the master is not marked started");
+        /* A new game says the hold's opening words, not the master's "come back when you are better" (playtest 2026-11-07). */
+        {
+            char said[512];
+            int refused;
+
+            refused = 0;
+            while (quest_take_message(said, (int)sizeof(said))) {
+                refused += strstr(said, "tough enough") != 0 || strstr(said, "unskilled") != 0;
+            }
+            check_expect(!refused, "quest machine: a new game's main quest says a guild's refusal at once");
+        }
         /* A dozen more guild quests beside it. */
         count = 0;
         for (k = 0; k < quest_table()->count && count < 12; k++) {

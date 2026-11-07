@@ -1,4 +1,5 @@
 #include "game/dagger/play/bag.h"
+#include "game/dagger/play/ui.h"
 #include "game/dagger/play/iteminfo.h"
 #include "game/dagger/formats/texture.h"
 #include "game/dagger/play/combat.h"
@@ -1006,7 +1007,7 @@ static void take_item(int i)
     if (it->template_id == ITEM_GOLD) {
         pack->gold += it->count;
     } else {
-        if (inventory_weight(pack) + it->weight * (float)it->count
+        if (inventory_weight(pack) + item_carried_kg(it)
             > rules_max_carry(g.player->sheet.attribute[ATTR_STRENGTH])) {
             g.note = "You cannot carry any more.";
             return;
@@ -1204,8 +1205,8 @@ void bag_key(int vk)
         if (n > 0) {
             g.gold_typed[n - 1] = 0;
         }
-    } else if (vk >= '0' && vk <= '9' && n < (int)sizeof(g.gold_typed) - 1) {
-        g.gold_typed[n] = (char)vk;
+    } else if (ui_digit(vk) && n < (int)sizeof(g.gold_typed) - 1) {
+        g.gold_typed[n] = (char)ui_digit(vk);
         g.gold_typed[n + 1] = 0;
     }
 }
@@ -1310,7 +1311,7 @@ static int take_basket(void)
     }
     weight = inventory_weight(&g.player->pack);
     for (i = 0; i < g_basket.count; i++) {
-        weight += g_basket.item[i].weight * (float)g_basket.item[i].count;
+        weight += item_carried_kg(&g_basket.item[i]);
     }
     if (weight > rules_max_carry(g.player->sheet.attribute[ATTR_STRENGTH])
         || g.player->pack.count + g_basket.count > INVENTORY_MAX) {

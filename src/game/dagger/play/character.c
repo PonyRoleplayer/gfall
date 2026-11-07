@@ -225,7 +225,7 @@ static int primary_mastered(const Character *c, const CareerClass *k)
     return highest_of(c, k->primary, 3, -1) >= CHARACTER_SKILL_MASTERED;
 }
 
-int character_raise_skills(Character *c, float now)
+int character_raise_skills(Character *c, float now, int *raised, int most)
 {
     const CareerClass *k;
     float class_advance;
@@ -260,7 +260,10 @@ int character_raise_skills(Character *c, float now)
         if (c->skill[i] < CHARACTER_SKILL_CAP
             || (c->skill[i] < CHARACTER_SKILL_MASTERED && !primary_mastered(c, k))) {
             c->skill[i]++;
-            rose = 1;
+            if (raised && rose < most) {
+                raised[rose] = i;
+            }
+            rose++;
         }
     }
     if (rules_level_from_sums(c->level_sum_start, character_level_sum(c)) > c->level) {

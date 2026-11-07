@@ -549,6 +549,15 @@ int inventory_has(const Inventory *inv, int template_id)
     return 0;
 }
 
+float item_carried_kg(const Item *it)
+{
+    /* A horse or a cart is owned, not carried: it weighs nothing in the pack, or in a shop's basket. */
+    if (it->template_id == ITEM_HORSE || it->template_id == ITEM_CART) {
+        return 0.0f;
+    }
+    return it->weight * (float)it->count;
+}
+
 float inventory_weight(const Inventory *inv)
 {
     float kg;
@@ -556,11 +565,7 @@ float inventory_weight(const Inventory *inv)
 
     kg = (float)inv->gold * GOLD_KG;
     for (i = 0; i < inv->count; i++) {
-        /* A horse or a cart is owned, not carried: it weighs nothing in the pack. */
-        if (inv->item[i].template_id == ITEM_HORSE || inv->item[i].template_id == ITEM_CART) {
-            continue;
-        }
-        kg += inv->item[i].weight * (float)inv->item[i].count;
+        kg += item_carried_kg(&inv->item[i]);
     }
     return kg;
 }

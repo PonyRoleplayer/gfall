@@ -120,6 +120,12 @@ void check_menu(void)
     keys_defaults();
     g_write_ok=1; g_writes=0;
     camera_set_fov(75.0f);
+    /* Escape on the start menu, the root, leaves the game. */
+    menu_open(MENU_MAIN);
+    mem_zero(&in, sizeof(in));
+    in.pressed = INPUT_BIT(INPUT_MENU);
+    check_expect(menu_frame(&in) == MENU_QUIT, "menu: Escape on the start menu does not leave the game");
+    menu_open(MENU_NONE);
     menu_open(MENU_OPTIONS);
     /* The saved games' tab (files.c): with no saves LOAD does not answer; in a game SAVE does. */
     check_expect(click_at(230,400)==MENU_STAY, "menu: Load answered with no saved game");

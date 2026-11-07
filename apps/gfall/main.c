@@ -140,19 +140,22 @@ int gfall_main(void *instance)
     }
     fnt_install();
     input_begin(win_hwnd());
+    /* The card's sound and its synthesizer, before the title opens: the title's theme plays from its
+     * first frame (it was silent when music started after it, playtest 2026-11-07). See docs/sound.md. */
+    sound_startup(win_hwnd());
+    music_startup();
     /* The game's keys, its pictures and their room, the title open; then the card with no place, for the menus. */
     game_setup();
     if (!gfx_prepare(0)) {
         win_fail(gfx_error());
+        music_shutdown();
+        sound_shutdown();
         input_end();
         gfx_shutdown();
         win_shutdown();
         mem_shutdown();
         return 1;
     }
-    /* The card's sound and its synthesizer; without either the hold is silent. See docs/sound.md. */
-    sound_startup(win_hwnd());
-    music_startup();
     camera_set(&cam, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
     console_set_camera(&cam);
     frame_secs();

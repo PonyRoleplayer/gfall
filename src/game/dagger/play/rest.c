@@ -1,4 +1,5 @@
 #include "game/dagger/play/rest.h"
+#include "game/dagger/play/ui.h"
 #include "game/dagger/play/canvas.h"
 #include "game/dagger/play/combat.h"
 #include "game/dagger/play/foes.h"
@@ -230,10 +231,25 @@ static int is_whole(const Character *c)
 }
 
 /* The rest ended, with a line for the game to say. */
+/* A rest of an hour or more ended (not loitering): what rest_take_slept reports once. Kept past the screen's close. */
+static int g_slept;
+
 static int end_rest(const char *line)
 {
     g.said = line;
+    if (g.kind != KIND_LOITER && g.hours_done >= 1) {
+        g_slept = 1;
+    }
     return REST_LEAVE;
+}
+
+int rest_take_slept(void)
+{
+    int slept;
+
+    slept = g_slept;
+    g_slept = 0;
+    return slept;
 }
 
 /*
@@ -350,7 +366,7 @@ int rest_key(int vk)
     if (g.phase != PHASE_ASK_HOURS) {
         return REST_STAY;
     }
-    if (vk >= '0' && vk <= '9') {
+    if (ui_digit(vk)) {
         int n;
 
         n = 0;
@@ -358,7 +374,7 @@ int rest_key(int vk)
             n++;
         }
         if (n < HOURS_TEXT - 1) {
-            g.typed[n] = (char)vk;
+            g.typed[n] = (char)ui_digit(vk);
             g.typed[n + 1] = 0;
             g.changed = 1;
         }

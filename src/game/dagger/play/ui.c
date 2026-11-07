@@ -17,6 +17,9 @@ static UiQuad g_quad;
 static void *g_ctx;
 static const int g_side[] = {128, 256, 128};
 static int g_regions;
+/* Native screen pixels per layout pixel, as native / layout: glyphs are drawn at their own pixel size (ui_scale). */
+static int g_native = 1;
+static int g_layout = 1;
 
 const char *ui_tr(const char *s)
 {
@@ -26,6 +29,20 @@ const char *ui_tr(const char *s)
 }
 
 void ui_translate(UiTranslate translate) { g_translate = translate; }
+
+void ui_scale(int native, int layout)
+{
+    if (native > 0 && layout > 0) {
+        g_native = native;
+        g_layout = layout;
+    }
+}
+
+/* Native pixels as layout pixels, rounded. */
+static int to_layout(int n)
+{
+    return (n * g_layout + g_native / 2) / g_native;
+}
 
 void ui_begin(UiQuad quad, void *ctx)
 {
@@ -168,24 +185,35 @@ int ui_width(int font, const char *s)
     int n;
     n = 0;
     while (*s) n += g_width[font][(unsigned char)*s++];
-    return n;
+    return to_layout(n);
 }
+/*
+ * Each glyph goes out at its own pixel size (a glyph quad's w and h are native pixels), placed at
+ * the layout point of the run's native advance so far. Scaled by 0.8 or 1.25, the point-sampled
+ * strokes came out uneven and unreadable at 512x384 and 800x600 (playtest 2026-11-07).
+ */
 void ui_text(int x, int y, int max_w, const char *s, int font)
 {
-    int right, cell;
+    int right, cell, advance;
     right = x + max_w;
     cell = font ? 8 : 16;
-    while (*s && x < right) {
+    advance = 0;
+    while (*s) {
         unsigned c;
-        int w;
+        int w, at;
+        at = x + to_layout(advance);
+        if (at >= right) break;
         c = (unsigned char)*s++;
         w = g_width[font][c];
         if (g_quad && c != ' ' && w) {
-            int draw_w;
-            draw_w = w < right-x ? w : right-x;
-            g_quad(g_ctx, font+1, (c%16)*cell, (c/16)*cell, draw_w, g_height[font], x, y, draw_w, g_height[font]);
+            int draw_w, room;
+            room = (right - at) * g_native / g_layout;
+            draw_w = w < room ? w : room;
+            if (draw_w > 0) {
+                g_quad(g_ctx, font+1, (c%16)*cell, (c/16)*cell, draw_w, g_height[font], at, y, draw_w, g_height[font]);
+            }
         }
-        x += w;
+        advance += w;
     }
 }
 void ui_centered(int x, int y, int w, const char *s)
@@ -216,7 +244,7 @@ void ui_paragraph(int x, int y, int w, int h, const char *s)
         while (s[used] && s[used] != '\n' && used < 126) {
             int next;
             next = g_width[0][(unsigned char)s[used]];
-            if (pixels+next > w) break;
+            if (to_layout(pixels+next) > w) break;
             if (s[used] == ' ') last_space = used;
             pixels += next; used++;
         }
@@ -332,4 +360,12 @@ void ui_list_bar(const UiList *list, int up_id, int down_id, int up_hot, int dow
         thumb = (room - size) * list->scroll / (list->count - list->rows);
         ui_panel(x + 3, list->y + 28 + thumb, UI_BAR_W - 6, size, 0);
     }
+}
+
+int ui_digit(int vk)
+{
+    if (vk >= '0' && vk <= '9') return vk;
+    /* VK_NUMPAD0 is 0x60: with Num Lock on, the keypad sends these, not '0'..'9' (playtest 2026-11-07). */
+    if (vk >= 0x60 && vk <= 0x69) return '0' + (vk - 0x60);
+    return 0;
 }

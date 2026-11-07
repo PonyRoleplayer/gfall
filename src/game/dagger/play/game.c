@@ -78,6 +78,7 @@
 #include "engine/ui/cmd.h"
 #include "engine/ui/hud.h"
 #include "engine/ui/pic.h"
+#include "engine/ui/font.h"
 
 /* See game.h. */
 
@@ -1595,11 +1596,61 @@ static int hud_bar(void)
     return overlay_panel() && !viewopt_full();
 }
 
+/*
+ * The skills that rose at the last rest, listed centred at the top of the view and drifting up out of it, as
+ * classic shows them. RAISED_SECONDS on the screen; a skill's name is its SKIL record's.
+ */
+#define RAISED_MOST 8
+#define RAISED_SECONDS 4.0f
+static int g_raised[RAISED_MOST];
+static int g_raised_n;
+static float g_raised_time;
+
+static void skills_after_rest(void)
+{
+    int n;
+
+    n = character_raise_skills(&g_player.sheet, game_minutes(), g_raised, RAISED_MOST);
+    g_raised_n = n > RAISED_MOST ? RAISED_MOST : n;
+    g_raised_time = 0.0f;
+}
+
+static void draw_raised(void)
+{
+    int i;
+    int top;
+    int line;
+    int alpha;
+
+    if (g_raised_n <= 0) {
+        return;
+    }
+    line = ui_line_height() + 2;
+    /* Glide's y grows up: the first line just under the top edge, the list rising 12 pixels a second. */
+    top = DF_VIEW_H - 8 + df_iround(g_raised_time * 12.0f);
+    alpha = g_raised_time < RAISED_SECONDS - 1.0f ? 255 : df_iround((RAISED_SECONDS - g_raised_time) * 255.0f);
+    for (i = 0; i < g_raised_n; i++) {
+        const CareerSkill *s;
+        char said[48];
+
+        s = career_skill(g_raised[i]);
+        if (!s) {
+            continue;
+        }
+        log_format(said, (int)sizeof(said), "%s skill has increased", s->name);
+        ui_string_alpha((DF_VIEW_W - ui_string_width(said)) / 2, top - i * line, said, alpha);
+    }
+}
+
 /* What the game draws over the frame: the weapon and the HUD in play, then the open menu and its pointer. */
 static void draw(void)
 {
-    /* A composed screen fills the screen: only it and the pointer. */
+    /* A composed screen fills the screen: only it and the pointer. A popup (rest, the spellbook...) stands
+     * over the world and the HUD, as classic: resting, the bars are seen filling (playtest 2026-11-07). */
     if (screens_is_open()) {
+        if (g_playing && screens_over_world()) {
+            overlay_draw();
+        }
         screens_draw();
         return;
     }
@@ -1619,6 +1670,7 @@ static void draw(void)
             screen_draw(pic, left, top, w, h);
         }
         overlay_draw();
+        draw_raised();
         /* Cursor, or Tab's free pointer: over the world. A menu or a screen draws its own.
            Classic Cursor uses the arrow or X for the region; otherwise ARROW.RAW. */
         if (g_hud_cursor && menu_current() == MENU_NONE) {
@@ -2219,7 +2271,7 @@ int game_playing(void)
 int game_world_shows(void)
 {
     /* All settings tabs now share a framed shell over the paused world. */
-    return g_playing && !screens_is_open();
+    return g_playing && (!screens_is_open() || screens_over_world());
 }
 
 /* What every arrival sets up: the frame's creatures gone with the last place, the camera on the player. */
@@ -2375,6 +2427,12 @@ int game_frame(Camera *cam, const Input *in, float dt)
 
     prof_begin(PROF_PLAY);
     g_cam = cam;
+    if (g_raised_n > 0 && !screens_is_open()) {
+        g_raised_time += dt;
+        if (g_raised_time >= RAISED_SECONDS) {
+            g_raised_n = 0;
+        }
+    }
     if (in->reset) {
         /* Engine discontinuities retain release bits for other consumers.
          * Never let focus/capture loss loose a bow or finish a click swing. */
@@ -2451,6 +2509,12 @@ int game_frame(Camera *cam, const Input *in, float dt)
         player_turn(&g_player, g_control.view_yaw, g_control.view_pitch);
         control_reset(&g_control);
         g_hud_cursor = g_control_scheme;
+        /* Mouse look has no pointer to click the mode button with: back to Grab, or a mode picked in
+         * Cursor mode stays stuck (playtest 2026-11-07). */
+        if (!g_control_scheme) {
+            g_mode = HUDBAR_GRAB;
+            overlay_set_mode(g_mode);
+        }
         mouse_set_cursor(g_control_scheme);
         overlay_set_crosshair(!g_hud_cursor);
         input_set_pointer(g_hud_cursor || screens_is_open() || menu_current() != MENU_NONE);
@@ -2467,6 +2531,10 @@ int game_frame(Camera *cam, const Input *in, float dt)
          * leaves the player exhausted (and dead with a creature near).
          */
         catch_up_minutes();
+        /* A rest's end: the skills look at their uses, as classic does after sleeping, not loitering (playtest 2026-11-07). */
+        if (rest_take_slept()) {
+            skills_after_rest();
+        }
         /* The screen over a house container's things closed: what was taken is a theft, seen or not. */
         if (g_container_state == 2 && !screens_is_open()) {
             container_closed();
@@ -2736,8 +2804,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
             prof_end(PROF_PLAY);
             return GAME_GO_ON;
         }
-        /* Skills look at their uses every six game hours; a level due opens the sheet (PlayerEntity.RaiseSkills). */
-        character_raise_skills(&g_player.sheet, game_minutes());
+        /* A level due (the skills rose at a rest's end) opens the sheet. */
         if (g_player.sheet.level_due) {
             sheet_over_play();
         }

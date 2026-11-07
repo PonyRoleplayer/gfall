@@ -458,10 +458,23 @@ static int hit(const Button *b, int n, int left, int top)
 static void settings_quad(void *ctx, int atlas, int sx, int sy, int sw, int sh,
                           int x, int y, int w, int h)
 {
+    int x0, y0, x1, y1;
+
     (void)ctx;
-    pic_draw_part(g_settings_pics[atlas], sx, sy, sw, sh,
-                  x * DF_VIEW_W / SETTINGS_W, DF_VIEW_H - y * DF_VIEW_H / SETTINGS_H,
-                  w * DF_VIEW_W / SETTINGS_W, h * DF_VIEW_H / SETTINGS_H, 255);
+    x0 = x * DF_VIEW_W / SETTINGS_W;
+    y0 = y * DF_VIEW_H / SETTINGS_H;
+    if (atlas != 0) {
+        /* A glyph: its own pixels, never scaled (ui_scale). */
+        x1 = x0 + w;
+        y1 = y0 + h;
+    } else {
+        /* Panels and lines scale by their edges, and a one-pixel bevel stays one pixel at 512x384. */
+        x1 = (x + w) * DF_VIEW_W / SETTINGS_W;
+        y1 = (y + h) * DF_VIEW_H / SETTINGS_H;
+        if (x1 <= x0) x1 = x0 + 1;
+        if (y1 <= y0) y1 = y0 + 1;
+    }
+    pic_draw_part(g_settings_pics[atlas], sx, sy, sw, sh, x0, DF_VIEW_H - y0, x1 - x0, y1 - y0, 255);
 }
 
 static int settings_list_scroll(void)
@@ -567,6 +580,15 @@ static void settings_apply(void)
         g_saved_classic = g_settings.classic;
     }
     g_settings.note = "Settings applied.";
+    /* The card stays at the mode it opened with: say plainly that a new one waits for a restart (playtest 2026-11-07). */
+    if (g_settings.tab == SETTINGS_GRAPHICS) {
+        int ow, oh;
+
+        gfx_mode_opened(&ow, &oh);
+        if (ow > 0 && (ow != settings_resolution_w(g_settings.gfx.resolution) || oh != settings_resolution_h(g_settings.gfx.resolution))) {
+            g_settings.note = "Applied. Restart the game to change the resolution.";
+        }
+    }
 }
 
 static int settings_frame(const Input *in, int px, int py)
@@ -765,6 +787,10 @@ int menu_frame(const Input *in)
         }
         return MENU_STAY;
     case MENU_MAIN:
+        /* Escape on the start menu, the root of every screen, leaves the game (playtest 2026-11-07). */
+        if (!in->reset && (in->pressed & INPUT_BIT(INPUT_MENU))) {
+            return MENU_QUIT;
+        }
         what = click ? hit(g_main_buttons, 3, 0, 0) : -1;
         if (what == DO_START) {
             menu_open(MENU_NONE);
@@ -821,6 +847,7 @@ void menu_draw(void)
             g_settings.bindings[i] = g_key_names[i];
         }
         g_settings.dirty = settings_dirty();
+        ui_scale(DF_VIEW_W, SETTINGS_W);
         settings_draw(&g_settings, settings_quad, 0);
         /* The snapshot of the save selected, over its frame (the same 640 x 480 the shell's quads use). */
         if (g_settings.tab == SETTINGS_FILES && g_thumb_pic) {

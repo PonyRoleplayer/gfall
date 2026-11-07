@@ -54,6 +54,8 @@ int rest_click(int x, int y);
 int rest_key(int vk);
 /* The frame's real seconds: time passes while it runs. As a click. */
 int rest_step(float dt);
+/* 1, once, after a rest (not loitering) of at least an hour has ended: the game then looks at the skills. */
+int rest_take_slept(void);
 /* The line a rest ended with, for the game to say once it has closed; 0 when none. */
 const char *rest_said(void);
 const char *rest_note(void);

@@ -39,6 +39,9 @@ int ui_open(void);
 void ui_close(void);
 const df_u8 *ui_atlas(int index, int *side);
 const df_u8 *ui_palette(void);
+/* The screen's pixels against the layout's (e.g. 512 and 640): widths are given back in layout pixels,
+ * and a glyph's quad carries its size in native pixels for the caller to draw unscaled. 1:1 by default. */
+void ui_scale(int native, int layout);
 void ui_translate(UiTranslate translate);
 /* A label as the translator has it, else as written. */
 const char *ui_tr(const char *english);
@@ -62,6 +65,8 @@ void ui_paragraph(int x, int y, int w, int h, const char *s);
 void ui_region(int id, int x, int y, int w, int h);
 /* The id of the region the point is in, or UI_NOTHING. */
 int ui_hit(int x, int y);
+/* The digit a key types, '0' to '9', from the top row or the numeric keypad (VK_NUMPAD0..9); 0 for any other key. */
+int ui_digit(int vk);
 
 /*
  * A list of rows: where it stands, how many rows show, how tall each is, how

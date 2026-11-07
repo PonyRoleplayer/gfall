@@ -1,4 +1,5 @@
 #include "game/dagger/play/bank.h"
+#include "game/dagger/play/ui.h"
 #include "game/dagger/play/canvas.h"
 #include "game/dagger/play/court.h"
 #include "game/dagger/play/rules.h"
@@ -354,7 +355,13 @@ void bank_compose(void)
         if (r->loan > 0) {
             log_format(line, (int)sizeof(line), "%d", r->loan);
             canvas_label(PANEL_X + 96, PANEL_Y + 36, line);
-            log_format(line, (int)sizeof(line), "day %d", r->due_day);
+            int year;
+            int month;
+            int day;
+
+            /* A date, as the quests write one, not the game's count of days (playtest 2026-11-07: "day 146310"). */
+            clock_date_of(r->due_day, &year, &month, &day);
+            log_format(line, (int)sizeof(line), "%d %s, %s %d", day + 1, clock_month_name(month), clock_era(), year);
             canvas_label(PANEL_X + 71, PANEL_Y + 46, line);
         }
     }
@@ -526,9 +533,9 @@ int bank_key(int vk)
     }
     for (n = 0; g.typed[n]; n++) {
     }
-    if (vk >= '0' && vk <= '9') {
+    if (ui_digit(vk)) {
         if (n < TYPED_MOST) {
-            g.typed[n] = (char)vk;
+            g.typed[n] = (char)ui_digit(vk);
             g.typed[n + 1] = 0;
         }
     } else if (vk == VK_BACK_KEY) {

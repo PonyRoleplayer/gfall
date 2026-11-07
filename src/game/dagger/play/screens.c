@@ -133,7 +133,14 @@ static void send_screen(void)
         pic_free(g_pic);
     }
     /* The indoor automap's chrome has a clear hole the engine's map shows through. */
-    g_pic = pic_load(pixels, SCREEN_W, SCREEN_H, g_rgb, g_open == OPEN_DUNMAP);
+    g_pic = pic_load(pixels, SCREEN_W, SCREEN_H, g_rgb, g_open == OPEN_DUNMAP || screens_over_world());
+}
+
+int screens_over_world(void)
+{
+    /* Composed on index 0, which is clear here: classic's popups over the view, not screens of their own. */
+    return g_open == OPEN_REST || g_open == OPEN_SPELLBOOK || g_open == OPEN_MSGBOX || g_open == OPEN_SERVICE
+           || g_open == OPEN_BANK || g_open == OPEN_LOGBOOK;
 }
 
 void screens_close(void)

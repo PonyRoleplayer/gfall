@@ -527,6 +527,7 @@ Skill advance by use and the level-up rule come from UESP's Leveling page. A pre
 `character.c`, by PlayerEntity.RaiseSkills, CheckForLevelUp and FormulaHelper; `play/sheet.c` for the screen.
 
 - **Uses** (`character_tally`): a swing that reaches something, its weapon's skill (Hand-to-Hand bare) and Critical Strike once a swing; a blow at a creature's back, Backstabbing; a creature's blow come at the player, Dodging, hit or not; four classic updates of running, Running; a jump from the ground, Jumping.
+- **When skills are looked at:** at the end of a rest of an hour or more, not loitering (`rest_take_slept`), as classic does; never while playing (it was every frame until the playtest of 2026-11-07). The ones that rose are listed centred at the top of the view, "Medical skill has increased", drifting up and fading over 4 s (`draw_raised` in `game.c`).
 - **A skill rises** at most every 360 game minutes, when its uses reach value × the skill's advancement × the class's × 1.04 ^ level × 0.4, down, plus 1. Reflexes count uses an eighth more or less a step from average. Past 95 only until a primary skill reaches 100. The class's raw word reads as 16.16 fixed point (a Mage's 1.04): inferred from the values, since DFU's conversion was not read.
 - **A level** comes when (sum now − sum at creation + 28) / 15 passes it. The sum is the three primary skills, the two highest major and the highest minor. So the first needs only 2 points, each after 15.
 - **Taking it.** The character sheet (INFO00I0.IMG) opens at once. The level rises, health gains half the class's hit points plus a roll of the other half, with endurance's modifier, at least 1, and 4 to 6 points go on the attributes through the spinner. It cannot close until they are placed.
@@ -975,6 +976,23 @@ Moving an entity's position and pose from game code, and the walker colliding wi
 The console: `ills` (what the player has), `catch <disease>|werewolf|wereboar|vampire` (a disease at once; an infection already dreamt, to turn at the next day), `cure`, `morph`.
 
 Not yet: the cemetery; the beast's own weapon picture, head (`WERE00I0.IMG`, `WERE01I0.IMG`) and paper doll (`WOLF00I0.IMG`, `BOAR00I0.IMG`); its sounds; citizens fleeing the beast and the crimes it does not count; silver to hit the player; the dream videos (`ANIM0002.VID`, `ANIM0004.VID`); the cure quests and vampire quests (P11); Hircine's Ring; a vampire's spells and a lycanthrope's (P12-b); poisons; a class's disease biography modifier.
+
+## The first real-hardware playtest (2026-11-07)
+
+On the P55C 233 with a Voodoo 2. The engine's half (picture state batching, `pic_update`, `swapahead`, `prof log`, Alt-Tab) went to the ENGINE implementer. The game's half, fixed and host-tested unless said:
+- **Escape** on the start menu, the root of every screen, leaves the game.
+- **Settings at 512x384 and 800x600:** a glyph is drawn at its own pixel size, placed at the layout point of the run's advance (`ui_scale`, a glyph quad's size in native pixels); panels scale by their edges and a 1-pixel bevel stays a pixel. Widths come back in layout pixels, so fitting and centring hold. Applying a new resolution says "Restart the game to change the resolution."
+- **Mouse look** from Cursor mode puts the interaction mode back to Grab: there is no pointer to click the mode button with.
+- **Title music** plays from the first frame: sound and music start before the title opens (`apps/gfall/main.c`).
+- **Popups over the world:** rest, the spellbook, message boxes, the bank, a merchant's panel and the logbook are composed on index 0 and drawn as cutouts over the paused world and the HUD (`screens_over_world`), as classic. Resting, the bars are seen filling. Index 0 inside their art is clear too.
+- **Skills after a rest** (Levelling, above).
+- **A horse or a cart in a shop's basket** weighs nothing against the load (`item_carried_kg`), as in the pack: they could not be bought before.
+- **The bank's loan** is due on a date ("15 Morning Star, 3E 406"), not the game's day count.
+- **The numeric keypad** types digits in every number box (`ui_digit`: the bank, rest, the gold box, a merchant's days, the travel map's search).
+- **A new game's main quest** says only the hold's opening: S0000999, the main quest's master, looks at every next step at once, and each guild of the story whose level or standing is not met said "come back when you are better". Its first look is kept quiet (`Slot.quiet`); a step that turns later still speaks. Ours: classic's exact gating was not found. The tutorial is not started (it never was).
+- **The logbook's head** names who gave the quest (the giver's faction, the guild group, or "Main quest"), not its file.
+
+Open from the playtest, game side: swimming (slow, the surface flickers in and out, no climbing out at an edge) and water creatures that do not swim up or down; the shop's coins gone on a second opening (not reproduced on the host: the steps are wanted); the spellbook item, and its description text out of line; a gold sound on buying and selling; Privateer's Hold's song against classic's; arrow and spell sounds; creatures woken by a rest standing outside the map. And the frame rate: `prof log` numbers are wanted from the 233.
 
 ## Known gaps
 

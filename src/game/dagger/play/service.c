@@ -1,4 +1,5 @@
 #include "game/dagger/play/service.h"
+#include "game/dagger/play/ui.h"
 #include "game/dagger/play/canvas.h"
 #include "game/dagger/play/lodging.h"
 #include "engine/core/log.h"
@@ -208,8 +209,8 @@ int service_key(int vk)
     g.changed = 1;
     for (n = 0; g.typed[n]; n++) {
     }
-    if (vk >= '0' && vk <= '9' && n < DAYS_TEXT - 1) {
-        g.typed[n] = (char)vk;
+    if (ui_digit(vk) && n < DAYS_TEXT - 1) {
+        g.typed[n] = (char)ui_digit(vk);
         g.typed[n + 1] = 0;
     } else if (vk == 0x08 && n > 0) {
         g.typed[n - 1] = 0;

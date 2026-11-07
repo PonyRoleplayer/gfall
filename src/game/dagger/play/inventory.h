@@ -146,6 +146,8 @@ int inventory_spend_arrow(Inventory *inv);
 /* 1 when the pack holds an item of this template: a horse, a cart. */
 int inventory_has(const Inventory *inv, int template_id);
 /* Every item's weight together and the gold's, kilograms; a horse and a cart are owned, not carried, and weigh nothing. */
+/* What an item (its whole stack) adds to the load: nothing for a horse or a cart. */
+float item_carried_kg(const Item *it);
 float inventory_weight(const Inventory *inv);
 /*
  * Each body part's armour value from what is worn: 100 bare, lower is

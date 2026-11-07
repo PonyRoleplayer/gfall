@@ -110,6 +110,8 @@ typedef struct Slot {
     QuestRun run;
     Qbn qbn;
     MemHeap *heap;
+    /* Its words held back (quest_accept: the main quest's master on its first run). */
+    int quiet;
 } Slot;
 
 static Slot g_slots[QUEST_SLOTS];
@@ -411,7 +413,7 @@ static void say(const Slot *s, int message)
 {
     char *to;
 
-    if (message == QBN_NO_MESSAGE || message <= 0 || g_message_count == MESSAGES) {
+    if (message == QBN_NO_MESSAGE || message <= 0 || g_message_count == MESSAGES || s->quiet) {
         return;
     }
     to = g_messages[(g_message_first + g_message_count) % MESSAGES];
@@ -1155,7 +1157,15 @@ int quest_accept(Player *p, int slot, int now)
         mark_done(s->run.quest);
     }
     g_player = p;
+    /*
+     * S0000999, the main quest's master, looks at once at every next step: each guild of the story whose
+     * level or standing is not yet met says "come back when you are better" (its messages 1033 to 1036).
+     * Those all fired with the hold's opening words at a new game (playtest 2026-11-07). Its first look is
+     * kept quiet; a step that turns later still speaks. Ours: classic's exact gating was not found.
+     */
+    s->quiet = df_eq(file_of(s), "S0000999");
     run(s, now);
+    s->quiet = 0;
     return s->used ? slot : -1;
 }
 

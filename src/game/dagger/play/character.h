@@ -77,8 +77,9 @@ void character_tally(Character *c, int skill, int n);
 int character_level_sum(const Character *c);
 /* Starts the level's count from what it is now: the end of creation. */
 void character_start_levelling(Character *c);
-/* Skills rise if six hours have passed since the last look, at game minute now. 1 when any rose. */
-int character_raise_skills(Character *c, float now);
+/* Skills rise if six hours have passed since the last look, at game minute now. The count that rose; their
+ * numbers in raised (up to most, raised may be 0). The game looks after a rest, as classic (docs/game.md, Levelling). */
+int character_raise_skills(Character *c, float now, int *raised, int most);
 /* The new level taken: level, and health by rules_level_health with roll. The screen places its points. */
 void character_level_up(Character *c, int roll);
 /*
