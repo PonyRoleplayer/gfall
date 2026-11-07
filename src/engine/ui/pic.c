@@ -339,19 +339,13 @@ static int g_src_cut;
  * repeats its edge: never drawn, but a point on a tile's edge never
  * samples a stray colour.
  */
-static int tile_fill(Tile *t)
+static void tile_cut(const Tile *t, df_u8 *out)
 {
     int row;
     int col;
-    df_u8 *out;
 
     if (g_src16) {
         /* 565, little-endian as the card reads it, the edge repeated past the picture. */
-        t->texels = (df_u8 *)mem_alloc((df_u32)t->side * (df_u32)t->side * 2u);
-        if (!t->texels) {
-            return 0;
-        }
-        out = t->texels;
         for (row = 0; row < t->side; row++) {
             int sy;
 
@@ -366,13 +360,8 @@ static int tile_fill(Tile *t)
                 *out++ = (df_u8)(v >> 8);
             }
         }
-        return 1;
+        return;
     }
-    t->texels = (df_u8 *)mem_alloc((df_u32)t->side * (df_u32)t->side);
-    if (!t->texels) {
-        return 0;
-    }
-    out = t->texels;
     for (row = 0; row < t->side; row++) {
         int sy;
 
@@ -392,6 +381,15 @@ static int tile_fill(Tile *t)
             *out++ = past && g_src_cut ? 0 : g_src[sy * g_src_w + sx];
         }
     }
+}
+
+static int tile_fill(Tile *t)
+{
+    t->texels = (df_u8 *)mem_alloc((df_u32)t->side * (df_u32)t->side * (g_src16 ? 2u : 1u));
+    if (!t->texels) {
+        return 0;
+    }
+    tile_cut(t, t->texels);
     return 1;
 }
 
@@ -630,6 +628,59 @@ int pic_load_565(const df_u16 *pixels, int w, int h)
     id = pic_tile(id);
     g_src16 = 0;
     return id;
+}
+
+/* A tile's texels cut fresh for pic_update, to compare with what it holds. */
+static df_u8 g_cut[PIC_TILE_MAX * PIC_TILE_MAX * 2];
+
+int pic_update(int id, const df_u8 *pixels)
+{
+    Pic *p;
+    int sent;
+    int i;
+
+    if (id < 1 || id > PIC_MAX || !g_pic[id].used || !pixels || g_pic[id].rgb) {
+        return -1;
+    }
+    p = &g_pic[id];
+    g_src = pixels;
+    g_src16 = 0;
+    g_src_w = p->w;
+    g_src_h = p->h;
+    g_src_cut = p->cutout;
+    sent = 0;
+    for (i = p->first; i != NO_TILE; i = g_tile[i].next) {
+        Tile *t;
+        int n;
+        int k;
+
+        t = &g_tile[i];
+        n = t->side * t->side;
+        tile_cut(t, g_cut);
+        for (k = 0; k < n && g_cut[k] == t->texels[k]; k++) {
+        }
+        if (k == n) {
+            continue;
+        }
+        mem_copy(t->texels, g_cut, (df_u32)n);
+        /*
+         * On the card: sent again into its own room, its old handle given
+         * back first so the record is the one reused. Off it, the new
+         * texels go up when it does.
+         */
+        if (t->on && g_ops) {
+            g_ops->release(t->handle);
+            if (!g_ops->upload(pic_format(p) == PIC_FMT_1555 ? widen(t, g_pal[p->pal].table) : t->texels,
+                               t->side, pic_format(p), t->addr, &t->handle)) {
+                room_give(t->addr, t->bytes);
+                t->on = 0;
+                p->missing++;
+            }
+        }
+        sent++;
+    }
+    g_src = 0;
+    return sent;
 }
 
 int pic_box_565(const df_u8 *src, int sw, int sh, int stride, df_u16 *out, int w, int h)

@@ -82,6 +82,8 @@ typedef void (FX_CALL *gr_blend_fn)(
     GrAlphaBlendFnc_t alpha_sf, GrAlphaBlendFnc_t alpha_df);
 typedef void (FX_CALL *gr_line_fn)(const GrVertex *a, const GrVertex *b);
 typedef void (FX_CALL *gr_planar_fn)(int nverts, const GrVertex vlist[]);
+typedef int (FX_CALL *gr_pending_fn)(void);
+typedef FxBool (FX_CALL *gr_control_fn)(FxU32 code);
 typedef void (FX_CALL *gr_constant_fn)(GrColor_t value);
 typedef FxBool (FX_CALL *gr_lfb_read_fn)(
     GrBuffer_t src, FxU32 x, FxU32 y, FxU32 w, FxU32 h, FxU32 stride, void *dst);
@@ -127,6 +129,8 @@ static struct {
     gr_blend_fn blend;
     gr_line_fn line;
     gr_planar_fn planar;
+    gr_pending_fn pending;
+    gr_control_fn control;
     gr_constant_fn constant;
     gr_lfb_read_fn lfb_read;
     gr_lfb_write_fn lfb_write;
@@ -213,8 +217,60 @@ static int g_mark_ntex;
  * tearing, and the counter then reads the real rate.
  */
 static int g_vsync = 1;
+/*
+ * Swaps the card may have queued once one is sent: the driver lets the
+ * CPU run frames ahead of the picture, and each frame queued is one more
+ * frame between the mouse and the glass. 1 lets the CPU make the next
+ * frame while the card draws this one, and no more. 3 is the driver's
+ * own depth, no wait (docs/glide.md, Frames queued).
+ */
+static int g_swap_ahead = 1;
 /* The open mode's refresh in hertz: with vsync, what already paces the swap (pace.h). */
 static int g_hz = 60;
+
+/*
+ * A state left on between draws (glide_hold): the screen's pictures',
+ * set once for a run of picture draws instead of on and off for each
+ * glyph (docs/pictures.md, Batching). release puts the card back as
+ * everything else expects it. Every public call here but the held
+ * draw's own (glide_pic_quad, glide_pic_palette) and the hold's calls
+ * settles first: whoever comes next, a model, a rectangle, a tint, a
+ * query, the swap, finds the card as it was before the pictures.
+ * SETTLE is a declaration, so it can open a function's block in C90.
+ */
+static void (*g_held)(void);
+
+static int settle(void)
+{
+    void (*release)(void);
+
+    release = g_held;
+    if (release) {
+        g_held = 0;
+        release();
+    }
+    return 0;
+}
+
+#define SETTLE int settled_ __attribute__((unused)) = settle()
+
+void glide_hold(void (*release)(void))
+{
+    if (g_held != release) {
+        settle();
+    }
+    g_held = release;
+}
+
+int glide_held(void (*release)(void))
+{
+    return release && g_held == release;
+}
+
+void glide_settle(void)
+{
+    settle();
+}
 /* Which export spelling find_export matched last: 0 plain, 1 @N, 2 _name@N. */
 static int g_form;
 /* What grSstQueryHardware said, for glide_report. */
@@ -323,12 +379,14 @@ static int mode_listed(int m)
 
 void glide_want_mode(int w, int h)
 {
+    SETTLE;
     g_want_w = w;
     g_want_h = h;
 }
 
 int glide_mode_count(void)
 {
+    SETTLE;
     int n;
     int m;
 
@@ -341,6 +399,7 @@ int glide_mode_count(void)
 
 int glide_mode(int i, int *w, int *h)
 {
+    SETTLE;
     int m;
 
     for (m = 0; m < MODE_COUNT; m++) {
@@ -475,6 +534,12 @@ static int load_glide(void)
     glide.planar = (gr_planar_fn)(void *)find_export(
         glide.dll, "grDrawPlanarPolygonVertexList", "grDrawPlanarPolygonVertexList@8",
         "_grDrawPlanarPolygonVertexList@8");
+    /* Optional. Without it the swaps queue as deep as the driver lets them (glide_set_swap_ahead). */
+    glide.pending = (gr_pending_fn)(void *)find_export(
+        glide.dll, "grBufferNumPending", "grBufferNumPending@0", "_grBufferNumPending@0");
+    /* Optional. Without it Alt-Tab leaves the monitor on the Voodoo (glide_activate). */
+    glide.control = (gr_control_fn)(void *)find_export(
+        glide.dll, "grSstControl", "grSstControl@4", "_grSstControl@4");
     /* Optional. A console can freeze the picture without them. */
     glide.lfb_read = (gr_lfb_read_fn)(void *)find_export(
         glide.dll, "grLfbReadRegion", "grLfbReadRegion@28", "_grLfbReadRegion@28");
@@ -563,6 +628,7 @@ static int aspect_of(int w, int h, GrAspectRatio_t *aspect)
 
 const char *glide_error(void)
 {
+    SETTLE;
     return g_why;
 }
 
@@ -572,6 +638,7 @@ static void alpha_apply(void);
 
 int glide_open(void *hwnd)
 {
+    SETTLE;
     GrHwConfiguration hw;
 
     g_why = "glide failed";
@@ -681,6 +748,7 @@ int glide_open(void *hwnd)
 
 void glide_set_tex_cap(df_u32 kb)
 {
+    SETTLE;
     df_u32 lo;
 
     g_tex_cap = kb * 1024u;
@@ -696,11 +764,13 @@ void glide_set_tex_cap(df_u32 kb)
 
 df_u32 glide_tex_cap(void)
 {
+    SETTLE;
     return g_tex_cap / 1024u;
 }
 
 df_u32 glide_tex_card(void)
 {
+    SETTLE;
     if (!g_opened) {
         return 0;
     }
@@ -720,6 +790,7 @@ static const char *board_name(GrSstType type)
 
 void glide_report(int level)
 {
+    SETTLE;
     if (!log_wants(level)) {
         return;
     }
@@ -749,10 +820,16 @@ void glide_report(int level)
         log_text(level, "mode: closed");
         return;
     }
-    log_print(level, "mode: 640x480 60 Hz, 2 colour buffers, %s, vsync %s, %s",
+    log_print(level, "mode: %dx%d %d Hz, 2 colour buffers, %s, vsync %s, %s",
+              df_view_w(), df_view_h(), g_hz,
               g_wbuf ? "W-buffer" : "Z-buffer", g_vsync ? "on" : "off",
               glide.planar ? (g_planar_on ? "planar polygons" : "planar polygons off")
                            : "no planar polygons in this DLL");
+    if (glide.pending) {
+        log_print(level, "swaps: at most %d queued ahead (swapahead)", g_swap_ahead);
+    } else {
+        log_text(level, "swaps: no grBufferNumPending, queued as deep as the driver lets them");
+    }
     log_print(level, "textures: %u KB of %u KB left on TMU0; frame grab %s",
               (unsigned int)((g_addr_max > g_addr ? g_addr_max - g_addr : 0u) / 1024u),
               (unsigned int)((g_addr_max - glide.tex_min(GR_TMU0)) / 1024u),
@@ -772,37 +849,44 @@ static void depth_apply(void)
 
 void glide_set_wbuffer(int on)
 {
+    SETTLE;
     g_wbuf = on ? 1 : 0;
     depth_apply();
 }
 
 int glide_wbuffer(void)
 {
+    SETTLE;
     return g_wbuf;
 }
 
 void glide_set_planar(int on)
 {
+    SETTLE;
     g_planar_on = on ? 1 : 0;
 }
 
 int glide_planar(void)
 {
+    SETTLE;
     return g_planar_on && glide.planar;
 }
 
 void glide_set_vsync(int on)
 {
+    SETTLE;
     g_vsync = on ? 1 : 0;
 }
 
 int glide_vsync(void)
 {
+    SETTLE;
     return g_vsync;
 }
 
 void glide_close(void)
 {
+    SETTLE;
     if (g_opened && glide.close) {
         glide.close();
     }
@@ -843,6 +927,7 @@ static GrColor_t clear_color(void)
 
 void glide_background(int r, int g, int b)
 {
+    SETTLE;
     g_clear_color = pack_rgb(r, g, b);
     if (g_opened && glide.fog_color) {
         glide.fog_color(clear_color());
@@ -851,6 +936,7 @@ void glide_background(int r, int g, int b)
 
 void glide_sky_color(int on, int r, int g, int b)
 {
+    SETTLE;
     GrColor_t was;
 
     was = clear_color();
@@ -899,6 +985,7 @@ static void fog_upload(void)
 
 void glide_fog(int on)
 {
+    SETTLE;
     g_fog = on ? 1 : 0;
     if (g_opened && glide.fog_mode) {
         glide.fog_mode(g_fog ? GR_FOG_WITH_TABLE : GR_FOG_DISABLE);
@@ -907,6 +994,7 @@ void glide_fog(int on)
 
 void glide_fog_range(float near_z, float far_z)
 {
+    SETTLE;
     if (near_z < 1.0f) {
         near_z = 1.0f;
     }
@@ -920,11 +1008,13 @@ void glide_fog_range(float near_z, float far_z)
 
 int glide_fog_on(void)
 {
+    SETTLE;
     return g_fog;
 }
 
 void glide_clear(void)
 {
+    SETTLE;
     if (!g_opened) {
         return;
     }
@@ -933,13 +1023,43 @@ void glide_clear(void)
 
 void glide_swap(void)
 {
+    SETTLE;
     /* Every swap counted, and held to the frame limit (pace.h). */
     pace_swap(g_vsync ? g_hz : 0);
     glide.swap(g_vsync ? 1 : 0);
+    /* The wait shows in PROF_SWAP, where the card's time already does. */
+    if (glide.pending && g_swap_ahead < 3) {
+        while (glide.pending() > g_swap_ahead) {
+        }
+    }
+}
+
+void glide_activate(int on)
+{
+    SETTLE;
+    if (!g_opened || !glide.control) {
+        return;
+    }
+    /* The pass-through: the monitor back to the desktop's card, or to the Voodoo. Its memory is kept. */
+    glide.control(on ? GR_CONTROL_ACTIVATE : GR_CONTROL_DEACTIVATE);
+    log_print(LOG_INFO, "glide: %s", on ? "the screen is back" : "the screen given back to the desktop");
+}
+
+void glide_set_swap_ahead(int n)
+{
+    SETTLE;
+    g_swap_ahead = n < 0 ? 0 : (n > 3 ? 3 : n);
+}
+
+int glide_swap_ahead(void)
+{
+    SETTLE;
+    return g_swap_ahead;
 }
 
 int glide_lfb_read(void *dst, int stride_bytes)
 {
+    SETTLE;
     if (!g_opened || !dst || !glide.lfb_read || stride_bytes < 2) {
         return 0;
     }
@@ -951,6 +1071,7 @@ int glide_lfb_read(void *dst, int stride_bytes)
 
 int glide_lfb_write(const void *src, int stride_bytes)
 {
+    SETTLE;
     if (!g_opened || !src || !glide.lfb_write || stride_bytes < 2) {
         return 0;
     }
@@ -962,6 +1083,7 @@ int glide_lfb_write(const void *src, int stride_bytes)
 
 void glide_triangle(const DrawVert *a, const DrawVert *b, const DrawVert *c)
 {
+    SETTLE;
     GrVertex va, vb, vc;
 
     if (!g_opened) {
@@ -983,7 +1105,7 @@ void glide_triangle(const DrawVert *a, const DrawVert *b, const DrawVert *c)
  * with its two successors has the largest area: snapping each corner
  * to 1/16 pixel moves the gradients least there.
  */
-void glide_polygon(const DrawVert *v, int n)
+static void polygon(const DrawVert *v, int n)
 {
     GrVertex g[GLIDE_POLY_MAX];
     GrVertex fan[GLIDE_POLY_MAX];
@@ -1033,8 +1155,15 @@ void glide_polygon(const DrawVert *v, int n)
     glide.planar(n, fan);
 }
 
+void glide_polygon(const DrawVert *v, int n)
+{
+    SETTLE;
+    polygon(v, n);
+}
+
 void glide_line(const DrawVert *a, const DrawVert *b)
 {
+    SETTLE;
     GrVertex va, vb;
 
     if (!g_opened) {
@@ -1061,6 +1190,7 @@ static void glide_blend(int on)
 
 int glide_palette(const df_u8 *r, const df_u8 *g, const df_u8 *b)
 {
+    SETTLE;
     FxU32 pal[256];
     int i;
 
@@ -1101,6 +1231,7 @@ void glide_pic_palette(int id, const df_u32 *table)
 
 void glide_level_palette(void)
 {
+    SETTLE;
     if (!g_opened || g_pal_on == PAL_LEVEL) {
         return;
     }
@@ -1163,6 +1294,7 @@ static int shape_bytes(int side, int cutout, int chain, GrTexInfo *info, df_u32 
 
 int glide_texture_bytes(int side, int cutout, int chain, df_u32 *bytes)
 {
+    SETTLE;
     GrTexInfo info;
 
     if (!bytes) {
@@ -1173,12 +1305,14 @@ int glide_texture_bytes(int side, int cutout, int chain, df_u32 *bytes)
 
 void glide_mark(void)
 {
+    SETTLE;
     g_mark_addr = g_addr;
     g_mark_ntex = g_ntex;
 }
 
 void glide_rewind(void)
 {
+    SETTLE;
     int i;
 
     for (i = g_mark_ntex; i < g_ntex; i++) {
@@ -1194,6 +1328,7 @@ void glide_rewind(void)
 
 df_u32 glide_detail_room(void)
 {
+    SETTLE;
     df_u32 room;
 
     if (g_addr_max <= g_mark_addr) {
@@ -1209,6 +1344,7 @@ df_u32 glide_detail_room(void)
 
 void glide_tex_reset(void)
 {
+    SETTLE;
     int i;
 
     for (i = 0; i < g_ntex; i++) {
@@ -1225,6 +1361,7 @@ void glide_tex_reset(void)
 
 void glide_set_mipmap(int on)
 {
+    SETTLE;
     g_mip = on ? 1 : 0;
     if (g_opened) {
         glide.tex_mip(GR_TMU0, g_mip ? GR_MIPMAP_NEAREST : GR_MIPMAP_DISABLE, FXFALSE);
@@ -1233,11 +1370,13 @@ void glide_set_mipmap(int on)
 
 int glide_mipmap(void)
 {
+    SETTLE;
     return g_mip;
 }
 
 df_u32 glide_tex_free(void)
 {
+    SETTLE;
     if (!g_opened || g_addr_max <= g_addr) {
         return 0;
     }
@@ -1246,6 +1385,7 @@ df_u32 glide_tex_free(void)
 
 int glide_tex_take(df_u32 bytes, df_u32 *lo)
 {
+    SETTLE;
     df_u32 at;
 
     if (!g_opened || !lo || bytes == 0 || bytes > 0x200000u) {
@@ -1322,6 +1462,7 @@ static int upload_one(GrTextureFormat_t format, const void *data, int side, df_u
 /* RGB 565: the light decals' falloff and the sky's dome. */
 int glide_upload_565(const df_u16 *pixels, int side, df_u32 *handle)
 {
+    SETTLE;
     int i;
 
     if (!pixels || side < 1 || side > 256) {
@@ -1341,6 +1482,7 @@ int glide_upload_565(const df_u16 *pixels, int side, df_u32 *handle)
  */
 int glide_upload_p8(const df_u8 *pixels, int side, df_u32 *handle)
 {
+    SETTLE;
     return upload_one(GR_TEXFMT_P_8, pixels, side, handle);
 }
 
@@ -1353,6 +1495,7 @@ int glide_upload_p8(const df_u8 *pixels, int side, df_u32 *handle)
  */
 int glide_upload_ai44(const df_u8 *ink, int side, df_u32 *handle)
 {
+    SETTLE;
     int i;
 
     if (!ink || side < 1 || side > 256) {
@@ -1366,6 +1509,7 @@ int glide_upload_ai44(const df_u8 *ink, int side, df_u32 *handle)
 
 int glide_replace(df_u32 handle, const df_u8 *pixels)
 {
+    SETTLE;
     GrTexInfo info;
     int i;
 
@@ -1382,6 +1526,7 @@ int glide_replace(df_u32 handle, const df_u8 *pixels)
 int glide_upload(const df_u8 *pixels, int side, int cutout, int drop, int chain,
                  const df_u8 *pr, const df_u8 *pg, const df_u8 *pb, df_u32 *handle)
 {
+    SETTLE;
     df_u32 size;
     df_u32 at;
     df_u32 boundary;
@@ -1484,6 +1629,7 @@ static void alpha_apply(void)
 
 void glide_sprite_alpha(int on)
 {
+    SETTLE;
     g_cut = on ? 1 : 0;
     alpha_apply();
 }
@@ -1542,6 +1688,7 @@ static void depth_over(int on)
 
 void glide_tint(df_u32 rgb)
 {
+    SETTLE;
     GrColor_t was;
 
     rgb &= 0xffffffu;
@@ -1565,6 +1712,7 @@ void glide_tint(df_u32 rgb)
 
 df_u32 glide_tinted(void)
 {
+    SETTLE;
     return g_tint;
 }
 
@@ -1581,6 +1729,7 @@ df_u32 glide_tinted(void)
  */
 void glide_decal(int on)
 {
+    SETTLE;
     if (!g_opened) {
         return;
     }
@@ -1613,6 +1762,7 @@ void glide_decal(int on)
  */
 void glide_sky(int on, const df_u8 *rgb)
 {
+    SETTLE;
     FxU32 pal[256];
     int i;
 
@@ -1646,6 +1796,7 @@ void glide_sky(int on, const df_u8 *rgb)
 
 void glide_water(int on, df_u32 rgb, int alpha)
 {
+    SETTLE;
     if (!g_opened) {
         return;
     }
@@ -1686,6 +1837,7 @@ void glide_water(int on, df_u32 rgb, int alpha)
 
 void glide_glow(int on, df_u32 rgb)
 {
+    SETTLE;
     FxU32 pal[256];
     int i;
 
@@ -1724,6 +1876,7 @@ void glide_glow(int on, df_u32 rgb)
 
 int glide_chroma_ok(void)
 {
+    SETTLE;
     return g_opened && glide.chroma_mode && glide.chroma_value;
 }
 
@@ -1735,6 +1888,7 @@ int glide_chroma_ok(void)
  */
 void glide_chroma(int on, df_u32 rgb)
 {
+    SETTLE;
     if (!glide_chroma_ok()) {
         return;
     }
@@ -1748,6 +1902,7 @@ void glide_chroma(int on, df_u32 rgb)
 
 void glide_flat(int on)
 {
+    SETTLE;
     if (!g_opened) {
         return;
     }
@@ -1765,6 +1920,7 @@ void glide_flat(int on)
  */
 void glide_flat_reset(int on)
 {
+    SETTLE;
     if (!g_opened) {
         return;
     }
@@ -1779,6 +1935,7 @@ void glide_flat_reset(int on)
 
 void glide_point_sample(int on)
 {
+    SETTLE;
     if (!g_opened) {
         return;
     }
@@ -1788,6 +1945,7 @@ void glide_point_sample(int on)
 
 void glide_ui(int on)
 {
+    SETTLE;
     if (!g_opened) {
         return;
     }
@@ -1802,6 +1960,7 @@ void glide_ui(int on)
 
 void glide_opacity(int alpha, int texture)
 {
+    SETTLE;
     if (alpha < 0) {
         g_fade = -1;
         alpha_apply();
@@ -1817,6 +1976,7 @@ void glide_opacity(int alpha, int texture)
 
 void glide_dim(int on, int alpha)
 {
+    SETTLE;
     if (!g_opened) {
         return;
     }
@@ -1834,12 +1994,14 @@ void glide_dim(int on, int alpha)
 
 void glide_plate(int on)
 {
+    SETTLE;
     /* 191/255 is about 75% opacity. */
     glide_dim(on, 191);
 }
 
 void glide_overlay(int on)
 {
+    SETTLE;
     if (!g_opened) {
         return;
     }
@@ -1858,6 +2020,7 @@ void glide_overlay(int on)
  */
 void glide_tex_range(df_u32 *lo, df_u32 *hi)
 {
+    SETTLE;
     *lo = g_opened ? g_addr : 0;
     *hi = g_opened ? g_addr_max : 0;
 }
@@ -1865,6 +2028,7 @@ void glide_tex_range(df_u32 *lo, df_u32 *hi)
 int glide_upload_chain(const df_u8 *levels, int side, int cutout, int chain, int drop,
                        df_u32 addr, df_u32 *handle)
 {
+    SETTLE;
     GrTexInfo info;
     df_u32 size;
     df_u32 offset;
@@ -1906,6 +2070,7 @@ int glide_upload_chain(const df_u8 *levels, int side, int cutout, int chain, int
 
 int glide_upload_565_at(const df_u8 *texels, int side, df_u32 addr, df_u32 *handle)
 {
+    SETTLE;
     GrTexInfo info;
     df_u32 size;
     int i;
@@ -1939,6 +2104,7 @@ int glide_upload_565_at(const df_u8 *texels, int side, df_u32 addr, df_u32 *hand
 
 void glide_release(df_u32 handle)
 {
+    SETTLE;
     int i;
 
     i = (int)handle;
@@ -1951,7 +2117,7 @@ void glide_release(df_u32 handle)
     }
 }
 
-void glide_bind(df_u32 handle)
+static void bind(df_u32 handle)
 {
     int i;
 
@@ -1962,3 +2128,17 @@ void glide_bind(df_u32 handle)
     glide.tex_source(GR_TMU0, g_tex[i].addr, GR_MIPMAPLEVELMASK_BOTH, &g_tex[i].info);
     g_bound = i;
 }
+
+void glide_bind(df_u32 handle)
+{
+    SETTLE;
+    bind(handle);
+}
+
+void glide_pic_quad(df_u32 handle, const DrawVert *v, int n)
+{
+    /* No settle: this is the held state's own draw. */
+    bind(handle);
+    polygon(v, n);
+}
+

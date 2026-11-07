@@ -1276,6 +1276,32 @@ static void check_pictures(void)
                  && check_near(g_pc_x0, 0.0f, 0.01f) && check_near(g_pc_x1, 640.0f, 0.01f)
                  && check_near(g_pc_y0, 440.0f, 0.01f) && check_near(g_pc_y1, 40.0f, 0.01f),
                  "the screen did not cover its 640 x 400 exactly");
+    /*
+     * pic_update: one pixel changed is one tile sent again (the 64 at
+     * 256, 0 holds pixel 256, 0), into the same count of tiles on the
+     * card; the same pixels again send nothing.
+     */
+    {
+        static df_u8 upd[320 * 200];
+        df_u32 next;
+        int on_was;
+
+        mem_copy(upd, screen, sizeof(upd));
+        upd[256] = 0x77;
+        on_was = on;
+        next = g_pc_next;
+        check_expect(pic_update(a, upd) == 1 && g_pc_next == next + 1 && g_pc_texel[0] == 0x77,
+                     "a pixel changed did not send its one tile again");
+        pic_stats(&pics, &on, &used, &room);
+        check_expect(on == on_was && used == 66560u && g_pc_uploads == on, "pic_update changed the card's room");
+        next = g_pc_next;
+        check_expect(pic_update(a, upd) == 0 && g_pc_next == next, "the same pixels were sent again");
+        upd[199 * 320 + 5] = 0x55;
+        upd[199 * 320 + 300] = 0x55;
+        check_expect(pic_update(a, upd) == 2, "two pixels in two of the bottom strip's tiles did not send two");
+        check_expect(pic_update(PIC_MAX + 1, upd) == -1 && pic_update(a, 0) == -1, "a bad pic_update was taken");
+        pic_update(a, screen);
+    }
     /* A part: 30 x 40 at 10, 20, into 60 x 80 at 100, 300. */
     pic_draw_part(a, 10, 20, 30, 40, 100, 300, 60, 80, 128);
     check_expect(g_pc_bad == 0 && check_near(g_pc_area, 60.0f * 80.0f, 0.1f)

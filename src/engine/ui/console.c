@@ -720,13 +720,81 @@ static void c_time(int argc, char **argv)
 }
 
 /* Where the frame's time goes: each stage's mean and worst frame, in milliseconds. */
+/* One stage's line of the table: "  models 6.2, 9.8". */
+static void prof_stage_line(int i, char *line, int cap)
+{
+    int mean;
+    int worst;
+
+    mean = df_iround(prof_ms(i) * 10.0f);
+    worst = df_iround(prof_peak_ms(i) * 10.0f);
+    log_format(line, cap, "  %s %d.%d, %d.%d", prof_name(i), mean / 10, mean % 10, worst / 10, worst % 10);
+}
+
+/*
+ * prof.log beside the program, appended: a block a call, what was
+ * measured and where, then the table. For a machine with no network:
+ * walk, stop, `prof log hold corridor`, and carry the file back.
+ */
+static void prof_append(const char *label)
+{
+    char path[260];
+    char line[160];
+    HANDLE f;
+    DWORD wrote;
+    int k;
+
+    if (!fs_beside(path, (int)sizeof(path), "prof.log")) {
+        log_text(LOG_ERROR, "prof: no path beside the program");
+        return;
+    }
+    f = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, 0, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    if (f == INVALID_HANDLE_VALUE) {
+        log_print(LOG_ERROR, "prof: cannot write %s", path);
+        return;
+    }
+    SetFilePointer(f, 0, 0, FILE_END);
+    for (k = 0; k < PROF_STAGES + 4; k++) {
+        int n;
+
+        if (k == 0) {
+            log_format(line, (int)sizeof(line), "== %s (%s)", label[0] ? label : "prof", build_text());
+        } else if (k == 1) {
+            log_format(line, (int)sizeof(line),
+                       "%dx%d, vsync %s, fps %d, limit %d, texdetail %d, spritedetail %d, %d MHz, %d frames",
+                       df_view_w(), df_view_h(), glide_vsync() ? "on" : "off", pace_fps(), pace_limit(),
+                       gfx_tex_detail(), gfx_sprite_detail(), prof_mhz(), prof_frames());
+        } else if (k == 2) {
+            if (g_cam) {
+                log_format(line, (int)sizeof(line), "at %d %d %d, yaw %d; ms mean, worst",
+                           df_iround(g_cam->x), df_iround(g_cam->y), df_iround(g_cam->z),
+                           df_iround(g_cam->yaw * (360.0f / DF_TAU)));
+            } else {
+                log_format(line, (int)sizeof(line), "ms mean, worst");
+            }
+        } else if (k < PROF_STAGES + 3) {
+            prof_stage_line(k - 3, line, (int)sizeof(line));
+        } else {
+            line[0] = 0;
+        }
+        for (n = 0; line[n]; n++) {
+        }
+        WriteFile(f, line, (DWORD)n, &wrote, 0);
+        WriteFile(f, "\r\n", 2, &wrote, 0);
+    }
+    CloseHandle(f);
+    log_print(LOG_PRINT, "prof: added to %s", path);
+}
+
+/* prof: the table in the console; prof log [label]: and appended to prof.log. */
 static void c_prof(int argc, char **argv)
 {
+    char label[96];
+    char line[160];
     int i;
 
-    (void)argv;
-    if (argc != 1) {
-        log_text(LOG_PRINT, "usage: prof");
+    if (argc >= 2 && !df_eq(argv[1], "log")) {
+        log_text(LOG_PRINT, "usage: prof [log [label]]");
         return;
     }
     if (prof_mhz() == 0 || prof_frames() == 0) {
@@ -735,12 +803,19 @@ static void c_prof(int argc, char **argv)
     }
     log_print(LOG_PRINT, "prof: %d MHz, %d frames; ms mean, worst", prof_mhz(), prof_frames());
     for (i = 0; i < PROF_STAGES; i++) {
-        int mean;
-        int worst;
+        prof_stage_line(i, line, (int)sizeof(line));
+        log_text(LOG_PRINT, line);
+    }
+    if (argc >= 2) {
+        int n;
 
-        mean = df_iround(prof_ms(i) * 10.0f);
-        worst = df_iround(prof_peak_ms(i) * 10.0f);
-        log_print(LOG_PRINT, "  %s %d.%d, %d.%d", prof_name(i), mean / 10, mean % 10, worst / 10, worst % 10);
+        /* The words after "log", one space between. */
+        n = 0;
+        label[0] = 0;
+        for (i = 2; i < argc; i++) {
+            n += log_format(label + n, (int)sizeof(label) - n, i > 2 ? " %s" : "%s", argv[i]);
+        }
+        prof_append(label);
     }
 }
 
@@ -1344,7 +1419,7 @@ static void commands(void)
     cmd_add("stats", c_stats, "", "frame time and what the last world frame drew");
     cmd_add("pos", c_pos, "", "camera position, yaw and pitch in degrees");
     cmd_add("time", c_time, "[hh:mm]", "the hour of the world clock, or set it");
-    cmd_add("prof", c_prof, "", "where the frame's time goes, by stage, in ms (P in LEVELFALL)");
+    cmd_add("prof", c_prof, "[log [label]]", "where the frame's time goes, by stage, in ms (P in LEVELFALL); log appends it to prof.log");
     cmd_add("date", c_date, "[day month [year]]",
             "the calendar's date, or set it; a town's pictures and sky follow its season");
     cmd_add("season", c_season, "[fall|spring|summer|winter]",
@@ -1384,6 +1459,8 @@ static void commands(void)
             "sprites point sampled, crisp as Daggerfall drew them; 0 bilinear");
     cmd_var("fpu24", draw_fpu_single, draw_set_fpu_single, 0, 1,
             "render passes at the x87's 24-bit precision (faster divides); 0 to compare");
+    cmd_var("swapahead", glide_swap_ahead, glide_set_swap_ahead, 0, 3,
+            "swaps the card may queue ahead of the picture: 1 (default) keeps the mouse close, 3 the driver's depth");
     cmd_var("vsync", glide_vsync, glide_set_vsync, 0, 1,
             "wait for the retrace; off shows the real frame rate, with tearing");
     cmd_var("wbuffer", glide_wbuffer, glide_set_wbuffer, 0, 1,

@@ -87,6 +87,15 @@ int pic_load_565(const df_u16 *pixels, int w, int h);
  * pixel once. w and h 1..sw and 1..sh. 1, or 0 for a bad shape.
  */
 int pic_box_565(const df_u8 *src, int sw, int sh, int stride, df_u16 *out, int w, int h);
+/*
+ * New pixels for a P_8 picture (pic_load), its size, palette and cutout
+ * as loaded: each tile cut again and compared with what it holds, and
+ * only those that changed sent again, into their own room. A screen
+ * composed in memory that changes in a few places (a scrolled list, a
+ * coin turning) costs those tiles, not the whole screen. The tiles sent
+ * again, 0 when nothing changed; -1 for no such P_8 picture.
+ */
+int pic_update(int id, const df_u8 *pixels);
 void pic_free(int id);
 /* Its size; 0 for an id not loaded. */
 int pic_size(int id, int *w, int *h);

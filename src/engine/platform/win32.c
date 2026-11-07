@@ -25,6 +25,13 @@ static char g_class_name[32];
 static void (*g_mouse)(unsigned int msg, int x, int y);
 static void (*g_command)(unsigned int id, unsigned int code);
 static void (*g_notify)(void *hdr);
+/*
+ * Full screen's focus (win_focus_hook): told when the program loses and
+ * regains the screen, and while it is away win_pump waits for it to come
+ * back instead of drawing to a card nobody sees.
+ */
+static void (*g_focus)(int active);
+static int g_away;
 typedef unsigned (WINAPI *gdi_color_fn)(HDC, unsigned);
 static gdi_color_fn g_set_text;
 static gdi_color_fn g_set_bk;
@@ -134,6 +141,24 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_SETFOCUS:
     case WM_KILLFOCUS:
         input_on_focus(msg == WM_SETFOCUS);
+        break;
+    case WM_ACTIVATEAPP:
+        /*
+         * Alt-Tab out of a Glide screen: the card's pass-through gives the
+         * monitor back to the desktop (the hook), and the window goes to
+         * the taskbar so a click there brings it back.
+         */
+        if (g_focus) {
+            if (!wp && !g_away) {
+                g_away = 1;
+                g_focus(0);
+                ShowWindow(hwnd, SW_MINIMIZE);
+            } else if (wp && g_away) {
+                g_away = 0;
+                ShowWindow(hwnd, SW_RESTORE);
+                g_focus(1);
+            }
+        }
         break;
     case WM_CAPTURECHANGED:
     case WM_CANCELMODE:
@@ -404,26 +429,44 @@ void win_shutdown(void)
 void win_pump(void)
 {
     MSG msg;
+    int quit;
 
-    while (PeekMessageA(&msg, 0, 0, 0, PM_REMOVE)) {
-        int take;
+    quit = 0;
+    for (;;) {
+        while (PeekMessageA(&msg, 0, 0, 0, PM_REMOVE)) {
+            int take;
 
-        if (msg.message == WM_QUIT) {
-            input_request_quit();
+            if (msg.message == WM_QUIT) {
+                input_request_quit();
+                quit = 1;
+            }
+            take = console_message(msg.message, (unsigned int)msg.wParam, (long)msg.lParam);
+            if (take != CONSOLE_PASS) {
+                /* Also catches a console toggle between two snapshots. */
+                input_mouse_reset();
+            }
+            if (take == CONSOLE_KEEP) {
+                continue;
+            }
+            TranslateMessage(&msg);
+            if (take == CONSOLE_TRANSLATE) {
+                continue;
+            }
+            DispatchMessageA(&msg);
         }
-        take = console_message(msg.message, (unsigned int)msg.wParam, (long)msg.lParam);
-        if (take != CONSOLE_PASS) {
-            /* Also catches a console toggle between two snapshots. */
-            input_mouse_reset();
+        /* Away from full screen: asleep until the window is back, or the program is closed. */
+        if (!g_away || quit || g_closed) {
+            break;
         }
-        if (take == CONSOLE_KEEP) {
-            continue;
-        }
-        TranslateMessage(&msg);
-        if (take == CONSOLE_TRANSLATE) {
-            continue;
-        }
-        DispatchMessageA(&msg);
+        WaitMessage();
+    }
+}
+
+void win_focus_hook(void (*fn)(int active))
+{
+    g_focus = fn;
+    if (!fn) {
+        g_away = 0;
     }
 }
 

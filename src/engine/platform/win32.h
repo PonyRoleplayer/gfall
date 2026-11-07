@@ -29,6 +29,13 @@ void win_command_hook(void (*fn)(unsigned int id, unsigned int code));
 void win_notify_hook(void (*fn)(void *hdr));
 /* Windows 98 dialog face: MS Sans Serif, not the bold System font. */
 void *win_ui_font(void);
+/*
+ * Full screen's focus: fn(0) when the program loses the screen (Alt-Tab),
+ * fn(1) when it is back. While a hook is set, losing the screen also
+ * minimizes the window, and win_pump sleeps (WaitMessage) until it is
+ * restored. 0 clears it. gfx_startup sets it for the Glide programs.
+ */
+void win_focus_hook(void (*fn)(int active));
 /* Hide the cursor while Glide owns the screen. */
 void win_blank_cursor(int on);
 

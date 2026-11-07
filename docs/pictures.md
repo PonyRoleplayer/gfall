@@ -54,6 +54,19 @@ Leaving it for a place is as between places:
 - **Full colour pictures** (`pic_load_565`: a save's snapshot) go as RGB 565, 2 bytes a texel, opaque, drawn with no palette. Their tiles are kept in memory as 565 already and sent as they are (`PIC_FMT_565`, `glide_upload_565_at`), in the same tiles and room as any picture. A 160 × 120 snapshot is 29 tiles and 40 KB of the room (2 of 64, 7 of 32, 20 of 16 for its last 24 rows). A game that shows one at a time keeps 40 KB of `pic_set_room` for it.
 - **The draw state** is `glide_ui`: point sampled, over the frame with no depth test or write, tint white. An opacity under 255 blends with `glide_opacity`.
 
+### Batching
+
+A settings page is some 1,500 `pic_draw_part` calls, a glyph each plus panel pieces and bevels. Setting the draw state on and back off for each one was about 25 Glide calls a draw, tens of thousands a frame: 20 frames a second on the 233 for a page that drew at 187 as one picture. So the state is left on after a draw (`glide_hold(pic_release)` in `gfx.c`):
+- The next picture draw of the same kind (opaque, keyed or alpha; the same opacity) finds it still on (`glide_held`) and sets nothing. Its quads go through `glide_pic_quad`, a bind and a polygon.
+- A draw of another kind puts the card back first (`glide_settle`) and sets its own.
+- Anything else that reaches the card first, any public call in `glide.c` (a model, a rectangle, the engine's text, a tint, a query, the swap), settles first: `SETTLE` opens each of them, and calls `pic_release`, which puts back the tint, the chroma key, the alpha test, the opacity and the scene's filter and depth as they were. Only `glide_pic_quad`, `glide_pic_palette`, `glide_held` and `glide_hold` do not settle.
+
+The game's calls stay as they were. A new public call in `glide.c` must open with `SETTLE;`, or it runs with the pictures' state still on. The win on the 233 is not measured yet.
+
+### Updating a picture
+
+`pic_update(id, pixels)` takes new pixels for a P_8 picture, its size, palette and cutout as loaded. Each tile is cut again into a scratch buffer and compared with the texels it holds. Only a tile that changed is copied and sent again, into its own room: its old handle is given back first, so the record is reused. A tile off the card just keeps the new texels for when it goes up. A screen composed in memory that changes in a few places (an inventory scrolled, a shop's coin turning) costs the tiles those places touch, not `pic_free` and `pic_load` of the whole screen. It answers the tiles sent, 0 when nothing changed, and -1 for no such picture or a full colour one. The compare is 64000 bytes for a full screen.
+
 ### Order
 
 Each `pic_draw` sends its quads when it is called, over the frame with no depth test, so the calls land in their order: a later picture covers an earlier one. A save screen draws the snapshot first and its composed canvas over it as a cutout, clear where the snapshot shows.
@@ -106,6 +119,7 @@ The RAM cost is a byte a texel, cutouts included: 65 KB for a full screen. A ful
 - a picture short of room not drawn, then drawn once the next place's room is bigger;
 - freed tiles joined so that one 64 KB tile fits where a screen's 29 were;
 - a 160 × 120 full colour picture in its 29 tiles of 565 and 40 KB, drawn opaque and whole with no palette, its texels little-endian;
+- `pic_update`: one pixel changed sends its one tile again, its texel the new one, with the room and the tiles on the card unchanged; the same pixels again send nothing; two pixels in two of the bottom strip's tiles send two; a bad id or no pixels is refused;
 - `check_pic_box`: a box's mean rounded to the nearest, a size that does not divide covering every source pixel once, a larger output or a short stride refused.
 
 ## Not yet

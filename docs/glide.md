@@ -142,6 +142,20 @@ What is fixed in pixels stays so: the engine's text (the 8 × 8 face, a game's g
 
 The sums (`pace_plan`, `pace_count`) are plain C on counter readings; hostcheck runs them (`check_pace`): the clamp, the beat after quick, half-late and very late frames, vsync at and over the limit, the counter's wrap, and 30 swaps in 510 ms reading 59. The sleep's accuracy on Windows 98 and the 233 has not been measured.
 
+## Frames queued
+
+The driver lets the CPU run swaps ahead of the picture: each frame queued is one more frame between the mouse and the glass, and the user found mouse look mushy where the frame rate swings. After each swap `glide_swap` waits while `grBufferNumPending()` says more than `swapahead` swaps are queued (`glide_set_swap_ahead`, the console's `swapahead`, 0..3). 1, the default, lets the CPU make the next frame while the card draws this one, and no more. 0 waits for every frame to finish. 3 is the driver's own depth, with no wait. The wait spins on the card's register and shows in the profile's `swap` stage, where the card's time already does. A `glide2x.dll` without `grBufferNumPending` waits for nothing, and `glinfo` says so.
+
+With vsync on, a frame that takes a little over 16.7 ms shows at 30, and one over 33.3 ms at 20 or 15. So a place that costs about 33 ms swings between 30 and 15, which also reads as mushy mouse look. A limit of 30 (`fps_limit`) holds such a place at a steady 30.
+
+## Alt-Tab
+
+A Voodoo 1 or 2 is a second card behind a pass-through cable, and Glide owns the monitor while it is open. `gfx_startup` sets the window's focus hook (`win_focus_hook(glide_activate)`):
+- On `WM_ACTIVATEAPP` going away, `glide_activate(0)` calls `grSstControl(GR_CONTROL_DEACTIVATE)`, which gives the monitor back to the desktop's card. The window is minimized to the taskbar, and `win_pump` sleeps in `WaitMessage` until it comes back. No frame is drawn and no input is read meanwhile. The sound runs out into quiet (`docs/sound.md`), and the music's stream plays on.
+- On coming back, the window is restored and `grSstControl(GR_CONTROL_ACTIVATE)` takes the monitor again. The card's memory and state were never touched, so nothing is sent again. The first frame's long interval is dropped as after any hitch, and the frame limit starts its beat again.
+
+`gfx_shutdown` clears the hook, so LEVELFALL's list is a plain window. A DLL without `grSstControl` keeps the monitor on the Voodoo, as before. Not yet tried on the target.
+
 ## Kept as they are
 
 - Bilinear filtering costs the SST-1 nothing over point sampling. Text is point sampled so glyph edges stay hard, and so are sprites by default (`spritepoint`, `glide_point_sample` around the sprite pass): up close a sprite is magnified three times, and bilinear smeared its hand-drawn texels.
@@ -151,7 +165,7 @@ The sums (`pace_plan`, `pace_count`) are plain C on counter readings; hostcheck 
 
 ## Console
 
-`wbuffer`, `planar`, `mipmap`, `mipmmx`, `mippackmmx`, and `mipboxmmx` switch the choices above at run time. `texmem` reports the chains and how many pictures the budget shrank. `vsync`, `stats`, and `glinfo` show what they cost. `fps` shows the counter, `hudfps` the HUD's corner, and `fps_limit` sets the limit. `glinfo` names the depth buffer and whether planar polygons are in use. See `docs/console.md`.
+`wbuffer`, `planar`, `mipmap`, `mipmmx`, `mippackmmx`, and `mipboxmmx` switch the choices above at run time. `texmem` reports the chains and how many pictures the budget shrank. `vsync`, `stats`, and `glinfo` show what they cost. `fps` shows the counter, `hudfps` the HUD's corner, and `fps_limit` sets the limit. `swapahead` sets the frames queued. `glinfo` names the mode and whether swaps are capped. `glinfo` names the depth buffer and whether planar polygons are in use. See `docs/console.md`.
 
 ## Water
 

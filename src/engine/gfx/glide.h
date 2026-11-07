@@ -72,6 +72,20 @@ int glide_planar(void);
 /* 1 waits for the retrace on each swap (default), 0 swaps at once. */
 void glide_set_vsync(int on);
 int glide_vsync(void);
+/*
+ * Swaps the card may hold queued after one is sent, 0..3: 1 (default)
+ * lets the CPU make one frame while the card draws the last, so the
+ * mouse is at most a frame behind the queue; 3 is the driver's depth,
+ * no wait. Needs grBufferNumPending, else nothing waits.
+ */
+/*
+ * Alt-Tab: 0 gives the monitor back to the desktop's card through the
+ * Voodoo's pass-through (grSstControl), 1 takes it again; the card's
+ * memory and state are kept. Nothing without grSstControl.
+ */
+void glide_activate(int on);
+void glide_set_swap_ahead(int n);
+int glide_swap_ahead(void);
 /* Logs the DLL's board, TMU, mode, and texture room at this level. */
 void glide_report(int level);
 /*
@@ -155,6 +169,19 @@ void glide_rewind(void);
 df_u32 glide_detail_room(void);
 /* A handle from glide_upload. Binding the texture already bound is free. */
 void glide_bind(df_u32 handle);
+/*
+ * A state left on between draws, for a run of the screen's pictures
+ * (docs/pictures.md, Batching): after a draw the caller holds its state
+ * with its release instead of putting the card back. The next call
+ * into glide.c, any but glide_pic_quad, glide_pic_palette, glide_held
+ * and glide_hold with the same release, calls release first. glide_held
+ * says whether release's state is still on; glide_settle releases now.
+ */
+void glide_hold(void (*release)(void));
+int glide_held(void (*release)(void));
+void glide_settle(void);
+/* A held picture's quad: bound and drawn without settling. */
+void glide_pic_quad(df_u32 handle, const DrawVert *v, int n);
 /*
  * Sprites and text take alpha from the texture and keep a texel past
  * half. Models use a constant alpha: no alpha travels with a triangle.

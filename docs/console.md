@@ -81,6 +81,7 @@ A variable prints its value when typed alone, and takes a new one as an argument
 | `hud` | on/off | GFALL's position and fps corners. LEVELFALL draws its own panels and turns this off in the view. |
 | `hudfps` | on/off | The HUD's fps corner alone, drawn while `hud` is on. F3 flips it too. Default on. |
 | `fps` | on/off | The fps counter, drawn with the HUD off and over a game's menu too, in the same box as the HUD's corner (once when both are on). A game turns it on itself (`gfx_set_fps_counter`, GFALL's Gameplay tab). Default off. See `docs/glide.md`, The frame's pace. |
+| `swapahead` | 0..3 | Swaps the card may hold queued after one is sent. 1 (default) lets the CPU make one frame while the card draws the last; 0 waits for each; 3 is the driver's own depth. See `docs/glide.md`, Frames queued. |
 | `fps_limit` | 0..240 | Frames a second at most, the swap waiting asleep for its time. 0 (default) is off; 1 to 19 are held to 20, as the sound is refilled from the frame. With vsync on, a limit at or above the refresh waits for nothing. |
 | `logfile` | on/off | Copies the log to `console.log` beside the program. See Log. |
 
@@ -107,7 +108,7 @@ A variable prints its value when typed alone, and takes a new one as an argument
 | `clear` | Empties the log. |
 | `help [name]`, `find word` | See above. |
 | `sndinfo`, `sndlist`, `sndview`, `song`, `play`, `musdev`, `sound`, `sndvol`, `sndmuffle`, `sndrate`, `snddrv`, `sndmmx`, `music`, `musvol`, `musvoices` | The sound and the music: see `docs/sound.md`. |
-| `prof` | Where the frame's time goes, by stage: see `docs/profile.md`. |
+| `prof [log [label]]` | Where the frame's time goes, by stage: see `docs/profile.md`. `log` appends the table, with the mode, vsync, the frames a second and where the camera stands, to `prof.log` beside the program. |
 | `date`, `season` | The calendar and the season a town is drawn in: see `docs/daylight.md`. |
 | `mapreveal` | Every model of the place on its automap, as if walked: see `docs/automap.md`. |
 | `useview`, `uselist`, `locks` | What can be used, and the doors' locks: see `docs/interact.md`. |

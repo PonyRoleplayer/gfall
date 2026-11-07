@@ -16,6 +16,7 @@
 #include "engine/ui/font.h"
 #include "engine/ui/pic.h"
 #include "engine/ui/shot.h"
+#include "engine/platform/win32.h"
 
 static const char *g_why = "graphics failed";
 
@@ -47,9 +48,21 @@ static int g_pic_how;
  * colour combine passes the texel through as it is (the key must reach
  * the chroma test unchanged). A keyed cutout drops its key's pixels; a
  * 1555 one is alpha-tested as sprites are.
+ *
+ * Left on after the draw (glide_hold): a settings page is some 1,500
+ * draws, a glyph each, and setting and clearing this for every one was
+ * tens of thousands of Glide calls a frame. The next draw of the same
+ * kind finds it still on and sets nothing; anything else that reaches
+ * the card first puts it back (pic_release). docs/pictures.md, Batching.
  */
+static void pic_release(void);
+
 static void pic_begin_draw(int how, int alpha)
 {
+    if (glide_held(pic_release) && how == g_pic_how && alpha == g_pic_alpha) {
+        return;
+    }
+    glide_settle();
     g_pic_tint = glide_tinted();
     g_pic_alpha = alpha;
     g_pic_how = how;
@@ -94,11 +107,11 @@ static void pic_quad(df_u32 handle, float x0, float y0, float x1, float y1,
     v[3].y = y1;
     v[3].sow = s0;
     v[3].tow = t1;
-    glide_bind(handle);
-    glide_polygon(v, 4);
+    glide_pic_quad(handle, v, 4);
 }
 
-static void pic_end_draw(void)
+/* The card back as it was before the pictures: called by glide.c when something else comes. */
+static void pic_release(void)
 {
     if (g_pic_alpha < 255) {
         glide_opacity(-1, 0);
@@ -109,6 +122,11 @@ static void pic_end_draw(void)
     glide_sprite_alpha(0);
     glide_tint(g_pic_tint);
     glide_ui(0);
+}
+
+static void pic_end_draw(void)
+{
+    glide_hold(pic_release);
 }
 
 /* chroma is the card's, set when the room is taken (pictures_prepare). */
@@ -153,6 +171,8 @@ int gfx_startup(void *hwnd)
     }
     /* The view may have a new width: the focal length follows it, the field of view kept. */
     camera_set_fov(camera_fov());
+    /* Alt-Tab hands the monitor to the desktop and back (docs/glide.md, Alt-Tab). */
+    win_focus_hook(glide_activate);
     return 1;
 }
 
@@ -211,6 +231,7 @@ void gfx_shutdown(void)
     draw_set_extra(0);
     draw_set_under(0);
     pic_end();
+    win_focus_hook(0);
     pace_close();
     glide_close();
 }
