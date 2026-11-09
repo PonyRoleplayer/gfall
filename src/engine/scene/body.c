@@ -442,6 +442,30 @@ static void push_off(Body *b, const Scene *scene)
     }
 }
 
+void body_fly_step(Body *b, const Scene *scene, float dx, float dy, float dz)
+{
+    float c[3], travel, below, above;
+    if (!b || !scene || !collide_use(scene)) { return; }
+    if (b->scene != scene || b->epoch != mem_epoch()) { b->have_safe = 0; }
+    b->scene = scene; b->epoch = mem_epoch();
+    b->grounded = b->landed = b->want_unstick = 0;
+    g_have_box = 0; shape(b,1);
+    travel = df_absf(dx) > df_absf(dz) ? df_absf(dx) : df_absf(dz);
+    below = dy < 0 ? -dy : 0; above = dy > 0 ? dy : 0;
+    gather_round(b,b->feet,travel+2,below+2,above+2);
+    upper(b,b->feet,c);
+    /* If a caller restores a bad point, retain the last clear point rather
+     * than searching for a floor on a different storey. */
+    if (collide_overlap(c) && b->have_safe) {
+        put(b->feet,b->safe); upper(b,b->feet,c);
+        gather_round(b,b->feet,travel+2,below+2,above+2);
+    }
+    collide_slide(c,dx,dy,dz,0);
+    b->feet[0] = c[0]; b->feet[1] = c[1]-b->height/2; b->feet[2] = c[2];
+    push_off(b,scene); upper(b,b->feet,c);
+    if (!collide_overlap(c)) { put(b->safe,b->feet); b->have_safe = 1; }
+}
+
 void body_step(Body *b, const Scene *scene, float want_dx, float want_dz, float dt)
 {
     float dy;

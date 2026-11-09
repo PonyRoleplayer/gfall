@@ -107,3 +107,20 @@ gcc -std=gnu90 -Wall -Wextra -Werror -DDF_HOST -Itests/input_win32 -Isrc tests/c
 ```
 
 `tests/input_win32/windows.h` supplies only the Win32 declarations this module uses. The harness feeds physical key states and client moves into the actual `input.c`, including synchronous cursor-warp notifications. It holds action ids/defaults, one poll per key, physical clicks independent of bindings, pointer-mode action edges, scaled motion and fractional carry, legacy look, console releases, focus/capture resets, and begin/end/toggle boundaries. `tests/check_engine.c` also holds the saved action ids in normal hostcheck. The real Win32 message dispatch and hardware remain covered by cross-builds and target testing.
+
+## A game's own action list
+
+`InputKeys` is an optional caller-owned bank of up to 64 bindings, attached with
+`input_keys_attach`. Each slot has its own virtual key and held/pressed/released
+bytes. It is separate from the legacy `Input` bitmask and does not change any
+existing action number. OGFALL attaches its 38 original actions plus two fixed
+UI keys. Other programs attach nothing and retain the existing path.
+
+`input_read` folds attached slots before clearing window key notes, using the
+same cached physical samples as the built-in actions and mouse buttons. A tap
+completed between reads is therefore preserved, duplicate bindings agree, and
+focus/console suppression releases held slots once. Zero is unbound; the console
+key is excluded, and Escape consumed by the console is excluded too. The caller
+keeps the bank alive until detaching it and owns binding validation and updates.
+`input_keys_fold` and `input_keys_release` are plain C in `keyname.c`; host tests
+exercise a completed tap beyond bit 31, repeated key-down and suppression.

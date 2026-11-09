@@ -479,6 +479,9 @@ static void check_hold_creatures(const World *world, const Dungeon *hold)
 
         e = world_entity(world, i);
         kind = world_entity_kind(world, i, &passive);
+        check_expect(world_entity_archive(world,i) == enemy_archive(kind,0) ||
+                     world_entity_archive(world,i) == enemy_archive(kind,1),
+                     "a creature exposes the exact selected male or female walking archive");
         if (kind < 0 || kind >= ENEMY_KINDS) {
             ok_views = 0;
             continue;

@@ -88,6 +88,23 @@ enum {
 };
 #define INPUT_BIT(action) (1u << (action))
 
+/* A game with its own action list may attach one bank of up to 64 keys.
+ * input_read folds it alongside the built-in actions from the same samples.
+ * The bank belongs to the caller and must outlive attachment. A zero key is
+ * unbound. No action names or game policy enter the platform. */
+#define INPUT_KEYS_MAX 64
+typedef struct InputKeys {
+    int count;
+    unsigned char key[INPUT_KEYS_MAX];
+    unsigned char held[INPUT_KEYS_MAX];
+    unsigned char pressed[INPUT_KEYS_MAX];
+    unsigned char released[INPUT_KEYS_MAX];
+} InputKeys;
+void input_keys_attach(InputKeys *keys);
+/* Plain-C edge folding, also used by native tests. suppressed releases holds. */
+void input_keys_fold(InputKeys *keys, int index, int saw_down, int saw_up, int polled);
+void input_keys_release(InputKeys *keys);
+
 /* Physical buttons, independent of action bindings and Windows' swap setting. */
 #define INPUT_MOUSE_LEFT 1u
 #define INPUT_MOUSE_RIGHT 2u

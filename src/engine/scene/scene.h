@@ -282,6 +282,10 @@ typedef struct Scene {
     int version;
     /* 1 when every sprite is in exactly one span's sfirst..scount (docs/streaming.md). */
     int sprite_spans;
+    /* Optional solid prefix of models. 0 means every model, as before.
+     * Models after this prefix draw but never obstruct bodies, use or LOS rays.
+     * A game's transient projectiles can share the scene without becoming walls. */
+    int solid_models;
     /* What walks about on its own: the game's, read to draw (docs/entities.md). 0 for none. */
     const struct Entity *entities;
     int nentities;
@@ -321,6 +325,7 @@ int scene_water_at(const Scene *scene, float x, float z, float *y, df_u32 *color
 int scene_water_body(const Scene *scene, float x, float eye_y, float z);
 
 void instance_set_rotation(Instance *in, float rx, float ry, float rz);
+int scene_solid_models(const Scene *scene);
 void instance_point(const Instance *in, float lx, float ly, float lz,
                     float *x, float *y, float *z);
 

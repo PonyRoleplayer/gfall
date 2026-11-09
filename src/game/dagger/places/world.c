@@ -1867,6 +1867,14 @@ int world_image_count(const World *world)
     return world ? world->nimages : 0;
 }
 
+int world_entity_archive(const World *world, int index)
+{
+    int slot;
+    if (!world || index < 0 || index >= world->nent) { return -1; }
+    slot = world->ent[index].pose[ENTITY_WALK].slot[0];
+    return slot < world->nimages ? world->key_file[slot] : -1;
+}
+
 const Image *world_image(const World *world, int slot)
 {
     if (!world || slot < 0 || slot >= world->nimages) {

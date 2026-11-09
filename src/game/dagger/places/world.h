@@ -103,6 +103,8 @@ int world_creatures_step(World *world, const Camera *cam, float radius, float bu
 int world_entity_count(const World *world);
 const struct Entity *world_entity(const World *world, int index);
 int world_entity_kind(const World *world, int index, int *passive);
+/* The selected walking archive, including the marker's human sex variant. */
+int world_entity_archive(const World *world, int index);
 
 /*
  * A dungeon's water (docs/water.md): rectangles of its blocks flooded to

@@ -131,3 +131,23 @@ Tried on the card (a Voodoo 2 on the 233 machine): it walks the hold, the castle
 - No swimming or climbing in the engine; the game swims its own body. A crouch is a size (A body's size, above). Jumping and the landing's speed are here; the damage is the game's.
 - The body rides lifts up and down (Lifts, above), but nothing carries it sideways and it pushes nothing; an entity stops it, and the game's motors stop at it.
 - Ladders and the steepest stairs (a riser over 24 units) block.
+
+## Free flight
+
+`body_fly_step` sweeps a body's full ellipsoid through a requested three-axis
+displacement. It does not apply gravity, search for a nearby floor, or walk up
+steps. It still slides at walls, floors and ceilings and separates solid bodies.
+Its last clear point is retained only within the current scene/heap. OGFALL uses
+this for flying creatures: a walking body's initial floor search could put a bat
+on another storey beside stairs, even with gravity set to zero. Host checks move
+a flying body into a stairwell ceiling and back down onto its floor.
+
+## Models drawn without collision
+
+`Scene.solid_models` optionally names a positive prefix of `models`. Zero keeps
+the existing all-model behavior. A model after that prefix is still culled,
+textured and drawn normally, but the collision gather, sight/sound segment
+queries and activation wall ray skip it. A game can reserve mesh slots for
+moving projectile visuals without making each projectile a wall. OGFALL uses
+this for ARCH3D arrows. Changing the prefix invalidates the collision cache;
+changes to transient visual poses alone do not rebuild its static grid.

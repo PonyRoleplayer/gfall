@@ -178,3 +178,8 @@ hostcheck: `check_teleport` walks into a pad and is sent once, lands on the far 
 - GFALL's passages (the game layer).
 - The temple's god, and a building's name.
 - Pointing at a thing to inspect it (talked over, not built): a key picks what the middle of the view rests on, or a free cursor picks what is under it (the ray through that pixel, the camera's projection run backwards). The pick keeps what the cast already finds: the model and the face the ray struck (its ARCH3D id, block, texture archive and record, its RDB offset or RMB building), a door's mover, a passage's way, a sprite (a box per flat, which the ray passes through today), or the light or sound source nearest the ray. It is drawn bright, as `useview` draws, lives on the place's heap, and console commands act on it: `sel` to print it, `sel open`, `sel lock n`, `sel unlock`, `sel run`, `sel go`, `sel tex`, `sel light`, `sel sound`. Whether the middle of the view, a free cursor, or both, is the open question.
+
+A scene may reserve a solid prefix with `Scene.solid_models` (zero means all).
+The activation wall pass and line-of-sight queries honor this prefix. Models
+past it remain visible, but transient projectile meshes cannot intercept a use
+ray aimed at a door, corpse or container. See `docs/collision.md`.

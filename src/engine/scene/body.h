@@ -80,6 +80,8 @@ void body_place(Body *b, float x, float feet_y, float z);
  * what stops it. dt is real seconds.
  */
 void body_step(Body *b, const Scene *scene, float want_dx, float want_dz, float dt);
+/* Free flight: one full-body sweep, without walking steps or floor snapping. */
+void body_fly_step(Body *b, const Scene *scene, float dx, float dy, float dz);
 /* A jump from a floor at up_speed (units a second); 0 off the ground. */
 int body_jump(Body *b, float up_speed);
 /* 1 once at a landing: the speed down at the floor and the height fallen from the arc's top. */

@@ -6,8 +6,8 @@
 # PONY97.EXE: optional embedded-model turntable; no game data.
 # make
 # Mount build/spintri.iso and run D:\SPINTRI.EXE, or mount build/gfall.iso
-# and run D:\GFALL.EXE. The disc is the executables only. ARENA2 stays
-# beside them on the machine. It is not copied onto the disc.
+# and run D:\GFALL.EXE or D:\OGFALL.EXE. The disc is the executables only.
+# ARENA2 stays beside them on the machine. It is not copied onto the disc.
 # The guest needs the 3dfx Voodoo Graphics driver (glide2x.dll). Escape quits.
 # Do not copy glide2x.dll onto either disc. The system driver is the one
 # that draws the 3dfx splash.
@@ -246,6 +246,48 @@ PLAY_DRAW_SRC := \
 
 GFALL_SRC := apps/gfall/main.c $(ENGINE_SRC) $(DAGGER_SRC) $(PLAY_SRC)
 
+# OGFALL: classic's menus and Privateer's Hold. Not PLAY_SRC.
+# seam.c is the only file that includes both games.
+OGFALL_GAME_SRC := \
+	src/game/ogfall/formats/formats.c \
+	src/game/ogfall/formats/book.c \
+	src/game/ogfall/formats/lore.c \
+	src/game/ogfall/tables/tables.c \
+	src/game/ogfall/tables/itemdefs.c \
+	src/game/ogfall/tables/combatdefs.c \
+	src/game/ogfall/places/place.c \
+	src/game/ogfall/play/state.c \
+	src/game/ogfall/play/inventory.c \
+	src/game/ogfall/play/describe.c \
+	src/game/ogfall/play/spellbook.c \
+	src/game/ogfall/play/possessions.c \
+	src/game/ogfall/play/save.c \
+	src/game/ogfall/play/vitals.c \
+	src/game/ogfall/play/anim.c \
+	src/game/ogfall/play/combat.c \
+	src/game/ogfall/play/cheats.c \
+	src/game/ogfall/play/rest.c \
+	src/game/ogfall/play/foegear.c \
+	src/game/ogfall/play/weapon.c \
+	src/game/ogfall/play/dungeon.c \
+	src/game/ogfall/play/steer.c \
+	src/game/ogfall/play/hud.c \
+	src/game/ogfall/play/screen.c \
+	src/game/ogfall/play/msg.c \
+	src/game/ogfall/play/kit.c \
+	src/game/ogfall/play/config.c \
+	src/game/ogfall/play/controls.c \
+	src/game/ogfall/play/files.c \
+	src/game/ogfall/play/options.c \
+	src/game/ogfall/play/chargen.c \
+	src/game/ogfall/play/move.c \
+	src/game/ogfall/play/activate.c \
+	src/game/ogfall/play/play.c
+
+OGFALL_HEADERS := $(wildcard src/game/ogfall/*/*.h apps/ogfall/*.h)
+
+OGFALL_SRC := apps/ogfall/main.c apps/ogfall/seam.c $(OGFALL_GAME_SRC) $(ENGINE_SRC) $(DAGGER_SRC)
+
 # RENDERFALL shows models alone: the readers they need and no place.
 RENDER_SRC := apps/renderfall/main.c $(ENGINE_SRC) \
 	src/game/dagger/formats/bsa.c \
@@ -263,7 +305,10 @@ PONY97_SRC := apps/pony97/main.c $(ENGINE_SRC)
 HOST_SRC := $(ENGINE_HOST_SRC) \
 	$(filter-out src/game/dagger/formats/fnt.c,$(DAGGER_SRC)) $(filter-out $(PLAY_DRAW_SRC),$(PLAY_SRC))
 
-.PHONY: all check clean hostcheck datacheck gfall-check renderfall-check levelfall-check datfall-check pony97-check pony97-iso deps deps-host layers
+# The ogfall game and its seam, without the Win32 entry. Hostcheck links these.
+OGFALL_HOST_SRC := apps/ogfall/seam.c $(OGFALL_GAME_SRC)
+
+.PHONY: all check clean hostcheck datacheck gfall-check renderfall-check levelfall-check datfall-check pony97-check pony97-iso ogfall ofgall ogfall-check ogfall-host deps deps-host layers
 
 # A bare make builds everything; deps alone is the first rule below.
 .DEFAULT_GOAL := all
@@ -307,7 +352,7 @@ deps-host: layers
 layers:
 	sh tools/check-layers
 
-all: deps check build/spintri.iso gfall-check renderfall-check levelfall-check datfall-check build/gfall.iso pony97-iso
+all: deps check build/spintri.iso gfall-check ogfall-check renderfall-check levelfall-check datfall-check build/gfall.iso pony97-iso
 
 build/SPINTRI.EXE: apps/spintri/main.c third_party/glide2/include/glide.h | deps
 	mkdir -p build
@@ -326,9 +371,17 @@ build/spintri.iso: build/cdroot/SPINTRI.EXE | deps
 # Only hostcheck links the menu against deterministic input/persistence stand-ins.
 MENU_TEST_SRC := tests/check_menu.c src/game/dagger/play/menu.c src/game/dagger/play/screen.c
 
-build/hostcheck: $(MENU_TEST_SRC) tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_play.c tests/check_util.c tests/host_card.c $(HOST_SRC) | deps-host
+build/hostcheck: $(MENU_TEST_SRC) tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_play.c tests/check_ogfall.c tests/check_ogstate.c tests/check_ogui.c tests/check_ogcombat.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC) $(OGFALL_HEADERS) | deps-host
 	mkdir -p build
-	$(HOST_CC) $(HOST_CFLAGS) -o $@ $(MENU_TEST_SRC) tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_play.c tests/check_util.c tests/host_card.c $(HOST_SRC)
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ $(MENU_TEST_SRC) tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_play.c tests/check_ogfall.c tests/check_ogstate.c tests/check_ogui.c tests/check_ogcombat.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC)
+
+# The ogfall sums and one walk in the hold, without the rest of hostcheck.
+build/ogfall-host: tests/check_ogfall.c tests/check_ogstate.c tests/check_ogui.c tests/check_ogcombat.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC) $(OGFALL_HEADERS) | deps-host
+	mkdir -p build
+	$(HOST_CC) $(HOST_CFLAGS) -DOGFALL_HOST_MAIN -o $@ tests/check_ogfall.c tests/check_ogstate.c tests/check_ogui.c tests/check_ogcombat.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC)
+
+ogfall-host: build/ogfall-host
+	./build/ogfall-host
 
 hostcheck: build/hostcheck datacheck
 	./build/hostcheck
@@ -358,6 +411,23 @@ build/GFALL.EXE: $(GFALL_SRC) third_party/glide2/include/glide.h | deps
 
 gfall-check: build/GFALL.EXE
 	$(call pe_check,build/GFALL.EXE,build/gfall.dump)
+
+# This entry has no CRT to pre-touch the stack. Let GCC's libgcc probe
+# grow it a page at a time for large frames (Win98 starts with 4 KB committed).
+build/OGFALL.EXE: $(OGFALL_SRC) Makefile third_party/glide2/include/glide.h $(OGFALL_HEADERS) | deps
+	mkdir -p build
+	$(CC) $(CFLAGS) -mstack-arg-probe -DBUILD_STAMP='"$(BUILD_STAMP)"' $(LDFLAGS) -o $@ $(OGFALL_SRC) -luser32 -lkernel32 -lgcc
+
+ogfall-check: build/OGFALL.EXE
+	$(call pe_check,build/OGFALL.EXE,build/ogfall.dump)
+	$(OBJDUMP) -d build/OGFALL.EXE > build/ogfall.code
+	sh tools/check-stack-probes build/ogfall.code
+
+# The exe alone. ogfall-check still runs the PE rules; all is not retargeted.
+# ofgall is the same target: that spelling was typed and had no rule.
+ogfall: build/OGFALL.EXE
+
+ofgall: ogfall
 
 build/RENDERFALL.EXE: $(RENDER_SRC) third_party/glide2/include/glide.h | deps
 	mkdir -p build
@@ -455,11 +525,12 @@ datfall-check: build/DATFALL.EXE build/datfall-host
 	$(call pe_check,build/DATFALL.EXE,build/datfall.dump)
 	./build/datfall-host
 
-build/gfall.iso: build/GFALL.EXE build/RENDERFALL.EXE build/LEVELFALL.EXE build/DATFALL.EXE build/hostcheck | deps
+build/gfall.iso: build/GFALL.EXE build/OGFALL.EXE build/RENDERFALL.EXE build/LEVELFALL.EXE build/DATFALL.EXE build/hostcheck | deps
 	./build/hostcheck
 	$(XORRISO) -as mkisofs -o $@ -V GFALL -J -relaxed-filenames \
 		-graft-points \
 		/GFALL.EXE=build/GFALL.EXE \
+		/OGFALL.EXE=build/OGFALL.EXE \
 		/RENDERFALL.EXE=build/RENDERFALL.EXE \
 		/LEVELFALL.EXE=build/LEVELFALL.EXE \
 		/DATFALL.EXE=build/DATFALL.EXE

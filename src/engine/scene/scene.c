@@ -680,7 +680,7 @@ int scene_line_blocked(const Scene *scene, const float *from, const float *to, f
     d[2] /= len;
     len -= stop_short;
     if (scene->nspans < 1 || !scene->spans) {
-        for (i = 0; i < scene->nmodels; i++) {
+        for (i = 0; i < scene_solid_models(scene); i++) {
             if (model_on_segment(scene, i, from, d, len)) {
                 return 1;
             }
@@ -695,13 +695,19 @@ int scene_line_blocked(const Scene *scene, const float *from, const float *to, f
         if (sp->count < 1 || !segment_meets_box(from, d, len, sp->cx, sp->cy, sp->cz, sp->ex, sp->ey, sp->ez)) {
             continue;
         }
-        for (i = sp->first; i < sp->first + sp->count && i < scene->nmodels; i++) {
+        for (i = sp->first; i < sp->first + sp->count && i < scene_solid_models(scene); i++) {
             if (model_on_segment(scene, i, from, d, len)) {
                 return 1;
             }
         }
     }
     return 0;
+}
+
+int scene_solid_models(const Scene *scene)
+{
+    if (!scene) { return 0; }
+    return scene->solid_models > 0 && scene->solid_models < scene->nmodels ? scene->solid_models : scene->nmodels;
 }
 
 static int take_visible(const Scene *scene, const Plane *planes,

@@ -158,6 +158,16 @@ A flyer (an imp, a bat, a harpy, a dragonling) or a ghost or wraith hangs where 
 
 In a dungeon streamed by block, a slot's entities are more than its creatures: its heaps of treasure (random markers and TEXTURE.216 flats), and `DUNSTREAM_SPARES` spare entities, not drawn until the game puts one down as a dropped pile. They are one picture facing every viewer, with no radius, so nothing stops at them. `dunstream_kind` is -1 for them, so what looks for creatures passes them by. What they mean is the game's: `docs/game.md`, Loot and the inventory.
 
+## Creature pose archives
+
+`world_entity_archive` exposes the exact archive reserved for a creature's walk,
+before its pictures finish streaming. The app adapter uses this same selection
+for hurt, melee and ranged poses; it must not guess the archive again from class.
+Human male/female archives are adjacent but have different ASCR scripts. OGFALL
+selects the script from that archive's original texture kind and shares combat
+pictures only between creatures with the same kind and archive. Original ranged
+scripts may select record group 20 or 25, so both groups must be available.
+
 ## Spawned while playing
 
 Entities made after the place was built (a quest's ambush, foes in the wild) are a pool of the engine's beside `Scene.entities`, drawn and solid as these are: `docs/spawn.md`.

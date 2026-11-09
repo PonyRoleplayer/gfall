@@ -33,6 +33,7 @@ static int g_vk[INPUT_ACTIONS] = {
 };
 /* The scan code of the console's key, the one left of 1 (console.c's CON_SCAN). */
 #define CONSOLE_SCAN 0x29
+static InputKeys *g_game_keys;
 static unsigned int g_held;
 static unsigned int g_mouse_held;
 static int g_escape_quits = 1;
@@ -83,6 +84,16 @@ int input_bind(int action, int vk)
     }
     g_vk[action] = vk;
     return 1;
+}
+
+void input_keys_attach(InputKeys *keys)
+{
+    g_game_keys = keys;
+    if (keys) {
+        mem_zero(keys->held, sizeof(keys->held));
+        mem_zero(keys->pressed, sizeof(keys->pressed));
+        mem_zero(keys->released, sizeof(keys->released));
+    }
 }
 
 int input_binding(int action)
@@ -396,6 +407,7 @@ void input_read(Input *out)
         out->wheel = 0;
         g_wheel = 0;
         /* Nor a click on it: that press is not a swing once the console closes. */
+        input_keys_release(g_game_keys);
         notes_clear();
         return;
     }
@@ -528,6 +540,19 @@ void input_read(Input *out)
             }
             if (now) {
                 held |= INPUT_BIT(a);
+            }
+        }
+        if (g_game_keys) {
+            int console_key;
+            console_key = console_vk();
+            for (a = 0; a < g_game_keys->count && a < INPUT_KEYS_MAX; a++) {
+                int vk;
+                vk = g_game_keys->key[a];
+                if (!vk || vk == console_key || (vk == VK_ESCAPE && escape)) {
+                    input_keys_fold(g_game_keys, a, 0, 0, 0);
+                } else {
+                    input_keys_fold(g_game_keys, a, g_note_down[vk], g_note_up[vk], key_down(vk));
+                }
             }
         }
         out->held = held;

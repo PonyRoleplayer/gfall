@@ -1,0 +1,37 @@
+#!/bin/sh
+# Check an objdump -d listing for a page-sized immediate stack allocation.
+# GCC's probed large frames call ___chkstk_ms with the size in EAX, then
+# subtract EAX from ESP. A large immediate subtraction skips that probe.
+# See docs/ogfall.md, Windows 98 stack growth.
+set -eu
+
+if [ "$#" -ne 1 ]; then
+    echo "usage: sh tools/check-stack-probes <objdump listing>" >&2
+    exit 2
+fi
+
+awk '
+function hex(s,    n, i, digit) {
+    n = 0
+    for (i = 1; i <= length(s); i++) {
+        digit = index("0123456789abcdef", tolower(substr(s, i, 1))) - 1
+        n = n * 16 + digit
+    }
+    return n
+}
+/[[:space:]]sub[[:space:]]+\$0x[0-9a-fA-F]+,%esp/ {
+    amount = $NF
+    sub(/^\$0x/, "", amount)
+    sub(/,%esp$/, "", amount)
+    # objdump prints sign-extended negative immediates as 0xffffff80:
+    # sub $-128,%esp releases stack space rather than reserving 4 GB.
+    bytes = hex(amount)
+    if (bytes >= 4096 && bytes < 2147483648) {
+        print "unprobed stack allocation: " $0
+        failed = 1
+    }
+}
+END {
+    if (failed) exit 1
+    print "stack probes ok"
+}' "$1"

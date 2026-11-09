@@ -123,3 +123,26 @@ void input_fold_edges(int was, int saw_down, int saw_up, int polled, int *press,
         }
     }
 }
+
+void input_keys_fold(InputKeys *keys, int index, int saw_down, int saw_up, int polled)
+{
+    int press, release, held;
+
+    if (!keys || index < 0 || index >= keys->count || index >= INPUT_KEYS_MAX) {
+        return;
+    }
+    input_fold_edges(keys->held[index], saw_down, saw_up, polled, &press, &release, &held);
+    keys->held[index] = (unsigned char)held;
+    keys->pressed[index] = (unsigned char)press;
+    keys->released[index] = (unsigned char)release;
+}
+
+void input_keys_release(InputKeys *keys)
+{
+    int i;
+
+    if (!keys) { return; }
+    for (i = 0; i < keys->count && i < INPUT_KEYS_MAX; i++) {
+        input_keys_fold(keys, i, 0, 0, 0);
+    }
+}

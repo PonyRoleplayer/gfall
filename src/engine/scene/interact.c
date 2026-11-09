@@ -254,7 +254,7 @@ static int first_wall(const Scene *scene, const float *o, const float *d, float 
     int i;
 
     best = -1;
-    for (i = 0; i < scene->nmodels; i++) {
+    for (i = 0; i < scene_solid_models(scene); i++) {
         const Instance *in;
         Bound b;
         float c[3];

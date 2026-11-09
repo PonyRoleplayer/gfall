@@ -147,11 +147,11 @@ int collide_use(const Scene *scene)
     int nref;
     int pass;
 
-    if (!scene || scene->nmodels < 1) {
+    if (!scene || scene_solid_models(scene) < 1) {
         g_built = 0;
         return 0;
     }
-    if (g_built && scene == g_scene && scene->nmodels == g_nmodels && g_epoch == mem_epoch()
+    if (g_built && scene == g_scene && scene_solid_models(scene) == g_nmodels && g_epoch == mem_epoch()
         && scene->version == g_version) {
         return 1;
     }
@@ -172,7 +172,7 @@ int collide_use(const Scene *scene)
         }
         g_by_span = 1;
         g_scene = scene;
-        g_nmodels = scene->nmodels;
+        g_nmodels = scene_solid_models(scene);
         g_version = scene->version;
         g_epoch = mem_epoch();
         g_built = 1;
@@ -181,7 +181,7 @@ int collide_use(const Scene *scene)
     g_by_span = 0;
     minx = minz = g_miny = 1.0e30f;
     maxx = maxz = g_maxy = -1.0e30f;
-    for (i = 0; i < scene->nmodels; i++) {
+    for (i = 0; i < scene_solid_models(scene); i++) {
         Bound b;
 
         model_box(scene, i, &b);
@@ -217,9 +217,9 @@ int collide_use(const Scene *scene)
         g_first = (int *)mem_alloc((df_u32)(g_gw * g_gh + 1) * (df_u32)sizeof(int));
         g_first_cap = g_first ? g_gw * g_gh + 1 : 0;
     }
-    if (scene->nmodels > g_mark_cap) {
-        g_mark = (df_u32 *)mem_alloc((df_u32)scene->nmodels * (df_u32)sizeof(df_u32));
-        g_mark_cap = g_mark ? scene->nmodels : 0;
+    if (scene_solid_models(scene) > g_mark_cap) {
+        g_mark = (df_u32 *)mem_alloc((df_u32)scene_solid_models(scene) * (df_u32)sizeof(df_u32));
+        g_mark_cap = g_mark ? scene_solid_models(scene) : 0;
     }
     if (!g_first || !g_mark || !g_first_cap || !g_mark_cap) {
         log_text(LOG_ERROR, "collide: out of memory for the model grid");
@@ -251,7 +251,7 @@ int collide_use(const Scene *scene)
                 run += n;
             }
         }
-        for (i = 0; i < scene->nmodels; i++) {
+        for (i = 0; i < scene_solid_models(scene); i++) {
             Bound b;
             int x0, z0, x1, z1, x, z;
 
@@ -277,18 +277,18 @@ int collide_use(const Scene *scene)
         g_first[i] = g_first[i - 1];
     }
     g_first[0] = 0;
-    for (i = 0; i < scene->nmodels; i++) {
+    for (i = 0; i < scene_solid_models(scene); i++) {
         g_mark[i] = 0;
     }
     g_stamp = 0;
     g_scene = scene;
-    g_nmodels = scene->nmodels;
+    g_nmodels = scene_solid_models(scene);
     g_version = scene->version;
     g_epoch = mem_epoch();
     g_built = 1;
     /* A streamed world rebuilds often: its grids are only a debug line. */
     log_print(scene->version ? LOG_DEBUG : LOG_INFO, "collide: %d models in a %d x %d grid of %d, %d entries",
-              scene->nmodels, g_gw, g_gh, df_iround(g_cell), nref);
+              scene_solid_models(scene), g_gw, g_gh, df_iround(g_cell), nref);
     return 1;
 }
 
@@ -407,7 +407,7 @@ int collide_gather(float minx, float miny, float minz,
                 || df_absf(sp->cy - wc[1]) > sp->ey + we[1] || df_absf(sp->cz - wc[2]) > sp->ez + we[2]) {
                 continue;
             }
-            for (i = sp->first; i < sp->first + sp->count; i++) {
+            for (i = sp->first; i < sp->first + sp->count && i < scene_solid_models(g_scene); i++) {
                 const Bound *b;
 
                 b = &g_scene->bounds[i];
