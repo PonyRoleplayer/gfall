@@ -1685,6 +1685,27 @@ static void check_keep(void)
                      "the table did not grow, or lost a row growing");
     }
     keep_clear();
+    /* A teleport has no motion endpoint to retain, but its lock and a game's
+     * bytes have the same lifetime as those of any other mover. */
+    build_keep_place(&sc, mv, in, en);
+    mv[2].lock = 4; mv[2].state = MOVER_END;
+    keep_save(&sc,0,3,0,0,0,0,0);
+    check_expect(keep_count() == 1 && keep_find(mv[2].key) &&
+                 keep_find(mv[2].key)->lock == 4 && !keep_find(mv[2].key)->at_end,
+                 "a teleport retains its changed lock without retaining an endpoint");
+    build_keep_place(&sc, mv, in, en);
+    keep_restore(&sc,0,3,0,0,0,0,0);
+    check_expect(mv[2].lock == 4 && mv[2].state == MOVER_START,
+                 "a rebuilt teleport restores its lock without changing its motion state");
+    g = keep_get(mv[2].key,KEEP_MOVER); g->game[0] = 7;
+    mv[2].lock = mv[2].lock0;
+    keep_save(&sc,0,3,0,0,0,0,0);
+    check_expect(keep_count() == 1 && keep_find(mv[2].key)->game[0] == 7 && !keep_find(mv[2].key)->lock,
+                 "a teleport back at its original lock retains game-owned bytes alone");
+    g = keep_get(mv[2].key,KEEP_MOVER); g->game[0] = 0;
+    keep_save(&sc,0,3,0,0,0,0,0);
+    check_expect(keep_count() == 0,"an unchanged teleport with no game bytes does not keep a row");
+    keep_clear();
 }
 
 /*
@@ -4720,6 +4741,15 @@ static void check_interact(void)
     check_expect(movers[0].state == MOVER_BACK && movers[1].state == MOVER_END,
                  "a once mover went back");
     mover_step(&scene, 1.5f);
+    movers[0].next = -1;
+    movers[1].state = MOVER_START; movers[0].next = 1;
+    mover_restore_motion(&movers[0],0.25f,1);
+    check_expect(mover_busy(&scene,0) && check_near(mover_progress(&movers[0]),0.25f,0.001f) &&
+                 movers[1].state == MOVER_START,"restoring partial motion does not restart the mover's chain");
+    mover_step(&scene,0.25f);
+    check_expect(check_near(mover_progress(&movers[0]),0.5f,0.001f),"restored forward motion resumes from its saved fraction");
+    mover_restore_motion(&movers[0],0.75f,-1); mover_step(&scene,0.25f);
+    check_expect(check_near(mover_progress(&movers[0]),0.5f,0.001f),"restored backward motion resumes from its saved fraction");
     movers[0].next = -1;
 }
 

@@ -1,12 +1,29 @@
 # OGFALL: from Privateer's Hold to the full game
 
-Status: 2026-11-08, playable Privateer's Hold slice; full-game work remains.
+Status: 2026-11-09, playable Hold and first wider-world slice; full-game work remains.
 Character creation, classic controls/HUD, Options, readable preferences, key
 bindings, inventory/equipment, the character sheet, spellbook item, books and
 dungeon loot are implemented. Combat includes melee, fists, bows/arrows,
 creature pursuit/attack animations, injuries, death recovery and persistent
 lootable corpses. Rest/loiter and hourly recovery are implemented. Six-slot
-save/load uses schema 4 and upgrades schemas 2/3; DOS saves are out of scope.
+save/load uses schema 7 and upgrades schemas 2–6; DOS saves are out of scope.
+Dungeon doors now support ordinary lockpicking/bashing with persistent locks and
+failed-attempt limits. Teleport arrivals reach OGFALL's body and retain its view
+angles. Original sensing, gradual turning and wall navigation, rest encounters,
+six-hour skill advancement and level allocation, swimming/breath/drowning,
+wall-contact climbing and minute fatigue are implemented. Dungeon action chains
+now dispatch their original triggers and ordinary motion, lock, damage, sound,
+message and riddle effects. Source mappings and limits are recorded in
+[ogfall.md](ogfall.md#dungeon-gameplay-systems--2026-11-09).
+Casting, creature spells, elemental missiles/bursts and casting hands/sounds,
+active effects and cures, ordinary poison/disease courses, and magical Open/Lock
+are now implemented and host-tested. See [magic and ailments](ogfall.md#magic-and-ailments--2026-11-09)
+for the source audit, rendering adaptations and remaining integrations.
+The Hold exit, streamed outdoors, named/numeric `goto`, building entrances and
+return doors, indoor/town/travel maps, original travel time/cost options,
+world save/load, cross-place Recall and persistent outdoor drops are connected.
+See [the world implementation](ogfall.md#opening-the-world--2026-11-09) for
+source references, engine budgets and the remaining adaptations.
 The user has exercised saving/loading and reported improved audio on the target.
 The latest fixes are host-tested; the full target checklist remains open.
 Implementation details and verification are in [ogfall.md](ogfall.md).
@@ -28,11 +45,11 @@ its numeric amount prompt. No invented general split-stack dialog is needed.
 
 Spellbook rename, icon cycling, subtype labels, effect help, paging, scrollbar,
 reordering and deletion now work on owned, saved records. Original SORT artwork
-has no button handler. Casting costs/list prefixes and ready/cast behavior
-belong to the upcoming magic rules, alongside the item effects below.
+has no button handler. The Cast key/HUD opens spell selection; inventory Use
+opens the item editor. Selection pays the live cost and readies/casts the spell.
 
-- **Character sheet:** skill-use progression, level advancement, the written
-  biography, live affiliations and quest-log contents remain. History currently
+- **Character sheet:** the written biography, live affiliations and quest-log
+  contents remain. Skill-use progression and level advancement are implemented. History currently
   shows creation/reputation information; guild and quest buttons report an empty
   state until those systems exist.
 - **Loot coverage:** MAGIC.DEF enchantments, potions/recipes and specialized
@@ -47,26 +64,38 @@ belong to the upcoming magic rules, alongside the item effects below.
 
 ### Systems still to implement
 
-- **Combat and survival:** original sensing, wall-following, fleeing, teams and
-  inter-creature combat; complete human/guard initialization, enchantment strike
-  effects, creature spells, poison/disease attacks and knockback collision damage.
-  Finish rest encounters, six-hour skill advancement, swimming/breath/drowning,
-  climbing and other survival rules. The original death movie is not played.
-- **Magic:** ready/cast/recast/abort, costs, projectiles, effects and durations,
-  spell making and purchasing, magical-item use, potions and enchanting. The
-  spellbook is currently the item and its contents, not working spell casting.
-- **Maps and travel:** dungeon/town automaps, leaving the Hold, other places,
-  streamed wilderness, towns and building interiors, travel map and journeys,
-  horses, carts and wagon storage. The inventory's Wagon button is a notice.
-- **Other HUD/actions:** map, travel, transport, magic-item use and status
-  still need their gameplay/screens connected; a click sound alone does not
-  mean an action works. Quest log and notebook also need their systems.
+- **Combat and survival:** fleeing, teams and inter-creature combat; complete
+  human/guard initialization, enchantment strike
+  effects, curse infections and knockback collision damage.
+  Broader survival conditions, guild bonuses and target acceptance of climbing,
+  swimming and wall navigation remain. The original death movie is not played.
+- **Magic:** curse transformations, biography modifiers and propagation of
+  edited owned-spell names/icons into active bundles remain. Cross-place Recall
+  is implemented, including outdoor anchors across origin changes. Spell
+  making/purchasing, enchantments/magical items and potions/recipes are deferred
+  until people and guild services exist (milestone 7).
+  Detect/Identify need their world/inventory systems. Light currently uses a
+  candle billboard and ambient illumination; moving local lighting remains.
+- **Maps and travel:** original map notes, markings and exact indoor camera
+  controls; larger-place/dungeon population coverage; outdoor encounters and
+  combat integration; riding, wagon storage, owned ships and guild travel
+  privileges. Horse/cart items already affect journey time. World terrain and
+  pedestrian presentation currently use GFALL's builders. Outdoor arrow mesh
+  rendering still needs an engine-supported dynamic model path.
+- **Other HUD/actions:** transport and magic-item use still need their systems.
+  The inventory's Wagon button is a notice. Quest log and notebook also need
+  their systems; map and travel controls are now connected.
 - **People and law:** dialogue, trade, shops, banking, stealing/pickpocketing,
-  lockpicking rules, guards, crimes, trials and imprisonment. Talk/Steal mode
-  selection currently changes the mode and icon, not these systems.
+  guards, crimes, trials and imprisonment. Steal mode picks ordinary dungeon
+  locks; stealing from people/shops and the town-door crime rules remain.
+- **Dungeon actions:** quest-specific action effects, secret doors and
+  combination actions remain. Spell and poison/disease traps are connected. The action interpreter
+  handles ordinary triggers and effects, with concurrent linked motion and
+  persistent trap/motion phase; remaining action kinds are logged explicitly.
 - **Progression and conditions:** guild membership/services/ranks, reputation
-  consequences, training, diseases, poisons, vampirism and lycanthropy, with the
-  original time and recovery rules.
+  consequences, training, vampirism and lycanthropy. Ordinary diseases/poisons
+  now use the original timing, damage, resistance and cure rules; biography
+  modifiers and special curse infections remain.
 - **Quests and story:** quest interpreter, resources, events and deadlines,
   generated quests, main-quest branches, journal integration, and opening/ending
   presentation. Readable item books are implemented; the opening movie is skipped.
@@ -89,6 +118,13 @@ Use `build/gfall.iso` and run OGFALL.EXE. The latest `make all`, host suite,
 fresh-process restore and Win98 binary/stack-probe checks pass, but composed
 host images do not establish Glide appearance, input behavior or target speed.
 
+- [ ] World: leave the Hold, enter/leave a tavern, return to a changed dungeon;
+      use `goto Daggerfall`, `goto Sentinel` and numeric ambiguous-name results.
+- [ ] Maps/travel: M and W, town-to-travel shortcut after rebinding, markers,
+      Find, filters, cautious/reckless, camping/inns, ship/foot, gold and dates;
+      decline and accept the illness warning.
+- [ ] Persistence: save outdoors, exit/restart/load, cross a stream-origin
+      change, revisit dropped items, Recall into a dungeon and back outside.
 - [ ] Creation: class scrollbar, reflex-help parchment, typed name and OK.
 - [ ] Movement/HUD: bottom alignment, original direction cursors, passive hover,
       left-button steering, forward-right, vertical look, Cursor/View changes.
@@ -118,6 +154,11 @@ host images do not establish Glide appearance, input behavior or target speed.
       arrows and corpse falls attenuate with distance and walls.
 - [ ] Rest: campfire and key, timed rest, until healed, loiter, Stop/Escape,
       nearby-enemy rejection, recovery totals and saved elapsed game time.
+- [ ] Doors: Grab difficulty message, Steal picking, a failed attempt refusing
+      retries at the same skill, melee bashing, magical-lock refusal, and picked
+      doors remaining unlocked after closing, saving and restarting.
+- [ ] Teleporters: touch and by-hand arrivals, crouch, retained facing/look,
+      paired-pad arrival guard, save pose and no arrival leaking across a load.
 - [ ] Death: Load, cancel loading, return to title/new game with no saves, Quit;
       dead saves cannot be written and older dead saves fail with an explanation.
 - [ ] Save/restart/load: preserve equipment, styles, names, quantities, gold,
@@ -297,21 +338,21 @@ The follow-up playtest repairs add drawn-weapon pickups, creature floor/sweep
 fixes, positional creature voices, MIDI startup, class confirmation sound,
 spellbook underlays and correctly fitted inventory icons. Death offers Load,
 title/new game and Quit, with dead saves refused. `tgm` protects vitals and gives
-certain reachable hits; spellcasting and breath simulation are still pending.
+certain reachable hits. Breath simulation is now implemented; spellcasting remains.
 
-- Complete original creature sensing, wall-following, teams and fleeing; add
-  creature spells and disease/poison/curse hit effects. Direct pursuit and melee
-  attacks currently run on engine bodies with original ASCR strike events.
+- Original sensing, turning and wall navigation now run on engine bodies with
+  ASCR strike events. Creature casting and ordinary disease hit effects are
+  connected. Complete teams, fleeing and curse hit effects.
 - Finish enchantment/artifact strike effects, collision damage from knockback,
   original human/guard special initialization and the original death movie.
-- Finish dungeon interaction: locked/secret doors, lockpicking/bashing, levers,
-  lifts, traps, chained actions, teleporters and their persistent state.
-- Rest/loiter and original hourly vital recovery are built and host-tested;
-  finish interrupted rest encounters, disease/curse updates, six-hour skill
-  advancement and the remaining survival rules. Replace the current climbing
-  approximation after measuring what
-  generic collision information the game actually needs; check swimming,
-  drowning, crouching, jumping and fall damage against source units.
+- Lockpicking/bashing, teleport arrivals, ordinary action triggers/effects,
+  concurrent motion chains and alert reactions are host-tested. Keys follow the
+  original unused-slot check. Magical Open/Lock and spell/poison/disease traps
+  are connected. Finish secret doors, combination actions and quest effects.
+- Rest encounters, six-hour skill advancement/level allocation, minute fatigue,
+  wall-contact climbing and swimming/breath/drowning are built and host-tested.
+  Complete curse updates and other condition/guild effects; accept
+  climbing ledges and survival controls on the target.
 
 Acceptance: a new martial character fights, loots, rests, dies/reloads and
 reaches the Hold exit. Re-entering or reloading cannot resurrect kills or
@@ -320,29 +361,42 @@ with original function results and target-test crowded combat.
 
 ## 4 — magic and active effects
 
-Source entry points: `spells.c`, `pickbook.c`, `runspell.c`, `spfx.c`, creature
-spell initialization, and the effect dispatch tables described in `docs/state.md`.
+Built and host-tested: original cost formulas, up-front payment, school use,
+ready/cast/recast/abort; self, touch, ranged and area targets; six-frame hands,
+elemental missiles/bursts and spatial sounds; damage/heal/attribute effects,
+resistance, shields, reflection/absorption, paralysis/cures, invisibility,
+regeneration, mobility flags, pacification, Soul Trap, dispels, Open/Lock and
+same-place Recall. Creature spell lists, costs and cast poses are connected.
+Timed effects, missiles, spent creature magicka and the Recall anchor survive
+save/load. The ordinary 17 diseases and 12 poisons use extracted original data,
+minute/day ticks, onset, drain, recovery and cures. Inventory drugs use their
+original poison types. See [source details and limits](ogfall.md#magic-and-ailments--2026-11-09).
 
-- Implement starting/learned spells and the original spellbook UI: selection,
-  sorting, deletion, ready/cast, recast and abort.
-- Translate cost and effect formulas, saves, resistances, schools, caster level,
-  stacking, duration, expiration and dispels. Inventory/character numbers must
-  respond to active effects and return correctly when effects end.
-- Implement caster, touch, ranged and area targets; missile/impact visuals,
-  collisions, shields, reflection/absorption and creature spell casting.
-- Cover world-affecting spells such as Open, Recall, levitation, water effects,
-  detection, invisibility and transformations through engine hooks as needed.
-- Audit the effect handlers even when they live in the decomp's XnGine-linked
-  object region: gameplay effects belong in OGFALL, not its renderer.
+Deferred to milestone 7, after people and guild services: spell making/buying,
+enchantments/magical items, artifacts and potions/recipes. Do not build these
+as standalone services during dungeon magic work.
 
-Acceptance: a new spellcasting character can use its real starting spells;
-representative damage/heal/buff/debuff/mobility spells match source results,
-expire correctly, and survive save/load without duplication or permanent buffs.
+Remaining here: Detect/Identify presentation; special curse infection/transformation systems;
+cross-place Recall; original moving local lighting instead of the ambient
+adaptation. Several spell handlers are stubs in the original itself; do not
+invent behavior for them. Owned spell icon/name propagation into active spell
+instances still needs completion.
+
+Acceptance on the target: exercise each element's hands/missile/burst/audio,
+touch aiming, area damage and walls, mobility spells, timed buffs/cures, monster
+casts, Open/Lock, Recall and interrupted Rest. Check RAM/VRAM and crowded-combat
+frame times on the MMX233. No target acceptance is claimed by host checks.
 
 ## 5 — the Hold exit, other places and the wider world
 
 Source entry points: `maplogic.c`, `maploads.c`, `tamriel.c`, `travel.c`,
 `region.c`, `mplace.c`, `automap.c`, `sky.c` and their companion/hand units.
+
+First slice implemented: passages, world streaming, building return positions,
+`goto`/`where`, map presentation and discovery, original ordinary-journey sums,
+outdoor saved places/drops and cross-place Recall. The items below remain the
+full milestone's acceptance scope, rather than a claim that all world systems
+are finished.
 
 - Implement dungeon/outdoor/building transitions and return positions, then
   persistent per-place changes and world coordinates across stream-origin moves.
@@ -391,10 +445,18 @@ Source entry points: `sheet.c`, `char.c`, `guilds.c`, `faction.c`, `disease.c`,
 - Implement poison, disease, vampirism and both lycanthropy forms, their
   incubation, calendars, immunities, transformations, feeding, sunlight and cures.
 - Connect legal rest, holidays, service availability, travel and timed conditions.
+- After people, dialogue/service dispatch and guild membership/rank permissions
+  work, implement spell making/buying, enchanting and potion systems through
+  their original providers. Include magical-item effects, potion use, recipes,
+  ingredients and brewing in this integration, with the original service
+  restrictions, prices and save coverage. These systems are deferred here by
+  the user; they are not prerequisites for completing dungeon spellcasting.
 
 Acceptance: advance a character by actual uses, join/rank in a guild, contract
 and cure an illness, and replay transformation/sunlight cases with controlled
-calendar time. All conditions and memberships survive a process restart.
+calendar time. Once guild providers are available, exercise spell making,
+enchanting and potion services through actual NPC interactions. Conditions,
+memberships and crafted items survive a process restart.
 
 ## 8 — quest interpreter and generated quests
 
@@ -439,8 +501,8 @@ Original-game ending snapshots are reference cases, not proof of the entire path
 Source entry points include `potions.c`, `itemmakr.c`, `spells.c`, `pickbook.c`,
 `guilds.c`, `inven.c`, `loadsave.c`, `intro.c`, `pflc.c` and relevant hand units.
 
-- Complete spell making/buying, enchanting, magic items and their side effects,
-  potion recipes/ingredients/brewing, repairs and service-specific restrictions.
+- Audit the spell making, enchantment and potion systems implemented after
+  people/guilds in milestone 7; finish repairs and remaining service restrictions.
 - Finish owned houses and ships, stored contents, transport/wagon edge cases,
   books, histories, affiliations, remaining menus and full saved configuration.
 - Add the opening/book/emperor sequences, videos/animation, dialogue/audio and
@@ -503,13 +565,14 @@ API and its test in a separate change. No game rules enter the engine. Leave
 GFALL, viewers, PONY97 and other checkouts alone unless a shared fix is separately
 necessary. Do not commit or push this roadmap or implementation without a request.
 
-Continue the remaining **milestone 3** dungeon/combat/survival work, then casting
-and effects, while resolving new target regressions first. Session saves,
+Continue the remaining dungeon/combat work and **milestone 4** magic integrations,
+while resolving new target regressions first. Spell making/buying, enchantments
+and potion systems must wait for people and guild services in milestone 7. Session saves,
 inventory/equipment, the sheet, spellbook items, readable books, Hold/corpse loot,
 basic melee/ranged combat, Rest and death recovery are implemented and
 host-tested, with fresh-process restore coverage. Target-test the latest pile
 clicks, humanoid poses, bat flight, audio and Rest before treating them as
-accepted. Magic/enchantment/potion systems, biography and progression, maps and
+accepted. Magic/enchantment/potion integrations, curses, biography, maps and
 the wider world, people/services/law, guilds and quests remain. Keep the opening
 missing-work list current as each system lands. None of this marks the full game
 complete.

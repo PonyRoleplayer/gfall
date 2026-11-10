@@ -132,11 +132,12 @@ A door opened, a lock picked or a creature killed stays so when its place is lef
 - **Keys.** The game gives each mover and entity a `KeepKey` at build (`Mover.key`, `Entity.key`): two words it composes, `place` and `thing`. Daggerfall's plan:
   - `place` is a dungeon's MAPDITEM location id, or for a building's inside, the town's id `| (building index + 1) << 24`.
   - `thing` is `(block index << 24) |` the offset in the block file.
-  - 0, 0 is not kept. Usables, teleports and passages have no state of their own: a door's state is its mover's.
+  - 0, 0 is not kept. Usables and passages have no state of their own: a door's state is its mover's. A teleport mover has no motion endpoint, but its lock and game-owned bytes can persist.
 - **Only what changed.** `keep_save(scene, first_mover, nmovers, ents, nents, ox, oy, oz)` writes rows for the movers and the game's entities in those ranges, and only for those that differ from their file:
   - a mover at its end, or moving toward it (it is kept at the end it was heading for), or with a lock other than its file's (`Mover.lock0`, noted by `mover_init`);
   - an entity killed (`Entity.dead`, the game's byte), showing an act, holding a frame, or more than a unit from its home. `Entity.live` is only "drawn" (a creature whose pictures are not read yet is not live), so keep never saves or restores it.
   A thing back as its file has it loses its row. So the table and the save file grow with what the player did, not with how far they walked. A mover that runs once is covered by `at_end`: it never leaves its end.
+  Teleport movers ignore `at_end` on save and restore. Their changed locks and game bytes follow the same rules as every other mover; an unchanged teleport creates no row merely because it was used.
 - **Put back before it shows.** `keep_restore` (same ranges) runs after the build and `mover_init`, before the first frame:
   - It notes each entity's home, where the file put it.
   - A mover with a row goes straight to its end or start, with its lock: no motion, no sound, and its chain is not run again, since each chained mover has its own key.
@@ -148,6 +149,12 @@ A door opened, a lock picked or a creature killed stays so when its place is lef
 - **Memory.** About 56 bytes a row, sorted, binary-searched, in a heap of its own that grows by doubling, never a place's heap.
 
 In a stream, `stream.c` makes both calls itself for each block: `keep_restore` when its fill is done, `keep_save` before it is dropped (`docs/streaming.md`, Dungeons). The table therefore lacks what changed in the blocks still loaded, until the game calls `stream_keep_now` before writing a save. A creature that walked from its home block into another is restored with its home block. In a stream, it may stand where the next block is not loaded yet: it is drawn there, over nothing, until that block comes. This is an edge case, accepted.
+
+OGFALL consumes pending teleport arrivals into its own body before the next
+movement/combat frame, rather than letting the viewer camera consume them.
+Its source-derived rule retains the player's yaw and pitch; the shared builder's
+target-facing value remains available to the viewers. OGFALL registers its body
+with `interact_set_body`, so touch volumes use its actual crouched height.
 
 ## Switches
 
@@ -164,6 +171,14 @@ Per place, on its own heap: one `ModelAct` and a block byte per model slot (8192
 A use is one pass over the model boxes and the triangles of the few the ray crosses, once, on the key's edge. A frame without `useview` does nothing but move what is moving: a door is three sines and cosines and a 3×3 product. With `useview` on, the aim is cast each frame.
 
 ## Tests
+
+Games that interpret their own action links can inspect
+`interact_using_touch()` inside their installed use handler. It is true only
+during a touch-trigger callback; a hand activation leaves it false.
+`mover_progress(m)` returns the normalized travel fraction.
+`mover_restore_motion(m, fraction, direction)` restores a partial motion without
+playing sounds or starting a chain: direction is -1 back, 0 stopped, +1 forward.
+OGFALL uses these generic operations for its own trigger interpreter and saves.
 
 hostcheck: `check_teleport` walks into a pad and is sent once, lands on the far pad and stays, steps off and on and is sent back, and uses a pad by hand only when it has a reach; Daggerfall's castle has its portal door and its other teleport, both to a marker in the castle at a body's eye. Also: the cast takes a door in front of the eye at its distance, not one out of reach or beside the view; a passage painted on a wall wins over the wall; a wall in front hides a door; a passage reaches the handler and nothing without one; a locked door stays and says so, and opens with locks off; a door is half open half way, turns a quarter about its hinge, leaves its doorway, and its sweep holds the turn; a chain starts together and a once mover stays. The hold: 58 doors and 2 levers, one locked, one way out of a door's size used from in front, a door that swings and shuts, a lever whose chain moves and refuses to start again while it moves. The Ashwing Farmstead: a building's door leads in; its inside loads with 6 doors and a way out by the street's door, facing in, with its own song; turned round on landing either side, the eye meets the door it came through. Privateer's Hold's outside has a way down, and the dungeon lies under it.
 

@@ -6,7 +6,7 @@ A town's guards are not this: they come from the people pool (`people_spawn_guar
 
 ## The pool
 
-`SPAWN_MAX` (16) entities, static, at fixed addresses, so a game's `Body.self` can point at one. They stand in the scene's frame, as its own do. Nothing is allocated.
+`SPAWN_MAX` (32) entities, static, at fixed addresses, so a game's `Body.self` can point at one. They stand in the scene's frame, as its own do. Nothing is allocated. The capacity leaves room for OGFALL's eight encounters, eight blood/splash effects, eight spell missiles/bursts, a Light candle and four nearby outdoor dropped piles; the engine does not assign those roles.
 
 - `spawn_add(scene, &e, leash)` copies `e` into a free entry and returns its `SpawnId`; 0 when the pool is full. Its `live` flag is as `e` has it: set it once its pictures are read, as for any entity.
 - `spawn_get(id)` is the entity, the game's to move and pose each frame; 0 once it is gone.
@@ -59,7 +59,7 @@ It uses collide's gather, as a body's step does: call it between steps. It is fo
 
 hostcheck, `check_spawn`, on a floor 1200 across with a wall at x 200:
 
-- **The pool:** it holds 16 and refuses a 17th; a freed spawn's old id reads as gone; `spawn_next` walks every spawn.
+- **The pool:** it holds 32 and refuses a 33rd; a freed spawn's old id reads as gone; `spawn_next` walks every spawn.
 - **When one goes:** past its leash a spawn goes and one with no leash stays; an origin move moves it; another place or a new heap empties the pool.
 - **Solid:** another entity cannot walk into a spawn.
 - **`spawn_find`:**

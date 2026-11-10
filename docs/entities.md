@@ -15,6 +15,11 @@ Two kinds of people stand in a town:
 
 `engine/scene/entity.h`: an entity is its feet (x, y, z in the scene's frame), its facing (`yaw`, the camera's sense: 0 looks along +z, a quarter turn along +x), two poses, and its place in the cycle of frames (`phase`). The game owns and moves its entities; the engine reads them once a frame to draw (`Scene.entities`, `Scene.nentities`; an entry with `live` 0 is skipped).
 
+`glow` 1 draws an entity at full brightness, like a luminous flat. The entity
+pass changes its tint only when needed and restores the place's tint before
+returning. This is a rendering flag, not a light source; the game decides which
+sprites emit light. OGFALL uses it for spell missiles, bursts and its candle.
+
 `radius` (0, as zeroed, passes through) makes it solid: the walker's body stops at it, and `entity_blocked(scene, self, x, z)` tells a motor whether a step would meet the body or another solid entity (`docs/collision.md`). Its height is its pose's front view (`entity_height`).
 
 A pose (`EntityPose`) is five views: a picture slot each, each view's size in world units (a record is drawn at its own: a rat side on is twice as wide as from the front), a frame rate, and `right`, a bit a view whose picture faces the viewer's right. An entity has `ENTITY_POSES` of them, `pose[ENTITY_*]`:

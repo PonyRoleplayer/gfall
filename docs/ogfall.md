@@ -1123,3 +1123,498 @@ Running rest checks that enemy condition again. Its interface is a keyed overlay
 over the world and HUD; previews are `build/ogfall-rest-{choice,running,healing}.ppm`.
 Random rest encounters, disease/curse updates and six-hour skill advancement are
 still pending alongside their respective systems. No save-format change is needed.
+
+## Dungeon locks and teleport arrivals — 2026-11-08
+
+`play/doors.c` owns ordinary dungeon lock rules. Grab activation reports the
+original difficulty message; Steal activation picks the lock. The source is
+`lockpick_door` (0x1345E), `lock_show_difficulty` (0x138E4) and `door_try_open`
+(0x7425E). For ratings 1–19, the pick chance is Lockpicking +
+(character level − lock rating) × 5, clamped to 5–95, tested against an inclusive
+0–100 roll. Each real attempt trains Lockpicking once. A failure remembers the
+skill value and prevents another roll until that value changes, including after
+a save/restart. Success unlocks and opens the door with sound 60. Ratings 20 and
+above resist ordinary picking and do not train the skill. Original difficulty,
+failure and success text is extracted into `tables/doordata.h` by the existing
+authoring tool; boosted skill hints are bounded to the last valid table entry.
+
+When a melee hit frame strikes no creature, the centre ray can strike a door,
+as `weapon_melee_strike` (0x733AD) does. The door must be within 100 horizontal
+world units, reachable by the ray and unobstructed by a nearer wall. Unlocked
+doors open or close. Bashing a locked door trains Stealth, sounds PlayerDoorBash
+(9) at the door and tests `roll(1,100) <= 20 − lock rating`; ratings 20 and above
+cannot break. Bow attacks stay on the projectile path. Levers and lifts are not
+lockpick/bash targets. Doors and their chains refuse another use while moving.
+
+A keyed mover's game bytes use marker `0xd1`, byte 1 for a recorded failure,
+bytes 2–3 for the underlying lock rating, and little-endian bytes 4–7 for the failed Lockpicking value. Successful attempts
+do not overwrite the last failed value. The existing `Keep.lock` and `at_end`
+retain unlocked/open/closed states. Schema 4 already carries these fields and
+game bytes; no format change or DOS-save compatibility is needed. All saves
+remain under `ogfall/saves`.
+
+OGFALL now takes the engine's pending teleport into its own body, camera and
+saved pose before movement, combat or a newly opened modal. Original link action
+14 (`run_0006480F.c`) preserves the player's yaw and pitch; OGFALL therefore
+ignores the borrowed builder's target-facing value. The builder supplies a
+standing-eye target over its selected floor. Arrival preserves crouch and uses
+that floor, resets movement/fall tracking and clears the previous safe position.
+The actual game body is registered for touch triggers, including its crouched
+height. The engine's arrival guard prevents immediate return through a paired
+pad. Closing a place discards an unconsumed arrival.
+
+The only engine change is generic persistence: teleport movers retain changed
+locks and game bytes, while their motion endpoints remain ignored. The engine
+contains no lockpicking, bashing, character, skill or original-action rules.
+
+Tests cover probability boundaries, skill training, blocked/out-of-range rays,
+magical locks, retry suppression, saving a picked door while closed, and paired
+touch teleports with a crouched body and retained view angles. The fresh-process
+Hold combat round trip additionally locks two real Hold doors in its fixture,
+picks one and fails the other, then checks both outcomes after rebuilding the
+place. The unmodified Hold is not assumed to contain two naturally locked doors.
+Generic engine tests cover a teleport lock, retained game bytes and removal of
+unchanged rows.
+
+The following gameplay slice adds trigger dispatch, ordinary traps and
+non-motion effects, creature alert reactions and original motion timing, below.
+Secret-door activation and magical Open/Lock spells remain.
+The teleport path is host-tested with synthetic paired pads; target acceptance
+in a dungeon containing portals remains.
+
+Verification: `make ogfall-host` and `make -j2 all` pass, including the full
+engine/game host suite, fresh-process Hold reload, Win98 PE/CPU validation and
+OGFALL stack-probe checks. `build/gfall.iso` contains the rebuilt OGFALL.EXE.
+The full-suite teleport fixture explicitly settles arrival state left by prior
+engine tests before entering its first pad; no target playtest is claimed.
+
+
+## Dungeon gameplay systems — 2026-11-09
+
+This extends the playable Hold; it does not complete every dungeon system.
+Rules stay in `src/game/ogfall/play/`. The borrowed place adapter exposes raw
+model actions and supplies geometry, keys and art. It does not decide OGFALL's
+skill, encounter, trap or survival rules.
+
+### Sensing and navigation
+
+`ai.c` translates `ai_stealth_check` (`monster_0006328F.c`),
+`ai_move_toward_target`, its octant lookup and corridor centering (`monster.c`).
+Detection shares the original once-per-game-minute Stealth roll, distance limit,
+momentum and odd-minute checks. Attacks and successful door use/picking or
+bashing alert creatures. The attacked source wakes regardless of its check.
+Awake enemies turn gradually, pursue through collision bodies, try the original
+axis directions and corridor grid when blocked, and run the give-up check.
+Ranged enemies turn into their firing arc instead of stalling while misaligned.
+
+Creature health Keep rows marked `0xc1` now also hold blocked/direction/turn
+state, give-up, stuck, detected and previously encountered flags. Earlier health
+rows remain readable. Navigation still uses the engine's collision solver and
+frame-time movement rather than importing XnGine. It is not a pathfinder:
+original axis navigation can oscillate against an isolated wall. Fleeing, teams,
+inter-creature targets, illusion effects and complete human/guard initialization
+remain. Movement around real stairs and crowded rooms needs target acceptance.
+
+### Action chains
+
+`actions.c` owns original link dispatch from `run_0006480F.c`. Triggers 1–7
+match their event; 8 accepts use/touch/melee/projectile (2/3/5/6), and 9 accepts
+use/touch (2/3). Door pick success/failure emit 7/4, melee misses and arrow wall
+impacts reach action models, and touch callbacks retain their provenance.
+Linked ordinary actions start concurrently. A riddle defers its following chain
+until a case-insensitive accepted answer; cancellation/wrong answers stop it.
+
+Implemented actions are motion 1–8, no-ops 10/13/29, text 11, riddle 12,
+teleport 14, lock/open/unlock/close 15–20, pulsed damage 21, elemental direct
+damage 22–25, magicka drain 28 and sound 30. Text uses TEXT.RSC 8600+parameter;
+riddles use 5400+parameter and answers 5656+parameter. The answer is bounded to
+16 characters. Both use the existing parchment composition over the world.
+Doors retain their underlying rating through unlock/relock, including an action
+changing that rating before a save. Grab/Info/Talk use the same ordinary door
+path; Steal picks. The original recursive key check is implemented too: the
+unshipped item slot 27/3 must have both value and message matching the location
+ID (the callback ignores lock level); a successful opening consumes it. Shipped
+Daggerfall does not generate this unused key slot.
+Damage actions call the original direct-damage path, which does not perform the
+spell bundle's separate resistance roll. `tgm` protects damage and magicka.
+
+Motion duration uses the original BIOS clock (18.2065 Hz); directional actions
+2–7 use 50 ticks. Geometry and collision still move through generic movers.
+Keep game bytes 8–15, marked `0xa2`, save the link's active/reverse/begun flags,
+elapsed BIOS ticks, remaining pulse milliseconds and normalized motion fraction.
+Partial movers resume without replaying start sounds or starting their chain.
+Pulse clocks are per link here; the original shares a damage/poison/disease timer.
+
+Kinds 31 (quest flag), 99 (special) and 129/130 (combination) remain explicit
+logged gaps. Kinds 9 and 26/27 and magical Open/Lock are now connected by the
+magic batch below. Secret-door-specific rules remain. This interpreter does not yet
+cover arbitrary flat actions or all original object flags.
+
+### Progression and survival
+
+`progress.c` follows `rest_close`, `raise_skills`, `skill_ready_to_advance`,
+`level_skill_sum` and the sheet's level-up code. Rest checks skill uses only
+when more than 360 game minutes have passed. Thresholds include original skill
+factors, the class's 16.16 advancement multiplier, reflex adjustment and
+1.04 raised to the current level. Each eligible skill rises at most once per
+check, with the original mastery cap. The career sum selects a level change;
+a gain adds the original random health/Endurance amount and 4–6 attribute points.
+The sheet allocates/refunds points above its saved opening floors, refuses to
+discard unspent points, and highlights raised skills. Intelligence updates the
+stored magicka ceiling. Allocations, skill highlights and the baseline survive
+save/load. Guild training and affliction-related skill adjustments remain.
+
+`survival.c` and `move.c` follow `fatigue_update`, `breath_update` and
+`player_movement_update`. Ordinary/running/climbing minutes cost 11/88/22
+fatigue; a non-Argonian's failed Swimming check costs 44 instead of 11.
+Exhaustion near an enemy is fatal; otherwise it passes an hour and applies
+rest recovery. Action fatigue also respects `tgm`.
+
+Swimming and levitation use collision-constrained free movement; up/down moves
+at 80 world units per second. Heavy swimmers sink. Underwater breath starts at
+half Endurance, capped at 50, and uses the BIOS timer; Argonians skip alternating
+decrements. Water Breathing and god mode protect against drowning. Remaining
+breath draws in the original right-edge bar and persists with its clock phase.
+
+Climbing requires an actual near-head-on wall contact and the original hold
+delay, rather than mistaking a short ordinary walking step for a blocked move.
+It trains Climbing, moves at one-third speed, checks failure by the original
+minute/race rules, and stops when facing away or clearing the wall at foot
+height. Saved climbing state restores with the physical body. Guild breath
+bonuses, broader condition effects and exact ledge handling on the target remain.
+
+### Rest encounters and persistence
+
+`encounter.c` follows `mplace.c`'s table windows, rolled land slots 1–6,
+12-minute rest checks, 1-in-36 interruption roll and hidden 384–768-unit spawn
+ring. Loitering does not roll encounters. Table preparation seeds from the
+location ID and restores the original saved `rand()` result; it does not consume
+hundreds of gameplay rolls. Encounter tables and navigation/skill constants are
+extracted from the verified FALL.EXE by `tools/ogfall-data.py`.
+
+The adapter prepares encounter art before the card opens the place. Matching
+combat poses are shared; absent walk/idle pictures are decoded into separate
+slots without activating distant placed enemies. Invisible resource references
+let the existing renderer budget those slots. No image decode/upload is added
+to an encounter frame. Live actors use the engine spawn pool and join the same
+OGFALL AI, combat, equipment and corpse-loot loops as placed creatures.
+
+Eight persistent encounter records retain unique keys, kind, walking archive
+(including humanoid sex) and initial position. Their Keep rows retain movement,
+health, death and AI. Failed placement creates no saved actor; failure to restore
+a saved actor fails place opening. Schema 5 explicitly serializes progression,
+survival, stealth time and encounters (348 added wire bytes), validates their
+ranges/identities/archives and upgrades schemas 2–4. Saves remain OGFALL's own
+files under `ogfall/saves`.
+
+Adaptations: encounter capacity is eight; no dead-slot reclamation is implemented.
+The engine's floor/visibility search replaces XnGine's search. Failed placement
+currently happens before rolling combat stats, unlike the original. Rest still
+advances/recoveries by whole hours, stopping on its first successful encounter.
+Other places and their encounter tables/actors await travel integration.
+
+### Verification and acceptance
+
+`make -j2 all` passes: full engine/game host checks, generated-data checks,
+layer checks, Win98 PE/import/CPU restrictions, stack-probe validation and ISO
+packaging. `make ogfall-host` also passes. `build/gfall.iso` contains OGFALL.EXE.
+Host cases cover trigger matrices, concurrent chains, trap/mover phase reload,
+right/wrong riddles, touch provenance, six-hour thresholds, saved level points,
+wall contact/climbing, swimming, breath/drowning, fatigue collapse and encounter
+placement/combat/codec validation. A fresh process loads an actual Hold save with
+both a killed placed creature and a killed rest encounter, checking physical
+positions, corpse art and loot usables. Painting captions now expand their nested
+male/female name macros while keeping inspection's RNG local.
+
+No new target run is claimed. On the MMX233/Voodoo1, accept wall navigation and
+climbing/ledge behavior, underwater controls/breath, rest interruption and
+save/restart, traps/riddle input, level allocation, and the extra art's RAM/VRAM
+and frame-time cost. The magic batch below adds creature spells and ordinary
+poison/disease. Curse systems, enchantment strike effects, knockback collision
+damage, the special actions listed above,
+the original death movie and the wider world are still unfinished.
+
+## Magic and ailments — 2026-11-09
+
+OGFALL now casts its owned standard spells. The Cast key/HUD opens selection;
+inventory Use of the spellbook keeps its editor. Selecting a spell closes the
+book before payment/casting, so Recall and Dispel can open their own modal.
+Self spells apply immediately; touch/ranged/area spells wait for a mouse press.
+Recast and Abort are connected. Abort does not refund. Status (key or HUD)
+shows active effects and ailments. Each cast trains its effect schools and
+raises original event 73. Dead characters cannot cast through the console.
+
+### Rules and source
+
+The reference is the byte-matched `/home/shade/git/daggerfall-decomp` and the
+verified `FALL.EXE`, not GFALL's rules. `tools/ogfall-magic-data.py` verifies the
+executable SHA-1 against `config/fall.sha1`, then extracts the effect metadata,
+43 cost rows, schools/formulas/target multipliers, element bits and sound IDs,
+12 poison timing rows, 17 disease records, creature spell/disease lists and
+undead/daedra categories into `tables/magicdata.h`. Runtime needs only ARENA2.
+Regenerate with:
+
+```
+python3 tools/ogfall-magic-data.py /home/shade/git/daggerfall-decomp daggerfall/DAGGER/FALL.EXE
+```
+
+`magic.c` follows `spells.c:spell_cost`, the seven cost formula functions at
+0x3937B–0x3988A, `runspell.c:cast_spell_on`, `spell_resist_check`,
+`spell_compute_values`, and the effect/end handlers in `spfx.c`, `maplogic.c`
+and `hand/run_0008A550.c`. Preserve integer division order, signed 16-bit cost
+subtotals, five-point minimum cost, chance byte wrapping and 16-bit durations.
+Resistance returns a damage percentage in 5% steps, including class flags,
+Breton/Nord bonuses, caster level and elemental protection. Absorption,
+reflection and Spell Resistance precede the elemental roll.
+
+Effects include damage/continuous damage, healing, attribute drain/transfer and
+fortification with exact applied-delta undo, paralysis/Free Action, cures,
+regeneration, elemental resistance, Shield's consumable point pool, illusion
+conditions, pacify/charm, disintegration, banishment, Soul Trap, dispels and
+movement conditions. Matching group/subtype/target extends duration without
+applying the bonus twice. A zero-round effect ends on the following minute,
+as `book.c:spell_tick_spell` does. Spell and ailment ticks are interleaved by
+minute during time passage. Normal invisibility/chameleon/shadow break on a
+hostile act; the original undead/daedra list and 4%/8% detection rolls remain.
+
+Open is consumed by an attempted non-Steal activation of a locked door. Wizard
+Lock closes an open door and gives it the caster's level as its lock rating.
+Their original condition bits and saved chance are represented by effect rows.
+Recall sets or consumes a saved anchor with position and view; it currently
+returns only within the loaded place. Dispel lists spell bundles and removes
+the selected bundle, with the original self-cast exemption and level chance.
+Soul Trap creates an owned type-20 soul child in an empty carried gem on death;
+Info expands TEXT.RSC's `%hs` to the trapped creature's name.
+
+`casting.c` follows `pickbook.c`'s payment/bonus/recast behavior, `runspell.c`'s
+launch/area rules, `hand/func_0005C448.c`'s 400-unit/sec flight and 2048-unit
+camera leash, and `monster.c`/`equip.c` for creature spell selection and casting.
+Missiles sweep their initial 110-unit advance and subsequent segments against
+walls and creatures. Cursor aiming shares activation's projection; touch uses
+the pointed direction within 160 units. Casting consumes its click, preventing
+a simultaneous door/loot activation. Creature lists use original level tiers,
+spell schools at 80, initial magicka `level*10+100`, cast poses and costs.
+Dungeon actions 9, 26 and 27 now emit spells, poisons and diseases at their
+one-second pulse cadence (`hand/run_0006480F.c`).
+
+### Sprites, sound and budgets
+
+The adapter decodes all five elements' six `*00C6.CIF` casting frames once at
+startup, draws both mirrored hands at their stored offsets, and shifts them
+46 pixels for the HUD bar. Casting/weapon pictures release each other's card
+allocation. Missile and impact art comes from TEXTURE.375–379 records 0/1,
+prepared with the place before play; firing decodes no pictures. Cast and
+impact IDs come from the executable's `spell_cast_sounds` and
+`spell_impact_sounds`, played through the existing spatial sound hook.
+Active-effect icons use ICON00I0, expire with the effects and blink near their
+end; hostile spells sit above the HUD or at y=177 in fullscreen. MCOL00I0's
+four portrait overlays now reflect low health, magic and symptomatic ailments,
+in original priority order.
+
+The generic engine adds only `Entity.glow` (full-bright drawing, no gameplay)
+and increases the fixed spawn pool from 16 to 32. OGFALL bounds active effects
+at 96, ailments at 32, magical actors at 64 and missiles/bursts at eight. The HUD
+shows at most 24 distinct spell bundles. Encounter/blood/missile pools and the
+Light candle fit without per-frame allocation. Light uses the original candle
+sprite 192 units ahead; illumination is currently an ambient lift, restored on
+expiry/close, because the renderer bakes static light decals. This is explicitly
+a rendering adaptation, not an exact moving local light.
+
+### Poison, disease and persistence
+
+`ailments.c` follows `disease.c:disease_infect`, `poison_apply`, `poison_tick`,
+`spfx.c:spfx_disease_daily`, recovery/cure handlers and
+`damage.c:damage_monster_hit_effects`. All twelve poisons have their original
+onset/course, stat combinations and beneficial side effects. Ordinary diseases
+roll their original affected-stat damage once at a day boundary; reversible
+attribute losses are tracked separately. Recovery restores tracked attributes;
+Cure Disease/Poison clears the matching records. Group-0 inventory drugs consume
+the whole item into poison types 136–139 (`inven.c:inv_use_item`). Rats, bats,
+mummies and vampires transmit ordinary diseases from the original lists;
+spider/scorpion strikes cast the original paralysis spell. Level-one protection
+and player class immunities apply even when a debug command skips resistance.
+
+Preserve the source's unusual infection comparison: `disease_infect` and
+`poison_apply` reject a resistance result of **100**, whereas ordinary spell
+bundles interpret 100 as full damage. Do not silently invert it. Adaptations:
+ailment stat changes affect their actual victim instead of the original global
+player pointer, and Transfer restores its actual caster; tracked drain is the actual applied change, preventing recovery
+overshoot at the attribute floor. Beneficial poison changes recover by their
+tracked sign. Biography infection modifiers and special curse infections remain
+unimplemented. God mode prevents health/fatigue/magicka loss through these paths.
+Rest stops after a fatal tick and cannot revive the player with hourly recovery.
+
+Schema 6 appends 11,368 explicit wire bytes for magic, ailments, in-flight
+missiles, spent actor vitals and the Recall anchor. No pointers or SpawnIds are
+saved. Versions 2–5 upgrade with empty magic state. Validation covers ranges,
+known spell/ailment IDs, owned ready/last spell references, unique actor keys,
+finite missile/anchor positions and directions. Deleting a book spell clears
+ready/recast references. Loading reconstructs visuals and creature modifiers
+without paying, training or applying player buffs again. Saves stay under
+`ogfall/saves`; preferences stay in `ogfall/settings.cfg`.
+
+Console testing: `learn 7` adds Wizard's Fire, `cast 7` pays/readies it normally;
+`learn 64`/`cast 64` exercises healing. `poison 128` or `disease 0` applies an
+ailment without its resistance roll but retains immunity/level-one protection.
+Use a level-two-or-higher character when testing infection. `tgm` keeps its
+existing resource protections and zero player spell cost.
+
+### Verification and remaining work
+
+`make hostcheck`, `make ogfall-host` and `make -j2 all` pass. The full native
+suite reports `hostcheck ok`; the cross-build passes every PE/import/CPU check
+and OGFALL stack-probe validation without compiler warnings. The ISO is
+`build/gfall.iso`. `make all` packages and checks the programs; the native
+suites above are run explicitly.
+
+The focused host suite covers golden costs, duration extension/expiry, buffs
+across saves, resistance, shields, reflection/absorption, paralysis and racial
+immunity, illusion visibility, Dispel, Open/Lock, Recall, Soul Trap descriptions,
+all twelve poison outcomes, drug use, disease day ticks, cures, fatal Rest,
+creature casting/magicka persistence and malformed-save rejection. A fresh
+process restores actual Hold magic and latent poison. Art checks decode all five
+casting animations and resolve original cast/impact sound IDs. The fire-frame
+preview is `build/ogfall-casting-fire.ppm` (transparent regions shown black).
+
+Sequencing decision: spell making/purchasing, enchantments/magical items and
+potion systems are deferred until people and guild services are implemented.
+Integrate them through their NPC providers and membership/rank restrictions
+(roadmap milestone 7); they are not the next dungeon magic tasks.
+
+No target run is claimed. Still missing: those deferred systems,
+artifacts (including Azura's Star), special vampirism and
+lycanthropy infections/transformations, cross-place Recall, Detect/Identify's
+world/inventory integration, owned spell name/icon propagation into active
+instances, biography modifiers, exact original collision shapes and moving
+local lighting. Nonfunctional original handlers (including wall spells and
+several unused effects) remain stubs. Tongues and similar condition bits await
+their dialogue/world systems. Test all five elements, aiming, walls/area damage,
+mobility, monster casts, cures, interrupted Rest and save/restart on the target,
+including audio balance, RAM/VRAM use and frame times.
+
+## Opening the world — 2026-11-09
+
+The Hold's actual exit now opens the streamed wilderness. Towns, dungeon
+exteriors and building interiors use the existing placement/stream APIs; building
+exits return to the door entered, with its facing and a walkable landing.
+`goto Daggerfall`, `goto Sentinel`, or `goto <region> <location>` changes place
+without spending time or gold. Name lookup is case-insensitive, preferring exact
+matches; an ambiguous name lists numbered choices. `where` prints place identity,
+map pixel and stream origin. Close other game screens before using `goto`.
+The catalogue contains the 15,251 real map locations, including taverns.
+
+M/HUD Map opens the indoor or town automap; in wilderness it opens the travel
+map. W/HUD Travel opens the world/province maps outdoors. The rebound travel key
+also works from the town map. Map input pauses simulation, consumes closing
+clicks, and does not leak into attacks. Indoor geometry uses `gfx_automap` and
+engine seen-model rows, with the chrome's transparent window fitted to OGFALL's
+letterboxed coordinates. Town maps use the RMB cells; both show a player arrow.
+Find, ambiguous results, province pages, location filters, confirmation, travel
+options and the day countdown are connected. The optional illness confirmation
+uses TEXT.RSC 1010; declining preserves options, money and time.
+
+### Boundaries and engine use
+
+`play/travel.c`, `journey.c`, `maps.c`, `ground.c` and `worldstate.h` own OGFALL's
+rules and saved data. Only `apps/ogfall/seam.c` includes the existing dagger
+builders and map presenters. The map's callbacks supply OGFALL money, discovery,
+question text and journey planning; no GFALL player or save is constructed.
+GFALL's original map entry delegates to `travelmap_player.c`, retaining its
+own atlas, ride, bank and journey behavior. OGFALL's executable links the
+presenters, canvas and widgets, rather than GFALL's gameplay implementation.
+
+The placement adapter adds an opt-in whole-dungeon policy, leaving GFALL's
+streamed-dungeon default unchanged. OGFALL currently retains its whole-place
+creature/action pipeline indoors; outdoors it uses `wild`/`stream` and `wres`.
+Townspeople stay in the existing pedestrian pool and are not reinterpreted as
+OGFALL dungeon enemies. They walk through the builder's motor. Outdoor far clip
+is 4096 units with radius one, a 2 ms streaming budget, and the engine's texture
+residency/terrain/sky/weather/audio paths. Seasonal and mesh-budget reloads run
+under the loading hold and prime resources before resuming.
+
+A place change releases graphics references before ending the old heap.
+Persistent keep rows are captured before closing; missiles are place-bound and
+cleared on departure. Reopening reconstructs the place, creatures, actions and
+pictures before restoring the walking body. Stream origin changes shift the
+body, safe point, saved pose, arrows and spell missiles exactly once; engine
+spawns shift through `spawn_shift`. This avoids saving an old local position
+against a new origin, including when a menu is opened immediately afterward.
+Recall saves the place descriptor, return door and origin with its anchor;
+cross-place and rebased outdoor returns use the same queued exact-pose landing.
+An old anchor without sufficient place identity is refused instead of opening
+the wrong place.
+
+Outdoor drops are keyed by map pixel and quantized position inside it, with
+small saved coordinates. This avoids float precision loss and key collisions
+between separate stream origins. Four nearest nonempty piles within 320 units
+use the existing spawn pool and acquired TEXTURE.216/0 art. Picking uses the
+pointed ray within 128 units, bounded by walls and nearer usables. Empty piles
+stop drawing. Items survive unloading, travel and saves; no SpawnId is saved.
+Four piles plus eight encounters, eight blood effects, eight missiles and Light
+fit the existing 32-slot budget. No engine-specific Daggerfall logic was added.
+
+### Original journey rules
+
+Reference: byte-matched decomp `src/hand/func_0009CEC4.c` (`travel_route`),
+`func_0009C3E7.c` (`travel_begin_trip`), `src/lifted/travel.c` and
+`src/hand/func_0003C610.c` (`health_status_add`).
+`tools/ogfall-world-data.py` verifies FALL.EXE's SHA-1 before extracting terrain
+modifiers and climate categories into `tables/traveldata.h`:
+
+```
+python3 tools/ogfall-world-data.py /home/shade/git/daggerfall-decomp daggerfall/DAGGER/FALL.EXE
+```
+
+Preserve the original strict-greater minor-axis route step, including its
+diagonal endpoint quirk. Foot/horse/cart transport factors are 256/128/192;
+truncate `factor*102/256` before multiplying by `512-terrain_modifier` and
+then dividing by 256. Sea pixels take 51 minutes by ship or 255 without it.
+Camping multiplies each pixel by 300/256. Reckless travel halves total time
+before both the displayed estimate and pricing. Inn costs use
+`5*((ceil(minutes/60)-sea_pixels)/24)+5`; ship fares use
+`25*(sea_pixels/24+1)`. These are the original integer sums, including the
+unusual subtraction of sea pixels from hours, rather than GFALL's DFU sums.
+Inventory horse/cart records supply the transport modifier in original scan
+order. Travel advances OGFALL time and ailment/effect ticks, spends gold, applies
+cautious recovery or retains reckless fatigue, and performs skill advancement.
+A cautious ordinary arrival waits to 06:10 if it is night; daylight-damaged
+classes wait to 18:10 when necessary. A fatal journey remains fatal.
+
+Schema 7 appends two explicit 48-byte place descriptors (current and Recall),
+map pixel, 2048 discovery bytes, a count and up to 8192 seen-model rows at 20
+bytes each. The fixed world suffix is 2156 bytes before its variable map rows;
+the codec's bounded buffer is 512 KiB. Schemas 2–6 upgrade to empty world/map
+state and the original Hold default. Saves remain `ogfall/saves`; no DOS
+compatibility is required. Existing object/keep budgets remain 256/512 and are
+not a claim of unlimited full-world persistence.
+
+### Verification and remaining scope
+
+Native coverage includes fixed original journey sums (terrain, horse/cart,
+camping, reckless, ocean fare and diagonal stepping), actual Hold exits,
+Daggerfall/tavern lookup, building doors both ways, indoor seen polygons,
+Find/confirm/options/Begin, illness cancellation, time advancement, outdoor
+save/load in a fresh process, real stream-origin changes, cross-place/outdoor
+Recall, and outdoor dropped-item activation/revisit/persistence, and fresh-process missile
+restoration under a changed origin. Composed map
+pictures are written under `build/ogfall-*-map.ppm` and
+`build/ogfall-travel-*.ppm`. The combined host runner launches OGFALL's suite in
+a fresh process: GFALL and OGFALL are separate executables and must not share
+command registrations or gameplay globals during tests.
+
+This opens the world; it does not complete every world system. Remaining work
+includes original map notes/markings and exact indoor camera controls, streamed
+large-dungeon population support, outdoor combat/encounters, riding and wagon
+storage, owned ships/guild travel privileges, NPC services/law/quests and an
+audit of world terrain/climate/population decisions against the decomp. Ground
+shape and pedestrian presentation currently follow GFALL's efficient builders.
+Outdoor arrow motion/collision works, but its 3D mesh still needs a dynamic-model
+rendering path compatible with streamed scene storage. Spell making/buying,
+enchantments and potions remain deferred until people/guild services. Target
+appearance, frame time, memory and the complete travel loop still require the
+Win98/233/Voodoo playtest.
+
+Final verification for this batch: `make ogfall-host`, `make hostcheck` and
+`make -j2 all` pass without compiler warnings, including every PE/import/CPU
+check and OGFALL stack probes. The rebuilt ISO is `build/gfall.iso`; target
+hardware acceptance remains separate.

@@ -82,6 +82,15 @@ Classic's travel map and its fast journeys, on Daggerfall Unity's numbers and cl
 `play/atlas.c`: a bit for each of the map's 15251 places. A new game knows what classic's map shows from the start: bit 30 of each place's MAPTABLE word, DFU's Discovered, which is 11199 of them (`worldmap_location_info`). A place is learnt when the player stands on its pixel of the world, or arrives there. The game's own block; a save's `DISC` chunk holds only the words that differ from a new game's.
 
 ### The map (`play/travelmap.c`)
+
+The presenter accepts `TravelMapRules` callbacks for money, discovery, planning,
+question text and an optional pre-trip warning. `travelmap_player.c` supplies
+GFALL's existing rules and word expansion through the unchanged `travelmap_open`
+entry. OGFALL's app adapter calls `travelmap_open_rules` with its own state and
+original-executable journey rules; the presenter has no link to GFALL's combat,
+bank, ride or player implementation. The callbacks must outlive the open map.
+A declined warning returns to the same options without charging or advancing time.
+
 - **The world:** `TRAV0I00.IMG`. The province under the pointer is named from `TRAV0I01.IMG`, whose index less 128 is the region; a click opens its map.
 - **A province:** `FMAP0I##.IMG`, the panel at (0, 12). DFU's table gives each map's world pixel at the panel's top left. Regions 0, 1 and 16 are two or four screens, with arrows between them.
   - Betony's is drawn four times larger. Its corner, (82, 244), is fitted to the island: DFU's comes with hover offsets in another form. Every known place of every one-screen province is tested to land on its panel.

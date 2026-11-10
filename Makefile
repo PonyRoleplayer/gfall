@@ -196,6 +196,7 @@ PLAY_SRC := \
 	src/game/dagger/play/spellbook.c \
 	src/game/dagger/play/maker.c \
 	src/game/dagger/play/travelmap.c \
+	src/game/dagger/play/travelmap_player.c \
 	src/game/dagger/play/townmap.c \
 	src/game/dagger/play/dunmap.c \
 	src/game/dagger/play/marker.c \
@@ -246,7 +247,7 @@ PLAY_DRAW_SRC := \
 
 GFALL_SRC := apps/gfall/main.c $(ENGINE_SRC) $(DAGGER_SRC) $(PLAY_SRC)
 
-# OGFALL: classic's menus and Privateer's Hold. Not PLAY_SRC.
+# OGFALL: original gameplay and the streamed world. Not GFALL's PLAY_SRC.
 # seam.c is the only file that includes both games.
 OGFALL_GAME_SRC := \
 	src/game/ogfall/formats/formats.c \
@@ -255,6 +256,10 @@ OGFALL_GAME_SRC := \
 	src/game/ogfall/tables/tables.c \
 	src/game/ogfall/tables/itemdefs.c \
 	src/game/ogfall/tables/combatdefs.c \
+	src/game/ogfall/tables/doordefs.c \
+	src/game/ogfall/tables/progressdefs.c \
+	src/game/ogfall/tables/magicdefs.c \
+	src/game/ogfall/tables/traveldefs.c \
 	src/game/ogfall/places/place.c \
 	src/game/ogfall/play/state.c \
 	src/game/ogfall/play/inventory.c \
@@ -270,6 +275,20 @@ OGFALL_GAME_SRC := \
 	src/game/ogfall/play/foegear.c \
 	src/game/ogfall/play/weapon.c \
 	src/game/ogfall/play/dungeon.c \
+	src/game/ogfall/play/ai.c \
+	src/game/ogfall/play/actions.c \
+	src/game/ogfall/play/progress.c \
+	src/game/ogfall/play/survival.c \
+	src/game/ogfall/play/encounter.c \
+	src/game/ogfall/play/magic.c \
+	src/game/ogfall/play/casting.c \
+	src/game/ogfall/play/travel.c \
+	src/game/ogfall/play/journey.c \
+	src/game/ogfall/play/ground.c \
+	src/game/ogfall/play/maps.c \
+	src/game/ogfall/play/magiccmd.c \
+	src/game/ogfall/play/ailments.c \
+	src/game/ogfall/play/doors.c \
 	src/game/ogfall/play/steer.c \
 	src/game/ogfall/play/hud.c \
 	src/game/ogfall/play/screen.c \
@@ -286,7 +305,11 @@ OGFALL_GAME_SRC := \
 
 OGFALL_HEADERS := $(wildcard src/game/ogfall/*/*.h apps/ogfall/*.h)
 
-OGFALL_SRC := apps/ogfall/main.c apps/ogfall/seam.c $(OGFALL_GAME_SRC) $(ENGINE_SRC) $(DAGGER_SRC)
+# The app borrows map composition only; GFALL player callbacks are separate.
+OGFALL_MAP_SRC := src/game/dagger/play/canvas.c src/game/dagger/play/ui.c \
+	src/game/dagger/play/travelmap.c src/game/dagger/play/townmap.c \
+	src/game/dagger/play/dunmap.c src/game/dagger/play/marker.c
+OGFALL_SRC := apps/ogfall/main.c apps/ogfall/seam.c $(OGFALL_GAME_SRC) $(ENGINE_SRC) $(DAGGER_SRC) $(OGFALL_MAP_SRC)
 
 # RENDERFALL shows models alone: the readers they need and no place.
 RENDER_SRC := apps/renderfall/main.c $(ENGINE_SRC) \
@@ -371,14 +394,14 @@ build/spintri.iso: build/cdroot/SPINTRI.EXE | deps
 # Only hostcheck links the menu against deterministic input/persistence stand-ins.
 MENU_TEST_SRC := tests/check_menu.c src/game/dagger/play/menu.c src/game/dagger/play/screen.c
 
-build/hostcheck: $(MENU_TEST_SRC) tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_play.c tests/check_ogfall.c tests/check_ogstate.c tests/check_ogui.c tests/check_ogcombat.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC) $(OGFALL_HEADERS) | deps-host
+build/hostcheck: $(MENU_TEST_SRC) tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_play.c tests/check_ogfall.c tests/check_ogstate.c tests/check_ogui.c tests/check_ogcombat.c tests/check_ogdoors.c tests/check_ogactions.c tests/check_ogprogress.c tests/check_ogsurvival.c tests/check_ogencounter.c tests/check_ogmagic.c tests/check_ogworld.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC) $(OGFALL_HEADERS) | deps-host
 	mkdir -p build
-	$(HOST_CC) $(HOST_CFLAGS) -o $@ $(MENU_TEST_SRC) tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_play.c tests/check_ogfall.c tests/check_ogstate.c tests/check_ogui.c tests/check_ogcombat.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC)
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ $(MENU_TEST_SRC) tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_play.c tests/check_ogfall.c tests/check_ogstate.c tests/check_ogui.c tests/check_ogcombat.c tests/check_ogdoors.c tests/check_ogactions.c tests/check_ogprogress.c tests/check_ogsurvival.c tests/check_ogencounter.c tests/check_ogmagic.c tests/check_ogworld.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC)
 
 # The ogfall sums and one walk in the hold, without the rest of hostcheck.
-build/ogfall-host: tests/check_ogfall.c tests/check_ogstate.c tests/check_ogui.c tests/check_ogcombat.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC) $(OGFALL_HEADERS) | deps-host
+build/ogfall-host: tests/check_ogfall.c tests/check_ogstate.c tests/check_ogui.c tests/check_ogcombat.c tests/check_ogdoors.c tests/check_ogactions.c tests/check_ogprogress.c tests/check_ogsurvival.c tests/check_ogencounter.c tests/check_ogmagic.c tests/check_ogworld.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC) $(OGFALL_HEADERS) | deps-host
 	mkdir -p build
-	$(HOST_CC) $(HOST_CFLAGS) -DOGFALL_HOST_MAIN -o $@ tests/check_ogfall.c tests/check_ogstate.c tests/check_ogui.c tests/check_ogcombat.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC)
+	$(HOST_CC) $(HOST_CFLAGS) -DOGFALL_HOST_MAIN -o $@ tests/check_ogfall.c tests/check_ogstate.c tests/check_ogui.c tests/check_ogcombat.c tests/check_ogdoors.c tests/check_ogactions.c tests/check_ogprogress.c tests/check_ogsurvival.c tests/check_ogencounter.c tests/check_ogmagic.c tests/check_ogworld.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC)
 
 ogfall-host: build/ogfall-host
 	./build/ogfall-host

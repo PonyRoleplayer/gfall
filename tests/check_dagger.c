@@ -1255,6 +1255,14 @@ static void check_doors_hold(const World *world)
     int i;
 
     world_as_level(world, &level);
+    {
+        const ModelAct *raw;
+        int block;
+        raw = world_model_action(world,0,&block);
+        check_expect(raw && block >= 0 && block < 5 &&
+                     !world_model_action(world,-1,0) && !world_model_action(world,world_model_count(world),0),
+                     "the place exposes original action metadata with bounded model/block lookup");
+    }
     doors = count_use(world, USE_MOVER, -1);
     actions = 0;
     locked = 0;

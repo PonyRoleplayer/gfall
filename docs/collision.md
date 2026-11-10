@@ -1,5 +1,13 @@
 # Collision
 
+`CollideHit.wall` and `wall_normal[3]` report the most horizontal contact
+normal from a slide (unit length in world space, absolute vertical component
+below 0.5). `Body.hit_wall` and `wall_normal` expose the horizontal walking
+sweep's result, or the full free-flight sweep's result. These are transient
+contacts, cleared on placement and the next step, rather than saved movement
+state. A game can use them to decide whether a body is pressing against a
+climbable wall; the engine contains no climbing chance, delay or skill rule.
+
 With `tcl 1` the camera is a body: it walks on floors, stops at walls, climbs stairs, and falls under gravity. Read this before editing `src/engine/scene/collide.c`, `src/engine/scene/walker.c`, or the walker's call in `draw.c`.
 
 ## The body
