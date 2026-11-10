@@ -1976,3 +1976,24 @@ steal from. `tests/check_ogsteal.c` holds the chances, the crimes and the kept g
 
 Not built: the window's screen, `rumor_pick_news` (it reads a rumour file the original's region events write, which OGFALL has no
 world to produce, so there is no news yet), the quest topics, and the people to talk to (slice 8). Tests are in `tests/check_ogtalk.c`.
+
+## People and law, slice 8 (first part): names
+
+`play/names.c` is the original's name generator and signs, over NAMEGEN.DAT bytes the seam loads at start (`og_names_set_data`) and the
+words in `tables/namedata.h` (from FALL.EXE):
+
+- `og_name_generate` / `og_name_seeded`: `name_generate` by bank. Banks 1, 8, 9 and 10 have a given name alone, the Nords (2) two pieces
+  and "sen", the rest a given name and a surname (pieces 4 and 5); the male and female forms differ as `name_generate_first` has them,
+  each with the original's own chance rolls (`rand() % 100 < 75`, `% 50 < 25`). Seeding keeps the stream's next value, seeds, and
+  seeds again with the kept value (`name_generate_seeded`), so naming leaves the stream advanced by exactly one draw.
+- `og_region_bank`: the bank each of the 62 regions names its people from (the table at FALL.EXE 0x1841E3).
+- `og_npc_name` (`npc_display_name`): an individual faction's own name, else a generated one seeded by the person's record id (a twin by its
+  name seed and own sex bit).
+- `og_building_name` (`building_name`): shops by type ("%s %s" of a first and a last word list), taverns, "The Bank of <region>", the palace,
+  the city wall, a guild's hall (or the Brotherhood's and the Thieves' once joined), a quest site's "The <resident> Residence", else
+  "Residence". The shop and tavern words carry macros (`%ef`, `%cn`), which the game's expander says (`og_names_set_expand`); with none
+  they stay raw.
+
+Not built: the person in the view (`people_in_view` gives an id and a sex), the town's building list with each building's name seed (the RMB
+building record's first word, not yet read by `rmb.c`), the person's faction and schedule, the portrait and the talk screen on top.
+Tests are in `tests/check_ognames.c`; the names themselves are not checked against the original's output, only their shapes and seeding.

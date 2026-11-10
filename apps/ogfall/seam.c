@@ -46,6 +46,7 @@
 #include "game/ogfall/tables/datedefs.h"
 #include "game/ogfall/play/bank.h"
 #include "game/ogfall/play/law.h"
+#include "game/ogfall/play/names.h"
 #include "game/dagger/play/character.h"
 #include "game/ogfall/play/standing.h"
 #include "game/dagger/formats/arch3d.h"
@@ -840,6 +841,14 @@ int seam_boot(void)
     if (!load_factions()) {
         why("FACTION.TXT did not read");
         return 0;
+    }
+    {
+        /* NAMEGEN.DAT's pieces name people and shops (people and law, slice 8); without them names are empty. */
+        df_u32 names_size;
+        const df_u8 *names_bytes;
+
+        names_bytes = vfs_read("NAMEGEN.DAT", &names_size);
+        og_names_set_data(names_bytes, names_bytes ? names_size : 0);
     }
     og_chargen_background(background);
 #ifndef DF_HOST
