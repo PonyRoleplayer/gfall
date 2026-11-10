@@ -53,11 +53,11 @@ and a short audit section in `ogfall.md`.
    directions, rumours and the logbook copy.
 7. **Steal.** (Built 2026-11-10: the pocket, the trade screen's Steal button and the shelf's alarm roll as rules; the pocket and the shelf question wait for the people and the merchant panel.) Pickpocket, shop steal, container theft and the alarm roll, with
    slice 5's consequences.
-8. **People.** (Built 2026-11-10: the names of people and signs over doors, a street person or one in a building met by the hud's mode, the town's buildings carrying their sign seeds, the shopkeeper's flag from the block, and the guild halls' and temples' menu with the guild memberships behind it (slice 9); the services themselves, taverns and the quest people remain.) Standing NPC roles, schedules and portraits, on top of the
+8. **People.** (Built 2026-11-10: the names of people and signs over doors, a street person or one in a building met by the hud's mode, the town's buildings carrying their sign seeds, the shopkeeper's flag from the block, and the guild halls' and temples' menu with the guild memberships behind it (slice 9); training, cures, blessings, healing, the innkeeper, the knights' armour and opening hours are built; potions, spells, magic items, soul gems, the Daedra, teleporting, temple quests and the quest people remain.) Standing NPC roles, schedules and portraits, on top of the
    existing pedestrian pool, without reinterpreting it before slices 1 to 7 are
    in.
 
-9. **Guilds.** (Built 2026-11-10: memberships, joining, rank, expulsion, invitations, the halls' and temples' gating and menu, schema 12; the services beyond a donation, the Fighters' repairs and the Thieves' fence remain.) The 22 guild kinds the original has, their messages and rank steps read out of FALL.EXE.
+9. **Guilds.** (Built 2026-11-10: memberships, joining, rank, expulsion, invitations, the halls' and temples' gating and menu, schema 12; with training, cures, blessings and healing; potions, spells, magic items, soul gems, the Daedra, teleporting and the temples' quests remain, each a subsystem of its own.) The 22 guild kinds the original has, their messages and rank steps read out of FALL.EXE.
 
 Order is by dependency: standing feeds trade, bank and law; law feeds steal;
 talk needs standing and the quest hooks left by milestone 8.
