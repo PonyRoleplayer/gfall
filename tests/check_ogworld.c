@@ -477,11 +477,27 @@ void check_ogworld(const char *root)
         if (place.type == 6) { region = place.region; index = place.index; break; }
     }
     check_expect(region >= 0 && og_travel_go(region,index) && change(),"goto accepts a real tavern location as well as towns");
+    /* The doors keep hours now (building_try_enter): the entrance is tried at noon. */
+    og_state_pass_minutes((df_u32)((12*60 + 1440 - (int)(og_state()->minutes % 1440u)) % 1440));
     door = passage(1);
     check_expect(door != 0,"a streamed tavern has a building entrance");
     if (door) {
+        Scene *entry_scene;
+        int k, entered;
+
+        /* A door of a house shut by its number is refused (a lock's hint); some door of the town opens. */
+        entry_scene = &seam_level()->scene;
+        entered = 0;
+        for (k = 0; k < entry_scene->nusables && !entered; k++) {
+            const Usable *candidate;
+
+            candidate = &entry_scene->usables[k];
+            if (candidate->kind == USE_PASSAGE && candidate->what == 1 && candidate->reach > 0 && og_travel_passage(candidate) && og_travel_asked()) {
+                door = candidate; entered = 1;
+            }
+        }
         stream_world(door->cx,door->cz,&bx,&bz);
-        check_expect(og_travel_passage(door) && change() && !seam_level()->streamed && !seam_level()->sky && og_world_state()->where.kind == OG_PLACE_INSIDE,
+        check_expect(entered && change() && !seam_level()->streamed && !seam_level()->sky && og_world_state()->where.kind == OG_PLACE_INSIDE,
                      "the tavern entrance opens its interior on a separate place heap");
         door = passage(2); check_expect(door && og_travel_passage(door) && change(),"the interior exit returns to the streamed world");
         stream_world(g_camera.x,g_camera.z,&ax,&az);

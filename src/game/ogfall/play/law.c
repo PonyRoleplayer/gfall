@@ -342,6 +342,11 @@ void og_guards_set_world(const OgGuardWorld *world)
     }
 }
 
+int og_guards_witnesses(void)
+{
+    return g_world.witnesses ? g_world.witnesses() : 0;
+}
+
 int og_guards_present(void)
 {
     return g_world.present && g_world.present();

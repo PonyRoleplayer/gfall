@@ -56,6 +56,8 @@
 #include "game/ogfall/play/magicitem.h"
 #include "game/ogfall/play/spellshop.h"
 #include "game/ogfall/play/hours.h"
+#include "game/ogfall/play/entry.h"
+#include "game/ogfall/play/hud.h"
 #include "game/ogfall/play/ailments.h"
 #include "game/ogfall/formats/interior.h"
 #include "game/ogfall/play/talkwin.h"
@@ -116,6 +118,47 @@ static int load_cast_art(void);
 static void cast_draw(int element, int frame);
 static void magic_hud_draw(const OgMagicState *state);
 static void magic_lighting(int enabled);
+/*
+ * A door from the street into a building (building_try_enter): its hours, a guild's own door, a house by day, a lock picked in Steal mode (and the crime of it), else how hard
+ * the lock is. Anything else, a dungeon's door, the way out of a building, goes straight to travel_use.
+ */
+static unsigned talk_building_id(const TownBuilding *t);
+
+static const char *passage_gate(const Usable *u)
+{
+    const TownBuilding *t;
+    Usable in;
+    OgEntryBuilding b;
+    OgEntryPlayer p;
+    OgEntry e;
+    OgMembership *m;
+    int region, index, minute;
+
+    if (u->kind == USE_PASSAGE && travel_door_in_town(u, &in, &region, &index) && (t = town_building(region, index, u->tag >> 8, u->tag & 0xff)) != 0) {
+        mem_zero(&b, sizeof(b));
+        b.id = talk_building_id(t);
+        b.type = t->type; b.faction = t->faction; b.name_seed = t->name_seed;
+        mem_zero(&p, sizeof(p));
+        p.house = (df_u32)og_bank()->house;
+        m = og_guild_find_kind(0); p.brotherhood = m ? m->rank : -1;
+        m = og_guild_find_kind(3); p.thieves = m ? m->rank : -1;
+        m = og_guild_find_kind(2); p.fighters = m ? m->rank : -1;
+        m = og_guild_find_kind(1); p.mages = m ? m->rank : -1;
+        minute = (int)(og_state()->minutes % 1440u);
+        p.daytime = minute >= 360 && minute < 1080;
+        p.steal = og_hud_mode() == OG_MODE_STEAL;
+        p.lock_spell = (og_character()->conditions & 0x40) != 0;
+        if (!og_building_try_enter(&b, &p, og_state()->minutes, (og_guards_witnesses() & 3) != 0, &e)) {
+            return e.line ? e.line : "The door is locked.";
+        }
+        if (e.spent_spell) { og_character()->conditions &= ~0x40; }
+        if (e.crime) { og_law_note(OG_CRIME_ATTEMPTED_BREAKING); og_guards_summon(1); }
+        if (e.text) { og_msg_set(og_words(e.text)); }
+        else if (e.picked && e.line) { og_msg_set(e.line); }
+    }
+    return travel_use(u);
+}
+
 static void install_travel(void);
 static int seam_world_art(void);
 static void install_maps(void);
@@ -4786,7 +4829,7 @@ static void install_travel(void)
     OgTravelHooks hooks;
     mem_zero(&hooks,sizeof(hooks));
     hooks.count = location_catalogue; hooks.location = location_record; hooks.go = go_to_location;
-    hooks.asked = travel_asked; hooks.passage = travel_use; hooks.here = current_place;
+    hooks.asked = travel_asked; hooks.passage = passage_gate; hooks.here = current_place;
     hooks.climate = worldmap_climate; hooks.return_to = return_to_anchor; og_travel_install(&hooks);
 }
 static int seam_world_art(void)

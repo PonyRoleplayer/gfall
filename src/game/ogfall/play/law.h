@@ -137,6 +137,8 @@ typedef struct OgGuardWorld {
 } OgGuardWorld;
 void og_guards_set_world(const OgGuardWorld *world);
 int og_guards_present(void);
+/* people_check_witnesses through the world's hook: bit 0 another person saw, bit 1 a guard; 0 with no hook. */
+int og_guards_witnesses(void);
 
 /* The most creatures in a place for the watch to be called (guards_summon returns past ten). */
 #define OG_GUARDS_CREATURES_MOST 10

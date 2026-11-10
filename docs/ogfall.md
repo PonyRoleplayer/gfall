@@ -2180,3 +2180,14 @@ Tests: `tests/check_ogmagicitem.c`.
   weather (most like any) is the weather; a roll of 0..100 at most 5 (15 in weather 6) calls the ninth prince instead. Failure is record 484. A first success marks the prince met (`daedra_met`, saved)
   and begins his quest; a later one summons a creature of one of five kinds (26, 25, 27, 29 or 31) as an ally. Neither is built: the quest waits for the quest machine, the ally for friendly creatures; the weather
   is not passed (the climate's weather byte is not kept), so a prince's liking for weather counts only when he likes any. Tests: `tests/check_ogguild.c`, and `tests/check_ogworld.c` for the teleport.
+
+### Doors keep hours; a house door can be picked
+
+`play/entry.c` is `building_try_enter` and `lockpick_action_door`; the seam's `passage_gate` puts it in front of a street door (a passage in a town) before `travel_use`.
+
+- Open: the player's own house; the city wall (24); a building of a type under 17 within its hours (`hours.c`); an open-lock spell (conditions 0x40, spent); a guild's own door (the Brotherhood's 108 and the Thieves' 42
+  for members); a house (17..20) by day when its number mod 100 is under 50 (record 256 said).
+- Shut: the way in is picking, in Steal mode, else only the lock's hint. The level is the building's name seed mod 10 plus 3. Lockpicking (13) is used once; the chance is the skill less five a level (5..95); one
+  try for each Lockpicking value (kept by building, not saved); a pick counts for the Thieves (`guild_count_crime(5, 1)`), and is a crime of attempted breaking (1, the watch called) when someone saw (`og_guards_witnesses`)
+  or a roll of 1..300 is under 100 less Stealth. The building's own flag 16 and access level are not read from the blocks (0).
+- The Thieves' pick count that was missing from `docs/ogfall-later.md` is now wired; so are the hours for doors. The witnesses hook is the street people's (see the town guards).
