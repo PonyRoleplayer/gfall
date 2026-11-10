@@ -253,6 +253,7 @@ static void street_checks(void)
     int pi;
 
     cmd_run("goto Daggerfall"); change();
+    og_state_pass_minutes((df_u32)((12*60 + 1440 - (int)(og_state()->minutes % 1440u)) % 1440));
     sc = &seam_level()->scene;
     people_fill(&g_camera);
     check_expect(og_guards_witnesses() != 0, "street: nobody in a busy street saw the player");
@@ -481,6 +482,8 @@ void check_ogworld(const char *root)
             (void)line;
         }
     }
+    /* The street and the watch first: what they leave behind must not stop the place being left and restored (a person of the street has no keep key). */
+    street_checks();
     /* Teleporting (guild_teleport): to a place on the map, at once, with no gold and no time; one that is not on the map is refused. */
     {
         OgLocation target;
@@ -591,7 +594,6 @@ restore:
     seam_close_hold(); og_state_restore(&g_before); og_state_restore_world(); og_world_restore();
     fs_delete("ogfall\\saves\\S0006.SAV"); fs_remove_dir("ogfall\\saves"); fs_remove_dir("ogfall");
     fs_set_root("build/ARENA2"); unlink(test_root); fs_remove_dir("ogfall-world-data"); vfs_mount(root);
-    street_checks();
     check_expect(seam_open_place(1,0,&x,&y,&z),"restore the original game after world travel tests");
     seam_land(&g_camera,1,0);
 }

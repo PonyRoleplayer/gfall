@@ -52,6 +52,8 @@ static void write32(df_u8 *p, df_u32 value)
 static void store_health(OgFoe *f)
 {
     Keep *row;
+    /* A person of the street taken into the watch has no key of its own (0, 0): a row for it could never be put back by a save, and would stop the place being restored. */
+    if (!f->entity->key.place && !f->entity->key.thing) { return; }
     row = keep_get(f->entity->key,KEEP_ENTITY);
     if (!row) { return; }
     row->game[0] = 0xc1; row->game[1] = (df_u8)(f->awake | (f->passive << 1));

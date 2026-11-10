@@ -56,7 +56,6 @@ for now. Each line names where to look.
 - **Names are not checked against the original's output**, only their shapes and seeding (`tests/check_ognames.c`); the same for building signs.
 - **Houses for sale and their price** (model radius * 5) need the dagger layer's models; so the bank's house, a knight's house and the town's `bank_add_house_for_sale` wait.
 - **The town's watch and people are the dagger layer's pool** (`people.c`): a guard is a person of archive 399 taken into OGFALL's creatures (`street_enlist`), a citizen turned into a guard is a guard made near and the citizen removed (the pictures are not the citizen's), blood splashes are not drawn, and a killed guard's corpse is the dagger's picture. The pool recycles slots: guards stay held until the place closes.
-- **Opening a street scene changes what follows**: in `tests/check_ogworld.c` the street test (a kill, the watch, the court sending it away) had to be run last, because leaving it earlier made later teleports and origin moves fail even after the town was reopened. Look for state that `og_dungeon_open_street` or `people_hold` leaves behind.
 - **Quest persons** are not told apart from pedestrians; no person is "a potential questor".
 
 ## Tests that approximate

@@ -2209,3 +2209,7 @@ The decomp's rules (`guards_summon`, `guard_spawn`, `people_check_witnesses`, `p
   A guard seen by a witness brings only the guards. A killed guard's body is the dagger's corpse (`people_lay_corpse`); the court sends the watch away (`og_dungeon_remove`, `people_fell`). A streamed town opens OGFALL's creatures
   with none of its own (`og_dungeon_open_street`), and their bodies move with the stream's origin (`og_dungeon_shift`).
 - Tests: `tests/check_ogworld.c`, `street_checks` (the last test of that file).
+
+Fixed: a guard taken from the street's people has no keep key (0, 0), and `store_health` wrote a keep row for it all the same (`keep_get` does not refuse an unkeyed key); the row was
+captured with the world and could never be put back (`keep_put` refuses it), so the next place change failed with "No memory for the saved place". `store_health` now skips an unkeyed entity.
+`street_checks` runs before the teleport and the origin moves to keep it so.
