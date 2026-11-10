@@ -78,6 +78,8 @@ int og_bank_sell_house(int region, int confirmed, int *text);
 int og_bank_sell_ship(int region, int confirmed, int *text);
 /* gold_total: the coins carried and every letter of credit's value, what the bank shows as the player's gold. */
 int og_gold_total(void);
+/* gold_spend (law.h) takes coins and letters; the bank asks it to make good a short balance. */
+void og_gold_spend(int amount);
 /* gold_can_carry: whether that much more gold fits (the pack's weight and a hundredth of it, against four times the capacity). */
 int og_gold_can_carry(int amount);
 

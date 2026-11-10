@@ -1836,3 +1836,42 @@ lines are read out of FALL.EXE (`tables/lodgingdata.h`, generated).
   building's interior markers), the knights' membership, a ship berth, the tavern's menu screen and room
   dialogue (talk), and an outdoor location's kind: the dagger's location records do not carry it, so every
   town counts as a town and a keep or a ruin refuses a sleeper that the original lets be.
+
+
+## Law: crimes and the court (2026-11-10)
+
+People and law, slice 5, the rules. `play/law.c`, tested in `tests/check_oglaw.c`; saves are schema 11 (the crime
+noted and each region's punishment flags). The crime table is read out of FALL.EXE (`tables/lawdata.h`, generated:
+`crime_reputation_loss` 0x179EAC, `crime_fine_table` 0x179EE0, `crime_names` 0x184229). Source:
+`crime_reputation_penalty`, `court_reputation_restore`, `court_restore_vitals`, `court_frame` (`src/lifted/crime.c`),
+`court_open` (`src/hand/func_00020C87.c`), `prison_serve_sentence` (`src/lifted/crime_000217E7.c`), `gold_spend`,
+`gold_total`, `gold_can_afford` (`src/lifted/support.c`), `reputation_decay` (`src/lifted/tamriel.c`); notes in
+`docs/ai-social-math.md` ("Crime, fine, jail, legal reputation").
+
+- **A fine** is the crime's row `{multiplier, base, least, most}` taken at the region's legal standing: base minus
+  standing times multiplier when the standing is below nothing, plus it when above (both raise it), held between
+  least and most (smuggling and piracy have a most of 0, so they fine nothing). Each forty of it is a coin: 40 gold
+  or 3 days of prison. Short of gold, the days take what the gold cannot.
+- **Severity:** a bad standing (below nothing) makes a banishment likelier: two rolls of 1..100 against half the
+  standing's size and against its size, each up to 75; assault at -100 is a banishment seven times in eight. Else the
+  usual fine and days.
+- **The court** is a state machine (`og_court_open`, `og_court_accept`, `og_court_plead`) that says what the original
+  says (TEXT.RSC 8050 the question, 8064 the plea, 8052, 8055, 8060, 8062, 8063) and what to do to the world. Guilty:
+  half the fine and half the days; paid from coins and letters (`og_gold_spend`: a letter that covers it is lessened,
+  else the letters in order, then the coins); a short purse gives up everything and adds a day for each forty short
+  and one. A banishment or a death sentence sets the region's flag and puts the player in the street or past it (marker
+  kinds 8 and 4). A plea is Personality and the skill over two plus the standing, 5 to 95: success is an acquittal
+  (marker 12); a failure is the sentence with the fine halved above a roll of 75 and doubled below 25 (and, as the
+  original does, not charged: only its days are served). A sentence given restores the standing a quarter of the
+  loss less a point (assault gives back 3), and the original does it a second time when prison days are served. The
+  Dark Brotherhood (crimes 4 and 5) and the Thieves Guild (crimes 1..3 and 12) clear a case at once when their rank is
+  at least a roll of 0..19 (the decomp's code, which reads the other way round in its own notes).
+- **Reputation:** a guard's blow costs the crime's loss off the standing and half of it off the region's people
+  (`og_crime_penalty`); the legal standing and every faction drift a point toward nothing each 161280 game minutes
+  (`og_standing_decay`, now called from the clock), not while a sentence is being served (`og_law_serving`).
+  Resting where it is vagrancy or trespass notes crime 8.
+- **Not built:** the guards (`guards_summon`, `people_check_witnesses`, their team and level, the line-of-sight
+  witnesses) and what calls the court (a guard's arrest, `crime_guards_or_court`'s health-to-1 and surrender); the
+  court's and prison's screens (`COURT00I0`, `PRIS00I0`, "N days until freedom") and the marker moves; the crimes'
+  callers (a witnessed pickpocketing, lockpicking, a theft: with steal, slice 7); the legal standing's words
+  (`legal_reputation_ranges`, with the character sheet). Playing the court needs the guards first.

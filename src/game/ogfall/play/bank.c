@@ -175,8 +175,8 @@ int og_bank_repay(int region, int amount, int *text)
     if (!a || a->loan_owed == 0 || amount < 1) {
         return OG_BANK_REFUSED;
     }
-    /* The balance and the gold carried together must cover it (gold_total_alias). */
-    if (a->balance + og_character()->gold < amount) {
+    /* The balance and the gold carried (coins and letters) together must cover it (gold_total_alias). */
+    if (a->balance + og_gold_total() < amount) {
         return refuse(text, OG_BANK_TEXT_CANNOT_AFFORD);
     }
     trimmed = 0;
@@ -188,7 +188,7 @@ int og_bank_repay(int region, int amount, int *text)
     a->loan_owed -= amount;
     if (a->balance < 0) {
         /* gold_spend of what the account could not pay, the balance back to nothing. */
-        og_character()->gold += a->balance;
+        og_gold_spend(-a->balance);
         a->balance = 0;
     }
     if (a->loan_owed == 0) {

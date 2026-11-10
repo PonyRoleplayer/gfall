@@ -399,6 +399,17 @@ static void transfer(Wire *w, OgState *s)
         wire_u32(w, &s->lodging.last_meal);
     }
 
+    /* Law (slice 5): the crime noted and each region's punishment flags. */
+    if (w->version >= 11) {
+        int k;
+
+        wire_int(w, &s->law.crime);
+        for (k = 0; k < OG_REGIONS; k++) {
+            int v;
+            v = s->law.punishment[k]; wire_int(w, &v); s->law.punishment[k] = (unsigned char)v;
+        }
+    }
+
     if (w->version >= 7) {
         OgWorldState *world;
         world = &s->world_state;

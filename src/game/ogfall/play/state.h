@@ -6,6 +6,7 @@
 #include "game/ogfall/play/standing.h"
 #include "game/ogfall/play/bank.h"
 #include "game/ogfall/play/lodging.h"
+#include "game/ogfall/play/law.h"
 #include "engine/core/df.h"
 #include "game/ogfall/tables/tables.h"
 #include "game/ogfall/play/move.h"
@@ -16,7 +17,7 @@
 #include "game/ogfall/play/worldstate.h"
 #include "engine/scene/keep.h"
 
-#define OG_STATE_VERSION 10
+#define OG_STATE_VERSION 11
 #define OG_STATE5_WIRE_BYTES 348
 #define OG_WORLD_ROWS 512
 #define OG_THUMB_W 80
@@ -111,6 +112,7 @@ typedef struct OgState {
     OgStanding standing;
     OgBankState bank;
     OgLodging lodging;
+    OgLaw law;
 } OgState;
 
 OgCharacter *og_character(void);
@@ -122,6 +124,8 @@ OgStanding *og_standing(void);
 OgBankState *og_bank(void);
 /* The rooms rented and the last meal (lodging.h). */
 OgLodging *og_lodging(void);
+/* The crime noted and each region's punishment (law.h). */
+OgLaw *og_law(void);
 const char *og_state_error(void);
 /* Reset gameplay, retaining the RNG stream and control settings.
  * begin consumes the completed character from chargen. */

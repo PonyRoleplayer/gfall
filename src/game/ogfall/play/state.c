@@ -49,6 +49,11 @@ OgLodging *og_lodging(void)
     return &g_state.lodging;
 }
 
+OgLaw *og_law(void)
+{
+    return &g_state.law;
+}
+
 void og_skill_use(int skill)
 {
     if (skill >= 0 && skill < OG_SKILLS && g_state.skill_uses[skill] != 0xffffffffu) {
@@ -431,6 +436,10 @@ void og_state_pass_minutes(df_u32 minutes)
     og_magic_minutes(start,minutes);
     for (i = 0; i < minutes; i++) {
         og_state_event(OG_EVENT_MINUTE, 0, 0, (int)(start + i + 1));
+        /* time_pass: each 161280 minutes the standings drift one point toward nothing (reputation_decay). */
+        if ((start + i + 1) % OG_DECAY_MINUTES == 0) {
+            og_standing_decay(og_law_is_serving());
+        }
     }
     og_state_calendar();
 }
@@ -716,7 +725,7 @@ int og_state_valid(const OgState *snapshot)
         character_valid(snapshot) && clock_and_view_valid(snapshot) && objects_valid(snapshot) &&
         saved_world_valid(snapshot) && encounters_valid(&snapshot->encounters) &&
         og_magic_valid(&snapshot->magic) && og_world_valid(&snapshot->world_state) && magic_references_valid(snapshot) && og_inventory_valid(snapshot) &&
-        (!snapshot->standing.ready || og_standing_valid(&snapshot->standing)) && og_bank_valid(&snapshot->bank) && og_lodging_valid(&snapshot->lodging);
+        (!snapshot->standing.ready || og_standing_valid(&snapshot->standing)) && og_bank_valid(&snapshot->bank) && og_lodging_valid(&snapshot->lodging) && og_law_valid(&snapshot->law);
 }
 
 int og_state_restore(const OgState *snapshot)

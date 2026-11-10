@@ -3,6 +3,7 @@
 #include "check_ogmarket.h"
 #include "check_ogbank.h"
 #include "check_oglodging.h"
+#include "check_oglaw.h"
 #include "game/ogfall/play/standing.h"
 #include "check_util.h"
 #include "engine/core/mem.h"
@@ -186,7 +187,7 @@ static void check_legacy_save(const df_u8 *current, df_u32 size)
     int row, spell_count, version, record_bytes;
     df_u32 spells[OG_OBJECTS];
     /* Standing, from schema 8, sits between the magic rows and the world: ready, a count, a pair a faction and a pair a region. */
-    df_u32 stand = 8u + (og_state()->standing.ready ? (df_u32)og_faction_count()*8u + OG_REGIONS*8u : 0u) + (OG_REGIONS*16u + 16u) + (OG_ROOMS_MOST*12u + 4u);
+    df_u32 stand = 8u + (og_state()->standing.ready ? (df_u32)og_faction_count()*8u + OG_REGIONS*8u : 0u) + (OG_REGIONS*16u + 16u) + (OG_ROOMS_MOST*12u + 4u) + (4u + OG_REGIONS*4u);
     check_expect(size > 24u+1272u+256u*124u && df_ru32(current+24+1272) == OG_WORLD_ROOT,
                  "fixture locates the documented original object section");
     if (size <= 24u+1272u+256u*124u) { return; }
@@ -365,6 +366,8 @@ void check_ogstate(const char *root)
     check_ogbank_screen();
     og_state_restore(&g_initial);
     check_oglodging();
+    og_state_restore(&g_initial);
+    check_oglaw();
     og_state_restore(&g_initial);
     og_state_restore(&g_initial);
     check_disk(root);
