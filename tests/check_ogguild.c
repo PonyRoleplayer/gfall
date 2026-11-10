@@ -223,4 +223,27 @@ void check_ogguild(void)
         check_expect(og_building_open(11, 41, 0u, 3u * 60u, 0, &p), "hours: a Fighter of rank 6 did not");
         check_expect(og_building_open(17, 0, 10u, 12u * 60u, 1, &p) && !og_building_open(17, 0, 60u, 12u * 60u, 1, &p) && !og_building_open(17, 0, 10u, 12u * 60u, 0, &p), "hours: houses open by day, half of them");
     }
+
+    /* Daedra summoning: a prince's day (index + 1), the sentinel and the day with none; the price from the hall's reputation; the roll and the first and later successes. */
+    {
+        OgDaedraStep d;
+        int kind, result, n, quests, allies, failed;
+
+        check_expect(!og_daedra_offer(40, 0, 1440u * 1u, &d) && d.text == 480, "daedra: a day with no prince was offered");
+        check_expect(!og_daedra_offer(40, 0, 1440u * 154u, &d) && d.text == 480, "daedra: the sentinel day was offered");
+        check_expect(og_daedra_offer(40, 0, 1440u * 319u, &d) && d.ask && d.prince == 2 && d.price == 200000 && d.text == 481, "daedra: day 319 is not the second prince's at the dearest price");
+        check_expect(og_daedra_offer(40, 100, 1440u * 45u + 518400u, &d) && d.prince == 5 && d.price == 100000, "daedra: the price at a reputation of 100 is not 100000");
+        check_expect(og_daedra_offer(40, 60, 1440u * 45u, &d) && d.price == 140000, "daedra: the price at 60 is not 140000");
+        og_guilds()->daedra_met = 0;
+        quests = allies = failed = 0;
+        for (n = 0; n < 300; n++) {
+            og_guilds()->daedra_met = 0;
+            result = og_daedra_summon(2, 0, &kind);
+            quests += result == OG_DAEDRA_QUEST; failed += result == OG_DAEDRA_FAILED;
+            result = og_daedra_summon(2, 0, &kind);
+            allies += result == OG_DAEDRA_ALLY && (kind == 26 || kind == 25 || kind == 27 || kind == 29 || kind == 31);
+        }
+        check_expect(quests > 120 && failed > 20 && allies > 60, "daedra: the first success, the failures and a later success are not in the odds the original has");
+        og_guilds()->daedra_met = 0;
+    }
 }

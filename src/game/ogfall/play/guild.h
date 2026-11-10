@@ -35,6 +35,8 @@ typedef struct OgGuilds {
     df_u32 thieves_invite, brotherhood_invite;
     /* The minute of the last lesson (last_training_minutes), and the one blessing a temple's gift allows. */
     df_u32 last_training;
+    /* The princes the player has summoned before (bit n for the prince of faction n + 1): the original sets 64 in their faction's flags. */
+    df_u32 daedra_met;
     struct OgBlessing {
         int active, target, amount, region;
         df_u32 end;
@@ -140,5 +142,21 @@ int og_blessing_expire(df_u32 now);
 int og_knight_armor(OgMembership *m, int *text);
 /* "Receive house" (848): record 460 until rank 9; the house itself waits for the towns' houses. 1 when the player may be given one. */
 int og_knight_house_allowed(const OgMembership *m, int has_house, int *text);
+
+/*
+ * Daedra summoning (daedra_summon, src/hand/func_000202C5.c 80..170): a day of the year belongs to one of sixteen princes (the original's table; the fourth has no day
+ * to be summoned on). The Mages and the temples' summoners offer it for (100 - the hall's reputation) * 1000 + 100000 gold, at most 200000: record 480 when no prince has the day,
+ * a line when the temple's own enemy would be called, else the question (481). The gold is spent before the roll. The chance is 30 and the prince's reputation, and 30 more
+ * when the weather is the one the prince likes (or any), unless the dice (a roll over 100 at most 5, 15 in weather 6) call the ninth prince instead. Failure is record 484.
+ * A first success sets the prince as met, and what follows is his quest; a later one summons a creature of one of five kinds as an ally.
+ */
+typedef struct OgDaedraStep {
+    int text, ask, price, prince;
+    const char *line;
+} OgDaedraStep;
+int og_daedra_offer(int hall_faction, int hall_reputation, df_u32 now, OgDaedraStep *step);
+enum { OG_DAEDRA_FAILED, OG_DAEDRA_QUEST, OG_DAEDRA_ALLY };
+/* The gold is the caller's to spend first. *kind is the creature kind of an ally. */
+int og_daedra_summon(int prince, int weather, int *kind);
 
 #endif

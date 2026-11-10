@@ -2168,3 +2168,15 @@ strikes is not built, and neither are the artifacts or the item maker.
 The shop (`guild_buy_magic_items`): quality / 2 + 1 magic items and a spellbook, and, for a member of rank 4 and over, as many soul traps; the stock is drawn on the stream started at the building's number, so
 a hall holds the same stock every visit; the festival 38 halves the prices. The Mages (65) from rank 3 and the Dibella-like temples that have a seller open it; a stranger is refused.
 Tests: `tests/check_ogmagicitem.c`.
+
+### Teleporting and the Daedra
+
+- **Teleportation** (`guild_teleport`; the Mages' person 62, rank 8): the world map opened in the original's mode 100 (`og_maps_open(100)`) from wherever the player stands (the original makes the
+  environment outdoors first), a place chosen on it is arrived at by `og_teleport`: no gold, no time, no rest, as `travel_begin_trip` has it for mode 100. The map's popup is the ordinary journey
+  popup (the original's own is a small yes/no picture, TELE00I0.IMG, which is not drawn); a place that is not on the map is refused.
+- **Daedra summoning** (`daedra_summon`; the Mages' rank 6, the temples' summoners from ranks 6 to 8): `og_daedra_offer` and `og_daedra_summon` in `guild.c` carry the original's sums. Sixteen days of the
+  year each belong to a prince (his faction number is the entry + 1; the fourth entry is no day at all): other days answer record 480. A temple does not call its own enemy (a line). The price is
+  (100 - the hall's reputation) * 1000 + 100000, held within 0..200000 and asked in record 481; the gold is spent before the roll. The chance is 30 and the prince's reputation, plus 30 when the prince's
+  weather (most like any) is the weather; a roll of 0..100 at most 5 (15 in weather 6) calls the ninth prince instead. Failure is record 484. A first success marks the prince met (`daedra_met`, saved)
+  and begins his quest; a later one summons a creature of one of five kinds (26, 25, 27, 29 or 31) as an ally. Neither is built: the quest waits for the quest machine, the ally for friendly creatures; the weather
+  is not passed (the climate's weather byte is not kept), so a prince's liking for weather counts only when he likes any. Tests: `tests/check_ogguild.c`, and `tests/check_ogworld.c` for the teleport.

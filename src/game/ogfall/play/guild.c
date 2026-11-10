@@ -614,3 +614,58 @@ int og_knight_house_allowed(const OgMembership *m, int has_house, int *text)
     }
     return 1;
 }
+
+int og_daedra_offer(int hall_faction, int hall_reputation, df_u32 now, OgDaedraStep *step)
+{
+    int day, i, prince, price;
+
+    step->text = 0; step->ask = 0; step->price = 0; step->prince = 0; step->line = 0;
+    day = (int)((now % 518400u) / 1440u);
+    prince = 0;
+    for (i = 0; i < 16; i++) {
+        /* The fourth entry is the original's "no summoning" sentinel (D_00179E66). */
+        if (g_daedra_day[i] == day && i != 3) {
+            prince = i + 1;
+            break;
+        }
+    }
+    if (!prince) {
+        step->text = 480;
+        return 0;
+    }
+    if (hall_faction != 40 && og_faction_has_enemy(hall_faction, prince)) {
+        step->line = "Today is a day for summoning enemies. We won't.";
+        return 0;
+    }
+    price = (100 - hall_reputation) * 1000 + 100000;
+    if (price < 0) { price = -price; }
+    if (price > 200000) { price = 200000; }
+    step->prince = prince;
+    step->price = price;
+    step->text = 481;
+    step->ask = 1;
+    return 1;
+}
+
+int og_daedra_summon(int prince, int weather, int *kind)
+{
+    int chance, n;
+
+    n = weather == 6 ? 15 : 5;
+    if (og_random_range(0, 32767) % 101 <= n) {
+        prince = 9;
+    }
+    chance = 30 + og_faction_rep(prince);
+    if (g_daedra_weather[prince] == 100 || weather == g_daedra_weather[prince]) {
+        chance += 30;
+    }
+    if (og_random_range(1, 100) > chance) {
+        return OG_DAEDRA_FAILED;
+    }
+    if (og_guilds()->daedra_met & (1u << prince)) {
+        *kind = g_daedra_kind[og_random_range(0, 4)];
+        return OG_DAEDRA_ALLY;
+    }
+    og_guilds()->daedra_met |= 1u << prince;
+    return OG_DAEDRA_QUEST;
+}

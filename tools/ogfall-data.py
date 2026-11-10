@@ -395,6 +395,11 @@ for f, a in trainers:
     guild.append('    {%s},\n' % ', '.join(str(v) for v in values + [255]))
 guild.append('};\n')
 guild.append(array('g_skill_advance', unpack(symbols['skill_advance_multipliers'], '35h'), 'df_i16'))
+# Daedra summoning (daedra_summon, src/hand/func_000202C5.c): the day of the year each of the sixteen princes may be summoned (index + 1 is the prince's faction), the weather each
+# likes (100 any, 0 for no prince 0), and the five kinds of creature that come once a prince has been met.
+guild.append(array('g_daedra_day', unpack(0x179e60, '16H'), 'df_u16'))
+guild.append(array('g_daedra_weather', unpack(0x179e7f, '17B')))
+guild.append(array('g_daedra_kind', unpack(0x179e90, '5B')))
 Path('src/game/ogfall/tables/guilddata.h').write_text(''.join(guild))
 
 # When buildings open (building_open_hours, src/lifted/tamriel.c 317): for each building type 0..16 the hour it opens and the hour it shuts.

@@ -1487,6 +1487,37 @@ static void hall_spell_buy(int id)
     hall_confirm(og_spellshop_price(spell, og_holiday_today(og_state()->minutes, travel_region())), hall_spell_paid);
 }
 
+/* daedra_summon: the day's prince, the price asked (481), the gold spent and the roll; a first success is the prince's quest (not built), a later one an ally (not built either). */
+static int g_daedra_prince, g_daedra_price;
+
+static void hall_daedra_answer(int yes)
+{
+    int kind, result;
+
+    if (!yes) { return; }
+    if (!og_gold_can_afford(g_daedra_price)) { hall_text(454); return; }
+    og_gold_spend(g_daedra_price);
+    result = og_daedra_summon(g_daedra_prince, 0, &kind);
+    if (result == OG_DAEDRA_FAILED) { hall_text(484); }
+    else if (result == OG_DAEDRA_QUEST) { og_possessions_message("The Daedra Prince has heard you. His quest is not yet built.", 0); }
+    else { og_possessions_message("A Daedra answers your call. Summoned creatures are not yet built.", 0); }
+}
+
+static void hall_daedra(void)
+{
+    OgDaedraStep step;
+    static char line[400];
+
+    if (!og_daedra_offer(g_hall.faction, og_faction_rep(g_hall.faction), og_state()->minutes, &step)) {
+        if (step.text) { hall_text(step.text); } else if (step.line) { og_possessions_message(step.line, 0); }
+        return;
+    }
+    g_daedra_prince = step.prince;
+    g_daedra_price = step.price;
+    offer_say(step.text, step.price, line, (int)sizeof(line));
+    og_possessions_ask(line, hall_daedra_answer);
+}
+
 static void hall_run(void);
 
 static void hall_heal_answer(int yes)
@@ -1587,6 +1618,13 @@ static void hall_run(void)
             count = og_spellshop_list(g_met.who, quality, ids, OG_SPELLSHOP_MOST);
             if (count) { og_possessions_spellshop(ids, count, hall_spell_buy); }
         }
+        break;
+    case OG_SVC_DAEDRA:
+        hall_daedra();
+        break;
+    case OG_SVC_TELEPORT:
+        /* guild_teleport: the world map, from wherever the player stands. */
+        og_maps_open(100);
         break;
     case OG_SVC_ARMOR:
         {
@@ -4824,6 +4862,8 @@ static void close_maps(void)
     g_map_marker_step = -1; g_maps_mode = g_map_drag = 0;
     og_pic_set(OG_PIC_SCREEN,0);
 }
+/* The map opened to teleport (the guild's mode 100): a place chosen is arrived at, not travelled to. */
+static int g_teleport;
 static int open_maps(int trip)
 {
     TravelMapRules rules;
@@ -4832,7 +4872,8 @@ static int open_maps(int trip)
     float x, z;
     og_travel_capture(); og_move_camera(&camera);
     g_map_x = g_map_y = -1; g_map_drag = 0; g_map_repeat = 0;
-    if (trip && og_world_state()->where.kind != OG_PLACE_WORLD) { return 0; }
+    g_teleport = trip == 100;
+    if (trip && !g_teleport && og_world_state()->where.kind != OG_PLACE_WORLD) { return 0; }
     if (!trip && og_world_state()->where.kind != OG_PLACE_WORLD) {
         if (!dunmap_open(og_move_body()->feet,camera.yaw)) { return 0; }
         g_maps_mode = 1;
@@ -4864,7 +4905,7 @@ static int frame_maps(const OgIn *input)
             int region, index, cautious, reckless, camp, ship;
             Journey journey;
             travelmap_chosen(&region,&index,&journey,&cautious); travelmap_options(&reckless,&camp,&ship);
-            if (og_journey_begin(region,index,reckless,camp,ship)) { return 1; }
+            if (g_teleport ? og_teleport(region,index) : og_journey_begin(region,index,reckless,camp,ship)) { return 1; }
         }
         return result == TRAVELMAP_LEAVE;
     }

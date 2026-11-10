@@ -29,6 +29,8 @@ void og_travel_discover(int ordinal);
 void og_travel_capture(void);
 int og_travel_climate(int px, int py);
 int og_travel_go(int region, int index);
+/* The Mages Guild's teleportation (guild_teleport, the map opened in mode 100): to a place on the map, at once, from anywhere, for nothing. */
+int og_teleport(int region, int index);
 int og_travel_at(const OgWhere *where);
 int og_travel_return(const OgWhere *where, float x, float eye_y, float z, int yaw, int pitch);
 /* A real journey uses original time/cost/options; goto changes place only. */

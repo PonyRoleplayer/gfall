@@ -446,6 +446,29 @@ void check_ogworld(const char *root)
             (void)line;
         }
     }
+    /* Teleporting (guild_teleport): to a place on the map, at once, with no gold and no time; one that is not on the map is refused. */
+    {
+        OgLocation target;
+        int k, here_region, minutes_before, gold_before;
+
+        here_region = og_state()->region;
+        target.region = -1;
+        for (k = 0; k < og_travel_count(); k++) {
+            OgLocation candidate;
+
+            if (og_travel_location(k, &candidate) && og_travel_known(k) && candidate.region != here_region && candidate.type == 6) { target = candidate; break; }
+        }
+        check_expect(target.region >= 0, "teleport: no known town elsewhere on the map");
+        if (target.region >= 0) {
+            minutes_before = (int)og_state()->minutes;
+            gold_before = og_character()->gold;
+            check_expect(og_teleport(target.region, target.index) && og_travel_asked(), "teleport: a known place was not arrived at");
+            check_expect((int)og_state()->minutes == minutes_before && og_character()->gold == gold_before, "teleport: it took time or gold");
+            check_expect(change() && og_state()->region == target.region, "teleport: the player is not in the town's region");
+            check_expect(!og_teleport(-5, 0), "teleport: a place that is none was reached");
+            cmd_run("goto Daggerfall"); change();
+        }
+    }
     walk_across_origin();
     drop_outside();
     region = index = -1;

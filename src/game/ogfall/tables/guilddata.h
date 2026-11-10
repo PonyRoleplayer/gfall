@@ -69,3 +69,6 @@ static const unsigned char g_trainer_skills[12][14] = {
     {3, 21, 20, 33, 5, 7, 22, 24, 18, 16, 9, 255},
 };
 static const df_i16 g_skill_advance[] = { 12, 1, 1, 5, 15, 15, 15, 15, 15, 15, 15, 15, 15, 2, 1, 2, 2, 1, 2, 1, 4, 50, 1, 2, 1, 1, 2, 1, 2, 2, 2, 2, 2, 1, 8 };
+static const df_u16 g_daedra_day[] = { 0, 319, 349, 154, 45, 98, 277, 64, 31, 301, 128, 12, 189, 247, 282, 80 };
+static const df_u8 g_daedra_weather[] = { 0, 100, 100, 100, 100, 4, 4, 100, 100, 6, 4, 100, 100, 100, 4, 100, 100 };
+static const df_u8 g_daedra_kind[] = { 26, 25, 27, 29, 31 };

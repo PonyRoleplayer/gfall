@@ -60,6 +60,21 @@ int og_journey_warning(void)
     }
     return 0;
 }
+int og_teleport(int region, int index)
+{
+    OgLocation location;
+    int i, found;
+
+    if (!og_state()->ready || og_character()->health <= 0) { return 0; }
+    found = 0;
+    for (i = 0; i < og_travel_count(); i++) {
+        if (og_travel_location(i,&location) && location.region == region && location.index == index) { found = 1; break; }
+    }
+    if (!found || !og_travel_known(i)) { og_msg_set("That location is not on your map."); return 0; }
+    /* travel_begin_trip with the map's mode 100: neither the clock, nor the gold, nor the rest of a journey; only the arrival. */
+    return og_travel_go(region,index);
+}
+
 int og_journey_begin(int region, int index, int reckless, int camp, int ship)
 {
     OgJourney route;
