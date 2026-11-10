@@ -97,6 +97,8 @@ typedef struct Entity {
     df_u8 frame;
     /* 0 for a free entry: not drawn. Only "drawn": a creature whose pictures are not read yet is not live. */
     df_u8 live;
+    /* Emissive art is drawn full bright, like Flat.glow. Not a light source. */
+    df_u8 glow;
     /*
      * The game's: 1 once it was killed. Kept across a load (keep.h) where
      * live is not, so a creature saved before its pictures were read is

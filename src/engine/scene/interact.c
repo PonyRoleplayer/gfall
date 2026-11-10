@@ -484,6 +484,18 @@ void mover_set_end(Mover *m, int at_end)
     }
 }
 
+void mover_restore_motion(Mover *m, float progress, int direction)
+{
+    if (!m || m->teleport) { return; }
+    if (!(progress >= 0)) { progress = 0; }
+    if (progress > 1) { progress = 1; }
+    m->t = progress;
+    m->state = direction > 0 ? MOVER_FORWARD : direction < 0 ? MOVER_BACK : progress > 0 ? MOVER_END : MOVER_START;
+    if (m->inst) { pose_at(m,m->t,m->inst); }
+}
+
+float mover_progress(const Mover *m) { return m ? m->t : 0; }
+
 int mover_at_end(const Mover *m)
 {
     /* One in motion counts at the end it is heading for. */
@@ -676,6 +688,9 @@ void mover_step(const Scene *scene, float secs)
     }
 }
 
+static int g_using_touch;
+int interact_using_touch(void) { return g_using_touch; }
+
 int interact_use(const Scene *scene, int i)
 {
     const Usable *u;
@@ -861,7 +876,9 @@ void interact_frame(const Scene *scene, const Camera *cam, float secs, int used)
             /* Landed: what the body stands in counts as come into already. */
             g_tele_arrive = 0;
         } else if (t >= 0 && t != g_touching) {
+            g_using_touch = 1;
             interact_use(scene, t);
+            g_using_touch = 0;
         }
         g_touching = t;
     }

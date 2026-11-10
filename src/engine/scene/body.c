@@ -90,6 +90,7 @@ void body_place(Body *b, float x, float feet_y, float z)
     b->landed = 0;
     b->have_safe = 0;
     b->want_unstick = 1;
+    b->hit_wall = 0;
 }
 
 int body_jump(Body *b, float up_speed)
@@ -444,6 +445,7 @@ static void push_off(Body *b, const Scene *scene)
 
 void body_fly_step(Body *b, const Scene *scene, float dx, float dy, float dz)
 {
+    CollideHit hit;
     float c[3], travel, below, above;
     if (!b || !scene || !collide_use(scene)) { return; }
     if (b->scene != scene || b->epoch != mem_epoch()) { b->have_safe = 0; }
@@ -460,7 +462,9 @@ void body_fly_step(Body *b, const Scene *scene, float dx, float dy, float dz)
         put(b->feet,b->safe); upper(b,b->feet,c);
         gather_round(b,b->feet,travel+2,below+2,above+2);
     }
-    collide_slide(c,dx,dy,dz,0);
+    collide_slide(c,dx,dy,dz,&hit);
+    b->hit_wall = (df_u8)hit.wall;
+    put(b->wall_normal,hit.wall_normal);
     b->feet[0] = c[0]; b->feet[1] = c[1]-b->height/2; b->feet[2] = c[2];
     push_off(b,scene); upper(b,b->feet,c);
     if (!collide_overlap(c)) { put(b->safe,b->feet); b->have_safe = 1; }
@@ -468,6 +472,7 @@ void body_fly_step(Body *b, const Scene *scene, float dx, float dy, float dz)
 
 void body_step(Body *b, const Scene *scene, float want_dx, float want_dz, float dt)
 {
+    CollideHit hit;
     float dy;
     float travel;
     float floor_y;
@@ -480,6 +485,7 @@ void body_step(Body *b, const Scene *scene, float want_dx, float want_dz, float 
     if (!b || !scene || !collide_use(scene)) {
         return;
     }
+    b->hit_wall = 0;
     /* A new place, or another heap: out of whatever it is caught in where it stands. */
     if (scene != b->scene || mem_epoch() != b->epoch) {
         b->scene = scene;
@@ -528,7 +534,9 @@ void body_step(Body *b, const Scene *scene, float want_dx, float want_dz, float 
 
         upper(b, b->feet, c);
         y0 = c[1];
-        collide_slide(c, want_dx, 0.0f, want_dz, 0);
+        collide_slide(c, want_dx, 0.0f, want_dz, &hit);
+        b->hit_wall = (df_u8)hit.wall;
+        put(b->wall_normal,hit.wall_normal);
         if (air) {
             b->feet[1] = c[1] - centre_up(b);
         } else if (df_absf(c[1] - y0) > 0.01f) {

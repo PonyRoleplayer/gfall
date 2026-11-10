@@ -191,10 +191,12 @@ void keep_save(Scene *scene, int first_mover, int nmovers, const Entity *ents, i
         int at;
 
         m = &scene->movers[i];
-        if (!keyed(m->key) || m->teleport) {
+        if (!keyed(m->key)) {
             continue;
         }
-        at_end = mover_at_end(m);
+        /* Teleports have no endpoint, but may still have a changed lock or
+         * game-owned state. Keep those independently of their motion kind. */
+        at_end = !m->teleport && mover_at_end(m);
         at = search(m->key);
         if (!at_end && m->lock == m->lock0) {
             /* As its file has it: no row, unless the game keeps something of its own. */
@@ -275,7 +277,7 @@ void keep_restore(Scene *scene, int first_mover, int nmovers, Entity *ents, int 
         const Keep *r;
 
         m = &scene->movers[i];
-        if (!keyed(m->key) || m->teleport) {
+        if (!keyed(m->key)) {
             continue;
         }
         r = keep_find(m->key);
@@ -283,7 +285,7 @@ void keep_restore(Scene *scene, int first_mover, int nmovers, Entity *ents, int 
             continue;
         }
         m->lock = r->lock;
-        mover_set_end(m, r->at_end);
+        if (!m->teleport) { mover_set_end(m, r->at_end); }
     }
     for (i = 0; ents && i < nents; i++) {
         Entity *e;

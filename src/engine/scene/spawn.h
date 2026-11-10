@@ -35,7 +35,7 @@
  * Plain C, no Glide: hostcheck runs it.
  */
 
-#define SPAWN_MAX 16
+#define SPAWN_MAX 32
 
 /* 0 for none; else the pool's entry plus one, and its generation in bits 8..15. */
 typedef df_u32 SpawnId;

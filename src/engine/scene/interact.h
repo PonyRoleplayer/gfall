@@ -63,6 +63,9 @@ int interact_use(const Scene *scene, int i);
  */
 typedef int (*UseHandler)(const Scene *scene, const Usable *u, int index);
 void interact_set_handler(UseHandler fn);
+/* During a use handler: nonzero when this use came from entering a touch
+ * volume. Explicit interact_use and pointer/key activation return zero. */
+int interact_using_touch(void);
 
 /*
  * Start mover i toward the end it is not at, and its chain, sounding
@@ -101,6 +104,10 @@ void mover_init(Mover *movers, int n);
 void mover_set_end(Mover *m, int at_end);
 /* 1 at its end or moving toward it. */
 int mover_at_end(const Mover *m);
+/* Restore an in-progress motion without sound or starting its chain.
+ * Progress is clamped to 0..1; direction is -1 back, 0 at rest, +1 forward. */
+void mover_restore_motion(Mover *m, float progress, int direction);
+float mover_progress(const Mover *m);
 
 /*
  * One frame, from draw_frame: when used is 1 (the use key went down),

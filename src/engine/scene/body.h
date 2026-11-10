@@ -65,6 +65,10 @@ typedef struct Body {
     df_u8 landed;
     df_u8 have_safe;
     df_u8 want_unstick;
+    /* Last requested motion's wall contact, independent of floor/ceiling hits.
+     * Transient; a game decides what a wall means for climbing or steering. */
+    df_u8 hit_wall;
+    float wall_normal[3];
 } Body;
 
 /*

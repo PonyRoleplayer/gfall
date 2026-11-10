@@ -38,6 +38,9 @@ typedef struct CollideHit {
      */
     float floor_y;
     float ceiling_y;
+    /* Most horizontal contact normal in world space, when wall is nonzero. */
+    int wall;
+    float wall_normal[3];
 } CollideHit;
 
 /*

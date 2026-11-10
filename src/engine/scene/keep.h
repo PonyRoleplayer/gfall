@@ -56,7 +56,8 @@ typedef struct Keep {
  * ents[0..nents-1] (its own array, which the scene only reads): each
  * keyed one that differs from its file gets its row, and one back as its
  * file has it loses its row (unless the game's bytes are set). A mover
- * differs at its end or with another lock than its file's; an entity
+ * differs at its end or with another lock than its file's. A teleport
+ * has no endpoint, but its changed lock and game bytes are retained; an entity
  * when it is dead (Entity.dead, the game's), shows an act, holds a
  * frame, or stands more than a unit from its home. Entity.live, which
  * is only "drawn", is never kept or put back. o is the scene's origin in the place's frame.
@@ -68,7 +69,8 @@ void keep_save(Scene *scene, int first_mover, int nmovers, const Entity *ents, i
  * The same after they are built (after mover_init), before they show:
  * each entity's home noted (where the file put it), then each keyed
  * thing that has a row put back. A mover goes straight to its end or
- * start, with no motion, sound or chain.
+ * start, with no motion, sound or chain. Teleports restore their lock
+ * without changing their motion state.
  */
 void keep_restore(Scene *scene, int first_mover, int nmovers, Entity *ents, int nents,
                   float ox, float oy, float oz);

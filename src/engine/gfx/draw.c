@@ -1044,9 +1044,11 @@ int draw_sprite_point(void)
 
 /* The live entities of list[0..n-1] the view sees, drawn. */
 static void draw_entity_list(const Camera *cam, const Basis *basis, const Level *level, int noted,
-                             const Entity *list, int n)
+                             const Entity *list, int n, df_u32 tint)
 {
     int i;
+    df_u32 current, wanted;
+    current = tint;
 
     for (i = 0; list && i < n; i++) {
         const Entity *e;
@@ -1068,21 +1070,24 @@ static void draw_entity_list(const Camera *cam, const Basis *basis, const Level 
         if (noted) {
             note_entity(e, (int)fl.slot, df_sqrt(d2));
         }
+        wanted = e->glow ? 0xffffffu : tint;
+        if (wanted != current) { glide_tint(wanted); current = wanted; }
         draw_flat(cam, basis, level, &fl);
         g_vis_entities++;
     }
+    if (current != tint) { glide_tint(tint); }
 }
 
 /* The place's own entities, then those spawned while playing (docs/spawn.md). */
-static void draw_entities(const Camera *cam, const Basis *basis, const Level *level, int noted)
+static void draw_entities(const Camera *cam, const Basis *basis, const Level *level, int noted, df_u32 tint)
 {
     const Entity *spawned;
     int nspawned;
 
     g_vis_entities = 0;
-    draw_entity_list(cam, basis, level, noted, level->scene.entities, level->scene.nentities);
+    draw_entity_list(cam, basis, level, noted, level->scene.entities, level->scene.nentities,tint);
     spawned = spawn_entities(&level->scene, &nspawned);
-    draw_entity_list(cam, basis, level, noted, spawned, nspawned);
+    draw_entity_list(cam, basis, level, noted, spawned, nspawned,tint);
 }
 
 /*
@@ -3252,7 +3257,7 @@ void draw_frame(const Camera *cam, const Level *level)
     /* The entities, each as the view of it the camera has (docs/entities.md), in daylight's colour. */
     if (level->scene.entities || spawn_count() > 0) {
         glide_tint(outdoor ? sprite_day : light_ambient_rgb());
-        draw_entities(cam, &basis, level, noted);
+        draw_entities(cam, &basis, level, noted,outdoor ? sprite_day : light_ambient_rgb());
     }
     glide_sprite_alpha(0);
     if (g_sprite_point) {

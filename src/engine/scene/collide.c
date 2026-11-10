@@ -706,6 +706,8 @@ float collide_slide(float *pos, float vx, float vy, float vz, CollideHit *hit)
         hit->hit = 0;
         hit->floor_y = -2.0f;
         hit->ceiling_y = 2.0f;
+        hit->wall = 0;
+        hit->wall_normal[0] = hit->wall_normal[1] = hit->wall_normal[2] = 0;
     }
     want = root(vx * vx + vy * vy + vz * vz);
     if (want < 1.0e-6f) {
@@ -781,6 +783,10 @@ float collide_slide(float *pos, float vx, float vy, float vz, CollideHit *hit)
             hit->hit = 1;
             hit->floor_y = wy > hit->floor_y ? wy : hit->floor_y;
             hit->ceiling_y = wy < hit->ceiling_y ? wy : hit->ceiling_y;
+            if (wl > 0 && df_absf(wy) < 0.5f && (!hit->wall || df_absf(wy) < df_absf(hit->wall_normal[1]))) {
+                hit->wall = 1;
+                hit->wall_normal[0] = wx/wl; hit->wall_normal[1] = wy; hit->wall_normal[2] = wz/wl;
+            }
         }
         {
             float into;
