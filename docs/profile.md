@@ -36,7 +36,7 @@ The time outside `frame` (the viewer's own loop, Windows' messages) is the diffe
 ## Where to read it
 
 - `prof` in the console: each stage's mean and worst, in ms, with the calibrated clock.
-- `prof log [label]`: the same, and appended to `prof.log` beside the program as a block: the label and the build, the mode, vsync, the frames a second, the limit, the texture details, the clock and the frames counted, where the camera stands, and the table. For a machine with no network: stand where it is slow, open the console, `prof log hold corridor`, and carry the one file back. The numbers are the last half second before the console opened.
+- `prof log [label]`: the same, and written to a file of its own beside the program, `prof_YYYY-MM-DDTHHMMSS[_label].log` (the label's words joined by underscores; take as many as you like and hand them over together), as a block: the label and the build, the mode, vsync, the frames a second, the limit, the texture details, the clock and the frames counted, where the camera stands, and the table. For a machine with no network: stand where it is slow, open the console, `prof log hold corridor`, and carry the one file back. The numbers are the last half second before the console opened.
 - LEVELFALL: P shows the profile panel, top centre (`profpanel=1` in `levelfall.cfg` opens it at start), and each F12 bookmark logs a `# prof` line with the means.
 
 ## The time spare before the retrace

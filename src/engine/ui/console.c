@@ -731,29 +731,67 @@ static void prof_stage_line(int i, char *line, int cap)
     log_format(line, cap, "  %s %d.%d, %d.%d", prof_name(i), mean / 10, mean % 10, worst / 10, worst % 10);
 }
 
+/* Two digits of n at dst[*at], zero filled. */
+static void two_digits(char *dst, int *at, int n)
+{
+    dst[(*at)++] = (char)('0' + (n / 10) % 10);
+    dst[(*at)++] = (char)('0' + n % 10);
+}
+
 /*
- * prof.log beside the program, appended: a block a call, what was
- * measured and where, then the table. For a machine with no network:
- * walk, stop, `prof log hold corridor`, and carry the file back.
+ * prof_YYYY-MM-DDTHHMMSS_label.log beside the program: one file a call
+ * (the stamp as screenshots have it, no colons for Windows 98), the
+ * label's words joined by underscores and cut to what a file name
+ * allows, then what was measured and where, and the table. For a
+ * machine with no network: walk, stop, `prof log hold corridor`, and
+ * carry the files back.
  */
+static void prof_file_name(char *name, int cap, const char *label)
+{
+    FsTime t;
+    int n;
+    int i;
+
+    fs_local_time(&t);
+    n = 0;
+    name[n++] = 'p'; name[n++] = 'r'; name[n++] = 'o'; name[n++] = 'f'; name[n++] = '_';
+    two_digits(name, &n, t.year / 100); two_digits(name, &n, t.year % 100);
+    name[n++] = '-'; two_digits(name, &n, t.month);
+    name[n++] = '-'; two_digits(name, &n, t.day);
+    name[n++] = 'T';
+    two_digits(name, &n, t.hour); two_digits(name, &n, t.minute); two_digits(name, &n, t.second);
+    if (label[0]) {
+        name[n++] = '_';
+        for (i = 0; label[i] && n < cap - 5 && i < 40; i++) {
+            char c;
+
+            c = label[i];
+            name[n++] = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '-' ? c : '_';
+        }
+    }
+    name[n++] = '.'; name[n++] = 'l'; name[n++] = 'o'; name[n++] = 'g';
+    name[n] = 0;
+}
+
 static void prof_append(const char *label)
 {
     char path[260];
+    char name[96];
     char line[160];
     HANDLE f;
     DWORD wrote;
     int k;
 
-    if (!fs_beside(path, (int)sizeof(path), "prof.log")) {
+    prof_file_name(name, (int)sizeof(name), label);
+    if (!fs_beside(path, (int)sizeof(path), name)) {
         log_text(LOG_ERROR, "prof: no path beside the program");
         return;
     }
-    f = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, 0, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    f = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
     if (f == INVALID_HANDLE_VALUE) {
         log_print(LOG_ERROR, "prof: cannot write %s", path);
         return;
     }
-    SetFilePointer(f, 0, 0, FILE_END);
     for (k = 0; k < PROF_STAGES + 4; k++) {
         int n;
 
@@ -783,10 +821,10 @@ static void prof_append(const char *label)
         WriteFile(f, "\r\n", 2, &wrote, 0);
     }
     CloseHandle(f);
-    log_print(LOG_PRINT, "prof: added to %s", path);
+    log_print(LOG_PRINT, "prof: written to %s", path);
 }
 
-/* prof: the table in the console; prof log [label]: and appended to prof.log. */
+/* prof: the table in the console; prof log [label]: and written to its own prof_<time>_<label>.log. */
 static void c_prof(int argc, char **argv)
 {
     char label[96];
@@ -1419,7 +1457,7 @@ static void commands(void)
     cmd_add("stats", c_stats, "", "frame time and what the last world frame drew");
     cmd_add("pos", c_pos, "", "camera position, yaw and pitch in degrees");
     cmd_add("time", c_time, "[hh:mm]", "the hour of the world clock, or set it");
-    cmd_add("prof", c_prof, "[log [label]]", "where the frame's time goes, by stage, in ms (P in LEVELFALL); log appends it to prof.log");
+    cmd_add("prof", c_prof, "[log [label]]", "where the frame's time goes, by stage, in ms (P in LEVELFALL); log writes it to its own prof_<ISO time>[_label].log");
     cmd_add("date", c_date, "[day month [year]]",
             "the calendar's date, or set it; a town's pictures and sky follow its season");
     cmd_add("season", c_season, "[fall|spring|summer|winter]",

@@ -108,7 +108,7 @@ A variable prints its value when typed alone, and takes a new one as an argument
 | `clear` | Empties the log. |
 | `help [name]`, `find word` | See above. |
 | `sndinfo`, `sndlist`, `sndview`, `song`, `play`, `musdev`, `sound`, `sndvol`, `sndmuffle`, `sndrate`, `snddrv`, `sndmmx`, `music`, `musvol`, `musvoices` | The sound and the music: see `docs/sound.md`. |
-| `prof [log [label]]` | Where the frame's time goes, by stage: see `docs/profile.md`. `log` appends the table, with the mode, vsync, the frames a second and where the camera stands, to `prof.log` beside the program. |
+| `prof [log [label]]` | Where the frame's time goes, by stage: see `docs/profile.md`. `log` writes the table, with the mode, vsync, the frames a second and where the camera stands, to a file of its own beside the program, `prof_YYYY-MM-DDTHHMMSS[_label].log` (the stamp as screenshots have it). |
 | `date`, `season` | The calendar and the season a town is drawn in: see `docs/daylight.md`. |
 | `mapreveal` | Every model of the place on its automap, as if walked: see `docs/automap.md`. |
 | `useview`, `uselist`, `locks` | What can be used, and the doors' locks: see `docs/interact.md`. |
