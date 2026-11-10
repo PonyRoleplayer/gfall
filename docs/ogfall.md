@@ -1959,3 +1959,20 @@ to know (8 kinds of question by 5 speech styles) and the attitude each kind adds
 Not wired: GFALL's shelf still opens a buying session directly (an adaptation: the original buys through the shopkeeper's
 panel, which comes with talk), so record 37's question and the alarm roll wait for that panel and for the person to
 steal from. `tests/check_ogsteal.c` holds the chances, the crimes and the kept goods.
+
+## People and law, slice 6 (continued): the window's answers
+
+`play/talk.c` now holds what `talk_button_okay` decides, over a world the caller describes:
+
+- Topics: `og_talk_category` is `building_category` (the bank's type 3 is "Banks", an unlisted type "General", a house only when
+  it is a quest site); `og_talk_topics` is `talk_build_place_topics` (houses and types past 16 out, nearest first by the original's
+  bubble sort, the "Regional" entry last and outside the sort); `og_talk_has_category` is `town_has_category`.
+- The answer (`og_talk_answer`): "tell me about" gives the news once a conversation, except for factions 806 and 842, whose person
+  is asked again and again (record 1457 once it was given; no knowing roll is made then). Work answers by attitude (8075..8077) or
+  8078 when there is none to give. "Regional" is record 28. Everything else is the answer table's record by knowing, speech style
+  and attitude (`tables/talkdata.h`, from FALL.EXE).
+- The directions (`og_talk_hint`, `talk_hint_text_id`): records 10 and 11 for a regional topic, 7332 (and the building goes on the
+  town map) when it is within 2048 units or a one-in-four recall while out in the streets, else 7333.
+
+Not built: the window's screen, `rumor_pick_news` (it reads a rumour file the original's region events write, which OGFALL has no
+world to produce, so there is no news yet), the quest topics, and the people to talk to (slice 8). Tests are in `tests/check_ogtalk.c`.

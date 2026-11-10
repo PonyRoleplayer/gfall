@@ -263,6 +263,20 @@ for k in range(8):
     talk.append('    {%d, %d, %d, %d, %d},\n' % tuple(unpack(0x1799f2 + k * 10, '5h')))
 talk.append('};\n')
 talk.append(array('g_attitude_mod', unpack(symbols['talk_question_attitude_mods'], '8h'), 'df_i16'))
+# What a person says to a question, by whether they know it, their speech style and the attitude (talk_button_okay):
+# [knows][style][attitude] TEXT.RSC records for "tell me about" and for "where is"; the 13 building types a
+# category of place stands for and the 15 category names.
+talk.append('static const df_i16 g_tell_answer[2][5][3] = {\n')
+for k in range(2):
+    talk.append('    {' + ', '.join('{%d, %d, %d}' % unpack(symbols['talk_tell_answers'] + k * 30 + st * 6, '3h') for st in range(5)) + '},\n')
+talk.append('};\n')
+talk.append('static const df_i16 g_where_answer[2][5][3] = {\n')
+for k in range(2):
+    talk.append('    {' + ', '.join('{%d, %d, %d}' % unpack(symbols['talk_where_answers'] + k * 30 + st * 6, '3h') for st in range(5)) + '},\n')
+talk.append('};\n')
+talk.append(array('g_category_type', unpack(symbols['talk_category_building_types'], '13B')))
+talk.append('static const char *const g_category_name[15] = { %s };\n' % ', '.join(
+    json.dumps(read(p, 40).split(b'\0')[0].decode('cp437')) for p in unpack(symbols['talk_category_names'], '15I')))
 Path('src/game/ogfall/tables/talkdata.h').write_text(''.join(talk))
 
 # Stealing (src/lifted/steal.c, src/lifted/inven.c trade_steal_button): the original's own lines.

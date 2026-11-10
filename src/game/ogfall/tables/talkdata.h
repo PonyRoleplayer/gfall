@@ -21,3 +21,13 @@ static const df_i16 g_knows[8][5] = {
     {1, -1, 6, 4, 2},
 };
 static const df_i16 g_attitude_mod[] = { 10, -5, 0, 0, 0, -10, -5, -5 };
+static const df_i16 g_tell_answer[2][5][3] = {
+    {{7250, 7265, 7280}, {7251, 7266, 7281}, {7252, 7267, 7282}, {7253, 7268, 7283}, {7254, 7269, 7284}},
+    {{7260, 7275, 7290}, {7261, 7276, 7291}, {7262, 7277, 7292}, {7263, 7278, 7293}, {7264, 7279, 7294}},
+};
+static const df_i16 g_where_answer[2][5][3] = {
+    {{7250, 7265, 7280}, {7251, 7266, 7281}, {7252, 7267, 7282}, {7253, 7268, 7283}, {7254, 7269, 7284}},
+    {{7255, 7270, 7285}, {7256, 7271, 7286}, {7257, 7272, 7287}, {7258, 7273, 7288}, {7259, 7274, 7289}},
+};
+static const df_u8 g_category_type[] = { 0, 2, 3, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15 };
+static const char *const g_category_name[15] = { "Alchemists", "Armorers", "Banks", "Bookstores", "Clothing stores", "Gem stores", "General stores", "Libraries", "Guilds", "Pawn shops", "Weapon smiths", "Local temples", "Taverns", "General", "Regional" };

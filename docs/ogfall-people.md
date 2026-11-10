@@ -49,7 +49,7 @@ and a short audit section in `ogfall.md`.
    is allowed (ties into the existing rest).
 5. **Law.** (Built 2026-11-10: crimes, fines, the court and its screen, sentences, reputation, the guards' rules and the arrest; making guards in a town waits for the streets' creatures.) Crimes and their witnesses, guard summoning and behaviour,
    `court_open`, fines, sentences, prison, reputation restore.
-6. **Talk.** (Rules built 2026-11-10: who talks, the greeting, attitude and knowing; the window and its answers remain.) `talk_open`, disposition, tones and the attitude roll, topics,
+6. **Talk.** (Rules built 2026-11-10: who talks, the greeting, attitude and knowing, the topics, the answer and the directions' hint; the window's screen, the rumours and the quest topics remain, with the people to talk to in slice 8.) `talk_open`, disposition, tones and the attitude roll, topics,
    directions, rumours and the logbook copy.
 7. **Steal.** (Built 2026-11-10: the pocket, the trade screen's Steal button and the shelf's alarm roll as rules; the pocket and the shelf question wait for the people and the merchant panel.) Pickpocket, shop steal, container theft and the alarm roll, with
    slice 5's consequences.

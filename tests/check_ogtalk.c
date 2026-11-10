@@ -4,6 +4,7 @@
 #include "game/ogfall/play/state.h"
 #include "game/ogfall/play/standing.h"
 #include <stdio.h>
+#include <string.h>
 
 /* An individual (type 4) under a group, and a regional person (type 15) under one, in the real table. */
 static int pick(int type, int *group)
@@ -166,4 +167,61 @@ void check_ogtalk(void)
         check_expect(yes > 120 && yes < 400, "talk: the chance to know is outside what the table allows");
     }
     og_standing()->rep[og_faction_index(group)] = 0;
+
+    /* The window's topics: categories by building type (the bank 3 is category 2, a house is none unless a quest site, an unlisted type is General). */
+    {
+        OgTalkBuilding b[5];
+        OgTalkTopic t[16];
+        OgTalkAsk ask;
+        int n, noted, answer;
+
+        check_expect(og_talk_category(3, 0) == 2 && og_talk_category(1, 0) == -1 && og_talk_category(1, 8) == 13 && og_talk_category(4, 0) == 13 &&
+                     og_talk_category(0, 0) == 0 && og_talk_category(15, 0) == 12, "talk: building categories");
+        check_expect(!strcmp(og_talk_category_name(2), "Banks") && !strcmp(og_talk_category_name(14), "Regional"), "talk: category names are not FALL.EXE's");
+        b[0].id = 10; b[0].type = 3; b[0].flags = 0; b[0].distance = 900;
+        b[1].id = 11; b[1].type = 1; b[1].flags = 0; b[1].distance = 10;
+        b[2].id = 12; b[2].type = 15; b[2].flags = 0; b[2].distance = 300;
+        b[3].id = 13; b[3].type = 2; b[3].flags = 0; b[3].distance = 600;
+        b[4].id = 14; b[4].type = 20; b[4].flags = 0; b[4].distance = 50;
+        n = og_talk_topics(t, 16, b, 5);
+        check_expect(n == 4 && t[0].building == 12 && t[1].building == 13 && t[2].building == 10 && t[3].category == OG_TALK_REGIONAL && !t[3].building,
+                     "talk: places are not listed nearest first, houses out, the regional entry last");
+        check_expect(og_talk_has_category(b, 5, 2) && !og_talk_has_category(b, 5, 7) && og_talk_has_category(b, 5, OG_TALK_REGIONAL), "talk: town_has_category");
+
+        /* The answers: "where is" picks its record by knowing, style and attitude; "tell me about" gives the news once. */
+        og_standing_defaults(og_standing());
+        who.person = 1; who.blocked = 0; who.npc = 777u; who.faction = person;
+        og_character()->reputation[0] = og_character()->reputation[1] = og_character()->reputation[2] = og_character()->reputation[3] = og_character()->reputation[4] = 0;
+        check_expect(og_talk_start(&talk, &who, &player, &text), "talk: a person would not talk for the answers");
+        og_talk_open(&talk, &player, 0, &text);
+        ask.mode = 1; ask.tab = 0; ask.category = 2; ask.row = 1; ask.news = 0; ask.no_work = 0;
+        answer = og_talk_answer(&talk, &ask, &text);
+        check_expect(answer == OG_ANSWER_TEXT && text >= 7250 && text <= 7290, "talk: a where-is answer is not one of the table's");
+        ask.category = OG_TALK_REGIONAL;
+        og_talk_answer(&talk, &ask, &text);
+        check_expect(text == 28, "talk: a regional question is not record 28");
+        ask.mode = 0; ask.category = 0; ask.row = 0; ask.news = 1;
+        check_expect(og_talk_answer(&talk, &ask, &text) == OG_ANSWER_NEWS && talk.news_asked, "talk: the news was not given");
+        og_talk_answer(&talk, &ask, &text);
+        check_expect(text == 1457, "talk: the news was given twice");
+        ask.tab = 3; talk.news_asked = 0; ask.news = 0; ask.row = 1; ask.no_work = 1;
+        og_talk_answer(&talk, &ask, &text);
+        check_expect(text == 8078, "talk: no work is not record 8078");
+        ask.no_work = 0; talk.attitude = 2; talk.news_asked = 0;
+        og_talk_answer(&talk, &ask, &text);
+        check_expect(text == 8075 || text == 8076 || text == 8077, "talk: work is not 8075..8077");
+        /* The king's and the underworld's people are asked for news again and again. */
+        talk.own = 806; talk.news_asked = 0; ask.tab = 0; ask.mode = 0; ask.row = 0; ask.news = 1;
+        og_talk_answer(&talk, &ask, &text);
+        check_expect(!talk.news_asked, "talk: a faction 806 person's news was counted");
+
+        /* The hint: near enough is told on the town map, far is the vague answer, regional 10 or 11. */
+        ask.mode = 1; ask.tab = 0; ask.category = 2;
+        check_expect(og_talk_hint(&ask, 0, 1000, 1, &noted) == 7332 && noted, "talk: a near place is not directions");
+        check_expect(og_talk_hint(&ask, 0, 5000, 0, &noted) == 7333 && !noted, "talk: indoors gives directions");
+        for (n = 0, i = 0; i < 400; i++) { n += og_talk_hint(&ask, 0, 5000, 1, &noted) == 7332; }
+        check_expect(n > 70 && n < 130, "talk: a far place should be recalled one try in four");
+        ask.category = OG_TALK_REGIONAL;
+        check_expect(og_talk_hint(&ask, 1, 0, 1, &noted) == 10 && og_talk_hint(&ask, 0, 0, 1, &noted) == 11, "talk: the regional hints are not 10 and 11");
+    }
 }
