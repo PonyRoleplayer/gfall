@@ -534,7 +534,12 @@ void flat_facing(float pitch, float fx, float fz, float *ux, float *uy, float *u
     float s;
     float c;
 
-    /* Positive pitch looks up. Negating it leans the top toward that camera. */
+    /*
+     * Positive pitch looks up. The picture's up axis is the camera's own: looking down the top goes away from
+     * the camera (forward) and looking up it comes toward it, so the picture stays square to the view up to the
+     * cap and its corners keep one depth. (The top used to go the other way, doubling the skew: a steep look
+     * put its top close to the lens and turned the picture over.)
+     */
     lean = -pitch;
     if (lean > FLAT_LEAN_MAX) {
         lean = FLAT_LEAN_MAX;
@@ -544,9 +549,9 @@ void flat_facing(float pitch, float fx, float fz, float *ux, float *uy, float *u
     }
     s = df_sin(lean);
     c = df_cos(lean);
-    *ux = -fx * s;
+    *ux = fx * s;
     *uy = c;
-    *uz = -fz * s;
+    *uz = fz * s;
 }
 
 static int flat_box(const Flat *fl, float *cx, float *cy, float *cz,

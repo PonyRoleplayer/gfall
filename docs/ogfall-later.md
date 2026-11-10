@@ -63,3 +63,11 @@ for now. Each line names where to look.
 - Several flows (a hall's cure and blessing, the innkeeper's room and food, the potion shops through a hall, the magic shop) need a building to stand in and are not driven; only their rules and the windows are.
 - `tests/check_ogworld.c` finds a person by scanning entities and calls `og_activate` at a made-up camera; it proves the wiring, not the aim.
 - The legacy-save fixture in `tests/check_ogstate.c` adds the wire size of each new block by hand (`stand`); a new block means a new term there.
+
+## Fixed 2026-11-10
+- A crouched player's blows and aim started 35 units under the eye, inside the floor: `chest()` in `play/dungeon.c` now takes the middle of the body (test in `check_ogcombat.c`).
+- Looking down turned sprites upside down: the lean's sign in the engine's `flat_facing` (`scene.c`) was wrong; the camera-facing up is `(fx*sin, cos, fz*sin)` for the engine's pitch (tests in `check_engine.c`). An engine file, edited because no engine session was listed.
+
+## Still open from the same report
+- Crash entering a building while pursued, after being inside another (not reproduced by the host test's two enter/leave cycles).
+- A killed guard does not become a lootable pile; emptied static piles do not vanish; a killed citizen has no blood or sound (the original kills them at once, they never fight back: the counterattack is the watch).

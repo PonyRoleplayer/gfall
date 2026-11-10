@@ -266,6 +266,15 @@ static int wall_distance(const Scene *scene, const float *from, const float *dir
     return collide_ray(from,dir,length,hit);
 }
 
+/* The middle of the player's body: half way from the floor to the eye, so a crouch (an eye 32 up) has it 16 up, not in the floor. */
+static float chest(const Camera *cam)
+{
+    float feet;
+
+    feet = og_move_body()->feet[1];
+    return feet+(cam->y-feet)*0.5f;
+}
+
 static int visible(const Scene *scene, const float *from, const float *to)
 {
     float dir[3], length, hit;
@@ -451,7 +460,8 @@ void og_dungeon_strike(const Scene *scene, const Camera *cam, const OgStrike *s)
     item = og_object(s->item); index = item ? item->index : -1; material = item ? item->material : 0;
     if (s->bow) { launch_arrow(cam,-1,s->item,index,material); return; }
     hits = 0;
-    from[0] = cam->x; from[1] = cam->y-35; from[2] = cam->z;
+    /* The ray of a blow starts at the middle of the body, not a fixed 35 under the eye: crouched, the eye is 32 above the floor and 35 under it is in the floor, where no blow would ever be seen to connect. */
+    from[0] = cam->x; from[1] = chest(cam); from[2] = cam->z;
     for (i = 0; i < g_count; i++) {
         e = g_foe[i].entity;
         if (e->dead || !e->live) { continue; }
@@ -506,7 +516,7 @@ static void arrows_step(const Scene *scene, const Camera *cam, float dt)
         for (j = a->source < 0 ? 0 : g_count; j <= g_count; j++) {
             if (j == g_count) {
                 if (a->source < 0) { continue; }
-                dx = cam->x-a->at[0]; dy = cam->y-35-a->at[1]; dz = cam->z-a->at[2]; r = 30;
+                dx = cam->x-a->at[0]; dy = chest(cam)-a->at[1]; dz = cam->z-a->at[2]; r = 30;
             } else {
                 e = g_foe[j].entity; if (e->dead || !e->live || j == a->source) { continue; }
                 dx = e->x-a->at[0]; dy = e->y+40-a->at[1]; dz = e->z-a->at[2];
@@ -564,7 +574,7 @@ static void monster_strike(const Scene *scene, const Camera *cam, OgFoe *f)
     if (dx*dx+dz*dz > 90*90 || df_absf(f->entity->y-og_move_body()->feet[1]) > 90) { return; }
     if (dx*dx+dz*dz > 100 && df_cos(df_atan2(dx,dz)-f->entity->yaw) <= df_cos(200*DF_TAU/2048)) { return; }
     from[0] = f->entity->x; from[1] = f->entity->y+40; from[2] = f->entity->z;
-    to[0] = cam->x; to[1] = cam->y-35; to[2] = cam->z;
+    to[0] = cam->x; to[1] = chest(cam); to[2] = cam->z;
     if (!visible(scene,from,to)) { return; }
     og_fighter_player(&player);
     part = og_struck_part(og_random_range(0,19)); total = 0;
@@ -626,7 +636,7 @@ static void foe_step(const Scene *scene, const Camera *cam, int index, float dt)
         f->voice_time = (float)og_random_range(2000,6000)/1000;
     }
     from[0] = e->x; from[1] = e->y+40; from[2] = e->z;
-    to[0] = cam->x; to[1] = cam->y-35; to[2] = cam->z;
+    to[0] = cam->x; to[1] = chest(cam); to[2] = cam->z;
     sight = visible(scene,from,to);
     angle = df_iround(df_atan2(dx,dz)*(2048/DF_TAU)) & 2047;
     facing = df_iround(e->yaw*(2048/DF_TAU)) & 2047;
@@ -670,7 +680,7 @@ static void foe_step(const Scene *scene, const Camera *cam, int index, float dt)
             if (events & 2) {
                 Camera shot;
                 shot.x = e->x; shot.y = e->y+50; shot.z = e->z;
-                shot.yaw = df_atan2(dx,dz); shot.pitch = df_atan2(cam->y-35-shot.y,distance);
+                shot.yaw = df_atan2(dx,dz); shot.pitch = df_atan2(chest(cam)-shot.y,distance);
                 og_sound_at(6,shot.x,shot.y,shot.z); launch_arrow(&shot,index,0,16,0);
             }
         }

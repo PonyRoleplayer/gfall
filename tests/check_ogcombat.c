@@ -252,6 +252,17 @@ static void melee(df_u32 sword)
     check_expect(g_entity[0].dead && og_dungeon_health(0) == 0 && g_entity[0].act == ENTITY_DEAD && !g_entity[0].radius,
                  "lethal melee makes a nonsolid corpse");
     check_expect(og_dungeon_health(1) == before,"melee respects its 90-unit reach");
+    /* Crouched, the eye is 32 above the floor: the blow's ray must start in the body, not 35 under the eye (in the floor). */
+    {
+        float standing_y;
+
+        standing_y = g_cam.y;
+        arena(0);
+        g_cam.y = og_move_body()->feet[1] + WALK_EYE / 2;
+        for (i = 0; i < 40 && !g_entity[0].dead; i++) { og_dungeon_strike(&g_scene,&g_cam,&s); }
+        check_expect(g_entity[0].dead,"a crouched player's blows connect");
+        g_cam.y = standing_y;
+    }
     keep_save(&g_scene,0,0,g_entity,2,0,0,0);
     check_expect(keep_find(g_entity[0].key)->dead && keep_find(g_entity[0].key)->game[0] == 0xc1,
                  "health and corpse pose share the saved world record");

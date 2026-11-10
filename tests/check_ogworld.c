@@ -273,6 +273,32 @@ static void street_checks(void)
     check_expect(!people_is_citizen(victim), "street: a swing did not kill the person in front");
     check_expect(og_law()->crime == OG_CRIME_MURDER, "street: a killing seen was not noted as murder");
     check_expect(og_dungeon_guards() > 0 && og_guards_present(), "street: the watch did not come to a murder");
+    /* Pursued by the watch, into a building, out, and into another: the creatures of the street must not outlive the street. */
+    {
+        Scene *entry_scene;
+        int k, entries, entered;
+
+        entries = 0;
+        for (entries = 0; entries < 2; entries++) {
+            entry_scene = &seam_level()->scene;
+            entered = 0;
+            for (k = 0; k < entry_scene->nusables && !entered; k++) {
+                const Usable *candidate;
+
+                candidate = &entry_scene->usables[k];
+                if (candidate->kind == USE_PASSAGE && candidate->what == 1 && candidate->reach > 0 && og_travel_passage(candidate) && og_travel_asked()) { entered = 1; }
+            }
+            check_expect(entered && change(), "street: the watch's quarry could not enter a building");
+            og_dungeon_step(&seam_level()->scene, &g_camera, 0.05f);
+            {
+                const Usable *leave;
+
+                leave = passage(2);
+                check_expect(leave && og_travel_passage(leave) && change(), "street: the watch's quarry could not leave a building");
+            }
+            og_dungeon_step(&seam_level()->scene, &g_camera, 0.05f);
+        }
+    }
     og_guards_dismiss();
     check_expect(!og_dungeon_guards(), "street: the court did not send the watch away");
     og_law()->crime = 0;

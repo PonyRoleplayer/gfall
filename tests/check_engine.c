@@ -5906,13 +5906,26 @@ static void check_flat_facing(void)
 
     flat_facing(0.0f, 0.0f, 1.0f, &ux, &uy, &uz);
     check_expect(uy > 0.99f && ux * ux + uz * uz < 0.0001f, "flat: a level view leans the picture");
-    /* Past the cap: sin(50 deg) is about 0.766, so the top moves toward the camera and stops. */
+    /* Past the cap: sin(50 deg) is about 0.766, so looking down the top moves away from the camera, as far as the cap. */
     flat_facing(-1.4f, 0.0f, 1.0f, &ux, &uy, &uz);
-    check_expect(uy > 0.60f && uy < 0.70f && uz < -0.70f && uz > -0.82f && ux * ux < 0.0001f,
-                 "flat: looking straight down thins the picture to a line");
+    check_expect(uy > 0.60f && uy < 0.70f && uz > 0.70f && uz < 0.82f && ux * ux < 0.0001f,
+                 "flat: looking straight down leans the top away, to the cap");
     /* Inside the cap the lean follows the pitch, so a side view is not pulled over. */
     flat_facing(-0.2f, 0.0f, 1.0f, &ux, &uy, &uz);
-    check_expect(uy > 0.97f && uz < -0.15f && uz > -0.25f, "flat: a small look is pulled to the cap");
+    check_expect(uy > 0.97f && uz > 0.15f && uz < 0.25f, "flat: a small look down leans the top away by the pitch");
+    /* The picture's top keeps the depth of its centre: its up axis is square to the view's forward (within the cap), whichever way the camera looks. */
+    {
+        float pitch;
+        float fx;
+        float fz;
+
+        for (pitch = -0.8f; pitch <= 0.8f; pitch += 0.4f) {
+            flat_facing(pitch, 0.6f, 0.8f, &ux, &uy, &uz);
+            fx = df_cos(pitch) * 0.6f;
+            fz = df_cos(pitch) * 0.8f;
+            check_expect(df_absf(ux * fx + uz * fz + uy * df_sin(pitch)) < 0.001f, "flat: the picture's up axis is not square to the view");
+        }
+    }
 }
 
 void check_engine(void)
