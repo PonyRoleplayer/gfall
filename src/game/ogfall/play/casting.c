@@ -287,10 +287,20 @@ int og_magic_creature(int index, const Camera *camera)
     e = og_dungeon_entity(index); list = 0;
     if (!e || !camera || !og_magic_target(index,&who,&career,base) || !who.magicka || (who.conditions & 0x100)) { return 0; }
     list = og_creature_spells(og_dungeon_kind(index),who.level); if (!list) { return 0; }
-    dx = camera->x-e->x; dz = camera->z-e->z; distance = df_sqrt(dx*dx+dz*dz); ranged = distance > 256;
+    dx = camera->x-e->x; dz = camera->z-e->z; distance = df_sqrt(dx*dx+dz*dz); ranged = distance > 360;
+    /* ai_creature_think: a ranged spell only past the band's start (4 reaches, 360 for the player); a touch spell only within a blow's reach. Between, the creature closes in. */
+    if (!ranged && distance > 90) { return 0; }
     n = 0;
     for (i = 0; list[i] != 255 && i < 32; i++) {
+        int held, k;
         s = og_spell_def(list[i]); if (!s) { continue; }
+        /* ai_pick_*_spell: nothing is cast that the player already has on them. */
+        held = 0;
+        for (k = 0; k < OG_EFFECTS; k++) {
+            const OgEffect *fx = &og_magic_state()->effect[k];
+            if (fx->active && fx->spell == s->id && fx->target.place == og_magic_key(-1).place && fx->target.thing == og_magic_key(-1).thing) { held = 1; }
+        }
+        if (held) { continue; }
         if (ranged ? (s->target == 2 || s->target == 4) : (s->target == 0 || s->target == 1)) { ids[n++] = s->id; }
     }
     if (!n) { return 0; }

@@ -307,7 +307,7 @@ static void creature_casting(void)
     OgCharacter who;
     OgClass career;
     int i, cast, base[8], magicka, kind, passive, rate;
-    fixture(0); kind = 1; passive = 1; rate = 71;
+    fixture(0); kind = 1; passive = 1; rate = 71; g_enemy.z = 400;
     og_dungeon_open(&g_scene,&kind,&passive,&rate); og_dungeon_loaded(0);
     og_magic_target(0,&who,&career,base); magicka = who.magicka;
     cast = 0;
