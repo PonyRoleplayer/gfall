@@ -31,3 +31,10 @@ static const df_i16 g_where_answer[2][5][3] = {
 };
 static const df_u8 g_category_type[] = { 0, 2, 3, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15 };
 static const char *const g_category_name[15] = { "Alchemists", "Armorers", "Banks", "Bookstores", "Clothing stores", "Gem stores", "General stores", "Libraries", "Guilds", "Pawn shops", "Weapon smiths", "Local temples", "Taverns", "General", "Regional" };
+static const df_i16 g_regional_id[] = { 26, 21, 29, 27, 35, 24, 33, 22, 414, 368, 413, 408, 410, 411, 409, 415, 416, 417, 40, 41, 15, 10, 13, 2, 0, 3, 5, 6 };
+static const char *const g_regional_name[28] = { "Temple of Akatosh", "Temple of Arkay", "Temple of Dibella", "Temple of Julianos", "Temple of Kynareth", "Temple of Mara", "Temple of Stendarr", "Temple of Zen", "Order of the Raven", "Knights of the Dragon", "Knights of the Owl", "Order of the Candle", "Knights of the Flame", "Host of the Horn", "Knights of the Rose", "Knights of the Wheel", "Order of the Scarab", "Knights of the Hawk", "Mages Guild", "Fighters Guild", "Tavern", "Library", "Weapon Smith", "Armorer", "Alchemist", "Bank", "Bookstore", "Clothing store" };
+static const signed char g_regional_region[] = { 5, 17, 18, 20, 21, 22, 23, 43, 51, 55 };
+static const df_i16 g_organisation[] = { 42, 40, 108, 129, 306, 353, 41, 67, 82, 84, 88, 92, 94, 106, 36, 83, 85, 89, 93, 95, 99, 107, 37, 368, 408, 409, 410, 411, 413, 414, 415, 416, 417, 98 };
+static const char g_any_news[] = "Any news?";
+static const char g_any_format[] = "Any %s";
+static const char g_previous_list[] = "Previous List";

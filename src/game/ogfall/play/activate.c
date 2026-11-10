@@ -88,6 +88,12 @@ void og_activate_aim(const Camera *camera, int cursor_mode, int cursor_active,
 static int g_shelf_what = -1;
 static int (*g_shelf_use)(int index, int tag);
 static int (*g_person_use)(const Camera *aim, int mode);
+static int (*g_talk_use)(const Usable *person, int mode, float dist, const Camera *cam);
+
+void og_activate_set_talk_use(int (*use)(const Usable *person, int mode, float dist, const Camera *cam))
+{
+    g_talk_use = use;
+}
 
 void og_activate_set_person(int (*use)(const Camera *aim, int mode))
 {
@@ -158,6 +164,7 @@ int og_activate(const Scene *scene, const Camera *cam, int mode,
         const Usable *usable;
         if (og_door_use(scene,hit.usable,mode)) { return 1; }
         usable = &scene->usables[hit.usable];
+        if (usable->kind == USE_TALK && g_talk_use && g_talk_use(usable, mode, hit.dist, cam)) { return 1; }
         if (usable->kind == USE_OTHER && g_shelf_use && usable->what == g_shelf_what) {
             if (mode == OG_MODE_GRAB) { return g_shelf_use(hit.usable, usable->tag); }
             if (mode == OG_MODE_INFO) { interact_say("shelf"); }

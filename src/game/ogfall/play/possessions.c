@@ -33,7 +33,7 @@ static int game_mode(int page)
 {
     if (page == OG_VIEW_SHEET) { return OG_GAME_SHEET; }
     if (page == OG_VIEW_INVENTORY) { return OG_GAME_INVENTORY; }
-    if (page == OG_VIEW_BOOK || page == OG_VIEW_MESSAGE || page == OG_VIEW_BANK || page == OG_VIEW_COURT) { return OG_GAME_READING; }
+    if (page == OG_VIEW_BOOK || page == OG_VIEW_MESSAGE || page == OG_VIEW_BANK || page == OG_VIEW_COURT || page == OG_VIEW_TALK || page == OG_VIEW_SERVICE) { return OG_GAME_READING; }
     return OG_GAME_SPELLBOOK;
 }
 
@@ -48,6 +48,7 @@ void og_possessions_close(void)
     g_answer = 0;
     if (g.page == OG_VIEW_INVENTORY && g.trade) { og_market_close(); g.trade = 0; g.price = 0; g.offer[0] = 0; }
     if (g.page == OG_VIEW_BOOK) { og_book_close(&g_reading); }
+    if (g.page == OG_VIEW_TALK) { og_talkwin_close(); }
     og_state_mode_pop();
     mode = og_state()->mode;
     g.page = mode == OG_GAME_SHEET ? OG_VIEW_SHEET : mode == OG_GAME_INVENTORY ? OG_VIEW_INVENTORY : OG_VIEW_NONE;
@@ -62,7 +63,7 @@ void og_possessions_close(void)
 
 int og_possessions_open(int page, df_u32 remote)
 {
-    if (!og_state()->ready || page < OG_VIEW_INVENTORY || page > OG_VIEW_COURT) { return 0; }
+    if (!og_state()->ready || page < OG_VIEW_INVENTORY || page > OG_VIEW_SERVICE) { return 0; }
     if (page == OG_VIEW_SPELLS) {
         df_u32 ids[OG_OBJECTS];
         g.book = og_inventory_book();
@@ -305,6 +306,42 @@ static void bank_click(int x, int y)
     g.prompt = OG_PROMPT_AMOUNT;
     g.input[0] = 0;
     g.revision++;
+}
+
+/* ---- A shopkeeper's panel ---- */
+static int inside(int x, int y, int left, int top, int right, int bottom);
+static void (*g_service_act)(int what);
+static int g_service_kind;
+
+void og_possessions_set_service(void (*act)(int what)) { g_service_act = act; }
+
+int og_possessions_service(int kind)
+{
+    if (g.page || kind < OG_SERVICE_REPAIR || kind > OG_SERVICE_SELL || !og_possessions_open(OG_VIEW_SERVICE, 0)) { return 0; }
+    g_service_kind = kind;
+    g.service = kind;
+    return 1;
+}
+
+/* The buttons' rectangles (repair_menu_buttons, service_menu_buttons), strictly inside; what a click asks the game to do, or -1 to leave. */
+static int service_button(int x, int y)
+{
+    if (g_service_kind == OG_SERVICE_REPAIR) {
+        if (inside(x,y,99,51,220,59)) { return OG_SERVICE_REPAIR_ITEM; }
+        if (inside(x,y,99,60,220,68)) { return OG_SERVICE_TALK; }
+        if (inside(x,y,99,69,220,77)) { return OG_SERVICE_SELL_ITEMS; }
+    } else {
+        if (inside(x,y,99,50,220,68)) { return OG_SERVICE_TALK; }
+        if (inside(x,y,99,69,220,77)) { return OG_SERVICE_DO; }
+    }
+    return inside(x,y,139,80,181,94) ? -1 : -2;
+}
+
+int og_possessions_talk(const OgTalkWho *who, const OgTalkPlayer *player, int witnessed, int *text)
+{
+    if (g.page || !og_talkwin_open(who, player, witnessed, text)) { return 0; }
+    if (!og_possessions_open(OG_VIEW_TALK, 0)) { og_talkwin_close(); return 0; }
+    return 1;
 }
 
 int og_possessions_trade(int mode, const OgShop *shop, df_u32 shelves)
@@ -814,6 +851,25 @@ void og_possessions_frame(const OgIn *in)
         if (in->ch == 27 || click) { g.skill_group = -1; }
         else if (in->key == OG_VK_NEXT || in->key == OG_VK_DOWN) { if (g.skill_group == 3 && g.skill_scroll < 7) { g.skill_scroll++; } }
         else if (in->key == OG_VK_PRIOR || in->key == OG_VK_UP) { if (g.skill_scroll) { g.skill_scroll--; } }
+    } else if (g.page == OG_VIEW_SERVICE) {
+        /* Escape and Exit leave; the others close the panel and hand over (the original closes the menu first). */
+        int what;
+
+        what = in->ch == 27 ? -1 : click ? service_button(in->cx,in->cy) : -2;
+        if (what != -2) {
+            og_possessions_close();
+            if (what >= 0 && g_service_act) { g_service_act(what); }
+        }
+    } else if (g.page == OG_VIEW_TALK) {
+        /* The window's own keys and its 19 buttons; Goodbye or Escape on the categories ends it. */
+        if (in->ch == 27) { og_talkwin_key(OG_TW_KEY_ESC); }
+        else if (in->ch == 13) { og_talkwin_key(OG_TW_KEY_ENTER); }
+        else if (in->key == OG_VK_UP) { og_talkwin_key(OG_TW_KEY_UP); }
+        else if (in->key == OG_VK_DOWN) { og_talkwin_key(OG_TW_KEY_DOWN); }
+        else if (in->key == OG_VK_PRIOR) { og_talkwin_key(OG_TW_KEY_PGUP); }
+        else if (in->key == OG_VK_NEXT) { og_talkwin_key(OG_TW_KEY_PGDN); }
+        else if (click) { og_talkwin_click(in->cx,in->cy); }
+        if (!og_talkwin()->open) { og_possessions_close(); }
     } else if (in->ch == 27) { og_possessions_close(); }
     else if (g.page == OG_VIEW_INVENTORY) {
         if (in->pressed[OG_INVENTORY]) { og_possessions_close(); }

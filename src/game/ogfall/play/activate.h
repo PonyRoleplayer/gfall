@@ -41,6 +41,8 @@ void og_activate_aim(const Camera *camera, int cursor_mode, int cursor_active,
 void og_activate_set_shelf(int what, int (*use)(int index, int tag));
 /* A person in the view (not a usable): the game's to talk to, or to name in info mode. aim is the camera the pick came from. 1 when it took the use. */
 void og_activate_set_person(int (*use)(const Camera *aim, int mode));
+/* A person standing in a building (a usable of kind USE_TALK): the game's to talk to, to offer a panel for, or to name. dist is how far along the view they stand. 1 when it took the use. */
+void og_activate_set_talk_use(int (*use)(const Usable *person, int mode, float dist, const Camera *cam));
 int og_activate(const Scene *scene, const Camera *cam, int mode,
                 int cursor_mode, int cursor_active, int at_centre,
                 int classic_x, int classic_y);

@@ -2011,3 +2011,34 @@ By the hud's mode:
 
 `TownBuilding` now carries each building's `name_seed` (`rmb_building_seed`, the first word of the 26-byte record), so `og_building_name`
 has what it needs. The test is in `tests/check_ogworld.c` (Daggerfall's streets: info, then talk opening a message page).
+
+## People and law: the talk window and the shopkeeper's panels
+
+`play/talkwin.c` is the window's behaviour (`talk_update`, `talk_draw`, `talk_buttons` at FALL.EXE 0x179B78) without drawing; the seam paints it
+(`paint_talk`) on TALK01I0.IMG, with TALK02I0 (the tabs greyed) and TALK03I0 (the two lit ways of asking) as the original layers them. A page of its
+own (`OG_VIEW_TALK`) routes the keys and clicks to `og_talkwin_click` and `og_talkwin_key`; Goodbye, or Escape on the categories, ends it.
+
+- The conversation: the tone (polite, normal, blunt) chooses the question's record (7225 + tone for a place, 7231 + tone for the news,
+  7212 + tone for a topic, 7211 for work); the question is wrapped to 111 pixels and OKAY logs it (marked, in the dull colour) and then says the
+  answer, the log wrapped to 112 and scrolled to its end. A person asked for news is told once (1457 after), except factions 806 and 842.
+- Where is: the categories the town has (a category picked by Enter or OKAY, even one the town lacks), then the places of that category nearest first by
+  their sign (`og_building_name`), "Previous List" as the first row; "Regional" lists the temples, orders, guilds and shops asked after in other towns
+  (the original's 28, the orders only in their own region). Tell me about: "Any news?" then the 34 organisations. People and Things stay empty (no quests).
+- The world the window asks for (`OgTalkWinWorld`): the town's buildings and their distances (the original's `xn_math_approx_dist2d` is not in the tree:
+  the longer side and half the shorter), the sign over a door, the words said with %key, %loc, %di and %hnt, and the font's width.
+
+Met people follow `click_pedestrian` and `click_npc` (not what I first wrote): in the street, Steal tries a pocket (the person is marked before the try,
+so each is tried once, win or lose) and every other mode, info too, talks. A person standing in a building: info names them; within 256 units the rest
+offer a shopkeeper's panel or talk. A panel is `REPR01I0.IMG` (Repair item, Talk, Sell, Exit) for armorers, weaponsmiths and general stores, or `GNRC01I0.IMG`
+(Talk, the service row, Exit) for banks ("Banking" opens the bank) and for alchemists, bookstores, clothing and gem stores and pawn shops ("Sell"). Sell and
+Repair open the inventory in its trade mode over a fresh counter (`og_possessions_trade`). The armorer and the general store test the faction number's bit 8
+where the others test the person's flag, as the decomp has it (`npc_click_service`).
+
+Shop shelves, corrected: in the original a shelf (`shelf_open_stock`) opens the buying screen when the shop is open and a plain container (everything
+free to take, so theft) when it is closed. Record 37, "private property", with its alarm roll, belongs to the furniture in other people's houses
+(models 418 and 410), not to a shop's shelves. Neither the closed shop nor the house furniture is built yet.
+
+Not built: the shopkeeper's flag (the blocks the dagger layer reads do not carry it, so a merchant stands for it), guild halls and temples (`guild_service_dispatch`),
+the tavern's panel (`tavern_open`), the quest people, `rumor_pick_news`, the regional search (`talk_find_regional`, so a regional question answers "no one"), the
+copy to the logbook, and the list's horizontal scroll (kept in the state, not painted). Tests: `tests/check_ogtalkwin.c` over a stand-in town, and
+`tests/check_ogworld.c` in Daggerfall's streets (a person met, the window's buttons, the panels), writing `build/ogfall-talk0..2.ppm` and `service0..1.ppm`.

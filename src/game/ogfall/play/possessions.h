@@ -7,8 +7,9 @@
 #include "game/ogfall/play/spellbook.h"
 #include "game/ogfall/play/market.h"
 #include "game/ogfall/play/law.h"
+#include "game/ogfall/play/talkwin.h"
 
-enum { OG_VIEW_NONE, OG_VIEW_INVENTORY, OG_VIEW_SHEET, OG_VIEW_SPELLS, OG_VIEW_BOOK, OG_VIEW_MESSAGE, OG_VIEW_BANK, OG_VIEW_COURT };
+enum { OG_VIEW_NONE, OG_VIEW_INVENTORY, OG_VIEW_SHEET, OG_VIEW_SPELLS, OG_VIEW_BOOK, OG_VIEW_MESSAGE, OG_VIEW_BANK, OG_VIEW_COURT, OG_VIEW_TALK, OG_VIEW_SERVICE };
 enum { OG_ITEM_INFO, OG_ITEM_EQUIP, OG_ITEM_REMOVE, OG_ITEM_USE };
 enum { OG_PROMPT_NONE, OG_PROMPT_GOLD, OG_PROMPT_NAME, OG_PROMPT_PAGE, OG_PROMPT_SPELL_NAME, OG_PROMPT_ANSWER, OG_PROMPT_OFFER, OG_PROMPT_AMOUNT, OG_PROMPT_ASK };
 #define OG_NOTICE_LINES 16
@@ -22,6 +23,8 @@ typedef struct OgPossessions {
     int trade, price;
     /* The bank over the world: which region's account, the action an amount or a yes is for, and the amount waiting on the yes. */
     int bank_region, bank_op, bank_amount;
+    /* The shopkeeper's panel (OG_SERVICE_*) when page is OG_VIEW_SERVICE. */
+    int service;
     /* The court over the world: the case, which question is up (OG_COURT_*), the records waiting to be shown, and the answers' words. */
     OgCourt court;
     int court_stage, court_texts[3], court_text_at;
@@ -54,6 +57,20 @@ int og_possessions_arrested(void);
  * the street, past the walls, set free), after the sentence's days have passed.
  */
 void og_possessions_set_court(int (*say)(int text, const OgCourt *court, char *out, int cap), void (*release)(int where));
+/*
+ * The talk window (talk_start, talk_open) over the world, painted by the seam from og_talkwin(). 1 when it opens;
+ * 0 when the person will not talk, with *text the record to show as a message (the caller shows it).
+ */
+int og_possessions_talk(const OgTalkWho *who, const OgTalkPlayer *player, int witnessed, int *text);
+/*
+ * A shopkeeper's panel (repair_menu_open, service_menu_open, src/lifted/click.c 1150..1200, 710..800): over the world, a few
+ * buttons. OG_SERVICE_REPAIR is REPR01I0 (Repair item, Talk, Sell, Exit); the other two are GNRC01I0 (Talk, the service row,
+ * Exit) with the service's word, "Banking" or "Sell". What each button does is the game's: the actions below.
+ */
+enum { OG_SERVICE_REPAIR = 1, OG_SERVICE_BANK, OG_SERVICE_SELL };
+enum { OG_SERVICE_TALK, OG_SERVICE_DO, OG_SERVICE_REPAIR_ITEM, OG_SERVICE_SELL_ITEMS };
+int og_possessions_service(int kind);
+void og_possessions_set_service(void (*act)(int what));
 int og_possessions_trade(int mode, const OgShop *shop, df_u32 shelves);
 /*
  * The offer box's words are one variant of a TEXT.RSC record (text_rsc_load picks one at random) with

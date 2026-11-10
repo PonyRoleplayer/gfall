@@ -38,6 +38,7 @@
 
 #include "game/dagger/formats/bind.h"
 #include "game/dagger/formats/factionfile.h"
+#include "game/dagger/formats/faces.h"
 #include "game/dagger/places/doors.h"
 #include "game/dagger/places/people.h"
 #include "game/ogfall/play/shelf.h"
@@ -50,6 +51,7 @@
 #include "game/ogfall/play/names.h"
 #include "game/ogfall/play/talk.h"
 #include "game/ogfall/play/steal.h"
+#include "game/ogfall/play/talkwin.h"
 #include "game/dagger/play/character.h"
 #include "game/ogfall/play/standing.h"
 #include "game/dagger/formats/arch3d.h"
@@ -690,14 +692,190 @@ static int offer_say(int text, int price, char *out, int cap)
 }
 
 /*
- * A person in the street (people and law, slice 8). The dagger layer says who stands in the view (a number
- * and a sex); the people of the region are that region's faction of type 15, as they answer in GFALL. In info
- * mode the view names them, in talk mode they greet (the window itself is the next part), in steal mode their
- * pocket is tried once (a person caught is not tried again).
+ * The talk window's world (people and law, slice 6): the town's buildings as the player stands in it, their signs,
+ * which way they lie, and the words with their macros said. The window itself is play/talkwin.c; this is only
+ * what it asks the game for. A building is named for the sign over it (names.c) and found again by an id made of
+ * its block and record.
+ */
+static Camera g_talk_cam;
+static int g_talk_region, g_talk_index;
+static float g_talk_x, g_talk_z;
+static int g_talk_in_town;
+static char g_talk_name[OG_NAME_MAX];
+static char g_talk_region_name[32];
+static df_u8 g_talk_face[FACE_W * FACE_H];
+static int g_talk_face_ok;
+static Words g_talk_words;
+
+static unsigned talk_building_id(const TownBuilding *t)
+{
+    return ((unsigned)(t->block + 1) << 8) | (unsigned)t->record;
+}
+
+static const TownBuilding *talk_building(unsigned id)
+{
+    int count, i;
+    const TownBuilding *rows;
+
+    if (!g_talk_in_town) {
+        return 0;
+    }
+    rows = town_buildings(g_talk_region, g_talk_index, &count);
+    for (i = 0; i < count; i++) {
+        if (talk_building_id(&rows[i]) == id) {
+            return &rows[i];
+        }
+    }
+    return 0;
+}
+
+/* xn_math_approx_dist2d is not in the tree: the longer side and half the shorter. */
+static int talk_distance_to(const TownBuilding *t)
+{
+    float dx, dz;
+    int a, b;
+
+    dx = t->x - g_talk_x;
+    dz = t->z - g_talk_z;
+    a = (int)(dx < 0 ? -dx : dx);
+    b = (int)(dz < 0 ? -dz : dz);
+    return a > b ? a + b / 2 : b + a / 2;
+}
+
+static int talk_buildings(OgTalkBuilding *out, int cap)
+{
+    int count, i, n;
+    const TownBuilding *rows;
+
+    if (!g_talk_in_town) {
+        return 0;
+    }
+    rows = town_buildings(g_talk_region, g_talk_index, &count);
+    for (i = n = 0; i < count && n < cap; i++, n++) {
+        out[n].id = talk_building_id(&rows[i]);
+        out[n].type = rows[i].type;
+        out[n].flags = 0;
+        out[n].distance = talk_distance_to(&rows[i]);
+    }
+    return n;
+}
+
+static void talk_building_name(unsigned id, char *out, int cap)
+{
+    const TownBuilding *t;
+    OgBuildingName b;
+    const OgFactionDef *f;
+
+    out[0] = 0;
+    t = talk_building(id);
+    if (!t) {
+        return;
+    }
+    mem_zero(&b, sizeof(b));
+    b.type = t->type;
+    b.faction = t->faction;
+    b.name_seed = t->name_seed;
+    b.region_name = g_talk_region_name;
+    f = og_faction_def(og_faction_index(t->faction));
+    if (f) {
+        b.faction_name = f->name;
+    }
+    og_building_name(&b, out, cap);
+}
+
+static int talk_town_has(int key, int by_type)
+{
+    int count, i;
+    const TownBuilding *rows;
+
+    if (!g_talk_in_town) {
+        return 0;
+    }
+    rows = town_buildings(g_talk_region, g_talk_index, &count);
+    for (i = 0; i < count; i++) {
+        if (by_type ? rows[i].type == key : rows[i].faction == key) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int talk_distance(unsigned id)
+{
+    const TownBuilding *t;
+
+    t = talk_building(id);
+    return t ? talk_distance_to(t) : 99999;
+}
+
+/* Which of the eight ways (east first, counter-clockwise) a building lies, by the slope's three bands (tan 22.5 degrees is about 0.414). */
+static int compass_index(float dx, float dz)
+{
+    int east, north;
+
+    east = dx > 0.0f ? 1 : -1;
+    north = dz > 0.0f ? 1 : -1;
+    dx = dx < 0.0f ? -dx : dx;
+    dz = dz < 0.0f ? -dz : dz;
+    if (dz < dx * 0.414f) { return east > 0 ? 0 : 4; }
+    if (dx < dz * 0.414f) { return north > 0 ? 2 : 6; }
+    if (north > 0) { return east > 0 ? 1 : 3; }
+    return east > 0 ? 7 : 5;
+}
+
+/* A record said with the window's macros: %key what is asked, %loc the place, %di its way, %hnt the hint already said. */
+static int talk_say(int text, const OgTalkWinSay *ctx, char *out, int cap)
+{
+    static const char *const compass[8] = { "east", "northeast", "north", "northwest", "west", "southwest", "south", "southeast" };
+    const TownBuilding *t;
+
+    mem_zero(&g_talk_words, sizeof(g_talk_words));
+    g_talk_words.key = ctx->key;
+    g_talk_words.loc = ctx->loc ? ctx->loc : ctx->key;
+    g_talk_words.hint = ctx->hint;
+    g_talk_words.city = g_talk_in_town ? town_name() : "";
+    g_talk_words.region = g_talk_region_name;
+    g_talk_words.place = "This place";
+    g_talk_words.tone = ctx->tone;
+    t = ctx->building ? talk_building(ctx->building) : 0;
+    if (t) {
+        g_talk_words.direction = compass[compass_index(t->x - g_talk_x, t->z - g_talk_z)];
+    }
+    words_use(&g_talk_words);
+    return words_say(text, out, cap);
+}
+
+static int talk_width(const char *text)
+{
+    return smallfont_width(&g_font, text);
+}
+
+static void talk_expand(const char *in, char *out, int cap)
+{
+    mem_zero(&g_talk_words, sizeof(g_talk_words));
+    g_talk_words.city = g_talk_in_town ? town_name() : "";
+    g_talk_words.region = g_talk_region_name;
+    words_use(&g_talk_words);
+    words_expand(in, out, cap);
+}
+
+/*
+ * People met (people and law, slice 8), as click_pedestrian, click_npc and npc_click_service have them (src/lifted/click.c).
+ * A person in the street: Steal tries their pocket, every other mode talks (info too). A person standing in a
+ * building (a usable): info names them; the others, within 256 units, offer a shopkeeper's panel or talk (npc_click_service).
+ * Whoever is picked is remembered here until the window or a panel acts on them.
  */
 #define PERSON_TRIED_MOST 32
 static unsigned g_person_tried[PERSON_TRIED_MOST];
 static int g_person_tried_count;
+
+typedef struct Met {
+    int faction, archive, record, female;
+    unsigned who;
+    char name[OG_NAME_MAX];
+    Camera cam;
+} Met;
+static Met g_met;
 
 static int person_tried(unsigned who)
 {
@@ -711,26 +889,85 @@ static int person_tried(unsigned who)
     return 0;
 }
 
-static void person_say_text(int text, int tone, const char *name, char *out, int cap)
+static void talk_say_text(int text, char *out, int cap)
+{
+    OgTalkWinSay ctx;
+
+    mem_zero(&ctx, sizeof(ctx));
+    ctx.tone = 1;
+    if (talk_say(text, &ctx, out, cap) < 0) {
+        out[0] = 0;
+    }
+}
+
+static void person_say_text(int text, char *out, int cap)
 {
     Words w;
 
     mem_zero(&w, sizeof(w));
     w.city = town_name();
-    w.tone = tone;
+    w.tone = 1;
     w.place = "This place";
     words_use(&w);
     if (words_say(text, out, cap) < 0) {
         out[0] = 0;
     }
-    (void)name;
+}
+
+/* talk_start for whoever g_met is: the window opens, or the record that says they will not (shown as a message). */
+static void start_talk(void)
+{
+    OgTalkWho target;
+    OgTalkPlayer player;
+    OgTalkWinWorld world;
+    static const int none[1] = { 0 };
+    static char line[400];
+    TravelWhere here;
+    const Faction *province;
+    int text, origin[2], block, record, index, region;
+    float x, z;
+
+    mem_zero(&target, sizeof(target));
+    target.npc = g_met.who;
+    target.faction = g_met.faction;
+    target.person = 1;
+    player.members = none;
+    player.member_count = 0;
+    player.temple_rank = 0;
+    /* Where the talk is: the town the player stands in (for the places asked after) and the region's name. */
+    g_talk_cam = g_met.cam;
+    g_talk_in_town = travel_town_here(&g_talk_cam, &region, &index, &x, &z, &block, &record);
+    g_talk_region = region;
+    g_talk_index = index;
+    g_talk_x = x;
+    g_talk_z = z;
+    province = faction_province_of(travel_region());
+    df_copy(g_talk_region_name, province ? province->name : "", (int)sizeof(g_talk_region_name));
+    df_copy(g_talk_name, g_met.name, (int)sizeof(g_talk_name));
+    travel_here(&here, origin);
+    mem_zero(&world, sizeof(world));
+    world.buildings = talk_buildings;
+    world.building_name = talk_building_name;
+    world.town_has = talk_town_has;
+    world.distance = talk_distance;
+    world.say = talk_say;
+    world.width = talk_width;
+    world.outdoors = here.kind != TRAVEL_INSIDE;
+    world.region = travel_region();
+    /* quest_find_potential_questor: no quests yet, so no one has work to give. */
+    world.no_work = 1;
+    og_talkwin_world(&world);
+    g_talk_face_ok = faces_read(faces_of_flat(g_met.archive, g_met.record), g_talk_face);
+    if (!og_possessions_talk(&target, &player, 0, &text) && text) {
+        talk_say_text(text, line, (int)sizeof(line));
+        og_possessions_message(line, 0);
+    }
 }
 
 static int person_used(const Camera *aim, int mode)
 {
     const Faction *people;
     OgNpcName npc;
-    char name[OG_NAME_MAX];
     int female;
     unsigned who;
     float along;
@@ -747,59 +984,138 @@ static int person_used(const Camera *aim, int mode)
     npc.region = travel_region();
     npc.id = who;
     npc.female = female;
-    og_npc_name(&npc, name, (int)sizeof(name));
-    if (mode == OG_MODE_INFO) {
-        interact_say(name);
-        return 1;
-    }
-    if (mode == OG_MODE_TALK) {
-        OgTalk talk;
-        OgTalkWho target;
-        OgTalkPlayer player;
-        static const int none[1] = { 0 };
-        static char line[400];
-        int text, r;
-
-        mem_zero(&target, sizeof(target));
-        target.npc = who;
-        target.faction = people->id;
-        target.person = 1;
-        player.members = none;
-        player.member_count = 0;
-        player.temple_rank = 0;
-        if (!og_talk_start(&talk, &target, &player, &text)) {
-            person_say_text(text, 1, name, line, (int)sizeof(line));
-            og_possessions_message(line, 0);
-            return 1;
-        }
-        r = og_talk_open(&talk, &player, 0, &text);
-        if (r == OG_TALK_REFUSED) {
-            return 1;
-        }
-        person_say_text(text, talk.tone, name, line, (int)sizeof(line));
-        og_possessions_message(line, 0);
-        return 1;
-    }
+    mem_zero(&g_met, sizeof(g_met));
+    og_npc_name(&npc, g_met.name, (int)sizeof(g_met.name));
+    g_met.faction = people->id;
+    g_met.archive = people->flat_archive[female];
+    g_met.record = people->flat_record[female];
+    g_met.female = female;
+    g_met.who = who;
+    g_met.cam = *aim;
     if (mode == OG_MODE_STEAL) {
         OgSteal taken;
         static char line[96];
 
+        /* click_pedestrian: nearer than 128, and the person is marked before the try, so each is tried once, win or lose. */
         if (along > 128.0f || person_tried(who)) {
             return 1;
         }
-        og_steal_pocket(0, 0, &taken);
-        if (taken.spoiled && g_person_tried_count < PERSON_TRIED_MOST) {
+        if (g_person_tried_count < PERSON_TRIED_MOST) {
             g_person_tried[g_person_tried_count++] = who;
         }
+        og_steal_pocket(0, 0, &taken);
         if (taken.text) {
-            person_say_text(taken.text, 1, name, line, (int)sizeof(line));
+            person_say_text(taken.text, line, (int)sizeof(line));
             interact_say(line);
         } else if (taken.line) {
             interact_say(taken.line);
         }
         return 1;
     }
-    return 0;
+    start_talk();
+    return 1;
+}
+
+/*
+ * A person standing in a building (a usable of USE_TALK: their faction and flat). npc_click_service: within a shop or a
+ * bank, a shopkeeper offers a panel; anyone else talks. The shopkeeper's flag (person flags & 8) is not in the blocks the
+ * dagger layer reads, so a merchant (the social group of shops) stands for it. The armorer, the general store and the
+ * bank keep the original's test (the faction number's bit 8 and the flag) as the decomp has it.
+ */
+static int talk_used(const Usable *u, int mode, float dist, const Camera *cam)
+{
+    const OgFactionDef *f;
+    OgNpcName npc;
+    int type, faction, quality, flat_archive, flat_record, female, merchant, kind;
+    unsigned place;
+
+    flat_archive = u->tag >> 7;
+    flat_record = u->tag & 127;
+    female = faces_female(flat_archive, flat_record);
+    mem_zero(&g_met, sizeof(g_met));
+    g_met.faction = u->what;
+    g_met.archive = flat_archive;
+    g_met.record = flat_record;
+    g_met.female = female < 0 ? 0 : female;
+    g_met.who = (unsigned)u->tag * 31u + (unsigned)u->what;
+    g_met.cam = *cam;
+    mem_zero(&npc, sizeof(npc));
+    npc.type = 8;
+    f = og_faction_def(og_faction_index(u->what));
+    npc.faction = u->what;
+    npc.faction_is_individual = f && f->type == 4;
+    npc.faction_name = f ? f->name : 0;
+    npc.region = travel_region();
+    npc.id = g_met.who;
+    npc.female = g_met.female;
+    og_npc_name(&npc, g_met.name, (int)sizeof(g_met.name));
+    if (mode == OG_MODE_INFO) {
+        interact_say(g_met.name);
+        return 1;
+    }
+    if (dist > 256.0f) {
+        return 1;
+    }
+    kind = 0;
+    merchant = f && (f->social_group == SOCIAL_MERCHANTS || f->social_group >= SOCIAL_COUNT);
+    if (travel_building(&type, &faction, &quality, &place)) {
+        if (type == 3 && merchant) { kind = OG_SERVICE_BANK; }
+        else if ((type == 2 || type == 9) && merchant && (u->what & 8)) { kind = OG_SERVICE_REPAIR; }
+        else if (type == 13 && merchant) { kind = OG_SERVICE_REPAIR; }
+        else if ((type == 0 || type == 5 || type == 6 || type == 8 || type == 12) && merchant) { kind = OG_SERVICE_SELL; }
+    }
+    if (kind && og_possessions_service(kind)) {
+        return 1;
+    }
+    start_talk();
+    return 1;
+}
+
+static df_u32 g_counter;
+
+/* The shop this building is, for the prices (what a shelf's too). */
+static int shop_here(OgShop *shop)
+{
+    int type, faction, quality, region;
+    unsigned place;
+
+    if (!travel_building(&type, &faction, &quality, &place)) {
+        return 0;
+    }
+    region = travel_region();
+    shop->region_adjust = og_region_price(region);
+    shop->quality = quality;
+    shop->type = type;
+    shop->holiday = og_holiday_today(og_state()->minutes, region);
+    shop->half = 0;
+    shop->scale = 256;
+    return 1;
+}
+
+/* What each button of a panel does (repair_menu_talk, repair_menu_sell, shop_open_repair, bank_open, service_menu_sell). */
+static void service_act(int what)
+{
+    OgShop shop;
+
+    if (what == OG_SERVICE_TALK) {
+        start_talk();
+        return;
+    }
+    if (what == OG_SERVICE_DO && og_possessions()->service == OG_SERVICE_BANK) {
+        og_possessions_bank(travel_region());
+        return;
+    }
+    if (!shop_here(&shop)) {
+        return;
+    }
+    if (!og_object(g_counter)) {
+        g_counter = og_object_new(OG_RECORD_CONTAINER, OG_WORLD_ROOT, 0, 1);
+    }
+    if (!g_counter) {
+        interact_say("There is no room for another counter.");
+        return;
+    }
+    og_possessions_trade(what == OG_SERVICE_REPAIR_ITEM ? OG_MARKET_REPAIR : OG_MARKET_SELL, &shop, g_counter);
 }
 
 static int shelf_used(int index, int variant)
@@ -944,6 +1260,9 @@ int seam_boot(void)
     install_travel();
     og_activate_set_shelf(OTHER_SHELF, shelf_used);
     og_activate_set_person(person_used);
+    og_activate_set_talk_use(talk_used);
+    og_possessions_set_service(service_act);
+    og_names_set_expand(talk_expand);
     og_rest_set_site(rest_site);
     {
         static const OgGuardWorld world = { guards_present, guards_count, 0, 0, guards_dungeon, 0 };
@@ -3297,6 +3616,93 @@ static void paint_painting(int picture, const char *caption)
     for (i = 0; i < count && y < 190; i++, y += 7) { centered_text(160,y,lines[i],146); }
 }
 
+/*
+ * The talk window (talk_draw, src/lifted/talk.c 282): TALK01I0.IMG is the whole screen, TALK02I0.IMG the four tabs
+ * greyed (drawn at 4,26) and TALK03I0.IMG the two lit ways of asking, 107 x 10 each. In "where is" the selected tab is
+ * put back from the base picture. The name sits centred at 213,53, the face at 119,65, the tone's button is filled,
+ * the list runs from y = 71 in 7-pixel rows, the question is at 125,10 and the log at 190,66 (18 rows).
+ */
+static void paint_talk(void)
+{
+    const OgTalkWin *t;
+    ImgPicture base, grey, lit;
+    char name[OG_NAME_MAX];
+    int i, row, x, y, w;
+    const short *b;
+
+    t = og_talkwin();
+    cover_screen(0, 0, 0);
+    if (img_load("TALK01I0.IMG", &base)) { blit_ix(base.x, base.y, base.pixels, base.width, base.height, 0); }
+    df_copy(name, g_talk_name, (int)sizeof(name));
+    w = smallfont_width(&g_font, name);
+    smallfont_draw(&g_font, g_buf, 320, 200, 213 - w / 2, 53, 145, 156, name);
+    if (g_talk_face_ok) { blit_ix(119, 65, g_talk_face, FACE_W, FACE_H, 0); }
+    b = og_talkwin_button(OG_TB_POLITE + t->tone);
+    fill_box(b[0], b[1], b[2] - b[0] + 1, b[3] - b[1] + 1, 244);
+    if (img_load("TALK02I0.IMG", &grey)) { blit_ix(4, 26, grey.pixels, grey.width, grey.height, 0); }
+    if (t->mode != 0 && base.width == 320) {
+        b = og_talkwin_button(OG_TB_PLACES + t->tab);
+        for (y = b[1]; y <= b[3]; y++) {
+            for (x = b[0]; x < b[0] + 107; x++) { put_px(x, y, base.pixels[y * 320 + x]); }
+        }
+    }
+    if (img_load("TALK03I0.IMG", &lit)) {
+        b = og_talkwin_button(t->mode);
+        for (y = b[1]; y <= b[3]; y++) {
+            for (x = 0; x < 107; x++) {
+                int sy;
+
+                sy = t->mode * 10 + (y - b[1]);
+                if (sy < lit.height) { put_px(b[0] + x, y, lit.pixels[sy * lit.width + x]); }
+            }
+        }
+    }
+    /* The list: the way back and the title in the dull colour, the selected row bright. */
+    for (i = t->top, row = 0; i < t->count && row < OG_TW_LIST_ROWS; i++, row++) {
+        char text[OG_TW_ITEM_TEXT];
+        int ink;
+
+        df_copy(text, t->item[i].text, (int)sizeof(text));
+        while (text[0] && smallfont_width(&g_font, text) > 94) {
+            int n;
+
+            for (n = 0; text[n]; n++) { }
+            text[n - 1] = 0;
+        }
+        if (t->item[i].value < 0 && t->mode == 1) { ink = 96; }
+        else if ((t->mode == 1 && t->tab == 0 && t->categories) ? t->item[i].value == t->row : i == t->row) { ink = 244; }
+        else { ink = 145; }
+        smallfont_draw(&g_font, g_buf, 320, 200, 6, 71 + row * 7, ink, 156, text);
+    }
+    for (i = 0; i < t->question_count; i++) {
+        smallfont_draw(&g_font, g_buf, 320, 200, 125, 10 + i * 7, 145, 156, t->question[i]);
+    }
+    for (row = 0; row < OG_TW_ANSWER_ROWS && t->answer_scroll + row < t->answer_count; row++) {
+        const char *line;
+
+        i = t->answer_scroll + row;
+        line = t->answer[i];
+        while (*line == ' ') { line++; }
+        smallfont_draw(&g_font, g_buf, 320, 200, 190, 66 + row * 7, t->asked[i] ? 96 : 145, 156, line);
+    }
+}
+
+/* A shopkeeper's panel (repair_menu_frame, service_menu_frame): REPR01I0.IMG or GNRC01I0.IMG over the world; the service row's word at 159,70. */
+static void paint_service(void)
+{
+    ImgPicture panel;
+    const OgPossessions *view;
+
+    view = og_possessions();
+    cover_screen(0, 0, 0);
+    if (img_load(view->service == OG_SERVICE_REPAIR ? "REPR01I0.IMG" : "GNRC01I0.IMG", &panel)) {
+        blit_ix(panel.x, panel.y, panel.pixels, panel.width, panel.height, 0);
+    }
+    if (view->service != OG_SERVICE_REPAIR) {
+        centered_text(159, 70, view->service == OG_SERVICE_BANK ? "Banking" : "Sell", 145);
+    }
+}
+
 static int present_possessions(void)
 {
     const OgPossessions *view;
@@ -3317,6 +3723,8 @@ static int present_possessions(void)
     else if (view->page == OG_VIEW_SPELLS) { paint_spellbook(); }
     else if (view->page == OG_VIEW_MESSAGE) { cover_screen(0,0,0); }
     else if (view->page == OG_VIEW_BANK) { paint_bank(); }
+    else if (view->page == OG_VIEW_TALK) { paint_talk(); }
+    else if (view->page == OG_VIEW_SERVICE) { paint_service(); }
     else if (view->page == OG_VIEW_COURT) {
         /* cort01i0.img fills the screen once a court sits; the offer to surrender is over the world. */
         ImgPicture court;
@@ -3363,7 +3771,7 @@ static int present_possessions(void)
     }
     for (i = 0; i < g_panel_file_count; i++) { texture_forget(g_panel_files[i]); }
     mem_heap_use(was); mem_heap_delete(heap);
-    publish_surface(1,(view->page == OG_VIEW_SPELLS && !view->underlay) || view->page == OG_VIEW_MESSAGE || view->page == OG_VIEW_BANK || (view->page == OG_VIEW_COURT && !view->court.open));
+    publish_surface(1,(view->page == OG_VIEW_SPELLS && !view->underlay) || view->page == OG_VIEW_MESSAGE || view->page == OG_VIEW_BANK || view->page == OG_VIEW_TALK || (view->page == OG_VIEW_COURT && !view->court.open));
     return 1;
 }
 

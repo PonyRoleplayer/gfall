@@ -24,6 +24,7 @@
 #include "engine/core/mem.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
 
@@ -33,6 +34,44 @@ static Camera g_camera;
 static int g_drawn[16384];
 static int g_climate;
 static df_u32 g_dropped;
+static void talk_shot(const char *name)
+{
+    const df_u8 *pixels, *palette;
+    char path[96];
+    FILE *file;
+    int i;
+
+    seam_present();
+    pixels = seam_screen(&palette);
+    snprintf(path, sizeof(path), "build/ogfall-%s.ppm", name);
+    file = fopen(path, "wb");
+    if (!file || !pixels || !palette) {
+        if (file) { fclose(file); }
+        return;
+    }
+    fprintf(file, "P6\n320 200\n255\n");
+    for (i = 0; i < 64000; i++) { fwrite(palette + pixels[i] * 3, 1, 3, file); }
+    fclose(file);
+}
+
+/* A click in the middle of a window button, through the controller's frame as the game gives it. */
+static void click_at(int x, int y)
+{
+    OgIn in;
+
+    memset(&in, 0, sizeof(in));
+    in.mouse_pressed = 1;
+    in.on_picture = 1;
+    in.cx = x;
+    in.cy = y;
+    og_possessions_frame(&in);
+}
+
+static void click_talk(const short *button)
+{
+    click_at((button[0] + button[2]) / 2, (button[1] + button[3]) / 2);
+}
+
 static int route_climate(int x, int y) { return g_climate ? g_climate : (y >= x ? 223 : 228); }
 void check_ogjourney(void)
 {
@@ -250,9 +289,30 @@ void check_ogworld(const char *root)
             og_character()->skill[15] = 100;
             og_law()->crime = 0;
             og_activate(sc, &look, OG_MODE_TALK, 0, 0, 1, 160, 100);
-            check_expect(og_possessions()->page == OG_VIEW_MESSAGE, "people: talk mode did not greet");
+            check_expect(og_possessions()->page == OG_VIEW_TALK && og_talkwin()->open && og_talkwin()->answer_count > 0,
+                         "people: talk mode did not open the window with a greeting");
+            talk_shot("talk0");
+            /* The window's own buttons: the categories of this town's buildings are listed, Escape leaves. */
+            check_expect(og_talkwin()->categories && og_talkwin()->count > 0, "people: the window lists no places");
+            click_talk(og_talkwin_button(OG_TB_TELL));
+            talk_shot("talk1");
+            click_talk(og_talkwin_button(OG_TB_WHERE));
+            click_talk(og_talkwin_button(OG_TB_OKAY));
+            talk_shot("talk2");
+            click_talk(og_talkwin_button(OG_TB_GOODBYE));
+            check_expect(og_possessions()->page == OG_VIEW_NONE, "people: Goodbye did not end the talk");
+            /* A shopkeeper's panels: drawn over the world, Exit leaves; a click outside every button leaves it be. */
+            check_expect(og_possessions_service(OG_SERVICE_REPAIR) && og_possessions()->page == OG_VIEW_SERVICE, "people: the repair panel did not open");
+            talk_shot("service0");
+            click_at(120, 78);
+            check_expect(og_possessions()->page == OG_VIEW_SERVICE, "people: a click between the buttons closed the panel");
+            click_at(160, 87);
+            check_expect(og_possessions()->page == OG_VIEW_NONE, "people: Exit did not close the repair panel");
+            check_expect(og_possessions_service(OG_SERVICE_BANK), "people: the bank's panel did not open");
+            talk_shot("service1");
+            click_at(160, 87);
+            check_expect(og_possessions()->page == OG_VIEW_NONE, "people: Exit did not close the bank's panel");
             (void)line;
-            og_possessions_close();
         }
     }
     walk_across_origin();
