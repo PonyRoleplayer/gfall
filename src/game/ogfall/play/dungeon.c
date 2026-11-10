@@ -265,17 +265,23 @@ int og_dungeon_loaded(int index)
     return 1;
 }
 
+/* A long ray is gathered in stretches: one box the length of the ray holds more triangles than the set, and the ones dropped are walls the ray would pass through, so far sleepers saw the player through the rock and woke. */
+#define RAY_STRETCH 384.0f
 static int wall_distance(const Scene *scene, const float *from, const float *dir, float length, float *hit)
 {
-    float to[3];
+    float start, stretch, a[3], b[3], origin[3], at;
     int k;
     if (!scene || !collide_use(scene)) { return 0; }
-    for (k = 0; k < 3; k++) { to[k] = from[k]+dir[k]*length; }
     collide_quiet(1);
-    collide_gather(minimum(from[0],to[0])-1,minimum(from[1],to[1])-1,minimum(from[2],to[2])-1,
-                   maximum(from[0],to[0])+1,maximum(from[1],to[1])+1,maximum(from[2],to[2])+1);
+    for (start = 0; start < length; start += RAY_STRETCH) {
+        stretch = length-start < RAY_STRETCH ? length-start : RAY_STRETCH;
+        for (k = 0; k < 3; k++) { a[k] = from[k]+dir[k]*start; b[k] = a[k]+dir[k]*stretch; origin[k] = a[k]; }
+        collide_gather(minimum(a[0],b[0])-1,minimum(a[1],b[1])-1,minimum(a[2],b[2])-1,
+                       maximum(a[0],b[0])+1,maximum(a[1],b[1])+1,maximum(a[2],b[2])+1);
+        if (collide_ray(origin,dir,stretch,&at)) { *hit = start+at; collide_quiet(0); return 1; }
+    }
     collide_quiet(0);
-    return collide_ray(from,dir,length,hit);
+    return 0;
 }
 
 /* The middle of the player's body: half way from the floor to the eye, so a crouch (an eye 32 up) has it 16 up, not in the floor. */
