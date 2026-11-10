@@ -77,3 +77,4 @@ for now. Each line names where to look.
 ## Rest and sight rays (2026-11-10)
 - Resting was refused for any non-passive creature within 1024 units, asleep or not, through walls; the original refuses for any creature among those collected round the player (`creature_list`, `world_collect_object`). A sleeper now counts only when the player is in its sight; an awake creature always counts. The exact collected area is not yet read out of the decomp.
 - A sleeping creature cast its sight ray (a collide gather of the whole box between it and the player) every frame, which filled the log with "collide: N triangles past the 1024" warnings; it now looks only when its 0.2 s think timer is due. Awake creatures still cast one a frame.
+- The parchment (`lay_paper`, SPOP.RCI's nine 22 x 22 tiles) was blitted opaque, so its torn edge's index-0 pixels showed as black dots; they are the cutout's clear texels (GFALL's `canvas_scroll` already cuts them out) and are now skipped.

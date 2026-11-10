@@ -3209,7 +3209,7 @@ static void lay_paper(int x0, int y0, int cols, int rows)
 
             piece_col = col == 0 ? 0 : (col == cols - 1 ? 2 : 1);
             piece = piece_row * 3 + piece_col;
-            blit_ix(x0 + col * 22, y0 + row * 22, g_spop + piece * 22 * 22, 22, 22, 0);
+            blit_ix(x0 + col * 22, y0 + row * 22, g_spop + piece * 22 * 22, 22, 22, 1);
         }
     }
 }
