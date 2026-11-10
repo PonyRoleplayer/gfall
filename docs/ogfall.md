@@ -1683,3 +1683,28 @@ Source: `trade_region_price`, `trade_base_price`, `trade_adjust_price`, `trade_t
   that are extern in the C and must be read from FALL.EXE), buildings' identity and
   `holiday_today`, the haggling window (its constants are extern doubles and no caller exists
   in the decomp), and the screen.
+
+
+## Trade: the shelves (2026-11-10)
+
+Slice 2, second part. `play/shelf.c`, with `tables/shopdefs.c` generated from FALL.EXE
+(`tools/ogfall-data.py` writes `shopdata.h`: the five group lists at 0x186639, 0x186678,
+0x186774, 0x186870 and 0x1868D9, 21 building types each). Source: `shop_generate_stock`
+(`src/lifted/equip.c` 755), `interior_stock_shelves` and `furniture_is_container`
+(`src/lifted/engsupp.c`), `building_load_interior` (`src/lifted/maplogic.c` 372).
+
+- **Which models are shelves:** interior model 418, or 410 when its variant is a container
+  (3, 4, 7, 8, 50, 51 or 32..38).
+- **A shelf** draws its groups from the building type's list, whose width and entries depend on the
+  shelf's variant (0..1: 3 groups, 2..3 and 4..10: 12, 11..14: 5, 15 and up: 11). One group is
+  picked a shelf, then an item of it, then more while a chance that starts at 100 and halves each
+  time keeps coming up (`rand() % 100 > chance` ends it): about 1.6 items a shelf, 100 shelves of a
+  general store made 164 in the host test. Clothing is the player's sex's group; a book's rarity
+  is `(quality + 3) / 5`. The items are made by the same routine as loot (`og_item_create`, a
+  random kind and material by the player's level).
+- **Restocked at every entry:** the original clears the shop's container and stocks all its
+  shelves again each time the building is entered, so nothing is kept between visits.
+- **Not built:** magic items (group 4), artifacts (5) and group 11 wait for the magic-item and
+  enchantment systems; the enchanted and soul-trap shelves of the Mages Guild and the potions
+  shelf (`shop_stock_magic`, `shop_stock_potions`) are separate callers and wait too. The shop
+  container itself and its owner flag are made when the trade screen is.
