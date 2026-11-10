@@ -108,6 +108,8 @@ void og_dungeon_variant(int i, int type)
     }
 }
 
+static int visible(const Scene *scene, const float *from, const float *to);
+
 int og_dungeon_nearby(const Camera *cam, float reach)
 {
     const Entity *e;
@@ -118,7 +120,15 @@ int og_dungeon_nearby(const Camera *cam, float reach)
         e = g_foe[i].entity;
         if (e->dead || (g_foe[i].passive && !g_foe[i].awake)) { continue; }
         dx = e->x-cam->x; dy = e->y+40-cam->y; dz = e->z-cam->z;
-        if (dx*dx+dy*dy+dz*dz < reach*reach) { return 1; }
+        if (dx*dx+dy*dy+dz*dz >= reach*reach) { continue; }
+        /* A sleeper behind a wall does not keep the player from resting; the original counts the creatures round the player, which is every one in the cells loaded. */
+        if (!g_foe[i].awake && g_scene) {
+            float from[3], to[3];
+            from[0] = e->x; from[1] = e->y+40; from[2] = e->z;
+            to[0] = cam->x; to[1] = cam->y; to[2] = cam->z;
+            if (!visible(g_scene,from,to)) { continue; }
+        }
+        return 1;
     }
     return 0;
 }
@@ -635,14 +645,18 @@ static void foe_step(const Scene *scene, const Camera *cam, int index, float dt)
         foe_voice(f,f->awake ? (distance < 128 && og_random_range(0,3) ? 2 : 1) : 0);
         f->voice_time = (float)og_random_range(2000,6000)/1000;
     }
+    /* A sleeper looks only when its think timer is due: the sight ray gathers every triangle between it and the player, too much to do for each sleeper each frame. */
+    if (!f->awake) {
+        f->think -= dt;
+        if (f->passive || f->think > 0) { return; }
+    }
     from[0] = e->x; from[1] = e->y+40; from[2] = e->z;
     to[0] = cam->x; to[1] = chest(cam); to[2] = cam->z;
     sight = visible(scene,from,to);
     angle = df_iround(df_atan2(dx,dz)*(2048/DF_TAU)) & 2047;
     facing = df_iround(e->yaw*(2048/DF_TAU)) & 2047;
     if (!f->awake) {
-        f->think -= dt;
-        if (!f->passive && f->think <= 0) {
+        {
             f->think = 0.2f;
             if (sight && og_magic_sees(f->kind) && (og_ai_angle(facing,angle) <= 512 ||
                 og_ai_stealth(f->mind.detected,df_iround(distance),f->mind.encountered))) {
