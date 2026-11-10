@@ -377,4 +377,19 @@ guild.append(array('g_service_faction', service, 'df_i16'))
 guild.append('static const char *const g_service_label[89] = { %s };\n' % ', '.join(json.dumps(safe_text(p)) for p in labels))
 guild.append('static const char g_guild_picture[] = %s;\n' % json.dumps(cstring_text(0x175eb3)))
 guild.append('static const char g_members_only[] = %s;\n' % json.dumps(cstring_text(0x175ec1)))
+# Training (training_offer, src/lifted/sheet.c 455): the skills each trainer offers by the person's faction, and the uses a lesson is worth
+# per skill (skill_advance_multipliers, 35 shorts).
+trainers = [(839, 0x186f37), (803, 0x186f4c), (61, 0x186f5f), (849, 0x186f74), (241, 0x186f88), (243, 0x186f9e),
+            (245, 0x186fb6), (247, 0x186fc9), (249, 0x186fdb), (250, 0x186fee), (252, 0x187001), (254, 0x187017)]
+guild.append('static const df_i16 g_trainer_faction[12] = { %s };\n' % ', '.join(str(f) for f, a in trainers))
+guild.append('static const unsigned char g_trainer_skills[12][14] = {\n')
+for f, a in trainers:
+    values = []
+    for value in read(a, 16):
+        if value == 255:
+            break
+        values.append(value)
+    guild.append('    {%s},\n' % ', '.join(str(v) for v in values + [255]))
+guild.append('};\n')
+guild.append(array('g_skill_advance', unpack(symbols['skill_advance_multipliers'], '35h'), 'df_i16'))
 Path('src/game/ogfall/tables/guilddata.h').write_text(''.join(guild))

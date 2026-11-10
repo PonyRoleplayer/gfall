@@ -2080,3 +2080,21 @@ Two small controls came with it: a yes or no over the world (`og_possessions_ask
 Not built: training, buying and making potions, soul gems, spells and magic items, the Daedra, teleporting, blessings, cures, the temples' quests, the knights' armour and house,
 the Brotherhood's and Thieves' invitation letters, the guild healing's attribute restore and disease cleanup, and the rank-4 knights' effects beyond rooms. Tests: `tests/check_ogguild.c`
 (the rules, through a save in `check_ogstate.c`) and the menu, the yes or no and the number in `tests/check_ogworld.c`, writing `build/ogfall-guild0..1.ppm`.
+
+### Guild services: training, cures, blessings, healing
+
+`guild.c` holds the rules, the seam the flows (`hall_*`):
+
+- **Training** (`training_offer`, `training_update`): a trainer's skills by their faction (the twelve lists are in `tables/guilddata.h`), refused within 720 minutes of the last
+  lesson (record 4023); the price is the level times 100, four times for a stranger, asked in record 8; a list of the skills; over 50 is refused (4022); else the gold is spent,
+  10 to 20 times the skill's advance (`skill_advance_multipliers`) uses are added (`og_skill_add_uses`, held 0..20000), record 5221 is said and 180 minutes pass.
+- **Cure** (`guild_cure_diseases`): 250 gold a disease (record 30 if there is none); Akatosh's members pay (10 - rank) / 10; the price goes through the shop's chain and the offer's words.
+- **Blessing** (`guild_buy_blessing`): none at Akatosh's, one at a time (the original answers 454, "no gold", when one is held), 100 gold through the chain, rank + 10 points of the
+  temple's skill, attribute or the region's legal standing for rank + 4 days. The points added are held at 100 but the amount kept is the whole, and the legal gift is taken back from
+  region 0 (the record never names a region), as the decomp has it. An old one ends when time passes (`og_blessing_expire` in `og_state_pass_minutes`).
+- **Heal** (`guild_heal`): health to the most; if an attribute is down the offer (403) to put them back, the conditions cleared and the ailments cured. The spells' effects on
+  the player (the original's type 9 children) are not cleared. When a question is up the service waits for its answer.
+- A watchman killed in a dungeon is counted by the Brotherhood (`guild_count_crime(6, 1)`); a pedestrian's death (6, 5) comes with the streets' people being fought.
+
+Controls on the message page grew a list popup (`og_possessions_list`) and up to four queued messages. Tests: `tests/check_ogguild.c` (training, blessings) and the Fighters'
+trainer driven by clicks to a lesson in `tests/check_ogworld.c`. Cure and blessing through the shop's chain need a building to stand in and are not driven by the tests.

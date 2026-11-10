@@ -159,6 +159,8 @@ void og_state_date(int *year, int *month, int *day, int *weekday);
 void og_state_observe(void (*fn)(const OgEvent *event));
 void og_state_event(int kind, df_u32 subject, df_u32 other, int value);
 void og_skill_use(int skill);
+/* skill_add_uses: n uses, never below 0 or past 20000. */
+void og_skill_add_uses(int skill, int n);
 void og_state_stealth_checked(void);
 void og_state_clear_skill_uses(int skill);
 void og_state_base_attribute(int attribute, int value);

@@ -53,3 +53,19 @@ static const df_i16 g_service_faction[] = { 839, 841, 840, 843, 842, 807, 61, 63
 static const char *const g_service_label[89] = { "Training", "Buy Potions", "Make Potions", "Buy Soulgems", "Spymaster", "Get Quest", "Training", "Get Quest", "Make Spells", "Buy Magic Items", "Make Magic Items", "Daedra Summoning", "Teleportation", "Buy Spells", "Identify", "Training", "Repairs", "Get Quest", "Training", "Get Quest", "Sell Magic Items", "Spymaster", "Receive Armor", "Receive House", "Get Quest", "Training", "Buy Potions", "Make Potions", "Buy Soulgems", "Daedra Summoning", "Get Quest", "Make Donation", "Cure Diseases", "Training", "Buy Potions", "Make Potions", "Daedra Summoning", "Make Donation", "Buy Blessing", "Cure Diseases", "Get Quest", "Training", "Buy Potions", "Make Potions", "Daedra Summoning", "Make Donation", "Buy Blessing", "Cure Diseases", "Get Quest", "Training", "Buy Potions", "Make Potions", "Daedra Summoning", "Make Donation", "Buy Blessing", "Cure Diseases", "Get Quest", "Training", "Buy Magic Items", "Make Magic Items", "Daedra Summoning", "Make Donation", "Buy Blessing", "Cure Diseases", "Get Quest", "Training", "Buy Potions", "Make Potions", "Daedra Summoning", "Make Donation", "Buy Blessing", "Cure Diseases", "Get Quest", "Training", "Buy Potions", "Make Potions", "Daedra Summoning", "Make Donation", "Buy Blessing", "Cure Diseases", "Get Quest", "Training", "Buy Spells", "Make Spells", "Daedra Summoning", "Make Donation", "Buy Blessing", "Cure Diseases", "Get Quest" };
 static const char g_guild_picture[] = "gild0%ci0.img";
 static const char g_members_only[] = "My services are reserved for members only.";
+static const df_i16 g_trainer_faction[12] = { 839, 803, 61, 849, 241, 243, 245, 247, 249, 250, 252, 254 };
+static const unsigned char g_trainer_skills[12][14] = {
+    {28, 33, 19, 2, 16, 18, 22, 9, 34, 17, 20, 21, 255},
+    {13, 15, 2, 16, 18, 19, 28, 17, 20, 32, 3, 255},
+    {22, 23, 24, 25, 26, 27, 9, 7, 4, 5, 10, 12, 255},
+    {32, 31, 33, 28, 29, 6, 4, 34, 17, 21, 3, 255},
+    {22, 23, 0, 31, 28, 19, 9, 34, 18, 255},
+    {2, 14, 4, 5, 6, 10, 11, 9, 26, 32, 15, 1, 255},
+    {0, 2, 1, 24, 23, 33, 34, 8, 5, 9, 255},
+    {22, 25, 29, 9, 7, 16, 21, 33, 17, 255},
+    {26, 27, 25, 28, 12, 9, 13, 34, 14, 255},
+    {1, 24, 23, 29, 13, 4, 8, 9, 2, 5, 255},
+    {0, 23, 32, 31, 20, 34, 9, 4, 10, 255},
+    {3, 21, 20, 33, 5, 7, 22, 24, 18, 16, 9, 255},
+};
+static const df_i16 g_skill_advance[] = { 12, 1, 1, 5, 15, 15, 15, 15, 15, 15, 15, 15, 15, 2, 1, 2, 2, 1, 2, 1, 4, 50, 1, 2, 1, 1, 2, 1, 2, 2, 2, 2, 2, 1, 8 };

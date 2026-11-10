@@ -373,6 +373,34 @@ void check_ogworld(const char *root)
             type_char('1'); type_char('2'); type_char('x'); type_char('5');
             type_char(13);
             check_expect(g_number == 125 && og_possessions()->page == OG_VIEW_NONE, "people: the number typed was not 125 with digits only");
+            /* A Fighters' trainer: a member sees the menu, the service asks the price, lists the skills and teaches one, three hours pass. */
+            {
+                OgGuildStep joined;
+                df_u32 before;
+                int gold;
+
+                og_guilds_clear();
+                og_guild_join(2, 41, og_state()->minutes, &joined);
+                og_faction_add_reputation(41, 40);
+                og_character()->level = 2;
+                og_character()->gold = 1000;
+                og_character()->skill[32] = 30;
+                og_guilds()->last_training = 0;
+                og_state_pass_minutes(2000);
+                before = og_state()->minutes;
+                gold = og_character()->gold;
+                seam_hall_enter(849, 41);
+                check_expect(og_possessions()->page == OG_VIEW_SERVICE && og_possessions()->service == OG_SERVICE_GUILD && og_possessions()->service_member &&
+                             !strcmp(og_possessions()->service_label, "Training"), "guild: the Fighters' trainer did not open the member's menu");
+                click_at(160, 73);
+                check_expect(og_possessions()->prompt == OG_PROMPT_ASK, "guild: the lesson's price was not asked");
+                click_at(117, 125);
+                check_expect(og_possessions()->prompt == OG_PROMPT_LIST && og_possessions()->list_count == 11, "guild: the trainer's skills were not listed");
+                click_at(150, 38);
+                check_expect(og_character()->gold == gold - 200 && og_state()->minutes == before + 180 && og_guilds()->last_training == before &&
+                             og_possessions()->notice[0] != 0, "guild: the lesson did not cost 200 and take three hours");
+                og_possessions_close();
+            }
             (void)line;
         }
     }

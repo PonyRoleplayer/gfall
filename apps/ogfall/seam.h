@@ -26,6 +26,8 @@ void seam_close_hold(void);
 int seam_capture_world(void);
 void seam_creatures(const Camera *cam);
 Level *seam_level(void);
+/* A person of a guild hall (their own faction and the hall's) met: promotion, then the menu or talk. For the game and its tests. */
+void seam_hall_enter(int person_faction, int hall_faction);
 int seam_creature_archive(int index);
 /* Palette index of TAMRIEL2.IMG at a classic pixel. 0 off the map. */
 int seam_map_pixel(int x, int y);

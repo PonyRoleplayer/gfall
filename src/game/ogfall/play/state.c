@@ -59,6 +59,15 @@ OgLaw *og_law(void)
     return &g_state.law;
 }
 
+void og_skill_add_uses(int skill, int n)
+{
+    long uses;
+
+    if (skill < 0 || skill >= OG_SKILLS) { return; }
+    uses = (long)g_state.skill_uses[skill] + n;
+    g_state.skill_uses[skill] = uses < 0 ? 0 : uses > 20000 ? 20000 : (df_u32)uses;
+}
+
 void og_skill_use(int skill)
 {
     if (skill >= 0 && skill < OG_SKILLS && g_state.skill_uses[skill] != 0xffffffffu) {
@@ -446,6 +455,7 @@ void og_state_pass_minutes(df_u32 minutes)
             og_standing_decay(og_law_is_serving());
         }
     }
+    og_blessing_expire(g_state.minutes);
     og_state_calendar();
 }
 

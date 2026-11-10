@@ -52,6 +52,7 @@
 #include "game/ogfall/play/talk.h"
 #include "game/ogfall/play/steal.h"
 #include "game/ogfall/play/guild.h"
+#include "game/ogfall/play/ailments.h"
 #include "game/ogfall/formats/interior.h"
 #include "game/ogfall/play/talkwin.h"
 #include "game/dagger/play/character.h"
@@ -1229,13 +1230,167 @@ static void hall_donate_answer(int amount)
     hall_text(703);
 }
 
-/* guild_heal: health to the most; the first record is shown. (The attributes put back and the diseases cleared are not built.) */
-static void hall_heal(void)
+/* guild_confirm_price: the price at the hall's shop (base, then the buyer's skills, then the scale), the offer's words, and a yes. */
+static int g_confirm_price;
+static void (*g_confirm_cb)(int price);
+
+static void hall_confirm_answer(int yes)
 {
-    og_character()->health = og_character()->max_health;
+    void (*cb)(int);
+    int price;
+
+    cb = g_confirm_cb; price = g_confirm_price; g_confirm_cb = 0;
+    if (yes && cb) { cb(price); }
 }
 
-static void hall_service(void)
+static void hall_confirm(int base, void (*cb)(int price))
+{
+    OgShop shop;
+    OgQuote q;
+    static char line[400];
+    int total;
+
+    if (!shop_here(&shop)) { return; }
+    total = og_trade_base_price(&shop, base);
+    q.total = total;
+    q.price = og_trade_adjust(&shop, og_character()->skill[14], og_character()->attribute[5], total, 0) * shop.scale / 256;
+    g_confirm_price = q.price;
+    g_confirm_cb = cb;
+    offer_say(og_trade_offer_text(1, q.total, q.price), q.price, line, (int)sizeof(line));
+    if (q.price < 1) { cb(q.price); return; }
+    og_possessions_ask(line, hall_confirm_answer);
+}
+
+/* A price paid: 454 when the gold is not there (a message over the world), else spent. */
+static int hall_pay(int price)
+{
+    if (!og_gold_can_afford(price)) {
+        hall_text(454);
+        return 0;
+    }
+    og_gold_spend(price);
+    return 1;
+}
+
+/* Training: the lesson's price asked (record 8), then a list of the trainer's skills, then the lesson. */
+static struct { int price; const unsigned char *skills; } g_lesson;
+
+static void hall_lesson_picked(int row)
+{
+    int text, minutes;
+
+    if (row < 0 || row >= OG_LIST_MOST) { return; }
+    if (og_training_learn(g_lesson.skills[row], g_lesson.price, og_state()->minutes, &text, &minutes)) {
+        hall_text(text);
+        og_state_pass_minutes((df_u32)minutes);
+    } else if (text) {
+        hall_text(text);
+    }
+}
+
+static void hall_lesson_answer(int yes)
+{
+    static char names[OG_LIST_MOST][OG_LIST_NAME];
+    int n;
+
+    if (!yes) { return; }
+    if (!og_gold_can_afford(g_lesson.price)) { hall_text(454); return; }
+    for (n = 0; g_lesson.skills[n] != 255 && n < OG_LIST_MOST; n++) {
+        df_copy(names[n], og_skill_name(g_lesson.skills[n]), OG_LIST_NAME);
+    }
+    og_possessions_list((const char (*)[OG_LIST_NAME])names, n, hall_lesson_picked);
+}
+
+static void hall_training(int person, int member)
+{
+    static char line[400];
+    int text;
+
+    g_lesson.skills = og_training_skills(person);
+    if (!g_lesson.skills) { start_talk(); return; }
+    if (!og_training_offer(og_state()->minutes, og_character()->level, member, &g_lesson.price, &text)) {
+        hall_text(text);
+        return;
+    }
+    offer_say(8, g_lesson.price, line, (int)sizeof(line));
+    og_possessions_ask(line, hall_lesson_answer);
+}
+
+/* guild_cure_diseases: 250 gold a disease (a temple of Akatosh's members pay less by rank), at the hall's prices, and the diseases cured. */
+static void hall_cure_paid(int price)
+{
+    if (hall_pay(price)) {
+        og_ailments_cure(-1, 0);
+    }
+}
+
+static void hall_cure(int kind, int rank)
+{
+    int count, price;
+
+    count = og_ailments_disease_count(-1);
+    if (!count) { hall_text(30); return; }
+    price = count * 250;
+    if (kind == 142 && rank >= 0) { price = price * og_guild_price_scale(rank) / 256; }
+    hall_confirm(price, hall_cure_paid);
+}
+
+/* guild_buy_blessing: one at a time, 100 gold at the hall's prices, its words by the temple. */
+static int g_blessing_kind, g_blessing_rank;
+
+static void hall_blessing_paid(int price)
+{
+    int text;
+
+    if (!hall_pay(price)) { return; }
+    if (og_blessing_buy(g_blessing_kind, g_blessing_rank, travel_region(), og_state()->minutes, &text) && text) {
+        hall_text(text);
+    }
+}
+
+static void hall_blessing(int kind, int rank)
+{
+    if (kind == 142) { return; }
+    if (og_guilds()->blessing.active) { hall_text(454); return; }
+    g_blessing_kind = kind;
+    g_blessing_rank = rank < 0 ? 0 : rank;
+    hall_confirm(100, hall_blessing_paid);
+}
+
+/* guild_heal: health to the most; if attributes are down, an offer (403) to put them back, the conditions and the ailments gone. */
+static void hall_run(void);
+
+static void hall_heal_answer(int yes)
+{
+    int i;
+
+    if (yes) {
+        for (i = 0; i < 8; i++) { og_character()->attribute[i] = og_state()->base_attribute[i]; }
+        og_character()->conditions = 0;
+        og_ailments_cure(-1, 0);
+        og_ailments_cure(-1, 1);
+    }
+    /* The service the heal came with goes on once the question is answered. */
+    hall_run();
+}
+
+/* 1 when a question is up (the service waits for its answer). */
+static int hall_heal(void)
+{
+    static char line[400];
+    int i, lowered;
+
+    og_character()->health = og_character()->max_health;
+    lowered = 0;
+    for (i = 0; i < 8; i++) {
+        if (og_character()->attribute[i] < og_state()->base_attribute[i]) { lowered++; }
+    }
+    if (!lowered) { hall_text(350); return 0; }
+    person_say_text(403, line, (int)sizeof(line));
+    return og_possessions_ask(line, hall_heal_answer);
+}
+
+static void hall_run(void)
 {
     OgMembership *m;
     OgShop shop;
@@ -1244,9 +1399,6 @@ static void hall_service(void)
     m = og_guild_find_faction(g_hall.faction);
     rank = m ? m->rank : -1;
     service = og_guild_service(g_hall.kind, g_hall.person, rank, &heal);
-    if (heal) {
-        hall_heal();
-    }
     switch (service) {
     case OG_SVC_TALK:
         start_talk();
@@ -1256,6 +1408,15 @@ static void hall_service(void)
         break;
     case OG_SVC_RANK_REFUSED:
         hall_text(OG_TEXT_RANK_REFUSED);
+        break;
+    case OG_SVC_TRAINING:
+        hall_training(g_hall.person, m != 0);
+        break;
+    case OG_SVC_CURE:
+        hall_cure(g_hall.kind, rank);
+        break;
+    case OG_SVC_BLESSING:
+        hall_blessing(g_hall.kind, rank);
         break;
     case OG_SVC_NONE:
         break;
@@ -1284,6 +1445,21 @@ static void hall_service(void)
         og_possessions_message("That service is not built yet.", 0);
         break;
     }
+}
+
+/* guild_service_dispatch's service: a member is healed first (the heal's own question, if any, is answered before the service goes on). */
+static void hall_service(void)
+{
+    OgMembership *m;
+    int service, heal;
+
+    m = og_guild_find_faction(g_hall.faction);
+    service = og_guild_service(g_hall.kind, g_hall.person, m ? m->rank : -1, &heal);
+    (void)service;
+    if (heal && hall_heal()) {
+        return;
+    }
+    hall_run();
 }
 
 static void hall_act(int what)
@@ -3966,7 +4142,13 @@ static int present_possessions(void)
         paper_box(lines,shown,0,&x,&y,&cols,&rows,&ty);
         lay_paper(x,y,cols,rows); paint_lines(lines,shown,1,x,ty,146);
     }
-    if (view->prompt == OG_PROMPT_OFFER || view->prompt == OG_PROMPT_ASK) {
+    if (view->prompt == OG_PROMPT_LIST) {
+        /* list_popup_open_strings: the rows in a box, each eight pixels from y 34. */
+        int k;
+
+        fill_box(100,26,120,view->list_count*8+14,45); outline(100,26,120,view->list_count*8+14,145);
+        for (k = 0; k < view->list_count; k++) { smallfont_draw(&g_font,g_buf,320,200,106,34+k*8,145,156,view->list[k]); }
+    } else if (view->prompt == OG_PROMPT_OFFER || view->prompt == OG_PROMPT_ASK) {
         /* msgbox_yes_no_rsc: the shopkeeper's words over a box, Accept and Reject under them. */
         char wrapped[10][96];
         int rows, k, court;
@@ -3979,7 +4161,7 @@ static int present_possessions(void)
         for (k = 0; k < rows; k++) { centered_text(160,(court ? 14 : 48)+k*10,wrapped[k],145); }
         centered_text(117,121,(view->page == OG_VIEW_COURT || view->page == OG_VIEW_MESSAGE) ? view->yes : "Accept",145);
         centered_text(203,121,(view->page == OG_VIEW_COURT || view->page == OG_VIEW_MESSAGE) ? view->no : "Reject",145);
-    } else if (view->prompt && view->prompt != OG_PROMPT_AMOUNT) {
+    } else if (view->prompt && view->prompt != OG_PROMPT_AMOUNT && view->prompt != OG_PROMPT_LIST) {
         const char *prompt;
         prompt = view->prompt == OG_PROMPT_GOLD ? "How much gold?" : view->prompt == OG_PROMPT_NAME ? "Name thyself" :
                  view->prompt == OG_PROMPT_SPELL_NAME ? "Enter spell name" :
@@ -4455,4 +4637,9 @@ static void present_maps(void)
     og_pic_set(OG_PIC_SCREEN,g_map_pic);
     if (!g_buf) { g_buf = (df_u8 *)mem_keep(64000); }
     if (g_buf) { mem_copy(g_buf,pixels,64000); } g_screen_kind = 1;
+}
+
+void seam_hall_enter(int person_faction, int hall_faction)
+{
+    hall_enter(person_faction, hall_faction);
 }

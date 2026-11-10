@@ -423,6 +423,9 @@ static void transfer(Wire *w, OgState *s)
         }
         wire_int(w, &s->guilds.thieves_count); wire_int(w, &s->guilds.brotherhood_count);
         wire_u32(w, &s->guilds.thieves_invite); wire_u32(w, &s->guilds.brotherhood_invite);
+        wire_u32(w, &s->guilds.last_training);
+        wire_int(w, &s->guilds.blessing.active); wire_int(w, &s->guilds.blessing.target); wire_int(w, &s->guilds.blessing.amount);
+        wire_int(w, &s->guilds.blessing.region); wire_u32(w, &s->guilds.blessing.end);
     }
 
     if (w->version >= 7) {

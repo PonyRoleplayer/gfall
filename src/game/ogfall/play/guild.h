@@ -33,6 +33,12 @@ typedef struct OgGuilds {
     int thieves_count, brotherhood_count;
     /* The minute an invitation comes, 0 for none. */
     df_u32 thieves_invite, brotherhood_invite;
+    /* The minute of the last lesson (last_training_minutes), and the one blessing a temple's gift allows. */
+    df_u32 last_training;
+    struct OgBlessing {
+        int active, target, amount, region;
+        df_u32 end;
+    } blessing;
 } OgGuilds;
 
 /* The live memberships, kept in the session (state.c). */
@@ -106,5 +112,24 @@ const char *og_guild_service_label(int person_faction);
 const char *og_guild_picture(int member);
 /* The price scale a Fighter or a Mage pays at the shop, out of 256: (10 - rank) * 256 / 10 (guild_service_dispatch). */
 int og_guild_price_scale(int rank);
+
+/*
+ * Training (training_offer and training_update, src/lifted/sheet.c 455..520): a trainer's skills by their faction (NULL for none), the lesson's
+ * price (the level times 100, four times for a stranger), refused within 12 hours of the last (record 4023); then the lesson of a chosen skill:
+ * refused over 50 (4022), else the price spent, the minute kept, 10 to 20 uses times the skill's advance, record 5221 and three hours gone.
+ */
+const unsigned char *og_training_skills(int person_faction);
+int og_training_offer(df_u32 now, int level, int member, int *price, int *text);
+int og_training_learn(int skill, int price, df_u32 now, int *text, int *minutes);
+
+/*
+ * A temple's blessing (guild_buy_blessing, run_00070887.c 134..): none from Akatosh's (142), one at a time (454 says no gold, as the original's
+ * message for it does), the target by the temple (a skill, an attribute or the region's legal standing), rank + 10 points for rank + 4 days.
+ * The points are held at 100 but the amount kept is the full one, so the end takes off what was never added (blessing_remove) as the original does.
+ * Cost 100 gold at the shop's prices is the caller's. *text is the record to show.
+ */
+int og_blessing_buy(int kind, int rank, int region, df_u32 now, int *text);
+/* guild_expire_blessings: an old blessing's gift removed. 1 when one ended. */
+int og_blessing_expire(df_u32 now);
 
 #endif

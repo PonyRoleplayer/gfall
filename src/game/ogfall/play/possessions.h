@@ -11,7 +11,9 @@
 
 enum { OG_VIEW_NONE, OG_VIEW_INVENTORY, OG_VIEW_SHEET, OG_VIEW_SPELLS, OG_VIEW_BOOK, OG_VIEW_MESSAGE, OG_VIEW_BANK, OG_VIEW_COURT, OG_VIEW_TALK, OG_VIEW_SERVICE };
 enum { OG_ITEM_INFO, OG_ITEM_EQUIP, OG_ITEM_REMOVE, OG_ITEM_USE };
-enum { OG_PROMPT_NONE, OG_PROMPT_GOLD, OG_PROMPT_NAME, OG_PROMPT_PAGE, OG_PROMPT_SPELL_NAME, OG_PROMPT_ANSWER, OG_PROMPT_OFFER, OG_PROMPT_AMOUNT, OG_PROMPT_ASK, OG_PROMPT_NUMBER };
+enum { OG_PROMPT_NONE, OG_PROMPT_GOLD, OG_PROMPT_NAME, OG_PROMPT_PAGE, OG_PROMPT_SPELL_NAME, OG_PROMPT_ANSWER, OG_PROMPT_OFFER, OG_PROMPT_AMOUNT, OG_PROMPT_ASK, OG_PROMPT_NUMBER, OG_PROMPT_LIST };
+#define OG_LIST_MOST 16
+#define OG_LIST_NAME 24
 #define OG_NOTICE_LINES 16
 typedef struct OgPossessions {
     int page, underlay, tab, action, scroll[2], selected, skill_group, skill_scroll;
@@ -30,6 +32,9 @@ typedef struct OgPossessions {
     OgCourt court;
     int court_stage, court_texts[3], court_text_at;
     char yes[16], no[16];
+    /* A list to choose from (list_popup_open_strings): its rows. */
+    char list[OG_LIST_MOST][OG_LIST_NAME];
+    int list_count;
     char offer[200];
     char notice[2048], input[32];
     unsigned revision;
@@ -77,6 +82,8 @@ int og_possessions_guild(int member, const char *label);
 int og_possessions_ask(const char *words, void (*answer)(int yes));
 /* A number typed (msgbox_prompt_number): the words over the box, the amount (digits only) given to the callback, 0 for Escape. */
 int og_possessions_number(const char *words, void (*answer)(int amount));
+/* A list popup over the world: the row clicked (0 on) is given to the callback, -1 for Escape. 0 when something else is open or there are no rows. */
+int og_possessions_list(const char names[][OG_LIST_NAME], int count, void (*pick)(int row));
 void og_possessions_set_service(void (*act)(int what));
 int og_possessions_trade(int mode, const OgShop *shop, df_u32 shelves);
 /*

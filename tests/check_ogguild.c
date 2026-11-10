@@ -127,4 +127,50 @@ void check_ogguild(void)
         check_expect(!strcmp(og_guild_service_label(60), "Buy Spells") && !strcmp(og_guild_service_label(810), "Make Donation") && og_guild_service_label(1) == 0, "guild: the service labels are not FALL.EXE's");
         check_expect(!strcmp(og_guild_picture(0), "GILD00I0.IMG") && !strcmp(og_guild_picture(1), "GILD01I0.IMG") && og_guild_price_scale(0) == 256 && og_guild_price_scale(5) == 128, "guild: the menu picture and the price scale");
     }
+
+    /* Training: 12 hours between lessons, the price a level of a hundred (four times for a stranger), over 50 refused, uses by the skill's advance. */
+    {
+        int price, text, minutes;
+        const unsigned char *list;
+
+        og_guilds()->last_training = 0;
+        og_character()->gold = 5000;
+        og_character()->level = 3;
+        list = og_training_skills(61);
+        check_expect(list && list[0] == 22 && og_training_skills(1) == 0 && og_training_skills(839)[0] == 28, "guild: the trainers' skills");
+        check_expect(og_training_offer(1000u, 3, 1, &price, &text) && price == 300 && og_training_offer(1000u, 3, 0, &price, &text) && price == 1200, "guild: a lesson's price");
+        og_character()->skill[22] = 51;
+        check_expect(!og_training_learn(22, 300, 1000u, &text, &minutes) && text == 4022 && og_character()->gold == 5000, "guild: a skill over 50 was taught");
+        og_character()->skill[22] = 40;
+        og_state_clear_skill_uses(22);
+        check_expect(og_training_learn(22, 300, 1000u, &text, &minutes) && text == 5221 && minutes == 180 && og_character()->gold == 4700 &&
+                     og_state()->skill_uses[22] >= 10u && og_state()->skill_uses[22] <= 20u && og_guilds()->last_training == 1000u,
+                     "guild: a lesson did not cost, teach 10..20 uses (skill 22 advances by 1), and note the minute");
+        check_expect(!og_training_offer(1000u + 719u, 3, 1, &price, &text) && text == 4023 && og_training_offer(1000u + 720u, 3, 1, &price, &text), "guild: lessons closer than 12 hours");
+    }
+    /* Blessings: one at a time, a skill, an attribute or the legal standing by the temple, rank + 10 for rank + 4 days; ended, what was added is taken off. */
+    {
+        int text, was_skill, was_attr, was_legal;
+
+        og_guilds()->blessing.active = 0;
+        was_skill = og_character()->skill[14];
+        check_expect(!og_blessing_buy(142, 3, 17, 5000u, &text), "guild: Akatosh's gave a blessing");
+        check_expect(og_blessing_buy(143, 3, 17, 5000u, &text) && text == 705 && og_character()->skill[14] == was_skill + 13 && og_guilds()->blessing.end == 5000u + 7u * 1440u,
+                     "guild: Dibella's blessing is not rank + 10 on skill 14 for rank + 4 days");
+        check_expect(!og_blessing_buy(144, 3, 17, 5000u, &text) && text == 454, "guild: a second blessing was given");
+        check_expect(!og_blessing_expire(5000u + 7u * 1440u) && og_blessing_expire(5000u + 7u * 1440u + 1u) && og_character()->skill[14] == was_skill && !og_guilds()->blessing.active,
+                     "guild: a blessing did not end at its time and take its points back");
+        was_attr = og_character()->attribute[5];
+        og_blessing_buy(144, 0, 17, 1u, &text);
+        check_expect(og_character()->attribute[5] == was_attr + 10 && text == 707, "guild: a temple's attribute blessing");
+        og_blessing_expire(1000000u);
+        was_legal = og_region_legal(17);
+        og_blessing_buy(148, 2, 17, 1u, &text);
+        check_expect(og_region_legal(17) == was_legal + 12 && text == 716, "guild: Zenithar's blessing raises the legal standing");
+        /* The gift is taken from region 0 at the end, as the original's record never names the region. */
+        og_blessing_expire(1000000u);
+        check_expect(og_region_legal(17) == was_legal + 12, "guild: the legal gift came off the region it was given in");
+        og_region_add_legal(17, -12);
+        og_region_add_legal(0, 12);
+    }
 }

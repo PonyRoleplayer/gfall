@@ -1,4 +1,5 @@
 #include "game/ogfall/play/dungeon.h"
+#include "game/ogfall/play/guild.h"
 #include "game/ogfall/play/doors.h"
 #include "game/ogfall/play/ai.h"
 #include "game/ogfall/play/actions.h"
@@ -294,6 +295,8 @@ static void hit_foe(const Scene *scene, int i, int damage, float yaw)
         og_magic_soul_capture(i);
         og_sound_at(17,e->x,e->y,e->z);
         og_state_event(OG_EVENT_KILL,e->key.thing,og_state()->entity_id,damage);
+        /* damage_creature_death: a watchman killed is counted by the Brotherhood (guild_count_crime(6, 1)). */
+        if (f->kind == 146) { og_guild_count_crime(6, 1, og_state()->minutes); }
     } else {
         weight = og_foe_weight(f->kind);
         if (weight && !f->knock) {

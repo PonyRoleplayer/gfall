@@ -20,8 +20,13 @@ const OgPossessions *og_possessions(void) { return &g; }
 const OgBook *og_reading(void) { return &g_reading; }
 df_u8 *og_doll_owners(void) { return g_owner; }
 
+/* Messages waiting behind the one shown (a service that has several things to say). */
+static char g_queue[4][512];
+static int g_queued;
+
 void og_possessions_reset(void)
 {
+    g_queued = 0;
     g_answer = 0;
     og_book_close(&g_reading);
     mem_zero(&g, sizeof(g));
@@ -46,6 +51,7 @@ void og_possessions_close(void)
         g.revision++; return;
     }
     g_answer = 0;
+    g_queued = 0;
     if (g.page == OG_VIEW_INVENTORY && g.trade) { og_market_close(); g.trade = 0; g.price = 0; g.offer[0] = 0; }
     if (g.page == OG_VIEW_BOOK) { og_book_close(&g_reading); }
     if (g.page == OG_VIEW_TALK) { og_talkwin_close(); }
@@ -386,12 +392,30 @@ int og_possessions_cast(void)
     g.casting = 1; return 1;
 }
 
+/* A dialog over the world: the message page already up and between questions is used again (an answer's follow-up), else one is opened. */
+static int dialog_ready(void)
+{
+    if (g.page == OG_VIEW_MESSAGE && !g.prompt) { return 1; }
+    return !g.page && og_possessions_open(OG_VIEW_MESSAGE,0);
+}
+
 static void (*g_ask_cb)(int yes);
 static void (*g_number_cb)(int amount);
+static void (*g_list_cb)(int row);
+
+int og_possessions_list(const char names[][OG_LIST_NAME], int count, void (*pick)(int row))
+{
+    int i;
+
+    if (!names || count < 1 || count > OG_LIST_MOST || !pick || !dialog_ready()) { return 0; }
+    for (i = 0; i < count; i++) { df_copy(g.list[i],names[i],OG_LIST_NAME); }
+    g.list_count = count; g.prompt = OG_PROMPT_LIST; g_list_cb = pick; g.revision++;
+    return 1;
+}
 
 int og_possessions_ask(const char *words, void (*answer)(int yes))
 {
-    if (!words || !*words || !answer || g.page || !og_possessions_open(OG_VIEW_MESSAGE,0)) { return 0; }
+    if (!words || !*words || !answer || !dialog_ready()) { return 0; }
     df_copy(g.offer,words,sizeof(g.offer));
     df_copy(g.yes,"Yes",sizeof(g.yes)); df_copy(g.no,"No",sizeof(g.no));
     g.prompt = OG_PROMPT_ASK; g_ask_cb = answer; g.revision++;
@@ -400,7 +424,7 @@ int og_possessions_ask(const char *words, void (*answer)(int yes))
 
 int og_possessions_number(const char *words, void (*answer)(int amount))
 {
-    if (!words || !*words || !answer || g.page || !og_possessions_open(OG_VIEW_MESSAGE,0)) { return 0; }
+    if (!words || !*words || !answer || !dialog_ready()) { return 0; }
     df_copy(g.offer,words,sizeof(g.offer)); g.input[0] = 0;
     g.prompt = OG_PROMPT_NUMBER; g_number_cb = answer; g.revision++;
     return 1;
@@ -408,8 +432,12 @@ int og_possessions_number(const char *words, void (*answer)(int amount))
 
 int og_possessions_message(const char *text, void (*answer)(const char *))
 {
-    /* A message said while another is up (an answer's own line) takes its place. */
-    if (text && *text && g.page == OG_VIEW_MESSAGE && !g.prompt) { df_copy(g.notice,text,sizeof(g.notice)); g.notice_page = 0; g.revision++; return 1; }
+    /* A message said while another is up waits its turn (up to four); said over an answered question it is shown at once. */
+    if (text && *text && g.page == OG_VIEW_MESSAGE && !g.prompt) {
+        if (!g.notice[0]) { df_copy(g.notice,text,sizeof(g.notice)); g.notice_page = 0; g.revision++; return 1; }
+        if (g_queued < 4) { df_copy(g_queue[g_queued++],text,sizeof(g_queue[0])); return 1; }
+        return 0;
+    }
     if (!text || !*text || g.page || !og_possessions_open(OG_VIEW_MESSAGE,0)) { return 0; }
     df_copy(g.notice,text,sizeof(g.notice)); g_answer = answer;
     if (answer) { g.prompt = OG_PROMPT_ANSWER; }
@@ -886,6 +914,14 @@ static void prompt_reject(void)
         cb(0);
         return;
     }
+    if (g.prompt == OG_PROMPT_LIST) {
+        void (*cb)(int);
+
+        cb = g_list_cb; g_list_cb = 0;
+        g.prompt = 0; g.list_count = 0;
+        if (cb) { cb(-1); }
+        return;
+    }
     if (g.prompt == OG_PROMPT_NUMBER) { g_number_cb = 0; }
     g.offer[0] = 0; g.prompt = 0;
 }
@@ -903,7 +939,20 @@ void og_possessions_frame(const OgIn *in)
     if (click) { og_sound(g.page == OG_VIEW_SPELLS ? 205 : 203); }
     if (!g.notice[0]) { g.notice_page = 0; }
     if (g.prompt) {
-        if (in->ch == 27) { prompt_reject(); }
+        if (g.prompt == OG_PROMPT_LIST) {
+            /* The rows are 8 pixels from y 34; a click on one picks it, Escape none. */
+            if (in->ch == 27) { prompt_reject(); }
+            else if (click && in->cx > 100 && in->cx < 220 && in->cy >= 34 && (in->cy-34)/8 < g.list_count) {
+                void (*cb)(int);
+                int row;
+
+                row = (in->cy-34)/8;
+                cb = g_list_cb; g_list_cb = 0;
+                g.prompt = 0; g.list_count = 0;
+                if (cb) { cb(row); }
+            }
+        }
+        else if (in->ch == 27) { prompt_reject(); }
         else if (in->ch == 13 || (click && inside(in->cx,in->cy,84,116,151,134))) { prompt_accept(); }
         else if (click && inside(in->cx,in->cy,169,116,236,134)) { prompt_reject(); }
         else {
@@ -984,6 +1033,13 @@ void og_possessions_frame(const OgIn *in)
             else if (inside(in->cx,in->cy,240,187,269,196)) { g.prompt = OG_PROMPT_PAGE; g.input[0] = 0; }
             else if (inside(in->cx,in->cy,278,187,307,196)) { og_possessions_close(); }
         }
+    }
+    if (g.page == OG_VIEW_MESSAGE && !g.notice[0] && !g.prompt && g_queued) {
+        int k;
+
+        df_copy(g.notice,g_queue[0],sizeof(g.notice)); g.notice_page = 0;
+        for (k = 1; k < g_queued; k++) { df_copy(g_queue[k-1],g_queue[k],sizeof(g_queue[0])); }
+        g_queued--; g.revision++;
     }
     if (g.page == OG_VIEW_MESSAGE && !g.notice[0] && !g.prompt) { og_possessions_close(); }
     if (click || in->ch || in->key) { g.revision++; }

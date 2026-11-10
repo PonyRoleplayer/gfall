@@ -1,6 +1,7 @@
 #include "game/ogfall/play/guild.h"
 #include "game/ogfall/play/state.h"
 #include "game/ogfall/play/standing.h"
+#include "game/ogfall/play/law.h"
 #include "engine/core/mem.h"
 #include "game/ogfall/tables/guilddata.h"
 
@@ -464,4 +465,115 @@ int og_guild_service(int kind, int person, int rank, int *heal)
         return person == 846 ? OG_SVC_QUEST : OG_SVC_MEMBERS_ONLY;
     }
     return OG_SVC_TALK;
+}
+
+const unsigned char *og_training_skills(int person_faction)
+{
+    int i;
+
+    for (i = 0; i < 12; i++) {
+        if (g_trainer_faction[i] == person_faction) {
+            return g_trainer_skills[i];
+        }
+    }
+    return 0;
+}
+
+int og_training_offer(df_u32 now, int level, int member, int *price, int *text)
+{
+    *text = 0;
+    if (now - og_guilds()->last_training < 720u) {
+        *text = 4023;
+        return 0;
+    }
+    *price = level * 100;
+    if (!member) {
+        *price <<= 2;
+    }
+    return 1;
+}
+
+int og_training_learn(int skill, int price, df_u32 now, int *text, int *minutes)
+{
+    *minutes = 0;
+    if (skill < 0 || skill >= OG_SKILLS) {
+        return 0;
+    }
+    if (og_character()->skill[skill] > 50) {
+        *text = 4022;
+        return 0;
+    }
+    og_gold_spend(price);
+    og_guilds()->last_training = now;
+    og_skill_add_uses(skill, og_random_range(10, 20) * g_skill_advance[skill]);
+    *text = 5221;
+    *minutes = 180;
+    return 1;
+}
+
+/* blessing_apply: the points added to the skill, attribute or region's legal standing, held at 100; the amount kept is the whole. */
+static int blessing_apply(int target, int amount, int region)
+{
+    if (target == 255) {
+        og_region_add_legal(region, amount);
+        if (og_region_legal(region) > 100) {
+            og_region_add_legal(region, 100 - og_region_legal(region));
+        }
+    } else if (target & 128) {
+        og_character()->attribute[target & 127] += amount;
+        if (og_character()->attribute[target & 127] > 100) { og_character()->attribute[target & 127] = 100; }
+    } else {
+        og_character()->skill[target] += amount;
+        if (og_character()->skill[target] > 100) { og_character()->skill[target] = 100; }
+    }
+    return amount;
+}
+
+static void blessing_remove(const struct OgBlessing *b)
+{
+    if (b->target == 255) {
+        og_region_add_legal(b->region, -b->amount);
+    } else if (b->target & 128) {
+        og_character()->attribute[b->target & 127] -= b->amount;
+    } else {
+        og_character()->skill[b->target] -= b->amount;
+    }
+}
+
+int og_blessing_buy(int kind, int rank, int region, df_u32 now, int *text)
+{
+    static const short target[8] = { 0, 14, 133, 134, 129, 135, 255, 132 };
+    static const short words[8] = { 0, 705, 707, 709, 710, 712, 716, 717 };
+    struct OgBlessing *b;
+
+    *text = 0;
+    if (kind == 142 || kind < 142 || kind > 149) {
+        return 0;
+    }
+    b = &og_guilds()->blessing;
+    if (b->active) {
+        *text = 454;
+        return 0;
+    }
+    b->active = 1;
+    b->target = target[kind - 142];
+    /* The gift to the legal standing goes to the region the player is in, but the record never names it: the end takes it from region 0 (blessing_remove). */
+    b->region = 0;
+    b->end = (df_u32)(rank + 4) * 1440u + now;
+    b->amount = blessing_apply(b->target, rank + 10, region);
+    *text = words[kind - 142];
+    return 1;
+}
+
+int og_blessing_expire(df_u32 now)
+{
+    struct OgBlessing *b;
+
+    b = &og_guilds()->blessing;
+    if (!b->active || b->end >= now) {
+        return 0;
+    }
+    blessing_remove(b);
+    mem_zero(b, sizeof(*b));
+    return 1;
 }

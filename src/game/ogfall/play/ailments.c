@@ -62,6 +62,19 @@ int og_poison_apply(int target, int id, int no_resist)
     return 1;
 }
 
+int og_ailments_disease_count(int target)
+{
+    OgAilment *a;
+    int i, count;
+
+    count = 0;
+    for (i = 0; i < OG_AILMENTS; i++) {
+        a = &og_magic_state()->ailment[i];
+        if (a->active && same(a->target,og_magic_key(target)) && a->id < 100) { count++; }
+    }
+    return count;
+}
+
 void og_ailments_cure(int target, int poison)
 {
     OgCharacter who;
