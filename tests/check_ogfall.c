@@ -10,6 +10,7 @@
 #include "check_util.h"
 #include "check_ogstate.h"
 #include "check_ogstanding.h"
+#include "check_ogtrade.h"
 #include "check_ogui.h"
 
 #include "engine/assets/level.h"
@@ -946,6 +947,7 @@ void check_ogfall(const char *root)
     check_ogjourney();
     /* The rules on a small table first: the boot below defines the real one. */
     check_ogstanding();
+    check_ogtrade();
     if (!seam_boot()) {
         check_expect(0, "OGFALL assets and classes load");
         return;

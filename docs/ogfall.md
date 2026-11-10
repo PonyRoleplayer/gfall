@@ -1655,3 +1655,31 @@ Source: `faction_add_reputation`, `faction_change_reputation`,
 - **Saves** are schema 8: standing is written before the world state (ready, the table's
   count, a reputation and power per faction, a legal reputation and price per region).
   Schemas 2..7 load with the defaults.
+
+
+## Trade: the price chain (2026-11-10)
+
+People and law, slice 2, first part. `play/trade.c`, plain integer C, host-tested in
+`tests/check_ogtrade.c` against numbers worked by hand from the decomp's notes.
+
+Source: `trade_region_price`, `trade_base_price`, `trade_adjust_price`, `trade_total_buy`,
+`trade_total_sell`, `trade_total_repair`, `trade_make_offer` (`src/lifted/inven.c` 1054..1345),
+`trade_add_buy_price`, `trade_add_repair_cost` (`src/lifted/generate.c` 264..304) and
+`trade_steal_button`; notes in `docs/economy-math.md`.
+
+- A shop is `OgShop`: the region's price adjustment (from standing), the building's quality
+  and type, today's holiday and the guild scale. A basket is the sum of its lines: a thing is
+  its value, a stack of arrows its value times its count, and the weaponsmith's holiday 49
+  (weapons) or a temple's 29 halve a line by a shift.
+- The chain is the region's adjustment, the quality's, doubled (`og_trade_base_price`), then
+  the buyer's side by Mercantile (skill 14) and Personality, and for buying and repair the
+  guild scale out of 256. Selling takes the other side of the adjustment with no scale.
+  A neutral shop (quality 10, region 1000, both at 50) quotes 112 to buy and 100 to sell for
+  goods worth 100.
+- Repair is a tenth of an item's value (three quarters if enchanted), at least 1, an empty
+  sum 1; identification at the Mages Guild is `(value * 25) >> 8` with no skill; the offer box
+  picks TEXT.RSC 260..262 (263..265 selling) by how the price compares with the total.
+- Not built yet: the shelves' stock (`shop_generate_stock` reads group tables by building type
+  that are extern in the C and must be read from FALL.EXE), buildings' identity and
+  `holiday_today`, the haggling window (its constants are extern doubles and no caller exists
+  in the decomp), and the screen.
