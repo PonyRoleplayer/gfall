@@ -132,4 +132,13 @@ int og_blessing_buy(int kind, int rank, int region, df_u32 now, int *text);
 /* guild_expire_blessings: an old blessing's gift removed. 1 when one ended. */
 int og_blessing_expire(df_u32 now);
 
+/*
+ * "Receive armor" at a knightly order (guild_service_dispatch, person 845): one piece of plate for each rank, in the metal the rank names (rank - 1: rank 0, which wraps
+ * the original's byte, is mithril's cousin 2; a metal over 9 is held to 9), a random piece of the seven; record 461 for a rank already given, 463 for the gift. 0 when
+ * the pack has no room.
+ */
+int og_knight_armor(OgMembership *m, int *text);
+/* "Receive house" (848): record 460 until rank 9; the house itself waits for the towns' houses. 1 when the player may be given one. */
+int og_knight_house_allowed(const OgMembership *m, int has_house, int *text);
+
 #endif

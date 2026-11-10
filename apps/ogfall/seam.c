@@ -52,6 +52,7 @@
 #include "game/ogfall/play/talk.h"
 #include "game/ogfall/play/steal.h"
 #include "game/ogfall/play/guild.h"
+#include "game/ogfall/play/hours.h"
 #include "game/ogfall/play/ailments.h"
 #include "game/ogfall/formats/interior.h"
 #include "game/ogfall/play/talkwin.h"
@@ -1104,7 +1105,8 @@ static int talk_used(const Usable *u, int mode, float dist, const Camera *cam)
         if ((u->what == 108 || parent == 108) && hall_member(0)) { hall_enter(u->what, faction); return 1; }
         if (u->what == 108 || parent == 108) { start_talk(); return 1; }
         if (type == 11 || type == 14) { hall_enter(u->what, faction); return 1; }
-        if (type == 3 && merchant) { kind = OG_SERVICE_BANK; }
+        if (type == 15 && merchant) { kind = OG_SERVICE_TAVERN; }
+        else if (type == 3 && merchant) { kind = OG_SERVICE_BANK; }
         else if ((type == 2 || type == 9) && (u->what & 8)) { kind = OG_SERVICE_REPAIR; }
         else if (type == 13 && merchant) { kind = OG_SERVICE_REPAIR; }
         else if ((type == 0 || type == 5 || type == 6 || type == 8 || type == 12) && merchant) { kind = OG_SERVICE_SELL; }
@@ -1153,10 +1155,16 @@ static int standing_membership(int bits)
 
 /* What each button of a panel does (repair_menu_talk, repair_menu_sell, shop_open_repair, bank_open, service_menu_sell). */
 static void hall_act(int what);
+static void inn_act(int what);
 
 static void service_act(int what)
 {
     OgShop shop;
+
+    if (og_possessions()->service == OG_SERVICE_TAVERN) {
+        inn_act(what);
+        return;
+    }
 
     if (og_possessions()->service == OG_SERVICE_GUILD) {
         hall_act(what);
@@ -1228,6 +1236,104 @@ static void hall_donate_answer(int amount)
         og_faction_add_reputation(g_hall.faction, 1);
     }
     hall_text(703);
+}
+
+/*
+ * A tavern's innkeeper (tavern_open, src/lifted/tavern.c; TVRN00I0.IMG: Room, Talk, Food and drinks, Goodbye). A room asks for the days (record 5102, or 5100 with
+ * the hours left when one is held), refuses over 350 days kept (16), is free to a local knight and on Heart's Day, else is priced at 7 gold a day through the buyer's
+ * skills and offered; a yes rents it, or adds the days. Food is a list of eleven, refused within 240 minutes of the last meal. The bed marker's number the room
+ * would send the sleeper to is not read (room 0).
+ */
+static unsigned g_inn_building;
+static OgRoomOffer g_inn_offer;
+
+static void inn_room_paid(int yes)
+{
+    int text;
+
+    if (!yes) { return; }
+    if (!og_room_take(g_inn_building, &g_inn_offer, 0, og_state()->minutes, &text)) {
+        if (text) { hall_text(text); }
+    }
+}
+
+static void inn_days(int days)
+{
+    OgShop shop;
+    int r, knight;
+    static char line[400];
+
+    if (!shop_here(&shop)) { return; }
+    knight = og_guild_is_local_knight(travel_region());
+    r = og_room_offer(g_inn_building, days, &shop, og_character()->skill[14], og_character()->attribute[5], knight, og_state()->minutes, &g_inn_offer);
+    if (r == OG_ROOM_NOTHING) { return; }
+    if (r == OG_ROOM_REFUSED) { hall_text(g_inn_offer.text); return; }
+    if (r == OG_ROOM_FREE) {
+        int text;
+
+        og_possessions_message(g_inn_offer.line, 0);
+        og_room_take(g_inn_building, &g_inn_offer, 0, og_state()->minutes, &text);
+        return;
+    }
+    offer_say(og_trade_offer_text(1, days * OG_ROOM_DAY_PRICE, g_inn_offer.price), g_inn_offer.price, line, (int)sizeof(line));
+    og_possessions_ask(line, inn_room_paid);
+}
+
+static void inn_food_picked(int row)
+{
+    const char *line;
+    int text;
+
+    if (row < 0) { return; }
+    if (!og_meal(row, og_holiday_today(og_state()->minutes, travel_region()), og_state()->minutes, &line, &text)) {
+        if (line) { og_possessions_message(line, 0); }
+        else if (text) { hall_text(text); }
+    }
+}
+
+static void inn_act(int what)
+{
+    static char words[300];
+    static char names[OG_LIST_MOST][OG_LIST_NAME];
+    const char *line;
+    int text, i, hours;
+    int type, faction, quality;
+    unsigned place;
+
+    if (what == OG_SERVICE_TALK) { start_talk(); return; }
+    if (!travel_building(&type, &faction, &quality, &place)) { return; }
+    g_inn_building = place;
+    if (what == OG_SERVICE_ROOM) {
+        person_say_text(og_room_rented(place, og_state()->minutes) ? 5100 : 5102, words, (int)sizeof(words));
+        /* %dwr: the hours left (macro_dwr_room_hours_left). */
+        for (i = 0; words[i]; i++) {
+            if (words[i] == '%' && words[i+1] == 'd' && words[i+2] == 'w' && words[i+3] == 'r') {
+                char tail[300];
+                int k;
+
+                hours = 0;
+                for (k = 0; k < OG_ROOMS_MOST; k++) {
+                    if (og_lodging()->room[k].building == place && og_lodging()->room[k].expires > og_state()->minutes) {
+                        hours = (int)((og_lodging()->room[k].expires - og_state()->minutes) / 60u);
+                    }
+                }
+                df_copy(tail, words + i + 4, (int)sizeof(tail));
+                log_format(words + i, (int)sizeof(words) - i, "%d", hours);
+                for (k = 0; words[i + k]; k++) { }
+                df_copy(words + i + k, tail, (int)sizeof(words) - i - k);
+                break;
+            }
+        }
+        og_possessions_number(words, inn_days);
+    } else if (what == OG_SERVICE_FOOD) {
+        if (og_state()->minutes - og_lodging()->last_meal < OG_MEAL_GAP) {
+            og_meal(0, 0, og_state()->minutes, &line, &text);
+            if (line) { og_possessions_message(line, 0); }
+            return;
+        }
+        for (i = 0; i < OG_FOODS && i < OG_LIST_MOST; i++) { df_copy(names[i], og_food_name(i), OG_LIST_NAME); }
+        og_possessions_list((const char (*)[OG_LIST_NAME])names, OG_FOODS, inn_food_picked);
+    }
 }
 
 /* guild_confirm_price: the price at the hall's shop (base, then the buyer's skills, then the scale), the offer's words, and a yes. */
@@ -1412,6 +1518,25 @@ static void hall_run(void)
     case OG_SVC_TRAINING:
         hall_training(g_hall.person, m != 0);
         break;
+    case OG_SVC_ARMOR:
+        {
+            int text;
+
+            og_knight_armor(m, &text);
+            if (text) { hall_text(text); }
+        }
+        break;
+    case OG_SVC_HOUSE:
+        {
+            int text;
+
+            if (og_knight_house_allowed(m, og_bank()->house != 0, &text)) {
+                og_possessions_message("The houses of the town are not yet in the order's gift.", 0);
+            } else if (text) {
+                hall_text(text);
+            }
+        }
+        break;
     case OG_SVC_CURE:
         hall_cure(g_hall.kind, rank);
         break;
@@ -1544,6 +1669,22 @@ static int shelf_used(int index, int variant)
     shop.holiday = og_holiday_today(og_state()->minutes, region);
     shop.half = 0;
     shop.scale = 256;
+    {
+        /* shelf_open_stock: a shop that is open sells from its shelves; one that is shut lets them be opened as a plain container, the goods free to take. */
+        OgHoursPlayer hours;
+        OgMembership *m;
+
+        m = og_guild_find_kind(0); hours.brotherhood = m ? m->rank : -1;
+        m = og_guild_find_kind(3); hours.thieves = m ? m->rank : -1;
+        m = og_guild_find_kind(2); hours.fighters = m ? m->rank : -1;
+        m = og_guild_find_kind(1); hours.mages = m ? m->rank : -1;
+        if (!og_building_open(type, faction, place, og_state()->minutes, 0, &hours)) {
+            if (!og_possessions_open(OG_VIEW_INVENTORY, g_shelf_box[index])) {
+                interact_say("You cannot take anything now.");
+            }
+            return 1;
+        }
+    }
     if (!og_possessions_trade(OG_MARKET_BUY, &shop, g_shelf_box[index])) {
         interact_say("You cannot trade now.");
     }
@@ -4090,12 +4231,12 @@ static void paint_service(void)
 
     view = og_possessions();
     cover_screen(0, 0, 0);
-    if (img_load(view->service == OG_SERVICE_REPAIR ? "REPR01I0.IMG" : view->service == OG_SERVICE_GUILD ? og_guild_picture(view->service_member) : "GNRC01I0.IMG", &panel)) {
+    if (img_load(view->service == OG_SERVICE_REPAIR ? "REPR01I0.IMG" : view->service == OG_SERVICE_TAVERN ? "TVRN00I0.IMG" : view->service == OG_SERVICE_GUILD ? og_guild_picture(view->service_member) : "GNRC01I0.IMG", &panel)) {
         blit_ix(panel.x, panel.y, panel.pixels, panel.width, panel.height, 0);
     }
     if (view->service == OG_SERVICE_GUILD) {
         centered_text(159, 71, view->service_label, 145);
-    } else if (view->service != OG_SERVICE_REPAIR) {
+    } else if (view->service != OG_SERVICE_REPAIR && view->service != OG_SERVICE_TAVERN) {
         centered_text(159, 70, view->service == OG_SERVICE_BANK ? "Banking" : "Sell", 145);
     }
 }

@@ -2,6 +2,7 @@
 #include "game/ogfall/play/state.h"
 #include "game/ogfall/play/standing.h"
 #include "game/ogfall/play/law.h"
+#include "game/ogfall/play/inventory.h"
 #include "engine/core/mem.h"
 #include "game/ogfall/tables/guilddata.h"
 
@@ -575,5 +576,41 @@ int og_blessing_expire(df_u32 now)
     }
     blessing_remove(b);
     mem_zero(b, sizeof(*b));
+    return 1;
+}
+
+int og_knight_armor(OgMembership *m, int *text)
+{
+    int metal;
+    df_u32 id;
+
+    *text = 0;
+    if ((1u << m->rank) & m->armor) {
+        *text = 461;
+        return 0;
+    }
+    /* forced_material = rank - 1 as a byte: over 100 (rank 0) is 2, over 10 is 10; the metals here end at 9. */
+    metal = (m->rank - 1) & 255;
+    if (metal > 100) { metal = 2; } else if (metal > 10) { metal = 10; }
+    if (metal > 9) { metal = 9; }
+    id = og_item_create(og_state()->inventory_id, 2, og_random_range(0, 6), metal);
+    if (!id) {
+        return 0;
+    }
+    m->armor |= 1u << m->rank;
+    *text = 463;
+    return 1;
+}
+
+int og_knight_house_allowed(const OgMembership *m, int has_house, int *text)
+{
+    *text = 0;
+    if (has_house) {
+        return 0;
+    }
+    if (m->rank != 9) {
+        *text = 460;
+        return 0;
+    }
     return 1;
 }

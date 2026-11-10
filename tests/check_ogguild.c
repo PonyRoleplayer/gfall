@@ -2,6 +2,7 @@
 #include "check_ogguild.h"
 #include "check_util.h"
 #include "game/ogfall/play/guild.h"
+#include "game/ogfall/play/hours.h"
 #include "game/ogfall/play/state.h"
 #include "game/ogfall/play/save.h"
 
@@ -172,5 +173,54 @@ void check_ogguild(void)
         check_expect(og_region_legal(17) == was_legal + 12, "guild: the legal gift came off the region it was given in");
         og_region_add_legal(17, -12);
         og_region_add_legal(0, 12);
+    }
+
+    /* A knightly order's armour: one piece a rank, in the metal the rank names; the house only at rank 9. */
+    {
+        OgMembership *knight;
+        int text, ok2;
+        df_u32 id;
+        int i2, plates;
+
+        og_guilds_clear();
+        og_guild_join(og_guild_kind_of_faction(368), 368, 0u, &step);
+        knight = og_guild_find_faction(368);
+        knight->rank = 3;
+        ok2 = og_knight_armor(knight, &text);
+        plates = 0;
+        for (i2 = 0; i2 < OG_OBJECTS; i2++) {
+            const OgObject *o;
+
+            o = &og_state()->object[i2];
+            if (o->id && o->type == OG_RECORD_ITEM && o->parent == og_state()->inventory_id && o->group == 2 && o->armor_type == 2 && o->material == 2) { plates++; }
+        }
+        id = 0;
+        check_expect(ok2 && text == 463 && plates >= 1 && (knight->armor & (1u << 3)), "guild: a knight's rank 3 gift is not a plate piece of metal 2");
+        check_expect(!og_knight_armor(knight, &text) && text == 461, "guild: the gift was given twice for a rank");
+        knight->rank = 4;
+        check_expect(og_knight_armor(knight, &text) && text == 463, "guild: the next rank's gift");
+        check_expect(!og_knight_house_allowed(knight, 0, &text) && text == 460 && !og_knight_house_allowed(knight, 1, &text) && text == 0, "guild: a house before rank 9 or with one");
+        knight->rank = 9;
+        check_expect(og_knight_house_allowed(knight, 0, &text), "guild: rank 9 was not offered a house");
+        (void)id;
+    }
+
+    /* Opening hours: an alchemist (type 0) 7 to 22, a bank (3) 8 to 15; a guild's own members at any hour. */
+    {
+        OgHoursPlayer p;
+
+        p.brotherhood = p.thieves = p.fighters = p.mages = -1;
+        check_expect(og_building_open(0, 0, 0u, 7u * 60u, 0, &p) && !og_building_open(0, 0, 0u, 6u * 60u + 59u, 0, &p) &&
+                     og_building_open(0, 0, 0u, 21u * 60u + 59u, 0, &p) && !og_building_open(0, 0, 0u, 22u * 60u, 0, &p), "hours: an alchemist is not open from 7 to 22");
+        check_expect(og_building_open(3, 0, 0u, 14u * 60u, 0, &p) && !og_building_open(3, 0, 0u, 15u * 60u, 0, &p) && og_building_open(3, 0, 0u, 1440u * 9u + 8u * 60u, 0, &p), "hours: a bank is not open from 8 to 15, every day");
+        check_expect(og_building_minutes_to_close(3, 14u * 60u + 30u) == 30 && og_building_minutes_to_close(3, 16u * 60u) == 0, "hours: the minutes to closing");
+        check_expect(!og_building_open(11, 42, 0u, 3u * 60u, 0, &p), "hours: the Thieves' hall was open to a stranger at three");
+        p.thieves = 0;
+        check_expect(og_building_open(11, 42, 0u, 3u * 60u, 0, &p), "hours: the Thieves' hall was shut to their own");
+        p.fighters = 5;
+        check_expect(!og_building_open(11, 41, 0u, 3u * 60u, 0, &p), "hours: a Fighter of rank 5 opened the hall at three");
+        p.fighters = 6;
+        check_expect(og_building_open(11, 41, 0u, 3u * 60u, 0, &p), "hours: a Fighter of rank 6 did not");
+        check_expect(og_building_open(17, 0, 10u, 12u * 60u, 1, &p) && !og_building_open(17, 0, 60u, 12u * 60u, 1, &p) && !og_building_open(17, 0, 10u, 12u * 60u, 0, &p), "hours: houses open by day, half of them");
     }
 }

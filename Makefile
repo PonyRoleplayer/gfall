@@ -274,6 +274,7 @@ OGFALL_GAME_SRC := \
 	src/game/ogfall/play/lodging.c \
 	src/game/ogfall/play/law.c \
 	src/game/ogfall/play/guild.c \
+	src/game/ogfall/play/hours.c \
 	src/game/ogfall/play/steal.c \
 	src/game/ogfall/play/names.c \
 	src/game/ogfall/play/talk.c \

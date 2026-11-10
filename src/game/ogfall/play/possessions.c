@@ -336,7 +336,7 @@ void og_possessions_set_service(void (*act)(int what)) { g_service_act = act; }
 
 int og_possessions_service(int kind)
 {
-    if (g.page || kind < OG_SERVICE_REPAIR || kind > OG_SERVICE_GUILD || !og_possessions_open(OG_VIEW_SERVICE, 0)) { return 0; }
+    if (g.page || kind < OG_SERVICE_REPAIR || kind > OG_SERVICE_TAVERN || !og_possessions_open(OG_VIEW_SERVICE, 0)) { return 0; }
     g_service_kind = kind;
     g.service = kind;
     return 1;
@@ -357,6 +357,12 @@ static int service_button(int x, int y)
         if (inside(x,y,99,51,220,59)) { return OG_SERVICE_REPAIR_ITEM; }
         if (inside(x,y,99,60,220,68)) { return OG_SERVICE_TALK; }
         if (inside(x,y,99,69,220,77)) { return OG_SERVICE_SELL_ITEMS; }
+    } else if (g_service_kind == OG_SERVICE_TAVERN) {
+        /* tavern_buttons: Room, Talk, Food and drinks, Goodbye, at x 99..220 from y 51, nine pixels a row. */
+        if (inside(x,y,99,51,220,59)) { return OG_SERVICE_ROOM; }
+        if (inside(x,y,99,60,220,68)) { return OG_SERVICE_TALK; }
+        if (inside(x,y,99,69,220,77)) { return OG_SERVICE_FOOD; }
+        return inside(x,y,99,78,220,86) ? -1 : -2;
     } else if (g_service_kind == OG_SERVICE_GUILD) {
         /* guild_menu_buttons: Join (a member cannot), Talk, the service, Exit. */
         if (inside(x,y,99,51,220,59) && !g.service_member) { return OG_SERVICE_JOIN; }

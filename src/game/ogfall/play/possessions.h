@@ -73,8 +73,8 @@ int og_possessions_talk(const OgTalkWho *who, const OgTalkPlayer *player, int wi
  * buttons. OG_SERVICE_REPAIR is REPR01I0 (Repair item, Talk, Sell, Exit); the other two are GNRC01I0 (Talk, the service row,
  * Exit) with the service's word, "Banking" or "Sell". What each button does is the game's: the actions below.
  */
-enum { OG_SERVICE_REPAIR = 1, OG_SERVICE_BANK, OG_SERVICE_SELL, OG_SERVICE_GUILD };
-enum { OG_SERVICE_TALK, OG_SERVICE_DO, OG_SERVICE_REPAIR_ITEM, OG_SERVICE_SELL_ITEMS, OG_SERVICE_JOIN };
+enum { OG_SERVICE_REPAIR = 1, OG_SERVICE_BANK, OG_SERVICE_SELL, OG_SERVICE_GUILD, OG_SERVICE_TAVERN };
+enum { OG_SERVICE_TALK, OG_SERVICE_DO, OG_SERVICE_REPAIR_ITEM, OG_SERVICE_SELL_ITEMS, OG_SERVICE_JOIN, OG_SERVICE_ROOM, OG_SERVICE_FOOD };
 int og_possessions_service(int kind);
 /* A guild hall's menu (guild_menu, GILD0xI0.IMG): Join (not for a member), Talk, the service row carrying label, Exit. */
 int og_possessions_guild(int member, const char *label);

@@ -353,6 +353,11 @@ void check_ogworld(const char *root)
             talk_shot("service1");
             click_at(160, 87);
             check_expect(og_possessions()->page == OG_VIEW_NONE, "people: Exit did not close the bank's panel");
+            /* The innkeeper's panel: its picture, and Goodbye (the fourth row) leaves. */
+            check_expect(og_possessions_service(OG_SERVICE_TAVERN), "people: the tavern's panel did not open");
+            talk_shot("tavern0");
+            click_at(160, 82);
+            check_expect(og_possessions()->page == OG_VIEW_NONE, "people: Goodbye did not close the tavern's panel");
             /* A guild hall's menu: Join is shut to a member; Exit leaves. A yes or no and a number go to their callbacks. */
             check_expect(og_possessions_guild(1, "Training") && og_possessions()->service == OG_SERVICE_GUILD, "people: the hall's menu did not open");
             talk_shot("guild0");

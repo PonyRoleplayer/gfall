@@ -2098,3 +2098,14 @@ the Brotherhood's and Thieves' invitation letters, the guild healing's attribute
 
 Controls on the message page grew a list popup (`og_possessions_list`) and up to four queued messages. Tests: `tests/check_ogguild.c` (training, blessings) and the Fighters'
 trainer driven by clicks to a lesson in `tests/check_ogworld.c`. Cure and blessing through the shop's chain need a building to stand in and are not driven by the tests.
+
+### The tavern, the knights' gifts and opening hours
+
+- **The innkeeper** (`inn_act`, `TVRN00I0.IMG`: Room, Talk, Food and drinks, Goodbye at x 99..220, y 51, 60, 69, 78): a person of a tavern who keeps it (the block's shopkeeper flag) offers it.
+  Room asks the days (record 5102, or 5100 with the hours left, `%dwr` = minutes left / 60), then `og_room_offer`'s rules (record 16 past 350 days, free to a local knight and on Heart's
+  Day, else 7 gold a day through the buyer's skills with the offer's words) and `og_room_take`. The bed marker the room sends a sleeper to is not read (room 0). Food is a list of eleven,
+  refused within 240 minutes of the last meal.
+- **Knights' gifts** (`og_knight_armor`, `og_knight_house_allowed`): one piece of plate a rank, a random one of seven, in the metal the rank names (rank 0 wraps the byte and gets 2),
+  records 461 and 463. The house waits until the towns' houses are OGFALL's own (their price is five times the largest model's radius, which the model layer holds).
+- **Opening hours** (`play/hours.c`, from `building_is_open`): a type opens and shuts by FALL.EXE's table; a guild's own members enter their hall at any hour (the Fighters and Mages from
+  rank 6). A shop's shelves now sell when it is open and open as a plain container, the goods free to take, when it is shut (`shelf_open_stock`). The doors do not ask yet.
