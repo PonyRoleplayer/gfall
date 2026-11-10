@@ -126,6 +126,20 @@ void og_item_name(const OgObject *item, char *out, int capacity)
         metal = item->armor_type == 0 ? "Leather" : item->armor_type == 1 ? "Chain" : og_material_name(item->material);
     }
     log_format(out, capacity, "%s%s%s", metal, *metal ? " " : "", item && item->name[0] ? item->name : def ? def->name : "Unknown item");
+    /* A magic item's name carries the macro %it: what it is made on ("%it of Life Stealing"). */
+    if (item && def) {
+        char tail[64];
+        int i, k;
+
+        for (i = 0; out[i]; i++) {
+            if (out[i] == '%' && out[i+1] == 'i' && out[i+2] == 't') {
+                for (k = 0; out[i+3+k] && k < 63; k++) { tail[k] = out[i+3+k]; }
+                tail[k] = 0;
+                log_format(out+i, capacity-i, "%s%s", def->name, tail);
+                break;
+            }
+        }
+    }
 }
 
 int og_item_tab(const OgObject *item)

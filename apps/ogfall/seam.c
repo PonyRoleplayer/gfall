@@ -53,6 +53,7 @@
 #include "game/ogfall/play/steal.h"
 #include "game/ogfall/play/guild.h"
 #include "game/ogfall/play/potion.h"
+#include "game/ogfall/play/magicitem.h"
 #include "game/ogfall/play/spellshop.h"
 #include "game/ogfall/play/hours.h"
 #include "game/ogfall/play/ailments.h"
@@ -1540,6 +1541,7 @@ static void hall_run(void)
     case OG_SVC_TRAINING:
         hall_training(g_hall.person, m != 0);
         break;
+    case OG_SVC_MAGIC_ITEMS:
     case OG_SVC_POTIONS:
     case OG_SVC_SOULGEMS:
         /* guild_buy_potions: the container emptied, stocked with the hall's quality + 1 bottles, and opened for buying. */
@@ -1559,6 +1561,16 @@ static void hall_run(void)
                 if (o->id && o->type == OG_RECORD_ITEM && o->parent == g_counter) { og_object_delete(o->id); }
             }
             if (service == OG_SVC_SOULGEMS) { og_soul_trap_stock(g_counter, quality); }
+            else if (service == OG_SVC_MAGIC_ITEMS) {
+                /* guild_buy_magic_items: the stock drawn on the stream started at the building's number (the same each visit), put back after; members of rank 4 and over also find soul traps; the festival 38 halves the prices. */
+                int saved;
+
+                saved = og_random_range(0, 32767);
+                og_random_seed((df_u32)place);
+                og_magic_shop_stock(g_counter, quality, m && m->rank >= 4);
+                og_random_seed((df_u32)saved);
+                if (og_holiday_today(og_state()->minutes, travel_region()) == 38) { shop.scale = 128; }
+            }
             else { og_potion_stock(g_counter, quality); }
             og_possessions_trade(OG_MARKET_BUY, &shop, g_counter);
         }
@@ -1885,6 +1897,8 @@ int seam_boot(void)
 
         names_bytes = vfs_read("NAMEGEN.DAT", &names_size);
         og_names_set_data(names_bytes, names_bytes ? names_size : 0);
+        names_bytes = vfs_read("MAGIC.DEF", &names_size);
+        og_magic_defs_set(names_bytes, names_bytes ? names_size : 0);
     }
     og_chargen_background(background);
 #ifndef DF_HOST

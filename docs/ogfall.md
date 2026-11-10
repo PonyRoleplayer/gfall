@@ -2154,3 +2154,17 @@ Buy asks the offer, 454 says no gold, and the spell goes into the spellbook (the
 for their help text. The player must have a spellbook (an empty list is not made without one, and the shop does not open).
 Controls grew a message that can be shown over any window that is up. Tests: `tests/check_ogspellshop.c`, and the window driven by clicks in `tests/check_ogworld.c`
 (`build/ogfall-spellshop0.ppm`).
+
+### Magic items
+
+`play/magicitem.c`, `tables/enchantdata.h` (from FALL.EXE) and MAGIC.DEF (read at start by the seam): 59 entries of 62 bytes (a name, an artifact flag, the group of base item and its index,
+ten enchantments of a type and a parameter, a condition, a value, a material), 23 of them artifacts. A shop's magic item (`item_make_magic(-1)`) is a random entry that is no artifact, made on a random
+item of the kinds its group allows (group 0: armour, weapons, clothes of the player's sex, 10, 14 or 25; group 1: armour, weapons, clothes, 12/6 or 25; group 2: a weapon; arrows are drawn again),
+named for the entry (the macro `%it` in a name says what it is made on and is expanded when the name is shown), its condition and material the entry's. Its price is `enchant_item_value`: each
+enchantment under type 16 adds its cost by the cost code of its type (a spell's cost for a spell-casting enchantment, costed for a character with every skill at 50 and ten times over; a fixed
+cost by code; or a cost by the parameter), the base item's own price being forgotten. The item keeps only which entry it is, in its message field: what an enchantment does when it is worn or
+strikes is not built, and neither are the artifacts or the item maker.
+
+The shop (`guild_buy_magic_items`): quality / 2 + 1 magic items and a spellbook, and, for a member of rank 4 and over, as many soul traps; the stock is drawn on the stream started at the building's number, so
+a hall holds the same stock every visit; the festival 38 halves the prices. The Mages (65) from rank 3 and the Dibella-like temples that have a seller open it; a stranger is refused.
+Tests: `tests/check_ogmagicitem.c`.
