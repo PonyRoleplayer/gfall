@@ -295,3 +295,119 @@ void og_standing_decay(int court_open)
         }
     }
 }
+
+static int has_ally(int f, int other)
+{
+    int i;
+
+    if (f < 0 || other < 0) {
+        return 0;
+    }
+    for (i = 0; i < OG_FACTION_LINKS; i++) {
+        if (g_ally[f][i] == other) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int has_enemy(int f, int other)
+{
+    int i;
+
+    if (f < 0 || other < 0) {
+        return 0;
+    }
+    for (i = 0; i < OG_FACTION_LINKS; i++) {
+        if (g_enemy[f][i] == other) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int og_faction_has_ally(int faction_id, int other_id)
+{
+    return has_ally(og_faction_index(faction_id), og_faction_index(other_id));
+}
+
+int og_faction_has_enemy(int faction_id, int other_id)
+{
+    return has_enemy(og_faction_index(faction_id), og_faction_index(other_id));
+}
+
+int og_faction_parent_id(int faction_id)
+{
+    int f;
+
+    f = og_faction_index(faction_id);
+    return f >= 0 && g_parent[f] >= 0 ? g_def[g_parent[f]].id : 0;
+}
+
+int og_faction_relation(int faction_id, const int *members, int count, int *score)
+{
+    int relation, m, i, j, f, o;
+
+    relation = 8;
+    f = og_faction_index(faction_id);
+    if (f < 0) {
+        return relation;
+    }
+    for (m = 0; m < count; m++) {
+        o = og_faction_index(members[m]);
+        if (o < 0) {
+            continue;
+        }
+        if (faction_id == g_def[o].id) {
+            return 0;
+        }
+        /* The same parent, or one of them the other's parent (the original's own grouping of && and ||). */
+        if ((g_parent[o] >= 0 && g_parent[f] >= 0 && g_parent[o] == g_parent[f]) || g_parent[o] == f || g_parent[f] == o) {
+            if (relation > 1) {
+                relation = 1;
+            }
+            *score += 15;
+        }
+        if ((has_ally(o, f) || has_ally(f, o)) && relation > 2) {
+            *score += 10;
+            relation = 2;
+        }
+        if ((has_enemy(o, f) || has_enemy(f, o)) && relation > 3) {
+            *score = 20;
+            relation = 3;
+        }
+        for (i = 0; i < OG_FACTION_LINKS; i++) {
+            for (j = 0; j < OG_FACTION_LINKS; j++) {
+                if (g_enemy[o][i] >= 0 && g_enemy[o][i] == g_enemy[f][j] && relation > 4) {
+                    relation = 4;
+                    *score += 5;
+                }
+            }
+        }
+        for (i = 0; i < OG_FACTION_LINKS; i++) {
+            for (j = 0; j < OG_FACTION_LINKS; j++) {
+                if (g_ally[o][i] >= 0 && g_ally[o][i] == g_ally[f][j] && relation > 5) {
+                    relation = 5;
+                    *score += 5;
+                }
+            }
+        }
+        for (i = 0; i < OG_FACTION_LINKS; i++) {
+            for (j = 0; j < OG_FACTION_LINKS; j++) {
+                if (g_ally[o][i] >= 0 && has_ally(o, g_enemy[f][j]) && relation > 6) {
+                    relation = 6;
+                    *score -= 5;
+                }
+            }
+        }
+        for (i = 0; i < OG_FACTION_LINKS; i++) {
+            for (j = 0; j < OG_FACTION_LINKS; j++) {
+                if (g_enemy[o][i] >= 0 && has_enemy(o, g_ally[f][j]) && relation > 7) {
+                    relation = 7;
+                    *score -= 5;
+                }
+            }
+        }
+    }
+    return relation;
+}

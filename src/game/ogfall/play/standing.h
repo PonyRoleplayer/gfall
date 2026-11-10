@@ -75,6 +75,20 @@ void og_faction_add_reputation(int id, int amount);
  */
 void og_faction_change_reputation(int id, int amount);
 
+/*
+ * talk_faction_relation (src/hand/func_00018BDC.c): how the player's memberships (the ids of the factions they
+ * belong to) stand toward this faction, the lowest relation code found, 8 for none: 0 the same faction, 1 a shared
+ * parent or one the other's parent, 2 an ally either way, 3 an enemy either way, 4 a shared enemy, 5 a shared ally,
+ * 6 the member's ally is their enemy's ally, 7 the member's enemy is their ally's enemy. *score is added to by each
+ * (+15, +10, set to 20, +5, +5, -5, -5) for the greeting's roll; it is not reset here.
+ */
+int og_faction_relation(int faction_id, const int *members, int count, int *score);
+/* faction_has_ally and faction_has_enemy by id: the first lists the second among its three. */
+int og_faction_has_ally(int faction_id, int other_id);
+int og_faction_has_enemy(int faction_id, int other_id);
+/* A faction's parent id, 0 for a root; its type, social group, region. -1 for none. */
+int og_faction_parent_id(int faction_id);
+
 /* A region's legal reputation (court and guards) and its shops' price adjustment. */
 int og_region_legal(int region);
 void og_region_add_legal(int region, int amount);

@@ -1906,3 +1906,38 @@ controller (`og_possessions_surrender`, `og_possessions_arrested`), painted by t
   rather than dealt after a No. Release puts the player out in the street from a building and leaves them where they
   stand otherwise (no marker kinds 8, 4 or 12 to move to). The prison's screen (`PRIS00I0`, "N days until
   freedom") is not drawn: the days pass at once. `%prn` says "the prison" or a variant of record 8100.
+
+
+## Talk: who talks and how they greet (2026-11-10)
+
+People and law, slice 6, the rules. `play/talk.c` and the faction relation in `play/standing.c`, tested in
+`tests/check_ogtalk.c` on FACTION.TXT's real factions. The greetings' records (9 relations of three), the chance
+to know (8 kinds of question by 5 speech styles) and the attitude each kind adds are read out of FALL.EXE
+(`tables/talkdata.h`, generated). Source: `talk_start` (`src/lifted/talk.c` 356), `talk_open`
+(`src/hand/func_00014AE8.c`), `talk_faction_greeting`, `talk_roll_attitude`, `talk_roll_knows` (talk.c 1378..1457),
+`talk_faction_relation` (`src/hand/func_00018BDC.c`), `faction_has_ally`; notes in `docs/ai-social-math.md`
+("Dialogue disposition").
+
+- **Who talks:** a thing is "not a person" (7204); a person flagged not to talk, or with a disposition under -20,
+  refuses (7205). The disposition is the reputation of the faction that speaks for them (the first of type 2, 7 or 9
+  up the tree from their own), a local temple's rank, and the player's reputation with that group's social class (the
+  equipment's reaction enchantments are not there yet).
+- **The greeting** is by the faction (its own for a regional person or a ruler's, else the group's) and the player's
+  relation to it: 0 the same faction, 1 a shared parent, 2 an ally, 3 an enemy, 4 a shared enemy, 5 a shared ally,
+  6 and 7 the allies and enemies of those, 8 none. The score is the relation's (+15, +10, 20, +5, +5, -5, -5) plus the
+  faction's reputation and the player's with its social class; against a roll of -10..5 it is the allied greeting when
+  the reputation is 30 or more, the ordinary one, or the hostile one, which closes the talk (a group at -15 always
+  greets hostile). A person of no faction's greeting says a word by the disposition (7206 under 0, 7207 under 10, 7208
+  under 30, 7209 more). A guard seeing the player speak to the underworld (social group 4) is crime 7 and the watch, and
+  no talk.
+- **Attitude** (cold, plain, warm) rolls Etiquette for the polite tone or Streetwise for the blunt, 10 on a success and
+  -5 else, plus the question's kind and Personality / 5, against 0..20, cached per tone; the skill is used the first time
+  the tone is rolled. Two quirks of the original are kept: the blunt tone tests the neutral tone's cache for that first
+  use, and the third cache is not cleared between conversations. **Knowing** is a roll seeded by the person and the
+  row, 1..20 against the table's number plus 10 for their speech style (a commoner and a merchant swapped); factions 806
+  and 842 always know.
+- **Not built:** the window itself (`CHAT00I0`-like pictures and the question lists: places by category, people,
+  things, work, news; the answers' wording and directions; quest topics; copying to the logbook), a rumour's first
+  words (`rumor_pick_news`), the prostitute's offer, creatures' talk by language, and the guild memberships and
+  equipment enchantments that feed the relation and the reaction. A person's own faction comes from the town's people
+  (`pedestrian_*` and the building keepers), which the world side does not give OGFALL yet.
