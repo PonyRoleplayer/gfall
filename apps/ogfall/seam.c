@@ -45,6 +45,8 @@
 #include "game/ogfall/tables/holidaydefs.h"
 #include "game/ogfall/tables/datedefs.h"
 #include "game/ogfall/play/bank.h"
+#include "game/ogfall/play/law.h"
+#include "game/dagger/play/character.h"
 #include "game/ogfall/play/standing.h"
 #include "game/dagger/formats/arch3d.h"
 #include "game/dagger/formats/bsa.h"
@@ -754,6 +756,51 @@ static int rest_site(OgRestSite *site)
     return 1;
 }
 
+/*
+ * The law's world (people and law, slice 5): the guards the dungeon AI knows (the watch is kind 146), no
+ * place for new ones in a town yet (the streets' creature art is not prepared for them), the court's words
+ * said by the dagger reader, and where a sentence leaves the player. A court in a building puts the player out
+ * in the street; a street stays where it is (no marker to move to).
+ */
+static int guards_present(void) { return og_dungeon_guards(); }
+static int guards_count(void) { return og_dungeon_count(); }
+static int guards_dungeon(void) { return og_world_state()->where.kind == OG_PLACE_DUNGEON; }
+
+static int court_say(int text, const OgCourt *court, char *out, int cap)
+{
+    static Character pc;
+    static char penalty[96], prison[48];
+    Words w;
+    int i;
+
+    for (i = 0; i < (int)sizeof(pc.name) - 1 && og_character()->name[i]; i++) { pc.name[i] = og_character()->name[i]; }
+    pc.name[i] = 0;
+    mem_zero(&w, sizeof(w));
+    w.pc = &pc;
+    w.city = town_name();
+    w.crime = og_crime_name(court->crime + 1);
+    if (court->severity == 0) { df_copy(penalty, "Banishment", sizeof(penalty)); }
+    else if (court->severity == 1) { df_copy(penalty, "Execution", sizeof(penalty)); }
+    else { log_format(penalty, sizeof(penalty), "%d gold pieces in fines and %d days in prison", court->fine, court->days); }
+    w.penalty = penalty;
+    w.days = court->days;
+    w.more_days = court->days;
+    /* The prison a death sentence names (record 8100's variants: "The Cage of Slarpen", "The Hall of Yegon"). */
+    df_copy(prison, "the prison", sizeof(prison));
+    words_use(&w);
+    words_say(8100, prison, sizeof(prison));
+    w.prison = prison;
+    words_use(&w);
+    return words_say(text, out, cap);
+}
+
+static void court_release(int where)
+{
+    /* The street (8) and the walls' edge (4) and an acquittal's (12) are all out of the building the case was heard in. */
+    (void)where;
+    travel_out_to_street();
+}
+
 int seam_boot(void)
 {
     ImgPicture raw;
@@ -780,6 +827,12 @@ int seam_boot(void)
     install_travel();
     og_activate_set_shelf(OTHER_SHELF, shelf_used);
     og_rest_set_site(rest_site);
+    {
+        static const OgGuardWorld world = { guards_present, guards_count, 0, 0, guards_dungeon, 0 };
+
+        og_guards_set_world(&world);
+    }
+    og_possessions_set_court(court_say, court_release);
     og_possessions_set_offer_words(offer_say);
     install_maps();
     load_classes();
@@ -3138,6 +3191,12 @@ static int present_possessions(void)
     else if (view->page == OG_VIEW_SPELLS) { paint_spellbook(); }
     else if (view->page == OG_VIEW_MESSAGE) { cover_screen(0,0,0); }
     else if (view->page == OG_VIEW_BANK) { paint_bank(); }
+    else if (view->page == OG_VIEW_COURT) {
+        /* cort01i0.img fills the screen once a court sits; the offer to surrender is over the world. */
+        ImgPicture court;
+        cover_screen(0,0,0);
+        if (view->court.open && img_load("CORT01I0.IMG",&court)) { blit_ix(court.x,court.y,court.pixels,court.width,court.height,0); }
+    }
     else { paint_readable_book(); }
     if (view->notice[0] && view->painting) { paint_painting(view->painting-1,view->notice); }
     else if (view->notice[0]) {
@@ -3154,13 +3213,17 @@ static int present_possessions(void)
     }
     if (view->prompt == OG_PROMPT_OFFER || view->prompt == OG_PROMPT_ASK) {
         /* msgbox_yes_no_rsc: the shopkeeper's words over a box, Accept and Reject under them. */
-        char wrapped[6][96];
-        int rows, k;
+        char wrapped[10][96];
+        int rows, k, court;
 
-        rows = wrap_words(view->offer,wrapped,6,176);
-        fill_box(68,40,184,96,45); outline(68,40,184,96,145);
-        for (k = 0; k < rows; k++) { centered_text(160,48+k*10,wrapped[k],145); }
-        centered_text(117,121,"Accept",145); centered_text(203,121,"Reject",145);
+        /* The court's questions are long: a taller, wider box that still leaves the buttons at 116..134 free. */
+        court = view->page == OG_VIEW_COURT;
+        rows = wrap_words(view->offer,wrapped,court ? 10 : 6,court ? 208 : 176);
+        if (court) { fill_box(48,8,224,126,45); outline(48,8,224,126,145); }
+        else { fill_box(68,40,184,96,45); outline(68,40,184,96,145); }
+        for (k = 0; k < rows; k++) { centered_text(160,(court ? 14 : 48)+k*10,wrapped[k],145); }
+        centered_text(117,121,view->page == OG_VIEW_COURT ? view->yes : "Accept",145);
+        centered_text(203,121,view->page == OG_VIEW_COURT ? view->no : "Reject",145);
     } else if (view->prompt && view->prompt != OG_PROMPT_AMOUNT) {
         const char *prompt;
         prompt = view->prompt == OG_PROMPT_GOLD ? "How much gold?" : view->prompt == OG_PROMPT_NAME ? "Name thyself" :
@@ -3174,7 +3237,7 @@ static int present_possessions(void)
     }
     for (i = 0; i < g_panel_file_count; i++) { texture_forget(g_panel_files[i]); }
     mem_heap_use(was); mem_heap_delete(heap);
-    publish_surface(1,(view->page == OG_VIEW_SPELLS && !view->underlay) || view->page == OG_VIEW_MESSAGE || view->page == OG_VIEW_BANK);
+    publish_surface(1,(view->page == OG_VIEW_SPELLS && !view->underlay) || view->page == OG_VIEW_MESSAGE || view->page == OG_VIEW_BANK || (view->page == OG_VIEW_COURT && !view->court.open));
     return 1;
 }
 

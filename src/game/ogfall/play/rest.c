@@ -32,8 +32,8 @@ static int may_sleep(void)
     why = og_rest_allowed(&site, og_state()->minutes, &to_room);
     if (why == OG_REST_NO_ROOM) { og_msg_set(og_no_room_line()); }
     else if (why == OG_REST_VAGRANT) { og_msg_set(og_words(17)); }
-    /* Vagrancy and trespass are crime 8 (rest_allowed notes it and calls the watch, which waits for the guards). Moving to a room needs the building's markers. */
-    if (why == OG_REST_VAGRANT || why == OG_REST_TRESPASS) { og_law_note(OG_CRIME_VAGRANCY); }
+    /* Vagrancy and trespass are crime 8 (rest_allowed notes it and calls the watch). Moving to a room needs the building's markers. */
+    if (why == OG_REST_VAGRANT || why == OG_REST_TRESPASS) { og_law_note(OG_CRIME_VAGRANCY); og_guards_summon(1); }
     return why == OG_REST_OK;
 }
 

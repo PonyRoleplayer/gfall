@@ -1,5 +1,6 @@
 #include "game/ogfall/play/possessions.h"
 #include "game/ogfall/play/bank.h"
+#include "game/ogfall/play/combat.h"
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/describe.h"
 #include "game/ogfall/play/msg.h"
@@ -32,7 +33,7 @@ static int game_mode(int page)
 {
     if (page == OG_VIEW_SHEET) { return OG_GAME_SHEET; }
     if (page == OG_VIEW_INVENTORY) { return OG_GAME_INVENTORY; }
-    if (page == OG_VIEW_BOOK || page == OG_VIEW_MESSAGE || page == OG_VIEW_BANK) { return OG_GAME_READING; }
+    if (page == OG_VIEW_BOOK || page == OG_VIEW_MESSAGE || page == OG_VIEW_BANK || page == OG_VIEW_COURT) { return OG_GAME_READING; }
     return OG_GAME_SPELLBOOK;
 }
 
@@ -61,7 +62,7 @@ void og_possessions_close(void)
 
 int og_possessions_open(int page, df_u32 remote)
 {
-    if (!og_state()->ready || page < OG_VIEW_INVENTORY || page > OG_VIEW_BANK) { return 0; }
+    if (!og_state()->ready || page < OG_VIEW_INVENTORY || page > OG_VIEW_COURT) { return 0; }
     if (page == OG_VIEW_SPELLS) {
         df_u32 ids[OG_OBJECTS];
         g.book = og_inventory_book();
@@ -92,6 +93,138 @@ int og_possessions_open(int page, df_u32 remote)
      * book screens play OpenBook (DAGGER.SND ID 237) on entry. */
     if (page == OG_VIEW_SPELLS || page == OG_VIEW_BOOK) { og_sound(237); }
     g.revision++;
+    return 1;
+}
+
+/* ---- The court (slice 5): the original's questions and records, one after another. ---- */
+enum { CS_NONE, CS_SURRENDER, CS_ASK, CS_PLEA, CS_TEXT };
+static int (*g_court_say)(int text, const OgCourt *court, char *out, int cap);
+static void (*g_court_release)(int where);
+static OgCourtStep g_step;
+static OgCourtGuilds g_guilds = { -1, -1 };
+
+void og_possessions_set_court(int (*say)(int text, const OgCourt *court, char *out, int cap), void (*release)(int where))
+{
+    g_court_say = say;
+    g_court_release = release;
+}
+
+/* A record's words with the case's macros said, else the raw first variant. */
+static void court_words(int text, char *out, int cap)
+{
+    if (g_court_say && g_court_say(text, &g.court, out, cap) >= 0) { return; }
+    df_copy(out, og_words(text), cap);
+}
+
+static void court_question(int stage, int text, const char *yes, const char *no)
+{
+    g.court_stage = stage;
+    court_words(text, g.offer, (int)sizeof(g.offer));
+    df_copy(g.yes, yes, sizeof(g.yes));
+    df_copy(g.no, no, sizeof(g.no));
+    g.prompt = OG_PROMPT_ASK;
+    g.revision++;
+}
+
+/* The court is over: its days pass in prison one after another, then court_close's 240 minutes; the player is put where it says. */
+static void court_finish(const OgCourtStep *s)
+{
+    int day;
+    int fatigue;
+
+    if (s->serve_days > 0) {
+        og_law_serving(1);
+        for (day = 0; day < s->serve_days; day++) { og_state_pass_minutes(1440); }
+        og_law_serving(0);
+    }
+    fatigue = og_character()->fatigue;
+    og_state_pass_minutes(OG_COURT_CLOSE_MINUTES);
+    og_character()->fatigue = fatigue;
+    if (s->release && g_court_release) { g_court_release(s->release); }
+    og_guards_dismiss();
+    g.court_stage = CS_NONE;
+    og_possessions_close();
+}
+
+/* What the last step asks of the screen: its records one by one (a click goes on), then the next question or the end. */
+static void court_show(const OgCourtStep *s)
+{
+    int i;
+
+    g_step = *s;
+    for (i = 0; i < 3; i++) { g.court_texts[i] = s->text[i]; }
+    g.court_text_at = 0;
+    g.court_stage = CS_TEXT;
+}
+
+static void court_next(void)
+{
+    char words[400];
+    int text;
+
+    while (g.court_text_at < 3 && g.court_texts[g.court_text_at]) {
+        text = g.court_texts[g.court_text_at++];
+        /* The accusation is the first question, not a message. */
+        if (text == OG_TEXT_COURT_ASK) { continue; }
+        court_words(text, words, (int)sizeof(words));
+        df_copy(g.notice, words, sizeof(g.notice));
+        g.notice_page = 0;
+        g.revision++;
+        return;
+    }
+    if (g_step.done || !g.court.open) { court_finish(&g_step); return; }
+    if (g.court.open) { court_question(CS_ASK, OG_TEXT_COURT_ASK, "Guilty", "Not guilty"); }
+}
+
+/* An answer of the court's questions: 1 the first button, 0 the second. */
+static void court_answer(int yes)
+{
+    OgCourtStep step;
+    const OgCharacter *c;
+
+    c = og_character();
+    g.prompt = 0; g.offer[0] = 0;
+    switch (g.court_stage) {
+    case CS_SURRENDER:
+        if (!yes) { g.court_stage = CS_NONE; og_possessions_close(); return; }
+        if (og_law_guards_or_court(1, og_state()->region, &g_guilds, &g.court, &step) == OG_ARREST_DEATH) {
+            g.court_stage = CS_NONE; og_possessions_close(); og_player_slain(); return;
+        }
+        court_show(&step); court_next();
+        break;
+    case CS_ASK:
+        if (yes) { og_court_accept(&g.court, &step); court_show(&step); court_next(); }
+        else { court_question(CS_PLEA, OG_TEXT_COURT_PLEA, "Polite", "Blunt"); }
+        break;
+    case CS_PLEA:
+        /* The first button argues with Etiquette (skill 1), the second with Streetwise (skill 2): one use of it, then the roll. */
+        og_skill_use(yes ? 1 : 2);
+        og_court_plead(&g.court, !yes, c->skill[yes ? 1 : 2], c->attribute[5], &step);
+        court_show(&step); court_next();
+        break;
+    default: break;
+    }
+}
+
+int og_possessions_surrender(void)
+{
+    if (g.page || !og_possessions_open(OG_VIEW_COURT, 0)) { return 0; }
+    mem_zero(&g.court, sizeof(g.court));
+    court_question(CS_SURRENDER, 15, "Yes", "No");
+    return 1;
+}
+
+int og_possessions_arrested(void)
+{
+    OgCourtStep step;
+
+    if (g.page && g.page != OG_VIEW_COURT) { return 0; }
+    if (!g.page && !og_possessions_open(OG_VIEW_COURT, 0)) { return 0; }
+    mem_zero(&g.court, sizeof(g.court));
+    if (og_law_guards_or_court(0, og_state()->region, &g_guilds, &g.court, &step) == OG_ARREST_DEATH) {
+        og_possessions_close(); og_player_slain(); return 1;
+    }
+    court_show(&step); court_next();
     return 1;
 }
 
@@ -587,6 +720,7 @@ static void prompt_accept(void)
         return;
     }
     if (g.prompt == OG_PROMPT_ASK) {
+        if (g.page == OG_VIEW_COURT) { court_answer(1); return; }
         g.prompt = 0; g.offer[0] = 0;
         bank_run(g.bank_op, g.bank_amount, 1);
         return;
@@ -633,12 +767,12 @@ void og_possessions_frame(const OgIn *in)
     if (g.prompt) {
         if (in->ch == 27) {
             if (g.prompt == OG_PROMPT_ANSWER) { submit_answer(0); }
-            else { if (g.prompt == OG_PROMPT_OFFER) { og_market_confirm(0); } g.offer[0] = 0; g.prompt = 0; }
+            else { if (g.prompt == OG_PROMPT_OFFER) { og_market_confirm(0); } if (g.prompt == OG_PROMPT_ASK && g.page == OG_VIEW_COURT) { court_answer(0); } else { g.offer[0] = 0; g.prompt = 0; } }
         }
         else if (in->ch == 13 || (click && inside(in->cx,in->cy,84,116,151,134))) { prompt_accept(); }
         else if (click && inside(in->cx,in->cy,169,116,236,134)) {
             if (g.prompt == OG_PROMPT_ANSWER) { submit_answer(0); }
-            else { if (g.prompt == OG_PROMPT_OFFER) { og_market_confirm(0); } g.offer[0] = 0; g.prompt = 0; }
+            else { if (g.prompt == OG_PROMPT_OFFER) { og_market_confirm(0); } if (g.prompt == OG_PROMPT_ASK && g.page == OG_VIEW_COURT) { court_answer(0); } else { g.offer[0] = 0; g.prompt = 0; } }
         }
         else {
             for (n = 0; g.input[n]; n++) { }
@@ -659,6 +793,7 @@ void og_possessions_frame(const OgIn *in)
         else if (in->ch == 13 || in->ch == ' ' || click) {
             if (g.notice_page+1 < pages) { g.notice_page++; } else { g.notice[0] = 0; }
         }
+        if (!g.notice[0] && g.page == OG_VIEW_COURT && g.court_stage == CS_TEXT) { court_next(); }
     } else if (g.skill_group >= 0) {
         if (in->ch == 27 || click) { g.skill_group = -1; }
         else if (in->key == OG_VK_NEXT || in->key == OG_VK_DOWN) { if (g.skill_group == 3 && g.skill_scroll < 7) { g.skill_scroll++; } }

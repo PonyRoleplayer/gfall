@@ -6,8 +6,9 @@
 #include "game/ogfall/play/play.h"
 #include "game/ogfall/play/spellbook.h"
 #include "game/ogfall/play/market.h"
+#include "game/ogfall/play/law.h"
 
-enum { OG_VIEW_NONE, OG_VIEW_INVENTORY, OG_VIEW_SHEET, OG_VIEW_SPELLS, OG_VIEW_BOOK, OG_VIEW_MESSAGE, OG_VIEW_BANK };
+enum { OG_VIEW_NONE, OG_VIEW_INVENTORY, OG_VIEW_SHEET, OG_VIEW_SPELLS, OG_VIEW_BOOK, OG_VIEW_MESSAGE, OG_VIEW_BANK, OG_VIEW_COURT };
 enum { OG_ITEM_INFO, OG_ITEM_EQUIP, OG_ITEM_REMOVE, OG_ITEM_USE };
 enum { OG_PROMPT_NONE, OG_PROMPT_GOLD, OG_PROMPT_NAME, OG_PROMPT_PAGE, OG_PROMPT_SPELL_NAME, OG_PROMPT_ANSWER, OG_PROMPT_OFFER, OG_PROMPT_AMOUNT, OG_PROMPT_ASK };
 #define OG_NOTICE_LINES 16
@@ -21,6 +22,10 @@ typedef struct OgPossessions {
     int trade, price;
     /* The bank over the world: which region's account, the action an amount or a yes is for, and the amount waiting on the yes. */
     int bank_region, bank_op, bank_amount;
+    /* The court over the world: the case, which question is up (OG_COURT_*), the records waiting to be shown, and the answers' words. */
+    OgCourt court;
+    int court_stage, court_texts[3], court_text_at;
+    char yes[16], no[16];
     char offer[200];
     char notice[2048], input[32];
     unsigned revision;
@@ -36,6 +41,19 @@ int og_possessions_open(int page, df_u32 remote);
  */
 /* The bank's screen (BANK00I0.IMG) for a region's account; 0 when refused. */
 int og_possessions_bank(int region);
+/*
+ * The arrest (damage_apply, qkey.c 535): the offer to surrender to the guards (record 15). Yes is the
+ * court (crime_guards_or_court with surrendered), No leaves the fight to go on. 0 when refused.
+ */
+int og_possessions_surrender(void);
+/* A player brought down while guards are about (crime_guards_or_court, not surrendered): the court or the end. */
+int og_possessions_arrested(void);
+/*
+ * What the court's words say and where it leaves the player. The words are a TEXT.RSC record with the case's
+ * macros (%cri %pen %dip %pdg %prn %pcn %cn) said; release puts the player where the court says (OG_RELEASE_*:
+ * the street, past the walls, set free), after the sentence's days have passed.
+ */
+void og_possessions_set_court(int (*say)(int text, const OgCourt *court, char *out, int cap), void (*release)(int where));
 int og_possessions_trade(int mode, const OgShop *shop, df_u32 shelves);
 /*
  * The offer box's words are one variant of a TEXT.RSC record (text_rsc_load picks one at random) with

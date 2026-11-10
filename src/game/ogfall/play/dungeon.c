@@ -706,3 +706,14 @@ void og_dungeon_step(const Scene *scene, const Camera *cam, float dt)
         }
     }
 }
+
+int og_dungeon_guards(void)
+{
+    int i, n;
+
+    n = 0;
+    for (i = 0; i < g_count; i++) {
+        if (g_foe[i].kind == 146 && g_foe[i].fighter.health > 0) { n++; }
+    }
+    return n;
+}

@@ -2,6 +2,7 @@
 #include "game/ogfall/play/possessions.h"
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/play.h"
+#include "game/ogfall/play/law.h"
 #include "game/ogfall/play/weapon.h"
 #include "game/ogfall/play/combat.h"
 #include "game/ogfall/play/cheats.h"
@@ -608,6 +609,8 @@ int og_frame(const OgIn *in, Camera *cam, const Scene *scene)
             }
             og_magic_frame(scene,cam,in,blocks);
             og_dungeon_step(scene,cam,in->dt);
+            og_guards_tick(in->dt);
+            og_law_calm();
         }
         if (casting || og_magic_visible()) {
             g_mouse_prev = in->mouse_held;

@@ -369,6 +369,8 @@ void check_ogstate(const char *root)
     og_state_restore(&g_initial);
     check_oglaw();
     og_state_restore(&g_initial);
+    check_oglaw_guards();
+    og_state_restore(&g_initial);
     og_state_restore(&g_initial);
     check_disk(root);
 }

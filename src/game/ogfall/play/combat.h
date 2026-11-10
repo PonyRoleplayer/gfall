@@ -18,6 +18,8 @@ int og_attack_damage(const OgFighter *attacker, const OgFighter *target,
                      int weapon, int material, int swing, int expert, int base);
 void og_item_wear(df_u32 id, int damage);
 void og_damage_player(int damage, int part);
+/* The end of the player (the original's damage_creature_death on them): health nothing, the death cry and line. */
+void og_player_slain(void);
 void og_combat_step(float dt);
 void og_combat_reset(void);
 float og_combat_flash(void);

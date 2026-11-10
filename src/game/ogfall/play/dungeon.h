@@ -33,6 +33,8 @@ int og_dungeon_nearby(const Camera *camera, float reach);
 /* Source is a struck creature index, or -1 for a door/noise. */
 void og_dungeon_alert(int source);
 int og_dungeon_count(void);
+/* guards_are_present: a living guard of the City Watch (kind 146) in the place. */
+int og_dungeon_guards(void);
 Entity *og_dungeon_entity(int index);
 /* Append a runtime creature; its Entity has a stable address until close. */
 int og_dungeon_add(Entity *entity, int kind, int passive, int rate);

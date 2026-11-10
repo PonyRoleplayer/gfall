@@ -150,6 +150,11 @@ static void say_macro(const char *macro, char *out, int cap, int depth)
     } else if (df_eq(macro, "dip")) {
         log_format(out, cap, "%d", w->days);
         return;
+    } else if (df_eq(macro, "pdg")) {
+        log_format(out, cap, "%d", w->more_days);
+        return;
+    } else if (df_eq(macro, "prn")) {
+        text = w->prison;
     }
     if (text) {
         df_copy(out, text, cap);
@@ -195,7 +200,7 @@ static int macro_known(const char *macro)
 {
     static const char *const known[] = {
         "pcn", "pc", "pcf", "pcnf", "ra", "hnr", "pct", "t", "oth", "1com", "2com", "n", "key", "loc",
-        "di", "hnt", "hnt2", "cn", "rn", "reg", "cpn", "tcn", "cri", "pen", "a", "dip", "fnpc", "fpc"
+        "di", "hnt", "hnt2", "cn", "rn", "reg", "cpn", "tcn", "cri", "pen", "a", "dip", "pdg", "prn", "fnpc", "fpc"
     };
     int i;
 

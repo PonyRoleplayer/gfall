@@ -1875,3 +1875,34 @@ noted and each region's punishment flags). The crime table is read out of FALL.E
   court's and prison's screens (`COURT00I0`, `PRIS00I0`, "N days until freedom") and the marker moves; the crimes'
   callers (a witnessed pickpocketing, lockpicking, a theft: with steal, slice 7); the legal standing's words
   (`legal_reputation_ranges`, with the character sheet). Playing the court needs the guards first.
+
+
+## Law: the guards, the arrest and the court screen (2026-11-10)
+
+People and law, slice 5, the play. `play/law.c` (guards and arrest), the court as a page of the possessions
+controller (`og_possessions_surrender`, `og_possessions_arrested`), painted by the seam, tested in
+`check_oglaw_guards` (it writes `build/ogfall-court-surrender.ppm`, `-ask.ppm`, `-sentence.ppm`). Source:
+`guards_summon` (`src/hand/func_00040C87.c`), `guards_timer_tick`, `guards_are_present` (`src/lifted/text.c`
+758..826), `damage_apply` (`src/lifted/qkey.c` 527..589), `crime_guards_or_court`
+(`src/hand/func_00040FC1.c`), `court_open` and `court_frame`; the court's words are TEXT.RSC 15 and 8050..8064.
+
+- **Summoning:** immediate makes two to five guards near the player (`rand_range(2, 5)`); deferred lets a guard who
+  saw it call the watch at once, and anyone else who saw it start a timer of five to ten seconds. Nothing in a
+  dungeon, and nothing once there are more than ten creatures. Vagrancy and trespass at rest call it.
+- **The blow:** with guards about, the first blow at the player takes the crime's loss off the standing and is the
+  offer to surrender (record 15, Yes or No); it is asked once until the guards are gone. A blow that brings the
+  player to nothing among the guards is `crime_guards_or_court(0)`: below -20 it is death, between -20 and 0 a coin's
+  toss, else the court. Yes to the offer is the court with `surrendered` (no death).
+- **The screen:** the court sits over `CORT01I0.IMG`. The accusation (8050) asks Guilty or Not guilty; Guilty is the
+  sentence (half the fine and days, the purse spent), Not guilty the plea (8064): the first button argues with
+  Etiquette, the second with Streetwise (one use of the skill, then the roll). The records follow, a click at a time
+  (8052, 8055, 8060, 8062, 8063 or a guild's 550 and 551), then the days pass one at a time (the standing does not
+  drift while they do), 240 minutes more as `court_close` does with the fatigue kept, and the player is put out.
+  The buttons' labels (the original's are pictures 16..19 of BUTTONS.RCI, with keys g, n, l and d) are ours.
+- **Adaptations and limits:** no guard is made in a town yet: the streets' creature art and AI are the engine's
+  dungeon ones and are not prepared for the watch, so the spawn hook says none and a summons makes nobody (the
+  rules, the timer and the court are all tested with a fake world). A guard seen by a person is not
+  modelled (`people_check_witnesses` needs the pedestrians' lines of sight). The held-back first blow is lost
+  rather than dealt after a No. Release puts the player out in the street from a building and leaves them where they
+  stand otherwise (no marker kinds 8, 4 or 12 to move to). The prison's screen (`PRIS00I0`, "N days until
+  freedom") is not drawn: the days pass at once. `%prn` says "the prison" or a variant of record 8100.

@@ -119,6 +119,57 @@ int og_court_open(OgCourt *court, int crime, int region, const OgCourtGuilds *gu
 void og_court_accept(OgCourt *court, OgCourtStep *step);
 /* The plea after a no, by Etiquette (the polite word) or Streetwise: a skill's rank, and the person's Personality. */
 void og_court_plead(OgCourt *court, int streetwise, int skill, int personality, OgCourtStep *step);
+/* ---- Guards and the arrest (src/lifted/text.c 758..826, src/hand/func_00040C87.c, src/hand/func_00040FC1.c, qkey.c damage_apply) ---- */
+
+/*
+ * What the world gives the law: whether guards stand about (guards_are_present: a creature of the City
+ * Watch, hostile), how many creatures there are, one guard made near the player (guard_spawn; 1 when made),
+ * who saw (people_check_witnesses: bit 0 another person, bit 1 a guard), and whether the place is a dungeon.
+ * Missing hooks are nothing: no guards, no witnesses, and nowhere to put one.
+ */
+typedef struct OgGuardWorld {
+    int (*present)(void);
+    int (*count)(void);
+    int (*spawn)(void);
+    int (*witnesses)(void);
+    int (*in_dungeon)(void);
+    void (*dismiss)(void);
+} OgGuardWorld;
+void og_guards_set_world(const OgGuardWorld *world);
+int og_guards_present(void);
+
+/* The most creatures in a place for the watch to be called (guards_summon returns past ten). */
+#define OG_GUARDS_CREATURES_MOST 10
+/*
+ * guards_summon. Immediate (now): rand_range(2, 5) guards made near. Deferred: a witness that is a guard
+ * calls the watch at once; another person who saw it starts a timer of rand_range(5, 10) seconds, at the end
+ * of which the watch comes. Nothing in a dungeon. How many were made now.
+ */
+int og_guards_summon(int now);
+/* guards_timer_tick, once a frame: the timer counts down and summons when it ends. */
+void og_guards_tick(float seconds);
+/* The timer's seconds left, -1 for none. */
+float og_guards_timer(void);
+void og_guards_reset(void);
+/* court_remove_creatures: after a court the watch about is gone. */
+void og_guards_dismiss(void);
+
+/* The watch has been called by a crime: the first blow at the player is the offer to surrender (record 15). */
+enum { OG_BLOW_FREE, OG_BLOW_ASK };
+/* damage_apply: a blow at the player while guards are present, before it is dealt. OG_BLOW_ASK says the question is to be put and the blow held back; the penalty for the crime is taken once. */
+int og_law_blow(int region);
+/* Cleared when no guards are about (the original clears it when no creature is). */
+void og_law_calm(void);
+
+enum { OG_ARREST_DEATH, OG_ARREST_COURT };
+/*
+ * crime_guards_or_court: health to 1, then by the legal standing: below -20 and not surrendered is death; from
+ * -20 to 0 it is a coin's toss unless they surrendered; else the court opens on the crime noted. surrendered is
+ * the yes to record 15. On OG_ARREST_COURT the court and its first step are set; on OG_ARREST_DEATH the
+ * caller kills the player.
+ */
+int og_law_guards_or_court(int surrendered, int region, const OgCourtGuilds *guilds, OgCourt *court, OgCourtStep *step);
+
 /* After a court (court_close): a prison sentence's days pass one at a time, then 240 minutes more, with the fatigue kept (the caller passes the time). */
 #define OG_COURT_CLOSE_MINUTES 240
 

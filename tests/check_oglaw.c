@@ -4,6 +4,11 @@
 #include "game/ogfall/play/state.h"
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/bank.h"
+#include "game/ogfall/play/possessions.h"
+#include "game/ogfall/play/combat.h"
+#include "engine/core/mem.h"
+#include "../apps/ogfall/seam.h"
+#include <stdio.h>
 #include <string.h>
 
 static void set_legal(int region, int legal)
@@ -173,4 +178,143 @@ void check_oglaw(void)
     og_law_note(OG_CRIME_VAGRANCY);
     check_expect(og_law()->crime == OG_CRIME_VAGRANCY, "law: the crime was not noted");
     check_expect(og_law_valid(og_law()), "law: the state is not valid after use");
+}
+
+/* ---- Guards, the arrest and the court screen ---- */
+static int g_present, g_spawned, g_dungeon, g_bits, g_count, g_released;
+
+static int fake_present(void) { return g_present; }
+static int fake_count(void) { return g_count; }
+static int fake_spawn(void) { g_spawned++; return 1; }
+static int fake_witnesses(void) { return g_bits; }
+static int fake_dungeon(void) { return g_dungeon; }
+static void fake_release(int where) { g_released = where; }
+
+static void shot(const char *name)
+{
+    const df_u8 *pixels, *palette;
+    char path[96];
+    FILE *file;
+    int i;
+
+    seam_present();
+    pixels = seam_screen(&palette);
+    snprintf(path, sizeof(path), "build/ogfall-%s.ppm", name);
+    file = fopen(path, "wb");
+    if (!file || !pixels || !palette) {
+        if (file) {
+            fclose(file);
+        }
+        return;
+    }
+    fprintf(file, "P6\n320 200\n255\n");
+    for (i = 0; i < 64000; i++) {
+        fwrite(palette + pixels[i] * 3, 1, 3, file);
+    }
+    fclose(file);
+}
+
+static void click(int cx, int cy)
+{
+    OgIn in;
+
+    mem_zero(&in, sizeof(in));
+    in.cx = cx;
+    in.cy = cy;
+    in.on_picture = 1;
+    in.mouse_pressed = 1;
+    og_possessions_frame(&in);
+}
+
+void check_oglaw_guards(void)
+{
+    static const OgGuardWorld world = { fake_present, fake_count, fake_spawn, fake_witnesses, fake_dungeon, 0 };
+    const OgPossessions *view;
+    OgCourt court;
+    OgCourtStep step;
+    OgCourtGuilds none;
+    const int region = 17;
+    int made, i, minutes, gold, steps;
+
+    none.brotherhood_rank = none.thieves_rank = -1;
+    og_guards_set_world(&world);
+    og_guards_reset();
+
+    /* Summoning: 2 to 5 guards made at once; nothing in a dungeon or past ten creatures; a witness starts a timer of 5 to 10 seconds. */
+    g_present = g_dungeon = g_bits = g_count = g_spawned = 0;
+    made = og_guards_summon(1);
+    check_expect(made >= 2 && made <= 5 && g_spawned == made, "guards: summoning did not make two to five");
+    g_spawned = 0;
+    g_dungeon = 1;
+    check_expect(og_guards_summon(1) == 0 && g_spawned == 0, "guards: the watch came in a dungeon");
+    g_dungeon = 0;
+    g_count = 11;
+    check_expect(og_guards_summon(1) == 0, "guards: the watch came past ten creatures");
+    g_count = 0;
+    g_bits = 0;
+    og_guards_summon(0);
+    check_expect(og_guards_timer() < 0.0f, "guards: a crime no one saw started the timer");
+    g_bits = 1;
+    og_guards_summon(0);
+    check_expect(og_guards_timer() >= 5.0f && og_guards_timer() <= 10.0f, "guards: a witness did not start a timer of 5 to 10 seconds");
+    g_spawned = 0;
+    for (i = 0; i < 12 && og_guards_timer() >= 0.0f; i++) {
+        og_guards_tick(1.0f);
+    }
+    check_expect(og_guards_timer() < 0.0f && g_spawned >= 2, "guards: the timer ran out and brought no watch");
+    g_bits = 2;
+    g_spawned = 0;
+    og_guards_summon(0);
+    check_expect(g_spawned >= 2, "guards: a guard's witness did not call the watch at once");
+
+    /* The first blow with guards about is the offer to surrender, once; the crime's loss is taken then. */
+    og_law_note(OG_CRIME_ASSAULT);
+    set_legal(region, 0);
+    g_present = 1;
+    check_expect(og_law_blow(region) == OG_BLOW_ASK && og_region_legal(region) == -8, "guards: the first blow did not ask, at a cost of 8");
+    check_expect(og_law_blow(region) == OG_BLOW_FREE, "guards: a second blow asked again");
+    g_present = 0;
+    og_law_calm();
+    g_present = 1;
+    check_expect(og_law_blow(region) == OG_BLOW_ASK, "guards: the question did not come again after the guards were gone");
+    og_law_calm();
+
+    /* Brought down or surrendered: below -20 and not surrendered is death; surrendered is the court. */
+    set_legal(region, -50);
+    check_expect(og_law_guards_or_court(0, region, &none, &court, &step) == OG_ARREST_DEATH && og_character()->health == 1, "guards: -50 and no surrender was not death at health 1");
+    check_expect(og_law_guards_or_court(1, region, &none, &court, &step) == OG_ARREST_COURT && court.open, "guards: a surrender at -50 did not open the court");
+    set_legal(region, 5);
+    check_expect(og_law_guards_or_court(0, region, &none, &court, &step) == OG_ARREST_COURT, "guards: a good standing was not tried");
+
+    /* The screen: a blow asks, Yes sits the court, Guilty is accepted through its messages, and the court sets the player free. */
+    og_possessions_reset();
+    og_possessions_set_court(0, fake_release);
+    og_guards_reset();
+    set_legal(region, 0);
+    og_law_note(OG_CRIME_ASSAULT);
+    og_character()->gold = 5000;
+    og_character()->max_health = 30;
+    og_character()->health = 30;
+    g_present = 1;
+    view = og_possessions();
+    og_damage_player(5, -1);
+    check_expect(view->page == OG_VIEW_COURT && view->prompt == OG_PROMPT_ASK && og_character()->health == 30 && view->offer[0], "court: the first blow did not ask to surrender, holding the blow back");
+    shot("court-surrender");
+    click(117, 125);
+    check_expect(view->court.open && view->prompt == OG_PROMPT_ASK, "court: surrendering did not put the question of guilt");
+    shot("court-ask");
+    gold = og_character()->gold;
+    minutes = (int)og_state()->minutes;
+    click(117, 125);
+    /* Messages follow: a click goes on through each; the court ends by setting the player free and the page closed. */
+    for (steps = 0; steps < 8 && view->page == OG_VIEW_COURT; steps++) {
+        if (steps == 0) { shot("court-sentence"); }
+        click(160, 100);
+    }
+    check_expect(view->page == OG_VIEW_NONE && g_released == OG_RELEASE_STREET, "court: the sentence did not end with the player set free in the street");
+    check_expect(og_character()->gold < gold && og_character()->health == og_character()->max_health, "court: the fine was not taken, or vitals not restored");
+    check_expect((int)og_state()->minutes >= minutes + 240, "court: no time passed (the court's 240 minutes at least)");
+    og_guards_set_world(0);
+    og_guards_reset();
+    og_possessions_set_court(0, 0);
 }

@@ -47,7 +47,7 @@ and a short audit section in `ogfall.md`.
    default, letters of credit, houses and ships, carrying gold.
 4. **Lodging.** (Built 2026-11-10: rooms, meals, where rest is allowed; the screens wait for talk, the watch for law.) Tavern rooms and their expiry, food and drink, and where rest
    is allowed (ties into the existing rest).
-5. **Law.** (Rules built 2026-11-10: crimes, fines, the court, sentences and reputation; the guards and the screens remain.) Crimes and their witnesses, guard summoning and behaviour,
+5. **Law.** (Built 2026-11-10: crimes, fines, the court and its screen, sentences, reputation, the guards' rules and the arrest; making guards in a town waits for the streets' creatures.) Crimes and their witnesses, guard summoning and behaviour,
    `court_open`, fines, sentences, prison, reputation restore.
 6. **Talk.** `talk_open`, disposition, tones and the attitude roll, topics,
    directions, rumours and the logbook copy.

@@ -35,6 +35,9 @@ typedef struct Words {
     const char *penalty;
     int days;
     int amount;
+    /* A sentence made longer (%pdg days) and the prison a death sentence names (%prn). */
+    int more_days;
+    const char *prison;
     /* The tone 0..2, what the person thinks of the player: which greeting, and a name or "stranger". */
     int tone;
     int reaction;

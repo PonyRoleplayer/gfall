@@ -1,4 +1,6 @@
 #include "game/ogfall/play/combat.h"
+#include "game/ogfall/play/possessions.h"
+#include "game/ogfall/play/law.h"
 #include "game/ogfall/play/cheats.h"
 #include "game/ogfall/play/magic.h"
 #include "game/ogfall/play/inventory.h"
@@ -82,6 +84,16 @@ void og_item_wear(df_u32 id, int damage)
     }
 }
 
+void og_player_slain(void)
+{
+    OgCharacter *who;
+    who = og_character();
+    who->health = 0;
+    og_state_event(OG_EVENT_KILL,og_state()->entity_id,0,1);
+    og_sound(who->female ? 258 : 243);
+    og_msg_set("You have died.");
+}
+
 void og_damage_player(int damage, int part)
 {
     OgCharacter *who;
@@ -89,7 +101,11 @@ void og_damage_player(int damage, int part)
     who = og_character();
     if (og_god_mode() || damage <= 0 || who->health <= 0) { return; }
     damage = og_magic_absorb(-1,damage); if (!damage) { return; }
+    /* damage_apply: while guards are about the first blow is the offer to surrender, held back until it is answered. */
+    if (og_law_blow(og_state()->region) == OG_BLOW_ASK && og_possessions_surrender()) { return; }
     who->health -= damage;
+    /* Brought down among the guards: the court (or the end), not simply death. */
+    if (who->health < 1 && og_guards_present() && og_possessions_arrested()) { return; }
     if (who->health < 0) { who->health = 0; }
     amount = damage < 4 ? 4 : damage > 32 ? 32 : damage;
     g_flash = (float)amount/32;

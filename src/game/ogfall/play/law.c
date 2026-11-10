@@ -326,3 +326,119 @@ void og_court_plead(OgCourt *court, int streetwise, int skill, int personality, 
     step->text[0] = OG_TEXT_COURT_SENTENCE;
     serve(court, step);
 }
+
+/* ---- Guards ---- */
+
+static OgGuardWorld g_world;
+static float g_guard_timer = -1.0f;
+static int g_asked;
+
+void og_guards_set_world(const OgGuardWorld *world)
+{
+    if (world) {
+        g_world = *world;
+    } else {
+        mem_zero(&g_world, sizeof(g_world));
+    }
+}
+
+int og_guards_present(void)
+{
+    return g_world.present && g_world.present();
+}
+
+float og_guards_timer(void)
+{
+    return g_guard_timer;
+}
+
+void og_guards_reset(void)
+{
+    g_guard_timer = -1.0f;
+    g_asked = 0;
+}
+
+int og_guards_summon(int now)
+{
+    int made, n, bits;
+
+    if ((g_world.in_dungeon && g_world.in_dungeon()) || (g_world.count && g_world.count() > OG_GUARDS_CREATURES_MOST)) {
+        return 0;
+    }
+    made = 0;
+    if (now) {
+        /* No townsperson is turned into a guard here (the pedestrians are the engine's): the watch is made. */
+        n = rand_range(2, 5);
+        while (n-- > 0) {
+            if (g_world.spawn && g_world.spawn()) {
+                made++;
+            }
+        }
+        return made;
+    }
+    bits = g_world.witnesses ? g_world.witnesses() : 0;
+    if (bits & 2) {
+        return og_guards_summon(1);
+    }
+    if (bits & 1) {
+        g_guard_timer = (float)rand_range(5, 10);
+    }
+    return 0;
+}
+
+void og_guards_tick(float seconds)
+{
+    if (g_guard_timer < 0.0f) {
+        return;
+    }
+    g_guard_timer -= seconds;
+    if (g_guard_timer <= 0.0f) {
+        g_guard_timer = -1.0f;
+        og_guards_summon(1);
+    }
+}
+
+int og_law_blow(int region)
+{
+    if (g_asked || !og_guards_present()) {
+        return OG_BLOW_FREE;
+    }
+    if (og_law()->crime >= 1) {
+        og_crime_penalty(region, og_law()->crime);
+    }
+    g_asked = 1;
+    return OG_BLOW_ASK;
+}
+
+void og_law_calm(void)
+{
+    if (!og_guards_present()) {
+        g_asked = 0;
+    }
+}
+
+int og_law_guards_or_court(int surrendered, int region, const OgCourtGuilds *guilds, OgCourt *court, OgCourtStep *step)
+{
+    int standing;
+
+    og_character()->health = 1;
+    court->open = 0;
+    standing = og_region_legal(region);
+    mem_zero(step, sizeof(*step));
+    if (standing < -20 && !surrendered) {
+        return OG_ARREST_DEATH;
+    }
+    if (standing >= -20 && standing <= 0 && (og_random_range(0, 32767) & 1) && !surrendered) {
+        return OG_ARREST_DEATH;
+    }
+    og_court_open(court, og_law()->crime, region, guilds, step);
+    return OG_ARREST_COURT;
+}
+
+void og_guards_dismiss(void)
+{
+    if (g_world.dismiss) {
+        g_world.dismiss();
+    }
+    og_guards_reset();
+}
