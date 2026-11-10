@@ -52,6 +52,7 @@
 #include "game/ogfall/play/talk.h"
 #include "game/ogfall/play/steal.h"
 #include "game/ogfall/play/guild.h"
+#include "game/ogfall/play/potion.h"
 #include "game/ogfall/play/hours.h"
 #include "game/ogfall/play/ailments.h"
 #include "game/ogfall/formats/interior.h"
@@ -1517,6 +1518,29 @@ static void hall_run(void)
         break;
     case OG_SVC_TRAINING:
         hall_training(g_hall.person, m != 0);
+        break;
+    case OG_SVC_POTIONS:
+    case OG_SVC_SOULGEMS:
+        /* guild_buy_potions: the container emptied, stocked with the hall's quality + 1 bottles, and opened for buying. */
+        {
+            int type, faction, quality, i;
+            unsigned place;
+
+            if (!shop_here(&shop) || !travel_building(&type, &faction, &quality, &place)) { break; }
+            if (!og_object(g_counter)) {
+                g_counter = og_object_new(OG_RECORD_CONTAINER, OG_WORLD_ROOT, 0, 1);
+            }
+            if (!g_counter) { break; }
+            for (i = 0; i < OG_OBJECTS; i++) {
+                const OgObject *o;
+
+                o = &og_state()->object[i];
+                if (o->id && o->type == OG_RECORD_ITEM && o->parent == g_counter) { og_object_delete(o->id); }
+            }
+            if (service == OG_SVC_SOULGEMS) { og_soul_trap_stock(g_counter, quality); }
+            else { og_potion_stock(g_counter, quality); }
+            og_possessions_trade(OG_MARKET_BUY, &shop, g_counter);
+        }
         break;
     case OG_SVC_ARMOR:
         {
@@ -3581,6 +3605,7 @@ static void load_possession_art(void)
         log_format(file,sizeof(file),"REST%02dI0.IMG",i); img_load(file,&g_rest_art[i]);
     }
     og_spells_load();
+    og_potions_register();
 }
 
 /* Every decode for one changed screen dies after composition. A newly read

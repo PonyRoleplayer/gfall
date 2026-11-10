@@ -2109,3 +2109,18 @@ trainer driven by clicks to a lesson in `tests/check_ogworld.c`. Cure and blessi
   records 461 and 463. The house waits until the towns' houses are OGFALL's own (their price is five times the largest model's radius, which the model layer holds).
 - **Opening hours** (`play/hours.c`, from `building_is_open`): a type opens and shuts by FALL.EXE's table; a guild's own members enter their hall at any hour (the Fighters and Mages from
   rank 6). A shop's shelves now sell when it is open and open as a plain container, the goods free to take, when it is shut (`shelf_open_stock`). The doors do not ask yet.
+
+### Potions and soul traps
+
+`play/potion.c` and `tables/potiondata.h`, `souldata.h` (from FALL.EXE):
+
+- The twenty recipes (`potion_recipes`, 109 bytes each: ingredients, value, the potion's own 89-byte spell). Each spell is registered with the spell table (`og_spell_register`,
+  under `1000 + recipe`), so a potion is cast like any spell of the caster. Stamina is 25 gold, Purification 500; Healing's spell is group 10, sub 8 and heals on drinking.
+- A potion is a glass bottle (group 1, index 1) priced at its recipe's value, named "Potion of ...", with the recipe (one more than its number) in the item's message field.
+  Using a bottle in the pack drinks it (inven.c 900): the spell lands on the player at the player's own level and the bottle is gone.
+- `guild_buy_potions` (a hall's potion seller, a stranger's too where the original lets them): the counter is emptied, stocked with quality + 1 bottles of random recipes
+  (`shop_stock_potions`) and opened for buying. The soul-gem seller is the same with `shop_stock_soul_traps`: quality / 2 + 1 traps at 5000, a quarter holding a soul of a random kind
+  that has a value (the 43 values are FALL.EXE's), added to the price.
+- Not built: the potion maker (`potionmaker_mix`: the cauldron, ingredients matched to a recipe by `potion_match_recipe` or an unknown brew made into a spell by
+  `potion_mix_unknown`, which wants the ingredients' potency from `item_make`'s side effects and the spell maker's tables), the alchemists' own shelves of potions, magic items
+  (`shop_stock_magic`, the enchantment tables), the spell shop's window, the Daedra and teleporting. Tests: `tests/check_ogpotion.c`.

@@ -1,4 +1,5 @@
 #include "game/ogfall/play/possessions.h"
+#include "game/ogfall/play/potion.h"
 #include "game/ogfall/play/bank.h"
 #include "game/ogfall/play/combat.h"
 #include "game/ogfall/play/inventory.h"
@@ -573,6 +574,12 @@ int og_possessions_use(df_u32 id)
         og_poison_apply(-1,item->index+136,1);
         og_object_delete(id);
         df_copy(g.notice,"You consume the drug.",sizeof(g.notice)); g.revision++;
+        return 1;
+    }
+    if (og_potion_of(id) >= 0) {
+        /* inven.c: a bottle with a recipe is drunk and gone. */
+        og_potion_drink(id);
+        g.revision++;
         return 1;
     }
     if (item->group == 27 && item->index == 0) {

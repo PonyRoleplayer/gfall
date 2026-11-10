@@ -4,34 +4,51 @@
 #include "engine/core/log.h"
 #include "game/ogfall/tables/itemdefs.h"
 
-static OgSpellDef g_spell[89];
+static OgSpellDef g_spell[128];
 static int g_count;
+
+/* One 89-byte spell record (SPELLS.STD's, or a potion recipe's own) into a definition. */
+static void parse_spell(const df_u8 *record, OgSpellDef *spell)
+{
+    int k;
+
+    spell->id = record[73]; spell->icon = record[72];
+    spell->target = record[7]; spell->element = record[6];
+    for (k = 0; k < 3; k++) {
+        int n;
+        spell->group[k] = record[k * 2]; spell->sub[k] = record[k * 2 + 1];
+        for (n = 0; n < 3; n++) {
+            spell->duration[k][n] = (signed char)record[14+k*3+n]; spell->chance[k][n] = (signed char)record[23+k*3+n];
+        }
+        for (n = 0; n < 5; n++) { spell->magnitude[k][n] = (signed char)record[32+k*5+n]; }
+    }
+    mem_copy(spell->name, record + 47, 25); spell->name[25] = 0;
+}
+
+int og_spell_register(const df_u8 *record, int id)
+{
+    OgSpellDef *spell;
+
+    if (g_count >= 128 || og_spell_def(id)) { return 0; }
+    spell = &g_spell[g_count++];
+    parse_spell(record, spell);
+    spell->id = id;
+    return 1;
+}
 
 void og_spells_load(void)
 {
-    const df_u8 *bytes, *record;
+    const df_u8 *bytes;
     df_u32 size;
-    int i, k;
+    int i;
     g_count = 0;
     bytes = vfs_read("SPELLS.STD", &size);
     if (!bytes || size % 89 || size / 89 > 89) { return; }
     for (i = 0; i < (int)(size / 89); i++) {
-        OgSpellDef *spell;
-        spell = &g_spell[g_count++];
-        record = bytes + i * 89;
-        spell->id = record[73]; spell->icon = record[72];
-        spell->target = record[7]; spell->element = record[6];
-        for (k = 0; k < 3; k++) {
-            int n;
-            spell->group[k] = record[k * 2]; spell->sub[k] = record[k * 2 + 1];
-            for (n = 0; n < 3; n++) {
-                spell->duration[k][n] = (signed char)record[14+k*3+n]; spell->chance[k][n] = (signed char)record[23+k*3+n];
-            }
-            for (n = 0; n < 5; n++) { spell->magnitude[k][n] = (signed char)record[32+k*5+n]; }
-        }
-        mem_copy(spell->name, record + 47, 25); spell->name[25] = 0;
+        parse_spell(bytes + i * 89, &g_spell[g_count++]);
     }
 }
+
 const OgSpellDef *og_spell_def(int id)
 {
     int i;
