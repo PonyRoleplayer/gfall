@@ -38,6 +38,7 @@ for now. Each line names where to look.
 - **At most four messages queue** on the message page (`g_queue`); more are dropped.
 - **The talk list's horizontal scroll** is kept in the state but not painted; "Copy to logbook" does nothing.
 - **Spellbook holds 128**; a purchase past it fails silently.
+- **Citizens never fight back** (as in the original, a swing kills them outright); the "people fighting back" were the guards. A citizen killed is gone with no corpse; witnesses count the victim, as the original's order has it.
 - **Guild invitations are counted but never delivered** (letters are quests); a Brotherhood kill is counted for a watchman in a dungeon only, not for a pedestrian (`guild_count_crime(6, 5)`), (a picked street door now counts for the Thieves; a dungeon door's pick does not, as in the original).
 - **The Daedra's weather is not passed** (0), so a prince's liking for a weather counts only when he likes any; his quest and his ally are not built.
 - **No weather, `climate_update` or rest after a teleport.**
@@ -54,7 +55,8 @@ for now. Each line names where to look.
 - **The region-to-name-bank table** read at 0x1841E3 has only banks 0 and 1; the original's regions should reach the Nords' bank. Unchecked against the original's output (`g_region_bank`).
 - **Names are not checked against the original's output**, only their shapes and seeding (`tests/check_ognames.c`); the same for building signs.
 - **Houses for sale and their price** (model radius * 5) need the dagger layer's models; so the bank's house, a knight's house and the town's `bank_add_house_for_sale` wait.
-- **Town creatures** (guards made in towns, pedestrians fighting back) need the street people's art and AI, which are the dagger layer's (`people.c`); the law's guards are made only in dungeons.
+- **The town's watch and people are the dagger layer's pool** (`people.c`): a guard is a person of archive 399 taken into OGFALL's creatures (`street_enlist`), a citizen turned into a guard is a guard made near and the citizen removed (the pictures are not the citizen's), blood splashes are not drawn, and a killed guard's corpse is the dagger's picture. The pool recycles slots: guards stay held until the place closes.
+- **Opening a street scene changes what follows**: in `tests/check_ogworld.c` the street test (a kill, the watch, the court sending it away) had to be run last, because leaving it earlier made later teleports and origin moves fail even after the town was reopened. Look for state that `og_dungeon_open_street` or `people_hold` leaves behind.
 - **Quest persons** are not told apart from pedestrians; no person is "a potential questor".
 
 ## Tests that approximate

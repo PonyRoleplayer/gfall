@@ -17,6 +17,8 @@ typedef struct OgArrow {
 
 void og_dungeon_open(const Scene *scene, const int *kinds, const int *passive, const int *rates);
 void og_dungeon_close(void);
+/* A town streamed round the player: no creature is the scene's own (its entities are the street's people, not foes), but the watch may be made of them. */
+void og_dungeon_open_street(const Scene *scene);
 void og_dungeon_step(const Scene *scene, const Camera *cam, float dt);
 void og_dungeon_strike(const Scene *scene, const Camera *cam, const OgStrike *strike);
 int og_dungeon_health(int index);
@@ -43,5 +45,16 @@ int og_dungeon_kind(int index);
 int og_dungeon_spell_target(int index, OgCharacter *who, OgClass *career, int *base);
 void og_dungeon_spell_commit(int index, const OgCharacter *who, int caster);
 void og_dungeon_pacify(int index);
+/* A creature made awake, knowing where the player is: the City Watch called in a town (a give-up three times a creature's). */
+void og_dungeon_wake(int index);
+/* The index of the creature on this entity, -1 for none. */
+int og_dungeon_index(const Entity *e);
+/* A creature taken out of the place (a court sent the watch away): not live, no health, not counted. */
+void og_dungeon_remove(int index);
+/*
+ * The street (src/hand/func_000733AD.c 96..110): a swing's hit frame in a town also strikes the people of the street, none of the rolls of a creature: whoever stands within 90 units
+ * and 200 of the view is killed. The game does it (hit(cam) returns how many it struck); a creature's death is told to the game (died(kind, entity)) so it can lay the body.
+ */
+void og_dungeon_set_street(int (*hit)(const Camera *cam), void (*died)(int kind, Entity *entity));
 
 #endif

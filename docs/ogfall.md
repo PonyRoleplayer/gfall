@@ -2196,3 +2196,16 @@ Tests: `tests/check_ogmagicitem.c`.
 
 A tavern's inside has beds: editor markers of record 4 (`world_marker_nth`, a small accessor in the dagger layer over the place's kept markers, in file order). Renting a room draws a bed at random (`rand() % how many`, `tavern_rent`) and keeps its
 number as the room; sleeping in a rented room, or in a knight's hall (room 0 unless one was rented), puts the player on that bed first (`og_rest_set_room`, `tavern_go_to_room`), a floor point with the eye 64 above it.
+
+### The watch and the street
+
+The decomp's rules (`guards_summon`, `guard_spawn`, `people_check_witnesses`, `pedestrian_killed`, the pedestrian pass of a swing in `func_000733AD.c`) over the dagger layer's people pool, through hooks in `OgGuardWorld`:
+
+- **Witnesses** (`street_witnesses`): a citizen in the pool, up to 4096 units off with a ray from their chest to the player's eye that no wall stops, is bit 0; a guard is bit 1; none in a dungeon.
+- **A swing in a town** (`og_dungeon_set_street`): its hit frame kills every person within 90 units and 200 of the view (distance counts height), with none of a creature's rolls. The victim is still among the people, so a killing in sight is
+  always witnessed: murder (crime 5) and `guards_summon(1)`; the Brotherhood counts it (`guild_count_crime(6, 5)`).
+- **The watch** (`street_convert`, `street_spawn`): every guard of the pool becomes a creature of kind 146 (`og_dungeon_add` on their entity, so the original's stats and mind apply), woken knowing the player with a
+  give-up three times a creature's (`og_dungeon_wake`); also a quarter of the people behind the player (over 600 of 2048 round from where they face) are replaced by a guard made near; if none came, two to five are made near.
+  A guard seen by a witness brings only the guards. A killed guard's body is the dagger's corpse (`people_lay_corpse`); the court sends the watch away (`og_dungeon_remove`, `people_fell`). A streamed town opens OGFALL's creatures
+  with none of its own (`og_dungeon_open_street`), and their bodies move with the stream's origin (`og_dungeon_shift`).
+- Tests: `tests/check_ogworld.c`, `street_checks` (the last test of that file).

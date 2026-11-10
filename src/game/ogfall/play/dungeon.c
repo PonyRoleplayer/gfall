@@ -36,6 +36,8 @@ static OgFoe g_foe[OG_FOES];
 static OgArrow g_arrow[OG_ARROWS];
 static int g_count, g_blood[2];
 static const Scene *g_scene;
+static int (*g_street_hit)(const Camera *cam);
+static void (*g_street_died)(int kind, Entity *entity);
 static SpawnId g_splash[8];
 static float g_splash_time[8];
 
@@ -91,6 +93,10 @@ void og_dungeon_shift(float dx, float dz)
     int i;
     for (i = 0; i < OG_ARROWS; i++) {
         if (g_arrow[i].live) { g_arrow[i].at[0] -= dx; g_arrow[i].at[2] -= dz; }
+    }
+    /* A creature of a town (the watch) keeps its own body, which moves with the stream's origin as the entity does. */
+    for (i = 0; i < g_count; i++) {
+        g_foe[i].body.feet[0] -= dx; g_foe[i].body.feet[2] -= dz;
     }
 }
 void og_dungeon_variant(int i, int type)
@@ -216,6 +222,14 @@ void og_dungeon_open(const Scene *scene, const int *kinds, const int *passive, c
     }
 }
 
+void og_dungeon_open_street(const Scene *scene)
+{
+    og_dungeon_close();
+    og_magic_open(scene);
+    g_scene = scene;
+    mem_zero(g_foe,sizeof(g_foe));
+}
+
 int og_dungeon_loaded(int index)
 {
     OgFoe *f;
@@ -295,6 +309,7 @@ static void hit_foe(const Scene *scene, int i, int damage, float yaw)
         og_magic_soul_capture(i);
         og_sound_at(17,e->x,e->y,e->z);
         og_state_event(OG_EVENT_KILL,e->key.thing,og_state()->entity_id,damage);
+        if (g_street_died) { g_street_died(f->kind,e); }
         /* damage_creature_death: a watchman killed is counted by the Brotherhood (guild_count_crime(6, 1)). */
         if (f->kind == 146) { og_guild_count_crime(6, 1, og_state()->minutes); }
     } else {
@@ -448,6 +463,7 @@ void og_dungeon_strike(const Scene *scene, const Camera *cam, const OgStrike *s)
         og_dungeon_alert(i);
         resolve_player(scene,cam,i,s,index,material); hits++;
     }
+    if (g_street_hit) { hits += g_street_hit(cam); }
     if (!hits) {
         og_sound(og_swing_sound(index));
         og_actions_strike(scene,cam,5);
@@ -708,6 +724,45 @@ void og_dungeon_step(const Scene *scene, const Camera *cam, float dt)
             if (g_splash_time[i] <= 0 && g_splash[i]) { spawn_remove(g_splash[i]); g_splash[i] = 0; }
         }
     }
+}
+
+void og_dungeon_wake(int index)
+{
+    OgFoe *f;
+
+    if (index < 0 || index >= g_count) { return; }
+    f = &g_foe[index];
+    f->awake = 1;
+    f->mind.detected = f->mind.encountered = 1;
+    /* A city watch gives up after three times a creature's count. */
+    f->mind.give_up = 600;
+}
+
+int og_dungeon_index(const Entity *e)
+{
+    int i;
+
+    for (i = 0; i < g_count; i++) {
+        if (g_foe[i].entity == e) { return i; }
+    }
+    return -1;
+}
+
+void og_dungeon_remove(int index)
+{
+    OgFoe *f;
+
+    if (index < 0 || index >= g_count) { return; }
+    f = &g_foe[index];
+    f->fighter.health = 0;
+    f->awake = 0;
+    f->entity->live = 0;
+}
+
+void og_dungeon_set_street(int (*hit)(const Camera *cam), void (*died)(int kind, Entity *entity))
+{
+    g_street_hit = hit;
+    g_street_died = died;
 }
 
 int og_dungeon_guards(void)

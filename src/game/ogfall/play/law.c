@@ -372,7 +372,11 @@ int og_guards_summon(int now)
     }
     made = 0;
     if (now) {
-        /* No townsperson is turned into a guard here (the pedestrians are the engine's): the watch is made. */
+        /* The street's guards come, and some of the people behind the player turn out to be guards; if none did, two to five are made near. */
+        made = g_world.convert ? g_world.convert(0) : 0;
+        if (made) {
+            return made;
+        }
         n = rand_range(2, 5);
         while (n-- > 0) {
             if (g_world.spawn && g_world.spawn()) {
@@ -383,6 +387,9 @@ int og_guards_summon(int now)
     }
     bits = g_world.witnesses ? g_world.witnesses() : 0;
     if (bits & 2) {
+        if (g_world.convert) {
+            return g_world.convert(1);
+        }
         return og_guards_summon(1);
     }
     if (bits & 1) {

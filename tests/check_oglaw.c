@@ -228,7 +228,7 @@ static void click(int cx, int cy)
 
 void check_oglaw_guards(void)
 {
-    static const OgGuardWorld world = { fake_present, fake_count, fake_spawn, fake_witnesses, fake_dungeon, 0 };
+    static const OgGuardWorld world = { fake_present, fake_count, fake_spawn, fake_witnesses, fake_dungeon, 0, 0 };
     const OgPossessions *view;
     OgCourt court;
     OgCourtStep step;

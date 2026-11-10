@@ -243,6 +243,40 @@ static void drop_outside(void)
                  "an outdoor pile is drawn through spawn and opens the actual item container when pointed at");
     og_possessions_close();
 }
+/* The street (the people pool as the original's pedestrians): someone in sight is a witness; a swing's hit kills the person in front, a murder seen, and the watch comes; the court sends it away. */
+static void street_checks(void)
+{
+    Scene *sc;
+    OgStrike strike;
+    Camera swing;
+    Entity *victim;
+    int pi;
+
+    cmd_run("goto Daggerfall"); change();
+    sc = &seam_level()->scene;
+    people_fill(&g_camera);
+    check_expect(og_guards_witnesses() != 0, "street: nobody in a busy street saw the player");
+    victim = 0;
+    for (pi = 0; pi < PEOPLE_MAX && !victim; pi++) {
+        Entity *cand;
+
+        cand = people_at(pi);
+        if (cand && people_is_citizen(cand) && !people_is_guard(cand)) { victim = cand; }
+    }
+    check_expect(victim != 0, "street: no citizen to strike");
+    if (!victim) { return; }
+    camera_set(&swing, victim->x, victim->y + entity_height(victim) * 0.5f, victim->z - 40, 0, 0);
+    strike.item = 0; strike.hand = 0; strike.bow = 0; strike.hit = 1; strike.damage = 5;
+    og_law()->crime = 0;
+    og_dungeon_strike(sc, &swing, &strike);
+    check_expect(!people_is_citizen(victim), "street: a swing did not kill the person in front");
+    check_expect(og_law()->crime == OG_CRIME_MURDER, "street: a killing seen was not noted as murder");
+    check_expect(og_dungeon_guards() > 0 && og_guards_present(), "street: the watch did not come to a murder");
+    og_guards_dismiss();
+    check_expect(!og_dungeon_guards(), "street: the court did not send the watch away");
+    og_law()->crime = 0;
+}
+
 void check_ogworld(const char *root)
 {
     char resolved[4096];
@@ -557,6 +591,7 @@ restore:
     seam_close_hold(); og_state_restore(&g_before); og_state_restore_world(); og_world_restore();
     fs_delete("ogfall\\saves\\S0006.SAV"); fs_remove_dir("ogfall\\saves"); fs_remove_dir("ogfall");
     fs_set_root("build/ARENA2"); unlink(test_root); fs_remove_dir("ogfall-world-data"); vfs_mount(root);
+    street_checks();
     check_expect(seam_open_place(1,0,&x,&y,&z),"restore the original game after world travel tests");
     seam_land(&g_camera,1,0);
 }

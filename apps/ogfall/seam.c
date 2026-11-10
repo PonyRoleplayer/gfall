@@ -1920,6 +1920,172 @@ static int rest_site(OgRestSite *site)
  * in the street; a street stays where it is (no marker to move to).
  */
 static int guards_present(void) { return og_dungeon_guards(); }
+/*
+ * The street's people and the watch (people and law, the town's creatures): the dagger layer's people pool stands for the original's pedestrians. A guard is a person of archive 399; the watch
+ * is those guards (and, when called, more made near the player) taken into OGFALL's own creatures (kind 146, the original's stats and mind) and woken knowing where the player is. A swing's hit
+ * kills whoever is within 90 units and 200 of the view (the original's pedestrian pass), the victim itself a witness; a killing seen is murder (crime 5) and brings the guards. Neither
+ * the pictures nor the walking of the people are OGFALL's.
+ */
+static int creature_rate(int archive);
+#define STREET_GUARD_KIND 146
+#define STREET_GUARD_ARCHIVE 399
+
+/* collide_line_of_sight: a ray from the person's chest to the player's eye that no wall stops. */
+static int street_sees(const Entity *e, const float *eye)
+{
+    UseHit hit;
+    float dx, dy, dz, length;
+
+    dx = eye[0] - e->x; dy = eye[1] - (e->y + 40.0f); dz = eye[2] - e->z;
+    length = df_sqrt(dx * dx + dy * dy + dz * dz);
+    if (length < 1.0f) { return 1; }
+    dx /= length; dy /= length; dz /= length;
+    interact_cast(&g_level.scene, e->x, e->y + 40.0f, e->z, dx, dy, dz, length, &hit);
+    return hit.wall >= length;
+}
+
+/* people_check_witnesses: bit 0 another person, bit 1 a guard, with the player in sight; nothing in a dungeon. */
+static int street_witnesses(void)
+{
+    Camera cam;
+    float eye[3];
+    int i, bits;
+
+    if (og_world_state()->where.kind == OG_PLACE_DUNGEON) { return 0; }
+    og_move_camera(&cam);
+    eye[0] = cam.x; eye[1] = cam.y; eye[2] = cam.z;
+    bits = 0;
+    for (i = 0; i < PEOPLE_MAX; i++) {
+        Entity *e;
+        float dx, dz;
+
+        e = people_at(i);
+        if (!e || !people_is_citizen(e)) { continue; }
+        dx = e->x - cam.x; dz = e->z - cam.z;
+        if (dx * dx + dz * dz > 4096.0f * 4096.0f) { continue; }
+        if (street_sees(e, eye)) { bits |= og_dungeon_index(e) >= 0 || people_is_guard(e) ? 2 : 1; }
+    }
+    return bits;
+}
+
+/* One of the pool's guards taken into the creatures and woken: a creature of the watch (kind 146) on the person's entity. */
+static int street_enlist(int index)
+{
+    Entity *e;
+    int foe;
+
+    e = people_at(index);
+    if (!e || !people_is_guard(e)) { return 0; }
+    foe = og_dungeon_index(e);
+    if (foe < 0) {
+        people_hold(index);
+        foe = og_dungeon_add(e, STREET_GUARD_KIND, 0, creature_rate(STREET_GUARD_ARCHIVE));
+        if (foe < 0) { return 0; }
+        og_dungeon_loaded(foe);
+    }
+    og_dungeon_wake(foe);
+    return 1;
+}
+
+/* guard_spawn(0): one guard near the player, out of sight where a cell allows it. */
+static int street_spawn(void)
+{
+    Camera cam;
+    int index;
+
+    og_move_camera(&cam);
+    index = people_spawn_guard(&cam);
+    return index >= 0 && street_enlist(index);
+}
+
+/* guards_summon's people: every guard comes; unless guards_only, a quarter of those behind the player (more than 600 of 2048 round from where they face) turn out to be guards too. */
+static int street_convert(int guards_only)
+{
+    Camera cam;
+    int i, n;
+
+    og_move_camera(&cam);
+    n = 0;
+    for (i = 0; i < PEOPLE_MAX; i++) {
+        Entity *e;
+
+        e = people_at(i);
+        if (!e || !people_is_citizen(e)) { continue; }
+        if (people_is_guard(e)) {
+            n += street_enlist(i);
+            continue;
+        }
+        if (guards_only) { continue; }
+        {
+            float dx, dz, diff;
+
+            dx = e->x - cam.x; dz = e->z - cam.z;
+            diff = df_absf(df_atan2(dx, dz) - cam.yaw);
+            while (diff > DF_TAU) { diff -= DF_TAU; }
+            if (diff > DF_TAU / 2) { diff = DF_TAU - diff; }
+            if (diff < 600.0f * DF_TAU / 2048.0f) { continue; }
+        }
+        if (og_random_range(0, 32767) & 3) { continue; }
+        /* The original makes a guard of the person where they stand; the pictures are not the person's, so a guard is made near and the person goes. */
+        if (street_spawn()) {
+            people_fell(e);
+            n++;
+        }
+    }
+    return n;
+}
+
+/* The pedestrian pass of a swing (func_000733AD.c 96..110). */
+static int street_hit(const Camera *cam)
+{
+    int i, struck, bits;
+
+    if (og_world_state()->where.kind == OG_PLACE_DUNGEON) { return 0; }
+    struck = 0;
+    for (i = 0; i < PEOPLE_MAX; i++) {
+        Entity *e;
+        float dx, dz, distance, dy;
+
+        e = people_at(i);
+        if (!e || !people_is_citizen(e) || og_dungeon_index(e) >= 0) { continue; }
+        dx = e->x - cam->x; dz = e->z - cam->z; dy = og_move_body()->feet[1] - e->y;
+        distance = df_sqrt(dx * dx + dz * dz + dy * dy);
+        if (distance > 90.0f) { continue; }
+        if (distance > 10.0f && df_cos(df_atan2(dx, dz) - cam->yaw) <= df_cos(200.0f * DF_TAU / 2048.0f)) { continue; }
+        /* pedestrian_killed: the victim is still among the people, so they have seen it; murder, and the guards. */
+        bits = street_witnesses();
+        if (bits) {
+            og_law_note(OG_CRIME_MURDER);
+            og_guards_summon(1);
+        }
+        people_fell(e);
+        og_guild_count_crime(6, 5, og_state()->minutes);
+        struck++;
+    }
+    return struck;
+}
+
+/* A creature of the watch killed: the body is laid, the guard's corpse. */
+static void street_died(int kind, Entity *e)
+{
+    if (kind == STREET_GUARD_KIND && people_index(e) >= 0) { people_lay_corpse(e); }
+}
+
+/* court_remove_creatures: the watch is sent away. */
+static void street_dismiss(void)
+{
+    int i;
+
+    for (i = 0; i < og_dungeon_count(); i++) {
+        Entity *e;
+
+        if (og_dungeon_kind(i) != STREET_GUARD_KIND) { continue; }
+        e = og_dungeon_entity(i);
+        og_dungeon_remove(i);
+        if (e && people_index(e) >= 0) { people_fell(e); }
+    }
+}
+
 static int guards_count(void) { return og_dungeon_count(); }
 static int guards_dungeon(void) { return og_world_state()->where.kind == OG_PLACE_DUNGEON; }
 
@@ -1990,8 +2156,9 @@ int seam_boot(void)
     og_names_set_expand(talk_expand);
     og_rest_set_site(rest_site);
     og_rest_set_room(go_to_bed);
+    og_dungeon_set_street(street_hit, street_died);
     {
-        static const OgGuardWorld world = { guards_present, guards_count, 0, 0, guards_dungeon, 0 };
+        static const OgGuardWorld world = { guards_present, guards_count, street_spawn, street_witnesses, guards_dungeon, street_dismiss, street_convert };
 
         og_guards_set_world(&world);
     }
@@ -4884,7 +5051,7 @@ static int seam_world_art(void)
     if (slot < 0 || !wres_acquire(slot)) { return 0; }
     og_ground_open(&g_level.scene,slot);
     og_object_edit(OG_WORLD_ROOT)->place_key = 0x80000000u;
-    og_dungeon_close(); og_dungeon_blood(-1,-1); og_magic_open(&g_level.scene);
+    og_dungeon_open_street(&g_level.scene); og_dungeon_blood(-1,-1);
     return 1;
 }
 int seam_next_world(void) { return travel_next_is_world(); }

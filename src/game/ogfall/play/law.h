@@ -134,6 +134,8 @@ typedef struct OgGuardWorld {
     int (*witnesses)(void);
     int (*in_dungeon)(void);
     void (*dismiss)(void);
+    /* The street's people made into guards (guards_summon): guards_only is 1 for a guard seen, else the people behind the player, a quarter of them, are too; how many. */
+    int (*convert)(int guards_only);
 } OgGuardWorld;
 void og_guards_set_world(const OgGuardWorld *world);
 int og_guards_present(void);
