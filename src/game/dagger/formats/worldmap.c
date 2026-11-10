@@ -38,6 +38,7 @@ static df_u8 *g_type;
 static df_u16 *g_px;
 static df_u16 *g_py;
 static df_u8 *g_known;
+static char (*g_name)[33];
 static int g_nloc;
 
 static int clampx(int x)
@@ -138,7 +139,8 @@ static int read_locations(void)
     g_px = (df_u16 *)mem_keep((df_u32)(cap > 0 ? cap : 1) * 2u);
     g_py = (df_u16 *)mem_keep((df_u32)(cap > 0 ? cap : 1) * 2u);
     g_known = (df_u8 *)mem_keep((df_u32)(cap > 0 ? cap : 1));
-    if (!g_region || !g_index || !g_type || !g_px || !g_py || !g_known || cap > 65535) {
+    g_name = (char (*)[33])mem_keep((df_u32)(cap > 0 ? cap : 1)*33u);
+    if (!g_region || !g_index || !g_type || !g_px || !g_py || !g_known || !g_name || cap > 65535) {
         bsa_close(maps);
         return 0;
     }
@@ -147,6 +149,9 @@ static int read_locations(void)
         char name[16];
         const BsaRec *rec;
         const df_u8 *t;
+        const df_u8 *names;
+        const BsaRec *names_rec;
+        int names_count;
         int n;
         int i;
 
@@ -163,6 +168,18 @@ static int read_locations(void)
             continue;
         }
         n = (int)(rec->size / TABLE_BYTES);
+        /* Separate scratch slots keep MAPTABLE valid while names are read.
+         * No MAPPITEM geometry or active exterior-cache state is needed. */
+        df_copy(name,"MAPNAMES.000",(int)sizeof(name));
+        name[9] = (char)('0'+region/100);
+        name[10] = (char)('0'+(region/10)%10);
+        name[11] = (char)('0'+region%10);
+        names_rec = bsa_find_name(maps,name);
+        names = names_rec && names_rec->size >= 4 ? bsa_read_scratch(maps,names_rec,BSA_SCRATCH_MODEL) : 0;
+        names_count = names ? (int)df_ru32(names) : 0;
+        if (names_count < 0 || names_count > 4096 || (names_rec && 4u+(df_u32)names_count*32u > names_rec->size)) {
+            names_count = 0;
+        }
         for (i = 0; i < n && g_nloc < cap; i++) {
             df_u32 word;
             df_u32 lon;
@@ -184,6 +201,13 @@ static int read_locations(void)
             g_px[g_nloc] = (df_u16)x;
             g_py[g_nloc] = (df_u16)y;
             g_known[g_nloc] = (df_u8)((word >> 30) & 1u);
+            if (i < names_count) {
+                int j;
+                for (j = 0; j < 32 && names[4u+(df_u32)i*32u+j]; j++) {
+                    g_name[g_nloc][j] = (char)names[4u+(df_u32)i*32u+j];
+                }
+                g_name[g_nloc][j] = 0;
+            }
             g_loc[y * WORLDMAP_W + x] = (df_u16)(g_nloc + 1);
             g_nloc++;
         }
@@ -224,6 +248,10 @@ int worldmap_open(void)
     log_print(LOG_INFO, "worldmap: %d locations on 1000 x 500 pixels", g_nloc);
     g_ok = 1;
     return 1;
+}
+const char *worldmap_location_name(int k)
+{
+    return worldmap_open() && k >= 0 && k < g_nloc ? g_name[k] : "";
 }
 
 /*

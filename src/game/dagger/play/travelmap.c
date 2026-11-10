@@ -1,10 +1,6 @@
 #include "game/dagger/play/travelmap.h"
 #include "game/dagger/play/ui.h"
-#include "game/dagger/play/bank.h"
-#include "game/dagger/play/atlas.h"
 #include "game/dagger/play/canvas.h"
-#include "game/dagger/play/words.h"
-#include "game/dagger/play/ride.h"
 #include "game/dagger/formats/dungeon.h"
 #include "game/dagger/formats/factionfile.h"
 #include "game/dagger/formats/palette.h"
@@ -78,7 +74,6 @@ static const Rect g_no_rect = { 184, 112, CANVAS_BUTTON_W, CANVAS_BUTTON_H };
 
 /* TEXT.RSC. */
 #define RECORD_NO_PLACE 13
-#define RECORD_TRAVEL_TO 31
 #define RECORD_NO_GOLD 454
 
 /* The world's palette index of the cross over the player's place, and of the dots by the place's type (DFU's). */
@@ -148,12 +143,11 @@ enum {
 /* The ring round a flashing place: this many map pixels from it. */
 #define FLASH_RING 3
 
-#define NAMES_MOST 4096
 #define LINE_TEXT 96
 
 static struct {
     int open;
-    Player *player;
+    TravelMapRules rules;
     Composer composer;
     df_u8 rgb[768];
     /* The art palette's colours as the map's nearest: a picture under ART_PAL.COL drawn on the map's. */
@@ -170,11 +164,10 @@ static struct {
     const df_u8 *popup;
     const df_u8 *region_pic;
     int step;
+    int confirm_trip;
     int region;
     int part;
     int filter_off[FILTERS];
-    DunRef *names;
-    int nnames;
     int here_px;
     int here_py;
     int here_region;
@@ -201,7 +194,6 @@ static struct {
     /* The world view's province blink, in seconds. */
     float blink;
     const char *note;
-    Words words;
     /* The screen as the map left it, before the popup or the scroll: what they did not draw is not mapped again. */
     df_u8 *under;
     int changed;
@@ -362,7 +354,6 @@ static const char *region_name(int region)
 static int show_region(int region, int part)
 {
     const RegionMap *m;
-    MemHeap *was;
 
     m = map_of(region, part);
     if (!m) {
@@ -372,16 +363,6 @@ static int show_region(int region, int part)
     if (!g.region_pic) {
         log_print(LOG_WARN, "travel map: %s did not read", m->file);
         return 0;
-    }
-    if (region != g.region || !g.names) {
-        was = mem_heap_use(g.composer.heap);
-        if (!g.names) {
-            g.names = (DunRef *)mem_alloc((df_u32)NAMES_MOST * (df_u32)sizeof(DunRef));
-        }
-        mem_heap_use(was);
-        g.nnames = g.names ? exterior_list_region(region, g.names, NAMES_MOST) : 0;
-        /* It counts what it could not hold too. */
-        g.nnames = g.nnames > NAMES_MOST ? NAMES_MOST : g.nnames;
     }
     g.region = region;
     g.part = part;
@@ -405,6 +386,9 @@ static int to_panel(int px, int py, int *x, int *y)
     *y = (py - m->y) * scale;
     return *x >= 0 && *x < PANEL_W && *y >= 0 && *y < PANEL_H;
 }
+
+static int known_place(int ordinal) { return g.rules.known(ordinal); }
+static unsigned traveller_gold(void) { return g.rules.gold(); }
 
 /* The place a type is shown as, or not at all (one of the player's ships; one a filter hides). */
 static int shows_type(int type)
@@ -438,7 +422,7 @@ static int place_near(int x, int y)
         int d;
 
         if (!worldmap_location_info(k, &px, &py, &region, &index, &type, &known) || region != g.region
-            || !atlas_known(k) || !shows_type(type) || !to_panel(px, py, &sx, &sy)) {
+            || !known_place(k) || !shows_type(type) || !to_panel(px, py, &sx, &sy)) {
             continue;
         }
         d = (sx - x) * (sx - x) + (sy - y) * (sy - y);
@@ -453,34 +437,24 @@ static int place_near(int x, int y)
 /* A location's name, from its province's list. */
 static const char *name_of(int k)
 {
-    int px;
-    int py;
-    int region;
-    int index;
-    int type;
-    int known;
-
-    if (!worldmap_location_info(k, &px, &py, &region, &index, &type, &known) || region != g.region
-        || index < 0 || index >= g.nnames) {
-        return "";
-    }
-    return g.names[index].name;
+    return worldmap_location_name(k);
 }
 
 /* ---- Open and close. ---- */
 
-int travelmap_open(Player *p, int px, int py, int region)
+int travelmap_open_rules(const TravelMapRules *rules, int px, int py, int region)
 {
     int i;
     int k;
 
     travelmap_close();
+    if (!rules || !rules->known || !rules->gold || !rules->plan || !rules->question) { return 0; }
     mem_zero(&g, sizeof(g));
     if (!composer_open(&g.composer)) {
         return 0;
     }
     g.open = 1;
-    g.player = p;
+    g.rules = *rules;
     g.here_px = px;
     g.here_py = py;
     g.here_region = region;
@@ -519,10 +493,11 @@ int travelmap_open(Player *p, int px, int py, int region)
     }
     g.step = STEP_WORLD;
     g.ship = 1;
-    g.words.pc = &p->sheet;
     g.changed = 1;
     return 1;
 }
+
+void travelmap_options(int *reckless, int *camp, int *ship) { *reckless = g.reckless; *camp = g.camp; *ship = g.ship; }
 
 void travelmap_close(void)
 {
@@ -545,11 +520,7 @@ void travelmap_palette(unsigned char *rgb)
 
 static void plan(void)
 {
-    /* "Foot/horse": on the horse when one is owned, else the cart, else on foot (ride.h). */
-    journey_plan(g.here_px, g.here_py, g.place_px, g.place_py, g.reckless, !g.camp, g.ship, ride_journey(g.player), 0, &g.journey);
-    if (g.ship && bank_ship() != BANK_SHIP_NONE) {
-        journey_own_ship(&g.journey);
-    }
+    g.rules.plan(g.here_px,g.here_py,g.place_px,g.place_py,g.reckless,!g.camp,g.ship,&g.journey);
 }
 
 /* A place chosen: ask whether to go. */
@@ -564,24 +535,33 @@ static void choose(int k)
     }
     g.place = k;
     df_copy(g.place_name, name_of(k), (int)sizeof(g.place_name));
-    g.words.place = g.place_name;
-    words_use(&g.words);
-    words_say(RECORD_TRAVEL_TO, g.ask, (int)sizeof(g.ask));
+    g.rules.question(g.place_name,g.ask,(int)sizeof(g.ask));
+    g.confirm_trip = 0;
     g.step = STEP_ASK;
 }
 
 /* The countdown's days, then the journey. */
+static void countdown(void)
+{
+    g.days_left = g.journey.days;
+    g.count_time = 0.0f;
+    g.step = STEP_COUNTING;
+    g.confirm_trip = 0;
+}
 static void begin(void)
 {
+    const char *warning;
     plan();
-    if (g.journey.cost > (int)g.player->pack.gold) {
+    if (g.journey.cost > (int)traveller_gold()) {
         textrsc_read(RECORD_NO_GOLD, g.line, LINE_TEXT);
         g.note = g.line;
         return;
     }
-    g.days_left = g.journey.days;
-    g.count_time = 0.0f;
-    g.step = STEP_COUNTING;
+    warning = g.rules.warning ? g.rules.warning() : 0;
+    if (warning && *warning) {
+        df_copy(g.ask,warning,(int)sizeof(g.ask)); g.confirm_trip = 1; g.step = STEP_ASK; return;
+    }
+    countdown();
 }
 
 int travelmap_step(float dt)
@@ -682,7 +662,7 @@ static void compose_places(void)
         int known;
 
         if (!worldmap_location_info(k, &px, &py, &region, &index, &type, &known) || region != g.region
-            || !atlas_known(k) || !shows_type(type) || type == WORLDMAP_HOME_YOUR_SHIPS || !to_panel(px, py, &x, &y)) {
+            || !known_place(k) || !shows_type(type) || type == WORLDMAP_HOME_YOUR_SHIPS || !to_panel(px, py, &x, &y)) {
             continue;
         }
         g.composer.screen[(PANEL_Y + y) * CANVAS_W + PANEL_X + x] = g_dot_of_type[type];
@@ -747,7 +727,7 @@ static void compose_popup(void)
     tick(g.ship ? &g_ship_rect : &g_foot_rect, mark);
     tick(g.camp ? &g_camp_rect : &g_inn_rect, mark);
     canvas_set_ink(CANVAS_INK, CANVAS_INK_SHADOW);
-    log_format(text, (int)sizeof(text), "%u", (unsigned)g.player->pack.gold);
+    log_format(text, (int)sizeof(text), "%u", traveller_gold());
     canvas_label(148, 97, text);
     log_format(text, (int)sizeof(text), "%d", g.journey.cost);
     canvas_label(117, 107, text);
@@ -986,42 +966,26 @@ static void go_to_found(int k)
  */
 static void find_typed(void)
 {
-    MemHeap *scratch;
-    MemHeap *was;
-    DunRef *rows;
     int pass;
-    int n;
     int i;
 
     g.nfound = 0;
-    scratch = mem_heap_new();
-    if (!scratch) {
-        return;
-    }
-    was = mem_heap_use(scratch);
-    rows = (DunRef *)mem_alloc(16000u * (df_u32)sizeof(DunRef));
-    n = rows ? exterior_list(rows, 16000) : 0;
     for (pass = 0; pass < 2; pass++) {
-        for (i = 0; i < n && g.nfound < FOUND_MOST && g.typed[0]; i++) {
+        for (i = 0; i < worldmap_locations() && g.nfound < FOUND_MOST && g.typed[0]; i++) {
             int first;
-            int px;
-            int py;
-            int k;
+            const char *name;
 
-            if (!name_has(rows[i].name, g.typed, &first) || first != (pass == 0)
-                || !worldmap_pixel_of(rows[i].region, rows[i].index, &px, &py)) {
+            name = worldmap_location_name(i);
+            if (!name_has(name,g.typed,&first) || first != (pass == 0)) {
                 continue;
             }
-            k = worldmap_location_id(px, py);
-            if (k >= 0 && atlas_known(k)) {
-                g.found[g.nfound] = k;
-                df_copy(g.found_name[g.nfound], rows[i].name, (int)sizeof(g.found_name[0]));
+            if (known_place(i)) {
+                g.found[g.nfound] = i;
+                df_copy(g.found_name[g.nfound],name,(int)sizeof(g.found_name[0]));
                 g.nfound++;
             }
         }
     }
-    mem_heap_use(was);
-    mem_heap_delete(scratch);
     if (g.nfound == 0) {
         textrsc_read(RECORD_NO_PLACE, g.line, LINE_TEXT);
         g.note = g.line;
@@ -1136,10 +1100,10 @@ int travelmap_click(int x, int y)
         return TRAVELMAP_STAY;
     case STEP_ASK:
         if (rect_has(&g_yes_rect, x, y)) {
-            g.step = STEP_POPUP;
+            if (g.confirm_trip) { countdown(); } else { g.step = STEP_POPUP; }
         } else if (rect_has(&g_no_rect, x, y)) {
-            g.step = STEP_REGION;
-            g.place = -1;
+            if (g.confirm_trip) { g.confirm_trip = 0; g.step = STEP_POPUP; }
+            else { g.step = STEP_REGION; g.place = -1; }
         }
         return TRAVELMAP_STAY;
     case STEP_POPUP:
@@ -1199,6 +1163,9 @@ int travelmap_key(int vk)
     if (g.step == STEP_FOUND) {
         g.step = g.region >= 0 ? STEP_REGION : STEP_WORLD;
         return TRAVELMAP_STAY;
+    }
+    if (g.step == STEP_ASK && g.confirm_trip) {
+        g.confirm_trip = 0; g.step = STEP_POPUP; return TRAVELMAP_STAY;
     }
     if (g.step == STEP_POPUP || g.step == STEP_ASK) {
         g.step = STEP_REGION;

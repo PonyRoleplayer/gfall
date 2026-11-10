@@ -35,6 +35,10 @@ const char *world_block_name(void);
 int world_model_count(const World *world);
 int world_triangle_count(const World *world);
 const Instance *world_instance(const World *world, int index);
+/* Original block-local action metadata, kept beside that model. The optional
+ * block receives its block index for resolving next-object offsets. */
+struct ModelAct;
+const struct ModelAct *world_model_action(const World *world, int index, int *block);
 
 int world_flat_count(const World *world);
 int world_editor_count(const World *world);

@@ -9,9 +9,10 @@
  * grows south: a pixel's world z is (499 - y) * 32768.
  *
  * Read once, the first time it is opened, and kept for the process
- * (mem_keep), about 2 MB: WOODS.WLD's height map (one byte a pixel),
+ * (mem_keep), about 2.6 MB: WOODS.WLD's height map (one byte a pixel),
  * CLIMATE.PAK unpacked (a climate id a pixel), and which location is on
- * each pixel, from every region's MAPTABLE (no pixel has two).
+ * each pixel, from every region's MAPTABLE (no pixel has two), plus the
+ * 32-byte location names from MAPNAMES, with a terminator of their own.
  */
 
 #define WORLDMAP_W 1000
@@ -68,6 +69,8 @@ int worldmap_locations(void);
  * word's bit 30, DFU's Discovered). 0 past the list.
  */
 int worldmap_location_info(int k, int *px, int *py, int *region, int *index, int *type, int *known);
+/* Stable, process-lived MAPNAMES text for location k; empty outside the list. */
+const char *worldmap_location_name(int k);
 /* The number of the location on a pixel; -1 for none. */
 int worldmap_location_id(int px, int py);
 

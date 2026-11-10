@@ -41,6 +41,7 @@ static TravelWhere g_here;
 static TravelWhere g_next;
 static int g_asked;
 static int g_open;
+static int g_dungeon_streaming = 1;
 static int g_land;
 static int g_land_what;
 /* Where the journey started, in world units, so the arrival faces that way. */
@@ -68,6 +69,11 @@ static float chunk_of(int kind)
 {
     return kind == TRAVEL_WORLD ? (float)STREAM_CHUNK : DUNSTREAM_BLOCK;
 }
+
+void travel_set_dungeon_streaming(int enabled) { if (!g_open) { g_dungeon_streaming = enabled != 0; } }
+World *travel_whole_world(void) { return g_open ? g_world : 0; }
+const Dungeon *travel_place_data(void) { return g_here.kind == TRAVEL_INSIDE ? &g_town : &g_dungeon; }
+df_u32 travel_place_key(void) { return automap_key(); }
 
 void travel_start_game(void)
 {
@@ -128,6 +134,11 @@ void travel_from_save(const TravelWhere *where, const float *feet, const int *or
     g_saved_yaw = yaw;
     g_saved_pitch = pitch;
     g_asked = 0;
+}
+void travel_to_pose(const TravelWhere *where, const float *feet, const int *origin, float yaw, float pitch)
+{
+    travel_from_save(where,feet,origin,yaw,pitch);
+    g_asked = 1;
 }
 
 /* Remembers the step outside door u, in world units, for the way back. */
@@ -242,7 +253,7 @@ void travel_keep_now(void)
     if (!g_open) {
         return;
     }
-    if (g_here.kind == TRAVEL_INSIDE) {
+    if (g_here.kind == TRAVEL_INSIDE || (g_here.kind == TRAVEL_DUNGEON && !g_dungeon_streaming)) {
         world_keep_save(g_world);
     } else {
         stream_keep_now();
@@ -267,7 +278,7 @@ static void close_place(int save)
         stream_save_keep(0);
     }
     /* A stream keeps what its chunks changed as it closes them; a place loaded whole is asked. */
-    if (g_here.kind == TRAVEL_DUNGEON) {
+    if (g_here.kind == TRAVEL_DUNGEON && g_dungeon_streaming) {
         dunstream_close();
     } else if (g_here.kind == TRAVEL_WORLD) {
         wild_close();
@@ -319,6 +330,13 @@ static int open_dungeon(Level *level)
     g_next.located = 1;
     g_next.region = g_dungeon.region;
     g_next.index = g_dungeon.index;
+    if (!g_dungeon_streaming) {
+        g_world = world_load_dungeon(&g_dungeon);
+        if (!g_world) { g_error = world_error(); return 0; }
+        world_as_level(g_world,level);
+        world_start(g_world,&g_start.x,&g_start.y,&g_start.z,&g_start.yaw,&g_start.pitch);
+        return 1;
+    }
     if (!dunstream_open(&g_dungeon, level, &g_start.x, &g_start.y, &g_start.z, &g_start.yaw, &g_start.pitch)) {
         g_error = "The dungeon's stream did not open.";
         return 0;
@@ -450,6 +468,7 @@ static int open_inside(Level *level)
 
 static int open_next(Level *level, int radius)
 {
+    g_world = 0;
     if (g_next.kind == TRAVEL_DUNGEON) {
         return open_dungeon(level);
     }
@@ -515,7 +534,7 @@ const char *travel_said(void)
 /* Everything round the camera before a first frame, under the hold. */
 static void fill_round(Camera *cam)
 {
-    if (g_here.kind == TRAVEL_DUNGEON) {
+    if (g_here.kind == TRAVEL_DUNGEON && g_dungeon_streaming) {
         dunstream_fill(cam);
     } else if (g_here.kind == TRAVEL_WORLD) {
         wild_fill(cam);
@@ -573,7 +592,7 @@ void travel_land(const Level *level, Camera *cam, float eye, TravelPose *out)
         /* The feet as saved, in the frame of the origin they were saved in, come to this stream's. */
         ox = 0;
         oz = 0;
-        if (g_here.kind != TRAVEL_INSIDE) {
+        if (g_here.kind == TRAVEL_WORLD || (g_here.kind == TRAVEL_DUNGEON && g_dungeon_streaming)) {
             stream_origin(&ox, &oz);
         }
         chunk = chunk_of(g_here.kind);
@@ -645,7 +664,7 @@ void travel_update(Camera *cam, int radius, float budget_ms, float dt, float *sh
 
     *shift_x = 0.0f;
     *shift_z = 0.0f;
-    if (!g_open || g_here.kind == TRAVEL_INSIDE) {
+    if (!g_open || g_here.kind == TRAVEL_INSIDE || (g_here.kind == TRAVEL_DUNGEON && !g_dungeon_streaming)) {
         return;
     }
     stream_origin(&ox, &oz);
@@ -694,7 +713,7 @@ void travel_here(TravelWhere *where, int *origin)
     *where = g_here;
     origin[0] = 0;
     origin[1] = 0;
-    if (g_open && g_here.kind != TRAVEL_INSIDE) {
+    if (g_open && (g_here.kind == TRAVEL_WORLD || (g_here.kind == TRAVEL_DUNGEON && g_dungeon_streaming))) {
         stream_origin(&origin[0], &origin[1]);
     }
 }

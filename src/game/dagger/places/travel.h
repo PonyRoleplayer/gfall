@@ -68,6 +68,14 @@ typedef struct TravelPose {
 
 /* The next place is the new game's: Privateer's Hold, at its start. */
 void travel_start_game(void);
+/* Builder policy, before opening a place. Default: stream dungeon blocks.
+ * A whole-place consumer can retain its own entity motors and art pipeline. */
+void travel_set_dungeon_streaming(int enabled);
+struct World;
+struct Dungeon;
+struct World *travel_whole_world(void);
+const struct Dungeon *travel_place_data(void);
+df_u32 travel_place_key(void);
 /*
  * The next place is a town's streets, from anywhere: the console's goto. Asked
  * at once, travel_asked now 1, on a walkable cell near its middle. 0 for a place
@@ -80,6 +88,8 @@ int travel_go_to_place(int region, int index, int by_way_down);
 int travel_pixel(const Camera *cam, int *px, int *py);
 /* The next place is a save's: where, the feet as saved and the stream's origin then (chunks), the way it looked. */
 void travel_from_save(const TravelWhere *where, const float *feet, const int *origin, float yaw, float pitch);
+/* Queue an exact pose, such as a game's teleport anchor, for the next frame. */
+void travel_to_pose(const TravelWhere *where, const float *feet, const int *origin, float yaw, float pitch);
 /*
  * The use key met passage u. 0 when it leads somewhere, travel_asked now 1;
  * otherwise what to tell the player.

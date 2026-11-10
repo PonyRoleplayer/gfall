@@ -1844,6 +1844,13 @@ const Instance *world_instance(const World *world, int index)
     return &world->inst[index];
 }
 
+const ModelAct *world_model_action(const World *world, int index, int *block)
+{
+    if (!world || index < 0 || index >= world->ninst) { return 0; }
+    if (block) { *block = world->blk[index]; }
+    return &world->act[index];
+}
+
 int world_flat_count(const World *world)
 {
     return world ? world->nflat : 0;

@@ -26,6 +26,18 @@ enum {
 
 /* Opened with the player standing on pixel (px, py) of region. 0 when a picture is missing. */
 int travelmap_open(Player *p, int px, int py, int region);
+/* Presentation-only entry for another game adapter: its own money, map
+ * discovery and journey rules. The ordinary GFALL entry keeps its defaults. */
+typedef struct TravelMapRules {
+    unsigned (*gold)(void);
+    int (*known)(int ordinal);
+    void (*plan)(int sx, int sy, int ex, int ey, int reckless, int inns, int ship, Journey *out);
+    void (*question)(const char *place, char *out, int capacity);
+    /* Optional pre-journey confirmation, such as an illness warning. */
+    const char *(*warning)(void);
+} TravelMapRules;
+int travelmap_open_rules(const TravelMapRules *rules, int px, int py, int region);
+void travelmap_options(int *reckless, int *camp, int *ship);
 void travelmap_close(void);
 void travelmap_compose(void);
 const unsigned char *travelmap_pixels(void);
