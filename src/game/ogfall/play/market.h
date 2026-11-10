@@ -41,6 +41,8 @@ int og_market_offer(void);
 int og_market_confirm(int yes);
 /* Why the last answer was refused, a TEXT.RSC id; 0 for none. */
 int og_market_refusal(void);
+/* trade_clear_button: everything unpaid back on the shelves, everything on the counter back in the pack. */
+void og_market_clear(void);
 /* Leave: unpaid items back on the shelves, the counter's back in the pack. */
 void og_market_close(void);
 

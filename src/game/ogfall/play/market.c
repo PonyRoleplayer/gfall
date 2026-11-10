@@ -200,7 +200,7 @@ int og_market_refusal(void)
     return g_refusal;
 }
 
-void og_market_close(void)
+void og_market_clear(void)
 {
     const OgState *s;
     int i;
@@ -209,6 +209,7 @@ void og_market_close(void)
         return;
     }
     s = og_state();
+    g_offered = 0;
     for (i = 0; i < OG_OBJECTS; i++) {
         const OgObject *item;
 
@@ -222,6 +223,14 @@ void og_market_close(void)
             og_inventory_transfer(item->id, og_state()->inventory_id);
         }
     }
+}
+
+void og_market_close(void)
+{
+    if (!g_mode) {
+        return;
+    }
+    og_market_clear();
     g_mode = OG_MARKET_NONE;
     g_offered = 0;
 }

@@ -1734,3 +1734,41 @@ FALL.EXE: `holiday_days` at 0x17CA24 and `holiday_regions` at 0x17CA8E, 53 holid
   (INVE08/10/12 columns), the building's quality, type and the holiday from the town (the seam's
   `travel_building`), the offer box and the haggling are the next part. Nothing here is saved:
   an open shop is a screen, not a state.
+
+
+## Trade: the shop screen (2026-11-10)
+
+Slice 2, fourth part. The inventory as a shop: `og_possessions_trade` (`play/possessions.c`), the seam's
+painting and shelf hook (`apps/ogfall/seam.c`: `paint_inventory`, `shelf_used`, `offer_say`), tested by
+scripted clicks in `check_ogmarket_screen`, which also writes `build/ogfall-shop-basket.ppm` and
+`build/ogfall-shop-offer.ppm`.
+
+Source: `inventory_draw` (`src/hand/func_00092ED8.c`), `inventory_load_images` and `inventory_frame`
+(`src/lifted/inven.c`), and the original's `inv_mode_buttons` table, read out of FALL.EXE at 0x188281
+(five modes of seven rects and handlers).
+
+- **The column.** A shop uses `INVE08I0.IMG` (buy), `INVE10I0` (sell) or `INVE12I0` (repair) over the
+  inventory at the picture's own place, with `INVE09/11/13` for the lit button and `SHOP00I0.IMG` as the
+  cost panel. Its buttons, strictly inside x 226..256: Wagon 14, Info 36, Select 58, Steal 112 (buying
+  only), Buy / Sell / Repair 134, Clear 156, Exit 182 (selling and repair have no Steal, so theirs are
+  one up the column as in the table). The panel shows the base total (not the price) at (77,15) and the
+  gold at (107,15).
+- **Clicks.** Info says what an item is. Select moves it: buying takes a shelf item into the pack unpaid
+  and puts an unpaid one back; selling puts a pack item on the counter and takes one off it. Buy asks the
+  offer: a yes-or-no box with the shopkeeper's words and Accept and Reject (Enter and Escape too); Accept
+  pays, and without the gold shows TEXT.RSC 454. Clear returns the basket or the counter; Exit (or the
+  inventory key) leaves and returns everything unpaid. Steal does nothing yet (slice 7).
+- **The offer's words** are TEXT.RSC 260..265, one variant picked at random, its macros filled in by the
+  dagger reader: `%a` the price, `%cn` the town. `%cpn` (the shop's name, `building_name` in the
+  decomp's names.c) is not built, so a shop is "This shop". The original draws its variant with one
+  `rand()` only when a record has several; this uses the reader's own draw, so the random stream differs.
+- **Shelves in the world.** A shelf usable from the dagger interior (DFU's shelf list; its variant is the
+  model number's last two digits, now carried in the usable's tag) opens a buy session over that shelf's
+  stock, made the first time it is used in a visit and discarded with the visit. Adaptation: the decomp
+  stocks the models whose id is 418, or 410 with a container variant (`interior_stock_shelves`), which is
+  not the dagger's shelf list; the two should be reconciled when interior models are read from the RMB
+  blocks directly. A building's quality and type come from the town (`travel_building`), the price from
+  the region's standing, the holiday from the clock. Opening hours and a closed shop are left to the door.
+- **Not done:** the haggling window; Steal; selling and repair are reachable by the session API but no
+  shopkeeper opens them yet (that is talk, slice 6); a save made inside a shop would leave the shelf
+  containers behind as objects.

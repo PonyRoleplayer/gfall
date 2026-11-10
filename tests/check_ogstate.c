@@ -356,6 +356,7 @@ void check_ogstate(const char *root)
     check_ogshelf();
     og_state_restore(&g_initial);
     check_ogmarket();
+    check_ogmarket_screen();
     og_state_restore(&g_initial);
     check_disk(root);
 }

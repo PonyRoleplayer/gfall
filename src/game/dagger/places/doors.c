@@ -570,6 +570,8 @@ int doors_build(DoorBuild *b)
                 }
                 u->model = i;
                 u->what = OTHER_SHELF;
+                /* The shelf's variant: its model is 41000 + variant (DFU ObjectId2), which the stock lists are chosen by. */
+                u->tag = (int)(b->act[i].id % 100u);
             } else if (is_container(b->act[i].id)) {
                 Usable *c;
 

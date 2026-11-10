@@ -38,6 +38,11 @@
 
 #include "game/dagger/formats/bind.h"
 #include "game/dagger/formats/factionfile.h"
+#include "game/dagger/places/doors.h"
+#include "game/ogfall/play/shelf.h"
+#include "game/dagger/play/words.h"
+#include "game/dagger/places/town.h"
+#include "game/ogfall/tables/holidaydefs.h"
 #include "game/ogfall/play/standing.h"
 #include "game/dagger/formats/arch3d.h"
 #include "game/dagger/formats/bsa.h"
@@ -623,6 +628,98 @@ static int load_factions(void)
     return og_factions_define(g_faction_def, n);
 }
 
+/*
+ * A shop's shelves (people and law, slice 2): a shelf used opens the inventory as a shop over that
+ * shelf's own stock. The stock is made the first time a shelf is used in a visit and gone with the
+ * visit (building_load_interior clears and restocks at each entry); a visit is one level and one
+ * building. The building's type and quality come from the town's blocks (travel_building), the
+ * prices from the region's standing, the holiday from the clock.
+ */
+#define SHELVES_MOST 64
+static df_u32 g_shelf_box[SHELVES_MOST];
+static const Level *g_shelf_level;
+static unsigned g_shelf_place;
+
+static void forget_shelves(void)
+{
+    int i;
+
+    for (i = 0; i < SHELVES_MOST; i++) {
+        if (g_shelf_box[i]) {
+            og_shelf_discard(g_shelf_box[i]);
+            g_shelf_box[i] = 0;
+        }
+    }
+}
+
+/*
+ * The shopkeeper's offer (TEXT.RSC 260..265): one variant picked at random with its macros said by
+ * the dagger reader: %a the price, %cn the town. The shop's own name (%cpn) comes from the
+ * decomp's building_name, not built yet, so the shop is "This shop" for now.
+ */
+#ifndef DF_HOST
+/*
+ * The dagger reader draws its variants with GFALL's dice, which OGFALL does not link: on the
+ * target they come from the session's own stream. (The host build links GFALL's combat, and its
+ * own.)
+ */
+int combat_roll(int n)
+{
+    return n > 0 ? og_random_range(0, n - 1) : 0;
+}
+#endif
+
+static int offer_say(int text, int price, char *out, int cap)
+{
+    Words w;
+
+    mem_zero(&w, sizeof(w));
+    w.amount = price;
+    w.city = town_name();
+    w.place = "This shop";
+    words_use(&w);
+    return words_say(text, out, cap);
+}
+
+static int shelf_used(int index, int variant)
+{
+    OgShop shop;
+    int type, faction, quality, region;
+    unsigned place;
+
+    if (!travel_building(&type, &faction, &quality, &place)) {
+        interact_say("There is nothing here you want.");
+        return 1;
+    }
+    if (g_shelf_level != seam_level() || g_shelf_place != place) {
+        forget_shelves();
+        g_shelf_level = seam_level();
+        g_shelf_place = place;
+    }
+    if (index < 0 || index >= SHELVES_MOST) {
+        return 1;
+    }
+    if (!g_shelf_box[index]) {
+        g_shelf_box[index] = og_object_new(OG_RECORD_CONTAINER, OG_WORLD_ROOT, 0, 1);
+        if (!g_shelf_box[index]) {
+            interact_say("There is no room for another shelf.");
+            return 1;
+        }
+        og_shelf_stock(g_shelf_box[index], variant, quality, type, index);
+    }
+    region = travel_region();
+    shop.region_adjust = og_region_price(region);
+    shop.quality = quality;
+    shop.type = type;
+    shop.holiday = og_holiday_today(og_state()->minutes, region);
+    shop.half = 0;
+    shop.scale = 256;
+    if (!og_possessions_trade(OG_MARKET_BUY, &shop, g_shelf_box[index])) {
+        interact_say("You cannot trade now.");
+    }
+    return 1;
+}
+
 int seam_boot(void)
 {
     ImgPicture raw;
@@ -647,6 +744,8 @@ int seam_boot(void)
     }
     dagger_bind_loaders();
     install_travel();
+    og_activate_set_shelf(OTHER_SHELF, shelf_used);
+    og_possessions_set_offer_words(offer_say);
     install_maps();
     load_classes();
     load_class_questions();
@@ -2566,6 +2665,34 @@ static void paint_item_cell(const OgObject *item, int x, int y)
     }
 }
 
+/* Words filled into lines no wider than width pixels, a word never split; how many lines. */
+static int wrap_words(const char *text, char lines[][96], int most, int width)
+{
+    char test[96];
+    int rows, len, word, i;
+
+    rows = 0;
+    lines[0][0] = 0;
+    while (*text && rows < most) {
+        while (*text == ' ') { text++; }
+        for (word = 0; text[word] && text[word] != ' '; word++) { }
+        len = 0;
+        while (lines[rows][len]) { len++; }
+        for (i = 0; i < len; i++) { test[i] = lines[rows][i]; }
+        if (len) { test[len++] = ' '; }
+        for (i = 0; i < word && len < 94; i++) { test[len++] = text[i]; }
+        test[len] = 0;
+        if (lines[rows][0] && smallfont_width(&g_font,test) > width) {
+            if (++rows >= most) { rows = most - 1; break; }
+            lines[rows][0] = 0;
+            continue;
+        }
+        for (i = 0; i <= len; i++) { lines[rows][i] = test[i]; }
+        text += word;
+    }
+    return lines[rows][0] ? rows + 1 : rows;
+}
+
 static void paint_inventory(void)
 {
     const OgPossessions *view;
@@ -2579,8 +2706,43 @@ static void paint_inventory(void)
     view = og_possessions();
     cover_screen(g_possession_art[0].pixels,g_possession_art[0].width,g_possession_art[0].height);
     copy_art_rect(&g_possession_art[1],tab_x[view->tab],0,tab_w[view->tab],10);
-    copy_art_rect(&g_possession_art[1],226,action_y[view->action],31,14);
+    if (view->trade) {
+        /* inventory_draw: the shop's column (INVE08/10/12), the lit button of the current action, then the doll. */
+        ImgPicture column, lit;
+        static const int lit_top[4] = {0, 0, 0, 0};
+        char file[16];
+        int top, act;
+
+        (void)lit_top;
+        log_format(file,sizeof(file),"INVE%02dI0.IMG",view->trade*2+6);
+        if (img_load(file,&column)) { blit_ix(column.x,column.y,column.pixels,column.width,column.height,0); }
+        log_format(file,sizeof(file),"INVE%02dI0.IMG",view->trade*2+7);
+        /* Info is the second button of every column, Select the third (inv_mode_buttons). */
+        act = view->action == OG_ITEM_INFO ? 36 : 58;
+        if (img_load(file,&lit)) {
+            for (top = act; top <= act+13; top++) {
+                int col;
+                for (col = 226; col <= 256; col++) {
+                    int sx, sy;
+                    sx = col-lit.x; sy = top-lit.y;
+                    if (sx >= 0 && sx < lit.width && sy >= 0 && sy < lit.height) { put_px(col,top,lit.pixels[sy*lit.width+sx]); }
+                }
+            }
+        }
+    } else {
+        copy_art_rect(&g_possession_art[1],226,action_y[view->action],31,14);
+    }
     paint_doll(49,13);
+    if (view->trade) {
+        ImgPicture cost;
+        char total[16];
+
+        if (img_load("SHOP00I0.IMG",&cost)) { blit_ix(cost.x,cost.y,cost.pixels,cost.width,cost.height,0); }
+        log_format(total,sizeof(total),"%d",view->price);
+        text_at(77,15,total);
+        log_format(total,sizeof(total),"%d",og_character()->gold);
+        text_at(107,15,total);
+    }
     for (i = 0; i < 12; i++) {
         item = og_object(og_state()->equipped[i]);
         if (item) { paint_item_icon(item,i%2*23,10+i/2*31,22,21); }
@@ -2618,8 +2780,10 @@ static void paint_inventory(void)
             } }
         }
     }
-    log_format(line,sizeof(line),"%d",og_character()->gold);
-    centered_text(240,151,line,145);
+    if (!view->trade) {
+        log_format(line,sizeof(line),"%d",og_character()->gold);
+        centered_text(240,151,line,145);
+    }
 }
 
 static int skill_in_career(int skill)
@@ -2931,7 +3095,16 @@ static int present_possessions(void)
         paper_box(lines,shown,0,&x,&y,&cols,&rows,&ty);
         lay_paper(x,y,cols,rows); paint_lines(lines,shown,1,x,ty,146);
     }
-    if (view->prompt) {
+    if (view->prompt == OG_PROMPT_OFFER) {
+        /* msgbox_yes_no_rsc: the shopkeeper's words over a box, Accept and Reject under them. */
+        char wrapped[6][96];
+        int rows, k;
+
+        rows = wrap_words(view->offer,wrapped,6,176);
+        fill_box(68,40,184,96,45); outline(68,40,184,96,145);
+        for (k = 0; k < rows; k++) { centered_text(160,48+k*10,wrapped[k],145); }
+        centered_text(117,121,"Accept",145); centered_text(203,121,"Reject",145);
+    } else if (view->prompt) {
         const char *prompt;
         prompt = view->prompt == OG_PROMPT_GOLD ? "How much gold?" : view->prompt == OG_PROMPT_NAME ? "Name thyself" :
                  view->prompt == OG_PROMPT_SPELL_NAME ? "Enter spell name" :

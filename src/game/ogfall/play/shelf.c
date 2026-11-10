@@ -67,3 +67,18 @@ int og_shelf_stock(df_u32 container, int variant, int quality, int building_type
     }
     return made;
 }
+
+void og_shelf_discard(df_u32 container)
+{
+    df_u32 ids[OG_OBJECTS];
+    int n, i;
+
+    if (!og_object(container)) {
+        return;
+    }
+    n = og_inventory_rows(container, -1, ids, OG_OBJECTS);
+    for (i = 0; i < n && i < OG_OBJECTS; i++) {
+        og_object_delete(ids[i]);
+    }
+    og_object_delete(container);
+}

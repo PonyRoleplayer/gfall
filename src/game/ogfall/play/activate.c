@@ -85,6 +85,15 @@ void og_activate_aim(const Camera *camera, int cursor_mode, int cursor_active,
     aim->yaw = df_atan2(dx,dz); aim->pitch = df_atan2(dy,df_sqrt(dx*dx+dz*dz));
 }
 
+static int g_shelf_what = -1;
+static int (*g_shelf_use)(int index, int tag);
+
+void og_activate_set_shelf(int what, int (*use)(int index, int tag))
+{
+    g_shelf_what = what;
+    g_shelf_use = use;
+}
+
 int og_activate(const Scene *scene, const Camera *cam, int mode,
                 int cursor_mode, int cursor_active, int at_centre,
                 int classic_x, int classic_y)
@@ -136,6 +145,11 @@ int og_activate(const Scene *scene, const Camera *cam, int mode,
         const Usable *usable;
         if (og_door_use(scene,hit.usable,mode)) { return 1; }
         usable = &scene->usables[hit.usable];
+        if (usable->kind == USE_OTHER && g_shelf_use && usable->what == g_shelf_what) {
+            if (mode == OG_MODE_GRAB) { return g_shelf_use(hit.usable, usable->tag); }
+            if (mode == OG_MODE_INFO) { interact_say("shelf"); }
+            return 1;
+        }
         if (usable->kind == USE_OTHER && usable->what >= OG_USE_TREASURE && usable->what < OG_USE_TREASURE+22) {
             if (mode == OG_MODE_GRAB) {
                 df_u32 container;

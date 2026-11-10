@@ -314,7 +314,7 @@ OGFALL_HEADERS := $(wildcard src/game/ogfall/*/*.h apps/ogfall/*.h)
 # The app borrows map composition only; GFALL player callbacks are separate.
 OGFALL_MAP_SRC := src/game/dagger/play/canvas.c src/game/dagger/play/ui.c \
 	src/game/dagger/play/travelmap.c src/game/dagger/play/townmap.c \
-	src/game/dagger/play/dunmap.c src/game/dagger/play/marker.c
+	src/game/dagger/play/dunmap.c src/game/dagger/play/marker.c src/game/dagger/play/words.c
 OGFALL_SRC := apps/ogfall/main.c apps/ogfall/seam.c $(OGFALL_GAME_SRC) $(ENGINE_SRC) $(DAGGER_SRC) $(OGFALL_MAP_SRC)
 
 # RENDERFALL shows models alone: the readers they need and no place.

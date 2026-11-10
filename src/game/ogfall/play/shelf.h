@@ -23,4 +23,7 @@ int og_shelf_model(int model_id, int variant);
  */
 int og_shelf_stock(df_u32 container, int variant, int quality, int building_type, int model_index);
 
+/* A shelf's container and every item still on it, gone: what a new visit does to the last one's stock. */
+void og_shelf_discard(df_u32 container);
+
 #endif

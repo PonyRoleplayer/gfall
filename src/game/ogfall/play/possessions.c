@@ -44,6 +44,7 @@ void og_possessions_close(void)
         g.revision++; return;
     }
     g_answer = 0;
+    if (g.page == OG_VIEW_INVENTORY && g.trade) { og_market_close(); g.trade = 0; g.price = 0; g.offer[0] = 0; }
     if (g.page == OG_VIEW_BOOK) { og_book_close(&g_reading); }
     og_state_mode_pop();
     mode = og_state()->mode;
@@ -93,6 +94,16 @@ int og_possessions_open(int page, df_u32 remote)
     return 1;
 }
 
+int og_possessions_trade(int mode, const OgShop *shop, df_u32 shelves)
+{
+    if (g.page || !og_market_open(mode, shop, shelves)) { return 0; }
+    if (!og_possessions_open(OG_VIEW_INVENTORY, shelves)) { og_market_close(); return 0; }
+    g.trade = mode;
+    g.price = 0;
+    g.offer[0] = 0;
+    return 1;
+}
+
 int og_possessions_cast(void)
 {
     if (!og_possessions_open(OG_VIEW_SPELLS,0)) { return 0; }
@@ -125,6 +136,74 @@ static df_u32 ground(void)
             og_state()->z);
     }
     return g.remote;
+}
+
+/* The offer box's words: TEXT.RSC's record with %a, the price, put in (macro_a_price). */
+static int (*g_offer_say)(int text, int price, char *out, int cap);
+
+void og_possessions_set_offer_words(int (*say)(int text, int price, char *out, int cap))
+{
+    g_offer_say = say;
+}
+
+static void offer_words(int text, int price)
+{
+    const char *src;
+    char *to;
+    int n;
+
+    if (g_offer_say && g_offer_say(text, price, g.offer, (int)sizeof(g.offer)) >= 0) {
+        return;
+    }
+    src = og_words(text);
+    to = g.offer;
+    n = 0;
+    while (src && *src && n < (int)sizeof(g.offer) - 12) {
+        if (src[0] == '%' && src[1] == 'a') {
+            n += log_format(to + n, (int)sizeof(g.offer) - n, "%d", price);
+            src += 2;
+        } else {
+            to[n++] = *src++;
+        }
+    }
+    to[n] = 0;
+}
+
+/* The original's trade buttons (inv_mode_buttons[mode]); a click is strictly inside, x 226..256. */
+enum { TB_WAGON, TB_INFO, TB_SELECT, TB_STEAL, TB_ACT, TB_CLEAR, TB_EXIT, TB_NONE };
+static int trade_button(int x, int y)
+{
+    static const int top[7] = {14, 36, 58, 112, 134, 156, 182};
+    static const int id[7] = {TB_WAGON, TB_INFO, TB_SELECT, TB_STEAL, TB_ACT, TB_CLEAR, TB_EXIT};
+    int i;
+
+    if (x <= 226 || x >= 256) { return TB_NONE; }
+    for (i = 0; i < 7; i++) {
+        /* Selling and repair have no Steal; the others follow it up the column unchanged (buttons 3.. of modes 2 and 3 are Act, Clear, Exit). */
+        if (g.trade != OG_MARKET_BUY && id[i] == TB_STEAL) { continue; }
+        if (y > top[i] && y < top[i] + 13) { return id[i]; }
+    }
+    return TB_NONE;
+}
+
+static void trade_click(int x, int y)
+{
+    int b, text;
+
+    b = trade_button(x, y);
+    if (b == TB_EXIT) { og_possessions_close(); return; }
+    if (b == TB_WAGON) { df_copy(g.notice, "You do not have a wagon here.", sizeof(g.notice)); return; }
+    if (b == TB_INFO) { g.action = OG_ITEM_INFO; return; }
+    if (b == TB_SELECT) { g.action = OG_ITEM_EQUIP; return; }
+    if (b == TB_CLEAR) { og_market_clear(); return; }
+    if (b == TB_STEAL) { return; }
+    if (b == TB_ACT) {
+        text = og_market_offer();
+        if (text) {
+            offer_words(text, og_market_quote().price);
+            g.prompt = OG_PROMPT_OFFER;
+        }
+    }
 }
 
 static void item_info(const OgObject *item)
@@ -179,6 +258,20 @@ static void select_item(df_u32 id, int remote)
     const OgObject *item;
     item = og_object(id);
     if (!item) { return; }
+    if (g.trade) {
+        /* A shop: Info says what it is; Select moves it between the shelves or the counter and the pack. */
+        if (g.action == OG_ITEM_INFO) { item_info(item); }
+        else {
+            int moved;
+            if (g.trade == OG_MARKET_BUY) { moved = remote ? og_market_take(id) : og_market_return(id); }
+            else { moved = remote ? og_market_return(id) : og_market_take(id); }
+            if (!moved && remote == (g.trade == OG_MARKET_BUY) && og_inventory_error()[0]) {
+                df_copy(g.notice, og_inventory_error(), sizeof(g.notice));
+            }
+        }
+        g.revision++;
+        return;
+    }
     if (g.action == OG_ITEM_INFO) { item_info(item); }
     else if (g.action == OG_ITEM_USE) { og_possessions_use(id); }
     else if (remote) {
@@ -208,12 +301,16 @@ static void inventory_click(int x, int y)
         g.scroll[0] = g.scroll[1] = 0;
         return;
     }
-    if (inside(x,y,222,178,261,200)) { og_possessions_close(); return; }
-    if (inside(x,y,226,14,257,28)) { df_copy(g.notice, "You do not have a wagon here.", sizeof(g.notice)); return; }
-    for (i = 0; i < 4; i++) {
-        if (inside(x,y,226,button_y[i],257,button_y[i]+14)) { g.action = i; return; }
+    /* A shop re-uses the column for its own buttons (inv_mode_buttons[mode]). */
+    if (g.trade && trade_button(x,y) != TB_NONE) { trade_click(x,y); return; }
+    if (!g.trade) {
+        if (inside(x,y,222,178,261,200)) { og_possessions_close(); return; }
+        if (inside(x,y,226,14,257,28)) { df_copy(g.notice, "You do not have a wagon here.", sizeof(g.notice)); return; }
+        for (i = 0; i < 4; i++) {
+            if (inside(x,y,226,button_y[i],257,button_y[i]+14)) { g.action = i; return; }
+        }
+        if (inside(x,y,226,126,257,140)) { g.prompt = OG_PROMPT_GOLD; g.input[0] = 0; return; }
     }
-    if (inside(x,y,226,126,257,140)) { g.prompt = OG_PROMPT_GOLD; g.input[0] = 0; return; }
     if (x >= 0 && x < 46 && y >= 10) {
         owner = ((y-10)/31)*2 + (x >= 23);
         if (owner < 12 && y < 10+(owner/2)*31+22 && og_state()->equipped[owner]) {
@@ -401,6 +498,13 @@ static void prompt_accept(void)
     int value, i;
     df_u32 id, rows[OG_OBJECTS];
     if (g.prompt == OG_PROMPT_ANSWER) { submit_answer(1); return; }
+    if (g.prompt == OG_PROMPT_OFFER) {
+        /* trade_settle_offer: a yes pays; with no gold the reason is TEXT.RSC 454. */
+        if (!og_market_confirm(1) && og_market_refusal()) { df_copy(g.notice, og_words(og_market_refusal()), sizeof(g.notice)); }
+        g.prompt = 0; g.offer[0] = 0; g.price = 0;
+        g.revision++;
+        return;
+    }
     value = 0;
     for (i = 0; g.input[i] && value < 10000000; i++) { value = value * 10 + g.input[i] - '0'; }
     if (g.prompt == OG_PROMPT_NAME) {
@@ -425,18 +529,23 @@ void og_possessions_frame(const OgIn *in)
 {
     int n, click;
     if (!g.page) { return; }
+    if (g.trade) {
+        /* The cost panel shows trade_total (inventory_draw), the base total, not the price paid: that is in the offer. */
+        n = og_market_quote().total;
+        if (n != g.price && g.prompt != OG_PROMPT_OFFER) { g.price = n; g.revision++; }
+    }
     click = (in->mouse_pressed & (g.page == OG_VIEW_SPELLS ? 3 : 1)) && in->on_picture;
     if (click) { og_sound(g.page == OG_VIEW_SPELLS ? 205 : 203); }
     if (!g.notice[0]) { g.notice_page = 0; }
     if (g.prompt) {
         if (in->ch == 27) {
             if (g.prompt == OG_PROMPT_ANSWER) { submit_answer(0); }
-            else { g.prompt = 0; }
+            else { if (g.prompt == OG_PROMPT_OFFER) { og_market_confirm(0); g.offer[0] = 0; } g.prompt = 0; }
         }
         else if (in->ch == 13 || (click && inside(in->cx,in->cy,84,116,151,134))) { prompt_accept(); }
         else if (click && inside(in->cx,in->cy,169,116,236,134)) {
             if (g.prompt == OG_PROMPT_ANSWER) { submit_answer(0); }
-            else { g.prompt = 0; }
+            else { if (g.prompt == OG_PROMPT_OFFER) { og_market_confirm(0); g.offer[0] = 0; } g.prompt = 0; }
         }
         else {
             for (n = 0; g.input[n]; n++) { }
@@ -444,7 +553,7 @@ void og_possessions_frame(const OgIn *in)
             else if (in->ch >= 32 && in->ch <= 126 && n < (int)sizeof(g.input)-1 &&
                      (g.prompt == OG_PROMPT_NAME || (g.prompt == OG_PROMPT_ANSWER && n < 16) ||
                       (g.prompt == OG_PROMPT_SPELL_NAME && n < 24) ||
-                      (g.prompt != OG_PROMPT_SPELL_NAME && g.prompt != OG_PROMPT_ANSWER && in->ch >= '0' && in->ch <= '9'))) {
+                      (g.prompt != OG_PROMPT_SPELL_NAME && g.prompt != OG_PROMPT_ANSWER && g.prompt != OG_PROMPT_OFFER && in->ch >= '0' && in->ch <= '9'))) {
                 g.input[n] = (char)in->ch; g.input[n+1] = 0;
             }
         }
