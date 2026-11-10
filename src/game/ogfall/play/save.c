@@ -374,6 +374,20 @@ static void transfer(Wire *w, OgState *s)
         }
     }
 
+    /* Banks (slice 3): each region's balance, loan, its due minute and flags, then the house and the ship. */
+    if (w->version >= 9) {
+        OgBankState *b;
+        int k;
+
+        b = &s->bank;
+        for (k = 0; k < OG_REGIONS; k++) {
+            wire_int(w, &b->account[k].balance); wire_int(w, &b->account[k].loan_owed);
+            wire_u32(w, &b->account[k].loan_due); wire_int(w, &b->account[k].flags);
+        }
+        wire_u32(w, &b->house); wire_int(w, &b->house_price);
+        wire_int(w, &b->ship); wire_int(w, &b->ship_price);
+    }
+
     if (w->version >= 7) {
         OgWorldState *world;
         world = &s->world_state;

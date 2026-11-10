@@ -7,9 +7,9 @@
 #include "game/ogfall/play/spellbook.h"
 #include "game/ogfall/play/market.h"
 
-enum { OG_VIEW_NONE, OG_VIEW_INVENTORY, OG_VIEW_SHEET, OG_VIEW_SPELLS, OG_VIEW_BOOK, OG_VIEW_MESSAGE };
+enum { OG_VIEW_NONE, OG_VIEW_INVENTORY, OG_VIEW_SHEET, OG_VIEW_SPELLS, OG_VIEW_BOOK, OG_VIEW_MESSAGE, OG_VIEW_BANK };
 enum { OG_ITEM_INFO, OG_ITEM_EQUIP, OG_ITEM_REMOVE, OG_ITEM_USE };
-enum { OG_PROMPT_NONE, OG_PROMPT_GOLD, OG_PROMPT_NAME, OG_PROMPT_PAGE, OG_PROMPT_SPELL_NAME, OG_PROMPT_ANSWER, OG_PROMPT_OFFER };
+enum { OG_PROMPT_NONE, OG_PROMPT_GOLD, OG_PROMPT_NAME, OG_PROMPT_PAGE, OG_PROMPT_SPELL_NAME, OG_PROMPT_ANSWER, OG_PROMPT_OFFER, OG_PROMPT_AMOUNT, OG_PROMPT_ASK };
 #define OG_NOTICE_LINES 16
 typedef struct OgPossessions {
     int page, underlay, tab, action, scroll[2], selected, skill_group, skill_scroll;
@@ -19,6 +19,8 @@ typedef struct OgPossessions {
     df_u32 remote, book;
     /* A shop session over the inventory (OG_MARKET_*, 0 for none), the total its cost panel shows, and the offer box's words. */
     int trade, price;
+    /* The bank over the world: which region's account, the action an amount or a yes is for, and the amount waiting on the yes. */
+    int bank_region, bank_op, bank_amount;
     char offer[200];
     char notice[2048], input[32];
     unsigned revision;
@@ -32,6 +34,8 @@ int og_possessions_open(int page, df_u32 remote);
  * the right, the shelf's goods for buying or the counter for selling and repair. mode is
  * OG_MARKET_BUY, SELL or REPAIR; shelves a container; shop the building's prices. 0 when refused.
  */
+/* The bank's screen (BANK00I0.IMG) for a region's account; 0 when refused. */
+int og_possessions_bank(int region);
 int og_possessions_trade(int mode, const OgShop *shop, df_u32 shelves);
 /*
  * The offer box's words are one variant of a TEXT.RSC record (text_rsc_load picks one at random) with

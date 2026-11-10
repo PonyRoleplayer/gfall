@@ -256,6 +256,7 @@ OGFALL_GAME_SRC := \
 	src/game/ogfall/tables/tables.c \
 	src/game/ogfall/tables/itemdefs.c \
 	src/game/ogfall/tables/shopdefs.c \
+	src/game/ogfall/tables/datedefs.c \
 	src/game/ogfall/tables/holidaydefs.c \
 	src/game/ogfall/tables/combatdefs.c \
 	src/game/ogfall/tables/doordefs.c \
@@ -268,6 +269,7 @@ OGFALL_GAME_SRC := \
 	src/game/ogfall/play/trade.c \
 	src/game/ogfall/play/shelf.c \
 	src/game/ogfall/play/market.c \
+	src/game/ogfall/play/bank.c \
 	src/game/ogfall/play/inventory.c \
 	src/game/ogfall/play/describe.c \
 	src/game/ogfall/play/spellbook.c \
@@ -400,14 +402,14 @@ build/spintri.iso: build/cdroot/SPINTRI.EXE | deps
 # Only hostcheck links the menu against deterministic input/persistence stand-ins.
 MENU_TEST_SRC := tests/check_menu.c src/game/dagger/play/menu.c src/game/dagger/play/screen.c
 
-build/hostcheck: $(MENU_TEST_SRC) tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_play.c tests/check_ogfall.c tests/check_ogstate.c tests/check_ogstanding.c tests/check_ogtrade.c tests/check_ogshelf.c tests/check_ogmarket.c tests/check_ogui.c tests/check_ogcombat.c tests/check_ogdoors.c tests/check_ogactions.c tests/check_ogprogress.c tests/check_ogsurvival.c tests/check_ogencounter.c tests/check_ogmagic.c tests/check_ogworld.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC) $(OGFALL_HEADERS) | deps-host
+build/hostcheck: $(MENU_TEST_SRC) tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_play.c tests/check_ogfall.c tests/check_ogstate.c tests/check_ogstanding.c tests/check_ogtrade.c tests/check_ogshelf.c tests/check_ogmarket.c tests/check_ogbank.c tests/check_ogui.c tests/check_ogcombat.c tests/check_ogdoors.c tests/check_ogactions.c tests/check_ogprogress.c tests/check_ogsurvival.c tests/check_ogencounter.c tests/check_ogmagic.c tests/check_ogworld.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC) $(OGFALL_HEADERS) | deps-host
 	mkdir -p build
-	$(HOST_CC) $(HOST_CFLAGS) -o $@ $(MENU_TEST_SRC) tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_play.c tests/check_ogfall.c tests/check_ogstate.c tests/check_ogstanding.c tests/check_ogtrade.c tests/check_ogshelf.c tests/check_ogmarket.c tests/check_ogui.c tests/check_ogcombat.c tests/check_ogdoors.c tests/check_ogactions.c tests/check_ogprogress.c tests/check_ogsurvival.c tests/check_ogencounter.c tests/check_ogmagic.c tests/check_ogworld.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC)
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ $(MENU_TEST_SRC) tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_play.c tests/check_ogfall.c tests/check_ogstate.c tests/check_ogstanding.c tests/check_ogtrade.c tests/check_ogshelf.c tests/check_ogmarket.c tests/check_ogbank.c tests/check_ogui.c tests/check_ogcombat.c tests/check_ogdoors.c tests/check_ogactions.c tests/check_ogprogress.c tests/check_ogsurvival.c tests/check_ogencounter.c tests/check_ogmagic.c tests/check_ogworld.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC)
 
 # The ogfall sums and one walk in the hold, without the rest of hostcheck.
-build/ogfall-host: tests/check_ogfall.c tests/check_ogstate.c tests/check_ogstanding.c tests/check_ogtrade.c tests/check_ogshelf.c tests/check_ogmarket.c tests/check_ogui.c tests/check_ogcombat.c tests/check_ogdoors.c tests/check_ogactions.c tests/check_ogprogress.c tests/check_ogsurvival.c tests/check_ogencounter.c tests/check_ogmagic.c tests/check_ogworld.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC) $(OGFALL_HEADERS) | deps-host
+build/ogfall-host: tests/check_ogfall.c tests/check_ogstate.c tests/check_ogstanding.c tests/check_ogtrade.c tests/check_ogshelf.c tests/check_ogmarket.c tests/check_ogbank.c tests/check_ogui.c tests/check_ogcombat.c tests/check_ogdoors.c tests/check_ogactions.c tests/check_ogprogress.c tests/check_ogsurvival.c tests/check_ogencounter.c tests/check_ogmagic.c tests/check_ogworld.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC) $(OGFALL_HEADERS) | deps-host
 	mkdir -p build
-	$(HOST_CC) $(HOST_CFLAGS) -DOGFALL_HOST_MAIN -o $@ tests/check_ogfall.c tests/check_ogstate.c tests/check_ogstanding.c tests/check_ogtrade.c tests/check_ogshelf.c tests/check_ogmarket.c tests/check_ogui.c tests/check_ogcombat.c tests/check_ogdoors.c tests/check_ogactions.c tests/check_ogprogress.c tests/check_ogsurvival.c tests/check_ogencounter.c tests/check_ogmagic.c tests/check_ogworld.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC)
+	$(HOST_CC) $(HOST_CFLAGS) -DOGFALL_HOST_MAIN -o $@ tests/check_ogfall.c tests/check_ogstate.c tests/check_ogstanding.c tests/check_ogtrade.c tests/check_ogshelf.c tests/check_ogmarket.c tests/check_ogbank.c tests/check_ogui.c tests/check_ogcombat.c tests/check_ogdoors.c tests/check_ogactions.c tests/check_ogprogress.c tests/check_ogsurvival.c tests/check_ogencounter.c tests/check_ogmagic.c tests/check_ogworld.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC)
 
 ogfall-host: build/ogfall-host
 	./build/ogfall-host

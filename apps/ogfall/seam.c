@@ -43,6 +43,8 @@
 #include "game/dagger/play/words.h"
 #include "game/dagger/places/town.h"
 #include "game/ogfall/tables/holidaydefs.h"
+#include "game/ogfall/tables/datedefs.h"
+#include "game/ogfall/play/bank.h"
 #include "game/ogfall/play/standing.h"
 #include "game/dagger/formats/arch3d.h"
 #include "game/dagger/formats/bsa.h"
@@ -2693,6 +2695,27 @@ static int wrap_words(const char *text, char lines[][96], int most, int width)
     return lines[rows][0] ? rows + 1 : rows;
 }
 
+/* The bank (bank_draw, src/hand/func_0006BA50.c): BANK00I0.IMG at its place, the balance, the gold carried, and a loan with its date. */
+static void paint_bank(void)
+{
+    ImgPicture window;
+    const OgBankAccount *account;
+    char line[80];
+
+    cover_screen(0,0,0);
+    if (img_load("BANK00I0.IMG",&window)) { blit_ix(window.x,window.y,window.pixels,window.width,window.height,0); }
+    account = &og_bank()->account[og_possessions()->bank_region];
+    log_format(line,sizeof(line),"%d",account->balance); text_at(197,19,line);
+    log_format(line,sizeof(line),"%d",og_gold_total()); text_at(203,29,line);
+    if (account->loan_due) {
+        log_format(line,sizeof(line),"%d",account->loan_owed); text_at(143,39,line);
+        og_date_text(account->loan_due,line,sizeof(line)); text_at(119,49,line);
+    }
+    if (og_possessions()->prompt == OG_PROMPT_AMOUNT) {
+        log_format(line,sizeof(line),"%s_",og_possessions()->input); text_at(157,152,line);
+    }
+}
+
 static void paint_inventory(void)
 {
     const OgPossessions *view;
@@ -3081,6 +3104,7 @@ static int present_possessions(void)
     else if (view->page == OG_VIEW_SHEET) { paint_character_sheet(); }
     else if (view->page == OG_VIEW_SPELLS) { paint_spellbook(); }
     else if (view->page == OG_VIEW_MESSAGE) { cover_screen(0,0,0); }
+    else if (view->page == OG_VIEW_BANK) { paint_bank(); }
     else { paint_readable_book(); }
     if (view->notice[0] && view->painting) { paint_painting(view->painting-1,view->notice); }
     else if (view->notice[0]) {
@@ -3095,7 +3119,7 @@ static int present_possessions(void)
         paper_box(lines,shown,0,&x,&y,&cols,&rows,&ty);
         lay_paper(x,y,cols,rows); paint_lines(lines,shown,1,x,ty,146);
     }
-    if (view->prompt == OG_PROMPT_OFFER) {
+    if (view->prompt == OG_PROMPT_OFFER || view->prompt == OG_PROMPT_ASK) {
         /* msgbox_yes_no_rsc: the shopkeeper's words over a box, Accept and Reject under them. */
         char wrapped[6][96];
         int rows, k;
@@ -3104,7 +3128,7 @@ static int present_possessions(void)
         fill_box(68,40,184,96,45); outline(68,40,184,96,145);
         for (k = 0; k < rows; k++) { centered_text(160,48+k*10,wrapped[k],145); }
         centered_text(117,121,"Accept",145); centered_text(203,121,"Reject",145);
-    } else if (view->prompt) {
+    } else if (view->prompt && view->prompt != OG_PROMPT_AMOUNT) {
         const char *prompt;
         prompt = view->prompt == OG_PROMPT_GOLD ? "How much gold?" : view->prompt == OG_PROMPT_NAME ? "Name thyself" :
                  view->prompt == OG_PROMPT_SPELL_NAME ? "Enter spell name" :
@@ -3117,7 +3141,7 @@ static int present_possessions(void)
     }
     for (i = 0; i < g_panel_file_count; i++) { texture_forget(g_panel_files[i]); }
     mem_heap_use(was); mem_heap_delete(heap);
-    publish_surface(1,(view->page == OG_VIEW_SPELLS && !view->underlay) || view->page == OG_VIEW_MESSAGE);
+    publish_surface(1,(view->page == OG_VIEW_SPELLS && !view->underlay) || view->page == OG_VIEW_MESSAGE || view->page == OG_VIEW_BANK);
     return 1;
 }
 

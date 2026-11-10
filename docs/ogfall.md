@@ -1772,3 +1772,36 @@ Source: `inventory_draw` (`src/hand/func_00092ED8.c`), `inventory_load_images` a
 - **Not done:** the haggling window; Steal; selling and repair are reachable by the session API but no
   shopkeeper opens them yet (that is talk, slice 6); a save made inside a shop would leave the shelf
   containers behind as objects.
+
+
+## The bank (2026-11-10)
+
+People and law, slice 3. Rules in `play/bank.c`, tested in `tests/check_ogbank.c`; the screen is a page of
+the possessions controller (`og_possessions_bank`) painted by the seam (`paint_bank`); the console's
+`bank [region]` opens it until bankers talk. Saves are schema 9 (an account a region, the house and the ship).
+
+Source: `bank_deposit_gold`, `bank_withdraw_gold`, `bank_deposit_letter`, `bank_withdraw_letter_of_credit`,
+`bank_borrow`, `bank_sell_house`, `bank_sell_ship` (`src/lifted/bank.c` 218..410), `bank_repay_loan`
+(`src/hand/func_0006BF30.c`), `bank_draw` (`src/hand/func_0006BA50.c`), `gold_can_carry`
+(`src/lifted/support.c` 900), `macro_dat_date` (`src/lifted/parse.c` 448); the notes are
+`docs/economy-math.md` ("Bank, houses, ships, loans"); the button rectangles (`bank_buttons`, 0x186E24) and
+the date's names (`tables/datedefs.c`, generated) are read out of FALL.EXE.
+
+- **Accounts** are a region's balance, loan owed, due minute and flags. A deposit moves gold 1:1 (454 if the
+  gold is not carried); a withdrawal over the balance asks (290) and takes what there is, then must fit the
+  carry limit (a hundredth of the gold in weight against four times the capacity: "You cannot carry so much
+  gold."). A letter of credit (item group 27, index 2) is at least 100, costs its value and a fee of
+  value / 100 + 1 (293, 292 when short), and depositing every letter asks (291).
+- **Loans:** at least 100, at most 50000 a level (296, 295), one at a time (289), a tenth added at once to
+  what is owed, due in 518400 game minutes; repayment is trimmed to what is owed (294), takes the balance
+  first and then the gold carried, and clears the due day when it reaches nothing. Selling a house or a ship
+  asks (298, 299) and pays the price less 15% into the account.
+- **The screen:** `BANK00I0.IMG` over the world with the balance at (197,19), the gold (coins and letters) at
+  (203,29), a loan's amount at (143,39) and due date at (119,49) ("Turdas the 4th of Morning Star"), the typed
+  amount at (157,152). The buttons are the original's, strictly inside their rectangles. An amount is typed
+  and Enter makes it; a question is the same Accept/Reject box as a shop's offer.
+- **Not built:** buying a house or a ship (their lists come from the town's blocks and the port, with the
+  wider world: for now Buy says there is none, or that one is owned); the world's effects of a loan overdue
+  (`loan_due_penalty`, `loan_collectors_update`, whose notes say they only ever read the first account, and
+  whose collector monster table is extern); a banker to talk to. The 10% is all there is: the decomp has no
+  later interest.

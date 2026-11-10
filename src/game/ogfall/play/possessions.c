@@ -1,4 +1,5 @@
 #include "game/ogfall/play/possessions.h"
+#include "game/ogfall/play/bank.h"
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/describe.h"
 #include "game/ogfall/play/msg.h"
@@ -31,7 +32,7 @@ static int game_mode(int page)
 {
     if (page == OG_VIEW_SHEET) { return OG_GAME_SHEET; }
     if (page == OG_VIEW_INVENTORY) { return OG_GAME_INVENTORY; }
-    if (page == OG_VIEW_BOOK || page == OG_VIEW_MESSAGE) { return OG_GAME_READING; }
+    if (page == OG_VIEW_BOOK || page == OG_VIEW_MESSAGE || page == OG_VIEW_BANK) { return OG_GAME_READING; }
     return OG_GAME_SPELLBOOK;
 }
 
@@ -60,7 +61,7 @@ void og_possessions_close(void)
 
 int og_possessions_open(int page, df_u32 remote)
 {
-    if (!og_state()->ready || page < OG_VIEW_INVENTORY || page > OG_VIEW_MESSAGE) { return 0; }
+    if (!og_state()->ready || page < OG_VIEW_INVENTORY || page > OG_VIEW_BANK) { return 0; }
     if (page == OG_VIEW_SPELLS) {
         df_u32 ids[OG_OBJECTS];
         g.book = og_inventory_book();
@@ -92,6 +93,85 @@ int og_possessions_open(int page, df_u32 remote)
     if (page == OG_VIEW_SPELLS || page == OG_VIEW_BOOK) { og_sound(237); }
     g.revision++;
     return 1;
+}
+
+/* ---- The bank (slice 3): the original's ten buttons (bank_buttons[0..10]), strictly inside their rectangles. ---- */
+enum { BK_DEPOSIT, BK_WITHDRAW, BK_LETTERS, BK_LETTER, BK_REPAY, BK_BORROW, BK_BUY_HOUSE, BK_SELL_HOUSE, BK_BUY_SHIP, BK_SELL_SHIP, BK_EXIT, BK_NONE };
+
+int og_possessions_bank(int region)
+{
+    if (g.page || region < 0 || region >= OG_REGIONS || !og_possessions_open(OG_VIEW_BANK, 0)) { return 0; }
+    g.bank_region = region;
+    g.bank_op = BK_NONE;
+    return 1;
+}
+
+static int bank_button(int x, int y)
+{
+    static const int box[11][4] = {
+        {166,60,216,74},{217,60,268,74},{165,78,216,92},{217,78,268,92},{165,96,216,110},
+        {217,96,268,110},{165,114,216,128},{217,114,268,128},{165,132,216,146},{217,132,268,146},{141,164,179,182}
+    };
+    int i;
+
+    for (i = 0; i < 11; i++) {
+        if (x > box[i][0] && x < box[i][2] && y > box[i][1] && y < box[i][3]) { return i; }
+    }
+    return BK_NONE;
+}
+
+/* A message the bank shows (msgbox_show_rsc): the record, or the original's own line for a purse too heavy. */
+static void bank_say(int text)
+{
+    df_copy(g.notice, text > 0 ? og_words(text) : "You cannot carry so much gold.", sizeof(g.notice));
+    g.notice_page = 0;
+}
+
+/* One bank action; a question becomes the Accept/Reject box, a refusal a message, a trimmed repayment its message too. */
+static void bank_run(int op, int amount, int confirmed)
+{
+    int text, r;
+
+    text = 0;
+    switch (op) {
+    case BK_DEPOSIT: r = og_bank_deposit(g.bank_region, amount, &text); break;
+    case BK_WITHDRAW: r = og_bank_withdraw(g.bank_region, amount, confirmed, &text); break;
+    case BK_LETTERS: r = og_bank_deposit_letters(g.bank_region, confirmed, &text); break;
+    case BK_LETTER: r = og_bank_letter(g.bank_region, amount, &text); break;
+    case BK_REPAY: r = og_bank_repay(g.bank_region, amount, &text); break;
+    case BK_BORROW: r = og_bank_borrow(g.bank_region, amount, &text); break;
+    case BK_SELL_HOUSE: r = og_bank_sell_house(g.bank_region, confirmed, &text); break;
+    case BK_SELL_SHIP: r = og_bank_sell_ship(g.bank_region, confirmed, &text); break;
+    default: return;
+    }
+    if (r == OG_BANK_ASK) {
+        df_copy(g.offer, og_words(text), sizeof(g.offer));
+        g.bank_op = op;
+        g.bank_amount = amount;
+        g.prompt = OG_PROMPT_ASK;
+    } else if (text) { bank_say(text); }
+    g.revision++;
+}
+
+static void bank_click(int x, int y)
+{
+    int b;
+
+    b = bank_button(x, y);
+    if (b == BK_EXIT) { og_possessions_close(); return; }
+    if (b == BK_NONE) { return; }
+    if (b == BK_BUY_HOUSE) {
+        /* Houses for sale are read from a town's blocks, which come with the wider world: none, or one owned. */
+        bank_say(og_bank()->house ? OG_BANK_TEXT_HOUSE_OWNED : OG_BANK_TEXT_NO_HOUSE);
+        return;
+    }
+    if (b == BK_BUY_SHIP) { bank_say(og_bank()->ship ? 284 : 285); return; }
+    if (b == BK_LETTERS || b == BK_SELL_HOUSE || b == BK_SELL_SHIP) { bank_run(b, 0, 0); return; }
+    /* The others take an amount, typed where the original asks (157, 152). */
+    g.bank_op = b;
+    g.prompt = OG_PROMPT_AMOUNT;
+    g.input[0] = 0;
+    g.revision++;
 }
 
 int og_possessions_trade(int mode, const OgShop *shop, df_u32 shelves)
@@ -498,6 +578,19 @@ static void prompt_accept(void)
     int value, i;
     df_u32 id, rows[OG_OBJECTS];
     if (g.prompt == OG_PROMPT_ANSWER) { submit_answer(1); return; }
+    if (g.prompt == OG_PROMPT_AMOUNT) {
+        int amount, k;
+        amount = 0;
+        for (k = 0; g.input[k] && amount < 100000000; k++) { amount = amount * 10 + g.input[k] - '0'; }
+        g.prompt = 0; g.input[0] = 0;
+        bank_run(g.bank_op, amount, 0);
+        return;
+    }
+    if (g.prompt == OG_PROMPT_ASK) {
+        g.prompt = 0; g.offer[0] = 0;
+        bank_run(g.bank_op, g.bank_amount, 1);
+        return;
+    }
     if (g.prompt == OG_PROMPT_OFFER) {
         /* trade_settle_offer: a yes pays; with no gold the reason is TEXT.RSC 454. */
         if (!og_market_confirm(1) && og_market_refusal()) { df_copy(g.notice, og_words(og_market_refusal()), sizeof(g.notice)); }
@@ -540,12 +633,12 @@ void og_possessions_frame(const OgIn *in)
     if (g.prompt) {
         if (in->ch == 27) {
             if (g.prompt == OG_PROMPT_ANSWER) { submit_answer(0); }
-            else { if (g.prompt == OG_PROMPT_OFFER) { og_market_confirm(0); g.offer[0] = 0; } g.prompt = 0; }
+            else { if (g.prompt == OG_PROMPT_OFFER) { og_market_confirm(0); } g.offer[0] = 0; g.prompt = 0; }
         }
         else if (in->ch == 13 || (click && inside(in->cx,in->cy,84,116,151,134))) { prompt_accept(); }
         else if (click && inside(in->cx,in->cy,169,116,236,134)) {
             if (g.prompt == OG_PROMPT_ANSWER) { submit_answer(0); }
-            else { if (g.prompt == OG_PROMPT_OFFER) { og_market_confirm(0); g.offer[0] = 0; } g.prompt = 0; }
+            else { if (g.prompt == OG_PROMPT_OFFER) { og_market_confirm(0); } g.offer[0] = 0; g.prompt = 0; }
         }
         else {
             for (n = 0; g.input[n]; n++) { }
@@ -553,7 +646,7 @@ void og_possessions_frame(const OgIn *in)
             else if (in->ch >= 32 && in->ch <= 126 && n < (int)sizeof(g.input)-1 &&
                      (g.prompt == OG_PROMPT_NAME || (g.prompt == OG_PROMPT_ANSWER && n < 16) ||
                       (g.prompt == OG_PROMPT_SPELL_NAME && n < 24) ||
-                      (g.prompt != OG_PROMPT_SPELL_NAME && g.prompt != OG_PROMPT_ANSWER && g.prompt != OG_PROMPT_OFFER && in->ch >= '0' && in->ch <= '9'))) {
+                      (g.prompt != OG_PROMPT_SPELL_NAME && g.prompt != OG_PROMPT_ANSWER && g.prompt != OG_PROMPT_OFFER && g.prompt != OG_PROMPT_ASK && in->ch >= '0' && in->ch <= '9' && n < 10))) {
                 g.input[n] = (char)in->ch; g.input[n+1] = 0;
             }
         }
@@ -575,6 +668,8 @@ void og_possessions_frame(const OgIn *in)
         if (in->pressed[OG_INVENTORY]) { og_possessions_close(); }
         else if (in->pressed[OG_SHEET]) { og_possessions_close(); og_possessions_open(OG_VIEW_SHEET,0); }
         else if (click) { inventory_click(in->cx,in->cy); }
+    } else if (g.page == OG_VIEW_BANK) {
+        if (click) { bank_click(in->cx,in->cy); }
     } else if (g.page == OG_VIEW_SHEET) {
         if (in->pressed[OG_SHEET]) { og_possessions_close(); }
         else if (in->pressed[OG_INVENTORY] && !og_progress()->active) { og_possessions_close(); og_possessions_open(OG_VIEW_INVENTORY,0); }

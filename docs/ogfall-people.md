@@ -43,7 +43,7 @@ and a short audit section in `ogfall.md`.
 2. **Trade.** (Built 2026-11-10: prices, shelves, the shop session and the buying screen over a shelf; selling and repair wait for talk, and building names for their own step.) The price chain (`trade_region_price`, `trade_base_price`,
    `trade_adjust_price`), shelves and stock, buying, selling, the offer and
    counter-offer dialogue, repair, identification, on OGFALL's inventory screen.
-3. **Bank.** Regional accounts, deposits, withdrawals, loans, repayment and
+3. **Bank.** (Built 2026-11-10: accounts, letters, loans, sales and the screen; buying a house or a ship and the overdue effects wait for the wider world.) Regional accounts, deposits, withdrawals, loans, repayment and
    default, letters of credit, houses and ships, carrying gold.
 4. **Lodging.** Tavern rooms and their expiry, food and drink, and where rest
    is allowed (ties into the existing rest).

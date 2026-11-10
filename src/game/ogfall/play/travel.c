@@ -3,6 +3,7 @@
 #include "game/ogfall/play/progress.h"
 #include "game/ogfall/play/cheats.h"
 #include "game/ogfall/play/msg.h"
+#include "game/ogfall/play/possessions.h"
 #include "engine/core/mem.h"
 #include "engine/core/log.h"
 #include "engine/ui/cmd.h"
@@ -151,8 +152,19 @@ static void where_command(int argc, char **argv)
         og_world_state()->where.kind,og_state()->region,og_state()->location,og_world_state()->px,
         og_world_state()->py,og_world_state()->where.origin_x,og_world_state()->where.origin_z);
 }
+/* bank [region]: the bank of a region's account (the current one without a number), to try the bank before bankers talk. */
+static void bank_command(int argc, char **argv)
+{
+    int region;
+
+    region = og_state()->region;
+    if (argc > 1 && !cmd_parse_int(argv[1], &region)) { log_text(LOG_PRINT, "bank [region 0..61]"); return; }
+    if (!og_state()->ready || !og_possessions_bank(region)) { log_text(LOG_PRINT, "The bank cannot open now."); }
+}
+
 void og_travel_commands(void)
 {
     cmd_add("goto",goto_command,"place | region index","Go to any town, tavern or other map location (no journey cost/time).");
     cmd_add("where",where_command,"","Show the current place and world-map pixel.");
+    cmd_add("bank",bank_command,"[region]","Open a region's bank, to try it before bankers talk.");
 }
