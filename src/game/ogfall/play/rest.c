@@ -1,4 +1,5 @@
 #include "game/ogfall/play/rest.h"
+#include "game/ogfall/play/lodging.h"
 #include "game/ogfall/play/state.h"
 #include "game/ogfall/play/dungeon.h"
 #include "game/ogfall/play/move.h"
@@ -12,6 +13,27 @@ static OgRest g;
 static const Scene *g_scene;
 const OgRest *og_rest(void) { return &g; }
 void og_rest_reset(void) { mem_zero(&g,sizeof(g)); g_scene = 0; }
+
+static int (*g_site)(OgRestSite *out);
+
+void og_rest_set_site(int (*site)(OgRestSite *out))
+{
+    g_site = site;
+}
+
+/* rest_allowed (src/lifted/rest.c 197): 1 when the player may sleep here; else the reason is said and the screen closes. */
+static int may_sleep(void)
+{
+    OgRestSite site;
+    int to_room, why;
+
+    if (!g_site || !g_site(&site)) { return 1; }
+    why = og_rest_allowed(&site, og_state()->minutes, &to_room);
+    if (why == OG_REST_NO_ROOM) { og_msg_set(og_no_room_line()); }
+    else if (why == OG_REST_VAGRANT) { og_msg_set(og_words(17)); }
+    /* Vagrancy and trespass are crime 8 and call the watch: the law slice. Moving to a room needs the building's markers. */
+    return why == OG_REST_OK;
+}
 
 void og_rest_close(void)
 {
@@ -73,6 +95,7 @@ void og_rest_frame(const OgIn *in, const Camera *cam)
     if (g.stage == OG_REST_CHOOSE) {
         if (click && in->cy >= 63 && in->cy <= 86 && in->cx >= 87 && in->cx <= 232) {
             og_sound(203);
+            if (in->cx <= 183 && !may_sleep()) { og_rest_close(); return; }
             if (in->cx <= 134) { g.stage = OG_REST_HOURS; }
             else if (in->cx <= 183) { g.until_healed = 1; g.stage = OG_REST_RUNNING; }
             else { g.loiter = 1; g.stage = OG_REST_HOURS; }
@@ -92,6 +115,14 @@ void og_rest_frame(const OgIn *in, const Camera *cam)
     } else {
         if (click && in->cx >= 140 && in->cx <= 179 && in->cy >= 76 && in->cy <= 85) { og_rest_close(); return; }
         if (og_dungeon_nearby(cam,1024)) { og_msg_set("There are enemies nearby."); og_rest_close(); return; }
+        {
+            /* rest_update: a tavern room whose time has run out wakes the sleeper. */
+            OgRestSite site;
+            if (g_site && g_site(&site) && site.kind == OG_SITE_INSIDE && site.building_type == 15 &&
+                og_room_expired(site.building, og_state()->minutes)) {
+                og_msg_set(og_room_expired_line()); og_rest_close(); return;
+            }
+        }
         g.time += in->dt;
         if (g.time >= (g.loiter ? 1.8f : 0.5f)) {
             g.time = 0; minute = og_state()->minutes; og_state_pass_minutes(60); g.elapsed++;

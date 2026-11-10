@@ -388,6 +388,17 @@ static void transfer(Wire *w, OgState *s)
         wire_int(w, &b->ship); wire_int(w, &b->ship_price);
     }
 
+    /* Lodging (slice 4): the rooms held (building, the minute they run out, the room) and the minute of the last meal. */
+    if (w->version >= 10) {
+        int k;
+
+        for (k = 0; k < OG_ROOMS_MOST; k++) {
+            wire_u32(w, &s->lodging.room[k].building); wire_u32(w, &s->lodging.room[k].expires);
+            wire_int(w, &s->lodging.room[k].room);
+        }
+        wire_u32(w, &s->lodging.last_meal);
+    }
+
     if (w->version >= 7) {
         OgWorldState *world;
         world = &s->world_state;

@@ -722,6 +722,38 @@ static int shelf_used(int index, int variant)
     return 1;
 }
 
+/*
+ * Where the player may sleep (rest_allowed): the dungeon, the wilds, a town's streets (where the watch
+ * minds a sleeper) or inside a building. The outdoor location's kind (a keep, a ruin, a graveyard are no
+ * town and let a sleeper be) is not carried by the dagger's location records, so every town is a town.
+ */
+static const Camera *g_site_camera;
+
+static int rest_site(OgRestSite *site)
+{
+    TravelWhere here;
+    int origin[2], region, index, block, record, type, faction, quality;
+    unsigned place;
+    float x, z;
+
+    mem_zero(site, sizeof(*site));
+    travel_here(&here, origin);
+    if (here.kind == TRAVEL_DUNGEON) {
+        site->kind = OG_SITE_DUNGEON;
+    } else if (here.kind == TRAVEL_INSIDE && travel_building(&type, &faction, &quality, &place)) {
+        site->kind = OG_SITE_INSIDE;
+        site->building_type = type;
+        site->building_faction = faction;
+        site->building = place;
+        site->own_house = og_bank()->house;
+    } else if (g_site_camera && travel_town_here(g_site_camera, &region, &index, &x, &z, &block, &record)) {
+        site->kind = OG_SITE_TOWN;
+    } else {
+        site->kind = OG_SITE_WILD;
+    }
+    return 1;
+}
+
 int seam_boot(void)
 {
     ImgPicture raw;
@@ -747,6 +779,7 @@ int seam_boot(void)
     dagger_bind_loaders();
     install_travel();
     og_activate_set_shelf(OTHER_SHELF, shelf_used);
+    og_rest_set_site(rest_site);
     og_possessions_set_offer_words(offer_say);
     install_maps();
     load_classes();
@@ -3427,6 +3460,7 @@ static int seam_world_art(void)
 int seam_next_world(void) { return travel_next_is_world(); }
 void seam_world_step(Camera *camera, float seconds)
 {
+    g_site_camera = camera;
     float dx, dz;
     if (!g_place_open || !g_level.streamed) { return; }
     travel_update(camera,1,2,seconds,&dx,&dz);

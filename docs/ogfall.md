@@ -1805,3 +1805,34 @@ the date's names (`tables/datedefs.c`, generated) are read out of FALL.EXE.
   (`loan_due_penalty`, `loan_collectors_update`, whose notes say they only ever read the first account, and
   whose collector monster table is extern); a banker to talk to. The 10% is all there is: the decomp has no
   later interest.
+
+
+## Lodging: rooms, meals and where rest is allowed (2026-11-10)
+
+People and law, slice 4. `play/lodging.c`, tested in `tests/check_oglodging.c` against numbers worked by
+hand; saves are schema 10 (rooms held, the last meal). Source: `tavern_room_offer`, `tavern_room_pay`,
+`tavern_rent`, `tavern_extend_room`, `tavern_room_rented`, `tavern_room_days_left`, `tavern_buy_food`,
+`tavern_food_button` (`src/lifted/tavern.c`), `rest_allowed`, `rest_room_expired` (`src/lifted/rest.c`
+197..244) and `rest_update` (`src/hand/func_0007193D.c`); the food list, its prices and the original's own
+lines are read out of FALL.EXE (`tables/lodgingdata.h`, generated).
+
+- **A room** is the building's, rented by the day: 7 gold a day through the buyer's side of the price
+  adjustment alone (no region, base or scale term: a neutral buyer pays 3 a night). A stay across day 46
+  (Heart's Day) loses a night, a single night there is free ("Room is free due to Heart's Day."), a local
+  knight stays free ("The room is free for a knight such as you."), and a room cannot be kept past 350 days
+  (record 16). Paying takes the gold alone (454 when short); asking again adds the days to the room held
+  (`tavern_extend_room`), else it is rented from now. A room's days left are rounded up; past its time it
+  is expired and a sleeper in it is woken with "Your time for this room has expired."
+- **Meals:** eleven, priced 1 to 3 gold, each giving twice its price in health; Sun's Rest (holiday 37)
+  halves the price (at least 1), holiday 1 is free; none within 240 minutes of the last ("You are not
+  hungry.").
+- **Where a bed is allowed** (`og_rest_allowed`): the dungeon and the wilds always; in a town's streets only
+  where its location kind lets a sleeper be (the original refuses sleep as vagrancy otherwise: crime 8, the
+  watch and record 17); inside, a tavern needs a rented room ("You have not rented a room here."), the
+  knights' hall (faction 41) a member, a house the player's own, anything else is trespass (crime 8). The
+  seam fills the place (`rest_site`); the rest screen asks when the first or second button is pressed
+  (`og_rest_set_site`, `may_sleep`), as `rest_update` does, and checks a tavern room's expiry each frame.
+- **Not built:** crime 8 and the watch (the law slice), moving the sleeper to their room's marker (the
+  building's interior markers), the knights' membership, a ship berth, the tavern's menu screen and room
+  dialogue (talk), and an outdoor location's kind: the dagger's location records do not carry it, so every
+  town counts as a town and a keep or a ruin refuses a sleeper that the original lets be.

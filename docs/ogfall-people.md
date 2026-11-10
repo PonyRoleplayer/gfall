@@ -45,7 +45,7 @@ and a short audit section in `ogfall.md`.
    counter-offer dialogue, repair, identification, on OGFALL's inventory screen.
 3. **Bank.** (Built 2026-11-10: accounts, letters, loans, sales and the screen; buying a house or a ship and the overdue effects wait for the wider world.) Regional accounts, deposits, withdrawals, loans, repayment and
    default, letters of credit, houses and ships, carrying gold.
-4. **Lodging.** Tavern rooms and their expiry, food and drink, and where rest
+4. **Lodging.** (Built 2026-11-10: rooms, meals, where rest is allowed; the screens wait for talk, the watch for law.) Tavern rooms and their expiry, food and drink, and where rest
    is allowed (ties into the existing rest).
 5. **Law.** Crimes and their witnesses, guard summoning and behaviour,
    `court_open`, fines, sentences, prison, reputation restore.

@@ -44,6 +44,11 @@ OgBankState *og_bank(void)
     return &g_state.bank;
 }
 
+OgLodging *og_lodging(void)
+{
+    return &g_state.lodging;
+}
+
 void og_skill_use(int skill)
 {
     if (skill >= 0 && skill < OG_SKILLS && g_state.skill_uses[skill] != 0xffffffffu) {
@@ -711,7 +716,7 @@ int og_state_valid(const OgState *snapshot)
         character_valid(snapshot) && clock_and_view_valid(snapshot) && objects_valid(snapshot) &&
         saved_world_valid(snapshot) && encounters_valid(&snapshot->encounters) &&
         og_magic_valid(&snapshot->magic) && og_world_valid(&snapshot->world_state) && magic_references_valid(snapshot) && og_inventory_valid(snapshot) &&
-        (!snapshot->standing.ready || og_standing_valid(&snapshot->standing)) && og_bank_valid(&snapshot->bank);
+        (!snapshot->standing.ready || og_standing_valid(&snapshot->standing)) && og_bank_valid(&snapshot->bank) && og_lodging_valid(&snapshot->lodging);
 }
 
 int og_state_restore(const OgState *snapshot)
