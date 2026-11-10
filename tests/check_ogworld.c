@@ -15,6 +15,9 @@
 #include "game/ogfall/play/law.h"
 #include "game/dagger/places/people.h"
 #include "engine/scene/entity.h"
+#include "game/ogfall/formats/interior.h"
+#include "game/dagger/places/town.h"
+#include "game/dagger/places/travel.h"
 #include "engine/assets/vfs.h"
 #include "engine/platform/fs.h"
 #include "engine/scene/interact.h"
@@ -265,6 +268,32 @@ void check_ogworld(const char *root)
     check_expect(og_travel_count() > 15000 && cmd_run("goto Daggerfall") && og_travel_asked() && change(),
                  "goto resolves an actual town name and opens its streamed street");
     check_expect(og_world_state()->where.kind == OG_PLACE_WORLD && og_state()->region == 17,"Daggerfall arrival updates the persistent region");
+    /* The people inside Daggerfall's buildings, read by OGFALL's own reader: shops have a shopkeeper, houses none. */
+    {
+        int region_t, index_t, block_t, record_t, count, i, k, n, shops, shopkeepers, house_keepers, people_total;
+        float tx, tz;
+        const TownBuilding *rows;
+
+        check_expect(travel_town_here(&g_camera, &region_t, &index_t, &tx, &tz, &block_t, &record_t), "people: not in a town for the interior test");
+        rows = town_buildings(region_t, index_t, &count);
+        shops = shopkeepers = house_keepers = people_total = 0;
+        for (i = 0; rows && i < count; i++) {
+            OgInteriorPerson people[OG_INTERIOR_PEOPLE];
+            const unsigned char *bytes;
+            unsigned size;
+            int has;
+
+            bytes = town_block_bytes(region_t, index_t, rows[i].block, &size);
+            n = og_interior_people(bytes, size, rows[i].record, people, OG_INTERIOR_PEOPLE);
+            people_total += n;
+            has = 0;
+            for (k = 0; k < n; k++) { has |= og_interior_shopkeeper(&people[k]); }
+            if (rows[i].type == 1) { house_keepers += has; }
+            else if (rows[i].type == 0 || rows[i].type == 2 || rows[i].type == 3 || rows[i].type == 13) { shops++; shopkeepers += has; }
+        }
+        printf("interior: %d buildings, %d people, %d of %d shops have a shopkeeper, %d houses\n", count, people_total, shopkeepers, shops, house_keepers);
+        check_expect(people_total > 20 && shops > 5 && shopkeepers * 2 > shops && house_keepers == 0, "people: the block's shopkeepers are not in the shops");
+    }
     /* Slice 8: a person in the view is named in info mode, greets in talk mode, and has a pocket in steal mode. */
     {
         Scene *sc;

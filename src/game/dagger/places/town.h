@@ -41,6 +41,11 @@ const TownBuilding *town_buildings(int region, int index, int *count);
 int town_automap(int region, int index, unsigned char *out, int *w, int *h);
 /* The name of the town last read. */
 const char *town_name(void);
+/*
+ * The bytes of one of the town's blocks (an RMB, copied: they stay until the next call), for a game that reads
+ * what is inside a building itself. 0 when the town or the block does not read, or the block is too big.
+ */
+const unsigned char *town_block_bytes(int region, int index, int block, unsigned *size);
 /* One of them, by what a door's tag names; 0 for none. */
 const TownBuilding *town_building(int region, int index, int block, int record);
 

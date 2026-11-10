@@ -2038,7 +2038,15 @@ Shop shelves, corrected: in the original a shelf (`shelf_open_stock`) opens the 
 free to take, so theft) when it is closed. Record 37, "private property", with its alarm roll, belongs to the furniture in other people's houses
 (models 418 and 410), not to a shop's shelves. Neither the closed shop nor the house furniture is built yet.
 
-Not built: the shopkeeper's flag (the blocks the dagger layer reads do not carry it, so a merchant stands for it), guild halls and temples (`guild_service_dispatch`),
+Not built: guild halls and temples (`guild_service_dispatch`),
 the tavern's panel (`tavern_open`), the quest people, `rumor_pick_news`, the regional search (`talk_find_regional`, so a regional question answers "no one"), the
 copy to the logbook, and the list's horizontal scroll (kept in the state, not painted). Tests: `tests/check_ogtalkwin.c` over a stand-in town, and
 `tests/check_ogworld.c` in Daggerfall's streets (a person met, the window's buttons, the panels), writing `build/ogfall-talk0..2.ppm` and `service0..1.ppm`.
+
+### The shopkeeper's flag
+
+`formats/interior.c` reads a block's inside itself (`og_interior_people`; the decomp's `rmb_add_people` and `block_flat`): a person's picture, faction and
+flag byte. Bit 4 of the block's flag is the record's bit 8, the shopkeeper (`og_interior_shopkeeper`). The dagger layer keeps the picture and faction
+but drops the flags, and OGFALL does not take its reading of a block: the only thing taken from it is the block's bytes (`town_block_bytes`, a copy of
+one RMB). The seam finds the person met among the building's by picture and faction. Checked on Daggerfall: 647 buildings, 682 people, every
+bank, alchemist, armorer and weaponsmith with a shopkeeper, no house with one.

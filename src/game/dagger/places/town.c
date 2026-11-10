@@ -153,3 +153,37 @@ const TownBuilding *town_building(int region, int index, int block, int record)
     }
     return 0;
 }
+
+#define BLOCK_COPY_MOST 131072
+
+const unsigned char *town_block_bytes(int region, int index, int block, unsigned *size)
+{
+    static unsigned char *copy;
+    Bsa *blocks;
+    const BsaRec *rec;
+    const unsigned char *bytes;
+    int count;
+
+    *size = 0;
+    if (!copy) {
+        copy = (unsigned char *)mem_keep(BLOCK_COPY_MOST);
+    }
+    town_buildings(region, index, &count);
+    if (!copy || block < 0 || block >= g_town.nblocks) {
+        return 0;
+    }
+    blocks = bsa_open("BLOCKS.BSA");
+    if (!blocks) {
+        return 0;
+    }
+    rec = bsa_find_name(blocks, g_town.block[block].name);
+    bytes = rec ? bsa_read_scratch(blocks, rec, BSA_SCRATCH_BLOCK) : 0;
+    if (!bytes || rec->size > BLOCK_COPY_MOST) {
+        bsa_close(blocks);
+        return 0;
+    }
+    mem_copy(copy, bytes, rec->size);
+    *size = rec->size;
+    bsa_close(blocks);
+    return copy;
+}

@@ -51,6 +51,7 @@
 #include "game/ogfall/play/names.h"
 #include "game/ogfall/play/talk.h"
 #include "game/ogfall/play/steal.h"
+#include "game/ogfall/formats/interior.h"
 #include "game/ogfall/play/talkwin.h"
 #include "game/dagger/play/character.h"
 #include "game/ogfall/play/standing.h"
@@ -1017,10 +1018,35 @@ static int person_used(const Camera *aim, int mode)
 }
 
 /*
+ * Whether the person met in this building keeps its shop: the block's own people (og_interior_people) carry the flag the
+ * dagger layer drops. The person is found by their picture and faction among those of the building the player stands in.
+ */
+static int interior_shopkeeper(const Camera *cam, int faction, int image)
+{
+    OgInteriorPerson people[OG_INTERIOR_PEOPLE];
+    const unsigned char *bytes;
+    unsigned size;
+    int region, index, block, record, n, i;
+    float x, z;
+
+    if (!travel_town_here(cam, &region, &index, &x, &z, &block, &record) || block < 0) {
+        return 0;
+    }
+    bytes = town_block_bytes(region, index, block, &size);
+    n = og_interior_people(bytes, size, record, people, OG_INTERIOR_PEOPLE);
+    for (i = 0; i < n; i++) {
+        if (people[i].image == image && people[i].faction == faction) {
+            return og_interior_shopkeeper(&people[i]);
+        }
+    }
+    return 0;
+}
+
+/*
  * A person standing in a building (a usable of USE_TALK: their faction and flat). npc_click_service: within a shop or a
- * bank, a shopkeeper offers a panel; anyone else talks. The shopkeeper's flag (person flags & 8) is not in the blocks the
- * dagger layer reads, so a merchant (the social group of shops) stands for it. The armorer, the general store and the
- * bank keep the original's test (the faction number's bit 8 and the flag) as the decomp has it.
+ * bank, a shopkeeper offers a panel; anyone else talks. The shopkeeper's flag (person flags & 8) is read from the block
+ * by OGFALL's own reader (interior_shopkeeper). The armorer and the general store test the faction number's bit 8 where
+ * the others test the flag, as the decomp has it.
  */
 static int talk_used(const Usable *u, int mode, float dist, const Camera *cam)
 {
@@ -1057,10 +1083,10 @@ static int talk_used(const Usable *u, int mode, float dist, const Camera *cam)
         return 1;
     }
     kind = 0;
-    merchant = f && (f->social_group == SOCIAL_MERCHANTS || f->social_group >= SOCIAL_COUNT);
+    merchant = interior_shopkeeper(cam, u->what, u->tag);
     if (travel_building(&type, &faction, &quality, &place)) {
         if (type == 3 && merchant) { kind = OG_SERVICE_BANK; }
-        else if ((type == 2 || type == 9) && merchant && (u->what & 8)) { kind = OG_SERVICE_REPAIR; }
+        else if ((type == 2 || type == 9) && (u->what & 8)) { kind = OG_SERVICE_REPAIR; }
         else if (type == 13 && merchant) { kind = OG_SERVICE_REPAIR; }
         else if ((type == 0 || type == 5 || type == 6 || type == 8 || type == 12) && merchant) { kind = OG_SERVICE_SELL; }
     }

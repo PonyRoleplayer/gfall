@@ -253,6 +253,7 @@ OGFALL_GAME_SRC := \
 	src/game/ogfall/formats/formats.c \
 	src/game/ogfall/formats/book.c \
 	src/game/ogfall/formats/lore.c \
+	src/game/ogfall/formats/interior.c \
 	src/game/ogfall/tables/tables.c \
 	src/game/ogfall/tables/itemdefs.c \
 	src/game/ogfall/tables/shopdefs.c \
