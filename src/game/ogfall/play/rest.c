@@ -22,6 +22,13 @@ void og_rest_set_site(int (*site)(OgRestSite *out))
     g_site = site;
 }
 
+static void (*g_room)(df_u32 building, int tavern);
+
+void og_rest_set_room(void (*go)(df_u32 building, int tavern))
+{
+    g_room = go;
+}
+
 /* rest_allowed (src/lifted/rest.c 197): 1 when the player may sleep here; else the reason is said and the screen closes. */
 static int may_sleep(void)
 {
@@ -32,7 +39,9 @@ static int may_sleep(void)
     why = og_rest_allowed(&site, og_state()->minutes, &to_room);
     if (why == OG_REST_NO_ROOM) { og_msg_set(og_no_room_line()); }
     else if (why == OG_REST_VAGRANT) { og_msg_set(og_words(17)); }
-    /* Vagrancy and trespass are crime 8 (rest_allowed notes it and calls the watch). Moving to a room needs the building's markers. */
+    /* tavern_go_to_room: a rented room, or a knight's hall, puts the player on its bed. */
+    if (to_room && g_room) { g_room(site.building, site.building_type == 15); }
+    /* Vagrancy and trespass are crime 8 (rest_allowed notes it and calls the watch). */
     if (why == OG_REST_VAGRANT || why == OG_REST_TRESPASS) { og_law_note(OG_CRIME_VAGRANCY); og_guards_summon(1); }
     return why == OG_REST_OK;
 }

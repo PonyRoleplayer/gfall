@@ -40,6 +40,11 @@ const Instance *world_instance(const World *world, int index);
 struct ModelAct;
 const struct ModelAct *world_model_action(const World *world, int index, int *block);
 
+/*
+ * The n-th editor marker of an editor record (199's) in the place, in file order, as the level places it: for a game that picks bed markers (record 4) or such. 1 when it exists.
+ */
+int world_marker_nth(const World *world, int record, int n, float *x, float *y, float *z);
+
 int world_flat_count(const World *world);
 int world_editor_count(const World *world);
 const Flat *world_flat(const World *world, int index);

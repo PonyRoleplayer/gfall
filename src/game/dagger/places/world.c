@@ -1851,6 +1851,24 @@ const ModelAct *world_model_action(const World *world, int index, int *block)
     return &world->act[index];
 }
 
+int world_marker_nth(const World *world, int record, int n, float *x, float *y, float *z)
+{
+    int i;
+
+    if (!world || n < 0) {
+        return 0;
+    }
+    for (i = 0; i < world->nmark; i++) {
+        if (world->mark[i].record == record && n-- == 0) {
+            *x = world->mark[i].x;
+            *y = world->mark[i].y;
+            *z = world->mark[i].z;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int world_flat_count(const World *world)
 {
     return world ? world->nflat : 0;

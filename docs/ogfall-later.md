@@ -26,19 +26,19 @@ for now. Each line names where to look.
 - **A promotion's message replaces the guild menu for that click**; the original shows the message and then the menu (`hall_enter`).
 - **Guild healing skips record 350 when attributes are down** (it asks 403 instead); the Mages' magicka restore for a caster is not done, nor the disease/effect cleanup of the player's spell effects (`hall_heal`).
 - **Room offer's offer text** uses days * 7 as the total, not the original's stale `trade_total` (`inn_days`); Heart's Day's free night is in the price but not the total.
-- **The innkeeper's bed marker is not read** (room 0), so a rented room does not send the sleeper to its bed (`inn_room_paid`).
+- **A tavern with no bed marker still rents a room** (the original takes the gold and rents nothing); the beds are the inside's editor markers of record 4, read through `world_marker_nth` (a dagger accessor added for it).
 - **The potion maker's name box always says "Unnamed potion"** (the original shows the recipe being loaded).
 - **Teleport shows the ordinary journey popup**, not TELE00I0's yes/no (`g_teleport` in `seam.c`).
 - **The spell shop's list is seeded with the person's own number**, the original with the high word of their record id; people's ids are ours (`tag * 31 + faction`).
 - **Magic-shop stock is not flagged "not owned" (32)**, so the price scale and "unidentified" bits of those items are not there.
-- **Opening hours do not gate doors** (`og_building_open` is used by shelves only); houses open by day need a daylight flag we do not pass.
+- **Doors keep hours now** (`entry.c`), but the building's own flag 16 and access level are not read from the blocks, a house's "by day" is the clock's 6..18 (`is_daytime` is the sky's), and a door picked is remembered by Lockpicking value in a table that is not saved.
 - **A shut shop's shelf opens as a plain container** with no crime for taking from it (the original may note theft); house furniture's "private property" prompt (record 37) and its alarm roll are not built (`shelf_used`).
 - **Direction words** use GFALL's compass, not `xn_math_angle_to_point`'s bands; the building distance is `longer + half the shorter`, not `xn_math_approx_dist2d` (`talk_say`, `talk_distance_to`).
 - **The list popup's place (x 100..220, from y 26) and the yes/no box's size are guessed** from the other screens, not read from the original's `list_popup_*`.
 - **At most four messages queue** on the message page (`g_queue`); more are dropped.
 - **The talk list's horizontal scroll** is kept in the state but not painted; "Copy to logbook" does nothing.
 - **Spellbook holds 128**; a purchase past it fails silently.
-- **Guild invitations are counted but never delivered** (letters are quests); a Brotherhood kill is counted for a watchman in a dungeon only, not for a pedestrian (`guild_count_crime(6, 5)`), and a lockpicked house door (`archive.c` 269) does not count for the Thieves.
+- **Guild invitations are counted but never delivered** (letters are quests); a Brotherhood kill is counted for a watchman in a dungeon only, not for a pedestrian (`guild_count_crime(6, 5)`), (a picked street door now counts for the Thieves; a dungeon door's pick does not, as in the original).
 - **The Daedra's weather is not passed** (0), so a prince's liking for a weather counts only when he likes any; his quest and his ally are not built.
 - **No weather, `climate_update` or rest after a teleport.**
 

@@ -1290,15 +1290,47 @@ static void hall_donate_answer(int amount)
  * skills and offered; a yes rents it, or adds the days. Food is a list of eleven, refused within 240 minutes of the last meal. The bed marker's number the room
  * would send the sleeper to is not read (room 0).
  */
+/*
+ * The beds of a tavern's inside: the editor markers of record 4 ("kind 2", `(image & 31) - 2`) in file order. A rented room is the number of one of them, drawn at random when the
+ * room is rented (tavern_rent); sleeping there puts the player on that bed (tavern_go_to_room). A knight's hall uses the building's room number, 0 when none was ever rented.
+ */
+static int bed_count(void)
+{
+    float x, y, z;
+    int n;
+
+    for (n = 0; world_marker_nth(g_world, 4, n, &x, &y, &z); n++) {
+    }
+    return n;
+}
+
+static void go_to_bed(df_u32 building, int tavern)
+{
+    float x, y, z;
+    int room, k;
+
+    room = 0;
+    if (tavern) {
+        for (k = 0; k < OG_ROOMS_MOST; k++) {
+            if (og_lodging()->room[k].building == building) { room = og_lodging()->room[k].room; }
+        }
+    }
+    if (world_marker_nth(g_world, 4, room, &x, &y, &z)) {
+        og_move_place(x, y + 64.0f, z, og_state()->yaw);
+    }
+}
+
 static unsigned g_inn_building;
 static OgRoomOffer g_inn_offer;
 
 static void inn_room_paid(int yes)
 {
-    int text;
+    int text, n;
 
     if (!yes) { return; }
-    if (!og_room_take(g_inn_building, &g_inn_offer, 0, og_state()->minutes, &text)) {
+    /* tavern_rent: a bed drawn at random from the building's (rand() % how many). */
+    n = bed_count();
+    if (!og_room_take(g_inn_building, &g_inn_offer, n > 0 ? og_random_range(0, 32767) % n : 0, og_state()->minutes, &text)) {
         if (text) { hall_text(text); }
     }
 }
@@ -1318,7 +1350,7 @@ static void inn_days(int days)
         int text;
 
         og_possessions_message(g_inn_offer.line, 0);
-        og_room_take(g_inn_building, &g_inn_offer, 0, og_state()->minutes, &text);
+        og_room_take(g_inn_building, &g_inn_offer, bed_count() > 0 ? og_random_range(0, 32767) % bed_count() : 0, og_state()->minutes, &text);
         return;
     }
     offer_say(og_trade_offer_text(1, days * OG_ROOM_DAY_PRICE, g_inn_offer.price), g_inn_offer.price, line, (int)sizeof(line));
@@ -1957,6 +1989,7 @@ int seam_boot(void)
     og_standing_set_membership(standing_membership);
     og_names_set_expand(talk_expand);
     og_rest_set_site(rest_site);
+    og_rest_set_room(go_to_bed);
     {
         static const OgGuardWorld world = { guards_present, guards_count, 0, 0, guards_dungeon, 0 };
 

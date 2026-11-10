@@ -19,6 +19,7 @@
 #include "engine/scene/entity.h"
 #include "game/ogfall/formats/interior.h"
 #include "game/dagger/places/town.h"
+#include "game/dagger/places/world.h"
 #include "game/dagger/places/travel.h"
 #include "engine/assets/vfs.h"
 #include "engine/platform/fs.h"
@@ -499,6 +500,12 @@ void check_ogworld(const char *root)
         stream_world(door->cx,door->cz,&bx,&bz);
         check_expect(entered && change() && !seam_level()->streamed && !seam_level()->sky && og_world_state()->where.kind == OG_PLACE_INSIDE,
                      "the tavern entrance opens its interior on a separate place heap");
+        {
+            float mx, my, mz;
+
+            /* The editor markers of the inside are there to be picked: the enter marker (record 8), and beds (record 4) if the building has them. */
+            check_expect(entered && world_marker_nth(travel_whole_world(), 8, 0, &mx, &my, &mz), "tavern: the inside's enter marker is not read from the place");
+        }
         door = passage(2); check_expect(door && og_travel_passage(door) && change(),"the interior exit returns to the streamed world");
         stream_world(g_camera.x,g_camera.z,&ax,&az);
         check_expect(ax-bx < 200 && ax-bx > -200 && az-bz < 200 && az-bz > -200,"leaving a building lands beside the same world door");

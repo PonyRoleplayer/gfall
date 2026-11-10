@@ -2191,3 +2191,8 @@ Tests: `tests/check_ogmagicitem.c`.
   try for each Lockpicking value (kept by building, not saved); a pick counts for the Thieves (`guild_count_crime(5, 1)`), and is a crime of attempted breaking (1, the watch called) when someone saw (`og_guards_witnesses`)
   or a roll of 1..300 is under 100 less Stealth. The building's own flag 16 and access level are not read from the blocks (0).
 - The Thieves' pick count that was missing from `docs/ogfall-later.md` is now wired; so are the hours for doors. The witnesses hook is the street people's (see the town guards).
+
+### Tavern beds
+
+A tavern's inside has beds: editor markers of record 4 (`world_marker_nth`, a small accessor in the dagger layer over the place's kept markers, in file order). Renting a room draws a bed at random (`rand() % how many`, `tavern_rent`) and keeps its
+number as the room; sleeping in a rented room, or in a knight's hall (room 0 unless one was rented), puts the player on that bed first (`og_rest_set_room`, `tavern_go_to_room`), a floor point with the eye 64 above it.
