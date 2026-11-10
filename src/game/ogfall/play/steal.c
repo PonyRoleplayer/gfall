@@ -1,6 +1,7 @@
 #include "game/ogfall/play/steal.h"
 #include "game/ogfall/play/state.h"
 #include "game/ogfall/play/law.h"
+#include "game/ogfall/play/guild.h"
 #include "engine/core/mem.h"
 #include "engine/core/log.h"
 #include "game/ogfall/tables/stealdata.h"
@@ -47,6 +48,8 @@ int og_steal_pocket(int creature, int victim_level, OgSteal *out)
     log_format(line, (int)sizeof(line), g_steal_gold, out->gold);
     out->line = line;
     out->ok = 1;
+    /* A pocket that paid is counted by the Thieves Guild (guild_count_crime(5, 1)); an empty one is not. */
+    og_guild_count_crime(5, 1, og_state()->minutes);
     return 1;
 }
 

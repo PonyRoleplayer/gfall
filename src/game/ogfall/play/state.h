@@ -7,6 +7,7 @@
 #include "game/ogfall/play/bank.h"
 #include "game/ogfall/play/lodging.h"
 #include "game/ogfall/play/law.h"
+#include "game/ogfall/play/guild.h"
 #include "engine/core/df.h"
 #include "game/ogfall/tables/tables.h"
 #include "game/ogfall/play/move.h"
@@ -17,7 +18,7 @@
 #include "game/ogfall/play/worldstate.h"
 #include "engine/scene/keep.h"
 
-#define OG_STATE_VERSION 11
+#define OG_STATE_VERSION 12
 #define OG_STATE5_WIRE_BYTES 348
 #define OG_WORLD_ROWS 512
 #define OG_THUMB_W 80
@@ -113,6 +114,7 @@ typedef struct OgState {
     OgBankState bank;
     OgLodging lodging;
     OgLaw law;
+    OgGuilds guilds;
 } OgState;
 
 OgCharacter *og_character(void);

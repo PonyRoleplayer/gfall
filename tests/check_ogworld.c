@@ -70,6 +70,18 @@ static void click_at(int x, int y)
     og_possessions_frame(&in);
 }
 
+static int g_asked, g_number;
+static void ask_done(int yes) { g_asked = yes; }
+static void number_done(int amount) { g_number = amount; }
+static void type_char(int ch)
+{
+    OgIn in;
+
+    memset(&in, 0, sizeof(in));
+    in.ch = ch;
+    og_possessions_frame(&in);
+}
+
 static void click_talk(const short *button)
 {
     click_at((button[0] + button[2]) / 2, (button[1] + button[3]) / 2);
@@ -341,6 +353,26 @@ void check_ogworld(const char *root)
             talk_shot("service1");
             click_at(160, 87);
             check_expect(og_possessions()->page == OG_VIEW_NONE, "people: Exit did not close the bank's panel");
+            /* A guild hall's menu: Join is shut to a member; Exit leaves. A yes or no and a number go to their callbacks. */
+            check_expect(og_possessions_guild(1, "Training") && og_possessions()->service == OG_SERVICE_GUILD, "people: the hall's menu did not open");
+            talk_shot("guild0");
+            click_at(160, 55);
+            check_expect(og_possessions()->page == OG_VIEW_SERVICE, "people: a member could press Join");
+            click_at(160, 87);
+            check_expect(og_possessions()->page == OG_VIEW_NONE, "people: Exit did not close the hall's menu");
+            g_asked = -1;
+            check_expect(og_possessions_ask("Join the guild?", ask_done) && og_possessions()->prompt == OG_PROMPT_ASK, "people: the question did not open");
+            talk_shot("guild1");
+            click_at(117, 125);
+            check_expect(g_asked == 1 && og_possessions()->page == OG_VIEW_NONE, "people: Yes did not reach its callback and close");
+            check_expect(og_possessions_ask("Join the guild?", ask_done), "people: the question did not open again");
+            click_at(203, 125);
+            check_expect(g_asked == 0 && og_possessions()->page == OG_VIEW_NONE, "people: No did not reach its callback and close");
+            g_number = -1;
+            check_expect(og_possessions_number("How much?", number_done) && og_possessions()->prompt == OG_PROMPT_NUMBER, "people: the number did not open");
+            type_char('1'); type_char('2'); type_char('x'); type_char('5');
+            type_char(13);
+            check_expect(g_number == 125 && og_possessions()->page == OG_VIEW_NONE, "people: the number typed was not 125 with digits only");
             (void)line;
         }
     }

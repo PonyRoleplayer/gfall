@@ -7,6 +7,7 @@
 #include "check_ogtalk.h"
 #include "check_ogsteal.h"
 #include "check_ognames.h"
+#include "check_ogguild.h"
 #include "check_ogtalkwin.h"
 #include "game/ogfall/play/standing.h"
 #include "check_util.h"
@@ -191,7 +192,7 @@ static void check_legacy_save(const df_u8 *current, df_u32 size)
     int row, spell_count, version, record_bytes;
     df_u32 spells[OG_OBJECTS];
     /* Standing, from schema 8, sits between the magic rows and the world: ready, a count, a pair a faction and a pair a region. */
-    df_u32 stand = 8u + (og_state()->standing.ready ? (df_u32)og_faction_count()*8u + OG_REGIONS*8u : 0u) + (OG_REGIONS*16u + 16u) + (OG_ROOMS_MOST*12u + 4u) + (4u + OG_REGIONS*4u);
+    df_u32 stand = 8u + (og_state()->standing.ready ? (df_u32)og_faction_count()*8u + OG_REGIONS*8u : 0u) + (OG_REGIONS*16u + 16u) + (OG_ROOMS_MOST*12u + 4u) + (4u + OG_REGIONS*4u) + (OG_MEMBERSHIPS*24u + 16u);
     check_expect(size > 24u+1272u+256u*124u && df_ru32(current+24+1272) == OG_WORLD_ROOT,
                  "fixture locates the documented original object section");
     if (size <= 24u+1272u+256u*124u) { return; }
@@ -268,6 +269,16 @@ static void check_disk(const char *root)
     og_faction_change_reputation(og_faction_def(5)->id, 7);
     og_region_add_legal(17, -4);
     og_standing()->price[17] = 1230;
+    /* A membership, a crime count and an invitation go through it too (slice 9). */
+    {
+        OgGuildStep joined;
+
+        og_guilds_clear();
+        og_guild_join(2, 41, 777u, &joined);
+        og_guild_find_faction(41)->rank = 3;
+        og_guilds()->thieves_count = 5;
+        og_guilds()->brotherhood_invite = 99999u;
+    }
     g_saved = *og_state();
     check_expect(og_save_write(1), "write an OGFALL session");
     check_expect(fs_exists("ogfall\\saves\\S0001.SAV"), "saves live in ogfall/saves");
@@ -277,6 +288,8 @@ static void check_disk(const char *root)
     check_expect(og_save_read(1), "load after clearing the live session");
     check_expect(memcmp(&g_saved, og_state(), sizeof(g_saved)) == 0,
                  "every serialized field survives a disk round trip");
+    check_expect(og_guild_find_faction(41) && og_guild_find_faction(41)->rank == 3 && og_guilds()->thieves_count == 5 && og_guilds()->brotherhood_invite == 99999u,
+                 "guilds: a membership and the counts survive a save");
     check_expect(og_options_flags() == 3 && og_options_mouse() == 1, "saved control and HUD settings are live after loading");
     check_expect(og_faction_rep(og_faction_def(5)->id) >= 7 && og_region_legal(17) == -4 && og_region_price(17) == 1230,
                  "standing: reputation, legal standing and prices survive a save");
@@ -378,6 +391,7 @@ void check_ogstate(const char *root)
     check_ogtalk();
     check_ogsteal();
     check_ognames();
+    check_ogguild();
     check_ogtalkwin();
     og_state_restore(&g_initial);
     og_state_restore(&g_initial);

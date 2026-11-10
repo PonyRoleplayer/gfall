@@ -2050,3 +2050,33 @@ flag byte. Bit 4 of the block's flag is the record's bit 8, the shopkeeper (`og_
 but drops the flags, and OGFALL does not take its reading of a block: the only thing taken from it is the block's bytes (`town_block_bytes`, a copy of
 one RMB). The seam finds the person met among the building's by picture and faction. Checked on Daggerfall: 647 buildings, 682 people, every
 bank, alchemist, armorer and weaponsmith with a shopkeeper, no house with one.
+
+## People and law, slice 9: guilds
+
+`play/guild.c` is the membership model (schema 12: `OgGuilds`, eight memberships, the Thieves' and the Brotherhood's crime counts and invitations) and its rules,
+from `guild_join_or_promote`, `guild_join_check`, `guild_rank_for_skills`, `guild_count_crime`, `guild_check_invitations` and `guild_kind_of_faction`; the messages, the skills that
+rank each guild and the steps come from FALL.EXE (`tables/guilddata.h`).
+
+- A guild has a kind: 0 the Dark Brotherhood, 1 the Mages, 2 the Fighters, 3 the Thieves, 64 | k an order (68..77), 128 | k a temple (142..149); the table has 22 guilds (kind & 63).
+  An empty slot is `used == 0`, since a cleared state would otherwise be a Brotherhood member (kind 0).
+- Joining wants the hall's reputation not negative (record 1 of the guild if it is), the best of its skills at 22 and the next at 4 (record 0), and then asks (record 2); the yes
+  makes a rank-0 member and says the first rank's line. A knight cannot join a second order, nor a temple member a second temple.
+- The rank is the lesser of a tenth of the hall's reputation, the step the best skill reaches (22, 30, 38 .. 94) and the step the next best reaches (4, 8 .. 40), at most 9. It is
+  looked at on each visit, at most once in 28 days: up is the next rank's line, a negative reputation is expulsion (record 668, the membership gone, the guild's count back to nothing).
+- The Thieves count a pocket that paid (wired in `steal.c`), the Brotherhood a kill (the kill is not wired); at 6 and 15 an invitation falls due three days on, taken outdoors
+  (`og_guild_invitation`; delivering the letter is not built).
+- Memberships feed the rest: the talk rules get the factions the player belongs to and a local temple's rank, the court the ranks that free a Brotherhood or Thieves member from a crime,
+  a local knight rests free in an order's rooms, and the standing rules find the player's temple (`og_standing_set_membership`).
+
+The hall (`hall_enter` in the seam): npc_click_service sends the Thieves' and the Brotherhood's people to their guild when the player is a member (a Brotherhood stranger only
+talks) and every person of a guild hall (type 11) or temple (14) to the menu. The menu is `GILD00I0.IMG` for a stranger and `GILD01I0.IMG` for a member, with Join (shut to a member), Talk,
+the person's service label (159,71) and Exit. `og_guild_service` is the original's gating by guild, the person's own faction and the rank: the rank refusal (record 3100),
+"reserved for members only", the temple's healing (from a rank each, Akatosh and Zenithar always), the Mages' restore of a caster's magicka, a stranger's training, donation, blessing,
+cure and quest. Built: Talk, a donation (a number, a chance of one point of the hall's reputation, records 702 and 703), the Fighters' repairs at a member's price, the Thieves' fence
+(a sale at half). Everything else answers "That service is not built yet." A promotion's message is shown in place of the menu (the original shows it, then the menu).
+
+Two small controls came with it: a yes or no over the world (`og_possessions_ask`) and a typed number (`og_possessions_number`), both on the message page.
+
+Not built: training, buying and making potions, soul gems, spells and magic items, the Daedra, teleporting, blessings, cures, the temples' quests, the knights' armour and house,
+the Brotherhood's and Thieves' invitation letters, the guild healing's attribute restore and disease cleanup, and the rank-4 knights' effects beyond rooms. Tests: `tests/check_ogguild.c`
+(the rules, through a save in `check_ogstate.c`) and the menu, the yes or no and the number in `tests/check_ogworld.c`, writing `build/ogfall-guild0..1.ppm`.

@@ -410,6 +410,21 @@ static void transfer(Wire *w, OgState *s)
         }
     }
 
+    /* Guilds (slice 9): the memberships (kind, rank, faction, the minute of the rank, the armour received), the crime counts and the invitations. */
+    if (w->version >= 12) {
+        int k;
+
+        for (k = 0; k < OG_MEMBERSHIPS; k++) {
+            OgMembership *m;
+
+            m = &s->guilds.m[k];
+            wire_int(w, &m->used); wire_int(w, &m->kind); wire_int(w, &m->rank); wire_int(w, &m->faction);
+            wire_u32(w, &m->rank_time); wire_u32(w, &m->armor);
+        }
+        wire_int(w, &s->guilds.thieves_count); wire_int(w, &s->guilds.brotherhood_count);
+        wire_u32(w, &s->guilds.thieves_invite); wire_u32(w, &s->guilds.brotherhood_invite);
+    }
+
     if (w->version >= 7) {
         OgWorldState *world;
         world = &s->world_state;

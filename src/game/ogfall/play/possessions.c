@@ -104,6 +104,17 @@ static void (*g_court_release)(int where);
 static OgCourtStep g_step;
 static OgCourtGuilds g_guilds = { -1, -1 };
 
+/* The guilds' ranks as the court reads them (crime_free_by_guild): -1 for a guild the player is not in. */
+static void court_guilds(void)
+{
+    OgMembership *m;
+
+    m = og_guild_find_kind(0);
+    g_guilds.brotherhood_rank = m ? m->rank : -1;
+    m = og_guild_find_kind(3);
+    g_guilds.thieves_rank = m ? m->rank : -1;
+}
+
 void og_possessions_set_court(int (*say)(int text, const OgCourt *court, char *out, int cap), void (*release)(int where))
 {
     g_court_say = say;
@@ -188,6 +199,7 @@ static void court_answer(int yes)
     switch (g.court_stage) {
     case CS_SURRENDER:
         if (!yes) { g.court_stage = CS_NONE; og_possessions_close(); return; }
+        court_guilds();
         if (og_law_guards_or_court(1, og_state()->region, &g_guilds, &g.court, &step) == OG_ARREST_DEATH) {
             g.court_stage = CS_NONE; og_possessions_close(); og_player_slain(); return;
         }
@@ -222,6 +234,7 @@ int og_possessions_arrested(void)
     if (g.page && g.page != OG_VIEW_COURT) { return 0; }
     if (!g.page && !og_possessions_open(OG_VIEW_COURT, 0)) { return 0; }
     mem_zero(&g.court, sizeof(g.court));
+    court_guilds();
     if (og_law_guards_or_court(0, og_state()->region, &g_guilds, &g.court, &step) == OG_ARREST_DEATH) {
         og_possessions_close(); og_player_slain(); return 1;
     }
@@ -317,9 +330,17 @@ void og_possessions_set_service(void (*act)(int what)) { g_service_act = act; }
 
 int og_possessions_service(int kind)
 {
-    if (g.page || kind < OG_SERVICE_REPAIR || kind > OG_SERVICE_SELL || !og_possessions_open(OG_VIEW_SERVICE, 0)) { return 0; }
+    if (g.page || kind < OG_SERVICE_REPAIR || kind > OG_SERVICE_GUILD || !og_possessions_open(OG_VIEW_SERVICE, 0)) { return 0; }
     g_service_kind = kind;
     g.service = kind;
+    return 1;
+}
+
+int og_possessions_guild(int member, const char *label)
+{
+    if (!og_possessions_service(OG_SERVICE_GUILD)) { return 0; }
+    g.service_member = member;
+    df_copy(g.service_label, label ? label : "", sizeof(g.service_label));
     return 1;
 }
 
@@ -330,6 +351,11 @@ static int service_button(int x, int y)
         if (inside(x,y,99,51,220,59)) { return OG_SERVICE_REPAIR_ITEM; }
         if (inside(x,y,99,60,220,68)) { return OG_SERVICE_TALK; }
         if (inside(x,y,99,69,220,77)) { return OG_SERVICE_SELL_ITEMS; }
+    } else if (g_service_kind == OG_SERVICE_GUILD) {
+        /* guild_menu_buttons: Join (a member cannot), Talk, the service, Exit. */
+        if (inside(x,y,99,51,220,59) && !g.service_member) { return OG_SERVICE_JOIN; }
+        if (inside(x,y,99,60,220,68)) { return OG_SERVICE_TALK; }
+        if (inside(x,y,99,69,220,77)) { return OG_SERVICE_DO; }
     } else {
         if (inside(x,y,99,50,220,68)) { return OG_SERVICE_TALK; }
         if (inside(x,y,99,69,220,77)) { return OG_SERVICE_DO; }
@@ -360,8 +386,30 @@ int og_possessions_cast(void)
     g.casting = 1; return 1;
 }
 
+static void (*g_ask_cb)(int yes);
+static void (*g_number_cb)(int amount);
+
+int og_possessions_ask(const char *words, void (*answer)(int yes))
+{
+    if (!words || !*words || !answer || g.page || !og_possessions_open(OG_VIEW_MESSAGE,0)) { return 0; }
+    df_copy(g.offer,words,sizeof(g.offer));
+    df_copy(g.yes,"Yes",sizeof(g.yes)); df_copy(g.no,"No",sizeof(g.no));
+    g.prompt = OG_PROMPT_ASK; g_ask_cb = answer; g.revision++;
+    return 1;
+}
+
+int og_possessions_number(const char *words, void (*answer)(int amount))
+{
+    if (!words || !*words || !answer || g.page || !og_possessions_open(OG_VIEW_MESSAGE,0)) { return 0; }
+    df_copy(g.offer,words,sizeof(g.offer)); g.input[0] = 0;
+    g.prompt = OG_PROMPT_NUMBER; g_number_cb = answer; g.revision++;
+    return 1;
+}
+
 int og_possessions_message(const char *text, void (*answer)(const char *))
 {
+    /* A message said while another is up (an answer's own line) takes its place. */
+    if (text && *text && g.page == OG_VIEW_MESSAGE && !g.prompt) { df_copy(g.notice,text,sizeof(g.notice)); g.notice_page = 0; g.revision++; return 1; }
     if (!text || !*text || g.page || !og_possessions_open(OG_VIEW_MESSAGE,0)) { return 0; }
     df_copy(g.notice,text,sizeof(g.notice)); g_answer = answer;
     if (answer) { g.prompt = OG_PROMPT_ANSWER; }
@@ -772,8 +820,27 @@ static void prompt_accept(void)
         bank_run(g.bank_op, amount, 0);
         return;
     }
+    if (g.prompt == OG_PROMPT_NUMBER) {
+        int amount, k;
+        void (*cb)(int);
+
+        amount = 0;
+        for (k = 0; g.input[k] && amount < 100000000; k++) { amount = amount * 10 + g.input[k] - '0'; }
+        cb = g_number_cb; g_number_cb = 0;
+        g.prompt = 0; g.offer[0] = 0; g.input[0] = 0;
+        if (cb) { cb(amount); }
+        return;
+    }
     if (g.prompt == OG_PROMPT_ASK) {
         if (g.page == OG_VIEW_COURT) { court_answer(1); return; }
+        if (g.page == OG_VIEW_MESSAGE && g_ask_cb) {
+            void (*cb)(int);
+
+            cb = g_ask_cb; g_ask_cb = 0;
+            g.prompt = 0; g.offer[0] = 0;
+            cb(1);
+            return;
+        }
         g.prompt = 0; g.offer[0] = 0;
         bank_run(g.bank_op, g.bank_amount, 1);
         return;
@@ -805,6 +872,24 @@ static void prompt_accept(void)
     g.prompt = 0; g.input[0] = 0;
 }
 
+/* The no, Escape, or the Reject button: whatever is asked is answered no. */
+static void prompt_reject(void)
+{
+    if (g.prompt == OG_PROMPT_ANSWER) { submit_answer(0); return; }
+    if (g.prompt == OG_PROMPT_OFFER) { og_market_confirm(0); }
+    if (g.prompt == OG_PROMPT_ASK && g.page == OG_VIEW_COURT) { court_answer(0); return; }
+    if (g.prompt == OG_PROMPT_ASK && g.page == OG_VIEW_MESSAGE && g_ask_cb) {
+        void (*cb)(int);
+
+        cb = g_ask_cb; g_ask_cb = 0;
+        g.offer[0] = 0; g.prompt = 0;
+        cb(0);
+        return;
+    }
+    if (g.prompt == OG_PROMPT_NUMBER) { g_number_cb = 0; }
+    g.offer[0] = 0; g.prompt = 0;
+}
+
 void og_possessions_frame(const OgIn *in)
 {
     int n, click;
@@ -818,15 +903,9 @@ void og_possessions_frame(const OgIn *in)
     if (click) { og_sound(g.page == OG_VIEW_SPELLS ? 205 : 203); }
     if (!g.notice[0]) { g.notice_page = 0; }
     if (g.prompt) {
-        if (in->ch == 27) {
-            if (g.prompt == OG_PROMPT_ANSWER) { submit_answer(0); }
-            else { if (g.prompt == OG_PROMPT_OFFER) { og_market_confirm(0); } if (g.prompt == OG_PROMPT_ASK && g.page == OG_VIEW_COURT) { court_answer(0); } else { g.offer[0] = 0; g.prompt = 0; } }
-        }
+        if (in->ch == 27) { prompt_reject(); }
         else if (in->ch == 13 || (click && inside(in->cx,in->cy,84,116,151,134))) { prompt_accept(); }
-        else if (click && inside(in->cx,in->cy,169,116,236,134)) {
-            if (g.prompt == OG_PROMPT_ANSWER) { submit_answer(0); }
-            else { if (g.prompt == OG_PROMPT_OFFER) { og_market_confirm(0); } if (g.prompt == OG_PROMPT_ASK && g.page == OG_VIEW_COURT) { court_answer(0); } else { g.offer[0] = 0; g.prompt = 0; } }
-        }
+        else if (click && inside(in->cx,in->cy,169,116,236,134)) { prompt_reject(); }
         else {
             for (n = 0; g.input[n]; n++) { }
             if (in->ch == 8 && n) { g.input[n-1] = 0; }

@@ -11,7 +11,7 @@
 
 enum { OG_VIEW_NONE, OG_VIEW_INVENTORY, OG_VIEW_SHEET, OG_VIEW_SPELLS, OG_VIEW_BOOK, OG_VIEW_MESSAGE, OG_VIEW_BANK, OG_VIEW_COURT, OG_VIEW_TALK, OG_VIEW_SERVICE };
 enum { OG_ITEM_INFO, OG_ITEM_EQUIP, OG_ITEM_REMOVE, OG_ITEM_USE };
-enum { OG_PROMPT_NONE, OG_PROMPT_GOLD, OG_PROMPT_NAME, OG_PROMPT_PAGE, OG_PROMPT_SPELL_NAME, OG_PROMPT_ANSWER, OG_PROMPT_OFFER, OG_PROMPT_AMOUNT, OG_PROMPT_ASK };
+enum { OG_PROMPT_NONE, OG_PROMPT_GOLD, OG_PROMPT_NAME, OG_PROMPT_PAGE, OG_PROMPT_SPELL_NAME, OG_PROMPT_ANSWER, OG_PROMPT_OFFER, OG_PROMPT_AMOUNT, OG_PROMPT_ASK, OG_PROMPT_NUMBER };
 #define OG_NOTICE_LINES 16
 typedef struct OgPossessions {
     int page, underlay, tab, action, scroll[2], selected, skill_group, skill_scroll;
@@ -24,7 +24,8 @@ typedef struct OgPossessions {
     /* The bank over the world: which region's account, the action an amount or a yes is for, and the amount waiting on the yes. */
     int bank_region, bank_op, bank_amount;
     /* The shopkeeper's panel (OG_SERVICE_*) when page is OG_VIEW_SERVICE. */
-    int service;
+    int service, service_member;
+    char service_label[40];
     /* The court over the world: the case, which question is up (OG_COURT_*), the records waiting to be shown, and the answers' words. */
     OgCourt court;
     int court_stage, court_texts[3], court_text_at;
@@ -67,9 +68,15 @@ int og_possessions_talk(const OgTalkWho *who, const OgTalkPlayer *player, int wi
  * buttons. OG_SERVICE_REPAIR is REPR01I0 (Repair item, Talk, Sell, Exit); the other two are GNRC01I0 (Talk, the service row,
  * Exit) with the service's word, "Banking" or "Sell". What each button does is the game's: the actions below.
  */
-enum { OG_SERVICE_REPAIR = 1, OG_SERVICE_BANK, OG_SERVICE_SELL };
-enum { OG_SERVICE_TALK, OG_SERVICE_DO, OG_SERVICE_REPAIR_ITEM, OG_SERVICE_SELL_ITEMS };
+enum { OG_SERVICE_REPAIR = 1, OG_SERVICE_BANK, OG_SERVICE_SELL, OG_SERVICE_GUILD };
+enum { OG_SERVICE_TALK, OG_SERVICE_DO, OG_SERVICE_REPAIR_ITEM, OG_SERVICE_SELL_ITEMS, OG_SERVICE_JOIN };
 int og_possessions_service(int kind);
+/* A guild hall's menu (guild_menu, GILD0xI0.IMG): Join (not for a member), Talk, the service row carrying label, Exit. */
+int og_possessions_guild(int member, const char *label);
+/* A yes or no over the world (msgbox_yes_no_rsc): the words, and the answer (1 yes, 0 no or Escape) given to the callback. 0 when something else is open. */
+int og_possessions_ask(const char *words, void (*answer)(int yes));
+/* A number typed (msgbox_prompt_number): the words over the box, the amount (digits only) given to the callback, 0 for Escape. */
+int og_possessions_number(const char *words, void (*answer)(int amount));
 void og_possessions_set_service(void (*act)(int what));
 int og_possessions_trade(int mode, const OgShop *shop, df_u32 shelves);
 /*

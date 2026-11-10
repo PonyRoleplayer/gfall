@@ -4,6 +4,7 @@
 #include "game/ogfall/play/steal.h"
 #include "game/ogfall/play/market.h"
 #include "game/ogfall/play/law.h"
+#include "game/ogfall/play/guild.h"
 #include "game/ogfall/play/state.h"
 #include "game/ogfall/play/inventory.h"
 
@@ -15,6 +16,7 @@ void check_ogsteal(void)
     int i, ok, nothing, gold, before, worked, failed;
 
     /* A pocket at Pickpocket 100 is held to 95%: about one try in twenty is seen. Of the rest a third have nothing, else 1 to 5 gold. */
+    og_guilds_clear();
     og_character()->skill[OG_SKILL_PICKPOCKET] = 100;
     og_character()->gold = 0;
     og_law()->crime = 0;
@@ -26,6 +28,7 @@ void check_ogsteal(void)
         else { ok = ok && r.gold >= 1 && r.gold <= 5 && og_character()->gold == before + r.gold && !strncmp(r.line, "You pinched", 11); }
     }
     check_expect(ok, "steal: a pocket's gold was out of range or not the line's");
+    check_expect(og_guilds()->thieves_invite != 0 || og_guilds()->thieves_count == 100, "steal: paid pockets were not counted by the Thieves Guild");
     check_expect(failed > 5 && failed < 70 && nothing > 120 && nothing < 280, "steal: skill 100 should be held to 95%, a third of the pockets empty");
 
     /* At skill 0 the chance is 5%: nearly every try is seen, noting pickpocketing and spoiling the person (a creature wakes instead). */

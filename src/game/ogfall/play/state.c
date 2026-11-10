@@ -44,6 +44,11 @@ OgBankState *og_bank(void)
     return &g_state.bank;
 }
 
+OgGuilds *og_guilds(void)
+{
+    return &g_state.guilds;
+}
+
 OgLodging *og_lodging(void)
 {
     return &g_state.lodging;
@@ -725,7 +730,7 @@ int og_state_valid(const OgState *snapshot)
         character_valid(snapshot) && clock_and_view_valid(snapshot) && objects_valid(snapshot) &&
         saved_world_valid(snapshot) && encounters_valid(&snapshot->encounters) &&
         og_magic_valid(&snapshot->magic) && og_world_valid(&snapshot->world_state) && magic_references_valid(snapshot) && og_inventory_valid(snapshot) &&
-        (!snapshot->standing.ready || og_standing_valid(&snapshot->standing)) && og_bank_valid(&snapshot->bank) && og_lodging_valid(&snapshot->lodging) && og_law_valid(&snapshot->law);
+        (!snapshot->standing.ready || og_standing_valid(&snapshot->standing)) && og_bank_valid(&snapshot->bank) && og_lodging_valid(&snapshot->lodging) && og_law_valid(&snapshot->law) && og_guilds_valid(&snapshot->guilds);
 }
 
 int og_state_restore(const OgState *snapshot)

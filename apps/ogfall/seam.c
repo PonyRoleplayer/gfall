@@ -51,6 +51,7 @@
 #include "game/ogfall/play/names.h"
 #include "game/ogfall/play/talk.h"
 #include "game/ogfall/play/steal.h"
+#include "game/ogfall/play/guild.h"
 #include "game/ogfall/formats/interior.h"
 #include "game/ogfall/play/talkwin.h"
 #include "game/dagger/play/character.h"
@@ -921,7 +922,7 @@ static void start_talk(void)
     OgTalkWho target;
     OgTalkPlayer player;
     OgTalkWinWorld world;
-    static const int none[1] = { 0 };
+    static int members[OG_MEMBERSHIPS];
     static char line[400];
     TravelWhere here;
     const Faction *province;
@@ -932,9 +933,15 @@ static void start_talk(void)
     target.npc = g_met.who;
     target.faction = g_met.faction;
     target.person = 1;
-    player.members = none;
+    /* The factions the player belongs to, and the rank held in a local temple (guild_local_temple_rank). */
     player.member_count = 0;
-    player.temple_rank = 0;
+    for (index = 0; index < OG_MEMBERSHIPS; index++) {
+        if (og_guilds()->m[index].used) {
+            members[player.member_count++] = og_guilds()->m[index].faction;
+        }
+    }
+    player.members = members;
+    player.temple_rank = og_guild_local_temple_rank(travel_region());
     /* Where the talk is: the town the player stands in (for the places asked after) and the region's name. */
     g_talk_cam = g_met.cam;
     g_talk_in_town = travel_town_here(&g_talk_cam, &region, &index, &x, &z, &block, &record);
@@ -1048,6 +1055,9 @@ static int interior_shopkeeper(const Camera *cam, int faction, int image)
  * by OGFALL's own reader (interior_shopkeeper). The armorer and the general store test the faction number's bit 8 where
  * the others test the flag, as the decomp has it.
  */
+static void hall_enter(int person_faction, int hall_faction);
+static int hall_member(int kind);
+
 static int talk_used(const Usable *u, int mode, float dist, const Camera *cam)
 {
     const OgFactionDef *f;
@@ -1085,6 +1095,14 @@ static int talk_used(const Usable *u, int mode, float dist, const Camera *cam)
     kind = 0;
     merchant = interior_shopkeeper(cam, u->what, u->tag);
     if (travel_building(&type, &faction, &quality, &place)) {
+        /* npc_click_service: the Thieves' and the Brotherhood's people serve their members, a stranger of the Brotherhood only talks, halls and temples have their menu. */
+        int parent;
+
+        parent = f ? f->parent : 0;
+        if ((u->what == 42 || parent == 42) && hall_member(3)) { hall_enter(u->what, faction); return 1; }
+        if ((u->what == 108 || parent == 108) && hall_member(0)) { hall_enter(u->what, faction); return 1; }
+        if (u->what == 108 || parent == 108) { start_talk(); return 1; }
+        if (type == 11 || type == 14) { hall_enter(u->what, faction); return 1; }
         if (type == 3 && merchant) { kind = OG_SERVICE_BANK; }
         else if ((type == 2 || type == 9) && (u->what & 8)) { kind = OG_SERVICE_REPAIR; }
         else if (type == 13 && merchant) { kind = OG_SERVICE_REPAIR; }
@@ -1118,10 +1136,31 @@ static int shop_here(OgShop *shop)
     return 1;
 }
 
+static int hall_member(int kind)
+{
+    return og_guild_find_kind(kind) != 0;
+}
+
+/* guild_find_membership_by_bits for the standing rules: the faction of the temple or order the player belongs to, 0 for none. */
+static int standing_membership(int bits)
+{
+    OgMembership *m;
+
+    m = og_guild_find_bits(bits);
+    return m ? m->faction : 0;
+}
+
 /* What each button of a panel does (repair_menu_talk, repair_menu_sell, shop_open_repair, bank_open, service_menu_sell). */
+static void hall_act(int what);
+
 static void service_act(int what)
 {
     OgShop shop;
+
+    if (og_possessions()->service == OG_SERVICE_GUILD) {
+        hall_act(what);
+        return;
+    }
 
     if (what == OG_SERVICE_TALK) {
         start_talk();
@@ -1143,6 +1182,158 @@ static void service_act(int what)
     }
     og_possessions_trade(what == OG_SERVICE_REPAIR_ITEM ? OG_MARKET_REPAIR : OG_MARKET_SELL, &shop, g_counter);
 }
+
+/*
+ * Guild halls and temples (people and law, slice 9): guild_service_dispatch (src/hand/run_0006DC35.c 191..949). The hall's person offers the
+ * menu (GILD0xI0.IMG: Join, Talk, their service, Exit); the service by the guild, the person and the player's rank is guild.c's gating. The
+ * services built are a donation (a temple), the Fighters' repairs and the Thieves' fence; the rest answer that they are not built yet.
+ * A promotion's message is shown in place of the menu (the original shows it, then the menu: one page at a time here).
+ */
+static struct { int kind, faction, person; } g_hall;
+
+static void hall_text(int text)
+{
+    static char line[600];
+
+    person_say_text(text, line, (int)sizeof(line));
+    og_possessions_message(line, 0);
+}
+
+/* The yes of the offer to join: the membership, and the first rank's words. */
+static void hall_join_answer(int yes)
+{
+    OgGuildStep step;
+
+    if (yes && og_guild_join(g_hall.kind, g_hall.faction, og_state()->minutes, &step)) {
+        hall_text(step.text);
+    }
+}
+
+/* guild_donate's number: money spent, a chance of the hall's reputation going up by one (amount * 2 against the standing). */
+static void hall_donate_answer(int amount)
+{
+    int rep;
+
+    if (amount < 1) {
+        return;
+    }
+    if (!og_gold_can_afford(amount)) {
+        hall_text(702);
+        return;
+    }
+    og_gold_spend(amount);
+    rep = og_faction_rep(g_hall.faction);
+    if (og_random_range(1, 100) <= amount * 2 / ((rep < 0 ? -rep : rep) + 1)) {
+        og_faction_add_reputation(g_hall.faction, 1);
+    }
+    hall_text(703);
+}
+
+/* guild_heal: health to the most; the first record is shown. (The attributes put back and the diseases cleared are not built.) */
+static void hall_heal(void)
+{
+    og_character()->health = og_character()->max_health;
+}
+
+static void hall_service(void)
+{
+    OgMembership *m;
+    OgShop shop;
+    int service, heal, rank;
+
+    m = og_guild_find_faction(g_hall.faction);
+    rank = m ? m->rank : -1;
+    service = og_guild_service(g_hall.kind, g_hall.person, rank, &heal);
+    if (heal) {
+        hall_heal();
+    }
+    switch (service) {
+    case OG_SVC_TALK:
+        start_talk();
+        break;
+    case OG_SVC_MEMBERS_ONLY:
+        og_possessions_message("My services are reserved for members only.", 0);
+        break;
+    case OG_SVC_RANK_REFUSED:
+        hall_text(OG_TEXT_RANK_REFUSED);
+        break;
+    case OG_SVC_NONE:
+        break;
+    case OG_SVC_DONATE:
+        {
+            static char words[200];
+
+            person_say_text(1000, words, (int)sizeof(words));
+            og_possessions_number(words, hall_donate_answer);
+        }
+        break;
+    case OG_SVC_REPAIRS:
+    case OG_SVC_FENCE:
+        if (shop_here(&shop)) {
+            /* The Fighters mend at a member's price ((10 - rank) / 10); the Thieves buy at half. */
+            shop.scale = service == OG_SVC_REPAIRS ? og_guild_price_scale(rank) : 128;
+            if (!og_object(g_counter)) {
+                g_counter = og_object_new(OG_RECORD_CONTAINER, OG_WORLD_ROOT, 0, 1);
+            }
+            if (g_counter) {
+                og_possessions_trade(service == OG_SVC_REPAIRS ? OG_MARKET_REPAIR : OG_MARKET_SELL, &shop, g_counter);
+            }
+        }
+        break;
+    default:
+        og_possessions_message("That service is not built yet.", 0);
+        break;
+    }
+}
+
+static void hall_act(int what)
+{
+    OgGuildStep step;
+    static char line[600];
+
+    if (what == OG_SERVICE_TALK) {
+        start_talk();
+    } else if (what == OG_SERVICE_JOIN) {
+        if (og_guild_offer(g_hall.kind, g_hall.faction, og_faction_rep(g_hall.faction), &step)) {
+            person_say_text(step.text, line, (int)sizeof(line));
+            if (step.ask) {
+                og_possessions_ask(line, hall_join_answer);
+            } else {
+                og_possessions_message(line, 0);
+            }
+        }
+    } else if (what == OG_SERVICE_DO) {
+        hall_service();
+    }
+}
+
+/* npc_click_service's call into the hall: promotion first, then the menu if the person has a service, else they talk. */
+static void hall_enter(int person_faction, int hall_faction)
+{
+    OgGuildStep step;
+    OgMembership *m;
+    const char *label;
+
+    g_hall.faction = hall_faction;
+    g_hall.kind = og_guild_kind_of_faction(hall_faction);
+    g_hall.person = person_faction;
+    if (g_hall.kind < 0) {
+        start_talk();
+        return;
+    }
+    if (og_guild_promote(g_hall.kind, hall_faction, og_faction_rep(hall_faction), og_state()->minutes, &step) && step.text) {
+        hall_text(step.text);
+        return;
+    }
+    label = og_guild_service_label(person_faction);
+    if (!label) {
+        start_talk();
+        return;
+    }
+    m = og_guild_find_faction(hall_faction);
+    og_possessions_guild(m != 0, label);
+}
+
 
 static int shelf_used(int index, int variant)
 {
@@ -1207,6 +1398,7 @@ static int rest_site(OgRestSite *site)
         site->building_faction = faction;
         site->building = place;
         site->own_house = og_bank()->house;
+        site->knight_member = og_guild_is_local_knight(travel_region());
     } else if (g_site_camera && travel_town_here(g_site_camera, &region, &index, &x, &z, &block, &record)) {
         site->kind = OG_SITE_TOWN;
     } else {
@@ -1288,6 +1480,7 @@ int seam_boot(void)
     og_activate_set_person(person_used);
     og_activate_set_talk_use(talk_used);
     og_possessions_set_service(service_act);
+    og_standing_set_membership(standing_membership);
     og_names_set_expand(talk_expand);
     og_rest_set_site(rest_site);
     {
@@ -3721,10 +3914,12 @@ static void paint_service(void)
 
     view = og_possessions();
     cover_screen(0, 0, 0);
-    if (img_load(view->service == OG_SERVICE_REPAIR ? "REPR01I0.IMG" : "GNRC01I0.IMG", &panel)) {
+    if (img_load(view->service == OG_SERVICE_REPAIR ? "REPR01I0.IMG" : view->service == OG_SERVICE_GUILD ? og_guild_picture(view->service_member) : "GNRC01I0.IMG", &panel)) {
         blit_ix(panel.x, panel.y, panel.pixels, panel.width, panel.height, 0);
     }
-    if (view->service != OG_SERVICE_REPAIR) {
+    if (view->service == OG_SERVICE_GUILD) {
+        centered_text(159, 71, view->service_label, 145);
+    } else if (view->service != OG_SERVICE_REPAIR) {
         centered_text(159, 70, view->service == OG_SERVICE_BANK ? "Banking" : "Sell", 145);
     }
 }
@@ -3782,13 +3977,13 @@ static int present_possessions(void)
         if (court) { fill_box(48,8,224,126,45); outline(48,8,224,126,145); }
         else { fill_box(68,40,184,96,45); outline(68,40,184,96,145); }
         for (k = 0; k < rows; k++) { centered_text(160,(court ? 14 : 48)+k*10,wrapped[k],145); }
-        centered_text(117,121,view->page == OG_VIEW_COURT ? view->yes : "Accept",145);
-        centered_text(203,121,view->page == OG_VIEW_COURT ? view->no : "Reject",145);
+        centered_text(117,121,(view->page == OG_VIEW_COURT || view->page == OG_VIEW_MESSAGE) ? view->yes : "Accept",145);
+        centered_text(203,121,(view->page == OG_VIEW_COURT || view->page == OG_VIEW_MESSAGE) ? view->no : "Reject",145);
     } else if (view->prompt && view->prompt != OG_PROMPT_AMOUNT) {
         const char *prompt;
         prompt = view->prompt == OG_PROMPT_GOLD ? "How much gold?" : view->prompt == OG_PROMPT_NAME ? "Name thyself" :
                  view->prompt == OG_PROMPT_SPELL_NAME ? "Enter spell name" :
-                 view->prompt == OG_PROMPT_ANSWER ? "Your answer:" :
+                 view->prompt == OG_PROMPT_ANSWER ? "Your answer:" : view->prompt == OG_PROMPT_NUMBER ? view->offer :
                  "Enter new page:";
         fill_box(68,65,184,75,45); outline(68,65,184,75,145);
         centered_text(160,75,prompt,145);
