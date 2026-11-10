@@ -34,6 +34,7 @@ typedef struct CTri {
 static CTri g_set[COLLIDE_SET];
 static int g_nset;
 static int g_dropped;
+static int g_quiet;
 
 static float g_rx = 16.0f;
 static float g_ry = 36.0f;
@@ -376,6 +377,12 @@ static void gather_model(const Instance *in, const float *wc, const float *we)
     }
 }
 
+/* A long sight ray's box is far wider than the set: what it leaves out is expected, and not worth a log line a frame. */
+void collide_quiet(int on)
+{
+    g_quiet = on;
+}
+
 int collide_gather(float minx, float miny, float minz,
                    float maxx, float maxy, float maxz)
 {
@@ -419,7 +426,7 @@ int collide_gather(float minx, float miny, float minz,
                 gather_model(&g_scene->models[i], wc, we);
             }
         }
-        if (g_dropped > 0) {
+        if (g_dropped > 0 && !g_quiet) {
             log_print(LOG_WARN, "collide: %d triangles past the %d the set holds were left out",
                       g_dropped, COLLIDE_SET);
         }
@@ -449,7 +456,7 @@ int collide_gather(float minx, float miny, float minz,
             }
         }
     }
-    if (g_dropped > 0) {
+    if (g_dropped > 0 && !g_quiet) {
         log_print(LOG_WARN, "collide: %d triangles past the %d the set holds were left out",
                   g_dropped, COLLIDE_SET);
     }

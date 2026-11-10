@@ -271,8 +271,10 @@ static int wall_distance(const Scene *scene, const float *from, const float *dir
     int k;
     if (!scene || !collide_use(scene)) { return 0; }
     for (k = 0; k < 3; k++) { to[k] = from[k]+dir[k]*length; }
+    collide_quiet(1);
     collide_gather(minimum(from[0],to[0])-1,minimum(from[1],to[1])-1,minimum(from[2],to[2])-1,
                    maximum(from[0],to[0])+1,maximum(from[1],to[1])+1,maximum(from[2],to[2])+1);
+    collide_quiet(0);
     return collide_ray(from,dir,length,hit);
 }
 

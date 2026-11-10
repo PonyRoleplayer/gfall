@@ -61,6 +61,8 @@ void collide_set_shape(float rx, float ry);
  */
 int collide_gather(float minx, float miny, float minz,
                    float maxx, float maxy, float maxz);
+/* While on, a gather that overflows the set says nothing (for the wide boxes of sight rays). */
+void collide_quiet(int on);
 
 /*
  * Move the body's centre (world) by v, sliding along what it meets.
