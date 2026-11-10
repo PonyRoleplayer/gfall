@@ -13,6 +13,7 @@
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/hud.h"
 #include "game/ogfall/play/law.h"
+#include "game/ogfall/play/potion.h"
 #include "game/dagger/places/people.h"
 #include "engine/scene/entity.h"
 #include "game/ogfall/formats/interior.h"
@@ -378,6 +379,25 @@ void check_ogworld(const char *root)
             type_char('1'); type_char('2'); type_char('x'); type_char('5');
             type_char(13);
             check_expect(g_number == 125 && og_possessions()->page == OG_VIEW_NONE, "people: the number typed was not 125 with digits only");
+            /* The potion maker: Healing's four ingredients clicked into the cauldron, Mix, and a bottle of Healing in the pack. */
+            {
+                int group[8], index[8], n2, k2, bottles;
+
+                n2 = og_potion_ingredients(2, group, index, 8);
+                for (k2 = 0; k2 < n2; k2++) { og_item_create(og_state()->inventory_id, group[k2], index[k2], -1); }
+                check_expect(og_possessions_potion() && og_possessions()->page == OG_VIEW_POTION, "people: the potion maker did not open");
+                talk_shot("potion0");
+                for (k2 = 0; k2 < n2; k2++) { click_at(28, 42); }
+                check_expect(og_cauldron_count() == n2, "people: the ingredients did not go into the cauldron by clicks");
+                talk_shot("potion1");
+                click_at(190, 48);
+                bottles = 0;
+                for (k2 = 0; k2 < OG_OBJECTS; k2++) { if (og_state()->object[k2].id && og_potion_of(og_state()->object[k2].id) == 2) { bottles++; } }
+                check_expect(bottles >= 1 && og_possessions()->notice[0] != 0, "people: Mix did not make a bottle of Healing and say so");
+                click_at(160, 100);
+                click_at(298, 190);
+                check_expect(og_possessions()->page == OG_VIEW_NONE, "people: Exit did not close the potion maker");
+            }
             /* A Fighters' trainer: a member sees the menu, the service asks the price, lists the skills and teaches one, three hours pass. */
             {
                 OgGuildStep joined;

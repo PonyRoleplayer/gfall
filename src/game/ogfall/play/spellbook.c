@@ -36,6 +36,20 @@ int og_spell_register(const df_u8 *record, int id)
     return 1;
 }
 
+int og_spell_replace(const df_u8 *record, int id)
+{
+    int i;
+
+    for (i = 0; i < g_count; i++) {
+        if (g_spell[i].id == id) {
+            parse_spell(record, &g_spell[i]);
+            g_spell[i].id = id;
+            return 1;
+        }
+    }
+    return og_spell_register(record, id);
+}
+
 void og_spells_load(void)
 {
     const df_u8 *bytes;

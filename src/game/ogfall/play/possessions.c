@@ -39,7 +39,7 @@ static int game_mode(int page)
 {
     if (page == OG_VIEW_SHEET) { return OG_GAME_SHEET; }
     if (page == OG_VIEW_INVENTORY) { return OG_GAME_INVENTORY; }
-    if (page == OG_VIEW_BOOK || page == OG_VIEW_MESSAGE || page == OG_VIEW_BANK || page == OG_VIEW_COURT || page == OG_VIEW_TALK || page == OG_VIEW_SERVICE) { return OG_GAME_READING; }
+    if (page == OG_VIEW_BOOK || page == OG_VIEW_MESSAGE || page == OG_VIEW_BANK || page == OG_VIEW_COURT || page == OG_VIEW_TALK || page == OG_VIEW_SERVICE || page == OG_VIEW_POTION) { return OG_GAME_READING; }
     return OG_GAME_SPELLBOOK;
 }
 
@@ -70,7 +70,7 @@ void og_possessions_close(void)
 
 int og_possessions_open(int page, df_u32 remote)
 {
-    if (!og_state()->ready || page < OG_VIEW_INVENTORY || page > OG_VIEW_SERVICE) { return 0; }
+    if (!og_state()->ready || page < OG_VIEW_INVENTORY || page > OG_VIEW_POTION) { return 0; }
     if (page == OG_VIEW_SPELLS) {
         df_u32 ids[OG_OBJECTS];
         g.book = og_inventory_book();
@@ -376,6 +376,98 @@ static int service_button(int x, int y)
     return inside(x,y,139,80,181,94) ? -1 : -2;
 }
 
+/* ---- The potion maker (potionmaker_update, MASK00I0.IMG) ---- */
+
+int og_possessions_potion(void)
+{
+    df_u32 ids[512];
+
+    if (g.page) { return 0; }
+    if (!og_ingredients(ids, 512) && !og_recipes_known(ids, 512)) {
+        return og_possessions_message(og_words(34), 0);
+    }
+    if (!og_possessions_open(OG_VIEW_POTION, 0)) { return 0; }
+    og_cauldron_clear();
+    g.scroll[0] = 0;
+    return 1;
+}
+
+static void potion_say(const char *text)
+{
+    df_copy(g.notice, text, sizeof(g.notice)); g.notice_page = 0; g.revision++;
+}
+
+/* potion_make: a known recipe's ingredients loaded into the cauldron, or "you do not have the ingredients". */
+static void potion_make(int recipe)
+{
+    if (!og_recipe_load(recipe)) { potion_say("You do not have the ingredients required."); }
+    g.revision++;
+}
+
+static void potion_recipe_picked(int row)
+{
+    df_u32 ids[OG_LIST_MOST];
+    int count;
+
+    if (row < 0) { return; }
+    count = og_recipes_known(ids, OG_LIST_MOST);
+    if (row < count) { potion_make(og_recipe_of(ids[row])); }
+}
+
+static void potion_click(int x, int y)
+{
+    df_u32 ids[512], recipes[OG_LIST_MOST];
+    int i, row, col, count, cells[8], n, brewed, potion_id;
+    const OgCauldron *c;
+
+    /* The five buttons (potionmaker_buttons), strictly inside. */
+    if (inside(x,y,169,26,204,41)) {
+        static char names[OG_LIST_MOST][OG_LIST_NAME];
+
+        og_sound(205);
+        count = og_recipes_known(recipes, OG_LIST_MOST);
+        if (!count) { potion_say("You have no recipies."); return; }
+        if (count == 1) { potion_make(og_recipe_of(recipes[0])); return; }
+        for (i = 0; i < count; i++) { df_copy(names[i], og_potion_name(og_recipe_of(recipes[i])), OG_LIST_NAME); }
+        og_possessions_list((const char (*)[OG_LIST_NAME])names, count, potion_recipe_picked);
+        return;
+    }
+    if (inside(x,y,169,42,204,57)) {
+        df_u32 made;
+
+        brewed = og_brew(&n, &made);
+        (void)potion_id;
+        if (brewed != OG_BREW_NOTHING) { og_sound(208); potion_say("Your potion has been mixed."); }
+        return;
+    }
+    if (inside(x,y,6,30,15,45)) { if (g.scroll[0]) { g.scroll[0] -= 3; } return; }
+    if (inside(x,y,6,156,15,171)) {
+        count = og_ingredients(ids, 512);
+        if (count - g.scroll[0] > 12) { g.scroll[0] += 3; }
+        return;
+    }
+    if (inside(x,y,290,178,306,202)) { og_possessions_close(); return; }
+    c = og_cauldron();
+    /* A cell of the cauldron (two across from x 221, 38 pixels down from y 30): taking it out. The cells shown are the full ones in order. */
+    if (x > 221 && x < 304 && y > 30 && y < 171) {
+        col = (x - 221) / 56; if ((x - 221) % 56 > 27) { return; }
+        row = (y - 30) / 38; if ((y - 30) % 38 > 24) { return; }
+        n = 0;
+        for (i = 0; i < OG_CAULDRON; i++) { if (c->item[i]) { cells[n++] = i; } }
+        i = col + row * 2;
+        if (i < n) { og_cauldron_remove(cells[i]); }
+        return;
+    }
+    /* The ingredients (three across from x 16, 38 pixels down): putting one in. */
+    if (x >= 16 && x <= 155 && y >= 30 && y <= 171) {
+        col = (x - 16) / 56; if ((x - 16) % 56 > 27) { return; }
+        row = (y - 30) / 38; if ((y - 30) % 38 > 27) { return; }
+        count = og_ingredients(ids, 512);
+        i = col + row * 3 + g.scroll[0];
+        if (i < count && og_cauldron_count() != OG_CAULDRON) { og_cauldron_add(ids[i]); }
+    }
+}
+
 int og_possessions_talk(const OgTalkWho *who, const OgTalkPlayer *player, int witnessed, int *text)
 {
     if (g.page || !og_talkwin_open(who, player, witnessed, text)) { return 0; }
@@ -402,7 +494,7 @@ int og_possessions_cast(void)
 /* A dialog over the world: the message page already up and between questions is used again (an answer's follow-up), else one is opened. */
 static int dialog_ready(void)
 {
-    if (g.page == OG_VIEW_MESSAGE && !g.prompt) { return 1; }
+    if ((g.page == OG_VIEW_MESSAGE || g.page == OG_VIEW_POTION) && !g.prompt) { return 1; }
     return !g.page && og_possessions_open(OG_VIEW_MESSAGE,0);
 }
 
@@ -992,6 +1084,9 @@ void og_possessions_frame(const OgIn *in)
         if (in->ch == 27 || click) { g.skill_group = -1; }
         else if (in->key == OG_VK_NEXT || in->key == OG_VK_DOWN) { if (g.skill_group == 3 && g.skill_scroll < 7) { g.skill_scroll++; } }
         else if (in->key == OG_VK_PRIOR || in->key == OG_VK_UP) { if (g.skill_scroll) { g.skill_scroll--; } }
+    } else if (g.page == OG_VIEW_POTION) {
+        if (in->ch == 27) { og_possessions_close(); }
+        else if (click) { potion_click(in->cx,in->cy); }
     } else if (g.page == OG_VIEW_SERVICE) {
         /* Escape and Exit leave; the others close the panel and hand over (the original closes the menu first). */
         int what;

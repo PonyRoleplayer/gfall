@@ -89,6 +89,8 @@ df_u32 og_item_create(df_u32 parent, int group, int index, int metal)
         image = armor_image(index, item->armor_type);
         if (image >= 0) { item->inventory_image = (item->inventory_image & ~127) + image; }
     }
+    /* item_init_from_template: a recipe item holds a recipe drawn from twenty (rand() % 20). */
+    if (group == 27 && index == 4) { item->message = og_random_range(0,32767) % 20 + 1; }
     if (group == 3 && index == 18) { item->count = og_random_range(1, 20); item->condition = 0; }
     if (group == 7 && og_book_count()) {
         df_u32 seed;

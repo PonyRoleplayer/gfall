@@ -9,7 +9,7 @@
 #include "game/ogfall/play/law.h"
 #include "game/ogfall/play/talkwin.h"
 
-enum { OG_VIEW_NONE, OG_VIEW_INVENTORY, OG_VIEW_SHEET, OG_VIEW_SPELLS, OG_VIEW_BOOK, OG_VIEW_MESSAGE, OG_VIEW_BANK, OG_VIEW_COURT, OG_VIEW_TALK, OG_VIEW_SERVICE };
+enum { OG_VIEW_NONE, OG_VIEW_INVENTORY, OG_VIEW_SHEET, OG_VIEW_SPELLS, OG_VIEW_BOOK, OG_VIEW_MESSAGE, OG_VIEW_BANK, OG_VIEW_COURT, OG_VIEW_TALK, OG_VIEW_SERVICE, OG_VIEW_POTION };
 enum { OG_ITEM_INFO, OG_ITEM_EQUIP, OG_ITEM_REMOVE, OG_ITEM_USE };
 enum { OG_PROMPT_NONE, OG_PROMPT_GOLD, OG_PROMPT_NAME, OG_PROMPT_PAGE, OG_PROMPT_SPELL_NAME, OG_PROMPT_ANSWER, OG_PROMPT_OFFER, OG_PROMPT_AMOUNT, OG_PROMPT_ASK, OG_PROMPT_NUMBER, OG_PROMPT_LIST };
 #define OG_LIST_MOST 16
@@ -85,6 +85,8 @@ int og_possessions_number(const char *words, void (*answer)(int amount));
 /* A list popup over the world: the row clicked (0 on) is given to the callback, -1 for Escape. 0 when something else is open or there are no rows. */
 int og_possessions_list(const char names[][OG_LIST_NAME], int count, void (*pick)(int row));
 void og_possessions_set_service(void (*act)(int what));
+/* The potion maker (potionmaker_open, MASK00I0.IMG): the pack's ingredients, the cauldron, Recipes, Mix, Exit. 0 when the player has no ingredients (record 34 is said). */
+int og_possessions_potion(void);
 int og_possessions_trade(int mode, const OgShop *shop, df_u32 shelves);
 /*
  * The offer box's words are one variant of a TEXT.RSC record (text_rsc_load picks one at random) with

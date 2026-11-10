@@ -16,6 +16,8 @@ void og_spells_load(void);
 const OgSpellDef *og_spell_def(int id);
 /* A spell of the game's own beyond SPELLS.STD (a potion's): its 89-byte record under an id of its own. 0 when full or taken. */
 int og_spell_register(const df_u8 *record, int id);
+/* The same, put over the spell of that id if there is one (an unknown brew is made fresh each time it is drunk). */
+int og_spell_replace(const df_u8 *record, int id);
 df_u32 og_spell_create(df_u32 book, int definition);
 int og_spell_rename(df_u32 id, const char *name);
 int og_spell_cycle_icon(df_u32 id, int step);

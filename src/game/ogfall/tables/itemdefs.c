@@ -7,6 +7,18 @@ const OgItemDef *og_item_def(int group, int index)
     return &g_template[g_groups[group][index]];
 }
 
+int og_item_rarity(int group, int index)
+{
+    if (group < 0 || group >= 29 || index < 0 || index >= og_item_kinds(group)) { return 0; }
+    return g_rarity[g_groups[group][index]];
+}
+
+int og_item_capacity(int group, int index)
+{
+    if (group < 0 || group >= 29 || index < 0 || index >= og_item_kinds(group)) { return 0; }
+    return g_capacity[g_groups[group][index]];
+}
+
 int og_item_kinds(int group)
 {
     int n;

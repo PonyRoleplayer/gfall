@@ -13,6 +13,9 @@ typedef struct OgItemDef {
 } OgItemDef;
 
 const OgItemDef *og_item_def(int group, int index);
+/* A template's rarity and capacity (FALL.EXE's +0x28 and +0x1E): 0 for an item that is none. */
+int og_item_rarity(int group, int index);
+int og_item_capacity(int group, int index);
 int og_item_kinds(int group);
 int og_item_slot(int group, int index);
 int og_body_shape(int race);

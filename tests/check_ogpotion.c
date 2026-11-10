@@ -7,6 +7,7 @@
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/spellbook.h"
 #include "game/ogfall/play/magic.h"
+#include "game/ogfall/tables/itemdefs.h"
 
 void check_ogpotion(void)
 {
@@ -78,5 +79,56 @@ void check_ogpotion(void)
         }
         check_expect(count == 6 && priced, "potion: a quality 10 hall did not stock six soul traps priced by their souls");
         (void)with_soul;
+    }
+
+    /* The cauldron: Healing is the ingredients 6, 8, 0 and 6 of the groups 20, 15, 21 and 17; their keys (variants) are what it matches by. */
+    {
+        df_u32 item[4], bottle, pack[64];
+        int made, k, found_recipe, type[3], subtype[3], effects, potency_ok;
+        const OgCauldron *c;
+
+        n = og_potion_ingredients(2, group, index, 8);
+        og_cauldron_clear();
+        for (k = 0; k < n; k++) {
+            item[k] = og_item_create(og_state()->inventory_id, group[k], index[k], -1);
+            check_expect(item[k] && og_ingredient(item[k]), "potion: an ingredient of Healing is not one");
+        }
+        check_expect(og_ingredients(pack, 64) >= 4, "potion: the pack's ingredients were not listed");
+        for (k = 0; k < n; k++) { og_cauldron_add(item[k]); }
+        c = og_cauldron();
+        check_expect(og_cauldron_count() == 4 && !og_cauldron_add(item[0]), "potion: four in the cauldron, and the same one twice");
+        potency_ok = c->potency[0] == og_item_rarity(group[0], index[0]) && c->key[0] == og_item_def(group[0], index[0])->variants;
+        check_expect(potency_ok, "potion: an ingredient's potency and key are not its template's rarity and variants");
+        check_expect(og_potion_match(2, c) && !og_potion_match(0, c), "potion: Healing's ingredients do not match Healing alone");
+        made = og_brew(&found_recipe, &bottle);
+        check_expect(made == OG_BREW_RECIPE && found_recipe == 2 && og_potion_of(bottle) == 2 && og_cauldron_count() == 0 && !og_object(item[0]), "potion: Healing was not brewed from its ingredients and used them up");
+        /* The original does not clear a cell's key when a mix uses the ingredients up (only taking one out by hand does), so mixing again at once matches the same recipe with
+         * nothing in the pot: kept as the decomp has it, and gone when the maker is opened again (potionmaker_open sets every key to 254). */
+        check_expect(og_brew(&found_recipe, &bottle) == OG_BREW_RECIPE && found_recipe == 2, "potion: the stale keys after a mix were not kept");
+        og_cauldron_clear();
+        check_expect(og_brew(&found_recipe, &bottle) == OG_BREW_NOTHING, "potion: an empty cauldron brewed");
+        /* A recipe in the pack is loaded from the ingredients in it. */
+        for (k = 0; k < n; k++) { item[k] = og_item_create(og_state()->inventory_id, group[k], index[k], -1); }
+        check_expect(og_recipe_create(og_state()->inventory_id, 2) && og_recipes_known(pack, 64) >= 1, "potion: a recipe item was not known");
+        check_expect(og_recipe_load(2) && og_cauldron_count() == 4 && og_potion_match(2, og_cauldron()), "potion: a recipe did not load its ingredients");
+        og_cauldron_clear();
+        for (k = 0; k < n; k++) { og_object_delete(item[k]); }
+        check_expect(!og_recipe_load(2), "potion: a recipe loaded without its ingredients");
+        /* An unknown brew: two unrelated ingredients lend their effects; the bottle is worth nothing and drinks as a spell of its own. */
+        og_cauldron_clear();
+        item[0] = og_item_create(og_state()->inventory_id, 14, 0, -1);
+        item[1] = og_item_create(og_state()->inventory_id, 21, 1, -1);
+        check_expect(item[0] && item[1] && og_ingredient(item[0]) && og_ingredient(item[1]), "potion: groups 14 and 21 gave no ingredients");
+        if (item[0] && item[1] && og_ingredient(item[0]) && og_ingredient(item[1])) {
+            og_cauldron_add(item[0]); og_cauldron_add(item[1]);
+            effects = og_brew_effects(og_cauldron(), type, subtype);
+            check_expect(effects >= 1 && effects <= 3, "potion: two ingredients made no effects");
+            made = og_brew(&found_recipe, &bottle);
+            check_expect(made == OG_BREW_UNKNOWN, "potion: two odd ingredients did not make an unknown brew");
+            if (made == OG_BREW_UNKNOWN) {
+                check_expect(found_recipe == -1 && og_object(bottle)->value == 0 && og_potion_of(bottle) == -1 && !strncmp(og_object(bottle)->name, "Potion of Unknown", 17), "potion: an unknown brew is not an unknown potion");
+                check_expect(og_potion_drink(bottle) && !og_object(bottle) && og_spell_def(OG_BREW_SPELL) != 0, "potion: an unknown brew could not be drunk");
+            }
+        }
     }
 }

@@ -2124,3 +2124,22 @@ trainer driven by clicks to a lesson in `tests/check_ogworld.c`. Cure and blessi
 - Not built: the potion maker (`potionmaker_mix`: the cauldron, ingredients matched to a recipe by `potion_match_recipe` or an unknown brew made into a spell by
   `potion_mix_unknown`, which wants the ingredients' potency from `item_make`'s side effects and the spell maker's tables), the alchemists' own shelves of potions, magic items
   (`shop_stock_magic`, the enchantment tables), the spell shop's window, the Daedra and teleporting. Tests: `tests/check_ogpotion.c`.
+
+### The potion maker and the alchemists' shelves
+
+- **Ingredients** are the pack's items whose template has bit 0 of its flags (`og_ingredient`). Each lends, from its template: a key (`variants`) the recipes match by, a potency (`rarity`,
+  +0x28, now read into `g_rarity`), and, to an unknown brew, an effect (`draw_order`) and a subtype (`capacity`, +0x1E, only for an ingredient). The cauldron (`OgCauldron`) holds eight, no two of a kind.
+- **Mixing** (`og_brew`): the twenty recipes in order; a recipe matches when each ingredient of it is matched by key and the potency (the matched cauldron ingredients' added, the others taken off,
+  less the recipe's own, halved, plus 5) is at least 1; the first match makes its potion, worth its recipe's value. Failing them, `potion_mix_unknown`: the effects the ingredients lend
+  sorted largest first, merged by effect (potencies added as bytes), sorted by potency, the weakest dropped (those past three added to a pool, and a second that is under half the first, a
+  third under half the second) and any at or below the pool; no effect left makes nothing. The brew is a spell of "Unknown Powers", element magic, on the caster, each effect's duration,
+  chance and magnitude from its settings (duration 1+1/level, chance 70+1/level, magnitude 10..1 plus 1 a level; the rest of the original's spell maker record, which it left as it was, is
+  nothing). The bottle remembers the effects (a message with bit 30 set and ten bits an effect) and a drink makes the spell fresh (id 2999) and casts it.
+- **Quirk kept:** using the ingredients up empties the cauldron's cells but not its keys (only taking one out by hand sets its key to 254), so a second Mix at once matches the same recipe
+  with nothing in the pot; opening the maker again clears it. The test holds it.
+- **Recipes** are items (group 27, index 4) holding a recipe (`rand() % 20` when made, `og_item_create` now does it); Recipes in the window loads the pack's ingredients for a known recipe
+  into the cauldron, or says "You do not have the ingredients required." (the cauldron's cells emptied first, its keys not, as above), or lists them if there are several.
+- **The window** (`MASK00I0.IMG`, `OG_VIEW_POTION`): the pack's ingredients three across from x 16 (twelve from the scroll, three at a time), the cauldron two across from x 221, Recipes
+  (169,26), Mix (169,42), scrolls (6,30) and (6,156), Exit (290,178). A guild's potion maker opens it (record 34 if the player has no ingredients).
+- **Alchemists' shelves:** the original stocks them from the ordinary group tables (ingredients and bottles); a potion is never on them. What it adds is a quarter chance of a recipe item
+  (`item_add_to_container(27, 4)`) when a shelf is first opened, and a horse and a cart (group 23, 1 and 0) on each general store shelf; both are now added.

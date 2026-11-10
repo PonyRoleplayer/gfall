@@ -1542,6 +1542,9 @@ static void hall_run(void)
             og_possessions_trade(OG_MARKET_BUY, &shop, g_counter);
         }
         break;
+    case OG_SVC_POTION_MAKER:
+        og_possessions_potion();
+        break;
     case OG_SVC_ARMOR:
         {
             int text;
@@ -1685,6 +1688,12 @@ static int shelf_used(int index, int variant)
             return 1;
         }
         og_shelf_stock(g_shelf_box[index], variant, quality, type, index);
+        /* shelf_open_stock: an alchemist's shelf, a quarter of the time, also holds a recipe for a potion; each shelf of a general store, when first opened, a horse and a cart (collected_count == 0). */
+        if (type == 0 && og_random_range(1, 100) < 25) { og_item_create(g_shelf_box[index], 27, 4, 0); }
+        if (type == 9) {
+            og_item_create(g_shelf_box[index], 23, 1, -1);
+            og_item_create(g_shelf_box[index], 23, 0, -1);
+        }
     }
     region = travel_region();
     shop.region_adjust = og_region_price(region);
@@ -4266,6 +4275,50 @@ static void paint_service(void)
     }
 }
 
+/*
+ * The potion maker (potionmaker_update, src/hand/func_0008F31F.c; MASK00I0.IMG): the name of what is being made and the gold under the window; the pack's ingredients three
+ * across from x 16 and 38 pixels down (the first twelve from the scroll), each drawn at its cell's middle with its name under it; the cauldron's cells two across from x 221.
+ */
+static void paint_potion_maker(void)
+{
+    const OgPossessions *view;
+    const OgCauldron *c;
+    ImgPicture window;
+    df_u32 ids[512];
+    char line[40];
+    int count, i, n, cells;
+
+    view = og_possessions();
+    cover_screen(0,0,0);
+    if (img_load("MASK00I0.IMG",&window)) { blit_ix(window.x,window.y,window.pixels,window.width,window.height,0); }
+    text_at(31,185,"Unnamed potion");
+    log_format(line,sizeof(line),"%d",og_character()->gold); text_at(235,185,line);
+    count = og_ingredients(ids,512);
+    for (i = view->scroll[0], n = 0; i < count && n < 12; i++, n++) {
+        const OgObject *item;
+        char name[32];
+
+        item = og_object(ids[i]);
+        if (!item) { continue; }
+        paint_item_icon(item,n%3*56+28-26,n/3*38+42-18,52,36);
+        og_item_name(item,name,sizeof(name));
+        centered_text(n%3*56+30,n/3*38+58+(n%3 == 1 ? 5 : 0),name,145);
+    }
+    c = og_cauldron();
+    for (i = cells = 0; i < OG_CAULDRON; i++) {
+        const OgObject *item;
+        char name[32];
+
+        if (!c->item[i]) { continue; }
+        item = og_object(c->item[i]);
+        if (!item) { continue; }
+        paint_item_icon(item,(cells&1)*56+233-26,(cells>>1)*38+42-18,52,36);
+        og_item_name(item,name,sizeof(name));
+        centered_text((cells&1)*56+236,(cells>>1)*40+48,name,145);
+        cells++;
+    }
+}
+
 static int present_possessions(void)
 {
     const OgPossessions *view;
@@ -4288,6 +4341,7 @@ static int present_possessions(void)
     else if (view->page == OG_VIEW_BANK) { paint_bank(); }
     else if (view->page == OG_VIEW_TALK) { paint_talk(); }
     else if (view->page == OG_VIEW_SERVICE) { paint_service(); }
+    else if (view->page == OG_VIEW_POTION) { paint_potion_maker(); }
     else if (view->page == OG_VIEW_COURT) {
         /* cort01i0.img fills the screen once a court sits; the offer to surrender is over the world. */
         ImgPicture court;
@@ -4340,7 +4394,7 @@ static int present_possessions(void)
     }
     for (i = 0; i < g_panel_file_count; i++) { texture_forget(g_panel_files[i]); }
     mem_heap_use(was); mem_heap_delete(heap);
-    publish_surface(1,(view->page == OG_VIEW_SPELLS && !view->underlay) || view->page == OG_VIEW_MESSAGE || view->page == OG_VIEW_BANK || view->page == OG_VIEW_TALK || (view->page == OG_VIEW_COURT && !view->court.open));
+    publish_surface(1,(view->page == OG_VIEW_SPELLS && !view->underlay) || view->page == OG_VIEW_MESSAGE || view->page == OG_VIEW_BANK || view->page == OG_VIEW_TALK || view->page == OG_VIEW_POTION || (view->page == OG_VIEW_COURT && !view->court.open));
     return 1;
 }
 
