@@ -5,6 +5,8 @@
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/screen.h"
 #include "game/ogfall/play/options.h"
+#include "game/ogfall/play/doors.h"
+#include "game/ogfall/play/ground.h"
 
 #include "engine/core/df.h"
 #include "engine/scene/interact.h"
@@ -71,6 +73,18 @@ static void ray_from_pixel(const Camera *cam, int view_w, int view_h, int cx, in
     *dz /= len;
 }
 
+void og_activate_aim(const Camera *camera, int cursor_mode, int cursor_active,
+                     int at_centre, int x, int y, Camera *aim)
+{
+    float dx, dy, dz;
+    int px, py;
+    *aim = *camera;
+    if (at_centre) { return; }
+    og_activate_pixel(cursor_mode,cursor_active,0,x,y,&px,&py);
+    ray_from_pixel(camera,df_view_w(),df_view_h(),px,py,&dx,&dy,&dz);
+    aim->yaw = df_atan2(dx,dz); aim->pitch = df_atan2(dy,df_sqrt(dx*dx+dz*dz));
+}
+
 int og_activate(const Scene *scene, const Camera *cam, int mode,
                 int cursor_mode, int cursor_active, int at_centre,
                 int classic_x, int classic_y)
@@ -102,11 +116,25 @@ int og_activate(const Scene *scene, const Camera *cam, int mode,
     x = cam->x;
     y = cam->y;
     z = cam->z;
+    if (og_world_state()->where.kind == OG_PLACE_WORLD) {
+        df_u32 pile;
+        float reach;
+        interact_cast(scene,x,y,z,dx,dy,dz,128,&hit);
+        reach = hit.wall < 128 ? hit.wall : 128;
+        if (hit.usable >= 0 && hit.dist < reach) { reach = hit.dist; }
+        pile = og_ground_aim(x,y,z,dx,dy,dz,reach);
+        if (pile) {
+            if (mode == OG_MODE_GRAB) { return og_possessions_open(OG_VIEW_INVENTORY,pile); }
+            if (mode == OG_MODE_INFO) { interact_say("Treasure"); }
+            return 1;
+        }
+    }
     if (!interact_aim_from(scene, x, y, z, dx, dy, dz, &hit)) {
         return 0;
     }
     if (hit.usable >= 0 && hit.usable < scene->nusables) {
         const Usable *usable;
+        if (og_door_use(scene,hit.usable,mode)) { return 1; }
         usable = &scene->usables[hit.usable];
         if (usable->kind == USE_OTHER && usable->what >= OG_USE_TREASURE && usable->what < OG_USE_TREASURE+22) {
             if (mode == OG_MODE_GRAB) {

@@ -3,6 +3,7 @@
 
 #include "game/ogfall/play/vitals.h"
 #include "game/ogfall/play/combat.h"
+#include "game/ogfall/play/cheats.h"
 #include "game/ogfall/play/config.h"
 #include "game/ogfall/play/options.h"
 #include "game/ogfall/tables/tables.h"
@@ -10,6 +11,8 @@
 #include "engine/core/df.h"
 #include "engine/scene/scene.h"
 #include "engine/scene/walker.h"
+#include "engine/scene/interact.h"
+#include "game/ogfall/play/msg.h"
 
 /* D_00187CA9's initial value in FALL.EXE: walk speed is SPD + 150. */
 #define WALK_ADD 200
@@ -81,6 +84,7 @@ void og_move_init(void)
     g_bob_ms = g_bob_offset = 0;
     walker_set_game(&g_body);
     walker_set_on(1);
+    interact_set_body(&g_body);
 }
 
 Body *og_move_body(void)
@@ -96,10 +100,30 @@ void og_move_place(float x, float eye_y, float z, int classic_yaw)
     g_yaw = classic_yaw & 0x7ff;
     g_pitch = 0;
     g_air = 0;
+    og_survival()->climbing = og_survival()->climb_failed = 0;
+    og_survival()->climb_time = 0;
     body_place(&g_body, x, eye_y - WALK_EYE, z);
     g_prev_x = x;
     g_prev_z = z;
     og_state_pose(x, eye_y, z, g_yaw, g_pitch);
+}
+
+int og_move_take_teleport(void)
+{
+    float x, y, z, yaw;
+
+    if (!g_ready || !interact_teleport(&x,&y,&z,&yaw)) { return 0; }
+    /* Original link action 14 changes position and retains the player's
+     * angles. The borrowed builder supplies the standing eye above its floor.
+     * Keep crouch/eye size, and restart collision/fall tracking at that floor. */
+    body_place(&g_body,x,y-WALK_EYE,z);
+    og_survival()->climbing = og_survival()->climb_failed = 0;
+    og_survival()->climb_time = 0;
+    g_air = g_climb = g_water = g_splash = 0;
+    g_vx = g_vz = g_bob_ms = g_bob_offset = 0;
+    g_prev_x = x; g_prev_z = z;
+    og_state_pose(x,g_body.feet[1]+g_body.eye_now,z,g_yaw,g_pitch);
+    return 1;
 }
 
 int og_move_yaw(void)
@@ -177,6 +201,53 @@ static void stand_up(const Scene *scene)
     body_set_size(&g_body, WALK_HEIGHT, WALK_EYE);
 }
 
+static int wall_near(const Scene *scene)
+{
+    UseHit hit;
+    float yaw;
+    yaw = g_yaw*(DF_TAU/2048);
+    interact_cast(scene,g_body.feet[0],g_body.feet[1]+2,g_body.feet[2],
+                    df_sin(yaw),0,df_cos(yaw),g_body.radius+8,&hit);
+    return hit.model >= 0 && hit.wall <= g_body.radius+8;
+}
+
+static void climb_update(const Scene *scene, float dx, float dz, float moved, float dt)
+{
+    OgSurvival *survival;
+    float length, into;
+    int chance;
+
+    survival = og_survival();
+    if (survival->climbing) {
+        if (!scene || g_water || (og_character()->conditions & 8) || !wall_near(scene)) {
+            survival->climbing = 0;
+            /* The last probe is at foot height. Once it clears the lip, let
+             * the walking step take the feet onto that floor. */
+            g_body.grounded = 1;
+        } else if (og_state()->minutes-survival->climb_minute > 1) {
+            survival->climb_minute = og_state()->minutes; og_skill_use(18);
+            chance = og_character()->skill[18]+(og_character()->race == 6 ? 30 : 0);
+            if (!(og_character()->conditions & 0x20000) && og_random_range(1,100) > 95 && og_random_range(1,100) > chance) {
+                survival->climbing = 0; survival->climb_failed = 1;
+            }
+        }
+    } else {
+        if (g_body.grounded) { survival->climb_failed = 0; }
+        length = df_sqrt(dx*dx+dz*dz);
+        into = length > 0 ? df_absf((dx*g_body.wall_normal[0]+dz*g_body.wall_normal[2])/length) : 0;
+        if (scene && g_body.hit_wall && !g_water && !survival->climb_failed &&
+            !(og_character()->conditions & 8) && length > 0 && moved < 25 && into >= 251.0f/256) {
+            survival->climb_time += dt;
+            if (survival->climb_time > 14/18.2065f) {
+                survival->climbing = 1; survival->climb_time = 0;
+                survival->climb_minute = og_state()->minutes;
+                og_skill_use(18); og_msg_set("Climbing mode.");
+            }
+        } else { survival->climb_time = 0; survival->climb_minute = og_state()->minutes; }
+    }
+    g_climb = survival->climbing;
+}
+
 static void crouch_down(void)
 {
     if (g_crouch) {
@@ -229,6 +300,8 @@ void og_move_frame(const Scene *scene, const OgMoveIn *in)
     float land;
     int jumped;
     int was_ground;
+    int swimming, free_move;
+    float vertical;
 
     if (!in || in->dt <= 0.0f) {
         return;
@@ -237,6 +310,10 @@ void og_move_frame(const Scene *scene, const OgMoveIn *in)
         og_move_init();
     }
     who = og_character();
+    if (who->conditions & 1) {
+        if (scene) { body_step(&g_body,scene,0,0,in->dt); }
+        return;
+    }
     if (in->pressed && in->pressed[OG_CROUCH]) {
         if (g_crouch) {
             stand_up(scene);
@@ -281,7 +358,10 @@ void og_move_frame(const Scene *scene, const OgMoveIn *in)
         g_body.vy = 0.0f;
     }
     g_water = wet;
-    speed = og_ground_speed(who->attribute[OG_SPD], g_crouch, running, who->skill[21], wet,
+    swimming = scene && scene_water_body(scene,g_body.feet[0],g_body.feet[1]+g_body.eye_now,g_body.feet[2]) >= WATER_WAIST;
+    free_move = swimming || (who->conditions & 8) || og_survival()->climbing;
+    if (free_move) { g_air = 0; }
+    speed = og_ground_speed(who->attribute[OG_SPD], g_crouch, running && !wet, who->skill[21], wet && !(who->conditions & 0x100000),
                             who->skill[17]);
     if (!g_air && in->view_mode && in->held && in->held[OG_SLOW]) {
         speed = og_view_slow(speed);
@@ -304,25 +384,35 @@ void og_move_frame(const Scene *scene, const OgMoveIn *in)
         step_x = dx * in->dt;
         step_z = dz * in->dt;
     }
-    if (wet && g_weight > 250 && !(in->held && in->held[OG_FLOAT_DOWN])) {
-        g_body.vy -= 80.0f * in->dt;
-    }
     jumped = 0;
-    if (!g_air && g_body.grounded && in->pressed && in->pressed[OG_JUMP]) {
+    if (!free_move && !g_air && g_body.grounded && in->pressed && in->pressed[OG_JUMP]) {
         int mag;
         int impulse;
 
         mag = og_jump_magnitude(who->attribute[OG_SPD], who->attribute[OG_STR], who->skill[OG_SKILL_JUMPING]);
         impulse = og_jump_impulse(mag, (who->conditions & 0x10000) != 0, (who->class_flags & 2) != 0);
         if (body_jump(&g_body, og_jump_ups(impulse))) {
-            who->fatigue = og_fatigue_add(who->fatigue, -11, who->attribute[OG_STR], who->attribute[OG_END]);
+            og_skill_use(3);
+            og_fatigue_spend(11);
             g_air = 1;
             jumped = 1;
         }
     }
     was_ground = g_body.grounded && !jumped;
     if (scene) {
-        body_step(&g_body, scene, step_x, step_z, in->dt);
+        if (free_move) {
+            vertical = og_survival()->climbing ? speed*in->dt/3 : 0;
+            if (swimming || (who->conditions & 8)) {
+                vertical = in->held ? (in->held[OG_FLOAT_UP]-in->held[OG_FLOAT_DOWN])*80*in->dt : 0;
+                if (swimming && g_weight > 250 && !(in->held && in->held[OG_FLOAT_DOWN])) { vertical -= 80*in->dt; }
+            }
+            g_body.vy = 0;
+            body_fly_step(&g_body,scene,step_x,vertical,step_z);
+            g_body.top = g_body.feet[1];
+        } else {
+            if ((who->conditions & 0x4000) && g_body.vy < -60) { g_body.vy = -60; }
+            body_step(&g_body, scene, step_x, step_z, in->dt);
+        }
     }
     moved = g_body.feet[0] - g_prev_x;
     moved = moved * moved;
@@ -332,12 +422,7 @@ void og_move_frame(const Scene *scene, const OgMoveIn *in)
         mz = g_body.feet[2] - g_prev_z;
         moved = moved + mz * mz;
     }
-    g_climb = 0;
-    if (!g_air && speed > 0 && moved < 25.0f) {
-        /* 5 squared. A slide along the wall is not a scrape. */
-        g_climb = 1;
-        g_body.vy = 0.0f;
-    }
+    climb_update(scene,step_x,step_z,moved,in->dt);
     g_prev_x = g_body.feet[0];
     g_prev_z = g_body.feet[2];
     if (was_ground && !g_body.grounded) {
@@ -356,6 +441,7 @@ void og_move_frame(const Scene *scene, const OgMoveIn *in)
     } else if (jumped) {
         g_air = 1;
     }
+    if (swimming || (who->conditions & 8) || g_climb) { g_air = 0; }
     /* head_bob_update's ten samples over its 1000-tick walking cycle. */
     g_bob_offset = 0;
     if ((og_options_flags() & 2) && g_body.grounded && !g_air && !wet && !(who->conditions & 8)) {
@@ -431,7 +517,17 @@ void og_move_restore(const OgMotion *motion)
     g_air = motion->airborne;
     g_crouch = motion->crouched;
     g_water = motion->water;
+    g_climb = og_survival()->climbing;
     g_weight = motion->weight;
     g_prev_x = g_body.feet[0];
     g_prev_z = g_body.feet[2];
+}
+void og_move_shift(float dx, float dz)
+{
+    OgMotion motion;
+    og_move_capture(&motion);
+    motion.feet[0] -= dx; motion.safe[0] -= dx;
+    motion.feet[2] -= dz; motion.safe[2] -= dz;
+    og_move_restore(&motion);
+    og_state_pose(g_body.feet[0],g_body.feet[1]+g_body.eye_now,g_body.feet[2],g_yaw,g_pitch);
 }

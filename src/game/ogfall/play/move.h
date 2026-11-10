@@ -12,11 +12,9 @@
  * << 8 integrator's 100352/256). The jump's magnitude is converted
  * in og_jump_ups.
  *
- * Climbing in the decomp needs a wall-hit flag the body does not
- * report. This approximates it as "asked to move, feet barely moved"
- * (under about 5 world units that frame). If a scrape slides the
- * body along the wall by more than that, climbing does not start.
- * It is not an acceptance test.
+ * Climbing uses the body's actual wall contact and normal, the original
+ * approach angle, hold delay and skill/fall checks. Swimming, levitation
+ * and climbing use full-body sweeps without the walker's floor snapping.
  *
  * Head bobbing uses view-flags bit 1 and the original int32 sample
  * curve, on the camera only. Motion snapshots carry its phase.
@@ -57,7 +55,12 @@ int og_region_speed(int region, int base);
 
 void og_move_init(void);
 Body *og_move_body(void);
+/* A streamed place moved its local origin; motion and saved pose move once. */
+void og_move_shift(float dx, float dz);
 void og_move_place(float x, float eye_y, float z, int classic_yaw);
+/* Consume an engine teleport arrival, keeping the original view angles and
+ * crouch. The builder's target Y is a standing eye, not a foot position. */
+int og_move_take_teleport(void);
 int og_move_yaw(void);
 int og_move_airborne(void);
 int og_move_crouched(void);

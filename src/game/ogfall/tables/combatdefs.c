@@ -1,6 +1,12 @@
 #include "game/ogfall/tables/combatdefs.h"
 #include "game/ogfall/tables/combatdata.h"
 
+int og_foe_nav_angle(int octant) { return g_nav_angle[octant & 7]; }
+int og_foe_encounter(int table, int index)
+{
+    return table >= 0 && table < 45 && index >= 0 && index < 20 ? g_encounter[table][index] : 0;
+}
+
 const OgFoeDef *og_foe_def(int kind) { return kind >= 0 && kind < 43 ? &g_foe[kind] : 0; }
 const OgAnimScript *og_foe_script(int kind)
 {

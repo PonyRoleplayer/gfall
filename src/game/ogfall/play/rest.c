@@ -4,16 +4,19 @@
 #include "game/ogfall/play/move.h"
 #include "game/ogfall/play/msg.h"
 #include "game/ogfall/play/vitals.h"
+#include "game/ogfall/play/progress.h"
+#include "game/ogfall/play/encounter.h"
 #include "engine/core/mem.h"
 
 static OgRest g;
+static const Scene *g_scene;
 const OgRest *og_rest(void) { return &g; }
-void og_rest_reset(void) { mem_zero(&g,sizeof(g)); }
+void og_rest_reset(void) { mem_zero(&g,sizeof(g)); g_scene = 0; }
 
 void og_rest_close(void)
 {
-    if (g.open) { og_state_mode_pop(); }
-    g.open = 0; g.revision++;
+    if (g.open) { og_state_mode_pop(); og_progress_rest(); }
+    g.open = 0; g_scene = 0; g.revision++;
 }
 
 int og_rest_open(const Scene *scene, const Camera *cam)
@@ -25,7 +28,7 @@ int og_rest_open(const Scene *scene, const Camera *cam)
         og_msg_set("You cannot sleep now."); return 0;
     }
     if (!og_state_mode_push(OG_GAME_REST)) { return 0; }
-    og_rest_reset(); g.open = 1; g.revision++;
+    og_rest_reset(); g.open = 1; g_scene = scene; g.revision++;
     return 1;
 }
 
@@ -34,6 +37,7 @@ void og_rest_recover(void)
     OgCharacter *who;
     int rate, heal, fatigue;
     who = og_character(); rate = 60;
+    if (who->health <= 0) { return; }
     /* Privateer's Hold is indoors: rapid healing in darkness or always. */
     if (og_state()->career.rapid & 6) { rate += 40; }
     rate += who->skill[0];
@@ -61,7 +65,8 @@ static int healed(void)
 
 void og_rest_frame(const OgIn *in, const Camera *cam)
 {
-    int click, n;
+    int click, n, interrupted;
+    df_u32 minute;
     if (!g.open || !in) { return; }
     if (in->ch == 27) { og_rest_close(); return; }
     click = (in->mouse_pressed & 1) && in->on_picture;
@@ -89,8 +94,14 @@ void og_rest_frame(const OgIn *in, const Camera *cam)
         if (og_dungeon_nearby(cam,1024)) { og_msg_set("There are enemies nearby."); og_rest_close(); return; }
         g.time += in->dt;
         if (g.time >= (g.loiter ? 1.8f : 0.5f)) {
-            g.time = 0; og_state_pass_minutes(60); g.elapsed++;
+            g.time = 0; minute = og_state()->minutes; og_state_pass_minutes(60); g.elapsed++;
+            if (og_character()->health <= 0) { og_rest_close(); return; }
+            interrupted = 0;
+            for (n = 1; n <= 60 && !interrupted; n++) {
+                interrupted = og_encounter_minute(g_scene,cam,minute+n,g.loiter);
+            }
             if (!g.loiter) { og_rest_recover(); }
+            if (interrupted) { og_msg_set("Your rest is interrupted by an enemy."); og_rest_close(); return; }
             g.revision++;
             if ((g.until_healed && healed()) || (!g.until_healed && g.elapsed >= g.hours)) {
                 og_msg_set(g.loiter ? "You finish loitering." : g.until_healed ? "You are healed." : "You wake up.");

@@ -25,9 +25,9 @@ void og_spells_load(void)
             int n;
             spell->group[k] = record[k * 2]; spell->sub[k] = record[k * 2 + 1];
             for (n = 0; n < 3; n++) {
-                spell->duration[k][n] = record[14+k*3+n]; spell->chance[k][n] = record[23+k*3+n];
+                spell->duration[k][n] = (signed char)record[14+k*3+n]; spell->chance[k][n] = (signed char)record[23+k*3+n];
             }
-            for (n = 0; n < 5; n++) { spell->magnitude[k][n] = record[32+k*5+n]; }
+            for (n = 0; n < 5; n++) { spell->magnitude[k][n] = (signed char)record[32+k*5+n]; }
         }
         mem_copy(spell->name, record + 47, 25); spell->name[25] = 0;
     }

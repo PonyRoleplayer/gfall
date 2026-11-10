@@ -6,13 +6,13 @@
 #include "game/ogfall/play/play.h"
 #include "game/ogfall/play/spellbook.h"
 
-enum { OG_VIEW_NONE, OG_VIEW_INVENTORY, OG_VIEW_SHEET, OG_VIEW_SPELLS, OG_VIEW_BOOK };
+enum { OG_VIEW_NONE, OG_VIEW_INVENTORY, OG_VIEW_SHEET, OG_VIEW_SPELLS, OG_VIEW_BOOK, OG_VIEW_MESSAGE };
 enum { OG_ITEM_INFO, OG_ITEM_EQUIP, OG_ITEM_REMOVE, OG_ITEM_USE };
-enum { OG_PROMPT_NONE, OG_PROMPT_GOLD, OG_PROMPT_NAME, OG_PROMPT_PAGE, OG_PROMPT_SPELL_NAME };
+enum { OG_PROMPT_NONE, OG_PROMPT_GOLD, OG_PROMPT_NAME, OG_PROMPT_PAGE, OG_PROMPT_SPELL_NAME, OG_PROMPT_ANSWER };
 #define OG_NOTICE_LINES 16
 typedef struct OgPossessions {
     int page, underlay, tab, action, scroll[2], selected, skill_group, skill_scroll;
-    int prompt, book_page, notice_page, painting;
+    int prompt, book_page, notice_page, painting, casting;
     int drag, drag_offset, repeat_step;
     float repeat_time;
     df_u32 remote, book;
@@ -23,7 +23,11 @@ void og_possessions_reset(void);
 const OgPossessions *og_possessions(void);
 const OgBook *og_reading(void);
 int og_possessions_open(int page, df_u32 remote);
+int og_possessions_cast(void);
 void og_possessions_close(void);
+/* A parchment over the world. An optional answer callback receives up to 16
+ * typed characters, or NULL on cancellation; no callback is serialized. */
+int og_possessions_message(const char *text, void (*answer)(const char *));
 void og_possessions_frame(const OgIn *input);
 int og_possessions_use(df_u32 id);
 /* Wrapped message lines; returns the total, filling at most capacity from first.

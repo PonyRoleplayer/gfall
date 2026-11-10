@@ -183,12 +183,12 @@ static void check_legacy_save(const df_u8 *current, df_u32 size)
     check_expect(size > 24u+1272u+256u*124u && df_ru32(current+24+1272) == OG_WORLD_ROOT,
                  "fixture locates the documented original object section");
     if (size <= 24u+1272u+256u*124u) { return; }
-    for (version = 2; version <= 3; version++) {
+    for (version = 2; version <= 6; version++) {
         memcpy(legacy,current,24+1272);
         /* Old creation had no equipped items or starting spell records. */
         if (version == 2) { memset(legacy+24+1044,0,27*4); }
         from = to = 24+1272;
-        record_bytes = version == 2 ? 36 : 120;
+        record_bytes = version == 2 ? 36 : version == 3 ? 120 : 124;
         for (row = 0; row < 256; row++) {
             if (version == 2 && df_ru32(current+from+8) == 9) { memset(legacy+to,0,36); }
             else {
@@ -197,8 +197,8 @@ static void check_legacy_save(const df_u8 *current, df_u32 size)
             }
             from += 124; to += record_bytes;
         }
-        memcpy(legacy+to,current+from,size-from);
-        to += size-from;
+        memcpy(legacy+to,current+from,size-from-OG_WORLD_WIRE_BASE-og_state()->world_state.map_count*20-(version < 6 ? OG_MAGIC_WIRE_BYTES : 0)-(version < 5 ? OG_STATE5_WIRE_BYTES : 0));
+        to += size-from-OG_WORLD_WIRE_BASE-og_state()->world_state.map_count*20-(version < 6 ? OG_MAGIC_WIRE_BYTES : 0)-(version < 5 ? OG_STATE5_WIRE_BYTES : 0);
         legacy_word(legacy+8,version); legacy_word(legacy+24,version); legacy_word(legacy+12,to-24);
         hash = 2166136261u;
         for (i = 24; i < to; i++) { hash = (hash ^ legacy[i])*16777619u; }

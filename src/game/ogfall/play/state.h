@@ -6,9 +6,15 @@
 #include "engine/core/df.h"
 #include "game/ogfall/tables/tables.h"
 #include "game/ogfall/play/move.h"
+#include "game/ogfall/play/progress.h"
+#include "game/ogfall/play/survival.h"
+#include "game/ogfall/play/encounter.h"
+#include "game/ogfall/play/magicstate.h"
+#include "game/ogfall/play/worldstate.h"
 #include "engine/scene/keep.h"
 
-#define OG_STATE_VERSION 4
+#define OG_STATE_VERSION 7
+#define OG_STATE5_WIRE_BYTES 348
 #define OG_WORLD_ROWS 512
 #define OG_THUMB_W 80
 #define OG_THUMB_H 50
@@ -26,6 +32,7 @@ enum {
     OG_RECORD_EYE = 5,
     OG_RECORD_SPELL = 9,
     OG_RECORD_QUESTS = 16,
+    OG_RECORD_SOUL = 20,
     OG_RECORD_OPTIONS = 23,
     OG_RECORD_LOGBOOK = 24,
     OG_RECORD_BANK = 25,
@@ -92,6 +99,12 @@ typedef struct OgState {
     df_u16 preview[OG_THUMB_PIXELS];
     df_u32 event_serial;
     OgEvent last_event;
+    df_u32 stealth_minute;
+    OgProgress progress;
+    OgSurvival survival;
+    OgEncounterState encounters;
+    OgMagicState magic;
+    OgWorldState world_state;
 } OgState;
 
 OgCharacter *og_character(void);
@@ -128,6 +141,9 @@ void og_state_date(int *year, int *month, int *day, int *weekday);
 void og_state_observe(void (*fn)(const OgEvent *event));
 void og_state_event(int kind, df_u32 subject, df_u32 other, int value);
 void og_skill_use(int skill);
+void og_state_stealth_checked(void);
+void og_state_clear_skill_uses(int skill);
+void og_state_base_attribute(int attribute, int value);
 int og_state_valid(const OgState *snapshot);
 int og_state_restore(const OgState *snapshot);
 /* Capture the engine's keyed changes only at a save boundary. */

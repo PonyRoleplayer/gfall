@@ -500,9 +500,11 @@ static void check_inventory_completion(const char *test_root)
                  "unequipping returns the same item to the pack list");
 
     incoming = og_item_create(loot,13,0,0);
+    /* Seed 2 picks painting 8 and prefix 6402, whose text contains %fn2. */
+    og_object_edit(incoming)->message = 2;
     og_possessions_open(OG_VIEW_INVENTORY,loot);
     click(200,4); click(240,42); click(290,60);
-    check_expect(og_possessions()->painting > 0 && og_possessions()->notice[0] && !strchr(og_possessions()->notice,'%'),
+    check_expect(og_possessions()->painting == 9 && og_possessions()->notice[0] && !strchr(og_possessions()->notice,'%'),
                  "painting Info resolves its saved seed, PAINT.DAT caption and generated artist");
     screenshot("painting-info");
     {
@@ -938,6 +940,69 @@ static void check_drawn_weapon_pickup(void)
     og_possessions_close(); og_weapon_cancel();
 }
 
+static void check_dungeon_teleport(void)
+{
+    Scene scene;
+    Mover portal[2];
+    Usable trigger[2];
+    Instance model[2];
+    Bound bounds[2];
+    OgMotion before, motion;
+    OgIn input;
+    float x, y, z, yaw;
+    int i;
+
+    og_move_capture(&before);
+    og_options_close(); og_possessions_reset(); og_weapon_cancel();
+    og_move_init(); og_move_place(0,WALK_EYE,0,256);
+    og_move_capture(&motion);
+    motion.crouched = 1; motion.eye = WALK_EYE/2;
+    motion.pitch = 64; motion.vx = 100; motion.vy = -200;
+    og_move_restore(&motion);
+    mem_zero(&scene,sizeof(scene)); mem_zero(portal,sizeof(portal));
+    mem_zero(trigger,sizeof(trigger)); mem_zero(model,sizeof(model)); mem_zero(bounds,sizeof(bounds));
+    scene.movers = portal; scene.nmovers = 2; scene.usables = trigger; scene.nusables = 2;
+    scene.models = model; scene.nmodels = 2; scene.bounds = bounds;
+    /* Earlier engine tests can leave a consumed arrival guard. Settle it in
+     * an empty scene before entering this fixture's first touch volume. */
+    interact_take_use(); interact_teleport(&x,&y,&z,&yaw);
+    scene.nusables = 0;
+    interact_frame(&scene,&g_camera,0,0);
+    scene.nusables = 2;
+    for (i = 0; i < 2; i++) {
+        trigger[i].kind = USE_MOVER; trigger[i].model = trigger[i].mover = i;
+        trigger[i].sprite = -1; trigger[i].touch = 1;
+        portal[i].teleport = 1; portal[i].next = -1;
+        bounds[i].ex = bounds[i].ez = 20; bounds[i].ey = 20;
+    }
+    bounds[0].cy = 20;
+    bounds[1].cx = portal[0].to_x = 300;
+    bounds[1].cy = 260; portal[0].to_y = 240+WALK_EYE;
+    bounds[1].cz = portal[0].to_z = 400;
+    portal[0].to_yaw = DF_TAU/2; portal[1].to_y = WALK_EYE;
+    /* The game's body, rather than a stray viewer camera, touches the pad. */
+    camera_set(&g_camera,900,900,900,0,0);
+    interact_frame(&scene,&g_camera,0,0);
+    mem_zero(&input,sizeof(input)); input.on_picture = 1; input.cx = 160; input.cy = 80;
+    og_frame(&input,&g_camera,&scene);
+    og_frame(&input,&g_camera,&scene);
+    check_expect(og_move_body()->feet[0] == 300 && og_move_body()->feet[1] == 240 &&
+                 og_move_body()->feet[2] == 400 && og_move_crouched(),
+                 "a touch teleporter moves OGFALL's own crouched body to the target floor");
+    og_move_capture(&motion);
+    check_expect(motion.yaw == 256 && motion.pitch == 64 && !motion.vx && !motion.vy &&
+                 !motion.have_safe && motion.top == 240,
+                 "teleport retains original view angles and restarts collision/fall tracking at arrival");
+    check_expect(g_camera.x == 300 && g_camera.y == 240+WALK_EYE/2 && g_camera.z == 400 &&
+                 og_state()->x == 300 && og_state()->eye_y == g_camera.y,
+                 "camera and save pose follow the teleported body immediately");
+    interact_frame(&scene,&g_camera,0,0);
+    interact_frame(&scene,&g_camera,0,0);
+    check_expect(!interact_teleport(&x,&y,&z,&yaw),"a paired arrival pad cannot immediately teleport the player back");
+    og_move_restore(&before); og_move_camera(&g_camera);
+    og_state_pose(g_camera.x,g_camera.y,g_camera.z,before.yaw,before.pitch);
+}
+
 static void check_rest(void)
 {
     OgIn in;
@@ -1058,6 +1123,7 @@ void check_ogui(const char *root)
     check_possessions(test_root);
     check_inventory_completion(test_root);
     check_drawn_weapon_pickup();
+    check_dungeon_teleport();
     check_spatial_sound();
     check_rest();
     check_death();

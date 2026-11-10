@@ -9,5 +9,6 @@ void og_god_set(int enabled);
 int og_magicka_cost(int cost);
 int og_magicka_spend(int cost);
 void og_god_protect(void);
+void og_fatigue_spend(int amount);
 
 #endif

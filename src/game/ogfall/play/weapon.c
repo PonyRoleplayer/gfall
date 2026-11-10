@@ -4,6 +4,7 @@
 #include "game/ogfall/play/msg.h"
 #include "game/ogfall/play/combat.h"
 #include "game/ogfall/play/vitals.h"
+#include "game/ogfall/play/cheats.h"
 #include "game/ogfall/tables/combatdefs.h"
 #include "engine/core/mem.h"
 
@@ -87,8 +88,7 @@ static void strike_at(OgStrike *s)
     s->item = g_item; s->hand = g_hand; s->bow = g_bow;
     s->hit = g_bow ? 0 : og_swing_hit(g_sector);
     s->damage = g_bow ? 0 : og_swing_damage(g_sector);
-    og_character()->fatigue = og_fatigue_add(og_character()->fatigue,-11,
-        og_character()->attribute[OG_STR],og_character()->attribute[OG_END]);
+    og_fatigue_spend(11);
 }
 
 void og_weapon_frame(const OgIn *in, int blocked, OgStrike *strike)

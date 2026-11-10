@@ -7,6 +7,7 @@
 typedef struct OgFighter {
     int race, level, health, maximum, flags, metal, armor[7];
     int attribute[OG_ATTRS], skill[OG_SKILLS];
+    int fatigue, magicka, max_magicka, conditions;
 } OgFighter;
 
 void og_fighter_player(OgFighter *out);

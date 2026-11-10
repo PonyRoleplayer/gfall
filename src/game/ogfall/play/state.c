@@ -1,11 +1,28 @@
 #include "game/ogfall/play/state.h"
 #include "engine/core/mem.h"
 #include "game/ogfall/play/inventory.h"
+#include "game/ogfall/play/magic.h"
+#include "game/ogfall/tables/combatdefs.h"
 #include "engine/scene/clock.h"
 
 static OgState g_state;
+OgWorldState *og_world_state(void) { return &g_state.world_state; }
 static void (*g_observer)(const OgEvent *event);
 static const char *g_error = "";
+OgMagicState *og_magic_state(void) { return &g_state.magic; }
+
+void og_state_stealth_checked(void) { g_state.stealth_minute = g_state.minutes; }
+OgProgress *og_progress(void) { return &g_state.progress; }
+OgSurvival *og_survival(void) { return &g_state.survival; }
+OgEncounterState *og_encounter_state(void) { return &g_state.encounters; }
+void og_state_clear_skill_uses(int skill)
+{
+    if (skill >= 0 && skill < OG_SKILLS) { g_state.skill_uses[skill] = 0; }
+}
+void og_state_base_attribute(int attribute, int value)
+{
+    if (attribute >= 0 && attribute < OG_ATTRS && value >= 0 && value <= 100) { g_state.base_attribute[attribute] = value; }
+}
 
 OgCharacter *og_character(void)
 {
@@ -207,6 +224,8 @@ int og_object_delete(df_u32 id)
             return 0;
         }
     }
+    if (g_state.magic.ready == id) { g_state.magic.ready = 0; }
+    if (g_state.magic.last == id) { g_state.magic.last = 0; g_state.magic.paid = 0; }
     mem_zero(&g_state.object[slot], sizeof(OgObject));
     return 1;
 }
@@ -286,6 +305,8 @@ int og_state_begin(void)
     }
     g_state.minutes = 523530u; /* Initial value, func_0004ED36; game_reset differs. */
     g_state.ready = 1;
+    og_progress_begin();
+    automap_clear();
     og_state_calendar();
     return 1;
 }
@@ -391,6 +412,7 @@ void og_state_pass_minutes(df_u32 minutes)
         return;
     }
     g_state.minutes += minutes;
+    og_magic_minutes(start,minutes);
     for (i = 0; i < minutes; i++) {
         og_state_event(OG_EVENT_MINUTE, 0, 0, (int)(start + i + 1));
     }
@@ -540,9 +562,22 @@ static int objects_valid(const OgState *state)
 static int clock_and_view_valid(const OgState *state)
 {
     int i;
+    if (state->progress.checked > state->minutes || state->progress.points < 0 || state->progress.points > 6 ||
+        state->progress.active < 0 || state->progress.active > 1 ||
+        (!state->progress.active && state->progress.points) ||
+        state->progress.base_sum < -1500 || state->progress.base_sum > 600 || state->progress.raised_hi > 7) { return 0; }
+    if (state->survival.breath < 0 || state->survival.breath > 80 ||
+        !(state->survival.fraction >= 0 && state->survival.fraction < 1) ||
+        !(state->survival.climb_time >= 0 && state->survival.climb_time <= 1) ||
+        state->survival.climb_minute > state->minutes || state->survival.climbing < 0 ||
+        state->survival.climbing > 1 || state->survival.climb_failed < 0 || state->survival.climb_failed > 1) { return 0; }
+    for (i = 0; i < OG_ATTRS; i++) {
+        if (state->progress.floor[i] < 0 || state->progress.floor[i] > 100) { return 0; }
+    }
 
     if (state->next_low < 10000u || state->next_low > 63000u ||
-        state->minutes > 0x7fffffffu || state->ticks >= 90u || state->tick_fraction >= 65536000u ||
+        state->minutes > 0x7fffffffu || state->stealth_minute > state->minutes ||
+        state->ticks >= 90u || state->tick_fraction >= 65536000u ||
         !(state->frame_fraction >= 0 && state->frame_fraction < 1) ||
         state->settings_flags < 0 || state->settings_flags > 3 ||
         state->mouse_mode < 0 || state->mouse_mode > 1 ||
@@ -564,6 +599,37 @@ static int clock_and_view_valid(const OgState *state)
 static int position_valid(float value)
 {
     return value >= -100000000 && value <= 100000000;
+}
+
+static int encounter_kind_valid(int kind)
+{
+    return (kind >= 0 && kind < 43) || (kind >= 128 && kind <= 146);
+}
+
+static int encounters_valid(const OgEncounterState *state)
+{
+    const OgEncounter *actor;
+    int i, j, archive;
+    df_u32 serial;
+
+    if (state->serial > 0xffffffu) { return 0; }
+    for (i = 0; i < 6; i++) { if (!encounter_kind_valid(state->choices[i])) { return 0; } }
+    for (i = 0; i < OG_ENCOUNTERS; i++) {
+        actor = &state->actor[i];
+        if (!actor->key.thing) { continue; }
+        serial = actor->key.thing & 0xffffffu;
+        if (!state->place || !actor->key.place || !serial || serial > state->serial ||
+            actor->key.thing != (0x80000000u | serial) || !encounter_kind_valid(actor->kind) ||
+            !position_valid(actor->x) || !position_valid(actor->y) || !position_valid(actor->z)) { return 0; }
+        archive = actor->kind < 43 ? 255+actor->kind : actor->kind == 146 ? 399 :
+                  432+og_foe_texture_kind(actor->kind);
+        if (actor->archive != archive &&
+            !(actor->kind >= 128 && actor->kind < 146 && actor->archive == archive+1)) { return 0; }
+        for (j = 0; j < i; j++) {
+            if (state->actor[j].key.thing == actor->key.thing) { return 0; }
+        }
+    }
+    return 1;
 }
 
 static int saved_world_valid(const OgState *state)
@@ -610,11 +676,30 @@ static int saved_world_valid(const OgState *state)
     return 1;
 }
 
+static int magic_references_valid(const OgState *state)
+{
+    const OgObject *spell, *book;
+    df_u32 ids[2];
+    int i, slot;
+    ids[0] = state->magic.ready; ids[1] = state->magic.last;
+    for (i = 0; i < 2; i++) {
+        if (!ids[i]) { continue; }
+        slot = object_slot(state,ids[i]); if (slot < 0) { return 0; }
+        spell = &state->object[slot];
+        slot = object_slot(state,spell->parent); if (slot < 0) { return 0; }
+        book = &state->object[slot];
+        if (spell->type != OG_RECORD_SPELL || book->type != OG_RECORD_ITEM ||
+            book->group != 27 || book->index != 0) { return 0; }
+    }
+    return 1;
+}
+
 int og_state_valid(const OgState *snapshot)
 {
     return snapshot && snapshot->version == OG_STATE_VERSION && snapshot->ready == 1 &&
         character_valid(snapshot) && clock_and_view_valid(snapshot) && objects_valid(snapshot) &&
-        saved_world_valid(snapshot) && og_inventory_valid(snapshot);
+        saved_world_valid(snapshot) && encounters_valid(&snapshot->encounters) &&
+        og_magic_valid(&snapshot->magic) && og_world_valid(&snapshot->world_state) && magic_references_valid(snapshot) && og_inventory_valid(snapshot);
 }
 
 int og_state_restore(const OgState *snapshot)

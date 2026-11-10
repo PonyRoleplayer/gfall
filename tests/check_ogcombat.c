@@ -1,10 +1,14 @@
 #include "check_ogcombat.h"
+#include "check_ogdoors.h"
+#include "check_ogmagic.h"
 #include "check_util.h"
 #include "game/ogfall/play/anim.h"
+#include "game/ogfall/play/ai.h"
 #include "game/ogfall/play/combat.h"
 #include "game/ogfall/play/cheats.h"
 #include "game/ogfall/play/vitals.h"
 #include "game/ogfall/play/dungeon.h"
+#include "game/ogfall/play/encounter.h"
 #include "game/ogfall/play/hud.h"
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/save.h"
@@ -47,6 +51,7 @@ static Instance g_model[2];
 static Mesh g_mesh[2];
 static Tri g_tri[4];
 static Camera g_cam;
+static int g_arena_version;
 static const int g_kind[2] = {0,0}, g_passive[2] = {1,1}, g_rate[2] = {71,71};
 
 static void preview(const char *name)
@@ -94,8 +99,10 @@ static void arena(int wall)
         g_entity[i].pose[ENTITY_WALK].slot[0] = 0;
         g_entity[i].pose[ENTITY_WALK].w[0] = 40; g_entity[i].pose[ENTITY_WALK].h[0] = 60;
     }
+    g_mesh[0].ex = g_mesh[0].ez = 1000;
+    g_mesh[1].ex = g_mesh[1].ey = g_mesh[1].cy = 100; g_mesh[1].cz = 30;
     g_scene.models = g_model; g_scene.nmodels = wall ? 2 : 1;
-    g_scene.entities = g_entity; g_scene.nentities = 2; g_scene.version++;
+    g_scene.entities = g_entity; g_scene.nentities = 2; g_scene.version = ++g_arena_version;
     keep_clear(); og_dungeon_open(&g_scene,g_kind,g_passive,g_rate);
     for (i = 0; i < 2; i++) { og_dungeon_loaded(i); }
     og_move_init(); og_move_place(0,WALK_EYE,0,0);
@@ -135,6 +142,56 @@ static void rules(void)
     og_anim_start(&anim,og_foe_script(9),8); strikes = 0;
     for (i = 0; i < 25 && !anim.ended; i++) { if (og_anim_tick(&anim) & 1) { strikes++; } }
     check_expect(strikes == 2,"werewolf ASCR retains both attack events");
+}
+
+static void ai_rules(void)
+{
+    static OgState before;
+    OgMotion motion, before_motion;
+    OgMind mind;
+    Body body;
+    Entity entity;
+    float target[3];
+    df_u32 uses, random;
+    int i, blocked;
+
+    before = *og_state(); og_move_capture(&before_motion); motion = before_motion;
+    og_character()->skill[16] = 100;
+    uses = og_state()->skill_uses[16];
+    check_expect(!og_ai_stealth(0,1024,0) && og_state()->skill_uses[16] == uses+1,
+                 "original stealth chance uses distance and trains once in an even game minute");
+    random = og_state()->random;
+    check_expect(og_ai_stealth(1,600,0) && og_state()->random == random &&
+                 og_state()->skill_uses[16] == uses+1,"other creatures share the minute's stealth check");
+    og_state_pass_minutes(1); random = og_state()->random;
+    check_expect(!og_ai_stealth(0,600,0) && og_state()->random == random,
+                 "quiet movement skips odd-minute stealth rolls");
+    motion.vx = 200; motion.vz = 0; og_move_restore(&motion);
+    check_expect(og_ai_stealth(0,600,1),"fast movement reveals an already encountered player");
+    check_expect(og_ai_octant(1,2) == 0 && og_ai_octant(2,1) == 1 &&
+                 og_ai_octant(1,-2) == 2 && og_ai_octant(2,-1) == 3 &&
+                 og_ai_octant(-2,-1) == 4 && og_ai_octant(-1,-2) == 5 &&
+                 og_ai_octant(-2,1) == 6 && og_ai_octant(-1,2) == 7,
+                 "all original navigation octants preserve dominant-axis and quadrant selection");
+    check_expect(og_ai_turn(2016,32,64) == 32 && og_ai_turn(0,512,64) == 64 &&
+                 og_ai_angle(2040,8) == 16,"creatures turn gradually across the angle wrap");
+    arena(1); g_scene.nentities = 0; g_scene.version = ++g_arena_version;
+    mem_zero(&mind,sizeof(mind)); entity_init(&entity);
+    entity.yaw = DF_TAU/2; mind.detected = 1;
+    body_init(&body,12,60,12,40); body_place(&body,0,0,60);
+    target[0] = 0; target[1] = 30; target[2] = -120;
+    blocked = 1;
+    for (i = 0; i < 120; i++) {
+        og_ai_walk(&mind,&body,&entity,&g_scene,target,0,0,200,1.0f/60);
+        if (body.feet[2] < 41 && df_absf(body.feet[0]) < 100) {
+            if (blocked) { fprintf(stderr,"AI wall fixture: step %d at %.2f %.2f %.2f\n",i,body.feet[0],body.feet[1],body.feet[2]); }
+            blocked = 0;
+        }
+    }
+    check_expect(blocked,"wall-following never moves a creature through the blocking wall");
+    check_expect(mind.direction == 2 || mind.direction == 4 || mind.direction == 8,
+                 "a blocked creature retains a valid original navigation direction");
+    og_state_restore(&before); og_state_restore_world(); og_move_restore(&before_motion);
 }
 
 static void swings(df_u32 sword)
@@ -380,8 +437,10 @@ void check_ogcombat_loaded(void)
     Camera cam;
     int i, j, dead, usable;
     scene = &seam_level()->scene; dead = usable = 0;
-    for (i = 0; i < scene->nentities; i++) {
-        corpse = &scene->entities[i];
+    check_ogdoors_loaded(scene);
+    check_ogmagic_loaded();
+    for (i = 0; i < og_dungeon_count(); i++) {
+        corpse = og_dungeon_entity(i);
         if (!corpse->dead) { continue; }
         dead++;
         camera_set(&cam,corpse->x,corpse->y+40,corpse->z-20,0,0);
@@ -396,6 +455,21 @@ void check_ogcombat_loaded(void)
         }
     }
     check_expect(dead && usable,"saved corpses remain lootable after a fresh-process load");
+    for (i = 0; i < OG_ENCOUNTERS; i++) {
+        const OgEncounter *saved;
+        const Keep *row;
+        const Entity *actor;
+        saved = &og_encounter_state()->actor[i];
+        if (!saved->key.thing) { continue; }
+        actor = 0;
+        for (j = 0; j < og_dungeon_count(); j++) {
+            if (og_dungeon_entity(j)->key.thing == saved->key.thing) { actor = og_dungeon_entity(j); break; }
+        }
+        row = keep_find(saved->key);
+        check_expect(actor && row && actor->live && actor->dead && actor->x == row->x &&
+                     actor->y == row->y && actor->z == row->z && actor->pose[ENTITY_DEAD].w[0] > 0,
+                     "a fresh process rebuilds the saved rest encounter with its corpse art and physical position");
+    }
     check_expect(scene->nmodels == scene_solid_models(scene)+OG_ARROWS,"arrow meshes have reserved nonsolid draw slots");
     check_expect(seam_capture_world(),"the reloaded corpse can be saved again");
 }
@@ -409,7 +483,7 @@ static void hold_round_trip(const char *root)
     Weather weather;
     df_u32 sword;
     float x, y, z;
-    int i, j, killed, status;
+    int i, j, killed, status, original, spawned;
     char resolved[4096];
     pid_t child;
     og_state_restore(&g_before); og_state_restore_world();
@@ -438,9 +512,32 @@ static void hold_round_trip(const char *root)
         killed = target->dead;
     }
     check_expect(killed,"actual Hold combat can kill a loaded creature");
+    original = og_dungeon_count(); spawned = 0;
+    for (i = 0; i < original && !spawned; i++) {
+        target = og_dungeon_entity(i);
+        og_move_place(target->x,target->y+WALK_EYE,target->z,0);
+        og_move_camera(&g_cam);
+        spawned = og_encounter_try(&g_cam);
+    }
+    check_expect(spawned && og_dungeon_count() == original+1,
+                 "the actual Hold can place a rest encounter with preloaded drawable resources");
+    if (spawned) {
+        int slot;
+        target = og_dungeon_entity(original); slot = target->pose[ENTITY_WALK].slot[0];
+        check_expect(slot < seam_level()->nimages && seam_level()->images[slot] &&
+                     target->pose[ENTITY_WALK].w[0],"a real rest creature has decoded walking art before its first frame");
+        og_move_place(target->x,target->y+WALK_EYE,target->z-30,0); og_move_camera(&g_cam);
+        og_god_set(1);
+        for (j = 0; j < 60 && !target->dead; j++) { og_dungeon_strike(scene,&g_cam,&strike); }
+        og_god_set(0);
+        check_expect(target->dead,"the actual rest encounter leaves a persistent combat corpse");
+        seam_creatures(&g_cam);
+    }
+    check_ogdoors_hold(scene);
     og_state_capture_motion(); og_move_camera(&g_cam);
     og_state_pose(g_cam.x,g_cam.y,g_cam.z,og_move_yaw(),0);
     og_state_save_label("Combat round trip");
+    check_ogmagic_hold();
     check_expect(seam_capture_world() && og_save_write(5),"write actual combat health and corpse state to an isolated save");
     child = fork();
     if (!child) { execl("/proc/self/exe","ogfall-test","--ogfall-resume-combat",test_root,(char *)0); _exit(127); }
@@ -470,7 +567,8 @@ void check_ogcombat(const char *root)
     og_object_edit(OG_WORLD_ROOT)->place_key = 0x40000001u;
     sword = og_item_create(og_state()->inventory_id,3,5,1);
     og_dungeon_blood(-1,-1);
-    rules(); swings(sword); melee(sword); archery(); injuries(); god_mode(sword);
+    check_ogdoors(root);
+    rules(); ai_rules(); swings(sword); melee(sword); archery(); injuries(); god_mode(sword);
     small_creature_floor(); flying_creature_floor(); flight_stairwell();
     og_dungeon_close(); og_weapon_cancel(); og_state_restore(&g_before); og_state_restore_world();
     hold_round_trip(root);

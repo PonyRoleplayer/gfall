@@ -48,7 +48,7 @@ static int magic_matches(const df_u8 *data)
 }
 
 /* Explicit little-endian wire fields. Never write struct layout or pointers. */
-#define SAVE_CAP 131072u
+#define SAVE_CAP 524288u
 static df_u8 g_wire[SAVE_CAP];
 typedef struct Wire {
     df_u32 pos, limit;
@@ -206,9 +206,16 @@ static void wire_pixel(Wire *w, df_u16 *pixel)
     if (w->read && !w->bad) { *pixel = df_ru16(bytes); }
 }
 
+static void wire_where(Wire *w, OgWhere *p)
+{
+    wire_int(w,&p->kind); wire_int(w,&p->located); wire_int(w,&p->region); wire_int(w,&p->index);
+    wire_int(w,&p->block); wire_int(w,&p->record); wire_int(w,&p->has_back);
+    wire_int(w,&p->back_x); wire_int(w,&p->back_z); wire_int(w,&p->back_yaw);
+    wire_int(w,&p->origin_x); wire_int(w,&p->origin_z);
+}
 static void transfer(Wire *w, OgState *s)
 {
-    int i;
+    int i, j;
 
     wire_int(w, &s->version);
     wire_int(w, &s->ready);
@@ -284,6 +291,79 @@ static void transfer(Wire *w, OgState *s)
     wire_u32(w, &s->last_event.subject);
     wire_u32(w, &s->last_event.other);
     wire_int(w, &s->last_event.value);
+    if (w->version >= 5) {
+        wire_u32(w,&s->stealth_minute);
+        wire_u32(w,&s->progress.checked); wire_u32(w,&s->progress.raised_lo); wire_u32(w,&s->progress.raised_hi);
+        wire_int(w,&s->progress.base_sum); wire_int(w,&s->progress.points); wire_int(w,&s->progress.active);
+        for (i = 0; i < OG_ATTRS; i++) { wire_int(w,&s->progress.floor[i]); }
+        wire_int(w,&s->survival.breath); wire_u32(w,&s->survival.ticks);
+        wire_u32(w,&s->survival.last_tick); wire_float(w,&s->survival.fraction);
+        wire_float(w,&s->survival.climb_time); wire_u32(w,&s->survival.climb_minute);
+        wire_int(w,&s->survival.climbing); wire_int(w,&s->survival.climb_failed);
+        wire_u32(w,&s->encounters.place); wire_u32(w,&s->encounters.serial);
+        for (i = 0; i < 6; i++) { wire_int(w,&s->encounters.choices[i]); }
+        for (i = 0; i < OG_ENCOUNTERS; i++) {
+            OgEncounter *actor;
+            actor = &s->encounters.actor[i];
+            wire_u32(w,&actor->key.place); wire_u32(w,&actor->key.thing);
+            wire_int(w,&actor->kind); wire_int(w,&actor->archive);
+            wire_float(w,&actor->x); wire_float(w,&actor->y); wire_float(w,&actor->z);
+        }
+    }
+    if (w->version >= 6) {
+        wire_u32(w,&s->magic.ready); wire_u32(w,&s->magic.last); wire_int(w,&s->magic.paid);
+        for (i = 0; i < OG_EFFECTS; i++) {
+            OgEffect *e;
+            e = &s->magic.effect[i];
+            wire_u32(w,&e->target.place); wire_u32(w,&e->target.thing);
+            wire_u32(w,&e->caster.place); wire_u32(w,&e->caster.thing);
+            wire_int(w,&e->active); wire_int(w,&e->group); wire_int(w,&e->sub); wire_int(w,&e->rounds);
+            wire_int(w,&e->magnitude); wire_int(w,&e->chance); wire_int(w,&e->change); wire_int(w,&e->spell);
+            wire_int(w,&e->level); wire_int(w,&e->icon); wire_int(w,&e->element); wire_int(w,&e->permanent);
+        }
+        for (i = 0; i < OG_AILMENTS; i++) {
+            OgAilment *a;
+            a = &s->magic.ailment[i];
+            wire_u32(w,&a->target.place); wire_u32(w,&a->target.thing);
+            wire_int(w,&a->active); wire_int(w,&a->id);
+            for (j = 0; j < 11; j++) { wire_int(w,&a->stat[j]); }
+            wire_int(w,&a->delay); wire_int(w,&a->maximum); wire_int(w,&a->left); wire_int(w,&a->stage);
+            for (j = 0; j < 8; j++) { wire_int(w,&a->drained[j]); }
+        }
+        for (i = 0; i < OG_MISSILES; i++) {
+            OgMissile *m;
+            m = &s->magic.missile[i];
+            wire_u32(w,&m->caster.place); wire_u32(w,&m->caster.thing);
+            wire_int(w,&m->live); wire_int(w,&m->spell); wire_int(w,&m->level);
+            wire_int(w,&m->element); wire_int(w,&m->target); wire_int(w,&m->burst);
+            wire_float(w,&m->x); wire_float(w,&m->y); wire_float(w,&m->z);
+            wire_float(w,&m->dx); wire_float(w,&m->dy); wire_float(w,&m->dz);
+        }
+        for (i = 0; i < OG_MAGIC_ACTORS; i++) {
+            OgMagicActor *a;
+            a = &s->magic.actor[i]; wire_u32(w,&a->key.place); wire_u32(w,&a->key.thing);
+            wire_int(w,&a->active); wire_int(w,&a->magicka); wire_int(w,&a->fatigue);
+        }
+        wire_int(w,&s->magic.recall.valid); wire_u32(w,&s->magic.recall.place);
+        wire_float(w,&s->magic.recall.x); wire_float(w,&s->magic.recall.y); wire_float(w,&s->magic.recall.z);
+        wire_int(w,&s->magic.recall.yaw); wire_int(w,&s->magic.recall.pitch);
+
+    }
+
+    if (w->version >= 7) {
+        OgWorldState *world;
+        world = &s->world_state;
+        wire_where(w,&world->where); wire_where(w,&world->recall_where);
+        wire_int(w,&world->px); wire_int(w,&world->py);
+        wire_bytes(w,world->known,OG_KNOWN_BYTES); wire_int(w,&world->map_count);
+        if (world->map_count < 0 || world->map_count > OG_MAP_ROWS) { w->bad = 1; return; }
+        for (i = 0; i < world->map_count; i++) {
+            AutomapRow *row;
+            row = &world->map[i]; wire_u32(w,&row->place); wire_u32(w,&row->mesh);
+            wire_int(w,&row->x); wire_int(w,&row->y); wire_int(w,&row->z);
+        }
+    }
+
 }
 
 static df_u32 checksum(const df_u8 *p, df_u32 n)
@@ -350,7 +430,13 @@ static int read_save(const char *path)
         if (!og_inventory_upgrade(&g_candidate)) { w.bad = 1; }
         else { g_legacy = 1; }
     }
-    if (w.version < 4 && !w.bad) { og_spell_upgrade(&g_candidate); g_candidate.version = OG_STATE_VERSION; }
+    if (w.version < 4 && !w.bad) { og_spell_upgrade(&g_candidate); }
+    if (w.version < 5 && !w.bad) {
+        g_candidate.version = OG_STATE_VERSION;
+        g_candidate.progress.checked = g_candidate.minutes;
+        g_candidate.progress.base_sum = og_progress_sum(&g_candidate.who,&g_candidate.career)-(g_candidate.who.level-1)*15;
+    }
+    if (w.version < 7) { g_candidate.version = OG_STATE_VERSION; }
     if (w.bad || w.pos != size || !og_state_valid(&g_candidate)) {
         g_error = "Invalid OGFALL save state";
         return 0;

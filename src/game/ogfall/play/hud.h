@@ -8,7 +8,7 @@
  *
  * interaction_mode is (mode + step) & 3. Left button steps +1, right
  * steps -1. Portrait overlay keeps hud_portrait_overlay_index's order;
- * slice 1 can only show the low-health frame.
+ * magic and ailments supply the live indicators.
  */
 
 #define OG_HUD_BUTTONS 11

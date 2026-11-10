@@ -26,7 +26,7 @@ enum {
     OG_PIC_HEALTH,
     OG_PIC_FATIGUE,
     OG_PIC_MAGICKA,
-    OG_PIC_OVERLAY,
+    OG_PIC_OVERLAY, OG_PIC_OVERLAY_1, OG_PIC_OVERLAY_2, OG_PIC_OVERLAY_3,
     OG_PIC_COMPASS,
     OG_PIC_COMPASS_WIDE,
     OG_PIC_COMPBOX,
@@ -44,6 +44,7 @@ enum {
     OG_PIC_FEMALE,
     /* The chargen screen composed for this frame, 320 x 200. 0 on the title and the map. */
     OG_PIC_SCREEN,
+    OG_PIC_BREATH, OG_PIC_BREATH_LOW,
     OG_PIC_COUNT
 };
 
@@ -52,6 +53,7 @@ enum {
     OG_FRAME_WORLD,
     OG_FRAME_ENTER,
     OG_FRAME_LOAD,
+    OG_FRAME_TRAVEL,
     OG_FRAME_TITLE,
     OG_FRAME_QUIT
 };
@@ -63,6 +65,7 @@ typedef struct OgIn {
     int mouse_held;
     int mouse_pressed;
     int mouse_released;
+    int wheel;
     int reset;
     unsigned char held[OG_ACTS];
     unsigned char pressed[OG_ACTS];
@@ -103,6 +106,7 @@ int og_frame(const OgIn *in, Camera *cam, const Scene *scene);
 int og_paused(void);
 /* 1 while the game draws the arrow and the engine must not look. */
 int og_wants_pointer(void);
+int og_cursor_free(void);
 const char *og_status_line(void);
 void og_draw(void);
 /* The engine pointer, lower-left. Drawn when the game owns the arrow. */

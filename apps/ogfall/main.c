@@ -33,6 +33,7 @@
 #include "game/ogfall/play/rest.h"
 #include "game/ogfall/play/screen.h"
 #include "game/ogfall/play/steer.h"
+#include "game/ogfall/play/maps.h"
 
 #include "seam.h"
 
@@ -100,11 +101,12 @@ static void fill_in(OgIn *in, const Input *keys, float dt)
     in->mouse_held = (int)keys->mouse_held;
     in->mouse_pressed = (int)keys->mouse_pressed;
     in->mouse_released = (int)keys->mouse_released;
+    in->wheel = keys->wheel;
     in->toggle_fullscreen = g_game_keys.pressed[OG_ACTS];
     if (g_game_keys.pressed[OG_ACTS + 1]) { in->ch = 27; }
     input_pointer(&x, &y);
     og_point_at(x, y);
-    if (og_chargen_mode() == OG_UI_WORLD && !og_options_up() && !og_possessions()->page && !og_rest()->open && !og_dead()) {
+    if (og_chargen_mode() == OG_UI_WORLD && !og_maps_up() && !og_options_up() && !og_possessions()->page && !og_rest()->open && !og_dead()) {
         in->on_picture = og_world_pointer(x, y, df_view_w(), df_view_h(),
                                          !(og_options_flags() & 1), &in->cx, &in->cy);
     } else {
@@ -113,7 +115,7 @@ static void fill_in(OgIn *in, const Input *keys, float dt)
     if (og_chargen_mode() == OG_UI_MAP && in->on_picture) {
         in->pixel = seam_map_pixel(in->cx, in->cy);
     }
-    if (og_chargen_mode() != OG_UI_WORLD || og_options_up() || og_possessions()->page || og_rest()->open || og_dead()) {
+    if (og_chargen_mode() != OG_UI_WORLD || og_maps_up() || og_options_up() || og_possessions()->page || og_rest()->open || og_dead()) {
         vk = input_key_pressed();
         in->key = vk;
         if (!in->ch) { in->ch = typed(vk); }
@@ -137,7 +139,14 @@ static void extra(void)
     }
 }
 
-static int enter_hold(Camera *cam, int restoring)
+static void under(void)
+{
+    const AutomapView *view;
+    view = seam_automap_view();
+    if (view && seam_level()) { gfx_automap(seam_level(),view,0x141418u); }
+}
+
+static int enter_place(Camera *cam, int restoring, int changing)
 {
     float x;
     float y;
@@ -146,30 +155,23 @@ static int enter_hold(Camera *cam, int restoring)
 
     gfx_hold("Loading...");
     /* Release graphics references before the old place's heap is destroyed. */
-    if (restoring && !gfx_prepare(0)) {
+    if (!gfx_prepare(0)) {
         win_fail(gfx_error());
         return 0;
     }
-    if (!seam_open_hold(&x, &y, &z)) {
+    if (!seam_open_place(restoring,changing,&x,&y,&z)) {
         win_fail(seam_error());
         return 0;
     }
-    if (restoring && og_state()->motion_valid) {
-        og_move_restore(&og_state()->motion);
-    } else {
-        og_move_init();
-        og_move_place(restoring ? og_state()->x : x,
-                      restoring ? og_state()->eye_y : y,
-                      restoring ? og_state()->z : z,
-                      restoring ? og_state()->yaw : 0);
-    }
-    og_move_camera(cam);
-    seam_creatures(cam);
     level = seam_level();
+    /* One ring of 4096-unit chunks covers this distance from every point. */
+    gfx_set_far(level->streamed ? 4096 : DF_FAR);
     if (!gfx_prepare(level)) {
         win_fail(gfx_error());
         return 0;
     }
+    seam_land(cam,restoring,changing);
+    seam_creatures(cam);
     gfx_prime(level, cam);
     gfx_fade_in(0.5f);
     return 1;
@@ -219,6 +221,7 @@ static int ogfall_main(void *instance)
     hud_set(0);
     gfx_set_use_key(0);
     gfx_set_extra(extra);
+    gfx_set_under(under);
     if (!gfx_prepare(0)) {
         win_fail(gfx_error());
         input_end();
@@ -263,18 +266,25 @@ static int ogfall_main(void *instance)
         if (have && !was_paused && og_paused()) {
             og_state_preview(gfx_thumbnail(OG_THUMB_W, OG_THUMB_H, preview) ? preview : 0);
         }
-        if ((asked == OG_FRAME_ENTER || asked == OG_FRAME_LOAD) && !enter_hold(&cam, asked == OG_FRAME_LOAD)) {
+        if ((asked == OG_FRAME_ENTER || asked == OG_FRAME_LOAD || asked == OG_FRAME_TRAVEL) &&
+            !enter_place(&cam,asked == OG_FRAME_LOAD,asked == OG_FRAME_TRAVEL)) {
             break;
         }
-        if (asked == OG_FRAME_ENTER || asked == OG_FRAME_LOAD) {
+        if (asked == OG_FRAME_ENTER || asked == OG_FRAME_LOAD || asked == OG_FRAME_TRAVEL) {
             have = 1;
         }
         if (have && !og_paused() && !console_open()) {
+            seam_world_step(&cam,in.dt);
+            if (seam_world_needs_reload()) {
+                gfx_hold("Loading...");
+                seam_world_reload(&cam);
+                gfx_prime(seam_level(),&cam);
+            }
             seam_creatures(&cam);
             sound_listen(cam.x, cam.y, cam.z, cam.yaw);
         }
         gfx_set_pause(og_paused());
-        gfx_frame(&cam, have ? seam_level() : 0);
+        gfx_frame(&cam,have && !og_maps_up() ? seam_level() : 0);
     }
     input_keys_attach(0);
     input_end();

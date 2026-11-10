@@ -6,6 +6,10 @@
 #include "game/ogfall/play/combat.h"
 #include "game/ogfall/play/cheats.h"
 #include "game/ogfall/play/rest.h"
+#include "game/ogfall/play/actions.h"
+#include "game/ogfall/play/magic.h"
+#include "game/ogfall/play/travel.h"
+#include "game/ogfall/play/maps.h"
 #include "game/ogfall/play/dungeon.h"
 #include "game/ogfall/tables/itemdefs.h"
 
@@ -79,6 +83,7 @@ void ogfall_play_startup(void)
     g_sound = 0;
     g_sound_at = 0;
     og_cheats_startup();
+    og_travel_commands();
     g_capture = 0;
     g_words = 0;
     g_word_variants = 0;
@@ -201,16 +206,18 @@ void og_compass_set(int frame, int pic, int w, int h)
 
 int og_paused(void)
 {
-    return !g_world || og_options_up() || og_possessions()->page || og_rest()->open ||
+    return !g_world || og_maps_up() || og_options_up() || og_possessions()->page || og_rest()->open ||
         (g_world && og_character()->health <= 0) || og_chargen_mode() != OG_UI_WORLD;
 }
+
+int og_cursor_free(void) { return g_cursor_active; }
 
 int og_wants_pointer(void)
 {
     if (og_paused() && og_chargen_mode() != OG_UI_WORLD) {
         return 1;
     }
-    if (og_options_up() || og_possessions()->page || og_rest()->open || og_dead()) {
+    if (og_maps_up() || og_options_up() || og_possessions()->page || og_rest()->open || og_dead()) {
         return 1;
     }
     if (og_options_mouse() == 0) {
@@ -404,6 +411,8 @@ int og_frame(const OgIn *in, Camera *cam, const Scene *scene)
     int step;
     int blocks;
     int result;
+    int casting;
+    df_u32 minute;
     OgMoveIn mv;
 
     if (!in) {
@@ -423,6 +432,12 @@ int og_frame(const OgIn *in, Camera *cam, const Scene *scene)
     if (og_chargen_quit()) {
         return OG_FRAME_QUIT;
     }
+    if (og_maps_up()) {
+        og_maps_frame(in); g_mouse_prev = in->mouse_held;
+        if (!og_maps_up()) { g_wait_buttons = (in->mouse_held & 3) != 0; }
+        return OG_FRAME_MENU;
+    }
+    if (og_travel_asked()) { return OG_FRAME_TRAVEL; }
     if (og_possessions()->page) {
         og_possessions_frame(in);
         g_mouse_prev = in->mouse_held;
@@ -475,6 +490,18 @@ int og_frame(const OgIn *in, Camera *cam, const Scene *scene)
         g_mouse_prev = in->mouse_held;
         return OG_FRAME_MENU;
     }
+    /* The renderer steps triggers after our frame. Apply its pending arrival
+     * before this frame's movement, combat, or opening a save/options screen. */
+    if (og_move_take_teleport()) {
+        og_weapon_cancel();
+        og_move_camera(cam);
+    }
+    og_actions_step(in->dt);
+    if (og_possessions()->page || og_dead()) { return OG_FRAME_MENU; }
+    if (og_progress()->active && !og_dungeon_nearby(cam,1024)) {
+        og_possessions_open(OG_VIEW_SHEET,0);
+        return OG_FRAME_MENU;
+    }
     if (in->toggle_fullscreen) {
         og_options_set_flags(og_options_flags() ^ 1);
         og_config_write();
@@ -516,27 +543,33 @@ int og_frame(const OgIn *in, Camera *cam, const Scene *scene)
             og_options_open();
         } else if (which == OG_HUD_SHEET) { og_possessions_open(OG_VIEW_SHEET,0); }
         else if (which == OG_HUD_PACK) { og_possessions_open(OG_VIEW_INVENTORY,0); }
-        else if (which == OG_HUD_SPELL) { og_possessions_open(OG_VIEW_SPELLS,0); }
+        else if (which == OG_HUD_SPELL) { og_possessions_cast(); }
+        else if (which == OG_HUD_MAP) { og_maps_open(0); }
+        else if (which == OG_HUD_TRAVEL) { og_maps_open(1); }
         else if (which == OG_HUD_REST) { og_rest_open(scene,cam); }
+        else if (which == OG_HUD_STATUS) { og_magic_status(); }
         blocks = og_hud_blocks_mouse(in->cy, 1, og_key_region(in->held));
     }
     if (in->ch == 27) {
         og_options_open();
     }
     if (in->pressed[OG_REST]) { og_rest_open(scene,cam); }
-    if (in->pressed[OG_TRANSPORT] || in->pressed[OG_AUTOMAP]
-        || in->pressed[OG_TRAVEL]
-        || in->pressed[OG_MAGIC_ITEM] || in->pressed[OG_STATUS_KEY]) {
+    if (in->pressed[OG_AUTOMAP]) { og_maps_open(0); }
+    if (in->pressed[OG_TRAVEL]) { og_maps_open(1); }
+    if (in->pressed[OG_TRANSPORT] || in->pressed[OG_MAGIC_ITEM]) {
         og_sound(203);
     }
     if (in->pressed[OG_SHEET]) { og_possessions_open(OG_VIEW_SHEET,0); }
     else if (in->pressed[OG_INVENTORY]) { og_possessions_open(OG_VIEW_INVENTORY,0); }
-    else if (in->pressed[OG_CAST]) { og_possessions_open(OG_VIEW_SPELLS,0); }
+    else if (in->pressed[OG_CAST]) { og_possessions_cast(); }
+    if (in->pressed[OG_RECAST]) { og_magic_recast(); }
+    if (in->pressed[OG_ABORT]) { og_magic_abort(); }
+    if (in->pressed[OG_STATUS_KEY]) { og_magic_status(); }
     region = og_control_region(in->on_picture ? in->cx : 160, in->on_picture ? in->cy : 77,
                                bar, og_options_mouse(), g_cursor_active,
                                in->on_picture && !blocks ? in->mouse_held : 0, in->held);
     /* A newly opened modal consumes this frame too. */
-    if (og_options_up() || og_possessions()->page || og_rest()->open) {
+    if (og_maps_up() || og_options_up() || og_possessions()->page || og_rest()->open) {
         og_weapon_cancel();
         g_mouse_prev = in->mouse_held;
         return OG_FRAME_MENU;
@@ -557,17 +590,28 @@ int og_frame(const OgIn *in, Camera *cam, const Scene *scene)
     cursor_weights(&mv, in->cx, in->cy, bar);
     og_move_set_weight(og_inventory_weight(og_state()->inventory_id));
     og_move_frame(scene, &mv);
+    minute = og_state()->minutes;
     og_state_frame(in->dt);
+    og_survival_minutes((int)(og_state()->minutes-minute),in->held[OG_RUN],og_move_climbing());
+    og_survival_step(scene,in->dt);
     if (og_move_splashed()) {
         og_sound(86);
     }
     if (cam) {
         og_move_camera(cam);
+        casting = og_magic_visible();
         {
             OgStrike strike;
-            og_weapon_frame(in,blocks,&strike);
-            og_dungeon_strike(scene,cam,&strike);
+            if (!og_magic_visible() && !(og_character()->conditions & 1)) {
+                og_weapon_frame(in,blocks,&strike);
+                og_dungeon_strike(scene,cam,&strike);
+            }
+            og_magic_frame(scene,cam,in,blocks);
             og_dungeon_step(scene,cam,in->dt);
+        }
+        if (casting || og_magic_visible()) {
+            g_mouse_prev = in->mouse_held;
+            return OG_FRAME_WORLD;
         }
     }
     {
@@ -650,12 +694,15 @@ void og_draw(void)
     static const int mode_row[4] = { 2, 3, 0, 1 };
 
     mode = og_chargen_mode();
+    if (og_maps_up()) {
+        og_blit(g_pic[OG_PIC_SCREEN],0,0,320,200); og_maps_overlay(); draw_pointer(); return;
+    }
     if (og_dead() && !og_options_up()) {
         og_blit(g_pic[OG_PIC_SCREEN],0,0,320,200);
         draw_pointer();
         return;
     }
-    if (og_possessions()->page) {
+    if (og_possessions()->page && og_possessions()->page != OG_VIEW_MESSAGE) {
         og_blit(g_pic[OG_PIC_SCREEN],0,0,320,200);
         draw_pointer();
         return;
@@ -692,14 +739,16 @@ void og_draw(void)
     }
     who = og_character();
     bar = (og_options_flags() & 1) == 0;
-    og_weapon_draw();
+    if (!og_magic_visible()) { og_weapon_draw(); }
+    og_magic_draw();
     if (bar) {
         og_hud_blit(g_pic[OG_PIC_BAR], 0, 154, 320, 46);
         row = mode_row[og_hud_mode() & 3];
         og_hud_blit_part(g_pic[OG_PIC_MODES], 0, row * 23, 47, 23, 131, 154, 47, 23);
-        overlay = og_hud_overlay(who->health, who->max_health, 0, 0, 0);
-        if (overlay == 2) {
-            og_hud_blit(g_pic[OG_PIC_OVERLAY], 5, 159, 36, 35);
+        overlay = og_magic_indicators();
+        overlay = og_hud_overlay(who->health,who->max_health,overlay & 1,overlay & 2,overlay & 4);
+        if (overlay >= 0) {
+            og_hud_blit(g_pic[OG_PIC_OVERLAY+overlay], 5, 159, 36, 35);
         }
         og_hud_blit(g_pic[OG_PIC_FACE], 7, 160, 32, 32);
         if (g_comp_n > 0) {
@@ -726,6 +775,12 @@ void og_draw(void)
         og_hud_blit_part(g_pic[OG_PIC_COMPASS_WIDE], (og_move_yaw() & 2047) / 8, 0, 65, 13,
                          253, 185, 65, 13);
     }
-    if (og_rest()->open) { og_blit(g_pic[OG_PIC_SCREEN],0,0,320,200); }
+    if (og_rest()->open || og_possessions()->page == OG_VIEW_MESSAGE) { og_blit(g_pic[OG_PIC_SCREEN],0,0,320,200); }
+    if (og_survival()->breath > 0) {
+        int remaining, id;
+        remaining = og_survival()->breath;
+        id = remaining < og_character()->attribute[OG_END]/8+4 ? OG_PIC_BREATH_LOW : OG_PIC_BREATH;
+        og_blit(g_pic[id],310,120-remaining*2,6,remaining*2);
+    }
     draw_pointer();
 }

@@ -5,8 +5,13 @@
 #include "game/ogfall/tables/itemdefs.h"
 #include "engine/core/mem.h"
 #include "engine/core/log.h"
+#include "game/ogfall/play/magic.h"
+#include "game/ogfall/play/ailments.h"
+#include "game/ogfall/play/ground.h"
+#include "game/ogfall/play/move.h"
 
 static OgPossessions g;
+static void (*g_answer)(const char *);
 static OgBook g_reading;
 static df_u8 g_owner[110 * 184];
 const OgPossessions *og_possessions(void) { return &g; }
@@ -15,6 +20,7 @@ df_u8 *og_doll_owners(void) { return g_owner; }
 
 void og_possessions_reset(void)
 {
+    g_answer = 0;
     og_book_close(&g_reading);
     mem_zero(&g, sizeof(g));
     g.skill_group = -1;
@@ -25,7 +31,7 @@ static int game_mode(int page)
 {
     if (page == OG_VIEW_SHEET) { return OG_GAME_SHEET; }
     if (page == OG_VIEW_INVENTORY) { return OG_GAME_INVENTORY; }
-    if (page == OG_VIEW_BOOK) { return OG_GAME_READING; }
+    if (page == OG_VIEW_BOOK || page == OG_VIEW_MESSAGE) { return OG_GAME_READING; }
     return OG_GAME_SPELLBOOK;
 }
 
@@ -33,6 +39,11 @@ void og_possessions_close(void)
 {
     int mode;
     if (!g.page) { return; }
+    if (g.page == OG_VIEW_SHEET && !og_progress_finish()) {
+        df_copy(g.notice,"You have not distributed all your attribute points.",sizeof(g.notice));
+        g.revision++; return;
+    }
+    g_answer = 0;
     if (g.page == OG_VIEW_BOOK) { og_book_close(&g_reading); }
     og_state_mode_pop();
     mode = og_state()->mode;
@@ -48,7 +59,7 @@ void og_possessions_close(void)
 
 int og_possessions_open(int page, df_u32 remote)
 {
-    if (!og_state()->ready || page < OG_VIEW_INVENTORY || page > OG_VIEW_BOOK) { return 0; }
+    if (!og_state()->ready || page < OG_VIEW_INVENTORY || page > OG_VIEW_MESSAGE) { return 0; }
     if (page == OG_VIEW_SPELLS) {
         df_u32 ids[OG_OBJECTS];
         g.book = og_inventory_book();
@@ -82,18 +93,36 @@ int og_possessions_open(int page, df_u32 remote)
     return 1;
 }
 
+int og_possessions_cast(void)
+{
+    if (!og_possessions_open(OG_VIEW_SPELLS,0)) { return 0; }
+    g.casting = 1; return 1;
+}
+
+int og_possessions_message(const char *text, void (*answer)(const char *))
+{
+    if (!text || !*text || g.page || !og_possessions_open(OG_VIEW_MESSAGE,0)) { return 0; }
+    df_copy(g.notice,text,sizeof(g.notice)); g_answer = answer;
+    if (answer) { g.prompt = OG_PROMPT_ANSWER; }
+    g.revision++;
+    return 1;
+}
+
+static void submit_answer(int accepted)
+{
+    char text[32];
+    void (*callback)(const char *);
+    df_copy(text,g.input,sizeof(text)); callback = g_answer; g_answer = 0;
+    og_possessions_close();
+    if (callback) { callback(accepted ? text : 0); }
+}
+
 static df_u32 ground(void)
 {
     if (!g.remote) {
-        /* Original room piles belong to a location, not a transient pointer.
-         * Quantised position distinguishes separate drops in the same room. */
-        int x, z;
-        df_u32 key;
-        x = df_ifloor(og_state()->x / 64);
-        z = df_ifloor(og_state()->z / 64);
-        key = 0x80000000u | (((df_u32)x & 32767u) << 15) | ((df_u32)z & 32767u);
-        g.remote = og_loot_container(og_object(OG_WORLD_ROOT)->place_key, key,
-                                    og_state()->x, og_state()->eye_y - 32, og_state()->z, -1);
+        g.remote = og_ground_container(og_state()->x,
+            og_world_state()->where.kind == OG_PLACE_WORLD ? og_move_body()->feet[1] : og_state()->eye_y-32,
+            og_state()->z);
     }
     return g.remote;
 }
@@ -111,6 +140,14 @@ int og_possessions_use(df_u32 id)
     item = og_object(id);
     if (!item || item->type != OG_RECORD_ITEM || (item->parent != og_state()->inventory_id &&
         !(g.page == OG_VIEW_INVENTORY && item->parent == g.remote))) { return 0; }
+    if (item->group == 0 && item->index >= 0 && item->index < 4) {
+        /* inven.c consumes the entire drug record, even when level-one
+         * protection or class immunity rejects its poison. */
+        og_poison_apply(-1,item->index+136,1);
+        og_object_delete(id);
+        df_copy(g.notice,"You consume the drug.",sizeof(g.notice)); g.revision++;
+        return 1;
+    }
     if (item->group == 27 && item->index == 0) {
         if (item->parent != og_state()->inventory_id) { return 0; }
         return og_possessions_open(OG_VIEW_SPELLS,0);
@@ -212,6 +249,15 @@ static void inventory_click(int x, int y)
 static void sheet_click(int x, int y)
 {
     int i;
+    if (og_progress()->active && inside(x,y,140,5,190,195)) {
+        i = (y-5)/24;
+        if (i < OG_ATTRS) {
+            g.selected = i;
+            if (x >= 176) { og_progress_adjust(i,(y-5)%24 < 12 ? 1 : -1); }
+        }
+        return;
+    }
+    if (og_progress()->active && !inside(x,y,50,179,89,198)) { return; }
     if (inside(x,y,50,179,89,198)) { og_possessions_close(); }
     else if (inside(x,y,1,150,67,160)) {
         og_possessions_close(); og_possessions_open(OG_VIEW_INVENTORY,0);
@@ -260,7 +306,11 @@ static void spell_click(int x, int y, int right)
         if ((y-58)%38 < 27) { og_spell_help(ids[g.selected],at,g.notice,sizeof(g.notice)); g.notice_page = 0; }
     } else if (inside(x,y,27,30,138,161)) {
         at = g.scroll[0] + (y-30)/9;
-        if (at < count) { g.selected = at; }
+        if (at < count) {
+            if (g.casting && g.selected == at) {
+                og_possessions_close(); og_magic_ready(ids[at]);
+            } else { g.selected = at; }
+        }
     } else if (inside(x,y,23,167,67,182)) {
         if (og_spell_delete(ids[g.selected])) {
             if (count == 1) { og_possessions_close(); return; }
@@ -350,6 +400,7 @@ static void prompt_accept(void)
 {
     int value, i;
     df_u32 id, rows[OG_OBJECTS];
+    if (g.prompt == OG_PROMPT_ANSWER) { submit_answer(1); return; }
     value = 0;
     for (i = 0; g.input[i] && value < 10000000; i++) { value = value * 10 + g.input[i] - '0'; }
     if (g.prompt == OG_PROMPT_NAME) {
@@ -378,15 +429,22 @@ void og_possessions_frame(const OgIn *in)
     if (click) { og_sound(g.page == OG_VIEW_SPELLS ? 205 : 203); }
     if (!g.notice[0]) { g.notice_page = 0; }
     if (g.prompt) {
-        if (in->ch == 27) { g.prompt = 0; }
+        if (in->ch == 27) {
+            if (g.prompt == OG_PROMPT_ANSWER) { submit_answer(0); }
+            else { g.prompt = 0; }
+        }
         else if (in->ch == 13 || (click && inside(in->cx,in->cy,84,116,151,134))) { prompt_accept(); }
-        else if (click && inside(in->cx,in->cy,169,116,236,134)) { g.prompt = 0; }
+        else if (click && inside(in->cx,in->cy,169,116,236,134)) {
+            if (g.prompt == OG_PROMPT_ANSWER) { submit_answer(0); }
+            else { g.prompt = 0; }
+        }
         else {
             for (n = 0; g.input[n]; n++) { }
             if (in->ch == 8 && n) { g.input[n-1] = 0; }
             else if (in->ch >= 32 && in->ch <= 126 && n < (int)sizeof(g.input)-1 &&
-                     (g.prompt == OG_PROMPT_NAME || (g.prompt == OG_PROMPT_SPELL_NAME && n < 24) ||
-                      (g.prompt != OG_PROMPT_SPELL_NAME && in->ch >= '0' && in->ch <= '9'))) {
+                     (g.prompt == OG_PROMPT_NAME || (g.prompt == OG_PROMPT_ANSWER && n < 16) ||
+                      (g.prompt == OG_PROMPT_SPELL_NAME && n < 24) ||
+                      (g.prompt != OG_PROMPT_SPELL_NAME && g.prompt != OG_PROMPT_ANSWER && in->ch >= '0' && in->ch <= '9'))) {
                 g.input[n] = (char)in->ch; g.input[n+1] = 0;
             }
         }
@@ -410,9 +468,19 @@ void og_possessions_frame(const OgIn *in)
         else if (click) { inventory_click(in->cx,in->cy); }
     } else if (g.page == OG_VIEW_SHEET) {
         if (in->pressed[OG_SHEET]) { og_possessions_close(); }
-        else if (in->pressed[OG_INVENTORY]) { og_possessions_close(); og_possessions_open(OG_VIEW_INVENTORY,0); }
+        else if (in->pressed[OG_INVENTORY] && !og_progress()->active) { og_possessions_close(); og_possessions_open(OG_VIEW_INVENTORY,0); }
         else if (click) { sheet_click(in->cx,in->cy); }
     } else if (g.page == OG_VIEW_SPELLS) {
+        if (g.casting && in->ch == 13) {
+            df_u32 ids[OG_OBJECTS];
+            int count;
+            count = og_spell_rows(g.book,ids,OG_OBJECTS);
+            if (g.selected < count) {
+                df_u32 id;
+                id = ids[g.selected]; og_possessions_close(); og_magic_ready(id);
+            }
+            return;
+        }
         spell_scroll(in);
         if (click && !(in->cx > 144 && in->cx < 153 && in->cy > 29 && in->cy < 166)) {
             spell_click(in->cx,in->cy,(in->mouse_pressed & 2) != 0);
@@ -427,5 +495,6 @@ void og_possessions_frame(const OgIn *in)
             else if (inside(in->cx,in->cy,278,187,307,196)) { og_possessions_close(); }
         }
     }
+    if (g.page == OG_VIEW_MESSAGE && !g.notice[0] && !g.prompt) { og_possessions_close(); }
     if (click || in->ch || in->key) { g.revision++; }
 }

@@ -3,6 +3,7 @@
 
 #include "engine/assets/level.h"
 #include "engine/gfx/camera.h"
+#include "engine/scene/automap.h"
 
 /*
  * The only file that includes Daggerfall. It loads Privateer's Hold,
@@ -14,6 +15,13 @@ int seam_boot(void);
 void seam_title(void);
 /* Marker 8 from world_start, then the nearest marker 6 when one exists. */
 int seam_open_hold(float *x, float *y, float *z);
+int seam_open_place(int restoring, int changing, float *x, float *y, float *z);
+void seam_land(Camera *camera, int restoring, int changing);
+void seam_world_step(Camera *camera, float seconds);
+int seam_world_needs_reload(void);
+void seam_world_reload(Camera *camera);
+int seam_next_world(void);
+const AutomapView *seam_automap_view(void);
 void seam_close_hold(void);
 int seam_capture_world(void);
 void seam_creatures(const Camera *cam);

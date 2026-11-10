@@ -31,5 +31,7 @@ int og_swing_hit(int sector);
 int og_swing_damage(int sector);
 int og_swing_sound(int index);
 int og_struck_part(int roll);
+int og_foe_nav_angle(int octant);
+int og_foe_encounter(int table, int index);
 
 #endif

@@ -18,7 +18,8 @@
  * so that fall-through is skipped.
  *
  * Info mode says the usable's label (interact_say) when it has one.
- * Steal and talk do not. Grab mode uses the mover.
+ * Steal picks a locked dungeon door; Grab reports its lock difficulty.
+ * Unlocked doors and other Grab-mode movers use the engine's mover.
  */
 
 /* Usable.what in this range is a treasure container; tag is its stable key.
@@ -28,6 +29,9 @@
 /* Classic pixel of the pick. at_centre ignores x and y. */
 void og_activate_pixel(int cursor_mode, int cursor_active, int at_centre,
                        int classic_x, int classic_y, int *px, int *py);
+/* Same projection for pointed use and spell aiming. */
+void og_activate_aim(const Camera *camera, int cursor_mode, int cursor_active,
+                     int at_centre, int x, int y, Camera *aim);
 
 /*
  * Cast and, in grab mode, request the use. Returns 1 when a usable was

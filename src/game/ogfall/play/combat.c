@@ -1,5 +1,6 @@
 #include "game/ogfall/play/combat.h"
 #include "game/ogfall/play/cheats.h"
+#include "game/ogfall/play/magic.h"
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/play.h"
 #include "game/ogfall/play/msg.h"
@@ -87,6 +88,7 @@ void og_damage_player(int damage, int part)
     int amount;
     who = og_character();
     if (og_god_mode() || damage <= 0 || who->health <= 0) { return; }
+    damage = og_magic_absorb(-1,damage); if (!damage) { return; }
     who->health -= damage;
     if (who->health < 0) { who->health = 0; }
     amount = damage < 4 ? 4 : damage > 32 ? 32 : damage;

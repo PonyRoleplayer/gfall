@@ -5,6 +5,14 @@
 #include "game/ogfall/play/weapon.h"
 #include "game/ogfall/play/screen.h"
 #include "game/ogfall/play/dungeon.h"
+#include "game/ogfall/play/actions.h"
+#include "game/ogfall/play/encounter.h"
+#include "game/ogfall/play/magic.h"
+#include "game/ogfall/play/cheats.h"
+#include "game/ogfall/play/travel.h"
+#include "game/ogfall/play/maps.h"
+#include "game/ogfall/play/msg.h"
+#include "game/ogfall/play/ground.h"
 #include "game/ogfall/tables/itemdefs.h"
 #include "game/ogfall/tables/combatdefs.h"
 #include "game/dagger/tables/careers.h"
@@ -24,6 +32,9 @@
 #include "engine/sound/music.h"
 #include "engine/ui/pic.h"
 #include "engine/scene/collide.h"
+#include "engine/scene/interact.h"
+#include "engine/scene/light.h"
+#include "engine/scene/stream.h"
 
 #include "game/dagger/formats/bind.h"
 #include "game/dagger/formats/arch3d.h"
@@ -39,6 +50,14 @@
 #include "game/dagger/formats/textrsc.h"
 #include "game/dagger/formats/texture.h"
 #include "game/dagger/places/world.h"
+#include "game/dagger/places/travel.h"
+#include "game/dagger/places/wild.h"
+#include "game/dagger/places/wres.h"
+#include "game/dagger/formats/worldmap.h"
+#include "game/dagger/play/travelmap.h"
+#include "game/dagger/play/dunmap.h"
+#include "game/dagger/play/townmap.h"
+#include "game/dagger/play/marker.h"
 #include "game/dagger/tables/maindat.h"
 
 #include "game/ogfall/formats/formats.h"
@@ -64,8 +83,21 @@
 
 static char g_why[96];
 static World *g_world;
+static int g_place_open;
+static Dungeon g_place_data;
+static OgWhere g_saved_where;
 static Level g_level;
 static void weapon_draw(const OgWeaponView *view, float flash);
+static int load_cast_art(void);
+static void cast_draw(int element, int frame);
+static void magic_hud_draw(const OgMagicState *state);
+static void magic_lighting(int enabled);
+static void install_travel(void);
+static int seam_world_art(void);
+static void install_maps(void);
+static void present_maps(void);
+static int g_maps_mode;
+static df_u8 g_maps_rgb[768];
 static const df_u8 *g_map;
 static int g_map_w;
 static int g_map_h;
@@ -95,6 +127,11 @@ static int g_have_biog_pic;
 static int g_have_chgn;
 static int g_have_sheet[6];
 static df_u8 *g_buf;
+#define ENCOUNTER_ART 20
+typedef struct EncounterArt { int kind, archive, rate; Entity entity; } EncounterArt;
+static EncounterArt g_encounter_art[ENCOUNTER_ART];
+static int g_encounter_art_count, g_original_entities;
+static Entity *g_game_entities;
 static int g_comp[3];
 static int g_comp_cutout[3];
 static unsigned g_revision;
@@ -442,6 +479,11 @@ static void load_chargen_screens(void)
         log_print(LOG_WARN, "ogfall: SPOP.RCI did not load");
     }
     g_have_art_rgb = img_art_palette(g_art_rgb);
+    if (g_have_art_rgb) {
+        df_u8 pixel;
+        pixel = 145; og_pic_set(OG_PIC_BREATH,pic_load(&pixel,1,1,g_art_rgb,0));
+        pixel = 246; og_pic_set(OG_PIC_BREATH_LOW,pic_load(&pixel,1,1,g_art_rgb,0));
+    }
     g_have_pick = img_load("PICK00I0.IMG", &g_pick);
     g_have_butn2 = img_load("BUTN02I0.IMG", &g_butn2);
     g_have_biog_pic = img_load("BIOG00I0.IMG", &g_biog_pic);
@@ -473,15 +515,13 @@ static void load_overlay(void)
     if (!cif_open("MCOL00I0.CIF", &g_overlay) || !img_art_palette(rgb)) {
         return;
     }
-    /* Low health is frame 2, the only overlay slice 1 can show. */
-    frame = cif_frame(&g_overlay, 2);
-    if (!frame && g_overlay.n > 0) {
-        frame = cif_frame(&g_overlay, 0);
+    {
+        int i;
+        for (i = 0; i < 4; i++) {
+            frame = cif_frame(&g_overlay,i);
+            if (frame) { og_pic_set(OG_PIC_OVERLAY+i,pic_load(frame->pixels,frame->w,frame->h,rgb,1)); }
+        }
     }
-    if (!frame) {
-        return;
-    }
-    og_pic_set(OG_PIC_OVERLAY, pic_load(frame->pixels, frame->w, frame->h, rgb, 1));
 }
 
 int seam_map_pixel(int x, int y)
@@ -548,6 +588,8 @@ int seam_boot(void)
     og_set_sound(play_sound);
     og_set_sound_at(play_sound_at);
     og_weapon_set_draw(weapon_draw);
+    og_magic_set_draw(cast_draw);
+    og_magic_set_hud(magic_hud_draw);
     og_set_save_capture(seam_capture_world);
     og_set_words(textrsc_read);
     og_set_word_variants(textrsc_variant);
@@ -556,6 +598,8 @@ int seam_boot(void)
         return 0;
     }
     dagger_bind_loaders();
+    install_travel();
+    install_maps();
     load_classes();
     load_class_questions();
     og_chargen_background(background);
@@ -569,6 +613,7 @@ int seam_boot(void)
     og_pic_set(OG_PIC_BUTTONS, menu_picture("BUTN01I0.IMG", &g_class_art));
     load_choice_buttons();
     load_chargen_screens();
+    if (!load_cast_art()) { why("Cannot read the spell casting pictures"); return 0; }
     load_panels();
     load_possession_art();
     if (img_load_raw("ARROW.RAW", 10, 10, &raw) && img_art_palette(rgb)) {
@@ -615,9 +660,7 @@ static void marker6(float *x, float *y, float *z)
     float nz;
 
     n = 0;
-    if (!dungeon_load(&hold)) {
-        return;
-    }
+    hold = g_place_data;
     blocks = bsa_open("BLOCKS.BSA");
     if (!blocks) {
         return;
@@ -766,6 +809,68 @@ const df_u8 *seam_weapon_screen(const df_u8 **palette)
     return g_weapon_pixels;
 }
 
+static CifFrame g_cast_art[5][6];
+static df_u8 *g_cast_pixels;
+static int g_cast_pic, g_cast_element = -1, g_cast_frame = -1, g_cast_bar;
+
+static int load_cast_art(void)
+{
+    static const char *names[5] = {"FIRE00C6.CIF","FRST00C6.CIF","POIS00C6.CIF","SHOK00C6.CIF","MJIC00C6.CIF"};
+    const df_u8 *bytes;
+    df_u8 *pixels;
+    df_u32 size, at;
+    CifFrame *f;
+    int element, frame, length;
+    for (element = 0; element < 5; element++) {
+        bytes = vfs_read(names[element],&size); at = 0;
+        if (!bytes) { return 0; }
+        for (frame = 0; frame < 6; frame++) {
+            if (at+12 > size) { return 0; }
+            f = &g_cast_art[element][frame];
+            f->x = df_ri16(bytes+at); f->y = df_ri16(bytes+at+2);
+            f->w = df_ru16(bytes+at+4); f->h = df_ru16(bytes+at+6); length = df_ru16(bytes+at+10);
+            if (f->w < 1 || f->w > 320 || f->h < 1 || f->h > 200 || at+12+length > size) { return 0; }
+            pixels = (df_u8 *)mem_keep(f->w*f->h);
+            if (!pixels || !cif_rle(bytes+at+12,length,pixels,f->w*f->h)) { return 0; }
+            f->pixels = pixels; at += 12+length;
+        }
+    }
+    return 1;
+}
+
+const df_u8 *seam_cast_screen(const df_u8 **palette)
+{
+    if (palette) { *palette = g_art_rgb; }
+    return g_cast_pixels;
+}
+
+static void cast_draw(int element, int frame)
+{
+    const CifFrame *f;
+    int x, y, px, py, bar;
+    df_u8 pixel;
+    if (element < 0 || element >= 5 || frame < 0 || frame >= 6) { return; }
+    if (!g_cast_pixels) { g_cast_pixels = (df_u8 *)mem_keep(64000); }
+    if (!g_cast_pixels) { return; }
+    bar = !(og_options_flags() & 1); f = &g_cast_art[element][frame];
+    if (!g_cast_pic || element != g_cast_element || frame != g_cast_frame || bar != g_cast_bar) {
+        mem_zero(g_cast_pixels,64000);
+        for (y = 0; y < f->h; y++) {
+            py = f->y+y-(bar ? 46 : 0); if (py < 0 || py >= 200) { continue; }
+            for (x = 0; x < f->w; x++) {
+                px = f->x+x; if (px < 0 || px >= 320) { continue; }
+                pixel = f->pixels[y*f->w+x];
+                g_cast_pixels[py*320+px] = pixel; g_cast_pixels[py*320+319-px] = pixel;
+            }
+        }
+        if (g_weapon_pic) { pic_free(g_weapon_pic); g_weapon_pic = 0; g_weapon_frame = -1; }
+        if (!g_cast_pic) { g_cast_pic = pic_load(g_cast_pixels,320,200,g_art_rgb,1); }
+        else { pic_update(g_cast_pic,g_cast_pixels); }
+        g_cast_element = element; g_cast_frame = frame; g_cast_bar = bar;
+    }
+    og_hud_blit(g_cast_pic,0,0,320,200);
+}
+
 static void weapon_draw(const OgWeaponView *view, float flash)
 {
     const CifFrame *frame;
@@ -773,6 +878,7 @@ static void weapon_draw(const OgWeaponView *view, float flash)
     char name[20];
     int first, count, at, x, y, px, py, bar;
     if (view->visible) {
+        if (g_cast_pic) { pic_free(g_cast_pic); g_cast_pic = 0; }
         if (g_weapon_file != view->cif) {
             cif_close(&g_weapon_art);
             log_format(name,sizeof(name),"WEAPON%02d.CIF",view->cif);
@@ -872,6 +978,119 @@ static void hold_creature_art(Image **images, df_u8 *cutout, int *slots)
     }
 }
 
+static int encounter_art(int kind, int archive, Entity *out, int *rate)
+{
+    int i;
+    for (i = 0; i < g_encounter_art_count; i++) {
+        if (g_encounter_art[i].kind == kind && g_encounter_art[i].archive == archive) {
+            *out = g_encounter_art[i].entity; *rate = g_encounter_art[i].rate; return 1;
+        }
+    }
+    return 0;
+}
+
+static int prepare_encounter_art(int kind, int archive, Image **images, df_u8 *cutout, int *slots)
+{
+    static const int first[ENTITY_POSES] = {0,15,5,10,20,25,0};
+    EncounterArt *art;
+    const Entity *existing;
+    EntityPose *pose;
+    Image *image;
+    int i, p, view, file, record, slot;
+
+    for (i = 0; i < g_encounter_art_count; i++) {
+        if (g_encounter_art[i].kind == kind && g_encounter_art[i].archive == archive) { return 1; }
+    }
+    if (g_encounter_art_count == ENCOUNTER_ART) { return 0; }
+    art = &g_encounter_art[g_encounter_art_count++];
+    mem_zero(art,sizeof(*art)); art->kind = kind; art->archive = archive; art->rate = creature_rate(archive);
+    entity_init(&art->entity);
+    for (i = 0; i < world_entity_count(g_world); i++) {
+        if (world_entity_kind(g_world,i,0) != kind || world_entity_archive(g_world,i) != archive) { continue; }
+        existing = world_entity(g_world,i);
+        for (p = 0; p < ENTITY_POSES; p++) { art->entity.pose[p] = existing->pose[p]; }
+        break;
+    }
+    /* Reuse decoded poses without activating a distant placed creature.
+     * Missing walk/idle art gets its own slots: the world's reserved slots
+     * still belong to its lazy loader. Prepare everything before gfx_prepare. */
+    for (p = 0; p < ENTITY_POSES; p++) {
+        pose = &art->entity.pose[p]; pose->rate = p == ENTITY_IDLE ? 5 : 10;
+        for (view = 0; view < (p == ENTITY_DEAD ? 1 : 5); view++) {
+            if (pose->w[view]) { continue; }
+            file = archive; record = first[p]+view;
+            if (p == ENTITY_DEAD) { og_foe_corpse(kind,&file,&record); }
+            if (p == ENTITY_IDLE && archive == 483 && view == 1) { record = 11; }
+            image = texture_load(file,record);
+            if (!image) { continue; }
+            if (image->frames <= 1 || !texture_sheet(image,file,record)) { texture_pad(image); }
+            slot = (*slots)++; images[slot] = image; cutout[slot] = 1;
+            pose->slot[view] = (df_u16)slot;
+            pose->w[view] = (df_u16)texture_extent(image->width,image->xscale);
+            pose->h[view] = (df_u16)texture_extent(image->height,image->yscale);
+        }
+    }
+    if (kind == 0) { art->entity.pose[ENTITY_IDLE].right = 14; }
+    if (kind == 18 || kind == 23) { art->entity.pose[ENTITY_WALK].right = 4; }
+    return art->entity.pose[ENTITY_WALK].w[0] > 0;
+}
+
+static int hold_encounter_art(Image **images, df_u8 *cutout, int *slots)
+{
+    OgEncounterState *state;
+    const OgEncounter *saved;
+    int i, kind, archive, variants;
+
+    g_encounter_art_count = 0; state = og_encounter_state();
+    for (i = 0; i < 6; i++) {
+        kind = state->choices[i]; archive = kind < 43 ? 255+kind : kind == 146 ? 399 : 432+og_foe_texture_kind(kind);
+        variants = kind >= 128 && kind < 146 ? 2 : 1;
+        if (!prepare_encounter_art(kind,archive,images,cutout,slots)) { return 0; }
+        if (variants == 2 && !prepare_encounter_art(kind,archive+1,images,cutout,slots)) { return 0; }
+    }
+    for (i = 0; i < OG_ENCOUNTERS; i++) {
+        saved = &state->actor[i];
+        if (saved->key.thing && saved->key.place == state->place &&
+            !prepare_encounter_art(saved->kind,saved->archive,images,cutout,slots)) { return 0; }
+    }
+    g_original_entities = g_level.scene.nentities;
+    g_game_entities = (Entity *)mem_alloc((g_original_entities+g_encounter_art_count+1)*sizeof(Entity));
+    if (!g_game_entities) { return 0; }
+    mem_copy(g_game_entities,g_level.scene.entities,g_original_entities*sizeof(Entity));
+    /* Invisible reference entities let the generic renderer budget the art
+     * for future spawns as creature resources, rather than shrinking walls. */
+    for (i = 0; i < g_encounter_art_count; i++) { g_game_entities[g_original_entities+i] = g_encounter_art[i].entity; }
+    g_level.scene.entities = g_game_entities;
+    g_level.scene.nentities = g_original_entities+g_encounter_art_count;
+    og_dungeon_rebind(g_game_entities,g_original_entities);
+    mem_copy(images,g_world_images,g_world_image_count*sizeof(Image *));
+    return 1;
+}
+
+/* Future missile pictures are budgeted as entity art at place opening. */
+static int hold_magic_art(Image **images, df_u8 *cutout, int *slots)
+{
+    int element, pose, slot, ids[5][2];
+    Image *image;
+    Entity *reference;
+    reference = &g_game_entities[g_level.scene.nentities++]; entity_init(reference);
+    for (element = 0; element < 5; element++) {
+        for (pose = 0; pose < 2; pose++) {
+            image = texture_load(375+element,pose); if (!image) { return 0; }
+            if (image->frames <= 1 || !texture_sheet(image,375+element,pose)) { texture_pad(image); }
+            slot = (*slots)++; images[slot] = image; cutout[slot] = 1; ids[element][pose] = slot;
+            reference->pose[pose].slot[element] = (df_u16)slot;
+            reference->pose[pose].w[element] = reference->pose[pose].h[element] = 64;
+        }
+    }
+    image = texture_load(210,3); if (!image) { return 0; }
+    if (image->frames <= 1 || !texture_sheet(image,210,3)) { texture_pad(image); }
+    slot = (*slots)++; images[slot] = image; cutout[slot] = 1;
+    reference->pose[2].slot[0] = (df_u16)slot; reference->pose[2].w[0] = reference->pose[2].h[0] = 64;
+    og_magic_light_sprite(slot,texture_extent(image->width,image->xscale),texture_extent(image->height,image->yscale));
+    og_magic_slots(ids); return 1;
+}
+
 static void treasure_usable(Usable *out, const Flat *flat, int sprite, df_u32 key, int table)
 {
     mem_zero(out,sizeof(*out));
@@ -895,10 +1114,10 @@ static void hold_dropped_piles(void)
     if (!g_world || !g_hold_flats || g_hold_pile_serial == og_state()->event_serial) { return; }
     g_hold_pile_serial = og_state()->event_serial;
     n = g_hold_flat_base; uses = g_hold_use_base; changed = 0;
-    for (i = 0; i < g_level.scene.nentities; i++) {
+    for (i = 0; i < og_dungeon_count(); i++) {
         const Entity *e;
         Flat corpse;
-        e = &g_level.scene.entities[i];
+        e = og_dungeon_entity(i);
         if (!e->dead || !e->live) { continue; }
         mem_zero(&corpse,sizeof(corpse));
         corpse.x = e->x; corpse.y = e->y+12; corpse.z = e->z;
@@ -936,8 +1155,11 @@ static int hold_treasures(void)
     df_u8 *cutout, *glass;
     Image *image;
     int i, b, k, count, uses, slot;
-    if (!dungeon_load(&hold)) { return 0; }
-    og_object_edit(OG_WORLD_ROOT)->place_key = 0x40000000u | (df_u32)hold.location_id;
+    hold = g_place_data;
+    og_object_edit(OG_WORLD_ROOT)->place_key = travel_place_key();
+    if (og_world_state()->where.kind == OG_PLACE_DUNGEON) {
+        og_encounter_prepare(og_object(OG_WORLD_ROOT)->place_key,hold.dungeon_type);
+    }
     g_hold_loot_table = og_dungeon_loot(hold.dungeon_type);
     g_hold_capacity = g_level.scene.nsprites + HOLD_TREASURES + OG_OBJECTS;
     g_hold_flats = (Flat *)mem_alloc(g_hold_capacity * sizeof(Flat));
@@ -963,6 +1185,7 @@ static int hold_treasures(void)
     g_world_image_count = g_level.nimages;
     slot = g_level.nimages;
     hold_creature_art(images,cutout,&slot);
+    if (!hold_encounter_art(images,cutout,&slot) || !hold_magic_art(images,cutout,&slot)) { return 0; }
     hold_arrow_model(images,cutout,&slot);
     if (g_hold_pile_slot < 0) {
         image = texture_load(216,0);
@@ -979,7 +1202,7 @@ static int hold_treasures(void)
     blocks = bsa_open("BLOCKS.BSA");
     if (!blocks) { return 0; }
     collide_use(&g_level.scene);
-    for (b = 0; b < hold.nblocks && count < g_hold_capacity-OG_OBJECTS; b++) {
+    for (b = 0; og_world_state()->where.kind == OG_PLACE_DUNGEON && b < hold.nblocks && count < g_hold_capacity-OG_OBJECTS; b++) {
         rec = bsa_find_name(blocks,hold.block[b].name);
         bytes = rec ? bsa_read_scratch(blocks,rec,BSA_SCRATCH_BLOCK) : 0;
         k = bytes ? rdb_markers(bytes,rec->size,marks,128) : 0;
@@ -1015,7 +1238,42 @@ static int hold_treasures(void)
     return 1;
 }
 
-int seam_open_hold(float *x, float *y, float *z)
+static int hold_actions(void)
+{
+    static OgAction actions[OG_ACTIONS];
+    static int next[OG_ACTIONS];
+    const ModelAct *raw;
+    OgAction *out;
+    int i, j, count, block;
+
+    count = 0;
+    for (i = 0; i < world_model_count(g_world); i++) {
+        raw = world_model_action(g_world,i,&block);
+        if (!raw || !raw->flags) { continue; }
+        if (count == OG_ACTIONS) { why("Too many dungeon actions"); return 0; }
+        out = &actions[count]; mem_zero(out,sizeof(*out));
+        out->model = i; out->mover = out->next = -1;
+        out->key.place = og_object(OG_WORLD_ROOT)->place_key;
+        out->key.thing = ((df_u32)block << 24) | raw->pos;
+        out->trigger = raw->trigger & 15; out->kind = raw->flags;
+        out->axis = raw->axis; out->duration = raw->duration;
+        out->magnitude = raw->magnitude; out->sound = raw->sound;
+        next[count++] = raw->next;
+        for (j = 0; j < g_level.scene.nmovers; j++) {
+            if (g_level.scene.movers[j].model == i) { out->mover = j; out->key = g_level.scene.movers[j].key; break; }
+        }
+    }
+    for (i = 0; i < count; i++) {
+        if (next[i] < 0) { continue; }
+        for (j = 0; j < count; j++) {
+            if ((actions[i].key.thing >> 24) == (actions[j].key.thing >> 24) &&
+                (actions[j].key.thing & 0xffffffu) == (df_u32)next[i]) { actions[i].next = j; break; }
+        }
+    }
+    return og_actions_open(&g_level.scene,actions,count);
+}
+
+int seam_open_place(int restoring, int changing, float *x, float *y, float *z)
 {
     float sx;
     float sy;
@@ -1049,8 +1307,14 @@ int seam_open_hold(float *x, float *y, float *z)
         load_overlay();
         g_hud_loaded = 1;
     }
+    if (changing && g_place_open) {
+        Camera from;
+        og_move_camera(&from); travel_came_from(&from);
+        if (!seam_capture_world()) { why(og_state_error()); return 0; }
+        mem_zero(og_magic_state()->missile,sizeof(og_magic_state()->missile));
+    }
     seam_close_hold();
-    if (!og_state_restore_world() || !mem_temp_begin()) {
+    if (!og_state_restore_world()) {
         why("No memory for the saved place");
         return 0;
     }
@@ -1066,15 +1330,35 @@ int seam_open_hold(float *x, float *y, float *z)
             }
         }
     }
-    g_world = world_load();
+    if (restoring) {
+        TravelWhere where;
+        const OgWhere *saved;
+        int origin[2];
+        float feet[3];
+        g_saved_where = og_world_state()->where; saved = &g_saved_where; mem_zero(&where,sizeof(where));
+        where.kind = saved->kind; where.located = saved->located; where.region = saved->region; where.index = saved->index;
+        where.block = saved->block; where.record = saved->record; where.has_back = saved->has_back;
+        where.back_x = saved->back_x; where.back_z = saved->back_z; where.back_yaw = saved->back_yaw*(DF_TAU/2048);
+        origin[0] = saved->origin_x; origin[1] = saved->origin_z;
+        feet[0] = og_state()->x; feet[1] = og_state()->eye_y-WALK_EYE; feet[2] = og_state()->z;
+        travel_from_save(&where,feet,origin,og_state()->yaw*(DF_TAU/2048),og_state()->pitch*(DF_TAU/2048));
+    } else if (!changing) { travel_start_game(); }
+    travel_set_dungeon_streaming(0);
+    g_place_open = travel_open(&g_level,1);
+    g_world = travel_whole_world();
     {
         int i;
         for (i = 0; i < g_entity_keep_count; i++) { keep_put(&g_entity_keeps[i]); }
     }
+    if (!g_place_open) { why(travel_error()); return 0; }
+    og_world_restore(); og_travel_capture();
     if (!g_world) {
-        why(world_error()); texture_cache_clear(); mem_temp_end(); return 0;
+        if (!seam_world_art()) { why("Cannot prepare world gameplay pictures"); return 0; }
+        if (x) { *x = 0; } if (y) { *y = WALK_EYE; } if (z) { *z = 0; }
+        og_actions_open(&g_level.scene,0,0);
+        return 1;
     }
-    world_as_level(g_world, &g_level);
+    g_place_data = *travel_place_data();
     keep_restore(&g_level.scene,0,0,(Entity *)g_level.scene.entities,g_level.scene.nentities,0,0,0);
     {
         int kind[OG_FOES], passive[OG_FOES], rates[OG_FOES], i;
@@ -1090,14 +1374,12 @@ int seam_open_hold(float *x, float *y, float *z)
         }
     }
     if (!hold_treasures()) { why("Cannot build the Hold treasure containers"); return 0; }
-    {
-        Dungeon hold;
-        if (og_state()->region < 0 && dungeon_load(&hold)) {
-            og_state_set_place(hold.region, hold.index, 1);
-        }
+    if (!hold_actions()) { return 0; }
+    if (og_world_state()->where.kind == OG_PLACE_DUNGEON && !og_encounter_open(&g_level.scene,encounter_art)) {
+        why("Cannot restore the dungeon encounters"); return 0;
     }
     world_start(g_world, &sx, &sy, &sz, &yaw, &pitch);
-    marker6(&sx, &sy, &sz);
+    if (!restoring && !changing && og_world_state()->where.kind == OG_PLACE_DUNGEON) { marker6(&sx,&sy,&sz); }
     if (x) {
         *x = sx;
     }
@@ -1110,42 +1392,105 @@ int seam_open_hold(float *x, float *y, float *z)
     return 1;
 }
 
+int seam_open_hold(float *x, float *y, float *z) { return seam_open_place(0,0,x,y,z); }
+void seam_land(Camera *camera, int restoring, int changing)
+{
+    TravelPose at;
+    OgMotion motion;
+    int ox, oz, sx, sz;
+    travel_land(&g_level,camera,WALK_EYE,&at);
+    if (restoring && og_world_state()->where.kind == OG_PLACE_WORLD) {
+        stream_origin(&ox,&oz);
+        og_magic_shift((ox-g_saved_where.origin_x)*STREAM_CHUNK,(oz-g_saved_where.origin_z)*STREAM_CHUNK);
+    }
+    if (!restoring && !changing && g_world && og_world_state()->where.kind == OG_PLACE_DUNGEON) { marker6(&at.x,&at.y,&at.z); }
+    if (restoring && og_state()->motion_valid) {
+        motion = og_state()->motion; stream_origin(&ox,&oz);
+        sx = g_saved_where.origin_x-ox; sz = g_saved_where.origin_z-oz;
+        if (og_world_state()->where.kind == OG_PLACE_WORLD) {
+            motion.feet[0] += sx*STREAM_CHUNK; motion.safe[0] += sx*STREAM_CHUNK;
+            motion.feet[2] += sz*STREAM_CHUNK; motion.safe[2] += sz*STREAM_CHUNK;
+        }
+        og_move_restore(&motion);
+    } else {
+        og_move_init(); og_move_place(at.x,at.y,at.z,df_iround(at.yaw*2048/DF_TAU));
+        og_move_capture(&motion); motion.pitch = df_iround(at.pitch*2048/DF_TAU); og_move_restore(&motion);
+    }
+    og_move_camera(camera);
+    og_state_pose(camera->x,og_move_body()->feet[1]+og_move_body()->eye_now,camera->z,motion.yaw,motion.pitch);
+    og_travel_capture();
+    {
+        const char *said;
+        said = travel_said(); if (said) { og_msg_set(said); }
+    }
+}
+
 void seam_close_hold(void)
 {
-    if (!g_world) { return; }
+    float x, y, z, yaw;
+
+    if (!g_place_open) { return; }
+    og_maps_close();
+    og_ground_close();
+    magic_lighting(0);
+    og_magic_close();
+    og_encounter_close(); g_game_entities = 0; g_original_entities = g_encounter_art_count = 0;
+    og_actions_close();
+    /* No queued arrival may carry a position into a newly loaded place. */
+    interact_teleport(&x,&y,&z,&yaw);
+    interact_set_body(0);
     og_dungeon_close();
     g_arrow_mesh = 0; g_arrow_models = 0; g_arrow_bounds = 0; g_arrow_spans = 0;
     og_weapon_cancel();
     cif_close(&g_weapon_art); g_weapon_file = -1;
     if (g_weapon_pic) { pic_free(g_weapon_pic); g_weapon_pic = 0; }
     g_weapon_frame = -1;
+    if (g_cast_pic) { pic_free(g_cast_pic); g_cast_pic = 0; }
     sound_stop_all();
     texture_cache_clear();
-    g_world = 0;
+    g_world = 0; g_place_open = 0;
     g_hold_flats = 0; g_hold_usables = 0;
+    travel_drop();
     mem_zero(&g_level, sizeof(g_level));
-    mem_temp_end();
 }
 
 int seam_capture_world(void)
 {
-    if (!g_world) { return 0; }
+    if (!g_place_open) { return 0; }
+    og_world_capture();
+    og_actions_capture();
+    og_encounter_capture();
+    travel_keep_now();
     keep_save(&g_level.scene,0,g_level.scene.nmovers,g_level.scene.entities,g_level.scene.nentities,0,0,0);
     return og_state_capture_world();
 }
 
 void seam_creatures(const Camera *cam)
 {
+    og_ground_frame(cam);
     if (!g_world) {
         return;
     }
     hold_dropped_piles();
+    magic_lighting((og_character()->conditions & 16) != 0);
     hold_arrows(cam);
     world_creatures_step(g_world, cam, 2048.0f, 2.0f);
     {
+        const Entity *loaded;
+        Entity *game;
         int i;
-        for (i = 0; i < g_level.scene.nentities; i++) {
-            if (og_dungeon_loaded(i) && g_level.scene.entities[i].dead) { g_hold_pile_serial--; }
+        for (i = 0; g_game_entities && i < g_original_entities; i++) {
+            loaded = world_entity(g_world,i); game = &g_game_entities[i];
+            if (!game->live && loaded->live) {
+                game->pose[ENTITY_WALK] = loaded->pose[ENTITY_WALK]; game->pose[ENTITY_IDLE] = loaded->pose[ENTITY_IDLE];
+                game->y = loaded->y; game->live = 1;
+            }
+        }
+    }
+    {
+        int i;
+        for (i = 0; i < og_dungeon_count(); i++) {
+            if (og_dungeon_loaded(i) && og_dungeon_entity(i)->dead) { g_hold_pile_serial--; }
         }
     }
     hold_dropped_piles();
@@ -1155,7 +1500,7 @@ void seam_creatures(const Camera *cam)
 
 Level *seam_level(void)
 {
-    return g_world ? &g_level : 0;
+    return g_place_open ? &g_level : 0;
 }
 
 static void put_px(int x, int y, int colour)
@@ -1727,7 +2072,7 @@ static void paint_reflex(int summary)
 const df_u8 *seam_screen(const df_u8 **palette)
 {
     if (palette) {
-        *palette = g_screen_kind == 2 ? g_chgn_rgb : (g_screen_kind == 1 ? g_art_rgb : g_map_rgb);
+        *palette = og_maps_up() ? g_maps_rgb : g_screen_kind == 2 ? g_chgn_rgb : (g_screen_kind == 1 ? g_art_rgb : g_map_rgb);
     }
     return g_buf;
 }
@@ -2254,7 +2599,8 @@ static void paint_skill_list(void)
         if (n++ < view->skill_scroll || shown >= 16) { continue; }
         name = og_skill_name(skill);
         log_format(line,sizeof(line),"%s: %d%%",name,og_character()->skill[skill]);
-        text_at(14,27+shown*9,line); shown++;
+        smallfont_draw(&g_font,g_buf,320,200,14,27+shown*9,
+                       og_progress_raised(skill) ? 146 : 145,-1,line); shown++;
     }
 }
 
@@ -2273,6 +2619,12 @@ static void paint_character_sheet(void)
     log_format(line,sizeof(line),"%d/%d",who->health,who->max_health); centered_text(72,64,line,145);
     log_format(line,sizeof(line),"%d/%d",og_inventory_weight(og_state()->inventory_id)/4,og_inventory_capacity()); text_at(91,74,line);
     for (i = 0; i < OG_ATTRS; i++) { number_at(155,17+i*24,who->attribute[i],1,0); }
+    if (og_progress()->active) {
+        i = og_possessions()->selected;
+        if (i < 0 || i >= OG_ATTRS) { i = 0; }
+        blit_ix(176,5+i*24,g_attr_arrows.pixels,g_attr_arrows.width,g_attr_arrows.height,1);
+        number_at(182,17+i*24,og_progress()->points,1,0);
+    }
     if (og_possessions()->skill_group >= 0) { paint_skill_list(); }
 }
 
@@ -2312,6 +2664,7 @@ static void paint_spellbook(void)
     owned = og_object(ids[selected]);
     if (!spell) { return; }
     text_at(148,20,owned->name);
+    log_format(line,sizeof(line),"Cost: %d",og_magicka_cost(og_spell_cost(spell,og_character()))); text_at(155,166,line);
     log_format(line,sizeof(line),"%d/%d",og_character()->magicka,og_character()->max_magicka); text_at(239,20,line);
     if (g_spell_icons && owned->spell_icon < 69) {
         x = (owned->spell_icon%20)*16; y = (owned->spell_icon/20)*16;
@@ -2327,6 +2680,77 @@ static void paint_spellbook(void)
             centered_text(219,75+i*38,og_effect_subtype(spell->group[i],spell->sub[i]),145);
         }
     }
+}
+
+/* The original moving Light spell is a candle ahead of the player.
+ * The current static-decal renderer uses an ambient lift for its light. */
+static void magic_lighting(int enabled)
+{
+    static int active, base, applied;
+    int current;
+    current = light_ambient();
+    if (active && current != applied) { base = current; }
+    if (enabled) {
+        if (!active) { base = current; }
+        applied = base+64; if (applied > 255) { applied = 255; }
+        light_set_ambient(applied); active = 1;
+    } else if (active) { light_set_ambient(base); active = 0; }
+}
+
+static int g_effect_pic;
+static df_u8 g_effect_pixels[320*64];
+static df_u32 g_effect_signature;
+static void magic_hud_draw(const OgMagicState *state)
+{
+    const OgEffect *e;
+    df_u32 signature;
+    int i, j, count, duplicate, x, y, px, py, icon, blink, hostile, expiring, columns;
+    if (!g_spell_icons) { return; }
+    signature = 2166136261u; count = 0;
+    blink = (og_state()->ticks/8) & 1;
+    for (i = 0; i < OG_EFFECTS; i++) {
+        e = &state->effect[i]; if (!e->active || e->target.place || e->target.thing) { continue; }
+        signature = (signature ^ (df_u32)(e->spell*257+e->rounds+(e->caster.thing & 255)))*16777619u; count++;
+    }
+    signature ^= (df_u32)(og_options_flags() & 1); signature ^= (df_u32)blink;
+    if (!count) { return; }
+    if (!g_effect_pic || signature != g_effect_signature) {
+        mem_zero(g_effect_pixels,sizeof(g_effect_pixels)); count = 0;
+        for (i = 0; i < OG_EFFECTS; i++) {
+            e = &state->effect[i]; if (!e->active || e->target.place || e->target.thing) { continue; }
+            duplicate = 0;
+            for (j = 0; j < i; j++) {
+                if (state->effect[j].active && !state->effect[j].target.place && !state->effect[j].target.thing &&
+                    state->effect[j].spell == e->spell && state->effect[j].caster.thing == e->caster.thing &&
+                    state->effect[j].caster.place == e->caster.place) { duplicate = 1; break; }
+            }
+            if (duplicate || count >= 24) { continue; }
+            hostile = e->caster.place || e->caster.thing;
+            columns = hostile && (og_options_flags() & 1) ? 11 : 12;
+            /* runspell.c uses D_00185CEC: 16,40,...,280. Hostile
+             * spells share their own row above the bar (or at y=177). */
+            x = 16+(count%columns)*24; y = hostile ? 48 : count/12*24;
+            icon = e->icon >= 200 ? 10 : e->icon; count++;
+            expiring = e->rounds <= 1;
+            for (j = i+1; j < OG_EFFECTS && expiring; j++) {
+                if (state->effect[j].active && !state->effect[j].target.place && !state->effect[j].target.thing &&
+                    state->effect[j].spell == e->spell && state->effect[j].caster.thing == e->caster.thing &&
+                    state->effect[j].caster.place == e->caster.place && state->effect[j].rounds > 1) { expiring = 0; }
+            }
+            if (icon < 0 || icon >= 69 || (expiring && blink)) { continue; }
+            for (py = 0; py < 16; py++) {
+                for (px = 0; px < 16; px++) {
+                    g_effect_pixels[(y+py)*320+x+px] = g_spell_icons[(icon/20*16+py)*320+icon%20*16+px];
+                }
+            }
+        }
+        if (!g_effect_pic) { g_effect_pic = pic_load(g_effect_pixels,320,64,g_art_rgb,1); }
+        else { pic_update(g_effect_pic,g_effect_pixels); }
+        g_effect_signature = signature;
+    }
+    x = (og_options_flags() & 1) ? 35 : 0;
+    og_hud_blit_part(g_effect_pic,0,0,320,48,x,16,320,48);
+    og_hud_blit_part(g_effect_pic,0,48,320,16,x,(og_options_flags() & 1) ? 177 : 132,320,16);
 }
 
 static int book_line_width(const SmallFont *font, const char *text)
@@ -2440,6 +2864,7 @@ static int present_possessions(void)
     if (view->page == OG_VIEW_INVENTORY) { paint_inventory(); }
     else if (view->page == OG_VIEW_SHEET) { paint_character_sheet(); }
     else if (view->page == OG_VIEW_SPELLS) { paint_spellbook(); }
+    else if (view->page == OG_VIEW_MESSAGE) { cover_screen(0,0,0); }
     else { paint_readable_book(); }
     if (view->notice[0] && view->painting) { paint_painting(view->painting-1,view->notice); }
     else if (view->notice[0]) {
@@ -2458,6 +2883,7 @@ static int present_possessions(void)
         const char *prompt;
         prompt = view->prompt == OG_PROMPT_GOLD ? "How much gold?" : view->prompt == OG_PROMPT_NAME ? "Name thyself" :
                  view->prompt == OG_PROMPT_SPELL_NAME ? "Enter spell name" :
+                 view->prompt == OG_PROMPT_ANSWER ? "Your answer:" :
                  "Enter new page:";
         fill_box(68,65,184,75,45); outline(68,65,184,75,145);
         centered_text(160,75,prompt,145);
@@ -2466,7 +2892,7 @@ static int present_possessions(void)
     }
     for (i = 0; i < g_panel_file_count; i++) { texture_forget(g_panel_files[i]); }
     mem_heap_use(was); mem_heap_delete(heap);
-    publish_surface(1,view->page == OG_VIEW_SPELLS && !view->underlay);
+    publish_surface(1,(view->page == OG_VIEW_SPELLS && !view->underlay) || view->page == OG_VIEW_MESSAGE);
     return 1;
 }
 
@@ -2507,6 +2933,7 @@ void seam_present(void)
     static int rest_present;
     static unsigned rest_revision;
 
+    if (og_maps_up()) { present_maps(); return; }
     mode = og_chargen_mode();
     if (mode == OG_UI_WORLD) { selected_hud_face(); update_compass(); }
     if (og_options_up()) { death_present = 0; present_panel(); return; }
@@ -2647,4 +3074,284 @@ void seam_present(void)
     }
     kind = screen_kind(mode);
     publish(kind);
+}
+
+/* Map records and placement remain behind this adapter. OGFALL supplies its
+ * own journey rules, object state and UI; the shared layer builds geometry. */
+static int location_catalogue(void)
+{
+    return worldmap_open() ? worldmap_locations() : 0;
+}
+static int location_record(int ordinal, OgLocation *out)
+{
+    if (!worldmap_location_info(ordinal,&out->px,&out->py,&out->region,&out->index,&out->type,&out->known)) { return 0; }
+    df_copy(out->name,worldmap_location_name(ordinal),(int)sizeof(out->name)); return 1;
+}
+static int go_to_location(int region, int index)
+{
+    int px, py, type;
+    if (!worldmap_open() || !worldmap_pixel_of(region,index,&px,&py)) { return 0; }
+    type = worldmap_location_type(px,py);
+    return travel_go_to_place(region,index,type == 4 || type == 7 || type == 10 || type == 12 || type == 13);
+}
+static int classic_angle(float radians)
+{
+    int angle;
+    angle = df_iround(radians*2048/DF_TAU); return angle & 2047;
+}
+static void current_place(OgWhere *out, int *px, int *py)
+{
+    TravelWhere here;
+    Camera camera;
+    const Dungeon *data;
+    int origin[2], exterior, region, index;
+    if (!g_place_open) { return; }
+    travel_here(&here,origin); og_move_camera(&camera);
+    out->kind = here.kind; out->located = here.located; out->region = here.region; out->index = here.index;
+    out->block = here.block; out->record = here.record; out->has_back = here.has_back;
+    out->back_x = (int)here.back_x; out->back_z = (int)here.back_z; out->back_yaw = classic_angle(here.back_yaw);
+    out->origin_x = origin[0]; out->origin_z = origin[1];
+    if (here.kind == TRAVEL_WORLD) {
+        if (!travel_pixel(&camera,px,py)) { return; }
+        if (worldmap_location(*px,*py,&region,&index)) {
+            out->region = region; out->index = index; out->located = 1;
+            og_travel_discover(worldmap_location_id(*px,*py));
+        }
+    } else {
+        data = travel_place_data(); exterior = here.index;
+        if (here.kind == TRAVEL_DUNGEON) { exterior = dungeon_outside(here.region,data->exterior_id); }
+        if (exterior >= 0) { worldmap_pixel_of(here.region,exterior,px,py); }
+    }
+    if (og_state()->region != out->region || og_state()->location != out->index || og_state()->environment != here.kind+1) {
+        og_state_set_place(out->region,out->index,here.kind+1);
+    }
+}
+static int return_to_anchor(const OgWhere *saved, float x, float eye_y, float z, int yaw, int pitch)
+{
+    TravelWhere where;
+    int origin[2];
+    float feet[3];
+    mem_zero(&where,sizeof(where));
+    where.kind = saved->kind; where.located = saved->located; where.region = saved->region; where.index = saved->index;
+    where.block = saved->block; where.record = saved->record; where.has_back = saved->has_back;
+    where.back_x = saved->back_x; where.back_z = saved->back_z; where.back_yaw = saved->back_yaw*(DF_TAU/2048);
+    origin[0] = saved->origin_x; origin[1] = saved->origin_z;
+    feet[0] = x; feet[1] = eye_y-WALK_EYE; feet[2] = z;
+    if (where.kind == TRAVEL_WORLD) {
+        /* Open the stream at the anchor, not at the old building's doorstep. */
+        where.has_back = 1;
+        where.back_x = (double)x+(double)origin[0]*STREAM_CHUNK;
+        where.back_z = (double)z+(double)origin[1]*STREAM_CHUNK;
+    }
+    travel_to_pose(&where,feet,origin,yaw*(DF_TAU/2048),pitch*(DF_TAU/2048)); return 1;
+}
+static void install_travel(void)
+{
+    OgTravelHooks hooks;
+    mem_zero(&hooks,sizeof(hooks));
+    hooks.count = location_catalogue; hooks.location = location_record; hooks.go = go_to_location;
+    hooks.asked = travel_asked; hooks.passage = travel_use; hooks.here = current_place;
+    hooks.climate = worldmap_climate; hooks.return_to = return_to_anchor; og_travel_install(&hooks);
+}
+static int seam_world_art(void)
+{
+    int element, frame, slots[5][2], slot;
+    const Image *image;
+    for (element = 0; element < 5; element++) {
+        for (frame = 0; frame < 2; frame++) {
+            slot = wres_slot(375+element,frame,WRES_SPRITE);
+            if (slot < 0 || !wres_acquire(slot)) { return 0; }
+            slots[element][frame] = slot;
+        }
+    }
+    og_magic_slots(slots); slot = wres_slot(210,3,WRES_SPRITE);
+    if (slot < 0 || !wres_acquire(slot)) { return 0; }
+    image = wres_image(slot);
+    og_magic_light_sprite(slot,texture_extent(image->width,image->xscale),texture_extent(image->height,image->yscale));
+    slot = wres_slot(216,0,WRES_SPRITE);
+    if (slot < 0 || !wres_acquire(slot)) { return 0; }
+    og_ground_open(&g_level.scene,slot);
+    og_object_edit(OG_WORLD_ROOT)->place_key = 0x80000000u;
+    og_dungeon_close(); og_dungeon_blood(-1,-1); og_magic_open(&g_level.scene);
+    return 1;
+}
+int seam_next_world(void) { return travel_next_is_world(); }
+void seam_world_step(Camera *camera, float seconds)
+{
+    float dx, dz;
+    if (!g_place_open || !g_level.streamed) { return; }
+    travel_update(camera,1,2,seconds,&dx,&dz);
+    if (dx || dz) {
+        og_move_shift(dx,dz); og_dungeon_shift(dx,dz);
+        og_magic_shift(dx,dz);
+    }
+    og_travel_capture();
+}
+int seam_world_needs_reload(void) { return g_place_open && travel_must_reload(); }
+void seam_world_reload(Camera *camera) { if (seam_world_needs_reload()) { travel_reload(camera); } }
+
+/* Classic map presenters accept OGFALL data callbacks. They never receive an
+ * OGFALL character disguised as a GFALL player. */
+static int g_map_pic, g_map_marker, g_map_marker_step = -1;
+static int g_map_x, g_map_y, g_map_drag;
+static float g_map_repeat;
+static unsigned map_gold(void) { return (unsigned)og_character()->gold; }
+static const char *map_warning(void) { return og_journey_warning() ? og_words(1010) : 0; }
+static void map_question(const char *place, char *out, int capacity)
+{
+    const char *text;
+    int n, i;
+    text = og_words(31); n = 0;
+    while (*text && n+1 < capacity) {
+        if (text[0] == '%' && text[1] == 't' && text[2] == 'c' && text[3] == 'n') {
+            for (i = 0; place[i] && n+1 < capacity; i++) { out[n++] = place[i]; }
+            text += 4;
+        } else { out[n++] = *text++; }
+    }
+    out[n] = 0;
+}
+static void map_journey(int sx, int sy, int ex, int ey, int reckless, int inns, int ship, Journey *out)
+{
+    OgJourney trip;
+    og_journey_plan(sx,sy,ex,ey,reckless,!inns,ship,og_journey_transport(),&trip);
+    mem_zero(out,sizeof(*out)); out->minutes = trip.minutes; out->hours = trip.hours;
+    out->days = (trip.minutes+1439)/1440; out->sea_pixels = trip.sea_pixels; out->cost = trip.cost;
+}
+static void close_maps(void)
+{
+    dunmap_close(); townmap_close(); travelmap_close();
+    if (g_map_pic) { pic_free(g_map_pic); g_map_pic = 0; }
+    if (g_map_marker) { pic_free(g_map_marker); g_map_marker = 0; }
+    g_map_marker_step = -1; g_maps_mode = g_map_drag = 0;
+    og_pic_set(OG_PIC_SCREEN,0);
+}
+static int open_maps(int trip)
+{
+    TravelMapRules rules;
+    Camera camera;
+    int region, index, block, record, i;
+    float x, z;
+    og_travel_capture(); og_move_camera(&camera);
+    g_map_x = g_map_y = -1; g_map_drag = 0; g_map_repeat = 0;
+    if (trip && og_world_state()->where.kind != OG_PLACE_WORLD) { return 0; }
+    if (!trip && og_world_state()->where.kind != OG_PLACE_WORLD) {
+        if (!dunmap_open(og_move_body()->feet,camera.yaw)) { return 0; }
+        g_maps_mode = 1;
+    } else if (!trip && travel_town_here(&camera,&region,&index,&x,&z,&block,&record) && townmap_open(region,index,x,z,camera.yaw)) {
+        g_maps_mode = 2;
+    } else {
+        rules.gold = map_gold; rules.known = og_travel_known; rules.plan = map_journey;
+        rules.question = map_question; rules.warning = map_warning;
+        if (!travelmap_open_rules(&rules,og_world_state()->px,og_world_state()->py,og_state()->region)) { return 0; }
+        g_maps_mode = 3;
+    }
+    for (i = 0; i < 3; i++) { if (g_comp[i]) { pic_free(g_comp[i]); g_comp[i] = 0; } }
+    og_pic_set(OG_PIC_SCREEN,0); return 1;
+}
+static int frame_maps(const OgIn *input)
+{
+    int result, dx, dy, pressed, repeat;
+    result = 0; pressed = input->mouse_pressed & 3;
+    if (input->reset) { g_map_drag = 0; g_map_x = g_map_y = -1; return 0; }
+    if (g_maps_mode != 3 && input->pressed[OG_AUTOMAP]) { return 1; }
+    if (g_maps_mode == 2 && input->pressed[OG_TRAVEL]) { close_maps(); return !open_maps(1); }
+    if (input->key) {
+        result = g_maps_mode == 1 ? dunmap_key(input->key) : g_maps_mode == 2 ? townmap_key(input->key) : travelmap_key(input->key);
+    }
+    if (g_maps_mode == 3) {
+        if (input->on_picture) { travelmap_point(input->cx,input->cy); }
+        if (pressed == 1 && input->on_picture) { result = travelmap_click(input->cx,input->cy); og_sound(203); }
+        if (travelmap_step(input->dt) == TRAVELMAP_GO) {
+            int region, index, cautious, reckless, camp, ship;
+            Journey journey;
+            travelmap_chosen(&region,&index,&journey,&cautious); travelmap_options(&reckless,&camp,&ship);
+            if (og_journey_begin(region,index,reckless,camp,ship)) { return 1; }
+        }
+        return result == TRAVELMAP_LEAVE;
+    }
+    if (result == TOWNMAP_TRAVEL && g_maps_mode == 2) { close_maps(); return !open_maps(1); }
+    if (result) { return 1; }
+    if (input->wheel) { if (g_maps_mode == 1) { dunmap_wheel(input->wheel); } else { townmap_wheel(input->wheel); } }
+    if (g_maps_mode == 2 && input->on_picture) { townmap_point(input->cx,input->cy); }
+    repeat = g_maps_mode == 1 ? dunmap_repeats(input->cx,input->cy) : townmap_repeats(input->cx,input->cy);
+    if (pressed && input->on_picture) {
+        if (pressed == 1) {
+            result = g_maps_mode == 1 ? dunmap_click(input->cx,input->cy) : townmap_click(input->cx,input->cy);
+            g_map_drag = (g_maps_mode == 1 ? dunmap_on_map(input->cx,input->cy) : townmap_on_map(input->cx,input->cy)) ? 1 : 0;
+        } else if (g_maps_mode == 1 && dunmap_on_map(input->cx,input->cy)) { g_map_drag = 2; }
+        og_sound(203); g_map_repeat = 0;
+    }
+    if (!(input->mouse_held & 3) || !input->on_picture) { g_map_drag = 0; }
+    if (g_map_drag && g_map_x >= 0 && !pressed) {
+        dx = input->cx-g_map_x; dy = input->cy-g_map_y;
+        if (g_maps_mode == 1) { if (g_map_drag == 2) { dunmap_turn_by(dx); } else { dunmap_drag(dx,dy); } }
+        else { townmap_drag(dx,dy); }
+    }
+    if (repeat && (input->mouse_held & 1) && input->on_picture) {
+        g_map_repeat += input->dt;
+        while (g_map_repeat >= 1.0f/18.2065f) {
+            g_map_repeat -= 1.0f/18.2065f;
+            result = g_maps_mode == 1 ? dunmap_click(input->cx,input->cy) : townmap_click(input->cx,input->cy);
+        }
+    }
+    g_map_x = input->cx; g_map_y = input->cy;
+    return result != 0;
+}
+const AutomapView *seam_automap_view(void)
+{
+    static AutomapView view;
+    int x, top, w, h;
+    if (!og_maps_up() || g_maps_mode != 1) { return 0; }
+    view = *dunmap_view(); og_screen_rect(df_view_w(),df_view_h(),&x,&top,&w,&h);
+    view.x0 = x+view.x0*w/df_view_w(); view.x1 = x+view.x1*w/df_view_w();
+    view.y0 = top-h+view.y0*h/df_view_h(); view.y1 = top-h+view.y1*h/df_view_h();
+    view.scale *= (float)w/df_view_w(); return &view;
+}
+static void map_overlay(void)
+{
+    const AutomapView *view;
+    float sx, sy, angle, ax, ay;
+    int x, top, w, h, step, visible;
+    df_u8 pixels[MARKER_SIDE*MARKER_SIDE];
+    visible = 0; angle = 0;
+    if (g_maps_mode == 1) {
+        view = seam_automap_view();
+        visible = automap_to_screen(view,og_move_body()->feet[0],og_move_body()->feet[1],og_move_body()->feet[2],&sx,&sy);
+        if (visible && automap_to_screen(view,og_move_body()->feet[0]+df_sin(og_move_yaw()*DF_TAU/2048)*64,
+             og_move_body()->feet[1],og_move_body()->feet[2]+df_cos(og_move_yaw()*DF_TAU/2048)*64,&ax,&ay)) { angle = df_atan2(ax-sx,ay-sy); }
+    } else if (g_maps_mode == 2) {
+        visible = townmap_marker(&sx,&sy,&angle);
+        og_screen_rect(df_view_w(),df_view_h(),&x,&top,&w,&h);
+        sx = x+sx*w/df_view_w(); sy = top-h+sy*h/df_view_h();
+    }
+    if (!visible) { return; }
+    step = marker_step(angle);
+    if (!g_map_marker || step != g_map_marker_step) {
+        marker_compose(pixels,step);
+        if (!g_map_marker) { g_map_marker = pic_load(pixels,MARKER_SIDE,MARKER_SIDE,g_art_rgb,1); }
+        else { pic_update(g_map_marker,pixels); }
+        g_map_marker_step = step;
+    }
+    w = df_view_w()*8/320; pic_draw(g_map_marker,df_iround(sx)-w/2,df_iround(sy)+w/2,w,w);
+}
+static void install_maps(void)
+{
+    OgMapsHooks hooks;
+    hooks.open = open_maps; hooks.close = close_maps; hooks.frame = frame_maps; hooks.overlay = map_overlay;
+    og_maps_install(&hooks);
+}
+static void present_maps(void)
+{
+    const df_u8 *pixels;
+    int changed;
+    if (g_maps_mode == 1) { changed = dunmap_changed(); if (changed || !g_map_pic) { dunmap_compose(); } pixels = dunmap_pixels(); }
+    else if (g_maps_mode == 2) { changed = townmap_changed(); if (changed || !g_map_pic) { townmap_compose(); } pixels = townmap_pixels(); }
+    else { changed = travelmap_changed(); if (changed || !g_map_pic) { travelmap_compose(); } pixels = travelmap_pixels(); }
+    if (!changed && g_map_pic) { return; }
+    if (g_maps_mode == 3) { travelmap_palette(g_maps_rgb); } else { mem_copy(g_maps_rgb,g_art_rgb,768); }
+    if (!g_map_pic) { g_map_pic = pic_load(pixels,320,200,g_maps_rgb,g_maps_mode == 1); }
+    else { pic_update(g_map_pic,pixels); }
+    og_pic_set(OG_PIC_SCREEN,g_map_pic);
+    if (!g_buf) { g_buf = (df_u8 *)mem_keep(64000); }
+    if (g_buf) { mem_copy(g_buf,pixels,64000); } g_screen_kind = 1;
 }

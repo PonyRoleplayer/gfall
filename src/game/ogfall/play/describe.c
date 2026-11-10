@@ -4,6 +4,7 @@
 #include "game/ogfall/play/play.h"
 #include "game/ogfall/formats/lore.h"
 #include "game/ogfall/tables/itemdefs.h"
+#include "game/ogfall/tables/combatdefs.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
 
@@ -12,7 +13,7 @@ typedef struct Description {
     const OgSpellDef *spell;
     int effect;
     char title[65], author[65];
-    char painting[4][128], artist[40];
+    char painting[4][128], artist[40], names[4][40];
 } Description;
 
 int og_item_info_record(df_u32 id)
@@ -34,7 +35,7 @@ static int expand_macro(const char *src, const Description *d, char *out, int ca
 {
     static const char *names[] = {"%mat","%arm","%wep","%mod","%wdm","%qua","%wth","%mit","%it","%kg","%bt","%ba","%hs",
         "%bdr","%adr","%cld","%bch","%ach","%clc","%1bm","%2bm","%1am","%2am","%clm",
-        "%sub","%adj","%pp1","%pp2","%an"};
+        "%sub","%adj","%pp1","%pp2","%an","%fn2","%mn2","%fn","%mn"};
     const OgObject *item;
     int i, n, value, low, high, weight;
     item = d->item;
@@ -43,6 +44,7 @@ static int expand_macro(const char *src, const Description *d, char *out, int ca
         if (!names[i][n]) { break; }
     }
     if (i == (int)(sizeof(names)/sizeof(names[0]))) { return 0; }
+    if (i >= 29) { df_copy(out,d->names[i-29],cap); return n; }
     if (i >= 24) { df_copy(out,i == 28 ? d->artist : d->painting[i-24],cap); return n; }
     if (i >= 13) {
         const OgSpellDef *s;
@@ -78,7 +80,17 @@ static int expand_macro(const char *src, const Description *d, char *out, int ca
         break;
     case 10: df_copy(out,d->title,cap); break;
     case 11: df_copy(out,d->author,cap); break;
-    case 12: df_copy(out,"Nothing",cap); break;
+    case 12:
+        df_copy(out,"Nothing",cap);
+        for (i = 0; i < OG_OBJECTS; i++) {
+            const OgObject *soul;
+            const OgFoeDef *kind;
+            soul = &og_state()->object[i];
+            if (!soul->id || soul->type != OG_RECORD_SOUL || soul->parent != item->id) { continue; }
+            kind = og_foe_def(soul->index); if (kind) { df_copy(out,kind->name,cap); }
+            break;
+        }
+        break;
     }
     return n;
 }
@@ -147,13 +159,11 @@ static void name_part(OgNameParts *parts, int set, df_u32 *seed, char *out, int 
     char piece[11];
     if (og_name_piece(parts,set,lore_random(seed),piece)) { append(out,cap,piece); }
 }
-static void artist_name(df_u32 *seed, char out[40])
+static void person_name(df_u32 *seed, int bank, int female, char out[40])
 {
     OgNameParts parts;
     char surname[30];
-    int female, bank, first;
-    /* macro_an evaluates gender before bank in the original instructions. */
-    female = lore_random(seed) & 1; bank = lore_random(seed) & 7;
+    int first;
     out[0] = surname[0] = 0;
     if (!og_name_open(&parts,bank)) { return; }
     if (bank == 1) {
@@ -170,11 +180,20 @@ static void artist_name(df_u32 *seed, char out[40])
     }
     og_name_close(&parts);
 }
+static void artist_name(df_u32 *seed, char out[40])
+{
+    int female, bank;
+    /* macro_an evaluates gender before bank in the original instructions. */
+    female = lore_random(seed) & 1; bank = lore_random(seed) & 7;
+    person_name(seed,bank,female,out);
+}
 int og_painting_info(df_u32 id, char *out, int capacity)
 {
     Description d;
     df_u8 choices[40];
-    df_u32 seed;
+    df_u32 seed, name_seed, named;
+    char raw[128];
+    static const int offsets[4] = {123,9543,0,3457};
     int picture, i, count, pick, variant;
     if (capacity < 1) { return 0; }
     out[0] = 0;
@@ -185,11 +204,24 @@ int og_painting_info(df_u32 id, char *out, int capacity)
     if (!og_painting_read(picture,choices)) { return 0; }
     for (i = 0; i < 4; i++) {
         for (count = 0; count < 10 && choices[i*10+count] != 255; count++) { }
+        if (!count) { return 0; }
         pick = count == 1 ? 0 : lore_random(&seed)%count;
         df_copy(d.painting[i],og_words(6100+i*100+choices[i*10+pick]),sizeof(d.painting[i]));
     }
     variant = lore_random(&seed)%9;
     artist_name(&seed,d.artist);
+    /* Painting subjects and prefixes contain the normal name macros too.
+     * Their separate seeded generators must not alter the world's RNG. */
+    name_seed = lore_random(&seed);
+    for (i = 0; i < 4; i++) {
+        named = name_seed+offsets[i];
+        pick = lore_random(&named) & 7;
+        person_name(&named,pick,!(i & 1),d.names[i]);
+    }
+    for (i = 0; i < 4; i++) {
+        df_copy(raw,d.painting[i],sizeof(raw));
+        expand(raw,&d,d.painting[i],sizeof(d.painting[i]));
+    }
     expand(og_words_variant(250,variant),&d,out,capacity);
     return picture+1;
 }

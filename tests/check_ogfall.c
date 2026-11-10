@@ -1,4 +1,6 @@
+#include "check_ogworld.h"
 #include "game/ogfall/play/state.h"
+#include "../apps/ogfall/seam.h"
 /*
  * OGFALL slice 1. The sums and the click script do not need the hold.
  * The last part boots the seam and walks one body in Privateer's Hold
@@ -18,6 +20,8 @@
 #include "engine/scene/body.h"
 #include "engine/scene/walker.h"
 #include "engine/scene/interact.h"
+#include "engine/scene/stream.h"
+#include "game/ogfall/play/magic.h"
 #include "engine/ui/pic.h"
 #include "engine/sound/sound.h"
 
@@ -35,15 +39,6 @@
 #include "game/ogfall/play/vitals.h"
 #include "check_ogcombat.h"
 #include "game/ogfall/tables/tables.h"
-
-/* Declared here so the test does not depend on the app include path.
- * seam.c is the only dagger include, and it is linked beside this file. */
-int seam_boot(void);
-int seam_open_hold(float *x, float *y, float *z);
-int seam_map_pixel(int x, int y);
-Level *seam_level(void);
-void seam_present(void);
-const df_u8 *seam_screen(const df_u8 **palette);
 
 static int g_card_quads;
 static float g_card_bottom, g_card_top, g_card_left, g_card_right;
@@ -947,6 +942,7 @@ void check_ogfall(const char *root)
     pic_end();
     for (id = 1; id <= PIC_MAX; id++) { pic_free(id); }
     pic_begin(0, 384u * 1024u, &g_card);
+    check_ogjourney();
     if (!seam_boot()) {
         check_expect(0, "OGFALL assets and classes load");
         return;
@@ -968,6 +964,7 @@ void check_ogfall(const char *root)
     check_hold(root);
     check_ogui(root);
     check_ogcombat(root);
+    check_ogworld(root);
     check_ogstate(root);
     pic_end();
 }
@@ -978,6 +975,7 @@ int check_ogfall_resume(const char *root, int slot)
     Camera camera;
     float x, y, z;
     int i, opened;
+    double saved_x, saved_z, world_x, world_z;
 
     mem_init();
     vfs_mount(root);
@@ -989,17 +987,32 @@ int check_ogfall_resume(const char *root, int slot)
     og_frame(&input, &camera, 0);
     check_expect(og_options_panel() == OG_PANEL_FILES, "cold title L opens the real load browser");
     input.ch = 1002; input.key = OG_VK_DOWN;
-    for (i = 1; i < slot; i++) { og_frame(&input,&camera,0); }
+    /* Scenario 7 exercises an outdoor save in the browser's sixth slot. */
+    for (i = 1; i < (slot == 7 ? 6 : slot); i++) { og_frame(&input,&camera,0); }
     input.ch = 13; input.key = 0;
     check_expect(og_frame(&input, &camera, 0) == OG_FRAME_LOAD, "cold title Enter loads the selected save");
-    check_expect(slot == 5 ? !strcmp(og_state()->save_label,"Combat round trip") :
+    check_expect(slot == 7 ? !strcmp(og_state()->save_label,"World round trip") : slot == 5 ? !strcmp(og_state()->save_label,"Combat round trip") :
                  og_character()->gold == (slot == 1 ? 987 : slot == 4 ? 1087 : 1024) && !strcmp(og_state()->save_label, "Host round trip"),
                  "fresh process recovered the actual saved character");
-    if (!seam_open_hold(&x, &y, &z)) { return 1; }
-    og_move_restore(&og_state()->motion);
-    og_move_camera(&camera);
-    check_expect(check_near(camera.x, og_state()->x, 0.01f) &&
-                 check_near(camera.z, og_state()->z, 0.01f), "cold load stands at the saved position");
+    saved_x = og_state()->x; saved_z = og_state()->z;
+    if (slot == 7) {
+        saved_x += (double)og_world_state()->where.origin_x*STREAM_CHUNK;
+        saved_z += (double)og_world_state()->where.origin_z*STREAM_CHUNK;
+    }
+    if (!seam_open_place(1,0,&x, &y, &z)) { return 1; }
+    seam_land(&camera,1,0);
+    world_x = camera.x; world_z = camera.z;
+    if (slot == 7) { stream_world(camera.x,camera.z,&world_x,&world_z); }
+    check_expect(check_near((float)(world_x-saved_x),0,0.1f) &&
+                 check_near((float)(world_z-saved_z),0,0.1f), "cold load stands at the saved position");
+    if (slot == 7) {
+        check_expect(seam_level()->streamed && og_world_state()->where.kind == OG_PLACE_WORLD && automap_count() > 0,
+                     "cold load reopens the streamed world and restores dungeon exploration");
+        check_expect(check_near(og_magic_state()->missile[0].x-camera.x,20,0.1f) &&
+                     check_near(og_magic_state()->missile[0].z-camera.z,30,0.1f),
+                     "cold load keeps in-flight magic beside the player after the stream origin changes");
+        pic_end(); return check_failed() ? 1 : 0;
+    }
     opened = 0;
     for (i = 0; i < seam_level()->scene.nmovers; i++) {
         opened += mover_at_end(&seam_level()->scene.movers[i]) != 0;
@@ -1051,6 +1064,7 @@ int main(int argc, char **argv)
     if (argc == 3 && !strcmp(argv[1], "--ogfall-resume-items")) { return check_ogfall_resume(argv[2],6); }
     if (argc == 3 && !strcmp(argv[1], "--ogfall-resume-inventory")) { return check_ogfall_resume(argv[2],4); }
     if (argc == 3 && !strcmp(argv[1], "--ogfall-resume-combat")) { return check_ogfall_resume(argv[2],5); }
+    if (argc == 3 && !strcmp(argv[1], "--ogfall-resume-world")) { return check_ogfall_resume(argv[2],7); }
     root = argc > 1 ? argv[1] : "daggerfall/DAGGER/ARENA2";
     check_ogfall(root);
     if (check_failed()) {
