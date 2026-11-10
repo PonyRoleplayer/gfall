@@ -1,5 +1,6 @@
 #include "check_ogstate.h"
 #include "check_ogshelf.h"
+#include "check_ogmarket.h"
 #include "game/ogfall/play/standing.h"
 #include "check_util.h"
 #include "engine/core/mem.h"
@@ -353,6 +354,8 @@ void check_ogstate(const char *root)
     check_validation();
     check_time();
     check_ogshelf();
+    og_state_restore(&g_initial);
+    check_ogmarket();
     og_state_restore(&g_initial);
     check_disk(root);
 }

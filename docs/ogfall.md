@@ -1708,3 +1708,29 @@ Slice 2, second part. `play/shelf.c`, with `tables/shopdefs.c` generated from FA
   enchantment systems; the enchanted and soul-trap shelves of the Mages Guild and the potions
   shelf (`shop_stock_magic`, `shop_stock_potions`) are separate callers and wait too. The shop
   container itself and its owner flag are made when the trade screen is.
+
+
+## Trade: a shop session and the holidays (2026-11-10)
+
+Slice 2, third part. `play/market.c` (the session), `tables/holidaydefs.c` (generated from
+FALL.EXE: `holiday_days` at 0x17CA24 and `holiday_regions` at 0x17CA8E, 53 holidays), tested in
+`tests/check_ogmarket.c` on a live session. Source: `inventory_frame` and `inventory_close`
+(`src/lifted/inven.c` 386..500), `trade_settle_offer`, `trade_make_offer`, `inv_claim_items`,
+`holiday_today` (`src/lifted/parse.c` 1920).
+
+- **A session** is one of buy, sell or repair, with the shop's `OgShop` and a container: the shelves
+  when buying, the empty counter otherwise. Buying moves a clicked shelf item into the pack marked
+  unpaid (record flag 32); the basket is every unpaid item carried. Selling puts a pack item on the
+  counter. Pay asks for the offer text (260..262, 263..265 selling) and the price does not change
+  with the answer; a yes takes or gives the gold, marks the basket as theirs or frees the counter,
+  uses Mercantile once and plays 204; a yes without the gold is refused with text 454. Leaving
+  returns the unpaid to the shelves and the counter to the pack.
+- **`holiday_today`** is a year of 518400 minutes (360 days), the last five days having none; a
+  holiday is for a region when its table byte is 255 or the region + 1. It comes from the 53-entry
+  tables, not GFALL's sixteen.
+- **Adaptations and limits:** an arrow stack is priced by its count (the original keeps the count
+  in the condition field). Repair has no enchanted-item case yet, as there are no enchantments. The
+  session does not draw anything and is not wired to a screen: the inventory's shop layout
+  (INVE08/10/12 columns), the building's quality, type and the holiday from the town (the seam's
+  `travel_building`), the offer box and the haggling are the next part. Nothing here is saved:
+  an open shop is a screen, not a state.

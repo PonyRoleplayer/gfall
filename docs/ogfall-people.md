@@ -40,7 +40,7 @@ and a short audit section in `ogfall.md`.
    Everything later reads this. Guild rank from reputation waits for the guilds
    (it needs two extern tables), and building identity and `holiday_today` wait
    for trade, their first user.
-2. **Trade.** (Prices and shelves built 2026-11-10; the screen and buildings' identity to do.) The price chain (`trade_region_price`, `trade_base_price`,
+2. **Trade.** (Prices, shelves and the shop session built 2026-11-10; the screen and the town's building identity to do.) The price chain (`trade_region_price`, `trade_base_price`,
    `trade_adjust_price`), shelves and stock, buying, selling, the offer and
    counter-offer dialogue, repair, identification, on OGFALL's inventory screen.
 3. **Bank.** Regional accounts, deposits, withdrawals, loans, repayment and
