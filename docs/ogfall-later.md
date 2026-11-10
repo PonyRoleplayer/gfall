@@ -68,6 +68,8 @@ for now. Each line names where to look.
 - A crouched player's blows and aim started 35 units under the eye, inside the floor: `chest()` in `play/dungeon.c` now takes the middle of the body (test in `check_ogcombat.c`).
 - Looking down turned sprites upside down: the lean's sign in the engine's `flat_facing` (`scene.c`) was wrong; the camera-facing up is `(fx*sin, cos, fz*sin)` for the engine's pitch (tests in `check_engine.c`). An engine file, edited because no engine session was listed.
 
+- A killed town guard leaves a ground pile (`og_ground_pile` with the watch's loot table) the use key opens; emptied static treasure piles and corpses of the Hold and dungeons are hidden and unusable once their container has no rows (`container_emptied` in `seam.c`).
+- A citizen struck down gets a second of blood (TEXTURE.380 record 0, in the people pool) and the death sound before they go. The original kills a citizen at once and they never fight back: the counterattack is the watch summoned by a witnessed murder.
+
 ## Still open from the same report
-- Crash entering a building while pursued, after being inside another (not reproduced by the host test's two enter/leave cycles).
-- A killed guard does not become a lootable pile; emptied static piles do not vanish; a killed citizen has no blood or sound (the original kills them at once, they never fight back: the counterattack is the watch).
+- Crash entering a building while pursued, after being inside another: not reproduced by the host test (two enter/leave cycles with the watch active) nor under AddressSanitizer. Needs the target's log or a save near it.

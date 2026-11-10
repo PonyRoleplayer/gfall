@@ -2035,6 +2035,32 @@ static int street_convert(int guards_only)
     return n;
 }
 
+/* damage_spawn_splash on a person struck: a splash of blood in the people pool for a second, taken down by street_blood_tick. */
+#define STREET_BLOODS 4
+static Entity *g_street_blood[STREET_BLOODS];
+static float g_street_blood_left[STREET_BLOODS];
+static void street_blood(const Entity *e)
+{
+    int i;
+
+    for (i = 0; i < STREET_BLOODS; i++) {
+        if (g_street_blood_left[i] > 0.0f) { continue; }
+        g_street_blood[i] = people_blood(e->x, e->y + 40.0f, e->z, 0);
+        g_street_blood_left[i] = g_street_blood[i] ? 1.0f : 0.0f;
+        return;
+    }
+}
+static void street_blood_tick(float seconds)
+{
+    int i;
+
+    for (i = 0; i < STREET_BLOODS; i++) {
+        if (g_street_blood_left[i] <= 0.0f) { continue; }
+        g_street_blood_left[i] -= seconds;
+        if (g_street_blood_left[i] <= 0.0f && g_street_blood[i]) { g_street_blood[i]->live = 0; g_street_blood[i] = 0; }
+    }
+}
+
 /* The pedestrian pass of a swing (func_000733AD.c 96..110). */
 static int street_hit(const Camera *cam)
 {
@@ -2058,6 +2084,8 @@ static int street_hit(const Camera *cam)
             og_law_note(OG_CRIME_MURDER);
             og_guards_summon(1);
         }
+        street_blood(e);
+        og_sound_at(17,e->x,e->y,e->z);
         people_fell(e);
         og_guild_count_crime(6, 5, og_state()->minutes);
         struck++;
@@ -2068,7 +2096,11 @@ static int street_hit(const Camera *cam)
 /* A creature of the watch killed: the body is laid, the guard's corpse. */
 static void street_died(int kind, Entity *e)
 {
-    if (kind == STREET_GUARD_KIND && people_index(e) >= 0) { people_lay_corpse(e); }
+    if (kind == STREET_GUARD_KIND && people_index(e) >= 0) {
+        people_lay_corpse(e);
+        /* The body's things lie on the ground there, a pile the use key opens (the street has no corpse usables). */
+        og_ground_pile(e->x,e->y,e->z,og_dungeon_loot_table(og_dungeon_index(e)));
+    }
 }
 
 /* court_remove_creatures: the watch is sent away. */
@@ -2685,6 +2717,22 @@ static void treasure_usable(Usable *out, const Flat *flat, int sprite, df_u32 ke
     out->label = "Treasure";
 }
 
+/* An emptied container stays in the state with no rows; a pile or corpse whose container is that is gone from the view and from the use key. */
+static int container_emptied(df_u32 thing)
+{
+    const OgObject *o;
+    int i;
+
+    for (i = 0; i < OG_OBJECTS; i++) {
+        o = &og_state()->object[i];
+        if (o->id && o->type == OG_RECORD_CONTAINER && o->parent == OG_WORLD_ROOT &&
+            o->place_key == og_object(OG_WORLD_ROOT)->place_key && o->thing_key == thing) {
+            return !og_inventory_rows(o->id,-1,0,0);
+        }
+    }
+    return 0;
+}
+
 static void hold_dropped_piles(void)
 {
     const OgObject *container;
@@ -2693,11 +2741,22 @@ static void hold_dropped_piles(void)
     if (!g_world || !g_hold_flats || g_hold_pile_serial == og_state()->event_serial) { return; }
     g_hold_pile_serial = og_state()->event_serial;
     n = g_hold_flat_base; uses = g_hold_use_base; changed = 0;
+    for (i = 0; i < g_hold_use_base; i++) {
+        Usable *u;
+
+        u = &g_hold_usables[i];
+        if (u->kind != USE_OTHER || u->what < OG_USE_TREASURE || u->what >= OG_USE_TREASURE+22 || u->sprite < 0 || u->sprite >= g_hold_flat_base) { continue; }
+        if (g_hold_flats[u->sprite].w > 0 && container_emptied((df_u32)u->tag)) {
+            g_hold_flats[u->sprite].w = g_hold_flats[u->sprite].h = 0;
+            u->reach = 0; u->hw = u->hh = u->hd = 0;
+            changed = 1;
+        }
+    }
     for (i = 0; i < og_dungeon_count(); i++) {
         const Entity *e;
         Flat corpse;
         e = og_dungeon_entity(i);
-        if (!e->dead || !e->live) { continue; }
+        if (!e->dead || !e->live || container_emptied(e->key.thing)) { continue; }
         mem_zero(&corpse,sizeof(corpse));
         corpse.x = e->x; corpse.y = e->y+12; corpse.z = e->z;
         corpse.w = 64; corpse.h = 32;
@@ -5051,6 +5110,7 @@ static int seam_world_art(void)
     if (slot < 0 || !wres_acquire(slot)) { return 0; }
     og_ground_open(&g_level.scene,slot);
     og_object_edit(OG_WORLD_ROOT)->place_key = 0x80000000u;
+    mem_zero(g_street_blood,sizeof(g_street_blood)); mem_zero(g_street_blood_left,sizeof(g_street_blood_left));
     og_dungeon_open_street(&g_level.scene); og_dungeon_blood(-1,-1);
     return 1;
 }
@@ -5058,6 +5118,7 @@ int seam_next_world(void) { return travel_next_is_world(); }
 void seam_world_step(Camera *camera, float seconds)
 {
     g_site_camera = camera;
+    street_blood_tick(seconds);
     float dx, dz;
     if (!g_place_open || !g_level.streamed) { return; }
     travel_update(camera,1,2,seconds,&dx,&dz);

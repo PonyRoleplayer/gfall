@@ -14,7 +14,7 @@ static int g_slot;
 static SpawnId g_picture[GROUND_VISIBLE];
 static df_u32 g_container[GROUND_VISIBLE];
 
-df_u32 og_ground_container(float x, float y, float z)
+df_u32 og_ground_pile(float x, float y, float z, int table)
 {
     const OgWhere *where;
     df_u32 place, thing;
@@ -33,8 +33,9 @@ df_u32 og_ground_container(float x, float y, float z)
     }
     qx = df_ifloor(x/64); qz = df_ifloor(z/64);
     thing = 0x80000000u | (((df_u32)qx & 32767u) << 15) | ((df_u32)qz & 32767u);
-    return og_loot_container(place,thing,x,y,z,-1);
+    return og_loot_container(place,thing,x,y,z,table);
 }
+df_u32 og_ground_container(float x, float y, float z) { return og_ground_pile(x,y,z,-1); }
 int og_ground_position(const OgObject *container, float *x, float *y, float *z)
 {
     const OgWhere *where;
