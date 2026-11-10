@@ -15,6 +15,9 @@ typedef struct OgSpellDef {
 void og_spells_load(void);
 const OgSpellDef *og_spell_def(int id);
 /* A spell of the game's own beyond SPELLS.STD (a potion's): its 89-byte record under an id of its own. 0 when full or taken. */
+/* The standard spells in SPELLS.STD's order (what the original keeps as spell_records). */
+int og_spell_standard_count(void);
+const OgSpellDef *og_spell_standard(int i);
 int og_spell_register(const df_u8 *record, int id);
 /* The same, put over the spell of that id if there is one (an unknown brew is made fresh each time it is drunk). */
 int og_spell_replace(const df_u8 *record, int id);

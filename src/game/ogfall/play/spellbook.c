@@ -6,6 +6,8 @@
 
 static OgSpellDef g_spell[128];
 static int g_count;
+/* How many of them came from SPELLS.STD (the rest are the game's own, a potion's). */
+static int g_standard;
 
 /* One 89-byte spell record (SPELLS.STD's, or a potion recipe's own) into a definition. */
 static void parse_spell(const df_u8 *record, OgSpellDef *spell)
@@ -23,6 +25,16 @@ static void parse_spell(const df_u8 *record, OgSpellDef *spell)
         for (n = 0; n < 5; n++) { spell->magnitude[k][n] = (signed char)record[32+k*5+n]; }
     }
     mem_copy(spell->name, record + 47, 25); spell->name[25] = 0;
+}
+
+int og_spell_standard_count(void)
+{
+    return g_standard;
+}
+
+const OgSpellDef *og_spell_standard(int i)
+{
+    return i >= 0 && i < g_standard ? &g_spell[i] : 0;
 }
 
 int og_spell_register(const df_u8 *record, int id)
@@ -61,6 +73,7 @@ void og_spells_load(void)
     for (i = 0; i < (int)(size / 89); i++) {
         parse_spell(bytes + i * 89, &g_spell[g_count++]);
     }
+    g_standard = g_count;
 }
 
 const OgSpellDef *og_spell_def(int id)

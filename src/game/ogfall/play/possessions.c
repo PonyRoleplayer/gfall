@@ -39,7 +39,7 @@ static int game_mode(int page)
 {
     if (page == OG_VIEW_SHEET) { return OG_GAME_SHEET; }
     if (page == OG_VIEW_INVENTORY) { return OG_GAME_INVENTORY; }
-    if (page == OG_VIEW_BOOK || page == OG_VIEW_MESSAGE || page == OG_VIEW_BANK || page == OG_VIEW_COURT || page == OG_VIEW_TALK || page == OG_VIEW_SERVICE || page == OG_VIEW_POTION) { return OG_GAME_READING; }
+    if (page == OG_VIEW_BOOK || page == OG_VIEW_MESSAGE || page == OG_VIEW_BANK || page == OG_VIEW_COURT || page == OG_VIEW_TALK || page == OG_VIEW_SERVICE || page == OG_VIEW_POTION || page == OG_VIEW_SPELLSHOP) { return OG_GAME_READING; }
     return OG_GAME_SPELLBOOK;
 }
 
@@ -70,7 +70,7 @@ void og_possessions_close(void)
 
 int og_possessions_open(int page, df_u32 remote)
 {
-    if (!og_state()->ready || page < OG_VIEW_INVENTORY || page > OG_VIEW_POTION) { return 0; }
+    if (!og_state()->ready || page < OG_VIEW_INVENTORY || page > OG_VIEW_SPELLSHOP) { return 0; }
     if (page == OG_VIEW_SPELLS) {
         df_u32 ids[OG_OBJECTS];
         g.book = og_inventory_book();
@@ -376,6 +376,44 @@ static int service_button(int x, int y)
     return inside(x,y,139,80,181,94) ? -1 : -2;
 }
 
+/* ---- The spell shop (spellshop_update) ---- */
+static void (*g_shop_buy)(int id);
+
+int og_possessions_spellshop(const int *ids, int count, void (*buy)(int id))
+{
+    int i;
+
+    if (g.page || count < 1 || count > 96 || !buy || !og_possessions_open(OG_VIEW_SPELLSHOP, 0)) { return 0; }
+    for (i = 0; i < count; i++) { g.shop[i] = ids[i]; }
+    g.shop_count = count;
+    g.selected = 0; g.scroll[0] = 0;
+    g_shop_buy = buy;
+    return 1;
+}
+
+static void spellshop_click(int x, int y)
+{
+    int at;
+    void (*buy)(int);
+
+    if (inside(x,y,242,170,278,178)) { og_possessions_close(); return; }
+    if (inside(x,y,23,167,65,181)) { if (g_shop_buy) { g_shop_buy(g.shop[g.selected]); } return; }
+    if (x > 161 && x < 277 && y > 58 && y < 162) {
+        at = (y-58)/38;
+        if ((y-58)%38 < 27) {
+            og_spell_help_def(og_spell_def(g.shop[g.selected]),at,g.notice,sizeof(g.notice)); g.notice_page = 0;
+        }
+        return;
+    }
+    if (inside(x,y,144,29,152,44)) { if (g.scroll[0]) { g.scroll[0]--; } return; }
+    if (inside(x,y,144,150,152,165)) { if (g.scroll[0]+14 < g.shop_count) { g.scroll[0]++; } return; }
+    if (inside(x,y,27,30,138,161)) {
+        at = g.scroll[0] + (y-30)/9;
+        if (at < g.shop_count) { g.selected = at; }
+    }
+    (void)buy;
+}
+
 /* ---- The potion maker (potionmaker_update, MASK00I0.IMG) ---- */
 
 int og_possessions_potion(void)
@@ -494,7 +532,7 @@ int og_possessions_cast(void)
 /* A dialog over the world: the message page already up and between questions is used again (an answer's follow-up), else one is opened. */
 static int dialog_ready(void)
 {
-    if ((g.page == OG_VIEW_MESSAGE || g.page == OG_VIEW_POTION) && !g.prompt) { return 1; }
+    if ((g.page == OG_VIEW_MESSAGE || g.page == OG_VIEW_POTION || g.page == OG_VIEW_SPELLSHOP) && !g.prompt) { return 1; }
     return !g.page && og_possessions_open(OG_VIEW_MESSAGE,0);
 }
 
@@ -532,6 +570,10 @@ int og_possessions_number(const char *words, void (*answer)(int amount))
 int og_possessions_message(const char *text, void (*answer)(const char *))
 {
     /* A message said while another is up waits its turn (up to four); said over an answered question it is shown at once. */
+    /* Over a window that is up (the potion maker, the spell shop), the words are shown over it. */
+    if (text && *text && (g.page == OG_VIEW_POTION || g.page == OG_VIEW_SPELLSHOP) && !g.prompt && !g.notice[0]) {
+        df_copy(g.notice,text,sizeof(g.notice)); g.notice_page = 0; g.revision++; return 1;
+    }
     if (text && *text && g.page == OG_VIEW_MESSAGE && !g.prompt) {
         if (!g.notice[0]) { df_copy(g.notice,text,sizeof(g.notice)); g.notice_page = 0; g.revision++; return 1; }
         if (g_queued < 4) { df_copy(g_queue[g_queued++],text,sizeof(g_queue[0])); return 1; }
@@ -1084,6 +1126,20 @@ void og_possessions_frame(const OgIn *in)
         if (in->ch == 27 || click) { g.skill_group = -1; }
         else if (in->key == OG_VK_NEXT || in->key == OG_VK_DOWN) { if (g.skill_group == 3 && g.skill_scroll < 7) { g.skill_scroll++; } }
         else if (in->key == OG_VK_PRIOR || in->key == OG_VK_UP) { if (g.skill_scroll) { g.skill_scroll--; } }
+    } else if (g.page == OG_VIEW_SPELLSHOP) {
+        if (in->ch == 27) { og_possessions_close(); }
+        else if (in->ch == 13) {
+            void (*buy)(int);
+            int id;
+
+            /* picklist_frame picked: the shop closes, then the spell is bought. */
+            buy = g_shop_buy; id = g.shop[g.selected];
+            og_possessions_close();
+            if (buy) { buy(id); }
+        }
+        else if (in->key == OG_VK_DOWN) { if (g.selected+1 < g.shop_count) { g.selected++; if (g.selected >= g.scroll[0]+14) { g.scroll[0]++; } } }
+        else if (in->key == OG_VK_UP) { if (g.selected) { g.selected--; if (g.selected < g.scroll[0]) { g.scroll[0]--; } } }
+        else if (click) { spellshop_click(in->cx,in->cy); }
     } else if (g.page == OG_VIEW_POTION) {
         if (in->ch == 27) { og_possessions_close(); }
         else if (click) { potion_click(in->cx,in->cy); }

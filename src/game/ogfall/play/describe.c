@@ -125,19 +125,26 @@ void og_item_info(df_u32 id, char *out, int capacity)
     if (!out[0]) { og_item_name(d.item,out,capacity); }
 }
 
-void og_spell_help(df_u32 id, int effect, char *out, int capacity)
+void og_spell_help_def(const OgSpellDef *def, int effect, char *out, int capacity)
 {
-    const OgObject *spell;
     Description d;
     int record;
     if (capacity < 1) { return; }
     out[0] = 0;
-    spell = og_object(id);
-    if (!spell || spell->type != OG_RECORD_SPELL || effect < 0 || effect >= 3) { return; }
-    mem_zero(&d,sizeof(d)); d.spell = og_spell_def(spell->index); d.effect = effect;
-    if (!d.spell) { return; }
+    if (!def || effect < 0 || effect >= 3) { return; }
+    mem_zero(&d,sizeof(d)); d.spell = def; d.effect = effect;
     record = og_effect_text(d.spell->group[effect],d.spell->sub[effect]);
     if (record >= 0) { expand(og_words(record),&d,out,capacity); }
+}
+
+void og_spell_help(df_u32 id, int effect, char *out, int capacity)
+{
+    const OgObject *spell;
+    if (capacity < 1) { return; }
+    out[0] = 0;
+    spell = og_object(id);
+    if (!spell || spell->type != OG_RECORD_SPELL) { return; }
+    og_spell_help_def(og_spell_def(spell->index),effect,out,capacity);
 }
 
 /* item_info_painting and names.c use Watcom's generator. Keep inspection's

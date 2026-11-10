@@ -9,7 +9,7 @@
 #include "game/ogfall/play/law.h"
 #include "game/ogfall/play/talkwin.h"
 
-enum { OG_VIEW_NONE, OG_VIEW_INVENTORY, OG_VIEW_SHEET, OG_VIEW_SPELLS, OG_VIEW_BOOK, OG_VIEW_MESSAGE, OG_VIEW_BANK, OG_VIEW_COURT, OG_VIEW_TALK, OG_VIEW_SERVICE, OG_VIEW_POTION };
+enum { OG_VIEW_NONE, OG_VIEW_INVENTORY, OG_VIEW_SHEET, OG_VIEW_SPELLS, OG_VIEW_BOOK, OG_VIEW_MESSAGE, OG_VIEW_BANK, OG_VIEW_COURT, OG_VIEW_TALK, OG_VIEW_SERVICE, OG_VIEW_POTION, OG_VIEW_SPELLSHOP };
 enum { OG_ITEM_INFO, OG_ITEM_EQUIP, OG_ITEM_REMOVE, OG_ITEM_USE };
 enum { OG_PROMPT_NONE, OG_PROMPT_GOLD, OG_PROMPT_NAME, OG_PROMPT_PAGE, OG_PROMPT_SPELL_NAME, OG_PROMPT_ANSWER, OG_PROMPT_OFFER, OG_PROMPT_AMOUNT, OG_PROMPT_ASK, OG_PROMPT_NUMBER, OG_PROMPT_LIST };
 #define OG_LIST_MOST 16
@@ -35,6 +35,8 @@ typedef struct OgPossessions {
     /* A list to choose from (list_popup_open_strings): its rows. */
     char list[OG_LIST_MOST][OG_LIST_NAME];
     int list_count;
+    /* The spell shop's list: the spell definitions offered. */
+    int shop[96], shop_count;
     char offer[200];
     char notice[2048], input[32];
     unsigned revision;
@@ -87,6 +89,11 @@ int og_possessions_list(const char names[][OG_LIST_NAME], int count, void (*pick
 void og_possessions_set_service(void (*act)(int what));
 /* The potion maker (potionmaker_open, MASK00I0.IMG): the pack's ingredients, the cauldron, Recipes, Mix, Exit. 0 when the player has no ingredients (record 34 is said). */
 int og_possessions_potion(void);
+/*
+ * The Mages Guild's spell shop (spellshop_open, SPBK01I0.IMG over MASK04I0.IMG): the spells offered (their definition ids) listed to choose from, a click selecting one and
+ * its price shown; Buy asks the game to sell the selected one (buy(id)), the window staying up; Enter buys it and leaves; Exit or Escape leaves. 0 when none are offered.
+ */
+int og_possessions_spellshop(const int *ids, int count, void (*buy)(int id));
 int og_possessions_trade(int mode, const OgShop *shop, df_u32 shelves);
 /*
  * The offer box's words are one variant of a TEXT.RSC record (text_rsc_load picks one at random) with

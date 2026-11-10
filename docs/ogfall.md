@@ -2143,3 +2143,14 @@ trainer driven by clicks to a lesson in `tests/check_ogworld.c`. Cure and blessi
   (169,26), Mix (169,42), scrolls (6,30) and (6,156), Exit (290,178). A guild's potion maker opens it (record 34 if the player has no ingredients).
 - **Alchemists' shelves:** the original stocks them from the ordinary group tables (ingredients and bottles); a potion is never on them. What it adds is a quarter chance of a recipe item
   (`item_add_to_container(27, 4)`) when a shelf is first opened, and a horse and a cart (group 23, 1 and 0) on each general store shelf; both are now added.
+
+### The Mages Guild's spell shop
+
+`play/spellshop.c`, `OG_VIEW_SPELLSHOP` (SPBK01I0.IMG): a stranger or a member at the Mages' spell seller (person 60) is offered some of the standard spells. For each of SPELLS.STD's
+89 (the unnamed and those named with "!" left out) the spell's magicka cost, held under 96 by halving, is taken from the hall's quality times 5 plus 30 (at least 5), and the spell is
+offered when a roll of 1..50 is below that; the whole table is gone through again while the list is empty. The rolls are on the stream started at the person's number (the original uses the high
+word of their record id) and put back after, so the same person offers the same spells. A spell costs four times its cost in gold (half on the holiday 43) through the hall's price chain;
+Buy asks the offer, 454 says no gold, and the spell goes into the spellbook (the page stays open). Enter buys the selected spell and leaves; Escape and Exit leave. Effects can be clicked
+for their help text. The player must have a spellbook (an empty list is not made without one, and the shop does not open).
+Controls grew a message that can be shown over any window that is up. Tests: `tests/check_ogspellshop.c`, and the window driven by clicks in `tests/check_ogworld.c`
+(`build/ogfall-spellshop0.ppm`).

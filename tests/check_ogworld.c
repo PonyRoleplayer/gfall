@@ -14,6 +14,7 @@
 #include "game/ogfall/play/hud.h"
 #include "game/ogfall/play/law.h"
 #include "game/ogfall/play/potion.h"
+#include "game/ogfall/play/spellshop.h"
 #include "game/dagger/places/people.h"
 #include "engine/scene/entity.h"
 #include "game/ogfall/formats/interior.h"
@@ -71,7 +72,8 @@ static void click_at(int x, int y)
     og_possessions_frame(&in);
 }
 
-static int g_asked, g_number;
+static int g_asked, g_number, g_shop_id;
+static void shop_bought(int id) { g_shop_id = id; }
 static void ask_done(int yes) { g_asked = yes; }
 static void number_done(int amount) { g_number = amount; }
 static void type_char(int ch)
@@ -397,6 +399,21 @@ void check_ogworld(const char *root)
                 click_at(160, 100);
                 click_at(298, 190);
                 check_expect(og_possessions()->page == OG_VIEW_NONE, "people: Exit did not close the potion maker");
+            }
+            /* The spell shop: the spells a person offers listed, one chosen by a click, Buy given its id, Exit leaves. */
+            {
+                int offered[OG_SPELLSHOP_MOST], listed;
+
+                listed = og_spellshop_list(4321u, 20, offered, OG_SPELLSHOP_MOST);
+                check_expect(listed > 1 && og_possessions_spellshop(offered, listed, shop_bought) && og_possessions()->page == OG_VIEW_SPELLSHOP, "people: the spell shop did not open");
+                talk_shot("spellshop0");
+                click_at(60, 30 + 9 + 2);
+                check_expect(og_possessions()->selected == 1, "people: a click did not choose the second spell");
+                g_shop_id = -1;
+                click_at(40, 174);
+                check_expect(g_shop_id == offered[1] && og_possessions()->page == OG_VIEW_SPELLSHOP, "people: Buy did not hand over the chosen spell and keep the window");
+                click_at(260, 174);
+                check_expect(og_possessions()->page == OG_VIEW_NONE, "people: Exit did not close the spell shop");
             }
             /* A Fighters' trainer: a member sees the menu, the service asks the price, lists the skills and teaches one, three hours pass. */
             {

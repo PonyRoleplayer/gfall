@@ -53,6 +53,7 @@
 #include "game/ogfall/play/steal.h"
 #include "game/ogfall/play/guild.h"
 #include "game/ogfall/play/potion.h"
+#include "game/ogfall/play/spellshop.h"
 #include "game/ogfall/play/hours.h"
 #include "game/ogfall/play/ailments.h"
 #include "game/ogfall/formats/interior.h"
@@ -1465,6 +1466,26 @@ static void hall_blessing(int kind, int rank)
 }
 
 /* guild_heal: health to the most; if attributes are down, an offer (403) to put them back, the conditions and the ailments gone. */
+/* spellshop_buy: four times the cost (half on the holiday 43) through the hall's chain, 454 if short, then the spell is in the book. */
+static int g_buying_spell;
+
+static void hall_spell_paid(int price)
+{
+    if (hall_pay(price)) {
+        og_spellshop_add(g_buying_spell);
+    }
+}
+
+static void hall_spell_buy(int id)
+{
+    const OgSpellDef *spell;
+
+    spell = og_spell_def(id);
+    if (!spell) { return; }
+    g_buying_spell = id;
+    hall_confirm(og_spellshop_price(spell, og_holiday_today(og_state()->minutes, travel_region())), hall_spell_paid);
+}
+
 static void hall_run(void);
 
 static void hall_heal_answer(int yes)
@@ -1544,6 +1565,16 @@ static void hall_run(void)
         break;
     case OG_SVC_POTION_MAKER:
         og_possessions_potion();
+        break;
+    case OG_SVC_SPELLS:
+        {
+            int ids[OG_SPELLSHOP_MOST], count, type, faction, quality;
+            unsigned place;
+
+            if (!travel_building(&type, &faction, &quality, &place)) { break; }
+            count = og_spellshop_list(g_met.who, quality, ids, OG_SPELLSHOP_MOST);
+            if (count) { og_possessions_spellshop(ids, count, hall_spell_buy); }
+        }
         break;
     case OG_SVC_ARMOR:
         {
@@ -4319,6 +4350,56 @@ static void paint_potion_maker(void)
     }
 }
 
+/* The spell shop (spellshop_update, spellshop_draw_spell): SPBK01I0.IMG, the offered spells in the list, the selected one's icon, element, target and effects, and its price at 97,172. */
+static void paint_spellshop(void)
+{
+    const OgPossessions *view;
+    const OgSpellDef *spell;
+    ImgPicture window;
+    char line[48];
+    int i, at, x, y, length;
+
+    view = og_possessions();
+    cover_screen(0,0,0);
+    if (img_load("SPBK01I0.IMG",&window)) { blit_ix(window.x,window.y,window.pixels,window.width,window.height,0); }
+    for (i = 0; i < 14 && i+view->scroll[0] < view->shop_count; i++) {
+        at = i+view->scroll[0];
+        spell = og_spell_def(view->shop[at]);
+        if (!spell) { continue; }
+        if (at == view->selected) { fill_box(27,30+i*9,111,9,150); }
+        df_copy(line,spell->name,sizeof(line));
+        for (length = 0; line[length]; length++) { }
+        while (length && smallfont_width(&g_font,line) > 109) { line[--length] = 0; }
+        text_at(28,30+i*9,line);
+    }
+    fill_box(145,45,7,104,114);
+    if (view->shop_count > 14) {
+        int height, top;
+
+        height = 104*14/view->shop_count; top = 45+(104-height)*view->scroll[0]/(view->shop_count-14);
+        fill_box(145,top,7,height,146);
+    }
+    spell = og_spell_def(view->shop[view->selected]);
+    if (!spell) { return; }
+    text_at(148,20,spell->name);
+    if (g_spell_icons && spell->icon < 69) {
+        x = (spell->icon%20)*16; y = (spell->icon/20)*16;
+        blit_stride(172,32,g_spell_icons+y*320+x,320,16,16);
+    }
+    if (g_spell_masks && spell->target < 5 && spell->element < 5) {
+        blit_stride(205,32,g_spell_masks+spell->target*640,40,24,16);
+        blit_stride(246,32,g_spell_masks+spell->element*640+24,40,16,16);
+    }
+    for (i = 0; i < 3; i++) {
+        if (spell->group[i] != 255) {
+            centered_text(219,63+i*38,og_spell_effect(spell->group[i],spell->sub[i]),145);
+            centered_text(219,75+i*38,og_effect_subtype(spell->group[i],spell->sub[i]),145);
+        }
+    }
+    log_format(line,sizeof(line),"%d",og_spellshop_price(spell,og_holiday_today(og_state()->minutes,travel_region())));
+    text_at(97,172,line);
+}
+
 static int present_possessions(void)
 {
     const OgPossessions *view;
@@ -4342,6 +4423,7 @@ static int present_possessions(void)
     else if (view->page == OG_VIEW_TALK) { paint_talk(); }
     else if (view->page == OG_VIEW_SERVICE) { paint_service(); }
     else if (view->page == OG_VIEW_POTION) { paint_potion_maker(); }
+    else if (view->page == OG_VIEW_SPELLSHOP) { paint_spellshop(); }
     else if (view->page == OG_VIEW_COURT) {
         /* cort01i0.img fills the screen once a court sits; the offer to surrender is over the world. */
         ImgPicture court;
@@ -4394,7 +4476,7 @@ static int present_possessions(void)
     }
     for (i = 0; i < g_panel_file_count; i++) { texture_forget(g_panel_files[i]); }
     mem_heap_use(was); mem_heap_delete(heap);
-    publish_surface(1,(view->page == OG_VIEW_SPELLS && !view->underlay) || view->page == OG_VIEW_MESSAGE || view->page == OG_VIEW_BANK || view->page == OG_VIEW_TALK || view->page == OG_VIEW_POTION || (view->page == OG_VIEW_COURT && !view->court.open));
+    publish_surface(1,(view->page == OG_VIEW_SPELLS && !view->underlay) || view->page == OG_VIEW_MESSAGE || view->page == OG_VIEW_BANK || view->page == OG_VIEW_TALK || view->page == OG_VIEW_POTION || view->page == OG_VIEW_SPELLSHOP || (view->page == OG_VIEW_COURT && !view->court.open));
     return 1;
 }
 
