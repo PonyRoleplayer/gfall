@@ -4348,7 +4348,7 @@ static void paint_character_sheet(void)
         i = og_possessions()->selected;
         if (i < 0 || i >= OG_ATTRS) { i = 0; }
         blit_ix(176,5+i*24,g_attr_arrows.pixels,g_attr_arrows.width,g_attr_arrows.height,1);
-        number_at(182,17+i*24,og_progress()->points,1,0);
+        number_at(183,5+i*24+14-g_font.height,og_progress()->points,1,0);
     }
     if (og_possessions()->skill_group >= 0) { paint_skill_list(); }
 }
