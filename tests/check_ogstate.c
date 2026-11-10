@@ -5,6 +5,7 @@
 #include "check_oglodging.h"
 #include "check_oglaw.h"
 #include "check_ogtalk.h"
+#include "check_ogsteal.h"
 #include "game/ogfall/play/standing.h"
 #include "check_util.h"
 #include "engine/core/mem.h"
@@ -373,6 +374,7 @@ void check_ogstate(const char *root)
     check_oglaw_guards();
     og_state_restore(&g_initial);
     check_ogtalk();
+    check_ogsteal();
     og_state_restore(&g_initial);
     og_state_restore(&g_initial);
     check_disk(root);

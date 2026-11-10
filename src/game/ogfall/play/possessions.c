@@ -409,7 +409,23 @@ static void trade_click(int x, int y)
     if (b == TB_INFO) { g.action = OG_ITEM_INFO; return; }
     if (b == TB_SELECT) { g.action = OG_ITEM_EQUIP; return; }
     if (b == TB_CLEAR) { og_market_clear(); return; }
-    if (b == TB_STEAL) { return; }
+    if (b == TB_STEAL) {
+        OgSteal taken;
+        int r;
+
+        r = og_market_steal(&taken);
+        if (r < 0) { return; }
+        if (r) {
+            df_copy(g.notice, taken.line, sizeof(g.notice));
+            g.revision++;
+        } else {
+            /* trade_steal_button: a failure leaves the screen (the goods back on the shelves) with the watch called. */
+            og_possessions_close();
+            df_copy(g.notice, taken.line, sizeof(g.notice));
+            g.revision++;
+        }
+        return;
+    }
     if (b == TB_ACT) {
         text = og_market_offer();
         if (text) {

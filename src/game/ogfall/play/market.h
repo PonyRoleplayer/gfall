@@ -3,6 +3,7 @@
 
 #include "engine/core/df.h"
 #include "game/ogfall/play/trade.h"
+#include "game/ogfall/play/steal.h"
 
 /*
  * A buying, selling or repairing session at a shop: what moves between the shelves, the
@@ -41,6 +42,8 @@ int og_market_offer(void);
 int og_market_confirm(int yes);
 /* Why the last answer was refused, a TEXT.RSC id; 0 for none. */
 int og_market_refusal(void);
+/* The trade screen's Steal button (trade_steal_button): -1 when there is no basket to take. 0 when seen (the caller leaves: the goods go back on the shelves by og_market_close); 1 when it worked, the basket theirs unpaid. out gets the original's line. */
+int og_market_steal(OgSteal *out);
 /* trade_clear_button: everything unpaid back on the shelves, everything on the counter back in the pack. */
 void og_market_clear(void);
 /* Leave: unpaid items back on the shelves, the counter's back in the pack. */

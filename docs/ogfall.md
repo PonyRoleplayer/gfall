@@ -1941,3 +1941,21 @@ to know (8 kinds of question by 5 speech styles) and the attitude each kind adds
   words (`rumor_pick_news`), the prostitute's offer, creatures' talk by language, and the guild memberships and
   equipment enchantments that feed the relation and the reaction. A person's own faction comes from the town's people
   (`pedestrian_*` and the building keepers), which the world side does not give OGFALL yet.
+
+## People and law, slice 7: steal (rules)
+
+`play/steal.c` is `pickpocket_attempt`, `trade_steal_button` and the shelf click's alarm roll (decomp `steal.c`, `inven.c`,
+`click.c` 975), with the original's own lines read out of FALL.EXE into `tables/stealdata.h`.
+
+- A pocket (`og_steal_pocket`): Pickpocket (15), a creature's level against the player's at five a level, held 5..95, so
+  even a master is seen one try in twenty. Seen: crime 12 and the watch; a townsperson is not tried again, a creature's company
+  wakes. Else a third of the time there is nothing (TEXT.RSC 8999), else 1 to 5 gold. One use of the skill each try.
+- The shop (`og_market_steal`, the Steal button in Buy): Pickpocket less a 32nd of the basket's base total and a quarter of
+  the pack's weight, with no floor, so a heavy pack always fails. Seen: a use of Stealth (16), crime 13, the watch, and the
+  screen closes with the goods back on the shelves. Else the basket is the player's, unpaid and unflagged.
+- A shelf (`og_steal_shelf`): after record 37's yes, seen when a roll of 0..255 reaches 108 less Pickpocket. The original
+  has it this way round (a higher skill is seen more); it is kept. Crime 13 and the watch.
+
+Not wired: GFALL's shelf still opens a buying session directly (an adaptation: the original buys through the shopkeeper's
+panel, which comes with talk), so record 37's question and the alarm roll wait for that panel and for the person to
+steal from. `tests/check_ogsteal.c` holds the chances, the crimes and the kept goods.

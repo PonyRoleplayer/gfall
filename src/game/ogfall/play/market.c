@@ -2,6 +2,7 @@
 #include "game/ogfall/play/state.h"
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/play.h"
+#include "game/ogfall/play/steal.h"
 #include "game/ogfall/tables/itemdefs.h"
 
 /* See market.h. */
@@ -193,6 +194,34 @@ int og_market_confirm(int yes)
     og_skill_use(SKILL_MERCANTILE);
     og_sound(204);
     return q.price;
+}
+
+int og_market_steal(OgSteal *out)
+{
+    OgQuote q;
+    int i;
+
+    g_offered = 0;
+    if (g_mode != OG_MARKET_BUY) {
+        return -1;
+    }
+    q = og_market_quote();
+    if (q.price <= 0) {
+        return -1;
+    }
+    if (!og_steal_shop(q.total, og_inventory_weight(og_state()->inventory_id), out)) {
+        return 0;
+    }
+    /* A success is inv_claim_items with no coins: what was in the basket is theirs. */
+    for (i = 0; i < OG_OBJECTS; i++) {
+        OgObject *item;
+
+        item = og_object_edit(og_state()->object[i].id);
+        if (item && item->type == OG_RECORD_ITEM && in_pack(item) && (item->flags & OG_ITEM_UNPAID)) {
+            item->flags &= ~OG_ITEM_UNPAID;
+        }
+    }
+    return 1;
 }
 
 int og_market_refusal(void)
