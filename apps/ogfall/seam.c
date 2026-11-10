@@ -39,6 +39,7 @@
 #include "game/dagger/formats/bind.h"
 #include "game/dagger/formats/factionfile.h"
 #include "game/dagger/places/doors.h"
+#include "game/dagger/places/people.h"
 #include "game/ogfall/play/shelf.h"
 #include "game/dagger/play/words.h"
 #include "game/dagger/places/town.h"
@@ -47,6 +48,8 @@
 #include "game/ogfall/play/bank.h"
 #include "game/ogfall/play/law.h"
 #include "game/ogfall/play/names.h"
+#include "game/ogfall/play/talk.h"
+#include "game/ogfall/play/steal.h"
 #include "game/dagger/play/character.h"
 #include "game/ogfall/play/standing.h"
 #include "game/dagger/formats/arch3d.h"
@@ -686,6 +689,119 @@ static int offer_say(int text, int price, char *out, int cap)
     return words_say(text, out, cap);
 }
 
+/*
+ * A person in the street (people and law, slice 8). The dagger layer says who stands in the view (a number
+ * and a sex); the people of the region are that region's faction of type 15, as they answer in GFALL. In info
+ * mode the view names them, in talk mode they greet (the window itself is the next part), in steal mode their
+ * pocket is tried once (a person caught is not tried again).
+ */
+#define PERSON_TRIED_MOST 32
+static unsigned g_person_tried[PERSON_TRIED_MOST];
+static int g_person_tried_count;
+
+static int person_tried(unsigned who)
+{
+    int i;
+
+    for (i = 0; i < g_person_tried_count && i < PERSON_TRIED_MOST; i++) {
+        if (g_person_tried[i] == who) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void person_say_text(int text, int tone, const char *name, char *out, int cap)
+{
+    Words w;
+
+    mem_zero(&w, sizeof(w));
+    w.city = town_name();
+    w.tone = tone;
+    w.place = "This place";
+    words_use(&w);
+    if (words_say(text, out, cap) < 0) {
+        out[0] = 0;
+    }
+    (void)name;
+}
+
+static int person_used(const Camera *aim, int mode)
+{
+    const Faction *people;
+    OgNpcName npc;
+    char name[OG_NAME_MAX];
+    int female;
+    unsigned who;
+    float along;
+
+    if (!people_in_view_at(aim, TALK_REACH, &female, &who, &along)) {
+        return 0;
+    }
+    people = faction_people_of(travel_region());
+    if (!people) {
+        return 0;
+    }
+    mem_zero(&npc, sizeof(npc));
+    npc.type = 8;
+    npc.region = travel_region();
+    npc.id = who;
+    npc.female = female;
+    og_npc_name(&npc, name, (int)sizeof(name));
+    if (mode == OG_MODE_INFO) {
+        interact_say(name);
+        return 1;
+    }
+    if (mode == OG_MODE_TALK) {
+        OgTalk talk;
+        OgTalkWho target;
+        OgTalkPlayer player;
+        static const int none[1] = { 0 };
+        static char line[400];
+        int text, r;
+
+        mem_zero(&target, sizeof(target));
+        target.npc = who;
+        target.faction = people->id;
+        target.person = 1;
+        player.members = none;
+        player.member_count = 0;
+        player.temple_rank = 0;
+        if (!og_talk_start(&talk, &target, &player, &text)) {
+            person_say_text(text, 1, name, line, (int)sizeof(line));
+            og_possessions_message(line, 0);
+            return 1;
+        }
+        r = og_talk_open(&talk, &player, 0, &text);
+        if (r == OG_TALK_REFUSED) {
+            return 1;
+        }
+        person_say_text(text, talk.tone, name, line, (int)sizeof(line));
+        og_possessions_message(line, 0);
+        return 1;
+    }
+    if (mode == OG_MODE_STEAL) {
+        OgSteal taken;
+        static char line[96];
+
+        if (along > 128.0f || person_tried(who)) {
+            return 1;
+        }
+        og_steal_pocket(0, 0, &taken);
+        if (taken.spoiled && g_person_tried_count < PERSON_TRIED_MOST) {
+            g_person_tried[g_person_tried_count++] = who;
+        }
+        if (taken.text) {
+            person_say_text(taken.text, 1, name, line, (int)sizeof(line));
+            interact_say(line);
+        } else if (taken.line) {
+            interact_say(taken.line);
+        }
+        return 1;
+    }
+    return 0;
+}
+
 static int shelf_used(int index, int variant)
 {
     OgShop shop;
@@ -827,6 +943,7 @@ int seam_boot(void)
     dagger_bind_loaders();
     install_travel();
     og_activate_set_shelf(OTHER_SHELF, shelf_used);
+    og_activate_set_person(person_used);
     og_rest_set_site(rest_site);
     {
         static const OgGuardWorld world = { guards_present, guards_count, 0, 0, guards_dungeon, 0 };

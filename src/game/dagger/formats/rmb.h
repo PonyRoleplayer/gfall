@@ -39,5 +39,7 @@ Block *rmb_load_interior(const df_u8 *rmb, df_u32 size, struct Bsa *arch, int re
  * tavern, 14 a temple, 17 and up houses) and its faction. 0 for none.
  */
 int rmb_building(const df_u8 *rmb, df_u32 size, int record, int *type, int *faction);
+/* A building record's name seed (the first word of its 26 bytes: the original's building name_seed, which names its sign); 0 past the block's records. */
+int rmb_building_seed(const df_u8 *rmb, df_u32 size, int record);
 
 #endif

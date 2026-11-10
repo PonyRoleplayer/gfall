@@ -656,6 +656,16 @@ int rmb_building(const df_u8 *rmb, df_u32 size, int record, int *type, int *fact
     return 1;
 }
 
+int rmb_building_seed(const df_u8 *rmb, df_u32 size, int record)
+{
+    int type, faction;
+
+    if (!rmb_building(rmb, size, record, &type, &faction)) {
+        return 0;
+    }
+    return (int)df_ru16(rmb + 3 + 640 + record * 26);
+}
+
 int rmb_building_at(const df_u8 *rmb, df_u32 size, int record, int *type, int *faction, int *quality, float *x, float *z)
 {
     const df_u8 *bd;

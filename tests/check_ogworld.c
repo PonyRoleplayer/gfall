@@ -12,6 +12,9 @@
 #include "game/ogfall/play/activate.h"
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/hud.h"
+#include "game/ogfall/play/law.h"
+#include "game/dagger/places/people.h"
+#include "engine/scene/entity.h"
 #include "engine/assets/vfs.h"
 #include "engine/platform/fs.h"
 #include "engine/scene/interact.h"
@@ -223,6 +226,35 @@ void check_ogworld(const char *root)
     check_expect(og_travel_count() > 15000 && cmd_run("goto Daggerfall") && og_travel_asked() && change(),
                  "goto resolves an actual town name and opens its streamed street");
     check_expect(og_world_state()->where.kind == OG_PLACE_WORLD && og_state()->region == 17,"Daggerfall arrival updates the persistent region");
+    /* Slice 8: a person in the view is named in info mode, greets in talk mode, and has a pocket in steal mode. */
+    {
+        Scene *sc;
+        Camera look;
+        int k, found, female_check;
+
+        sc = &seam_level()->scene;
+        people_fill(&g_camera);
+        found = -1;
+        for (k = 0; k < sc->nentities && found < 0; k++) {
+            if (sc->entities[k].live && entity_height(&sc->entities[k]) > 0) { found = k; }
+        }
+        check_expect(found >= 0, "people: no person to talk to in Daggerfall");
+        if (found >= 0) {
+            const Entity *person;
+            char line[400];
+
+            person = &sc->entities[found];
+            camera_set(&look, person->x, person->y + entity_height(person) * 0.5f, person->z - 60, 0, 0);
+            female_check = og_activate(sc, &look, OG_MODE_INFO, 0, 0, 1, 160, 100);
+            check_expect(female_check, "people: info mode did not take a person");
+            og_character()->skill[15] = 100;
+            og_law()->crime = 0;
+            og_activate(sc, &look, OG_MODE_TALK, 0, 0, 1, 160, 100);
+            check_expect(og_possessions()->page == OG_VIEW_MESSAGE, "people: talk mode did not greet");
+            (void)line;
+            og_possessions_close();
+        }
+    }
     walk_across_origin();
     drop_outside();
     region = index = -1;

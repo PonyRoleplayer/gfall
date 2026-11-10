@@ -1997,3 +1997,17 @@ words in `tables/namedata.h` (from FALL.EXE):
 Not built: the person in the view (`people_in_view` gives an id and a sex), the town's building list with each building's name seed (the RMB
 building record's first word, not yet read by `rmb.c`), the person's faction and schedule, the portrait and the talk screen on top.
 Tests are in `tests/check_ognames.c`; the names themselves are not checked against the original's output, only their shapes and seeding.
+
+## People and law, slice 8 (continued): the person in the view
+
+`og_activate_set_person` hands the game a use that found no usable: `apps/ogfall/seam.c`'s `person_used` asks the dagger layer who stands
+in the view (`people_in_view_at`, a number and a sex, within `TALK_REACH`), and the people of the region are that region's faction of type 15.
+By the hud's mode:
+
+- Info: the person's generated name (`og_npc_name`, the region's bank, their number as the seed).
+- Talk: `og_talk_start` and `og_talk_open` (who talks, the greeting by faction relation or the mood's word), the greeting said in a message page.
+  The window itself (the lists, the answers) is the next part. No guild memberships are passed yet, so no player belongs to a faction.
+- Steal: a pocket within 128 units (`og_steal_pocket`), once a person: a failed try puts the number on a short list and that person is not tried again.
+
+`TownBuilding` now carries each building's `name_seed` (`rmb_building_seed`, the first word of the 26-byte record), so `og_building_name`
+has what it needs. The test is in `tests/check_ogworld.c` (Daggerfall's streets: info, then talk opening a message page).

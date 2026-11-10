@@ -87,6 +87,12 @@ void og_activate_aim(const Camera *camera, int cursor_mode, int cursor_active,
 
 static int g_shelf_what = -1;
 static int (*g_shelf_use)(int index, int tag);
+static int (*g_person_use)(const Camera *aim, int mode);
+
+void og_activate_set_person(int (*use)(const Camera *aim, int mode))
+{
+    g_person_use = use;
+}
 
 void og_activate_set_shelf(int what, int (*use)(int index, int tag))
 {
@@ -139,6 +145,13 @@ int og_activate(const Scene *scene, const Camera *cam, int mode,
         }
     }
     if (!interact_aim_from(scene, x, y, z, dx, dy, dz, &hit)) {
+        /* Nothing usable in the way: whoever stands in the view is the game's to talk to. */
+        if (g_person_use) {
+            Camera aim;
+
+            og_activate_aim(cam, cursor_mode, cursor_active, at_centre, classic_x, classic_y, &aim);
+            return g_person_use(&aim, mode);
+        }
         return 0;
     }
     if (hit.usable >= 0 && hit.usable < scene->nusables) {
@@ -160,6 +173,12 @@ int og_activate(const Scene *scene, const Camera *cam, int mode,
             } else if (mode == OG_MODE_INFO) { interact_say("Treasure"); }
             return 1;
         }
+    }
+    if (g_person_use && hit.usable < 0) {
+        Camera aim;
+
+        og_activate_aim(cam, cursor_mode, cursor_active, at_centre, classic_x, classic_y, &aim);
+        if (g_person_use(&aim, mode)) { return 1; }
     }
     if (mode == OG_MODE_GRAB) {
         interact_request_use_from(x, y, z, dx, dy, dz);

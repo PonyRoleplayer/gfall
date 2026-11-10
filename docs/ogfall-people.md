@@ -53,7 +53,7 @@ and a short audit section in `ogfall.md`.
    directions, rumours and the logbook copy.
 7. **Steal.** (Built 2026-11-10: the pocket, the trade screen's Steal button and the shelf's alarm roll as rules; the pocket and the shelf question wait for the people and the merchant panel.) Pickpocket, shop steal, container theft and the alarm roll, with
    slice 5's consequences.
-8. **People.** (First part built 2026-11-10: the names of people and signs over doors; the person in view, the building list and the talk screen remain.) Standing NPC roles, schedules and portraits, on top of the
+8. **People.** (Built 2026-11-10: the names of people and signs over doors, and a street person in the view named, greeted or pickpocketed by the hud's mode, the town's buildings carrying their sign seeds; the talk window's screen and the merchant panel remain.) Standing NPC roles, schedules and portraits, on top of the
    existing pedestrian pool, without reinterpreting it before slices 1 to 7 are
    in.
 

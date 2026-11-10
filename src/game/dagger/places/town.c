@@ -63,6 +63,7 @@ const TownBuilding *town_buildings(int region, int index, int *count)
             t->record = (short)r;
             t->type = (short)type;
             t->quality = (short)quality;
+            t->name_seed = (unsigned short)rmb_building_seed(bytes, rec->size, r);
             t->faction = faction;
             t->x = (float)g_town.block[b].x * BLOCK_SIDE + x;
             t->z = (float)g_town.block[b].z * BLOCK_SIDE + z;

@@ -21,6 +21,8 @@ typedef struct TownBuilding {
     short record;
     short type;
     short quality;
+    /* The sign's seed, the building record's first word. */
+    unsigned short name_seed;
     int faction;
     float x;
     float z;
