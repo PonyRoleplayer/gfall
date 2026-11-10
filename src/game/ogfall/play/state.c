@@ -34,6 +34,11 @@ const OgState *og_state(void)
     return &g_state;
 }
 
+OgStanding *og_standing(void)
+{
+    return &g_state.standing;
+}
+
 void og_skill_use(int skill)
 {
     if (skill >= 0 && skill < OG_SKILLS && g_state.skill_uses[skill] != 0xffffffffu) {
@@ -261,6 +266,7 @@ int og_state_begin(void)
         return 0;
     }
     og_state_clear();
+    og_standing_defaults(&g_state.standing);
     g_state.who = who;
     g_state.who.weapon = g_state.who.weapon_sound = 0;
     g_state.career = *career;
@@ -699,7 +705,8 @@ int og_state_valid(const OgState *snapshot)
     return snapshot && snapshot->version == OG_STATE_VERSION && snapshot->ready == 1 &&
         character_valid(snapshot) && clock_and_view_valid(snapshot) && objects_valid(snapshot) &&
         saved_world_valid(snapshot) && encounters_valid(&snapshot->encounters) &&
-        og_magic_valid(&snapshot->magic) && og_world_valid(&snapshot->world_state) && magic_references_valid(snapshot) && og_inventory_valid(snapshot);
+        og_magic_valid(&snapshot->magic) && og_world_valid(&snapshot->world_state) && magic_references_valid(snapshot) && og_inventory_valid(snapshot) &&
+        (!snapshot->standing.ready || og_standing_valid(&snapshot->standing));
 }
 
 int og_state_restore(const OgState *snapshot)

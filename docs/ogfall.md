@@ -1618,3 +1618,40 @@ Final verification for this batch: `make ogfall-host`, `make hostcheck` and
 `make -j2 all` pass without compiler warnings, including every PE/import/CPU
 check and OGFALL stack probes. The rebuilt ISO is `build/gfall.iso`; target
 hardware acceptance remains separate.
+
+
+## Standing: factions, reputation and regions (2026-11-10)
+
+People and law, slice 1 ([ogfall-people.md](ogfall-people.md)). `play/standing.c`,
+plain C, no Daggerfall headers, host-tested in `tests/check_ogstanding.c`.
+
+Source: `faction_add_reputation`, `faction_change_reputation`,
+`faction_add_reputation_r`, `faction_propagate_reputation` (`src/lifted/talk.c`
+1734..1800), `reputation_decay` (`src/lifted/tamriel.c` 392..417) and
+`faction_find_type_in_region` (names.csv); the notes are `docs/ai-social-math.md`,
+"Faction reputation".
+
+- **The table** is static data: `FACTION.TXT`'s 366 records, handed in by the seam
+  (`load_factions`) as `OgFactionDef`, linked into the original's tree (children in
+  file order, siblings by `next`). Only reputation and power change while playing, in
+  `OgStanding` inside the saved state, with each region's legal reputation and price
+  adjustment.
+- **A reputation** is a sum held in -100..100 (the original stores a short: past 100 it
+  stops, below -100 it is 65436, which is -100).
+- **A change** goes to the faction's root (or to faction 108's own line: the walk up stops
+  there), then down the root's whole subtree, the faction itself in full and every other
+  node at half by an arithmetic shift (-5 halves to -3); faction 844 and a temple (id 240)
+  follow the player's membership by guild bits 64 and 128; then each ally takes half and
+  each enemy minus half. Memberships come with the guilds slice (`og_standing_set_membership`).
+- **Decay** is one point toward zero for every region's legal reputation (not while a court
+  is open) and every faction's reputation; a value under -100 is set to 100 first and comes
+  out at 99, as the original does. Nothing calls it yet: `time_pass` does it each 161280
+  game minutes (`OG_DECAY_MINUTES`), to be wired when the clock hooks are.
+- **Adaptations and limits.** Regions start at 1000 (normal prices) and no legal standing:
+  the original's start values are not in the C. The politics tick (powers, alliances, war,
+  regional prices by `region_update_prices`) is not implemented; it needs the extern tables
+  its notes list. `faction_find_type_in_region` is the first of a type in the region, else
+  the first of the type with no region.
+- **Saves** are schema 8: standing is written before the world state (ready, the table's
+  count, a reputation and power per faction, a legal reputation and price per region).
+  Schemas 2..7 load with the defaults.

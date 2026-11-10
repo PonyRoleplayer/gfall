@@ -33,12 +33,13 @@ Each slice lands alone: its pure rules host-tested against the notes' worked
 numbers, its screens driven by scripted clicks, its state in the save schema,
 and a short audit section in `ogfall.md`.
 
-1. **Standing.** The faction records (id, type, parent, allies, enemies,
-   reputation, power, social and guild group, region), the regions' price
-   adjustment and legal reputation, `faction_change_reputation` and its
-   propagation, the daily decay, guild-rank-from-reputation, building identity
-   (type, quality, name) and `holiday_today`. No screens. Everything later
-   reads this.
+1. **Standing.** (Built 2026-11-10, host-tested.) The faction records (id,
+   type, parent, allies, enemies, reputation, power, social and guild group,
+   region), the regions' legal reputation and price adjustment,
+   `faction_change_reputation` and its propagation, and the decay. No screens.
+   Everything later reads this. Guild rank from reputation waits for the guilds
+   (it needs two extern tables), and building identity and `holiday_today` wait
+   for trade, their first user.
 2. **Trade.** The price chain (`trade_region_price`, `trade_base_price`,
    `trade_adjust_price`), shelves and stock, buying, selling, the offer and
    counter-offer dialogue, repair, identification, on OGFALL's inventory screen.

@@ -37,6 +37,8 @@
 #include "engine/scene/stream.h"
 
 #include "game/dagger/formats/bind.h"
+#include "game/dagger/formats/factionfile.h"
+#include "game/ogfall/play/standing.h"
 #include "game/dagger/formats/arch3d.h"
 #include "game/dagger/formats/bsa.h"
 #include "game/dagger/formats/cif.h"
@@ -575,6 +577,52 @@ static int background(int klass, int question, int answer)
     return 1;
 }
 
+/*
+ * The faction table, from FACTION.TXT as the dagger reader parses it, into
+ * standing.c's plain records (people and law, slice 1). The tree and the allies
+ * and enemies keep the file's ids; the file counts regions from 1 and the
+ * reader from 0, as the decomp's regions run.
+ */
+static OgFactionDef g_faction_def[OG_FACTIONS_MAX];
+
+static int load_factions(void)
+{
+    int i, k, n;
+
+    if (!factionfile_open()) {
+        return 0;
+    }
+    n = faction_count();
+    if (n > OG_FACTIONS_MAX) {
+        return 0;
+    }
+    for (i = 0; i < n; i++) {
+        const Faction *f;
+        OgFactionDef *d;
+
+        f = faction_at(i);
+        d = &g_faction_def[i];
+        mem_zero(d, sizeof(*d));
+        d->id = f->id;
+        d->parent = f->parent;
+        d->type = f->type;
+        d->region = f->region;
+        d->rep = f->rep;
+        d->power = f->power;
+        d->flags = f->flags;
+        d->social_group = f->sgroup;
+        d->guild_group = f->ggroup;
+        for (k = 0; k < OG_FACTION_LINKS && k < FACTION_LINKS; k++) {
+            d->ally[k] = f->ally[k];
+            d->enemy[k] = f->enemy[k];
+        }
+        for (k = 0; k < OG_FACTION_NAME - 1 && f->name[k]; k++) {
+            d->name[k] = f->name[k];
+        }
+    }
+    return og_factions_define(g_faction_def, n);
+}
+
 int seam_boot(void)
 {
     ImgPicture raw;
@@ -602,6 +650,10 @@ int seam_boot(void)
     install_maps();
     load_classes();
     load_class_questions();
+    if (!load_factions()) {
+        why("FACTION.TXT did not read");
+        return 0;
+    }
     og_chargen_background(background);
 #ifndef DF_HOST
     fnt_install();

@@ -9,6 +9,7 @@
 
 #include "check_util.h"
 #include "check_ogstate.h"
+#include "check_ogstanding.h"
 #include "check_ogui.h"
 
 #include "engine/assets/level.h"
@@ -943,10 +944,13 @@ void check_ogfall(const char *root)
     for (id = 1; id <= PIC_MAX; id++) { pic_free(id); }
     pic_begin(0, 384u * 1024u, &g_card);
     check_ogjourney();
+    /* The rules on a small table first: the boot below defines the real one. */
+    check_ogstanding();
     if (!seam_boot()) {
         check_expect(0, "OGFALL assets and classes load");
         return;
     }
+    check_ogstanding_real();
     og_chargen_seed(1);
     check_steer();
     check_hud();

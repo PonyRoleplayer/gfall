@@ -1,4 +1,5 @@
 #include "check_ogstate.h"
+#include "game/ogfall/play/standing.h"
 #include "check_util.h"
 #include "engine/core/mem.h"
 #include "engine/platform/fs.h"
@@ -180,6 +181,8 @@ static void check_legacy_save(const df_u8 *current, df_u32 size)
     df_u32 from, to, hash, i;
     int row, spell_count, version, record_bytes;
     df_u32 spells[OG_OBJECTS];
+    /* Standing, from schema 8, sits between the magic rows and the world: ready, a count, a pair a faction and a pair a region. */
+    df_u32 stand = 8u + (og_state()->standing.ready ? (df_u32)og_faction_count()*8u + OG_REGIONS*8u : 0u);
     check_expect(size > 24u+1272u+256u*124u && df_ru32(current+24+1272) == OG_WORLD_ROOT,
                  "fixture locates the documented original object section");
     if (size <= 24u+1272u+256u*124u) { return; }
@@ -197,8 +200,8 @@ static void check_legacy_save(const df_u8 *current, df_u32 size)
             }
             from += 124; to += record_bytes;
         }
-        memcpy(legacy+to,current+from,size-from-OG_WORLD_WIRE_BASE-og_state()->world_state.map_count*20-(version < 6 ? OG_MAGIC_WIRE_BYTES : 0)-(version < 5 ? OG_STATE5_WIRE_BYTES : 0));
-        to += size-from-OG_WORLD_WIRE_BASE-og_state()->world_state.map_count*20-(version < 6 ? OG_MAGIC_WIRE_BYTES : 0)-(version < 5 ? OG_STATE5_WIRE_BYTES : 0);
+        memcpy(legacy+to,current+from,size-from-OG_WORLD_WIRE_BASE-og_state()->world_state.map_count*20-stand-(version < 6 ? OG_MAGIC_WIRE_BYTES : 0)-(version < 5 ? OG_STATE5_WIRE_BYTES : 0));
+        to += size-from-OG_WORLD_WIRE_BASE-og_state()->world_state.map_count*20-stand-(version < 6 ? OG_MAGIC_WIRE_BYTES : 0)-(version < 5 ? OG_STATE5_WIRE_BYTES : 0);
         legacy_word(legacy+8,version); legacy_word(legacy+24,version); legacy_word(legacy+12,to-24);
         hash = 2166136261u;
         for (i = 24; i < to; i++) { hash = (hash ^ legacy[i])*16777619u; }
@@ -252,6 +255,10 @@ static void check_disk(const char *root)
     og_character()->health -= 3;
     og_options_set_flags(3);
     og_options_set_mouse(1);
+    /* Standing goes through the save too: a reputation, a legal standing and a price (people and law, slice 1). */
+    og_faction_change_reputation(og_faction_def(5)->id, 7);
+    og_region_add_legal(17, -4);
+    og_standing()->price[17] = 1230;
     g_saved = *og_state();
     check_expect(og_save_write(1), "write an OGFALL session");
     check_expect(fs_exists("ogfall\\saves\\S0001.SAV"), "saves live in ogfall/saves");
@@ -262,6 +269,8 @@ static void check_disk(const char *root)
     check_expect(memcmp(&g_saved, og_state(), sizeof(g_saved)) == 0,
                  "every serialized field survives a disk round trip");
     check_expect(og_options_flags() == 3 && og_options_mouse() == 1, "saved control and HUD settings are live after loading");
+    check_expect(og_faction_rep(og_faction_def(5)->id) >= 7 && og_region_legal(17) == -4 && og_region_price(17) == 1230,
+                 "standing: reputation, legal standing and prices survive a save");
     check_expect(og_random_range(0, 999) == roll && og_object(id),
                  "save/load retains random continuation and item identity");
 

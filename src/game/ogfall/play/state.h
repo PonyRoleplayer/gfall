@@ -3,6 +3,7 @@
 
 /* OGFALL's pointer-free session, original record ownership and Watcom RNG.
  * This is our own schema, not a DOS save ABI. Read docs/ogfall.md. */
+#include "game/ogfall/play/standing.h"
 #include "engine/core/df.h"
 #include "game/ogfall/tables/tables.h"
 #include "game/ogfall/play/move.h"
@@ -13,7 +14,7 @@
 #include "game/ogfall/play/worldstate.h"
 #include "engine/scene/keep.h"
 
-#define OG_STATE_VERSION 7
+#define OG_STATE_VERSION 8
 #define OG_STATE5_WIRE_BYTES 348
 #define OG_WORLD_ROWS 512
 #define OG_THUMB_W 80
@@ -105,11 +106,14 @@ typedef struct OgState {
     OgEncounterState encounters;
     OgMagicState magic;
     OgWorldState world_state;
+    OgStanding standing;
 } OgState;
 
 OgCharacter *og_character(void);
 void og_character_clear(void);
 const OgState *og_state(void);
+/* The faction and region standing inside the session (standing.h). */
+OgStanding *og_standing(void);
 const char *og_state_error(void);
 /* Reset gameplay, retaining the RNG stream and control settings.
  * begin consumes the completed character from chargen. */

@@ -350,6 +350,30 @@ static void transfer(Wire *w, OgState *s)
 
     }
 
+    /* Standing (people and law, slice 1): reputations and powers by the table's order, then each region's legal standing and prices. */
+    if (w->version >= 8) {
+        OgStanding *st;
+        int n, k;
+
+        st = &s->standing;
+        wire_int(w, &st->ready);
+        n = og_faction_count();
+        wire_int(w, &n);
+        if (st->ready && n != og_faction_count()) { w->bad = 1; return; }
+        if (st->ready) {
+            for (k = 0; k < n; k++) {
+                int v;
+                v = st->rep[k]; wire_int(w, &v); st->rep[k] = (short)v;
+                v = st->power[k]; wire_int(w, &v); st->power[k] = (short)v;
+            }
+            for (k = 0; k < OG_REGIONS; k++) {
+                int v;
+                v = st->legal[k]; wire_int(w, &v); st->legal[k] = (short)v;
+                v = st->price[k]; wire_int(w, &v); st->price[k] = (unsigned short)v;
+            }
+        }
+    }
+
     if (w->version >= 7) {
         OgWorldState *world;
         world = &s->world_state;
@@ -436,7 +460,8 @@ static int read_save(const char *path)
         g_candidate.progress.checked = g_candidate.minutes;
         g_candidate.progress.base_sum = og_progress_sum(&g_candidate.who,&g_candidate.career)-(g_candidate.who.level-1)*15;
     }
-    if (w.version < 7) { g_candidate.version = OG_STATE_VERSION; }
+    if (w.version < 8) { og_standing_defaults(&g_candidate.standing); }
+    if (w.version < OG_STATE_VERSION) { g_candidate.version = OG_STATE_VERSION; }
     if (w.bad || w.pos != size || !og_state_valid(&g_candidate)) {
         g_error = "Invalid OGFALL save state";
         return 0;
