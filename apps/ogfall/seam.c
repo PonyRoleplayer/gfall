@@ -145,6 +145,8 @@ static const char *passage_gate(const Usable *u)
         mem_zero(&b, sizeof(b));
         b.id = talk_building_id(t);
         b.type = t->type; b.faction = t->faction; b.name_seed = t->name_seed;
+        b.quest_open = og_quest_building_open(region, index, t->block, t->record);
+        b.access = og_quest_building_access(region, index, t->block, t->record, og_state()->minutes);
         mem_zero(&p, sizeof(p));
         p.house = (df_u32)og_bank()->house;
         m = og_guild_find_kind(0); p.brotherhood = m ? m->rank : -1;

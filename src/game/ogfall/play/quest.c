@@ -1116,6 +1116,37 @@ int og_quest_topic_answer(int i, char *out, int cap)
 
 /* ---- Faces ---- */
 
+int og_quest_building_open(int region, int index, int block, int record)
+{
+    int s, i;
+
+    for (s = 0; s < OG_QUESTS; s++) {
+        const OgQuest *q;
+
+        q = &g_quest[s];
+        if (!q->used) { continue; }
+        for (i = 0; i < q->qbn.n_place; i++) {
+            if ((q->qbn.place[i].flags & 64) && q->place[i].bound && q->place[i].region == region && q->place[i].index == index && q->place[i].block == block && q->place[i].record == record) { return 1; }
+        }
+        for (i = 0; i < q->qbn.n_person; i++) {
+            if ((q->qbn.person[i].flags & 0x4000) && q->person[i].bound && q->person[i].homed && q->person[i].home_region == region && q->person[i].home_index == index &&
+                q->person[i].home_block == block && q->person[i].home_record == record) { return 1; }
+        }
+    }
+    return 0;
+}
+
+int og_quest_building_access(int region, int index, int block, int record, df_u32 now)
+{
+    int i, best;
+
+    best = 0;
+    for (i = 0; i < OG_QUEST_ACCESS; i++) {
+        if (g_access[i].used && g_access[i].region == region && g_access[i].index == index && g_access[i].block == block && g_access[i].record == record && g_access[i].until > now && g_access[i].access > best) { best = g_access[i].access; }
+    }
+    return best;
+}
+
 const OgQuestAccess *og_quest_access(int i) { return i >= 0 && i < OG_QUEST_ACCESS && g_access[i].used ? &g_access[i] : 0; }
 const OgQuestFace *og_quest_face(int i) { return i >= 0 && i < OG_QUEST_FACES && g_face[i].used ? &g_face[i] : 0; }
 
@@ -1393,16 +1424,16 @@ static void run_op(int slot, OgQuest *q, OgQbnOp *op)
         /* Every run while the gate holds: the place's building open to the access kind until the minutes are up (the grant of the same place and kind is renewed). */
         if (arg_state(q, op, 0)) {
             n = op->arg[1].value;
-            if (n >= 0 && n < q->qbn.n_place && q->place[n].bound) {
+            if (n >= 0 && n < q->qbn.n_place && q->place[n].bound && q->place[n].block >= 0) {
                 int free_slot;
 
                 free_slot = -1;
                 for (i = 0; i < OG_QUEST_ACCESS; i++) {
-                    if (g_access[i].used && g_access[i].region == q->place[n].region && g_access[i].index == q->place[n].index && g_access[i].access == op->arg[2].value) { free_slot = i; break; }
+                    if (g_access[i].used && g_access[i].region == q->place[n].region && g_access[i].index == q->place[n].index && g_access[i].block == q->place[n].block && g_access[i].record == q->place[n].record && g_access[i].access == op->arg[2].value) { free_slot = i; break; }
                     if (!g_access[i].used && free_slot < 0) { free_slot = i; }
                 }
                 if (free_slot >= 0) {
-                    g_access[free_slot].used = 1; g_access[free_slot].quest_id = q->qbn.id; g_access[free_slot].region = q->place[n].region; g_access[free_slot].index = q->place[n].index;
+                    g_access[free_slot].used = 1; g_access[free_slot].quest_id = q->qbn.id; g_access[free_slot].region = q->place[n].region; g_access[free_slot].index = q->place[n].index; g_access[free_slot].block = q->place[n].block; g_access[free_slot].record = q->place[n].record;
                     g_access[free_slot].access = op->arg[2].value; g_access[free_slot].until = og_state()->minutes + (df_u32)op->arg[3].value;
                 }
             }
@@ -1814,10 +1845,9 @@ void og_quest_start_initial_later(void) { g_initial_pending = 1; }
 void og_quest_run(void)
 {
     if (g_initial_pending && g_world) {
-        /* quests_start_initial, once the world is open: no offer box (neither name is a Y quest). */
+        /* quests_start_initial, once the world is open: no offer box. Only _BRISIEN, which starts the main story: the tutorial _TUTOR__ is left out on purpose (a design choice: whoever plays knows Daggerfall). */
         g_initial_pending = 0;
         og_quest_start("_BRISIEN", 0);
-        og_quest_start("_TUTOR__", 0);
     }
     int slot, i;
 
@@ -1930,7 +1960,7 @@ int og_quest_pack(df_u8 *out, int cap)
         qput(&w, (df_u32)g_rumour[i].quest_id); qput(&w, (df_u32)g_rumour[i].message); qput(&w, (df_u32)g_rumour[i].flags); qput(&w, (df_u32)g_rumour[i].target); qput(&w, g_rumour[i].expires);
         qbytes(&w, g_rumour[i].name, 9, 0); qbytes(&w, g_rumour[i].text, 200, 0);
     }
-    for (i = 0; i < OG_QUEST_ACCESS; i++) { qput(&w, (df_u32)g_access[i].used); qput(&w, (df_u32)g_access[i].quest_id); qput(&w, (df_u32)g_access[i].region); qput(&w, (df_u32)g_access[i].index); qput(&w, (df_u32)g_access[i].access); qput(&w, g_access[i].until); }
+    for (i = 0; i < OG_QUEST_ACCESS; i++) { qput(&w, (df_u32)g_access[i].used); qput(&w, (df_u32)g_access[i].quest_id); qput(&w, (df_u32)g_access[i].region); qput(&w, (df_u32)g_access[i].index); qput(&w, (df_u32)g_access[i].block); qput(&w, (df_u32)g_access[i].record); qput(&w, (df_u32)g_access[i].access); qput(&w, g_access[i].until); }
     for (i = 0; i < OG_QUEST_FACES; i++) { qput(&w, (df_u32)g_face[i].used); qput(&w, (df_u32)g_face[i].quest_id); qput(&w, (df_u32)g_face[i].kind); qput(&w, (df_u32)g_face[i].index); }
     return w.bad ? -1 : w.n;
 }
@@ -1975,7 +2005,7 @@ int og_quest_unpack(const df_u8 *in, int len)
         qbytes(&w, g_rumour[i].name, 9, 1); qbytes(&w, g_rumour[i].text, 200, 1);
         g_rumour[i].name[8] = 0; g_rumour[i].text[199] = 0;
     }
-    for (i = 0; i < OG_QUEST_ACCESS && !w.bad; i++) { g_access[i].used = (int)qget(&w); g_access[i].quest_id = (int)qget(&w); g_access[i].region = (int)qget(&w); g_access[i].index = (int)qget(&w); g_access[i].access = (int)qget(&w); g_access[i].until = qget(&w); }
+    for (i = 0; i < OG_QUEST_ACCESS && !w.bad; i++) { g_access[i].used = (int)qget(&w); g_access[i].quest_id = (int)qget(&w); g_access[i].region = (int)qget(&w); g_access[i].index = (int)qget(&w); g_access[i].block = (int)qget(&w); g_access[i].record = (int)qget(&w); g_access[i].access = (int)qget(&w); g_access[i].until = qget(&w); }
     for (i = 0; i < OG_QUEST_FACES && !w.bad; i++) { g_face[i].used = (int)qget(&w); g_face[i].quest_id = (int)qget(&w); g_face[i].kind = (int)qget(&w); g_face[i].index = (int)qget(&w); }
     if (w.bad || w.n != len) { og_quest_reset(); return 0; }
     return 1;

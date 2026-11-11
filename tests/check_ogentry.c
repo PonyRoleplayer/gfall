@@ -27,6 +27,11 @@ void check_ogentry(void)
     p.house = 500u;
     check_expect(og_building_try_enter(&b, &p, night, 0, &e) && e.allow, "entry: the player's own house was shut");
     p.house = 0;
+    /* A quest's building (op 81) lets the player in at night, a house too, by the quest's mark; a type under 17 is still by its hours first. */
+    check_expect(!og_building_try_enter(&b, &p, night, 0, &e), "entry: the alchemist is open at night without a quest");
+    b.quest_open = 1;
+    check_expect(og_building_try_enter(&b, &p, night, 0, &e) && e.allow, "entry: a building a quest marked open was shut to the quest");
+    b.quest_open = 0;
     b.type = 24;
     check_expect(og_building_try_enter(&b, &p, night, 0, &e), "entry: the city wall was shut");
     /* A guild's own door at any hour; the Brotherhood's hall is shut to a stranger. */

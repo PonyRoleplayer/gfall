@@ -61,6 +61,7 @@ int og_building_try_enter(const OgEntryBuilding *b, const OgEntryPlayer *p, df_u
     if (b->type < 17 && og_building_open(b->type, b->faction, b->id, now, p->daytime, &hours)) { out->allow = 1; return 1; }
     if (b->type < 17 && (b->flags & 16)) { return 0; }
     if (b->flags & 16) { out->allow = 1; return 1; }
+    if (b->quest_open) { out->allow = 1; return 1; }
     if (p->lock_spell) {
         out->spent_spell = 1;
         out->allow = 1;

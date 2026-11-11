@@ -377,7 +377,7 @@ void check_ogquest(void)
             put16(f3 + 0x10 + 8 * 2, 6); put16(f3 + 0x24 + 8 * 2, 0x140);
             put16(f3 + 0x10 + 9 * 2, 6); put16(f3 + 0x24 + 9 * 2, 0x140 + 6 * 87);
             put16(f3 + 0xC0 + 4, 21); put16(f3 + 0xC0 + 6, 7);
-            f3[0xE0 + 3] = 2; put16(f3 + 0xE0 + 4, 1); put16(f3 + 0xE0 + 6, (df_u32)-1); put16(f3 + 0xE0 + 8, 0);
+            f3[0xE0 + 3] = 2; put16(f3 + 0xE0 + 4, 0); put16(f3 + 0xE0 + 6, 15); put16(f3 + 0xE0 + 8, 0);
             f3[0x120 + 3] = 4; f3[0x120 + 4] = 2;
             for (i = 0; i < 6; i++) { put16(f3 + 0x140 + 6 * 87 + i * 8, i); put32(f3 + 0x140 + 6 * 87 + i * 8 + 4, (df_u32)(100 + i)); }
             put_op(f3 + 0x140, 9, -1, d9, 0);
@@ -408,7 +408,9 @@ void check_ogquest(void)
                 check_expect(g_spawned == before_spawn + 4, "quest: op 9 placed more than its two times, or fewer");
                 og_quest_set_state(0, 1, 1);
                 og_quest_run();
-                check_expect(og_quest_access(0) && og_quest_access(0)->access == 4 && og_quest_access(0)->index == og_quest(0)->place[0].index, "quest: op 17 did not grant the place's access");
+                check_expect(og_quest_access(0) && og_quest_access(0)->access == 4 && og_quest_access(0)->index == og_quest(0)->place[0].index && og_quest_access(0)->block == 3 &&
+                             og_quest_building_access(17, og_quest(0)->place[0].index, 3, 7, og_state()->minutes) == 4 && og_quest_building_access(17, og_quest(0)->place[0].index, 3, 8, og_state()->minutes) == 0 &&
+                             og_quest_building_access(17, og_quest(0)->place[0].index, 3, 7, og_state()->minutes + 200u) == 0, "quest: op 17 did not grant the building's access for its minutes");
                 og_quest_set_state(0, 2, 1);
                 og_quest_run();
                 check_expect(og_quest(0)->person[0].at == 1, "quest: op 30 did not put the person in the place");
@@ -418,7 +420,8 @@ void check_ogquest(void)
                 check_expect(g_went_region == og_quest(0)->place[0].region && g_went_index == og_quest(0)->place[0].index, "quest: op 30 did not take the player to the person's place");
                 og_quest_set_state(0, 4, 1);
                 og_quest_run();
-                check_expect((og_quest(0)->qbn.place[0].flags & 64) && (og_quest(0)->qbn.person[0].flags & 0x4000), "quest: op 81 did not mark the place and the person");
+                check_expect((og_quest(0)->qbn.place[0].flags & 64) && (og_quest(0)->qbn.person[0].flags & 0x4000) && og_quest_building_open(17, og_quest(0)->place[0].index, 3, 7) && !og_quest_building_open(17, og_quest(0)->place[0].index, 3, 8),
+                             "quest: op 81 did not mark the place and the person, or their building is not open to the quest");
                 og_quest_set_state(0, 3, 1);
                 og_quest_run();
                 check_expect(og_quest(1) && og_quest(1)->qbn.name[0] == 'S' && og_quest(1)->qbn.name[7] == '1', "quest: op 8 did not start the child quest S0000101");
@@ -450,10 +453,10 @@ void check_ogquest(void)
             og_quest_set_world(&w10);
             og_quest_start_initial_later();
             og_quest_run(); og_quest_run(); og_quest_run();
-            check_expect(og_quest(0) && !strcmp(og_quest(0)->qbn.name, "_BRISIEN") && og_quest(1) && !strcmp(og_quest(1)->qbn.name, "_TUTOR__"), "quest: a new game did not start _BRISIEN and _TUTOR__");
+            check_expect(og_quest(0) && !strcmp(og_quest(0)->qbn.name, "_BRISIEN") && (!og_quest(1) || strcmp(og_quest(1)->qbn.name, "_TUTOR__")), "quest: a new game did not start _BRISIEN, or started the tutorial");
             check_expect(og_quest(0) && og_quest(0)->place[0].bound && og_quest(0)->place[0].index == 10 && og_quest(0)->place[0].marker == 0xFA01 && og_quest(0)->person[0].bound && og_quest(0)->person[0].who != 0,
                          "quest: _BRISIEN's fixed place or her person did not bind");
-            check_expect(og_quest(1) && og_quest(1)->place[1].bound && og_quest(1)->place[1].index == 11 && og_quest(1)->place[1].marker == 1, "quest: _TUTOR__'s place 1 (Daggerfall, low word 2) was not read as the town");
+            check_expect(og_quest(0) && og_quest(0)->place[0].marker == 0xFA01, "quest: _BRISIEN's place 0 is not the hold's first quest marker");
             found999 = 0; found977 = 0;
             for (k = 0; k < og_quest_count(); k++) {
                 if (og_quest(k) && !strcmp(og_quest(k)->qbn.name, "S0000999")) { found999 = 1; }

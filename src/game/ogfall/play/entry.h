@@ -16,6 +16,8 @@ typedef struct OgEntryBuilding {
     int type, faction, name_seed;
     /* The building's own flag 16 (never open to the street) and its access level (10 and over opens its door to a picker). Not read from the blocks yet: 0. */
     int flags, access;
+    /* A quest has marked the building open to it (op 81's place flag 64 or person flag 0x4000: quest_find_site_for_building). */
+    int quest_open;
 } OgEntryBuilding;
 
 typedef struct OgEntryPlayer {

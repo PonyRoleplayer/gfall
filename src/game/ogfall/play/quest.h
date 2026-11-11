@@ -163,7 +163,11 @@ int og_quest_topic_answer(int i, char *out, int cap);
 
 /* Building access a quest granted (op 17): the building's place, the access kind and the minute it lasts to. Nothing reads them until a quest's buildings stand in a town. */
 #define OG_QUEST_ACCESS 16
-typedef struct OgQuestAccess { int used, quest_id, region, index, access; df_u32 until; } OgQuestAccess;
+typedef struct OgQuestAccess { int used, quest_id, region, index, block, record, access; df_u32 until; } OgQuestAccess;
+/* A building (the town's region and index, the building's block and record) a running quest has marked open to it (op 81's place flag 64 on a place of it, or the flag 0x4000 on a person who stands in it): the door lets the player in. */
+int og_quest_building_open(int region, int index, int block, int record);
+/* The access level op 17 granted the building, while its minutes last (building_access_level: 10 and over opens its door to a lockpicker); 0 for none. */
+int og_quest_building_access(int region, int index, int block, int record, df_u32 now);
 const OgQuestAccess *og_quest_access(int i);
 
 /* The quest people standing in a building (op 30 put them in a place that is one): the building's block and record in the town at region and index. Each is made a person of the building when
@@ -186,7 +190,7 @@ void og_quest_globals_clear(void);
 
 /* quests_run_all for a passing minute: as og_quest_run, and the ops that watch the clock (79) look. */
 void og_quest_run_minute(void);
-/* quests_start_initial: the quests that start with a new game (_BRISIEN, then _TUTOR__), begun at the first frame of play in the world. */
+/* quests_start_initial: the quest that starts with a new game (_BRISIEN; _TUTOR__ is left out), begun at the first frame of play in the world. */
 void og_quest_start_initial_later(void);
 void og_quest_reset(void);
 /* The quests as bytes for a save and back (step 8): the global states, the logbook, the foe counter and each running quest's name, id, faction and what changed since its QBN was read (the
