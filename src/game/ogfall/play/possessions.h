@@ -83,6 +83,8 @@ int og_possessions_guild(int member, const char *label);
 /* A yes or no over the world (msgbox_yes_no_rsc): the words, and the answer (1 yes, 0 no or Escape) given to the callback. 0 when something else is open. */
 int og_possessions_ask(const char *words, void (*answer)(int yes));
 /* A number typed (msgbox_prompt_number): the words over the box, the amount (digits only) given to the callback, 0 for Escape. */
+/* The same with a number already typed in (msgbox_prompt_number's default). */
+int og_possessions_number_from(const char *words, int initial, void (*answer)(int amount));
 int og_possessions_number(const char *words, void (*answer)(int amount));
 /* A list popup over the world: the row clicked (0 on) is given to the callback, -1 for Escape. 0 when something else is open or there are no rows. */
 int og_possessions_list(const char names[][OG_LIST_NAME], int count, void (*pick)(int row));

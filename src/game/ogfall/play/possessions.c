@@ -561,8 +561,14 @@ int og_possessions_ask(const char *words, void (*answer)(int yes))
 
 int og_possessions_number(const char *words, void (*answer)(int amount))
 {
+    return og_possessions_number_from(words, 0, answer);
+}
+
+int og_possessions_number_from(const char *words, int initial, void (*answer)(int amount))
+{
     if (!words || !*words || !answer || !dialog_ready()) { return 0; }
     df_copy(g.offer,words,sizeof(g.offer)); g.input[0] = 0;
+    if (initial > 0) { log_format(g.input,sizeof(g.input),"%d",initial); }
     g.prompt = OG_PROMPT_NUMBER; g_number_cb = answer; g.revision++;
     return 1;
 }

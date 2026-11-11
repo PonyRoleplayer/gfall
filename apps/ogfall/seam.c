@@ -1741,10 +1741,8 @@ static void hall_run(void)
         break;
     case OG_SVC_DONATE:
         {
-            static char words[200];
-
-            person_say_text(1000, words, (int)sizeof(words));
-            og_possessions_number(words, hall_donate_answer);
+            /* guild_donate: msgbox_prompt_number(1000, ...): 1000 is the number first typed in; the words are FALL.EXE's own line. */
+            og_possessions_number_from("Donate how much money", 1000, hall_donate_answer);
         }
         break;
     case OG_SVC_REPAIRS:
@@ -4883,10 +4881,14 @@ static int present_possessions(void)
                  view->prompt == OG_PROMPT_SPELL_NAME ? "Enter spell name" :
                  view->prompt == OG_PROMPT_ANSWER ? "Your answer:" : view->prompt == OG_PROMPT_NUMBER ? view->offer :
                  "Enter new page:";
-        fill_box(68,65,184,75,45); outline(68,65,184,75,145);
-        centered_text(160,75,prompt,145);
-        log_format(line,sizeof(line),"%s_",view->input); centered_text(160,96,line,145);
-        centered_text(117,121,"Accept",145); centered_text(203,121,"Reject",145);
+        if (g_spop && g_buttons) {
+            /* The prompt on the parchment, the typed line under the words, the Yes and No pictures at the bottom. */
+            lay_paper(61,34,9,5);
+            lay_button(3,112,117); lay_button(4,176,117);
+        } else { fill_box(68,65,184,75,45); outline(68,65,184,75,145); }
+        centered_text(160,g_spop && g_buttons ? 56 : 75,prompt,145);
+        log_format(line,sizeof(line),"%s_",view->input); centered_text(160,g_spop && g_buttons ? 84 : 96,line,145);
+        if (!g_spop || !g_buttons) { centered_text(117,121,"Accept",145); centered_text(203,121,"Reject",145); }
     }
     for (i = 0; i < g_panel_file_count; i++) { texture_forget(g_panel_files[i]); }
     mem_heap_use(was); mem_heap_delete(heap);
