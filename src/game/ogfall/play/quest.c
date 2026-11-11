@@ -101,7 +101,14 @@ static int start_with(const char *name, const df_u8 *bytes, df_u32 size, int fac
 int og_quest_start(const char *name, int faction) { return start_with(name, 0, 0, faction); }
 int og_quest_start_bytes(const char *name, const df_u8 *bytes, df_u32 size, int faction) { return start_with(name, bytes, size, faction); }
 
+int og_quest_pick_seeded(char letter, char letter2, char membership, int rank, unsigned seed, char *name);
 int og_quest_pick(char letter, char letter2, char membership, int rank, char *name)
+{
+    return og_quest_pick_seeded(letter, letter2, membership, rank, 0xffffffffu, name);
+}
+
+/* quest_pick_file with the pick made by a seed (func_0004CD10 seeds rand with the person's id, so a person offers the same quest each time); 0xffffffff draws at random. */
+int og_quest_pick_seeded(char letter, char letter2, char membership, int rank, unsigned seed, char *name)
 {
     int i, n, pick, count;
     const char *q;
@@ -112,7 +119,7 @@ int og_quest_pick(char letter, char letter2, char membership, int rank, char *na
         if ((q[0] == letter || (letter2 && q[0] == letter2)) && q[1] == '0' && q[2] == membership && q[3] - '0' <= rank) { count++; }
     }
     if (!count) { return 0; }
-    pick = og_random_range(0, count - 1); n = 0;
+    pick = seed == 0xffffffffu ? og_random_range(0, count - 1) : (int)(seed % (unsigned)count); n = 0;
     for (i = 0; i < (int)(sizeof(g_quest_name) / sizeof(g_quest_name[0])); i++) {
         q = g_quest_name[i];
         if (!((q[0] == letter || (letter2 && q[0] == letter2)) && q[1] == '0' && q[2] == membership && q[3] - '0' <= rank)) { continue; }

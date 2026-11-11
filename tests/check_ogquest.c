@@ -397,6 +397,16 @@ void check_ogquest(void)
                 for (k = 0; k < og_quest_count(); k++) { og_quest_end(k); }
             }
         }
+        /* Who offers what: a person's seed picks the same quest each time, a temple's letter picks its quests and a Julianos one the 0 file, a non-member of a temple the C quests. */
+        {
+            char a[9], b[9], c[9];
+
+            check_expect(og_quest_pick_seeded('A', 'K', 'C', 9, 77u, a) && og_quest_pick_seeded('A', 'K', 'C', 9, 77u, b) && !strcmp(a, b) && (a[0] == 'A' || a[0] == 'K') && a[2] == 'C',
+                         "quest: a person's seed did not pick the same commoner's quest each time");
+            check_expect(og_quest_pick_seeded('E', 0, 'B', 0, 0u, c) && c[0] == 'E' && c[2] == 'B' && og_quest_pick('0', 0, 'B', 0, c) && c[0] == '0' && c[2] == 'B' && og_quest_pick('E', 'C', 'B', 0, c) && (c[0] == 'E' || c[0] == 'C'),
+                         "quest: Arkay's member's quest is not E0B, or Julianos's not 00B");
+            check_expect(og_quest_pick('R', 0, 'C', 9, c) && c[0] == 'R' && c[2] == 'C', "quest: a type 4 faction's person's quest is not an R quest");
+        }
         og_character()->attribute[OG_STR] = saved_str;
     }
     slot = og_quest_start("M0B00Y00", 8);

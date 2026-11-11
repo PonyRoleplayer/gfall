@@ -1298,6 +1298,30 @@ static int interior_shopkeeper(const Camera *cam, int faction, int image)
 static void hall_enter(int person_faction, int hall_faction);
 static int hall_member(int kind);
 
+/* quest_mark_givers and the click (3.7): a commoner of a type 2, 12 or 4 faction (not of the Mages', Fighters', Thieves' or Brotherhood's trees) is a giver on a day by a roll of the day and the
+ * person (the original reseeds rand with the day; ours hashes, so each person's day is the same each time), half the type 4 factions' and a quarter of the others. A giver clicked offers the
+ * quest their id picks: R for a type 4 faction (not 407), else A or K, for a non-member at the player's level. 1 when one was offered. */
+static int street_quest(const OgFactionDef *f, int in_building_type)
+{
+    char name[9];
+    int root, threshold, guard;
+    unsigned roll;
+    const OgFactionDef *top;
+
+    if (!f || (in_building_type >= 16 || in_building_type == 1)) { return 0; }
+    threshold = f->type == 4 ? 50 : (f->type == 2 || f->type == 12) ? 25 : -1;
+    if (threshold < 0) { return 0; }
+    root = f->id; top = f;
+    for (guard = 0; top && top->parent && guard < 8; guard++) { top = og_faction_def(og_faction_index(top->parent)); if (top) { root = top->id; } }
+    if (root == 40 || root == 41 || root == 42 || root == 108) { return 0; }
+    roll = (unsigned)(og_state()->minutes / 1440u) * 2654435761u ^ g_met.who * 40503u;
+    roll = (roll >> 8) % 100u;
+    if ((int)roll > threshold || og_quest_person_busy((int)g_met.who)) { return 0; }
+    if (!og_quest_pick_seeded(f->type == 4 && f->id != 407 ? 'R' : 'A', f->type == 4 && f->id != 407 ? 0 : 'K', 'C', og_character()->level, g_met.who, name)) { return 0; }
+    og_quest_set_questor((int)g_met.who, g_met.faction, g_met.name, town_name());
+    return og_quest_begin(name, g_met.faction) >= 0;
+}
+
 static int talk_used(const Usable *u, int mode, float dist, const Camera *cam)
 {
     const OgFactionDef *f;
@@ -1352,6 +1376,7 @@ static int talk_used(const Usable *u, int mode, float dist, const Camera *cam)
     if (kind && og_possessions_service(kind)) {
         return 1;
     }
+    if (!kind && street_quest(f, travel_building(&type, &faction, &quality, &place) ? type : -1)) { return 1; }
     start_talk();
     return 1;
 }
@@ -1829,7 +1854,18 @@ static void hall_quest(const OgMembership *m)
     else if (g_hall.kind == 1) { letter = 'N'; rank = og_character()->level; }
     else if (g_hall.kind == 2) { letter = 'M'; }
     else if (g_hall.kind == 3) { letter = 'O'; }
-    else if (g_hall.kind >= 4 && g_hall.kind <= 13) { letter = 'B'; rank = og_character()->level; }
+    else if (g_hall.kind >= OG_KIND_KNIGHT + 4 && g_hall.kind <= OG_KIND_KNIGHT + 13) { letter = 'B'; rank = og_character()->level; }
+    else if (g_hall.kind >= OG_KIND_TEMPLE + 14 && g_hall.kind <= OG_KIND_TEMPLE + 21) {
+        /* guild_temple_quest: the temple's letter (the temples by name: Akatosh D, Arkay E, Dibella F, Julianos 0, Kynareth G, Mara H, Stendarr I, Zen J) or any C quest, a member's by rank. */
+        letter = "DEF0GHIJ"[g_hall.kind - (OG_KIND_TEMPLE + 14)];
+        if (!m) { rank = og_character()->level; }
+        if (og_quest_pick(letter, 'C', m ? 'B' : 'C', rank, name) && !og_quest_person_busy((int)g_met.who)) {
+            og_quest_set_questor((int)g_met.who, g_hall.person, g_met.name, town_name());
+            if (og_quest_begin(name, g_hall.person) >= 0) { return; }
+        }
+        start_talk();
+        return;
+    }
     /* A person already giving a quest is not asked for another: they talk (their quest's events run there). */
     if (letter && !og_quest_person_busy(g_met.who)) {
         og_quest_set_questor((int)g_met.who, g_hall.person, g_met.name, town_name());
