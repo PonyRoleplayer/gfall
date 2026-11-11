@@ -25,6 +25,10 @@ int og_dungeon_health(int index);
 int og_dungeon_loot_table(int index);
 df_u32 og_dungeon_container(int index);
 void og_dungeon_gear_to(int index, df_u32 container);
+/* The creatures round a point for the enchantments' ticks: the nearest's distance (-1 for none), one of a category within reach, and a hurt to the nearest within reach. */
+int og_dungeon_nearest_distance(const Camera *cam);
+int og_dungeon_category_within(const Camera *cam, int category, int reach);
+int og_dungeon_hurt_nearest(const Camera *cam, float reach, int damage);
 const OgArrow *og_dungeon_arrow(int index);
 void og_dungeon_shift(float dx, float dz);
 /* Sprite slots, loaded by the adapter with the place. */

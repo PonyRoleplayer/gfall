@@ -294,6 +294,8 @@ void og_state_event(int kind, df_u32 subject, df_u32 other, int value)
     e.value = value;
     g_state.last_event = e;
     g_state.event_serial++;
+    /* A kill by the player starts Health leech's clock again. */
+    if (kind == OG_EVENT_KILL && other && other == g_state.entity_id) { g_state.last_kill = g_state.minutes; }
     if (g_observer) {
         g_observer(&e);
     }
@@ -464,6 +466,7 @@ void og_state_pass_minutes(df_u32 minutes)
     }
     g_state.minutes += minutes;
     og_magic_minutes(start,minutes);
+    og_enchant_minutes();
     for (i = 0; i < minutes; i++) {
         og_state_event(OG_EVENT_MINUTE, 0, 0, (int)(start + i + 1));
         /* time_pass: each 161280 minutes the standings drift one point toward nothing (reputation_decay). */
@@ -506,6 +509,7 @@ void og_state_frame(float seconds)
     ms = (df_u32)df_ifloor(total);
     g_state.frame_fraction = total - (float)ms;
     og_state_advance_ms(ms);
+    og_enchant_frame();
 }
 
 static int character_valid(const OgState *state)

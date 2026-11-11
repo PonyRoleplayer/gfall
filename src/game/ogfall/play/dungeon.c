@@ -767,6 +767,52 @@ void og_dungeon_step(const Scene *scene, const Camera *cam, float dt)
     }
 }
 
+/* The nearest living creature's distance on the floor, -1 for none (nearest_creature_distance). */
+int og_dungeon_nearest_distance(const Camera *cam)
+{
+    int i, best;
+    float dx, dz, d;
+
+    best = -1;
+    for (i = 0; cam && i < g_count; i++) {
+        if (g_foe[i].entity->dead || !g_foe[i].entity->live) { continue; }
+        dx = g_foe[i].entity->x-cam->x; dz = g_foe[i].entity->z-cam->z; d = df_sqrt(dx*dx+dz*dz);
+        if (best < 0 || d < (float)best) { best = df_iround(d); }
+    }
+    return best;
+}
+
+/* Whether a living creature of that category (0 undead, 1 Daedra, 2 humanoid, 3 animal) is within reach on the floor. */
+int og_dungeon_category_within(const Camera *cam, int category, int reach)
+{
+    int i;
+    float dx, dz;
+
+    for (i = 0; cam && i < g_count; i++) {
+        if (g_foe[i].entity->dead || !g_foe[i].entity->live || og_foe_category(g_foe[i].kind) != category) { continue; }
+        dx = g_foe[i].entity->x-cam->x; dz = g_foe[i].entity->z-cam->z;
+        if (dx*dx+dz*dz < (float)reach*(float)reach) { return 1; }
+    }
+    return 0;
+}
+
+/* Damage to the nearest living creature within reach (Vampiric effect at range); 1 when there was one. */
+int og_dungeon_hurt_nearest(const Camera *cam, float reach, int damage)
+{
+    int i, best;
+    float dx, dz, d, best_d;
+
+    best = -1; best_d = reach;
+    for (i = 0; cam && i < g_count; i++) {
+        if (g_foe[i].entity->dead || !g_foe[i].entity->live) { continue; }
+        dx = g_foe[i].entity->x-cam->x; dz = g_foe[i].entity->z-cam->z; d = df_sqrt(dx*dx+dz*dz);
+        if (d < best_d) { best_d = d; best = i; }
+    }
+    if (best < 0) { return 0; }
+    hit_foe(g_scene,best,damage,0);
+    return 1;
+}
+
 void og_dungeon_wake(int index)
 {
     OgFoe *f;

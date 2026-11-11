@@ -6,6 +6,8 @@
 #include "game/ogfall/play/state.h"
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/itemmaker.h"
+#include "game/ogfall/play/progress.h"
+#include "game/ogfall/play/enchant.h"
 #include "game/ogfall/play/play.h"
 #include "game/ogfall/play/magic.h"
 #include "game/ogfall/play/spellbook.h"
@@ -192,6 +194,62 @@ static void itemmaker_checks(void)
         check_expect(og_character()->conditions & 0x200, "enchant: one absorbing ring off cleared the other's absorption");
         og_inventory_unequip(r3);
         check_expect(!(og_character()->conditions & 0x200), "enchant: absorption stayed with no ring worn");
+    }
+    /* Slice 2: wear and breaking, Regens health, Item deteriorates, Extra spell pts and Health leech by the tick. */
+    {
+        df_u32 plain, ench, regen;
+        int year, month, day, weekday, season, before_max, h, i, k2;
+        static const int seasons[12] = {0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 0, 0};
+
+        plain = og_item_create(pack, 3, dag, 0);
+        og_object_edit(plain)->condition = 10;
+        og_item_damage(plain, 3);
+        check_expect(og_object(plain)->condition == 7, "wear: a dagger did not lose 3 condition");
+        og_item_damage(plain, 7);
+        check_expect(og_object(plain) && og_object(plain)->condition == 0, "wear: a plain item did not stay broken in the pack");
+        regen = og_item_create(pack, 25, rg, 0);
+        ench = og_item_create(pack, 25, rg, 0);
+        {
+            OgItemEnchant *row;
+            int free_row;
+
+            for (free_row = 0; og_item_enchant_edit(free_row)->item; free_row++) { }
+            row = og_item_enchant_edit(free_row);
+            row->item = regen; row->identified = 1;
+            for (k2 = 0; k2 < 10; k2++) { row->type[k2] = -1; row->param[k2] = -1; }
+            row->type[0] = 5; row->param[0] = 0; row->type[1] = 16; row->param[1] = 0;
+            for (free_row++; og_item_enchant_edit(free_row)->item; free_row++) { }
+            row = og_item_enchant_edit(free_row);
+            row->item = ench; row->identified = 1;
+            for (k2 = 0; k2 < 10; k2++) { row->type[k2] = -1; row->param[k2] = -1; }
+            og_state_date(&year, &month, &day, &weekday);
+            season = seasons[month % 12];
+            row->type[0] = 3; row->param[0] = season;
+        }
+        og_object_edit(regen)->condition = og_object_edit(regen)->max_condition = 500;
+        og_character()->health = og_character()->max_health - 20; h = og_character()->health;
+        check_expect(og_inventory_equip(regen), "tick: the regenerating ring was not worn");
+        og_state_pass_minutes(8);
+        check_expect(og_character()->health == h + 2 && og_object(regen)->condition <= 500 - 2 && og_object(regen)->condition >= 500 - 3, "tick: eight minutes did not give 2 health and cost 2 condition");
+        og_state_pass_minutes(100);
+        check_expect(og_object(regen)->condition < 500 - 1, "tick: a hundred minutes cost nothing");
+        i = og_object(regen)->condition;
+        og_state_pass_minutes(150);
+        check_expect(og_object(regen)->condition == i, "tick: a gap of 150 minutes was not thrown away");
+        og_inventory_unequip(regen);
+        before_max = og_character()->max_magicka;
+        og_inventory_equip(ench);
+        og_enchant_frame();
+        check_expect(og_character()->max_magicka == og_magicka(og_character()->attribute[OG_INT], og_character()->class_flags) + 75, "tick: Extra spell pts did not add 75 in its season");
+        og_inventory_unequip(ench);
+        og_enchant_frame();
+        check_expect(og_character()->max_magicka == og_magicka(og_character()->attribute[OG_INT], og_character()->class_flags), "tick: Extra spell pts stayed after the item came off");
+        (void)before_max;
+        /* The item that deteriorates breaks and is gone; the worn effects with it. */
+        og_object_edit(regen)->condition = 3;
+        og_inventory_equip(regen);
+        og_state_pass_minutes(40);
+        check_expect(!og_object(regen) && og_item_equipped(regen) < 0, "wear: an enchanted item that wore out was not gone and unequipped");
     }
     (void)daedric; (void)text; (void)n; (void)list;
 }

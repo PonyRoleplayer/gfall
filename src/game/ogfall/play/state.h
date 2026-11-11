@@ -18,7 +18,7 @@
 #include "game/ogfall/play/worldstate.h"
 #include "engine/scene/keep.h"
 
-#define OG_STATE_VERSION 14
+#define OG_STATE_VERSION 15
 #define OG_STATE5_WIRE_BYTES 348
 #define OG_WORLD_ROWS 512
 #define OG_THUMB_W 80
@@ -126,6 +126,8 @@ typedef struct OgState {
     OgGuilds guilds;
     OgCustomSpell custom_spell[OG_CUSTOM_SPELLS];
     OgItemEnchant enchant[OG_ENCHANTED_ITEMS];
+    /* The game minute of the player's last kill (character +0x1FD, set by damage_creature_death): Health leech's clock. */
+    df_u32 last_kill;
 } OgState;
 
 OgCharacter *og_character(void);

@@ -451,6 +451,9 @@ static void transfer(Wire *w, OgState *s)
         }
     }
 
+    /* The last kill (schema 15). */
+    if (w->version >= 15) { wire_u32(w, &s->last_kill); }
+
     if (w->version >= 7) {
         OgWorldState *world;
         world = &s->world_state;

@@ -15,6 +15,7 @@
 #include "game/ogfall/play/ground.h"
 #include "game/ogfall/play/spellmaker.h"
 #include "game/ogfall/play/itemmaker.h"
+#include "game/ogfall/play/enchant.h"
 #include "game/ogfall/tables/magicdefs.h"
 #include "game/ogfall/tables/itemdefs.h"
 #include "game/ogfall/tables/combatdefs.h"
@@ -785,6 +786,39 @@ static int status_intro(char *out, int cap)
     }
     out[n] = 0;
     return n;
+}
+
+/* The world the enchantments' ticks ask about (disease.c player_in_daylight, player_in_temple, the creatures round the player). */
+static int ench_daylight(void)
+{
+    int minute;
+
+    minute = (int)(og_state()->minutes % 1440u);
+    return og_world_state()->where.kind == OG_PLACE_WORLD && minute >= 360 && minute < 1080;
+}
+
+static int ench_temple(void)
+{
+    int type, faction, quality;
+    unsigned place;
+
+    return travel_building(&type, &faction, &quality, &place) && type == 14;
+}
+
+static int ench_category_near(int category, int distance)
+{
+    Camera cam;
+
+    og_move_camera(&cam);
+    return og_dungeon_category_within(&cam, category, distance);
+}
+
+static int ench_hurt_nearest(int amount)
+{
+    Camera cam;
+
+    og_move_camera(&cam);
+    return og_dungeon_hurt_nearest(&cam, 128.0f, amount);
 }
 
 static int offer_say(int text, int price, char *out, int cap)
@@ -2295,6 +2329,11 @@ int seam_boot(void)
     og_set_save_capture(seam_capture_world);
     og_set_words(textrsc_read);
     og_set_status_intro(status_intro);
+    {
+        static const OgEnchantWorld enchant_world = { ench_daylight, ench_temple, ench_category_near, ench_hurt_nearest };
+
+        og_enchant_set_world(&enchant_world);
+    }
     og_set_word_variants(textrsc_variant);
     if (!maindat_start()) {
         why(maindat_error());
