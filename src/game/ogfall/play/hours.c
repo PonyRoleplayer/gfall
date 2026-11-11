@@ -28,3 +28,10 @@ int og_building_minutes_to_close(int type, df_u32 now)
     }
     return 0;
 }
+
+int og_building_hours(int type, int *open, int *close)
+{
+    if (type < 0 || type > 16) { return 0; }
+    *open = g_open_hour[type]; *close = g_close_hour[type];
+    return 1;
+}

@@ -149,6 +149,16 @@ static const char *passage_gate(const Usable *u)
         p.steal = og_hud_mode() == OG_MODE_STEAL;
         p.lock_spell = (og_character()->conditions & 0x40) != 0;
         if (!og_building_try_enter(&b, &p, og_state()->minutes, (og_guards_witnesses() & 3) != 0, &e)) {
+            /* click_show_building_info: a shop shut for the hour says when it opens (FALL.EXE's "Store is closed. Open from %d:00 to %d:00."). In Steal mode the lock's own line is what matters. */
+            if (b.type < 14 && b.type != 1 && p.steal == 0) {
+                static char hours[64];
+                int from, to;
+
+                if (og_building_hours(b.type, &from, &to)) {
+                    log_format(hours, sizeof(hours), "Store is closed. Open from %d:00 to %d:00.", from, to);
+                    return hours;
+                }
+            }
             return e.line ? e.line : "The door is locked.";
         }
         if (e.spent_spell) { og_character()->conditions &= ~0x40; }
@@ -1949,7 +1959,7 @@ static int street_witnesses(void)
 {
     Camera cam;
     float eye[3];
-    int i, bits;
+    int i, bits, bit;
 
     if (og_world_state()->where.kind == OG_PLACE_DUNGEON) { return 0; }
     og_move_camera(&cam);
@@ -1962,8 +1972,11 @@ static int street_witnesses(void)
         e = people_at(i);
         if (!e || !people_is_citizen(e)) { continue; }
         dx = e->x - cam.x; dz = e->z - cam.z;
-        if (dx * dx + dz * dz > 4096.0f * 4096.0f) { continue; }
-        if (street_sees(e, eye)) { bits |= og_dungeon_index(e) >= 0 || people_is_guard(e) ? 2 : 1; }
+        if (dx * dx + dz * dz > 2048.0f * 2048.0f) { continue; }
+        /* Each look is a wall cast over the whole street: one for a bit not yet set, and none once both are. */
+        bit = og_dungeon_index(e) >= 0 || people_is_guard(e) ? 2 : 1;
+        if (bits & bit) { continue; }
+        if (street_sees(e, eye)) { bits |= bit; if (bits == 3) { break; } }
     }
     return bits;
 }
@@ -4821,10 +4834,16 @@ static int present_possessions(void)
         court = view->page == OG_VIEW_COURT;
         rows = wrap_words(view->offer,wrapped,court ? 10 : 6,court ? 208 : 176);
         if (court) { fill_box(48,8,224,126,45); outline(48,8,224,126,145); }
-        else { fill_box(68,40,184,96,45); outline(68,40,184,96,145); }
-        for (k = 0; k < rows; k++) { centered_text(160,(court ? 14 : 48)+k*10,wrapped[k],145); }
-        centered_text(117,121,(view->page == OG_VIEW_COURT || view->page == OG_VIEW_MESSAGE) ? view->yes : "Accept",145);
-        centered_text(203,121,(view->page == OG_VIEW_COURT || view->page == OG_VIEW_MESSAGE) ? view->no : "Reject",145);
+        else if (g_spop && g_buttons && view->page != OG_VIEW_MESSAGE) {
+            /* msgbox_show_string: the words on SPOP's parchment, the Yes and No pictures of BUTTONS.RCI under them (the pointer's regions are the buttons' own). */
+            lay_paper(61,34,9,5);
+            lay_button(3,112,117); lay_button(4,176,117);
+        } else { fill_box(68,40,184,96,45); outline(68,40,184,96,145); }
+        for (k = 0; k < rows; k++) { centered_text(160,(court ? 14 : 44)+k*10,wrapped[k],145); }
+        if (court || view->page == OG_VIEW_MESSAGE || !g_spop || !g_buttons) {
+            centered_text(117,121,(view->page == OG_VIEW_COURT || view->page == OG_VIEW_MESSAGE) ? view->yes : "Accept",145);
+            centered_text(203,121,(view->page == OG_VIEW_COURT || view->page == OG_VIEW_MESSAGE) ? view->no : "Reject",145);
+        }
     } else if (view->prompt && view->prompt != OG_PROMPT_AMOUNT && view->prompt != OG_PROMPT_LIST) {
         const char *prompt;
         prompt = view->prompt == OG_PROMPT_GOLD ? "How much gold?" : view->prompt == OG_PROMPT_NAME ? "Name thyself" :

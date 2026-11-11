@@ -135,7 +135,8 @@ static void extra(void)
     }
     line = og_status_line();
     if (line && line[0]) {
-        ui_string(8, 24, line);
+        /* ui_string's top counts up from the bottom of the view: the message is centred along the top. */
+        ui_string((df_view_w() - ui_string_width(line)) / 2, df_view_h() - 12, line);
     }
 }
 

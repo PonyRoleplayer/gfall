@@ -20,4 +20,7 @@ int og_building_open(int type, int faction, df_u32 id, df_u32 now, int daytime, 
 /* Minutes until it shuts, 0 when it is shut. */
 int og_building_minutes_to_close(int type, df_u32 now);
 
+/* The hours a type keeps, as the table gives them (the closing hour may be 25, round the clock); 0 for a type with none. */
+int og_building_hours(int type, int *open, int *close);
+
 #endif
