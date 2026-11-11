@@ -100,3 +100,4 @@ for now. Each line names where to look.
 - House containers: whether every piece of furniture the user finds unlootable is outside the original's variants (3, 4, 7, 8, 32..38, 50, 51) is unchecked; a container's stock uses `og_shelf_stock`.
 - The Affiliations list uses a colon where the original has tab columns; the town's building name is not shown when a wall is clicked (`click_show_building_info`).
 - Coins behind the shop's things repaint the 320 x 200 screen every 0.08 s: unmeasured on the 233.
+- Shop coins, a cheaper repaint (do after measuring on the 233): the coins turn behind the items inside the one composed 320 x 200 buffer, so each 0.08 s frame recomposes the whole screen and re-publishes the surface. Instead recompose only the item cells (coin, then icon, then count) into the kept buffer and hand just those rectangles to `pic_update`, which already re-sends only the changed tiles.
