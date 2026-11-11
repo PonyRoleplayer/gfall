@@ -101,6 +101,8 @@ typedef struct OgQuestWorld {
     int (*pick_site)(int region, int index, int mode, int value, unsigned seed, int *block, int *record, int *faction);
     /* A name for a person of the quests (the same each time for the same id). */
     void (*person_name)(int who, int faction, int female, char *out, int cap);
+    /* The player is out of doors (the streamed world's streets and fields, not a building or a dungeon): a guild's invitation comes then. */
+    int (*outdoors)(void);
 } OgQuestWorld;
 void og_quest_set_world(const OgQuestWorld *world);
 
@@ -179,9 +181,13 @@ int og_quest_people_in(int region, int index, int block, int record, OgQuestHere
 /* The person a flat's tag names: their id, faction, sex and name; 0 when it names none. */
 int og_quest_person_of_tag(int tag, int *who, int *faction, int *female, char *name, int cap);
 
+/* The words of a quest's letter item (group 9, index 5): its QRC message of the quest that still holds it, filled in; 0 when no running quest has the item. */
+int og_quest_item_text(df_u32 item, char *out, int cap);
+
 /* The faces at the top of the screen (3.11, ops 55, 56, 63 and 64): ten slots of a quest's person or foe. kind 1 person, 2 foe. */
 #define OG_QUEST_FACES 10
-typedef struct OgQuestFace { int used, quest_id, kind, index; } OgQuestFace;
+/* face is the original's byte: bit 7 a woman, bit 6 the name bank, bit 4 a child's (faction 514: KIDS00I0), bits 0..3 the picture. */
+typedef struct OgQuestFace { int used, quest_id, kind, index, face; } OgQuestFace;
 const OgQuestFace *og_quest_face(int i);
 
 /* The 64 global states every quest shares (the main story's). */

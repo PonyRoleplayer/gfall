@@ -28,6 +28,9 @@ typedef struct Words {
     const char *city;
     const char *region;
     const char *place;
+    /* The giver of a quest the player is pointed to (%pqn their name, %pqp their building's name). */
+    const char *questor;
+    const char *questor_place;
     /* The person's faction (%fnpc and the like). */
     const char *faction;
     /* A court's words (%cri, %pen) and sums (%dip days, %a gold). */

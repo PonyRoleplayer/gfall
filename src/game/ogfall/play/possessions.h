@@ -119,6 +119,8 @@ int og_possessions_trade(int mode, const OgShop *shop, df_u32 shelves);
  * shop; without it the record's first variant has only %a put in.
  */
 void og_possessions_set_offer_words(int (*say)(int text, int price, char *out, int cap));
+/* A letter of a quest (group 9, index 5, its message the QRC id) read: the words, from the quest that holds it; 0 when none. */
+void og_possessions_set_letter(int (*text)(df_u32 item, char *out, int cap));
 int og_possessions_cast(void);
 void og_possessions_close(void);
 /* A parchment over the world. An optional answer callback receives up to 16

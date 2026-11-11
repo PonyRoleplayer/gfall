@@ -1108,6 +1108,8 @@ static int compass_index(float dx, float dz)
     return east > 0 ? 7 : 5;
 }
 
+static char g_pq_name[40], g_pq_place[64];
+
 /* A record said with the window's macros: %key what is asked, %loc the place, %di its way, %hnt the hint already said. */
 static int talk_say(int text, const OgTalkWinSay *ctx, char *out, int cap)
 {
@@ -1121,6 +1123,7 @@ static int talk_say(int text, const OgTalkWinSay *ctx, char *out, int cap)
     g_talk_words.city = g_talk_in_town ? town_name() : "";
     g_talk_words.region = g_talk_region_name;
     g_talk_words.place = "This place";
+    g_talk_words.questor = g_pq_name; g_talk_words.questor_place = g_pq_place;
     g_talk_words.tone = ctx->tone;
     t = ctx->building ? talk_building(ctx->building) : 0;
     if (t) {
@@ -1203,6 +1206,10 @@ static void person_say_text(int text, char *out, int cap)
 static int quest_news(int faction, char *out, int cap) { return og_quest_news(faction, out, cap); }
 static int quest_rumour_for(unsigned npc, char *out, int cap) { return og_quest_rumour_for((int)npc, out, cap); }
 
+static int g_talk_events_done;
+static int potential_questor(char *name, int ncap, char *place, int pcap);
+static char g_pq_name[40], g_pq_place[64];
+
 static void start_talk(void)
 {
     OgTalkWho target;
@@ -1216,7 +1223,8 @@ static void start_talk(void)
     float x, z;
 
     /* A quest's person met: its event 28 runs on the talk path, and a quest that takes the click answers in its own words. */
-    if (og_quest_talk((int)g_met.who, g_met.faction)) { return; }
+    if (!g_talk_events_done && og_quest_talk((int)g_met.who, g_met.faction)) { return; }
+    g_talk_events_done = 0;
     mem_zero(&target, sizeof(target));
     target.npc = g_met.who;
     target.faction = g_met.faction;
@@ -1253,8 +1261,8 @@ static void start_talk(void)
     world.width = talk_width;
     world.outdoors = here.kind != TRAVEL_INSIDE;
     world.region = travel_region();
-    /* quest_find_potential_questor: no quests yet, so no one has work to give. */
-    world.no_work = 1;
+    /* quest_find_potential_questor (4.2): no work in a dungeon or where no building is marked; else a marked building's person is named, and the building. */
+    world.no_work = !potential_questor(g_pq_name, (int)sizeof(g_pq_name), g_pq_place, (int)sizeof(g_pq_place));
     og_talkwin_world(&world);
     g_talk_face_ok = faces_read(faces_of_flat(g_met.archive, g_met.record), g_talk_face);
     if (!og_possessions_talk(&target, &player, 0, &text) && text) {
@@ -1349,25 +1357,72 @@ static int interior_shopkeeper(const Camera *cam, int faction, int image)
 static void hall_enter(int person_faction, int hall_faction);
 static int hall_member(int kind);
 
-/* quest_mark_givers and the click (3.7): a commoner of a type 2, 12 or 4 faction (not of the Mages', Fighters', Thieves' or Brotherhood's trees) is a giver on a day by a roll of the day and the
- * person (the original reseeds rand with the day; ours hashes, so each person's day is the same each time), half the type 4 factions' and a quarter of the others. A giver clicked offers the
- * quest their id picks: R for a type 4 faction (not 407), else A or K, for a non-member at the player's level. 1 when one was offered. */
-static int street_quest(const OgFactionDef *f, int in_building_type)
+/* quest_mark_givers (4.1 of quest-hooks.md): a person standing in a building of a type other than 1, 11, 14 and 16 up, of a faction of type 2, 12 or 4 not under the Mages', Fighters', Thieves' or
+ * Brotherhood's trees, is a giver for the day by a roll (type 4 at 51%, the others 26%). The original rolls each person from `rand` reseeded with the day; we roll each building from the day and its id,
+ * so all its people are marked or none (the Work answer can then name the building). */
+static int building_marked(unsigned place, int building_type, const OgFactionDef *f)
 {
-    char name[9];
-    int root, threshold, guard;
-    unsigned roll;
+    int root, guard;
     const OgFactionDef *top;
+    unsigned roll;
 
-    if (!f || (in_building_type >= 16 || in_building_type == 1)) { return 0; }
-    threshold = f->type == 4 ? 50 : (f->type == 2 || f->type == 12) ? 25 : -1;
-    if (threshold < 0) { return 0; }
+    if (!f || building_type == 1 || building_type == 11 || building_type == 14 || building_type >= 16 || building_type < 0) { return 0; }
+    if (!(f->type == 4 || f->type == 2 || f->type == 12)) { return 0; }
     root = f->id; top = f;
     for (guard = 0; top && top->parent && guard < 8; guard++) { top = og_faction_def(og_faction_index(top->parent)); if (top) { root = top->id; } }
     if (root == 40 || root == 41 || root == 42 || root == 108) { return 0; }
-    roll = (unsigned)(og_state()->minutes / 1440u) * 2654435761u ^ g_met.who * 40503u;
+    roll = (unsigned)(og_state()->minutes / 1440u) * 2654435761u ^ place * 40503u;
     roll = (roll >> 8) % 100u;
-    if ((int)roll > threshold || og_quest_person_busy((int)g_met.who)) { return 0; }
+    return (int)roll <= (f->type == 4 ? 50 : 25);
+}
+
+/* The marks a click cleared today ("the person's mark is cleared at once, whether or not a file was found"), by day and building. */
+static struct { unsigned day, place; } g_cleared[16];
+static int g_cleared_next;
+
+static int mark_cleared(unsigned place)
+{
+    int i;
+
+    for (i = 0; i < 16; i++) { if (g_cleared[i].place == place && g_cleared[i].day == (unsigned)(og_state()->minutes / 1440u) + 1u) { return 1; } }
+    return 0;
+}
+
+/* The giver the Work answer points to (%pqn, %pqp): one of the town's marked buildings picked by the day, a name made by the town's naming, and the building's own. 0 away from a town or when none is
+ * marked. */
+static int potential_questor(char *name, int ncap, char *place, int pcap)
+{
+    const TownBuilding *rows;
+    int count, i, n, pick;
+    OgNpcName npc;
+
+    if (!g_talk_in_town || og_world_state()->where.kind == OG_PLACE_DUNGEON) { return 0; }
+    rows = town_buildings(g_talk_region, g_talk_index, &count);
+    n = 0;
+    for (i = 0; rows && i < count; i++) {
+        if (building_marked(talk_building_id(&rows[i]), rows[i].type, og_faction_def(og_faction_index(rows[i].faction))) && !mark_cleared(talk_building_id(&rows[i]))) { n++; }
+    }
+    if (!n) { return 0; }
+    pick = (int)(((unsigned)(og_state()->minutes / 1440u) * 2246822519u >> 7) % (unsigned)n);
+    for (i = 0; i < count; i++) {
+        if (!(building_marked(talk_building_id(&rows[i]), rows[i].type, og_faction_def(og_faction_index(rows[i].faction))) && !mark_cleared(talk_building_id(&rows[i]))) || pick-- != 0) { continue; }
+        mem_zero(&npc, sizeof(npc));
+        npc.type = 8; npc.region = travel_region(); npc.id = talk_building_id(&rows[i]) * 31u + (unsigned)(og_state()->minutes / 1440u); npc.faction = rows[i].faction;
+        og_npc_name(&npc, name, ncap);
+        talk_building_name(talk_building_id(&rows[i]), place, pcap);
+        return 1;
+    }
+    return 0;
+}
+
+/* Clicking a marked person (after the quest events of the click) offers a quest: R for a type 4 faction other than 407, else A or K, for a non-member at the player's level, the one their id picks.
+ * 1 when one was offered. */
+static int street_quest(const OgFactionDef *f, int building_type, unsigned place)
+{
+    char name[9];
+
+    if (!building_marked(place, building_type, f) || mark_cleared(place) || og_quest_person_busy((int)g_met.who)) { return 0; }
+    g_cleared[g_cleared_next].day = (unsigned)(og_state()->minutes / 1440u) + 1u; g_cleared[g_cleared_next].place = place; g_cleared_next = (g_cleared_next + 1) & 15;
     if (!og_quest_pick_seeded(f->type == 4 && f->id != 407 ? 'R' : 'A', f->type == 4 && f->id != 407 ? 0 : 'K', 'C', og_character()->level, g_met.who, name)) { return 0; }
     og_quest_set_questor((int)g_met.who, g_met.faction, g_met.name, town_name());
     return og_quest_begin(name, g_met.faction) >= 0;
@@ -1413,6 +1468,8 @@ static int quest_pick_building(int region, int index, int type, unsigned seed, i
     }
     return 0;
 }
+
+static int quest_outdoors(void) { return og_world_state()->where.kind == OG_PLACE_WORLD; }
 
 /* A building of a town for a person's site: of a type, any shop-like one, of a faction, or of a faction of a type. */
 static int site_matches(const TownBuilding *b, int mode, int value)
@@ -1544,7 +1601,10 @@ static int talk_used(const Usable *u, int mode, float dist, const Camera *cam)
     if (kind && og_possessions_service(kind)) {
         return 1;
     }
-    if (!kind && street_quest(f, travel_building(&type, &faction, &quality, &place) ? type : -1)) { return 1; }
+    /* The quest events of the click come first (28, 71, 1, 78), then a marked person's offer, then talk. */
+    if (og_quest_talk((int)g_met.who, g_met.faction)) { return 1; }
+    if (!kind && travel_building(&type, &faction, &quality, &place) && street_quest(f, type, place)) { return 1; }
+    g_talk_events_done = 1;
     start_talk();
     return 1;
 }
@@ -2660,7 +2720,7 @@ int seam_boot(void)
     og_quest_set_text(quest_text); og_quest_set_say(quest_say); og_quest_set_ask(og_possessions_ask);
     og_quest_set_macros(quest_macros); og_quest_set_place(quest_place);
     {
-        static const OgQuestWorld quest_world = { og_travel_count, og_travel_location, quest_here, quest_region_name, quest_journey, og_travel_discover, quest_spawn_foe, og_teleport, quest_place_item, quest_find_number, quest_marker_at, quest_spawn_foe_at, quest_place_item_at, quest_pick_building, quest_pick_site, quest_person_name };
+        static const OgQuestWorld quest_world = { og_travel_count, og_travel_location, quest_here, quest_region_name, quest_journey, og_travel_discover, quest_spawn_foe, og_teleport, quest_place_item, quest_find_number, quest_marker_at, quest_spawn_foe_at, quest_place_item_at, quest_pick_building, quest_pick_site, quest_person_name, quest_outdoors };
 
         og_quest_set_world(&quest_world);
     }
@@ -2679,6 +2739,7 @@ int seam_boot(void)
     og_activate_set_shelf(OTHER_SHELF, shelf_used);
     og_activate_set_container(OTHER_CONTAINER, container_used);
     og_activate_set_global(OTHER_GLOBAL, og_quest_global_set);
+    og_possessions_set_letter(og_quest_item_text);
     og_activate_set_person(person_used);
     world_set_people_hook(quest_people_hook);
     og_activate_set_talk_use(talk_used);
@@ -4980,12 +5041,66 @@ static void magic_lighting(int enabled)
     } else if (active) { light_set_ambient(base); active = 0; }
 }
 
+/* The quests' faces (3.11 of quest-hooks.md): each used slot in order at x = 32 * n + 8, y = 36 of classic's screen, FACE{sex}{bank}I0.CIF's picture (a child's from KIDS00I0.CIF), colour 0 clear; drawn
+ * with the world's HUD, so under no menu. The strip is made again when the faces change. */
+static int g_face_pic;
+static df_u8 g_face_pixels[320*48];
+static df_u32 g_face_signature;
+
+static void quest_faces_draw(void)
+{
+    df_u32 signature;
+    int i, n;
+
+    signature = 2166136261u; n = 0;
+    for (i = 0; i < OG_QUEST_FACES; i++) {
+        const OgQuestFace *f;
+
+        f = og_quest_face(i);
+        if (f) { signature = (signature ^ (df_u32)(f->face + 1)) * 16777619u; signature = (signature ^ (df_u32)(f->quest_id)) * 16777619u; n++; }
+    }
+    if (!n || !g_have_art_rgb) { return; }
+    if (!g_face_pic || signature != g_face_signature) {
+        int slot;
+
+        mem_zero(g_face_pixels, sizeof(g_face_pixels));
+        slot = 0;
+        for (i = 0; i < OG_QUEST_FACES; i++) {
+            const OgQuestFace *f;
+            CifSet set;
+            const CifFrame *frame;
+            char name[16];
+            int x, y, record;
+
+            f = og_quest_face(i);
+            if (!f) { continue; }
+            if (f->face & 0x10) { log_format(name, sizeof(name), "KIDS00I0.CIF"); record = f->face & 15; }
+            else { log_format(name, sizeof(name), "FACE%d%dI0.CIF", (f->face & 0x80) ? 1 : 0, (f->face & 0x40) ? 1 : 0); record = f->face & 15; }
+            if (cif_open(name, &set)) {
+                frame = cif_frame(&set, record);
+                if (frame) {
+                    for (y = 0; y < frame->h && y < 48; y++) {
+                        for (x = 0; x < frame->w && slot * 32 + 8 + x < 320; x++) { g_face_pixels[y * 320 + slot * 32 + 8 + x] = frame->pixels[y * frame->w + x]; }
+                    }
+                }
+                cif_close(&set);
+            }
+            slot++;
+        }
+        if (!g_face_pic) { g_face_pic = pic_load(g_face_pixels, 320, 48, g_art_rgb, 1); }
+        else { pic_update(g_face_pic, g_face_pixels); }
+        g_face_signature = signature;
+    }
+    if (g_face_pic) { og_hud_blit_part(g_face_pic, 0, 0, 320, 48, 0, 36, 320, 48); }
+}
+
 static int g_effect_pic;
 static df_u8 g_effect_pixels[320*64];
 static df_u32 g_effect_signature;
 static void magic_hud_draw(const OgMagicState *state)
 {
     const OgEffect *e;
+    quest_faces_draw();
     df_u32 signature;
     int i, j, count, duplicate, x, y, px, py, icon, blink, hostile, expiring, columns;
     if (!g_spell_icons) { return; }

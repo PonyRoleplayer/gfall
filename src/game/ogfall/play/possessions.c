@@ -969,6 +969,8 @@ static df_u32 ground(void)
 
 /* The offer box's words: TEXT.RSC's record with %a, the price, put in (macro_a_price). */
 static int (*g_offer_say)(int text, int price, char *out, int cap);
+static int (*g_letter_text)(df_u32 item, char *out, int cap);
+void og_possessions_set_letter(int (*text)(df_u32 item, char *out, int cap)) { g_letter_text = text; }
 
 void og_possessions_set_offer_words(int (*say)(int text, int price, char *out, int cap))
 {
@@ -1117,6 +1119,12 @@ int og_possessions_use(df_u32 id)
     if (item->group == 27 && item->index == 0) {
         if (item->parent != og_state()->inventory_id) { return 0; }
         return og_possessions_open(OG_VIEW_SPELLS,0);
+    }
+    if (item->group == 9 && item->index == 5 && item->message > 0 && g_letter_text) {
+        /* A quest's letter: its message is shown, with the quest's own names filled in. */
+        static char words[800];
+
+        if (g_letter_text(id, words, (int)sizeof(words))) { og_possessions_message(words, 0); g.revision++; return 1; }
     }
     if (item->group == 7) {
         if (!og_book_open(&g_reading, item->message) || !og_book_read(&g_reading, 0)) {

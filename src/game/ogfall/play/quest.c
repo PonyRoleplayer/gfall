@@ -1148,6 +1148,25 @@ int og_quest_building_access(int region, int index, int block, int record, df_u3
     return best;
 }
 
+int og_quest_item_text(df_u32 item, char *out, int cap)
+{
+    int s, i;
+    char raw[1024];
+
+    if (!item || !g_read) { return 0; }
+    for (s = 0; s < OG_QUESTS; s++) {
+        if (!g_quest[s].used) { continue; }
+        for (i = 0; i < g_quest[s].qbn.n_item; i++) {
+            if (g_quest[s].item[i].object != item || g_quest[s].qbn.item[i].message[1] <= 0) { continue; }
+            raw[0] = 0;
+            if (g_read(g_quest[s].qbn.name, g_quest[s].qbn.item[i].message[1], 0, raw, sizeof(raw)) <= 0 || !raw[0]) { return 0; }
+            og_quest_expand(s, raw, out, cap, og_state()->minutes, 0);
+            return 1;
+        }
+    }
+    return 0;
+}
+
 const OgQuestAccess *og_quest_access(int i) { return i >= 0 && i < OG_QUEST_ACCESS && g_access[i].used ? &g_access[i] : 0; }
 const OgQuestFace *og_quest_face(int i) { return i >= 0 && i < OG_QUEST_FACES && g_face[i].used ? &g_face[i] : 0; }
 
@@ -1164,7 +1183,20 @@ static void face_set(const OgQuest *q, int kind, int index, int on)
         }
         if (!g_face[i].used && free_slot < 0) { free_slot = i; }
     }
-    if (on && free_slot >= 0) { g_face[free_slot].used = 1; g_face[free_slot].quest_id = q->qbn.id; g_face[free_slot].kind = kind; g_face[free_slot].index = index; }
+    if (on && free_slot >= 0) {
+        int woman, bank, region, here, px, py, child;
+
+        /* quest_face_add: the sex (a person's by their flag, a foe's male here), the region's name bank (D_001841E3), a child's face for faction 514, else a picture of the bank 0..9 at random. */
+        woman = kind == 1 && q->person[index].female;
+        child = kind == 1 && q->person[index].faction == 514;
+        region = 0;
+        if (g_world && g_world->here) { g_world->here(&region, &here, &px, &py); }
+        /* The regions of the second bank (D_001841E3): 0, 1, 7, 8, 10, 11, 14, 20, 22, 25, 28, 29, 43..56 and 61. */
+        bank = region == 0 || region == 1 || region == 7 || region == 8 || region == 10 || region == 11 || region == 14 || region == 20 || region == 22 || region == 25 || region == 28 || region == 29 ||
+               (region >= 43 && region <= 56) || region == 61;
+        g_face[free_slot].used = 1; g_face[free_slot].quest_id = q->qbn.id; g_face[free_slot].kind = kind; g_face[free_slot].index = index;
+        g_face[free_slot].face = (woman ? 0x80 : 0) | (bank ? 0x40 : 0) | (child ? 0x10 : 0) | (child ? (woman ? 1 : 0) + bank * 2 : og_random_range(0, 9));
+    }
 }
 
 /* ---- The messages ---- */
@@ -1325,6 +1357,12 @@ static int town_here(void)
         if (g_world->location(n, &lo) && lo.region == region && lo.index == here) { return lo.type != 4 && lo.type != 7 && lo.type <= 9; }
     }
     return 0;
+}
+
+static int same_name_blind(const char *a, const char *b)
+{
+    while (*a && ((*a ^ *b) & ~32) == 0) { a++; b++; }
+    return *a == *b;
 }
 
 static int same_text(const char *a, const char *b)
@@ -1497,11 +1535,25 @@ static void run_op(int slot, OgQuest *q, OgQbnOp *op)
          * player. An item already given is passed over (7.4). Other items wait for step 9; the Brotherhood's and the Thieves' joining quests too. */
         if (arg_state(q, op, 0) && !(op->flags & 1)) {
             q->rewarded = 1;
+            /* The two guilds' invitation quests join the guild instead (rank 0, nothing given, no reputation): by their names, case blind. */
+            if (same_name_blind(q->qbn.name, "L0A01L00") || same_name_blind(q->qbn.name, "O0A0AL00")) {
+                OgGuildStep joined;
+
+                og_guild_join(q->qbn.name[0] == 'L' || q->qbn.name[0] == 'l' ? 0 : 3, q->qbn.name[0] == 'L' || q->qbn.name[0] == 'l' ? 108 : 42, og_state()->minutes, &joined);
+                done(q, op);
+                break;
+            }
             if (q->qbn.faction) { og_faction_change_reputation(q->qbn.faction, 5); }
             for (i = 1; i < op->argc; i++) {
                 n = op->arg[i].value;
                 if (op->arg[i].literal || n < 0 || n >= q->qbn.n_item || q->item[n].given) { continue; }
                 if (q->item[n].gold) { og_character()->gold += q->item[n].amount; q->item[n].given = 1; }
+                else if (q->item[n].object) {
+                    /* The reward box of the original opens the inventory on the items; they go into the pack here, or lie at the player's feet when it is full, and are the quest's no more (the box turns them into
+                     * ordinary items when the inventory closes). */
+                    if (!og_inventory_transfer(q->item[n].object, og_state()->inventory_id)) { put_item_down(q, n); }
+                    q->item[n].given = 1; item_forget(q, n);
+                }
             }
             done(q, op);
         }
@@ -1843,8 +1895,18 @@ void og_quest_run_minute(void)
 
 void og_quest_start_initial_later(void) { g_initial_pending = 1; }
 
+/* guild_check_invitations: a guild's invitation falls due while the player is out of doors: its quest starts, no prompt (the Thieves' by a letter the courier brings, the Brotherhood's at once). */
+static void invitations(void)
+{
+    int kind;
+
+    if (!g_world || !g_world->outdoors || !g_world->outdoors()) { return; }
+    if (og_guild_invitation(og_state()->minutes, 1, &kind)) { og_quest_start(kind == 3 ? "O0A0AL00" : "L0A01L00", 0); }
+}
+
 void og_quest_run(void)
 {
+    invitations();
     if (g_initial_pending && g_world) {
         /* quests_start_initial, once the world is open: no offer box. Only _BRISIEN, which starts the main story: the tutorial _TUTOR__ is left out on purpose (a design choice: whoever plays knows Daggerfall). */
         g_initial_pending = 0;
@@ -1962,7 +2024,7 @@ int og_quest_pack(df_u8 *out, int cap)
         qbytes(&w, g_rumour[i].name, 9, 0); qbytes(&w, g_rumour[i].text, 200, 0);
     }
     for (i = 0; i < OG_QUEST_ACCESS; i++) { qput(&w, (df_u32)g_access[i].used); qput(&w, (df_u32)g_access[i].quest_id); qput(&w, (df_u32)g_access[i].region); qput(&w, (df_u32)g_access[i].index); qput(&w, (df_u32)g_access[i].block); qput(&w, (df_u32)g_access[i].record); qput(&w, (df_u32)g_access[i].access); qput(&w, g_access[i].until); }
-    for (i = 0; i < OG_QUEST_FACES; i++) { qput(&w, (df_u32)g_face[i].used); qput(&w, (df_u32)g_face[i].quest_id); qput(&w, (df_u32)g_face[i].kind); qput(&w, (df_u32)g_face[i].index); }
+    for (i = 0; i < OG_QUEST_FACES; i++) { qput(&w, (df_u32)g_face[i].used); qput(&w, (df_u32)g_face[i].quest_id); qput(&w, (df_u32)g_face[i].kind); qput(&w, (df_u32)g_face[i].index); qput(&w, (df_u32)g_face[i].face); }
     return w.bad ? -1 : w.n;
 }
 
@@ -2007,7 +2069,7 @@ int og_quest_unpack(const df_u8 *in, int len)
         g_rumour[i].name[8] = 0; g_rumour[i].text[199] = 0;
     }
     for (i = 0; i < OG_QUEST_ACCESS && !w.bad; i++) { g_access[i].used = (int)qget(&w); g_access[i].quest_id = (int)qget(&w); g_access[i].region = (int)qget(&w); g_access[i].index = (int)qget(&w); g_access[i].block = (int)qget(&w); g_access[i].record = (int)qget(&w); g_access[i].access = (int)qget(&w); g_access[i].until = qget(&w); }
-    for (i = 0; i < OG_QUEST_FACES && !w.bad; i++) { g_face[i].used = (int)qget(&w); g_face[i].quest_id = (int)qget(&w); g_face[i].kind = (int)qget(&w); g_face[i].index = (int)qget(&w); }
+    for (i = 0; i < OG_QUEST_FACES && !w.bad; i++) { g_face[i].used = (int)qget(&w); g_face[i].quest_id = (int)qget(&w); g_face[i].kind = (int)qget(&w); g_face[i].index = (int)qget(&w); g_face[i].face = (int)qget(&w); }
     if (w.bad || w.n != len) { og_quest_reset(); return 0; }
     return 1;
 }
