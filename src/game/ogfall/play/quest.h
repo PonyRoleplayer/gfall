@@ -25,6 +25,12 @@ typedef struct OgQuestPlace {
     char name[33];
 } OgQuestPlace;
 /* A timer's running state: its flags (the bits of 2.8, 64 running and 128 expired changing), the minute it started and its delay. */
+/* A person a quest names, bound to someone in the world (quest_init_person, 2.3). Step 6 binds the questor (kind 21: the one who offered the quest) and the persons that are only a faction
+ * (kind -8, type 65); the others wait for the town's buildings (step 9). who identifies a person of the world (the talk window's id), name and town are what text says of them. */
+typedef struct OgQuestPerson {
+    int bound, who, faction;
+    char name[40], town[33];
+} OgQuestPerson;
 typedef struct OgQuestTimer {
     int flags;
     df_u32 start, delay;
@@ -41,6 +47,7 @@ typedef struct OgQuest {
     OgQuestPlace place[OG_QBN_PLACES];
     OgQuestTimer timer[OG_QBN_TIMERS];
     OgQuestFoe foe[OG_QBN_FOES];
+    OgQuestPerson person[OG_QBN_PERSONS];
 } OgQuest;
 
 /* What the quests ask of the map: the locations (the travel list's), where the player is, a region's name and a journey's minutes by the quests' estimate (quest_travel_minutes). */
@@ -120,6 +127,13 @@ void og_quest_set_ask(int (*ask)(const char *words, void (*answer)(int yes)));
  * and a Y quest or a Daedra's is asked yes or no (QRC 1000), answered by 1002 or 1001, and a no ends it. Returns the slot, -1 for none started (a missing file, a refused name,
  * a quest of that name running, no free slot). */
 int og_quest_begin(const char *name, int faction);
+
+/* The person the player has just spoken to, who a kind-21 person binds to when a quest starts (the last clicked NPC): their id, faction, name and town. */
+void og_quest_set_questor(int who, int faction, const char *name, const char *town);
+/* Whether the person already belongs to a quest (a quest giver with a quest does not offer another). */
+int og_quest_person_busy(int who);
+/* npc_talk's quest part (click.c 695): the events of talking (28 and 1 and 71 to the quests of the person, 78 by their faction): 1 when a quest took it and the talk window should not open. */
+int og_quest_talk(int who, int faction);
 
 /* A dungeon (a location) has just been loaded: the foes placed there and not yet live are made. */
 void og_quest_location_loaded(int region, int index);

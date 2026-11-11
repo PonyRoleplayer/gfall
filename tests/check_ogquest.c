@@ -19,6 +19,8 @@ static int give_text(const char *quest, int message, int in_text_rsc, char *out,
     return 10;
 }
 
+static void questor(int who) { og_quest_set_questor(who, 851, "Sir Test", "Wayrest"); }
+
 static void take_say(const char *text) { g_said++; strncpy(g_text, text, sizeof(g_text) - 1); }
 
 static int name_place(int slot, int index, int form, char *out, int cap) { (void)slot; (void)cap; strcpy(out, form >= 32 ? "Dungeon of Test" : "Test Tower"); return index + 1; }
@@ -128,7 +130,9 @@ void check_ogquest(void)
     /* Run it as a started quest: the file path needs a file, so the slot is made from the parsed bytes by writing it where og_qbn_load reads (a test file beside ARENA2). */
     og_quest_set_text(give_text); og_quest_set_say(take_say);
     og_quest_reset();
+    questor(1);
     slot = og_quest_start("M0B00Y00", 8);
+    questor(2);
     check_expect(slot == 0 && og_quest(0)->qbn.id == 1 && og_quest(0)->qbn.faction == 8 && og_quest_start("M0B00Y00", 8) == 1 && og_quest(1)->qbn.id == 2, "quest: started quests did not get ids 1 and 2 and the faction");
     g_said = 0;
     og_quest_run();
@@ -169,14 +173,25 @@ void check_ogquest(void)
         check_expect(og_quest_pick('N', 0, 'C', 3, picked) && picked[0] == 'N' && picked[2] == 'C' && !og_quest_pick('Z', 0, 'Q', 0, picked), "quest: a quest for a non-member was not found, or one for no group was");
     }
     g_said = 0; g_answer = 0; g_asked = -1;
+    questor(3);
     slot = og_quest_begin("M0B00Y00", 851);
     check_expect(slot >= 0 && og_quest(slot)->qbn.faction == 851 && g_answer && og_quest_begin("M0B00Y00", 851) == -1, "quest: M0B00Y00 was not started with the giver's faction and asked, or was started twice");
     g_answer(1);
     check_expect(og_quest(slot) && g_asked == 1002 && g_said == 1, "quest: yes did not keep the quest and say QRC 1002");
     og_quest_reset();
+    questor(3);
     slot = og_quest_begin("M0B00Y00", 851); g_asked = -1;
     g_answer(0);
     check_expect(!og_quest(slot) && g_asked == 1001, "quest: no did not say QRC 1001 and end the quest");
+    /* Persons: the questor is bound to who gave the quest; they are busy until it ends, another quest is refused them, and meeting them is event 28. */
+    og_quest_reset();
+    questor(7);
+    slot = og_quest_begin("M0B00Y00", 851);
+    check_expect(slot >= 0 && og_quest_person_busy(7) && !og_quest_person_busy(8), "quest: the questgiver was not bound and busy");
+    check_expect(og_quest_begin("M0B00Y00", 851) == -1 && !og_quest_talk(8, 851), "quest: a busy questor was given another quest, or a stranger's talk was taken");
+    og_quest_end(slot);
+    check_expect(!og_quest_person_busy(7), "quest: the questor stayed busy after the quest ended");
+    og_quest_reset();
     check_expect(og_quest_begin("N0C00Y01", 0) == -1 && og_quest_begin("", 0) == -1, "quest: N0C00Y01 or an empty name was started");
     og_quest_reset();
     /* Text: symbols said by what they name (a place at form 32 is its town, a timer with = its days), %qdt and %cn, and the logbook of M0B00Y00's first entry. */
@@ -188,6 +203,7 @@ void check_ogquest(void)
         og_quest_reset();
         og_quest_set_world(0);
         og_quest_set_names(&names); og_quest_set_text(real_text); og_quest_set_say(take_say); og_quest_set_place(where_now);
+        questor(4);
         s2 = og_quest_start("M0B00Y00", 851);
         check_expect(s2 == 0, "quest: M0B00Y00 did not start for the text test");
         real_text("M0B00Y00", 1002, 0, raw, sizeof(raw));
@@ -216,6 +232,7 @@ void check_ogquest(void)
         og_quest_reset();
         og_quest_set_world(&world); og_quest_set_names(0); og_quest_set_text(real_text); og_quest_set_say(take_say); og_quest_set_ask(take_ask);
         g_revealed_count = 0;
+        questor(5);
         s2 = og_quest_begin("M0B00Y00", 851);
         check_expect(s2 == 0, "quest: M0B00Y00 did not start against the stub map");
         q2 = og_quest(s2);

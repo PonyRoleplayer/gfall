@@ -1153,6 +1153,8 @@ static void start_talk(void)
     int text, origin[2], block, record, index, region;
     float x, z;
 
+    /* A quest's person met: its event 28 runs on the talk path, and a quest that takes the click answers in its own words. */
+    if (og_quest_talk((int)g_met.who, g_met.faction)) { return; }
     mem_zero(&target, sizeof(target));
     target.npc = g_met.who;
     target.faction = g_met.faction;
@@ -1814,7 +1816,11 @@ static void hall_quest(const OgMembership *m)
     else if (g_hall.kind == 2) { letter = 'M'; }
     else if (g_hall.kind == 3) { letter = 'O'; }
     else if (g_hall.kind >= 4 && g_hall.kind <= 13) { letter = 'B'; rank = og_character()->level; }
-    if (letter && og_quest_pick(letter, 0, m ? 'B' : 'C', rank, name) && og_quest_begin(name, g_hall.person) >= 0) { return; }
+    /* A person already giving a quest is not asked for another: they talk (their quest's events run there). */
+    if (letter && !og_quest_person_busy(g_met.who)) {
+        og_quest_set_questor((int)g_met.who, g_hall.person, g_met.name, town_name());
+        if (og_quest_pick(letter, 0, m ? 'B' : 'C', rank, name) && og_quest_begin(name, g_hall.person) >= 0) { return; }
+    }
     start_talk();
 }
 

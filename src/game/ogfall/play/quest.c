@@ -4,6 +4,7 @@
 #include "engine/core/log.h"
 #include "game/ogfall/tables/questdata.h"
 #include "game/ogfall/tables/combatdefs.h"
+#include "game/ogfall/play/law.h"
 #include "game/ogfall/tables/datedefs.h"
 
 /* See quest.h. */
@@ -20,6 +21,7 @@ static const char *(*g_place)(void);
 static OgLogSlot g_log[OG_LOG_SLOTS];
 static const OgQuestWorld *g_world;
 static int g_foe_counter = 1;
+static struct { int set, who, faction; char name[40], town[33]; } g_questor;
 static void arg_set(OgQuest *q, const OgQbnOp *op, int n, int value);
 static void done(OgQuest *q, OgQbnOp *op);
 static int bind_resources(int slot);
@@ -30,7 +32,7 @@ void og_quest_set_say(void (*say)(const char *text)) { g_say = say; }
 void og_quest_set_ask(int (*ask)(const char *words, void (*answer)(int yes))) { g_ask = ask; }
 const df_u8 *og_quest_globals(void) { return g_global; }
 void og_quest_globals_clear(void) { mem_zero(g_global, sizeof(g_global)); }
-void og_quest_reset(void) { mem_zero(g_quest, sizeof(g_quest)); mem_zero(g_global, sizeof(g_global)); mem_zero(g_log, sizeof(g_log)); g_offer_slot = -1; g_foe_counter = 1; }
+void og_quest_reset(void) { mem_zero(g_quest, sizeof(g_quest)); mem_zero(g_global, sizeof(g_global)); mem_zero(g_log, sizeof(g_log)); g_offer_slot = -1; g_foe_counter = 1; mem_zero(&g_questor, sizeof(g_questor)); }
 void og_quest_set_names(const OgQuestNames *names) { g_names = names; }
 void og_quest_set_world(const OgQuestWorld *world) { g_world = world; }
 void og_quest_set_macros(int (*fill)(const char *in, char *out, int cap)) { g_macros = fill; }
@@ -256,10 +258,84 @@ static int bind_resources(int slot)
     q = &g_quest[slot];
     for (i = 0; i < q->qbn.n_timer; i++) { q->timer[i].flags = q->qbn.timer[i].flags & ~(128 | 1024); }
     for (i = 0; i < q->qbn.n_place; i++) { if (!bind_place(slot, i)) { return 0; } }
+    /* quest_init_person (2.3), the kinds of this step: the questor, and a person that is only a faction. */
+    for (i = 0; i < q->qbn.n_person; i++) {
+        const OgQbnPerson *pe;
+
+        pe = &q->qbn.person[i];
+        if (pe->kind == 21) {
+            if (!g_questor.set || og_quest_person_busy(g_questor.who)) { return 0; }
+            q->person[i].bound = 1; q->person[i].who = g_questor.who; q->person[i].faction = g_questor.faction;
+            log_format(q->person[i].name, sizeof(q->person[i].name), "%s", g_questor.name);
+            log_format(q->person[i].town, sizeof(q->person[i].town), "%s", g_questor.town);
+        } else if (pe->kind == -8) {
+            q->person[i].bound = 1; q->person[i].who = 0; q->person[i].faction = pe->faction;
+        }
+    }
     /* quest_init_foe: each foe takes the next number of the counter. */
     for (i = 0; i < q->qbn.n_foe; i++) { q->foe[i].number = g_foe_counter++; q->foe[i].place = -1; }
     for (i = 0; i < q->qbn.n_timer; i++) { timer_start(q, i); }
     return 1;
+}
+
+/* ---- Persons and talk ---- */
+
+void og_quest_set_questor(int who, int faction, const char *name, const char *town)
+{
+    g_questor.set = 1; g_questor.who = who; g_questor.faction = faction;
+    log_format(g_questor.name, sizeof(g_questor.name), "%s", name ? name : "");
+    log_format(g_questor.town, sizeof(g_questor.town), "%s", town ? town : "");
+}
+
+int og_quest_person_busy(int who)
+{
+    int s, i;
+
+    for (s = 0; s < OG_QUESTS; s++) {
+        if (!g_quest[s].used) { continue; }
+        for (i = 0; i < g_quest[s].qbn.n_person; i++) { if (g_quest[s].person[i].bound && g_quest[s].qbn.person[i].kind == 21 && g_quest[s].person[i].who == who) { return 1; } }
+    }
+    return 0;
+}
+
+/* Whether the one talked to is the quest's person (type 65, a faction, is any person of that faction). */
+static int is_person(const OgQuest *q, int i, int who, int faction)
+{
+    if (i < 0 || i >= q->qbn.n_person || !q->person[i].bound) { return 0; }
+    if (q->qbn.person[i].kind == -8) { return q->person[i].faction == faction; }
+    return q->person[i].who == who;
+}
+
+int og_quest_talk(int who, int faction)
+{
+    int s, i, consumed;
+
+    consumed = 0;
+    for (s = 0; s < OG_QUESTS; s++) {
+        OgQuest *q;
+
+        q = &g_quest[s];
+        if (!q->used) { continue; }
+        for (i = 0; i < q->qbn.n_op; i++) {
+            OgQbnOp *op;
+
+            op = &q->qbn.op[i];
+            if (op->opcode == 28 && !(op->arg[0].value == -1) && is_person(q, op->arg[1].value, who, faction)) {
+                arg_set(q, op, 0, 1); done(q, op);
+                /* The click is consumed unless the person's talk passes through (flag 0x2000). */
+                if (!(q->qbn.person[op->arg[1].value].flags & 0x2000)) { consumed = 1; }
+            } else if (op->opcode == 71 && is_person(q, op->arg[3].value, who, faction)) {
+                if (og_gold_can_afford(op->arg[2].value)) {
+                    og_gold_spend(op->arg[2].value);
+                    arg_set(q, op, 0, 1); arg_set(q, op, 1, 0); done(q, op);
+                } else { arg_set(q, op, 0, 0); arg_set(q, op, 1, 1); }
+                consumed = 1;
+            } else if (op->opcode == 78 && op->arg[1].literal && op->arg[1].value == faction) {
+                arg_set(q, op, 0, 1); consumed = 1;
+            }
+        }
+    }
+    return consumed;
 }
 
 /* ---- Foes in the world (quest_place_object) and the events they raise ---- */
@@ -352,7 +428,15 @@ static int symbol_text(int slot, df_i32 hash, int form, df_i32 hash2, char *out,
         }
         return g_names && g_names->place && g_names->place(slot, i, form, out, cap);
     }
-    for (i = 0; i < q->qbn.n_person; i++) { if (q->qbn.person[i].symbol == hash) { return g_names && g_names->person && g_names->person(slot, i, form, out, cap); } }
+    for (i = 0; i < q->qbn.n_person; i++) {
+        if (q->qbn.person[i].symbol != hash) { continue; }
+        /* A person bound to someone says their name (0), their town (32) or the region (48); the building (16) is the town's here. */
+        if (q->person[i].bound && q->qbn.person[i].kind == 21) {
+            if (form >= 48 && g_world && g_world->region_name) { int region, here, px, py; g_world->here(&region, &here, &px, &py); return g_world->region_name(region, out, cap) > 0; }
+            return log_format(out, cap, "%s", form >= 16 ? q->person[i].town : q->person[i].name) > 0;
+        }
+        return g_names && g_names->person && g_names->person(slot, i, form, out, cap);
+    }
     for (i = 0; i < q->qbn.n_foe; i++) {
         if (q->qbn.foe[i].symbol == hash) {
             const OgFoeDef *def;
