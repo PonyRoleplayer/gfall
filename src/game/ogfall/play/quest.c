@@ -8,6 +8,8 @@
 #include "game/ogfall/play/standing.h"
 #include "game/ogfall/play/guild.h"
 #include "game/ogfall/play/ailments.h"
+#include "game/ogfall/play/inventory.h"
+#include "game/ogfall/tables/itemdefs.h"
 #include "game/ogfall/tables/datedefs.h"
 
 /* See quest.h. */
@@ -26,6 +28,13 @@ static const OgQuestWorld *g_world;
 static int g_foe_counter = 1;
 static struct { int set, who, faction; char name[40], town[33]; } g_questor;
 static void arg_set(OgQuest *q, const OgQbnOp *op, int n, int value);
+static void lay_items(OgQuest *q, int region, int index);
+static int carried(df_u32 id);
+static void make_item(OgQuest *q, int i);
+static int arg_state(const OgQuest *q, const OgQbnOp *op, int n);
+static void item_forget(OgQuest *q, int n);
+static int in_place(const OgQuest *q, int n);
+static void foe_dropped(OgQuest *q, int f);
 static void done(OgQuest *q, OgQbnOp *op);
 static int bind_resources(int slot);
 static void state_store(OgQuest *q, int index, int value);
@@ -45,7 +54,11 @@ const OgQuest *og_quest(int slot) { return slot >= 0 && slot < OG_QUESTS && g_qu
 
 void og_quest_end(int slot)
 {
-    if (slot >= 0 && slot < OG_QUESTS) { mem_zero(&g_quest[slot], sizeof(g_quest[slot])); }
+    if (slot >= 0 && slot < OG_QUESTS) {
+        int i;
+
+        /* quest_end: every object with the quest's id goes, a quest item in the pack too. */
+        for (i = 0; i < g_quest[slot].qbn.n_item; i++) { if (g_quest[slot].item[i].object) { og_object_delete(g_quest[slot].item[i].object); } } mem_zero(&g_quest[slot], sizeof(g_quest[slot])); }
 }
 
 static int start_with(const char *name, const df_u8 *bytes, df_u32 size, int faction)
@@ -299,6 +312,8 @@ static int bind_resources(int slot)
     }
     for (i = 0; i < q->qbn.n_item; i++) {
         if (q->qbn.item[i].flags & 2) { q->item[i].gold = 1; q->item[i].amount = roll_gold(q, &q->qbn.item[i]); }
+        else { make_item(q, i); }
+        q->item[i].place = -1;
     }
     /* quest_init_foe: each foe takes the next number of the counter. */
     for (i = 0; i < q->qbn.n_foe; i++) { q->foe[i].number = g_foe_counter++; q->foe[i].place = -1; }
@@ -358,12 +373,55 @@ int og_quest_talk(int who, int faction)
                     arg_set(q, op, 0, 1); arg_set(q, op, 1, 0); done(q, op);
                 } else { arg_set(q, op, 0, 0); arg_set(q, op, 1, 1); }
                 consumed = 1;
+            } else if (op->opcode == 1 && !(op->flags & 1) && is_person(q, op->arg[2].value, who, faction)) {
+                /* The item given to the person: carried, it is taken from the player and forgotten, and the state set. */
+                int n;
+
+                n = op->arg[1].value;
+                if (n >= 0 && n < q->qbn.n_item && q->item[n].object && carried(q->item[n].object)) {
+                    og_inventory_unequip(q->item[n].object);
+                    og_object_delete(q->item[n].object); item_forget(q, n);
+                    arg_set(q, op, 0, 1); done(q, op);
+                    if (!(q->qbn.person[op->arg[2].value].flags & 0x2000)) { consumed = 1; }
+                }
             } else if (op->opcode == 78 && op->arg[1].literal && op->arg[1].value == faction) {
                 arg_set(q, op, 0, 1); consumed = 1;
             }
         }
     }
     return consumed;
+}
+
+
+/* The state's events that quests watch (the original's quest_event_object): an item the pack took (3) or put down (5), a spell cast (73). */
+void og_quest_event(int kind, df_u32 subject, df_u32 other)
+{
+    int s, i, n;
+
+    if (kind != OG_EVENT_GIVE && kind != OG_EVENT_DROP && kind != OG_EVENT_SPELL) { return; }
+    for (s = 0; s < OG_QUESTS; s++) {
+        OgQuest *q;
+
+        q = &g_quest[s];
+        if (!q->used) { continue; }
+        for (i = 0; i < q->qbn.n_op; i++) {
+            OgQbnOp *op;
+
+            op = &q->qbn.op[i];
+            if (kind == OG_EVENT_GIVE && op->opcode == 3 && !op->arg[1].literal) {
+                n = op->arg[1].value;
+                if (n >= 0 && n < q->qbn.n_item && q->item[n].object == subject) { arg_set(q, op, 0, 1); done(q, op); }
+            } else if (kind == OG_EVENT_DROP && op->opcode == 5 && !op->arg[1].literal) {
+                n = op->arg[1].value;
+                if (n >= 0 && n < q->qbn.n_item && q->item[n].object == subject && other != og_state()->inventory_id && in_place(q, op->arg[2].value)) { arg_set(q, op, 0, 1); done(q, op); }
+            } else if (kind == OG_EVENT_SPELL && op->opcode == 73 && !(op->flags & 1) && arg_state(q, op, 0)) {
+                const OgObject *spell;
+
+                spell = og_object(subject);
+                if (spell && spell->index == op->arg[2].value) { arg_set(q, op, 1, 1); op->flags |= 1; }
+            }
+        }
+    }
 }
 
 /* ---- Foes in the world (quest_place_object) and the events they raise ---- */
@@ -388,6 +446,7 @@ void og_quest_location_loaded(int region, int index)
 
     for (s = 0; s < OG_QUESTS; s++) {
         if (!g_quest[s].used) { continue; }
+        lay_items(&g_quest[s], region, index);
         for (f = 0; f < g_quest[s].qbn.n_foe; f++) {
             OgQuestFoe *foe;
             const OgQuestPlace *place;
@@ -423,6 +482,7 @@ static void foe_event(int number, int opcode)
             } else { arg_set(q, op, 0, 1); }
         }
         if (opcode == 2 && q->foe[f].live > 0) { q->foe[f].live--; }
+        if (opcode == 2) { foe_dropped(q, f); }
     }
 }
 
@@ -697,6 +757,98 @@ static void done(OgQuest *q, OgQbnOp *op)
     show(q, op->message);
 }
 
+/* The quest tree's record: what a quest's items hang from until they are given. */
+static df_u32 quest_root(void)
+{
+    int i;
+
+    for (i = 0; i < OG_OBJECTS; i++) { if (og_state()->object[i].id && og_state()->object[i].type == OG_RECORD_QUESTS) { return og_state()->object[i].id; } }
+    return 0;
+}
+
+/* quest_init_item (2.5): a group below 0 is drawn among the groups that have items, an index below 0 among the group's; a template from the parent quest (group 100) is not made. A letter
+ * (group 9, index 5) carries its QRC message. The item hangs from the quest tree. */
+static void make_item(OgQuest *q, int i)
+{
+    const OgQbnItem *it;
+    int group, index, count;
+
+    it = &q->qbn.item[i];
+    group = it->group; index = it->index;
+    if (group == 100 || group > 27 || !quest_root()) { return; }
+    if (group < 0) {
+        int tries;
+
+        for (tries = 0; tries < 200; tries++) { group = og_random_range(0, 27); if (og_item_def(group, 0)) { break; } }
+    }
+    if (!og_item_def(group, 0)) { return; }
+    if (index < 0) {
+        for (count = 0; og_item_def(group, count); count++) { }
+        index = og_random_range(0, count - 1);
+    }
+    q->item[i].object = og_item_create(quest_root(), group, index, -1);
+    if (q->item[i].object && group == 9 && index == 5 && it->message[1] > 0) { og_object_edit(q->item[i].object)->message = it->message[1]; }
+}
+
+/* Whether the player has the object: up its parents to the player's pack (the quest tree hangs from the same entity, and is not the pack). */
+static int carried(df_u32 id)
+{
+    int guard;
+
+    for (guard = 0; id && guard < 16; guard++) {
+        const OgObject *o;
+
+        if (id == og_state()->inventory_id) { return 1; }
+        o = og_object(id);
+        if (!o) { return 0; }
+        id = o->parent;
+    }
+    return 0;
+}
+
+/* An item the quest forgets or deletes (ops 54 and 36), and every item it still holds when it ends (the quest's id is on them). */
+static void item_forget(OgQuest *q, int n) { if (n >= 0 && n < q->qbn.n_item) { q->item[n].object = 0; q->item[n].carrier = 0; } }
+
+static int in_place(const OgQuest *q, int n)
+{
+    int region, here, px, py;
+
+    if (n < 0 || n >= q->qbn.n_place || !q->place[n].bound || !g_world || !g_world->here) { return 0; }
+    g_world->here(&region, &here, &px, &py);
+    return q->place[n].region == region && q->place[n].index == here;
+}
+
+/* An item set down in the world at the player's feet: the pile the game makes, the item moved into it. */
+static void put_item_down(OgQuest *q, int i)
+{
+    df_u32 pile;
+
+    if (!q->item[i].object || !g_world || !g_world->place_item) { return; }
+    pile = g_world->place_item();
+    if (pile) { og_object_reparent(q->item[i].object, pile); }
+}
+
+/* Items of op 0 whose place is the location that was just loaded are laid in it (quest_place_object when the place is the loaded one). */
+static void lay_items(OgQuest *q, int region, int index)
+{
+    int i;
+
+    for (i = 0; i < q->qbn.n_item; i++) {
+        if (q->item[i].object && q->item[i].place >= 0 && !q->item[i].laid && q->place[q->item[i].place].bound &&
+            q->place[q->item[i].place].region == region && q->place[q->item[i].place].index == index) {
+            put_item_down(q, i); q->item[i].laid = 1;
+        }
+    }
+}
+
+/* The foe that carried an item (op 39) has died: the item lies where the player is. */
+static void foe_dropped(OgQuest *q, int f)
+{
+    int i;
+
+    for (i = 0; i < q->qbn.n_item; i++) { if (q->item[i].object && q->item[i].carrier == f + 1) { put_item_down(q, i); q->item[i].carrier = 0; } }
+}
+
 /* ---- The ops of this step ---- */
 
 static int g_minute;                  /* set while a passing minute runs the quests (op 79) */
@@ -723,6 +875,21 @@ static int person_faction(const OgQuest *q, int n)
 
 static int minute_of_day(void) { return (int)(og_state()->minutes % 1440u); }
 
+/* Whether the player is in a town, a village or the like: the location they are in, not a dungeon (kinds 4, 7 and over 9 are the dungeons and the rest). */
+static int town_here(void)
+{
+    int region, here, px, py, n;
+    OgLocation lo;
+
+    if (!g_world || !g_world->here || !g_world->count || !g_world->location) { return 0; }
+    g_world->here(&region, &here, &px, &py);
+    if (here < 0) { return 0; }
+    for (n = 0; n < g_world->count(); n++) {
+        if (g_world->location(n, &lo) && lo.region == region && lo.index == here) { return lo.type != 4 && lo.type != 7 && lo.type <= 9; }
+    }
+    return 0;
+}
+
 static void run_op(int slot, OgQuest *q, OgQbnOp *op)
 {
     int i, n, count, pick, found;
@@ -740,6 +907,84 @@ static void run_op(int slot, OgQuest *q, OgQbnOp *op)
                 if (q->item[n].gold) { og_character()->gold += q->item[n].amount; q->item[n].given = 1; }
             }
             done(q, op);
+        }
+        break;
+    case 0:
+        /* Once: the item set in its place: now when that is the location the player is in, else when it is loaded. An item already out in the world is taken back first. */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) {
+            n = op->arg[1].value;
+            if (n >= 0 && n < q->qbn.n_item && q->item[n].object) {
+                q->item[n].place = op->arg[2].value >= 0 && op->arg[2].value < q->qbn.n_place ? op->arg[2].value : -1;
+                q->item[n].laid = 0; q->item[n].carrier = 0;
+                if (q->item[n].place >= 0 && in_place(q, q->item[n].place)) { put_item_down(q, n); q->item[n].laid = 1; }
+            }
+            done(q, op);
+        }
+        break;
+    case 26:
+        /* Once: the item given to the player (into the pack). A pack with no room leaves it for the next run. */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) {
+            n = op->arg[1].value;
+            if (n >= 0 && n < q->qbn.n_item && q->item[n].object && !og_inventory_transfer(q->item[n].object, og_state()->inventory_id)) { break; }
+            done(q, op);
+        }
+        break;
+    case 36:
+        /* Once: the item deleted. */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) {
+            n = op->arg[1].value;
+            done(q, op);
+            if (n >= 0 && n < q->qbn.n_item && q->item[n].object) { og_object_delete(q->item[n].object); item_forget(q, n); }
+        }
+        break;
+    case 54:
+        /* Once: the item forgotten: it stays in the world, no longer the quest's. */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) { item_forget(q, op->arg[1].value); done(q, op); }
+        break;
+    case 39:
+        /* Once: the foe carries the item; it is set down where the player is when the foe dies. */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) {
+            n = op->arg[1].value;
+            if (n >= 0 && n < q->qbn.n_item && q->item[n].object && op->arg[2].value >= 0 && op->arg[2].value < q->qbn.n_foe) { q->item[n].carrier = op->arg[2].value + 1; q->item[n].place = -1; }
+            done(q, op);
+        }
+        break;
+    case 43:
+        /* Every run while the gate holds: the result is whether the player is in the place; done when it is. */
+        if (arg_state(q, op, 0) && op->arg[2].value >= 0) {
+            found = in_place(q, op->arg[2].value);
+            arg_set(q, op, 1, found);
+            if (found) { done(q, op); }
+        }
+        break;
+    case 57:
+        /* Once the item has been used (flag 512): the result is set. */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) {
+            n = op->arg[2].value;
+            if (n >= 0 && n < q->qbn.n_item && q->item[n].object && og_object(q->item[n].object) && (og_object(q->item[n].object)->flags & 512)) { arg_set(q, op, 1, 1); done(q, op); }
+        }
+        break;
+    case 70:
+        /* Once the player carries every item named: the result is set; until then it is clear. */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) {
+            found = 1;
+            for (i = 2; i < 5 && i < op->argc; i++) {
+                n = op->arg[i].value;
+                if (op->arg[i].literal || n == -1 || n == -2) { continue; }
+                if (n < 0 || n >= q->qbn.n_item || !q->item[n].object || !carried(q->item[n].object)) { found = 0; }
+            }
+            arg_set(q, op, 1, found);
+            if (found) { done(q, op); }
+        }
+        break;
+    case 76:
+        /* The item delivered later: pending, then handed over by chance on a passing minute when the player is in a town by day (the original also wants no creature near and the street, not
+         * a building: no source for them here yet). */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) {
+            n = op->arg[1].value;
+            if (n < 0 || n >= q->qbn.n_item || !q->item[n].object) { done(q, op); break; }
+            if (g_minute && minute_of_day() >= 360 && minute_of_day() < 1080 && town_here() && og_random_range(1, 100) < 10 &&
+                og_inventory_transfer(q->item[n].object, og_state()->inventory_id)) { done(q, op); }
         }
         break;
     case 6:
@@ -1057,7 +1302,7 @@ static void qwire_quest(QWire *w, OgQuest *q, int read)
     for (i = 0; i < q->qbn.n_state; i++) { if (!q->qbn.state[i].is_global) { QI(q->qbn.state[i].value); } }
     for (i = 0; i < q->qbn.n_foe; i++) { QI(q->qbn.foe[i].killed); QI(q->foe[i].number); QI(q->foe[i].placed); QI(q->foe[i].place); QI(q->foe[i].live); }
     for (i = 0; i < q->qbn.n_timer; i++) { QI(q->timer[i].flags); QU(q->timer[i].start); QU(q->timer[i].delay); }
-    for (i = 0; i < q->qbn.n_item; i++) { QI(q->item[i].gold); QI(q->item[i].amount); QI(q->item[i].given); }
+    for (i = 0; i < q->qbn.n_item; i++) { QI(q->item[i].gold); QI(q->item[i].amount); QI(q->item[i].given); QU(q->item[i].object); QI(q->item[i].place); QI(q->item[i].laid); QI(q->item[i].carrier); }
     count = 0;
     if (!read) { for (i = 0; i < q->qbn.n_op; i++) { if (q->qbn.op[i].flags || q->qbn.op[i].last_minutes) { count++; } } }
     QI(count);

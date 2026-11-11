@@ -44,6 +44,9 @@ typedef struct OgQuestFoe {
 /* An item a quest names: gold's amount is rolled when the quest starts (quest_init_item); a reward is given once. Other items wait for step 9. */
 typedef struct OgQuestItem {
     int gold, amount, given;
+    /* The item made when the quest began (0 for gold, none made, or one forgotten, given away or deleted); op 0's place (-1 none) not yet laid there, the foe (+1) that carries it. */
+    df_u32 object;
+    int place, laid, carrier;
 } OgQuestItem;
 
 typedef struct OgQuest {
@@ -68,6 +71,8 @@ typedef struct OgQuestWorld {
     void (*reveal)(int ordinal);
     /* A creature of a kind placed in the dungeon the player is in, unseen and near (quest_place_object); thing is its key (OG_QUEST_FOE_KEY and the number and copy). 1 when placed. */
     int (*spawn_foe)(int kind, df_u32 thing);
+    /* A pile at the player's feet for an item (a quest's item set down in its place, or dropped by its foe): the container's id, 0 for none. */
+    df_u32 (*place_item)(void);
 } OgQuestWorld;
 void og_quest_set_world(const OgQuestWorld *world);
 
@@ -151,6 +156,8 @@ int og_quest_talk(int who, int faction);
 /* A dungeon (a location) has just been loaded: the foes placed there and not yet live are made. */
 void og_quest_location_loaded(int region, int index);
 /* Event 2 (a creature died) and 21 (the player hit one): the foe's number, read from the creature's key. Ops 2 count the kills to their number and set their state. */
+/* An event of the state (the pack took or lost an item, a spell was cast): ops 3, 5 and 73 watch for them. */
+void og_quest_event(int kind, df_u32 subject, df_u32 other);
 void og_quest_foe_killed(int number);
 void og_quest_foe_hit(int number);
 

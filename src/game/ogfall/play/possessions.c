@@ -1084,6 +1084,8 @@ int og_possessions_use(df_u32 id)
     item = og_object(id);
     if (!item || item->type != OG_RECORD_ITEM || (item->parent != og_state()->inventory_id &&
         !(g.page == OG_VIEW_INVENTORY && item->parent == g.remote))) { return 0; }
+    /* An item used is marked (item flag 512), which a quest's op 57 looks for. */
+    og_object_edit(id)->flags |= 512;
     /* inv_use_item: an enchanted item's powers fire first; an item with nothing else to use is then used. */
     if (og_item_enchanted(id) && item->parent == og_state()->inventory_id) {
         int used, pending;

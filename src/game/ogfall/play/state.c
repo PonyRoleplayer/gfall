@@ -298,6 +298,7 @@ void og_state_event(int kind, df_u32 subject, df_u32 other, int value)
     g_state.event_serial++;
     /* A kill by the player starts Health leech's clock again. */
     if (kind == OG_EVENT_KILL && other && other == g_state.entity_id) { g_state.last_kill = g_state.minutes; }
+    og_quest_event(kind, subject, other);
     if (g_observer) {
         g_observer(&e);
     }

@@ -883,6 +883,14 @@ static int quest_spawn_foe(int kind, df_u32 thing)
     return og_encounter_place(&cam, kind, thing);
 }
 
+/* A pile at the player's feet for a quest's item: the container the drop screen would make. */
+static df_u32 quest_place_item(void)
+{
+    return og_ground_container(og_state()->x,
+        og_world_state()->where.kind == OG_PLACE_WORLD ? og_move_body()->feet[1] : og_state()->eye_y - 32,
+        og_state()->z);
+}
+
 static int quest_journey(int sx, int sy, int ex, int ey)
 {
     OgJourney journey;
@@ -2442,7 +2450,7 @@ int seam_boot(void)
     og_quest_set_text(quest_text); og_quest_set_say(quest_say); og_quest_set_ask(og_possessions_ask);
     og_quest_set_macros(quest_macros); og_quest_set_place(quest_place);
     {
-        static const OgQuestWorld quest_world = { og_travel_count, og_travel_location, quest_here, quest_region_name, quest_journey, og_travel_discover, quest_spawn_foe };
+        static const OgQuestWorld quest_world = { og_travel_count, og_travel_location, quest_here, quest_region_name, quest_journey, og_travel_discover, quest_spawn_foe, quest_place_item };
 
         og_quest_set_world(&quest_world);
     }

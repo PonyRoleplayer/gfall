@@ -5,6 +5,7 @@
 #include "check_util.h"
 #include "game/ogfall/formats/qbn.h"
 #include "game/ogfall/play/quest.h"
+#include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/standing.h"
 #include "game/ogfall/play/state.h"
 #include "game/dagger/formats/textrsc.h"
@@ -56,6 +57,15 @@ static int g_revealed[8], g_revealed_count;
 static void w_reveal(int ordinal) { if (g_revealed_count < 8) { g_revealed[g_revealed_count++] = ordinal; } }
 static int g_spawned, g_spawn_kind[16];
 static df_u32 g_spawn_thing[16];
+static int carried_by_player(df_u32 id)
+{
+    const OgObject *o;
+
+    o = og_object(id);
+    return o && o->parent == og_state()->inventory_id;
+}
+static df_u32 g_pile_made;
+static df_u32 w_place_item(void) { g_pile_made++; return 0; }
 static int w_spawn(int kind, df_u32 thing) { if (g_spawned < 16) { g_spawn_kind[g_spawned] = kind; g_spawn_thing[g_spawned++] = thing; } return 1; }
 
 static void (*g_answer)(int yes);
@@ -191,6 +201,84 @@ void check_ogquest(void)
         og_quest_end(0);
         og_region_add_legal(0, 5);
     }
+    /* Items: one made when the quest begins and hung from the quest tree; op 26 gives it (the pack's GIVE event sets op 3's state), op 70 sees it carried, op 36 deletes it, and a quest that
+     * ends takes what it still holds. */
+    {
+        static df_u8 f3[4096];
+        int a3[5] = {1, 0, -2, -2, -2}, a70[5] = {-1, 2, 0, -2, -2}, a26[5] = {0, 0, -2, -2, -2}, a36[5] = {3, 0, -2, -2, -2};
+        df_u32 id;
+        int saved_str;
+
+        og_quest_end(0);
+        memset(f3, 0, sizeof(f3));
+        put16(f3 + 0x10 + 0 * 2, 1); put16(f3 + 0x24 + 0 * 2, 0x80);
+        put16(f3 + 0x10 + 8 * 2, 4); put16(f3 + 0x24 + 8 * 2, 0x100);
+        put16(f3 + 0x10 + 9 * 2, 4); put16(f3 + 0x24 + 9 * 2, 0x100 + 4 * 87);
+        put16(f3 + 0x80 + 3, 3); put16(f3 + 0x80 + 5, 0);
+        for (i = 0; i < 4; i++) { put16(f3 + 0x100 + 4 * 87 + i * 8, i); put32(f3 + 0x100 + 4 * 87 + i * 8 + 4, (df_u32)(100 + i)); }
+        put_op(f3 + 0x100, 3, -1, a3, 0);
+        put_op(f3 + 0x100 + 87, 70, -1, a70, 0);
+        put_op(f3 + 0x100 + 174, 26, -1, a26, 0);
+        put_op(f3 + 0x100 + 261, 36, -1, a36, 0);
+        og_quest_set_world(0);
+        /* The pack an earlier test filled is heavy: a strength that carries it. */
+        saved_str = og_character()->attribute[OG_STR];
+        og_character()->attribute[OG_STR] = 5000;
+        slot = og_quest_start_bytes("TEST0003", f3, 0x100 + 4 * 87 + 4 * 8, 0);
+        check_expect(slot == 0 && og_quest(0)->item[0].object != 0 && !carried_by_player(og_quest(0)->item[0].object), "quest: the quest's item was not made, or the player already has it");
+        if (slot == 0 && og_quest(0)->item[0].object) {
+            id = og_quest(0)->item[0].object;
+            og_quest_run();
+            check_expect(og_quest_state(0, 2) == 0 && og_quest_state(0, 1) == 0, "quest: op 70 saw an item the player does not have");
+            og_quest_set_state(0, 0, 1);
+            og_quest_run(); og_quest_run();
+            check_expect(carried_by_player(id) && og_quest_state(0, 1) == 1 && og_quest_state(0, 2) == 1, "quest: op 26 did not give the item, or ops 3 and 70 did not see it");
+            og_quest_set_state(0, 3, 1);
+            og_quest_run();
+            check_expect(!og_object(id) && og_quest(0)->item[0].object == 0, "quest: op 36 did not delete the item");
+        }
+        og_quest_end(0);
+        slot = og_quest_start_bytes("TEST0003", f3, 0x100 + 4 * 87 + 4 * 8, 0);
+        if (slot == 0 && og_quest(0)->item[0].object) {
+            id = og_quest(0)->item[0].object;
+            og_quest_set_state(0, 0, 1);
+            og_quest_run();
+            og_quest_end(0);
+            check_expect(!og_object(id), "quest: a quest that ended left its item in the pack");
+        }
+        /* Op 57 sees an item used (flag 512), and op 1 takes the item carried from the player when its person (a faction's, here 7) is talked to. */
+        {
+            int b26[5] = {0, 0, -2, -2, -2}, b57[5] = {-1, 1, 0, -2, -2}, b1[5] = {2, 0, 0, -2, -2};
+
+            og_quest_end(0);
+            memset(f3, 0, sizeof(f3));
+            put16(f3 + 0x10 + 0 * 2, 1); put16(f3 + 0x24 + 0 * 2, 0x80);
+            put16(f3 + 0x10 + 3 * 2, 1); put16(f3 + 0x24 + 3 * 2, 0xC0);
+            put16(f3 + 0x10 + 8 * 2, 3); put16(f3 + 0x24 + 8 * 2, 0x100);
+            put16(f3 + 0x10 + 9 * 2, 3); put16(f3 + 0x24 + 9 * 2, 0x100 + 3 * 87);
+            put16(f3 + 0x80 + 3, 3); put16(f3 + 0x80 + 5, 0);
+            put16(f3 + 0xC0 + 4, (df_u32)-8); put16(f3 + 0xC0 + 6, 7);
+            for (i = 0; i < 3; i++) { put16(f3 + 0x100 + 3 * 87 + i * 8, i); put32(f3 + 0x100 + 3 * 87 + i * 8 + 4, (df_u32)(100 + i)); }
+            put_op(f3 + 0x100, 26, -1, b26, 0);
+            put_op(f3 + 0x100 + 87, 57, -1, b57, 0);
+            put_op(f3 + 0x100 + 174, 1, -1, b1, 0);
+            slot = og_quest_start_bytes("TEST0057", f3, 0x100 + 3 * 87 + 3 * 8, 0);
+            if (slot == 0 && og_quest(0)->item[0].object) {
+                id = og_quest(0)->item[0].object;
+                og_quest_set_state(0, 0, 1);
+                og_quest_run();
+                og_quest_run();
+                check_expect(carried_by_player(id) && og_quest_state(0, 1) == 0, "quest: op 57 saw an item that was not used");
+                og_object_edit(id)->flags |= 512;
+                og_quest_run();
+                check_expect(og_quest_state(0, 1) == 1, "quest: op 57 did not see the item used");
+                check_expect(!og_quest_talk(1, 9) && og_object(id), "quest: another faction's person took the item");
+                check_expect(og_quest_talk(1, 7) && !og_object(id) && og_quest_state(0, 2) == 1 && og_quest(0)->item[0].object == 0, "quest: op 1 did not take the item for the person and set its state");
+            } else { check_expect(0, "quest: the item quest did not start"); }
+            og_quest_end(0);
+        }
+        og_character()->attribute[OG_STR] = saved_str;
+    }
     slot = og_quest_start("M0B00Y00", 8);
     check_expect(!og_quest(1) && og_quest(0), "quest: a quest ended took another with it");
     og_quest_reset();
@@ -262,7 +350,7 @@ void check_ogquest(void)
     /* Places and timers: M0B00Y00's two dungeons bound to two different dungeons of the region other than the one the player is in, its timer's delay the travel estimate and a week
      * for the kind, doubled; op 19 shows the first on the map; at the delay the timer's state ends the quest (op 6). */
     {
-        static const OgQuestWorld world = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn };
+        static const OgQuestWorld world = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_place_item };
         const OgQuest *q2;
         int s2, spent;
 
