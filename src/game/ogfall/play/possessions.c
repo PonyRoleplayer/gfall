@@ -13,6 +13,7 @@
 #include "game/ogfall/play/spellmaker.h"
 #include "game/ogfall/play/itemmaker.h"
 #include "game/ogfall/play/enchant.h"
+#include "game/ogfall/play/quest.h"
 #include "game/ogfall/play/magicitem.h"
 #include "game/ogfall/tables/magicdefs.h"
 #include "game/ogfall/play/standing.h"
@@ -1250,7 +1251,11 @@ static void sheet_click(int x, int y)
                    og_character()->name, og_character()->female ? "Female" : "Male", og_race_name(og_character()->race),
                    og_state()->career.name, og_character()->reputation[0], og_character()->reputation[1],
                    og_character()->reputation[2],og_character()->reputation[3],og_character()->reputation[4]);
-    } else if (inside(x,y,1,164,67,178)) { df_copy(g.notice, "Your quest log is empty.", sizeof(g.notice)); }
+    } else if (inside(x,y,1,164,67,178)) {
+        /* logbook_open: the entries of the quests that are running, or an empty log. */
+        if (og_logbook_text(g.notice, sizeof(g.notice)) <= 0) { df_copy(g.notice, "Your quest log is empty.", sizeof(g.notice)); }
+        g.notice_page = 0;
+    }
     else if (inside(x,y,140,5,170,195)) {
         static const char *attribute[] = {"Strength","Intelligence","Willpower","Agility","Endurance","Personality","Speed","Luck"};
         i = (y-5)/24;

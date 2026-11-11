@@ -834,6 +834,42 @@ static int quest_text(const char *quest, int message, int in_text_rsc, char *out
 
 static void quest_say(const char *text) { og_possessions_message(text, 0); }
 
+/* The TEXT.RSC macros of a quest's text: the player's name and race, the town and the region. */
+static int quest_macros(const char *in, char *out, int cap)
+{
+    static Character pc;
+    Words w;
+    int i;
+    char province[32];
+    const Faction *faction;
+
+    for (i = 0; i < (int)sizeof(pc.name) - 1 && og_character()->name[i]; i++) { pc.name[i] = og_character()->name[i]; }
+    pc.name[i] = 0;
+    pc.race = og_character()->race; pc.female = og_character()->female;
+    faction = faction_province_of(travel_region());
+    df_copy(province, faction ? faction->name : "", sizeof(province));
+    mem_zero(&w, sizeof(w));
+    w.pc = &pc; w.city = town_name(); w.region = province;
+    words_use(&w);
+    words_expand(in, out, cap);
+    for (i = 0; out[i]; i++) { }
+    return i;
+}
+
+/* The place a logbook entry is written in: the town, else the region. */
+static const char *quest_place(void)
+{
+    static char place[40];
+    const char *town;
+    const Faction *faction;
+
+    town = town_name();
+    if (town && town[0]) { df_copy(place, town, sizeof(place)); return place; }
+    faction = faction_province_of(travel_region());
+    df_copy(place, faction ? faction->name : "", sizeof(place));
+    return place;
+}
+
 static int offer_say(int text, int price, char *out, int cap)
 {
     Words w;
@@ -2363,6 +2399,7 @@ int seam_boot(void)
     og_set_words(textrsc_read);
     og_set_status_intro(status_intro);
     og_quest_set_text(quest_text); og_quest_set_say(quest_say); og_quest_set_ask(og_possessions_ask);
+    og_quest_set_macros(quest_macros); og_quest_set_place(quest_place);
     {
         static const OgEnchantWorld enchant_world = { ench_daylight, ench_temple, ench_category_near, ench_hurt_nearest };
 

@@ -3,6 +3,8 @@
 #include "engine/core/mem.h"
 #include "engine/core/log.h"
 #include "game/ogfall/tables/questdata.h"
+#include "game/ogfall/tables/combatdefs.h"
+#include "game/ogfall/tables/datedefs.h"
 
 /* See quest.h. */
 
@@ -12,13 +14,20 @@ static int (*g_read)(const char *quest, int message, int in_text_rsc, char *out,
 static void (*g_say)(const char *text);
 static int (*g_ask)(const char *words, void (*answer)(int yes));
 static int g_offer_slot = -1;
+static const OgQuestNames *g_names;
+static int (*g_macros)(const char *in, char *out, int cap);
+static const char *(*g_place)(void);
+static OgLogSlot g_log[OG_LOG_SLOTS];
 
 void og_quest_set_text(int (*read)(const char *quest, int message, int in_text_rsc, char *out, int cap)) { g_read = read; }
 void og_quest_set_say(void (*say)(const char *text)) { g_say = say; }
 void og_quest_set_ask(int (*ask)(const char *words, void (*answer)(int yes))) { g_ask = ask; }
 const df_u8 *og_quest_globals(void) { return g_global; }
 void og_quest_globals_clear(void) { mem_zero(g_global, sizeof(g_global)); }
-void og_quest_reset(void) { mem_zero(g_quest, sizeof(g_quest)); mem_zero(g_global, sizeof(g_global)); g_offer_slot = -1; }
+void og_quest_reset(void) { mem_zero(g_quest, sizeof(g_quest)); mem_zero(g_global, sizeof(g_global)); mem_zero(g_log, sizeof(g_log)); g_offer_slot = -1; }
+void og_quest_set_names(const OgQuestNames *names) { g_names = names; }
+void og_quest_set_macros(int (*fill)(const char *in, char *out, int cap)) { g_macros = fill; }
+void og_quest_set_place(const char *(*current)(void)) { g_place = current; }
 int og_quest_count(void) { return OG_QUESTS; }
 const OgQuest *og_quest(int slot) { return slot >= 0 && slot < OG_QUESTS && g_quest[slot].used ? &g_quest[slot] : 0; }
 
@@ -80,6 +89,178 @@ int og_quest_active(const char *name)
         if (k == 8 || (!name[k] && !g_quest[i].qbn.name[k])) { return 1; }
     }
     return 0;
+}
+
+/* ---- Text (parse_expand, quest_symbol_text) ---- */
+
+static int put(char *out, int cap, int at, const char *s)
+{
+    while (*s && at < cap - 1) { out[at++] = *s++; }
+    return at;
+}
+
+/* A symbol said: items, places, persons, foes, timers, the first whose hash it is; blank for none. */
+static int symbol_text(int slot, df_i32 hash, int form, df_i32 hash2, char *out, int cap)
+{
+    const OgQuest *q;
+    int i;
+    df_u32 delay;
+
+    out[0] = 0;
+    q = &g_quest[slot];
+    for (i = 0; i < q->qbn.n_item; i++) { if (q->qbn.item[i].symbol == hash) { return g_names && g_names->item && g_names->item(slot, i, form, out, cap); } }
+    for (i = 0; i < q->qbn.n_place; i++) { if (q->qbn.place[i].symbol == hash) { return g_names && g_names->place && g_names->place(slot, i, form, out, cap); } }
+    for (i = 0; i < q->qbn.n_person; i++) { if (q->qbn.person[i].symbol == hash) { return g_names && g_names->person && g_names->person(slot, i, form, out, cap); } }
+    for (i = 0; i < q->qbn.n_foe; i++) {
+        if (q->qbn.foe[i].symbol == hash) {
+            const OgFoeDef *def;
+
+            def = og_foe_def(q->qbn.foe[i].type);
+            return log_format(out, cap, "%s", def ? def->name : "");
+        }
+    }
+    for (i = 0; i < q->qbn.n_timer; i++) {
+        if (q->qbn.timer[i].hash == hash) {
+            delay = q->qbn.timer[i].delay;
+            /* _a`b_: the second timer's delay is added to the first's. */
+            for (i = 0; hash2 && i < q->qbn.n_timer; i++) { if (q->qbn.timer[i].hash == hash2) { delay += q->qbn.timer[i].delay; } }
+            return form == 0 ? log_format(out, cap, "%d", (int)delay) : log_format(out, cap, "%d", (int)((delay + 1439u) / 1440u));
+        }
+    }
+    return 0;
+}
+
+int og_quest_expand(int slot, const char *in, char *out, int cap, df_u32 minutes, const char *place)
+{
+    static char stage[2048];
+    char name[24], name2[24], said[256];
+    int at, n, k, form, second;
+    char lead;
+
+    if (cap < 1) { return 0; }
+    at = 0;
+    while (*in && at < (int)sizeof(stage) - 1) {
+        if ((*in == '_' || *in == '=') && slot >= 0 && slot < OG_QUESTS && g_quest[slot].used) {
+            lead = *in; n = 0;
+            while (in[n] == lead) { n++; }
+            k = 0; second = 0;
+            while (in[n + k] && in[n + k] != '_' && in[n + k] != ' ' && in[n + k] != '\n' && k < 20) {
+                if (in[n + k] == '`') { second = k + 1; }
+                k++;
+            }
+            if (in[n + k] == '_' && k > 0) {
+                int j;
+
+                for (j = 0; j < k && (!second || j < second - 1); j++) { name[j] = in[n + j]; }
+                name[j] = 0; name2[0] = 0;
+                if (second) { int m; for (m = 0; second + m < k; m++) { name2[m] = in[n + second + m]; } name2[m] = 0; }
+                form = lead == '_' ? (n - 1) * 16 : n;
+                said[0] = 0;
+                symbol_text(slot, og_qbn_hash(name), form, name2[0] ? og_qbn_hash(name2) : 0, said, sizeof(said));
+                at = put(stage, sizeof(stage), at, said);
+                in += n + k + 1;
+                continue;
+            }
+        }
+        stage[at++] = *in++;
+    }
+    stage[at] = 0;
+    /* %qdt: the date a log entry was written; %cn: its place, when it has one. */
+    {
+        static char second[2048];
+        int s, d;
+        char date[64];
+
+        s = 0;
+        for (d = 0; stage[d] && s < (int)sizeof(second) - 1; ) {
+            if (stage[d] == '%' && stage[d + 1] == 'q' && stage[d + 2] == 'd' && stage[d + 3] == 't') {
+                og_date_text(minutes, date, sizeof(date)); s = put(second, sizeof(second), s, date); d += 4;
+            } else if (place && stage[d] == '%' && stage[d + 1] == 'c' && stage[d + 2] == 'n') {
+                s = put(second, sizeof(second), s, place); d += 3;
+            } else { second[s++] = stage[d++]; }
+        }
+        second[s] = 0;
+        if (g_macros) { return g_macros(second, out, cap); }
+        out[0] = 0; at = put(out, cap, 0, second); out[at] = 0;
+        return at;
+    }
+}
+
+/* ---- The logbook (logbook.c) ---- */
+
+const OgLogSlot *og_logbook_slot(int i) { return i >= 0 && i < OG_LOG_SLOTS ? &g_log[i] : 0; }
+void og_logbook_clear(void) { mem_zero(g_log, sizeof(g_log)); }
+
+/* logbook_prune_quests: the slot of a quest that is not running is free. */
+static void prune(void)
+{
+    int i, k, alive;
+
+    for (i = 0; i < OG_LOG_SLOTS; i++) {
+        if (!g_log[i].used) { continue; }
+        alive = 0;
+        for (k = 0; k < OG_QUESTS; k++) { if (g_quest[k].used && g_quest[k].qbn.id == g_log[i].quest_id) { alive = 1; } }
+        if (!alive) { mem_zero(&g_log[i], sizeof(g_log[i])); }
+    }
+}
+
+void og_logbook_add(int quest_slot, int index, int message)
+{
+    int i, found, k;
+    const char *where;
+
+    if (!og_quest(quest_slot)) { return; }
+    prune();
+    found = -1;
+    for (i = 0; i < OG_LOG_SLOTS; i++) { if (g_log[i].used && g_log[i].quest_id == g_quest[quest_slot].qbn.id) { found = i; } }
+    if (found < 0) {
+        for (i = 0; i < OG_LOG_SLOTS && g_log[i].used; i++) { }
+        /* A full log writes nothing and the quest goes on (7.7: the original wrote slot -1). */
+        if (i == OG_LOG_SLOTS) { return; }
+        found = i;
+        mem_zero(&g_log[found], sizeof(g_log[found]));
+        g_log[found].used = 1; g_log[found].quest_id = g_quest[quest_slot].qbn.id;
+        for (k = 0; k < 8; k++) { g_log[found].name[k] = g_quest[quest_slot].qbn.name[k]; }
+    }
+    index = ((index % 10) + 10) % 10;
+    g_log[found].message[index] = message;
+    g_log[found].minutes[index] = og_state()->minutes;
+    where = g_place ? g_place() : 0;
+    for (k = 0; where && where[k] && k < 31; k++) { g_log[found].place[index][k] = where[k]; }
+    g_log[found].place[index][k] = 0;
+}
+
+void og_logbook_remove(int quest_slot, int index)
+{
+    int i;
+
+    if (!og_quest(quest_slot)) { return; }
+    index = ((index % 10) + 10) % 10;
+    for (i = 0; i < OG_LOG_SLOTS; i++) {
+        if (g_log[i].used && g_log[i].quest_id == g_quest[quest_slot].qbn.id) { g_log[i].message[index] = 0; g_log[i].minutes[index] = 0; g_log[i].place[index][0] = 0; }
+    }
+}
+
+int og_logbook_text(char *out, int cap)
+{
+    int i, k, n, quest;
+    char raw[1024], said[1024];
+
+    prune();
+    n = 0; out[0] = 0;
+    for (i = 0; i < OG_LOG_SLOTS; i++) {
+        if (!g_log[i].used) { continue; }
+        for (quest = 0; quest < OG_QUESTS && !(g_quest[quest].used && g_quest[quest].qbn.id == g_log[i].quest_id); quest++) { }
+        if (quest == OG_QUESTS) { continue; }
+        for (k = 0; k < 10; k++) {
+            if (!g_log[i].message[k] || !g_read) { continue; }
+            raw[0] = 0;
+            if (g_read(g_log[i].name, g_log[i].message[k], 0, raw, sizeof(raw)) <= 0 || !raw[0]) { continue; }
+            og_quest_expand(quest, raw, said, sizeof(said), g_log[i].minutes[k], g_log[i].place[k]);
+            n += log_format(out + n, cap - n, "%s\n", said);
+        }
+    }
+    return n;
 }
 
 /* ---- States (quest_arg_state, quest_set_state) ---- */
@@ -144,11 +325,14 @@ static void arg_set(OgQuest *q, const OgQbnOp *op, int n, int value)
 
 static void show(const OgQuest *q, int message)
 {
-    char text[1024];
+    char text[1024], said[1024];
 
     if (message == -1 || !g_read || !g_say) { return; }
     text[0] = 0;
-    if (g_read(q->qbn.name, message & 0x7fff, (message & 0x8000) != 0, text, sizeof(text)) > 0 && text[0]) { g_say(text); }
+    if (g_read(q->qbn.name, message & 0x7fff, (message & 0x8000) != 0, text, sizeof(text)) > 0 && text[0]) {
+        og_quest_expand((int)(q - g_quest), text, said, sizeof(said), og_state()->minutes, 0);
+        g_say(said);
+    }
 }
 
 /* quest_op_done: the done bit, and the message the first time. */
@@ -178,6 +362,13 @@ static void run_op(int slot, OgQuest *q, OgQbnOp *op)
     case 16:
         /* The day of the world in a range (no file uses it). */
         arg_set(q, op, 0, (int)(og_state()->minutes / 1440u) >= op->arg[1].value && (int)(og_state()->minutes / 1440u) <= op->arg[2].value);
+        break;
+    case 23:
+        /* Once: entry `index` of the quest's log is the message. */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) { og_logbook_add(slot, op->arg[2].value, op->arg[1].value); done(q, op); }
+        break;
+    case 24:
+        if (arg_state(q, op, 0) && !(op->flags & 1)) { og_logbook_remove(slot, op->arg[1].value); done(q, op); }
         break;
     case 31: {
         int from, to, m, inside;
@@ -250,7 +441,12 @@ static void offer_answer(int yes)
     g_offer_slot = -1;
     if (slot < 0 || !g_quest[slot].used) { return; }
     text[0] = 0;
-    if (g_read && g_say && g_read(g_quest[slot].qbn.name, yes ? 1002 : 1001, 0, text, sizeof(text)) > 0 && text[0]) { g_say(text); }
+    if (g_read && g_say && g_read(g_quest[slot].qbn.name, yes ? 1002 : 1001, 0, text, sizeof(text)) > 0 && text[0]) {
+        char said[1024];
+
+        og_quest_expand(slot, text, said, sizeof(said), og_state()->minutes, 0);
+        g_say(said);
+    }
     if (!yes) { og_quest_end(slot); }
 }
 
@@ -275,8 +471,11 @@ int og_quest_begin(const char *name, int faction)
     text[0] = 0;
     asked = name[5] == 'Y' || (name[0] >= '1' && name[0] <= '9') || (name[0] >= 'T' && name[0] <= 'Z');
     if (asked && g_read && g_ask && g_read(g_quest[slot].qbn.name, 1000, 0, text, sizeof(text)) > 0 && text[0]) {
+        char said[1024];
+
+        og_quest_expand(slot, text, said, sizeof(said), og_state()->minutes, 0);
         g_offer_slot = slot;
-        if (!g_ask(text, offer_answer)) { g_offer_slot = -1; og_quest_end(slot); return -1; }
+        if (!g_ask(said, offer_answer)) { g_offer_slot = -1; og_quest_end(slot); return -1; }
     }
     return slot;
 }

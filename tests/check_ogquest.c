@@ -1,10 +1,12 @@
 #include <dirent.h>
+#include <stdio.h>
 #include <string.h>
 #include "check_ogquest.h"
 #include "check_util.h"
 #include "game/ogfall/formats/qbn.h"
 #include "game/ogfall/play/quest.h"
 #include "game/ogfall/play/state.h"
+#include "game/dagger/formats/textrsc.h"
 
 static int g_said, g_asked;
 static char g_text[200];
@@ -18,6 +20,20 @@ static int give_text(const char *quest, int message, int in_text_rsc, char *out,
 }
 
 static void take_say(const char *text) { g_said++; strncpy(g_text, text, sizeof(g_text) - 1); }
+
+static int name_place(int slot, int index, int form, char *out, int cap) { (void)slot; (void)cap; strcpy(out, form >= 32 ? "Dungeon of Test" : "Test Tower"); return index + 1; }
+static int name_person(int slot, int index, int form, char *out, int cap) { (void)slot; (void)cap; strcpy(out, form >= 32 ? "Wayrest" : "Sir Test"); return index + 1; }
+static const char *where_now(void) { return "Testown"; }
+static int g_in_rsc;
+static int real_text(const char *quest, int message, int in_text_rsc, char *out, int cap)
+{
+    char file[16];
+
+    g_in_rsc = in_text_rsc;
+    if (in_text_rsc) { return textrsc_read(message, out, cap); }
+    sprintf(file, "%s.QRC", quest);
+    return textrsc_read_in(file, message, out, cap);
+}
 
 static void (*g_answer)(int yes);
 static int take_ask(const char *words, void (*answer)(int yes)) { g_answer = answer; strncpy(g_text, words, sizeof(g_text) - 1); return 1; }
@@ -143,4 +159,30 @@ void check_ogquest(void)
     check_expect(!og_quest(slot) && g_asked == 1001, "quest: no did not say QRC 1001 and end the quest");
     check_expect(og_quest_begin("N0C00Y01", 0) == -1 && og_quest_begin("", 0) == -1, "quest: N0C00Y01 or an empty name was started");
     og_quest_reset();
+    /* Text: symbols said by what they name (a place at form 32 is its town, a timer with = its days), %qdt and %cn, and the logbook of M0B00Y00's first entry. */
+    {
+        static const OgQuestNames names = { 0, name_place, name_person };
+        char raw[1024], said[1024], log[2048];
+        int s2, k;
+
+        og_quest_reset();
+        og_quest_set_names(&names); og_quest_set_text(real_text); og_quest_set_say(take_say); og_quest_set_place(where_now);
+        s2 = og_quest_start("M0B00Y00", 851);
+        check_expect(s2 == 0, "quest: M0B00Y00 did not start for the text test");
+        real_text("M0B00Y00", 1002, 0, raw, sizeof(raw));
+        og_quest_expand(s2, raw, said, sizeof(said), 0, 0);
+        check_expect(strstr(said, "Dungeon of Test") != 0, "quest: ___mondung_ was not said by the place's name");
+        check_expect(strstr(said, "in 0 days") != 0 && !strchr(said, '_') && !strchr(said, '='), "quest: =1stparton_ was not its days, or a symbol was left in the text");
+        og_quest_expand(s2, "a_nosuch_b and =x", said, sizeof(said), 0, 0);
+        check_expect(!strcmp(said, "ab and =x"), "quest: a symbol that names nothing was not blank, or an unfinished one was changed");
+        g_said = 0;
+        og_quest_run();
+        check_expect(og_logbook_slot(0) && og_logbook_slot(0)->used && og_logbook_slot(0)->message[0] == 1030 && !strcmp(og_logbook_slot(0)->place[0], "Testown"), "quest: op 23 did not write entry 0 (1030) with the place");
+        k = og_logbook_text(log, sizeof(log));
+        check_expect(k > 0 && strstr(log, "Fighters Guild of") && strstr(log, "Wayrest") && strstr(log, "Dungeon of Test") && !strstr(log, "%qdt"), "quest: the log's entry is not 1030 with its date, the town and the dungeon");
+        og_quest_end(s2);
+        check_expect(og_logbook_text(log, sizeof(log)) <= 0 && !og_logbook_slot(0)->used, "quest: the log kept the entries of a quest that ended");
+        og_quest_set_text(give_text);
+        og_quest_reset();
+    }
 }

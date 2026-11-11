@@ -23,6 +23,39 @@ typedef struct OgQuest {
 void og_quest_set_text(int (*read)(const char *quest, int message, int in_text_rsc, char *out, int cap));
 void og_quest_set_say(void (*say)(const char *text));
 
+/* What the world says of a resource a quest names (3.2 of the document): the text of its item, place or person in a form (0 the first of its kinds, 16 and 32 one more, 48 the last; 1 and up for `=`), 0
+ * when it has none to give (a resource not bound yet reads blank). Set by the game as the steps that bind them are built. */
+typedef struct OgQuestNames {
+    int (*item)(int slot, int index, int form, char *out, int cap);
+    int (*place)(int slot, int index, int form, char *out, int cap);
+    int (*person)(int slot, int index, int form, char *out, int cap);
+} OgQuestNames;
+void og_quest_set_names(const OgQuestNames *names);
+/* The macros of TEXT.RSC filled in a text (%pcn, %cn ...): set by the game. */
+void og_quest_set_macros(int (*fill)(const char *in, char *out, int cap));
+/* The current place's name, kept with a logbook entry and said by its %cn. */
+void og_quest_set_place(const char *(*current)(void));
+/* parse_expand: the symbols in a quest's text (`_name_`, `___name_`, `=name_`, `_a`b_`) said by what they name, then %qdt (the date of minutes) and %cn (place when given), then the
+ * game's macros. Items, places, persons, foes and timers are looked up in that order, the first hash that matches (7.2). Returns the length. */
+int og_quest_expand(int slot, const char *in, char *out, int cap, df_u32 minutes, const char *place);
+
+/* The logbook (logbook.c, 3.4): 32 slots of ten entries, an entry a QRC message with the minute and the place it was written; the slot of a quest that has ended is free. */
+#define OG_LOG_SLOTS 32
+typedef struct OgLogSlot {
+    int used, quest_id;
+    char name[9];
+    int message[10];
+    df_u32 minutes[10];
+    char place[10][32];
+} OgLogSlot;
+const OgLogSlot *og_logbook_slot(int i);
+void og_logbook_clear(void);
+/* logbook_add_entry (op 23) and op 24: entry index % 10 of the quest's slot. */
+void og_logbook_add(int quest_slot, int index, int message);
+void og_logbook_remove(int quest_slot, int index);
+/* logbook_build_entries: every entry of the quests that are running, in order, as text; its length. */
+int og_logbook_text(char *out, int cap);
+
 /* The 64 global states every quest shares (the main story's). */
 const df_u8 *og_quest_globals(void);
 void og_quest_globals_clear(void);
