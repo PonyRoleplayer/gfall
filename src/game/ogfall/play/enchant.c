@@ -270,3 +270,45 @@ int og_enchant_armor_modifier(void)
     }
     return 0;
 }
+
+int og_enchant_capacity(int capacity)
+{
+    int slot, k, type, param;
+
+    for (slot = 0; slot < 27; slot++) {
+        for (k = 0; og_state()->equipped[slot] && og_item_enchantment(og_state()->equipped[slot], k, &type, &param); k++) {
+            if (type == 7) { return param == 0 ? capacity * 320 / 256 : capacity * 384 / 256; }
+        }
+    }
+    return capacity;
+}
+
+int og_enchant_weight(df_u32 id, int weight)
+{
+    int k, type, param;
+
+    for (k = 0; og_item_enchantment(id, k, &type, &param); k++) {
+        if (type == 11) { return 1; }
+        if (type == 23) { return weight * 4 < 20 ? 20 : weight * 4; }
+    }
+    return weight;
+}
+
+int og_enchant_reaction(int social)
+{
+    int i, k, type, param, depth, mod;
+    const OgObject *item, *owner;
+
+    mod = 0;
+    for (i = 0; i < OG_OBJECTS; i++) {
+        item = &og_state()->object[i];
+        if (!item->id || item->type != OG_RECORD_ITEM) { continue; }
+        for (owner = item, depth = 0; owner && depth < OG_OBJECTS && owner->parent != og_state()->entity_id; depth++) { owner = og_object(owner->parent); }
+        if (!owner) { continue; }
+        for (k = 0; og_item_enchantment(item->id, k, &type, &param); k++) {
+            if (type == 14 && (param == 5 || param == social)) { mod += 10; }
+            else if (type == 25 && (param == 5 || param == social)) { mod -= 10; }
+        }
+    }
+    return mod;
+}

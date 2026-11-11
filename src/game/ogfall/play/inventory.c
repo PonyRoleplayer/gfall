@@ -1,4 +1,5 @@
 #include "game/ogfall/play/inventory.h"
+#include "game/ogfall/play/enchant.h"
 #include "game/ogfall/tables/itemdefs.h"
 #include "game/ogfall/formats/book.h"
 #include "game/ogfall/play/spellbook.h"
@@ -291,7 +292,7 @@ int og_inventory_weight(df_u32 parent)
         item = &og_state()->object[i];
         if (!item->id || item->type != OG_RECORD_ITEM || !belongs_to(item->parent, parent)) { continue; }
         if (item->group == 28) { weight += item->value / 100; }
-        else { weight += item->weight * item->count; }
+        else { weight += og_enchant_weight(item->id, item->weight) * item->count; }
     }
     if (parent == og_state()->inventory_id) { weight += og_character()->gold / 100; }
     return weight;
@@ -300,7 +301,7 @@ int og_inventory_capacity(void)
 {
     int strength;
     strength = og_character()->attribute[OG_STR];
-    return strength + (strength >> 1);
+    return og_enchant_capacity(strength + (strength >> 1));
 }
 
 void og_weight_text(int quarters, char *out, int capacity)

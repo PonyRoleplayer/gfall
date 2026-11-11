@@ -196,6 +196,43 @@ static void itemmaker_checks(void)
         og_inventory_unequip(r3);
         check_expect(!(og_character()->conditions & 0x200), "enchant: absorption stayed with no ring worn");
     }
+    /* Slice 5: carrying, weight and reactions. */
+    {
+        df_u32 belt, feather, heavy, kind_ring, bad_ring;
+        int k2, free_row, base, rep0;
+        OgItemEnchant *row;
+
+        belt = og_item_create(pack, 25, rg, 0); feather = og_item_create(pack, 3, longsword, 1); heavy = og_item_create(pack, 3, dag, 0);
+        kind_ring = og_item_create(pack, 25, rg, 0); bad_ring = og_item_create(pack, 25, rg, 0);
+        {
+            df_u32 ids[5];
+            int types[5], params[5], n;
+
+            ids[0] = belt; types[0] = 7; params[0] = 0;
+            ids[1] = feather; types[1] = 11; params[1] = -1;
+            ids[2] = heavy; types[2] = 23; params[2] = -1;
+            ids[3] = kind_ring; types[3] = 14; params[3] = 2;
+            ids[4] = bad_ring; types[4] = 25; params[4] = 5;
+            for (n = 0; n < 5; n++) {
+                for (free_row = 0; og_item_enchant_edit(free_row)->item; free_row++) { }
+                row = og_item_enchant_edit(free_row);
+                row->item = ids[n]; row->identified = 1;
+                for (k2 = 0; k2 < 10; k2++) { row->type[k2] = -1; row->param[k2] = -1; }
+                row->type[0] = types[n]; row->param[0] = params[n];
+            }
+        }
+        base = og_character()->attribute[OG_STR] + (og_character()->attribute[OG_STR] >> 1);
+        og_inventory_unequip(belt);
+        check_expect(og_inventory_capacity() == base, "carry: the capacity changed with no item worn");
+        og_inventory_equip(belt);
+        check_expect(og_inventory_capacity() == base * 320 / 256, "carry: Increased Weight Allowance did not add a quarter");
+        og_inventory_unequip(belt);
+        check_expect(og_enchant_weight(feather, 40) == 1 && og_enchant_weight(heavy, 3) == 20 && og_enchant_weight(heavy, 10) == 40 && og_enchant_weight(sword, 40) == 40,
+                     "weight: Feather Weight is not 1, Extra weight not four times and at least 20, or a plain item changed");
+        rep0 = og_enchant_reaction(2);
+        check_expect(rep0 == 10 - 10, "reaction: a carried ring of Good rep with Scholars and one of Bad rep with All did not cancel for Scholars");
+        check_expect(og_enchant_reaction(3) == -10 && og_enchant_reaction(5) == -10, "reaction: Bad rep with All did not take 10 off for another group");
+    }
     /* Slice 4: the hooks of a weapon that hits: Potent vs and Low damage vs by the wielder's level (9.3 fixed), Health leech on a hit, Vampiric when strikes, armour. */
     {
         df_u32 axe, shield;

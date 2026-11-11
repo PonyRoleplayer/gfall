@@ -64,3 +64,10 @@ Written 2026-11-10 before any code, from the decomp's `docs/item-enchantments-in
 - **Armour** (`og_enchant_armor_modifier`, from `og_fighter_player`): Strengthens armor takes 25 off every part's armour value, Weakens armor adds 25; only the first of either over the worn items counts (9.10 kept); clamped to -100..100.
 - Test: `check_ogmagicitem.c` (the bonus and the penalty by category, the leech, the vampiric heal and wear, the armour modifier). The strike spell's casting at a creature is not host-tested.
 - Not built: arrows (a bow's hits do not read the weapon's enchantments), creatures with enchanted weapons (OGFALL's creatures carry plain gear), Namira's reflect, and the hit wear of enchanted armour.
+
+## Slice 5 built (2026-11-11)
+
+- **Carrying** (`og_enchant_capacity`, from `og_inventory_capacity`, carry_capacity): the first worn item (slot order) with Increased Weight Allowance makes the capacity `* 320 / 256` (param 0) or `* 384 / 256`; later ones are ignored (9.10 kept).
+- **Weight** (`og_enchant_weight`, from `og_inventory_weight`, object_weight_add): the first Feather Weight or Extra weight of an item decides: weight 1, or four times its weight and at least 20; the count of a stack still multiplies it.
+- **Reactions** (`og_enchant_reaction`, in `talk.c`'s disposition, reaction_mod_item_cb): over every item carried, worn or not, +10 for Good rep with All or the person's social group and -10 for Bad rep with. The talk window's attitude and greeting already read the disposition.
+- Test: `check_ogmagicitem.c`. With this the five slices of the plan are built; what remains is listed under "Not built" in each: the soul summon on a broken soul-bound item, arrows and creatures with enchanted weapons, the usable icon, artifacts, the identify service, and the enchanted mark on the paper doll's equipment slots.

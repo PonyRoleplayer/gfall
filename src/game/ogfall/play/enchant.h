@@ -42,6 +42,13 @@ void og_enchant_strike(df_u32 weapon, int victim, int dealt);
 /* armor_value_for_part: Strengthens armor takes 25 off every part's armour value, Weakens armor adds 25; only the first of either over the worn items counts. */
 int og_enchant_armor_modifier(void);
 
+/* carry_capacity (support.c 1173): the first worn item with Increased Weight Allowance (type 7) makes the capacity a quarter more (param 0) or a half more; later ones are ignored. */
+int og_enchant_capacity(int capacity);
+/* object_weight_add (parse.c 1771): the first Feather Weight (11) or Extra weight (23) of an item decides: 1, or four times its weight and at least 20. */
+int og_enchant_weight(df_u32 item, int weight);
+/* reaction_mod_item_cb (disease.c 698): over every item carried, worn or not: +10 for Good rep with All or the person's social group, -10 for Bad rep with. */
+int og_enchant_reaction(int social_group);
+
 void og_enchant_equip(df_u32 item, int slot);
 void og_enchant_unequip(df_u32 item, int slot);
 

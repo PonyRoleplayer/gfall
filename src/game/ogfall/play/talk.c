@@ -1,6 +1,7 @@
 #include "game/ogfall/play/talk.h"
 #include "game/ogfall/play/state.h"
 #include "game/ogfall/play/law.h"
+#include "game/ogfall/play/enchant.h"
 #include "engine/core/mem.h"
 #include "game/ogfall/tables/talkdata.h"
 
@@ -55,10 +56,11 @@ int og_talk_start(OgTalk *talk, const OgTalkWho *who, const OgTalkPlayer *player
     c = og_character();
     talk->disposition = og_faction_rep(talk->faction) + player->temple_rank;
     social = og_faction_def(og_faction_index(talk->faction))->social_group;
-    /* A group below five adds the player's reputation with it; the equipment's reaction enchantments are not here. */
+    /* A group below five adds the player's reputation with it; the reaction enchantments of every item carried (reaction_mod_item_cb) add or take ten each. */
     if (social < 5) {
         talk->disposition += c->reputation[social];
     }
+    talk->disposition += og_enchant_reaction(social);
     if (talk->disposition < -20) {
         *text = OG_TALK_TEXT_REFUSES;
         return 0;
