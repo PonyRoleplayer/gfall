@@ -8,6 +8,7 @@
 #include "game/ogfall/play/itemmaker.h"
 #include "game/ogfall/play/progress.h"
 #include "game/ogfall/play/enchant.h"
+#include "game/ogfall/play/possessions.h"
 #include "game/ogfall/play/play.h"
 #include "game/ogfall/play/magic.h"
 #include "game/ogfall/play/spellbook.h"
