@@ -1730,6 +1730,23 @@ static int hall_heal(void)
     return og_possessions_ask(line, hall_heal_answer);
 }
 
+/* guild_service_dispatch's Get quest (run_0006DC35.c): the quest letter of the NPC's guild, 'B' for a member and 'C' for anyone else, and the rank (the guild's for the Brotherhood, the
+ * Fighters and the Thieves, the player's level for the Mages and the orders; a non-member has none: 7.3 fixed). A quest picked is started and offered; none to offer leaves the NPC talking. */
+static void hall_quest(const OgMembership *m)
+{
+    char name[9], letter;
+    int rank;
+
+    letter = 0; rank = m ? m->rank : 0;
+    if (g_hall.kind == 0) { letter = 'L'; }
+    else if (g_hall.kind == 1) { letter = 'N'; rank = og_character()->level; }
+    else if (g_hall.kind == 2) { letter = 'M'; }
+    else if (g_hall.kind == 3) { letter = 'O'; }
+    else if (g_hall.kind >= 4 && g_hall.kind <= 13) { letter = 'B'; rank = og_character()->level; }
+    if (letter && og_quest_pick(letter, 0, m ? 'B' : 'C', rank, name) && og_quest_begin(name, g_hall.person) >= 0) { return; }
+    start_talk();
+}
+
 static void hall_run(void)
 {
     OgMembership *m;
@@ -1836,6 +1853,9 @@ static void hall_run(void)
         break;
     case OG_SVC_BLESSING:
         hall_blessing(g_hall.kind, rank);
+        break;
+    case OG_SVC_QUEST:
+        hall_quest(m);
         break;
     case OG_SVC_NONE:
         break;
@@ -2342,7 +2362,7 @@ int seam_boot(void)
     og_set_save_capture(seam_capture_world);
     og_set_words(textrsc_read);
     og_set_status_intro(status_intro);
-    og_quest_set_text(quest_text); og_quest_set_say(quest_say);
+    og_quest_set_text(quest_text); og_quest_set_say(quest_say); og_quest_set_ask(og_possessions_ask);
     {
         static const OgEnchantWorld enchant_world = { ench_daylight, ench_temple, ench_category_near, ench_hurt_nearest };
 

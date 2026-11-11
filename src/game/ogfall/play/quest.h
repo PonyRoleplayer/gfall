@@ -37,6 +37,18 @@ const OgQuest *og_quest(int slot);
 /* A quest ended (op 6): its slot is free. */
 void og_quest_end(int slot);
 
+/* quest_pick_file (func_0004C274): the quest files whose name begins with a letter or the other (0 for none), then '0', then the membership letter ('B' members only, 'C' anyone), whose
+ * rank digit is at most the rank, one picked at random into name (9 bytes). 0 when none qualifies. (DAGGER.GRD's hiding of X quests is not read: there is no such file.) */
+int og_quest_pick(char letter, char letter2, char membership, int rank, char *name);
+/* Whether a quest of that name is running (quest_is_active). */
+int og_quest_active(const char *name);
+/* What asks the player (a yes/no box) and says the quest's words, set by the game. */
+void og_quest_set_ask(int (*ask)(const char *words, void (*answer)(int yes)));
+/* quest_start and the offer (quest_offer_prompt): the quest is started with the giver's faction when its name has a Y at its sixth place (else none); a name other than S0000xxx
+ * and a Y quest or a Daedra's is asked yes or no (QRC 1000), answered by 1002 or 1001, and a no ends it. Returns the slot, -1 for none started (a missing file, a refused name,
+ * a quest of that name running, no free slot). */
+int og_quest_begin(const char *name, int faction);
+
 /* quest_run_opcodes for every quest: from the frame and from each passing minute. */
 void og_quest_run(void);
 

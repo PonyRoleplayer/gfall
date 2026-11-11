@@ -19,6 +19,9 @@ static int give_text(const char *quest, int message, int in_text_rsc, char *out,
 
 static void take_say(const char *text) { g_said++; strncpy(g_text, text, sizeof(g_text) - 1); }
 
+static void (*g_answer)(int yes);
+static int take_ask(const char *words, void (*answer)(int yes)) { g_answer = answer; strncpy(g_text, words, sizeof(g_text) - 1); return 1; }
+
 static void put16(df_u8 *p, int v) { p[0] = (df_u8)v; p[1] = (df_u8)(v >> 8); }
 static void put32(df_u8 *p, df_u32 v) { p[0] = (df_u8)v; p[1] = (df_u8)(v >> 8); p[2] = (df_u8)(v >> 16); p[3] = (df_u8)(v >> 24); }
 
@@ -113,5 +116,31 @@ void check_ogquest(void)
     check_expect(g_said == 1 && g_asked == 1030 && !strcmp(g_text, "Well done.") && !og_quest(0), "quest: S1 = S0 and not S2 did not say its message once and end the quest");
     slot = og_quest_start("M0B00Y00", 8);
     check_expect(!og_quest(1) && og_quest(0), "quest: a quest ended took another with it");
+    og_quest_reset();
+    /* Choosing and offering: the name's letters and rank, a Y quest asked (1000) and answered (1002 or 1001), a no ending it, a quest not started twice. */
+    og_quest_set_ask(take_ask);
+    {
+        int k;
+        char picked[9];
+        int low_only, high_seen;
+
+        low_only = 1; high_seen = 0;
+        for (k = 0; k < 200; k++) {
+            if (!og_quest_pick('M', 0, 'B', 0, picked) || picked[0] != 'M' || picked[1] != '0' || picked[2] != 'B' || picked[3] != '0') { low_only = 0; }
+            if (og_quest_pick('M', 0, 'B', 9, picked) && picked[3] > '0') { high_seen = 1; }
+        }
+        check_expect(low_only && high_seen, "quest: Fighters quests of rank 0 are not all M0B0, or rank 9 offers no higher one");
+        check_expect(og_quest_pick('N', 0, 'C', 3, picked) && picked[0] == 'N' && picked[2] == 'C' && !og_quest_pick('Z', 0, 'Q', 0, picked), "quest: a quest for a non-member was not found, or one for no group was");
+    }
+    g_said = 0; g_answer = 0; g_asked = -1;
+    slot = og_quest_begin("M0B00Y00", 851);
+    check_expect(slot >= 0 && og_quest(slot)->qbn.faction == 851 && g_answer && og_quest_begin("M0B00Y00", 851) == -1, "quest: M0B00Y00 was not started with the giver's faction and asked, or was started twice");
+    g_answer(1);
+    check_expect(og_quest(slot) && g_asked == 1002 && g_said == 1, "quest: yes did not keep the quest and say QRC 1002");
+    og_quest_reset();
+    slot = og_quest_begin("M0B00Y00", 851); g_asked = -1;
+    g_answer(0);
+    check_expect(!og_quest(slot) && g_asked == 1001, "quest: no did not say QRC 1001 and end the quest");
+    check_expect(og_quest_begin("N0C00Y01", 0) == -1 && og_quest_begin("", 0) == -1, "quest: N0C00Y01 or an empty name was started");
     og_quest_reset();
 }

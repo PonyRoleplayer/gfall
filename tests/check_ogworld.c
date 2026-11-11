@@ -11,6 +11,7 @@
 #include "game/ogfall/play/ground.h"
 #include "game/ogfall/play/spellmaker.h"
 #include "game/ogfall/play/itemmaker.h"
+#include "game/ogfall/play/quest.h"
 #include "game/ogfall/play/activate.h"
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/hud.h"
@@ -624,6 +625,22 @@ void check_ogworld(const char *root)
                 check_expect(og_character()->gold == gold - 200 && og_state()->minutes == before + 180 && og_guilds()->last_training == before &&
                              og_possessions()->notice[0] != 0, "guild: the lesson did not cost 200 and take three hours");
                 og_possessions_close();
+                /* Get Quest at a Fighters Guild: a member of rank 0 is offered a quest of the guild (M0B0..), asked yes or no, and accepted. */
+                {
+                    int q3, started;
+
+                    og_quest_reset();
+                    og_guilds_clear(); og_guild_join(2, 41, og_state()->minutes, &joined);
+                    seam_hall_enter(851, 41);
+                    check_expect(og_possessions()->page == OG_VIEW_SERVICE, "quest: the Fighters' quest giver did not open the member's menu");
+                    click_at(160, 73);
+                    if (og_possessions()->prompt == OG_PROMPT_ASK) { click_at(117, 125); }
+                    started = 0;
+                    for (q3 = 0; q3 < og_quest_count(); q3++) { if (og_quest(q3) && og_quest(q3)->qbn.name[0] == 'M' && og_quest(q3)->qbn.name[2] == 'B') { started++; } }
+                    check_expect(started == 1, "quest: Get Quest did not start one quest of the Fighters Guild");
+                    og_possessions_close();
+                    og_quest_reset();
+                }
             }
             (void)line;
         }
