@@ -1872,6 +1872,52 @@ static void hall_enter(int person_faction, int hall_faction)
 }
 
 
+/* click.c 960..985, a house's chest or cupboard (a 418 prop, or a 410 furniture variant that furniture_is_container says holds things): stocked the first time by shop_generate_stock, empty ones do nothing; the player's own house opens freely; anyone else's asks first (TEXT.RSC 37), and a grab may be seen: a pickpocket roll against 108, then theft (crime 13) and the guards. */
+static df_u32 g_container_pending;
+
+static void container_answer(int yes)
+{
+    if (!yes || !g_container_pending) { return; }
+    if (og_random_range(0, 255) >= 108 - og_character()->skill[15]) {
+        og_law_note(OG_CRIME_THEFT);
+        og_guards_summon(1);
+    }
+    if (!og_possessions_open(OG_VIEW_INVENTORY, g_container_pending)) { interact_say("You cannot take anything now."); }
+}
+
+static int container_used(int index)
+{
+    const Usable *u;
+    OgObject *box;
+    df_u32 id;
+    int type, faction, quality;
+    unsigned place;
+
+    u = &seam_level()->scene.usables[index];
+    if (!travel_building(&type, &faction, &quality, &place)) {
+        interact_say("There is nothing here you want.");
+        return 1;
+    }
+    id = og_loot_container(og_object(OG_WORLD_ROOT)->place_key, (df_u32)u->tag, u->cx, u->cy, u->cz, -1);
+    box = id ? og_object_edit(id) : 0;
+    if (!box) { interact_say("There is no room for another container."); return 1; }
+    if (!(box->flags & 2)) {
+        box->flags |= 2;
+        og_shelf_stock(id, (int)((df_u32)u->hd % 100u), quality, type, u->model);
+    }
+    if (!og_inventory_rows(id, -1, 0, 0)) {
+        interact_say("There is nothing here you want.");
+        return 1;
+    }
+    if ((df_u32)og_bank()->house == place) {
+        if (!og_possessions_open(OG_VIEW_INVENTORY, id)) { interact_say("You cannot take anything now."); }
+        return 1;
+    }
+    g_container_pending = id;
+    if (!og_possessions_ask(og_words(37), container_answer)) { interact_say("You cannot take anything now."); }
+    return 1;
+}
+
 static int shelf_used(int index, int variant)
 {
     OgShop shop;
@@ -2013,7 +2059,8 @@ static int street_witnesses(void)
         float dx, dz;
 
         e = people_at(i);
-        if (!e || !people_is_citizen(e)) { continue; }
+        /* A guard of the street is a person too, and the one whose sight brings the watch (people_check_witnesses: bit 1). */
+        if (!e || !(people_is_citizen(e) || people_is_guard(e))) { continue; }
         dx = e->x - cam.x; dz = e->z - cam.z;
         if (dx * dx + dz * dz > 2048.0f * 2048.0f) { continue; }
         /* Each look is a wall cast over the whole street: one for a bit not yet set, and none once both are. */
@@ -2068,7 +2115,8 @@ static int street_convert(int guards_only)
         Entity *e;
 
         e = people_at(i);
-        if (!e || !people_is_citizen(e)) { continue; }
+        /* people_is_citizen is false for a guard: the guards walking the street are the first the watch is made of. */
+        if (!e || !(people_is_citizen(e) || people_is_guard(e))) { continue; }
         if (people_is_guard(e)) {
             n += street_enlist(i);
             continue;
@@ -2246,6 +2294,7 @@ int seam_boot(void)
     dagger_bind_loaders();
     install_travel();
     og_activate_set_shelf(OTHER_SHELF, shelf_used);
+    og_activate_set_container(OTHER_CONTAINER, container_used);
     og_activate_set_person(person_used);
     og_activate_set_talk_use(talk_used);
     og_possessions_set_service(service_act);

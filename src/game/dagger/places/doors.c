@@ -581,6 +581,8 @@ int doors_build(DoorBuild *b)
                 }
                 c->model = i;
                 c->what = OTHER_CONTAINER;
+                /* A model's usable has no box of its own: hd carries the model's id (41000 + variant, or a 418xx prop), which a game's stock for the container is chosen by. */
+                c->hd = (float)b->act[i].id;
                 /* Its row in the keep table, as a mover's key is made: its block and its place in it. */
                 c->tag = (int)(((df_u32)b->block[i] << 24)
                                | (b->act[i].pos ? (b->act[i].pos & 0x7FFFFFu) : (0x800000u | ((df_u32)i & 0x7FFFFFu))));
