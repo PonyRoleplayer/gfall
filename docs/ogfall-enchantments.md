@@ -33,3 +33,11 @@ Written 2026-11-10 before any code, from the decomp's `docs/item-enchantments-in
 3. **Use** (section 4): Cast when used from the inventory's use mode and the magic items list, the usable icon, Health leech on use, wear 10.
 4. **Combat hooks** (section 5): Potent vs, Low damage vs, Cast when strikes, Vampiric on a hit, Health leech on a hit, armour (12/24), creatures with enchanted weapons.
 5. **Carrying and people** (types 7, 11, 23, 14, 25): weight allowance, weights, reactions in talk.
+
+## Slice 1 built (2026-11-10)
+
+- **One path**: `og_state_equip` (state.c) removes the old item's effects, sets the slot and applies the new item's, so every way an item goes in or out (the inventory, the paper doll, the hands, a trade, a drop) applies and removes (9.9 fixed). Loading a save applies nothing (the skill, the condition and the lasting spells are in the saved state).
+- **`play/enchant.c`**: Cast when held (type 1): `og_magic_hold` casts the spell on the player as a lasting effect (every effect's duration -1, icon 200 + the item's slot, level 8 as for every icon of 200 and over, no merging with an identical one), `og_magic_release` ends it with the item (9.11 fixed); Absorbs spells (9): the condition 0x200 while any worn item holds it (9.10's absorption fix); Enhances skill (10): +15 and -15. `og_item_enchantment` reads an item's enchantments whether made here or a guild's.
+- **On screen**: the HUD's effect icons already draw icon 10 for 200 and over; a lasting spell no longer blinks (`permanent`). The inventory's lists mark an enchanted item with TEXTURE.380 record 5 under its picture (`paint_enchant_mark`; the equipment slots on the paper doll do not yet). An enchanted weapon that is not a bow is drawn from `WEAPO1##.CIF` (`OgWeaponView.enchanted`), the plain picture when there is none.
+- **Not yet**: the wear a held spell puts on the item (its spell cost, once the wear and break rules of slice 2 exist), Regens health's stamp, and every tick effect.
+- Test: `check_ogmagicitem.c`: rings made with the item maker, worn and taken off.

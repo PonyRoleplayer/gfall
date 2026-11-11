@@ -204,7 +204,7 @@ static OgEffect *extend_or_allocate(const OgEffect *value)
     for (i = 0; i < OG_EFFECTS; i++) {
         e = &og_magic_state()->effect[i];
         if (!e->active) { if (!free) { free = e; } continue; }
-        if (e->group == value->group && e->sub == value->sub && same(e->target,value->target)) {
+        if (value->icon < 200 && e->group == value->group && e->sub == value->sub && same(e->target,value->target)) {
             e->rounds = (e->rounds+value->rounds) & 65535; return 0;
         }
     }
@@ -365,14 +365,12 @@ void og_magic_soul_capture(int index)
     }
 }
 
-void og_magic_apply(int spell, int caster, int target, int level, int no_resist)
+static void apply_spell(const OgSpellDef *s, int spell, int caster, int target, int level, int no_resist)
 {
-    const OgSpellDef *s;
     OgCharacter from, to;
     OgClass career;
     OgEffect value, *stored;
     int base[8], k, flags, percent, rounds;
-    s = og_spell_def(spell);
     if (!s || !og_magic_target(caster,&from,&career,base) || !og_magic_target(target,&to,&career,base)) { return; }
     if (level <= 0) { level = from.level; }
     if (s->icon >= 200) { level = 8; }
@@ -411,6 +409,41 @@ void og_magic_apply(int spell, int caster, int target, int level, int no_resist)
             if (!stored) { continue; }
             *stored = value; apply_effect(stored,target,caster);
         } else { apply_effect(&value,target,caster); }
+    }
+}
+
+void og_magic_apply(int spell, int caster, int target, int level, int no_resist)
+{
+    apply_spell(og_spell_def(spell), spell, caster, target, level, no_resist);
+}
+
+/* item_apply_equip_effects, type 1: the spell cast on the player as a lasting one (every effect's duration -1) with the icon 200 + the slot of the item that holds it. */
+void og_magic_hold(int spell, int slot)
+{
+    OgSpellDef held;
+    const OgSpellDef *s;
+    int k;
+
+    s = og_spell_def(spell);
+    if (!s || slot < 0 || slot > 26) { return; }
+    held = *s; held.icon = 200 + slot;
+    for (k = 0; k < 3; k++) {
+        if (held.group[k] == 255) { continue; }
+        held.duration[k][0] = -1; held.duration[k][1] = 0; held.duration[k][2] = 0;
+    }
+    apply_spell(&held, spell, -1, -1, 0, 1);
+}
+
+/* item_remove_equip_effects, type 1: the lasting spell of that slot (and spell) ends. */
+void og_magic_release(int spell, int slot)
+{
+    int i;
+
+    for (i = 0; i < OG_EFFECTS; i++) {
+        OgEffect *e;
+
+        e = &og_magic_state()->effect[i];
+        if (e->active && e->icon == 200 + slot && e->spell == spell && !e->target.place && !e->target.thing) { end(e); }
     }
 }
 

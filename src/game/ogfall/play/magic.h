@@ -14,6 +14,9 @@ int og_effect_cost_raw(int group, const df_i16 *c, const int *d, const int *ch, 
 int og_magic_resist(int index, int element, int class_bit, int modifier);
 int og_magic_chance(int index, int group, int sub);
 void og_magic_apply(int spell, int caster, int target, int level, int no_resist);
+/* A spell held by an enchanted item (Cast when held): a lasting effect on the player with icon 200 + the item's slot, ended by og_magic_release (items.md of the decomp, docs/ogfall-enchantments.md). */
+void og_magic_hold(int spell, int slot);
+void og_magic_release(int spell, int slot);
 void og_magic_minutes(df_u32 start, df_u32 minutes);
 void og_magic_restore_foe(int index);
 void og_magic_remove(int target, int group);

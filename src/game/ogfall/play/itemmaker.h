@@ -83,4 +83,7 @@ int og_item_powers_text(df_u32 item, char *out, int cap);
 /* inv_refresh_magic_values: the value of each item made at the item maker is its powers' cost, worked again when the inventory opens. */
 void og_itemmaker_refresh_values(void);
 
+/* The k-th enchantment of any enchanted item, a made one or a guild's: its type (15 and over a side effect) and parameter (the spell id for the first three powers, -1 for none). 0 past the last. */
+int og_item_enchantment(df_u32 item, int k, int *type, int *param);
+
 #endif

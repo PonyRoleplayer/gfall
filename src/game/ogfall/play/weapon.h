@@ -8,6 +8,8 @@
 
 typedef struct OgWeaponView {
     int cif, material, color, hand, group, frame, visible;
+    /* An enchanted weapon that is not a bow is drawn from WEAPO1##.CIF (weapons.c 132). */
+    int enchanted;
 } OgWeaponView;
 typedef struct OgStrike {
     df_u32 item;

@@ -7,6 +7,7 @@
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/itemmaker.h"
 #include "game/ogfall/play/play.h"
+#include "game/ogfall/play/magic.h"
 #include "game/ogfall/play/spellbook.h"
 #include "game/ogfall/tables/itemdefs.h"
 
@@ -152,6 +153,46 @@ static void itemmaker_checks(void)
     og_itemmaker_begin(1, 0); og_itemmaker_choose(31);
     g_consumed = -1;
     check_expect(og_itemmaker_enchant(eat_soul) == OG_IM_DONE && g_consumed == 31, "itemmaker: the soul bound was not consumed");
+    /* Slice 1 of the enchantments in play: a held spell lasting while the ring is worn, Enhances skill's +15 and Absorbs spells' condition. */
+    {
+        df_u32 r1, r2, r3;
+        int slot, held, skill_before, i;
+
+        r1 = og_item_create(pack, 25, rg, 0); r2 = og_item_create(pack, 25, rg, 0); r3 = og_item_create(pack, 25, rg, 0);
+        og_itemmaker_reset(); og_itemmaker_pick(r1);
+        og_itemmaker_begin(0, 1); og_itemmaker_choose(0);
+        og_itemmaker_begin(0, 10); og_itemmaker_choose(16);
+        check_expect(og_itemmaker_enchant(0) == OG_IM_DONE, "enchant: the held ring was not made");
+        og_itemmaker_reset(); og_itemmaker_pick(r2);
+        og_itemmaker_begin(0, 9);
+        check_expect(og_itemmaker_enchant(0) == OG_IM_DONE, "enchant: the absorbing ring was not made");
+        skill_before = og_character()->skill[16];
+        og_character()->conditions &= ~0x200;
+        og_itemmaker_reset(); og_itemmaker_pick(r3);
+        og_itemmaker_begin(0, 9);
+        check_expect(og_itemmaker_enchant(0) == OG_IM_DONE, "enchant: the third ring was not made");
+        check_expect(og_inventory_equip(r1), "enchant: the enchanted ring was not worn");
+        slot = og_item_equipped(r1);
+        held = 0;
+        for (i = 0; i < OG_EFFECTS; i++) {
+            const OgEffect *e;
+
+            e = &og_magic_state()->effect[i];
+            if (e->active && e->icon == 200 + slot && e->spell == 37 && e->permanent) { held++; }
+        }
+        check_expect(held > 0, "enchant: Cast when held left no lasting effect with icon 200 + the slot");
+        check_expect(og_character()->skill[16] == skill_before + 15, "enchant: Enhances skill did not add 15");
+        check_expect(og_inventory_equip(r2) && (og_character()->conditions & 0x200), "enchant: Absorbs spells did not set its condition");
+        check_expect(og_inventory_equip(r3), "enchant: the second absorbing ring was not worn");
+        og_inventory_unequip(r1);
+        held = 0;
+        for (i = 0; i < OG_EFFECTS; i++) { const OgEffect *e; e = &og_magic_state()->effect[i]; if (e->active && e->icon == 200 + slot) { held++; } }
+        check_expect(held == 0 && og_character()->skill[16] == skill_before && (og_character()->conditions & 0x200), "enchant: taking the ring off did not end its spell and skill, or cleared the other ring's absorption");
+        og_inventory_unequip(r2);
+        check_expect(og_character()->conditions & 0x200, "enchant: one absorbing ring off cleared the other's absorption");
+        og_inventory_unequip(r3);
+        check_expect(!(og_character()->conditions & 0x200), "enchant: absorption stayed with no ring worn");
+    }
     (void)daedric; (void)text; (void)n; (void)list;
 }
 

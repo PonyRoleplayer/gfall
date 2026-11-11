@@ -2613,10 +2613,18 @@ static void weapon_draw(const OgWeaponView *view, float flash)
     int first, count, at, x, y, px, py, bar;
     if (view->visible) {
         if (g_cast_pic) { pic_free(g_cast_pic); g_cast_pic = 0; }
-        if (g_weapon_file != view->cif) {
+        if (g_weapon_file != view->cif + (view->enchanted ? 100 : 0)) {
             cif_close(&g_weapon_art);
-            log_format(name,sizeof(name),"WEAPON%02d.CIF",view->cif);
-            g_weapon_file = cif_open(name,&g_weapon_art) ? view->cif : -1;
+            /* An enchanted weapon (not a bow) is drawn from WEAPO1##.CIF; the plain picture when there is none. */
+            g_weapon_file = -1;
+            if (view->enchanted) {
+                log_format(name,sizeof(name),"WEAPO1%02d.CIF",view->cif);
+                if (cif_open(name,&g_weapon_art)) { g_weapon_file = view->cif + 100; }
+            }
+            if (g_weapon_file < 0) {
+                log_format(name,sizeof(name),"WEAPON%02d.CIF",view->cif);
+                g_weapon_file = cif_open(name,&g_weapon_art) ? view->cif + (view->enchanted ? 100 : 0) : -1;
+            }
             g_weapon_frame = -1;
         }
         count = cif_group_span(&g_weapon_art,view->cif == 9 ? 1 : view->group,&first);
@@ -4295,9 +4303,27 @@ static void paint_coins(int x, int y)
     }
 }
 
+/* inv_draw_item_cell: an enchanted item has TEXTURE.380 record 5 centred in its cell, under the picture. */
+static void paint_enchant_mark(int x, int y)
+{
+    const Image *mark;
+    int row, col, color, left, top;
+
+    mark = possession_texture(380,5);
+    if (!mark || mark->width > 50 || mark->height > 37) { return; }
+    left = x+(50-mark->width)/2; top = y+(37-mark->height)/2;
+    for (row = 0; row < mark->height; row++) {
+        for (col = 0; col < mark->width; col++) {
+            color = mark->index[row*mark->width+col];
+            if (color && color != 255) { put_px(left+col,top+row,color); }
+        }
+    }
+}
+
 static void paint_item_cell(const OgObject *item, int x, int y)
 {
     char line[32];
+    if (og_item_enchanted(item->id)) { paint_enchant_mark(x,y); }
     if (og_possessions()->trade == OG_MARKET_BUY) { paint_coins(x,y); }
     paint_item_icon(item,x+2,y+2,46,33);
     if (og_item_equipped(item->id) >= 0) { outline(x,y,50,37,145); }
@@ -4610,7 +4636,8 @@ static void magic_hud_draw(const OgMagicState *state)
              * spells share their own row above the bar (or at y=177). */
             x = 16+(count%columns)*24; y = hostile ? 48 : count/12*24;
             icon = e->icon >= 200 ? 10 : e->icon; count++;
-            expiring = e->rounds <= 1;
+            /* A lasting spell (a held item's) never blinks. */
+            expiring = !e->permanent && e->rounds <= 1;
             for (j = i+1; j < OG_EFFECTS && expiring; j++) {
                 if (state->effect[j].active && !state->effect[j].target.place && !state->effect[j].target.thing &&
                     state->effect[j].spell == e->spell && state->effect[j].caster.thing == e->caster.thing &&

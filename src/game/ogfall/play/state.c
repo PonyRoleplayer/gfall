@@ -2,6 +2,7 @@
 #include "engine/core/mem.h"
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/magic.h"
+#include "game/ogfall/play/enchant.h"
 #include "game/ogfall/tables/combatdefs.h"
 #include "engine/scene/clock.h"
 
@@ -169,7 +170,11 @@ int og_state_equip(int slot, df_u32 id)
     if (slot < 0 || slot >= 27) { return 0; }
     item = og_object(id);
     if (id && (!item || item->type != OG_RECORD_ITEM || item->parent != g_state.inventory_id)) { return 0; }
+    /* item_remove_equip_effects, then the slot, then item_apply_equip_effects: the one place an item goes into or out of a slot, so every path of the original (and the ones it forgot) applies and removes. */
+    if (g_state.equipped[slot] == id) { return 1; }
+    if (g_state.equipped[slot]) { og_enchant_unequip(g_state.equipped[slot], slot); }
     g_state.equipped[slot] = id;
+    if (id) { og_enchant_equip(id, slot); }
     return 1;
 }
 

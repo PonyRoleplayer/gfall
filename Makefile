@@ -280,6 +280,7 @@ OGFALL_GAME_SRC := \
 	src/game/ogfall/play/spellshop.c \
 	src/game/ogfall/play/spellmaker.c \
 	src/game/ogfall/play/itemmaker.c \
+	src/game/ogfall/play/enchant.c \
 	src/game/ogfall/play/magicitem.c \
 	src/game/ogfall/play/steal.c \
 	src/game/ogfall/play/names.c \

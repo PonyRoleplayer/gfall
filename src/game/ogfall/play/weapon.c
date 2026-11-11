@@ -1,4 +1,5 @@
 #include "game/ogfall/play/weapon.h"
+#include "game/ogfall/play/itemmaker.h"
 #include "game/ogfall/play/hud.h"
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/msg.h"
@@ -106,6 +107,7 @@ void og_weapon_frame(const OgIn *in, int blocked, OgStrike *strike)
     bow = item && (item->index == 16 || item->index == 17);
     if (id != g_item || bow != g_bow) { og_weapon_cancel(); g_item = id; g_bow = bow; }
     g_view.cif = og_weapon_cif(item ? item->index : -1);
+    g_view.enchanted = item && !bow && og_item_enchanted(id);
     g_view.material = item ? item->material : 0; g_view.hand = g_hand;
     g_view.color = item ? item->color : 0;
     g_view.visible = og_hud_weapon_ready() && og_character()->health > 0;

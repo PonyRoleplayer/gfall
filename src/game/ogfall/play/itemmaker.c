@@ -572,6 +572,22 @@ int og_itemmaker_text(df_u32 id, char *out, int cap)
     return enchant_lines(row, out, cap);
 }
 
+int og_item_enchantment(df_u32 id, int k, int *type, int *param)
+{
+    const OgItemEnchant *row;
+    int def;
+
+    if (k < 0 || k > 9) { return 0; }
+    row = og_itemmaker_row(id);
+    if (row) {
+        if (row->type[k] < 0) { return 0; }
+        *type = row->type[k]; *param = row->param[k];
+        return 1;
+    }
+    def = og_magic_item_def(id);
+    return def >= 0 && og_magic_def_enchant(def, k, type, param);
+}
+
 int og_item_enchanted(df_u32 id)
 {
     return og_itemmaker_row(id) != 0 || og_magic_item_def(id) >= 0;
