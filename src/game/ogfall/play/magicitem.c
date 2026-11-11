@@ -55,7 +55,7 @@ int og_magic_def_artifact(int i)
 }
 
 /* enchant_spell_cost: the standard spell of this id costed for a character with every skill at 50, ten times; 0 for no such spell. */
-static int spell_cost_for(int id)
+int og_magic_spell_cost(int id)
 {
     OgCharacter dummy;
     int i;
@@ -98,7 +98,7 @@ int og_magic_def_value(int i)
         }
         if (code < 100) {
             /* enchant_value_slot_cost: 5 to 7 a spell's cost, else the fixed cost of the code. A parameter of 255 (to be chosen) names no spell. */
-            value += code >= 5 && code <= 7 ? spell_cost_for(param) : g_enchant_fixed[code];
+            value += code >= 5 && code <= 7 ? og_magic_spell_cost(param) : g_enchant_fixed[code];
         } else {
             value += g_enchant_by_param[code - 1000][param < 12 ? param : 11];
         }

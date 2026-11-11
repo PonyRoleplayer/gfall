@@ -438,6 +438,19 @@ static void transfer(Wire *w, OgState *s)
         }
     }
 
+    /* The items made at the item maker (schema 14). */
+    if (w->version >= 14) {
+        int k, j;
+
+        for (k = 0; k < OG_ENCHANTED_ITEMS; k++) {
+            OgItemEnchant *e;
+
+            e = &s->enchant[k];
+            wire_u32(w, &e->item); wire_int(w, &e->identified);
+            for (j = 0; j < 10; j++) { wire_int(w, &e->type[j]); wire_int(w, &e->param[j]); }
+        }
+    }
+
     if (w->version >= 7) {
         OgWorldState *world;
         world = &s->world_state;

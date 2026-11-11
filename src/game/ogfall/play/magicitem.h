@@ -28,6 +28,9 @@ df_u32 og_magic_item_create(df_u32 container, int which);
 /* The entry a magic item is of, -1 for another item. */
 int og_magic_item_def(df_u32 item);
 
+/* enchant_spell_cost: a standard spell's cost for a character with every skill at 50, ten times; 0 when there is no such spell. */
+int og_magic_spell_cost(int id);
+
 /* shop_stock_magic: quality / 2 + 1 magic items and a spellbook, and, if asked (a Mages Guild's rank 4), as many soul traps (a quarter holding a soul). */
 void og_magic_shop_stock(df_u32 container, int quality, int soul_traps);
 

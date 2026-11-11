@@ -13,6 +13,12 @@ int og_item_rarity(int group, int index)
     return g_rarity[g_groups[group][index]];
 }
 
+int og_item_template(int group, int index)
+{
+    if (group < 0 || group >= 29 || index < 0 || index >= og_item_kinds(group)) { return -1; }
+    return g_groups[group][index];
+}
+
 int og_item_capacity(int group, int index)
 {
     if (group < 0 || group >= 29 || index < 0 || index >= og_item_kinds(group)) { return 0; }

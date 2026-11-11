@@ -18,7 +18,7 @@
 #include "game/ogfall/play/worldstate.h"
 #include "engine/scene/keep.h"
 
-#define OG_STATE_VERSION 13
+#define OG_STATE_VERSION 14
 #define OG_STATE5_WIRE_BYTES 348
 #define OG_WORLD_ROWS 512
 #define OG_THUMB_W 80
@@ -81,6 +81,10 @@ typedef struct OgEvent {
 #define OG_CUSTOM_SPELL_ID 3000
 typedef struct OgCustomSpell { int used; df_u8 record[89]; } OgCustomSpell;
 
+/* What an item made at the item maker carries (itemmaker_enchant: ten pairs of a type, 0..14 a power and 15..25 a side effect, and a parameter; the spell id for the first three powers). Kept by the item's id; a row whose item is gone is free. identified is the original's item flag 32. */
+#define OG_ENCHANTED_ITEMS 64
+typedef struct OgItemEnchant { df_u32 item; int identified; int type[10], param[10]; } OgItemEnchant;
+
 typedef struct OgState {
     int version, ready;
     OgCharacter who;
@@ -121,11 +125,14 @@ typedef struct OgState {
     OgLaw law;
     OgGuilds guilds;
     OgCustomSpell custom_spell[OG_CUSTOM_SPELLS];
+    OgItemEnchant enchant[OG_ENCHANTED_ITEMS];
 } OgState;
 
 OgCharacter *og_character(void);
 /* A slot of the player's own spells, to fill (spellmaker.c). */
 OgCustomSpell *og_custom_spell_edit(int slot);
+/* A row of the enchanted items (itemmaker.c). */
+OgItemEnchant *og_item_enchant_edit(int slot);
 void og_character_clear(void);
 const OgState *og_state(void);
 /* The faction and region standing inside the session (standing.h). */

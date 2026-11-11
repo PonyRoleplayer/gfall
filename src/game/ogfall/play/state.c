@@ -49,6 +49,11 @@ OgCustomSpell *og_custom_spell_edit(int slot)
     return slot >= 0 && slot < OG_CUSTOM_SPELLS ? &g_state.custom_spell[slot] : 0;
 }
 
+OgItemEnchant *og_item_enchant_edit(int slot)
+{
+    return slot >= 0 && slot < OG_ENCHANTED_ITEMS ? &g_state.enchant[slot] : 0;
+}
+
 OgGuilds *og_guilds(void)
 {
     return &g_state.guilds;

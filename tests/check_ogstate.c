@@ -196,7 +196,7 @@ static void check_legacy_save(const df_u8 *current, df_u32 size)
     int row, spell_count, version, record_bytes;
     df_u32 spells[OG_OBJECTS];
     /* Standing, from schema 8, sits between the magic rows and the world: ready, a count, a pair a faction and a pair a region. */
-    df_u32 stand = 8u + (og_state()->standing.ready ? (df_u32)og_faction_count()*8u + OG_REGIONS*8u : 0u) + (OG_REGIONS*16u + 16u) + (OG_ROOMS_MOST*12u + 4u) + (4u + OG_REGIONS*4u) + (OG_MEMBERSHIPS*24u + 16u + 4u + 4u + 20u) + OG_CUSTOM_SPELLS*(4u + 89u);
+    df_u32 stand = 8u + (og_state()->standing.ready ? (df_u32)og_faction_count()*8u + OG_REGIONS*8u : 0u) + (OG_REGIONS*16u + 16u) + (OG_ROOMS_MOST*12u + 4u) + (4u + OG_REGIONS*4u) + (OG_MEMBERSHIPS*24u + 16u + 4u + 4u + 20u) + OG_CUSTOM_SPELLS*(4u + 89u) + OG_ENCHANTED_ITEMS*(4u + 4u + 80u);
     check_expect(size > 24u+1272u+256u*124u && df_ru32(current+24+1272) == OG_WORLD_ROOT,
                  "fixture locates the documented original object section");
     if (size <= 24u+1272u+256u*124u) { return; }
@@ -258,7 +258,7 @@ static void check_disk(const char *root)
     FsFile *file;
     df_u32 size, id;
     int roll;
-    static df_u8 data[65536];
+    static df_u8 data[131072];
     OgClass custom;
 
     /* The filesystem's executable directory is build/ for this test only. */
