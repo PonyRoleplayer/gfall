@@ -28,6 +28,9 @@ static const OgQuestWorld *g_world;
 static int g_foe_counter = 1;
 static OgRumour g_rumour[OG_RUMOURS];
 static OgQuestFace g_face[OG_QUEST_FACES];
+static OgQuestAccess g_access[OG_QUEST_ACCESS];
+/* Op 75's templates for the quest op 8 starts this run: the group and index of up to four items (-1 none). */
+static int g_tpl_group[4] = { -1, -1, -1, -1 }, g_tpl_index[4];
 static struct { int set, who, faction; char name[40], town[33]; } g_questor;
 static void arg_set(OgQuest *q, const OgQbnOp *op, int n, int value);
 static void lay_items(OgQuest *q, int region, int index);
@@ -49,7 +52,7 @@ void og_quest_set_say(void (*say)(const char *text)) { g_say = say; }
 void og_quest_set_ask(int (*ask)(const char *words, void (*answer)(int yes))) { g_ask = ask; }
 const df_u8 *og_quest_globals(void) { return g_global; }
 void og_quest_globals_clear(void) { mem_zero(g_global, sizeof(g_global)); }
-void og_quest_reset(void) { mem_zero(g_rumour, sizeof(g_rumour)); mem_zero(g_face, sizeof(g_face)); mem_zero(g_quest, sizeof(g_quest)); mem_zero(g_global, sizeof(g_global)); mem_zero(g_log, sizeof(g_log)); g_offer_slot = -1; g_foe_counter = 1; mem_zero(&g_questor, sizeof(g_questor)); }
+void og_quest_reset(void) { mem_zero(g_rumour, sizeof(g_rumour)); mem_zero(g_face, sizeof(g_face)); mem_zero(g_access, sizeof(g_access)); mem_zero(g_quest, sizeof(g_quest)); mem_zero(g_global, sizeof(g_global)); mem_zero(g_log, sizeof(g_log)); g_offer_slot = -1; g_foe_counter = 1; mem_zero(&g_questor, sizeof(g_questor)); }
 void og_quest_set_names(const OgQuestNames *names) { g_names = names; }
 void og_quest_set_world(const OgQuestWorld *world) { g_world = world; }
 void og_quest_set_macros(int (*fill)(const char *in, char *out, int cap)) { g_macros = fill; }
@@ -318,6 +321,7 @@ static int bind_resources(int slot)
             q->person[i].bound = 1; q->person[i].who = 0; q->person[i].faction = pe->faction;
         }
     }
+    for (i = 0; i < q->qbn.n_op; i++) { q->qbn.op[i].last_minutes = og_state()->minutes; }
     for (i = 0; i < q->qbn.n_item; i++) {
         if (q->qbn.item[i].flags & 2) { q->item[i].gold = 1; q->item[i].amount = roll_gold(q, &q->qbn.item[i]); }
         else { make_item(q, i); }
@@ -876,6 +880,7 @@ int og_quest_topic_answer(int i, char *out, int cap)
 
 /* ---- Faces ---- */
 
+const OgQuestAccess *og_quest_access(int i) { return i >= 0 && i < OG_QUEST_ACCESS && g_access[i].used ? &g_access[i] : 0; }
 const OgQuestFace *og_quest_face(int i) { return i >= 0 && i < OG_QUEST_FACES && g_face[i].used ? &g_face[i] : 0; }
 
 /* quest_face_add and its removal: one slot a person or foe of a quest; a full list takes none. */
@@ -934,6 +939,7 @@ static void make_item(OgQuest *q, int i)
 
     it = &q->qbn.item[i];
     group = it->group; index = it->index;
+    if (group == 100 && index >= 0 && index < 4 && g_tpl_group[index] >= 0) { group = g_tpl_group[index]; index = g_tpl_index[index]; }
     if (group == 100 || group > 27 || !quest_root()) { return; }
     if (group < 0) {
         int tries;
@@ -1049,6 +1055,12 @@ static int town_here(void)
     return 0;
 }
 
+static int same_text(const char *a, const char *b)
+{
+    while (*a && *a == *b) { a++; b++; }
+    return *a == *b;
+}
+
 static void run_op(int slot, OgQuest *q, OgQbnOp *op)
 {
     int i, n, count, pick, found;
@@ -1097,6 +1109,110 @@ static void run_op(int slot, OgQuest *q, OgQbnOp *op)
             n = op->arg[1].value;
             if (n >= 0 && n < (op->opcode < 60 ? q->qbn.n_person : q->qbn.n_foe)) { face_set(q, op->opcode < 60 ? 1 : 2, n, op->opcode == 55 || op->opcode == 63); }
             done(q, op);
+        }
+        break;
+    case 8:
+        /* Once, outside region 31: another quest started, S plus seven digits drawn between the two numbers. */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) {
+            int region, here, px, py;
+
+            region = 0;
+            if (g_world && g_world->here) { g_world->here(&region, &here, &px, &py); }
+            if (region != 31) {
+                char child[12];
+                int k, lo, hi, active;
+
+                lo = op->arg[1].value; hi = op->arg[2].value;
+                log_format(child, sizeof(child), "S%07d", og_random_range(lo < hi ? lo : hi, lo < hi ? hi : lo));
+                active = 0;
+                for (k = 0; k < OG_QUESTS; k++) { if (g_quest[k].used && same_text(g_quest[k].qbn.name, child)) { active = 1; } }
+                if (!active) { og_quest_start(child, 0); }
+            }
+            done(q, op);
+        }
+        break;
+    case 9:
+        /* A foe placed again and again: every `interval` minutes, with a chance in a hundred, `count` more (a count of -1 never runs out; 0 is a no-op). */
+        if (arg_state(q, op, 0) && op->arg[4].value != 0 && op->arg[1].value >= 0 && op->arg[1].value < q->qbn.n_foe &&
+            og_state()->minutes - op->last_minutes >= (df_u32)op->arg[2].value) {
+            op->last_minutes = og_state()->minutes;
+            if (og_random_range(0, 32767) % 100 <= op->arg[3].value) {
+                OgQuestFoe *foe;
+                int made;
+
+                if (op->arg[4].value != -1) { op->arg[4].value--; }
+                foe = &q->foe[op->arg[1].value];
+                for (made = 0; g_world && g_world->spawn_foe && made < q->qbn.foe[op->arg[1].value].count && made < 16; made++) {
+                    if (!g_world->spawn_foe(q->qbn.foe[op->arg[1].value].type, OG_QUEST_FOE_THING(foe->number, (foe->next++) & 15))) { break; }
+                    foe->live++;
+                }
+            }
+        }
+        break;
+    case 17:
+        /* Every run while the gate holds: the place's building open to the access kind until the minutes are up (the grant of the same place and kind is renewed). */
+        if (arg_state(q, op, 0)) {
+            n = op->arg[1].value;
+            if (n >= 0 && n < q->qbn.n_place && q->place[n].bound) {
+                int free_slot;
+
+                free_slot = -1;
+                for (i = 0; i < OG_QUEST_ACCESS; i++) {
+                    if (g_access[i].used && g_access[i].region == q->place[n].region && g_access[i].index == q->place[n].index && g_access[i].access == op->arg[2].value) { free_slot = i; break; }
+                    if (!g_access[i].used && free_slot < 0) { free_slot = i; }
+                }
+                if (free_slot >= 0) {
+                    g_access[free_slot].used = 1; g_access[free_slot].quest_id = q->qbn.id; g_access[free_slot].region = q->place[n].region; g_access[free_slot].index = q->place[n].index;
+                    g_access[free_slot].access = op->arg[2].value; g_access[free_slot].until = og_state()->minutes + (df_u32)op->arg[3].value;
+                }
+            }
+            done(q, op);
+        }
+        break;
+    case 30:
+        /* Once: the person put in the place (a person that is only a faction stays). With no person named: the player taken to the place of the person of the next argument. */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) {
+            if (op->arg[1].value == -1) {
+                n = op->arg[2].value;
+                if (n >= 0 && n < q->qbn.n_person && q->person[n].at > 0 && q->place[q->person[n].at - 1].bound && g_world && g_world->go) {
+                    g_world->go(q->place[q->person[n].at - 1].region, q->place[q->person[n].at - 1].index);
+                }
+            } else {
+                n = op->arg[1].value;
+                if (n >= 0 && n < q->qbn.n_person && q->person[n].bound && q->qbn.person[n].kind != -8 && op->arg[2].value >= 0 && op->arg[2].value < q->qbn.n_place) { q->person[n].at = op->arg[2].value + 1; }
+            }
+            done(q, op);
+        }
+        break;
+    case 75:
+        /* Every run while the gate holds: the items named are the templates of the quest op 8 starts. */
+        if (arg_state(q, op, 0)) {
+            for (i = 1; i < 5 && i < op->argc; i++) {
+                n = op->arg[i].value;
+                if (!op->arg[i].literal && n >= 0 && n < q->qbn.n_item) { g_tpl_group[i - 1] = q->qbn.item[n].group; g_tpl_index[i - 1] = q->qbn.item[n].index; }
+            }
+        }
+        break;
+    case 81:
+        /* Once: the place and the person marked open to the quest (place flag 64, person 0x4000). */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) {
+            n = op->arg[1].value;
+            if (!op->arg[1].literal && n >= 0 && n < q->qbn.n_place) { q->qbn.place[n].flags |= 64; }
+            n = op->arg[2].value;
+            if (!op->arg[2].literal && n >= 0 && n < q->qbn.n_person) { q->qbn.person[n].flags |= 0x4000; }
+        }
+        break;
+    case 83:
+        /* Once: the player taken to the dungeon of a region whose map pixel is the number (map id: the pixel's row times 1000 and its column). */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) {
+            if (g_world && g_world->go && g_world->count && g_world->location) {
+                OgLocation lo;
+
+                for (n = 0; n < g_world->count(); n++) {
+                    if (g_world->location(n, &lo) && lo.region == op->arg[2].value && lo.py * 1000 + lo.px == op->arg[3].value) { g_world->go(lo.region, lo.index); break; }
+                }
+            }
+            op->flags |= 1;
         }
         break;
     case 4:
@@ -1463,6 +1579,8 @@ void og_quest_run(void)
         q = &g_quest[slot];
         if (!q->used) { continue; }
         for (i = 0; i < q->qbn.n_op && !q->ended; i++) { run_op(slot, q, &q->qbn.op[i]); }
+        /* The four template slots are cleared after each quest's run. */
+        for (i = 0; i < 4; i++) { g_tpl_group[i] = -1; }
         if (!q->ended) { timers_run(q); }
         if (q->ended) { og_quest_end(slot); }
     }
@@ -1507,15 +1625,15 @@ static void qwire_quest(QWire *w, OgQuest *q, int read)
 #define QU(x) do { if (read) { (x) = qget(w); } else { qput(w, (x)); } } while (0)
     QI(q->rewarded); QI(q->ended);
     for (i = 0; i < q->qbn.n_state; i++) { if (!q->qbn.state[i].is_global) { QI(q->qbn.state[i].value); } }
-    for (i = 0; i < q->qbn.n_foe; i++) { QI(q->qbn.foe[i].killed); QI(q->foe[i].number); QI(q->foe[i].placed); QI(q->foe[i].place); QI(q->foe[i].live); }
+    for (i = 0; i < q->qbn.n_foe; i++) { QI(q->qbn.foe[i].killed); QI(q->foe[i].number); QI(q->foe[i].placed); QI(q->foe[i].place); QI(q->foe[i].live); QI(q->foe[i].next); }
     for (i = 0; i < q->qbn.n_timer; i++) { QI(q->timer[i].flags); QU(q->timer[i].start); QU(q->timer[i].delay); }
     for (i = 0; i < q->qbn.n_item; i++) { QI(q->item[i].gold); QI(q->item[i].amount); QI(q->item[i].given); QU(q->item[i].object); QI(q->item[i].place); QI(q->item[i].laid); QI(q->item[i].carrier); }
     count = 0;
-    if (!read) { for (i = 0; i < q->qbn.n_op; i++) { if (q->qbn.op[i].flags || q->qbn.op[i].last_minutes || q->qbn.op[i].opcode == 25) { count++; } } }
+    if (!read) { for (i = 0; i < q->qbn.n_op; i++) { if (q->qbn.op[i].flags || q->qbn.op[i].last_minutes || q->qbn.op[i].opcode == 25 || q->qbn.op[i].opcode == 9) { count++; } } }
     QI(count);
     if (read && (count < 0 || count > q->qbn.n_op)) { w->bad = 1; return; }
-    if (read) { for (k = 0; k < count && !w->bad; k++) { i = (int)qget(w); if (i < 0 || i >= q->qbn.n_op) { w->bad = 1; return; } q->qbn.op[i].flags = (int)qget(w); q->qbn.op[i].last_minutes = qget(w); q->qbn.op[i].arg[2].value = (int)qget(w); } }
-    else { for (i = 0; i < q->qbn.n_op; i++) { if (q->qbn.op[i].flags || q->qbn.op[i].last_minutes || q->qbn.op[i].opcode == 25) { v = (df_u32)i; qput(w, v); qput(w, (df_u32)q->qbn.op[i].flags); qput(w, q->qbn.op[i].last_minutes); qput(w, (df_u32)q->qbn.op[i].arg[2].value); } } }
+    if (read) { for (k = 0; k < count && !w->bad; k++) { i = (int)qget(w); if (i < 0 || i >= q->qbn.n_op) { w->bad = 1; return; } q->qbn.op[i].flags = (int)qget(w); q->qbn.op[i].last_minutes = qget(w); q->qbn.op[i].arg[2].value = (int)qget(w); q->qbn.op[i].arg[4].value = (int)qget(w); } }
+    else { for (i = 0; i < q->qbn.n_op; i++) { if (q->qbn.op[i].flags || q->qbn.op[i].last_minutes || q->qbn.op[i].opcode == 25 || q->qbn.op[i].opcode == 9) { v = (df_u32)i; qput(w, v); qput(w, (df_u32)q->qbn.op[i].flags); qput(w, q->qbn.op[i].last_minutes); qput(w, (df_u32)q->qbn.op[i].arg[2].value); qput(w, (df_u32)q->qbn.op[i].arg[4].value); } } }
     for (i = 0; i < q->qbn.n_item; i++) { QI(q->qbn.item[i].flags); }
     for (i = 0; i < q->qbn.n_place; i++) {
         QI(q->qbn.place[i].flags);
@@ -1525,6 +1643,7 @@ static void qwire_quest(QWire *w, OgQuest *q, int read)
     for (i = 0; i < q->qbn.n_person; i++) {
         QI(q->qbn.person[i].flags);
         QI(q->person[i].bound);
+        QI(q->person[i].at);
         if (q->person[i].bound) { QI(q->person[i].who); QI(q->person[i].faction); qbytes(w, q->person[i].name, 40, read); qbytes(w, q->person[i].town, 33, read); }
     }
 #undef QI
@@ -1561,6 +1680,7 @@ int og_quest_pack(df_u8 *out, int cap)
         qput(&w, (df_u32)g_rumour[i].quest_id); qput(&w, (df_u32)g_rumour[i].message); qput(&w, (df_u32)g_rumour[i].flags); qput(&w, (df_u32)g_rumour[i].target); qput(&w, g_rumour[i].expires);
         qbytes(&w, g_rumour[i].name, 9, 0); qbytes(&w, g_rumour[i].text, 200, 0);
     }
+    for (i = 0; i < OG_QUEST_ACCESS; i++) { qput(&w, (df_u32)g_access[i].used); qput(&w, (df_u32)g_access[i].quest_id); qput(&w, (df_u32)g_access[i].region); qput(&w, (df_u32)g_access[i].index); qput(&w, (df_u32)g_access[i].access); qput(&w, g_access[i].until); }
     for (i = 0; i < OG_QUEST_FACES; i++) { qput(&w, (df_u32)g_face[i].used); qput(&w, (df_u32)g_face[i].quest_id); qput(&w, (df_u32)g_face[i].kind); qput(&w, (df_u32)g_face[i].index); }
     return w.bad ? -1 : w.n;
 }
@@ -1605,6 +1725,7 @@ int og_quest_unpack(const df_u8 *in, int len)
         qbytes(&w, g_rumour[i].name, 9, 1); qbytes(&w, g_rumour[i].text, 200, 1);
         g_rumour[i].name[8] = 0; g_rumour[i].text[199] = 0;
     }
+    for (i = 0; i < OG_QUEST_ACCESS && !w.bad; i++) { g_access[i].used = (int)qget(&w); g_access[i].quest_id = (int)qget(&w); g_access[i].region = (int)qget(&w); g_access[i].index = (int)qget(&w); g_access[i].access = (int)qget(&w); g_access[i].until = qget(&w); }
     for (i = 0; i < OG_QUEST_FACES && !w.bad; i++) { g_face[i].used = (int)qget(&w); g_face[i].quest_id = (int)qget(&w); g_face[i].kind = (int)qget(&w); g_face[i].index = (int)qget(&w); }
     if (w.bad || w.n != len) { og_quest_reset(); return 0; }
     return 1;

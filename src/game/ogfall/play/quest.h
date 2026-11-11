@@ -29,6 +29,8 @@ typedef struct OgQuestPlace {
  * (kind -8, type 65); the others wait for the town's buildings (step 9). who identifies a person of the world (the talk window's id), name and town are what text says of them. */
 typedef struct OgQuestPerson {
     int bound, who, faction;
+    /* The place (+1) op 30 put the person in; 0 for none. */
+    int at;
     char name[40], town[33];
 } OgQuestPerson;
 typedef struct OgQuestTimer {
@@ -38,7 +40,7 @@ typedef struct OgQuestTimer {
 
 /* A foe the quest names: its number in the world (the counter every foe of every quest takes one from), whether op 22 placed it and where (a place of the quest, -1 near the player), and how many of it are live. */
 typedef struct OgQuestFoe {
-    int number, placed, place, live;
+    int number, placed, place, live, next;
 } OgQuestFoe;
 
 /* An item a quest names: gold's amount is rolled when the quest starts (quest_init_item); a reward is given once. Other items wait for step 9. */
@@ -71,6 +73,8 @@ typedef struct OgQuestWorld {
     void (*reveal)(int ordinal);
     /* A creature of a kind placed in the dungeon the player is in, unseen and near (quest_place_object); thing is its key (OG_QUEST_FOE_KEY and the number and copy). 1 when placed. */
     int (*spawn_foe)(int kind, df_u32 thing);
+    /* The player taken to a place on the map (op 30 and op 83): the Mages Guild's teleport. */
+    int (*go)(int region, int index);
     /* A pile at the player's feet for an item (a quest's item set down in its place, or dropped by its foe): the container's id, 0 for none. */
     df_u32 (*place_item)(void);
 } OgQuestWorld;
@@ -132,6 +136,11 @@ int og_quest_rumour_for(int who, char *out, int cap);
 int og_quest_topic_count(void);
 int og_quest_topic_name(int i, char *out, int cap);
 int og_quest_topic_answer(int i, char *out, int cap);
+
+/* Building access a quest granted (op 17): the building's place, the access kind and the minute it lasts to. Nothing reads them until a quest's buildings stand in a town. */
+#define OG_QUEST_ACCESS 16
+typedef struct OgQuestAccess { int used, quest_id, region, index, access; df_u32 until; } OgQuestAccess;
+const OgQuestAccess *og_quest_access(int i);
 
 /* The faces at the top of the screen (3.11, ops 55, 56, 63 and 64): ten slots of a quest's person or foe. kind 1 person, 2 foe. */
 #define OG_QUEST_FACES 10

@@ -64,6 +64,8 @@ static int carried_by_player(df_u32 id)
     o = og_object(id);
     return o && o->parent == og_state()->inventory_id;
 }
+static int g_went_region = -1, g_went_index = -1;
+static int w_go(int region, int index) { g_went_region = region; g_went_index = index; return 1; }
 static df_u32 g_pile_made;
 static df_u32 w_place_item(void) { g_pile_made++; return 0; }
 static int w_spawn(int kind, df_u32 thing) { if (g_spawned < 16) { g_spawn_kind[g_spawned] = kind; g_spawn_thing[g_spawned++] = thing; } return 1; }
@@ -328,6 +330,73 @@ void check_ogquest(void)
             }
             (void)name;
         }
+        /* Op 9 repeats a foe (every ten minutes, twice in all, two of them each time), op 17 grants access to a place's building, op 30 puts the questor in a place and takes the player to it,
+         * op 81 marks the place and person open, op 8 starts a child quest. */
+        {
+            int d9[5] = {-1, 0, 0, 0, 0}, d17[5] = {1, 0, -2, -2, -2}, d30[5] = {2, 0, 0, -2, -2}, d30b[5] = {5, -1, 0, -2, -2}, d81[5] = {4, 0, 0, -2, -2}, d8[5] = {3, -2, -2, -2, -2};
+            int before_spawn;
+
+            og_quest_end(0);
+            memset(f3, 0, sizeof(f3));
+            put16(f3 + 0x10 + 3 * 2, 1); put16(f3 + 0x24 + 3 * 2, 0xC0);
+            put16(f3 + 0x10 + 4 * 2, 1); put16(f3 + 0x24 + 4 * 2, 0xE0);
+            put16(f3 + 0x10 + 7 * 2, 1); put16(f3 + 0x24 + 7 * 2, 0x120);
+            put16(f3 + 0x10 + 8 * 2, 6); put16(f3 + 0x24 + 8 * 2, 0x140);
+            put16(f3 + 0x10 + 9 * 2, 6); put16(f3 + 0x24 + 9 * 2, 0x140 + 6 * 87);
+            put16(f3 + 0xC0 + 4, 21); put16(f3 + 0xC0 + 6, 7);
+            f3[0xE0 + 3] = 2; put16(f3 + 0xE0 + 4, 1); put16(f3 + 0xE0 + 6, (df_u32)-1); put16(f3 + 0xE0 + 8, 0);
+            f3[0x120 + 3] = 4; f3[0x120 + 4] = 2;
+            for (i = 0; i < 6; i++) { put16(f3 + 0x140 + 6 * 87 + i * 8, i); put32(f3 + 0x140 + 6 * 87 + i * 8 + 4, (df_u32)(100 + i)); }
+            put_op(f3 + 0x140, 9, -1, d9, 0);
+            put_lit(f3 + 0x140 + 6 + 2 * 15, 10); put_lit(f3 + 0x140 + 6 + 3 * 15, 100); put_lit(f3 + 0x140 + 6 + 4 * 15, 2);
+            put_op(f3 + 0x140 + 87, 17, -1, d17, 0);
+            put_lit(f3 + 0x140 + 87 + 6 + 2 * 15, 4); put_lit(f3 + 0x140 + 87 + 6 + 3 * 15, 100);
+            put_op(f3 + 0x140 + 174, 30, -1, d30, 0);
+            put_op(f3 + 0x140 + 261, 30, -1, d30b, 0);
+            put_op(f3 + 0x140 + 348, 81, -1, d81, 0);
+            put_op(f3 + 0x140 + 435, 8, -1, d8, 0);
+            put_lit(f3 + 0x140 + 435 + 6 + 1 * 15, 101); put_lit(f3 + 0x140 + 435 + 6 + 2 * 15, 101);
+            {
+                static const OgQuestWorld w9 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item };
+
+                og_quest_set_world(&w9);
+            }
+            questor(11);
+            g_spawned = 0;
+            slot = og_quest_start_bytes("TEST0009", f3, 0x140 + 6 * 87 + 6 * 8, 0);
+            check_expect(slot == 0 && og_quest(0)->place[0].bound, "quest: the repeat quest did not start with its place");
+            if (slot == 0) {
+                og_quest_run();
+                before_spawn = g_spawned;
+                og_state_pass_minutes(10);
+                check_expect(g_spawned == before_spawn + 2, "quest: op 9 did not place two foes after ten minutes");
+                og_state_pass_minutes(10);
+                og_state_pass_minutes(10);
+                check_expect(g_spawned == before_spawn + 4, "quest: op 9 placed more than its two times, or fewer");
+                og_quest_set_state(0, 1, 1);
+                og_quest_run();
+                check_expect(og_quest_access(0) && og_quest_access(0)->access == 4 && og_quest_access(0)->index == og_quest(0)->place[0].index, "quest: op 17 did not grant the place's access");
+                og_quest_set_state(0, 2, 1);
+                og_quest_run();
+                check_expect(og_quest(0)->person[0].at == 1, "quest: op 30 did not put the person in the place");
+                og_quest_set_state(0, 5, 1);
+                g_went_region = -1;
+                og_quest_run();
+                check_expect(g_went_region == og_quest(0)->place[0].region && g_went_index == og_quest(0)->place[0].index, "quest: op 30 did not take the player to the person's place");
+                og_quest_set_state(0, 4, 1);
+                og_quest_run();
+                check_expect((og_quest(0)->qbn.place[0].flags & 64) && (og_quest(0)->qbn.person[0].flags & 0x4000), "quest: op 81 did not mark the place and the person");
+                og_quest_set_state(0, 3, 1);
+                og_quest_run();
+                check_expect(og_quest(1) && og_quest(1)->qbn.name[0] == 'S' && og_quest(1)->qbn.name[7] == '1', "quest: op 8 did not start the child quest S0000101");
+            }
+            og_quest_set_world(0);
+            {
+                int k;
+
+                for (k = 0; k < og_quest_count(); k++) { og_quest_end(k); }
+            }
+        }
         og_character()->attribute[OG_STR] = saved_str;
     }
     slot = og_quest_start("M0B00Y00", 8);
@@ -401,7 +470,7 @@ void check_ogquest(void)
     /* Places and timers: M0B00Y00's two dungeons bound to two different dungeons of the region other than the one the player is in, its timer's delay the travel estimate and a week
      * for the kind, doubled; op 19 shows the first on the map; at the delay the timer's state ends the quest (op 6). */
     {
-        static const OgQuestWorld world = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_place_item };
+        static const OgQuestWorld world = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item };
         const OgQuest *q2;
         int s2, spent;
 

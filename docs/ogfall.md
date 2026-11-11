@@ -2314,3 +2314,12 @@ Step 9 is a long tail; it lands in slices. This one:
 - **Op 25** counts its third argument down while the gate holds and the flag is clear; the count is saved. **Ops 44, 46, 48** unbind, hide (flags 0xA00) or show a person: no quest person stands in the world yet, so the flags only record it. **Ops 55, 56, 63, 64** keep the faces (ten slots, saved); nothing paints them yet.
 - Not yet: painting the faces, quest people and buildings in Where-is and People, the Where-is category for a quest's building.
 - Test: `check_ogquest.c` (topics hidden and shown, the countdown, faces, the rumour; start rumour taken with an unfinished quest).
+
+### The quest machine, step 9d (child quests, repeats, access, travel)
+
+- **Op 8** (once, not in region 31): another quest, `S` and seven digits drawn between the two numbers, started by `og_quest_start` (no offer; one already running is not started twice). **Op 75** names up to four items as the templates of the quest op 8 starts in the same run: a child's item of group 100 takes the group and index of template `index` (`g_tpl_*`, cleared after each quest's run).
+- **Op 9**: every `interval` minutes (from the op's `last_minutes`, now set to the quest's start for every op) with a chance in a hundred, the foe is placed `count` more times near the player (copies numbered on from the foe's `next`), and the op's repeat count (arg 4, -1 for ever) goes down; the count and `next` are saved.
+- **Op 17** grants a place's building an access kind until the minutes are up (`OgQuestAccess`, 16 slots, saved) and **op 81** marks the place (flag 64) and person (0x4000). Nothing reads either yet: the quests' buildings do not stand in towns.
+- **Op 30** puts a person (not a faction-only one) in a place (`OgQuestPerson.at`), or with no person named takes the player to the place of the person of the next argument through `OgQuestWorld.go` (the Mages Guild's teleport, `og_teleport`). **Op 83** takes the player to the dungeon of the region whose map pixel (row * 1000 + column) is the op's number; the original also stands the player at the place's live copy, which is not built.
+- Test: `check_ogquest.c` (op 9 twice and no more, op 17, op 30 both ways, op 81, op 8 starting S0000101).
+- Not yet: the main story's start and its global states (the S quests read them; nothing sets them but the quests), the Daedra, temple and noble quest letters, the guild invitation letters, the letter's text on reading.
