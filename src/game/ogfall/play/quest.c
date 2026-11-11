@@ -19,6 +19,9 @@ static int (*g_macros)(const char *in, char *out, int cap);
 static const char *(*g_place)(void);
 static OgLogSlot g_log[OG_LOG_SLOTS];
 static const OgQuestWorld *g_world;
+static int g_foe_counter = 1;
+static void arg_set(OgQuest *q, const OgQbnOp *op, int n, int value);
+static void done(OgQuest *q, OgQbnOp *op);
 static int bind_resources(int slot);
 static void state_store(OgQuest *q, int index, int value);
 
@@ -27,7 +30,7 @@ void og_quest_set_say(void (*say)(const char *text)) { g_say = say; }
 void og_quest_set_ask(int (*ask)(const char *words, void (*answer)(int yes))) { g_ask = ask; }
 const df_u8 *og_quest_globals(void) { return g_global; }
 void og_quest_globals_clear(void) { mem_zero(g_global, sizeof(g_global)); }
-void og_quest_reset(void) { mem_zero(g_quest, sizeof(g_quest)); mem_zero(g_global, sizeof(g_global)); mem_zero(g_log, sizeof(g_log)); g_offer_slot = -1; }
+void og_quest_reset(void) { mem_zero(g_quest, sizeof(g_quest)); mem_zero(g_global, sizeof(g_global)); mem_zero(g_log, sizeof(g_log)); g_offer_slot = -1; g_foe_counter = 1; }
 void og_quest_set_names(const OgQuestNames *names) { g_names = names; }
 void og_quest_set_world(const OgQuestWorld *world) { g_world = world; }
 void og_quest_set_macros(int (*fill)(const char *in, char *out, int cap)) { g_macros = fill; }
@@ -253,9 +256,74 @@ static int bind_resources(int slot)
     q = &g_quest[slot];
     for (i = 0; i < q->qbn.n_timer; i++) { q->timer[i].flags = q->qbn.timer[i].flags & ~(128 | 1024); }
     for (i = 0; i < q->qbn.n_place; i++) { if (!bind_place(slot, i)) { return 0; } }
+    /* quest_init_foe: each foe takes the next number of the counter. */
+    for (i = 0; i < q->qbn.n_foe; i++) { q->foe[i].number = g_foe_counter++; q->foe[i].place = -1; }
     for (i = 0; i < q->qbn.n_timer; i++) { timer_start(q, i); }
     return 1;
 }
+
+/* ---- Foes in the world (quest_place_object) and the events they raise ---- */
+
+/* Make a placed foe's creatures: as many as its count less the kills, one key each. */
+static void spawn_foe(OgQuest *q, int f)
+{
+    int want, made;
+
+    if (!g_world || !g_world->spawn_foe || q->foe[f].live) { return; }
+    want = q->qbn.foe[f].count - q->qbn.foe[f].killed;
+    if (want > 16) { want = 16; }
+    for (made = 0; made < want; made++) {
+        if (!g_world->spawn_foe(q->qbn.foe[f].type, OG_QUEST_FOE_THING(q->foe[f].number, made))) { break; }
+    }
+    q->foe[f].live = made;
+}
+
+void og_quest_location_loaded(int region, int index)
+{
+    int s, f;
+
+    for (s = 0; s < OG_QUESTS; s++) {
+        if (!g_quest[s].used) { continue; }
+        for (f = 0; f < g_quest[s].qbn.n_foe; f++) {
+            OgQuestFoe *foe;
+            const OgQuestPlace *place;
+
+            foe = &g_quest[s].foe[f];
+            if (!foe->placed || foe->live || foe->place < 0 || foe->place >= g_quest[s].qbn.n_place) { continue; }
+            place = &g_quest[s].place[foe->place];
+            if (place->bound && place->region == region && place->index == index) { spawn_foe(&g_quest[s], f); }
+        }
+    }
+}
+
+/* Event 2 and 21 for every quest that has the foe: the ops of that opcode on it. */
+static void foe_event(int number, int opcode)
+{
+    int s, i, f;
+
+    for (s = 0; s < OG_QUESTS; s++) {
+        OgQuest *q;
+
+        q = &g_quest[s];
+        if (!q->used) { continue; }
+        for (f = 0; f < q->qbn.n_foe && q->foe[f].number != number; f++) { }
+        if (f == q->qbn.n_foe) { continue; }
+        for (i = 0; i < q->qbn.n_op; i++) {
+            OgQbnOp *op;
+
+            op = &q->qbn.op[i];
+            if (op->opcode != opcode || op->arg[1].literal || op->arg[1].value != f) { continue; }
+            if (opcode == 2) {
+                if (q->qbn.foe[f].killed < op->arg[2].value) { q->qbn.foe[f].killed++; }
+                if (q->qbn.foe[f].killed >= op->arg[2].value) { arg_set(q, op, 0, 1); done(q, op); }
+            } else { arg_set(q, op, 0, 1); }
+        }
+        if (opcode == 2 && q->foe[f].live > 0) { q->foe[f].live--; }
+    }
+}
+
+void og_quest_foe_killed(int number) { foe_event(number, 2); }
+void og_quest_foe_hit(int number) { foe_event(number, 21); }
 
 /* ---- Text (parse_expand, quest_symbol_text) ---- */
 
@@ -566,6 +634,26 @@ static void run_op(int slot, OgQuest *q, OgQbnOp *op)
 
                 for (n = 0; n < g_world->count(); n++) {
                     if (g_world->location(n, &lo) && lo.region == op->arg[2].value && lo.index == op->arg[3].value) { g_world->reveal(n); break; }
+                }
+            }
+            done(q, op);
+        }
+        break;
+    case 22:
+    case 33:
+        /* Once: the foe placed (a place of the quest, or near the player when there is none); made now when the dungeon is the one the player is in, else when it is loaded. */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) {
+            n = op->arg[1].value;
+            if (n >= 0 && n < q->qbn.n_foe) {
+                int where;
+
+                where = !op->arg[2].literal && op->arg[2].value >= 0 ? op->arg[2].value : -1;
+                q->foe[n].placed = 1; q->foe[n].place = where; q->foe[n].live = 0;
+                if (g_world && g_world->here) {
+                    int region, here, px, py;
+
+                    g_world->here(&region, &here, &px, &py);
+                    if (where < 0 ? here >= 0 : (q->place[where].bound && q->place[where].region == region && q->place[where].index == here)) { spawn_foe(q, n); }
                 }
             }
             done(q, op);

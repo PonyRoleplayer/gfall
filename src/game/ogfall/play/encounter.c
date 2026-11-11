@@ -111,6 +111,36 @@ int og_encounter_try(const Camera *camera)
     return 1;
 }
 
+int og_encounter_place(const Camera *camera, int kind, df_u32 thing)
+{
+    OgEncounter *saved;
+    Entity entity;
+    SpawnSpot want;
+    Body *player;
+    int slot, archive, rate;
+    float x, y, z;
+
+    if (!g_scene || !g_art || !camera) { return 0; }
+    for (slot = 0; slot < OG_ENCOUNTERS; slot++) { if (!og_encounter_state()->actor[slot].key.thing) { break; } }
+    if (slot == OG_ENCOUNTERS) { return 0; }
+    archive = kind < 43 ? 255+kind : kind == 146 ? 399 : 432+og_foe_texture_kind(kind)+og_random_range(0,1);
+    if (!g_art(kind,archive,&entity,&rate)) { return 0; }
+    player = og_move_body(); mem_zero(&want,sizeof(want));
+    want.x = player->feet[0]; want.y = player->feet[1]; want.z = player->feet[2];
+    want.inner = 384; want.outer = 768; want.climb = 384;
+    want.radius = 12; want.height = entity.pose[ENTITY_WALK].h[0];
+    if (want.height < 24) { want.height = 24; }
+    if (want.height > 128) { want.height = 128; }
+    want.flags = SPAWN_UNSEEN | ((og_foe_flags(kind) & 65) ? 0 : SPAWN_DRY);
+    if (!spawn_find(g_scene,camera,&want,&x,&y,&z)) { return 0; }
+    saved = &og_encounter_state()->actor[slot];
+    saved->key.place = og_encounter_state()->place;
+    saved->key.thing = thing;
+    saved->kind = kind; saved->archive = archive; saved->x = x; saved->y = y; saved->z = z;
+    if (!create(slot)) { mem_zero(saved,sizeof(*saved)); return 0; }
+    return 1;
+}
+
 int og_encounter_minute(const Scene *scene, const Camera *camera, df_u32 minute, int loitering)
 {
     return g_scene && scene == g_scene && !loitering && !(minute%12) && og_random_range(0,35) == 0 && og_encounter_try(camera);

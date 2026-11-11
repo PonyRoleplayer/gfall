@@ -16,6 +16,10 @@
 #define OG_QUESTS 32
 
 /* A place a quest names, bound to a location of the map (quest_init_place, qinit.c 2.4): the location's number in the map's list, its region and index there, its kind, its pixel, name. */
+/* The key of a quest's creature: this bit, the foe's number and the copy (up to 16 of a foe). A kill reads the number back. */
+#define OG_QUEST_FOE_KEY 0xe0000000u
+#define OG_QUEST_FOE_THING(number, copy) (OG_QUEST_FOE_KEY | (((df_u32)(number) & 0xffffffu) << 4) | (df_u32)(copy))
+
 typedef struct OgQuestPlace {
     int bound, ordinal, region, index, type, px, py;
     char name[33];
@@ -26,11 +30,17 @@ typedef struct OgQuestTimer {
     df_u32 start, delay;
 } OgQuestTimer;
 
+/* A foe the quest names: its number in the world (the counter every foe of every quest takes one from), whether op 22 placed it and where (a place of the quest, -1 near the player), and how many of it are live. */
+typedef struct OgQuestFoe {
+    int number, placed, place, live;
+} OgQuestFoe;
+
 typedef struct OgQuest {
     int used, ended;
     OgQbn qbn;
     OgQuestPlace place[OG_QBN_PLACES];
     OgQuestTimer timer[OG_QBN_TIMERS];
+    OgQuestFoe foe[OG_QBN_FOES];
 } OgQuest;
 
 /* What the quests ask of the map: the locations (the travel list's), where the player is, a region's name and a journey's minutes by the quests' estimate (quest_travel_minutes). */
@@ -43,6 +53,8 @@ typedef struct OgQuestWorld {
     int (*journey)(int sx, int sy, int ex, int ey);
     /* The map shows a location (location_reveal). */
     void (*reveal)(int ordinal);
+    /* A creature of a kind placed in the dungeon the player is in, unseen and near (quest_place_object); thing is its key (OG_QUEST_FOE_KEY and the number and copy). 1 when placed. */
+    int (*spawn_foe)(int kind, df_u32 thing);
 } OgQuestWorld;
 void og_quest_set_world(const OgQuestWorld *world);
 
@@ -108,6 +120,12 @@ void og_quest_set_ask(int (*ask)(const char *words, void (*answer)(int yes)));
  * and a Y quest or a Daedra's is asked yes or no (QRC 1000), answered by 1002 or 1001, and a no ends it. Returns the slot, -1 for none started (a missing file, a refused name,
  * a quest of that name running, no free slot). */
 int og_quest_begin(const char *name, int faction);
+
+/* A dungeon (a location) has just been loaded: the foes placed there and not yet live are made. */
+void og_quest_location_loaded(int region, int index);
+/* Event 2 (a creature died) and 21 (the player hit one): the foe's number, read from the creature's key. Ops 2 count the kills to their number and set their state. */
+void og_quest_foe_killed(int number);
+void og_quest_foe_hit(int number);
 
 /* quest_run_opcodes for every quest: from the frame and from each passing minute. */
 void og_quest_run(void);

@@ -1,5 +1,6 @@
 #include "game/ogfall/play/dungeon.h"
 #include "game/ogfall/play/enchant.h"
+#include "game/ogfall/play/quest.h"
 #include "game/ogfall/play/guild.h"
 #include "game/ogfall/play/doors.h"
 #include "game/ogfall/play/ai.h"
@@ -346,6 +347,8 @@ static void hit_foe(const Scene *scene, int i, int damage, float yaw)
         og_magic_soul_capture(i);
         og_sound_at(17,e->x,e->y,e->z);
         og_state_event(OG_EVENT_KILL,e->key.thing,og_state()->entity_id,damage);
+        /* Event 2 of the quests: a creature a quest placed died. */
+        if ((e->key.thing & 0xe0000000u) == OG_QUEST_FOE_KEY) { og_quest_foe_killed((int)((e->key.thing >> 4) & 0xffffffu)); }
         if (g_street_died) { g_street_died(f->kind,e); }
         /* damage_creature_death: a watchman killed is counted by the Brotherhood (guild_count_crime(6, 1)). */
         if (f->kind == 146) { og_guild_count_crime(6, 1, og_state()->minutes); }
@@ -453,6 +456,8 @@ static void resolve_player(const Scene *scene, const Camera *cam, int target, co
     if (index >= 0 && s->item) { damage += og_enchant_hit_bonus(s->item, f->kind >= 128 ? 2 : og_foe_category(f->kind)); if (damage < 0) { damage = 0; } }
     if (og_god_mode() && damage < 1) { damage = 1; }
     if (backstab && og_random_range(1,100) <= backstab) { damage *= 3; og_msg_set("Backstab!"); }
+    /* Event 21: the player hit a creature of a quest. */
+    if (damage && (f->entity->key.thing & 0xe0000000u) == OG_QUEST_FOE_KEY) { og_quest_foe_hit((int)((f->entity->key.thing >> 4) & 0xffffffu)); }
     hit_foe(scene,target,damage,cam->yaw);
     if (damage && index >= 0 && s->item) { og_enchant_strike(s->item, target, damage); }
     if (damage) {

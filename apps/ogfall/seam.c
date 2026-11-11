@@ -874,6 +874,15 @@ static int quest_region_name(int region, char *out, int cap)
     return faction ? 1 : 0;
 }
 
+/* quest_place_object: a quest's creature among the dungeon's actors, unseen and near the player. */
+static int quest_spawn_foe(int kind, df_u32 thing)
+{
+    Camera cam;
+
+    og_move_camera(&cam);
+    return og_encounter_place(&cam, kind, thing);
+}
+
 static int quest_journey(int sx, int sy, int ex, int ey)
 {
     OgJourney journey;
@@ -2427,7 +2436,7 @@ int seam_boot(void)
     og_quest_set_text(quest_text); og_quest_set_say(quest_say); og_quest_set_ask(og_possessions_ask);
     og_quest_set_macros(quest_macros); og_quest_set_place(quest_place);
     {
-        static const OgQuestWorld quest_world = { og_travel_count, og_travel_location, quest_here, quest_region_name, quest_journey, og_travel_discover };
+        static const OgQuestWorld quest_world = { og_travel_count, og_travel_location, quest_here, quest_region_name, quest_journey, og_travel_discover, quest_spawn_foe };
 
         og_quest_set_world(&quest_world);
     }
@@ -3288,6 +3297,8 @@ int seam_open_place(int restoring, int changing, float *x, float *y, float *z)
     if (og_world_state()->where.kind == OG_PLACE_DUNGEON && !og_encounter_open(&g_level.scene,encounter_art)) {
         why("Cannot restore the dungeon encounters"); return 0;
     }
+    /* A dungeon loaded: the foes of the quests placed in it are made (func_0004C759 links them as a location loads). */
+    if (og_world_state()->where.kind == OG_PLACE_DUNGEON) { og_quest_location_loaded(og_world_state()->where.region, og_world_state()->where.index); }
     world_start(g_world, &sx, &sy, &sz, &yaw, &pitch);
     if (!restoring && !changing && og_world_state()->where.kind == OG_PLACE_DUNGEON) { marker6(&sx,&sy,&sz); }
     if (x) {

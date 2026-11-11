@@ -51,6 +51,9 @@ static int w_region(int region, char *out, int cap) { (void)region; (void)cap; s
 static int w_journey(int sx, int sy, int ex, int ey) { (void)sx; (void)sy; (void)ex; (void)ey; return 100; }
 static int g_revealed[8], g_revealed_count;
 static void w_reveal(int ordinal) { if (g_revealed_count < 8) { g_revealed[g_revealed_count++] = ordinal; } }
+static int g_spawned, g_spawn_kind[16];
+static df_u32 g_spawn_thing[16];
+static int w_spawn(int kind, df_u32 thing) { if (g_spawned < 16) { g_spawn_kind[g_spawned] = kind; g_spawn_thing[g_spawned++] = thing; } return 1; }
 
 static void (*g_answer)(int yes);
 static int take_ask(const char *words, void (*answer)(int yes)) { g_answer = answer; strncpy(g_text, words, sizeof(g_text) - 1); return 1; }
@@ -206,7 +209,7 @@ void check_ogquest(void)
     /* Places and timers: M0B00Y00's two dungeons bound to two different dungeons of the region other than the one the player is in, its timer's delay the travel estimate and a week
      * for the kind, doubled; op 19 shows the first on the map; at the delay the timer's state ends the quest (op 6). */
     {
-        static const OgQuestWorld world = { w_count, w_location, w_here, w_region, w_journey, w_reveal };
+        static const OgQuestWorld world = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn };
         const OgQuest *q2;
         int s2, spent;
 
@@ -220,6 +223,7 @@ void check_ogquest(void)
                      (q2->place[0].type == 4 || q2->place[0].type == 10) && !strcmp(q2->place[0].name, q2->place[0].index == 11 ? "Dungeon One" : q2->place[0].index == 12 ? "Dungeon Two" : "Dungeon Three"),
                      "quest: the two dungeons were not two different dungeons of the region other than the current location");
         check_expect(q2 && q2->timer[0].delay == (((100u + 2880u) * 384u >> 8) + 10080u) * 2u && !(q2->timer[0].flags & 64), "quest: the timer's delay is not the estimate, a week for the kind, doubled, or it runs before op 12");
+        g_spawned = 0;
         og_quest_run();
         check_expect((q2->timer[0].flags & 64) && g_revealed_count == 1 && g_revealed[0] == q2->place[0].ordinal, "quest: op 12 did not start the timer or op 19 did not show the first dungeon");
         {
@@ -228,6 +232,24 @@ void check_ogquest(void)
             real_text("M0B00Y00", 1002, 0, raw2, sizeof(raw2));
             og_quest_expand(s2, raw2, said2, sizeof(said2), 0, 0);
             check_expect(strstr(said2, q2->place[0].name) != 0 && strstr(said2, "in 21 days") != 0, "quest: the offer's ___mondung_ and =1stparton_ are not the dungeon's name and the days (14550 * 2 = 29100 minutes is 21 days)");
+        }
+        /* Foes: op 22 placed one of the three beasts in the first dungeon, not yet made; when that dungeon is loaded its creature is made with the foe's key, and its death sets the state of
+         * the op that waits for it (1020 for a werebeast, 1021 for the bear). */
+        {
+            int f, placed, number;
+
+            placed = -1;
+            for (f = 0; f < 3; f++) { if (q2->foe[f].placed) { placed = f; } }
+            check_expect(placed >= 0 && g_spawned == 0, "quest: op 22 did not place one beast, or made it before its dungeon was loaded");
+            og_quest_location_loaded(q2->place[0].region, q2->place[0].index);
+            check_expect(g_spawned == 1 && g_spawn_kind[0] == q2->qbn.foe[placed].type && g_spawn_thing[0] == OG_QUEST_FOE_THING(q2->foe[placed].number, 0), "quest: the beast was not made with its type and key when its dungeon loaded");
+            og_quest_location_loaded(q2->place[0].region, q2->place[0].index);
+            check_expect(g_spawned == 1, "quest: the beast was made twice");
+            number = q2->foe[placed].number;
+            g_said = 0;
+            og_quest_foe_hit(number);
+            og_quest_foe_killed(number);
+            check_expect(og_quest_state(s2, 1) == 1 && q2->qbn.foe[placed].killed == 1 && g_said >= 1, "quest: the beast's death did not set S1 and say its message");
         }
         spent = 0;
         og_state_pass_minutes(29100);
