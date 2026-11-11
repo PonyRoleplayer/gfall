@@ -11,13 +11,40 @@
  * need no world: 6, 7, 16, 31, 34, 35, 51, 52, 53, 77. The rest are inert and are added by the steps of the plan, each keeping its place in the one switch.
  */
 #include "game/ogfall/formats/qbn.h"
+#include "game/ogfall/play/travel.h"
 
 #define OG_QUESTS 32
+
+/* A place a quest names, bound to a location of the map (quest_init_place, qinit.c 2.4): the location's number in the map's list, its region and index there, its kind, its pixel, name. */
+typedef struct OgQuestPlace {
+    int bound, ordinal, region, index, type, px, py;
+    char name[33];
+} OgQuestPlace;
+/* A timer's running state: its flags (the bits of 2.8, 64 running and 128 expired changing), the minute it started and its delay. */
+typedef struct OgQuestTimer {
+    int flags;
+    df_u32 start, delay;
+} OgQuestTimer;
 
 typedef struct OgQuest {
     int used, ended;
     OgQbn qbn;
+    OgQuestPlace place[OG_QBN_PLACES];
+    OgQuestTimer timer[OG_QBN_TIMERS];
 } OgQuest;
+
+/* What the quests ask of the map: the locations (the travel list's), where the player is, a region's name and a journey's minutes by the quests' estimate (quest_travel_minutes). */
+typedef struct OgQuestWorld {
+    int (*count)(void);
+    int (*location)(int ordinal, OgLocation *out);
+    /* The player's region, the location they are in (-1 outdoors) and their map pixel. */
+    void (*here)(int *region, int *index, int *px, int *py);
+    int (*region_name)(int region, char *out, int cap);
+    int (*journey)(int sx, int sy, int ex, int ey);
+    /* The map shows a location (location_reveal). */
+    void (*reveal)(int ordinal);
+} OgQuestWorld;
+void og_quest_set_world(const OgQuestWorld *world);
 
 /* The text of a message of a quest's QRC (id, or a TEXT.RSC id when asked): the game fills it in; 0 when there is none. And what shows it (a message box). */
 void og_quest_set_text(int (*read)(const char *quest, int message, int in_text_rsc, char *out, int cap));

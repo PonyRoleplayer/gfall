@@ -856,6 +856,32 @@ static int quest_macros(const char *in, char *out, int cap)
     return i;
 }
 
+/* What the quests ask of the map: the travel list's locations, where the player stands, a region's name, the journey the quests estimate (ships' sea pixels cost 51) and the map's discovery. */
+static void quest_here(int *region, int *index, int *px, int *py)
+{
+    og_travel_capture();
+    *region = travel_region();
+    *index = og_world_state()->where.located ? og_world_state()->where.index : -1;
+    *px = og_world_state()->px; *py = og_world_state()->py;
+}
+
+static int quest_region_name(int region, char *out, int cap)
+{
+    const Faction *faction;
+
+    faction = faction_province_of(region);
+    df_copy(out, faction ? faction->name : "", cap);
+    return faction ? 1 : 0;
+}
+
+static int quest_journey(int sx, int sy, int ex, int ey)
+{
+    OgJourney journey;
+
+    og_journey_plan(sx, sy, ex, ey, 0, 0, 1, og_journey_transport(), &journey);
+    return journey.minutes;
+}
+
 /* The place a logbook entry is written in: the town, else the region. */
 static const char *quest_place(void)
 {
@@ -2400,6 +2426,11 @@ int seam_boot(void)
     og_set_status_intro(status_intro);
     og_quest_set_text(quest_text); og_quest_set_say(quest_say); og_quest_set_ask(og_possessions_ask);
     og_quest_set_macros(quest_macros); og_quest_set_place(quest_place);
+    {
+        static const OgQuestWorld quest_world = { og_travel_count, og_travel_location, quest_here, quest_region_name, quest_journey, og_travel_discover };
+
+        og_quest_set_world(&quest_world);
+    }
     {
         static const OgEnchantWorld enchant_world = { ench_daylight, ench_temple, ench_category_near, ench_hurt_nearest };
 

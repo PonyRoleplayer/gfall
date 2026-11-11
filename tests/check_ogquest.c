@@ -35,6 +35,23 @@ static int real_text(const char *quest, int message, int in_text_rsc, char *out,
     return textrsc_read_in(file, message, out, cap);
 }
 
+static int w_count(void) { return 5; }
+static int w_location(int ordinal, OgLocation *out)
+{
+    static const int type[5] = {0, 4, 10, 4, 1};
+    static const char *const name[5] = {"Test Town", "Dungeon One", "Dungeon Two", "Dungeon Three", "Test Hamlet"};
+
+    if (ordinal < 0 || ordinal > 4) { return 0; }
+    memset(out, 0, sizeof(*out));
+    strcpy(out->name, name[ordinal]); out->region = 17; out->index = 10 + ordinal; out->px = 100 + ordinal; out->py = 200; out->type = type[ordinal];
+    return 1;
+}
+static void w_here(int *region, int *index, int *px, int *py) { *region = 17; *index = 10; *px = 100; *py = 200; }
+static int w_region(int region, char *out, int cap) { (void)region; (void)cap; strcpy(out, "Test Province"); return 1; }
+static int w_journey(int sx, int sy, int ex, int ey) { (void)sx; (void)sy; (void)ex; (void)ey; return 100; }
+static int g_revealed[8], g_revealed_count;
+static void w_reveal(int ordinal) { if (g_revealed_count < 8) { g_revealed[g_revealed_count++] = ordinal; } }
+
 static void (*g_answer)(int yes);
 static int take_ask(const char *words, void (*answer)(int yes)) { g_answer = answer; strncpy(g_text, words, sizeof(g_text) - 1); return 1; }
 
@@ -166,6 +183,7 @@ void check_ogquest(void)
         int s2, k;
 
         og_quest_reset();
+        og_quest_set_world(0);
         og_quest_set_names(&names); og_quest_set_text(real_text); og_quest_set_say(take_say); og_quest_set_place(where_now);
         s2 = og_quest_start("M0B00Y00", 851);
         check_expect(s2 == 0, "quest: M0B00Y00 did not start for the text test");
@@ -184,5 +202,42 @@ void check_ogquest(void)
         check_expect(og_logbook_text(log, sizeof(log)) <= 0 && !og_logbook_slot(0)->used, "quest: the log kept the entries of a quest that ended");
         og_quest_set_text(give_text);
         og_quest_reset();
+    }
+    /* Places and timers: M0B00Y00's two dungeons bound to two different dungeons of the region other than the one the player is in, its timer's delay the travel estimate and a week
+     * for the kind, doubled; op 19 shows the first on the map; at the delay the timer's state ends the quest (op 6). */
+    {
+        static const OgQuestWorld world = { w_count, w_location, w_here, w_region, w_journey, w_reveal };
+        const OgQuest *q2;
+        int s2, spent;
+
+        og_quest_reset();
+        og_quest_set_world(&world); og_quest_set_names(0); og_quest_set_text(real_text); og_quest_set_say(take_say); og_quest_set_ask(take_ask);
+        g_revealed_count = 0;
+        s2 = og_quest_begin("M0B00Y00", 851);
+        check_expect(s2 == 0, "quest: M0B00Y00 did not start against the stub map");
+        q2 = og_quest(s2);
+        check_expect(q2 && q2->place[0].bound && q2->place[1].bound && q2->place[0].index != 10 && q2->place[1].index != 10 && q2->place[0].index != q2->place[1].index &&
+                     (q2->place[0].type == 4 || q2->place[0].type == 10) && !strcmp(q2->place[0].name, q2->place[0].index == 11 ? "Dungeon One" : q2->place[0].index == 12 ? "Dungeon Two" : "Dungeon Three"),
+                     "quest: the two dungeons were not two different dungeons of the region other than the current location");
+        check_expect(q2 && q2->timer[0].delay == (((100u + 2880u) * 384u >> 8) + 10080u) * 2u && !(q2->timer[0].flags & 64), "quest: the timer's delay is not the estimate, a week for the kind, doubled, or it runs before op 12");
+        og_quest_run();
+        check_expect((q2->timer[0].flags & 64) && g_revealed_count == 1 && g_revealed[0] == q2->place[0].ordinal, "quest: op 12 did not start the timer or op 19 did not show the first dungeon");
+        {
+            char said2[1024], raw2[1024];
+
+            real_text("M0B00Y00", 1002, 0, raw2, sizeof(raw2));
+            og_quest_expand(s2, raw2, said2, sizeof(said2), 0, 0);
+            check_expect(strstr(said2, q2->place[0].name) != 0 && strstr(said2, "in 21 days") != 0, "quest: the offer's ___mondung_ and =1stparton_ are not the dungeon's name and the days (14550 * 2 = 29100 minutes is 21 days)");
+        }
+        spent = 0;
+        og_state_pass_minutes(29100);
+        og_quest_run();
+        check_expect(og_quest(s2) != 0 && !og_quest_state_by_hash(s2, og_qbn_hash("1stparton")), "quest: the timer expired at its delay, not after it");
+        og_state_pass_minutes(2);
+        og_quest_run();
+        check_expect(!og_quest(s2), "quest: the expired timer's state did not end the quest by op 6");
+        (void)spent;
+        og_quest_reset();
+        og_quest_set_world(0);
     }
 }

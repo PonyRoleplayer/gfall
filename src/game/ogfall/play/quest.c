@@ -18,6 +18,9 @@ static const OgQuestNames *g_names;
 static int (*g_macros)(const char *in, char *out, int cap);
 static const char *(*g_place)(void);
 static OgLogSlot g_log[OG_LOG_SLOTS];
+static const OgQuestWorld *g_world;
+static int bind_resources(int slot);
+static void state_store(OgQuest *q, int index, int value);
 
 void og_quest_set_text(int (*read)(const char *quest, int message, int in_text_rsc, char *out, int cap)) { g_read = read; }
 void og_quest_set_say(void (*say)(const char *text)) { g_say = say; }
@@ -26,6 +29,7 @@ const df_u8 *og_quest_globals(void) { return g_global; }
 void og_quest_globals_clear(void) { mem_zero(g_global, sizeof(g_global)); }
 void og_quest_reset(void) { mem_zero(g_quest, sizeof(g_quest)); mem_zero(g_global, sizeof(g_global)); mem_zero(g_log, sizeof(g_log)); g_offer_slot = -1; }
 void og_quest_set_names(const OgQuestNames *names) { g_names = names; }
+void og_quest_set_world(const OgQuestWorld *world) { g_world = world; }
 void og_quest_set_macros(int (*fill)(const char *in, char *out, int cap)) { g_macros = fill; }
 void og_quest_set_place(const char *(*current)(void)) { g_place = current; }
 int og_quest_count(void) { return OG_QUESTS; }
@@ -53,6 +57,12 @@ static int start_with(const char *name, const df_u8 *bytes, df_u32 size, int fac
     if (bytes) { for (k = 0; k < 8 && name[k]; k++) { g_quest[slot].qbn.name[k] = name[k]; } g_quest[slot].qbn.name[k] = 0; }
     g_quest[slot].used = 1;
     g_quest[slot].qbn.id = id; g_quest[slot].qbn.faction = faction;
+    if (!bind_resources(slot)) {
+        /* Any failure ends the quest and says TEXT.RSC 600. */
+        mem_zero(&g_quest[slot], sizeof(g_quest[slot]));
+        if (g_read && g_say) { char text[256]; text[0] = 0; if (g_read("", 600, 1, text, sizeof(text)) > 0) { g_say(text); } }
+        return -1;
+    }
     return slot;
 }
 
@@ -91,6 +101,162 @@ int og_quest_active(const char *name)
     return 0;
 }
 
+/* ---- Places (quest_init_place, quest_pick_location) and timers (quest_timer_update) ---- */
+
+/* The kinds of location: towns 0..2, the dungeons 4, 7, 10, 12 and 13. */
+static int is_town(int type) { return type >= 0 && type <= 2; }
+static int is_dungeon(int type) { return type == 4 || type == 7 || type == 10 || type == 12 || type == 13; }
+
+static int location_used(int slot, int place, int region, int index)
+{
+    int k, i;
+
+    for (k = 0; k < OG_QUESTS; k++) {
+        if (!g_quest[k].used) { continue; }
+        for (i = 0; i < OG_QBN_PLACES; i++) { if (!(k == slot && i == place) && g_quest[k].place[i].bound && g_quest[k].place[i].region == region && g_quest[k].place[i].index == index) { return 1; } }
+    }
+    return 0;
+}
+
+static void place_from(OgQuestPlace *place, int ordinal, const OgLocation *lo)
+{
+    place->bound = 1; place->ordinal = ordinal; place->region = lo->region; place->index = lo->index; place->type = lo->type;
+    place->px = lo->px; place->py = lo->py;
+    log_format(place->name, sizeof(place->name), "%s", lo->name);
+}
+
+/* quest_init_place for a place that is a location: a fixed one (scope 0) waits for the steps that read the world's records; scope 1 or below is where the player is; scope 2 and up a location
+ * of the kind (p1: 0 a town, 1 a dungeon) in the player's region, other than the one they are in. A location another quest uses is drawn again, up to 100 times. */
+static int bind_place(int slot, int i)
+{
+    OgQuest *q;
+    const OgQbnPlace *pl;
+    OgLocation lo;
+    int region, here, px, py, count, n, tries, pick, k, ordinal;
+
+    q = &g_quest[slot]; pl = &q->qbn.place[i];
+    if (!g_world || !g_world->count || !g_world->location || !g_world->here) { return 1; }
+    if (pl->scope == 0) { return 1; }
+    g_world->here(&region, &here, &px, &py);
+    count = g_world->count();
+    if (pl->scope <= 1) {
+        for (k = 0; k < count; k++) {
+            if (g_world->location(k, &lo) && lo.region == region && lo.index == here) { place_from(&q->place[i], k, &lo); return 1; }
+        }
+        return 0;
+    }
+    for (tries = 0; tries < 100; tries++) {
+        n = 0;
+        for (k = 0; k < count; k++) {
+            if (!g_world->location(k, &lo) || lo.region != region || lo.index == here) { continue; }
+            if (pl->p1 == 1 ? !is_dungeon(lo.type) : pl->p1 == 0 ? !is_town(lo.type) : 1) { continue; }
+            n++;
+        }
+        if (!n) { return 0; }
+        pick = og_random_range(0, n - 1); ordinal = -1; n = 0;
+        for (k = 0; k < count && ordinal < 0; k++) {
+            if (!g_world->location(k, &lo) || lo.region != region || lo.index == here) { continue; }
+            if (pl->p1 == 1 ? !is_dungeon(lo.type) : pl->p1 == 0 ? !is_town(lo.type) : 1) { continue; }
+            if (n++ == pick) { ordinal = k; }
+        }
+        if (ordinal < 0 || !g_world->location(ordinal, &lo)) { return 0; }
+        if (location_used(slot, i, lo.region, lo.index)) { continue; }
+        place_from(&q->place[i], ordinal, &lo);
+        return 1;
+    }
+    return 0;
+}
+
+/* quest_travel_minutes: the quests' journey estimate plus two days, a half more, and a week more for each end of a kind of dungeon the map holds (4, 7, 10, 12, 14). */
+static df_u32 travel_delay(const OgQuestPlace *a, const OgQuestPlace *b)
+{
+    int px, py, region, here, sx, sy, minutes;
+    df_u32 delay;
+
+    if (!g_world || !g_world->journey || !g_world->here) { return 2880u * 384u >> 8; }
+    g_world->here(&region, &here, &px, &py);
+    sx = a ? a->px : px; sy = a ? a->py : py;
+    minutes = g_world->journey(sx, sy, b->px, b->py) + 2880;
+    delay = ((df_u32)minutes * 384u) >> 8;
+    return delay;
+}
+
+static int far_kind(int type) { return type == 4 || type == 7 || type == 10 || type == 12 || type == 14; }
+
+static void timer_start(OgQuest *q, int t)
+{
+    const OgQbnTimer *tm;
+    OgQuestTimer *rt;
+    df_u32 delay;
+    int l1, l2;
+
+    tm = &q->qbn.timer[t]; rt = &q->timer[t];
+    l1 = (tm->flags & 0x300) ? -1 : tm->link1; l2 = (tm->flags & 0x300) ? -1 : tm->link2;
+    delay = 0;
+    if (tm->type == 0) { delay = (df_u32)og_random_range((int)tm->minimum, (int)tm->maximum); }
+    else if (tm->type == 1) { delay = (df_u32)tm->minimum; }
+    else if (tm->type == 2 || tm->type == 4) {
+        if (l1 >= 0 && l1 < q->qbn.n_place && q->place[l1].bound) {
+            delay = travel_delay(0, &q->place[l1]);
+            if (far_kind(q->place[l1].type)) { delay += 10080u; }
+        }
+    } else if (tm->type == 3) {
+        if (l1 >= 0 && l2 >= 0 && l1 < q->qbn.n_place && l2 < q->qbn.n_place && q->place[l1].bound && q->place[l2].bound) {
+            delay = travel_delay(&q->place[l1], &q->place[l2]);
+            if (far_kind(q->place[l1].type) || far_kind(q->place[l2].type)) { delay += 10080u; }
+        }
+    } else if (tm->type == 5) {
+        if (l1 >= 0 && l2 >= 0 && l1 < q->qbn.n_place && l2 < q->qbn.n_place && q->place[l1].bound && q->place[l2].bound) {
+            delay = travel_delay(0, &q->place[l1]) + travel_delay(&q->place[l1], &q->place[l2]);
+            if (far_kind(q->place[l1].type)) { delay += 10080u; }
+            if (far_kind(q->place[l2].type)) { delay += 10080u; }
+        }
+    }
+    if (rt->flags & 16) { delay <<= 1; }
+    rt->delay = delay; rt->start = og_state()->minutes;
+}
+
+/* The state whose hash is the timer's takes whether it has expired. */
+static void timer_state(OgQuest *q, int t, int value)
+{
+    int i;
+
+    for (i = 0; i < q->qbn.n_state; i++) { if (q->qbn.state[i].hash == q->qbn.timer[t].hash) { state_store(q, i, value); } }
+}
+
+/* quest_timer_update, after the ops of a run: a pulse's expired state lasts one run; a running timer that has run past its delay is expired (latched or pulsed; toggled; else nothing: 7.15),
+ * and starts again with bit 3 or stops. */
+static void timers_run(OgQuest *q)
+{
+    int t, flags;
+    df_u32 now;
+
+    now = og_state()->minutes;
+    for (t = 0; t < q->qbn.n_timer; t++) {
+        flags = q->timer[t].flags;
+        if (flags & 2) { flags &= ~128; timer_state(q, t, 0); }
+        if ((flags & 64) && now - q->timer[t].start > q->timer[t].delay) {
+            if (flags & 3) { flags |= 128; } else if (flags & 4) { flags ^= 128; }
+            timer_state(q, t, (flags & 128) != 0);
+            if (flags & 8) { q->timer[t].start = now; } else { flags &= ~64; }
+        }
+        q->timer[t].flags = flags;
+    }
+}
+
+/* quest_init_resources, the places and the timers of this step: a place that cannot be bound ends the quest (TEXT.RSC 600). */
+static int bind_resources(int slot)
+{
+    OgQuest *q;
+    int i;
+
+    q = &g_quest[slot];
+    for (i = 0; i < q->qbn.n_timer; i++) { q->timer[i].flags = q->qbn.timer[i].flags & ~(128 | 1024); }
+    for (i = 0; i < q->qbn.n_place; i++) { if (!bind_place(slot, i)) { return 0; } }
+    for (i = 0; i < q->qbn.n_timer; i++) { timer_start(q, i); }
+    return 1;
+}
+
 /* ---- Text (parse_expand, quest_symbol_text) ---- */
 
 static int put(char *out, int cap, int at, const char *s)
@@ -109,7 +275,15 @@ static int symbol_text(int slot, df_i32 hash, int form, df_i32 hash2, char *out,
     out[0] = 0;
     q = &g_quest[slot];
     for (i = 0; i < q->qbn.n_item; i++) { if (q->qbn.item[i].symbol == hash) { return g_names && g_names->item && g_names->item(slot, i, form, out, cap); } }
-    for (i = 0; i < q->qbn.n_place; i++) { if (q->qbn.place[i].symbol == hash) { return g_names && g_names->place && g_names->place(slot, i, form, out, cap); } }
+    for (i = 0; i < q->qbn.n_place; i++) {
+        if (q->qbn.place[i].symbol != hash) { continue; }
+        /* A place bound to a location says its name (forms 0, 16, 32) or its region's (48). */
+        if (q->place[i].bound) {
+            if (form >= 48 && g_world && g_world->region_name) { return g_world->region_name(q->place[i].region, out, cap) > 0; }
+            return log_format(out, cap, "%s", q->place[i].name) > 0;
+        }
+        return g_names && g_names->place && g_names->place(slot, i, form, out, cap);
+    }
     for (i = 0; i < q->qbn.n_person; i++) { if (q->qbn.person[i].symbol == hash) { return g_names && g_names->person && g_names->person(slot, i, form, out, cap); } }
     for (i = 0; i < q->qbn.n_foe; i++) {
         if (q->qbn.foe[i].symbol == hash) {
@@ -121,9 +295,9 @@ static int symbol_text(int slot, df_i32 hash, int form, df_i32 hash2, char *out,
     }
     for (i = 0; i < q->qbn.n_timer; i++) {
         if (q->qbn.timer[i].hash == hash) {
-            delay = q->qbn.timer[i].delay;
+            delay = q->timer[i].delay;
             /* _a`b_: the second timer's delay is added to the first's. */
-            for (i = 0; hash2 && i < q->qbn.n_timer; i++) { if (q->qbn.timer[i].hash == hash2) { delay += q->qbn.timer[i].delay; } }
+            for (i = 0; hash2 && i < q->qbn.n_timer; i++) { if (q->qbn.timer[i].hash == hash2) { delay += q->timer[i].delay; } }
             return form == 0 ? log_format(out, cap, "%d", (int)delay) : log_format(out, cap, "%d", (int)((delay + 1439u) / 1440u));
         }
     }
@@ -359,6 +533,44 @@ static void run_op(int slot, OgQuest *q, OgQbnOp *op)
     case 7:
         if (arg_state(q, op, 0)) { for (i = 1; i < op->argc; i++) { arg_set(q, op, i, 0); } }
         break;
+    case 12:
+        /* Once: start the timer that is not running, its delay worked from now. */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) {
+            n = op->arg[1].value;
+            if (n >= 0 && n < q->qbn.n_timer && !(q->timer[n].flags & 64)) {
+                timer_start(q, n); q->timer[n].flags = (q->timer[n].flags | 64) & ~128;
+            }
+            done(q, op);
+        }
+        break;
+    case 13:
+        if (arg_state(q, op, 0)) {
+            n = op->arg[1].value;
+            if (n >= 0 && n < q->qbn.n_timer) { q->timer[n].flags &= ~64; }
+            done(q, op);
+        }
+        break;
+    case 19:
+    case 20:
+        /* Once: the place's location shown on the map (7.12: the bound place, whatever its kind). */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) {
+            n = op->arg[1].value;
+            if (g_world && g_world->reveal && n >= 0 && n < q->qbn.n_place && q->place[n].bound) { g_world->reveal(q->place[n].ordinal); }
+            done(q, op);
+        }
+        break;
+    case 27:
+        if (arg_state(q, op, 0) && !(op->flags & 1)) {
+            if (g_world && g_world->reveal && g_world->count && g_world->location) {
+                OgLocation lo;
+
+                for (n = 0; n < g_world->count(); n++) {
+                    if (g_world->location(n, &lo) && lo.region == op->arg[2].value && lo.index == op->arg[3].value) { g_world->reveal(n); break; }
+                }
+            }
+            done(q, op);
+        }
+        break;
     case 16:
         /* The day of the world in a range (no file uses it). */
         arg_set(q, op, 0, (int)(og_state()->minutes / 1440u) >= op->arg[1].value && (int)(og_state()->minutes / 1440u) <= op->arg[2].value);
@@ -490,6 +702,7 @@ void og_quest_run(void)
         q = &g_quest[slot];
         if (!q->used) { continue; }
         for (i = 0; i < q->qbn.n_op && !q->ended; i++) { run_op(slot, q, &q->qbn.op[i]); }
+        if (!q->ended) { timers_run(q); }
         if (q->ended) { og_quest_end(slot); }
     }
 }
