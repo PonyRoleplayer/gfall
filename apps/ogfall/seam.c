@@ -1370,33 +1370,102 @@ static int street_quest(const OgFactionDef *f, int in_building_type)
     return og_quest_begin(name, g_met.faction) >= 0;
 }
 
+/* A building of a town for a quest's place: of the type asked (17..20 any house, below 0 any) picked by the seed. */
+static int quest_pick_building(int region, int index, int type, unsigned seed, int *block, int *record)
+{
+    const TownBuilding *list;
+    int count, i, n, pick;
+
+    list = town_buildings(region, index, &count);
+    if (!list) { return 0; }
+    n = 0;
+    for (i = 0; i < count; i++) {
+        if (type < 0 ? (list[i].type < 17 && list[i].type != 1) : (list[i].type == type || (type >= 17 && type <= 20 && list[i].type >= 17 && list[i].type <= 20))) { n++; }
+    }
+    if (!n) { return 0; }
+    pick = (int)(seed % (unsigned)n);
+    for (i = 0; i < count; i++) {
+        if (type < 0 ? (list[i].type < 17 && list[i].type != 1) : (list[i].type == type || (type >= 17 && type <= 20 && list[i].type >= 17 && list[i].type <= 20))) {
+            if (pick-- == 0) { *block = list[i].block; *record = list[i].record; return 1; }
+        }
+    }
+    return 0;
+}
+
+/* A quest person's name, as any person of the town is named: by their id, sex and faction. */
+static void quest_person_name(int who, int faction, int female, char *out, int cap)
+{
+    OgNpcName npc;
+    const OgFactionDef *f;
+
+    mem_zero(&npc, sizeof(npc));
+    f = faction ? og_faction_def(og_faction_index(faction)) : 0;
+    npc.type = 8; npc.region = travel_region(); npc.id = (unsigned)who; npc.female = female;
+    npc.faction = faction; npc.faction_is_individual = f && f->type == 4; npc.faction_name = f ? f->name : 0;
+    og_npc_name(&npc, out, cap);
+}
+
+/* The engine's hook for a building's inside (world_set_people_hook): each quest person put in it stands on a quest marker (199.11) of the building, else beside its first person (else its first flat),
+ * as their faction's flat for their sex (else the region's people's), the flat marked with the quest and person so a use of them is theirs (talk_used). */
+static int quest_people_hook(const Dungeon *town, int block, int record, const Flat *flats, int nflat, Flat *out, int cap)
+{
+    OgQuestHere here[8];
+    const Flat *at;
+    int n, i;
+    float mx, my, mz;
+
+    n = og_quest_people_in(town->region, town->index, block, record, here, cap < 8 ? cap : 8);
+    if (!n || !nflat) { return 0; }
+    at = &flats[0];
+    for (i = 0; i < nflat; i++) { if (flats[i].tag & FLAT_PERSON) { at = &flats[i]; break; } }
+    for (i = 0; i < n; i++) {
+        const Faction *f;
+
+        f = factionfile_open() && here[i].faction ? faction_find(here[i].faction) : 0;
+        if (!f || !f->flat_archive[here[i].female]) { f = faction_people_of(town->region); }
+        mem_zero(&out[i], sizeof(out[i]));
+        if (world_building_marker_nth(11, i, &mx, &my, &mz)) { out[i].x = mx; out[i].y = my; out[i].z = mz; }
+        else { out[i].x = at->x + 48.0f * (float)(i + 1); out[i].y = at->y; out[i].z = at->z; }
+        out[i].file = (df_u16)(f ? f->flat_archive[here[i].female] : 182);
+        out[i].image = (df_u16)(f ? f->flat_record[here[i].female] : 0);
+        out[i].tag = (df_u16)(FLAT_PERSON | OG_QUEST_PERSON_TAG(here[i].slot, here[i].person));
+    }
+    return n;
+}
+
 static int talk_used(const Usable *u, int mode, float dist, const Camera *cam)
 {
     const OgFactionDef *f;
     OgNpcName npc;
     int type, faction, quality, flat_archive, flat_record, female, merchant, kind;
     unsigned place;
+    int what, qwho, qfaction, qfemale, quest;
+    char qname[40];
 
+    /* A quest's person (their flat is marked with the quest and the person): their own faction, id and name. */
+    quest = u->what >= OG_QUEST_PERSON_MARK && og_quest_person_of_tag(u->what, &qwho, &qfaction, &qfemale, qname, (int)sizeof(qname));
+    what = quest ? (qfaction ? qfaction : 510) : u->what;
     flat_archive = u->tag >> 7;
     flat_record = u->tag & 127;
     female = faces_female(flat_archive, flat_record);
     mem_zero(&g_met, sizeof(g_met));
-    g_met.faction = u->what;
+    g_met.faction = what;
     g_met.archive = flat_archive;
     g_met.record = flat_record;
     g_met.female = female < 0 ? 0 : female;
-    g_met.who = (unsigned)u->tag * 31u + (unsigned)u->what;
+    g_met.who = quest ? (unsigned)qwho : (unsigned)u->tag * 31u + (unsigned)what;
     g_met.cam = *cam;
     mem_zero(&npc, sizeof(npc));
     npc.type = 8;
-    f = og_faction_def(og_faction_index(u->what));
-    npc.faction = u->what;
+    f = og_faction_def(og_faction_index(what));
+    npc.faction = what;
     npc.faction_is_individual = f && f->type == 4;
     npc.faction_name = f ? f->name : 0;
     npc.region = travel_region();
     npc.id = g_met.who;
     npc.female = g_met.female;
     og_npc_name(&npc, g_met.name, (int)sizeof(g_met.name));
+    if (quest && qname[0]) { df_copy(g_met.name, qname, (int)sizeof(g_met.name)); }
     if (mode == OG_MODE_INFO) {
         interact_say(g_met.name);
         return 1;
@@ -1405,19 +1474,19 @@ static int talk_used(const Usable *u, int mode, float dist, const Camera *cam)
         return 1;
     }
     kind = 0;
-    merchant = interior_shopkeeper(cam, u->what, u->tag);
+    merchant = interior_shopkeeper(cam, what, u->tag);
     if (travel_building(&type, &faction, &quality, &place)) {
         /* npc_click_service: the Thieves' and the Brotherhood's people serve their members, a stranger of the Brotherhood only talks, halls and temples have their menu. */
         int parent;
 
         parent = f ? f->parent : 0;
-        if ((u->what == 42 || parent == 42) && hall_member(3)) { hall_enter(u->what, faction); return 1; }
-        if ((u->what == 108 || parent == 108) && hall_member(0)) { hall_enter(u->what, faction); return 1; }
-        if (u->what == 108 || parent == 108) { start_talk(); return 1; }
-        if (type == 11 || type == 14) { hall_enter(u->what, faction); return 1; }
+        if ((what == 42 || parent == 42) && hall_member(3)) { hall_enter(what, faction); return 1; }
+        if ((what == 108 || parent == 108) && hall_member(0)) { hall_enter(what, faction); return 1; }
+        if (what == 108 || parent == 108) { start_talk(); return 1; }
+        if (type == 11 || type == 14) { hall_enter(what, faction); return 1; }
         if (type == 15 && merchant) { kind = OG_SERVICE_TAVERN; }
         else if (type == 3 && merchant) { kind = OG_SERVICE_BANK; }
-        else if ((type == 2 || type == 9) && (u->what & 8)) { kind = OG_SERVICE_REPAIR; }
+        else if ((type == 2 || type == 9) && (what & 8)) { kind = OG_SERVICE_REPAIR; }
         else if (type == 13 && merchant) { kind = OG_SERVICE_REPAIR; }
         else if ((type == 0 || type == 5 || type == 6 || type == 8 || type == 12) && merchant) { kind = OG_SERVICE_SELL; }
     }
@@ -2540,7 +2609,7 @@ int seam_boot(void)
     og_quest_set_text(quest_text); og_quest_set_say(quest_say); og_quest_set_ask(og_possessions_ask);
     og_quest_set_macros(quest_macros); og_quest_set_place(quest_place);
     {
-        static const OgQuestWorld quest_world = { og_travel_count, og_travel_location, quest_here, quest_region_name, quest_journey, og_travel_discover, quest_spawn_foe, og_teleport, quest_place_item, quest_find_number };
+        static const OgQuestWorld quest_world = { og_travel_count, og_travel_location, quest_here, quest_region_name, quest_journey, og_travel_discover, quest_spawn_foe, og_teleport, quest_place_item, quest_find_number, quest_pick_building, quest_person_name };
 
         og_quest_set_world(&quest_world);
     }
@@ -2559,6 +2628,7 @@ int seam_boot(void)
     og_activate_set_shelf(OTHER_SHELF, shelf_used);
     og_activate_set_container(OTHER_CONTAINER, container_used);
     og_activate_set_person(person_used);
+    world_set_people_hook(quest_people_hook);
     og_activate_set_talk_use(talk_used);
     og_possessions_set_service(service_act);
     og_standing_set_membership(standing_membership);

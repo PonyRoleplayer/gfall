@@ -29,6 +29,8 @@ World *world_load_inside(const Dungeon *town, int block, int record);
  */
 typedef int (*WorldPeopleHook)(const Dungeon *town, int block, int record, const Flat *flats, int nflat, Flat *out, int cap);
 void world_set_people_hook(WorldPeopleHook hook);
+/* While that hook runs: the n-th editor marker of a record in the building being built (world_marker_nth of it), so a game can stand its people on the marker (199.11 is a quest's). 1 when it exists. */
+int world_building_marker_nth(int record, int n, float *x, float *y, float *z);
 const char *world_error(void);
 const char *world_block_name(void);
 

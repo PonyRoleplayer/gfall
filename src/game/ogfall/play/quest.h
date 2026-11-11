@@ -24,6 +24,8 @@ typedef struct OgQuestPlace {
     int bound, ordinal, region, index, type, px, py;
     /* A fixed place's object, as the low word of its id (1 the location itself, 0xFA01.. its quest markers). */
     int marker;
+    /* A building place (p1 0): which building of the town, as a door's tag names it; -1 for none (the whole location). */
+    int block, record;
     char name[33];
 } OgQuestPlace;
 /* A timer's running state: its flags (the bits of 2.8, 64 running and 128 expired changing), the minute it started and its delay. */
@@ -33,6 +35,8 @@ typedef struct OgQuestPerson {
     int bound, who, faction;
     /* The place (+1) op 30 put the person in; 0 for none. */
     int at;
+    /* The person is a woman (flags 0x200, or a toss when neither sex is asked). */
+    int female;
     char name[40], town[33];
 } OgQuestPerson;
 typedef struct OgQuestTimer {
@@ -81,6 +85,10 @@ typedef struct OgQuestWorld {
     df_u32 (*place_item)(void);
     /* Where the location numbered so is (a fixed place's p1: the outside's number, its dungeon's one more): the region and the index of the outside in it; 1 when found. */
     int (*find_number)(int number, int *region, int *index);
+    /* A building of a town for a place that is one (p1 0): the town (region, index), the building's type (below 0 any shop-like one, 17..20 any house, 11 only a Mages Guild) and a seed that picks among them; its block and record. 1 when there is one. */
+    int (*pick_building)(int region, int index, int type, unsigned seed, int *block, int *record);
+    /* A name for a person of the quests (the same each time for the same id). */
+    void (*person_name)(int who, int faction, int female, char *out, int cap);
 } OgQuestWorld;
 void og_quest_set_world(const OgQuestWorld *world);
 
@@ -145,6 +153,15 @@ int og_quest_topic_answer(int i, char *out, int cap);
 #define OG_QUEST_ACCESS 16
 typedef struct OgQuestAccess { int used, quest_id, region, index, access; df_u32 until; } OgQuestAccess;
 const OgQuestAccess *og_quest_access(int i);
+
+/* The quest people standing in a building (op 30 put them in a place that is one): the building's block and record in the town at region and index. Each is made a person of the building when
+ * it is entered (the seam installs the engine's people hook); their flat carries OG_QUEST_PERSON_TAG, which a use of them is known by. */
+typedef struct OgQuestHere { int slot, person, female, faction; } OgQuestHere;
+int og_quest_people_in(int region, int index, int block, int record, OgQuestHere *out, int cap);
+#define OG_QUEST_PERSON_MARK 0x7000
+#define OG_QUEST_PERSON_TAG(slot, person) (OG_QUEST_PERSON_MARK + (slot) * 16 + (person))
+/* The person a flat's tag names: their id, faction, sex and name; 0 when it names none. */
+int og_quest_person_of_tag(int tag, int *who, int *faction, int *female, char *name, int cap);
 
 /* The faces at the top of the screen (3.11, ops 55, 56, 63 and 64): ten slots of a quest's person or foe. kind 1 person, 2 foe. */
 #define OG_QUEST_FACES 10

@@ -160,6 +160,7 @@ static int location_used(int slot, int place, int region, int index)
 
 static void place_from(OgQuestPlace *place, int ordinal, const OgLocation *lo)
 {
+    place->block = -1; place->record = -1;
     place->bound = 1; place->ordinal = ordinal; place->region = lo->region; place->index = lo->index; place->type = lo->type;
     place->px = lo->px; place->py = lo->py;
     log_format(place->name, sizeof(place->name), "%s", lo->name);
@@ -210,6 +211,11 @@ static int bind_place(int slot, int i)
         if (ordinal < 0 || !g_world->location(ordinal, &lo)) { return 0; }
         if (location_used(slot, i, lo.region, lo.index)) { continue; }
         place_from(&q->place[i], ordinal, &lo);
+        /* A building place: which building of the town, by the seed of this quest and place. */
+        q->place[i].block = -1; q->place[i].record = -1;
+        if (pl->p1 == 0 && g_world->pick_building) {
+            g_world->pick_building(lo.region, lo.index, pl->p2, (unsigned)(q->qbn.id * 977 + i * 31 + og_random_range(0, 32767)), &q->place[i].block, &q->place[i].record);
+        }
         return 1;
     }
     return 0;
@@ -340,6 +346,8 @@ static int bind_resources(int slot)
             /* Any other kind is a person not yet in the world: a named individual (kind -1 of a faction of its own) is found by their faction when their town loads, the others stand nowhere until
              * op 30 puts them in a place. They are bound, with an id of their own and no body (the towns' people are not made from the quests yet). */
             q->person[i].bound = 1; q->person[i].who = (int)(0x40000000u | (unsigned)(slot << 8) | (unsigned)i); q->person[i].faction = pe->kind == -1 ? pe->faction : 0;
+            q->person[i].female = (pe->flags & 0x200) ? 1 : (pe->flags & 0x400) ? 0 : og_random_range(0, 1);
+            if (g_world && g_world->person_name) { g_world->person_name(q->person[i].who, q->person[i].faction, q->person[i].female, q->person[i].name, (int)sizeof(q->person[i].name)); }
         }
     }
     for (i = 0; i < q->qbn.n_op; i++) { q->qbn.op[i].last_minutes = og_state()->minutes; }
@@ -380,6 +388,39 @@ static int is_person(const OgQuest *q, int i, int who, int faction)
     if (i < 0 || i >= q->qbn.n_person || !q->person[i].bound) { return 0; }
     if (q->qbn.person[i].kind == -8 || (q->qbn.person[i].kind == -1 && !(q->qbn.person[i].flags & 0x100) && q->person[i].faction)) { return q->person[i].faction == faction; }
     return q->person[i].who == who;
+}
+
+int og_quest_people_in(int region, int index, int block, int record, OgQuestHere *out, int cap)
+{
+    int s, i, n, at;
+
+    n = 0;
+    for (s = 0; s < OG_QUESTS; s++) {
+        const OgQuest *q;
+
+        q = &g_quest[s];
+        if (!q->used) { continue; }
+        for (i = 0; i < q->qbn.n_person && n < cap; i++) {
+            at = q->person[i].at - 1;
+            if (!q->person[i].bound || at < 0 || at >= q->qbn.n_place || q->qbn.person[i].kind == -8 || q->qbn.person[i].kind == 21 || (q->qbn.person[i].flags & 0xA00) == 0xA00) { continue; }
+            if (!q->place[at].bound || q->place[at].region != region || q->place[at].index != index || q->place[at].block != block || q->place[at].record != record || block < 0) { continue; }
+            out[n].slot = s; out[n].person = i; out[n].female = q->person[i].female; out[n].faction = q->person[i].faction;
+            n++;
+        }
+    }
+    return n;
+}
+
+int og_quest_person_of_tag(int tag, int *who, int *faction, int *female, char *name, int cap)
+{
+    int s, i;
+
+    if (tag < OG_QUEST_PERSON_MARK) { return 0; }
+    s = (tag - OG_QUEST_PERSON_MARK) / 16; i = (tag - OG_QUEST_PERSON_MARK) % 16;
+    if (s < 0 || s >= OG_QUESTS || !g_quest[s].used || i >= g_quest[s].qbn.n_person || !g_quest[s].person[i].bound) { return 0; }
+    *who = g_quest[s].person[i].who; *faction = g_quest[s].person[i].faction; *female = g_quest[s].person[i].female;
+    log_format(name, cap, "%s", g_quest[s].person[i].name);
+    return 1;
 }
 
 int og_quest_talk(int who, int faction)
@@ -1666,13 +1707,13 @@ static void qwire_quest(QWire *w, OgQuest *q, int read)
     for (i = 0; i < q->qbn.n_item; i++) { QI(q->qbn.item[i].flags); }
     for (i = 0; i < q->qbn.n_place; i++) {
         QI(q->qbn.place[i].flags);
-        QI(q->place[i].bound); QI(q->place[i].marker);
+        QI(q->place[i].bound); QI(q->place[i].marker); QI(q->place[i].block); QI(q->place[i].record);
         if (q->place[i].bound) { QI(q->place[i].ordinal); QI(q->place[i].region); QI(q->place[i].index); QI(q->place[i].type); QI(q->place[i].px); QI(q->place[i].py); qbytes(w, q->place[i].name, 33, read); }
     }
     for (i = 0; i < q->qbn.n_person; i++) {
         QI(q->qbn.person[i].flags);
         QI(q->person[i].bound);
-        QI(q->person[i].at);
+        QI(q->person[i].at); QI(q->person[i].female);
         if (q->person[i].bound) { QI(q->person[i].who); QI(q->person[i].faction); qbytes(w, q->person[i].name, 40, read); qbytes(w, q->person[i].town, 33, read); }
     }
 #undef QI

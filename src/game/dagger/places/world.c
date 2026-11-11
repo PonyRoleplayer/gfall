@@ -1534,6 +1534,8 @@ void world_keep_save(World *world)
 
 /* The game's people for an inside, or 0 (world_set_people_hook). */
 static WorldPeopleHook g_people_hook;
+/* The inside being built, for the hook to ask where its editor markers are (world_building_marker_nth). */
+static const World *g_building;
 
 static World *assemble(const Dungeon *hold, int require_start, int inside_block, int inside_record)
 {
@@ -1703,8 +1705,10 @@ static World *assemble(const Dungeon *hold, int require_start, int inside_block,
     }
     /* A game's own people in a building (a quest's, world_set_people_hook), before the pictures are placed. */
     if (world->place == PLACE_INSIDE && g_people_hook && world->nflat < MAX_FLATS) {
+        g_building = world;
         world->nflat += g_people_hook(hold, inside_block, inside_record, world->flat, world->nflat, world->flat + world->nflat,
                                       MAX_FLATS - world->nflat);
+        g_building = 0;
     }
     lap(&g_times.rest);
     if (!build_tex_table(world, hold)) {
@@ -1867,6 +1871,11 @@ int world_marker_nth(const World *world, int record, int n, float *x, float *y, 
         }
     }
     return 0;
+}
+
+int world_building_marker_nth(int record, int n, float *x, float *y, float *z)
+{
+    return world_marker_nth(g_building, record, n, x, y, z);
 }
 
 int world_flat_count(const World *world)

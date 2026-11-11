@@ -75,6 +75,8 @@ static int w_find_number(int number, int *region, int *index)
     if (number == 50026) { *index = 11; return 1; }
     return 0;
 }
+static int w_pick_building(int region, int index, int type, unsigned seed, int *block, int *record) { (void)region; (void)index; (void)type; *block = 3 + (int)(seed % 2u) * 0; *record = 7; return 1; }
+static void w_person_name(int who, int faction, int female, char *out, int cap) { (void)who; (void)faction; (void)cap; strcpy(out, female ? "Lady Test" : "Sir Test"); }
 static df_u32 g_pile_made;
 static df_u32 w_place_item(void) { g_pile_made++; return 0; }
 static int w_spawn(int kind, df_u32 thing) { if (g_spawned < 16) { g_spawn_kind[g_spawned] = kind; g_spawn_thing[g_spawned++] = thing; } return 1; }
@@ -366,7 +368,7 @@ void check_ogquest(void)
             put_op(f3 + 0x140 + 435, 8, -1, d8, 0);
             put_lit(f3 + 0x140 + 435 + 6 + 1 * 15, 101); put_lit(f3 + 0x140 + 435 + 6 + 2 * 15, 101);
             {
-                static const OgQuestWorld w9 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number };
+                static const OgQuestWorld w9 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, w_pick_building, w_person_name };
 
                 og_quest_set_world(&w9);
             }
@@ -419,7 +421,7 @@ void check_ogquest(void)
         /* The quests of a new game: _BRISIEN then _TUTOR__ begin at the first run, their fixed places found by the location's number (low word 2 read as the location), _BRISIEN's person made
          * (kind -1, her flags 0x101) though standing nowhere, and its ops 6 and 7, which wait while the player is in the hold (op 43 sets state 5 there), start the main story's S0000977 and S0000999 once they are out of it. */
         {
-            static const OgQuestWorld w10 = { w_count, w_location, w_here_out, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number };
+            static const OgQuestWorld w10 = { w_count, w_location, w_here_out, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, w_pick_building, w_person_name };
             int k, found999, found977;
 
             for (k = 0; k < og_quest_count(); k++) { og_quest_end(k); }
@@ -436,6 +438,42 @@ void check_ogquest(void)
                 if (og_quest(k) && !strcmp(og_quest(k)->qbn.name, "S0000977")) { found977 = 1; }
             }
             check_expect(found999 && found977, "quest: _BRISIEN out of the hold did not start S0000977 and S0000999");
+            for (k = 0; k < og_quest_count(); k++) { og_quest_end(k); }
+            og_quest_set_world(0);
+        }
+        /* A person with a body: Brisienna's kind (-1, a faction of an individual, flags 0x101: any building, a woman asked for by neither sex bit so tossed) put by op 30 in a tavern of another
+         * town stands in that building (block and record) when it is entered, with her name, and her flat's tag names her. */
+        {
+            static const OgQuestWorld w11 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, w_pick_building, w_person_name };
+            int e30[5] = {-1, 0, 0, -2, -2};
+            OgQuestHere here[4];
+            int who, faction, female, tag, k;
+            char name[40];
+
+            for (k = 0; k < og_quest_count(); k++) { og_quest_end(k); }
+            memset(f3, 0, sizeof(f3));
+            put16(f3 + 0x10 + 3 * 2, 1); put16(f3 + 0x24 + 3 * 2, 0xC0);
+            put16(f3 + 0x10 + 4 * 2, 1); put16(f3 + 0x24 + 4 * 2, 0xE0);
+            put16(f3 + 0x10 + 8 * 2, 1); put16(f3 + 0x24 + 8 * 2, 0x140);
+            put16(f3 + 0x10 + 9 * 2, 1); put16(f3 + 0x24 + 9 * 2, 0x140 + 87);
+            put16(f3 + 0xC0 + 2, 0x201); put16(f3 + 0xC0 + 4, (df_u32)-1); put16(f3 + 0xC0 + 6, 352);
+            f3[0xE0 + 3] = 2; put16(f3 + 0xE0 + 4, 0); put16(f3 + 0xE0 + 6, 15); put16(f3 + 0xE0 + 8, 0);
+            put16(f3 + 0x140 + 87, 0); put32(f3 + 0x140 + 87 + 4, 100u);
+            put_op(f3 + 0x140, 30, -1, e30, 0);
+            og_quest_set_world(&w11);
+            slot = og_quest_start_bytes("TEST0030", f3, 0x140 + 87 + 8, 0);
+            check_expect(slot == 0 && og_quest(0)->person[0].bound && og_quest(0)->person[0].female == 1 && !strcmp(og_quest(0)->person[0].name, "Lady Test") && og_quest(0)->place[0].block == 3,
+                         "quest: the person (a woman, named) or the tavern's building were not bound");
+            if (slot == 0) {
+                check_expect(og_quest_people_in(17, og_quest(0)->place[0].index, 3, 7, here, 4) == 0, "quest: the person stood in the building before op 30 put her there");
+                og_quest_run();
+                check_expect(og_quest_people_in(17, og_quest(0)->place[0].index, 3, 7, here, 4) == 1 && here[0].slot == 0 && here[0].person == 0 && here[0].faction == 352 && here[0].female == 1,
+                             "quest: op 30 did not stand the person in the building");
+                check_expect(og_quest_people_in(17, og_quest(0)->place[0].index, 3, 8, here, 4) == 0, "quest: the person stood in another building of the town");
+                tag = OG_QUEST_PERSON_TAG(0, 0);
+                check_expect(og_quest_person_of_tag(tag, &who, &faction, &female, name, sizeof(name)) && faction == 352 && female == 1 && !strcmp(name, "Lady Test") && who == og_quest(0)->person[0].who,
+                             "quest: the person's flat tag did not name her");
+            }
             for (k = 0; k < og_quest_count(); k++) { og_quest_end(k); }
             og_quest_set_world(0);
         }
@@ -512,7 +550,7 @@ void check_ogquest(void)
     /* Places and timers: M0B00Y00's two dungeons bound to two different dungeons of the region other than the one the player is in, its timer's delay the travel estimate and a week
      * for the kind, doubled; op 19 shows the first on the map; at the delay the timer's state ends the quest (op 6). */
     {
-        static const OgQuestWorld world = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number };
+        static const OgQuestWorld world = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, w_pick_building, w_person_name };
         const OgQuest *q2;
         int s2, spent;
 
