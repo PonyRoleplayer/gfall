@@ -112,6 +112,8 @@ int og_logbook_text(char *out, int cap);
 const df_u8 *og_quest_globals(void);
 void og_quest_globals_clear(void);
 
+/* quests_run_all for a passing minute: as og_quest_run, and the ops that watch the clock (79) look. */
+void og_quest_run_minute(void);
 void og_quest_reset(void);
 /* The quests as bytes for a save and back (step 8): the global states, the logbook, the foe counter and each running quest's name, id, faction and what changed since its QBN was read (the
  * states, ops done, foes killed, timers, bound places, persons and items). A quest comes back by reading its QBN again. pack returns the length, or -1 when it does not fit; unpack

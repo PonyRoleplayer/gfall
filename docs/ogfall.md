@@ -2288,3 +2288,12 @@ From the decomp's `docs/quest-machine.md` (sections 1.2 and 2.9..2.10); the plan
 - Bytes that do not read back leave no quest running (`og_quest_unpack` returns 0 after a reset), not half of one.
 - Not kept yet: faces (step 9), the questor in the middle of an offer.
 - Test: `check_ogquest.c` packs M0B00Y00 mid-quest, resets, unpacks, compares, refuses a damaged blob and then finishes the quest; `check_ogstate.c`'s fixture counts the new length.
+
+### The quest machine, step 9a (the first of the rest: ops on the player and the world's standing)
+
+Step 9 is a long tail; it lands in slices. This one:
+- **Op 29** a yes/no box with the op's QRC message; the answer sets its yes (arg 1) or no (arg 2) state and finishes the op. One box at a time; a box open at a save is asked again after the load.
+- **Op 37** (every run while its gate holds; arg 0 gate, arg 1 result, arg 2 person, arg 3 value): the person's faction reputation, plus the player's reputation of the faction's social group when it is under 5, is at least the value. (The document's table lists it with the result first; qmisc.c's `qaction_op37_repute_exceeds` reads the result from arg 1.)
+- **Op 61** the person's faction's reputation changes by the amount. **Op 65** the region's legal reputation changes, clamped to -100..100. **Op 49** cures the player's diseases (`og_ailments_cure`). **Op 72** infects with a disease with no saving throw. **Op 79** once a game minute (`og_quest_run_minute`), while its state is clear: set when the faction's reputation reaches the value. **Op 80** says its message while set. **Op 82** the person's talk passes through (flag 0x2000, saved with the quest) while set.
+- Not yet: ops 58 and 59 (the cures of vampirism and lycanthropy: the curses are not built), 25, 44, 46, 48 (people hidden or deleted: no quest people are in the world yet), and the item, delivery, topic, face, child-quest, building-access and S-quest parts of step 9.
+- Test: `check_ogquest.c` runs a quest made in memory with ops 29, 65 and 6.

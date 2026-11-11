@@ -7,6 +7,7 @@
 #include "game/ogfall/play/law.h"
 #include "game/ogfall/play/standing.h"
 #include "game/ogfall/play/guild.h"
+#include "game/ogfall/play/ailments.h"
 #include "game/ogfall/tables/datedefs.h"
 
 /* See quest.h. */
@@ -698,6 +699,28 @@ static void done(OgQuest *q, OgQbnOp *op)
 
 /* ---- The ops of this step ---- */
 
+static int g_minute;                  /* set while a passing minute runs the quests (op 79) */
+static int g_prompt_slot = -1, g_prompt_op = -1;   /* op 29's box open: the quest and the op that waits for the answer */
+
+/* op 29's answer: the yes state or the no state is set, and the op is done. */
+static void prompt_answer(int yes)
+{
+    OgQuest *q;
+    OgQbnOp *op;
+
+    if (g_prompt_slot < 0 || !g_quest[g_prompt_slot].used) { g_prompt_slot = -1; return; }
+    q = &g_quest[g_prompt_slot]; op = &q->qbn.op[g_prompt_op];
+    g_prompt_slot = -1;
+    arg_set(q, op, yes ? 1 : 2, 1);
+    op->flags |= 1;
+}
+
+/* A person's faction by the quest's own binding (a faction-only person, or the one who gave it). */
+static int person_faction(const OgQuest *q, int n)
+{
+    return n >= 0 && n < q->qbn.n_person && q->person[n].bound ? q->person[n].faction : 0;
+}
+
 static int minute_of_day(void) { return (int)(og_state()->minutes % 1440u); }
 
 static void run_op(int slot, OgQuest *q, OgQbnOp *op)
@@ -853,6 +876,69 @@ static void run_op(int slot, OgQuest *q, OgQbnOp *op)
     case 77:
         arg_set(q, op, 0, og_character()->level >= op->arg[1].value);
         break;
+    case 29:
+        /* Once: a yes/no box with the op's QRC message; the answer sets its yes or no state. One box at a time. */
+        if (arg_state(q, op, 0) && !(op->flags & 1) && g_prompt_slot < 0 && g_ask && g_read) {
+            char text[1024], said[1024];
+
+            text[0] = 0;
+            if (g_read(q->qbn.name, op->message & 0x7fff, (op->message & 0x8000) != 0, text, sizeof(text)) > 0 && text[0]) {
+                og_quest_expand(slot, text, said, sizeof(said), og_state()->minutes, 0);
+                g_prompt_slot = slot; g_prompt_op = (int)(op - q->qbn.op);
+                if (!g_ask(said, prompt_answer)) { g_prompt_slot = -1; }
+            } else { op->flags |= 1; }
+        }
+        break;
+    case 37:
+        /* Every run while the gate holds: the result is whether the person's faction thinks of the player at least `value` (and their social group's standing is added when it is under 5). */
+        if (arg_state(q, op, 0) && op->arg[1].value != -1 && person_faction(q, op->arg[2].value)) {
+            int faction, rep;
+            const OgFactionDef *def;
+
+            faction = person_faction(q, op->arg[2].value);
+            rep = og_faction_rep(faction);
+            def = og_faction_def(faction);
+            if (def && def->social_group >= 0 && def->social_group < 5) { rep += og_character()->reputation[def->social_group]; }
+            arg_set(q, op, 1, rep >= op->arg[3].value);
+            done(q, op);
+        }
+        break;
+    case 49:
+        if (arg_state(q, op, 0) && !(op->flags & 1)) { og_ailments_cure(0, 0); done(q, op); }
+        break;
+    case 61:
+        if (arg_state(q, op, 0) && !(op->flags & 1)) {
+            if (person_faction(q, op->arg[1].value)) { og_faction_change_reputation(person_faction(q, op->arg[1].value), op->arg[2].value); }
+            done(q, op);
+        }
+        break;
+    case 65:
+        if (arg_state(q, op, 0) && !(op->flags & 1)) {
+            int region, here, px, py;
+
+            region = 0;
+            if (g_world && g_world->here) { g_world->here(&region, &here, &px, &py); }
+            og_region_add_legal(region, op->arg[1].value);
+            if (og_region_legal(region) > 100) { og_region_add_legal(region, 100 - og_region_legal(region)); }
+            if (og_region_legal(region) < -100) { og_region_add_legal(region, -100 - og_region_legal(region)); }
+            done(q, op);
+        }
+        break;
+    case 72:
+        if (arg_state(q, op, 0) && !(op->flags & 1)) { og_disease_infect(0, op->arg[1].value, 1); done(q, op); }
+        break;
+    case 79:
+        /* Once a game minute while the state is clear: set when the faction's reputation (as it stands) is at least the value. */
+        if (!arg_state(q, op, 0) && g_minute && op->arg[1].literal && op->arg[2].literal && og_faction_rep(op->arg[1].value) >= op->arg[2].value) { arg_set(q, op, 0, 1); }
+        break;
+    case 80:
+        if (arg_state(q, op, 0)) { show(q, op->message); }
+        break;
+    case 82:
+        /* The person's talk passes through (flag 0x2000) while the state is set. */
+        n = op->arg[1].value;
+        if (n >= 0 && n < q->qbn.n_person) { if (arg_state(q, op, 0)) { q->qbn.person[n].flags |= 0x2000; } else { q->qbn.person[n].flags &= ~0x2000; } }
+        break;
     default:
         break;
     }
@@ -906,6 +992,13 @@ int og_quest_begin(const char *name, int faction)
         if (!g_ask(said, offer_answer)) { g_offer_slot = -1; og_quest_end(slot); return -1; }
     }
     return slot;
+}
+
+void og_quest_run_minute(void)
+{
+    g_minute = 1;
+    og_quest_run();
+    g_minute = 0;
 }
 
 void og_quest_run(void)
@@ -976,6 +1069,7 @@ static void qwire_quest(QWire *w, OgQuest *q, int read)
         if (q->place[i].bound) { QI(q->place[i].ordinal); QI(q->place[i].region); QI(q->place[i].index); QI(q->place[i].type); QI(q->place[i].px); QI(q->place[i].py); qbytes(w, q->place[i].name, 33, read); }
     }
     for (i = 0; i < q->qbn.n_person; i++) {
+        QI(q->qbn.person[i].flags);
         QI(q->person[i].bound);
         if (q->person[i].bound) { QI(q->person[i].who); QI(q->person[i].faction); qbytes(w, q->person[i].name, 40, read); qbytes(w, q->person[i].town, 33, read); }
     }

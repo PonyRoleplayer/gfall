@@ -73,6 +73,12 @@ static void put_arg(df_u8 *p, int value, int negate)
     put32(p + 7, (df_u32)value);
 }
 
+/* An operand that is a literal number. */
+static void put_lit(df_u8 *p, int value)
+{
+    p[0] = 0; put32(p + 1, 0x12345678u); put16(p + 5, 0); put32(p + 7, (df_u32)value);
+}
+
 static void put_op(df_u8 *p, int opcode, int message, const int *args, const int *negate)
 {
     int k;
@@ -155,6 +161,36 @@ void check_ogquest(void)
     check_expect(slot == 0, "quest: the quest made in memory did not start");
     og_quest_run();
     check_expect(g_said == 1 && g_asked == 1030 && !strcmp(g_text, "Well done.") && !og_quest(0), "quest: S1 = S0 and not S2 did not say its message once and end the quest");
+    /* Step 9's first ops in a quest made in memory: 29 asks yes or no and the answer sets a state, 65 changes the region's legal reputation once when that state is set, 80 says its message
+     * while its state is set, and 82 lets a person's talk pass while set. */
+    {
+        static df_u8 f2[4096];
+        int a29[5] = {-1, 1, 2, -2, -2}, a65[5] = {1, 0, -2, -2, -2}, a80[5] = {2, -2, -2, -2, -2}, a6[5] = {1, -2, -2, -2, -2};
+        int before;
+
+        og_quest_end(0);
+        memset(f2, 0, sizeof(f2));
+        put16(f2 + 0x10 + 8 * 2, 4); put16(f2 + 0x10 + 9 * 2, 3);
+        put16(f2 + 0x24 + 8 * 2, 0x80); put16(f2 + 0x24 + 9 * 2, 0x80 + 4 * 87);
+        for (i = 0; i < 3; i++) { put16(f2 + 0x80 + 4 * 87 + i * 8, i); put32(f2 + 0x80 + 4 * 87 + i * 8 + 4, (df_u32)(100 + i)); }
+        put_op(f2 + 0x80, 29, 1040, a29, 0);
+        put_op(f2 + 0x80 + 87, 65, -1, a65, 0); put_lit(f2 + 0x80 + 87 + 6 + 15, -5);
+        put_op(f2 + 0x80 + 174, 80, 1041, a80, 0);
+        put_op(f2 + 0x80 + 261, 6, -1, a6, 0);
+        og_quest_set_ask(take_ask); g_answer = 0; og_quest_set_world(0);
+        slot = og_quest_start_bytes("TEST0029", f2, 0x80 + 4 * 87 + 3 * 8, 0);
+        before = og_region_legal(0);
+        og_quest_run();
+        check_expect(slot == 0 && g_answer != 0 && og_quest_state(0, 1) == 0, "quest: op 29 did not open its box, or answered before it was");
+        g_said = 0;
+        g_answer(1);
+        og_quest_run();
+        check_expect(og_region_legal(0) == before - 5, "quest: yes did not set its state, or op 65 did not lower the region's legal reputation by 5");
+        og_quest_run();
+        check_expect(og_region_legal(0) == before - 5 && !og_quest(0), "quest: op 65 ran twice, or op 6 did not end the quest");
+        og_quest_end(0);
+        og_region_add_legal(0, 5);
+    }
     slot = og_quest_start("M0B00Y00", 8);
     check_expect(!og_quest(1) && og_quest(0), "quest: a quest ended took another with it");
     og_quest_reset();

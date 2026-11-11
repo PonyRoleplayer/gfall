@@ -470,7 +470,7 @@ void og_state_pass_minutes(df_u32 minutes)
     og_magic_minutes(start,minutes);
     og_enchant_minutes();
     /* quests_run_all for each passing minute, unless a sentence is being served. */
-    if (!og_law_is_serving()) { og_quest_run(); }
+    if (!og_law_is_serving()) { og_quest_run_minute(); }
     for (i = 0; i < minutes; i++) {
         og_state_event(OG_EVENT_MINUTE, 0, 0, (int)(start + i + 1));
         /* time_pass: each 161280 minutes the standings drift one point toward nothing (reputation_decay). */
