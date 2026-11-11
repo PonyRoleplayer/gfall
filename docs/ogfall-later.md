@@ -108,3 +108,9 @@ for now. Each line names where to look.
 - Plan, as its own mechanical commit with `make all` green before and after: names taken from the decomp documents (`OG_QOP_REPUTE_EXCEEDS`, `OG_QPERSON_PASS_TALK`, `OG_QRC_OFFER`), one header per domain beside its code (`quest_ops.h`, `quest_flags.h`, `item_groups.h`), constants for generated tables emitted by the same `tools/ogfall-*.py` scripts, no behaviour change.
 - Folders: `src/game/ogfall/play/` is crowded; split into `play/quest/`, `play/people/`, `play/magic/`, `play/items/` and so on, updating `tools/check-layers`, the Makefile and AGENTS.md's layout.
 - Do it after the quest machine is finished, not between its steps.
+
+## Dropping the og_ / OG_ prefixes (user's request, 2026-11-11)
+
+- OGFALL will replace GFALL, so `og_`, `OG_` and `Og` prefixes (functions, macros, types, files like `ogfall-*.py`, `check_og*.c`, `docs/ogfall*.md`) go once GFALL's `src/game/dagger/play/` and `apps/gfall/` are retired: the prefix only exists to keep the two apart.
+- Order: retire GFALL first (nothing then collides), then one mechanical rename commit (sed over `src`, `apps`, `tests`, `tools`, `docs`, Makefile), `make all` green before and after. Do it together with or just after the constants and folders pass above, so names are touched once.
+- Watch for collisions with the engine and the formats layer (`og_` removed from `og_item_create` must not clash with a dagger or engine `item_create`), and for save-format identifiers: the `OGSAVE` magic and schema numbers stay.
