@@ -5,6 +5,8 @@
 #include "game/ogfall/tables/questdata.h"
 #include "game/ogfall/tables/combatdefs.h"
 #include "game/ogfall/play/law.h"
+#include "game/ogfall/play/standing.h"
+#include "game/ogfall/play/guild.h"
 #include "game/ogfall/tables/datedefs.h"
 
 /* See quest.h. */
@@ -250,6 +252,28 @@ static void timers_run(OgQuest *q)
 }
 
 /* quest_init_resources, the places and the timers of this step: a place that cannot be bound ends the quest (TEXT.RSC 600). */
+/* quest_init_item's gold (quests-math.md): index and group are the least and most; index -1 scales by level (the guild's rank + 1 when the player is of the faction, else half the level + 1,
+ * at most 10), the faction's power and the region's prices. At least 1. */
+static int roll_gold(const OgQuest *q, const OgQbnItem *it)
+{
+    int gold, level, power, adj, region, here, px, py;
+
+    if (it->index != -1) { gold = og_random_range(it->index, it->group); }
+    else {
+        OgMembership *m;
+
+        m = q->qbn.faction ? og_guild_find_faction(q->qbn.faction) : 0;
+        level = m ? m->rank + 1 : og_character()->level / 2 + 1;
+        if (level > 10) { level = 10; }
+        power = q->qbn.faction ? og_faction_power(q->qbn.faction) : 50;
+        region = 0;
+        if (g_world && g_world->here) { g_world->here(&region, &here, &px, &py); }
+        adj = og_region_price(region) / 2 + 500;
+        gold = ((power + 50) * ((adj * og_random_range(level * 150, level * 200)) / 1000)) / 100;
+    }
+    return gold < 1 ? 1 : gold;
+}
+
 static int bind_resources(int slot)
 {
     OgQuest *q;
@@ -271,6 +295,9 @@ static int bind_resources(int slot)
         } else if (pe->kind == -8) {
             q->person[i].bound = 1; q->person[i].who = 0; q->person[i].faction = pe->faction;
         }
+    }
+    for (i = 0; i < q->qbn.n_item; i++) {
+        if (q->qbn.item[i].flags & 2) { q->item[i].gold = 1; q->item[i].amount = roll_gold(q, &q->qbn.item[i]); }
     }
     /* quest_init_foe: each foe takes the next number of the counter. */
     for (i = 0; i < q->qbn.n_foe; i++) { q->foe[i].number = g_foe_counter++; q->foe[i].place = -1; }
@@ -678,9 +705,26 @@ static void run_op(int slot, OgQuest *q, OgQbnOp *op)
     int i, n, count, pick, found;
 
     switch (op->opcode) {
+    case 4:
+        /* Once: +5 with the quest's faction and the reward given. The reward box of the original holds gold as a purse here (it would open the inventory on it): the coins go straight to the
+         * player. An item already given is passed over (7.4). Other items wait for step 9; the Brotherhood's and the Thieves' joining quests too. */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) {
+            q->rewarded = 1;
+            if (q->qbn.faction) { og_faction_change_reputation(q->qbn.faction, 5); }
+            for (i = 1; i < op->argc; i++) {
+                n = op->arg[i].value;
+                if (op->arg[i].literal || n < 0 || n >= q->qbn.n_item || q->item[n].given) { continue; }
+                if (q->item[n].gold) { og_character()->gold += q->item[n].amount; q->item[n].given = 1; }
+            }
+            done(q, op);
+        }
+        break;
     case 6:
-        /* The end: when set (no delivery pending and an empty reward box come with the rewards, step 7). The reputation, the rumours and the objects are later steps. */
-        if (arg_state(q, op, 0)) { done(q, op); q->ended = 1; }
+        /* The end: when set (no delivery is pending and the box is empty, both so with gold paid directly). A quest never rewarded costs -2 with its faction. The rumours are step 9. */
+        if (arg_state(q, op, 0)) {
+            if (!q->rewarded && q->qbn.faction) { og_faction_change_reputation(q->qbn.faction, -2); }
+            done(q, op); q->ended = 1;
+        }
         break;
     case 7:
         if (arg_state(q, op, 0)) { for (i = 1; i < op->argc; i++) { arg_set(q, op, i, 0); } }

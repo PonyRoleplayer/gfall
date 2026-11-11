@@ -2272,3 +2272,11 @@ From the decomp's `docs/quest-machine.md` (sections 1.2 and 2.9..2.10); the plan
 - **Talk events** (`og_quest_talk`, called first in `start_talk`): meeting a quest's person sets event 28's result (the click is consumed unless the person's flag 0x2000 lets the talk pass), op 71 takes its price or fails, op 78 is a faction's talk. A consumed click opens no talk window; the quest's own message answers.
 - Test: `check_ogquest.c` (a questor bound and busy, a second quest refused them, a stranger's talk not taken, freed when the quest ends); the Fighters' Get Quest by click in `check_ogworld.c` still starts one quest.
 - Not yet: rewards and the return to the questgiver finishing M0B00Y00 (step 7).
+
+### The quest machine, step 7 (rewards)
+
+- **Gold** (`roll_gold`, quests-math.md): an item with flag 2 is rolled when the quest starts: index..group, or with index -1 scaled by the player's level (the guild's rank + 1 when a member of the quest's faction), the faction's power and the region's prices; at least 1. `OgQuestItem` keeps it.
+- **Op 4** (once): `rewarded` set, +5 reputation with the quest's faction (spread to allies and enemies by `og_faction_change_reputation`), each item arg's gold paid. Deliberate simplification: the original's reward box opens the inventory on the coins and op 6 waits for it to empty; gold goes straight to the purse, so the box is always empty. A given item is passed over (7.4 fixed).
+- **Op 6**: when set, ends the quest; one never rewarded costs -2 with the faction. Rumours (1006..1009) are step 9.
+- Test: `check_ogquest.c`: M0B00Y00 won (beasts killed, questgiver talked to, gold and +reputation, ended) and lost to the timer (-2).
+- Not yet: reward items other than gold, op 76 delivery, the Brotherhood's and Thieves' joining quests (step 9); saving the quest's items (step 8).

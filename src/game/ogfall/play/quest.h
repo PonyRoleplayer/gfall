@@ -41,8 +41,14 @@ typedef struct OgQuestFoe {
     int number, placed, place, live;
 } OgQuestFoe;
 
+/* An item a quest names: gold's amount is rolled when the quest starts (quest_init_item); a reward is given once. Other items wait for step 9. */
+typedef struct OgQuestItem {
+    int gold, amount, given;
+} OgQuestItem;
+
 typedef struct OgQuest {
-    int used, ended;
+    int used, ended, rewarded;
+    OgQuestItem item[OG_QBN_ITEMS];
     OgQbn qbn;
     OgQuestPlace place[OG_QBN_PLACES];
     OgQuestTimer timer[OG_QBN_TIMERS];

@@ -5,6 +5,7 @@
 #include "check_util.h"
 #include "game/ogfall/formats/qbn.h"
 #include "game/ogfall/play/quest.h"
+#include "game/ogfall/play/standing.h"
 #include "game/ogfall/play/state.h"
 #include "game/dagger/formats/textrsc.h"
 
@@ -276,6 +277,37 @@ void check_ogquest(void)
         og_quest_run();
         check_expect(!og_quest(s2), "quest: the expired timer's state did not end the quest by op 6");
         (void)spent;
+        /* Won: the beast killed, the questgiver spoken to (event 28), then op 14, op 4 (+5 with the faction, the gold paid) and op 6 end it. Never rewarded costs -2 instead. */
+        og_quest_reset();
+        questor(9);
+        s2 = og_quest_begin("M0B00Y00", 851);
+        check_expect(s2 >= 0, "quest: M0B00Y00 did not start for the win");
+        if (s2 >= 0) {
+            int rep, gold, amount, f;
+
+            og_quest_run();
+            amount = og_quest(s2)->item[0].amount;
+            check_expect(og_quest(s2)->item[0].gold && amount >= 1, "quest: the reward gold was not rolled");
+            rep = og_faction_rep(851); gold = og_character()->gold;
+            for (f = 0; f < 3; f++) { og_quest_foe_killed(og_quest(s2)->foe[f].number); }
+            og_quest_run();
+            check_expect(og_quest(s2) != 0 && og_character()->gold == gold, "quest: the reward came before the questgiver was spoken to");
+            check_expect(og_quest_talk(9, 851), "quest: the questgiver's talk was not taken");
+            og_quest_run();
+            check_expect(!og_quest(s2) && og_character()->gold == gold + amount && og_faction_rep(851) > rep, "quest: the win did not pay the gold, raise the reputation and end the quest");
+        }
+        og_quest_reset();
+        questor(10);
+        s2 = og_quest_begin("M0B00Y00", 851);
+        if (s2 >= 0) {
+            int rep;
+
+            og_quest_run();
+            rep = og_faction_rep(851);
+            og_state_pass_minutes(60000);
+            og_quest_run(); og_quest_run();
+            check_expect(!og_quest(s2) && og_faction_rep(851) < rep, "quest: a quest that ran out of time did not cost reputation");
+        }
         og_quest_reset();
         og_quest_set_world(0);
     }
