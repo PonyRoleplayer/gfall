@@ -2280,3 +2280,11 @@ From the decomp's `docs/quest-machine.md` (sections 1.2 and 2.9..2.10); the plan
 - **Op 6**: when set, ends the quest; one never rewarded costs -2 with the faction. Rumours (1006..1009) are step 9.
 - Test: `check_ogquest.c`: M0B00Y00 won (beasts killed, questgiver talked to, gold and +reputation, ended) and lost to the timer (-2).
 - Not yet: reward items other than gold, op 76 delivery, the Brotherhood's and Thieves' joining quests (step 9); saving the quest's items (step 8).
+
+### The quest machine, step 8 (save and load)
+
+- **Schema 16**: `OgState` gains `quest_len` and `quest_blob` (24576 bytes). A save write fills them with `og_quest_pack` (the failure "Too many quests to save" if they do not fit); a restore reads them with `og_quest_unpack`. Older saves carry none, so loading one leaves no quest running.
+- **What is kept**: the 64 global states, the foe counter, the logbook's used slots, and for each running quest its slot, name, id and faction and only what changed since its QBN was read: local states, ops done and their last minute, foes killed and their numbers, timers, items (rolled gold, given), and the bound places and persons (the original unlinks object pointers to ids; ours never held pointers). A quest comes back by reading its QBN again, so a quest started from bytes (a test's) cannot be restored.
+- Bytes that do not read back leave no quest running (`og_quest_unpack` returns 0 after a reset), not half of one.
+- Not kept yet: faces (step 9), the questor in the middle of an offer.
+- Test: `check_ogquest.c` packs M0B00Y00 mid-quest, resets, unpacks, compares, refuses a damaged blob and then finishes the quest; `check_ogstate.c`'s fixture counts the new length.

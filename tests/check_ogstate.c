@@ -11,6 +11,7 @@
 #include "check_ogpotion.h"
 #include "check_ogspellshop.h"
 #include "check_ogmagicitem.h"
+#include "game/ogfall/play/quest.h"
 #include "check_ogquest.h"
 #include "check_ogentry.h"
 #include "check_ogtalkwin.h"
@@ -197,7 +198,9 @@ static void check_legacy_save(const df_u8 *current, df_u32 size)
     int row, spell_count, version, record_bytes;
     df_u32 spells[OG_OBJECTS];
     /* Standing, from schema 8, sits between the magic rows and the world: ready, a count, a pair a faction and a pair a region. */
-    df_u32 stand = 8u + (og_state()->standing.ready ? (df_u32)og_faction_count()*8u + OG_REGIONS*8u : 0u) + (OG_REGIONS*16u + 16u) + (OG_ROOMS_MOST*12u + 4u) + (4u + OG_REGIONS*4u) + (OG_MEMBERSHIPS*24u + 16u + 4u + 4u + 20u) + OG_CUSTOM_SPELLS*(4u + 89u) + OG_ENCHANTED_ITEMS*(4u + 4u + 80u) + 4u;
+    static df_u8 quest_pack[OG_QUEST_BLOB];
+    int quest_bytes = og_quest_pack(quest_pack, OG_QUEST_BLOB);
+    df_u32 stand = 8u + (og_state()->standing.ready ? (df_u32)og_faction_count()*8u + OG_REGIONS*8u : 0u) + (OG_REGIONS*16u + 16u) + (OG_ROOMS_MOST*12u + 4u) + (4u + OG_REGIONS*4u) + (OG_MEMBERSHIPS*24u + 16u + 4u + 4u + 20u) + OG_CUSTOM_SPELLS*(4u + 89u) + OG_ENCHANTED_ITEMS*(4u + 4u + 80u) + 4u + 4u + (df_u32)quest_bytes;
     check_expect(size > 24u+1272u+256u*124u && df_ru32(current+24+1272) == OG_WORLD_ROOT,
                  "fixture locates the documented original object section");
     if (size <= 24u+1272u+256u*124u) { return; }
@@ -285,6 +288,7 @@ static void check_disk(const char *root)
         og_guilds()->brotherhood_invite = 99999u;
     }
     g_saved = *og_state();
+    g_saved.quest_len = og_quest_pack(g_saved.quest_blob, OG_QUEST_BLOB);
     check_expect(og_save_write(1), "write an OGFALL session");
     check_expect(fs_exists("ogfall\\saves\\S0001.SAV"), "saves live in ogfall/saves");
     check_expect(!fs_exists("saves\\S0001.SAV"), "OGFALL does not use GFALL's saves folder");

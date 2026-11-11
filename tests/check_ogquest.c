@@ -292,6 +292,27 @@ void check_ogquest(void)
             for (f = 0; f < 3; f++) { og_quest_foe_killed(og_quest(s2)->foe[f].number); }
             og_quest_run();
             check_expect(og_quest(s2) != 0 && og_character()->gold == gold, "quest: the reward came before the questgiver was spoken to");
+            /* Saved mid-quest and read back: the quest, its rolled gold, bound places, timer, foes, states and the logbook come back, and it can still be finished. */
+            {
+                static df_u8 blob[OG_QUEST_BLOB];
+                int len, s3, st1, ord0, delay;
+                char log1[2048], log2[2048];
+
+                st1 = og_quest_state(s2, 1); ord0 = og_quest(s2)->place[0].ordinal; delay = (int)og_quest(s2)->timer[0].delay;
+                og_logbook_text(log1, sizeof(log1));
+                len = og_quest_pack(blob, sizeof(blob));
+                check_expect(len > 64 && len < 4096, "quest: the packed quests are not a few hundred bytes");
+                og_quest_reset();
+                check_expect(og_quest_unpack(blob, len) == 1, "quest: the packed quests were not read back");
+                s3 = s2;
+                check_expect(og_quest(s3) != 0 && !strcmp(og_quest(s3)->qbn.name, "M0B00Y00") && og_quest(s3)->qbn.faction == 851 && og_quest(s3)->item[0].amount == amount &&
+                             og_quest_state(s3, 1) == st1 && og_quest(s3)->place[0].ordinal == ord0 && (int)og_quest(s3)->timer[0].delay == delay && og_quest_person_busy(9),
+                             "quest: the quest read back is not the one saved");
+                og_logbook_text(log2, sizeof(log2));
+                check_expect(!strcmp(log1, log2) && log1[0], "quest: the logbook was not kept through the pack");
+                check_expect(og_quest_unpack(blob, len - 1) == 0 && !og_quest(s3) && og_quest_unpack(blob, 0) == 1, "quest: damaged bytes were accepted, or no bytes left a quest running");
+                og_quest_unpack(blob, len);
+            }
             check_expect(og_quest_talk(9, 851), "quest: the questgiver's talk was not taken");
             og_quest_run();
             check_expect(!og_quest(s2) && og_character()->gold == gold + amount && og_faction_rep(851) > rep, "quest: the win did not pay the gold, raise the reputation and end the quest");

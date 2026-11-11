@@ -922,3 +922,127 @@ void og_quest_run(void)
         if (q->ended) { og_quest_end(slot); }
     }
 }
+
+/* ---- Saving ---- */
+
+typedef struct { df_u8 *p; int n, cap, bad; } QWire;
+
+static void qput(QWire *w, df_u32 v)
+{
+    if (w->n + 4 > w->cap) { w->bad = 1; return; }
+    w->p[w->n++] = (df_u8)v; w->p[w->n++] = (df_u8)(v >> 8); w->p[w->n++] = (df_u8)(v >> 16); w->p[w->n++] = (df_u8)(v >> 24);
+}
+
+static df_u32 qget(QWire *w)
+{
+    df_u32 v;
+
+    if (w->n + 4 > w->cap) { w->bad = 1; return 0; }
+    v = (df_u32)w->p[w->n] | (df_u32)w->p[w->n + 1] << 8 | (df_u32)w->p[w->n + 2] << 16 | (df_u32)w->p[w->n + 3] << 24;
+    w->n += 4;
+    return v;
+}
+
+static void qbytes(QWire *w, const char *b, int len, int read)
+{
+    int i;
+
+    if (w->n + len > w->cap) { w->bad = 1; return; }
+    for (i = 0; i < len; i++) { if (read) { ((char *)b)[i] = (char)w->p[w->n + i]; } else { w->p[w->n + i] = (df_u8)b[i]; } }
+    w->n += len;
+}
+
+/* One quest's changing parts, written or read by the same walk (a read fills what a write puts). The sparse tables (ops, places, persons) lead with a count of the rows that are not empty. */
+static void qwire_quest(QWire *w, OgQuest *q, int read)
+{
+    int i, k, count;
+    df_u32 v;
+
+#define QI(x) do { if (read) { (x) = (int)qget(w); } else { qput(w, (df_u32)(x)); } } while (0)
+#define QU(x) do { if (read) { (x) = qget(w); } else { qput(w, (x)); } } while (0)
+    QI(q->rewarded); QI(q->ended);
+    for (i = 0; i < q->qbn.n_state; i++) { if (!q->qbn.state[i].is_global) { QI(q->qbn.state[i].value); } }
+    for (i = 0; i < q->qbn.n_foe; i++) { QI(q->qbn.foe[i].killed); QI(q->foe[i].number); QI(q->foe[i].placed); QI(q->foe[i].place); QI(q->foe[i].live); }
+    for (i = 0; i < q->qbn.n_timer; i++) { QI(q->timer[i].flags); QU(q->timer[i].start); QU(q->timer[i].delay); }
+    for (i = 0; i < q->qbn.n_item; i++) { QI(q->item[i].gold); QI(q->item[i].amount); QI(q->item[i].given); }
+    count = 0;
+    if (!read) { for (i = 0; i < q->qbn.n_op; i++) { if (q->qbn.op[i].flags || q->qbn.op[i].last_minutes) { count++; } } }
+    QI(count);
+    if (read && (count < 0 || count > q->qbn.n_op)) { w->bad = 1; return; }
+    if (read) { for (k = 0; k < count && !w->bad; k++) { i = (int)qget(w); if (i < 0 || i >= q->qbn.n_op) { w->bad = 1; return; } q->qbn.op[i].flags = (int)qget(w); q->qbn.op[i].last_minutes = qget(w); } }
+    else { for (i = 0; i < q->qbn.n_op; i++) { if (q->qbn.op[i].flags || q->qbn.op[i].last_minutes) { v = (df_u32)i; qput(w, v); qput(w, (df_u32)q->qbn.op[i].flags); qput(w, q->qbn.op[i].last_minutes); } } }
+    for (i = 0; i < q->qbn.n_place; i++) {
+        QI(q->place[i].bound);
+        if (q->place[i].bound) { QI(q->place[i].ordinal); QI(q->place[i].region); QI(q->place[i].index); QI(q->place[i].type); QI(q->place[i].px); QI(q->place[i].py); qbytes(w, q->place[i].name, 33, read); }
+    }
+    for (i = 0; i < q->qbn.n_person; i++) {
+        QI(q->person[i].bound);
+        if (q->person[i].bound) { QI(q->person[i].who); QI(q->person[i].faction); qbytes(w, q->person[i].name, 40, read); qbytes(w, q->person[i].town, 33, read); }
+    }
+#undef QI
+#undef QU
+}
+
+int og_quest_pack(df_u8 *out, int cap)
+{
+    QWire w;
+    int s, i, k, used;
+
+    w.p = out; w.n = 0; w.cap = cap; w.bad = 0;
+    qbytes(&w, (const char *)g_global, 64, 0);
+    qput(&w, (df_u32)g_foe_counter);
+    used = 0;
+    for (i = 0; i < OG_LOG_SLOTS; i++) { if (g_log[i].used) { used++; } }
+    qput(&w, (df_u32)used);
+    for (i = 0; i < OG_LOG_SLOTS; i++) {
+        if (!g_log[i].used) { continue; }
+        qput(&w, (df_u32)i); qput(&w, (df_u32)g_log[i].quest_id); qbytes(&w, g_log[i].name, 9, 0);
+        for (k = 0; k < 10; k++) { qput(&w, (df_u32)g_log[i].message[k]); qput(&w, g_log[i].minutes[k]); qbytes(&w, g_log[i].place[k], 32, 0); }
+    }
+    used = 0;
+    for (s = 0; s < OG_QUESTS; s++) { if (g_quest[s].used) { used++; } }
+    qput(&w, (df_u32)used);
+    for (s = 0; s < OG_QUESTS; s++) {
+        if (!g_quest[s].used) { continue; }
+        qput(&w, (df_u32)s); qbytes(&w, g_quest[s].qbn.name, 9, 0); qput(&w, (df_u32)g_quest[s].qbn.id); qput(&w, (df_u32)g_quest[s].qbn.faction);
+        qwire_quest(&w, &g_quest[s], 0);
+    }
+    return w.bad ? -1 : w.n;
+}
+
+int og_quest_unpack(const df_u8 *in, int len)
+{
+    QWire w;
+    int i, k, n, s;
+
+    og_quest_reset();
+    if (len <= 0) { return len == 0; }
+    w.p = (df_u8 *)in; w.n = 0; w.cap = len; w.bad = 0;
+    qbytes(&w, (const char *)g_global, 64, 1);
+    g_foe_counter = (int)qget(&w);
+    n = (int)qget(&w);
+    if (n < 0 || n > OG_LOG_SLOTS) { w.bad = 1; }
+    for (k = 0; k < n && !w.bad; k++) {
+        i = (int)qget(&w);
+        if (i < 0 || i >= OG_LOG_SLOTS) { w.bad = 1; break; }
+        g_log[i].used = 1; g_log[i].quest_id = (int)qget(&w); qbytes(&w, g_log[i].name, 9, 1);
+        for (s = 0; s < 10; s++) { g_log[i].message[s] = (int)qget(&w); g_log[i].minutes[s] = qget(&w); qbytes(&w, g_log[i].place[s], 32, 1); g_log[i].place[s][31] = 0; }
+    }
+    n = w.bad ? 0 : (int)qget(&w);
+    if (n < 0 || n > OG_QUESTS) { w.bad = 1; }
+    for (k = 0; k < n && !w.bad; k++) {
+        OgQuest *q;
+        char name[9];
+
+        s = (int)qget(&w);
+        if (s < 0 || s >= OG_QUESTS || g_quest[s].used) { w.bad = 1; break; }
+        qbytes(&w, name, 9, 1); name[8] = 0;
+        q = &g_quest[s];
+        mem_zero(q, sizeof(*q));
+        if (w.bad || !og_qbn_load(name, &q->qbn)) { w.bad = 1; break; }
+        q->used = 1; q->qbn.id = (int)qget(&w); q->qbn.faction = (int)qget(&w);
+        qwire_quest(&w, q, 1);
+    }
+    if (w.bad || w.n != len) { og_quest_reset(); return 0; }
+    return 1;
+}

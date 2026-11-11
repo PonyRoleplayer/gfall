@@ -113,6 +113,11 @@ const df_u8 *og_quest_globals(void);
 void og_quest_globals_clear(void);
 
 void og_quest_reset(void);
+/* The quests as bytes for a save and back (step 8): the global states, the logbook, the foe counter and each running quest's name, id, faction and what changed since its QBN was read (the
+ * states, ops done, foes killed, timers, bound places, persons and items). A quest comes back by reading its QBN again. pack returns the length, or -1 when it does not fit; unpack
+ * returns 0 for bytes it cannot read (nothing is then running). */
+int og_quest_pack(df_u8 *out, int cap);
+int og_quest_unpack(const df_u8 *in, int len);
 /* quest_start's file part: NAME.QBN read into the first free slot with its id (1..255 not in use); the slot, or -1. Binding to the world is later steps. */
 int og_quest_start(const char *name, int faction);
 /* The same from bytes already in memory (a quest of a test). */

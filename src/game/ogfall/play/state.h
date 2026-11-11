@@ -18,7 +18,9 @@
 #include "game/ogfall/play/worldstate.h"
 #include "engine/scene/keep.h"
 
-#define OG_STATE_VERSION 15
+#define OG_STATE_VERSION 16
+/* The room a save keeps for the quests (quest.c packs into it). */
+#define OG_QUEST_BLOB 24576
 #define OG_STATE5_WIRE_BYTES 348
 #define OG_WORLD_ROWS 512
 #define OG_THUMB_W 80
@@ -128,6 +130,9 @@ typedef struct OgState {
     OgItemEnchant enchant[OG_ENCHANTED_ITEMS];
     /* The game minute of the player's last kill (character +0x1FD, set by damage_creature_death): Health leech's clock. */
     df_u32 last_kill;
+    /* The quests as quest.c packs them (schema 16): filled when a save is written, read when one is restored. */
+    int quest_len;
+    df_u8 quest_blob[OG_QUEST_BLOB];
 } OgState;
 
 OgCharacter *og_character(void);

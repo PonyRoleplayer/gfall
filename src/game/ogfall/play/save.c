@@ -1,4 +1,5 @@
 #include "game/ogfall/play/save.h"
+#include "game/ogfall/play/quest.h"
 #include "game/ogfall/play/state.h"
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/spellbook.h"
@@ -454,6 +455,13 @@ static void transfer(Wire *w, OgState *s)
     /* The last kill (schema 15). */
     if (w->version >= 15) { wire_u32(w, &s->last_kill); }
 
+    /* The quests (schema 16): a length and the bytes quest.c packed. */
+    if (w->version >= 16) {
+        wire_int(w, &s->quest_len);
+        if (s->quest_len < 0 || s->quest_len > OG_QUEST_BLOB) { w->bad = 1; return; }
+        wire_bytes(w, s->quest_blob, s->quest_len);
+    }
+
     if (w->version >= 7) {
         OgWorldState *world;
         world = &s->world_state;
@@ -573,6 +581,11 @@ int og_save_write(int slot)
     w.read = 0;
     w.bad = 0;
     g_candidate = *og_state();
+    g_candidate.quest_len = og_quest_pack(g_candidate.quest_blob, OG_QUEST_BLOB);
+    if (g_candidate.quest_len < 0) {
+        g_error = "Too many quests to save";
+        return 0;
+    }
     /* Menus are transient; a loaded save always resumes the world. */
     g_candidate.mode = OG_GAME_WORLD;
     g_candidate.depth = 0;

@@ -779,6 +779,8 @@ int og_state_restore(const OgState *snapshot)
         return 0;
     }
     g_state = *snapshot;
+    /* The quests come back by reading their files again; bytes that cannot be read leave none running. */
+    (void)og_quest_unpack(g_state.quest_blob, g_state.quest_len);
     og_spells_sync_custom(&g_state);
     if (g_state.who.klass == 18) {
         og_class_set(18, &g_state.career);
