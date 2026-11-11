@@ -195,6 +195,44 @@ static void itemmaker_checks(void)
         og_inventory_unequip(r3);
         check_expect(!(og_character()->conditions & 0x200), "enchant: absorption stayed with no ring worn");
     }
+    /* Slice 3: using an item: Cast when used on the caster at once and wearing 10, a spell that has to be aimed readied, Health leech whenever used. */
+    {
+        df_u32 wand, aim_ring, leech;
+        int k2, free_row, hp, cond, effects_before, effects_after, i;
+
+        wand = og_item_create(pack, 25, rg, 0); aim_ring = og_item_create(pack, 25, rg, 0); leech = og_item_create(pack, 25, rg, 0);
+        for (free_row = 0; og_item_enchant_edit(free_row)->item; free_row++) { }
+        {
+            OgItemEnchant *row;
+
+            row = og_item_enchant_edit(free_row);
+            row->item = wand; row->identified = 1;
+            for (k2 = 0; k2 < 10; k2++) { row->type[k2] = -1; row->param[k2] = -1; }
+            row->type[0] = 0; row->param[0] = 4;
+            for (free_row++; og_item_enchant_edit(free_row)->item; free_row++) { }
+            row = og_item_enchant_edit(free_row);
+            row->item = aim_ring; row->identified = 1;
+            for (k2 = 0; k2 < 10; k2++) { row->type[k2] = -1; row->param[k2] = -1; }
+            row->type[0] = 0; row->param[0] = 7;
+            for (free_row++; og_item_enchant_edit(free_row)->item; free_row++) { }
+            row = og_item_enchant_edit(free_row);
+            row->item = leech; row->identified = 1;
+            for (k2 = 0; k2 < 10; k2++) { row->type[k2] = -1; row->param[k2] = -1; }
+            row->type[0] = 21; row->param[0] = 0;
+        }
+        og_object_edit(wand)->condition = og_object_edit(wand)->max_condition = 500; cond = 500;
+        effects_before = 0; for (i = 0; i < OG_EFFECTS; i++) { if (og_magic_state()->effect[i].active) { effects_before++; } }
+        check_expect(og_possessions_use(wand), "use: an item with Cast when used could not be used");
+        effects_after = 0; for (i = 0; i < OG_EFFECTS; i++) { if (og_magic_state()->effect[i].active) { effects_after++; } }
+        check_expect(effects_after > effects_before && og_object(wand)->condition == cond - 10, "use: Levitate was not cast on the user or the item not worn by 10");
+        og_object_edit(aim_ring)->condition = og_object_edit(aim_ring)->max_condition = 500;
+        og_magic_state()->ready = 0;
+        check_expect(og_item_use(aim_ring) == 1 && og_magic_pending() && og_object(aim_ring)->condition == 490, "use: a spell to be aimed was not readied and worn by 10");
+        og_magic_abort();
+        og_character()->health = og_character()->max_health; hp = og_character()->health;
+        og_object_edit(leech)->condition = og_object_edit(leech)->max_condition = 500;
+        check_expect(og_item_use(leech) == 0 && og_character()->health == hp - ((og_character()->level >> 1) + 1) && og_object(leech)->condition == 498, "use: Health leech did not cost the user health and wear the item by 2");
+    }
     /* Slice 2: wear and breaking, Regens health, Item deteriorates, Extra spell pts and Health leech by the tick. */
     {
         df_u32 plain, ench, regen;

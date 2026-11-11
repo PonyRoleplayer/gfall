@@ -564,6 +564,7 @@ int og_frame(const OgIn *in, Camera *cam, const Scene *scene)
     if (in->pressed[OG_TRANSPORT] || in->pressed[OG_MAGIC_ITEM]) {
         og_sound(203);
     }
+    if (in->pressed[OG_MAGIC_ITEM]) { og_possessions_magic_items(); }
     if (in->pressed[OG_SHEET]) { og_possessions_open(OG_VIEW_SHEET,0); }
     else if (in->pressed[OG_INVENTORY]) { og_possessions_open(OG_VIEW_INVENTORY,0); }
     else if (in->pressed[OG_CAST]) { og_possessions_cast(); }

@@ -12,6 +12,7 @@
 #include "game/ogfall/play/guild.h"
 #include "game/ogfall/play/spellmaker.h"
 #include "game/ogfall/play/itemmaker.h"
+#include "game/ogfall/play/enchant.h"
 #include "game/ogfall/play/magicitem.h"
 #include "game/ogfall/tables/magicdefs.h"
 #include "game/ogfall/play/standing.h"
@@ -529,6 +530,38 @@ static void maker_click(int x, int y)
             return;
         }
     }
+}
+
+/* The key for a magic item (control action 31, magic_items_open): a list of the carried items with a Cast when used, each by its name; the pick is used. */
+static df_u32 g_magic_items[OG_LIST_MOST];
+
+static void magic_item_picked(int row)
+{
+    df_u32 id;
+
+    if (row < 0 || row >= OG_LIST_MOST) { return; }
+    id = g_magic_items[row];
+    og_possessions_close();
+    if (og_object(id)) { og_item_use(id); }
+}
+
+int og_possessions_magic_items(void)
+{
+    static char names[OG_LIST_MOST][OG_LIST_NAME];
+    int i, n, k, type, param;
+    const OgObject *item;
+
+    if (g.page) { return 0; }
+    n = 0;
+    for (i = 0; i < OG_OBJECTS && n < OG_LIST_MOST; i++) {
+        item = &og_state()->object[i];
+        if (!item->id || item->type != OG_RECORD_ITEM || item->parent != og_state()->inventory_id) { continue; }
+        for (k = 0; og_item_enchantment(item->id, k, &type, &param); k++) {
+            if (type == 0) { g_magic_items[n] = item->id; og_item_name(item, names[n], OG_LIST_NAME); n++; break; }
+        }
+    }
+    if (!n) { return 0; }
+    return og_possessions_list((const char (*)[OG_LIST_NAME])names, n, magic_item_picked);
 }
 
 int og_possessions_spellmaker(void)
@@ -1050,6 +1083,20 @@ int og_possessions_use(df_u32 id)
     item = og_object(id);
     if (!item || item->type != OG_RECORD_ITEM || (item->parent != og_state()->inventory_id &&
         !(g.page == OG_VIEW_INVENTORY && item->parent == g.remote))) { return 0; }
+    /* inv_use_item: an enchanted item's powers fire first; an item with nothing else to use is then used. */
+    if (og_item_enchanted(id) && item->parent == og_state()->inventory_id) {
+        int used, pending;
+
+        used = og_item_use(id);
+        pending = og_magic_pending();
+        if (used && !(item->group == 7 || item->group == 27 || item->group == 6 || item->group == 12)) {
+            g.revision++;
+            /* A spell that has to be fired is fired from the view: the inventory is put away. */
+            if (pending && g.page == OG_VIEW_INVENTORY) { og_possessions_close(); }
+            return 1;
+        }
+        if (!og_object(id)) { g.revision++; return 1; }
+    }
     if (item->group == 0 && item->index >= 0 && item->index < 4) {
         /* inven.c consumes the entire drug record, even when level-one
          * protection or class immunity rejects its poison. */

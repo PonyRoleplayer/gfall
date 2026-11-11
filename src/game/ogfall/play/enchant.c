@@ -208,3 +208,19 @@ void og_enchant_frame(void)
     if (who->magicka > who->max_magicka) { who->magicka = who->max_magicka; }
     g_rebuild = any;
 }
+
+int og_item_use(df_u32 id)
+{
+    int k, type, param, used;
+
+    used = 0;
+    for (k = 0; og_object(id) && og_item_enchantment(id, k, &type, &param); k++) {
+        if (type == 0 && param >= 0) {
+            if (og_magic_cast_item(param)) { used++; og_item_damage(id, 10); }
+        } else if (type == 21 && param == 0) {
+            og_damage_player((og_character()->level >> 1) + 1, 0);
+            og_item_damage(id, 2);
+        }
+    }
+    return used;
+}

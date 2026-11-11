@@ -29,6 +29,10 @@ void og_item_damage(df_u32 item, int n);
 void og_enchant_minutes(void);
 void og_enchant_frame(void);
 
+/* inv_use_item (inven.c 775): every Cast when used of the item fires, each wearing it by 10, and Health leech "whenever used" costs the user (level / 2 + 1) health and wears 2.
+ * Returns how many things were used; 0 when the item has nothing to use. */
+int og_item_use(df_u32 item);
+
 void og_enchant_equip(df_u32 item, int slot);
 void og_enchant_unequip(df_u32 item, int slot);
 

@@ -24,6 +24,8 @@ void og_magic_hostile(void);
 int og_magic_sees(int kind);
 void og_magic_soul_capture(int index);
 int og_magic_ready(df_u32 owned_spell);
+/* An enchanted item's Cast when used (spell id): cast at once on the caster, else readied for the attack button; 0 when it could not be. */
+int og_magic_cast_item(int spell);
 int og_magic_recast(void);
 void og_magic_abort(void);
 int og_magic_pending(void);

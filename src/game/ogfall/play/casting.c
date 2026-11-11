@@ -158,6 +158,31 @@ static int ready(df_u32 id, int recast)
     return 1;
 }
 int og_magic_ready(df_u32 id) { return ready(id,0); }
+
+/* The spell an item's Cast when used readied (target 1 to 4): a spell object of its own in the pack, gone once it is fired or put away. */
+static df_u32 g_item_spell;
+
+/* cast_item_used_spell: the player's cast of a spell that came from an item. Nothing is paid (the item pays in wear), silence does not stop it for this cast only (9.1 fixed),
+ * and the last spellbook spell is left as it was. A spell on the caster goes at once; the others are readied and fired with the attack button. */
+int og_magic_cast_item(int spell)
+{
+    const OgSpellDef *s;
+    df_u32 id;
+
+    s = og_spell_def(spell);
+    if (!s || og_character()->health <= 0) { return 0; }
+    if (s->target == 0) {
+        og_sound(og_cast_sound(s->element)); animate(s->element);
+        og_magic_apply(s->id,-1,-1,og_character()->level,0);
+        return 1;
+    }
+    if (og_magic_pending()) { og_msg_set("You already have a spell ready."); return 0; }
+    id = og_object_new(OG_RECORD_SPELL,og_state()->inventory_id,spell,100);
+    if (!id) { return 0; }
+    g_item_spell = id; og_magic_state()->ready = id;
+    og_msg_set("Press button to fire spell."); og_weapon_cancel();
+    return 1;
+}
 int og_magic_recast(void)
 {
     if (og_magic_pending()) { og_msg_set("You already have a spell ready."); return 0; }
@@ -242,6 +267,8 @@ void og_magic_frame(const Scene *scene, const Camera *camera, const OgIn *input,
         }
     } else if (g_light) { spawn_remove(g_light); g_light = 0; }
     if (g_element >= 0) { g_animation += input->dt; if (g_animation*18.2065f >= 7) { g_element = -1; } }
+    /* An item's readied spell is let go with the readying (fired, or put away). */
+    if (g_item_spell && og_magic_state()->ready != g_item_spell) { og_object_delete(g_item_spell); g_item_spell = 0; }
     if (og_magic_pending()) {
         item = og_object(og_magic_state()->ready); s = item ? og_spell_def(item->index) : 0;
         if (!s) { og_magic_state()->ready = 0; }

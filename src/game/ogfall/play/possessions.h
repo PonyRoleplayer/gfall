@@ -57,7 +57,11 @@ int og_possessions_open(int page, df_u32 remote);
 /* The bank's screen (BANK00I0.IMG) for a region's account; 0 when refused. */
 int og_possessions_bank(int region);
 /* The spell maker (SPELLMAKER window, INFO01I0.IMG) over the world: the spell begins empty (spellmaker.h); 0 when refused. */
+/* inv_use_item: use an item of the pack (an enchanted one fires its powers first). */
+int og_possessions_use(df_u32 id);
 int og_possessions_spellmaker(void);
+/* The magic item key: a list of the carried items that cast when used; the pick is used. 0 when there is none. */
+int og_possessions_magic_items(void);
 /* The item maker (ITEM00I0.IMG, itemmaker.h) over the world; 0 when refused. */
 int og_possessions_itemmaker(void);
 /* The enchantable items of the tab the item maker shows, and the rows of one column of its slots (power 0, side effect 1): their words and the slot a click on them takes out (-1 for a gap). */
