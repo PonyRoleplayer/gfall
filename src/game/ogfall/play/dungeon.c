@@ -1,4 +1,5 @@
 #include "game/ogfall/play/dungeon.h"
+#include "game/ogfall/play/enchant.h"
 #include "game/ogfall/play/guild.h"
 #include "game/ogfall/play/doors.h"
 #include "game/ogfall/play/ai.h"
@@ -448,9 +449,12 @@ static void resolve_player(const Scene *scene, const Camera *cam, int target, co
     base = index >= 0 ? og_random_range(og_weapon_damage(index,0),og_weapon_damage(index,1)) :
         og_random_range(a.skill[30]/10+1,a.skill[30]/5+1);
     damage = og_attack_damage(&a,&f->fighter,index,material,s->damage,expert,base);
+    /* damage_bonus_vs_target: a creature of a class is a humanoid. */
+    if (index >= 0 && s->item) { damage += og_enchant_hit_bonus(s->item, f->kind >= 128 ? 2 : og_foe_category(f->kind)); if (damage < 0) { damage = 0; } }
     if (og_god_mode() && damage < 1) { damage = 1; }
     if (backstab && og_random_range(1,100) <= backstab) { damage *= 3; og_msg_set("Backstab!"); }
     hit_foe(scene,target,damage,cam->yaw);
+    if (damage && index >= 0 && s->item) { og_enchant_strike(s->item, target, damage); }
     if (damage) {
         og_sound_at(og_random_range(378,382),f->entity->x,f->entity->y+40,f->entity->z); og_item_wear(s->item,damage);
         og_item_wear(f->equipped[og_armor_slot(part)],damage);

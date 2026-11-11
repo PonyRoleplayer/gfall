@@ -88,7 +88,7 @@ static void apply_area(const OgSpellDef *s, int caster, int level, float x, floa
         }
         if (dx*dx+dy*dy+dz*dz >= radius*radius || !line_clear(x,y,z,x+dx,y+dy,z+dz)) { continue; }
         if (caster == -1 && i == -1 && s->target == 3) { continue; }
-        og_magic_apply(s->id,caster,i,level,0);
+        og_magic_apply_def(s,s->id,caster,i,level,0);
     }
 }
 static void visual(int i)
@@ -158,6 +158,23 @@ static int ready(df_u32 id, int recast)
     return 1;
 }
 int og_magic_ready(df_u32 id) { return ready(id,0); }
+
+/* cast_item_strike_spell: the spell with icon 250, on the creature the weapon struck. An area spell (Fire Storm, Ice Storm) bursts where the creature stands. */
+void og_magic_strike(int spell, int victim)
+{
+    const OgSpellDef *s;
+    OgSpellDef strike;
+    Entity *e;
+
+    s = og_spell_def(spell);
+    e = og_dungeon_entity(victim);
+    if (!s || !e) { return; }
+    strike = *s; strike.icon = 250;
+    og_magic_hostile();
+    og_sound(og_cast_sound(s->element));
+    if (s->target >= 3) { apply_area(&strike,-1,og_character()->level,e->x,e->y+40,e->z); }
+    else if (s->target != 0) { og_magic_apply_def(&strike,spell,-1,victim,og_character()->level,0); }
+}
 
 /* The spell an item's Cast when used readied (target 1 to 4): a spell object of its own in the pack, gone once it is fired or put away. */
 static df_u32 g_item_spell;

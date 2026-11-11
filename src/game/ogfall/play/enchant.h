@@ -33,6 +33,15 @@ void og_enchant_frame(void);
  * Returns how many things were used; 0 when the item has nothing to use. */
 int og_item_use(df_u32 item);
 
+/* damage_bonus_vs_target for a weapon that hit a creature of a category (0 undead, 1 Daedra, 2 humanoid, 3 animal): Potent vs adds the wielder's level, Low damage vs takes it off,
+ * Health leech "whenever used" costs the wielder (level / 4 + 1) (9.3: they all apply, whatever else is on the weapon). */
+int og_enchant_hit_bonus(df_u32 weapon, int category);
+/* damage_weapon_strike_effects after a hit that dealt damage to a creature (a dungeon index): Cast when strikes fires each spell through the weapon (wear 10), Vampiric effect "when
+ * strikes" heals the wielder half the damage dealt and wears the weapon by a quarter of that and one. */
+void og_enchant_strike(df_u32 weapon, int victim, int dealt);
+/* armor_value_for_part: Strengthens armor takes 25 off every part's armour value, Weakens armor adds 25; only the first of either over the worn items counts. */
+int og_enchant_armor_modifier(void);
+
 void og_enchant_equip(df_u32 item, int slot);
 void og_enchant_unequip(df_u32 item, int slot);
 

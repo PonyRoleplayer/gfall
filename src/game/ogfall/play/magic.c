@@ -417,6 +417,12 @@ void og_magic_apply(int spell, int caster, int target, int level, int no_resist)
     apply_spell(og_spell_def(spell), spell, caster, target, level, no_resist);
 }
 
+/* A spell definition given by the caller (an item's strike spell with icon 250). */
+void og_magic_apply_def(const OgSpellDef *def, int spell, int caster, int target, int level, int no_resist)
+{
+    apply_spell(def, spell, caster, target, level, no_resist);
+}
+
 /* item_apply_equip_effects, type 1: the spell cast on the player as a lasting one (every effect's duration -1) with the icon 200 + the slot of the item that holds it. */
 void og_magic_hold(int spell, int slot)
 {

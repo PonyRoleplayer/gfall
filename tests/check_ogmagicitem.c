@@ -196,6 +196,38 @@ static void itemmaker_checks(void)
         og_inventory_unequip(r3);
         check_expect(!(og_character()->conditions & 0x200), "enchant: absorption stayed with no ring worn");
     }
+    /* Slice 4: the hooks of a weapon that hits: Potent vs and Low damage vs by the wielder's level (9.3 fixed), Health leech on a hit, Vampiric when strikes, armour. */
+    {
+        df_u32 axe, shield;
+        int k2, free_row, lvl, hp, cond;
+        OgItemEnchant *row;
+
+        axe = og_item_create(pack, 3, longsword, 1); shield = og_item_create(pack, 25, rg, 0);
+        for (free_row = 0; og_item_enchant_edit(free_row)->item; free_row++) { }
+        row = og_item_enchant_edit(free_row);
+        row->item = axe; row->identified = 1;
+        for (k2 = 0; k2 < 10; k2++) { row->type[k2] = -1; row->param[k2] = -1; }
+        row->type[0] = 4; row->param[0] = 0; row->type[1] = 20; row->param[1] = 1; row->type[2] = 21; row->param[2] = 0; row->type[3] = 6; row->param[3] = 1;
+        for (free_row++; og_item_enchant_edit(free_row)->item; free_row++) { }
+        row = og_item_enchant_edit(free_row);
+        row->item = shield; row->identified = 1;
+        for (k2 = 0; k2 < 10; k2++) { row->type[k2] = -1; row->param[k2] = -1; }
+        row->type[0] = 12; row->param[0] = -1;
+        lvl = og_character()->level;
+        og_character()->health = og_character()->max_health; hp = og_character()->health;
+        check_expect(og_enchant_hit_bonus(axe, 0) == lvl, "hit: Potent vs undead did not add the wielder's level");
+        check_expect(og_character()->health == hp - ((lvl >> 2) + 1), "hit: Health leech did not cost the wielder (level / 4 + 1) on a hit");
+        check_expect(og_enchant_hit_bonus(axe, 1) == -lvl && og_enchant_hit_bonus(axe, 2) == 0, "hit: Low damage vs Daedra did not take the level off, or another category changed the damage");
+        og_object_edit(axe)->condition = og_object_edit(axe)->max_condition = 500; cond = 500;
+        og_character()->health = og_character()->max_health - 20; hp = og_character()->health;
+        og_enchant_strike(axe, 0, 10);
+        check_expect(og_character()->health == hp + 5 && og_object(axe)->condition == cond - (5 / 4 + 1), "strike: Vampiric when strikes did not heal half the damage and wear the weapon");
+        og_state_equip(0, 0);
+        check_expect(og_enchant_armor_modifier() == 0, "armour: a modifier with nothing worn");
+        og_inventory_equip(shield);
+        check_expect(og_enchant_armor_modifier() == -25, "armour: Strengthens armor did not take 25 off");
+        og_inventory_unequip(shield);
+    }
     /* Slice 3: using an item: Cast when used on the caster at once and wearing 10, a spell that has to be aimed readied, Health leech whenever used. */
     {
         df_u32 wand, aim_ring, leech;

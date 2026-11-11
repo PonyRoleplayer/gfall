@@ -224,3 +224,49 @@ int og_item_use(df_u32 id)
     }
     return used;
 }
+
+int og_enchant_hit_bonus(df_u32 weapon, int category)
+{
+    int k, type, param, bonus;
+
+    bonus = 0;
+    for (k = 0; og_item_enchantment(weapon, k, &type, &param); k++) {
+        if (type == 4 && param == category) { bonus += og_character()->level; }
+        else if (type == 20 && param == category) { bonus -= og_character()->level; }
+        else if (type == 21 && param == 0) { og_damage_player((og_character()->level >> 2) + 1, 0); }
+    }
+    return bonus;
+}
+
+void og_enchant_strike(df_u32 weapon, int victim, int dealt)
+{
+    int k, type, param, healed;
+    OgCharacter *who;
+
+    who = og_character();
+    for (k = 0; og_object(weapon) && og_item_enchantment(weapon, k, &type, &param); k++) {
+        if (type == 2 && param >= 0) {
+            og_magic_strike(param, victim);
+            og_item_damage(weapon, 10);
+        } else if (type == 6 && param == 1) {
+            healed = dealt / 2;
+            if (healed > who->max_health - who->health) { healed = who->max_health - who->health; }
+            if (healed < 0) { healed = 0; }
+            who->health += healed;
+            og_item_damage(weapon, healed / 4 + 1);
+        }
+    }
+}
+
+int og_enchant_armor_modifier(void)
+{
+    int slot, k, type, param;
+
+    for (slot = 0; slot < 27; slot++) {
+        for (k = 0; og_state()->equipped[slot] && og_item_enchantment(og_state()->equipped[slot], k, &type, &param); k++) {
+            if (type == 12) { return -25; }
+            if (type == 24) { return 25; }
+        }
+    }
+    return 0;
+}

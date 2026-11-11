@@ -57,3 +57,10 @@ Written 2026-11-10 before any code, from the decomp's `docs/item-enchantments-in
 - **The magic item key** (`OG_MAGIC_ITEM`, magic_items_open): a list of the carried items with a Cast when used, each by name; the pick is used. Nothing opens with none.
 - Test: `check_ogmagicitem.c` (Levitate on the user and the wear of 10, a Wizard's Fire ring readied and put away, Health leech's cost and wear).
 - Not built: the "usable" icon, artifacts' uses, the casting delay by Intelligence, the quest event, and the skill training an item's spell would give.
+
+## Slice 4 built (2026-11-10)
+
+- **The player's blow** (`resolve_player`, `dungeon.c`): after the weapon's damage, `og_enchant_hit_bonus` adds Potent vs the wielder's level against the creature's category and takes Low damage vs off (9.3: they apply whatever else is on the weapon, and the class's modifiers stay); a class creature counts as a humanoid. Health leech "whenever used" costs the wielder `(level >> 2) + 1` on every hit (9.19 kept). After the hit, `og_enchant_strike` fires each Cast when strikes spell through the weapon on the creature struck (`og_magic_strike`: a touch or range spell on the creature, with icon 250; an area spell, Fire Storm or Ice Storm, bursting where the creature stands and not on the wielder: 9.4 fixed) wearing the weapon by 10, and Vampiric effect "when strikes" heals the wielder half the damage dealt (clamped) and wears the weapon by a quarter of it and one.
+- **Armour** (`og_enchant_armor_modifier`, from `og_fighter_player`): Strengthens armor takes 25 off every part's armour value, Weakens armor adds 25; only the first of either over the worn items counts (9.10 kept); clamped to -100..100.
+- Test: `check_ogmagicitem.c` (the bonus and the penalty by category, the leech, the vampiric heal and wear, the armour modifier). The strike spell's casting at a creature is not host-tested.
+- Not built: arrows (a bow's hits do not read the weapon's enchantments), creatures with enchanted weapons (OGFALL's creatures carry plain gear), Namira's reflect, and the hit wear of enchanted armour.

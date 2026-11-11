@@ -1,4 +1,5 @@
 #include "game/ogfall/play/combat.h"
+#include "game/ogfall/play/enchant.h"
 #include "game/ogfall/play/possessions.h"
 #include "game/ogfall/play/law.h"
 #include "game/ogfall/play/cheats.h"
@@ -23,7 +24,11 @@ void og_fighter_player(OgFighter *out)
     for (i = 0; i < OG_ATTRS; i++) { out->attribute[i] = who->attribute[i]; }
     for (i = 0; i < OG_SKILLS; i++) { out->skill[i] = who->skill[i]; }
     /* armor_value_for_part starts at 100; the sheet displays fifths. */
-    for (i = 0; i < 7; i++) { out->armor[i] = 100-og_inventory_armor(i)*5; }
+    for (i = 0; i < 7; i++) {
+        out->armor[i] = 100-og_inventory_armor(i)*5+og_enchant_armor_modifier();
+        if (out->armor[i] < -100) { out->armor[i] = -100; }
+        if (out->armor[i] > 100) { out->armor[i] = 100; }
+    }
 }
 
 static int race_bonus(int race, int weapon, int level)

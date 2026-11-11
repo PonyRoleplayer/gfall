@@ -16,6 +16,10 @@ int og_magic_chance(int index, int group, int sub);
 void og_magic_apply(int spell, int caster, int target, int level, int no_resist);
 /* A spell held by an enchanted item (Cast when held): a lasting effect on the player with icon 200 + the item's slot, ended by og_magic_release (items.md of the decomp, docs/ogfall-enchantments.md). */
 void og_magic_hold(int spell, int slot);
+/* The same spell with a definition of the caller's (an item's strike spell is cast with icon 250). */
+void og_magic_apply_def(const OgSpellDef *def, int spell, int caster, int target, int level, int no_resist);
+/* damage_weapon_strike_effects, type 2: the spell cast through a weapon that struck the creature (the index of the dungeon's creatures): a spell on a touch or a range at the creature, an area one bursting at the creature (and not at the wielder, 9.4 fixed). */
+void og_magic_strike(int spell, int victim);
 void og_magic_release(int spell, int slot);
 void og_magic_minutes(df_u32 start, df_u32 minutes);
 void og_magic_restore_foe(int index);
