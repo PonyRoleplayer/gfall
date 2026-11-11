@@ -52,6 +52,7 @@ void og_quest_set_text(int (*read)(const char *quest, int message, int in_text_r
 void og_quest_set_say(void (*say)(const char *text)) { g_say = say; }
 void og_quest_set_ask(int (*ask)(const char *words, void (*answer)(int yes))) { g_ask = ask; }
 const df_u8 *og_quest_globals(void) { return g_global; }
+void og_quest_global_set(int state) { if (state >= 0 && state < 64) { g_global[state] = 1; } }
 void og_quest_globals_clear(void) { mem_zero(g_global, sizeof(g_global)); }
 void og_quest_reset(void) { mem_zero(g_rumour, sizeof(g_rumour)); mem_zero(g_face, sizeof(g_face)); mem_zero(g_access, sizeof(g_access)); mem_zero(g_quest, sizeof(g_quest)); mem_zero(g_global, sizeof(g_global)); mem_zero(g_log, sizeof(g_log)); g_offer_slot = -1; g_initial_pending = 0; g_foe_counter = 1; mem_zero(&g_questor, sizeof(g_questor)); }
 void og_quest_set_names(const OgQuestNames *names) { g_names = names; }

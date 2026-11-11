@@ -87,6 +87,8 @@ void og_activate_aim(const Camera *camera, int cursor_mode, int cursor_active,
 
 static int g_container_what = -1;
 static int (*g_container_use)(int index);
+static int g_global_what = -1;
+static void (*g_global_use)(int state);
 static int g_shelf_what = -1;
 static int (*g_shelf_use)(int index, int tag);
 static int (*g_person_use)(const Camera *aim, int mode);
@@ -106,6 +108,12 @@ void og_activate_set_container(int what, int (*use)(int index))
 {
     g_container_what = what;
     g_container_use = use;
+}
+
+void og_activate_set_global(int what, void (*use)(int state))
+{
+    g_global_what = what;
+    g_global_use = use;
 }
 
 void og_activate_set_shelf(int what, int (*use)(int index, int tag))
@@ -176,6 +184,10 @@ int og_activate(const Scene *scene, const Camera *cam, int mode,
         if (usable->kind == USE_OTHER && g_container_use && usable->what == g_container_what) {
             if (mode == OG_MODE_GRAB) { return g_container_use(hit.usable); }
             if (mode == OG_MODE_INFO) { interact_say("container"); }
+            return 1;
+        }
+        if (usable->kind == USE_OTHER && g_global_use && usable->what == g_global_what) {
+            if (mode == OG_MODE_GRAB) { g_global_use(usable->tag); }
             return 1;
         }
         if (usable->kind == USE_OTHER && g_shelf_use && usable->what == g_shelf_what) {

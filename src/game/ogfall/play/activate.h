@@ -41,6 +41,8 @@ void og_activate_aim(const Camera *camera, int cursor_mode, int cursor_active,
 void og_activate_set_shelf(int what, int (*use)(int index, int tag));
 /* A house's chest or cupboard (what OTHER_CONTAINER): use(index) with the usable's index in the scene. */
 void og_activate_set_container(int what, int (*use)(int index));
+/* A dungeon model that sets a quest's global state (RDB action 31): used by hand, the game is told the state's number. */
+void og_activate_set_global(int what, void (*use)(int state));
 /* A person in the view (not a usable): the game's to talk to, or to name in info mode. aim is the camera the pick came from. 1 when it took the use. */
 void og_activate_set_person(int (*use)(const Camera *aim, int mode));
 /* A person standing in a building (a usable of kind USE_TALK): the game's to talk to, to offer a panel for, or to name. dist is how far along the view they stand. 1 when it took the use. */

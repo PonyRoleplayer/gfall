@@ -561,6 +561,19 @@ void check_ogquest(void)
             for (k = 0; k < og_quest_count(); k++) { og_quest_end(k); }
             og_quest_set_world(0);
         }
+        /* A dungeon action's global state (Mantellan Crux's sets 36): set, kept in the globals and through a pack. */
+        {
+            static df_u8 gb[OG_QUEST_BLOB];
+            int len;
+
+            og_quest_globals_clear();
+            og_quest_global_set(36); og_quest_global_set(99);
+            len = og_quest_pack(gb, sizeof(gb));
+            og_quest_globals_clear();
+            check_expect(og_quest_globals()[36] == 0 && og_quest_unpack(gb, len) == 1 && og_quest_globals()[36] == 1 && og_quest_globals()[35] == 0, "quest: a global state set by a dungeon action was not kept");
+            og_quest_globals_clear();
+            questor(1);
+        }
         og_character()->attribute[OG_STR] = saved_str;
     }
     slot = og_quest_start("M0B00Y00", 8);

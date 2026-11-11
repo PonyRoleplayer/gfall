@@ -187,6 +187,8 @@ const OgQuestFace *og_quest_face(int i);
 /* The 64 global states every quest shares (the main story's). */
 const df_u8 *og_quest_globals(void);
 void og_quest_globals_clear(void);
+/* A dungeon's action 31 (RDB: a clickable model, Mantellan Crux's sets 36, Lysandus' Tomb's 43): the global state set. */
+void og_quest_global_set(int state);
 
 /* quests_run_all for a passing minute: as og_quest_run, and the ops that watch the clock (79) look. */
 void og_quest_run_minute(void);

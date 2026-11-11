@@ -36,6 +36,7 @@
 #define ACT_TRANSLATE 1
 #define ACT_ROTATE 8
 #define ACT_TELEPORT 14
+#define ACT_GLOBAL 31
 #define TRIG_COLLIDE1 1
 #define TRIG_COLLIDE3 3
 #define TRIG_DIRECT 2
@@ -481,6 +482,18 @@ int doors_build(DoorBuild *b)
                 u->model = i;
                 u->mover = mover_of[i];
                 act_numbers(u, a);
+            }
+            continue;
+        }
+        if (b->place == PLACE_DUNGEON && a->flags == ACT_GLOBAL) {
+            /* link_step's action 31 sets a quest global state: no motion, a use of its own for the game to answer (the state is the action's axis byte). */
+            Usable *g;
+
+            g = new_use(b, USE_OTHER, "global", DOOR_REACH);
+            if (g) {
+                g->model = i;
+                g->what = OTHER_GLOBAL;
+                g->tag = (int)a->axis;
             }
             continue;
         }

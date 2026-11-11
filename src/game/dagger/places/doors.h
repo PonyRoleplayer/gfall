@@ -39,6 +39,8 @@ enum {
 #define OTHER_SHELF 1
 /* A house's chest, cupboard or drawer (DaggerfallInterior's houseContainerObjectGroupIndices); tag is its key's thing (keep.h). */
 #define OTHER_CONTAINER 2
+/* A dungeon model whose action sets one of the quests' 64 global states (RDB action 31; tag is the state's number, the action's axis byte): used by hand, it is the game's to say. */
+#define OTHER_GLOBAL 3
 
 /* What the place is, so which passages it has. */
 enum {

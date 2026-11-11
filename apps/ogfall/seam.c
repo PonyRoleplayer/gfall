@@ -2678,6 +2678,7 @@ int seam_boot(void)
     install_travel();
     og_activate_set_shelf(OTHER_SHELF, shelf_used);
     og_activate_set_container(OTHER_CONTAINER, container_used);
+    og_activate_set_global(OTHER_GLOBAL, og_quest_global_set);
     og_activate_set_person(person_used);
     world_set_people_hook(quest_people_hook);
     og_activate_set_talk_use(talk_used);
