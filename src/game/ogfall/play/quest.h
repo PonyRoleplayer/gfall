@@ -113,6 +113,31 @@ void og_logbook_remove(int quest_slot, int index);
 /* logbook_build_entries: every entry of the quests that are running, in order, as text; its length. */
 int og_logbook_text(char *out, int cap);
 
+/* Rumours (3.6): a line of text a quest adds when it starts (1005), ends (1006 lost, 1007 won) and for its questor (1008 and 1009, to be told in the greeting). People tell them as news
+ * (flags 4 and 8) for 30 days, the questor's for 180. A quest that ended takes its start rumour with it. */
+#define OG_RUMOURS 32
+typedef struct OgRumour {
+    int used, quest_id, message, flags, target;
+    df_u32 expires;
+    char name[9];
+    char text[200];
+} OgRumour;
+const OgRumour *og_rumour(int i);
+/* rumor_pick_news: one rumour of the news kind, at random, not yet gone stale; 0 when there is none. */
+int og_quest_news(int faction, char *out, int cap);
+/* rumor_find_for_npc: the questor's own rumour (the person is the one who gave the quest); 0 when there is none. */
+int og_quest_rumour_for(int who, char *out, int cap);
+
+/* The talk window's quest topics ("Tell me about": every place, person and item the quest names that is not hidden and has a message): how many, a topic's name and its answer. */
+int og_quest_topic_count(void);
+int og_quest_topic_name(int i, char *out, int cap);
+int og_quest_topic_answer(int i, char *out, int cap);
+
+/* The faces at the top of the screen (3.11, ops 55, 56, 63 and 64): ten slots of a quest's person or foe. kind 1 person, 2 foe. */
+#define OG_QUEST_FACES 10
+typedef struct OgQuestFace { int used, quest_id, kind, index; } OgQuestFace;
+const OgQuestFace *og_quest_face(int i);
+
 /* The 64 global states every quest shares (the main story's). */
 const df_u8 *og_quest_globals(void);
 void og_quest_globals_clear(void);

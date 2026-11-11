@@ -26,9 +26,14 @@ static const char *(*g_place)(void);
 static OgLogSlot g_log[OG_LOG_SLOTS];
 static const OgQuestWorld *g_world;
 static int g_foe_counter = 1;
+static OgRumour g_rumour[OG_RUMOURS];
+static OgQuestFace g_face[OG_QUEST_FACES];
 static struct { int set, who, faction; char name[40], town[33]; } g_questor;
 static void arg_set(OgQuest *q, const OgQbnOp *op, int n, int value);
 static void lay_items(OgQuest *q, int region, int index);
+static void rumour_add(int slot, int message, int target, int flags);
+static void rumour_questor(int slot, int rewarded);
+static void face_set(const OgQuest *q, int kind, int index, int on);
 static int carried(df_u32 id);
 static void make_item(OgQuest *q, int i);
 static int arg_state(const OgQuest *q, const OgQbnOp *op, int n);
@@ -44,7 +49,7 @@ void og_quest_set_say(void (*say)(const char *text)) { g_say = say; }
 void og_quest_set_ask(int (*ask)(const char *words, void (*answer)(int yes))) { g_ask = ask; }
 const df_u8 *og_quest_globals(void) { return g_global; }
 void og_quest_globals_clear(void) { mem_zero(g_global, sizeof(g_global)); }
-void og_quest_reset(void) { mem_zero(g_quest, sizeof(g_quest)); mem_zero(g_global, sizeof(g_global)); mem_zero(g_log, sizeof(g_log)); g_offer_slot = -1; g_foe_counter = 1; mem_zero(&g_questor, sizeof(g_questor)); }
+void og_quest_reset(void) { mem_zero(g_rumour, sizeof(g_rumour)); mem_zero(g_face, sizeof(g_face)); mem_zero(g_quest, sizeof(g_quest)); mem_zero(g_global, sizeof(g_global)); mem_zero(g_log, sizeof(g_log)); g_offer_slot = -1; g_foe_counter = 1; mem_zero(&g_questor, sizeof(g_questor)); }
 void og_quest_set_names(const OgQuestNames *names) { g_names = names; }
 void og_quest_set_world(const OgQuestWorld *world) { g_world = world; }
 void og_quest_set_macros(int (*fill)(const char *in, char *out, int cap)) { g_macros = fill; }
@@ -57,6 +62,8 @@ void og_quest_end(int slot)
     if (slot >= 0 && slot < OG_QUESTS) {
         int i;
 
+        for (i = 0; i < OG_QUEST_FACES; i++) { if (g_face[i].used && g_face[i].quest_id == g_quest[slot].qbn.id) { g_face[i].used = 0; } }
+        for (i = 0; i < OG_RUMOURS; i++) { if (g_rumour[i].used && (g_rumour[i].flags & 4) && g_rumour[i].quest_id == g_quest[slot].qbn.id) { g_rumour[i].used = 0; } }
         /* quest_end: every object with the quest's id goes, a quest item in the pack too. */
         for (i = 0; i < g_quest[slot].qbn.n_item; i++) { if (g_quest[slot].item[i].object) { og_object_delete(g_quest[slot].item[i].object); } } mem_zero(&g_quest[slot], sizeof(g_quest[slot])); }
 }
@@ -84,6 +91,7 @@ static int start_with(const char *name, const df_u8 *bytes, df_u32 size, int fac
         if (g_read && g_say) { char text[256]; text[0] = 0; if (g_read("", 600, 1, text, sizeof(text)) > 0) { g_say(text); } }
         return -1;
     }
+    rumour_add(slot, 1005, 0, 4);
     return slot;
 }
 
@@ -735,6 +743,157 @@ static void arg_set(OgQuest *q, const OgQbnOp *op, int n, int value)
     state_store(q, a->value, a->negate ? !value : value);
 }
 
+/* ---- Rumours ---- */
+
+/* rumor_add_quest: the message's text, filled in, kept with the quest's id; 30 days, or 180 for the questor's. A full list loses its first. */
+static void rumour_add(int slot, int message, int target, int flags)
+{
+    OgRumour *r;
+    char raw[1024], said[1024];
+    int i;
+
+    if (!g_read) { return; }
+    raw[0] = 0;
+    if (g_read(g_quest[slot].qbn.name, message, 0, raw, sizeof(raw)) <= 0 || !raw[0]) { return; }
+    og_quest_expand(slot, raw, said, sizeof(said), og_state()->minutes, 0);
+    for (i = 0; i < OG_RUMOURS && g_rumour[i].used; i++) { }
+    if (i == OG_RUMOURS) { for (i = 1; i < OG_RUMOURS; i++) { g_rumour[i - 1] = g_rumour[i]; } i = OG_RUMOURS - 1; }
+    r = &g_rumour[i];
+    mem_zero(r, sizeof(*r));
+    r->used = 1; r->quest_id = g_quest[slot].qbn.id; r->message = message; r->flags = flags; r->target = target;
+    r->expires = og_state()->minutes + (flags & 2 ? 180u : 30u) * 1440u;
+    log_format(r->name, sizeof(r->name), "%s", g_quest[slot].qbn.name);
+    log_format(r->text, sizeof(r->text), "%s", said);
+}
+
+/* The questor's own rumour at the quest's end: the person of kind 21. */
+static void rumour_questor(int slot, int rewarded)
+{
+    int i;
+
+    for (i = 0; i < g_quest[slot].qbn.n_person; i++) {
+        if (g_quest[slot].qbn.person[i].kind == 21 && g_quest[slot].person[i].bound) { rumour_add(slot, rewarded ? 1008 : 1009, g_quest[slot].person[i].who, 2); return; }
+    }
+}
+
+const OgRumour *og_rumour(int i) { return i >= 0 && i < OG_RUMOURS && g_rumour[i].used ? &g_rumour[i] : 0; }
+
+int og_quest_news(int faction, char *out, int cap)
+{
+    int i, n, pick;
+
+    (void)faction;
+    n = 0;
+    for (i = 0; i < OG_RUMOURS; i++) { if (g_rumour[i].used && (g_rumour[i].flags & 12) && g_rumour[i].expires > og_state()->minutes) { n++; } }
+    if (!n) { return 0; }
+    pick = og_random_range(0, n - 1);
+    for (i = 0; i < OG_RUMOURS; i++) {
+        if (g_rumour[i].used && (g_rumour[i].flags & 12) && g_rumour[i].expires > og_state()->minutes && pick-- == 0) { log_format(out, cap, "%s", g_rumour[i].text); return 1; }
+    }
+    return 0;
+}
+
+int og_quest_rumour_for(int who, char *out, int cap)
+{
+    int i;
+
+    for (i = 0; i < OG_RUMOURS; i++) {
+        if (g_rumour[i].used && (g_rumour[i].flags & 2) && g_rumour[i].target == who && g_rumour[i].expires > og_state()->minutes) { log_format(out, cap, "%s", g_rumour[i].text); return 1; }
+    }
+    return 0;
+}
+
+/* ---- Talk topics ---- */
+
+/* The nth topic: its quest, the section (0 item, 3 person, 4 place) and the record. A resource is a topic when it is not hidden (an item and a place 128, a person 0x8000) and has a message. */
+static int topic_find(int n, int *quest, int *section, int *index)
+{
+    int s, i;
+
+    for (s = 0; s < OG_QUESTS; s++) {
+        const OgQuest *q;
+
+        q = &g_quest[s];
+        if (!q->used) { continue; }
+        for (i = 0; i < q->qbn.n_item; i++) {
+            if (!(q->qbn.item[i].flags & 128) && (q->qbn.item[i].message[0] > 0 || q->qbn.item[i].message[1] > 0) && n-- == 0) { *quest = s; *section = 0; *index = i; return 1; }
+        }
+        for (i = 0; i < q->qbn.n_person; i++) {
+            if (!(q->qbn.person[i].flags & 0x8000) && (q->qbn.person[i].message[0] > 0 || q->qbn.person[i].message[1] > 0) && n-- == 0) { *quest = s; *section = 3; *index = i; return 1; }
+        }
+        for (i = 0; i < q->qbn.n_place; i++) {
+            if (!(q->qbn.place[i].flags & 128) && (q->qbn.place[i].message[0] > 0 || q->qbn.place[i].message[1] > 0) && n-- == 0) { *quest = s; *section = 4; *index = i; return 1; }
+        }
+    }
+    return 0;
+}
+
+int og_quest_topic_count(void)
+{
+    int n, s, i;
+
+    n = 0;
+    for (s = 0; s < OG_QUESTS; s++) {
+        const OgQuest *q;
+
+        q = &g_quest[s];
+        if (!q->used) { continue; }
+        for (i = 0; i < q->qbn.n_item; i++) { if (!(q->qbn.item[i].flags & 128) && (q->qbn.item[i].message[0] > 0 || q->qbn.item[i].message[1] > 0)) { n++; } }
+        for (i = 0; i < q->qbn.n_person; i++) { if (!(q->qbn.person[i].flags & 0x8000) && (q->qbn.person[i].message[0] > 0 || q->qbn.person[i].message[1] > 0)) { n++; } }
+        for (i = 0; i < q->qbn.n_place; i++) { if (!(q->qbn.place[i].flags & 128) && (q->qbn.place[i].message[0] > 0 || q->qbn.place[i].message[1] > 0)) { n++; } }
+    }
+    return n;
+}
+
+int og_quest_topic_name(int i, char *out, int cap)
+{
+    int quest, section, index, ok;
+
+    out[0] = 0;
+    if (!topic_find(i, &quest, &section, &index) || !g_names) { return 0; }
+    ok = 0;
+    if (section == 0 && g_names->item) { ok = g_names->item(quest, index, 0, out, cap); }
+    else if (section == 3 && g_names->person) { ok = g_names->person(quest, index, 0, out, cap); }
+    else if (section == 4 && g_names->place) { ok = g_names->place(quest, index, 0, out, cap); }
+    return ok;
+}
+
+int og_quest_topic_answer(int i, char *out, int cap)
+{
+    int quest, section, index, message;
+    char raw[1024];
+
+    out[0] = 0;
+    if (!g_read || !topic_find(i, &quest, &section, &index)) { return 0; }
+    if (section == 0) { message = g_quest[quest].qbn.item[index].message[1] > 0 ? g_quest[quest].qbn.item[index].message[1] : g_quest[quest].qbn.item[index].message[0]; }
+    else if (section == 3) { message = g_quest[quest].qbn.person[index].message[1] > 0 ? g_quest[quest].qbn.person[index].message[1] : g_quest[quest].qbn.person[index].message[0]; }
+    else { message = g_quest[quest].qbn.place[index].message[1] > 0 ? g_quest[quest].qbn.place[index].message[1] : g_quest[quest].qbn.place[index].message[0]; }
+    raw[0] = 0;
+    if (g_read(g_quest[quest].qbn.name, message, 0, raw, sizeof(raw)) <= 0 || !raw[0]) { return 0; }
+    og_quest_expand(quest, raw, out, cap, og_state()->minutes, 0);
+    return 1;
+}
+
+/* ---- Faces ---- */
+
+const OgQuestFace *og_quest_face(int i) { return i >= 0 && i < OG_QUEST_FACES && g_face[i].used ? &g_face[i] : 0; }
+
+/* quest_face_add and its removal: one slot a person or foe of a quest; a full list takes none. */
+static void face_set(const OgQuest *q, int kind, int index, int on)
+{
+    int i, free_slot;
+
+    free_slot = -1;
+    for (i = 0; i < OG_QUEST_FACES; i++) {
+        if (g_face[i].used && g_face[i].quest_id == q->qbn.id && g_face[i].kind == kind && g_face[i].index == index) {
+            if (!on) { g_face[i].used = 0; }
+            return;
+        }
+        if (!g_face[i].used && free_slot < 0) { free_slot = i; }
+    }
+    if (on && free_slot >= 0) { g_face[free_slot].used = 1; g_face[free_slot].quest_id = q->qbn.id; g_face[free_slot].kind = kind; g_face[free_slot].index = index; }
+}
+
 /* ---- The messages ---- */
 
 static void show(const OgQuest *q, int message)
@@ -895,6 +1054,51 @@ static void run_op(int slot, OgQuest *q, OgQbnOp *op)
     int i, n, count, pick, found;
 
     switch (op->opcode) {
+    case 10:
+    case 11:
+        /* Once: the topics shown (10) or hidden (11): the place and the item by flag 128, the person by 0x8000. */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) {
+            for (i = 1; i < 4 && i < op->argc; i++) {
+                n = op->arg[i].value;
+                if (op->arg[i].literal || n < 0) { continue; }
+                if (i == 1 && n < q->qbn.n_place) { if (op->opcode == 11) { q->qbn.place[n].flags |= 128; } else { q->qbn.place[n].flags &= 127; } }
+                if (i == 2 && n < q->qbn.n_person) { if (op->opcode == 11) { q->qbn.person[n].flags |= 0x8000; } else { q->qbn.person[n].flags &= ~0x8000; } }
+                if (i == 3 && n < q->qbn.n_item) { if (op->opcode == 11) { q->qbn.item[n].flags |= 128; } else { q->qbn.item[n].flags &= 127; } }
+            }
+            done(q, op);
+        }
+        break;
+    case 25:
+        /* While the gate holds and the flag is clear: the counter counts down, and at 0 the flag is set. */
+        if (arg_state(q, op, 0) && !(op->flags & 1) && op->arg[1].value != -1 && !arg_state(q, op, 1)) {
+            if (op->arg[2].value != 0) { op->arg[2].value--; }
+            if (op->arg[2].value == 0) { arg_set(q, op, 1, 1); done(q, op); }
+        }
+        break;
+    case 44:
+        /* Once: the person gone from the quest. */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) { n = op->arg[1].value; if (n >= 0 && n < q->qbn.n_person) { q->person[n].bound = 0; } done(q, op); }
+        break;
+    case 46:
+    case 48:
+        /* Once: the person hidden (flags 0xA00) or shown. */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) {
+            n = op->arg[1].value;
+            if (n >= 0 && n < q->qbn.n_person) { if (op->opcode == 46) { q->qbn.person[n].flags |= 0xA00; } else { q->qbn.person[n].flags &= ~0xA00; } }
+            done(q, op);
+        }
+        break;
+    case 55:
+    case 56:
+    case 63:
+    case 64:
+        /* Once: a person's (55, 56) or a foe's (63, 64) face put at the top of the screen, or taken away. */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) {
+            n = op->arg[1].value;
+            if (n >= 0 && n < (op->opcode < 60 ? q->qbn.n_person : q->qbn.n_foe)) { face_set(q, op->opcode < 60 ? 1 : 2, n, op->opcode == 55 || op->opcode == 63); }
+            done(q, op);
+        }
+        break;
     case 4:
         /* Once: +5 with the quest's faction and the reward given. The reward box of the original holds gold as a purse here (it would open the inventory on it): the coins go straight to the
          * player. An item already given is passed over (7.4). Other items wait for step 9; the Brotherhood's and the Thieves' joining quests too. */
@@ -991,7 +1195,10 @@ static void run_op(int slot, OgQuest *q, OgQbnOp *op)
         /* The end: when set (no delivery is pending and the box is empty, both so with gold paid directly). A quest never rewarded costs -2 with its faction. The rumours are step 9. */
         if (arg_state(q, op, 0)) {
             if (!q->rewarded && q->qbn.faction) { og_faction_change_reputation(q->qbn.faction, -2); }
-            done(q, op); q->ended = 1;
+            done(q, op);
+            rumour_add(slot, q->rewarded ? 1007 : 1006, 0, 8);
+            rumour_questor(slot, q->rewarded);
+            q->ended = 1;
         }
         break;
     case 7:
@@ -1304,12 +1511,14 @@ static void qwire_quest(QWire *w, OgQuest *q, int read)
     for (i = 0; i < q->qbn.n_timer; i++) { QI(q->timer[i].flags); QU(q->timer[i].start); QU(q->timer[i].delay); }
     for (i = 0; i < q->qbn.n_item; i++) { QI(q->item[i].gold); QI(q->item[i].amount); QI(q->item[i].given); QU(q->item[i].object); QI(q->item[i].place); QI(q->item[i].laid); QI(q->item[i].carrier); }
     count = 0;
-    if (!read) { for (i = 0; i < q->qbn.n_op; i++) { if (q->qbn.op[i].flags || q->qbn.op[i].last_minutes) { count++; } } }
+    if (!read) { for (i = 0; i < q->qbn.n_op; i++) { if (q->qbn.op[i].flags || q->qbn.op[i].last_minutes || q->qbn.op[i].opcode == 25) { count++; } } }
     QI(count);
     if (read && (count < 0 || count > q->qbn.n_op)) { w->bad = 1; return; }
-    if (read) { for (k = 0; k < count && !w->bad; k++) { i = (int)qget(w); if (i < 0 || i >= q->qbn.n_op) { w->bad = 1; return; } q->qbn.op[i].flags = (int)qget(w); q->qbn.op[i].last_minutes = qget(w); } }
-    else { for (i = 0; i < q->qbn.n_op; i++) { if (q->qbn.op[i].flags || q->qbn.op[i].last_minutes) { v = (df_u32)i; qput(w, v); qput(w, (df_u32)q->qbn.op[i].flags); qput(w, q->qbn.op[i].last_minutes); } } }
+    if (read) { for (k = 0; k < count && !w->bad; k++) { i = (int)qget(w); if (i < 0 || i >= q->qbn.n_op) { w->bad = 1; return; } q->qbn.op[i].flags = (int)qget(w); q->qbn.op[i].last_minutes = qget(w); q->qbn.op[i].arg[2].value = (int)qget(w); } }
+    else { for (i = 0; i < q->qbn.n_op; i++) { if (q->qbn.op[i].flags || q->qbn.op[i].last_minutes || q->qbn.op[i].opcode == 25) { v = (df_u32)i; qput(w, v); qput(w, (df_u32)q->qbn.op[i].flags); qput(w, q->qbn.op[i].last_minutes); qput(w, (df_u32)q->qbn.op[i].arg[2].value); } } }
+    for (i = 0; i < q->qbn.n_item; i++) { QI(q->qbn.item[i].flags); }
     for (i = 0; i < q->qbn.n_place; i++) {
+        QI(q->qbn.place[i].flags);
         QI(q->place[i].bound);
         if (q->place[i].bound) { QI(q->place[i].ordinal); QI(q->place[i].region); QI(q->place[i].index); QI(q->place[i].type); QI(q->place[i].px); QI(q->place[i].py); qbytes(w, q->place[i].name, 33, read); }
     }
@@ -1346,6 +1555,13 @@ int og_quest_pack(df_u8 *out, int cap)
         qput(&w, (df_u32)s); qbytes(&w, g_quest[s].qbn.name, 9, 0); qput(&w, (df_u32)g_quest[s].qbn.id); qput(&w, (df_u32)g_quest[s].qbn.faction);
         qwire_quest(&w, &g_quest[s], 0);
     }
+    for (i = 0; i < OG_RUMOURS; i++) {
+        qput(&w, (df_u32)g_rumour[i].used);
+        if (!g_rumour[i].used) { continue; }
+        qput(&w, (df_u32)g_rumour[i].quest_id); qput(&w, (df_u32)g_rumour[i].message); qput(&w, (df_u32)g_rumour[i].flags); qput(&w, (df_u32)g_rumour[i].target); qput(&w, g_rumour[i].expires);
+        qbytes(&w, g_rumour[i].name, 9, 0); qbytes(&w, g_rumour[i].text, 200, 0);
+    }
+    for (i = 0; i < OG_QUEST_FACES; i++) { qput(&w, (df_u32)g_face[i].used); qput(&w, (df_u32)g_face[i].quest_id); qput(&w, (df_u32)g_face[i].kind); qput(&w, (df_u32)g_face[i].index); }
     return w.bad ? -1 : w.n;
 }
 
@@ -1382,6 +1598,14 @@ int og_quest_unpack(const df_u8 *in, int len)
         q->used = 1; q->qbn.id = (int)qget(&w); q->qbn.faction = (int)qget(&w);
         qwire_quest(&w, q, 1);
     }
+    for (i = 0; i < OG_RUMOURS && !w.bad; i++) {
+        g_rumour[i].used = (int)qget(&w);
+        if (!g_rumour[i].used) { continue; }
+        g_rumour[i].quest_id = (int)qget(&w); g_rumour[i].message = (int)qget(&w); g_rumour[i].flags = (int)qget(&w); g_rumour[i].target = (int)qget(&w); g_rumour[i].expires = qget(&w);
+        qbytes(&w, g_rumour[i].name, 9, 1); qbytes(&w, g_rumour[i].text, 200, 1);
+        g_rumour[i].name[8] = 0; g_rumour[i].text[199] = 0;
+    }
+    for (i = 0; i < OG_QUEST_FACES && !w.bad; i++) { g_face[i].used = (int)qget(&w); g_face[i].quest_id = (int)qget(&w); g_face[i].kind = (int)qget(&w); g_face[i].index = (int)qget(&w); }
     if (w.bad || w.n != len) { og_quest_reset(); return 0; }
     return 1;
 }

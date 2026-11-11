@@ -13,7 +13,7 @@
  * The window is one conversation: the tone (polite, normal, blunt), the way of asking (tell me about, where
  * is), the tab (places, people, things, work), the list under them and the question it makes, OKAY to ask,
  * and the log of what was asked and answered. Clicks are strictly inside a button's rectangle, as the original's.
- * Not built: the quest topics (the People and Things lists stay empty), the copy to the logbook, the news
+ * The quest topics are in "Tell me about" (value 1000 and up); the quests' places and people in Where is wait for them to stand in a town (the lists stay empty). the copy to the logbook, the news
  * (the original reads rumours its region events write), horizontal list scroll is kept.
  */
 
@@ -47,6 +47,11 @@ typedef struct OgTalkWinWorld {
     int (*distance)(unsigned building);
     /* rumor_pick_news: one piece of news for the faction; 0 when none. */
     int (*news)(int faction, char *out, int cap);
+    /* The quests' topics of "Tell me about" (a name and its answer, by number), and the rumour the person who gave a quest tells in their greeting (rumor_find_for_npc); 0 for none. */
+    int (*topic_count)(void);
+    int (*topic_name)(int i, char *out, int cap);
+    int (*topic_answer)(int i, char *out, int cap);
+    int (*rumour_for)(unsigned npc, char *out, int cap);
     /* A record said with its macros filled in; the length, or -1. */
     int (*say)(int text, const OgTalkWinSay *ctx, char *out, int cap);
     /* The width of text in the window's font. */

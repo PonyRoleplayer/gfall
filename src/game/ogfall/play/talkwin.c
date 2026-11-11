@@ -223,6 +223,10 @@ static void rebuild(void)
     if (g.mode == 0) {
         /* talk_draw_tell_list: the news, then the organisations (the quest's topics would come between). */
         add_item(g_any_news, -1);
+        /* The quests' topics come between the news and the organisations. */
+        for (i = 0; g_world.topic_count && g_world.topic_name && i < g_world.topic_count() && g.count < OG_TW_ITEMS - 34; i++) {
+            if (g_world.topic_name(i, name, (int)sizeof(name)) && name[0]) { add_item(name, 1000 + i); }
+        }
         for (i = 0; i < 34; i++) {
             const OgFactionDef *f;
 
@@ -352,6 +356,8 @@ int og_talkwin_open(const OgTalkWho *who, const OgTalkPlayer *player, int witnes
     g.topic_count = og_talk_topics(g.topic, OG_TALK_TOPICS, g.building, n);
     mem_zero(&ctx, sizeof(ctx));
     ctx.tone = g.tone;
+    /* The person who gave a quest greets with the rumour of it, when there is one. */
+    if (g_world.rumour_for && g_world.rumour_for(who->npc, greeting, (int)sizeof(greeting)) && greeting[0]) { say_lines(greeting); refresh(); return 1; }
     say(*text, &ctx, greeting, (int)sizeof(greeting));
     say_lines(greeting);
     refresh();
@@ -453,6 +459,12 @@ static void ask(void)
     a.news = 0;
     a.no_work = g_world.no_work;
     /* rumor_pick_news: the person's one piece of news, if the region has any. */
+    /* A quest's topic answers in its own words. */
+    if (g.mode == 0 && g.row >= 0 && g.row < g.count && g.item[g.row].value >= 1000 && g_world.topic_answer) {
+        if (g_world.topic_answer(g.item[g.row].value - 1000, text, (int)sizeof(text))) { say_lines(text); }
+        refresh();
+        return;
+    }
     if (g.mode == 0 && g.row == 0 && g_world.news && g_world.news(g.talk.faction, text, (int)sizeof(text))) {
         a.news = 1;
     }
@@ -487,7 +499,7 @@ static void ask(void)
             ctx.loc = place;
             ctx.building = building;
             say(topic_text, &ctx, hint, (int)sizeof(hint));
-        } else if (g.row > 0 && g.row < g.count) {
+        } else if (g.row > 0 && g.row < g.count && g.item[g.row].value < 1000) {
             /* A topic's own record: organisation i is 860 + i, one on from 868 (talk_draw_tell_list). */
             topic_text = g.item[g.row].value > 7 ? g.item[g.row].value + 861 : g.item[g.row].value + 860;
             context(&ctx);

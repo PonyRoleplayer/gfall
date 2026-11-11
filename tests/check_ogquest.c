@@ -170,7 +170,7 @@ void check_ogquest(void)
     slot = og_quest_start_bytes("TEST0001", file, 0x80 + 4 * 87 + 3 * 8, 0);
     check_expect(slot == 0, "quest: the quest made in memory did not start");
     og_quest_run();
-    check_expect(g_said == 1 && g_asked == 1030 && !strcmp(g_text, "Well done.") && !og_quest(0), "quest: S1 = S0 and not S2 did not say its message once and end the quest");
+    check_expect(g_said == 1 && g_asked == 1006 && !strcmp(g_text, "Well done.") && !og_quest(0), "quest: S1 = S0 and not S2 did not say its message once and end the quest");
     /* Step 9's first ops in a quest made in memory: 29 asks yes or no and the answer sets a state, 65 changes the region's legal reputation once when that state is set, 80 says its message
      * while its state is set, and 82 lets a person's talk pass while set. */
     {
@@ -276,6 +276,57 @@ void check_ogquest(void)
                 check_expect(og_quest_talk(1, 7) && !og_object(id) && og_quest_state(0, 2) == 1 && og_quest(0)->item[0].object == 0, "quest: op 1 did not take the item for the person and set its state");
             } else { check_expect(0, "quest: the item quest did not start"); }
             og_quest_end(0);
+        }
+        /* Topics, rumours, faces and the countdown: op 11 hides the item's topic and op 10 shows it again, op 25 counts three runs, ops 55 and 56 put a face up and take it away, and the quest's start
+         * left a rumour that people tell as news. */
+        {
+            int c11[5] = {0, -1, -1, 0, -2}, c10[5] = {1, -1, -1, 0, -2}, c25[5] = {-1, 2, 0, -2, -2}, c55[5] = {3, 0, -2, -2, -2}, c56[5] = {4, 0, -2, -2, -2};
+            char text[300], name[64];
+
+            og_quest_end(0);
+            memset(f3, 0, sizeof(f3));
+            put16(f3 + 0x10 + 0 * 2, 1); put16(f3 + 0x24 + 0 * 2, 0x80);
+            put16(f3 + 0x10 + 3 * 2, 1); put16(f3 + 0x24 + 3 * 2, 0xC0);
+            put16(f3 + 0x10 + 8 * 2, 5); put16(f3 + 0x24 + 8 * 2, 0x100);
+            put16(f3 + 0x10 + 9 * 2, 5); put16(f3 + 0x24 + 9 * 2, 0x100 + 5 * 87);
+            put16(f3 + 0x80 + 3, 3); put16(f3 + 0x80 + 5, 0); put16(f3 + 0x80 + 15, 1050);
+            put16(f3 + 0xC0 + 4, (df_u32)-8); put16(f3 + 0xC0 + 6, 7);
+            for (i = 0; i < 5; i++) { put16(f3 + 0x100 + 5 * 87 + i * 8, i); put32(f3 + 0x100 + 5 * 87 + i * 8 + 4, (df_u32)(100 + i)); }
+            put_op(f3 + 0x100, 11, -1, c11, 0);
+            put_op(f3 + 0x100 + 87, 10, -1, c10, 0);
+            put_op(f3 + 0x100 + 174, 25, -1, c25, 0); put_lit(f3 + 0x100 + 174 + 6 + 30, 3);
+            put_op(f3 + 0x100 + 261, 55, -1, c55, 0);
+            put_op(f3 + 0x100 + 348, 56, -1, c56, 0);
+            og_quest_set_names(0);
+            slot = og_quest_start_bytes("TEST0010", f3, 0x100 + 5 * 87 + 5 * 8, 0);
+            check_expect(slot == 0 && og_quest_news(0, text, sizeof(text)) == 1, "quest: the quest's start left no rumour to tell as news");
+            check_expect(og_quest_topic_count() == 1 && og_quest_topic_answer(0, text, sizeof(text)) == 1 && text[0], "quest: the item with a message was not a topic with an answer");
+            og_quest_run(); og_quest_run();
+            check_expect(og_quest_state(0, 2) == 0, "quest: op 25 set its flag before three runs");
+            og_quest_run();
+            check_expect(og_quest_state(0, 2) == 1, "quest: op 25 did not set its flag at the third run");
+            og_quest_set_state(0, 0, 1);
+            og_quest_run();
+            check_expect(og_quest_topic_count() == 0, "quest: op 11 did not hide the topic");
+            og_quest_set_state(0, 1, 1);
+            og_quest_run();
+            check_expect(og_quest_topic_count() == 1, "quest: op 10 did not show the topic again");
+            og_quest_set_state(0, 3, 1);
+            og_quest_run();
+            check_expect(og_quest_face(0) && og_quest_face(0)->kind == 1 && og_quest_face(0)->index == 0, "quest: op 55 did not put the person's face up");
+            og_quest_set_state(0, 4, 1);
+            og_quest_run();
+            check_expect(!og_quest_face(0), "quest: op 56 did not take the face away");
+            og_quest_set_state(0, 3, 1);
+            og_quest_end(0);
+            {
+                int r, left;
+
+                left = 0;
+                for (r = 0; r < OG_RUMOURS; r++) { if (og_rumour(r) && !strcmp(og_rumour(r)->name, "TEST0010")) { left++; } }
+                check_expect(left == 0, "quest: a quest that never finished left its start rumour");
+            }
+            (void)name;
         }
         og_character()->attribute[OG_STR] = saved_str;
     }

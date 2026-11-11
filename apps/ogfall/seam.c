@@ -1149,6 +1149,9 @@ static void person_say_text(int text, char *out, int cap)
 }
 
 /* talk_start for whoever g_met is: the window opens, or the record that says they will not (shown as a message). */
+static int quest_news(int faction, char *out, int cap) { return og_quest_news(faction, out, cap); }
+static int quest_rumour_for(unsigned npc, char *out, int cap) { return og_quest_rumour_for((int)npc, out, cap); }
+
 static void start_talk(void)
 {
     OgTalkWho target;
@@ -1193,6 +1196,9 @@ static void start_talk(void)
     world.town_has = talk_town_has;
     world.distance = talk_distance;
     world.say = talk_say;
+    world.news = quest_news;
+    world.topic_count = og_quest_topic_count; world.topic_name = og_quest_topic_name; world.topic_answer = og_quest_topic_answer;
+    world.rumour_for = quest_rumour_for;
     world.width = talk_width;
     world.outdoors = here.kind != TRAVEL_INSIDE;
     world.region = travel_region();

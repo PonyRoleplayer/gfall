@@ -2306,3 +2306,11 @@ Step 9 is a long tail; it lands in slices. This one:
 - **The end** (`og_quest_end`): every item the quest still holds is deleted, the pack's too (the quest's id is on them in the original).
 - Not yet: the letter's text on reading, op 75, where a placed item stands in a dungeon (it lies where the player is: the quest markers are unsettled), the person-held items.
 - Test: `check_ogquest.c`: an item made, given, seen by ops 3 and 70, deleted by 36, taken by the quest's end; op 57 and op 1 by talk.
+
+### The quest machine, step 9c (topics, rumours, faces, hiding)
+
+- **Topics**: op 11 hides (place and item flag 128, person 0x8000) and op 10 shows. "Tell me about" lists every item, person and place of a running quest that is not hidden and has a message, between the news and the organisations (value 1000 + n in `talkwin.c`); asking answers with the QRC message (`messages[1]` when set, else `messages[0]`; the document's "second variant" is not built). The Where-is lists need the quests' buildings in a town and wait for them.
+- **Rumours** (`rumour_add`): a quest adds 1005 at its start (flag 4), 1006 or 1007 at its end (flag 8) and 1008 or 1009 for its questor (flag 2, target the person), expanded as the quest's text, 30 days (180 for the questor's). People tell the news kinds (flags 4 and 8) in "Tell me about > news" (`og_quest_news` through the talk world's `news`), and the questor greets with theirs (`rumour_for`). A quest that ends without ending by op 6 (an offer refused) takes its start rumour with it. Saved with the quests.
+- **Op 25** counts its third argument down while the gate holds and the flag is clear; the count is saved. **Ops 44, 46, 48** unbind, hide (flags 0xA00) or show a person: no quest person stands in the world yet, so the flags only record it. **Ops 55, 56, 63, 64** keep the faces (ten slots, saved); nothing paints them yet.
+- Not yet: painting the faces, quest people and buildings in Where-is and People, the Where-is category for a quest's building.
+- Test: `check_ogquest.c` (topics hidden and shown, the countdown, faces, the rumour; start rumour taken with an unfinished quest).
