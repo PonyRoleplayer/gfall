@@ -556,6 +556,8 @@ void og_magic_status(void)
         log_format(line,sizeof(line),"%s %d: %s\n",a->id >= 128 ? "Poison" : "Disease",a->id,a->stage ? "active" : "latent");
         df_copy(text+used,line,sizeof(text)-used); used = length(text);
     }
-    if (used == 26) { df_copy(text+used,"None.",sizeof(text)-used); }
-    og_possessions_message(text,0);
+    /* status_show: TEXT.RSC 22 (the date, the time and where the player stands), then show_health_status: the ailments, or record 18 when there are none. Active spells are ours. */
+    { static char intro[300]; if (og_status_intro(intro,sizeof(intro)) > 0) { og_possessions_message(intro,0); } }
+    if (used == 26) { df_copy(text,og_words(18),sizeof(text)); }
+    if (text[0]) { og_possessions_message(text,0); }
 }

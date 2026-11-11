@@ -740,6 +740,50 @@ int combat_roll(int n)
 }
 #endif
 
+/* The Status key's first box: TEXT.RSC 22 ("You are in %cn. It is %tim on %dat. In the eyes of the law of %crn, you are %ltn.") with the parse.c macros said: the town or the region, the time as %d:%02d, the date, the region and the law's opinion of the player. */
+static int status_intro(char *out, int cap)
+{
+    const char *raw, *town;
+    char time[16], date[48], region[32];
+    int i, n, minute;
+
+    raw = og_words(22);
+    if (!raw || !raw[0]) { return 0; }
+    {
+        const Faction *province;
+
+        province = faction_province_of(travel_region());
+        df_copy(region, province ? province->name : "", (int)sizeof(region));
+    }
+    town = town_name();
+    if (!town || !town[0]) { town = region; }
+    minute = (int)(og_state()->minutes % 1440u);
+    log_format(time, sizeof(time), minute % 60 < 10 ? "%d:0%d" : "%d:%d", minute / 60, minute % 60);
+    og_date_text(og_state()->minutes, date, sizeof(date));
+    n = 0;
+    for (i = 0; raw[i] && n < cap - 1; ) {
+        const char *with;
+
+        with = 0;
+        if (raw[i] == '%') {
+            if (raw[i + 1] == 'c' && raw[i + 2] == 'n') { with = town; i += 3; }
+            else if (raw[i + 1] == 't' && raw[i + 2] == 'i' && raw[i + 3] == 'm') { with = time; i += 4; }
+            else if (raw[i + 1] == 'd' && raw[i + 2] == 'a' && raw[i + 3] == 't') { with = date; i += 4; }
+            else if (raw[i + 1] == 'c' && raw[i + 2] == 'r' && raw[i + 3] == 'n') { with = region; i += 4; }
+            else if (raw[i + 1] == 'l' && raw[i + 2] == 't' && raw[i + 3] == 'n') { with = og_legal_title(og_region_legal(og_state()->region)); i += 4; }
+        }
+        if (with) {
+            int k;
+
+            for (k = 0; with[k] && n < cap - 1; k++) { out[n++] = with[k]; }
+        } else {
+            out[n++] = raw[i++];
+        }
+    }
+    out[n] = 0;
+    return n;
+}
+
 static int offer_say(int text, int price, char *out, int cap)
 {
     Words w;
@@ -2193,6 +2237,7 @@ int seam_boot(void)
     og_magic_set_hud(magic_hud_draw);
     og_set_save_capture(seam_capture_world);
     og_set_words(textrsc_read);
+    og_set_status_intro(status_intro);
     og_set_word_variants(textrsc_variant);
     if (!maindat_start()) {
         why(maindat_error());

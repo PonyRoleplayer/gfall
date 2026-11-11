@@ -9,4 +9,7 @@
  */
 int og_date_text(unsigned minutes, char *out, int cap);
 
+/* macro_ltn_legal_standing: how the law of a region thinks of the player, "a common citizen" at 0. */
+const char *og_legal_title(int reputation);
+
 #endif

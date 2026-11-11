@@ -2,3 +2,5 @@
 static const char *const g_day_name[7] = { "Morndas", "Tirdas", "Middas", "Turdas", "Fredas", "Loredas", "Sundas" };
 static const char *const g_month_name[12] = { "Morning Star", "Sun's Dawn", "First Seed", "Rain's Hand", "Second Seed", "Mid Year", "Sun's Height", "Last Seed", "Hearthfire", "Frostfall", "Sun's Dusk", "Evening Star" };
 static const char *const g_ordinal[4] = { "st", "nd", "rd", "th" };
+static const short g_legal_range[13][2] = { {-100, -81}, {-80, -61}, {-60, -41}, {-40, -21}, {-20, -11}, {-10, -1}, {0, 0}, {1, 10}, {11, 20}, {21, 40}, {41, 60}, {61, 80}, {81, 100} };
+static const char *const g_legal_name[13] = { "hated", "pond scum", "a villain", "a criminal", "a scoundrel", "undependable", "a common citizen", "dependable", "respected", "admired", "honored", "esteemed", "revered" };

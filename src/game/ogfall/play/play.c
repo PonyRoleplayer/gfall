@@ -233,6 +233,10 @@ void og_point_at(int x, int y)
     g_py = y;
 }
 
+static int (*g_status_intro)(char *dst, int cap);
+void og_set_status_intro(int (*fn)(char *dst, int cap)) { g_status_intro = fn; }
+int og_status_intro(char *dst, int cap) { return g_status_intro ? g_status_intro(dst,cap) : 0; }
+
 const char *og_status_line(void)
 {
     if (og_chargen_mode() != OG_UI_WORLD) {

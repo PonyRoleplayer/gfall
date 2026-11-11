@@ -108,6 +108,9 @@ int og_paused(void);
 int og_wants_pointer(void);
 int og_cursor_free(void);
 const char *og_status_line(void);
+/* The Status key's first box (status_show: TEXT.RSC 22 with the town, time, date, region and the law's opinion said): the game fills dst. */
+void og_set_status_intro(int (*fn)(char *dst, int cap));
+int og_status_intro(char *dst, int cap);
 void og_draw(void);
 /* The engine pointer, lower-left. Drawn when the game owns the arrow. */
 void og_point_at(int x, int y);

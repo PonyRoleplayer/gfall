@@ -322,6 +322,14 @@ static void street_checks(void)
     og_law()->crime = 0;
 }
 
+static void status_check(void)
+{
+    static char said[300];
+
+    check_expect(og_status_intro(said,sizeof(said)) > 0 && !strchr(said,'%') && strstr(said,"It is ") && strstr(said," on ") && strstr(said,"you are "),
+                 "status: the Status key's first box has no date, time or law's opinion, or a macro left unsaid");
+}
+
 void check_ogworld(const char *root)
 {
     char resolved[4096];
@@ -333,6 +341,7 @@ void check_ogworld(const char *root)
     pid_t child;
     const char *test_root = "build/ogfall-world-data/ARENA2";
     seam_land(&g_camera,0,0);
+    status_check();
     og_state_capture_motion(); seam_capture_world(); g_before = *og_state(); og_move_capture(&g_motion); og_move_camera(&g_camera);
     fs_set_root("build/ARENA2"); fs_make_dirs("ogfall-world-data");
     check_expect(realpath(root,resolved) != 0,"resolve world test assets"); unlink(test_root);
