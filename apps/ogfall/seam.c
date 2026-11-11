@@ -1412,6 +1412,35 @@ static int quest_pick_building(int region, int index, int type, unsigned seed, i
     return 0;
 }
 
+/* A building of a town for a person's site: of a type, any shop-like one, of a faction, or of a faction of a type. */
+static int site_matches(const TownBuilding *b, int mode, int value)
+{
+    const OgFactionDef *f;
+
+    if (mode == 0) { return value == 11 ? (b->type == 11 && b->faction == 40) : (b->type == value || (value >= 17 && value <= 20 && b->type >= 17 && b->type <= 20)); }
+    if (mode == 1) { return b->type < 17; }
+    if (mode == 2) { return b->faction == value; }
+    f = b->faction ? og_faction_def(og_faction_index(b->faction)) : 0;
+    return f && f->type == value;
+}
+
+static int quest_pick_site(int region, int index, int mode, int value, unsigned seed, int *block, int *record, int *faction)
+{
+    const TownBuilding *list;
+    int count, i, n, pick;
+
+    list = town_buildings(region, index, &count);
+    if (!list) { return 0; }
+    n = 0;
+    for (i = 0; i < count; i++) { if (site_matches(&list[i], mode, value)) { n++; } }
+    if (!n) { return 0; }
+    pick = (int)(seed % (unsigned)n);
+    for (i = 0; i < count; i++) {
+        if (site_matches(&list[i], mode, value) && pick-- == 0) { *block = list[i].block; *record = list[i].record; *faction = list[i].faction; return 1; }
+    }
+    return 0;
+}
+
 /* A quest person's name, as any person of the town is named: by their id, sex and faction. */
 static void quest_person_name(int who, int faction, int female, char *out, int cap)
 {
@@ -2629,7 +2658,7 @@ int seam_boot(void)
     og_quest_set_text(quest_text); og_quest_set_say(quest_say); og_quest_set_ask(og_possessions_ask);
     og_quest_set_macros(quest_macros); og_quest_set_place(quest_place);
     {
-        static const OgQuestWorld quest_world = { og_travel_count, og_travel_location, quest_here, quest_region_name, quest_journey, og_travel_discover, quest_spawn_foe, og_teleport, quest_place_item, quest_find_number, quest_marker_at, quest_spawn_foe_at, quest_place_item_at, quest_pick_building, quest_person_name };
+        static const OgQuestWorld quest_world = { og_travel_count, og_travel_location, quest_here, quest_region_name, quest_journey, og_travel_discover, quest_spawn_foe, og_teleport, quest_place_item, quest_find_number, quest_marker_at, quest_spawn_foe_at, quest_place_item_at, quest_pick_building, quest_pick_site, quest_person_name };
 
         og_quest_set_world(&quest_world);
     }

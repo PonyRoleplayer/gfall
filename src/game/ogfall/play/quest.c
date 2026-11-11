@@ -321,6 +321,148 @@ static int roll_gold(const OgQuest *q, const OgQbnItem *it)
     return gold < 1 ? 1 : gold;
 }
 
+/* A town of the player's region, other than the one they are in, picked by the seed: its region and index; 0 when the region has none. */
+static int random_town(unsigned seed, int *region, int *index)
+{
+    OgLocation lo;
+    int r, here, px, py, k, n, pick;
+
+    if (!g_world || !g_world->count || !g_world->location || !g_world->here) { return 0; }
+    g_world->here(&r, &here, &px, &py);
+    n = 0;
+    for (k = 0; k < g_world->count(); k++) { if (g_world->location(k, &lo) && lo.region == r && lo.index != here && is_town(lo.type)) { n++; } }
+    if (!n) { return 0; }
+    pick = (int)(seed % (unsigned)n);
+    for (k = 0; k < g_world->count(); k++) {
+        if (g_world->location(k, &lo) && lo.region == r && lo.index != here && is_town(lo.type) && pick-- == 0) { *region = lo.region; *index = lo.index; return 1; }
+    }
+    return 0;
+}
+
+/* The town the person is made in (3.1: low byte 0 here, 255 a toss between here and elsewhere, else elsewhere): here when it is a town. */
+static int person_town(const OgQuest *q, int i, unsigned seed, int *region, int *index)
+{
+    OgLocation lo;
+    int here_region, here, px, py, k, want_here;
+    int low;
+
+    low = q->qbn.person[i].flags & 0xff;
+    want_here = low == 0 || (low == 255 && (seed & 1u));
+    if (!g_world || !g_world->here) { return 0; }
+    if (want_here) {
+        g_world->here(&here_region, &here, &px, &py);
+        for (k = 0; g_world->count && g_world->location && k < g_world->count(); k++) {
+            if (g_world->location(k, &lo) && lo.region == here_region && lo.index == here && is_town(lo.type)) { *region = here_region; *index = here; return 1; }
+        }
+    }
+    return random_town(seed / 2u, region, index);
+}
+
+/* A faction of the type, picked by the seed (type 10: one of the knightly orders); 0 for none. */
+static int random_faction_of_type(int type, unsigned seed)
+{
+    static const short orders[10] = { 368, 408, 409, 410, 411, 413, 414, 415, 416, 417 };
+    int k, n, pick;
+
+    if (type == 10) { return orders[seed % 10u]; }
+    n = 0;
+    for (k = 0; k < og_faction_count(); k++) { if (og_faction_def(k) && og_faction_def(k)->type == type) { n++; } }
+    if (!n) { return 0; }
+    pick = (int)(seed % (unsigned)n);
+    for (k = 0; k < og_faction_count(); k++) { if (og_faction_def(k) && og_faction_def(k)->type == type && pick-- == 0) { return og_faction_def(k)->id; } }
+    return 0;
+}
+
+/* quest_init_person (2.3) for the kinds that stand in a building: the site (a building of a town of the region: the original picks among a location's quest sites, markers and people; we pick among
+ * its buildings and the engine stands the person on a marker or beside the first person), the faction, the sex and the name. Persons linked to another (-3, -4, -5, -7) wait for it, up to 21 passes.
+ * A person whose site cannot be found stands nowhere (the original fails the whole quest: 7.6). */
+static int bind_persons(int slot)
+{
+    OgQuest *q;
+    int pass, i, pending, progress;
+    unsigned char done_flag[OG_QBN_PERSONS];
+
+    q = &g_quest[slot];
+    for (i = 0; i < OG_QBN_PERSONS; i++) { done_flag[i] = 1; }
+    for (i = 0; i < q->qbn.n_person; i++) { done_flag[i] = (q->qbn.person[i].kind == 21 || q->qbn.person[i].kind == -8) ? 1 : 0; }
+    for (pass = 0; pass < 21; pass++) {
+        pending = 0; progress = 0;
+        for (i = 0; i < q->qbn.n_person; i++) {
+            const OgQbnPerson *pe;
+            OgQuestPerson *p;
+            int kind, faction, mode, value, link, tries, region, index, block, record, bfaction, found;
+            unsigned seed;
+
+            if (done_flag[i]) { continue; }
+            pe = &q->qbn.person[i]; p = &q->person[i];
+            kind = pe->kind; faction = pe->faction;
+            seed = (unsigned)(q->qbn.id * 977 + i * 131) + (unsigned)og_random_range(0, 32767);
+            p->female = (pe->flags & 0x200) ? 1 : (pe->flags & 0x400) ? 0 : (int)(seed >> 3 & 1u);
+            link = -1;
+            if (kind == -7 || kind == -5 || kind == -4 || kind == -3) {
+                if (kind == -4 && faction == 10000) { kind = -6; }
+                else {
+                    link = faction;
+                    if (link < 0 || link >= q->qbn.n_person || link == i) { kind = -6; link = -1; }
+                    else if (!done_flag[link]) { pending++; continue; }
+                }
+            }
+            if (link >= 0) {
+                const OgQuestPerson *other = &q->person[link];
+                const OgFactionDef *fd = other->faction ? og_faction_def(og_faction_index(other->faction)) : 0;
+
+                if (kind == -7) { p->female = other->female; kind = -6; }
+                else if (kind == -5) { faction = other->faction; kind = -1; }
+                else {
+                    int k, n, pick, list[3];
+
+                    n = 0;
+                    for (k = 0; fd && k < OG_FACTION_LINKS; k++) { int id = kind == -4 ? fd->enemy[k] : fd->ally[k]; if (id) { list[n++] = id; } }
+                    faction = n ? list[(int)(seed % (unsigned)n)] : 510;
+                    pick = 0; (void)pick;
+                    kind = -1;
+                }
+            }
+            if (kind == -2) { faction = random_faction_of_type(faction, seed); kind = -1; }
+            /* The person's faction and their kind of site. */
+            mode = -1; value = 0; bfaction = faction;
+            if (kind == -1) {
+                const OgFactionDef *fd = faction ? og_faction_def(og_faction_index(faction)) : 0;
+
+                /* A named individual (a faction of type 4, no 0x100) is the person already standing in a town of their own: found by their faction as the town loads. */
+                if (!(pe->flags & 0x100) && fd && fd->type == 4) { p->faction = faction; p->bound = 1; done_flag[i] = 1; progress++; }
+                else { mode = 2; value = faction; }
+            } else if (kind == -6) { mode = 1; }
+            else if (kind >= 0 && kind != 40) { mode = 0; value = kind; }
+            if (!done_flag[i]) {
+                found = 0;
+                if (mode >= 0 && g_world && g_world->pick_site) {
+                    for (tries = 0; tries < 50 && !found; tries++) {
+                        if (!person_town(q, i, seed + (unsigned)tries * 7919u, &region, &index)) { break; }
+                        found = g_world->pick_site(region, index, mode, value, seed + (unsigned)tries, &block, &record, &bfaction);
+                        if (!found && mode != 1 && tries == 49) { mode = 1; tries = 0; }
+                    }
+                }
+                p->bound = 1;
+                p->faction = kind == -1 ? faction : (found && bfaction ? bfaction : faction);
+                if (found) { p->homed = 1; p->home_region = region; p->home_index = index; p->home_block = block; p->home_record = record; }
+                done_flag[i] = 1; progress++;
+            }
+            p->who = (int)(0x40000000u | (unsigned)(slot << 8) | (unsigned)i);
+            if (g_world && g_world->person_name) { g_world->person_name(p->who, p->faction, p->female, p->name, (int)sizeof(p->name)); }
+        }
+        if (!pending) { break; }
+        if (!progress) {
+            /* A link that never resolves: those persons stand nowhere. */
+            for (i = 0; i < q->qbn.n_person; i++) {
+                if (!done_flag[i]) { q->person[i].bound = 1; q->person[i].who = (int)(0x40000000u | (unsigned)(slot << 8) | (unsigned)i); done_flag[i] = 1; }
+            }
+            break;
+        }
+    }
+    return 1;
+}
+
 static int bind_resources(int slot)
 {
     OgQuest *q;
@@ -342,14 +484,9 @@ static int bind_resources(int slot)
             log_format(q->person[i].town, sizeof(q->person[i].town), "%s", g_questor.town);
         } else if (pe->kind == -8) {
             q->person[i].bound = 1; q->person[i].who = 0; q->person[i].faction = pe->faction;
-        } else {
-            /* Any other kind is a person not yet in the world: a named individual (kind -1 of a faction of its own) is found by their faction when their town loads, the others stand nowhere until
-             * op 30 puts them in a place. They are bound, with an id of their own and no body (the towns' people are not made from the quests yet). */
-            q->person[i].bound = 1; q->person[i].who = (int)(0x40000000u | (unsigned)(slot << 8) | (unsigned)i); q->person[i].faction = pe->kind == -1 ? pe->faction : 0;
-            q->person[i].female = (pe->flags & 0x200) ? 1 : (pe->flags & 0x400) ? 0 : og_random_range(0, 1);
-            if (g_world && g_world->person_name) { g_world->person_name(q->person[i].who, q->person[i].faction, q->person[i].female, q->person[i].name, (int)sizeof(q->person[i].name)); }
         }
     }
+    if (!bind_persons(slot)) { return 0; }
     for (i = 0; i < q->qbn.n_op; i++) { q->qbn.op[i].last_minutes = og_state()->minutes; }
     for (i = 0; i < q->qbn.n_item; i++) {
         if (q->qbn.item[i].flags & 2) { q->item[i].gold = 1; q->item[i].amount = roll_gold(q, &q->qbn.item[i]); }
@@ -392,7 +529,7 @@ static int is_person(const OgQuest *q, int i, int who, int faction)
 
 int og_quest_people_in(int region, int index, int block, int record, OgQuestHere *out, int cap)
 {
-    int s, i, n, at;
+    int s, i, n;
 
     n = 0;
     for (s = 0; s < OG_QUESTS; s++) {
@@ -401,10 +538,12 @@ int og_quest_people_in(int region, int index, int block, int record, OgQuestHere
         q = &g_quest[s];
         if (!q->used) { continue; }
         for (i = 0; i < q->qbn.n_person && n < cap; i++) {
-            at = q->person[i].at - 1;
-            if (!q->person[i].bound || at < 0 || at >= q->qbn.n_place || q->qbn.person[i].kind == -8 || q->qbn.person[i].kind == 21 || (q->qbn.person[i].flags & 0xA00) == 0xA00) { continue; }
-            if (!q->place[at].bound || q->place[at].region != region || q->place[at].index != index || q->place[at].block != block || q->place[at].record != record || block < 0) { continue; }
-            out[n].slot = s; out[n].person = i; out[n].female = q->person[i].female; out[n].faction = q->person[i].faction;
+            const OgQuestPerson *p;
+
+            p = &q->person[i];
+            if (!p->bound || !p->homed || q->qbn.person[i].kind == -8 || q->qbn.person[i].kind == 21 || (q->qbn.person[i].flags & 0xA00) == 0xA00) { continue; }
+            if (p->home_region != region || p->home_index != index || p->home_block != block || p->home_record != record || block < 0) { continue; }
+            out[n].slot = s; out[n].person = i; out[n].female = p->female; out[n].faction = p->faction;
             n++;
         }
     }
@@ -1277,7 +1416,12 @@ static void run_op(int slot, OgQuest *q, OgQbnOp *op)
                 }
             } else {
                 n = op->arg[1].value;
-                if (n >= 0 && n < q->qbn.n_person && q->person[n].bound && q->qbn.person[n].kind != -8 && op->arg[2].value >= 0 && op->arg[2].value < q->qbn.n_place) { q->person[n].at = op->arg[2].value + 1; }
+                if (n >= 0 && n < q->qbn.n_person && q->person[n].bound && q->qbn.person[n].kind != -8 && op->arg[2].value >= 0 && op->arg[2].value < q->qbn.n_place) {
+                    int pl = op->arg[2].value;
+
+                    q->person[n].at = pl + 1;
+                    if (q->place[pl].bound && q->place[pl].block >= 0) { q->person[n].homed = 1; q->person[n].home_region = q->place[pl].region; q->person[n].home_index = q->place[pl].index; q->person[n].home_block = q->place[pl].block; q->person[n].home_record = q->place[pl].record; }
+                }
             }
             done(q, op);
         }
@@ -1746,7 +1890,7 @@ static void qwire_quest(QWire *w, OgQuest *q, int read)
     for (i = 0; i < q->qbn.n_person; i++) {
         QI(q->qbn.person[i].flags);
         QI(q->person[i].bound);
-        QI(q->person[i].at); QI(q->person[i].female);
+        QI(q->person[i].at); QI(q->person[i].female); QI(q->person[i].homed); QI(q->person[i].home_region); QI(q->person[i].home_index); QI(q->person[i].home_block); QI(q->person[i].home_record);
         if (q->person[i].bound) { QI(q->person[i].who); QI(q->person[i].faction); qbytes(w, q->person[i].name, 40, read); qbytes(w, q->person[i].town, 33, read); }
     }
 #undef QI

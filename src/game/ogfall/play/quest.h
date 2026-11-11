@@ -35,6 +35,8 @@ typedef struct OgQuestPerson {
     int bound, who, faction;
     /* The place (+1) op 30 put the person in; 0 for none. */
     int at;
+    /* The building the person stands in (their site at the start, or the place op 30 put them in): the town and the building's block and record; homed 0 for none. */
+    int homed, home_region, home_index, home_block, home_record;
     /* The person is a woman (flags 0x200, or a toss when neither sex is asked). */
     int female;
     char name[40], town[33];
@@ -94,6 +96,9 @@ typedef struct OgQuestWorld {
     df_u32 (*place_item_at)(float x, float y, float z);
     /* A building of a town for a place that is one (p1 0): the town (region, index), the building's type (below 0 any shop-like one, 17..20 any house, 11 only a Mages Guild) and a seed that picks among them; its block and record. 1 when there is one. */
     int (*pick_building)(int region, int index, int type, unsigned seed, int *block, int *record);
+    /* A building of a town for a person's site (quest_init_person): mode 0 of the type value (17..20 any house, 11 only a Mages Guild), 1 any shop-like one, 2 of the faction value, 3 of a faction of the type
+     * value; picked by the seed; its block, record and faction. 1 when there is one. */
+    int (*pick_site)(int region, int index, int mode, int value, unsigned seed, int *block, int *record, int *faction);
     /* A name for a person of the quests (the same each time for the same id). */
     void (*person_name)(int who, int faction, int female, char *out, int cap);
 } OgQuestWorld;
