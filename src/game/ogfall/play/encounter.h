@@ -26,6 +26,8 @@ int og_encounter_try(const Camera *camera);
 /* A creature of a kind placed in the dungeon by something other than the rest's chance (a quest's foe): it takes a free actor slot like a rest encounter, with this key thing, unseen 384 to 768 units
  * from the camera where there is floor. 0 when there is no room or no floor. */
 int og_encounter_place(const Camera *camera, int kind, df_u32 thing);
+/* The same on the floor near a point (a quest marker's), not unseen; 0 while the point has no floor loaded, to be tried again. */
+int og_encounter_place_at(const Camera *camera, int kind, df_u32 thing, float x, float y, float z);
 void og_encounter_capture(void);
 /* Original once-per-12-game-minutes roll while resting, never loitering. */
 int og_encounter_minute(const Scene *scene, const Camera *camera, df_u32 minute, int loitering);

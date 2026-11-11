@@ -108,6 +108,10 @@ typedef struct Draw {
 static Draw *g_draw;
 static int g_draw_first[DUN_MAX_BLOCKS + 1];
 static Marker g_marks[MARKS_MAX];
+/* The quest markers (editor records 11 and 18) in the blocks' order, as the original numbers them from 0xFA01: where, and in which block. */
+#define QUEST_MARKERS_MAX 64
+static struct { float x, y, z; int record, block; } g_qm[QUEST_MARKERS_MAX];
+static int g_nqm;
 
 /*
  * The dungeon's treasure, listed once at open as its creatures are. Block
@@ -319,6 +323,7 @@ static int draw_creatures(void)
     if (!g_draw) {
         return 0;
     }
+    g_nqm = 0;
     n = 0;
     for (b = 0; b < g_dun->nblocks; b++) {
         const BsaRec *rec;
@@ -332,6 +337,11 @@ static int draw_creatures(void)
         bytes = rec ? bsa_read_scratch(g_blocks, rec, BSA_SCRATCH_BLOCK) : 0;
         nmark = bytes ? rdb_markers(bytes, rec->size, g_marks, MARKS_MAX) : 0;
         water = enemy_water(g_marks, nmark);
+        for (i = 0; i < nmark && g_nqm < QUEST_MARKERS_MAX; i++) {
+            if (g_marks[i].record == QUEST_MARKER_PERSON || g_marks[i].record == QUEST_MARKER_ITEM) {
+                g_qm[g_nqm].x = g_marks[i].x; g_qm[g_nqm].y = g_marks[i].y; g_qm[g_nqm].z = g_marks[i].z; g_qm[g_nqm].record = g_marks[i].record; g_qm[g_nqm].block = b; g_nqm++;
+            }
+        }
         for (i = 0; i < nmark && n < DRAWS_MAX; i++) {
             int kind;
             int female;
@@ -1363,4 +1373,27 @@ int dunstream_passive(const Entity *e)
 
     d = draw_of(e);
     return d ? d->passive : 0;
+}
+
+int dunstream_quest_marker(int n, int record, unsigned seed, float *x, float *y, float *z)
+{
+    int cx, cz, i, count, pick;
+
+    if (!g_open || !g_dun) { return 0; }
+    stream_origin(&cx, &cz);
+    if (n >= 0) {
+        /* The n-th marker of either record, from 0: the original's 0xFA01 + n. */
+        if (n >= g_nqm) { return 0; }
+        i = n;
+    } else {
+        count = 0;
+        for (i = 0; i < g_nqm; i++) { if (record < 0 || g_qm[i].record == record) { count++; } }
+        if (!count) { return 0; }
+        pick = (int)(seed % (unsigned)count);
+        for (i = 0; i < g_nqm; i++) { if ((record < 0 || g_qm[i].record == record) && pick-- == 0) { break; } }
+    }
+    *x = g_qm[i].x + (float)(g_dun->block[g_qm[i].block].x - cx) * DUNSTREAM_BLOCK;
+    *y = g_qm[i].y;
+    *z = g_qm[i].z + (float)(g_dun->block[g_qm[i].block].z - cz) * DUNSTREAM_BLOCK;
+    return 1;
 }

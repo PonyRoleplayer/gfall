@@ -501,23 +501,54 @@ void og_quest_event(int kind, df_u32 subject, df_u32 other)
 /* ---- Foes in the world (quest_place_object) and the events they raise ---- */
 
 /* Make a placed foe's creatures: as many as its count less the kills, one key each. */
+/* A quest marker of a place of the quest, in the dungeon the player is in: the place's own marker (a fixed place names its 0xFA0n), else one of the record picked by a seed of the quest and place. */
+static int marker_point(const OgQuest *q, int place, int record, int extra, float *x, float *y, float *z)
+{
+    int marker;
+
+    if (!g_world || !g_world->marker_at || place < 0 || place >= q->qbn.n_place || !q->place[place].bound) { return 0; }
+    marker = q->place[place].marker >= 0xFA01 ? q->place[place].marker - 0xFA01 : -1;
+    return g_world->marker_at(marker, record, (unsigned)(q->qbn.id * 977 + place * 31 + extra * 7), x, y, z);
+}
+
+/* Whether the player is where the foe was placed: in its place's location, or in any dungeon when it has none. */
+static int g_loaded_region = -1, g_loaded_index = -1;   /* the location that is being loaded, before the player's place says so */
+
+static int foe_here(const OgQuest *q, int f)
+{
+    int region, here, px, py, where;
+
+    if (!g_world || !g_world->here) { return 0; }
+    g_world->here(&region, &here, &px, &py);
+    if (g_loaded_region >= 0) { region = g_loaded_region; here = g_loaded_index; }
+    where = q->foe[f].place;
+    if (where < 0) { return here >= 0; }
+    return where < q->qbn.n_place && q->place[where].bound && q->place[where].region == region && q->place[where].index == here;
+}
+
+/* The foe's creatures not yet in the world are made, on the foe's marker when its place has one (the hold's, the dungeon's) else near the player. A floor not loaded yet leaves the rest for the next try. */
 static void spawn_foe(OgQuest *q, int f)
 {
-    int want, made;
+    float x, y, z;
+    int on_marker, made;
 
-    if (!g_world || !g_world->spawn_foe || q->foe[f].live) { return; }
-    want = q->qbn.foe[f].count - q->qbn.foe[f].killed;
-    if (want > 16) { want = 16; }
-    for (made = 0; made < want; made++) {
-        if (!g_world->spawn_foe(q->qbn.foe[f].type, OG_QUEST_FOE_THING(q->foe[f].number, made))) { break; }
+    if (!g_world || !q->foe[f].placed || q->foe[f].made >= q->qbn.foe[f].count || !foe_here(q, f)) { return; }
+    on_marker = marker_point(q, q->foe[f].place, 11, f, &x, &y, &z) && g_world->spawn_foe_at;
+    for (made = q->foe[f].made; made < q->qbn.foe[f].count && made < 16; made++) {
+        df_u32 thing;
+
+        thing = OG_QUEST_FOE_THING(q->foe[f].number, made);
+        if (on_marker ? !g_world->spawn_foe_at(q->qbn.foe[f].type, thing, x, y, z) : (!g_world->spawn_foe || !g_world->spawn_foe(q->qbn.foe[f].type, thing))) { break; }
+        q->foe[f].live++;
     }
-    q->foe[f].live = made;
+    q->foe[f].made = made;
 }
 
 void og_quest_location_loaded(int region, int index)
 {
     int s, f;
 
+    g_loaded_region = region; g_loaded_index = index;
     for (s = 0; s < OG_QUESTS; s++) {
         if (!g_quest[s].used) { continue; }
         lay_items(&g_quest[s], region, index);
@@ -526,11 +557,12 @@ void og_quest_location_loaded(int region, int index)
             const OgQuestPlace *place;
 
             foe = &g_quest[s].foe[f];
-            if (!foe->placed || foe->live || foe->place < 0 || foe->place >= g_quest[s].qbn.n_place) { continue; }
+            if (!foe->placed || foe->made >= g_quest[s].qbn.foe[f].count || foe->place < 0 || foe->place >= g_quest[s].qbn.n_place) { continue; }
             place = &g_quest[s].place[foe->place];
             if (place->bound && place->region == region && place->index == index) { spawn_foe(&g_quest[s], f); }
         }
     }
+    g_loaded_region = -1; g_loaded_index = -1;
 }
 
 /* Event 2 and 21 for every quest that has the foe: the ops of that opcode on it. */
@@ -1050,8 +1082,12 @@ static void put_item_down(OgQuest *q, int i)
 {
     df_u32 pile;
 
+    float x, y, z;
+
     if (!q->item[i].object || !g_world || !g_world->place_item) { return; }
-    pile = g_world->place_item();
+    /* On the item marker (199.18) of its place when the dungeon has one, else at the player's feet. */
+    if (q->item[i].place >= 0 && g_world->place_item_at && marker_point(q, q->item[i].place, 18, 100 + i, &x, &y, &z)) { pile = g_world->place_item_at(x, y, z); }
+    else { pile = g_world->place_item(); }
     if (pile) { og_object_reparent(q->item[i].object, pile); }
 }
 
@@ -1429,13 +1465,8 @@ static void run_op(int slot, OgQuest *q, OgQbnOp *op)
                 int where;
 
                 where = !op->arg[2].literal && op->arg[2].value >= 0 ? op->arg[2].value : -1;
-                q->foe[n].placed = 1; q->foe[n].place = where; q->foe[n].live = 0;
-                if (g_world && g_world->here) {
-                    int region, here, px, py;
-
-                    g_world->here(&region, &here, &px, &py);
-                    if (where < 0 ? here >= 0 : (q->place[where].bound && q->place[where].region == region && q->place[where].index == here)) { spawn_foe(q, n); }
-                }
+                q->foe[n].placed = 1; q->foe[n].place = where; q->foe[n].live = 0; q->foe[n].made = 0;
+                spawn_foe(q, n);
             }
             done(q, op);
         }
@@ -1649,6 +1680,8 @@ void og_quest_run(void)
         q = &g_quest[slot];
         if (!q->used) { continue; }
         for (i = 0; i < q->qbn.n_op && !q->ended; i++) { run_op(slot, q, &q->qbn.op[i]); }
+        /* A foe whose floor was not there when it was placed (a marker far off) is made as the player comes near. */
+        for (i = 0; i < q->qbn.n_foe; i++) { if (q->foe[i].placed && q->foe[i].made < q->qbn.foe[i].count) { spawn_foe(q, i); } }
         /* The four template slots are cleared after each quest's run. */
         for (i = 0; i < 4; i++) { g_tpl_group[i] = -1; }
         if (!q->ended) { timers_run(q); }
@@ -1695,7 +1728,7 @@ static void qwire_quest(QWire *w, OgQuest *q, int read)
 #define QU(x) do { if (read) { (x) = qget(w); } else { qput(w, (x)); } } while (0)
     QI(q->rewarded); QI(q->ended);
     for (i = 0; i < q->qbn.n_state; i++) { if (!q->qbn.state[i].is_global) { QI(q->qbn.state[i].value); } }
-    for (i = 0; i < q->qbn.n_foe; i++) { QI(q->qbn.foe[i].killed); QI(q->foe[i].number); QI(q->foe[i].placed); QI(q->foe[i].place); QI(q->foe[i].live); QI(q->foe[i].next); }
+    for (i = 0; i < q->qbn.n_foe; i++) { QI(q->qbn.foe[i].killed); QI(q->foe[i].number); QI(q->foe[i].placed); QI(q->foe[i].place); QI(q->foe[i].live); QI(q->foe[i].next); QI(q->foe[i].made); }
     for (i = 0; i < q->qbn.n_timer; i++) { QI(q->timer[i].flags); QU(q->timer[i].start); QU(q->timer[i].delay); }
     for (i = 0; i < q->qbn.n_item; i++) { QI(q->item[i].gold); QI(q->item[i].amount); QI(q->item[i].given); QU(q->item[i].object); QI(q->item[i].place); QI(q->item[i].laid); QI(q->item[i].carrier); }
     count = 0;

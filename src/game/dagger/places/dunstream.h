@@ -90,5 +90,13 @@ int dunstream_dungeon_type(void);
 /* A block's side in units: a chunk of the stream, and what stream_origin counts in. */
 #define DUNSTREAM_BLOCK 2048.0f
 int dunstream_active(void);
+/* The editor records a quest places things at: 11 a person's or foe's, 18 an item's (TEXTURE.199). */
+#define QUEST_MARKER_PERSON 11
+#define QUEST_MARKER_ITEM 18
+/*
+ * A quest marker of the open dungeon, its point in the stream's frame. n >= 0: the n-th marker of either record in the blocks' order, from 0 (the original numbers them from 0xFA01, so 0xFA01 is 0);
+ * n < 0: one of the markers of the record (any with a record below 0) picked by the seed, the same each time. 1 when there is one.
+ */
+int dunstream_quest_marker(int n, int record, unsigned seed, float *x, float *y, float *z);
 
 #endif

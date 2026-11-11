@@ -47,6 +47,8 @@ typedef struct OgQuestTimer {
 /* A foe the quest names: its number in the world (the counter every foe of every quest takes one from), whether op 22 placed it and where (a place of the quest, -1 near the player), and how many of it are live. */
 typedef struct OgQuestFoe {
     int number, placed, place, live, next;
+    /* How many of its count have been put in the world so far (their deaths do not make more). */
+    int made;
 } OgQuestFoe;
 
 /* An item a quest names: gold's amount is rolled when the quest starts (quest_init_item); a reward is given once. Other items wait for step 9. */
@@ -85,6 +87,11 @@ typedef struct OgQuestWorld {
     df_u32 (*place_item)(void);
     /* Where the location numbered so is (a fixed place's p1: the outside's number, its dungeon's one more): the region and the index of the outside in it; 1 when found. */
     int (*find_number)(int number, int *region, int *index);
+    /* A quest marker of the dungeon the player is in, its point in the game's frame: marker >= 0 the n-th (0xFA01 is 0), else one of the record (11 a person's or foe's, 18 an item's) picked by the seed;
+     * 1 when the dungeon is open and has it. A foe placed on the floor near a point (0 while that floor is not loaded: tried again), and a pile for an item at a point. */
+    int (*marker_at)(int marker, int record, unsigned seed, float *x, float *y, float *z);
+    int (*spawn_foe_at)(int kind, df_u32 thing, float x, float y, float z);
+    df_u32 (*place_item_at)(float x, float y, float z);
     /* A building of a town for a place that is one (p1 0): the town (region, index), the building's type (below 0 any shop-like one, 17..20 any house, 11 only a Mages Guild) and a seed that picks among them; its block and record. 1 when there is one. */
     int (*pick_building)(int region, int index, int type, unsigned seed, int *block, int *record);
     /* A name for a person of the quests (the same each time for the same id). */

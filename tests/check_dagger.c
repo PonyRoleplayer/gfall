@@ -2959,6 +2959,17 @@ static void check_dungeon_automap(void)
     }
     camera_set(&cam, x, y, z, yaw, pitch);
     dunstream_fill(&cam);
+    /* The hold's quest markers as the original numbers them (0xFA01, 0xFA02): the person marker (199.11) in cell 8 and the item marker (199.18) in cell 9, nothing else. */
+    {
+        float qx, qy, qz, rx, ry, rz;
+
+        check_expect(dunstream_quest_marker(0, -1, 0, &qx, &qy, &qz) && qx == 645.0f && qy == 41.0f && qz == 1585.0f &&
+                     dunstream_quest_marker(1, -1, 0, &qx, &qy, &qz) && qx == 1428.0f && qy == 1824.0f && qz == 1699.0f && !dunstream_quest_marker(2, -1, 0, &qx, &qy, &qz),
+                     "the hold: quest markers 0 and 1 are not at the original's 0xFA01 and 0xFA02, or there are more");
+        check_expect(dunstream_quest_marker(-1, QUEST_MARKER_PERSON, 5u, &qx, &qy, &qz) && qx == 645.0f && dunstream_quest_marker(-1, QUEST_MARKER_ITEM, 9u, &rx, &ry, &rz) && rx == 1428.0f &&
+                     dunstream_quest_marker(-1, -1, 3u, &qx, &qy, &qz) && qx == 1428.0f,
+                     "the hold: a quest marker picked by its record or by a seed is not the person's or the item's");
+    }
     automap_set_place(17);
     /* A look round from the start, a quarter turn a frame. */
     for (i = 0; i < 4; i++) {

@@ -13,6 +13,7 @@
 #include "game/ogfall/play/maps.h"
 #include "game/ogfall/play/msg.h"
 #include "game/ogfall/play/ground.h"
+#include "game/dagger/places/dunstream.h"
 #include "game/ogfall/play/spellmaker.h"
 #include "game/ogfall/play/itemmaker.h"
 #include "game/ogfall/play/enchant.h"
@@ -1370,6 +1371,25 @@ static int street_quest(const OgFactionDef *f, int in_building_type)
     return og_quest_begin(name, g_met.faction) >= 0;
 }
 
+/* A quest marker of the dungeon the player is in (dunstream's), a quest's creature on the floor beside it, and a pile there for its item. */
+static int quest_marker_at(int marker, int record, unsigned seed, float *x, float *y, float *z)
+{
+    return dunstream_active() && dunstream_quest_marker(marker, record, seed, x, y, z);
+}
+
+static int quest_spawn_foe_at(int kind, df_u32 thing, float x, float y, float z)
+{
+    Camera cam;
+
+    og_move_camera(&cam);
+    return og_encounter_place_at(&cam, kind, thing, x, y, z);
+}
+
+static df_u32 quest_place_item_at(float x, float y, float z)
+{
+    return og_ground_container(x, y, z);
+}
+
 /* A building of a town for a quest's place: of the type asked (17..20 any house, below 0 any) picked by the seed. */
 static int quest_pick_building(int region, int index, int type, unsigned seed, int *block, int *record)
 {
@@ -2609,7 +2629,7 @@ int seam_boot(void)
     og_quest_set_text(quest_text); og_quest_set_say(quest_say); og_quest_set_ask(og_possessions_ask);
     og_quest_set_macros(quest_macros); og_quest_set_place(quest_place);
     {
-        static const OgQuestWorld quest_world = { og_travel_count, og_travel_location, quest_here, quest_region_name, quest_journey, og_travel_discover, quest_spawn_foe, og_teleport, quest_place_item, quest_find_number, quest_pick_building, quest_person_name };
+        static const OgQuestWorld quest_world = { og_travel_count, og_travel_location, quest_here, quest_region_name, quest_journey, og_travel_discover, quest_spawn_foe, og_teleport, quest_place_item, quest_find_number, quest_marker_at, quest_spawn_foe_at, quest_place_item_at, quest_pick_building, quest_person_name };
 
         og_quest_set_world(&quest_world);
     }
