@@ -857,12 +857,60 @@ static int quest_macros(const char *in, char *out, int cap)
 }
 
 /* What the quests ask of the map: the travel list's locations, where the player stands, a region's name, the journey the quests estimate (ships' sea pixels cost 51) and the map's discovery. */
+/* The index of the outside the player is in or under, in its region's list (the travel list's index): a dungeon's is the outside it lies under. -1 when in no location. */
+static int quest_outside(void)
+{
+    const OgWhere *where;
+    const Dungeon *data;
+    int index;
+
+    where = &og_world_state()->where;
+    if (where->kind == OG_PLACE_DUNGEON) {
+        data = travel_place_data();
+        index = data ? dungeon_outside(where->region, data->exterior_id) : -1;
+        return index;
+    }
+    return where->located ? where->index : -1;
+}
+
 static void quest_here(int *region, int *index, int *px, int *py)
 {
     og_travel_capture();
     *region = travel_region();
-    *index = og_world_state()->where.located ? og_world_state()->where.index : -1;
+    *index = quest_outside();
     *px = og_world_state()->px; *py = og_world_state()->py;
+}
+
+/* A location's number (MAPS' LOC_ID, 1 for an outside and its dungeon the next): the region and the outside's index in it, found by reading each region's two lists once and kept. */
+static int quest_find_number(int number, int *region, int *index)
+{
+    static struct { int number, region, index; } cache[16];
+    static int cached;
+    static DunRef list[2048];
+    int r, n, i, k, count;
+
+    for (k = 0; k < cached; k++) { if (cache[k].number == number) { *region = cache[k].region; *index = cache[k].index; return cache[k].index >= 0; } }
+    *region = -1; *index = -1;
+    for (r = 0; r < DUN_REGIONS && *index < 0; r++) {
+        count = exterior_list_region(r, list, 2048);
+        if (count > 2048) { count = 2048; }
+        for (i = 0; i < count; i++) { if (list[i].location_id == number) { *region = r; *index = i; break; } }
+    }
+    if (*index < 0) {
+        /* A dungeon's number: its record in the dungeon list names the outside it lies under. */
+        static DunRef dungeons[4400];
+
+        n = dungeon_list(dungeons, 4400);
+        if (n > 4400) { n = 4400; }
+        for (i = 0; i < n && *index < 0; i++) {
+            if (dungeons[i].location_id == number) {
+                k = dungeon_outside(dungeons[i].region, dungeons[i].exterior_id);
+                if (k >= 0) { *region = dungeons[i].region; *index = k; }
+            }
+        }
+    }
+    if (cached < 16) { cache[cached].number = number; cache[cached].region = *region; cache[cached].index = *index; cached++; }
+    return *index >= 0;
 }
 
 static int quest_region_name(int region, char *out, int cap)
@@ -2492,7 +2540,7 @@ int seam_boot(void)
     og_quest_set_text(quest_text); og_quest_set_say(quest_say); og_quest_set_ask(og_possessions_ask);
     og_quest_set_macros(quest_macros); og_quest_set_place(quest_place);
     {
-        static const OgQuestWorld quest_world = { og_travel_count, og_travel_location, quest_here, quest_region_name, quest_journey, og_travel_discover, quest_spawn_foe, og_teleport, quest_place_item };
+        static const OgQuestWorld quest_world = { og_travel_count, og_travel_location, quest_here, quest_region_name, quest_journey, og_travel_discover, quest_spawn_foe, og_teleport, quest_place_item, quest_find_number };
 
         og_quest_set_world(&quest_world);
     }
@@ -3354,7 +3402,7 @@ int seam_open_place(int restoring, int changing, float *x, float *y, float *z)
         why("Cannot restore the dungeon encounters"); return 0;
     }
     /* A dungeon loaded: the foes of the quests placed in it are made (func_0004C759 links them as a location loads). */
-    if (og_world_state()->where.kind == OG_PLACE_DUNGEON) { og_quest_location_loaded(og_world_state()->where.region, og_world_state()->where.index); }
+    if (og_world_state()->where.kind == OG_PLACE_DUNGEON) { og_quest_location_loaded(og_world_state()->where.region, quest_outside()); }
     world_start(g_world, &sx, &sy, &sz, &yaw, &pitch);
     if (!restoring && !changing && og_world_state()->where.kind == OG_PLACE_DUNGEON) { marker6(&sx,&sy,&sz); }
     if (x) {

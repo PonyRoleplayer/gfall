@@ -22,6 +22,8 @@
 
 typedef struct OgQuestPlace {
     int bound, ordinal, region, index, type, px, py;
+    /* A fixed place's object, as the low word of its id (1 the location itself, 0xFA01.. its quest markers). */
+    int marker;
     char name[33];
 } OgQuestPlace;
 /* A timer's running state: its flags (the bits of 2.8, 64 running and 128 expired changing), the minute it started and its delay. */
@@ -77,6 +79,8 @@ typedef struct OgQuestWorld {
     int (*go)(int region, int index);
     /* A pile at the player's feet for an item (a quest's item set down in its place, or dropped by its foe): the container's id, 0 for none. */
     df_u32 (*place_item)(void);
+    /* Where the location numbered so is (a fixed place's p1: the outside's number, its dungeon's one more): the region and the index of the outside in it; 1 when found. */
+    int (*find_number)(int number, int *region, int *index);
 } OgQuestWorld;
 void og_quest_set_world(const OgQuestWorld *world);
 
@@ -153,6 +157,8 @@ void og_quest_globals_clear(void);
 
 /* quests_run_all for a passing minute: as og_quest_run, and the ops that watch the clock (79) look. */
 void og_quest_run_minute(void);
+/* quests_start_initial: the quests that start with a new game (_BRISIEN, then _TUTOR__), begun at the first frame of play in the world. */
+void og_quest_start_initial_later(void);
 void og_quest_reset(void);
 /* The quests as bytes for a save and back (step 8): the global states, the logbook, the foe counter and each running quest's name, id, faction and what changed since its QBN was read (the
  * states, ops done, foes killed, timers, bound places, persons and items). A quest comes back by reading its QBN again. pack returns the length, or -1 when it does not fit; unpack

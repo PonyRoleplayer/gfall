@@ -26,6 +26,7 @@ static const char *(*g_place)(void);
 static OgLogSlot g_log[OG_LOG_SLOTS];
 static const OgQuestWorld *g_world;
 static int g_foe_counter = 1;
+static int g_initial_pending;
 static OgRumour g_rumour[OG_RUMOURS];
 static OgQuestFace g_face[OG_QUEST_FACES];
 static OgQuestAccess g_access[OG_QUEST_ACCESS];
@@ -52,7 +53,7 @@ void og_quest_set_say(void (*say)(const char *text)) { g_say = say; }
 void og_quest_set_ask(int (*ask)(const char *words, void (*answer)(int yes))) { g_ask = ask; }
 const df_u8 *og_quest_globals(void) { return g_global; }
 void og_quest_globals_clear(void) { mem_zero(g_global, sizeof(g_global)); }
-void og_quest_reset(void) { mem_zero(g_rumour, sizeof(g_rumour)); mem_zero(g_face, sizeof(g_face)); mem_zero(g_access, sizeof(g_access)); mem_zero(g_quest, sizeof(g_quest)); mem_zero(g_global, sizeof(g_global)); mem_zero(g_log, sizeof(g_log)); g_offer_slot = -1; g_foe_counter = 1; mem_zero(&g_questor, sizeof(g_questor)); }
+void og_quest_reset(void) { mem_zero(g_rumour, sizeof(g_rumour)); mem_zero(g_face, sizeof(g_face)); mem_zero(g_access, sizeof(g_access)); mem_zero(g_quest, sizeof(g_quest)); mem_zero(g_global, sizeof(g_global)); mem_zero(g_log, sizeof(g_log)); g_offer_slot = -1; g_initial_pending = 0; g_foe_counter = 1; mem_zero(&g_questor, sizeof(g_questor)); }
 void og_quest_set_names(const OgQuestNames *names) { g_names = names; }
 void og_quest_set_world(const OgQuestWorld *world) { g_world = world; }
 void og_quest_set_macros(int (*fill)(const char *in, char *out, int cap)) { g_macros = fill; }
@@ -175,7 +176,15 @@ static int bind_place(int slot, int i)
 
     q = &g_quest[slot]; pl = &q->qbn.place[i];
     if (!g_world || !g_world->count || !g_world->location || !g_world->here) { return 1; }
-    if (pl->scope == 0) { return 1; }
+    if (pl->scope == 0) {
+        /* A fixed place: (p1 << 16) | p2, the location's number and the low word of an object in it. Low word 2 names no object in the original (7.1: its tutorial step could never run); it is read as 1,
+         * the location itself, as Daggerfall Unity does. The place has the location's bounds and no point of its own. */
+        if (!g_world->find_number || !g_world->find_number(pl->p1, &region, &here)) { return 1; }
+        for (k = 0; k < g_world->count(); k++) {
+            if (g_world->location(k, &lo) && lo.region == region && lo.index == here) { place_from(&q->place[i], k, &lo); q->place[i].marker = (pl->p2 & 0xffff) == 2 ? 1 : (pl->p2 & 0xffff); return 1; }
+        }
+        return 1;
+    }
     g_world->here(&region, &here, &px, &py);
     count = g_world->count();
     if (pl->scope <= 1) {
@@ -319,6 +328,7 @@ static int bind_resources(int slot)
         const OgQbnPerson *pe;
 
         pe = &q->qbn.person[i];
+        q->qbn.person[i].flags &= 0x0fff;
         if (pe->kind == 21) {
             if (!g_questor.set || og_quest_person_busy(g_questor.who)) { return 0; }
             q->person[i].bound = 1; q->person[i].who = g_questor.who; q->person[i].faction = g_questor.faction;
@@ -326,6 +336,10 @@ static int bind_resources(int slot)
             log_format(q->person[i].town, sizeof(q->person[i].town), "%s", g_questor.town);
         } else if (pe->kind == -8) {
             q->person[i].bound = 1; q->person[i].who = 0; q->person[i].faction = pe->faction;
+        } else {
+            /* Any other kind is a person not yet in the world: a named individual (kind -1 of a faction of its own) is found by their faction when their town loads, the others stand nowhere until
+             * op 30 puts them in a place. They are bound, with an id of their own and no body (the towns' people are not made from the quests yet). */
+            q->person[i].bound = 1; q->person[i].who = (int)(0x40000000u | (unsigned)(slot << 8) | (unsigned)i); q->person[i].faction = pe->kind == -1 ? pe->faction : 0;
         }
     }
     for (i = 0; i < q->qbn.n_op; i++) { q->qbn.op[i].last_minutes = og_state()->minutes; }
@@ -364,7 +378,7 @@ int og_quest_person_busy(int who)
 static int is_person(const OgQuest *q, int i, int who, int faction)
 {
     if (i < 0 || i >= q->qbn.n_person || !q->person[i].bound) { return 0; }
-    if (q->qbn.person[i].kind == -8) { return q->person[i].faction == faction; }
+    if (q->qbn.person[i].kind == -8 || (q->qbn.person[i].kind == -1 && !(q->qbn.person[i].flags & 0x100) && q->person[i].faction)) { return q->person[i].faction == faction; }
     return q->person[i].who == who;
 }
 
@@ -1576,8 +1590,16 @@ void og_quest_run_minute(void)
     g_minute = 0;
 }
 
+void og_quest_start_initial_later(void) { g_initial_pending = 1; }
+
 void og_quest_run(void)
 {
+    if (g_initial_pending && g_world) {
+        /* quests_start_initial, once the world is open: no offer box (neither name is a Y quest). */
+        g_initial_pending = 0;
+        og_quest_start("_BRISIEN", 0);
+        og_quest_start("_TUTOR__", 0);
+    }
     int slot, i;
 
     for (slot = 0; slot < OG_QUESTS; slot++) {
@@ -1644,7 +1666,7 @@ static void qwire_quest(QWire *w, OgQuest *q, int read)
     for (i = 0; i < q->qbn.n_item; i++) { QI(q->qbn.item[i].flags); }
     for (i = 0; i < q->qbn.n_place; i++) {
         QI(q->qbn.place[i].flags);
-        QI(q->place[i].bound);
+        QI(q->place[i].bound); QI(q->place[i].marker);
         if (q->place[i].bound) { QI(q->place[i].ordinal); QI(q->place[i].region); QI(q->place[i].index); QI(q->place[i].type); QI(q->place[i].px); QI(q->place[i].py); qbytes(w, q->place[i].name, 33, read); }
     }
     for (i = 0; i < q->qbn.n_person; i++) {

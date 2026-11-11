@@ -66,6 +66,15 @@ static int carried_by_player(df_u32 id)
 }
 static int g_went_region = -1, g_went_index = -1;
 static int w_go(int region, int index) { g_went_region = region; g_went_index = index; return 1; }
+static void w_here_out(int *region, int *index, int *px, int *py) { *region = 17; *index = 99; *px = 100; *py = 200; }
+static int w_find_number(int number, int *region, int *index)
+{
+    /* The stub's locations: 50050 (a dungeon) lies under the outside the player is in, 50026 is the town beside it. */
+    *region = 17;
+    if (number == 50050) { *index = 10; return 1; }
+    if (number == 50026) { *index = 11; return 1; }
+    return 0;
+}
 static df_u32 g_pile_made;
 static df_u32 w_place_item(void) { g_pile_made++; return 0; }
 static int w_spawn(int kind, df_u32 thing) { if (g_spawned < 16) { g_spawn_kind[g_spawned] = kind; g_spawn_thing[g_spawned++] = thing; } return 1; }
@@ -357,7 +366,7 @@ void check_ogquest(void)
             put_op(f3 + 0x140 + 435, 8, -1, d8, 0);
             put_lit(f3 + 0x140 + 435 + 6 + 1 * 15, 101); put_lit(f3 + 0x140 + 435 + 6 + 2 * 15, 101);
             {
-                static const OgQuestWorld w9 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item };
+                static const OgQuestWorld w9 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number };
 
                 og_quest_set_world(&w9);
             }
@@ -406,6 +415,29 @@ void check_ogquest(void)
             check_expect(og_quest_pick_seeded('E', 0, 'B', 0, 0u, c) && c[0] == 'E' && c[2] == 'B' && og_quest_pick('0', 0, 'B', 0, c) && c[0] == '0' && c[2] == 'B' && og_quest_pick('E', 'C', 'B', 0, c) && (c[0] == 'E' || c[0] == 'C'),
                          "quest: Arkay's member's quest is not E0B, or Julianos's not 00B");
             check_expect(og_quest_pick('R', 0, 'C', 9, c) && c[0] == 'R' && c[2] == 'C', "quest: a type 4 faction's person's quest is not an R quest");
+        }
+        /* The quests of a new game: _BRISIEN then _TUTOR__ begin at the first run, their fixed places found by the location's number (low word 2 read as the location), _BRISIEN's person made
+         * (kind -1, her flags 0x101) though standing nowhere, and its ops 6 and 7, which wait while the player is in the hold (op 43 sets state 5 there), start the main story's S0000977 and S0000999 once they are out of it. */
+        {
+            static const OgQuestWorld w10 = { w_count, w_location, w_here_out, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number };
+            int k, found999, found977;
+
+            for (k = 0; k < og_quest_count(); k++) { og_quest_end(k); }
+            og_quest_set_world(&w10);
+            og_quest_start_initial_later();
+            og_quest_run(); og_quest_run(); og_quest_run();
+            check_expect(og_quest(0) && !strcmp(og_quest(0)->qbn.name, "_BRISIEN") && og_quest(1) && !strcmp(og_quest(1)->qbn.name, "_TUTOR__"), "quest: a new game did not start _BRISIEN and _TUTOR__");
+            check_expect(og_quest(0) && og_quest(0)->place[0].bound && og_quest(0)->place[0].index == 10 && og_quest(0)->place[0].marker == 0xFA01 && og_quest(0)->person[0].bound && og_quest(0)->person[0].who != 0,
+                         "quest: _BRISIEN's fixed place or her person did not bind");
+            check_expect(og_quest(1) && og_quest(1)->place[1].bound && og_quest(1)->place[1].index == 11 && og_quest(1)->place[1].marker == 1, "quest: _TUTOR__'s place 1 (Daggerfall, low word 2) was not read as the town");
+            found999 = 0; found977 = 0;
+            for (k = 0; k < og_quest_count(); k++) {
+                if (og_quest(k) && !strcmp(og_quest(k)->qbn.name, "S0000999")) { found999 = 1; }
+                if (og_quest(k) && !strcmp(og_quest(k)->qbn.name, "S0000977")) { found977 = 1; }
+            }
+            check_expect(found999 && found977, "quest: _BRISIEN out of the hold did not start S0000977 and S0000999");
+            for (k = 0; k < og_quest_count(); k++) { og_quest_end(k); }
+            og_quest_set_world(0);
         }
         og_character()->attribute[OG_STR] = saved_str;
     }
@@ -480,7 +512,7 @@ void check_ogquest(void)
     /* Places and timers: M0B00Y00's two dungeons bound to two different dungeons of the region other than the one the player is in, its timer's delay the travel estimate and a week
      * for the kind, doubled; op 19 shows the first on the map; at the delay the timer's state ends the quest (op 6). */
     {
-        static const OgQuestWorld world = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item };
+        static const OgQuestWorld world = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number };
         const OgQuest *q2;
         int s2, spent;
 

@@ -1,5 +1,6 @@
 #include "game/ogfall/play/state.h"
 #include "game/ogfall/play/chargen.h"
+#include "game/ogfall/play/quest.h"
 
 #include "game/ogfall/play/kit.h"
 #include "game/ogfall/tables/tables.h"
@@ -432,6 +433,7 @@ static void enter_world(void)
         caption("Cannot create the game state");
         return;
     }
+    og_quest_start_initial_later();
     g_mode = OG_UI_WORLD;
     caption("Privateer's Hold");
 }
