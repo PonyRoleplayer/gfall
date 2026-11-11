@@ -669,3 +669,9 @@ int og_daedra_summon(int prince, int weather, int *kind)
     og_guilds()->daedra_met |= 1u << prince;
     return OG_DAEDRA_QUEST;
 }
+
+const char *og_guild_rank_name(int kind, int rank)
+{
+    if (kind < 0 || kind > 21 || rank < 0 || rank > 9) { return ""; }
+    return g_rank_name[kind][rank];
+}

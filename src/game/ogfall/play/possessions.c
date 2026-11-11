@@ -9,9 +9,12 @@
 #include "engine/core/mem.h"
 #include "engine/core/log.h"
 #include "game/ogfall/play/magic.h"
+#include "game/ogfall/play/guild.h"
+#include "game/ogfall/play/standing.h"
 #include "game/ogfall/play/ailments.h"
 #include "game/ogfall/play/ground.h"
 #include "game/ogfall/play/move.h"
+static void sheet_affiliations(void);
 
 static OgPossessions g;
 static void (*g_answer)(const char *);
@@ -855,7 +858,7 @@ static void sheet_click(int x, int y)
         og_possessions_close(); og_possessions_open(OG_VIEW_INVENTORY,0);
     } else if (inside(x,y,68,150,134,160)) { og_possessions_open(OG_VIEW_SPELLS,0); }
     else if (inside(x,y,9,3,135,12)) { g.prompt = OG_PROMPT_NAME; df_copy(g.input, og_character()->name, sizeof(g.input)); }
-    else if (inside(x,y,2,83,134,93)) { df_copy(g.notice, "You have no guild affiliations.", sizeof(g.notice)); }
+    else if (inside(x,y,2,83,134,93)) { sheet_affiliations(); }
     else if (inside(x,y,69,164,134,178)) {
         log_format(g.notice,sizeof(g.notice),"%s\n%s %s\n%s\nCommoners: %d\nMerchants: %d\nScholars: %d\nNobility: %d\nUnderworld: %d",
                    og_character()->name, og_character()->female ? "Female" : "Male", og_race_name(og_character()->race),
@@ -1213,4 +1216,25 @@ void og_possessions_frame(const OgIn *in)
     }
     if (g.page == OG_VIEW_MESSAGE && !g.notice[0] && !g.prompt) { og_possessions_close(); }
     if (click || in->ch || in->key) { g.revision++; }
+}
+
+/* sheet_show_affiliations: "Affiliation  Rank", then a line for each guild or order the player belongs to (faction name and rank title); none is TEXT.RSC 19. */
+static void sheet_affiliations(void)
+{
+    const OgFactionDef *faction;
+    char text[400];
+    int i, n, count;
+
+    n = 0; count = 0;
+    n += log_format(text + n, (int)sizeof(text) - n, "Affiliation        Rank");
+    for (i = 0; i < OG_MEMBERSHIPS; i++) {
+        const OgMembership *m;
+
+        m = &og_guilds()->m[i];
+        if (!m->used) { continue; }
+        faction = og_faction_def(og_faction_index(m->faction));
+        n += log_format(text + n, (int)sizeof(text) - n, "\n%s: %s", faction ? faction->name : "?", og_guild_rank_name(m->kind, m->rank));
+        count++;
+    }
+    df_copy(g.notice, count ? text : og_words(19), sizeof(g.notice));
 }

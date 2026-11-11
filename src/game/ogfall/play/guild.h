@@ -45,6 +45,8 @@ typedef struct OgGuilds {
 
 /* The live memberships, kept in the session (state.c). */
 OgGuilds *og_guilds(void);
+/* sheet_affiliation_line: a membership's rank title by guild kind (0..21) and rank (0..9), FALL.EXE's faction_rank_names. */
+const char *og_guild_rank_name(int kind, int rank);
 void og_guilds_clear(void);
 int og_guilds_valid(const OgGuilds *g);
 

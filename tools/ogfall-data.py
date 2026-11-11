@@ -404,6 +404,16 @@ guild.append(array('g_skill_advance', unpack(symbols['skill_advance_multipliers'
 guild.append(array('g_daedra_day', unpack(0x179e60, '16H'), 'df_u16'))
 guild.append(array('g_daedra_weather', unpack(0x179e7f, '17B')))
 guild.append(array('g_daedra_kind', unpack(0x179e90, '5B')))
+# faction_rank_names (src/lifted/sheet.c sheet_affiliation_line): the ten rank titles of each of the 22 guild kinds.
+rank_table = symbols['faction_rank_names']
+for kind in range(22):
+    row = unpack(unpack(rank_table + kind * 4, 'I')[0], '10I')
+    guild.append('/* kind %d */\n' % kind if False else '')
+guild.append('static const char *const g_rank_name[22][10] = {\n')
+for kind in range(22):
+    row = unpack(unpack(rank_table + kind * 4, 'I')[0], '10I')
+    guild.append('    { %s },\n' % ', '.join(json.dumps(read(p, 40).split(b'\0')[0].decode('cp437')) for p in row))
+guild.append('};\n')
 Path('src/game/ogfall/tables/guilddata.h').write_text(''.join(guild))
 
 # When buildings open (building_open_hours, src/lifted/tamriel.c 317): for each building type 0..16 the hour it opens and the hour it shuts.

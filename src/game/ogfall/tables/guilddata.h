@@ -72,3 +72,27 @@ static const df_i16 g_skill_advance[] = { 12, 1, 1, 5, 15, 15, 15, 15, 15, 15, 1
 static const df_u16 g_daedra_day[] = { 0, 319, 349, 154, 45, 98, 277, 64, 31, 301, 128, 12, 189, 247, 282, 80 };
 static const df_u8 g_daedra_weather[] = { 0, 100, 100, 100, 100, 4, 4, 100, 100, 6, 4, 100, 100, 100, 4, 100, 100 };
 static const df_u8 g_daedra_kind[] = { 26, 25, 27, 29, 31 };
+static const char *const g_rank_name[22][10] = {
+    { "Apprentice", "Journeyman", "Operator", "Slayer", "Executioner", "Punisher", "Terminator", "Assassin", "Dark Brother", "Master Assassin" },
+    { "Apprentice", "Journeyman", "Evoker", "Conjuror", "Magician", "Enchanter", "Warlock", "Wizard", "Master Wizard", "Archmage" },
+    { "Apprentice", "Journeyman", "Swordsman", "Protector", "Defender", "Warder", "Guardian", "Champion", "Warrior", "Master" },
+    { "Apprentice", "Journeyman", "Filcher", "Crook", "Robber", "Bandit", "Thief", "Ringleader", "Mastermind", "Master Thief" },
+    { "Aspirant", "Squire", "Gallant", "Chevalier", "Keeper", "Knight Brother", "Commander", "Marshal", "Seneschal", "Paladin" },
+    { "Aspirant", "Squire", "Gallant", "Chevalier", "Keeper", "Knight Brother", "Commander", "Marshal", "Seneschal", "Paladin" },
+    { "Aspirant", "Squire", "Gallant", "Chevalier", "Keeper", "Knight Brother", "Commander", "Marshal", "Seneschal", "Paladin" },
+    { "Aspirant", "Squire", "Gallant", "Chevalier", "Keeper", "Knight Brother", "Commander", "Marshal", "Seneschal", "Paladin" },
+    { "Aspirant", "Squire", "Gallant", "Chevalier", "Keeper", "Knight Brother", "Commander", "Marshal", "Seneschal", "Paladin" },
+    { "Aspirant", "Squire", "Gallant", "Chevalier", "Keeper", "Knight Brother", "Commander", "Marshal", "Seneschal", "Paladin" },
+    { "Aspirant", "Squire", "Gallant", "Chevalier", "Keeper", "Knight Brother", "Commander", "Marshal", "Seneschal", "Paladin" },
+    { "Aspirant", "Squire", "Gallant", "Chevalier", "Keeper", "Knight Brother", "Commander", "Marshal", "Seneschal", "Paladin" },
+    { "Aspirant", "Squire", "Gallant", "Chevalier", "Keeper", "Knight Brother", "Commander", "Marshal", "Seneschal", "Paladin" },
+    { "Aspirant", "Squire", "Gallant", "Chevalier", "Keeper", "Knight Brother", "Commander", "Marshal", "Seneschal", "Paladin" },
+    { "Novice", "Initiate", "Acolyte", "Adept", "Curate", "Disciple", "Brother", "Diviner", "Master", "Patriarch" },
+    { "Novice", "Initiate", "Acolyte", "Adept", "Curate", "Disciple", "Brother", "Diviner", "Master", "Patriarch" },
+    { "Novice", "Initiate", "Acolyte", "Adept", "Curate", "Disciple", "Brother", "Diviner", "Master", "Patriarch" },
+    { "Novice", "Initiate", "Acolyte", "Adept", "Curate", "Disciple", "Brother", "Diviner", "Master", "Patriarch" },
+    { "Novice", "Initiate", "Acolyte", "Adept", "Curate", "Disciple", "Brother", "Diviner", "Master", "Patriarch" },
+    { "Novice", "Initiate", "Acolyte", "Adept", "Curate", "Disciple", "Brother", "Diviner", "Master", "Patriarch" },
+    { "Novice", "Initiate", "Acolyte", "Adept", "Curate", "Disciple", "Brother", "Diviner", "Master", "Patriarch" },
+    { "Novice", "Initiate", "Acolyte", "Adept", "Curate", "Disciple", "Brother", "Diviner", "Master", "Patriarch" },
+};
