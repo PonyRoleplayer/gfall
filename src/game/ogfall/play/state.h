@@ -18,7 +18,7 @@
 #include "game/ogfall/play/worldstate.h"
 #include "engine/scene/keep.h"
 
-#define OG_STATE_VERSION 12
+#define OG_STATE_VERSION 13
 #define OG_STATE5_WIRE_BYTES 348
 #define OG_WORLD_ROWS 512
 #define OG_THUMB_W 80
@@ -76,6 +76,11 @@ typedef struct OgEvent {
     int value;
 } OgEvent;
 
+/* A spell the player made at a spell maker (spellmaker_buy copies the 89-byte record into the book's spell object): kept here, registered under id OG_CUSTOM_SPELL_ID + its slot. */
+#define OG_CUSTOM_SPELLS 32
+#define OG_CUSTOM_SPELL_ID 3000
+typedef struct OgCustomSpell { int used; df_u8 record[89]; } OgCustomSpell;
+
 typedef struct OgState {
     int version, ready;
     OgCharacter who;
@@ -115,9 +120,12 @@ typedef struct OgState {
     OgLodging lodging;
     OgLaw law;
     OgGuilds guilds;
+    OgCustomSpell custom_spell[OG_CUSTOM_SPELLS];
 } OgState;
 
 OgCharacter *og_character(void);
+/* A slot of the player's own spells, to fill (spellmaker.c). */
+OgCustomSpell *og_custom_spell_edit(int slot);
 void og_character_clear(void);
 const OgState *og_state(void);
 /* The faction and region standing inside the session (standing.h). */

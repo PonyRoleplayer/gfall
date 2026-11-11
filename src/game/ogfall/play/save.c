@@ -428,6 +428,16 @@ static void transfer(Wire *w, OgState *s)
         wire_int(w, &s->guilds.blessing.region); wire_u32(w, &s->guilds.blessing.end);
     }
 
+    /* The spells the player made (schema 13): the 89-byte records, each used or not. */
+    if (w->version >= 13) {
+        int k;
+
+        for (k = 0; k < OG_CUSTOM_SPELLS; k++) {
+            wire_int(w, &s->custom_spell[k].used);
+            wire_bytes(w, s->custom_spell[k].record, 89);
+        }
+    }
+
     if (w->version >= 7) {
         OgWorldState *world;
         world = &s->world_state;
@@ -516,7 +526,9 @@ static int read_save(const char *path)
     }
     if (w.version < 8) { og_standing_defaults(&g_candidate.standing); }
     if (w.version < OG_STATE_VERSION) { g_candidate.version = OG_STATE_VERSION; }
+    og_spells_sync_custom(&g_candidate);
     if (w.bad || w.pos != size || !og_state_valid(&g_candidate)) {
+        og_spells_sync_custom(og_state());
         g_error = "Invalid OGFALL save state";
         return 0;
     }

@@ -13,6 +13,8 @@
 #include "game/ogfall/play/maps.h"
 #include "game/ogfall/play/msg.h"
 #include "game/ogfall/play/ground.h"
+#include "game/ogfall/play/spellmaker.h"
+#include "game/ogfall/tables/magicdefs.h"
 #include "game/ogfall/tables/itemdefs.h"
 #include "game/ogfall/tables/combatdefs.h"
 #include "game/dagger/tables/careers.h"
@@ -1738,6 +1740,9 @@ static void hall_run(void)
         break;
     case OG_SVC_POTION_MAKER:
         og_possessions_potion();
+        break;
+    case OG_SVC_SPELL_MAKER:
+        og_possessions_spellmaker();
         break;
     case OG_SVC_SPELLS:
         {
@@ -4850,6 +4855,52 @@ static void paint_potion_maker(void)
 }
 
 /* The spell shop (spellshop_update, spellshop_draw_spell): SPBK01I0.IMG, the offered spells in the list, the selected one's icon, element, target and effects, and its price at 97,172. */
+/* spellmaker_update (func_00037014): INFO01I0.IMG, each effect's name centred at y 30 + 32 a slot, the points, gold, price and spell points, the name, the chosen target and element and the icon; with a panel open MASK05I0.IMG over it and the effect's numbers in their boxes (func_00038911). */
+static void paint_maker(void)
+{
+    const OgMaker *maker;
+    ImgPicture window, panel;
+    char line[64];
+    int i, k, type, sub, skill, shown;
+
+    maker = og_maker();
+    cover_screen(0,0,0);
+    if (img_load("INFO01I0.IMG",&window)) { blit_ix(window.x,window.y,window.pixels,window.width,window.height,0); }
+    for (i = 0; i < 3; i++) {
+        type = maker->spell[i*2]; sub = maker->spell[i*2+1];
+        if (type == 255) { continue; }
+        if (sub != 255 && og_effect_sub_name(type,sub)) { log_format(line,sizeof(line),"%s %s",og_effect_name(type),og_effect_sub_name(type,sub)); }
+        else { log_format(line,sizeof(line),"%s",og_effect_name(type)); }
+        centered_text(160,30+i*32,line,146);
+    }
+    log_format(line,sizeof(line),"%d",og_character()->magicka); text_at(43,149,line);
+    log_format(line,sizeof(line),"%d",og_character()->gold); text_at(40,158,line);
+    log_format(line,sizeof(line),"%d",og_maker_shown()); text_at(59,167,line);
+    log_format(line,sizeof(line),"%d",og_maker_spell_points()); text_at(70,176,line);
+    text_at(60,185,(const char *)maker->spell+OG_MAKER_NAME_AT);
+    if (g_spell_masks) {
+        k = maker->spell[7]; blit_stride(275,114+16*k,g_spell_masks+k*640,40,24,16);
+        k = maker->spell[6]; blit_stride(299,114+16*k,g_spell_masks+k*640+24,40,16,16);
+    }
+    if (g_spell_icons && maker->spell[72] < OG_MAKER_ICONS) {
+        k = maker->spell[72]; blit_stride(288,94,g_spell_icons+(k/20)*16*320+(k%20)*16,320,16,16);
+    }
+    if (!maker->kind) { return; }
+    if (img_load("MASK05I0.IMG",&panel)) { blit_ix(panel.x,panel.y,panel.pixels,panel.width,panel.height,1); }
+    skill = og_character()->skill[og_effect_school(maker->spell[maker->slot*2])];
+    shown = (110-skill)*(short)(maker->spell[8+maker->slot*2] | (maker->spell[9+maker->slot*2] << 8))/100;
+    log_format(line,sizeof(line),"%d",shown); text_at(275,119,line);
+    {
+        static const int left[11] = {64, 104, 160, 64, 104, 160, 64, 104, 144, 184, 240};
+        static const int top[11] = {94, 94, 94, 114, 114, 114, 134, 134, 134, 134, 134};
+
+        for (k = 0; k < 11; k++) {
+            if ((k < 3 && !(maker->kind & 1)) || (k >= 3 && k < 6 && !(maker->kind & 2)) || (k >= 6 && !(maker->kind & 4))) { continue; }
+            number_at(left[k]+12,top[k]+4,og_maker_value(k),1,0);
+        }
+    }
+}
+
 static void paint_spellshop(void)
 {
     const OgPossessions *view;
@@ -4924,6 +4975,7 @@ static int present_possessions(void)
     else if (view->page == OG_VIEW_SERVICE) { paint_service(); }
     else if (view->page == OG_VIEW_POTION) { paint_potion_maker(); }
     else if (view->page == OG_VIEW_SPELLSHOP) { paint_spellshop(); }
+    else if (view->page == OG_VIEW_MAKER) { paint_maker(); }
     else if (view->page == OG_VIEW_COURT) {
         /* cort01i0.img fills the screen once a court sits; the offer to surrender is over the world. */
         ImgPicture court;
@@ -4948,8 +5000,11 @@ static int present_possessions(void)
         /* list_popup_open_strings: the rows in a box, each eight pixels from y 34. */
         int k;
 
-        fill_box(100,26,120,view->list_count*8+14,45); outline(100,26,120,view->list_count*8+14,145);
-        for (k = 0; k < view->list_count; k++) { smallfont_draw(&g_font,g_buf,320,200,106,34+k*8,145,156,view->list[k]); }
+        int shown;
+
+        shown = view->list_count < OG_LIST_SHOWN ? view->list_count : OG_LIST_SHOWN;
+        fill_box(100,26,120,shown*8+14,45); outline(100,26,120,shown*8+14,145);
+        for (k = 0; k < shown; k++) { smallfont_draw(&g_font,g_buf,320,200,106,34+k*8,145,156,view->list[view->list_top+k]); }
     } else if (view->prompt == OG_PROMPT_OFFER || view->prompt == OG_PROMPT_ASK) {
         /* msgbox_yes_no_rsc: the shopkeeper's words over a box, Accept and Reject under them. */
         char wrapped[10][96];
@@ -4986,7 +5041,7 @@ static int present_possessions(void)
     }
     for (i = 0; i < g_panel_file_count; i++) { texture_forget(g_panel_files[i]); }
     mem_heap_use(was); mem_heap_delete(heap);
-    publish_surface(1,(view->page == OG_VIEW_SPELLS && !view->underlay) || view->page == OG_VIEW_MESSAGE || view->page == OG_VIEW_BANK || view->page == OG_VIEW_TALK || view->page == OG_VIEW_POTION || view->page == OG_VIEW_SPELLSHOP || (view->page == OG_VIEW_COURT && !view->court.open));
+    publish_surface(1,(view->page == OG_VIEW_SPELLS && !view->underlay) || view->page == OG_VIEW_MESSAGE || view->page == OG_VIEW_BANK || view->page == OG_VIEW_TALK || view->page == OG_VIEW_POTION || view->page == OG_VIEW_SPELLSHOP || view->page == OG_VIEW_MAKER || (view->page == OG_VIEW_COURT && !view->court.open));
     return 1;
 }
 

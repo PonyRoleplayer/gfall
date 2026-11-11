@@ -25,6 +25,8 @@ df_u32 og_spell_create(df_u32 book, int definition);
 int og_spell_rename(df_u32 id, const char *name);
 int og_spell_cycle_icon(df_u32 id, int step);
 void og_spell_upgrade(OgState *state);
+/* The registry made to hold the state's own spells (and none left from another game). */
+void og_spells_sync_custom(const OgState *state);
 int og_spell_rows(df_u32 book, df_u32 *ids, int capacity);
 int og_spell_move(df_u32 id, int by);
 int og_spell_delete(df_u32 id);

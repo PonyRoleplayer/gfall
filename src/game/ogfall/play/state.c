@@ -44,6 +44,11 @@ OgBankState *og_bank(void)
     return &g_state.bank;
 }
 
+OgCustomSpell *og_custom_spell_edit(int slot)
+{
+    return slot >= 0 && slot < OG_CUSTOM_SPELLS ? &g_state.custom_spell[slot] : 0;
+}
+
 OgGuilds *og_guilds(void)
 {
     return &g_state.guilds;
@@ -103,6 +108,7 @@ void og_state_clear(void)
     g_state.mouse_mode = mouse;
     g_state.next_low = 10000;
     g_state.region = g_state.location = -1;
+    og_spells_sync_custom(&g_state);
     og_character_clear();
 }
 
@@ -745,11 +751,15 @@ int og_state_valid(const OgState *snapshot)
 
 int og_state_restore(const OgState *snapshot)
 {
+    /* A spell the player made is a spell object's definition: the registry holds it before the state is judged. */
+    og_spells_sync_custom(snapshot);
     if (!og_state_valid(snapshot)) {
+        og_spells_sync_custom(&g_state);
         g_error = "Invalid OGFALL session";
         return 0;
     }
     g_state = *snapshot;
+    og_spells_sync_custom(&g_state);
     if (g_state.who.klass == 18) {
         og_class_set(18, &g_state.career);
     }

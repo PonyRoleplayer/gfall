@@ -9,6 +9,8 @@ int og_magic_index(KeepKey key);
 int og_magic_target(int index, OgCharacter *who, OgClass *career, int *base);
 void og_magic_commit(int index, const OgCharacter *who, int caster);
 int og_spell_cost(const OgSpellDef *spell, const OgCharacter *caster);
+/* One effect's raw cost, the formula of its group over its cost record and numbers (spell_cost_formula_dispatch); what the spell maker stores and prices by. */
+int og_effect_cost_raw(int group, const df_i16 *c, const int *d, const int *ch, const int *m);
 int og_magic_resist(int index, int element, int class_bit, int modifier);
 int og_magic_chance(int index, int group, int sub);
 void og_magic_apply(int spell, int caster, int target, int level, int no_resist);

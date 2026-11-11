@@ -88,27 +88,32 @@ void og_magic_commit(int index, const OgCharacter *who, int caster)
 }
 
 static int divide(int value, int by) { return by ? value/by : 0; }
+/* spell_cost_formula_dispatch: the formula an effect's group names, over a cost record c (four shorts) and the effect's own numbers; no skill and no target in it. */
+int og_effect_cost_raw(int group, const df_i16 *c, const int *d, const int *ch, const int *m)
+{
+    int formula, cost;
+
+    formula = og_effect_formula(group); cost = 0;
+    if (formula == 1) { cost = c[0]*d[0]+divide(d[1],d[2])*c[1]+c[2]*ch[0]+divide(ch[1],ch[2])*c[3]; }
+    else if (formula == 2) { cost = c[0]*d[0]+divide(d[1],d[2])*c[1]+c[2]*((m[0]+m[1])/2)+divide((m[2]+m[3])/2,m[4])*c[3]; }
+    else if (formula == 3) { cost = c[0]*d[0]+divide(d[1],d[2])*c[1]; }
+    else if (formula == 4) { cost = c[0]*ch[0]+divide(ch[1],ch[2])*c[1]; }
+    else if (formula == 5) { cost = c[0]*((m[0]+m[1])/2)+divide((m[2]+m[3])/2,m[4])*c[1]; }
+    else if (formula == 6) { cost = c[2]*((m[0]+m[1])/2)+((m[2]+m[3])/2)*divide(c[3],m[4])+c[0]*d[0]+divide(d[1]*c[1],d[2]); }
+    else if (formula == 7) { cost = divide((df_i16)(c[0]*((m[0]+m[1])/2)+divide((m[2]+m[3])/2,m[4])*c[1])*d[0],d[1]); }
+    return (df_i16)cost;
+}
 int og_spell_cost(const OgSpellDef *s, const OgCharacter *caster)
 {
     const df_i16 *c;
-    const int *d, *ch, *m;
-    int k, cost, total, formula, skill;
+    int k, total, skill;
     if (!s || !caster) { return 0; }
     total = 0;
     for (k = 0; k < 3; k++) {
         if (s->group[k] == 255) { continue; }
         c = og_effect_costs(s->group[k],s->sub[k]); if (!c) { continue; }
-        d = s->duration[k]; ch = s->chance[k]; m = s->magnitude[k];
-        formula = og_effect_formula(s->group[k]); cost = 0;
-        if (formula == 1) { cost = c[0]*d[0]+divide(d[1],d[2])*c[1]+c[2]*ch[0]+divide(ch[1],ch[2])*c[3]; }
-        else if (formula == 2) { cost = c[0]*d[0]+divide(d[1],d[2])*c[1]+c[2]*((m[0]+m[1])/2)+divide((m[2]+m[3])/2,m[4])*c[3]; }
-        else if (formula == 3) { cost = c[0]*d[0]+divide(d[1],d[2])*c[1]; }
-        else if (formula == 4) { cost = c[0]*ch[0]+divide(ch[1],ch[2])*c[1]; }
-        else if (formula == 5) { cost = c[0]*((m[0]+m[1])/2)+divide((m[2]+m[3])/2,m[4])*c[1]; }
-        else if (formula == 6) { cost = c[2]*((m[0]+m[1])/2)+((m[2]+m[3])/2)*divide(c[3],m[4])+c[0]*d[0]+divide(d[1]*c[1],d[2]); }
-        else if (formula == 7) { cost = divide((df_i16)(c[0]*((m[0]+m[1])/2)+divide((m[2]+m[3])/2,m[4])*c[1])*d[0],d[1]); }
         skill = caster->skill[og_effect_school(s->group[k])];
-        total += ((110-skill)*(df_i16)cost)/100;
+        total += ((110-skill)*og_effect_cost_raw(s->group[k],c,s->duration[k],s->chance[k],s->magnitude[k]))/100;
     }
     total = (og_target_factor(s->target)*total) >> 1;
     return total < 5 ? 5 : total;

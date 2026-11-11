@@ -32,3 +32,7 @@ int og_dispel_kind(int kind, int category)
 }
 int og_creature_ignores_illusion(int kind) { return og_dispel_kind(kind,0) || og_dispel_kind(kind,1); }
 const df_u8 *og_creature_diseases(int kind) { return kind == 3 ? g_bat_disease : kind == 19 ? g_mummy_disease : g_plague_disease; }
+/* The spell maker's tables (spells.c): the targets an effect allows, its elemental level (the original reads 255 for an empty slot, past the 51 entries: the bytes that follow), the name of a subtype. */
+int og_effect_target_class(int group) { return group >= 0 && group < 51 ? g_target_class[group] : 2; }
+int og_effect_element_level(int group) { return group >= 0 && group < 256 ? g_element_level[group] : 0; }
+const char *og_effect_sub_name(int group, int sub) { return group >= 0 && group < 51 && sub >= 0 && sub < 12 ? g_effect_sub_name[group][sub] : 0; }

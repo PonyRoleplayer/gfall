@@ -66,6 +66,23 @@ for i,address in enumerate(class_lists):
         if value == 255: break
     out.append('static const df_u8 g_class_spells%d[] = {%s};\n' % (i,', '.join(map(str,values))))
 out.append('static const df_u8 *g_class_spells[7] = {'+', '.join('g_class_spells%d'%i for i in range(7))+'};\n')
+# The spell maker (spells.c, func_00037AB7, func_00038228): which targets an effect allows (0 the caster only, 1 touch and beyond, 2 any), the elemental level of each (0 for none: only effects above 0 let the player pick an element) and the names of each effect's subtypes.
+out.append('static const df_u8 g_target_class[] = {%s};\n' % ', '.join(map(str,read(symbols['spell_effect_target_class'],'51B'))))
+out.append('static const df_u8 g_element_level[] = {%s};\n' % ', '.join(map(str,read(0x17A8B2,'256B'))))
+import json
+def text(pointer):
+    a = pointer
+    out_bytes = bytearray()
+    while True:
+        b = read(a,'B')[0]
+        if b == 0: break
+        out_bytes.append(b); a += 1
+    return json.dumps(out_bytes.decode('cp437'))
+sub_rows = []
+for t in range(51):
+    pointers = read(symbols['spell_effect_subtype_names']+t*48,'12I')
+    sub_rows.append('    {' + ', '.join('0' if p == 0 else text(p) for p in pointers) + '},\n')
+out.append('static const char *const g_effect_sub_name[51][12] = {\n' + ''.join(sub_rows) + '};\n')
 out.append(array('g_undead_daedra','undead_daedra_ids','14B','df_u8'))
 out.append('static const OgDiseaseDef g_disease[17] = {\n')
 for i in range(17):

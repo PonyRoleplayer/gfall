@@ -9,10 +9,12 @@
 #include "game/ogfall/play/law.h"
 #include "game/ogfall/play/talkwin.h"
 
-enum { OG_VIEW_NONE, OG_VIEW_INVENTORY, OG_VIEW_SHEET, OG_VIEW_SPELLS, OG_VIEW_BOOK, OG_VIEW_MESSAGE, OG_VIEW_BANK, OG_VIEW_COURT, OG_VIEW_TALK, OG_VIEW_SERVICE, OG_VIEW_POTION, OG_VIEW_SPELLSHOP };
+enum { OG_VIEW_NONE, OG_VIEW_INVENTORY, OG_VIEW_SHEET, OG_VIEW_SPELLS, OG_VIEW_BOOK, OG_VIEW_MESSAGE, OG_VIEW_BANK, OG_VIEW_COURT, OG_VIEW_TALK, OG_VIEW_SERVICE, OG_VIEW_POTION, OG_VIEW_SPELLSHOP, OG_VIEW_MAKER };
 enum { OG_ITEM_INFO, OG_ITEM_EQUIP, OG_ITEM_REMOVE, OG_ITEM_USE };
 enum { OG_PROMPT_NONE, OG_PROMPT_GOLD, OG_PROMPT_NAME, OG_PROMPT_PAGE, OG_PROMPT_SPELL_NAME, OG_PROMPT_ANSWER, OG_PROMPT_OFFER, OG_PROMPT_AMOUNT, OG_PROMPT_ASK, OG_PROMPT_NUMBER, OG_PROMPT_LIST };
-#define OG_LIST_MOST 16
+#define OG_LIST_MOST 64
+/* How many of a list's rows show at once; the rest scroll. */
+#define OG_LIST_SHOWN 20
 #define OG_LIST_NAME 24
 #define OG_NOTICE_LINES 16
 typedef struct OgPossessions {
@@ -34,7 +36,7 @@ typedef struct OgPossessions {
     char yes[16], no[16];
     /* A list to choose from (list_popup_open_strings): its rows. */
     char list[OG_LIST_MOST][OG_LIST_NAME];
-    int list_count;
+    int list_count, list_top;
     /* The spell shop's list: the spell definitions offered. */
     int shop[96], shop_count;
     char offer[200];
@@ -52,6 +54,8 @@ int og_possessions_open(int page, df_u32 remote);
  */
 /* The bank's screen (BANK00I0.IMG) for a region's account; 0 when refused. */
 int og_possessions_bank(int region);
+/* The spell maker (SPELLMAKER window, INFO01I0.IMG) over the world: the spell begins empty (spellmaker.h); 0 when refused. */
+int og_possessions_spellmaker(void);
 /*
  * The arrest (damage_apply, qkey.c 535): the offer to surrender to the guards (record 15). Yes is the
  * court (crime_guards_or_court with surrendered), No leaves the fight to go on. 0 when refused.

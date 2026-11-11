@@ -10,6 +10,8 @@
 #include "engine/core/log.h"
 #include "game/ogfall/play/magic.h"
 #include "game/ogfall/play/guild.h"
+#include "game/ogfall/play/spellmaker.h"
+#include "game/ogfall/tables/magicdefs.h"
 #include "game/ogfall/play/standing.h"
 #include "game/ogfall/play/ailments.h"
 #include "game/ogfall/play/ground.h"
@@ -42,7 +44,7 @@ static int game_mode(int page)
 {
     if (page == OG_VIEW_SHEET) { return OG_GAME_SHEET; }
     if (page == OG_VIEW_INVENTORY) { return OG_GAME_INVENTORY; }
-    if (page == OG_VIEW_BOOK || page == OG_VIEW_MESSAGE || page == OG_VIEW_BANK || page == OG_VIEW_COURT || page == OG_VIEW_TALK || page == OG_VIEW_SERVICE || page == OG_VIEW_POTION || page == OG_VIEW_SPELLSHOP) { return OG_GAME_READING; }
+    if (page == OG_VIEW_BOOK || page == OG_VIEW_MESSAGE || page == OG_VIEW_BANK || page == OG_VIEW_COURT || page == OG_VIEW_TALK || page == OG_VIEW_SERVICE || page == OG_VIEW_POTION || page == OG_VIEW_SPELLSHOP || page == OG_VIEW_MAKER) { return OG_GAME_READING; }
     return OG_GAME_SPELLBOOK;
 }
 
@@ -73,7 +75,7 @@ void og_possessions_close(void)
 
 int og_possessions_open(int page, df_u32 remote)
 {
-    if (!og_state()->ready || page < OG_VIEW_INVENTORY || page > OG_VIEW_SPELLSHOP) { return 0; }
+    if (!og_state()->ready || page < OG_VIEW_INVENTORY || page > OG_VIEW_MAKER) { return 0; }
     if (page == OG_VIEW_SPELLS) {
         df_u32 ids[OG_OBJECTS];
         g.book = og_inventory_book();
@@ -433,6 +435,106 @@ int og_possessions_potion(void)
     return 1;
 }
 
+/* ---- The spell maker (spells.c): its buttons are spellmaker_buttons, its numbers spellmaker_setting_buttons, both read from FALL.EXE. ---- */
+static int g_maker_types[OG_LIST_MOST];
+
+static void maker_say(int text)
+{
+    const char *words;
+
+    words = text < 0 ? "You do not have a spellbook!" : og_words(text);
+    if (words && words[0]) { df_copy(g.notice, words, sizeof(g.notice)); g.notice_page = 0; g.revision++; }
+}
+
+/* spellmaker_pick_subtype_cb; a list left with Escape takes the effect out again (list_popup_poll). */
+static void maker_subtype_picked(int row)
+{
+    if (row < 0) { og_maker_delete(og_maker()->slot); }
+    else { og_maker_pick_subtype(row); }
+    g.revision++;
+}
+
+/* spellmaker_pick_effect_cb: the effect goes in; with subtypes they are asked for, else its numbers open. */
+static void maker_effect_picked(int row)
+{
+    static char names[OG_LIST_MOST][OG_LIST_NAME];
+    int type, slot, n, i;
+
+    if (row < 0 || row >= OG_LIST_MOST) { return; }
+    type = g_maker_types[row];
+    slot = og_maker_pick_effect(type);
+    g.revision++;
+    if (slot < 0) { return; }
+    n = og_maker_subtype_count(type);
+    if (!n) { return; }
+    for (i = 0; i < n; i++) { df_copy(names[i], og_effect_sub_name(type, i), OG_LIST_NAME); }
+    og_possessions_list((const char (*)[OG_LIST_NAME])names, n, maker_subtype_picked);
+}
+
+/* The choice on an effect's row (msgbox_choice_rsc 1708): edit its numbers, or delete it. */
+static void maker_row_chosen(int row)
+{
+    if (row == 0) { og_maker_edit(og_maker()->slot); }
+    else if (row == 1) { og_maker_delete(og_maker()->slot); }
+    g.revision++;
+}
+
+static void maker_click(int x, int y)
+{
+    static char names[OG_LIST_MOST][OG_LIST_NAME];
+    int k, n, types[OG_LIST_MOST];
+
+    g.revision++;
+    if (og_maker()->kind) {
+        /* spellmaker_settings_update: the close button, then the up and down regions of the eleven numbers. */
+        static const int left[11] = {64, 104, 160, 64, 104, 160, 64, 104, 144, 184, 240};
+        static const int top[11] = {94, 94, 94, 114, 114, 114, 134, 134, 134, 134, 134};
+
+        if (inside(x,y,281,94,304,109)) { og_maker_close_panel(); return; }
+        for (k = 0; k < 11; k++) {
+            if (x > left[k] && x < left[k]+23) {
+                if (y > top[k] && y < top[k]+5) { if (og_maker_spin_allowed(k)) { og_maker_adjust(k, 1); } return; }
+                if (y > top[k]+10 && y < top[k]+15) { if (og_maker_spin_allowed(k)) { og_maker_adjust(k, -1); } return; }
+            }
+        }
+        return;
+    }
+    for (k = 0; k < 5; k++) {
+        if (inside(x,y,299,114+k*16,315,130+k*16)) { og_maker_set_element(k); return; }
+        if (inside(x,y,275,114+k*16,299,130+k*16)) { og_maker_set_target(k); return; }
+    }
+    if (inside(x,y,244,147,268,163)) { k = og_maker_buy(); if (k) { maker_say(k); } return; }
+    if (inside(x,y,244,163,268,179)) { og_maker_new(); return; }
+    if (inside(x,y,244,179,268,195)) { og_possessions_close(); return; }
+    if (inside(x,y,244,114,271,144)) {
+        if (og_maker_free_slot() < 0) { maker_say(1707); return; }
+        n = og_maker_effect_list(types, OG_LIST_MOST);
+        for (k = 0; k < n; k++) { g_maker_types[k] = types[k]; df_copy(names[k], og_effect_name(types[k]), OG_LIST_NAME); }
+        og_possessions_list((const char (*)[OG_LIST_NAME])names, n, maker_effect_picked);
+        return;
+    }
+    if (inside(x,y,288,94,302,108)) { og_maker_icon(1); return; }
+    if (inside(x,y,270,94,280,99)) { og_maker_icon(1); return; }
+    if (inside(x,y,270,100,280,108)) { og_maker_icon(-1); return; }
+    if (inside(x,y,59,184,166,191)) { g.prompt = OG_PROMPT_SPELL_NAME; df_copy(g.input, "", sizeof(g.input)); return; }
+    for (k = 0; k < 3; k++) {
+        if (og_maker()->spell[k*2] != 255 && y > k*32+30 && y < k*32+39) {
+            static const char choice[2][OG_LIST_NAME] = {"Edit", "Delete"};
+
+            og_maker_select(k);
+            og_possessions_list(choice, 2, maker_row_chosen);
+            return;
+        }
+    }
+}
+
+int og_possessions_spellmaker(void)
+{
+    if (g.page || !og_possessions_open(OG_VIEW_MAKER, 0)) { return 0; }
+    og_maker_new();
+    return 1;
+}
+
 static void potion_say(const char *text)
 {
     df_copy(g.notice, text, sizeof(g.notice)); g.notice_page = 0; g.revision++;
@@ -535,7 +637,7 @@ int og_possessions_cast(void)
 /* A dialog over the world: the message page already up and between questions is used again (an answer's follow-up), else one is opened. */
 static int dialog_ready(void)
 {
-    if ((g.page == OG_VIEW_MESSAGE || g.page == OG_VIEW_POTION || g.page == OG_VIEW_SPELLSHOP) && !g.prompt) { return 1; }
+    if ((g.page == OG_VIEW_MESSAGE || g.page == OG_VIEW_POTION || g.page == OG_VIEW_SPELLSHOP || g.page == OG_VIEW_MAKER) && !g.prompt) { return 1; }
     return !g.page && og_possessions_open(OG_VIEW_MESSAGE,0);
 }
 
@@ -549,7 +651,7 @@ int og_possessions_list(const char names[][OG_LIST_NAME], int count, void (*pick
 
     if (!names || count < 1 || count > OG_LIST_MOST || !pick || !dialog_ready()) { return 0; }
     for (i = 0; i < count; i++) { df_copy(g.list[i],names[i],OG_LIST_NAME); }
-    g.list_count = count; g.prompt = OG_PROMPT_LIST; g_list_cb = pick; g.revision++;
+    g.list_count = count; g.list_top = 0; g.prompt = OG_PROMPT_LIST; g_list_cb = pick; g.revision++;
     return 1;
 }
 
@@ -1041,6 +1143,8 @@ static void prompt_accept(void)
     if (g.prompt == OG_PROMPT_NAME) {
         if (!g.input[0]) { return; }
         df_copy(og_character()->name, g.input, OG_NAME);
+    } else if (g.prompt == OG_PROMPT_SPELL_NAME && g.page == OG_VIEW_MAKER) {
+        og_maker_set_name(g.input);
     } else if (g.prompt == OG_PROMPT_SPELL_NAME) {
         i = og_spell_rows(g.book,rows,OG_OBJECTS);
         if (g.selected < i) { og_spell_rename(rows[g.selected],g.input); }
@@ -1097,12 +1201,17 @@ void og_possessions_frame(const OgIn *in)
     if (g.prompt) {
         if (g.prompt == OG_PROMPT_LIST) {
             /* The rows are 8 pixels from y 34; a click on one picks it, Escape none. */
+            int shown;
+
+            shown = g.list_count < OG_LIST_SHOWN ? g.list_count : OG_LIST_SHOWN;
             if (in->ch == 27) { prompt_reject(); }
-            else if (click && in->cx > 100 && in->cx < 220 && in->cy >= 34 && (in->cy-34)/8 < g.list_count) {
+            else if (in->key == OG_VK_DOWN || in->key == OG_VK_NEXT) { if (g.list_top+shown < g.list_count) { g.list_top += in->key == OG_VK_NEXT ? shown : 1; if (g.list_top+shown > g.list_count) { g.list_top = g.list_count-shown; } g.revision++; } }
+            else if (in->key == OG_VK_UP || in->key == OG_VK_PRIOR) { if (g.list_top) { g.list_top -= in->key == OG_VK_PRIOR ? shown : 1; if (g.list_top < 0) { g.list_top = 0; } g.revision++; } }
+            else if (click && in->cx > 100 && in->cx < 220 && in->cy >= 34 && (in->cy-34)/8 < shown) {
                 void (*cb)(int);
                 int row;
 
-                row = (in->cy-34)/8;
+                row = g.list_top+(in->cy-34)/8;
                 cb = g_list_cb; g_list_cb = 0;
                 g.prompt = 0; g.list_count = 0;
                 if (cb) { cb(row); }
@@ -1149,6 +1258,10 @@ void og_possessions_frame(const OgIn *in)
         else if (in->key == OG_VK_DOWN) { if (g.selected+1 < g.shop_count) { g.selected++; if (g.selected >= g.scroll[0]+14) { g.scroll[0]++; } } }
         else if (in->key == OG_VK_UP) { if (g.selected) { g.selected--; if (g.selected < g.scroll[0]) { g.scroll[0]--; } } }
         else if (click) { spellshop_click(in->cx,in->cy); }
+    } else if (g.page == OG_VIEW_MAKER) {
+        if (in->ch == 27) { if (og_maker()->kind) { og_maker_close_panel(); g.revision++; } else { og_possessions_close(); } }
+        else if (click) { maker_click(in->cx,in->cy); }
+        if (og_maker()->kind) { og_maker_recompute(); g.revision++; }
     } else if (g.page == OG_VIEW_POTION) {
         if (in->ch == 27) { og_possessions_close(); }
         else if (click) { potion_click(in->cx,in->cy); }

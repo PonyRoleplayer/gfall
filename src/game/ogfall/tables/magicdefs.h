@@ -9,6 +9,10 @@ int og_effect_school(int group);
 int og_effect_formula(int group);
 const df_i16 *og_effect_costs(int group, int sub);
 int og_target_factor(int target);
+/* The spell maker's tables: 0 the caster only, 1 touch and beyond, 2 any; the elemental level (0 for none); a subtype's name, 0 past the last. */
+int og_effect_target_class(int group);
+int og_effect_element_level(int group);
+const char *og_effect_sub_name(int group, int sub);
 int og_element_bit(int element);
 df_u32 og_resist_flag(int element);
 int og_cast_sound(int element);

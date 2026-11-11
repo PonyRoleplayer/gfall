@@ -9,6 +9,7 @@
 #include "game/ogfall/play/ailments.h"
 #include "game/ogfall/play/possessions.h"
 #include "game/ogfall/play/ground.h"
+#include "game/ogfall/play/spellmaker.h"
 #include "game/ogfall/play/activate.h"
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/hud.h"
@@ -503,6 +504,53 @@ void check_ogworld(const char *root)
                 check_expect(g_shop_id == offered[1] && og_possessions()->page == OG_VIEW_SPELLSHOP, "people: Buy did not hand over the chosen spell and keep the window");
                 click_at(260, 174);
                 check_expect(og_possessions()->page == OG_VIEW_NONE, "people: Exit did not close the spell shop");
+            }
+            /* The spell maker: an effect added from the list, its subtype and numbers by clicks, a name typed, bought into the book, Exit. */
+            {
+                static const int left[11] = {64, 104, 160, 64, 104, 160, 64, 104, 144, 184, 240};
+                static const int top[11] = {94, 94, 94, 114, 114, 114, 134, 134, 134, 134, 134};
+                df_u32 book2, rows2[OG_OBJECTS];
+                int row, k2, before2, up, value;
+
+                book2 = og_inventory_book();
+                before2 = book2 ? og_spell_rows(book2, rows2, OG_OBJECTS) : 0;
+                check_expect(og_possessions_spellmaker() && og_possessions()->page == OG_VIEW_MAKER, "maker: the spell maker did not open");
+                talk_shot("maker0");
+                click_at(255, 125);
+                check_expect(og_possessions()->prompt == OG_PROMPT_LIST && og_possessions()->list_count > 20, "maker: the add button did not list the effects");
+                row = -1;
+                for (k2 = 0; k2 < og_possessions()->list_count && k2 < OG_LIST_SHOWN; k2++) { if (!strcmp(og_possessions()->list[k2], "Damage")) { row = k2; } }
+                check_expect(row >= 0, "maker: Damage is not in the list of effects");
+                if (row >= 0) {
+                    click_at(150, 34 + row * 8 + 3);
+                    check_expect(og_possessions()->prompt == OG_PROMPT_LIST && og_possessions()->list_count == 3 && !strcmp(og_possessions()->list[0], "Health"), "maker: Damage did not ask for its subtype");
+                    click_at(150, 37);
+                    check_expect(og_maker()->kind != 0 && og_maker()->spell[1] == 0, "maker: the subtype did not open the numbers");
+                    talk_shot("maker1");
+                    up = -1;
+                    for (k2 = 0; k2 < 11 && up < 0; k2++) { if (og_maker_spin_allowed(k2)) { up = k2; } }
+                    check_expect(up >= 0, "maker: Damage has no number to set");
+                    if (up >= 0) {
+                        value = og_maker_value(up);
+                        click_at(left[up] + 12, top[up] + 2);
+                        check_expect(og_maker_value(up) == value + 1 || og_maker_value(up) == value, "maker: the up arrow moved the number the wrong way");
+                        click_at(left[up] + 12, top[up] + 12);
+                        check_expect(og_maker_value(up) >= 1, "maker: the down arrow took the number under 1");
+                    }
+                    click_at(292, 100);
+                    check_expect(og_maker()->kind == 0 && og_maker_price() > 0, "maker: the close button did not leave the numbers with a price");
+                    click_at(100, 187);
+                    check_expect(og_possessions()->prompt == OG_PROMPT_SPELL_NAME, "maker: the name box did not ask for a name");
+                    type_char('Z'); type_char('a'); type_char('p'); type_char(13);
+                    check_expect(!strcmp((const char *)og_maker()->spell + OG_MAKER_NAME_AT, "Zap"), "maker: the name typed was not kept");
+                    og_character()->gold = 100000;
+                    talk_shot("maker2");
+                    click_at(256, 155);
+                    check_expect(og_possessions()->notice[0] != 0 && og_spell_rows(book2, rows2, OG_OBJECTS) == before2 + 1, "maker: Buy did not add the spell to the book and say so");
+                    click_at(160, 100);
+                }
+                click_at(256, 187);
+                check_expect(og_possessions()->page == OG_VIEW_NONE, "maker: Exit did not close the spell maker");
             }
             /* A Fighters' trainer: a member sees the menu, the service asks the price, lists the skills and teaches one, three hours pass. */
             {

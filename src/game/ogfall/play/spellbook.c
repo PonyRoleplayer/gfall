@@ -4,7 +4,7 @@
 #include "engine/core/log.h"
 #include "game/ogfall/tables/itemdefs.h"
 
-static OgSpellDef g_spell[128];
+static OgSpellDef g_spell[256];
 static int g_count;
 /* How many of them came from SPELLS.STD (the rest are the game's own, a potion's). */
 static int g_standard;
@@ -41,7 +41,7 @@ int og_spell_register(const df_u8 *record, int id)
 {
     OgSpellDef *spell;
 
-    if (g_count >= 128 || og_spell_def(id)) { return 0; }
+    if (g_count >= 256 || og_spell_def(id)) { return 0; }
     spell = &g_spell[g_count++];
     parse_spell(record, spell);
     spell->id = id;
@@ -177,4 +177,20 @@ const char *og_spell_effect(int group, int sub)
 {
     (void)sub;
     return og_effect_name(group);
+}
+
+/* The player's own spells (spellmaker_buy) kept in the state and registered under OG_CUSTOM_SPELL_ID + slot; the registry is put to match a state. */
+void og_spells_sync_custom(const OgState *state)
+{
+    int i, k;
+
+    for (i = 0; i < g_count; ) {
+        if (g_spell[i].id >= OG_CUSTOM_SPELL_ID && g_spell[i].id < OG_CUSTOM_SPELL_ID + OG_CUSTOM_SPELLS) {
+            for (k = i; k + 1 < g_count; k++) { g_spell[k] = g_spell[k + 1]; }
+            g_count--;
+        } else { i++; }
+    }
+    for (k = 0; state && k < OG_CUSTOM_SPELLS; k++) {
+        if (state->custom_spell[k].used) { og_spell_register(state->custom_spell[k].record, OG_CUSTOM_SPELL_ID + k); }
+    }
 }
