@@ -11,6 +11,7 @@
 #include "check_ogpotion.h"
 #include "check_ogspellshop.h"
 #include "check_ogmagicitem.h"
+#include "check_ogquest.h"
 #include "check_ogentry.h"
 #include "check_ogtalkwin.h"
 #include "game/ogfall/play/standing.h"
@@ -399,6 +400,7 @@ void check_ogstate(const char *root)
     check_ogpotion();
     check_ogspellshop();
     check_ogmagicitem();
+    check_ogquest();
     check_ogentry();
     check_ogtalkwin();
     og_state_restore(&g_initial);

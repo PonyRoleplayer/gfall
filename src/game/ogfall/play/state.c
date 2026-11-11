@@ -3,6 +3,7 @@
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/magic.h"
 #include "game/ogfall/play/enchant.h"
+#include "game/ogfall/play/quest.h"
 #include "game/ogfall/tables/combatdefs.h"
 #include "engine/scene/clock.h"
 
@@ -115,6 +116,7 @@ void og_state_clear(void)
     g_state.next_low = 10000;
     g_state.region = g_state.location = -1;
     og_spells_sync_custom(&g_state);
+    og_quest_reset();
     og_character_clear();
 }
 
@@ -467,6 +469,8 @@ void og_state_pass_minutes(df_u32 minutes)
     g_state.minutes += minutes;
     og_magic_minutes(start,minutes);
     og_enchant_minutes();
+    /* quests_run_all for each passing minute, unless a sentence is being served. */
+    if (!og_law_is_serving()) { og_quest_run(); }
     for (i = 0; i < minutes; i++) {
         og_state_event(OG_EVENT_MINUTE, 0, 0, (int)(start + i + 1));
         /* time_pass: each 161280 minutes the standings drift one point toward nothing (reputation_decay). */
@@ -510,6 +514,8 @@ void og_state_frame(float seconds)
     g_state.frame_fraction = total - (float)ms;
     og_state_advance_ms(ms);
     og_enchant_frame();
+    /* quests_run_all, every frame of play (the state's frame runs in the world only: the inventory suspends them). */
+    og_quest_run();
 }
 
 static int character_valid(const OgState *state)

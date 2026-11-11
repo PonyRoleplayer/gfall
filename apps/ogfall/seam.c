@@ -16,6 +16,7 @@
 #include "game/ogfall/play/spellmaker.h"
 #include "game/ogfall/play/itemmaker.h"
 #include "game/ogfall/play/enchant.h"
+#include "game/ogfall/play/quest.h"
 #include "game/ogfall/tables/magicdefs.h"
 #include "game/ogfall/tables/itemdefs.h"
 #include "game/ogfall/tables/combatdefs.h"
@@ -820,6 +821,18 @@ static int ench_hurt_nearest(int amount)
     og_move_camera(&cam);
     return og_dungeon_hurt_nearest(&cam, 128.0f, amount);
 }
+
+/* The quests' words: a message of the quest's own QRC (TEXT.RSC's format), or a record of TEXT.RSC itself; shown in a message box. Macros and symbols are the later steps. */
+static int quest_text(const char *quest, int message, int in_text_rsc, char *out, int cap)
+{
+    char file[16];
+
+    if (in_text_rsc) { return textrsc_read(message, out, cap); }
+    log_format(file, sizeof(file), "%s.QRC", quest);
+    return textrsc_read_in(file, message, out, cap);
+}
+
+static void quest_say(const char *text) { og_possessions_message(text, 0); }
 
 static int offer_say(int text, int price, char *out, int cap)
 {
@@ -2329,6 +2342,7 @@ int seam_boot(void)
     og_set_save_capture(seam_capture_world);
     og_set_words(textrsc_read);
     og_set_status_intro(status_intro);
+    og_quest_set_text(quest_text); og_quest_set_say(quest_say);
     {
         static const OgEnchantWorld enchant_world = { ench_daylight, ench_temple, ench_category_near, ench_hurt_nearest };
 
