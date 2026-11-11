@@ -101,3 +101,10 @@ for now. Each line names where to look.
 - The Affiliations list uses a colon where the original has tab columns; the town's building name is not shown when a wall is clicked (`click_show_building_info`).
 - Coins behind the shop's things repaint the 320 x 200 screen every 0.08 s: unmeasured on the 233.
 - Shop coins, a cheaper repaint (do after measuring on the 233): the coins turn behind the items inside the one composed 320 x 200 buffer, so each 0.08 s frame recomposes the whole screen and re-publishes the surface. Instead recompose only the item cells (coin, then icon, then count) into the kept buffer and hand just those rectangles to `pic_update`, which already re-sends only the changed tiles.
+
+## Magic numbers and folders (user's request, 2026-11-11)
+
+- The quest system and much of OGFALL carry bare numbers: opcodes in `case 52:`, flags (`0x2000` talk passes, `0xA00` hidden, `128`/`0x8000` topic hidden, `512` item used), QRC message ids 1000..1009, rumour expiries (30 and 180 days), item group/index pairs, state and section indexes, `OG_QUEST_BLOB`. They mirror the decomp, which names almost nothing.
+- Plan, as its own mechanical commit with `make all` green before and after: names taken from the decomp documents (`OG_QOP_REPUTE_EXCEEDS`, `OG_QPERSON_PASS_TALK`, `OG_QRC_OFFER`), one header per domain beside its code (`quest_ops.h`, `quest_flags.h`, `item_groups.h`), constants for generated tables emitted by the same `tools/ogfall-*.py` scripts, no behaviour change.
+- Folders: `src/game/ogfall/play/` is crowded; split into `play/quest/`, `play/people/`, `play/magic/`, `play/items/` and so on, updating `tools/check-layers`, the Makefile and AGENTS.md's layout.
+- Do it after the quest machine is finished, not between its steps.
