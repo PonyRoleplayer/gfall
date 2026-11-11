@@ -1,4 +1,5 @@
 #include "game/ogfall/play/market.h"
+#include "game/ogfall/play/itemmaker.h"
 #include "game/ogfall/play/state.h"
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/play.h"
@@ -105,7 +106,7 @@ static int lines(void)
                 sum += og_trade_buy_line(&g_shop, item->value, stack ? item->count : item->condition, item->group, item->index, stack);
             }
         } else if (item->parent == g_shelves && !(item->flags & OG_ITEM_UNPAID)) {
-            sum += g_mode == OG_MARKET_SELL ? item->value : og_trade_repair_line(item->value, 0 /* no enchantments yet */);
+            sum += g_mode == OG_MARKET_SELL ? item->value : og_trade_repair_line(item->value, og_item_enchanted(item->id));
         }
     }
     return sum;

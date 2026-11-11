@@ -76,4 +76,11 @@ int og_itemmaker_value(df_u32 item);
 /* enchant_powers_text: "Powers unknown." or a line for each enchantment. */
 int og_itemmaker_text(df_u32 item, char *out, int cap);
 
+/* Whether an item holds enchantments: one made at the item maker or a guild's magic item. */
+int og_item_enchanted(df_u32 item);
+/* The enchantments of any enchanted item as lines (enchant_powers_text), for the item's second box (TEXT.RSC 1016). */
+int og_item_powers_text(df_u32 item, char *out, int cap);
+/* inv_refresh_magic_values: the value of each item made at the item maker is its powers' cost, worked again when the inventory opens. */
+void og_itemmaker_refresh_values(void);
+
 #endif

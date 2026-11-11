@@ -184,6 +184,17 @@ df_u32 og_magic_item_create(df_u32 container, int which)
     return id;
 }
 
+/* The k-th enchantment of an entry (a type, 15 and over a side effect, and a parameter, -1 for none): 0 past the last. */
+int og_magic_def_enchant(int i, int k, int *type, int *param)
+{
+    const df_u8 *d;
+
+    d = def(i);
+    if (!d || k < 0 || k > 9 || d[35 + k * 2] == 255) { return 0; }
+    *type = d[35 + k * 2]; *param = d[36 + k * 2] == 255 ? -1 : d[36 + k * 2];
+    return 1;
+}
+
 int og_magic_item_def(df_u32 item)
 {
     const OgObject *o;

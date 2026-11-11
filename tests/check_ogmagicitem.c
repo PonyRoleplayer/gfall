@@ -6,6 +6,7 @@
 #include "game/ogfall/play/state.h"
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/itemmaker.h"
+#include "game/ogfall/play/play.h"
 #include "game/ogfall/play/spellbook.h"
 #include "game/ogfall/tables/itemdefs.h"
 
@@ -97,7 +98,18 @@ static void itemmaker_checks(void)
     check_expect(og_itemmaker_value(sword) == 1700, "itemmaker: the enchanted value is not 800 + 900");
     og_itemmaker_text(sword, said, sizeof(said));
     check_expect(strstr(said, "Potent vs undead") && strstr(said, "Enhances skill Stealth") && strstr(said, "Item deteriorates all the time"), "itemmaker: the powers text does not name the enchantments");
+    check_expect(strstr(og_words(1016), "%mpw") != 0, "itemmaker: TEXT.RSC 1016 has no %mpw for the item's powers");
     check_expect(og_itemmaker_pick(sword) == OG_IM_ENCHANTED, "itemmaker: an enchanted item was taken again");
+    /* inv_refresh_magic_values: the value is the powers' cost, worked again; and the same lines for a guild's magic item. */
+    og_object_edit(sword)->value = 5;
+    og_itemmaker_refresh_values();
+    check_expect(og_object(sword)->value == 1700 && og_item_enchanted(sword) && !og_item_enchanted(dagger), "itemmaker: the inventory did not work an enchanted item's value again");
+    {
+        df_u32 magic;
+
+        magic = og_magic_item_create(pack, -1);
+        check_expect(magic == 0 || (og_item_enchanted(magic) && og_item_powers_text(magic, said, sizeof(said)) > 0), "itemmaker: a guild's magic item has no powers text");
+    }
     saved = *og_state();
     check_expect(og_state_restore(&saved) && og_itemmaker_row(sword) && og_itemmaker_value(sword) == 1700, "itemmaker: the enchantments were not kept through the state");
     /* Capacity and gold refused. */

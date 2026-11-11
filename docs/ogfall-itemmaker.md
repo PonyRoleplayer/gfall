@@ -54,3 +54,11 @@ Whether made items keep their enchantment table through the save as a side table
 Test: `check_ogworld.c`, by clicks (item taken, a power with its parameter added and removed, Feather Weight added, ENCHANT, Exit), screenshots `build/ogfall-itemmaker0..2.ppm`.
 
 Not built: the list's up-out-of-a-container button (the pack has no bags here), the item's value written into the item when the inventory opens, the powers text in the item info box, the soul traps' own screens, what the enchantments do, and the broken-item cases (7.20 belongs there).
+
+## Stage 3 built (2026-11-10)
+
+- **Item value** (`og_itemmaker_refresh_values`, called when the inventory opens: `inv_refresh_magic_values`): a made item's value is the cost of its powers (section 4.11), not times ten.
+- **The info box** (`item_info` in `possessions.c`): an enchanted item (one made here, or a guild's MAGIC.DEF item) gets a second box after the first is let go, TEXT.RSC 1016 "Item powers: %mpw" with the lines of `enchant_powers_text` (`og_item_powers_text`; a MAGIC.DEF entry's enchantments through `og_magic_def_enchant`). A made item is identified; guild items are shown as identified too (the identify service is not built).
+- **Repair** costs three quarters of the value for an enchanted item (`og_trade_repair_line`'s flag, now `og_item_enchanted`).
+- **Soul gems**: the maker lists the souls in the player's traps and consumes the soul and its trap (stage 2); the Soul Bound powers are the rules of stage 1. A broken soul-bound item (`item_break`, 7.20) belongs to item wear and is not built.
+- **Not built**: artifacts' own texts (TEXT.RSC 8700 + item, flag 0x800), the identify service, and what the enchantments do (section 5 of the decomp's document; stage 4).

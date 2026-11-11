@@ -99,6 +99,7 @@ int og_possessions_open(int page, df_u32 remote)
     g.painting = 0;
     if (page == OG_VIEW_SPELLS) { g.scroll[0] = 0; }
     if (page == OG_VIEW_INVENTORY) {
+        og_itemmaker_refresh_values();
         g.remote = remote;
         g.scroll[0] = g.scroll[1] = 0;
         g.tab = 0;
@@ -1016,11 +1017,31 @@ static void trade_click(int x, int y)
     }
 }
 
+static char g_info_next[600];
+
 static void item_info(const OgObject *item)
 {
     g.painting = item->group == 13 ? og_painting_info(item->id,g.notice,sizeof(g.notice)) : 0;
     if (!g.painting) { og_item_info(item->id,g.notice,sizeof(g.notice)); }
     g.notice_page = 0;
+    /* inven.c 971: an enchanted item has a second box, TEXT.RSC 1016 "Item powers: %mpw", once the first is let go. */
+    g_info_next[0] = 0;
+    if (og_item_enchanted(item->id)) {
+        static char powers[400];
+        const char *raw, *at;
+        int n, k;
+
+        og_item_powers_text(item->id, powers, sizeof(powers));
+        raw = og_words(1016);
+        n = 0;
+        for (at = raw; *at && n < (int)sizeof(g_info_next) - 1; ) {
+            if (at[0] == '%' && at[1] == 'm' && at[2] == 'p' && at[3] == 'w') {
+                for (k = 0; powers[k] && n < (int)sizeof(g_info_next) - 1; k++) { g_info_next[n++] = powers[k]; }
+                at += 4;
+            } else { g_info_next[n++] = *at++; }
+        }
+        g_info_next[n] = 0;
+    }
 }
 
 int og_possessions_use(df_u32 id)
@@ -1461,6 +1482,7 @@ void og_possessions_frame(const OgIn *in)
         else if (in->ch == 13 || in->ch == ' ' || click) {
             if (g.notice_page+1 < pages) { g.notice_page++; } else { g.notice[0] = 0; }
         }
+        if (!g.notice[0] && g_info_next[0]) { df_copy(g.notice, g_info_next, sizeof(g.notice)); g_info_next[0] = 0; g.notice_page = 0; g.revision++; }
         if (!g.notice[0] && g.page == OG_VIEW_COURT && g.court_stage == CS_TEXT) { court_next(); }
     } else if (g.skill_group >= 0) {
         if (in->ch == 27 || click) { g.skill_group = -1; }

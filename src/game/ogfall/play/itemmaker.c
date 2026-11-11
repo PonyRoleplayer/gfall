@@ -539,13 +539,10 @@ int og_itemmaker_value(df_u32 id)
     return value;
 }
 
-int og_itemmaker_text(df_u32 id, char *out, int cap)
+static int enchant_lines(const OgItemEnchant *row, char *out, int cap)
 {
-    const OgItemEnchant *row;
     int k, n;
 
-    row = og_itemmaker_row(id);
-    if (!row || !row->identified) { return log_format(out, cap, "Powers unknown."); }
     n = 0;
     for (k = 0; k < 10; k++) {
         int type, param;
@@ -564,4 +561,46 @@ int og_itemmaker_text(df_u32 id, char *out, int cap)
         n += log_format(out + n, cap - n, what[0] && name[0] && name[strlen_of(name) - 1] != ' ' ? "%s %s\n" : "%s%s\n", name, what);
     }
     return n;
+}
+
+int og_itemmaker_text(df_u32 id, char *out, int cap)
+{
+    const OgItemEnchant *row;
+
+    row = og_itemmaker_row(id);
+    if (!row || !row->identified) { return log_format(out, cap, "Powers unknown."); }
+    return enchant_lines(row, out, cap);
+}
+
+int og_item_enchanted(df_u32 id)
+{
+    return og_itemmaker_row(id) != 0 || og_magic_item_def(id) >= 0;
+}
+
+int og_item_powers_text(df_u32 id, char *out, int cap)
+{
+    OgItemEnchant row;
+    int def, k, type, param;
+
+    if (og_itemmaker_row(id)) { return og_itemmaker_text(id, out, cap); }
+    def = og_magic_item_def(id);
+    if (def < 0) { out[0] = 0; return 0; }
+    mem_zero(&row, sizeof(row));
+    for (k = 0; k < 10; k++) { row.type[k] = -1; row.param[k] = -1; }
+    for (k = 0; og_magic_def_enchant(def, k, &type, &param); k++) { row.type[k] = type; row.param[k] = param; }
+    return enchant_lines(&row, out, cap);
+}
+
+void og_itemmaker_refresh_values(void)
+{
+    int k;
+
+    for (k = 0; k < OG_ENCHANTED_ITEMS; k++) {
+        const OgItemEnchant *row;
+        OgObject *item;
+
+        row = &og_state()->enchant[k];
+        item = row->item ? og_object_edit(row->item) : 0;
+        if (item) { item->value = og_itemmaker_value(row->item); }
+    }
 }

@@ -25,6 +25,8 @@ int og_magic_def_value(int def);
 
 /* item_make_magic(-1) or (which): an item of a random non-artifact entry (or the which-th) made into container; 0 when there is none or no room. */
 df_u32 og_magic_item_create(df_u32 container, int which);
+/* The k-th enchantment of an entry: its type (15 and over a side effect) and parameter (-1 for none). 0 past the last. */
+int og_magic_def_enchant(int def, int k, int *type, int *param);
 /* The entry a magic item is of, -1 for another item. */
 int og_magic_item_def(df_u32 item);
 
