@@ -14,6 +14,7 @@
 #include "game/ogfall/play/msg.h"
 #include "game/ogfall/play/ground.h"
 #include "game/ogfall/play/spellmaker.h"
+#include "game/ogfall/play/itemmaker.h"
 #include "game/ogfall/tables/magicdefs.h"
 #include "game/ogfall/tables/itemdefs.h"
 #include "game/ogfall/tables/combatdefs.h"
@@ -1743,6 +1744,9 @@ static void hall_run(void)
         break;
     case OG_SVC_SPELL_MAKER:
         og_possessions_spellmaker();
+        break;
+    case OG_SVC_ITEM_MAKER:
+        og_possessions_itemmaker();
         break;
     case OG_SVC_SPELLS:
         {
@@ -4901,6 +4905,49 @@ static void paint_maker(void)
     }
 }
 
+/* itemmaker_draw (func_000562A1): ITEM00I0.IMG; the current tab's strip of ITEM01I0.IMG at (175, 9 a tab + 6); the gold, the item's name, the gold cost and the points used of its limit; the item in its box; the left list's four rows; the powers' rows from x 10 and the side effects' from x 108, 7 pixels each, colour 146 and 193 for what a soul gave. */
+static void paint_item_maker(void)
+{
+    const OgPossessions *view;
+    const OgItemMaker *maker;
+    const OgObject *item;
+    ImgPicture window;
+    const df_u8 *tabs;
+    df_u32 size, ids[OG_OBJECTS];
+    OgImRow rows[40];
+    char line[48];
+    int i, k, side, n, count;
+
+    view = og_possessions();
+    maker = og_itemmaker();
+    cover_screen(0,0,0);
+    if (img_load("ITEM00I0.IMG",&window)) { blit_ix(window.x,window.y,window.pixels,window.width,window.height,0); }
+    tabs = vfs_read("ITEM01I0.IMG",&size);
+    if (tabs && size >= 4u*729u && view->im_tab >= 0 && view->im_tab < 4) { blit_stride(175,view->im_tab*9+6,tabs+view->im_tab*729,81,81,9); }
+    log_format(line,sizeof(line),"%d",og_character()->gold); text_at(70,15,line);
+    item = maker->item ? og_object(maker->item) : 0;
+    if (item) {
+        text_at(51,3,item->name);
+        log_format(line,sizeof(line),"%d",og_itemmaker_gold()); text_at(63,27,line);
+        log_format(line,sizeof(line),"%d/%d",og_itemmaker_points_used(),og_itemmaker_capacity(item->id)); text_at(96,39,line);
+        paint_item_icon(item,203,69,46,34);
+    }
+    count = og_possessions_im_list(ids,OG_OBJECTS);
+    for (i = 0; i < 4 && view->im_scroll+i < count; i++) {
+        static const int rowtop[4] = {50, 87, 124, 161};
+
+        item = og_object(ids[view->im_scroll+i]);
+        if (item) { paint_item_icon(item,265,rowtop[i]+1,46,33); }
+    }
+    for (side = 0; side < 2; side++) {
+        n = og_possessions_im_rows(side,rows,40);
+        for (k = 0; k < n; k++) {
+            if (!rows[k].text[0]) { continue; }
+            smallfont_draw(&g_font,g_buf,320,200,side ? 108 : 10,60+k*7,rows[k].soul ? 193 : 146,156,rows[k].text);
+        }
+    }
+}
+
 static void paint_spellshop(void)
 {
     const OgPossessions *view;
@@ -4976,6 +5023,7 @@ static int present_possessions(void)
     else if (view->page == OG_VIEW_POTION) { paint_potion_maker(); }
     else if (view->page == OG_VIEW_SPELLSHOP) { paint_spellshop(); }
     else if (view->page == OG_VIEW_MAKER) { paint_maker(); }
+    else if (view->page == OG_VIEW_ITEMMAKER) { paint_item_maker(); }
     else if (view->page == OG_VIEW_COURT) {
         /* cort01i0.img fills the screen once a court sits; the offer to surrender is over the world. */
         ImgPicture court;
@@ -5041,7 +5089,7 @@ static int present_possessions(void)
     }
     for (i = 0; i < g_panel_file_count; i++) { texture_forget(g_panel_files[i]); }
     mem_heap_use(was); mem_heap_delete(heap);
-    publish_surface(1,(view->page == OG_VIEW_SPELLS && !view->underlay) || view->page == OG_VIEW_MESSAGE || view->page == OG_VIEW_BANK || view->page == OG_VIEW_TALK || view->page == OG_VIEW_POTION || view->page == OG_VIEW_SPELLSHOP || view->page == OG_VIEW_MAKER || (view->page == OG_VIEW_COURT && !view->court.open));
+    publish_surface(1,(view->page == OG_VIEW_SPELLS && !view->underlay) || view->page == OG_VIEW_MESSAGE || view->page == OG_VIEW_BANK || view->page == OG_VIEW_TALK || view->page == OG_VIEW_POTION || view->page == OG_VIEW_SPELLSHOP || view->page == OG_VIEW_MAKER || view->page == OG_VIEW_ITEMMAKER || (view->page == OG_VIEW_COURT && !view->court.open));
     return 1;
 }
 

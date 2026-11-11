@@ -10,6 +10,7 @@
 #include "game/ogfall/play/possessions.h"
 #include "game/ogfall/play/ground.h"
 #include "game/ogfall/play/spellmaker.h"
+#include "game/ogfall/play/itemmaker.h"
 #include "game/ogfall/play/activate.h"
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/hud.h"
@@ -551,6 +552,50 @@ void check_ogworld(const char *root)
                 }
                 click_at(256, 187);
                 check_expect(og_possessions()->page == OG_VIEW_NONE, "maker: Exit did not close the spell maker");
+            }
+            /* The item maker: an item taken from the list, a power with its parameter added by clicks, a side effect, ENCHANT, and the item gone from the list. */
+            {
+                df_u32 gem2, pack2, ids2[OG_OBJECTS];
+                int idx, listed, before_gold, row2;
+
+                pack2 = og_state()->inventory_id;
+                idx = 0;
+                gem2 = og_item_create(pack2, 3, 1, 9);
+                (void)idx;
+                og_character()->gold = 1000000;
+                check_expect(og_possessions_itemmaker() && og_possessions()->page == OG_VIEW_ITEMMAKER, "itemmaker: the item maker did not open");
+                talk_shot("itemmaker0");
+                listed = og_possessions_im_list(ids2, OG_OBJECTS);
+                check_expect(listed > 0, "itemmaker: the list shows nothing to enchant");
+                row2 = -1;
+                {
+                    int k3;
+
+                    for (k3 = 0; k3 < listed && k3 < 4; k3++) { if (ids2[k3] == gem2) { row2 = k3; } }
+                }
+                if (row2 >= 0) {
+                    click_at(280, 52 + row2 * 37);
+                    check_expect(og_itemmaker()->item == gem2, "itemmaker: a click on the list did not take the item");
+                    click_at(40, 187);
+                    check_expect(og_possessions()->prompt == OG_PROMPT_LIST && og_possessions()->list_count > 3, "itemmaker: ADD POWERS did not list the powers");
+                    click_at(150, 34 + 4 * 8 + 3);
+                    check_expect(og_possessions()->prompt == OG_PROMPT_LIST || og_itemmaker()->pending < 0, "itemmaker: a power chosen did not ask for its parameter");
+                    if (og_possessions()->prompt == OG_PROMPT_LIST) { click_at(150, 37); }
+                    check_expect(og_itemmaker()->kind[0] == 0 && og_itemmaker()->pending < 0, "itemmaker: the first slot is not a finished power");
+                    talk_shot("itemmaker1");
+                    click_at(25, 61);
+                    check_expect(og_itemmaker()->kind[0] == -1, "itemmaker: a click on a power's row did not take it out");
+                    click_at(40, 187);
+                    click_at(150, 34 + 11 * 8 + 3);
+                    before_gold = og_character()->gold;
+                    click_at(225, 122);
+                    check_expect(og_possessions()->notice[0] != 0, "itemmaker: ENCHANT said nothing");
+                    click_at(160, 100);
+                    check_expect(og_itemmaker()->item == 0 && og_itemmaker_row(gem2) != 0 && og_character()->gold < before_gold, "itemmaker: ENCHANT did not enchant the item and charge for it");
+                    talk_shot("itemmaker2");
+                }
+                click_at(225, 187);
+                check_expect(og_possessions()->page == OG_VIEW_NONE, "itemmaker: Exit did not close the item maker");
             }
             /* A Fighters' trainer: a member sees the menu, the service asks the price, lists the skills and teaches one, three hours pass. */
             {

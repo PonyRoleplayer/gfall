@@ -11,6 +11,8 @@
 #include "game/ogfall/play/magic.h"
 #include "game/ogfall/play/guild.h"
 #include "game/ogfall/play/spellmaker.h"
+#include "game/ogfall/play/itemmaker.h"
+#include "game/ogfall/play/magicitem.h"
 #include "game/ogfall/tables/magicdefs.h"
 #include "game/ogfall/play/standing.h"
 #include "game/ogfall/play/ailments.h"
@@ -44,7 +46,7 @@ static int game_mode(int page)
 {
     if (page == OG_VIEW_SHEET) { return OG_GAME_SHEET; }
     if (page == OG_VIEW_INVENTORY) { return OG_GAME_INVENTORY; }
-    if (page == OG_VIEW_BOOK || page == OG_VIEW_MESSAGE || page == OG_VIEW_BANK || page == OG_VIEW_COURT || page == OG_VIEW_TALK || page == OG_VIEW_SERVICE || page == OG_VIEW_POTION || page == OG_VIEW_SPELLSHOP || page == OG_VIEW_MAKER) { return OG_GAME_READING; }
+    if (page == OG_VIEW_BOOK || page == OG_VIEW_MESSAGE || page == OG_VIEW_BANK || page == OG_VIEW_COURT || page == OG_VIEW_TALK || page == OG_VIEW_SERVICE || page == OG_VIEW_POTION || page == OG_VIEW_SPELLSHOP || page == OG_VIEW_MAKER || page == OG_VIEW_ITEMMAKER) { return OG_GAME_READING; }
     return OG_GAME_SPELLBOOK;
 }
 
@@ -75,7 +77,7 @@ void og_possessions_close(void)
 
 int og_possessions_open(int page, df_u32 remote)
 {
-    if (!og_state()->ready || page < OG_VIEW_INVENTORY || page > OG_VIEW_MAKER) { return 0; }
+    if (!og_state()->ready || page < OG_VIEW_INVENTORY || page > OG_VIEW_ITEMMAKER) { return 0; }
     if (page == OG_VIEW_SPELLS) {
         df_u32 ids[OG_OBJECTS];
         g.book = og_inventory_book();
@@ -535,6 +537,220 @@ int og_possessions_spellmaker(void)
     return 1;
 }
 
+/* ---- The item maker (itemmakr.c): its buttons are itemmaker_buttons, read from FALL.EXE; the rules are itemmaker.c. ---- */
+static int g_im_kinds[16], g_im_side, g_im_params[64], g_im_kind;
+
+/* Whether an object is the player's: its parents lead to the player. */
+static int owned_by_player(const OgObject *item)
+{
+    int depth;
+
+    for (depth = 0; item && depth < OG_OBJECTS; depth++) {
+        if (item->parent == og_state()->entity_id) { return 1; }
+        item = og_object(item->parent);
+    }
+    return 0;
+}
+
+/* The player's captured souls (OG_RECORD_SOUL in a soul trap), by creature, at most 63 (itemmaker_soul_list_cb). */
+static int im_souls(int *ids, int cap)
+{
+    int i, n;
+    const OgObject *soul;
+
+    n = 0;
+    for (i = 0; i < OG_OBJECTS && n < cap; i++) {
+        soul = &og_state()->object[i];
+        if (soul->id && soul->type == OG_RECORD_SOUL && owned_by_player(soul)) { ids[n++] = soul->index; }
+    }
+    return n;
+}
+
+/* itemmaker_consume_soul: the soul of that creature goes, and the trap with it unless it is an artifact. */
+static void im_consume(int creature)
+{
+    int i;
+    const OgObject *soul;
+
+    for (i = 0; i < OG_OBJECTS; i++) {
+        soul = &og_state()->object[i];
+        if (soul->id && soul->type == OG_RECORD_SOUL && soul->index == creature && owned_by_player(soul)) {
+            df_u32 gem;
+            int def;
+
+            gem = soul->parent;
+            og_object_delete(soul->id);
+            def = og_magic_item_def(gem);
+            if (def < 0 || !og_magic_def_artifact(def)) { og_object_delete(gem); }
+            return;
+        }
+    }
+}
+
+/* inv_list_left_item while the maker is open: what has no enchantment and some points, but not the item in the maker, arrows, soul traps and carts or ships. */
+int og_possessions_im_list(df_u32 *ids, int cap)
+{
+    int i, n;
+    const OgObject *item;
+
+    n = 0;
+    for (i = 0; i < OG_OBJECTS; i++) {
+        item = &og_state()->object[i];
+        if (!item->id || item->type != OG_RECORD_ITEM || item->parent != og_state()->inventory_id || og_item_tab(item) != g.im_tab) { continue; }
+        if (item->id == og_itemmaker()->item || item->group == 23 || (item->group == 27 && item->index == 1)) { continue; }
+        if (item->group == 3 && item->index == 17) { continue; }
+        if (!og_itemmaker_capacity(item->id) || og_itemmaker_row(item->id) || og_magic_item_def(item->id) >= 0) { continue; }
+        if (n < cap) { ids[n] = item->id; }
+        n++;
+    }
+    return n < cap ? n : cap;
+}
+
+int og_possessions_im_rows(int side, OgImRow *rows, int cap)
+{
+    const OgItemMaker *maker;
+    int s, n, kind;
+
+    maker = og_itemmaker();
+    n = 0;
+    for (s = 0; s < 10; s++) {
+        if (maker->kind[s] != side) { continue; }
+        kind = maker->type[s];
+        if (n < cap) { df_copy(rows[n].text, og_itemmaker_name(side, kind), sizeof(rows[n].text)); rows[n].slot = s; rows[n].soul = maker->soul[s]; n++; }
+        if (maker->param[s] >= 0 && n < cap) {
+            log_format(rows[n].text, sizeof(rows[n].text), "  %s", og_itemmaker_param_name(side, kind, maker->param[s]));
+            rows[n].slot = s; rows[n].soul = maker->soul[s]; n++;
+        }
+        if (n < cap) { rows[n].text[0] = 0; rows[n].slot = -1; rows[n].soul = 0; n++; }
+    }
+    return n;
+}
+
+static void im_say(int text)
+{
+    const char *words;
+
+    words = og_words(text);
+    if (words && words[0]) { df_copy(g.notice, words, sizeof(g.notice)); g.notice_page = 0; }
+}
+
+/* The parameter chosen from the popup: the maker takes it (a soul's powers may not fit), or Escape takes the half-made slot out again. */
+static void im_param_picked(int row)
+{
+    int made;
+
+    g.revision++;
+    if (row < 0) { og_itemmaker_cancel(); return; }
+    made = og_itemmaker_choose(g_im_params[row]);
+    if (made < 0) { df_copy(g.notice, "No room in item...", sizeof(g.notice)); g.notice_page = 0; }
+}
+
+static void im_open_params(void)
+{
+    static char names[OG_LIST_MOST][OG_LIST_NAME];
+    int n, i;
+
+    n = og_itemmaker_params(g_im_params, OG_LIST_MOST);
+    if (!n) {
+        if (g_im_side && g_im_kind == 0) { df_copy(g.notice, "You have no captured spirits.", sizeof(g.notice)); g.notice_page = 0; }
+        og_itemmaker_cancel();
+        return;
+    }
+    for (i = 0; i < n; i++) { df_copy(names[i], og_itemmaker_param_name(g_im_side, g_im_kind, g_im_params[i]), OG_LIST_NAME); }
+    og_possessions_list((const char (*)[OG_LIST_NAME])names, n, im_param_picked);
+}
+
+/* A power or a side effect chosen from the list: the first free slot, and its parameters asked for. */
+static void im_kind_picked(int row)
+{
+    int slot;
+
+    g.revision++;
+    if (row < 0 || row >= 16) { return; }
+    g_im_kind = g_im_kinds[row];
+    slot = og_itemmaker_begin(g_im_side, g_im_kind);
+    if (slot < 0) { im_say(-slot); return; }
+    if (og_itemmaker()->pending >= 0) { im_open_params(); }
+}
+
+static void im_add(int side)
+{
+    static char names[OG_LIST_MOST][OG_LIST_NAME];
+    int n, i;
+
+    if (!og_itemmaker()->item) { im_say(OG_IM_NO_ITEM); return; }
+    if (!og_itemmaker_free_slots()) { im_say(side ? OG_IM_NO_SIDE_SLOT : OG_IM_NO_POWER_SLOT); return; }
+    g_im_side = side;
+    n = og_itemmaker_kinds(side, g_im_kinds, 16);
+    for (i = 0; i < n; i++) { df_copy(names[i], og_itemmaker_name(side, g_im_kinds[i]), OG_LIST_NAME); }
+    if (n) { og_possessions_list((const char (*)[OG_LIST_NAME])names, n, im_kind_picked); }
+}
+
+static void im_pick(int row)
+{
+    df_u32 ids[OG_OBJECTS];
+    int n, at, said, k;
+
+    n = og_possessions_im_list(ids, OG_OBJECTS);
+    at = g.im_scroll + row;
+    if (at >= n) { return; }
+    said = og_itemmaker_pick(ids[at]);
+    if (said) { im_say(said); return; }
+    /* The item comes off: nothing it wore is undone, for it holds no enchantment. */
+    for (k = 0; k < 1; k++) { if (og_item_equipped(ids[at]) >= 0) { og_inventory_unequip(ids[at]); } }
+}
+
+static void itemmaker_click(int x, int y)
+{
+    static const int tabs[4][4] = {{175,6,255,14},{175,15,255,23},{175,24,255,32},{175,33,255,41}};
+    static const int rowtop[4] = {50, 87, 124, 161};
+    OgImRow rows[40];
+    df_u32 ids[OG_OBJECTS];
+    int k, side, r, n, count;
+
+    g.revision++;
+    og_itemmaker_set_souls(im_souls);
+    if (inside(x,y,3,1,163,9)) {
+        if (!og_itemmaker()->item) { im_say(OG_IM_NO_ITEM); return; }
+        g.prompt = OG_PROMPT_SPELL_NAME; df_copy(g.input, og_object(og_itemmaker()->item)->name, sizeof(g.input)); g.input[23] = 0;
+        return;
+    }
+    for (side = 0; side < 2; side++) {
+        if (inside(x,y,side ? 106 : 8,58,side ? 182 : 84,177)) {
+            r = y >= 60 ? (y - 60) / 7 : -1;
+            n = og_possessions_im_rows(side, rows, 40);
+            if (r >= 0 && r < n && rows[r].slot >= 0) { og_itemmaker_remove(rows[r].slot); }
+            return;
+        }
+        if (inside(x,y,side ? 106 : 9,183,side ? 182 : 84,191)) { im_add(side); return; }
+    }
+    if (inside(x,y,201,68,250,104)) { og_itemmaker_reset(); return; }
+    if (inside(x,y,204,115,246,129)) {
+        int said;
+
+        said = og_itemmaker_enchant(im_consume);
+        if (said) { im_say(said); if (said == OG_IM_DONE) { og_sound(207); } }
+        return;
+    }
+    if (inside(x,y,206,176,244,197)) { og_possessions_close(); return; }
+    for (k = 0; k < 4; k++) {
+        if (inside(x,y,264,rowtop[k],311,rowtop[k]+34)) { im_pick(k); return; }
+        if (inside(x,y,tabs[k][0],tabs[k][1],tabs[k][2],tabs[k][3])) { g.im_tab = k; g.im_scroll = 0; return; }
+    }
+    count = og_possessions_im_list(ids, OG_OBJECTS);
+    if (inside(x,y,253,49,261,122)) { if (g.im_scroll) { g.im_scroll--; } return; }
+    if (inside(x,y,253,123,261,196)) { if (count - 4 > g.im_scroll) { g.im_scroll++; } return; }
+}
+
+int og_possessions_itemmaker(void)
+{
+    if (g.page || !og_possessions_open(OG_VIEW_ITEMMAKER, 0)) { return 0; }
+    g.im_tab = g.im_scroll = 0;
+    og_itemmaker_reset();
+    og_itemmaker_set_souls(im_souls);
+    return 1;
+}
+
 static void potion_say(const char *text)
 {
     df_copy(g.notice, text, sizeof(g.notice)); g.notice_page = 0; g.revision++;
@@ -637,7 +853,7 @@ int og_possessions_cast(void)
 /* A dialog over the world: the message page already up and between questions is used again (an answer's follow-up), else one is opened. */
 static int dialog_ready(void)
 {
-    if ((g.page == OG_VIEW_MESSAGE || g.page == OG_VIEW_POTION || g.page == OG_VIEW_SPELLSHOP || g.page == OG_VIEW_MAKER) && !g.prompt) { return 1; }
+    if ((g.page == OG_VIEW_MESSAGE || g.page == OG_VIEW_POTION || g.page == OG_VIEW_SPELLSHOP || g.page == OG_VIEW_MAKER || g.page == OG_VIEW_ITEMMAKER) && !g.prompt) { return 1; }
     return !g.page && og_possessions_open(OG_VIEW_MESSAGE,0);
 }
 
@@ -1143,6 +1359,12 @@ static void prompt_accept(void)
     if (g.prompt == OG_PROMPT_NAME) {
         if (!g.input[0]) { return; }
         df_copy(og_character()->name, g.input, OG_NAME);
+    } else if (g.prompt == OG_PROMPT_SPELL_NAME && g.page == OG_VIEW_ITEMMAKER) {
+        /* itemmaker_enter_name: the item's name is edited in place, 23 characters. */
+        OgObject *named;
+
+        named = og_object_edit(og_itemmaker()->item);
+        if (named) { df_copy(named->name, g.input, 24); }
     } else if (g.prompt == OG_PROMPT_SPELL_NAME && g.page == OG_VIEW_MAKER) {
         og_maker_set_name(g.input);
     } else if (g.prompt == OG_PROMPT_SPELL_NAME) {
@@ -1258,6 +1480,9 @@ void og_possessions_frame(const OgIn *in)
         else if (in->key == OG_VK_DOWN) { if (g.selected+1 < g.shop_count) { g.selected++; if (g.selected >= g.scroll[0]+14) { g.scroll[0]++; } } }
         else if (in->key == OG_VK_UP) { if (g.selected) { g.selected--; if (g.selected < g.scroll[0]) { g.scroll[0]--; } } }
         else if (click) { spellshop_click(in->cx,in->cy); }
+    } else if (g.page == OG_VIEW_ITEMMAKER) {
+        if (in->ch == 27) { og_possessions_close(); }
+        else if (click) { itemmaker_click(in->cx,in->cy); }
     } else if (g.page == OG_VIEW_MAKER) {
         if (in->ch == 27) { if (og_maker()->kind) { og_maker_close_panel(); g.revision++; } else { og_possessions_close(); } }
         else if (click) { maker_click(in->cx,in->cy); }

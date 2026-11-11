@@ -9,7 +9,7 @@
 #include "game/ogfall/play/law.h"
 #include "game/ogfall/play/talkwin.h"
 
-enum { OG_VIEW_NONE, OG_VIEW_INVENTORY, OG_VIEW_SHEET, OG_VIEW_SPELLS, OG_VIEW_BOOK, OG_VIEW_MESSAGE, OG_VIEW_BANK, OG_VIEW_COURT, OG_VIEW_TALK, OG_VIEW_SERVICE, OG_VIEW_POTION, OG_VIEW_SPELLSHOP, OG_VIEW_MAKER };
+enum { OG_VIEW_NONE, OG_VIEW_INVENTORY, OG_VIEW_SHEET, OG_VIEW_SPELLS, OG_VIEW_BOOK, OG_VIEW_MESSAGE, OG_VIEW_BANK, OG_VIEW_COURT, OG_VIEW_TALK, OG_VIEW_SERVICE, OG_VIEW_POTION, OG_VIEW_SPELLSHOP, OG_VIEW_MAKER, OG_VIEW_ITEMMAKER };
 enum { OG_ITEM_INFO, OG_ITEM_EQUIP, OG_ITEM_REMOVE, OG_ITEM_USE };
 enum { OG_PROMPT_NONE, OG_PROMPT_GOLD, OG_PROMPT_NAME, OG_PROMPT_PAGE, OG_PROMPT_SPELL_NAME, OG_PROMPT_ANSWER, OG_PROMPT_OFFER, OG_PROMPT_AMOUNT, OG_PROMPT_ASK, OG_PROMPT_NUMBER, OG_PROMPT_LIST };
 #define OG_LIST_MOST 64
@@ -37,6 +37,8 @@ typedef struct OgPossessions {
     /* A list to choose from (list_popup_open_strings): its rows. */
     char list[OG_LIST_MOST][OG_LIST_NAME];
     int list_count, list_top;
+    /* The item maker: the inventory tab its list shows and how far it is scrolled. */
+    int im_tab, im_scroll;
     /* The spell shop's list: the spell definitions offered. */
     int shop[96], shop_count;
     char offer[200];
@@ -56,6 +58,12 @@ int og_possessions_open(int page, df_u32 remote);
 int og_possessions_bank(int region);
 /* The spell maker (SPELLMAKER window, INFO01I0.IMG) over the world: the spell begins empty (spellmaker.h); 0 when refused. */
 int og_possessions_spellmaker(void);
+/* The item maker (ITEM00I0.IMG, itemmaker.h) over the world; 0 when refused. */
+int og_possessions_itemmaker(void);
+/* The enchantable items of the tab the item maker shows, and the rows of one column of its slots (power 0, side effect 1): their words and the slot a click on them takes out (-1 for a gap). */
+int og_possessions_im_list(df_u32 *ids, int cap);
+typedef struct OgImRow { char text[48]; int slot, soul; } OgImRow;
+int og_possessions_im_rows(int side, OgImRow *rows, int cap);
 /*
  * The arrest (damage_apply, qkey.c 535): the offer to surrender to the guards (record 15). Yes is the
  * court (crime_guards_or_court with surrendered), No leaves the fight to go on. 0 when refused.
