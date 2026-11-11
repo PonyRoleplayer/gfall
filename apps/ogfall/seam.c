@@ -75,6 +75,7 @@
 #include "game/dagger/formats/sndfile.h"
 #include "game/dagger/formats/textrsc.h"
 #include "game/dagger/formats/texture.h"
+#include "engine/core/prof.h"
 #include "game/dagger/places/world.h"
 #include "game/dagger/places/travel.h"
 #include "game/dagger/places/wild.h"
@@ -4163,9 +4164,40 @@ static void paint_item_icon(const OgObject *item, int x, int y, int width, int h
     }
 }
 
+/* The coins that turn behind what is for sale (DFU's coinsAnimTextureName: TEXTURE.434 record 6, 0.08 s a frame): the frame showing, and the one the screen was last painted with. */
+static int g_coin_now = -1, g_coin_shown = -1;
+static int coin_frame_now(void)
+{
+    int n, mhz;
+
+    if (!possession_texture(434,6)) { return -1; }
+    n = texture_frame_count(434,6);
+    n = n > 16 ? 16 : n;
+    mhz = prof_mhz();
+    return n > 1 && mhz > 0 ? (int)((prof_now() / ((df_u32)mhz * 80000u)) % (df_u32)n) : 0;
+}
+
+static void paint_coins(int x, int y)
+{
+    const Image *frame;
+    int row, col, color, left, top;
+
+    if (g_coin_now < 0) { return; }
+    frame = texture_load_frame(434,6,g_coin_now);
+    if (!frame || frame->width > 50 || frame->height > 37) { return; }
+    left = x+(50-frame->width)/2; top = y+(37-frame->height)/2;
+    for (row = 0; row < frame->height; row++) {
+        for (col = 0; col < frame->width; col++) {
+            color = frame->index[row*frame->width+col];
+            if (color && color != 255) { put_px(left+col,top+row,color); }
+        }
+    }
+}
+
 static void paint_item_cell(const OgObject *item, int x, int y)
 {
     char line[32];
+    if (og_possessions()->trade == OG_MARKET_BUY) { paint_coins(x,y); }
     paint_item_icon(item,x+2,y+2,46,33);
     if (og_item_equipped(item->id) >= 0) { outline(x,y,50,37,145); }
     if (item->count > 1 || item->group == 28) {
@@ -4783,8 +4815,9 @@ static int present_possessions(void)
     int i;
     view = og_possessions();
     if (!view->page) { g_possession_page = 0; return 0; }
-    if (g_possession_page == view->page && g_possession_revision == view->revision && og_pic(OG_PIC_SCREEN)) { return 1; }
-    g_possession_page = view->page; g_possession_revision = view->revision;
+    g_coin_now = view->page == OG_VIEW_INVENTORY && view->trade == OG_MARKET_BUY ? coin_frame_now() : -1;
+    if (g_possession_page == view->page && g_possession_revision == view->revision && g_coin_shown == g_coin_now && og_pic(OG_PIC_SCREEN)) { return 1; }
+    g_possession_page = view->page; g_possession_revision = view->revision; g_coin_shown = g_coin_now;
     if (!g_buf) { g_buf = (df_u8 *)mem_keep(64000); }
     if (!g_buf) { return 1; }
     heap = mem_heap_new();
