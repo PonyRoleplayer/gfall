@@ -273,6 +273,24 @@ static void street_checks(void)
     check_expect(!people_is_citizen(victim), "street: a swing did not kill the person in front");
     check_expect(og_law()->crime == OG_CRIME_MURDER, "street: a killing seen was not noted as murder");
     check_expect(og_dungeon_guards() > 0 && og_guards_present(), "street: the watch did not come to a murder");
+    /* A guard struck down leaves a pile of its gear to loot. */
+    {
+        int g, tries;
+        Entity *guard;
+
+        guard = 0;
+        for (g = 0; g < og_dungeon_count() && !guard; g++) { if (og_dungeon_kind(g) == 146) { guard = og_dungeon_entity(g); } }
+        check_expect(guard != 0, "street: no guard of the watch to strike");
+        if (guard) {
+            for (tries = 0; tries < 40 && !guard->dead; tries++) {
+                camera_set(&swing, guard->x, guard->y + entity_height(guard) * 0.5f, guard->z - 40, 0, 0);
+                strike.damage = 999; strike.hit = 1;
+                og_dungeon_strike(sc, &swing, &strike);
+            }
+            check_expect(guard->dead, "street: a guard could not be struck down");
+            check_expect(og_inventory_rows(og_ground_container(guard->x,guard->y,guard->z),-1,0,0) > 0, "street: a dead guard left no pile of gear");
+        }
+    }
     /* Pursued by the watch, into a building, out, and into another: the creatures of the street must not outlive the street. */
     {
         Scene *entry_scene;

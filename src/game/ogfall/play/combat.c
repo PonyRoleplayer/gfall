@@ -99,10 +99,11 @@ void og_damage_player(int damage, int part)
     OgCharacter *who;
     int amount;
     who = og_character();
-    if (og_god_mode() || damage <= 0 || who->health <= 0) { return; }
+    if (damage <= 0 || who->health <= 0) { return; }
     damage = og_magic_absorb(-1,damage); if (!damage) { return; }
-    /* damage_apply: while guards are about the first blow is the offer to surrender, held back until it is answered. */
+    /* damage_apply: while guards are about the first blow is the offer to surrender, held back until it is answered. It is the law's, not the body's: god mode does not skip it. */
     if (og_law_blow(og_state()->region) == OG_BLOW_ASK && og_possessions_surrender()) { return; }
+    if (og_god_mode()) { return; }
     who->health -= damage;
     /* Brought down among the guards: the court (or the end), not simply death. */
     if (who->health < 1 && og_guards_present() && og_possessions_arrested()) { return; }

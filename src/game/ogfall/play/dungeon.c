@@ -142,6 +142,13 @@ df_u32 og_dungeon_container(int i)
     return og_loot_container(e->key.place,e->key.thing,e->x,e->y,e->z,og_dungeon_loot_table(i));
 }
 
+/* A creature with no key of its own (the watch from a street) has no container; its gear is made into one given at its death. */
+void og_dungeon_gear_to(int index, df_u32 container)
+{
+    if (index < 0 || index >= g_count || !container) { return; }
+    og_foe_equipment(g_foe[index].kind,container,g_foe[index].equipped,&g_foe[index].fighter);
+}
+
 void og_dungeon_close(void)
 {
     int i;

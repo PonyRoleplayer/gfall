@@ -1979,6 +1979,8 @@ static int street_enlist(int index)
     foe = og_dungeon_index(e);
     if (foe < 0) {
         people_hold(index);
+        /* A guard of the watch in pursuit is not talked to (the street's talk refuses the hostile). */
+        people_set_hostile(e, 1);
         foe = og_dungeon_add(e, STREET_GUARD_KIND, 0, creature_rate(STREET_GUARD_ARCHIVE));
         if (foe < 0) { return 0; }
         og_dungeon_loaded(foe);
@@ -2099,7 +2101,13 @@ static void street_died(int kind, Entity *e)
     if (kind == STREET_GUARD_KIND && people_index(e) >= 0) {
         people_lay_corpse(e);
         /* The body's things lie on the ground there, a pile the use key opens (the street has no corpse usables). */
-        og_ground_pile(e->x,e->y,e->z,og_dungeon_loot_table(og_dungeon_index(e)));
+        {
+            df_u32 pile;
+
+            /* The watch has no loot table (class creatures carry their gear): the pile is made empty and the guard's gear made into it. */
+            pile = og_ground_pile(e->x,e->y,e->z,og_dungeon_loot_table(og_dungeon_index(e)));
+            og_dungeon_gear_to(og_dungeon_index(e),pile);
+        }
     }
 }
 

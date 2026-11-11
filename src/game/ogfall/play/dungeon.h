@@ -24,6 +24,7 @@ void og_dungeon_strike(const Scene *scene, const Camera *cam, const OgStrike *st
 int og_dungeon_health(int index);
 int og_dungeon_loot_table(int index);
 df_u32 og_dungeon_container(int index);
+void og_dungeon_gear_to(int index, df_u32 container);
 const OgArrow *og_dungeon_arrow(int index);
 void og_dungeon_shift(float dx, float dz);
 /* Sprite slots, loaded by the adapter with the place. */
