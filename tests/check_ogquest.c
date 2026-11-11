@@ -76,11 +76,12 @@ static int w_find_number(int number, int *region, int *index)
     return 0;
 }
 static int w_pick_building(int region, int index, int type, unsigned seed, int *block, int *record) { (void)region; (void)index; (void)type; *block = 3 + (int)(seed % 2u) * 0; *record = 7; return 1; }
-static int g_site_mode = -1, g_site_value;
+static int g_site_mode = -1, g_site_value, g_site_none;
 static const int a51_none[5] = {-1, -2, -2, -2, -2};
 static int w_pick_site(int region, int index, int mode, int value, unsigned seed, int *block, int *record, int *faction)
 {
     (void)region; (void)index; (void)seed;
+    if (g_site_none) { return 0; }
     g_site_mode = mode; g_site_value = value;
     *block = 5; *record = 9; *faction = mode == 2 ? value : 4242;
     return 1;
@@ -551,6 +552,9 @@ void check_ogquest(void)
             check_expect(pq && pq->person[1].homed && pq->person[1].faction == 4242, "quest: the linked person (-5) did not take the first one's faction and a site");
             check_expect(pq && pq->person[2].homed && pq->person[2].home_index != 10, "quest: the person asked for in another town (low byte 1) was homed in the town the player is in");
             check_expect(pq && og_quest_people_in(17, 10, 5, 9, (OgQuestHere[4]){{0}}, 4) == 2, "quest: the town's building 5, 9 does not hold the two persons homed there");
+            g_site_none = 1;
+            check_expect(og_quest_start_bytes("TEST0015", f3, 0x140 + 87 + 8, 0) == -1, "quest: a quest whose person has no site anywhere was started");
+            g_site_none = 0;
             for (k = 0; k < og_quest_count(); k++) { og_quest_end(k); }
             og_quest_set_world(0);
         }

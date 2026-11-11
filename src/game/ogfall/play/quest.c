@@ -390,7 +390,7 @@ static int bind_persons(int slot)
         for (i = 0; i < q->qbn.n_person; i++) {
             const OgQbnPerson *pe;
             OgQuestPerson *p;
-            int kind, faction, mode, value, link, tries, region, index, block, record, bfaction, found;
+            int kind, faction, mode, value, link, tries, region = 0, index = 0, block = 0, record = 0, bfaction, found;
             unsigned seed;
 
             if (done_flag[i]) { continue; }
@@ -431,6 +431,7 @@ static int bind_persons(int slot)
 
                 /* A named individual (a faction of type 4, no 0x100) is the person already standing in a town of their own: found by their faction as the town loads. */
                 if (!(pe->flags & 0x100) && fd && fd->type == 4) { p->faction = faction; p->bound = 1; done_flag[i] = 1; progress++; }
+                else if (pe->flags & 0x100) { mode = 1; }   /* any building: a person asked for anywhere takes any site (kind -1 accepts any marker) */
                 else { mode = 2; value = faction; }
             } else if (kind == -6) { mode = 1; }
             else if (kind >= 0 && kind != 40) { mode = 0; value = kind; }
@@ -443,6 +444,8 @@ static int bind_persons(int slot)
                         if (!found && mode != 1 && tries == 49) { mode = 1; tries = 0; }
                     }
                 }
+                /* A person who should stand in a building and has no site anywhere fails the quest (the original does, by accident of its code, 7.6: its fallback to any building never ran; ours runs it above): the offer is not made and nothing is started. */
+                if (mode >= 0 && g_world && g_world->pick_site && !found) { return 0; }
                 p->bound = 1;
                 p->faction = kind == -1 ? faction : (found && bfaction ? bfaction : faction);
                 if (found) { p->homed = 1; p->home_region = region; p->home_index = index; p->home_block = block; p->home_record = record; }
