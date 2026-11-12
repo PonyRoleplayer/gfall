@@ -1,4 +1,4 @@
-# OGFALL: from Privateer's Hold to the full game
+# GFALL: from Privateer's Hold to the full game
 
 Status: 2026-11-09, playable Hold and first wider-world slice; full-game work remains.
 Character creation, classic controls/HUD, Options, readable preferences, key
@@ -8,36 +8,36 @@ creature pursuit/attack animations, injuries, death recovery and persistent
 lootable corpses. Rest/loiter and hourly recovery are implemented. Six-slot
 save/load uses schema 7 and upgrades schemas 2–6; DOS saves are out of scope.
 Dungeon doors now support ordinary lockpicking/bashing with persistent locks and
-failed-attempt limits. Teleport arrivals reach OGFALL's body and retain its view
+failed-attempt limits. Teleport arrivals reach GFALL's body and retain its view
 angles. Original sensing, gradual turning and wall navigation, rest encounters,
 six-hour skill advancement and level allocation, swimming/breath/drowning,
 wall-contact climbing and minute fatigue are implemented. Dungeon action chains
 now dispatch their original triggers and ordinary motion, lock, damage, sound,
 message and riddle effects. Source mappings and limits are recorded in
-[ogfall.md](ogfall.md#dungeon-gameplay-systems--2026-11-09).
+[game.md](game.md#dungeon-gameplay-systems--2026-11-09).
 Casting, creature spells, elemental missiles/bursts and casting hands/sounds,
 active effects and cures, ordinary poison/disease courses, and magical Open/Lock
-are now implemented and host-tested. See [magic and ailments](ogfall.md#magic-and-ailments--2026-11-09)
+are now implemented and host-tested. See [magic and ailments](game.md#magic-and-ailments--2026-11-09)
 for the source audit, rendering adaptations and remaining integrations.
 The Hold exit, streamed outdoors, named/numeric `goto`, building entrances and
 return doors, indoor/town/travel maps, original travel time/cost options,
 world save/load, cross-place Recall and persistent outdoor drops are connected.
-See [the world implementation](ogfall.md#opening-the-world--2026-11-09) for
+See [the world implementation](game.md#opening-the-world--2026-11-09) for
 source references, engine budgets and the remaining adaptations.
 The user has exercised saving/loading and reported improved audio on the target.
 The latest fixes are host-tested; the full target checklist remains open.
-Implementation details and verification are in [ogfall.md](ogfall.md).
+Implementation details and verification are in [game.md](game.md).
 
 ## What is still missing
 
-This is OGFALL's checklist. Features already present in GFALL do not count as
+This is GFALL's checklist. Features already present in GFALL do not count as
 implemented here. Follow the original rules in the byte-matched decompilation
 when completing each system.
 
 ### Inventory completed; remaining system integrations
 
 The current inventory interactions and ordinary-item descriptions are complete
-and host-tested; see [the source audit and tests](ogfall.md#inventory-completion-2026-11-08).
+and host-tested; see [the source audit and tests](game.md#inventory-completion-2026-11-08).
 The earlier quantity-splitting entry was an incorrect assumption: original
 inventory actions move whole items/stacks. Taking arrows merges into one carried
 stack capped at 199, discarding overflow as `inv_merge_arrows` does. Gold keeps
@@ -102,9 +102,9 @@ opens the item editor. Selection pays the live cost and readies/casts the spell.
 - **Settings and presentation:** Detail is deliberately stored without changing
   rendering yet. Joystick control is unsupported. Complete sound/music/event
   coverage as the remaining systems arrive.
-- **Persistence:** extend OGFALL's own save schema alongside each new system.
-  Existing saves live in `ogfall/saves`; preferences and bindings live in
-  `ogfall/settings.cfg`. DOS-save compatibility is not required.
+- **Persistence:** extend GFALL's own save schema alongside each new system.
+  Existing saves live in `gfall/saves`; preferences and bindings live in
+  `gfall/settings.cfg`. DOS-save compatibility is not required.
 
 ### Target playtest still needed
 
@@ -112,9 +112,9 @@ Target reports drove corrections to UI sound IDs, hand-specific equipment,
 pile activation, humanoid combat variants, bat flight and positional sounds.
 The latest audio was reported as improved; continue verifying the complete
 new-game-to-death/save/load loop on the target. See the dated follow-up sections
-in [the implementation notes](ogfall.md).
+in [the implementation notes](game.md).
 
-Use `build/gfall.iso` and run OGFALL.EXE. The latest `make all`, host suite,
+Use `build/gfall.iso` and run GFALL.EXE. The latest `make all`, host suite,
 fresh-process restore and Win98 binary/stack-probe checks pass, but composed
 host images do not establish Glide appearance, input behavior or target speed.
 
@@ -176,7 +176,7 @@ casting and effects before extending the playable world beyond the Hold.
 - Split the large app adapter and character-creation controller by responsibility
   while preserving their source-derived behavior and existing interaction tests.
 - Reduce remaining duplicate selections between the borrowed place builder and
-  OGFALL rules; sprite variants now have one source, the selected walking archive.
+  GFALL rules; sprite variants now have one source, the selected walking archive.
 - Measure RAM/VRAM, loading and crowded combat on the target before increasing
   object limits, place size or eager combat-art loading.
 - Extend the save schema and fresh-process tests with each new persistent system.
@@ -187,7 +187,7 @@ Reproduce Daggerfall 1.07.213's game behavior on the existing Win98/Glide engine
 using `/home/shade/git/daggerfall-decomp` as the source for original rules,
 control flow, UI geometry, data layout and event order. Its byte-matched output
 is a much stronger reference than a second implementation. This does not make
-OGFALL a byte-matched executable or make the translated C pointer casts portable.
+GFALL a byte-matched executable or make the translated C pointer casts portable.
 
 Use `src/hand` and `src/lifted` together, resolving names through `config/names.csv`
 and `config/symbols.txt`. When a lifted expression, sign, pointer or unit is
@@ -197,7 +197,7 @@ shared readers are useful infrastructure; their gameplay interpretations do not
 settle disagreements with FALL.EXE.
 
 Keep the engine responsible for Glide, platform input, generic collision,
-geometry, sound output and resource budgets. OGFALL owns the player, time-driven
+geometry, sound output and resource budgets. GFALL owns the player, time-driven
 rules, objects, screens, interactions and quests. Adapt XnGine calls at that
 boundary; do not import XnGine's renderer or DOS platform implementation.
 
@@ -232,7 +232,7 @@ working art and fix its placement and input geometry.
    it globally. Acceptance: the intended scheme feels right on the target,
    the bar meets its intended screen edge, and hovering/clicking the HUD never
    moves the player. Verify both schemes, fullscreen/HUD toggles and focus loss.
-4. **Forward-right goes left.** Confirmed in `og_move_frame`: regions 0 and 2
+4. **Forward-right goes left.** Confirmed in `move_frame`: regions 0 and 2
    take the same negative-turn branch. Separate the right-hand branch and
    compare every steering handler with `intrface.c` and the named hand units.
    Acceptance: all nine regions, key combinations and strafes give the right
@@ -276,7 +276,7 @@ No calendar estimate is assigned before the first few target-accepted slices.
 Source entry points: `main.c`, `init.c`, `object.c`, `objcode.c`, `objlib.c`,
 `keys.c`, `support.c`, `options.c`, `char.c`; `include/records.h` and `docs/state.md`.
 
-- Expand the current small `OgCharacter` into the state original gameplay needs:
+- Expand the current small `CharacterState` into the state original gameplay needs:
   base/current attributes, skill values and uses, class restrictions/specials,
   equipment, vitals, identity, reputations, affiliations, effects and conditions.
 - Introduce stable object identities and ownership/container relationships.
@@ -291,7 +291,7 @@ Source entry points: `main.c`, `init.c`, `object.c`, `objcode.c`, `objlib.c`,
   effects and history, custom restrictions/costs, real starting inventory and
   spell contents. Do not lose unimplemented fields at the boundary.
 - Restore the full original key-action set and saved controls, including F5/F6,
-  instead of permanently borrowing unrelated engine actions for OGFALL keys.
+  instead of permanently borrowing unrelated engine actions for GFALL keys.
   Request a generic engine input addition only if the current API cannot carry it.
 
 Acceptance: two independently created characters retain their complete state;
@@ -311,7 +311,7 @@ Source entry points: `inven.c` and companion units, `equip.c`, `char.c`, `sheet.
   needed by these screens. Shared list/message-box primitives come from milestone 0.
 - Make title and Options Save/Load functional. Persist IDs, ownership, player,
   place changes, random/time state and movers; restore references after loading.
-  Use OGFALL's own versioned saves under `ogfall/saves`, with explicit rejection
+  Use GFALL's own versioned saves under `gfall/saves`, with explicit rejection
   of unsupported versions. DOS Daggerfall save compatibility is out of scope.
 - Add each later system to save round trips when introduced, not at the end.
 
@@ -330,7 +330,7 @@ ammunition, swept/visible arrows, original to-hit/damage/material/armor rules,
 weapon and armor wear, creature ASCR attack events, hurt/blood, basic pursuit,
 player damage/death recovery and persistent, lootable corpses. Armed creatures
 carry the original equipment tiers. A fresh-process title Load test preserves
-a real Hold kill and its visible corpse. See docs/ogfall.md, Weapons and dungeon
+a real Hold kill and its visible corpse. See docs/game.md, Weapons and dungeon
 combat, for source functions, timing adaptations and explicit boundaries.
 Target pointer/sprite/sound/performance acceptance remains pending.
 
@@ -370,7 +370,7 @@ same-place Recall. Creature spell lists, costs and cast poses are connected.
 Timed effects, missiles, spent creature magicka and the Recall anchor survive
 save/load. The ordinary 17 diseases and 12 poisons use extracted original data,
 minute/day ticks, onset, drain, recovery and cures. Inventory drugs use their
-original poison types. See [source details and limits](ogfall.md#magic-and-ailments--2026-11-09).
+original poison types. See [source details and limits](game.md#magic-and-ailments--2026-11-09).
 
 Deferred to milestone 7, after people and guild services: spell making/buying,
 enchantments/magical items, artifacts and potions/recipes. Do not build these
@@ -507,14 +507,14 @@ Source entry points include `potions.c`, `itemmakr.c`, `spells.c`, `pickbook.c`,
   books, histories, affiliations, remaining menus and full saved configuration.
 - Add the opening/book/emperor sequences, videos/animation, dialogue/audio and
   ending presentation through format readers and engine frame/audio output.
-- Complete OGFALL save coverage for every implemented system, including failure
+- Complete GFALL save coverage for every implemented system, including failure
   recovery and explicit rejection of unsupported versions. Preserve named schema
   fields; no DOS save-layout or import/export contract is required.
 - Audit every reachable original gameplay entry against the feature inventory.
   Classify dead code and unsupported hardware drivers separately from missing
   gameplay. Add absent features discovered by that audit to named slices.
 
-Acceptance: crafting and ownership loops work across travel and OGFALL saves;
+Acceptance: crafting and ownership loops work across travel and GFALL saves;
 no promised menu remains a stub. Deliberate gameplay deviations are documented
 with their source references.
 
@@ -545,18 +545,18 @@ native tests; cross-build and inspect the final PE; compare composed screens;
 then target-test the behavior before marking it target-accepted.
 
 Keep an evidence note linking source functions/addresses, a saved state or seed,
-input sequence, expected result and actual OGFALL result. Original-game scenarios
+input sequence, expected result and actual GFALL result. Original-game scenarios
 can use the decomp's `tools/fallplay.py`, `tools/fallemu.py` and
 `tools/scenarios/newgame.txt`; they run in that checkout without editing it.
 Compare fixed-step/deterministic rule results rather than assuming both engines
 consume wall-clock frames or random numbers identically.
 
-Maintain `src/game/ogfall/{formats,tables,places,play}`. OGFALL never includes
-`game/dagger` or another game's play code. `apps/ogfall/seam.c` remains the
+Maintain `src/game/gfall/{formats,tables,places,play}`. GFALL never includes
+`game/dagger` or another game's play code. `apps/gfall/seam.c` remains the
 explicit shared-data adapter; split it into focused app adapters when justified
 instead of making it a second gameplay layer. Do not duplicate an existing file
 reader merely to remove this seam. Propose shared-format extraction separately
-if it becomes necessary. New original-derived data belongs in OGFALL tables,
+if it becomes necessary. New original-derived data belongs in GFALL tables,
 with source addresses and typed schemas where the record system is used.
 
 Use existing engine facilities first. If a capability is truly missing (for

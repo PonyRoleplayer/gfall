@@ -151,10 +151,10 @@ A door opened, a lock picked or a creature killed stays so when its place is lef
 
 In a stream, `stream.c` makes both calls itself for each block: `keep_restore` when its fill is done, `keep_save` before it is dropped (`docs/streaming.md`, Dungeons). The table therefore lacks what changed in the blocks still loaded, until the game calls `stream_keep_now` before writing a save. A creature that walked from its home block into another is restored with its home block. In a stream, it may stand where the next block is not loaded yet: it is drawn there, over nothing, until that block comes. This is an edge case, accepted.
 
-OGFALL consumes pending teleport arrivals into its own body before the next
+GFALL consumes pending teleport arrivals into its own body before the next
 movement/combat frame, rather than letting the viewer camera consume them.
 Its source-derived rule retains the player's yaw and pitch; the shared builder's
-target-facing value remains available to the viewers. OGFALL registers its body
+target-facing value remains available to the viewers. GFALL registers its body
 with `interact_set_body`, so touch volumes use its actual crouched height.
 
 A kept entity the game made (`ENT_KEPT`, `docs/entities.md`, Kept) has its whole self in its row: `made`, `residence`, `flags`, `owner` and its chunk `cx`, `cz`, so the stream can give it back when its chunk fills.
@@ -181,7 +181,7 @@ during a touch-trigger callback; a hand activation leaves it false.
 `mover_progress(m)` returns the normalized travel fraction.
 `mover_restore_motion(m, fraction, direction)` restores a partial motion without
 playing sounds or starting a chain: direction is -1 back, 0 stopped, +1 forward.
-OGFALL uses these generic operations for its own trigger interpreter and saves.
+GFALL uses these generic operations for its own trigger interpreter and saves.
 
 hostcheck: `check_teleport` walks into a pad and is sent once, lands on the far pad and stays, steps off and on and is sent back, and uses a pad by hand only when it has a reach; Daggerfall's castle has its portal door and its other teleport, both to a marker in the castle at a body's eye. Also: the cast takes a door in front of the eye at its distance, not one out of reach or beside the view; a passage painted on a wall wins over the wall; a wall in front hides a door; a passage reaches the handler and nothing without one; a locked door stays and says so, and opens with locks off; a door is half open half way, turns a quarter about its hinge, leaves its doorway, and its sweep holds the turn; a chain starts together and a once mover stays. The hold: 58 doors and 2 levers, one locked, one way out of a door's size used from in front, a door that swings and shuts, a lever whose chain moves and refuses to start again while it moves. The Ashwing Farmstead: a building's door leads in; its inside loads with 6 doors and a way out by the street's door, facing in, with its own song; turned round on landing either side, the eye meets the door it came through. Privateer's Hold's outside has a way down, and the dungeon lies under it.
 

@@ -1,10 +1,10 @@
-# OGFALL: people and law
+# GFALL: people and law
 
-Milestone 6 of [ogfall-roadmap.md](ogfall-roadmap.md), planned 2026-11-10. Classic
+Milestone 6 of [game-roadmap.md](game-roadmap.md), planned 2026-11-10. Classic
 behaviour first, from the byte-matched decompilation at
 `/home/shade/git/daggerfall-decomp`; improvements go on top of it later and are
 listed in one place. Cite decomp functions in comments, never paste lifted code.
-OGFALL's game folder does not include dagger headers: `apps/ogfall/seam.c`
+GFALL's game folder does not include dagger headers: `apps/gfall/seam.c`
 adapts data into plain structs.
 
 ## Where the rules are
@@ -24,14 +24,14 @@ file and line references. Read them before the C:
 
 What the notes say is not in the tree (extern tables such as the full crime
 fine table, `talk_knows_mods`, the greeting text ids) must be read out of
-FALL.EXE with `tools/ogfall-data.py`, which already checks the executable's
+FALL.EXE with `tools/gfall-data.py`, which already checks the executable's
 SHA-1 against the decomp and reads tables at the addresses the decomp names.
 
 ## Slices
 
 Each slice lands alone: its pure rules host-tested against the notes' worked
 numbers, its screens driven by scripted clicks, its state in the save schema,
-and a short audit section in `ogfall.md`.
+and a short audit section in `game.md`.
 
 1. **Standing.** (Built 2026-11-10, host-tested.) The faction records (id,
    type, parent, allies, enemies, reputation, power, social and guild group,
@@ -42,7 +42,7 @@ and a short audit section in `ogfall.md`.
    for trade, their first user.
 2. **Trade.** (Built 2026-11-10: prices, shelves, the shop session and the buying screen over a shelf; selling and repair wait for talk, and building names for their own step.) The price chain (`trade_region_price`, `trade_base_price`,
    `trade_adjust_price`), shelves and stock, buying, selling, the offer and
-   counter-offer dialogue, repair, identification, on OGFALL's inventory screen.
+   counter-offer dialogue, repair, identification, on GFALL's inventory screen.
 3. **Bank.** (Built 2026-11-10: accounts, letters, loans, sales and the screen; buying a house or a ship and the overdue effects wait for the wider world.) Regional accounts, deposits, withdrawals, loans, repayment and
    default, letters of credit, houses and ships, carrying gold.
 4. **Lodging.** (Built 2026-11-10: rooms, meals, where rest is allowed; the screens wait for talk, the watch for law.) Tavern rooms and their expiry, food and drink, and where rest
@@ -53,7 +53,7 @@ and a short audit section in `ogfall.md`.
    directions, rumours and the logbook copy.
 7. **Steal.** (Built 2026-11-10: the pocket, the trade screen's Steal button and the shelf's alarm roll as rules; the pocket and the shelf question wait for the people and the merchant panel.) Pickpocket, shop steal, container theft and the alarm roll, with
    slice 5's consequences.
-8. **People.** (Built 2026-11-10: the names of people and signs over doors, a street person or one in a building met by the hud's mode, the town's buildings carrying their sign seeds, the shopkeeper's flag from the block, and the guild halls' and temples' menu with the guild memberships behind it (slice 9); training, cures, blessings, healing, the innkeeper, the knights' armour and opening hours are built; the potion and soul-gem sellers, the potion maker, the spell shop, the magic items' shop, teleporting and the Daedra's offer are built, and the spell maker (`docs/ogfall.md`, The spell maker); the item maker, the Daedra's quest and allies, temple quests and the quest people remain.) Standing NPC roles, schedules and portraits, on top of the
+8. **People.** (Built 2026-11-10: the names of people and signs over doors, a street person or one in a building met by the hud's mode, the town's buildings carrying their sign seeds, the shopkeeper's flag from the block, and the guild halls' and temples' menu with the guild memberships behind it (slice 9); training, cures, blessings, healing, the innkeeper, the knights' armour and opening hours are built; the potion and soul-gem sellers, the potion maker, the spell shop, the magic items' shop, teleporting and the Daedra's offer are built, and the spell maker (`docs/game.md`, The spell maker); the item maker, the Daedra's quest and allies, temple quests and the quest people remain.) Standing NPC roles, schedules and portraits, on top of the
    existing pedestrian pool, without reinterpreting it before slices 1 to 7 are
    in.
 
@@ -66,10 +66,10 @@ talk needs standing and the quest hooks left by milestone 8.
 
 - Where the faction table comes from. GFALL reads `FACTION.TXT` from ARENA2
   (`formats/factionfile.c`). The decomp parses the same file (`faction_parse_*`),
-  so OGFALL can take the seam's already-parsed records, or its own parse of
+  so GFALL can take the seam's already-parsed records, or its own parse of
   the file. The seam route is cheaper; a parse of our own removes a dagger
   dependency. Either way the in-game structure follows the decomp's record.
-- Whether OGFALL's tables move to MAIN.DAT records (the engine's `recfile`) as
+- Whether GFALL's tables move to MAIN.DAT records (the engine's `recfile`) as
   they are extracted, so later changes are data mods. Not needed for slice 1.
 
 ## Acceptance

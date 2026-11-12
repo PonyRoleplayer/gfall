@@ -8,7 +8,8 @@ MAIN.DAT, OBJ loader or external art at runtime.
 
 ## Build and run
 
-These targets are optional; the normal `make` / `all` is unchanged:
+The normal `make` / `make all` also builds and validates `build/PONY97.EXE`
+and packages `build/pony97.iso`. To build just the pony viewer:
 
 - `make pony97-check` builds `build/PONY97.EXE` and runs the existing PE
   validator: Windows 4.0 GUI, KERNEL32/USER32 imports only, runtime DLL

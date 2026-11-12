@@ -6,7 +6,7 @@ A town's guards are not this: they come from the people pool (`people_spawn_guar
 
 ## The pool
 
-`SPAWN_MAX` (`ENT_POOL`, 64) entities, static, at fixed addresses, so a game's `Body.self` can point at one. They stand in the scene's frame, as its own do. Nothing is allocated. The capacity leaves room for OGFALL's eight encounters, eight blood/splash effects, eight spell missiles/bursts, a Light candle and four nearby outdoor dropped piles; the engine does not assign those roles.
+`SPAWN_MAX` (`ENT_POOL`, 64) entities, static, at fixed addresses, so a game's `Body.self` can point at one. They stand in the scene's frame, as its own do. Nothing is allocated. The capacity leaves room for GFALL's eight encounters, eight blood/splash effects, eight spell missiles/bursts, a Light candle and four nearby outdoor dropped piles; the engine does not assign those roles.
 
 - `spawn_add(scene, &e, leash)` copies `e` into a free entry and returns its `SpawnId`; 0 when the pool is full. Its `live` flag is as `e` has it: set it once its pictures are read, as for any entity.
 - `spawn_get(id)` is the entity, the game's to move and pose each frame; 0 once it is gone.
