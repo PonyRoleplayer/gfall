@@ -699,6 +699,17 @@ static int encounters_valid(const OgEncounterState *state)
     return 1;
 }
 
+/* A kept creature's row (docs/entities.md, Kept): flagged kept, a rest or quest key, and an owner that names a kind of the tables with its own picture archive. */
+static int kept_row_valid(const Keep *row)
+{
+    int kind, archive, expect;
+
+    kind = (int)(row->owner & 255u); archive = (int)((row->owner >> 8) & 4095u);
+    expect = kind < 43 ? 255+kind : kind == 146 ? 399 : 432+og_foe_texture_kind(kind);
+    return (row->flags & ENT_KEPT) && (row->key.thing & 0x80000000u) && row->made == 2 && encounter_kind_valid(kind) &&
+           (archive == expect || (kind >= 128 && kind < 146 && archive == expect+1));
+}
+
 static int saved_world_valid(const OgState *state)
 {
     const Keep *row;
@@ -734,6 +745,7 @@ static int saved_world_valid(const OgState *state)
         if ((!row->key.place && !row->key.thing) ||
             (row->kind != KEEP_MOVER && row->kind != KEEP_ENTITY) || row->at_end > 1 ||
             row->dead > 1 || row->moving > 1 || row->placed > 1 || row->hold > 1 ||
+            row->made > 2 || row->residence > ENT_HOME_ROAM || (row->made && !kept_row_valid(row)) ||
             row->act >= ENTITY_POSES || !position_valid(row->x) || !position_valid(row->y) ||
             !position_valid(row->z) || !(row->yaw >= 0 && row->yaw < DF_TAU)) { return 0; }
         for (j = 0; j < i; j++) {

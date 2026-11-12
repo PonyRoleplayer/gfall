@@ -162,6 +162,13 @@ void og_dungeon_close(void)
 }
 
 int og_dungeon_count(void) { return g_count; }
+int og_dungeon_has(const Entity *entity)
+{
+    int i;
+
+    for (i = 0; i < g_count; i++) { if (g_foe[i].entity == entity) { return 1; } }
+    return 0;
+}
 Entity *og_dungeon_entity(int index) { return index >= 0 && index < g_count ? g_foe[index].entity : 0; }
 
 void og_dungeon_rebind(Entity *entities, int count)

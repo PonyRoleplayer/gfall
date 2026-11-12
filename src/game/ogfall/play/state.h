@@ -18,7 +18,7 @@
 #include "game/ogfall/play/worldstate.h"
 #include "engine/scene/keep.h"
 
-#define OG_STATE_VERSION 16
+#define OG_STATE_VERSION 17
 /* The room a save keeps for the quests (quest.c packs into it). */
 #define OG_QUEST_BLOB 24576
 #define OG_STATE5_WIRE_BYTES 348

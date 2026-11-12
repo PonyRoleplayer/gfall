@@ -466,18 +466,17 @@ void check_ogcombat_loaded(void)
         }
     }
     check_expect(dead && usable,"saved corpses remain lootable after a fresh-process load");
-    for (i = 0; i < OG_ENCOUNTERS; i++) {
-        const OgEncounter *saved;
+    for (i = 0; i < keep_count(); i++) {
         const Keep *row;
         const Entity *actor;
-        saved = &og_encounter_state()->actor[i];
-        if (!saved->key.thing) { continue; }
+        row = keep_at(i);
+        /* A rest encounter is a kept row (made 2, a key with the high bit): its creature is rebuilt from the key and the owner. */
+        if (!row || row->made != 2 || !(row->key.thing & 0x80000000u)) { continue; }
         actor = 0;
         for (j = 0; j < og_dungeon_count(); j++) {
-            if (og_dungeon_entity(j)->key.thing == saved->key.thing) { actor = og_dungeon_entity(j); break; }
+            if (og_dungeon_entity(j)->key.thing == row->key.thing) { actor = og_dungeon_entity(j); break; }
         }
-        row = keep_find(saved->key);
-        check_expect(actor && row && actor->live && actor->dead && actor->x == row->x &&
+        check_expect(actor && actor->live && actor->dead && actor->x == row->x &&
                      actor->y == row->y && actor->z == row->z && actor->pose[ENTITY_DEAD].w[0] > 0,
                      "a fresh process rebuilds the saved rest encounter with its corpse art and physical position");
     }

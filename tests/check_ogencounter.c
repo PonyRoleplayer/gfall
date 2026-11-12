@@ -99,10 +99,22 @@ void check_ogencounter(void)
     }
     g_bad = *og_state(); g_bad.encounters.choices[0] = 127;
     check_expect(!og_state_valid(&g_bad),"save validation refuses an invalid encounter kind");
-    g_bad = *og_state(); g_bad.encounters.actor[0].archive = 483;
-    check_expect(!og_state_valid(&g_bad),"save validation refuses a creature with a different archive");
-    g_bad = *og_state(); g_bad.encounters.actor[1] = g_bad.encounters.actor[0];
-    check_expect(!og_state_valid(&g_bad),"save validation refuses duplicate encounter identities");
+    /* A kept creature's row (the actor table's successor) is judged: its archive must be its kind's, and the same key twice is refused. */
+    {
+        int r, kept;
+
+        kept = -1;
+        for (r = 0; r < og_state()->world_count; r++) { if (og_state()->world[r].made) { kept = r; break; } }
+        check_expect(kept >= 0, "a rest encounter is a kept row of the saved session");
+        if (kept >= 0) {
+            g_bad = *og_state(); g_bad.world[kept].owner = (g_bad.world[kept].owner & ~(4095u << 8)) | (483u << 8);
+            check_expect(!og_state_valid(&g_bad),"save validation refuses a kept creature with a different archive");
+            g_bad = *og_state(); g_bad.world[kept].flags &= ~(unsigned)ENT_KEPT;
+            check_expect(!og_state_valid(&g_bad),"save validation refuses a made row that is not flagged kept");
+            g_bad = *og_state(); g_bad.world[kept].owner = (g_bad.world[kept].owner & ~255u) | 127u;
+            check_expect(!og_state_valid(&g_bad),"save validation refuses a kept creature of no kind");
+        }
+    }
     og_encounter_close(); og_dungeon_close(); spawn_clear();
     og_state_restore(&g_before); og_state_restore_world(); og_move_restore(&motion);
 }

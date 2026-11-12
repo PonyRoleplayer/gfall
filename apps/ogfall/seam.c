@@ -3319,7 +3319,6 @@ static int prepare_encounter_art(int kind, int archive, Image **images, df_u8 *c
 static int hold_encounter_art(Image **images, df_u8 *cutout, int *slots)
 {
     OgEncounterState *state;
-    const OgEncounter *saved;
     int i, kind, archive, variants;
 
     g_encounter_art_count = 0; state = og_encounter_state();
@@ -3329,10 +3328,13 @@ static int hold_encounter_art(Image **images, df_u8 *cutout, int *slots)
         if (!prepare_encounter_art(kind,archive,images,cutout,slots)) { return 0; }
         if (variants == 2 && !prepare_encounter_art(kind,archive+1,images,cutout,slots)) { return 0; }
     }
-    for (i = 0; i < OG_ENCOUNTERS; i++) {
-        saved = &state->actor[i];
-        if (saved->key.thing && saved->key.place == state->place &&
-            !prepare_encounter_art(saved->kind,saved->archive,images,cutout,slots)) { return 0; }
+    /* The creatures of earlier visits and saves are kept rows (made 2) of this place: their art, by the kind and archive their owner says (encounter.c). */
+    for (i = 0; i < keep_count(); i++) {
+        const Keep *row;
+
+        row = keep_at(i);
+        if (row && row->made == 2 && row->key.place == state->place && (row->key.thing & 0x80000000u) &&
+            !prepare_encounter_art((int)(row->owner & 255u),(int)((row->owner >> 8) & 4095u),images,cutout,slots)) { return 0; }
     }
     g_original_entities = g_level.scene.nentities;
     g_game_entities = (Entity *)mem_alloc((g_original_entities+g_encounter_art_count+1)*sizeof(Entity));

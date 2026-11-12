@@ -2414,3 +2414,8 @@ With the entity plan's step 7 (docs/entities.md, Dungeon people):
 - **Castle residents**: talking to one reaches the quest machine as any person (their faction and flat). In Daggerfall's, Wayrest's and Sentinel's castles (locations 50027, 50029, 50033) a resident of a type 4 faction (not 407) not under the guilds' trees is marked for the day by a roll (51%) and clicking them offers an R quest by level (`castle_quest`): in a dungeon the original offers nothing else.
 - Not yet: a resident's faction 0 is 510 and their picture's face may be missing (FLATS.CFG may not know archive 334 or 346); wild.c's town chunks (step 10).
 - Test: `check_ogquest.c` (a person put in a dungeon place has their marker's point).
+
+### Rest encounters and quest foes as kept entities (entity plan step 9)
+
+See docs/entities.md, OGFALL's encounters. The saved actor table is replaced by keep rows (schema 17); a rest encounter or quest foe is a pool entity that is written to its row when the place is left or saved and made again from it when the place is opened, then given its mind. `og_encounter_capture` is the one call before leaving or saving. An older save's actor table is read and ignored: its creatures are not restored (no old-format migration).
+Not changed: the dungeons are loaded whole in OGFALL (`travel_set_dungeon_streaming(0)`), so the kept rows are filed under the place (made 2), never under a chunk. Dungeon quest markers in a whole dungeon: `dunstream_quest_marker` answers only in a streamed one, so quest foes and persons placed at a marker in OGFALL's whole dungeons fall back to near the player until the marker lookup is given to a whole world (next).

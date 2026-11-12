@@ -1,12 +1,12 @@
 #ifndef OGFALL_ENCOUNTER_H
 #define OGFALL_ENCOUNTER_H
 
-/* Original dungeon rest encounters. Live actors use the engine spawn pool;
- * their identity/initial position and the rolled six choices are saved here,
- * health/position/AI in their keyed Keep rows. See docs/ogfall.md. */
+/* Original dungeon rest encounters. Live actors are kept entities of the engine's pool (docs/entities.md, Kept): the rolled six choices are saved here, the creatures themselves
+ * (what they are, where they stand, health and AI) in their keyed Keep rows. See docs/ogfall.md. */
 #include "engine/scene/entity.h"
 #include "engine/gfx/camera.h"
 #define OG_ENCOUNTERS 8
+/* The saved actor table of earlier schemas: no longer filled (the keep rows say what each creature is), but kept in the layout so a save's bytes stay as they were. */
 typedef struct OgEncounter {
     KeepKey key;
     int kind, archive;

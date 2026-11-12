@@ -476,6 +476,19 @@ static void transfer(Wire *w, OgState *s)
         }
     }
 
+    /* What an entity the game made keeps in its keep row (schema 17: ENT_KEPT, docs/entities.md, Kept; a row is the whole entity): after everything else, a record a row. */
+    if (w->version >= 17) {
+        int k;
+
+        for (k = 0; k < s->world_count; k++) {
+            Keep *row;
+
+            row = &s->world[k];
+            wire_bytes(w, &row->made, 1); wire_bytes(w, &row->residence, 1);
+            wire_u32(w, &row->flags); wire_u32(w, &row->owner);
+            wire_int(w, &row->cx); wire_int(w, &row->cz);
+        }
+    }
 }
 
 static df_u32 checksum(const df_u8 *p, df_u32 n)
