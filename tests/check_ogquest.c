@@ -5,6 +5,7 @@
 #include "check_util.h"
 #include "game/ogfall/formats/qbn.h"
 #include "game/ogfall/play/quest.h"
+#include "game/ogfall/play/talk.h"
 #include "game/ogfall/play/inventory.h"
 #include "game/ogfall/play/standing.h"
 #include "game/ogfall/play/state.h"
@@ -500,6 +501,24 @@ void check_ogquest(void)
                 tag = OG_QUEST_PERSON_TAG(0, 0);
                 check_expect(og_quest_person_of_tag(tag, &who, &faction, &female, name, sizeof(name)) && faction == 352 && female == 1 && !strcmp(name, "Lady Test") && who == og_quest(0)->person[0].who,
                              "quest: the person's flat tag did not name her");
+            }
+            {
+                char surname[24];
+                OgTalkBuilding rows[3];
+                OgTalkTopic topics[8];
+                int nt, listed, q;
+
+                check_expect(og_quest_building_site(17, og_quest(0)->person[0].home_index, 3, 7, surname, sizeof(surname)) == 1 && !strcmp(surname, "Test") && og_quest_building_site(17, og_quest(0)->person[0].home_index, 3, 8, surname, sizeof(surname)) == 0,
+                             "quest: a building a quest person stands in is not a quest site named for their surname, or another one is");
+                /* The talk window lists a house that is a quest site (flag 8) under category 13, and no other house. */
+                memset(rows, 0, sizeof(rows));
+                rows[0].id = 1; rows[0].type = 17; rows[0].flags = 8; rows[0].distance = 10;
+                rows[1].id = 2; rows[1].type = 17; rows[1].flags = 0; rows[1].distance = 20;
+                rows[2].id = 3; rows[2].type = 15; rows[2].flags = 0; rows[2].distance = 30;
+                nt = og_talk_topics(topics, 8, rows, 3);
+                listed = 0;
+                for (q = 0; q < nt; q++) { if (topics[q].building == 1 && topics[q].category == 13) { listed++; } if (topics[q].building == 2) { listed += 10; } }
+                check_expect(listed == 1, "quest: a house that is a quest site was not listed under category 13 in Where is, or a plain house was");
             }
             for (k = 0; k < og_quest_count(); k++) { og_quest_end(k); }
             og_quest_set_world(0);

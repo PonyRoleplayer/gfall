@@ -170,6 +170,9 @@ int og_quest_topic_answer(int i, char *out, int cap);
 typedef struct OgQuestAccess { int used, quest_id, region, index, block, record, access; df_u32 until; } OgQuestAccess;
 /* A building (the town's region and index, the building's block and record) a running quest has marked open to it (op 81's place flag 64 on a place of it, or the flag 0x4000 on a person who stands in it): the door lets the player in. */
 int og_quest_building_open(int region, int index, int block, int record);
+/* quest_find_site_for_building as the talk window and building_name use it: 1 when a running quest has a place that is this building or a person standing in it; surname the quest person's, or one made from
+ * the building when it is a place (a quest residence is "The Surname Residence"). */
+int og_quest_building_site(int region, int index, int block, int record, char *surname, int cap);
 /* The access level op 17 granted the building, while its minutes last (building_access_level: 10 and over opens its door to a lockpicker); 0 for none. */
 int og_quest_building_access(int region, int index, int block, int record, df_u32 now);
 const OgQuestAccess *og_quest_access(int i);

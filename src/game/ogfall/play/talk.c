@@ -234,10 +234,11 @@ int og_talk_topics(OgTalkTopic *out, int cap, const OgTalkBuilding *buildings, i
     n = 0;
     for (i = 0; i < count && n < cap - 1; i++) {
         /* talk_build_place_topics lists by type (houses, past 16 and nothing else are skipped), unlike building_category. */
-        if (buildings[i].type >= 17 || buildings[i].type == 1) {
+        /* A house that is a quest's site (flag 8, talk_open's quest buildings) is listed too, under category 13. */
+        if ((buildings[i].type >= 17 && !(buildings[i].flags & 8)) || buildings[i].type == 1) {
             continue;
         }
-        out[n].category = og_talk_category(buildings[i].type, 0);
+        out[n].category = og_talk_category(buildings[i].type, buildings[i].flags);
         out[n].distance = buildings[i].distance;
         out[n].building = buildings[i].id;
         n++;

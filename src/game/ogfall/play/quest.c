@@ -1137,6 +1137,49 @@ int og_quest_building_open(int region, int index, int block, int record)
     return 0;
 }
 
+/* The last word of a name. */
+static void last_word(const char *name, char *out, int cap)
+{
+    const char *w;
+    int n;
+
+    w = name;
+    for (n = 0; name[n]; n++) { if (name[n] == ' ' && name[n + 1]) { w = name + n + 1; } }
+    log_format(out, cap, "%s", w);
+}
+
+int og_quest_building_site(int region, int index, int block, int record, char *surname, int cap)
+{
+    int s, i;
+
+    if (surname) { surname[0] = 0; }
+    for (s = 0; s < OG_QUESTS; s++) {
+        const OgQuest *q;
+
+        q = &g_quest[s];
+        if (!q->used) { continue; }
+        for (i = 0; i < q->qbn.n_person; i++) {
+            if (q->person[i].bound && q->person[i].homed && q->person[i].home_region == region && q->person[i].home_index == index && q->person[i].home_block == block &&
+                q->person[i].home_record == record && !(q->qbn.person[i].flags & 0x8000)) {
+                if (surname) { last_word(q->person[i].name, surname, cap); }
+                return 1;
+            }
+        }
+        for (i = 0; i < q->qbn.n_place; i++) {
+            if (q->place[i].bound && q->place[i].region == region && q->place[i].index == index && q->place[i].block == block && q->place[i].record == record && !(q->qbn.place[i].flags & 128)) {
+                if (surname && g_world && g_world->person_name) {
+                    char made[40];
+
+                    g_world->person_name(0x50000000 + block * 251 + record, 0, 0, made, (int)sizeof(made));
+                    last_word(made, surname, cap);
+                }
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
 int og_quest_building_access(int region, int index, int block, int record, df_u32 now)
 {
     int i, best;

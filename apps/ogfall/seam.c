@@ -1039,7 +1039,8 @@ static int talk_buildings(OgTalkBuilding *out, int cap)
     for (i = n = 0; i < count && n < cap; i++, n++) {
         out[n].id = talk_building_id(&rows[i]);
         out[n].type = rows[i].type;
-        out[n].flags = 0;
+        /* talk_open: every quest building of the town has flag 8. */
+        out[n].flags = og_quest_building_site(g_talk_region, g_talk_index, rows[i].block, rows[i].record, 0, 0) ? 8 : 0;
         out[n].distance = talk_distance_to(&rows[i]);
     }
     return n;
@@ -1065,7 +1066,13 @@ static void talk_building_name(unsigned id, char *out, int cap)
     if (f) {
         b.faction_name = f->name;
     }
-    og_building_name(&b, out, cap);
+    {
+        /* building_name: a residence that is a quest building is named for the quest person. */
+        char surname[24];
+
+        if (t->type >= 17 && og_quest_building_site(g_talk_region, g_talk_index, t->block, t->record, surname, (int)sizeof(surname)) && surname[0]) { b.resident = surname; }
+        og_building_name(&b, out, cap);
+    }
 }
 
 static int talk_town_has(int key, int by_type)
