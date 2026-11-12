@@ -1,8 +1,6 @@
 #ifndef DF_TRAVELMAP_H
 #define DF_TRAVELMAP_H
 
-#include "game/dagger/play/journey.h"
-#include "game/dagger/play/player.h"
 
 /*
  * Classic's travel map in memory: the world (TRAV0I00.IMG), a click on a
@@ -17,6 +15,18 @@
  * Plain C, drawing nothing and reaching no card: hostcheck drives it by clicks.
  */
 
+/* A journey's sums, as the map's popup shows them (the game's own rules fill them: TravelMapRules.plan). */
+typedef struct Journey {
+    int minutes;
+    int sea_pixels;
+    int hours;
+    /* Whole days, a part counted as one: what the map's popup shows. */
+    int days;
+    int inn_gold;
+    int fare;
+    int cost;
+} Journey;
+
 enum {
     TRAVELMAP_STAY,
     TRAVELMAP_LEAVE,
@@ -24,10 +34,7 @@ enum {
     TRAVELMAP_GO
 };
 
-/* Opened with the player standing on pixel (px, py) of region. 0 when a picture is missing. */
-int travelmap_open(Player *p, int px, int py, int region);
-/* Presentation-only entry for another game adapter: its own money, map
- * discovery and journey rules. The ordinary GFALL entry keeps its defaults. */
+/* The game's own money, map discovery and journey rules. */
 typedef struct TravelMapRules {
     unsigned (*gold)(void);
     int (*known)(int ordinal);

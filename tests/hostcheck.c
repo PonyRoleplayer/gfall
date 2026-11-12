@@ -12,7 +12,6 @@
 
 void check_engine(void);
 int check_dagger(const char *root);
-void check_play(void);
 void check_ogfall(const char *root);
 int check_ogfall_resume(const char *root, int slot);
 
@@ -35,8 +34,6 @@ int main(int argc, char **argv)
     if (check_dagger(root) && !check_failed()) {
         return 1;
     }
-    /* After the dagger checks: ARENA2 mounted, MAIN.DAT merged. */
-    check_play();
     /* Each executable owns its command table and gameplay globals. */
     fflush(0);
     child = fork();

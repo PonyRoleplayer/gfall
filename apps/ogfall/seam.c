@@ -68,7 +68,6 @@
 #include "game/ogfall/play/ailments.h"
 #include "game/ogfall/formats/interior.h"
 #include "game/ogfall/play/talkwin.h"
-#include "game/dagger/play/character.h"
 #include "game/ogfall/play/standing.h"
 #include "game/dagger/formats/arch3d.h"
 #include "game/dagger/formats/bsa.h"
@@ -841,7 +840,7 @@ static void quest_say(const char *text) { og_possessions_message(text, 0); }
 /* The TEXT.RSC macros of a quest's text: the player's name and race, the town and the region. */
 static int quest_macros(const char *in, char *out, int cap)
 {
-    static Character pc;
+    static WordsPlayer pc;
     Words w;
     int i;
     char province[32];
@@ -2774,7 +2773,7 @@ static int guards_dungeon(void) { return og_world_state()->where.kind == OG_PLAC
 
 static int court_say(int text, const OgCourt *court, char *out, int cap)
 {
-    static Character pc;
+    static WordsPlayer pc;
     static char penalty[96], prison[48];
     Words w;
     int i;

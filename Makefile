@@ -131,7 +131,6 @@ FORMATS_SRC := \
 	src/game/dagger/formats/biog.c \
 	src/game/dagger/formats/classcfg.c \
 	src/game/dagger/formats/namegen.c \
-	src/game/dagger/formats/qbn.c \
 	src/game/dagger/formats/spells.c
 
 # Daggerfall's rules for dressing a place.
@@ -167,89 +166,18 @@ PLACES_SRC := \
 
 DAGGER_SRC := $(FORMATS_SRC) $(TABLES_SRC) $(PLACES_SRC)
 
-# Daggerfall's game: its player, its rules. LEVELFALL does not link it.
+# What the game borrows of Daggerfall's own presentation: the classic maps, the TEXT.RSC macros and the
+# canvas and widgets they draw with. Plain C, drawing nothing and reaching no card.
 PLAY_SRC := \
-	src/game/dagger/play/rules.c \
-	src/game/dagger/play/character.c \
-	src/game/dagger/play/inventory.c \
-	src/game/dagger/play/iteminfo.c \
-	src/game/dagger/play/loot.c \
-	src/game/dagger/play/pile.c \
-	src/game/dagger/play/doll.c \
 	src/game/dagger/play/canvas.c \
-	src/game/dagger/play/hudbar.c \
-	src/game/dagger/play/control.c \
-	src/game/dagger/play/bag.c \
-	src/game/dagger/play/kit.c \
-	src/game/dagger/play/create.c \
-	src/game/dagger/play/sheet.c \
-	src/game/dagger/play/rest.c \
-	src/game/dagger/play/standing.c \
-	src/game/dagger/play/atlas.c \
-	src/game/dagger/play/journey.c \
-	src/game/dagger/play/ride.c \
-	src/game/dagger/play/wagon.c \
-	src/game/dagger/play/ills.c \
-	src/game/dagger/play/lodging.c \
-	src/game/dagger/play/guild.c \
-	src/game/dagger/play/quest.c \
-	src/game/dagger/play/msgbox.c \
-	src/game/dagger/play/logbook.c \
-	src/game/dagger/play/spellbook.c \
-	src/game/dagger/play/maker.c \
+	src/game/dagger/play/ui.c \
 	src/game/dagger/play/travelmap.c \
-	src/game/dagger/play/travelmap_player.c \
 	src/game/dagger/play/townmap.c \
 	src/game/dagger/play/dunmap.c \
 	src/game/dagger/play/marker.c \
-	src/game/dagger/play/words.c \
-	src/game/dagger/play/talk.c \
-	src/game/dagger/play/service.c \
-	src/game/dagger/play/shop.c \
-	src/game/dagger/play/bank.c \
-	src/game/dagger/play/court.c \
-	src/game/dagger/play/watch.c \
-	src/game/dagger/play/theft.c \
-	src/game/dagger/play/save.c \
-	src/game/dagger/play/saves.c \
-	src/game/dagger/play/commands.c \
-	src/game/dagger/play/weapon.c \
-	src/game/dagger/play/combat.c \
-	src/game/dagger/play/spells.c \
-	src/game/dagger/play/castfx.c \
-	src/game/dagger/play/effects.c \
-	src/game/dagger/play/cast.c \
-	src/game/dagger/play/projectile.c \
-	src/game/dagger/play/shots.c \
-	src/game/dagger/play/foes.c \
-	src/game/dagger/play/conjure.c \
-	src/game/dagger/play/sfx.c \
-	src/game/dagger/play/player.c \
-	src/game/dagger/play/mouse.c \
-	src/game/dagger/play/viewopt.c \
-	src/game/dagger/play/config.c \
-	src/game/dagger/play/ui.c \
-	src/game/dagger/play/files.c \
-	src/game/dagger/play/settings.c \
-	src/game/dagger/play/screen.c \
-	src/game/dagger/play/overlay.c \
-	src/game/dagger/play/menu.c \
-	src/game/dagger/play/screens.c \
-	src/game/dagger/play/keys.c \
-	src/game/dagger/play/game.c
+	src/game/dagger/play/words.c
 
-# What of the game draws, reaches the card or the keys: not built for the host.
-PLAY_DRAW_SRC := \
-	src/game/dagger/play/screen.c \
-	src/game/dagger/play/overlay.c \
-	src/game/dagger/play/menu.c \
-	src/game/dagger/play/screens.c \
-	src/game/dagger/play/keys.c \
-	src/game/dagger/play/game.c
-
-GFALL_SRC := apps/gfall/main.c $(ENGINE_SRC) $(DAGGER_SRC) $(PLAY_SRC)
-
-# OGFALL: original gameplay and the streamed world. Not GFALL's PLAY_SRC.
+# OGFALL: original gameplay and the streamed world.
 # seam.c is the only file that includes both games.
 OGFALL_GAME_SRC := \
 	src/game/ogfall/formats/formats.c \
@@ -333,11 +261,7 @@ OGFALL_GAME_SRC := \
 
 OGFALL_HEADERS := $(wildcard src/game/ogfall/*/*.h apps/ogfall/*.h)
 
-# The app borrows map composition only; GFALL player callbacks are separate.
-OGFALL_MAP_SRC := src/game/dagger/play/canvas.c src/game/dagger/play/ui.c \
-	src/game/dagger/play/travelmap.c src/game/dagger/play/townmap.c \
-	src/game/dagger/play/dunmap.c src/game/dagger/play/marker.c src/game/dagger/play/words.c
-OGFALL_SRC := apps/ogfall/main.c apps/ogfall/seam.c $(OGFALL_GAME_SRC) $(ENGINE_SRC) $(DAGGER_SRC) $(OGFALL_MAP_SRC)
+OGFALL_SRC := apps/ogfall/main.c apps/ogfall/seam.c $(OGFALL_GAME_SRC) $(ENGINE_SRC) $(DAGGER_SRC) $(PLAY_SRC)
 
 # RENDERFALL shows models alone: the readers they need and no place.
 RENDER_SRC := apps/renderfall/main.c $(ENGINE_SRC) \
@@ -354,12 +278,12 @@ LEVEL_SRC := apps/levelfall/main.c $(ENGINE_SRC) \
 PONY97_SRC := apps/pony97/main.c $(ENGINE_SRC)
 
 HOST_SRC := $(ENGINE_HOST_SRC) \
-	$(filter-out src/game/dagger/formats/fnt.c,$(DAGGER_SRC)) $(filter-out $(PLAY_DRAW_SRC),$(PLAY_SRC))
+	$(filter-out src/game/dagger/formats/fnt.c,$(DAGGER_SRC)) $(PLAY_SRC)
 
 # The ogfall game and its seam, without the Win32 entry. Hostcheck links these.
 OGFALL_HOST_SRC := apps/ogfall/seam.c $(OGFALL_GAME_SRC)
 
-.PHONY: all check clean hostcheck datacheck gfall-check renderfall-check levelfall-check datfall-check pony97-check pony97-iso ogfall ofgall ogfall-check ogfall-host deps deps-host layers
+.PHONY: all check clean hostcheck datacheck renderfall-check levelfall-check datfall-check pony97-check pony97-iso ogfall ofgall ogfall-check ogfall-host deps deps-host layers
 
 # A bare make builds everything; deps alone is the first rule below.
 .DEFAULT_GOAL := all
@@ -403,7 +327,7 @@ deps-host: layers
 layers:
 	sh tools/check-layers
 
-all: deps check build/spintri.iso gfall-check ogfall-check renderfall-check levelfall-check datfall-check build/gfall.iso pony97-iso
+all: deps check build/spintri.iso ogfall-check renderfall-check levelfall-check datfall-check build/gfall.iso pony97-iso
 
 build/SPINTRI.EXE: apps/spintri/main.c third_party/glide2/include/glide.h | deps
 	mkdir -p build
@@ -419,12 +343,9 @@ build/cdroot/SPINTRI.EXE: build/SPINTRI.EXE
 build/spintri.iso: build/cdroot/SPINTRI.EXE | deps
 	$(XORRISO) -as mkisofs -o $@ -V SPINTRI -J -iso-level 1 build/cdroot
 
-# Only hostcheck links the menu against deterministic input/persistence stand-ins.
-MENU_TEST_SRC := tests/check_menu.c src/game/dagger/play/menu.c src/game/dagger/play/screen.c
-
-build/hostcheck: $(MENU_TEST_SRC) tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_play.c tests/check_ogfall.c tests/check_ogstate.c tests/check_ogstanding.c tests/check_ogtrade.c tests/check_ogshelf.c tests/check_ogmarket.c tests/check_ogbank.c tests/check_oglodging.c tests/check_oglaw.c tests/check_ogtalk.c tests/check_ogsteal.c tests/check_ognames.c tests/check_ogguild.c tests/check_ogpotion.c tests/check_ogspellshop.c tests/check_ogmagicitem.c tests/check_ogquest.c tests/check_ogentry.c tests/check_ogtalkwin.c tests/check_ogui.c tests/check_ogcombat.c tests/check_ogdoors.c tests/check_ogactions.c tests/check_ogprogress.c tests/check_ogsurvival.c tests/check_ogencounter.c tests/check_ogmagic.c tests/check_ogworld.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC) $(OGFALL_HEADERS) | deps-host
+build/hostcheck: tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_ogfall.c tests/check_ogstate.c tests/check_ogstanding.c tests/check_ogtrade.c tests/check_ogshelf.c tests/check_ogmarket.c tests/check_ogbank.c tests/check_oglodging.c tests/check_oglaw.c tests/check_ogtalk.c tests/check_ogsteal.c tests/check_ognames.c tests/check_ogguild.c tests/check_ogpotion.c tests/check_ogspellshop.c tests/check_ogmagicitem.c tests/check_ogquest.c tests/check_ogentry.c tests/check_ogtalkwin.c tests/check_ogui.c tests/check_ogcombat.c tests/check_ogdoors.c tests/check_ogactions.c tests/check_ogprogress.c tests/check_ogsurvival.c tests/check_ogencounter.c tests/check_ogmagic.c tests/check_ogworld.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC) $(OGFALL_HEADERS) | deps-host
 	mkdir -p build
-	$(HOST_CC) $(HOST_CFLAGS) -o $@ $(MENU_TEST_SRC) tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_play.c tests/check_ogfall.c tests/check_ogstate.c tests/check_ogstanding.c tests/check_ogtrade.c tests/check_ogshelf.c tests/check_ogmarket.c tests/check_ogbank.c tests/check_oglodging.c tests/check_oglaw.c tests/check_ogtalk.c tests/check_ogsteal.c tests/check_ognames.c tests/check_ogguild.c tests/check_ogpotion.c tests/check_ogspellshop.c tests/check_ogmagicitem.c tests/check_ogquest.c tests/check_ogentry.c tests/check_ogtalkwin.c tests/check_ogui.c tests/check_ogcombat.c tests/check_ogdoors.c tests/check_ogactions.c tests/check_ogprogress.c tests/check_ogsurvival.c tests/check_ogencounter.c tests/check_ogmagic.c tests/check_ogworld.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC)
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_ogfall.c tests/check_ogstate.c tests/check_ogstanding.c tests/check_ogtrade.c tests/check_ogshelf.c tests/check_ogmarket.c tests/check_ogbank.c tests/check_oglodging.c tests/check_oglaw.c tests/check_ogtalk.c tests/check_ogsteal.c tests/check_ognames.c tests/check_ogguild.c tests/check_ogpotion.c tests/check_ogspellshop.c tests/check_ogmagicitem.c tests/check_ogquest.c tests/check_ogentry.c tests/check_ogtalkwin.c tests/check_ogui.c tests/check_ogcombat.c tests/check_ogdoors.c tests/check_ogactions.c tests/check_ogprogress.c tests/check_ogsurvival.c tests/check_ogencounter.c tests/check_ogmagic.c tests/check_ogworld.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC)
 
 # The ogfall sums and one walk in the hold, without the rest of hostcheck.
 build/ogfall-host: tests/check_ogfall.c tests/check_ogstate.c tests/check_ogstanding.c tests/check_ogtrade.c tests/check_ogshelf.c tests/check_ogmarket.c tests/check_ogbank.c tests/check_oglodging.c tests/check_oglaw.c tests/check_ogtalk.c tests/check_ogsteal.c tests/check_ognames.c tests/check_ogguild.c tests/check_ogpotion.c tests/check_ogspellshop.c tests/check_ogmagicitem.c tests/check_ogquest.c tests/check_ogentry.c tests/check_ogtalkwin.c tests/check_ogui.c tests/check_ogcombat.c tests/check_ogdoors.c tests/check_ogactions.c tests/check_ogprogress.c tests/check_ogsurvival.c tests/check_ogencounter.c tests/check_ogmagic.c tests/check_ogworld.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC) $(OGFALL_HEADERS) | deps-host
@@ -455,13 +376,6 @@ datacheck: build/dfrec
 	! ./build/dfrec build tests/data/misspelled.txt build/data/BAD.DAT 2> build/data/bad.log
 	grep -q 'misspelled.txt:4: no such field' build/data/bad.log
 	test ! -e build/data/BAD.DAT
-
-build/GFALL.EXE: $(GFALL_SRC) third_party/glide2/include/glide.h | deps
-	mkdir -p build
-	$(CC) $(CFLAGS) -DBUILD_STAMP='"$(BUILD_STAMP)"' $(LDFLAGS) -o $@ $(GFALL_SRC) -luser32 -lkernel32 -lgcc
-
-gfall-check: build/GFALL.EXE
-	$(call pe_check,build/GFALL.EXE,build/gfall.dump)
 
 # This entry has no CRT to pre-touch the stack. Let GCC's libgcc probe
 # grow it a page at a time for large frames (Win98 starts with 4 KB committed).
@@ -542,7 +456,6 @@ DAT_SRC := \
 	src/engine/scene/weather.c \
 	src/game/dagger/formats/classcfg.c \
 	src/game/dagger/formats/namegen.c \
-	src/game/dagger/formats/qbn.c \
 	src/game/dagger/formats/spells.c \
 	src/game/dagger/formats/bsa.c \
 	src/game/dagger/tables/maindat.c \
@@ -576,11 +489,10 @@ datfall-check: build/DATFALL.EXE build/datfall-host
 	$(call pe_check,build/DATFALL.EXE,build/datfall.dump)
 	./build/datfall-host
 
-build/gfall.iso: build/GFALL.EXE build/OGFALL.EXE build/RENDERFALL.EXE build/LEVELFALL.EXE build/DATFALL.EXE build/hostcheck | deps
+build/gfall.iso: build/OGFALL.EXE build/RENDERFALL.EXE build/LEVELFALL.EXE build/DATFALL.EXE build/hostcheck | deps
 	./build/hostcheck
 	$(XORRISO) -as mkisofs -o $@ -V GFALL -J -relaxed-filenames \
 		-graft-points \
-		/GFALL.EXE=build/GFALL.EXE \
 		/OGFALL.EXE=build/OGFALL.EXE \
 		/RENDERFALL.EXE=build/RENDERFALL.EXE \
 		/LEVELFALL.EXE=build/LEVELFALL.EXE \

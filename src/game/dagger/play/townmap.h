@@ -1,7 +1,6 @@
 #ifndef DF_TOWNMAP_H
 #define DF_TOWNMAP_H
 
-#include "game/dagger/play/player.h"
 
 /*
  * Classic's automap of a town (AMAP00I0.IMG, TOWN00I0.IMG's caption) in memory:

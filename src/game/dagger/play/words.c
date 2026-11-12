@@ -1,5 +1,4 @@
 #include "game/dagger/play/words.h"
-#include "game/dagger/play/combat.h"
 #include "game/dagger/formats/textrsc.h"
 #include "game/dagger/tables/careers.h"
 #include "engine/core/df.h"
@@ -40,6 +39,20 @@ void words_use(const Words *w)
     g_words = w;
 }
 
+static int (*g_roll)(int n);
+static df_u32 g_dice = 12345u;
+
+void words_set_roll(int (*roll)(int n)) { g_roll = roll; }
+
+/* A variant of n: the game's dice, else a generator of ours. */
+static int words_roll(int n)
+{
+    if (n <= 1) { return 0; }
+    if (g_roll) { return g_roll(n); }
+    g_dice = g_dice * 1103515245u + 12345u;
+    return (int)((g_dice >> 16) % (df_u32)n);
+}
+
 /* A record chosen and filled in, as a macro's text. */
 static void say_into(int record, char *out, int cap, int depth)
 {
@@ -48,7 +61,7 @@ static void say_into(int record, char *out, int cap, int depth)
 
     n = textrsc_variants(record);
     out[0] = 0;
-    if (n > 0 && textrsc_variant(record, combat_roll(n), line, (int)sizeof(line)) >= 0) {
+    if (n > 0 && textrsc_variant(record, words_roll(n), line, (int)sizeof(line)) >= 0) {
         expand(line, out, cap, depth + 1);
     }
 }
@@ -224,7 +237,7 @@ int words_say_plain(int record, char *out, int cap)
 
     n = textrsc_variants(record);
     out[0] = 0;
-    if (n < 1 || textrsc_variant(record, combat_roll(n), line, (int)sizeof(line)) < 0) {
+    if (n < 1 || textrsc_variant(record, words_roll(n), line, (int)sizeof(line)) < 0) {
         return -1;
     }
     for (s = line; *s; s++) {

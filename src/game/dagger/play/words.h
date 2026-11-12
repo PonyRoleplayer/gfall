@@ -1,7 +1,6 @@
 #ifndef DF_WORDS_H
 #define DF_WORDS_H
 
-#include "game/dagger/play/character.h"
 
 /*
  * What people say: TEXT.RSC's records with their %macros filled in. Read
@@ -15,9 +14,19 @@
  * Plain C: hostcheck runs it.
  */
 
+/* The player, as the macros say them: the name, the race's number (career_race) and a woman. */
+typedef struct WordsPlayer {
+    char name[32];
+    int race;
+    int female;
+} WordsPlayer;
+
+/* The game's dice for the variant of a record (n variants: 0..n-1); a simple generator of its own until it gives them. */
+void words_set_roll(int (*roll)(int n));
+
 /* What the macros say, set before words_say. Anything left 0 or empty says nothing. */
 typedef struct Words {
-    const Character *pc;
+    const WordsPlayer *pc;
     /* What is being asked about (%key), and the place named in a hint (%loc). */
     const char *key;
     const char *loc;
