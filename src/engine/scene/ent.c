@@ -31,6 +31,41 @@ static df_u8 g_gen[ENT_IDS];
 static const Scene *g_scene;
 static df_u32 g_epoch;
 
+/*
+ * The near-gather (ent_near_solid): every entity with a radius, by the
+ * cell of the ground its feet stood in when the grid was built, hashed
+ * into buckets. Built lazily, once a frame (g_stamp moves in ent_frame)
+ * or when what is held changed (g_dirty). Between builds an entity may
+ * move; a query reaches GRID_PAD further, so one that moved less than
+ * that since the build is still found. Before the first ent_frame there
+ * is no grid and the callers walk everything, as host tests step bodies
+ * with no frames.
+ */
+#define GRID_CELL 512.0f
+#define GRID_BUCKETS 256
+#define GRID_PAD 256.0f
+/* A query spanning more cells than this across walks everything instead. */
+#define GRID_SPAN 6
+/* Fewer entities with a radius than this: walking them all is as cheap, and never stale. */
+#define GRID_MIN 32
+
+static const Entity *g_grid_ent[ENT_IDS];
+static int g_grid_cx[ENT_IDS];
+static int g_grid_cz[ENT_IDS];
+static short g_grid_next[ENT_IDS];
+static short g_bucket[GRID_BUCKETS];
+static int g_grid_n;
+static float g_grid_radius;
+static const Scene *g_grid_scene;
+/* The scene's array the grid was built from: another array, or another length, builds it again. */
+static const Entity *g_grid_array;
+static int g_grid_count;
+/* 1: too few to be worth a grid; the callers walk everything. */
+static int g_grid_small;
+static df_u32 g_stamp;
+static df_u32 g_built;
+static int g_dirty;
+
 static EntId make_id(int index)
 {
     return (EntId)(index + 1) | ((EntId)g_gen[index] << 16);
@@ -66,6 +101,9 @@ void ent_clear(void)
         g_range[i].used = 0;
     }
     g_count = 0;
+    g_dirty = 1;
+    /* A new place: no grid until its first frame (ent_frame). */
+    g_stamp = 0;
     /* Every id of the place reads as gone: the pool's, the scene's entries', the ranges'. */
     bump(0, ENT_IDS);
     g_scene = 0;
@@ -153,6 +191,7 @@ int ent_register_range(const Scene *scene, Entity *first, int n, int residence)
     g_range[i].used = 1;
     g_range[i].residence = (df_u8)residence;
     bump(RANGE_BASE + i * ENT_RANGE_MAX, ENT_RANGE_MAX);
+    g_dirty = 1;
     return 1;
 }
 
@@ -165,6 +204,7 @@ void ent_unregister_range(Entity *first)
         if (g_range[i].used && g_range[i].first == first) {
             g_range[i].used = 0;
             bump(RANGE_BASE + i * ENT_RANGE_MAX, ENT_RANGE_MAX);
+            g_dirty = 1;
         }
     }
 }
@@ -189,6 +229,7 @@ EntId ent_add(const Scene *scene, const Entity *e)
     g_used[i] = 1;
     g_gen[i]++;
     g_count++;
+    g_dirty = 1;
     return make_id(i);
 }
 
@@ -353,6 +394,7 @@ void ent_renew(const Scene *scene, int first, int n)
     if (in_place(scene) && first < ENT_SCENE_MAX) {
         bump(SCENE_BASE + first, first + n <= ENT_SCENE_MAX ? n : ENT_SCENE_MAX - first);
     }
+    g_dirty = 1;
 }
 
 void ent_frame(const Scene *scene, const Camera *cam)
@@ -361,6 +403,11 @@ void ent_frame(const Scene *scene, const Camera *cam)
 
     /* The frame's place is the registry's: its entries are named from now on. */
     ent_place(scene);
+    /* The near-gather is built again at its first query this frame. */
+    g_stamp++;
+    if (g_stamp == 0) {
+        g_stamp = 1;
+    }
     if (!cam || g_count == 0) {
         return;
     }
@@ -401,4 +448,109 @@ Entity *ent_pool(const Scene *scene, int *n)
     }
     *n = ENT_POOL;
     return g_pool;
+}
+
+/* The bucket of a ground cell. Unsigned sums: a wrap only moves the bucket. */
+static int bucket_of(int cx, int cz)
+{
+    return (int)(((df_u32)cx * 73856093u ^ (df_u32)cz * 19349663u) & (GRID_BUCKETS - 1));
+}
+
+static void grid_build(const Scene *scene)
+{
+    EntList lists[ENT_LISTS];
+    int nlists;
+    int li;
+    int i;
+
+    for (i = 0; i < GRID_BUCKETS; i++) {
+        g_bucket[i] = -1;
+    }
+    g_grid_n = 0;
+    g_grid_radius = 0.0f;
+    nlists = ent_lists(scene, lists, ENT_LISTS);
+    for (li = 0; li < nlists; li++) {
+        for (i = 0; i < lists[li].n; i++) {
+            const Entity *e;
+            int b;
+
+            e = &lists[li].first[i];
+            /* Every entity with a radius, live or not: one becoming solid before the next build is still found. */
+            if (e->radius <= 0.0f) {
+                continue;
+            }
+            if (g_grid_n >= ENT_IDS) {
+                /* More than the grid holds: no grid this frame, the callers walk everything. */
+                g_grid_scene = 0;
+                return;
+            }
+            g_grid_ent[g_grid_n] = e;
+            g_grid_cx[g_grid_n] = df_ifloor(e->x / GRID_CELL);
+            g_grid_cz[g_grid_n] = df_ifloor(e->z / GRID_CELL);
+            b = bucket_of(g_grid_cx[g_grid_n], g_grid_cz[g_grid_n]);
+            g_grid_next[g_grid_n] = g_bucket[b];
+            g_bucket[b] = (short)g_grid_n;
+            if (e->radius > g_grid_radius) {
+                g_grid_radius = e->radius;
+            }
+            g_grid_n++;
+        }
+    }
+    g_grid_scene = scene;
+    g_grid_array = scene->entities;
+    g_grid_count = scene->nentities;
+    g_grid_small = g_grid_n < GRID_MIN;
+}
+
+int ent_near_solid(const Scene *scene, float x, float z, float r, const Entity **out, int cap)
+{
+    float reach;
+    int x0, x1, z0, z1;
+    int cx, cz;
+    int n;
+
+    if (!scene || g_stamp == 0) {
+        return -1;
+    }
+    check_epoch();
+    if (g_built != g_stamp || g_dirty || g_grid_scene != scene || g_grid_array != scene->entities
+        || g_grid_count != scene->nentities) {
+        grid_build(scene);
+        g_built = g_stamp;
+        g_dirty = 0;
+    }
+    if (!g_grid_scene || g_grid_small) {
+        return -1;
+    }
+    reach = r + g_grid_radius + GRID_PAD;
+    x0 = df_ifloor((x - reach) / GRID_CELL);
+    x1 = df_ifloor((x + reach) / GRID_CELL);
+    z0 = df_ifloor((z - reach) / GRID_CELL);
+    z1 = df_ifloor((z + reach) / GRID_CELL);
+    if (x1 - x0 >= GRID_SPAN || z1 - z0 >= GRID_SPAN) {
+        return -1;
+    }
+    n = 0;
+    for (cz = z0; cz <= z1; cz++) {
+        for (cx = x0; cx <= x1; cx++) {
+            int k;
+
+            for (k = g_bucket[bucket_of(cx, cz)]; k >= 0; k = g_grid_next[k]) {
+                /* Another cell sharing the bucket is that cell's query's, not this one's: each entity once. */
+                if (g_grid_cx[k] != cx || g_grid_cz[k] != cz) {
+                    continue;
+                }
+                if (n >= cap) {
+                    return -1;
+                }
+                out[n++] = g_grid_ent[k];
+            }
+        }
+    }
+    return n;
+}
+
+void ent_regather(void)
+{
+    g_dirty = 1;
 }

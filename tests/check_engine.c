@@ -2261,6 +2261,71 @@ static void check_registry(void)
     ent_clear();
 }
 
+/*
+ * The near-gather (ent_near_solid): 500 entities scattered over 20000
+ * units, 200 steps tested before the first frame (every entity walked)
+ * and after it (the grid): the same answers, some of them blocked; and a
+ * gather that hands back only the few near.
+ */
+static void check_near_gather(void)
+{
+    static Scene sc;
+    static Entity many[500];
+    static df_u8 before[200];
+    const Entity *near_ents[128];
+    Entity self;
+    Camera cam;
+    df_u32 seed;
+    int same;
+    int blocked;
+    int n;
+    int i;
+
+    ent_clear();
+    mem_zero(&sc, sizeof(sc));
+    seed = 12345u;
+    for (i = 0; i < 500; i++) {
+        entity_init(&many[i]);
+        seed = seed * 1103515245u + 12345u;
+        many[i].x = (float)((seed >> 8) % 20000u) - 10000.0f;
+        seed = seed * 1103515245u + 12345u;
+        many[i].z = (float)((seed >> 8) % 20000u) - 10000.0f;
+        many[i].radius = 16.0f;
+        many[i].live = 1;
+        many[i].pose[ENTITY_WALK].slot[0] = 0;
+        many[i].pose[ENTITY_WALK].w[0] = 32;
+        many[i].pose[ENTITY_WALK].h[0] = 64;
+    }
+    sc.entities = many;
+    sc.nentities = 500;
+    ent_place(&sc);
+    self = many[0];
+    /* A step from 60 units off to a point 20 past an entity, 0, 20 or 40 aside: it meets two in three. */
+    for (i = 0; i < 200; i++) {
+        self.x = many[i * 2 + 1].x - 60.0f;
+        self.z = many[i * 2 + 1].z + (float)(i % 3) * 20.0f;
+        before[i] = (df_u8)entity_blocked(&sc, &self, many[i * 2 + 1].x + 20.0f, self.z);
+    }
+    check_expect(ent_near_solid(&sc, 0.0f, 0.0f, 16.0f, near_ents, 128) == -1, "the gather answered before the first frame");
+    camera_set(&cam, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+    ent_frame(&sc, &cam);
+    same = 1;
+    blocked = 0;
+    for (i = 0; i < 200; i++) {
+        int now;
+
+        self.x = many[i * 2 + 1].x - 60.0f;
+        self.z = many[i * 2 + 1].z + (float)(i % 3) * 20.0f;
+        now = entity_blocked(&sc, &self, many[i * 2 + 1].x + 20.0f, self.z);
+        same = same && now == before[i];
+        blocked += now;
+    }
+    check_expect(same && blocked > 50 && blocked < 200, "the grid's steps did not match every entity walked");
+    n = ent_near_solid(&sc, many[7].x, many[7].z, 16.0f, near_ents, 128);
+    check_expect(n >= 1 && n < 20, "the gather did not hand back only the near ones");
+    ent_clear();
+}
+
 static void check_spawn(void)
 {
     static Scene sc;
@@ -6036,6 +6101,7 @@ void check_engine(void)
     check_body_fixes();
     check_body_crouch();
     check_registry();
+    check_near_gather();
     check_spawn();
     check_body_lifts();
     check_console();

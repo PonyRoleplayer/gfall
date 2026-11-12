@@ -198,6 +198,16 @@ An `EntId` is the entry's index plus one in its low 16 bits (the pool first, the
 - The pool and the ranges belong to the scene and heap epoch they were filled under: any call that finds the epoch moved drops them, and an add or a range into another scene empties the pool first. `ent_clear` (a stream's open and close, `spawn_clear`) drops both.
 - `ent_shift` moves the pool with the stream's origin. An array's entries are their owner's to move.
 
+### The near-gather
+
+A body's push (`body.c`) and `entity_blocked` used to walk every entity for every step: about 24 minds × 600 entities in a full streamed dungeon, an estimated 2.5 ms on the 233 (`docs/entity-plan.md`, 7; not measured). They now ask `ent_near_solid(scene, x, z, r, out, cap)` for the candidates near, and test each by their own rule as before.
+
+- **The grid:** every entity with a radius (live or not, so one becoming solid is still found), by the 512-unit ground cell its feet stood in, hashed into 256 buckets. A query reaches `r`, plus the largest radius, plus `GRID_PAD` (256 units, what an entity may move between builds), and hands back each entity of the cells it covers once.
+- **When it is built:** at the first query after `ent_frame` (each frame, from `draw_frame`), and again when the pool, a range, a renewed slot or the scene's array (its pointer or its length) changed. `ent_regather()` asks for it too: a game that moves entities far with no frame between (a long rest stepped in a loop) calls it first.
+- **When it is not used:** before the first `ent_frame` of a place (host tests step bodies with no frames), with fewer than 32 entities with a radius (walking them is as cheap, and never stale), when more than `ENT_IDS` have one, when a query spans more than 6 cells across, or when more than the caller's 128 candidates come back. The callers then walk `ent_lists` as before.
+
+`check_near_gather` (hostcheck): 500 entities over 20000 units, 200 steps tested before the first frame and after it give the same answers, about two in three blocked, and a gather round one hands back fewer than 20.
+
 Leash applies to the pool only. A range's or the scene's entry goes with its array. `residence` and `ENT_KEPT` are stored for step 8 (kept game-made entities).
 
 `check_registry` (hostcheck) gives ids to a scene's own entries, a range's and a pool entry; walks them all once; renews one entry and keeps the others; drops a range and its ids; removes a pool entry; and forgets every id on a new heap.

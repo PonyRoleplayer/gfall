@@ -115,6 +115,21 @@ void ent_renew(const Scene *scene, int first, int n);
 void ent_frame(const Scene *scene, const Camera *cam);
 /* The stream's origin moved: the pool moves by -dx, -dz with it. An array is its owner's to move. */
 void ent_shift(const Scene *scene, float dx, float dz);
+/*
+ * The near-gather, for a body's push and entity_blocked: every entity
+ * with a radius whose feet stood within r of x, z (plus the largest
+ * radius and what it may have moved since the grid was built) into out,
+ * at most cap; how many. Candidates only: the caller tests each by its
+ * own rule (entity_solid, its height, the circles). -1 when there is no
+ * grid to ask (before the first ent_frame, too many entities, a reach
+ * across too many cells, more than cap): walk ent_lists instead.
+ * The grid is built at the first query after ent_frame, and again after
+ * anything was added, removed, renewed or registered. A game that moves
+ * entities far without a frame between (a long rest stepped in a loop)
+ * calls ent_regather first.
+ */
+int ent_near_solid(const Scene *scene, float x, float z, float r, const Entity **out, int cap);
+void ent_regather(void);
 /* The pool's array (ENT_POOL entries, free ones not live) when scene is its place; 0 otherwise. */
 Entity *ent_pool(const Scene *scene, int *n);
 

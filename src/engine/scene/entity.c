@@ -122,20 +122,26 @@ static int circles_meet(float ax, float az, float ra, float bx, float bz, float 
 }
 
 /* 1 when self, moved to x, z and standing lo..hi, would walk into a solid entity of list[0..n-1]. */
+/* The near-gather's candidates: as many as stand round one entity at once, and more walks everything. */
+#define NEAR_CAP 128
+
+/* 1 when o stops self's step to x, z (its body from lo to hi). */
+static int blocked_one(const Entity *o, const Entity *self, float x, float z, float lo, float hi)
+{
+    if (o == self || !entity_solid(o)) {
+        return 0;
+    }
+    return hi > o->y && lo < o->y + entity_height(o) && circles_meet(x, z, self->radius, o->x, o->z, o->radius)
+        /* Already overlapping (born so): let it walk out, not freeze. */
+        && !circles_meet(self->x, self->z, self->radius, o->x, o->z, o->radius);
+}
+
 static int blocked_by(const Entity *list, int n, const Entity *self, float x, float z, float lo, float hi)
 {
     int i;
 
     for (i = 0; list && i < n; i++) {
-        const Entity *o;
-
-        o = &list[i];
-        if (o == self || !entity_solid(o)) {
-            continue;
-        }
-        if (hi > o->y && lo < o->y + entity_height(o) && circles_meet(x, z, self->radius, o->x, o->z, o->radius)
-            /* Already overlapping (born so): let it walk out, not freeze. */
-            && !circles_meet(self->x, self->z, self->radius, o->x, o->z, o->radius)) {
+        if (blocked_one(&list[i], self, x, z, lo, hi)) {
             return 1;
         }
     }
@@ -164,7 +170,30 @@ int entity_blocked(const Scene *scene, const Entity *self, float x, float z)
     if (!scene) {
         return 0;
     }
-    /* The place's own, the game's ranges and those made while playing (docs/entities.md, The registry). */
+    /*
+     * The place's own, the game's ranges and those made while playing
+     * (docs/entities.md, The registry): the ones near the step, by the
+     * grid, or all of them when there is no grid to ask. The step's end
+     * and the feet now are both tested, so the reach covers the step too.
+     */
+    {
+        const Entity *near_ents[NEAR_CAP];
+        float dx, dz;
+        float reach;
+
+        dx = x - self->x;
+        dz = z - self->z;
+        reach = self->radius + (dx < 0.0f ? -dx : dx) + (dz < 0.0f ? -dz : dz);
+        n = ent_near_solid(scene, self->x, self->z, reach, near_ents, NEAR_CAP);
+        if (n >= 0) {
+            for (i = 0; i < n; i++) {
+                if (blocked_one(near_ents[i], self, x, z, lo, hi)) {
+                    return 1;
+                }
+            }
+            return 0;
+        }
+    }
     n = ent_lists(scene, lists, ENT_LISTS);
     for (i = 0; i < n; i++) {
         if (blocked_by(lists[i].first, lists[i].n, self, x, z, lo, hi)) {

@@ -104,7 +104,7 @@ The walker is the viewers' body, and it walks the console's camera from inside `
 
 ### Entities
 
-An entity with a radius (`Entity.radius`, `docs/entities.md`) stands in the way. After the move across, the body is pushed out of every live solid entity its height meets, its radius and the entity's apart, the push swept through `collide` like any move, so it never goes into a wall (`push_off_entities`). For the game's motors, `entity_blocked(scene, self, x, z)` says whether an entity standing at x, z would meet the body or another solid entity, and `walker_body` gives the body's feet. Two that already overlap (born so) may walk apart.
+An entity with a radius (`Entity.radius`, `docs/entities.md`) stands in the way. After the move across, the body is pushed out of every live solid entity its height meets, its radius and the entity's apart, the push swept through `collide` like any move, so it never goes into a wall (`push_off_entities`). For the game's motors, `entity_blocked(scene, self, x, z)` says whether an entity standing at x, z would meet the body or another solid entity, and `walker_body` gives the body's feet. Two that already overlap (born so) may walk apart. Both take the entities near from the registry's near-gather once a place has drawn a frame, and walk every entity before that (`docs/entities.md`, The near-gather).
 
 ### Lifts
 

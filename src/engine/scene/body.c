@@ -416,9 +416,13 @@ static void push_from_list(const Body *b, const Entity *list, int n, float *px, 
     }
 }
 
+/* The near-gather's candidates: as many as stand round one body at once, and more walks everything. */
+#define NEAR_CAP 128
+
 static void push_off(Body *b, const Scene *scene)
 {
     EntList lists[ENT_LISTS];
+    const Entity *near_ents[NEAR_CAP];
     float px;
     float pz;
     float wx, wy, wz;
@@ -427,10 +431,26 @@ static void push_off(Body *b, const Scene *scene)
 
     px = 0.0f;
     pz = 0.0f;
-    /* The place's own, the game's ranges and those made while playing (docs/entities.md, The registry). */
-    n = ent_lists(scene, lists, ENT_LISTS);
-    for (i = 0; i < n; i++) {
-        push_from_list(b, lists[i].first, lists[i].n, &px, &pz);
+    /*
+     * The place's own, the game's ranges and those made while playing
+     * (docs/entities.md, The registry): the ones near, by the grid, or all
+     * of them when there is no grid to ask.
+     */
+    n = ent_near_solid(scene, b->feet[0], b->feet[2], b->radius, near_ents, NEAR_CAP);
+    if (n >= 0) {
+        for (i = 0; i < n; i++) {
+            const Entity *e;
+
+            e = near_ents[i];
+            if (e != b->self && entity_solid(e)) {
+                push_from(b, e->x, e->y, e->z, e->radius, entity_height(e), &px, &pz);
+            }
+        }
+    } else {
+        n = ent_lists(scene, lists, ENT_LISTS);
+        for (i = 0; i < n; i++) {
+            push_from_list(b, lists[i].first, lists[i].n, &px, &pz);
+        }
     }
     if (b != walker_own_body() && walker_body(&wx, &wy, &wz)) {
         push_from(b, wx, wy, wz, walker_own_body()->radius, walker_own_body()->height, &px, &pz);
