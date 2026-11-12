@@ -3071,6 +3071,16 @@ static void check_dungeon_automap(void)
     }
     camera_set(&cam, x, y, z, yaw, pitch);
     dunstream_fill(&cam);
+    /* The hold loaded whole numbers the same quest markers (what OGFALL, which loads its dungeons whole, asks): 0xFA01 and 0xFA02. */
+    {
+        World *whole;
+        float wx, wy, wz;
+
+        whole = world_load();
+        check_expect(whole && world_quest_marker(whole, 0, -1, 0, &wx, &wy, &wz) && wx == 645.0f && wy == 41.0f && wz == 1585.0f && world_quest_marker(whole, 1, -1, 0, &wx, &wy, &wz) &&
+                     wx == 1428.0f && !world_quest_marker(whole, 2, -1, 0, &wx, &wy, &wz) && world_quest_marker(whole, -1, 18, 7u, &wx, &wy, &wz) && wx == 1428.0f,
+                     "the hold loaded whole: its quest markers are not 0xFA01 and 0xFA02 as the stream numbers them");
+    }
     /* The hold's quest sites, the records before its location record: a person marker (0x4000, low word 64001) and an item marker (0x1000, 64002), no building. */
     {
         DunSite site[8];

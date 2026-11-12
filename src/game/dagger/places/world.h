@@ -105,6 +105,8 @@ struct Entity;
 int world_creatures_step(World *world, const Camera *cam, float radius, float budget_ms);
 /* A building's people, who are entities in a range of their own (world_as_level registers it): how many. */
 int world_people_count(const World *world);
+/* A whole dungeon's quest marker (editor records 11 and 18), numbered in the blocks' order as dunstream_quest_marker's: n >= 0 the n-th of either record, from 0; n < 0 one of the record picked by the seed. 1 when there is one. */
+int world_quest_marker(const World *world, int n, int record, unsigned seed, float *x, float *y, float *z);
 int world_entity_count(const World *world);
 const struct Entity *world_entity(const World *world, int index);
 int world_entity_kind(const World *world, int index, int *passive);

@@ -1108,6 +1108,21 @@ static int build_slot(int file, int image, int *slot, int *w, int *h)
 
 static int build_marker(int record, int n, float *x, float *y, float *z)
 {
+    int i;
+
+    if (g_building && g_building->place == PLACE_DUNGEON) {
+        /* A whole dungeon: its quest markers (199.11, 199.18) in the blocks' order, as dunstream numbers them; record -1 either. */
+        for (i = 0; i < g_building->ndmark; i++) {
+            const Marker *mk;
+
+            mk = &g_building->dmark[i];
+            if ((mk->record == 11 || mk->record == 18) && (record < 0 || (int)mk->record == record) && n-- == 0) {
+                *x = mk->x; *y = mk->y; *z = mk->z;
+                return 1;
+            }
+        }
+        return 0;
+    }
     return world_marker_nth(g_building, record, n, x, y, z);
 }
 
@@ -1148,7 +1163,18 @@ static void run_entity_hooks(World *world)
     if (world->npers < PEOPLE_MAX) {
         b.nth = world->npers;
         made = entbuild_add(&b, world->pers + world->npers, PEOPLE_MAX - world->npers);
-        if (made > 0) { world->npers += made; }
+        if (made > 0) {
+            int k;
+
+            /* A dungeon's markers are flat centres: the game's people stand on the floor under theirs. */
+            for (k = world->npers; world->place == PLACE_DUNGEON && k < world->npers + made; k++) {
+                float ground;
+
+                if (foe_floor(world, world->pers[k].x, world->pers[k].y, world->pers[k].z, &ground)) { world->pers[k].y = ground; }
+                else { world->pers[k].y -= (float)world->pers[k].pose[ENTITY_IDLE].h[0] * 0.5f; }
+            }
+            world->npers += made;
+        }
     }
     entbuild_end();
     g_building = 0;
@@ -2078,6 +2104,26 @@ const Water *world_water(const World *world, int index)
         return 0;
     }
     return &world->water[index];
+}
+
+int world_quest_marker(const World *world, int n, int record, unsigned seed, float *x, float *y, float *z)
+{
+    int i, count, pick;
+
+    if (!world || world->place != PLACE_DUNGEON) { return 0; }
+    count = 0;
+    for (i = 0; i < world->ndmark; i++) {
+        if ((world->dmark[i].record == 11 || world->dmark[i].record == 18) && (n >= 0 || record < 0 || (int)world->dmark[i].record == record)) { count++; }
+    }
+    if (!count || n >= count) { return 0; }
+    pick = n >= 0 ? n : (int)(seed % (unsigned)count);
+    for (i = 0; i < world->ndmark; i++) {
+        if ((world->dmark[i].record == 11 || world->dmark[i].record == 18) && (n >= 0 || record < 0 || (int)world->dmark[i].record == record) && pick-- == 0) {
+            *x = world->dmark[i].x; *y = world->dmark[i].y; *z = world->dmark[i].z;
+            return 1;
+        }
+    }
+    return 0;
 }
 
 int world_people_count(const World *world)

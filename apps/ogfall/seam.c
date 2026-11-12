@@ -1464,7 +1464,9 @@ static int street_quest(const OgFactionDef *f, int building_type, unsigned place
 /* A quest marker of the dungeon the player is in (dunstream's), a quest's creature on the floor beside it, and a pile there for its item. */
 static int quest_marker_at(int marker, int record, unsigned seed, float *x, float *y, float *z)
 {
-    return dunstream_active() && dunstream_quest_marker(marker, record, seed, x, y, z);
+    /* OGFALL loads its dungeons whole (a streamed one is the viewers'): the world's markers; a streamed dungeon's are dunstream's. */
+    if (dunstream_active()) { return dunstream_quest_marker(marker, record, seed, x, y, z); }
+    return g_world && world_quest_marker(g_world, marker, record, seed, x, y, z);
 }
 
 static int quest_spawn_foe_at(int kind, df_u32 thing, float x, float y, float z)
@@ -1595,7 +1597,8 @@ static int quest_dungeon_people(const EntBuild *b, Entity *out, int cap)
     int i, n, made, ox, oz;
 
     n = og_quest_people_in(b->region, quest_outside(), -2, -1, here, 8);
-    stream_origin(&ox, &oz);
+    ox = oz = 0;
+    if (b->block >= 0) { stream_origin(&ox, &oz); }
     made = 0;
     for (i = 0; i < n && made < cap; i++) {
         const Faction *f;
@@ -1603,9 +1606,12 @@ static int quest_dungeon_people(const EntBuild *b, Entity *out, int cap)
         int file, image;
 
         if (!here[i].has_point) { continue; }
-        lx = here[i].x - (float)(b->cx - ox) * DUNSTREAM_BLOCK;
-        lz = here[i].z - (float)(b->cz - oz) * DUNSTREAM_BLOCK;
-        if (lx < 0.0f || lx >= DUNSTREAM_BLOCK || lz < 0.0f || lz >= DUNSTREAM_BLOCK) { continue; }
+        /* A whole dungeon (OGFALL's): the point is in the world's frame; a streamed block: in the chunk's, its origin taken off, and only the block that holds it makes them. */
+        lx = here[i].x; lz = here[i].z;
+        if (b->block >= 0) {
+            lx -= (float)(b->cx - ox) * DUNSTREAM_BLOCK; lz -= (float)(b->cz - oz) * DUNSTREAM_BLOCK;
+            if (lx < 0.0f || lx >= DUNSTREAM_BLOCK || lz < 0.0f || lz >= DUNSTREAM_BLOCK) { continue; }
+        }
         f = factionfile_open() && here[i].faction ? faction_find(here[i].faction) : 0;
         if (!f || !f->flat_archive[here[i].female]) { f = faction_people_of(b->region); }
         file = f ? f->flat_archive[here[i].female] : 182;
