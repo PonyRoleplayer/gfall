@@ -11,6 +11,7 @@
 #include <sys/wait.h>
 
 void check_engine(void);
+void check_maps(void);
 int check_dagger(const char *root);
 void check_ogfall(const char *root);
 int check_ogfall_resume(const char *root, int slot);
@@ -34,6 +35,8 @@ int main(int argc, char **argv)
     if (check_dagger(root) && !check_failed()) {
         return 1;
     }
+    /* What of Daggerfall's own pieces remains to be checked: the macros, the maps' arrow, the indoor map, a building's people. */
+    check_maps();
     /* Each executable owns its command table and gameplay globals. */
     fflush(0);
     child = fork();
