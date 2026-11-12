@@ -37,6 +37,8 @@ typedef struct OgQuestPerson {
     int at;
     /* The building the person stands in (their site at the start, or the place op 30 put them in): the town and the building's block and record; homed 0 for none. */
     int homed, home_region, home_index, home_block, home_record;
+    /* 1 when the site was picked by a building type (kinds 0 and up, -6): the person is one of that building's own people, not an added one. */
+    int takeover;
     /* The person is a woman (flags 0x200, or a toss when neither sex is asked). */
     int female;
     char name[40], town[33];
@@ -174,7 +176,8 @@ const OgQuestAccess *og_quest_access(int i);
 
 /* The quest people standing in a building (op 30 put them in a place that is one): the building's block and record in the town at region and index. Each is made a person of the building when
  * it is entered (the seam installs the engine's people hook); their flat carries OG_QUEST_PERSON_TAG, which a use of them is known by. */
-typedef struct OgQuestHere { int slot, person, female, faction; } OgQuestHere;
+/* takeover: the person is one of the building's own people (a quest person of a building type takes over an NPC of it: the original's NPC site); seed picks which. */
+typedef struct OgQuestHere { int slot, person, female, faction, takeover; unsigned seed; } OgQuestHere;
 int og_quest_people_in(int region, int index, int block, int record, OgQuestHere *out, int cap);
 #define OG_QUEST_PERSON_MARK 0x7000
 #define OG_QUEST_PERSON_TAG(slot, person) (OG_QUEST_PERSON_MARK + (slot) * 16 + (person))

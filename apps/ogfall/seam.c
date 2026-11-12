@@ -1515,30 +1515,52 @@ static void quest_person_name(int who, int faction, int female, char *out, int c
 
 /* The engine's hook for a building's inside (world_set_people_hook): each quest person put in it stands on a quest marker (199.11) of the building, else beside its first person (else its first flat),
  * as their faction's flat for their sex (else the region's people's), the flat marked with the quest and person so a use of them is theirs (talk_used). */
-static int quest_people_hook(const Dungeon *town, int block, int record, const Flat *flats, int nflat, Flat *out, int cap)
+static int quest_people_hook(const Dungeon *town, int block, int record, Flat *flats, int nflat, Flat *out, int cap)
 {
     OgQuestHere here[8];
     const Flat *at;
-    int n, i;
+    int n, i, made;
     float mx, my, mz;
 
     n = og_quest_people_in(town->region, town->index, block, record, here, cap < 8 ? cap : 8);
     if (!n || !nflat) { return 0; }
     at = &flats[0];
     for (i = 0; i < nflat; i++) { if (flats[i].tag & FLAT_PERSON) { at = &flats[i]; break; } }
+    made = 0;
     for (i = 0; i < n; i++) {
         const Faction *f;
+        df_u16 file, image, tag;
 
         f = factionfile_open() && here[i].faction ? faction_find(here[i].faction) : 0;
         if (!f || !f->flat_archive[here[i].female]) { f = faction_people_of(town->region); }
-        mem_zero(&out[i], sizeof(out[i]));
-        if (world_building_marker_nth(11, i, &mx, &my, &mz)) { out[i].x = mx; out[i].y = my; out[i].z = mz; }
-        else { out[i].x = at->x + 48.0f * (float)(i + 1); out[i].y = at->y; out[i].z = at->z; }
-        out[i].file = (df_u16)(f ? f->flat_archive[here[i].female] : 182);
-        out[i].image = (df_u16)(f ? f->flat_record[here[i].female] : 0);
-        out[i].tag = (df_u16)(FLAT_PERSON | OG_QUEST_PERSON_TAG(here[i].slot, here[i].person));
+        file = (df_u16)(f ? f->flat_archive[here[i].female] : 182);
+        image = (df_u16)(f ? f->flat_record[here[i].female] : 0);
+        tag = (df_u16)(FLAT_PERSON | OG_QUEST_PERSON_TAG(here[i].slot, here[i].person));
+        if (here[i].takeover) {
+            /* The NPC site (8.5 of quest-places-and-start.md): one of the building's own people becomes the quest person, where it stands: its picture is the quest person's, its faction kept. The original picks
+             * from the MAPS site list (partial, and its NPC numbers need a replay of the town's objects, `dungeon_sites` reads it); we pick by the quest's seed among the people of the building not already
+             * taken. */
+            int k, count, pick;
+
+            count = 0;
+            for (k = 0; k < nflat; k++) { if ((flats[k].tag & FLAT_PERSON) && (flats[k].tag & 0x7fff) < OG_QUEST_PERSON_MARK) { count++; } }
+            if (count) {
+                pick = (int)(here[i].seed % (unsigned)count);
+                for (k = 0; k < nflat; k++) {
+                    if (!((flats[k].tag & FLAT_PERSON) && (flats[k].tag & 0x7fff) < OG_QUEST_PERSON_MARK) || pick-- != 0) { continue; }
+                    flats[k].file = file; flats[k].image = image; flats[k].tag = tag;
+                    break;
+                }
+                continue;
+            }
+        }
+        mem_zero(&out[made], sizeof(out[made]));
+        if (world_building_marker_nth(11, made, &mx, &my, &mz)) { out[made].x = mx; out[made].y = my; out[made].z = mz; }
+        else { out[made].x = at->x + 48.0f * (float)(made + 1); out[made].y = at->y; out[made].z = at->z; }
+        out[made].file = file; out[made].image = image; out[made].tag = tag;
+        made++;
     }
-    return n;
+    return made;
 }
 
 static int talk_used(const Usable *u, int mode, float dist, const Camera *cam)

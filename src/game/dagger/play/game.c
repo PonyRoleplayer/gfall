@@ -2198,7 +2198,7 @@ static void use_key(const Camera *cam)
  * flat), as their faction's flat for their sex (else the region's people's),
  * marked QUEST_PERSON_TAG so a use of them is the quest's (person_used).
  */
-static int quest_people_hook(const Dungeon *town, int block, int record, const Flat *flats, int nflat, Flat *out, int cap)
+static int quest_people_hook(const Dungeon *town, int block, int record, Flat *flats, int nflat, Flat *out, int cap)
 {
     QuestPersonHere here[8];
     const Flat *at;

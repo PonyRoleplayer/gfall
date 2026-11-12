@@ -556,7 +556,11 @@ void check_ogquest(void)
                          "quest: a tavern person was not homed in a building of the town the player is in, with the building's faction");
             check_expect(pq && pq->person[1].homed && pq->person[1].faction == 4242, "quest: the linked person (-5) did not take the first one's faction and a site");
             check_expect(pq && pq->person[2].homed && pq->person[2].home_index != 10, "quest: the person asked for in another town (low byte 1) was homed in the town the player is in");
-            check_expect(pq && og_quest_people_in(17, 10, 5, 9, (OgQuestHere[4]){{0}}, 4) == 2, "quest: the town's building 5, 9 does not hold the two persons homed there");
+            {
+                OgQuestHere in[4];
+
+                check_expect(pq && og_quest_people_in(17, 10, 5, 9, in, 4) == 2 && in[0].takeover == 1 && in[1].takeover == 0, "quest: the town's building 5, 9 does not hold the two persons homed there, the tavern's one taking over a person of it");
+            }
             g_site_none = 1;
             check_expect(og_quest_start_bytes("TEST0015", f3, 0x140 + 87 + 8, 0) == -1, "quest: a quest whose person has no site anywhere was started");
             g_site_none = 0;

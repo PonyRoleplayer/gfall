@@ -449,7 +449,7 @@ static int bind_persons(int slot)
                 if (mode >= 0 && g_world && g_world->pick_site && !found) { return 0; }
                 p->bound = 1;
                 p->faction = kind == -1 ? faction : (found && bfaction ? bfaction : faction);
-                if (found) { p->homed = 1; p->home_region = region; p->home_index = index; p->home_block = block; p->home_record = record; }
+                if (found) { p->homed = 1; p->home_region = region; p->home_index = index; p->home_block = block; p->home_record = record; p->takeover = (kind == -6 || kind >= 0) && !(pe->flags & 0x100) ? 1 : 0; }
                 done_flag[i] = 1; progress++;
             }
             p->who = (int)(0x40000000u | (unsigned)(slot << 8) | (unsigned)i);
@@ -547,7 +547,7 @@ int og_quest_people_in(int region, int index, int block, int record, OgQuestHere
             p = &q->person[i];
             if (!p->bound || !p->homed || q->qbn.person[i].kind == -8 || q->qbn.person[i].kind == 21 || (q->qbn.person[i].flags & 0xA00) == 0xA00) { continue; }
             if (p->home_region != region || p->home_index != index || p->home_block != block || p->home_record != record || block < 0) { continue; }
-            out[n].slot = s; out[n].person = i; out[n].female = p->female; out[n].faction = p->faction;
+            out[n].slot = s; out[n].person = i; out[n].female = p->female; out[n].faction = p->faction; out[n].takeover = p->takeover; out[n].seed = (unsigned)(q->qbn.id * 977 + i * 131);
             n++;
         }
     }
@@ -1986,7 +1986,7 @@ static void qwire_quest(QWire *w, OgQuest *q, int read)
     for (i = 0; i < q->qbn.n_person; i++) {
         QI(q->qbn.person[i].flags);
         QI(q->person[i].bound);
-        QI(q->person[i].at); QI(q->person[i].female); QI(q->person[i].homed); QI(q->person[i].home_region); QI(q->person[i].home_index); QI(q->person[i].home_block); QI(q->person[i].home_record);
+        QI(q->person[i].at); QI(q->person[i].female); QI(q->person[i].homed); QI(q->person[i].takeover); QI(q->person[i].home_region); QI(q->person[i].home_index); QI(q->person[i].home_block); QI(q->person[i].home_record);
         if (q->person[i].bound) { QI(q->person[i].who); QI(q->person[i].faction); qbytes(w, q->person[i].name, 40, read); qbytes(w, q->person[i].town, 33, read); }
     }
 #undef QI
