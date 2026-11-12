@@ -5,7 +5,7 @@
  * The character and the class rows chargen and the jump read.
  * Not FALL.EXE's 634-byte character: the fields slice 1 uses.
  * The seam fills the 18 standard CLASS*.CFG rows; row 18 is the custom
- * editor. Chargen writes the character. See docs/gfall.md.
+ * editor. Chargen writes the character. See docs/game.md.
  */
 
 #define NAME_LEN 32

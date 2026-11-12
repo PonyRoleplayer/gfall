@@ -2,7 +2,7 @@
 #define GFALL_QUEST_H
 
 /*
- * The quest machine (qcom.c, qinit.c, tamriel.c quests_run_all of the decompilation; docs/quest-machine.md there, docs/gfall-quests.md here for the plan and the bugs
+ * The quest machine (qcom.c, qinit.c, tamriel.c quests_run_all of the decompilation; docs/quest-machine.md there, docs/game-quests.md here for the plan and the bugs
  * fixed). A quest is its QBN (formats/qbn.h) and the state it has run to: the states, each op's done bit, the timers. Quests run every frame of play and every passing
  * minute: each op in file order, looked at once; the states change as the ops run, so an op sees what the ones before it did this run.
  *

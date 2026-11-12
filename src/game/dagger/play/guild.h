@@ -4,7 +4,7 @@
 #include "engine/core/df.h"
 
 /*
- * The guilds the player belongs to. Slice 9 of people and law (docs/gfall-people.md), from guild_join_or_promote
+ * The guilds the player belongs to. Slice 9 of people and law (docs/game-people.md), from guild_join_or_promote
  * (src/hand/run_0006DC35.c 108..190), guild_join_check (func_0006FF7E.c), guild_rank_for_skills and the membership
  * finders (src/lifted/guilds.c 278..460), guild_count_crime (guilds_00070370.c), guild_check_invitations and
  * guild_add_membership (run_00070887.c), guild_kind_of_faction (run_00070EC0.c 92), with the notes in

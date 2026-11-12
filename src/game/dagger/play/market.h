@@ -8,7 +8,7 @@
 /*
  * A buying, selling or repairing session at a shop: what moves between the shelves, the
  * counter and the player's pack, what it costs, and what paying does. Slice 2 of people and
- * law (docs/gfall-people.md). The flow is inventory_frame, inventory_close and the trade
+ * law (docs/game-people.md). The flow is inventory_frame, inventory_close and the trade
  * helpers in the decomp (src/lifted/inven.c 386..500, 1054..1335); the sums are trade.c's.
  * No drawing and no pointer here: the inventory screen drives it.
  *

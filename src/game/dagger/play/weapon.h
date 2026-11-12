@@ -2,7 +2,7 @@
 #define GFALL_WEAPON_H
 
 /* Original hand selection, gestures and CIF animation clock. The app supplies
- * pictures; this module owns when a strike is due. See docs/gfall.md. */
+ * pictures; this module owns when a strike is due. See docs/game.md. */
 #include "game/dagger/play/play.h"
 #include "game/dagger/play/state.h"
 

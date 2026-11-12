@@ -3,7 +3,7 @@
 
 /*
  * The item maker's rules (itemmakr.c, func_000576FF, func_00057147, func_00057F8B and func_00058A31 of the decompilation; docs/item-making-math.md there,
- * docs/gfall-itemmaker.md here for which of the original's bugs are fixed): ten slots of powers and side effects on one item, what each costs in the item's
+ * docs/game-itemmaker.md here for which of the original's bugs are fixed): ten slots of powers and side effects on one item, what each costs in the item's
  * enchantment points and in gold, what an item may be given, and the item made. The screen is stage 2.
  *
  * A slot is a power (kind 0, type 0..14) or a side effect (kind 1, type 0..10, the item's type 15..25). A parameter is a list index (the three spell lists, the

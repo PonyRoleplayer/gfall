@@ -1,7 +1,7 @@
 #ifndef GFALL_FILES_H
 #define GFALL_FILES_H
 
-/* Classic's six-slot save/load screen over GFALL saves. See docs/gfall.md. */
+/* Classic's six-slot save/load screen over GFALL saves. See docs/game.md. */
 #include "game/dagger/play/save.h"
 #define FILE_ACCEPT_X 112
 #define FILE_REJECT_X 176

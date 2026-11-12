@@ -2,7 +2,7 @@
 #define GFALL_INVENTORY_H
 
 /* Original item records, containers and 27 equipment slots. Item IDs remain
- * stable when moved; a spellbook carries its spell children. See docs/gfall.md. */
+ * stable when moved; a spellbook carries its spell children. See docs/game.md. */
 #include "game/dagger/play/state.h"
 
 df_u32 item_create(df_u32 parent, int group, int index, int material);

@@ -3,7 +3,7 @@
 
 /* Dungeon picking and bashing; movers and collision remain generic engine
  * facilities. Failed attempts live in the mover's Keep.game bytes.
- * See docs/gfall.md. */
+ * See docs/game.md. */
 #include "engine/gfx/camera.h"
 #include "engine/scene/scene.h"
 

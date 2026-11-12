@@ -2,7 +2,7 @@
 #define GFALL_QBN_H
 
 /*
- * A quest's logic: ARENA2's .QBN, read in place and parsed into plain records (docs/quest-machine.md of the decompilation, section 1.2; docs/gfall-quests.md here).
+ * A quest's logic: ARENA2's .QBN, read in place and parsed into plain records (docs/quest-machine.md of the decompilation, section 1.2; docs/game-quests.md here).
  * The original uses the file as its own record and fixes pointers up; GFALL keeps no pointers: an operand names a record by section and index, so a quest can be
  * saved as it is. Nothing here knows the world.
  *

@@ -14,7 +14,7 @@ int effect_cost_raw(int group, const df_i16 *c, const int *d, const int *ch, con
 int magic_resist(int index, int element, int class_bit, int modifier);
 int magic_chance(int index, int group, int sub);
 void magic_apply(int spell, int caster, int target, int level, int no_resist);
-/* A spell held by an enchanted item (Cast when held): a lasting effect on the player with icon 200 + the item's slot, ended by magic_release (items.md of the decomp, docs/gfall-enchantments.md). */
+/* A spell held by an enchanted item (Cast when held): a lasting effect on the player with icon 200 + the item's slot, ended by magic_release (items.md of the decomp, docs/game-enchantments.md). */
 void magic_hold(int spell, int slot);
 /* The same spell with a definition of the caller's (an item's strike spell is cast with icon 250). */
 void magic_apply_def(const SpellDef *def, int spell, int caster, int target, int level, int no_resist);

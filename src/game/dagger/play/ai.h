@@ -3,7 +3,7 @@
 
 /* Original detection and wall-following on generic engine bodies.
  * ai_stealth_check, ai_move_toward_target and ai_center_in_corridor.
- * See docs/gfall.md. No renderer or platform dependencies. */
+ * See docs/game.md. No renderer or platform dependencies. */
 #include "engine/scene/body.h"
 #include "engine/scene/entity.h"
 

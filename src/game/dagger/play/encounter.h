@@ -2,7 +2,7 @@
 #define GFALL_ENCOUNTER_H
 
 /* Original dungeon rest encounters. Live actors are kept entities of the engine's pool (docs/entities.md, Kept): the rolled six choices are saved here, the creatures themselves
- * (what they are, where they stand, health and AI) in their keyed Keep rows. See docs/gfall.md. */
+ * (what they are, where they stand, health and AI) in their keyed Keep rows. See docs/game.md. */
 #include "engine/scene/entity.h"
 #include "engine/gfx/camera.h"
 #define ENCOUNTERS 8

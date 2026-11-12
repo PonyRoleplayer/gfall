@@ -2,7 +2,7 @@
 #define GFALL_SPELLBOOK_H
 
 /* Readable books and the spellbook's owned spell list. No casting simulation
- * here: this slice exposes the real contents and descriptions. See docs/gfall.md. */
+ * here: this slice exposes the real contents and descriptions. See docs/game.md. */
 #include "game/dagger/formats/book.h"
 #include "game/dagger/play/state.h"
 

@@ -1,7 +1,7 @@
 #ifndef GFALL_SAVE_H
 #define GFALL_SAVE_H
 
-/* GFALL session serialization. Read docs/gfall.md before editing. */
+/* GFALL session serialization. Read docs/game.md before editing. */
 #define SAVE_DIR "gfall\\saves"
 
 #include "game/dagger/play/state.h"

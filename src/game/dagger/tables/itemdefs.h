@@ -3,7 +3,7 @@
 
 /* FALL.EXE's item templates, group maps, equipment slots and loot tables.
  * Values are extracted from the byte-perfect image; see tools/gfall-data.py
- * and docs/gfall.md. No dependency on GFALL's rules. */
+ * and docs/game.md. No dependency on GFALL's rules. */
 #include "engine/core/df.h"
 
 typedef struct ItemDef {

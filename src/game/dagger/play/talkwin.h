@@ -6,7 +6,7 @@
 /*
  * The talk window's behaviour: what talk_update, talk_draw and the 19 buttons of talk_buttons do (src/lifted/talk.c
  * 228..720, 805..1300, src/hand/func_00014AE8.c talk_open, func_0001889E.c talk_draw_tell_list), without drawing.
- * Slice 6 of people and law (docs/gfall-people.md), over slice 6's rules (talk.c). The seam paints the window
+ * Slice 6 of people and law (docs/game-people.md), over slice 6's rules (talk.c). The seam paints the window
  * from this state on TALK01I0.IMG and answers the clicks here. Everything the window knows of the world comes
  * through TalkWinWorld, so it runs on the host with a stand-in.
  *

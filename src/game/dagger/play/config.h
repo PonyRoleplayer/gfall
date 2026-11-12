@@ -1,7 +1,7 @@
 #ifndef GFALL_CONFIG_H
 #define GFALL_CONFIG_H
 
-/* GFALL's text preferences, independent of saves. Read docs/gfall.md.
+/* GFALL's text preferences, independent of saves. Read docs/game.md.
  * Keys are Windows virtual keys; no DOS keyboard codes enter this schema. */
 #include "game/dagger/play/steer.h"
 

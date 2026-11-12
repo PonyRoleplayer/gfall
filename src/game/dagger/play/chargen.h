@@ -2,7 +2,7 @@
 #define GFALL_CHARGEN_H
 
 /*
- * title_menu from the title through the summary. See docs/gfall.md.
+ * title_menu from the title through the summary. See docs/game.md.
  * Class list/questions and the custom editor feed the twelve BIOG
  * answers, then name, portrait, rolled attributes (6..14 points),
  * three skill groups (6 points each), reflexes and editable summary.

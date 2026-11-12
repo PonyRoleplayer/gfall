@@ -5,7 +5,7 @@
 
 /*
  * Conversation with a person: who will talk, how they greet, and the rolls behind a question. Slice 6 of
- * people and law (docs/gfall-people.md), from the decomp's talk_start (src/lifted/talk.c 356), talk_open
+ * people and law (docs/game-people.md), from the decomp's talk_start (src/lifted/talk.c 356), talk_open
  * (src/hand/func_00014AE8.c), talk_faction_greeting, talk_faction_relation (src/hand/func_00018BDC.c),
  * talk_roll_attitude and talk_roll_knows (talk.c 1378..1457), with the notes in docs/ai-social-math.md
  * ("Dialogue disposition"). The greetings' record numbers, the chance to know and the attitudes are read out

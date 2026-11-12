@@ -1,7 +1,7 @@
 #ifndef GFALL_OPTIONS_H
 #define GFALL_OPTIONS_H
 
-/* Classic Options and modal routing. Read docs/gfall.md. Geometry is shared
+/* Classic Options and modal routing. Read docs/game.md. Geometry is shared
  * by its compositor and controller; Detail is stored without renderer effect. */
 #define OPT_CONTINUE 9
 #define OPT_EXIT 2

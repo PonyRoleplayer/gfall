@@ -2,7 +2,7 @@
 #define GFALL_STATE_H
 
 /* GFALL's pointer-free session, original record ownership and Watcom RNG.
- * This is our own schema, not a DOS save ABI. Read docs/gfall.md. */
+ * This is our own schema, not a DOS save ABI. Read docs/game.md. */
 #include "game/dagger/play/standing.h"
 #include "game/dagger/play/bank.h"
 #include "game/dagger/play/lodging.h"

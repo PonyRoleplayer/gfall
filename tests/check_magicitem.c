@@ -54,7 +54,7 @@ static int find_item(int group, const char *name)
     return -1;
 }
 
-/* The item maker's rules (docs/item-making-math.md sections 4 and 6, and the bugs docs/gfall-itemmaker.md fixes). */
+/* The item maker's rules (docs/item-making-math.md sections 4 and 6, and the bugs docs/game-itemmaker.md fixes). */
 static void itemmaker_checks(void)
 {
     static GameState saved;

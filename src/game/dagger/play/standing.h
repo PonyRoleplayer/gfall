@@ -4,7 +4,7 @@
 /*
  * What the world thinks of the player: faction reputations and powers, and
  * each region's legal reputation and price adjustment. Slice 1 of people and
- * law (docs/gfall-people.md). The rules follow the byte-matched decompilation
+ * law (docs/game-people.md). The rules follow the byte-matched decompilation
  * (src/lifted/talk.c 1620..1800 for reputation, tamriel.c 385..420 for decay),
  * with its worked notes in docs/ai-social-math.md ("Faction reputation").
  *

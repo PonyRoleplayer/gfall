@@ -6,7 +6,7 @@
 
 /*
  * The regional banks: an account a region (balance, a loan and when it is due), letters of credit,
- * the player's house and ship. Slice 3 of people and law (docs/gfall-people.md). The rules are the
+ * the player's house and ship. Slice 3 of people and law (docs/game-people.md). The rules are the
  * decomp's, src/lifted/bank.c 218..410 and src/hand/func_0006BF30.c, with its notes in
  * docs/economy-math.md ("Bank, houses, ships, loans", "Carrying gold"). Pure rules over the
  * session; the screen asks them, so a screen and a test do the same things.

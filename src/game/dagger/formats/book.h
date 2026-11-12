@@ -3,7 +3,7 @@
 
 /* BOOKS/BOKnnnnn.TXT: 234-byte header, page count, absolute u32 offsets,
  * then the book_draw_page token stream. A reader owns its file and page
- * buffer, not the world's temporary heap. Read docs/gfall.md. */
+ * buffer, not the world's temporary heap. Read docs/game.md. */
 #include "engine/core/df.h"
 #include "engine/platform/fs.h"
 #define BOOK_PAGES 512

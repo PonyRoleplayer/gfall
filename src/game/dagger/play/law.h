@@ -5,7 +5,7 @@
 #include "game/dagger/play/standing.h"
 
 /*
- * Crime and the court. Slice 5 of people and law (docs/gfall-people.md), from the decomp:
+ * Crime and the court. Slice 5 of people and law (docs/game-people.md), from the decomp:
  * crime_reputation_penalty, court_reputation_restore, court_restore_vitals, court_frame
  * (src/lifted/crime.c), court_open (src/hand/func_00020C87.c), prison_serve_sentence
  * (src/lifted/crime_000217E7.c), gold_spend and gold_total (src/lifted/support.c), with its notes in

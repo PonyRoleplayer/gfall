@@ -5,7 +5,7 @@
 #include "game/dagger/play/trade.h"
 
 /*
- * Taverns and where the player may sleep. Slice 4 of people and law (docs/gfall-people.md). The
+ * Taverns and where the player may sleep. Slice 4 of people and law (docs/game-people.md). The
  * rules are the decomp's: tavern_room_offer, tavern_room_pay, tavern_rent, tavern_extend_room,
  * tavern_room_rented, tavern_room_days_left, tavern_buy_food, tavern_food_button (src/lifted/tavern.c)
  * and rest_allowed, rest_room_expired (src/lifted/rest.c 197..244), with the notes in

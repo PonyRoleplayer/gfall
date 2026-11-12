@@ -1,7 +1,7 @@
 #ifndef GFALL_CONTROLS_H
 #define GFALL_CONTROLS_H
 
-/* The original 38-key control grid and mouse panel. Read docs/gfall.md. */
+/* The original 38-key control grid and mouse panel. Read docs/game.md. */
 typedef struct ControlRect { int x0, y0, x1, y1; } ControlRect;
 const ControlRect *control_rect(int index);
 void controls_open(void);

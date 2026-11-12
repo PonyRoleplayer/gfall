@@ -2,7 +2,7 @@
 #define GFALL_ENCHANT_H
 
 /*
- * What an enchanted item does while it is worn (item_apply_equip_effects, item_remove_equip_effects of the decompilation; docs/gfall-enchantments.md for the
+ * What an enchanted item does while it is worn (item_apply_equip_effects, item_remove_equip_effects of the decompilation; docs/game-enchantments.md for the
  * plan and the bugs fixed): Cast when held lasts as an effect on the player with icon 200 + the slot; Absorbs spells sets the condition; Enhances skill adds
  * 15 to the skill. `state_equip` (state.c) is the one place an item goes into or out of a slot, so every path applies and removes. The tick (minute by
  * minute effects), use, combat and carrying are the later slices.

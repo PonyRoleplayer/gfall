@@ -4,7 +4,7 @@
 #include "engine/core/df.h"
 
 /*
- * What a shop's shelves hold. Slice 2 of people and law (docs/gfall-people.md).
+ * What a shop's shelves hold. Slice 2 of people and law (docs/game-people.md).
  * From the decomp: shop_generate_stock (src/lifted/equip.c 755), interior_stock_shelves
  * (src/lifted/engsupp.c) and building_load_interior (maplogic.c), which clears the shop's
  * container and stocks every shelf again at each entry: nothing is kept between visits.

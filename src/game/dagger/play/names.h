@@ -4,7 +4,7 @@
 #include "engine/core/df.h"
 
 /*
- * The names of people and buildings. Slice 8 of people and law (docs/gfall-people.md), from name_generate,
+ * The names of people and buildings. Slice 8 of people and law (docs/game-people.md), from name_generate,
  * name_generate_first, name_generate_surname and namegen_read_part (src/lifted/names.c, src/hand/func_0008B65C.c),
  * npc_display_name (src/lifted/spfx.c 959) and building_name (names.c 169). The pieces come from NAMEGEN.DAT, which
  * the seam hands over as bytes (names_set_data); the words shops and taverns are named from are read out of

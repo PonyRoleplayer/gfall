@@ -1,7 +1,7 @@
 #ifndef GFALL_COMBATDEFS_H
 #define GFALL_COMBATDEFS_H
 
-/* Immutable FALL.EXE combat tables and MONSTER.BSA scripts. See docs/gfall.md. */
+/* Immutable FALL.EXE combat tables and MONSTER.BSA scripts. See docs/game.md. */
 #include "engine/core/df.h"
 
 typedef struct FoeDef {

@@ -4,7 +4,7 @@
 /*
  * The shop's arithmetic: what a basket costs to buy, what a pile sells for,
  * what a repair or an identification costs, and what the offer box says.
- * Slice 2 of people and law (docs/gfall-people.md). Pure integer rules from
+ * Slice 2 of people and law (docs/game-people.md). Pure integer rules from
  * the byte-matched decompilation, src/lifted/inven.c 1054..1345 and
  * src/lifted/generate.c 264..304, with the decomp's own worked notes in
  * docs/economy-math.md. Plain C, host-tested; the shelves and the screen are

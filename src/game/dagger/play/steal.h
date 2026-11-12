@@ -3,7 +3,7 @@
 
 /*
  * Taking what is not the player's: a pocket picked, a shop's counter emptied, a shelf looked through.
- * Slice 7 of people and law (docs/gfall-people.md), from pickpocket_attempt (src/lifted/steal.c), the
+ * Slice 7 of people and law (docs/game-people.md), from pickpocket_attempt (src/lifted/steal.c), the
  * trade screen's steal button (trade_steal_button, src/lifted/inven.c 1416) and the shelf click
  * (src/lifted/click.c 955..990), with notes in docs/ai-social-math.md ("Dialogue disposition", the shop steal
  * lines) and docs/character-skills-math.md. The original's own lines are read out of FALL.EXE

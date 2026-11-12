@@ -1,7 +1,7 @@
 #ifndef GFALL_PROGRESS_H
 #define GFALL_PROGRESS_H
 
-/* Persistent original skill/rest/level advancement. See docs/gfall.md. */
+/* Persistent original skill/rest/level advancement. See docs/game.md. */
 #include "game/dagger/tables/tables.h"
 #include "engine/core/df.h"
 typedef struct ProgressState {

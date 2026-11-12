@@ -2,7 +2,7 @@
 #define GFALL_ACTIONS_H
 
 /* Original dungeon links, separate from engine movers. The adapter supplies
- * raw action records and resolved model/mover/next indices. See docs/gfall.md. */
+ * raw action records and resolved model/mover/next indices. See docs/game.md. */
 #include "engine/scene/scene.h"
 #include "engine/gfx/camera.h"
 

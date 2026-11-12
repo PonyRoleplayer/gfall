@@ -2,7 +2,7 @@
 #define GFALL_SURVIVAL_H
 
 /* Original breath_update and minute-based fatigue_update. The engine only
- * supplies body/water queries. See docs/gfall.md. */
+ * supplies body/water queries. See docs/game.md. */
 #include "engine/core/df.h"
 #include "engine/scene/scene.h"
 typedef struct Survival {

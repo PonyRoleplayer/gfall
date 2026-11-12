@@ -1,7 +1,7 @@
 #ifndef GFALL_COMBAT_H
 #define GFALL_COMBAT_H
 
-/* FALL.EXE damage_roll_to_hit / damage_resolve_attack. See docs/gfall.md. */
+/* FALL.EXE damage_roll_to_hit / damage_resolve_attack. See docs/game.md. */
 #include "game/dagger/play/state.h"
 
 typedef struct FighterInfo {

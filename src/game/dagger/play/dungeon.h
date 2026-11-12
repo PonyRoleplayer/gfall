@@ -2,7 +2,7 @@
 #define GFALL_DUNGEON_H
 
 /* GFALL's creature combat and swept arrows. Entity pictures and collision
- * belong to the engine; all combat decisions are here. See docs/gfall.md. */
+ * belong to the engine; all combat decisions are here. See docs/game.md. */
 #include "game/dagger/play/weapon.h"
 #include "engine/scene/entity.h"
 

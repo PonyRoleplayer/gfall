@@ -2,7 +2,7 @@
 #define GFALL_ANIM_H
 
 /* XnGine's ASCR frame/event interpreter, independent of sprite loading.
- * Requests are the original action numbers. See docs/gfall.md. */
+ * Requests are the original action numbers. See docs/game.md. */
 #include "game/dagger/tables/combatdefs.h"
 
 typedef struct Anim {
