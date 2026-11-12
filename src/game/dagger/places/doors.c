@@ -607,8 +607,8 @@ int doors_build(DoorBuild *b)
     for (i = 0; i < b->nflat; i++) {
         Usable *u;
 
-        /* An inside's people are entities (world.c), taken by the use ray; a town's flats still make usables. */
-        if (!(b->flat[i].tag & FLAT_PERSON) || b->place == PLACE_INSIDE) {
+        /* An inside's and a dungeon's people are entities (world.c, dunstream.c), taken by the use ray; a town's flats still make usables. */
+        if (!(b->flat[i].tag & FLAT_PERSON) || b->place == PLACE_INSIDE || b->place == PLACE_DUNGEON) {
             continue;
         }
         u = new_use(b, USE_TALK, "person", TALK_REACH);

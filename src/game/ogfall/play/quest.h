@@ -180,7 +180,8 @@ const OgQuestAccess *og_quest_access(int i);
 /* The quest people standing in a building (op 30 put them in a place that is one): the building's block and record in the town at region and index. Each is made a person of the building when
  * it is entered (the seam installs the engine's people hook); their flat carries OG_QUEST_PERSON_TAG, which a use of them is known by. */
 /* takeover: the person is one of the building's own people (a quest person of a building type takes over an NPC of it: the original's NPC site); seed picks which. */
-typedef struct OgQuestHere { int slot, person, female, faction, takeover; unsigned seed; } OgQuestHere;
+/* A person put in a dungeon (block -2) has the point of their quest marker in the game's frame (has_point), when the dungeon is open and has one. */
+typedef struct OgQuestHere { int slot, person, female, faction, takeover; unsigned seed; int has_point; float x, y, z; } OgQuestHere;
 int og_quest_people_in(int region, int index, int block, int record, OgQuestHere *out, int cap);
 #define OG_QUEST_PERSON_MARK 0x7000
 #define OG_QUEST_PERSON_TAG(slot, person) (OG_QUEST_PERSON_MARK + (slot) * 16 + (person))

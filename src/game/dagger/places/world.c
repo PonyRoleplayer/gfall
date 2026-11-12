@@ -1217,9 +1217,9 @@ static int paint(World *world)
              * in the air. The data agrees: a dungeon flat standing on a
              * floor has its point at mid-height, a town's at its base.
              */
-            if (world->place == PLACE_INSIDE && (fl->tag & FLAT_PERSON) && world->npers < PEOPLE_MAX) {
-                /* A person in a building is a static entity that can be talked to, not a flat. */
-                entbuild_make_person(&world->pers[world->npers++], slot, extent_w, extent_h, (int)fl->tag, (int)fl->file, (int)fl->image, fl->x, fl->y, fl->z);
+            if ((world->place == PLACE_INSIDE || world->place == PLACE_DUNGEON) && (fl->tag & FLAT_PERSON) && world->npers < PEOPLE_MAX) {
+                /* A person in a building, or a dungeon's resident, is a static entity that can be talked to, not a flat. An RDB flat's point is its centre, so its feet are half a height under it. */
+                entbuild_make_person(&world->pers[world->npers++], slot, extent_w, extent_h, (int)fl->tag, (int)fl->file, (int)fl->image, fl->x, world->place == PLACE_DUNGEON ? fl->y - (float)extent_h * 0.5f : fl->y, fl->z);
                 continue;
             }
             if (world->base_flats) {

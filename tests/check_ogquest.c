@@ -646,6 +646,34 @@ void check_ogquest(void)
             }
             for (k = 0; k < og_quest_count(); k++) { og_quest_end(k); }
         }
+        /* A quest person put in a dungeon place (op 30) stands on its quest marker: homed in the dungeon (block -2) with the marker's point. */
+        {
+            static const OgQuestWorld w15 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, w_marker_at, w_spawn_at, w_place_at, w_pick_building, w_pick_site, w_person_name, w_outdoors };
+            int h30[5] = {-1, 0, 0, -2, -2}, k;
+            OgQuestHere dh[4];
+
+            for (k = 0; k < og_quest_count(); k++) { og_quest_end(k); }
+            memset(f3, 0, sizeof(f3));
+            put16(f3 + 0x10 + 3 * 2, 1); put16(f3 + 0x24 + 3 * 2, 0xC0);
+            put16(f3 + 0x10 + 4 * 2, 1); put16(f3 + 0x24 + 4 * 2, 0xE0);
+            put16(f3 + 0x10 + 8 * 2, 1); put16(f3 + 0x24 + 8 * 2, 0x140);
+            put16(f3 + 0x10 + 9 * 2, 1); put16(f3 + 0x24 + 9 * 2, 0x140 + 87);
+            put16(f3 + 0xC0 + 2, 0x100); put16(f3 + 0xC0 + 4, (df_u32)-8 & 0xffffu); put16(f3 + 0xC0 + 6, 7);
+            put16(f3 + 0xC0 + 4, (df_u32)-1);
+            f3[0xE0 + 3] = 2; put16(f3 + 0xE0 + 4, 1); put16(f3 + 0xE0 + 6, (df_u32)-1); put16(f3 + 0xE0 + 8, 0);
+            put16(f3 + 0x140 + 87, 0); put32(f3 + 0x140 + 87 + 4, 100u);
+            put_op(f3 + 0x140, 30, -1, h30, 0);
+            og_quest_set_world(&w15);
+            slot = og_quest_start_bytes("TEST0031", f3, 0x140 + 87 + 8, 0);
+            if (slot == 0) {
+                og_quest_run();
+                check_expect(og_quest_people_in(17, og_quest(0)->place[0].index, -2, -1, dh, 4) == 1 && dh[0].has_point && dh[0].x == 1000.0f && dh[0].z == 2000.0f &&
+                             og_quest_people_in(17, og_quest(0)->place[0].index, 3, 7, dh, 4) == 0,
+                             "quest: a person put in a dungeon place is not homed there with their quest marker's point");
+            } else { check_expect(0, "quest: the dungeon person quest did not start"); }
+            for (k = 0; k < og_quest_count(); k++) { og_quest_end(k); }
+            og_quest_set_world(0);
+        }
         og_character()->attribute[OG_STR] = saved_str;
     }
     slot = og_quest_start("M0B00Y00", 8);

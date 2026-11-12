@@ -458,7 +458,9 @@ Block *rdb_load(const df_u8 *rdb, df_u32 size, Bsa *arch, ArchEnt *cache, int *n
                     fl->image = (df_u16)record;
                     fl->slot = 0xffff;
                     fl->glow = (df_u16)(archive == LIGHTS_ARCHIVE);
-                    fl->tag = 0;
+                    /* A flat whose action is 29 is a person (a castle's resident: 79 in the game's blocks, in archives 178, 183, 184, 334, 346 and 357): its faction is the flat's FactionOrMobileId
+                     * (0 reads as 510, the commoners'). */
+                    fl->tag = rdb[res + 10] == RDB_ACTION_PERSON ? (df_u16)(FLAT_PERSON | (df_u16)((df_u16)df_ru16(rdb + res + 4) ? (df_u16)df_ru16(rdb + res + 4) : 510u)) : 0;
                     fl->sight = 0;
                     fl->thin = 0;
                     fl->flip = 0;

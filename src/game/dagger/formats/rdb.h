@@ -56,8 +56,9 @@ typedef struct ModelAct {
     df_u8 hinged;
 } ModelAct;
 
-/* Flat.tag of a person (an RMB people record): this bit, and the faction under it. */
+/* Flat.tag of a person (an RMB people record, or an RDB flat whose action is RDB_ACTION_PERSON): this bit, and the faction under it. */
 #define FLAT_PERSON 0x8000
+#define RDB_ACTION_PERSON 29
 
 typedef struct Block {
     Instance *inst;

@@ -34,7 +34,7 @@
 #define CAP_EMITTERS 128
 #define CAP_USABLES 256
 #define CAP_MOVERS 256
-#define CAP_ENTITIES 64
+#define CAP_ENTITIES 96
 #define CAP_WATER 64
 /* Pictures a block holds: its walls and flats, and its creatures' views. */
 #define CHUNK_PICS 512
@@ -83,7 +83,7 @@ typedef struct Chunk {
     Entity *people;
     int npeople;
 } Chunk;
-#define CHUNK_PEOPLE 8
+#define CHUNK_PEOPLE 40
 
 static int g_open;
 static const Dungeon *g_dun;
@@ -313,16 +313,16 @@ static int hook_slot(int file, int image, int *slot, int *w, int *h)
     return 1;
 }
 
-/* The n-th quest marker (199.11, or 199.18) of the block, in the chunk's frame. */
+/* The n-th quest marker (199.11, or 199.18; record -1 either) of the block, in the chunk's frame. */
 static int hook_marker(int record, int n, float *x, float *y, float *z)
 {
     int i;
 
-    if (!g_hook_chunk || (record != QUEST_MARKER_PERSON && record != QUEST_MARKER_ITEM)) {
+    if (!g_hook_chunk || (record >= 0 && record != QUEST_MARKER_PERSON && record != QUEST_MARKER_ITEM)) {
         return 0;
     }
     for (i = 0; i < g_nqm; i++) {
-        if (g_qm[i].block == g_hook_chunk->b && g_qm[i].record == record && n-- == 0) {
+        if (g_qm[i].block == g_hook_chunk->b && (record < 0 || g_qm[i].record == record) && n-- == 0) {
             *x = g_qm[i].x;
             *y = g_qm[i].y;
             *z = g_qm[i].z;
@@ -332,15 +332,20 @@ static int hook_marker(int record, int n, float *x, float *y, float *z)
     return 0;
 }
 
-/* Asked once per block, before its pictures are held: the game's own people for it. */
+/* Asked once per block, before its pictures are held: the block's residents (RDB flats whose action is 29) as entities, each changed or dropped by the game, then the game's own people for it. */
 static void ask_people(Chunk *c)
 {
     static const EntBuilder builder = { hook_slot, hook_marker };
     EntBuild b;
+    int i, n, nflat_people;
 
     c->people = 0;
     c->npeople = 0;
-    if (!entbuild_have_hooks()) {
+    nflat_people = 0;
+    for (i = 0; i < c->blk->nflat; i++) {
+        nflat_people += (c->blk->flat[i].tag & FLAT_PERSON) != 0;
+    }
+    if (!nflat_people && !entbuild_have_hooks()) {
         return;
     }
     c->people = (Entity *)mem_alloc(CHUNK_PEOPLE * (df_u32)sizeof(Entity));
@@ -355,14 +360,39 @@ static void ask_people(Chunk *c)
     b.index = g_dun->index;
     b.block = c->b;
     b.record = -1;
+    b.source = ENT_SRC_PEOPLE;
+    b.count = nflat_people;
     g_hook_chunk = c;
     entbuild_begin(&builder);
-    c->npeople = entbuild_add(&b, c->people, CHUNK_PEOPLE);
+    n = 0;
+    for (i = 0; i < c->blk->nflat && n < CHUNK_PEOPLE; i++) {
+        const Flat *fl;
+        int slot, w, h;
+        Entity *e;
+
+        fl = &c->blk->flat[i];
+        if (!(fl->tag & FLAT_PERSON) || !hook_slot((int)fl->file, (int)fl->image, &slot, &w, &h)) {
+            continue;
+        }
+        e = &c->people[n];
+        entbuild_make_person(e, slot, 1, 1, (int)fl->tag, (int)fl->file, (int)fl->image, fl->x, fl->y, fl->z);
+        b.nth = n;
+        if (entbuild_change(&b, e)) {
+            n++;
+        }
+    }
+    b.nth = n;
+    if (n < CHUNK_PEOPLE && entbuild_have_hooks()) {
+        int made;
+
+        made = entbuild_add(&b, c->people + n, CHUNK_PEOPLE - n);
+        if (made > 0) {
+            n += made;
+        }
+    }
     entbuild_end();
     g_hook_chunk = 0;
-    if (c->npeople < 0) {
-        c->npeople = 0;
-    }
+    c->npeople = n;
 }
 
 /* Step: the game's people into the slot, standing on the floor under their point (their point is the marker's centre), with their pictures' sizes now they are read. */
@@ -611,6 +641,10 @@ static void place_flats(Chunk *c, StreamOut *out)
 
         /* A treasure flat is an entity here (place_treasure), so it can be searched and go. */
         if ((int)c->blk->flat[i].file == RDB_TREASURE_ARCHIVE) {
+            continue;
+        }
+        /* A resident (action 29) is an entity (place_people), so it can be talked to. */
+        if (c->blk->flat[i].tag & FLAT_PERSON) {
             continue;
         }
         fl = &out->sprites[out->sprites_n];

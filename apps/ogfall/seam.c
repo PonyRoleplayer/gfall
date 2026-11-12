@@ -1396,6 +1396,31 @@ static int mark_cleared(unsigned place)
     return 0;
 }
 
+/* quest_mark_givers in a dungeon (4.1 of quest-hooks.md): only Daggerfall's, Wayrest's and Sentinel's castles (locations 50027, 50029, 50033) mark people, any resident of a type 2, 12 or 4 faction (not under the
+ * guilds' trees) by a roll of the day and the person; and quest_pick_for_npc offers nothing in a dungeon but an R quest to a person of a type 4 faction (not 407). 1 when one was offered. */
+static int castle_quest(const OgFactionDef *f)
+{
+    const Dungeon *data;
+    char name[9];
+    unsigned roll;
+    int root, guard;
+    const OgFactionDef *top;
+
+    if (og_world_state()->where.kind != OG_PLACE_DUNGEON || !f || f->type != 4 || f->id == 407) { return 0; }
+    data = travel_place_data();
+    if (!data || (data->location_id != 50027 && data->location_id != 50029 && data->location_id != 50033)) { return 0; }
+    root = f->id; top = f;
+    for (guard = 0; top && top->parent && guard < 8; guard++) { top = og_faction_def(og_faction_index(top->parent)); if (top) { root = top->id; } }
+    if (root == 40 || root == 41 || root == 42 || root == 108) { return 0; }
+    roll = (unsigned)(og_state()->minutes / 1440u) * 2654435761u ^ g_met.who * 40503u;
+    roll = (roll >> 8) % 100u;
+    if ((int)roll > 50 || mark_cleared(g_met.who) || og_quest_person_busy((int)g_met.who)) { return 0; }
+    g_cleared[g_cleared_next].day = (unsigned)(og_state()->minutes / 1440u) + 1u; g_cleared[g_cleared_next].place = g_met.who; g_cleared_next = (g_cleared_next + 1) & 15;
+    if (!og_quest_pick_seeded('R', 0, 'C', og_character()->level, g_met.who, name)) { return 0; }
+    og_quest_set_questor((int)g_met.who, g_met.faction, g_met.name, town_name());
+    return og_quest_begin(name, g_met.faction) >= 0;
+}
+
 /* The giver the Work answer points to (%pqn, %pqp): one of the town's marked buildings picked by the day, a name made by the town's naming, and the building's own. 0 away from a town or when none is
  * marked. */
 static int potential_questor(char *name, int ncap, char *place, int pcap)
@@ -1562,10 +1587,40 @@ static int quest_people_change(const EntBuild *b, Entity *e)
     return 1;
 }
 
+/* A person put in the dungeon the player is in stands on their quest marker when the marker is in this block (a dungeon's block is stream chunk (b->cx, b->cz); the point is in the stream's frame, which
+ * the chunk's origin is taken off): a body made by the engine's dungeon hook, a person to talk to. */
+static int quest_dungeon_people(const EntBuild *b, Entity *out, int cap)
+{
+    OgQuestHere here[8];
+    int i, n, made, ox, oz;
+
+    n = og_quest_people_in(b->region, quest_outside(), -2, -1, here, 8);
+    stream_origin(&ox, &oz);
+    made = 0;
+    for (i = 0; i < n && made < cap; i++) {
+        const Faction *f;
+        float lx, lz;
+        int file, image;
+
+        if (!here[i].has_point) { continue; }
+        lx = here[i].x - (float)(b->cx - ox) * DUNSTREAM_BLOCK;
+        lz = here[i].z - (float)(b->cz - oz) * DUNSTREAM_BLOCK;
+        if (lx < 0.0f || lx >= DUNSTREAM_BLOCK || lz < 0.0f || lz >= DUNSTREAM_BLOCK) { continue; }
+        f = factionfile_open() && here[i].faction ? faction_find(here[i].faction) : 0;
+        if (!f || !f->flat_archive[here[i].female]) { f = faction_people_of(b->region); }
+        file = f ? f->flat_archive[here[i].female] : 182;
+        image = f ? f->flat_record[here[i].female] : 0;
+        if (entbuild_person(&out[made], file, image, OG_QUEST_PERSON_TAG(here[i].slot, here[i].person), lx, here[i].y, lz)) { made++; }
+    }
+    return made;
+}
+
 static int quest_people_add(const EntBuild *b, Entity *out, int cap)
 {
     int i, made;
     float mx, my, mz;
+
+    if (b->place == PLACE_DUNGEON) { return quest_dungeon_people(b, out, cap); }
 
     if (g_here_key[0] != b->region || g_here_key[1] != b->index || g_here_key[2] != b->block || g_here_key[3] != b->record || b->count == 0) { quest_people_for(b); }
     made = 0;
@@ -1650,6 +1705,7 @@ static int talk_used(const Usable *u, int mode, float dist, const Camera *cam)
     /* The quest events of the click come first (28, 71, 1, 78), then a marked person's offer, then talk. */
     if (og_quest_talk((int)g_met.who, g_met.faction)) { return 1; }
     if (!kind && travel_building(&type, &faction, &quality, &place) && street_quest(f, type, place)) { return 1; }
+    if (!kind && og_world_state()->where.kind == OG_PLACE_DUNGEON && castle_quest(f)) { return 1; }
     g_talk_events_done = 1;
     start_talk();
     return 1;

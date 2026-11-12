@@ -2952,6 +2952,61 @@ static int ds_add_hook(const EntBuild *b, Entity *out, int cap)
     return entbuild_person(&out[0], 182, 0, 0x7001, x, y, z) ? 1 : 0;
 }
 
+/* Dungeon people (entity plan step 7): Daggerfall's castle (location 50027) is full of residents, RDB flats whose action is 29; loaded whole they are usable static entities with their faction, drawn
+ * as people not as flats; the hold has none. */
+static void check_dungeon_people(void)
+{
+    static DunRef list[4400];
+    Dungeon castle;
+    World *world;
+    Level level;
+    int n, i, found, people, usable;
+
+    n = dungeon_list(list, 4400);
+    found = -1;
+    for (i = 0; i < n && i < 4400; i++) {
+        if (list[i].location_id == 50027) { found = i; break; }
+    }
+    if (found < 0 || !dungeon_load_at(list[found].region, list[found].index, &castle)) {
+        check_expect(0, "dungeon people: Daggerfall's castle was not found");
+        return;
+    }
+    world = world_load_dungeon(&castle);
+    if (!world) {
+        check_expect(0, "dungeon people: Daggerfall's castle did not load");
+        return;
+    }
+    world_as_level(world, &level);
+    ent_place(&level.scene);
+    {
+        EntList lists[ENT_LISTS];
+        int nl, l, k;
+
+        nl = ent_lists(&level.scene, lists, ENT_LISTS);
+        people = 0;
+        usable = 0;
+        for (l = 0; l < nl; l++) {
+            for (k = 0; k < lists[l].n; k++) {
+                const Entity *e;
+
+                e = &lists[l].first[k];
+                if ((e->flags & ENT_USABLE) && e->use.kind == USE_TALK) {
+                    people++;
+                    usable += e->live != 0 && e->use.what > 0 && (e->flags & ENT_GHOST) != 0;
+                }
+            }
+        }
+    }
+    printf("dungeon people: Daggerfall's castle has %d residents as entities\n", people);
+    check_expect(world_people_count(world) == people && people >= 10 && usable == people, "dungeon people: Daggerfall's castle's residents are not usable entities with a faction");
+    {
+        World *hold_world;
+
+        hold_world = world_load();
+        check_expect(hold_world && world_people_count(hold_world) == 0, "dungeon people: the hold has someone to talk to");
+    }
+}
+
 static void check_dunstream_people(void)
 {
     Dungeon hold;
@@ -3752,5 +3807,6 @@ int check_dagger(const char *root_in)
     check_dungeon_movers();
     check_dungeon_automap();
     check_dunstream_people();
+    check_dungeon_people();
     return check_failed() ? 1 : 0;
 }

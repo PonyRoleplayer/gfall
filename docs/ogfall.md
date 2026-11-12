@@ -2406,3 +2406,11 @@ From section 8 of `quest-places-and-start.md`.
 - The shop-like quest buildings (type under 17) are listed as before; the original adds the quest's own answer to their topic (3.5 of `quest-machine.md`), not built. The People list of Where is (every quest person not hidden, not the one talked to) is not built either: a quest person is asked after by their building only.
 - The closed-building rule (a closed building hides its people but not a quest's) has nothing to do here: nothing in OGFALL hides the people of a closed building, so a quest's are never hidden either.
 - Test: `check_ogquest.c` (the building of a quest person is a site named by their surname, another is not; a quest house is listed under category 13, a plain house is not).
+
+### The quest machine, step 18 (persons in dungeons, the castles)
+
+With the entity plan's step 7 (docs/entities.md, Dungeon people):
+- **Quest persons in a dungeon**: op 30 on a place that is a dungeon (a location, not a building) homes the person in it (`home_block` -2): `og_quest_people_in(region, index, -2, -1)` lists them with the point of their quest marker (record 11, the place's own 0xFA0n or one picked by a seed), in the game's frame; the seam's add hook (`quest_dungeon_people`) makes their body in the block that holds the marker, on the floor under it, as an entity to talk to (their quest tag as for a building's). The outside's index is the place's (`quest_outside`).
+- **Castle residents**: talking to one reaches the quest machine as any person (their faction and flat). In Daggerfall's, Wayrest's and Sentinel's castles (locations 50027, 50029, 50033) a resident of a type 4 faction (not 407) not under the guilds' trees is marked for the day by a roll (51%) and clicking them offers an R quest by level (`castle_quest`): in a dungeon the original offers nothing else.
+- Not yet: a resident's faction 0 is 510 and their picture's face may be missing (FLATS.CFG may not know archive 334 or 346); wild.c's town chunks (step 10).
+- Test: `check_ogquest.c` (a person put in a dungeon place has their marker's point).

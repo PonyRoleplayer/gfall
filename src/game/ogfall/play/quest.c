@@ -43,6 +43,7 @@ static void make_item(OgQuest *q, int i);
 static int arg_state(const OgQuest *q, const OgQbnOp *op, int n);
 static void item_forget(OgQuest *q, int n);
 static int in_place(const OgQuest *q, int n);
+static int marker_point(const OgQuest *q, int place, int record, int extra, float *x, float *y, float *z);
 static void foe_dropped(OgQuest *q, int f);
 static void done(OgQuest *q, OgQbnOp *op);
 static int bind_resources(int slot);
@@ -546,7 +547,9 @@ int og_quest_people_in(int region, int index, int block, int record, OgQuestHere
 
             p = &q->person[i];
             if (!p->bound || !p->homed || q->qbn.person[i].kind == -8 || q->qbn.person[i].kind == 21 || (q->qbn.person[i].flags & 0xA00) == 0xA00) { continue; }
-            if (p->home_region != region || p->home_index != index || p->home_block != block || p->home_record != record || block < 0) { continue; }
+            if (p->home_region != region || p->home_index != index || p->home_block != block || p->home_record != record || (block < 0 && block != -2)) { continue; }
+            out[n].has_point = 0;
+            if (block == -2 && p->at > 0) { out[n].has_point = marker_point(q, p->at - 1, 11, 200 + i, &out[n].x, &out[n].y, &out[n].z); }
             out[n].slot = s; out[n].person = i; out[n].female = p->female; out[n].faction = p->faction; out[n].takeover = p->takeover; out[n].seed = (unsigned)(q->qbn.id * 977 + i * 131);
             n++;
         }
@@ -1537,6 +1540,11 @@ static void run_op(int slot, OgQuest *q, OgQbnOp *op)
 
                     q->person[n].at = pl + 1;
                     if (q->place[pl].bound && q->place[pl].block >= 0) { q->person[n].homed = 1; q->person[n].home_region = q->place[pl].region; q->person[n].home_index = q->place[pl].index; q->person[n].home_block = q->place[pl].block; q->person[n].home_record = q->place[pl].record; }
+                    else if (q->place[pl].bound && is_dungeon(q->place[pl].type)) {
+                        /* A dungeon place: the person stands on its quest marker (home block -2), the engine's dungeon hook makes their body. */
+                        q->person[n].homed = 1; q->person[n].takeover = 0; q->person[n].home_region = q->place[pl].region; q->person[n].home_index = q->place[pl].index;
+                        q->person[n].home_block = -2; q->person[n].home_record = -1;
+                    }
                 }
             }
             done(q, op);
