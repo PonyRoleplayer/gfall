@@ -1,9 +1,9 @@
 #include <string.h>
 #include "check_ogentry.h"
 #include "check_util.h"
-#include "game/ogfall/play/entry.h"
-#include "game/ogfall/play/guild.h"
-#include "game/ogfall/play/state.h"
+#include "game/dagger/play/entry.h"
+#include "game/dagger/play/guild.h"
+#include "game/dagger/play/state.h"
 
 void check_ogentry(void)
 {

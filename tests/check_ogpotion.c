@@ -2,12 +2,12 @@
 #include <stdio.h>
 #include "check_ogpotion.h"
 #include "check_util.h"
-#include "game/ogfall/play/potion.h"
-#include "game/ogfall/play/state.h"
-#include "game/ogfall/play/inventory.h"
-#include "game/ogfall/play/spellbook.h"
-#include "game/ogfall/play/magic.h"
-#include "game/ogfall/tables/itemdefs.h"
+#include "game/dagger/play/potion.h"
+#include "game/dagger/play/state.h"
+#include "game/dagger/play/inventory.h"
+#include "game/dagger/play/spellbook.h"
+#include "game/dagger/play/magic.h"
+#include "game/dagger/tables/itemdefs.h"
 
 void check_ogpotion(void)
 {

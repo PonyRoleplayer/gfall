@@ -1,6 +1,6 @@
 #include "check_ogtrade.h"
 #include "check_util.h"
-#include "game/ogfall/play/trade.h"
+#include "game/dagger/play/trade.h"
 
 /*
  * By hand, from docs/economy-math.md. A neutral shop: quality 10 (the quality term is 50), the

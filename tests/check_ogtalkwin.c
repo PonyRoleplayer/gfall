@@ -2,11 +2,11 @@
 #include <stdio.h>
 #include "check_ogtalkwin.h"
 #include "check_util.h"
-#include "game/ogfall/play/talkwin.h"
-#include "game/ogfall/play/standing.h"
-#include "game/ogfall/play/state.h"
-#include "game/ogfall/play/law.h"
-#include "game/ogfall/play/play.h"
+#include "game/dagger/play/talkwin.h"
+#include "game/dagger/play/standing.h"
+#include "game/dagger/play/state.h"
+#include "game/dagger/play/law.h"
+#include "game/dagger/play/play.h"
 
 /* A town of a bank (type 3), two taverns (15), an armorer (2) and a house (1), at known distances from the player. */
 static int town(OgTalkBuilding *out, int cap)

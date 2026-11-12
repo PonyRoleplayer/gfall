@@ -1,10 +1,10 @@
 #include <string.h>
 #include "check_ogguild.h"
 #include "check_util.h"
-#include "game/ogfall/play/guild.h"
-#include "game/ogfall/play/hours.h"
-#include "game/ogfall/play/state.h"
-#include "game/ogfall/play/save.h"
+#include "game/dagger/play/guild.h"
+#include "game/dagger/play/hours.h"
+#include "game/dagger/play/state.h"
+#include "game/dagger/play/save.h"
 
 static void skills(int a, int b, int c)
 {

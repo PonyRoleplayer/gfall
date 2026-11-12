@@ -2,8 +2,8 @@
 #include "check_ognames.h"
 #include "check_util.h"
 #include "engine/assets/vfs.h"
-#include "game/ogfall/play/names.h"
-#include "game/ogfall/play/state.h"
+#include "game/dagger/play/names.h"
+#include "game/dagger/play/state.h"
 
 static int has_space(const char *s)
 {

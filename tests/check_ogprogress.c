@@ -1,8 +1,8 @@
 #include "check_ogprogress.h"
 #include "check_util.h"
-#include "game/ogfall/play/state.h"
-#include "game/ogfall/play/possessions.h"
-#include "game/ogfall/play/save.h"
+#include "game/dagger/play/state.h"
+#include "game/dagger/play/possessions.h"
+#include "game/dagger/play/save.h"
 #include "engine/core/mem.h"
 
 static OgState g_before;

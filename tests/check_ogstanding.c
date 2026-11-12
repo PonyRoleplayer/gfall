@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include "check_ogstanding.h"
 #include "check_util.h"
-#include "game/ogfall/play/standing.h"
-#include "game/ogfall/play/state.h"
+#include "game/dagger/play/standing.h"
+#include "game/dagger/play/state.h"
 #include "engine/core/mem.h"
 
 /*

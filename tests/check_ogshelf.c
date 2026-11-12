@@ -1,10 +1,10 @@
 #include <stdio.h>
 #include "check_ogshelf.h"
 #include "check_util.h"
-#include "game/ogfall/play/shelf.h"
-#include "game/ogfall/play/state.h"
-#include "game/ogfall/play/inventory.h"
-#include "game/ogfall/tables/shopdefs.h"
+#include "game/dagger/play/shelf.h"
+#include "game/dagger/play/state.h"
+#include "game/dagger/play/inventory.h"
+#include "game/dagger/tables/shopdefs.h"
 
 /* The groups an item belongs to, by what was stocked (OgObject.group). */
 static int in_list(int group, const int *list, int n)

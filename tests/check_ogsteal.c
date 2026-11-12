@@ -1,12 +1,12 @@
 #include <string.h>
 #include "check_ogsteal.h"
 #include "check_util.h"
-#include "game/ogfall/play/steal.h"
-#include "game/ogfall/play/market.h"
-#include "game/ogfall/play/law.h"
-#include "game/ogfall/play/guild.h"
-#include "game/ogfall/play/state.h"
-#include "game/ogfall/play/inventory.h"
+#include "game/dagger/play/steal.h"
+#include "game/dagger/play/market.h"
+#include "game/dagger/play/law.h"
+#include "game/dagger/play/guild.h"
+#include "game/dagger/play/state.h"
+#include "game/dagger/play/inventory.h"
 
 void check_ogsteal(void)
 {

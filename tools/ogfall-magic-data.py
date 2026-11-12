@@ -89,4 +89,4 @@ for i in range(17):
     a=symbols['disease_table']+i*47
     out.append('    {%d, {%s}, %s},\n' % (read(a,'B')[0],', '.join(map(str,read(a+1,'11h'))),', '.join(map(str,read(a+23,'4h')))))
 out.append('};\n')
-Path('src/game/ogfall/tables/magicdata.h').write_text(''.join(out))
+Path('src/game/dagger/tables/magicdata.h').write_text(''.join(out))

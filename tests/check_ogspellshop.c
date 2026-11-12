@@ -1,13 +1,13 @@
 #include <string.h>
 #include "check_ogspellshop.h"
 #include "check_util.h"
-#include "game/ogfall/play/spellshop.h"
-#include "game/ogfall/play/state.h"
-#include "game/ogfall/play/inventory.h"
-#include "game/ogfall/play/magic.h"
-#include "game/ogfall/play/spellmaker.h"
-#include "game/ogfall/tables/magicdefs.h"
-#include "game/ogfall/tables/itemdefs.h"
+#include "game/dagger/play/spellshop.h"
+#include "game/dagger/play/state.h"
+#include "game/dagger/play/inventory.h"
+#include "game/dagger/play/magic.h"
+#include "game/dagger/play/spellmaker.h"
+#include "game/dagger/tables/magicdefs.h"
+#include "game/dagger/tables/itemdefs.h"
 
 /* The spell maker: the empty spell, the effect list by target, a Damage spell's numbers clamped and paired, the stored cost and price by hand, the buying and its refusals, and the spell kept through a restore. */
 static void maker_checks(void)

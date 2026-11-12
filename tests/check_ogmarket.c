@@ -4,13 +4,13 @@
 #include "../apps/ogfall/seam.h"
 #include "engine/core/mem.h"
 #include "check_util.h"
-#include "game/ogfall/play/market.h"
-#include "game/ogfall/play/possessions.h"
-#include "game/ogfall/play/shelf.h"
-#include "game/ogfall/play/play.h"
-#include "game/ogfall/play/state.h"
-#include "game/ogfall/play/inventory.h"
-#include "game/ogfall/tables/holidaydefs.h"
+#include "game/dagger/play/market.h"
+#include "game/dagger/play/possessions.h"
+#include "game/dagger/play/shelf.h"
+#include "game/dagger/play/play.h"
+#include "game/dagger/play/state.h"
+#include "game/dagger/play/inventory.h"
+#include "game/dagger/tables/holidaydefs.h"
 
 static OgShop neutral(void)
 {

@@ -1,7 +1,7 @@
 #include "check_oglodging.h"
 #include "check_util.h"
-#include "game/ogfall/play/lodging.h"
-#include "game/ogfall/play/state.h"
+#include "game/dagger/play/lodging.h"
+#include "game/dagger/play/state.h"
 #include <string.h>
 
 /* A neutral shop (quality 10, normal region) and a buyer of 50 and 50: 7 gold of raw price is 7 * 144 / 256 = 3. */

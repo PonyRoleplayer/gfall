@@ -3,12 +3,12 @@
 #include <string.h>
 #include "check_ogquest.h"
 #include "check_util.h"
-#include "game/ogfall/formats/qbn.h"
-#include "game/ogfall/play/quest.h"
-#include "game/ogfall/play/talk.h"
-#include "game/ogfall/play/inventory.h"
-#include "game/ogfall/play/standing.h"
-#include "game/ogfall/play/state.h"
+#include "game/dagger/formats/qbn.h"
+#include "game/dagger/play/quest.h"
+#include "game/dagger/play/talk.h"
+#include "game/dagger/play/inventory.h"
+#include "game/dagger/play/standing.h"
+#include "game/dagger/play/state.h"
 #include "game/dagger/formats/textrsc.h"
 
 static int g_said, g_asked;

@@ -1,8 +1,8 @@
 #include "check_ogtalk.h"
 #include "check_util.h"
-#include "game/ogfall/play/talk.h"
-#include "game/ogfall/play/state.h"
-#include "game/ogfall/play/standing.h"
+#include "game/dagger/play/talk.h"
+#include "game/dagger/play/state.h"
+#include "game/dagger/play/standing.h"
 #include <stdio.h>
 #include <string.h>
 
