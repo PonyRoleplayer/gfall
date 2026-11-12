@@ -6,6 +6,7 @@
 #include "engine/core/mem.h"
 #include "engine/gfx/texres.h"
 #include "engine/scene/entity.h"
+#include "engine/scene/ent.h"
 
 /*
  * One upload per picture, at load, never during the frame. With mipmap
@@ -75,7 +76,10 @@ static float g_dyn_density[TEX_SLOTS];
 
 static int mark_entity_pictures(const Level *level, int n)
 {
+    EntList lists[ENT_LISTS];
     const Scene *sc;
+    int nlists;
+    int li;
     int count;
     int i;
     int k;
@@ -85,14 +89,17 @@ static int mark_entity_pictures(const Level *level, int n)
         g_dyn_density[i] = 0.0f;
     }
     sc = &level->scene;
-    if (!sc->entities || sc->nentities < 1) {
+    /* The place's own, and a game's ranges registered before the load (docs/entities.md, The registry). */
+    nlists = ent_lists(sc, lists, ENT_LISTS);
+    if (nlists < 1) {
         return 0;
     }
-    for (i = 0; i < sc->nentities; i++) {
+    for (li = 0; li < nlists; li++) {
+    for (i = 0; i < lists[li].n; i++) {
         const Entity *e;
         int p;
 
-        e = &sc->entities[i];
+        e = &lists[li].first[i];
         for (p = 0; p < ENTITY_POSES; p++) {
             const EntityPose *pose;
 
@@ -121,6 +128,7 @@ static int mark_entity_pictures(const Level *level, int n)
                 }
             }
         }
+    }
     }
     /* Shared with a flat or a face: that one is drawn unnoted, so it stays with the place's. */
     for (i = 0; i < sc->nsprites; i++) {

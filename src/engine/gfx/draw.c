@@ -841,6 +841,9 @@ void draw_prime(const Level *level, const Camera *cam)
      * at most a few a call, the most needed first). Load time: casts are fine.
      */
     for (pass = 0; pass < 256; pass++) {
+        EntList lists[ENT_LISTS];
+        int nlists;
+        int li;
         int before;
         int after;
         int i;
@@ -876,19 +879,22 @@ void draw_prime(const Level *level, const Camera *cam)
             dz = fl->z - cam->z;
             texcache_note((int)fl->slot, df_sqrt(dx * dx + dz * dz));
         }
-        /* The entities too: townspeople, a dungeon's creatures; as the frame will see them. */
-        for (i = 0; sc->entities && i < sc->nentities; i++) {
+        /* The entities too: townspeople, a dungeon's creatures, a game's ranges; as the frame will see them. */
+        nlists = ent_lists(sc, lists, ENT_LISTS);
+        for (li = 0; li < nlists; li++) {
+        for (i = 0; i < lists[li].n; i++) {
             const Entity *e;
             Flat fl;
             float dx, dz;
 
-            e = &sc->entities[i];
+            e = &lists[li].first[i];
             if (!e->live || (e->flags & ENT_HIDDEN) || !entity_flat(e, cam->x, cam->z, &fl)) {
                 continue;
             }
             dx = fl.x - cam->x;
             dz = fl.z - cam->z;
             note_entity(e, (int)fl.slot, df_sqrt(dx * dx + dz * dz));
+        }
         }
         before = 0;
         after = 0;
@@ -1078,16 +1084,26 @@ static void draw_entity_list(const Camera *cam, const Basis *basis, const Level 
     if (current != tint) { glide_tint(tint); }
 }
 
-/* The place's own entities, then those spawned while playing (docs/spawn.md). */
+/* 1 when the place has any entities to walk: its own array, the pool or a game's range. */
+static int any_entities(const Scene *sc)
+{
+    EntList lists[ENT_LISTS];
+
+    return ent_lists(sc, lists, ENT_LISTS) > 0;
+}
+
+/* The place's own entities, the game's ranges, then those made while playing (docs/entities.md, The registry). */
 static void draw_entities(const Camera *cam, const Basis *basis, const Level *level, int noted, df_u32 tint)
 {
-    const Entity *spawned;
-    int nspawned;
+    EntList lists[ENT_LISTS];
+    int n;
+    int i;
 
     g_vis_entities = 0;
-    draw_entity_list(cam, basis, level, noted, level->scene.entities, level->scene.nentities,tint);
-    spawned = spawn_entities(&level->scene, &nspawned);
-    draw_entity_list(cam, basis, level, noted, spawned, nspawned,tint);
+    n = ent_lists(&level->scene, lists, ENT_LISTS);
+    for (i = 0; i < n; i++) {
+        draw_entity_list(cam, basis, level, noted, lists[i].first, lists[i].n, tint);
+    }
 }
 
 /*
@@ -3130,7 +3146,7 @@ void draw_frame(const Camera *cam, const Level *level)
         automap_frame(&level->scene, cam, order, norder);
     }
     /* Spawns the camera has left behind go (docs/spawn.md). */
-    spawn_frame(&level->scene, cam);
+    ent_frame(&level->scene, cam);
     prof_end(PROF_CULL);
     prof_begin(PROF_MODELS);
     g_vis_models = norder;
@@ -3255,7 +3271,7 @@ void draw_frame(const Camera *cam, const Level *level)
         draw_flat(cam, &basis, level, &level->scene.sprites[order[oi]]);
     }
     /* The entities, each as the view of it the camera has (docs/entities.md), in daylight's colour. */
-    if (level->scene.entities || spawn_count() > 0) {
+    if (any_entities(&level->scene)) {
         glide_tint(outdoor ? sprite_day : light_ambient_rgb());
         draw_entities(cam, &basis, level, noted,outdoor ? sprite_day : light_ambient_rgb());
     }

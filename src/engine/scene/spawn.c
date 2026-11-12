@@ -1,26 +1,15 @@
 #include "engine/scene/spawn.h"
+#include "engine/scene/ent.h"
 #include "engine/scene/body.h"
 #include "engine/scene/collide.h"
 #include "engine/scene/walker.h"
 #include "engine/core/mem.h"
 
 /*
- * See spawn.h and docs/spawn.md. The pool is static: a spawn's address
- * never moves, and nothing is allocated. Which scene it belongs to and
- * the heap epoch it was made under are noted with it; any call that
- * finds either changed empties it first, so a spawn never outlives its
- * place even when the game forgets to clear it.
+ * See spawn.h and docs/spawn.md. The pool is the registry's (ent.c):
+ * these calls are a wrapper over its transient entries, kept for the
+ * games' callers while they move to ent_*. spawn_find is this file's own.
  */
-
-static Entity g_pool[SPAWN_MAX];
-static float g_leash[SPAWN_MAX];
-static df_u8 g_used[SPAWN_MAX];
-/* Bumped at each add, never 0: an old id for a reused entry reads as gone. */
-static df_u8 g_gen[SPAWN_MAX];
-static int g_count;
-/* The place the pool is in: its scene and its heap's epoch. 0 with none. */
-static const Scene *g_scene;
-static df_u32 g_epoch;
 
 /* Directions round the ring, and radii across it, that spawn_find tries. */
 #define FIND_DIRS 16
@@ -30,167 +19,69 @@ static df_u32 g_epoch;
 /* Outside the view by this much more than half its width, a spot is out of sight. */
 #define VIEW_MARGIN 10.0f
 
-static void free_entry(int i)
-{
-    if (g_used[i]) {
-        g_count--;
-    }
-    g_used[i] = 0;
-    /* Zeroed: not live, so the walkers skip it like a free entry of Scene.entities. */
-    mem_zero(&g_pool[i], sizeof(Entity));
-}
-
-void spawn_clear(void)
+/* A pool entry's id: an id of the registry whose index is in the pool. */
+static int pooled(SpawnId id)
 {
     int i;
 
-    for (i = 0; i < SPAWN_MAX; i++) {
-        free_entry(i);
-    }
-    g_count = 0;
-    g_scene = 0;
-}
-
-/* Empty the pool when its place is gone: another heap. */
-static void check_epoch(void)
-{
-    if (g_scene && g_epoch != mem_epoch()) {
-        spawn_clear();
-    }
-}
-
-/* 1 when scene is the pool's place, still standing. */
-static int in_place(const Scene *scene)
-{
-    check_epoch();
-    return g_scene && scene == g_scene;
+    i = (int)(id & 0xffffu) - 1;
+    return i >= 0 && i < ENT_POOL;
 }
 
 SpawnId spawn_add(const Scene *scene, const Entity *e, float leash)
 {
-    int i;
+    Entity copy;
 
     if (!scene || !e) {
         return 0;
     }
-    /* Another place: what stood in the old one is gone. */
-    if (!in_place(scene)) {
-        spawn_clear();
-        g_scene = scene;
-        g_epoch = mem_epoch();
-    }
-    for (i = 0; i < SPAWN_MAX; i++) {
-        if (!g_used[i]) {
-            break;
-        }
-    }
-    if (i == SPAWN_MAX) {
-        return 0;
-    }
-    g_pool[i] = *e;
-    g_leash[i] = leash > 0.0f ? leash : 0.0f;
-    g_used[i] = 1;
-    g_gen[i]++;
-    if (g_gen[i] == 0) {
-        g_gen[i] = 1;
-    }
-    g_count++;
-    return (SpawnId)(i + 1) | ((SpawnId)g_gen[i] << 8);
-}
-
-/* The entry id names while it is still that spawn; -1 when gone. */
-static int entry_of(SpawnId id)
-{
-    int i;
-
-    check_epoch();
-    i = (int)(id & 0xff) - 1;
-    if (i < 0 || i >= SPAWN_MAX || !g_used[i] || g_gen[i] != (df_u8)(id >> 8)) {
-        return -1;
-    }
-    return i;
+    copy = *e;
+    copy.leash = leash > 0.0f ? leash : 0.0f;
+    return ent_add(scene, &copy);
 }
 
 Entity *spawn_get(SpawnId id)
 {
-    int i;
-
-    i = entry_of(id);
-    return i < 0 ? 0 : &g_pool[i];
+    return pooled(id) ? ent_get(id) : 0;
 }
 
 void spawn_remove(SpawnId id)
 {
-    int i;
-
-    i = entry_of(id);
-    if (i >= 0) {
-        free_entry(i);
+    if (pooled(id)) {
+        ent_remove(id);
     }
+}
+
+void spawn_clear(void)
+{
+    ent_clear();
 }
 
 int spawn_next(int i, SpawnId *id)
 {
-    check_epoch();
-    for (; i < SPAWN_MAX; i++) {
-        if (g_used[i]) {
-            *id = (SpawnId)(i + 1) | ((SpawnId)g_gen[i] << 8);
-            return i + 1;
-        }
-    }
-    return 0;
+    /* The pool's indices come first in the registry's walk: stop where they end. */
+    i = ent_next(i, id);
+    return i > 0 && i <= ENT_POOL ? i : 0;
 }
 
 int spawn_count(void)
 {
-    check_epoch();
-    return g_count;
+    return ent_count();
 }
 
 const Entity *spawn_entities(const Scene *scene, int *n)
 {
-    if (!in_place(scene) || g_count == 0) {
-        *n = 0;
-        return 0;
-    }
-    *n = SPAWN_MAX;
-    return g_pool;
+    return ent_pool(scene, n);
 }
 
 void spawn_frame(const Scene *scene, const Camera *cam)
 {
-    int i;
-
-    if (!in_place(scene) || g_count == 0) {
-        return;
-    }
-    for (i = 0; i < SPAWN_MAX; i++) {
-        float dx, dz;
-
-        if (!g_used[i] || g_leash[i] <= 0.0f) {
-            continue;
-        }
-        dx = g_pool[i].x - cam->x;
-        dz = g_pool[i].z - cam->z;
-        if (dx * dx + dz * dz > g_leash[i] * g_leash[i]) {
-            free_entry(i);
-        }
-    }
+    ent_frame(scene, cam);
 }
 
 void spawn_shift(const Scene *scene, float dx, float dz)
 {
-    int i;
-
-    if (!in_place(scene)) {
-        return;
-    }
-    for (i = 0; i < SPAWN_MAX; i++) {
-        if (g_used[i]) {
-            g_pool[i].x -= dx;
-            g_pool[i].z -= dz;
-        }
-    }
+    ent_shift(scene, dx, dz);
 }
 
 /* 1 when a circle of radius at x, z, from feet_y up height, meets a solid entity or the player's body. */
@@ -224,16 +115,17 @@ static int crowded_by(const Entity *list, int n, float x, float y, float z, floa
 
 static int crowded(const Scene *scene, float x, float y, float z, float r, float h)
 {
-    const Entity *pool;
+    EntList lists[ENT_LISTS];
     float bx, by, bz;
     int n;
+    int i;
 
-    if (crowded_by(scene->entities, scene->nentities, x, y, z, r, h)) {
-        return 1;
-    }
-    pool = spawn_entities(scene, &n);
-    if (crowded_by(pool, n, x, y, z, r, h)) {
-        return 1;
+    /* The place's own, the pool and the game's ranges. */
+    n = ent_lists(scene, lists, ENT_LISTS);
+    for (i = 0; i < n; i++) {
+        if (crowded_by(lists[i].first, lists[i].n, x, y, z, r, h)) {
+            return 1;
+        }
     }
     return walker_body(&bx, &by, &bz)
         && meets(x, y, z, r, h, bx, by, bz, walker_own_body()->radius, walker_own_body()->height);

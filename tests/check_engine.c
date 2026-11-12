@@ -23,6 +23,7 @@
 #include "engine/scene/stream.h"
 #include "engine/scene/automap.h"
 #include "engine/scene/spawn.h"
+#include "engine/scene/ent.h"
 #include "engine/scene/interact.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
@@ -2190,6 +2191,76 @@ static void spawn_body(Entity *e, float x, float y, float z, float radius)
  * shift and place; where spawn_find puts one, in sight or not, dry or
  * not; and a spawn solid to what walks.
  */
+/*
+ * The registry (ent.h): one id for the scene's own entries, a game's range
+ * and the pool; renewed entries' ids gone, the rest kept; found by key and
+ * by address; walked across all three; a new heap forgets them all.
+ */
+static void check_registry(void)
+{
+    static Scene sc;
+    static Entity own[4];
+    static Entity mine[3];
+    EntList lists[ENT_LISTS];
+    KeepKey key;
+    Entity e;
+    EntId a;
+    EntId b;
+    EntId c;
+    EntId first;
+    EntId id;
+    int walked;
+    int i;
+
+    ent_clear();
+    mem_zero(&sc, sizeof(sc));
+    for (i = 0; i < 4; i++) {
+        entity_init(&own[i]);
+        own[i].live = i != 2;
+        own[i].key.place = 7;
+        own[i].key.thing = (df_u32)(100 + i);
+    }
+    sc.entities = own;
+    sc.nentities = 4;
+    ent_place(&sc);
+    a = ent_id(&own[1]);
+    first = ent_id(&own[0]);
+    key.place = 7;
+    key.thing = 103;
+    check_expect(a != 0 && ent_get(a) == &own[1] && ent_by_key(key) == ent_id(&own[3]) && ent_by_key(key) != 0,
+                 "a scene's own entity had no id, or its key did not find it");
+    for (i = 0; i < 3; i++) {
+        entity_init(&mine[i]);
+        mine[i].live = 1;
+    }
+    check_expect(ent_register_range(&sc, mine, 3, ENT_HOME_ROAM), "a game's range was refused");
+    b = ent_id(&mine[2]);
+    entity_init(&e);
+    e.live = 1;
+    c = ent_add(&sc, &e);
+    check_expect(b != 0 && ent_get(b) == &mine[2] && c != 0 && ent_get(c) != 0 && ent_count() == 1,
+                 "a range's entry or a pool entry had no id");
+    check_expect(ent_lists(&sc, lists, ENT_LISTS) == 3, "the walk did not see the scene's array, the pool and the range");
+    walked = 0;
+    for (i = 0; (i = ent_next(i, &id)) != 0;) {
+        walked += ent_get(id) != 0;
+    }
+    /* The pool's one, the scene's three live (not entry 2), the range's three. */
+    check_expect(walked == 7, "ent_next did not walk every live entity once");
+    ent_renew(&sc, 1, 1);
+    check_expect(ent_get(a) == 0 && ent_get(ent_id(&own[1])) == &own[1] && ent_get(first) == &own[0],
+                 "a renewed entry kept its old id, or another lost its own");
+    ent_unregister_range(mine);
+    check_expect(ent_get(b) == 0 && ent_id(&mine[2]) == 0 && ent_lists(&sc, lists, ENT_LISTS) == 2,
+                 "a dropped range was still walked or named");
+    ent_remove(c);
+    check_expect(ent_get(c) == 0 && ent_count() == 0, "a removed pool entry was still there");
+    mem_temp_begin();
+    mem_temp_end();
+    check_expect(ent_get(first) == 0, "a new heap (a new place) kept the scene's ids");
+    ent_clear();
+}
+
 static void check_spawn(void)
 {
     static Scene sc;
@@ -5964,6 +6035,7 @@ void check_engine(void)
     check_dungeon_stream();
     check_body_fixes();
     check_body_crouch();
+    check_registry();
     check_spawn();
     check_body_lifts();
     check_console();

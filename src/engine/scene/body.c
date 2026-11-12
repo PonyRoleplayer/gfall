@@ -418,18 +418,20 @@ static void push_from_list(const Body *b, const Entity *list, int n, float *px, 
 
 static void push_off(Body *b, const Scene *scene)
 {
-    const Entity *spawned;
+    EntList lists[ENT_LISTS];
     float px;
     float pz;
     float wx, wy, wz;
-    int nspawned;
+    int n;
+    int i;
 
     px = 0.0f;
     pz = 0.0f;
-    /* The place's own, and those spawned while playing (docs/spawn.md). */
-    push_from_list(b, scene->entities, scene->nentities, &px, &pz);
-    spawned = spawn_entities(scene, &nspawned);
-    push_from_list(b, spawned, nspawned, &px, &pz);
+    /* The place's own, the game's ranges and those made while playing (docs/entities.md, The registry). */
+    n = ent_lists(scene, lists, ENT_LISTS);
+    for (i = 0; i < n; i++) {
+        push_from_list(b, lists[i].first, lists[i].n, &px, &pz);
+    }
     if (b != walker_own_body() && walker_body(&wx, &wy, &wz)) {
         push_from(b, wx, wy, wz, walker_own_body()->radius, walker_own_body()->height, &px, &pz);
     }

@@ -181,6 +181,27 @@ selects the script from that archive's original texture kind and shares combat
 pictures only between creatures with the same kind and archive. Original ranged
 scripts may select record group 20 or 25, so both groups must be available.
 
+## The registry
+
+`engine/scene/ent.h`, `ent.c`: every entity in a place under one id (`docs/entity-plan.md`, steps 2 and 3). Three kinds of storage read the same to every engine walk (draw, the texture notes, a body's push, `entity_blocked`, `spawn_find`'s crowding, the use ray):
+
+- **The place's own array**, `Scene.entities`: a builder's (a dungeon loaded whole) or the stream's slots (a block's creatures). The registry never owns it, only names its entries (`ENT_SCENE_MAX`, 2048, get ids).
+- **Ranges** a game registers beside it, `ent_register_range(scene, first, n, residence)`: arrays of its own it wants drawn, solid and named, up to `ENT_RANGES` (8) of `ENT_RANGE_MAX` (256). `ent_unregister_range(first)` drops one.
+- **The transient pool**, `ENT_POOL` (64) entries at fixed addresses: what is made while playing (`ent_add`, freed by `ent_remove`, its `leash` or the place's close). `spawn.h` is a wrapper over it (`docs/spawn.md`).
+
+`ent_lists(scene, out, cap)` hands a walk those arrays, at most `ENT_LISTS`; free entries are not live and are skipped as before.
+
+An `EntId` is the entry's index plus one in its low 16 bits (the pool first, then the scene's entries, then a window of 256 for each range slot) and the entry's generation in bits 16..23. A generation moves when the entry holds something else: a pool add, a stream slot filled or emptied (`ent_renew`, from `stream.c`), a range registered or dropped, another place. An id kept after its entity went reads as gone (`ent_get` answers 0), so a game needs no callback.
+
+- `ent_get(id)`, `ent_id(e)` (an address in the registry's storage to its id), `ent_by_key(key)` (a walk, for events), `ent_next(i, &id)` (every live entity, a pool entry while in use), `ent_count()` (the pool's).
+- `ent_place(scene)`: scene is the place; `ent_frame` (from `draw_frame`) does it each frame, so a game's ids work from the first frame. A test or a builder that wants ids before then calls it.
+- The pool and the ranges belong to the scene and heap epoch they were filled under: any call that finds the epoch moved drops them, and an add or a range into another scene empties the pool first. `ent_clear` (a stream's open and close, `spawn_clear`) drops both.
+- `ent_shift` moves the pool with the stream's origin. An array's entries are their owner's to move.
+
+Leash applies to the pool only. A range's or the scene's entry goes with its array. `residence` and `ENT_KEPT` are stored for step 8 (kept game-made entities).
+
+`check_registry` (hostcheck) gives ids to a scene's own entries, a range's and a pool entry; walks them all once; renews one entry and keeps the others; drops a range and its ids; removes a pool entry; and forgets every id on a new heap.
+
 ## Spawned while playing
 
 Entities made after the place was built (a quest's ambush, foes in the wild) are a pool of the engine's beside `Scene.entities`, drawn and solid as these are: `docs/spawn.md`.

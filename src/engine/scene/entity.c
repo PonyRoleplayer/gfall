@@ -144,11 +144,12 @@ static int blocked_by(const Entity *list, int n, const Entity *self, float x, fl
 
 int entity_blocked(const Scene *scene, const Entity *self, float x, float z)
 {
-    const Entity *spawned;
+    EntList lists[ENT_LISTS];
     float lo;
     float hi;
     float bx, by, bz;
-    int nspawned;
+    int n;
+    int i;
 
     if (!self || self->radius <= 0.0f) {
         return 0;
@@ -163,12 +164,14 @@ int entity_blocked(const Scene *scene, const Entity *self, float x, float z)
     if (!scene) {
         return 0;
     }
-    /* The place's own, and those spawned while playing (docs/spawn.md). */
-    if (blocked_by(scene->entities, scene->nentities, self, x, z, lo, hi)) {
-        return 1;
+    /* The place's own, the game's ranges and those made while playing (docs/entities.md, The registry). */
+    n = ent_lists(scene, lists, ENT_LISTS);
+    for (i = 0; i < n; i++) {
+        if (blocked_by(lists[i].first, lists[i].n, self, x, z, lo, hi)) {
+            return 1;
+        }
     }
-    spawned = spawn_entities(scene, &nspawned);
-    return blocked_by(spawned, nspawned, self, x, z, lo, hi);
+    return 0;
 }
 
 static int g_population = 1;

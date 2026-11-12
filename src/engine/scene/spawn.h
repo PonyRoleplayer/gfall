@@ -3,6 +3,7 @@
 
 #include "engine/gfx/camera.h"
 #include "engine/scene/entity.h"
+#include "engine/scene/ent.h"
 #include "engine/scene/scene.h"
 
 /*
@@ -35,10 +36,11 @@
  * Plain C, no Glide: hostcheck runs it.
  */
 
-#define SPAWN_MAX 32
+/* The registry's transient pool (ent.h): spawn_* is a wrapper over it, kept while the games move to ent_*. */
+#define SPAWN_MAX ENT_POOL
 
-/* 0 for none; else the pool's entry plus one, and its generation in bits 8..15. */
-typedef df_u32 SpawnId;
+/* An EntId of a pool entry: 0 for none; else its index plus one, and its generation in bits 16..23. */
+typedef EntId SpawnId;
 
 /*
  * A copy of e, live in scene from now on, freed when the camera is more

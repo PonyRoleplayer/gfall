@@ -5,6 +5,7 @@
 #include "engine/scene/interact.h"
 #include "engine/scene/keep.h"
 #include "engine/scene/spawn.h"
+#include "engine/scene/ent.h"
 
 /* See stream.h and docs/streaming.md. */
 
@@ -184,6 +185,10 @@ static void drop_slot(int s)
         g_src.drop(g_src.user, g_slot[s].cx, g_slot[s].cz, g_slot[s].data);
     }
     empty_slot(s);
+    /* Its entities' ids read as gone: the next block in this slot is other creatures (docs/entities.md, The registry). */
+    if (g_cap.entities > 0) {
+        ent_renew(g_scene, s * g_cap.entities, g_cap.entities);
+    }
     g_scene->version++;
     if (was_done && g_src.changed) {
         g_src.changed(g_src.user, s, 0);
@@ -709,6 +714,9 @@ static void finish(int s)
     sl->usables = g_out.usables_n;
     sl->movers = g_out.movers_n;
     sl->entities = g_entities ? g_out.entities_n : 0;
+    if (g_cap.entities > 0) {
+        ent_renew(g_scene, s * g_cap.entities, g_cap.entities);
+    }
     sl->water = g_water ? g_out.water_n : 0;
     sl->data = g_out.data;
     for (i = base; i < base + sl->models; i++) {
