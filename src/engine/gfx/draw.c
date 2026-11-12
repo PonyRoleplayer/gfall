@@ -883,7 +883,7 @@ void draw_prime(const Level *level, const Camera *cam)
             float dx, dz;
 
             e = &sc->entities[i];
-            if (!e->live || !entity_flat(e, cam->x, cam->z, &fl)) {
+            if (!e->live || (e->flags & ENT_HIDDEN) || !entity_flat(e, cam->x, cam->z, &fl)) {
                 continue;
             }
             dx = fl.x - cam->x;
@@ -1056,7 +1056,7 @@ static void draw_entity_list(const Camera *cam, const Basis *basis, const Level 
         float dx, dz, d2, r;
 
         e = &list[i];
-        if (!e->live || !entity_flat(e, cam->x, cam->z, &fl)) {
+        if (!e->live || (e->flags & ENT_HIDDEN) || !entity_flat(e, cam->x, cam->z, &fl)) {
             continue;
         }
         dx = fl.x - cam->x;

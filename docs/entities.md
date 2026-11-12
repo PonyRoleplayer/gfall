@@ -22,6 +22,14 @@ sprites emit light. OGFALL uses it for spell missiles, bursts and its candle.
 
 `radius` (0, as zeroed, passes through) makes it solid: the walker's body stops at it, and `entity_blocked(scene, self, x, z)` tells a motor whether a step would meet the body or another solid entity (`docs/collision.md`). Its height is its pose's front view (`entity_height`).
 
+What an entity is beyond its picture (`docs/entity-plan.md`), every field 0 as zeroed, which is how entities behaved before them:
+
+- `flags`: `ENT_MOVES` (not static; the game's to say, read nowhere by the engine yet), `ENT_GHOST` (bodies pass through although it has a radius, which still sizes its use box), `ENT_HOSTILE` (the game's friend or foe, stored for it; the engine acts on nothing by it), `ENT_USABLE` (the use ray takes it, by `use`), `ENT_KEPT` (kept by its key although the game made it), `ENT_HIDDEN` (not drawn, not solid, not usable). `entity_solid(e)` is the one test of solid: live, a radius, neither ghost nor hidden. The plan's `ENT_SOLID` became `ENT_GHOST` so that a zeroed entity with a radius stays solid, as before.
+- `owner`: the game's word for who it is, never read by the engine.
+- `use`: how the use ray takes it (`EntityUse`: `kind` `USE_TALK` or `USE_OTHER`, `reach` from the eye, 0 not by hand; `what`, `tag` and `label` as a `Usable`'s).
+- `leash`: a transient's distance from the camera past which it is freed, 0 never.
+- `residence`: `ENT_HOME_CHUNK` (as its array says), `ENT_HOME_PLACE`, `ENT_HOME_ROAM`. The plan calls it `home`, but `home` is already where the file put it.
+
 A pose (`EntityPose`) is five views: a picture slot each, each view's size in world units (a record is drawn at its own: a rat side on is twice as wide as from the front), a frame rate, and `right`, a bit a view whose picture faces the viewer's right. An entity has `ENTITY_POSES` of them, `pose[ENTITY_*]`:
 
 | Pose | Shows | Daggerfall's records |

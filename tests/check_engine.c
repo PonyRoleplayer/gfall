@@ -2256,6 +2256,17 @@ static void check_spawn(void)
     spawn_body(&me, -140.0f, 0.0f, 50.0f, 16.0f);
     check_expect(entity_blocked(&sc, &me, -120.0f, 50.0f) && !entity_blocked(&sc, &me, -160.0f, 50.0f),
                  "a spawned entity was not solid to another");
+    /* The flags: 0 as before them; a ghost and a hidden entity are passed through. */
+    check_expect(spawn_get(old)->flags == 0 && spawn_get(old)->residence == ENT_HOME_CHUNK
+                 && entity_solid(spawn_get(old)), "a spawned entity's new fields were not zero");
+    spawn_get(old)->flags = ENT_GHOST;
+    check_expect(!entity_blocked(&sc, &me, -120.0f, 50.0f), "a ghost entity was solid");
+    spawn_get(old)->flags = ENT_HIDDEN;
+    check_expect(!entity_blocked(&sc, &me, -120.0f, 50.0f) && !entity_solid(spawn_get(old)),
+                 "a hidden entity was solid");
+    spawn_get(old)->flags = ENT_HOSTILE | ENT_MOVES;
+    check_expect(entity_blocked(&sc, &me, -120.0f, 50.0f), "a hostile moving entity was not solid");
+    spawn_get(old)->flags = 0;
     check_expect(spawn_entities(&other, &n) == 0 && n == 0, "the pool answered for a scene it is not in");
     id = spawn_add(&other, &e, 0.0f);
     check_expect(spawn_get(old) == 0 && spawn_get(id) && spawn_count() == 1,

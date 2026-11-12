@@ -215,7 +215,7 @@ static int crowded_by(const Entity *list, int n, float x, float y, float z, floa
         const Entity *o;
 
         o = &list[i];
-        if (o->live && o->radius > 0.0f && meets(x, y, z, r, h, o->x, o->y, o->z, o->radius, entity_height(o))) {
+        if (entity_solid(o) && meets(x, y, z, r, h, o->x, o->y, o->z, o->radius, entity_height(o))) {
             return 1;
         }
     }

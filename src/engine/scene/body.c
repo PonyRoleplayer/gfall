@@ -409,7 +409,7 @@ static void push_from_list(const Body *b, const Entity *list, int n, float *px, 
         const Entity *e;
 
         e = &list[i];
-        if (e == b->self || !e->live || e->radius <= 0.0f) {
+        if (e == b->self || !entity_solid(e)) {
             continue;
         }
         push_from(b, e->x, e->y, e->z, e->radius, entity_height(e), px, pz);

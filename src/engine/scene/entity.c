@@ -22,6 +22,11 @@ void entity_init(Entity *e)
     }
 }
 
+int entity_solid(const Entity *e)
+{
+    return e && e->live && e->radius > 0.0f && !(e->flags & (ENT_GHOST | ENT_HIDDEN));
+}
+
 /* 1 when the game filled pose p in: a picture and a size. */
 static int posed(const EntityPose *p)
 {
@@ -125,7 +130,7 @@ static int blocked_by(const Entity *list, int n, const Entity *self, float x, fl
         const Entity *o;
 
         o = &list[i];
-        if (o == self || !o->live || o->radius <= 0.0f) {
+        if (o == self || !entity_solid(o)) {
             continue;
         }
         if (hi > o->y && lo < o->y + entity_height(o) && circles_meet(x, z, self->radius, o->x, o->z, o->radius)

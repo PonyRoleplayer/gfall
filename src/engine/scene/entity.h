@@ -67,6 +67,54 @@ typedef struct EntityPose {
     df_u8 right;
 } EntityPose;
 
+/*
+ * What an entity is to the engine beyond its picture (Entity.flags), all
+ * 0 as zeroed, which is how every entity behaved before them. Who it is
+ * (a person, a creature, a quest's) is the game's, in Entity.owner.
+ * docs/entities.md, The registry.
+ */
+enum {
+    /* Not static: it may move and may have a body. The game's to say; the engine reads it nowhere yet. */
+    ENT_MOVES = 0x01,
+    /* Bodies pass through it although it has a radius (its radius still sizes its use box). */
+    ENT_GHOST = 0x02,
+    /* The game's friend or foe, stored here for it and shown by the viewers; the engine acts on nothing by it. */
+    ENT_HOSTILE = 0x04,
+    /* The use ray takes it (Entity.use): interact_cast, EntityUseHandler. */
+    ENT_USABLE = 0x08,
+    /* Keyed and kept even though the game made it, not the file (keep.h): revived by its key when its chunk fills. */
+    ENT_KEPT = 0x10,
+    /* Not drawn, not solid, not usable: a quest's hidden person. */
+    ENT_HIDDEN = 0x20
+};
+
+/* Where an entity belongs (Entity.residence): what takes it away. */
+enum {
+    /* As its array says: a stream chunk's goes with the chunk, a place's with the place, a transient with its leash. */
+    ENT_HOME_CHUNK,
+    /* Stays until the place closes. */
+    ENT_HOME_PLACE,
+    /* Follows the camera through the stream: kept under the chunk it stands in when that chunk drops. */
+    ENT_HOME_ROAM
+};
+
+/*
+ * How the use ray takes an entity with ENT_USABLE: as a Usable is taken,
+ * but on the entity's own box (its radius round its feet, its pose's
+ * height). kind is USE_TALK or USE_OTHER (a mover or a passage is a
+ * model's, never an entity's); what, tag and label are the game's, as
+ * Usable's are. reach is from the eye in world units; 0 is not usable by
+ * hand.
+ */
+typedef struct EntityUse {
+    df_u8 kind;
+    df_u8 pad;
+    df_u16 reach;
+    int what;
+    int tag;
+    const char *label;
+} EntityUse;
+
 typedef struct Entity {
     /* Its feet, in the scene's frame; its facing. */
     float x, y, z;
@@ -110,6 +158,20 @@ typedef struct Entity {
     /* Where the file put it, noted by keep_restore, so a kept row is only what changed. */
     float home[3];
     df_u8 homed;
+    /* ENT_HOME_*: what takes it away. 0, as its array says. */
+    df_u8 residence;
+    /* ENT_* above; 0 as before them. */
+    df_u32 flags;
+    /* The game's: who it is (its table's index, or an identity packed as it likes). The engine never reads it. */
+    df_u32 owner;
+    /* With ENT_USABLE: how the use ray takes it. */
+    EntityUse use;
+    /*
+     * A transient's (ent_add, spawn_add): freed once the camera is
+     * further than this across the ground; 0 never by distance. An
+     * entity of an array goes with its array.
+     */
+    float leash;
 } Entity;
 
 /*
@@ -148,6 +210,11 @@ void entity_set_population(int on);
  * its own (0: never blocked). The walker's body only while it is on.
  */
 int entity_blocked(const Scene *scene, const Entity *self, float x, float z);
+/*
+ * 1 when bodies stop at e and solid entities keep apart from it: live,
+ * a radius, and neither ENT_GHOST nor ENT_HIDDEN.
+ */
+int entity_solid(const Entity *e);
 /* How tall entity e stands now: its pose's front view. */
 float entity_height(const Entity *e);
 int entity_population(void);
