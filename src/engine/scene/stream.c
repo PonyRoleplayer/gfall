@@ -169,6 +169,7 @@ void stream_keep_now(void)
             keep_slot(s);
         }
     }
+    ent_keep_now(g_scene, g_chunk, (float)g_ox * (float)g_chunk, 0.0f, (float)g_oz * (float)g_chunk);
 }
 
 /* The chunk in slot s goes: the source lets go of it, then the slot is empty. */
@@ -180,6 +181,9 @@ static void drop_slot(int s)
     /* What the player changed in it, kept for when it comes again (docs/interact.md). */
     if (was_done && g_save_keep) {
         keep_slot(s);
+        /* The game's kept entities standing in it, filed under it and gone with it (docs/entities.md, Kept). */
+        ent_chunk_dropped(g_scene, g_slot[s].cx, g_slot[s].cz, g_chunk,
+                          (float)g_ox * (float)g_chunk, (float)g_oz * (float)g_chunk);
     }
     if (g_src.drop) {
         g_src.drop(g_src.user, g_slot[s].cx, g_slot[s].cz, g_slot[s].data);
@@ -794,6 +798,8 @@ static void finish(int s)
     keep_restore(g_scene, s * g_cap.movers, sl->movers,
                  g_entities ? &g_entities[s * g_cap.entities] : 0, sl->entities,
                  (float)g_ox * (float)g_chunk, 0.0f, (float)g_oz * (float)g_chunk);
+    /* The game's kept entities filed under this chunk, back where they stood (docs/entities.md, Kept). */
+    ent_chunk_filled(g_scene, sl->cx, sl->cz, g_chunk, (float)g_ox * (float)g_chunk, (float)g_oz * (float)g_chunk);
     /*
      * A model that moves has its whole sweep as its box, before the spans
      * are made from the boxes: the cull and the collision gather read them

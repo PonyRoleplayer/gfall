@@ -220,7 +220,24 @@ A body's push (`body.c`) and `entity_blocked` used to walk every entity for ever
 
 `check_near_gather` (hostcheck): 500 entities over 20000 units, 200 steps tested before the first frame and after it give the same answers, about two in three blocked, and a gather round one hands back fewer than 20.
 
-Leash applies to the pool only. A range's or the scene's entry goes with its array. `residence` and `ENT_KEPT` are stored for step 8 (kept game-made entities).
+### Kept
+
+A keyed entity the game made, not the file, survives its chunk dropping and a save (`docs/entity-plan.md`, step 8):
+
+- **What counts:** a pool entity with `ENT_KEPT` and a key. A file's entity needs nothing new: its builder makes it again and `keep_restore` applies its row. An entity in a game's range is its owner's to keep.
+- **The row:** the keep row is the whole entity. It holds its feet in the place's frame, facing, dead, act, hold and frame, as for any entity. It also holds `made` (1 filed under a stream chunk `cx`, `cz`; 2 filed under its place), `residence`, `flags` and `owner`. The game's bytes stay the game's.
+- **A chunk drops** (`ent_chunk_dropped`, from the stream's `drop_slot`, only when the keep is being saved): each kept made entity standing in it is written, filed under that chunk, and freed, roaming ones included. An `ENT_HOME_PLACE` one is never dropped with a chunk.
+- **A chunk fills** (`ent_chunk_filled`, after `keep_restore`): every row filed under it is offered to the game's `EntityReviveHook(row, out)`. The hook fills in the look (poses, size, radius, use, leash, live) from `row->key` and `row->owner` and answers 1; the engine puts it back where it stood, as it was, into the pool. The hook answers 0 for a row of another place: the stream does not know which place it streams, and the game does, from `row->key.place`. A row whose key is already in the registry is not revived twice. With the pool full, the row waits for the next fill.
+- **Now:** `ent_keep_now(scene, chunk, ox, oy, oz)` writes every live kept made entity without freeing it: under the chunk it stands in when `chunk` > 0 (`stream_keep_now` calls it before a save), or under the place when `chunk` is 0 (a place loaded whole, before the game leaves it). `ent_revive_place` offers a place's rows when it is built again.
+- **Saves:** rows stay in the table while their entity lives, so a save holds them. GFALL's `KEEP` record carries the new fields. OGFALL's codec writes `Keep` field by field, so it must add them to carry kept entities across a save.
+
+`check_kept_entities` (hostcheck):
+- A kept hostile standing in chunk 2,0 is filed and freed when the chunk drops; a place-resident one and one in the next chunk stay.
+- It comes back at its place-frame position less the new origin, with its facing, act, owner, flags and the hook's leash, and only once.
+- Another place's row is declined.
+- A whole place kept, its rows through a save and its pool emptied, revives all three.
+
+Leash applies to the pool only. A range's or the scene's entry goes with its array. `residence` and `ENT_KEPT` decide what is kept (Kept, above).
 
 `check_registry` (hostcheck) gives ids to a scene's own entries, a range's and a pool entry; walks them all once; renews one entry and keeps the others; drops a range and its ids; removes a pool entry; and forgets every id on a new heap.
 

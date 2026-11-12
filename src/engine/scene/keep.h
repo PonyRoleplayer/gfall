@@ -49,6 +49,21 @@ typedef struct Keep {
     df_u8 pad2[2];
     /* The game's own (health, a flag): carried, never read by the engine. A row with any set is kept. */
     df_u8 game[KEEP_GAME_BYTES];
+    /*
+     * An entity the game made (ENT_KEPT, ent.h), not the file: 0 for a
+     * file's; 1 filed under the stream chunk cx, cz it stood in when that
+     * chunk went; 2 filed under its place (a place loaded whole). Such a
+     * row is the whole entity: its flags, owner and residence below, its
+     * look rebuilt by the game's EntityReviveHook from the key and owner.
+     * A file's entity carries none of these: its builder makes it again.
+     */
+    df_u8 made;
+    df_u8 residence;
+    df_u8 pad3[2];
+    df_u32 flags;
+    df_u32 owner;
+    df_i32 cx;
+    df_i32 cz;
 } Keep;
 
 /*

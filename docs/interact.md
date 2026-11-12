@@ -157,6 +157,8 @@ Its source-derived rule retains the player's yaw and pitch; the shared builder's
 target-facing value remains available to the viewers. OGFALL registers its body
 with `interact_set_body`, so touch volumes use its actual crouched height.
 
+A kept entity the game made (`ENT_KEPT`, `docs/entities.md`, Kept) has its whole self in its row: `made`, `residence`, `flags`, `owner` and its chunk `cx`, `cz`, so the stream can give it back when its chunk fills.
+
 ## Switches
 
 | | |

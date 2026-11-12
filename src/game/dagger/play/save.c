@@ -307,7 +307,14 @@ static const RecField g_keep_fields[] = {
     K("hold", REC_UINT, hold),
     K("frame", REC_UINT, frame),
     K("placed", REC_UINT, placed),
-    REC_ARRAY("game", REC_UINT, SaveKeepRow, keep.game)
+    REC_ARRAY("game", REC_UINT, SaveKeepRow, keep.game),
+    /* A kept entity the game made (ent.h): where it is filed and who it is, for its revival. */
+    K("made", REC_UINT, made),
+    K("residence", REC_UINT, residence),
+    K("flags", REC_UINT, flags),
+    K("owner", REC_UINT, owner),
+    K("cx", REC_INT, cx),
+    K("cz", REC_INT, cz)
 };
 #undef K
 static const RecSchema g_keep_schema = {

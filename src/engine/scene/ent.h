@@ -4,6 +4,7 @@
 #include "engine/gfx/camera.h"
 #include "engine/scene/entity.h"
 #include "engine/scene/scene.h"
+#include "engine/scene/keep.h"
 
 /*
  * The registry: every entity in a place, under one id. Read
@@ -130,6 +131,39 @@ void ent_shift(const Scene *scene, float dx, float dz);
  */
 int ent_near_solid(const Scene *scene, float x, float z, float r, const Entity **out, int cap);
 void ent_regather(void);
+/*
+ * Kept entities the game made (docs/entities.md, Kept): a pool entity
+ * with ENT_KEPT and a key is written to the keep table (Keep.made) when
+ * the chunk it stands in drops, or when the place is kept now, and freed
+ * with its chunk. When a chunk fills, every row filed under it is
+ * offered to the game's hook, which fills in out's look (its poses, its
+ * size, its use, its leash) from row->key and row->owner and answers 1;
+ * the engine then puts it back where it stood, as it was (its feet,
+ * facing, dead, act, frame, flags, owner, residence), into the pool. 0
+ * declines: a row of another place (the stream does not know which place
+ * it is; the game does, from row->key.place), or one not wanted now.
+ * Rows stay in the table while their entity lives: a save holds them.
+ * An entity of ENT_HOME_PLACE is never dropped with a chunk.
+ */
+typedef int (*EntityReviveHook)(const Keep *row, Entity *out);
+void ent_set_revive_hook(EntityReviveHook fn);
+/*
+ * The stream's: chunk cx, cz (chunk units a side) dropped or filled, the
+ * scene's origin at ox, oz in the place's frame. Dropped writes and
+ * frees the kept made entities standing in it; filled revives its rows.
+ */
+void ent_chunk_dropped(const Scene *scene, int cx, int cz, int chunk, float ox, float oz);
+void ent_chunk_filled(const Scene *scene, int cx, int cz, int chunk, float ox, float oz);
+/*
+ * Every live kept made entity of the pool written now, before a save or
+ * before leaving a place: under the chunk it stands in (chunk > 0, a
+ * stream), or under the place (chunk 0, a place loaded whole). The scene's
+ * origin is ox, oy, oz in the place's frame. Nothing is freed.
+ */
+void ent_keep_now(const Scene *scene, int chunk, float ox, float oy, float oz);
+/* A place loaded whole is built: its rows filed under the place (made 2) offered to the hook, as a chunk's are. */
+void ent_revive_place(const Scene *scene, float ox, float oy, float oz);
+
 /* The pool's array (ENT_POOL entries, free ones not live) when scene is its place; 0 otherwise. */
 Entity *ent_pool(const Scene *scene, int *n);
 

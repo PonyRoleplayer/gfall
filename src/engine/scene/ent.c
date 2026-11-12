@@ -554,3 +554,153 @@ void ent_regather(void)
 {
     g_dirty = 1;
 }
+
+/* --- kept entities the game made ------------------------------------ */
+
+static EntityReviveHook g_revive;
+
+void ent_set_revive_hook(EntityReviveHook fn)
+{
+    g_revive = fn;
+}
+
+/* 1 when pool entry i is a kept entity the game made: ENT_KEPT, a key. */
+static int kept_made(int i)
+{
+    const Entity *e;
+
+    e = &g_pool[i];
+    return g_used[i] && (e->flags & ENT_KEPT) && (e->key.place != 0 || e->key.thing != 0);
+}
+
+/* Pool entry i's row: the whole entity, filed by made (1 a chunk, 2 the place). 0 with no memory. */
+static int write_row(int i, int made, int cx, int cz, float ox, float oy, float oz)
+{
+    const Entity *e;
+    Keep *row;
+
+    e = &g_pool[i];
+    row = keep_get(e->key, KEEP_ENTITY);
+    if (!row) {
+        return 0;
+    }
+    /* Its game bytes are the game's, kept as they are. */
+    row->x = e->x + ox;
+    row->y = e->y + oy;
+    row->z = e->z + oz;
+    row->yaw = e->yaw;
+    row->dead = e->dead;
+    row->moving = e->moving;
+    row->act = e->act;
+    row->hold = e->hold;
+    row->frame = e->frame;
+    row->placed = 1;
+    row->made = (df_u8)made;
+    row->residence = e->residence;
+    row->flags = e->flags;
+    row->owner = e->owner;
+    row->cx = cx;
+    row->cz = cz;
+    return 1;
+}
+
+void ent_chunk_dropped(const Scene *scene, int cx, int cz, int chunk, float ox, float oz)
+{
+    int i;
+
+    if (chunk <= 0 || !in_place(scene)) {
+        return;
+    }
+    for (i = 0; i < ENT_POOL; i++) {
+        if (!kept_made(i) || g_pool[i].residence == ENT_HOME_PLACE) {
+            continue;
+        }
+        if (df_ifloor((g_pool[i].x + ox) / (float)chunk) != cx || df_ifloor((g_pool[i].z + oz) / (float)chunk) != cz) {
+            continue;
+        }
+        /* Filed under the chunk it stands in, and gone with it: no floor is under it any more. */
+        if (write_row(i, 1, cx, cz, ox, 0.0f, oz)) {
+            free_entry(i);
+            g_dirty = 1;
+        }
+    }
+}
+
+void ent_keep_now(const Scene *scene, int chunk, float ox, float oy, float oz)
+{
+    int i;
+
+    if (!in_place(scene)) {
+        return;
+    }
+    for (i = 0; i < ENT_POOL; i++) {
+        if (!kept_made(i)) {
+            continue;
+        }
+        if (chunk > 0 && g_pool[i].residence != ENT_HOME_PLACE) {
+            write_row(i, 1, df_ifloor((g_pool[i].x + ox) / (float)chunk), df_ifloor((g_pool[i].z + oz) / (float)chunk),
+                      ox, oy, oz);
+        } else {
+            write_row(i, 2, 0, 0, ox, oy, oz);
+        }
+    }
+}
+
+/* Every row filed as made (and, for a chunk, under cx, cz) offered to the hook, and put back as it was. */
+static void revive(const Scene *scene, int made, int cx, int cz, float ox, float oy, float oz)
+{
+    int n;
+    int i;
+
+    if (!scene || !g_revive) {
+        return;
+    }
+    enter(scene);
+    n = keep_count();
+    for (i = 0; i < n; i++) {
+        const Keep *row;
+        Entity e;
+
+        row = keep_at(i);
+        if (row->kind != KEEP_ENTITY || row->made != made || (made == 1 && (row->cx != cx || row->cz != cz))) {
+            continue;
+        }
+        /* Already standing here (it never left, or came back another way): not twice. */
+        if (ent_by_key(row->key)) {
+            continue;
+        }
+        entity_init(&e);
+        if (!g_revive(row, &e)) {
+            continue;
+        }
+        e.key = row->key;
+        e.x = row->x - ox;
+        e.y = row->y - oy;
+        e.z = row->z - oz;
+        e.yaw = row->yaw;
+        e.dead = row->dead;
+        e.moving = row->moving;
+        e.act = row->act;
+        e.hold = row->hold;
+        e.frame = row->frame;
+        e.flags = row->flags | ENT_KEPT;
+        e.owner = row->owner;
+        e.residence = row->residence;
+        if (!ent_add(scene, &e)) {
+            /* The pool is full: it stays in the table, and comes back the next time its chunk fills. */
+            continue;
+        }
+    }
+}
+
+void ent_chunk_filled(const Scene *scene, int cx, int cz, int chunk, float ox, float oz)
+{
+    if (chunk > 0) {
+        revive(scene, 1, cx, cz, ox, 0.0f, oz);
+    }
+}
+
+void ent_revive_place(const Scene *scene, float ox, float oy, float oz)
+{
+    revive(scene, 2, 0, 0, ox, oy, oz);
+}

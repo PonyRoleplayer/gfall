@@ -2406,6 +2406,114 @@ static void check_entity_use(void)
     ent_clear();
 }
 
+static int g_revived;
+
+/* The game's look for a kept entity of place 9: a size and a leash. Any other place's rows are declined. */
+static int revive_place9(const Keep *row, Entity *out)
+{
+    int p;
+
+    if (row->key.place != 9) {
+        return 0;
+    }
+    for (p = 0; p < ENTITY_POSES; p++) {
+        out->pose[p].w[0] = 32;
+        out->pose[p].h[0] = 64;
+    }
+    out->radius = 16.0f;
+    out->live = 1;
+    out->leash = 4000.0f;
+    g_revived++;
+    return 1;
+}
+
+/*
+ * Kept entities the game made (ent.h, docs/entities.md, Kept): one
+ * standing in a stream chunk is filed under it and freed when the chunk
+ * drops, and comes back where it stood, as it was, when the chunk fills
+ * again after the origin moved; once, not twice; a place-resident one
+ * stays; another place's row is declined; a place loaded whole keeps its
+ * own and revives them; the rows come back from a save.
+ */
+static void check_kept_entities(void)
+{
+    static Scene sc;
+    Keep rows[4];
+    const Keep *row;
+    Entity e;
+    Entity *got;
+    KeepKey key;
+    EntId id;
+    int nrows;
+    int i;
+
+    keep_clear();
+    ent_clear();
+    mem_zero(&sc, sizeof(sc));
+    ent_place(&sc);
+    ent_set_revive_hook(revive_place9);
+    g_revived = 0;
+    /* Origin at chunk 2 (4096 across): a kept hostile at 300, 500 in the scene stands in chunk 2, 0. */
+    spawn_body(&e, 300.0f, 0.0f, 500.0f, 16.0f);
+    e.flags = ENT_KEPT | ENT_HOSTILE;
+    e.key.place = 9;
+    e.key.thing = 1;
+    e.owner = 77;
+    e.yaw = 1.0f;
+    e.act = 2;
+    id = ent_add(&sc, &e);
+    /* A place-resident one in the same chunk, and one in the chunk west of it. */
+    e.flags = ENT_KEPT;
+    e.residence = ENT_HOME_PLACE;
+    e.key.thing = 2;
+    ent_add(&sc, &e);
+    e.residence = ENT_HOME_CHUNK;
+    e.x = -300.0f;
+    e.key.thing = 3;
+    ent_add(&sc, &e);
+    ent_chunk_dropped(&sc, 2, 0, 2048, 4096.0f, 0.0f);
+    key.place = 9;
+    key.thing = 1;
+    row = keep_find(key);
+    check_expect(ent_get(id) == 0 && ent_count() == 2 && row && row->made == 1 && row->cx == 2 && row->cz == 0
+                 && check_near(row->x, 4396.0f, 0.01f) && row->owner == 77 && (row->flags & ENT_HOSTILE),
+                 "a kept entity was not filed under its chunk and freed with it, or the others went too");
+    /* The origin moved a chunk east: it comes back at 4396 - 2048 in the scene, as it was. */
+    ent_chunk_filled(&sc, 2, 0, 2048, 2048.0f, 0.0f);
+    got = ent_get(ent_by_key(key));
+    check_expect(got && check_near(got->x, 2348.0f, 0.01f) && check_near(got->z, 500.0f, 0.01f)
+                 && check_near(got->yaw, 1.0f, 0.001f) && got->act == 2 && got->owner == 77
+                 && (got->flags & (ENT_KEPT | ENT_HOSTILE)) == (ENT_KEPT | ENT_HOSTILE) && got->leash == 4000.0f,
+                 "a kept entity did not come back where it stood, as it was, with the game's look");
+    ent_chunk_filled(&sc, 2, 0, 2048, 2048.0f, 0.0f);
+    check_expect(g_revived == 1 && ent_count() == 3, "a kept entity came back twice");
+    /* Another place's row, filed under the same chunk, is the game's to decline. */
+    key.place = 8;
+    keep_get(key, KEEP_ENTITY)->made = 1;
+    keep_find(key)->cx = 5;
+    ent_chunk_filled(&sc, 5, 0, 2048, 2048.0f, 0.0f);
+    check_expect(ent_count() == 3, "another place's kept row was revived");
+    keep_forget(key);
+    /* A place loaded whole: kept now under the place, the pool emptied, revived when it is built again. */
+    ent_keep_now(&sc, 0, 0.0f, 0.0f, 0.0f);
+    nrows = 0;
+    for (i = 0; i < keep_count() && nrows < 4; i++) {
+        rows[nrows++] = *keep_at(i);
+    }
+    keep_clear();
+    for (i = 0; i < nrows; i++) {
+        keep_put(&rows[i]);
+    }
+    ent_clear();
+    g_revived = 0;
+    ent_revive_place(&sc, 0.0f, 0.0f, 0.0f);
+    check_expect(nrows == 3 && g_revived == 3 && ent_count() == 3 && keep_find(key) == 0,
+                 "a place's kept entities did not come back from its rows through a save");
+    ent_set_revive_hook(0);
+    keep_clear();
+    ent_clear();
+}
+
 static void check_spawn(void)
 {
     static Scene sc;
@@ -6183,6 +6291,7 @@ void check_engine(void)
     check_registry();
     check_near_gather();
     check_entity_use();
+    check_kept_entities();
     check_spawn();
     check_body_lifts();
     check_console();
