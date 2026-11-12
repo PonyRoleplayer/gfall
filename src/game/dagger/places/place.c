@@ -1,14 +1,14 @@
 #include "game/dagger/places/place.h"
 
-void ogfall_place_startup(void)
+void gfall_place_startup(void)
 {
 }
 
-void ogfall_place_shutdown(void)
+void gfall_place_shutdown(void)
 {
 }
 
-int og_place_marker6(const OgMark *marks, int n,
+int place_marker6(const MarkInfo *marks, int n,
                      float fx, float fy, float fz,
                      float *x, float *y, float *z)
 {

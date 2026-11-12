@@ -13,7 +13,7 @@ static const unsigned char g_weapon[19][2] = {
     {3,0}, {3,0}, {7,0}, {2,1}, {254,254}, {14,1}, {13,0}, {5,0}, {7,0}, {7,0}
 };
 
-static void gift(OgCharacter *who, int group, int index, int material)
+static void gift(CharacterState *who, int group, int index, int material)
 {
     int n;
     n = who->gifts;
@@ -22,7 +22,7 @@ static void gift(OgCharacter *who, int group, int index, int material)
     who->gifts++;
 }
 
-void og_kit_give(OgCharacter *who)
+void kit_give(CharacterState *who)
 {
     int klass;
     int weapon;
@@ -45,5 +45,5 @@ void og_kit_give(OgCharacter *who)
     } else { weapon = 0; }
     gift(who, 27, 0, 0);
     who->weapon = weapon;
-    who->weapon_sound = og_weapon_sound(weapon);
+    who->weapon_sound = weapon_sound(weapon);
 }

@@ -6,7 +6,7 @@
 # PONY97.EXE: optional embedded-model turntable; no game data.
 # make
 # Mount build/spintri.iso and run D:\SPINTRI.EXE, or mount build/gfall.iso
-# and run D:\GFALL.EXE or D:\OGFALL.EXE. The disc is the executables only.
+# and run D:\GFALL.EXE. The disc is the executables only.
 # ARENA2 stays beside them on the machine. It is not copied onto the disc.
 # The guest needs the 3dfx Voodoo Graphics driver (glide2x.dll). Escape quits.
 # Do not copy glide2x.dll onto either disc. The system driver is the one
@@ -177,9 +177,9 @@ PLAY_SRC := \
 	src/game/dagger/play/marker.c \
 	src/game/dagger/play/words.c
 
-# OGFALL: original gameplay and the streamed world.
+# GFALL: original gameplay and the streamed world.
 # seam.c is the only file that includes both games.
-OGFALL_GAME_SRC := \
+GFALL_GAME_SRC := \
 	src/game/dagger/formats/formats.c \
 	src/game/dagger/formats/qbn.c \
 	src/game/dagger/formats/book.c \
@@ -259,9 +259,9 @@ OGFALL_GAME_SRC := \
 	src/game/dagger/play/activate.c \
 	src/game/dagger/play/play.c
 
-OGFALL_HEADERS := $(wildcard src/game/dagger/*/*.h apps/ogfall/*.h)
+GFALL_HEADERS := $(wildcard src/game/dagger/*/*.h apps/gfall/*.h)
 
-OGFALL_SRC := apps/ogfall/main.c apps/ogfall/seam.c $(OGFALL_GAME_SRC) $(ENGINE_SRC) $(DAGGER_SRC) $(PLAY_SRC)
+GFALL_SRC := apps/gfall/main.c apps/gfall/seam.c $(GFALL_GAME_SRC) $(ENGINE_SRC) $(DAGGER_SRC) $(PLAY_SRC)
 
 # RENDERFALL shows models alone: the readers they need and no place.
 RENDER_SRC := apps/renderfall/main.c $(ENGINE_SRC) \
@@ -280,10 +280,10 @@ PONY97_SRC := apps/pony97/main.c $(ENGINE_SRC)
 HOST_SRC := $(ENGINE_HOST_SRC) \
 	$(filter-out src/game/dagger/formats/fnt.c,$(DAGGER_SRC)) $(PLAY_SRC)
 
-# The ogfall game and its seam, without the Win32 entry. Hostcheck links these.
-OGFALL_HOST_SRC := apps/ogfall/seam.c $(OGFALL_GAME_SRC)
+# The gfall game and its seam, without the Win32 entry. Hostcheck links these.
+GFALL_HOST_SRC := apps/gfall/seam.c $(GFALL_GAME_SRC)
 
-.PHONY: all check clean hostcheck datacheck renderfall-check levelfall-check datfall-check pony97-check pony97-iso ogfall ofgall ogfall-check ogfall-host deps deps-host layers
+.PHONY: all check clean hostcheck datacheck renderfall-check levelfall-check datfall-check pony97-check pony97-iso gfall gfall-check gfall-host deps deps-host layers
 
 # A bare make builds everything; deps alone is the first rule below.
 .DEFAULT_GOAL := all
@@ -327,7 +327,7 @@ deps-host: layers
 layers:
 	sh tools/check-layers
 
-all: deps check build/spintri.iso ogfall-check renderfall-check levelfall-check datfall-check build/gfall.iso pony97-iso
+all: deps check build/spintri.iso gfall-check renderfall-check levelfall-check datfall-check build/gfall.iso pony97-iso
 
 build/SPINTRI.EXE: apps/spintri/main.c third_party/glide2/include/glide.h | deps
 	mkdir -p build
@@ -343,17 +343,17 @@ build/cdroot/SPINTRI.EXE: build/SPINTRI.EXE
 build/spintri.iso: build/cdroot/SPINTRI.EXE | deps
 	$(XORRISO) -as mkisofs -o $@ -V SPINTRI -J -iso-level 1 build/cdroot
 
-build/hostcheck: tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_maps.c tests/check_ogfall.c tests/check_ogstate.c tests/check_ogstanding.c tests/check_ogtrade.c tests/check_ogshelf.c tests/check_ogmarket.c tests/check_ogbank.c tests/check_oglodging.c tests/check_oglaw.c tests/check_ogtalk.c tests/check_ogsteal.c tests/check_ognames.c tests/check_ogguild.c tests/check_ogpotion.c tests/check_ogspellshop.c tests/check_ogmagicitem.c tests/check_ogquest.c tests/check_ogentry.c tests/check_ogtalkwin.c tests/check_ogui.c tests/check_ogcombat.c tests/check_ogdoors.c tests/check_ogactions.c tests/check_ogprogress.c tests/check_ogsurvival.c tests/check_ogencounter.c tests/check_ogmagic.c tests/check_ogworld.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC) $(OGFALL_HEADERS) | deps-host
+build/hostcheck: tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_maps.c tests/check_game.c tests/check_state.c tests/check_standing.c tests/check_trade.c tests/check_shelf.c tests/check_market.c tests/check_bank.c tests/check_lodging.c tests/check_law.c tests/check_talk.c tests/check_steal.c tests/check_names.c tests/check_guild.c tests/check_potion.c tests/check_spellshop.c tests/check_magicitem.c tests/check_quest.c tests/check_entry.c tests/check_talkwin.c tests/check_ui.c tests/check_combat.c tests/check_doors.c tests/check_actions.c tests/check_progress.c tests/check_survival.c tests/check_encounter.c tests/check_magic.c tests/check_world.c tests/check_util.c tests/host_card.c $(GFALL_HOST_SRC) $(HOST_SRC) $(GFALL_HEADERS) | deps-host
 	mkdir -p build
-	$(HOST_CC) $(HOST_CFLAGS) -o $@ tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_maps.c tests/check_ogfall.c tests/check_ogstate.c tests/check_ogstanding.c tests/check_ogtrade.c tests/check_ogshelf.c tests/check_ogmarket.c tests/check_ogbank.c tests/check_oglodging.c tests/check_oglaw.c tests/check_ogtalk.c tests/check_ogsteal.c tests/check_ognames.c tests/check_ogguild.c tests/check_ogpotion.c tests/check_ogspellshop.c tests/check_ogmagicitem.c tests/check_ogquest.c tests/check_ogentry.c tests/check_ogtalkwin.c tests/check_ogui.c tests/check_ogcombat.c tests/check_ogdoors.c tests/check_ogactions.c tests/check_ogprogress.c tests/check_ogsurvival.c tests/check_ogencounter.c tests/check_ogmagic.c tests/check_ogworld.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC)
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ tests/hostcheck.c tests/check_engine.c tests/check_dagger.c tests/check_maps.c tests/check_game.c tests/check_state.c tests/check_standing.c tests/check_trade.c tests/check_shelf.c tests/check_market.c tests/check_bank.c tests/check_lodging.c tests/check_law.c tests/check_talk.c tests/check_steal.c tests/check_names.c tests/check_guild.c tests/check_potion.c tests/check_spellshop.c tests/check_magicitem.c tests/check_quest.c tests/check_entry.c tests/check_talkwin.c tests/check_ui.c tests/check_combat.c tests/check_doors.c tests/check_actions.c tests/check_progress.c tests/check_survival.c tests/check_encounter.c tests/check_magic.c tests/check_world.c tests/check_util.c tests/host_card.c $(GFALL_HOST_SRC) $(HOST_SRC)
 
-# The ogfall sums and one walk in the hold, without the rest of hostcheck.
-build/ogfall-host: tests/check_ogfall.c tests/check_ogstate.c tests/check_ogstanding.c tests/check_ogtrade.c tests/check_ogshelf.c tests/check_ogmarket.c tests/check_ogbank.c tests/check_oglodging.c tests/check_oglaw.c tests/check_ogtalk.c tests/check_ogsteal.c tests/check_ognames.c tests/check_ogguild.c tests/check_ogpotion.c tests/check_ogspellshop.c tests/check_ogmagicitem.c tests/check_ogquest.c tests/check_ogentry.c tests/check_ogtalkwin.c tests/check_ogui.c tests/check_ogcombat.c tests/check_ogdoors.c tests/check_ogactions.c tests/check_ogprogress.c tests/check_ogsurvival.c tests/check_ogencounter.c tests/check_ogmagic.c tests/check_ogworld.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC) $(OGFALL_HEADERS) | deps-host
+# The gfall sums and one walk in the hold, without the rest of hostcheck.
+build/gfall-host: tests/check_game.c tests/check_state.c tests/check_standing.c tests/check_trade.c tests/check_shelf.c tests/check_market.c tests/check_bank.c tests/check_lodging.c tests/check_law.c tests/check_talk.c tests/check_steal.c tests/check_names.c tests/check_guild.c tests/check_potion.c tests/check_spellshop.c tests/check_magicitem.c tests/check_quest.c tests/check_entry.c tests/check_talkwin.c tests/check_ui.c tests/check_combat.c tests/check_doors.c tests/check_actions.c tests/check_progress.c tests/check_survival.c tests/check_encounter.c tests/check_magic.c tests/check_world.c tests/check_util.c tests/host_card.c $(GFALL_HOST_SRC) $(HOST_SRC) $(GFALL_HEADERS) | deps-host
 	mkdir -p build
-	$(HOST_CC) $(HOST_CFLAGS) -DOGFALL_HOST_MAIN -o $@ tests/check_ogfall.c tests/check_ogstate.c tests/check_ogstanding.c tests/check_ogtrade.c tests/check_ogshelf.c tests/check_ogmarket.c tests/check_ogbank.c tests/check_oglodging.c tests/check_oglaw.c tests/check_ogtalk.c tests/check_ogsteal.c tests/check_ognames.c tests/check_ogguild.c tests/check_ogpotion.c tests/check_ogspellshop.c tests/check_ogmagicitem.c tests/check_ogquest.c tests/check_ogentry.c tests/check_ogtalkwin.c tests/check_ogui.c tests/check_ogcombat.c tests/check_ogdoors.c tests/check_ogactions.c tests/check_ogprogress.c tests/check_ogsurvival.c tests/check_ogencounter.c tests/check_ogmagic.c tests/check_ogworld.c tests/check_util.c tests/host_card.c $(OGFALL_HOST_SRC) $(HOST_SRC)
+	$(HOST_CC) $(HOST_CFLAGS) -DGFALL_HOST_MAIN -o $@ tests/check_game.c tests/check_state.c tests/check_standing.c tests/check_trade.c tests/check_shelf.c tests/check_market.c tests/check_bank.c tests/check_lodging.c tests/check_law.c tests/check_talk.c tests/check_steal.c tests/check_names.c tests/check_guild.c tests/check_potion.c tests/check_spellshop.c tests/check_magicitem.c tests/check_quest.c tests/check_entry.c tests/check_talkwin.c tests/check_ui.c tests/check_combat.c tests/check_doors.c tests/check_actions.c tests/check_progress.c tests/check_survival.c tests/check_encounter.c tests/check_magic.c tests/check_world.c tests/check_util.c tests/host_card.c $(GFALL_HOST_SRC) $(HOST_SRC)
 
-ogfall-host: build/ogfall-host
-	./build/ogfall-host
+gfall-host: build/gfall-host
+	./build/gfall-host
 
 hostcheck: build/hostcheck datacheck
 	./build/hostcheck
@@ -379,20 +379,17 @@ datacheck: build/dfrec
 
 # This entry has no CRT to pre-touch the stack. Let GCC's libgcc probe
 # grow it a page at a time for large frames (Win98 starts with 4 KB committed).
-build/OGFALL.EXE: $(OGFALL_SRC) Makefile third_party/glide2/include/glide.h $(OGFALL_HEADERS) | deps
+build/GFALL.EXE: $(GFALL_SRC) Makefile third_party/glide2/include/glide.h $(GFALL_HEADERS) | deps
 	mkdir -p build
-	$(CC) $(CFLAGS) -mstack-arg-probe -DBUILD_STAMP='"$(BUILD_STAMP)"' $(LDFLAGS) -o $@ $(OGFALL_SRC) -luser32 -lkernel32 -lgcc
+	$(CC) $(CFLAGS) -mstack-arg-probe -DBUILD_STAMP='"$(BUILD_STAMP)"' $(LDFLAGS) -o $@ $(GFALL_SRC) -luser32 -lkernel32 -lgcc
 
-ogfall-check: build/OGFALL.EXE
-	$(call pe_check,build/OGFALL.EXE,build/ogfall.dump)
-	$(OBJDUMP) -d build/OGFALL.EXE > build/ogfall.code
-	sh tools/check-stack-probes build/ogfall.code
+gfall-check: build/GFALL.EXE
+	$(call pe_check,build/GFALL.EXE,build/gfall.dump)
+	$(OBJDUMP) -d build/GFALL.EXE > build/gfall.code
+	sh tools/check-stack-probes build/gfall.code
 
-# The exe alone. ogfall-check still runs the PE rules; all is not retargeted.
-# ofgall is the same target: that spelling was typed and had no rule.
-ogfall: build/OGFALL.EXE
-
-ofgall: ogfall
+# The exe alone. gfall-check still runs the PE rules; all is not retargeted.
+gfall: build/GFALL.EXE
 
 build/RENDERFALL.EXE: $(RENDER_SRC) third_party/glide2/include/glide.h | deps
 	mkdir -p build
@@ -489,11 +486,11 @@ datfall-check: build/DATFALL.EXE build/datfall-host
 	$(call pe_check,build/DATFALL.EXE,build/datfall.dump)
 	./build/datfall-host
 
-build/gfall.iso: build/OGFALL.EXE build/RENDERFALL.EXE build/LEVELFALL.EXE build/DATFALL.EXE build/hostcheck | deps
+build/gfall.iso: build/GFALL.EXE build/RENDERFALL.EXE build/LEVELFALL.EXE build/DATFALL.EXE build/hostcheck | deps
 	./build/hostcheck
 	$(XORRISO) -as mkisofs -o $@ -V GFALL -J -relaxed-filenames \
 		-graft-points \
-		/OGFALL.EXE=build/OGFALL.EXE \
+		/GFALL.EXE=build/GFALL.EXE \
 		/RENDERFALL.EXE=build/RENDERFALL.EXE \
 		/LEVELFALL.EXE=build/LEVELFALL.EXE \
 		/DATFALL.EXE=build/DATFALL.EXE

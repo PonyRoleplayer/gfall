@@ -14,41 +14,41 @@ static const char *const g_race[] = {
 };
 static const int g_race_msg[] = { 3, 2, 0, 7, 6, 5, 1, 4 };
 
-static OgClass g_class[OG_CLASSES];
-static int g_class_set[OG_CLASSES];
+static ClassInfo g_class[CLASSES];
+static int g_class_set[CLASSES];
 
-void ogfall_tables_startup(void)
+void gfall_tables_startup(void)
 {
 }
 
-void ogfall_tables_shutdown(void)
+void gfall_tables_shutdown(void)
 {
 }
 
-void og_class_clear(void)
+void class_clear(void)
 {
     mem_zero(g_class, sizeof(g_class));
     mem_zero(g_class_set, sizeof(g_class_set));
 }
 
-void og_class_set(int index, const OgClass *row)
+void class_set(int index, const ClassInfo *row)
 {
-    if (index < 0 || index >= OG_CLASSES || !row) {
+    if (index < 0 || index >= CLASSES || !row) {
         return;
     }
     g_class[index] = *row;
     g_class_set[index] = 1;
 }
 
-const OgClass *og_class(int index)
+const ClassInfo *class_at(int index)
 {
-    if (index < 0 || index >= OG_CLASSES || !g_class_set[index]) {
+    if (index < 0 || index >= CLASSES || !g_class_set[index]) {
         return 0;
     }
     return &g_class[index];
 }
 
-const char *og_race_name(int race)
+const char *race_name(int race)
 {
     if (race < 0 || race >= (int)(sizeof(g_race) / sizeof(g_race[0]))) {
         return "";
@@ -56,7 +56,7 @@ const char *og_race_name(int race)
     return g_race[race];
 }
 
-int og_race_text(int race)
+int race_text(int race)
 {
     if (race < 0 || race >= (int)(sizeof(g_race_msg) / sizeof(g_race_msg[0]))) {
         return 0;
@@ -66,9 +66,9 @@ int og_race_text(int race)
 
 /* Skill order and the fixed-point spell table in FALL.EXE, D_001788D3.
  * init.c character_reset_magicka uses integer multiplication then /256. */
-const char *og_skill_name(int skill)
+const char *skill_name(int skill)
 {
-    static const char *const names[OG_SKILLS] = {
+    static const char *const names[SKILLS] = {
         "Medical", "Etiquette", "Streetwise", "Jumping", "Orcish", "Harpy",
         "Giantish", "Dragonish", "Nymph", "Daedric", "Spriggan", "Centaurian",
         "Impish", "Lockpicking", "Mercantile", "Pickpocket", "Stealth",
@@ -77,14 +77,14 @@ const char *og_skill_name(int skill)
         "Mysticism", "Short Blade", "Long Blade", "Hand-to-Hand", "Axe",
         "Blunt Weapon", "Archery", "Critical Strike"
     };
-    return skill >= 0 && skill < OG_SKILLS ? names[skill] : "";
+    return skill >= 0 && skill < SKILLS ? names[skill] : "";
 }
 
-int og_class_skill(int klass, int slot)
+int class_skill(int klass, int slot)
 {
-    const OgClass *row;
+    const ClassInfo *row;
 
-    row = og_class(klass);
+    row = class_at(klass);
     if (!row || slot < 0 || slot >= 12) {
         return -1;
     }
@@ -97,7 +97,7 @@ int og_class_skill(int klass, int slot)
     return row->minor[slot - 6];
 }
 
-int og_magicka(int intelligence, int flags)
+int magicka_state(int intelligence, int flags)
 {
     static const int multiplier[] = { 768, 512, 448, 384, 256, 128, 256, 0 };
     return intelligence * multiplier[(flags >> 10) & 7] / 256;
@@ -106,19 +106,19 @@ int og_magicka(int intelligence, int flags)
 static const char *g_questions[40];
 static unsigned char g_class_answers[66 * 3];
 
-void og_question_set(int number, const char *text)
+void question_set(int number, const char *text)
 {
     if (number >= 1 && number <= 40) { g_questions[number - 1] = text; }
 }
 
-const char *og_question_text(int number)
+const char *question_text(int number)
 {
     return number >= 1 && number <= 40 && g_questions[number - 1] ? g_questions[number - 1] : "";
 }
 
 /* question.c/class_questions_run: the biased table base is D_0018520B;
  * answer indices 1..3 make the first real byte 0x18520C. */
-int og_question_kind(int number, int answer)
+int question_kind(int number, int answer)
 {
     static const unsigned char kinds[40][3] = {
         { 0, 2, 1 },
@@ -166,12 +166,12 @@ int og_question_kind(int number, int answer)
     return kinds[number - 1][answer];
 }
 
-void og_class_answers_set(const unsigned char *triples)
+void class_answers_set(const unsigned char *triples)
 {
     if (triples) { mem_copy(g_class_answers, triples, sizeof(g_class_answers)); }
 }
 
-int og_class_from_answers(const int *counts)
+int class_from_answers(const int *counts)
 {
     static const int ids[] = { 17, 16, 15, 14, 10, 7, 11, 9, 0, 3, 5, 4, 13, 12, 6, 8, 2, 1 };
     int i;
@@ -189,7 +189,7 @@ int og_class_from_answers(const int *counts)
 
 /* custom.c's name/sublist and 16.16 cost tables, FALL.EXE 1.07.213:
  * D_0018084E/D_0018092E, D_00185370/D_001853A0, D_0018549C/D_001854C8. */
-static const OgSpecial g_special0[11] = {
+static const Special g_special0[11] = {
     { "Resistance", 7, { "to Paralysis", "to Magic", "to Poison", "to Fire", "to Frost", "to Shock", "to Disease" }, { 16384, 16384, 16384, 16384, 16384, 16384, 16384 } },
     { "Immunity", 7, { "to Paralysis", "to Magic", "to Poison", "to Fire", "to Frost", "to Shock", "to Disease" }, { 32768, 32768, 32768, 32768, 32768, 32768, 32768 } },
     { "Acute Hearing", 1, { "" }, { 3277 } },
@@ -202,7 +202,7 @@ static const OgSpecial g_special0[11] = {
     { "Adrenaline Rush", 1, { "" }, { 13108 } },
     { "Expertise in", 6, { "Short Blade", "Long Blade", "Hand-to-Hand", "Axe", "Blunt Weapon", "Missile Weapon" }, { 6554, 6554, 6554, 6554, 6554, 6554 } },
 };
-static const OgSpecial g_special1[11] = {
+static const Special g_special1[11] = {
     { "Inability to Regen Spell Points", 1, { "" }, { 45875 } },
     { "Damage", 2, { "from Sunlight", "from Holy Places" }, { 32768, 19661 } },
     { "Phobia", 4, { "Undead", "Daedra", "Humanoid", "Animals" }, { 13108, 13108, 13108, 13108 } },
@@ -216,14 +216,14 @@ static const OgSpecial g_special1[11] = {
     { "Forbidden Material", 10, { "Iron", "Steel", "Silver", "Elven", "Dwarven", "Mithril", "Adamantium", "Ebony", "Orcish", "Daedric" }, { 3277, 32768, 19661, 29491, 22938, 19661, 16384, 13108, 9830, 6554 } },
 };
 
-const OgSpecial *og_special(int list, int kind)
+const Special *special_state(int list, int kind)
 {
     if (kind < 0 || kind >= 11) { return 0; }
     return list ? &g_special1[kind] : &g_special0[kind];
 }
 
 /* career_nearest_class: primary/major/minor weights, first class wins ties. */
-int og_nearest_class(int klass)
+int nearest_class(int klass)
 {
     int i, j, k, w, v, score, best, result, d;
     best = -1;
@@ -233,7 +233,7 @@ int og_nearest_class(int klass)
         for (i = 0; i < 12; i++) {
             w = i < 3 ? 3 : (i < 6 ? 2 : 1);
             for (k = 0; k < 12; k++) {
-                if (og_class_skill(klass, i) != og_class_skill(j, k)) { continue; }
+                if (class_skill(klass, i) != class_skill(j, k)) { continue; }
                 v = k < 3 ? 3 : (k < 6 ? 2 : 1);
                 d = v > w ? v - w : w - v;
                 score += v == w ? w : 3 - d;
@@ -245,7 +245,7 @@ int og_nearest_class(int klass)
     return result;
 }
 
-int og_bob_sample(int phase_ms)
+int bob_sample(int phase_ms)
 {
     static const int sample[10] = { 0, 2, 4, 6, 8, 6, 4, 2, 0, 0 };
     if (phase_ms < 0 || phase_ms >= 1000) { return 0; }

@@ -15,16 +15,16 @@
 #define LINK_MARK 0xa2
 #define BIOS_HZ 18.2065f
 typedef struct Link {
-    OgAction data;
+    ActionInfo data;
     int active, reverse, begun;
     float elapsed, pulse;
 } Link;
-static Link g_link[OG_ACTIONS];
+static Link g_link[ACTIONS];
 static const Scene *g_scene;
 static int g_count, g_question = -1, g_deferred = -1;
 static void start_chain(int index);
 
-int og_actions_accepts(int trigger, int event)
+int actions_accepts(int trigger, int event)
 {
     trigger &= 15;
     if (trigger == 8) { return event == 2 || event == 3 || event == 5 || event == 6; }
@@ -72,13 +72,13 @@ static void answer(const char *text)
     index = g_question; next = g_deferred; g_question = g_deferred = -1;
     if (index < 0 || index >= g_count) { return; }
     g_link[index].active = 0;
-    if (answer_matches(og_words(5656+g_link[index].data.sound),text)) { start_chain(next); }
+    if (answer_matches(words_state(5656+g_link[index].data.sound),text)) { start_chain(next); }
     else { interact_say("That is not the answer."); }
 }
 
 static void effect(Link *link, float seconds)
 {
-    const OgAction *a;
+    const ActionInfo *a;
     Mover *m;
     int damage;
     a = &link->data; m = motion(link);
@@ -88,8 +88,8 @@ static void effect(Link *link, float seconds)
         link->pulse -= seconds;
         if (link->pulse <= 0) {
             Body *body;
-            body = og_move_body(); link->pulse += 1;
-            og_magic_trap(a->sound,m ? m->x0 : body->feet[0],m ? m->y0+40 : body->feet[1]+40,
+            body = move_body(); link->pulse += 1;
+            magic_trap(a->sound,m ? m->x0 : body->feet[0],m ? m->y0+40 : body->feet[1]+40,
                           m ? m->z0 : body->feet[2]);
         }
         break;
@@ -98,61 +98,61 @@ static void effect(Link *link, float seconds)
         break;
     case 10: case 13: case 29: break;
     case 11:
-        if (!link->begun) { og_possessions_message(og_words(8600+a->sound),0); }
+        if (!link->begun) { possessions_message(words_state(8600+a->sound),0); }
         break;
     case 12:
         if (!link->begun) {
             g_question = (int)(link-g_link); g_deferred = a->next;
-            if (!og_possessions_message(og_words(5400+a->sound),answer)) {
+            if (!possessions_message(words_state(5400+a->sound),answer)) {
                 g_question = g_deferred = -1;
-                log_text(LOG_WARN,"OGFALL: missing dungeon riddle text");
+                log_text(LOG_WARN,"GFALL: missing dungeon riddle text");
             }
         }
         break;
-    case 15: if (m && !link->begun) { og_door_lock(m,a->axis); } break;
+    case 15: if (m && !link->begun) { door_lock(m,a->axis); } break;
     case 16: case 18:
         if (!link->begun && m && (a->kind == 18 || !m->lock) && !mover_at_end(m)) {
-            if (mover_start(g_scene,a->mover) && a->kind == 18) { og_door_unlock(m); }
+            if (mover_start(g_scene,a->mover) && a->kind == 18) { door_unlock(m); }
         }
         break;
-    case 17: if (m && !link->begun) { og_door_unlock(m); } break;
+    case 17: if (m && !link->begun) { door_unlock(m); } break;
     case 19: case 20:
         if (!link->begun && m) {
             if (mover_at_end(m)) { mover_start(g_scene,a->mover); }
-            if (a->kind == 20) { og_door_relock(m); }
+            if (a->kind == 20) { door_relock(m); }
         }
         break;
     case 21:
         link->pulse -= seconds;
         if (link->pulse <= 0) {
             link->pulse += 1;
-            damage = og_random_range(a->sound,a->axis)*og_character()->level;
-            og_damage_player(damage ? damage : og_character()->level,-1);
+            damage = random_range(a->sound,a->axis)*character_state()->level;
+            damage_player(damage ? damage : character_state()->level,-1);
         }
         break;
     case 22: case 23: case 24: case 25:
         /* link_hurt_player calls spfx_damage directly, without the spell
          * bundle's resistance roll. The element does not change this sum. */
-        og_damage_player(a->axis*og_character()->level,-1);
+        damage_player(a->axis*character_state()->level,-1);
         break;
     case 28:
         damage = a->axis ? a->axis : 1;
-        if (damage > og_character()->magicka) { damage = og_character()->magicka; }
-        og_magicka_spend(damage);
+        if (damage > character_state()->magicka) { damage = character_state()->magicka; }
+        magicka_spend(damage);
         break;
     case 26: case 27:
         link->pulse -= seconds;
         if (link->pulse <= 0) {
             link->pulse += 1;
-            if (a->kind == 26) { og_poison_apply(-1,og_random_range(128,139),0); }
-            else { og_disease_infect(-1,og_random_range(0,16),0); }
+            if (a->kind == 26) { poison_apply(-1,random_range(128,139),0); }
+            else { disease_infect(-1,random_range(0,16),0); }
         }
         break;
     case 30:
-        if (a->sound && m) { og_sound_at(a->sound,m->x0,m->y0,m->z0); }
+        if (a->sound && m) { sound_at(a->sound,m->x0,m->y0,m->z0); }
         break;
     default:
-        if (!link->begun) { log_print(LOG_WARN,"OGFALL: unimplemented dungeon action %d",a->kind); }
+        if (!link->begun) { log_print(LOG_WARN,"GFALL: unimplemented dungeon action %d",a->kind); }
         break;
     }
     link->begun = 1;
@@ -172,13 +172,13 @@ static void start_chain(int index)
     }
 }
 
-int og_actions_trigger(const Scene *scene, int model, int event)
+int actions_trigger(const Scene *scene, int model, int event)
 {
     int i, found;
     if (scene != g_scene) { return 0; }
     found = 0;
     for (i = 0; i < g_count; i++) {
-        if (g_link[i].data.model == model && og_actions_accepts(g_link[i].data.trigger,event)) {
+        if (g_link[i].data.model == model && actions_accepts(g_link[i].data.trigger,event)) {
             if (!g_link[i].active) { start_chain(i); found = 1; }
         }
     }
@@ -187,24 +187,24 @@ int og_actions_trigger(const Scene *scene, int model, int event)
 
 static int use(const Scene *scene, const Usable *usable, int index)
 {
-    const OgAction *action;
+    const ActionInfo *action;
     int event;
     (void)index;
-    if (og_travel_passage(usable)) { return 1; }
-    if (scene != g_scene || usable->what != OG_USE_ACTION || usable->tag < 0 || usable->tag >= g_count) { return 0; }
+    if (travel_passage(usable)) { return 1; }
+    if (scene != g_scene || usable->what != USE_ACTION || usable->tag < 0 || usable->tag >= g_count) { return 0; }
     action = &g_link[usable->tag].data;
     event = interact_using_touch() ? (action->trigger == 1 ? 1 : 3) : action->trigger == 6 ? 6 : 2;
-    og_actions_trigger(scene,action->model,event);
+    actions_trigger(scene,action->model,event);
     return 1;
 }
 
-void og_actions_close(void)
+void actions_close(void)
 {
     g_count = 0; g_scene = 0; g_question = g_deferred = -1;
     interact_set_handler(0);
 }
 
-int og_actions_open(const Scene *scene, const OgAction *actions, int count)
+int actions_open(const Scene *scene, const ActionInfo *actions, int count)
 {
     const Keep *row;
     Mover *m;
@@ -212,8 +212,8 @@ int og_actions_open(const Scene *scene, const OgAction *actions, int count)
     Usable *usable;
     int i, j;
 
-    og_actions_close();
-    if (!scene || count < 0 || count > OG_ACTIONS) { return 0; }
+    actions_close();
+    if (!scene || count < 0 || count > ACTIONS) { return 0; }
     g_scene = scene; g_count = count;
     mem_zero(g_link,sizeof(g_link));
     for (i = 0; i < count; i++) {
@@ -237,7 +237,7 @@ int og_actions_open(const Scene *scene, const OgAction *actions, int count)
         for (j = 0; j < scene->nusables; j++) {
             usable = &((Usable *)scene->usables)[j];
             if (usable->model == link->data.model && (!m || !m->door)) {
-                usable->kind = USE_OTHER; usable->what = OG_USE_ACTION; usable->tag = i;
+                usable->kind = USE_OTHER; usable->what = USE_ACTION; usable->tag = i;
             }
         }
     }
@@ -245,12 +245,12 @@ int og_actions_open(const Scene *scene, const OgAction *actions, int count)
     return 1;
 }
 
-void og_actions_step(float seconds)
+void actions_step(float seconds)
 {
     Link *link;
     int i;
     if (seconds <= 0 || !g_scene || g_question >= 0) { return; }
-    for (i = 0; i < g_count && og_character()->health > 0; i++) {
+    for (i = 0; i < g_count && character_state()->health > 0; i++) {
         link = &g_link[i];
         if (!link->active) { continue; }
         if (link->elapsed >= duration(link)) {
@@ -262,7 +262,7 @@ void og_actions_step(float seconds)
     }
 }
 
-void og_actions_capture(void)
+void actions_capture(void)
 {
     Keep *row;
     Link *link;
@@ -286,12 +286,12 @@ void og_actions_capture(void)
     }
 }
 
-void og_actions_strike(const Scene *scene, const Camera *camera, int event)
+void actions_strike(const Scene *scene, const Camera *camera, int event)
 {
     UseHit hit;
     Basis basis;
     if (scene != g_scene || !camera) { return; }
     camera_basis(camera,&basis);
     interact_cast(scene,camera->x,camera->y,camera->z,basis.fx*basis.cp,basis.sp,basis.fz*basis.cp,100,&hit);
-    if (hit.model >= 0 && hit.wall <= 100) { og_actions_trigger(scene,hit.model,event); }
+    if (hit.model >= 0 && hit.wall <= 100) { actions_trigger(scene,hit.model,event); }
 }

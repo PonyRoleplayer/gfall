@@ -1,7 +1,7 @@
 #include "game/dagger/formats/lore.h"
 #include "engine/core/mem.h"
 
-int og_painting_read(int picture, df_u8 choices[40])
+int painting_read(int picture, df_u8 choices[40])
 {
     FsFile *file;
     int good, i;
@@ -14,7 +14,7 @@ int og_painting_read(int picture, df_u8 choices[40])
     return good;
 }
 
-int og_name_open(OgNameParts *parts, int bank)
+int name_open(NameParts *parts, int bank)
 {
     df_u8 header[48];
     int i;
@@ -23,21 +23,21 @@ int og_name_open(OgNameParts *parts, int bank)
     parts->file = fs_open("NAMEGEN.DAT");
     if (!parts->file) { return 0; }
     parts->size = fs_size(parts->file);
-    if (!fs_read_at(parts->file,bank*48,header,48)) { og_name_close(parts); return 0; }
+    if (!fs_read_at(parts->file,bank*48,header,48)) { name_close(parts); return 0; }
     for (i = 0; i < 6; i++) {
         parts->offset[i] = df_ru32(header+i*4); parts->count[i] = df_ru32(header+24+i*4);
         if (parts->offset[i] > parts->size || parts->count[i] > (parts->size-parts->offset[i])/10) {
-            og_name_close(parts); return 0;
+            name_close(parts); return 0;
         }
     }
     return 1;
 }
-void og_name_close(OgNameParts *parts)
+void name_close(NameParts *parts)
 {
     if (parts->file) { fs_close(parts->file); }
     mem_zero(parts,sizeof(*parts));
 }
-int og_name_piece(OgNameParts *parts, int set, df_u32 pick, char text[11])
+int name_piece(NameParts *parts, int set, df_u32 pick, char text[11])
 {
     text[0] = 0;
     if (!parts->file || set < 0 || set >= 6 || !parts->count[set]) { return 0; }

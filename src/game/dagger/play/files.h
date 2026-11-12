@@ -1,25 +1,25 @@
-#ifndef OGFALL_FILES_H
-#define OGFALL_FILES_H
+#ifndef GFALL_FILES_H
+#define GFALL_FILES_H
 
-/* Classic's six-slot save/load screen over OGFALL saves. See docs/ogfall.md. */
+/* Classic's six-slot save/load screen over GFALL saves. See docs/gfall.md. */
 #include "game/dagger/play/save.h"
-#define OG_FILE_ACCEPT_X 112
-#define OG_FILE_REJECT_X 176
-#define OG_FILE_BUTTON_Y 120
-#define OG_FILE_BUTTON_W 32
-#define OG_FILE_BUTTON_H 16
-struct OgIn;
-enum { OG_FILES_NONE, OG_FILES_SAVE, OG_FILES_LOAD, OG_FILES_CANCEL };
-void og_files_open(int saving);
-int og_files_frame(const struct OgIn *input);
-int og_files_saving(void);
-int og_files_selected(void);
-int og_files_editing(void);
-const char *og_files_name(void);
-const char *og_files_error(void);
-void og_files_failed(const char *message);
-const OgSaveInfo *og_files_info(int slot);
-unsigned og_files_revision(void);
-unsigned og_files_generation(void);
+#define FILE_ACCEPT_X 112
+#define FILE_REJECT_X 176
+#define FILE_BUTTON_Y 120
+#define FILE_BUTTON_W 32
+#define FILE_BUTTON_H 16
+struct PlayIn;
+enum { FILES_NONE, FILES_SAVE, FILES_LOAD, FILES_CANCEL };
+void files_open(int saving);
+int files_frame(const struct PlayIn *input);
+int files_saving(void);
+int files_selected(void);
+int files_editing(void);
+const char *files_name(void);
+const char *files_error(void);
+void files_failed(const char *message);
+const SaveInfo *files_info(int slot);
+unsigned files_revision(void);
+unsigned files_generation(void);
 
 #endif

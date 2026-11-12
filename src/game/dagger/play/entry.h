@@ -1,5 +1,5 @@
-#ifndef OGFALL_ENTRY_H
-#define OGFALL_ENTRY_H
+#ifndef GFALL_ENTRY_H
+#define GFALL_ENTRY_H
 
 #include "engine/core/df.h"
 
@@ -11,25 +11,25 @@
  * of attempted breaking (1) if anyone saw or a roll of 1..300 is under 100 less Stealth, and is counted by the Thieves Guild (a crime of 5). Anything else shows how hard the lock is.
  */
 
-typedef struct OgEntryBuilding {
+typedef struct EntryBuilding {
     df_u32 id;
     int type, faction, name_seed;
     /* The building's own flag 16 (never open to the street) and its access level (10 and over opens its door to a picker). Not read from the blocks yet: 0. */
     int flags, access;
     /* A quest has marked the building open to it (op 81's place flag 64 or person flag 0x4000: quest_find_site_for_building). */
     int quest_open;
-} OgEntryBuilding;
+} EntryBuilding;
 
-typedef struct OgEntryPlayer {
+typedef struct EntryPlayer {
     df_u32 house;
     /* The ranks of the Brotherhood's and the Thieves' memberships (-1 for none), and of the Fighters' and Mages' (their halls open to them from rank 6). */
     int brotherhood, thieves, fighters, mages;
     int daytime, steal;
     /* A spell that opens a lock was cast (conditions 0x40): its chance, and whether it is waiting. */
     int lock_spell, lock_chance;
-} OgEntryPlayer;
+} EntryPlayer;
 
-typedef struct OgEntry {
+typedef struct Entry {
     int allow;
     /* What to say: a TEXT.RSC record (256), or the lock's own line. */
     int text;
@@ -38,10 +38,10 @@ typedef struct OgEntry {
     int picked, crime;
     /* The open-lock spell was spent. */
     int spent_spell;
-} OgEntry;
+} Entry;
 
 /* 1 when the door lets the player in. The lock's try is remembered by building and Lockpicking value (not saved). */
-int og_building_try_enter(const OgEntryBuilding *building, const OgEntryPlayer *player, df_u32 now, int witnessed, OgEntry *out);
-void og_entry_reset(void);
+int building_try_enter(const EntryBuilding *building, const EntryPlayer *player, df_u32 now, int witnessed, Entry *out);
+void entry_reset(void);
 
 #endif

@@ -22,7 +22,7 @@ static df_u32 list_bytes(const df_u8 *rmb, df_u32 at)
            (df_u32)rmb[at + 2] * SECTION_BYTES + (df_u32)rmb[at + 3] * FLAT_BYTES + (df_u32)rmb[at + 4] * DOOR_BYTES;
 }
 
-int og_interior_people(const df_u8 *rmb, df_u32 size, int record, OgInteriorPerson *out, int cap)
+int interior_people(const df_u8 *rmb, df_u32 size, int record, InteriorPerson *out, int cap)
 {
     df_u32 pos, span, at, end;
     int i, people, n;
@@ -57,7 +57,7 @@ int og_interior_people(const df_u8 *rmb, df_u32 size, int record, OgInteriorPers
     return n;
 }
 
-int og_interior_shopkeeper(const OgInteriorPerson *person)
+int interior_shopkeeper(const InteriorPerson *person)
 {
     return (person->flags & 4) != 0;
 }

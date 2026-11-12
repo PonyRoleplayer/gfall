@@ -1,37 +1,37 @@
-#ifndef OGFALL_COMBATDEFS_H
-#define OGFALL_COMBATDEFS_H
+#ifndef GFALL_COMBATDEFS_H
+#define GFALL_COMBATDEFS_H
 
-/* Immutable FALL.EXE combat tables and MONSTER.BSA scripts. See docs/ogfall.md. */
+/* Immutable FALL.EXE combat tables and MONSTER.BSA scripts. See docs/gfall.md. */
 #include "engine/core/df.h"
 
-typedef struct OgFoeDef {
+typedef struct FoeDef {
     char name[24];
     int dice, hp_bonus, armor, loot, metal, flags, level;
     int attribute[8], minimum[5], maximum[5];
-} OgFoeDef;
+} FoeDef;
 
-typedef struct OgAnimScript { const df_u8 *bytes; int size; } OgAnimScript;
+typedef struct AnimScript { const df_u8 *bytes; int size; } AnimScript;
 
-const OgFoeDef *og_foe_def(int kind);
-const OgAnimScript *og_foe_script(int kind);
-const OgAnimScript *og_foe_type_script(int texture_kind);
-int og_foe_type_flags(int texture_kind);
-int og_foe_weight(int kind);
-int og_foe_category(int kind);
-int og_foe_parries(int kind);
-int og_foe_texture_kind(int kind);
-void og_foe_corpse(int kind, int *file, int *record);
-int og_foe_flags(int kind);
-int og_foe_loot(int kind);
-int og_foe_hp_bonus(int kind);
-int og_weapon_cif(int index);
-int og_weapon_skill(int index);
-int og_swing_group(int sector);
-int og_swing_hit(int sector);
-int og_swing_damage(int sector);
-int og_swing_sound(int index);
-int og_struck_part(int roll);
-int og_foe_nav_angle(int octant);
-int og_foe_encounter(int table, int index);
+const FoeDef *foe_def(int kind);
+const AnimScript *foe_script(int kind);
+const AnimScript *foe_type_script(int texture_kind);
+int foe_type_flags(int texture_kind);
+int foe_weight(int kind);
+int foe_category(int kind);
+int foe_parries(int kind);
+int foe_texture_kind(int kind);
+void foe_corpse(int kind, int *file, int *record);
+int foe_flags(int kind);
+int foe_loot(int kind);
+int foe_hp_bonus(int kind);
+int weapon_cif(int index);
+int weapon_skill(int index);
+int swing_group(int sector);
+int swing_hit(int sector);
+int swing_damage(int sector);
+int swing_sound(int index);
+int struck_part(int roll);
+int foe_nav_angle(int octant);
+int foe_encounter(int table, int index);
 
 #endif

@@ -8,53 +8,53 @@
 #include "engine/core/log.h"
 #include "engine/ui/cmd.h"
 
-static OgTravelHooks g_hooks;
-void og_travel_install(const OgTravelHooks *hooks) { g_hooks = *hooks; }
-int og_travel_count(void) { return g_hooks.count ? g_hooks.count() : 0; }
-int og_travel_location(int ordinal, OgLocation *out) { return g_hooks.location && g_hooks.location(ordinal,out); }
-int og_travel_climate(int px, int py) { return g_hooks.climate ? g_hooks.climate(px,py) : 0; }
-int og_travel_asked(void) { return g_hooks.asked && g_hooks.asked(); }
-int og_travel_go(int region, int index)
+static TravelHooks g_hooks;
+void travel_install(const TravelHooks *hooks) { g_hooks = *hooks; }
+int travel_count(void) { return g_hooks.count ? g_hooks.count() : 0; }
+int travel_location(int ordinal, LocationInfo *out) { return g_hooks.location && g_hooks.location(ordinal,out); }
+int travel_climate(int px, int py) { return g_hooks.climate ? g_hooks.climate(px,py) : 0; }
+int play_travel_asked(void) { return g_hooks.asked && g_hooks.asked(); }
+int travel_go(int region, int index)
 {
-    return og_state()->ready && og_character()->health > 0 && g_hooks.go && g_hooks.go(region,index);
+    return game_state()->ready && character_state()->health > 0 && g_hooks.go && g_hooks.go(region,index);
 }
-int og_travel_at(const OgWhere *where)
+int travel_at(const PlaceWhere *where)
 {
-    const OgWhere *here;
-    og_travel_capture(); here = &og_world_state()->where;
+    const PlaceWhere *here;
+    travel_capture(); here = &world_where()->where;
     return here->kind == where->kind && here->located == where->located && here->region == where->region &&
         here->index == where->index && here->block == where->block && here->record == where->record &&
         here->origin_x == where->origin_x && here->origin_z == where->origin_z;
 }
-int og_travel_return(const OgWhere *where, float x, float eye_y, float z, int yaw, int pitch)
+int travel_return(const PlaceWhere *where, float x, float eye_y, float z, int yaw, int pitch)
 {
     return where->located && g_hooks.return_to && g_hooks.return_to(where,x,eye_y,z,yaw,pitch);
 }
-int og_travel_passage(const Usable *usable)
+int travel_passage(const Usable *usable)
 {
     const char *error;
     if (!g_hooks.passage || usable->kind != USE_PASSAGE) { return 0; }
-    error = g_hooks.passage(usable); if (error) { og_msg_set(error); }
+    error = g_hooks.passage(usable); if (error) { msg_set(error); }
     return 1;
 }
-int og_travel_known(int ordinal)
+int travel_known(int ordinal)
 {
-    OgLocation location;
-    return ordinal >= 0 && ordinal < OG_KNOWN_BYTES*8 &&
-        (((og_world_state()->known[ordinal/8] >> (ordinal&7)) & 1) ||
-         (og_travel_location(ordinal,&location) && location.known));
+    LocationInfo location;
+    return ordinal >= 0 && ordinal < KNOWN_BYTES*8 &&
+        (((world_where()->known[ordinal/8] >> (ordinal&7)) & 1) ||
+         (travel_location(ordinal,&location) && location.known));
 }
-void og_travel_discover(int ordinal)
+void travel_discover(int ordinal)
 {
-    if (ordinal >= 0 && ordinal < OG_KNOWN_BYTES*8) { og_world_state()->known[ordinal/8] |= 1 << (ordinal&7); }
+    if (ordinal >= 0 && ordinal < KNOWN_BYTES*8) { world_where()->known[ordinal/8] |= 1 << (ordinal&7); }
 }
-void og_travel_capture(void)
+void travel_capture(void)
 {
-    OgWorldState *world;
-    world = og_world_state();
+    WorldState *world;
+    world = world_where();
     if (g_hooks.here) { g_hooks.here(&world->where,&world->px,&world->py); }
 }
-static int where_valid(const OgWhere *where)
+static int where_valid(const PlaceWhere *where)
 {
     return where->kind >= 0 && where->kind <= 2 && where->located >= 0 && where->located <= 1 &&
         where->region >= 0 && where->region < 62 && where->index >= 0 && where->index < 4096 &&
@@ -64,12 +64,12 @@ static int where_valid(const OgWhere *where)
         where->back_yaw >= 0 && where->back_yaw < 2048 && where->origin_x >= -16384 && where->origin_x <= 16384 &&
         where->origin_z >= -16384 && where->origin_z <= 16384;
 }
-int og_world_valid(const OgWorldState *world)
+int world_valid(const WorldState *world)
 {
     int i;
     if (!where_valid(&world->where) || !where_valid(&world->recall_where) ||
         world->px < 0 || world->px >= 1000 || world->py < 0 || world->py >= 500 ||
-        world->map_count < 0 || world->map_count > OG_MAP_ROWS) { return 0; }
+        world->map_count < 0 || world->map_count > MAP_ROWS) { return 0; }
     for (i = 0; i < world->map_count; i++) {
         const AutomapRow *row;
         row = &world->map[i];
@@ -78,19 +78,19 @@ int og_world_valid(const OgWorldState *world)
     }
     return 1;
 }
-void og_world_capture(void)
+void world_capture(void)
 {
-    OgWorldState *world;
+    WorldState *world;
     int i;
-    world = og_world_state(); og_travel_capture();
-    world->map_count = automap_count(); if (world->map_count > OG_MAP_ROWS) { world->map_count = OG_MAP_ROWS; }
+    world = world_where(); travel_capture();
+    world->map_count = automap_count(); if (world->map_count > MAP_ROWS) { world->map_count = MAP_ROWS; }
     for (i = 0; i < world->map_count; i++) { world->map[i] = *automap_at(i); }
 }
-void og_world_restore(void)
+void world_restore(void)
 {
     int i;
     automap_clear();
-    for (i = 0; i < og_world_state()->map_count; i++) { automap_put(&og_world_state()->map[i]); }
+    for (i = 0; i < world_where()->map_count; i++) { automap_put(&world_where()->map[i]); }
 }
 static int lower(int c) { return c >= 'A' && c <= 'Z' ? c+32 : c; }
 static int matches(const char *name, const char *query, int exact)
@@ -105,14 +105,14 @@ static int matches(const char *name, const char *query, int exact)
 }
 static void goto_command(int argc, char **argv)
 {
-    OgLocation location, chosen;
+    LocationInfo location, chosen;
     char query[96];
     int i, j, used, n, region, index, exact;
-    if (!og_state()->ready || og_state()->mode != OG_GAME_WORLD || og_character()->health <= 0) {
+    if (!game_state()->ready || game_state()->mode != GAME_WORLD || character_state()->health <= 0) {
         log_text(LOG_PRINT,"Close the game screens before using goto."); return;
     }
     if (argc == 3 && cmd_parse_int(argv[1],&region) && cmd_parse_int(argv[2],&index)) {
-        if (!og_travel_go(region,index)) { log_text(LOG_PRINT,"No map location has those numbers."); }
+        if (!travel_go(region,index)) { log_text(LOG_PRINT,"No map location has those numbers."); }
         return;
     }
     if (argc < 2) { log_text(LOG_PRINT,"goto <place name> or goto <region> <location>; ambiguous names list their numbers."); return; }
@@ -123,20 +123,20 @@ static void goto_command(int argc, char **argv)
     }
     query[used] = 0; n = 0; mem_zero(&chosen,sizeof(chosen));
     for (exact = 1; exact >= 0 && !n; exact--) {
-        for (i = 0; i < og_travel_count(); i++) {
-            if (og_travel_location(i,&location) && matches(location.name,query,exact)) {
+        for (i = 0; i < travel_count(); i++) {
+            if (travel_location(i,&location) && matches(location.name,query,exact)) {
                 if (!n) { chosen = location; } n++;
             }
         }
         if (n == 1) {
-            if (og_travel_go(chosen.region,chosen.index)) { log_print(LOG_PRINT,"Going to %s.",chosen.name); }
+            if (travel_go(chosen.region,chosen.index)) { log_print(LOG_PRINT,"Going to %s.",chosen.name); }
             else { log_text(LOG_PRINT,"Cannot change place now."); }
             return;
         }
         if (n > 1) {
             j = 0;
-            for (i = 0; i < og_travel_count() && j < 12; i++) {
-                if (og_travel_location(i,&location) && matches(location.name,query,exact)) {
+            for (i = 0; i < travel_count() && j < 12; i++) {
+                if (travel_location(i,&location) && matches(location.name,query,exact)) {
                     log_print(LOG_PRINT,"%d %d: %s",location.region,location.index,location.name); j++;
                 }
             }
@@ -147,22 +147,22 @@ static void goto_command(int argc, char **argv)
 }
 static void where_command(int argc, char **argv)
 {
-    (void)argc; (void)argv; og_travel_capture();
+    (void)argc; (void)argv; travel_capture();
     log_print(LOG_PRINT,"Place %d, region %d location %d; map pixel %d,%d, origin %d,%d.",
-        og_world_state()->where.kind,og_state()->region,og_state()->location,og_world_state()->px,
-        og_world_state()->py,og_world_state()->where.origin_x,og_world_state()->where.origin_z);
+        world_where()->where.kind,game_state()->region,game_state()->location,world_where()->px,
+        world_where()->py,world_where()->where.origin_x,world_where()->where.origin_z);
 }
 /* bank [region]: the bank of a region's account (the current one without a number), to try the bank before bankers talk. */
 static void bank_command(int argc, char **argv)
 {
     int region;
 
-    region = og_state()->region;
+    region = game_state()->region;
     if (argc > 1 && !cmd_parse_int(argv[1], &region)) { log_text(LOG_PRINT, "bank [region 0..61]"); return; }
-    if (!og_state()->ready || !og_possessions_bank(region)) { log_text(LOG_PRINT, "The bank cannot open now."); }
+    if (!game_state()->ready || !possessions_bank(region)) { log_text(LOG_PRINT, "The bank cannot open now."); }
 }
 
-void og_travel_commands(void)
+void travel_commands(void)
 {
     cmd_add("goto",goto_command,"place | region index","Go to any town, tavern or other map location (no journey cost/time).");
     cmd_add("where",where_command,"","Show the current place and world-map pixel.");

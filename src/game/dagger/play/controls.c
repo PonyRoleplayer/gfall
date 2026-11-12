@@ -5,7 +5,7 @@
 #include "game/dagger/play/msg.h"
 
 /* FALL.EXE 1.07.213 controls_buttons at 0x17B808, strict hit bounds. */
-static const OgControlRect g_rect[42] = {
+static const ControlRect g_rect[42] = {
     { 55, 11, 104, 20 },
     { 55, 22, 104, 31 },
     { 55, 33, 104, 42 },
@@ -56,12 +56,12 @@ static int g_drag = -1;
 static unsigned g_revision;
 static const char *g_notice = "";
 
-const OgControlRect *og_control_rect(int index)
+const ControlRect *control_rect(int index)
 {
     return index >= 0 && index < 42 ? &g_rect[index] : 0;
 }
 
-void og_controls_open(void)
+void controls_open(void)
 {
     g_edit = -1;
     g_wait_release = 0;
@@ -71,36 +71,36 @@ void og_controls_open(void)
     g_revision++;
 }
 
-int og_controls_editing(void)
+int controls_editing(void)
 {
     return g_edit;
 }
 
-int og_controls_mouse(void)
+int controls_mouse(void)
 {
     return g_mouse;
 }
 
-const char *og_controls_notice(void)
+const char *controls_notice(void)
 {
     return g_notice;
 }
 
-unsigned og_controls_revision(void)
+unsigned controls_revision(void)
 {
     return g_revision;
 }
 
-void og_controls_cancel_drag(void)
+void controls_cancel_drag(void)
 {
     g_drag = -1;
 }
 
-int og_controls_duplicate(int action)
+int controls_duplicate(int action)
 {
     int i;
-    for (i = 0; i < OG_ACTS; i++) {
-        if (i != action && og_config()->key[i] == og_config()->key[action]) {
+    for (i = 0; i < ACTS; i++) {
+        if (i != action && game_config()->key[i] == game_config()->key[action]) {
             return 1;
         }
     }
@@ -110,23 +110,23 @@ int og_controls_duplicate(int action)
 static int finish(void)
 {
     int i;
-    for (i = 0; i < OG_ACTS; i++) {
-        if (og_controls_duplicate(i)) {
+    for (i = 0; i < ACTS; i++) {
+        if (controls_duplicate(i)) {
             g_notice = "Two actions share a key. Rebind the red entries.";
             return 0;
         }
     }
-    if (!og_config_write()) {
-        g_notice = og_config_error();
-        og_msg_set(g_notice);
+    if (!config_write()) {
+        g_notice = config_error();
+        msg_set(g_notice);
         return 1;
     }
     return 1;
 }
 
-int og_controls_key(int key)
+int controls_key(int key)
 {
-    OgConfig config;
+    Config config;
     g_revision++;
     if (!key) {
         return 0;
@@ -144,13 +144,13 @@ int og_controls_key(int key)
             g_notice = "";
             return 0;
         }
-        if (!og_key_allowed(key)) {
+        if (!key_allowed(key)) {
             g_notice = "That key is reserved.";
             return 0;
         }
-        config = *og_config();
+        config = *game_config();
         config.key[g_edit] = key;
-        og_config_set(&config);
+        config_set(&config);
         g_edit = -1;
         g_notice = "";
         return 0;
@@ -173,9 +173,9 @@ static int inside(int x, int y, int x0, int y0, int x1, int y1)
 
 static void mouse_slider(int x)
 {
-    OgConfig config;
+    Config config;
     int value;
-    config = *og_config();
+    config = *game_config();
     value = (x - 139) / (g_drag == 2 ? 7 : 6) + (g_drag == 2 ? 0 : 1);
     if (value < (g_drag == 2 ? 0 : 1)) {
         value = g_drag == 2 ? 0 : 1;
@@ -192,13 +192,13 @@ static void mouse_slider(int x)
     if (g_drag == 2) {
         config.turn_rate = value;
     }
-    og_config_set(&config);
+    config_set(&config);
     g_revision++;
 }
 
-int og_controls_click(int x, int y)
+int controls_click(int x, int y)
 {
-    OgConfig config, defaults;
+    Config config, defaults;
     int i;
     g_revision++;
     if (g_edit >= 0) {
@@ -209,7 +209,7 @@ int og_controls_click(int x, int y)
         return 0;
     }
     if (g_mouse) {
-        config = *og_config();
+        config = *game_config();
         if (inside(x,y,67,44,160,90)) {
             config.mouse_mode = 0;
         }
@@ -232,7 +232,7 @@ int og_controls_click(int x, int y)
             g_mouse = 0;
             g_drag = -1;
         }
-        og_config_set(&config);
+        config_set(&config);
         if (g_drag >= 0) {
             mouse_slider(x);
         }
@@ -242,7 +242,7 @@ int og_controls_click(int x, int y)
         if (!inside(x,y,g_rect[i].x0,g_rect[i].y0,g_rect[i].x1,g_rect[i].y1)) {
             continue;
         }
-        if (i < OG_ACTS) {
+        if (i < ACTS) {
             g_edit = i;
             g_wait_release = 1;
         }
@@ -253,12 +253,12 @@ int og_controls_click(int x, int y)
             g_mouse = 1;
         }
         else if (i == 40) {
-            config = *og_config();
-            og_config_defaults(&defaults);
-            for (i = 0; i < OG_ACTS; i++) {
+            config = *game_config();
+            config_defaults(&defaults);
+            for (i = 0; i < ACTS; i++) {
                 config.key[i] = defaults.key[i];
             }
-            og_config_set(&config);
+            config_set(&config);
         } else {
             return finish();
         }
@@ -267,7 +267,7 @@ int og_controls_click(int x, int y)
     return 0;
 }
 
-void og_controls_drag(int x, int y, int held)
+void controls_drag(int x, int y, int held)
 {
     (void)y;
     if (!(held & 3)) {
@@ -282,10 +282,10 @@ void og_controls_drag(int x, int y, int held)
     }
 }
 
-void og_control_key_name(int action, char *text, int capacity)
+void control_key_name(int action, char *text, int capacity)
 {
     int key;
-    key = og_config()->key[action];
+    key = game_config()->key[action];
     if (key == 0x21) {
         df_copy(text, "PgUp", capacity);
         return;

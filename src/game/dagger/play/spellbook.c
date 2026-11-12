@@ -4,13 +4,13 @@
 #include "engine/core/log.h"
 #include "game/dagger/tables/itemdefs.h"
 
-static OgSpellDef g_spell[256];
+static SpellDef g_spell[256];
 static int g_count;
 /* How many of them came from SPELLS.STD (the rest are the game's own, a potion's). */
 static int g_standard;
 
 /* One 89-byte spell record (SPELLS.STD's, or a potion recipe's own) into a definition. */
-static void parse_spell(const df_u8 *record, OgSpellDef *spell)
+static void parse_spell(const df_u8 *record, SpellDef *spell)
 {
     int k;
 
@@ -27,28 +27,28 @@ static void parse_spell(const df_u8 *record, OgSpellDef *spell)
     mem_copy(spell->name, record + 47, 25); spell->name[25] = 0;
 }
 
-int og_spell_standard_count(void)
+int spell_standard_count(void)
 {
     return g_standard;
 }
 
-const OgSpellDef *og_spell_standard(int i)
+const SpellDef *spell_standard(int i)
 {
     return i >= 0 && i < g_standard ? &g_spell[i] : 0;
 }
 
-int og_spell_register(const df_u8 *record, int id)
+int spell_register(const df_u8 *record, int id)
 {
-    OgSpellDef *spell;
+    SpellDef *spell;
 
-    if (g_count >= 256 || og_spell_def(id)) { return 0; }
+    if (g_count >= 256 || spell_def(id)) { return 0; }
     spell = &g_spell[g_count++];
     parse_spell(record, spell);
     spell->id = id;
     return 1;
 }
 
-int og_spell_replace(const df_u8 *record, int id)
+int spell_replace(const df_u8 *record, int id)
 {
     int i;
 
@@ -59,10 +59,10 @@ int og_spell_replace(const df_u8 *record, int id)
             return 1;
         }
     }
-    return og_spell_register(record, id);
+    return spell_register(record, id);
 }
 
-void og_spells_load(void)
+void spells_load(void)
 {
     const df_u8 *bytes;
     df_u32 size;
@@ -76,121 +76,121 @@ void og_spells_load(void)
     g_standard = g_count;
 }
 
-const OgSpellDef *og_spell_def(int id)
+const SpellDef *spell_def(int id)
 {
     int i;
     for (i = 0; i < g_count; i++) { if (g_spell[i].id == id) { return &g_spell[i]; } }
     return 0;
 }
-df_u32 og_spell_create(df_u32 book, int definition)
+df_u32 spell_create(df_u32 book, int definition)
 {
-    const OgSpellDef *def;
-    const OgObject *parent;
-    OgObject *spell;
-    df_u32 rows[OG_OBJECTS], id;
+    const SpellDef *def;
+    const ObjectInfo *parent;
+    ObjectInfo *spell;
+    df_u32 rows[OBJECTS], id;
     int count, i;
-    def = og_spell_def(definition);
-    parent = og_object(book);
-    if (!def || !parent || parent->type != OG_RECORD_ITEM || parent->group != 27 || parent->index != 0) { return 0; }
-    count = og_spell_rows(book,rows,OG_OBJECTS);
+    def = spell_def(definition);
+    parent = object_at(book);
+    if (!def || !parent || parent->type != RECORD_ITEM || parent->group != 27 || parent->index != 0) { return 0; }
+    count = spell_rows(book,rows,OBJECTS);
     if (count >= 128) { return 0; }
-    id = og_object_new(OG_RECORD_SPELL,book,definition,100);
-    spell = og_object_edit(id);
+    id = object_new(RECORD_SPELL,book,definition,100);
+    spell = object_edit(id);
     if (!spell) { return 0; }
     /* Older books may have gaps after deletion. Compact before appending so
      * a new spell never shares an order value with an existing last entry. */
-    for (i = 0; i < count; i++) { og_object_edit(rows[i])->flags = i; }
+    for (i = 0; i < count; i++) { object_edit(rows[i])->flags = i; }
     df_copy(spell->name,def->name,25);
     spell->spell_icon = def->icon;
     spell->flags = count;
     return id;
 }
-int og_spell_rename(df_u32 id, const char *name)
+int spell_rename(df_u32 id, const char *name)
 {
-    OgObject *spell;
-    spell = og_object_edit(id);
-    if (!spell || spell->type != OG_RECORD_SPELL || !name || !*name) { return 0; }
+    ObjectInfo *spell;
+    spell = object_edit(id);
+    if (!spell || spell->type != RECORD_SPELL || !name || !*name) { return 0; }
     df_copy(spell->name,name,25);
     return 1;
 }
-int og_spell_cycle_icon(df_u32 id, int step)
+int spell_cycle_icon(df_u32 id, int step)
 {
-    OgObject *spell;
-    spell = og_object_edit(id);
-    if (!spell || spell->type != OG_RECORD_SPELL) { return 0; }
+    ObjectInfo *spell;
+    spell = object_edit(id);
+    if (!spell || spell->type != RECORD_SPELL) { return 0; }
     spell->spell_icon = (spell->spell_icon + (step < 0 ? 68 : 1)) % 69;
     return 1;
 }
-void og_spell_upgrade(OgState *state)
+void spell_upgrade(GameState *state)
 {
     int i;
-    for (i = 0; i < OG_OBJECTS; i++) {
-        OgObject *spell;
-        const OgSpellDef *def;
+    for (i = 0; i < OBJECTS; i++) {
+        ObjectInfo *spell;
+        const SpellDef *def;
         spell = &state->object[i];
-        if (!spell->id || spell->type != OG_RECORD_SPELL) { continue; }
-        def = og_spell_def(spell->index);
+        if (!spell->id || spell->type != RECORD_SPELL) { continue; }
+        def = spell_def(spell->index);
         if (!def) { continue; }
         df_copy(spell->name,def->name,25);
         spell->spell_icon = def->icon;
     }
 }
-int og_spell_rows(df_u32 book, df_u32 *ids, int capacity)
+int spell_rows(df_u32 book, df_u32 *ids, int capacity)
 {
     int i, count, at, j;
-    const OgObject *spell;
+    const ObjectInfo *spell;
     count = 0;
-    for (i = 0; i < OG_OBJECTS; i++) {
-        spell = &og_state()->object[i];
-        if (!spell->id || spell->type != OG_RECORD_SPELL || spell->parent != book) { continue; }
+    for (i = 0; i < OBJECTS; i++) {
+        spell = &game_state()->object[i];
+        if (!spell->id || spell->type != RECORD_SPELL || spell->parent != book) { continue; }
         if (count >= capacity) { break; }
         at = count++;
         /* Spell order is its record flags, independent of allocator slot. */
-        while (at > 0 && og_object(ids[at-1])->flags > spell->flags) { ids[at] = ids[at-1]; at--; }
+        while (at > 0 && object_at(ids[at-1])->flags > spell->flags) { ids[at] = ids[at-1]; at--; }
         ids[at] = spell->id;
     }
     for (j = count; j < capacity; j++) { ids[j] = 0; }
     return count;
 }
-int og_spell_move(df_u32 id, int by)
+int spell_move(df_u32 id, int by)
 {
-    df_u32 rows[OG_OBJECTS];
-    OgObject *spell;
+    df_u32 rows[OBJECTS];
+    ObjectInfo *spell;
     int count, i, other;
-    spell = og_object_edit(id);
-    if (!spell || spell->type != OG_RECORD_SPELL) { return 0; }
-    count = og_spell_rows(spell->parent, rows, OG_OBJECTS);
+    spell = object_edit(id);
+    if (!spell || spell->type != RECORD_SPELL) { return 0; }
+    count = spell_rows(spell->parent, rows, OBJECTS);
     for (i = 0; i < count && rows[i] != id; i++) { }
     other = i + by;
     if (i == count || other < 0 || other >= count) { return 0; }
     rows[i] = rows[other]; rows[other] = id;
-    for (i = 0; i < count; i++) { og_object_edit(rows[i])->flags = i; }
+    for (i = 0; i < count; i++) { object_edit(rows[i])->flags = i; }
     return 1;
 }
-int og_spell_delete(df_u32 id)
+int spell_delete(df_u32 id)
 {
-    const OgObject *spell;
-    spell = og_object(id);
-    return spell && spell->type == OG_RECORD_SPELL && og_object_delete(id);
+    const ObjectInfo *spell;
+    spell = object_at(id);
+    return spell && spell->type == RECORD_SPELL && object_delete(id);
 }
-const char *og_spell_effect(int group, int sub)
+const char *spell_effect(int group, int sub)
 {
     (void)sub;
-    return og_effect_name(group);
+    return effect_name(group);
 }
 
-/* The player's own spells (spellmaker_buy) kept in the state and registered under OG_CUSTOM_SPELL_ID + slot; the registry is put to match a state. */
-void og_spells_sync_custom(const OgState *state)
+/* The player's own spells (spellmaker_buy) kept in the state and registered under CUSTOM_SPELL_ID + slot; the registry is put to match a state. */
+void spells_sync_custom(const GameState *state)
 {
     int i, k;
 
     for (i = 0; i < g_count; ) {
-        if (g_spell[i].id >= OG_CUSTOM_SPELL_ID && g_spell[i].id < OG_CUSTOM_SPELL_ID + OG_CUSTOM_SPELLS) {
+        if (g_spell[i].id >= CUSTOM_SPELL_ID && g_spell[i].id < CUSTOM_SPELL_ID + CUSTOM_SPELLS) {
             for (k = i; k + 1 < g_count; k++) { g_spell[k] = g_spell[k + 1]; }
             g_count--;
         } else { i++; }
     }
-    for (k = 0; state && k < OG_CUSTOM_SPELLS; k++) {
-        if (state->custom_spell[k].used) { og_spell_register(state->custom_spell[k].record, OG_CUSTOM_SPELL_ID + k); }
+    for (k = 0; state && k < CUSTOM_SPELLS; k++) {
+        if (state->custom_spell[k].used) { spell_register(state->custom_spell[k].record, CUSTOM_SPELL_ID + k); }
     }
 }

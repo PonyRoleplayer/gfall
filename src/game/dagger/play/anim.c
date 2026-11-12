@@ -2,7 +2,7 @@
 #include "game/dagger/play/state.h"
 #include "engine/core/mem.h"
 
-void og_anim_start(OgAnim *a, const OgAnimScript *script, int action)
+void anim_start(Anim *a, const AnimScript *script, int action)
 {
     int entry;
     mem_zero(a,sizeof(*a));
@@ -14,7 +14,7 @@ void og_anim_start(OgAnim *a, const OgAnimScript *script, int action)
     a->pc = entry;
 }
 
-int og_anim_tick(OgAnim *a)
+int anim_tick(Anim *a)
 {
     const df_u8 *s;
     int op, pc, budget, target;
@@ -41,7 +41,7 @@ int og_anim_tick(OgAnim *a)
             a->pc = target; break;
         case 6: a->ended = 1; return a->events;
         case 7:
-            a->pc = og_random_range(0,100) < s[pc+1] ? df_ru16(s+pc+2) : pc+4; break;
+            a->pc = random_range(0,100) < s[pc+1] ? df_ru16(s+pc+2) : pc+4; break;
         case 9: a->pc += 2; break; /* The engine chooses mirroring by view. */
         case 10: a->pc += 2; break;
         case 11: a->record = s[pc+1]; a->pc += 2; break;

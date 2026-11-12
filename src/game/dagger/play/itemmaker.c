@@ -13,12 +13,12 @@
 
 /* See itemmaker.h. */
 
-static OgItemMaker g;
+static ItemMaker g;
 static int (*g_souls)(int *creatures, int cap);
 
-const OgItemMaker *og_itemmaker(void) { return &g; }
+const ItemMaker *itemmaker_state(void) { return &g; }
 
-void og_itemmaker_set_souls(int (*list)(int *creatures, int cap)) { g_souls = list; }
+void itemmaker_set_souls(int (*list)(int *creatures, int cap)) { g_souls = list; }
 
 /* A slot's type in the item's numbering. */
 static int item_type(int s) { return g.kind[s] == 1 ? g.type[s] + 15 : g.type[s]; }
@@ -30,7 +30,7 @@ static void clear_pairs(int row)
     for (k = 0; k < 5; k++) { g.pair[row][k][0] = g.pair[row][k][1] = 255; }
 }
 
-void og_itemmaker_reset(void)
+void itemmaker_reset(void)
 {
     int s;
 
@@ -42,48 +42,48 @@ void og_itemmaker_reset(void)
 
 /* ---- What an item can take ---- */
 
-int og_itemmaker_capacity(df_u32 id)
+int itemmaker_capacity(df_u32 id)
 {
-    const OgObject *item;
+    const ObjectInfo *item;
     int template, points;
 
-    item = og_object(id);
-    if (!item || item->type != OG_RECORD_ITEM) { return 0; }
-    template = og_item_template(item->group, item->index);
+    item = object_at(id);
+    if (!item || item->type != RECORD_ITEM) { return 0; }
+    template = template_index(item->group, item->index);
     if (template < 0) { return 0; }
     points = g_template_enchant[template];
     if (points <= 0) { return 0; }
     /* item_init_from_template: only weapons (not arrows) and plate armour roll a material, which scales the points. */
-    if ((item->group == 3 && !df_eq(og_item_def(3, item->index)->name, "Arrow")) || (item->group == 2 && item->armor_type == 2)) {
+    if ((item->group == 3 && !df_eq(item_def(3, item->index)->name, "Arrow")) || (item->group == 2 && item->armor_type == 2)) {
         if (item->material >= 0 && item->material < 10) { points = (points * g_ench_material[item->material]) >> 2; }
     }
     return points;
 }
 
-const OgItemEnchant *og_itemmaker_row(df_u32 id)
+const ItemEnchant *itemmaker_row(df_u32 id)
 {
     int k;
 
-    for (k = 0; k < OG_ENCHANTED_ITEMS; k++) {
-        const OgItemEnchant *row;
+    for (k = 0; k < ENCHANTED_ITEMS; k++) {
+        const ItemEnchant *row;
 
-        row = &og_state()->enchant[k];
+        row = &game_state()->enchant[k];
         if (row->item == id && id) { return row; }
     }
     return 0;
 }
 
-int og_itemmaker_pick(df_u32 id)
+int itemmaker_pick(df_u32 id)
 {
-    if (!og_itemmaker_capacity(id)) { return OG_IM_CANNOT; }
-    if (og_itemmaker_row(id) || og_magic_item_def(id) >= 0) { return OG_IM_ENCHANTED; }
+    if (!itemmaker_capacity(id)) { return IM_CANNOT; }
+    if (itemmaker_row(id) || magic_item_def(id) >= 0) { return IM_ENCHANTED; }
     /* Another item than the one in the maker: the slots do not carry over (7.10). */
-    if (g.item != id) { og_itemmaker_reset(); }
+    if (g.item != id) { itemmaker_reset(); }
     g.item = id;
     return 0;
 }
 
-int og_itemmaker_free_slots(void)
+int itemmaker_free_slots(void)
 {
     int s, n;
 
@@ -101,13 +101,13 @@ static int free_slot(void)
 
 /* ---- Parameters ---- */
 
-const char *og_itemmaker_name(int side, int kind)
+const char *itemmaker_name(int side, int kind)
 {
     if (kind < 0 || kind >= (side ? 11 : 15)) { return ""; }
     return side ? g_ench_side_name[kind] : g_ench_power_name[kind];
 }
 
-int og_itemmaker_param_kind(int side, int kind)
+int itemmaker_param_kind(int side, int kind)
 {
     if (kind < 0 || kind >= (side ? 11 : 15)) { return 0; }
     return side ? g_ench_side_kind[kind] : g_ench_power_kind[kind];
@@ -127,32 +127,32 @@ static int spell_count(int list)
     return count[list];
 }
 
-int og_itemmaker_param_count(int side, int kind)
+int itemmaker_param_count(int side, int kind)
 {
     int pk, ids[63];
 
-    pk = og_itemmaker_param_kind(side, kind);
+    pk = itemmaker_param_kind(side, kind);
     if (pk == 0) { return 0; }
     if (pk <= 3) { return spell_count(pk - 1); }
     if (pk == 4) { return souls_list(ids, 63); }
     return g_ench_label_count[pk - 100];
 }
 
-const char *og_itemmaker_param_name(int side, int kind, int param)
+const char *itemmaker_param_name(int side, int kind, int param)
 {
     int pk;
 
-    pk = og_itemmaker_param_kind(side, kind);
+    pk = itemmaker_param_kind(side, kind);
     if (pk >= 1 && pk <= 3) {
-        const OgSpellDef *spell;
+        const SpellDef *spell;
 
-        spell = param >= 0 && param < spell_count(pk - 1) ? og_spell_def(g_ench_spells[pk - 1][param]) : 0;
+        spell = param >= 0 && param < spell_count(pk - 1) ? spell_def(g_ench_spells[pk - 1][param]) : 0;
         return spell ? spell->name : "";
     }
     if (pk == 4) {
-        const OgFoeDef *foe;
+        const FoeDef *foe;
 
-        foe = param >= 0 && param < 43 ? og_foe_def(param) : 0;
+        foe = param >= 0 && param < 43 ? foe_def(param) : 0;
         return foe ? foe->name : "";
     }
     if (pk >= 100 && param >= 0 && param < g_ench_label_count[pk - 100]) { return g_ench_labels[pk - 100][param]; }
@@ -199,7 +199,7 @@ static int allowed(int side, int kind, int *out, int cap)
 {
     int pk, count, q, n, ids[63], t;
 
-    pk = og_itemmaker_param_kind(side, kind);
+    pk = itemmaker_param_kind(side, kind);
     if (pk == 0) { return 0; }
     t = side ? kind + 15 : kind;
     n = 0;
@@ -208,7 +208,7 @@ static int allowed(int side, int kind, int *out, int cap)
         for (q = 0; q < count && n < cap; q++) { out[n++] = ids[q]; }
         return n;
     }
-    count = og_itemmaker_param_count(side, kind);
+    count = itemmaker_param_count(side, kind);
     for (q = 0; q < count && n < cap; q++) {
         /* A spell's parameter is its index in the list; the soul's rule-outs sit in rows 10 and 11 as (0, index) and (1, index). */
         if (has_pair(t, q)) { continue; }
@@ -218,12 +218,12 @@ static int allowed(int side, int kind, int *out, int cap)
     return n;
 }
 
-int og_itemmaker_kinds(int side, int *kinds, int cap)
+int itemmaker_kinds(int side, int *kinds, int cap)
 {
-    const OgObject *item;
+    const ObjectInfo *item;
     int kind, t, n, count, s, scratch[40];
 
-    item = og_object(g.item);
+    item = object_at(g.item);
     n = 0;
     for (kind = 0; kind < (side ? 11 : 15) && n < cap; kind++) {
         t = side ? kind + 15 : kind;
@@ -238,7 +238,7 @@ int og_itemmaker_kinds(int side, int *kinds, int cap)
         if (t == 15) { for (s = 0; s < 10; s++) { if (g.kind[s] == 1 && g.type[s] == 0) { break; } } if (s < 10) { continue; } }
         if (t == 21) { for (s = 0; s < 10; s++) { if (g.kind[s] == 1 && g.type[s] == 6) { break; } } if (s < 10) { continue; } }
         /* A kind with every parameter taken is not offered (7.3). */
-        if (og_itemmaker_param_kind(side, kind)) {
+        if (itemmaker_param_kind(side, kind)) {
             count = allowed(side, kind, scratch, 40);
             if (!count) { continue; }
         }
@@ -254,17 +254,17 @@ static void set_pair(int s, int k, int t, int p)
     g.pair[s][k][0] = (df_u8)(t < 0 ? 255 : t); g.pair[s][k][1] = (df_u8)(p < 0 ? 255 : p);
 }
 
-int og_itemmaker_begin(int side, int kind)
+int itemmaker_begin(int side, int kind)
 {
     int s;
 
-    if (!g.item) { return -OG_IM_NO_ITEM; }
-    if (kind < 0 || kind >= (side ? 11 : 15)) { return -OG_IM_NO_ITEM; }
+    if (!g.item) { return -IM_NO_ITEM; }
+    if (kind < 0 || kind >= (side ? 11 : 15)) { return -IM_NO_ITEM; }
     s = free_slot();
-    if (s < 0) { return side ? -OG_IM_NO_SIDE_SLOT : -OG_IM_NO_POWER_SLOT; }
+    if (s < 0) { return side ? -IM_NO_SIDE_SLOT : -IM_NO_POWER_SLOT; }
     g.kind[s] = side ? 1 : 0; g.type[s] = kind; g.param[s] = -1; g.soul[s] = 0;
     clear_pairs(s);
-    if (og_itemmaker_param_kind(side, kind)) {
+    if (itemmaker_param_kind(side, kind)) {
         g.pending = s;
         return s;
     }
@@ -278,7 +278,7 @@ int og_itemmaker_begin(int side, int kind)
     return s;
 }
 
-int og_itemmaker_params(int *params, int cap)
+int itemmaker_params(int *params, int cap)
 {
     int s;
 
@@ -351,7 +351,7 @@ static int add_soul_powers(int soul_slot, int creature)
     }
     want = 0;
     while (want < 5 && g_ench_soul_power[r][want][0] != -1) { want++; }
-    free_count = og_itemmaker_free_slots();
+    free_count = itemmaker_free_slots();
     if (free_count < want) { return -1; }
     for (n = 0; n < want; n++) {
         type = g_ench_soul_power[r][n][0]; param = g_ench_soul_power[r][n][1];
@@ -372,7 +372,7 @@ static int add_soul_powers(int soul_slot, int creature)
     return 0;
 }
 
-int og_itemmaker_choose(int param)
+int itemmaker_choose(int param)
 {
     int s, side, kind, result;
 
@@ -394,7 +394,7 @@ int og_itemmaker_choose(int param)
     return result;
 }
 
-void og_itemmaker_cancel(void)
+void itemmaker_cancel(void)
 {
     int s;
 
@@ -405,7 +405,7 @@ void og_itemmaker_cancel(void)
     g.pending = -1;
 }
 
-void og_itemmaker_remove(int slot)
+void itemmaker_remove(int slot)
 {
     int s, k;
 
@@ -435,7 +435,7 @@ static int slot_cost(int side, int type, int param, int as_points)
         code = g_enchant_code[type];
         if (code == 0) { return 0; }
         if (code >= 1000) { return g_enchant_by_param[code - 1000][param < 0 ? 0 : param < 12 ? param : 11]; }
-        if (code >= 5 && code <= 7) { return param >= 0 && param < spell_count(code - 5) ? og_magic_spell_cost(g_ench_spells[code - 5][param]) : 0; }
+        if (code >= 5 && code <= 7) { return param >= 0 && param < spell_count(code - 5) ? magic_spell_cost(g_ench_spells[code - 5][param]) : 0; }
         return g_enchant_fixed[code];
     }
     code = g_ench_side_code[type];
@@ -450,7 +450,7 @@ static int slot_cost(int side, int type, int param, int as_points)
     return g_enchant_fixed[code];
 }
 
-int og_itemmaker_points_used(void)
+int itemmaker_points_used(void)
 {
     int s, points;
 
@@ -462,7 +462,7 @@ int og_itemmaker_points_used(void)
     return points;
 }
 
-int og_itemmaker_gold(void)
+int itemmaker_gold(void)
 {
     int s, cost;
 
@@ -474,29 +474,29 @@ int og_itemmaker_gold(void)
     return cost * 10;
 }
 
-int og_itemmaker_enchant(void (*consume)(int creature))
+int itemmaker_enchant(void (*consume)(int creature))
 {
-    OgItemEnchant *row;
+    ItemEnchant *row;
     int s, n, k, gold, free_row, soul_creature, any;
 
-    if (!g.item) { return OG_IM_NO_ITEM; }
+    if (!g.item) { return IM_NO_ITEM; }
     any = 0;
     for (s = 0; s < 10; s++) { if (g.kind[s] != -1 && s != g.pending) { any = 1; } }
     if (!any) { return 0; }
-    if (og_itemmaker_points_used() > og_itemmaker_capacity(g.item)) { return OG_IM_NO_POINTS; }
-    gold = og_itemmaker_gold();
-    if (!og_gold_can_afford(gold)) { return OG_IM_NO_GOLD; }
+    if (itemmaker_points_used() > itemmaker_capacity(g.item)) { return IM_NO_POINTS; }
+    gold = itemmaker_gold();
+    if (!gold_can_afford(gold)) { return IM_NO_GOLD; }
     free_row = -1;
-    for (k = 0; k < OG_ENCHANTED_ITEMS; k++) {
-        OgItemEnchant *candidate;
+    for (k = 0; k < ENCHANTED_ITEMS; k++) {
+        ItemEnchant *candidate;
 
-        candidate = og_item_enchant_edit(k);
+        candidate = item_enchant_edit(k);
         if (candidate->item == g.item) { free_row = k; break; }
-        if (free_row < 0 && (!candidate->item || !og_object(candidate->item))) { free_row = k; }
+        if (free_row < 0 && (!candidate->item || !object_at(candidate->item))) { free_row = k; }
     }
-    if (free_row < 0) { return OG_IM_NO_GOLD; }
-    og_gold_spend(gold);
-    row = og_item_enchant_edit(free_row);
+    if (free_row < 0) { return IM_NO_GOLD; }
+    gold_spend(gold);
+    row = item_enchant_edit(free_row);
     mem_zero(row, sizeof(*row));
     row->item = g.item; row->identified = 1;
     for (k = 0; k < 10; k++) { row->type[k] = -1; row->param[k] = -1; }
@@ -511,20 +511,20 @@ int og_itemmaker_enchant(void (*consume)(int creature))
         n++;
     }
     if (soul_creature >= 0 && consume) { consume(soul_creature); }
-    og_itemmaker_reset();
-    return OG_IM_DONE;
+    itemmaker_reset();
+    return IM_DONE;
 }
 
 /* ---- What an item holds ---- */
 
 static int strlen_of(const char *s) { int n; for (n = 0; s[n]; n++) { } return n; }
 
-int og_itemmaker_value(df_u32 id)
+int itemmaker_value(df_u32 id)
 {
-    const OgItemEnchant *row;
+    const ItemEnchant *row;
     int k, value, code, param;
 
-    row = og_itemmaker_row(id);
+    row = itemmaker_row(id);
     if (!row) { return 0; }
     value = 0;
     for (k = 0; k < 10; k++) {
@@ -533,13 +533,13 @@ int og_itemmaker_value(df_u32 id)
         code = g_enchant_code[row->type[k]];
         if (code == 0) { continue; }
         if (code >= 1000) { value += g_enchant_by_param[code - 1000][param < 0 ? 0 : param < 12 ? param : 11]; }
-        else if (code >= 5 && code <= 7) { value += og_magic_spell_cost(param); }
+        else if (code >= 5 && code <= 7) { value += magic_spell_cost(param); }
         else { value += g_enchant_fixed[code]; }
     }
     return value;
 }
 
-static int enchant_lines(const OgItemEnchant *row, char *out, int cap)
+static int enchant_lines(const ItemEnchant *row, char *out, int cap)
 {
     int k, n;
 
@@ -553,9 +553,9 @@ static int enchant_lines(const OgItemEnchant *row, char *out, int cap)
         name = type < 15 ? g_ench_power_name[type] : g_ench_side_name[type - 15];
         what = "";
         if (param >= 0) {
-            if (type < 3) { const OgSpellDef *spell; spell = og_spell_def(param); what = spell ? spell->name : ""; }
-            else if (type == 15) { const OgFoeDef *foe; foe = param < 43 ? og_foe_def(param) : 0; what = foe ? foe->name : ""; }
-            else { what = og_itemmaker_param_name(type < 15 ? 0 : 1, type < 15 ? type : type - 15, param); }
+            if (type < 3) { const SpellDef *spell; spell = spell_def(param); what = spell ? spell->name : ""; }
+            else if (type == 15) { const FoeDef *foe; foe = param < 43 ? foe_def(param) : 0; what = foe ? foe->name : ""; }
+            else { what = itemmaker_param_name(type < 15 ? 0 : 1, type < 15 ? type : type - 15, param); }
         }
         /* The names of the first three powers end with ": "; the others are followed by a space. */
         n += log_format(out + n, cap - n, what[0] && name[0] && name[strlen_of(name) - 1] != ' ' ? "%s %s\n" : "%s%s\n", name, what);
@@ -563,60 +563,60 @@ static int enchant_lines(const OgItemEnchant *row, char *out, int cap)
     return n;
 }
 
-int og_itemmaker_text(df_u32 id, char *out, int cap)
+int itemmaker_text(df_u32 id, char *out, int cap)
 {
-    const OgItemEnchant *row;
+    const ItemEnchant *row;
 
-    row = og_itemmaker_row(id);
+    row = itemmaker_row(id);
     if (!row || !row->identified) { return log_format(out, cap, "Powers unknown."); }
     return enchant_lines(row, out, cap);
 }
 
-int og_item_enchantment(df_u32 id, int k, int *type, int *param)
+int item_enchantment(df_u32 id, int k, int *type, int *param)
 {
-    const OgItemEnchant *row;
+    const ItemEnchant *row;
     int def;
 
     if (k < 0 || k > 9) { return 0; }
-    row = og_itemmaker_row(id);
+    row = itemmaker_row(id);
     if (row) {
         if (row->type[k] < 0) { return 0; }
         *type = row->type[k]; *param = row->param[k];
         return 1;
     }
-    def = og_magic_item_def(id);
-    return def >= 0 && og_magic_def_enchant(def, k, type, param);
+    def = magic_item_def(id);
+    return def >= 0 && magic_def_enchant(def, k, type, param);
 }
 
-int og_item_enchanted(df_u32 id)
+int item_enchanted(df_u32 id)
 {
-    return og_itemmaker_row(id) != 0 || og_magic_item_def(id) >= 0;
+    return itemmaker_row(id) != 0 || magic_item_def(id) >= 0;
 }
 
-int og_item_powers_text(df_u32 id, char *out, int cap)
+int item_powers_text(df_u32 id, char *out, int cap)
 {
-    OgItemEnchant row;
+    ItemEnchant row;
     int def, k, type, param;
 
-    if (og_itemmaker_row(id)) { return og_itemmaker_text(id, out, cap); }
-    def = og_magic_item_def(id);
+    if (itemmaker_row(id)) { return itemmaker_text(id, out, cap); }
+    def = magic_item_def(id);
     if (def < 0) { out[0] = 0; return 0; }
     mem_zero(&row, sizeof(row));
     for (k = 0; k < 10; k++) { row.type[k] = -1; row.param[k] = -1; }
-    for (k = 0; og_magic_def_enchant(def, k, &type, &param); k++) { row.type[k] = type; row.param[k] = param; }
+    for (k = 0; magic_def_enchant(def, k, &type, &param); k++) { row.type[k] = type; row.param[k] = param; }
     return enchant_lines(&row, out, cap);
 }
 
-void og_itemmaker_refresh_values(void)
+void itemmaker_refresh_values(void)
 {
     int k;
 
-    for (k = 0; k < OG_ENCHANTED_ITEMS; k++) {
-        const OgItemEnchant *row;
-        OgObject *item;
+    for (k = 0; k < ENCHANTED_ITEMS; k++) {
+        const ItemEnchant *row;
+        ObjectInfo *item;
 
-        row = &og_state()->enchant[k];
-        item = row->item ? og_object_edit(row->item) : 0;
-        if (item) { item->value = og_itemmaker_value(row->item); }
+        row = &game_state()->enchant[k];
+        item = row->item ? object_edit(row->item) : 0;
+        if (item) { item->value = itemmaker_value(row->item); }
     }
 }

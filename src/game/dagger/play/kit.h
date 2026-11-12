@@ -1,5 +1,5 @@
-#ifndef OGFALL_KIT_H
-#define OGFALL_KIT_H
+#ifndef GFALL_KIT_H
+#define GFALL_KIT_H
 
 #include "game/dagger/tables/tables.h"
 
@@ -10,6 +10,6 @@
  * The weapon byte is FALL.EXE's D_0017BABC pair for that class.
  */
 
-void og_kit_give(OgCharacter *who);
+void kit_give(CharacterState *who);
 
 #endif

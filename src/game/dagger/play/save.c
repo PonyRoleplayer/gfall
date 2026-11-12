@@ -6,11 +6,11 @@
 #include "engine/core/mem.h"
 #include "engine/platform/fs.h"
 
-static OgState g_candidate;
+static GameState g_candidate;
 static int g_legacy;
 static const char *g_error = "";
 
-const char *og_save_error(void)
+const char *save_error(void)
 {
     return g_error;
 }
@@ -104,18 +104,18 @@ static void wire_float(Wire *w, float *v)
     }
 }
 
-static void wire_character(Wire *w, OgCharacter *c)
+static void wire_character(Wire *w, CharacterState *c)
 {
     int i;
 
-    wire_bytes(w, c->name, OG_NAME);
+    wire_bytes(w, c->name, NAME_LEN);
     wire_int(w, &c->race);
     wire_int(w, &c->female);
     wire_int(w, &c->klass);
-    for (i = 0; i < OG_ATTRS; i++) {
+    for (i = 0; i < ATTRS; i++) {
         wire_int(w, &c->attribute[i]);
     }
-    for (i = 0; i < OG_SKILLS; i++) {
+    for (i = 0; i < SKILLS; i++) {
         wire_int(w, &c->skill[i]);
     }
     wire_int(w, &c->health);
@@ -145,12 +145,12 @@ static void wire_character(Wire *w, OgCharacter *c)
     }
 }
 
-static void wire_career(Wire *w, OgClass *k)
+static void wire_career(Wire *w, ClassInfo *k)
 {
     int i;
 
     wire_bytes(w, k->name, 16);
-    for (i = 0; i < OG_ATTRS; i++) {
+    for (i = 0; i < ATTRS; i++) {
         wire_int(w, &k->attribute[i]);
     }
     wire_int(w, &k->hp_per_level);
@@ -177,7 +177,7 @@ static void wire_career(Wire *w, OgClass *k)
     wire_int(w, &k->advancement);
 }
 
-static void wire_motion(Wire *w, OgMotion *motion)
+static void wire_motion(Wire *w, MotionState *motion)
 {
     int i;
     for (i = 0; i < 3; i++) { wire_float(w, &motion->feet[i]); wire_float(w, &motion->safe[i]); }
@@ -207,14 +207,14 @@ static void wire_pixel(Wire *w, df_u16 *pixel)
     if (w->read && !w->bad) { *pixel = df_ru16(bytes); }
 }
 
-static void wire_where(Wire *w, OgWhere *p)
+static void wire_where(Wire *w, PlaceWhere *p)
 {
     wire_int(w,&p->kind); wire_int(w,&p->located); wire_int(w,&p->region); wire_int(w,&p->index);
     wire_int(w,&p->block); wire_int(w,&p->record); wire_int(w,&p->has_back);
     wire_int(w,&p->back_x); wire_int(w,&p->back_z); wire_int(w,&p->back_yaw);
     wire_int(w,&p->origin_x); wire_int(w,&p->origin_z);
 }
-static void transfer(Wire *w, OgState *s)
+static void transfer(Wire *w, GameState *s)
 {
     int i, j;
 
@@ -222,10 +222,10 @@ static void transfer(Wire *w, OgState *s)
     wire_int(w, &s->ready);
     wire_character(w, &s->who);
     wire_career(w, &s->career);
-    for (i = 0; i < OG_ATTRS; i++) {
+    for (i = 0; i < ATTRS; i++) {
         wire_int(w, &s->base_attribute[i]);
     }
-    for (i = 0; i < OG_SKILLS; i++) {
+    for (i = 0; i < SKILLS; i++) {
         wire_u32(w, &s->skill_uses[i]);
     }
     for (i = 0; i < 27; i++) {
@@ -241,7 +241,7 @@ static void transfer(Wire *w, OgState *s)
     wire_int(w, &s->mouse_mode);
     wire_int(w, &s->mode);
     wire_int(w, &s->depth);
-    for (i = 0; i < OG_MODES; i++) {
+    for (i = 0; i < MODES; i++) {
         wire_int(w, &s->mode_stack[i]);
     }
     wire_int(w, &s->region);
@@ -256,8 +256,8 @@ static void transfer(Wire *w, OgState *s)
     wire_u32(w, &s->eye_id);
     wire_u32(w, &s->entity_id);
     wire_u32(w, &s->inventory_id);
-    for (i = 0; i < OG_OBJECTS; i++) {
-        OgObject *o;
+    for (i = 0; i < OBJECTS; i++) {
+        ObjectInfo *o;
         o = &s->object[i];
         wire_u32(w, &o->id);
         wire_u32(w, &o->parent);
@@ -281,12 +281,12 @@ static void transfer(Wire *w, OgState *s)
     wire_int(w, &s->motion_valid);
     wire_motion(w, &s->motion);
     wire_int(w, &s->world_count);
-    if (s->world_count < 0 || s->world_count > OG_WORLD_ROWS) { w->bad = 1; return; }
+    if (s->world_count < 0 || s->world_count > WORLD_ROWS) { w->bad = 1; return; }
     for (i = 0; i < s->world_count; i++) { wire_keep(w, &s->world[i]); }
     wire_int(w, &s->hud_mode); wire_int(w, &s->weapon_ready); wire_int(w, &s->cursor_active);
     wire_bytes(w, s->save_label, sizeof(s->save_label));
     wire_int(w, &s->preview_valid);
-    for (i = 0; i < OG_THUMB_PIXELS; i++) { wire_pixel(w, &s->preview[i]); }
+    for (i = 0; i < THUMB_PIXELS; i++) { wire_pixel(w, &s->preview[i]); }
     wire_u32(w, &s->event_serial);
     wire_int(w, &s->last_event.kind);
     wire_u32(w, &s->last_event.subject);
@@ -296,15 +296,15 @@ static void transfer(Wire *w, OgState *s)
         wire_u32(w,&s->stealth_minute);
         wire_u32(w,&s->progress.checked); wire_u32(w,&s->progress.raised_lo); wire_u32(w,&s->progress.raised_hi);
         wire_int(w,&s->progress.base_sum); wire_int(w,&s->progress.points); wire_int(w,&s->progress.active);
-        for (i = 0; i < OG_ATTRS; i++) { wire_int(w,&s->progress.floor[i]); }
+        for (i = 0; i < ATTRS; i++) { wire_int(w,&s->progress.floor[i]); }
         wire_int(w,&s->survival.breath); wire_u32(w,&s->survival.ticks);
         wire_u32(w,&s->survival.last_tick); wire_float(w,&s->survival.fraction);
         wire_float(w,&s->survival.climb_time); wire_u32(w,&s->survival.climb_minute);
         wire_int(w,&s->survival.climbing); wire_int(w,&s->survival.climb_failed);
         wire_u32(w,&s->encounters.place); wire_u32(w,&s->encounters.serial);
         for (i = 0; i < 6; i++) { wire_int(w,&s->encounters.choices[i]); }
-        for (i = 0; i < OG_ENCOUNTERS; i++) {
-            OgEncounter *actor;
+        for (i = 0; i < ENCOUNTERS; i++) {
+            EncounterRoll *actor;
             actor = &s->encounters.actor[i];
             wire_u32(w,&actor->key.place); wire_u32(w,&actor->key.thing);
             wire_int(w,&actor->kind); wire_int(w,&actor->archive);
@@ -313,8 +313,8 @@ static void transfer(Wire *w, OgState *s)
     }
     if (w->version >= 6) {
         wire_u32(w,&s->magic.ready); wire_u32(w,&s->magic.last); wire_int(w,&s->magic.paid);
-        for (i = 0; i < OG_EFFECTS; i++) {
-            OgEffect *e;
+        for (i = 0; i < EFFECTS; i++) {
+            Effect *e;
             e = &s->magic.effect[i];
             wire_u32(w,&e->target.place); wire_u32(w,&e->target.thing);
             wire_u32(w,&e->caster.place); wire_u32(w,&e->caster.thing);
@@ -322,8 +322,8 @@ static void transfer(Wire *w, OgState *s)
             wire_int(w,&e->magnitude); wire_int(w,&e->chance); wire_int(w,&e->change); wire_int(w,&e->spell);
             wire_int(w,&e->level); wire_int(w,&e->icon); wire_int(w,&e->element); wire_int(w,&e->permanent);
         }
-        for (i = 0; i < OG_AILMENTS; i++) {
-            OgAilment *a;
+        for (i = 0; i < AILMENTS; i++) {
+            AilmentInfo *a;
             a = &s->magic.ailment[i];
             wire_u32(w,&a->target.place); wire_u32(w,&a->target.thing);
             wire_int(w,&a->active); wire_int(w,&a->id);
@@ -331,8 +331,8 @@ static void transfer(Wire *w, OgState *s)
             wire_int(w,&a->delay); wire_int(w,&a->maximum); wire_int(w,&a->left); wire_int(w,&a->stage);
             for (j = 0; j < 8; j++) { wire_int(w,&a->drained[j]); }
         }
-        for (i = 0; i < OG_MISSILES; i++) {
-            OgMissile *m;
+        for (i = 0; i < MISSILES; i++) {
+            MissileInfo *m;
             m = &s->magic.missile[i];
             wire_u32(w,&m->caster.place); wire_u32(w,&m->caster.thing);
             wire_int(w,&m->live); wire_int(w,&m->spell); wire_int(w,&m->level);
@@ -340,8 +340,8 @@ static void transfer(Wire *w, OgState *s)
             wire_float(w,&m->x); wire_float(w,&m->y); wire_float(w,&m->z);
             wire_float(w,&m->dx); wire_float(w,&m->dy); wire_float(w,&m->dz);
         }
-        for (i = 0; i < OG_MAGIC_ACTORS; i++) {
-            OgMagicActor *a;
+        for (i = 0; i < MAGIC_ACTORS; i++) {
+            MagicActor *a;
             a = &s->magic.actor[i]; wire_u32(w,&a->key.place); wire_u32(w,&a->key.thing);
             wire_int(w,&a->active); wire_int(w,&a->magicka); wire_int(w,&a->fatigue);
         }
@@ -353,21 +353,21 @@ static void transfer(Wire *w, OgState *s)
 
     /* Standing (people and law, slice 1): reputations and powers by the table's order, then each region's legal standing and prices. */
     if (w->version >= 8) {
-        OgStanding *st;
+        StandingState *st;
         int n, k;
 
         st = &s->standing;
         wire_int(w, &st->ready);
-        n = og_faction_count();
+        n = faction_total();
         wire_int(w, &n);
-        if (st->ready && n != og_faction_count()) { w->bad = 1; return; }
+        if (st->ready && n != faction_total()) { w->bad = 1; return; }
         if (st->ready) {
             for (k = 0; k < n; k++) {
                 int v;
                 v = st->rep[k]; wire_int(w, &v); st->rep[k] = (short)v;
                 v = st->power[k]; wire_int(w, &v); st->power[k] = (short)v;
             }
-            for (k = 0; k < OG_REGIONS; k++) {
+            for (k = 0; k < REGIONS; k++) {
                 int v;
                 v = st->legal[k]; wire_int(w, &v); st->legal[k] = (short)v;
                 v = st->price[k]; wire_int(w, &v); st->price[k] = (unsigned short)v;
@@ -377,11 +377,11 @@ static void transfer(Wire *w, OgState *s)
 
     /* Banks (slice 3): each region's balance, loan, its due minute and flags, then the house and the ship. */
     if (w->version >= 9) {
-        OgBankState *b;
+        BankState *b;
         int k;
 
         b = &s->bank;
-        for (k = 0; k < OG_REGIONS; k++) {
+        for (k = 0; k < REGIONS; k++) {
             wire_int(w, &b->account[k].balance); wire_int(w, &b->account[k].loan_owed);
             wire_u32(w, &b->account[k].loan_due); wire_int(w, &b->account[k].flags);
         }
@@ -393,7 +393,7 @@ static void transfer(Wire *w, OgState *s)
     if (w->version >= 10) {
         int k;
 
-        for (k = 0; k < OG_ROOMS_MOST; k++) {
+        for (k = 0; k < ROOMS_MOST; k++) {
             wire_u32(w, &s->lodging.room[k].building); wire_u32(w, &s->lodging.room[k].expires);
             wire_int(w, &s->lodging.room[k].room);
         }
@@ -405,7 +405,7 @@ static void transfer(Wire *w, OgState *s)
         int k;
 
         wire_int(w, &s->law.crime);
-        for (k = 0; k < OG_REGIONS; k++) {
+        for (k = 0; k < REGIONS; k++) {
             int v;
             v = s->law.punishment[k]; wire_int(w, &v); s->law.punishment[k] = (unsigned char)v;
         }
@@ -415,8 +415,8 @@ static void transfer(Wire *w, OgState *s)
     if (w->version >= 12) {
         int k;
 
-        for (k = 0; k < OG_MEMBERSHIPS; k++) {
-            OgMembership *m;
+        for (k = 0; k < MEMBERSHIPS; k++) {
+            Membership *m;
 
             m = &s->guilds.m[k];
             wire_int(w, &m->used); wire_int(w, &m->kind); wire_int(w, &m->rank); wire_int(w, &m->faction);
@@ -433,7 +433,7 @@ static void transfer(Wire *w, OgState *s)
     if (w->version >= 13) {
         int k;
 
-        for (k = 0; k < OG_CUSTOM_SPELLS; k++) {
+        for (k = 0; k < CUSTOM_SPELLS; k++) {
             wire_int(w, &s->custom_spell[k].used);
             wire_bytes(w, s->custom_spell[k].record, 89);
         }
@@ -443,8 +443,8 @@ static void transfer(Wire *w, OgState *s)
     if (w->version >= 14) {
         int k, j;
 
-        for (k = 0; k < OG_ENCHANTED_ITEMS; k++) {
-            OgItemEnchant *e;
+        for (k = 0; k < ENCHANTED_ITEMS; k++) {
+            ItemEnchant *e;
 
             e = &s->enchant[k];
             wire_u32(w, &e->item); wire_int(w, &e->identified);
@@ -458,17 +458,17 @@ static void transfer(Wire *w, OgState *s)
     /* The quests (schema 16): a length and the bytes quest.c packed. */
     if (w->version >= 16) {
         wire_int(w, &s->quest_len);
-        if (s->quest_len < 0 || s->quest_len > OG_QUEST_BLOB) { w->bad = 1; return; }
+        if (s->quest_len < 0 || s->quest_len > QUEST_BLOB) { w->bad = 1; return; }
         wire_bytes(w, s->quest_blob, s->quest_len);
     }
 
     if (w->version >= 7) {
-        OgWorldState *world;
+        WorldState *world;
         world = &s->world_state;
         wire_where(w,&world->where); wire_where(w,&world->recall_where);
         wire_int(w,&world->px); wire_int(w,&world->py);
-        wire_bytes(w,world->known,OG_KNOWN_BYTES); wire_int(w,&world->map_count);
-        if (world->map_count < 0 || world->map_count > OG_MAP_ROWS) { w->bad = 1; return; }
+        wire_bytes(w,world->known,KNOWN_BYTES); wire_int(w,&world->map_count);
+        if (world->map_count < 0 || world->map_count > MAP_ROWS) { w->bad = 1; return; }
         for (i = 0; i < world->map_count; i++) {
             AutomapRow *row;
             row = &world->map[i]; wire_u32(w,&row->place); wire_u32(w,&row->mesh);
@@ -514,7 +514,7 @@ static int path_for(char *path, int slot, const char *suffix)
         slot /= 10;
     }
     digits[4] = 0;
-    df_copy(path, OG_SAVE_DIR "\\S", 64);
+    df_copy(path, SAVE_DIR "\\S", 64);
     append_text(path, digits, 64);
     append_text(path, suffix, 64);
     return 1;
@@ -528,20 +528,20 @@ static int read_save(const char *path)
     g_legacy = 0;
     f = fs_open_beside(path);
     if (!f) {
-        g_error = "Cannot open OGFALL save";
+        g_error = "Cannot open GFALL save";
         return 0;
     }
     size = fs_size(f);
     if (size < 24 || size > SAVE_CAP || !fs_read_at(f, 0, g_wire, size)) {
         fs_close(f);
-        g_error = "Incomplete OGFALL save";
+        g_error = "Incomplete GFALL save";
         return 0;
     }
     fs_close(f);
     if (!magic_matches(g_wire) ||
-        (df_ru32(g_wire + 8) < 2 || df_ru32(g_wire + 8) > OG_STATE_VERSION) || df_ru32(g_wire + 12) != size - 24 ||
+        (df_ru32(g_wire + 8) < 2 || df_ru32(g_wire + 8) > STATE_VERSION) || df_ru32(g_wire + 12) != size - 24 ||
         df_ru32(g_wire + 20) != 0 || df_ru32(g_wire + 16) != checksum(g_wire + 24, size - 24)) {
-        g_error = "Unsupported or damaged OGFALL save";
+        g_error = "Unsupported or damaged GFALL save";
         return 0;
     }
     mem_zero(&g_candidate, sizeof(g_candidate));
@@ -552,27 +552,27 @@ static int read_save(const char *path)
     w.bad = 0;
     transfer(&w, &g_candidate);
     if (w.version == 2 && !w.bad) {
-        if (!og_inventory_upgrade(&g_candidate)) { w.bad = 1; }
+        if (!inventory_upgrade(&g_candidate)) { w.bad = 1; }
         else { g_legacy = 1; }
     }
-    if (w.version < 4 && !w.bad) { og_spell_upgrade(&g_candidate); }
+    if (w.version < 4 && !w.bad) { spell_upgrade(&g_candidate); }
     if (w.version < 5 && !w.bad) {
-        g_candidate.version = OG_STATE_VERSION;
+        g_candidate.version = STATE_VERSION;
         g_candidate.progress.checked = g_candidate.minutes;
-        g_candidate.progress.base_sum = og_progress_sum(&g_candidate.who,&g_candidate.career)-(g_candidate.who.level-1)*15;
+        g_candidate.progress.base_sum = progress_sum(&g_candidate.who,&g_candidate.career)-(g_candidate.who.level-1)*15;
     }
-    if (w.version < 8) { og_standing_defaults(&g_candidate.standing); }
-    if (w.version < OG_STATE_VERSION) { g_candidate.version = OG_STATE_VERSION; }
-    og_spells_sync_custom(&g_candidate);
-    if (w.bad || w.pos != size || !og_state_valid(&g_candidate)) {
-        og_spells_sync_custom(og_state());
-        g_error = "Invalid OGFALL save state";
+    if (w.version < 8) { standing_defaults(&g_candidate.standing); }
+    if (w.version < STATE_VERSION) { g_candidate.version = STATE_VERSION; }
+    spells_sync_custom(&g_candidate);
+    if (w.bad || w.pos != size || !state_valid(&g_candidate)) {
+        spells_sync_custom(game_state());
+        g_error = "Invalid GFALL save state";
         return 0;
     }
     return 1;
 }
 
-int og_save_write(int slot)
+int save_write(int slot)
 {
     Wire w;
     char path[64], temp[64];
@@ -580,60 +580,60 @@ int og_save_write(int slot)
     if (!path_for(path, slot, ".SAV") || !path_for(temp, slot, ".TMP")) {
         return 0;
     }
-    if (!og_state_valid(og_state())) {
-        g_error = "No valid OGFALL session to save";
+    if (!state_valid(game_state())) {
+        g_error = "No valid GFALL session to save";
         return 0;
     }
-    if (og_character()->health <= 0) {
+    if (character_state()->health <= 0) {
         g_error = "A dead character cannot be saved.";
         return 0;
     }
     w.pos = 24;
     w.limit = SAVE_CAP;
-    w.version = OG_STATE_VERSION;
+    w.version = STATE_VERSION;
     w.read = 0;
     w.bad = 0;
-    g_candidate = *og_state();
-    g_candidate.quest_len = og_quest_pack(g_candidate.quest_blob, OG_QUEST_BLOB);
+    g_candidate = *game_state();
+    g_candidate.quest_len = quest_pack(g_candidate.quest_blob, QUEST_BLOB);
     if (g_candidate.quest_len < 0) {
         g_error = "Too many quests to save";
         return 0;
     }
     /* Menus are transient; a loaded save always resumes the world. */
-    g_candidate.mode = OG_GAME_WORLD;
+    g_candidate.mode = GAME_WORLD;
     g_candidate.depth = 0;
     mem_zero(g_candidate.mode_stack, sizeof(g_candidate.mode_stack));
     transfer(&w, &g_candidate);
     if (w.bad) {
-        g_error = "OGFALL save is too large";
+        g_error = "GFALL save is too large";
         return 0;
     }
     size = w.pos;
     mem_copy(g_wire, "OGSAVE\r\n", 8);
-    put_u32(g_wire + 8, OG_STATE_VERSION);
+    put_u32(g_wire + 8, STATE_VERSION);
     put_u32(g_wire + 12, size - 24);
     put_u32(g_wire + 16, checksum(g_wire + 24, size - 24));
     put_u32(g_wire + 20, 0);
-    if (!fs_make_dirs(OG_SAVE_DIR) || !fs_create(temp)) {
-        g_error = "Cannot create OGFALL save";
+    if (!fs_make_dirs(SAVE_DIR) || !fs_create(temp)) {
+        g_error = "Cannot create GFALL save";
         return 0;
     }
     if (!fs_append(g_wire, size)) {
         fs_abort();
-        g_error = "Cannot write OGFALL save";
+        g_error = "Cannot write GFALL save";
         return 0;
     }
     fs_finish();
     if (!read_save(temp) || !fs_move(temp, path)) {
         fs_delete(temp);
-        g_error = "Cannot verify or replace OGFALL save";
+        g_error = "Cannot verify or replace GFALL save";
         return 0;
     }
     g_error = "";
     return 1;
 }
 
-int og_save_read(int slot)
+int save_read(int slot)
 {
     char path[64];
     int i;
@@ -649,25 +649,25 @@ int og_save_read(int slot)
         g_error = "This save contains a dead character. Choose another save or start a new game.";
         return 0;
     }
-    if (!og_state_restore(&g_candidate)) {
+    if (!state_restore(&g_candidate)) {
         return 0;
     }
     if (g_legacy) {
         /* Version 2 retained gifts but had no live equipment or spell contents.
          * Materialise them once, after validating and restoring the snapshot. */
-        for (i = 0; i < OG_OBJECTS; i++) {
-            const OgObject *item;
-            item = &og_state()->object[i];
-            if (!item->id || item->type != OG_RECORD_ITEM || item->parent != og_state()->inventory_id) { continue; }
-            if (item->group == 27 && item->index == 0) { og_inventory_start_spells(item->id); }
-            else if (item->group == 6 || item->group == 12) { og_inventory_equip(item->id); }
+        for (i = 0; i < OBJECTS; i++) {
+            const ObjectInfo *item;
+            item = &game_state()->object[i];
+            if (!item->id || item->type != RECORD_ITEM || item->parent != game_state()->inventory_id) { continue; }
+            if (item->group == 27 && item->index == 0) { inventory_start_spells(item->id); }
+            else if (item->group == 6 || item->group == 12) { inventory_equip(item->id); }
         }
     }
     g_error = "";
     return 1;
 }
 
-int og_save_info(int slot, OgSaveInfo *info)
+int save_info(int slot, SaveInfo *info)
 {
     char path[64];
     mem_zero(info, sizeof(*info));

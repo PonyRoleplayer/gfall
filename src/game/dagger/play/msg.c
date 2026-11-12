@@ -1,8 +1,8 @@
 #include "game/dagger/play/msg.h"
 
-static char g_line[OG_MSG];
+static char g_line[MESSAGE_LEN];
 
-void og_msg_set(const char *text)
+void msg_set(const char *text)
 {
     int i;
 
@@ -10,18 +10,18 @@ void og_msg_set(const char *text)
         g_line[0] = 0;
         return;
     }
-    for (i = 0; i < OG_MSG - 1 && text[i]; i++) {
+    for (i = 0; i < MESSAGE_LEN - 1 && text[i]; i++) {
         g_line[i] = text[i];
     }
     g_line[i] = 0;
 }
 
-const char *og_msg(void)
+const char *message_line(void)
 {
     return g_line;
 }
 
-void og_msg_clear(void)
+void msg_clear(void)
 {
     g_line[0] = 0;
 }

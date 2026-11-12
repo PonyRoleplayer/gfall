@@ -1,43 +1,43 @@
-#ifndef OGFALL_TRAVEL_H
-#define OGFALL_TRAVEL_H
+#ifndef GFALL_TRAVEL_H
+#define GFALL_TRAVEL_H
 /* Original travel rules and commands. App adapters supply map data/placement;
  * no GFALL player, save, or gameplay state crosses this boundary. */
 #include "game/dagger/play/worldstate.h"
 #include "engine/scene/scene.h"
-typedef struct OgLocation {
+typedef struct LocationInfo {
     char name[33];
     int region, index, px, py, type, known;
-} OgLocation;
-typedef struct OgTravelHooks {
+} LocationInfo;
+typedef struct TravelHooks {
     int (*count)(void);
-    int (*location)(int ordinal, OgLocation *out);
+    int (*location)(int ordinal, LocationInfo *out);
     int (*go)(int region, int index);
     int (*asked)(void);
     const char *(*passage)(const Usable *usable);
-    void (*here)(OgWhere *out, int *px, int *py);
+    void (*here)(PlaceWhere *out, int *px, int *py);
     int (*climate)(int px, int py);
-    int (*return_to)(const OgWhere *where, float x, float eye_y, float z, int yaw, int pitch);
-} OgTravelHooks;
-void og_travel_install(const OgTravelHooks *hooks);
-void og_travel_commands(void);
-int og_travel_asked(void);
-int og_travel_passage(const Usable *usable);
-int og_travel_location(int ordinal, OgLocation *out);
-int og_travel_count(void);
-int og_travel_known(int ordinal);
-void og_travel_discover(int ordinal);
-void og_travel_capture(void);
-int og_travel_climate(int px, int py);
-int og_travel_go(int region, int index);
+    int (*return_to)(const PlaceWhere *where, float x, float eye_y, float z, int yaw, int pitch);
+} TravelHooks;
+void travel_install(const TravelHooks *hooks);
+void travel_commands(void);
+int play_travel_asked(void);
+int travel_passage(const Usable *usable);
+int travel_location(int ordinal, LocationInfo *out);
+int travel_count(void);
+int travel_known(int ordinal);
+void travel_discover(int ordinal);
+void travel_capture(void);
+int travel_climate(int px, int py);
+int travel_go(int region, int index);
 /* The Mages Guild's teleportation (guild_teleport, the map opened in mode 100): to a place on the map, at once, from anywhere, for nothing. */
-int og_teleport(int region, int index);
-int og_travel_at(const OgWhere *where);
-int og_travel_return(const OgWhere *where, float x, float eye_y, float z, int yaw, int pitch);
+int teleport(int region, int index);
+int travel_at(const PlaceWhere *where);
+int travel_return(const PlaceWhere *where, float x, float eye_y, float z, int yaw, int pitch);
 /* A real journey uses original time/cost/options; goto changes place only. */
-typedef struct OgJourney { int minutes, sea_pixels, hours, cost; } OgJourney;
-void og_journey_plan(int sx, int sy, int ex, int ey, int reckless, int camp,
-                     int ship, int transport, OgJourney *out);
-int og_journey_transport(void);
-int og_journey_warning(void);
-int og_journey_begin(int region, int index, int reckless, int camp, int ship);
+typedef struct JourneyPlan { int minutes, sea_pixels, hours, cost; } JourneyPlan;
+void journey_plan(int sx, int sy, int ex, int ey, int reckless, int camp,
+                     int ship, int transport, JourneyPlan *out);
+int journey_transport(void);
+int journey_warning(void);
+int journey_begin(int region, int index, int reckless, int camp, int ship);
 #endif

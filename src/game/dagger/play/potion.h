@@ -1,5 +1,5 @@
-#ifndef OGFALL_POTION_H
-#define OGFALL_POTION_H
+#ifndef GFALL_POTION_H
+#define GFALL_POTION_H
 
 #include "engine/core/df.h"
 
@@ -12,38 +12,38 @@
  * casting of a spell on the player at the player's own level.
  */
 
-#define OG_POTION_SPELL 1000
+#define POTION_SPELL 1000
 /* An unknown brew's spell is made fresh into this id each time one is drunk. */
-#define OG_BREW_SPELL 2999
-#define OG_POTION_GROUP 1
-#define OG_POTION_INDEX 1
+#define BREW_SPELL 2999
+#define POTION_GROUP 1
+#define POTION_INDEX 1
 
 /* Registers every recipe's spell; after the spells are loaded. */
-void og_potions_register(void);
-int og_potion_count(void);
+void potions_register(void);
+int potion_count(void);
 /* The recipe's name (its spell's), its value, the spell's id. */
-const char *og_potion_name(int recipe);
-int og_potion_value(int recipe);
-int og_potion_spell(int recipe);
+const char *potion_name(int recipe);
+int potion_value(int recipe);
+int potion_spell(int recipe);
 /* Its ingredients: how many, and the group and index of the n-th (the original's -2 ends the list). */
-int og_potion_ingredients(int recipe, int *group, int *index, int cap);
+int potion_ingredients(int recipe, int *group, int *index, int cap);
 
 /* A bottle of the recipe in a container; 0 when there is no room. */
-df_u32 og_potion_create(df_u32 container, int recipe);
+df_u32 potion_create(df_u32 container, int recipe);
 /* The recipe a bottle holds, -1 for an item that is no potion. */
-int og_potion_of(df_u32 item);
+int potion_of(df_u32 item);
 /* inventory use of a bottle: the spell is cast on the player and the bottle gone. 1 when drunk. */
-int og_potion_drink(df_u32 item);
+int potion_drink(df_u32 item);
 /* shop_stock_potions: quality + 1 bottles of random recipes into a container. */
-void og_potion_stock(df_u32 container, int quality);
+void potion_stock(df_u32 container, int quality);
 
 /*
  * shop_stock_soul_traps (equip.c 495): a hall's quality / 2 + 1 soul traps at 5000, a quarter of them (a roll under 25) holding a soul of a random kind that has a
- * value, which is then added to the price. A soul is a child of the trap (OG_RECORD_SOUL, its kind the index).
+ * value, which is then added to the price. A soul is a child of the trap (RECORD_SOUL, its kind the index).
  */
-void og_soul_trap_stock(df_u32 container, int quality);
+void soul_trap_stock(df_u32 container, int quality);
 /* What a creature's soul is worth, by kind; 0 for none. */
-int og_soul_value(int kind);
+int soul_value(int kind);
 
 /*
  * The potion maker (potionmaker_*, potion_match_recipe, potion_mix_unknown: src/lifted/potions.c, src/hand/func_0008FE48.c). Ingredients are the pack's items whose
@@ -52,42 +52,42 @@ int og_soul_value(int kind);
  * key, and the potency left after the unmatched ones are taken off, less the recipe's own, halved and plus 5, at least 1); failing them, the effects the ingredients lend are
  * merged by effect, the strongest three kept and the weak ones dropped, and the potion is of "Unknown Powers" worth nothing.
  */
-#define OG_CAULDRON 8
-typedef struct OgCauldron {
-    df_u32 item[OG_CAULDRON];
+#define CAULDRON 8
+typedef struct Cauldron {
+    df_u32 item[CAULDRON];
     /* The key (254 for an empty cell), potency, effect and subtype of each, as the original keeps them in arrays by cell: a removed cell leaves its old numbers behind. */
-    unsigned char key[OG_CAULDRON], potency[OG_CAULDRON], type[OG_CAULDRON], subtype[OG_CAULDRON];
-} OgCauldron;
+    unsigned char key[CAULDRON], potency[CAULDRON], type[CAULDRON], subtype[CAULDRON];
+} Cauldron;
 
-const OgCauldron *og_cauldron(void);
-void og_cauldron_clear(void);
+const Cauldron *cauldron_state(void);
+void cauldron_clear(void);
 /* An item that can go in the cauldron (a template flagged an ingredient). */
-int og_ingredient(df_u32 item);
+int ingredient_at(df_u32 item);
 /* potionmaker_add_ingredient: into the first free cell, refused when full or when an ingredient of its kind is in already. */
-int og_cauldron_add(df_u32 item);
-int og_cauldron_remove(int cell);
-int og_cauldron_count(void);
+int cauldron_add(df_u32 item);
+int cauldron_remove(int cell);
+int cauldron_count(void);
 
 /* The pack's ingredients not in the cauldron, in the order the original lists them; how many (ids at most cap). */
-int og_ingredients(df_u32 *ids, int cap);
+int ingredient_list(df_u32 *ids, int cap);
 
 /* potion_match_recipe for a recipe against a cauldron: 1 when it makes it. */
-int og_potion_match(int recipe, const OgCauldron *cauldron);
+int potion_match(int recipe, const Cauldron *cauldron);
 
-enum { OG_BREW_NOTHING, OG_BREW_RECIPE, OG_BREW_UNKNOWN };
+enum { BREW_NOTHING, BREW_RECIPE, BREW_UNKNOWN };
 /*
  * potionmaker_mix: the first recipe the cauldron makes, else an unknown brew, else nothing. A potion is made into the pack, the ingredients used up and the cauldron emptied;
  * *recipe is the recipe made, or -1 for an unknown brew.
  */
-int og_brew(int *recipe, df_u32 *potion);
+int brew_state(int *recipe, df_u32 *potion);
 /* The unknown brew's effects as potion_mix_unknown merges them, from a cauldron: how many (0 for none); each effect's type and subtype. */
-int og_brew_effects(const OgCauldron *cauldron, int *type, int *subtype);
+int brew_effects(const Cauldron *cauldron, int *type, int *subtype);
 
 /* Recipes the player knows: items "Potion Recipe" (group 27, index 4) in the pack, the recipe a recipe item holds read as the potions' are. */
-df_u32 og_recipe_create(df_u32 container, int recipe);
-int og_recipe_of(df_u32 item);
-int og_recipes_known(df_u32 *ids, int cap);
+df_u32 recipe_create(df_u32 container, int recipe);
+int recipe_of(df_u32 item);
+int recipes_known(df_u32 *ids, int cap);
 /* potion_have_recipe_ingredients and potion_load_recipe: the cauldron emptied and filled with the pack's ingredients for a recipe. 0 when one is missing. */
-int og_recipe_load(int recipe);
+int recipe_load(int recipe);
 
 #endif

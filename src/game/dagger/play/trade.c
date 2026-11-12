@@ -2,7 +2,7 @@
 
 /* See trade.h. */
 
-int og_trade_base_price(const OgShop *shop, int price)
+int trade_base_price(const ShopState *shop, int price)
 {
     /* trade_region_price */
     price = (shop->region_adjust * price) / 1000;
@@ -15,7 +15,7 @@ int og_trade_base_price(const OgShop *shop, int price)
     return price;
 }
 
-int og_trade_adjust(const OgShop *shop, int mercantile, int personality, int price, int selling)
+int trade_adjust(const ShopState *shop, int mercantile, int personality, int price, int selling)
 {
     int q, skill_factor, attr_factor;
 
@@ -30,11 +30,11 @@ int og_trade_adjust(const OgShop *shop, int mercantile, int personality, int pri
     return (price * (((skill_factor * 179) / 256) + ((attr_factor * 51) / 256))) / 256;
 }
 
-int og_trade_buy_line(const OgShop *shop, int value, int condition, int group, int index, int is_stack)
+int trade_buy_line(const ShopState *shop, int value, int condition, int group, int index, int is_stack)
 {
     int price;
 
-    if (is_stack && group == OG_ARROW_GROUP && index == OG_ARROW_INDEX && condition == 0) {
+    if (is_stack && group == ARROW_GROUP && index == ARROW_INDEX && condition == 0) {
         return 0;
     }
     /* A stack (image 998, the arrows) is sold by the number in it: its condition is its count. */
@@ -52,26 +52,26 @@ int og_trade_buy_line(const OgShop *shop, int value, int condition, int group, i
     return price;
 }
 
-OgQuote og_trade_buy(const OgShop *shop, int mercantile, int personality, int lines)
+Quote trade_buy(const ShopState *shop, int mercantile, int personality, int lines)
 {
-    OgQuote q;
+    Quote q;
 
-    q.total = og_trade_base_price(shop, lines);
-    q.price = (og_trade_adjust(shop, mercantile, personality, q.total, 0) * shop->scale) / 256;
+    q.total = trade_base_price(shop, lines);
+    q.price = (trade_adjust(shop, mercantile, personality, q.total, 0) * shop->scale) / 256;
     return q;
 }
 
-OgQuote og_trade_sell(const OgShop *shop, int mercantile, int personality, int lines)
+Quote trade_sell(const ShopState *shop, int mercantile, int personality, int lines)
 {
-    OgQuote q;
+    Quote q;
 
     /* No scale, no condition, no holiday: what a pile is worth, then the seller's side of the adjustment. */
-    q.total = og_trade_base_price(shop, lines);
-    q.price = og_trade_adjust(shop, mercantile, personality, q.total, 1);
+    q.total = trade_base_price(shop, lines);
+    q.price = trade_adjust(shop, mercantile, personality, q.total, 1);
     return q;
 }
 
-int og_trade_repair_line(int value, int enchanted)
+int trade_repair_line(int value, int enchanted)
 {
     int cost;
 
@@ -79,18 +79,18 @@ int og_trade_repair_line(int value, int enchanted)
     return cost < 1 ? 1 : cost;
 }
 
-OgQuote og_trade_repair(const OgShop *shop, int mercantile, int personality, int lines)
+Quote trade_repair(const ShopState *shop, int mercantile, int personality, int lines)
 {
     /* A sum under 1 is 1, then the same chain as buying. */
-    return og_trade_buy(shop, mercantile, personality, lines > 0 ? lines : 1);
+    return trade_buy(shop, mercantile, personality, lines > 0 ? lines : 1);
 }
 
-int og_trade_identify_line(int value)
+int trade_identify_line(int value)
 {
     return (int)(((unsigned)(value * 25)) >> 8);
 }
 
-int og_trade_offer_text(int mode, int total, int price)
+int trade_offer_text(int mode, int total, int price)
 {
     int text;
 
@@ -104,7 +104,7 @@ int og_trade_offer_text(int mode, int total, int price)
     return mode == 2 ? text + 3 : text;
 }
 
-int og_trade_steal_chance(int pickpocket, int total, int weight)
+int trade_steal_chance(int pickpocket, int total, int weight)
 {
     return pickpocket - total / 32 - weight / 4;
 }

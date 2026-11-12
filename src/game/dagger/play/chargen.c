@@ -15,7 +15,7 @@
 
 static int g_mode;
 static unsigned g_revision;
-unsigned og_chargen_revision(void) { return g_revision; }
+unsigned chargen_revision(void) { return g_revision; }
 static int g_text;
 static int g_lines;
 static int g_pool;
@@ -26,22 +26,22 @@ static int g_class_sel;
 static int g_list_top;
 static int g_list_sel;
 static int g_question;
-static OgCharacter g_before_background;
-static OgClass g_custom;
+static CharacterState g_before_background;
+static ClassInfo g_custom;
 static int g_maker_page, g_maker_top, g_maker_slot, g_maker_list, g_maker_kind;
 static int g_special_count[2];
 static int g_special_kind[2][7], g_special_param[2][7];
 static int g_maker_pool;
 static int g_custom_reputation[5];
 
-int og_chargen_maker_reputation(int group) { return group >= 0 && group < 5 ? g_custom_reputation[group] : 0; }
-int og_chargen_maker_page(void) { return g_maker_page; }
-int og_chargen_maker_top(void) { return g_maker_top; }
-int og_chargen_maker_kind(void) { return g_maker_kind; }
-int og_chargen_maker_list(void) { return g_maker_list; }
-int og_chargen_special_count(int list) { return g_special_count[list & 1]; }
-int og_chargen_special_kind(int list, int slot) { return g_special_kind[list & 1][slot % 7]; }
-int og_chargen_special_param(int list, int slot) { return g_special_param[list & 1][slot % 7]; }
+int chargen_maker_reputation(int group) { return group >= 0 && group < 5 ? g_custom_reputation[group] : 0; }
+int chargen_maker_page(void) { return g_maker_page; }
+int chargen_maker_top(void) { return g_maker_top; }
+int chargen_maker_kind(void) { return g_maker_kind; }
+int chargen_maker_list(void) { return g_maker_list; }
+int chargen_special_count(int list) { return g_special_count[list & 1]; }
+int chargen_special_kind(int list, int slot) { return g_special_kind[list & 1][slot % 7]; }
+int chargen_special_param(int list, int slot) { return g_special_param[list & 1][slot % 7]; }
 
 static int g_asked[10];
 static int g_answer_counts[3];
@@ -49,8 +49,8 @@ static int g_scroll;
 static void open_class(int which);
 static void accept_class(void);
 
-int og_chargen_question_number(void) { return g_asked[g_question < 10 ? g_question : 9]; }
-int og_chargen_question_scroll(void) { return g_scroll; }
+int chargen_question_number(void) { return g_asked[g_question < 10 ? g_question : 9]; }
+int chargen_question_scroll(void) { return g_scroll; }
 
 static int g_scroll_drag;
 static float g_repeat;
@@ -64,28 +64,28 @@ static int g_have_saved;
 static int g_rename;
 static const char *g_notice = "";
 
-void og_chargen_seed(unsigned seed)
+void chargen_seed(unsigned seed)
 {
-    og_random_seed(seed);
+    random_seed(seed);
 }
 
 static int roll(int lo, int hi)
 {
-    return og_random_range(lo, hi);
+    return random_range(lo, hi);
 }
 
-void og_chargen_background(int (*fn)(int, int, int))
+void chargen_background(int (*fn)(int, int, int))
 {
     g_background = fn;
 }
 
-int og_chargen_attr_y(int attr)
+int chargen_attr_y(int attr)
 {
     static const int y[] = { 20, 42, 64, 86, 108, 130, 151, 174 };
     return attr >= 0 && attr < 8 ? y[attr] : 20;
 }
 
-int og_chargen_skill_y(int slot)
+int chargen_skill_y(int slot)
 {
     if (slot < 3) {
         return 31 + slot * 10;
@@ -96,19 +96,19 @@ int og_chargen_skill_y(int slot)
     return 129 + (slot - 6) * 10;
 }
 
-int og_chargen_attr_selected(void) { return g_attr_sel; }
-int og_chargen_skill_selected(int group) { return group >= 0 && group < 3 ? g_skill_sel[group] : 0; }
-const char *og_chargen_notice(void) { return g_notice; }
+int chargen_attr_selected(void) { return g_attr_sel; }
+int chargen_skill_selected(int group) { return group >= 0 && group < 3 ? g_skill_sel[group] : 0; }
+const char *chargen_notice(void) { return g_notice; }
 
 static void roll_attributes(void)
 {
-    const OgClass *row;
-    OgCharacter *who;
+    const ClassInfo *row;
+    CharacterState *who;
     int i;
     int base;
 
-    who = og_character();
-    row = og_class(who->klass);
+    who = character_state();
+    row = class_at(who->klass);
     for (i = 0; i < 8; i++) {
         base = row ? row->attribute[i] : 50;
         who->attribute[i] = roll(base, base + 10);
@@ -122,19 +122,19 @@ static void roll_attributes(void)
 
 static void prepare_skills(void)
 {
-    OgCharacter *who;
+    CharacterState *who;
     int i;
     int skill;
 
-    who = og_character();
-    for (i = 0; i < OG_SKILLS; i++) {
+    who = character_state();
+    for (i = 0; i < SKILLS; i++) {
         if (!who->skill[i]) {
             who->skill[i] = roll(3, 6);
         }
     }
     for (i = 0; i < 12; i++) {
-        skill = og_class_skill(who->klass, i);
-        if (skill >= 0 && skill < OG_SKILLS) {
+        skill = class_skill(who->klass, i);
+        if (skill >= 0 && skill < SKILLS) {
             who->skill[skill] += i < 3 ? 25 : (i < 6 ? 15 : 10);
         }
     }
@@ -144,18 +144,18 @@ static void biography_answer(int answer)
 {
     int count;
 
-    count = g_background ? g_background(og_character()->klass, g_question, -1) : 8;
+    count = g_background ? g_background(character_state()->klass, g_question, -1) : 8;
     if (count < 1) { count = 1; }
     if (answer < 0 || answer >= count) {
         return;
     }
     if (g_background) {
-        g_background(og_character()->klass, g_question, answer);
+        g_background(character_state()->klass, g_question, answer);
     }
     g_question++;
     if (g_question == 12) {
         prepare_skills();
-        g_mode = OG_UI_REPUTE;
+        g_mode = UI_REPUTE;
     }
 }
 
@@ -186,7 +186,7 @@ static int lines_for(int id)
  * tile is SPOP.RCI's 22. Kind 5 adds 20 for the buttons (text_format_flags
  * bit 2). The early -20 on the cursor is overwritten by the tile layout.
  */
-int og_box_button_y(int lines)
+int box_button_y(int lines)
 {
     int mh;
     int hh;
@@ -249,7 +249,7 @@ static void start_questions(void)
     }
     g_question = 0;
     g_scroll = 0;
-    g_mode = OG_UI_QUESTIONS;
+    g_mode = UI_QUESTIONS;
 }
 
 static void question_answer(int answer)
@@ -257,30 +257,30 @@ static void question_answer(int answer)
     int klass;
     int kind;
 
-    kind = og_question_kind(og_chargen_question_number(), answer);
+    kind = question_kind(chargen_question_number(), answer);
     g_answer_counts[kind]++;
     g_question++;
     g_scroll = 0;
     if (g_question == 10) {
-        klass = og_class_from_answers(g_answer_counts);
+        klass = class_from_answers(g_answer_counts);
         if (klass >= 0) { open_class(klass); }
-        else { g_mode = OG_UI_CLASS_LIST; }
+        else { g_mode = UI_CLASS_LIST; }
     }
 }
 
 static void copy_class(int index)
 {
-    const OgClass *row;
-    OgCharacter *who;
+    const ClassInfo *row;
+    CharacterState *who;
     int i;
 
-    who = og_character();
+    who = character_state();
     who->klass = index;
-    row = og_class(index);
+    row = class_at(index);
     if (!row) {
         return;
     }
-    for (i = 0; i < OG_ATTRS; i++) {
+    for (i = 0; i < ATTRS; i++) {
         who->attribute[i] = row->attribute[i];
     }
     who->class_flags = row->flags;
@@ -296,10 +296,10 @@ static int *custom_skill(int slot)
     return &g_custom.minor[slot - 6];
 }
 
-int og_chargen_maker_skill(int row)
+int chargen_maker_skill(int row)
 {
     int i, j, used;
-    for (i = 0; i < OG_SKILLS; i++) {
+    for (i = 0; i < SKILLS; i++) {
         used = 0;
         for (j = 0; j < 12; j++) { if (*custom_skill(j) == i) { used = 1; } }
         if (!used && row-- == 0) { return i; }
@@ -310,7 +310,7 @@ int og_chargen_maker_skill(int row)
 static void custom_publish(void)
 {
     g_pool = g_maker_pool;
-    og_class_set(18, &g_custom);
+    class_set(18, &g_custom);
 }
 
 static void custom_begin(void)
@@ -328,7 +328,7 @@ static void custom_begin(void)
     g_maker_pool = 0;
     g_attr_sel = 0;
     custom_publish();
-    g_mode = OG_UI_MAKER;
+    g_mode = UI_MAKER;
 }
 
 /* Rebuild from the picked specials, so removing one cannot leave stale bits.
@@ -336,8 +336,8 @@ static void custom_begin(void)
 static void custom_specials(void)
 {
     int list, i, kind, param, bit, cost;
-    OgClass *c;
-    const OgSpecial *s;
+    ClassInfo *c;
+    const Special *s;
     c = &g_custom;
     c->flags = 0x1400;
     c->resistance = c->immunity = c->tolerance = c->weakness = 0;
@@ -347,7 +347,7 @@ static void custom_specials(void)
     for (list = 0; list < 2; list++) {
         for (i = 0; i < g_special_count[list]; i++) {
             kind = g_special_kind[list][i]; param = g_special_param[list][i]; bit = 1 << param;
-            s = og_special(list, kind);
+            s = special_state(list, kind);
             cost += (list ? -1 : 1) * s->cost[param];
             if (!list) {
                 switch (kind) {
@@ -409,42 +409,42 @@ static void custom_add_special(int param)
 
 static void enter_world(void)
 {
-    OgCharacter *who;
+    CharacterState *who;
     int max;
 
-    who = og_character();
+    who = character_state();
     if (who->max_health <= 0) {
-        who->max_health = 25 + who->attribute[OG_END] / 2;
+        who->max_health = 25 + who->attribute[ATTR_END] / 2;
     }
     if (who->max_health < 1) {
         who->max_health = 1;
     }
     who->health = who->max_health;
-    max = (who->attribute[OG_STR] + who->attribute[OG_END]) << 6;
+    max = (who->attribute[ATTR_STR] + who->attribute[ATTR_END]) << 6;
     who->fatigue = max > 0 ? max : 64;
-    who->max_magicka = og_magicka(who->attribute[OG_INT], who->class_flags);
+    who->max_magicka = magicka_state(who->attribute[ATTR_INT], who->class_flags);
     who->magicka = who->max_magicka;
     who->level = 1;
     if (who->gold <= 0) {
         who->gold = 100;
     }
-    og_kit_give(who);
-    if (!og_state_begin()) {
+    kit_give(who);
+    if (!state_begin()) {
         caption("Cannot create the game state");
         return;
     }
-    og_quest_start_initial_later();
-    g_mode = OG_UI_WORLD;
+    quest_start_initial_later();
+    g_mode = UI_WORLD;
     caption("Privateer's Hold");
 }
 
-void og_chargen_begin(void)
+void chargen_begin(void)
 {
-    og_state_clear();
+    state_clear();
     g_scroll_drag = 0;
     g_repeat = 0.0f;
     g_revision++;
-    g_mode = OG_UI_TITLE;
+    g_mode = UI_TITLE;
     g_text = 0;
     g_lines = 1;
     g_pool = 10;
@@ -462,34 +462,34 @@ void og_chargen_begin(void)
     mem_zero(g_skill_added, sizeof(g_skill_added));
     mem_zero(g_attr_bonus, sizeof(g_attr_bonus));
     mem_zero(g_skill_bonus, sizeof(g_skill_bonus));
-    og_character_clear();
+    character_clear();
     caption("L load   S start   E exit");
 }
 
-int og_chargen_mode(void)
+int chargen_mode(void)
 {
     return g_mode;
 }
 
-const char *og_chargen_caption(void)
+const char *chargen_caption(void)
 {
     return g_caption;
 }
 
-int og_chargen_text_id(void)
+int chargen_text_id(void)
 {
     return g_text;
 }
 
-int og_chargen_choice_y(void)
+int chargen_choice_y(void)
 {
-    if (g_mode != OG_UI_RACE && g_mode != OG_UI_GENDER && g_mode != OG_UI_CLASS_YES) {
+    if (g_mode != UI_RACE && g_mode != UI_GENDER && g_mode != UI_CLASS_YES) {
         return -1;
     }
-    return og_box_button_y(g_lines);
+    return box_button_y(g_lines);
 }
 
-int og_chargen_count_lines(const char *text)
+int chargen_count_lines(const char *text)
 {
     int n;
     int any;
@@ -521,7 +521,7 @@ int og_chargen_count_lines(const char *text)
     return n;
 }
 
-void og_chargen_set_lines(int lines)
+void chargen_set_lines(int lines)
 {
     if (lines < 1) {
         lines = 1;
@@ -532,32 +532,32 @@ void og_chargen_set_lines(int lines)
     g_lines = lines;
 }
 
-int og_chargen_lines(void)
+int chargen_lines(void)
 {
     return g_lines;
 }
 
-int og_chargen_list_top(void)
+int chargen_list_top(void)
 {
     return g_list_top;
 }
 
-int og_chargen_list_sel(void)
+int chargen_list_sel(void)
 {
     return g_list_sel;
 }
 
-int og_chargen_question(void)
+int chargen_question(void)
 {
     return g_question;
 }
 
-int og_chargen_attr_pool(void)
+int chargen_attr_pool(void)
 {
     return g_pool;
 }
 
-int og_chargen_attr_bonus(int attr)
+int chargen_attr_bonus(int attr)
 {
     if (attr < 0 || attr >= 8) {
         return 0;
@@ -565,7 +565,7 @@ int og_chargen_attr_bonus(int attr)
     return g_attr_bonus[attr];
 }
 
-int og_chargen_skill_bonus(int group)
+int chargen_skill_bonus(int group)
 {
     if (group < 0 || group >= 3) {
         return 0;
@@ -575,9 +575,9 @@ int og_chargen_skill_bonus(int group)
 
 static void change_attr(int delta)
 {
-    OgCharacter *who;
+    CharacterState *who;
 
-    who = og_character();
+    who = character_state();
     if (delta > 0) {
         if (g_pool <= 0 || who->attribute[g_attr_sel] >= 100) {
             return;
@@ -592,20 +592,20 @@ static void change_attr(int delta)
 
 static void change_skill(int group, int delta)
 {
-    OgCharacter *who;
+    CharacterState *who;
     int slot;
     int skill;
 
     slot = g_skill_sel[group];
-    skill = og_class_skill(og_character()->klass, slot);
-    if (skill < 0 || skill >= OG_SKILLS) {
+    skill = class_skill(character_state()->klass, slot);
+    if (skill < 0 || skill >= SKILLS) {
         return;
     }
     if ((delta > 0 && g_skill_bonus[group] == 6)
         || (delta < 0 && g_skill_added[slot] == 0)) {
         return;
     }
-    who = og_character();
+    who = character_state();
     who->skill[skill] += delta;
     g_skill_added[slot] += delta;
     g_skill_bonus[group] += delta;
@@ -614,18 +614,18 @@ static void change_skill(int group, int delta)
 static void title_click(int x, int y)
 {
     if (in_rect(x, y, 72, 46, 217, 58)) {
-        g_mode = OG_UI_LOAD;
+        g_mode = UI_LOAD;
         caption("Load game");
         return;
     }
     if (in_rect(x, y, 74, 100, 217, 112)) {
-        og_chargen_begin();
-        g_mode = OG_UI_MAP;
+        chargen_begin();
+        g_mode = UI_MAP;
         caption("Select your home province");
         return;
     }
     if (in_rect(x, y, 125, 145, 165, 158)) {
-        g_mode = OG_UI_TITLE;
+        g_mode = UI_TITLE;
         caption("");
         /* The caller treats a repeated exit caption as quit via key E.
          * A click on Exit sets a sentinel mode by clearing the caption
@@ -637,22 +637,22 @@ static void title_click(int x, int y)
 /* title_menu: pick is the mask byte, 1..8. 0 is the sea and stays on the map. */
 static void map_pixel(int pixel)
 {
-    OgCharacter *who;
+    CharacterState *who;
 
     if (pixel < 1 || pixel > 8) {
         return;
     }
-    who = og_character();
+    who = character_state();
     who->race = pixel - 1;
-    g_text = og_race_text(who->race);
+    g_text = race_text(who->race);
     g_lines = lines_for(g_text);
-    g_mode = OG_UI_RACE;
-    caption(og_race_name(who->race));
+    g_mode = UI_RACE;
+    caption(race_name(who->race));
 }
 
 static void back_to_map(void)
 {
-    g_mode = OG_UI_MAP;
+    g_mode = UI_MAP;
     g_text = 0;
     caption("Select your home province");
 }
@@ -661,14 +661,14 @@ static void accept_race(void)
 {
     g_text = 2200;
     g_lines = lines_for(2200);
-    g_mode = OG_UI_GENDER;
+    g_mode = UI_GENDER;
     caption("M male, F female");
 }
 
 static void pick_sex(int female)
 {
-    og_character()->female = female;
-    g_mode = OG_UI_CLASS_HOW;
+    character_state()->female = female;
+    g_mode = UI_CLASS_HOW;
     caption("Class from a list, or questions.");
 }
 
@@ -677,12 +677,12 @@ static int choice_at(int x, int y, int x0)
 {
     int top;
 
-    top = og_box_button_y(g_lines);
-    return x > x0 && x < x0 + OG_CHOICE_W && y > top && y < top + OG_CHOICE_H;
+    top = box_button_y(g_lines);
+    return x > x0 && x < x0 + CHOICE_W && y > top && y < top + CHOICE_H;
 }
 
 /* picklist_poll: the row under the cursor, or -1 outside the list. */
-void og_chargen_scroll_thumb(int top, int count, int *y, int *height)
+void chargen_scroll_thumb(int top, int count, int *y, int *height)
 {
     int h;
     h = count <= 9 ? 82 : 81 * 9 / count;
@@ -701,14 +701,14 @@ static int scroll_list(int x, int y)
     int next;
     int step;
 
-    if (g_mode == OG_UI_CLASS_LIST) {
+    if (g_mode == UI_CLASS_LIST) {
         top = &g_list_top;
-        count = OG_LIST_N;
-    } else if (g_mode == OG_UI_MAKER && (g_maker_page == 1 || g_maker_page == 4 || g_maker_page == 5)) {
+        count = LIST_N;
+    } else if (g_mode == UI_MAKER && (g_maker_page == 1 || g_maker_page == 4 || g_maker_page == 5)) {
         top = &g_maker_top;
-        count = g_maker_page == 4 ? 11 : (g_maker_page == 5 ? og_special(g_maker_list, g_maker_kind)->count : 0);
+        count = g_maker_page == 4 ? 11 : (g_maker_page == 5 ? special_state(g_maker_list, g_maker_kind)->count : 0);
         if (g_maker_page == 1) {
-            while (og_chargen_maker_skill(count) >= 0) {
+            while (chargen_maker_skill(count) >= 0) {
                 count++;
             }
         }
@@ -721,7 +721,7 @@ static int scroll_list(int x, int y)
     next = *top;
     step = y >= 47 && y <= 56 ? -1 : (y >= 145 && y <= 154 ? 1 : 0);
     if (step) {
-        if (g_mode == OG_UI_CLASS_LIST) {
+        if (g_mode == UI_CLASS_LIST) {
             g_list_sel += step;
             if (g_list_sel < 0) {
                 g_list_sel = 0;
@@ -740,7 +740,7 @@ static int scroll_list(int x, int y)
         }
     } else if (y >= 58 && y <= 140) {
         next = count <= 9 ? 0 : count * (y - 58) / 83;
-        if (g_mode == OG_UI_CLASS_LIST) {
+        if (g_mode == UI_CLASS_LIST) {
             g_list_sel = next;
         }
     } else {
@@ -753,13 +753,13 @@ static int scroll_list(int x, int y)
         next = 0;
     }
     *top = next;
-    if (g_mode == OG_UI_CLASS_LIST && g_list_sel >= count) {
+    if (g_mode == UI_CLASS_LIST && g_list_sel >= count) {
         g_list_sel = count - 1;
     }
     return 1;
 }
 
-void og_chargen_scroll_frame(int x, int y, int held, int pressed, float dt)
+void chargen_scroll_frame(int x, int y, int held, int pressed, float dt)
 {
     if (!(held & 1)) {
         g_scroll_drag = 0;
@@ -796,11 +796,11 @@ static int list_row(int x, int y)
 {
     int row;
 
-    if (x < OG_LIST_X || x > OG_LIST_X + OG_LIST_W - 1 || y < OG_LIST_Y || y > OG_LIST_Y + OG_LIST_H - 1) {
+    if (x < LIST_X || x > LIST_X + LIST_W - 1 || y < LIST_Y || y > LIST_Y + LIST_H - 1) {
         return -1;
     }
-    row = g_list_top + (y - OG_LIST_Y) / OG_LIST_ROW;
-    if (row < 0 || row >= OG_LIST_N) {
+    row = g_list_top + (y - LIST_Y) / LIST_ROW;
+    if (row < 0 || row >= LIST_N) {
         return -1;
     }
     return row;
@@ -813,35 +813,35 @@ static void open_class(int which)
         caption("Custom class");
         return;
     }
-    if (which < 0 || which >= OG_CLASSES) {
+    if (which < 0 || which >= CLASSES) {
         return;
     }
     g_class_sel = which;
     g_text = 2100 + which;
     g_lines = lines_for(g_text);
-    g_mode = OG_UI_CLASS_YES;
-    caption(og_class(which) ? og_class(which)->name : "This class?");
+    g_mode = UI_CLASS_YES;
+    caption(class_at(which) ? class_at(which)->name : "This class?");
 }
 
 static void accept_class(void)
 {
-    if (g_class_sel < 0 || g_class_sel >= OG_CLASSES) {
+    if (g_class_sel < 0 || g_class_sel >= CLASSES) {
         return;
     }
     {
         int race, female, i;
-        race = og_character()->race; female = og_character()->female;
-        og_character_clear();
-        og_character()->race = race; og_character()->female = female;
+        race = character_state()->race; female = character_state()->female;
+        character_clear();
+        character_state()->race = race; character_state()->female = female;
         if (g_class_sel == 18) {
-            for (i = 0; i < 5; i++) { og_character()->reputation[i] = g_custom_reputation[i]; }
+            for (i = 0; i < 5; i++) { character_state()->reputation[i] = g_custom_reputation[i]; }
         }
     }
     copy_class(g_class_sel);
-    og_character()->gold = 100;
-    g_before_background = *og_character();
+    character_state()->gold = 100;
+    g_before_background = *character_state();
     g_question = 0;
-    g_mode = OG_UI_BG_HOW;
+    g_mode = UI_BG_HOW;
     caption("Generated background, or questions.");
 }
 
@@ -873,48 +873,48 @@ static int answer_box(int x, int y)
     return 0;
 }
 
-void og_chargen_click(int x, int y, int pixel)
+void chargen_click(int x, int y, int pixel)
 {
     int which;
     int i;
     int y0;
     int summary;
-    OgCharacter *who;
+    CharacterState *who;
 
     g_revision++;
     if (g_notice[0]) { g_notice = ""; return; }
     if (scroll_list(x, y)) { return; }
-    if (g_mode == OG_UI_TITLE) {
+    if (g_mode == UI_TITLE) {
         title_click(x, y);
         return;
     }
     /* The outer controller owns the save browser and its clicks. */
-    if (g_mode == OG_UI_LOAD) { return; }
-    if (g_mode == OG_UI_MAP) {
+    if (g_mode == UI_LOAD) { return; }
+    if (g_mode == UI_MAP) {
         map_pixel(pixel);
         return;
     }
     /* Yes continues. No puts the map back. A click on the land does not. */
-    if (g_mode == OG_UI_RACE) {
-        if (choice_at(x, y, OG_CHOICE_X0)) {
+    if (g_mode == UI_RACE) {
+        if (choice_at(x, y, CHOICE_X0)) {
             accept_race();
-        } else if (choice_at(x, y, OG_CHOICE_X1)) {
+        } else if (choice_at(x, y, CHOICE_X1)) {
             back_to_map();
         }
         return;
     }
-    if (g_mode == OG_UI_GENDER) {
-        if (choice_at(x, y, OG_CHOICE_X0)) {
+    if (g_mode == UI_GENDER) {
+        if (choice_at(x, y, CHOICE_X0)) {
             pick_sex(0);
-        } else if (choice_at(x, y, OG_CHOICE_X1)) {
+        } else if (choice_at(x, y, CHOICE_X1)) {
             pick_sex(1);
         }
         return;
     }
     /* title_menu: the top of BUTN01I0 is the list, the bottom the questions. */
-    if (g_mode == OG_UI_CLASS_HOW) {
+    if (g_mode == UI_CLASS_HOW) {
         if (x > 68 && x < 251 && y > 60 && y < 111) {
-            g_mode = OG_UI_CLASS_LIST;
+            g_mode = UI_CLASS_LIST;
             g_list_top = 0;
             g_list_sel = -1;
             caption("Choose a class");
@@ -924,20 +924,20 @@ void og_chargen_click(int x, int y, int pixel)
         }
         return;
     }
-    if (g_mode == OG_UI_MAKER) {
+    if (g_mode == UI_MAKER) {
         if (g_maker_page == 1 || g_maker_page == 4 || g_maker_page == 5) {
             int limit;
-            limit = g_maker_page == 4 ? 11 : (g_maker_page == 5 ? og_special(g_maker_list, g_maker_kind)->count : 0);
-            if (g_maker_page == 1) { while (og_chargen_maker_skill(limit) >= 0) { limit++; } }
-            if (x < OG_LIST_X || x > OG_LIST_X + OG_LIST_W || y < OG_LIST_Y || y >= OG_LIST_Y + OG_LIST_VIS * 8) { return; }
-            which = g_maker_top + (y - OG_LIST_Y) / 8;
+            limit = g_maker_page == 4 ? 11 : (g_maker_page == 5 ? special_state(g_maker_list, g_maker_kind)->count : 0);
+            if (g_maker_page == 1) { while (chargen_maker_skill(limit) >= 0) { limit++; } }
+            if (x < LIST_X || x > LIST_X + LIST_W || y < LIST_Y || y >= LIST_Y + LIST_VIS * 8) { return; }
+            which = g_maker_top + (y - LIST_Y) / 8;
             if (which >= limit) { return; }
             if (g_maker_page == 1) {
-                *custom_skill(g_maker_slot) = og_chargen_maker_skill(which);
+                *custom_skill(g_maker_slot) = chargen_maker_skill(which);
                 custom_publish(); g_maker_page = 0;
             } else if (g_maker_page == 4) {
                 g_maker_kind = which;
-                if (og_special(g_maker_list, which)->count == 1) { custom_add_special(0); }
+                if (special_state(g_maker_list, which)->count == 1) { custom_add_special(0); }
                 else { g_maker_page = 5; g_maker_top = 0; }
             } else { custom_add_special(which); }
             return;
@@ -991,14 +991,14 @@ void og_chargen_click(int x, int y, int pixel)
         }
         if (y > 2 && y < 13) { g_maker_page = 7; return; }
         for (i = 0; i < 12; i++) {
-            y0 = og_chargen_skill_y(i);
+            y0 = chargen_skill_y(i);
             if (x > 66 && x < 174 && y > y0 && y < y0 + 8) { g_maker_page = 1; g_maker_slot = i; g_maker_top = 0; return; }
         }
         for (i = 0; i < 8; i++) {
-            y0 = og_chargen_attr_y(i);
+            y0 = chargen_attr_y(i);
             if (x > 7 && x < 42 && y > y0 && y < y0 + 19) { g_attr_sel = i; }
         }
-        y0 = og_chargen_attr_y(g_attr_sel) + 1;
+        y0 = chargen_attr_y(g_attr_sel) + 1;
         if (x > 45 && x < 57) {
             if (y > y0 && y < y0 + 6 && g_custom.attribute[g_attr_sel] < 75) { g_custom.attribute[g_attr_sel]++; g_maker_pool--; }
             if (y > y0 + 13 && y < y0 + 19 && g_custom.attribute[g_attr_sel] > 10) { g_custom.attribute[g_attr_sel]--; g_maker_pool++; }
@@ -1017,12 +1017,12 @@ void og_chargen_click(int x, int y, int pixel)
         }
         return;
     }
-    if (g_mode == OG_UI_QUESTIONS) {
+    if (g_mode == UI_QUESTIONS) {
         const char *text;
         int row;
         int n;
         int answer;
-        text = og_question_text(og_chargen_question_number());
+        text = question_text(chargen_question_number());
         if (y > 120 && y < 135) { if (g_scroll > 0) { g_scroll--; } return; }
         if (y > 183 && y < 200) { if (g_scroll < 100) { g_scroll++; } return; }
         row = 0;
@@ -1040,7 +1040,7 @@ void og_chargen_click(int x, int y, int pixel)
         }
         return;
     }
-    if (g_mode == OG_UI_CLASS_LIST) {
+    if (g_mode == UI_CLASS_LIST) {
         which = list_row(x, y);
         if (which < 0) {
             return;
@@ -1053,56 +1053,56 @@ void og_chargen_click(int x, int y, int pixel)
         }
         return;
     }
-    if (g_mode == OG_UI_CLASS_YES) {
-        if (choice_at(x, y, OG_CHOICE_X0)) {
+    if (g_mode == UI_CLASS_YES) {
+        if (choice_at(x, y, CHOICE_X0)) {
             accept_class();
-        } else if (choice_at(x, y, OG_CHOICE_X1)) {
-            g_mode = OG_UI_CLASS_LIST;
+        } else if (choice_at(x, y, CHOICE_X1)) {
+            g_mode = UI_CLASS_LIST;
             caption("Choose a class");
         }
         return;
     }
     /* butn02i0.img: the top generates the background, the bottom asks. */
-    if (g_mode == OG_UI_BG_HOW) {
+    if (g_mode == UI_BG_HOW) {
         if (x > 76 && x < 243 && y > 58 && y < 111) {
-            *og_character() = g_before_background;
+            *character_state() = g_before_background;
             g_question = 0;
             while (g_question < 12) {
                 int count;
-                count = g_background ? g_background(og_character()->klass, g_question, -1) : 8;
+                count = g_background ? g_background(character_state()->klass, g_question, -1) : 8;
                 if (count < 1) { count = 1; }
                 biography_answer(roll(0, count - 1));
             }
-            g_mode = OG_UI_REPUTE;
+            g_mode = UI_REPUTE;
             caption("Reputation. Enter continues.");
         } else if (x > 76 && x < 243 && y > 130 && y < 176) {
-            *og_character() = g_before_background;
+            *character_state() = g_before_background;
             g_question = 0;
-            g_mode = OG_UI_BIOG;
+            g_mode = UI_BIOG;
             caption("Biography. Y accepts, Escape returns.");
         }
         return;
     }
-    if (g_mode == OG_UI_BIOG) {
+    if (g_mode == UI_BIOG) {
         which = answer_box(x, y);
         if (which) {
             biography_answer(which - 1);
         }
         return;
     }
-    if (g_mode == OG_UI_REPUTE) {
-        g_mode = OG_UI_NAME;
+    if (g_mode == UI_REPUTE) {
+        g_mode = UI_NAME;
         caption("Name");
         return;
     }
-    if (g_mode == OG_UI_NAME) {
+    if (g_mode == UI_NAME) {
         if (ok_click(x, y)) {
-            og_chargen_key(13);
+            chargen_key(13);
         }
         return;
     }
-    if (g_mode == OG_UI_FACE || g_mode == OG_UI_SUMMARY) {
-        who = og_character();
+    if (g_mode == UI_FACE || g_mode == UI_SUMMARY) {
+        who = character_state();
         /* chargen_face_previous / chargen_face_next. */
         if (x > 245 && x < 286 && y > 69 && y < 77) {
             who->face = who->face <= 0 ? 9 : who->face - 1;
@@ -1113,25 +1113,25 @@ void og_chargen_click(int x, int y, int pixel)
             return;
         }
     }
-    if (g_mode == OG_UI_FACE || g_mode == OG_UI_ATTR || g_mode == OG_UI_SKILL
-        || g_mode == OG_UI_REFLEX || g_mode == OG_UI_SUMMARY) {
+    if (g_mode == UI_FACE || g_mode == UI_ATTR || g_mode == UI_SKILL
+        || g_mode == UI_REFLEX || g_mode == UI_SUMMARY) {
         if (ok_click(x, y)) {
-            if (g_mode == OG_UI_FACE) {
-                g_mode = OG_UI_ATTR;
+            if (g_mode == UI_FACE) {
+                g_mode = UI_ATTR;
                 roll_attributes();
                 caption("Bonus points. Select an attribute, then the diamond.");
-            } else if (g_mode == OG_UI_ATTR) {
+            } else if (g_mode == UI_ATTR) {
                 if (g_pool) { g_notice = "You must distribute your bonus points."; return; }
-                g_mode = OG_UI_SKILL;
+                g_mode = UI_SKILL;
                 caption("Skill bonuses. Six in each group.");
-            } else if (g_mode == OG_UI_SKILL) {
+            } else if (g_mode == UI_SKILL) {
                 if (g_skill_bonus[0] != 6 || g_skill_bonus[1] != 6 || g_skill_bonus[2] != 6) {
                     g_notice = "You must distribute your bonus points."; return;
                 }
-                g_mode = OG_UI_REFLEX;
+                g_mode = UI_REFLEX;
                 caption("Reflexes, average.");
-            } else if (g_mode == OG_UI_REFLEX) {
-                g_mode = OG_UI_SUMMARY;
+            } else if (g_mode == UI_REFLEX) {
+                g_mode = UI_SUMMARY;
                 caption("Summary.");
             } else {
                 if (g_pool || g_skill_bonus[0] != 6 || g_skill_bonus[1] != 6 || g_skill_bonus[2] != 6) {
@@ -1142,34 +1142,34 @@ void og_chargen_click(int x, int y, int pixel)
             return;
         }
     }
-    summary = g_mode == OG_UI_SUMMARY;
+    summary = g_mode == UI_SUMMARY;
     if (summary && in_rect(x, y, 8, 2, 315, 13)) {
         g_rename = 1;
-        g_mode = OG_UI_NAME;
+        g_mode = UI_NAME;
         return;
     }
-    if (g_mode == OG_UI_ATTR || summary) {
+    if (g_mode == UI_ATTR || summary) {
         for (i = 0; i < 8; i++) {
-            y0 = og_chargen_attr_y(i);
+            y0 = chargen_attr_y(i);
             if (x > 7 && x < 42 && y > y0 && y < y0 + 19) {
                 g_attr_sel = i;
             }
         }
-        y0 = og_chargen_attr_y(g_attr_sel) + 1;
+        y0 = chargen_attr_y(g_attr_sel) + 1;
         if (x > 45 && x < 57) {
             if (y > y0 && y < y0 + 6) { change_attr(1); }
             if (y > y0 + 13 && y < y0 + 19) { change_attr(-1); }
         }
         if (x > 263 && x < 301 && y > 142 && y < 168) {
             if (summary) {
-                og_chargen_begin();
-                g_mode = OG_UI_MAP;
+                chargen_begin();
+                g_mode = UI_MAP;
             } else {
                 roll_attributes();
             }
         }
         if (!summary && x > 162 && x < 232) {
-            who = og_character();
+            who = character_state();
             if (y > 162 && y < 169) {
                 mem_copy(g_saved_attr, who->attribute, sizeof(g_saved_attr));
                 mem_copy(g_saved_bonus, g_attr_bonus, sizeof(g_saved_bonus));
@@ -1182,34 +1182,34 @@ void og_chargen_click(int x, int y, int pixel)
             }
         }
     }
-    if (g_mode == OG_UI_SKILL || summary) {
+    if (g_mode == UI_SKILL || summary) {
         for (i = 0; i < 12; i++) {
-            y0 = og_chargen_skill_y(i);
+            y0 = chargen_skill_y(i);
             if (x > 66 && x < 174 && y > y0 && y < y0 + 8) {
                 g_skill_sel[i < 3 ? 0 : (i < 6 ? 1 : 2)] = i;
             }
         }
         for (i = 0; i < 3; i++) {
-            y0 = og_chargen_skill_y(g_skill_sel[i]);
+            y0 = chargen_skill_y(g_skill_sel[i]);
             if (y > y0 && y < y0 + 8) {
                 if (x > 203 && x < 213) { change_skill(i, -1); }
                 if (x > 229 && x < 239) { change_skill(i, 1); }
             }
         }
     }
-    if (g_mode == OG_UI_REFLEX || summary) {
+    if (g_mode == UI_REFLEX || summary) {
         if (summary) { x -= 119; y += 53; }
         for (i = 0; i < 5; i++) {
             if (x > 127 && x < 192 && y > 148 + i * 9 && y < 156 + i * 9) {
-                og_character()->reflexes = i;
+                character_state()->reflexes = i;
             }
         }
     }
 }
 
-void og_chargen_key(int ch)
+void chargen_key(int ch)
 {
-    OgCharacter *who;
+    CharacterState *who;
     int n;
 
     if (ch == 0) {
@@ -1217,13 +1217,13 @@ void og_chargen_key(int ch)
     }
     g_revision++;
     if (g_notice[0]) { g_notice = ""; return; }
-    if (g_mode == OG_UI_TITLE) {
+    if (g_mode == UI_TITLE) {
         if (ch == 's' || ch == 'S') {
-            og_chargen_begin();
-            g_mode = OG_UI_MAP;
+            chargen_begin();
+            g_mode = UI_MAP;
             caption("Select your home province");
         } else if (ch == 'l' || ch == 'L') {
-            g_mode = OG_UI_LOAD;
+            g_mode = UI_LOAD;
             caption("Load game");
         } else if (ch == 'e' || ch == 'E' || ch == 27) {
             g_text = -1;
@@ -1231,21 +1231,21 @@ void og_chargen_key(int ch)
         }
         return;
     }
-    if (g_mode == OG_UI_LOAD) {
+    if (g_mode == UI_LOAD) {
         if (ch == 27) {
-            g_mode = OG_UI_TITLE;
+            g_mode = UI_TITLE;
             g_text = 0;
             caption("L load   S start   E exit");
         }
         return;
     }
-    if (g_mode == OG_UI_MAP && ch == 27) {
-        g_mode = OG_UI_TITLE;
+    if (g_mode == UI_MAP && ch == 27) {
+        g_mode = UI_TITLE;
         g_text = 0;
         caption("L load   S start   E exit");
         return;
     }
-    if (g_mode == OG_UI_RACE) {
+    if (g_mode == UI_RACE) {
         if (ch == 'y' || ch == 'Y') {
             accept_race();
         } else if (ch == 'n' || ch == 'N' || ch == 27) {
@@ -1254,7 +1254,7 @@ void og_chargen_key(int ch)
         }
         return;
     }
-    if (g_mode == OG_UI_GENDER) {
+    if (g_mode == UI_GENDER) {
         if (ch == 'm' || ch == 'M') {
             pick_sex(0);
         } else if (ch == 'f' || ch == 'F') {
@@ -1262,43 +1262,43 @@ void og_chargen_key(int ch)
         }
         return;
     }
-    if (g_mode == OG_UI_CLASS_YES && (ch == 'y' || ch == 'Y')) {
+    if (g_mode == UI_CLASS_YES && (ch == 'y' || ch == 'Y')) {
         accept_class();
         return;
     }
-    if (ch == 27 && (g_mode == OG_UI_CLASS_LIST || g_mode == OG_UI_CLASS_HOW || g_mode == OG_UI_BG_HOW)) {
-        g_mode = g_mode == OG_UI_BG_HOW ? OG_UI_CLASS_LIST : (g_mode == OG_UI_CLASS_LIST ? OG_UI_CLASS_HOW : OG_UI_MAP);
+    if (ch == 27 && (g_mode == UI_CLASS_LIST || g_mode == UI_CLASS_HOW || g_mode == UI_BG_HOW)) {
+        g_mode = g_mode == UI_BG_HOW ? UI_CLASS_LIST : (g_mode == UI_CLASS_LIST ? UI_CLASS_HOW : UI_MAP);
         return;
     }
-    if (g_mode == OG_UI_CLASS_LIST && (ch == 1001 || ch == 1002)) {
+    if (g_mode == UI_CLASS_LIST && (ch == 1001 || ch == 1002)) {
         g_list_sel += ch == 1001 ? -1 : 1;
         if (g_list_sel < 0) { g_list_sel = 0; }
-        if (g_list_sel >= OG_LIST_N) { g_list_sel = OG_LIST_N - 1; }
+        if (g_list_sel >= LIST_N) { g_list_sel = LIST_N - 1; }
         if (g_list_sel < g_list_top) { g_list_top = g_list_sel; }
-        if (g_list_sel >= g_list_top + OG_LIST_VIS) { g_list_top = g_list_sel - OG_LIST_VIS + 1; }
+        if (g_list_sel >= g_list_top + LIST_VIS) { g_list_top = g_list_sel - LIST_VIS + 1; }
         return;
     }
-    if (g_mode == OG_UI_CLASS_LIST && ch == 13) {
+    if (g_mode == UI_CLASS_LIST && ch == 13) {
         open_class(g_list_sel);
         return;
     }
-    if (g_mode == OG_UI_CLASS_YES && (ch == 27 || ch == 'n' || ch == 'N')) {
-        g_mode = OG_UI_CLASS_LIST;
+    if (g_mode == UI_CLASS_YES && (ch == 27 || ch == 'n' || ch == 'N')) {
+        g_mode = UI_CLASS_LIST;
         caption("Choose a class");
         return;
     }
-    if (g_mode == OG_UI_QUESTIONS) {
-        if (ch == 27) { g_mode = OG_UI_CLASS_HOW; }
+    if (g_mode == UI_QUESTIONS) {
+        if (ch == 27) { g_mode = UI_CLASS_HOW; }
         else if (ch >= 'a' && ch <= 'c') { question_answer(ch - 'a'); }
         else if (ch >= 'A' && ch <= 'C') { question_answer(ch - 'A'); }
         else if (ch == 1001 && g_scroll > 0) { g_scroll--; }
         else if (ch == 1002 && g_scroll < 100) { g_scroll++; }
         return;
     }
-    if (g_mode == OG_UI_MAKER) {
+    if (g_mode == UI_MAKER) {
         if (ch == 27) {
             if (g_maker_page) { g_maker_page = 0; }
-            else { g_mode = OG_UI_CLASS_LIST; }
+            else { g_mode = UI_CLASS_LIST; }
         } else if (g_maker_page == 7) {
             n = 0; while (g_custom.name[n]) { n++; }
             if (ch == 13) { g_maker_page = 0; }
@@ -1308,29 +1308,29 @@ void og_chargen_key(int ch)
         }
         return;
     }
-    if (g_mode == OG_UI_BIOG) {
+    if (g_mode == UI_BIOG) {
         if (ch >= '1' && ch <= '8') { biography_answer(ch - '1'); return; }
         if (ch == 27) {
-            g_mode = OG_UI_BG_HOW;
+            g_mode = UI_BG_HOW;
             caption("Generated background, or questions.");
         } else if (ch == 'y' || ch == 'Y') {
             biography_answer(0);
         }
         return;
     }
-    if (g_mode == OG_UI_REPUTE && ch == 13) {
-        g_mode = OG_UI_NAME;
+    if (g_mode == UI_REPUTE && ch == 13) {
+        g_mode = UI_NAME;
         caption("Name");
         return;
     }
-    if (g_mode == OG_UI_NAME) {
-        who = og_character();
+    if (g_mode == UI_NAME) {
+        who = character_state();
         n = 0;
-        while (who->name[n] && n < OG_NAME - 1) {
+        while (who->name[n] && n < NAME_LEN - 1) {
             n++;
         }
         if (ch == 13 && n > 0) {
-            g_mode = g_rename ? OG_UI_SUMMARY : OG_UI_FACE;
+            g_mode = g_rename ? UI_SUMMARY : UI_FACE;
             g_rename = 0;
             caption("Face");
             return;
@@ -1339,10 +1339,10 @@ void og_chargen_key(int ch)
             who->name[n - 1] = 0;
             return;
         }
-        if (ch >= 33 && ch <= 126 && n < OG_NAME - 1) {
+        if (ch >= 33 && ch <= 126 && n < NAME_LEN - 1) {
             who->name[n] = (char)ch;
             who->name[n + 1] = 0;
-        } else if (ch == ' ' && n > 0 && n < OG_NAME - 1) {
+        } else if (ch == ' ' && n > 0 && n < NAME_LEN - 1) {
             who->name[n] = ' ';
             who->name[n + 1] = 0;
         }
@@ -1350,14 +1350,14 @@ void og_chargen_key(int ch)
 }
 
 /* Exit click uses text id -1 so the frame can see it without a second channel. */
-int og_chargen_quit(void)
+int chargen_quit(void)
 {
-    return g_mode == OG_UI_TITLE && g_text < 0;
+    return g_mode == UI_TITLE && g_text < 0;
 }
 
-void og_chargen_resume(void)
+void chargen_resume(void)
 {
-    g_mode = OG_UI_WORLD;
+    g_mode = UI_WORLD;
     g_text = 0;
     g_revision++;
     caption("Privateer's Hold");

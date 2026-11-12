@@ -7,70 +7,70 @@
 
 /* See law.h. */
 
-int og_law_valid(const OgLaw *law)
+int law_valid(const LawState *law)
 {
     int i;
 
-    for (i = 0; i < OG_REGIONS; i++) {
+    for (i = 0; i < REGIONS; i++) {
         if (law->punishment[i] > 3) {
             return 0;
         }
     }
-    return law->crime >= 0 && law->crime <= OG_CRIMES;
+    return law->crime >= 0 && law->crime <= CRIMES;
 }
 
 static int g_serving;
 
-void og_law_serving(int on)
+void law_serving(int on)
 {
     g_serving = on != 0;
 }
 
-int og_law_is_serving(void)
+int law_is_serving(void)
 {
     return g_serving;
 }
 
-int og_crime_loss(int crime)
+int crime_loss(int crime)
 {
-    return crime >= 1 && crime <= OG_CRIMES ? g_crime_loss[crime - 1] : 0;
+    return crime >= 1 && crime <= CRIMES ? g_crime_loss[crime - 1] : 0;
 }
 
-const char *og_crime_name(int crime)
+const char *crime_name(int crime)
 {
     return crime >= 1 && crime <= 14 ? g_crime_name[crime - 1] : "";
 }
 
-void og_law_note(int crime)
+void law_note(int crime)
 {
-    og_law()->crime = crime;
+    law_state()->crime = crime;
 }
 
-int og_gold_can_afford(int amount)
+int gold_can_afford(int amount)
 {
-    return og_gold_total() >= amount;
+    return gold_total() >= amount;
 }
 
-void og_gold_spend(int amount)
+void gold_spend(int amount)
 {
-    OgCharacter *c;
-    df_u32 ids[OG_OBJECTS];
+    CharacterState *c;
+    df_u32 ids[OBJECTS];
     int n, i, left;
 
-    c = og_character();
+    c = character_state();
     if (c->gold >= amount) {
         c->gold -= amount;
         return;
     }
-    n = og_inventory_rows(og_state()->inventory_id, -1, ids, OG_OBJECTS);
-    if (n > OG_OBJECTS) {
-        n = OG_OBJECTS;
+    n = inventory_rows(game_state()->inventory_id, -1, ids, OBJECTS);
+    if (n > OBJECTS) {
+        n = OBJECTS;
     }
     /* A letter that covers it all is made less by it. */
     for (i = 0; i < n; i++) {
-        OgObject *it;
+        ObjectInfo *it;
 
-        it = og_object_edit(ids[i]);
+        it = object_edit(ids[i]);
         if (it && it->group == 27 && it->index == 2 && it->value >= amount) {
             it->value -= amount;
             return;
@@ -79,15 +79,15 @@ void og_gold_spend(int amount)
     /* Else the letters in order: one worth no more than what is left is used up, a bigger one is lessened and ends it. */
     left = amount;
     for (i = 0; i < n && left; i++) {
-        OgObject *it;
+        ObjectInfo *it;
 
-        it = og_object_edit(ids[i]);
+        it = object_edit(ids[i]);
         if (!it || it->group != 27 || it->index != 2) {
             continue;
         }
         if (it->value <= left) {
             left -= it->value;
-            og_object_delete(ids[i]);
+            object_delete(ids[i]);
         } else {
             it->value -= left;
             left = 0;
@@ -101,69 +101,69 @@ void og_gold_spend(int amount)
 
 static void gold_remove_all(void)
 {
-    df_u32 ids[OG_OBJECTS];
+    df_u32 ids[OBJECTS];
     int n, i;
 
-    og_character()->gold = 0;
-    n = og_inventory_rows(og_state()->inventory_id, -1, ids, OG_OBJECTS);
-    for (i = 0; i < n && i < OG_OBJECTS; i++) {
-        const OgObject *it;
+    character_state()->gold = 0;
+    n = inventory_rows(game_state()->inventory_id, -1, ids, OBJECTS);
+    for (i = 0; i < n && i < OBJECTS; i++) {
+        const ObjectInfo *it;
 
-        it = og_object(ids[i]);
+        it = object_at(ids[i]);
         if (it && it->group == 27 && it->index == 2) {
-            og_object_delete(ids[i]);
+            object_delete(ids[i]);
         }
     }
 }
 
-void og_crime_penalty(int region, int crime)
+void crime_penalty(int region, int crime)
 {
     int loss, f;
 
-    loss = og_crime_loss(crime);
-    og_region_add_legal(region, -(int)(short)loss);
-    f = og_faction_of_type(region, 15);
+    loss = crime_loss(crime);
+    region_add_legal(region, -(int)(short)loss);
+    f = faction_of_type(region, 15);
     if (f >= 0) {
-        og_faction_change_reputation(og_faction_def(f)->id, -(loss >> 1));
+        faction_change_reputation(faction_def(f)->id, -(loss >> 1));
     }
 }
 
-void og_court_restore_reputation(int region, int change)
+void court_restore_reputation(int region, int change)
 {
     int f;
 
-    og_region_add_legal(region, change - 1);
-    f = og_faction_of_type(region, 15);
+    region_add_legal(region, change - 1);
+    f = faction_of_type(region, 15);
     if (f >= 0) {
-        og_faction_change_reputation(og_faction_def(f)->id, (-(change - 1)) / 2);
+        faction_change_reputation(faction_def(f)->id, (-(change - 1)) / 2);
     }
 }
 
-void og_court_restore_vitals(void)
+void court_restore_vitals(void)
 {
-    OgCharacter *c;
+    CharacterState *c;
 
-    c = og_character();
+    c = character_state();
     c->health = c->max_health;
     c->magicka = c->max_magicka;
-    c->fatigue = (c->attribute[OG_STR] + c->attribute[OG_END]) << 6;
+    c->fatigue = (c->attribute[ATTR_STR] + c->attribute[ATTR_END]) << 6;
 }
 
 static int rand_range(int low, int high)
 {
-    return og_random_range(low, high);
+    return random_range(low, high);
 }
 
-int og_court_open(OgCourt *court, int crime, int region, const OgCourtGuilds *guilds, OgCourtStep *step)
+int court_open(Court *court, int crime, int region, const CourtGuilds *guilds, CourtStep *step)
 {
     int legal, penalty, half, fine, steps, i, gold;
 
     mem_zero(step, sizeof(*step));
-    if (crime < 1 || crime > OG_CRIMES) {
+    if (crime < 1 || crime > CRIMES) {
         return 0;
     }
     crime--;
-    legal = og_region_legal(region);
+    legal = region_legal(region);
     court->open = 1;
     court->crime = crime;
     court->region = region;
@@ -191,13 +191,13 @@ int og_court_open(OgCourt *court, int crime, int region, const OgCourtGuilds *gu
     steps = fine / 40;
     court->days = 0;
     for (fine = i = 0; i < steps; i++) {
-        if (og_random_range(0, 32767) & 1) {
+        if (random_range(0, 32767) & 1) {
             fine += 40;
         } else {
             court->days += 3;
         }
     }
-    gold = og_gold_total();
+    gold = gold_total();
     if (gold < fine) {
         court->days += (fine - gold) / 40;
         fine -= fine - gold;
@@ -205,51 +205,51 @@ int og_court_open(OgCourt *court, int crime, int region, const OgCourtGuilds *gu
     court->fine = fine;
     /* The Dark Brotherhood clears murder and assault, the Thieves Guild the crimes of the hand; rank against a roll of 0..19. */
     if ((crime == 4 || crime == 3) && guilds && guilds->brotherhood_rank >= 0 && guilds->brotherhood_rank >= rand_range(0, 19)) {
-        step->text[0] = OG_TEXT_GUILD_BROTHERHOOD;
+        step->text[0] = TEXT_GUILD_BROTHERHOOD;
     } else if ((crime <= 2 || crime == 11) && guilds && guilds->thieves_rank >= 0 && guilds->thieves_rank >= rand_range(0, 19)) {
-        step->text[0] = OG_TEXT_GUILD_THIEVES;
+        step->text[0] = TEXT_GUILD_THIEVES;
     }
     if (step->text[0]) {
-        og_court_restore_vitals();
-        og_court_restore_reputation(region, court->change);
+        court_restore_vitals();
+        court_restore_reputation(region, court->change);
         court->open = 0;
         step->done = 1;
         return 1;
     }
-    step->text[0] = OG_TEXT_COURT_ASK;
+    step->text[0] = TEXT_COURT_ASK;
     return 1;
 }
 
 /* A banishment or the death sentence: the flag on the region and where the player is put. */
-static void punish(OgCourt *court, int severity, OgCourtStep *step)
+static void punish(Court *court, int severity, CourtStep *step)
 {
     if (severity == 0) {
-        step->text[0] = OG_TEXT_COURT_BANISHED;
-        og_law()->punishment[court->region] |= 1;
+        step->text[0] = TEXT_COURT_BANISHED;
+        law_state()->punishment[court->region] |= 1;
         step->flag = 1;
-        step->release = OG_RELEASE_STREET;
+        step->release = RELEASE_STREET;
     } else {
-        step->text[0] = OG_TEXT_COURT_DEATH;
-        og_law()->punishment[court->region] |= 2;
+        step->text[0] = TEXT_COURT_DEATH;
+        law_state()->punishment[court->region] |= 2;
         step->flag = 2;
-        step->release = OG_RELEASE_BANISHED;
+        step->release = RELEASE_BANISHED;
     }
     step->done = 1;
     court->open = 0;
 }
 
 /* State 3: set free in the street, the days served, health restored and the sentence's reputation given back. */
-static void serve(OgCourt *court, OgCourtStep *step)
+static void serve(Court *court, CourtStep *step)
 {
-    step->release = OG_RELEASE_STREET;
+    step->release = RELEASE_STREET;
     step->serve_days = court->days;
-    og_court_restore_vitals();
-    og_court_restore_reputation(court->region, court->change);
+    court_restore_vitals();
+    court_restore_reputation(court->region, court->change);
     step->done = 1;
     court->open = 0;
 }
 
-void og_court_accept(OgCourt *court, OgCourtStep *step)
+void court_accept(Court *court, CourtStep *step)
 {
     int gold;
 
@@ -264,15 +264,15 @@ void og_court_accept(OgCourt *court, OgCourtStep *step)
     /* Guilty and accepting: half the fine and half the days. */
     court->fine >>= 1;
     court->days >>= 1;
-    gold = og_gold_total();
+    gold = gold_total();
     if (gold >= court->fine) {
-        og_gold_spend(court->fine);
+        gold_spend(court->fine);
         step->gold_taken = court->fine;
-        og_court_restore_reputation(court->region, court->change);
+        court_restore_reputation(court->region, court->change);
         if (court->days) {
             serve(court, step);
         } else {
-            step->release = OG_RELEASE_STREET;
+            step->release = RELEASE_STREET;
             step->done = 1;
             court->open = 0;
         }
@@ -282,13 +282,13 @@ void og_court_accept(OgCourt *court, OgCourtStep *step)
     court->days += (court->fine - gold) / 40 + 1;
     step->gold_taken = gold;
     gold_remove_all();
-    og_court_restore_reputation(court->region, court->change);
-    step->text[0] = OG_TEXT_COURT_SHORT;
-    step->text[1] = OG_TEXT_COURT_SENTENCE;
+    court_restore_reputation(court->region, court->change);
+    step->text[0] = TEXT_COURT_SHORT;
+    step->text[1] = TEXT_COURT_SENTENCE;
     serve(court, step);
 }
 
-void og_court_plead(OgCourt *court, int streetwise, int skill, int personality, OgCourtStep *step)
+void court_plead(Court *court, int streetwise, int skill, int personality, CourtStep *step)
 {
     int chance, legal, roll;
 
@@ -297,7 +297,7 @@ void og_court_plead(OgCourt *court, int streetwise, int skill, int personality, 
     if (!court->open) {
         return;
     }
-    legal = og_region_legal(court->region);
+    legal = region_legal(court->region);
     chance = (personality + skill) / 2 + legal;
     if (chance < 5) {
         chance = 5;
@@ -306,8 +306,8 @@ void og_court_plead(OgCourt *court, int streetwise, int skill, int personality, 
     }
     if (rand_range(1, 100) <= chance) {
         /* Not guilty: the court says so and sets them free where it found them. */
-        step->text[0] = OG_TEXT_COURT_ACQUITTED;
-        step->release = OG_RELEASE_ACQUITTED;
+        step->text[0] = TEXT_COURT_ACQUITTED;
+        step->release = RELEASE_ACQUITTED;
         step->done = 1;
         court->open = 0;
         return;
@@ -323,17 +323,17 @@ void og_court_plead(OgCourt *court, int streetwise, int skill, int personality, 
         court->fine <<= 1;
     }
     /* The fine is changed and not charged: the days are what is served (as the original does). */
-    step->text[0] = OG_TEXT_COURT_SENTENCE;
+    step->text[0] = TEXT_COURT_SENTENCE;
     serve(court, step);
 }
 
 /* ---- Guards ---- */
 
-static OgGuardWorld g_world;
+static GuardWorld g_world;
 static float g_guard_timer = -1.0f;
 static int g_asked;
 
-void og_guards_set_world(const OgGuardWorld *world)
+void guards_set_world(const GuardWorld *world)
 {
     if (world) {
         g_world = *world;
@@ -342,32 +342,32 @@ void og_guards_set_world(const OgGuardWorld *world)
     }
 }
 
-int og_guards_witnesses(void)
+int guards_witnesses(void)
 {
     return g_world.witnesses ? g_world.witnesses() : 0;
 }
 
-int og_guards_present(void)
+int guards_present(void)
 {
     return g_world.present && g_world.present();
 }
 
-float og_guards_timer(void)
+float guards_timer(void)
 {
     return g_guard_timer;
 }
 
-void og_guards_reset(void)
+void guards_reset(void)
 {
     g_guard_timer = -1.0f;
     g_asked = 0;
 }
 
-int og_guards_summon(int now)
+int guards_summon(int now)
 {
     int made, n, bits;
 
-    if ((g_world.in_dungeon && g_world.in_dungeon()) || (g_world.count && g_world.count() > OG_GUARDS_CREATURES_MOST)) {
+    if ((g_world.in_dungeon && g_world.in_dungeon()) || (g_world.count && g_world.count() > GUARDS_CREATURES_MOST)) {
         return 0;
     }
     made = 0;
@@ -390,7 +390,7 @@ int og_guards_summon(int now)
         if (g_world.convert) {
             return g_world.convert(1);
         }
-        return og_guards_summon(1);
+        return guards_summon(1);
     }
     if (bits & 1) {
         g_guard_timer = (float)rand_range(5, 10);
@@ -398,7 +398,7 @@ int og_guards_summon(int now)
     return 0;
 }
 
-void og_guards_tick(float seconds)
+void guards_tick(float seconds)
 {
     if (g_guard_timer < 0.0f) {
         return;
@@ -406,51 +406,51 @@ void og_guards_tick(float seconds)
     g_guard_timer -= seconds;
     if (g_guard_timer <= 0.0f) {
         g_guard_timer = -1.0f;
-        og_guards_summon(1);
+        guards_summon(1);
     }
 }
 
-int og_law_blow(int region)
+int law_blow(int region)
 {
-    if (g_asked || !og_guards_present()) {
-        return OG_BLOW_FREE;
+    if (g_asked || !guards_present()) {
+        return BLOW_FREE;
     }
-    if (og_law()->crime >= 1) {
-        og_crime_penalty(region, og_law()->crime);
+    if (law_state()->crime >= 1) {
+        crime_penalty(region, law_state()->crime);
     }
     g_asked = 1;
-    return OG_BLOW_ASK;
+    return BLOW_ASK;
 }
 
-void og_law_calm(void)
+void law_calm(void)
 {
-    if (!og_guards_present()) {
+    if (!guards_present()) {
         g_asked = 0;
     }
 }
 
-int og_law_guards_or_court(int surrendered, int region, const OgCourtGuilds *guilds, OgCourt *court, OgCourtStep *step)
+int law_guards_or_court(int surrendered, int region, const CourtGuilds *guilds, Court *court, CourtStep *step)
 {
     int standing;
 
-    og_character()->health = 1;
+    character_state()->health = 1;
     court->open = 0;
-    standing = og_region_legal(region);
+    standing = region_legal(region);
     mem_zero(step, sizeof(*step));
     if (standing < -20 && !surrendered) {
-        return OG_ARREST_DEATH;
+        return ARREST_DEATH;
     }
-    if (standing >= -20 && standing <= 0 && (og_random_range(0, 32767) & 1) && !surrendered) {
-        return OG_ARREST_DEATH;
+    if (standing >= -20 && standing <= 0 && (random_range(0, 32767) & 1) && !surrendered) {
+        return ARREST_DEATH;
     }
-    og_court_open(court, og_law()->crime, region, guilds, step);
-    return OG_ARREST_COURT;
+    court_open(court, law_state()->crime, region, guilds, step);
+    return ARREST_COURT;
 }
 
-void og_guards_dismiss(void)
+void guards_dismiss(void)
 {
     if (g_world.dismiss) {
         g_world.dismiss();
     }
-    og_guards_reset();
+    guards_reset();
 }

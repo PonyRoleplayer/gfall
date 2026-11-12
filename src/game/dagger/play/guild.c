@@ -8,16 +8,16 @@
 
 /* See guild.h. */
 
-void og_guilds_clear(void)
+void guilds_clear(void)
 {
-    mem_zero(og_guilds(), sizeof(OgGuilds));
+    mem_zero(guilds_state(), sizeof(GuildsState));
 }
 
-int og_guilds_valid(const OgGuilds *g)
+int guilds_valid(const GuildsState *g)
 {
     int i;
 
-    for (i = 0; i < OG_MEMBERSHIPS; i++) {
+    for (i = 0; i < MEMBERSHIPS; i++) {
         if (g->m[i].used && (g->m[i].kind < 0 || g->m[i].kind > 255 || g->m[i].faction < 0)) {
             return 0;
         }
@@ -25,7 +25,7 @@ int og_guilds_valid(const OgGuilds *g)
     return g->thieves_count >= 0 && g->thieves_count <= 100 && g->brotherhood_count >= 0 && g->brotherhood_count <= 100;
 }
 
-int og_guild_kind_of_faction(int faction)
+int guild_kind_of_faction(int faction)
 {
     static const short knights[10] = { 368, 408, 409, 410, 411, 413, 414, 415, 416, 417 };
     static const short temples[8][2] = { {21, 82}, {22, 84}, {24, 28}, {26, 92}, {27, 94}, {29, 98}, {33, 106}, {35, 36} };
@@ -40,48 +40,48 @@ int og_guild_kind_of_faction(int faction)
     }
     for (i = 0; i < 8; i++) {
         if (faction == temples[i][0] || faction == temples[i][1]) {
-            return OG_KIND_TEMPLE + 14 + i;
+            return KIND_TEMPLE + 14 + i;
         }
     }
     for (i = 0; i < 10; i++) {
         if (faction == knights[i]) {
-            return OG_KIND_KNIGHT + 4 + i;
+            return KIND_KNIGHT + 4 + i;
         }
     }
     return -1;
 }
 
-OgMembership *og_guild_find_faction(int faction)
+Membership *guild_find_faction(int faction)
 {
     int i;
 
-    for (i = 0; i < OG_MEMBERSHIPS; i++) {
-        if (og_guilds()->m[i].used && og_guilds()->m[i].faction == faction) {
-            return &og_guilds()->m[i];
+    for (i = 0; i < MEMBERSHIPS; i++) {
+        if (guilds_state()->m[i].used && guilds_state()->m[i].faction == faction) {
+            return &guilds_state()->m[i];
         }
     }
     return 0;
 }
 
-OgMembership *og_guild_find_kind(int kind)
+Membership *guild_find_kind(int kind)
 {
     int i;
 
-    for (i = 0; i < OG_MEMBERSHIPS; i++) {
-        if (og_guilds()->m[i].used && og_guilds()->m[i].kind == kind) {
-            return &og_guilds()->m[i];
+    for (i = 0; i < MEMBERSHIPS; i++) {
+        if (guilds_state()->m[i].used && guilds_state()->m[i].kind == kind) {
+            return &guilds_state()->m[i];
         }
     }
     return 0;
 }
 
-OgMembership *og_guild_find_bits(int bits)
+Membership *guild_find_bits(int bits)
 {
     int i;
 
-    for (i = 0; i < OG_MEMBERSHIPS; i++) {
-        if (og_guilds()->m[i].used && (og_guilds()->m[i].kind & bits)) {
-            return &og_guilds()->m[i];
+    for (i = 0; i < MEMBERSHIPS; i++) {
+        if (guilds_state()->m[i].used && (guilds_state()->m[i].kind & bits)) {
+            return &guilds_state()->m[i];
         }
     }
     return 0;
@@ -97,7 +97,7 @@ static int best_skill(int guild, int skip, int *which)
     best = -1;
     *which = -1;
     for (i = 0; list[i] != 255; i++) {
-        value = og_character()->skill[list[i]];
+        value = character_state()->skill[list[i]];
         if (value > best && list[i] != skip) {
             best = value;
             *which = list[i];
@@ -106,12 +106,12 @@ static int best_skill(int guild, int skip, int *which)
     return best;
 }
 
-int og_guild_join_check(int kind, int reputation)
+int guild_join_check(int kind, int reputation)
 {
     int guild, which, primary, secondary;
 
     guild = kind & 63;
-    if (guild >= OG_GUILDS) {
+    if (guild >= GUILDS) {
         return 2;
     }
     if (reputation < 0) {
@@ -125,12 +125,12 @@ int og_guild_join_check(int kind, int reputation)
     return secondary < 4 ? 2 : 0;
 }
 
-int og_guild_rank_for_skills(int kind, int reputation)
+int guild_rank_for_skills(int kind, int reputation)
 {
     int guild, which, rank, primary, secondary, step_primary, step_secondary;
 
     guild = kind & 63;
-    if (guild >= OG_GUILDS) {
+    if (guild >= GUILDS) {
         return 0;
     }
     rank = reputation / 10;
@@ -150,7 +150,7 @@ int og_guild_rank_for_skills(int kind, int reputation)
     return rank > 9 ? 9 : rank;
 }
 
-int og_guild_offer(int kind, int faction, int reputation, OgGuildStep *step)
+int guild_offer(int kind, int faction, int reputation, GuildStep *step)
 {
     int guild, refusal;
 
@@ -158,16 +158,16 @@ int og_guild_offer(int kind, int faction, int reputation, OgGuildStep *step)
     mem_zero(step, sizeof(*step));
     step->map = -1;
     guild = kind & 63;
-    if (guild >= OG_GUILDS || og_guild_find_faction(faction)) {
+    if (guild >= GUILDS || guild_find_faction(faction)) {
         return 0;
     }
-    if ((kind & OG_KIND_KNIGHT) && og_guild_find_bits(OG_KIND_KNIGHT)) {
+    if ((kind & KIND_KNIGHT) && guild_find_bits(KIND_KNIGHT)) {
         return 0;
     }
-    if ((kind & OG_KIND_TEMPLE) && og_guild_find_bits(OG_KIND_TEMPLE)) {
+    if ((kind & KIND_TEMPLE) && guild_find_bits(KIND_TEMPLE)) {
         return 0;
     }
-    refusal = og_guild_join_check(kind, reputation);
+    refusal = guild_join_check(kind, reputation);
     if (refusal == 2) {
         step->text = g_guild_message[guild][0];
     } else if (refusal == 1) {
@@ -179,17 +179,17 @@ int og_guild_offer(int kind, int faction, int reputation, OgGuildStep *step)
     return step->text != 0;
 }
 
-int og_guild_join(int kind, int faction, df_u32 now, OgGuildStep *step)
+int guild_join(int kind, int faction, df_u32 now, GuildStep *step)
 {
     int i;
-    OgMembership *m;
+    Membership *m;
 
     mem_zero(step, sizeof(*step));
     step->map = -1;
     m = 0;
-    for (i = 0; i < OG_MEMBERSHIPS && !m; i++) {
-        if (!og_guilds()->m[i].used) {
-            m = &og_guilds()->m[i];
+    for (i = 0; i < MEMBERSHIPS && !m; i++) {
+        if (!guilds_state()->m[i].used) {
+            m = &guilds_state()->m[i];
         }
     }
     if (!m) {
@@ -206,20 +206,20 @@ int og_guild_join(int kind, int faction, df_u32 now, OgGuildStep *step)
     return 1;
 }
 
-int og_guild_promote(int kind, int faction, int reputation, df_u32 now, OgGuildStep *step)
+int guild_promote(int kind, int faction, int reputation, df_u32 now, GuildStep *step)
 {
-    OgMembership *m;
+    Membership *m;
     int guild, delta, expelled, rank;
 
     mem_zero(step, sizeof(*step));
     step->map = -1;
     guild = kind & 63;
-    m = og_guild_find_faction(faction);
-    if (!m || guild >= OG_GUILDS || now - m->rank_time <= OG_RANK_MONTH) {
+    m = guild_find_faction(faction);
+    if (!m || guild >= GUILDS || now - m->rank_time <= RANK_MONTH) {
         return 0;
     }
     expelled = 0;
-    delta = og_guild_rank_for_skills(kind, reputation) - m->rank;
+    delta = guild_rank_for_skills(kind, reputation) - m->rank;
     if (reputation < 0) {
         delta = -(m->rank + 1);
         expelled = 1;
@@ -241,8 +241,8 @@ int og_guild_promote(int kind, int faction, int reputation, df_u32 now, OgGuildS
         step->text = 668;
         step->expelled = 1;
         m->used = 0;
-        if (guild == 3) { og_guilds()->thieves_count = 0; }
-        if (guild == 0) { og_guilds()->brotherhood_count = 0; }
+        if (guild == 3) { guilds_state()->thieves_count = 0; }
+        if (guild == 0) { guilds_state()->brotherhood_count = 0; }
         return 1;
     }
     if (delta < 0) {
@@ -255,40 +255,40 @@ int og_guild_promote(int kind, int faction, int reputation, df_u32 now, OgGuildS
     return 1;
 }
 
-int og_guild_local_temple_rank(int region)
+int guild_local_temple_rank(int region)
 {
-    OgMembership *m;
-    const OgFactionDef *f;
+    Membership *m;
+    const FactionDef *f;
 
-    m = og_guild_find_bits(OG_KIND_TEMPLE);
+    m = guild_find_bits(KIND_TEMPLE);
     if (!m) {
         return 0;
     }
-    f = og_faction_def(og_faction_index(m->faction));
+    f = faction_def(faction_index(m->faction));
     return f && f->region == region ? m->rank : 0;
 }
 
-int og_guild_is_local_knight(int region)
+int guild_is_local_knight(int region)
 {
-    OgMembership *m;
-    const OgFactionDef *f;
+    Membership *m;
+    const FactionDef *f;
 
-    m = og_guild_find_bits(OG_KIND_KNIGHT);
+    m = guild_find_bits(KIND_KNIGHT);
     if (!m) {
         return 0;
     }
-    f = og_faction_def(og_faction_index(m->faction));
+    f = faction_def(faction_index(m->faction));
     if (f && f->region == region) {
         return 1;
     }
     return m->rank >= 4;
 }
 
-void og_guild_count_crime(int crime, int count, df_u32 now)
+void guild_count_crime(int crime, int count, df_u32 now)
 {
-    OgGuilds *g;
+    GuildsState *g;
 
-    g = og_guilds();
+    g = guilds_state();
     if (crime == 5) {
         if (g->thieves_invite || g->thieves_count == 100) {
             return;
@@ -308,11 +308,11 @@ void og_guild_count_crime(int crime, int count, df_u32 now)
     }
 }
 
-int og_guild_invitation(df_u32 now, int outdoors, int *kind)
+int guild_invitation(df_u32 now, int outdoors, int *kind)
 {
-    OgGuilds *g;
+    GuildsState *g;
 
-    g = og_guilds();
+    g = guilds_state();
     if (g->thieves_count != 100 && g->thieves_invite && g->thieves_invite < now && outdoors) {
         g->thieves_count = 100;
         g->thieves_invite = 0;
@@ -328,7 +328,7 @@ int og_guild_invitation(df_u32 now, int outdoors, int *kind)
     return 1;
 }
 
-const char *og_guild_service_label(int person_faction)
+const char *guild_service_label(int person_faction)
 {
     int i;
 
@@ -340,7 +340,7 @@ const char *og_guild_service_label(int person_faction)
     return 0;
 }
 
-const char *og_guild_picture(int member)
+const char *guild_picture(int member)
 {
     /* "gild0%ci0.img": the digit is 0 for a stranger and 1 for a member (the VFS wants it as the others are named). */
     static char name[] = "GILD00I0.IMG";
@@ -349,7 +349,7 @@ const char *og_guild_picture(int member)
     return name;
 }
 
-int og_guild_price_scale(int rank)
+int guild_price_scale(int rank)
 {
     return ((10 - rank) << 8) / 10;
 }
@@ -363,28 +363,28 @@ typedef struct TempleRule {
 } TempleRule;
 
 static const TempleRule g_temple[8] = {
-    /* 142 */ { 0, {{453, 1}, {454, 4}, {455, 4}}, {OG_SVC_POTIONS, OG_SVC_POTION_MAKER, OG_SVC_SOULGEMS}, 241, 0 },
-    /* 143 */ { 2, {{462, 1}, {463, 6}, {464, 8}}, {OG_SVC_POTIONS, OG_SVC_POTION_MAKER, OG_SVC_DAEDRA}, 243, 460 },
-    /* 144 */ { 1, {{468, 2}, {469, 5}, {470, 7}}, {OG_SVC_POTIONS, OG_SVC_POTION_MAKER, OG_SVC_DAEDRA}, 245, 466 },
-    /* 145 */ { 1, {{473, 4}, {474, 5}, {475, 7}}, {OG_SVC_POTIONS, OG_SVC_POTION_MAKER, OG_SVC_DAEDRA}, 247, 471 },
-    /* 146 */ { 2, {{480, 3}, {481, 5}, {482, 6}}, {OG_SVC_MAGIC_ITEMS, OG_SVC_ITEM_MAKER, OG_SVC_DAEDRA}, 249, 477 },
-    /* 147 */ { 2, {{485, 1}, {487, 5}, {488, 7}}, {OG_SVC_POTIONS, OG_SVC_POTION_MAKER, OG_SVC_DAEDRA}, 250, 484 },
-    /* 148 */ { 0, {{490, 2}, {491, 5}, {492, 7}}, {OG_SVC_POTIONS, OG_SVC_POTION_MAKER, OG_SVC_DAEDRA}, 252, 493 },
-    /* 149 */ { 1, {{496, 3}, {497, 6}, {498, 7}}, {OG_SVC_SPELLS, OG_SVC_SPELL_MAKER, OG_SVC_DAEDRA}, 254, 494 }
+    /* 142 */ { 0, {{453, 1}, {454, 4}, {455, 4}}, {SVC_POTIONS, SVC_POTION_MAKER, SVC_SOULGEMS}, 241, 0 },
+    /* 143 */ { 2, {{462, 1}, {463, 6}, {464, 8}}, {SVC_POTIONS, SVC_POTION_MAKER, SVC_DAEDRA}, 243, 460 },
+    /* 144 */ { 1, {{468, 2}, {469, 5}, {470, 7}}, {SVC_POTIONS, SVC_POTION_MAKER, SVC_DAEDRA}, 245, 466 },
+    /* 145 */ { 1, {{473, 4}, {474, 5}, {475, 7}}, {SVC_POTIONS, SVC_POTION_MAKER, SVC_DAEDRA}, 247, 471 },
+    /* 146 */ { 2, {{480, 3}, {481, 5}, {482, 6}}, {SVC_MAGIC_ITEMS, SVC_ITEM_MAKER, SVC_DAEDRA}, 249, 477 },
+    /* 147 */ { 2, {{485, 1}, {487, 5}, {488, 7}}, {SVC_POTIONS, SVC_POTION_MAKER, SVC_DAEDRA}, 250, 484 },
+    /* 148 */ { 0, {{490, 2}, {491, 5}, {492, 7}}, {SVC_POTIONS, SVC_POTION_MAKER, SVC_DAEDRA}, 252, 493 },
+    /* 149 */ { 1, {{496, 3}, {497, 6}, {498, 7}}, {SVC_SPELLS, SVC_SPELL_MAKER, SVC_DAEDRA}, 254, 494 }
 };
 
 /* A strange face at a temple: training, the temple's quest, a donation, a cure, a blessing; the rest are reserved. */
 static int temple_stranger(const TempleRule *t, int person)
 {
-    if (person == t->training) { return OG_SVC_TRAINING; }
-    if (person == 240) { return OG_SVC_TEMPLE_QUEST; }
-    if (person == 810) { return OG_SVC_DONATE; }
-    if (person == 813) { return OG_SVC_CURE; }
-    if (t->blessing && person == t->blessing) { return OG_SVC_BLESSING; }
-    return OG_SVC_MEMBERS_ONLY;
+    if (person == t->training) { return SVC_TRAINING; }
+    if (person == 240) { return SVC_TEMPLE_QUEST; }
+    if (person == 810) { return SVC_DONATE; }
+    if (person == 813) { return SVC_CURE; }
+    if (t->blessing && person == t->blessing) { return SVC_BLESSING; }
+    return SVC_MEMBERS_ONLY;
 }
 
-int og_guild_service(int kind, int person, int rank, int *heal)
+int guild_service(int kind, int person, int rank, int *heal)
 {
     int guild, i, member;
 
@@ -399,7 +399,7 @@ int og_guild_service(int kind, int person, int rank, int *heal)
             *heal = t->heal >= 0 && rank >= t->heal;
             for (i = 0; i < 3; i++) {
                 if (person == t->member[i][0]) {
-                    return rank >= t->member[i][1] ? t->which[i] : OG_SVC_RANK_REFUSED;
+                    return rank >= t->member[i][1] ? t->which[i] : SVC_RANK_REFUSED;
                 }
             }
         }
@@ -407,68 +407,68 @@ int og_guild_service(int kind, int person, int rank, int *heal)
     }
     switch (kind) {
     case 0:
-        if (!member) { return OG_SVC_NONE; }
+        if (!member) { return SVC_NONE; }
         switch (person) {
-        case 839: return OG_SVC_TRAINING;
-        case 841: return rank >= 1 ? OG_SVC_POTIONS : OG_SVC_RANK_REFUSED;
-        case 840: return rank >= 3 ? OG_SVC_POTION_MAKER : OG_SVC_RANK_REFUSED;
-        case 843: return rank >= 5 ? OG_SVC_SOULGEMS : OG_SVC_RANK_REFUSED;
-        case 842: return rank >= 7 ? OG_SVC_SPYMASTER : OG_SVC_RANK_REFUSED;
-        case 807: return OG_SVC_QUEST;
-        default: return OG_SVC_TALK;
+        case 839: return SVC_TRAINING;
+        case 841: return rank >= 1 ? SVC_POTIONS : SVC_RANK_REFUSED;
+        case 840: return rank >= 3 ? SVC_POTION_MAKER : SVC_RANK_REFUSED;
+        case 843: return rank >= 5 ? SVC_SOULGEMS : SVC_RANK_REFUSED;
+        case 842: return rank >= 7 ? SVC_SPYMASTER : SVC_RANK_REFUSED;
+        case 807: return SVC_QUEST;
+        default: return SVC_TALK;
         }
     case 1:
         *heal = member;
         if (member) {
             switch (person) {
-            case 61: return OG_SVC_TRAINING;
-            case 64: return OG_SVC_SPELL_MAKER;
-            case 65: return rank >= 3 ? OG_SVC_MAGIC_ITEMS : OG_SVC_RANK_REFUSED;
-            case 802: return rank >= 5 ? OG_SVC_ITEM_MAKER : OG_SVC_RANK_REFUSED;
-            case 66: return rank >= 6 ? OG_SVC_DAEDRA : OG_SVC_RANK_REFUSED;
-            case 62: return rank >= 8 ? OG_SVC_TELEPORT : OG_SVC_RANK_REFUSED;
+            case 61: return SVC_TRAINING;
+            case 64: return SVC_SPELL_MAKER;
+            case 65: return rank >= 3 ? SVC_MAGIC_ITEMS : SVC_RANK_REFUSED;
+            case 802: return rank >= 5 ? SVC_ITEM_MAKER : SVC_RANK_REFUSED;
+            case 66: return rank >= 6 ? SVC_DAEDRA : SVC_RANK_REFUSED;
+            case 62: return rank >= 8 ? SVC_TELEPORT : SVC_RANK_REFUSED;
             default: break;
             }
         }
         *heal = 0;
         switch (person) {
-        case 60: return OG_SVC_SPELLS;
-        case 63: return OG_SVC_QUEST;
-        case 801: return member ? OG_SVC_IDENTIFY : OG_SVC_MEMBERS_ONLY;
-        default: return OG_SVC_MEMBERS_ONLY;
+        case 60: return SVC_SPELLS;
+        case 63: return SVC_QUEST;
+        case 801: return member ? SVC_IDENTIFY : SVC_MEMBERS_ONLY;
+        default: return SVC_MEMBERS_ONLY;
         }
     case 2:
         if (member) {
             switch (person) {
-            case 849: return OG_SVC_TRAINING;
-            case 850: return OG_SVC_REPAIRS;
-            case 851: return OG_SVC_QUEST;
+            case 849: return SVC_TRAINING;
+            case 850: return SVC_REPAIRS;
+            case 851: return SVC_QUEST;
             default: break;
             }
         }
-        return person == 851 ? OG_SVC_QUEST : OG_SVC_TALK;
+        return person == 851 ? SVC_QUEST : SVC_TALK;
     case 3:
-        if (!member) { return OG_SVC_NONE; }
+        if (!member) { return SVC_NONE; }
         switch (person) {
-        case 803: return OG_SVC_TRAINING;
-        case 804: return OG_SVC_QUEST;
-        case 805: return rank >= 2 ? OG_SVC_FENCE : OG_SVC_RANK_REFUSED;
-        case 806: return rank >= 4 ? OG_SVC_SPYMASTER : OG_SVC_RANK_REFUSED;
-        default: return OG_SVC_TALK;
+        case 803: return SVC_TRAINING;
+        case 804: return SVC_QUEST;
+        case 805: return rank >= 2 ? SVC_FENCE : SVC_RANK_REFUSED;
+        case 806: return rank >= 4 ? SVC_SPYMASTER : SVC_RANK_REFUSED;
+        default: return SVC_TALK;
         }
     default: break;
     }
     if (guild >= 4 && guild <= 13) {
         if (member) {
-            if (person == 845) { return OG_SVC_ARMOR; }
-            if (person == 848) { return OG_SVC_HOUSE; }
+            if (person == 845) { return SVC_ARMOR; }
+            if (person == 848) { return SVC_HOUSE; }
         }
-        return person == 846 ? OG_SVC_QUEST : OG_SVC_MEMBERS_ONLY;
+        return person == 846 ? SVC_QUEST : SVC_MEMBERS_ONLY;
     }
-    return OG_SVC_TALK;
+    return SVC_TALK;
 }
 
-const unsigned char *og_training_skills(int person_faction)
+const unsigned char *training_skills(int person_faction)
 {
     int i;
 
@@ -480,10 +480,10 @@ const unsigned char *og_training_skills(int person_faction)
     return 0;
 }
 
-int og_training_offer(df_u32 now, int level, int member, int *price, int *text)
+int training_offer(df_u32 now, int level, int member, int *price, int *text)
 {
     *text = 0;
-    if (now - og_guilds()->last_training < 720u) {
+    if (now - guilds_state()->last_training < 720u) {
         *text = 4023;
         return 0;
     }
@@ -494,19 +494,19 @@ int og_training_offer(df_u32 now, int level, int member, int *price, int *text)
     return 1;
 }
 
-int og_training_learn(int skill, int price, df_u32 now, int *text, int *minutes)
+int training_learn(int skill, int price, df_u32 now, int *text, int *minutes)
 {
     *minutes = 0;
-    if (skill < 0 || skill >= OG_SKILLS) {
+    if (skill < 0 || skill >= SKILLS) {
         return 0;
     }
-    if (og_character()->skill[skill] > 50) {
+    if (character_state()->skill[skill] > 50) {
         *text = 4022;
         return 0;
     }
-    og_gold_spend(price);
-    og_guilds()->last_training = now;
-    og_skill_add_uses(skill, og_random_range(10, 20) * g_skill_advance[skill]);
+    gold_spend(price);
+    guilds_state()->last_training = now;
+    skill_add_uses(skill, random_range(10, 20) * g_skill_advance[skill]);
     *text = 5221;
     *minutes = 180;
     return 1;
@@ -516,42 +516,42 @@ int og_training_learn(int skill, int price, df_u32 now, int *text, int *minutes)
 static int blessing_apply(int target, int amount, int region)
 {
     if (target == 255) {
-        og_region_add_legal(region, amount);
-        if (og_region_legal(region) > 100) {
-            og_region_add_legal(region, 100 - og_region_legal(region));
+        region_add_legal(region, amount);
+        if (region_legal(region) > 100) {
+            region_add_legal(region, 100 - region_legal(region));
         }
     } else if (target & 128) {
-        og_character()->attribute[target & 127] += amount;
-        if (og_character()->attribute[target & 127] > 100) { og_character()->attribute[target & 127] = 100; }
+        character_state()->attribute[target & 127] += amount;
+        if (character_state()->attribute[target & 127] > 100) { character_state()->attribute[target & 127] = 100; }
     } else {
-        og_character()->skill[target] += amount;
-        if (og_character()->skill[target] > 100) { og_character()->skill[target] = 100; }
+        character_state()->skill[target] += amount;
+        if (character_state()->skill[target] > 100) { character_state()->skill[target] = 100; }
     }
     return amount;
 }
 
-static void blessing_remove(const struct OgBlessing *b)
+static void blessing_remove(const struct BlessingInfo *b)
 {
     if (b->target == 255) {
-        og_region_add_legal(b->region, -b->amount);
+        region_add_legal(b->region, -b->amount);
     } else if (b->target & 128) {
-        og_character()->attribute[b->target & 127] -= b->amount;
+        character_state()->attribute[b->target & 127] -= b->amount;
     } else {
-        og_character()->skill[b->target] -= b->amount;
+        character_state()->skill[b->target] -= b->amount;
     }
 }
 
-int og_blessing_buy(int kind, int rank, int region, df_u32 now, int *text)
+int blessing_buy(int kind, int rank, int region, df_u32 now, int *text)
 {
     static const short target[8] = { 0, 14, 133, 134, 129, 135, 255, 132 };
     static const short words[8] = { 0, 705, 707, 709, 710, 712, 716, 717 };
-    struct OgBlessing *b;
+    struct BlessingInfo *b;
 
     *text = 0;
     if (kind == 142 || kind < 142 || kind > 149) {
         return 0;
     }
-    b = &og_guilds()->blessing;
+    b = &guilds_state()->blessing;
     if (b->active) {
         *text = 454;
         return 0;
@@ -566,11 +566,11 @@ int og_blessing_buy(int kind, int rank, int region, df_u32 now, int *text)
     return 1;
 }
 
-int og_blessing_expire(df_u32 now)
+int blessing_expire(df_u32 now)
 {
-    struct OgBlessing *b;
+    struct BlessingInfo *b;
 
-    b = &og_guilds()->blessing;
+    b = &guilds_state()->blessing;
     if (!b->active || b->end >= now) {
         return 0;
     }
@@ -579,7 +579,7 @@ int og_blessing_expire(df_u32 now)
     return 1;
 }
 
-int og_knight_armor(OgMembership *m, int *text)
+int knight_armor(Membership *m, int *text)
 {
     int metal;
     df_u32 id;
@@ -593,7 +593,7 @@ int og_knight_armor(OgMembership *m, int *text)
     metal = (m->rank - 1) & 255;
     if (metal > 100) { metal = 2; } else if (metal > 10) { metal = 10; }
     if (metal > 9) { metal = 9; }
-    id = og_item_create(og_state()->inventory_id, 2, og_random_range(0, 6), metal);
+    id = item_create(game_state()->inventory_id, 2, random_range(0, 6), metal);
     if (!id) {
         return 0;
     }
@@ -602,7 +602,7 @@ int og_knight_armor(OgMembership *m, int *text)
     return 1;
 }
 
-int og_knight_house_allowed(const OgMembership *m, int has_house, int *text)
+int knight_house_allowed(const Membership *m, int has_house, int *text)
 {
     *text = 0;
     if (has_house) {
@@ -615,7 +615,7 @@ int og_knight_house_allowed(const OgMembership *m, int has_house, int *text)
     return 1;
 }
 
-int og_daedra_offer(int hall_faction, int hall_reputation, df_u32 now, OgDaedraStep *step)
+int daedra_offer(int hall_faction, int hall_reputation, df_u32 now, DaedraStep *step)
 {
     int day, i, prince, price;
 
@@ -633,7 +633,7 @@ int og_daedra_offer(int hall_faction, int hall_reputation, df_u32 now, OgDaedraS
         step->text = 480;
         return 0;
     }
-    if (hall_faction != 40 && og_faction_has_enemy(hall_faction, prince)) {
+    if (hall_faction != 40 && faction_has_enemy(hall_faction, prince)) {
         step->line = "Today is a day for summoning enemies. We won't.";
         return 0;
     }
@@ -647,30 +647,30 @@ int og_daedra_offer(int hall_faction, int hall_reputation, df_u32 now, OgDaedraS
     return 1;
 }
 
-int og_daedra_summon(int prince, int weather, int *kind)
+int daedra_summon(int prince, int weather, int *kind)
 {
     int chance, n;
 
     n = weather == 6 ? 15 : 5;
-    if (og_random_range(0, 32767) % 101 <= n) {
+    if (random_range(0, 32767) % 101 <= n) {
         prince = 9;
     }
-    chance = 30 + og_faction_rep(prince);
+    chance = 30 + faction_rep(prince);
     if (g_daedra_weather[prince] == 100 || weather == g_daedra_weather[prince]) {
         chance += 30;
     }
-    if (og_random_range(1, 100) > chance) {
-        return OG_DAEDRA_FAILED;
+    if (random_range(1, 100) > chance) {
+        return DAEDRA_FAILED;
     }
-    if (og_guilds()->daedra_met & (1u << prince)) {
-        *kind = g_daedra_kind[og_random_range(0, 4)];
-        return OG_DAEDRA_ALLY;
+    if (guilds_state()->daedra_met & (1u << prince)) {
+        *kind = g_daedra_kind[random_range(0, 4)];
+        return DAEDRA_ALLY;
     }
-    og_guilds()->daedra_met |= 1u << prince;
-    return OG_DAEDRA_QUEST;
+    guilds_state()->daedra_met |= 1u << prince;
+    return DAEDRA_QUEST;
 }
 
-const char *og_guild_rank_name(int kind, int rank)
+const char *guild_rank_name(int kind, int rank)
 {
     if (kind < 0 || kind > 21 || rank < 0 || rank > 9) { return ""; }
     return g_rank_name[kind][rank];

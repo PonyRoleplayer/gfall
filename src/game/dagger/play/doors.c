@@ -9,9 +9,9 @@
 #include "engine/scene/interact.h"
 #include "engine/scene/keep.h"
 
-#define OG_LOCK_ATTEMPT 0xd1
+#define LOCK_ATTEMPT 0xd1
 
-int og_lock_chance(int skill, int level, int lock)
+int lock_chance(int skill, int level, int lock)
 {
     int chance;
 
@@ -20,7 +20,7 @@ int og_lock_chance(int skill, int level, int lock)
     return chance < 5 ? 5 : chance > 95 ? 95 : chance;
 }
 
-int og_bash_chance(int lock)
+int bash_chance(int lock)
 {
     return lock > 0 && lock < 20 ? 20-lock : 0;
 }
@@ -44,7 +44,7 @@ static int tried(const Mover *door, int skill)
     /* Original records begin with lockpick_skill_tried == 0. */
     if (!skill) { return 1; }
     row = keep_find(door->key);
-    if (!row || row->kind != KEEP_MOVER || row->game[0] != OG_LOCK_ATTEMPT || !row->game[1]) { return 0; }
+    if (!row || row->kind != KEEP_MOVER || row->game[0] != LOCK_ATTEMPT || !row->game[1]) { return 0; }
     previous = 0;
     for (i = 0; i < 4; i++) { previous |= (df_u32)row->game[i+4] << (i*8); }
     return previous == (df_u32)skill;
@@ -59,11 +59,11 @@ static Keep *door_state(const Mover *door)
     if (!row) { return 0; }
     row->lock = door->lock;
     row->at_end = (df_u8)(!door->teleport && mover_at_end(door));
-    row->game[0] = OG_LOCK_ATTEMPT;
+    row->game[0] = LOCK_ATTEMPT;
     return row;
 }
 
-int og_door_lock(Mover *door, int rating)
+int door_lock(Mover *door, int rating)
 {
     Keep *row;
     if (!door || rating < 0 || rating > 65535) { return 0; }
@@ -74,7 +74,7 @@ int og_door_lock(Mover *door, int rating)
     return 1;
 }
 
-int og_door_unlock(Mover *door)
+int door_unlock(Mover *door)
 {
     Keep *row;
     if (!door) { return 0; }
@@ -87,89 +87,89 @@ int og_door_unlock(Mover *door)
     return 1;
 }
 
-int og_door_relock(Mover *door)
+int door_relock(Mover *door)
 {
     const Keep *row;
     int rating;
     if (!door) { return 0; }
     row = keep_find(door->key);
-    rating = row && row->game[0] == OG_LOCK_ATTEMPT ? df_ru16(row->game+2) : 0;
+    rating = row && row->game[0] == LOCK_ATTEMPT ? df_ru16(row->game+2) : 0;
     if (!rating) { rating = door->lock ? door->lock : door->lock0; }
-    return og_door_lock(door,rating);
+    return door_lock(door,rating);
 }
 
 static df_u32 find_key(const Mover *door)
 {
-    const OgObject *item, *owner;
+    const ObjectInfo *item, *owner;
     int i, depth;
     df_u32 location;
     location = door->key.place & 65535u;
-    for (i = 0; i < OG_OBJECTS; i++) {
-        item = &og_state()->object[i];
+    for (i = 0; i < OBJECTS; i++) {
+        item = &game_state()->object[i];
         /* door_key_match_cb compares both fields with the location ID.
          * Its lock-level argument is unused; 27/3 is an unshipped item slot. */
-        if (!item->id || item->type != OG_RECORD_ITEM || item->group != 27 || item->index != 3 ||
+        if (!item->id || item->type != RECORD_ITEM || item->group != 27 || item->index != 3 ||
             item->value != (int)location || (df_u16)item->message != location) { continue; }
         owner = item;
-        for (depth = 0; owner && depth < OG_OBJECTS; depth++) {
-            if (owner->parent == og_state()->entity_id) { return item->id; }
-            owner = og_object(owner->parent);
+        for (depth = 0; owner && depth < OBJECTS; depth++) {
+            if (owner->parent == game_state()->entity_id) { return item->id; }
+            owner = object_at(owner->parent);
         }
     }
     return 0;
 }
 
-int og_door_use(const Scene *scene, int usable, int mode)
+int door_use(const Scene *scene, int usable, int mode)
 {
     Mover *door;
     Keep *row;
     df_u32 key;
     int mover, skill, chance, i;
 
-    if (mode < OG_MODE_GRAB || mode > OG_MODE_TALK) { return 0; }
+    if (mode < MODE_GRAB || mode > MODE_TALK) { return 0; }
     door = door_at(scene,usable);
     if (!door) { return 0; }
     mover = scene->usables[usable].mover;
     if (mover_busy(scene,mover)) { return 1; }
-    if ((og_character()->conditions & 32) && (door->lock <= 0 || mover_at_end(door))) {
+    if ((character_state()->conditions & 32) && (door->lock <= 0 || mover_at_end(door))) {
         if (mover_at_end(door)) {
-            if (mover_start(scene,mover) && og_random_range(1,100) <= og_magic_chance(-1,16,-1)) {
-                og_door_lock(door,og_character()->level);
+            if (mover_start(scene,mover) && random_range(1,100) <= magic_chance(-1,16,-1)) {
+                door_lock(door,character_state()->level);
             }
             return 1;
         }
-        if (og_random_range(1,100) <= og_magic_chance(-1,16,-1)) {
-            og_door_lock(door,og_character()->level); return 1;
+        if (random_range(1,100) <= magic_chance(-1,16,-1)) {
+            door_lock(door,character_state()->level); return 1;
         }
     }
     if (door->lock <= 0 || mover_at_end(door) || !interact_locks()) {
         if (interact_use(scene,usable)) {
-            og_dungeon_alert(-1);
-            og_actions_trigger(scene,scene->usables[usable].model,2);
+            dungeon_alert(-1);
+            actions_trigger(scene,scene->usables[usable].model,2);
         }
         return 1;
     }
     key = find_key(door);
     if (key) {
-        if (mover_start(scene,mover) && og_door_unlock(door)) { og_object_delete(key); }
+        if (mover_start(scene,mover) && door_unlock(door)) { object_delete(key); }
         return 1;
     }
-    skill = og_character()->skill[13];
-    if (mode != OG_MODE_STEAL) {
-        if (og_character()->conditions & 64) {
-            chance = og_magic_chance(-1,17,-1); og_magic_remove(-1,17);
-            if (og_random_range(1,100) <= chance && mover_start(scene,mover)) {
-                og_door_unlock(door); og_dungeon_alert(-1);
+    skill = character_state()->skill[13];
+    if (mode != MODE_STEAL) {
+        if (character_state()->conditions & 64) {
+            chance = magic_chance(-1,17,-1); magic_remove(-1,17);
+            if (random_range(1,100) <= chance && mover_start(scene,mover)) {
+                door_unlock(door); dungeon_alert(-1);
             } else { interact_say("The spell failed."); }
             return 1;
         }
-        interact_say(og_lock_hint(skill,door->lock));
+        interact_say(lock_hint(skill,door->lock));
         return 1;
     }
-    chance = og_lock_chance(skill,og_character()->level,door->lock);
+    chance = lock_chance(skill,character_state()->level,door->lock);
     if (!chance || tried(door,skill)) {
-        interact_say(og_lock_text(OG_LOCK_FAILED));
-        if (!chance) { og_actions_trigger(scene,scene->usables[usable].model,4); }
+        interact_say(lock_text(LOCK_FAILED));
+        if (!chance) { actions_trigger(scene,scene->usables[usable].model,4); }
         return 1;
     }
     /* Secure the attempt before rolling, so a failed allocation cannot give
@@ -179,28 +179,28 @@ int og_door_use(const Scene *scene, int usable, int mode)
         interact_say("Cannot remember this lock.");
         return 1;
     }
-    og_skill_use(13);
-    if (og_random_range(0,100) <= chance) {
-        og_door_unlock(door);
+    skill_use(13);
+    if (random_range(0,100) <= chance) {
+        door_unlock(door);
         mover_start(scene,mover);
-        og_sound_at(60,door->x0,door->y0,door->z0);
-        interact_say(og_lock_text(OG_LOCK_OPEN));
+        sound_at(60,door->x0,door->y0,door->z0);
+        interact_say(lock_text(LOCK_OPEN));
     } else {
         /* Only failure updates lockpick_skill_tried. A successful pick must
          * not become a failed attempt if a later action relocks the door. */
         row->game[1] = 1;
         for (i = 0; i < 4; i++) { row->game[i+4] = (df_u8)((df_u32)skill >> (i*8)); }
-        interact_say(og_lock_text(OG_LOCK_FAILED));
+        interact_say(lock_text(LOCK_FAILED));
     }
     row->lock = door->lock;
     row->at_end = (df_u8)(!door->teleport && mover_at_end(door));
     /* Trigger callbacks can grow Keep: do not retain row across this call. */
-    if (!door->lock) { og_dungeon_alert(-1); og_actions_trigger(scene,scene->usables[usable].model,7); }
-    else { og_actions_trigger(scene,scene->usables[usable].model,4); }
+    if (!door->lock) { dungeon_alert(-1); actions_trigger(scene,scene->usables[usable].model,7); }
+    else { actions_trigger(scene,scene->usables[usable].model,4); }
     return 1;
 }
 
-int og_door_strike(const Scene *scene, const Camera *camera)
+int door_strike(const Scene *scene, const Camera *camera)
 {
     UseHit hit;
     Mover *door;
@@ -220,12 +220,12 @@ int og_door_strike(const Scene *scene, const Camera *camera)
         return 1;
     }
     /* weapon_melee_strike trains Stealth, even at a magically held door. */
-    og_skill_use(16);
-    og_dungeon_alert(-1);
-    chance = og_bash_chance(door->lock);
-    if (chance && og_random_range(1,100) <= chance && mover_start(scene,mover)) {
-        og_door_unlock(door);
+    skill_use(16);
+    dungeon_alert(-1);
+    chance = bash_chance(door->lock);
+    if (chance && random_range(1,100) <= chance && mover_start(scene,mover)) {
+        door_unlock(door);
     }
-    og_sound_at(9,door->x0,door->y0,door->z0);
+    sound_at(9,door->x0,door->y0,door->z0);
     return 1;
 }

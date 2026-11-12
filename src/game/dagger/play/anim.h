@@ -1,18 +1,18 @@
-#ifndef OGFALL_ANIM_H
-#define OGFALL_ANIM_H
+#ifndef GFALL_ANIM_H
+#define GFALL_ANIM_H
 
 /* XnGine's ASCR frame/event interpreter, independent of sprite loading.
- * Requests are the original action numbers. See docs/ogfall.md. */
+ * Requests are the original action numbers. See docs/gfall.md. */
 #include "game/dagger/tables/combatdefs.h"
 
-typedef struct OgAnim {
-    const OgAnimScript *script;
+typedef struct Anim {
+    const AnimScript *script;
     int pc, wait, record, frame, action, events, ended;
     float time;
-} OgAnim;
+} Anim;
 
-void og_anim_start(OgAnim *anim, const OgAnimScript *script, int action);
+void anim_start(Anim *anim, const AnimScript *script, int action);
 /* One script tick, not one render frame. Returns the new event mask. */
-int og_anim_tick(OgAnim *anim);
+int anim_tick(Anim *anim);
 
 #endif

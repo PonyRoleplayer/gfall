@@ -7,34 +7,34 @@
 
 /* See talkwin.h. */
 
-static OgTalkWin g;
-static OgTalkWinWorld g_world;
+static TalkWin g;
+static TalkWinWorld g_world;
 static char g_key[65];
 
 /* talk_buttons (FALL.EXE 0x179B78): x0, y0, x1, y1. */
-static const short g_button[OG_TB_COUNT][4] = {
+static const short g_button[TB_COUNT][4] = {
     {4, 4, 110, 13}, {4, 14, 110, 23}, {4, 26, 110, 35}, {4, 36, 110, 45}, {4, 46, 110, 55}, {4, 56, 110, 65},
     {258, 18, 263, 23}, {258, 28, 263, 33}, {258, 38, 263, 43}, {118, 158, 184, 175}, {118, 183, 184, 192},
     {102, 69, 110, 84}, {102, 161, 110, 176}, {4, 177, 19, 185}, {86, 177, 101, 185}, {7, 71, 101, 176},
     {303, 64, 311, 79}, {303, 176, 311, 191}, {4, 186, 110, 195}
 };
 
-void og_talkwin_world(const OgTalkWinWorld *world)
+void talkwin_world(const TalkWinWorld *world)
 {
     g_world = *world;
 }
 
-const OgTalkWin *og_talkwin(void)
+const TalkWin *talkwin_state(void)
 {
     return &g;
 }
 
-const short *og_talkwin_button(int button)
+const short *talkwin_button(int button)
 {
     return g_button[button];
 }
 
-const char *og_talkwin_key_text(void)
+const char *talkwin_key_text(void)
 {
     return g_key;
 }
@@ -61,7 +61,7 @@ static void copy(char *to, int cap, const char *from)
 }
 
 /* Say a record with the window's macros; the raw record when the game cannot say it. */
-static void say(int text, const OgTalkWinSay *ctx, char *out, int cap)
+static void say(int text, const TalkWinSay *ctx, char *out, int cap)
 {
     out[0] = 0;
     if (!text) {
@@ -70,10 +70,10 @@ static void say(int text, const OgTalkWinSay *ctx, char *out, int cap)
     if (g_world.say && g_world.say(text, ctx, out, cap) >= 0) {
         return;
     }
-    copy(out, cap, og_words(text));
+    copy(out, cap, words_state(text));
 }
 
-static void context(OgTalkWinSay *ctx)
+static void context(TalkWinSay *ctx)
 {
     mem_zero(ctx, sizeof(*ctx));
     ctx->key = g_key;
@@ -86,28 +86,28 @@ static void push_answer(const char *text, int asked)
 {
     int i;
 
-    if (g.answer_count >= OG_TW_LINES) {
-        for (i = 1; i < OG_TW_LINES; i++) {
-            copy(g.answer[i - 1], OG_TW_LINE, g.answer[i]);
+    if (g.answer_count >= TW_LINES) {
+        for (i = 1; i < TW_LINES; i++) {
+            copy(g.answer[i - 1], TW_LINE, g.answer[i]);
             g.asked[i - 1] = g.asked[i];
         }
         g.answer_count--;
     }
-    copy(g.answer[g.answer_count], OG_TW_LINE, text);
+    copy(g.answer[g.answer_count], TW_LINE, text);
     g.asked[g.answer_count++] = (unsigned char)asked;
 }
 
 static void push_question(const char *text)
 {
-    if (g.question_count < OG_TW_QUESTION) {
-        copy(g.question[g.question_count++], OG_TW_LINE, text);
+    if (g.question_count < TW_QUESTION) {
+        copy(g.question[g.question_count++], TW_LINE, text);
     }
 }
 
 /* Cut text into lines under limit pixels; each to add(). */
 static void wrap(const char *text, int limit, void (*add)(const char *, int), int flag)
 {
-    char line[OG_TW_LINE], token[OG_TW_LINE];
+    char line[TW_LINE], token[TW_LINE];
     int used, len, t;
 
     line[0] = 0;
@@ -116,20 +116,20 @@ static void wrap(const char *text, int limit, void (*add)(const char *, int), in
     while (*text) {
         t = 0;
         if (*text > ' ') {
-            while (*text > ' ' && t < OG_TW_LINE - 1) {
+            while (*text > ' ' && t < TW_LINE - 1) {
                 token[t++] = *text++;
             }
         } else {
             token[t++] = *text++;
         }
         token[t] = 0;
-        if (used + text_width(token) < limit && len + t < OG_TW_LINE - 1) {
-            copy(line + len, OG_TW_LINE - len, token);
+        if (used + text_width(token) < limit && len + t < TW_LINE - 1) {
+            copy(line + len, TW_LINE - len, token);
             len += t;
             used += text_width(token);
         } else {
             add(line, flag);
-            copy(line, OG_TW_LINE, token);
+            copy(line, TW_LINE, token);
             len = t;
             used = text_width(token);
         }
@@ -155,7 +155,7 @@ static void say_lines(const char *text)
         push_answer("", 0);
     }
     wrap(text, 112, answer_line, 0);
-    g.answer_scroll = g.answer_count - OG_TW_ANSWER_ROWS;
+    g.answer_scroll = g.answer_count - TW_ANSWER_ROWS;
     if (g.answer_scroll < 0) {
         g.answer_scroll = 0;
     }
@@ -177,8 +177,8 @@ static void log_question(void)
 
 static void add_item(const char *text, int value)
 {
-    if (g.count < OG_TW_ITEMS) {
-        copy(g.item[g.count].text, OG_TW_ITEM_TEXT, text);
+    if (g.count < TW_ITEMS) {
+        copy(g.item[g.count].text, TW_ITEM_TEXT, text);
         g.item[g.count++].value = value;
     }
 }
@@ -186,7 +186,7 @@ static void add_item(const char *text, int value)
 /* talk_draw_regional_list: the places elsewhere asked after, the orders only in their own region. */
 static void regional_items(void)
 {
-    char name[OG_TW_ITEM_TEXT];
+    char name[TW_ITEM_TEXT];
     int i, has, key_type;
 
     for (i = 0; i < 28; i++) {
@@ -205,7 +205,7 @@ static void regional_items(void)
             for (n = 0; g_any_format[n] && g_any_format[n] != '%'; n++) {
                 name[n] = g_any_format[n];
             }
-            for (k = 0; g_regional_name[i][k] && n < OG_TW_ITEM_TEXT - 1; k++) {
+            for (k = 0; g_regional_name[i][k] && n < TW_ITEM_TEXT - 1; k++) {
                 name[n++] = g_regional_name[i][k];
             }
             name[n] = 0;
@@ -216,7 +216,7 @@ static void regional_items(void)
 
 static void rebuild(void)
 {
-    char name[OG_TW_ITEM_TEXT];
+    char name[TW_ITEM_TEXT];
     int i, category;
 
     g.count = 0;
@@ -224,28 +224,28 @@ static void rebuild(void)
         /* talk_draw_tell_list: the news, then the organisations (the quest's topics would come between). */
         add_item(g_any_news, -1);
         /* The quests' topics come between the news and the organisations. */
-        for (i = 0; g_world.topic_count && g_world.topic_name && i < g_world.topic_count() && g.count < OG_TW_ITEMS - 34; i++) {
+        for (i = 0; g_world.topic_count && g_world.topic_name && i < g_world.topic_count() && g.count < TW_ITEMS - 34; i++) {
             if (g_world.topic_name(i, name, (int)sizeof(name)) && name[0]) { add_item(name, 1000 + i); }
         }
         for (i = 0; i < 34; i++) {
-            const OgFactionDef *f;
+            const FactionDef *f;
 
-            f = og_faction_def(og_faction_index(g_organisation[i]));
+            f = faction_def(faction_index(g_organisation[i]));
             add_item(f ? f->name : "", i);
         }
         return;
     }
     if (g.tab == 0) {
         if (g.categories) {
-            for (category = 0; category < OG_TALK_CATEGORIES; category++) {
-                if (og_talk_has_category(g.building, g.building_count, category)) {
-                    add_item(og_talk_category_name(category), category);
+            for (category = 0; category < TALK_CATEGORIES; category++) {
+                if (talk_has_category(g.building, g.building_count, category)) {
+                    add_item(talk_category_name(category), category);
                 }
             }
             return;
         }
         add_item(g_previous_list, -1);
-        if (g.category == OG_TALK_REGIONAL) {
+        if (g.category == TALK_REGIONAL) {
             regional_items();
         } else {
             for (i = 0; i < g.topic_count; i++) {
@@ -288,7 +288,7 @@ static void select_key(void)
 /* talk_draw: the question in the box above the list, by the tone, the way of asking and the tab. */
 static void make_question(void)
 {
-    OgTalkWinSay ctx;
+    TalkWinSay ctx;
     char text[240];
     int base, news_row;
 
@@ -324,19 +324,19 @@ static void refresh(void)
 
 /* ---- Opening ---- */
 
-int og_talkwin_open(const OgTalkWho *who, const OgTalkPlayer *player, int witnessed, int *text)
+int talkwin_open(const TalkWho *who, const TalkPlayer *player, int witnessed, int *text)
 {
-    OgTalk talk;
+    TalkState talk;
     int r, n;
     char greeting[400];
-    OgTalkWinSay ctx;
+    TalkWinSay ctx;
 
     *text = 0;
-    if (!og_talk_start(&talk, who, player, text)) {
+    if (!talk_start(&talk, who, player, text)) {
         return 0;
     }
-    r = og_talk_open(&talk, player, witnessed, text);
-    if (r == OG_TALK_REFUSED || r == OG_TALK_HOSTILE) {
+    r = talk_open(&talk, player, witnessed, text);
+    if (r == TALK_REFUSED || r == TALK_HOSTILE) {
         return 0;
     }
     mem_zero(&g, sizeof(g));
@@ -344,16 +344,16 @@ int og_talkwin_open(const OgTalkWho *who, const OgTalkPlayer *player, int witnes
     g.talk = talk;
     g.player = *player;
     g.who = *who;
-    g.tone = OG_TONE_NORMAL;
+    g.tone = TONE_NORMAL;
     g.mode = 1;
     g.tab = 0;
     g.categories = 1;
     g.row = 0;
     g_key[0] = 0;
     /* talk_open: the town's buildings (their distances taken now), the topics made of them, the quest sites a category of their own (none yet). */
-    n = g_world.buildings ? g_world.buildings(g.building, OG_TALK_TOPICS) : 0;
+    n = g_world.buildings ? g_world.buildings(g.building, TALK_TOPICS) : 0;
     g.building_count = n;
-    g.topic_count = og_talk_topics(g.topic, OG_TALK_TOPICS, g.building, n);
+    g.topic_count = talk_topics(g.topic, TALK_TOPICS, g.building, n);
     mem_zero(&ctx, sizeof(ctx));
     ctx.tone = g.tone;
     /* The person who gave a quest greets with the rumour of it, when there is one. */
@@ -364,7 +364,7 @@ int og_talkwin_open(const OgTalkWho *who, const OgTalkPlayer *player, int witnes
     return 1;
 }
 
-void og_talkwin_close(void)
+void talkwin_close(void)
 {
     g.open = 0;
     g.revision++;
@@ -388,7 +388,7 @@ static void list_scroll(int delta)
     if (delta < 0 && g.top == 0) {
         return;
     }
-    if (delta > 0 && g.top + OG_TW_LIST_ROWS - 1 >= g.count) {
+    if (delta > 0 && g.top + TW_LIST_ROWS - 1 >= g.count) {
         return;
     }
     g.top = top;
@@ -435,8 +435,8 @@ static void list_click(int y)
 /* The answer: talk_button_okay, after the question has been logged. */
 static void ask(void)
 {
-    OgTalkAsk a;
-    OgTalkWinSay ctx;
+    TalkAsk a;
+    TalkWinSay ctx;
     char hint[400], text[600];
     int answer, id, noted, regional, found;
     int topic_text;
@@ -469,8 +469,8 @@ static void ask(void)
         a.news = 1;
     }
     context(&ctx);
-    answer = og_talk_answer(&g.talk, &a, &id);
-    if (answer == OG_ANSWER_NEWS) {
+    answer = talk_answer(&g.talk, &a, &id);
+    if (answer == ANSWER_NEWS) {
         say_lines(text);
         refresh();
         return;
@@ -479,10 +479,10 @@ static void ask(void)
     if (g.tab != 3 && id != 1457 && id != 28) {
         if (g.mode == 1) {
             unsigned building;
-            char place[OG_TW_ITEM_TEXT];
+            char place[TW_ITEM_TEXT];
 
             building = 0;
-            regional = g.category == OG_TALK_REGIONAL && g.tab == 0;
+            regional = g.category == TALK_REGIONAL && g.tab == 0;
             place[0] = 0;
             found = 0;
             if (regional) {
@@ -494,7 +494,7 @@ static void ask(void)
                 building = g.topic[g.item[g.row].value].building;
                 copy(place, (int)sizeof(place), g.item[g.row].text);
             }
-            topic_text = og_talk_hint(&a, found, building && g_world.distance ? g_world.distance(building) : 99999, g_world.outdoors, &noted);
+            topic_text = talk_hint(&a, found, building && g_world.distance ? g_world.distance(building) : 99999, g_world.outdoors, &noted);
             context(&ctx);
             ctx.loc = place;
             ctx.building = building;
@@ -533,40 +533,40 @@ static void set_tab(int tab)
     refresh();
 }
 
-int og_talkwin_click(int x, int y)
+int talkwin_click(int x, int y)
 {
     int b;
 
     if (!g.open) {
         return 0;
     }
-    for (b = 0; b < OG_TB_COUNT; b++) {
+    for (b = 0; b < TB_COUNT; b++) {
         if (!inside(b, x, y)) {
             continue;
         }
         switch (b) {
-        case OG_TB_TELL: set_mode(0); break;
-        case OG_TB_WHERE: set_mode(1); break;
-        case OG_TB_PLACES: set_tab(0); break;
-        case OG_TB_PEOPLE: set_tab(1); break;
-        case OG_TB_THINGS: set_tab(2); break;
-        case OG_TB_WORK: set_tab(3); break;
-        case OG_TB_POLITE: case OG_TB_NORMAL: case OG_TB_BLUNT:
-            og_talk_tone(&g.talk, b - OG_TB_POLITE);
+        case TB_TELL: set_mode(0); break;
+        case TB_WHERE: set_mode(1); break;
+        case TB_PLACES: set_tab(0); break;
+        case TB_PEOPLE: set_tab(1); break;
+        case TB_THINGS: set_tab(2); break;
+        case TB_WORK: set_tab(3); break;
+        case TB_POLITE: case TB_NORMAL: case TB_BLUNT:
+            talk_tone(&g.talk, b - TB_POLITE);
             g.tone = g.talk.tone;
             make_question();
             g.revision++;
             break;
-        case OG_TB_COPY: break;
-        case OG_TB_GOODBYE: og_talkwin_close(); break;
-        case OG_TB_LIST_UP: list_scroll(-1); break;
-        case OG_TB_LIST_DOWN: list_scroll(1); break;
-        case OG_TB_LIST_LEFT: if (g.scroll_x < 0) { g.scroll_x += 4; g.revision++; } break;
-        case OG_TB_LIST_RIGHT: g.scroll_x -= 4; g.revision++; break;
-        case OG_TB_LIST: list_click(y); break;
-        case OG_TB_ANSWER_UP: if (g.answer_scroll) { g.answer_scroll--; g.revision++; } break;
-        case OG_TB_ANSWER_DOWN: if (g.answer_count - OG_TW_ANSWER_ROWS > g.answer_scroll) { g.answer_scroll++; g.revision++; } break;
-        case OG_TB_OKAY: ask(); break;
+        case TB_COPY: break;
+        case TB_GOODBYE: talkwin_close(); break;
+        case TB_LIST_UP: list_scroll(-1); break;
+        case TB_LIST_DOWN: list_scroll(1); break;
+        case TB_LIST_LEFT: if (g.scroll_x < 0) { g.scroll_x += 4; g.revision++; } break;
+        case TB_LIST_RIGHT: g.scroll_x -= 4; g.revision++; break;
+        case TB_LIST: list_click(y); break;
+        case TB_ANSWER_UP: if (g.answer_scroll) { g.answer_scroll--; g.revision++; } break;
+        case TB_ANSWER_DOWN: if (g.answer_count - TW_ANSWER_ROWS > g.answer_scroll) { g.answer_scroll++; g.revision++; } break;
+        case TB_OKAY: ask(); break;
         default: break;
         }
         return g.open;
@@ -574,7 +574,7 @@ int og_talkwin_click(int x, int y)
     return g.open;
 }
 
-int og_talkwin_key(int key)
+int talkwin_key(int key)
 {
     int i;
 
@@ -582,15 +582,15 @@ int og_talkwin_key(int key)
         return 0;
     }
     switch (key) {
-    case OG_TW_KEY_ENTER: ask(); break;
-    case OG_TW_KEY_UP: list_scroll(-1); break;
-    case OG_TW_KEY_DOWN: list_scroll(1); break;
-    case OG_TW_KEY_PGUP: for (i = 0; i < 10; i++) { list_scroll(-1); } break;
-    case OG_TW_KEY_PGDN: for (i = 0; i < 10; i++) { list_scroll(1); } break;
-    case OG_TW_KEY_ESC:
+    case TW_KEY_ENTER: ask(); break;
+    case TW_KEY_UP: list_scroll(-1); break;
+    case TW_KEY_DOWN: list_scroll(1); break;
+    case TW_KEY_PGUP: for (i = 0; i < 10; i++) { list_scroll(-1); } break;
+    case TW_KEY_PGDN: for (i = 0; i < 10; i++) { list_scroll(1); } break;
+    case TW_KEY_ESC:
         /* talk_update: Escape on the categories (or any other tab) leaves; it also goes back to the categories. */
         if ((g.tab == 0 && g.categories) || g.tab != 0) {
-            og_talkwin_close();
+            talkwin_close();
             break;
         }
         g.categories = 1;

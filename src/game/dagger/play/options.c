@@ -15,129 +15,129 @@ static int g_up, g_panel, g_drag = -1;
 static unsigned g_revision;
 static const char *g_error = "";
 
-void og_options_reset(void)
+void options_reset(void)
 {
-    OgConfig config;
+    Config config;
     g_up = 0;
-    g_panel = OG_PANEL_OPTIONS;
+    g_panel = PANEL_OPTIONS;
     g_drag = -1;
     g_error = "";
-    og_config_defaults(&config);
-    og_config_set(&config);
+    config_defaults(&config);
+    config_set(&config);
     g_revision++;
 }
 
-int og_options_up(void)
+int options_up(void)
 {
     return g_up;
 }
 
-int og_options_panel(void)
+int options_panel(void)
 {
     return g_panel;
 }
 
-unsigned og_options_revision(void)
+unsigned options_revision(void)
 {
     return g_revision;
 }
 
-const char *og_options_error(void)
+const char *options_error(void)
 {
     return g_error;
 }
 
-void og_options_cancel_drag(void)
+void options_cancel_drag(void)
 {
     g_drag = -1;
-    og_controls_cancel_drag();
+    controls_cancel_drag();
 }
 
-void og_options_open(void)
+void options_open(void)
 {
-    if (!g_up && og_state()->ready && !og_state_mode_push(OG_GAME_OPTIONS)) {
+    if (!g_up && game_state()->ready && !state_mode_push(GAME_OPTIONS)) {
         return;
     }
     g_up = 1;
-    g_panel = OG_PANEL_OPTIONS;
+    g_panel = PANEL_OPTIONS;
     g_error = "";
     g_revision++;
 }
 
-void og_options_open_files(int saving)
+void options_open_files(int saving)
 {
-    if (saving && og_character()->health <= 0) {
-        og_msg_set("A dead character cannot be saved.");
+    if (saving && character_state()->health <= 0) {
+        msg_set("A dead character cannot be saved.");
         return;
     }
     if (!g_up) {
-        og_options_open();
+        options_open();
     }
-    g_panel = OG_PANEL_FILES;
+    g_panel = PANEL_FILES;
     g_drag = -1;
-    og_files_open(saving);
+    files_open(saving);
     g_revision++;
 }
 
-void og_options_back(void)
+void options_back(void)
 {
-    g_panel = OG_PANEL_OPTIONS;
+    g_panel = PANEL_OPTIONS;
     g_drag = -1;
     g_revision++;
 }
 
-void og_options_close(void)
+void options_close(void)
 {
-    if (g_up && og_state()->ready) {
-        og_state_mode_pop();
+    if (g_up && game_state()->ready) {
+        state_mode_pop();
     }
     g_up = 0;
     g_drag = -1;
     g_revision++;
 }
 
-int og_options_commit(void)
+int options_commit(void)
 {
-    if (!og_config_write()) {
-        g_error = og_config_error();
+    if (!config_write()) {
+        g_error = config_error();
         g_revision++;
-        og_msg_set(g_error);
+        msg_set(g_error);
     }
-    og_options_close();
+    options_close();
     return 1;
 }
 
-int og_options_flags(void)
+int options_flags(void)
 {
-    return og_state()->settings_flags;
+    return game_state()->settings_flags;
 }
 
-int og_options_mouse(void)
+int options_mouse(void)
 {
-    return og_state()->mouse_mode;
+    return game_state()->mouse_mode;
 }
 
-void og_options_set_flags(int flags)
+void options_set_flags(int flags)
 {
-    OgConfig config;
-    config = *og_config();
+    Config config;
+    config = *game_config();
     config.flags = flags & 3;
-    og_config_set(&config);
+    config_set(&config);
     g_revision++;
 }
 
-void og_options_set_mouse(int mode)
+void options_set_mouse(int mode)
 {
-    OgConfig config;
-    config = *og_config();
+    Config config;
+    config = *game_config();
     config.mouse_mode = mode ? 1 : 0;
-    og_config_set(&config);
+    config_set(&config);
     g_revision++;
 }
 
 static void slider(int x)
 {
-    OgConfig config;
+    Config config;
     int value;
     value = (x - 91) * 128 / 108;
     if (value < 0) {
@@ -146,7 +146,7 @@ static void slider(int x)
     if (value > 127) {
         value = 127;
     }
-    config = *og_config();
+    config = *game_config();
     if (g_drag == 3) {
         config.sound_volume = (value * 100 + 63) / 127;
     }
@@ -156,22 +156,22 @@ static void slider(int x)
     if (g_drag == 5) {
         config.detail = value;
     }
-    og_config_set(&config);
+    config_set(&config);
     g_revision++;
 }
 
-void og_options_drag(int x, int held)
+void options_drag(int x, int held)
 {
     if (!(held & 1)) {
         g_drag = -1;
         return;
     }
-    if (g_panel == OG_PANEL_OPTIONS && g_drag >= 3) {
+    if (g_panel == PANEL_OPTIONS && g_drag >= 3) {
         slider(x);
     }
 }
 
-int og_options_click(int x, int y, int *sound, int *quit)
+int options_click(int x, int y, int *sound, int *quit)
 {
     int i;
     if (sound) {
@@ -180,7 +180,7 @@ int og_options_click(int x, int y, int *sound, int *quit)
     if (quit) {
         *quit = 0;
     }
-    if (!g_up || g_panel != OG_PANEL_OPTIONS) {
+    if (!g_up || g_panel != PANEL_OPTIONS) {
         return 0;
     }
     for (i = 0; i < 10; i++) {
@@ -191,28 +191,28 @@ int og_options_click(int x, int y, int *sound, int *quit)
             *sound = 203;
         }
         if (i == 0) {
-            og_options_open_files(1);
+            options_open_files(1);
         }
         else if (i == 1) {
-            og_options_open_files(0);
+            options_open_files(0);
         }
-        else if (i == OG_OPT_CONTINUE) {
-            og_options_commit();
+        else if (i == OPT_CONTINUE) {
+            options_commit();
         }
-        else if (i == OG_OPT_EXIT) {
+        else if (i == OPT_EXIT) {
             if (quit) {
                 *quit = 1;
             }
         }
-        else if (i == OG_OPT_FULL) {
-            og_options_set_flags(og_options_flags() ^ 1);
+        else if (i == OPT_FULL) {
+            options_set_flags(options_flags() ^ 1);
         }
-        else if (i == OG_OPT_BOB) {
-            og_options_set_flags(og_options_flags() ^ 2);
+        else if (i == OPT_BOB) {
+            options_set_flags(options_flags() ^ 2);
         }
-        else if (i == OG_OPT_CONTROLS) {
-            g_panel = OG_PANEL_CONTROLS;
-            og_controls_open();
+        else if (i == OPT_CONTROLS) {
+            g_panel = PANEL_CONTROLS;
+            controls_open();
             g_revision++;
         } else {
             g_drag = i;

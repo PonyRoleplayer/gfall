@@ -2,7 +2,7 @@
 #include "engine/core/df.h"
 #include "engine/ui/pic.h"
 
-void og_size_fit(int *width, int *height, int max_width, int max_height)
+void size_fit(int *width, int *height, int max_width, int max_height)
 {
     int sx, sy;
     if (*width <= 0 || *height <= 0 || max_width <= 0 || max_height <= 0) {
@@ -16,7 +16,7 @@ void og_size_fit(int *width, int *height, int max_width, int max_height)
     if (*height < 1) { *height = 1; }
 }
 
-void og_screen_rect(int view_w, int view_h, int *x, int *top, int *w, int *h)
+void screen_rect(int view_w, int view_h, int *x, int *top, int *w, int *h)
 {
     int scale;
     int pw;
@@ -50,7 +50,7 @@ void og_screen_rect(int view_w, int view_h, int *x, int *top, int *w, int *h)
     }
 }
 
-int og_pointer_classic(int sx, int sy, int view_w, int view_h, int *cx, int *cy)
+int pointer_classic(int sx, int sy, int view_w, int view_h, int *cx, int *cy)
 {
     int left;
     int top;
@@ -58,7 +58,7 @@ int og_pointer_classic(int sx, int sy, int view_w, int view_h, int *cx, int *cy)
     int ph;
     int bottom;
 
-    og_screen_rect(view_w, view_h, &left, &top, &pw, &ph);
+    screen_rect(view_w, view_h, &left, &top, &pw, &ph);
     bottom = top - ph;
     if (sx < left || sx >= left + pw || sy < bottom || sy >= top) {
         return 0;
@@ -72,14 +72,14 @@ int og_pointer_classic(int sx, int sy, int view_w, int view_h, int *cx, int *cy)
     return 1;
 }
 
-void og_classic_engine(int cx, int cy, int view_w, int view_h, int *sx, int *sy)
+void classic_engine(int cx, int cy, int view_w, int view_h, int *sx, int *sy)
 {
     int left;
     int top;
     int pw;
     int ph;
 
-    og_screen_rect(view_w, view_h, &left, &top, &pw, &ph);
+    screen_rect(view_w, view_h, &left, &top, &pw, &ph);
     if (cx < 0) {
         cx = 0;
     }
@@ -100,7 +100,7 @@ void og_classic_engine(int cx, int cy, int view_w, int view_h, int *sx, int *sy)
     }
 }
 
-void og_blit(int pic, int cx, int cy, int cw, int ch)
+void blit(int pic, int cx, int cy, int cw, int ch)
 {
     int sx;
     int sy;
@@ -114,7 +114,7 @@ void og_blit(int pic, int cx, int cy, int cw, int ch)
     if (pic <= 0 || cw < 1 || ch < 1) {
         return;
     }
-    og_screen_rect(df_view_w(), df_view_h(), &left, &top, &pw, &ph);
+    screen_rect(df_view_w(), df_view_h(), &left, &top, &pw, &ph);
     sx = left + cx * pw / 320;
     sy = top - cy * ph / 200;
     sw = cw * pw / 320;
@@ -128,7 +128,7 @@ void og_blit(int pic, int cx, int cy, int cw, int ch)
     pic_draw(pic, sx, sy, sw, sh);
 }
 
-void og_blit_part(int pic, int sx, int sy, int sw, int sh, int cx, int cy, int cw, int ch)
+void blit_part(int pic, int sx, int sy, int sw, int sh, int cx, int cy, int cw, int ch)
 {
     int dx;
     int dy;
@@ -142,7 +142,7 @@ void og_blit_part(int pic, int sx, int sy, int sw, int sh, int cx, int cy, int c
     if (pic <= 0 || sw < 1 || sh < 1 || cw < 1 || ch < 1) {
         return;
     }
-    og_screen_rect(df_view_w(), df_view_h(), &left, &top, &pw, &ph);
+    screen_rect(df_view_w(), df_view_h(), &left, &top, &pw, &ph);
     dx = left + cx * pw / 320;
     dy = top - cy * ph / 200;
     dw = cw * pw / 320;
@@ -156,7 +156,7 @@ void og_blit_part(int pic, int sx, int sy, int sw, int sh, int cx, int cy, int c
     pic_draw_part(pic, sx, sy, sw, sh, dx, dy, dw < 1 ? 1 : dw, dh, 255);
 }
 
-void og_hud_screen_rect(int view_w, int view_h, int *top, int *height)
+void hud_screen_rect(int view_w, int view_h, int *top, int *height)
 {
     int h;
     h = view_w * 46 / 320;
@@ -174,14 +174,14 @@ void og_hud_screen_rect(int view_w, int view_h, int *top, int *height)
     }
 }
 
-int og_world_pointer(int sx, int sy, int view_w, int view_h, int bar, int *cx, int *cy)
+int world_pointer(int sx, int sy, int view_w, int view_h, int bar, int *cx, int *cy)
 {
     int bh;
     int y;
     if (view_w < 1 || view_h < 2 || sx < 0 || sx >= view_w || sy < 0 || sy >= view_h) {
         return 0;
     }
-    og_hud_screen_rect(view_w, view_h, 0, &bh);
+    hud_screen_rect(view_w, view_h, 0, &bh);
     if (bar && sy < bh) {
         y = 154 + (bh - 1 - sy) * 46 / bh;
     } else {
@@ -196,10 +196,10 @@ int og_world_pointer(int sx, int sy, int view_w, int view_h, int bar, int *cx, i
     return 1;
 }
 
-void og_world_engine(int cx, int cy, int view_w, int view_h, int bar, int *sx, int *sy)
+void world_engine(int cx, int cy, int view_w, int view_h, int bar, int *sx, int *sy)
 {
     int bh;
-    og_hud_screen_rect(view_w, view_h, 0, &bh);
+    hud_screen_rect(view_w, view_h, 0, &bh);
     if (sx) {
         *sx = cx * view_w / 320;
     }
@@ -209,7 +209,7 @@ void og_world_engine(int cx, int cy, int view_w, int view_h, int bar, int *sx, i
     }
 }
 
-void og_hud_blit_part(int pic, int sx, int sy, int sw, int sh, int cx, int cy, int cw, int ch)
+void hud_blit_part(int pic, int sx, int sy, int sw, int sh, int cx, int cy, int cw, int ch)
 {
     int bottom;
     int top;
@@ -223,10 +223,10 @@ void og_hud_blit_part(int pic, int sx, int sy, int sw, int sh, int cx, int cy, i
                   (cx + cw) * width / 320 - cx * width / 320, top - bottom, 255);
 }
 
-void og_hud_blit(int pic, int cx, int cy, int cw, int ch)
+void hud_blit(int pic, int cx, int cy, int cw, int ch)
 {
     int w, h;
     if (pic_size(pic, &w, &h)) {
-        og_hud_blit_part(pic, 0, 0, w, h, cx, cy, cw, ch);
+        hud_blit_part(pic, 0, 0, w, h, cx, cy, cw, ch);
     }
 }

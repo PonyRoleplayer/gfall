@@ -1,8 +1,8 @@
-#ifndef OGFALL_STATE_H
-#define OGFALL_STATE_H
+#ifndef GFALL_STATE_H
+#define GFALL_STATE_H
 
-/* OGFALL's pointer-free session, original record ownership and Watcom RNG.
- * This is our own schema, not a DOS save ABI. Read docs/ogfall.md. */
+/* GFALL's pointer-free session, original record ownership and Watcom RNG.
+ * This is our own schema, not a DOS save ABI. Read docs/gfall.md. */
 #include "game/dagger/play/standing.h"
 #include "game/dagger/play/bank.h"
 #include "game/dagger/play/lodging.h"
@@ -18,45 +18,45 @@
 #include "game/dagger/play/worldstate.h"
 #include "engine/scene/keep.h"
 
-#define OG_STATE_VERSION 17
+#define STATE_VERSION 17
 /* The room a save keeps for the quests (quest.c packs into it). */
-#define OG_QUEST_BLOB 24576
-#define OG_STATE5_WIRE_BYTES 348
-#define OG_WORLD_ROWS 512
-#define OG_THUMB_W 80
-#define OG_THUMB_H 50
-#define OG_THUMB_PIXELS (OG_THUMB_W * OG_THUMB_H)
-#define OG_OBJECTS 256
-#define OG_MODES 8
-#define OG_WORLD_ROOT 1u
-#define OG_PLAYER_ROOT 700u
+#define QUEST_BLOB 24576
+#define STATE5_WIRE_BYTES 348
+#define WORLD_ROWS 512
+#define THUMB_W 80
+#define THUMB_H 50
+#define THUMB_PIXELS (THUMB_W * THUMB_H)
+#define OBJECTS 256
+#define MODES 8
+#define WORLD_ROOT 1u
+#define PLAYER_ROOT 700u
 
 enum {
-    OG_RECORD_WORLD = 1,
-    OG_RECORD_ITEM = 2,
-    OG_RECORD_ENTITY = 3,
-    OG_RECORD_MOVE = 4,
-    OG_RECORD_EYE = 5,
-    OG_RECORD_SPELL = 9,
-    OG_RECORD_QUESTS = 16,
-    OG_RECORD_SOUL = 20,
-    OG_RECORD_OPTIONS = 23,
-    OG_RECORD_LOGBOOK = 24,
-    OG_RECORD_BANK = 25,
-    OG_RECORD_NONWORLD = 39,
-    OG_RECORD_CONTAINER = 52
+    RECORD_WORLD = 1,
+    RECORD_ITEM = 2,
+    RECORD_ENTITY = 3,
+    RECORD_MOVE = 4,
+    RECORD_EYE = 5,
+    RECORD_SPELL = 9,
+    RECORD_QUESTS = 16,
+    RECORD_SOUL = 20,
+    RECORD_OPTIONS = 23,
+    RECORD_LOGBOOK = 24,
+    RECORD_BANK = 25,
+    RECORD_NONWORLD = 39,
+    RECORD_CONTAINER = 52
 };
 
-enum { OG_EVENT_GIVE = 1, OG_EVENT_KILL = 2, OG_EVENT_FOUND = 3,
-       OG_EVENT_DROP = 5, OG_EVENT_HURT = 21, OG_EVENT_NPC = 28,
-       OG_EVENT_GOLD = 71, OG_EVENT_SPELL = 73, OG_EVENT_FACTION = 78,
-       /* OGFALL notifications, outside the original quest event range. */
-       OG_EVENT_MINUTE = 256, OG_EVENT_PLACE = 257 };
-enum { OG_GAME_WORLD = 0, OG_GAME_SHEET = 3, OG_GAME_INVENTORY = 4,
-       OG_GAME_SPELLBOOK = 5, OG_GAME_OPTIONS = 7, OG_GAME_READING = 11, OG_GAME_LOG = 14,
-       OG_GAME_REST = 16, OG_GAME_TRAVEL = 19 };
+enum { EVENT_GIVE = 1, EVENT_KILL = 2, EVENT_FOUND = 3,
+       EVENT_DROP = 5, EVENT_HURT = 21, EVENT_NPC = 28,
+       EVENT_GOLD = 71, EVENT_SPELL = 73, EVENT_FACTION = 78,
+       /* GFALL notifications, outside the original quest event range. */
+       EVENT_MINUTE = 256, EVENT_PLACE = 257 };
+enum { GAME_WORLD = 0, GAME_SHEET = 3, GAME_INVENTORY = 4,
+       GAME_SPELLBOOK = 5, GAME_OPTIONS = 7, GAME_READING = 11, GAME_LOG = 14,
+       GAME_REST = 16, GAME_TRAVEL = 19 };
 
-typedef struct OgObject {
+typedef struct ObjectInfo {
     df_u32 id, parent;
     int type, index, flags;
     /* Original group/index identity. Weight is in quarter kilograms. */
@@ -70,130 +70,130 @@ typedef struct OgObject {
     /* Spell instances own their editable name (above) and icon. Effects stay
      * in the immutable standard definition identified by index. */
     int spell_icon;
-} OgObject;
+} ObjectInfo;
 
-typedef struct OgEvent {
+typedef struct QuestEvent {
     int kind;
     df_u32 subject, other;
     int value;
-} OgEvent;
+} QuestEvent;
 
-/* A spell the player made at a spell maker (spellmaker_buy copies the 89-byte record into the book's spell object): kept here, registered under id OG_CUSTOM_SPELL_ID + its slot. */
-#define OG_CUSTOM_SPELLS 32
-#define OG_CUSTOM_SPELL_ID 3000
-typedef struct OgCustomSpell { int used; df_u8 record[89]; } OgCustomSpell;
+/* A spell the player made at a spell maker (spellmaker_buy copies the 89-byte record into the book's spell object): kept here, registered under id CUSTOM_SPELL_ID + its slot. */
+#define CUSTOM_SPELLS 32
+#define CUSTOM_SPELL_ID 3000
+typedef struct CustomSpell { int used; df_u8 record[89]; } CustomSpell;
 
 /* What an item made at the item maker carries (itemmaker_enchant: ten pairs of a type, 0..14 a power and 15..25 a side effect, and a parameter; the spell id for the first three powers). Kept by the item's id; a row whose item is gone is free. identified is the original's item flag 32. */
-#define OG_ENCHANTED_ITEMS 64
-typedef struct OgItemEnchant { df_u32 item; int identified; int type[10], param[10]; } OgItemEnchant;
+#define ENCHANTED_ITEMS 64
+typedef struct ItemEnchant { df_u32 item; int identified; int type[10], param[10]; } ItemEnchant;
 
-typedef struct OgState {
+typedef struct GameState {
     int version, ready;
-    OgCharacter who;
+    CharacterState who;
     /* Includes a custom class's restrictions, independent of the editor. */
-    OgClass career;
-    int base_attribute[OG_ATTRS];
-    df_u32 skill_uses[OG_SKILLS];
+    ClassInfo career;
+    int base_attribute[ATTRS];
+    df_u32 skill_uses[SKILLS];
     df_u32 equipped[27];
     df_u32 random, next_low, minutes;
     df_u32 tick_fraction, ticks;
     float frame_fraction;
     int settings_flags, mouse_mode;
-    int mode, depth, mode_stack[OG_MODES];
+    int mode, depth, mode_stack[MODES];
     int region, location, environment;
     float x, eye_y, z;
     int yaw, pitch;
     df_u32 move_id, eye_id, entity_id, inventory_id;
-    OgObject object[OG_OBJECTS];
+    ObjectInfo object[OBJECTS];
     int motion_valid;
-    OgMotion motion;
+    MotionState motion;
     int world_count;
-    Keep world[OG_WORLD_ROWS];
+    Keep world[WORLD_ROWS];
     int hud_mode, weapon_ready, cursor_active;
     char save_label[32];
     int preview_valid;
-    df_u16 preview[OG_THUMB_PIXELS];
+    df_u16 preview[THUMB_PIXELS];
     df_u32 event_serial;
-    OgEvent last_event;
+    QuestEvent last_event;
     df_u32 stealth_minute;
-    OgProgress progress;
-    OgSurvival survival;
-    OgEncounterState encounters;
-    OgMagicState magic;
-    OgWorldState world_state;
-    OgStanding standing;
-    OgBankState bank;
-    OgLodging lodging;
-    OgLaw law;
-    OgGuilds guilds;
-    OgCustomSpell custom_spell[OG_CUSTOM_SPELLS];
-    OgItemEnchant enchant[OG_ENCHANTED_ITEMS];
+    ProgressState progress;
+    Survival survival;
+    EncounterState encounters;
+    MagicState magic;
+    WorldState world_state;
+    StandingState standing;
+    BankState bank;
+    LodgingState lodging;
+    LawState law;
+    GuildsState guilds;
+    CustomSpell custom_spell[CUSTOM_SPELLS];
+    ItemEnchant enchant[ENCHANTED_ITEMS];
     /* The game minute of the player's last kill (character +0x1FD, set by damage_creature_death): Health leech's clock. */
     df_u32 last_kill;
     /* The quests as quest.c packs them (schema 16): filled when a save is written, read when one is restored. */
     int quest_len;
-    df_u8 quest_blob[OG_QUEST_BLOB];
-} OgState;
+    df_u8 quest_blob[QUEST_BLOB];
+} GameState;
 
-OgCharacter *og_character(void);
+CharacterState *character_state(void);
 /* A slot of the player's own spells, to fill (spellmaker.c). */
-OgCustomSpell *og_custom_spell_edit(int slot);
+CustomSpell *custom_spell_edit(int slot);
 /* A row of the enchanted items (itemmaker.c). */
-OgItemEnchant *og_item_enchant_edit(int slot);
-void og_character_clear(void);
-const OgState *og_state(void);
+ItemEnchant *item_enchant_edit(int slot);
+void character_clear(void);
+const GameState *game_state(void);
 /* The faction and region standing inside the session (standing.h). */
-OgStanding *og_standing(void);
+StandingState *standing_state(void);
 /* The regional accounts, the house and the ship (bank.h). */
-OgBankState *og_bank(void);
+BankState *bank_state(void);
 /* The rooms rented and the last meal (lodging.h). */
-OgLodging *og_lodging(void);
+LodgingState *lodging_state(void);
 /* The crime noted and each region's punishment (law.h). */
-OgLaw *og_law(void);
-const char *og_state_error(void);
+LawState *law_state(void);
+const char *state_error(void);
 /* Reset gameplay, retaining the RNG stream and control settings.
  * begin consumes the completed character from chargen. */
-void og_state_clear(void);
-int og_state_begin(void);
-void og_random_seed(df_u32 seed);
-int og_random_range(int low, int high);
-const OgObject *og_object(df_u32 id);
+void state_clear(void);
+int state_begin(void);
+void random_seed(df_u32 seed);
+int random_range(int low, int high);
+const ObjectInfo *object_at(df_u32 id);
 /* Editing fields never changes record identity, type or ownership. */
-OgObject *og_object_edit(df_u32 id);
-int og_state_equip(int slot, df_u32 item);
-df_u32 og_object_new(int type, df_u32 parent, int index, unsigned high);
-int og_object_reparent(df_u32 id, df_u32 parent);
+ObjectInfo *object_edit(df_u32 id);
+int state_equip(int slot, df_u32 item);
+df_u32 object_new(int type, df_u32 parent, int index, unsigned high);
+int object_reparent(df_u32 id, df_u32 parent);
 /* Only leaves may be deleted. Mandatory session records are protected. */
-int og_object_delete(df_u32 id);
-void og_state_settings(int flags, int mouse_mode);
-int og_state_mode_push(int mode);
-int og_state_mode_pop(void);
-void og_state_set_place(int region, int location, int environment);
-void og_state_pose(float x, float eye_y, float z, int yaw, int pitch);
+int object_delete(df_u32 id);
+void state_settings(int flags, int mouse_mode);
+int state_mode_push(int mode);
+int state_mode_pop(void);
+void state_set_place(int region, int location, int environment);
+void state_pose(float x, float eye_y, float z, int yaw, int pitch);
 /* The frame caller excludes menus/focus loss; modes also gate the clock. */
-void og_state_frame(float seconds);
-void og_state_advance_ms(df_u32 milliseconds);
-void og_state_pass_minutes(df_u32 minutes);
-void og_state_calendar(void);
+void state_frame(float seconds);
+void state_advance_ms(df_u32 milliseconds);
+void state_pass_minutes(df_u32 minutes);
+void state_calendar(void);
 /* Original epoch: 3E 400, 360-day years; weekday runs across months. */
-void og_state_date(int *year, int *month, int *day, int *weekday);
+void state_date(int *year, int *month, int *day, int *weekday);
 /* One synchronous observer, kept outside saved data. No dropped event queue. */
-void og_state_observe(void (*fn)(const OgEvent *event));
-void og_state_event(int kind, df_u32 subject, df_u32 other, int value);
-void og_skill_use(int skill);
+void state_observe(void (*fn)(const QuestEvent *event));
+void state_event(int kind, df_u32 subject, df_u32 other, int value);
+void skill_use(int skill);
 /* skill_add_uses: n uses, never below 0 or past 20000. */
-void og_skill_add_uses(int skill, int n);
-void og_state_stealth_checked(void);
-void og_state_clear_skill_uses(int skill);
-void og_state_base_attribute(int attribute, int value);
-int og_state_valid(const OgState *snapshot);
-int og_state_restore(const OgState *snapshot);
+void skill_add_uses(int skill, int n);
+void state_stealth_checked(void);
+void state_clear_skill_uses(int skill);
+void state_base_attribute(int attribute, int value);
+int state_valid(const GameState *snapshot);
+int state_restore(const GameState *snapshot);
 /* Capture the engine's keyed changes only at a save boundary. */
-int og_state_capture_world(void);
-int og_state_restore_world(void);
-void og_state_capture_motion(void);
-void og_state_ui(int mode, int weapon_ready, int cursor_active);
-void og_state_save_label(const char *label);
-void og_state_preview(const df_u16 *pixels);
+int state_capture_world(void);
+int state_restore_world(void);
+void state_capture_motion(void);
+void state_ui(int mode, int weapon_ready, int cursor_active);
+void state_save_label(const char *label);
+void state_preview(const df_u16 *pixels);
 
 #endif

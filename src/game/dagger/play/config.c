@@ -9,9 +9,9 @@
 #include "engine/gfx/camera.h"
 #include <stddef.h>
 
-static OgConfig g_config;
+static Config g_config;
 static const char *g_error = "";
-static const struct { const char *token, *name; int key; } g_action[OG_ACTS] = {
+static const struct { const char *token, *name; int key; } g_action[ACTS] = {
     {"forward", "Forward", 0x26}, {"back", "Reverse", 0x28},
     {"turn_left", "Turn left", 0x25}, {"slide_left", "Slide left", 0xa0},
     {"turn_right", "Turn right", 0x27}, {"slide_right", "Slide right", 0xa1},
@@ -34,7 +34,7 @@ static const struct { const char *token, *name; int key; } g_action[OG_ACTS] = {
 };
 
 typedef struct Setting { const char *name; size_t offset; int low, high; } Setting;
-#define SETTING(name, field, low, high) {name, offsetof(OgConfig, field), low, high}
+#define SETTING(name, field, low, high) {name, offsetof(Config, field), low, high}
 static const Setting g_setting[] = {
     SETTING("view_flags", flags, 0, 3), SETTING("mouse_mode", mouse_mode, 0, 1),
     SETTING("sound_volume", sound_volume, 0, 100), SETTING("music_volume", music_volume, 0, 100),
@@ -46,38 +46,38 @@ static const Setting g_setting[] = {
 };
 #undef SETTING
 
-static int *setting_value(OgConfig *config, int index)
+static int *setting_value(Config *config, int index)
 {
     return (int *)((char *)config + g_setting[index].offset);
 }
 
-const OgConfig *og_config(void)
+const Config *game_config(void)
 {
     return &g_config;
 }
 
-const char *og_config_error(void)
+const char *config_error(void)
 {
     return g_error;
 }
 
-const char *og_action_name(int action)
+const char *action_name(int action)
 {
-    return action >= 0 && action < OG_ACTS ? g_action[action].name : "";
+    return action >= 0 && action < ACTS ? g_action[action].name : "";
 }
 
-const char *og_action_token(int action)
+const char *action_token(int action)
 {
-    return action >= 0 && action < OG_ACTS ? g_action[action].token : "";
+    return action >= 0 && action < ACTS ? g_action[action].token : "";
 }
 
-int og_key_allowed(int key)
+int key_allowed(int key)
 {
     /* Escape, the console and F10 retain their own UI actions. */
     return key >= 1 && key <= 254 && key != 0x1b && key != 0xc0 && key != 0x79;
 }
 
-void og_config_defaults(OgConfig *config)
+void config_defaults(Config *config)
 {
     int i;
 
@@ -88,12 +88,12 @@ void og_config_defaults(OgConfig *config)
     config->width = 640;
     config->height = 480;
     config->fov = 75;
-    for (i = 0; i < OG_ACTS; i++) {
+    for (i = 0; i < ACTS; i++) {
         config->key[i] = g_action[i].key;
     }
 }
 
-static int valid(const OgConfig *config)
+static int valid(const Config *config)
 {
     int i, value;
 
@@ -110,30 +110,30 @@ static int valid(const OgConfig *config)
           (config->width == 800 && config->height == 600))) {
         return 0;
     }
-    for (i = 0; i < OG_ACTS; i++) {
-        if (!og_key_allowed(config->key[i])) {
+    for (i = 0; i < ACTS; i++) {
+        if (!key_allowed(config->key[i])) {
             return 0;
         }
     }
     return 1;
 }
 
-void og_config_apply(void)
+void config_apply(void)
 {
-    og_state_settings(g_config.flags, g_config.mouse_mode);
+    state_settings(g_config.flags, g_config.mouse_mode);
     sound_set_volume(g_config.sound_volume);
     music_set_volume(g_config.music_volume);
     camera_set_fov((float)g_config.fov);
 }
 
-int og_config_set(const OgConfig *config)
+int config_set(const Config *config)
 {
     if (!config || !valid(config)) {
-        g_error = "Invalid OGFALL settings";
+        g_error = "Invalid GFALL settings";
         return 0;
     }
     g_config = *config;
-    og_config_apply();
+    config_apply();
     return 1;
 }
 
@@ -219,7 +219,7 @@ static int boolean(const char *text, int *value)
     return number(text, value) && *value <= 1;
 }
 
-static int set_named(OgConfig *config, const char *name, char *value)
+static int set_named(Config *config, const char *name, char *value)
 {
     int v, i;
     char *height;
@@ -243,7 +243,7 @@ static int set_named(OgConfig *config, const char *name, char *value)
     }
     if (df_eq(name, "reverse_y")) { return boolean(value, &config->reverse_y); }
     if (name[0] == 'k' && name[1] == 'e' && name[2] == 'y' && name[3] == '.') {
-        for (i = 0; i < OG_ACTS; i++) {
+        for (i = 0; i < ACTS; i++) {
             if (df_eq(name + 4, g_action[i].token)) { return key_value(value, &config->key[i]); }
         }
         return 0;
@@ -254,15 +254,15 @@ static int set_named(OgConfig *config, const char *name, char *value)
     return 0;
 }
 
-int og_config_parse(OgConfig *out, const char *text)
+int config_parse(Config *out, const char *text)
 {
-    OgConfig candidate;
+    Config candidate;
     char line[128];
     char *name, *value;
     int n;
 
     if (!out || !text) { return 0; }
-    og_config_defaults(&candidate);
+    config_defaults(&candidate);
     while (*text) {
         n = 0;
         while (*text && *text != '\n') {
@@ -308,7 +308,7 @@ static int append(char *text, int capacity, int *used, const char *line)
     return 1;
 }
 
-int og_config_format(const OgConfig *config, char *text, int capacity)
+int config_format(const Config *config, char *text, int capacity)
 {
     char line[128], name[32];
     int i, used;
@@ -317,7 +317,7 @@ int og_config_format(const OgConfig *config, char *text, int capacity)
     used = 0;
     text[0] = 0;
 #define PUT(s) do { if (!append(text, capacity, &used, s)) { return 0; } } while (0)
-    PUT("# OGFALL settings. Edit name=value lines; Options writes this file on Continue.\r\n");
+    PUT("# GFALL settings. Edit name=value lines; Options writes this file on Continue.\r\n");
     PUT("# Switches use on/off (yes/no or 1/0 also work).\r\n");
     PUT("\r\n# Screen. Resolution changes take effect at the next start.\r\n");
     log_format(line, sizeof(line), "resolution=%dx%d\r\nfov=%d\r\n", config->width, config->height, config->fov);
@@ -338,7 +338,7 @@ int og_config_format(const OgConfig *config, char *text, int capacity)
     PUT(config->reverse_y ? "reverse_y=on\r\n" : "reverse_y=off\r\n");
     PUT("\r\n# Keys use names: Up, K, Left Shift, Right Button, Digit 2, etc.\r\n");
     PUT("# Escape, F10 and the console key are reserved.\r\n");
-    for (i = 0; i < OG_ACTS; i++) {
+    for (i = 0; i < ACTS; i++) {
         key_name(config->key[i], name, sizeof(name));
         log_format(line, sizeof(line), "key.%s=%s\r\n", g_action[i].token, name);
         PUT(line);
@@ -347,77 +347,77 @@ int og_config_format(const OgConfig *config, char *text, int capacity)
     return used;
 }
 
-int og_config_read(void)
+int config_read(void)
 {
     FsFile *file;
-    OgConfig candidate;
+    Config candidate;
     char text[4096];
     df_u32 size;
     const char *path;
 
-    path = OG_CONFIG_FILE;
-    og_config_defaults(&g_config);
-    if (!fs_exists(path) && fs_exists(OG_CONFIG_FILE ".OLD")) {
-        path = OG_CONFIG_FILE ".OLD";
+    path = CONFIG_FILE;
+    config_defaults(&g_config);
+    if (!fs_exists(path) && fs_exists(CONFIG_FILE ".OLD")) {
+        path = CONFIG_FILE ".OLD";
     }
     if (!fs_exists(path)) {
-        og_config_apply();
+        config_apply();
         g_error = "";
         return 1;
     }
     file = fs_open_beside(path);
     if (!file) {
-        g_error = "Cannot open ogfall/settings.cfg";
+        g_error = "Cannot open gfall/settings.cfg";
         return 0;
     }
     size = fs_size(file);
     if (size >= sizeof(text) || !fs_read_at(file, 0, text, size)) {
         fs_close(file);
-        g_error = "Cannot read ogfall/settings.cfg";
+        g_error = "Cannot read gfall/settings.cfg";
         return 0;
     }
     fs_close(file);
     text[size] = 0;
-    if (!og_config_parse(&candidate, text)) {
-        g_error = "Invalid ogfall/settings.cfg; defaults retained";
-        og_config_apply();
+    if (!config_parse(&candidate, text)) {
+        g_error = "Invalid gfall/settings.cfg; defaults retained";
+        config_apply();
         return 0;
     }
     g_config = candidate;
-    og_config_apply();
+    config_apply();
     g_error = "";
     return 1;
 }
 
-int og_config_write(void)
+int config_write(void)
 {
     static char text[4096];
     static char verify[4096];
-    OgConfig candidate;
+    Config candidate;
     FsFile *file;
     int size, good;
 
-    size = og_config_format(&g_config, text, sizeof(text));
-    if (!size || !fs_make_dirs("ogfall") || !fs_create("ogfall\\settings.tmp")) {
-        g_error = "Cannot create ogfall/settings.cfg";
+    size = config_format(&g_config, text, sizeof(text));
+    if (!size || !fs_make_dirs("gfall") || !fs_create("gfall\\settings.tmp")) {
+        g_error = "Cannot create gfall/settings.cfg";
         return 0;
     }
     if (!fs_append(text, (df_u32)size)) {
         fs_abort();
-        g_error = "Cannot write ogfall/settings.cfg";
+        g_error = "Cannot write gfall/settings.cfg";
         return 0;
     }
     fs_finish();
-    file = fs_open_beside("ogfall\\settings.tmp");
+    file = fs_open_beside("gfall\\settings.tmp");
     good = file && fs_size(file) == (df_u32)size && fs_read_at(file, 0, verify, (df_u32)size);
     if (file) {
         fs_close(file);
     }
     verify[size] = 0;
-    if (!good || !og_config_parse(&candidate, verify) ||
-        !fs_move("ogfall\\settings.tmp", OG_CONFIG_FILE)) {
-        fs_delete("ogfall\\settings.tmp");
-        g_error = "Cannot verify or replace ogfall/settings.cfg";
+    if (!good || !config_parse(&candidate, verify) ||
+        !fs_move("gfall\\settings.tmp", CONFIG_FILE)) {
+        fs_delete("gfall\\settings.tmp");
+        g_error = "Cannot verify or replace gfall/settings.cfg";
         return 0;
     }
     g_error = "";

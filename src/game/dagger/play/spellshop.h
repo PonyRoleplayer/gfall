@@ -1,5 +1,5 @@
-#ifndef OGFALL_SPELLSHOP_H
-#define OGFALL_SPELLSHOP_H
+#ifndef GFALL_SPELLSHOP_H
+#define GFALL_SPELLSHOP_H
 
 #include "game/dagger/play/spellbook.h"
 
@@ -10,13 +10,13 @@
  * of the table, until it holds one. The rolls are on the stream seeded with the person's number, so the same person offers the same spells; the stream is put back.
  * A spell costs four times its magicka cost in gold (half on the holiday 43), through the hall's price chain.
  */
-#define OG_SPELLSHOP_MOST 96
+#define SPELLSHOP_MOST 96
 
 /* The definitions' ids offered by a person of a hall of this quality; how many. 0 when the player has no spellbook to put one in. */
-int og_spellshop_list(unsigned person, int quality, int *ids, int cap);
+int spellshop_list(unsigned person, int quality, int *ids, int cap);
 /* The gold a spell asks before the chain: four times its cost, halved on holiday 43. */
-int og_spellshop_price(const OgSpellDef *spell, int holiday);
+int spellshop_price(const SpellDef *spell, int holiday);
 /* The spell into the spellbook; 1 when it is there (the book holds 128). */
-int og_spellshop_add(int id);
+int spellshop_add(int id);
 
 #endif

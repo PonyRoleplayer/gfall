@@ -8,19 +8,19 @@
 #define BOOK_PATH "BOOKS\\BOK%05d.TXT"
 #endif
 
-void og_book_close(OgBook *book)
+void book_close(BookInfo *book)
 {
     if (book->file) { fs_close(book->file); }
     mem_zero(book, sizeof(*book));
 }
 
-int og_book_open(OgBook *book, int id)
+int book_open(BookInfo *book, int id)
 {
     char path[32];
     df_u8 header[236], offset[4];
     df_u32 size, start, end;
     int i;
-    og_book_close(book);
+    book_close(book);
     if (id < 0 || id > 99999) { return 0; }
     log_format(path, sizeof(path), BOOK_PATH, id);
     book->file = fs_open(path);
@@ -28,7 +28,7 @@ int og_book_open(OgBook *book, int id)
     size = fs_size(book->file);
     if (size < 240 || !fs_read_at(book->file, 0, header, sizeof(header))) { goto bad; }
     book->pages = df_ru16(header + 234);
-    if (book->pages < 1 || book->pages > OG_BOOK_PAGES || 236u + 4u * book->pages >= size) { goto bad; }
+    if (book->pages < 1 || book->pages > BOOK_PAGES || 236u + 4u * book->pages >= size) { goto bad; }
     /* Title and author are 64-byte fields at offsets 0 and 64. */
     mem_copy(book->title, header, 64);
     mem_copy(book->author, header + 64, 64);
@@ -44,11 +44,11 @@ int og_book_open(OgBook *book, int id)
     book->offset[book->pages] = size;
     return 1;
 bad:
-    og_book_close(book);
+    book_close(book);
     return 0;
 }
 
-int og_book_read(OgBook *book, int page)
+int book_read(BookInfo *book, int page)
 {
     df_u32 size;
     int i;
@@ -58,7 +58,7 @@ int og_book_read(OgBook *book, int page)
      * following page's offset. book_draw_page reads up to 16000 bytes, then
      * stops at token 246; preserve that behavior with an explicit file bound. */
     size = book->offset[book->pages] - book->offset[page];
-    if (size > OG_BOOK_PAGE_BYTES) { size = OG_BOOK_PAGE_BYTES; }
+    if (size > BOOK_PAGE_BYTES) { size = BOOK_PAGE_BYTES; }
     if (!size || !fs_read_at(book->file, book->offset[page], book->page, size)) { return 0; }
     /* Walk token operands too: 246 inside an x-coordinate or picture name
      * is data, not an end marker. A damaged operand cannot escape this page. */
@@ -77,7 +77,7 @@ int og_book_read(OgBook *book, int page)
     return 0;
 }
 
-int og_book_title(int id, char *name, int capacity, df_u32 *seed)
+int book_title(int id, char *name, int capacity, df_u32 *seed)
 {
     FsFile *file;
     char path[32];
@@ -96,7 +96,7 @@ int og_book_title(int id, char *name, int capacity, df_u32 *seed)
     return 1;
 }
 
-int og_book_header(int id, char *title, int title_cap, char *author, int author_cap)
+int book_header(int id, char *title, int title_cap, char *author, int author_cap)
 {
     FsFile *file;
     char path[32], field[65];

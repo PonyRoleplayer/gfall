@@ -2,7 +2,7 @@
 # Check an objdump -d listing for a page-sized immediate stack allocation.
 # GCC's probed large frames call ___chkstk_ms with the size in EAX, then
 # subtract EAX from ESP. A large immediate subtraction skips that probe.
-# See docs/ogfall.md, Windows 98 stack growth.
+# See docs/gfall.md, Windows 98 stack growth.
 set -eu
 
 if [ "$#" -ne 1 ]; then

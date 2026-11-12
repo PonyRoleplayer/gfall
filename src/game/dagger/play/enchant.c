@@ -20,80 +20,80 @@ static int others_absorb(int skip)
     int slot, k, type, param;
 
     for (slot = 0; slot < 27; slot++) {
-        if (slot == skip || !og_state()->equipped[slot]) { continue; }
-        for (k = 0; og_item_enchantment(og_state()->equipped[slot], k, &type, &param); k++) { if (type == 9) { return 1; } }
+        if (slot == skip || !game_state()->equipped[slot]) { continue; }
+        for (k = 0; item_enchantment(game_state()->equipped[slot], k, &type, &param); k++) { if (type == 9) { return 1; } }
     }
     return 0;
 }
 
-void og_enchant_equip(df_u32 item, int slot)
+void enchant_equip(df_u32 item, int slot)
 {
     int k, type, param;
 
-    for (k = 0; og_item_enchantment(item, k, &type, &param); k++) {
+    for (k = 0; item_enchantment(item, k, &type, &param); k++) {
         if (type == 1 && param >= 0) {
-            const OgSpellDef *held;
+            const SpellDef *held;
 
-            og_magic_hold(param, slot);
+            magic_hold(param, slot);
             /* Each held spell wears the item by its own cost (the original wears once by the last one's: 9.16). */
-            held = og_spell_def(param);
-            if (held) { og_item_damage(item, og_spell_cost(held, og_character())); }
-            if (!og_object(item)) { return; }
+            held = spell_def(param);
+            if (held) { item_damage(item, spell_cost(held, character_state())); }
+            if (!object_at(item)) { return; }
         }
-        else if (type == 5) { g_stamp = og_state()->minutes; }
-        else if (type == 9) { og_character()->conditions |= 0x200; }
-        else if (type == 10 && param >= 0 && param < OG_SKILLS) { og_character()->skill[param] += 15; }
+        else if (type == 5) { g_stamp = game_state()->minutes; }
+        else if (type == 9) { character_state()->conditions |= 0x200; }
+        else if (type == 10 && param >= 0 && param < SKILLS) { character_state()->skill[param] += 15; }
     }
 }
 
-void og_enchant_unequip(df_u32 item, int slot)
+void enchant_unequip(df_u32 item, int slot)
 {
     int k, type, param;
 
-    for (k = 0; og_item_enchantment(item, k, &type, &param); k++) {
-        if (type == 1 && param >= 0) { og_magic_release(param, slot); }
-        else if (type == 9 && !others_absorb(slot)) { og_character()->conditions &= ~0x200; }
-        else if (type == 10 && param >= 0 && param < OG_SKILLS) { og_character()->skill[param] -= 15; }
+    for (k = 0; item_enchantment(item, k, &type, &param); k++) {
+        if (type == 1 && param >= 0) { magic_release(param, slot); }
+        else if (type == 9 && !others_absorb(slot)) { character_state()->conditions &= ~0x200; }
+        else if (type == 10 && param >= 0 && param < SKILLS) { character_state()->skill[param] -= 15; }
         else if (type == 3) { g_rebuild = 1; }
     }
 }
 
 /* ---- Wear and breaking (equip.c item_damage, inven.c item_break) ---- */
 
-static const OgEnchantWorld *g_world;
+static const EnchantWorld *g_world;
 
-void og_enchant_set_world(const OgEnchantWorld *world) { g_world = world; }
+void enchant_set_world(const EnchantWorld *world) { g_world = world; }
 
 static int daylight(void) { return g_world && g_world->daylight && g_world->daylight(); }
 static int temple(void) { return g_world && g_world->temple && g_world->temple(); }
 
 static void item_break(df_u32 id)
 {
-    OgObject *item;
+    ObjectInfo *item;
     char name[48], line[80];
     int enchanted, k, type, param;
 
-    item = og_object_edit(id);
+    item = object_edit(id);
     if (!item) { return; }
     item->condition = 0;
-    og_item_name(item, name, sizeof(name));
+    item_name(item, name, sizeof(name));
     log_format(line, sizeof(line), "%s is broken.", name);
-    og_msg_set(line);
-    enchanted = og_item_enchanted(id);
-    og_inventory_unequip(id);
+    msg_set(line);
+    enchanted = item_enchanted(id);
+    inventory_unequip(id);
     if (!enchanted) { return; }
-    for (k = 0; og_item_enchantment(id, k, &type, &param); k++) {
-        if (type == 15) { og_msg_set("The soul from your broken item is released."); }
+    for (k = 0; item_enchantment(id, k, &type, &param); k++) {
+        if (type == 15) { msg_set("The soul from your broken item is released."); }
     }
-    og_object_delete(id);
+    object_delete(id);
 }
 
-void og_item_damage(df_u32 id, int n)
+void item_damage(df_u32 id, int n)
 {
-    OgObject *item;
+    ObjectInfo *item;
 
-    item = og_object_edit(id);
-    if (!item || item->type != OG_RECORD_ITEM) { return; }
+    item = object_edit(id);
+    if (!item || item->type != RECORD_ITEM) { return; }
     if (item->condition > n) { item->condition -= n; return; }
     item_break(id);
 }
@@ -107,8 +107,8 @@ static int extra_points(int param)
     int year, month, day, weekday, moon0, moon1;
     df_u32 now;
 
-    now = og_state()->minutes;
-    og_state_date(&year, &month, &day, &weekday);
+    now = game_state()->minutes;
+    state_date(&year, &month, &day, &weekday);
     moon0 = (int)((now / 1440u) & 31u); moon1 = (int)(((now + 5760u) / 1440u) & 31u);
     if (param >= 0 && param <= 3) { return season[month % 12] == param ? 75 : 0; }
     if (param == 4) { return moon0 == 0 || moon1 == 0 ? 75 : 0; }
@@ -122,14 +122,14 @@ static void repair_first(int amount)
 {
     int i;
 
-    for (i = 0; i < OG_OBJECTS; i++) {
-        OgObject *item;
+    for (i = 0; i < OBJECTS; i++) {
+        ObjectInfo *item;
         int depth;
-        const OgObject *owner;
+        const ObjectInfo *owner;
 
-        item = og_object_edit(og_state()->object[i].id);
-        if (!item || item->type != OG_RECORD_ITEM || (item->group == 3 && item->index == 17) || og_item_enchanted(item->id)) { continue; }
-        for (owner = item, depth = 0; owner && depth < OG_OBJECTS && owner->parent != og_state()->entity_id; depth++) { owner = og_object(owner->parent); }
+        item = object_edit(game_state()->object[i].id);
+        if (!item || item->type != RECORD_ITEM || (item->group == 3 && item->index == 17) || item_enchanted(item->id)) { continue; }
+        for (owner = item, depth = 0; owner && depth < OBJECTS && owner->parent != game_state()->entity_id; depth++) { owner = object_at(owner->parent); }
         if (!owner || item->condition >= item->max_condition) { continue; }
         item->condition += amount;
         if (item->condition > item->max_condition) { item->condition = item->max_condition; }
@@ -139,43 +139,43 @@ static void repair_first(int amount)
 
 static void tick_one(df_u32 id, int type, int param, int amount)
 {
-    OgCharacter *who;
+    CharacterState *who;
 
-    who = og_character();
-    if (type == 1) { og_item_damage(id, 1); }
+    who = character_state();
+    if (type == 1) { item_damage(id, 1); }
     else if (type == 3) {
-        if (og_state()->minutes % 4u == 0) { og_item_damage(id, 1); }
+        if (game_state()->minutes % 4u == 0) { item_damage(id, 1); }
         if (param >= 7 && param <= 10 && extra_points(param) && who->magicka < who->max_magicka) { who->magicka += amount * 5; }
     } else if (type == 5) {
         if (param == 1 ? !daylight() : param == 2 ? daylight() : 0) { return; }
         who->health += amount;
         if (who->health > who->max_health) { who->health = who->max_health; }
-        else if (og_random_range(0, 9) == 0) { og_item_damage(id, 1); }
+        else if (random_range(0, 9) == 0) { item_damage(id, 1); }
     } else if (type == 6 && param == 0) {
         if (who->health < who->max_health && g_world && g_world->hurt_nearest && g_world->hurt_nearest(amount)) {
             who->health += amount;
             if (who->health > who->max_health) { who->health = who->max_health; }
-            og_item_damage(id, amount);
+            item_damage(id, amount);
         }
     } else if (type == 8) {
         repair_first(amount);
-        if (og_random_range(0, 9) == 0) { og_item_damage(id, 1); }
+        if (random_range(0, 9) == 0) { item_damage(id, 1); }
     } else if (type == 16) {
         if (param == 1 ? !daylight() : param == 2 ? !temple() : 0) { return; }
-        og_item_damage(id, amount);
+        item_damage(id, amount);
     } else if (type == 17) {
-        if (param == 0 ? daylight() : temple()) { og_damage_player(amount, 0); }
+        if (param == 0 ? daylight() : temple()) { damage_player(amount, 0); }
     } else if (type == 21 && (param == 1 || param == 2)) {
-        if (og_state()->minutes - og_state()->last_kill > (param == 1 ? 1440u : 10080u)) { og_damage_player(amount, 0); }
+        if (game_state()->minutes - game_state()->last_kill > (param == 1 ? 1440u : 10080u)) { damage_player(amount, 0); }
     }
 }
 
-void og_enchant_minutes(void)
+void enchant_minutes(void)
 {
     df_u32 now, elapsed;
     int amount, slot, k, type, param;
 
-    now = og_state()->minutes;
+    now = game_state()->minutes;
     elapsed = now >= g_stamp ? now - g_stamp : 0;
     if (elapsed > 100) { elapsed = 0; g_stamp = now; }
     amount = (int)(elapsed >> 2);
@@ -184,86 +184,86 @@ void og_enchant_minutes(void)
     for (slot = 0; slot < 27; slot++) {
         df_u32 id;
 
-        id = og_state()->equipped[slot];
-        for (k = 0; id && og_object(id) && og_item_enchantment(id, k, &type, &param); k++) { tick_one(id, type, param, amount); }
+        id = game_state()->equipped[slot];
+        for (k = 0; id && object_at(id) && item_enchantment(id, k, &type, &param); k++) { tick_one(id, type, param, amount); }
     }
-    if (og_character()->magicka < 0) { og_character()->magicka = 0; }
+    if (character_state()->magicka < 0) { character_state()->magicka = 0; }
 }
 
-void og_enchant_frame(void)
+void enchant_frame(void)
 {
     int slot, k, type, param, bonus, any;
-    OgCharacter *who;
+    CharacterState *who;
 
     bonus = 0; any = 0;
     for (slot = 0; slot < 27; slot++) {
-        for (k = 0; og_state()->equipped[slot] && og_item_enchantment(og_state()->equipped[slot], k, &type, &param); k++) {
+        for (k = 0; game_state()->equipped[slot] && item_enchantment(game_state()->equipped[slot], k, &type, &param); k++) {
             if (type == 3) { any = 1; bonus += extra_points(param); }
         }
     }
     if (!any && !g_rebuild) { return; }
     /* The maximum is built again from Intelligence and the class, plus the bonus, each frame while an item gives one (and once more when the last is taken off). */
-    who = og_character();
-    who->max_magicka = og_magicka(who->attribute[OG_INT], who->class_flags) + bonus;
+    who = character_state();
+    who->max_magicka = magicka_state(who->attribute[ATTR_INT], who->class_flags) + bonus;
     if (who->magicka > who->max_magicka) { who->magicka = who->max_magicka; }
     g_rebuild = any;
 }
 
-int og_item_use(df_u32 id)
+int item_use(df_u32 id)
 {
     int k, type, param, used;
 
     used = 0;
-    for (k = 0; og_object(id) && og_item_enchantment(id, k, &type, &param); k++) {
+    for (k = 0; object_at(id) && item_enchantment(id, k, &type, &param); k++) {
         if (type == 0 && param >= 0) {
-            if (og_magic_cast_item(param)) { used++; og_item_damage(id, 10); }
+            if (magic_cast_item(param)) { used++; item_damage(id, 10); }
         } else if (type == 21 && param == 0) {
-            og_damage_player((og_character()->level >> 1) + 1, 0);
-            og_item_damage(id, 2);
+            damage_player((character_state()->level >> 1) + 1, 0);
+            item_damage(id, 2);
         }
     }
     return used;
 }
 
-int og_enchant_hit_bonus(df_u32 weapon, int category)
+int enchant_hit_bonus(df_u32 weapon, int category)
 {
     int k, type, param, bonus;
 
     bonus = 0;
-    for (k = 0; og_item_enchantment(weapon, k, &type, &param); k++) {
-        if (type == 4 && param == category) { bonus += og_character()->level; }
-        else if (type == 20 && param == category) { bonus -= og_character()->level; }
-        else if (type == 21 && param == 0) { og_damage_player((og_character()->level >> 2) + 1, 0); }
+    for (k = 0; item_enchantment(weapon, k, &type, &param); k++) {
+        if (type == 4 && param == category) { bonus += character_state()->level; }
+        else if (type == 20 && param == category) { bonus -= character_state()->level; }
+        else if (type == 21 && param == 0) { damage_player((character_state()->level >> 2) + 1, 0); }
     }
     return bonus;
 }
 
-void og_enchant_strike(df_u32 weapon, int victim, int dealt)
+void enchant_strike(df_u32 weapon, int victim, int dealt)
 {
     int k, type, param, healed;
-    OgCharacter *who;
+    CharacterState *who;
 
-    who = og_character();
-    for (k = 0; og_object(weapon) && og_item_enchantment(weapon, k, &type, &param); k++) {
+    who = character_state();
+    for (k = 0; object_at(weapon) && item_enchantment(weapon, k, &type, &param); k++) {
         if (type == 2 && param >= 0) {
-            og_magic_strike(param, victim);
-            og_item_damage(weapon, 10);
+            magic_strike(param, victim);
+            item_damage(weapon, 10);
         } else if (type == 6 && param == 1) {
             healed = dealt / 2;
             if (healed > who->max_health - who->health) { healed = who->max_health - who->health; }
             if (healed < 0) { healed = 0; }
             who->health += healed;
-            og_item_damage(weapon, healed / 4 + 1);
+            item_damage(weapon, healed / 4 + 1);
         }
     }
 }
 
-int og_enchant_armor_modifier(void)
+int enchant_armor_modifier(void)
 {
     int slot, k, type, param;
 
     for (slot = 0; slot < 27; slot++) {
-        for (k = 0; og_state()->equipped[slot] && og_item_enchantment(og_state()->equipped[slot], k, &type, &param); k++) {
+        for (k = 0; game_state()->equipped[slot] && item_enchantment(game_state()->equipped[slot], k, &type, &param); k++) {
             if (type == 12) { return -25; }
             if (type == 24) { return 25; }
         }
@@ -271,41 +271,41 @@ int og_enchant_armor_modifier(void)
     return 0;
 }
 
-int og_enchant_capacity(int capacity)
+int enchant_capacity(int capacity)
 {
     int slot, k, type, param;
 
     for (slot = 0; slot < 27; slot++) {
-        for (k = 0; og_state()->equipped[slot] && og_item_enchantment(og_state()->equipped[slot], k, &type, &param); k++) {
+        for (k = 0; game_state()->equipped[slot] && item_enchantment(game_state()->equipped[slot], k, &type, &param); k++) {
             if (type == 7) { return param == 0 ? capacity * 320 / 256 : capacity * 384 / 256; }
         }
     }
     return capacity;
 }
 
-int og_enchant_weight(df_u32 id, int weight)
+int enchant_weight(df_u32 id, int weight)
 {
     int k, type, param;
 
-    for (k = 0; og_item_enchantment(id, k, &type, &param); k++) {
+    for (k = 0; item_enchantment(id, k, &type, &param); k++) {
         if (type == 11) { return 1; }
         if (type == 23) { return weight * 4 < 20 ? 20 : weight * 4; }
     }
     return weight;
 }
 
-int og_enchant_reaction(int social)
+int enchant_reaction(int social)
 {
     int i, k, type, param, depth, mod;
-    const OgObject *item, *owner;
+    const ObjectInfo *item, *owner;
 
     mod = 0;
-    for (i = 0; i < OG_OBJECTS; i++) {
-        item = &og_state()->object[i];
-        if (!item->id || item->type != OG_RECORD_ITEM) { continue; }
-        for (owner = item, depth = 0; owner && depth < OG_OBJECTS && owner->parent != og_state()->entity_id; depth++) { owner = og_object(owner->parent); }
+    for (i = 0; i < OBJECTS; i++) {
+        item = &game_state()->object[i];
+        if (!item->id || item->type != RECORD_ITEM) { continue; }
+        for (owner = item, depth = 0; owner && depth < OBJECTS && owner->parent != game_state()->entity_id; depth++) { owner = object_at(owner->parent); }
         if (!owner) { continue; }
-        for (k = 0; og_item_enchantment(item->id, k, &type, &param); k++) {
+        for (k = 0; item_enchantment(item->id, k, &type, &param); k++) {
             if (type == 14 && (param == 5 || param == social)) { mod += 10; }
             else if (type == 25 && (param == 5 || param == social)) { mod -= 10; }
         }

@@ -1,5 +1,5 @@
-#ifndef OGFALL_HOURS_H
-#define OGFALL_HOURS_H
+#ifndef GFALL_HOURS_H
+#define GFALL_HOURS_H
 
 #include "engine/core/df.h"
 
@@ -10,17 +10,17 @@
  * are for sale or free for the taking, and a door's lock, ask this.
  */
 
-typedef struct OgHoursPlayer {
+typedef struct HoursPlayer {
     /* The ranks of the guilds that open their halls (-1 for no membership): the Brotherhood's (kind 0), the Thieves' (3), the Fighters' (2), the Mages' (1). */
     int brotherhood, thieves, fighters, mages;
-} OgHoursPlayer;
+} HoursPlayer;
 
 /* 1 when open at game minute now. daytime is for the houses; id is the building's key (its low word % 100 < 50 picks the houses open by day). */
-int og_building_open(int type, int faction, df_u32 id, df_u32 now, int daytime, const OgHoursPlayer *player);
+int building_open(int type, int faction, df_u32 id, df_u32 now, int daytime, const HoursPlayer *player);
 /* Minutes until it shuts, 0 when it is shut. */
-int og_building_minutes_to_close(int type, df_u32 now);
+int building_minutes_to_close(int type, df_u32 now);
 
 /* The hours a type keeps, as the table gives them (the closing hour may be 25, round the clock); 0 for a type with none. */
-int og_building_hours(int type, int *open, int *close);
+int building_hours(int type, int *open, int *close);
 
 #endif

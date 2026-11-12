@@ -3,7 +3,7 @@
 
 #include "engine/core/df.h"
 
-int og_bar_ratio(int numerator, int denominator)
+int bar_ratio(int numerator, int denominator)
 {
     int height;
 
@@ -14,7 +14,7 @@ int og_bar_ratio(int numerator, int denominator)
     return height > 0 ? height : 0;
 }
 
-int og_bar_fatigue(int fatigue, int strength, int endurance)
+int bar_fatigue(int fatigue, int strength, int endurance)
 {
     int max;
     int height;
@@ -30,7 +30,7 @@ int og_bar_fatigue(int fatigue, int strength, int endurance)
     return height > 0 ? height : 0;
 }
 
-int og_jump_magnitude(int speed, int strength, int jumping)
+int jump_magnitude(int speed, int strength, int jumping)
 {
     int magnitude;
 
@@ -39,7 +39,7 @@ int og_jump_magnitude(int speed, int strength, int jumping)
     return magnitude;
 }
 
-int og_jump_impulse(int magnitude, int acrobat, int class_flag_bit2)
+int jump_impulse(int magnitude, int acrobat, int class_flag_bit2)
 {
     int impulse;
 
@@ -50,12 +50,12 @@ int og_jump_impulse(int magnitude, int acrobat, int class_flag_bit2)
     return impulse;
 }
 
-float og_jump_ups(int impulse)
+float jump_ups(int impulse)
 {
     return (float)impulse;
 }
 
-int og_fall_v(float down_units_per_sec)
+int fall_v(float down_units_per_sec)
 {
     if (down_units_per_sec <= 0.0f) {
         return 0;
@@ -63,7 +63,7 @@ int og_fall_v(float down_units_per_sec)
     return df_iround(down_units_per_sec * 256.0f);
 }
 
-int og_fall_damage(int v)
+int fall_damage(int v)
 {
     int d;
 
@@ -77,11 +77,11 @@ int og_fall_damage(int v)
     return (d * d) / 2;
 }
 
-int og_fatigue_add(int fatigue, int amount, int strength, int endurance)
+int fatigue_add(int fatigue, int amount, int strength, int endurance)
 {
     int max;
 
-    if (!og_god_mode() || amount > 0) { fatigue += amount; }
+    if (!god_mode() || amount > 0) { fatigue += amount; }
     max = (strength + endurance) << 6;
     if (max < 0) {
         max = 0;

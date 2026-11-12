@@ -3,25 +3,25 @@
 #include "game/dagger/play/move.h"
 #include "game/dagger/tables/combatdefs.h"
 
-int og_ai_stealth(int detected, int distance, int encountered)
+int ai_stealth(int detected, int distance, int encountered)
 {
-    OgMotion motion;
+    MotionState motion;
     float momentum;
     int chance, base;
 
     if (distance > 1024) { return 0; }
-    if (og_state()->minutes == og_state()->stealth_minute) { return detected; }
-    og_move_capture(&motion);
+    if (game_state()->minutes == game_state()->stealth_minute) { return detected; }
+    move_capture(&motion);
     momentum = df_sqrt(motion.vx*motion.vx+motion.vz*motion.vz);
-    base = og_character()->attribute[OG_SPD]+150;
+    base = character_state()->attribute[ATTR_SPD]+150;
     if (encountered && momentum > base/2) { return 1; }
-    if (momentum <= base/2 && (og_state()->minutes & 1)) { return detected; }
-    og_skill_use(16); og_state_stealth_checked();
-    chance = ((og_character()->skill[16]*distance)/1024)*2;
-    return og_random_range(1,100) > chance;
+    if (momentum <= base/2 && (game_state()->minutes & 1)) { return detected; }
+    skill_use(16); state_stealth_checked();
+    chance = ((character_state()->skill[16]*distance)/1024)*2;
+    return random_range(1,100) > chance;
 }
 
-int og_ai_octant(float dx, float dz)
+int ai_octant(float dx, float dz)
 {
     int octant;
     octant = (df_absf(dx) > df_absf(dz))+(dz < 0 ? 2 : 0);
@@ -32,13 +32,13 @@ static int delta(int from, int to)
 {
     return ((to-from+1024) & 2047)-1024;
 }
-int og_ai_angle(int from, int to)
+int ai_angle(int from, int to)
 {
     int difference;
     difference = delta(from,to);
     return difference < 0 ? -difference : difference;
 }
-int og_ai_turn(int from, int to, int step)
+int ai_turn(int from, int to, int step)
 {
     int difference;
     difference = delta(from,to);
@@ -63,7 +63,7 @@ static int move(Body *body, const Scene *scene, int yaw, int flying,
     return moved > 2*dt*60;
 }
 
-void og_ai_walk(OgMind *mind, Body *body, Entity *entity, const Scene *scene,
+void ai_walk(Mind *mind, Body *body, Entity *entity, const Scene *scene,
                  const float *target, int visible, int flying, float speed, float dt)
 {
     float dx, dz, distance, amount, before, across, offset;
@@ -74,13 +74,13 @@ void og_ai_walk(OgMind *mind, Body *body, Entity *entity, const Scene *scene,
     angle = df_iround(df_atan2(dx,dz)*(2048/DF_TAU)) & 2047;
     yaw = df_iround(entity->yaw*(2048/DF_TAU)) & 2047;
     mind->clock += dt*60; ticks = df_ifloor(mind->clock); mind->clock -= ticks;
-    difference = og_ai_angle(yaw,angle);
+    difference = ai_angle(yaw,angle);
     amount = speed*dt;
     if (amount > distance-60) { amount = distance > 60 ? distance-60 : 0; }
     if (!mind->direction) { mind->direction = 2; }
     if ((visible || mind->detected) && !(mind->blocked & 1)) {
         mind->turns = 12;
-        if (difference >= 32) { yaw = og_ai_turn(yaw,angle,64*ticks); amount = 0; }
+        if (difference >= 32) { yaw = ai_turn(yaw,angle,64*ticks); amount = 0; }
         else if (!move(body,scene,yaw,flying,target,amount,dt)) {
             if (body->grounded && (mind->stuck += ticks) > 6) { mind->blocked |= 1; mind->stuck = 0; }
         } else { mind->blocked = 0; mind->stuck = 0; }
@@ -89,7 +89,7 @@ void og_ai_walk(OgMind *mind, Body *body, Entity *entity, const Scene *scene,
         return;
     }
     if (mind->detected && !mind->turns) { mind->blocked &= ~1; }
-    nav = og_foe_nav_angle(og_ai_octant(dx,dz));
+    nav = foe_nav_angle(ai_octant(dx,dz));
     if (mind->direction == 4) { nav += 1024; }
     else if (mind->direction == 8) { nav += 1536; }
     nav &= 2047;
@@ -106,8 +106,8 @@ void og_ai_walk(OgMind *mind, Body *body, Entity *entity, const Scene *scene,
             if (df_absf(across-before) > 2) { return; }
         }
     }
-    yaw = og_ai_turn(yaw,nav,64*ticks); entity->yaw = yaw*(DF_TAU/2048);
-    if (og_ai_angle(yaw,nav) >= 64) { move(body,scene,yaw,flying,target,0,dt); return; }
+    yaw = ai_turn(yaw,nav,64*ticks); entity->yaw = yaw*(DF_TAU/2048);
+    if (ai_angle(yaw,nav) >= 64) { move(body,scene,yaw,flying,target,0,dt); return; }
     if (mind->turns > 0) { mind->turns -= ticks; if (mind->turns < 0) { mind->turns = 0; } }
     if (mind->blocked & mind->direction) {
         mind->direction <<= 1;

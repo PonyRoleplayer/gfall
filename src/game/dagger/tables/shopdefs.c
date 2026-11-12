@@ -2,12 +2,12 @@
 #include "engine/core/df.h"
 #include "game/dagger/tables/shopdata.h"
 
-int og_shop_groups(int variant, int building_type, int *groups)
+int shop_groups(int variant, int building_type, int *groups)
 {
     const df_u8 *row;
     int width, n;
 
-    if (building_type < 0 || building_type >= OG_SHOP_TYPES) {
+    if (building_type < 0 || building_type >= SHOP_TYPES) {
         return 0;
     }
     if (variant < 2) {

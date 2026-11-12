@@ -3071,7 +3071,7 @@ static void check_dungeon_automap(void)
     }
     camera_set(&cam, x, y, z, yaw, pitch);
     dunstream_fill(&cam);
-    /* The hold loaded whole numbers the same quest markers (what OGFALL, which loads its dungeons whole, asks): 0xFA01 and 0xFA02. */
+    /* The hold loaded whole numbers the same quest markers (what GFALL, which loads its dungeons whole, asks): 0xFA01 and 0xFA02. */
     {
         World *whole;
         float wx, wy, wz;

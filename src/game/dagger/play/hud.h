@@ -1,5 +1,5 @@
-#ifndef OGFALL_HUD_H
-#define OGFALL_HUD_H
+#ifndef GFALL_HUD_H
+#define GFALL_HUD_H
 
 /*
  * hud_buttons from FALL.EXE at 0x185C58: eleven rectangles, hit with
@@ -11,47 +11,47 @@
  * magic and ailments supply the live indicators.
  */
 
-#define OG_HUD_BUTTONS 11
-#define OG_HUD_NONE 255
-#define OG_BAR_Y 154
+#define HUD_BUTTONS 11
+#define HUD_NONE 255
+#define HUD_BAR_Y 154
 
 enum {
-    OG_HUD_SHEET,
-    OG_HUD_SPELL,
-    OG_HUD_MODE,
-    OG_HUD_PACK,
-    OG_HUD_WEAPON,
-    OG_HUD_MAGIC,
-    OG_HUD_TRAVEL,
-    OG_HUD_MAP,
-    OG_HUD_REST,
-    OG_HUD_OPTIONS,
-    OG_HUD_STATUS
+    HUD_SHEET,
+    HUD_SPELL,
+    HUD_MODE,
+    HUD_PACK,
+    HUD_WEAPON,
+    HUD_MAGIC,
+    HUD_TRAVEL,
+    HUD_MAP,
+    HUD_REST,
+    HUD_OPTIONS,
+    HUD_STATUS
 };
 
 enum {
-    OG_MODE_GRAB,
-    OG_MODE_INFO,
-    OG_MODE_STEAL,
-    OG_MODE_TALK
+    MODE_GRAB,
+    MODE_INFO,
+    MODE_STEAL,
+    MODE_TALK
 };
 
-typedef struct OgHudRect {
+typedef struct HudRect {
     int x0, y0, x1, y1;
-} OgHudRect;
+} HudRect;
 
-const OgHudRect *og_hud_rect(int index);
+const HudRect *hud_rect(int index);
 
 /* 1 when the point is strictly inside the button. The edge misses. */
-int og_hud_hit(int x, int y);
+int hud_hit(int x, int y);
 
-void og_hud_reset(void);
-int og_hud_mode(void);
-void og_hud_set_mode(int mode);
-int og_hud_weapon_ready(void);
+void hud_reset(void);
+int hud_mode(void);
+void hud_set_mode(int mode);
+int hud_weapon_ready(void);
 /* Flips the ready flag. 1 when it is now ready. */
-int og_hud_toggle_ready(void);
-int og_hud_pressed(void);
+int hud_toggle_ready(void);
+int hud_pressed(void);
 
 /*
  * buttons is the mouse buttons down now, prev the previous frame,
@@ -60,7 +60,7 @@ int og_hud_pressed(void);
  * when one fired, 0 otherwise. *which is the button, or -1.
  * A mode click writes *step +1 or -1. A weapon click toggles the flag.
  */
-int og_hud_buttons(int x, int y, int buttons, int prev, int view_mode, int cursor_active,
+int hud_buttons(int x, int y, int buttons, int prev, int view_mode, int cursor_active,
                    int *sound, int *which, int *step);
 
 /*
@@ -68,20 +68,20 @@ int og_hud_buttons(int x, int y, int buttons, int prev, int view_mode, int curso
  * the bar is up, and no steer key is held. A steer key still wins
  * (hud_update returns 1 only when steer_key_region is -1).
  */
-int og_hud_blocks_mouse(int y, int bar_up, int steer_key);
+int hud_blocks_mouse(int y, int bar_up, int steer_key);
 
 /* (mode + step) & 3, then the status sentence. */
-int og_hud_cycle(int step, char *status, int cap);
-const char *og_hud_mode_name(int mode);
+int hud_cycle(int step, char *status, int cap);
+const char *hud_mode_name(int mode);
 
 /* First match: low health, under a spell, poisoned, diseased. -1 for none. */
-int og_hud_overlay(int health, int max_health, int under_spell, int poisoned, int diseased);
+int hud_overlay(int health, int max_health, int under_spell, int poisoned, int diseased);
 
 /* (yaw & 0x7ff) >> 6. yaw is the 2048-step circle. */
-int og_hud_compass_frame(int yaw);
+int hud_compass_frame(int yaw);
 
 /* Vital bar height, 0..32. which is 0 health, 1 fatigue, 2 magicka. */
-int og_hud_bar(int which, int health, int max_health, int fatigue, int strength, int endurance,
+int hud_bar(int which, int health, int max_health, int fatigue, int strength, int endurance,
                int magicka, int magicka_bonus, int max_magicka);
 
 #endif

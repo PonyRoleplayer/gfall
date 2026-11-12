@@ -2,7 +2,7 @@
 #include "engine/core/df.h"
 #include "game/dagger/tables/holidaydata.h"
 
-int og_holiday_today(unsigned minutes, int region)
+int holiday_today(unsigned minutes, int region)
 {
     int day, h;
 

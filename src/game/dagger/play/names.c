@@ -12,18 +12,18 @@ static void (*g_expand)(const char *in, char *out, int cap);
 /* One bank's six sets, as namegen_read_part has them in namegen_part_offsets and _counts. */
 static df_u32 g_offset[6], g_count[6];
 
-void og_names_set_data(const df_u8 *bytes, df_u32 size)
+void names_set_data(const df_u8 *bytes, df_u32 size)
 {
     g_data = bytes;
     g_size = size;
 }
 
-void og_names_set_expand(void (*expand)(const char *in, char *out, int cap))
+void names_set_expand(void (*expand)(const char *in, char *out, int cap))
 {
     g_expand = expand;
 }
 
-int og_region_bank(int region)
+int region_bank(int region)
 {
     return region >= 0 && region < 62 ? g_region_bank[region] : 0;
 }
@@ -31,7 +31,7 @@ int og_region_bank(int region)
 /* rand() % n on the session's stream, as the original writes it. */
 static int rand_mod(int n)
 {
-    return og_random_range(0, 32767) % n;
+    return random_range(0, 32767) % n;
 }
 
 static df_u32 word(const df_u8 *p)
@@ -160,7 +160,7 @@ static void family(int bank, char *name, int cap)
     }
 }
 
-void og_name_generate(int bank, int female, char *out, int cap)
+void name_generate(int bank, int female, char *out, int cap)
 {
     char first[30], last[30];
     const df_u8 *b;
@@ -189,17 +189,17 @@ void og_name_generate(int bank, int female, char *out, int cap)
     }
 }
 
-void og_name_seeded(int bank, int female, df_u32 seed, char *out, int cap)
+void name_seeded(int bank, int female, df_u32 seed, char *out, int cap)
 {
     int saved;
 
-    saved = og_random_range(0, 32767);
-    og_random_seed(seed);
-    og_name_generate(bank, female, out, cap);
-    og_random_seed((df_u32)saved);
+    saved = random_range(0, 32767);
+    random_seed(seed);
+    name_generate(bank, female, out, cap);
+    random_seed((df_u32)saved);
 }
 
-int og_npc_name(const OgNpcName *npc, char *out, int cap)
+int npc_name(const NpcName *npc, char *out, int cap)
 {
     int i;
 
@@ -215,9 +215,9 @@ int og_npc_name(const OgNpcName *npc, char *out, int cap)
         return 1;
     }
     if (npc->twin) {
-        og_name_seeded(og_region_bank(npc->region), npc->twin_female, npc->name_seed, out, cap);
+        name_seeded(region_bank(npc->region), npc->twin_female, npc->name_seed, out, cap);
     } else {
-        og_name_seeded(og_region_bank(npc->region), npc->female, npc->id, out, cap);
+        name_seeded(region_bank(npc->region), npc->female, npc->id, out, cap);
     }
     return 1;
 }
@@ -231,7 +231,7 @@ static const char *pick(const char *const *list)
     while (list[n]) {
         n++;
     }
-    return list[og_random_range(0, n - 1)];
+    return list[random_range(0, n - 1)];
 }
 
 static void copy(char *out, int cap, const char *text)
@@ -255,20 +255,20 @@ static void two_words(char *out, int cap, const char *first, const char *second)
     }
 }
 
-void og_building_name(const OgBuildingName *b, char *out, int cap)
+void building_name(const BuildingName *b, char *out, int cap)
 {
     int saved;
     const char *first;
     const char *last;
 
     out[0] = 0;
-    saved = og_random_range(0, 32767);
+    saved = random_range(0, 32767);
     if (b->player_house) {
         copy(out, cap, g_your_house);
-        og_random_seed((df_u32)saved);
+        random_seed((df_u32)saved);
         return;
     }
-    og_random_seed(b->name_seed);
+    random_seed(b->name_seed);
     switch (b->type) {
     case 0: case 2: case 5: case 6: case 7: case 8: case 9: case 10: case 12: case 13:
         first = pick(g_shop_first);
@@ -329,5 +329,5 @@ void og_building_name(const OgBuildingName *b, char *out, int cap)
         }
         break;
     }
-    og_random_seed((df_u32)saved);
+    random_seed((df_u32)saved);
 }

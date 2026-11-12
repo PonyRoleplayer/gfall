@@ -7,45 +7,45 @@
  * in its order: a slide key before a turn, a turn-plus-strafe before
  * a plain turn, forward-plus-turn before plain forward.
  */
-int og_key_region(const unsigned char *held)
+int key_region(const unsigned char *held)
 {
     if (!held) {
         return -1;
     }
-    if (held[OG_SLIDE_LEFT]) {
+    if (held[SLIDE_LEFT]) {
         return 6;
     }
-    if (held[OG_TURN_LEFT] && held[OG_STRAFE]) {
+    if (held[TURN_LEFT] && held[STRAFE]) {
         return 6;
     }
-    if (held[OG_SLIDE_RIGHT]) {
+    if (held[SLIDE_RIGHT]) {
         return 8;
     }
-    if (held[OG_TURN_RIGHT] && held[OG_STRAFE]) {
+    if (held[TURN_RIGHT] && held[STRAFE]) {
         return 8;
     }
-    if (held[OG_FORWARD] && held[OG_TURN_RIGHT]) {
+    if (held[FORWARD] && held[TURN_RIGHT]) {
         return 2;
     }
-    if (held[OG_FORWARD] && held[OG_TURN_LEFT]) {
+    if (held[FORWARD] && held[TURN_LEFT]) {
         return 0;
     }
-    if (held[OG_FORWARD]) {
+    if (held[FORWARD]) {
         return 1;
     }
-    if (held[OG_BACK]) {
+    if (held[BACK]) {
         return 7;
     }
-    if (held[OG_TURN_RIGHT] && !held[OG_STRAFE]) {
+    if (held[TURN_RIGHT] && !held[STRAFE]) {
         return 5;
     }
-    if (held[OG_TURN_LEFT] && !held[OG_STRAFE]) {
+    if (held[TURN_LEFT] && !held[STRAFE]) {
         return 3;
     }
     return -1;
 }
 
-int og_mouse_region(int x, int y, int vw, int vh, int ox, int oy)
+int mouse_region(int x, int y, int vw, int vh, int ox, int oy)
 {
     int x1;
     int x2;
@@ -79,19 +79,19 @@ int og_mouse_region(int x, int y, int vw, int vh, int ox, int oy)
     return region + 2;
 }
 
-int og_steer_region(int x, int y, int vw, int vh, int ox, int oy,
+int steer_region(int x, int y, int vw, int vh, int ox, int oy,
                     const unsigned char *held, int bar_up)
 {
     int key;
 
-    key = og_key_region(held);
+    key = key_region(held);
     if (bar_up && y >= 154 && key < 0) {
         return -2;
     }
     if (key >= 0) {
         return key;
     }
-    return og_mouse_region(x, y, vw, vh, ox, oy);
+    return mouse_region(x, y, vw, vh, ox, oy);
 }
 
 /*
@@ -100,21 +100,21 @@ int og_steer_region(int x, int y, int vw, int vh, int ox, int oy,
  * bound; the sheet, the inventory and the off hand are HUD clicks.
  * W is the travel map, so it cannot also be forward.
  */
-int og_bind_vk(int engine_action)
+int bind_vk(int engine_action)
 {
     switch (engine_action) {
     case INPUT_FORWARD:
-        return OG_VK_UP;
+        return KEY_UP;
     case INPUT_BACK:
-        return OG_VK_DOWN;
+        return KEY_DOWN;
     case INPUT_TURN_LEFT:
-        return OG_VK_LEFT;
+        return KEY_LEFT;
     case INPUT_TURN_RIGHT:
-        return OG_VK_RIGHT;
+        return KEY_RIGHT;
     case INPUT_LEFT:
-        return OG_VK_LSHIFT;
+        return KEY_LSHIFT;
     case INPUT_RIGHT:
-        return OG_VK_RSHIFT;
+        return KEY_RSHIFT;
     case INPUT_JUMP:
         return 'J';
     case INPUT_CROUCH:
@@ -122,23 +122,23 @@ int og_bind_vk(int engine_action)
     case INPUT_RUN:
         return 'P';
     case INPUT_LOOK_UP:
-        return OG_VK_PRIOR;
+        return KEY_PRIOR;
     case INPUT_LOOK_DOWN:
-        return OG_VK_NEXT;
+        return KEY_NEXT;
     case INPUT_USE:
-        return OG_VK_SPACE;
+        return KEY_SPACE;
     case INPUT_CURSOR:
-        return OG_VK_RETURN;
+        return KEY_RETURN;
     case INPUT_FREELOOK:
-        return OG_VK_MENU;
+        return KEY_MENU;
     case INPUT_LOOK_CENTER:
-        return OG_VK_HOME;
+        return KEY_HOME;
     case INPUT_ATTACK:
         return 'A';
     case INPUT_RECAST:
-        return OG_VK_CONTROL;
+        return KEY_CONTROL;
     case INPUT_MENU:
-        return OG_VK_ESCAPE;
+        return KEY_ESCAPE;
     case INPUT_TRAVEL_MAP:
         return 'W';
     case INPUT_MAP:
@@ -148,35 +148,35 @@ int og_bind_vk(int engine_action)
     case INPUT_TRANSPORT:
         return 'T';
     case INPUT_SPELLBOOK:
-        return OG_VK_F1;
+        return KEY_F1;
     case INPUT_SWAP_HANDS:
-        return OG_VK_F2;
+        return KEY_F2;
     case INPUT_CHARACTER:
-        return OG_VK_F3;
+        return KEY_F3;
     case INPUT_INVENTORY:
-        return OG_VK_F4;
+        return KEY_F4;
     default:
         return 0;
     }
 }
 
-int og_view_slow(int speed)
+int view_slow(int speed)
 {
     speed >>= 1;
     speed--;
     return speed;
 }
 
-int og_control_region(int x, int y, int bar, int view_mode, int cursor_active, int buttons,
+int control_region(int x, int y, int bar, int view_mode, int cursor_active, int buttons,
                       const unsigned char *held)
 {
     int key;
-    key = og_key_region(held);
+    key = key_region(held);
     if (key >= 0) {
         return key;
     }
     if (view_mode || cursor_active || !(buttons & 1) || (bar && y >= 154)) {
         return 4;
     }
-    return og_mouse_region(x, y, 320, bar ? 154 : 200, 0, 0);
+    return mouse_region(x, y, 320, bar ? 154 : 200, 0, 0);
 }

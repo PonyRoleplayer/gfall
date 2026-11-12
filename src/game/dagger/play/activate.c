@@ -14,7 +14,7 @@
 #include "engine/core/df.h"
 #include "engine/scene/interact.h"
 
-void og_activate_pixel(int cursor_mode, int cursor_active, int at_centre,
+void activate_pixel(int cursor_mode, int cursor_active, int at_centre,
                        int classic_x, int classic_y, int *px, int *py)
 {
     int x;
@@ -51,7 +51,7 @@ static void ray_from_pixel(const Camera *cam, int view_w, int view_h, int cx, in
     float len;
     float focal;
 
-    og_world_engine(cx, cy, view_w, view_h, !(og_options_flags() & 1), &sx, &sy);
+    world_engine(cx, cy, view_w, view_h, !(options_flags() & 1), &sx, &sy);
     focal = camera_focal();
     if (focal < 1.0f) {
         focal = 1.0f;
@@ -76,14 +76,14 @@ static void ray_from_pixel(const Camera *cam, int view_w, int view_h, int cx, in
     *dz /= len;
 }
 
-void og_activate_aim(const Camera *camera, int cursor_mode, int cursor_active,
+void activate_aim(const Camera *camera, int cursor_mode, int cursor_active,
                      int at_centre, int x, int y, Camera *aim)
 {
     float dx, dy, dz;
     int px, py;
     *aim = *camera;
     if (at_centre) { return; }
-    og_activate_pixel(cursor_mode,cursor_active,0,x,y,&px,&py);
+    activate_pixel(cursor_mode,cursor_active,0,x,y,&px,&py);
     ray_from_pixel(camera,df_view_w(),df_view_h(),px,py,&dx,&dy,&dz);
     aim->yaw = df_atan2(dx,dz); aim->pitch = df_atan2(dy,df_sqrt(dx*dx+dz*dz));
 }
@@ -97,35 +97,35 @@ static int (*g_shelf_use)(int index, int tag);
 static int (*g_person_use)(const Camera *aim, int mode);
 static int (*g_talk_use)(const Usable *person, int mode, float dist, const Camera *cam);
 
-void og_activate_set_talk_use(int (*use)(const Usable *person, int mode, float dist, const Camera *cam))
+void activate_set_talk_use(int (*use)(const Usable *person, int mode, float dist, const Camera *cam))
 {
     g_talk_use = use;
 }
 
-void og_activate_set_person(int (*use)(const Camera *aim, int mode))
+void activate_set_person(int (*use)(const Camera *aim, int mode))
 {
     g_person_use = use;
 }
 
-void og_activate_set_container(int what, int (*use)(int index))
+void activate_set_container(int what, int (*use)(int index))
 {
     g_container_what = what;
     g_container_use = use;
 }
 
-void og_activate_set_global(int what, void (*use)(int state))
+void activate_set_global(int what, void (*use)(int state))
 {
     g_global_what = what;
     g_global_use = use;
 }
 
-void og_activate_set_shelf(int what, int (*use)(int index, int tag))
+void activate_set_shelf(int what, int (*use)(int index, int tag))
 {
     g_shelf_what = what;
     g_shelf_use = use;
 }
 
-int og_activate(const Scene *scene, const Camera *cam, int mode,
+int activate(const Scene *scene, const Camera *cam, int mode,
                 int cursor_mode, int cursor_active, int at_centre,
                 int classic_x, int classic_y)
 {
@@ -142,7 +142,7 @@ int og_activate(const Scene *scene, const Camera *cam, int mode,
     if (!scene || !cam) {
         return 0;
     }
-    og_activate_pixel(cursor_mode, cursor_active, at_centre, classic_x, classic_y, &px, &py);
+    activate_pixel(cursor_mode, cursor_active, at_centre, classic_x, classic_y, &px, &py);
     if (at_centre) {
         Basis basis;
 
@@ -156,16 +156,16 @@ int og_activate(const Scene *scene, const Camera *cam, int mode,
     x = cam->x;
     y = cam->y;
     z = cam->z;
-    if (og_world_state()->where.kind == OG_PLACE_WORLD) {
+    if (world_where()->where.kind == WHERE_WORLD) {
         df_u32 pile;
         float reach;
         interact_cast(scene,x,y,z,dx,dy,dz,128,&hit);
         reach = hit.wall < 128 ? hit.wall : 128;
         if (hit.usable >= 0 && hit.dist < reach) { reach = hit.dist; }
-        pile = og_ground_aim(x,y,z,dx,dy,dz,reach);
+        pile = ground_aim(x,y,z,dx,dy,dz,reach);
         if (pile) {
-            if (mode == OG_MODE_GRAB) { return og_possessions_open(OG_VIEW_INVENTORY,pile); }
-            if (mode == OG_MODE_INFO) { interact_say("Treasure"); }
+            if (mode == MODE_GRAB) { return possessions_open(VIEW_INVENTORY,pile); }
+            if (mode == MODE_INFO) { interact_say("Treasure"); }
             return 1;
         }
     }
@@ -174,7 +174,7 @@ int og_activate(const Scene *scene, const Camera *cam, int mode,
         if (g_person_use) {
             Camera aim;
 
-            og_activate_aim(cam, cursor_mode, cursor_active, at_centre, classic_x, classic_y, &aim);
+            activate_aim(cam, cursor_mode, cursor_active, at_centre, classic_x, classic_y, &aim);
             return g_person_use(&aim, mode);
         }
         return 0;
@@ -197,43 +197,43 @@ int og_activate(const Scene *scene, const Camera *cam, int mode,
     }
     if (hit.usable >= 0 && hit.usable < scene->nusables) {
         const Usable *usable;
-        if (og_door_use(scene,hit.usable,mode)) { return 1; }
+        if (door_use(scene,hit.usable,mode)) { return 1; }
         usable = &scene->usables[hit.usable];
         if (usable->kind == USE_TALK && g_talk_use && g_talk_use(usable, mode, hit.dist, cam)) { return 1; }
         if (usable->kind == USE_OTHER && g_container_use && usable->what == g_container_what) {
-            if (mode == OG_MODE_GRAB) { return g_container_use(hit.usable); }
-            if (mode == OG_MODE_INFO) { interact_say("container"); }
+            if (mode == MODE_GRAB) { return g_container_use(hit.usable); }
+            if (mode == MODE_INFO) { interact_say("container"); }
             return 1;
         }
         if (usable->kind == USE_OTHER && g_global_use && usable->what == g_global_what) {
-            if (mode == OG_MODE_GRAB) { g_global_use(usable->tag); }
+            if (mode == MODE_GRAB) { g_global_use(usable->tag); }
             return 1;
         }
         if (usable->kind == USE_OTHER && g_shelf_use && usable->what == g_shelf_what) {
-            if (mode == OG_MODE_GRAB) { return g_shelf_use(hit.usable, usable->tag); }
-            if (mode == OG_MODE_INFO) { interact_say("shelf"); }
+            if (mode == MODE_GRAB) { return g_shelf_use(hit.usable, usable->tag); }
+            if (mode == MODE_INFO) { interact_say("shelf"); }
             return 1;
         }
-        if (usable->kind == USE_OTHER && usable->what >= OG_USE_TREASURE && usable->what < OG_USE_TREASURE+22) {
-            if (mode == OG_MODE_GRAB) {
+        if (usable->kind == USE_OTHER && usable->what >= USE_TREASURE && usable->what < USE_TREASURE+22) {
+            if (mode == MODE_GRAB) {
                 df_u32 container;
-                container = og_loot_container(og_object(OG_WORLD_ROOT)->place_key,(df_u32)usable->tag,
-                                              usable->cx,usable->cy,usable->cz,usable->what-OG_USE_TREASURE-1);
-                if (container) { return og_possessions_open(OG_VIEW_INVENTORY,container); }
+                container = loot_container(object_at(WORLD_ROOT)->place_key,(df_u32)usable->tag,
+                                              usable->cx,usable->cy,usable->cz,usable->what-USE_TREASURE-1);
+                if (container) { return possessions_open(VIEW_INVENTORY,container); }
                 interact_say("There is no room for another container.");
-            } else if (mode == OG_MODE_INFO) { interact_say("Treasure"); }
+            } else if (mode == MODE_INFO) { interact_say("Treasure"); }
             return 1;
         }
     }
     if (g_person_use && hit.usable < 0) {
         Camera aim;
 
-        og_activate_aim(cam, cursor_mode, cursor_active, at_centre, classic_x, classic_y, &aim);
+        activate_aim(cam, cursor_mode, cursor_active, at_centre, classic_x, classic_y, &aim);
         if (g_person_use(&aim, mode)) { return 1; }
     }
-    if (mode == OG_MODE_GRAB) {
+    if (mode == MODE_GRAB) {
         interact_request_use_from(x, y, z, dx, dy, dz);
-    } else if (mode == OG_MODE_INFO && hit.usable >= 0 && hit.usable < scene->nusables) {
+    } else if (mode == MODE_INFO && hit.usable >= 0 && hit.usable < scene->nusables) {
         if (scene->usables[hit.usable].label) {
             interact_say(scene->usables[hit.usable].label);
         }

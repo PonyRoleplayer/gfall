@@ -16,7 +16,7 @@
 static struct { df_u32 building; int skill; } g_tried[TRIED_MOST];
 static int g_tried_count;
 
-void og_entry_reset(void)
+void entry_reset(void)
 {
     g_tried_count = 0;
 }
@@ -49,16 +49,16 @@ static void note_tried(df_u32 building, int skill)
     }
 }
 
-int og_building_try_enter(const OgEntryBuilding *b, const OgEntryPlayer *p, df_u32 now, int witnessed, OgEntry *out)
+int building_try_enter(const EntryBuilding *b, const EntryPlayer *p, df_u32 now, int witnessed, Entry *out)
 {
-    OgHoursPlayer hours;
+    HoursPlayer hours;
     int lock, skill, chance;
 
     mem_zero(out, sizeof(*out));
     if (b->id && b->id == p->house) { out->allow = 1; return 1; }
     if (b->type == 24) { out->allow = 1; return 1; }
     hours.brotherhood = p->brotherhood; hours.thieves = p->thieves; hours.fighters = p->fighters; hours.mages = p->mages;
-    if (b->type < 17 && og_building_open(b->type, b->faction, b->id, now, p->daytime, &hours)) { out->allow = 1; return 1; }
+    if (b->type < 17 && building_open(b->type, b->faction, b->id, now, p->daytime, &hours)) { out->allow = 1; return 1; }
     if (b->type < 17 && (b->flags & 16)) { return 0; }
     if (b->flags & 16) { out->allow = 1; return 1; }
     if (b->quest_open) { out->allow = 1; return 1; }
@@ -81,32 +81,32 @@ int og_building_try_enter(const OgEntryBuilding *b, const OgEntryPlayer *p, df_u
             out->allow = 1;
             return 1;
         }
-        skill = og_character()->skill[SKILL_LOCKPICKING];
+        skill = character_state()->skill[SKILL_LOCKPICKING];
         if (was_tried(b->id, skill)) {
             return 0;
         }
         if (lock >= 20) {
-            out->line = og_lock_text(OG_LOCK_FAILED);
+            out->line = lock_text(LOCK_FAILED);
             return 0;
         }
-        og_skill_use(SKILL_LOCKPICKING);
+        skill_use(SKILL_LOCKPICKING);
         chance = skill - lock * 5;
         chance = chance < 5 ? 5 : chance > 95 ? 95 : chance;
-        if (og_random_range(0, 100) <= chance) {
-            out->line = og_lock_text(OG_LOCK_OPEN);
+        if (random_range(0, 100) <= chance) {
+            out->line = lock_text(LOCK_OPEN);
             out->picked = 1;
-            og_guild_count_crime(5, 1, now);
-            if (witnessed || og_random_range(1, 300) < 100 - og_character()->skill[SKILL_STEALTH]) {
+            guild_count_crime(5, 1, now);
+            if (witnessed || random_range(1, 300) < 100 - character_state()->skill[SKILL_STEALTH]) {
                 out->crime = 1;
             }
             out->allow = 1;
             return 1;
         }
         note_tried(b->id, skill);
-        out->line = og_lock_text(OG_LOCK_FAILED);
+        out->line = lock_text(LOCK_FAILED);
         return 0;
     }
     /* lock_show_difficulty */
-    out->line = og_lock_hint(og_character()->skill[SKILL_LOCKPICKING], lock);
+    out->line = lock_hint(character_state()->skill[SKILL_LOCKPICKING], lock);
     return 0;
 }

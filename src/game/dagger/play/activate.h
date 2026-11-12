@@ -1,5 +1,5 @@
-#ifndef OGFALL_ACTIVATE_H
-#define OGFALL_ACTIVATE_H
+#ifndef GFALL_ACTIVATE_H
+#define GFALL_ACTIVATE_H
 
 #include "engine/gfx/camera.h"
 #include "engine/scene/scene.h"
@@ -24,13 +24,13 @@
 
 /* Usable.what in this range is a treasure container; tag is its stable key.
  * The adapter supplies the original loot-table index in the low offset. */
-#define OG_USE_TREASURE 0x4f4700
+#define USE_TREASURE 0x4f4700
 
 /* Classic pixel of the pick. at_centre ignores x and y. */
-void og_activate_pixel(int cursor_mode, int cursor_active, int at_centre,
+void activate_pixel(int cursor_mode, int cursor_active, int at_centre,
                        int classic_x, int classic_y, int *px, int *py);
 /* Same projection for pointed use and spell aiming. */
-void og_activate_aim(const Camera *camera, int cursor_mode, int cursor_active,
+void activate_aim(const Camera *camera, int cursor_mode, int cursor_active,
                      int at_centre, int x, int y, Camera *aim);
 
 /*
@@ -38,16 +38,16 @@ void og_activate_aim(const Camera *camera, int cursor_mode, int cursor_active,
  * hit. The frame after this, gfx_frame steps the mover.
  */
 /* A usable of this kind (a shop's shelf) is the game's to open as a shop: what the seam knows is what, the call gets its index in the scene and its tag. */
-void og_activate_set_shelf(int what, int (*use)(int index, int tag));
+void activate_set_shelf(int what, int (*use)(int index, int tag));
 /* A house's chest or cupboard (what OTHER_CONTAINER): use(index) with the usable's index in the scene. */
-void og_activate_set_container(int what, int (*use)(int index));
+void activate_set_container(int what, int (*use)(int index));
 /* A dungeon model that sets a quest's global state (RDB action 31): used by hand, the game is told the state's number. */
-void og_activate_set_global(int what, void (*use)(int state));
+void activate_set_global(int what, void (*use)(int state));
 /* A person in the view (not a usable): the game's to talk to, or to name in info mode. aim is the camera the pick came from. 1 when it took the use. */
-void og_activate_set_person(int (*use)(const Camera *aim, int mode));
+void activate_set_person(int (*use)(const Camera *aim, int mode));
 /* A person standing in a building (a usable of kind USE_TALK): the game's to talk to, to offer a panel for, or to name. dist is how far along the view they stand. 1 when it took the use. */
-void og_activate_set_talk_use(int (*use)(const Usable *person, int mode, float dist, const Camera *cam));
-int og_activate(const Scene *scene, const Camera *cam, int mode,
+void activate_set_talk_use(int (*use)(const Usable *person, int mode, float dist, const Camera *cam));
+int activate(const Scene *scene, const Camera *cam, int mode,
                 int cursor_mode, int cursor_active, int at_centre,
                 int classic_x, int classic_y);
 

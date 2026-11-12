@@ -3,7 +3,7 @@
 #include "engine/core/log.h"
 #include "game/dagger/tables/datedata.h"
 
-int og_date_text(unsigned minutes, char *out, int cap)
+int date_text(unsigned minutes, char *out, int cap)
 {
     int day_of_year, month, day;
 
@@ -13,7 +13,7 @@ int og_date_text(unsigned minutes, char *out, int cap)
     return log_format(out, cap, "%s the %d%s of %s", g_day_name[day_of_year % 7], day + 1, g_ordinal[day > 3 ? 3 : day], g_month_name[month]);
 }
 
-const char *og_legal_title(int reputation)
+const char *legal_title(int reputation)
 {
     int i;
 

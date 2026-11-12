@@ -1,9 +1,9 @@
 #include "game/dagger/formats/formats.h"
 
-void ogfall_formats_startup(void)
+void gfall_formats_startup(void)
 {
 }
 
-void ogfall_formats_shutdown(void)
+void gfall_formats_shutdown(void)
 {
 }
