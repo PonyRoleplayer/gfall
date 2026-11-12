@@ -2326,6 +2326,86 @@ static void check_near_gather(void)
     ent_clear();
 }
 
+static df_u32 g_used_entity;
+
+static int record_entity_use(const Scene *scene, df_u32 id)
+{
+    (void)scene;
+    g_used_entity = id;
+    return 1;
+}
+
+/*
+ * Use on entities (interact_cast, docs/entities.md, Use): on a floor with
+ * a wall at x 200, a ray along +x takes a usable entity in reach, not one
+ * past its reach, behind the wall or hidden; the nearer of an entity and
+ * a usable wins; the use key's handler gets the entity's id.
+ */
+static void check_entity_use(void)
+{
+    static Scene sc;
+    static Instance in[2];
+    static Entity ents[2];
+    static Usable u;
+    Mesh *m[2];
+    UseHit hit;
+    int got;
+
+    ent_clear();
+    m[0] = flat_quad(-600.0f, 600.0f, -600.0f, 600.0f, 0.0f);
+    m[1] = side_quad(-600.0f, 600.0f, 0.0f, 200.0f, 200.0f);
+    body_scene(&sc, in, m, 2);
+    spawn_body(&ents[0], 100.0f, 0.0f, 0.0f, 16.0f);
+    spawn_body(&ents[1], 300.0f, 0.0f, 0.0f, 16.0f);
+    ents[0].flags = ENT_USABLE;
+    ents[0].use.kind = USE_TALK;
+    ents[0].use.reach = 300;
+    ents[1].flags = ENT_USABLE;
+    ents[1].use.kind = USE_TALK;
+    ents[1].use.reach = 600;
+    sc.entities = ents;
+    sc.nentities = 2;
+    ent_place(&sc);
+    got = interact_aim_from(&sc, 0.0f, 40.0f, 0.0f, 1.0f, 0.0f, 0.0f, &hit);
+    check_expect(got && hit.usable < 0 && hit.entity == ent_id(&ents[0]) && check_near(hit.dist, 84.0f, 0.1f),
+                 "the use ray did not take the usable entity in reach");
+    ents[0].use.reach = 50;
+    got = interact_aim_from(&sc, 0.0f, 40.0f, 0.0f, 1.0f, 0.0f, 0.0f, &hit);
+    check_expect(!got && hit.entity == 0, "the use ray took an entity past its reach, or one behind a wall");
+    ents[0].use.reach = 300;
+    ents[0].flags = ENT_USABLE | ENT_HIDDEN;
+    got = interact_aim_from(&sc, 0.0f, 40.0f, 0.0f, 1.0f, 0.0f, 0.0f, &hit);
+    check_expect(!got, "the use ray took a hidden entity");
+    ents[0].flags = ENT_USABLE;
+    /* A usable's box in front of the entity takes the ray; behind it, the entity does. */
+    mem_zero(&u, sizeof(u));
+    u.kind = USE_OTHER;
+    u.model = -1;
+    u.sprite = -1;
+    u.cx = 50.0f;
+    u.cy = 40.0f;
+    u.nx = 1.0f;
+    u.hw = 10.0f;
+    u.hh = 10.0f;
+    u.hd = 10.0f;
+    u.reach = 300.0f;
+    sc.usables = &u;
+    sc.nusables = 1;
+    got = interact_aim_from(&sc, 0.0f, 40.0f, 0.0f, 1.0f, 0.0f, 0.0f, &hit);
+    check_expect(got && hit.usable == 0 && hit.entity == 0, "a usable before an entity did not take the ray");
+    u.cx = 150.0f;
+    got = interact_aim_from(&sc, 0.0f, 40.0f, 0.0f, 1.0f, 0.0f, 0.0f, &hit);
+    check_expect(got && hit.usable < 0 && hit.entity == ent_id(&ents[0]), "an entity before a usable did not take the ray");
+    interact_set_entity_handler(record_entity_use);
+    g_used_entity = 0;
+    check_expect(interact_use_entity(&sc, hit.entity) && g_used_entity == hit.entity,
+                 "the entity's use did not reach the game's handler with its id");
+    interact_set_entity_handler(0);
+    sc.usables = 0;
+    sc.nusables = 0;
+    ent_clear();
+}
+
 static void check_spawn(void)
 {
     static Scene sc;
@@ -6102,6 +6182,7 @@ void check_engine(void)
     check_body_crouch();
     check_registry();
     check_near_gather();
+    check_entity_use();
     check_spawn();
     check_body_lifts();
     check_console();

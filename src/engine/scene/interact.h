@@ -31,7 +31,14 @@
 
 /* What the ray met. usable is -1 when it met none within reach. */
 typedef struct UseHit {
+    /*
+     * What the ray took: a usable of the scene (its index), or an entity
+     * with ENT_USABLE (its EntId, ent.h); the other is -1 or 0. A cast that
+     * answers 1 has one of the two. A game that only reads usable sees an
+     * entity as "nothing usable" (-1), so it is safe until it reads entity.
+     */
     int usable;
+    df_u32 entity;
     /* From the eye to where it struck: the usable's box, or the wall. */
     float dist;
     /* The model that stopped it, -1 for none within the ray's length. */
@@ -41,7 +48,12 @@ typedef struct UseHit {
 
 /*
  * The first usable along the ray from x, y, z toward dx, dy, dz (unit
- * length) within len, that no triangle comes before. 1 when one was met.
+ * length) within len, that no triangle comes before: a scene's usable,
+ * or a usable entity (ENT_USABLE, use.reach > 0, live, not ENT_HIDDEN)
+ * by its box, its radius round its feet (half its pose's front width
+ * with no radius) and its pose's height, within its use.reach. The
+ * nearer of the two wins. 1 when one was met. An entity is only taken
+ * in the registry's place (ent_place, each frame from draw_frame).
  */
 int interact_cast(const Scene *scene, float x, float y, float z,
                   float dx, float dy, float dz, float len, UseHit *hit);
@@ -63,6 +75,15 @@ int interact_use(const Scene *scene, int i);
  */
 typedef int (*UseHandler)(const Scene *scene, const Usable *u, int index);
 void interact_set_handler(UseHandler fn);
+/*
+ * The game's part of a use of an entity (Entity.flags ENT_USABLE): called
+ * with its EntId (ent_get gives the entity, its use and owner). Returns 1
+ * when it did something. 0 clears it; with none, a use says what it is.
+ */
+typedef int (*EntityUseHandler)(const Scene *scene, df_u32 id);
+void interact_set_entity_handler(EntityUseHandler fn);
+/* Use entity id: its handler. 1 when something happened. interact_frame calls it for the use key. */
+int interact_use_entity(const Scene *scene, df_u32 id);
 /* During a use handler: nonzero when this use came from entering a touch
  * volume. Explicit interact_use and pointer/key activation return zero. */
 int interact_using_touch(void);

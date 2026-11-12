@@ -198,6 +198,18 @@ An `EntId` is the entry's index plus one in its low 16 bits (the pool first, the
 - The pool and the ranges belong to the scene and heap epoch they were filled under: any call that finds the epoch moved drops them, and an add or a range into another scene empties the pool first. `ent_clear` (a stream's open and close, `spawn_clear`) drops both.
 - `ent_shift` moves the pool with the stream's origin. An array's entries are their owner's to move.
 
+### Use
+
+An entity with `ENT_USABLE` is taken by the use ray as a usable is (`interact_cast`, `docs/interact.md`), so a person need not be a flat turned into a `USE_TALK` usable any more:
+
+- **Its box:** its radius round its feet, or half its pose's front width with no radius, from its feet up its pose's height (`entity_height`).
+- **How far:** `use.reach` from the eye, and never past the first wall. 0 is not usable by hand.
+- **Who wins:** the nearer of it and any usable. `UseHit.entity` is its `EntId`, and `usable` is -1. A game that reads only `usable` sees nothing usable, so nothing changes for it until it sets `ENT_USABLE` and reads `entity`.
+- **The use:** the use key's frame (`interact_frame`) calls `interact_use_entity(scene, id)`, which hands the id to the game's `EntityUseHandler` (`interact_set_entity_handler`). The game finds who it is from `ent_get(id)`: its `use.what`, `tag`, `label` and `owner`. With no handler, the use is logged.
+- **Ids:** only an entity of the registry's place is taken, since the game must get an id (`ent_place`; `ent_frame` does it each frame).
+
+`check_entity_use` (hostcheck): on a floor with a wall at x 200, a ray along +x takes a usable entity at 100 (84 units, its radius before it); not past its reach, not behind the wall, not hidden; a usable box in front of it wins, and one behind it loses; the handler gets the entity's id.
+
 ### The near-gather
 
 A body's push (`body.c`) and `entity_blocked` used to walk every entity for every step: about 24 minds × 600 entities in a full streamed dungeon, an estimated 2.5 ms on the 233 (`docs/entity-plan.md`, 7; not measured). They now ask `ent_near_solid(scene, x, z, r, out, cap)` for the candidates near, and test each by their own rule as before.

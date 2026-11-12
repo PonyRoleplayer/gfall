@@ -1,4 +1,5 @@
 #include "engine/scene/interact.h"
+#include "engine/scene/ent.h"
 #include "engine/scene/walker.h"
 #include "engine/scene/body.h"
 #include "engine/core/log.h"
@@ -300,6 +301,7 @@ int interact_cast(const Scene *scene, float x, float y, float z,
     int i;
 
     hit->usable = -1;
+    hit->entity = 0;
     hit->dist = 0.0f;
     hit->model = -1;
     hit->wall = len;
@@ -331,12 +333,92 @@ int interact_cast(const Scene *scene, float x, float y, float z,
             best_t = t;
         }
     }
+    /* The usable entities (docs/entities.md, Use): a nearer one takes the ray from the usable. */
+    {
+        EntList lists[ENT_LISTS];
+        df_u32 best_ent;
+        int nl;
+        int li;
+
+        best_ent = 0;
+        nl = ent_lists(scene, lists, ENT_LISTS);
+        for (li = 0; li < nl; li++) {
+            for (i = 0; i < lists[li].n; i++) {
+                const Entity *e;
+                float c[3];
+                float ext[3];
+                float reach;
+                float h;
+                float t;
+
+                e = &lists[li].first[i];
+                if (!(e->flags & ENT_USABLE) || (e->flags & ENT_HIDDEN) || !e->live || e->use.reach == 0) {
+                    continue;
+                }
+                h = entity_height(e);
+                ext[0] = e->radius > 0.0f ? e->radius : (float)entity_pose(e)->w[0] * 0.5f;
+                ext[1] = h * 0.5f;
+                ext[2] = ext[0];
+                if (ext[0] <= 0.0f || h <= 0.0f) {
+                    continue;
+                }
+                c[0] = e->x;
+                c[1] = e->y + ext[1];
+                c[2] = e->z;
+                reach = (float)e->use.reach < wall + WALL_SLACK ? (float)e->use.reach : wall + WALL_SLACK;
+                if (!box_enter(o, d, c, ext, reach, &t)) {
+                    continue;
+                }
+                if ((best < 0 && !best_ent) || t < best_t) {
+                    df_u32 id;
+
+                    /* Named only in the registry's place: an entity with no id cannot be handed to the game. */
+                    id = ent_id(e);
+                    if (!id) {
+                        continue;
+                    }
+                    best_ent = id;
+                    best = -1;
+                    best_t = t;
+                }
+            }
+        }
+        if (best_ent) {
+            hit->entity = best_ent;
+            hit->dist = best_t;
+            return 1;
+        }
+    }
     if (best < 0) {
         return 0;
     }
     hit->usable = best;
     hit->dist = best_t;
     return 1;
+}
+
+/* The longest reach of a usable entity of scene, 0 for none: how far an aim must look. */
+static float entity_reach(const Scene *scene)
+{
+    EntList lists[ENT_LISTS];
+    float len;
+    int nl;
+    int li;
+    int i;
+
+    len = 0.0f;
+    nl = ent_lists(scene, lists, ENT_LISTS);
+    for (li = 0; li < nl; li++) {
+        for (i = 0; i < lists[li].n; i++) {
+            const Entity *e;
+
+            e = &lists[li].first[i];
+            if ((e->flags & ENT_USABLE) && e->live && (float)e->use.reach > len) {
+                len = (float)e->use.reach;
+            }
+        }
+    }
+    return len;
 }
 
 int interact_aim_from(const Scene *scene, float x, float y, float z,
@@ -346,17 +428,21 @@ int interact_aim_from(const Scene *scene, float x, float y, float z,
     int i;
 
     hit->usable = -1;
+    hit->entity = 0;
     hit->dist = 0.0f;
     hit->model = -1;
     hit->wall = 0.0f;
-    if (!scene || scene->nusables < 1) {
+    if (!scene) {
         return 0;
     }
-    len = 0.0f;
+    len = entity_reach(scene);
     for (i = 0; i < scene->nusables; i++) {
         if (scene->usables[i].reach > len) {
             len = scene->usables[i].reach;
         }
+    }
+    if (len <= 0.0f) {
+        return 0;
     }
     return interact_cast(scene, x, y, z, dx, dy, dz, len, hit);
 }
@@ -367,6 +453,7 @@ int interact_aim(const Scene *scene, const Camera *cam, UseHit *hit)
 
     if (!cam) {
         hit->usable = -1;
+        hit->entity = 0;
         hit->dist = 0.0f;
         hit->model = -1;
         hit->wall = 0.0f;
@@ -691,6 +778,29 @@ void mover_step(const Scene *scene, float secs)
 static int g_using_touch;
 int interact_using_touch(void) { return g_using_touch; }
 
+static EntityUseHandler g_ent_handler;
+
+void interact_set_entity_handler(EntityUseHandler fn)
+{
+    g_ent_handler = fn;
+}
+
+int interact_use_entity(const Scene *scene, df_u32 id)
+{
+    const Entity *e;
+
+    e = ent_get(id);
+    if (!scene || !e) {
+        return 0;
+    }
+    if (g_ent_handler && g_ent_handler(scene, id)) {
+        return 1;
+    }
+    log_print(LOG_INFO, "use: %s (entity %u), nothing here takes it", e->use.label ? e->use.label : "entity",
+              (unsigned int)id);
+    return 0;
+}
+
 int interact_use(const Scene *scene, int i)
 {
     const Usable *u;
@@ -852,6 +962,8 @@ void interact_frame(const Scene *scene, const Camera *cam, float secs, int used)
         g_aimed = hit.usable;
         if (used && hit.usable >= 0) {
             interact_use(scene, hit.usable);
+        } else if (used && hit.entity) {
+            interact_use_entity(scene, hit.entity);
         } else if (used) {
             /* Say what the click met, so a use that does nothing can be told from one not taken. */
             if (hit.model >= 0) {

@@ -16,6 +16,7 @@ The ray starts at the camera's eye and runs along its forward, pitch included: t
 
 1. **The wall.** Every model whose box (`Scene.bounds`) the ray crosses is turned into the ray's frame, and its triangles are tested from both sides (Möller and Trumbore). The nearest hit is the wall: nothing past it is used. That is what stops a door being opened through the wall beside it.
 2. **The usables.** Each usable's box is tested against the ray, up to the shorter of its reach and the wall plus half a unit. The nearest box entered wins.
+3. **The usable entities.** Every entity with `ENT_USABLE` (live, not hidden, `use.reach` above 0) is tested the same way on its own box (`docs/entities.md`, Use). A nearer one takes the ray from the usable: `UseHit.entity` is its `EntId` and `usable` is -1. The use key's frame hands it to the game's `EntityUseHandler` (`interact_use_entity`).
 
 A usable is one of three shapes:
 
