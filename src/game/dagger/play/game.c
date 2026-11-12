@@ -12,6 +12,7 @@
 #include "game/dagger/play/quest.h"
 #include "game/dagger/play/msgbox.h"
 #include "game/dagger/places/world.h"
+#include "game/dagger/places/entbuild.h"
 #include "game/dagger/formats/rdb.h"
 #include "game/dagger/tables/quests.h"
 #include "engine/assets/vfs.h"
@@ -2210,45 +2211,42 @@ static void use_key(const Camera *cam)
 }
 
 /*
- * The world's hook for a building's inside (world_set_people_hook): each quest
- * person put in this building stands beside its first person (else its first
- * flat), as their faction's flat for their sex (else the region's people's),
- * marked QUEST_PERSON_TAG so a use of them is the quest's (person_used).
+ * The world's add hook (entbuild_set_hooks): each quest person put in this building stands
+ * beside its first person (else on a quest marker), as their faction's flat for their sex (else
+ * the region's people's), marked QUEST_PERSON_TAG so a use of them is the quest's (person_used).
  */
-static int quest_people_hook(const Dungeon *town, int block, int record, Flat *flats, int nflat, Flat *out, int cap)
+static int quest_people_add(const EntBuild *b, Entity *out, int cap)
 {
     QuestPersonHere here[8];
-    const Flat *at;
     int n;
+    int made;
     int i;
 
-    n = quest_people_in(town->region, town->index, block, record, here, cap < 8 ? cap : 8);
-    if (!n || !nflat) {
-        return 0;
-    }
-    at = &flats[0];
-    for (i = 0; i < nflat; i++) {
-        if (flats[i].tag & FLAT_PERSON) {
-            at = &flats[i];
-            break;
-        }
-    }
+    n = quest_people_in(b->region, b->index, b->block, b->record, here, cap < 8 ? cap : 8);
+    made = 0;
     for (i = 0; i < n; i++) {
         const Faction *f;
+        float x, y, z;
+        int file, image;
 
         f = factionfile_open() && here[i].faction ? faction_find(here[i].faction) : 0;
         if (!f || !f->flat_archive[here[i].female]) {
-            f = faction_people_of(town->region);
+            f = faction_people_of(b->region);
         }
-        mem_zero(&out[i], sizeof(out[i]));
-        out[i].x = at->x + 48.0f * (float)(i + 1);
-        out[i].y = at->y;
-        out[i].z = at->z;
-        out[i].file = (df_u16)(f ? f->flat_archive[here[i].female] : 182);
-        out[i].image = (df_u16)(f ? f->flat_record[here[i].female] : 0);
-        out[i].tag = (df_u16)(FLAT_PERSON | QUEST_PERSON_TAG(here[i].slot, here[i].person));
+        file = f ? f->flat_archive[here[i].female] : 182;
+        image = f ? f->flat_record[here[i].female] : 0;
+        if (b->has_first) {
+            x = b->first_x + 48.0f * (float)(i + 1);
+            y = b->first_y;
+            z = b->first_z;
+        } else if (!entbuild_marker_nth(11, i, &x, &y, &z)) {
+            continue;
+        }
+        if (entbuild_person(&out[made], file, image, QUEST_PERSON_TAG(here[i].slot, here[i].person), x, y, z)) {
+            made++;
+        }
     }
-    return n;
+    return made;
 }
 
 void game_setup(void)
@@ -2275,8 +2273,8 @@ void game_setup(void)
     gfx_set_under(draw_under);
     commands_setup();
     commands_book(&g_book);
-    /* A quest's people stand in their buildings when they are entered (quest_people_hook). */
-    world_set_people_hook(quest_people_hook);
+    /* A quest's people stand in their buildings when they are entered (quest_people_add). */
+    entbuild_set_hooks(0, quest_people_add);
     /* And a quest's foes take their place in its dungeon (quest_foes_at). */
     dunstream_set_foes_hook(quest_foes_at);
     cmd_var("panel", overlay_panel, overlay_set_panel, 0, 1, "classic's bottom panel of the HUD; panel alone flips it");

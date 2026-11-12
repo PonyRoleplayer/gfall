@@ -195,6 +195,8 @@ struct World {
 #define PEOPLE_MAX 48
     Entity pers[PEOPLE_MAX];
     int npers;
+    /* The building being built (RMB block and record), -1 for neither: what the hooks are told. */
+    int in_block, in_record, in_region, in_index;
     Entity *ent;
     df_i16 *ent_kind;
     df_u8 *ent_passive;
@@ -1086,6 +1088,72 @@ static void animate(World *world, Flat *fl, int slot)
     fl->phase = (df_u8)(((unsigned int)df_iround(fl->x) * 7u + (unsigned int)df_iround(fl->z) * 13u) & 255u);
 }
 
+static World *g_building;
+
+/* The picture a hook asks for, read and placed in the place being built (before the images are finished), and the place's editor markers. */
+static int build_slot(int file, int image, int *slot, int *w, int *h)
+{
+    const Image *img;
+    int s;
+
+    if (!g_building || !place_image(g_building, file, image, 1, &s)) {
+        return 0;
+    }
+    img = g_building->images[s];
+    *slot = s;
+    *w = flat_extent(img->width, img->xscale);
+    *h = flat_extent(img->height, img->yscale);
+    return *w >= 1 && *h >= 1;
+}
+
+static int build_marker(int record, int n, float *x, float *y, float *z)
+{
+    return world_marker_nth(g_building, record, n, x, y, z);
+}
+
+/* The game's say (entbuild.h): each person the builder made is changed or dropped, then the game's own are added. Pictures it asks for are placed here, before the images are finished. */
+static void run_entity_hooks(World *world)
+{
+    static const EntBuilder builder = { build_slot, build_marker };
+    EntBuild b;
+    int i, n, kept, made;
+
+    if (!entbuild_have_hooks()) {
+        return;
+    }
+    mem_zero(&b, sizeof(b));
+    b.place = world->place;
+    b.region = world->in_region;
+    b.index = world->in_index;
+    b.block = world->in_block;
+    b.record = world->in_record;
+    b.source = ENT_SRC_PEOPLE;
+    b.count = world->npers;
+    if (world->npers > 0) {
+        b.has_first = 1;
+        b.first_x = world->pers[0].x; b.first_y = world->pers[0].y; b.first_z = world->pers[0].z;
+    }
+    g_building = world;
+    entbuild_begin(&builder);
+    kept = 0;
+    n = world->npers;
+    for (i = 0; i < n; i++) {
+        b.nth = i;
+        if (entbuild_change(&b, &world->pers[i])) {
+            if (kept != i) { world->pers[kept] = world->pers[i]; }
+            kept++;
+        }
+    }
+    world->npers = kept;
+    if (world->npers < PEOPLE_MAX) {
+        b.nth = world->npers;
+        made = entbuild_add(&b, world->pers + world->npers, PEOPLE_MAX - world->npers);
+        if (made > 0) { world->npers += made; }
+    }
+    entbuild_end();
+    g_building = 0;
+}
+
 static int paint(World *world)
 {
     int i;
@@ -1150,26 +1218,8 @@ static int paint(World *world)
              * floor has its point at mid-height, a town's at its base.
              */
             if (world->place == PLACE_INSIDE && (fl->tag & FLAT_PERSON) && world->npers < PEOPLE_MAX) {
-                /* A person in a building is a static entity that can be talked to, not a flat: drawn by the registry as one picture facing the viewer, not solid, its use box its radius round its feet. */
-                Entity *pe;
-
-                pe = &world->pers[world->npers++];
-                entity_init(pe);
-                pe->pose[ENTITY_IDLE].slot[0] = (df_u16)slot;
-                pe->pose[ENTITY_IDLE].w[0] = (df_u16)extent_w;
-                pe->pose[ENTITY_IDLE].h[0] = (df_u16)extent_h;
-                pe->x = fl->x; pe->y = fl->y; pe->z = fl->z;
-                pe->radius = PEOPLE_RADIUS;
-                pe->live = 1;
-                pe->flags = ENT_USABLE | ENT_GHOST;
-                pe->residence = ENT_HOME_PLACE;
-                pe->owner = fl->tag;
-                pe->use.kind = USE_TALK;
-                pe->use.reach = (df_u16)TALK_REACH;
-                /* Their faction, and the flat they stand as, for their face: what a flat's usable carried. */
-                pe->use.what = (int)(fl->tag & 0x7fff);
-                pe->use.tag = ((int)fl->file << 7) + (int)fl->image;
-                pe->use.label = "person";
+                /* A person in a building is a static entity that can be talked to, not a flat. */
+                entbuild_make_person(&world->pers[world->npers++], slot, extent_w, extent_h, (int)fl->tag, (int)fl->file, (int)fl->image, fl->x, fl->y, fl->z);
                 continue;
             }
             if (world->base_flats) {
@@ -1183,6 +1233,7 @@ static int paint(World *world)
         }
         world->nflat = kept;
     }
+    run_entity_hooks(world);
     return 1;
 }
 
@@ -1560,10 +1611,6 @@ void world_keep_save(World *world)
     keep_save(&scene, 0, world->nmover, world->ent, world->nent, 0.0f, 0.0f, 0.0f);
 }
 
-/* The game's people for an inside, or 0 (world_set_people_hook). */
-static WorldPeopleHook g_people_hook;
-/* The inside being built, for the hook to ask where its editor markers are (world_building_marker_nth). */
-static const World *g_building;
 
 static World *assemble(const Dungeon *hold, int require_start, int inside_block, int inside_record)
 {
@@ -1595,6 +1642,10 @@ static World *assemble(const Dungeon *hold, int require_start, int inside_block,
     world->season = clock_season();
     world->outdoor = world->place == PLACE_TOWN;
     world->keep_place = keep_place(hold, world->place, inside_record);
+    world->in_block = inside_block;
+    world->in_record = inside_record;
+    world->in_region = hold->region;
+    world->in_index = hold->index;
     /* Set now: paint places flats by it. */
     world->base_flats = hold->outdoor;
     world->inst = (Instance *)mem_alloc(MAX_MODELS * (df_u32)sizeof(Instance));
@@ -1731,13 +1782,6 @@ static World *assemble(const Dungeon *hold, int require_start, int inside_block,
             world->have_start = 1;
         }
     }
-    /* A game's own people in a building (a quest's, world_set_people_hook), before the pictures are placed. */
-    if (world->place == PLACE_INSIDE && g_people_hook && world->nflat < MAX_FLATS) {
-        g_building = world;
-        world->nflat += g_people_hook(hold, inside_block, inside_record, world->flat, world->nflat, world->flat + world->nflat,
-                                      MAX_FLATS - world->nflat);
-        g_building = 0;
-    }
     lap(&g_times.rest);
     if (!build_tex_table(world, hold)) {
         return 0;
@@ -1834,11 +1878,6 @@ World *world_load_dungeon(const Dungeon *dungeon)
     return assemble(dungeon, 0, -1, -1);
 }
 
-void world_set_people_hook(WorldPeopleHook hook)
-{
-    g_people_hook = hook;
-}
-
 World *world_load_inside(const Dungeon *town, int block, int record)
 {
     if (!town || !town->outdoor || block < 0 || block >= town->nblocks || record < 0) {
@@ -1899,11 +1938,6 @@ int world_marker_nth(const World *world, int record, int n, float *x, float *y, 
         }
     }
     return 0;
-}
-
-int world_building_marker_nth(int record, int n, float *x, float *y, float *z)
-{
-    return world_marker_nth(g_building, record, n, x, y, z);
 }
 
 int world_flat_count(const World *world)

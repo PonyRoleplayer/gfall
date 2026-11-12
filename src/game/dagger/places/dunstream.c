@@ -17,6 +17,7 @@
 #include "engine/scene/interact.h"
 #include "engine/scene/light.h"
 #include "engine/scene/stream.h"
+#include "game/dagger/places/entbuild.h"
 #include "engine/scene/walker.h"
 
 /* See dunstream.h and docs/streaming.md (Dungeons). */
@@ -78,7 +79,11 @@ typedef struct Chunk {
     int at;
     /* Its creatures before they are placed: the marker, the kind, a woman, passive. */
     int nfoes;
+    /* The game's own people for the block (entbuild.h), asked for before its pictures are held: their pictures are held too, and they are placed with the creatures. */
+    Entity *people;
+    int npeople;
 } Chunk;
+#define CHUNK_PEOPLE 8
 
 static int g_open;
 static const Dungeon *g_dun;
@@ -284,6 +289,107 @@ static const int g_idle_483[ENTITY_VIEWS] = { 15, 11, 17, 18, 19 };
 static const int g_hurt[ENTITY_VIEWS] = { 10, 11, 12, 13, 14 };
 /* Records 5 to 9: a melee attack (its primary attack). The game steps its frames (Entity.hold). */
 static const int g_attack[ENTITY_VIEWS] = { 5, 6, 7, 8, 9 };
+
+/* ---- The game's say in who stands in a block (entbuild.h) ---- */
+
+static Chunk *g_hook_chunk;
+
+/* A picture a hook asks for: its slot (held by the chunk, read with its pictures); sizes are known once it is read, so the entity gets 1 and the placing step sets them. */
+static int hook_slot(int file, int image, int *slot, int *w, int *h)
+{
+    int s;
+
+    if (!g_hook_chunk) {
+        return 0;
+    }
+    s = wres_slot(file, image, WRES_SPRITE);
+    if (s < 0) {
+        return 0;
+    }
+    hold(g_hook_chunk, s);
+    *slot = s;
+    *w = 1;
+    *h = 1;
+    return 1;
+}
+
+/* The n-th quest marker (199.11, or 199.18) of the block, in the chunk's frame. */
+static int hook_marker(int record, int n, float *x, float *y, float *z)
+{
+    int i;
+
+    if (!g_hook_chunk || (record != QUEST_MARKER_PERSON && record != QUEST_MARKER_ITEM)) {
+        return 0;
+    }
+    for (i = 0; i < g_nqm; i++) {
+        if (g_qm[i].block == g_hook_chunk->b && g_qm[i].record == record && n-- == 0) {
+            *x = g_qm[i].x;
+            *y = g_qm[i].y;
+            *z = g_qm[i].z;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Asked once per block, before its pictures are held: the game's own people for it. */
+static void ask_people(Chunk *c)
+{
+    static const EntBuilder builder = { hook_slot, hook_marker };
+    EntBuild b;
+
+    c->people = 0;
+    c->npeople = 0;
+    if (!entbuild_have_hooks()) {
+        return;
+    }
+    c->people = (Entity *)mem_alloc(CHUNK_PEOPLE * (df_u32)sizeof(Entity));
+    if (!c->people) {
+        return;
+    }
+    mem_zero(&b, sizeof(b));
+    b.place = PLACE_DUNGEON;
+    b.cx = g_dun->block[c->b].x;
+    b.cz = g_dun->block[c->b].z;
+    b.region = g_dun->region;
+    b.index = g_dun->index;
+    b.block = c->b;
+    b.record = -1;
+    g_hook_chunk = c;
+    entbuild_begin(&builder);
+    c->npeople = entbuild_add(&b, c->people, CHUNK_PEOPLE);
+    entbuild_end();
+    g_hook_chunk = 0;
+    if (c->npeople < 0) {
+        c->npeople = 0;
+    }
+}
+
+/* Step: the game's people into the slot, standing on the floor under their point (their point is the marker's centre), with their pictures' sizes now they are read. */
+static void place_people(Chunk *c, StreamOut *out)
+{
+    int i;
+
+    for (i = 0; i < c->npeople && out->entities_n < CAP_ENTITIES; i++) {
+        Entity *e;
+        float ground;
+        df_u16 w, h;
+
+        e = &out->entities[out->entities_n];
+        *e = c->people[i];
+        if (!size_of((int)e->pose[ENTITY_IDLE].slot[0], &w, &h)) {
+            continue;
+        }
+        e->pose[ENTITY_IDLE].w[0] = w;
+        e->pose[ENTITY_IDLE].h[0] = h;
+        if (floor_under(out->models, out->models_n, e->x, e->y, e->z, &ground)) {
+            e->y = ground;
+        } else {
+            e->y -= (float)h * 0.5f;
+        }
+        out->entities_n++;
+    }
+}
 
 /* Step: the block's models into the slot, in its frame (an RDB block's own), their pictures held. */
 static void place_models(Chunk *c, StreamOut *out)
@@ -969,6 +1075,7 @@ static int fill(void *user, int cx, int cz, StreamOut *out)
         out->step = STEP_HOLD;
         return 0;
     case STEP_HOLD:
+        ask_people(c);
         hold_pictures(c);
         c->at = 0;
         out->step = STEP_PICTURES;
@@ -989,6 +1096,7 @@ static int fill(void *user, int cx, int cz, StreamOut *out)
     case STEP_FOES:
         place_foes(c, out);
         place_treasure(c, out);
+        place_people(c, out);
         out->step = STEP_WATER;
         return 0;
     default:

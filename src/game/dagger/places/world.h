@@ -3,6 +3,8 @@
 
 #include "engine/assets/level.h"
 #include "game/dagger/formats/dungeon.h"
+#include "engine/scene/entity.h"
+#include "game/dagger/places/entbuild.h"
 
 typedef struct World World;
 
@@ -20,18 +22,7 @@ World *world_load_dungeon(const Dungeon *dungeon);
  * street's. Starts on its enter marker. docs/interact.md.
  */
 World *world_load_inside(const Dungeon *town, int block, int record);
-/*
- * A game's own people for a building's inside (a quest's): called as it is
- * built, with the town, the building and the flats its blocks put there
- * (people among them, FLAT_PERSON), it writes flats of its own into out (cap
- * of them, an RMB flat's base point) and says how many. It may change a
- * flat it was given (a quest person takes over one of the building's people). They are pictured and
- * made people to talk to as the block's own are. 0 for none.
- */
-typedef int (*WorldPeopleHook)(const Dungeon *town, int block, int record, Flat *flats, int nflat, Flat *out, int cap);
-void world_set_people_hook(WorldPeopleHook hook);
-/* While that hook runs: the n-th editor marker of a record in the building being built (world_marker_nth of it), so a game can stand its people on the marker (199.11 is a quest's). 1 when it exists. */
-int world_building_marker_nth(int record, int n, float *x, float *y, float *z);
+/* A building's people and a game's own are entities its hooks may change (entbuild.h); the place registers them as a range (world_as_level). */
 const char *world_error(void);
 const char *world_block_name(void);
 

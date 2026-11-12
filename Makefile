@@ -156,6 +156,7 @@ TABLES_SRC := \
 PLACES_SRC := \
 	src/game/dagger/places/world.c \
 	src/game/dagger/places/doors.c \
+	src/game/dagger/places/entbuild.c \
 	src/game/dagger/places/wild.c \
 	src/game/dagger/places/people.c \
 	src/game/dagger/places/terrain.c \

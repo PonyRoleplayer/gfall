@@ -38,6 +38,8 @@
 #include "engine/scene/keep.h"
 #include "engine/scene/automap.h"
 #include "game/dagger/places/dunstream.h"
+#include "engine/scene/ent.h"
+#include "game/dagger/places/entbuild.h"
 #include "engine/scene/interact.h"
 #include "engine/gfx/draw.h"
 #include "engine/gfx/mip.h"
@@ -2936,6 +2938,61 @@ static int hm_count(const Scene *scene, AutomapView *v)
  * the hold opened again (a new heap, a new scene) knows the same models
  * seen; revealed, the whole hold draws.
  */
+/* The load hooks in a streamed dungeon (entbuild.h): a game's add hook puts a person on the hold's quest marker 199.11 of its start block; they stand in the slot as a usable entity, on the floor under it. */
+static int g_ds_asked;
+
+static int ds_add_hook(const EntBuild *b, Entity *out, int cap)
+{
+    float x, y, z;
+
+    if (cap < 1 || b->place != PLACE_DUNGEON || b->block != 0 || !entbuild_marker_nth(QUEST_MARKER_PERSON, 0, &x, &y, &z)) {
+        return 0;
+    }
+    g_ds_asked++;
+    return entbuild_person(&out[0], 182, 0, 0x7001, x, y, z) ? 1 : 0;
+}
+
+static void check_dunstream_people(void)
+{
+    Dungeon hold;
+    Level level;
+    Camera cam;
+    float x, y, z, yaw, pitch;
+    int i, found, usable;
+
+    keep_clear();
+    if (!dungeon_load(&hold)) {
+        check_expect(0, "dunstream people: the hold did not load");
+        return;
+    }
+    g_ds_asked = 0;
+    entbuild_set_hooks(0, ds_add_hook);
+    if (!dunstream_open(&hold, &level, &x, &y, &z, &yaw, &pitch)) {
+        entbuild_set_hooks(0, 0);
+        check_expect(0, "dunstream people: the hold's stream did not open");
+        return;
+    }
+    camera_set(&cam, x, y, z, yaw, pitch);
+    for (i = 0; i < 60; i++) {
+        dunstream_fill(&cam);
+    }
+    ent_place(&level.scene);
+    found = 0;
+    usable = 0;
+    for (i = 0; i < level.scene.nentities; i++) {
+        const Entity *e;
+
+        e = &level.scene.entities[i];
+        if ((e->flags & ENT_USABLE) && e->use.kind == USE_TALK && e->owner == 0x7001u) {
+            usable++;
+            found += e->live != 0 && e->x == 645.0f && e->z == 1585.0f;
+        }
+    }
+    dunstream_close();
+    entbuild_set_hooks(0, 0);
+    check_expect(g_ds_asked >= 1 && usable == 1 && found == 1, "dunstream people: the add hook's person is not in the hold's start block on its quest marker as a live usable entity");
+}
+
 static void check_dungeon_automap(void)
 {
     static int order[DRAW_VIS_MAX];
@@ -3694,5 +3751,6 @@ int check_dagger(const char *root_in)
     check_dungeon_lights();
     check_dungeon_movers();
     check_dungeon_automap();
+    check_dunstream_people();
     return check_failed() ? 1 : 0;
 }

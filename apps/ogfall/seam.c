@@ -14,6 +14,7 @@
 #include "game/ogfall/play/msg.h"
 #include "game/ogfall/play/ground.h"
 #include "game/dagger/places/dunstream.h"
+#include "game/dagger/places/entbuild.h"
 #include "game/ogfall/play/spellmaker.h"
 #include "game/ogfall/play/itemmaker.h"
 #include "game/ogfall/play/enchant.h"
@@ -1520,52 +1521,68 @@ static void quest_person_name(int who, int faction, int female, char *out, int c
     og_npc_name(&npc, out, cap);
 }
 
-/* The engine's hook for a building's inside (world_set_people_hook): each quest person put in it stands on a quest marker (199.11) of the building, else beside its first person (else its first flat),
- * as their faction's flat for their sex (else the region's people's), the flat marked with the quest and person so a use of them is theirs (talk_used). */
-static int quest_people_hook(const Dungeon *town, int block, int record, Flat *flats, int nflat, Flat *out, int cap)
+/* The engine's hooks for who stands in a building (entbuild_set_hooks): the quest persons put in it (og_quest_people_in), found for the building once, are told apart from the building's own people.
+ * A person of a building type takes over one of its people (the original's NPC site: the engine's change hook is asked of each in turn, and the person picked by the quest's seed becomes the quest's: their
+ * picture and tag, standing where they stood); the others, and any takeover with no one to take, are added, standing on a quest marker (199.11) of the building or beside its first person. */
+static OgQuestHere g_here[8];
+static int g_here_count, g_here_done[8];
+static int g_here_key[4] = { -1, -1, -1, -1 };
+
+static void quest_people_for(const EntBuild *b)
 {
-    OgQuestHere here[8];
-    const Flat *at;
-    int n, i, made;
+    /* A new building: its quest people, none taken over yet. */
+    g_here_key[0] = b->region; g_here_key[1] = b->index; g_here_key[2] = b->block; g_here_key[3] = b->record;
+    g_here_count = og_quest_people_in(b->region, b->index, b->block, b->record, g_here, 8);
+    mem_zero(g_here_done, sizeof(g_here_done));
+}
+
+static int quest_people_change(const EntBuild *b, Entity *e)
+{
+    int i;
+
+    if (b->nth == 0) { quest_people_for(b); }
+    for (i = 0; i < g_here_count; i++) {
+        const Faction *f;
+        int slot, w, h, file, image;
+
+        if (!g_here[i].takeover || g_here_done[i] || b->count < 1 || (int)(g_here[i].seed % (unsigned)b->count) != b->nth) { continue; }
+        f = factionfile_open() && g_here[i].faction ? faction_find(g_here[i].faction) : 0;
+        if (!f || !f->flat_archive[g_here[i].female]) { f = faction_people_of(b->region); }
+        file = f ? f->flat_archive[g_here[i].female] : 182;
+        image = f ? f->flat_record[g_here[i].female] : 0;
+        if (!entbuild_slot(file, image, &slot, &w, &h)) { continue; }
+        /* The NPC site (8.5 of quest-places-and-start.md): the picture is the quest person's, the faction kept, the tag theirs, the place the NPC's own. */
+        e->pose[ENTITY_IDLE].slot[0] = (df_u16)slot; e->pose[ENTITY_IDLE].w[0] = (df_u16)w; e->pose[ENTITY_IDLE].h[0] = (df_u16)h;
+        e->owner = (df_u32)OG_QUEST_PERSON_TAG(g_here[i].slot, g_here[i].person);
+        e->use.what = (int)e->owner & 0x7fff;
+        e->use.tag = (file << 7) + image;
+        g_here_done[i] = 1;
+        break;
+    }
+    return 1;
+}
+
+static int quest_people_add(const EntBuild *b, Entity *out, int cap)
+{
+    int i, made;
     float mx, my, mz;
 
-    n = og_quest_people_in(town->region, town->index, block, record, here, cap < 8 ? cap : 8);
-    if (!n || !nflat) { return 0; }
-    at = &flats[0];
-    for (i = 0; i < nflat; i++) { if (flats[i].tag & FLAT_PERSON) { at = &flats[i]; break; } }
+    if (g_here_key[0] != b->region || g_here_key[1] != b->index || g_here_key[2] != b->block || g_here_key[3] != b->record || b->count == 0) { quest_people_for(b); }
     made = 0;
-    for (i = 0; i < n; i++) {
+    for (i = 0; i < g_here_count && made < cap; i++) {
         const Faction *f;
-        df_u16 file, image, tag;
+        int file, image;
+        float x, y, z;
 
-        f = factionfile_open() && here[i].faction ? faction_find(here[i].faction) : 0;
-        if (!f || !f->flat_archive[here[i].female]) { f = faction_people_of(town->region); }
-        file = (df_u16)(f ? f->flat_archive[here[i].female] : 182);
-        image = (df_u16)(f ? f->flat_record[here[i].female] : 0);
-        tag = (df_u16)(FLAT_PERSON | OG_QUEST_PERSON_TAG(here[i].slot, here[i].person));
-        if (here[i].takeover) {
-            /* The NPC site (8.5 of quest-places-and-start.md): one of the building's own people becomes the quest person, where it stands: its picture is the quest person's, its faction kept. The original picks
-             * from the MAPS site list (partial, and its NPC numbers need a replay of the town's objects, `dungeon_sites` reads it); we pick by the quest's seed among the people of the building not already
-             * taken. */
-            int k, count, pick;
-
-            count = 0;
-            for (k = 0; k < nflat; k++) { if ((flats[k].tag & FLAT_PERSON) && (flats[k].tag & 0x7fff) < OG_QUEST_PERSON_MARK) { count++; } }
-            if (count) {
-                pick = (int)(here[i].seed % (unsigned)count);
-                for (k = 0; k < nflat; k++) {
-                    if (!((flats[k].tag & FLAT_PERSON) && (flats[k].tag & 0x7fff) < OG_QUEST_PERSON_MARK) || pick-- != 0) { continue; }
-                    flats[k].file = file; flats[k].image = image; flats[k].tag = tag;
-                    break;
-                }
-                continue;
-            }
-        }
-        mem_zero(&out[made], sizeof(out[made]));
-        if (world_building_marker_nth(11, made, &mx, &my, &mz)) { out[made].x = mx; out[made].y = my; out[made].z = mz; }
-        else { out[made].x = at->x + 48.0f * (float)(made + 1); out[made].y = at->y; out[made].z = at->z; }
-        out[made].file = file; out[made].image = image; out[made].tag = tag;
-        made++;
+        if (g_here_done[i]) { continue; }
+        f = factionfile_open() && g_here[i].faction ? faction_find(g_here[i].faction) : 0;
+        if (!f || !f->flat_archive[g_here[i].female]) { f = faction_people_of(b->region); }
+        file = f ? f->flat_archive[g_here[i].female] : 182;
+        image = f ? f->flat_record[g_here[i].female] : 0;
+        if (entbuild_marker_nth(11, made, &mx, &my, &mz)) { x = mx; y = my; z = mz; }
+        else if (b->has_first) { x = b->first_x + 48.0f * (float)(made + 1); y = b->first_y; z = b->first_z; }
+        else { continue; }
+        if (entbuild_person(&out[made], file, image, OG_QUEST_PERSON_TAG(g_here[i].slot, g_here[i].person), x, y, z)) { made++; }
     }
     return made;
 }
@@ -2770,7 +2787,7 @@ int seam_boot(void)
     og_activate_set_global(OTHER_GLOBAL, og_quest_global_set);
     og_possessions_set_letter(og_quest_item_text);
     og_activate_set_person(person_used);
-    world_set_people_hook(quest_people_hook);
+    entbuild_set_hooks(quest_people_change, quest_people_add);
     og_activate_set_talk_use(talk_used);
     og_possessions_set_service(service_act);
     og_standing_set_membership(standing_membership);

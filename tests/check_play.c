@@ -15,6 +15,7 @@
 #include "engine/scene/interact.h"
 #include "engine/scene/keep.h"
 #include "game/dagger/places/world.h"
+#include "game/dagger/places/entbuild.h"
 #include "game/dagger/places/dunstream.h"
 #include "game/dagger/places/doors.h"
 #include "game/dagger/places/travel.h"
@@ -5059,6 +5060,31 @@ static void check_bank(void)
 }
 
 /* An armorer in Daggerfall, entered through its own door: its shelf, its person, what the building says; a save holds it all. */
+/* The load hooks of a building's people: one changed (its faction made 9999), one added (owner 0x7123). */
+static int g_hook_changed, g_hook_added;
+
+static int test_change_hook(const EntBuild *b, Entity *e)
+{
+    (void)b;
+    g_hook_changed++;
+    if (b->nth == 0) {
+        e->use.what = 9999;
+    }
+    return 1;
+}
+
+static int test_add_hook(const EntBuild *b, Entity *out, int cap)
+{
+    if (cap < 1 || !b->has_first) {
+        return 0;
+    }
+    g_hook_added++;
+    if (!entbuild_person(&out[0], 182, 0, 0x7123, b->first_x + 40.0f, b->first_y, b->first_z)) {
+        return 0;
+    }
+    return 1;
+}
+
 static void check_people_in_town(void)
 {
     Level level;
@@ -5156,6 +5182,43 @@ static void check_people_in_town(void)
             check_expect(f != 0, "people: someone in the shop has a faction the file does not");
             check_expect(faces_of_flat(first_person->use.tag >> 7, first_person->use.tag & 0x7f) >= 0, "people: a person's flat has no face");
         }
+    }
+    /* The load hooks (entbuild_set_hooks): the same building again with a hook that changes one person and one that adds a person of its own: one more, the changed one named, the added one theirs. */
+    {
+        int before, after, changed, added;
+
+        before = folk;
+        travel_leave();
+        g_hook_changed = 0; g_hook_added = 0;
+        entbuild_set_hooks(test_change_hook, test_add_hook);
+        travel_from_save(&where, feet, chunk, 0.0f, 0.0f);
+        if (!travel_go(&level, &cam, &at)) {
+            entbuild_set_hooks(0, 0);
+            return;
+        }
+        {
+            EntList lists[ENT_LISTS];
+            int nl, l, k;
+
+            ent_place(&level.scene);
+            nl = ent_lists(&level.scene, lists, ENT_LISTS);
+            after = 0; changed = 0; added = 0;
+            for (l = 0; l < nl; l++) {
+                for (k = 0; k < lists[l].n; k++) {
+                    const Entity *e;
+
+                    e = &lists[l].first[k];
+                    if ((e->flags & ENT_USABLE) && e->use.kind == USE_TALK) {
+                        after++;
+                        changed += e->use.what == 9999;
+                        added += e->owner == 0x7123u;
+                    }
+                }
+            }
+        }
+        entbuild_set_hooks(0, 0);
+        check_expect(after == before + 1 && g_hook_changed == before && changed == 1 && added == 1 && g_hook_added == 1,
+                     "people: the load hooks did not change one of the building's people and add one of their own");
     }
     travel_leave();
     printf("people in town: Daggerfall's armorer, quality %d, %d shelves, %d people\n", quality, shelves, folk);
