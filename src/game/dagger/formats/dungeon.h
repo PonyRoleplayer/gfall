@@ -99,6 +99,17 @@ int dungeon_under(int region, int location_id);
  */
 void exterior_keep(int on);
 
+/*
+ * A location's quest sites (the 6-byte records ahead of its location record: really a list of where a quest may stand a person or put a thing): the building's index in the location (0xFFFF for
+ * none), flags (0x4000 a quest marker 199.11 inside, 0x1000 an item marker 199.18, 0x2000 an NPC's flat with its faction in the low 10 bits, 0x8000 a woman) and the low word of the object's id.
+ * Into out (cap) as many as fit; how many there are. A dungeon by its record's index, an outside by its place in its region's list.
+ */
+typedef struct DunSite {
+    unsigned short building, flags, object;
+} DunSite;
+int dungeon_sites(int region, int index, DunSite *out, int cap);
+int exterior_sites(int region, int index, DunSite *out, int cap);
+
 const char *dungeon_error(void);
 
 #endif

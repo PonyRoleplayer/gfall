@@ -1156,6 +1156,83 @@ int exterior_load_at(int region, int index, Dungeon *out)
     return 1;
 }
 
+/* ---- A location's quest sites: the 6-byte records before its location record (quest-places-and-start.md 1) ---- */
+
+struct SiteWalk {
+    int want;
+    DunSite *out;
+    int cap;
+    int n;
+    int found;
+    ExtNames src;
+};
+
+static void sites_of(const df_u8 *rec, df_u32 size, struct SiteWalk *walk)
+{
+    df_u32 doors, i;
+
+    walk->found = 1;
+    doors = df_ru32(rec);
+    if (doors > 4096 || 4u + doors * 6u > size) { return; }
+    for (i = 0; i < doors; i++) {
+        if (walk->out && walk->n < walk->cap) {
+            walk->out[walk->n].building = df_ru16(rec + 4 + i * 6);
+            walk->out[walk->n].flags = df_ru16(rec + 6 + i * 6);
+            walk->out[walk->n].object = df_ru16(rec + 8 + i * 6);
+        }
+        walk->n++;
+    }
+}
+
+static int site_visit(const df_u8 *rec, df_u32 size, int index, void *user)
+{
+    struct SiteWalk *walk;
+
+    walk = (struct SiteWalk *)user;
+    if (index != walk->want) { return 1; }
+    sites_of(rec, size, walk);
+    return 0;
+}
+
+int dungeon_sites(int region, int index, DunSite *out, int cap)
+{
+    Bsa *maps;
+    struct SiteWalk walk;
+
+    if (region < 0 || region >= DUN_REGIONS || index < 0) { return 0; }
+    maps = bsa_open(MAP_NAME);
+    if (!maps) { return 0; }
+    walk.want = index; walk.out = out; walk.cap = cap; walk.n = 0; walk.found = 0;
+    each_record(maps, region, site_visit, &walk);
+    bsa_close(maps);
+    return walk.n;
+}
+
+static int ext_site_visit(const df_u8 *rec, df_u32 size, int index, void *user)
+{
+    struct SiteWalk *walk;
+
+    walk = (struct SiteWalk *)user;
+    if (index != walk->want) { return 1; }
+    sites_of(rec, size, walk);
+    return 0;
+}
+
+int exterior_sites(int region, int index, DunSite *out, int cap)
+{
+    Bsa *maps;
+    struct SiteWalk walk;
+
+    if (region < 0 || region >= DUN_REGIONS || index < 0) { return 0; }
+    maps = g_keep ? g_keep_maps : bsa_open(MAP_NAME);
+    if (!maps) { return 0; }
+    walk.want = index; walk.out = out; walk.cap = cap; walk.n = 0; walk.found = 0;
+    walk.src.names = 0; walk.src.name_bytes = 0; walk.src.region = region;
+    each_exterior(maps, region, &walk.src, ext_site_visit, &walk);
+    if (!g_keep) { bsa_close(maps); }
+    return walk.n;
+}
+
 const char *dungeon_error(void)
 {
     return g_why;

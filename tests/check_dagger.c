@@ -2959,6 +2959,16 @@ static void check_dungeon_automap(void)
     }
     camera_set(&cam, x, y, z, yaw, pitch);
     dunstream_fill(&cam);
+    /* The hold's quest sites, the records before its location record: a person marker (0x4000, low word 64001) and an item marker (0x1000, 64002), no building. */
+    {
+        DunSite site[8];
+        int ns;
+
+        ns = dungeon_sites(hold.region, hold.index, site, 8);
+        check_expect(ns == 2 && site[0].building == 0xFFFF && site[1].building == 0xFFFF && ((site[0].flags == 0x4000 && site[0].object == 64001 && site[1].flags == 0x1000 && site[1].object == 64002) ||
+                                                                          (site[1].flags == 0x4000 && site[1].object == 64001 && site[0].flags == 0x1000 && site[0].object == 64002)),
+                     "the hold: its quest sites are not the person marker 64001 and the item marker 64002 (in either order)");
+    }
     /* The hold's quest markers as the original numbers them (0xFA01, 0xFA02): the person marker (199.11) in cell 8 and the item marker (199.18) in cell 9, nothing else. */
     {
         float qx, qy, qz, rx, ry, rz;
