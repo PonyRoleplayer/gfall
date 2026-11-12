@@ -244,3 +244,11 @@ Leash applies to the pool only. A range's or the scene's entry goes with its arr
 ## Spawned while playing
 
 Entities made after the place was built (a quest's ambush, foes in the wild) are a pool of the engine's beside `Scene.entities`, drawn and solid as these are: `docs/spawn.md`.
+
+## Building people as entities (entity plan step 5)
+
+A person in a building (an RMB people record, or a flat a game's `world_set_people_hook` added) is no longer a flat with a talk usable. As `paint` (`places/world.c`) places a flat's picture, a flat inside a building (`PLACE_INSIDE`) that carries `FLAT_PERSON` becomes an `Entity` in `World.pers` and is not kept as a flat:
+- static, `ENT_USABLE | ENT_GHOST` (not solid, its use box a circle of `PEOPLE_RADIUS` 24 round its feet), `ENT_HOME_PLACE`, live; one idle picture (the flat's own slot, already read), drawn facing the viewer;
+- `use` = `USE_TALK`, reach `TALK_REACH`, `what` the faction, `tag` the flat as `(file << 7) + image`, `label` "person"; `owner` the flat's tag (a quest person's marked tag included).
+`world_as_level` registers `World.pers` as a range (`ent_register_range`, residence place), so the registry draws and uses them; they are not in `Scene.entities`, which stay the creatures. `doors.c` makes no `USE_TALK` usable for an inside any more (a town's still do: step 6 and 10). The games: `interact_set_entity_handler` (GFALL's `on_use_entity`, LEVELFALL's `lf_use_entity`) and OGFALL's `activate.c` take a hit with `hit.entity`, make the `Usable` the old path knew (`doors_entity_usable`) and answer as before, so `person_used`, `talk_used` and the quest persons' tags are unchanged. A game's hook that adds or changes flats still works: its flats are turned into entities by the same paint.
+Test: `check_play`'s armorer's inside has its people as entities that are live and not solid, with the faction and face the file has.

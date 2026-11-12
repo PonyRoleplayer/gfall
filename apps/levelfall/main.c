@@ -36,6 +36,7 @@
 #include "engine/platform/win32.h"
 #include "engine/scene/clock.h"
 #include "engine/scene/interact.h"
+#include "engine/scene/ent.h"
 #include "engine/scene/walker.h"
 #include "engine/scene/daylight.h"
 #include "engine/scene/light.h"
@@ -2636,6 +2637,27 @@ static int stream_row_of(const Usable *u)
  * a passage ends the view, once view_row has somewhere to open; a
  * person says who they are, which is all a person does yet.
  */
+/* A person in a building is an entity (docs/entities.md); the ray takes it and says who they are as it did their usable. */
+static int lf_use_entity(const Scene *scene, df_u32 id)
+{
+    const Entity *e;
+    char line[64];
+    int n;
+
+    (void)scene;
+    e = ent_get(id);
+    if (!e || e->use.kind != USE_TALK) {
+        return 0;
+    }
+    n = 0;
+    line[0] = 0;
+    add_str(line, &n, (int)sizeof(line), "A person, faction ");
+    add_num(line, &n, (int)sizeof(line), e->use.what, 0);
+    add_str(line, &n, (int)sizeof(line), ".");
+    interact_say(line);
+    return 1;
+}
+
 static int lf_use(const Scene *scene, const Usable *u, int index)
 {
     char line[64];
@@ -2947,6 +2969,7 @@ static void run_view(const Level *level, Camera *cam)
     g_p_was = key_down('P');
     g_go.what = 0;
     interact_set_handler(lf_use);
+    interact_set_entity_handler(lf_use_entity);
     frames = 0;
     g_snap.valid = 0;
     g_fps_tick = 0;
@@ -3037,6 +3060,7 @@ static void run_view(const Level *level, Camera *cam)
     }
     gfx_set_extra(0);
     interact_set_handler(0);
+    interact_set_entity_handler(0);
     hud_set(1);
     g_cam = 0;
     console_set_camera(0);

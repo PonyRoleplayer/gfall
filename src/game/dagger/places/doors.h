@@ -52,6 +52,8 @@ enum {
 /* Daggerfall Unity's reach: a door or a lever 128 units (3.2 m), a person 256. */
 #define DOOR_REACH 128.0f
 #define TALK_REACH 256.0f
+/* The use box of a person in a building, a circle round their feet. */
+#define PEOPLE_RADIUS 24.0f
 
 typedef struct DoorBuild {
     /* In: the place's models (written as they move), what the file said of each, its block. */
@@ -95,5 +97,9 @@ int doors_build(DoorBuild *b);
  */
 void doors_landing(const Usable *u, float d, float eye,
                    float *x, float *y, float *z, float *yaw);
+
+/* An entity with ENT_USABLE as the Usable a game's handler knows (kind, what, tag and label from Entity.use; the box round the feet): the person a use ray took. */
+struct Entity;
+void doors_entity_usable(const struct Entity *e, Usable *out);
 
 #endif

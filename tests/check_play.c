@@ -5123,21 +5123,38 @@ static void check_people_in_town(void)
 
         u = &level.scene.usables[i];
         shelves += u->kind == USE_OTHER && u->what == OTHER_SHELF;
-        folk += u->kind == USE_TALK;
     }
-    check_expect(shelves > 0, "people: an armorer has no shelves");
-    check_expect(folk > 0, "people: an armorer has no one in it");
-    for (i = 0; i < level.scene.nusables; i++) {
-        const Usable *u;
+    /* A building's people are entities now (a range beside the scene's): the ones the use ray can take to talk. */
+    {
+        EntList lists[ENT_LISTS];
+        int nl, l, k, faced;
+        const Entity *first_person;
 
-        u = &level.scene.usables[i];
-        if (u->kind == USE_TALK) {
+        ent_place(&level.scene);
+        nl = ent_lists(&level.scene, lists, ENT_LISTS);
+        faced = 0;
+        first_person = 0;
+        for (l = 0; l < nl; l++) {
+            for (k = 0; k < lists[l].n; k++) {
+                const Entity *e;
+
+                e = &lists[l].first[k];
+                if ((e->flags & ENT_USABLE) && e->use.kind == USE_TALK) {
+                    folk++;
+                    if (!first_person) { first_person = e; }
+                    faced += e->live != 0 && (e->flags & ENT_GHOST) != 0;
+                }
+            }
+        }
+        check_expect(shelves > 0, "people: an armorer has no shelves");
+        check_expect(folk > 0, "people: an armorer has no one in it");
+        check_expect(faced == folk, "people: a person in a building is not drawn, or is solid");
+        if (first_person) {
             const Faction *f;
 
-            f = faction_find(u->what);
+            f = faction_find(first_person->use.what);
             check_expect(f != 0, "people: someone in the shop has a faction the file does not");
-            check_expect(faces_of_flat(u->tag >> 7, u->tag & 0x7f) >= 0, "people: a person's flat has no face");
-            break;
+            check_expect(faces_of_flat(first_person->use.tag >> 7, first_person->use.tag & 0x7f) >= 0, "people: a person's flat has no face");
         }
     }
     travel_leave();

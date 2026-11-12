@@ -19,6 +19,7 @@
 #include "engine/core/mem.h"
 #include "engine/core/prof.h"
 #include "engine/scene/entity.h"
+#include "engine/scene/ent.h"
 #include "engine/scene/interact.h"
 #include "engine/scene/walker.h"
 #include "engine/gfx/texcache.h"
@@ -190,6 +191,10 @@ struct World {
     Marker *dmark;
     df_u8 *dmark_blk;
     int ndmark;
+    /* A building's people (RMB people records, a game's too): static usable entities, a range the registry draws, solves and uses (docs/entities.md, The registry); made as the pictures are placed. */
+#define PEOPLE_MAX 48
+    Entity pers[PEOPLE_MAX];
+    int npers;
     Entity *ent;
     df_i16 *ent_kind;
     df_u8 *ent_passive;
@@ -1144,6 +1149,29 @@ static int paint(World *world)
              * in the air. The data agrees: a dungeon flat standing on a
              * floor has its point at mid-height, a town's at its base.
              */
+            if (world->place == PLACE_INSIDE && (fl->tag & FLAT_PERSON) && world->npers < PEOPLE_MAX) {
+                /* A person in a building is a static entity that can be talked to, not a flat: drawn by the registry as one picture facing the viewer, not solid, its use box its radius round its feet. */
+                Entity *pe;
+
+                pe = &world->pers[world->npers++];
+                entity_init(pe);
+                pe->pose[ENTITY_IDLE].slot[0] = (df_u16)slot;
+                pe->pose[ENTITY_IDLE].w[0] = (df_u16)extent_w;
+                pe->pose[ENTITY_IDLE].h[0] = (df_u16)extent_h;
+                pe->x = fl->x; pe->y = fl->y; pe->z = fl->z;
+                pe->radius = PEOPLE_RADIUS;
+                pe->live = 1;
+                pe->flags = ENT_USABLE | ENT_GHOST;
+                pe->residence = ENT_HOME_PLACE;
+                pe->owner = fl->tag;
+                pe->use.kind = USE_TALK;
+                pe->use.reach = (df_u16)TALK_REACH;
+                /* Their faction, and the flat they stand as, for their face: what a flat's usable carried. */
+                pe->use.what = (int)(fl->tag & 0x7fff);
+                pe->use.tag = ((int)fl->file << 7) + (int)fl->image;
+                pe->use.label = "person";
+                continue;
+            }
             if (world->base_flats) {
                 fl->y += (float)extent_h * 0.5f;
             }
@@ -1996,6 +2024,11 @@ void world_as_level(const World *world, Level *level)
     level->sound = &world->scape;
     level->scene.entities = world->nent > 0 ? world->ent : 0;
     level->scene.nentities = world->nent;
+    /* A building's people are a range beside the scene's own (they are not in Scene.entities, which are the creatures). */
+    if (world->npers > 0) {
+        ent_unregister_range((Entity *)world->pers);
+        ent_register_range(&level->scene, (Entity *)world->pers, world->npers, ENT_HOME_PLACE);
+    }
     level->scene.water = world->nwater > 0 ? world->water : 0;
     level->scene.nwater = world->nwater;
 }
@@ -2011,6 +2044,11 @@ const Water *world_water(const World *world, int index)
         return 0;
     }
     return &world->water[index];
+}
+
+int world_people_count(const World *world)
+{
+    return world ? world->npers : 0;
 }
 
 int world_entity_count(const World *world)

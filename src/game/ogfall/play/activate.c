@@ -1,4 +1,7 @@
 #include "game/ogfall/play/activate.h"
+#include "engine/core/mem.h"
+#include "engine/scene/ent.h"
+#include "engine/scene/entity.h"
 
 #include "game/ogfall/play/hud.h"
 #include "game/ogfall/play/possessions.h"
@@ -175,6 +178,22 @@ int og_activate(const Scene *scene, const Camera *cam, int mode,
             return g_person_use(&aim, mode);
         }
         return 0;
+    }
+    if (hit.entity && hit.usable < 0) {
+        /* A person standing in a building is an entity (docs/entities.md): the use ray took it, and the game answers as it did to a person's usable. */
+        const Entity *e;
+
+        e = ent_get(hit.entity);
+        if (e && e->use.kind == USE_TALK && g_talk_use) {
+            Usable person;
+
+            mem_zero(&person, sizeof(person));
+            person.kind = USE_TALK; person.model = -1; person.sprite = -1; person.mover = -1;
+            person.cx = e->x; person.cy = e->y + (float)e->pose[ENTITY_IDLE].h[0] * 0.5f; person.cz = e->z;
+            person.hw = e->radius; person.hd = e->radius; person.hh = (float)e->pose[ENTITY_IDLE].h[0] * 0.5f;
+            person.reach = (float)e->use.reach; person.what = e->use.what; person.tag = e->use.tag; person.label = e->use.label;
+            if (g_talk_use(&person, mode, hit.dist, cam)) { return 1; }
+        }
     }
     if (hit.usable >= 0 && hit.usable < scene->nusables) {
         const Usable *usable;

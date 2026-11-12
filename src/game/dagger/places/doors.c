@@ -2,6 +2,7 @@
 #include "game/dagger/formats/sndfile.h"
 #include "engine/core/mem.h"
 #include "engine/scene/interact.h"
+#include "engine/scene/entity.h"
 
 /*
  * See doors.h and docs/interact.md. Numbers are Daggerfall Unity's
@@ -606,7 +607,8 @@ int doors_build(DoorBuild *b)
     for (i = 0; i < b->nflat; i++) {
         Usable *u;
 
-        if (!(b->flat[i].tag & FLAT_PERSON)) {
+        /* An inside's people are entities (world.c), taken by the use ray; a town's flats still make usables. */
+        if (!(b->flat[i].tag & FLAT_PERSON) || b->place == PLACE_INSIDE) {
             continue;
         }
         u = new_use(b, USE_TALK, "person", TALK_REACH);
@@ -630,4 +632,23 @@ void doors_landing(const Usable *u, float d, float eye,
     *z = u->cz + u->nz * d;
     /* Camera yaw 0 looks along +Z, and a quarter turn along +X. */
     *yaw = df_wrap_tau(df_atan2(u->nx, u->nz));
+}
+
+void doors_entity_usable(const struct Entity *e, Usable *out)
+{
+    mem_zero(out, sizeof(*out));
+    out->kind = e->use.kind;
+    out->model = -1;
+    out->sprite = -1;
+    out->mover = -1;
+    out->cx = e->x;
+    out->cy = e->y + (float)e->pose[ENTITY_IDLE].h[0] * 0.5f;
+    out->cz = e->z;
+    out->hw = e->radius;
+    out->hd = e->radius;
+    out->hh = (float)e->pose[ENTITY_IDLE].h[0] * 0.5f;
+    out->reach = (float)e->use.reach;
+    out->what = e->use.what;
+    out->tag = e->use.tag;
+    out->label = e->use.label;
 }

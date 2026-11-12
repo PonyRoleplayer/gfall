@@ -112,6 +112,8 @@ struct Entity;
  * the landing, then each frame the world is not paused.
  */
 int world_creatures_step(World *world, const Camera *cam, float radius, float budget_ms);
+/* A building's people, who are entities in a range of their own (world_as_level registers it): how many. */
+int world_people_count(const World *world);
 int world_entity_count(const World *world);
 const struct Entity *world_entity(const World *world, int index);
 int world_entity_kind(const World *world, int index, int *passive);

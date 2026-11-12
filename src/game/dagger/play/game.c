@@ -1,4 +1,5 @@
 #include "game/dagger/play/game.h"
+#include "engine/scene/ent.h"
 #include "game/dagger/play/control.h"
 #include "game/dagger/play/bag.h"
 #include "game/dagger/play/atlas.h"
@@ -1471,6 +1472,20 @@ static int on_use(const Scene *scene, const Usable *u, int index)
     return 0;
 }
 
+/* A person in a building is an entity the use ray took: the same use as their usable was (on_use). */
+static int on_use_entity(const Scene *scene, df_u32 id)
+{
+    const Entity *e;
+    Usable u;
+
+    e = ent_get(id);
+    if (!e || e->use.kind != USE_TALK) {
+        return 0;
+    }
+    doors_entity_usable(e, &u);
+    return on_use(scene, &u, -1);
+}
+
 /* The player died (a fall, a blow): classic's death screen over the stilled world. */
 static void die(void)
 {
@@ -2158,8 +2173,10 @@ static void use_key(const Camera *cam)
         if (street_person_used(cam)) {
             return;
         }
-        if (interact_aim(&g_level->scene, cam, &hit) && g_level->scene.usables[hit.usable].kind == USE_TALK) {
+        if (interact_aim(&g_level->scene, cam, &hit) && hit.usable >= 0 && g_level->scene.usables[hit.usable].kind == USE_TALK) {
             person_used(&g_level->scene.usables[hit.usable]);
+        } else if (hit.entity && interact_use_entity(&g_level->scene, hit.entity)) {
+            /* a person in a building, an entity: spoken to by the entity handler */
         } else {
             interact_say("There is no one to talk to.");
         }
@@ -2339,6 +2356,7 @@ static void arrive(const Level *level, Camera *cam, const TravelPose *at)
     walker_set_game(&g_player.body);
     walker_set_on(1);
     interact_set_handler(on_use);
+    interact_set_entity_handler(on_use_entity);
     g_playing = 1;
     menu_over_play(MENU_NONE);
     said = travel_said();
@@ -3051,6 +3069,7 @@ int game_frame(Camera *cam, const Input *in, float dt)
 void game_shutdown(void)
 {
     interact_set_handler(0);
+    interact_set_entity_handler(0);
     commands_player(0);
     screens_close();
     weapon_free();
