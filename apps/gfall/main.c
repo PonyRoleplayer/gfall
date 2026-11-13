@@ -9,6 +9,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#include "engine/core/prof.h"
 #include "engine/core/df.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
@@ -254,8 +255,11 @@ static int gfall_main(void *instance)
         }
         fill_in(&in, &keys, frame_secs());
         was_paused = play_paused();
+        /* The game's own frame shows in the profile (docs/profile.md): rules, bodies, motors, the world's step. */
+        prof_begin(PROF_PLAY);
         asked = console_open() ? FRAME_MENU
             : play_frame(&in, &cam, have ? &seam_level()->scene : 0);
+        prof_end(PROF_PLAY);
         if (asked == FRAME_QUIT) {
             break;
         }
@@ -275,6 +279,7 @@ static int gfall_main(void *instance)
             have = 1;
         }
         if (have && !play_paused() && !console_open()) {
+            prof_begin(PROF_PLAY);
             seam_world_step(&cam,in.dt);
             if (seam_world_needs_reload()) {
                 gfx_hold("Loading...");
@@ -282,6 +287,7 @@ static int gfall_main(void *instance)
                 gfx_prime(seam_level(),&cam);
             }
             seam_creatures(&cam);
+            prof_end(PROF_PLAY);
             sound_listen(cam.x, cam.y, cam.z, cam.yaw);
         }
         gfx_set_pause(play_paused());
