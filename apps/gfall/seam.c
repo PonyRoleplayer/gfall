@@ -889,16 +889,10 @@ static int quest_find_number(int number, int *region, int *index)
 {
     static struct { int number, region, index; } cache[16];
     static int cached;
-    static DunRef list[2048];
-    int r, n, i, k, count;
+    int n, i, k;
 
     for (k = 0; k < cached; k++) { if (cache[k].number == number) { *region = cache[k].region; *index = cache[k].index; return cache[k].index >= 0; } }
-    *region = -1; *index = -1;
-    for (r = 0; r < DUN_REGIONS && *index < 0; r++) {
-        count = exterior_list_region(r, list, 2048);
-        if (count > 2048) { count = 2048; }
-        for (i = 0; i < count; i++) { if (list[i].location_id == number) { *region = r; *index = i; break; } }
-    }
+    exterior_find_number(number, region, index);
     if (*index < 0) {
         /* A dungeon's number: its record in the dungeon list names the outside it lies under. */
         static DunRef dungeons[4400];

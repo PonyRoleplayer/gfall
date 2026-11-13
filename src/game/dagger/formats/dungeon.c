@@ -999,6 +999,56 @@ static int ext_list_visit(const df_u8 *rec, df_u32 size, int index, void *user)
     return 1;
 }
 
+struct ExtFind {
+    int number;
+    int index;
+};
+
+/* An outside's LOC_ID against the number asked: the visit stops (returns 0) at the first match. */
+static int ext_find_visit(const df_u8 *rec, df_u32 size, int index, void *user)
+{
+    struct ExtFind *find;
+    df_u32 ext, doors, at;
+    int width, height, letter1;
+
+    find = (struct ExtFind *)user;
+    if (!exterior_at(rec, size, &ext, &width, &height, &letter1)) {
+        return 1;
+    }
+    if (size >= 4) {
+        doors = df_ru32(rec);
+        at = 4u + doors * 6u;
+        if (doors <= 4096 && at + LOC_ID + 2u <= size && (int)df_ru16(rec + at + LOC_ID) == find->number) {
+            find->index = index;
+            return 0;
+        }
+    }
+    return 1;
+}
+
+int exterior_find_number(int number, int *region, int *index)
+{
+    Bsa *maps;
+    ExtNames src;
+    struct ExtFind find;
+    int r;
+
+    *region = -1; *index = -1;
+    maps = bsa_open(MAP_NAME);
+    if (!maps) {
+        return 0;
+    }
+    find.number = number; find.index = -1;
+    src.names = 0; src.name_bytes = 0;
+    for (r = 0; r < DUN_REGIONS && find.index < 0; r++) {
+        src.region = r;
+        each_exterior(maps, r, &src, ext_find_visit, &find);
+        if (find.index >= 0) { *region = r; *index = find.index; }
+    }
+    bsa_close(maps);
+    return find.index >= 0;
+}
+
 int exterior_list_region(int region, DunRef *out, int cap)
 {
     Bsa *maps;

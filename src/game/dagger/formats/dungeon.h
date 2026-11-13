@@ -84,6 +84,8 @@ int exterior_list(DunRef *out, int cap);
 int exterior_load_at(int region, int index, Dungeon *out);
 /* One region's outdoor places, as exterior_list, in their MAPPITEM order: row i is index i. How many there are, which may be more than cap. */
 int exterior_list_region(int region, DunRef *out, int cap);
+/* The outside whose LOC_ID is number: its region and index; one open of MAPS.BSA, each region read once, stopping at the match. 1 when found. */
+int exterior_find_number(int number, int *region, int *index);
 /*
  * The two halves of a location, within one region: the index of the outside
  * whose number is exterior_id (a dungeon's Dungeon.exterior_id), and of the

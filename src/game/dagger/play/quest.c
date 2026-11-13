@@ -1393,16 +1393,20 @@ static int minute_of_day(void) { return (int)(game_state()->minutes % 1440u); }
 /* Whether the player is in a town, a village or the like: the location they are in, not a dungeon (kinds 4, 7 and over 9 are the dungeons and the rest). */
 static int town_here(void)
 {
+    static int seen_region = -1, seen_here = -1, seen_answer;
     int region, here, px, py, n;
     LocationInfo lo;
 
     if (!g_world || !g_world->here || !g_world->count || !g_world->location) { return 0; }
     g_world->here(&region, &here, &px, &py);
     if (here < 0) { return 0; }
+    /* Asked every daytime minute: the walk of every location is made once for each place the player stands in. */
+    if (region == seen_region && here == seen_here) { return seen_answer; }
+    seen_region = region; seen_here = here; seen_answer = 0;
     for (n = 0; n < g_world->count(); n++) {
-        if (g_world->location(n, &lo) && lo.region == region && lo.index == here) { return lo.type != 4 && lo.type != 7 && lo.type <= 9; }
+        if (g_world->location(n, &lo) && lo.region == region && lo.index == here) { seen_answer = lo.type != 4 && lo.type != 7 && lo.type <= 9; break; }
     }
-    return 0;
+    return seen_answer;
 }
 
 static int same_name_blind(const char *a, const char *b)
