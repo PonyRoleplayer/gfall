@@ -1264,13 +1264,36 @@ static int outside_visit(const df_u8 *rec, df_u32 size, int index, void *user)
     return 1;
 }
 
+/*
+ * dungeon_outside's answers, kept: the walk reads the region's whole
+ * exterior list (about 2 MB for region 17) to find one index, and the
+ * game asks where the player stands every frame (a quest's "is the
+ * player in this place"). MAPS.BSA does not change while the program
+ * runs, so an answer, found or -1, is good for ever. A file that would
+ * not open is not kept. See docs/dungeons.md, The other half.
+ */
+#define OUTSIDE_MEMO 8
+static struct {
+    int region;
+    int exterior_id;
+    int found;
+} g_outside_memo[OUTSIDE_MEMO];
+static int g_outside_memos;
+static int g_outside_next;
+
 int dungeon_outside(int region, int exterior_id)
 {
     Bsa *maps;
     struct PairWalk walk;
+    int i;
 
     if (region < 0 || region >= DUN_REGIONS) {
         return -1;
+    }
+    for (i = 0; i < g_outside_memos; i++) {
+        if (g_outside_memo[i].region == region && g_outside_memo[i].exterior_id == exterior_id) {
+            return g_outside_memo[i].found;
+        }
     }
     /* A stream open keeps MAPS.BSA and the region it last read: the same file, or a second open of it. */
     maps = g_keep ? g_keep_maps : bsa_open(MAP_NAME);
@@ -1282,6 +1305,14 @@ int dungeon_outside(int region, int exterior_id)
     each_exterior(maps, region, &walk.src, outside_visit, &walk);
     if (!g_keep) {
         bsa_close(maps);
+    }
+    /* The oldest answer gives way when all are taken. */
+    g_outside_memo[g_outside_next].region = region;
+    g_outside_memo[g_outside_next].exterior_id = exterior_id;
+    g_outside_memo[g_outside_next].found = walk.found;
+    g_outside_next = (g_outside_next + 1) % OUTSIDE_MEMO;
+    if (g_outside_memos < OUTSIDE_MEMO) {
+        g_outside_memos++;
     }
     return walk.found;
 }

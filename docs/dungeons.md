@@ -71,6 +71,12 @@ The RMB name is prefix + letter1 + letter2 + number + `.RMB`. Prefixes run `TVRN
 
 `assemble` owns one `ArchEnt` table (`ARCH_CACHE`, 4096) and passes it into every `rmb_load` and `rdb_load`. A mesh is in model-local space, so two blocks that name the same ARCH3D id share one `Mesh`. Do not put that cache back inside a single block load. How the bytes are sized, and how the 2MB texture card is filled, is `docs/memory.md`.
 
+## The other half
+
+A dungeon lies under an outside, and `dungeon_outside(region, exterior_id)` finds that outside's index in its region's list by walking every exterior record of the region in `MAPPITEM` until one carries the dungeon's location number. That walk reads the region's whole list, about 2 MB for region 17. The game asks it every frame: in a dungeon, a quest's "is the player in this place" (op 43) asks where the player stands, and that is two of these calls. So `dungeon_outside` keeps its last 8 answers, found or −1, and answers again from them without opening `MAPS.BSA`. The file does not change while the program runs, so a kept answer never goes stale. A file that would not open is not kept. Before this, the 233 read 3.9 MB a frame in Privateer's Hold once the opening page was closed, about 0.25 fps.
+
+Anything new the game asks every frame must not read a file. Ask once when the place opens, and keep the answer.
+
 ## What will not open
 
 A missing block name, a texture the climate file does not contain (except a cave record, which stays on the archive the face named), or more than 384 distinct images fails the open. The image table is 384 (`TEX_SLOTS`). Wayrest is 273 and used to die on the old table of 256. The viewer shows `world_error()` or `gfx_error()` and returns to the list. House interiors are not part of the outdoor load. A city whose full-size pictures are larger than the 2MB texture card still opens: far faces stay at 16 by 16. See `docs/memory.md`.
