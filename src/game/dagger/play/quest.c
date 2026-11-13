@@ -68,6 +68,10 @@ void quest_end(int slot)
     if (slot >= 0 && slot < QUESTS) {
         int i;
 
+        if (g_quest[slot].used) {
+            log_print(LOG_INFO, "quest: %s ends (%s), minute %u", g_quest[slot].qbn.name, g_quest[slot].ended ? "its end op" : "refused or stopped",
+                      (unsigned)game_state()->minutes);
+        }
         for (i = 0; i < QUEST_FACES; i++) { if (g_face[i].used && g_face[i].quest_id == g_quest[slot].qbn.id) { g_face[i].used = 0; } }
         for (i = 0; i < RUMOURS; i++) { if (g_rumour[i].used && (g_rumour[i].flags & 4) && g_rumour[i].quest_id == g_quest[slot].qbn.id) { g_rumour[i].used = 0; } }
         /* quest_end: every object with the quest's id goes, a quest item in the pack too. */
@@ -87,16 +91,21 @@ static int start_with(const char *name, const df_u8 *bytes, df_u32 size, int fac
     }
     if (id == 256) { return -1; }
     mem_zero(&g_quest[slot], sizeof(g_quest[slot]));
-    if (bytes ? !qbn_parse(bytes, size, &g_quest[slot].qbn) : !qbn_load(name, &g_quest[slot].qbn)) { return -1; }
+    if (bytes ? !qbn_parse(bytes, size, &g_quest[slot].qbn) : !qbn_load(name, &g_quest[slot].qbn)) {
+        log_print(LOG_WARN, "quest: %s does not read", name);
+        return -1;
+    }
     if (bytes) { for (k = 0; k < 8 && name[k]; k++) { g_quest[slot].qbn.name[k] = name[k]; } g_quest[slot].qbn.name[k] = 0; }
     g_quest[slot].used = 1;
     g_quest[slot].qbn.id = id; g_quest[slot].qbn.faction = faction;
     if (!bind_resources(slot)) {
-        /* Any failure ends the quest and says TEXT.RSC 600. */
+        /* Any failure ends the quest and says TEXT.RSC 600 (bind_resources logged why). */
+        log_print(LOG_WARN, "quest: %s does not start, minute %u", name, (unsigned)game_state()->minutes);
         mem_zero(&g_quest[slot], sizeof(g_quest[slot]));
         if (g_read && g_say) { char text[256]; text[0] = 0; if (g_read("", 600, 1, text, sizeof(text)) > 0) { g_say(text); } }
         return -1;
     }
+    log_print(LOG_INFO, "quest: %s starts in slot %d, minute %u", g_quest[slot].qbn.name, slot, (unsigned)game_state()->minutes);
     rumour_add(slot, 1005, 0, 4);
     return slot;
 }
@@ -475,7 +484,9 @@ static int bind_resources(int slot)
 
     q = &g_quest[slot];
     for (i = 0; i < q->qbn.n_timer; i++) { q->timer[i].flags = q->qbn.timer[i].flags & ~(128 | 1024); }
-    for (i = 0; i < q->qbn.n_place; i++) { if (!bind_place(slot, i)) { return 0; } }
+    for (i = 0; i < q->qbn.n_place; i++) {
+        if (!bind_place(slot, i)) { log_print(LOG_WARN, "quest: %s cannot bind place %d (scope %d)", q->qbn.name, i, q->qbn.place[i].scope); return 0; }
+    }
     /* quest_init_person (2.3), the kinds of this step: the questor, and a person that is only a faction. */
     for (i = 0; i < q->qbn.n_person; i++) {
         const QbnPerson *pe;
@@ -483,7 +494,10 @@ static int bind_resources(int slot)
         pe = &q->qbn.person[i];
         q->qbn.person[i].flags &= 0x0fff;
         if (pe->kind == 21) {
-            if (!g_questor.set || quest_person_busy(g_questor.who)) { return 0; }
+            if (!g_questor.set || quest_person_busy(g_questor.who)) {
+                log_print(LOG_WARN, "quest: %s has no questor for person %d (%s)", q->qbn.name, i, g_questor.set ? "busy" : "none set");
+                return 0;
+            }
             q->person[i].bound = 1; q->person[i].who = g_questor.who; q->person[i].faction = g_questor.faction;
             log_format(q->person[i].name, sizeof(q->person[i].name), "%s", g_questor.name);
             log_format(q->person[i].town, sizeof(q->person[i].town), "%s", g_questor.town);
@@ -491,7 +505,7 @@ static int bind_resources(int slot)
             q->person[i].bound = 1; q->person[i].who = 0; q->person[i].faction = pe->faction;
         }
     }
-    if (!bind_persons(slot)) { return 0; }
+    if (!bind_persons(slot)) { log_print(LOG_WARN, "quest: %s cannot bind its persons", q->qbn.name); return 0; }
     for (i = 0; i < q->qbn.n_op; i++) { q->qbn.op[i].last_minutes = game_state()->minutes; }
     for (i = 0; i < q->qbn.n_item; i++) {
         if (q->qbn.item[i].flags & 2) { q->item[i].gold = 1; q->item[i].amount = roll_gold(q, &q->qbn.item[i]); }
@@ -1254,6 +1268,7 @@ static void show(const QuestState *q, int message)
     if (message == -1 || !g_read || !g_say) { return; }
     text[0] = 0;
     if (g_read(q->qbn.name, message & 0x7fff, (message & 0x8000) != 0, text, sizeof(text)) > 0 && text[0]) {
+        log_print(LOG_INFO, "quest: %s says %s %d", q->qbn.name, (message & 0x8000) ? "TEXT.RSC" : "QRC", message & 0x7fff);
         quest_expand((int)(q - g_quest), text, said, sizeof(said), game_state()->minutes, 0);
         g_say(said);
     }
