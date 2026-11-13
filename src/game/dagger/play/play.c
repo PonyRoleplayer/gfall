@@ -594,7 +594,8 @@ int play_frame(const PlayIn *in, Camera *cam, const Scene *scene)
     mv.bar_blocks = blocks;
     mv.mouse_steer = key_region(in->held) < 0 && region != 4;
     cursor_weights(&mv, in->cx, in->cy, bar);
-    move_set_weight(inventory_weight(game_state()->inventory_id));
+    /* The pack's weight walks every object: refreshed every few frames, the walk's speed is not felt to lag by so much. */
+    { static int weight_age = 8, weight; if (++weight_age >= 8) { weight = inventory_weight(game_state()->inventory_id); weight_age = 0; } move_set_weight(weight); }
     move_frame(scene, &mv);
     minute = game_state()->minutes;
     state_frame(in->dt);
