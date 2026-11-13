@@ -364,25 +364,53 @@ int worldmap_location_type(int px, int py)
     return k > 0 ? (int)g_type[k - 1] : -1;
 }
 
+/*
+ * The game asks this every frame (where the player stands, travel.c and
+ * the seam's current place), so it walks the locations, not the half a
+ * million pixels, and keeps its last answer. The answer is the one a
+ * pass over the map in pixel order gives: of the locations with that
+ * region and index still shown at their own pixel (a later one on the
+ * same pixel hides an earlier), the first pixel.
+ */
+static int g_memo_region = -1;
+static int g_memo_index = -1;
+static int g_memo_found;
+static int g_memo_px;
+static int g_memo_py;
+
 int worldmap_pixel_of(int region, int index, int *px, int *py)
 {
-    int p;
+    int best;
+    int k;
 
     if (!g_ok) {
         return 0;
     }
-    /* Once, from a menu: a pass over the map is fine. */
-    for (p = 0; p < WORLDMAP_W * WORLDMAP_H; p++) {
-        int k;
+    if (region != g_memo_region || index != g_memo_index) {
+        best = -1;
+        for (k = 0; k < g_nloc; k++) {
+            int p;
 
-        k = (int)g_loc[p];
-        if (k && (int)g_region[k - 1] == region && (int)g_index[k - 1] == index) {
-            *px = p % WORLDMAP_W;
-            *py = p / WORLDMAP_W;
-            return 1;
+            if ((int)g_region[k] != region || (int)g_index[k] != index) {
+                continue;
+            }
+            p = (int)g_py[k] * WORLDMAP_W + (int)g_px[k];
+            if ((int)g_loc[p] == k + 1 && (best < 0 || p < best)) {
+                best = p;
+            }
         }
+        g_memo_region = region;
+        g_memo_index = index;
+        g_memo_found = best >= 0;
+        g_memo_px = best >= 0 ? best % WORLDMAP_W : 0;
+        g_memo_py = best >= 0 ? best / WORLDMAP_W : 0;
     }
-    return 0;
+    if (!g_memo_found) {
+        return 0;
+    }
+    *px = g_memo_px;
+    *py = g_memo_py;
+    return 1;
 }
 
 int worldmap_locations(void)

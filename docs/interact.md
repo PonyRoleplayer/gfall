@@ -72,6 +72,8 @@ The engine keeps the teleport a use or a chain reached (`interact_teleport`); `d
 
 **Walking into.** A usable with `touch` is used on the frame the body (the walker's, `WALK_RADIUS` round and `WALK_HEIGHT` tall under the eye) comes into its model's box as it stands now, not each frame it stays. With reach 0 it is never aimed at by hand. After a teleport, what the body lands in counts as come into already: a teleporter at the far end does not send it straight back; stepped off and on again, it does. In the hold, a lever (41020, an activate relay) starts a stone that turns 83° (41042, 1.7 s); another (61027) turns, and starts a slab that rises, which starts another.
 
+The frame tests only the usables that have `touch`, from a list of their indices (`TOUCH_LIST`, 256). A town's stream holds 15488 usables of 80 bytes and none with touch, and walking them all each frame was a cache miss an entry on the 233, about 2 ms. The list is made again at the first frame after the place's usables change: another scene, array, count or heap is seen on its own; the stream calls `interact_usables_changed` as a slot fills or empties. A builder that rewrites `Scene.usables` in place, or sets `touch` after the place opened, calls it too. With more than 256 touch usables every usable is walked, as before.
+
 **Passages.** A face is a door when its texture archive, less its climate hundreds unless it is 331 or 156, is a door set (`MeshReader.LoadVertices`):
 
 | archive | where | leads |

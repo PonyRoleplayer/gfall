@@ -109,6 +109,8 @@ static void empty_slot(int s)
         g_usables[i].sprite = -1;
         g_usables[i].mover = -1;
     }
+    /* The walk-into triggers are listed again (interact.h). */
+    interact_usables_changed();
     for (i = s * g_cap.movers; i < (s + 1) * g_cap.movers; i++) {
         g_movers[i].inst = 0;
         g_movers[i].state = MOVER_START;
@@ -716,6 +718,9 @@ static void finish(int s)
     sl->lights = g_out.lights_n;
     sl->emitters = g_out.emitters_n;
     sl->usables = g_out.usables_n;
+    if (g_out.usables_n > 0) {
+        interact_usables_changed();
+    }
     sl->movers = g_out.movers_n;
     sl->entities = g_entities ? g_out.entities_n : 0;
     if (g_cap.entities > 0) {

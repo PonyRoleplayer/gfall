@@ -196,5 +196,13 @@ struct Body;
 void interact_set_body(const struct Body *b);
 /* The touch usable the body is in now (Usable.touch), -1 for none. */
 int interact_touching(void);
+/*
+ * A place's usables changed where they lie (the same array and count):
+ * the list of walk-into triggers is made again at the next frame. The
+ * stream calls it as a slot fills or empties; a builder that rewrites
+ * Scene.usables in place, or sets a Usable.touch after the place opened,
+ * calls it too. Another array, count or heap is seen without it.
+ */
+void interact_usables_changed(void);
 
 #endif

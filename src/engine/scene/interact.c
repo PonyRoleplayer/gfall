@@ -845,10 +845,60 @@ int interact_use(const Scene *scene, int i)
 static int g_touching = -1;
 static const Scene *g_touch_scene;
 
-/* The first usable with touch whose model's box the body (the walker's, under the eye) is in; -1 none. */
 /* The game's body for walk-into triggers (interact_set_body, below). */
 static const Body *g_toucher;
 
+/*
+ * The usables with touch, by index in order: a town's stream holds
+ * 15488 usables (1.2 MB) and none with touch, and walking them all each
+ * frame was a cache miss an entry on the 233. Made again at the first
+ * frame after the place's usables changed: another scene, array, count
+ * or heap, or interact_usables_changed (the stream, as a slot fills or
+ * empties). More than TOUCH_LIST walks every usable, as before.
+ */
+#define TOUCH_LIST 256
+static int g_touch_list[TOUCH_LIST];
+static int g_touch_n;
+static int g_touch_all;
+static int g_touch_dirty = 1;
+static const Scene *g_touch_list_scene;
+static const Usable *g_touch_list_array;
+static int g_touch_list_count;
+static df_u32 g_touch_list_epoch;
+
+void interact_usables_changed(void)
+{
+    g_touch_dirty = 1;
+}
+
+static void touch_list(const Scene *scene)
+{
+    int i;
+
+    if (!g_touch_dirty && scene == g_touch_list_scene && scene->usables == g_touch_list_array
+        && scene->nusables == g_touch_list_count && g_touch_list_epoch == mem_epoch()) {
+        return;
+    }
+    g_touch_dirty = 0;
+    g_touch_list_scene = scene;
+    g_touch_list_array = scene->usables;
+    g_touch_list_count = scene->nusables;
+    g_touch_list_epoch = mem_epoch();
+    g_touch_n = 0;
+    g_touch_all = 0;
+    for (i = 0; i < scene->nusables; i++) {
+        if (!scene->usables[i].touch) {
+            continue;
+        }
+        if (g_touch_n == TOUCH_LIST) {
+            g_touch_all = 1;
+            return;
+        }
+        g_touch_list[g_touch_n++] = i;
+    }
+}
+
+/* The first usable with touch whose model's box the body (the walker's, under the eye) is in; -1 none. */
 static int touched(const Scene *scene, const Camera *cam)
 {
     float lo;
@@ -856,6 +906,8 @@ static int touched(const Scene *scene, const Camera *cam)
     float x;
     float z;
     float r;
+    int n;
+    int k;
     int i;
 
     /* The game's body, if it named one; else the walker's, under the camera's eye. */
@@ -872,10 +924,13 @@ static int touched(const Scene *scene, const Camera *cam)
         hi = lo + WALK_HEIGHT;
         r = WALK_RADIUS;
     }
-    for (i = 0; i < scene->nusables; i++) {
+    touch_list(scene);
+    n = g_touch_all ? scene->nusables : g_touch_n;
+    for (k = 0; k < n; k++) {
         const Usable *u;
         const Bound *b;
 
+        i = g_touch_all ? k : g_touch_list[k];
         u = &scene->usables[i];
         if (!u->touch || u->model < 0 || u->model >= scene->nmodels || !scene->bounds) {
             continue;
