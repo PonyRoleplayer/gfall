@@ -2931,6 +2931,8 @@ void draw_frame(const Camera *cam, const Level *level)
     int sky_alpha;
     Weather w;
     float secs;
+    /* The frame's real seconds even while paused: the fade-in runs on them, not on world time. */
+    float real_secs;
     float flash;
     float fog_far;
     float fog_near;
@@ -2967,6 +2969,7 @@ void draw_frame(const Camera *cam, const Level *level)
     if (secs < 0.0f || secs > 1.0f) {
         secs = 0.0f;
     }
+    real_secs = secs;
     /* The game's pause (gfx_set_pause): drawn, but no time passes in the world. */
     if (g_pause) {
         secs = 0.0f;
@@ -3316,10 +3319,15 @@ void draw_frame(const Camera *cam, const Level *level)
     shot_note();
     build_legend();
     draw_covers();
-    /* Coming through a passage: the new place comes up from black (draw_hold). */
+    /*
+     * Coming through a passage: the new place comes up from black (draw_hold).
+     * In real seconds: a page that pauses the game as the place opens (the
+     * new game's first message) is under the wash, and on world time the
+     * wash never lifted until the page was closed.
+     */
     if (g_fade_left > 0.0f && g_fade_total > 0.0f) {
         wash_glass(df_iround(255.0f * g_fade_left / g_fade_total));
-        g_fade_left -= secs;
+        g_fade_left -= real_secs;
     }
     prof_end(PROF_OVERLAY);
     /*
