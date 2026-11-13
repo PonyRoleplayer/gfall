@@ -4464,6 +4464,24 @@ static void publish_surface(int kind, int cutout)
     pic_set(PIC_SCREEN, g_comp[kind]);
 }
 
+/*
+ * A page fills the whole 320 x 200 with no clear texel (inventory, sheet,
+ * book, service, an open court, the spellbook on its underlay): nothing
+ * of the world shows, so the app draws the frame with no place. On the
+ * 233 the world behind cost about 10 ms a frame that nobody saw. A
+ * cutout page (talk, bank, the message, rest, death) keeps the world.
+ */
+int seam_screen_covers(void)
+{
+    int page;
+
+    page = possessions_state()->page;
+    if (!page || page == VIEW_MESSAGE || maps_up() || options_up() || !g_comp[g_screen_kind]) {
+        return 0;
+    }
+    return play_pic(PIC_SCREEN) == g_comp[g_screen_kind] && !g_comp_cutout[g_screen_kind];
+}
+
 static void publish(int kind) { publish_surface(kind,0); }
 
 static void fill_box(int x, int y, int w, int h, int color)

@@ -291,7 +291,8 @@ static int gfall_main(void *instance)
             sound_listen(cam.x, cam.y, cam.z, cam.yaw);
         }
         gfx_set_pause(play_paused());
-        gfx_frame(&cam,have && !maps_up() ? seam_level() : 0);
+        /* No world behind a map, or behind a page that covers the whole screen (seam_screen_covers). */
+        gfx_frame(&cam,have && !maps_up() && !seam_screen_covers() ? seam_level() : 0);
     }
     input_keys_attach(0);
     input_end();

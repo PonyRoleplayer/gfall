@@ -34,6 +34,8 @@ int seam_map_pixel(int x, int y);
 const char *seam_error(void);
 /* Compose the chargen picture for this frame into PIC_SCREEN. */
 void seam_present(void);
+/* 1 while an opaque page covers the whole screen: the frame needs no world drawn behind it. */
+int seam_screen_covers(void);
 /* Last composed 320 x 200 surface and its selected palette, for host QA. */
 const df_u8 *seam_screen(const df_u8 **palette);
 const df_u8 *seam_weapon_screen(const df_u8 **palette);
