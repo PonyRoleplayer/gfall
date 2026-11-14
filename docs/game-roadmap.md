@@ -1,110 +1,39 @@
 # GFALL: from Privateer's Hold to the full game
 
-Status: 2026-11-09, playable Hold and first wider-world slice; full-game work remains.
-Character creation, classic controls/HUD, Options, readable preferences, key
-bindings, inventory/equipment, the character sheet, spellbook item, books and
-dungeon loot are implemented. Combat includes melee, fists, bows/arrows,
-creature pursuit/attack animations, injuries, death recovery and persistent
-lootable corpses. Rest/loiter and hourly recovery are implemented. Six-slot
-save/load uses schema 7 and upgrades schemas 2–6; DOS saves are out of scope.
-Dungeon doors now support ordinary lockpicking/bashing with persistent locks and
-failed-attempt limits. Teleport arrivals reach GFALL's body and retain its view
-angles. Original sensing, gradual turning and wall navigation, rest encounters,
-six-hour skill advancement and level allocation, swimming/breath/drowning,
-wall-contact climbing and minute fatigue are implemented. Dungeon action chains
-now dispatch their original triggers and ordinary motion, lock, damage, sound,
-message and riddle effects. Source mappings and limits are recorded in
-[game.md](game.md#dungeon-gameplay-systems--2026-11-09).
-Casting, creature spells, elemental missiles/bursts and casting hands/sounds,
-active effects and cures, ordinary poison/disease courses, and magical Open/Lock
-are now implemented and host-tested. See [magic and ailments](game.md#magic-and-ailments--2026-11-09)
-for the source audit, rendering adaptations and remaining integrations.
-The Hold exit, streamed outdoors, named/numeric `goto`, building entrances and
-return doors, indoor/town/travel maps, original travel time/cost options,
-world save/load, cross-place Recall and persistent outdoor drops are connected.
-See [the world implementation](game.md#opening-the-world--2026-11-09) for
-source references, engine budgets and the remaining adaptations.
-The user has exercised saving/loading and reported improved audio on the target.
-The latest fixes are host-tested; the full target checklist remains open.
-Implementation details and verification are in [game.md](game.md).
+Status: 2026-11-13. GFALL.EXE plays from character creation through Privateer's Hold, the streamed
+world, towns and houses, with combat, magic (casting, the spell maker, potions, magic items and the item
+maker's rules), people and law (talk, shops, banks, lodging, the court, steal, guilds), the travel map
+and its journeys, riding and the wagon, the afflictions, and the quest machine. Saves are the game's own
+(`gfall/saves`, schema 17); preferences and bindings live in `gfall/settings.cfg`. Design and per-system
+history are in [game.md](game.md); known bugs and shortcuts in [game-later.md](game-later.md).
+Work happens on `main`; the first-generation player was retired on 2026-11-12 (tag `before-gfall-retire`).
 
 ## What is still missing
 
-This is GFALL's checklist. Features already present in GFALL do not count as
-implemented here. Follow the original rules in the byte-matched decompilation
-when completing each system.
+Checked against the notes in game.md and game-later.md on 2026-11-13. Target acceptance (a real
+233/Voodoo 1) is open for almost everything; the checklist below is what to tick.
 
-### Inventory completed; remaining system integrations
-
-The current inventory interactions and ordinary-item descriptions are complete
-and host-tested; see [the source audit and tests](game.md#inventory-completion-2026-11-08).
-The earlier quantity-splitting entry was an incorrect assumption: original
-inventory actions move whole items/stacks. Taking arrows merges into one carried
-stack capped at 199, discarding overflow as `inv_merge_arrows` does. Gold keeps
-its numeric amount prompt. No invented general split-stack dialog is needed.
-
-Spellbook rename, icon cycling, subtype labels, effect help, paging, scrollbar,
-reordering and deletion now work on owned, saved records. Original SORT artwork
-has no button handler. The Cast key/HUD opens spell selection; inventory Use
-opens the item editor. Selection pays the live cost and readies/casts the spell.
-
-- **Character sheet:** the written biography, live affiliations and quest-log
-  contents remain. Skill-use progression and level advancement are implemented. History currently
-  shows creation/reputation information; guild and quest buttons report an empty
-  state until those systems exist.
-- **Loot coverage:** MAGIC.DEF enchantments, potions/recipes and specialized
-  descriptions/effects remain. Mundane corpse loot and generated creature gear
-  are implemented. Original book rarity selection is implemented. Random markers share
-  picture 216/0; their original appearance/probability rules need completing.
-  Mundane treasure, persistent empty containers and dropped piles already work.
-- **Scale:** initial empty treasure rolls have a 32-attempt limit and objects
-  use a bounded 256-record pool. Revisit those limits with larger places and
-  real object populations rather than treating the Hold slice as full-world
-  coverage.
-
-### Systems still to implement
-
-- **Combat and survival:** fleeing, teams and inter-creature combat; complete
-  human/guard initialization, enchantment strike
-  effects, curse infections and knockback collision damage.
-  Broader survival conditions, guild bonuses and target acceptance of climbing,
-  swimming and wall navigation remain. The original death movie is not played.
-- **Magic:** curse transformations, biography modifiers and propagation of
-  edited owned-spell names/icons into active bundles remain. Cross-place Recall
-  is implemented, including outdoor anchors across origin changes. Spell
-  making/purchasing, enchantments/magical items and potions/recipes are deferred
-  until people and guild services exist (milestone 7).
-  Detect/Identify need their world/inventory systems. Light currently uses a
-  candle billboard and ambient illumination; moving local lighting remains.
-- **Maps and travel:** original map notes, markings and exact indoor camera
-  controls; larger-place/dungeon population coverage; outdoor encounters and
-  combat integration; riding, wagon storage, owned ships and guild travel
-  privileges. Horse/cart items already affect journey time. World terrain and
-  pedestrian presentation currently use GFALL's builders. Outdoor arrow mesh
-  rendering still needs an engine-supported dynamic model path.
-- **Other HUD/actions:** transport and magic-item use still need their systems.
-  The inventory's Wagon button is a notice. Quest log and notebook also need
-  their systems; map and travel controls are now connected.
-- **People and law:** dialogue, trade, shops, banking, stealing/pickpocketing,
-  guards, crimes, trials and imprisonment. Steal mode picks ordinary dungeon
-  locks; stealing from people/shops and the town-door crime rules remain.
-- **Dungeon actions:** quest-specific action effects, secret doors and
-  combination actions remain. Spell and poison/disease traps are connected. The action interpreter
-  handles ordinary triggers and effects, with concurrent linked motion and
-  persistent trap/motion phase; remaining action kinds are logged explicitly.
-- **Progression and conditions:** guild membership/services/ranks, reputation
-  consequences, training, vampirism and lycanthropy. Ordinary diseases/poisons
-  now use the original timing, damage, resistance and cure rules; biography
-  modifiers and special curse infections remain.
-- **Quests and story:** quest interpreter, resources, events and deadlines,
-  generated quests, main-quest branches, journal integration, and opening/ending
-  presentation. Readable item books are implemented; the opening movie is skipped.
-- **Settings and presentation:** Detail is deliberately stored without changing
-  rendering yet. Joystick control is unsupported. Complete sound/music/event
-  coverage as the remaining systems arrive.
-- **Persistence:** extend GFALL's own save schema alongside each new system.
-  Existing saves live in `gfall/saves`; preferences and bindings live in
-  `gfall/settings.cfg`. DOS-save compatibility is not required.
+- **Quests and the main story.** Not played end to end on the target (the Daggerfall quests vanishing on the
+  VM is being traced from `console.log`; COUNT.DAT's dangling buffer was one cause). Main-story global states
+  are set by dungeon actions and only two are hooked (Mantellan Crux, Lysandus' Tomb). Quest foes and
+  persons are not yet placed at every RDB marker; foe gear (op 22), respawn ops 9 and 87, pacify and spell
+  ops 68 and 69, quest creatures through a save, the cures of vampirism and lycanthropy (ops 58 and 59),
+  Daedra, temple and guild-invitation letters, noble quests (they need the regions' event flags), the
+  logbook's own page, notes page and a saved log.
+- **Enchanting's effects.** The item maker's rules and data are built; the held spell's wear, enchanted
+  arrows and creatures' weapons, artifacts' texts, the identify service and the soul summon of a broken
+  soul-bound item are not.
+- **Combat.** Fleeing, teams and inter-creature fights, enchantment strike effects, knockback collision
+  damage, pacifying by language and Personality when a creature is placed (`docs/game-later.md`, For
+  later), and the watch's 5%-a-minute guard roll.
+- **The world.** Outdoor encounters, region events and the Daedra's weather, houses and ships for sale,
+  Where-is's People list, street people on the entity registry (entity plan step 10), a moving local light.
+- **Presentation.** The opening and death movies are skipped; joystick is unsupported; Detail is stored
+  and applied only as the texture and sprite detail options.
+- **The 233.** Dungeons load whole (streaming them is measured-first work), shop coins and the 320 x 200
+  repaints, the far clip and the stream budget are unmeasured; a crash entering a second building while
+  chased by the watch is not reproduced.
+- **Later, by choice.** P13 (our own ruleset), EAX, a modern indoor map, the pony project.
 
 ### Target playtest still needed
 
