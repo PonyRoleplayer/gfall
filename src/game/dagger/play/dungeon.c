@@ -19,6 +19,7 @@
 #include "engine/scene/collide.h"
 #include "engine/scene/interact.h"
 #include "engine/scene/spawn.h"
+#include "engine/scene/walker.h"
 #include "engine/core/mem.h"
 
 typedef struct FoeState {
@@ -654,6 +655,18 @@ static void foe_move(FoeState *f, const Scene *scene, float dx, float dz, float 
     else { body_step(&f->body,scene,dx,dz,dt); }
 }
 
+/* A flyer killed in the air drops under gravity until its body lands, then lies there. The body flew with no gravity; a corpse is not flying. */
+static void corpse_fall(FoeState *f, const Scene *scene, float dt)
+{
+    Entity *e;
+
+    if (!f->def || !(f->def->flags & 1) || f->body.grounded) { return; }
+    e = f->entity;
+    f->body.gravity = WALK_GRAVITY;
+    body_step(&f->body,scene,0,0,dt);
+    e->x = f->body.feet[0]; e->y = f->body.feet[1]; e->z = f->body.feet[2];
+}
+
 static void foe_step(const Scene *scene, const Camera *cam, int index, float dt)
 {
     FoeState *f;
@@ -661,7 +674,8 @@ static void foe_step(const Scene *scene, const Camera *cam, int index, float dt)
     float dx, dz, distance, from[3], to[3], speed, amount;
     int events, pose, stepped, sight, angle, facing;
     f = &g_foe[index]; e = f->entity;
-    if (e->dead || !e->live) { return; }
+    if (!e->live) { return; }
+    if (e->dead) { corpse_fall(f,scene,dt); return; }
     if (f->fighter.conditions & 1) {
         foe_move(f,scene,0,0,dt);
         e->x = f->body.feet[0]; e->y = f->body.feet[1]; e->z = f->body.feet[2];

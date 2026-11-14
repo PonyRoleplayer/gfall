@@ -307,6 +307,24 @@ static void archery(void)
     check_expect(!hud_weapon_ready() && strike.hand < 0,"a bow without ammunition lowers without firing");
 }
 
+/* A flyer killed in the air falls to the floor and lies there; flying bodies have no gravity, a corpse must. */
+static void flyer_corpse(void)
+{
+    int kind[2], i;
+    const FoeDef *def;
+
+    for (i = 0; i < 43; i++) { def = foe_def(i); if (def && (def->flags & 1)) { break; } }
+    if (i == 43) { return; }
+    kind[0] = kind[1] = i;
+    character_state()->health = character_state()->max_health = 100;
+    arena(0); g_entity[0].z = 60; g_entity[0].y = 150;
+    dungeon_open(&g_scene,kind,g_passive,g_rate); dungeon_loaded(0);
+    for (i = 0; i < 4 && dungeon_health(0) > 0; i++) { dungeon_hurt_nearest(&g_cam,1000,100000); }
+    check_expect(dungeon_health(0) <= 0 && g_entity[0].dead,"a flyer is killed in the air");
+    for (i = 0; i < 100; i++) { dungeon_step(&g_scene,&g_cam,0.05f); }
+    check_expect(g_entity[0].y < 5,"a flyer killed in the air falls to the floor");
+}
+
 static void injuries(void)
 {
     int before, i;
@@ -578,7 +596,7 @@ void check_combat(const char *root)
     sword = item_create(game_state()->inventory_id,3,5,1);
     dungeon_blood(-1,-1);
     check_doors(root);
-    rules(); ai_rules(); swings(sword); melee(sword); archery(); injuries(); god_swing(sword);
+    rules(); ai_rules(); swings(sword); melee(sword); archery(); injuries(); flyer_corpse(); god_swing(sword);
     small_creature_floor(); flying_creature_floor(); flight_stairwell();
     dungeon_close(); weapon_cancel(); state_restore(&g_before); state_restore_world();
     hold_round_trip(root);
