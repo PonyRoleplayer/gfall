@@ -218,6 +218,8 @@ int quest_start(const char *name, int faction);
 /* The same from bytes already in memory (a quest of a test). */
 int quest_start_bytes(const char *name, const df_u8 *bytes, df_u32 size, int faction);
 int quest_count(void);
+/* The console command that lists the running quests (cheats_startup registers it). */
+void quest_commands(void);
 const QuestState *quest_at(int slot);
 /* A quest ended (op 6): its slot is free. */
 void quest_end(int slot);

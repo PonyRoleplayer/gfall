@@ -1,5 +1,7 @@
 #include "game/dagger/play/quest.h"
 #include "game/dagger/play/state.h"
+#include "game/dagger/play/play.h"
+#include "engine/ui/cmd.h"
 #include "engine/core/mem.h"
 #include "engine/core/log.h"
 #include "game/dagger/tables/questdata.h"
@@ -1909,6 +1911,15 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
     case 80:
         if (arg_state(q, op, 0)) { show(q, op->message); }
         break;
+    case 84:
+        /* Once the game minute changes, on every period's minute and by chance, while the state is set: the sound (S0000977's scream in Daggerfall at night). */
+        if (arg_state(q, op, 0) && g_minute && op->arg[2].literal && op->arg[3].literal && op->arg[2].value > 0 &&
+            game_state()->minutes % (df_u32)op->arg[2].value == 0 && game_state()->minutes != op->last_minutes && random_range(1, 100) <= op->arg[3].value) {
+            op->last_minutes = game_state()->minutes;
+            play_sound(op->arg[1].value);
+            done(q, op);
+        }
+        break;
     case 82:
         /* The person's talk passes through (flag 0x2000) while the state is set. */
         n = op->arg[1].value;
@@ -2155,4 +2166,32 @@ int quest_unpack(const df_u8 *in, int len)
     for (i = 0; i < QUEST_FACES && !w.bad; i++) { g_face[i].used = (int)qget(&w); g_face[i].quest_id = (int)qget(&w); g_face[i].kind = (int)qget(&w); g_face[i].index = (int)qget(&w); g_face[i].face = (int)qget(&w); }
     if (w.bad || w.n != len) { quest_reset(); return 0; }
     return 1;
+}
+
+/* The console's quests: each running quest, the states it has set and its timers, to see why one waits. */
+static void quests_command(int argc, char **argv)
+{
+    const QuestState *q;
+    int i, k, set;
+
+    (void)argc; (void)argv;
+    log_print(LOG_PRINT, "minute %u, %d quests", (unsigned)game_state()->minutes, quest_count());
+    for (i = 0; i < QUESTS; i++) {
+        q = &g_quest[i];
+        if (!q->used) { continue; }
+        set = 0;
+        for (k = 0; k < q->qbn.n_state; k++) { if (q->qbn.state[k].value) { set++; } }
+        log_print(LOG_PRINT, "%d %s%s: %d of %d states set", i, q->qbn.name, q->ended ? " (ended)" : "", set, q->qbn.n_state);
+        for (k = 0; k < q->qbn.n_timer; k++) {
+            if (q->timer[k].flags & 64) {
+                log_print(LOG_PRINT, "  timer %d runs from %u for %u minutes (%d left)", k, (unsigned)q->timer[k].start, (unsigned)q->timer[k].delay,
+                          (int)(q->timer[k].start + q->timer[k].delay) - (int)game_state()->minutes);
+            }
+        }
+    }
+}
+
+void quest_commands(void)
+{
+    cmd_add("quests", quests_command, "", "List the running quests, their states set and their timers.");
 }

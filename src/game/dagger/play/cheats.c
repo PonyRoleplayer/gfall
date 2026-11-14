@@ -1,4 +1,5 @@
 #include "game/dagger/play/cheats.h"
+#include "game/dagger/play/quest.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/vitals.h"
 #include "game/dagger/play/magic.h"
@@ -28,6 +29,7 @@ void cheats_startup(void)
 {
     g_god = 0;
     magic_commands();
+    quest_commands();
     if (cmd_var("tgm",god_mode,god_set,0,1,"God mode: certain hits and protected vitals.")) {
         cmd_toggles("tgm");
     }
