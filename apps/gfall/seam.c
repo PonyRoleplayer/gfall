@@ -1204,6 +1204,8 @@ static void person_say_text(int text, char *out, int cap)
 }
 
 /* talk_start for whoever g_met is: the window opens, or the record that says they will not (shown as a message). */
+static int text_letters(const char *text) { int n; for (n = 0; text[n]; n++) { } return n; }
+static int seam_text_width(const char *text) { return g_font.bytes ? smallfont_width(&g_font, text) : text_letters(text) * 6; }
 static int seam_quest_news(int faction, char *out, int cap) { return quest_news(faction, out, cap); }
 static int seam_quest_rumour_for(unsigned npc, char *out, int cap) { return quest_rumour_for((int)npc, out, cap); }
 
@@ -2818,6 +2820,7 @@ int seam_boot(void)
     set_save_capture(seam_capture_world);
     set_words(textrsc_read);
     set_status_intro(seam_status_intro);
+    possessions_set_measure(seam_text_width);
     quest_set_text(quest_text); quest_set_say(quest_say); quest_set_ask(possessions_ask);
     quest_set_macros(quest_macros); quest_set_place(quest_place);
     {

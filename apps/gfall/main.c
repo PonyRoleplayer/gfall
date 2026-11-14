@@ -35,6 +35,7 @@
 #include "game/dagger/play/screen.h"
 #include "game/dagger/play/steer.h"
 #include "game/dagger/play/maps.h"
+#include "game/dagger/play/msg.h"
 
 #include "seam.h"
 
@@ -136,8 +137,12 @@ static void extra(void)
     }
     line = status_line();
     if (line && line[0]) {
-        /* ui_string's top counts up from the bottom of the view: the message is centred along the top. */
-        ui_string((df_view_w() - ui_string_width(line)) / 2, df_view_h() - 12, line);
+        const char *entry;
+        int alpha, row;
+        /* ui_string's top counts up from the bottom of the view: the feed is centred along the top, the newest first and each older entry a row lower. */
+        for (row = 0; (entry = msg_entry(row, &alpha)) != 0; row++) {
+            ui_string_alpha((df_view_w() - ui_string_width(entry)) / 2, df_view_h() - 12 - row * ui_line_height(), entry, alpha);
+        }
     }
 }
 

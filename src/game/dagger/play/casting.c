@@ -133,28 +133,63 @@ static int launch(const SpellDef *s, int caster, int level, const Camera *aim)
     return 1;
 }
 
+/* The spell an item's Cast when used readied (target 1 to 4): a spell object of its own in the pack, gone once it is fired or put away. */
+static df_u32 g_item_spell;
+
+/* Whether the readied spell is the next cast a recast (the cost of the last one paid, not a fresh sum); not saved, a loaded ready is a plain one. */
+static int g_recast;
+
+static int spell_price(const SpellDef *s, const CharacterState *who, int recast)
+{
+    return magicka_cost(recast ? magic_state()->paid : spell_cost(s,who));
+}
+
+/* The spell points a cast takes, and what trains: paid when the spell is cast, not when it is chosen. 0 with its line when they are not there. */
+static int pay_cast(df_u32 id, const SpellDef *s, int recast)
+{
+    CharacterState *who;
+    int cost, bonus, k;
+    who = character_state();
+    cost = spell_price(s,who,recast);
+    if (cost > who->magicka+who->spell_points_bonus) { msg_set("You do not have enough spell points."); return 0; }
+    bonus = cost < who->spell_points_bonus ? cost : who->spell_points_bonus;
+    who->spell_points_bonus -= bonus; magicka_spend(cost-bonus);
+    magic_state()->paid = bonus == cost ? 0 : cost; magic_state()->last = id;
+    for (k = 0; k < 3; k++) { if (s->group[k] != 255) { skill_use(effect_school(s->group[k])); } }
+    state_event(EVENT_SPELL,id,game_state()->entity_id,cost);
+    return 1;
+}
+
+/* The moment a readied spell is let go: an item's spell pays nothing (the item pays in wear), a book's pays now. A spell that cannot be paid is put away. */
+static int cast_paid(const SpellDef *s)
+{
+    df_u32 id;
+    id = magic_state()->ready;
+    if (id == g_item_spell) { return 1; }
+    if (pay_cast(id,s,g_recast)) { return 1; }
+    magic_state()->ready = 0;
+    return 0;
+}
+
 static int ready(df_u32 id, int recast)
 {
     const ObjectInfo *item;
     const SpellDef *s;
     CharacterState *who;
-    int cost, bonus, k;
     item = object_at(id); who = character_state();
     if (who->health <= 0 || !item || item->type != RECORD_SPELL || item->parent != inventory_book()) { return 0; }
     s = spell_def(item->index); if (!s) { return 0; }
     if (who->conditions & 0x100) { msg_set("You are silenced."); return 0; }
-    cost = magicka_cost(recast ? magic_state()->paid : spell_cost(s,who));
-    if (cost > who->magicka+who->spell_points_bonus) { msg_set("You do not have enough spell points."); return 0; }
-    bonus = cost < who->spell_points_bonus ? cost : who->spell_points_bonus;
-    who->spell_points_bonus -= bonus; magicka_spend(cost-bonus);
-    magic_state()->paid = bonus == cost ? 0 : cost; magic_state()->last = id;
-    magic_state()->ready = s->target == 0 ? 0 : id;
-    for (k = 0; k < 3; k++) { if (s->group[k] != 255) { skill_use(effect_school(s->group[k])); } }
-    state_event(EVENT_SPELL,id,game_state()->entity_id,cost);
+    if (spell_price(s,who,recast) > who->magicka+who->spell_points_bonus) { msg_set("You do not have enough spell points."); return 0; }
     if (s->target == 0) {
+        if (!pay_cast(id,s,recast)) { return 0; }
         play_sound(cast_sound(s->element)); animate(s->element);
         magic_apply(s->id,-1,-1,who->level,0);
-    } else { msg_set("Press the mouse button to cast the spell."); weapon_cancel(); }
+    } else {
+        /* Readied, not paid: the attack button casts it, and that pays. */
+        magic_state()->ready = id; g_recast = recast;
+        msg_set("Press the mouse button to cast the spell."); weapon_cancel();
+    }
     return 1;
 }
 int magic_ready(df_u32 id) { return ready(id,0); }
@@ -175,9 +210,6 @@ void magic_strike(int spell, int victim)
     if (s->target >= 3) { apply_area(&strike,-1,character_state()->level,e->x,e->y+40,e->z); }
     else if (s->target != 0) { magic_apply_def(&strike,spell,-1,victim,character_state()->level,0); }
 }
-
-/* The spell an item's Cast when used readied (target 1 to 4): a spell object of its own in the pack, gone once it is fired or put away. */
-static df_u32 g_item_spell;
 
 /* cast_item_used_spell: the player's cast of a spell that came from an item. Nothing is paid (the item pays in wear), silence does not stop it for this cast only (9.1 fixed),
  * and the last spellbook spell is left as it was. A spell on the caster goes at once; the others are readied and fired with the attack button. */
@@ -302,13 +334,14 @@ void magic_frame(const Scene *scene, const Camera *camera, const PlayIn *input, 
                         !line_clear(camera->x,camera->y,camera->z,e->x,e->y+40,e->z)) { continue; }
                     victim = i; best = distance;
                 }
-                if (cast && victim >= 0) {
+                if (cast && victim >= 0 && cast_paid(s)) {
                     magic_hostile();
                     play_sound(cast_sound(s->element)); magic_apply(s->id,-1,victim,character_state()->level,0);
                     animate(s->element); magic_state()->ready = 0;
                 }
             } else if (cast) {
-                if (s->target == 3) {
+                if (!cast_paid(s)) { /* put away */ }
+                else if (s->target == 3) {
                     play_sound(cast_sound(s->element)); apply_area(s,-1,character_state()->level,camera->x,camera->y,camera->z);
                     animate(s->element); magic_state()->ready = 0;
                 } else if (launch(s,-1,character_state()->level,&aim)) { animate(s->element); magic_state()->ready = 0; }

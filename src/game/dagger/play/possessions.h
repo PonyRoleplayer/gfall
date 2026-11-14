@@ -130,6 +130,8 @@ void possessions_frame(const PlayIn *input);
 int possessions_use(df_u32 id);
 /* Wrapped message lines; returns the total, filling at most capacity from first.
  * With out=0, only counts. Drawing and paging share this geometry. */
+/* The text width in pixels for a line: the notice then fits its lines to the parchment, not to 40 letters. */
+void possessions_set_measure(int (*measure)(const char *text));
 int notice_lines(const char *text, int first, char out[][96], int capacity);
 void spell_scrollbar(int *top, int *height);
 /* Adapter fills one slot number per 110x184 doll pixel, 255 for no item. */

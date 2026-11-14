@@ -1363,6 +1363,35 @@ static void spell_scroll(const PlayIn *in)
     if (g.scroll[0] != old) { g.revision++; }
 }
 
+/* The parchment's text width in pixels, measured by the app's font; none until it is set (then 40 letters a line). */
+static int (*g_measure)(const char *text);
+void possessions_set_measure(int (*measure)(const char *text)) { g_measure = measure; }
+#define NOTICE_PIXELS 250
+
+/* How much of the line at text, length letters long, fits the parchment: all of it, else up to its last space that fits (a word longer than the box is cut where it stops fitting). */
+static int fit(const char *text, int length)
+{
+    char probe[96];
+    int n, k, best, limit;
+
+    if (!g_measure) {
+        if (length <= 40) { return length; }
+        for (n = 40; n > 0; n--) { if (text[n] == ' ') { return n; } }
+        return 40;
+    }
+    best = 0; limit = length > 95 ? 95 : length;
+    for (n = 1; n <= limit; n++) {
+        for (k = 0; k < n; k++) { probe[k] = text[k]; }
+        probe[n] = 0;
+        if (g_measure(probe) > NOTICE_PIXELS) { break; }
+        best = n;
+    }
+    if (best == length) { return length; }
+    if (text[best] == ' ') { return best; }
+    for (n = best; n > 0; n--) { if (text[n] == ' ') { return n; } }
+    return best > 0 ? best : 1;
+}
+
 int notice_lines(const char *text, int first, char out[][96], int capacity)
 {
     int count, length, n, split;
@@ -1370,11 +1399,8 @@ int notice_lines(const char *text, int first, char out[][96], int capacity)
     while (*text) {
         while (*text == '\n' || *text == ' ') { text++; }
         if (!*text) { break; }
-        for (length = 0; text[length] && text[length] != '\n' && length < 40; length++) { }
-        split = length;
-        if (length == 40 && text[length] && text[length] != '\n') {
-            for (n = length; n > 0; n--) { if (text[n] == ' ') { split = n; break; } }
-        }
+        for (length = 0; text[length] && text[length] != '\n' && length < 95; length++) { }
+        split = fit(text,length);
         if (out && count >= first && count-first < capacity) {
             for (n = 0; n < split; n++) { out[count-first][n] = text[n]; }
             while (n && out[count-first][n-1] == ' ') { n--; }

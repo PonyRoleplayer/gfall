@@ -1261,6 +1261,18 @@ static void face_set(const QuestState *q, int kind, int index, int on)
 
 /* ---- The messages ---- */
 
+/* The records come broken into lines of about 45 letters, each continuation starting with a space. The parchment fits its own lines, so a break before a space is joined; the rest stay. */
+static void join_lines(char *text)
+{
+    int from, to;
+
+    for (from = to = 0; text[from]; from++) {
+        if (text[from] == '\n' && text[from + 1] == ' ') { continue; }
+        text[to++] = text[from];
+    }
+    text[to] = 0;
+}
+
 static void show(const QuestState *q, int message)
 {
     char text[1024], said[1024];
@@ -1270,6 +1282,7 @@ static void show(const QuestState *q, int message)
     if (g_read(q->qbn.name, message & 0x7fff, (message & 0x8000) != 0, text, sizeof(text)) > 0 && text[0]) {
         log_print(LOG_INFO, "quest: %s says %s %d", q->qbn.name, (message & 0x8000) ? "TEXT.RSC" : "QRC", message & 0x7fff);
         quest_expand((int)(q - g_quest), text, said, sizeof(said), game_state()->minutes, 0);
+        join_lines(said);
         g_say(said);
     }
 }

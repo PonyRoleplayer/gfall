@@ -26,6 +26,7 @@
 #include "game/dagger/play/describe.h"
 #include "game/dagger/play/activate.h"
 #include "game/dagger/play/hud.h"
+#include "game/dagger/play/msg.h"
 #include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/play/save.h"
 #include "game/dagger/play/screen.h"
@@ -1098,6 +1099,35 @@ static void check_death(void)
     check_expect(w == 50 && h == 60,"inventory icons are never enlarged beyond their native art");
 }
 
+/* The notification feed: newest on top, an older entry a row lower, five at most, fading, a repeat renewing rather than stacking. */
+static int tenth_width(const char *text) { return (int)strlen(text) * 10; }
+static void check_feed(void)
+{
+    char lines[8][96];
+    int alpha, i;
+
+    msg_clear();
+    msg_set("one"); msg_set("two");
+    check_expect(strcmp(msg_entry(0,&alpha),"two") == 0 && strcmp(msg_entry(1,0),"one") == 0 && alpha == 255 && !msg_entry(2,0),
+                 "the feed shows the newest entry on top and the first one a row lower");
+    msg_set("two"); msg_set("two");
+    check_expect(msg_entry(1,0) && strcmp(msg_entry(1,0),"one") == 0 && !msg_entry(2,0),"a line equal to the newest renews it, it is not stacked");
+    for (i = 3; i <= 7; i++) { char line[8]; line[0] = (char)('0'+i); line[1] = 0; msg_set(line); }
+    check_expect(strcmp(msg_entry(0,0),"7") == 0 && strcmp(msg_entry(4,0),"3") == 0 && !msg_entry(5,0),
+                 "at most five entries show: a sixth drops the oldest");
+    msg_tick(MSG_LIFE-MSG_FADE/2);
+    check_expect(msg_entry(0,&alpha) && alpha > 100 && alpha < 160,"an entry fades over its last two seconds");
+    msg_set("late"); msg_tick(0.9f);
+    check_expect(strcmp(msg_entry(0,&alpha),"late") == 0 && alpha == 255 && msg_entry(1,&alpha) && alpha < 100,
+                 "a newer entry is fresh while the older ones go on fading");
+    msg_tick(MSG_LIFE);
+    check_expect(!msg_entry(0,0) && message_line()[0] == 0,"every entry is gone after its life");
+    possessions_set_measure(tenth_width);
+    i = notice_lines("A line of words that is too long for one row of the parchment box.",0,lines,8);
+    check_expect(i >= 2 && strlen(lines[0]) <= 25 && strlen(lines[1]) <= 25,"a notice is fitted to the parchment's pixel width");
+    possessions_set_measure(0);
+}
+
 void check_ui(const char *root)
 {
     Config preferences;
@@ -1105,6 +1135,7 @@ void check_ui(const char *root)
     int slot;
     const char *test_root = "build/gfall-ui-data/ARENA2";
 
+    check_feed();
     preferences = *game_config();
     g_before = *game_state();
     move_camera(&g_camera);

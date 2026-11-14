@@ -122,9 +122,11 @@ static void costs_and_durations(void)
     character_state()->conditions |= 0x100;
     check_expect(!magic_ready(spell) && character_state()->magicka == 964,"silence refuses a cast before payment");
     character_state()->conditions &= ~0x100; spell = owned(7);
-    check_expect(magic_ready(spell) && magic_pending(),"a ranged spell remains ready after its up-front payment");
-    i = character_state()->magicka; magic_abort();
-    check_expect(!magic_pending() && character_state()->magicka == i && magic_recast(),"abort does not refund and recast readies the owned last spell");
+    i = character_state()->magicka; uses = game_state()->skill_uses[effect_school(10)];
+    check_expect(magic_ready(spell) && magic_pending() && character_state()->magicka == i,"a ranged spell is readied unpaid: spell points go at the cast");
+    magic_abort();
+    check_expect(!magic_pending() && character_state()->magicka == i && game_state()->skill_uses[effect_school(10)] == uses &&
+                 magic_recast(),"putting a readied spell away costs and trains nothing, and recast readies the last one cast");
     magic_abort();
 }
 static void missiles_and_art(void)
@@ -136,7 +138,12 @@ static void missiles_and_art(void)
     int i, frame, before, opaque, mirror;
     FILE *file;
     fixture(1); mem_zero(&input,sizeof(input)); input.dt = 0.1f; input.mouse_pressed = 1;
-    spell = owned(7); before = dungeon_health(0); god_set(1);
+    spell = owned(7); before = dungeon_health(0);
+    i = character_state()->magicka;
+    check_expect(magic_ready(spell) && character_state()->magicka == i,"a missile spell costs nothing when chosen");
+    magic_frame(&g_scene,&g_camera,&input,0); input.mouse_pressed = 0;
+    check_expect(!magic_pending() && character_state()->magicka < i && magic_state()->last == spell,"the attack button casts it and pays then");
+    magic_abort(); fixture(1); spell = owned(7); input.mouse_pressed = 1; god_set(1);
     check_expect(magic_ready(spell),"god mode readies a spell without charging magicka");
     magic_frame(&g_scene,&g_camera,&input,0); input.mouse_pressed = 0;
     check_expect(!magic_pending() && magic_state()->missile[0].live &&
