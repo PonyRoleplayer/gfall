@@ -3,6 +3,7 @@
 #include "check_progress.h"
 #include "check_survival.h"
 #include "check_encounter.h"
+#include "check_curse.h"
 #include "check_magic.h"
 #include "check_util.h"
 #include "game/dagger/play/activate.h"
@@ -210,7 +211,7 @@ void check_doors(const char *root)
     check_expect(fs_make_dirs("gfall-door-data"),"create an isolated door-save fixture");
     fs_set_root("build/gfall-door-data/ARENA2");
     lockpicking(); bashing(); keys_and_relocking(); magical_locks();
-    check_actions(); check_progress(); check_survival(); check_encounter(); check_magic();
+    check_actions(); check_progress(); check_survival(); check_encounter(); check_magic(); check_curse();
     fs_delete("gfall\\saves\\S0006.SAV");
     fs_remove_dir("gfall\\saves"); fs_remove_dir("gfall");
     fs_set_root("build/ARENA2"); fs_remove_dir("gfall-door-data"); fs_set_root(root);

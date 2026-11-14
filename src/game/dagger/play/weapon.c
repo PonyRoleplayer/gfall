@@ -1,4 +1,5 @@
 #include "game/dagger/play/weapon.h"
+#include "game/dagger/play/curse.h"
 #include "game/dagger/play/itemmaker.h"
 #include "game/dagger/play/hud.h"
 #include "game/dagger/play/inventory.h"
@@ -87,6 +88,7 @@ int arrow_take(void)
 static void strike_at(StrikeInfo *s)
 {
     s->item = g_item; s->hand = g_hand; s->bow = g_bow;
+    curse_attack_sound();
     s->hit = g_bow ? 0 : swing_hit(g_sector);
     s->damage = g_bow ? 0 : swing_damage(g_sector);
     fatigue_spend(11);
@@ -106,7 +108,8 @@ void weapon_frame(const PlayIn *in, int blocked, StrikeInfo *strike)
     if (!item || item->group != 3 || item->index >= 18 || item->condition <= 0) { item = 0; id = 0; }
     bow = item && (item->index == 16 || item->index == 17);
     if (id != g_item || bow != g_bow) { weapon_cancel(); g_item = id; g_bow = bow; }
-    g_view.cif = weapon_cif(item ? item->index : -1);
+    /* A beast fights with claws (WEAPON11.CIF, the fists are 10): its hands were emptied when it changed. */
+    g_view.cif = curse_beast() ? 11 : weapon_cif(item ? item->index : -1);
     g_view.enchanted = item && !bow && item_enchanted(id);
     g_view.material = item ? item->material : 0; g_view.hand = g_hand;
     g_view.color = item ? item->color : 0;

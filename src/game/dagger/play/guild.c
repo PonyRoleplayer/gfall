@@ -3,6 +3,7 @@
 #include "game/dagger/play/standing.h"
 #include "game/dagger/play/law.h"
 #include "game/dagger/play/inventory.h"
+#include "game/dagger/play/curse.h"
 #include "engine/core/mem.h"
 #include "game/dagger/tables/guilddata.h"
 
@@ -56,7 +57,7 @@ Membership *guild_find_faction(int faction)
     int i;
 
     for (i = 0; i < MEMBERSHIPS; i++) {
-        if (guilds_state()->m[i].used && guilds_state()->m[i].faction == faction) {
+        if (guilds_state()->m[i].used && !curse_suspended(i) && guilds_state()->m[i].faction == faction) {
             return &guilds_state()->m[i];
         }
     }
@@ -68,7 +69,7 @@ Membership *guild_find_kind(int kind)
     int i;
 
     for (i = 0; i < MEMBERSHIPS; i++) {
-        if (guilds_state()->m[i].used && guilds_state()->m[i].kind == kind) {
+        if (guilds_state()->m[i].used && !curse_suspended(i) && guilds_state()->m[i].kind == kind) {
             return &guilds_state()->m[i];
         }
     }
@@ -80,7 +81,7 @@ Membership *guild_find_bits(int bits)
     int i;
 
     for (i = 0; i < MEMBERSHIPS; i++) {
-        if (guilds_state()->m[i].used && (guilds_state()->m[i].kind & bits)) {
+        if (guilds_state()->m[i].used && !curse_suspended(i) && (guilds_state()->m[i].kind & bits)) {
             return &guilds_state()->m[i];
         }
     }

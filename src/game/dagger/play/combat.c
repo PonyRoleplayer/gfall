@@ -1,4 +1,5 @@
 #include "game/dagger/play/combat.h"
+#include "game/dagger/play/curse.h"
 #include "game/dagger/play/enchant.h"
 #include "game/dagger/play/possessions.h"
 #include "game/dagger/play/law.h"
@@ -18,7 +19,8 @@ void fighter_player(FighterInfo *out)
     int i;
     who = character_state();
     mem_zero(out,sizeof(*out));
-    out->race = who->race;
+    /* A vampire is race 8, a beast 9 or 10, as the original reads them. */
+    out->race = curse_race();
     out->level = who->level; out->health = who->health; out->maximum = who->max_health;
     out->flags = game_state()->career.flags;
     for (i = 0; i < ATTRS; i++) { out->attribute[i] = who->attribute[i]; }

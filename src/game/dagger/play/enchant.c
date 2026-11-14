@@ -176,11 +176,15 @@ void enchant_minutes(void)
     int amount, slot, k, type, param;
 
     now = game_state()->minutes;
-    elapsed = now >= g_stamp ? now - g_stamp : 0;
+    /* A clock behind the stamp is a load of an older game: the stamp follows it, or no step would run until the clock caught up. */
+    if (now < g_stamp) { g_stamp = now; }
+    elapsed = now - g_stamp;
     if (elapsed > 100) { elapsed = 0; g_stamp = now; }
     amount = (int)(elapsed >> 2);
     if (!amount) { return; }
     g_stamp = now;
+    /* effects_tick's class part (5.2): a class hurt by sunlight (flag 16) or in temples (flag 32) takes 12 a step, a vampire's 3 health a game minute. */
+    if (((game_state()->career.flags & 16) && daylight()) || ((game_state()->career.flags & 32) && temple())) { damage_player(amount * 12, 0); }
     for (slot = 0; slot < 27; slot++) {
         df_u32 id;
 

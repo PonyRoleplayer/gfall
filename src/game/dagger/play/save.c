@@ -177,6 +177,19 @@ static void wire_career(Wire *w, ClassInfo *k)
     wire_int(w, &k->advancement);
 }
 
+/* The curse (schema 18): CURSE_WIRE_BYTES in all. */
+static void wire_curse(Wire *w, CurseState *c)
+{
+    int i;
+
+    wire_u32(w, &c->infection_time); wire_int(w, &c->infection_kind); wire_int(w, &c->dream);
+    wire_int(w, &c->disease); wire_int(w, &c->form); wire_int(w, &c->clan); wire_int(w, &c->action);
+    for (i = 0; i < ATTRS; i++) { wire_int(w, &c->drained[i]); }
+    wire_career(w, &c->saved_class);
+    wire_u32(w, &c->kill_time); wire_u32(w, &c->shape_time);
+    wire_int(w, &c->health_base); wire_int(w, &c->suspended);
+}
+
 static void wire_motion(Wire *w, MotionState *motion)
 {
     int i;
@@ -475,6 +488,8 @@ static void transfer(Wire *w, GameState *s)
             wire_int(w,&row->x); wire_int(w,&row->y); wire_int(w,&row->z);
         }
     }
+
+    if (w->version >= 18) { wire_curse(w, &s->curse); }
 
     /* What an entity the game made keeps in its keep row (schema 17: ENT_KEPT, docs/entities.md, Kept; a row is the whole entity): after everything else, a record a row. */
     if (w->version >= 17) {

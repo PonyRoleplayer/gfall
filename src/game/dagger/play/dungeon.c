@@ -2,6 +2,7 @@
 #include "game/dagger/play/enchant.h"
 #include "game/dagger/play/quest.h"
 #include "game/dagger/play/guild.h"
+#include "game/dagger/play/curse.h"
 #include "game/dagger/play/doors.h"
 #include "game/dagger/play/ai.h"
 #include "game/dagger/play/actions.h"
@@ -359,7 +360,7 @@ static void hit_foe(const Scene *scene, int i, int damage, float yaw)
         if ((e->key.thing & 0xe0000000u) == QUEST_FOE_KEY) { quest_foe_killed((int)((e->key.thing >> 4) & 0xffffffu)); }
         if (g_street_died) { g_street_died(f->kind,e); }
         /* damage_creature_death: a watchman killed is counted by the Brotherhood (guild_count_crime(6, 1)). */
-        if (f->kind == 146) { guild_count_crime(6, 1, game_state()->minutes); }
+        if (f->kind == 146) { guild_count_crime(6, 1, game_state()->minutes); curse_innocent_killed(); }
     } else {
         weight = foe_weight(f->kind);
         if (weight && !f->knock) {

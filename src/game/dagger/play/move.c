@@ -1,4 +1,5 @@
 #include "game/dagger/play/state.h"
+#include "game/dagger/play/curse.h"
 #include "game/dagger/play/move.h"
 
 #include "game/dagger/play/vitals.h"
@@ -226,7 +227,7 @@ static void climb_update(const Scene *scene, float dx, float dz, float moved, fl
             g_body.grounded = 1;
         } else if (game_state()->minutes-survival->climb_minute > 1) {
             survival->climb_minute = game_state()->minutes; skill_use(18);
-            chance = character_state()->skill[18]+(character_state()->race == 6 ? 30 : 0);
+            chance = character_state()->skill[18]+(curse_race() == 6 ? 30 : 0);
             if (!(character_state()->conditions & 0x20000) && random_range(1,100) > 95 && random_range(1,100) > chance) {
                 survival->climbing = 0; survival->climb_failed = 1;
             }

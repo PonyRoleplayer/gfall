@@ -1,6 +1,7 @@
 #include "game/dagger/play/magic.h"
 #include "game/dagger/play/dungeon.h"
 #include "game/dagger/play/cheats.h"
+#include "game/dagger/play/curse.h"
 #include "game/dagger/play/inventory.h"
 #include "game/dagger/play/actions.h"
 #include "game/dagger/play/msg.h"
@@ -179,6 +180,8 @@ static int ready(df_u32 id, int recast)
     item = object_at(id); who = character_state();
     if (who->health <= 0 || !item || item->type != RECORD_SPELL || item->parent != inventory_book()) { return 0; }
     s = spell_def(item->index); if (!s) { return 0; }
+    /* Shapechange (spell 92) is not cast: cast_player_spell calls the change itself, free and at once. */
+    if (s->id == SHAPECHANGE_SPELL) { curse_shapechange(0); return 1; }
     if (who->conditions & 0x100) { msg_set("You are silenced."); return 0; }
     if (spell_price(s,who,recast) > who->magicka+who->spell_points_bonus) { msg_set("You do not have enough spell points."); return 0; }
     if (s->target == 0) {

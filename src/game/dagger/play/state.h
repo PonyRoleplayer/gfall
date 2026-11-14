@@ -15,10 +15,11 @@
 #include "game/dagger/play/survival.h"
 #include "game/dagger/play/encounter.h"
 #include "game/dagger/play/magicstate.h"
+#include "game/dagger/play/curse.h"
 #include "game/dagger/play/worldstate.h"
 #include "engine/scene/keep.h"
 
-#define STATE_VERSION 17
+#define STATE_VERSION 18
 /* The room a save keeps for the quests (quest.c packs into it). */
 #define QUEST_BLOB 24576
 #define STATE5_WIRE_BYTES 348
@@ -126,6 +127,8 @@ typedef struct GameState {
     LodgingState lodging;
     LawState law;
     GuildsState guilds;
+    /* Vampirism and lycanthropy (schema 18): the infection, the form, the bonuses and the saved class. */
+    CurseState curse;
     CustomSpell custom_spell[CUSTOM_SPELLS];
     ItemEnchant enchant[ENCHANTED_ITEMS];
     /* The game minute of the player's last kill (character +0x1FD, set by damage_creature_death): Health leech's clock. */
@@ -136,6 +139,8 @@ typedef struct GameState {
 } GameState;
 
 CharacterState *character_state(void);
+/* The live class, which a curse changes and its cure puts back (curse.c). */
+ClassInfo *career_edit(void);
 /* A slot of the player's own spells, to fill (spellmaker.c). */
 CustomSpell *custom_spell_edit(int slot);
 /* A row of the enchanted items (itemmaker.c). */

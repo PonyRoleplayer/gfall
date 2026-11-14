@@ -9,6 +9,7 @@
 #include "game/dagger/play/law.h"
 #include "game/dagger/play/standing.h"
 #include "game/dagger/play/guild.h"
+#include "game/dagger/play/curse.h"
 #include "game/dagger/play/ailments.h"
 #include "game/dagger/play/inventory.h"
 #include "game/dagger/tables/itemdefs.h"
@@ -1717,7 +1718,7 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
         if (arg_state(q, op, 0) && !(op->flags & 1)) {
             n = op->arg[1].value;
             if (n < 0 || n >= q->qbn.n_item || !q->item[n].object) { done(q, op); break; }
-            if (g_minute && minute_of_day() >= 360 && minute_of_day() < 1080 && town_here() && random_range(1, 100) < 10 &&
+            if (g_minute && (curse_is_vampire() ? !(minute_of_day() >= 360 && minute_of_day() < 1080) : (minute_of_day() >= 360 && minute_of_day() < 1080)) && town_here() && random_range(1, 100) < 10 &&
                 inventory_transfer(q->item[n].object, game_state()->inventory_id)) { done(q, op); }
         }
         break;
@@ -1900,6 +1901,14 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             if (region_legal(region) < -100) { region_add_legal(region, -100 - region_legal(region)); }
             done(q, op);
         }
+        break;
+    case 58:
+        /* Once: the cure of vampirism ($CUREVAM). */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) { curse_cure_vampirism(); done(q, op); }
+        break;
+    case 59:
+        /* Once: the cure of lycanthropy ($CUREWER). */
+        if (arg_state(q, op, 0) && !(op->flags & 1)) { curse_cure_lycanthropy(); done(q, op); }
         break;
     case 72:
         if (arg_state(q, op, 0) && !(op->flags & 1)) { disease_infect(0, op->arg[1].value, 1); done(q, op); }

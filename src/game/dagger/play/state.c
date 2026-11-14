@@ -61,6 +61,17 @@ GuildsState *guilds_state(void)
     return &g_state.guilds;
 }
 
+CurseState *curse_state(void)
+{
+    return &g_state.curse;
+}
+
+/* The live class, which a curse changes (its immunities, its flags) and the cure puts back. */
+ClassInfo *career_edit(void)
+{
+    return &g_state.career;
+}
+
 LodgingState *lodging_state(void)
 {
     return &g_state.lodging;
@@ -481,6 +492,9 @@ void state_pass_minutes(df_u32 minutes)
     }
     blessing_expire(g_state.minutes);
     state_calendar();
+    /* time_pass_minutes ends with the lycanthrope's tick and the infection that takes (docs/curses.md 2.4). */
+    curse_tick();
+    curse_schedule(start, minutes);
 }
 
 void state_advance_ms(df_u32 milliseconds)
@@ -779,7 +793,7 @@ int state_valid(const GameState *snapshot)
         character_valid(snapshot) && clock_and_view_valid(snapshot) && objects_valid(snapshot) &&
         saved_world_valid(snapshot) && encounters_valid(&snapshot->encounters) &&
         magic_valid(&snapshot->magic) && world_valid(&snapshot->world_state) && magic_references_valid(snapshot) && inventory_valid(snapshot) &&
-        (!snapshot->standing.ready || standing_valid(&snapshot->standing)) && bank_valid(&snapshot->bank) && lodging_valid(&snapshot->lodging) && law_valid(&snapshot->law) && guilds_valid(&snapshot->guilds);
+        (!snapshot->standing.ready || standing_valid(&snapshot->standing)) && bank_valid(&snapshot->bank) && lodging_valid(&snapshot->lodging) && law_valid(&snapshot->law) && guilds_valid(&snapshot->guilds) && curse_valid(&snapshot->curse);
 }
 
 int state_restore(const GameState *snapshot)

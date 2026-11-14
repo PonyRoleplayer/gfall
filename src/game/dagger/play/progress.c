@@ -1,4 +1,5 @@
 #include "game/dagger/play/progress.h"
+#include "game/dagger/play/curse.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/play.h"
 #include "game/dagger/play/msg.h"
@@ -44,7 +45,7 @@ int progress_raised(int skill)
                        (progress_state()->raised_hi & (1u << (skill-32))) != 0;
 }
 
-void progress_rest(void)
+static void rest_checks(void)
 {
     ProgressState *progress;
     CharacterState *who;
@@ -77,9 +78,18 @@ void progress_rest(void)
     who->level++;
     health = random_range(career->hp_per_level/2,career->hp_per_level)+who->attribute[ATTR_END]/10-5;
     who->max_health += health > 0 ? health : 1;
+    curse_level_up(health > 0 ? health : 1);
     progress->points = random_range(4,6); progress->active = 1;
     for (i = 0; i < ATTRS; i++) { progress->floor[i] = game_state()->base_attribute[i]; }
     play_sound(364);
+}
+
+/* raise_skills takes the curse's skill bonuses off before it looks at the skills and puts them back after (docs/curses.md 10). */
+void progress_rest(void)
+{
+    curse_skill_bonuses(-1);
+    rest_checks();
+    curse_skill_bonuses(1);
 }
 
 int progress_adjust(int attribute, int direction)

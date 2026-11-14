@@ -96,6 +96,7 @@
 #include "game/dagger/formats/formats.h"
 #include "game/dagger/places/place.h"
 #include "game/dagger/play/chargen.h"
+#include "game/dagger/play/curse.h"
 #include "game/dagger/play/play.h"
 #include "game/dagger/tables/tables.h"
 
@@ -876,6 +877,43 @@ static int quest_outside(void)
     return where->located ? where->index : -1;
 }
 
+/* Every dungeon record of the map, read once: a number's dungeon and a vampire's crypts search it. */
+#define DUNGEON_REFS 4400
+static DunRef g_dungeon_refs[DUNGEON_REFS];
+
+/* The curses (docs/curses.md 4): a region's crypts (dungeon type 0), one of them picked, the player taken to it; the region's vampire clan; the region the player is in. */
+static int curse_haunt(int region)
+{
+    static Dungeon dungeon;
+    int n, i, count, pick, outside;
+
+    n = dungeon_list(g_dungeon_refs, DUNGEON_REFS);
+    if (n > DUNGEON_REFS) { n = DUNGEON_REFS; }
+    count = 0; pick = -1;
+    for (i = 0; i < n; i++) {
+        if (g_dungeon_refs[i].region == region && dungeon_load_at(region, g_dungeon_refs[i].index, &dungeon) && dungeon.dungeon_type == DUN_TYPE_CRYPT) { count++; }
+    }
+    if (!count) { return 0; }
+    pick = random_range(0, count - 1);
+    for (i = 0; i < n; i++) {
+        if (g_dungeon_refs[i].region != region || !dungeon_load_at(region, g_dungeon_refs[i].index, &dungeon) || dungeon.dungeon_type != DUN_TYPE_CRYPT) { continue; }
+        if (pick-- == 0) {
+            outside = dungeon_outside(region, dungeon.exterior_id);
+            return outside >= 0 && teleport(region, outside);
+        }
+    }
+    return 0;
+}
+static int curse_clan(int region)
+{
+    const Faction *province;
+
+    province = faction_province_of(region);
+    return province ? province->vampire : 0;
+}
+static int curse_region(void) { return travel_region(); }
+static int curse_ring_worn(void) { return 0; }
+
 static void quest_here(int *region, int *index, int *px, int *py)
 {
     travel_capture();
@@ -895,14 +933,12 @@ static int quest_find_number(int number, int *region, int *index)
     exterior_find_number(number, region, index);
     if (*index < 0) {
         /* A dungeon's number: its record in the dungeon list names the outside it lies under. */
-        static DunRef dungeons[4400];
-
-        n = dungeon_list(dungeons, 4400);
-        if (n > 4400) { n = 4400; }
+        n = dungeon_list(g_dungeon_refs, DUNGEON_REFS);
+        if (n > DUNGEON_REFS) { n = DUNGEON_REFS; }
         for (i = 0; i < n && *index < 0; i++) {
-            if (dungeons[i].location_id == number) {
-                k = dungeon_outside(dungeons[i].region, dungeons[i].exterior_id);
-                if (k >= 0) { *region = dungeons[i].region; *index = k; }
+            if (g_dungeon_refs[i].location_id == number) {
+                k = dungeon_outside(g_dungeon_refs[i].region, g_dungeon_refs[i].exterior_id);
+                if (k >= 0) { *region = g_dungeon_refs[i].region; *index = k; }
             }
         }
     }
@@ -2832,6 +2868,10 @@ int seam_boot(void)
         static const EnchantWorld enchant_world = { ench_daylight, ench_temple, ench_category_near, ench_hurt_nearest };
 
         enchant_set_world(&enchant_world);
+        {
+            static const CurseWorld curse_world = { curse_haunt, curse_clan, curse_region, curse_ring_worn };
+            curse_set_world(&curse_world);
+        }
     }
     set_word_variants(textrsc_variant);
     if (!maindat_start()) {

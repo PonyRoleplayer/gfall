@@ -1,4 +1,5 @@
 #include "game/dagger/play/rest.h"
+#include "game/dagger/play/curse.h"
 #include "game/dagger/play/lodging.h"
 #include "game/dagger/play/law.h"
 #include "game/dagger/play/state.h"
@@ -48,7 +49,11 @@ static int may_sleep(void)
 
 void rest_close(void)
 {
-    if (g.open) { state_mode_pop(); progress_rest(); }
+    if (g.open) {
+        state_mode_pop(); progress_rest();
+        /* An infection's dream is shown on the first rest after it (anim0002.vid, or anim0004.vid for vampirism); we have no movie, the flag is only spent. */
+        curse_dream();
+    }
     g.open = 0; g_scene = 0; g.revision++;
 }
 
@@ -56,6 +61,8 @@ int rest_open(const Scene *scene, const Camera *cam)
 {
     if (g.open) { return 1; }
     if (!game_state()->ready || character_state()->health <= 0) { return 0; }
+    /* A vampire who has not killed for 16 hours cannot rest (rest_open: TEXT.RSC 36). */
+    if (curse_hungry()) { msg_set(words_state(36)); return 0; }
     if (dungeon_nearby(cam,1024)) { msg_set("There are enemies nearby."); return 0; }
     if (!scene || move_in_water() || !move_body()->grounded) {
         msg_set("You cannot sleep now."); return 0;
@@ -70,7 +77,7 @@ void rest_recover(void)
     CharacterState *who;
     int rate, heal, fatigue;
     who = character_state(); rate = 60;
-    if (who->health <= 0) { return; }
+    if (who->health <= 0 || curse_hungry()) { return; }
     /* Privateer's Hold is indoors: rapid healing in darkness or always. */
     if (game_state()->career.rapid & 6) { rate += 40; }
     rate += who->skill[0];

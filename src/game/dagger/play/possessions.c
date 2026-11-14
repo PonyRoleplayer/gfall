@@ -1,4 +1,5 @@
 #include "game/dagger/play/possessions.h"
+#include "game/dagger/play/curse.h"
 #include "game/dagger/play/potion.h"
 #include "game/dagger/play/bank.h"
 #include "game/dagger/play/combat.h"
@@ -80,6 +81,8 @@ void possessions_close(void)
 int possessions_open(int page, df_u32 remote)
 {
     if (!game_state()->ready || page < VIEW_INVENTORY || page > VIEW_ITEMMAKER) { return 0; }
+    /* inventory_open: a beast has no pack to open (docs/curses.md 7.3). */
+    if (page == VIEW_INVENTORY && curse_beast()) { msg_set("You cannot access the inventory while shapechanged..."); return 0; }
     if (page == VIEW_SPELLS) {
         df_u32 ids[OBJECTS];
         g.book = inventory_book();
