@@ -33,4 +33,5 @@ int ShowCursor(int on);
 int ClipCursor(const RECT *rc);
 HWND SetCapture(HWND hwnd);
 int ReleaseCapture(void);
+int IsIconic(HWND hwnd);
 #endif

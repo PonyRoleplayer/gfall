@@ -20,6 +20,10 @@ static int warps;
 static HWND capture;
 static int width = 1280;
 static int height = 960;
+/* The cursor's clip (ClipCursor), and whether the window is minimized. */
+static int fenced;
+static RECT fence;
+static int iconic;
 
 static void expect(int ok, const char *why)
 {
@@ -61,9 +65,17 @@ int GetClientRect(HWND hwnd, RECT *rc)
     return 1;
 }
 int ShowCursor(int on) { shown += on ? 1 : -1; return shown; }
-int ClipCursor(const RECT *rc) { (void)rc; return 1; }
+int ClipCursor(const RECT *rc)
+{
+    fenced = rc != 0;
+    if (rc) {
+        fence = *rc;
+    }
+    return 1;
+}
 HWND SetCapture(HWND hwnd) { HWND was = capture; capture = hwnd; return was; }
 int ReleaseCapture(void) { capture = 0; return 1; }
+int IsIconic(HWND hwnd) { (void)hwnd; return iconic; }
 void console_pump(void) {}
 int console_open(void) { return con; }
 int console_take_escape(void) { return 0; }
@@ -298,6 +310,32 @@ static void check_look(void)
     expect(!in.reset, "begin's marker was not consumed");
 }
 
+/*
+ * Alt-Tab. Windows 98's clip is the whole system's, so focus loss takes
+ * the fence down, and the first read with the window back, not minimized,
+ * puts it up again, the client's whole rectangle.
+ */
+static void check_fence(void)
+{
+    Input in;
+
+    read_frame(&in);
+    expect(fenced && capture == (HWND)1, "a focused session is not fenced");
+    input_on_focus(0);
+    expect(!fenced && !capture, "focus loss left the pointer fenced");
+    read_frame(&in);
+    expect(!fenced, "an unfocused read fenced the pointer");
+    iconic = 1;
+    input_on_focus(1);
+    read_frame(&in);
+    expect(!fenced, "a minimized window fenced the pointer");
+    iconic = 0;
+    read_frame(&in);
+    expect(fenced && capture == (HWND)1 && fence.left == 0 && fence.top == 0
+           && fence.right == width && fence.bottom == height,
+           "the fence did not come back with the window");
+}
+
 int main(void)
 {
     Input in;
@@ -313,7 +351,9 @@ int main(void)
     check_pointer();
     check_boundaries();
     check_look();
+    check_fence();
     input_end();
+    expect(!fenced && !capture, "end left the pointer fenced");
     read_frame(&in);
     expect(in.reset == 1, "end did not mark a discontinuity");
     read_frame(&in);

@@ -73,6 +73,8 @@ A HUD or menu takes `mouse_pressed & INPUT_MOUSE_LEFT`: rebinding an attack or s
 
 `input_begin` captures the mouse and clips it to the window, and the cursor stays blank while that capture is held (`input_grabs_cursor`): `WM_SETCURSOR` draws none, so the system arrow does not sit over the client. A button-up does not release that capture. It used to, on every left or right button-up, which dropped the capture `input_begin` had taken and let the cursor leave the window: the system arrow showed around it, and a click out there never arrived. The drag hook (`win_mouse_hook`, a viewer's orbit) still captures for its own button and releases on the way up, and the button-up is delivered to the hook before that release so the synthesized move is not a drag.
 
+That clip and capture are the fence, and it comes down whenever the window loses focus (`input_on_focus(0)`, so Alt-Tab and the Ctrl+Alt+Del box) and goes up again at the first `input_read` with the window focused and not minimized (`IsIconic`), the client's rectangle read again. Windows 98's clip is the whole system's, not the window's, and the program that set it must lift it before another program has the screen. Before 2026-11-14 only `input_end` lifted it: over Alt-Tab the desktop's pointer stayed in a 640 x 480 box at the top left, where the minimized game had been. Raising it again at focus gain itself would be too early, since the window can still be minimized then; the read waits for `win_pump`, which sleeps until the window is restored.
+
 ## The use key
 
 The engine's own use key, polled by `draw_frame` (`use_edge`: the left button or E), is the viewers'. A game whose left button attacks turns it off with `gfx_set_use_key(0)` and, on its `INPUT_USE` edge, calls `interact_request_use()`: the next frame uses what the middle of the view rests on, as the engine's key would (`docs/interact.md`). With the key on, a request is taken as well.
@@ -102,11 +104,11 @@ Between `input_begin` and `input_end`, the window retains session capture across
 Run independently of the Makefile (no Windows or Glide required):
 
 ```
-gcc -std=gnu90 -Wall -Wextra -Werror -DDF_HOST -Itests/input_win32 -Isrc tests/check_input.c src/engine/platform/input.c src/engine/platform/keyname.c -o /tmp/gfall-check-input
+gcc -std=gnu90 -Wall -Wextra -Werror -DDF_HOST -Itests/input_win32 -Isrc tests/check_input.c src/engine/platform/input.c src/engine/platform/keyname.c src/engine/core/view.c -o /tmp/gfall-check-input
 /tmp/gfall-check-input
 ```
 
-`tests/input_win32/windows.h` supplies only the Win32 declarations this module uses. The harness feeds physical key states and client moves into the actual `input.c`, including synchronous cursor-warp notifications. It holds action ids/defaults, one poll per key, physical clicks independent of bindings, pointer-mode action edges, scaled motion and fractional carry, legacy look, console releases, focus/capture resets, and begin/end/toggle boundaries. `tests/check_engine.c` also holds the saved action ids in normal hostcheck. The real Win32 message dispatch and hardware remain covered by cross-builds and target testing.
+`tests/input_win32/windows.h` supplies only the Win32 declarations this module uses. The harness feeds physical key states and client moves into the actual `input.c`, including synchronous cursor-warp notifications. It holds action ids/defaults, one poll per key, physical clicks independent of bindings, pointer-mode action edges, scaled motion and fractional carry, legacy look, console releases, focus/capture resets, the fence down at focus loss and up again only once the window is back, and begin/end/toggle boundaries. `tests/check_engine.c` also holds the saved action ids in normal hostcheck. The real Win32 message dispatch and hardware remain covered by cross-builds and target testing.
 
 ## A game's own action list
 

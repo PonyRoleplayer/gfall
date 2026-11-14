@@ -65,6 +65,15 @@ static int g_suppressed;
    A bind screen's independent scan, outside that read, still polls normally. */
 static df_u8 g_keys[256];
 static int g_reading;
+/*
+ * Whether the fence is up: the pointer clipped to the client and captured
+ * (fence_up). Windows 98's clip is the whole system's, not the window's,
+ * and the program that set it must lift it before another has the screen:
+ * left up over Alt-Tab, it kept the desktop's pointer in a 640 x 480 box
+ * where the minimized game had been. Down at focus loss, up again at the
+ * first read with the window focused and not minimized.
+ */
+static int g_fenced;
 
 static int key_down(int vk);
 
@@ -176,8 +185,41 @@ void input_mouse_reset(void)
     g_reset = 1;
 }
 
+/* See g_fenced. The rectangle is read again each time: the client is where it is now. */
+static void fence_up(void)
+{
+    RECT rc;
+    RECT clip;
+    POINT origin;
+
+    if (IsIconic(g_hwnd)) {
+        return;
+    }
+    GetClientRect(g_hwnd, &rc);
+    origin.x = 0;
+    origin.y = 0;
+    ClientToScreen(g_hwnd, &origin);
+    clip.left = origin.x;
+    clip.top = origin.y;
+    clip.right = origin.x + (rc.right - rc.left);
+    clip.bottom = origin.y + (rc.bottom - rc.top);
+    ClipCursor(&clip);
+    SetCapture(g_hwnd);
+    g_fenced = 1;
+}
+
+static void fence_down(void)
+{
+    ReleaseCapture();
+    ClipCursor(0);
+    g_fenced = 0;
+}
+
 void input_on_focus(int on)
 {
+    if (!on && g_fenced) {
+        fence_down();
+    }
     g_focus = on ? 1 : 0;
     input_mouse_reset();
     g_look_dx = g_look_dy = 0;
@@ -302,8 +344,6 @@ int input_quit_requested(void)
 void input_begin(void *hwnd)
 {
     RECT rc;
-    RECT clip;
-    POINT origin;
 
     g_hwnd = (HWND)hwnd;
     g_look_dx = 0;
@@ -330,15 +370,7 @@ void input_begin(void *hwnd)
     g_look_dy = 0;
     while (ShowCursor(FALSE) >= 0) {
     }
-    origin.x = 0;
-    origin.y = 0;
-    ClientToScreen(g_hwnd, &origin);
-    clip.left = origin.x;
-    clip.top = origin.y;
-    clip.right = origin.x + (rc.right - rc.left);
-    clip.bottom = origin.y + (rc.bottom - rc.top);
-    ClipCursor(&clip);
-    SetCapture(g_hwnd);
+    fence_up();
 }
 
 void input_end(void)
@@ -348,8 +380,7 @@ void input_end(void)
     input_mouse_reset();
     g_look_dx = g_look_dy = 0;
     g_wheel = 0;
-    ReleaseCapture();
-    ClipCursor(0);
+    fence_down();
     while (ShowCursor(TRUE) < 0) {
     }
 }
@@ -370,6 +401,10 @@ void input_read(Input *out)
 
     g_frame++;
     console_pump();
+    /* Back from Alt-Tab: the fence again, console or not, once the window is restored (g_fenced). */
+    if (g_active && g_focus && !g_fenced) {
+        fence_up();
+    }
     suppressed = console_open() || !g_focus;
     if (suppressed != g_suppressed) {
         /* Suppressed reads/events already cleared the old motion. On
