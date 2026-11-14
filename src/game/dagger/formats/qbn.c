@@ -5,13 +5,35 @@
 
 /* See qbn.h. */
 
-static const df_u8 *g_count;
+/*
+ * COUNT.DAT copied into the program's own bytes on the first parse, never
+ * kept as a vfs_read buffer: the first quest starts inside a place, and
+ * mem_alloc then is that place's heap. Kept as a pointer, the table died
+ * with Privateer's Hold, so quests started in the next place read the new
+ * place's bytes as their argument counts, and a new game after a death
+ * faulted on the freed pages (GFALL.EXE at 004190fe).
+ */
+#define COUNT_OPS 89
+static df_u8 g_count[COUNT_OPS];
 static df_u32 g_count_size;
+static int g_count_read;
 
 int qbn_arg_count(int opcode)
 {
-    if (!g_count) { g_count = vfs_read("COUNT.DAT", &g_count_size); }
-    if (!g_count || opcode < 0 || opcode >= 89 || (df_u32)opcode >= g_count_size) { return 0; }
+    if (!g_count_read) {
+        VfsFile *f;
+
+        g_count_read = 1;
+        f = vfs_open("COUNT.DAT");
+        g_count_size = f ? vfs_size(f) : 0;
+        if (g_count_size > COUNT_OPS) { g_count_size = COUNT_OPS; }
+        if (!f || !vfs_read_at(f, 0, g_count, g_count_size)) {
+            g_count_size = 0;
+            log_print(LOG_ERROR, "quest: COUNT.DAT does not read, every op takes no arguments");
+        }
+        if (f) { vfs_close(f); }
+    }
+    if (opcode < 0 || opcode >= COUNT_OPS || (df_u32)opcode >= g_count_size) { return 0; }
     return g_count[opcode] >= '0' && g_count[opcode] <= '9' ? g_count[opcode] - '0' : 0;
 }
 

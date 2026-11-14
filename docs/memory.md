@@ -4,7 +4,7 @@ Two different budgets. System RAM is the Win32 heap. Texture memory is the 2MB o
 
 Copies and fills (`mem_copy`, `mem_fill`, `mem_zero`, and the CRT's `memcpy`, `memmove` forward, `memset`) go a 32-bit word at a time on the target (`rep movsd`, `rep stosd`), the odd bytes after.
 
-There is no `mem_free` on the main or temp heap. Bytes live until `mem_temp_end` destroys the temp heap (a no-op on the host). Do not allocate a size you will not use. A streamed world is the exception, below: private heaps that free.
+There is no `mem_free` on the main or temp heap. Bytes live until `mem_temp_end` destroys the temp heap, on the host as on the target: the host's temp heap is a list of malloc'd blocks freed at the end, so a buffer kept in a static past its place is a use after free under AddressSanitizer, not a test that passes on the host and reads the next place's bytes on the 233. GFALL opens every place on the temp heap and plays inside it, so anything a game module reads on first use and keeps for the process (a table such as COUNT.DAT) goes in a static array or `mem_keep`, never a kept `vfs_read` pointer. `formats/qbn.c` kept COUNT.DAT's `vfs_read` buffer: read in Privateer's Hold, it died with the Hold, quests started in the next place took that place's bytes for their argument counts, and a new character after a death faulted on the freed pages (2026-11-13). Do not allocate a size you will not use. A streamed world is the exception, below: private heaps that free.
 
 ## Why a city died on the heap
 
@@ -30,7 +30,7 @@ The world lists are still 8192 instances and 8192 flats. That is about 0.6MB and
 
 `mem_scratch` is two reusable buffers. Slot 0 (`BSA_SCRATCH_BLOCK`) holds the RMB or RDB being parsed. Slot 1 (`BSA_SCRATCH_MODEL`) holds the ARCH3D record. A model is read while the block file is still live, so they cannot share one slot. `bsa_read_scratch` fills the slot. The pointer is invalid after the next read of that slot.
 
-The slot grows by doubling from 4KB. The previous buffer is abandoned until the temp heap dies. On Win32, `mem_temp_end` drops the pointers before `HeapDestroy`, because those bytes came from that heap. The host malloc heap is not rewound, so the host keeps the buffers and frees them in `mem_shutdown`.
+The slot grows by doubling from 4KB. The previous buffer is abandoned until the temp heap dies. On Win32, `mem_temp_end` drops the pointers before `HeapDestroy`, because those bytes came from that heap. The host does the same: a slot grown inside the temp heap dies with it, and one malloc'd before the temp heap began is freed there.
 
 `bsa_read` is still the call that keeps bytes. Map files and anything else that holds a pointer across another read must use it. Do not point a mesh at scratch memory. `arch3d_load` copies the points out before it returns.
 

@@ -15,7 +15,8 @@ void *mem_alloc(df_u32 bytes);
 /*
  * A second heap for one model. Allocations after mem_temp_begin die in
  * mem_temp_end. The directory and the palette stay on the main heap.
- * Host builds keep a single malloc heap; rewind is a no-op there.
+ * The host frees them at mem_temp_end too, so a pointer kept past its
+ * place fails in hostcheck (under AddressSanitizer) as on the target.
  */
 int mem_temp_begin(void);
 void mem_temp_end(void);

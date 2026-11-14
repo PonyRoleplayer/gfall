@@ -222,13 +222,22 @@ void mem_shutdown(void)
 {
     int i;
 
+    mem_temp_end();
     for (i = 0; i < SCRATCH_SLOTS; i++) {
         free(g_scratch[i]);
     }
     scratch_drop();
 }
 
-static void *base_alloc(df_u32 bytes)
+/*
+ * The temp heap, a real one as on the target: what is allocated between
+ * mem_temp_begin and mem_temp_end is freed at the end, so a pointer kept
+ * past its place fails here as it does on the 233 (where it read the next
+ * place's bytes, or faulted). 0 outside a temp heap.
+ */
+static MemHeap *g_temp_heap;
+
+static void *main_alloc(df_u32 bytes)
 {
     void *p;
 
@@ -241,6 +250,14 @@ static void *base_alloc(df_u32 bytes)
     }
     mem_zero(p, bytes);
     return p;
+}
+
+static void *base_alloc(df_u32 bytes)
+{
+    if (g_temp_heap) {
+        return bytes ? counted(heap_alloc(g_temp_heap, bytes), bytes, 1) : 0;
+    }
+    return main_alloc(bytes);
 }
 
 void *mem_alloc(df_u32 bytes)
@@ -260,22 +277,50 @@ void *mem_alloc(df_u32 bytes)
 
 int mem_temp_begin(void)
 {
+    if (g_temp_heap) {
+        return 1;
+    }
     g_epoch++;
-    return 1;
+    g_temp_heap = mem_heap_new();
+    return g_temp_heap != 0;
 }
 
-/*
- * The host has one base heap, so kept and temp bytes are the same. A heap
- * set with mem_heap_use is another matter: what is kept must not die with
- * it, here as on the target, or a test passes or fails unlike the machine.
- */
+/* What is kept dies with neither the temp heap nor one set with mem_heap_use, here as on the target. */
 void *mem_keep(df_u32 bytes)
 {
-    return base_alloc(bytes);
+    return main_alloc(bytes);
+}
+
+/* 1 when p is one of heap h's blocks. */
+static int in_heap(const MemHeap *h, const void *p)
+{
+    const HostBlock *b;
+
+    for (b = h->first; b; b = b->next) {
+        if ((const void *)(b + 1) == p) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 void mem_temp_end(void)
 {
+    int i;
+
+    if (!g_temp_heap) {
+        return;
+    }
+    /* The target drops every scratch pointer here; one grown before the temp heap began was malloc'd. */
+    for (i = 0; i < SCRATCH_SLOTS; i++) {
+        if (g_scratch[i] && !in_heap(g_temp_heap, g_scratch[i])) {
+            free(g_scratch[i]);
+        }
+    }
+    scratch_drop();
+    mem_heap_delete(g_temp_heap);
+    g_temp_heap = 0;
+    g_temp_bytes = 0;
     g_epoch++;
 }
 

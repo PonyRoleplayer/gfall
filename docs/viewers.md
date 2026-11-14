@@ -18,7 +18,7 @@ Both viewers use the same child-window pattern. Copy it; do not invent a second 
 
 ## Opening a level
 
-Wrap the open in `mem_temp_begin` / `mem_temp_end`. On Win32 that is a second heap; destroying it frees the dungeon, the textures, and the climate read. On the host the temp heap is a no-op, so hostcheck leaks, which is already the case for `world_load`.
+Wrap the open in `mem_temp_begin` / `mem_temp_end`. On Win32 that is a second heap; destroying it frees the dungeon, the textures, and the climate read. The host's temp heap frees its blocks the same way (`docs/memory.md`).
 
 Order when leaving the view:
 
