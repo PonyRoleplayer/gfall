@@ -170,13 +170,23 @@ static int df_iround(float v)
 }
 
 /*
- * v rounded to the nearest 1/16, for |v| below 2^18. The SST-1 takes
- * screen x and y in 12.4 fixed point. Adding 1.5 * 2^19 leaves a float
- * four fraction bits, so the store rounds to 1/16 and the subtraction
- * is exact. volatile forces that store: on the x87 the sum would
- * otherwise stay in an 80-bit register with every bit. A union read of
- * the same member is not enough, GCC keeps it in the register.
+ * 1 when v is below zero, by its sign bit: a store and a shift, where a
+ * compare on the x87 is fcom, fnstsw, sahf and a jump (fcomi is a P6's).
+ * For tests done many times a corner, and gathered into a mask. -0.0
+ * counts as negative, which v < 0.0f does not: use it where a sum or a
+ * difference is tested, which gives +0 when it gives zero.
  */
+static df_u32 df_negative(float v)
+{
+    union {
+        float f;
+        df_u32 u;
+    } bits;
+
+    bits.f = v;
+    return bits.u >> 31;
+}
+
 /*
  * The x87's precision control, for the render passes (docs/glide.md,
  * The FPU): at 24 bits a Pentium divides in 19 cycles, not 33 at the 53
@@ -202,6 +212,14 @@ static void df_fpu_restore(unsigned short was)
     __asm__ __volatile__("fldcw %0" : : "m"(was));
 }
 
+/*
+ * v rounded to the nearest 1/16, for |v| below 2^18. The SST-1 takes
+ * screen x and y in 12.4 fixed point. Adding 1.5 * 2^19 leaves a float
+ * four fraction bits, so the store rounds to 1/16 and the subtraction
+ * is exact. volatile forces that store: on the x87 the sum would
+ * otherwise stay in an 80-bit register with every bit. A union read of
+ * the same member is not enough, GCC keeps it in the register.
+ */
 static float df_snap16(float v)
 {
     volatile float t;

@@ -6,6 +6,8 @@ This is a source audit and a prioritized suggestions list. **No build, compiler,
 
 > **Since this snapshot** (`f024e74`, 2026-11-03): the three texture MMX kernels' parity checks run in hostcheck and pass on an MMX host; the far ground's rectangles are one MMX batch with one `EMMS` per tile (item 11's per-rectangle overhead); `g_rgba`, `g_box_pal` and the two MOVQ constant tables are eight-byte aligned; and `pe_check` refuses every post-P55C instruction named under "Tempting approaches", item 4. Their speed on the 233 is still unmeasured, so item 0 stands first.
 
+> **Since** (2026-11-14, branch `optimize`): items 1 and 2 are built as one mechanism, `gfx/modelview.h` (the instance-to-view transform composed once an instance, the back-face test in the model's frame; `docs/glide.md`, The model's transform); item 5 as corner outcodes with a whole-polygon reject (`corners_out`, same doc, Corners against the view); item 15's eviction walks go over the pictures in use, not all 4096 slots (`g_live`, `docs/streaming.md`, The card); the stream's missing-chunk search is one walk (`map_round`). All pass hostcheck and `pe_check`. **None is measured on the 233**: item 0 still stands first, and `prof`'s `models` stage before and after is the number to take. Items 3, 4, 6 to 14, 16 and 17 are untouched.
+
 The best next work is to establish a target baseline, remove repeated per-face mathematics, then reduce repeated geometry and query work. More MMX is a secondary choice. Streaming stalls deserve their own ranking: reducing a worst-case work unit can improve play more than making a warm inner loop faster.
 
 ## What the P55C changes about the analysis

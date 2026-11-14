@@ -28,6 +28,7 @@
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
 #include "engine/gfx/camera.h"
+#include "engine/gfx/modelview.h"
 #include "engine/gfx/mip.h"
 #include "engine/gfx/pace.h"
 #include "engine/scene/light.h"
@@ -85,6 +86,108 @@ static void check_rotation(void)
     check_expect(check_near(x, 0.0f, 0.02f) && check_near(y, 0.0f, 0.02f) &&
                  check_near(z, -1.0f, 0.02f),
                  "+Y rotation did not take +X toward -Z");
+}
+
+/*
+ * A model's composed way to the view (modelview.h) against the two steps
+ * it replaced, instance_point then camera_view, and its face test against
+ * instance_faces: a few hundred turns of model and camera, far from the
+ * world's origin as a streamed town is. Faces within a hair of edge-on
+ * are not compared: there the two round apart, and such a face covers no
+ * pixel either way.
+ */
+static void check_modelview(void)
+{
+    df_u32 seed;
+    float worst;
+    int flips;
+    int edge;
+    int i;
+
+    seed = 12345u;
+    worst = 0.0f;
+    flips = 0;
+    edge = 0;
+    for (i = 0; i < 400; i++) {
+        Instance in;
+        Camera cam;
+        Basis basis;
+        ModelView mv;
+        float r[12];
+        float wx, wy, wz;
+        float ax, ay, az;
+        float bx, by, bz;
+        float nx, ny, nz;
+        float len;
+        float side;
+        int k;
+
+        for (k = 0; k < 12; k++) {
+            seed = seed * 1664525u + 1013904223u;
+            r[k] = (float)(seed >> 8) * (1.0f / 16777216.0f);
+        }
+        mem_zero(&in, sizeof(in));
+        instance_set_rotation(&in, r[0] * DF_TAU, r[1] * DF_TAU, r[2] * DF_TAU);
+        in.x = 20000.0f + r[3] * 4000.0f;
+        in.y = 12000.0f + r[4] * 500.0f;
+        in.z = -30000.0f + r[5] * 4000.0f;
+        camera_set(&cam, in.x + (r[6] - 0.5f) * 3000.0f, in.y + (r[7] - 0.5f) * 600.0f,
+                   in.z + (r[8] - 0.5f) * 3000.0f, r[9] * DF_TAU, (r[10] - 0.5f) * 3.0f);
+        camera_basis(&cam, &basis);
+        modelview_build(&mv, &in, &cam, &basis);
+        /* A corner. */
+        ax = (r[11] - 0.5f) * 2000.0f;
+        ay = (r[0] - 0.5f) * 800.0f;
+        az = (r[1] - 0.5f) * 2000.0f;
+        instance_point(&in, ax, ay, az, &wx, &wy, &wz);
+        camera_view(&cam, &basis, wx, wy, wz, &bx, &by, &bz);
+        modelview_point(&mv, ax, ay, az, &wx, &wy, &wz);
+        worst = df_absf(wx - bx) > worst ? df_absf(wx - bx) : worst;
+        worst = df_absf(wy - by) > worst ? df_absf(wy - by) : worst;
+        worst = df_absf(wz - bz) > worst ? df_absf(wz - bz) : worst;
+        /* A face through it. */
+        nx = r[2] - 0.5f;
+        ny = r[3] - 0.5f;
+        nz = r[4] - 0.5f;
+        len = df_sqrt(nx * nx + ny * ny + nz * nz);
+        if (len < 0.01f) {
+            continue;
+        }
+        nx /= len;
+        ny /= len;
+        nz /= len;
+        side = nx * (ax - mv.ex) + ny * (ay - mv.ey) + nz * (az - mv.ez);
+        if (df_absf(side) < 0.05f) {
+            edge++;
+            continue;
+        }
+        flips += modelview_faces(&mv, nx, ny, nz, ax, ay, az)
+            != instance_faces(&in, &cam, &basis, nx, ny, nz, ax, ay, az);
+    }
+    printf("modelview: 400 models, a corner at most %.4f units from the two-step answer, %d faces differ (%d edge-on skipped)\n",
+           (double)worst, flips, edge);
+    check_expect(worst < 0.02f, "a model's composed transform put a corner elsewhere");
+    check_expect(flips == 0, "a face's side in the model's frame is not its side in the view");
+    {
+        Instance in;
+        Camera cam;
+        Basis basis;
+        ModelView mv;
+
+        mem_zero(&in, sizeof(in));
+        instance_set_rotation(&in, 0.0f, 0.0f, 0.0f);
+        camera_set(&cam, 0.0f, 0.0f, -100.0f, 0.0f, 0.0f);
+        camera_basis(&cam, &basis);
+        modelview_build(&mv, &in, &cam, &basis);
+        check_expect(modelview_faces(&mv, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, 0.0f)
+                     && !modelview_faces(&mv, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f),
+                     "a wall facing the camera is not the one kept");
+        check_expect(modelview_faces(&mv, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f),
+                     "a face with no normal was dropped");
+        check_expect(df_negative(-1.0f) == 1u && df_negative(1.0f) == 0u && df_negative(0.0f) == 0u
+                     && df_negative(2.0f - 2.0f) == 0u,
+                     "df_negative is not the sign");
+    }
 }
 
 /*
@@ -6267,6 +6370,7 @@ void check_engine(void)
 {
     check_rotation();
     check_camera();
+    check_modelview();
     check_view_size();
     check_pace();
     check_flat_facing();

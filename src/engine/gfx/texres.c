@@ -55,6 +55,8 @@ typedef struct Res {
     int note_frame;
     float note_dist;
     int last_frame;
+    /* Where this slot is in g_live while used. */
+    short live_at;
 } Res;
 
 static TexResOps g_ops;
@@ -64,6 +66,16 @@ static int g_narena;
 static Res g_res[TEXRES_SLOTS];
 static int g_noted[TEXRES_SLOTS];
 static int g_nnoted;
+/*
+ * The slots in use, packed, in no order. Making room looks at every
+ * picture on the card, several times a frame while the card is full; a
+ * streamed world uses a few hundred of the 4096 slots, and walking all
+ * of g_res (180 KB, eleven times the Pentium's data cache) for them cost
+ * more than the choice. Each walk breaks a tie toward the lower slot, as
+ * a walk in slot order did, so what goes first is as it always was.
+ */
+static short g_live[TEXRES_SLOTS];
+static int g_nlive;
 static int g_frame = 1;
 static df_u32 g_used;
 static df_u32 g_room;
@@ -274,6 +286,7 @@ void texres_begin(df_u32 base, df_u32 end, const TexResOps *ops)
     }
     g_used = 0;
     g_nnoted = 0;
+    g_nlive = 0;
     g_added = 0;
     g_sharp = 0;
     g_uploads = 0;
@@ -285,6 +298,16 @@ void texres_end(void)
 {
     g_on = 0;
     g_narena = 0;
+}
+
+/* Free slot i's sharp copy: its handle released and its block given back. */
+static void drop_big(int i)
+{
+    g_ops.release(g_res[i].big_h);
+    block_free(g_res[i].big_addr, g_res[i].big_order);
+    g_res[i].big_drop = -1;
+    g_sharp--;
+    g_evictions++;
 }
 
 /*
@@ -300,34 +323,43 @@ void texres_end(void)
  */
 static int evict_one(float sprite_dist)
 {
+    /* The least recently drawn of those not drawn this frame: [0] a wall, [1] a sprite. */
+    int idle[2];
     int best;
-    int pass;
-    int i;
+    int k;
 
-    best = -1;
-    for (pass = 0; pass < 2 && best < 0; pass++) {
-        for (i = 0; i < TEXRES_SLOTS; i++) {
-            Res *r;
+    idle[0] = -1;
+    idle[1] = -1;
+    for (k = 0; k < g_nlive; k++) {
+        const Res *r;
+        int i;
+        int was;
 
-            r = &g_res[i];
-            if (!r->used || r->big_drop < 0 || r->last_frame >= g_frame || (int)r->cutout != pass) {
-                continue;
-            }
-            if (best < 0 || r->last_frame < g_res[best].last_frame) {
-                best = i;
-            }
+        i = g_live[k];
+        r = &g_res[i];
+        if (r->big_drop < 0 || r->last_frame >= g_frame) {
+            continue;
+        }
+        was = idle[r->cutout];
+        if (was < 0 || r->last_frame < g_res[was].last_frame
+            || (r->last_frame == g_res[was].last_frame && i < was)) {
+            idle[r->cutout] = i;
         }
     }
+    best = idle[0] >= 0 ? idle[0] : idle[1];
     if (sprite_dist >= 0.0f && best < 0 && g_steals < STEALS_A_FRAME) {
-        for (i = 0; i < TEXRES_SLOTS; i++) {
-            Res *r;
+        for (k = 0; k < g_nlive; k++) {
+            const Res *r;
+            int i;
 
+            i = g_live[k];
             r = &g_res[i];
-            if (!r->used || r->big_drop < 0 || r->cutout || r->last_frame < g_frame
+            if (r->big_drop < 0 || r->cutout || r->last_frame < g_frame
                 || r->note_dist <= sprite_dist) {
                 continue;
             }
-            if (best < 0 || r->note_dist > g_res[best].note_dist) {
+            if (best < 0 || r->note_dist > g_res[best].note_dist
+                || (r->note_dist == g_res[best].note_dist && i < best)) {
                 best = i;
             }
         }
@@ -338,22 +370,8 @@ static int evict_one(float sprite_dist)
     if (best < 0) {
         return 0;
     }
-    g_ops.release(g_res[best].big_h);
-    block_free(g_res[best].big_addr, g_res[best].big_order);
-    g_res[best].big_drop = -1;
-    g_sharp--;
-    g_evictions++;
+    drop_big(best);
     return 1;
-}
-
-/* Free slot i's sharp copy: its handle released and its block given back. */
-static void drop_big(int i)
-{
-    g_ops.release(g_res[i].big_h);
-    block_free(g_res[i].big_addr, g_res[i].big_order);
-    g_res[i].big_drop = -1;
-    g_sharp--;
-    g_evictions++;
 }
 
 /*
@@ -391,14 +409,11 @@ static int free_region(int o, float sprite_dist)
         bad[i] = 0;
     }
     /* One pass over the pictures: each copy marks the region it lies in. */
-    for (i = 0; i < TEXRES_SLOTS; i++) {
+    for (i = 0; i < g_nlive; i++) {
         const Res *r;
         int k;
 
-        r = &g_res[i];
-        if (!r->used) {
-            continue;
-        }
+        r = &g_res[g_live[i]];
         for (k = 0; k < g_narena; k++) {
             const Arena *a;
             int g;
@@ -445,17 +460,17 @@ static int free_region(int o, float sprite_dist)
     }
     /* Every sharp copy in it goes; the region then joins into one block. */
     freed = 0;
-    for (i = 0; i < TEXRES_SLOTS; i++) {
+    for (i = 0; i < g_nlive; i++) {
         const Res *r;
         df_u32 lo;
 
-        r = &g_res[i];
+        r = &g_res[g_live[i]];
         lo = g_arena[best / per].base + (df_u32)(best % per) * size;
-        if (r->used && r->big_drop >= 0 && r->big_addr >= lo && r->big_addr < lo + size) {
+        if (r->big_drop >= 0 && r->big_addr >= lo && r->big_addr < lo + size) {
             if (r->last_frame >= g_frame) {
                 g_steals++;
             }
-            drop_big(i);
+            drop_big(g_live[i]);
             freed++;
         }
     }
@@ -528,6 +543,8 @@ int texres_add(int slot, int side, int cutout, float density)
     r->big_drop = -1;
     r->note_frame = 0;
     r->last_frame = g_frame;
+    r->live_at = (short)g_nlive;
+    g_live[g_nlive++] = (short)slot;
     g_added++;
     return 1;
 }
@@ -548,6 +565,10 @@ void texres_remove(int slot)
     g_ops.release(r->tiny_h);
     block_free(r->tiny_addr, r->tiny_order);
     r->used = 0;
+    /* The last live slot takes its place in the list. */
+    g_nlive--;
+    g_live[r->live_at] = g_live[g_nlive];
+    g_res[g_live[r->live_at]].live_at = r->live_at;
     g_added--;
 }
 
@@ -597,13 +618,16 @@ static int room_for_floor(df_u32 bytes, df_u32 *addr, int *order, float sprite_d
             return 1;
         }
         best = -1;
-        for (i = 0; i < TEXRES_SLOTS; i++) {
+        for (i = 0; i < g_nlive; i++) {
             const Res *r;
+            int s;
 
-            r = &g_res[i];
-            if (r->used && r->big_drop >= 0 && !r->cutout
-                && (best < 0 || r->note_dist > g_res[best].note_dist)) {
-                best = i;
+            s = g_live[i];
+            r = &g_res[s];
+            if (r->big_drop >= 0 && !r->cutout
+                && (best < 0 || r->note_dist > g_res[best].note_dist
+                    || (r->note_dist == g_res[best].note_dist && s < best))) {
+                best = s;
             }
         }
         if (best < 0) {

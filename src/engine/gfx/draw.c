@@ -28,6 +28,7 @@
 #include "engine/sound/ambience.h"
 #include "engine/sound/sound.h"
 #include "engine/gfx/sky.h"
+#include "engine/gfx/modelview.h"
 
 /*
  * View signs live in camera_view. This file only clips and submits.
@@ -382,8 +383,13 @@ static int clip_plane(const Vtx *in, int n, Vtx *out, int plane)
     return nout;
 }
 
-/* n corners of a convex polygon, n at most FACE_MAX. */
-static int clip_view(const Vtx *in, int n, Vtx *out)
+/*
+ * n corners of a convex polygon, n at most FACE_MAX, cut to the view.
+ * crossed is corners_out's "any": only the planes some corner is beyond
+ * are looked at. A cut makes corners on the polygon's own edges, inside
+ * every plane the old corners were inside, so the others stay skipped.
+ */
+static int clip_view(const Vtx *in, int n, Vtx *out, df_u32 crossed)
 {
     Vtx buf[2][CLIP_MAX];
     int src;
@@ -402,6 +408,10 @@ static int clip_view(const Vtx *in, int n, Vtx *out)
         int inside;
         int k;
 
+        if (!(crossed & (1u << plane))) {
+            continue;
+        }
+        /* An earlier cut may have taken off all that was beyond this one. */
         inside = 1;
         for (k = 0; k < nsrc; k++) {
             if (plane_side(plane, &buf[src][k]) < 0.0f) {
@@ -466,34 +476,54 @@ static void image_inv(const Image *img, float *inv_w, float *inv_h)
 }
 
 /*
- * 1 when every corner is inside the near plane, the far clip, and the
- * picture. A polygon that crosses the glass is cut to it. One that is
- * already on the glass is projected directly.
+ * Which of the view's six planes the polygon's corners are beyond, a bit
+ * a plane in plane_side's order (near, far, left, right, bottom, top):
+ * *any is the planes some corner is beyond, *all the planes every corner
+ * is beyond.
+ *
+ *   any == 0   the polygon is wholly on the glass: projected as it is.
+ *   all != 0   it is wholly off it, past one plane: nothing to draw. Most
+ *              faces of a model that only pokes into the view end here,
+ *              and used to be copied and cut down to nothing.
+ *   otherwise  it crosses the planes in any, and is cut to those alone.
+ *
+ * Each test is the sign of a float taken as an integer (df_negative), so
+ * a corner is six stores and no branch: the x87 has no compare that sets
+ * the flags (fcomi is a P6's), and each one was fcom, fnstsw, sahf and a
+ * jump the Pentium guessed wrong half the time.
  */
-static int poly_inside(const Vtx *v, int n)
+static void corners_out(const Vtx *v, int n, df_u32 *any, df_u32 *all)
 {
+    df_u32 some;
+    df_u32 every;
     int i;
 
+    some = 0;
+    every = 63u;
     for (i = 0; i < n; i++) {
         float x;
         float y;
         float z;
         float gx;
         float gy;
+        df_u32 out;
 
         x = v[i].x;
         y = v[i].y;
         z = v[i].z;
-        if (z < DF_NEAR || z > g_limit) {
-            return 0;
-        }
         gx = z * g_clip_x;
         gy = z * g_clip_y;
-        if (gx + x < 0.0f || gx - x < 0.0f || gy + y < 0.0f || gy - y < 0.0f) {
-            return 0;
-        }
+        out = df_negative(z - DF_NEAR)
+            | (df_negative(g_limit - z) << 1)
+            | (df_negative(gx + x) << 2)
+            | (df_negative(gx - x) << 3)
+            | (df_negative(gy + y) << 4)
+            | (df_negative(gy - y) << 5);
+        some |= out;
+        every &= out;
     }
-    return 1;
+    *any = some;
+    *all = every;
 }
 
 static void submit(const Vtx *poly, int n, float inv_w, float inv_h,
@@ -510,13 +540,19 @@ static void emit_poly(const Vtx *view, int n, float inv_w, float inv_h,
                       float cr, float cg, float cb)
 {
     Vtx clipped[CLIP_MAX];
+    df_u32 any;
+    df_u32 all;
     int nout;
 
-    if (poly_inside(view, n)) {
+    corners_out(view, n, &any, &all);
+    if (!any) {
         submit(view, n, inv_w, inv_h, cr, cg, cb);
         return;
     }
-    nout = clip_view(view, n, clipped);
+    if (all) {
+        return;
+    }
+    nout = clip_view(view, n, clipped, any);
     if (nout < 3) {
         return;
     }
@@ -592,27 +628,12 @@ static void image_scale(const Image *img, int slot, float *inv_w, float *inv_h)
     }
 }
 
-/* Local point straight into view space. One less round trip through memory. */
-/* Inlined. A call per vertex is three calls per triangle on a 233. */
-static __inline__ void view_point(const Instance *in, const Camera *cam, const Basis *basis,
-                                  float lx, float ly, float lz,
-                                  float *vx, float *vy, float *vz)
-{
-    float dx, dy, dz;
-    float x1, z1;
-
-    dx = in->m[0] * lx + in->m[1] * ly + in->m[2] * lz + in->x - cam->x;
-    dy = in->m[3] * lx + in->m[4] * ly + in->m[5] * lz + in->y - cam->y;
-    dz = in->m[6] * lx + in->m[7] * ly + in->m[8] * lz + in->z - cam->z;
-    x1 = dx * basis->rx + dz * basis->rz;
-    z1 = dx * basis->fx + dz * basis->fz;
-    *vx = x1;
-    *vy = dy * basis->cp - z1 * basis->sp;
-    *vz = dy * basis->sp + z1 * basis->cp;
-}
-
-static void draw_tris(const Camera *cam, const Basis *basis, const Level *level,
-                      const Instance *in, int first, int count)
+/*
+ * Triangles first..first + count of the instance, one by one. mv is the
+ * instance's way to the view (modelview_build), made once by the caller.
+ */
+static void draw_tris(const Level *level, const Instance *in, const ModelView *mv,
+                      int first, int count)
 {
     int t;
     int end;
@@ -638,8 +659,8 @@ static void draw_tris(const Camera *cam, const Basis *basis, const Level *level,
         }
         img = level_image(level, (int)tri->slot);
         for (k = 0; k < 3; k++) {
-            view_point(in, cam, basis, tri->x[k], tri->y[k], tri->z[k],
-                       &view[k].x, &view[k].y, &view[k].z);
+            modelview_point(mv, tri->x[k], tri->y[k], tri->z[k],
+                            &view[k].x, &view[k].y, &view[k].z);
             view[k].u = tri->u[k];
             view[k].v = tri->v[k];
         }
@@ -698,8 +719,7 @@ static int face_fan(const Mesh *mesh, Face *face)
  * card as one planar polygon. A face that is not an exact fan goes
  * triangle by triangle as before.
  */
-static void draw_face(const Camera *cam, const Basis *basis, const Level *level,
-                      const Instance *in, Face *face)
+static void draw_face(const Level *level, const Instance *in, const ModelView *mv, Face *face)
 {
     const Tri *tris;
     const Tri *t0;
@@ -711,7 +731,7 @@ static void draw_face(const Camera *cam, const Basis *basis, const Level *level,
     int t;
 
     if (face->first + face->ntris > in->mesh->ntris || !face_fan(in->mesh, face)) {
-        draw_tris(cam, basis, level, in, face->first, face->ntris);
+        draw_tris(level, in, mv, face->first, face->ntris);
         return;
     }
     tris = in->mesh->tris;
@@ -719,16 +739,16 @@ static void draw_face(const Camera *cam, const Basis *basis, const Level *level,
     if (t0->slot == 0xffff) {
         return;
     }
-    view_point(in, cam, basis, t0->x[0], t0->y[0], t0->z[0], &poly[0].x, &poly[0].y, &poly[0].z);
+    modelview_point(mv, t0->x[0], t0->y[0], t0->z[0], &poly[0].x, &poly[0].y, &poly[0].z);
     poly[0].u = t0->u[0];
     poly[0].v = t0->v[0];
-    view_point(in, cam, basis, t0->x[1], t0->y[1], t0->z[1], &poly[1].x, &poly[1].y, &poly[1].z);
+    modelview_point(mv, t0->x[1], t0->y[1], t0->z[1], &poly[1].x, &poly[1].y, &poly[1].z);
     poly[1].u = t0->u[1];
     poly[1].v = t0->v[1];
     n = 2;
     for (t = face->first; t < face->first + face->ntris; t++) {
-        view_point(in, cam, basis, tris[t].x[2], tris[t].y[2], tris[t].z[2],
-                   &poly[n].x, &poly[n].y, &poly[n].z);
+        modelview_point(mv, tris[t].x[2], tris[t].y[2], tris[t].z[2],
+                        &poly[n].x, &poly[n].y, &poly[n].z);
         poly[n].u = tris[t].u[2];
         poly[n].v = tris[t].v[2];
         n++;
@@ -2794,6 +2814,7 @@ static void draw_windows(const Camera *cam, const Basis *basis, const Level *lev
     on = 0;
     for (oi = 0; oi < norder; oi++) {
         const Instance *in;
+        ModelView mv;
         float fade;
         int f;
 
@@ -2818,6 +2839,7 @@ static void draw_windows(const Camera *cam, const Basis *basis, const Level *lev
         if (fade > 1.0f) {
             fade = 1.0f;
         }
+        modelview_build(&mv, in, cam, basis);
         for (f = 0; f < in->mesh->nfaces; f++) {
             Face *face;
             const Tri *tri;
@@ -2833,8 +2855,8 @@ static void draw_windows(const Camera *cam, const Basis *basis, const Level *lev
                 continue;
             }
             if (g_faces && face->ntris >= 2 &&
-                !instance_faces(in, cam, basis, face->nx, face->ny, face->nz,
-                                tri->x[0], tri->y[0], tri->z[0])) {
+                !modelview_faces(&mv, face->nx, face->ny, face->nz,
+                                 tri->x[0], tri->y[0], tri->z[0])) {
                 continue;
             }
             if (!on) {
@@ -2847,7 +2869,7 @@ static void draw_windows(const Camera *cam, const Basis *basis, const Level *lev
                 g = df_iround(fade * 255.0f);
                 glide_tint(((df_u32)g << 16) | ((df_u32)g << 8) | (df_u32)g);
             }
-            draw_face(cam, basis, level, in, face);
+            draw_face(level, in, &mv, face);
         }
     }
     if (on) {
@@ -3156,11 +3178,14 @@ void draw_frame(const Camera *cam, const Level *level)
     cap_warn(&g_cap_models, norder, "models");
     for (oi = 0; oi < norder; oi++) {
         const Instance *in;
+        ModelView mv;
 
         in = &level->scene.models[order[oi]];
         if (!in->mesh) {
             continue;
         }
+        /* Model to view, and the camera in the model's frame: once, for every face below. */
+        modelview_build(&mv, in, cam, &basis);
         /*
          * Pictures on the card by distance (a streamed world, a place past
          * the card): how near each was drawn decides how sharp it is sent.
@@ -3208,9 +3233,8 @@ void draw_frame(const Camera *cam, const Level *level)
                 }
                 tri = &in->mesh->tris[face->first];
                 if (g_faces && face->ntris >= 2 &&
-                    !instance_faces(in, cam, &basis,
-                                    face->nx, face->ny, face->nz,
-                                    tri->x[0], tri->y[0], tri->z[0])) {
+                    !modelview_faces(&mv, face->nx, face->ny, face->nz,
+                                     tri->x[0], tri->y[0], tri->z[0])) {
                     g_faces_drop++;
                     continue;
                 }
@@ -3230,13 +3254,13 @@ void draw_frame(const Camera *cam, const Level *level)
                     }
                     glide_tint(g_shade[step]);
                 }
-                draw_face(cam, &basis, level, in, face);
+                draw_face(level, in, &mv, face);
             }
         } else {
             if (lit) {
                 glide_tint(g_shade[DAYLIGHT_STEPS / 2]);
             }
-            draw_tris(cam, &basis, level, in, 0, in->mesh->ntris);
+            draw_tris(level, in, &mv, 0, in->mesh->ntris);
         }
     }
     prof_end(PROF_MODELS);

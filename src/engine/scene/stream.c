@@ -356,26 +356,53 @@ void stream_reload(void)
     g_filling = -1;
 }
 
+/*
+ * The square of chunks within r rings of chunk ccx, ccz as a map, a byte
+ * a chunk, row by row: 1 where a slot holds that chunk (and, with
+ * done_only, has finished filling it). One walk over the slots, where
+ * asking "is this chunk loaded" of each of the square's 81 chunks in
+ * turn was 81 walks, every frame.
+ */
+#define ROUND_SIDE (2 * STREAM_RADIUS_MAX + 1)
+
+static void map_round(int ccx, int ccz, int r, int done_only, df_u8 *here)
+{
+    int side;
+    int s;
+
+    side = 2 * r + 1;
+    for (s = 0; s < side * side; s++) {
+        here[s] = 0;
+    }
+    for (s = 0; s < SLOTS; s++) {
+        int x;
+        int z;
+
+        if (!g_slot[s].used || (done_only && !g_slot[s].done)) {
+            continue;
+        }
+        x = g_slot[s].cx - ccx + r;
+        z = g_slot[s].cz - ccz + r;
+        if (x >= 0 && x < side && z >= 0 && z < side) {
+            here[z * side + x] = 1;
+        }
+    }
+}
+
 /* Chunks within rings of the camera's that are not loaded yet. */
 static int missing_within(int rings)
 {
+    df_u8 here[ROUND_SIDE * ROUND_SIDE];
+    int side;
     int n;
-    int x;
-    int z;
+    int k;
 
+    rings = rings < 0 ? 0 : (rings > STREAM_RADIUS_MAX ? STREAM_RADIUS_MAX : rings);
+    side = 2 * rings + 1;
+    map_round(g_ccx, g_ccz, rings, 1, here);
     n = 0;
-    for (z = -rings; z <= rings; z++) {
-        for (x = -rings; x <= rings; x++) {
-            int k;
-            int have;
-
-            have = 0;
-            for (k = 0; k < SLOTS && !have; k++) {
-                have = g_slot[k].used && g_slot[k].done
-                    && g_slot[k].cx == g_ccx + x && g_slot[k].cz == g_ccz + z;
-            }
-            n += !have;
-        }
+    for (k = 0; k < side * side; k++) {
+        n += !here[k];
     }
     return n;
 }
@@ -846,24 +873,18 @@ static void finish(int s)
     }
 }
 
-static int loaded_or_filling(int cx, int cz)
-{
-    int s;
-
-    for (s = 0; s < SLOTS; s++) {
-        if (g_slot[s].used && g_slot[s].cx == cx && g_slot[s].cz == cz) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
 /* The nearest chunk within the radius that is not loaded, ring by ring. 0 when none is missing. */
 static int next_missing(int ccx, int ccz, int *cx, int *cz)
 {
+    df_u8 here[ROUND_SIDE * ROUND_SIDE];
+    int side;
+    int r;
     int d;
 
-    for (d = 0; d <= g_radius; d++) {
+    r = g_radius > STREAM_RADIUS_MAX ? STREAM_RADIUS_MAX : g_radius;
+    side = 2 * r + 1;
+    map_round(ccx, ccz, r, 0, here);
+    for (d = 0; d <= r; d++) {
         int x;
         int z;
 
@@ -872,7 +893,7 @@ static int next_missing(int ccx, int ccz, int *cx, int *cz)
                 if (iabs(x) != d && iabs(z) != d) {
                     continue;
                 }
-                if (!loaded_or_filling(ccx + x, ccz + z)) {
+                if (!here[(z + r) * side + (x + r)]) {
                     *cx = ccx + x;
                     *cz = ccz + z;
                     return 1;
