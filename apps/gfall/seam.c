@@ -5706,13 +5706,13 @@ static int present_possessions(void)
         court = view->page == VIEW_COURT;
         rows = wrap_words(view->offer,wrapped,court ? 10 : 6,court ? 208 : 176);
         if (court) { fill_box(48,8,224,126,45); outline(48,8,224,126,145); }
-        else if (g_spop && g_buttons && view->page != VIEW_MESSAGE) {
+        else if (g_spop && g_buttons) {
             /* msgbox_show_string: the words on SPOP's parchment, the Yes and No pictures of BUTTONS.RCI under them (the pointer's regions are the buttons' own). */
             lay_paper(61,34,9,5);
             lay_button(3,112,117); lay_button(4,176,117);
         } else { fill_box(68,40,184,96,45); outline(68,40,184,96,145); }
         for (k = 0; k < rows; k++) { centered_text(160,(court ? 14 : 44)+k*10,wrapped[k],145); }
-        if (court || view->page == VIEW_MESSAGE || !g_spop || !g_buttons) {
+        if (court || !g_spop || !g_buttons) {
             centered_text(117,121,(view->page == VIEW_COURT || view->page == VIEW_MESSAGE) ? view->yes : "Accept",145);
             centered_text(203,121,(view->page == VIEW_COURT || view->page == VIEW_MESSAGE) ? view->no : "Reject",145);
         }
@@ -5727,7 +5727,15 @@ static int present_possessions(void)
             lay_paper(61,34,9,5);
             lay_button(3,112,117); lay_button(4,176,117);
         } else { fill_box(68,65,184,75,45); outline(68,65,184,75,145); }
-        centered_text(160,g_spop && g_buttons ? 56 : 75,prompt,145);
+        /* The words are fitted to the parchment's width, a few rows centred where the one line stood. */
+        {
+            char wrapped[3][96];
+            int rows, k, top;
+
+            rows = wrap_words(prompt,wrapped,3,170);
+            top = (g_spop && g_buttons ? 56 : 75) - (rows - 1) * 5;
+            for (k = 0; k < rows; k++) { centered_text(160,top + k * 10,wrapped[k],145); }
+        }
         log_format(line,sizeof(line),"%s_",view->input); centered_text(160,g_spop && g_buttons ? 84 : 96,line,145);
         if (!g_spop || !g_buttons) { centered_text(117,121,"Accept",145); centered_text(203,121,"Reject",145); }
     }
