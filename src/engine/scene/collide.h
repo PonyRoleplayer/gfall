@@ -51,7 +51,11 @@ int collide_use(const Scene *scene);
 /* The scene's lowest and highest point, once built. */
 void collide_extent(float *miny, float *maxy);
 
-/* The body's radii: across (x and z) and up (half its height). */
+/*
+ * The body's radii: across (x and z) and up (half its height). The
+ * triangles gathered stay gathered: a query after a change of shape reads
+ * the same gather in the new shape, with no gather again.
+ */
 void collide_set_shape(float rx, float ry);
 
 /*
@@ -75,6 +79,11 @@ int collide_overlap(const float *pos);
 
 /* A floor's normal rises at least this steeply: 45 degrees. */
 #define COLLIDE_FLOOR 0.7f
+/*
+ * A wall's normal rises less than this, up or down: within 30 degrees of
+ * level. CollideHit.wall is the most upright such contact of a slide.
+ */
+#define COLLIDE_WALL 0.5f
 
 /*
  * The highest floor (a triangle whose normal rises at least COLLIDE_FLOOR)

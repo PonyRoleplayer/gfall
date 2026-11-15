@@ -10,6 +10,9 @@
  * id is a loader tag. The rasterizer does not read it.
  */
 
+/* Tri.slot of a face with no picture: skipped by the draw, the lights and collision. */
+#define MESH_NO_SLOT 0xffff
+
 typedef struct Tri {
     float x[3];
     float y[3];

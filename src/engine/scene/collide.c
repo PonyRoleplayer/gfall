@@ -13,6 +13,14 @@
 #define CELL 512.0f
 #define GRID_MAX 256
 /*
+ * In ellipsoid space the body is a sphere of this radius: the world is
+ * scaled by one over the body's radii, so every "1" in Fauerby's method
+ * is this.
+ */
+#define SPHERE 1.0f
+/* The whole of a sweep's motion, as the fraction t of it: a contact past this is not met. */
+#define WHOLE_MOVE 1.0f
+/*
  * The gap a sweep leaves before what it hits, in ellipsoid space (a unit
  * is the body's radius): 1/200 of it, a tenth of a world unit. Without
  * it the body ends exactly on the plane and the next sweep starts
@@ -21,25 +29,73 @@
 #define VERY_CLOSE 0.005f
 /* Slides per sweep: hit, slide along, hit again. Five settles any corner. */
 #define SLIDE_STEPS 5
+/*
+ * A body is inside a triangle when its centre is nearer than this,
+ * squared: four gaps short of touching, (SPHERE - 4 VERY_CLOSE)^2. A
+ * body resting a sweep's gap away, or two after a corner, is not inside.
+ */
+#define INSIDE_SQUARED 0.96f
+/*
+ * Too small to be anything: a length (a motion, a normal, twice a
+ * sliver's area) under NOTHING is none, and NOTHING_SQUARED is the same
+ * for a squared length or a quadratic's leading term.
+ */
+#define NOTHING 1.0e-6f
+#define NOTHING_SQUARED 1.0e-12f
+/* A motion's part toward a plane under this is along the plane: it never reaches it. */
+#define ALONG_PLANE 1.0e-7f
+/* A ray this nearly in a triangle's plane (the determinant of Moller and Trumbore) misses it. */
+#define RAY_IN_PLANE 1.0e-9f
+/* The half size of a model with no box (model_box). */
+#define NO_BOX -1.0f
+/* Past any coordinate: where a minimum or a maximum starts. */
+#define FAR_OFF 1.0e30f
+/* CollideHit.floor_y and ceiling_y before any contact: outside the -1..1 a unit normal's y can be. */
+#define NO_FLOOR_Y -2.0f
+#define NO_CEILING_Y 2.0f
+/* The shape until collide_set_shape: a person's upper body, 16 across and 36 up. */
+#define FIRST_RX 16.0f
+#define FIRST_RY 36.0f
+/* The least radius a shape may have, either way. */
+#define LEAST_RADIUS 1.0f
 
-/* A triangle in ellipsoid space: corners, unit normal, plane n . p + d = 0. */
+/*
+ * A gathered triangle, twice. WTri is its corners in the world, kept so
+ * another shape can be asked of the same gather without gathering again.
+ * CTri is the same triangle in ellipsoid space, what the sweeps read:
+ * corners, unit normal, plane n . p + d = 0, and whether it is a floor.
+ */
+typedef struct WTri {
+    float p[3][3];
+} WTri;
+
 typedef struct CTri {
     float a[3];
     float b[3];
     float c[3];
     float n[3];
     float d;
+    /* 1 when a body can stand on it: its world normal rises at least COLLIDE_FLOOR, either way up. */
+    int floor;
 } CTri;
 
+static WTri g_world[COLLIDE_SET];
 static CTri g_set[COLLIDE_SET];
 static int g_nset;
 static int g_dropped;
 static int g_quiet;
 
-static float g_rx = 16.0f;
-static float g_ry = 36.0f;
-static float g_irx = 1.0f / 16.0f;
-static float g_iry = 1.0f / 36.0f;
+static float g_rx = FIRST_RX;
+static float g_ry = FIRST_RY;
+static float g_irx = 1.0f / FIRST_RX;
+static float g_iry = 1.0f / FIRST_RY;
+/*
+ * 1 when the shape changed since g_set was made from g_world: the next
+ * query makes it again (shape_set). A walking body asks two shapes of
+ * one gather, its upper body and its whole body; each change used to
+ * gather again, grid, boxes, triangles and all.
+ */
+static int g_shape_stale;
 
 /* The model grid: for each cell, the models whose box reaches into it. */
 static const Scene *g_scene;
@@ -94,10 +150,87 @@ static float dot3(const float *a, const float *b)
 
 void collide_set_shape(float rx, float ry)
 {
-    g_rx = rx > 1.0f ? rx : 1.0f;
-    g_ry = ry > 1.0f ? ry : 1.0f;
+    rx = rx > LEAST_RADIUS ? rx : LEAST_RADIUS;
+    ry = ry > LEAST_RADIUS ? ry : LEAST_RADIUS;
+    if (rx == g_rx && ry == g_ry) {
+        return;
+    }
+    g_rx = rx;
+    g_ry = ry;
     g_irx = 1.0f / g_rx;
     g_iry = 1.0f / g_ry;
+    /* The set held is the old shape's: made again when next read, if it is. */
+    g_shape_stale = g_nset > 0;
+}
+
+/*
+ * A world triangle in the shape's ellipsoid space, with its plane. 0 for
+ * a sliver, which has no plane to slide on; its neighbours carry the
+ * shape.
+ */
+static int shape_tri(CTri *ct, const WTri *wt)
+{
+    float e1[3];
+    float e2[3];
+    float len;
+    float wy;
+    int k;
+
+    for (k = 0; k < 3; k++) {
+        float *p;
+
+        p = k == 0 ? ct->a : (k == 1 ? ct->b : ct->c);
+        p[0] = wt->p[k][0] * g_irx;
+        p[1] = wt->p[k][1] * g_iry;
+        p[2] = wt->p[k][2] * g_irx;
+    }
+    for (k = 0; k < 3; k++) {
+        e1[k] = ct->b[k] - ct->a[k];
+        e2[k] = ct->c[k] - ct->a[k];
+    }
+    ct->n[0] = e1[1] * e2[2] - e1[2] * e2[1];
+    ct->n[1] = e1[2] * e2[0] - e1[0] * e2[2];
+    ct->n[2] = e1[0] * e2[1] - e1[1] * e2[0];
+    len = root(dot3(ct->n, ct->n));
+    if (len < NOTHING) {
+        return 0;
+    }
+    ct->n[0] /= len;
+    ct->n[1] /= len;
+    ct->n[2] /= len;
+    ct->d = -dot3(ct->n, ct->a);
+    /*
+     * Flat enough to stand on: its normal, scaled back to the world,
+     * rises at least COLLIDE_FLOOR. Either way up: the triangles are
+     * two-sided, and ARCH3D winds a floor's normal down, away from the
+     * side it is seen from. Worked out here once, not at each of the
+     * ten points a step asks a floor of.
+     */
+    wy = ct->n[1] * g_iry;
+    ct->floor = df_absf(ct->n[1]) >= NOTHING
+        && wy * wy >= COLLIDE_FLOOR * COLLIDE_FLOOR
+            * (ct->n[0] * ct->n[0] * g_irx * g_irx + wy * wy + ct->n[2] * ct->n[2] * g_irx * g_irx);
+    return 1;
+}
+
+/* The set in the shape it is asked in: made again from the world triangles after a change of shape. */
+static void shape_set(void)
+{
+    int i;
+    int n;
+
+    if (!g_shape_stale) {
+        return;
+    }
+    g_shape_stale = 0;
+    n = 0;
+    for (i = 0; i < g_nset; i++) {
+        if (shape_tri(&g_set[n], &g_world[i])) {
+            g_world[n] = g_world[i];
+            n++;
+        }
+    }
+    g_nset = n;
 }
 
 void collide_extent(float *miny, float *maxy)
@@ -108,6 +241,7 @@ void collide_extent(float *miny, float *maxy)
 
 void collide_stats(int *gathered, int *dropped)
 {
+    shape_set();
     *gathered = g_nset;
     *dropped = g_dropped;
 }
@@ -121,8 +255,9 @@ static void model_box(const Scene *scene, int i, Bound *out)
         return;
     }
     if (!instance_world_box(&scene->models[i], out)) {
+        /* No box: a negative half size, which the callers skip (ex < 0). */
         out->cx = out->cy = out->cz = 0.0f;
-        out->ex = out->ey = out->ez = -1.0f;
+        out->ex = out->ey = out->ez = NO_BOX;
     }
 }
 
@@ -159,8 +294,8 @@ int collide_use(const Scene *scene)
     g_built = 0;
     if (scene->sprite_spans && scene->spans) {
         /* The height the scene spans, from the spans' boxes: a few hundred, not every model. */
-        g_miny = 1.0e30f;
-        g_maxy = -1.0e30f;
+        g_miny = FAR_OFF;
+        g_maxy = -FAR_OFF;
         for (i = 0; i < scene->nspans; i++) {
             const Span *sp;
 
@@ -180,8 +315,8 @@ int collide_use(const Scene *scene)
         return 1;
     }
     g_by_span = 0;
-    minx = minz = g_miny = 1.0e30f;
-    maxx = maxz = g_maxy = -1.0e30f;
+    minx = minz = g_miny = FAR_OFF;
+    maxx = maxz = g_maxy = -FAR_OFF;
     for (i = 0; i < scene_solid_models(scene); i++) {
         Bound b;
 
@@ -299,81 +434,63 @@ int collide_use(const Scene *scene)
  * One model's triangles that meet the box. The box goes into the model's
  * own frame (the matrix is a rotation, so its transpose undoes it), and
  * each triangle is tested there against its own corners' range: no
- * transform for the many that miss. A survivor is turned into the world,
- * scaled into ellipsoid space, and given its plane.
+ * transform for the many that miss. A survivor is turned into the world
+ * and kept there (g_world), and in ellipsoid space with its plane (g_set).
  */
 static void gather_model(const Instance *in, const float *wc, const float *we)
 {
     const float *m;
     const Mesh *mesh;
-    float lc[3];
-    float le[3];
+    /* The box in the model's frame: its lowest and highest corner. */
+    float lo[3];
+    float hi[3];
     float dx, dy, dz;
     int t;
+    int k;
 
     m = in->m;
     mesh = in->mesh;
     dx = wc[0] - in->x;
     dy = wc[1] - in->y;
     dz = wc[2] - in->z;
-    lc[0] = m[0] * dx + m[3] * dy + m[6] * dz;
-    lc[1] = m[1] * dx + m[4] * dy + m[7] * dz;
-    lc[2] = m[2] * dx + m[5] * dy + m[8] * dz;
-    le[0] = df_absf(m[0]) * we[0] + df_absf(m[3]) * we[1] + df_absf(m[6]) * we[2];
-    le[1] = df_absf(m[1]) * we[0] + df_absf(m[4]) * we[1] + df_absf(m[7]) * we[2];
-    le[2] = df_absf(m[2]) * we[0] + df_absf(m[5]) * we[1] + df_absf(m[8]) * we[2];
+    for (k = 0; k < 3; k++) {
+        float centre;
+        float half;
+
+        centre = m[k] * dx + m[3 + k] * dy + m[6 + k] * dz;
+        half = df_absf(m[k]) * we[0] + df_absf(m[3 + k]) * we[1] + df_absf(m[6 + k]) * we[2];
+        lo[k] = centre - half;
+        hi[k] = centre + half;
+    }
     for (t = 0; t < mesh->ntris; t++) {
         const Tri *tri;
-        CTri *ct;
-        float e1[3];
-        float e2[3];
-        float len;
-        int k;
+        WTri *wt;
 
         tri = &mesh->tris[t];
         /* A face the loader could not texture is not part of the place. */
-        if (tri->slot == 0xffff) {
+        if (tri->slot == MESH_NO_SLOT) {
             continue;
         }
-        if ((tri->x[0] < lc[0] - le[0] && tri->x[1] < lc[0] - le[0] && tri->x[2] < lc[0] - le[0])
-            || (tri->x[0] > lc[0] + le[0] && tri->x[1] > lc[0] + le[0] && tri->x[2] > lc[0] + le[0])
-            || (tri->y[0] < lc[1] - le[1] && tri->y[1] < lc[1] - le[1] && tri->y[2] < lc[1] - le[1])
-            || (tri->y[0] > lc[1] + le[1] && tri->y[1] > lc[1] + le[1] && tri->y[2] > lc[1] + le[1])
-            || (tri->z[0] < lc[2] - le[2] && tri->z[1] < lc[2] - le[2] && tri->z[2] < lc[2] - le[2])
-            || (tri->z[0] > lc[2] + le[2] && tri->z[1] > lc[2] + le[2] && tri->z[2] > lc[2] + le[2])) {
+        /* All three corners past one side of the box: it cannot meet it. */
+        if ((tri->x[0] < lo[0] && tri->x[1] < lo[0] && tri->x[2] < lo[0])
+            || (tri->x[0] > hi[0] && tri->x[1] > hi[0] && tri->x[2] > hi[0])
+            || (tri->y[0] < lo[1] && tri->y[1] < lo[1] && tri->y[2] < lo[1])
+            || (tri->y[0] > hi[1] && tri->y[1] > hi[1] && tri->y[2] > hi[1])
+            || (tri->z[0] < lo[2] && tri->z[1] < lo[2] && tri->z[2] < lo[2])
+            || (tri->z[0] > hi[2] && tri->z[1] > hi[2] && tri->z[2] > hi[2])) {
             continue;
         }
         if (g_nset >= COLLIDE_SET) {
             g_dropped++;
             continue;
         }
-        ct = &g_set[g_nset];
+        wt = &g_world[g_nset];
         for (k = 0; k < 3; k++) {
-            float *p;
-
-            p = k == 0 ? ct->a : (k == 1 ? ct->b : ct->c);
-            instance_point(in, tri->x[k], tri->y[k], tri->z[k], &p[0], &p[1], &p[2]);
-            p[0] *= g_irx;
-            p[1] *= g_iry;
-            p[2] *= g_irx;
+            instance_point(in, tri->x[k], tri->y[k], tri->z[k], &wt->p[k][0], &wt->p[k][1], &wt->p[k][2]);
         }
-        for (k = 0; k < 3; k++) {
-            e1[k] = ct->b[k] - ct->a[k];
-            e2[k] = ct->c[k] - ct->a[k];
+        if (shape_tri(&g_set[g_nset], wt)) {
+            g_nset++;
         }
-        ct->n[0] = e1[1] * e2[2] - e1[2] * e2[1];
-        ct->n[1] = e1[2] * e2[0] - e1[0] * e2[2];
-        ct->n[2] = e1[0] * e2[1] - e1[1] * e2[0];
-        len = root(dot3(ct->n, ct->n));
-        /* A sliver has no plane to slide on; its neighbours carry the shape. */
-        if (len < 1.0e-6f) {
-            continue;
-        }
-        ct->n[0] /= len;
-        ct->n[1] /= len;
-        ct->n[2] /= len;
-        ct->d = -dot3(ct->n, ct->a);
-        g_nset++;
     }
 }
 
@@ -392,6 +509,8 @@ int collide_gather(float minx, float miny, float minz,
 
     g_nset = 0;
     g_dropped = 0;
+    /* What is gathered now is gathered in the shape as it is. */
+    g_shape_stale = 0;
     if (!g_built) {
         return 0;
     }
@@ -471,15 +590,19 @@ typedef struct Contact {
     float point[3];
 } Contact;
 
-/* The smaller root of a t^2 + b t + c in (0, limit), if any. */
+/*
+ * The smaller root of a t^2 + b t + c in (0, limit), if any: when the
+ * sphere's surface reaches a corner or an edge's line.
+ */
 static int lowest_root(float a, float b, float c, float limit, float *out)
 {
     float det;
     float s;
+    float half_over_a;
     float r1;
     float r2;
 
-    if (df_absf(a) < 1.0e-12f) {
+    if (df_absf(a) < NOTHING_SQUARED) {
         return 0;
     }
     /*
@@ -497,13 +620,24 @@ static int lowest_root(float a, float b, float c, float limit, float *out)
         }
         return 0;
     }
+    /*
+     * Outside, and not coming nearer: the roots' product c / a is not
+     * negative here, so they share a sign, and their sum -b / a is not
+     * positive: neither is ahead. Half the corners and edges of every
+     * triangle near a moving body end here, before the square root.
+     */
+    if (b * a >= 0.0f) {
+        return 0;
+    }
     det = b * b - 4.0f * a * c;
     if (det < 0.0f) {
         return 0;
     }
     s = root(det);
-    r1 = (-b - s) / (2.0f * a);
-    r2 = (-b + s) / (2.0f * a);
+    /* One divide for both roots: 39 cycles on the Pentium at the precision the walk runs at. */
+    half_over_a = 0.5f / a;
+    r1 = (-b - s) * half_over_a;
+    r2 = (-b + s) * half_over_a;
     if (r1 > r2) {
         float tmp;
 
@@ -540,12 +674,13 @@ static int inside(const CTri *tr, const float *p)
     d11 = dot3(v1, v1);
     d12 = dot3(v1, v2);
     den = d00 * d11 - d01 * d01;
-    if (den <= 1.0e-12f) {
+    if (den <= NOTHING_SQUARED) {
         return 0;
     }
-    u = (d11 * d02 - d01 * d12) / den;
-    v = (d00 * d12 - d01 * d02) / den;
-    return u >= 0.0f && v >= 0.0f && u + v <= 1.0f;
+    /* The two weights times den, which is positive: inside is both at least 0 and their sum at most den. No divide. */
+    u = d11 * d02 - d01 * d12;
+    v = d00 * d12 - d01 * d02;
+    return u >= 0.0f && v >= 0.0f && u + v <= den;
 }
 
 /*
@@ -558,7 +693,6 @@ static void sweep_tri(const CTri *tr, const float *base, const float *vel, float
     float dist;
     float ndv;
     float t0;
-    float t1;
     float t;
     float point[3];
     int found;
@@ -588,35 +722,36 @@ static void sweep_tri(const CTri *tr, const float *base, const float *vel, float
          * one wall walk into the end of the next, a wall's edge facing it
          * (docs/collision.md, The sweep).
          */
-        if (dist >= 1.0f) {
+        if (dist >= SPHERE) {
             return;
         }
         embedded = 1;
         t0 = 0.0f;
-        t1 = 1.0f;
-    } else if (ndv > -1.0e-7f) {
-        if (dist >= 1.0f) {
+    } else if (ndv > -ALONG_PLANE) {
+        /* Along the plane: never its face, and its edges only within reach. */
+        if (dist >= SPHERE) {
             return;
         }
         embedded = 1;
         t0 = 0.0f;
-        t1 = 1.0f;
     } else {
-        t0 = (1.0f - dist) / ndv;
-        t1 = (-1.0f - dist) / ndv;
+        float t1;
+
+        /* When the sphere's front reaches the plane, and when its back leaves it. */
+        t0 = (SPHERE - dist) / ndv;
+        t1 = (-SPHERE - dist) / ndv;
         if (t0 > t1) {
             t = t0;
             t0 = t1;
             t1 = t;
         }
-        if (t0 > 1.0f || t1 < 0.0f) {
+        if (t0 > WHOLE_MOVE || t1 < 0.0f) {
             return;
         }
         t0 = t0 < 0.0f ? 0.0f : t0;
-        t1 = t1 > 1.0f ? 1.0f : t1;
     }
     found = 0;
-    t = c->found ? c->t : 1.0f;
+    t = c->found ? c->t : WHOLE_MOVE;
     /* The sphere meets the plane inside the triangle: that is the first contact. */
     if (!embedded && t0 < t) {
         float p[3];
@@ -635,6 +770,8 @@ static void sweep_tri(const CTri *tr, const float *base, const float *vel, float
     }
     /* Otherwise it may meet a corner or an edge first. */
     {
+        /* The corner after each, round the triangle. */
+        static const int next[3] = { 1, 2, 0 };
         const float *v[3];
         float nt;
 
@@ -650,7 +787,7 @@ static void sweep_tri(const CTri *tr, const float *base, const float *vel, float
             d[1] = base[1] - v[k][1];
             d[2] = base[2] - v[k][2];
             b = 2.0f * dot3(vel, d);
-            cc = dot3(d, d) - 1.0f;
+            cc = dot3(d, d) - SPHERE * SPHERE;
             if (lowest_root(vv, b, cc, t, &nt)) {
                 t = nt;
                 found = 1;
@@ -668,7 +805,7 @@ static void sweep_tri(const CTri *tr, const float *base, const float *vel, float
             int j;
 
             p1 = v[k];
-            p2 = v[(k + 1) % 3];
+            p2 = v[next[k]];
             for (j = 0; j < 3; j++) {
                 edge[j] = p2[j] - p1[j];
                 btv[j] = p1[j] - base[j];
@@ -678,7 +815,7 @@ static void sweep_tri(const CTri *tr, const float *base, const float *vel, float
             edb = dot3(edge, btv);
             a = es * -vv + edv * edv;
             b = es * (2.0f * dot3(vel, btv)) - 2.0f * edv * edb;
-            cc = es * (1.0f - dot3(btv, btv)) + edb * edb;
+            cc = es * (SPHERE * SPHERE - dot3(btv, btv)) + edb * edb;
             if (lowest_root(a, b, cc, t, &nt)) {
                 f = (edv * nt - edb) / es;
                 if (f >= 0.0f && f <= 1.0f) {
@@ -711,15 +848,16 @@ float collide_slide(float *pos, float vx, float vy, float vz, CollideHit *hit)
 
     if (hit) {
         hit->hit = 0;
-        hit->floor_y = -2.0f;
-        hit->ceiling_y = 2.0f;
+        hit->floor_y = NO_FLOOR_Y;
+        hit->ceiling_y = NO_CEILING_Y;
         hit->wall = 0;
         hit->wall_normal[0] = hit->wall_normal[1] = hit->wall_normal[2] = 0;
     }
     want = root(vx * vx + vy * vy + vz * vz);
-    if (want < 1.0e-6f) {
+    if (want < NOTHING) {
         return 1.0f;
     }
+    shape_set();
     base[0] = pos[0] * g_irx;
     base[1] = pos[1] * g_iry;
     base[2] = pos[2] * g_irx;
@@ -740,12 +878,12 @@ float collide_slide(float *pos, float vx, float vy, float vz, CollideHit *hit)
         float wx, wy, wz, wl;
 
         vv = dot3(vel, vel);
-        if (vv < 1.0e-12f) {
+        if (vv < NOTHING_SQUARED) {
             break;
         }
         len = root(vv);
         c.found = 0;
-        c.t = 1.0f;
+        c.t = WHOLE_MOVE;
         for (i = 0; i < g_nset; i++) {
             sweep_tri(&g_set[i], base, vel, vv, &c);
         }
@@ -774,7 +912,7 @@ float collide_slide(float *pos, float vx, float vy, float vz, CollideHit *hit)
             sn[i] = base[i] - c.point[i];
         }
         sl = root(dot3(sn, sn));
-        if (sl < 1.0e-6f) {
+        if (sl < NOTHING) {
             break;
         }
         for (i = 0; i < 3; i++) {
@@ -790,9 +928,13 @@ float collide_slide(float *pos, float vx, float vy, float vz, CollideHit *hit)
             hit->hit = 1;
             hit->floor_y = wy > hit->floor_y ? wy : hit->floor_y;
             hit->ceiling_y = wy < hit->ceiling_y ? wy : hit->ceiling_y;
-            if (wl > 0 && df_absf(wy) < 0.5f && (!hit->wall || df_absf(wy) < df_absf(hit->wall_normal[1]))) {
+            /* The most upright thing met is the wall the body is against. */
+            if (wl > 0.0f && df_absf(wy) < COLLIDE_WALL
+                && (!hit->wall || df_absf(wy) < df_absf(hit->wall_normal[1]))) {
                 hit->wall = 1;
-                hit->wall_normal[0] = wx/wl; hit->wall_normal[1] = wy; hit->wall_normal[2] = wz/wl;
+                hit->wall_normal[0] = wx / wl;
+                hit->wall_normal[1] = wy;
+                hit->wall_normal[2] = wz / wl;
             }
         }
         {
@@ -897,6 +1039,7 @@ int collide_overlap(const float *pos)
     float p[3];
     int i;
 
+    shape_set();
     p[0] = pos[0] * g_irx;
     p[1] = pos[1] * g_iry;
     p[2] = pos[2] * g_irx;
@@ -908,8 +1051,7 @@ int collide_overlap(const float *pos)
         d[0] = p[0] - q[0];
         d[1] = p[1] - q[1];
         d[2] = p[2] - q[2];
-        /* A body resting a sweep's gap away is not inside. */
-        if (dot3(d, d) < 0.96f) {
+        if (dot3(d, d) < INSIDE_SQUARED) {
             return 1;
         }
     }
@@ -924,6 +1066,7 @@ int collide_ray(const float *o, const float *d, float len, float *t)
     int found;
     int i;
 
+    shape_set();
     /*
      * The segment in the set's space (the shape's 1/radius scale): a
      * fraction along it is the same fraction in the world.
@@ -934,6 +1077,7 @@ int collide_ray(const float *o, const float *d, float len, float *t)
     v[0] = d[0] * len * g_irx;
     v[1] = d[1] * len * g_iry;
     v[2] = d[2] * len * g_irx;
+    /* As a fraction of the segment: its whole length to start with. */
     best = 1.0f;
     found = 0;
     for (i = 0; i < g_nset; i++) {
@@ -953,7 +1097,7 @@ int collide_ray(const float *o, const float *d, float len, float *t)
         h[1] = v[2] * e2[0] - v[0] * e2[2];
         h[2] = v[0] * e2[1] - v[1] * e2[0];
         a = e1[0] * h[0] + e1[1] * h[1] + e1[2] * h[2];
-        if (df_absf(a) < 1.0e-9f) {
+        if (df_absf(a) < RAY_IN_PLANE) {
             continue;
         }
         f = 1.0f / a;
@@ -991,25 +1135,18 @@ int collide_floor(float x, float z, float y_top, float y_bottom, float *y)
     int found;
     int i;
 
+    shape_set();
     px = x * g_irx;
     pz = z * g_irx;
     best = y_bottom;
     found = 0;
     for (i = 0; i < g_nset; i++) {
         const CTri *tr;
-        float d0, d1, d2, h, wy;
+        float d0, d1, d2, h;
 
         tr = &g_set[i];
-        /*
-         * Flat enough to stand on: its normal, scaled back to the world,
-         * rises at least COLLIDE_FLOOR. Either way up: the triangles are
-         * two-sided, and ARCH3D winds a floor's normal down, away from the
-         * side it is seen from.
-         */
-        wy = tr->n[1] * g_iry;
-        if (df_absf(tr->n[1]) < 1.0e-6f || wy * wy < COLLIDE_FLOOR * COLLIDE_FLOOR
-                                * (tr->n[0] * tr->n[0] * g_irx * g_irx + wy * wy
-                                   + tr->n[2] * tr->n[2] * g_irx * g_irx)) {
+        /* Only what a body can stand on (shape_tri). */
+        if (!tr->floor) {
             continue;
         }
         /* x, z inside the triangle seen from above: the same side of all three edges. */

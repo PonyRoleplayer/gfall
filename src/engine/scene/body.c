@@ -15,17 +15,65 @@
  * the sweep. The rules are the walker's, which is one body now.
  */
 
+/*
+ * Every distance the rules below turn on, in world units (40 a metre),
+ * named once. None is tuned to a place: each is a margin or a tolerance
+ * of the method.
+ */
+
 /* Below the place's lowest point by this much, the body has fallen out. */
 #define FALL_OUT 1024.0f
-/* Rings the unstick search tries, 8 to 256 units out, at four heights. */
-#define RINGS 6
-#define DIRS 16
-/* The footprint: the middle and eight points this far out, as a fraction of the radius. */
-#define FOOT 0.7f
+/* When it has, the floor to put it back on is looked for this far past the place's top and bottom. */
+#define RECOVER_REACH 64.0f
 
-/* The footprint's eight directions, a unit circle, made once. */
-static float g_foot_x[9];
-static float g_foot_z[9];
+/* The footprint: the middle and FOOT_ROUND points FOOT of the radius out. */
+#define FOOT 0.7f
+#define FOOT_ROUND 8
+#define FOOT_POINTS (1 + FOOT_ROUND)
+
+/* The frame's gather reaches this far past everything the frame's moves can touch. */
+#define GATHER_SLACK 2.0f
+
+/*
+ * The feet are where they were asked to go when within REACHED of it: a
+ * sweep stops a tenth of a unit short of what it meets (collide.c,
+ * VERY_CLOSE), so an exact compare would never pass. A move under
+ * NO_MOVE is none; a rise over LIFTED while sliding across is a slope
+ * lifting the body.
+ */
+#define REACHED 0.05f
+#define NO_MOVE 1.0e-4f
+#define LIFTED 0.01f
+
+/*
+ * In the air, a floor counts from LAND_WINDOW above the feet to
+ * LAND_WINDOW under the end of the frame's fall: the feet may already be
+ * a hair inside it.
+ */
+#define LAND_WINDOW 0.5f
+/* A place is safe to come back to with a floor within this of the feet, under the body's middle. */
+#define SAFE_WINDOW 1.0f
+/* Two bodies nearer than this, centre to centre, are on one spot: no direction to push along. */
+#define SAME_SPOT 0.01f
+
+/*
+ * The unstick search (unstick): UNSTICK_RINGS rings of UNSTICK_DIRS
+ * points, the first UNSTICK_FIRST out and each twice the last (8 to 256),
+ * every point tried at the feet's height and at each of g_unstick_lift
+ * above it: a step, two, and four of a person's.
+ */
+#define UNSTICK_RINGS 6
+#define UNSTICK_DIRS 16
+#define UNSTICK_FIRST 8.0f
+#define UNSTICK_LIFTS 4
+static const float g_unstick_lift[UNSTICK_LIFTS] = { 0.0f, 24.0f, 48.0f, 96.0f };
+/* Its gathers reach this far past the ring, twice it under the feet, and over the highest lift. */
+#define UNSTICK_SLACK 4.0f
+#define UNSTICK_ABOVE (96.0f + UNSTICK_SLACK)
+
+/* The footprint's directions round the middle, a unit circle, made once. */
+static float g_foot_x[FOOT_POINTS];
+static float g_foot_z[FOOT_POINTS];
 static int g_foot_ready;
 
 /* The upper body's half height: from a step above the feet to the head. */
@@ -42,20 +90,12 @@ static float upper_half(const Body *b)
  * feet then found a floor behind them, or none.
  */
 static int g_whole;
-/*
- * The frame's gather box: the set holds its triangles scaled by the shape
- * at the time (ellipsoid space), so another shape gathers them again.
- */
-static float g_box[6];
-static int g_have_box;
 
+/* The shape the next sweeps use. What is gathered stays gathered: collide reads it in the new shape. */
 static void shape(const Body *b, int whole)
 {
     g_whole = whole;
     collide_set_shape(b->radius, whole ? b->height * 0.5f : upper_half(b));
-    if (g_have_box) {
-        collide_gather(g_box[0], g_box[1], g_box[2], g_box[3], g_box[4], g_box[5]);
-    }
 }
 
 /* The swept ellipsoid's centre's height above the feet. */
@@ -164,8 +204,10 @@ int body_can_stand(const Body *b, const Scene *scene, float height)
      */
     half = (height - b->step) * 0.5f;
     collide_set_shape(b->radius, half);
-    collide_gather(b->feet[0] - b->radius - 2.0f, b->feet[1] + b->step - 2.0f, b->feet[2] - b->radius - 2.0f,
-                   b->feet[0] + b->radius + 2.0f, b->feet[1] + height + 2.0f, b->feet[2] + b->radius + 2.0f);
+    collide_gather(b->feet[0] - b->radius - GATHER_SLACK, b->feet[1] + b->step - GATHER_SLACK,
+                   b->feet[2] - b->radius - GATHER_SLACK,
+                   b->feet[0] + b->radius + GATHER_SLACK, b->feet[1] + height + GATHER_SLACK,
+                   b->feet[2] + b->radius + GATHER_SLACK);
     c[0] = b->feet[0];
     c[1] = b->feet[1] + b->step + half;
     c[2] = b->feet[2];
@@ -205,19 +247,13 @@ static void upper(const Body *b, const float *f, float *c)
 /* Gather round the whole body at feet f, reaching r across, down below and up above. */
 static void gather_round(const Body *b, const float *f, float r, float below, float above)
 {
-    g_box[0] = f[0] - b->radius - r;
-    g_box[1] = f[1] - below;
-    g_box[2] = f[2] - b->radius - r;
-    g_box[3] = f[0] + b->radius + r;
-    g_box[4] = f[1] + b->height + above;
-    g_box[5] = f[2] + b->radius + r;
-    g_have_box = 1;
-    collide_gather(g_box[0], g_box[1], g_box[2], g_box[3], g_box[4], g_box[5]);
+    collide_gather(f[0] - b->radius - r, f[1] - below, f[2] - b->radius - r,
+                   f[0] + b->radius + r, f[1] + b->height + above, f[2] + b->radius + r);
 }
 
 /*
  * The highest floor under the footprint at x, z, from top down to
- * bottom: the middle and eight points round it. 1 and its height in *y.
+ * bottom: the middle and FOOT_ROUND points round it. 1 and its height in *y.
  */
 static int floor_under(const Body *b, float x, float z, float top, float bottom, float *y)
 {
@@ -229,10 +265,10 @@ static int floor_under(const Body *b, float x, float z, float top, float bottom,
     if (!g_foot_ready) {
         g_foot_x[0] = 0.0f;
         g_foot_z[0] = 0.0f;
-        for (k = 1; k < 9; k++) {
+        for (k = 1; k < FOOT_POINTS; k++) {
             float a;
 
-            a = (float)(k - 1) * (DF_TAU / 8.0f);
+            a = (float)(k - 1) * (DF_TAU / (float)FOOT_ROUND);
             g_foot_x[k] = df_cos(a);
             g_foot_z[k] = df_sin(a);
         }
@@ -241,7 +277,7 @@ static int floor_under(const Body *b, float x, float z, float top, float bottom,
     r = b->radius * FOOT;
     found = 0;
     best = bottom;
-    for (k = 0; k < 9; k++) {
+    for (k = 0; k < FOOT_POINTS; k++) {
         float h;
 
         if (collide_floor(x + r * g_foot_x[k], z + r * g_foot_z[k], top, best, &h)) {
@@ -266,39 +302,37 @@ static int free_at(const Body *b, const float *f, float *floor_y)
 }
 
 /*
- * The nearest free place: rings of DIRS points 8, 16 ... 256 units out,
- * each at the feet's height and 24, 48 and 96 above, nearest first; the
- * feet then go onto the floor found there. Then the last place it stood.
+ * The nearest free place: rings of points round the body, nearest first,
+ * each at the feet's height and lifted (the constants above); the feet
+ * then go onto the floor found there. Then the last place it stood.
  */
 static int unstick(Body *b)
 {
-    static const float lift[4] = { 0.0f, 24.0f, 48.0f, 96.0f };
     float r;
     float floor_y;
     int ring;
 
     /* Free is the upper body clear and a floor under it: the shape a body stands in. */
-    g_have_box = 0;
     shape(b, 0);
-    gather_round(b, b->feet, 4.0f, b->step + 4.0f, 4.0f);
+    gather_round(b, b->feet, UNSTICK_SLACK, b->step + UNSTICK_SLACK, UNSTICK_SLACK);
     if (free_at(b, b->feet, &floor_y)) {
         return 1;
     }
-    r = 8.0f;
-    for (ring = 0; ring < RINGS; ring++, r *= 2.0f) {
+    r = UNSTICK_FIRST;
+    for (ring = 0; ring < UNSTICK_RINGS; ring++, r *= 2.0f) {
         int h;
 
-        gather_round(b, b->feet, r + 4.0f, b->step + 8.0f, 100.0f);
-        for (h = 0; h < 4; h++) {
+        gather_round(b, b->feet, r + UNSTICK_SLACK, b->step + 2.0f * UNSTICK_SLACK, UNSTICK_ABOVE);
+        for (h = 0; h < UNSTICK_LIFTS; h++) {
             int k;
 
-            for (k = 0; k < DIRS; k++) {
+            for (k = 0; k < UNSTICK_DIRS; k++) {
                 float p[3];
                 float a;
 
-                a = (float)k * (DF_TAU / (float)DIRS);
+                a = (float)k * (DF_TAU / (float)UNSTICK_DIRS);
                 p[0] = b->feet[0] + r * df_cos(a);
-                p[1] = b->feet[1] + lift[h];
+                p[1] = b->feet[1] + g_unstick_lift[h];
                 p[2] = b->feet[2] + r * df_sin(a);
                 if (free_at(b, p, &floor_y)) {
                     p[1] = floor_y;
@@ -330,9 +364,9 @@ static void recover(Body *b)
     float floor_y;
 
     collide_extent(&miny, &maxy);
-    collide_gather(b->feet[0] - b->radius, miny - 64.0f, b->feet[2] - b->radius,
-                   b->feet[0] + b->radius, maxy + 64.0f, b->feet[2] + b->radius);
-    if (floor_under(b, b->feet[0], b->feet[2], maxy + 64.0f, miny - 64.0f, &floor_y)) {
+    collide_gather(b->feet[0] - b->radius, miny - RECOVER_REACH, b->feet[2] - b->radius,
+                   b->feet[0] + b->radius, maxy + RECOVER_REACH, b->feet[2] + b->radius);
+    if (floor_under(b, b->feet[0], b->feet[2], maxy + RECOVER_REACH, miny - RECOVER_REACH, &floor_y)) {
         b->feet[1] = floor_y;
     } else if (b->have_safe) {
         put(b->feet, b->safe);
@@ -353,7 +387,7 @@ static int rise_to(Body *b, float y)
     float want;
 
     want = y - b->feet[1];
-    if (df_absf(want) < 1.0e-4f) {
+    if (df_absf(want) < NO_MOVE) {
         return 1;
     }
     upper(b, b->feet, c);
@@ -362,7 +396,7 @@ static int rise_to(Body *b, float y)
     b->feet[0] = c[0];
     b->feet[2] = c[2];
     b->feet[1] = c[1] - centre_up(b);
-    return df_absf(b->feet[1] - y) < 0.05f;
+    return df_absf(b->feet[1] - y) < REACHED;
 }
 
 /* The push out of one circle (another's feet at ox, oz, radius orad, from oy up oh) the body meets. */
@@ -385,7 +419,7 @@ static void push_from(const Body *b, float ox, float oy, float oz, float orad, f
         return;
     }
     d = df_sqrt(d2);
-    if (d < 0.01f) {
+    if (d < SAME_SPOT) {
         /* Right on it: out along +x, any way will do. */
         *px += reach;
         return;
@@ -468,28 +502,51 @@ static void push_off(Body *b, const Scene *scene)
 void body_fly_step(Body *b, const Scene *scene, float dx, float dy, float dz)
 {
     CollideHit hit;
-    float c[3], travel, below, above;
-    if (!b || !scene || !collide_use(scene)) { return; }
-    if (b->scene != scene || b->epoch != mem_epoch()) { b->have_safe = 0; }
-    b->scene = scene; b->epoch = mem_epoch();
-    b->grounded = b->landed = b->want_unstick = 0;
-    g_have_box = 0; shape(b,1);
-    travel = df_absf(dx) > df_absf(dz) ? df_absf(dx) : df_absf(dz);
-    below = dy < 0 ? -dy : 0; above = dy > 0 ? dy : 0;
-    gather_round(b,b->feet,travel+2,below+2,above+2);
-    upper(b,b->feet,c);
-    /* If a caller restores a bad point, retain the last clear point rather
-     * than searching for a floor on a different storey. */
-    if (collide_overlap(c) && b->have_safe) {
-        put(b->feet,b->safe); upper(b,b->feet,c);
-        gather_round(b,b->feet,travel+2,below+2,above+2);
+    float c[3];
+    float travel;
+    float below;
+    float above;
+
+    if (!b || !scene || !collide_use(scene)) {
+        return;
     }
-    collide_slide(c,dx,dy,dz,&hit);
+    /* A new place, or another heap: the last clear point was the old one's. */
+    if (b->scene != scene || b->epoch != mem_epoch()) {
+        b->have_safe = 0;
+    }
+    b->scene = scene;
+    b->epoch = mem_epoch();
+    b->grounded = 0;
+    b->landed = 0;
+    b->want_unstick = 0;
+    /* The whole body, feet to head: nothing is walked onto in flight. */
+    shape(b, 1);
+    travel = df_absf(dx) > df_absf(dz) ? df_absf(dx) : df_absf(dz);
+    below = dy < 0.0f ? -dy : 0.0f;
+    above = dy > 0.0f ? dy : 0.0f;
+    gather_round(b, b->feet, travel + GATHER_SLACK, below + GATHER_SLACK, above + GATHER_SLACK);
+    upper(b, b->feet, c);
+    /*
+     * If a caller restores a bad point, retain the last clear point rather
+     * than searching for a floor on a different storey.
+     */
+    if (collide_overlap(c) && b->have_safe) {
+        put(b->feet, b->safe);
+        upper(b, b->feet, c);
+        gather_round(b, b->feet, travel + GATHER_SLACK, below + GATHER_SLACK, above + GATHER_SLACK);
+    }
+    collide_slide(c, dx, dy, dz, &hit);
     b->hit_wall = (df_u8)hit.wall;
-    put(b->wall_normal,hit.wall_normal);
-    b->feet[0] = c[0]; b->feet[1] = c[1]-b->height/2; b->feet[2] = c[2];
-    push_off(b,scene); upper(b,b->feet,c);
-    if (!collide_overlap(c)) { put(b->safe,b->feet); b->have_safe = 1; }
+    put(b->wall_normal, hit.wall_normal);
+    b->feet[0] = c[0];
+    b->feet[1] = c[1] - centre_up(b);
+    b->feet[2] = c[2];
+    push_off(b, scene);
+    upper(b, b->feet, c);
+    if (!collide_overlap(c)) {
+        put(b->safe, b->feet);
+        b->have_safe = 1;
+    }
 }
 
 void body_step(Body *b, const Scene *scene, float want_dx, float want_dz, float dt)
@@ -538,10 +595,9 @@ void body_step(Body *b, const Scene *scene, float want_dx, float want_dz, float 
      */
     travel = df_absf(want_dx) > df_absf(want_dz) ? df_absf(want_dx) : df_absf(want_dz);
     air = !b->grounded;
-    g_have_box = 0;
     shape(b, air);
-    gather_round(b, b->feet, travel + 2.0f, b->step + (dy < 0.0f ? -dy : 0.0f) + 2.0f,
-                 b->step + (dy > 0.0f ? dy : 0.0f) + 2.0f);
+    gather_round(b, b->feet, travel + GATHER_SLACK, b->step + (dy < 0.0f ? -dy : 0.0f) + GATHER_SLACK,
+                 b->step + (dy > 0.0f ? dy : 0.0f) + GATHER_SLACK);
 
     /*
      * Across. On the ground the upper body meets walls, and what is under
@@ -558,12 +614,12 @@ void body_step(Body *b, const Scene *scene, float want_dx, float want_dz, float 
         y0 = c[1];
         collide_slide(c, want_dx, 0.0f, want_dz, &hit);
         b->hit_wall = (df_u8)hit.wall;
-        put(b->wall_normal,hit.wall_normal);
+        put(b->wall_normal, hit.wall_normal);
         if (air) {
             b->feet[1] = c[1] - centre_up(b);
-        } else if (df_absf(c[1] - y0) > 0.01f) {
+        } else if (df_absf(c[1] - y0) > LIFTED) {
             collide_slide(c, 0.0f, y0 - c[1], 0.0f, 0);
-            if (df_absf(c[1] - y0) > 0.05f) {
+            if (df_absf(c[1] - y0) > REACHED) {
                 /* It could not get back down: it stays where it was. */
                 c[0] = before[0];
                 c[2] = before[2];
@@ -607,14 +663,15 @@ void body_step(Body *b, const Scene *scene, float want_dx, float want_dz, float 
          */
         rise = mover_rise();
         if (dy <= rise
-            && floor_under(b, b->feet[0], b->feet[2], b->feet[1] + 0.5f + rise, b->feet[1] + dy - 0.5f, &floor_y)) {
+            && floor_under(b, b->feet[0], b->feet[2], b->feet[1] + LAND_WINDOW + rise,
+                           b->feet[1] + dy - LAND_WINDOW, &floor_y)) {
             float speed;
 
             speed = -b->vy;
             /* Onto the floor with the upper body, which the floor it lands on never meets. */
             shape(b, 0);
             rise_to(b, floor_y);
-            b->grounded = df_absf(b->feet[1] - floor_y) < 0.05f;
+            b->grounded = df_absf(b->feet[1] - floor_y) < REACHED;
             b->vy = 0.0f;
             if (b->grounded) {
                 /* Landed: how fast, and from how high (body_landed, once). */
@@ -641,7 +698,8 @@ void body_step(Body *b, const Scene *scene, float want_dx, float want_dz, float 
         recover(b);
     }
     /* A floor under the middle, not just the footprint's edge: safe to come back to. */
-    if (b->grounded && collide_floor(b->feet[0], b->feet[2], b->feet[1] + 1.0f, b->feet[1] - 1.0f, &floor_y)) {
+    if (b->grounded
+        && collide_floor(b->feet[0], b->feet[2], b->feet[1] + SAFE_WINDOW, b->feet[1] - SAFE_WINDOW, &floor_y)) {
         put(b->safe, b->feet);
         b->have_safe = 1;
     }

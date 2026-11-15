@@ -39,7 +39,28 @@ The first contact over all the gathered triangles, if any before t = 1, stops th
 
 A 10-minute random walk and jump through the whole hold, with every door open, at 9.8 and at 20 m/s², at a steady 60 fps and at uneven frame times up to 0.1 s, never ends a frame 2 units inside anything and never leaves the hold. Before these fixes it left the hold within 5000 frames.
 
-Point in triangle is barycentric (Ericson, *Real-Time Collision Detection*, 3.4); the static overlap test for `stuck` is the closest point on a triangle (Ericson 5.1.5).
+Point in triangle is barycentric (Ericson, *Real-Time Collision Detection*, 3.4), its two weights compared times their denominator, so no divide; the static overlap test for `stuck` is the closest point on a triangle (Ericson 5.1.5).
+
+A corner or an edge the body is outside of and not coming nearer cannot be met, and `lowest_root` says so from the signs of its quadratic's terms, before the square root: the roots share a sign (their product c / a is not negative outside), and their sum -b / a is not positive. About half the corners and edges round a moving body end there. The two roots take one divide between them.
+
+### The numbers
+
+No bare number stands in `collide.c` or `body.c`: each is named where the file starts, with what it is for. The ones a change is likeliest to meet:
+
+| Name | Value | What it is |
+|---|---|---|
+| `SPHERE` | 1 | The body in ellipsoid space: every "1" of Fauerby's method. |
+| `VERY_CLOSE` | 0.005 | The gap a sweep leaves, in radii: a tenth of a world unit. |
+| `INSIDE_SQUARED` | 0.96 | Nearer than four gaps short of touching, squared: caught in it (`collide_overlap`). |
+| `NOTHING`, `NOTHING_SQUARED` | 1e-6, 1e-12 | A length, or a squared one, too small to be a motion, a normal or a triangle. |
+| `ALONG_PLANE` | 1e-7 | A motion's part toward a plane under this never reaches it. |
+| `COLLIDE_FLOOR`, `COLLIDE_WALL` | 0.7, 0.5 | A floor's normal rises at least 45°; a wall's less than 30° (`collide.h`). |
+| `GATHER_SLACK` | 2 | The frame's gather reaches this far past what the moves can touch. |
+| `REACHED`, `NO_MOVE`, `LIFTED` | 0.05, 1e-4, 0.01 | The feet got where they were sent; a move that is none; a slope lifted the body. |
+| `LAND_WINDOW`, `SAFE_WINDOW` | 0.5, 1 | How far round the feet a floor counts in the air, and for a place safe to come back to. |
+| `FOOT`, `FOOT_ROUND` | 0.7, 8 | The footprint: the middle and eight points 70% of the radius out. |
+| `UNSTICK_*`, `g_unstick_lift` | | The rings, directions, first radius and lifts of the unstick search. |
+| `MESH_NO_SLOT` | 0xffff | A face with no picture (`mesh.h`): not part of the place. |
 
 ## The gather
 
@@ -58,7 +79,7 @@ Faces the loader could not texture (`slot` 0xffff) are not part of the place and
 3. Across. On the ground, the upper body is swept by the move, and what is under a step is walked over. A slope the upper body meets lifts it as it slides. That lift is undone by sliding back down, so the feet do not go forward at their own height into what lifted them (a steep ramp, a ladder). If it cannot get back down, the body stays where it was. In the air, the whole body is swept, feet to head, and it rides up a slope as it slides. With the upper body alone, the legs went into walls and ledges in a jump, and the feet then found a floor behind them, or none, and fell through.
 4. Down: standing, the floor within a step up or down of the feet, and the upper body swept to it, so a low ceiling over a stair keeps the body off it. With no room for the head over a step, the feet go back where they were, their height too: the sweep had got part way up, and the body hung over the step and jittered (the hold's ramp, walked into, seemed to pull the body in and snap it back). Falling: the floor within this frame's fall, landed on with the upper body, which the floor never meets; or, with none, the whole body swept down by the fall.
 
-The gathered set is kept in the ellipsoid's space, so a change of shape (upper body or whole body) gathers it again, from the same box.
+The gathered set is kept twice: each triangle's corners in the world (`g_world`), and the same triangle in the ellipsoid's space with its plane (`g_set`), which is what the sweeps read. A change of shape (upper body or whole body) marks the second stale, and the next query makes it again from the first (`shape_set`): a scale, a cross product and a square root a triangle. It used to gather again from the same box, grid, model boxes, every triangle's range test and all, twice a frame for a body in the air. A gather makes both in the shape of the moment, so what a step reads is to the bit what it read before.
 
 The whole body is narrower than the upper body at chest height, by up to 2 units. So a body that jumped close to a wall can land with its chest that much nearer the wall than standing allows. It is not seen from the eye, and from inside a body never goes deeper (The sweep, above). An air shape wide enough to contain the upper body would start every jump inside the wall it stood beside.
 5. Fallen more than 1024 units below the place's lowest point: back on the highest floor under where it fell, or the last place it stood on firm floor, or on top of the place.
@@ -122,7 +143,9 @@ A body is not carried across: a mover that slides sideways moves out from under 
 
 On the host, a step is about a microsecond: the sets near the body hold 2 to 42 triangles in the hold, the castle and Daggerfall's streets. On the 233 that is some tens of microseconds a frame. No allocation after the grid; no float-to-int cast in the frame (`df_ifloor`), so the x87 never changes its rounding mode.
 
-Memory: the grid, on the place's heap: a start per cell, a model index per cell a model reaches, and a stamp per model: tens of KB in a city. The gathered set is static, 52 bytes a triangle, 53 KB.
+Whether a triangle is a floor is worked out once when it is shaped (`CTri.floor`), not at each of the ten points a step asks a floor of.
+
+Memory: the grid, on the place's heap: a start per cell, a model index per cell a model reaches, and a stamp per model: tens of KB in a city. The gathered set is static: 56 bytes a triangle in ellipsoid space and 36 in the world, 94 KB for the 1024.
 
 Tried on the card (a Voodoo 2 on the 233 machine): it walks the hold, the castle and the streets, stops at walls and climbs stairs. A good first version, not a finished one: the list below is what it lacks.
 
