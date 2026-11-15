@@ -290,6 +290,8 @@ void guild_count_crime(int crime, int count, df_u32 now)
     GuildsState *g;
 
     g = guilds_state();
+    /* A townsperson or a city guard killed (the kill kinds) feeds a lycanthrope, before the guilds look at it (docs/curses.md 7.4). */
+    if (crime == 6) { curse_innocent_killed(); }
     if (crime == 5) {
         if (g->thieves_invite || g->thieves_count == 100) {
             return;

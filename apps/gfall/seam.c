@@ -912,7 +912,6 @@ static int curse_clan(int region)
     return province ? province->vampire : 0;
 }
 static int curse_region(void) { return travel_region(); }
-static int curse_ring_worn(void) { return 0; }
 
 static void quest_here(int *region, int *index, int *px, int *py)
 {
@@ -2869,7 +2868,7 @@ int seam_boot(void)
 
         enchant_set_world(&enchant_world);
         {
-            static const CurseWorld curse_world = { curse_haunt, curse_clan, curse_region, curse_ring_worn };
+            static const CurseWorld curse_world = { curse_haunt, curse_clan, curse_region };
             curse_set_world(&curse_world);
         }
     }
@@ -4431,36 +4430,61 @@ const df_u8 *seam_screen(const df_u8 **palette)
     return g_buf;
 }
 
+static int g_hud_form = -1;
+
+/* The 32 x 32 portrait of the bar: the race's face, a vampire's VAMP00I0.CIF frame (the sex's eight, the race's), a beast's WERE01I0.IMG (werewolf) or WERE00I0.IMG (wereboar) (docs/curses.md 5.1, 7.3). */
 static void selected_hud_face(void)
 {
     const CifFrame *frame;
+    const df_u8 *source;
+    CifSet vampire;
+    ImgPicture beast;
     df_u8 pixels[32 * 32];
     int x;
     int y;
     int sx;
     int sy;
+    int sw;
+    int sh;
     int id;
+    int form;
+    int opened;
     CharacterState *who;
 
     who = character_state();
-    if (g_face_index == who->face && g_hud_race == who->race && g_hud_sex == who->female) { return; }
-    ensure_faces(who->race, who->female);
-    frame = g_faces_open ? cif_frame(&g_faceset, who->face) : 0;
-    if (!frame) { return; }
-    mem_zero(pixels, sizeof(pixels));
-    for (y = 0; y < 32; y++) {
-        sy = y * frame->h / 32;
-        for (x = 0; x < 32; x++) {
-            sx = x * frame->w / 32;
-            pixels[y * 32 + x] = frame->pixels[sy * frame->w + sx];
-        }
+    form = curse_form();
+    opened = 0;
+    if (g_face_index == who->face && g_hud_race == who->race && g_hud_sex == who->female && g_hud_form == form) { return; }
+    source = 0; sw = sh = 0; frame = 0;
+    if (form > 8 && img_load(form == 9 ? "WERE01I0.IMG" : "WERE00I0.IMG", &beast) && beast.width > 0 && beast.height > 0) {
+        source = beast.pixels; sw = beast.width; sh = beast.height;
+    } else if (form == 8 && cif_open("VAMP00I0.CIF", &vampire)) {
+        opened = 1;
+        frame = cif_frame(&vampire, (who->female ? 0 : 8) + who->race);
+        if (frame) { source = frame->pixels; sw = frame->w; sh = frame->h; }
+    } else {
+        ensure_faces(who->race, who->female);
+        frame = g_faces_open ? cif_frame(&g_faceset, who->face) : 0;
+        if (frame) { source = frame->pixels; sw = frame->w; sh = frame->h; }
     }
-    id = play_pic(PIC_FACE);
-    if (id) { pic_free(id); }
-    pic_set(PIC_FACE, pic_load(pixels, 32, 32, g_art_rgb, 1));
-    g_face_index = who->face;
-    g_hud_race = who->race;
-    g_hud_sex = who->female;
+    if (source) {
+        mem_zero(pixels, sizeof(pixels));
+        for (y = 0; y < 32; y++) {
+            sy = y * sh / 32;
+            for (x = 0; x < 32; x++) {
+                sx = x * sw / 32;
+                pixels[y * 32 + x] = source[sy * sw + sx];
+            }
+        }
+        id = play_pic(PIC_FACE);
+        if (id) { pic_free(id); }
+        pic_set(PIC_FACE, pic_load(pixels, 32, 32, g_art_rgb, 1));
+        g_face_index = who->face;
+        g_hud_race = who->race;
+        g_hud_sex = who->female;
+        g_hud_form = form;
+    }
+    if (opened) { cif_close(&vampire); }
 }
 
 static int screen_kind(int mode)
@@ -4812,6 +4836,13 @@ static void paint_doll(int x, int y)
     DollLayer layers[27];
     int i, n, slot, image_id, layer, cloak, px, py, color_map;
     race = career_race(character_state()->race+1);
+    /* A beast has its own picture, background and body in one, and wears nothing (docs/curses.md 7.3). */
+    if (curse_beast()) {
+        if (!img_load(curse_form() == 9 ? "WOLF00I0.IMG" : "BOAR00I0.IMG",&back) || back.width < 118 || back.height < 191) { return; }
+        for (i = 0; i < 184; i++) { mem_copy(g_doll+i*110,back.pixels+(i+7)*back.width+8,110); }
+        blit_ix(x,y,g_doll,110,184,0);
+        return;
+    }
     if (!race || !img_load(race->background,&back) || back.width < 118 || back.height < 191) { return; }
     for (i = 0; i < 184; i++) { mem_copy(g_doll_back+i*110,back.pixels+(i+7)*back.width+8,110); }
     mem_copy(g_doll,g_doll_back,sizeof(g_doll));

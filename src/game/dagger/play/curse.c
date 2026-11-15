@@ -8,6 +8,8 @@
 #include "game/dagger/play/law.h"
 #include "game/dagger/play/msg.h"
 #include "game/dagger/play/quest.h"
+#include "game/dagger/play/itemmaker.h"
+#include "engine/scene/entity.h"
 #include "game/dagger/play/play.h"
 #include "engine/core/mem.h"
 #include "engine/core/log.h"
@@ -60,6 +62,7 @@ int curse_race(void) { return curse_state()->form ? curse_state()->form : charac
 int curse_is_vampire(void) { return curse_state()->disease == CURSE_VAMPIRISM; }
 int curse_is_lycanthrope(void) { return curse_state()->disease == CURSE_WEREWOLF || curse_state()->disease == CURSE_WEREBOAR; }
 int curse_beast(void) { return curse_state()->form > 8; }
+int curse_min_metal(void) { return curse_state()->form ? 2 : 0; }
 int curse_infected(void) { return curse_state()->infection_time != 0; }
 int curse_suspended(int slot) { return slot >= 0 && slot < MEMBERSHIPS && (curse_state()->suspended & (1 << slot)) != 0; }
 
@@ -294,6 +297,23 @@ void curse_cure_lycanthropy(void)
     c->form = 0; c->disease = 0; c->health_base = 0;
 }
 
+/* Hircine's ring is artifact 3: an equipped item whose first enchantment is type 26 with that parameter (item_artifact_equipped). Worn, it ends the hunger and the moons and the wait between changes. */
+#define ENCHANT_ARTIFACT 26
+#define HIRCINE_RING 3
+
+static int ring_worn(void)
+{
+    int slot, type, param;
+
+    for (slot = 0; slot < 27; slot++) {
+        df_u32 id;
+
+        id = game_state()->equipped[slot];
+        if (id && item_enchantment(id, 0, &type, &param) && type == ENCHANT_ARTIFACT && param == HIRCINE_RING) { return 1; }
+    }
+    return 0;
+}
+
 /* ---- A lycanthrope's changes (7) ---- */
 
 int curse_shapechange(int forced)
@@ -304,7 +324,7 @@ int curse_shapechange(int forced)
 
     c = curse_state(); who = character_state();
     if (!curse_is_lycanthrope()) { return 0; }
-    if (!forced && c->form == 0 && !(g_world && g_world->ring_worn && g_world->ring_worn()) &&
+    if (!forced && c->form == 0 && !ring_worn() &&
         game_state()->minutes - c->shape_time < SHAPECHANGE_WAIT) {
         msg_set("Can only be cast once per day...");
         return 0;
@@ -344,6 +364,28 @@ int curse_hungry(void)
     return curse_is_vampire() && game_state()->minutes - game_state()->last_kill > HUNGER_MINUTES;
 }
 
+/* ---- A beast in the world (7.3) ---- */
+
+/* The ambient growl: 50 in 32768 each ambient call, which the original makes about 18 times a second. */
+#define GROWL_TICK 0.055f
+#define GROWL_SOUND 10090
+#define GROWL_CHANCE 50
+
+void curse_frame(float dt)
+{
+    static int was_beast = 0;
+    static float growl;
+    int beast;
+
+    beast = curse_beast();
+    /* No townspeople come to a town while the player is a beast (people_max_count), and those about go. */
+    if (beast != was_beast) { entity_set_population(!beast); was_beast = beast; }
+    if (!beast) { growl = 0; return; }
+    for (growl += dt; growl >= GROWL_TICK; growl -= GROWL_TICK) {
+        if (random_range(0, 32767) < GROWL_CHANCE) { play_sound(GROWL_SOUND); }
+    }
+}
+
 /* ---- Sounds (5.1, 7.3) ---- */
 
 void curse_attack_sound(void)
@@ -367,7 +409,7 @@ static void lycanthrope_tick(void)
     int new_max, day;
 
     c = curse_state(); who = character_state();
-    if (!curse_is_lycanthrope() || (g_world && g_world->ring_worn && g_world->ring_worn())) { return; }
+    if (!curse_is_lycanthrope() || ring_worn()) { return; }
     since = game_state()->minutes - c->kill_time;
     if (since > KILL_PERIOD) {
         over = since - KILL_PERIOD;

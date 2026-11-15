@@ -1,4 +1,5 @@
 #include "game/dagger/play/state.h"
+#include "game/dagger/play/curse.h"
 #include "game/dagger/play/possessions.h"
 #include "game/dagger/play/inventory.h"
 #include "game/dagger/play/play.h"
@@ -425,6 +426,7 @@ int play_frame(const PlayIn *in, Camera *cam, const Scene *scene)
     }
     /* Real seconds, so the feed fades behind a page and under the pause too. */
     msg_tick(in->dt);
+    curse_frame(in->dt);
     god_protect();
     g_pointer_x = in->cx;
     g_pointer_y = in->cy;

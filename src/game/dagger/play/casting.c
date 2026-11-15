@@ -223,6 +223,8 @@ int magic_cast_item(int spell)
 
     s = spell_def(spell);
     if (!s || character_state()->health <= 0) { return 0; }
+    /* cast_item_spell_at calls the change itself, as the book's cast does. */
+    if (s->id == SHAPECHANGE_SPELL) { curse_shapechange(0); return 1; }
     if (s->target == 0) {
         play_sound(cast_sound(s->element)); animate(s->element);
         magic_apply(s->id,-1,-1,character_state()->level,0);

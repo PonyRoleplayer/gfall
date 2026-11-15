@@ -60,8 +60,6 @@ typedef struct CurseWorld {
     int (*clan)(int region);
     /* The region the player is in. */
     int (*region)(void);
-    /* Hircine's ring (artifact 3) is worn: no hunger, no moon, no wait between changes. */
-    int (*ring_worn)(void);
 } CurseWorld;
 void curse_set_world(const CurseWorld *world);
 const CurseWorld *curse_world(void);
@@ -78,6 +76,8 @@ int curse_is_vampire(void);
 int curse_is_lycanthrope(void);
 /* In beast form (2.3 beast: race 9 or 10). */
 int curse_beast(void);
+/* min_metal_to_hit: 2 (silver) for a vampire or a beast, else 0. */
+int curse_min_metal(void);
 
 /* damage_infect_*: a damaging blow of a werewolf (kind 9), wereboar (14) or vampire (28, 30), 1.22% (2.1). */
 /* 1 when a blow of that creature kind (9, 14, 28, 30) rolled the infection chance (the infection itself is refused for level 1 and the cursed). */
@@ -102,6 +102,8 @@ void curse_innocent_killed(void);
 /* A level gained: a lycanthrope's true maximum health rises with it. */
 void curse_level_up(int health);
 
+/* Once a frame: the beast empties the towns and growls. */
+void curse_frame(float dt);
 /* qkey.c 286..291: one swing in five a vampire or a beast makes a sound of its own. */
 void curse_attack_sound(void);
 

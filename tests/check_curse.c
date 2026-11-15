@@ -148,6 +148,40 @@ static void moons(void)
     check_expect(curse_form() == 0 && who->reputation[0] == 0, "curse: a cure in beast form kept the beast's reputation");
 }
 
+static void ring(void)
+{
+    CharacterState *who;
+    ItemEnchant *row;
+    df_u32 item;
+    int k;
+
+    start();
+    who = character_state();
+    curse_infect_lycanthropy(0);
+    state_pass_minutes(4400);
+    item = item_create(game_state()->inventory_id, 3, 0, 0);
+    row = item_enchant_edit(0);
+    check_expect(item && row, "curse: no item or enchantment row for Hircine's ring");
+    if (!item || !row) { return; }
+    memset(row, 0, sizeof(*row)); row->item = item;
+    for (k = 0; k < 10; k++) { row->type[k] = -1; }
+    row->type[0] = 26; row->param[0] = 3;
+    state_equip(19, item);
+    /* Worn: the moons do nothing, the hunger does nothing, and changes come as often as asked. */
+    state_pass_minutes(70u * 1440u);
+    check_expect(curse_form() == 0 && who->max_health == 100, "curse: Hircine's ring did not stop the moons and the hunger");
+    check_expect(curse_shapechange(0) && curse_beast(), "curse: the first change was refused");
+    state_equip(19, item);
+    check_expect(curse_shapechange(0) && !curse_beast(), "curse: changing back was refused");
+    check_expect(curse_shapechange(0) && curse_beast(), "curse: Hircine's ring did not lift the wait between changes");
+    state_equip(19, item);
+    curse_shapechange(0);
+    state_equip(19, 0);
+    curse_cure_lycanthropy();
+    memset(row, 0, sizeof(*row));
+    object_delete(item);
+}
+
 static void vampirism(void)
 {
     CharacterState *who;
@@ -207,7 +241,7 @@ void check_curse(void)
     /* The game's own hooks would take a vampire to a crypt and name its clan; these tests want neither. */
     booted = curse_world(); curse_set_world(0);
     g_before = *game_state();
-    infection(); lycanthropy(); moons(); vampirism(); saving();
+    infection(); lycanthropy(); moons(); ring(); vampirism(); saving();
     state_restore(&g_before); state_restore_world();
     curse_set_world(booted);
 }

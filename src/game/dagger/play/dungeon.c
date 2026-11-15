@@ -360,7 +360,7 @@ static void hit_foe(const Scene *scene, int i, int damage, float yaw)
         if ((e->key.thing & 0xe0000000u) == QUEST_FOE_KEY) { quest_foe_killed((int)((e->key.thing >> 4) & 0xffffffu)); }
         if (g_street_died) { g_street_died(f->kind,e); }
         /* damage_creature_death: a watchman killed is counted by the Brotherhood (guild_count_crime(6, 1)). */
-        if (f->kind == 146) { guild_count_crime(6, 1, game_state()->minutes); curse_innocent_killed(); }
+        if (f->kind == 146) { guild_count_crime(6, 1, game_state()->minutes); }
     } else {
         weight = foe_weight(f->kind);
         if (weight && !f->knock) {
@@ -630,6 +630,8 @@ static void monster_strike(const Scene *scene, const Camera *cam, FoeState *f)
             index >= 0 ? material_hit(material) : 0,part,0,random_range(1,100));
         skill_use(20);
         if (random_range(0,100) > chance) { continue; }
+        /* min_metal_to_hit (qkey.c 367): a weapon below silver does not hurt a vampire or a beast. */
+        if (index >= 0 && material < curse_min_metal()) { continue; }
         damage = index >= 0 ? random_range(weapon_damage(index,0),weapon_damage(index,1)) :
             f->def ? random_range(f->def->minimum[i],f->def->maximum[i]) :
             random_range(f->fighter.skill[30]/10+1,f->fighter.skill[30]/5+1);
