@@ -130,24 +130,56 @@ static void square_pot(Image *img)
     img->pot_h = side;
 }
 
+/*
+ * The picture stretched to its power-of-two sides, nearest texel, then
+ * squared. Which source column each column takes is worked out once a
+ * picture, and which row once a row: it was two divides a texel, 46
+ * cycles each on the Pentium, 130,000 of them for one 256 x 256 wall, on
+ * every picture a streamed chunk brings in. A picture already a power of
+ * two wide, as most walls are, is copied a row at a time.
+ */
+/*
+ * 0 while texture_sheet loads a record's later frames: it takes each
+ * frame's own pixels (index) and never its square, so none is made. The
+ * square was a stretch and an allocation a frame, thrown away, on the
+ * heap of a place that frees nothing until it closes.
+ */
+static int g_want_pot = 1;
+
 static void scale_pot(Image *img)
 {
+    short col[256];
     int y;
     int x;
 
+    if (!g_want_pot) {
+        /* Not null: the loaders take null for out of memory. Never read as a square. */
+        img->pot = img->index;
+        return;
+    }
+    if (img->pot_w > 256) {
+        img->pot = 0;
+        return;
+    }
     img->pot = (df_u8 *)mem_alloc((df_u32)img->pot_w * (df_u32)img->pot_h);
     if (!img->pot) {
         return;
     }
+    for (x = 0; x < img->pot_w; x++) {
+        col[x] = (short)(x * img->width / img->pot_w);
+    }
     for (y = 0; y < img->pot_h; y++) {
-        int sy;
+        const df_u8 *src;
+        df_u8 *dst;
 
-        sy = y * img->height / img->pot_h;
+        src = img->index + (y * img->height / img->pot_h) * img->width;
+        dst = img->pot + y * img->pot_w;
+        if (img->width == img->pot_w) {
+            mem_copy(dst, src, (df_u32)img->pot_w);
+            continue;
+        }
         for (x = 0; x < img->pot_w; x++) {
-            int sx;
-
-            sx = x * img->width / img->pot_w;
-            img->pot[y * img->pot_w + x] = img->index[sy * img->width + sx];
+            dst[x] = src[col[x]];
         }
     }
     square_pot(img);
@@ -756,10 +788,18 @@ void texture_pad(Image *img)
     if (img->width > side || img->height > side) {
         return;
     }
+    /* A row of the picture, then clear to the square's edge; clear rows under it. */
     for (y = 0; y < side; y++) {
-        for (x = 0; x < side; x++) {
-            img->pot[y * side + x] = (x < img->width && y < img->height)
-                ? img->index[y * img->width + x] : 0;
+        df_u8 *row;
+
+        row = img->pot + y * side;
+        x = 0;
+        if (y < img->height) {
+            mem_copy(row, img->index + y * img->width, (df_u32)img->width);
+            x = img->width;
+        }
+        if (x < side) {
+            mem_zero(row + x, (df_u32)(side - x));
         }
     }
     img->span_w = img->width;
@@ -1011,7 +1051,14 @@ int texture_sheet(Image *img, int file, int image)
     fw = 0;
     fh = 0;
     for (k = 0; k < frames; k++) {
-        frame[k] = k == 0 ? img : texture_load_frame(file, image, k);
+        if (k == 0) {
+            frame[k] = img;
+        } else {
+            /* Its pixels alone (g_want_pot). */
+            g_want_pot = 0;
+            frame[k] = texture_load_frame(file, image, k);
+            g_want_pot = 1;
+        }
         if (!frame[k]) {
             return 0;
         }
@@ -1062,10 +1109,18 @@ int texture_sheet(Image *img, int file, int image)
         y0 = (k / cols) * (fh + TEXTURE_SHEET_GAP);
         /* Every shrink-th texel of every shrink-th row: palette indices cannot be averaged. */
         for (y = 0; y * shrink < frame[k]->height; y++) {
+            const df_u8 *from;
+            df_u8 *to;
             int x;
 
+            from = frame[k]->index + y * shrink * frame[k]->width;
+            to = pot + (y0 + y) * side + x0;
+            if (shrink == 1) {
+                mem_copy(to, from, (df_u32)frame[k]->width);
+                continue;
+            }
             for (x = 0; x * shrink < frame[k]->width; x++) {
-                pot[(y0 + y) * side + x0 + x] = frame[k]->index[y * shrink * frame[k]->width + x * shrink];
+                to[x] = from[x * shrink];
             }
         }
     }

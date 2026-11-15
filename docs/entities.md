@@ -61,6 +61,10 @@ Facing the camera, record 0; a quarter turn to the camera's left, record 2; a qu
 
 `entity_flat` turns an entity and a camera into a `Flat`: the view's picture slot, that view's size, mirrored or not (`Flat.flip`, which `draw_flat` honours by swapping the texels' left and right), standing on its feet (a flat's point is its middle), and its frames, a sheet of them (`texture_sheet`, `docs/sprites.md`) run at the pose's rate from the entity's own phase. A townsperson walks at 4 frames a second and stands at 1, as DFU runs them; a creature walks at 6, flies at 10, stands at 4 (EnemyBasics). `draw_entities` in `draw.c` draws them after the scene's sprites, each one within the visible far and in the frustum, in daylight's sprite colour outdoors. Where its pictures are on the card by distance (a streamed world, or a place loaded whole: `texcache_resident`) it notes each one's: the view shown at the entity's distance, the others four times farther.
 
+### Before an entity is drawn
+
+`draw_entity_list` drops an entity on its position alone when it is past the far clip or more than `ENTITY_REACH` (1024 units, more than any picture reaches from its feet) behind the camera, before `entity_flat` works out which of its views the camera has. That is an arctangent, 150 cycles on the Pentium, and it was paid for every live entity of the place every frame: all of a dungeon's creatures, and the half of a street's people behind the walker. The exact tests (the far clip by its size, `scene_box_visible`) follow as before for those left.
+
 ## Townspeople (game)
 
 `game/dagger/places/people.c`, in a streamed world (LEVELFALL's Stream World). A place loaded whole has none yet: its pictures go up to the card all at once at load (`texcache_upload`), and the people's 54 sheets would shrink every other picture of the town.

@@ -774,7 +774,6 @@ static int light_reaches(const Light *li, float x, float y, float z)
     float o[3];
     float d[3];
     float len;
-    float t;
     int i;
 
     o[0] = li->x;
@@ -804,7 +803,7 @@ static int light_reaches(const Light *li, float x, float y, float z)
         } else if (!instance_world_box(in, &b)) {
             continue;
         }
-        if (seg_box(o, d, len, &b) && instance_ray(in, o, d, len, &t)) {
+        if (seg_box(o, d, len, &b) && instance_ray_any(in, o, d, len)) {
             return 0;
         }
     }

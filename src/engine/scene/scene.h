@@ -353,6 +353,12 @@ int instance_faces(const Instance *in, const Camera *cam, const Basis *basis,
  */
 int instance_ray(const Instance *in, const float *o, const float *d, float len, float *t);
 /*
+ * 1 when the ray meets the model at all within len: instance_ray's yes or
+ * no, stopping at the first triangle hit, not looking on for the nearest.
+ * A light's shadow rays ask only this (light.c), thousands a light.
+ */
+int instance_ray_any(const Instance *in, const float *o, const float *d, float len);
+/*
  * 1 when a model's drawn triangle lies on the line from one point to
  * another, stopping stop_short before the end (a sound sits against its own
  * wall). Sprites do not count, and a mover counts where it stands now. It

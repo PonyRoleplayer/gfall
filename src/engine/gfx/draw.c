@@ -1106,6 +1106,9 @@ int draw_sprite_point(void)
     return g_sprite_point;
 }
 
+/* Farther than any entity's picture reaches from where it stands: the early reject's margin. */
+#define ENTITY_REACH 1024.0f
+
 /* The live entities of list[0..n-1] the view sees, drawn. */
 static void draw_entity_list(const Camera *cam, const Basis *basis, const Level *level, int noted,
                              const Entity *list, int n, df_u32 tint)
@@ -1120,7 +1123,23 @@ static void draw_entity_list(const Camera *cam, const Basis *basis, const Level 
         float dx, dz, d2, r;
 
         e = &list[i];
-        if (!e->live || (e->flags & ENT_HIDDEN) || !entity_flat(e, cam->x, cam->z, &fl)) {
+        if (!e->live || (e->flags & ENT_HIDDEN)) {
+            continue;
+        }
+        /*
+         * Past the far clip or behind the camera by more than any entity's
+         * size: gone on its position alone, before entity_flat works out
+         * which of its views the camera has (an arctangent, 150 cycles on
+         * the Pentium) and fills a Flat. Most of a dungeon's creatures and
+         * half a street's people end here. The exact tests follow.
+         */
+        dx = e->x - cam->x;
+        dz = e->z - cam->z;
+        if (dx * dx + dz * dz > (g_limit + ENTITY_REACH) * (g_limit + ENTITY_REACH)
+            || (e->y - cam->y) * basis->sp + (dx * basis->fx + dz * basis->fz) * basis->cp < -ENTITY_REACH) {
+            continue;
+        }
+        if (!entity_flat(e, cam->x, cam->z, &fl)) {
             continue;
         }
         dx = fl.x - cam->x;

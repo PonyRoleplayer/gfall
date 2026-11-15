@@ -302,6 +302,25 @@ int instance_ray(const Instance *in, const float *o, const float *d, float len, 
     return hit;
 }
 
+int instance_ray_any(const Instance *in, const float *o, const float *d, float len)
+{
+    float lo[3];
+    float ld[3];
+    float at;
+    int k;
+
+    if (!in || !in->mesh || !in->mesh->tris) {
+        return 0;
+    }
+    ray_into_model(in, o, d, lo, ld);
+    for (k = 0; k < in->mesh->ntris; k++) {
+        if (ray_tri(lo, ld, &in->mesh->tris[k], len, &at)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int instance_faces(const Instance *in, const Camera *cam, const Basis *basis,
                    float nx, float ny, float nz,
                    float lx, float ly, float lz)

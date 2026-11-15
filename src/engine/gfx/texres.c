@@ -393,15 +393,21 @@ static int free_region(int o, float sprite_dist)
     static df_u8 drawn[REGIONS];
     static df_u8 bad[REGIONS];
     df_u32 size;
+    /* size and per are powers of two: every divide by them below is a shift. */
+    int size_shift;
+    int per_shift;
     int per;
     int best;
     int freed;
     int n;
     int i;
 
-    size = TEXRES_MIN << o;
-    per = (int)((2u * 1024u * 1024u) / size);
-    per = per > REGIONS / ARENA_MAX ? REGIONS / ARENA_MAX : per;
+    size_shift = o + MIN_ORDER;
+    size = 1u << size_shift;
+    /* Regions an arena: 2 MB over the size, 128 at most (REGIONS / ARENA_MAX). */
+    per_shift = MAX_ORDER - size_shift;
+    per_shift = per_shift > 7 ? 7 : per_shift;
+    per = 1 << per_shift;
     n = g_narena * per;
     for (i = 0; i < n; i++) {
         cost[i] = 0;
@@ -420,13 +426,13 @@ static int free_region(int o, float sprite_dist)
 
             a = &g_arena[k];
             if (r->tiny_addr >= a->base && r->tiny_addr < a->base + a->size) {
-                g = k * per + (int)((r->tiny_addr - a->base) / size);
+                g = k * per + (int)((r->tiny_addr - a->base) >> size_shift);
                 if (g < n) {
                     bad[g] = 1;
                 }
             }
             if (r->big_drop >= 0 && r->big_addr >= a->base && r->big_addr < a->base + a->size) {
-                g = k * per + (int)((r->big_addr - a->base) / size);
+                g = k * per + (int)((r->big_addr - a->base) >> size_shift);
                 if (g >= n) {
                     continue;
                 }
@@ -446,8 +452,8 @@ static int free_region(int o, float sprite_dist)
         int k;
         df_u32 at;
 
-        k = i / per;
-        at = (df_u32)(i % per) * size;
+        k = i >> per_shift;
+        at = (df_u32)(i & (per - 1)) << size_shift;
         if (bad[i] || cost[i] == 0 || at + size > g_arena[k].size || g_steals + drawn[i] > STEALS_A_FRAME) {
             continue;
         }
@@ -465,7 +471,7 @@ static int free_region(int o, float sprite_dist)
         df_u32 lo;
 
         r = &g_res[g_live[i]];
-        lo = g_arena[best / per].base + (df_u32)(best % per) * size;
+        lo = g_arena[best >> per_shift].base + ((df_u32)(best & (per - 1)) << size_shift);
         if (r->big_drop >= 0 && r->big_addr >= lo && r->big_addr < lo + size) {
             if (r->last_frame >= g_frame) {
                 g_steals++;

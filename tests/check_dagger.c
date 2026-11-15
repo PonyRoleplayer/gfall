@@ -2563,6 +2563,35 @@ static void check_stream(void)
         stream_local(rx, rz, &cam.x, &cam.z);
         settle(&cam);
     }
+    /*
+     * A run on a slant the filling cannot quite keep up with (180 units
+     * a frame, a step of filling a frame; docs/streaming.md, The budget).
+     * The loading is aimed a chunk ahead of the camera's motion, so the
+     * chunk about to be stepped onto is the one being filled: taken in
+     * the rings' loop order, from one corner, the same run loaded the
+     * camera's chunk at once, whole, 20 times; aimed, once.
+     */
+    {
+        double rx;
+        double rz;
+        int outran;
+
+        stream_world(cam.x, cam.z, &rx, &rz);
+        outran = stream_outran();
+        under = 1;
+        for (step = 0; step < 500; step++) {
+            cam.x += 150.0f;
+            cam.z += 100.0f;
+            wild_update(&cam, 0.0f);
+            under = under && ground_under(&level.scene, cam.x, cam.z);
+        }
+        printf("stream: a run of 500 frames on a slant, the camera's chunk loaded at once %d times, ground under all the way %d\n",
+               stream_outran() - outran, under);
+        check_expect(under, "a run on a slant fell off the stream's edge");
+        check_expect(stream_outran() - outran <= 5, "the stream does not load ahead of the camera's motion");
+        stream_local(rx, rz, &cam.x, &cam.z);
+        settle(&cam);
+    }
     wild_close();
     check_wres(level.palette);
     mem_temp_end();

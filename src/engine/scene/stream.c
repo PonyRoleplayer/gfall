@@ -63,6 +63,18 @@ static Entity *g_entities;
 static Water *g_water;
 static Span *g_spans;
 static int g_filling = -1;
+/*
+ * Where the camera was at the last update, in the scene's units, and the
+ * origin then: its motion aims the loading ahead of it (next_missing).
+ */
+static float g_was_x;
+static float g_was_z;
+static int g_was_ox;
+static int g_was_oz;
+static int g_was_known;
+/* The point the loading is aimed at, kept while the camera stands still. */
+static float g_aim_x;
+static float g_aim_z;
 /* The longest single fill call since stream_worst last asked, and the step it was. */
 static df_u32 g_worst;
 static int g_worst_step;
@@ -214,6 +226,7 @@ static int open_stream(Scene *scene, const StreamSource *src, int radius, int ra
 
     stream_close();
     g_outran = 0;
+    g_was_known = 0;
     if (!scene || !src || !src->fill || src->caps.models < 1 || chunk < 1) {
         return 0;
     }
@@ -873,8 +886,20 @@ static void finish(int s)
     }
 }
 
-/* The nearest chunk within the radius that is not loaded, ring by ring. 0 when none is missing. */
-static int next_missing(int ccx, int ccz, int *cx, int *cz)
+/*
+ * The next chunk to load: of the nearest ring with a chunk missing, the
+ * one nearest the point (px, pz), in the scene's units. 0 when none is
+ * missing within the radius.
+ *
+ * The rings keep their order, nearest first, so the camera's surroundings
+ * always fill before anything farther. Within a ring the chunks used to
+ * be taken as the loops met them, from one corner: the chunk behind and
+ * to the side of a walker could load before the one it was walking into,
+ * which then had to be loaded at once, whole, when it stepped onto it
+ * (fill_under). stream_update aims the point a chunk ahead of the way the
+ * camera is moving, or at the camera when it stands.
+ */
+static int next_missing(int ccx, int ccz, float px, float pz, int *cx, int *cz)
 {
     df_u8 here[ROUND_SIDE * ROUND_SIDE];
     int side;
@@ -885,20 +910,36 @@ static int next_missing(int ccx, int ccz, int *cx, int *cz)
     side = 2 * r + 1;
     map_round(ccx, ccz, r, 0, here);
     for (d = 0; d <= r; d++) {
+        float best;
+        int found;
         int x;
         int z;
 
+        found = 0;
+        best = 0.0f;
         for (z = -d; z <= d; z++) {
             for (x = -d; x <= d; x++) {
-                if (iabs(x) != d && iabs(z) != d) {
+                float dx;
+                float dz;
+                float d2;
+
+                if ((iabs(x) != d && iabs(z) != d) || here[(z + r) * side + (x + r)]) {
                     continue;
                 }
-                if (!here[(z + r) * side + (x + r)]) {
+                /* The chunk's middle, from the point. */
+                dx = ((float)(ccx + x - g_ox) + 0.5f) * (float)g_chunk - px;
+                dz = ((float)(ccz + z - g_oz) + 0.5f) * (float)g_chunk - pz;
+                d2 = dx * dx + dz * dz;
+                if (!found || d2 < best) {
+                    found = 1;
+                    best = d2;
                     *cx = ccx + x;
                     *cz = ccz + z;
-                    return 1;
                 }
             }
+        }
+        if (found) {
+            return 1;
         }
     }
     return 0;
@@ -1101,6 +1142,34 @@ void stream_update(Camera *cam, float budget_ms)
             fill_under(ux, uz);
         }
     }
+    /*
+     * Aim a chunk ahead of the camera's motion since the last update (the
+     * same origin both times: a rebase moves every coordinate). Standing
+     * still, the camera itself: the chunk whose middle it is nearest.
+     */
+    g_aim_x = cam->x;
+    g_aim_z = cam->z;
+    if (g_was_known && g_was_ox == g_ox && g_was_oz == g_oz) {
+        float mx;
+        float mz;
+        float len2;
+
+        mx = cam->x - g_was_x;
+        mz = cam->z - g_was_z;
+        len2 = mx * mx + mz * mz;
+        if (len2 > 1.0f) {
+            float k;
+
+            k = (float)g_chunk / df_sqrt(len2);
+            g_aim_x += mx * k;
+            g_aim_z += mz * k;
+        }
+    }
+    g_was_x = cam->x;
+    g_was_z = cam->z;
+    g_was_ox = g_ox;
+    g_was_oz = g_oz;
+    g_was_known = 1;
     start = prof_now();
     budget = budget_ms > 0.0f ? (df_u32)df_iround(budget_ms * (float)prof_per_ms()) : 0u;
     for (;;) {
@@ -1108,7 +1177,7 @@ void stream_update(Camera *cam, float budget_ms)
             int cx;
             int cz;
 
-            if (!next_missing(ccx, ccz, &cx, &cz)) {
+            if (!next_missing(ccx, ccz, g_aim_x, g_aim_z, &cx, &cz)) {
                 break;
             }
             s = free_slot();

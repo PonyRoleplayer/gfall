@@ -1,4 +1,5 @@
 #include "engine/gfx/mip.h"
+#include "engine/core/mem.h"
 #include "engine/core/cpu.h"
 
 #if defined(__i386__) || defined(__x86_64__)
@@ -67,6 +68,12 @@ static df_u8 g_near[256];
  * the palette the table was built for; a new one empties it.
  */
 static df_u16 g_inv[32768];
+/*
+ * The palette as the texels top_level writes, r, g, b, a in memory:
+ * alpha 255 for the glass index, 0 for the rest. A wall's top level is
+ * then a load and a store a texel, where it was four of each.
+ */
+static df_u32 g_pal32[256];
 static df_u8 g_inv_pal[768];
 static int g_inv_ready;
 /*
@@ -134,6 +141,8 @@ void mip_palette(const df_u8 *pr, const df_u8 *pg, const df_u8 *pb)
         g_box_pal[i][1] = pg[i];
         g_box_pal[i][2] = pb[i];
         g_box_pal[i][3] = 0;
+        g_pal32[i] = (df_u32)pr[i] | ((df_u32)pg[i] << 8) | ((df_u32)pb[i] << 16)
+            | (i == MIP_GLASS ? 0xff000000u : 0u);
     }
     for (i = 0; i < 32768; i++) {
         g_inv[i] = 0xffff;
@@ -461,6 +470,15 @@ static int row_span(const df_u8 *index, int side, int y, int *from, int *to)
     return 1;
 }
 
+/*
+ * The mean of up to 8 neighbours' channel: sum / n as sum * (65536 / n
+ * rounded up) >> 16, the same whole number for a sum this small (2040 at
+ * most; 0 for n 0), a multiply where a divide is 46 cycles on the Pentium
+ * and there were three a bled texel, every texel round a sprite's outline.
+ */
+static const df_u32 g_over[9] = { 0u, 65536u, 32768u, 21846u, 16384u, 13108u, 10923u, 9363u, 8192u };
+#define MEAN(sum, n) (((df_u32)(sum) * g_over[n]) >> 16)
+
 /* The mean colour of the opaque texels round clear texel (x, y), wrapping; n 0 for none. */
 static void bleed(const df_u8 *index, int side, int x, int y,
                   const df_u8 *pr, const df_u8 *pg, const df_u8 *pb, int *r, int *g, int *b, int *n)
@@ -515,21 +533,20 @@ static void top_level(const df_u8 *index, int side, int cutout,
         row = index + y * side;
         o = g_px + y * side * 4;
         if (!cutout) {
-            /* An 8-bit picture's alpha is how much of the texel is glass, so halving keeps it. */
-            for (x = 0; x < side; x++, o += 4) {
-                df_u8 c;
+            df_u32 *o32;
 
-                c = row[x];
-                o[0] = pr[c];
-                o[1] = pg[c];
-                o[2] = pb[c];
-                o[3] = (df_u8)(c == MIP_GLASS ? 255 : 0);
+            /*
+             * An 8-bit picture's alpha is how much of the texel is glass, so
+             * halving keeps it. g_pal32 is this palette's: mip_build asked
+             * mip_palette for it just before.
+             */
+            o32 = g_rgba + y * side;
+            for (x = 0; x < side; x++) {
+                o32[x] = g_pal32[row[x]];
             }
             continue;
         }
-        for (x = 0; x < side; x++) {
-            g_rgba[y * side + x] = 0;
-        }
+        mem_zero(g_rgba + y * side, (df_u32)side * 4u);
         if (!row_span(index, side, y, &from, &to)) {
             continue;
         }
@@ -555,9 +572,9 @@ static void top_level(const df_u8 *index, int side, int cutout,
                 continue;
             }
             bleed(index, side, xm, y, pr, pg, pb, &r, &g, &b, &n);
-            o[0] = (df_u8)(n ? r / n : 0);
-            o[1] = (df_u8)(n ? g / n : 0);
-            o[2] = (df_u8)(n ? b / n : 0);
+            o[0] = (df_u8)MEAN(r, n);
+            o[1] = (df_u8)MEAN(g, n);
+            o[2] = (df_u8)MEAN(b, n);
         }
     }
 }
@@ -737,9 +754,7 @@ static df_u32 cutout_top(const df_u8 *index, int side,
 
         row = index + y * side;
         o = out + y * side * 2;
-        for (x = 0; x < side * 2; x++) {
-            o[x] = 0;
-        }
+        mem_zero(o, (df_u32)side * 2u);
         if (!row_span(index, side, y, &from, &to)) {
             continue;
         }
@@ -760,8 +775,8 @@ static df_u32 cutout_top(const df_u8 *index, int side,
                 continue;
             } else {
                 bleed(index, side, xm, y, pr, pg, pb, &r, &g, &b, &n);
-                pix = n ? (df_u16)(((df_u16)((r / n) >> 3) << 10) | ((df_u16)((g / n) >> 3) << 5)
-                                   | (df_u16)((b / n) >> 3))
+                pix = n ? (df_u16)(((df_u16)(MEAN(r, n) >> 3) << 10) | ((df_u16)(MEAN(g, n) >> 3) << 5)
+                                   | (df_u16)(MEAN(b, n) >> 3))
                         : 0;
             }
             o[xm * 2] = (df_u8)(pix & 0xff);
@@ -904,9 +919,16 @@ static df_u32 emit(int side, int cutout, df_u8 *out)
     }
     for (i = 0; i < n; i++) {
         const df_u8 *p;
+        df_u16 hit;
 
         p = g_px + i * 4;
-        out[i] = p[3] >= 128 ? (df_u8)MIP_GLASS : mip_nearest(p[0], p[1], p[2]);
+        if (p[3] >= 128) {
+            out[i] = (df_u8)MIP_GLASS;
+            continue;
+        }
+        /* mip_nearest's answer when its cell is already known, without the call. */
+        hit = g_inv[((p[0] >> 3) << 10) | ((p[1] >> 3) << 5) | (p[2] >> 3)];
+        out[i] = hit != 0xffff ? (df_u8)hit : mip_nearest(p[0], p[1], p[2]);
     }
     return n;
 }
@@ -930,12 +952,9 @@ df_u32 mip_build(const df_u8 *index, int side, int cutout, int drop, int chain,
     if (!cutout && drop == 0) {
         /* The full level is the picture: no colour is remapped. */
         df_u32 n;
-        df_u32 i;
 
         n = (df_u32)side * (df_u32)side;
-        for (i = 0; i < n; i++) {
-            out[i] = index[i];
-        }
+        mem_copy(out, index, n);
         at = n;
         if (!chain || side == 1) {
             return at;

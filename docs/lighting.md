@@ -90,7 +90,7 @@ A decal is cut only where the light can see it: the line from the light to the d
 
 `light_build` counts the decals, allocates them, then cuts them. The count skips the rays (`seen` runs only when filling), so it is an upper bound (the castle counts 7710 for its 5238) and the rays, three quarters of the cut, are cast once: before, the count cast them too, and the castle's lights were 0.9 s of its load on the 233 (the host's time ×40), 0.57 s now, the same decals.
 
-The test runs once, at load, against the models the light reaches (the ones whose box is within its reach, `g_near`), with their triangles from both sides (`instance_ray`, the use key's test). A model that moves does not shade: it is not in that list. A face partly behind something keeps its whole decal when any one of the five lines is clear. Sprites and moving models still take their colour from every light in reach, through walls (`light_point`).
+A shadow ray only asks whether anything is in the way, so it stops at the first triangle it meets (`instance_ray_any`), where `instance_ray` looks on for the nearest: a fifth fewer triangle tests over hostcheck's cuts, the same decals. The test runs once, at load, against the models the light reaches (the ones whose box is within its reach, `g_near`), with their triangles from both sides (`instance_ray`, the use key's test). A model that moves does not shade: it is not in that list. A face partly behind something keeps its whole decal when any one of the five lines is clear. Sprites and moving models still take their colour from every light in reach, through walls (`light_point`).
 
 
 ## Cost
