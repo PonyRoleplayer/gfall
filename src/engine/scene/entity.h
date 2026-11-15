@@ -22,9 +22,9 @@
  * It has poses, each five views (pose[ENTITY_*]): walking and standing
  * (idle), which moving picks, and the ones a game shows for a while
  * instead (act): an attack, being hurt, a spell, a shot, lying dead. A
- * pose of one picture (slot[1] 0xffff) is drawn facing the viewer
+ * pose of one picture (slot[1] SLOT_NONE) is drawn facing the viewer
  * whichever way the entity faces: a townsperson's idle picture, a body.
- * An entity with no idle pose (idle's slot[0] 0xffff) stands in its
+ * An entity with no idle pose (idle's slot[0] SLOT_NONE) stands in its
  * walking one: a creature that never stops, a bat or a ghost. A pose not
  * filled in (no width) is not shown: the walk or the stand is.
  *
@@ -51,7 +51,7 @@ enum {
 };
 
 typedef struct EntityPose {
-    /* Picture slots, one a view (records 0..4 of its kind); 0xffff for none. */
+    /* Picture slots, one a view (records 0..4 of its kind); SLOT_NONE for none. */
     df_u16 slot[ENTITY_VIEWS];
     /* Each view's size in world units: a record is drawn at its own. */
     df_u16 w[ENTITY_VIEWS];
@@ -175,7 +175,7 @@ typedef struct Entity {
 } Entity;
 
 /*
- * e zeroed, with no picture in any pose (every slot 0xffff): fill in the
+ * e zeroed, with no picture in any pose (every slot SLOT_NONE): fill in the
  * poses it has. A zeroed entity's slots are 0, picture 0: start one here.
  */
 void entity_init(Entity *e);

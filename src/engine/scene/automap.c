@@ -809,7 +809,7 @@ int automap_polygons(const Scene *scene, const AutomapView *view, AutomapEmit em
             }
             t0 = &in->mesh->tris[face->first];
             /* A face the world does not draw is not on the map either. */
-            if (t0->slot == 0xffff) {
+            if (t0->slot == SLOT_NONE) {
                 continue;
             }
             nx = in->m[0] * face->nx + in->m[1] * face->ny + in->m[2] * face->nz;

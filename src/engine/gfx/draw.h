@@ -19,7 +19,10 @@ void draw_frame(const Camera *cam, const struct Level *level);
 void draw_set_extra(void (*fn)(void));
 /* Called after the scene and before the HUD. 0 clears it. */
 void draw_set_under(void (*fn)(void));
-/* Far clip in world units. Default is DF_FAR. Clamped to DF_FAR_MAX. */
+/*
+ * Far clip in world units. Default is DF_FAR. Clamped to DF_FAR_MAX. The
+ * fog's range and the cull's limit move with it (gfx_set_far is this).
+ */
 void draw_set_far(float far);
 float draw_far(void);
 /* 1 drops ARCH3D faces whose normal points away. 0 draws them. */

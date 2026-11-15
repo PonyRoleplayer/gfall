@@ -804,7 +804,7 @@ static int model_on_segment(const Scene *scene, int i, const float *o, const flo
     }
     ray_into_model(in, o, d, lo, ld);
     for (k = 0; k < in->mesh->ntris; k++) {
-        if (in->mesh->tris[k].slot != 0xffff && ray_tri(lo, ld, &in->mesh->tris[k], len, &at)) {
+        if (in->mesh->tris[k].slot != SLOT_NONE && ray_tri(lo, ld, &in->mesh->tris[k], len, &at)) {
             return 1;
         }
     }
@@ -2096,7 +2096,7 @@ static void occ_seam(int c)
  *   - a plane of two or more triangles has to face the eye, by the
  *     same normal test draw_frame uses. A single triangle is drawn
  *     from both sides, so it counts from both sides.
- *   - every triangle needs a texture slot. 0xffff is never drawn.
+ *   - every triangle needs a texture slot. SLOT_NONE is never drawn.
  *
  * The loader fans a plane from its first corner: triangle k is corners
  * 0, k + 1 and k + 2, each copied from the same file point. So the
@@ -2152,7 +2152,7 @@ static int occ_face(const Mesh *mesh, const Face *face, const Xf *xf,
         const Tri *tri;
 
         tri = &tris[t];
-        if (tri->slot == 0xffff) {
+        if (tri->slot == SLOT_NONE) {
             return 0;
         }
         if (t > face->first &&

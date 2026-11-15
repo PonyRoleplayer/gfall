@@ -105,7 +105,7 @@ static void empty_slot(int s)
         g_sprites[i].flip = 0;
         g_sprites[i].held = 0;
         g_sprites[i].frame = 0;
-        g_sprites[i].slot = 0xffff;
+        g_sprites[i].slot = SLOT_NONE;
     }
     for (i = s * g_cap.lights; i < (s + 1) * g_cap.lights; i++) {
         g_lights[i].radius = 0.0f;

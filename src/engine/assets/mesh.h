@@ -6,12 +6,17 @@
 /*
  * Triangle list in world units. u and v are texels on the source image,
  * not 0..1. tex_file and tex_image are keys for the loader that owns the
- * art. slot is the level texture index. 0xffff means the face is skipped.
+ * art. slot is the level texture index. SLOT_NONE means the face is skipped.
  * id is a loader tag. The rasterizer does not read it.
  */
 
-/* Tri.slot of a face with no picture: skipped by the draw, the lights and collision. */
-#define MESH_NO_SLOT 0xffff
+/*
+ * No picture: the slot of a face (Tri.slot), a flat (Flat.slot) or one
+ * view of an entity's pose (EntityPose.slot) that has none. A face with
+ * it is not part of the place: not drawn, not lit, not solid. A flat or
+ * a view with it is not drawn.
+ */
+#define SLOT_NONE 0xffff
 
 typedef struct Tri {
     float x[3];

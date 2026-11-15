@@ -154,6 +154,14 @@ void draw_set_far(float dist)
     }
     g_far = dist;
     g_far_now = dist;
+    /*
+     * The fog and the cull go with it, here, so no caller can move the
+     * clip and leave them behind: fog solid a little before the clip (the
+     * same ratio as 1100 of 1400), and the cull's limit the same distance.
+     * The cull kept the old distance when only the clip was set.
+     */
+    glide_fog_range(DF_FOG_NEAR, df_fog_far(g_far));
+    scene_set_limits(g_far, glide_fog_on());
 }
 
 void draw_view(float *far_now, float *fog_near, float *fog_far)
@@ -796,7 +804,7 @@ static void draw_tris(const Level *level, const Instance *in, const ModelView *m
         float inv_h;
 
         tri = &in->mesh->tris[t];
-        if (tri->slot == MESH_NO_SLOT) {
+        if (tri->slot == SLOT_NONE) {
             continue;
         }
         if (cached_mesh(in)) {
@@ -887,7 +895,7 @@ static void draw_face(const Level *level, const Instance *in, const ModelView *m
     }
     tris = in->mesh->tris;
     t0 = &tris[face->first];
-    if (t0->slot == MESH_NO_SLOT) {
+    if (t0->slot == SLOT_NONE) {
         return;
     }
     if (cached_mesh(in)) {
@@ -985,7 +993,7 @@ static void note_entity(const Entity *e, int shown, float d)
             continue;
         }
         for (k = 0; k < ENTITY_VIEWS; k++) {
-            if (pose->slot[k] != 0xffff && pose->slot[k] != shown) {
+            if (pose->slot[k] != SLOT_NONE && pose->slot[k] != shown) {
                 texcache_note((int)pose->slot[k], d * ENTITY_OTHER_VIEWS);
             }
         }
@@ -1065,7 +1073,7 @@ void draw_prime(const Level *level, const Camera *cam)
             float dx, dz;
 
             fl = &sc->sprites[i];
-            if (fl->w <= 0.0f || fl->slot == 0xffff) {
+            if (fl->w <= 0.0f || fl->slot == SLOT_NONE) {
                 continue;
             }
             dx = fl->x - cam->x;
@@ -1173,7 +1181,7 @@ static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
     float v0;
     Vtx corner[4];
 
-    if (!flat || flat->slot == 0xffff || flat->w < 1.0f || flat->h < 1.0f) {
+    if (!flat || flat->slot == SLOT_NONE || flat->w < 1.0f || flat->h < 1.0f) {
         return;
     }
     img = level_image(level, (int)flat->slot);

@@ -468,7 +468,7 @@ static void gather_model(const Instance *in, const float *wc, const float *we)
 
         tri = &mesh->tris[t];
         /* A face the loader could not texture is not part of the place. */
-        if (tri->slot == MESH_NO_SLOT) {
+        if (tri->slot == SLOT_NONE) {
             continue;
         }
         /* All three corners past one side of the box: it cannot meet it. */
@@ -1166,4 +1166,16 @@ int collide_floor(float x, float z, float y_top, float y_bottom, float *y)
         *y = best;
     }
     return found;
+}
+
+/* collide_floor_at's column reaches this far round the point: enough to hold the triangle under it. */
+#define FLOOR_COLUMN 1.0f
+
+int collide_floor_at(const Scene *scene, float x, float z, float y_top, float y_bottom, float *y)
+{
+    if (!collide_use(scene)) {
+        return 0;
+    }
+    collide_gather(x - FLOOR_COLUMN, y_bottom, z - FLOOR_COLUMN, x + FLOOR_COLUMN, y_top, z + FLOOR_COLUMN);
+    return collide_floor(x, z, y_top, y_bottom, y);
 }

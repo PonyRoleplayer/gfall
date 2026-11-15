@@ -60,7 +60,7 @@ No bare number stands in `collide.c` or `body.c`: each is named where the file s
 | `LAND_WINDOW`, `SAFE_WINDOW` | 0.5, 1 | How far round the feet a floor counts in the air, and for a place safe to come back to. |
 | `FOOT`, `FOOT_ROUND` | 0.7, 8 | The footprint: the middle and eight points 70% of the radius out. |
 | `UNSTICK_*`, `g_unstick_lift` | | The rings, directions, first radius and lifts of the unstick search. |
-| `MESH_NO_SLOT` | 0xffff | A face with no picture (`mesh.h`): not part of the place. |
+| `SLOT_NONE` | 0xffff | No picture (`mesh.h`): a face with it is not part of the place; a flat or an entity's view with it is not drawn. |
 
 ## The gather
 
@@ -68,7 +68,9 @@ Nothing is copied at load but a grid of model boxes: 512-unit cells over the pla
 
 Each frame `collide_gather` takes one box round everything the frame's moves can reach. For each model in its cells whose box meets it (a stamp skips one met twice), the box goes into the model's own frame (the matrix is a rotation, so its transpose undoes it), and each triangle is tested there against its own corners' range: no transform for the many that miss. The few that are left are turned into the world, scaled into ellipsoid space, given their plane, and kept in a static set of up to 1024 (`COLLIDE_SET`). Every query reads that set.
 
-Faces the loader could not texture (`slot` 0xffff) are not part of the place and do not collide. Flats, sprites, never do: Daggerfall let you walk through its scenery and its people; enemies are for later.
+Faces the loader could not texture (`slot` `SLOT_NONE`) are not part of the place and do not collide.
+
+To put a thing on the ground from outside a step (a corpse, a pile of treasure) there is one call, `collide_floor_at(scene, x, z, top, bottom, &y)`: it readies the scene, gathers a thin column for itself and asks the floor. Callers used to do the three by hand, each with its own box, some of them thousands of units tall and several wide. It replaces the working set, so not between a body's gather and its sweeps. Flats, sprites, never do: Daggerfall let you walk through its scenery and its people; enemies are for later.
 
 ## A frame
 

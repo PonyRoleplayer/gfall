@@ -606,13 +606,8 @@ int gfx_fog(void)
 
 void gfx_set_far(float far)
 {
-    float fog_far;
-
+    /* The clip, and the fog and the cull's limit with it. */
     draw_set_far(far);
-    /* Keep fog solid a little before the clip, same ratio as 1100/1400. */
-    fog_far = df_fog_far(draw_far());
-    glide_fog_range(DF_FOG_NEAR, fog_far);
-    scene_set_limits(draw_far(), gfx_fog());
 }
 
 float gfx_far(void)

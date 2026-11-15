@@ -93,6 +93,15 @@ int collide_overlap(const float *pos);
 int collide_floor(float x, float z, float y_top, float y_bottom, float *y);
 
 /*
+ * The highest floor of scene under x, z between y_top and y_bottom, in
+ * one call: 1 and its height in *y. For putting a thing on the ground (a
+ * corpse, a pile of treasure, a marker) from anywhere, with no gather of
+ * the caller's own. It gathers a thin column for itself, so it replaces
+ * the working set: not for use between a body's gather and its sweeps.
+ */
+int collide_floor_at(const Scene *scene, float x, float z, float y_top, float y_bottom, float *y);
+
+/*
  * The nearest gathered triangle the segment from o along unit d meets
  * within len, from either side: 1 and its distance in *t. Gather round
  * the segment first. For a camera pulled in from a wall (rig_third).

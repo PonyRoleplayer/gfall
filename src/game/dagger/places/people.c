@@ -92,6 +92,9 @@ static int g_attack_on;
 static df_u32 g_corpse_n;
 /* TEXTURE.380: the human blood splash. */
 #define BLOOD_ARCHIVE 380
+/* A corpse is put on the floor found from this far above its feet to this far below: a fall's worth. */
+#define CORPSE_FLOOR_ABOVE 4.0f
+#define CORPSE_FLOOR_BELOW 4096.0f
 /* A guard corpse's keep place: not a location id. */
 #define CORPSE_PLACE 0x57544348u
 static int g_pictures;
@@ -904,11 +907,9 @@ int people_lay_corpse(Entity *e)
         e->key.place = CORPSE_PLACE;
         e->key.thing = g_corpse_n;
     }
-    if (g_scene && collide_use(g_scene)) {
-        collide_gather(e->x - 4.0f, e->y - 4096.0f, e->z - 4.0f, e->x + 4.0f, e->y + 8.0f, e->z + 4.0f);
-        if (collide_floor(e->x, e->z, e->y + 4.0f, e->y - 4096.0f, &fy)) {
-            e->y = fy;
-        }
+    /* Onto the floor under it, from a little above its feet down as far as a fall goes. */
+    if (g_scene && collide_floor_at(g_scene, e->x, e->z, e->y + CORPSE_FLOOR_ABOVE, e->y - CORPSE_FLOOR_BELOW, &fy)) {
+        e->y = fy;
     }
     return e->pose[ENTITY_DEAD].w[0] > 0;
 }

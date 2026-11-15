@@ -20,7 +20,7 @@ A plane rejects the box when the nearest corner is outside: `dot(normal, center)
 
 ## How far
 
-`scene_set_limits(clip_far, fog)` is the limit. Defaults are fog on and `DF_FAR` (1400), the same as a fresh device. `gfx_set_far` and `gfx_set_fog` are the callers. Do not set the clip in `draw_set_far` alone; the cull would keep the old distance.
+`scene_set_limits(clip_far, fog)` is the limit. Defaults are fog on and `DF_FAR` (1400), the same as a fresh device. `gfx_set_far` and `gfx_set_fog` are the callers. `draw_set_far` moves the fog's range and this limit with the clip itself, so there is no way to set the clip and leave the cull at the old distance.
 
 The fog table is uploaded to go solid at `df_fog_far(clip_far)`: `clip_far * (DF_FOG_FAR / DF_FAR)`, 1100 out of 1400, never closer than `DF_FOG_NEAR + 1`, because `glide_fog_range` will not put solid fog in front of the fog start. The card does not reach solid there. Its 64 entries sit at w = 2^(3 + i/4) / (8 - i % 4), and it blends between two, so fog is 255 only from the first entry at or past that distance: `df_fog_solid`, 8192 / 7 = 1170 for 1100. At 1100 itself it is about 95%. The cull limit is `df_fog_solid(df_fog_far(clip_far))`, and so is `draw.c`'s far clip plane when fog is on. They used to differ: the cull dropped boxes from 1100, where a model was still about 5% visible and popped, and the clipper kept polygons out to 1400, filling pixels the fog had already turned to the clear colour. At LEVELFALL's 8192 the solid entry is 6553, a fifth of the range nearer than the clip. The clear colour is the fog colour, so a box entirely past the limit is invisible. With fog off, the limit is the far clip itself. A box that only straddles the limit is kept, and the clipper cuts it.
 

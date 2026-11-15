@@ -1180,7 +1180,7 @@ static void light_faces(const Instance *in, const Light *li, float reach, int fi
             continue;
         }
         t0 = &mesh->tris[face->first];
-        if (t0->slot == 0xffff) {
+        if (t0->slot == SLOT_NONE) {
             continue;
         }
         vis[0] = in->m[0] * face->nx + in->m[1] * face->ny + in->m[2] * face->nz;

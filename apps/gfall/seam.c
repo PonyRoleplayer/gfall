@@ -3569,8 +3569,8 @@ static int hold_treasures(void)
             flat->h = (float)texture_extent(image->height,image->yscale);
             {
                 float floor;
-                collide_gather(flat->x-1,flat->y-2048,flat->z-1,flat->x+1,flat->y+16,flat->z+1);
-                if (collide_floor(flat->x,flat->z,flat->y+16,flat->y-2048,&floor)) {
+                /* The floor under the marker: a little above it, down two blocks. */
+                if (collide_floor_at(&g_level.scene,flat->x,flat->z,flat->y+16,flat->y-2048,&floor)) {
                     flat->y = floor + flat->h/2;
                 }
             }

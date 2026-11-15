@@ -2262,6 +2262,22 @@ static void check_body_fixes(void)
     m[0] = flat_quad(-200.0f, 200.0f, -200.0f, 200.0f, 0.0f);
     m[1] = flat_quad(-200.0f, 200.0f, -200.0f, 200.0f, 100.0f);
     body_scene(&sc, in, m, 2);
+    /*
+     * The floor under a point in one call (collide_floor_at): from between
+     * the two it is the lower, from over both the upper, the same from 4000
+     * up, and past the place's edge there is none.
+     */
+    {
+        float fy;
+
+        check_expect(collide_floor_at(&sc, 10.0f, -30.0f, 50.0f, -500.0f, &fy) && check_near(fy, 0.0f, 0.01f),
+                     "the floor under a point between two floors is not the lower one");
+        check_expect(collide_floor_at(&sc, 10.0f, -30.0f, 4000.0f, -500.0f, &fy) && check_near(fy, 100.0f, 0.01f),
+                     "the floor under a point from high above is not the highest one");
+        check_expect(!collide_floor_at(&sc, 900.0f, 0.0f, 4000.0f, -500.0f, &fy)
+                     && !collide_floor_at(0, 10.0f, -30.0f, 50.0f, -500.0f, &fy),
+                     "a floor was found past the place's edge, or with no place");
+    }
     body_init(&b, WALK_RADIUS, WALK_HEIGHT, WALK_STEP, WALK_EYE);
     body_place(&b, 0.0f, 0.0f, 0.0f);
     for (f = 0; f < 10; f++) {

@@ -17,7 +17,7 @@ void entity_init(Entity *e)
     mem_zero(e, sizeof(Entity));
     for (p = 0; p < ENTITY_POSES; p++) {
         for (k = 0; k < ENTITY_VIEWS; k++) {
-            e->pose[p].slot[k] = 0xffff;
+            e->pose[p].slot[k] = SLOT_NONE;
         }
     }
 }
@@ -30,7 +30,7 @@ int entity_solid(const Entity *e)
 /* 1 when the game filled pose p in: a picture and a size. */
 static int posed(const EntityPose *p)
 {
-    return p->slot[0] != 0xffff && (p->w[0] > 0 || p->h[0] > 0);
+    return p->slot[0] != SLOT_NONE && (p->w[0] > 0 || p->h[0] > 0);
 }
 
 const EntityPose *entity_pose(const Entity *e)
@@ -38,7 +38,7 @@ const EntityPose *entity_pose(const Entity *e)
     if (e->act >= ENTITY_ATTACK && e->act < ENTITY_POSES && posed(&e->pose[e->act])) {
         return &e->pose[e->act];
     }
-    if (e->moving || e->pose[ENTITY_IDLE].slot[0] == 0xffff) {
+    if (e->moving || e->pose[ENTITY_IDLE].slot[0] == SLOT_NONE) {
         return &e->pose[ENTITY_WALK];
     }
     return &e->pose[ENTITY_IDLE];
@@ -53,7 +53,7 @@ int entity_view(const Entity *e, float cx, float cz, int *flip)
 
     *flip = 0;
     pose = entity_pose(e);
-    if (pose->slot[1] == 0xffff) {
+    if (pose->slot[1] == SLOT_NONE) {
         return 0;
     }
     /*
@@ -84,7 +84,7 @@ int entity_flat(const Entity *e, float cx, float cz, Flat *out)
 
     pose = entity_pose(e);
     view = entity_view(e, cx, cz, &flip);
-    if (pose->slot[view] == 0xffff) {
+    if (pose->slot[view] == SLOT_NONE) {
         return 0;
     }
     mem_zero(out, sizeof(Flat));

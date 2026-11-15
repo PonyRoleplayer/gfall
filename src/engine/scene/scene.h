@@ -22,7 +22,7 @@ typedef struct Instance {
 
 /*
  * A camera-facing quad, centered on x,y,z. w and h are the full size in
- * world units. slot is 0xffff until a loader assigns a texture.
+ * world units. slot is SLOT_NONE until a loader assigns a texture.
  * file and image are loader keys. The rasterizer uses slot.
  *
  * It faces the camera's yaw and stays upright when the camera is level.
