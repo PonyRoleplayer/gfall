@@ -1490,6 +1490,8 @@ static void commands(void)
     cmd_var("covers", scene_cover_draw, scene_set_cover_draw, 0, 1,
             "wash the occlusion cells of the last frame green");
     cmd_var("faces", draw_faces, draw_set_faces, 0, 1, "drop ARCH3D faces that point away");
+    cmd_var("nearfirst", draw_near_first, draw_set_near_first, 0, 1,
+            "draw models nearest first and the ground last, so hidden pixels fail the depth test; 0 the place's order");
     cmd_var("population", entity_population, entity_set_population, 0, 1,
             "walkers come and go on their own (a town's people); population alone flips it");
     cmd_toggles("population");

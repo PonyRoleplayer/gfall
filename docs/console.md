@@ -59,6 +59,7 @@ A variable prints its value when typed alone, and takes a new one as an argument
 | `occlude` | on/off | Off keeps the frustum and skips the occlusion step, to compare a frame. Default on. See `docs/culling.md`. |
 | `covers` | on/off | Washes the occlusion cells of the last frame green. A model or sprite whose box lands only on green, and is behind it, was not drawn. Default off. |
 | `faces` | on/off | Off draws ARCH3D faces the normal would drop. |
+| `nearfirst` | on/off | On (default) draws the frame's models nearest first and the ground last, so hidden pixels fail the depth test; off draws in the place's order (`docs/culling.md`, The order they are drawn in). |
 | `vsync` | on/off | On waits for the retrace on each swap. Default on. |
 | `wbuffer` | on/off | On is the W-buffer, depth from 1/w. Off is the 16-bit Z-buffer, to compare. Default on. See `docs/glide.md`. |
 | `texcap` | 0..16384 | Debug only. TMU0 holds at most this many KB, as a smaller card would: `texcap 2048` shows on a 4 MB card what a 2 MB Voodoo 1 gets. A change sends the level again. `texmem` says when it is on. Default 0, the card's own. See `docs/memory.md`. |

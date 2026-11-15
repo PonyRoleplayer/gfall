@@ -160,6 +160,22 @@ float draw_far(void)
     return g_far;
 }
 
+/*
+ * 1 (default): the frame's models are drawn nearest first, the ground
+ * last (order_near_first). 0 draws them as the place stores them.
+ */
+static int g_near_first = 1;
+
+void draw_set_near_first(int on)
+{
+    g_near_first = on ? 1 : 0;
+}
+
+int draw_near_first(void)
+{
+    return g_near_first;
+}
+
 void draw_set_faces(int on)
 {
     g_faces = on ? 1 : 0;
@@ -338,7 +354,7 @@ static int clip_plane(const Vtx *in, int n, Vtx *out, int plane)
         float t;
         Vtx hit;
 
-        j = (i + 1) % n;
+        j = i + 1 < n ? i + 1 : 0;
         ain = dist[i] >= 0.0f;
         bin = dist[j] >= 0.0f;
         if (ain && bin) {
@@ -933,6 +949,29 @@ static const Image *level_image(const Level *level, int slot)
  */
 static float g_anim_time;
 
+/*
+ * Every flat of a frame faces the camera the same way, so what that
+ * takes is worked out once (flats_face), not for each flat: the up axis
+ * of a flat in view space. Its right axis is the camera's own, (1, 0, 0)
+ * there, so a flat's four corners are its centre, turned to the view
+ * once, plus and minus half its width along x and half its height along
+ * this. Each flat used to work out a sine and a cosine for the lean (a
+ * hundred cycles each on the Pentium) and turn four world corners.
+ */
+static float g_flat_up[3];
+
+static void flats_face(const Camera *cam, const Basis *basis)
+{
+    float ux, uy, uz;
+    float z1;
+
+    flat_facing(cam->pitch, basis->fx, basis->fz, &ux, &uy, &uz);
+    z1 = ux * basis->fx + uz * basis->fz;
+    g_flat_up[0] = ux * basis->rx + uz * basis->rz;
+    g_flat_up[1] = uy * basis->cp - z1 * basis->sp;
+    g_flat_up[2] = uy * basis->sp + z1 * basis->cp;
+}
+
 /* The frame an animated flat shows now, 0 for a still one. */
 static int flat_frame(const Flat *flat, const Image *img)
 {
@@ -958,7 +997,7 @@ static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
     float dv;
     float hx;
     float hy;
-    float rx, ry, rz;
+    float cx, cy, cz;
     float ux, uy, uz;
     float uw;
     float uh;
@@ -977,11 +1016,11 @@ static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
     }
     hx = flat->w * 0.5f;
     hy = flat->h * 0.5f;
-    /* Right stays horizontal. Up leans toward the camera, capped (flat_facing). */
-    rx = basis->rx;
-    ry = 0.0f;
-    rz = basis->rz;
-    flat_facing(cam->pitch, basis->fx, basis->fz, &ux, &uy, &uz);
+    /* Its centre in view space; right is the view's x, up leans toward the camera, capped (flats_face). */
+    camera_view(cam, basis, flat->x, flat->y, flat->z, &cx, &cy, &cz);
+    ux = g_flat_up[0] * hy;
+    uy = g_flat_up[1] * hy;
+    uz = g_flat_up[2] * hy;
     /*
      * Half a card texel in from every edge. Bilinear filtering at the
      * very edge mixes in the next texel over, which for a sprite is the
@@ -1016,18 +1055,26 @@ static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
         uw = t;
     }
     /* 0 top-left, 1 top-right, 2 bottom-right, 3 bottom-left. v = 0 is the top row. */
-    flat_corner(cam, basis,
-                flat->x - rx * hx + ux * hy, flat->y - ry * hx + uy * hy, flat->z - rz * hx + uz * hy,
-                u0, v0, &corner[0]);
-    flat_corner(cam, basis,
-                flat->x + rx * hx + ux * hy, flat->y + ry * hx + uy * hy, flat->z + rz * hx + uz * hy,
-                uw, v0, &corner[1]);
-    flat_corner(cam, basis,
-                flat->x + rx * hx - ux * hy, flat->y + ry * hx - uy * hy, flat->z + rz * hx - uz * hy,
-                uw, uh, &corner[2]);
-    flat_corner(cam, basis,
-                flat->x - rx * hx - ux * hy, flat->y - ry * hx - uy * hy, flat->z - rz * hx - uz * hy,
-                u0, uh, &corner[3]);
+    corner[0].x = cx - hx + ux;
+    corner[0].y = cy + uy;
+    corner[0].z = cz + uz;
+    corner[0].u = u0;
+    corner[0].v = v0;
+    corner[1].x = cx + hx + ux;
+    corner[1].y = cy + uy;
+    corner[1].z = cz + uz;
+    corner[1].u = uw;
+    corner[1].v = v0;
+    corner[2].x = cx + hx - ux;
+    corner[2].y = cy - uy;
+    corner[2].z = cz - uz;
+    corner[2].u = uw;
+    corner[2].v = uh;
+    corner[3].x = cx - hx - ux;
+    corner[3].y = cy - uy;
+    corner[3].z = cz - uz;
+    corner[3].u = u0;
+    corner[3].v = uh;
     texcache_bind((int)flat->slot);
     emit_poly(corner, 4, inv_w, inv_h, 255.0f, 255.0f, 255.0f);
 }
@@ -2900,6 +2947,78 @@ static void draw_windows(const Camera *cam, const Basis *basis, const Level *lev
     }
 }
 
+/*
+ * The frame's models nearest first, the ground last (docs/culling.md,
+ * The order they are drawn in). The cull lists them as the place stores
+ * them, which is no order on the glass: a far house was drawn, then the
+ * near one over it, every pixel of the far one read, textured, written
+ * and written again. Nearest first, the far one's pixels fail the depth
+ * test, and the card writes nothing for them. The ground (mesh id 0)
+ * lies under everything and is half hidden by what stands on it, so it
+ * goes last whatever its distance.
+ *
+ * Near is the distance from the camera to the model's box, 0 inside it:
+ * the room the camera stands in goes first. A counting sort into
+ * NEAR_BUCKETS steps of the far clip: two walks of the list, no compares,
+ * and models at one step keep the place's order.
+ */
+#define NEAR_BUCKETS 64
+
+static void order_near_first(const Scene *scene, const Camera *cam, int *order, int n)
+{
+    static int sorted[VIS_MAX];
+    static df_u8 key[VIS_MAX];
+    int start[NEAR_BUCKETS];
+    float scale;
+    int i;
+    int at;
+
+    if (n < 2 || n > VIS_MAX || !scene->bounds) {
+        return;
+    }
+    for (i = 0; i < NEAR_BUCKETS; i++) {
+        start[i] = 0;
+    }
+    scale = (float)(NEAR_BUCKETS - 2) / g_limit;
+    for (i = 0; i < n; i++) {
+        const Bound *b;
+        const Mesh *mesh;
+        float dx, dy, dz;
+        int k;
+
+        b = &scene->bounds[order[i]];
+        mesh = scene->models[order[i]].mesh;
+        if (mesh && mesh->id == 0) {
+            k = NEAR_BUCKETS - 1;
+        } else {
+            dx = df_absf(b->cx - cam->x) - b->ex;
+            dy = df_absf(b->cy - cam->y) - b->ey;
+            dz = df_absf(b->cz - cam->z) - b->ez;
+            dx = dx > 0.0f ? dx : 0.0f;
+            dy = dy > 0.0f ? dy : 0.0f;
+            dz = dz > 0.0f ? dz : 0.0f;
+            k = df_iround(df_sqrt(dx * dx + dy * dy + dz * dz) * scale);
+            k = k < 0 ? 0 : (k > NEAR_BUCKETS - 2 ? NEAR_BUCKETS - 2 : k);
+        }
+        key[i] = (df_u8)k;
+        start[k]++;
+    }
+    at = 0;
+    for (i = 0; i < NEAR_BUCKETS; i++) {
+        int c;
+
+        c = start[i];
+        start[i] = at;
+        at += c;
+    }
+    for (i = 0; i < n; i++) {
+        sorted[start[key[i]]++] = order[i];
+    }
+    for (i = 0; i < n; i++) {
+        order[i] = sorted[i];
+    }
+}
+
 static int g_cap_models;
 static int g_cap_sprites;
 
@@ -3166,6 +3285,7 @@ void draw_frame(const Camera *cam, const Level *level)
     glide_clear();
     clip_slopes();
     camera_basis(cam, &basis);
+    flats_face(cam, &basis);
     /* Before the sky: the HUD may have left blending or a fade on. */
     glide_sprite_alpha(0);
     /* The render passes at the x87's single precision: float all through (df_fpu_single). */
@@ -3195,6 +3315,9 @@ void draw_frame(const Camera *cam, const Level *level)
     }
     /* Spawns the camera has left behind go (docs/spawn.md). */
     ent_frame(&level->scene, cam);
+    if (g_near_first) {
+        order_near_first(&level->scene, cam, order, norder);
+    }
     prof_end(PROF_CULL);
     prof_begin(PROF_MODELS);
     g_vis_models = norder;

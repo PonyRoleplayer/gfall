@@ -4,7 +4,7 @@ Flats: the camera-facing pictures of torches, candles, furniture, plants, people
 
 ## Lean
 
-A flat faces the camera's yaw. With the camera level its up axis is world up, so a side-on view is the picture as before. Looking up or down leans that axis toward the camera (`flat_facing`), and the lean stops at 50 degrees (`FLAT_LEAN_MAX`). Past that a vertical card is seen on edge and thins to a line; the cap keeps the picture readable from above and does not lay it flat. The cull box is widened by the same cap so the leaned top is not dropped (`docs/culling.md`).
+A flat faces the camera's yaw. With the camera level its up axis is world up, so a side-on view is the picture as before. Looking up or down leans that axis toward the camera (`flat_facing`), and the lean stops at 50 degrees (`FLAT_LEAN_MAX`). Past that a vertical card is seen on edge and thins to a line; the cap keeps the picture readable from above and does not lay it flat. The cull box is widened by the same cap so the leaned top is not dropped (`docs/culling.md`). Every flat of a frame leans the same way, so `draw_frame` works the facing out once (`flats_face`: the flat's up axis in view space; its right axis is the view's own x) and a flat is its centre turned to the view once, plus and minus half its width along x and half its height along that axis. Each flat used to take a sine and a cosine for the lean and turn four world corners.
 
 ## Where a flat stands
 

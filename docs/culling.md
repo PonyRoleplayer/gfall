@@ -2,7 +2,7 @@
 
 `draw_frame` does not walk the scene. It draws the index list from `scene_visible_models` and `scene_visible_sprites`. Those two calls are the cull. Read this before editing `scene.c`, the far clip, or fog.
 
-A null camera lists every stored entity, in storage order. `check_engine` uses that. With a camera, a model or sprite is dropped when its box is wholly outside the view, and then when it is wholly behind nearer walls. Survivors stay in storage order. `VIS_MAX` (2048, exported as `DRAW_VIS_MAX` in `draw.h`) still truncates the list. A city holds more models than that, so `cull off` there drops the tail; LEVELFALL marks a count at the cap `CAP`. A model with no triangles is omitted, so an empty slot does not consume the cap.
+A null camera lists every stored entity, in storage order. `check_engine` uses that. With a camera, a model or sprite is dropped when its box is wholly outside the view, and then when it is wholly behind nearer walls. Survivors come out in storage order; `draw_frame` then puts the models nearest first (The order they are drawn in, below). `VIS_MAX` (2048, exported as `DRAW_VIS_MAX` in `draw.h`) still truncates the list. A city holds more models than that, so `cull off` there drops the tail; LEVELFALL marks a count at the cap `CAP`. A model with no triangles is omitted, so an empty slot does not consume the cap.
 
 The rule for every step: the cull may keep something that turns out to be hidden, and the Z buffer sorts that out. It never drops something that has a pixel on the glass.
 
@@ -30,6 +30,8 @@ Outdoors the weather can bring the fog nearer than `df_fog_far(clip_far)`: `draw
 
 `world` stores a `Span` per block: the first model index, the count, and the union of those models' boxes. The frame tests that box with the same six planes. A block that misses is not read. Survivors are still in storage order, block after block.
 
+The block's test also says which planes its box crosses (`box_crosses`: -1 out, else a bit a plane). A plane the block is wholly inside of cannot cut any model in it, whose boxes lie in the block's, so its models are asked only about the planes the block crosses: one or two for most blocks in view, and none for a block in the middle of the glass, whose models are taken untested. A streamed world's sprites, listed by chunk, are asked the same way. A model that pokes past its block's box (there should be none) is kept, not dropped: the mask only ever skips a test that could have dropped something.
+
 Inside a block, each instance has a `Bound` filled once, in `append_block`, after `shift_block` has written the final position. The cull reads that array and does not touch `m[]` or the mesh. `mesh_measure` runs at load (`arch3d_load`, ground patches). `bound_n` is the triangle count that produced the local box. A shared mesh is measured once.
 
 The world box is the local box through the instance. The half-size is the local half-size times the absolute columns of `m[]`, so a rotated or scaled model stays inside. The box is larger than the triangles. It can keep a model that is actually just off screen. It does not drop a model that still has a vertex in view.
@@ -39,6 +41,17 @@ A sprite faces yaw. Level, it stays upright. Looking up or down leans it toward 
 With no spans and no bounds (a single renderfall model, or a null camera), the old path remains: measure from the triangles if needed, and list everything when the camera is null.
 
 A model that moves (`docs/interact.md`) has the box of its whole sweep baked in its place, and its block's span grown to hold it, so neither drops it wherever it has swung to.
+
+## The order they are drawn in
+
+The cull's list is in the place's storage order, which is no order on the glass: a far house was drawn, then the near one over it, and every pixel of the far one was read, textured and written, then written again. `draw_frame` sorts the list nearest first before the model pass (`order_near_first` in `draw.c`), so the far house's pixels fail the depth test and the card writes nothing for them. The Voodoo 1 has no early reject, it still walks those pixels, but a failed pixel skips the colour and depth writes.
+
+- Near is the distance from the camera to the model's box, 0 inside it: the room the camera stands in goes first.
+- The ground (mesh id 0) goes last whatever its distance. It lies under everything, the camera stands on it, and what stands on it hides much of it.
+- A counting sort into 64 steps of the far clip: two walks of the list, no compares, and models at one step keep the place's order. One square root a model.
+- The window pass reads the same list. The light decals, the sprites and the automap do not depend on the order.
+
+`nearfirst 0` in the console draws in the place's order again, to compare the frame time on the card. What it saves depends on the overdraw the occlusion step left: little in a dungeon corridor, more in a town, where occlusion drops only about one model in seven. It is not measured on the 233.
 
 ## Occlusion
 

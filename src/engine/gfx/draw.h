@@ -25,6 +25,9 @@ float draw_far(void);
 /* 1 drops ARCH3D faces whose normal points away. 0 draws them. */
 void draw_set_faces(int on);
 int draw_faces(void);
+/* 1 (default): models drawn nearest first, the ground last; 0 in the place's order (docs/culling.md). */
+void draw_set_near_first(int on);
+int draw_near_first(void);
 /* Counts from the last world frame. A frozen console keeps these. */
 void draw_stats(int *models, int *sprites, int *kept, int *dropped);
 /*

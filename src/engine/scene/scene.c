@@ -488,6 +488,46 @@ static int box_visible(const Plane *planes, float cx, float cy, float cz,
     return 1;
 }
 
+/*
+ * A box against the planes named in ask (bit i: plane i). -1 when it is
+ * wholly outside one of them; otherwise the planes of ask it crosses.
+ *
+ * A block's box is asked about all six. A plane it comes back wholly
+ * inside of cannot cut any model in the block, whose boxes lie in the
+ * block's, so the models are asked only about the planes the block
+ * crosses: one or two for most blocks in view, none for a block in the
+ * middle of the glass, whose models are then taken untested.
+ */
+#define PLANES_ALL 63
+
+static int box_crosses(const Plane *planes, int ask, float cx, float cy, float cz,
+                       float ex, float ey, float ez)
+{
+    int cross;
+    int i;
+
+    cross = 0;
+    for (i = 0; i < 6; i++) {
+        const Plane *p;
+        float dist;
+        float rad;
+
+        if (!(ask & (1 << i))) {
+            continue;
+        }
+        p = &planes[i];
+        dist = p->nx * cx + p->ny * cy + p->nz * cz + p->d;
+        rad = ex * df_absf(p->nx) + ey * df_absf(p->ny) + ez * df_absf(p->nz);
+        if (dist + rad < 0.0f) {
+            return -1;
+        }
+        if (dist - rad < 0.0f) {
+            cross |= 1 << i;
+        }
+    }
+    return cross;
+}
+
 static int mesh_box(Mesh *mesh, float *cx, float *cy, float *cz,
                     float *ex, float *ey, float *ez)
 {
@@ -715,7 +755,8 @@ int scene_solid_models(const Scene *scene)
     return scene->solid_models > 0 && scene->solid_models < scene->nmodels ? scene->solid_models : scene->nmodels;
 }
 
-static int take_visible(const Scene *scene, const Plane *planes,
+/* Models first..first + count in view, asked only about the planes in ask (box_crosses). */
+static int take_visible(const Scene *scene, const Plane *planes, int ask,
                         int first, int count, int *out, int cap, int n)
 {
     int i;
@@ -734,7 +775,7 @@ static int take_visible(const Scene *scene, const Plane *planes,
         if (!model_box(scene, i, &cx, &cy, &cz, &ex, &ey, &ez)) {
             continue;
         }
-        if (!box_visible(planes, cx, cy, cz, ex, ey, ez)) {
+        if (ask && box_crosses(planes, ask, cx, cy, cz, ex, ey, ez) < 0) {
             continue;
         }
         if (n >= cap) {
@@ -1149,7 +1190,7 @@ static int cv_clip(const Cv *in, int n, Cv *out, int plane, float hx, float hy)
         float t;
         Cv hit;
 
-        j = (i + 1) % n;
+        j = i + 1 < n ? i + 1 : 0;
         ain = dist[i] >= 0.0f;
         bin = dist[j] >= 0.0f;
         if (ain && bin) {
@@ -1198,7 +1239,7 @@ static float poly_area2(const float *sx, const float *sy, int n)
     for (i = 0; i < n; i++) {
         int j;
 
-        j = (i + 1) % n;
+        j = i + 1 < n ? i + 1 : 0;
         a += sx[i] * sy[j] - sx[j] * sy[i];
     }
     return a;
@@ -1227,8 +1268,8 @@ static int poly_convex(const float *px, const float *py, int n)
         int k;
         int sx;
 
-        j = (i + 1) % n;
-        k = (i + 2) % n;
+        j = i + 1 < n ? i + 1 : 0;
+        k = i + 2 < n ? i + 2 : i + 2 - n;
         ax = px[j] - px[i];
         ay = py[j] - py[i];
         bx = px[k] - px[j];
@@ -1397,7 +1438,7 @@ static void occ_fill(int f, float wa, float wb, float wc, float wfar)
         if (py[i] > maxy) {
             maxy = py[i];
         }
-        j = (i + 1) % n;
+        j = i + 1 < n ? i + 1 : 0;
         a = -(py[j] - py[i]);
         b = px[j] - px[i];
         c = -(a * px[i] + b * py[i]);
@@ -1584,7 +1625,7 @@ static void pc_cut(const Pc *in, float a, float b, float c, float sign, Pc *out)
     for (i = 0; i < in->n; i++) {
         int j;
 
-        j = (i + 1) % in->n;
+        j = i + 1 < in->n ? i + 1 : 0;
         if (d[i] >= 0.0f && out->n < OCC_PV) {
             out->x[out->n] = in->x[i];
             out->y[out->n] = in->y[i];
@@ -1681,7 +1722,7 @@ static int pc_nosample(const Pc *p, float ox, float oy)
             maxy = p->y[i];
         }
         /* Inside is ea * x + eb * y + ec >= 0, in screen space, grown. */
-        j = (i + 1) % p->n;
+        j = i + 1 < p->n ? i + 1 : 0;
         dx = p->x[j] - p->x[i];
         dy = p->y[j] - p->y[i];
         l2 = dx * dx + dy * dy;
@@ -1803,7 +1844,7 @@ static int pc_subtract(Pc *pieces, int *np, int f, float ox, float oy, int *used
             float a, b, c;
             int in, out, k, j;
 
-            j = (i + 1) % fc->n;
+            j = i + 1 < fc->n ? i + 1 : 0;
             a = -(fc->y[j] - fc->y[i]);
             b = fc->x[j] - fc->x[i];
             /* The edge in cell coordinates. */
@@ -2041,7 +2082,7 @@ static int occ_face(const Mesh *mesh, const Face *face, const Xf *xf,
         const Cv *q;
 
         p = &poly[0][k];
-        q = &poly[0][(k + 1) % n];
+        q = &poly[0][k + 1 < n ? k + 1 : 0];
         nx += (p->y - q->y) * (p->z + q->z);
         ny += (p->z - q->z) * (p->x + q->x);
         nz += (p->x - q->x) * (p->y + q->y);
@@ -2383,21 +2424,24 @@ int scene_visible_models(const Scene *scene, const Camera *cam, int *out, int ca
     if (scene->nspans > 0 && scene->spans) {
         for (s = 0; s < scene->nspans; s++) {
             const Span *sp;
+            int ask;
 
             sp = &scene->spans[s];
             if (sp->count < 1) {
                 continue;
             }
-            if (!box_visible(planes, sp->cx, sp->cy, sp->cz, sp->ex, sp->ey, sp->ez)) {
+
+            ask = box_crosses(planes, PLANES_ALL, sp->cx, sp->cy, sp->cz, sp->ex, sp->ey, sp->ez);
+            if (ask < 0) {
                 continue;
             }
-            n = take_visible(scene, planes, sp->first, sp->count, out, cap, n);
+            n = take_visible(scene, planes, ask, sp->first, sp->count, out, cap, n);
             if (n >= cap) {
                 break;
             }
         }
     } else {
-        n = take_visible(scene, planes, 0, scene->nmodels, out, cap, 0);
+        n = take_visible(scene, planes, PLANES_ALL, 0, scene->nmodels, out, cap, 0);
     }
     if (!g_occ_on || n < 1) {
         return n;
@@ -2459,9 +2503,15 @@ int scene_visible_sprites(const Scene *scene, const Camera *cam, int *out, int c
         /* A streamed world: a chunk out of view is skipped with its sprites. */
         for (s = 0; s < scene->nspans && n < cap; s++) {
             const Span *sp;
+            int ask;
 
             sp = &scene->spans[s];
-            if (sp->scount < 1 || !box_visible(planes, sp->cx, sp->cy, sp->cz, sp->ex, sp->ey, sp->ez)) {
+            if (sp->scount < 1) {
+                continue;
+            }
+            /* As for models: a sprite is asked only about the planes its chunk crosses. */
+            ask = box_crosses(planes, PLANES_ALL, sp->cx, sp->cy, sp->cz, sp->ex, sp->ey, sp->ez);
+            if (ask < 0) {
                 continue;
             }
             for (i = sp->sfirst; i < sp->sfirst + sp->scount && n < cap; i++) {
@@ -2469,7 +2519,7 @@ int scene_visible_sprites(const Scene *scene, const Camera *cam, int *out, int c
 
                 if (!sprite_in_sight(&scene->sprites[i], cam)
                     || !flat_box(&scene->sprites[i], &cx, &cy, &cz, &ex, &ey, &ez)
-                    || !box_visible(planes, cx, cy, cz, ex, ey, ez)) {
+                    || (ask && box_crosses(planes, ask, cx, cy, cz, ex, ey, ez) < 0)) {
                     continue;
                 }
                 out[n++] = i;

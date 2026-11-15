@@ -500,7 +500,7 @@ static int clip_y(const V3 *in, int n, V3 *out, float level, float side)
     for (i = 0; i < n && m < AUTOMAP_CORNERS - 1; i++) {
         int j;
 
-        j = (i + 1) % n;
+        j = i + 1 < n ? i + 1 : 0;
         if (d[i] >= 0.0f) {
             out[m++] = in[i];
         }
@@ -535,7 +535,7 @@ static int clip_near(const V3 *in, int n, V3 *out)
     for (i = 0; i < n && m < AUTOMAP_CORNERS - 1; i++) {
         int j;
 
-        j = (i + 1) % n;
+        j = i + 1 < n ? i + 1 : 0;
         if (d[i] >= 0.0f) {
             out[m++] = in[i];
         }
@@ -589,7 +589,7 @@ static int clip_rect(const AutomapView *v, AutomapCorner *c, int n)
         for (i = 0; i < n && m < AUTOMAP_CORNERS - 1; i++) {
             int j;
 
-            j = (i + 1) % n;
+            j = i + 1 < n ? i + 1 : 0;
             if (d[i] >= 0.0f) {
                 tmp[m++] = c[i];
             }

@@ -1104,11 +1104,18 @@ void glide_triangle(const DrawVert *a, const DrawVert *b, const DrawVert *c)
  * glass across a plane. So the fan starts at the corner whose triangle
  * with its two successors has the largest area: snapping each corner
  * to 1/16 pixel moves the gradients least there.
+ *
+ * Glide wants the corners in one run from that start. They are converted
+ * into g[0..n), and the ones before the start are copied again after the
+ * end, so the run is g[start..start + n): no second copy of the whole
+ * polygon, and none at all when the first corner is the start. The walk
+ * round the polygon wraps with a compare, never `% n`: a divide is 46
+ * cycles on the Pentium, and there were three a corner.
  */
 static void polygon(const DrawVert *v, int n)
 {
-    GrVertex g[GLIDE_POLY_MAX];
-    GrVertex fan[GLIDE_POLY_MAX];
+    /* Static: 3.8 KB, and one polygon at a time. */
+    static GrVertex g[2 * GLIDE_POLY_MAX];
     float best;
     int start;
     int i;
@@ -1138,8 +1145,8 @@ static void polygon(const DrawVert *v, int n)
         float area;
 
         a = &g[i];
-        b = &g[(i + 1) % n];
-        c = &g[(i + 2) % n];
+        b = i + 1 < n ? &g[i + 1] : &g[i + 1 - n];
+        c = i + 2 < n ? &g[i + 2] : &g[i + 2 - n];
         area = (b->x - a->x) * (c->y - a->y) - (b->y - a->y) * (c->x - a->x);
         if (area < 0.0f) {
             area = -area;
@@ -1149,10 +1156,10 @@ static void polygon(const DrawVert *v, int n)
             start = i;
         }
     }
-    for (i = 0; i < n; i++) {
-        fan[i] = g[(start + i) % n];
+    for (i = 0; i < start; i++) {
+        g[n + i] = g[i];
     }
-    glide.planar(n, fan);
+    glide.planar(n, &g[start]);
 }
 
 void glide_polygon(const DrawVert *v, int n)
