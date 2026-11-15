@@ -1545,6 +1545,55 @@ static int ground_under(const Scene *sc, float x, float z)
 }
 
 /*
+ * The area of every decal the built lights carry, in world units squared:
+ * what the card fills, blended, when all of it is on the glass. A lamp's
+ * core (Decal.variant from LIGHT_VARIANTS up) apart, in *core.
+ */
+static double decal_area(double *core)
+{
+    double pool;
+    int i;
+
+    pool = 0.0;
+    *core = 0.0;
+    for (i = 0; i < light_count(); i++) {
+        const Decal *d;
+        const float *c;
+        int n;
+        int k;
+
+        n = light_decals(i, &d);
+        c = light_corners_of(i);
+        for (k = 0; c && k < n; k++) {
+            const float *p0;
+            double a;
+            int q;
+
+            p0 = &c[d[k].first * LIGHT_CORNER];
+            a = 0.0;
+            for (q = 1; q + 1 < d[k].n; q++) {
+                const float *p1;
+                const float *p2;
+                double ux, uy, uz, vx, vy, vz, x, y, z;
+
+                p1 = &c[(d[k].first + q) * LIGHT_CORNER];
+                p2 = &c[(d[k].first + q + 1) * LIGHT_CORNER];
+                ux = p1[0] - p0[0]; uy = p1[1] - p0[1]; uz = p1[2] - p0[2];
+                vx = p2[0] - p0[0]; vy = p2[1] - p0[1]; vz = p2[2] - p0[2];
+                x = uy * vz - uz * vy; y = uz * vx - ux * vz; z = ux * vy - uy * vx;
+                a += 0.5 * (double)df_sqrt((float)(x * x + y * y + z * z));
+            }
+            if (d[k].variant >= 8) {
+                *core += a;
+            } else {
+                pool += a;
+            }
+        }
+    }
+    return pool;
+}
+
+/*
  * Every lit light's decals lie within its reach of it: so a rebase moved
  * them with the lights. Returns how many lights have decals; *far is set
  * when one does not.
@@ -2207,6 +2256,16 @@ static void check_stream(void)
             lit = stream_pools(&far);
             printf("stream: Daggerfall's middle 5 x 5: %d models past the ground, %d flats, %d doors, %d lamps (%d with pools, %d decals), %d sounds\n",
                    houses, flats, doors, lamps, lit, light_decal_total(), sounds);
+            {
+                double core;
+                double pool;
+
+                pool = decal_area(&core);
+                printf("stream: the lamps' decal area: pools %.0f units2, cores %.0f (%.1f%% of the pools)\n",
+                       pool, core, pool > 0.0 ? core * 100.0 / pool : 0.0);
+                check_expect(core > 0.0 && core < pool * 0.2,
+                             "the lamps have no core decals, or the cores are not a small part of the pools");
+            }
             check_expect(houses > 200 && flats > 100 && doors > 50 && lamps > 10,
                          "the stream's chunks in Daggerfall lack its houses, flats, doors or lamps");
             check_expect(lit > lamps / 2 && !far,
@@ -3369,13 +3428,24 @@ int check_dagger(const char *root_in)
                 int lit;
                 int through;
 
-                /* Through its walls the hold's lights cut 2282 decals; seeing only what they reach, fewer. */
+                /*
+                 * Through its walls the hold's lights cut 2105 decals (2282 before a
+                 * decal stopped where its picture goes black); seeing only what they
+                 * reach, fewer.
+                 */
                 light_set_shadow(0);
                 through = light_build(&hl.scene);
                 light_set_shadow(1);
                 lit = light_build(&hl.scene);
                 printf("hold decals: %d, %d through walls\n", lit, through);
-                check_expect(through == 2282 && lit > 1000 && lit < through * 4 / 5,
+                {
+                    double core;
+                    double pool;
+
+                    pool = decal_area(&core);
+                    printf("hold decal area: %.0f units2\n", pool + core);
+                }
+                check_expect(through == 2105 && lit > 1000 && lit < through * 4 / 5,
                              "the hold's lights still reach through its walls");
             }
             check_expect(flick > 20 && flick < hl.scene.nlights, "the hold's flames do not flicker, or all do");

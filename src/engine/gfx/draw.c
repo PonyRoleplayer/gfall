@@ -529,13 +529,6 @@ static void corners_out(const Vtx *v, int n, df_u32 *any, df_u32 *all)
 static void submit(const Vtx *poly, int n, float inv_w, float inv_h,
                    float cr, float cg, float cb);
 
-/*
- * How many times submit sends each polygon: 1, except in the lamp pass,
- * which lays each decal LAMP_PASSES deep. The corners are transformed,
- * clipped and projected once for all of them.
- */
-static int g_repeat = 1;
-
 static void emit_poly(const Vtx *view, int n, float inv_w, float inv_h,
                       float cr, float cg, float cb)
 {
@@ -585,9 +578,7 @@ static void submit(const Vtx *poly, int n, float inv_w, float inv_h,
     if (!ok) {
         return;
     }
-    for (i = 0; i < g_repeat; i++) {
-        glide_polygon(dv, n);
-    }
+    glide_polygon(dv, n);
 }
 
 static const Image *level_image(const Level *level, int slot);
@@ -1132,8 +1123,15 @@ static void draw_entities(const Camera *cam, const Basis *basis, const Level *le
  * the texture budget sees the room they leave; 0 ready when the place
  * has no lights.
  */
-static df_u32 g_light_tex[LIGHT_VARIANTS];
+/*
+ * [0..LIGHT_VARIANTS) the pools' pictures, a dungeon's or a street lamp's
+ * (g_light_lamp); past them, for lamps only, each band's core (0 for a
+ * band with none, which no decal names). Indexed by Decal.variant.
+ */
+static df_u32 g_light_tex[2 * LIGHT_VARIANTS];
 static int g_light_ready;
+/* 1 when the pictures on the card are the street lamps' (draw_light_upload). */
+static int g_light_lamp;
 static int g_lights_drawn;
 static int g_decals_drawn;
 /*
@@ -1144,18 +1142,31 @@ static int g_decals_drawn;
  */
 #define DECAL_PULL 0.998f
 
-int draw_light_upload(int want)
+int draw_light_upload(int want, int outdoor)
 {
     static df_u16 pixels[LIGHT_TEX * LIGHT_TEX];
     int v;
 
     g_light_ready = 0;
+    g_light_lamp = outdoor ? 1 : 0;
     if (!want) {
         return 1;
     }
     for (v = 0; v < LIGHT_VARIANTS; v++) {
-        light_texture(v, pixels);
-        if (!glide_upload_565(pixels, LIGHT_TEX, &g_light_tex[v])) {
+        int ok;
+
+        g_light_tex[LIGHT_VARIANTS + v] = 0;
+        if (outdoor) {
+            light_texture_lamp(v, pixels);
+        } else {
+            light_texture(v, pixels);
+        }
+        ok = glide_upload_565(pixels, LIGHT_TEX, &g_light_tex[v]);
+        if (ok && outdoor && light_core(v) > 0.0f) {
+            light_texture_core(v, pixels);
+            ok = glide_upload_565(pixels, LIGHT_CORE_TEX, &g_light_tex[LIGHT_VARIANTS + v]);
+        }
+        if (!ok) {
             log_text(LOG_WARN, "lights: no room for the falloff pictures, the place is unlit");
             return 0;
         }
@@ -1194,6 +1205,8 @@ void draw_light_stats(int *lights, int *decals)
 
 static void draw_lights(const Camera *cam, const Basis *basis)
 {
+    /* World to view, pulled DECAL_PULL toward the eye: the camera's rows, scaled. */
+    float pull[9];
     df_u32 lamp;
     int outdoor;
     int i;
@@ -1202,13 +1215,17 @@ static void draw_lights(const Camera *cam, const Basis *basis)
         return;
     }
     outdoor = light_outdoor();
-    /* Outdoors the lamps fade in by the hour, flame-coloured, LAMP_PASSES deep. */
+    /* Outdoors the lamps fade in by the hour, flame-coloured. */
     lamp = (df_u32)light_lamps();
-    if (outdoor) {
-        g_repeat = LAMP_PASSES;
-    } else {
-        glide_tint(0xffffffu);
-    }
+    pull[0] = basis->rx * DECAL_PULL;
+    pull[1] = 0.0f;
+    pull[2] = basis->rz * DECAL_PULL;
+    pull[3] = -basis->sp * basis->fx * DECAL_PULL;
+    pull[4] = basis->cp * DECAL_PULL;
+    pull[5] = -basis->sp * basis->fz * DECAL_PULL;
+    pull[6] = basis->cp * basis->fx * DECAL_PULL;
+    pull[7] = basis->sp * DECAL_PULL;
+    pull[8] = basis->cp * basis->fz * DECAL_PULL;
     glide_decal(1);
     for (i = 0; i < light_count(); i++) {
         const Decal *d;
@@ -1222,11 +1239,12 @@ static void draw_lights(const Camera *cam, const Basis *basis)
         if (!light_box(i, &cx, &cy, &cz, &ex, &ey, &ez)) {
             continue;
         }
+        /* Out of view or behind a wall: before its flame and its colour are worked out. */
+        if (!scene_box_visible(cx, cy, cz, ex, ey, ez)) {
+            continue;
+        }
         /* A flame wavers: its pool dims and brightens on its own (docs/lighting.md). */
         flame = (df_u32)light_flicker(i, g_anim_time);
-        if (!outdoor) {
-            glide_tint((flame << 16) | (flame << 8) | flame);
-        }
         if (outdoor) {
             const Light *li;
             float dx, dy, dz, d2;
@@ -1255,9 +1273,8 @@ static void draw_lights(const Camera *cam, const Basis *basis)
             }
             glide_tint(((l * LAMP_R / 255u) << 16) | ((l * LAMP_G / 255u) << 8)
                        | (l * LAMP_B / 255u));
-        }
-        if (!scene_box_visible(cx, cy, cz, ex, ey, ez)) {
-            continue;
+        } else {
+            glide_tint((flame << 16) | (flame << 8) | flame);
         }
         g_lights_drawn++;
         n = light_decals(i, &d);
@@ -1273,15 +1290,22 @@ static void draw_lights(const Camera *cam, const Basis *basis)
                 || !scene_box_visible(dc->cx, dc->cy, dc->cz, dc->ex, dc->ey, dc->ez)) {
                 continue;
             }
+            /* A lamp's core has a picture only when the lamps' pictures are the ones up. */
+            if (dc->variant >= LIGHT_VARIANTS && !g_light_lamp) {
+                continue;
+            }
             for (q = 0; q < dc->n; q++) {
                 const float *c;
                 float x, y, z;
 
+                /* The camera off first, so a far town's corner loses no bits; then one matrix. */
                 c = &corners[(dc->first + q) * LIGHT_CORNER];
-                camera_view(cam, basis, c[0], c[1], c[2], &x, &y, &z);
-                v[q].x = x * DECAL_PULL;
-                v[q].y = y * DECAL_PULL;
-                v[q].z = z * DECAL_PULL;
+                x = c[0] - cam->x;
+                y = c[1] - cam->y;
+                z = c[2] - cam->z;
+                v[q].x = pull[0] * x + pull[2] * z;
+                v[q].y = pull[3] * x + pull[4] * y + pull[5] * z;
+                v[q].z = pull[6] * x + pull[7] * y + pull[8] * z;
                 v[q].u = c[3];
                 v[q].v = c[4];
             }
@@ -1290,7 +1314,6 @@ static void draw_lights(const Camera *cam, const Basis *basis)
             g_decals_drawn++;
         }
     }
-    g_repeat = 1;
     glide_decal(0);
 }
 

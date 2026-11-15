@@ -371,45 +371,174 @@ static df_u8 byte01(float v)
  * distance R sqrt((1 - h^2) rho^2 + h^2). Its colour is the light added
  * to the wall, so the edge, and everything past the circle, is 0: the
  * blend dst + dst * src leaves the wall exactly as it was there.
+ *
+ * band_light is that light, 0..1, at rho^2 of variant v's picture.
  */
-void light_texture(int variant, df_u16 *out)
+static float band_light(int variant, float rho2)
 {
     float hb;
+    float dr;
+
+    if (rho2 >= 1.0f) {
+        return 0.0f;
+    }
+    hb = ((float)variant + 0.5f) / (float)LIGHT_VARIANTS;
+    dr = root((1.0f - hb * hb) * rho2 + hb * hb);
+    return falloff(dr, dr > 0.0f ? hb / dr : 1.0f);
+}
+
+/*
+ * The three pictures a decal is drawn with, as a texel's RGB 565 for the
+ * light l (band_light) at it:
+ *
+ *   LIGHT_PLAIN  x = l * torch colour. A dungeon's one pass: the wall
+ *                becomes wall * (1 + x).
+ *   LIGHT_LAMP   A street lamp is two layers deep, wall * (1 + x)^2: a
+ *                night street starts dark and one layer at most doubles
+ *                it. Drawn as two passes of x that was every pool's fill
+ *                twice. But (1 + x)^2 = 1 + (2x + x^2), and 2x + x^2 is
+ *                1 or less wherever x is 0.414 or less, which is all of
+ *                a pool but its hot middle: so the lamp picture holds
+ *                a = min(1, 2x + x^2), and one pass of it is both layers.
+ *   LIGHT_CORE   The hot middle, where one pass's doubling is not
+ *                enough: b = (1 + x)^2 / (1 + a) - 1, 0 outside it. A
+ *                second, small decal lays it over the middle alone
+ *                (light_core), a few percent of the pool's area.
+ *
+ * (1 + a)(1 + b) is (1 + x)^2 exactly at full strength. Dimmed by the
+ * tint t (dusk, distance, a flame) the two differ by x^2 (t - t^2) at
+ * most, under 4% of the wall and smooth.
+ */
+#define LIGHT_PLAIN 0
+#define LIGHT_LAMP 1
+#define LIGHT_CORE 2
+
+static df_u16 light_texel(float l, int kind)
+{
+    static const float colour[3] = { LIGHT_R, LIGHT_G, LIGHT_B };
+    static const float top[3] = { 31.0f, 63.0f, 31.0f };
+    int q[3];
+    int k;
+
+    for (k = 0; k < 3; k++) {
+        float x;
+        float a;
+
+        x = l * colour[k];
+        if (kind != LIGHT_PLAIN) {
+            a = 2.0f * x + x * x;
+            a = a > 1.0f ? 1.0f : a;
+            x = kind == LIGHT_LAMP ? a : (1.0f + x) * (1.0f + x) / (1.0f + a) - 1.0f;
+        }
+        q[k] = (int)(x * top[k] + 0.5f);
+    }
+    return (df_u16)((q[0] << 11) | (q[1] << 5) | q[2]);
+}
+
+/*
+ * How far from its middle a picture of this kind has any colour at all,
+ * as a fraction of its half side: past it every texel is 0 and a decal
+ * adds nothing, yet the card would still read and write each pixel. The
+ * light only falls with distance, so the last coloured ring is found
+ * walking in from the edge. 0 when the whole picture is black.
+ */
+static float lit_edge(int variant, int kind)
+{
+    int k;
+
+    for (k = 256; k > 0; k--) {
+        float rho;
+
+        rho = (float)k * (1.0f / 256.0f);
+        if (light_texel(band_light(variant, rho * rho), kind)) {
+            return rho;
+        }
+    }
+    return 0.0f;
+}
+
+/*
+ * Two texels past the last coloured one: a texel's own half diagonal,
+ * and the one more that bilinear filtering spreads a colour over.
+ */
+#define LIT_MARGIN (4.0f / (float)LIGHT_TEX)
+
+static float g_lit[2][LIGHT_VARIANTS];
+static float g_core[LIGHT_VARIANTS];
+static int g_lit_known;
+
+static void lit_measure(void)
+{
+    int v;
+
+    if (g_lit_known) {
+        return;
+    }
+    for (v = 0; v < LIGHT_VARIANTS; v++) {
+        int kind;
+        float e;
+
+        for (kind = 0; kind < 2; kind++) {
+            e = lit_edge(v, kind);
+            e = e > 0.0f ? e + LIT_MARGIN : 0.0f;
+            g_lit[kind][v] = e > 1.0f ? 1.0f : e;
+        }
+        /*
+         * The core's square, a quarter wider than its coloured middle: its
+         * picture's border texels are then 0, and clamped addressing keeps
+         * the edge of its decal dark.
+         */
+        e = lit_edge(v, LIGHT_CORE);
+        e = e > 0.0f ? e * 1.25f + 0.02f : 0.0f;
+        g_core[v] = e > 1.0f ? 1.0f : e;
+    }
+    g_lit_known = 1;
+}
+
+float light_lit(int variant, int lamp)
+{
+    lit_measure();
+    return variant >= 0 && variant < LIGHT_VARIANTS ? g_lit[lamp ? 1 : 0][variant] : 0.0f;
+}
+
+float light_core(int variant)
+{
+    lit_measure();
+    return variant >= 0 && variant < LIGHT_VARIANTS ? g_core[variant] : 0.0f;
+}
+
+/* A picture of side texels spanning +/- span of variant v's square. */
+static void light_picture(int variant, int kind, int side, float span, df_u16 *out)
+{
     int x;
     int y;
 
-    if (variant < 0) {
-        variant = 0;
-    }
-    if (variant >= LIGHT_VARIANTS) {
-        variant = LIGHT_VARIANTS - 1;
-    }
-    hb = ((float)variant + 0.5f) / (float)LIGHT_VARIANTS;
-    for (y = 0; y < LIGHT_TEX; y++) {
-        for (x = 0; x < LIGHT_TEX; x++) {
+    variant = variant < 0 ? 0 : (variant >= LIGHT_VARIANTS ? LIGHT_VARIANTS - 1 : variant);
+    for (y = 0; y < side; y++) {
+        for (x = 0; x < side; x++) {
             float px;
             float py;
-            float rho2;
-            float dr;
-            float l;
-            int r5;
-            int g6;
-            int b5;
 
-            px = ((float)x + 0.5f) / (float)LIGHT_TEX * 2.0f - 1.0f;
-            py = ((float)y + 0.5f) / (float)LIGHT_TEX * 2.0f - 1.0f;
-            rho2 = px * px + py * py;
-            l = 0.0f;
-            if (rho2 < 1.0f) {
-                dr = root((1.0f - hb * hb) * rho2 + hb * hb);
-                l = falloff(dr, dr > 0.0f ? hb / dr : 1.0f);
-            }
-            r5 = (int)(l * LIGHT_R * 31.0f + 0.5f);
-            g6 = (int)(l * LIGHT_G * 63.0f + 0.5f);
-            b5 = (int)(l * LIGHT_B * 31.0f + 0.5f);
-            out[y * LIGHT_TEX + x] = (df_u16)((r5 << 11) | (g6 << 5) | b5);
+            px = (((float)x + 0.5f) / (float)side * 2.0f - 1.0f) * span;
+            py = (((float)y + 0.5f) / (float)side * 2.0f - 1.0f) * span;
+            out[y * side + x] = light_texel(band_light(variant, px * px + py * py), kind);
         }
     }
+}
+
+void light_texture(int variant, df_u16 *out)
+{
+    light_picture(variant, LIGHT_PLAIN, LIGHT_TEX, 1.0f, out);
+}
+
+void light_texture_lamp(int variant, df_u16 *out)
+{
+    light_picture(variant, LIGHT_LAMP, LIGHT_TEX, 1.0f, out);
+}
+
+void light_texture_core(int variant, df_u16 *out)
+{
+    light_picture(variant, LIGHT_CORE, LIGHT_CORE_TEX, light_core(variant), out);
 }
 
 typedef struct Cut {
@@ -417,8 +546,8 @@ typedef struct Cut {
     float u, v;
 } Cut;
 
-/* The part of in[] with sign * (axis - limit) <= 0, lerped from the inside. */
-static int cut_side(const Cut *in, int n, Cut *out, int axis, float limit, float sign)
+/* The part of in[] with au * u + av * v <= limit, lerped from the inside. */
+static int cut_side(const Cut *in, int n, Cut *out, float au, float av, float limit)
 {
     int i;
     int m;
@@ -432,8 +561,8 @@ static int cut_side(const Cut *in, int n, Cut *out, int axis, float limit, float
 
         a = &in[i];
         b = &in[(i + 1) % n];
-        da = sign * ((axis ? a->v : a->u) - limit);
-        db = sign * ((axis ? b->v : b->u) - limit);
+        da = au * a->u + av * a->v - limit;
+        db = au * b->u + av * b->v - limit;
         if (da <= 0.0f) {
             out[m++] = *a;
         }
@@ -562,16 +691,38 @@ static void to_frame(const Frame *f, const float (*p)[3], int n, Cut *a)
     }
 }
 
-/* The part of a[0..n) inside the square round the circle, back in a. */
+/* The part of a[0..n) inside the square of half side rr round the centre, back in a. */
 static int to_square(Cut *a, int n, float rr)
 {
     Cut b[DECAL_MAX];
     int m;
 
-    m = cut_side(a, n, b, 0, rr, 1.0f);
-    m = m >= 3 ? cut_side(b, m, a, 0, -rr, -1.0f) : 0;
-    m = m >= 3 ? cut_side(a, m, b, 1, rr, 1.0f) : 0;
-    m = m >= 3 ? cut_side(b, m, a, 1, -rr, -1.0f) : 0;
+    m = cut_side(a, n, b, 1.0f, 0.0f, rr);
+    m = m >= 3 ? cut_side(b, m, a, -1.0f, 0.0f, rr) : 0;
+    m = m >= 3 ? cut_side(a, m, b, 0.0f, 1.0f, rr) : 0;
+    m = m >= 3 ? cut_side(b, m, a, 0.0f, -1.0f, rr) : 0;
+    return m >= 3 ? m : 0;
+}
+
+/*
+ * The part of a[0..n) inside the octagon round the circle of radius r,
+ * back in a: the square, then its four corners off. The circle is where
+ * the falloff picture has colour (light_lit); the square round it is 27%
+ * black corners the card would fill for nothing, the octagon 5%. Up to
+ * four more corners a decal, on the few that hold a whole pool.
+ */
+#define OCT 0.70710678f
+
+static int to_octagon(Cut *a, int n, float r)
+{
+    Cut b[DECAL_MAX];
+    int m;
+
+    m = to_square(a, n, r);
+    m = m >= 3 ? cut_side(a, m, b, OCT, OCT, r) : 0;
+    m = m >= 3 ? cut_side(b, m, a, -OCT, OCT, r) : 0;
+    m = m >= 3 ? cut_side(a, m, b, -OCT, -OCT, r) : 0;
+    m = m >= 3 ? cut_side(b, m, a, OCT, -OCT, r) : 0;
     return m >= 3 ? m : 0;
 }
 
@@ -706,12 +857,90 @@ static int seen(const Light *li, const Cut *a, int m)
     return 0;
 }
 
+/*
+ * A cut stored as light's next decal (fill), or only counted. a[0..m) are
+ * its corners with u, v in the plane, from the pool's centre; the picture
+ * is `picture` and spans +/- half of them. nx..d0 is the face's plane.
+ */
+static void store_decal(const Cut *a, int m, int picture, float half,
+                        float nx, float ny, float nz, float d0, int light, int fill)
+{
+    Decal *d;
+    float *bx;
+    float lo[3];
+    float hi[3];
+    int k;
+
+    if (!fill) {
+        g_ndecal++;
+        g_ncorner += m;
+        return;
+    }
+    if (g_ndecal >= g_decal_cap || g_ncorner + m > g_corner_cap) {
+        return;
+    }
+    d = &g_decal[g_ndecal];
+    d->first = g_ncorner;
+    d->n = m;
+    d->variant = picture;
+    d->nx = nx;
+    d->ny = ny;
+    d->nz = nz;
+    d->d = d0;
+    lo[0] = hi[0] = a[0].x;
+    lo[1] = hi[1] = a[0].y;
+    lo[2] = hi[2] = a[0].z;
+    for (k = 1; k < m; k++) {
+        lo[0] = a[k].x < lo[0] ? a[k].x : lo[0];
+        lo[1] = a[k].y < lo[1] ? a[k].y : lo[1];
+        lo[2] = a[k].z < lo[2] ? a[k].z : lo[2];
+        hi[0] = a[k].x > hi[0] ? a[k].x : hi[0];
+        hi[1] = a[k].y > hi[1] ? a[k].y : hi[1];
+        hi[2] = a[k].z > hi[2] ? a[k].z : hi[2];
+    }
+    d->cx = (lo[0] + hi[0]) * 0.5f;
+    d->cy = (lo[1] + hi[1]) * 0.5f;
+    d->cz = (lo[2] + hi[2]) * 0.5f;
+    d->ex = (hi[0] - lo[0]) * 0.5f;
+    d->ey = (hi[1] - lo[1]) * 0.5f;
+    d->ez = (hi[2] - lo[2]) * 0.5f;
+    bx = &g_box[light * 6];
+    for (k = 0; k < m; k++) {
+        float *c;
+
+        c = &g_corner[g_ncorner * LIGHT_CORNER];
+        c[0] = a[k].x;
+        c[1] = a[k].y;
+        c[2] = a[k].z;
+        c[3] = a[k].u / (2.0f * half) + 0.5f;
+        c[4] = a[k].v / (2.0f * half) + 0.5f;
+        /* This light's first decal, first corner: the box starts here. */
+        if (g_ndecal == g_first[light] && k == 0) {
+            bx[0] = bx[3] = c[0];
+            bx[1] = bx[4] = c[1];
+            bx[2] = bx[5] = c[2];
+        }
+        bx[0] = c[0] < bx[0] ? c[0] : bx[0];
+        bx[1] = c[1] < bx[1] ? c[1] : bx[1];
+        bx[2] = c[2] < bx[2] ? c[2] : bx[2];
+        bx[3] = c[0] > bx[3] ? c[0] : bx[3];
+        bx[4] = c[1] > bx[4] ? c[1] : bx[4];
+        bx[5] = c[2] > bx[5] ? c[2] : bx[5];
+        g_ncorner++;
+    }
+    g_ndecal++;
+}
+
 static void cut_face(const float (*p)[3], int n, const float *vis, int two_sided,
                      const Light *li, float reach, int fill, int light)
 {
     float nx, ny, nz, h, rr;
+    float lit;
+    float core;
+    float d0;
     Frame f;
     Cut a[DECAL_MAX];
+    int variant;
     int m;
     int k;
 
@@ -723,13 +952,25 @@ static void cut_face(const float (*p)[3], int n, const float *vis, int two_sided
     nz = f.nz;
     h = f.h;
     rr = f.rr;
+    variant = (int)(h / reach * (float)LIGHT_VARIANTS);
+    if (variant >= LIGHT_VARIANTS) {
+        variant = LIGHT_VARIANTS - 1;
+    }
+    /*
+     * Only as far as its picture has colour: the outer ring of every
+     * falloff picture rounds to black in RGB 565, and the highest band's
+     * whole picture does (a light that only just reaches the face).
+     */
+    lit = light_lit(variant, g_outdoor) * rr;
+    if (lit < 1.0f) {
+        return;
+    }
     to_frame(&f, p, n, a);
-    /* The square the circle fits in. */
-    m = to_square(a, n, rr);
+    m = to_octagon(a, n, lit);
     if (m < 3) {
         return;
     }
-    /* A patch in the square's corners, wholly outside the circle, adds nothing. */
+    /* A patch in the octagon's corners, wholly outside the circle, adds nothing. */
     {
         float best;
         int inside;
@@ -773,7 +1014,7 @@ static void cut_face(const float (*p)[3], int n, const float *vis, int two_sided
                 }
             }
         }
-        if (!inside && best >= rr * rr) {
+        if (!inside && best >= lit * lit) {
             return;
         }
     }
@@ -785,75 +1026,20 @@ static void cut_face(const float (*p)[3], int n, const float *vis, int two_sided
     if (fill && !seen(li, a, m)) {
         return;
     }
-    if (fill) {
-        Decal *d;
-        float *bx;
-
-        if (g_ndecal >= g_decal_cap || g_ncorner + m > g_corner_cap) {
-            return;
+    d0 = -(nx * p[0][0] + ny * p[0][1] + nz * p[0][2]);
+    store_decal(a, m, variant, rr, nx, ny, nz, d0, light, fill);
+    /*
+     * A street lamp's hot middle, its second layer (light_texel): the
+     * same face cut to the core's small square, drawn with the core's
+     * picture. Most faces a lamp reaches miss that square and get none.
+     */
+    core = g_outdoor ? light_core(variant) * rr : 0.0f;
+    if (core >= 1.0f) {
+        to_frame(&f, p, n, a);
+        m = to_square(a, n, core);
+        if (m >= 3) {
+            store_decal(a, m, LIGHT_VARIANTS + variant, core, nx, ny, nz, d0, light, fill);
         }
-        d = &g_decal[g_ndecal];
-        d->first = g_ncorner;
-        d->n = m;
-        d->variant = (int)(h / reach * (float)LIGHT_VARIANTS);
-        if (d->variant >= LIGHT_VARIANTS) {
-            d->variant = LIGHT_VARIANTS - 1;
-        }
-        d->nx = nx;
-        d->ny = ny;
-        d->nz = nz;
-        d->d = -(nx * p[0][0] + ny * p[0][1] + nz * p[0][2]);
-        {
-            float lo[3];
-            float hi[3];
-            int q;
-
-            lo[0] = hi[0] = a[0].x;
-            lo[1] = hi[1] = a[0].y;
-            lo[2] = hi[2] = a[0].z;
-            for (q = 1; q < m; q++) {
-                lo[0] = a[q].x < lo[0] ? a[q].x : lo[0];
-                lo[1] = a[q].y < lo[1] ? a[q].y : lo[1];
-                lo[2] = a[q].z < lo[2] ? a[q].z : lo[2];
-                hi[0] = a[q].x > hi[0] ? a[q].x : hi[0];
-                hi[1] = a[q].y > hi[1] ? a[q].y : hi[1];
-                hi[2] = a[q].z > hi[2] ? a[q].z : hi[2];
-            }
-            d->cx = (lo[0] + hi[0]) * 0.5f;
-            d->cy = (lo[1] + hi[1]) * 0.5f;
-            d->cz = (lo[2] + hi[2]) * 0.5f;
-            d->ex = (hi[0] - lo[0]) * 0.5f;
-            d->ey = (hi[1] - lo[1]) * 0.5f;
-            d->ez = (hi[2] - lo[2]) * 0.5f;
-        }
-        bx = &g_box[light * 6];
-        for (k = 0; k < m; k++) {
-            float *c;
-
-            c = &g_corner[g_ncorner * LIGHT_CORNER];
-            c[0] = a[k].x;
-            c[1] = a[k].y;
-            c[2] = a[k].z;
-            c[3] = a[k].u / (2.0f * rr) + 0.5f;
-            c[4] = a[k].v / (2.0f * rr) + 0.5f;
-            /* This light's first decal, first corner: the box starts here. */
-            if (g_ndecal == g_first[light] && k == 0) {
-                bx[0] = bx[3] = c[0];
-                bx[1] = bx[4] = c[1];
-                bx[2] = bx[5] = c[2];
-            }
-            bx[0] = c[0] < bx[0] ? c[0] : bx[0];
-            bx[1] = c[1] < bx[1] ? c[1] : bx[1];
-            bx[2] = c[2] < bx[2] ? c[2] : bx[2];
-            bx[3] = c[0] > bx[3] ? c[0] : bx[3];
-            bx[4] = c[1] > bx[4] ? c[1] : bx[4];
-            bx[5] = c[2] > bx[5] ? c[2] : bx[5];
-            g_ncorner++;
-        }
-        g_ndecal++;
-    } else {
-        g_ndecal++;
-        g_ncorner += m;
     }
 }
 

@@ -69,7 +69,7 @@ void draw_prime(const struct Level *level, const Camera *cam);
  * lights). Call after glide_tex_reset and before the level's pictures.
  * 0 when they did not fit: the place is then drawn unlit.
  */
-int draw_light_upload(int want);
+int draw_light_upload(int want, int outdoor);
 /* Lights whose decals passed the cull last frame, and decals drawn. */
 void draw_light_stats(int *lights, int *decals);
 

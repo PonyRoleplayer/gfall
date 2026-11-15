@@ -22,6 +22,8 @@
 /* Falloff pictures, one per band of the light's height over the face. */
 #define LIGHT_VARIANTS 8
 #define LIGHT_TEX 64
+/* A street lamp's core picture's side: it spans the hot middle alone. */
+#define LIGHT_CORE_TEX 32
 
 /*
  * One cut of one face by one light. corners index light_corners():
@@ -32,6 +34,11 @@
 typedef struct Decal {
     int first;
     int n;
+    /*
+     * The picture it is drawn with: 0..LIGHT_VARIANTS - 1 the falloff of
+     * that height band; LIGHT_VARIANTS and up, outdoors only, the lamp's
+     * core of band variant - LIGHT_VARIANTS (light_texture_core).
+     */
     int variant;
     float nx, ny, nz, d;
     /* World box around the corners, for the per-frame cull. */
@@ -113,11 +120,12 @@ df_u32 light_ambient_rgb(void);
  */
 df_u32 light_sprite_over(int s, df_u32 base);
 /*
- * Outdoors the decals are drawn this many times: a pass at most doubles
- * a pixel, and a night street starts dark. Two take the ground under a
- * lamp from moonlight to most of its colour. Three looked a little
- * brighter, and on the Voodoo the third pass of a near pool's fill cost
- * more than it showed.
+ * Outdoors a lamp's light is this many layers deep, wall * (1 + x)^2: a
+ * layer at most doubles a pixel, and a night street starts dark. Two
+ * take the ground under a lamp from moonlight to most of its colour.
+ * Not two passes: the lamp's picture holds both layers, and a small core
+ * decal the middle one pass cannot reach (light_texture_lamp). Three
+ * looked a little brighter, and cost more than it showed.
  */
 #define LAMP_PASSES 2
 /*
@@ -153,8 +161,25 @@ int light_stream_pending(void);
 /* The longest single light (or slot of sprites) cut since the last ask, in ms; then forgets it. */
 float light_stream_worst(void);
 
-/* LIGHT_TEX x LIGHT_TEX texels of RGB 565, row 0 first: falloff picture v. */
+/* LIGHT_TEX x LIGHT_TEX texels of RGB 565, row 0 first: falloff picture v, a dungeon's. */
 void light_texture(int variant, df_u16 *out);
+/*
+ * A street lamp's two pictures of band v (docs/lighting.md, The lamps in
+ * one pass): the pool, both its layers in one, LIGHT_TEX a side; and its
+ * core, LIGHT_CORE_TEX a side over the middle alone, the square of
+ * light_core(v) of the pool's half side. light_core is 0 for a band with
+ * no core: nothing to upload, and no decal names it.
+ */
+void light_texture_lamp(int variant, df_u16 *out);
+void light_texture_core(int variant, df_u16 *out);
+float light_core(int variant);
+/*
+ * How far from its middle band v's picture has any colour, as a fraction
+ * of its half side (lamp: the lamp's picture, else the dungeon's): a
+ * decal is cut to the octagon round that, and a band whose picture is
+ * all black, 0, lays none.
+ */
+float light_lit(int variant, int lamp);
 
 /* Switches. Default on. Off draws every place full bright, as before. */
 void light_set_on(int on);

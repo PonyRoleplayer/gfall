@@ -3906,6 +3906,93 @@ static void check_light_shadow(void)
     light_build(0);
 }
 
+/*
+ * The falloff pictures (docs/lighting.md, Black fill; The lamps in one
+ * pass). Past light_lit of its half side a picture has no colour, less
+ * the two texels of margin, so the octagon a decal is cut to loses
+ * nothing; the highest band is all black and lays no decal. A street
+ * lamp's picture and its core, one pass each, multiply to the two passes
+ * of the plain picture they replaced, to within a step of RGB 565; the
+ * core's own border is black, so its small decal has no edge.
+ */
+static void check_light_pictures(void)
+{
+    static df_u16 plain[LIGHT_TEX * LIGHT_TEX];
+    static df_u16 lamp[LIGHT_TEX * LIGHT_TEX];
+    static df_u16 core[LIGHT_CORE_TEX * LIGHT_CORE_TEX];
+    float worst;
+    int stray;
+    int cores;
+    int border;
+    int v;
+
+    worst = 0.0f;
+    stray = 0;
+    cores = 0;
+    border = 0;
+    for (v = 0; v < LIGHT_VARIANTS; v++) {
+        float k;
+        int x;
+        int y;
+
+        light_texture(v, plain);
+        light_texture_lamp(v, lamp);
+        k = light_core(v);
+        if (k > 0.0f) {
+            cores++;
+            light_texture_core(v, core);
+            for (x = 0; x < LIGHT_CORE_TEX; x++) {
+                border += core[x] != 0 || core[(LIGHT_CORE_TEX - 1) * LIGHT_CORE_TEX + x] != 0
+                    || core[x * LIGHT_CORE_TEX] != 0 || core[x * LIGHT_CORE_TEX + LIGHT_CORE_TEX - 1] != 0;
+            }
+        }
+        for (y = 0; y < LIGHT_TEX; y++) {
+            for (x = 0; x < LIGHT_TEX; x++) {
+                float px;
+                float py;
+                float rho;
+                float want;
+                float got;
+                float a;
+                float b;
+
+                px = ((float)x + 0.5f) / (float)LIGHT_TEX * 2.0f - 1.0f;
+                py = ((float)y + 0.5f) / (float)LIGHT_TEX * 2.0f - 1.0f;
+                rho = df_sqrt(px * px + py * py);
+                /* A texel wholly past the lit circle, its own half diagonal allowed for. */
+                if (rho - 1.5f / (float)LIGHT_TEX > light_lit(v, 0)) {
+                    stray += plain[y * LIGHT_TEX + x] != 0;
+                }
+                if (rho - 1.5f / (float)LIGHT_TEX > light_lit(v, 1)) {
+                    stray += lamp[y * LIGHT_TEX + x] != 0;
+                }
+                /* Red, the strongest: two layers of the plain picture against lamp times core. */
+                want = 1.0f + (float)(plain[y * LIGHT_TEX + x] >> 11) / 31.0f;
+                want *= want;
+                a = (float)(lamp[y * LIGHT_TEX + x] >> 11) / 31.0f;
+                b = 0.0f;
+                if (k > 0.0f && df_absf(px) < k && df_absf(py) < k) {
+                    int cx;
+                    int cy;
+
+                    cx = df_ifloor((px / k + 1.0f) * 0.5f * (float)LIGHT_CORE_TEX);
+                    cy = df_ifloor((py / k + 1.0f) * 0.5f * (float)LIGHT_CORE_TEX);
+                    b = (float)(core[cy * LIGHT_CORE_TEX + cx] >> 11) / 31.0f;
+                }
+                got = (1.0f + a) * (1.0f + b);
+                worst = df_absf(got - want) > worst ? df_absf(got - want) : worst;
+            }
+        }
+    }
+    printf("light pictures: lit to %.2f of the half side (band 0), band %d black, %d bands with a core (band 0's %.2f wide); lamp x core within %.3f of two passes\n",
+           (double)light_lit(0, 0), LIGHT_VARIANTS - 1, cores, (double)light_core(0), (double)worst);
+    check_expect(stray == 0, "a falloff picture has colour past where its decals are cut");
+    check_expect(light_lit(0, 0) > 0.5f && light_lit(0, 0) < 0.97f && light_lit(LIGHT_VARIANTS - 1, 0) == 0.0f,
+                 "the lit part of a falloff picture is not what the cut expects");
+    check_expect(cores > 0 && border == 0, "a lamp's core picture is missing, or not black at its border");
+    check_expect(worst < 0.2f, "a lamp's one pass and its core are not the two passes they replace");
+}
+
 static void check_lights(void)
 {
     static const float wx[4] = { -200.0f, 200.0f, 200.0f, -200.0f };
@@ -3968,7 +4055,8 @@ static void check_lights(void)
                      "the next place's decals were written into the last place's buffers");
     }
     n = light_decals(0, &d);
-    ok = n == 1 && d[0].n == 4 && d[0].nz < -0.99f && d[0].d > 0.0f;
+    /* A whole pool on one wall: the octagon round where its picture has colour. */
+    ok = n == 1 && d[0].n == 8 && d[0].nz < -0.99f && d[0].d > 0.0f;
     c = light_corners();
     for (k = 0; ok && k < d[0].n; k++) {
         const float *q;
@@ -3977,7 +4065,8 @@ static void check_lights(void)
         ok = check_near(q[2], 100.0f, 0.01f) && q[0] > -146.0f && q[0] < 146.0f
             && q[3] >= -0.001f && q[3] <= 1.001f && q[4] >= -0.001f && q[4] <= 1.001f;
     }
-    check_expect(ok, "the decal is not the wall's square around the light");
+    check_expect(ok, "the decal is not the wall's octagon around the light");
+    check_light_pictures();
     /* A steady light is full; a flame wavers between its low and full, and moves. */
     {
         int lo;

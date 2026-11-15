@@ -263,7 +263,7 @@ int gfx_prepare(const Level *level)
         draw_prepare();
         weather_state(&w);
         sky_prepare(level->sky, clock_minute(), w.sky);
-        draw_light_upload(1);
+        draw_light_upload(1, level->scene.outdoor);
         if (level->palette) {
             font_upload(level->palette->r, level->palette->g, level->palette->b);
         }
@@ -294,7 +294,7 @@ int gfx_prepare(const Level *level)
         weather_state(&w);
         sky_prepare(level ? level->sky : 0, clock_minute(), w.sky);
     }
-    draw_light_upload(level && level->scene.nlights > 0);
+    draw_light_upload(level && level->scene.nlights > 0, level ? level->scene.outdoor : 0);
     /*
      * The font before the level's pictures too: the budget then sees the
      * exact room, instead of keeping back a guess for it.
