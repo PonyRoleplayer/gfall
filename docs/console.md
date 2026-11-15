@@ -59,6 +59,7 @@ A variable prints its value when typed alone, and takes a new one as an argument
 | `occlude` | on/off | Off keeps the frustum and skips the occlusion step, to compare a frame. Default on. See `docs/culling.md`. |
 | `covers` | on/off | Washes the occlusion cells of the last frame green. A model or sprite whose box lands only on green, and is behind it, was not drawn. Default off. |
 | `faces` | on/off | Off draws ARCH3D faces the normal would drop. |
+| `vertcache` | on/off | On (default) turns each corner of a model to the view once, however many faces share it; off works every face's corners out again, the same picture (`docs/glide.md`, Corners once a model). |
 | `nearfirst` | on/off | On (default) draws the frame's models nearest first and the ground last, so hidden pixels fail the depth test; off draws in the place's order (`docs/culling.md`, The order they are drawn in). |
 | `vsync` | on/off | On waits for the retrace on each swap. Default on. |
 | `wbuffer` | on/off | On is the W-buffer, depth from 1/w. Off is the 16-bit Z-buffer, to compare. Default on. See `docs/glide.md`. |

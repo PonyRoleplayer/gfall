@@ -64,6 +64,20 @@ typedef struct Mesh {
     float cx, cy, cz;
     float ex, ey, ez;
     int bound_n;
+    /*
+     * Which corner each triangle corner is (mesh_index, scene.h): corner
+     * k of triangle t is number vid[3 * t + k] of the mesh's nverts
+     * distinct positions. Two triangle corners at one place share a
+     * number, so the draw turns each place to the view once a model, not
+     * once a face that has it (docs/glide.md, Corners once a model). 0
+     * for a mesh not indexed: one a loader did not index, or one with
+     * more than MESH_VERTS_MAX places; it is drawn corner by corner.
+     */
+    df_u16 *vid;
+    int nverts;
 } Mesh;
+
+/* The most distinct corners an indexed mesh has: the draw's cache holds this many. */
+#define MESH_VERTS_MAX 4096
 
 #endif

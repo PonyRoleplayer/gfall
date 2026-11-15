@@ -29,6 +29,7 @@
 #include "engine/core/mem.h"
 #include "engine/gfx/camera.h"
 #include "engine/gfx/modelview.h"
+#include "engine/gfx/viewvert.h"
 #include "engine/gfx/mip.h"
 #include "engine/gfx/pace.h"
 #include "engine/scene/light.h"
@@ -188,6 +189,136 @@ static void check_modelview(void)
                      && df_negative(2.0f - 2.0f) == 0u,
                      "df_negative is not the sign");
     }
+}
+
+/*
+ * A mesh's corners numbered (mesh_index) and the draw's cache over them
+ * (viewvert.h; docs/glide.md, Corners once a model). Two quads that share
+ * an edge, one corner written as -0: 12 triangle corners, 6 places. Each
+ * place turns to the view once a model and gives what modelview_point and
+ * camera_project give, to the bit; the next model works them out again.
+ */
+static void check_corner_cache(void)
+{
+    static ViewVert table[MESH_VERTS_MAX];
+    /* Quad a: 0,0 1,0 1,1 0,1 at z 50; quad b: 1,0 2,0 2,1 1,1. Scaled by 40. */
+    static const float qx[2][4] = { { -0.0f, 40.0f, 40.0f, 0.0f }, { 40.0f, 80.0f, 80.0f, 40.0f } };
+    static const float qy[4] = { 0.0f, 0.0f, 40.0f, 40.0f };
+    Mesh *mesh;
+    Instance in;
+    Camera cam;
+    Basis basis;
+    ModelView mv;
+    ViewClip clip;
+    df_u16 stamp;
+    int q;
+    int t;
+    int k;
+    int same;
+    int exact;
+
+    mesh = (Mesh *)mem_alloc(sizeof(Mesh));
+    check_expect(mesh != 0, "corner cache mesh was not allocated");
+    if (!mesh) {
+        return;
+    }
+    mesh->ntris = 4;
+    mesh->tris = (Tri *)mem_alloc(4u * (df_u32)sizeof(Tri));
+    for (q = 0; q < 2; q++) {
+        static const int fan[2][3] = { { 0, 1, 2 }, { 0, 2, 3 } };
+
+        for (t = 0; t < 2; t++) {
+            for (k = 0; k < 3; k++) {
+                Tri *tri;
+
+                tri = &mesh->tris[q * 2 + t];
+                tri->x[k] = qx[q][fan[t][k]];
+                tri->y[k] = qy[fan[t][k]];
+                tri->z[k] = 50.0f;
+            }
+        }
+    }
+    mesh_index(mesh);
+    check_expect(mesh->vid != 0 && mesh->nverts == 6, "two quads sharing an edge are not 6 corners");
+    if (!mesh->vid) {
+        return;
+    }
+    /* Same place, same number; another place, another. */
+    same = 1;
+    for (t = 0; t < 4; t++) {
+        for (k = 0; k < 3; k++) {
+            int t2;
+            int k2;
+
+            for (t2 = 0; t2 < 4; t2++) {
+                for (k2 = 0; k2 < 3; k2++) {
+                    int here;
+
+                    here = mesh->tris[t].x[k] == mesh->tris[t2].x[k2] && mesh->tris[t].y[k] == mesh->tris[t2].y[k2];
+                    same = same && here == (mesh->vid[t * 3 + k] == mesh->vid[t2 * 3 + k2]);
+                }
+            }
+        }
+    }
+    check_expect(same, "a mesh's corner numbers do not follow its corners' places");
+
+    mem_zero(&in, sizeof(in));
+    in.mesh = mesh;
+    instance_set_rotation(&in, 0.3f, 1.1f, 0.2f);
+    in.x = 2000.0f;
+    in.z = -900.0f;
+    camera_set(&cam, 1960.0f, 30.0f, -1100.0f, 0.4f, 0.1f);
+    camera_basis(&cam, &basis);
+    modelview_build(&mv, &in, &cam, &basis);
+    clip.limit = DF_FAR;
+    clip.focal = camera_focal();
+    clip.slope_x = (df_view_cx() + 16.0f) / clip.focal;
+    clip.slope_y = (df_view_cy() + 16.0f) / clip.focal;
+    mem_zero(table, sizeof(table));
+    stamp = VIEW_NO_STAMP;
+    view_begin(table, &stamp);
+    exact = 1;
+    for (t = 0; t < 4; t++) {
+        for (k = 0; k < 3; k++) {
+            ViewVert *v;
+            float x, y, z;
+
+            v = view_corner(table, stamp, &mv, &clip, mesh, t, k);
+            modelview_point(&mv, mesh->tris[t].x[k], mesh->tris[t].y[k], mesh->tris[t].z[k], &x, &y, &z);
+            exact = exact && v->x == x && v->y == y && v->z == z && v->out == view_out(&clip, x, y, z);
+            if (z >= DF_NEAR) {
+                float sx, sy, oow, ooz;
+
+                view_project(v, stamp, &clip);
+                camera_project(x, y, z, &sx, &sy, &oow, &ooz);
+                exact = exact && v->sx == sx && v->sy == sy && v->oow == oow;
+            }
+        }
+    }
+    check_expect(exact, "a cached corner is not what the transform and the projection give");
+    /* Asked again in the same model, it is not worked out again; in the next model, it is. */
+    {
+        ViewVert *v;
+        float was;
+
+        v = view_corner(table, stamp, &mv, &clip, mesh, 0, 1);
+        was = v->x;
+        v->x = 12345.0f;
+        check_expect(view_corner(table, stamp, &mv, &clip, mesh, 2, 0)->x == 12345.0f,
+                     "a corner two faces share was worked out twice in one model");
+        view_begin(table, &stamp);
+        check_expect(view_corner(table, stamp, &mv, &clip, mesh, 2, 0)->x == was,
+                     "the next model was given the last model's corner");
+        /* The stamp comes round: the table is cleared, so 65536 models on nothing is taken for fresh. */
+        stamp = 65535u;
+        table[5].seen = 1;
+        view_begin(table, &stamp);
+        check_expect(stamp == 1 && table[5].seen == VIEW_NO_STAMP, "the corner cache's stamp came round without a clear");
+    }
+    check_expect(view_out(&clip, 0.0f, 0.0f, 100.0f) == 0u && (view_out(&clip, 0.0f, 0.0f, 1.0f) & 1u)
+                 && (view_out(&clip, 0.0f, 0.0f, DF_FAR + 10.0f) & 2u)
+                 && (view_out(&clip, -500.0f, 0.0f, 100.0f) & 4u) && (view_out(&clip, 500.0f, 0.0f, 100.0f) & 8u),
+                 "a point's planes are not near, far, left, right");
 }
 
 /*
@@ -6460,6 +6591,7 @@ void check_engine(void)
     check_rotation();
     check_camera();
     check_modelview();
+    check_corner_cache();
     check_view_size();
     check_pace();
     check_flat_facing();

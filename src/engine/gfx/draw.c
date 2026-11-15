@@ -29,6 +29,7 @@
 #include "engine/sound/sound.h"
 #include "engine/gfx/sky.h"
 #include "engine/gfx/modelview.h"
+#include "engine/gfx/viewvert.h"
 
 /*
  * View signs live in camera_view. This file only clips and submits.
@@ -91,6 +92,8 @@ static int g_faces_drop;
 static float g_clip_x = (320.0f + CLIP_MARGIN) / 417.0f;
 static float g_clip_y = (240.0f + CLIP_MARGIN) / 417.0f;
 static float g_focal = 417.0f;
+/* The frame's clip values as the corner cache reads them, set with the ones above (clip_slopes). */
+static ViewClip g_view_clip;
 
 /*
  * Where the card's fog table goes solid now: the far clip's own
@@ -133,6 +136,11 @@ static void clip_slopes(void)
     }
     g_clip_x = (df_view_cx() + CLIP_MARGIN) / g_focal;
     g_clip_y = (df_view_cy() + CLIP_MARGIN) / g_focal;
+    /* The same four for the corner cache (viewvert.h). */
+    g_view_clip.limit = g_limit;
+    g_view_clip.slope_x = g_clip_x;
+    g_view_clip.slope_y = g_clip_y;
+    g_view_clip.focal = g_focal;
 }
 
 /* Not "far": windows.h defines far and near as empty macros. */
@@ -515,26 +523,11 @@ static void corners_out(const Vtx *v, int n, df_u32 *any, df_u32 *all)
     int i;
 
     some = 0;
-    every = 63u;
+    every = VIEW_PLANES;
     for (i = 0; i < n; i++) {
-        float x;
-        float y;
-        float z;
-        float gx;
-        float gy;
         df_u32 out;
 
-        x = v[i].x;
-        y = v[i].y;
-        z = v[i].z;
-        gx = z * g_clip_x;
-        gy = z * g_clip_y;
-        out = df_negative(z - DF_NEAR)
-            | (df_negative(g_limit - z) << 1)
-            | (df_negative(gx + x) << 2)
-            | (df_negative(gx - x) << 3)
-            | (df_negative(gy + y) << 4)
-            | (df_negative(gy - y) << 5);
+        out = view_out(&g_view_clip, v[i].x, v[i].y, v[i].z);
         some |= out;
         every &= out;
     }
@@ -636,6 +629,148 @@ static void image_scale(const Image *img, int slot, float *inv_w, float *inv_h)
 }
 
 /*
+ * The corner cache (viewvert.h): what the frame has worked out for each
+ * distinct corner of the model being drawn, good while it carries
+ * g_vert_stamp. model_view starts a model: its ModelView, and a new stamp.
+ */
+static ViewVert g_vert[MESH_VERTS_MAX] __attribute__((aligned(32)));
+static df_u16 g_vert_stamp;
+/* 1 (default): an indexed mesh's corners go through the cache. 0: every face works out its own, as before. */
+static int g_vert_cache = 1;
+/* This frame: face corners asked of the cache, and how many of them had to be worked out. */
+static int g_corners_asked;
+static int g_corners_made;
+
+void draw_set_vert_cache(int on)
+{
+    g_vert_cache = on ? 1 : 0;
+}
+
+int draw_vert_cache(void)
+{
+    return g_vert_cache;
+}
+
+void draw_corner_stats(int *asked, int *made)
+{
+    if (asked) {
+        *asked = g_corners_asked;
+    }
+    if (made) {
+        *made = g_corners_made;
+    }
+}
+
+static void model_view(ModelView *mv, const Instance *in, const Camera *cam, const Basis *basis)
+{
+    modelview_build(mv, in, cam, basis);
+    view_begin(g_vert, &g_vert_stamp);
+}
+
+/* 1 when the instance's mesh has its corners numbered and the cache is on. */
+static int cached_mesh(const Instance *in)
+{
+    return g_vert_cache && in->mesh->vid != 0;
+}
+
+/* Corner k of triangle t of the instance's mesh, from the cache. */
+static __inline__ ViewVert *cached_corner(const Instance *in, const ModelView *mv, int t, int k)
+{
+    ViewVert *v;
+
+    v = &g_vert[in->mesh->vid[t * 3 + k]];
+    g_corners_asked++;
+    g_corners_made += v->seen != g_vert_stamp;
+    return view_corner(g_vert, g_vert_stamp, mv, &g_view_clip, in->mesh, t, k);
+}
+
+/*
+ * A polygon of cached corners, n of them in order, with its texels (u, v
+ * a corner) and its picture's slot: emit_poly for corners already in
+ * view space with their planes known.
+ *
+ *   Every corner beyond one plane: nothing is drawn, and nothing was
+ *   looked up for its picture.
+ *   No corner beyond any: each is put on the glass, once a model, and
+ *   the polygon goes to the card.
+ *   Otherwise the corners are copied out and cut as any polygon is.
+ *
+ * The sums are project_vert's and emit_poly's own, on the same numbers:
+ * what reaches the card is what the uncached path sends, bit for bit.
+ */
+static void emit_cached(const Level *level, int slot, ViewVert *const *pv,
+                        const float *tu, const float *tv, int n)
+{
+    const Image *img;
+    df_u32 any;
+    df_u32 all;
+    float inv_w;
+    float inv_h;
+    int flat;
+    int i;
+
+    any = 0;
+    all = VIEW_PLANES;
+    for (i = 0; i < n; i++) {
+        any |= pv[i]->out;
+        all &= pv[i]->out;
+    }
+    if (all) {
+        return;
+    }
+    img = level_image(level, slot);
+    /* A null image is a texture the loader could not read: flat magenta, so the face is not silently dropped. */
+    flat = !img || img->width < 1 || img->height < 1;
+    if (flat) {
+        inv_w = 1.0f;
+        inv_h = 1.0f;
+        glide_flat(1);
+    } else {
+        texcache_bind(slot);
+        image_scale(img, slot, &inv_w, &inv_h);
+    }
+    if (!any) {
+        DrawVert dv[FACE_MAX];
+
+        for (i = 0; i < n; i++) {
+            ViewVert *v;
+
+            v = pv[i];
+            view_project(v, g_vert_stamp, &g_view_clip);
+            dv[i].x = v->sx;
+            dv[i].y = v->sy;
+            dv[i].oow = v->oow;
+            dv[i].ooz = (65535.0f * DF_NEAR) * v->oow;
+            dv[i].sow = tu[i] * inv_w * GLIDE_TEXEL * v->oow;
+            dv[i].tow = TEX_V_SIGN * tv[i] * inv_h * GLIDE_TEXEL * v->oow;
+            dv[i].r = 255.0f;
+            dv[i].g = flat ? 0.0f : 255.0f;
+            dv[i].b = 255.0f;
+        }
+        glide_polygon(dv, n);
+    } else {
+        Vtx poly[FACE_MAX];
+        Vtx clipped[CLIP_MAX];
+        int nout;
+
+        for (i = 0; i < n; i++) {
+            poly[i].x = pv[i]->x;
+            poly[i].y = pv[i]->y;
+            poly[i].z = pv[i]->z;
+            poly[i].u = tu[i];
+            poly[i].v = tv[i];
+        }
+        nout = clip_view(poly, n, clipped, any);
+        if (nout >= 3) {
+            submit(clipped, nout, inv_w, inv_h, 255.0f, flat ? 0.0f : 255.0f, 255.0f);
+        }
+    }
+    if (flat) {
+        glide_flat(0);
+    }
+}
+
+/*
  * Triangles first..first + count of the instance, one by one. mv is the
  * instance's way to the view (modelview_build), made once by the caller.
  */
@@ -661,7 +796,16 @@ static void draw_tris(const Level *level, const Instance *in, const ModelView *m
         float inv_h;
 
         tri = &in->mesh->tris[t];
-        if (tri->slot == 0xffff) {
+        if (tri->slot == MESH_NO_SLOT) {
+            continue;
+        }
+        if (cached_mesh(in)) {
+            ViewVert *pv[3];
+
+            for (k = 0; k < 3; k++) {
+                pv[k] = cached_corner(in, mv, t, k);
+            }
+            emit_cached(level, (int)tri->slot, pv, tri->u, tri->v, 3);
             continue;
         }
         img = level_image(level, (int)tri->slot);
@@ -743,7 +887,29 @@ static void draw_face(const Level *level, const Instance *in, const ModelView *m
     }
     tris = in->mesh->tris;
     t0 = &tris[face->first];
-    if (t0->slot == 0xffff) {
+    if (t0->slot == MESH_NO_SLOT) {
+        return;
+    }
+    if (cached_mesh(in)) {
+        ViewVert *pv[FACE_MAX];
+        float tu[FACE_MAX];
+        float tv[FACE_MAX];
+
+        /* The fan's corners: the first triangle's first two, then each triangle's last. */
+        pv[0] = cached_corner(in, mv, face->first, 0);
+        tu[0] = t0->u[0];
+        tv[0] = t0->v[0];
+        pv[1] = cached_corner(in, mv, face->first, 1);
+        tu[1] = t0->u[1];
+        tv[1] = t0->v[1];
+        n = 2;
+        for (t = face->first; t < face->first + face->ntris; t++) {
+            pv[n] = cached_corner(in, mv, t, 2);
+            tu[n] = tris[t].u[2];
+            tv[n] = tris[t].v[2];
+            n++;
+        }
+        emit_cached(level, (int)t0->slot, pv, tu, tv, n);
         return;
     }
     modelview_point(mv, t0->x[0], t0->y[0], t0->z[0], &poly[0].x, &poly[0].y, &poly[0].z);
@@ -2928,7 +3094,7 @@ static void draw_windows(const Camera *cam, const Basis *basis, const Level *lev
         if (fade > 1.0f) {
             fade = 1.0f;
         }
-        modelview_build(&mv, in, cam, basis);
+        model_view(&mv, in, cam, basis);
         for (f = 0; f < in->mesh->nfaces; f++) {
             Face *face;
             const Tri *tri;
@@ -3326,6 +3492,8 @@ void draw_frame(const Camera *cam, const Level *level)
     tinted = ambient;
     g_lights_drawn = 0;
     g_decals_drawn = 0;
+    g_corners_asked = 0;
+    g_corners_made = 0;
     prof_begin(PROF_CULL);
     norder = scene_visible_models(&level->scene, cam, order, VIS_MAX);
     /* What this frame shows goes on the automap, while the game names a place (docs/automap.md). */
@@ -3349,8 +3517,8 @@ void draw_frame(const Camera *cam, const Level *level)
         if (!in->mesh) {
             continue;
         }
-        /* Model to view, and the camera in the model's frame: once, for every face below. */
-        modelview_build(&mv, in, cam, &basis);
+        /* Model to view, the camera in the model's frame, and a fresh corner cache: once, for every face below. */
+        model_view(&mv, in, cam, &basis);
         /*
          * Pictures on the card by distance (a streamed world, a place past
          * the card): how near each was drawn decides how sharp it is sent.

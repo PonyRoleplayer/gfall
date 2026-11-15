@@ -25,6 +25,15 @@ float draw_far(void);
 /* 1 drops ARCH3D faces whose normal points away. 0 draws them. */
 void draw_set_faces(int on);
 int draw_faces(void);
+/*
+ * 1 (default): a model's corners are turned to the view once each, however
+ * many faces share them (docs/glide.md, Corners once a model). 0: every
+ * face works out its own, as before; the same picture, to compare.
+ */
+void draw_set_vert_cache(int on);
+int draw_vert_cache(void);
+/* Last frame: face corners drawn through the cache, and how many of them had to be worked out. */
+void draw_corner_stats(int *asked, int *made);
 /* 1 (default): models drawn nearest first, the ground last; 0 in the place's order (docs/culling.md). */
 void draw_set_near_first(int on);
 int draw_near_first(void);

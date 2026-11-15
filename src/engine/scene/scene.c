@@ -135,6 +135,92 @@ void instance_set_rotation(Instance *in, float rx, float ry, float rz)
     set_axes(in, rot_xyz, df_wrap_tau(rx), df_wrap_tau(ry), df_wrap_tau(rz));
 }
 
+/*
+ * mesh_index's scratch. A mesh of up to INDEX_TRIS triangles is indexed;
+ * the table is open addressing over the corners' bits, a power of two at
+ * least four times the corners so a probe is short.
+ */
+#define INDEX_TRIS 4096
+#define INDEX_TABLE 16384
+
+void mesh_index(Mesh *mesh)
+{
+    static df_u16 vid[INDEX_TRIS * 3];
+    /* A slot holds a corner number + 1; 0 is empty. */
+    static df_u16 table[INDEX_TABLE];
+    /* The triangle corner each number was first seen at, to compare positions with. */
+    static df_u16 first_t[MESH_VERTS_MAX];
+    static df_u8 first_k[MESH_VERTS_MAX];
+    df_u32 size;
+    df_u32 i;
+    int n;
+    int t;
+    int k;
+
+    if (!mesh || mesh->vid || !mesh->tris || mesh->ntris < 1 || mesh->ntris > INDEX_TRIS) {
+        return;
+    }
+    size = 16;
+    while (size < (df_u32)mesh->ntris * 12u && size < INDEX_TABLE) {
+        size <<= 1;
+    }
+    for (i = 0; i < size; i++) {
+        table[i] = 0;
+    }
+    n = 0;
+    for (t = 0; t < mesh->ntris; t++) {
+        const Tri *tri;
+
+        tri = &mesh->tris[t];
+        for (k = 0; k < 3; k++) {
+            union {
+                float f;
+                df_u32 u;
+            } bx, by, bz;
+            df_u32 h;
+            int found;
+
+            /* + 0 turns -0 into 0: the two are one place and hash alike. */
+            bx.f = tri->x[k] + 0.0f;
+            by.f = tri->y[k] + 0.0f;
+            bz.f = tri->z[k] + 0.0f;
+            h = (bx.u * 73856093u) ^ (by.u * 19349663u) ^ (bz.u * 83492791u);
+            h = (h ^ (h >> 15)) & (size - 1u);
+            found = -1;
+            while (table[h]) {
+                const Tri *o;
+                int v;
+                int ok;
+
+                v = (int)table[h] - 1;
+                o = &mesh->tris[first_t[v]];
+                ok = first_k[v];
+                if (o->x[ok] == tri->x[k] && o->y[ok] == tri->y[k] && o->z[ok] == tri->z[k]) {
+                    found = v;
+                    break;
+                }
+                h = (h + 1u) & (size - 1u);
+            }
+            if (found < 0) {
+                if (n >= MESH_VERTS_MAX) {
+                    return;
+                }
+                found = n++;
+                first_t[found] = (df_u16)t;
+                first_k[found] = (df_u8)k;
+                table[h] = (df_u16)(found + 1);
+            }
+            vid[t * 3 + k] = (df_u16)found;
+        }
+    }
+    mesh->vid = (df_u16 *)mem_alloc((df_u32)mesh->ntris * 3u * (df_u32)sizeof(df_u16));
+    if (!mesh->vid) {
+        return;
+    }
+    mem_copy(mesh->vid, vid, (df_u32)mesh->ntris * 3u * (df_u32)sizeof(df_u16));
+    mesh->nverts = n;
+}
+
 void instance_point(const Instance *in, float lx, float ly, float lz,
                     float *x, float *y, float *z)
 {

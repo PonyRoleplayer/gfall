@@ -664,6 +664,14 @@ static void c_stats(int argc, char **argv)
     log_print(LOG_PRINT, "fov %d, far %d, fog %s, faces %s, covers %s",
               get_fov(), get_far(), gfx_fog() ? "on" : "off",
               draw_faces() ? "on" : "off", scene_cover_draw() ? "on" : "off");
+    {
+        int asked;
+        int made;
+
+        draw_corner_stats(&asked, &made);
+        log_print(LOG_PRINT, "corners %d drawn, %d worked out (vertcache %s)",
+                  asked, made, draw_vert_cache() ? "on" : "off");
+    }
 }
 
 /* "14", "14:30" or "7:05": minutes since midnight, or -1. */
@@ -1490,6 +1498,8 @@ static void commands(void)
     cmd_var("covers", scene_cover_draw, scene_set_cover_draw, 0, 1,
             "wash the occlusion cells of the last frame green");
     cmd_var("faces", draw_faces, draw_set_faces, 0, 1, "drop ARCH3D faces that point away");
+    cmd_var("vertcache", draw_vert_cache, draw_set_vert_cache, 0, 1,
+            "turn each corner of a model to the view once, not once a face that has it; 0 as before");
     cmd_var("nearfirst", draw_near_first, draw_set_near_first, 0, 1,
             "draw models nearest first and the ground last, so hidden pixels fail the depth test; 0 the place's order");
     cmd_var("population", entity_population, entity_set_population, 0, 1,

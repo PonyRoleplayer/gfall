@@ -3466,6 +3466,32 @@ int check_dagger(const char *root_in)
                 through = light_build(&hl.scene);
                 light_set_shadow(1);
                 lit = light_build(&hl.scene);
+{
+                    int m;
+                    int corners;
+                    int places;
+                    int indexed;
+
+                    /* The hold's models: triangle corners against distinct places (mesh_index). */
+                    corners = 0;
+                    places = 0;
+                    indexed = 0;
+                    for (m = 0; m < hl.scene.nmodels; m++) {
+                        const Mesh *mesh;
+
+                        mesh = hl.scene.models[m].mesh;
+                        if (mesh && mesh->vid) {
+                            indexed++;
+                            corners += mesh->ntris * 3;
+                            places += mesh->nverts;
+                        }
+                    }
+                    printf("hold corners: %d of %d models indexed, %d triangle corners at %d places (%.2f a place)\n",
+                           indexed, hl.scene.nmodels, corners, places,
+                           places ? (double)corners / (double)places : 0.0);
+                    check_expect(indexed > hl.scene.nmodels / 2 && places > 0 && corners > places * 2,
+                                 "the hold's meshes are not indexed, or their corners are not shared");
+                }
                 printf("hold decals: %d, %d through walls\n", lit, through);
                 {
                     double core;

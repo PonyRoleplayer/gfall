@@ -987,5 +987,7 @@ Mesh *arch3d_load(const df_u8 *rec, df_u32 size, df_u32 id)
     }
     g_counting = 0;
     mesh_measure(mesh);
+    /* Its corners numbered: the draw turns each to the view once a model (mesh_index). */
+    mesh_index(mesh);
     return mesh;
 }

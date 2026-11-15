@@ -331,6 +331,14 @@ void instance_point(const Instance *in, float lx, float ly, float lz,
 
 /* Local box from the triangles. A second call with the same count is free. */
 void mesh_measure(Mesh *mesh);
+/*
+ * Numbers the mesh's distinct corners (Mesh.vid, Mesh.nverts), on the
+ * current heap: a loader calls it once the triangles are final, on the
+ * heap they are on. Leaves the mesh unindexed when it has too many, or
+ * there is no memory. Positions are matched exactly, bit for bit but for
+ * the sign of zero: only corners that turn to the same point in view.
+ */
+void mesh_index(Mesh *mesh);
 
 /* World box. 0 when the mesh has no triangles. */
 int instance_world_box(const Instance *in, Bound *out);

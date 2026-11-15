@@ -26,6 +26,8 @@ Privateer's Hold never showed this. It is 5 blocks. hostcheck still expects 365 
 
 The world lists are still 8192 instances and 8192 flats. That is about 0.6MB and is the "dungeon is too large" cap. Do not grow the per-block arrays back to 2048 to "be safe".
 
+A mesh also carries a number for each triangle corner, two bytes each, on the same heap (`Mesh.vid`, `docs/glide.md`, Corners once a model): 56 KB in Privateer's Hold. The draw's cache over them and the indexer's scratch are static, 128 KB and about 70 KB.
+
 ## Scratch for file bytes
 
 `mem_scratch` is two reusable buffers. Slot 0 (`BSA_SCRATCH_BLOCK`) holds the RMB or RDB being parsed. Slot 1 (`BSA_SCRATCH_MODEL`) holds the ARCH3D record. A model is read while the block file is still live, so they cannot share one slot. `bsa_read_scratch` fills the slot. The pointer is invalid after the next read of that slot.

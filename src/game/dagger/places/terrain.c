@@ -704,6 +704,8 @@ Mesh *terrain_near_mesh(const TerrainChunk *t, int (*slot_of)(int record, void *
     }
     key_slots(m);
     mesh_measure(m);
+    /* A land's corner is shared by up to six triangles (mesh_index). */
+    mesh_index(m);
     return m->ntris > 0 ? m : 0;
 }
 
@@ -841,5 +843,6 @@ Mesh *terrain_far_mesh(const TerrainChunk *t, int slot, int side)
     }
     key_slots(m);
     mesh_measure(m);
+    mesh_index(m);
     return m;
 }
