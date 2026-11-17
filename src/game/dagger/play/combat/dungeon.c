@@ -270,7 +270,7 @@ int dungeon_add(Entity *entity, int kind, int passive, int rate)
     body_init(&f->body,FOE_BODY_RADIUS,FOE_BODY_HEIGHT,FOE_BODY_STEP,FOE_BODY_EYE);
     f->body.radius = f->entity->radius > 0 ? f->entity->radius : FOE_BODY_RADIUS;
     f->body.height = FOE_BODY_HEIGHT; f->body.eye = FOE_BODY_EYE; f->body.step = FOE_BODY_STEP; f->body.self = f->entity;
-    if (f->def && (f->def->flags & 1)) { f->body.gravity = 0; }
+    if (f->def && (f->def->flags & FOE_FLAG_FLYING)) { f->body.gravity = 0; }
     body_place(&f->body,f->entity->x,f->entity->y,f->entity->z);
     magic_restore_foe(index);
     return index;
@@ -874,7 +874,7 @@ static void foe_voice(FoeState *f, int variant)
 
 static void foe_move(FoeState *f, const Scene *scene, float dx, float dz, float dt)
 {
-    if (f->def && (f->def->flags & 1)) { body_fly_step(&f->body,scene,dx,f->body.vy*dt,dz); }
+    if (f->def && (f->def->flags & FOE_FLAG_FLYING)) { body_fly_step(&f->body,scene,dx,f->body.vy*dt,dz); }
     else { body_step(&f->body,scene,dx,dz,dt); }
 }
 
@@ -883,7 +883,7 @@ static void corpse_fall(FoeState *f, const Scene *scene, float dt)
 {
     Entity *e;
 
-    if (!f->def || !(f->def->flags & 1) || f->body.grounded) { return; }
+    if (!f->def || !(f->def->flags & FOE_FLAG_FLYING) || f->body.grounded) { return; }
     e = f->entity;
     f->body.gravity = WALK_GRAVITY;
     body_step(&f->body,scene,0,0,dt);
@@ -907,7 +907,7 @@ static void foe_step(const Scene *scene, const Camera *cam, int index, float dt)
     dx = cam->x-e->x; dz = cam->z-e->z; distance = df_sqrt(dx*dx+dz*dz);
     if (distance > FOE_ACTIVE_RANGE) { return; }
     stepped = 0;
-    if (f->def && (f->def->flags & 1)) { f->body.vy = 0; }
+    if (f->def && (f->def->flags & FOE_FLAG_FLYING)) { f->body.vy = 0; }
     f->voice_time -= dt;
     if (distance < FOE_VOICE_RANGE && f->voice_time <= 0) {
         foe_voice(f,f->awake ? (distance < FOE_VOICE_NEAR && random_range(0,3) ? 2 : 1) : 0);
@@ -1003,7 +1003,7 @@ static void foe_step(const Scene *scene, const Camera *cam, int index, float dt)
             /* monster_move_step: SPD - 50 + D_00187CA9 (200). */
             speed = (float)(f->fighter.attribute[ATTR_SPD]+WALK_SPEED_ADD);
             ai_walk(&f->mind,&f->body,e,scene,to,sight,
-                         f->def && (f->def->flags & 1),speed,dt);
+                         f->def && (f->def->flags & FOE_FLAG_FLYING),speed,dt);
             stepped = 1;
             e->moving = 1;
         } else {

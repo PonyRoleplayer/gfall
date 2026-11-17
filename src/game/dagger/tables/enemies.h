@@ -151,6 +151,11 @@ int enemy_group(int kind);
 #define ENEMY_VOICE_BASE 10000
 #define ENEMY_VOICE_STRIDE 10
 
+/* monster_table's flags: a flyer needs no floor, an aquatic creature no dry one. */
+#define FOE_FLAG_FLYING 1
+#define FOE_FLAG_AQUATIC 64
+#define FOE_FLAGS_NO_FLOOR (FOE_FLAG_FLYING | FOE_FLAG_AQUATIC)
+
 /*
  * A creature's numbers at its making (monster_init, monster_give_spells; the decomp leaves them inline): every skill is level * FOE_SKILL_PER_LEVEL + FOE_SKILL_BASE, held to
  * FOE_SKILL_MAX; health is FOE_HIT_DIE-sided dice; a creature that casts has FOE_CASTER_MAGICKA_BASE + FOE_CASTER_MAGICKA_PER_LEVEL a level of magicka and its six magic skills at

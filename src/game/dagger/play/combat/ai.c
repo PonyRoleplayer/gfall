@@ -1,5 +1,6 @@
 #include "game/dagger/play/combat/ai.h"
 #include "game/dagger/tables/enemies.h"
+#include "game/dagger/tables/magic.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/input/move.h"
@@ -13,43 +14,47 @@ int ai_stealth(int detected, int distance, int encountered)
     float momentum;
     int chance, base;
 
-    if (distance > 1024) { return 0; }
+    if (distance > STEALTH_RANGE) { return 0; }
     if (game_state()->minutes == game_state()->stealth_minute) { return detected; }
     move_capture(&motion);
     momentum = df_sqrt(motion.vx*motion.vx+motion.vz*motion.vz);
     base = character_state()->attribute[ATTR_SPD]+WALK_SPEED_ADD;
-    if (encountered && momentum > base/2) { return 1; }
-    if (momentum <= base/2 && (game_state()->minutes & 1)) { return detected; }
+    if (encountered && momentum > base/STEALTH_MOMENTUM_DIV) { return 1; }
+    if (momentum <= base/STEALTH_MOMENTUM_DIV && (game_state()->minutes & 1)) { return detected; }
     skill_use(SKILL_STEALTH); state_stealth_checked();
-    chance = ((character_state()->skill[SKILL_STEALTH]*distance)/1024)*2;
+    chance = ((character_state()->skill[SKILL_STEALTH]*distance)/STEALTH_RANGE)*STEALTH_MULTIPLIER;
     return random_range(1,100) > chance;
 }
+
+/* The reseed hash of a marker's roll (ours). */
+#define PACIFY_SEED_MIX 0x9e3779b9u
+#define PACIFY_SEED_MUL 1103515245u
+#define PACIFY_SEED_ADD 12345u
 
 /* monster_pacify_check: a drawn weapon sets the base to -25. Only
  * creatures with a language train that skill, even when the roll fails. */
 int ai_marker_pacify(int kind, KeepKey key)
 {
-    enum { COMPREHEND_LANGUAGES = 44 };
     const CharacterState *who;
     int chance, language, roll;
     df_u32 saved;
 
     who = character_state();
-    chance = (hud_weapon_ready() ? -25 : 10) + who->attribute[ATTR_PER]/5;
-    if (ENEMY_IS_CLASS(kind)) { chance += who->skill[SKILL_ETIQUETTE]/10; }
+    chance = (hud_weapon_ready() ? PACIFY_BASE_ARMED : PACIFY_BASE) + who->attribute[ATTR_PER]/PACIFY_PER_DIV;
+    if (ENEMY_IS_CLASS(kind)) { chance += who->skill[SKILL_ETIQUETTE]/PACIFY_ETIQUETTE_DIV; }
     else {
         language = foe_language(kind);
         if (language) {
             chance += who->skill[language];
             skill_add_uses(language,1);
         }
-        chance += magic_chance(-1,COMPREHEND_LANGUAGES,-1);
+        chance += magic_chance(-1,GROUP_COMPREHEND_LANGUAGES,-1);
     }
     /* The original reseeds for each marker. Our stable identity supplies
      * that seed, independent of the order in which its artwork becomes ready. */
     saved = game_state()->random;
-    random_seed((key.thing ^ key.place*0x9e3779b9u) * 1103515245u + 12345u);
-    roll = random_range(1,200);
+    random_seed((key.thing ^ key.place*PACIFY_SEED_MIX) * PACIFY_SEED_MUL + PACIFY_SEED_ADD);
+    roll = random_range(1,PACIFY_ROLL);
     random_seed(saved);
     return roll <= chance;
 }
@@ -58,12 +63,12 @@ int ai_octant(float dx, float dz)
 {
     int octant;
     octant = (df_absf(dx) > df_absf(dz))+(dz < 0 ? 2 : 0);
-    return dx < 0 ? 7-octant : octant;
+    return dx < 0 ? OCTANTS-1-octant : octant;
 }
 
 static int delta(int from, int to)
 {
-    return ((to-from+1024) & 2047)-1024;
+    return ((to-from+ANGLE_HALF) & ANGLE_MASK)-ANGLE_HALF;
 }
 int ai_angle(int from, int to)
 {
@@ -77,7 +82,7 @@ int ai_turn(int from, int to, int step)
     difference = delta(from,to);
     if (difference > step) { difference = step; }
     if (difference < -step) { difference = -step; }
-    return (from+difference) & 2047;
+    return (from+difference) & ANGLE_MASK;
 }
 
 static int move(Body *body, const Scene *scene, int yaw, int flying,
@@ -85,7 +90,7 @@ static int move(Body *body, const Scene *scene, int yaw, int flying,
 {
     float x, z, angle, up, moved;
 
-    x = body->feet[0]; z = body->feet[2]; angle = yaw*(DF_TAU/2048);
+    x = body->feet[0]; z = body->feet[2]; angle = yaw*(DF_TAU/ANGLE_FULL);
     if (flying) {
         up = target[1]-body->height/2-body->feet[1];
         if (up > amount) { up = amount; }
@@ -93,7 +98,7 @@ static int move(Body *body, const Scene *scene, int yaw, int flying,
         body_fly_step(body,scene,df_sin(angle)*amount,up,df_cos(angle)*amount);
     } else { body_step(body,scene,df_sin(angle)*amount,df_cos(angle)*amount,dt); }
     moved = df_absf(body->feet[0]-x)+df_absf(body->feet[2]-z);
-    return moved > 2*dt*60;
+    return moved > STEP_MOVED_MIN*dt*TICKS_PER_SECOND;
 }
 
 void ai_walk(Mind *mind, Body *body, Entity *entity, const Scene *scene,
@@ -104,47 +109,47 @@ void ai_walk(Mind *mind, Body *body, Entity *entity, const Scene *scene,
 
     dx = target[0]-body->feet[0]; dz = target[2]-body->feet[2];
     distance = df_sqrt(dx*dx+dz*dz);
-    angle = df_iround(df_atan2(dx,dz)*(2048/DF_TAU)) & 2047;
-    yaw = df_iround(entity->yaw*(2048/DF_TAU)) & 2047;
-    mind->clock += dt*60; ticks = df_ifloor(mind->clock); mind->clock -= ticks;
+    angle = df_iround(df_atan2(dx,dz)*(ANGLE_FULL/DF_TAU)) & ANGLE_MASK;
+    yaw = df_iround(entity->yaw*(ANGLE_FULL/DF_TAU)) & ANGLE_MASK;
+    mind->clock += dt*TICKS_PER_SECOND; ticks = df_ifloor(mind->clock); mind->clock -= ticks;
     difference = ai_angle(yaw,angle);
     amount = speed*dt;
-    if (amount > distance-60) { amount = distance > 60 ? distance-60 : 0; }
-    if (!mind->direction) { mind->direction = 2; }
+    if (amount > distance-WALK_STOP_SHORT) { amount = distance > WALK_STOP_SHORT ? distance-WALK_STOP_SHORT : 0; }
+    if (!mind->direction) { mind->direction = NAV_DIR_AHEAD; }
     if ((visible || mind->detected) && !(mind->blocked & 1)) {
-        mind->turns = 12;
-        if (difference >= 32) { yaw = ai_turn(yaw,angle,64*ticks); amount = 0; }
+        mind->turns = NAV_TURNS;
+        if (difference >= NAV_TURN_FIRST_ARC) { yaw = ai_turn(yaw,angle,FOE_TURN_PER_TICK*ticks); amount = 0; }
         else if (!move(body,scene,yaw,flying,target,amount,dt)) {
-            if (body->grounded && (mind->stuck += ticks) > 6) { mind->blocked |= 1; mind->stuck = 0; }
+            if (body->grounded && (mind->stuck += ticks) > NAV_STUCK_STEPS) { mind->blocked |= 1; mind->stuck = 0; }
         } else { mind->blocked = 0; mind->stuck = 0; }
-        entity->yaw = yaw*(DF_TAU/2048);
+        entity->yaw = yaw*(DF_TAU/ANGLE_FULL);
         if (!amount) { move(body,scene,yaw,flying,target,0,dt); }
         return;
     }
     if (mind->detected && !mind->turns) { mind->blocked &= ~1; }
     nav = foe_nav_angle(ai_octant(dx,dz));
-    if (mind->direction == 4) { nav += 1024; }
-    else if (mind->direction == 8) { nav += 1536; }
-    nav &= 2047;
+    if (mind->direction == NAV_DIR_BACK) { nav += NAV_BACK_OFFSET; }
+    else if (mind->direction == NAV_DIR_SIDE) { nav += NAV_SIDE_OFFSET; }
+    nav &= ANGLE_MASK;
     /* Center on the original 64-unit corridor grid before trying another axis. */
-    if ((mind->blocked & 1) && difference <= 256 && !flying) {
-        quadrant = ((angle+256)/512) & 3;
+    if ((mind->blocked & 1) && difference <= NAV_CENTRE_ARC && !flying) {
+        quadrant = ((angle+NAV_CENTRE_ARC)/ANGLE_QUARTER) & 3;
         across = quadrant & 1 ? body->feet[2] : body->feet[0];
-        offset = across-df_ifloor(across/64)*64;
+        offset = across-df_ifloor(across/NAV_GRID)*NAV_GRID;
         if (offset != 0) {
             before = across;
-            offset = offset < 8 ? -offset : offset < 32 ? -8 : offset > 56 ? 64-offset : 8;
+            offset = offset < NAV_SNAP ? -offset : offset < NAV_GRID_HALF ? -NAV_SNAP : offset > NAV_SNAP_FAR ? NAV_GRID-offset : NAV_SNAP;
             body_step(body,scene,quadrant & 1 ? 0 : offset,quadrant & 1 ? offset : 0,dt);
             across = quadrant & 1 ? body->feet[2] : body->feet[0];
             if (df_absf(across-before) > 2) { return; }
         }
     }
-    yaw = ai_turn(yaw,nav,64*ticks); entity->yaw = yaw*(DF_TAU/2048);
-    if (ai_angle(yaw,nav) >= 64) { move(body,scene,yaw,flying,target,0,dt); return; }
+    yaw = ai_turn(yaw,nav,FOE_TURN_PER_TICK*ticks); entity->yaw = yaw*(DF_TAU/ANGLE_FULL);
+    if (ai_angle(yaw,nav) >= FOE_TURN_PER_TICK) { move(body,scene,yaw,flying,target,0,dt); return; }
     if (mind->turns > 0) { mind->turns -= ticks; if (mind->turns < 0) { mind->turns = 0; } }
     if (mind->blocked & mind->direction) {
         mind->direction <<= 1;
-        if (mind->direction & 16) { mind->direction = 2; mind->blocked &= ~1; }
+        if (mind->direction & NAV_DIR_WRAP) { mind->direction = NAV_DIR_AHEAD; mind->blocked &= ~1; }
         if (visible) { mind->turns = 0; mind->blocked &= ~1; }
         move(body,scene,yaw,flying,target,0,dt);
     } else if (!move(body,scene,yaw,flying,target,amount,dt)) { mind->blocked |= mind->direction; }

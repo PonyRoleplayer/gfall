@@ -2,6 +2,7 @@
 #include "game/dagger/tables/enemies.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/combat/dungeon.h"
+#include "game/dagger/play/combat/combat.h"
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/formats/climate.h"
 #include "game/dagger/play/quests/quest.h"
@@ -10,6 +11,13 @@
 #include "engine/scene/spawn.h"
 #include "engine/scene/ent.h"
 #include "engine/core/mem.h"
+
+/* Ours: what an owner word packs (a kept creature's kind, picture archive and frame rate). */
+#define OWNER_KIND_MASK 0xffu
+#define OWNER_ARCHIVE_SHIFT 8
+#define OWNER_ARCHIVE_MASK 0xfffu
+#define OWNER_RATE_SHIFT 20
+#define OWNER_RATE_MASK 0xfffu
 
 static const Scene *g_scene;
 static int (*g_art)(int, int, Entity *, int *);
@@ -30,12 +38,12 @@ static int archive_for(int kind)
 int encounter_pick(int type, int level)
 {
     int roll, low, high;
-    roll = random_range(1,100);
-    if (roll <= 80) { low = level-3; high = level+3; }
-    else if (roll <= 95) { low = 0; high = level+1; }
-    else { low = 0; high = level > 5 ? 19 : level+2; }
-    if (low < 0) { low = 0; high = 5; }
-    if (high > 19) { low = 14; high = 19; }
+    roll = random_range(1,PERCENT);
+    if (roll <= ENC_BAND_NEAR_CHANCE) { low = level-ENC_BAND_NEAR; high = level+ENC_BAND_NEAR; }
+    else if (roll <= ENC_BAND_LOW_CHANCE) { low = 0; high = level+ENC_BAND_LOW_HIGH; }
+    else { low = 0; high = level > ENC_BAND_WIDE_LEVEL ? ENC_TABLE_LAST : level+ENC_BAND_WIDE_LOW_HIGH; }
+    if (low < 0) { low = 0; high = ENC_TABLE_FLOOR_HIGH; }
+    if (high > ENC_TABLE_LAST) { low = ENC_TABLE_CEIL_LOW; high = ENC_TABLE_LAST; }
     return foe_encounter(type,random_range(low,high));
 }
 
@@ -46,13 +54,13 @@ void encounter_prepare(df_u32 place, int type)
     state = encounter_state();
     if (state->place == place) { return; }
     state->place = place;
-    saved_seed = random_range(0,32767);
-    random_seed(place & 65535u);
+    saved_seed = random_range(0,RAND_MAX_WATCOM);
+    random_seed(place & ENC_SEED_MASK);
     /* dungeon_roll_monster_tables rolls the whole land table. Rest takes
      * slots 1..6, not six fresh table draws on every attempted interruption. */
-    for (i = 0; i < 256; i++) {
+    for (i = 0; i < ENC_TABLE_SIZE; i++) {
         kind = encounter_pick(type,character_state()->level);
-        if (i >= 1 && i <= 6) { state->choices[i-1] = kind; }
+        if (i >= ENC_REST_FIRST && i < ENC_REST_FIRST+ENC_REST_CHOICES) { state->choices[i-ENC_REST_FIRST] = kind; }
     }
     /* Original saves rand()'s result, not the generator's internal state.
      * Its unused water table does not affect the restored gameplay stream. */
@@ -63,7 +71,7 @@ void encounter_prepare(df_u32 place, int type)
  * key and the owner by the revive hook). */
 static df_u32 owner_of(int kind, int archive, int rate)
 {
-    return (df_u32)(kind & 255) | ((df_u32)(archive & 4095) << 8) | ((df_u32)(rate & 4095) << 20);
+    return (df_u32)(kind & OWNER_KIND_MASK) | ((df_u32)(archive & OWNER_ARCHIVE_MASK) << OWNER_ARCHIVE_SHIFT) | ((df_u32)(rate & OWNER_RATE_MASK) << OWNER_RATE_SHIFT);
 }
 
 /* How many of the place's kept creatures stand (the original's room for eight at once, now only a cap on them). */
@@ -112,7 +120,7 @@ static int revive(const Keep *row, Entity *out)
     int kind, archive, rate;
 
     if (!g_scene || !g_art || !encounter_state()->place || row->key.place != encounter_state()->place || !(row->key.thing & 0x80000000u)) { return 0; }
-    kind = (int)(row->owner & 255u); archive = (int)((row->owner >> 8) & 4095u); rate = (int)((row->owner >> 20) & 4095u);
+    kind = (int)(row->owner & OWNER_KIND_MASK); archive = (int)((row->owner >> OWNER_ARCHIVE_SHIFT) & OWNER_ARCHIVE_MASK); rate = (int)((row->owner >> OWNER_RATE_SHIFT) & OWNER_RATE_MASK);
     if (!g_art(kind,archive,out,&rate)) { return 0; }
     out->key = row->key; out->live = 1; out->homed = 0;
     out->flags |= ENT_KEPT | ENT_MOVES; out->residence = ENT_HOME_PLACE; out->owner = row->owner;
@@ -124,7 +132,7 @@ static int adopt(Entity *e)
 {
     int kind, archive, rate, foe;
 
-    kind = (int)(e->owner & 255u); archive = (int)((e->owner >> 8) & 4095u); rate = (int)((e->owner >> 20) & 4095u);
+    kind = (int)(e->owner & OWNER_KIND_MASK); archive = (int)((e->owner >> OWNER_ARCHIVE_SHIFT) & OWNER_ARCHIVE_MASK); rate = (int)((e->owner >> OWNER_RATE_SHIFT) & OWNER_RATE_MASK);
     foe = dungeon_add(e,kind,0,rate);
     if (foe < 0) { ent_remove(ent_id(e)); return -1; }
     if (ENEMY_IS_CLASS_ONLY(kind)) { dungeon_variant(foe,archive-ENEMY_ARCHIVE_CLASS); }
@@ -168,7 +176,7 @@ void encounter_update(const Scene *scene, const Camera *camera)
         entity = spawn_get(g_outdoor_actor[i].id);
         if (entity) {
             dx = entity->x-camera->x; dz = entity->z-camera->z;
-            if (dx*dx+dz*dz > 3072.0f*3072.0f) { outdoor_retire(&g_outdoor_actor[i]); }
+            if (dx*dx+dz*dz > (float)ENC_OUTDOOR_RETIRE*ENC_OUTDOOR_RETIRE) { outdoor_retire(&g_outdoor_actor[i]); }
         }
     }
 }
@@ -235,13 +243,13 @@ static int place_actor(const Camera *camera, int kind, df_u32 thing, const float
     if (!g_art(kind,archive,&entity,&rate)) { return 0; }
     player = move_body(); mem_zero(&want,sizeof(want));
     want.x = at ? at[0] : player->feet[0]; want.y = at ? at[1] : player->feet[1]; want.z = at ? at[2] : player->feet[2];
-    if (at) { want.inner = 0; want.outer = 192; want.climb = 256; }
-    else if (summoned) { want.inner = 96; want.outer = 300; want.climb = 128; }
-    else { want.inner = 384; want.outer = 768; want.climb = 384; }
-    want.radius = 12; want.height = entity.pose[ENTITY_WALK].h[0];
-    if (want.height < 24) { want.height = 24; }
-    if (want.height > 128) { want.height = 128; }
-    want.flags = (at || summoned ? 0 : SPAWN_UNSEEN) | ((foe_flags(kind) & 65) ? 0 : SPAWN_DRY);
+    if (at) { want.inner = 0; want.outer = ENC_AT_OUTER; want.climb = ENC_AT_CLIMB; }
+    else if (summoned) { want.inner = SUMMON_INNER; want.outer = SUMMON_OUTER; want.climb = SUMMON_CLIMB; }
+    else { want.inner = ENC_HIDDEN_INNER; want.outer = ENC_HIDDEN_OUTER; want.climb = ENC_HIDDEN_CLIMB; }
+    want.radius = FOE_BODY_RADIUS; want.height = entity.pose[ENTITY_WALK].h[0];
+    if (want.height < FOE_BODY_HEIGHT_MIN) { want.height = FOE_BODY_HEIGHT_MIN; }
+    if (want.height > FOE_BODY_HEIGHT_MAX) { want.height = FOE_BODY_HEIGHT_MAX; }
+    want.flags = (at || summoned ? 0 : SPAWN_UNSEEN) | ((foe_flags(kind) & FOE_FLAGS_NO_FLOOR) ? 0 : SPAWN_DRY);
     if (!spawn_find(g_scene,camera,&want,&x,&y,&z)) { return 0; }
     if (kept_here() >= ENCOUNTERS && !retire_looted()) { return 0; }
     if (generated) { thing = 0x80000000u | ++encounter_state()->serial; }
@@ -263,7 +271,7 @@ static int place_actor(const Camera *camera, int kind, df_u32 thing, const float
 int encounter_try(const Camera *camera)
 {
     if (!g_scene || !g_art || !camera) { return 0; }
-    return place_actor(camera, encounter_state()->choices[random_range(0,5)], 0, 0, 1, 0, TEAM_HOSTILE);
+    return place_actor(camera, encounter_state()->choices[random_range(0,ENC_REST_CHOICES-1)], 0, 0, 1, 0, TEAM_HOSTILE);
 }
 
 int encounter_place(const Camera *camera, int kind, df_u32 thing) { return place_actor(camera, kind, thing, 0, 0, 0, TEAM_HOSTILE); }
@@ -290,13 +298,13 @@ int encounter_release_soul(const Camera *camera, int kind)
  * The original switch leaves swamp category 3 as the table index. */
 static int outdoor_table(int climate, int settlement, int night)
 {
-    static const df_u8 base[] = {20,20,23,26,3,29,32,32,35};
+    static const df_u8 base[] = {ENC_TABLE_DESERT,ENC_TABLE_DESERT,ENC_TABLE_MOUNTAIN,ENC_TABLE_RAINFOREST,ENC_TABLE_SWAMP,ENC_TABLE_SUBTROPICAL,ENC_TABLE_WOODS,ENC_TABLE_WOODS,ENC_TABLE_HAUNTED};
     int table;
 
     if (climate < CLIMATE_DESERT || climate > CLIMATE_HAUNTED) { return -1; }
     table = base[climate-CLIMATE_DESERT];
     if (climate == CLIMATE_SWAMP || settlement) { return table; }
-    return table + (night ? 2 : 1);
+    return table + (night ? ENC_TABLE_NIGHT : ENC_TABLE_DAY);
 }
 
 static int outdoor_spawn(const Camera *camera, int kind, int settlement)
@@ -315,16 +323,16 @@ static int outdoor_spawn(const Camera *camera, int kind, int settlement)
 
     player = move_body(); mem_zero(&spot,sizeof(spot));
     spot.x = player->feet[0]; spot.y = player->feet[1]; spot.z = player->feet[2];
-    spot.radius = 12; spot.height = entity.pose[ENTITY_WALK].h[0];
-    if (spot.height < 24) { spot.height = 24; }
-    if (spot.height > 128) { spot.height = 128; }
-    spot.flags = (foe_flags(kind) & 65) ? 0 : SPAWN_DRY;
+    spot.radius = FOE_BODY_RADIUS; spot.height = entity.pose[ENTITY_WALK].h[0];
+    if (spot.height < FOE_BODY_HEIGHT_MIN) { spot.height = FOE_BODY_HEIGHT_MIN; }
+    if (spot.height > FOE_BODY_HEIGHT_MAX) { spot.height = FOE_BODY_HEIGHT_MAX; }
+    spot.flags = (foe_flags(kind) & FOE_FLAGS_NO_FLOOR) ? 0 : SPAWN_DRY;
     if (settlement) {
-        spot.inner = 384; spot.outer = 768; spot.climb = 384;
+        spot.inner = ENC_HIDDEN_INNER; spot.outer = ENC_HIDDEN_OUTER; spot.climb = ENC_HIDDEN_CLIMB;
         spot.flags |= SPAWN_UNSEEN;
     } else {
-        spot.x += 1024*df_sin(camera->yaw); spot.z += 1024*df_cos(camera->yaw);
-        spot.outer = 128; spot.climb = 1536;
+        spot.x += ENC_AHEAD*df_sin(camera->yaw); spot.z += ENC_AHEAD*df_cos(camera->yaw);
+        spot.outer = ENC_AHEAD_RING; spot.climb = ENC_AHEAD_CLIMB;
     }
     if (spawn_find(g_scene,camera,&spot,&entity.x,&entity.y,&entity.z)) {
         entity.live = 1; entity.flags |= ENT_MOVES;
@@ -350,20 +358,20 @@ int encounter_minute(const Scene *scene, const Camera *camera, df_u32 minute, in
 {
     int climate, night, settlement, table, kind, tries;
 
-    if (!g_scene || scene != g_scene || !camera || activity == ENCOUNTER_LOITER || minute%12) { return 0; }
+    if (!g_scene || scene != g_scene || !camera || activity == ENCOUNTER_LOITER || minute%ENC_ROLL_MINUTES) { return 0; }
     if (!g_outdoors) {
-        return activity == ENCOUNTER_REST && random_range(0,35) == 0 && encounter_try(camera);
+        return activity == ENCOUNTER_REST && random_range(0,ENC_CHANCE_DAY) == 0 && encounter_try(camera);
     }
     if (!g_outdoors->site || !g_outdoors->art) { return 0; }
     climate = g_outdoors->site(camera,&settlement);
-    minute %= 1440u;
-    night = minute < 360u || minute > 1080u;
+    minute %= MINUTES_PER_DAY;
+    night = minute < DAWN_MINUTE || minute > DUSK_MINUTE;
     if (climate == CLIMATE_OCEAN || (settlement && !night)) { return 0; }
     table = outdoor_table(climate,settlement,night);
-    if (table < 0 || random_range(0,night ? 23 : 35) != 0) { return 0; }
-    for (tries = 0; tries < 32; tries++) {
+    if (table < 0 || random_range(0,night ? ENC_CHANCE_NIGHT : ENC_CHANCE_DAY) != 0) { return 0; }
+    for (tries = 0; tries < ENC_DAY_REROLLS; tries++) {
         kind = encounter_pick(table,character_state()->level);
-        if (night || (kind != 18 && kind != 23)) { return outdoor_spawn(camera,kind,settlement); }
+        if (night || (kind != ENEMY_GHOST && kind != ENEMY_WRAITH)) { return outdoor_spawn(camera,kind,settlement); }
     }
     return 0;
 }

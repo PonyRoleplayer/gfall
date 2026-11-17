@@ -19,6 +19,11 @@
 #include "game/dagger/play/travel/worldstate.h"
 #include "engine/scene/keep.h"
 
+/* The day: MINUTES_PER_DAY minutes, daylight from DAWN_MINUTE to DUSK_MINUTE (06:00 to 18:00). */
+#define MINUTES_PER_DAY 1440u
+#define DAWN_MINUTE 360u
+#define DUSK_MINUTE 1080u
+
 #define STATE_VERSION 18
 /* The room a save keeps for the quests (quest.c packs into it). */
 #define QUEST_BLOB 24576

@@ -14,6 +14,42 @@
  * TARGET_SCORE_IDLE more when nothing else has it and TARGET_SCORE_SEEN more when it is in sight.
  */
 #define TICKS_PER_SECOND 60
+/* The angle's halves and quarters, in 2048ths, and the eight octants a heading falls in. */
+#define ANGLE_HALF 1024
+#define ANGLE_QUARTER 512
+#define OCTANTS 8
+/* ai_stealth_check: a creature further than STEALTH_RANGE never notices; the player is unnoticed when a roll of 1..100 is over (stealth skill * distance / STEALTH_RANGE) * STEALTH_MULTIPLIER;
+ * a player moving faster than 1/STEALTH_MOMENTUM_DIV of the walk speed is always noticed by one that has met them. */
+#define STEALTH_RANGE 1024
+#define STEALTH_MULTIPLIER 2
+#define STEALTH_MOMENTUM_DIV 2
+/* monster_pacify_check: the chance is PACIFY_BASE (PACIFY_BASE_ARMED with a weapon drawn) plus Personality / PACIFY_PER_DIV, plus Etiquette / PACIFY_ETIQUETTE_DIV for a class enemy, and the
+ * creature is calmed when a roll of 1..PACIFY_ROLL is not over it. The reseed's hash is ours. */
+#define PACIFY_BASE_ARMED -25
+#define PACIFY_BASE 10
+#define PACIFY_PER_DIV 5
+#define PACIFY_ETIQUETTE_DIV 10
+#define PACIFY_ROLL 200
+/* ai_move_toward_target (monster.c): a creature that has seen the player turns in place while more than NAV_TURN_FIRST_ARC off, keeps a detour for NAV_TURNS ticks, is stuck after
+ * NAV_STUCK_STEPS failed steps, and tries the directions NAV_DIR_AHEAD, NAV_DIR_BACK (turned NAV_BACK_OFFSET) and NAV_DIR_SIDE (NAV_SIDE_OFFSET) in turn, wrapping at NAV_DIR_WRAP. Within
+ * NAV_CENTRE_ARC of its target it centres on the NAV_GRID-unit corridor: under NAV_SNAP it snaps back, under NAV_GRID_HALF it steps back NAV_SNAP, over NAV_SNAP_FAR it snaps forward. A step
+ * moved more than STEP_MOVED_MIN a tick. WALK_STOP_SHORT is ours: a creature stops that short of its target. */
+#define NAV_TURN_FIRST_ARC 32
+#define NAV_TURNS 12
+#define NAV_STUCK_STEPS 6
+#define NAV_DIR_AHEAD 2
+#define NAV_DIR_BACK 4
+#define NAV_DIR_SIDE 8
+#define NAV_DIR_WRAP 16
+#define NAV_BACK_OFFSET 1024
+#define NAV_SIDE_OFFSET 1536
+#define NAV_CENTRE_ARC 256
+#define NAV_GRID 64
+#define NAV_SNAP 8
+#define NAV_GRID_HALF 32
+#define NAV_SNAP_FAR 56
+#define STEP_MOVED_MIN 2
+#define WALK_STOP_SHORT 60
 #define MS_PER_SECOND 1000
 #define ANGLE_FULL 2048
 #define ANGLE_MASK (ANGLE_FULL - 1)
