@@ -86,7 +86,7 @@ void rest_recover(void)
     if (heal < 1) { heal = 1; }
     who->health += heal;
     if (who->health > who->max_health) { who->health = who->max_health; }
-    fatigue = (game_state()->base_attribute[ATTR_STR]+game_state()->base_attribute[ATTR_END]) << 3;
+    fatigue = fatigue_maximum(game_state()->base_attribute[ATTR_STR],game_state()->base_attribute[ATTR_END]) >> FATIGUE_REST_SHIFT;
     who->fatigue = fatigue_add(who->fatigue,fatigue,who->attribute[ATTR_STR],who->attribute[ATTR_END]);
     if (!(game_state()->career.flags & CLASS_NO_MAGICKA_REGEN)) {
         who->magicka += who->max_magicka >> 3;
@@ -100,7 +100,7 @@ static int healed(void)
     const CharacterState *who;
     who = character_state();
     return who->health == who->max_health &&
-        who->fatigue == (who->attribute[ATTR_STR]+who->attribute[ATTR_END])*64 &&
+        who->fatigue == fatigue_maximum(who->attribute[ATTR_STR],who->attribute[ATTR_END]) &&
         ((game_state()->career.flags & CLASS_NO_MAGICKA_REGEN) || who->magicka == who->max_magicka);
 }
 

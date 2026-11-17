@@ -1,4 +1,5 @@
 #include "game/dagger/play/state.h"
+#include "game/dagger/play/character/vitals.h"
 #include "game/dagger/play/character/chargen.h"
 #include "game/dagger/play/quests/quest.h"
 
@@ -420,7 +421,7 @@ static void enter_world(void)
         who->max_health = 1;
     }
     who->health = who->max_health;
-    max = (who->attribute[ATTR_STR] + who->attribute[ATTR_END]) << 6;
+    max = fatigue_maximum(who->attribute[ATTR_STR], who->attribute[ATTR_END]);
     who->fatigue = max > 0 ? max : 64;
     who->max_magicka = magicka_state(who->attribute[ATTR_INT], who->class_flags);
     who->magicka = who->max_magicka;

@@ -16,7 +16,7 @@ void god_protect(void)
     if (!g_god) { return; }
     who = character_state();
     who->health = who->max_health > 0 ? who->max_health : 1;
-    who->fatigue = (who->attribute[ATTR_STR]+who->attribute[ATTR_END]) << 6;
+    who->fatigue = fatigue_maximum(who->attribute[ATTR_STR],who->attribute[ATTR_END]);
     who->magicka = who->max_magicka;
 }
 

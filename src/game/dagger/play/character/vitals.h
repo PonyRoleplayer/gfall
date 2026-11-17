@@ -8,6 +8,24 @@
  * and does not divide.
  */
 
+/* Fixed point: a ratio is worked in 1/RATIO_ONE ths (a shift of RATIO_SHIFT), and a bar is BAR_PIXELS tall (a shift of BAR_SHIFT). */
+#define RATIO_SHIFT 8
+#define RATIO_ONE 256
+#define BAR_SHIFT 5
+/* Fatigue is counted in units, FATIGUE_UNIT to a point of strength or endurance: the most is (STR + END) * FATIGUE_UNIT, and a night's rest gives back an eighth of it (FATIGUE_REST_SHIFT). */
+#define FATIGUE_UNIT 64
+#define FATIGUE_REST_SHIFT 3
+/* The jump: ((speed + strength) / JUMP_AVERAGE) + JUMP_BASE, then jumping skill percent of it (JUMP_SKILL_PERCENT). */
+#define JUMP_AVERAGE 2
+#define JUMP_BASE 50
+#define JUMP_SKILL_PERCENT 100
+/* The fall: the impact speed in 1/256 units is divided by 256 and by FALL_SPEED_STEP, FALL_SAFE of it is free, and the rest squared over FALL_DAMAGE_DIVISOR. */
+#define FALL_SPEED_STEP 40
+#define FALL_SAFE 7
+#define FALL_DAMAGE_DIVISOR 2
+/* The most fatigue a body of this strength and endurance can have. */
+int fatigue_maximum(int strength, int endurance);
+
 /* Health and magicka: (((n << 8) / max) << 5) / 256. 0..32. */
 int bar_ratio(int numerator, int denominator);
 /* Fatigue: (((fatigue << 8) / max) << 5) >> 8. max is (STR+END)<<6. */

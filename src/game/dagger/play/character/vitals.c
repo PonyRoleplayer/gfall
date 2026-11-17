@@ -3,6 +3,11 @@
 
 #include "engine/core/df.h"
 
+int fatigue_maximum(int strength, int endurance)
+{
+    return (strength + endurance) * FATIGUE_UNIT;
+}
+
 int bar_ratio(int numerator, int denominator)
 {
     int height;
@@ -10,7 +15,7 @@ int bar_ratio(int numerator, int denominator)
     if (numerator <= 0 || denominator <= 0) {
         return 0;
     }
-    height = (((numerator << 8) / denominator) << 5) / 256;
+    height = (((numerator << RATIO_SHIFT) / denominator) << BAR_SHIFT) / RATIO_ONE;
     return height > 0 ? height : 0;
 }
 
@@ -22,11 +27,11 @@ int bar_fatigue(int fatigue, int strength, int endurance)
     if (fatigue <= 0) {
         return 0;
     }
-    max = (strength + endurance) << 6;
+    max = fatigue_maximum(strength, endurance);
     if (max <= 0) {
         return 0;
     }
-    height = (((fatigue << 8) / max) << 5) >> 8;
+    height = (((fatigue << RATIO_SHIFT) / max) << BAR_SHIFT) >> RATIO_SHIFT;
     return height > 0 ? height : 0;
 }
 
@@ -34,8 +39,8 @@ int jump_magnitude(int speed, int strength, int jumping)
 {
     int magnitude;
 
-    magnitude = ((speed + strength) / 2) + 50;
-    magnitude += (jumping * magnitude) / 100;
+    magnitude = ((speed + strength) / JUMP_AVERAGE) + JUMP_BASE;
+    magnitude += (jumping * magnitude) / JUMP_SKILL_PERCENT;
     return magnitude;
 }
 
@@ -60,7 +65,7 @@ int fall_v(float down_units_per_sec)
     if (down_units_per_sec <= 0.0f) {
         return 0;
     }
-    return df_iround(down_units_per_sec * 256.0f);
+    return df_iround(down_units_per_sec * (float)RATIO_ONE);
 }
 
 int fall_damage(int v)
@@ -70,11 +75,11 @@ int fall_damage(int v)
     if (v <= 0) {
         return 0;
     }
-    d = ((v / 256) / 40) - 7;
+    d = ((v / RATIO_ONE) / FALL_SPEED_STEP) - FALL_SAFE;
     if (d <= 0) {
         return 0;
     }
-    return (d * d) / 2;
+    return (d * d) / FALL_DAMAGE_DIVISOR;
 }
 
 int fatigue_add(int fatigue, int amount, int strength, int endurance)
@@ -82,7 +87,7 @@ int fatigue_add(int fatigue, int amount, int strength, int endurance)
     int max;
 
     if (!god_mode() || amount > 0) { fatigue += amount; }
-    max = (strength + endurance) << 6;
+    max = fatigue_maximum(strength, endurance);
     if (max < 0) {
         max = 0;
     }

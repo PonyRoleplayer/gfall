@@ -1,4 +1,5 @@
 #include "game/dagger/play/travel/travel.h"
+#include "game/dagger/play/character/vitals.h"
 #include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/items/inventory.h"
@@ -108,6 +109,6 @@ int journey_begin(int region, int index, int reckless, int camp, int ship)
     if (game_state()->career.flags & CLASS_SUN_DAMAGE) { if (minute >= 360 && minute < 1080) { wait = 1090-minute; } }
     else if (!reckless) { if (minute >= 1080) { wait = 1440-minute+370; } else if (minute < 360) { wait = 370-minute; } }
     if (wait) { state_pass_minutes(wait); }
-    if (who->health > 0) { who->fatigue = reckless ? fatigue : (who->attribute[ATTR_STR]+who->attribute[ATTR_END])*64; }
+    if (who->health > 0) { who->fatigue = reckless ? fatigue : fatigue_maximum(who->attribute[ATTR_STR],who->attribute[ATTR_END]); }
     progress_rest(); return 1;
 }

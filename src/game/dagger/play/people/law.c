@@ -1,4 +1,5 @@
 #include "game/dagger/play/people/law.h"
+#include "game/dagger/play/character/vitals.h"
 #include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/items/inventory.h"
@@ -147,7 +148,7 @@ void court_restore_vitals(void)
     c = character_state();
     c->health = c->max_health;
     c->magicka = c->max_magicka;
-    c->fatigue = (c->attribute[ATTR_STR] + c->attribute[ATTR_END]) << 6;
+    c->fatigue = fatigue_maximum(c->attribute[ATTR_STR], c->attribute[ATTR_END]);
 }
 
 static int rand_range(int low, int high)

@@ -1,4 +1,5 @@
 #include "game/dagger/play/magic/magic.h"
+#include "game/dagger/play/character/vitals.h"
 #include "game/dagger/tables/magic.h"
 #include "game/dagger/tables/enemies.h"
 #include "game/dagger/play/magic/magicitem.h"
@@ -117,7 +118,7 @@ void magic_commit(int index, const CharacterState *who, int caster)
     copy = *who;
     if (copy.health < 0) { copy.health = 0; }
     if (copy.health > copy.max_health) { copy.health = copy.max_health; }
-    maximum = (copy.attribute[ATTR_STR]+copy.attribute[ATTR_END])*64;
+    maximum = fatigue_maximum(copy.attribute[ATTR_STR],copy.attribute[ATTR_END]);
     if (copy.fatigue < 0) { copy.fatigue = 0; }
     if (copy.fatigue > maximum) { copy.fatigue = maximum; }
     if (copy.magicka < 0) { copy.magicka = 0; }
@@ -286,7 +287,7 @@ static void heal(CharacterState *who, const int *base, int sub, int magnitude)
 {
     if (sub < 8) { who->attribute[sub] += magnitude; if (who->attribute[sub] > base[sub]) { who->attribute[sub] = base[sub]; } }
     else if (sub == 8) { who->health += magnitude; }
-    else if (sub == 9) { who->fatigue += magnitude*64; }
+    else if (sub == 9) { who->fatigue += magnitude*FATIGUE_UNIT; }
     else if (sub == 10) { who->magicka += magnitude; }
 }
 

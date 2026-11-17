@@ -1,4 +1,5 @@
 #include "game/dagger/play/combat/dungeon.h"
+#include "game/dagger/play/character/vitals.h"
 #include "game/dagger/tables/enemies.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/play/magic/enchant.h"
@@ -216,7 +217,7 @@ int dungeon_add(Entity *entity, int kind, int passive, int rate)
     for (j = 0; j < SKILLS; j++) { f->fighter.skill[j] = skill; }
     for (j = 0; j < ATTRS; j++) { f->fighter.attribute[j] = f->def ? f->def->attribute[j] : career ? career->attribute[j] : 50; }
     for (j = 0; j < 7; j++) { f->fighter.armor[j] = f->def ? f->def->armor : 60; }
-    f->fighter.fatigue = (f->fighter.attribute[ATTR_STR]+f->fighter.attribute[ATTR_END])*64;
+    f->fighter.fatigue = fatigue_maximum(f->fighter.attribute[ATTR_STR],f->fighter.attribute[ATTR_END]);
     f->fighter.magicka = f->fighter.max_magicka = f->fighter.attribute[ATTR_INT]*2;
     if (creature_spells(f->kind,f->fighter.level)) {
         f->fighter.magicka = f->fighter.max_magicka = f->fighter.level*10+100;

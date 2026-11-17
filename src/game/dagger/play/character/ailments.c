@@ -1,4 +1,5 @@
 #include "game/dagger/play/character/ailments.h"
+#include "game/dagger/play/character/vitals.h"
 #include "game/dagger/tables/enemies.h"
 #include "game/dagger/play/magic/magic.h"
 #include "game/dagger/play/cheats.h"
@@ -126,7 +127,7 @@ static void poison_tick(AilmentInfo *a, CharacterState *who)
     case 7: drain(a,who,2,random_range(5,20),0); drain(a,who,5,random_range(10,20),0); a->stage = 2; break;
     case 8: who->fatigue -= random_range(10,100); drain(a,who,7,-random_range(4,10),0); a->stage = 2; break;
     case 9: drain(a,who,1,random_range(10,30),0); drain(a,who,0,-random_range(5,20),0); a->stage = 2; break;
-    case 10: who->fatigue += random_range(5,10)*64; drain(a,who,2,random_range(1,4),0); a->stage = 2; break;
+    case 10: who->fatigue += random_range(5,10)*FATIGUE_UNIT; drain(a,who,2,random_range(1,4),0); a->stage = 2; break;
     case 11: who->magicka += random_range(5,10); drain(a,who,4,random_range(1,5),0); a->stage = 2; break;
     }
     if (a->left) { a->left--; }
@@ -192,6 +193,6 @@ void ailments_strike(int creature, int kind)
     if (kind == ENEMY_MUMMY && random_range(1,100) <= 5) { infection = 1; }
     if ((kind == ENEMY_VAMPIRE || kind == ENEMY_VAMPIRE_ANCIENT) && !cursed && random_range(1,100) <= 2) { infection = 1; }
     if (infection) { infect(-1,creature_diseases(kind),0,0); }
-    if (kind == ENEMY_NYMPH) { fatigue_spend(random_range(10,30)*64); }
+    if (kind == ENEMY_NYMPH) { fatigue_spend(random_range(10,30)*FATIGUE_UNIT); }
     if ((kind == ENEMY_SPIDER || kind == ENEMY_GIANT_SCORPION) && !magic_chance(-1,0,-1)) { magic_apply(66,creature,-1,0,0); }
 }
