@@ -1,4 +1,5 @@
 #include "game/dagger/play/combat/dungeon.h"
+#include "game/dagger/tables/enemies.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/play/magic/enchant.h"
 #include "game/dagger/play/quests/quest.h"
@@ -196,7 +197,7 @@ int dungeon_add(Entity *entity, int kind, int passive, int rate)
     const Keep *row;
     const ClassInfo *career;
     int index, j, skill, health, dice;
-    if (!entity || !((kind >= 0 && kind < 43) || (kind >= 128 && kind <= 146))) { return -1; }
+    if (!entity || !ENEMY_IS_KNOWN(kind)) { return -1; }
     for (index = 0; index < g_count && g_foe[index].entity != &g_unused_actor; index++) { }
     if (index == FOE_ACTORS) { return -1; }
     if (index == g_count) { g_count++; }
@@ -207,8 +208,8 @@ int dungeon_add(Entity *entity, int kind, int passive, int rate)
     f->type = foe_texture_kind(f->kind);
     f->voice_time = 1+(float)(f->entity->key.thing%4000)/1000;
     f->def = foe_def(f->kind);
-    career = f->kind >= 128 ? class_at((f->kind-128)%18) : 0;
-    f->fighter.race = f->kind >= 128 ? 43 : f->kind;
+    career = ENEMY_IS_CLASS(f->kind) ? class_at((f->kind-ENEMY_FIRST_CLASS)%ENEMY_CLASS_COUNT) : 0;
+    f->fighter.race = ENEMY_IS_CLASS(f->kind) ? ENEMY_RACE_CLASS : f->kind;
     f->fighter.level = f->def ? f->def->level : character_state()->level;
     f->fighter.metal = f->def ? f->def->metal : 0;
     skill = f->fighter.level*5+30; if (skill > 100) { skill = 100; }
@@ -291,7 +292,7 @@ int dungeon_loaded(int index)
     /* A rat's step used to consume its entire collision ellipsoid. */
     f->body.step = minimum(24,height/4);
     if (!f->entity->dead) { f->entity->radius = f->body.radius; }
-    if (f->kind >= 128 || f->kind == 7 || f->kind == 8 || f->kind == 12 || f->kind == 21 || f->kind == 24) {
+    if (ENEMY_IS_CLASS(f->kind) || f->kind == ENEMY_ORC || f->kind == ENEMY_CENTAUR || f->kind == ENEMY_ORC_SERGEANT || f->kind == ENEMY_ORC_SHAMAN || f->kind == ENEMY_ORC_WARLORD) {
         foe_equipment(f->kind,dungeon_container(index),f->equipped,&f->fighter);
     }
     return 1;
@@ -420,7 +421,7 @@ static int hit_foe_from(const Scene *scene, int i, int damage, float yaw, int so
         if ((e->key.thing & 0xe0000000u) == QUEST_FOE_KEY) { quest_foe_killed((int)((e->key.thing >> 4) & 0xffffffu)); }
         if (g_street_died) { g_street_died(f->kind,e); }
         /* damage_creature_death: a watchman killed is counted by the Brotherhood (guild_count_crime(6, 1)). */
-        if (source == TARGET_PLAYER && f->kind == 146) { guild_count_crime(6, 1, game_state()->minutes); }
+        if (source == TARGET_PLAYER && f->kind == ENEMY_CITY_WATCH) { guild_count_crime(6, 1, game_state()->minutes); }
     } else {
         weight = foe_weight(f->kind);
         if (weight && !f->knock) {
@@ -467,7 +468,7 @@ int dungeon_spell_target(int index, CharacterState *who, ClassInfo *career, int 
     int i;
     if (index < 0 || index >= g_count) { return 0; }
     f = &g_foe[index]; mem_zero(who,sizeof(*who)); mem_zero(career,sizeof(*career));
-    if (f->kind >= 128 && f->kind < 146 && class_at(f->kind-128)) { *career = *class_at(f->kind-128); }
+    if (ENEMY_IS_CLASS_ONLY(f->kind) && class_at(f->kind-ENEMY_FIRST_CLASS)) { *career = *class_at(f->kind-ENEMY_FIRST_CLASS); }
     who->race = f->fighter.race; who->level = f->fighter.level;
     who->health = f->fighter.health; who->max_health = f->fighter.maximum;
     who->fatigue = f->fighter.fatigue; who->magicka = f->fighter.magicka;
@@ -554,7 +555,7 @@ static void resolve_player(const Scene *scene, const Camera *cam, int target, co
         random_range(a.skill[SKILL_HAND_TO_HAND]/10+1,a.skill[SKILL_HAND_TO_HAND]/5+1);
     damage = attack_damage(&a,&f->fighter,index,material,s->damage,expert,base);
     /* damage_bonus_vs_target: a creature of a class is a humanoid. */
-    if (index >= 0 && s->item) { damage += enchant_hit_bonus(s->item, f->kind >= 128 ? 2 : foe_category(f->kind)); if (damage < 0) { damage = 0; } }
+    if (index >= 0 && s->item) { damage += enchant_hit_bonus(s->item, foe_enchant_category(f->kind)); if (damage < 0) { damage = 0; } }
     if (god_mode() && damage < 1) { damage = 1; }
     if (backstab && random_range(1,100) <= backstab) { damage *= 3; msg_set("Backstab!"); }
     /* Event 21: the player hit a creature of a quest. */
@@ -693,7 +694,7 @@ static void arrows_step(const Scene *scene, const Camera *cam, float dt)
                     if (hit_player) {
                         before = character_state()->health;
                         damage_player(damage,part);
-                        enchant_reflect(a->source,archer->kind >= 128 ? 2 : foe_category(archer->kind),before-character_state()->health);
+                        enchant_reflect(a->source,foe_enchant_category(archer->kind),before-character_state()->health);
                     } else { hit_foe_from(scene,target,damage,df_atan2(a->direction[0],a->direction[2]),a->source); }
                 }
                 recover_to(hit_player ? game_state()->inventory_id : dungeon_container(target));
@@ -781,10 +782,10 @@ static void monster_strike(const Scene *scene, const Camera *cam, FoeState *foe,
     if (!visible(scene,from,to)) { return; }
     if (target == TARGET_PLAYER) {
         fighter_player(&player); player.metal = curse_min_metal(); victim = &player;
-        category = curse_beast() ? foe_category(curse_form() == 9 ? 9 : 14) : 2;
+        category = curse_beast() ? foe_category(curse_form() == 9 ? ENEMY_WEREWOLF : ENEMY_WEREBOAR) : FOE_HUMANOID;
     } else {
         victim = &g_foe[target].fighter;
-        category = g_foe[target].kind >= 128 ? 2 : foe_category(g_foe[target].kind);
+        category = foe_enchant_category(g_foe[target].kind);
     }
     source = (int)(foe-g_foe);
     part = struck_part(random_range(0,19)); total = 0;
@@ -818,7 +819,7 @@ static void monster_strike(const Scene *scene, const Camera *cam, FoeState *foe,
         if (dealt > 0) {
             total += dealt;
             if (index >= 0) { enchant_strike_for(weapon_id,source,target,foe->fighter.level,dealt); }
-            if (target == TARGET_PLAYER) { enchant_reflect(source,foe->kind >= 128 ? 2 : foe_category(foe->kind),dealt); }
+            if (target == TARGET_PLAYER) { enchant_reflect(source,foe_enchant_category(foe->kind),dealt); }
         }
         if (index >= 0 && !foe->entity->dead) { item_wear(weapon_id,dealt); }
         if (foe->entity->dead || !target_live(target)) { break; }
@@ -843,8 +844,8 @@ static void monster_swing(const Scene *scene, const Camera *cam, FoeState *foe)
 static void foe_voice(FoeState *f, int variant)
 {
     int id;
-    if (f->kind == 146) { id = 11461; }
-    else if (f->kind >= 0 && f->kind < 43) { id = 10000+f->kind*10+variant; }
+    if (f->kind == ENEMY_CITY_WATCH) { id = ENEMY_VOICE_BASE+ENEMY_CITY_WATCH*ENEMY_VOICE_STRIDE+1; }
+    else if (ENEMY_IS_CLASSIC(f->kind)) { id = ENEMY_VOICE_BASE+f->kind*ENEMY_VOICE_STRIDE+variant; }
     else { return; }
     sound_at(id,f->entity->x,f->entity->y+f->body.height/2,f->entity->z);
 }
@@ -1123,7 +1124,7 @@ int dungeon_guards(void)
 
     n = 0;
     for (i = 0; i < g_count; i++) {
-        if (g_foe[i].kind == 146 && g_foe[i].fighter.health > 0) { n++; }
+        if (g_foe[i].kind == ENEMY_CITY_WATCH && g_foe[i].fighter.health > 0) { n++; }
     }
     return n;
 }

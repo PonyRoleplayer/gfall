@@ -1,4 +1,5 @@
 #include "game/dagger/play/character/ailments.h"
+#include "game/dagger/tables/enemies.h"
 #include "game/dagger/play/magic/magic.h"
 #include "game/dagger/play/cheats.h"
 #include "game/dagger/play/combat/combat.h"
@@ -186,11 +187,11 @@ void ailments_strike(int creature, int kind)
     infection = 0;
     /* A werewolf's, wereboar's or vampire's blow may pass on its curse; a vampire's that did not may still give a plague (damage_monster_hit_effects). */
     cursed = curse_blow(kind);
-    if (kind == 0 && random_range(0,100) <= 5) { infection = 1; }
-    if (kind == 3 && random_range(0,100) <= 2) { infection = 1; }
-    if (kind == 19 && random_range(1,100) <= 5) { infection = 1; }
-    if ((kind == 28 || kind == 30) && !cursed && random_range(1,100) <= 2) { infection = 1; }
+    if (kind == ENEMY_RAT && random_range(0,100) <= 5) { infection = 1; }
+    if (kind == ENEMY_GIANT_BAT && random_range(0,100) <= 2) { infection = 1; }
+    if (kind == ENEMY_MUMMY && random_range(1,100) <= 5) { infection = 1; }
+    if ((kind == ENEMY_VAMPIRE || kind == ENEMY_VAMPIRE_ANCIENT) && !cursed && random_range(1,100) <= 2) { infection = 1; }
     if (infection) { infect(-1,creature_diseases(kind),0,0); }
-    if (kind == 10) { fatigue_spend(random_range(10,30)*64); }
-    if ((kind == 6 || kind == 20) && !magic_chance(-1,0,-1)) { magic_apply(66,creature,-1,0,0); }
+    if (kind == ENEMY_NYMPH) { fatigue_spend(random_range(10,30)*64); }
+    if ((kind == ENEMY_SPIDER || kind == ENEMY_GIANT_SCORPION) && !magic_chance(-1,0,-1)) { magic_apply(66,creature,-1,0,0); }
 }

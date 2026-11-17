@@ -1,4 +1,5 @@
 #include "game/dagger/tables/combatdefs.h"
+#include "game/dagger/tables/enemies.h"
 #include "game/dagger/tables/combatdata.h"
 
 int foe_nav_angle(int octant) { return g_nav_angle[octant & 7]; }
@@ -7,7 +8,7 @@ int foe_encounter(int table, int index)
     return table >= 0 && table < 45 && index >= 0 && index < 20 ? g_encounter[table][index] : 0;
 }
 
-const FoeDef *foe_def(int kind) { return kind >= 0 && kind < 43 ? &g_foe[kind] : 0; }
+const FoeDef *foe_def(int kind) { return ENEMY_IS_CLASSIC(kind) ? &g_foe[kind] : 0; }
 const AnimScript *foe_script(int kind)
 {
     return foe_type_script(foe_texture_kind(kind));
@@ -19,10 +20,15 @@ const AnimScript *foe_type_script(int type)
     return type >= 0 && type < 60 ? &g_anim[type] : 0;
 }
 int foe_type_flags(int type) { return type >= 0 && type < 60 ? g_monster[type][2] : 0; }
-int foe_weight(int kind) { return kind >= 0 && kind < 43 ? g_weight[kind] : 80; }
-int foe_language(int kind) { return kind >= 0 && kind < 43 ? g_language[kind] : 0; }
-int foe_category(int kind) { return kind >= 0 && kind < 43 ? g_category[kind] : 0; }
-int foe_texture_kind(int kind) { return kind >= 128 && kind <= 146 ? g_class_kind[kind-128] : kind; }
+int foe_weight(int kind) { return ENEMY_IS_CLASSIC(kind) ? g_weight[kind] : 80; }
+int foe_language(int kind) { return ENEMY_IS_CLASSIC(kind) ? g_language[kind] : 0; }
+int foe_category(int kind) { return ENEMY_IS_CLASSIC(kind) ? g_category[kind] : 0; }
+int foe_enchant_category(int kind) { return ENEMY_IS_CLASS(kind) ? FOE_HUMANOID : foe_category(kind); }
+int foe_archive(int kind)
+{
+    return ENEMY_IS_CLASSIC(kind) ? ENEMY_ARCHIVE_CLASSIC + kind : kind == ENEMY_CITY_WATCH ? ENEMY_ARCHIVE_WATCH : ENEMY_ARCHIVE_CLASS + foe_texture_kind(kind);
+}
+int foe_texture_kind(int kind) { return kind >= ENEMY_FIRST_CLASS && kind <= ENEMY_CITY_WATCH ? g_class_kind[kind-ENEMY_FIRST_CLASS] : kind; }
 static int monster_field(int kind, int field)
 {
     int index;

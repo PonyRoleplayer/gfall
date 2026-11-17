@@ -1,4 +1,5 @@
 #include "game/dagger/play/magic/itemmaker.h"
+#include "game/dagger/tables/enemies.h"
 #include "game/dagger/play/magic/spellbook.h"
 #include "game/dagger/play/magic/magicitem.h"
 #include "game/dagger/play/items/inventory.h"
@@ -152,7 +153,7 @@ const char *itemmaker_param_name(int side, int kind, int param)
     if (pk == 4) {
         const FoeDef *foe;
 
-        foe = param >= 0 && param < 43 ? foe_def(param) : 0;
+        foe = ENEMY_IS_CLASSIC(param) ? foe_def(param) : 0;
         return foe ? foe->name : "";
     }
     if (pk >= 100 && param >= 0 && param < g_ench_label_count[pk - 100]) { return g_ench_labels[pk - 100][param]; }
@@ -442,7 +443,7 @@ static int slot_cost(int side, int type, int param, int as_points)
     if (code == 99) {
         int v;
 
-        v = param >= 0 && param < 43 ? g_soul_value[param] : 0;
+        v = ENEMY_IS_CLASSIC(param) ? g_soul_value[param] : 0;
         if (as_points) { v /= 100; }
         return -v;
     }
@@ -554,7 +555,7 @@ static int enchant_lines(const ItemEnchant *row, char *out, int cap)
         what = "";
         if (param >= 0) {
             if (type < 3) { const SpellDef *spell; spell = spell_def(param); what = spell ? spell->name : ""; }
-            else if (type == 15) { const FoeDef *foe; foe = param < 43 ? foe_def(param) : 0; what = foe ? foe->name : ""; }
+            else if (type == 15) { const FoeDef *foe; foe = param < ENEMY_CLASSIC_KINDS ? foe_def(param) : 0; what = foe ? foe->name : ""; }
             else { what = itemmaker_param_name(type < 15 ? 0 : 1, type < 15 ? type : type - 15, param); }
         }
         /* The names of the first three powers end with ": "; the others are followed by a space. */

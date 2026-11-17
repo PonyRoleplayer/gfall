@@ -1,4 +1,5 @@
 #include "game/dagger/play/combat/combat.h"
+#include "game/dagger/tables/enemies.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/play/character/curse.h"
 #include "game/dagger/play/magic/enchant.h"
@@ -50,7 +51,7 @@ int attack_chance(const FighterInfo *a, const FighterInfo *t, int skill, int wea
     chance += (a->attribute[ATTR_AGI]-t->attribute[ATTR_AGI])/10;
     chance += (a->attribute[ATTR_LUC]-t->attribute[ATTR_LUC])/10;
     chance += t->armor[part >= 0 && part < 7 ? part : 0];
-    if (t->race < 43) { chance += 40; }
+    if (t->race < ENEMY_RACE_CLASS) { chance += 40; }
     chance += race_bonus(a->race,weapon,a->level);
     /* This is the ATTACKER's Dodging in the byte-matched original. */
     chance -= a->skill[SKILL_DODGING]/4;
@@ -67,7 +68,7 @@ int attack_damage(const FighterInfo *a, const FighterInfo *t, int weapon, int ma
     if (weapon < 0) { return base; }
     damage = base + race_bonus(a->race,weapon,a->level) + swing;
     if (expert) { damage += a->level/3+1; }
-    if (t->race == 15) {
+    if (t->race == ENEMY_SKELETAL_WARRIOR) {
         if (material == 2) { damage *= 2; }
         /* Ordinary edged weapons halve against a skeletal warrior. */
         if (!(item_def(3,weapon)->flags & 16)) { damage /= 2; }

@@ -18,6 +18,11 @@ const AnimScript *foe_type_script(int texture_kind);
 int foe_type_flags(int texture_kind);
 int foe_weight(int kind);
 int foe_category(int kind);
+/* A foe's category by the enchantments that name one (Potent vs, Low damage vs): a class enemy is a humanoid. */
+enum { FOE_UNDEAD, FOE_DAEDRA, FOE_HUMANOID, FOE_ANIMAL };
+int foe_enchant_category(int kind);
+/* The picture archive a mobile wears, without a class enemy's choice of sex (the caller adds 1 for the other). */
+int foe_archive(int kind);
 int foe_language(int kind);
 int foe_parries(int kind);
 int foe_texture_kind(int kind);

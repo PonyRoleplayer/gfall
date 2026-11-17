@@ -1,4 +1,5 @@
 #include "game/dagger/play/magic/magic.h"
+#include "game/dagger/tables/enemies.h"
 #include "game/dagger/play/magic/magicitem.h"
 #include "game/dagger/play/character/curse.h"
 #include "game/dagger/play/character/ailments.h"
@@ -346,7 +347,7 @@ static void apply_effect(Effect *e, int index, int caster)
     if (group == 0) {
         if ((index == -1 ? curse_race() : who.race) == 4 || (index == -1 && (career.immunity & 1)) || (who.conditions & 0x8001) || random_range(1,100) > e->chance) { e->active = 0; return; }
     }
-    if (group == 12 && index >= 0 && dungeon_kind(index) >= 128) {
+    if (group == 12 && index >= 0 && ENEMY_IS_CLASS(dungeon_kind(index))) {
         e->active = 0; msg_set("That creature has no soul you can trap."); return;
     }
     if ((group == 3 || group == 5 || group == 19 || group == 33 || group == 34) && random_range(1,100) > e->chance) { e->active = 0; return; }
@@ -386,7 +387,7 @@ static void apply_effect(Effect *e, int index, int caster)
     } else if (group == 10) { heal(&who,base,sub,e->magnitude); }
     else if (group == 26) { magic_remove(index,0); who.conditions &= ~1; }
     else if (group == 33 || group == 34) {
-        if (index >= 0 && ((dungeon_kind(index) >= 128) == (group == 34))) { dungeon_pacify(index); }
+        if (index >= 0 && (ENEMY_IS_CLASS(dungeon_kind(index)) == (group == 34))) { dungeon_pacify(index); }
     }
     else if (group == 43 && index == -1) { magic_recall_prompt(); }
     chance = who.health;
@@ -411,7 +412,7 @@ void magic_soul_capture(int index)
     df_u32 gem, soul;
     int i, j, depth, kind, star_worn;
 
-    kind = dungeon_kind(index); if (kind < 0 || kind >= 43) { return; }
+    kind = dungeon_kind(index); if (!ENEMY_IS_CLASSIC(kind)) { return; }
     gem = magic_artifact_worn(9);
     star_worn = gem != 0;
     if (star_worn) {

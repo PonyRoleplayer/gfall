@@ -1,4 +1,5 @@
 #include "game/dagger/play/character/curse.h"
+#include "game/dagger/tables/enemies.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/people/guild.h"
@@ -99,10 +100,10 @@ void curse_infect_lycanthropy(int kind) { infect(kind + 1); }
 
 int curse_blow(int attacker_kind)
 {
-    if (attacker_kind != 9 && attacker_kind != 14 && attacker_kind != 28 && attacker_kind != 30) { return 0; }
+    if (attacker_kind != ENEMY_WEREWOLF && attacker_kind != ENEMY_WEREBOAR && attacker_kind != ENEMY_VAMPIRE && attacker_kind != ENEMY_VAMPIRE_ANCIENT) { return 0; }
     if (random_range(0, 32767) >= INFECTION_CHANCE) { return 0; }
-    if (attacker_kind == 9) { curse_infect_lycanthropy(0); }
-    else if (attacker_kind == 14) { curse_infect_lycanthropy(1); }
+    if (attacker_kind == ENEMY_WEREWOLF) { curse_infect_lycanthropy(0); }
+    else if (attacker_kind == ENEMY_WEREBOAR) { curse_infect_lycanthropy(1); }
     else { curse_infect_vampirism(); }
     return 1;
 }

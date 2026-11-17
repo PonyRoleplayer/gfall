@@ -1,4 +1,5 @@
 #include "game/dagger/play/combat/foegear.h"
+#include "game/dagger/tables/enemies.h"
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/tables/itemdefs.h"
 
@@ -21,10 +22,10 @@ void foe_equipment(int kind, df_u32 container, df_u32 *slots, FighterInfo *fight
     int tier, i, part, armor, equipped;
     static const int gear_slot[6] = {12,13,15,18,23,26};
     static const int armor_index[6] = {5,4,3,0,2,6};
-    if (kind >= 128) { tier = 3; }
-    else if (kind == 7 || kind == 21) { tier = 0; }
-    else if (kind == 8 || kind == 12) { tier = 1; }
-    else if (kind == 24) { tier = 2; }
+    if (ENEMY_IS_CLASS(kind)) { tier = 3; }
+    else if (kind == ENEMY_ORC || kind == ENEMY_ORC_SHAMAN) { tier = 0; }
+    else if (kind == ENEMY_CENTAUR || kind == ENEMY_ORC_SERGEANT) { tier = 1; }
+    else if (kind == ENEMY_ORC_WARLORD) { tier = 2; }
     else { return; }
     pack = object_edit(container);
     if (!pack) { return; }

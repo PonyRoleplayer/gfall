@@ -1,4 +1,5 @@
 #include "game/dagger/play/combat/encounter.h"
+#include "game/dagger/tables/enemies.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/combat/dungeon.h"
 #include "game/dagger/play/items/inventory.h"
@@ -23,7 +24,7 @@ static OutdoorActor g_outdoor_actor[ENCOUNTERS];
 
 static int archive_for(int kind)
 {
-    return kind < 43 ? 255+kind : kind == 146 ? 399 : 432+foe_texture_kind(kind)+random_range(0,1);
+    return foe_archive(kind) + (ENEMY_IS_CLASSIC(kind) || kind == ENEMY_CITY_WATCH ? 0 : random_range(0,1));
 }
 
 int encounter_pick(int type, int level)
@@ -126,7 +127,7 @@ static int adopt(Entity *e)
     kind = (int)(e->owner & 255u); archive = (int)((e->owner >> 8) & 4095u); rate = (int)((e->owner >> 20) & 4095u);
     foe = dungeon_add(e,kind,0,rate);
     if (foe < 0) { ent_remove(ent_id(e)); return -1; }
-    if (kind >= 128 && kind < 146) { dungeon_variant(foe,archive-432); }
+    if (ENEMY_IS_CLASS_ONLY(kind)) { dungeon_variant(foe,archive-ENEMY_ARCHIVE_CLASS); }
     dungeon_loaded(foe);
     return foe;
 }
@@ -333,7 +334,7 @@ static int outdoor_spawn(const Camera *camera, int kind, int settlement)
             foe = dungeon_add(live,kind,0,rate);
             if (foe >= 0) {
                 actor->foe = foe;
-                if (kind >= 128 && kind < 146) { dungeon_variant(foe,archive-432); }
+                if (ENEMY_IS_CLASS_ONLY(kind)) { dungeon_variant(foe,archive-ENEMY_ARCHIVE_CLASS); }
                 dungeon_loaded(foe);
                 return 1;
             }

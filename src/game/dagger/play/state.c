@@ -1,4 +1,5 @@
 #include "game/dagger/play/state.h"
+#include "game/dagger/tables/enemies.h"
 #include "engine/core/mem.h"
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/magic/magic.h"
@@ -684,7 +685,7 @@ static int position_valid(float value)
 
 static int encounter_kind_valid(int kind)
 {
-    return (kind >= 0 && kind < 43) || (kind >= 128 && kind <= 146);
+    return ENEMY_IS_KNOWN(kind);
 }
 
 static int encounters_valid(const EncounterState *state)
@@ -702,10 +703,9 @@ static int encounters_valid(const EncounterState *state)
         if (!state->place || !actor->key.place || !serial || serial > state->serial ||
             actor->key.thing != (0x80000000u | serial) || !encounter_kind_valid(actor->kind) ||
             !position_valid(actor->x) || !position_valid(actor->y) || !position_valid(actor->z)) { return 0; }
-        archive = actor->kind < 43 ? 255+actor->kind : actor->kind == 146 ? 399 :
-                  432+foe_texture_kind(actor->kind);
+        archive = foe_archive(actor->kind);
         if (actor->archive != archive &&
-            !(actor->kind >= 128 && actor->kind < 146 && actor->archive == archive+1)) { return 0; }
+            !(ENEMY_IS_CLASS_ONLY(actor->kind) && actor->archive == archive+1)) { return 0; }
         for (j = 0; j < i; j++) {
             if (state->actor[j].key.thing == actor->key.thing) { return 0; }
         }
@@ -719,9 +719,9 @@ static int kept_row_valid(const Keep *row)
     int kind, archive, expect;
 
     kind = (int)(row->owner & 255u); archive = (int)((row->owner >> 8) & 4095u);
-    expect = kind < 43 ? 255+kind : kind == 146 ? 399 : 432+foe_texture_kind(kind);
+    expect = foe_archive(kind);
     return (row->flags & ENT_KEPT) && (row->key.thing & 0x80000000u) && row->made == 2 && encounter_kind_valid(kind) &&
-           (archive == expect || (kind >= 128 && kind < 146 && archive == expect+1));
+           (archive == expect || (ENEMY_IS_CLASS_ONLY(kind) && archive == expect+1));
 }
 
 static int saved_world_valid(const GameState *state)

@@ -101,6 +101,14 @@ const EnemyKind *enemy_kind(int kind);
 enum { ENEMY_GROUP_NONE, ENEMY_GROUP_UNDEAD, ENEMY_GROUP_DAEDRA, ENEMY_GROUP_HUMANOID, ENEMY_GROUP_ANIMALS };
 int enemy_group(int kind);
 #define ENEMY_RAT 0
+#define ENEMY_SPIDER 6
+#define ENEMY_ORC 7
+#define ENEMY_CENTAUR 8
+#define ENEMY_NYMPH 10
+#define ENEMY_ORC_SERGEANT 12
+#define ENEMY_GIANT_SCORPION 20
+#define ENEMY_ORC_SHAMAN 21
+#define ENEMY_ORC_WARLORD 24
 #define ENEMY_SLAUGHTERFISH 11
 /* Those whose blow can pass on a disease or a curse (ills.c). */
 #define ENEMY_GIANT_BAT 3
@@ -119,6 +127,29 @@ int enemy_group(int kind);
 #define ENEMY_FIRST_CLASS 128
 /* City Watch: archive 399, bark DAGGER.SND 456 (Halt). */
 #define ENEMY_CITY_WATCH 146
+
+/*
+ * The bands of mobile ids. The classic mobiles (rat .. lamia) are 0..ENEMY_CLASSIC_KINDS - 1. A class enemy is ENEMY_FIRST_CLASS + the class (ENEMY_CLASS_COUNT of
+ * them); ENEMY_CITY_WATCH, the next id, is the guard that wears a class's gear. A fighter's race is its mobile id, and ENEMY_RACE_CLASS (one past the classic mobiles)
+ * for a class enemy.
+ */
+#define ENEMY_CLASSIC_KINDS 43
+#define ENEMY_RACE_CLASS ENEMY_CLASSIC_KINDS
+#define ENEMY_CLASS_COUNT 18
+#define ENEMY_IS_CLASSIC(kind) ((kind) >= 0 && (kind) < ENEMY_CLASSIC_KINDS)
+/* A class enemy, or the watch, which is a class enemy in a guard's picture. */
+#define ENEMY_IS_CLASS(kind) ((kind) >= ENEMY_FIRST_CLASS)
+/* A class enemy only: not the watch. */
+#define ENEMY_IS_CLASS_ONLY(kind) ((kind) >= ENEMY_FIRST_CLASS && (kind) < ENEMY_CITY_WATCH)
+/* An id that names a mobile at all: a classic one, a class enemy or the watch. */
+#define ENEMY_IS_KNOWN(kind) (ENEMY_IS_CLASSIC(kind) || ((kind) >= ENEMY_FIRST_CLASS && (kind) <= ENEMY_CITY_WATCH))
+/* The picture archive of a mobile (foe_archive in combatdefs.c): TEXTURE.255 + kind, the watch's 399, and a class's 432 + its picture kind (433 the other sex's). */
+#define ENEMY_ARCHIVE_CLASSIC 255
+#define ENEMY_ARCHIVE_WATCH 399
+#define ENEMY_ARCHIVE_CLASS 432
+/* DAGGER.SND: a mobile's voice is ENEMY_VOICE_BASE + kind * ENEMY_VOICE_STRIDE + its variant (asleep 0, awake 1, close 2). */
+#define ENEMY_VOICE_BASE 10000
+#define ENEMY_VOICE_STRIDE 10
 
 /* Editor records: a random creature, a fixed one. */
 #define ENEMY_RANDOM_MARKER 15

@@ -1,4 +1,5 @@
 #include "game/dagger/play/combat/ai.h"
+#include "game/dagger/tables/enemies.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/input/move.h"
@@ -35,7 +36,7 @@ int ai_marker_pacify(int kind, KeepKey key)
 
     who = character_state();
     chance = (hud_weapon_ready() ? -25 : 10) + who->attribute[ATTR_PER]/5;
-    if (kind >= 128) { chance += who->skill[SKILL_ETIQUETTE]/10; }
+    if (ENEMY_IS_CLASS(kind)) { chance += who->skill[SKILL_ETIQUETTE]/10; }
     else {
         language = foe_language(kind);
         if (language) {

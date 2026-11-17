@@ -1,4 +1,5 @@
 #include "game/dagger/play/magic/potion.h"
+#include "game/dagger/tables/enemies.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/magic/spellbook.h"
@@ -118,7 +119,7 @@ void potion_stock(df_u32 container, int quality)
 
 int soul_value(int kind)
 {
-    return kind >= 0 && kind < 43 ? g_soul_value[kind] : 0;
+    return ENEMY_IS_CLASSIC(kind) ? g_soul_value[kind] : 0;
 }
 
 void soul_trap_stock(df_u32 container, int quality)
