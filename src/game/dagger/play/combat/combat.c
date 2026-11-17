@@ -1,4 +1,5 @@
 #include "game/dagger/play/combat/combat.h"
+#include "game/dagger/tables/careers.h"
 #include "game/dagger/play/character/curse.h"
 #include "game/dagger/play/magic/enchant.h"
 #include "game/dagger/play/items/possessions.h"
@@ -52,8 +53,8 @@ int attack_chance(const FighterInfo *a, const FighterInfo *t, int skill, int wea
     if (t->race < 43) { chance += 40; }
     chance += race_bonus(a->race,weapon,a->level);
     /* This is the ATTACKER's Dodging in the byte-matched original. */
-    chance -= a->skill[20]/4;
-    if (critical < a->skill[34]) { chance += a->skill[34]/10; }
+    chance -= a->skill[SKILL_DODGING]/4;
+    if (critical < a->skill[SKILL_CRITICAL_STRIKE]) { chance += a->skill[SKILL_CRITICAL_STRIKE]/10; }
     chance -= 50;
     if (chance < 3) { return 3; }
     return chance > 97 ? 97 : chance;

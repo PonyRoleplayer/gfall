@@ -1,4 +1,5 @@
 #include "game/dagger/play/combat/ai.h"
+#include "game/dagger/tables/careers.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/input/move.h"
 #include "game/dagger/play/magic/magic.h"
@@ -18,8 +19,8 @@ int ai_stealth(int detected, int distance, int encountered)
     base = character_state()->attribute[ATTR_SPD]+150;
     if (encountered && momentum > base/2) { return 1; }
     if (momentum <= base/2 && (game_state()->minutes & 1)) { return detected; }
-    skill_use(16); state_stealth_checked();
-    chance = ((character_state()->skill[16]*distance)/1024)*2;
+    skill_use(SKILL_STEALTH); state_stealth_checked();
+    chance = ((character_state()->skill[SKILL_STEALTH]*distance)/1024)*2;
     return random_range(1,100) > chance;
 }
 
@@ -27,14 +28,14 @@ int ai_stealth(int detected, int distance, int encountered)
  * creatures with a language train that skill, even when the roll fails. */
 int ai_marker_pacify(int kind, KeepKey key)
 {
-    enum { ETIQUETTE = 1, COMPREHEND_LANGUAGES = 44 };
+    enum { COMPREHEND_LANGUAGES = 44 };
     const CharacterState *who;
     int chance, language, roll;
     df_u32 saved;
 
     who = character_state();
     chance = (hud_weapon_ready() ? -25 : 10) + who->attribute[ATTR_PER]/5;
-    if (kind >= 128) { chance += who->skill[ETIQUETTE]/10; }
+    if (kind >= 128) { chance += who->skill[SKILL_ETIQUETTE]/10; }
     else {
         language = foe_language(kind);
         if (language) {

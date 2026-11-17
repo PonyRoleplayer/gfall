@@ -1,4 +1,5 @@
 #include "game/dagger/play/items/inventory.h"
+#include "game/dagger/tables/careers.h"
 #include "game/dagger/play/magic/enchant.h"
 #include "game/dagger/play/magic/magicitem.h"
 #include "game/dagger/tables/itemdefs.h"
@@ -355,7 +356,7 @@ void inventory_start_spells(df_u32 book)
         career = &game_state()->career;
         for (i = 0; i < 3; i++) { skills[i] = career->primary[i]; skills[i+3] = career->major[i]; }
         for (i = 0; i < 6; i++) { skills[i+6] = career->minor[i]; }
-        for (n = 0; n < 12 && !(skills[n] >= 22 && skills[n] <= 27); n++) { }
+        for (n = 0; n < 12 && !(skills[n] >= SKILL_DESTRUCTION && skills[n] <= SKILL_MYSTICISM); n++) { }
         if (n == 12) { return; }
         klass = 1;
     }

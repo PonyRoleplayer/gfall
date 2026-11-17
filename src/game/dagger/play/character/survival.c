@@ -1,4 +1,5 @@
 #include "game/dagger/play/character/survival.h"
+#include "game/dagger/tables/careers.h"
 #include "game/dagger/play/character/curse.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/cheats.h"
@@ -45,8 +46,8 @@ void survival_minutes(int count, int running, int climbing)
     while (count-- > 0) {
         delta = 11;
         if (move_in_water() && curse_race() != 7) {
-            if (random_range(1,100) > character_state()->skill[17]) { delta = 44; }
-            skill_use(17);
+            if (random_range(1,100) > character_state()->skill[SKILL_SWIMMING]) { delta = 44; }
+            skill_use(SKILL_SWIMMING);
         }
         if (running) { delta = 88; }
         if (climbing) { delta = 22; }

@@ -4,6 +4,7 @@
 #include "game/dagger/play/character/curse.h"
 #include "game/dagger/play/character/ailments.h"
 #include "game/dagger/play/magic/enchant.h"
+#include "game/dagger/play/magic/magicitem.h"
 #include "game/dagger/play/people/guild.h"
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/save/save.h"
@@ -151,21 +152,24 @@ static void moons(void)
 static void ring(void)
 {
     CharacterState *who;
-    ItemEnchant *row;
     df_u32 item;
-    int k;
+    int ordinal;
 
     start();
     who = character_state();
     curse_infect_lycanthropy(0);
     state_pass_minutes(4400);
-    item = item_create(game_state()->inventory_id, 3, 0, 0);
-    row = item_enchant_edit(0);
-    check_expect(item && row, "curse: no item or enchantment row for Hircine's ring");
-    if (!item || !row) { return; }
-    memset(row, 0, sizeof(*row)); row->item = item;
-    for (k = 0; k < 10; k++) { row->type[k] = -1; }
-    row->type[0] = 26; row->param[0] = 3;
+    /* Hircine's ring: the artifact whose power is 3. */
+    item = 0;
+    for (ordinal = 0; ordinal < 40 && !item; ordinal++) {
+        df_u32 made;
+
+        made = magic_artifact_create(game_state()->inventory_id, ordinal);
+        if (made && magic_artifact_power(made) == 3) { item = made; }
+        else if (made) { object_delete(made); }
+    }
+    check_expect(item != 0, "curse: no artifact of power 3 to stand for Hircine's ring");
+    if (!item) { return; }
     state_equip(19, item);
     /* Worn: the moons do nothing, the hunger does nothing, and changes come as often as asked. */
     state_pass_minutes(70u * 1440u);
@@ -178,7 +182,6 @@ static void ring(void)
     curse_shapechange(0);
     state_equip(19, 0);
     curse_cure_lycanthropy();
-    memset(row, 0, sizeof(*row));
     object_delete(item);
 }
 

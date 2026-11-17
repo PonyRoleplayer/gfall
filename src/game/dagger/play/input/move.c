@@ -1,4 +1,5 @@
 #include "game/dagger/play/state.h"
+#include "game/dagger/tables/careers.h"
 #include "game/dagger/play/character/curse.h"
 #include "game/dagger/play/input/move.h"
 
@@ -226,8 +227,8 @@ static void climb_update(const Scene *scene, float dx, float dz, float moved, fl
              * the walking step take the feet onto that floor. */
             g_body.grounded = 1;
         } else if (game_state()->minutes-survival->climb_minute > 1) {
-            survival->climb_minute = game_state()->minutes; skill_use(18);
-            chance = character_state()->skill[18]+(curse_race() == 6 ? 30 : 0);
+            survival->climb_minute = game_state()->minutes; skill_use(SKILL_CLIMBING);
+            chance = character_state()->skill[SKILL_CLIMBING]+(curse_race() == 6 ? 30 : 0);
             if (!(character_state()->conditions & 0x20000) && random_range(1,100) > 95 && random_range(1,100) > chance) {
                 survival->climbing = 0; survival->climb_failed = 1;
             }
@@ -242,7 +243,7 @@ static void climb_update(const Scene *scene, float dx, float dz, float moved, fl
             if (survival->climb_time > 14/18.2065f) {
                 survival->climbing = 1; survival->climb_time = 0;
                 survival->climb_minute = game_state()->minutes;
-                skill_use(18); msg_set("Climbing mode.");
+                skill_use(SKILL_CLIMBING); msg_set("Climbing mode.");
             }
         } else { survival->climb_time = 0; survival->climb_minute = game_state()->minutes; }
     }
@@ -362,8 +363,8 @@ void move_frame(const Scene *scene, const MoveIn *in)
     swimming = scene && scene_water_body(scene,g_body.feet[0],g_body.feet[1]+g_body.eye_now,g_body.feet[2]) >= WATER_WAIST;
     free_move = swimming || (who->conditions & 8) || survival_state()->climbing;
     if (free_move) { g_air = 0; }
-    speed = ground_speed(who->attribute[ATTR_SPD], g_crouch, running && !wet, who->skill[21], wet && !(who->conditions & 0x100000),
-                            who->skill[17]);
+    speed = ground_speed(who->attribute[ATTR_SPD], g_crouch, running && !wet, who->skill[SKILL_RUNNING], wet && !(who->conditions & 0x100000),
+                            who->skill[SKILL_SWIMMING]);
     if (!g_air && in->view_mode && in->held && in->held[SLOW]) {
         speed = view_slow(speed);
     }
@@ -393,7 +394,7 @@ void move_frame(const Scene *scene, const MoveIn *in)
         mag = jump_magnitude(who->attribute[ATTR_SPD], who->attribute[ATTR_STR], who->skill[SKILL_JUMPING]);
         impulse = jump_impulse(mag, (who->conditions & 0x10000) != 0, (who->class_flags & 2) != 0);
         if (body_jump(&g_body, jump_ups(impulse))) {
-            skill_use(3);
+            skill_use(SKILL_JUMPING);
             fatigue_spend(11);
             g_air = 1;
             jumped = 1;

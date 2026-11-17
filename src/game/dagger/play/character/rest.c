@@ -1,4 +1,5 @@
 #include "game/dagger/play/character/rest.h"
+#include "game/dagger/tables/careers.h"
 #include "game/dagger/play/character/curse.h"
 #include "game/dagger/play/people/lodging.h"
 #include "game/dagger/play/people/law.h"
@@ -80,7 +81,7 @@ void rest_recover(void)
     if (who->health <= 0 || curse_hungry()) { return; }
     /* Privateer's Hold is indoors: rapid healing in darkness or always. */
     if (game_state()->career.rapid & 6) { rate += 40; }
-    rate += who->skill[0];
+    rate += who->skill[SKILL_MEDICAL];
     heal = who->max_health*rate/1000+(who->attribute[ATTR_END]-50)/10;
     if (heal < 1) { heal = 1; }
     who->health += heal;
@@ -91,7 +92,7 @@ void rest_recover(void)
         who->magicka += who->max_magicka >> 3;
         if (who->magicka > who->max_magicka) { who->magicka = who->max_magicka; }
     }
-    skill_use(0);
+    skill_use(SKILL_MEDICAL);
 }
 
 static int healed(void)

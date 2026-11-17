@@ -1,4 +1,5 @@
 #include "game/dagger/play/people/entry.h"
+#include "game/dagger/tables/careers.h"
 #include "game/dagger/tables/buildingtypes.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/people/hours.h"
@@ -9,8 +10,6 @@
 
 /* See entry.h. */
 
-#define SKILL_LOCKPICKING 13
-#define SKILL_STEALTH 16
 #define TRIED_MOST 32
 
 /* lockpick_skill_tried is kept on the building's door record in the original; here by building. */

@@ -1,4 +1,5 @@
 #include "game/dagger/play/people/market.h"
+#include "game/dagger/tables/careers.h"
 #include "game/dagger/play/magic/itemmaker.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/items/inventory.h"
@@ -8,8 +9,6 @@
 
 /* See market.h. */
 
-#define SKILL_MERCANTILE 14
-#define ATTR_PERSONALITY 5
 
 static int g_mode;
 static ShopState g_shop;
@@ -125,12 +124,12 @@ Quote market_quote(void)
     c = character_state();
     sum = lines();
     if (g_mode == MARKET_BUY) {
-        return sum > 0 ? trade_buy(&g_shop, c->skill[SKILL_MERCANTILE], c->attribute[ATTR_PERSONALITY], sum) : none;
+        return sum > 0 ? trade_buy(&g_shop, c->skill[SKILL_MERCANTILE], c->attribute[ATTR_PER], sum) : none;
     }
     if (g_mode == MARKET_SELL) {
-        return sum > 0 ? trade_sell(&g_shop, c->skill[SKILL_MERCANTILE], c->attribute[ATTR_PERSONALITY], sum) : none;
+        return sum > 0 ? trade_sell(&g_shop, c->skill[SKILL_MERCANTILE], c->attribute[ATTR_PER], sum) : none;
     }
-    return sum > 0 ? trade_repair(&g_shop, c->skill[SKILL_MERCANTILE], c->attribute[ATTR_PERSONALITY], sum) : none;
+    return sum > 0 ? trade_repair(&g_shop, c->skill[SKILL_MERCANTILE], c->attribute[ATTR_PER], sum) : none;
 }
 
 int market_offer(void)

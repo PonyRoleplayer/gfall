@@ -24,9 +24,6 @@ enum {
     ATTR_LUC
 };
 
-/* Jumping is skill 3 in the decomp (player_compute_jump_velocity). */
-#define SKILL_JUMPING 3
-
 typedef struct ClassInfo {
     char name[16];
     int attribute[ATTRS];

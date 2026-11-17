@@ -1,4 +1,5 @@
 #include "game/dagger/play/people/talk.h"
+#include "game/dagger/tables/careers.h"
 #include "game/dagger/tables/buildingtypes.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/people/law.h"
@@ -9,9 +10,6 @@
 
 /* See talk.h. */
 
-#define SKILL_ETIQUETTE 1
-#define SKILL_STREETWISE 2
-#define ATTR_PERSONALITY 5
 
 /* The original never clears the third tone's cache between conversations. */
 static int g_stale_cache;
@@ -63,7 +61,7 @@ int talk_start(TalkState *talk, const TalkWho *who, const TalkPlayer *player, in
         talk->disposition += c->reputation[social];
     }
     talk->disposition += enchant_reaction(social);
-    if (magic_artifact_worn(0)) { talk->disposition += c->attribute[ATTR_PERSONALITY]/5; }
+    if (magic_artifact_worn(0)) { talk->disposition += c->attribute[ATTR_PER]/5; }
     if (talk->disposition < -20) {
         *text = TALK_TEXT_REFUSES;
         return 0;
@@ -172,7 +170,7 @@ int talk_attitude(TalkState *talk)
     }
     kind = ((1 - talk->mode) << 2) + talk->tab;
     attitude += g_attitude_mod[kind];
-    attitude += c->attribute[ATTR_PERSONALITY] / 5;
+    attitude += c->attribute[ATTR_PER] / 5;
     roll = rand_range(0, 20);
     if (talk->cache[talk->tone] != 0) {
         attitude = talk->cache[talk->tone];

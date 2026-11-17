@@ -1,4 +1,5 @@
 #include "game/dagger/play/travel/doors.h"
+#include "game/dagger/tables/careers.h"
 #include "game/dagger/play/ui/hud.h"
 #include "game/dagger/play/play.h"
 #include "game/dagger/play/state.h"
@@ -154,7 +155,7 @@ int door_use(const Scene *scene, int usable, int mode)
         if (mover_start(scene,mover) && door_unlock(door)) { object_delete(key); }
         return 1;
     }
-    skill = character_state()->skill[13];
+    skill = character_state()->skill[SKILL_LOCKPICKING];
     if (mode != MODE_STEAL) {
         if (character_state()->conditions & 64) {
             chance = magic_chance(-1,17,-1); magic_remove(-1,17);
@@ -179,7 +180,7 @@ int door_use(const Scene *scene, int usable, int mode)
         interact_say("Cannot remember this lock.");
         return 1;
     }
-    skill_use(13);
+    skill_use(SKILL_LOCKPICKING);
     if (random_range(0,100) <= chance) {
         door_unlock(door);
         mover_start(scene,mover);
@@ -220,7 +221,7 @@ int door_strike(const Scene *scene, const Camera *camera)
         return 1;
     }
     /* weapon_melee_strike trains Stealth, even at a magically held door. */
-    skill_use(16);
+    skill_use(SKILL_STEALTH);
     dungeon_alert(-1);
     chance = bash_chance(door->lock);
     if (chance && random_range(1,100) <= chance && mover_start(scene,mover)) {

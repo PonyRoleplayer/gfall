@@ -1,4 +1,5 @@
 #include "game/dagger/play/character/curse.h"
+#include "game/dagger/tables/careers.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/people/guild.h"
 #include "game/dagger/play/items/inventory.h"
@@ -8,7 +9,7 @@
 #include "game/dagger/play/people/law.h"
 #include "game/dagger/play/ui/msg.h"
 #include "game/dagger/play/quests/quest.h"
-#include "game/dagger/play/magic/itemmaker.h"
+#include "game/dagger/play/magic/magicitem.h"
 #include "engine/scene/entity.h"
 #include "game/dagger/play/play.h"
 #include "engine/core/mem.h"
@@ -47,8 +48,8 @@
 /* 4 step 14: the spells every vampire has, and the clan's (SPELLS.STD numbers). */
 static const int vampire_spells[] = { 4, 90, 91 };
 /* 4 step 8, 6 step 4, 4 step 9, 6 step 7: attributes and skills of each curse. */
-static const int vampire_skills[] = { 3, 21, 16, 34, 18, 30 };
-static const int lycanthrope_skills[] = { 17, 18, 3, 16, 21, 34, 30 };
+static const int vampire_skills[] = { SKILL_JUMPING, SKILL_RUNNING, SKILL_STEALTH, SKILL_CRITICAL_STRIKE, SKILL_CLIMBING, SKILL_HAND_TO_HAND };
+static const int lycanthrope_skills[] = { SKILL_SWIMMING, SKILL_CLIMBING, SKILL_JUMPING, SKILL_STEALTH, SKILL_RUNNING, SKILL_CRITICAL_STRIKE, SKILL_HAND_TO_HAND };
 static const int lycanthrope_attributes[] = { ATTR_STR, ATTR_END, ATTR_AGI, ATTR_SPD };
 
 static const CurseWorld *g_world;
@@ -297,22 +298,10 @@ void curse_cure_lycanthropy(void)
     c->form = 0; c->disease = 0; c->health_base = 0;
 }
 
-/* Hircine's ring is artifact 3: an equipped item whose first enchantment is type 26 with that parameter (item_artifact_equipped). Worn, it ends the hunger and the moons and the wait between changes. */
-#define ENCHANT_ARTIFACT 26
+/* Hircine's ring is artifact 3 (item_artifact_equipped(3)). Worn, it ends the hunger and the moons and the wait between changes. */
 #define HIRCINE_RING 3
 
-static int ring_worn(void)
-{
-    int slot, type, param;
-
-    for (slot = 0; slot < 27; slot++) {
-        df_u32 id;
-
-        id = game_state()->equipped[slot];
-        if (id && item_enchantment(id, 0, &type, &param) && type == ENCHANT_ARTIFACT && param == HIRCINE_RING) { return 1; }
-    }
-    return 0;
-}
+static int ring_worn(void) { return magic_artifact_worn(HIRCINE_RING) != 0; }
 
 /* ---- A lycanthrope's changes (7) ---- */
 

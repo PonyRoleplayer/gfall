@@ -1,6 +1,8 @@
 #ifndef GFALL_STEAL_H
 #define GFALL_STEAL_H
 
+#include "game/dagger/tables/careers.h"
+
 /*
  * Taking what is not the player's: a pocket picked, a shop's counter emptied, a shelf looked through.
  * Slice 7 of people and law (docs/game-people.md), from pickpocket_attempt (src/lifted/steal.c), the
@@ -10,8 +12,6 @@
  * (tables/stealdata.h). Pure rules over the session; a failure notes the crime and calls the watch.
  */
 
-#define SKILL_PICKPOCKET 15
-#define SKILL_STEALTH 16
 
 typedef struct StealState {
     /* 1 when it worked. */

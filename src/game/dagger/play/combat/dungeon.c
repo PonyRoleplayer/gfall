@@ -1,4 +1,5 @@
 #include "game/dagger/play/combat/dungeon.h"
+#include "game/dagger/tables/careers.h"
 #include "game/dagger/play/magic/enchant.h"
 #include "game/dagger/play/quests/quest.h"
 #include "game/dagger/play/people/guild.h"
@@ -534,9 +535,9 @@ static void resolve_player(const Scene *scene, const Camera *cam, int target, co
     expert = index >= 0 && (weapon_proficiency(index) & game_state()->career.expert);
     chance = a.skill[skill] + (expert ? a.level : 0);
     toward = df_atan2(cam->x-f->entity->x,cam->z-f->entity->z)-f->entity->yaw;
-    backstab = !s->bow && df_cos(toward) < df_cos(640*DF_TAU/2048) ? a.skill[19] : 0;
+    backstab = !s->bow && df_cos(toward) < df_cos(640*DF_TAU/2048) ? a.skill[SKILL_BACKSTABBING] : 0;
     chance += backstab;
-    skill_use(skill); skill_use(34); if (backstab) { skill_use(19); }
+    skill_use(skill); skill_use(SKILL_CRITICAL_STRIKE); if (backstab) { skill_use(SKILL_BACKSTABBING); }
     if (!god_mode() && index >= 0 && material < f->fighter.metal) {
         f->awake = 1; store_health(f);
         msg_set("Your weapon is ineffective against this creature.");
@@ -550,7 +551,7 @@ static void resolve_player(const Scene *scene, const Camera *cam, int target, co
         store_health(f); return;
     }
     base = index >= 0 ? random_range(weapon_damage(index,0),weapon_damage(index,1)) :
-        random_range(a.skill[30]/10+1,a.skill[30]/5+1);
+        random_range(a.skill[SKILL_HAND_TO_HAND]/10+1,a.skill[SKILL_HAND_TO_HAND]/5+1);
     damage = attack_damage(&a,&f->fighter,index,material,s->damage,expert,base);
     /* damage_bonus_vs_target: a creature of a class is a humanoid. */
     if (index >= 0 && s->item) { damage += enchant_hit_bonus(s->item, f->kind >= 128 ? 2 : foe_category(f->kind)); if (damage < 0) { damage = 0; } }
@@ -685,8 +686,8 @@ static void arrows_step(const Scene *scene, const Camera *cam, float dt)
                 if (hit_player) { fighter_player(&player); victim = &player; }
                 else { victim = &g_foe[target].fighter; }
                 part = struck_part(random_range(0,19));
-                chance = attack_chance(&archer->fighter,victim,archer->fighter.skill[33],16,0,part,0,random_range(1,100));
-                if (hit_player) { skill_use(20); }
+                chance = attack_chance(&archer->fighter,victim,archer->fighter.skill[SKILL_ARCHERY],16,0,part,0,random_range(1,100));
+                if (hit_player) { skill_use(SKILL_DODGING); }
                 if (random_range(0,100) <= chance) {
                     damage = random_range(weapon_damage(16,0),weapon_damage(16,1));
                     if (hit_player) {
@@ -794,11 +795,11 @@ static void monster_strike(const Scene *scene, const Camera *cam, FoeState *foe,
         if (index < 0 && foe->def && (!foe->def->minimum[i] || random_range(0,99) >= 50-(character_state()->reflexes-2)*10)) { continue; }
         chance = attack_chance(&foe->fighter,victim,foe->fighter.skill[skill],index,
             index >= 0 ? material_hit(material) : 0,part,0,random_range(1,100));
-        if (target == TARGET_PLAYER) { skill_use(20); }
+        if (target == TARGET_PLAYER) { skill_use(SKILL_DODGING); }
         if (random_range(0,100) > chance || (index >= 0 && material < victim->metal)) { continue; }
         damage = index >= 0 ? random_range(weapon_damage(index,0),weapon_damage(index,1)) :
             foe->def ? random_range(foe->def->minimum[i],foe->def->maximum[i]) :
-            random_range(foe->fighter.skill[30]/10+1,foe->fighter.skill[30]/5+1);
+            random_range(foe->fighter.skill[SKILL_HAND_TO_HAND]/10+1,foe->fighter.skill[SKILL_HAND_TO_HAND]/5+1);
         damage = attack_damage(&foe->fighter,victim,index,material,0,0,damage);
         if (index >= 0) {
             damage += enchant_hit_bonus_for(weapon_id,category,source,foe->fighter.level);
