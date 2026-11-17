@@ -29,17 +29,17 @@ void fighter_player(FighterInfo *out)
     for (i = 0; i < ATTRS; i++) { out->attribute[i] = who->attribute[i]; }
     for (i = 0; i < SKILLS; i++) { out->skill[i] = who->skill[i]; }
     /* armor_value_for_part starts at 100; the sheet displays fifths. */
-    for (i = 0; i < 7; i++) {
-        out->armor[i] = 100-inventory_armor(i)*5+enchant_armor_modifier();
-        if (out->armor[i] < -100) { out->armor[i] = -100; }
-        if (out->armor[i] > 100) { out->armor[i] = 100; }
+    for (i = 0; i < BODY_PARTS; i++) {
+        out->armor[i] = ARMOR_BASE-inventory_armor(i)*ARMOR_PER_POINT+enchant_armor_modifier();
+        if (out->armor[i] < -ARMOR_LIMIT) { out->armor[i] = -ARMOR_LIMIT; }
+        if (out->armor[i] > ARMOR_LIMIT) { out->armor[i] = ARMOR_LIMIT; }
     }
 }
 
 static int race_bonus(int race, int weapon, int level)
 {
-    if ((race == PLAYER_RACE_REDGUARD && weapon < WEAPON_SHORT_BOW) || (race == PLAYER_RACE_WOOD_ELF && weapon >= WEAPON_SHORT_BOW)) { return level/3; }
-    return race == PLAYER_RACE_DARK_ELF ? level/4 : 0;
+    if ((race == PLAYER_RACE_REDGUARD && weapon < WEAPON_SHORT_BOW) || (race == PLAYER_RACE_WOOD_ELF && weapon >= WEAPON_SHORT_BOW)) { return level/RACE_BONUS_LEVEL_DIVISOR; }
+    return race == PLAYER_RACE_DARK_ELF ? level/DARK_ELF_LEVEL_DIVISOR : 0;
 }
 
 int attack_chance(const FighterInfo *a, const FighterInfo *t, int skill, int weapon,
@@ -47,19 +47,19 @@ int attack_chance(const FighterInfo *a, const FighterInfo *t, int skill, int wea
 {
     int chance;
     chance = skill + swing + material;
-    if (a->health < a->maximum/8 && (a->flags & 4)) { chance += 5; }
-    if (t->health < t->maximum/8 && (t->flags & 4)) { chance -= 5; }
-    chance += (a->attribute[ATTR_AGI]-t->attribute[ATTR_AGI])/10;
-    chance += (a->attribute[ATTR_LUC]-t->attribute[ATTR_LUC])/10;
-    chance += t->armor[part >= 0 && part < 7 ? part : 0];
-    if (t->race < ENEMY_RACE_CLASS) { chance += 40; }
+    if (a->health < a->maximum/LOW_HEALTH_DIVISOR && (a->flags & CLASS_ADRENALINE_RUSH)) { chance += ADRENALINE_CHANCE; }
+    if (t->health < t->maximum/LOW_HEALTH_DIVISOR && (t->flags & CLASS_ADRENALINE_RUSH)) { chance -= ADRENALINE_CHANCE; }
+    chance += (a->attribute[ATTR_AGI]-t->attribute[ATTR_AGI])/ATTRIBUTE_HIT_DIVISOR;
+    chance += (a->attribute[ATTR_LUC]-t->attribute[ATTR_LUC])/ATTRIBUTE_HIT_DIVISOR;
+    chance += t->armor[part >= 0 && part < BODY_PARTS ? part : 0];
+    if (t->race < ENEMY_RACE_CLASS) { chance += MONSTER_HIT_BONUS; }
     chance += race_bonus(a->race,weapon,a->level);
     /* This is the ATTACKER's Dodging in the byte-matched original. */
-    chance -= a->skill[SKILL_DODGING]/4;
-    if (critical < a->skill[SKILL_CRITICAL_STRIKE]) { chance += a->skill[SKILL_CRITICAL_STRIKE]/10; }
-    chance -= 50;
-    if (chance < 3) { return 3; }
-    return chance > 97 ? 97 : chance;
+    chance -= a->skill[SKILL_DODGING]/DODGE_DIVISOR;
+    if (critical < a->skill[SKILL_CRITICAL_STRIKE]) { chance += a->skill[SKILL_CRITICAL_STRIKE]/CRITICAL_HIT_DIVISOR; }
+    chance -= TO_HIT_OFFSET;
+    if (chance < TO_HIT_MIN) { return TO_HIT_MIN; }
+    return chance > TO_HIT_MAX ? TO_HIT_MAX : chance;
 }
 
 int attack_damage(const FighterInfo *a, const FighterInfo *t, int weapon, int material,
@@ -68,13 +68,13 @@ int attack_damage(const FighterInfo *a, const FighterInfo *t, int weapon, int ma
     int damage;
     if (weapon < 0) { return base; }
     damage = base + race_bonus(a->race,weapon,a->level) + swing;
-    if (expert) { damage += a->level/3+1; }
+    if (expert) { damage += a->level/EXPERT_LEVEL_DIVISOR+1; }
     if (t->race == ENEMY_SKELETAL_WARRIOR) {
         if (material == MATERIAL_SILVER) { damage *= 2; }
         /* Ordinary edged weapons halve against a skeletal warrior. */
-        if (!(item_def(ITEM_GROUP_WEAPON,weapon)->flags & 16)) { damage /= 2; }
+        if (!(item_def(ITEM_GROUP_WEAPON,weapon)->flags & ITEM_FLAG_BLUNT)) { damage /= 2; }
     }
-    damage += material_hit(material)/10 + (a->attribute[ATTR_STR]-50)/5;
+    damage += material_hit(material)/MATERIAL_DAMAGE_DIVISOR + (a->attribute[ATTR_STR]-STRENGTH_BASE)/STRENGTH_DAMAGE_DIVISOR;
     return damage < 1 ? 0 : damage;
 }
 
@@ -83,8 +83,8 @@ void item_wear(df_u32 id, int damage)
     int loss;
 
     if (!object_at(id) || damage <= 0) { return; }
-    loss = (damage*10+50)/100;
-    if (!loss && random_range(1,100) < 20) { loss = 1; }
+    loss = (damage*WEAR_PERCENT+WEAR_ROUND)/100;
+    if (!loss && random_range(1,100) < WEAR_LAST_CHANCE) { loss = 1; }
     if (loss) { item_damage(id,loss); }
 }
 
@@ -112,8 +112,8 @@ void damage_player(int damage, int part)
     /* Brought down among the guards: the court (or the end), not simply death. */
     if (who->health < 1 && guards_present() && possessions_arrested()) { return; }
     if (who->health < 0) { who->health = 0; }
-    amount = damage < 4 ? 4 : damage > 32 ? 32 : damage;
-    g_flash = (float)amount/32;
+    amount = damage < HURT_MIN ? HURT_MIN : damage > HURT_MAX ? HURT_MAX : damage;
+    g_flash = (float)amount/HURT_MAX;
     state_event(who->health ? EVENT_HURT : EVENT_KILL,game_state()->entity_id,0,damage);
     if (armor_slot(part) >= 0) { item_wear(game_state()->equipped[armor_slot(part)],damage); }
     if (!who->health) {
@@ -122,6 +122,6 @@ void damage_player(int damage, int part)
     }
 }
 
-void combat_step(float dt) { g_flash -= dt*2; if (g_flash < 0) { g_flash = 0; } }
+void combat_step(float dt) { g_flash -= dt*HURT_FADE_PER_SECOND; if (g_flash < 0) { g_flash = 0; } }
 void combat_reset(void) { g_flash = 0; }
 float combat_flash(void) { return g_flash; }

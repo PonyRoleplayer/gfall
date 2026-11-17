@@ -41,6 +41,7 @@ enum {
 /* ClassInfo.flags, CLASS*.CFG's abilities word: the bits the rules read. */
 enum {
     CLASS_JUMP_BONUS = 2,
+    CLASS_ADRENALINE_RUSH = 4,
     CLASS_NO_MAGICKA_REGEN = 8,
     CLASS_SUN_DAMAGE = 16,
     CLASS_HOLY_DAMAGE = 32
