@@ -260,7 +260,7 @@ static void ready_weapon(void)
     const ObjectInfo *item;
     weapon_cancel();
     if (hud_weapon_ready()) {
-        item = object_at(game_state()->equipped[weapon_hand() ? 21 : 19]);
+        item = object_at(game_state()->equipped[weapon_hand() ? EQUIP_LEFT_HAND : EQUIP_RIGHT_HAND]);
         if (item && item->group == ITEM_GROUP_WEAPON) { play_sound(weapon_sound(item->index)); }
     }
 }
@@ -657,7 +657,7 @@ int play_frame(const PlayIn *in, Camera *cam, const Scene *scene)
          * A drag belongs to combat, and a bow's click always releases it. */
         if ((in->mouse_released & 2) && g_attack_click) {
             const ObjectInfo *weapon;
-            weapon = object_at(game_state()->equipped[weapon_hand() ? 21 : 19]);
+            weapon = object_at(game_state()->equipped[weapon_hand() ? EQUIP_LEFT_HAND : EQUIP_RIGHT_HAND]);
             if (hud_weapon_ready() && options_mouse() == 0 && !blocks &&
                 g_attack_motion <= 4 && (!weapon || weapon->group != ITEM_GROUP_WEAPON || weapon->index < WEAPON_SHORT_BOW)) {
                 grab_click = 1;

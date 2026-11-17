@@ -32,6 +32,16 @@
 #define WORLD_ROOT 1u
 #define PLAYER_ROOT 700u
 
+/* The player's equipment slots (FALL.EXE's EQUIP_*): the index of equipped[]. The pairs are the left and the right. Slots 22 and 25 have no use. */
+enum {
+    EQUIP_AMULET0, EQUIP_AMULET1, EQUIP_BRACELET0, EQUIP_BRACELET1, EQUIP_RING0, EQUIP_RING1,
+    EQUIP_BRACER0, EQUIP_BRACER1, EQUIP_MARK0, EQUIP_MARK1, EQUIP_CRYSTAL0, EQUIP_CRYSTAL1,
+    EQUIP_HEAD, EQUIP_RIGHT_PAULDRON, EQUIP_CLOAK0, EQUIP_LEFT_PAULDRON, EQUIP_CLOAK1,
+    EQUIP_CHEST_CLOTHES, EQUIP_CUIRASS, EQUIP_RIGHT_HAND, EQUIP_GAUNTLETS, EQUIP_LEFT_HAND,
+    EQUIP_SLOT22, EQUIP_GREAVES, EQUIP_LEGS_CLOTHES, EQUIP_SLOT25, EQUIP_BOOTS,
+    EQUIP_SLOTS
+};
+
 enum {
     RECORD_WORLD = 1,
     RECORD_ITEM = 2,
@@ -95,7 +105,7 @@ typedef struct GameState {
     ClassInfo career;
     int base_attribute[ATTRS];
     df_u32 skill_uses[SKILLS];
-    df_u32 equipped[27];
+    df_u32 equipped[EQUIP_SLOTS];
     df_u32 random, next_low, minutes;
     df_u32 tick_fraction, ticks;
     float frame_fraction;

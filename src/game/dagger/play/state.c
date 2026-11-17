@@ -182,7 +182,7 @@ ObjectInfo *object_edit(df_u32 id)
 int state_equip(int slot, df_u32 id)
 {
     const ObjectInfo *item;
-    if (slot < 0 || slot >= 27) { return 0; }
+    if (slot < 0 || slot >= EQUIP_SLOTS) { return 0; }
     item = object_at(id);
     if (id && (!item || item->type != RECORD_ITEM || item->parent != g_state.inventory_id)) { return 0; }
     /* item_remove_equip_effects, then the slot, then item_apply_equip_effects: the one place an item goes into or out of a slot, so every path of the original (and the ones it forgot) applies and removes. */
@@ -257,7 +257,7 @@ int object_reparent(df_u32 id, df_u32 parent)
     if (slot < 0 || !object_at(parent) || protected_id(id)) {
         return 0;
     }
-    for (i = 0; i < 27; i++) { if (g_state.equipped[i] == id) { return 0; } }
+    for (i = 0; i < EQUIP_SLOTS; i++) { if (g_state.equipped[i] == id) { return 0; } }
     p = parent;
     for (i = 0; p && i < OBJECTS; i++) {
         if (p == id) {
@@ -284,7 +284,7 @@ int object_delete(df_u32 id)
             return 0;
         }
     }
-    for (i = 0; i < 27; i++) {
+    for (i = 0; i < EQUIP_SLOTS; i++) {
         if (g_state.equipped[i] == id) {
             return 0;
         }
@@ -633,7 +633,7 @@ static int objects_valid(const GameState *state)
             return 0;
         }
     }
-    for (i = 0; i < 27; i++) {
+    for (i = 0; i < EQUIP_SLOTS; i++) {
         slot = object_slot(state, state->equipped[i]);
         if (state->equipped[i] && (slot < 0 || state->object[slot].type != RECORD_ITEM)) {
             return 0;

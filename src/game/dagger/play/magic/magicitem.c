@@ -284,7 +284,7 @@ df_u32 magic_artifact_worn(int power)
     int slot;
     df_u32 id;
 
-    for (slot = 0; slot < 27; slot++) {
+    for (slot = 0; slot < EQUIP_SLOTS; slot++) {
         id = game_state()->equipped[slot];
         if (id && magic_artifact_power(id) == power) { return id; }
     }

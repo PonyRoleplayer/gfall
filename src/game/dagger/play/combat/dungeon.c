@@ -31,7 +31,7 @@ typedef struct FoeState {
     FighterInfo fighter;
     Body body;
     Mind mind;
-    df_u32 equipped[27];
+    df_u32 equipped[EQUIP_SLOTS];
     Anim anim;
     const AnimScript *script;
     int kind, type, passive, awake, rate, loaded, restored;
@@ -789,7 +789,7 @@ static void monster_strike(const Scene *scene, const Camera *cam, FoeState *foe,
     }
     source = (int)(foe-g_foe);
     part = struck_part(random_range(0,19)); total = 0;
-    weapon_id = foe->equipped[19]; weapon = object_at(weapon_id);
+    weapon_id = foe->equipped[EQUIP_RIGHT_HAND]; weapon = object_at(weapon_id);
     index = weapon && weapon->condition > 0 ? weapon->index : -1;
     material = index >= 0 ? weapon->material : 0; skill = weapon_skill(index);
     for (i = 0; i < (index < 0 && foe->def ? 5 : 1); i++) {

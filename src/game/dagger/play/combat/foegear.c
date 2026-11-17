@@ -20,7 +20,7 @@ void foe_equipment(int kind, df_u32 container, df_u32 *slots, FighterInfo *fight
     const ObjectInfo *item, *shield;
     ObjectInfo *pack;
     int tier, i, part, armor, equipped;
-    static const int gear_slot[6] = {12,13,15,18,23,26};
+    static const int gear_slot[6] = {EQUIP_HEAD,EQUIP_RIGHT_PAULDRON,EQUIP_LEFT_PAULDRON,EQUIP_CUIRASS,EQUIP_GREAVES,EQUIP_BOOTS};
     static const int armor_index[6] = {5,4,3,0,2,6};
     if (ENEMY_IS_CLASS(kind)) { tier = 3; }
     else if (kind == ENEMY_ORC || kind == ENEMY_ORC_SHAMAN) { tier = 0; }
@@ -31,28 +31,28 @@ void foe_equipment(int kind, df_u32 container, df_u32 *slots, FighterInfo *fight
     if (!pack) { return; }
     if (!(pack->flags & 2)) {
         if (tier == 3) { tier = random_range(0,1); }
-        make(container,3,tier ? 9 : 5,tier ? 14 : 7,-1,100,19);
+        make(container,3,tier ? 9 : 5,tier ? 14 : 7,-1,100,EQUIP_RIGHT_HAND);
         if (!tier) {
-            make(container,2,7,8,-1,50,21);
+            make(container,2,7,8,-1,50,EQUIP_LEFT_HAND);
             equipped = 0;
             for (i = 0; i < OBJECTS; i++) {
                 item = &game_state()->object[i];
                 if (item->id && item->parent == container && (item->flags & FOE_SLOT) &&
                     ((item->flags >> 8) & 31) == 21) { equipped = 1; }
             }
-            if (!equipped) { make(container,3,0,3,2,50,21); }
+            if (!equipped) { make(container,3,0,3,2,50,EQUIP_LEFT_HAND); }
         }
         for (i = 0; i < 6; i++) {
             make(container,2,armor_index[i],armor_index[i],-1,tier == 0 ? 50 : tier == 1 ? 75 : 90,gear_slot[i]);
         }
         pack->flags |= 2;
     }
-    for (i = 0; i < 27; i++) { slots[i] = 0; }
+    for (i = 0; i < EQUIP_SLOTS; i++) { slots[i] = 0; }
     for (i = 0; i < OBJECTS; i++) {
         item = &game_state()->object[i];
         if (item->id && item->parent == container && (item->flags & FOE_SLOT) && item->condition > 0) {
             part = (item->flags >> 8) & 31;
-            if (part < 27) { slots[part] = item->id; }
+            if (part < EQUIP_SLOTS) { slots[part] = item->id; }
         }
     }
     shield = object_at(slots[21]);

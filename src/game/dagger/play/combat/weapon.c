@@ -40,7 +40,7 @@ void weapon_reset(void)
 void weapon_switch(void)
 {
     const ObjectInfo *other;
-    other = object_at(game_state()->equipped[g_hand ? 19 : 21]);
+    other = object_at(game_state()->equipped[g_hand ? EQUIP_RIGHT_HAND : EQUIP_LEFT_HAND]);
     /* run_00042F0F refuses a shield in the other hand. An empty hand is fists. */
     if (!hud_weapon_ready() || g_step >= 0 || (other && other->group != ITEM_GROUP_WEAPON)) { return; }
     g_hand ^= 1;
@@ -104,7 +104,7 @@ void weapon_frame(const PlayIn *in, int blocked, StrikeInfo *strike)
     static const int kick[] = {0,1,2,3,4,2,1,0};
     mem_zero(strike,sizeof(*strike));
     strike->hand = -1;
-    id = game_state()->equipped[g_hand ? 21 : 19];
+    id = game_state()->equipped[g_hand ? EQUIP_LEFT_HAND : EQUIP_RIGHT_HAND];
     item = object_at(id);
     if (!item || item->group != ITEM_GROUP_WEAPON || item->index >= WEAPON_ARROW || item->condition <= 0) { item = 0; id = 0; }
     bow = item && (item->index == WEAPON_SHORT_BOW || item->index == WEAPON_LONG_BOW);

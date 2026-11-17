@@ -241,7 +241,7 @@ static void transfer(Wire *w, GameState *s)
     for (i = 0; i < SKILLS; i++) {
         wire_u32(w, &s->skill_uses[i]);
     }
-    for (i = 0; i < 27; i++) {
+    for (i = 0; i < EQUIP_SLOTS; i++) {
         wire_u32(w, &s->equipped[i]);
     }
     wire_u32(w, &s->random);

@@ -511,7 +511,7 @@ void magic_hold(int spell, int slot)
     int k;
 
     s = spell_def(spell);
-    if (!s || slot < 0 || slot > 26) { return; }
+    if (!s || slot < 0 || slot >= EQUIP_SLOTS) { return; }
     held = *s; held.icon = 200 + slot;
     for (k = 0; k < 3; k++) {
         if (held.group[k] == 255) { continue; }

@@ -21,7 +21,7 @@ static int others_absorb(int skip)
 {
     int slot, k, type, param;
 
-    for (slot = 0; slot < 27; slot++) {
+    for (slot = 0; slot < EQUIP_SLOTS; slot++) {
         if (slot == skip || !game_state()->equipped[slot]) { continue; }
         for (k = 0; item_enchantment(game_state()->equipped[slot], k, &type, &param); k++) { if (type == 9) { return 1; } }
     }
@@ -194,7 +194,7 @@ void enchant_minutes(void)
     g_stamp = now;
     /* effects_tick's class part (5.2): a class hurt by sunlight (flag 16) or in temples (flag 32) takes 12 a step, a vampire's 3 health a game minute. */
     if (((game_state()->career.flags & CLASS_SUN_DAMAGE) && daylight()) || ((game_state()->career.flags & CLASS_HOLY_DAMAGE) && temple())) { damage_player(amount * 12, 0); }
-    for (slot = 0; slot < 27; slot++) {
+    for (slot = 0; slot < EQUIP_SLOTS; slot++) {
         df_u32 id;
 
         id = game_state()->equipped[slot];
@@ -209,7 +209,7 @@ void enchant_frame(void)
     CharacterState *who;
 
     bonus = 0; any = 0;
-    for (slot = 0; slot < 27; slot++) {
+    for (slot = 0; slot < EQUIP_SLOTS; slot++) {
         for (k = 0; game_state()->equipped[slot] && item_enchantment(game_state()->equipped[slot], k, &type, &param); k++) {
             if (type == 3) { any = 1; bonus += extra_points(param); }
         }
@@ -319,7 +319,7 @@ void enchant_reflect(int attacker, int category, int dealt)
     df_u32 item;
 
     if (dealt <= 0 || category < 0 || category > 2 || dungeon_kind(attacker) == 2) { return; }
-    for (slot = 0; slot < 27; slot++) {
+    for (slot = 0; slot < EQUIP_SLOTS; slot++) {
         item = game_state()->equipped[slot];
         if (!item_enchantment(item,0,&type,&param) || type != 26 || param != 7) { continue; }
         wear = category == 0 ? dealt*2 : category == 1 ? dealt/2 : dealt;
@@ -333,7 +333,7 @@ int enchant_armor_modifier(void)
 {
     int slot, k, type, param;
 
-    for (slot = 0; slot < 27; slot++) {
+    for (slot = 0; slot < EQUIP_SLOTS; slot++) {
         for (k = 0; game_state()->equipped[slot] && item_enchantment(game_state()->equipped[slot], k, &type, &param); k++) {
             if (type == 12) { return -25; }
             if (type == 24) { return 25; }
@@ -346,7 +346,7 @@ int enchant_capacity(int capacity)
 {
     int slot, k, type, param;
 
-    for (slot = 0; slot < 27; slot++) {
+    for (slot = 0; slot < EQUIP_SLOTS; slot++) {
         for (k = 0; game_state()->equipped[slot] && item_enchantment(game_state()->equipped[slot], k, &type, &param); k++) {
             if (type == 7) { return param == 0 ? capacity * 320 / 256 : capacity * 384 / 256; }
         }

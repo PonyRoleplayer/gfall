@@ -41,8 +41,6 @@
 #define MOON_GAP 4
 #define MOON_SOCIAL_GROUPS 5
 #define BEAST_REPUTATION 100
-#define HAND_SLOTS_FIRST 19
-#define HAND_SLOT_SECOND 21
 
 /* TEXT.RSC 401: the message box a vampire's infection takes with. */
 #define TEXT_BECOME_VAMPIRE 401
@@ -326,7 +324,7 @@ int curse_shapechange(int forced)
         for (i = 0; i < MOON_SOCIAL_GROUPS; i++) { who->reputation[i] -= BEAST_REPUTATION; }
         who->health = who->max_health;
         /* Both hands emptied: the weapons stay in the pack. */
-        state_equip(HAND_SLOTS_FIRST, 0); state_equip(HAND_SLOT_SECOND, 0);
+        state_equip(EQUIP_RIGHT_HAND, 0); state_equip(EQUIP_LEFT_HAND, 0);
     } else {
         c->form = CURSE_FORM_NONE;
         for (i = 0; i < MOON_SOCIAL_GROUPS; i++) { who->reputation[i] += BEAST_REPUTATION; }

@@ -175,7 +175,7 @@ int inventory_rows(df_u32 parent, int tab, df_u32 *ids, int capacity)
 int item_equipped(df_u32 id)
 {
     int i;
-    for (i = 0; i < 27; i++) { if (id && game_state()->equipped[i] == id) { return i; } }
+    for (i = 0; i < EQUIP_SLOTS; i++) { if (id && game_state()->equipped[i] == id) { return i; } }
     return -1;
 }
 
@@ -205,7 +205,7 @@ int item_two_handed(const ObjectInfo *item)
 static void sync_weapon(void)
 {
     const ObjectInfo *item;
-    item = object_at(game_state()->equipped[19]);
+    item = object_at(game_state()->equipped[EQUIP_RIGHT_HAND]);
     character_state()->weapon = item && item->group == ITEM_GROUP_WEAPON ? item->index : 0;
     character_state()->weapon_sound = item && item->group == ITEM_GROUP_WEAPON ? weapon_sound(item->index) : 0;
 }
@@ -261,13 +261,13 @@ int inventory_equip(df_u32 id)
     if (item_equipped(id) >= 0) { return 1; }
     step = 0;
     if (item->group == ITEM_GROUP_GEM || item->group == ITEM_GROUP_JEWELRY) { step = 1; }
-    if (item->group == ITEM_GROUP_MENS_CLOTHING || item->group == ITEM_GROUP_WOMENS_CLOTHING) { if (slot == 14) { step = 2; } }
+    if (item->group == ITEM_GROUP_MENS_CLOTHING || item->group == ITEM_GROUP_WOMENS_CLOTHING) { if (slot == EQUIP_CLOAK0) { step = 2; } }
     if (item->group == ITEM_GROUP_WEAPON) {
-        hand = object_at(game_state()->equipped[19]);
-        if (item_two_handed(item)) { state_equip(21, 0); }
+        hand = object_at(game_state()->equipped[EQUIP_RIGHT_HAND]);
+        if (item_two_handed(item)) { state_equip(EQUIP_LEFT_HAND, 0); }
         else if (!item_two_handed(hand)) { step = 2; }
     }
-    if (slot == 21 && item_two_handed(object_at(game_state()->equipped[19]))) { state_equip(19, 0); }
+    if (slot == EQUIP_LEFT_HAND && item_two_handed(object_at(game_state()->equipped[EQUIP_RIGHT_HAND]))) { state_equip(EQUIP_RIGHT_HAND, 0); }
     if (step && game_state()->equipped[slot] && !game_state()->equipped[slot + step]) { slot += step; }
     state_equip(slot, id);
     sync_weapon();
@@ -328,7 +328,7 @@ int inventory_armor(int part)
         value = armor_base(item->armor_type);
         if (item->armor_type == 2) { value += material_hit(item->material); }
     }
-    shield = object_at(game_state()->equipped[21]);
+    shield = object_at(game_state()->equipped[EQUIP_LEFT_HAND]);
     if (shield && shield->group == ITEM_GROUP_ARMOR && shield_covers(shield->index,part)) { value += (shield->index-6)*5; }
     if (value > 200) { value = 200; }
     return value / 5;
@@ -504,11 +504,11 @@ int inventory_valid(const GameState *state)
             item->color < 0 || item->color > 31 || item->dropped_image < 0 || item->dropped_image > 65535 ||
             item->message < 0 || item->message > 99999) { return 0; }
     }
-    for (i = 0; i < 27; i++) {
+    for (i = 0; i < EQUIP_SLOTS; i++) {
         if (!state->equipped[i]) { continue; }
         for (j = 0; j < OBJECTS && state->object[j].id != state->equipped[i]; j++) { }
         if (j == OBJECTS || state->object[j].parent != state->inventory_id) { return 0; }
-        for (j = i + 1; j < 27; j++) { if (state->equipped[j] == state->equipped[i]) { return 0; } }
+        for (j = i + 1; j < EQUIP_SLOTS; j++) { if (state->equipped[j] == state->equipped[i]) { return 0; } }
     }
     return 1;
 }
