@@ -32,6 +32,35 @@ typedef struct Quote {
     int total, price;
 } Quote;
 
+/*
+ * The coefficients of the shop's sums (inven.c, which leaves them inline). Prices are worked in fixed point over 256. A shop's quality 10 is neutral and each point of it moves the
+ * quality term QUALITY_STEP (from QUALITY_BASE); a skill or an attribute 0..100 becomes a factor of SKILL_FACTOR_BASE/256 .. (SKILL_FACTOR_BASE + 256)/256 (half to one and a half) by
+ * dividing its 256ths by SKILL_FACTOR_DIVISOR. Buying weighs the skill factor BUY_SKILL_WEIGHT and the attribute factor BUY_ATTRIBUTE_WEIGHT of 256 (a quarter), selling SELL_SKILL_WEIGHT
+ * and SELL_ATTRIBUTE_WEIGHT. The region's adjustment is in thousandths. A repair costs REPAIR_PERCENT of a value, REPAIR_ENCHANTED_PERCENT when it is enchanted; identifying costs
+ * IDENTIFY_NUMERATOR/256 of it. A purchase is offered as a bargain by how far the price is under the total (trade_offer_text).
+ */
+#define QUALITY_NEUTRAL 10
+#define QUALITY_STEP 5
+#define QUALITY_BASE 50
+#define SKILL_FACTOR_DIVISOR 200
+#define SKILL_FACTOR_BASE 128
+#define BUY_SKILL_WEIGHT 192
+#define BUY_ATTRIBUTE_WEIGHT 64
+#define SELL_SKILL_WEIGHT 179
+#define SELL_ATTRIBUTE_WEIGHT 51
+#define REGION_PRICE_ONE 1000
+#define REPAIR_PERCENT 10
+#define REPAIR_ENCHANTED_PERCENT 75
+#define IDENTIFY_NUMERATOR 25
+/* A shop's building type and its holiday that halve a price: a weaponsmith's holiday the weapons, a temple's everything. */
+#define SHOP_TYPE_WEAPONSMITH 13
+#define SHOP_HOLIDAY_WEAPONSMITH 49
+#define SHOP_TYPE_TEMPLE 9
+#define SHOP_HOLIDAY_TEMPLE 29
+/* A pickpocket's chance falls a thirty-second of the total and a quarter of the weight (trade_steal_chance). */
+#define STEAL_TOTAL_DIVISOR 32
+#define STEAL_WEIGHT_DIVISOR 4
+
 /* trade_region_price, then trade_base_price: the region's adjustment, the quality's, then doubled. */
 int trade_base_price(const ShopState *shop, int price);
 /* trade_adjust_price, buying or selling, by Mercantile (skill 14) and Personality. */

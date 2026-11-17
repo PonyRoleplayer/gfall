@@ -120,11 +120,11 @@ int guild_join_check(int kind, int reputation)
         return 1;
     }
     primary = best_skill(guild, -1, &which);
-    if (primary < 22) {
+    if (primary < JOIN_PRIMARY_MIN) {
         return 2;
     }
     secondary = best_skill(guild, which, &which);
-    return secondary < 4 ? 2 : 0;
+    return secondary < JOIN_SECONDARY_MIN ? 2 : 0;
 }
 
 int guild_rank_for_skills(int kind, int reputation)
@@ -135,21 +135,21 @@ int guild_rank_for_skills(int kind, int reputation)
     if (guild >= GUILDS) {
         return 0;
     }
-    rank = reputation / 10;
+    rank = reputation / REPUTATION_PER_RANK;
     primary = best_skill(guild, -1, &which);
     secondary = best_skill(guild, which, &which);
-    /* The index of the first step the skill reaches (the original's scan, which would run past the table for a skill over 94: held at 10). */
+    /* The index of the first step the skill reaches (the original's scan, which would run past the table for a skill over 94: held at RANK_STEPS). */
     step_primary = 0;
-    while (step_primary < 10 && g_rank_primary[step_primary] < primary) {
+    while (step_primary < RANK_STEPS && g_rank_primary[step_primary] < primary) {
         step_primary++;
     }
     step_secondary = 0;
-    while (step_secondary < 10 && g_rank_secondary[step_secondary] < secondary) {
+    while (step_secondary < RANK_STEPS && g_rank_secondary[step_secondary] < secondary) {
         step_secondary++;
     }
     if (step_primary < rank) { rank = step_primary; }
     if (step_secondary < rank) { rank = step_secondary; }
-    return rank > 9 ? 9 : rank;
+    return rank > MAX_RANK ? MAX_RANK : rank;
 }
 
 int guild_offer(int kind, int faction, int reputation, GuildStep *step)

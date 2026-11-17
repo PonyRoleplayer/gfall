@@ -17,6 +17,15 @@
 
 #define MEMBERSHIPS 8
 #define GUILDS 22
+/*
+ * guild_rank_for_skills: a rank is REPUTATION_PER_RANK of reputation, held to the first step the primary skill and the second reach in their RANK_STEPS-long tables, and to MAX_RANK. To be
+ * taken in, the guild's best skill must be JOIN_PRIMARY_MIN (the first step of the primary table) and its second JOIN_SECONDARY_MIN (the first of the secondary).
+ */
+#define REPUTATION_PER_RANK 10
+#define RANK_STEPS 10
+#define MAX_RANK 9
+#define JOIN_PRIMARY_MIN 22
+#define JOIN_SECONDARY_MIN 4
 #define RANK_MONTH 40320u
 #define KIND_KNIGHT 64
 #define KIND_TEMPLE 128

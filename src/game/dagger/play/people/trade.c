@@ -6,12 +6,12 @@
 int trade_base_price(const ShopState *shop, int price)
 {
     /* trade_region_price */
-    price = (shop->region_adjust * price) / 1000;
+    price = (shop->region_adjust * price) / REGION_PRICE_ONE;
     if (price < 0) {
         price = 1;
     }
     /* trade_base_price: the building's quality, then doubled */
-    price += ((shop->quality - 10) * price) / 100;
+    price += ((shop->quality - QUALITY_NEUTRAL) * price) / 100;
     price += price;
     return price;
 }
@@ -20,15 +20,15 @@ int trade_adjust(const ShopState *shop, int mercantile, int personality, int pri
 {
     int q, skill_factor, attr_factor;
 
-    q = ((shop->quality - 10) * 5) + 50;
+    q = ((shop->quality - QUALITY_NEUTRAL) * QUALITY_STEP) + QUALITY_BASE;
     if (!selling) {
-        skill_factor = ((((q << 8) / 200) + 128) * ((((100 - mercantile) << 8) / 200) + 128)) / 256;
-        attr_factor = ((((q << 8) / 200) + 128) * ((((100 - personality) << 8) / 200) + 128)) / 256;
-        return (price * (((skill_factor * 192) / 256) + ((attr_factor << 6) / 256))) / 256;
+        skill_factor = ((((q << 8) / SKILL_FACTOR_DIVISOR) + SKILL_FACTOR_BASE) * ((((100 - mercantile) << 8) / SKILL_FACTOR_DIVISOR) + SKILL_FACTOR_BASE)) / 256;
+        attr_factor = ((((q << 8) / SKILL_FACTOR_DIVISOR) + SKILL_FACTOR_BASE) * ((((100 - personality) << 8) / SKILL_FACTOR_DIVISOR) + SKILL_FACTOR_BASE)) / 256;
+        return (price * (((skill_factor * BUY_SKILL_WEIGHT) / 256) + ((attr_factor * BUY_ATTRIBUTE_WEIGHT) / 256))) / 256;
     }
-    skill_factor = (((((100 - q) << 8) / 200) + 128) * (((mercantile << 8) / 200) + 128)) / 256;
-    attr_factor = (((((100 - q) << 8) / 200) + 128) * (((personality << 8) / 200) + 128)) / 256;
-    return (price * (((skill_factor * 179) / 256) + ((attr_factor * 51) / 256))) / 256;
+    skill_factor = (((((100 - q) << 8) / SKILL_FACTOR_DIVISOR) + SKILL_FACTOR_BASE) * (((mercantile << 8) / SKILL_FACTOR_DIVISOR) + SKILL_FACTOR_BASE)) / 256;
+    attr_factor = (((((100 - q) << 8) / SKILL_FACTOR_DIVISOR) + SKILL_FACTOR_BASE) * (((personality << 8) / SKILL_FACTOR_DIVISOR) + SKILL_FACTOR_BASE)) / 256;
+    return (price * (((skill_factor * SELL_SKILL_WEIGHT) / 256) + ((attr_factor * SELL_ATTRIBUTE_WEIGHT) / 256))) / 256;
 }
 
 int trade_buy_line(const ShopState *shop, int value, int condition, int group, int index, int is_stack)
@@ -41,10 +41,10 @@ int trade_buy_line(const ShopState *shop, int value, int condition, int group, i
     /* A stack (image 998, the arrows) is sold by the number in it: its condition is its count. */
     price = is_stack ? value * condition : value;
     /* The weaponsmith's holiday (49) halves weapons, a temple's (29) everything; the debug bit halves all. */
-    if (shop->type == 13 && shop->holiday == 49 && group == ITEM_GROUP_WEAPON) {
+    if (shop->type == SHOP_TYPE_WEAPONSMITH && shop->holiday == SHOP_HOLIDAY_WEAPONSMITH && group == ITEM_GROUP_WEAPON) {
         return price >> 1;
     }
-    if (shop->type == 9 && shop->holiday == 29) {
+    if (shop->type == SHOP_TYPE_TEMPLE && shop->holiday == SHOP_HOLIDAY_TEMPLE) {
         return price >> 1;
     }
     if (shop->half) {
@@ -76,7 +76,7 @@ int trade_repair_line(int value, int enchanted)
 {
     int cost;
 
-    cost = (int)(((unsigned)(value * (enchanted ? 75 : 10))) / 100u);
+    cost = (int)(((unsigned)(value * (enchanted ? REPAIR_ENCHANTED_PERCENT : REPAIR_PERCENT))) / 100u);
     return cost < 1 ? 1 : cost;
 }
 
@@ -88,7 +88,7 @@ Quote trade_repair(const ShopState *shop, int mercantile, int personality, int l
 
 int trade_identify_line(int value)
 {
-    return (int)(((unsigned)(value * 25)) >> 8);
+    return (int)(((unsigned)(value * IDENTIFY_NUMERATOR)) >> 8);
 }
 
 int trade_offer_text(int mode, int total, int price)
@@ -107,5 +107,5 @@ int trade_offer_text(int mode, int total, int price)
 
 int trade_steal_chance(int pickpocket, int total, int weight)
 {
-    return pickpocket - total / 32 - weight / 4;
+    return pickpocket - total / STEAL_TOTAL_DIVISOR - weight / STEAL_WEIGHT_DIVISOR;
 }

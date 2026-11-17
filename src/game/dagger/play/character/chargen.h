@@ -2,6 +2,18 @@
 #define GFALL_CHARGEN_H
 
 /*
+ * The custom class's price (classmaker_set_advantage, update_advancement; custom.c leaves the numbers inline). A class starts at CLASS_HP_DEFAULT health a level and an advancement of
+ * ADVANCEMENT_ONE; each health point under or over the default moves the price CLASS_HP_STEP (twice as much under it), and the price is held at ADVANCEMENT_MIN or more.
+ * Health a level is picked between CLASS_HP_MIN and CLASS_HP_MAX.
+ */
+#define ADVANCEMENT_ONE 65536
+#define ADVANCEMENT_MIN 6554
+#define CLASS_HP_DEFAULT 8
+#define CLASS_HP_STEP 3277
+#define CLASS_HP_MIN 1
+#define CLASS_HP_MAX 30
+
+/*
  * title_menu from the title through the summary. See docs/game.md.
  * Class list/questions and the custom editor feed the twelve BIOG
  * answers, then name, portrait, rolled attributes (6..14 points),

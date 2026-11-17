@@ -320,9 +320,9 @@ static void custom_begin(void)
     mem_zero(&g_custom, sizeof(g_custom));
     mem_zero(g_special_count, sizeof(g_special_count));
     mem_zero(g_custom_reputation, sizeof(g_custom_reputation));
-    g_custom.hp_per_level = 8;
+    g_custom.hp_per_level = CLASS_HP_DEFAULT;
     g_custom.flags = 0x1400;
-    g_custom.advancement = 65536;
+    g_custom.advancement = ADVANCEMENT_ONE;
     for (i = 0; i < 8; i++) { g_custom.attribute[i] = 50; }
     for (i = 0; i < 12; i++) { *custom_skill(i) = -1; }
     g_maker_page = 0;
@@ -344,7 +344,7 @@ static void custom_specials(void)
     c->resistance = c->immunity = c->tolerance = c->weakness = 0;
     c->absorption = c->rapid = c->regeneration = c->attack = c->expert = 0;
     c->forbidden_materials = c->forbidden_equipment = 0;
-    cost = 65536 + (c->hp_per_level - 8) * 3277 * (c->hp_per_level < 8 ? 2 : 1);
+    cost = ADVANCEMENT_ONE + (c->hp_per_level - CLASS_HP_DEFAULT) * CLASS_HP_STEP * (c->hp_per_level < CLASS_HP_DEFAULT ? 2 : 1);
     for (list = 0; list < 2; list++) {
         for (i = 0; i < g_special_count[list]; i++) {
             kind = g_special_kind[list][i]; param = g_special_param[list][i]; bit = 1 << param;
@@ -381,7 +381,7 @@ static void custom_specials(void)
             }
         }
     }
-    c->advancement = cost < 6554 ? 6554 : cost;
+    c->advancement = cost < ADVANCEMENT_MIN ? ADVANCEMENT_MIN : cost;
     custom_publish();
 }
 
@@ -1006,8 +1006,8 @@ void chargen_click(int x, int y, int pixel)
             custom_publish();
         }
         if (x > 252 && x < 260) {
-            if (y > 46 && y < 56 && g_custom.hp_per_level < 30) { g_custom.hp_per_level++; }
-            if (y > 57 && y < 67 && g_custom.hp_per_level > 1) { g_custom.hp_per_level--; }
+            if (y > 46 && y < 56 && g_custom.hp_per_level < CLASS_HP_MAX) { g_custom.hp_per_level++; }
+            if (y > 57 && y < 67 && g_custom.hp_per_level > CLASS_HP_MIN) { g_custom.hp_per_level--; }
             custom_specials();
         }
         if (x > 249 && x < 315) {
