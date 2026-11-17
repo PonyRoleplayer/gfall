@@ -168,8 +168,8 @@ int possessions_im_list(df_u32 *ids, int cap)
     for (i = 0; i < OBJECTS; i++) {
         item = &game_state()->object[i];
         if (!item->id || item->type != RECORD_ITEM || item->parent != game_state()->inventory_id || item_tab(item) != possessions_view.im_tab) { continue; }
-        if (item->id == itemmaker_state()->item || item->group == 23 || (item->group == 27 && item->index == 1)) { continue; }
-        if (item->group == 3 && item->index == 17) { continue; }
+        if (item->id == itemmaker_state()->item || item->group == ITEM_GROUP_TRANSPORT || (item->group == ITEM_GROUP_MISC && item->index == MISC_SOUL_TRAP)) { continue; }
+        if (item->group == ITEM_GROUP_WEAPON && item->index == 17) { continue; }
         if (!itemmaker_capacity(item->id) || itemmaker_row(item->id) || magic_item_def(item->id) >= 0) { continue; }
         if (n < cap) { ids[n] = item->id; }
         n++;

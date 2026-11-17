@@ -158,7 +158,7 @@ static char g_info_next[600];
 
 static void show_item_info(const ObjectInfo *item)
 {
-    possessions_view.painting = item->group == 13 ? painting_info(item->id,possessions_view.notice,sizeof(possessions_view.notice)) : 0;
+    possessions_view.painting = item->group == ITEM_GROUP_PAINTING ? painting_info(item->id,possessions_view.notice,sizeof(possessions_view.notice)) : 0;
     if (!possessions_view.painting) { item_info(item->id,possessions_view.notice,sizeof(possessions_view.notice)); }
     possessions_view.notice_page = 0;
     /* inven.c 971: an enchanted item has a second box, TEXT.RSC 1016 "Item powers: %mpw", once the first is let go. */
@@ -228,7 +228,7 @@ int possessions_use(df_u32 id)
 
         used = item_use(id);
         pending = magic_pending();
-        if (used && !(item->group == 7 || item->group == 27 || item->group == 6 || item->group == 12)) {
+        if (used && !(item->group == ITEM_GROUP_BOOK || item->group == ITEM_GROUP_MISC || item->group == ITEM_GROUP_MENS_CLOTHING || item->group == ITEM_GROUP_WOMENS_CLOTHING)) {
             possessions_view.revision++;
             /* A spell that has to be fired is fired from the view: the inventory is put away. */
             if (pending && possessions_view.page == VIEW_INVENTORY) { possessions_close(); }
@@ -236,7 +236,7 @@ int possessions_use(df_u32 id)
         }
         if (!object_at(id)) { possessions_view.revision++; return 1; }
     }
-    if (item->group == 0 && item->index >= 0 && item->index < 4) {
+    if (item->group == ITEM_GROUP_DRUGS && item->index >= 0 && item->index < 4) {
         /* inven.c consumes the entire drug record, even when level-one
          * protection or class immunity rejects its poison. */
         poison_apply(-1,item->index+136,1);
@@ -250,20 +250,20 @@ int possessions_use(df_u32 id)
         possessions_view.revision++;
         return 1;
     }
-    if (item->group == 27 && item->index == 0) {
+    if (item->group == ITEM_GROUP_MISC && item->index == MISC_SPELLBOOK) {
         if (item->parent != game_state()->inventory_id) { return 0; }
         return possessions_open(VIEW_SPELLS,0);
     }
-    if (item->group == 9 && item->index == 5 && item->message > 0 && g_letter_text) {
+    if (item->group == ITEM_GROUP_CURIO && item->index == 5 && item->message > 0 && g_letter_text) {
         /* A quest's letter: its message is shown, with the quest's own names filled in. */
         static char words[800];
 
         if (g_letter_text(id, words, (int)sizeof(words))) { possessions_message(words, 0); possessions_view.revision++; return 1; }
     }
-    if (item->group == 7) {
+    if (item->group == ITEM_GROUP_BOOK) {
         return possessions_read_open(item->message);
     }
-    if (item->group == 6 || item->group == 12) {
+    if (item->group == ITEM_GROUP_MENS_CLOTHING || item->group == ITEM_GROUP_WOMENS_CLOTHING) {
         /* Cycling variants changes the actual picture, never its template. */
         ObjectInfo *changed;
         changed = object_edit(id);
@@ -331,7 +331,7 @@ static void inventory_click(int x, int y)
     }
     if (x >= 0 && x < 46 && y >= 10) {
         owner = ((y-10)/31)*2 + (x >= 23);
-        if (owner < 12 && y < 10+(owner/2)*31+22 && game_state()->equipped[owner]) {
+        if (owner < EQUIP_HEAD && y < 10+(owner/2)*31+22 && game_state()->equipped[owner]) {
             if (possessions_view.action == ITEM_EQUIP) { inventory_unequip(game_state()->equipped[owner]); }
             else { select_item(game_state()->equipped[owner],0); }
         }
@@ -339,7 +339,7 @@ static void inventory_click(int x, int y)
     }
     if (possessions_hit(x,y,49,13,159,197)) {
         owner = g_owner[(y-13)*110+x-49];
-        if (owner < 27) {
+        if (owner < EQUIP_SLOTS) {
             if (possessions_view.action == ITEM_EQUIP) { inventory_unequip(game_state()->equipped[owner]); }
             else { select_item(game_state()->equipped[owner], 0); }
         }
@@ -376,7 +376,7 @@ int possessions_drop_gold(int value)
 
     if (value < 1 || value > character_state()->gold) { return 0; }
     if (!ground()) { return 0; }
-    id = item_create(possessions_view.remote,28,0,0);
+    id = item_create(possessions_view.remote,ITEM_GROUP_CURRENCY,0,0);
     if (!id) { return 0; }
     object_edit(id)->value = value;
     character_state()->gold -= value;
