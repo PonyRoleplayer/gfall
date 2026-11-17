@@ -174,14 +174,14 @@ int spell_cost(const SpellDef *s, const CharacterState *caster)
     int k, total, skill;
     if (!s || !caster) { return 0; }
     total = 0;
-    for (k = 0; k < 3; k++) {
-        if (s->group[k] == 255) { continue; }
+    for (k = 0; k < MAGIC_SLOTS; k++) {
+        if (s->group[k] == MAGIC_EFFECT_NONE) { continue; }
         c = effect_costs(s->group[k],s->sub[k]); if (!c) { continue; }
         skill = caster->skill[effect_school(s->group[k])];
-        total += ((110-skill)*effect_cost_raw(s->group[k],c,s->duration[k],s->chance[k],s->magnitude[k]))/100;
+        total += ((SPELL_COST_SKILL_CEILING-skill)*effect_cost_raw(s->group[k],c,s->duration[k],s->chance[k],s->magnitude[k]))/100;
     }
     total = (target_factor(s->target)*total) >> 1;
-    return total < 5 ? 5 : total;
+    return total < SPELL_COST_MIN ? SPELL_COST_MIN : total;
 }
 int magic_chance(int target, int group, int sub)
 {
@@ -200,7 +200,7 @@ int magic_resist(int index, int element, int bit, int modifier)
     int base[8], chance, roll, race;
     if (!magic_target(index,&who,&career,base)) { return 0; }
     if ((who.conditions & resist_flag(element)) && random_range(1,100) <= magic_chance(index,GROUP_ELEMENTAL_RESISTANCE,element)) { return 0; }
-    chance = 50;
+    chance = RESIST_BASE;
     if (career.immunity & bit) { return 0; }
     if (career.weakness & bit) { return 100; }
     if (career.tolerance & bit) { chance >>= 1; }
@@ -208,12 +208,12 @@ int magic_resist(int index, int element, int bit, int modifier)
     chance += modifier;
     /* The form of the player counts as the race the original reads: a vampire or a beast has none of a race's gifts. */
     race = index == -1 ? curse_race() : who.race;
-    if ((element == ELEMENT_COLD && race == PLAYER_RACE_NORD) || (element == ELEMENT_MAGIC && race == PLAYER_RACE_BRETON)) { chance += 30; }
-    if (chance < 5) { chance = 5; } if (chance > 95) { chance = 95; }
+    if ((element == ELEMENT_COLD && race == PLAYER_RACE_NORD) || (element == ELEMENT_MAGIC && race == PLAYER_RACE_BRETON)) { chance += RESIST_RACIAL; }
+    if (chance < RESIST_MIN) { chance = RESIST_MIN; } if (chance > RESIST_MAX) { chance = RESIST_MAX; }
     roll = random_range(1,100);
     if (roll > chance) { return 100; }
-    if (chance-20 > roll) { return 0; }
-    return (chance-roll)*5;
+    if (chance-RESIST_NONE_BAND > roll) { return 0; }
+    return (chance-roll)*RESIST_PARTIAL_STEP;
 }
 
 static int condition(int group)
@@ -261,7 +261,7 @@ int magic_sees(int kind)
     conditions = character_state()->conditions;
     if (!(conditions & (COND_INVISIBLE | COND_CHAMELEON | COND_SHADOW)) || creature_ignores_illusion(kind)) { return 1; }
     if (conditions & COND_INVISIBLE) { return 0; }
-    return random_range(1,100) <= (conditions & COND_SHADOW ? 8 : 4);
+    return random_range(1,100) <= (conditions & COND_SHADOW ? SEE_SHADOW_CHANCE : SEE_CHANCE);
 }
 static Effect *extend_or_allocate(const Effect *value)
 {

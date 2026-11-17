@@ -1,4 +1,5 @@
 #include "game/dagger/play/character/curse.h"
+#include "game/dagger/tables/items.h"
 #include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/tables/enemies.h"
 #include "game/dagger/tables/careers.h"
@@ -28,7 +29,17 @@
 #define VAMPIRE_ATTRIBUTE 20
 #define LYCANTHROPE_ATTRIBUTE 40
 #define SKILL_BONUS 30
+/* The clans are the factions CLAN_FIRST .. CLAN_LAST; a region with no noble of its own gives DEFAULT_CLAN. */
+#define CLAN_FIRST 150
+#define CLAN_LAST 158
 #define DEFAULT_CLAN 153
+/* An attribute is held to this, and a record that holds more than the room for it is refused when a save is checked. */
+#define ATTRIBUTE_MAX 100
+#define HEALTH_BASE_MAX 100000
+/* Watcom's rand() is 0..RAND_LIMIT. */
+#define RAND_LIMIT 32767
+/* The infection's kinds (CurseState.infection_kind): vampirism, then the two beasts. */
+enum { INFECTION_VAMPIRISM, INFECTION_WEREWOLF, INFECTION_WEREBOAR };
 /* 5.4: a vampire may go this long (16 hours) without killing. */
 #define HUNGER_MINUTES 960u
 /* 7.2: a change into beast form once in 20 hours. */
@@ -46,7 +57,11 @@
 #define TEXT_BECOME_VAMPIRE 401
 
 /* 4 step 14: the spells every vampire has, and the clan's (SPELLS.STD numbers). */
-static const int vampire_spells[] = { 4, 90, 91 };
+enum {
+    SPELL_LEVITATE = 4, SPELL_INVISIBILITY = 6, SPELL_FREE_ACTION = 10, SPELL_RESIST_COLD = 11, SPELL_RESIST_FIRE = 12, SPELL_RESIST_SHOCK = 13, SPELL_SHIELD = 17,
+    SPELL_ICE_STORM = 20, SPELL_SILENCE = 23, SPELL_WILDFIRE = 33, SPELL_PARALYSIS = 50, SPELL_HEAL = 64, SPELL_NIMBLENESS = 85, SPELL_CHARM_MORTAL = 90, SPELL_CALM_HUMANOID = 91
+};
+static const int vampire_spells[] = { SPELL_LEVITATE, SPELL_CHARM_MORTAL, SPELL_CALM_HUMANOID };
 /* 4 step 8, 6 step 4, 4 step 9, 6 step 7: attributes and skills of each curse. */
 static const int vampire_skills[] = { SKILL_JUMPING, SKILL_RUNNING, SKILL_STEALTH, SKILL_CRITICAL_STRIKE, SKILL_CLIMBING, SKILL_HAND_TO_HAND };
 static const int lycanthrope_skills[] = { SKILL_SWIMMING, SKILL_CLIMBING, SKILL_JUMPING, SKILL_STEALTH, SKILL_RUNNING, SKILL_CRITICAL_STRIKE, SKILL_HAND_TO_HAND };
@@ -63,7 +78,7 @@ int curse_race(void) { return curse_state()->form ? curse_state()->form : charac
 int curse_is_vampire(void) { return curse_state()->disease == CURSE_VAMPIRISM; }
 int curse_is_lycanthrope(void) { return curse_state()->disease == CURSE_WEREWOLF || curse_state()->disease == CURSE_WEREBOAR; }
 int curse_beast(void) { return curse_state()->form > CURSE_FORM_VAMPIRE; }
-int curse_min_metal(void) { return curse_state()->form ? 2 : 0; }
+int curse_min_metal(void) { return curse_state()->form ? MATERIAL_SILVER : MATERIAL_IRON; }
 int curse_infected(void) { return curse_state()->infection_time != 0; }
 int curse_suspended(int slot) { return slot >= 0 && slot < MEMBERSHIPS && (curse_state()->suspended & (1 << slot)) != 0; }
 
@@ -72,11 +87,11 @@ int curse_valid(const CurseState *c)
     int i;
 
     if (!c || (c->form != CURSE_FORM_NONE && (c->form < CURSE_FORM_VAMPIRE || c->form > CURSE_FORM_WEREBOAR)) || c->disease < 0 || (c->disease != 0 && (c->disease < 100 || c->disease > 102)) ||
-        c->action < 0 || c->action > 1 || c->infection_kind < 0 || c->infection_kind > 2 || (c->clan != 0 && (c->clan < 150 || c->clan > 158)) ||
-        c->suspended < 0 || c->suspended >= (1 << MEMBERSHIPS) || c->health_base < 0 || c->health_base > 100000) { return 0; }
+        c->action < 0 || c->action > 1 || c->infection_kind < INFECTION_VAMPIRISM || c->infection_kind > INFECTION_WEREBOAR || (c->clan != 0 && (c->clan < CLAN_FIRST || c->clan > CLAN_LAST)) ||
+        c->suspended < 0 || c->suspended >= (1 << MEMBERSHIPS) || c->health_base < 0 || c->health_base > HEALTH_BASE_MAX) { return 0; }
     /* The form follows the curse: a vampire's is 8, a lycanthrope's human (0) or its beast (9 for the werewolf, 10 for the wereboar). */
     if (c->disease == CURSE_VAMPIRISM ? c->form != CURSE_FORM_VAMPIRE : c->disease == 0 ? c->form != CURSE_FORM_NONE : (c->form != CURSE_FORM_NONE && c->form != (c->disease == CURSE_WEREWOLF ? CURSE_FORM_WEREWOLF : CURSE_FORM_WEREBOAR))) { return 0; }
-    for (i = 0; i < ATTRS; i++) { if (c->drained[i] < 0 || c->drained[i] > 100) { return 0; } }
+    for (i = 0; i < ATTRS; i++) { if (c->drained[i] < 0 || c->drained[i] > ATTRIBUTE_MAX) { return 0; } }
     return 1;
 }
 
@@ -100,7 +115,7 @@ void curse_infect_lycanthropy(int kind) { infect(kind + 1); }
 int curse_blow(int attacker_kind)
 {
     if (attacker_kind != ENEMY_WEREWOLF && attacker_kind != ENEMY_WEREBOAR && attacker_kind != ENEMY_VAMPIRE && attacker_kind != ENEMY_VAMPIRE_ANCIENT) { return 0; }
-    if (random_range(0, 32767) >= INFECTION_CHANCE) { return 0; }
+    if (random_range(0, RAND_LIMIT) >= INFECTION_CHANCE) { return 0; }
     if (attacker_kind == ENEMY_WEREWOLF) { curse_infect_lycanthropy(0); }
     else if (attacker_kind == ENEMY_WEREBOAR) { curse_infect_lycanthropy(1); }
     else { curse_infect_vampirism(); }
@@ -133,8 +148,8 @@ static void bonus_attribute(int i, int amount)
     c = curse_state();
     base = game_state()->base_attribute[i] + amount;
     character_state()->attribute[i] += amount; c->drained[i] += amount;
-    if (base > 100) {
-        over = base - 100;
+    if (base > ATTRIBUTE_MAX) {
+        over = base - ATTRIBUTE_MAX;
         base -= over; character_state()->attribute[i] -= over; c->drained[i] -= over;
     }
     state_base_attribute(i, base);
@@ -229,20 +244,20 @@ static void become_vampire(void)
     suspend_guilds();
     c->form = CURSE_FORM_VAMPIRE;
     for (i = 0; i < (int)(sizeof(vampire_spells) / sizeof(vampire_spells[0])); i++) { give_spell(vampire_spells[i]); }
-    switch (c->clan - 150) {
-    case 0: give_spell(85); break;
-    case 1: give_spell(20); give_spell(33); break;
-    case 2: give_spell(64); break;
-    case 3: give_spell(23); give_spell(6); break;
-    case 4: give_spell(10); break;
-    case 5: give_spell(50); break;
-    case 6: give_spell(17); break;
+    switch (c->clan - CLAN_FIRST) {
+    case 0: give_spell(SPELL_NIMBLENESS); break;
+    case 1: give_spell(SPELL_ICE_STORM); give_spell(SPELL_WILDFIRE); break;
+    case 2: give_spell(SPELL_HEAL); break;
+    case 3: give_spell(SPELL_SILENCE); give_spell(SPELL_INVISIBILITY); break;
+    case 4: give_spell(SPELL_FREE_ACTION); break;
+    case 5: give_spell(SPELL_PARALYSIS); break;
+    case 6: give_spell(SPELL_SHIELD); break;
     case 7:
         /* The original's 100 clamp for this clan's +20 Intelligence reads the attribute after the spell count (3: Agility), which the loop above has already held to 100: nothing is clamped (docs/curses.md 12.4). */
         character_state()->attribute[ATTR_INT] += VAMPIRE_ATTRIBUTE; c->drained[ATTR_INT] += VAMPIRE_ATTRIBUTE;
         state_base_attribute(ATTR_INT, game_state()->base_attribute[ATTR_INT] + VAMPIRE_ATTRIBUTE);
         break;
-    case 8: give_spell(11); give_spell(12); give_spell(13); break;
+    case 8: give_spell(SPELL_RESIST_COLD); give_spell(SPELL_RESIST_FIRE); give_spell(SPELL_RESIST_SHOCK); break;
     default: break;
     }
 }
@@ -371,20 +386,27 @@ void curse_frame(float dt)
     if (beast != was_beast) { entity_set_population(!beast); was_beast = beast; }
     if (!beast) { growl = 0; return; }
     for (growl += dt; growl >= GROWL_TICK; growl -= GROWL_TICK) {
-        if (random_range(0, 32767) < GROWL_CHANCE) { play_sound(GROWL_SOUND); }
+        if (random_range(0, RAND_LIMIT) < GROWL_CHANCE) { play_sound(GROWL_SOUND); }
     }
 }
 
 /* ---- Sounds (5.1, 7.3) ---- */
+
+/* One swing in five a vampire or a beast cries out, each with two clips (DAGGER.SND). */
+#define ATTACK_SOUND_PERCENT 20
+#define VAMPIRE_CRY_FEMALE 10281
+#define VAMPIRE_CRY_MALE 10301
+#define WEREWOLF_CRY 10091
+#define WEREBOAR_CRY 10141
 
 void curse_attack_sound(void)
 {
     int form, base;
 
     form = curse_form();
-    if (!form || random_range(0, 99) >= 20) { return; }
+    if (!form || random_range(0, 99) >= ATTACK_SOUND_PERCENT) { return; }
     /* A vampire's cry by sex (10281/10282 a woman's, 10301/10302 a man's); a werewolf's 10091/10092, a wereboar's 10141/10142. */
-    base = form == CURSE_FORM_VAMPIRE ? (character_state()->female ? 10281 : 10301) : form == CURSE_FORM_WEREWOLF ? 10091 : 10141;
+    base = form == CURSE_FORM_VAMPIRE ? (character_state()->female ? VAMPIRE_CRY_FEMALE : VAMPIRE_CRY_MALE) : form == CURSE_FORM_WEREWOLF ? WEREWOLF_CRY : WEREBOAR_CRY;
     play_sound(base + random_range(0, 1));
 }
 
@@ -435,6 +457,10 @@ static void infection_tick(void)
 }
 
 /* disease_start_cure_quest (9.3): every 84 days a vampire has 22 in 100 and a lycanthrope 29 in 100 of being offered the cure quest; every 266 days a vampire may be offered a clan quest (P0B once the first P0A was picked). */
+/* A roll under CURE_OFFER_BELOW offers the cure (a vampire rolls from VAMPIRE_CURE_LOW, so 20 in 91), and under CLAN_QUEST_BELOW the clan quest. */
+#define CURE_OFFER_BELOW 30
+#define VAMPIRE_CURE_LOW 10
+#define CLAN_QUEST_BELOW 50
 #define CURE_PERIOD 120960u
 #define CLAN_PERIOD 383040u
 
@@ -448,13 +474,13 @@ void curse_schedule(df_u32 start, df_u32 minutes)
     if (!c->disease) { return; }
     end = start + minutes;
     for (m = (start / CURE_PERIOD + 1u) * CURE_PERIOD; m <= end; m += CURE_PERIOD) {
-        if (curse_is_vampire() ? random_range(10, 100) < 30 : random_range(1, 100) < 30) { quest_begin(curse_is_vampire() ? "$CUREVAM" : "$CUREWER", 0); }
+        if (curse_is_vampire() ? random_range(VAMPIRE_CURE_LOW, 100) < CURE_OFFER_BELOW : random_range(1, 100) < CURE_OFFER_BELOW) { quest_begin(curse_is_vampire() ? "$CUREVAM" : "$CUREWER", 0); }
     }
     if (!curse_is_vampire()) { return; }
     for (m = (start / CLAN_PERIOD + 1u) * CLAN_PERIOD; m <= end; m += CLAN_PERIOD) {
         if (c->action) {
-            if (random_range(1, 100) < 50 && quest_pick('P', 0, 'B', character_state()->level, name)) { quest_begin(name, 0); }
-        } else if (random_range(1, 100) < 50 && quest_pick('P', 0, 'A', character_state()->level, name)) {
+            if (random_range(1, 100) < CLAN_QUEST_BELOW && quest_pick('P', 0, 'B', character_state()->level, name)) { quest_begin(name, 0); }
+        } else if (random_range(1, 100) < CLAN_QUEST_BELOW && quest_pick('P', 0, 'A', character_state()->level, name)) {
             quest_begin(name, 0); c->action = 1;
         }
     }
@@ -488,7 +514,7 @@ static void curse_command(int argc, char **argv)
     if (argc >= 2 && word(argv[1], "vampire")) { curse_infect_vampirism(); }
     else if (argc >= 2 && word(argv[1], "werewolf")) { curse_infect_lycanthropy(0); }
     else if (argc >= 2 && word(argv[1], "wereboar")) { curse_infect_lycanthropy(1); }
-    else if (argc >= 2 && word(argv[1], "now")) { state_pass_minutes(4321); }
+    else if (argc >= 2 && word(argv[1], "now")) { state_pass_minutes(INFECTION_MINUTES + 1); }
     else if (argc >= 2 && word(argv[1], "shape")) { curse_shapechange(0); }
     else if (argc >= 2 && word(argv[1], "cure")) { curse_cure_vampirism(); curse_cure_lycanthropy(); }
     else if (argc >= 2) { log_text(LOG_PRINT, "curse vampire | werewolf | wereboar | now | shape | cure"); return; }

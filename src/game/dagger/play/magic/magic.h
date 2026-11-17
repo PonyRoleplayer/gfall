@@ -13,6 +13,23 @@ void magic_commit(int index, const CharacterState *who, int caster);
 int spell_cost(const SpellDef *spell, const CharacterState *caster);
 /* One effect's raw cost, the formula of its group over its cost record and numbers (spell_cost_formula_dispatch); what the spell maker stores and prices by. */
 int effect_cost_raw(int group, const df_i16 *c, const int *d, const int *ch, const int *m);
+/*
+ * magic_resist (spfx_resist_roll): the chance starts at RESIST_BASE, immunity ends it at 0 and a critical weakness at 100, a tolerance halves it and a resistance adds half again, a Nord against
+ * cold and a Breton against magic gain RESIST_RACIAL, and it is held to RESIST_MIN..RESIST_MAX. A roll over the chance is the full effect; one that is more than RESIST_NONE_BAND under it, none; between
+ * them the effect is the margin times RESIST_PARTIAL_STEP percent.
+ */
+#define RESIST_BASE 50
+#define RESIST_RACIAL 30
+#define RESIST_MIN 5
+#define RESIST_MAX 95
+#define RESIST_NONE_BAND 20
+#define RESIST_PARTIAL_STEP 5
+/* magic_sees: a creature sees through a chameleon or shadow one time in SEE_CHANCE (SEE_SHADOW_CHANCE for a shadow), never through invisibility. */
+#define SEE_CHANCE 4
+#define SEE_SHADOW_CHANCE 8
+/* spell_cost: each effect costs (SPELL_COST_SKILL_CEILING - the school's skill) percent of its raw cost; the target's factor halves the sum; a spell costs SPELL_COST_MIN at least. */
+#define SPELL_COST_SKILL_CEILING 110
+#define SPELL_COST_MIN 5
 int magic_resist(int index, int element, int class_bit, int modifier);
 int magic_chance(int index, int group, int sub);
 void magic_apply(int spell, int caster, int target, int level, int no_resist);
