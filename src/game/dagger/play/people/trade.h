@@ -1,6 +1,8 @@
 #ifndef GFALL_TRADE_H
 #define GFALL_TRADE_H
 
+#include "game/dagger/tables/itemdefs.h"
+
 /*
  * The shop's arithmetic: what a basket costs to buy, what a pile sells for,
  * what a repair or an identification costs, and what the offer box says.
@@ -36,8 +38,8 @@ int trade_base_price(const ShopState *shop, int price);
 int trade_adjust(const ShopState *shop, int mercantile, int personality, int price, int selling);
 
 /* The one-item contribution to a basket (trade_add_buy_price); 0 for a spent stack of arrows. */
-#define ARROW_GROUP 3
-#define ARROW_INDEX 18
+#define ARROW_GROUP ITEM_GROUP_WEAPON
+#define ARROW_INDEX WEAPON_ARROW
 int trade_buy_line(const ShopState *shop, int value, int condition, int group, int index, int is_stack);
 
 /* trade_total_buy, trade_total_sell and trade_total_repair, given the sum of their lines. */

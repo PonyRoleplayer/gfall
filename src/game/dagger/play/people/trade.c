@@ -1,4 +1,5 @@
 #include "game/dagger/play/people/trade.h"
+#include "game/dagger/tables/itemdefs.h"
 
 /* See trade.h. */
 
@@ -40,7 +41,7 @@ int trade_buy_line(const ShopState *shop, int value, int condition, int group, i
     /* A stack (image 998, the arrows) is sold by the number in it: its condition is its count. */
     price = is_stack ? value * condition : value;
     /* The weaponsmith's holiday (49) halves weapons, a temple's (29) everything; the debug bit halves all. */
-    if (shop->type == 13 && shop->holiday == 49 && group == 3) {
+    if (shop->type == 13 && shop->holiday == 49 && group == ITEM_GROUP_WEAPON) {
         return price >> 1;
     }
     if (shop->type == 9 && shop->holiday == 29) {

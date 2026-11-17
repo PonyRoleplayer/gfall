@@ -1,4 +1,5 @@
 #include "game/dagger/play/travel/travel.h"
+#include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/character/progress.h"
@@ -39,7 +40,7 @@ int journey_transport(void)
     for (i = 0; i < OBJECTS; i++) {
         const ObjectInfo *item;
         item = &game_state()->object[i];
-        if (item->id && item->type == RECORD_ITEM && item->parent == game_state()->inventory_id && item->group == 23) {
+        if (item->id && item->type == RECORD_ITEM && item->parent == game_state()->inventory_id && item->group == ITEM_GROUP_TRANSPORT) {
             if (item->index == 1) { transport = 1; } else if (item->index == 0) { transport = 2; }
         }
     }

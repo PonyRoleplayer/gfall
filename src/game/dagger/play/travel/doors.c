@@ -1,4 +1,5 @@
 #include "game/dagger/play/travel/doors.h"
+#include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/play/ui/hud.h"
 #include "game/dagger/play/play.h"
@@ -109,7 +110,7 @@ static df_u32 find_key(const Mover *door)
         item = &game_state()->object[i];
         /* door_key_match_cb compares both fields with the location ID.
          * Its lock-level argument is unused; 27/3 is an unshipped item slot. */
-        if (!item->id || item->type != RECORD_ITEM || item->group != 27 || item->index != 3 ||
+        if (!item->id || item->type != RECORD_ITEM || item->group != ITEM_GROUP_MISC || item->index != 3 ||
             item->value != (int)location || (df_u16)item->message != location) { continue; }
         owner = item;
         for (depth = 0; owner && depth < OBJECTS; depth++) {

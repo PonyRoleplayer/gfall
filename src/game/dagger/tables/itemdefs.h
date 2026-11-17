@@ -12,6 +12,38 @@ typedef struct ItemDef {
     int variants, draw_order, flags, dropped_image, inventory_image;
 } ItemDef;
 
+
+/*
+ * The item groups of FALL.EXE (an item's group, with its index inside the group), in Daggerfall Unity's ItemGroups order. The ingredient groups 15..22 have no name here.
+ * A name is for the groups the game's rules name; the numbers are the data's.
+ */
+enum {
+    ITEM_GROUP_DRUGS = 0,
+    ITEM_GROUP_USELESS = 1,
+    ITEM_GROUP_ARMOR = 2,
+    ITEM_GROUP_WEAPON = 3,
+    ITEM_GROUP_MAGIC_ITEM = 4,
+    ITEM_GROUP_ARTIFACT = 5,
+    ITEM_GROUP_MENS_CLOTHING = 6,
+    ITEM_GROUP_BOOK = 7,
+    ITEM_GROUP_FURNITURE = 8,
+    ITEM_GROUP_CURIO = 9,
+    ITEM_GROUP_RELIGIOUS = 10,
+    ITEM_GROUP_MAP = 11,
+    ITEM_GROUP_WOMENS_CLOTHING = 12,
+    ITEM_GROUP_PAINTING = 13,
+    ITEM_GROUP_GEM = 14,
+    ITEM_GROUP_TRANSPORT = 23,
+    ITEM_GROUP_DEED = 24,
+    ITEM_GROUP_JEWELRY = 25,
+    ITEM_GROUP_QUEST_ITEM = 26,
+    ITEM_GROUP_MISC = 27,
+    ITEM_GROUP_CURRENCY = 28
+};
+/* Indexes in ITEM_GROUP_MISC: the spellbook, a soul trap, a letter of credit. In ITEM_GROUP_WEAPON: the two bows and the arrow. */
+enum { MISC_SPELLBOOK = 0, MISC_SOUL_TRAP = 1, MISC_LETTER_OF_CREDIT = 2 };
+enum { WEAPON_SHORT_BOW = 16, WEAPON_LONG_BOW = 17, WEAPON_ARROW = 18 };
+
 const ItemDef *item_def(int group, int index);
 /* A template's rarity and capacity (FALL.EXE's +0x28 and +0x1E): 0 for an item that is none. */
 int item_rarity(int group, int index);

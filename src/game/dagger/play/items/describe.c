@@ -21,11 +21,11 @@ int item_info_record(df_u32 id)
     const ObjectInfo *item;
     item = object_at(id);
     if (!item || item->type != RECORD_ITEM) { return -1; }
-    if (item->group == 2) { return 1000; }
-    if (item->group == 3) { return item->index == 18 ? 1011 : 1001; }
-    if (item->group == 7) { return 1009; }
-    if (item->group == 27 && item->index == 1) { return 1004; }
-    if (item->group == 27 && item->index == 2) { return 1007; }
+    if (item->group == ITEM_GROUP_ARMOR) { return 1000; }
+    if (item->group == ITEM_GROUP_WEAPON) { return item->index == WEAPON_ARROW ? 1011 : 1001; }
+    if (item->group == ITEM_GROUP_BOOK) { return 1009; }
+    if (item->group == ITEM_GROUP_MISC && item->index == MISC_SOUL_TRAP) { return 1004; }
+    if (item->group == ITEM_GROUP_MISC && item->index == MISC_LETTER_OF_CREDIT) { return 1007; }
     return 1003;
 }
 
@@ -57,8 +57,8 @@ static int expand_macro(const char *src, const Description *d, char *out, int ca
     if (!item) { return 0; }
     switch (i) {
     case 0:
-        df_copy(out,item->group == 2 && (item->index >= 7 || item->index == 5) ? "" :
-                item->group == 2 && item->armor_type != 2 ? (item->armor_type ? "Chain" : "Leather") :
+        df_copy(out,item->group == ITEM_GROUP_ARMOR && (item->index >= 7 || item->index == 5) ? "" :
+                item->group == ITEM_GROUP_ARMOR && item->armor_type != 2 ? (item->armor_type ? "Chain" : "Leather") :
                 material_name(item->material),cap);
         break;
     case 1: case 2: case 7: case 8: df_copy(out,item->name,cap); break;
@@ -75,7 +75,7 @@ static int expand_macro(const char *src, const Description *d, char *out, int ca
     case 5: df_copy(out,condition_name(item->condition,item->max_condition),cap); break;
     case 6: log_format(out,cap,"%d",item->value); break;
     case 9:
-        weight = (item->group == 28 ? item->value/100 : item->group == 23 ? 0 : item->weight*item->count) + inventory_weight(item->id);
+        weight = (item->group == ITEM_GROUP_CURRENCY ? item->value/100 : item->group == ITEM_GROUP_TRANSPORT ? 0 : item->weight*item->count) + inventory_weight(item->id);
         weight_text(weight,out,cap);
         break;
     case 10: df_copy(out,d->title,cap); break;
@@ -120,7 +120,7 @@ void item_info(df_u32 id, char *out, int capacity)
     record = item_info_record(id);
     if (record < 0) { return; }
     mem_zero(&d,sizeof(d)); d.item = object_at(id);
-    if (d.item->group == 7) { book_header(d.item->message,d.title,sizeof(d.title),d.author,sizeof(d.author)); }
+    if (d.item->group == ITEM_GROUP_BOOK) { book_header(d.item->message,d.title,sizeof(d.title),d.author,sizeof(d.author)); }
     expand(words_state(record),&d,out,capacity);
     if (!out[0]) { item_name(d.item,out,capacity); }
 }
@@ -205,7 +205,7 @@ int painting_info(df_u32 id, char *out, int capacity)
     if (capacity < 1) { return 0; }
     out[0] = 0;
     mem_zero(&d,sizeof(d)); d.item = object_at(id);
-    if (!d.item || d.item->type != RECORD_ITEM || d.item->group != 13) { return 0; }
+    if (!d.item || d.item->type != RECORD_ITEM || d.item->group != ITEM_GROUP_PAINTING) { return 0; }
     seed = (df_u16)d.item->message;
     picture = lore_random(&seed)%180;
     if (!painting_read(picture,choices)) { return 0; }

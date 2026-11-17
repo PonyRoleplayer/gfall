@@ -261,7 +261,7 @@ static void ready_weapon(void)
     weapon_cancel();
     if (hud_weapon_ready()) {
         item = object_at(game_state()->equipped[weapon_hand() ? 21 : 19]);
-        if (item && item->group == 3) { play_sound(weapon_sound(item->index)); }
+        if (item && item->group == ITEM_GROUP_WEAPON) { play_sound(weapon_sound(item->index)); }
     }
 }
 
@@ -659,7 +659,7 @@ int play_frame(const PlayIn *in, Camera *cam, const Scene *scene)
             const ObjectInfo *weapon;
             weapon = object_at(game_state()->equipped[weapon_hand() ? 21 : 19]);
             if (hud_weapon_ready() && options_mouse() == 0 && !blocks &&
-                g_attack_motion <= 4 && (!weapon || weapon->group != 3 || weapon->index < 16)) {
+                g_attack_motion <= 4 && (!weapon || weapon->group != ITEM_GROUP_WEAPON || weapon->index < WEAPON_SHORT_BOW)) {
                 grab_click = 1;
             }
             g_attack_click = 0;

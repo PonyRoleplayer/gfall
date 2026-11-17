@@ -1,4 +1,5 @@
 #include "game/dagger/play/state.h"
+#include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/tables/enemies.h"
 #include "engine/core/mem.h"
 #include "game/dagger/play/items/inventory.h"
@@ -359,15 +360,15 @@ int state_begin(void)
         id = item_create(g_state.inventory_id, who.gift[i].group,
                             who.gift[i].index, who.gift[i].material);
         if (!id) { return 0; }
-        if (who.gift[i].group == 3 && who.gift[i].index == 18) {
+        if (who.gift[i].group == ITEM_GROUP_WEAPON && who.gift[i].index == WEAPON_ARROW) {
             object_edit(id)->count = who.arrows ? who.arrows : 24;
         }
-        if (who.gift[i].group == 27 && who.gift[i].index == 0) { inventory_start_spells(id); }
-        if (i == who.gifts-2 && who.klass != 13 && who.gift[i].group == 3) {
+        if (who.gift[i].group == ITEM_GROUP_MISC && who.gift[i].index == MISC_SPELLBOOK) { inventory_start_spells(id); }
+        if (i == who.gifts-2 && who.klass != 13 && who.gift[i].group == ITEM_GROUP_WEAPON) {
             /* starting_equipment_give fixes a standard class weapon's value. */
             object_edit(id)->value = 15;
         }
-        if (who.gift[i].group == 6 || who.gift[i].group == 12) {
+        if (who.gift[i].group == ITEM_GROUP_MENS_CLOTHING || who.gift[i].group == ITEM_GROUP_WOMENS_CLOTHING) {
             inventory_equip(id);
         }
     }
@@ -782,7 +783,7 @@ static int magic_references_valid(const GameState *state)
         slot = object_slot(state,spell->parent); if (slot < 0) { return 0; }
         book = &state->object[slot];
         if (spell->type != RECORD_SPELL || book->type != RECORD_ITEM ||
-            book->group != 27 || book->index != 0) { return 0; }
+            book->group != ITEM_GROUP_MISC || book->index != MISC_SPELLBOOK) { return 0; }
     }
     return 1;
 }

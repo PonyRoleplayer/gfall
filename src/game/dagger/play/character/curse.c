@@ -1,4 +1,5 @@
 #include "game/dagger/play/character/curse.h"
+#include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/tables/enemies.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/play/state.h"
@@ -171,7 +172,7 @@ static void give_spell(int number)
     df_u32 book, spell;
 
     book = inventory_book();
-    if (!book) { book = item_create(game_state()->inventory_id, 27, 0, 0); }
+    if (!book) { book = item_create(game_state()->inventory_id, ITEM_GROUP_MISC, MISC_SPELLBOOK, 0); }
     if (!book) { return; }
     spell = spell_create(book, number);
     if (spell) { object_edit(spell)->message = CURSE_SPELL_MARK; }

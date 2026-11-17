@@ -56,7 +56,7 @@ int market_take(df_u32 id)
         return 1;
     }
     /* Selling and repair: from the pack to the counter, never an unpaid thing, never gold. */
-    if (!in_pack(item) || (item->flags & ITEM_UNPAID) || item->group == 28) {
+    if (!in_pack(item) || (item->flags & ITEM_UNPAID) || item->group == ITEM_GROUP_CURRENCY) {
         return 0;
     }
     return inventory_transfer(id, g_shelves);

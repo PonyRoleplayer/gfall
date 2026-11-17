@@ -169,7 +169,7 @@ df_u32 magic_item_create(df_u32 container, int which)
         if (!item) {
             return 0;
         }
-        if (item->group == 3 && item->index == 18) {
+        if (item->group == ITEM_GROUP_WEAPON && item->index == WEAPON_ARROW) {
             object_delete(id);
             item = 0;
         }
@@ -177,13 +177,13 @@ df_u32 magic_item_create(df_u32 container, int which)
     df_copy(item->name, (const char *)d, (int)sizeof(item->name));
     item->condition = item->max_condition = (int)(short)(d[0x37] | d[0x38] << 8);
     item->material = d[0x3d];
-    if (item->material == 0 && (item->group == 2 || item->group == 3)) {
+    if (item->material == 0 && (item->group == ITEM_GROUP_ARMOR || item->group == ITEM_GROUP_WEAPON)) {
         /* item_roll_material: left as the base item rolled it. */
     }
-    if (item->group == 2) {
+    if (item->group == ITEM_GROUP_ARMOR) {
         item->armor_type = 2;
     }
-    if (item->group != 1 && item->group != 7 && item->group != 13 && item->group != 27) {
+    if (item->group != ITEM_GROUP_USELESS && item->group != ITEM_GROUP_BOOK && item->group != ITEM_GROUP_PAINTING && item->group != ITEM_GROUP_MISC) {
         item->message = i + 1;
     }
     item->value = magic_def_value(i);
@@ -243,8 +243,8 @@ int magic_item_def(df_u32 item)
     entry = (o->flags >> MAGIC_DEF_SHIFT) & MAGIC_DEF_MASK;
     if (entry) { return def(entry-1) ? entry-1 : -1; }
     /* The message field held MAGIC.DEF indices before item flags did. */
-    if (o->group == 1 || o->group == 7 || o->group == 13 || o->group == 27 ||
-        (o->group == 9 && o->index == 5) || o->message < 1 || o->message > g_count) {
+    if (o->group == ITEM_GROUP_USELESS || o->group == ITEM_GROUP_BOOK || o->group == ITEM_GROUP_PAINTING || o->group == ITEM_GROUP_MISC ||
+        (o->group == ITEM_GROUP_CURIO && o->index == 5) || o->message < 1 || o->message > g_count) {
         return -1;
     }
     return o->message - 1;
@@ -307,7 +307,7 @@ void magic_shop_stock(df_u32 container, int quality, int soul_traps)
     for (i = 0; i < (quality >> 1) + 1; i++) {
         magic_item_create(container, -1);
     }
-    item_create(container, 27, 0, -1);
+    item_create(container, ITEM_GROUP_MISC, MISC_SPELLBOOK, -1);
     if (soul_traps) {
         soul_trap_stock(container, quality);
     }

@@ -37,7 +37,7 @@ void fighter_player(FighterInfo *out)
 
 static int race_bonus(int race, int weapon, int level)
 {
-    if ((race == 1 && weapon < 16) || (race == 5 && weapon >= 16)) { return level/3; }
+    if ((race == 1 && weapon < WEAPON_SHORT_BOW) || (race == 5 && weapon >= WEAPON_SHORT_BOW)) { return level/3; }
     return race == 3 ? level/4 : 0;
 }
 
@@ -71,7 +71,7 @@ int attack_damage(const FighterInfo *a, const FighterInfo *t, int weapon, int ma
     if (t->race == ENEMY_SKELETAL_WARRIOR) {
         if (material == 2) { damage *= 2; }
         /* Ordinary edged weapons halve against a skeletal warrior. */
-        if (!(item_def(3,weapon)->flags & 16)) { damage /= 2; }
+        if (!(item_def(ITEM_GROUP_WEAPON,weapon)->flags & 16)) { damage /= 2; }
     }
     damage += material_hit(material)/10 + (a->attribute[ATTR_STR]-50)/5;
     return damage < 1 ? 0 : damage;

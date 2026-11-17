@@ -627,12 +627,12 @@ static void recover_to(df_u32 container)
     for (i = 0; i < OBJECTS; i++) {
         const ObjectInfo *o;
         o = &game_state()->object[i];
-        if (o->id && o->parent == container && o->type == RECORD_ITEM && o->group == 3 && o->index == 18) {
+        if (o->id && o->parent == container && o->type == RECORD_ITEM && o->group == ITEM_GROUP_WEAPON && o->index == WEAPON_ARROW) {
             if (o->count < 199) { object_edit(o->id)->count++; }
             return;
         }
     }
-    arrow = item_create(container,3,18,0);
+    arrow = item_create(container,ITEM_GROUP_WEAPON,WEAPON_ARROW,0);
     if (arrow) { object_edit(arrow)->count = 1; }
 }
 

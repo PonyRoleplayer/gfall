@@ -55,7 +55,7 @@ int itemmaker_capacity(df_u32 id)
     points = g_template_enchant[template];
     if (points <= 0) { return 0; }
     /* item_init_from_template: only weapons (not arrows) and plate armour roll a material, which scales the points. */
-    if ((item->group == 3 && !df_eq(item_def(3, item->index)->name, "Arrow")) || (item->group == 2 && item->armor_type == 2)) {
+    if ((item->group == ITEM_GROUP_WEAPON && !df_eq(item_def(ITEM_GROUP_WEAPON, item->index)->name, "Arrow")) || (item->group == ITEM_GROUP_ARMOR && item->armor_type == 2)) {
         if (item->material >= 0 && item->material < 10) { points = (points * g_ench_material[item->material]) >> 2; }
     }
     return points;
@@ -229,7 +229,7 @@ int itemmaker_kinds(int side, int *kinds, int cap)
     for (kind = 0; kind < (side ? 11 : 15) && n < cap; kind++) {
         t = side ? kind + 15 : kind;
         if (has_kind_pair(t)) { continue; }
-        if (t == 20 && (!item || item->group != 3)) { continue; }
+        if (t == 20 && (!item || item->group != ITEM_GROUP_WEAPON)) { continue; }
         if (t == 18 || t == 19) { continue; }
         /* itemmaker_power_excluded: a reputation kind is gone once All of the other, or of itself, is on the item. */
         if (t == 25 || t == 14) {

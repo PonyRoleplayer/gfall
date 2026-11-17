@@ -42,14 +42,14 @@ int shelf_stock(df_u32 container, int variant, int quality, int building_type, i
         int kinds;
 
         id = 0;
-        if (group == 6 || group == 12) {
+        if (group == ITEM_GROUP_MENS_CLOTHING || group == ITEM_GROUP_WOMENS_CLOTHING) {
             /* Clothes for the player's sex (the original tests the character's flag bit 0). */
             group = character_state()->female ? 12 : 6;
         }
-        if (group == 7) {
+        if (group == ITEM_GROUP_BOOK) {
             /* item_make(7, (quality + 3) / 5): a book of that rarity. */
-            id = item_create(container, 7, (quality + 3) / 5, -1);
-        } else if (group != 4 && group != 5 && group != 11) {
+            id = item_create(container, ITEM_GROUP_BOOK, (quality + 3) / 5, -1);
+        } else if (group != ITEM_GROUP_MAGIC_ITEM && group != ITEM_GROUP_ARTIFACT && group != ITEM_GROUP_MAP) {
             kinds = item_kinds(group);
             if (kinds > 0) {
                 id = item_create(container, group, pick(kinds), -1);

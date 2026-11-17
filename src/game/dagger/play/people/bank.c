@@ -1,4 +1,5 @@
 #include "game/dagger/play/people/bank.h"
+#include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/items/inventory.h"
 
@@ -99,7 +100,7 @@ int bank_deposit_letters(int region, int confirmed, int *text)
         const ObjectInfo *item;
 
         item = object_at(ids[i]);
-        if (item && item->group == 27 && item->index == 2) {
+        if (item && item->group == ITEM_GROUP_MISC && item->index == MISC_LETTER_OF_CREDIT) {
             a->balance += item->value;
             object_delete(ids[i]);
             taken++;
@@ -126,7 +127,7 @@ int bank_letter(int region, int amount, int *text)
     if (fee + amount > a->balance) {
         return refuse(text, BANK_TEXT_FEE);
     }
-    id = item_create(game_state()->inventory_id, 27, 2, 0);
+    id = item_create(game_state()->inventory_id, ITEM_GROUP_MISC, MISC_LETTER_OF_CREDIT, 0);
     if (!id) {
         return BANK_REFUSED;
     }
@@ -251,7 +252,7 @@ int gold_total(void)
         const ObjectInfo *item;
 
         item = object_at(ids[i]);
-        if (item && item->group == 27 && item->index == 2) {
+        if (item && item->group == ITEM_GROUP_MISC && item->index == MISC_LETTER_OF_CREDIT) {
             total += item->value;
         }
     }

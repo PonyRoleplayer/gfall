@@ -1,4 +1,5 @@
 #include "game/dagger/play/people/guild.h"
+#include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/people/standing.h"
 #include "game/dagger/play/people/law.h"
@@ -596,7 +597,7 @@ int knight_armor(Membership *m, int *text)
     metal = (m->rank - 1) & 255;
     if (metal > 100) { metal = 2; } else if (metal > 10) { metal = 10; }
     if (metal > 9) { metal = 9; }
-    id = item_create(game_state()->inventory_id, 2, random_range(0, 6), metal);
+    id = item_create(game_state()->inventory_id, ITEM_GROUP_ARMOR, random_range(0, 6), metal);
     if (!id) {
         return 0;
     }

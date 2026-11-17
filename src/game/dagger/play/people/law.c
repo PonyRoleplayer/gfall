@@ -1,4 +1,5 @@
 #include "game/dagger/play/people/law.h"
+#include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/people/bank.h"
@@ -71,7 +72,7 @@ void gold_spend(int amount)
         ObjectInfo *it;
 
         it = object_edit(ids[i]);
-        if (it && it->group == 27 && it->index == 2 && it->value >= amount) {
+        if (it && it->group == ITEM_GROUP_MISC && it->index == MISC_LETTER_OF_CREDIT && it->value >= amount) {
             it->value -= amount;
             return;
         }
@@ -82,7 +83,7 @@ void gold_spend(int amount)
         ObjectInfo *it;
 
         it = object_edit(ids[i]);
-        if (!it || it->group != 27 || it->index != 2) {
+        if (!it || it->group != ITEM_GROUP_MISC || it->index != MISC_LETTER_OF_CREDIT) {
             continue;
         }
         if (it->value <= left) {
@@ -110,7 +111,7 @@ static void gold_remove_all(void)
         const ObjectInfo *it;
 
         it = object_at(ids[i]);
-        if (it && it->group == 27 && it->index == 2) {
+        if (it && it->group == ITEM_GROUP_MISC && it->index == MISC_LETTER_OF_CREDIT) {
             object_delete(ids[i]);
         }
     }

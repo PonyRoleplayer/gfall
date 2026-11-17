@@ -1,4 +1,5 @@
 #include "game/dagger/play/combat/weapon.h"
+#include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/play/character/curse.h"
 #include "game/dagger/play/magic/itemmaker.h"
 #include "game/dagger/play/ui/hud.h"
@@ -41,7 +42,7 @@ void weapon_switch(void)
     const ObjectInfo *other;
     other = object_at(game_state()->equipped[g_hand ? 19 : 21]);
     /* run_00042F0F refuses a shield in the other hand. An empty hand is fists. */
-    if (!hud_weapon_ready() || g_step >= 0 || (other && other->group != 3)) { return; }
+    if (!hud_weapon_ready() || g_step >= 0 || (other && other->group != ITEM_GROUP_WEAPON)) { return; }
     g_hand ^= 1;
     if (object_edit(game_state()->entity_id)) { object_edit(game_state()->entity_id)->flags = g_hand; }
     weapon_cancel();
@@ -64,7 +65,7 @@ int arrow_count(void)
     for (i = 0; i < OBJECTS; i++) {
         o = &game_state()->object[i];
         if (o->id && o->parent == game_state()->inventory_id && o->type == RECORD_ITEM &&
-            o->group == 3 && o->index == 18) { count += o->count; }
+            o->group == ITEM_GROUP_WEAPON && o->index == WEAPON_ARROW) { count += o->count; }
     }
     return count;
 }
@@ -76,7 +77,7 @@ int arrow_take(void)
     for (i = 0; i < OBJECTS; i++) {
         o = &game_state()->object[i];
         if (o->id && o->parent == game_state()->inventory_id && o->type == RECORD_ITEM &&
-            o->group == 3 && o->index == 18 && o->count > 0) {
+            o->group == ITEM_GROUP_WEAPON && o->index == WEAPON_ARROW && o->count > 0) {
             if (o->count == 1) { object_delete(o->id); }
             else { object_edit(o->id)->count--; }
             return 1;
@@ -105,8 +106,8 @@ void weapon_frame(const PlayIn *in, int blocked, StrikeInfo *strike)
     strike->hand = -1;
     id = game_state()->equipped[g_hand ? 21 : 19];
     item = object_at(id);
-    if (!item || item->group != 3 || item->index >= 18 || item->condition <= 0) { item = 0; id = 0; }
-    bow = item && (item->index == 16 || item->index == 17);
+    if (!item || item->group != ITEM_GROUP_WEAPON || item->index >= WEAPON_ARROW || item->condition <= 0) { item = 0; id = 0; }
+    bow = item && (item->index == WEAPON_SHORT_BOW || item->index == WEAPON_LONG_BOW);
     if (id != g_item || bow != g_bow) { weapon_cancel(); g_item = id; g_bow = bow; }
     /* A beast fights with claws (WEAPON11.CIF, the fists are 10): its hands were emptied when it changed. */
     g_view.cif = curse_beast() ? 11 : weapon_cif(item ? item->index : -1);

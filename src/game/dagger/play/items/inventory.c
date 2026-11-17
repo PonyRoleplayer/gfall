@@ -59,8 +59,8 @@ df_u32 item_create(df_u32 parent, int group, int index, int metal)
     ObjectInfo *item;
     df_u32 id;
     int image, roll;
-    if (group == 4) { return magic_item_create(parent,index); }
-    if (group == 5) { return magic_artifact_create(parent,index); }
+    if (group == ITEM_GROUP_MAGIC_ITEM) { return magic_item_create(parent,index); }
+    if (group == ITEM_GROUP_ARTIFACT) { return magic_artifact_create(parent,index); }
     def = item_def(group, index);
     if (!def || metal < -1 || metal > 9) { return 0; }
     id = object_new(RECORD_ITEM, parent, index, 100);
@@ -68,24 +68,24 @@ df_u32 item_create(df_u32 parent, int group, int index, int metal)
     if (!item) { g_error = "There is no room for another item."; return 0; }
     item->group = group;
     init_item(item, def);
-    if (group == 6 || group == 12 || group == 2) {
+    if (group == ITEM_GROUP_MENS_CLOTHING || group == ITEM_GROUP_WOMENS_CLOTHING || group == ITEM_GROUP_ARMOR) {
         if (def->variants > 1) { item->inventory_image += random_range(0, def->variants - 1); }
-        if (group == 2 && !character_state()->female) { item->inventory_image += 4 * 128; }
+        if (group == ITEM_GROUP_ARMOR && !character_state()->female) { item->inventory_image += 4 * 128; }
         item->inventory_image += body_shape(character_state()->race) * 128;
-        if (group == 6 || group == 12) {
+        if (group == ITEM_GROUP_MENS_CLOTHING || group == ITEM_GROUP_WOMENS_CLOTHING) {
             if (random_range(0,100) >= 25) {
                 item->color = random_range(1,10);
-                if ((group == 6 && (index == 10 || index == 11)) || (group == 12 && index == 8)) {
+                if ((group == ITEM_GROUP_MENS_CLOTHING && (index == 10 || index == 11)) || (group == ITEM_GROUP_WOMENS_CLOTHING && index == 8)) {
                     item->color = clothing_dye(0,random_range(0,32767));
-                } else if (group == 6 && index == 4) { item->color = clothing_dye(1,random_range(0,32767)); }
+                } else if (group == ITEM_GROUP_MENS_CLOTHING && index == 4) { item->color = clothing_dye(1,random_range(0,32767)); }
             }
-            if ((group == 6 && (index == 13 || index == 14)) || (group == 12 && (index == 9 || index == 10))) {
+            if ((group == ITEM_GROUP_MENS_CLOTHING && (index == 13 || index == 14)) || (group == ITEM_GROUP_WOMENS_CLOTHING && (index == 9 || index == 10))) {
                 item->inventory_image++;
             }
         }
     }
-    if (group == 3 && index != 18) { set_metal(item, metal < 0 ? metal_roll() : metal); }
-    if (group == 2) {
+    if (group == ITEM_GROUP_WEAPON && index != WEAPON_ARROW) { set_metal(item, metal < 0 ? metal_roll() : metal); }
+    if (group == ITEM_GROUP_ARMOR) {
         roll = metal < 0 ? random_range(1, 100) : 100;
         item->armor_type = roll < 70 ? 0 : (roll < 90 ? 1 : 2);
         if (!item->armor_type) { item->weight >>= 1; }
@@ -95,9 +95,9 @@ df_u32 item_create(df_u32 parent, int group, int index, int metal)
         if (image >= 0) { item->inventory_image = (item->inventory_image & ~127) + image; }
     }
     /* item_init_from_template: a recipe item holds a recipe drawn from twenty (rand() % 20). */
-    if (group == 27 && index == 4) { item->message = random_range(0,32767) % 20 + 1; }
-    if (group == 3 && index == 18) { item->count = random_range(1, 20); item->condition = 0; }
-    if (group == 7 && book_count()) {
+    if (group == ITEM_GROUP_MISC && index == 4) { item->message = random_range(0,32767) % 20 + 1; }
+    if (group == ITEM_GROUP_WEAPON && index == WEAPON_ARROW) { item->count = random_range(1, 20); item->condition = 0; }
+    if (group == ITEM_GROUP_BOOK && book_count()) {
         df_u32 seed;
         int count, pick, i;
         count = 0;
@@ -116,7 +116,7 @@ df_u32 item_create(df_u32 parent, int group, int index, int metal)
             item->value = 300 + (int)(((seed >> 16) & 0x7fffu) % 501u);
         }
     }
-    if (group == 13) { item->message = random_range(0,32767); }
+    if (group == ITEM_GROUP_PAINTING) { item->message = random_range(0,32767); }
     return id;
 }
 
@@ -127,8 +127,8 @@ void item_name(const ObjectInfo *item, char *out, int capacity)
     def = item ? item_def(item->group, item->index) : 0;
     if (item && magic_def_artifact(magic_item_def(item->id))) { df_copy(out,item->name,capacity); return; }
     metal = "";
-    if (item && item->group == 3 && item->index != 18) { metal = material_name(item->material); }
-    if (item && item->group == 2) {
+    if (item && item->group == ITEM_GROUP_WEAPON && item->index != WEAPON_ARROW) { metal = material_name(item->material); }
+    if (item && item->group == ITEM_GROUP_ARMOR) {
         metal = item->armor_type == 0 ? "Leather" : item->armor_type == 1 ? "Chain" : material_name(item->material);
     }
     log_format(out, capacity, "%s%s%s", metal, *metal ? " " : "", item && item->name[0] && !magic_item_unknown(item->id) ? item->name : def ? def->name : "Unknown item");
@@ -151,7 +151,7 @@ void item_name(const ObjectInfo *item, char *out, int capacity)
 int item_tab(const ObjectInfo *item)
 {
     if (!item || item->type != RECORD_ITEM) { return -1; }
-    if ((item->group == 27 && item->index == 0) || (item->flags & 1)) { return 1; }
+    if ((item->group == ITEM_GROUP_MISC && item->index == MISC_SPELLBOOK) || (item->flags & 1)) { return 1; }
     return group_tab(item->group);
 }
 
@@ -188,7 +188,7 @@ int inventory_list(df_u32 parent, int tab, df_u32 *ids, int capacity)
         item = &game_state()->object[i];
         if (!item->id || item->parent != parent || item->type != RECORD_ITEM ||
             (tab >= 0 && item_tab(item) != tab)) { continue; }
-        if (parent == game_state()->inventory_id && item->group != 1 && item_equipped(item->id) >= 0) { continue; }
+        if (parent == game_state()->inventory_id && item->group != ITEM_GROUP_USELESS && item_equipped(item->id) >= 0) { continue; }
         if (count < capacity) { ids[count] = item->id; }
         count++;
     }
@@ -198,7 +198,7 @@ int inventory_list(df_u32 parent, int tab, df_u32 *ids, int capacity)
 int item_two_handed(const ObjectInfo *item)
 {
     const ItemDef *def;
-    def = item && item->group == 3 ? item_def(item->group,item->index) : 0;
+    def = item && item->group == ITEM_GROUP_WEAPON ? item_def(item->group,item->index) : 0;
     return def && !(def->flags & 4);
 }
 
@@ -206,8 +206,8 @@ static void sync_weapon(void)
 {
     const ObjectInfo *item;
     item = object_at(game_state()->equipped[19]);
-    character_state()->weapon = item && item->group == 3 ? item->index : 0;
-    character_state()->weapon_sound = item && item->group == 3 ? weapon_sound(item->index) : 0;
+    character_state()->weapon = item && item->group == ITEM_GROUP_WEAPON ? item->index : 0;
+    character_state()->weapon_sound = item && item->group == ITEM_GROUP_WEAPON ? weapon_sound(item->index) : 0;
 }
 
 void inventory_unequip(df_u32 id)
@@ -223,11 +223,11 @@ static int forbidden(const ObjectInfo *item)
     int bits;
     /* Original weapon_proficiency_bits, by weapon index. */
     career = &game_state()->career;
-    if (item->group == 3) {
+    if (item->group == ITEM_GROUP_WEAPON) {
         return (career->forbidden_equipment & weapon_proficiency(item->index)) ||
                (career->forbidden_materials & (1 << item->material));
     }
-    if (item->group != 2) { return 0; }
+    if (item->group != ITEM_GROUP_ARMOR) { return 0; }
     bits = item->index >= 7 ? 1 << (item->index + 2) : 1 << (item->armor_type + 6);
     return (career->forbidden_equipment & bits) ||
            (item->armor_type == 2 && (career->forbidden_materials & (1 << item->material)));
@@ -235,12 +235,12 @@ static int forbidden(const ObjectInfo *item)
 
 static int equip_sound(const ObjectInfo *item)
 {
-    if (item->group == 3) { return weapon_sound(item->index); }
-    if (item->group == 2) {
+    if (item->group == ITEM_GROUP_WEAPON) { return weapon_sound(item->index); }
+    if (item->group == ITEM_GROUP_ARMOR) {
         if (item->index == 1 || (item->index >= 5 && item->index != 6)) { return 233; }
         return item->armor_type+231;
     }
-    if (item->group == 6 || item->group == 12) { return 234; }
+    if (item->group == ITEM_GROUP_MENS_CLOTHING || item->group == ITEM_GROUP_WOMENS_CLOTHING) { return 234; }
     return 236;
 }
 
@@ -255,14 +255,14 @@ int inventory_equip(df_u32 id)
     if (slot < 0) { g_error = "This item cannot be equipped."; return 0; }
     if (item->condition <= 0) { g_error = "This item is broken."; return 0; }
     if (forbidden(item)) { g_error = "Your class forbids this equipment."; return 0; }
-    if ((item->group == 6 && character_state()->female) || (item->group == 12 && !character_state()->female)) {
+    if ((item->group == ITEM_GROUP_MENS_CLOTHING && character_state()->female) || (item->group == ITEM_GROUP_WOMENS_CLOTHING && !character_state()->female)) {
         g_error = "This clothing does not fit."; return 0;
     }
     if (item_equipped(id) >= 0) { return 1; }
     step = 0;
-    if (item->group == 14 || item->group == 25) { step = 1; }
-    if (item->group == 6 || item->group == 12) { if (slot == 14) { step = 2; } }
-    if (item->group == 3) {
+    if (item->group == ITEM_GROUP_GEM || item->group == ITEM_GROUP_JEWELRY) { step = 1; }
+    if (item->group == ITEM_GROUP_MENS_CLOTHING || item->group == ITEM_GROUP_WOMENS_CLOTHING) { if (slot == 14) { step = 2; } }
+    if (item->group == ITEM_GROUP_WEAPON) {
         hand = object_at(game_state()->equipped[19]);
         if (item_two_handed(item)) { state_equip(21, 0); }
         else if (!item_two_handed(hand)) { step = 2; }
@@ -296,7 +296,7 @@ int inventory_weight(df_u32 parent)
     for (i = 0; i < OBJECTS; i++) {
         item = &game_state()->object[i];
         if (!item->id || item->type != RECORD_ITEM || !belongs_to(item->parent, parent)) { continue; }
-        if (item->group == 28) { weight += item->value / 100; }
+        if (item->group == ITEM_GROUP_CURRENCY) { weight += item->value / 100; }
         else { weight += enchant_weight(item->id, item->weight) * item->count; }
     }
     if (parent == game_state()->inventory_id) { weight += character_state()->gold / 100; }
@@ -324,12 +324,12 @@ int inventory_armor(int part)
     if (slot < 0) { return 0; }
     item = object_at(game_state()->equipped[slot]);
     value = 0;
-    if (item && item->group == 2) {
+    if (item && item->group == ITEM_GROUP_ARMOR) {
         value = armor_base(item->armor_type);
         if (item->armor_type == 2) { value += material_hit(item->material); }
     }
     shield = object_at(game_state()->equipped[21]);
-    if (shield && shield->group == 2 && shield_covers(shield->index,part)) { value += (shield->index-6)*5; }
+    if (shield && shield->group == ITEM_GROUP_ARMOR && shield_covers(shield->index,part)) { value += (shield->index-6)*5; }
     if (value > 200) { value = 200; }
     return value / 5;
 }
@@ -340,7 +340,7 @@ df_u32 inventory_book(void)
     const ObjectInfo *item;
     for (i = 0; i < OBJECTS; i++) {
         item = &game_state()->object[i];
-        if (item->id && item->type == RECORD_ITEM && item->group == 27 && item->index == 0 &&
+        if (item->id && item->type == RECORD_ITEM && item->group == ITEM_GROUP_MISC && item->index == MISC_SPELLBOOK &&
             item->parent == game_state()->inventory_id) { return item->id; }
     }
     return 0;
@@ -377,12 +377,12 @@ int inventory_transfer(df_u32 id, df_u32 parent)
     if (!item || item->type != RECORD_ITEM || !target || target->type != RECORD_CONTAINER) { return 0; }
     if (item->parent == parent) { return 1; }
     taking = parent == game_state()->inventory_id;
-    weight = item->group == 28 ? item->value / 100 : item->weight * item->count;
+    weight = item->group == ITEM_GROUP_CURRENCY ? item->value / 100 : item->weight * item->count;
     weight += inventory_weight(id);
     if (taking && inventory_weight(parent) + weight > inventory_capacity() * 4) {
         g_error = "You cannot carry any more."; return 0;
     }
-    if (taking && item->group == 28) {
+    if (taking && item->group == ITEM_GROUP_CURRENCY) {
         int gold;
         gold = item->value;
         if (gold > 100000000 - character_state()->gold) { g_error = "Too much gold."; return 0; }
@@ -392,13 +392,13 @@ int inventory_transfer(df_u32 id, df_u32 parent)
         play_sound(204);
         return 1;
     }
-    if (taking && item->group == 3 && item->index == 18) {
+    if (taking && item->group == ITEM_GROUP_WEAPON && item->index == WEAPON_ARROW) {
         int i, count;
         for (i = 0; i < OBJECTS; i++) {
             ObjectInfo *stack;
             stack = object_edit(game_state()->object[i].id);
             if (!stack || stack->parent != parent || stack->type != RECORD_ITEM ||
-                stack->group != 3 || stack->index != 18) { continue; }
+                stack->group != ITEM_GROUP_WEAPON || stack->index != WEAPON_ARROW) { continue; }
             count = stack->count + item->count;
             /* inv_merge_arrows clamps the one carried stack to 199 and
              * deletes the incoming stack, including any excess arrows. */
@@ -424,7 +424,7 @@ static void roll_loot(df_u32 container, int index)
     if (!table) { return; }
     level = character_state()->level;
     if (table[0] || table[1]) {
-        id = item_create(container, 28, 0, 0);
+        id = item_create(container, ITEM_GROUP_CURRENCY, 0, 0);
         if (id) { object_edit(id)->value = level * random_range(table[0], table[1]); }
     }
     /* loot_generate uses <= (so zero has a 1% first chance), scales only
@@ -436,7 +436,7 @@ static void roll_loot(df_u32 container, int index)
         if (group == 255) { group = character_state()->female ? 12 : 6; }
         /* MAGIC.DEF and enchantment records are a later rules slice. Never
          * substitute a mundane weapon for a magic item. */
-        if (group == 4) { continue; }
+        if (group == ITEM_GROUP_MAGIC_ITEM) { continue; }
         do {
             id = item_create(container, group, random_range(0, item_kinds(group) - 1), -1);
             if (!id) { return; }
@@ -491,7 +491,7 @@ int inventory_valid(const GameState *state)
             const ObjectInfo *parent;
             parent = 0;
             for (j = 0; j < OBJECTS; j++) { if (state->object[j].id == item->parent) { parent = &state->object[j]; break; } }
-            if (!parent || parent->type != RECORD_ITEM || parent->group != 27 || parent->index != 0 ||
+            if (!parent || parent->type != RECORD_ITEM || parent->group != ITEM_GROUP_MISC || parent->index != MISC_SPELLBOOK ||
                 !spell_def(item->index) || item->flags < 0 || item->flags >= OBJECTS ||
                 !item->name[0] || item->name[24] || item->spell_icon < 0 || item->spell_icon >= 69) { return 0; }
         }
@@ -521,13 +521,13 @@ int inventory_upgrade(GameState *state)
     for (i = 0; i < OBJECTS; i++) {
         item = &state->object[i];
         if (!item->id || item->type != RECORD_ITEM) { continue; }
-        if (item->group == 3 && item->index == 17 && item->count > 1) { item->index = 18; }
+        if (item->group == ITEM_GROUP_WEAPON && item->index == 17 && item->count > 1) { item->index = 18; }
         def = item_def(item->group, item->index);
         if (!def) { return 0; }
         init_item(item, def);
-        if (item->group == 3 && item->index != 18) { set_metal(item, item->material); }
-        if (item->group == 2 || item->group == 6 || item->group == 12) {
-            if (item->group == 2 && !state->who.female) { item->inventory_image += 4 * 128; }
+        if (item->group == ITEM_GROUP_WEAPON && item->index != WEAPON_ARROW) { set_metal(item, item->material); }
+        if (item->group == ITEM_GROUP_ARMOR || item->group == ITEM_GROUP_MENS_CLOTHING || item->group == ITEM_GROUP_WOMENS_CLOTHING) {
+            if (item->group == ITEM_GROUP_ARMOR && !state->who.female) { item->inventory_image += 4 * 128; }
             item->inventory_image += body_shape(state->who.race) * 128;
         }
     }

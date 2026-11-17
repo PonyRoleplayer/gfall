@@ -1,4 +1,5 @@
 #include "game/dagger/play/magic/enchant.h"
+#include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/play/magic/itemmaker.h"
 #include "game/dagger/play/magic/magic.h"
 #include "game/dagger/play/state.h"
@@ -136,7 +137,7 @@ static void repair_first(int amount)
         const ObjectInfo *owner;
 
         item = object_edit(game_state()->object[i].id);
-        if (!item || item->type != RECORD_ITEM || (item->group == 3 && item->index == 17) || item_enchanted(item->id)) { continue; }
+        if (!item || item->type != RECORD_ITEM || (item->group == ITEM_GROUP_WEAPON && item->index == 17) || item_enchanted(item->id)) { continue; }
         for (owner = item, depth = 0; owner && depth < OBJECTS && owner->parent != game_state()->entity_id; depth++) { owner = object_at(owner->parent); }
         if (!owner || item->condition >= item->max_condition) { continue; }
         item->condition += amount;
