@@ -519,6 +519,11 @@ const char *travel_error(void)
     return g_error ? g_error : "The place did not load.";
 }
 
+int travel_entered_building(void)
+{
+    return g_open && g_here.kind == TRAVEL_INSIDE && g_land == LAND_PASSAGE;
+}
+
 const char *travel_said(void)
 {
     static char said[48];

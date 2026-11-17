@@ -1,8 +1,8 @@
 #include "check_talk.h"
 #include "check_util.h"
-#include "game/dagger/play/talk.h"
+#include "game/dagger/play/people/talk.h"
 #include "game/dagger/play/state.h"
-#include "game/dagger/play/standing.h"
+#include "game/dagger/play/people/standing.h"
 #include <stdio.h>
 #include <string.h>
 

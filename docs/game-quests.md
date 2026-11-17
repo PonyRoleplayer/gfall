@@ -1,6 +1,6 @@
 # GFALL: the quest machine (plan and decisions)
 
-Written 2026-11-11 before any code, from the decomp's `docs/quest-machine.md` (DOCUMENTER; section numbers below are its; it builds on the decomp's `docs/quests-math.md` for reward gold, timer sums and site picking). GFALL builds its own machine from that document and the files in ARENA2 (232 QBN, 229 QRC); GFALL's `play/quest.c` is the dagger layer's and is not reused (`docs/game-later.md` lists the decoupling). Classic first; where the original has a plain bug we do what it meant.
+Written 2026-11-11 before any code, from the decomp's `docs/quest-machine.md` (DOCUMENTER; section numbers below are its; it builds on the decomp's `docs/quests-math.md` for reward gold, timer sums and site picking). GFALL builds its own machine from that document and the files in ARENA2 (232 QBN, 229 QRC); GFALL's `play/quests/quest.c` is the dagger layer's and is not reused (`docs/game-later.md` lists the decoupling). Classic first; where the original has a plain bug we do what it meant.
 
 ## Decisions on section 7
 
@@ -38,7 +38,7 @@ The machine is data-driven: the quest files are read in place, never copied; not
 3. **Text and the logbook**: the hash, quest symbol text, `%qdt` `%cn` and the macros, ops 23/24, the Log button's screen (the sheet has the button).
 4. **Places and timers**: `quest_init_place`, op 19, timers 0..5 with ops 12/13, the state by hash.
 5. **Foes and kills**: `quest_init_foe`, op 22 placing in a dungeon through GFALL's own dungeon creatures, event 2, op 34.
-6. **Persons and talk**: `quest_init_person`, the live copy, event 28 from the talk window (`play/talkwin.c`), quest topics, rumours.
+6. **Persons and talk**: `quest_init_person`, the live copy, event 28 from the talk window (`play/people/talkwin.c`), quest topics, rumours.
 7. **Rewards**: gold, items, op 4 with the box; M0B00Y00 plays end to end.
 8. **Save and load** (schema bump): the quest tree, faces, global states; save mid-quest in a dungeon, load, finish.
 9. **The rest by use**: items, the other events, topics and rumours, faces, hide/restore, child quests, building access, the S quests and the main story's global states, the Daedra and temple quests, noble quests, invitation letters.

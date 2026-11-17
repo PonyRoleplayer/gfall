@@ -1,9 +1,9 @@
 #include "game/dagger/play/cheats.h"
-#include "game/dagger/play/quest.h"
-#include "game/dagger/play/curse.h"
+#include "game/dagger/play/quests/quest.h"
+#include "game/dagger/play/character/curse.h"
 #include "game/dagger/play/state.h"
-#include "game/dagger/play/vitals.h"
-#include "game/dagger/play/magic.h"
+#include "game/dagger/play/character/vitals.h"
+#include "game/dagger/play/magic/magic.h"
 #include "engine/ui/cmd.h"
 
 static int g_god;

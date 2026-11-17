@@ -3,7 +3,7 @@
 
 /* GFALL's text preferences, independent of saves. Read docs/game.md.
  * Keys are Windows virtual keys; no DOS keyboard codes enter this schema. */
-#include "game/dagger/play/steer.h"
+#include "game/dagger/play/input/steer.h"
 
 #define CONFIG_FILE "gfall\\settings.cfg"
 typedef struct Config {

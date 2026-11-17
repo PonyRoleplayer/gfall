@@ -5,11 +5,7 @@
 #include "engine/gfx/camera.h"
 #include "engine/scene/automap.h"
 
-/*
- * The only file that includes Daggerfall. It loads Privateer's Hold,
- * the menu and HUD pictures, the class rows and the click sound.
- * gfall's own sources never include src/game/dagger.
- */
+/* App interface used by the Win32 frame loop and the host game tests. */
 
 int seam_boot(void);
 void seam_title(void);

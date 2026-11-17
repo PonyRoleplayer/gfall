@@ -1,12 +1,12 @@
 #include "check_curse.h"
 #include "check_util.h"
 #include "game/dagger/play/cheats.h"
-#include "game/dagger/play/curse.h"
-#include "game/dagger/play/ailments.h"
-#include "game/dagger/play/enchant.h"
-#include "game/dagger/play/guild.h"
-#include "game/dagger/play/inventory.h"
-#include "game/dagger/play/save.h"
+#include "game/dagger/play/character/curse.h"
+#include "game/dagger/play/character/ailments.h"
+#include "game/dagger/play/magic/enchant.h"
+#include "game/dagger/play/people/guild.h"
+#include "game/dagger/play/items/inventory.h"
+#include "game/dagger/play/save/save.h"
 #include "game/dagger/play/state.h"
 #include <string.h>
 

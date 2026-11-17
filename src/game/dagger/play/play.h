@@ -1,7 +1,7 @@
 #ifndef GFALL_PLAY_H
 #define GFALL_PLAY_H
 
-#include "game/dagger/play/steer.h"
+#include "game/dagger/play/input/steer.h"
 
 #include "engine/gfx/camera.h"
 #include "engine/scene/scene.h"

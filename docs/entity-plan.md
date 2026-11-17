@@ -15,7 +15,11 @@ The picture stays what it is today: billboard sprite sets with five views and th
 
 Each claim about the current code cites the file it was read in. Claims I could not check are marked **[unverified]**. Costs are estimates, not measurements (`docs/profile.md`: measure on the target first).
 
-## 1. What exists today
+## 1. Baseline before the registry work
+
+The descriptions and line numbers below record the 2026-11-11 baseline.
+See [entities.md](entities.md) for the active registry and [architecture.md](architecture.md)
+for the current file layout.
 
 | Piece | What it is | Where |
 | --- | --- | --- |
@@ -32,8 +36,8 @@ Each claim about the current code cites the file it was read in. Claims I could 
 | Building people | An RMB people record becomes a `Flat` tagged `FLAT_PERSON` plus its faction (`rmb.c:174`). `doors_build` then makes a `USE_TALK` usable on that sprite (`what` = faction, `tag` = file and image for the face). These are not entities. | `src/game/dagger/formats/rmb.c:174`, `src/game/dagger/places/doors.c:604..618` |
 | A game's people | `world_set_people_hook(fn)`: while a building's inside is built, the game adds `FLAT_PERSON` flats or changes the block's own. Inside buildings only. | `src/game/dagger/places/world.h:31`, `world.c:1706` |
 | Dungeon people | **None.** RDB flats are made with `tag = 0` whatever their action (`rdb.c:460`), so an action-29 NPC (a castle resident) is a plain sprite: no usable, no hook. Verified. | `src/game/dagger/formats/rdb.c:451..466` |
-| Rest encounters / quest foes (GFALL) | 8 actor slots (`ENCOUNTERS`). Their identity and start point are saved by GFALL; position and health are in keep rows by key. Live ones sit in the spawn pool with **leash 0**. | `src/game/gfall/play/encounter.h`, `encounter.c:56` |
-| Other spawn users | dagger: shots (leash 0), conjured creatures (leash 64 m, `conjure.c:17`). GFALL: ground piles (4), dungeon splashes (8), spell visuals (8) and a light (1). | `src/game/dagger/play/shots.c:131`, `conjure.c:76`, `src/game/gfall/play/ground.c:14`, `dungeon.c:43`, `casting.c:18`, `:279` |
+| Rest encounters / quest foes (GFALL) | 8 actor slots (`ENCOUNTERS`). Their identity and start point are saved by GFALL; position and health are in keep rows by key. Live ones sit in the spawn pool with **leash 0**. | `src/game/dagger/play/combat/encounter.h`, `play/combat/encounter.c` |
+| Other spawn users | dagger: shots (leash 0), conjured creatures (leash 64 m, `conjure.c:17`). GFALL: ground piles (4), dungeon splashes (8), spell visuals (8) and a light (1). | `src/game/dagger/play/shots.c:131`, `conjure.c:76`, `play/items/ground.c`, `play/combat/dungeon.c`, `play/magic/casting.c` |
 
 Corrections to the brief:
 

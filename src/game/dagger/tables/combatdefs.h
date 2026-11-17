@@ -18,6 +18,7 @@ const AnimScript *foe_type_script(int texture_kind);
 int foe_type_flags(int texture_kind);
 int foe_weight(int kind);
 int foe_category(int kind);
+int foe_language(int kind);
 int foe_parries(int kind);
 int foe_texture_kind(int kind);
 void foe_corpse(int kind, int *file, int *record);

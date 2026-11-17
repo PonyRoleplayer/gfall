@@ -1,8 +1,8 @@
 #include <string.h>
 #include "check_entry.h"
 #include "check_util.h"
-#include "game/dagger/play/entry.h"
-#include "game/dagger/play/guild.h"
+#include "game/dagger/play/people/entry.h"
+#include "game/dagger/play/people/guild.h"
 #include "game/dagger/play/state.h"
 
 void check_entry(void)

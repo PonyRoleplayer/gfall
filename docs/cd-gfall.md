@@ -147,7 +147,7 @@ The list is the materials that piece comes in: the ten metals, then leather and 
 
 The well is that piece's paper-doll record, drawn with the texture reader and `cif_metal` for a metal. Leather and chain keep the picture's own colours. The default wearer is a Breton man: archive `249 + 2` (a man's archives start at 249, a woman's at 245, and Breton's body shape is 2). The record is the template's `player_record` plus the variant. A metal uses `plate_low` through `plate_high`, leather uses `leather_low` through `leather_high`, chain uses `chain_low` through `chain_high`, both ends included. Left and right step the variant, the same keys that step a weapon frame. Two buttons under the well, **Man** and **Woman**, flip 249 and 245. The body shape stays human for this slice, so there is no race picker. The status says `Breton man` or `Breton woman`.
 
-The grid is the item, the armour template, and the material, then the made line. The sums are the ones `item_make` uses, copied here so the app still does not include `play/inventory.c`:
+The grid is the item, the armour template, and the material, then the made line. The sums are the ones `item_make` uses, copied here so the app still does not include `play/items/inventory.c`:
 
 - value = price × `value_mul` × `value_q`
 - weight = whole quarter-kilograms × `weight_q` / 4, half rounded to even, back to kilograms

@@ -2,11 +2,11 @@
 #include <stdio.h>
 #include "check_potion.h"
 #include "check_util.h"
-#include "game/dagger/play/potion.h"
+#include "game/dagger/play/magic/potion.h"
 #include "game/dagger/play/state.h"
-#include "game/dagger/play/inventory.h"
-#include "game/dagger/play/spellbook.h"
-#include "game/dagger/play/magic.h"
+#include "game/dagger/play/items/inventory.h"
+#include "game/dagger/play/magic/spellbook.h"
+#include "game/dagger/play/magic/magic.h"
 #include "game/dagger/tables/itemdefs.h"
 
 void check_potion(void)

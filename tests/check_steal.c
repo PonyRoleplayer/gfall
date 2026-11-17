@@ -1,12 +1,12 @@
 #include <string.h>
 #include "check_steal.h"
 #include "check_util.h"
-#include "game/dagger/play/steal.h"
-#include "game/dagger/play/market.h"
-#include "game/dagger/play/law.h"
-#include "game/dagger/play/guild.h"
+#include "game/dagger/play/people/steal.h"
+#include "game/dagger/play/people/market.h"
+#include "game/dagger/play/people/law.h"
+#include "game/dagger/play/people/guild.h"
 #include "game/dagger/play/state.h"
-#include "game/dagger/play/inventory.h"
+#include "game/dagger/play/items/inventory.h"
 
 void check_steal(void)
 {

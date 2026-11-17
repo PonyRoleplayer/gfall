@@ -1,9 +1,9 @@
 #include "game/dagger/play/state.h"
 #include "engine/core/mem.h"
-#include "game/dagger/play/inventory.h"
-#include "game/dagger/play/magic.h"
-#include "game/dagger/play/enchant.h"
-#include "game/dagger/play/quest.h"
+#include "game/dagger/play/items/inventory.h"
+#include "game/dagger/play/magic/magic.h"
+#include "game/dagger/play/magic/enchant.h"
+#include "game/dagger/play/quests/quest.h"
 #include "game/dagger/tables/combatdefs.h"
 #include "engine/scene/clock.h"
 
@@ -643,7 +643,7 @@ static int objects_valid(const GameState *state)
 static int clock_and_view_valid(const GameState *state)
 {
     int i;
-    if (state->progress.checked > state->minutes || state->progress.points < 0 || state->progress.points > 6 ||
+    if (state->progress.checked > state->minutes || state->progress.points < 0 || state->progress.points > OGHMA_POINTS ||
         state->progress.active < 0 || state->progress.active > 1 ||
         (!state->progress.active && state->progress.points) ||
         state->progress.base_sum < -1500 || state->progress.base_sum > 600 || state->progress.raised_hi > 7) { return 0; }

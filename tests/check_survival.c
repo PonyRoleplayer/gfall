@@ -1,10 +1,10 @@
 #include "check_survival.h"
 #include "check_util.h"
-#include "game/dagger/play/survival.h"
+#include "game/dagger/play/character/survival.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/cheats.h"
-#include "game/dagger/play/dungeon.h"
-#include "game/dagger/play/save.h"
+#include "game/dagger/play/combat/dungeon.h"
+#include "game/dagger/play/save/save.h"
 #include "engine/core/mem.h"
 #include "engine/scene/walker.h"
 

@@ -1,10 +1,10 @@
 #include <string.h>
 #include "check_guild.h"
 #include "check_util.h"
-#include "game/dagger/play/guild.h"
-#include "game/dagger/play/hours.h"
+#include "game/dagger/play/people/guild.h"
+#include "game/dagger/play/people/hours.h"
 #include "game/dagger/play/state.h"
-#include "game/dagger/play/save.h"
+#include "game/dagger/play/save/save.h"
 
 static void skills(int a, int b, int c)
 {

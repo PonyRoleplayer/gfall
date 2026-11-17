@@ -1,39 +1,78 @@
 # GFALL: from Privateer's Hold to the full game
 
-Status: 2026-11-13. GFALL.EXE plays from character creation through Privateer's Hold, the streamed
-world, towns and houses, with combat, magic (casting, the spell maker, potions, magic items and the item
-maker's rules), people and law (talk, shops, banks, lodging, the court, steal, guilds), the travel map
-and its journeys, riding and the wagon, the afflictions, and the quest machine. Saves are the game's own
-(`gfall/saves`, schema 17); preferences and bindings live in `gfall/settings.cfg`. Design and per-system
-history are in [game.md](game.md); known bugs and shortcuts in [game-later.md](game-later.md).
-Work happens on `main`; the first-generation player was retired on 2026-11-12 (tag `before-gfall-retire`).
+Status as of 2026-11-16. GFALL.EXE plays from character creation through
+Privateer's Hold into the streamed world. It includes combat, magic and
+crafting, towns and guild services, law, travel, curses and the quest machine.
+Recent work added opposing creature teams, marker-time pacification, outdoor
+encounters, inventory magic animation, guild identification and soul release.
+GFALL saves use schema 18 under `gfall/saves`. Preferences and bindings live in
+`gfall/settings.cfg`. See [game.md](game.md) for implementation notes and
+[game-later.md](game-later.md) for specific gaps. The first-generation player was
+retired on 2026-11-12 at tag `before-gfall-retire`.
 
 ## What is still missing
 
-Checked against the notes in game.md and game-later.md on 2026-11-13. Target acceptance (a real
-233/Voodoo 1) is open for almost everything; the checklist below is what to tick.
+### Main story and quests
 
-- **Quests and the main story.** Not played end to end on the target (the Daggerfall quests vanishing on the
-  VM is being traced from `console.log`; COUNT.DAT's dangling buffer was one cause). Main-story global states
-  are set by dungeon actions and only two are hooked (Mantellan Crux, Lysandus' Tomb). Quest foes and
-  persons are not yet placed at every RDB marker; foe gear (op 22), respawn ops 9 and 87, pacify and spell
-  ops 68 and 69, quest creatures through a save, the cures of vampirism and lycanthropy (ops 58 and 59),
-  Daedra, temple and guild-invitation letters, noble quests (they need the regions' event flags), the
-  logbook's own page, notes page and a saved log.
-- **Enchanting's effects.** The item maker's rules and data are built; the held spell's wear, enchanted
-  arrows and creatures' weapons, artifacts' texts, the identify service and the soul summon of a broken
-  soul-bound item are not.
-- **Combat.** Fleeing, teams and inter-creature fights, enchantment strike effects, knockback collision
-  damage, pacifying by language and Personality when a creature is placed (`docs/game-later.md`, For
-  later), and the watch's 5%-a-minute guard roll.
-- **The world.** Outdoor encounters, region events and the Daedra's weather, houses and ships for sale,
-  Where-is's People list, street people on the entity registry (entity plan step 10), a moving local light.
-- **Presentation.** The opening and death movies are skipped; joystick is unsupported; Detail is stored
-  and applied only as the texture and sprite detail options.
-- **The 233.** Dungeons load whole (streaming them is measured-first work), shop coins and the 320 x 200
-  repaints, the far clip and the stream budget are unmeasured; a crash entering a second building while
-  chased by the watch is not reproduced.
-- **Later, by choice.** P13 (our own ruleset), EAX, a modern indoor map, the pony project.
+- The story starts after the Hold. Both dungeon actions that set global story
+  states are wired. The royal audiences, later dungeon stages and every ending
+  still need checkpointed playthroughs.
+- The installed 232 QBN files use 69 opcode IDs across 5,655 records. GFALL
+  dispatches 62 IDs across frame and event handlers. Six absent IDs perform
+  actions in FALL.EXE and appear in 103 records across 26 files. They are movie
+  playback (50), immediate sound (60), casting on a quest foe (69), faction flag
+  changes (85 and 86), and foe respawn (87). Op 38 is absent and does nothing in
+  FALL.EXE. GFALL currently skips unhandled frame ops silently. Handler presence
+  measures static coverage. Branch reachability and parity require playthroughs.
+- Quest foes can persist through saves, and op 68 can pacify or release them.
+  Quest-specified equipment and exact MAPS/RMB site selection still need work.
+  The Where-is menu lacks its People list and some quest-specific answers.
+- Letters and guild invitations are wired. Courier timing still differs on
+  fast travel, during rest and inside buildings. The quest-minute pass runs
+  once per batched advance, so repeated interval and chance checks can diverge.
+  The saved log has entries on parchment. The original logbook controls and
+  copied notes page are missing.
+- Vampirism and lycanthropy have scheduled cure quests and cure opcodes.
+  Both cure adventures still need end-to-end tests. Crypt-marker arrival,
+  infection dreams and racial hit effects remain open.
+
+### Combat, magic, and world systems
+
+- Opposing creatures can fight, marker pacification survives reload and ends
+  on damage, and random encounters cover outdoor walking or rest and dungeon
+  rest. Remaining work includes knockback collision damage, the watch's
+  recurring wanted-player checks, and overdue-loan penalties and collectors.
+- Equipment wear, strike enchantments, soul release, guild Identify and the
+  animated inventory magic mark are in use. The Identify spell and some unique
+  artifact powers remain open. Creatures can use enchanted weapons. Standard
+  creature gear generation still produces plain equipment, and the Skull of
+  Corruption currently copies non-class creatures.
+- Daedra summoning reaches its outcome prompt. It still needs actual weather,
+  a prince's quest and the allied-creature outcome. Region politics, events
+  and price or news updates remain incomplete. Installed noble work already
+  includes ordinary R0C quests from marked nobles.
+- Banks have accounts and loans. Buying houses and ships, entering and using
+  owned property, and the town's sale listings remain incomplete. Building
+  access still approximates some original flags, lockpick persistence and
+  trespass behavior. Street people still use the places layer's pool.
+- Opening, death, infection and scripted movies need playback. Joystick and
+  the moving local light remain open. Detail currently controls texture and
+  sprite quality.
+
+### Deferred save work and target acceptance
+
+- A slot is roughly 288 KiB at the current schema's maximum. World capture
+  refuses the save at 513 keep records, the automap saves its first 8,192 rows,
+  and quest packing has a separate 24 KiB limit. The deferred plan is to store
+  changes by place and page them from disk within the 64 MB RAM budget.
+  See [long-campaign save limits](game-later.md#long-campaign-save-limits-2026-11-16).
+- Host tests and Win98 binary checks pass. Full-game stability, peak RAM/VRAM,
+  frame pacing, outdoor encounter art loads and animated panel repaints still
+  need measurement on the MMX 233/Voodoo 1. Dungeons load whole, and streaming
+  them remains measured-first work. The reported crash when entering a second
+  building during a watch pursuit still needs a target reproduction.
+- Deliberately deferred work includes the original tutorial, P13, EAX, a modern
+  indoor map and further work on Pony97.
 
 ### Target playtest still needed
 
@@ -88,6 +127,13 @@ host images do not establish Glide appearance, input behavior or target speed.
       doors remaining unlocked after closing, saving and restarting.
 - [ ] Teleporters: touch and by-hand arrivals, crouch, retained facing/look,
       paired-pad arrival guard, save pose and no arrival leaking across a load.
+- [ ] Encounters and teams: wilderness and settlement spawns, dungeon rest
+      interruption, loot and slot reuse, allied combat, and pacification across
+      damage and a reload.
+- [ ] Enchanting: animated marks in both inventory columns and worn accessory
+      slots, paid guild identification, and hostile soul release after a break.
+- [ ] Story: leave the Hold, receive Brisienna's letter, run the royal audiences
+      and both dungeon switches, and checkpoint each ending route.
 - [ ] Death: Load, cancel loading, return to title/new game with no saves, Quit;
       dead saves cannot be written and older dead saves fail with an explanation.
 - [ ] Save/restart/load: preserve equipment, styles, names, quantities, gold,
@@ -97,8 +143,9 @@ host images do not establish Glide appearance, input behavior or target speed.
 
 Measure RAM/VRAM use, loading time and frame rate on the MMX 233/Voodoo 1 as
 content grows. Full-game performance and long-session stability remain open.
-Address target regressions first, finish dungeon survival/combat, then implement
-casting and effects before extending the playable world beyond the Hold.
+Prioritize story progression and reproducible target regressions. Run the new
+encounter and enchanting paths alongside the main-story checkpoints. When
+the deferred save work resumes, address the world capture failure first.
 
 ### Engineering follow-up
 
@@ -271,7 +318,7 @@ certain reachable hits. Breath simulation is now implemented; spellcasting remai
 
 - Original sensing, turning and wall navigation now run on engine bodies with
   ASCR strike events. Creature casting and ordinary disease hit effects are
-  connected. Complete teams, fleeing and curse hit effects.
+  connected. Complete curse hit effects.
 - Finish enchantment/artifact strike effects, collision damage from knockback,
   original human/guard special initialization and the original death movie.
 - Lockpicking/bashing, teleport arrivals, ordinary action triggers/effects,
@@ -480,12 +527,9 @@ can use the decomp's `tools/fallplay.py`, `tools/fallemu.py` and
 Compare fixed-step/deterministic rule results rather than assuming both engines
 consume wall-clock frames or random numbers identically.
 
-Maintain `src/game/gfall/{formats,tables,places,play}`. GFALL never includes
-`game/dagger` or another game's play code. `apps/gfall/seam.c` remains the
-explicit shared-data adapter; split it into focused app adapters when justified
-instead of making it a second gameplay layer. Do not duplicate an existing file
-reader merely to remove this seam. Propose shared-format extraction separately
-if it becomes necessary. New original-derived data belongs in GFALL tables,
+Keep Daggerfall's rules in `src/game/dagger/` under the existing layer
+boundaries. The subsystem adapters in `apps/gfall/` connect the app to the
+game. Reuse existing readers. Put original-derived data in the owning table
 with source addresses and typed schemas where the record system is used.
 
 Use existing engine facilities first. If a capability is truly missing (for

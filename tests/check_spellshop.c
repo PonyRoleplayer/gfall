@@ -1,11 +1,11 @@
 #include <string.h>
 #include "check_spellshop.h"
 #include "check_util.h"
-#include "game/dagger/play/spellshop.h"
+#include "game/dagger/play/magic/spellshop.h"
 #include "game/dagger/play/state.h"
-#include "game/dagger/play/inventory.h"
-#include "game/dagger/play/magic.h"
-#include "game/dagger/play/spellmaker.h"
+#include "game/dagger/play/items/inventory.h"
+#include "game/dagger/play/magic/magic.h"
+#include "game/dagger/play/magic/spellmaker.h"
 #include "game/dagger/tables/magicdefs.h"
 #include "game/dagger/tables/itemdefs.h"
 

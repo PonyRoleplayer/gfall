@@ -37,32 +37,32 @@ Written 2026-11-10 before any code, from the decomp's `docs/item-enchantments-in
 ## Slice 1 built (2026-11-10)
 
 - **One path**: `state_equip` (state.c) removes the old item's effects, sets the slot and applies the new item's, so every way an item goes in or out (the inventory, the paper doll, the hands, a trade, a drop) applies and removes (9.9 fixed). Loading a save applies nothing (the skill, the condition and the lasting spells are in the saved state).
-- **`play/enchant.c`**: Cast when held (type 1): `magic_hold` casts the spell on the player as a lasting effect (every effect's duration -1, icon 200 + the item's slot, level 8 as for every icon of 200 and over, no merging with an identical one), `magic_release` ends it with the item (9.11 fixed); Absorbs spells (9): the condition 0x200 while any worn item holds it (9.10's absorption fix); Enhances skill (10): +15 and -15. `item_enchantment` reads an item's enchantments whether made here or a guild's.
+- **`play/magic/enchant.c`**: Cast when held (type 1): `magic_hold` casts the spell on the player as a lasting effect (every effect's duration -1, icon 200 + the item's slot, level 8 as for every icon of 200 and over, no merging with an identical one), `magic_release` ends it with the item (9.11 fixed); Absorbs spells (9): the condition 0x200 while any worn item holds it (9.10's absorption fix); Enhances skill (10): +15 and -15. `item_enchantment` reads an item's enchantments whether made here or a guild's.
 - **On screen**: the HUD's effect icons already draw icon 10 for 200 and over; a lasting spell no longer blinks (`permanent`). The inventory's lists mark an enchanted item with TEXTURE.380 record 5 under its picture (`paint_enchant_mark`; the equipment slots on the paper doll do not yet). An enchanted weapon that is not a bow is drawn from `WEAPO1##.CIF` (`WeaponView.enchanted`), the plain picture when there is none.
 - **Not yet**: the wear a held spell puts on the item (its spell cost, once the wear and break rules of slice 2 exist), Regens health's stamp, and every tick effect.
-- Test: `check_ogmagicitem.c`: rings made with the item maker, worn and taken off.
+- Test: `check_magicitem.c`: rings made with the item maker, worn and taken off.
 
 ## Slice 2 built (2026-11-10)
 
-- **Wear and breaking** (`item_damage`, `item_break` in `play/enchant.c`): the condition goes down by n; an item with no more than that breaks: condition 0, "%s is broken.", worn effects removed (it is taken off), a soul-bound enchanted item says "The soul from your broken item is released." and an enchanted item is deleted (a plain one stays in the pack, broken). Not built: the soul's creature coming back hostile (the summon; 9.8 is moot until it is).
+- **Wear and breaking** (`item_damage`, `item_break` in `play/magic/enchant.c`): the condition goes down by n; an item with no more than that breaks: condition 0, "%s is broken.", worn effects removed (it is taken off), a soul-bound enchanted item says "The soul from your broken item is released." and an enchanted item is deleted (a plain one stays in the pack, broken). Not built: the soul's creature coming back hostile (the summon; 9.8 is moot until it is).
 - **The tick** (`enchant_minutes`, from `state_pass_minutes`; `effects_tick`'s amount: the minutes since the last step over four, a gap over 100 thrown away, the stamp reset by equipping Regens health): Cast when held wears 1 a step; Regens health by param (all the time, daylight, darkness), 1 in 10 wears when it did not reach the maximum; Vampiric effect at range hurts the nearest creature within 128 and heals and wears by the amount; Repairs objects mends the first damaged carried item (not arrows or magic items), 1 in 10 wears; Item deteriorates (always, daylight, temple) breaks the item when it has no more than the amount; User takes damage (daylight, temple) through `damage_player`; Health leech params 1 and 2 after 1440 and 10080 minutes since the last kill (`last_kill` in the state, schema 15, set by the player's kills). The held spell's cost now wears the item at equip, each spell by its own cost (9.16).
 - **Extra spell pts** (`enchant_frame`, every world frame): +75 maximum magicka while the parameter holds (season by month, the moons by `(minutes / 1440) & 31` and the other plus 5760, a creature of the category within 1024), the maximum rebuilt from Intelligence and the class each frame while an item gives one and once more when the last comes off; the magicka grows by 5 a step for the creature parameters.
-- **The world** the tick asks (`EnchantWorld`, `seam.c`): daylight is 6:00 to 18:00 outdoors, a temple is a building of type 14, creatures are the dungeon module's (`dungeon_nearest_distance`, `_category_within`, `_hurt_nearest`).
-- Tests: `check_ogmagicitem.c` (wear and break, the 8-minute and 100-minute steps and the 150-minute gap, Extra spell pts on and off, an item deteriorating until gone). Not tested by hand: Vampiric, Repairs objects, User takes damage and Health leech's clock (they use the same step).
+- **The world** the tick asks (`EnchantWorld`, `apps/gfall/boot.c`): daylight is 6:00 to 18:00 outdoors, a temple has type `BUILDING_TEMPLE`, creatures are the dungeon module's (`dungeon_nearest_distance`, `_category_within`, `_hurt_nearest`).
+- Tests: `check_magicitem.c` (wear and break, the 8-minute and 100-minute steps and the 150-minute gap, Extra spell pts on and off, an item deteriorating until gone). Not tested by hand: Vampiric, Repairs objects, User takes damage and Health leech's clock (they use the same step).
 
 ## Slice 3 built (2026-11-10)
 
 - **Use** (`item_use` in `enchant.c`, from `possessions_use`, inv_use_item): every Cast when used of the item fires in order, each wearing the item by 10 (even when the spell then has to be aimed), and Health leech "whenever used" costs the user `(level >> 1) + 1` health through `damage_player` and wears the item by 2. The item's ordinary use (books, clothing, the spellbook) follows for those groups; an enchanted item with nothing else is used up in the one step.
 - **The cast** (`magic_cast_item` in `casting.c`, cast_item_used_spell): nothing is paid, silence does not stop it and is not left off afterwards (9.1 fixed), the last spellbook spell is untouched, aborting refunds nothing (9.2 fixed). A spell on the caster goes at once with the element's hand and sound; any other is readied as a spell object of its own in the pack ("Press button to fire spell."), fired with the attack button like a spellbook spell, and the object is deleted once the spell is no longer readied. The inventory is put away when a spell is readied so it can be aimed.
 - **The magic item key** (`MAGIC_ITEM`, magic_items_open): a list of the carried items with a Cast when used, each by name; the pick is used. Nothing opens with none.
-- Test: `check_ogmagicitem.c` (Levitate on the user and the wear of 10, a Wizard's Fire ring readied and put away, Health leech's cost and wear).
+- Test: `check_magicitem.c` (Levitate on the user and the wear of 10, a Wizard's Fire ring readied and put away, Health leech's cost and wear).
 - Not built: the "usable" icon, artifacts' uses, the casting delay by Intelligence, the quest event, and the skill training an item's spell would give.
 
 ## Slice 4 built (2026-11-10)
 
 - **The player's blow** (`resolve_player`, `dungeon.c`): after the weapon's damage, `enchant_hit_bonus` adds Potent vs the wielder's level against the creature's category and takes Low damage vs off (9.3: they apply whatever else is on the weapon, and the class's modifiers stay); a class creature counts as a humanoid. Health leech "whenever used" costs the wielder `(level >> 2) + 1` on every hit (9.19 kept). After the hit, `enchant_strike` fires each Cast when strikes spell through the weapon on the creature struck (`magic_strike`: a touch or range spell on the creature, with icon 250; an area spell, Fire Storm or Ice Storm, bursting where the creature stands and not on the wielder: 9.4 fixed) wearing the weapon by 10, and Vampiric effect "when strikes" heals the wielder half the damage dealt (clamped) and wears the weapon by a quarter of it and one.
 - **Armour** (`enchant_armor_modifier`, from `fighter_player`): Strengthens armor takes 25 off every part's armour value, Weakens armor adds 25; only the first of either over the worn items counts (9.10 kept); clamped to -100..100.
-- Test: `check_ogmagicitem.c` (the bonus and the penalty by category, the leech, the vampiric heal and wear, the armour modifier). The strike spell's casting at a creature is not host-tested.
+- Test: `check_magicitem.c` (the bonus and the penalty by category, the leech, the vampiric heal and wear, the armour modifier). The strike spell's casting at a creature is not host-tested.
 - Not built: arrows (a bow's hits do not read the weapon's enchantments), creatures with enchanted weapons (GFALL's creatures carry plain gear), Namira's reflect, and the hit wear of enchanted armour.
 
 ## Slice 5 built (2026-11-11)
@@ -70,4 +70,25 @@ Written 2026-11-10 before any code, from the decomp's `docs/item-enchantments-in
 - **Carrying** (`enchant_capacity`, from `inventory_capacity`, carry_capacity): the first worn item (slot order) with Increased Weight Allowance makes the capacity `* 320 / 256` (param 0) or `* 384 / 256`; later ones are ignored (9.10 kept).
 - **Weight** (`enchant_weight`, from `inventory_weight`, object_weight_add): the first Feather Weight or Extra weight of an item decides: weight 1, or four times its weight and at least 20; the count of a stack still multiplies it.
 - **Reactions** (`enchant_reaction`, in `talk.c`'s disposition, reaction_mod_item_cb): over every item carried, worn or not, +10 for Good rep with All or the person's social group and -10 for Bad rep with. The talk window's attitude and greeting already read the disposition.
-- Test: `check_ogmagicitem.c`. With this the five slices of the plan are built; what remains is listed under "Not built" in each: the soul summon on a broken soul-bound item, arrows and creatures with enchanted weapons, the usable icon, artifacts, the identify service, and the enchanted mark on the paper doll's equipment slots.
+- Test: `check_magicitem.c`. With this the five slices of the plan are built; what remains is listed under "Not built" in each: the soul summon on a broken soul-bound item, arrows and creatures with enchanted weapons, the usable icon, artifacts, the identify service, and the enchanted mark on the paper doll's equipment slots.
+
+## Inventory and combat follow-up
+
+- The inventory cycles TEXTURE.380 record 5 at 80 ms per frame under magic
+  items in the item lists and accessory slots, including unidentified items.
+  The nine frames are 51 × 39. List cells crop the image and accessory slots
+  scale it. A visible marker invalidates the cached inventory at a frame change.
+- Ordinary combat wear now uses the same break path as an enchantment charge.
+  A broken soul-bound item releases its creature through the place adapter.
+  Dungeons keep the creature with the other encounter actors. Indoor and
+  outdoor releases use transient entities. A release still needs a free actor
+  slot, a reachable floor spot and available creature art.
+- Guild Identify handles one item per offer at the original per-item price.
+  Unidentified shop items display their base names and unknown powers. Existing
+  saves keep their known powers. Artifact quest items use their original
+  names, sprites and descriptions, with hooks for Hircine, Namira, Azura, the Masque and the Oghma Infinium.
+- A creature wielding an enchanted weapon can apply its hit bonus, strike spell
+  and vampiric effect. The standard creature equipment generator still rolls
+  plain gear. The player’s bow already carries its enchantment into arrow hits.
+- Open work includes Identify as a cast spell, the remaining bespoke artifact
+  powers, and Win98 hardware testing of animation cost.

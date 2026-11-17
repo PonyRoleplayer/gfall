@@ -2,10 +2,10 @@
 #include <stdio.h>
 #include "check_talkwin.h"
 #include "check_util.h"
-#include "game/dagger/play/talkwin.h"
-#include "game/dagger/play/standing.h"
+#include "game/dagger/play/people/talkwin.h"
+#include "game/dagger/play/people/standing.h"
 #include "game/dagger/play/state.h"
-#include "game/dagger/play/law.h"
+#include "game/dagger/play/people/law.h"
 #include "game/dagger/play/play.h"
 
 /* A town of a bank (type 3), two taverns (15), an armorer (2) and a house (1), at known distances from the player. */
@@ -123,8 +123,14 @@ void check_talkwin(void)
     row_click(2);
     check_expect(w->row == 12, "talkwin: a category click did not select its number");
     click_in(TB_OKAY);
-    check_expect(!w->categories && w->category == 12 && w->count == 3 && !strcmp(w->item[0].text, "Previous List") &&
-                 !strcmp(w->item[1].text, "Place 102") && !strcmp(w->item[2].text, "Place 101") && w->row == 1, "talkwin: the tavern list is not nearest first");
+    {
+        TwItem previous, near, far;
+
+        check_expect(!w->categories && w->category == 12 && w->count == 3 && w->row == 1 &&
+                     talkwin_item(0, &previous) && !strcmp(previous.text, "Previous List") &&
+                     talkwin_item(1, &near) && !strcmp(near.text, "Place 102") &&
+                     talkwin_item(2, &far) && !strcmp(far.text, "Place 101"), "talkwin: the tavern list is not nearest first");
+    }
     check_expect(w->question_count > 0 && strstr(w->question[0], "[7226|Place 102") != 0, "talkwin: the question for the nearest tavern is not 7226 (normal tone) with its name");
 
     /* Tones change the question's record. */

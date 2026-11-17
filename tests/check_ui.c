@@ -12,27 +12,27 @@
 #include "engine/ui/pic.h"
 #include "game/dagger/formats/sndfile.h"
 #include "game/dagger/formats/texture.h"
-#include "game/dagger/play/chargen.h"
+#include "game/dagger/play/character/chargen.h"
 #include "game/dagger/play/config.h"
-#include "game/dagger/play/controls.h"
-#include "game/dagger/play/files.h"
-#include "game/dagger/play/move.h"
-#include "game/dagger/play/options.h"
+#include "game/dagger/play/input/controls.h"
+#include "game/dagger/play/save/files.h"
+#include "game/dagger/play/input/move.h"
+#include "game/dagger/play/ui/options.h"
 #include "game/dagger/play/play.h"
 #include "game/dagger/play/state.h"
-#include "game/dagger/play/possessions.h"
-#include "game/dagger/play/kit.h"
-#include "game/dagger/play/inventory.h"
-#include "game/dagger/play/describe.h"
-#include "game/dagger/play/activate.h"
-#include "game/dagger/play/hud.h"
-#include "game/dagger/play/msg.h"
+#include "game/dagger/play/items/possessions.h"
+#include "game/dagger/play/character/kit.h"
+#include "game/dagger/play/items/inventory.h"
+#include "game/dagger/play/items/describe.h"
+#include "game/dagger/play/input/activate.h"
+#include "game/dagger/play/ui/hud.h"
+#include "game/dagger/play/ui/msg.h"
 #include "game/dagger/tables/itemdefs.h"
-#include "game/dagger/play/save.h"
-#include "game/dagger/play/screen.h"
-#include "game/dagger/play/weapon.h"
-#include "game/dagger/play/rest.h"
-#include "game/dagger/play/dungeon.h"
+#include "game/dagger/play/save/save.h"
+#include "game/dagger/play/ui/screen.h"
+#include "game/dagger/play/combat/weapon.h"
+#include "game/dagger/play/character/rest.h"
+#include "game/dagger/play/combat/dungeon.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -46,6 +46,7 @@ void seam_creatures(const Camera *camera);
 Level *seam_level(void);
 const df_u8 *seam_screen(const df_u8 **palette);
 void seam_title(void);
+void seam_enchant_test_frame(int frame);
 static GameState g_before, g_saved;
 static Camera g_camera;
 void check_game_draw_reset(void);
@@ -462,6 +463,48 @@ static void check_save_load(const char *root, const char *test_root)
     check_expect(!memcmp(&g_saved, game_state(), sizeof(g_saved)), "focus reset does not move or advance the session");
 }
 
+static void check_enchant_mark(df_u32 sword, df_u32 loot)
+{
+    df_u8 cell[50*37];
+    const df_u8 *screen;
+    ItemEnchant *enchant;
+    int frame, i, row, changed, different;
+
+    for (i = 0; i < ENCHANTED_ITEMS && item_enchant_edit(i)->item; i++) { }
+    enchant = item_enchant_edit(i);
+    if (!enchant) { check_expect(0,"room for a magic inventory fixture"); return; }
+    check_expect(texture_frame_count(380,5) == 9,"the original magic inventory mark has nine frames");
+    possessions_open(VIEW_INVENTORY,loot);
+    seam_enchant_test_frame(0);
+    seam_present();
+    screen = seam_screen(0);
+    for (row = 0; row < 37; row++) { mem_copy(cell+row*50,screen+(48+row)*320+270,50); }
+    possessions_close();
+
+    enchant->item = sword;
+    enchant->identified = 1;
+    for (i = 0; i < 10; i++) { enchant->type[i] = enchant->param[i] = -1; }
+    enchant->type[0] = 12;
+    possessions_open(VIEW_INVENTORY,loot);
+    seam_present();
+    screen = seam_screen(0);
+    changed = 0;
+    for (row = 0; row < 37; row++) { changed |= memcmp(cell+row*50,screen+(48+row)*320+270,50) != 0; }
+    check_expect(changed,"the enchanted mark is visible under the item in the composed inventory");
+    for (row = 0; row < 37; row++) { mem_copy(cell+row*50,screen+(48+row)*320+270,50); }
+    different = 0;
+    for (frame = 1; frame < 9; frame++) {
+        seam_enchant_test_frame(frame);
+        seam_present();
+        screen = seam_screen(0);
+        for (row = 0; row < 37; row++) { different |= memcmp(cell+row*50,screen+(48+row)*320+270,50) != 0; }
+    }
+    check_expect(different,"the inventory repaints its magic mark as the animation advances without input");
+    possessions_close();
+    seam_enchant_test_frame(-1);
+    mem_zero(enchant,sizeof(*enchant));
+}
+
 static void check_inventory_completion(const char *test_root)
 {
     static GameState saved, fixture, disk;
@@ -481,6 +524,7 @@ static void check_inventory_completion(const char *test_root)
     n = inventory_rows(game_state()->inventory_id,-1,rows,OBJECTS);
     for (i = 0; i < n; i++) { check_expect(inventory_transfer(rows[i],stash), "isolate the carried pack for original inventory scenarios"); }
     sword = item_create(loot,3,0,1);
+    check_enchant_mark(sword,loot);
     possessions_open(VIEW_INVENTORY,loot);
     click(290,60);
     check_expect(object_at(sword)->parent == game_state()->inventory_id && item_equipped(sword) == 19,

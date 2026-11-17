@@ -1,31 +1,32 @@
 #include "game/dagger/play/state.h"
-#include "game/dagger/play/curse.h"
-#include "game/dagger/play/possessions.h"
-#include "game/dagger/play/inventory.h"
+#include "game/dagger/play/character/curse.h"
+#include "game/dagger/play/items/possessions.h"
+#include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/play.h"
-#include "game/dagger/play/law.h"
-#include "game/dagger/play/weapon.h"
-#include "game/dagger/play/combat.h"
+#include "game/dagger/play/people/law.h"
+#include "game/dagger/play/combat/weapon.h"
+#include "game/dagger/play/combat/combat.h"
 #include "game/dagger/play/cheats.h"
-#include "game/dagger/play/rest.h"
-#include "game/dagger/play/actions.h"
-#include "game/dagger/play/magic.h"
-#include "game/dagger/play/travel.h"
-#include "game/dagger/play/maps.h"
-#include "game/dagger/play/dungeon.h"
+#include "game/dagger/play/character/rest.h"
+#include "game/dagger/play/combat/encounter.h"
+#include "game/dagger/play/travel/actions.h"
+#include "game/dagger/play/magic/magic.h"
+#include "game/dagger/play/travel/travel.h"
+#include "game/dagger/play/travel/maps.h"
+#include "game/dagger/play/combat/dungeon.h"
 #include "game/dagger/tables/itemdefs.h"
 
-#include "game/dagger/play/activate.h"
-#include "game/dagger/play/chargen.h"
-#include "game/dagger/play/hud.h"
-#include "game/dagger/play/move.h"
-#include "game/dagger/play/msg.h"
-#include "game/dagger/play/options.h"
+#include "game/dagger/play/input/activate.h"
+#include "game/dagger/play/character/chargen.h"
+#include "game/dagger/play/ui/hud.h"
+#include "game/dagger/play/input/move.h"
+#include "game/dagger/play/ui/msg.h"
+#include "game/dagger/play/ui/options.h"
 #include "game/dagger/play/config.h"
-#include "game/dagger/play/controls.h"
-#include "game/dagger/play/files.h"
-#include "game/dagger/play/save.h"
-#include "game/dagger/play/screen.h"
+#include "game/dagger/play/input/controls.h"
+#include "game/dagger/play/save/files.h"
+#include "game/dagger/play/save/save.h"
+#include "game/dagger/play/ui/screen.h"
 #include "game/dagger/tables/tables.h"
 
 #include "engine/core/df.h"
@@ -610,6 +611,14 @@ int play_frame(const PlayIn *in, Camera *cam, const Scene *scene)
     }
     if (cam) {
         move_camera(cam);
+        encounter_update(scene,cam);
+        if (game_state()->minutes > minute && character_state()->health > 0) {
+            df_u32 elapsed;
+
+            for (elapsed = minute+1; elapsed <= game_state()->minutes; elapsed++) {
+                encounter_minute(scene,cam,elapsed,ENCOUNTER_WALK);
+            }
+        }
         casting = magic_visible();
         {
             StrikeInfo strike;

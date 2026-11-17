@@ -1,6 +1,8 @@
 #ifndef DF_COMMERCE_H
 #define DF_COMMERCE_H
 
+#include "game/dagger/tables/buildingtypes.h"
+
 #include "engine/assets/recfile.h"
 
 /*
@@ -42,28 +44,6 @@ extern const RecSchema holiday_schema;
 RecTable *holiday_table(void);
 /* The holiday on month (0..11) and day (0..29) of the calendar; 0 for an ordinary day. */
 const Holiday *holiday_on(int month, int day);
-
-/* The building types the code names. */
-enum {
-    BUILDING_ALCHEMIST = 0,
-    BUILDING_ARMORER = 2,
-    BUILDING_BANK = 3,
-    BUILDING_BOOKSELLER = 5,
-    BUILDING_CLOTHING = 6,
-    BUILDING_FURNITURE = 7,
-    BUILDING_GEMS = 8,
-    BUILDING_GENERAL = 9,
-    BUILDING_LIBRARY = 10,
-    BUILDING_GUILD_HALL = 11,
-    BUILDING_PAWN = 12,
-    BUILDING_WEAPONS = 13,
-    BUILDING_TEMPLE = 14,
-    BUILDING_TAVERN = 15,
-    BUILDING_PALACE = 16,
-    BUILDING_HOUSE1 = 17,
-    BUILDING_HOUSE4 = 20,
-    BUILDING_TYPES = 25
-};
 
 /* The crimes the code names. */
 enum {

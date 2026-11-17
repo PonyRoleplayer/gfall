@@ -2,19 +2,19 @@
 #include "check_doors.h"
 #include "check_magic.h"
 #include "check_util.h"
-#include "game/dagger/play/anim.h"
-#include "game/dagger/play/ai.h"
-#include "game/dagger/play/combat.h"
+#include "game/dagger/play/combat/anim.h"
+#include "game/dagger/play/combat/ai.h"
+#include "game/dagger/play/combat/combat.h"
 #include "game/dagger/play/cheats.h"
-#include "game/dagger/play/vitals.h"
-#include "game/dagger/play/dungeon.h"
-#include "game/dagger/play/encounter.h"
-#include "game/dagger/play/hud.h"
-#include "game/dagger/play/inventory.h"
-#include "game/dagger/play/save.h"
-#include "game/dagger/play/weapon.h"
-#include "game/dagger/play/options.h"
-#include "game/dagger/play/chargen.h"
+#include "game/dagger/play/character/vitals.h"
+#include "game/dagger/play/combat/dungeon.h"
+#include "game/dagger/play/combat/encounter.h"
+#include "game/dagger/play/ui/hud.h"
+#include "game/dagger/play/items/inventory.h"
+#include "game/dagger/play/save/save.h"
+#include "game/dagger/play/combat/weapon.h"
+#include "game/dagger/play/ui/options.h"
+#include "game/dagger/play/character/chargen.h"
 #include "game/dagger/tables/itemdefs.h"
 #include "engine/core/mem.h"
 #include "engine/scene/walker.h"
@@ -325,6 +325,84 @@ static void flyer_corpse(void)
     check_expect(g_entity[0].y < 5,"a flyer killed in the air falls to the floor");
 }
 
+static void marker_pacification(void)
+{
+    const int kinds[2] = {1,0};
+    const int hostile[2] = {0,0};
+    int drawn, impish;
+    df_u32 uses, random;
+
+    arena(0);
+    keep_clear();
+    drawn = hud_weapon_ready();
+    if (drawn) { hud_toggle_ready(); }
+    impish = character_state()->skill[12];
+    character_state()->skill[12] = 50;
+    dungeon_open(&g_scene,kinds,hostile,g_rate);
+    uses = game_state()->skill_uses[12];
+    random = game_state()->random;
+    check_expect(dungeon_loaded_marker(0) && dungeon_is_pacified(0) &&
+                 game_state()->skill_uses[12] == uses+1 && game_state()->random == random,
+                 "an Imp uses the shipped Impish skill and marker seed to pacify once");
+    check_expect(!dungeon_loaded_marker(0) && game_state()->skill_uses[12] == uses+1,
+                 "making the same marker active again does not train Impish again");
+    dungeon_open(&g_scene,kinds,hostile,g_rate);
+    check_expect(dungeon_loaded_marker(0) && dungeon_is_pacified(0) &&
+                 game_state()->skill_uses[12] == uses+1,"the keep row preserves the roll and its outcome");
+    dungeon_enchant_damage(0,1,TARGET_PLAYER);
+    check_expect(!dungeon_is_pacified(0),"a damaging hit clears marker pacification");
+    dungeon_open(&g_scene,kinds,hostile,g_rate);
+    dungeon_loaded_marker(0);
+    check_expect(!dungeon_is_pacified(0) && game_state()->skill_uses[12] == uses+1,
+                 "a revisit preserves a pacified creature's broken truce");
+    keep_clear();
+    hud_toggle_ready();
+    dungeon_open(&g_scene,kinds,hostile,g_rate);
+    check_expect(dungeon_loaded_marker(0) && !dungeon_is_pacified(0) &&
+                 game_state()->skill_uses[12] == uses+2,
+                 "a drawn weapon lowers the chance but a failed check still trains Impish");
+    if (!drawn) { hud_toggle_ready(); }
+    character_state()->skill[12] = impish;
+}
+
+static void creature_teams(void)
+{
+    int i, health, first, second;
+    df_u32 kill_minute;
+
+    arena(0);
+    g_entity[0].x = g_entity[1].x = 0;
+    g_entity[0].z = 160; g_entity[1].z = 204;
+    g_entity[0].yaw = 0; g_entity[1].yaw = DF_TAU/2;
+    dungeon_open(&g_scene,g_kind,g_passive,g_rate);
+    for (i = 0; i < 2; i++) {
+        dungeon_loaded(i);
+        dungeon_set_pacified(i,0);
+        dungeon_wake(i);
+    }
+    move_place(0,WALK_EYE,-700,0);
+    camera_set(&g_cam,0,WALK_EYE,-700,0,0);
+    dungeon_step(&g_scene,&g_cam,0.05f);
+    check_expect(dungeon_target(0) == TARGET_PLAYER && dungeon_target(1) == TARGET_PLAYER,
+                 "hostile creatures do not select their teammates");
+    dungeon_set_team(1,TEAM_PLAYER);
+    dungeon_step(&g_scene,&g_cam,0.05f);
+    for (i = 0; i < 12 && dungeon_target(0) != 1; i++) { dungeon_step(&g_scene,&g_cam,0.05f); }
+    check_expect(dungeon_target(0) == 1 && dungeon_target(1) == 0,
+                 "opposing creatures select each other, and an ally ignores the player");
+    health = character_state()->health;
+    first = dungeon_health(0); second = dungeon_health(1);
+    kill_minute = game_state()->last_kill;
+    for (i = 0; i < 190 && dungeon_health(0) == first && dungeon_health(1) == second; i++) {
+        dungeon_step(&g_scene,&g_cam,0.05f);
+    }
+    check_expect((dungeon_health(0) < first || dungeon_health(1) < second) &&
+                 character_state()->health == health && game_state()->last_kill == kill_minute,
+                 "the attack animation deals damage to an opposing creature");
+    dungeon_open(&g_scene,g_kind,g_passive,g_rate);
+    check_expect(dungeon_team(1) == TEAM_PLAYER,"the keep row restores the ally's team");
+}
+
 static void injuries(void)
 {
     int before, i;
@@ -333,7 +411,7 @@ static void injuries(void)
     keep_find(g_entity[0].key)->game[1] = 1;
     dungeon_open(&g_scene,g_kind,g_passive,g_rate); dungeon_loaded(0);
     before = character_state()->health;
-    check_expect(dungeon_nearby(&g_cam,1024),"an alerted passive creature also prevents resting nearby");
+    check_expect(dungeon_nearby(&g_cam,1024),"an alerted hostile creature prevents resting nearby");
     for (i = 0; i < 200 && character_state()->health == before; i++) { dungeon_step(&g_scene,&g_cam,0.05f); }
     check_expect(character_state()->health < before,"an alerted creature's animated attack can injure the player");
     damage_player(10000,0);
@@ -550,13 +628,23 @@ static void hold_round_trip(const char *root)
     check_expect(spawned && dungeon_count() == original+1,
                  "the actual Hold can place a rest encounter with preloaded drawable resources");
     if (spawned) {
-        int slot;
+        int slot, side, health;
         target = dungeon_entity(original); slot = target->pose[ENTITY_WALK].slot[0];
         check_expect(slot < seam_level()->nimages && seam_level()->images[slot] &&
                      target->pose[ENTITY_WALK].w[0],"a real rest creature has decoded walking art before its first frame");
-        move_place(target->x,target->y+WALK_EYE,target->z-30,0); move_camera(&g_cam);
+        /* The hidden placement can have a wall immediately on one side.
+         * Find a clear strike before hammering in one direction. */
+        health = dungeon_health(original);
         god_set(1);
-        for (j = 0; j < 60 && !target->dead; j++) { dungeon_strike(scene,&g_cam,&strike); }
+        for (side = 0; side < 8 && dungeon_health(original) == health; side++) {
+            float yaw;
+
+            yaw = side*(DF_TAU/8.0f);
+            move_place(target->x-18*df_sin(yaw),target->y+WALK_EYE,target->z-18*df_cos(yaw),side*256);
+            move_camera(&g_cam);
+            dungeon_strike(scene,&g_cam,&strike);
+        }
+        for (j = 0; j < 200 && !target->dead; j++) { dungeon_strike(scene,&g_cam,&strike); }
         god_set(0);
         check_expect(target->dead,"the actual rest encounter leaves a persistent combat corpse");
         seam_creatures(&g_cam);
@@ -596,7 +684,7 @@ void check_combat(const char *root)
     sword = item_create(game_state()->inventory_id,3,5,1);
     dungeon_blood(-1,-1);
     check_doors(root);
-    rules(); ai_rules(); swings(sword); melee(sword); archery(); injuries(); flyer_corpse(); god_swing(sword);
+    rules(); ai_rules(); swings(sword); melee(sword); archery(); marker_pacification(); creature_teams(); injuries(); flyer_corpse(); god_swing(sword);
     small_creature_floor(); flying_creature_floor(); flight_stairwell();
     dungeon_close(); weapon_cancel(); state_restore(&g_before); state_restore_world();
     hold_round_trip(root);

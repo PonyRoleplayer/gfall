@@ -4,10 +4,10 @@
 #include "check_quest.h"
 #include "check_util.h"
 #include "game/dagger/formats/qbn.h"
-#include "game/dagger/play/quest.h"
-#include "game/dagger/play/talk.h"
-#include "game/dagger/play/inventory.h"
-#include "game/dagger/play/standing.h"
+#include "game/dagger/play/quests/quest.h"
+#include "game/dagger/play/people/talk.h"
+#include "game/dagger/play/items/inventory.h"
+#include "game/dagger/play/people/standing.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/formats/textrsc.h"
 
@@ -526,27 +526,36 @@ void check_quest(void)
         /* A foe on its place's quest marker: with the floor not loaded it waits (nothing made), and when it is loaded both are made on the marker with the foe's keys, once. */
         {
             static const QuestWorld w12 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, w_marker_at, w_spawn_at, w_place_at, w_pick_building, w_pick_site, w_person_name, w_outdoors };
-            int f22[5] = {-1, 0, 0, -2, -2}, k;
+            int f22[5] = {-1, 0, 0, -2, -2}, calm[5] = {-1, 0, -1, -2, -2};
+            int release[5] = {0, 0, -2, -2, -2}, k;
 
             for (k = 0; k < quest_count(); k++) { quest_end(k); }
             memset(f3, 0, sizeof(f3));
             put16(f3 + 0x10 + 4 * 2, 1); put16(f3 + 0x24 + 4 * 2, 0xE0);
             put16(f3 + 0x10 + 7 * 2, 1); put16(f3 + 0x24 + 7 * 2, 0x120);
-            put16(f3 + 0x10 + 8 * 2, 1); put16(f3 + 0x24 + 8 * 2, 0x140);
-            put16(f3 + 0x10 + 9 * 2, 1); put16(f3 + 0x24 + 9 * 2, 0x140 + 87);
+            put16(f3 + 0x10 + 8 * 2, 3); put16(f3 + 0x24 + 8 * 2, 0x140);
+            put16(f3 + 0x10 + 9 * 2, 1); put16(f3 + 0x24 + 9 * 2, 0x140 + 3 * 87);
             f3[0xE0 + 3] = 1;
             f3[0x120 + 3] = 4; f3[0x120 + 4] = 2;
-            put16(f3 + 0x140 + 87, 0); put32(f3 + 0x140 + 87 + 4, 100u);
-            put_op(f3 + 0x140, 22, -1, f22, 0);
+            put16(f3 + 0x140 + 3 * 87, 0); put32(f3 + 0x140 + 3 * 87 + 4, 100u);
+            put_op(f3 + 0x140, 68, -1, calm, 0);
+            put_op(f3 + 0x140 + 87, 22, -1, f22, 0);
+            put_op(f3 + 0x140 + 2 * 87, 68, -1, release, 0);
             quest_set_world(&w12);
             g_floor = 0; g_at_made = 0; g_spawned = 0;
-            slot = quest_start_bytes("TEST0022", f3, 0x140 + 87 + 8, 0);
+            slot = quest_start_bytes("TEST0022", f3, 0x140 + 3 * 87 + 8, 0);
             quest_run();
             check_expect(slot == 0 && quest_at(0)->foe[0].placed && quest_at(0)->foe[0].made == 0 && g_at_made == 0 && g_spawned == 0, "quest: a foe was made where there was no floor yet, or near the player instead of its marker");
+            check_expect(quest_at(0) && quest_foe_pacified(quest_at(0)->foe[0].number),
+                         "quest: op 68 can pacify a foe before its creatures are placed");
             g_floor = 1;
             quest_run(); quest_run();
             check_expect(quest_at(0)->foe[0].made == 2 && g_at_made == 2 && g_at_x == 1000.0f && g_at_z == 2000.0f && g_at_thing[0] == QUEST_FOE_THING(quest_at(0)->foe[0].number, 0) && g_at_thing[1] == QUEST_FOE_THING(quest_at(0)->foe[0].number, 1),
                          "quest: the foe's two creatures were not made on its quest marker with their keys, once");
+            quest_set_state(0,0,1);
+            quest_run();
+            check_expect(quest_at(0) && !quest_foe_pacified(quest_at(0)->foe[0].number),
+                         "quest: op 68 can release the same foe from pacification");
             for (k = 0; k < quest_count(); k++) { quest_end(k); }
             quest_set_world(0);
         }

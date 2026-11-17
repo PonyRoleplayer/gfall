@@ -3,20 +3,20 @@
 
 /* GFALL's pointer-free session, original record ownership and Watcom RNG.
  * This is our own schema, not a DOS save ABI. Read docs/game.md. */
-#include "game/dagger/play/standing.h"
-#include "game/dagger/play/bank.h"
-#include "game/dagger/play/lodging.h"
-#include "game/dagger/play/law.h"
-#include "game/dagger/play/guild.h"
+#include "game/dagger/play/people/standing.h"
+#include "game/dagger/play/people/bank.h"
+#include "game/dagger/play/people/lodging.h"
+#include "game/dagger/play/people/law.h"
+#include "game/dagger/play/people/guild.h"
 #include "engine/core/df.h"
 #include "game/dagger/tables/tables.h"
-#include "game/dagger/play/move.h"
-#include "game/dagger/play/progress.h"
-#include "game/dagger/play/survival.h"
-#include "game/dagger/play/encounter.h"
-#include "game/dagger/play/magicstate.h"
-#include "game/dagger/play/curse.h"
-#include "game/dagger/play/worldstate.h"
+#include "game/dagger/play/input/move.h"
+#include "game/dagger/play/character/progress.h"
+#include "game/dagger/play/character/survival.h"
+#include "game/dagger/play/combat/encounter.h"
+#include "game/dagger/play/magic/magicstate.h"
+#include "game/dagger/play/character/curse.h"
+#include "game/dagger/play/travel/worldstate.h"
 #include "engine/scene/keep.h"
 
 #define STATE_VERSION 18

@@ -169,16 +169,15 @@ DAGGER_SRC := $(FORMATS_SRC) $(TABLES_SRC) $(PLACES_SRC)
 # What the game borrows of Daggerfall's own presentation: the classic maps, the TEXT.RSC macros and the
 # canvas and widgets they draw with. Plain C, drawing nothing and reaching no card.
 PLAY_SRC := \
-	src/game/dagger/play/canvas.c \
-	src/game/dagger/play/ui.c \
-	src/game/dagger/play/travelmap.c \
-	src/game/dagger/play/townmap.c \
-	src/game/dagger/play/dunmap.c \
-	src/game/dagger/play/marker.c \
-	src/game/dagger/play/words.c
+	src/game/dagger/play/ui/canvas.c \
+	src/game/dagger/play/ui/ui.c \
+	src/game/dagger/play/travel/travelmap.c \
+	src/game/dagger/play/travel/townmap.c \
+	src/game/dagger/play/travel/dunmap.c \
+	src/game/dagger/play/travel/marker.c \
+	src/game/dagger/play/ui/words.c
 
 # GFALL: original gameplay and the streamed world.
-# seam.c is the only file that includes both games.
 GFALL_GAME_SRC := \
 	src/game/dagger/formats/formats.c \
 	src/game/dagger/formats/qbn.c \
@@ -197,72 +196,89 @@ GFALL_GAME_SRC := \
 	src/game/dagger/tables/traveldefs.c \
 	src/game/dagger/places/place.c \
 	src/game/dagger/play/state.c \
-	src/game/dagger/play/standing.c \
-	src/game/dagger/play/trade.c \
-	src/game/dagger/play/shelf.c \
-	src/game/dagger/play/market.c \
-	src/game/dagger/play/bank.c \
-	src/game/dagger/play/lodging.c \
-	src/game/dagger/play/law.c \
-	src/game/dagger/play/guild.c \
-	src/game/dagger/play/hours.c \
-	src/game/dagger/play/entry.c \
-	src/game/dagger/play/potion.c \
-	src/game/dagger/play/spellshop.c \
-	src/game/dagger/play/spellmaker.c \
-	src/game/dagger/play/itemmaker.c \
-	src/game/dagger/play/enchant.c \
-	src/game/dagger/play/quest.c \
-	src/game/dagger/play/magicitem.c \
-	src/game/dagger/play/steal.c \
-	src/game/dagger/play/names.c \
-	src/game/dagger/play/talk.c \
-	src/game/dagger/play/talkwin.c \
-	src/game/dagger/play/inventory.c \
-	src/game/dagger/play/describe.c \
-	src/game/dagger/play/spellbook.c \
-	src/game/dagger/play/possessions.c \
-	src/game/dagger/play/save.c \
-	src/game/dagger/play/vitals.c \
-	src/game/dagger/play/anim.c \
-	src/game/dagger/play/combat.c \
+	src/game/dagger/play/people/standing.c \
+	src/game/dagger/play/people/trade.c \
+	src/game/dagger/play/people/shelf.c \
+	src/game/dagger/play/people/market.c \
+	src/game/dagger/play/people/bank.c \
+	src/game/dagger/play/people/lodging.c \
+	src/game/dagger/play/people/law.c \
+	src/game/dagger/play/people/guild.c \
+	src/game/dagger/play/people/hours.c \
+	src/game/dagger/play/people/entry.c \
+	src/game/dagger/play/magic/potion.c \
+	src/game/dagger/play/magic/spellshop.c \
+	src/game/dagger/play/magic/spellmaker.c \
+	src/game/dagger/play/magic/itemmaker.c \
+	src/game/dagger/play/magic/enchant.c \
+	src/game/dagger/play/quests/quest.c \
+	src/game/dagger/play/magic/magicitem.c \
+	src/game/dagger/play/people/steal.c \
+	src/game/dagger/play/people/names.c \
+	src/game/dagger/play/people/talk.c \
+	src/game/dagger/play/people/talkwin.c \
+	src/game/dagger/play/items/inventory.c \
+	src/game/dagger/play/items/describe.c \
+	src/game/dagger/play/magic/spellbook.c \
+	src/game/dagger/play/items/possessions.c \
+	src/game/dagger/play/save/save.c \
+	src/game/dagger/play/character/vitals.c \
+	src/game/dagger/play/combat/anim.c \
+	src/game/dagger/play/combat/combat.c \
 	src/game/dagger/play/cheats.c \
-	src/game/dagger/play/rest.c \
-	src/game/dagger/play/foegear.c \
-	src/game/dagger/play/weapon.c \
-	src/game/dagger/play/dungeon.c \
-	src/game/dagger/play/ai.c \
-	src/game/dagger/play/actions.c \
-	src/game/dagger/play/progress.c \
-	src/game/dagger/play/survival.c \
-	src/game/dagger/play/encounter.c \
-	src/game/dagger/play/magic.c \
-	src/game/dagger/play/casting.c \
-	src/game/dagger/play/travel.c \
-	src/game/dagger/play/journey.c \
-	src/game/dagger/play/ground.c \
-	src/game/dagger/play/maps.c \
-	src/game/dagger/play/magiccmd.c \
-	src/game/dagger/play/ailments.c \
-	src/game/dagger/play/curse.c \
-	src/game/dagger/play/doors.c \
-	src/game/dagger/play/steer.c \
-	src/game/dagger/play/hud.c \
-	src/game/dagger/play/screen.c \
-	src/game/dagger/play/msg.c \
-	src/game/dagger/play/kit.c \
+	src/game/dagger/play/character/rest.c \
+	src/game/dagger/play/combat/foegear.c \
+	src/game/dagger/play/combat/weapon.c \
+	src/game/dagger/play/combat/dungeon.c \
+	src/game/dagger/play/combat/ai.c \
+	src/game/dagger/play/travel/actions.c \
+	src/game/dagger/play/character/progress.c \
+	src/game/dagger/play/character/survival.c \
+	src/game/dagger/play/combat/encounter.c \
+	src/game/dagger/play/magic/magic.c \
+	src/game/dagger/play/magic/casting.c \
+	src/game/dagger/play/travel/travel.c \
+	src/game/dagger/play/travel/journey.c \
+	src/game/dagger/play/items/ground.c \
+	src/game/dagger/play/travel/maps.c \
+	src/game/dagger/play/magic/magiccmd.c \
+	src/game/dagger/play/character/ailments.c \
+	src/game/dagger/play/character/curse.c \
+	src/game/dagger/play/travel/doors.c \
+	src/game/dagger/play/input/steer.c \
+	src/game/dagger/play/ui/hud.c \
+	src/game/dagger/play/ui/screen.c \
+	src/game/dagger/play/ui/msg.c \
+	src/game/dagger/play/character/kit.c \
 	src/game/dagger/play/config.c \
-	src/game/dagger/play/controls.c \
-	src/game/dagger/play/files.c \
-	src/game/dagger/play/options.c \
-	src/game/dagger/play/chargen.c \
-	src/game/dagger/play/move.c \
-	src/game/dagger/play/activate.c \
+	src/game/dagger/play/input/controls.c \
+	src/game/dagger/play/save/files.c \
+	src/game/dagger/play/ui/options.c \
+	src/game/dagger/play/character/chargen.c \
+	src/game/dagger/play/input/move.c \
+	src/game/dagger/play/input/activate.c \
 	src/game/dagger/play/play.c
 
-GFALL_HEADERS := $(wildcard src/game/dagger/*/*.h apps/gfall/*.h)
+GFALL_HEADERS := $(wildcard src/game/dagger/*/*.h src/game/dagger/play/*/*.h apps/gfall/*.h apps/gfall/*/*.h)
 
-GFALL_SRC := apps/gfall/main.c apps/gfall/seam.c $(GFALL_GAME_SRC) $(ENGINE_SRC) $(DAGGER_SRC) $(PLAY_SRC)
+GFALL_APP_SRC := \
+	apps/gfall/boot.c \
+	apps/gfall/buildings/buildings.c \
+	apps/gfall/buildings/hooks.c \
+	apps/gfall/people/people.c \
+	apps/gfall/people/services.c \
+	apps/gfall/people/street.c \
+	apps/gfall/people/hooks.c \
+	apps/gfall/quests/hooks.c \
+	apps/gfall/screen/screen.c \
+	apps/gfall/screen/maps.c \
+	apps/gfall/screen/overlays.c \
+	apps/gfall/screen/possessions.c \
+	apps/gfall/screen/hooks.c \
+	apps/gfall/world/world.c \
+	apps/gfall/world/hooks.c
+
+GFALL_SRC := apps/gfall/main.c $(GFALL_APP_SRC) $(GFALL_GAME_SRC) $(ENGINE_SRC) $(DAGGER_SRC) $(PLAY_SRC)
 
 # RENDERFALL shows models alone: the readers they need and no place.
 RENDER_SRC := apps/renderfall/main.c $(ENGINE_SRC) \
@@ -282,7 +298,7 @@ HOST_SRC := $(ENGINE_HOST_SRC) \
 	$(filter-out src/game/dagger/formats/fnt.c,$(DAGGER_SRC)) $(PLAY_SRC)
 
 # The gfall game and its seam, without the Win32 entry. Hostcheck links these.
-GFALL_HOST_SRC := apps/gfall/seam.c $(GFALL_GAME_SRC)
+GFALL_HOST_SRC := $(GFALL_APP_SRC) $(GFALL_GAME_SRC)
 
 .PHONY: all check clean hostcheck datacheck renderfall-check levelfall-check datfall-check pony97-check pony97-iso gfall gfall-check gfall-host deps deps-host layers
 

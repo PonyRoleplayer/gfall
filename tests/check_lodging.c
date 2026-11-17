@@ -1,6 +1,6 @@
 #include "check_lodging.h"
 #include "check_util.h"
-#include "game/dagger/play/lodging.h"
+#include "game/dagger/play/people/lodging.h"
 #include "game/dagger/play/state.h"
 #include <string.h>
 

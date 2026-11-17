@@ -1,0 +1,384 @@
+#include "game/dagger/play/magic/enchant.h"
+#include "game/dagger/play/magic/itemmaker.h"
+#include "game/dagger/play/magic/magic.h"
+#include "game/dagger/play/state.h"
+#include "game/dagger/play/items/inventory.h"
+#include "game/dagger/play/combat/combat.h"
+#include "game/dagger/play/ui/msg.h"
+#include "game/dagger/play/character/progress.h"
+#include "game/dagger/play/magic/spellbook.h"
+#include "game/dagger/play/combat/dungeon.h"
+#include "engine/core/log.h"
+
+/* See enchant.h. */
+
+static df_u32 g_stamp;
+static int g_rebuild;
+
+/* Whether an item worn in a slot other than skip holds Absorbs spells (a worn item taking it off must not clear what another still gives). */
+static int others_absorb(int skip)
+{
+    int slot, k, type, param;
+
+    for (slot = 0; slot < 27; slot++) {
+        if (slot == skip || !game_state()->equipped[slot]) { continue; }
+        for (k = 0; item_enchantment(game_state()->equipped[slot], k, &type, &param); k++) { if (type == 9) { return 1; } }
+    }
+    return 0;
+}
+
+void enchant_equip(df_u32 item, int slot)
+{
+    int k, type, param, wear;
+
+    wear = 0;
+    for (k = 0; item_enchantment(item, k, &type, &param); k++) {
+        if (type == 1 && param >= 0) {
+            const SpellDef *held;
+
+            magic_hold(param, slot);
+            /* Each held spell wears the item by its own cost (the original wears once by the last one's: 9.16). */
+            held = spell_def(param);
+            if (held) { wear += spell_cost(held, character_state()); }
+        }
+        else if (type == 5) { g_stamp = game_state()->minutes; }
+        else if (type == 9) { character_state()->conditions |= 0x200; }
+        else if (type == 10 && param >= 0 && param < SKILLS) { character_state()->skill[param] += 15; }
+    }
+    /* Breaking takes off all the effects, so apply them all before charging wear. */
+    if (wear) { item_damage(item,wear); }
+}
+
+void enchant_unequip(df_u32 item, int slot)
+{
+    int k, type, param;
+
+    for (k = 0; item_enchantment(item, k, &type, &param); k++) {
+        if (type == 1 && param >= 0) { magic_release(param, slot); }
+        else if (type == 9 && !others_absorb(slot)) { character_state()->conditions &= ~0x200; }
+        else if (type == 10 && param >= 0 && param < SKILLS) { character_state()->skill[param] -= 15; }
+        else if (type == 3) { g_rebuild = 1; }
+    }
+}
+
+/* ---- Wear and breaking (equip.c item_damage, inven.c item_break) ---- */
+
+static const EnchantWorld *g_world;
+
+void enchant_set_world(const EnchantWorld *world) { g_world = world; }
+
+static int daylight(void) { return g_world && g_world->daylight && g_world->daylight(); }
+static int temple(void) { return g_world && g_world->temple && g_world->temple(); }
+
+static void item_break(df_u32 id)
+{
+    ObjectInfo *item;
+    char name[48], line[80];
+    int enchanted, k, type, param, souls[10], count;
+
+    item = object_edit(id);
+    if (!item) { return; }
+    item->condition = 0;
+    item_name(item, name, sizeof(name));
+    log_format(line, sizeof(line), "%s is broken.", name);
+    msg_set(line);
+    enchanted = item_enchanted(id);
+    inventory_unequip(id);
+    if (!enchanted) { return; }
+    count = 0;
+    for (k = 0; item_enchantment(id, k, &type, &param); k++) {
+        if (type == 15 && param >= 0) { souls[count++] = param; }
+    }
+    object_delete(id);
+    for (k = 0; k < count; k++) {
+        msg_set("The soul from your broken item is released.");
+        if (g_world && g_world->release_soul) { g_world->release_soul(souls[k]); }
+    }
+}
+
+void item_damage(df_u32 id, int n)
+{
+    ObjectInfo *item;
+
+    item = object_edit(id);
+    if (!item || item->type != RECORD_ITEM || n <= 0 || item->condition <= 0) { return; }
+    if (item->condition > n) { item->condition -= n; return; }
+    item_break(id);
+}
+
+/* ---- The tick (disease_000680DD.c item_enchantment_tick) ---- */
+
+/* enchant_spell_points_condition: 75 when the parameter's condition holds. */
+static int extra_points(int param)
+{
+    static const int season[12] = {0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 0, 0};
+    int year, month, day, weekday, moon0, moon1;
+    df_u32 now;
+
+    now = game_state()->minutes;
+    state_date(&year, &month, &day, &weekday);
+    moon0 = (int)((now / 1440u) & 31u); moon1 = (int)(((now + 5760u) / 1440u) & 31u);
+    if (param >= 0 && param <= 3) { return season[month % 12] == param ? 75 : 0; }
+    if (param == 4) { return moon0 == 0 || moon1 == 0 ? 75 : 0; }
+    if (param == 5) { return moon0 == 8 || moon0 == 24 || moon1 == 8 || moon1 == 24 ? 75 : 0; }
+    if (param == 6) { return moon0 == 16 || moon1 == 16 ? 75 : 0; }
+    if (param >= 7 && param <= 10) { return g_world && g_world->category_near && g_world->category_near(param - 7, 1024) ? 75 : 0; }
+    return 0;
+}
+
+static void repair_first(int amount)
+{
+    int i;
+
+    for (i = 0; i < OBJECTS; i++) {
+        ObjectInfo *item;
+        int depth;
+        const ObjectInfo *owner;
+
+        item = object_edit(game_state()->object[i].id);
+        if (!item || item->type != RECORD_ITEM || (item->group == 3 && item->index == 17) || item_enchanted(item->id)) { continue; }
+        for (owner = item, depth = 0; owner && depth < OBJECTS && owner->parent != game_state()->entity_id; depth++) { owner = object_at(owner->parent); }
+        if (!owner || item->condition >= item->max_condition) { continue; }
+        item->condition += amount;
+        if (item->condition > item->max_condition) { item->condition = item->max_condition; }
+        return;
+    }
+}
+
+static void tick_one(df_u32 id, int type, int param, int amount)
+{
+    CharacterState *who;
+
+    who = character_state();
+    if (type == 1) { item_damage(id, 1); }
+    else if (type == 3) {
+        if (game_state()->minutes % 4u == 0) { item_damage(id, 1); }
+        if (param >= 7 && param <= 10 && extra_points(param) && who->magicka < who->max_magicka) { who->magicka += amount * 5; }
+    } else if (type == 5) {
+        if (param == 1 ? !daylight() : param == 2 ? daylight() : 0) { return; }
+        who->health += amount;
+        if (who->health > who->max_health) { who->health = who->max_health; }
+        else if (random_range(0, 9) == 0) { item_damage(id, 1); }
+    } else if (type == 6 && param == 0) {
+        if (who->health < who->max_health && g_world && g_world->hurt_nearest && g_world->hurt_nearest(amount)) {
+            who->health += amount;
+            if (who->health > who->max_health) { who->health = who->max_health; }
+            item_damage(id, amount);
+        }
+    } else if (type == 8) {
+        repair_first(amount);
+        if (random_range(0, 9) == 0) { item_damage(id, 1); }
+    } else if (type == 16) {
+        if (param == 1 ? !daylight() : param == 2 ? !temple() : 0) { return; }
+        item_damage(id, amount);
+    } else if (type == 17) {
+        if (param == 0 ? daylight() : temple()) { damage_player(amount, 0); }
+    } else if (type == 21 && (param == 1 || param == 2)) {
+        if (game_state()->minutes - game_state()->last_kill > (param == 1 ? 1440u : 10080u)) { damage_player(amount, 0); }
+    }
+}
+
+void enchant_minutes(void)
+{
+    df_u32 now, elapsed;
+    int amount, slot, k, type, param;
+
+    now = game_state()->minutes;
+    /* A clock behind the stamp is a load of an older game: the stamp follows it, or no step would run until the clock caught up. */
+    if (now < g_stamp) { g_stamp = now; }
+    elapsed = now - g_stamp;
+    if (elapsed > 100) { elapsed = 0; g_stamp = now; }
+    amount = (int)(elapsed >> 2);
+    if (!amount) { return; }
+    g_stamp = now;
+    /* effects_tick's class part (5.2): a class hurt by sunlight (flag 16) or in temples (flag 32) takes 12 a step, a vampire's 3 health a game minute. */
+    if (((game_state()->career.flags & 16) && daylight()) || ((game_state()->career.flags & 32) && temple())) { damage_player(amount * 12, 0); }
+    for (slot = 0; slot < 27; slot++) {
+        df_u32 id;
+
+        id = game_state()->equipped[slot];
+        for (k = 0; id && object_at(id) && item_enchantment(id, k, &type, &param); k++) { tick_one(id, type, param, amount); }
+    }
+    if (character_state()->magicka < 0) { character_state()->magicka = 0; }
+}
+
+void enchant_frame(void)
+{
+    int slot, k, type, param, bonus, any;
+    CharacterState *who;
+
+    bonus = 0; any = 0;
+    for (slot = 0; slot < 27; slot++) {
+        for (k = 0; game_state()->equipped[slot] && item_enchantment(game_state()->equipped[slot], k, &type, &param); k++) {
+            if (type == 3) { any = 1; bonus += extra_points(param); }
+        }
+    }
+    if (!any && !g_rebuild) { return; }
+    /* The maximum is built again from Intelligence and the class, plus the bonus, each frame while an item gives one (and once more when the last is taken off). */
+    who = character_state();
+    who->max_magicka = magicka_state(who->attribute[ATTR_INT], who->class_flags) + bonus;
+    if (who->magicka > who->max_magicka) { who->magicka = who->max_magicka; }
+    g_rebuild = any;
+}
+
+int item_use(df_u32 id)
+{
+    int k, type, param, used;
+
+    used = 0;
+    if (item_enchantment(id,0,&type,&param) && type == 26) {
+        if (param == 3) {
+            if (!magic_cast_item(92)) { return 0; }
+            item_damage(id,50);
+            return 1;
+        }
+        if (param == 4 || param == 8) {
+            int kind, index;
+            const Entity *entity;
+
+            for (index = 0; index < dungeon_count(); index++) {
+                entity = dungeon_entity(index);
+                if (entity->live && !entity->dead && dungeon_team(index) == TEAM_HOSTILE) { break; }
+            }
+            if (index == dungeon_count()) { msg_set("There are no creatures nearby."); return 0; }
+            kind = param == 4 ? 27 : dungeon_kind(index);
+            if (!g_world || !g_world->summon_ally || !g_world->summon_ally(kind)) {
+                msg_set("There is no room to summon a creature.");
+                return 0;
+            }
+            item_damage(id,100);
+            return 1;
+        }
+    }
+    for (k = 0; object_at(id) && item_enchantment(id, k, &type, &param); k++) {
+        if (type == 0 && param >= 0) {
+            if (magic_cast_item(param)) { used++; item_damage(id, 10); }
+        } else if (type == 21 && param == 0) {
+            damage_player((character_state()->level >> 1) + 1, 0);
+            item_damage(id, 2);
+        }
+    }
+    return used;
+}
+
+int enchant_hit_bonus_for(df_u32 weapon, int category, int attacker, int level)
+{
+    int k, type, param, bonus;
+
+    bonus = 0;
+    for (k = 0; item_enchantment(weapon, k, &type, &param); k++) {
+        if (type == 4 && param == category) { bonus += level; }
+        else if (type == 20 && param == category) { bonus -= level; }
+        else if (type == 21 && param == 0) {
+            if (attacker < 0) { damage_player((level >> 2) + 1, -1); }
+            else { dungeon_enchant_damage(attacker,(level >> 2) + 1,attacker); }
+        }
+    }
+    return bonus;
+}
+
+int enchant_hit_bonus(df_u32 weapon, int category)
+{
+    return enchant_hit_bonus_for(weapon,category,-1,character_state()->level);
+}
+
+void enchant_strike_for(df_u32 weapon, int attacker, int victim, int level, int dealt)
+{
+    int k, type, param, healed;
+    CharacterState *who;
+
+    who = character_state();
+    for (k = 0; object_at(weapon) && item_enchantment(weapon, k, &type, &param); k++) {
+        if (type == 2 && param >= 0) {
+            if (attacker < 0) { magic_strike(param,victim); }
+            else { magic_creature_item_strike(param,attacker,victim,level); }
+            item_damage(weapon, 10);
+        } else if (type == 6 && param == 1) {
+            if (attacker >= 0) { healed = dungeon_enchant_heal(attacker,dealt/2); }
+            else {
+                healed = dealt / 2;
+                if (healed > who->max_health - who->health) { healed = who->max_health - who->health; }
+                if (healed < 0 || who->health <= 0) { healed = 0; }
+                who->health += healed;
+            }
+            item_damage(weapon, healed / 4 + 1);
+        }
+    }
+}
+
+void enchant_strike(df_u32 weapon, int victim, int dealt)
+{
+    enchant_strike_for(weapon,-1,victim,character_state()->level,dealt);
+}
+
+/* Namira reflects a creature's actual blow without reducing the incoming hit. */
+void enchant_reflect(int attacker, int category, int dealt)
+{
+    int slot, type, param, wear;
+    df_u32 item;
+
+    if (dealt <= 0 || category < 0 || category > 2 || dungeon_kind(attacker) == 2) { return; }
+    for (slot = 0; slot < 27; slot++) {
+        item = game_state()->equipped[slot];
+        if (!item_enchantment(item,0,&type,&param) || type != 26 || param != 7) { continue; }
+        wear = category == 0 ? dealt*2 : category == 1 ? dealt/2 : dealt;
+        dungeon_enchant_damage(attacker,dealt,TARGET_PLAYER);
+        item_damage(item,wear);
+        return;
+    }
+}
+
+int enchant_armor_modifier(void)
+{
+    int slot, k, type, param;
+
+    for (slot = 0; slot < 27; slot++) {
+        for (k = 0; game_state()->equipped[slot] && item_enchantment(game_state()->equipped[slot], k, &type, &param); k++) {
+            if (type == 12) { return -25; }
+            if (type == 24) { return 25; }
+        }
+    }
+    return 0;
+}
+
+int enchant_capacity(int capacity)
+{
+    int slot, k, type, param;
+
+    for (slot = 0; slot < 27; slot++) {
+        for (k = 0; game_state()->equipped[slot] && item_enchantment(game_state()->equipped[slot], k, &type, &param); k++) {
+            if (type == 7) { return param == 0 ? capacity * 320 / 256 : capacity * 384 / 256; }
+        }
+    }
+    return capacity;
+}
+
+int enchant_weight(df_u32 id, int weight)
+{
+    int k, type, param;
+
+    for (k = 0; item_enchantment(id, k, &type, &param); k++) {
+        if (type == 11) { return 1; }
+        if (type == 23) { return weight * 4 < 20 ? 20 : weight * 4; }
+    }
+    return weight;
+}
+
+int enchant_reaction(int social)
+{
+    int i, k, type, param, depth, mod;
+    const ObjectInfo *item, *owner;
+
+    mod = 0;
+    for (i = 0; i < OBJECTS; i++) {
+        item = &game_state()->object[i];
+        if (!item->id || item->type != RECORD_ITEM) { continue; }
+        for (owner = item, depth = 0; owner && depth < OBJECTS && owner->parent != game_state()->entity_id; depth++) { owner = object_at(owner->parent); }
+        if (!owner) { continue; }
+        for (k = 0; item_enchantment(item->id, k, &type, &param); k++) {
+            if (type == 14 && (param == 5 || param == social)) { mod += 10; }
+            else if (type == 25 && (param == 5 || param == social)) { mod -= 10; }
+        }
+    }
+    return mod;
+}

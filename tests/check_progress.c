@@ -1,8 +1,8 @@
 #include "check_progress.h"
 #include "check_util.h"
 #include "game/dagger/play/state.h"
-#include "game/dagger/play/possessions.h"
-#include "game/dagger/play/save.h"
+#include "game/dagger/play/items/possessions.h"
+#include "game/dagger/play/save/save.h"
 #include "engine/core/mem.h"
 
 static GameState g_before;

@@ -4,12 +4,12 @@
 #include "../apps/gfall/seam.h"
 #include "engine/core/mem.h"
 #include "check_util.h"
-#include "game/dagger/play/market.h"
-#include "game/dagger/play/possessions.h"
-#include "game/dagger/play/shelf.h"
+#include "game/dagger/play/people/market.h"
+#include "game/dagger/play/items/possessions.h"
+#include "game/dagger/play/people/shelf.h"
 #include "game/dagger/play/play.h"
 #include "game/dagger/play/state.h"
-#include "game/dagger/play/inventory.h"
+#include "game/dagger/play/items/inventory.h"
 #include "game/dagger/tables/holidaydefs.h"
 
 static ShopState neutral(void)

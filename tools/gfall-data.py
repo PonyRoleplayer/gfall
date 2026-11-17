@@ -153,7 +153,8 @@ for name, symbol, count, fmt in [
     ('g_parry', 'monster_parry_ids', 28, 'B'),
     ('g_weight', 'monster_weights', 43, 'h'),
     ('g_class_kind', 'class_creature_types', 19, 'B'),
-    ('g_category', 'monster_category', 43, 'B')]:
+    ('g_category', 'monster_category', 43, 'B'),
+    ('g_language', 'monster_language_skill', 43, 'B')]:
     out.append(array(name, unpack(symbols[symbol], str(count) + fmt), 'df_i16' if fmt == 'h' else 'df_u16' if fmt == 'H' else 'df_u8'))
 out.append('static const df_u16 g_monster[60][3] = {\n')
 for i in range(60):

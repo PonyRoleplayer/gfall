@@ -2,7 +2,7 @@
 #include "check_names.h"
 #include "check_util.h"
 #include "engine/assets/vfs.h"
-#include "game/dagger/play/names.h"
+#include "game/dagger/play/people/names.h"
 #include "game/dagger/play/state.h"
 
 static int has_space(const char *s)

@@ -1,5 +1,8 @@
 # GFALL
 
+See [architecture.md](architecture.md) for current source ownership and paths.
+The early slice plans below describe the original layout.
+
 The current [missing-work list and target playtest checklist](game-roadmap.md#what-is-still-missing)
 are recorded at the top of the full continuation plan. They distinguish the
 implemented Hold slice, including combat and Rest, from the systems still to build.
@@ -9,6 +12,13 @@ A second program, `GFALL.EXE`, beside GFALL. It starts a new character through t
 The original slice-1 plan is retained below as history; current implementation
 and verification are described in the dated status sections, through Pile clicks,
 creature variants and Rest. GFALL's design stays in `docs/game.md`.
+
+## Current layout
+
+The play layer is grouped by gameplay responsibility. The app adapters are
+split into buildings, people, quests, screen and world, with startup in
+`apps/gfall/boot.c`. Host tests and the Win98 app link the same adapters.
+See [architecture.md](architecture.md) for ownership and where to put constants.
 
 ## Current build and verification
 
@@ -70,9 +80,9 @@ XnGine calls in those files (`xn_draw_image`, `xn_mouse_poll_clamped`, `engine_p
 ENGINE goes first and is short: confirm section 7, report "no engine change", and stop. GAME must not start the Makefile until that report is in, so a real gap can land before the exe is wired. The pure functions in steps 2–4 do not need the exe and can be written during the review.
 
 1. ENGINE reads section 7 against the headers and reports to the supervisor. No source edit on a confirmation.
-2. GAME: host-tested pure functions. Steer regions and key-to-region (`play/steer.c`). Vital-bar height, fall damage, jump speed and the 11-point fatigue cost (`play/vitals.c`). HUD hit tests with the strict inequalities (`play/hud.c`). Title and option hit tests (`play/title.c`, `play/options.c`). Marker-6 choice given a plain list of marker ids and positions (`places/place.c`).
-3. GAME: character record and chargen state machine (`play/chargen.c`, `tables/tables.c`), driven by scripted clicks in the host test, including the Battlemage path and Escape back to the title. No pictures yet: the test feeds classic 320×200 coordinates and reads the mode and the character.
-4. GAME: movement policy on top of `body` (`play/move.c`). Host test on a fake scene the engine's body tests already know how to build, or on the hold if `make hostcheck` can see ARENA2 (it can: hostcheck already loads the hold). Walk, stop at a wall, jump, land, crouch. Creatures are not stepped.
+2. GAME: host-tested pure functions. Steer regions and key-to-region (`play/input/steer.c`). Vital-bar height, fall damage, jump speed and the 11-point fatigue cost (`play/character/vitals.c`). HUD hit tests with the strict inequalities (`play/ui/hud.c`). Title and option hit tests (`play/title.c`, `play/ui/options.c`). Marker-6 choice given a plain list of marker ids and positions (`places/place.c`).
+3. GAME: character record and chargen state machine (`play/character/chargen.c`, `tables/tables.c`), driven by scripted clicks in the host test, including the Battlemage path and Escape back to the title. No pictures yet: the test feeds classic 320×200 coordinates and reads the mode and the character.
+4. GAME: movement policy on top of `body` (`play/input/move.c`). Host test on a fake scene the engine's body tests already know how to build, or on the hold if `make hostcheck` can see ARENA2 (it can: hostcheck already loads the hold). Walk, stop at a wall, jump, land, crouch. Creatures are not stepped.
 5. GAME, after step 1: `apps/gfall/seam.c` and `apps/gfall/main.c`, and the Makefile target in section 6. `make gfall-check` passes the PE check. `make hostcheck` still passes, including the new file.
 6. GAME: draw the title, chargen, HUD, and options through `pic_*`, with the seam loading the IMG, CIF, BSS, and font bytes. Fullscreen bit hides the bar and uses the heading strip. Cursor mode and view mode both work in the hold. A door in grab mode swings.
 7. Supervisor accepts slice 1 when section 1 is true. Nobody commits unless the user asks.
@@ -90,19 +100,19 @@ Fill the stubs. Do not add a second tree. `formats/formats.c` stays empty apart 
 | `apps/gfall/main.c` | The frame loop only. Window, `input_read`, `gfall` frame, `gfx_frame`. | Same shape as `apps/gfall/main.c` and `apps/pony97/main.c`: `WinMainCRTStartup` via `win_startup`, `mem_init`, dt from the performance counter clamped to a tenth. |
 | `apps/gfall/seam.c` | The only translation unit that includes dagger. Loads the hold, pictures, classes, race text, the click sound, and editor markers. | See section 5. |
 | `play/play.c` | Which screen has the input. World runs only in mode 0. | `gfx_set_pause` while a screen is up. `gfx_set_extra` draws the HUD. `hud_set(0)` so the engine's position line stays off. `gfx_set_use_key(0)` so E is not "use". |
-| `play/screen.c` | Classic 320×200, origin top-left, over the view. | `docs/pictures.md`: a 320×200 picture at 2× is `pic_draw(id, 0, 440, 640, 400)` on 640×480. Mouse hits divide back into classic pixels, letterbox included. |
+| `play/ui/screen.c` | Classic 320×200, origin top-left, over the view. | `docs/pictures.md`: a 320×200 picture at 2× is `pic_draw(id, 0, 440, 640, 400)` on 640×480. Mouse hits divide back into classic pixels, letterbox included. |
 | `play/title.c` | `title_menu` through the race map's return to the title, the load button, and exit. | `gfx_prepare(0)`, `gfx_frame(cam, 0)`, `input_set_pointer(1)`, `input_pointer`. |
-| `play/chargen.c` | The rest of `title_menu`: gender, class list, generated background, name, face, attributes, skills, reflexes, summary. | Pictures and `smallfont` pixels handed in by the seam. Clicks are classic coordinates. |
+| `play/character/chargen.c` | The rest of `title_menu`: gender, class list, generated background, name, face, attributes, skills, reflexes, summary. | Pictures and `smallfont` pixels handed in by the seam. Clicks are classic coordinates. |
 | `tables/tables.c` | The class and race fields chargen and the jump formula read. Plain structs the seam fills. | None. |
-| `play/kit.c` | `chargen_give_starting_equipment`. Gold is already 100. | None. No inventory screen. |
+| `play/character/kit.c` | `chargen_give_starting_equipment`. Gold is already 100. | None. No inventory screen. |
 | `places/place.c` | Marker 6 after marker 8. | None. The seam passes `{record, x, y, z}`. |
-| `play/hud.c` | `hud_draw`, `hud_update`, `hud_buttons_click`, `hud_portrait_overlay_index`, `interaction_mode_cycle`. | `pic_draw` / `pic_draw_part` from `gfx_set_extra`. |
-| `play/steer.c` | `intrface_set_regions`, `intrface_key_region`, the 3×3 grid in `docs/state.md`. | Reads `input_pointer` and the rebound actions. Does not look. |
-| `play/move.c` | `player_movement_update` and `player_compute_jump_velocity`, on the engine body. | `body_init`, `body_place`, `body_step`, `body_jump`, `body_landed`, `body_set_size`, `rig_first`, `walker_set_game`. |
-| `play/activate.c` | `click_activate` for a door, a lever, and a dungeon click that hits nothing. | `interact_request_use_from` along the ray through the hotspot or the centre. `camera_basis`, `camera_focal`, `df_view_w`, `df_view_h`. |
-| `play/options.c` | Continue, Exit, the two setting bits, Cursor/View. | `input_set_pointer` follows the mode. Fullscreen is `game_settings` bit 0, the same word `hud_draw` already tests. |
-| `play/vitals.c` | The bar expression, fatigue max, fall damage, jump cost. | None. `play/hud.c` and `play/move.c` call it. |
-| `play/msg.c` | The one status line `interaction_mode_cycle` and `hud_status_set` write. | `ui_string` or a `smallfont` blit into a picture. |
+| `play/ui/hud.c` | `hud_draw`, `hud_update`, `hud_buttons_click`, `hud_portrait_overlay_index`, `interaction_mode_cycle`. | `pic_draw` / `pic_draw_part` from `gfx_set_extra`. |
+| `play/input/steer.c` | `intrface_set_regions`, `intrface_key_region`, the 3×3 grid in `docs/state.md`. | Reads `input_pointer` and the rebound actions. Does not look. |
+| `play/input/move.c` | `player_movement_update` and `player_compute_jump_velocity`, on the engine body. | `body_init`, `body_place`, `body_step`, `body_jump`, `body_landed`, `body_set_size`, `rig_first`, `walker_set_game`. |
+| `play/input/activate.c` | `click_activate` for a door, a lever, and a dungeon click that hits nothing. | `interact_request_use_from` along the ray through the hotspot or the centre. `camera_basis`, `camera_focal`, `df_view_w`, `df_view_h`. |
+| `play/ui/options.c` | Continue, Exit, the two setting bits, Cursor/View. | `input_set_pointer` follows the mode. Fullscreen is `game_settings` bit 0, the same word `hud_draw` already tests. |
+| `play/character/vitals.c` | The bar expression, fatigue max, fall damage, jump cost. | None. `play/ui/hud.c` and `play/input/move.c` call it. |
+| `play/ui/msg.c` | The one status line `interaction_mode_cycle` and `hud_status_set` write. | `ui_string` or a `smallfont` blit into a picture. |
 
 ### HUD
 
@@ -164,7 +174,7 @@ Cursor mode stays on `input_set_pointer(1)` for the whole dungeon. The game draw
 
 The engine body is the collider. +Y is up. Do not port `object_apply_gravity` or classic's Y sign.
 
-`player_compute_jump_velocity`: `((SPD + STR) / 2) + 50`, then add `jumping * that / 100`. The decomp then negates and shifts left 8 because its velocity is in 1/256 and its jump is negative. Take the magnitude before that negate. Convert to engine units per second in one function in `play/move.c`, and host-test the integer magnitude and the conversion separately. Acrobat (`conditions` bit `0x10000`) doubles the impulse. Class flag bit 2 adds half again. Both use the integer magnitude. A jump from the ground spends 11 fatigue (`fatigue_add(-11)`), sets airborne, and does not re-steer until landing.
+`player_compute_jump_velocity`: `((SPD + STR) / 2) + 50`, then add `jumping * that / 100`. The decomp then negates and shifts left 8 because its velocity is in 1/256 and its jump is negative. Take the magnitude before that negate. Convert to engine units per second in one function in `play/input/move.c`, and host-test the integer magnitude and the conversion separately. Acrobat (`conditions` bit `0x10000`) doubles the impulse. Class flag bit 2 adds half again. Both use the integer magnitude. A jump from the ground spends 11 fatigue (`fatigue_add(-11)`), sets airborne, and does not re-steer until landing.
 
 Fall damage, on the classic-scaled impact speed, only when it is positive: `d = ((v / 256) / 40) - 7`, then `d * d / 2`, applied to health. Map `body_landed`'s downward speed into that `v` with the same conversion, reversed. Host-test the expression on known `v`, not by eyeballing a fall.
 
@@ -174,7 +184,7 @@ Other rules in `player_movement_update` that slice 1 keeps:
 - View mode, on the ground, with the decomp's key 23 held: halve that speed, then subtract one. Integer. The key is whatever action 23 is in `key_map`; bind it, do not drop the decrement.
 - Crouch is `body_set_size` to half height, and the step while crouched is the smaller one (`step_size` 5 against 10 in the classic loop). Ask `body_can_stand` before standing.
 - Run is the faster steer speed. The decomp's run key is P.
-- Water and climbing are in the same function. The hold is dry (`dungeon_water_level` 10000 means none) and the start is a floor, so they are not acceptance tests. Still code the water enter (sound, vertical velocity cleared, sink when carried weight is over 250 and float is not held) against `scene_water_body`, so a wet block is not special-cased away. Climbing in the decomp needs a wall-hit flag the body does not report. Approximate with "asked to move, feet barely moved" (under about 5 classic units). Do not add a collide flag. If the approximation cannot see a scrape, leave climbing out of the acceptance test and say so in `play/move.c`.
+- Water and climbing are in the same function. The hold is dry (`dungeon_water_level` 10000 means none) and the start is a floor, so they are not acceptance tests. Still code the water enter (sound, vertical velocity cleared, sink when carried weight is over 250 and float is not held) against `scene_water_body`, so a wet block is not special-cased away. Climbing in the decomp needs a wall-hit flag the body does not report. Approximate with "asked to move, feet barely moved" (under about 5 classic units). Do not add a collide flag. If the approximation cannot see a scrape, leave climbing out of the acceptance test and say so in `play/input/move.c`.
 
 `walker_set_game` to the player's body so the viewer's walker does not move a second body. The game calls `body_step` itself. `gfx_frame` does not.
 
@@ -247,7 +257,7 @@ Already there, so an engine change is forbidden:
 | Creature pictures | `world_creatures_step` from the seam |
 | Water depth | `scene_water_body` |
 
-A ray through a screen point is `camera_basis` plus `camera_focal` and the view size. That is game arithmetic in `play/activate.c`.
+A ray through a screen point is `camera_basis` plus `camera_focal` and the view size. That is game arithmetic in `play/input/activate.c`.
 
 Coloured classic text is a blit into an indexed picture (`smallfont_draw` already takes an ink index). Do not add `ui_string` colours.
 
@@ -534,7 +544,7 @@ that every original maintenance handler already runs.
 
 ### GFALL's save format and location
 
-`play/save.c` writes **`gfall/saves/S0001.SAV`** through `S9999.SAV`, relative
+`play/save/save.c` writes **`gfall/saves/S0001.SAV`** through `S9999.SAV`, relative
 to the executable directory. It never writes GFALL's `saves` folder. These
 are GFALL saves; DOS Daggerfall import/export compatibility is out of scope.
 Future GFALL versions may explicitly reject incompatible files.
@@ -559,7 +569,7 @@ container keys/positions and owned spell records. Version 2 saves are upgraded
 and their starting clothing and spell contents materialised once. Effects,
 factions and quest state will extend the schema as their systems are built.
 
-`tests/check_ogstate.c` verifies ownership/cycle/reference validation, bounded
+`tests/check_state.c` verifies ownership/cycle/reference validation, bounded
 IDs and wrap, RNG reference values and continuation, modal pause/resume,
 frame-independent timer accumulation, chronological minute events, two
 independent characters, custom career preservation, settings and pose, disk
@@ -664,7 +674,7 @@ when heading changes. This replaces 32 resident copies and makes room for all
 six RGB previews within the existing 384 KB picture allocation. Closed previews
 and the Mouse panel are freed. These are no longer needed when walking.
 
-`tests/check_ogui.c` drives the real controller: Name OK, both audio sliders and
+`tests/check_ui.c` drives the real controller: Name OK, both audio sliders and
 a captured drag, fullscreen/bobbing indicators, key capture/cancel/duplicates,
 Cursor/View/sensitivity/reverse, defaults/config round trips, all nine native
 PNTER.CIF arrows/X, save naming, six previews actually drawn on the fake card,
@@ -699,7 +709,7 @@ The behavior is translated from the reference's `src/hand/func_0005DE74.c`
 `src/lifted/pickbook*.c` (spellbook), and `src/lifted/book*.c` (books).
 The imported original data is separate from GFALL's rules and tables.
 
-`play/inventory.c` operates on stable object IDs. Item records retain group,
+`play/items/inventory.c` operates on stable object IDs. Item records retain group,
 index, name, material, current/max condition, quantity, quarter-kilogram weight,
 value, inventory/dropped picture, armor type, dye and book ID. Equipment uses
 the original 27 slot numbers, including paired accessories, clothing layers,
@@ -723,7 +733,7 @@ Nothing recreates or rerolls those contents on an ordinary save/load.
 
 ### Screens and input
 
-`play/possessions.c` owns input and transient screen state. F6/the pack button
+`play/items/possessions.c` owns input and transient screen state. F6/the pack button
 opens the four-tab inventory on INVE00/01, with the paper doll, twelve accessory
 slots, live armor values, two scrolling item columns, Info/Equip/Remove/Use and
 the Gold prompt. The right column is the searched container or a dropped pile.
@@ -863,7 +873,7 @@ systems; inventory does not fabricate their records or effects.
 
 ### Rules and descriptions
 
-`play/describe.c` expands the original TEXT.RSC item records rather than a
+`play/items/describe.c` expands the original TEXT.RSC item records rather than a
 generic stats box: 1000 armor, 1001 weapons, 1003 miscellaneous items, 1004
 empty soul traps, 1007 letters of credit, 1009 book title/author and 1011 arrows.
 Material, armor modifier, weapon damage, condition, worth and quarter-kilogram
@@ -1126,7 +1136,7 @@ still pending alongside their respective systems. No save-format change is neede
 
 ## Dungeon locks and teleport arrivals — 2026-11-08
 
-`play/doors.c` owns ordinary dungeon lock rules. Grab activation reports the
+`play/travel/doors.c` owns ordinary dungeon lock rules. Grab activation reports the
 original difficulty message; Steal activation picks the lock. The source is
 `lockpick_door` (0x1345E), `lock_show_difficulty` (0x138E4) and `door_try_open`
 (0x7425E). For ratings 1–19, the pick chance is Lockpicking +
@@ -1192,7 +1202,7 @@ engine tests before entering its first pad; no target playtest is claimed.
 ## Dungeon gameplay systems — 2026-11-09
 
 This extends the playable Hold; it does not complete every dungeon system.
-Rules stay in `src/game/gfall/play/`. The borrowed place adapter exposes raw
+Rules stay in `src/game/dagger/play/`. The place adapter exposes raw
 model actions and supplies geometry, keys and art. It does not decide GFALL's
 skill, encounter, trap or survival rules.
 
@@ -1515,8 +1525,8 @@ uses TEXT.RSC 1010; declining preserves options, money and time.
 
 ### Boundaries and engine use
 
-`play/travel.c`, `journey.c`, `maps.c`, `ground.c` and `worldstate.h` own GFALL's
-rules and saved data. Only `apps/gfall/seam.c` includes the existing dagger
+`play/travel/travel.c`, `journey.c`, `maps.c`, `ground.c` and `worldstate.h` own GFALL's
+rules and saved data. The app adapters under `apps/gfall/` include the existing dagger
 builders and map presenters. The map's callbacks supply GFALL money, discovery,
 question text and journey planning; no GFALL player or save is constructed.
 GFALL's original map entry delegates to `travelmap_player.c`, retaining its
@@ -1622,8 +1632,8 @@ hardware acceptance remains separate.
 
 ## Standing: factions, reputation and regions (2026-11-10)
 
-People and law, slice 1 ([game-people.md](game-people.md)). `play/standing.c`,
-plain C, no Daggerfall headers, host-tested in `tests/check_ogstanding.c`.
+People and law, slice 1 ([game-people.md](game-people.md)). `play/people/standing.c`,
+plain C, no Daggerfall headers, host-tested in `tests/check_standing.c`.
 
 Source: `faction_add_reputation`, `faction_change_reputation`,
 `faction_add_reputation_r`, `faction_propagate_reputation` (`src/lifted/talk.c`
@@ -1659,8 +1669,8 @@ Source: `faction_add_reputation`, `faction_change_reputation`,
 
 ## Trade: the price chain (2026-11-10)
 
-People and law, slice 2, first part. `play/trade.c`, plain integer C, host-tested in
-`tests/check_ogtrade.c` against numbers worked by hand from the decomp's notes.
+People and law, slice 2, first part. `play/people/trade.c`, plain integer C, host-tested in
+`tests/check_trade.c` against numbers worked by hand from the decomp's notes.
 
 Source: `trade_region_price`, `trade_base_price`, `trade_adjust_price`, `trade_total_buy`,
 `trade_total_sell`, `trade_total_repair`, `trade_make_offer` (`src/lifted/inven.c` 1054..1345),
@@ -1687,7 +1697,7 @@ Source: `trade_region_price`, `trade_base_price`, `trade_adjust_price`, `trade_t
 
 ## Trade: the shelves (2026-11-10)
 
-Slice 2, second part. `play/shelf.c`, with `tables/shopdefs.c` generated from FALL.EXE
+Slice 2, second part. `play/people/shelf.c`, with `tables/shopdefs.c` generated from FALL.EXE
 (`tools/gfall-data.py` writes `shopdata.h`: the five group lists at 0x186639, 0x186678,
 0x186774, 0x186870 and 0x1868D9, 21 building types each). Source: `shop_generate_stock`
 (`src/lifted/equip.c` 755), `interior_stock_shelves` and `furniture_is_container`
@@ -1712,9 +1722,9 @@ Slice 2, second part. `play/shelf.c`, with `tables/shopdefs.c` generated from FA
 
 ## Trade: a shop session and the holidays (2026-11-10)
 
-Slice 2, third part. `play/market.c` (the session), `tables/holidaydefs.c` (generated from
+Slice 2, third part. `play/people/market.c` (the session), `tables/holidaydefs.c` (generated from
 FALL.EXE: `holiday_days` at 0x17CA24 and `holiday_regions` at 0x17CA8E, 53 holidays), tested in
-`tests/check_ogmarket.c` on a live session. Source: `inventory_frame` and `inventory_close`
+`tests/check_market.c` on a live session. Source: `inventory_frame` and `inventory_close`
 (`src/lifted/inven.c` 386..500), `trade_settle_offer`, `trade_make_offer`, `inv_claim_items`,
 `holiday_today` (`src/lifted/parse.c` 1920).
 
@@ -1738,9 +1748,9 @@ FALL.EXE: `holiday_days` at 0x17CA24 and `holiday_regions` at 0x17CA8E, 53 holid
 
 ## Trade: the shop screen (2026-11-10)
 
-Slice 2, fourth part. The inventory as a shop: `possessions_trade` (`play/possessions.c`), the seam's
-painting and shelf hook (`apps/gfall/seam.c`: `paint_inventory`, `shelf_used`, `offer_say`), tested by
-scripted clicks in `check_ogmarket_screen`, which also writes `build/gfall-shop-basket.ppm` and
+Slice 2, fourth part. The inventory as a shop: `possessions_trade` (`play/items/possessions.c`), the seam's
+painting and shelf hook (`apps/gfall/screen/possessions.c` and `apps/gfall/people/people.c`), tested by
+scripted clicks in `check_market_screen`, which also writes `build/gfall-shop-basket.ppm` and
 `build/gfall-shop-offer.ppm`.
 
 Source: `inventory_draw` (`src/hand/func_00092ED8.c`), `inventory_load_images` and `inventory_frame`
@@ -1776,7 +1786,7 @@ Source: `inventory_draw` (`src/hand/func_00092ED8.c`), `inventory_load_images` a
 
 ## The bank (2026-11-10)
 
-People and law, slice 3. Rules in `play/bank.c`, tested in `tests/check_ogbank.c`; the screen is a page of
+People and law, slice 3. Rules in `play/people/bank.c`, tested in `tests/check_bank.c`; the screen is a page of
 the possessions controller (`possessions_bank`) painted by the seam (`paint_bank`); the console's
 `bank [region]` opens it until bankers talk. Saves are schema 9 (an account a region, the house and the ship).
 
@@ -1809,7 +1819,7 @@ the date's names (`tables/datedefs.c`, generated) are read out of FALL.EXE.
 
 ## Lodging: rooms, meals and where rest is allowed (2026-11-10)
 
-People and law, slice 4. `play/lodging.c`, tested in `tests/check_oglodging.c` against numbers worked by
+People and law, slice 4. `play/people/lodging.c`, tested in `tests/check_lodging.c` against numbers worked by
 hand; saves are schema 10 (rooms held, the last meal). Source: `tavern_room_offer`, `tavern_room_pay`,
 `tavern_rent`, `tavern_extend_room`, `tavern_room_rented`, `tavern_room_days_left`, `tavern_buy_food`,
 `tavern_food_button` (`src/lifted/tavern.c`), `rest_allowed`, `rest_room_expired` (`src/lifted/rest.c`
@@ -1840,7 +1850,7 @@ lines are read out of FALL.EXE (`tables/lodgingdata.h`, generated).
 
 ## Law: crimes and the court (2026-11-10)
 
-People and law, slice 5, the rules. `play/law.c`, tested in `tests/check_oglaw.c`; saves are schema 11 (the crime
+People and law, slice 5, the rules. `play/people/law.c`, tested in `tests/check_law.c`; saves are schema 11 (the crime
 noted and each region's punishment flags). The crime table is read out of FALL.EXE (`tables/lawdata.h`, generated:
 `crime_reputation_loss` 0x179EAC, `crime_fine_table` 0x179EE0, `crime_names` 0x184229). Source:
 `crime_reputation_penalty`, `court_reputation_restore`, `court_restore_vitals`, `court_frame` (`src/lifted/crime.c`),
@@ -1879,9 +1889,9 @@ noted and each region's punishment flags). The crime table is read out of FALL.E
 
 ## Law: the guards, the arrest and the court screen (2026-11-10)
 
-People and law, slice 5, the play. `play/law.c` (guards and arrest), the court as a page of the possessions
+People and law, slice 5, the play. `play/people/law.c` (guards and arrest), the court as a page of the possessions
 controller (`possessions_surrender`, `possessions_arrested`), painted by the seam, tested in
-`check_oglaw_guards` (it writes `build/gfall-court-surrender.ppm`, `-ask.ppm`, `-sentence.ppm`). Source:
+`check_law_guards` (it writes `build/gfall-court-surrender.ppm`, `-ask.ppm`, `-sentence.ppm`). Source:
 `guards_summon` (`src/hand/func_00040C87.c`), `guards_timer_tick`, `guards_are_present` (`src/lifted/text.c`
 758..826), `damage_apply` (`src/lifted/qkey.c` 527..589), `crime_guards_or_court`
 (`src/hand/func_00040FC1.c`), `court_open` and `court_frame`; the court's words are TEXT.RSC 15 and 8050..8064.
@@ -1910,8 +1920,8 @@ controller (`possessions_surrender`, `possessions_arrested`), painted by the sea
 
 ## Talk: who talks and how they greet (2026-11-10)
 
-People and law, slice 6, the rules. `play/talk.c` and the faction relation in `play/standing.c`, tested in
-`tests/check_ogtalk.c` on FACTION.TXT's real factions. The greetings' records (9 relations of three), the chance
+People and law, slice 6, the rules. `play/people/talk.c` and the faction relation in `play/people/standing.c`, tested in
+`tests/check_talk.c` on FACTION.TXT's real factions. The greetings' records (9 relations of three), the chance
 to know (8 kinds of question by 5 speech styles) and the attitude each kind adds are read out of FALL.EXE
 (`tables/talkdata.h`, generated). Source: `talk_start` (`src/lifted/talk.c` 356), `talk_open`
 (`src/hand/func_00014AE8.c`), `talk_faction_greeting`, `talk_roll_attitude`, `talk_roll_knows` (talk.c 1378..1457),
@@ -1944,7 +1954,7 @@ to know (8 kinds of question by 5 speech styles) and the attitude each kind adds
 
 ## People and law, slice 7: steal (rules)
 
-`play/steal.c` is `pickpocket_attempt`, `trade_steal_button` and the shelf click's alarm roll (decomp `steal.c`, `inven.c`,
+`play/people/steal.c` is `pickpocket_attempt`, `trade_steal_button` and the shelf click's alarm roll (decomp `steal.c`, `inven.c`,
 `click.c` 975), with the original's own lines read out of FALL.EXE into `tables/stealdata.h`.
 
 - A pocket (`steal_pocket`): Pickpocket (15), a creature's level against the player's at five a level, held 5..95, so
@@ -1958,11 +1968,11 @@ to know (8 kinds of question by 5 speech styles) and the attitude each kind adds
 
 Not wired: GFALL's shelf still opens a buying session directly (an adaptation: the original buys through the shopkeeper's
 panel, which comes with talk), so record 37's question and the alarm roll wait for that panel and for the person to
-steal from. `tests/check_ogsteal.c` holds the chances, the crimes and the kept goods.
+steal from. `tests/check_steal.c` holds the chances, the crimes and the kept goods.
 
 ## People and law, slice 6 (continued): the window's answers
 
-`play/talk.c` now holds what `talk_button_okay` decides, over a world the caller describes:
+`play/people/talk.c` now holds what `talk_button_okay` decides, over a world the caller describes:
 
 - Topics: `talk_category` is `building_category` (the bank's type 3 is "Banks", an unlisted type "General", a house only when
   it is a quest site); `talk_topics` is `talk_build_place_topics` (houses and types past 16 out, nearest first by the original's
@@ -1975,11 +1985,11 @@ steal from. `tests/check_ogsteal.c` holds the chances, the crimes and the kept g
   town map) when it is within 2048 units or a one-in-four recall while out in the streets, else 7333.
 
 Not built: the window's screen, `rumor_pick_news` (it reads a rumour file the original's region events write, which GFALL has no
-world to produce, so there is no news yet), the quest topics, and the people to talk to (slice 8). Tests are in `tests/check_ogtalk.c`.
+world to produce, so there is no news yet), the quest topics, and the people to talk to (slice 8). Tests are in `tests/check_talk.c`.
 
 ## People and law, slice 8 (first part): names
 
-`play/names.c` is the original's name generator and signs, over NAMEGEN.DAT bytes the seam loads at start (`names_set_data`) and the
+`play/people/names.c` is the original's name generator and signs, over NAMEGEN.DAT bytes the seam loads at start (`names_set_data`) and the
 words in `tables/namedata.h` (from FALL.EXE):
 
 - `name_generate` / `name_seeded`: `name_generate` by bank. Banks 1, 8, 9 and 10 have a given name alone, the Nords (2) two pieces
@@ -1996,11 +2006,11 @@ words in `tables/namedata.h` (from FALL.EXE):
 
 Not built: the person in the view (`people_in_view` gives an id and a sex), the town's building list with each building's name seed (the RMB
 building record's first word, not yet read by `rmb.c`), the person's faction and schedule, the portrait and the talk screen on top.
-Tests are in `tests/check_ognames.c`; the names themselves are not checked against the original's output, only their shapes and seeding.
+Tests are in `tests/check_names.c`; the names themselves are not checked against the original's output, only their shapes and seeding.
 
 ## People and law, slice 8 (continued): the person in the view
 
-`activate_set_person` hands the game a use that found no usable: `apps/gfall/seam.c`'s `person_used` asks the dagger layer who stands
+`activate_set_person` hands the game a use that found no usable: `gfall_person_used` in `apps/gfall/people/people.c` asks the dagger layer who stands
 in the view (`people_in_view_at`, a number and a sex, within `TALK_REACH`), and the people of the region are that region's faction of type 15.
 By the hud's mode:
 
@@ -2010,11 +2020,11 @@ By the hud's mode:
 - Steal: a pocket within 128 units (`steal_pocket`), once a person: a failed try puts the number on a short list and that person is not tried again.
 
 `TownBuilding` now carries each building's `name_seed` (`rmb_building_seed`, the first word of the 26-byte record), so `building_name`
-has what it needs. The test is in `tests/check_ogworld.c` (Daggerfall's streets: info, then talk opening a message page).
+has what it needs. The test is in `tests/check_world.c` (Daggerfall's streets: info, then talk opening a message page).
 
 ## People and law: the talk window and the shopkeeper's panels
 
-`play/talkwin.c` is the window's behaviour (`talk_update`, `talk_draw`, `talk_buttons` at FALL.EXE 0x179B78) without drawing; the seam paints it
+`play/people/talkwin.c` is the window's behaviour (`talk_update`, `talk_draw`, `talk_buttons` at FALL.EXE 0x179B78) without drawing; the seam paints it
 (`paint_talk`) on TALK01I0.IMG, with TALK02I0 (the tabs greyed) and TALK03I0 (the two lit ways of asking) as the original layers them. A page of its
 own (`VIEW_TALK`) routes the keys and clicks to `talkwin_click` and `talkwin_key`; Goodbye, or Escape on the categories, ends it.
 
@@ -2040,8 +2050,8 @@ free to take, so theft) when it is closed. Record 37, "private property", with i
 
 Not built: guild halls and temples (`guild_service_dispatch`),
 the tavern's panel (`tavern_open`), the quest people, `rumor_pick_news`, the regional search (`talk_find_regional`, so a regional question answers "no one"), the
-copy to the logbook, and the list's horizontal scroll (kept in the state, not painted). Tests: `tests/check_ogtalkwin.c` over a stand-in town, and
-`tests/check_ogworld.c` in Daggerfall's streets (a person met, the window's buttons, the panels), writing `build/gfall-talk0..2.ppm` and `service0..1.ppm`.
+copy to the logbook, and the list's horizontal scroll (kept in the state, not painted). Tests: `tests/check_talkwin.c` over a stand-in town, and
+`tests/check_world.c` in Daggerfall's streets (a person met, the window's buttons, the panels), writing `build/gfall-talk0..2.ppm` and `service0..1.ppm`.
 
 ### The shopkeeper's flag
 
@@ -2053,7 +2063,7 @@ bank, alchemist, armorer and weaponsmith with a shopkeeper, no house with one.
 
 ## People and law, slice 9: guilds
 
-`play/guild.c` is the membership model (schema 12: `GuildsState`, eight memberships, the Thieves' and the Brotherhood's crime counts and invitations) and its rules,
+`play/people/guild.c` is the membership model (schema 12: `GuildsState`, eight memberships, the Thieves' and the Brotherhood's crime counts and invitations) and its rules,
 from `guild_join_or_promote`, `guild_join_check`, `guild_rank_for_skills`, `guild_count_crime`, `guild_check_invitations` and `guild_kind_of_faction`; the messages, the skills that
 rank each guild and the steps come from FALL.EXE (`tables/guilddata.h`).
 
@@ -2078,8 +2088,8 @@ cure and quest. Built: Talk, a donation (a number, a chance of one point of the 
 Two small controls came with it: a yes or no over the world (`possessions_ask`) and a typed number (`possessions_number`), both on the message page.
 
 Not built: training, buying and making potions, soul gems, spells and magic items, the Daedra, teleporting, blessings, cures, the temples' quests, the knights' armour and house,
-the Brotherhood's and Thieves' invitation letters, the guild healing's attribute restore and disease cleanup, and the rank-4 knights' effects beyond rooms. Tests: `tests/check_ogguild.c`
-(the rules, through a save in `check_ogstate.c`) and the menu, the yes or no and the number in `tests/check_ogworld.c`, writing `build/gfall-guild0..1.ppm`.
+the Brotherhood's and Thieves' invitation letters, the guild healing's attribute restore and disease cleanup, and the rank-4 knights' effects beyond rooms. Tests: `tests/check_guild.c`
+(the rules, through a save in `check_state.c`) and the menu, the yes or no and the number in `tests/check_world.c`, writing `build/gfall-guild0..1.ppm`.
 
 ### Guild services: training, cures, blessings, healing
 
@@ -2096,8 +2106,8 @@ the Brotherhood's and Thieves' invitation letters, the guild healing's attribute
   the player (the original's type 9 children) are not cleared. When a question is up the service waits for its answer.
 - A watchman killed in a dungeon is counted by the Brotherhood (`guild_count_crime(6, 1)`); a pedestrian's death (6, 5) comes with the streets' people being fought.
 
-Controls on the message page grew a list popup (`possessions_list`) and up to four queued messages. Tests: `tests/check_ogguild.c` (training, blessings) and the Fighters'
-trainer driven by clicks to a lesson in `tests/check_ogworld.c`. Cure and blessing through the shop's chain need a building to stand in and are not driven by the tests.
+Controls on the message page grew a list popup (`possessions_list`) and up to four queued messages. Tests: `tests/check_guild.c` (training, blessings) and the Fighters'
+trainer driven by clicks to a lesson in `tests/check_world.c`. Cure and blessing through the shop's chain need a building to stand in and are not driven by the tests.
 
 ### The tavern, the knights' gifts and opening hours
 
@@ -2107,12 +2117,12 @@ trainer driven by clicks to a lesson in `tests/check_ogworld.c`. Cure and blessi
   refused within 240 minutes of the last meal.
 - **Knights' gifts** (`knight_armor`, `knight_house_allowed`): one piece of plate a rank, a random one of seven, in the metal the rank names (rank 0 wraps the byte and gets 2),
   records 461 and 463. The house waits until the towns' houses are GFALL's own (their price is five times the largest model's radius, which the model layer holds).
-- **Opening hours** (`play/hours.c`, from `building_is_open`): a type opens and shuts by FALL.EXE's table; a guild's own members enter their hall at any hour (the Fighters and Mages from
+- **Opening hours** (`play/people/hours.c`, from `building_is_open`): a type opens and shuts by FALL.EXE's table; a guild's own members enter their hall at any hour (the Fighters and Mages from
   rank 6). A shop's shelves now sell when it is open and open as a plain container, the goods free to take, when it is shut (`shelf_open_stock`). The doors do not ask yet.
 
 ### Potions and soul traps
 
-`play/potion.c` and `tables/potiondata.h`, `souldata.h` (from FALL.EXE):
+`play/magic/potion.c` and `tables/potiondata.h`, `souldata.h` (from FALL.EXE):
 
 - The twenty recipes (`potion_recipes`, 109 bytes each: ingredients, value, the potion's own 89-byte spell). Each spell is registered with the spell table (`spell_register`,
   under `1000 + recipe`), so a potion is cast like any spell of the caster. Stamina is 25 gold, Purification 500; Healing's spell is group 10, sub 8 and heals on drinking.
@@ -2123,7 +2133,7 @@ trainer driven by clicks to a lesson in `tests/check_ogworld.c`. Cure and blessi
   that has a value (the 43 values are FALL.EXE's), added to the price.
 - Not built: the potion maker (`potionmaker_mix`: the cauldron, ingredients matched to a recipe by `potion_match_recipe` or an unknown brew made into a spell by
   `potion_mix_unknown`, which wants the ingredients' potency from `item_make`'s side effects and the spell maker's tables), the alchemists' own shelves of potions, magic items
-  (`shop_stock_magic`, the enchantment tables), the spell shop's window, the Daedra and teleporting. Tests: `tests/check_ogpotion.c`.
+  (`shop_stock_magic`, the enchantment tables), the spell shop's window, the Daedra and teleporting. Tests: `tests/check_potion.c`.
 
 ### The potion maker and the alchemists' shelves
 
@@ -2146,18 +2156,18 @@ trainer driven by clicks to a lesson in `tests/check_ogworld.c`. Cure and blessi
 
 ### The Mages Guild's spell shop
 
-`play/spellshop.c`, `VIEW_SPELLSHOP` (SPBK01I0.IMG): a stranger or a member at the Mages' spell seller (person 60) is offered some of the standard spells. For each of SPELLS.STD's
+`play/magic/spellshop.c`, `VIEW_SPELLSHOP` (SPBK01I0.IMG): a stranger or a member at the Mages' spell seller (person 60) is offered some of the standard spells. For each of SPELLS.STD's
 89 (the unnamed and those named with "!" left out) the spell's magicka cost, held under 96 by halving, is taken from the hall's quality times 5 plus 30 (at least 5), and the spell is
 offered when a roll of 1..50 is below that; the whole table is gone through again while the list is empty. The rolls are on the stream started at the person's number (the original uses the high
 word of their record id) and put back after, so the same person offers the same spells. A spell costs four times its cost in gold (half on the holiday 43) through the hall's price chain;
 Buy asks the offer, 454 says no gold, and the spell goes into the spellbook (the page stays open). Enter buys the selected spell and leaves; Escape and Exit leave. Effects can be clicked
 for their help text. The player must have a spellbook (an empty list is not made without one, and the shop does not open).
-Controls grew a message that can be shown over any window that is up. Tests: `tests/check_ogspellshop.c`, and the window driven by clicks in `tests/check_ogworld.c`
+Controls grew a message that can be shown over any window that is up. Tests: `tests/check_spellshop.c`, and the window driven by clicks in `tests/check_world.c`
 (`build/gfall-spellshop0.ppm`).
 
 ### Magic items
 
-`play/magicitem.c`, `tables/enchantdata.h` (from FALL.EXE) and MAGIC.DEF (read at start by the seam): 59 entries of 62 bytes (a name, an artifact flag, the group of base item and its index,
+`play/magic/magicitem.c`, `tables/enchantdata.h` (from FALL.EXE) and MAGIC.DEF (read at start by the seam): 59 entries of 62 bytes (a name, an artifact flag, the group of base item and its index,
 ten enchantments of a type and a parameter, a condition, a value, a material), 23 of them artifacts. A shop's magic item (`item_make_magic(-1)`) is a random entry that is no artifact, made on a random
 item of the kinds its group allows (group 0: armour, weapons, clothes of the player's sex, 10, 14 or 25; group 1: armour, weapons, clothes, 12/6 or 25; group 2: a weapon; arrows are drawn again),
 named for the entry (the macro `%it` in a name says what it is made on and is expanded when the name is shown), its condition and material the entry's. Its price is `enchant_item_value`: each
@@ -2167,7 +2177,7 @@ strikes is not built, and neither are the artifacts or the item maker.
 
 The shop (`guild_buy_magic_items`): quality / 2 + 1 magic items and a spellbook, and, for a member of rank 4 and over, as many soul traps; the stock is drawn on the stream started at the building's number, so
 a hall holds the same stock every visit; the festival 38 halves the prices. The Mages (65) from rank 3 and the Dibella-like temples that have a seller open it; a stranger is refused.
-Tests: `tests/check_ogmagicitem.c`.
+Tests: `tests/check_magicitem.c`.
 
 ### Teleporting and the Daedra
 
@@ -2179,11 +2189,11 @@ Tests: `tests/check_ogmagicitem.c`.
   (100 - the hall's reputation) * 1000 + 100000, held within 0..200000 and asked in record 481; the gold is spent before the roll. The chance is 30 and the prince's reputation, plus 30 when the prince's
   weather (most like any) is the weather; a roll of 0..100 at most 5 (15 in weather 6) calls the ninth prince instead. Failure is record 484. A first success marks the prince met (`daedra_met`, saved)
   and begins his quest; a later one summons a creature of one of five kinds (26, 25, 27, 29 or 31) as an ally. Neither is built: the quest waits for the quest machine, the ally for friendly creatures; the weather
-  is not passed (the climate's weather byte is not kept), so a prince's liking for weather counts only when he likes any. Tests: `tests/check_ogguild.c`, and `tests/check_ogworld.c` for the teleport.
+  is not passed (the climate's weather byte is not kept), so a prince's liking for weather counts only when he likes any. Tests: `tests/check_guild.c`, and `tests/check_world.c` for the teleport.
 
 ### Doors keep hours; a house door can be picked
 
-`play/entry.c` is `building_try_enter` and `lockpick_action_door`; the seam's `passage_gate` puts it in front of a street door (a passage in a town) before `travel_use`.
+`play/people/entry.c` is `building_try_enter` and `lockpick_action_door`; the seam's `passage_gate` puts it in front of a street door (a passage in a town) before `travel_use`.
 
 - Open: the player's own house; the city wall (24); a building of a type under 17 within its hours (`hours.c`); an open-lock spell (conditions 0x40, spent); a guild's own door (the Brotherhood's 108 and the Thieves' 42
   for members); a house (17..20) by day when its number mod 100 is under 50 (record 256 said).
@@ -2208,7 +2218,7 @@ The decomp's rules (`guards_summon`, `guard_spawn`, `people_check_witnesses`, `p
   give-up three times a creature's (`dungeon_wake`); also a quarter of the people behind the player (over 600 of 2048 round from where they face) are replaced by a guard made near; if none came, two to five are made near.
   A guard seen by a witness brings only the guards. A killed guard's body is the dagger's corpse (`people_lay_corpse`); the court sends the watch away (`dungeon_remove`, `people_fell`). A streamed town opens GFALL's creatures
   with none of its own (`dungeon_open_street`), and their bodies move with the stream's origin (`dungeon_shift`).
-- Tests: `tests/check_ogworld.c`, `street_checks` (the last test of that file).
+- Tests: `tests/check_world.c`, `street_checks` (the last test of that file).
 
 Fixed: a guard taken from the street's people has no keep key (0, 0), and `store_health` wrote a keep row for it all the same (`keep_get` does not refuse an unkeyed key); the row was
 captured with the world and could never be put back (`keep_put` refuses it), so the next place change failed with "No memory for the saved place". `store_health` now skips an unkeyed entity.
@@ -2216,7 +2226,7 @@ captured with the world and could never be put back (`keep_put` refuses it), so 
 
 ### The spell maker (milestone 7)
 
-The Mages Guild's Make Spells (`SVC_SPELL_MAKER`, rank-gated by the guild table) opens `VIEW_MAKER`: INFO01I0.IMG, and MASK05I0.IMG for an effect's numbers, from the decomp's `spellmaker_update` (func_00037014), `spellmaker_settings_update` (func_00038911), `spellmaker_add_effect` and `spellmaker_pick_effect_cb` (func_000383CC, func_00038228) and spells.c. The rules are `play/spellmaker.c` (host-tested in `check_ogspellshop.c`); the clicks `maker_click` in `possessions.c`; the painting `paint_maker` in `seam.c`.
+The Mages Guild's Make Spells (`SVC_SPELL_MAKER`, rank-gated by the guild table) opens `VIEW_MAKER`: INFO01I0.IMG, and MASK05I0.IMG for an effect's numbers, from the decomp's `spellmaker_update` (func_00037014), `spellmaker_settings_update` (func_00038911), `spellmaker_add_effect` and `spellmaker_pick_effect_cb` (func_000383CC, func_00038228) and spells.c. The rules are `play/magic/spellmaker.c` (host-tested in `check_spellshop.c`); the clicks `maker_click` in `possessions.c`; the painting `paint_maker` in `apps/gfall/screen/possessions.c`.
 
 - **The spell** is the 89-byte SPELLS.STD record: effect type and subtype pairs, element (6), target (7), three stored effect costs (shorts at 8), durations, chances, magnitudes, the name (47) and the icon (72). `spellmaker_new` fills it with 1, the effects 255, the element 4 (magic), the target 0.
 - **Effects** are listed for the targets they allow (`spell_effect_target_class`: 0 caster only, 1 touch and beyond, 2 any); picking one puts it in the first free slot and sets the element (magic unless an effect has an elemental level, `D_0017A8B2`) and the target. An effect with subtypes asks for one first; Escape on that list takes the effect out again. The tables are generated by `tools/gfall-magic-data.py` (`g_target_class`, `g_element_level`, `g_effect_sub_name`).
@@ -2230,32 +2240,32 @@ The Mages Guild's Make Spells (`SVC_SPELL_MAKER`, rank-gated by the guild table)
 From the decomp's `docs/quest-machine.md` (sections 1.2 and 2.9..2.10); the plan and the bugs fixed are `docs/game-quests.md`. GFALL reads the quest files in place (`vfs_read`, never copied) and keeps no pointers.
 
 - **`formats/qbn.c`**: the 60-byte header, the section tables (items 19 bytes, persons 20, places 24, timers 33, foes 14, ops 87, states 8, the text variables 27), COUNT.DAT's argument counts, `string_hash` (`qbn_hash`, hash * 2 + byte), an operand as a literal, "always" (-1), "none" (-2) or a record of a section. All 232 QBN files parse; M0B00Y00 is the document's one item, one person, two places, one timer, three foes, twelve states and twenty ops, its hashes 6932 and 115084.
-- **`play/quest.c`**: up to 32 quests with ids 1..255; `quest_run` runs every quest's ops in file order, once each, from the state's frame (the world only: the inventory suspends them) and from each passing minute (not while a sentence is served). States are bytes (a global one is a byte of the 64 shared); `quest_arg_state` and `quest_set_state` honour the negate bit, -1 is always true. Done: ops 6 (the end), 7 (clear), 16, 31 (the minute of the day, wrapping), 34 (one given state at random, once), 35, 51 (say, once), 52 (all given states set the state, never cleared: 7.9 kept; an unused operand is ignored), 53 (any), 77 (level). The others are inert and land with the steps: each keeps its place in the one switch of `run_op`.
-- **The words**: an op's message is a QRC id of the quest's own file, or a TEXT.RSC id when bit 15 is set; `seam.c` reads it with the dagger layer's TEXT.RSC reader and shows it in the message box. Symbols and macros (`%qdt`, `___questgiver_`) are step 3.
-- Test: `tests/check_ogquest.c` (every QBN parses, M0B00Y00's tables, a quest built in memory running to its end saying its message once, ids and the faction of started quests).
+- **`play/quests/quest.c`**: up to 32 quests with ids 1..255; `quest_run` runs every quest's ops in file order, once each, from the state's frame (the world only: the inventory suspends them) and from each passing minute (not while a sentence is served). States are bytes (a global one is a byte of the 64 shared); `quest_arg_state` and `quest_set_state` honour the negate bit, -1 is always true. Done: ops 6 (the end), 7 (clear), 16, 31 (the minute of the day, wrapping), 34 (one given state at random, once), 35, 51 (say, once), 52 (all given states set the state, never cleared: 7.9 kept; an unused operand is ignored), 53 (any), 77 (level). The others are inert and land with the steps: each keeps its place in the one switch of `run_op`.
+- **The words**: an op's message is a QRC id of the quest's own file, or a TEXT.RSC id when bit 15 is set; `apps/gfall/quests/hooks.c` reads it with the dagger layer's TEXT.RSC reader and shows it in the message box. Symbols and macros (`%qdt`, `___questgiver_`) are step 3.
+- Test: `tests/check_quest.c` (every QBN parses, M0B00Y00's tables, a quest built in memory running to its end saying its message once, ids and the faction of started quests).
 - Not yet: the resources (people, places, items, foes), timers, the logbook, starting and offering, rewards and saving.
 
 ### The quest machine, step 2 (choosing, starting and offering)
 
 - **The list** (`tables/questdata.h`, generated by `tools/gfall-data.py` from the names of ARENA2's `.QBN` files; the files themselves are read in place): `quest_pick` is `quest_pick_file`: the names whose first letter is the guild's (or a second), then '0', then the membership letter ('B' members only, 'C' anyone), whose rank digit is at most the rank, one at random. DAGGER.GRD's hiding of X quests is not read (the file is not there).
 - **Starting** (`quest_begin`, `quest_start` and `quest_offer_prompt`): an empty name, `N0C00Y01` and a quest of that name already running are refused; the quest's faction is the giver's when its sixth letter is `Y`, else none; a name that is not an `S` quest and is a `Y` quest or a Daedra's (T..Z, 1..9) asks yes or no with the QRC's message 1000, answers 1002 or 1001, and a no ends it; anything else is accepted silently. The princes' FLC is not played. Binding the resources, the timers, the logbook and the rumour 1005 are the later steps.
-- **Get Quest** (`hall_quest` in `seam.c`, from the guild menu's `SVC_QUEST`): L for the Dark Brotherhood, N for the Mages (rank: the player's level), M for the Fighters, O for the Thieves, B for the knightly orders (the level); 'B' for a member and 'C' for anyone else, a non-member's rank 0 (7.3 fixed). None to offer leaves the person talking. The person already having a quest (the click then talks, step 6) and the temples' and commoners' quests are later steps.
-- Tests: `check_ogquest.c` (the picks, the offer answered yes and no, the refusals) and `check_ogworld.c` (a Fighters member asking for a quest by clicks).
+- **Get Quest** (`hall_quest` in `apps/gfall/people/services.c`, from the guild menu's `SVC_QUEST`): L for the Dark Brotherhood, N for the Mages (rank: the player's level), M for the Fighters, O for the Thieves, B for the knightly orders (the level); 'B' for a member and 'C' for anyone else, a non-member's rank 0 (7.3 fixed). None to offer leaves the person talking. The person already having a quest (the click then talks, step 6) and the temples' and commoners' quests are later steps.
+- Tests: `check_quest.c` (the picks, the offer answered yes and no, the refusals) and `check_world.c` (a Fighters member asking for a quest by clicks).
 
 ### The quest machine, step 3 (text and the logbook)
 
-- **Symbols** (`quest_expand`, `parse_expand` and `quest_symbol_text`, 3.2): `_name_` (each extra leading `_` adds 16 to the form), `=name_` (each extra `=` adds 1), and `_a`b_` (the second timer's delay added to the first's); the hash is `string_hash` of the name. A hash is looked up in the items, the places, the persons, the foes and the timers, the first match winning (7.2 kept). A foe says its creature's name, a timer `=` its days `(delay + 1439) / 1440` and `_` its minutes; the items', places' and persons' words are the game's (`QuestNames`: forms 0, 16, 32, 48 of a place or person are its name, its building, its town, its region), blank until the steps that bind them. A symbol that names nothing is blank. Then `%qdt` (the entry's date, `date_text`) and `%cn` (a log entry's own place), then the game's TEXT.RSC macros (`quest_macros` in `seam.c`: the player's name and race, the town, the region). Messages and the offer are all said through it.
+- **Symbols** (`quest_expand`, `parse_expand` and `quest_symbol_text`, 3.2): `_name_` (each extra leading `_` adds 16 to the form), `=name_` (each extra `=` adds 1), and `_a`b_` (the second timer's delay added to the first's); the hash is `string_hash` of the name. A hash is looked up in the items, the places, the persons, the foes and the timers, the first match winning (7.2 kept). A foe says its creature's name, a timer `=` its days `(delay + 1439) / 1440` and `_` its minutes; the items', places' and persons' words are the game's (`QuestNames`: forms 0, 16, 32, 48 of a place or person are its name, its building, its town, its region), blank until the steps that bind them. A symbol that names nothing is blank. Then `%qdt` (the entry's date, `date_text`) and `%cn` (a log entry's own place), then the game's TEXT.RSC macros (`quest_macros` in `apps/gfall/quests/hooks.c`: the player's name and race, the town, the region). Messages and the offer are all said through it.
 - **The logbook** (`logbook_*`, logbook.c, 3.4): 32 slots of ten entries, each an entry's QRC message, the minute and the place it was written (the town or the region); op 23 writes entry `index % 10` of the quest's slot (the first free, after clearing the slots of quests that have ended), op 24 clears one. A full log writes nothing and the quest goes on (7.7 fixed). `logbook_text` is `logbook_build_entries`: every entry of the quests that are running in order, each expanded with its own date and place.
 - **The Log button** on the character sheet opens the entries on the parchment (paged with PgUp and PgDn); the original's own page with its previous and next buttons and the notes page (`COPYFILE.DAT`, `logbook_copy_text`) are not built. "Your quest log is empty." when there is none.
-- Test: `check_ogquest.c` (the symbols with stub names, a symbol that names nothing, the unfinished `=x`, op 23 writing 1030 with the place, the log's text with the town, the dungeon and the date, a quest that ended leaving no entries).
+- Test: `check_quest.c` (the symbols with stub names, a symbol that names nothing, the unfinished `=x`, op 23 writing 1030 with the place, the log's text with the town, the dungeon and the date, a quest that ended leaving no entries).
 - Not yet: the resources' own names (steps 4 to 7), the timers' delays (step 4), the notes page, and the log saved (step 8; the log is lost with the game).
 
 ### The quest machine, step 4 (places and timers)
 
-- **Places** (`bind_place`, quest_init_place and quest_pick_location, 2.4 and `quests-math.md`): a place with scope 1 or below is the location the player is in; scope 2 and up is a location of the kind (`p1`: 0 a town, types 0..2; 1 a dungeon, types 4, 7, 10, 12, 13) in the player's region other than the one they are in, drawn at random and drawn again (up to 100 times) when another quest, or another place of this quest, holds it. The map comes through `QuestWorld` (`seam.c`: the travel list's locations, `travel_region`, the world state's pixel, the province's name, the journey estimate, the map's discovery). A place that cannot be bound ends the quest and says TEXT.RSC 600. A symbol on a bound place says the location's name (forms 0, 16, 32; the document's town and building names are the location here) or its region's (48).
+- **Places** (`bind_place`, quest_init_place and quest_pick_location, 2.4 and `quests-math.md`): a place with scope 1 or below is the location the player is in; scope 2 and up is a location of the kind (`p1`: 0 a town, types 0..2; 1 a dungeon, types 4, 7, 10, 12, 13) in the player's region other than the one they are in, drawn at random and drawn again (up to 100 times) when another quest, or another place of this quest, holds it. The map comes through `QuestWorld` (`apps/gfall/quests/hooks.c`: the travel list's locations, `travel_region`, the world state's pixel, the province's name, the journey estimate, the map's discovery). A place that cannot be bound ends the quest and says TEXT.RSC 600. A symbol on a bound place says the location's name (forms 0, 16, 32; the document's town and building names are the location here) or its region's (48).
 - **Timers** (`timer_start`, `timers_run`, 2.8): the delay by type (0 a random in the range, 1 the minimum, 2 and 4 the journey to the first place, 3 between the two, 5 both), the journey being the quests' estimate (`journey_plan` with the ship's sea pixels at 51) plus two days, `* 384 >> 8`, a week more for each place of a kind 4, 7, 10, 12 or 14, doubled with bit 4. A running timer past its delay (unsigned, strictly) is expired: latched or pulsed with bits 0 or 1, toggled with bit 2 (else nothing: 7.15 kept), started again with bit 3 or stopped; the state whose hash is the timer's takes the expired bit; a pulse's lasts one run. Op 12 starts a timer that is not running, op 13 stops one. `=timer_` in text is the days.
 - **Ops 19, 20 and 27** show a location on the map (`travel_discover`): the place bound to the symbol (7.12 fixed), or the region and index given.
-- Test: `check_ogquest.c` with a stub map of five locations: M0B00Y00's dungeons are two different ones of the region other than the current, the delay is `(100 + 2880) * 384 / 256 + 10080` doubled, op 12 starts the timer, op 19 shows the first dungeon, the offer says its name and "21 days", and at the delay the timer's state ends the quest by op 6.
+- Test: `check_quest.c` with a stub map of five locations: M0B00Y00's dungeons are two different ones of the region other than the current, the delay is `(100 + 2880) * 384 / 256 + 10080` doubled, op 12 starts the timer, op 19 shows the first dungeon, the offer says its name and "21 days", and at the delay the timer's state ends the quest by op 6.
 - Not yet: places by their sub-kind (the dungeon's type `p2`) or by a town's building types (`p1` 0 with `p2`), fixed places (scope 0, the main story's), timers linked to a person (flags 0x100, 0x200), and the building or door a place is (steps 5, 6 and 9).
 
 ### The quest machine, step 5 (foes and kills)
@@ -2263,14 +2273,14 @@ From the decomp's `docs/quest-machine.md` (sections 1.2 and 2.9..2.10); the plan
 - **Foes** (quest_init_foe, 2.6): each foe of a quest takes the next number of one counter (the original's `D_00178A10`), and the number is the creature's identity. Its type is the creature id (GFALL's kinds 0..42, 128..146) and its count how many of it there are.
 - **Op 22** (once, 2.10; 33 the same): the foe is placed in a place of the quest or, with none, near the player. It is made now when the player is in that dungeon, else when the dungeon loads (`quest_location_loaded`, called by `seam_open_place` after the dungeon's encounters are opened; a foe is made once). The creatures go through the dungeon's actor slots (`encounter_place`: the rest encounters' spawn, unseen 384 to 768 units from the player where there is floor, a keep row each, the same eight slots), keyed `0xE0000000 | number << 4 | copy` (`QUEST_FOE_THING`; the rest's keys are `0x80000000 | serial`, a dungeon's own `block << 24 | position`).
 - **Events** (2.11): a creature of a quest dying raises event 2 (`hit_foe`), the player's blow on one event 21 (`resolve_player`); both read the foe's number from the key. An op 2 counts a kill to its number (`killed` on the foe, shared by its ops) and, at the count, sets its state and says its message (1020 and 1021 of M0B00Y00); an op 21 sets its state. Their state is read by the run after.
-- Test: `check_ogquest.c`: M0B00Y00's op 22 places one of its three beasts in the first dungeon and it is made with its type and key when that dungeon loads, once; a hit and a kill set S1 and say the message.
+- Test: `check_quest.c`: M0B00Y00's op 22 places one of its three beasts in the first dungeon and it is made with its type and key when that dungeon loads, once; a hit and a kill set S1 and say the message.
 - Not yet (documented): the quest markers a dungeon places a foe at (RDB's editor markers of the archive 199: records 11, 17, 18 and 20 are in the blocks besides the creatures' 15 and 16, which one is the quest's is not settled, so the foe is placed near the player), the door kind `p3`, the foe's gear (op 22's "then give it its gear"), the respawning ops 9 and 87 and the pacify and spell ops 68 and 69 (step 9), foes of more than the eight actor slots, and quest creatures that wait in the dungeon through a save (step 8).
 
 ### The quest machine, step 6 (persons and talk)
 
-- **The questor** (`quest_set_questor`): the person a guild's Get Quest was asked of (`seam.c` `hall_quest`: who, faction, name, town). A person of kind 21 binds to them as a live copy, or the quest does not start; a kind -8 person is a faction alone. A questor already giving a quest is *busy* (`quest_person_busy`): they are not asked for another, they talk, and their quest's events run there.
+- **The questor** (`quest_set_questor`): the person a guild's Get Quest was asked of (`hall_quest` in `apps/gfall/people/services.c`: who, faction, name, town). A person of kind 21 binds to them as a live copy, or the quest does not start; a kind -8 person is a faction alone. A questor already giving a quest is *busy* (`quest_person_busy`): they are not asked for another, they talk, and their quest's events run there.
 - **Talk events** (`quest_talk`, called first in `start_talk`): meeting a quest's person sets event 28's result (the click is consumed unless the person's flag 0x2000 lets the talk pass), op 71 takes its price or fails, op 78 is a faction's talk. A consumed click opens no talk window; the quest's own message answers.
-- Test: `check_ogquest.c` (a questor bound and busy, a second quest refused them, a stranger's talk not taken, freed when the quest ends); the Fighters' Get Quest by click in `check_ogworld.c` still starts one quest.
+- Test: `check_quest.c` (a questor bound and busy, a second quest refused them, a stranger's talk not taken, freed when the quest ends); the Fighters' Get Quest by click in `check_world.c` still starts one quest.
 - Not yet: rewards and the return to the questgiver finishing M0B00Y00 (step 7).
 
 ### The quest machine, step 7 (rewards)
@@ -2278,7 +2288,7 @@ From the decomp's `docs/quest-machine.md` (sections 1.2 and 2.9..2.10); the plan
 - **Gold** (`roll_gold`, quests-math.md): an item with flag 2 is rolled when the quest starts: index..group, or with index -1 scaled by the player's level (the guild's rank + 1 when a member of the quest's faction), the faction's power and the region's prices; at least 1. `QuestItem` keeps it.
 - **Op 4** (once): `rewarded` set, +5 reputation with the quest's faction (spread to allies and enemies by `faction_change_reputation`), each item arg's gold paid. Deliberate simplification: the original's reward box opens the inventory on the coins and op 6 waits for it to empty; gold goes straight to the purse, so the box is always empty. A given item is passed over (7.4 fixed).
 - **Op 6**: when set, ends the quest; one never rewarded costs -2 with the faction. Rumours (1006..1009) are step 9.
-- Test: `check_ogquest.c`: M0B00Y00 won (beasts killed, questgiver talked to, gold and +reputation, ended) and lost to the timer (-2).
+- Test: `check_quest.c`: M0B00Y00 won (beasts killed, questgiver talked to, gold and +reputation, ended) and lost to the timer (-2).
 - Not yet: reward items other than gold, op 76 delivery, the Brotherhood's and Thieves' joining quests (step 9); saving the quest's items (step 8).
 
 ### The quest machine, step 8 (save and load)
@@ -2287,7 +2297,7 @@ From the decomp's `docs/quest-machine.md` (sections 1.2 and 2.9..2.10); the plan
 - **What is kept**: the 64 global states, the foe counter, the logbook's used slots, and for each running quest its slot, name, id and faction and only what changed since its QBN was read: local states, ops done and their last minute, foes killed and their numbers, timers, items (rolled gold, given), and the bound places and persons (the original unlinks object pointers to ids; ours never held pointers). A quest comes back by reading its QBN again, so a quest started from bytes (a test's) cannot be restored.
 - Bytes that do not read back leave no quest running (`quest_unpack` returns 0 after a reset), not half of one.
 - Not kept yet: faces (step 9), the questor in the middle of an offer.
-- Test: `check_ogquest.c` packs M0B00Y00 mid-quest, resets, unpacks, compares, refuses a damaged blob and then finishes the quest; `check_ogstate.c`'s fixture counts the new length.
+- Test: `check_quest.c` packs M0B00Y00 mid-quest, resets, unpacks, compares, refuses a damaged blob and then finishes the quest; `check_state.c`'s fixture counts the new length.
 
 ### The quest machine, step 9a (the first of the rest: ops on the player and the world's standing)
 
@@ -2296,7 +2306,7 @@ Step 9 is a long tail; it lands in slices. This one:
 - **Op 37** (every run while its gate holds; arg 0 gate, arg 1 result, arg 2 person, arg 3 value): the person's faction reputation, plus the player's reputation of the faction's social group when it is under 5, is at least the value. (The document's table lists it with the result first; qmisc.c's `qaction_op37_repute_exceeds` reads the result from arg 1.)
 - **Op 61** the person's faction's reputation changes by the amount. **Op 65** the region's legal reputation changes, clamped to -100..100. **Op 49** cures the player's diseases (`ailments_cure`). **Op 72** infects with a disease with no saving throw. **Op 79** once a game minute (`quest_run_minute`), while its state is clear: set when the faction's reputation reaches the value. **Op 80** says its message while set. **Op 82** the person's talk passes through (flag 0x2000, saved with the quest) while set.
 - Not yet: ops 58 and 59 (the cures of vampirism and lycanthropy: the curses are not built), 25, 44, 46, 48 (people hidden or deleted: no quest people are in the world yet), and the item, delivery, topic, face, child-quest, building-access and S-quest parts of step 9.
-- Test: `check_ogquest.c` runs a quest made in memory with ops 29, 65 and 6.
+- Test: `check_quest.c` runs a quest made in memory with ops 29, 65 and 6.
 
 ### The quest machine, step 9b (items)
 
@@ -2305,7 +2315,7 @@ Step 9 is a long tail; it lands in slices. This one:
 - **Events** (`quest_event`, called from `state_event`): the pack taking an item sets op 3's state; an item put down in a place of op 5 sets that op's; a spell cast sets op 73's result (arg 1) when its id is the op's. Op 1 runs in `quest_talk`: the carried item is taken (unequipped, deleted, forgotten) and the state set when the person is talked to.
 - **The end** (`quest_end`): every item the quest still holds is deleted, the pack's too (the quest's id is on them in the original).
 - Not yet: the letter's text on reading, op 75, where a placed item stands in a dungeon (it lies where the player is: the quest markers are unsettled), the person-held items.
-- Test: `check_ogquest.c`: an item made, given, seen by ops 3 and 70, deleted by 36, taken by the quest's end; op 57 and op 1 by talk.
+- Test: `check_quest.c`: an item made, given, seen by ops 3 and 70, deleted by 36, taken by the quest's end; op 57 and op 1 by talk.
 
 ### The quest machine, step 9c (topics, rumours, faces, hiding)
 
@@ -2313,7 +2323,7 @@ Step 9 is a long tail; it lands in slices. This one:
 - **Rumours** (`rumour_add`): a quest adds 1005 at its start (flag 4), 1006 or 1007 at its end (flag 8) and 1008 or 1009 for its questor (flag 2, target the person), expanded as the quest's text, 30 days (180 for the questor's). People tell the news kinds (flags 4 and 8) in "Tell me about > news" (`quest_news` through the talk world's `news`), and the questor greets with theirs (`rumour_for`). A quest that ends without ending by op 6 (an offer refused) takes its start rumour with it. Saved with the quests.
 - **Op 25** counts its third argument down while the gate holds and the flag is clear; the count is saved. **Ops 44, 46, 48** unbind, hide (flags 0xA00) or show a person: no quest person stands in the world yet, so the flags only record it. **Ops 55, 56, 63, 64** keep the faces (ten slots, saved); nothing paints them yet.
 - Not yet: painting the faces, quest people and buildings in Where-is and People, the Where-is category for a quest's building.
-- Test: `check_ogquest.c` (topics hidden and shown, the countdown, faces, the rumour; start rumour taken with an unfinished quest).
+- Test: `check_quest.c` (topics hidden and shown, the countdown, faces, the rumour; start rumour taken with an unfinished quest).
 
 ### The quest machine, step 9d (child quests, repeats, access, travel)
 
@@ -2321,7 +2331,7 @@ Step 9 is a long tail; it lands in slices. This one:
 - **Op 9**: every `interval` minutes (from the op's `last_minutes`, now set to the quest's start for every op) with a chance in a hundred, the foe is placed `count` more times near the player (copies numbered on from the foe's `next`), and the op's repeat count (arg 4, -1 for ever) goes down; the count and `next` are saved.
 - **Op 17** grants a place's building an access kind until the minutes are up (`QuestAccess`, 16 slots, saved) and **op 81** marks the place (flag 64) and person (0x4000). Nothing reads either yet: the quests' buildings do not stand in towns.
 - **Op 30** puts a person (not a faction-only one) in a place (`QuestPerson.at`), or with no person named takes the player to the place of the person of the next argument through `QuestWorld.go` (the Mages Guild's teleport, `teleport`). **Op 83** takes the player to the dungeon of the region whose map pixel (row * 1000 + column) is the op's number; the original also stands the player at the place's live copy, which is not built.
-- Test: `check_ogquest.c` (op 9 twice and no more, op 17, op 30 both ways, op 81, op 8 starting S0000101).
+- Test: `check_quest.c` (op 9 twice and no more, op 17, op 30 both ways, op 81, op 8 starting S0000101).
 - Not yet: the main story's start and its global states (the S quests read them; nothing sets them but the quests), the Daedra, temple and noble quest letters, the guild invitation letters, the letter's text on reading.
 
 ### The quest machine, step 9e (who offers quests)
@@ -2329,7 +2339,7 @@ Step 9 is a long tail; it lands in slices. This one:
 - **Temples** (`hall_quest`): the Get Quest of a temple's person picks the temple's letter or any C quest (`quest_pick(letter, 'C', 'B' or 'C', rank or level)`): Akatosh D, Arkay E, Dibella F, Julianos 0, Kynareth G, Mara H, Stendarr I, Zen J, by the temple's place in the table (the document lists the letters by god in a different order and says Julianos has none; ARENA2 has `00B00Y00` for it). The old test `kind >= 4 && kind <= 13` for the knightly orders never matched (their kinds are 68..77): fixed.
 - **Commoners** (`street_quest`, 3.7): a person of a type 2, 12 or 4 faction outside the four guild trees is a giver by a roll of the day and the person's id (the original reseeds `rand` with the day; ours hashes, which gives the same each time): half of type 4, a quarter of the others, not in a building of type 16 and over or the general store. Clicking one offers the quest their id picks (`quest_pick_seeded`): `R` for a type 4 faction other than 407, else `A` or `K`, `0`, `C`, at the player's level; a person already giving one talks instead.
 - Not built, and why: the **noble's** `R`+letter quests need each region's 29 flags (not in the data we have); **initial quests** `_BRISIEN` and `_TUTOR__` start with a new game but use fixed places (scope 0: a location id and a marker, `(p1<<16)|p2`) and a person of kind -1 that nothing here binds yet, so they would only start prompts that wait on places; the **main story** (`S00..`) is started by those and by a faction-510 person's click naming a quest in an extern string, and its global states by dungeon action records; the **P** cure quests are for later; the **work** button's potential questor (`%pqn`) and the invitation letters read nothing of quests.
-- Test: `check_ogquest.c` (a person's seed picks the same quest, the temple letters, Julianos's 00B, the R quests).
+- Test: `check_quest.c` (a person's seed picks the same quest, the temple letters, Julianos's 00B, the R quests).
 
 ### The quest machine, step 9f (fixed places, persons of any kind, the new game's quests)
 
@@ -2339,18 +2349,18 @@ From DOCUMENTER's `daggerfall-decomp/docs/quest-places-and-start.md`.
 - **Persons**: any kind but 21 and -8 is bound with an id of its own and no body: a kind -1 person of a faction (no 0x100) is the named individual of that faction, and an event matches by faction; the others (Brisienna: kind -1, 0x101) stand nowhere until op 30 puts them in a place. The high nibble of a person's flags is cleared at the start.
 - **The new game** (`quest_start_initial_later`, called when creation ends; run at the first frame in the world): `_BRISIEN` then `_TUTOR__`, no offer. `_BRISIEN`'s ops 6 and 7 start the main story's `S0000977` and `S0000999` while its state 5 is *clear*: op 43 sets state 5 while the player is in the Hold, so they start when the player leaves it (the document says "at once"; the ops' negated gate says otherwise, and the test checks it). `S0000999` starts `S0000001` on the first talk with a person of faction 382 at level 5 and reputation 0 (event 78 reads the faction of whoever the talk window opens on).
 - Not yet (the two global-state actions are hooked since step 14): the markers' positions (ops 0, 22, 30, 83 stand things where the player is), a person's body in a town (the towns' people are not made from the quests), the tavern of Brisienna, the letters of op 76 as items read in the game.
-- Test: `check_ogquest.c` (the new game's two quests, the places' numbers, Brisienna bound, the main story's start outside the Hold).
+- Test: `check_quest.c` (the new game's two quests, the places' numbers, Brisienna bound, the main story's start outside the Hold).
 
 ### The quest machine, step 10 (people with bodies)
 
 How a quest person gets a body in a building, and what the layers say to each other:
 - **Engine / places → game** (`world_set_people_hook`, already there for GFALL's quests): as a building's inside is built the world calls the game's hook with the town, the building (block, record) and the flats its blocks put there; the hook writes flats of its own. New: while it runs, `world_building_marker_nth(record, n, ...)` answers where the building's editor markers are, so the hook stands a quest person on a quest marker (199.11) rather than beside the first person; with no marker they stand beside the first person flat, as GFALL's do.
-- **Game → quests** (`seam.c` `quest_people_hook`): asks `quest_people_in(region, index, block, record)` which persons of running quests are in that building and puts each there as their faction's flat for their sex (else the region's people's), the flat's tag `QUEST_PERSON_TAG(slot, person)` (0x7000 + slot * 16 + person, under FLAT_PERSON).
+- **Game → quests** (entity callbacks in `apps/gfall/quests/hooks.c`): asks `quest_people_in(region, index, block, record)` which persons of running quests are in that building and puts each there as their faction's flat for their sex (else the region's people's), the flat's tag `QUEST_PERSON_TAG(slot, person)` (0x7000 + slot * 16 + person, under FLAT_PERSON).
 - **Quests → game**: a building place (`p1 0`, a type in `p2`) now has a building: `QuestWorld.pick_building` picks one of the town's buildings of the type (any house for 17..20, any shop-like one for below 0) by a seed (`town_buildings`); the place keeps `block` and `record`. Op 30 puts a person in such a place; a person is bound at the start with a sex (flag 0x200 woman, 0x400 man, else a toss) and a name (`QuestWorld.person_name`, the town's naming by id, sex and faction), and stands in the building only once op 30 put them there. Questors, faction-only persons (-8) and hidden persons (0xA00) stand in no building.
 - **Using them** (`talk_used`): a flat tagged as a quest person is the quest's: `g_met` takes their id, faction and name, so the talk window, event 28, ops 1 and 71 and the rest meet them as the quest names them.
 - Saved: the place's building, the person's sex.
 - Not yet: persons of kinds that pick a site at the start without op 30 (a building type, any shop, the named individuals standing already in a town: kind -1 with no 0x100 should take over that individual's own flat), people in streets, a marker for each quest in dungeons (the foes and items), hiding a person whose op 46 says so while they stand in a building already drawn.
-- Test: `check_ogquest.c` (Brisienna's kind put in a tavern by op 30: her building, her sex and name, in that building and no other, and her flat's tag). The hook itself and the markers are not host-tested: the seam is Glide's.
+- Test: `check_quest.c` (Brisienna's kind put in a tavern by op 30: her building, her sex and name, in that building and no other, and her flat's tag). The hook itself and the markers are not host-tested: the seam is Glide's.
 
 ### The quest machine, step 11 (dungeon markers)
 
@@ -2359,7 +2369,7 @@ How a quest person gets a body in a building, and what the layers say to each ot
 - **Foes**: op 22 places a foe; its creatures are made when the player is in its place and its floor is loaded: a floor not there yet (the marker is in a chunk the stream has not made) makes none and the next frame tries again (`made` counts how many of its count were put in, saved; a death does not make another). The player's place is the outside the dungeon lies under, the same as the place's (see step 9f); the location loaded sets it for its own call.
 - **Items** op 0 lays an item on the item marker of its place (record 18), when the player is in that dungeon, else when it loads (`lay_items`).
 - Not yet: quest people standing at dungeon markers (op 30 into a dungeon place makes no body: bodies are in buildings), the item markers in towns' buildings, the quest marker flats' own height (a marker is a flat's centre; the floor is found under it), and a foe that was leashed or whose slot was freed before it died is not made again.
-- Test: `check_ogquest.c` (a foe waits for its floor and is made on the marker with its keys once), `check_dagger.c` (the hold's two markers, by number, by record and by seed).
+- Test: `check_quest.c` (a foe waits for its floor and is made on the marker with its keys once), `check_dagger.c` (the hold's two markers, by number, by record and by seed).
 
 ### The quest machine, step 12 (persons that pick a site)
 
@@ -2367,30 +2377,30 @@ How a quest person gets a body in a building, and what the layers say to each ot
 - **Where**: the low byte of the person's flags is the town: 0 the one the player is in (when it is a town), 255 a toss between that and another, anything else another town of the region (`random_town`, up to 50 tries, then any shop-like building); sex by 0x200 and 0x400, else a toss. The person's faction is the building's (or the asked one) and their name by the town's naming. The site is a building (`QuestWorld.pick_site`, over `town_buildings`): `QuestPerson.home*` keeps its town, block and record, and op 30 sets the same from the place it moves them to; `quest_people_in` reads it, so the engine's people hook (step 10) stands them in it.
 - **A difference we keep**: the original picks among the town's quest sites (the 6-byte list of its MAPS record: an NPC flat inside a building, or a quest marker 199.11) and a person standing at an NPC's flat is that NPC. We pick among the buildings and the hook stands the person on a marker of the building or beside its first person, a second person beside the NPC of a site that had one; the sites' list is not read. The original fails the quest when the current town has no site for a person (7.6: its fallback to any building never runs). Ours runs the fallback (any shop-like building, then other towns), and only when no site exists anywhere does the quest fail to start (TEXT.RSC 600, nothing begun): a person with no body would make an unwinnable quest that only its timer ends. A person asked for "anywhere" (0x100) takes any building.
 - Saved: the person's home.
-- Test: `check_ogquest.c` (a tavern person homed in the player's town with the building's faction, a -5 person linked to them, a -2 person in another town, both in the town's building 5, 9).
+- Test: `check_quest.c` (a tavern person homed in the player's town with the building's faction, a -5 person linked to them, a -2 person in another town, both in the town's building 5, 9).
 
 ### The quest machine, step 13 (building access)
 
 - The tutorial `_TUTOR__` is left out of the new game on purpose (a design choice); `_BRISIEN` alone starts, and starts the main story.
 - **Op 81** (a place's flag 64, a person's 0x4000) and a quest person's building make a building *open to the quest* (`quest_building_open`, 2.7's `quest_find_site_for_building`): `building_try_enter` lets the player in after its own checks (hours of a shop, a guild's own door, a house by day, `EntryBuilding.quest_open`, `entry.c`). **Op 17** grants a building an access level for minutes (`QuestAccess` now has the building's block and record; it needs a place that is a building): `quest_building_access` feeds `EntryBuilding.access`, where 10 and over opens a lockpicker's door (the original's `building_access_level`; its other reader, the trespass check on resting, is not built). The seam asks both at the door (`passage_gate`).
-- Test: `check_ogquest.c` (op 17 by building and for its minutes, op 81's place and person), `check_ogentry.c` (a shut shop at night lets a quest in).
+- Test: `check_quest.c` (op 17 by building and for its minutes, op 81's place and person), `check_entry.c` (a shut shop at night lets a quest in).
 
 ### The quest machine, step 14 (global states from dungeon actions)
 
 - RDB action 31 (`link_step`, `run_0006480F.c:338`) sets quest global state `axis`: exactly two exist in the game's blocks, both clickable models (Mantellan Crux's `S0000005.RDB` sets 36, read by `S0000009`, `S0000016` and `S0000988`; Lysandus' Tomb's `S0000140.RDB` sets 43, read by `S0000022`). In `places/doors.c` a dungeon model whose action is 31 is a usable of its own (`OTHER_GLOBAL`, tag the axis, no motion); `activate_set_global` tells the game, which sets the state (`quest_global_set`), kept with the globals in a save. A flat's version (the original also reads a flat's magnitude byte) is not made: no block has one.
-- Not host-tested at the door (the two blocks are far dungeons); the state and its save are (`check_ogquest.c`).
+- Not host-tested at the door (the two blocks are far dungeons); the state and its save are (`check_quest.c`).
 
 ### The quest machine, step 15 (invitations, faces, letters, rewards, Work)
 
 From `daggerfall-decomp/docs/quest-hooks.md`.
 - **Invitations** (`invitations`, 5): the counters were kept (`guild_count_crime`) but nothing ever called `guild_invitation`. Each frame, out of doors (`QuestWorld.outdoors`: the streamed world, not a building or a dungeon), a due invitation starts `O0A0AL00` (Thieves, a courier's letter) or `L0A01L00` (Brotherhood, a letter at once), no prompt, faction 0. Their op 4 joins the guild at rank 0 (`guild_join`: faction 42 kind 3, faction 108 kind 0), gives nothing and no reputation (the names, case blind).
-- **Faces** (2, `quest_faces_draw` in `seam.c`): each face keeps the original's byte (bit 7 woman, bit 6 the region's name bank, bit 4 a child of faction 514, low bits the picture, a random 0..9; the bank regions are 0, 1, 7, 8, 10, 11, 14, 20, 22, 25, 28, 29, 43..56 and 61); saved. Drawn with the world's HUD (so under no menu) at x = 32 n + 8, y = 36 of classic's screen from `FACE{sex}{bank}I0.CIF` (`KIDS00I0.CIF` for a child), colour 0 clear. Op 64 removes the foe's face (the original's removes by a different id and never finds it, 8.4: fixed).
+- **Faces** (2, `quest_faces_draw` in `apps/gfall/screen/possessions.c`): each face keeps the original's byte (bit 7 woman, bit 6 the region's name bank, bit 4 a child of faction 514, low bits the picture, a random 0..9; the bank regions are 0, 1, 7, 8, 10, 11, 14, 20, 22, 25, 28, 29, 43..56 and 61); saved. Drawn with the world's HUD (so under no menu) at x = 32 n + 8, y = 36 of classic's screen from `FACE{sex}{bank}I0.CIF` (`KIDS00I0.CIF` for a child), colour 0 clear. Op 64 removes the foe's face (the original's removes by a different id and never finds it, 8.4: fixed).
 - **Letters** (3.1): a letter (group 9 index 5) holds its QRC message; using it in the pack shows that message with the quest's names filled in (`quest_item_text`, `possessions_set_letter`). The name-only path for a letter whose quest ended is not built: a quest deletes its items when it ends.
 - **Reward items** (3.3): op 4 puts each non-gold item arg into the pack (at the player's feet when it is full) and the quest forgets it: the original opens the inventory on a reward box with them and turns them into ordinary items when it closes (what is left behind is lost, 8.6); we never lose one.
 - **Marking and Work** (4): a giver is marked per building and day (a person in a building of a type other than 1, 11, 14, 16 up, of a faction of type 2, 12 or 4 outside the guilds' trees; 51% type 4, 26% the others; the original rolls each person from `rand` seeded by the day, ours rolls the building so the Work answer can name it). Clicking a person: the quest events first (28, 71, 1, 78), then a marked person's offer, then talk; the click clears the building's mark for the day, a quest or not. The Work button answers 8078 in a dungeon or when nothing is marked, else 8075..8077 with `%pqn` (a name from the town's naming, not the exact person: we do not enumerate a building's people) and `%pqp` (the building's name) (new macros in `words.c`).
 - **Nobles** (6): not built, on purpose. Every R file is `R0C`, so the original's noble pick (`R` plus the region's flag letter) never finds a file (8.9); classic's `R0C` quests come from marked persons of a type 4 faction, which the marking above gives. The regions' event flags (wars, plagues, famines) need the politics simulation, and only a new `RxC` quest set would read them.
 - Not yet: the engine's closed-building rule that hides a closed building's people but not a quest's, quest buildings under "Where is" and a quest residence named for its person, the marking in the three castles (Daggerfall, Wayrest, Sentinel dungeons: any NPC may be marked), persons at dungeon markers, the site list.
-- Test: `check_ogquest.c` (the Thieves' invitation out of doors, a reward item and a letter's text); the faces, the Work answer and the click order are the seam's and not host-tested.
+- Test: `check_quest.c` (the Thieves' invitation out of doors, a reward item and a letter's text); the faces, the Work answer and the click order are the seam's and not host-tested.
 
 ### The quest machine, step 16 (persons take over NPCs; the site list)
 
@@ -2398,14 +2408,14 @@ From section 8 of `quest-places-and-start.md`.
 - **What the original does**: a person of a building type (kinds 0 and up) or -6 picks a site of the town's MAPS list (`dungeon_sites` / `exterior_sites` read it: a building's index in the location's own list of kept buildings, flags 0x2000 an interior *people* record, 0x4000 / 0x1000 an interior marker 199.11 / 199.18, low word the object's id); at an NPC site the NPC itself becomes the quest person (flag 128, name changed, faction kept, picture replaced). The faction bits of every site are 0, so kind -1 persons in towns never take an NPC site and use the 199.11 markers. The list is partial (in Daggerfall 69 buildings with candidates have none listed).
 - **What we do**: the same takeover without the list. A person of kind 0+ or -6 (without 0x100) is `takeover`: when its building is entered one of the building's own people (picked by the quest's seed, not one already taken) is changed in place by the engine's people hook (`flats` may now be changed: `WorldPeopleHook` takes `Flat *`) to the quest person's picture and tag, standing where the NPC stood; a building with no person gets an added one on a marker, as for the others (kind -1 with 0x100, op 30 placements: markers). The building is any building of the town of the type, not only those the list names.
 - **Why not the list**: the exact site needs the town's object numbers replayed (blocks in order; each building's exterior and interior subrecord with markers, people and doors counted; the kept-building roll of the houses; two counters), which `dungeon_sites` plus the document's section 8 allow and which was checked there against four towns. It buys which exact NPC and which buildings, nothing the player could tell apart; the engine's flat order would also have to be matched to the RMB's people records. If a later change wants it, the reader is done and tested (the Hold's two sites, `check_dagger.c`).
-- Test: `check_ogquest.c` (the tavern person is a takeover, the linked and op 30 persons are not). The hook is the seam's and not host-tested.
+- Test: `check_quest.c` (the tavern person is a takeover, the linked and op 30 persons are not). The hook is the seam's and not host-tested.
 
 ### The quest machine, step 17 (quest buildings in Where is)
 
 - `quest_building_site` (`quest_find_site_for_building`, `quest-hooks.md` 1.3): a building is a quest building when a running quest has a place that is it (bound, not hidden by op 11) or a person standing in it. The talk window gives every quest building of the town flag 8 (`talk_buildings`); `talk_topics` lists a house with the flag (the original skips houses, but files a quest house under category 13 by `building_category`) in "Where is"; and a residence that is a quest building is named "The *Surname* Residence" (`building_name`, `BuildingName.resident`: the quest person's last name, or one made from the building when it is a place).
 - The shop-like quest buildings (type under 17) are listed as before; the original adds the quest's own answer to their topic (3.5 of `quest-machine.md`), not built. The People list of Where is (every quest person not hidden, not the one talked to) is not built either: a quest person is asked after by their building only.
 - The closed-building rule (a closed building hides its people but not a quest's) has nothing to do here: nothing in GFALL hides the people of a closed building, so a quest's are never hidden either.
-- Test: `check_ogquest.c` (the building of a quest person is a site named by their surname, another is not; a quest house is listed under category 13, a plain house is not).
+- Test: `check_quest.c` (the building of a quest person is a site named by their surname, another is not; a quest house is listed under category 13, a plain house is not).
 
 ### The quest machine, step 18 (persons in dungeons, the castles)
 
@@ -2413,7 +2423,7 @@ With the entity plan's step 7 (docs/entities.md, Dungeon people):
 - **Quest persons in a dungeon**: op 30 on a place that is a dungeon (a location, not a building) homes the person in it (`home_block` -2): `quest_people_in(region, index, -2, -1)` lists them with the point of their quest marker (record 11, the place's own 0xFA0n or one picked by a seed), in the game's frame; the seam's add hook (`quest_dungeon_people`) makes their body in the block that holds the marker, on the floor under it, as an entity to talk to (their quest tag as for a building's). The outside's index is the place's (`quest_outside`).
 - **Castle residents**: talking to one reaches the quest machine as any person (their faction and flat). In Daggerfall's, Wayrest's and Sentinel's castles (locations 50027, 50029, 50033) a resident of a type 4 faction (not 407) not under the guilds' trees is marked for the day by a roll (51%) and clicking them offers an R quest by level (`castle_quest`): in a dungeon the original offers nothing else.
 - Not yet: a resident's faction 0 is 510 and their picture's face may be missing (FLATS.CFG may not know archive 334 or 346); wild.c's town chunks (step 10).
-- Test: `check_ogquest.c` (a person put in a dungeon place has their marker's point).
+- Test: `check_quest.c` (a person put in a dungeon place has their marker's point).
 
 ### Rest encounters and quest foes as kept entities (entity plan step 9)
 
@@ -2428,7 +2438,7 @@ The host is 100 to 150 times faster than the Pentium MMX 233, and its page cache
 
 ## Vampirism and lycanthropy (2026-11-14)
 
-Built from the decomp's `docs/curses.md` (DOCUMENTER; section numbers below are its) in `play/curse.c`, with its state in `GameState.curse` (schema 18, `CURSE_WIRE_BYTES`).
+Built from the decomp's `docs/curses.md` (DOCUMENTER; section numbers below are its) in `play/character/curse.c`, with its state in `GameState.curse` (schema 18, `CURSE_WIRE_BYTES`).
 
 - **The form is not the race.** The original stores the current form in `race` (8 vampire, 9 werewolf, 10 wereboar). GFALL keeps the chosen race in `CharacterState.race` for good (a dozen tables are indexed by it) and the form in `CurseState.form`: `curse_form()` is the original's `race > 7`, `curse_race()` the number its rules read. The player's race gifts (Argonian water, Khajiit climbing, the elements' modifiers, Nord resistance) and the fighter's race for combat read `curse_race()`.
 - **Infection** (2): a damaging blow of a werewolf (9), wereboar (14) or vampire (28, 30) rolls 400 in 32768 (`ailments_strike`, `curse_blow`); refused at level 1 and for form > 7; three days; a second infection overwrites; Cure Disease clears it, and a pending one counts as a disease for the temple. The tick runs at the end of every `state_pass_minutes`, not in prison. The dream's video is not played (`curse_dream` only spends the flag).
@@ -2440,3 +2450,68 @@ Built from the decomp's `docs/curses.md` (DOCUMENTER; section numbers below are 
 - **Fixed on the way:** `enchant_minutes` kept a stale stamp when a load put the clock back, so no step ran until it caught up.
 - **Also built:** the portrait of the bar (VAMP00I0.CIF's frame by sex and race, WERE01I0.IMG or WERE00I0.IMG for a beast: `selected_hud_face`) and a beast's paperdoll (WOLF00I0.IMG, BOAR00I0.IMG, nothing worn: `paint_doll`); the growl (clip 10090, 50 in 32768 each 1/18 s) and the towns emptied of new people while a beast (`curse_frame`, the engine's `entity_set_population`); a weapon below silver does not hurt a vampire or a beast (`curse_min_metal`, `monster_strike`); Hircine's ring (a worn item whose first enchantment is type 26, parameter 3: no moons, no hunger, no wait); Shapechange from an item (`magic_cast_item`); a killed townsperson or city guard feeds a lycanthrope (`guild_count_crime`, crime 6).
 - **Not built**: standing on the crypt's marker (kind 9) on arrival, the infection's dream movies (no movie player), and the player's race picking a creature's hit effect (docs/curses.md 11: a Breton's plague, a Khajiit's spell 66, a wereboar's fatigue drain; creatures here have no fatigue).
+
+### Creature teams and marker pacification
+
+FALL.EXE uses team 0 for the player and allied summons and team 1 for
+marker creatures, quest enemies and the watch. GFALL stores the team on the
+combat actor. Creature targets score 20 for clear sight, up to 30 for distance,
+and 5 for an unengaged target, following `ai_pick_target` in the decompilation's
+`src/lifted/equip.c`. GFALL uses the active combat radius and its own 3D distance
+and wall test. It refreshes targets on staggered timers and replaces an invalid
+target on the next think. The common case with only hostile creatures skips
+the creature-to-creature scan. Friendly melee and aimed projectiles skip their
+own team. Area spells still affect creatures inside the blast. A creature kill
+does not count as the player's kill.
+
+`dungeon_loaded_marker` runs when a file-placed creature first becomes live.
+The marker's stable place and object key seed a single 1–200 roll. The chance
+starts at 10 with the weapon put away or −25 with it ready, plus Personality / 5.
+Class creatures add Etiquette / 10. Other creatures add their language skill and
+the active Comprehend Languages chance. A listed language gains one use per
+roll. `tools/gfall-data.py` extracts the 43 language entries from the matching
+FALL.EXE. Direct summons, guards and random rest encounters use their own spawn
+paths and do not roll. Quest opcode 68 can pacify or release a scripted foe and
+its copies. Calm and marker pacification both end on a damaging hit.
+
+Team and marker-roll state use spare bits in the existing creature keep row.
+The quest save records the scripted pacification bit in the foe placement word.
+Older rows default to hostile and preserve saved pacification for already
+placed creatures. Targets are selected again after load. Sanguine Rose and
+Skull of Corruption use the ally team. Dungeon summons use the kept encounter
+pool. Summons elsewhere share the place's transient entity pool. Summoning
+requires room, valid floor and available creature art. The Skull currently
+copies non-class creatures and uses preloaded art in whole places.
+
+`check_combat.c` covers a one-time Impish roll, persistence, removal on damage,
+opposing target selection, melee damage between creatures and team restoration.
+Target-hardware cost remains unmeasured.
+
+### Random encounters while walking or resting
+
+`encounter_tick` in the FALL.EXE decompilation's `src/lifted/mplace.c`
+checks game-minute multiples of 12. GFALL calls it from ordinary walking
+time and the rest controller. Loitering, fast travel, ocean pixels and ordinary
+building interiors skip the rolls. Dungeon checks run during rest only.
+A successful rest spawn wakes the player after that hour's recovery.
+
+Outdoor wilderness rolls are 1 in 36 by day and 1 in 24 before 06:00 or
+after 18:00. Outdoor settlements use the nighttime roll inside the location's
+bounds and have no daytime roll. The climate selects the shipped encounter
+table. A successful wilderness roll looks for clear ground near the point
+1,024 units ahead. Settlement and dungeon rolls look for a hidden position
+384–768 units from the player. A roll with no safe floor makes no creature.
+
+Outdoor encounters use a roster of eight transient actors. They pass through
+ordinary combat and leave their loot on the ground. After the player gets
+3,072 units away, an actor releases its combat slot and references to its
+streamed textures. Dungeon encounters retain their world rows and unlooted
+corpses through saves. Once the dungeon pool is full, a searched and emptied
+generated corpse can give up its slot for a new encounter. Quest foes and
+unsearched corpses retain their slots. Buildings use their existing rest and
+trespass rules.
+
+Host scenarios cover dungeon rest scheduling and save restoration, outdoor
+suppression rules, nighttime hidden placement, wilderness placement ahead of
+the player and reuse of released actor and texture references. Spawn-time art
+decoding and the outdoor roster still need a performance check on the 233.

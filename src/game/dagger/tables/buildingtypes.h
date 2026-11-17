@@ -1,0 +1,31 @@
+#ifndef DAGGER_BUILDING_TYPES_H
+#define DAGGER_BUILDING_TYPES_H
+
+/* The building types the code names. */
+enum {
+    BUILDING_ALCHEMIST = 0,
+    BUILDING_HOUSE_FOR_SALE = 1,
+    BUILDING_ARMORER = 2,
+    BUILDING_BANK = 3,
+    BUILDING_BOOKSELLER = 5,
+    BUILDING_CLOTHING = 6,
+    BUILDING_FURNITURE = 7,
+    BUILDING_GEMS = 8,
+    BUILDING_GENERAL = 9,
+    BUILDING_LIBRARY = 10,
+    BUILDING_GUILD_HALL = 11,
+    BUILDING_PAWN = 12,
+    BUILDING_WEAPONS = 13,
+    BUILDING_TEMPLE = 14,
+    BUILDING_TAVERN = 15,
+    BUILDING_PALACE = 16,
+    BUILDING_HOUSE1 = 17,
+    BUILDING_HOUSE4 = 20,
+    BUILDING_CITY_WALL = 23,
+    BUILDING_TYPES = 25
+};
+
+/* High bit of the name seed when the low bits name a TEXT.RSC record. */
+#define BUILDING_TEXT_NAME 0x8000u
+
+#endif

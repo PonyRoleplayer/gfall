@@ -22,9 +22,9 @@
 #include "game/dagger/places/town.h"
 #include "game/dagger/tables/commerce.h"
 #include "game/dagger/tables/careers.h"
-#include "game/dagger/play/dunmap.h"
-#include "game/dagger/play/marker.h"
-#include "game/dagger/play/words.h"
+#include "game/dagger/play/travel/dunmap.h"
+#include "game/dagger/play/travel/marker.h"
+#include "game/dagger/play/ui/words.h"
 
 #include "engine/scene/stream.h"
 #include "game/dagger/formats/worldmap.h"

@@ -1,9 +1,9 @@
 #include <stdio.h>
 #include "check_shelf.h"
 #include "check_util.h"
-#include "game/dagger/play/shelf.h"
+#include "game/dagger/play/people/shelf.h"
 #include "game/dagger/play/state.h"
-#include "game/dagger/play/inventory.h"
+#include "game/dagger/play/items/inventory.h"
 #include "game/dagger/tables/shopdefs.h"
 
 /* The groups an item belongs to, by what was stocked (ObjectInfo.group). */

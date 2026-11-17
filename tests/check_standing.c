@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include "check_standing.h"
 #include "check_util.h"
-#include "game/dagger/play/standing.h"
+#include "game/dagger/play/people/standing.h"
 #include "game/dagger/play/state.h"
 #include "engine/core/mem.h"
 

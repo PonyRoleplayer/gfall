@@ -2,16 +2,17 @@
 #include "check_magicitem.h"
 #include "check_util.h"
 #include "engine/assets/vfs.h"
-#include "game/dagger/play/magicitem.h"
+#include "game/dagger/play/magic/magicitem.h"
 #include "game/dagger/play/state.h"
-#include "game/dagger/play/inventory.h"
-#include "game/dagger/play/itemmaker.h"
-#include "game/dagger/play/progress.h"
-#include "game/dagger/play/enchant.h"
-#include "game/dagger/play/possessions.h"
+#include "game/dagger/play/items/inventory.h"
+#include "game/dagger/play/magic/itemmaker.h"
+#include "game/dagger/play/character/progress.h"
+#include "game/dagger/play/magic/enchant.h"
+#include "game/dagger/play/combat/combat.h"
+#include "game/dagger/play/items/possessions.h"
 #include "game/dagger/play/play.h"
-#include "game/dagger/play/magic.h"
-#include "game/dagger/play/spellbook.h"
+#include "game/dagger/play/magic/magic.h"
+#include "game/dagger/play/magic/spellbook.h"
 #include "game/dagger/tables/itemdefs.h"
 
 static int count_in(df_u32 container, int group, int index)
@@ -26,6 +27,9 @@ static int count_in(df_u32 container, int group, int index)
     }
     return n;
 }
+
+static int g_released;
+static void released_soul(int kind) { g_released = kind; }
 
 static int g_souls_given[2], g_souls_count, g_consumed = -1;
 static int give_souls(int *ids, int cap) { int i; for (i = 0; i < g_souls_count && i < cap; i++) { ids[i] = g_souls_given[i]; } return g_souls_count; }
@@ -156,6 +160,19 @@ static void itemmaker_checks(void)
     itemmaker_begin(1, 0); itemmaker_choose(31);
     g_consumed = -1;
     check_expect(itemmaker_enchant(eat_soul) == IM_DONE && g_consumed == 31, "itemmaker: the soul bound was not consumed");
+    {
+        static const EnchantWorld world = {0,0,0,0,released_soul,0};
+
+        check_expect(item_enchanted(ring),"the bound item retains its powers");
+        if (item_enchanted(ring)) {
+            g_released = -1;
+            enchant_set_world(&world);
+            object_edit(ring)->condition = 1;
+            item_wear(ring,10);
+            check_expect(!object_at(ring) && g_released == 31,"combat wear destroys a broken enchanted item and releases its bound soul");
+            enchant_set_world(0);
+        }
+    }
     /* Slice 1 of the enchantments in play: a held spell lasting while the ring is worn, Enhances skill's +15 and Absorbs spells' condition. */
     {
         df_u32 r1, r2, r3;
@@ -388,6 +405,20 @@ void check_magicitem(void)
     check_expect(id && def >= 0 && !magic_def_artifact(def) && object_at(id)->value == magic_def_value(def) && !strcmp(object_at(id)->name, magic_def_name(def)), "magicitem: an item is not of its entry");
     item_name(object_at(id), name, sizeof(name));
     check_expect(!strstr(name, "%it"), "magicitem: the macro %it was left in an item's name");
+    check_expect(magic_item_unknown(id) && magic_item_identify_price(id) == (object_at(id)->value*25 >> 8),
+                 "shop magic starts unidentified with the classic identification price");
+    check_expect(magic_item_identify(id) && !magic_item_unknown(id) && !magic_item_identify(id),
+                 "a magic item can be identified once");
+    {
+        df_u32 ring;
+        int type, param;
+
+        ring = item_create(container,5,3,-1);
+        check_expect(ring && magic_artifact_text(ring) == 8703 && !magic_item_unknown(ring) &&
+                     item_enchantment(ring,0,&type,&param) && type == 26 && param == 3,
+                     "artifact construction binds the original powers and text ordinal");
+        object_delete(ring);
+    }
     /* Never an artifact in a shop: many items, none of them one. */
     magic = 0;
     for (i = 0; i < 40; i++) {

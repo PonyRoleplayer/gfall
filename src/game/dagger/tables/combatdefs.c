@@ -20,6 +20,7 @@ const AnimScript *foe_type_script(int type)
 }
 int foe_type_flags(int type) { return type >= 0 && type < 60 ? g_monster[type][2] : 0; }
 int foe_weight(int kind) { return kind >= 0 && kind < 43 ? g_weight[kind] : 80; }
+int foe_language(int kind) { return kind >= 0 && kind < 43 ? g_language[kind] : 0; }
 int foe_category(int kind) { return kind >= 0 && kind < 43 ? g_category[kind] : 0; }
 int foe_texture_kind(int kind) { return kind >= 128 && kind <= 146 ? g_class_kind[kind-128] : kind; }
 static int monster_field(int kind, int field)

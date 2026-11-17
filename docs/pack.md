@@ -2,7 +2,7 @@
 
 `src/engine/scene/pack.[ch]` is what someone or something carries: a player's bag, a chest, a body. `src/engine/ui/packview.[ch]` is a list screen over one pack or two side by side. Both belong to the engine and know no game: no item names, no rules, no pictures. Both are plain C, and hostcheck runs them (`check_pack`).
 
-No game calls them yet. GFALL's own `play/inventory.c` is separate and unchanged.
+No game calls them yet. GFALL's own `play/items/inventory.c` is separate and unchanged.
 
 ## The catalogue
 

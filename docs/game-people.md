@@ -4,8 +4,8 @@ Milestone 6 of [game-roadmap.md](game-roadmap.md), planned 2026-11-10. Classic
 behaviour first, from the byte-matched decompilation at
 `/home/shade/git/daggerfall-decomp`; improvements go on top of it later and are
 listed in one place. Cite decomp functions in comments, never paste lifted code.
-GFALL's game folder does not include dagger headers: `apps/gfall/seam.c`
-adapts data into plain structs.
+The adapters in `apps/gfall/people/` and `apps/gfall/buildings/` pass game data to the
+rules in `src/game/dagger/play/people/`.
 
 ## Where the rules are
 
@@ -71,6 +71,29 @@ talk needs standing and the quest hooks left by milestone 8.
   dependency. Either way the in-game structure follows the decomp's record.
 - Whether GFALL's tables move to MAIN.DAT records (the engine's `recfile`) as
   they are extracted, so later changes are data mods. Not needed for slice 1.
+
+## Local directions
+
+With a townsperson, choose **Where is → Places**, select **Taverns** or
+**Local temples**, then use **OKAY** to open the list. Select a named building
+and use **OKAY** again to ask for directions. The horizontal arrows reveal names
+that extend past the list column.
+
+Entering a building through its street door shows its name in the HUD feed,
+for example “You've entered The Rusty Mug.” The notice appears after the
+interior loads and uses the same sign name as the directions menu. This is an
+intentional departure from FALL.EXE, which shows building names when the player
+inspects them from outside.
+
+FALL.EXE's `talk_build_place_topics` scans the whole town, omits ordinary
+residences, adds quest destinations and orders local topics by distance. GFALL
+previously capped the raw list at 64 before filtering. The dialogue now covers
+the full town loader's capacity. It keeps each destination's building ID for
+the answer, even when two buildings have the same name. The name resolver uses
+the building's seed, honors named `TEXT.RSC` records and looks up a temple's
+first child faction, as in `building_name`. The host test opens dialogue with a
+pedestrian in Daggerfall, checks the two lists against the actual town records,
+and submits a named question from each.
 
 ## Acceptance
 

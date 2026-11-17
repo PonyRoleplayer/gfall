@@ -1,0 +1,496 @@
+#include "game/dagger/play/magic/magic.h"
+#include "game/dagger/play/combat/dungeon.h"
+#include "game/dagger/play/cheats.h"
+#include "game/dagger/play/character/curse.h"
+#include "game/dagger/play/items/inventory.h"
+#include "game/dagger/play/travel/actions.h"
+#include "game/dagger/play/ui/msg.h"
+#include "game/dagger/play/ui/hud.h"
+#include "game/dagger/play/items/possessions.h"
+#include "game/dagger/play/input/activate.h"
+#include "game/dagger/play/ui/options.h"
+#include "game/dagger/play/travel/travel.h"
+#include "game/dagger/tables/magicdefs.h"
+#include "engine/scene/interact.h"
+#include "engine/scene/spawn.h"
+#include "engine/core/mem.h"
+
+static const Scene *g_scene;
+static SpawnId g_visual[MISSILES];
+static int g_slots[5][2];
+static void (*g_draw)(int, int);
+static void (*g_hud)(const MagicState *);
+static SpawnId g_light;
+static int g_light_slot = -1, g_light_w, g_light_h;
+static int g_element = -1;
+static float g_animation;
+
+void magic_set_draw(void (*draw)(int, int)) { g_draw = draw; }
+void magic_set_hud(void (*draw)(const MagicState *)) { g_hud = draw; }
+void magic_light_sprite(int slot, int width, int height) { g_light_slot = slot; g_light_w = width; g_light_h = height; }
+void magic_slots(const int slots[5][2]) { mem_copy(g_slots,slots,sizeof(g_slots)); }
+void magic_close(void)
+{
+    int i;
+    for (i = 0; i < MISSILES; i++) { if (g_visual[i]) { spawn_remove(g_visual[i]); } }
+    mem_zero(g_visual,sizeof(g_visual)); g_scene = 0; g_element = -1; g_animation = 0;
+    if (g_light) { spawn_remove(g_light); g_light = 0; }
+}
+void magic_open(const Scene *scene) { magic_close(); g_scene = scene; }
+void magic_shift(float dx, float dz)
+{
+    int i;
+    for (i = 0; i < MISSILES; i++) {
+        if (magic_state()->missile[i].live) {
+            magic_state()->missile[i].x -= dx; magic_state()->missile[i].z -= dz;
+        }
+    }
+}
+static void animate(int element)
+{
+    g_element = element; g_animation = 0; weapon_cancel();
+}
+void magic_draw(void)
+{
+    if (g_element >= 0 && g_draw) { g_draw(g_element,df_ifloor(g_animation*18.2065f)%6); }
+    if (g_hud) { g_hud(magic_state()); }
+}
+int magic_pending(void) { return magic_state()->ready != 0; }
+int magic_visible(void) { return g_element >= 0 || magic_pending(); }
+void magic_abort(void)
+{
+    /* Payment and skill use occur when readied, as pickbook.c does. No refund. */
+    magic_state()->ready = 0; msg_set("Spell aborted.");
+}
+
+static int line_clear(float x, float y, float z, float tx, float ty, float tz)
+{
+    UseHit hit;
+    float dx, dy, dz, distance;
+    if (!g_scene) { return 1; }
+    dx = tx-x; dy = ty-y; dz = tz-z; distance = df_sqrt(dx*dx+dy*dy+dz*dz);
+    if (distance < 1) { return 1; }
+    interact_cast(g_scene,x,y,z,dx/distance,dy/distance,dz/distance,distance,&hit);
+    return hit.wall >= distance-1;
+}
+static void apply_area(const SpellDef *s, int caster, int level, float x, float y, float z)
+{
+    Entity *e;
+    Body *body;
+    int i;
+    float dx, dy, dz, radius;
+    radius = (s->icon >= 250 ? 168 : level*4+64)*3;
+    for (i = -1; i < dungeon_count(); i++) {
+        e = dungeon_entity(i);
+        if (i == -1) { body = move_body(); dx = body->feet[0]-x; dy = body->feet[1]+40-y; dz = body->feet[2]-z; }
+        else {
+            if (e->dead || !e->live) { continue; }
+            dx = e->x-x; dy = e->y+40-y; dz = e->z-z;
+        }
+        if (dx*dx+dy*dy+dz*dz >= radius*radius || !line_clear(x,y,z,x+dx,y+dy,z+dz)) { continue; }
+        if (caster == -1 && i == -1 && s->target == 3) { continue; }
+        magic_apply_def(s,s->id,caster,i,level,0);
+    }
+}
+static void visual(int i)
+{
+    MissileInfo *m;
+    Entity entity, *live;
+    int slot;
+    m = &magic_state()->missile[i];
+    slot = g_slots[m->element][m->burst != 0];
+    live = spawn_get(g_visual[i]);
+    if (!live) {
+        entity_init(&entity); entity.live = 1; entity.glow = 1;
+        entity.pose[ENTITY_IDLE].slot[0] = (df_u16)slot;
+        entity.pose[ENTITY_IDLE].w[0] = entity.pose[ENTITY_IDLE].h[0] = m->burst ? 128 : 48;
+        entity.pose[ENTITY_IDLE].rate = 12;
+        g_visual[i] = spawn_add(g_scene,&entity,0); live = spawn_get(g_visual[i]);
+    }
+    if (live) {
+        live->x = m->x; live->y = m->y-24; live->z = m->z;
+        live->pose[ENTITY_IDLE].slot[0] = (df_u16)slot;
+        live->pose[ENTITY_IDLE].w[0] = live->pose[ENTITY_IDLE].h[0] = m->burst ? 128 : 48;
+    }
+}
+static void step_missile(int index, const Camera *camera, float dt);
+static int launch(const SpellDef *s, int caster, int level, const Camera *aim)
+{
+    MissileInfo *m;
+    Basis basis;
+    int i;
+    for (i = 0; i < MISSILES; i++) { if (!magic_state()->missile[i].live) { break; } }
+    if (i == MISSILES || !aim) { return 0; }
+    m = &magic_state()->missile[i]; mem_zero(m,sizeof(*m));
+    m->live = 1; m->caster = magic_key(caster); m->spell = s->id; m->level = level;
+    if (caster == -1) { magic_hostile(); }
+    m->element = s->element; m->target = s->target;
+    camera_basis(aim,&basis); m->dx = basis.fx*basis.cp; m->dy = basis.sp; m->dz = basis.fz*basis.cp;
+    m->x = aim->x; m->y = aim->y; m->z = aim->z;
+    /* The original launch advances 110 units. Sweep this too, so a nearby
+     * wall or creature cannot be skipped between the hand and that point. */
+    sound_at(cast_sound(s->element),m->x,m->y,m->z);
+    step_missile(i,aim,110.0f/400.0f);
+    return 1;
+}
+
+/* The spell an item's Cast when used readied (target 1 to 4): a spell object of its own in the pack, gone once it is fired or put away. */
+static df_u32 g_item_spell;
+
+/* Whether the readied spell is the next cast a recast (the cost of the last one paid, not a fresh sum); not saved, a loaded ready is a plain one. */
+static int g_recast;
+
+static int spell_price(const SpellDef *s, const CharacterState *who, int recast)
+{
+    return magicka_cost(recast ? magic_state()->paid : spell_cost(s,who));
+}
+
+/* The spell points a cast takes, and what trains: paid when the spell is cast, not when it is chosen. 0 with its line when they are not there. */
+static int pay_cast(df_u32 id, const SpellDef *s, int recast)
+{
+    CharacterState *who;
+    int cost, bonus, k;
+    who = character_state();
+    cost = spell_price(s,who,recast);
+    if (cost > who->magicka+who->spell_points_bonus) { msg_set("You do not have enough spell points."); return 0; }
+    bonus = cost < who->spell_points_bonus ? cost : who->spell_points_bonus;
+    who->spell_points_bonus -= bonus; magicka_spend(cost-bonus);
+    magic_state()->paid = bonus == cost ? 0 : cost; magic_state()->last = id;
+    for (k = 0; k < 3; k++) { if (s->group[k] != 255) { skill_use(effect_school(s->group[k])); } }
+    state_event(EVENT_SPELL,id,game_state()->entity_id,cost);
+    return 1;
+}
+
+/* The moment a readied spell is let go: an item's spell pays nothing (the item pays in wear), a book's pays now. A spell that cannot be paid is put away. */
+static int cast_paid(const SpellDef *s)
+{
+    df_u32 id;
+    id = magic_state()->ready;
+    if (id == g_item_spell) { return 1; }
+    if (pay_cast(id,s,g_recast)) { return 1; }
+    magic_state()->ready = 0;
+    return 0;
+}
+
+static int ready(df_u32 id, int recast)
+{
+    const ObjectInfo *item;
+    const SpellDef *s;
+    CharacterState *who;
+    item = object_at(id); who = character_state();
+    if (who->health <= 0 || !item || item->type != RECORD_SPELL || item->parent != inventory_book()) { return 0; }
+    s = spell_def(item->index); if (!s) { return 0; }
+    /* Shapechange (spell 92) is not cast: cast_player_spell calls the change itself, free and at once. */
+    if (s->id == SHAPECHANGE_SPELL) { curse_shapechange(0); return 1; }
+    if (who->conditions & 0x100) { msg_set("You are silenced."); return 0; }
+    if (spell_price(s,who,recast) > who->magicka+who->spell_points_bonus) { msg_set("You do not have enough spell points."); return 0; }
+    if (s->target == 0) {
+        if (!pay_cast(id,s,recast)) { return 0; }
+        play_sound(cast_sound(s->element)); animate(s->element);
+        magic_apply(s->id,-1,-1,who->level,0);
+    } else {
+        /* Readied, not paid: the attack button casts it, and that pays. */
+        magic_state()->ready = id; g_recast = recast;
+        msg_set("Press the mouse button to cast the spell."); weapon_cancel();
+    }
+    return 1;
+}
+int magic_ready(df_u32 id) { return ready(id,0); }
+
+/* cast_item_strike_spell: the spell with icon 250, on the creature the weapon struck. An area spell (Fire Storm, Ice Storm) bursts where the creature stands. */
+void magic_strike(int spell, int victim)
+{
+    const SpellDef *s;
+    SpellDef strike;
+    Entity *e;
+
+    s = spell_def(spell);
+    e = dungeon_entity(victim);
+    if (!s || !e) { return; }
+    strike = *s; strike.icon = 250;
+    magic_hostile();
+    play_sound(cast_sound(s->element));
+    if (s->target >= 3) { apply_area(&strike,-1,character_state()->level,e->x,e->y+40,e->z); }
+    else if (s->target != 0) { magic_apply_def(&strike,spell,-1,victim,character_state()->level,0); }
+}
+
+void magic_creature_item_strike(int spell, int attacker, int target, int level)
+{
+    const SpellDef *def;
+    SpellDef strike;
+    Entity *foe, *victim;
+    Body *body;
+
+    def = spell_def(spell);
+    foe = dungeon_entity(attacker);
+    if (!def || !foe || foe->dead) { return; }
+    strike = *def; strike.icon = 250;
+    sound_at(cast_sound(strike.element),foe->x,foe->y+40,foe->z);
+    if (strike.target >= 3) {
+        victim = dungeon_entity(target);
+        body = move_body();
+        apply_area(&strike,attacker,level,victim ? victim->x : body->feet[0],
+            (victim ? victim->y : body->feet[1])+40,victim ? victim->z : body->feet[2]);
+    } else { magic_apply_def(&strike,spell,attacker,strike.target == 0 ? attacker : target,level,0); }
+}
+
+static void record_item_cast(const SpellDef *spell, df_u32 id)
+{
+    int k;
+    df_u32 temporary;
+
+    for (k = 0; k < 3; k++) {
+        if (spell->group[k] != 255) { skill_use(effect_school(spell->group[k])); }
+    }
+    temporary = id ? 0 : object_new(RECORD_SPELL,game_state()->inventory_id,spell->id,100);
+    if (id || temporary) { state_event(EVENT_SPELL,id ? id : temporary,game_state()->entity_id,0); }
+    if (temporary) { object_delete(temporary); }
+}
+
+/* cast_item_used_spell: the player's cast of a spell that came from an item. Nothing is paid (the item pays in wear), silence does not stop it for this cast only (9.1 fixed),
+ * and the last spellbook spell is left as it was. A spell on the caster goes at once; the others are readied and fired with the attack button. */
+int magic_cast_item(int spell)
+{
+    const SpellDef *s;
+    df_u32 id;
+
+    s = spell_def(spell);
+    if (!s || character_state()->health <= 0) { return 0; }
+    /* cast_item_spell_at calls the change itself, as the book's cast does. */
+    if (s->id == SHAPECHANGE_SPELL) { record_item_cast(s,0); curse_shapechange(0); return 1; }
+    if (s->target == 0) {
+        record_item_cast(s,0);
+        play_sound(cast_sound(s->element)); animate(s->element);
+        magic_apply(s->id,-1,-1,character_state()->level,0);
+        return 1;
+    }
+    if (magic_pending()) { msg_set("You already have a spell ready."); return 0; }
+    id = object_new(RECORD_SPELL,game_state()->inventory_id,spell,100);
+    if (!id) { return 0; }
+    record_item_cast(s,id);
+    g_item_spell = id; magic_state()->ready = id;
+    msg_set("Press button to fire spell."); weapon_cancel();
+    return 1;
+}
+int magic_recast(void)
+{
+    if (magic_pending()) { msg_set("You already have a spell ready."); return 0; }
+    return ready(magic_state()->last,1);
+}
+
+static void impact(int i, int victim, int model)
+{
+    MissileInfo *m;
+    const SpellDef *s;
+    int caster;
+    m = &magic_state()->missile[i]; s = spell_def(m->spell);
+    caster = magic_index(m->caster);
+    if (!s) { m->live = 0; return; }
+    sound_at(impact_sound(m->element),m->x,m->y,m->z);
+    if (model >= 0) { actions_trigger(g_scene,model,6); }
+    if (m->target == 4) { apply_area(s,caster,m->level,m->x,m->y,m->z); }
+    else if (victim >= -1) { magic_apply(s->id,caster,victim,m->level,0); }
+    m->burst = 1; visual(i);
+}
+static void step_missile(int index, const Camera *camera, float dt)
+{
+    MissileInfo *m;
+    Entity *e;
+    Body *body;
+    UseHit wall;
+    int i, victim, caster;
+    float distance, nearest, dx, dy, dz, along, squared, radius;
+    m = &magic_state()->missile[index]; if (!m->live) { return; }
+    if (m->burst) {
+        m->burst += df_iround(dt*1000);
+        if (m->burst > 600) { m->live = 0; spawn_remove(g_visual[index]); g_visual[index] = 0; }
+        else { visual(index); }
+        return;
+    }
+    dx = camera->x-m->x; dy = camera->y-m->y; dz = camera->z-m->z;
+    if (dx*dx+dy*dy+dz*dz > 2048*2048) { m->burst = 1; visual(index); return; }
+    distance = 400*dt;
+    interact_cast(g_scene,m->x,m->y,m->z,m->dx,m->dy,m->dz,distance,&wall);
+    nearest = wall.wall; victim = -2; caster = magic_index(m->caster);
+    for (i = -1; i < dungeon_count(); i++) {
+        if (i == caster || (caster >= 0 && dungeon_team(i) == dungeon_team(caster))) { continue; }
+        e = dungeon_entity(i); radius = 60;
+        if (i == -1) { body = move_body(); dx = body->feet[0]-m->x; dy = body->feet[1]+40-m->y; dz = body->feet[2]-m->z; }
+        else { if (e->dead || !e->live) { continue; } dx = e->x-m->x; dy = e->y+40-m->y; dz = e->z-m->z; }
+        along = dx*m->dx+dy*m->dy+dz*m->dz;
+        squared = dx*dx+dy*dy+dz*dz-along*along;
+        if (squared > radius*radius || along < 0) { continue; }
+        along -= df_sqrt(radius*radius-squared); if (along < 0) { along = 0; }
+        if (along <= nearest && line_clear(m->x,m->y,m->z,m->x+dx,m->y+dy,m->z+dz)) { nearest = along; victim = i; }
+    }
+    m->x += m->dx*nearest; m->y += m->dy*nearest; m->z += m->dz*nearest;
+    if (victim >= -1 || wall.wall < distance) { impact(index,victim,wall.model); }
+    else { visual(index); }
+}
+
+void magic_frame(const Scene *scene, const Camera *camera, const PlayIn *input, int blocked)
+{
+    const ObjectInfo *item;
+    const SpellDef *s;
+    Entity *e;
+    Camera aim;
+    Basis basis;
+    float dx, dy, dz, distance, best, across;
+    int i, victim, cast;
+    if (!scene || !camera || !input) { return; }
+    g_scene = scene;
+    activate_aim(camera,options_mouse() == 0,cursor_free(),
+                    !input->on_picture || !wants_pointer(),input->cx,input->cy,&aim);
+    if ((character_state()->conditions & 16) && g_light_slot >= 0) {
+        Entity light, *live;
+        live = spawn_get(g_light);
+        if (!live) {
+            entity_init(&light); light.live = light.glow = 1;
+            light.pose[ENTITY_IDLE].slot[0] = (df_u16)g_light_slot;
+            light.pose[ENTITY_IDLE].w[0] = (df_u16)g_light_w; light.pose[ENTITY_IDLE].h[0] = (df_u16)g_light_h;
+            light.pose[ENTITY_IDLE].rate = 12; g_light = spawn_add(scene,&light,0); live = spawn_get(g_light);
+        }
+        if (live) {
+            live->x = camera->x+df_sin(camera->yaw)*192;
+            live->y = camera->y-18; live->z = camera->z+df_cos(camera->yaw)*192;
+        }
+    } else if (g_light) { spawn_remove(g_light); g_light = 0; }
+    if (g_element >= 0) { g_animation += input->dt; if (g_animation*18.2065f >= 7) { g_element = -1; } }
+    /* An item's readied spell is let go with the readying (fired, or put away). */
+    if (g_item_spell && magic_state()->ready != g_item_spell) { object_delete(g_item_spell); g_item_spell = 0; }
+    if (magic_pending()) {
+        item = object_at(magic_state()->ready); s = item ? spell_def(item->index) : 0;
+        if (!s) { magic_state()->ready = 0; }
+        else if (!blocked) {
+            cast = input->mouse_pressed & 3;
+            if (s->target == 1) {
+                victim = -2; best = 160; camera_basis(&aim,&basis);
+                for (i = 0; i < dungeon_count(); i++) {
+                    e = dungeon_entity(i); if (!e->live || e->dead) { continue; }
+                    dx = e->x-camera->x; dy = e->y+40-camera->y; dz = e->z-camera->z;
+                    distance = dx*basis.fx*basis.cp+dy*basis.sp+dz*basis.fz*basis.cp;
+                    across = dx*dx+dy*dy+dz*dz-distance*distance;
+                    if (distance < 0 || distance >= best || across > 60*60 ||
+                        !line_clear(camera->x,camera->y,camera->z,e->x,e->y+40,e->z)) { continue; }
+                    victim = i; best = distance;
+                }
+                if (cast && victim >= 0 && cast_paid(s)) {
+                    magic_hostile();
+                    play_sound(cast_sound(s->element)); magic_apply(s->id,-1,victim,character_state()->level,0);
+                    animate(s->element); magic_state()->ready = 0;
+                }
+            } else if (cast) {
+                if (!cast_paid(s)) { /* put away */ }
+                else if (s->target == 3) {
+                    play_sound(cast_sound(s->element)); apply_area(s,-1,character_state()->level,camera->x,camera->y,camera->z);
+                    animate(s->element); magic_state()->ready = 0;
+                } else if (launch(s,-1,character_state()->level,&aim)) { animate(s->element); magic_state()->ready = 0; }
+            }
+        }
+    }
+    for (i = 0; i < MISSILES; i++) { step_missile(i,camera,input->dt); }
+}
+
+int magic_creature_at(int index, int target, const Camera *camera)
+{
+    const df_u8 *list;
+    const SpellDef *s;
+    CharacterState who;
+    ClassInfo career;
+    Camera aim;
+    Entity *e, *victim;
+    KeepKey key;
+    int base[8], ids[32], n, i, ranged, reach;
+    float x, y, z, dx, dz, distance;
+    e = dungeon_entity(index); list = 0;
+    if (!e || !camera || !magic_target(index,&who,&career,base) || !who.magicka || (who.conditions & 0x100)) { return 0; }
+    list = creature_spells(dungeon_kind(index),who.level); if (!list) { return 0; }
+    victim = dungeon_entity(target);
+    if (target != TARGET_PLAYER && (!victim || !victim->live || victim->dead)) { return 0; }
+    x = victim ? victim->x : camera->x;
+    y = victim ? victim->y+40 : camera->y-20;
+    z = victim ? victim->z : camera->z;
+    dx = x-e->x; dz = z-e->z; distance = df_sqrt(dx*dx+dz*dz);
+    reach = victim ? 60 : 90;
+    ranged = distance > 4*reach && distance > 256;
+    if (!ranged && distance > reach) { return 0; }
+    key = magic_key(target);
+    n = 0;
+    for (i = 0; i < 32 && list[i] != 255; i++) {
+        int held, k;
+        s = spell_def(list[i]); if (!s) { continue; }
+        /* ai_pick_*_spell: nothing is cast that the player already has on them. */
+        held = 0;
+        for (k = 0; k < EFFECTS; k++) {
+            const Effect *fx = &magic_state()->effect[k];
+            if (fx->active && fx->spell == s->id && fx->target.place == key.place && fx->target.thing == key.thing) { held = 1; }
+        }
+        if (held) { continue; }
+        if (ranged ? (s->target == 2 || s->target == 4) : (s->target == 0 || s->target == 1)) { ids[n++] = s->id; }
+    }
+    if (!n) { return 0; }
+    s = spell_def(ids[random_range(0,n-1)]);
+    if (ranged && random_range(0,39)) { return 0; }
+    if (!line_clear(e->x,e->y+40,e->z,x,y,z)) { return 0; }
+    aim.x = e->x; aim.y = e->y+50; aim.z = e->z;
+    aim.yaw = df_atan2(dx,dz); aim.pitch = df_atan2(y-aim.y,distance);
+    if (s->target == 2 || s->target == 4) { if (!launch(s,index,who.level,&aim)) { return 0; } }
+    else { sound_at(cast_sound(s->element),e->x,e->y+40,e->z); magic_apply(s->id,index,s->target == 0 ? index : target,who.level,0); }
+    if (magic_target(index,&who,&career,base)) {
+        who.magicka -= spell_cost(s,&who); magic_commit(index,&who,index);
+    }
+    return 1;
+}
+int magic_creature(int index, const Camera *camera)
+{
+    return magic_creature_at(index,TARGET_PLAYER,camera);
+}
+
+void magic_trap(int spell, float x, float y, float z)
+{
+    const SpellDef *s;
+    Body *body;
+    Camera aim;
+    float dx, dz, distance;
+    s = spell_def(spell); if (!s) { return; }
+    if (s->target == 2 || s->target == 4) {
+        body = move_body(); dx = body->feet[0]-x; dz = body->feet[2]-z;
+        distance = df_sqrt(dx*dx+dz*dz); aim.x = x; aim.y = y; aim.z = z;
+        aim.yaw = df_atan2(dx,dz); aim.pitch = df_atan2(body->feet[1]+40-y,distance);
+        launch(s,-3,character_state()->level,&aim);
+    } else {
+        sound_at(cast_sound(s->element),x,y,z);
+        magic_apply(spell,s->target == 0 ? -1 : -3,-1,character_state()->level,0);
+    }
+}
+
+static void recall_answer(const char *answer)
+{
+    RecallState *anchor;
+    Body *body;
+    MotionState motion;
+    anchor = &magic_state()->recall;
+    if (!answer || !*answer) { return; }
+    if (*answer == 'a' || *answer == 'A') {
+        travel_capture(); world_where()->recall_where = world_where()->where;
+        body = move_body(); anchor->valid = 1;
+        anchor->place = object_at(WORLD_ROOT)->place_key;
+        anchor->x = body->feet[0]; anchor->y = body->feet[1]+body->eye_now; anchor->z = body->feet[2];
+        move_capture(&motion); anchor->yaw = motion.yaw; anchor->pitch = motion.pitch;
+        msg_set("Your anchor has been set.");
+    } else if (*answer == 'r' || *answer == 'R' || *answer == 't' || *answer == 'T') {
+        if (!anchor->valid) { msg_set("You have not set an anchor."); return; }
+        if (anchor->place == object_at(WORLD_ROOT)->place_key && travel_at(&world_where()->recall_where)) {
+            move_place(anchor->x,anchor->y,anchor->z,anchor->yaw);
+            move_capture(&motion); motion.pitch = anchor->pitch; move_restore(&motion);
+        } else if (!travel_return(&world_where()->recall_where,anchor->x,anchor->y,anchor->z,anchor->yaw,anchor->pitch)) {
+            msg_set("Your anchor's place is unavailable."); return;
+        }
+        anchor->valid = 0;
+        msg_set("You return to your anchor.");
+    }
+}
+void magic_recall_prompt(void)
+{
+    possessions_message("Recall\n\nType ANCHOR to set an anchor here, or RECALL to return to it.\nThe anchor is consumed when you return.",recall_answer);
+}

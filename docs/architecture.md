@@ -80,15 +80,48 @@ A place, built: what the engine draws, hears, walks on and uses.
 | `doors` | the doors, levers, passages and people a block names, as usables and movers |
 
 ### `src/game/dagger/play/`
-Daggerfall's game, as `docs/game.md` lays it out: its player, its rules, its screens. Today: `game` (the play state's frame), `player` (a body under `rig_first`), `character` (the sheet), `inventory` (items, gold, what is worn), `loot` (what a body or a heap of treasure holds), `pile` (what the player drops), `combat`, `foes` and `watch` (blows, creatures awake, and the guard a street killing draws), `weapon` (the weapon in hand), `doll` (the paper doll), `canvas` (classic's screen composed in memory), `bag`, `sheet`, `create` and `rest` (the inventory, the character sheet, creation and rest, on it), `screens` (whichever is open, on the card), `kit` (what a new character starts with), `save` (the one saved game), `commands` (the game's console commands), `rules` (classic's sums), `hudbar` (classic bar buttons and modes), `control` (cursor movement, view offsets, gesture ownership and pointed rays), `overlay` (the compass, vitals, portrait and bar), `menu` (classic title/start/death and settings input), `settings` (native stone panels, translated text and shared hit geometry), `keys` (the bindings), `mouse` (Cursor or View), `viewopt` (stored full screen, head bobbing, FOV and audio volumes), `screen` (classic's 320 × 200 on the card). Rules that can be written as plain C (stats, combat sums, saves) live here and are host-tested in `tests/`.
+The root coordinates the frame (`play.c`), shared session state (`state.c`),
+global configuration and console cheats. Each folder owns a gameplay responsibility.
+
+- `character/` owns creation, careers in play, progression, vitals, survival, rest and ailments.
+- `combat/` owns melee and weapons, creature AI, dungeon actors and encounters.
+- `input/` owns controls, activation, steering and movement.
+- `items/` owns inventory, descriptions, ground containers and the possessions controller.
+- `magic/` owns effects, casting, equipment enchantments, potions and spell services.
+- `people/` owns dialogue, standing, entry rules, law, guilds and commerce.
+- `quests/` owns quest interpretation, events and persistent quest state.
+- `save/` owns the save codec and slot selection.
+- `travel/` owns passage actions, travel, journeys, map controllers and world state kept in saves.
+- `ui/` owns shared presentation primitives, notifications, HUD, options and text macros.
+
+Headers live beside their implementation. Only expose what a caller uses.
+Folders organize the play layer and follow the same include rules as its root.
 
 ### `apps/`
-One folder per program, each a `main.c` that brings `WinMainCRTStartup`, except `dfrec`, the `.DAT` tool, a native command-line program built beside hostcheck (`docs/data.md`). An app wires the layers together and owns its window, its loop and its keys. LEVELFALL and RENDERFALL are the engine's diagnostic views (`docs/viewers.md`). GFALL is the game. DATFALL is the construction set, titled cd-gfall (`docs/data.md`). SPINTRI stands alone as the Glide demo.
+
+Each program has an entry point. The GFALL app wires the gameplay layer into
+the Win32/Glide frame loop and renders game-specific assets. `main.c` owns the
+loop, `boot.c` initializes the app, and `seam.h` is their interface to the
+rest of the app and to the host game tests.
+
+- `world/` owns the active level, place heap, arrivals, travel callbacks and encounter art.
+- `buildings/` resolves building IDs and names, announces entry and adapts the door gate.
+- `people/` connects NPC selection, conversations, services and street guards to gameplay.
+- `quests/` adapts quest text, world lookups and placement of quest entities.
+- `screen/` composes classic screens and owns pictures, palettes and fonts. Map views,
+  possessions screens and first-person overlays have separate presenters.
+
+A subsystem's `hooks.c` adapts or registers callbacks. Use direct calls
+between subsystems for operations such as asking a building for its name.
+
+LEVELFALL and RENDERFALL are diagnostic viewers (`docs/viewers.md`). DATFALL is
+the construction set and dfrec is its native data tool (`docs/data.md`).
+SPINTRI is the standalone Glide demo.
 
 ### Data
 Daggerfall's tables are records, not C arrays (`docs/data.md`):
 - A table's row struct and `RecSchema` live in the module that uses it.
-- Classic's numbers live only in `tables/classic.c`, which cooks MAIN.DAT.
+- `tables/classic.c` reads the original values used to cook MAIN.DAT.
 - The record file itself is the engine's (`engine/assets/recfile.c`), and it knows no game.
 - `apps/dfrec` reads and makes `.DAT` files. `apps/datfall` is cd-gfall: the tables, the pictures, the characters, the creatures, the items and the world map.
 
@@ -103,13 +136,18 @@ Daggerfall's tables are records, not C arrays (`docs/data.md`):
 5. Is it about the player, the rules of play, a screen, a save? Put it in **play**. The engine never gets a player; it gets the generic part the player needs (a key, a hook, a body's rule) as an engine request.
 6. Is it a key, a panel, or a diagnostic for one program? Put it in that program's **apps** folder.
 
-A number Daggerfall decides (a creature's health, a spell's cost, the weather's odds) is a record in a table, never a constant in code: its schema goes beside the module that reads it, and its classic values go in `classic.c`.
+Gameplay data such as creature health, spell costs and weather odds belongs in
+the existing records. Fixed format IDs, masks and dimensions belong with the
+code that interprets them. Share them through the owning domain's header when
+more than one module needs them. For example, `tables/buildingtypes.h` defines
+building record IDs for the table and its gameplay consumers, and
+`play/ui/canvas.h` defines the classic screen dimensions for presenters.
 
 When a lower layer needs something from a higher one, the lower layer gains a hook, and the higher one installs it.
 
 ## Conventions
 
-- **A module is one `.c` and one `.h`** of the same name. The header opens with a comment saying what the module is, its format quirks, and which `docs/` page to read before editing.
+- **A header defines an interface.** A module may span several C files. Keep local helpers and state private. Document format quirks and dependencies at the interface that uses them.
 - **Names** are snake_case, prefixed by the module: `world_load`, `wild_update`, `forecast_set`. Types are `CamelCase`.
 - **Lifetimes.** Something that lives for the process is `x_startup` / `x_shutdown` with `mem_keep`. A place's data lives in that place's heap (`docs/memory.md`). Per-frame work is `x_step` or `x_frame`, takes `dt` in seconds, and skips itself while `gfx_paused()`.
 - **No Win32 below `apps/` and `src/engine/platform`**, except where the engine guards it with `DF_HOST`. `src/game/` is plain C, so hostcheck builds it. `fnt.c` is the one exception, and `tools/check-layers` lists it.

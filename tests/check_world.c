@@ -1,23 +1,26 @@
 #include "check_world.h"
+#include "game/dagger/tables/buildingtypes.h"
 #include "check_util.h"
 #include "../apps/gfall/seam.h"
-#include "game/dagger/play/travel.h"
-#include "game/dagger/play/save.h"
-#include "game/dagger/play/dungeon.h"
-#include "game/dagger/play/magic.h"
-#include "game/dagger/play/maps.h"
-#include "game/dagger/play/ailments.h"
-#include "game/dagger/play/possessions.h"
-#include "game/dagger/play/ground.h"
-#include "game/dagger/play/spellmaker.h"
-#include "game/dagger/play/itemmaker.h"
-#include "game/dagger/play/quest.h"
-#include "game/dagger/play/activate.h"
-#include "game/dagger/play/inventory.h"
-#include "game/dagger/play/hud.h"
-#include "game/dagger/play/law.h"
-#include "game/dagger/play/potion.h"
-#include "game/dagger/play/spellshop.h"
+#include "game/dagger/play/travel/travel.h"
+#include "game/dagger/play/save/save.h"
+#include "game/dagger/play/combat/dungeon.h"
+#include "game/dagger/play/combat/encounter.h"
+#include "game/dagger/play/magic/magic.h"
+#include "game/dagger/play/travel/maps.h"
+#include "game/dagger/play/character/ailments.h"
+#include "game/dagger/play/items/possessions.h"
+#include "game/dagger/play/items/ground.h"
+#include "game/dagger/play/ui/msg.h"
+#include "game/dagger/play/magic/spellmaker.h"
+#include "game/dagger/play/magic/itemmaker.h"
+#include "game/dagger/play/quests/quest.h"
+#include "game/dagger/play/input/activate.h"
+#include "game/dagger/play/items/inventory.h"
+#include "game/dagger/play/ui/hud.h"
+#include "game/dagger/play/people/law.h"
+#include "game/dagger/play/magic/potion.h"
+#include "game/dagger/play/magic/spellshop.h"
 #include "game/dagger/places/people.h"
 #include "engine/scene/entity.h"
 #include "game/dagger/formats/interior.h"
@@ -92,6 +95,60 @@ static void type_char(int ch)
 static void click_talk(const short *button)
 {
     click_at((button[0] + button[2]) / 2, (button[1] + button[3]) / 2);
+}
+
+static void check_named_directions(const Camera *cam)
+{
+    const TalkWin *window;
+    const TownBuilding *buildings;
+    int region, index, block, record, count, type;
+    float x, z;
+
+    if (!travel_town_here(cam, &region, &index, &x, &z, &block, &record)) {
+        check_expect(0, "people: cannot find the town to check its directions");
+        return;
+    }
+    buildings = town_buildings(region, index, &count);
+    window = talkwin_state();
+    for (type = BUILDING_TEMPLE; type <= BUILDING_TAVERN; type++) {
+        int category, i, expected, named, last_distance, answers;
+        TwItem item;
+
+        category = talk_category(type, 0);
+        expected = 0;
+        for (i = 0; i < count; i++) {
+            if (buildings[i].type == type) { expected++; }
+        }
+        for (i = 0; talkwin_item(i, &item) && item.value != category; i++) { }
+        if (!window->categories || i >= window->count) {
+            check_expect(0, "people: Daggerfall is missing Local temples or Taverns in Where is");
+            return;
+        }
+        click_at(20, 73 + 7 * i);
+        click_talk(talkwin_button(TB_OKAY));
+        check_expect(!window->categories && window->category == category && expected > 0 && window->count == expected + 1,
+                     "people: Where is did not list every real temple or tavern in Daggerfall");
+        named = 0;
+        last_distance = 0;
+        for (i = 1; talkwin_item(i, &item); i++) {
+            const TalkTopic *topic;
+
+            topic = &window->topic[item.value];
+            if (item.text[0] && topic->category == category && topic->distance >= last_distance) { named++; }
+            last_distance = topic->distance;
+        }
+        check_expect(named == expected, "people: Daggerfall's temple or tavern names are blank or out of distance order");
+        if (talkwin_item(1, &item)) {
+            check_expect(window->question_count > 0 && !strcmp(talkwin_key_text(), item.text),
+                         "people: the selected destination's full name did not reach the question");
+            answers = window->answer_count;
+            click_talk(talkwin_button(TB_OKAY));
+            check_expect(window->answer_count > answers + 3 && window->asked[answers + 1] &&
+                         window->answer[window->answer_count - 1][0],
+                         "people: asking for the selected named destination did not log a question and answer");
+        }
+        click_at(20, 73);
+    }
 }
 
 static int route_climate(int x, int y) { return g_climate ? g_climate : (y >= x ? 223 : 228); }
@@ -375,6 +432,23 @@ void check_world(const char *root)
     check_expect(travel_count() > 15000 && cmd_run("goto Daggerfall") && play_travel_asked() && change(),
                  "goto resolves an actual town name and opens its streamed street");
     check_expect(world_where()->where.kind == WHERE_WORLD && game_state()->region == 17,"Daggerfall arrival updates the persistent region");
+    {
+        const Entity *actor;
+        Camera away;
+        df_u32 saved_random;
+
+        saved_random = game_state()->random;
+        random_seed(0);
+        check_expect(encounter_minute(&seam_level()->scene,&g_camera,0,ENCOUNTER_WALK),
+                     "a nighttime encounter can spawn in a real Daggerfall street");
+        actor = dungeon_entity(0);
+        check_expect(actor && actor->pose[ENTITY_WALK].w[0] && encounter_outdoor_actor(actor),
+                     "the encounter has real streamed creature art and a combat actor");
+        away = g_camera; away.x += 5000;
+        encounter_update(&seam_level()->scene,&away);
+        check_expect(!dungeon_count(),"the real streamed encounter leaves no combat actor past its leash");
+        random_seed(saved_random);
+    }
     /* The people inside Daggerfall's buildings, read by GFALL's own reader: shops have a shopkeeper, houses none. */
     {
         int region_t, index_t, block_t, record_t, count, i, k, n, shops, shopkeepers, house_keepers, people_total;
@@ -430,6 +504,7 @@ void check_world(const char *root)
             talk_shot("talk0");
             /* The window's own buttons: the categories of this town's buildings are listed, Escape leaves. */
             check_expect(talkwin_state()->categories && talkwin_state()->count > 0, "people: the window lists no places");
+            check_named_directions(&look);
             click_talk(talkwin_button(TB_TELL));
             talk_shot("talk1");
             click_talk(talkwin_button(TB_WHERE));
@@ -686,27 +761,36 @@ void check_world(const char *root)
         Scene *entry_scene;
         int k, entered;
 
-        /* A door of a house shut by its number is refused (a lock's hint); some door of the town opens. */
+        /* Use a real tavern door so its arrival can be distinguished from a house's. */
         entry_scene = &seam_level()->scene;
+        msg_clear();
         entered = 0;
         for (k = 0; k < entry_scene->nusables && !entered; k++) {
             const Usable *candidate;
+            const TownBuilding *building;
 
             candidate = &entry_scene->usables[k];
-            if (candidate->kind == USE_PASSAGE && candidate->what == 1 && candidate->reach > 0 && travel_passage(candidate) && play_travel_asked()) {
+            if (candidate->kind != USE_PASSAGE || candidate->what != 1 || candidate->reach <= 0) { continue; }
+            building = town_building(region, index, candidate->tag >> 8, candidate->tag & 0xff);
+            if (building && building->type == BUILDING_TAVERN && travel_passage(candidate) && play_travel_asked()) {
                 door = candidate; entered = 1;
             }
         }
         stream_world(door->cx,door->cz,&bx,&bz);
+        check_expect(!strstr(message_line(), "You've entered"), "tavern: the announcement appeared before arrival");
         check_expect(entered && change() && !seam_level()->streamed && !seam_level()->sky && world_where()->where.kind == WHERE_INSIDE,
                      "the tavern entrance opens its interior on a separate place heap");
+        check_expect(!strncmp(message_line(), "You've entered The ", sizeof("You've entered The ") - 1),
+                     "tavern: entering did not announce its named sign on the HUD");
         {
             float mx, my, mz;
 
             /* The editor markers of the inside are there to be picked: the enter marker (record 8), and beds (record 4) if the building has them. */
             check_expect(entered && world_marker_nth(travel_whole_world(), 8, 0, &mx, &my, &mz), "tavern: the inside's enter marker is not read from the place");
         }
+        msg_clear();
         door = passage(2); check_expect(door && travel_passage(door) && change(),"the interior exit returns to the streamed world");
+        check_expect(!strstr(message_line(), "You've entered"), "tavern: leaving incorrectly announced a building arrival");
         stream_world(g_camera.x,g_camera.z,&ax,&az);
         check_expect(ax-bx < 200 && ax-bx > -200 && az-bz < 200 && az-bz > -200,"leaving a building lands beside the same world door");
     }

@@ -117,6 +117,8 @@ int travel_open(Level *level, int radius);
 const char *travel_error(void);
 /* Something to say on arriving, once; 0 for nothing. */
 const char *travel_said(void);
+/* The current arrival is through a street door into a building. */
+int travel_entered_building(void);
 /*
  * After gfx_prepare. Where to stand in the place just opened: a body with its
  * eye this far above its feet. What is round it is loaded, sharp for the first
