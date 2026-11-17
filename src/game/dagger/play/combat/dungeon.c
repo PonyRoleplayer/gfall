@@ -782,7 +782,7 @@ static void monster_strike(const Scene *scene, const Camera *cam, FoeState *foe,
     if (!visible(scene,from,to)) { return; }
     if (target == TARGET_PLAYER) {
         fighter_player(&player); player.metal = curse_min_metal(); victim = &player;
-        category = curse_beast() ? foe_category(curse_form() == 9 ? ENEMY_WEREWOLF : ENEMY_WEREBOAR) : FOE_HUMANOID;
+        category = curse_beast() ? foe_category(curse_form() == CURSE_FORM_WEREWOLF ? ENEMY_WEREWOLF : ENEMY_WEREBOAR) : FOE_HUMANOID;
     } else {
         victim = &g_foe[target].fighter;
         category = foe_enchant_category(g_foe[target].kind);

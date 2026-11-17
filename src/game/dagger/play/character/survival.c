@@ -33,7 +33,7 @@ void survival_step(const Scene *scene, float seconds)
     if (!survival->breath) { survival->breath = limit; }
     if (survival->ticks-survival->last_tick > 18) {
         survival->last_tick = survival->ticks;
-        if (curse_race() != 7 || !(survival->ticks & 1)) { survival->breath--; }
+        if (curse_race() != PLAYER_RACE_ARGONIAN || !(survival->ticks & 1)) { survival->breath--; }
     }
     if (survival->breath <= 0) { survival->breath = 0; damage_player(who->health,-1); }
 }
@@ -45,7 +45,7 @@ void survival_minutes(int count, int running, int climbing)
     if (god_mode() || game_state()->mode != GAME_WORLD || character_state()->health <= 0) { return; }
     while (count-- > 0) {
         delta = 11;
-        if (move_in_water() && curse_race() != 7) {
+        if (move_in_water() && curse_race() != PLAYER_RACE_ARGONIAN) {
             if (random_range(1,100) > character_state()->skill[SKILL_SWIMMING]) { delta = 44; }
             skill_use(SKILL_SWIMMING);
         }

@@ -1,4 +1,5 @@
 #include "game/dagger/play/combat/combat.h"
+#include "game/dagger/tables/items.h"
 #include "game/dagger/tables/enemies.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/play/character/curse.h"
@@ -37,8 +38,8 @@ void fighter_player(FighterInfo *out)
 
 static int race_bonus(int race, int weapon, int level)
 {
-    if ((race == 1 && weapon < WEAPON_SHORT_BOW) || (race == 5 && weapon >= WEAPON_SHORT_BOW)) { return level/3; }
-    return race == 3 ? level/4 : 0;
+    if ((race == PLAYER_RACE_REDGUARD && weapon < WEAPON_SHORT_BOW) || (race == PLAYER_RACE_WOOD_ELF && weapon >= WEAPON_SHORT_BOW)) { return level/3; }
+    return race == PLAYER_RACE_DARK_ELF ? level/4 : 0;
 }
 
 int attack_chance(const FighterInfo *a, const FighterInfo *t, int skill, int weapon,
@@ -69,7 +70,7 @@ int attack_damage(const FighterInfo *a, const FighterInfo *t, int weapon, int ma
     damage = base + race_bonus(a->race,weapon,a->level) + swing;
     if (expert) { damage += a->level/3+1; }
     if (t->race == ENEMY_SKELETAL_WARRIOR) {
-        if (material == 2) { damage *= 2; }
+        if (material == MATERIAL_SILVER) { damage *= 2; }
         /* Ordinary edged weapons halve against a skeletal warrior. */
         if (!(item_def(ITEM_GROUP_WEAPON,weapon)->flags & 16)) { damage /= 2; }
     }

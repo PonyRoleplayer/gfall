@@ -64,7 +64,7 @@ int curse_form(void) { return curse_state()->form; }
 int curse_race(void) { return curse_state()->form ? curse_state()->form : character_state()->race; }
 int curse_is_vampire(void) { return curse_state()->disease == CURSE_VAMPIRISM; }
 int curse_is_lycanthrope(void) { return curse_state()->disease == CURSE_WEREWOLF || curse_state()->disease == CURSE_WEREBOAR; }
-int curse_beast(void) { return curse_state()->form > 8; }
+int curse_beast(void) { return curse_state()->form > CURSE_FORM_VAMPIRE; }
 int curse_min_metal(void) { return curse_state()->form ? 2 : 0; }
 int curse_infected(void) { return curse_state()->infection_time != 0; }
 int curse_suspended(int slot) { return slot >= 0 && slot < MEMBERSHIPS && (curse_state()->suspended & (1 << slot)) != 0; }
@@ -73,11 +73,11 @@ int curse_valid(const CurseState *c)
 {
     int i;
 
-    if (!c || (c->form != 0 && (c->form < 8 || c->form > 10)) || c->disease < 0 || (c->disease != 0 && (c->disease < 100 || c->disease > 102)) ||
+    if (!c || (c->form != CURSE_FORM_NONE && (c->form < CURSE_FORM_VAMPIRE || c->form > CURSE_FORM_WEREBOAR)) || c->disease < 0 || (c->disease != 0 && (c->disease < 100 || c->disease > 102)) ||
         c->action < 0 || c->action > 1 || c->infection_kind < 0 || c->infection_kind > 2 || (c->clan != 0 && (c->clan < 150 || c->clan > 158)) ||
         c->suspended < 0 || c->suspended >= (1 << MEMBERSHIPS) || c->health_base < 0 || c->health_base > 100000) { return 0; }
     /* The form follows the curse: a vampire's is 8, a lycanthrope's human (0) or its beast (9 for the werewolf, 10 for the wereboar). */
-    if (c->disease == CURSE_VAMPIRISM ? c->form != 8 : c->disease == 0 ? c->form != 0 : (c->form != 0 && c->form != c->disease - 92)) { return 0; }
+    if (c->disease == CURSE_VAMPIRISM ? c->form != CURSE_FORM_VAMPIRE : c->disease == 0 ? c->form != CURSE_FORM_NONE : (c->form != CURSE_FORM_NONE && c->form != (c->disease == CURSE_WEREWOLF ? CURSE_FORM_WEREWOLF : CURSE_FORM_WEREBOAR))) { return 0; }
     for (i = 0; i < ATTRS; i++) { if (c->drained[i] < 0 || c->drained[i] > 100) { return 0; } }
     return 1;
 }
@@ -89,7 +89,7 @@ static void infect(int kind)
     CurseState *c;
 
     /* Both infect functions: nothing at level 1 or for a vampire or a lycanthrope in beast form (race > 7). A second infection overwrites the first and restarts the three days. */
-    if (character_state()->level == 1 || curse_form() > 7) { return; }
+    if (character_state()->level == 1 || curse_form() > PLAYER_RACE_ARGONIAN) { return; }
     c = curse_state();
     c->infection_time = game_state()->minutes + INFECTION_MINUTES;
     c->infection_kind = kind;
@@ -212,7 +212,7 @@ static void become_vampire(void)
     int region, i, clan;
 
     c = curse_state();
-    if (curse_form() > 7 || curse_is_lycanthrope()) { return; }
+    if (curse_form() > PLAYER_RACE_ARGONIAN || curse_is_lycanthrope()) { return; }
     curse_clear_infection();
     possessions_message(words_state(TEXT_BECOME_VAMPIRE), 0);
     /* 21 days pass (random encounters belong to resting here, so there are none), then the player wakes in a crypt of the region, if it has one. */
@@ -225,11 +225,11 @@ static void become_vampire(void)
     c->disease = CURSE_VAMPIRISM;
     for (i = 0; i < ATTRS; i++) { if (i != ATTR_INT) { bonus_attribute(i, VAMPIRE_ATTRIBUTE); } }
     curse_skill_bonuses(1);
-    career_edit()->immunity |= 0x41;
-    career_edit()->flags |= 0x30;
+    career_edit()->immunity |= EFFECT_BIT_PARALYSIS | EFFECT_BIT_DISEASE;
+    career_edit()->flags |= CLASS_SUN_DAMAGE | CLASS_HOLY_DAMAGE;
     ailments_cure(-1, 0);
     suspend_guilds();
-    c->form = 8;
+    c->form = CURSE_FORM_VAMPIRE;
     for (i = 0; i < (int)(sizeof(vampire_spells) / sizeof(vampire_spells[0])); i++) { give_spell(vampire_spells[i]); }
     switch (c->clan - 150) {
     case 0: give_spell(85); break;
@@ -255,12 +255,12 @@ static void become_lycanthrope(int kind)
     int i;
 
     c = curse_state();
-    if (character_state()->level == 1 || curse_is_lycanthrope() || curse_form() > 7) { return; }
+    if (character_state()->level == 1 || curse_is_lycanthrope() || curse_form() > PLAYER_RACE_ARGONIAN) { return; }
     curse_clear_infection();
     c->saved_class = game_state()->career;
     c->disease = CURSE_WEREWOLF + kind;
     for (i = 0; i < (int)(sizeof(lycanthrope_attributes) / sizeof(lycanthrope_attributes[0])); i++) { bonus_attribute(lycanthrope_attributes[i], LYCANTHROPE_ATTRIBUTE); }
-    career_edit()->immunity |= 64;
+    career_edit()->immunity |= EFFECT_BIT_DISEASE;
     give_spell(SHAPECHANGE_SPELL);
     curse_skill_bonuses(1);
     c->kill_time = game_state()->minutes;
@@ -279,7 +279,7 @@ void curse_cure_vampirism(void)
     take_back_attributes();
     curse_skill_bonuses(-1);
     restore_class();
-    c->suspended = 0; c->form = 0; c->disease = 0;
+    c->suspended = 0; c->form = CURSE_FORM_NONE; c->disease = 0;
     take_spells();
 }
 
@@ -297,7 +297,7 @@ void curse_cure_lycanthropy(void)
     restore_class();
     take_spells();
     if (c->health_base) { character_state()->max_health = c->health_base; }
-    c->form = 0; c->disease = 0; c->health_base = 0;
+    c->form = CURSE_FORM_NONE; c->disease = 0; c->health_base = 0;
 }
 
 /* Hircine's ring is artifact 3 (item_artifact_equipped(3)). Worn, it ends the hunger and the moons and the wait between changes. */
@@ -315,20 +315,20 @@ int curse_shapechange(int forced)
 
     c = curse_state(); who = character_state();
     if (!curse_is_lycanthrope()) { return 0; }
-    if (!forced && c->form == 0 && !ring_worn() &&
+    if (!forced && c->form == CURSE_FORM_NONE && !ring_worn() &&
         game_state()->minutes - c->shape_time < SHAPECHANGE_WAIT) {
         msg_set("Can only be cast once per day...");
         return 0;
     }
     c->shape_time = game_state()->minutes;
-    if (c->form == 0) {
-        c->form = c->disease == CURSE_WEREWOLF ? 9 : 10;
+    if (c->form == CURSE_FORM_NONE) {
+        c->form = c->disease == CURSE_WEREWOLF ? CURSE_FORM_WEREWOLF : CURSE_FORM_WEREBOAR;
         for (i = 0; i < MOON_SOCIAL_GROUPS; i++) { who->reputation[i] -= BEAST_REPUTATION; }
         who->health = who->max_health;
         /* Both hands emptied: the weapons stay in the pack. */
         state_equip(HAND_SLOTS_FIRST, 0); state_equip(HAND_SLOT_SECOND, 0);
     } else {
-        c->form = 0;
+        c->form = CURSE_FORM_NONE;
         for (i = 0; i < MOON_SOCIAL_GROUPS; i++) { who->reputation[i] += BEAST_REPUTATION; }
         who->health = who->max_health;
     }
@@ -386,7 +386,7 @@ void curse_attack_sound(void)
     form = curse_form();
     if (!form || random_range(0, 99) >= 20) { return; }
     /* A vampire's cry by sex (10281/10282 a woman's, 10301/10302 a man's); a werewolf's 10091/10092, a wereboar's 10141/10142. */
-    base = form == 8 ? (character_state()->female ? 10281 : 10301) : form == 9 ? 10091 : 10141;
+    base = form == CURSE_FORM_VAMPIRE ? (character_state()->female ? 10281 : 10301) : form == CURSE_FORM_WEREWOLF ? 10091 : 10141;
     play_sound(base + random_range(0, 1));
 }
 
@@ -413,7 +413,7 @@ static void lycanthrope_tick(void)
         who->max_health = new_max;
         if (who->health > new_max) { who->health = new_max; }
     }
-    if (c->form <= 8) {
+    if (c->form <= CURSE_FORM_VAMPIRE) {
         day = (int)(game_state()->minutes / 1440u);
         if (day % MOON_PERIOD == 0 || (day + MOON_GAP) % MOON_PERIOD == 0) {
             msg_set("You dream, once again, of the moon...");

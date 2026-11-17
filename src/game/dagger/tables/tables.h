@@ -24,6 +24,35 @@ enum {
     ATTR_LUC
 };
 
+/* The player's race: 0 is Breton, the High Rock pixel (a different numbering from careers.h's RACE_*, which are record ids and start at 1; never pass one to career_race).
+ * A fighter's race is a player's or a mobile id, so the original's tests of race 1, 3 and 5 meet a mobile of that id too. */
+enum {
+    PLAYER_RACE_BRETON,
+    PLAYER_RACE_REDGUARD,
+    PLAYER_RACE_NORD,
+    PLAYER_RACE_DARK_ELF,
+    PLAYER_RACE_HIGH_ELF,
+    PLAYER_RACE_WOOD_ELF,
+    PLAYER_RACE_KHAJIIT,
+    PLAYER_RACE_ARGONIAN,
+    PLAYER_RACES
+};
+
+/* ClassInfo.flags, CLASS*.CFG's abilities word: the bits the rules read. */
+enum {
+    CLASS_JUMP_BONUS = 2,
+    CLASS_NO_MAGICKA_REGEN = 8,
+    CLASS_SUN_DAMAGE = 16,
+    CLASS_HOLY_DAMAGE = 32
+};
+
+/* ClassInfo.resistance, immunity, tolerance and weakness: one bit a kind of harm (Daggerfall Unity's DFCareer.EffectFlags), as magic_resist takes them. */
+enum {
+    EFFECT_BIT_PARALYSIS = 1,
+    EFFECT_BIT_POISON = 4,
+    EFFECT_BIT_DISEASE = 64
+};
+
 typedef struct ClassInfo {
     char name[16];
     int attribute[ATTRS];

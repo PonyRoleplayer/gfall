@@ -37,7 +37,7 @@ static int infect(int target, const df_u8 *list, int id, int no_resist)
     const DiseaseDef *def;
     AilmentInfo *a;
     int i, count;
-    if (!vulnerable(target,64,no_resist)) { return 0; }
+    if (!vulnerable(target,EFFECT_BIT_DISEASE,no_resist)) { return 0; }
     if (list) {
         for (count = 0; list[count] != 255; count++) { }
         if (!count) { return 0; }
@@ -58,7 +58,7 @@ int poison_apply(int target, int id, int no_resist)
     const df_i16 *def;
     AilmentInfo *a;
     def = poison_def(id);
-    if (!def || !vulnerable(target,4,no_resist)) { return 0; }
+    if (!def || !vulnerable(target,EFFECT_BIT_POISON,no_resist)) { return 0; }
     a = allocate(target); if (!a) { return 0; }
     a->id = id; a->left = random_range(def[2],def[3]); a->delay = random_range(def[0],def[1]);
     return 1;

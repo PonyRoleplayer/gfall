@@ -88,7 +88,7 @@ void rest_recover(void)
     if (who->health > who->max_health) { who->health = who->max_health; }
     fatigue = (game_state()->base_attribute[ATTR_STR]+game_state()->base_attribute[ATTR_END]) << 3;
     who->fatigue = fatigue_add(who->fatigue,fatigue,who->attribute[ATTR_STR],who->attribute[ATTR_END]);
-    if (!(game_state()->career.flags & 8)) {
+    if (!(game_state()->career.flags & CLASS_NO_MAGICKA_REGEN)) {
         who->magicka += who->max_magicka >> 3;
         if (who->magicka > who->max_magicka) { who->magicka = who->max_magicka; }
     }
@@ -101,7 +101,7 @@ static int healed(void)
     who = character_state();
     return who->health == who->max_health &&
         who->fatigue == (who->attribute[ATTR_STR]+who->attribute[ATTR_END])*64 &&
-        ((game_state()->career.flags & 8) || who->magicka == who->max_magicka);
+        ((game_state()->career.flags & CLASS_NO_MAGICKA_REGEN) || who->magicka == who->max_magicka);
 }
 
 void rest_frame(const PlayIn *in, const Camera *cam)

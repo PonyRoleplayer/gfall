@@ -193,7 +193,7 @@ void enchant_minutes(void)
     if (!amount) { return; }
     g_stamp = now;
     /* effects_tick's class part (5.2): a class hurt by sunlight (flag 16) or in temples (flag 32) takes 12 a step, a vampire's 3 health a game minute. */
-    if (((game_state()->career.flags & 16) && daylight()) || ((game_state()->career.flags & 32) && temple())) { damage_player(amount * 12, 0); }
+    if (((game_state()->career.flags & CLASS_SUN_DAMAGE) && daylight()) || ((game_state()->career.flags & CLASS_HOLY_DAMAGE) && temple())) { damage_player(amount * 12, 0); }
     for (slot = 0; slot < 27; slot++) {
         df_u32 id;
 

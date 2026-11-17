@@ -1,4 +1,5 @@
 #include "game/dagger/play/magic/magic.h"
+#include "game/dagger/tables/magic.h"
 #include "game/dagger/tables/enemies.h"
 #include "game/dagger/play/magic/magicitem.h"
 #include "game/dagger/play/character/curse.h"
@@ -205,7 +206,7 @@ int magic_resist(int index, int element, int bit, int modifier)
     chance += modifier;
     /* The form of the player counts as the race the original reads: a vampire or a beast has none of a race's gifts. */
     race = index == -1 ? curse_race() : who.race;
-    if ((element == 1 && race == 2) || (element == 4 && race == 0)) { chance += 30; }
+    if ((element == ELEMENT_COLD && race == PLAYER_RACE_NORD) || (element == ELEMENT_MAGIC && race == PLAYER_RACE_BRETON)) { chance += 30; }
     if (chance < 5) { chance = 5; } if (chance > 95) { chance = 95; }
     roll = random_range(1,100);
     if (roll > chance) { return 100; }
@@ -345,7 +346,7 @@ static void apply_effect(Effect *e, int index, int caster)
     if (!magic_target(index,&who,&career,base)) { return; }
     group = e->group; sub = e->sub;
     if (group == 0) {
-        if ((index == -1 ? curse_race() : who.race) == 4 || (index == -1 && (career.immunity & 1)) || (who.conditions & 0x8001) || random_range(1,100) > e->chance) { e->active = 0; return; }
+        if ((index == -1 ? curse_race() : who.race) == PLAYER_RACE_HIGH_ELF || (index == -1 && (career.immunity & EFFECT_BIT_PARALYSIS)) || (who.conditions & 0x8001) || random_range(1,100) > e->chance) { e->active = 0; return; }
     }
     if (group == 12 && index >= 0 && ENEMY_IS_CLASS(dungeon_kind(index))) {
         e->active = 0; msg_set("That creature has no soul you can trap."); return;

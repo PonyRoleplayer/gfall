@@ -100,12 +100,12 @@ int journey_begin(int region, int index, int reckless, int camp, int ship)
     if (who->health <= 0) { msg_set("You did not survive the journey."); return 1; }
     if (!reckless) {
         who->health = who->max_health;
-        if (!(game_state()->career.flags & 8)) { who->magicka = who->max_magicka; }
+        if (!(game_state()->career.flags & CLASS_NO_MAGICKA_REGEN)) { who->magicka = who->max_magicka; }
     }
     /* travel_begin_trip waits to 06:10 for cautious ordinary travellers,
      * or 18:10 for a daylight-damaged class. Unlike GFALL, not 07:10. */
     minute = game_state()->minutes%1440; wait = 0;
-    if (game_state()->career.flags & 16) { if (minute >= 360 && minute < 1080) { wait = 1090-minute; } }
+    if (game_state()->career.flags & CLASS_SUN_DAMAGE) { if (minute >= 360 && minute < 1080) { wait = 1090-minute; } }
     else if (!reckless) { if (minute >= 1080) { wait = 1440-minute+370; } else if (minute < 360) { wait = 370-minute; } }
     if (wait) { state_pass_minutes(wait); }
     if (who->health > 0) { who->fatigue = reckless ? fatigue : (who->attribute[ATTR_STR]+who->attribute[ATTR_END])*64; }

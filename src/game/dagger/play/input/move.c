@@ -228,7 +228,7 @@ static void climb_update(const Scene *scene, float dx, float dz, float moved, fl
             g_body.grounded = 1;
         } else if (game_state()->minutes-survival->climb_minute > 1) {
             survival->climb_minute = game_state()->minutes; skill_use(SKILL_CLIMBING);
-            chance = character_state()->skill[SKILL_CLIMBING]+(curse_race() == 6 ? 30 : 0);
+            chance = character_state()->skill[SKILL_CLIMBING]+(curse_race() == PLAYER_RACE_KHAJIIT ? 30 : 0);
             if (!(character_state()->conditions & 0x20000) && random_range(1,100) > 95 && random_range(1,100) > chance) {
                 survival->climbing = 0; survival->climb_failed = 1;
             }
@@ -392,7 +392,7 @@ void move_frame(const Scene *scene, const MoveIn *in)
         int impulse;
 
         mag = jump_magnitude(who->attribute[ATTR_SPD], who->attribute[ATTR_STR], who->skill[SKILL_JUMPING]);
-        impulse = jump_impulse(mag, (who->conditions & 0x10000) != 0, (who->class_flags & 2) != 0);
+        impulse = jump_impulse(mag, (who->conditions & 0x10000) != 0, (who->class_flags & CLASS_JUMP_BONUS) != 0);
         if (body_jump(&g_body, jump_ups(impulse))) {
             skill_use(SKILL_JUMPING);
             fatigue_spend(11);

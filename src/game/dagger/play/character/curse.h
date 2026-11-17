@@ -16,6 +16,8 @@
  * who is infected again with vampirism simply loses the infection at day three (3).
  */
 
+/* The forms (the original's `race` above the playable races, 1.1): none, a vampire, a werewolf, a wereboar. */
+enum { CURSE_FORM_NONE = 0, CURSE_FORM_VAMPIRE = 8, CURSE_FORM_WEREWOLF = 9, CURSE_FORM_WEREBOAR = 10 };
 /* The disease record ids of the curses (1.2). */
 #define CURSE_VAMPIRISM 100
 #define CURSE_WEREWOLF 101

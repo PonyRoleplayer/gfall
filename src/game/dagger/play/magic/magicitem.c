@@ -1,4 +1,5 @@
 #include "game/dagger/play/magic/magicitem.h"
+#include "game/dagger/tables/items.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/magic/spellbook.h"
@@ -177,7 +178,7 @@ df_u32 magic_item_create(df_u32 container, int which)
     df_copy(item->name, (const char *)d, (int)sizeof(item->name));
     item->condition = item->max_condition = (int)(short)(d[0x37] | d[0x38] << 8);
     item->material = d[0x3d];
-    if (item->material == 0 && (item->group == ITEM_GROUP_ARMOR || item->group == ITEM_GROUP_WEAPON)) {
+    if (item->material == MATERIAL_IRON && (item->group == ITEM_GROUP_ARMOR || item->group == ITEM_GROUP_WEAPON)) {
         /* item_roll_material: left as the base item rolled it. */
     }
     if (item->group == ITEM_GROUP_ARMOR) {
