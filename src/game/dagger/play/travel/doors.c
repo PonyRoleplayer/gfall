@@ -1,4 +1,5 @@
 #include "game/dagger/play/travel/doors.h"
+#include "game/dagger/tables/magic.h"
 #include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/play/ui/hud.h"
@@ -133,7 +134,7 @@ int door_use(const Scene *scene, int usable, int mode)
     if (!door) { return 0; }
     mover = scene->usables[usable].mover;
     if (mover_busy(scene,mover)) { return 1; }
-    if ((character_state()->conditions & 32) && (door->lock <= 0 || mover_at_end(door))) {
+    if ((character_state()->conditions & COND_LOCK) && (door->lock <= 0 || mover_at_end(door))) {
         if (mover_at_end(door)) {
             if (mover_start(scene,mover) && random_range(1,100) <= magic_chance(-1,16,-1)) {
                 door_lock(door,character_state()->level);
@@ -158,7 +159,7 @@ int door_use(const Scene *scene, int usable, int mode)
     }
     skill = character_state()->skill[SKILL_LOCKPICKING];
     if (mode != MODE_STEAL) {
-        if (character_state()->conditions & 64) {
+        if (character_state()->conditions & COND_OPEN) {
             chance = magic_chance(-1,17,-1); magic_remove(-1,17);
             if (random_range(1,100) <= chance && mover_start(scene,mover)) {
                 door_unlock(door); dungeon_alert(-1);

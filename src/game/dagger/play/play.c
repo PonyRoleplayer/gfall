@@ -1,4 +1,5 @@
 #include "game/dagger/play/state.h"
+#include "game/dagger/tables/magic.h"
 #include "game/dagger/play/character/curse.h"
 #include "game/dagger/play/items/possessions.h"
 #include "game/dagger/play/items/inventory.h"
@@ -622,7 +623,7 @@ int play_frame(const PlayIn *in, Camera *cam, const Scene *scene)
         casting = magic_visible();
         {
             StrikeInfo strike;
-            if (!magic_visible() && !(character_state()->conditions & 1)) {
+            if (!magic_visible() && !(character_state()->conditions & COND_PARALYZED)) {
                 weapon_frame(in,blocks,&strike);
                 dungeon_strike(scene,cam,&strike);
             }

@@ -1,4 +1,5 @@
 #include "game/dagger/play/magic/magic.h"
+#include "game/dagger/tables/magic.h"
 #include "game/dagger/play/combat/dungeon.h"
 #include "game/dagger/play/cheats.h"
 #include "game/dagger/play/character/curse.h"
@@ -182,7 +183,7 @@ static int ready(df_u32 id, int recast)
     s = spell_def(item->index); if (!s) { return 0; }
     /* Shapechange (spell 92) is not cast: cast_player_spell calls the change itself, free and at once. */
     if (s->id == SHAPECHANGE_SPELL) { curse_shapechange(0); return 1; }
-    if (who->conditions & 0x100) { msg_set("You are silenced."); return 0; }
+    if (who->conditions & COND_SILENCE) { msg_set("You are silenced."); return 0; }
     if (spell_price(s,who,recast) > who->magicka+who->spell_points_bonus) { msg_set("You do not have enough spell points."); return 0; }
     if (s->target == 0) {
         if (!pay_cast(id,s,recast)) { return 0; }
@@ -341,7 +342,7 @@ void magic_frame(const Scene *scene, const Camera *camera, const PlayIn *input, 
     g_scene = scene;
     activate_aim(camera,options_mouse() == 0,cursor_free(),
                     !input->on_picture || !wants_pointer(),input->cx,input->cy,&aim);
-    if ((character_state()->conditions & 16) && g_light_slot >= 0) {
+    if ((character_state()->conditions & COND_LIGHT) && g_light_slot >= 0) {
         Entity light, *live;
         live = spawn_get(g_light);
         if (!live) {
@@ -403,7 +404,7 @@ int magic_creature_at(int index, int target, const Camera *camera)
     int base[8], ids[32], n, i, ranged, reach;
     float x, y, z, dx, dz, distance;
     e = dungeon_entity(index); list = 0;
-    if (!e || !camera || !magic_target(index,&who,&career,base) || !who.magicka || (who.conditions & 0x100)) { return 0; }
+    if (!e || !camera || !magic_target(index,&who,&career,base) || !who.magicka || (who.conditions & COND_SILENCE)) { return 0; }
     list = creature_spells(dungeon_kind(index),who.level); if (!list) { return 0; }
     victim = dungeon_entity(target);
     if (target != TARGET_PLAYER && (!victim || !victim->live || victim->dead)) { return 0; }

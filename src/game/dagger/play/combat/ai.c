@@ -17,7 +17,7 @@ int ai_stealth(int detected, int distance, int encountered)
     if (game_state()->minutes == game_state()->stealth_minute) { return detected; }
     move_capture(&motion);
     momentum = df_sqrt(motion.vx*motion.vx+motion.vz*motion.vz);
-    base = character_state()->attribute[ATTR_SPD]+150;
+    base = character_state()->attribute[ATTR_SPD]+WALK_SPEED_ADD;
     if (encountered && momentum > base/2) { return 1; }
     if (momentum <= base/2 && (game_state()->minutes & 1)) { return detected; }
     skill_use(SKILL_STEALTH); state_stealth_checked();

@@ -1,4 +1,5 @@
 #include "game/dagger/play/state.h"
+#include "game/dagger/tables/magic.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/play/character/curse.h"
 #include "game/dagger/play/input/move.h"
@@ -16,8 +17,6 @@
 #include "engine/scene/interact.h"
 #include "game/dagger/play/ui/msg.h"
 
-/* D_00187CA9's initial value in FALL.EXE: walk speed is SPD + 150. */
-#define WALK_ADD 200
 /* Default mouse_turn_rate 0 makes the turn cap 4. At weight 255 that is 255 steps a second. */
 #define TURN_PER_SEC 255
 /* Classic units in a circle. Compass and pitch use this. */
@@ -45,15 +44,15 @@ int ground_speed(int spd, int crouched, int running, int run_skill, int in_water
     int speed;
 
     if (crouched) {
-        speed = spd + 50;
+        speed = spd + CROUCH_SPEED_ADD;
     } else {
-        speed = WALK_ADD + (spd - 50);
+        speed = WALK_ADD + (spd - ATTRIBUTE_NEUTRAL);
     }
     if (running && !in_water) {
-        speed = speed * (((run_skill << 8) / 200) + 320) / 256;
+        speed = speed * (((run_skill << RATIO_SHIFT) / RUN_SKILL_DIVISOR) + RUN_BASE) / RATIO_ONE;
     } else if (in_water) {
-        speed >>= 2;
-        speed = speed + speed * ((swim_skill << 8) / 200) / 256;
+        speed >>= WATER_SPEED_SHIFT;
+        speed = speed + speed * ((swim_skill << RATIO_SHIFT) / RUN_SKILL_DIVISOR) / RATIO_ONE;
     }
     return speed;
 }
@@ -221,7 +220,7 @@ static void climb_update(const Scene *scene, float dx, float dz, float moved, fl
 
     survival = survival_state();
     if (survival->climbing) {
-        if (!scene || g_water || (character_state()->conditions & 8) || !wall_near(scene)) {
+        if (!scene || g_water || (character_state()->conditions & COND_LEVITATING) || !wall_near(scene)) {
             survival->climbing = 0;
             /* The last probe is at foot height. Once it clears the lip, let
              * the walking step take the feet onto that floor. */
@@ -229,7 +228,7 @@ static void climb_update(const Scene *scene, float dx, float dz, float moved, fl
         } else if (game_state()->minutes-survival->climb_minute > 1) {
             survival->climb_minute = game_state()->minutes; skill_use(SKILL_CLIMBING);
             chance = character_state()->skill[SKILL_CLIMBING]+(curse_race() == PLAYER_RACE_KHAJIIT ? 30 : 0);
-            if (!(character_state()->conditions & 0x20000) && random_range(1,100) > 95 && random_range(1,100) > chance) {
+            if (!(character_state()->conditions & COND_CLIMBING) && random_range(1,100) > 95 && random_range(1,100) > chance) {
                 survival->climbing = 0; survival->climb_failed = 1;
             }
         }
@@ -238,7 +237,7 @@ static void climb_update(const Scene *scene, float dx, float dz, float moved, fl
         length = df_sqrt(dx*dx+dz*dz);
         into = length > 0 ? df_absf((dx*g_body.wall_normal[0]+dz*g_body.wall_normal[2])/length) : 0;
         if (scene && g_body.hit_wall && !g_water && !survival->climb_failed &&
-            !(character_state()->conditions & 8) && length > 0 && moved < 25 && into >= 251.0f/256) {
+            !(character_state()->conditions & COND_LEVITATING) && length > 0 && moved < 25 && into >= 251.0f/256) {
             survival->climb_time += dt;
             if (survival->climb_time > 14/18.2065f) {
                 survival->climbing = 1; survival->climb_time = 0;
@@ -312,7 +311,7 @@ void move_frame(const Scene *scene, const MoveIn *in)
         move_init();
     }
     who = character_state();
-    if (who->conditions & 1) {
+    if (who->conditions & COND_PARALYZED) {
         if (scene) { body_step(&g_body,scene,0,0,in->dt); }
         return;
     }
@@ -361,9 +360,9 @@ void move_frame(const Scene *scene, const MoveIn *in)
     }
     g_water = wet;
     swimming = scene && scene_water_body(scene,g_body.feet[0],g_body.feet[1]+g_body.eye_now,g_body.feet[2]) >= WATER_WAIST;
-    free_move = swimming || (who->conditions & 8) || survival_state()->climbing;
+    free_move = swimming || (who->conditions & COND_LEVITATING) || survival_state()->climbing;
     if (free_move) { g_air = 0; }
-    speed = ground_speed(who->attribute[ATTR_SPD], g_crouch, running && !wet, who->skill[SKILL_RUNNING], wet && !(who->conditions & 0x100000),
+    speed = ground_speed(who->attribute[ATTR_SPD], g_crouch, running && !wet, who->skill[SKILL_RUNNING], wet && !(who->conditions & COND_WATER_WALKING),
                             who->skill[SKILL_SWIMMING]);
     if (!g_air && in->view_mode && in->held && in->held[SLOW]) {
         speed = view_slow(speed);
@@ -392,7 +391,7 @@ void move_frame(const Scene *scene, const MoveIn *in)
         int impulse;
 
         mag = jump_magnitude(who->attribute[ATTR_SPD], who->attribute[ATTR_STR], who->skill[SKILL_JUMPING]);
-        impulse = jump_impulse(mag, (who->conditions & 0x10000) != 0, (who->class_flags & CLASS_JUMP_BONUS) != 0);
+        impulse = jump_impulse(mag, (who->conditions & COND_ACROBAT) != 0, (who->class_flags & CLASS_JUMP_BONUS) != 0);
         if (body_jump(&g_body, jump_ups(impulse))) {
             skill_use(SKILL_JUMPING);
             fatigue_spend(11);
@@ -404,7 +403,7 @@ void move_frame(const Scene *scene, const MoveIn *in)
     if (scene) {
         if (free_move) {
             vertical = survival_state()->climbing ? speed*in->dt/3 : 0;
-            if (swimming || (who->conditions & 8)) {
+            if (swimming || (who->conditions & COND_LEVITATING)) {
                 vertical = in->held ? (in->held[FLOAT_UP]-in->held[FLOAT_DOWN])*80*in->dt : 0;
                 if (swimming && g_weight > 250 && !(in->held && in->held[FLOAT_DOWN])) { vertical -= 80*in->dt; }
             }
@@ -412,7 +411,7 @@ void move_frame(const Scene *scene, const MoveIn *in)
             body_fly_step(&g_body,scene,step_x,vertical,step_z);
             g_body.top = g_body.feet[1];
         } else {
-            if ((who->conditions & 0x4000) && g_body.vy < -60) { g_body.vy = -60; }
+            if ((who->conditions & COND_SLOWFALL) && g_body.vy < -60) { g_body.vy = -60; }
             body_step(&g_body, scene, step_x, step_z, in->dt);
         }
     }
@@ -443,10 +442,10 @@ void move_frame(const Scene *scene, const MoveIn *in)
     } else if (jumped) {
         g_air = 1;
     }
-    if (swimming || (who->conditions & 8) || g_climb) { g_air = 0; }
+    if (swimming || (who->conditions & COND_LEVITATING) || g_climb) { g_air = 0; }
     /* head_bob_update's ten samples over its 1000-tick walking cycle. */
     g_bob_offset = 0;
-    if ((options_flags() & 2) && g_body.grounded && !g_air && !wet && !(who->conditions & 8)) {
+    if ((options_flags() & 2) && g_body.grounded && !g_air && !wet && !(who->conditions & COND_LEVITATING)) {
         if (moved > 0.001f) {
             g_bob_ms += in->dt * 1000.0f;
             while (g_bob_ms >= 1000.0f) { g_bob_ms -= 1000.0f; }

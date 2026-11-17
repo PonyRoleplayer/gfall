@@ -48,6 +48,19 @@ typedef struct MotionState {
 void move_capture(MotionState *out);
 void move_restore(const MotionState *motion);
 
+/*
+ * The walk (func_00010585.c). Standing speed is WALK_ADD + (SPD - ATTRIBUTE_NEUTRAL), WALK_ADD being the initial value of FALL.EXE's D_00187CA9, so it is SPD + WALK_SPEED_ADD
+ * (150): a creature's chase speed and the stealth momentum are that same sum. Crouched it is SPD + CROUCH_SPEED_ADD. Running scales it by (RUN_BASE + running skill * 256 / RUN_SKILL_DIVISOR)
+ * over 256, and in water a quarter of it plus the swimming skill's share.
+ */
+#define WALK_ADD 200
+#define ATTRIBUTE_NEUTRAL 50
+#define WALK_SPEED_ADD (WALK_ADD - ATTRIBUTE_NEUTRAL)
+#define CROUCH_SPEED_ADD 50
+#define RUN_BASE 320
+#define RUN_SKILL_DIVISOR 200
+#define WATER_SPEED_SHIFT 2
+
 /* Standing speed in world units a second, before the steer weight. */
 int ground_speed(int spd, int crouched, int running, int run_skill, int in_water, int swim_skill);
 /* The steer region's scale of that speed. 0 for a turn in place. */

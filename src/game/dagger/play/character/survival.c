@@ -1,4 +1,5 @@
 #include "game/dagger/play/character/survival.h"
+#include "game/dagger/tables/magic.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/play/character/curse.h"
 #include "game/dagger/play/state.h"
@@ -26,7 +27,7 @@ void survival_step(const Scene *scene, float seconds)
         body->feet[1]+body->eye_now >= surface) {
         survival->breath = 0; survival->last_tick = survival->ticks; return;
     }
-    if (who->conditions & 0x80000) { return; }
+    if (who->conditions & COND_WATER_BREATHING) { return; }
     limit = who->attribute[ATTR_END]/2;
     if (limit > 50) { limit = 50; }
     if (god_mode()) { survival->breath = limit; survival->last_tick = survival->ticks; return; }

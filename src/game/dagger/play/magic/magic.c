@@ -1,4 +1,5 @@
 #include "game/dagger/play/magic/magic.h"
+#include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/play/character/vitals.h"
 #include "game/dagger/tables/magic.h"
 #include "game/dagger/tables/enemies.h"
@@ -131,7 +132,7 @@ void magic_commit(int index, const CharacterState *who, int caster)
         }
         if (copy.health < character_state()->health) {
             damage_player(character_state()->health-copy.health,-1); copy.health = character_state()->health;
-            copy.conditions = (copy.conditions & ~0x400000) | (character_state()->conditions & 0x400000);
+            copy.conditions = (copy.conditions & ~COND_SHIELD) | (character_state()->conditions & COND_SHIELD);
         }
         *character_state() = copy;
     } else if (index >= 0) {
@@ -198,7 +199,7 @@ int magic_resist(int index, int element, int bit, int modifier)
     ClassInfo career;
     int base[8], chance, roll, race;
     if (!magic_target(index,&who,&career,base)) { return 0; }
-    if ((who.conditions & resist_flag(element)) && random_range(1,100) <= magic_chance(index,8,element)) { return 0; }
+    if ((who.conditions & resist_flag(element)) && random_range(1,100) <= magic_chance(index,GROUP_ELEMENTAL_RESISTANCE,element)) { return 0; }
     chance = 50;
     if (career.immunity & bit) { return 0; }
     if (career.weakness & bit) { return 100; }
@@ -217,12 +218,12 @@ int magic_resist(int index, int element, int bit, int modifier)
 
 static int condition(int group)
 {
-    if (group == 0) { return 1; }
-    if (group >= 13 && group <= 32) { return 1 << (group-11); }
-    if (group == 35) { return 0x400000; }
-    if (group == 39) { return 0x800000; }
-    if (group == 42) { return 0x1000000; }
-    return group >= 44 && group <= 46 ? 1 << (group-19) : 0;
+    if (group == GROUP_PARALYZE) { return COND_PARALYZED; }
+    if (group >= GROUP_INVISIBILITY && group <= GROUP_JUMPING) { return COND_GROUP(group); }
+    if (group == GROUP_SHIELD) { return COND_SHIELD; }
+    if (group == 39) { return COND_GROUP39; }
+    if (group == 42) { return COND_GROUP42; }
+    return group >= GROUP_COMPREHEND_LANGUAGES && group <= 46 ? COND_LATE_GROUP(group) : 0;
 }
 static void end(Effect *e)
 {
@@ -231,8 +232,8 @@ static void end(Effect *e)
     int base[8], index;
     index = magic_index(e->target); e->active = 0;
     if (!magic_target(index,&who,&career,base)) { return; }
-    who.conditions &= ~(e->group == 8 ? (int)resist_flag(e->sub) : condition(e->group));
-    if (e->group == 9 && e->sub < 8) { who.attribute[e->sub] -= e->change; }
+    who.conditions &= ~(e->group == GROUP_ELEMENTAL_RESISTANCE ? (int)resist_flag(e->sub) : condition(e->group));
+    if (e->group == GROUP_FORTIFY && e->sub < 8) { who.attribute[e->sub] -= e->change; }
     magic_commit(index,&who,-1);
 }
 void magic_remove(int target, int group)
@@ -251,16 +252,16 @@ void magic_hostile(void)
     for (i = 0; i < EFFECTS; i++) {
         e = &magic_state()->effect[i];
         if (e->active && !e->target.place && !e->target.thing && e->sub == 0 &&
-            (e->group == 13 || e->group == 23 || e->group == 24)) { end(e); }
+            (e->group == GROUP_INVISIBILITY || e->group == GROUP_CHAMELEON || e->group == GROUP_SHADOW)) { end(e); }
     }
 }
 int magic_sees(int kind)
 {
     int conditions;
     conditions = character_state()->conditions;
-    if (!(conditions & 0x3004) || creature_ignores_illusion(kind)) { return 1; }
-    if (conditions & 4) { return 0; }
-    return random_range(1,100) <= (conditions & 0x2000 ? 8 : 4);
+    if (!(conditions & (COND_INVISIBLE | COND_CHAMELEON | COND_SHADOW)) || creature_ignores_illusion(kind)) { return 1; }
+    if (conditions & COND_INVISIBLE) { return 0; }
+    return random_range(1,100) <= (conditions & COND_SHADOW ? 8 : 4);
 }
 static Effect *extend_or_allocate(const Effect *value)
 {
@@ -346,22 +347,22 @@ static void apply_effect(Effect *e, int index, int caster)
     int base[8], other_base[8], group, sub, before, chance;
     if (!magic_target(index,&who,&career,base)) { return; }
     group = e->group; sub = e->sub;
-    if (group == 0) {
-        if ((index == -1 ? curse_race() : who.race) == PLAYER_RACE_HIGH_ELF || (index == -1 && (career.immunity & EFFECT_BIT_PARALYSIS)) || (who.conditions & 0x8001) || random_range(1,100) > e->chance) { e->active = 0; return; }
+    if (group == GROUP_PARALYZE) {
+        if ((index == -1 ? curse_race() : who.race) == PLAYER_RACE_HIGH_ELF || (index == -1 && (career.immunity & EFFECT_BIT_PARALYSIS)) || (who.conditions & (COND_FREE_ACTION | COND_PARALYZED)) || random_range(1,100) > e->chance) { e->active = 0; return; }
     }
-    if (group == 12 && index >= 0 && ENEMY_IS_CLASS(dungeon_kind(index))) {
+    if (group == GROUP_SOUL_TRAP && index >= 0 && ENEMY_IS_CLASS(dungeon_kind(index))) {
         e->active = 0; msg_set("That creature has no soul you can trap."); return;
     }
-    if ((group == 3 || group == 5 || group == 19 || group == 33 || group == 34) && random_range(1,100) > e->chance) { e->active = 0; return; }
-    if (group == 8) { who.conditions |= resist_flag(sub); }
+    if ((group == GROUP_CURE || group == GROUP_DISINTEGRATE || group == GROUP_SILENCE || group == GROUP_CALM || group == GROUP_CHARM) && random_range(1,100) > e->chance) { e->active = 0; return; }
+    if (group == GROUP_ELEMENTAL_RESISTANCE) { who.conditions |= resist_flag(sub); }
     else { who.conditions |= condition(group); }
-    if (group == 1 || group == 4) { damage(&who,sub,e->magnitude); }
-    else if (group == 5) { who.health = 0; }
-    else if (group == 3) {
+    if (group == GROUP_CONTINUOUS_DAMAGE || group == GROUP_DAMAGE) { damage(&who,sub,e->magnitude); }
+    else if (group == GROUP_DISINTEGRATE) { who.health = 0; }
+    else if (group == GROUP_CURE) {
         if (sub < 2) { ailments_cure(index,sub == 1); }
         else if (sub == 2) { magic_remove(index,0); }
         return;
-    } else if (group == 6) {
+    } else if (group == GROUP_DISPEL) {
         if (sub == 0) { dispel_prompt(index,e); return; }
         else {
             int i, level, chance;
@@ -374,27 +375,27 @@ static void apply_effect(Effect *e, int index, int caster)
             }
             return;
         }
-    } else if (group == 7 || group == 11) {
-        before = e->magnitude; if (group == 11) { before >>= 1; }
+    } else if (group == GROUP_DRAIN || group == GROUP_TRANSFER) {
+        before = e->magnitude; if (group == GROUP_TRANSFER) { before >>= 1; }
         if (sub < 8) { who.attribute[sub] -= before; if (who.attribute[sub] < 1) { who.attribute[sub] = 1; } }
         else if (sub == 8) { who.health -= before; }
         else if (sub == 9) { who.fatigue -= before; if (who.fatigue < 1) { who.fatigue = 1; } }
-        if (group == 11 && magic_target(caster,&giver,&career,other_base)) {
+        if (group == GROUP_TRANSFER && magic_target(caster,&giver,&career,other_base)) {
             heal(&giver,other_base,sub,before); magic_commit(caster,&giver,caster);
         }
-    } else if (group == 9 && sub < 8) {
+    } else if (group == GROUP_FORTIFY && sub < 8) {
         before = who.attribute[sub]; who.attribute[sub] += e->magnitude;
         if (who.attribute[sub] > 100) { who.attribute[sub] = 100; }
         e->change = who.attribute[sub]-before;
-    } else if (group == 10) { heal(&who,base,sub,e->magnitude); }
-    else if (group == 26) { magic_remove(index,0); who.conditions &= ~1; }
-    else if (group == 33 || group == 34) {
-        if (index >= 0 && (ENEMY_IS_CLASS(dungeon_kind(index)) == (group == 34))) { dungeon_pacify(index); }
+    } else if (group == GROUP_HEAL) { heal(&who,base,sub,e->magnitude); }
+    else if (group == GROUP_FREE_ACTION) { magic_remove(index,0); who.conditions &= ~COND_PARALYZED; }
+    else if (group == GROUP_CALM || group == GROUP_CHARM) {
+        if (index >= 0 && (ENEMY_IS_CLASS(dungeon_kind(index)) == (group == GROUP_CHARM))) { dungeon_pacify(index); }
     }
-    else if (group == 43 && index == -1) { magic_recall_prompt(); }
+    else if (group == GROUP_TELEPORT && index == -1) { magic_recall_prompt(); }
     chance = who.health;
     magic_commit(index,&who,caster);
-    if (index == -1 && group == 0 && chance > 0) { msg_set("You are paralyzed."); }
+    if (index == -1 && group == GROUP_PARALYZE && chance > 0) { msg_set("You are paralyzed."); }
 }
 
 static int soul_trap_empty(df_u32 id)
@@ -425,12 +426,12 @@ void magic_soul_capture(int index)
     }
     for (i = 0; i < EFFECTS; i++) {
         e = &magic_state()->effect[i];
-        if (!e->active || e->group != 12 || !same(e->target,magic_key(index))) { continue; }
+        if (!e->active || e->group != GROUP_SOUL_TRAP || !same(e->target,magic_key(index))) { continue; }
         gem = 0;
         for (j = 0; j < OBJECTS; j++) {
             item = &game_state()->object[j];
             if (!item->id || item->type != RECORD_ITEM ||
-                !((item->group == 27 && item->index == 1) || magic_artifact_power(item->id) == 9) ||
+                !((item->group == ITEM_GROUP_MISC && item->index == MISC_SOUL_TRAP) || magic_artifact_power(item->id) == 9) ||
                 !soul_trap_empty(item->id)) { continue; }
             owner = item;
             for (depth = 0; owner && depth < OBJECTS; depth++) {
@@ -457,16 +458,16 @@ static void apply_spell(const SpellDef *s, int spell, int caster, int target, in
     if (s->icon >= 200) { level = 8; }
     if (target == -1 && god_mode() && caster != -1) { return; }
     if (!no_resist && s->target != 0) {
-        if ((to.conditions & 0x200) || (career.absorption & 6)) {
-            if (!(to.conditions & 0x200) || random_range(1,100) <= magic_chance(target,20,-1)) {
+        if ((to.conditions & COND_ABSORPTION) || (career.absorption & 6)) {
+            if (!(to.conditions & COND_ABSORPTION) || random_range(1,100) <= magic_chance(target,GROUP_SPELL_ABSORPTION,-1)) {
                 k = spell_cost(s,&to);
                 if (to.magicka+k <= to.max_magicka) { to.magicka += k; magic_commit(target,&to,caster); return; }
             }
         }
-        if ((to.conditions & 0x400) && random_range(1,100) <= magic_chance(target,21,-1)) {
+        if ((to.conditions & COND_REFLECTION) && random_range(1,100) <= magic_chance(target,GROUP_SPELL_REFLECTION,-1)) {
             target = caster; to = from;
         }
-        if ((to.conditions & 0x800) && random_range(1,100) <= magic_chance(target,22,-1)) { return; }
+        if ((to.conditions & COND_RESISTANCE) && random_range(1,100) <= magic_chance(target,GROUP_SPELL_RESISTANCE,-1)) { return; }
     }
     percent = no_resist || s->target == 0 ? 100 : magic_resist(target,s->element,element_bit(s->element),-(level-to.level)*5);
     if (!percent) { msg_set("The spell has no effect."); return; }
@@ -484,8 +485,8 @@ static void apply_spell(const SpellDef *s, int spell, int caster, int target, in
             value.magnitude = (df_u16)((random_range(s->magnitude[k][0],s->magnitude[k][1])+
                 divide(level,s->magnitude[k][4])*random_range(s->magnitude[k][2],s->magnitude[k][3]))*percent/100);
         }
-        if ((flags & 1) || value.group == 16 || value.group == 17) {
-            if (value.group == 16 || value.group == 17) { value.permanent = 1; }
+        if ((flags & 1) || value.group == GROUP_LOCK || value.group == GROUP_OPEN) {
+            if (value.group == GROUP_LOCK || value.group == GROUP_OPEN) { value.permanent = 1; }
             stored = extend_or_allocate(&value);
             if (!stored) { continue; }
             *stored = value; apply_effect(stored,target,caster);
@@ -548,8 +549,8 @@ void magic_minutes(df_u32 start, df_u32 count)
             if (!e->rounds) { end(e); continue; }
             e->rounds--; target = magic_index(e->target); caster = magic_index(e->caster);
             if (!magic_target(target,&who,&career,base)) { continue; }
-            if (e->group == 1) { damage(&who,e->sub,e->magnitude); }
-            if (e->group == 18) { heal(&who,base,8,e->magnitude); }
+            if (e->group == GROUP_CONTINUOUS_DAMAGE) { damage(&who,e->sub,e->magnitude); }
+            if (e->group == GROUP_REGENERATE) { heal(&who,base,8,e->magnitude); }
             magic_commit(target,&who,caster);
         }
         ailments_minutes(start+n,1);
@@ -571,8 +572,8 @@ void magic_restore_foe(int index)
     for (i = 0; i < EFFECTS; i++) {
         e = &magic_state()->effect[i];
         if (!e->active || !same(e->target,magic_key(index))) { continue; }
-        who.conditions |= e->group == 8 ? (int)resist_flag(e->sub) : condition(e->group);
-        if (e->group == 9 && e->sub < 8) { who.attribute[e->sub] += e->change; }
+        who.conditions |= e->group == GROUP_ELEMENTAL_RESISTANCE ? (int)resist_flag(e->sub) : condition(e->group);
+        if (e->group == GROUP_FORTIFY && e->sub < 8) { who.attribute[e->sub] += e->change; }
     }
     for (i = 0; i < AILMENTS; i++) {
         a = &magic_state()->ailment[i];
@@ -589,7 +590,7 @@ int magic_absorb(int index, int damage)
     int i, amount;
     for (i = 0; i < EFFECTS; i++) {
         e = &magic_state()->effect[i];
-        if (!e->active || e->group != 35 || !same(e->target,magic_key(index))) { continue; }
+        if (!e->active || e->group != GROUP_SHIELD || !same(e->target,magic_key(index))) { continue; }
         amount = e->magnitude < damage ? e->magnitude : damage;
         e->magnitude -= amount; damage -= amount;
         if (!e->magnitude) { end(e); }

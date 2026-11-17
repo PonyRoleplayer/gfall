@@ -116,6 +116,37 @@ enum {
     GROUP_COMPREHEND_LANGUAGES = 44
 };
 
+/*
+ * CharacterState.conditions: which effects are on a body. The effect groups INVISIBILITY .. JUMPING take bit (group - COND_SHIFT), the three late groups (44..46) bit (group - COND_LATE_SHIFT); the
+ * paralysis, the shield and two whose effects are not known have bits of their own.
+ */
+#define COND_SHIFT 11
+#define COND_LATE_SHIFT 19
+#define COND_GROUP(group) (1 << ((group) - COND_SHIFT))
+#define COND_LATE_GROUP(group) (1 << ((group) - COND_LATE_SHIFT))
+#define COND_PARALYZED 1
+#define COND_INVISIBLE COND_GROUP(GROUP_INVISIBILITY)
+#define COND_LEVITATING COND_GROUP(GROUP_LEVITATE)
+#define COND_LIGHT COND_GROUP(GROUP_LIGHT)
+#define COND_LOCK COND_GROUP(GROUP_LOCK)
+#define COND_OPEN COND_GROUP(GROUP_OPEN)
+#define COND_SILENCE COND_GROUP(GROUP_SILENCE)
+#define COND_ABSORPTION COND_GROUP(GROUP_SPELL_ABSORPTION)
+#define COND_REFLECTION COND_GROUP(GROUP_SPELL_REFLECTION)
+#define COND_RESISTANCE COND_GROUP(GROUP_SPELL_RESISTANCE)
+#define COND_CHAMELEON COND_GROUP(GROUP_CHAMELEON)
+#define COND_SHADOW COND_GROUP(GROUP_SHADOW)
+#define COND_SLOWFALL COND_GROUP(GROUP_SLOWFALL)
+#define COND_FREE_ACTION COND_GROUP(GROUP_FREE_ACTION)
+#define COND_ACROBAT 0x10000
+#define COND_CLIMBING COND_GROUP(GROUP_CLIMBING)
+#define COND_WATER_BREATHING COND_GROUP(GROUP_WATER_BREATHING)
+#define COND_WATER_WALKING COND_GROUP(GROUP_WATER_WALKING)
+/* The shield (group 35) keeps a bit of its own, and groups 39 and 42 (effects not identified here) too. */
+#define COND_SHIELD 0x400000
+#define COND_GROUP39 0x800000
+#define COND_GROUP42 0x1000000
+
 typedef struct MagicEffect {
     df_u16 id;
     char group[MAGIC_EFFECT_NAME];

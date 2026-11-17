@@ -1,4 +1,5 @@
 #include "game/dagger/play/magic/enchant.h"
+#include "game/dagger/tables/magic.h"
 #include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/play/magic/itemmaker.h"
 #include "game/dagger/play/magic/magic.h"
@@ -56,7 +57,7 @@ void enchant_unequip(df_u32 item, int slot)
 
     for (k = 0; item_enchantment(item, k, &type, &param); k++) {
         if (type == 1 && param >= 0) { magic_release(param, slot); }
-        else if (type == 9 && !others_absorb(slot)) { character_state()->conditions &= ~0x200; }
+        else if (type == 9 && !others_absorb(slot)) { character_state()->conditions &= ~COND_ABSORPTION; }
         else if (type == 10 && param >= 0 && param < SKILLS) { character_state()->skill[param] -= 15; }
         else if (type == 3) { g_rebuild = 1; }
     }

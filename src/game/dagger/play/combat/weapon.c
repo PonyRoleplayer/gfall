@@ -1,4 +1,5 @@
 #include "game/dagger/play/combat/weapon.h"
+#include "game/dagger/tables/magic.h"
 #include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/play/character/curse.h"
 #include "game/dagger/play/magic/itemmaker.h"
@@ -115,7 +116,7 @@ void weapon_frame(const PlayIn *in, int blocked, StrikeInfo *strike)
     g_view.material = item ? item->material : 0; g_view.hand = g_hand;
     g_view.color = item ? item->color : 0;
     g_view.visible = hud_weapon_ready() && character_state()->health > 0;
-    if (!g_view.visible || (character_state()->conditions & 1)) { weapon_cancel(); return; }
+    if (!g_view.visible || (character_state()->conditions & COND_PARALYZED)) { weapon_cancel(); return; }
     held = !blocked && in->held[SWING_BUTTON];
     if (g_reload > 0) { g_reload -= in->dt; g_view.visible = 0; return; }
     if (bow) {

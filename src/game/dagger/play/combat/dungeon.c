@@ -1,4 +1,6 @@
 #include "game/dagger/play/combat/dungeon.h"
+#include "game/dagger/tables/magic.h"
+#include "game/dagger/play/input/move.h"
 #include "game/dagger/play/character/vitals.h"
 #include "game/dagger/tables/enemies.h"
 #include "game/dagger/tables/careers.h"
@@ -491,7 +493,7 @@ void dungeon_spell_commit(int index, const CharacterState *who, int caster)
     if (who->health < f->fighter.health) {
         if (caster >= 0) { f->awake = 1; }
         hit_foe_from(g_scene,index,f->fighter.health-who->health,0,caster);
-        conditions = (conditions & ~0x400000) | (f->fighter.conditions & 0x400000);
+        conditions = (conditions & ~COND_SHIELD) | (f->fighter.conditions & COND_SHIELD);
     } else { f->fighter.health = who->health; store_health(f); }
     f->fighter.fatigue = who->fatigue; f->fighter.magicka = who->magicka;
     f->fighter.max_magicka = who->max_magicka; f->fighter.conditions = conditions;
@@ -878,7 +880,7 @@ static void foe_step(const Scene *scene, const Camera *cam, int index, float dt)
     f = &g_foe[index]; e = f->entity;
     if (!e->live) { return; }
     if (e->dead) { corpse_fall(f,scene,dt); return; }
-    if (f->fighter.conditions & 1) {
+    if (f->fighter.conditions & COND_PARALYZED) {
         foe_move(f,scene,0,0,dt);
         e->x = f->body.feet[0]; e->y = f->body.feet[1]; e->z = f->body.feet[2];
         return;
@@ -980,7 +982,7 @@ static void foe_step(const Scene *scene, const Camera *cam, int index, float dt)
             }
         } else if (distance > reach-20) {
             /* monster_move_step: SPD - 50 + D_00187CA9 (200). */
-            speed = (float)(f->fighter.attribute[ATTR_SPD]+150);
+            speed = (float)(f->fighter.attribute[ATTR_SPD]+WALK_SPEED_ADD);
             ai_walk(&f->mind,&f->body,e,scene,to,sight,
                          f->def && (f->def->flags & 1),speed,dt);
             stepped = 1;
