@@ -89,13 +89,29 @@ global configuration and console cheats. Each folder owns a gameplay responsibil
 - `items/` owns inventory, descriptions, ground containers and the possessions controller.
 - `magic/` owns effects, casting, equipment enchantments, potions and spell services.
 - `people/` owns dialogue, standing, entry rules, law, guilds and commerce.
-- `quests/` owns quest interpretation, events and persistent quest state.
+- `quests/` owns quest selection, binding, interpretation, events, text and persistence. [Quest machine layout](game-quests.md#implementation-layout) lists each module.
 - `save/` owns the save codec and slot selection.
 - `travel/` owns passage actions, travel, journeys, map controllers and world state kept in saves.
 - `ui/` owns shared presentation primitives, notifications, HUD, options and text macros.
 
 Headers live beside their implementation. Only expose what a caller uses.
 Folders organize the play layer and follow the same include rules as its root.
+
+The possessions controller lives in `play/items/possessions/`. Its public
+header stays at `play/items/possessions.h` so input and painters share the same
+read-only view. The controller owns page transitions, modal input priority, and
+the frame's dispatch. `dialogs.c` owns prompts, callback handling, queued text,
+and notice pagination. Page handlers own their inputs:
+
+- `inventory.c` handles pack and equipment clicks, item use, and trade.
+- `sheet.c` and `reading.c` handle character details and readable books.
+- `services.c` handles banking, court, dialogue, and shopkeeper menus.
+- `spellbook.c`, `makers.c`, and `alchemist.c` handle the spellbook and spell
+  shop, spell and item makers, and potion brewing.
+
+The page handlers share transient view state through their private
+`internal.h`. Game rules remain in their subsystem modules, and the painters
+remain in `apps/gfall/screen/`.
 
 ### `apps/`
 

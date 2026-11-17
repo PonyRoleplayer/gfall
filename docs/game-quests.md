@@ -1,6 +1,27 @@
 # GFALL: the quest machine (plan and decisions)
 
-Written 2026-11-11 before any code, from the decomp's `docs/quest-machine.md` (DOCUMENTER; section numbers below are its; it builds on the decomp's `docs/quests-math.md` for reward gold, timer sums and site picking). GFALL builds its own machine from that document and the files in ARENA2 (232 QBN, 229 QRC); GFALL's `play/quests/quest.c` is the dagger layer's and is not reused (`docs/game-later.md` lists the decoupling). Classic first; where the original has a plain bug we do what it meant.
+The original plan began on 2026-11-11 and follows the decompilation's
+`docs/quest-machine.md` and `docs/quests-math.md`. The quest machine reads QBN
+and QRC records from ARENA2 through the existing format readers. Section numbers
+in the design notes refer to the decompilation's documents.
+
+## Implementation layout
+
+The public interface is `src/game/dagger/play/quests/quest.h`. The app still
+supplies world and text callbacks through that interface.
+
+- `quest.c` owns quest slots, selection, offers, startup, and teardown.
+- `binding.c` resolves questors, people, and places and initializes a quest's resources.
+- `resources.c` handles quest items, foes, marker placement, and building access at runtime.
+- `machine.c` runs opcodes in file order, updates timers, and owns the state and operand rules.
+- `events.c` dispatches talk, item, spell, and combat events through those operand rules.
+- `journal.c` expands symbols and formats text, logbook entries, rumours, topics, and faces.
+- `persist.c` reads and writes the existing quest save fields explicitly in wire order.
+
+The modules share runtime storage and helper declarations through
+`internal.h`. The save codec serializes fields individually, independent of the
+C struct layout. Quest tests in `tests/check_quest.c` exercise dispatch,
+markers, and save round trips, including rejection of truncated data.
 
 ## Decisions on section 7
 

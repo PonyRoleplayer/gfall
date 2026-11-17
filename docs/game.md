@@ -733,7 +733,7 @@ Nothing recreates or rerolls those contents on an ordinary save/load.
 
 ### Screens and input
 
-`play/items/possessions.c` owns input and transient screen state. F6/the pack button
+`play/items/possessions/` owns input and transient screen state. F6/the pack button
 opens the four-tab inventory on INVE00/01, with the paper doll, twelve accessory
 slots, live armor values, two scrolling item columns, Info/Equip/Remove/Use and
 the Gold prompt. The right column is the searched container or a dropped pile.
@@ -1748,7 +1748,7 @@ FALL.EXE: `holiday_days` at 0x17CA24 and `holiday_regions` at 0x17CA8E, 53 holid
 
 ## Trade: the shop screen (2026-11-10)
 
-Slice 2, fourth part. The inventory as a shop: `possessions_trade` (`play/items/possessions.c`), the seam's
+Slice 2, fourth part. The inventory as a shop: `possessions_trade` (`play/items/possessions/inventory.c`), the seam's
 painting and shelf hook (`apps/gfall/screen/possessions.c` and `apps/gfall/people/people.c`), tested by
 scripted clicks in `check_market_screen`, which also writes `build/gfall-shop-basket.ppm` and
 `build/gfall-shop-offer.ppm`.

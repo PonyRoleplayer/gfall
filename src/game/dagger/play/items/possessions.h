@@ -1,8 +1,8 @@
 #ifndef GFALL_POSSESSIONS_H
 #define GFALL_POSSESSIONS_H
 
-/* Input controllers for classic inventory, sheet, spells and readable books.
- * Painting is the adapter's responsibility. No UI pointers enter the save. */
+/* Public interface for the page controllers in possessions/.
+ * Painting is the app adapter's responsibility. No UI pointers enter the save. */
 #include "game/dagger/play/play.h"
 #include "game/dagger/play/magic/spellbook.h"
 #include "game/dagger/play/people/market.h"

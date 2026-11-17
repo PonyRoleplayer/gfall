@@ -212,6 +212,12 @@ GFALL_GAME_SRC := \
 	src/game/dagger/play/magic/itemmaker.c \
 	src/game/dagger/play/magic/enchant.c \
 	src/game/dagger/play/quests/quest.c \
+	src/game/dagger/play/quests/binding.c \
+	src/game/dagger/play/quests/resources.c \
+	src/game/dagger/play/quests/journal.c \
+	src/game/dagger/play/quests/machine.c \
+	src/game/dagger/play/quests/events.c \
+	src/game/dagger/play/quests/persist.c \
 	src/game/dagger/play/magic/magicitem.c \
 	src/game/dagger/play/people/steal.c \
 	src/game/dagger/play/people/names.c \
@@ -220,7 +226,15 @@ GFALL_GAME_SRC := \
 	src/game/dagger/play/items/inventory.c \
 	src/game/dagger/play/items/describe.c \
 	src/game/dagger/play/magic/spellbook.c \
-	src/game/dagger/play/items/possessions.c \
+	src/game/dagger/play/items/possessions/possessions.c \
+	src/game/dagger/play/items/possessions/services.c \
+	src/game/dagger/play/items/possessions/spellbook.c \
+	src/game/dagger/play/items/possessions/alchemist.c \
+	src/game/dagger/play/items/possessions/makers.c \
+	src/game/dagger/play/items/possessions/inventory.c \
+	src/game/dagger/play/items/possessions/sheet.c \
+	src/game/dagger/play/items/possessions/reading.c \
+	src/game/dagger/play/items/possessions/dialogs.c \
 	src/game/dagger/play/save/save.c \
 	src/game/dagger/play/character/vitals.c \
 	src/game/dagger/play/combat/anim.c \
@@ -259,7 +273,7 @@ GFALL_GAME_SRC := \
 	src/game/dagger/play/input/activate.c \
 	src/game/dagger/play/play.c
 
-GFALL_HEADERS := $(wildcard src/game/dagger/*/*.h src/game/dagger/play/*/*.h apps/gfall/*.h apps/gfall/*/*.h)
+GFALL_HEADERS := $(wildcard src/game/dagger/*/*.h src/game/dagger/play/*/*.h src/game/dagger/play/items/possessions/*.h apps/gfall/*.h apps/gfall/*/*.h)
 
 GFALL_APP_SRC := \
 	apps/gfall/boot.c \

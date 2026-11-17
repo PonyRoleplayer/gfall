@@ -7,8 +7,9 @@
  * minute: each op in file order, looked at once; the states change as the ops run, so an op sees what the ones before it did this run.
  *
  * An op's first argument is its state: for most ops a gate ("when set"), for the ones that compute a result (52, 53, 31, 77, 16 ...) and the events (1, 2, 28 ...) the
- * state they set. -1 is always true. Most ops act once: the done bit, and the op's message, shown the first time. Step 1 (this file): loading, the states and the ops that
- * need no world: 6, 7, 16, 31, 34, 35, 51, 52, 53, 77. The rest are inert and are added by the steps of the plan, each keeping its place in the one switch.
+ * state they set. -1 is always true. Most ops act once. The done bit records
+ * that execution, and the message is shown on the first execution.
+ * machine.c implements the opcode switch. internal.h is private to this subsystem.
  */
 #include "game/dagger/formats/qbn.h"
 #include "game/dagger/play/travel/travel.h"
