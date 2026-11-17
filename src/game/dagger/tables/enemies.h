@@ -151,6 +151,20 @@ int enemy_group(int kind);
 #define ENEMY_VOICE_BASE 10000
 #define ENEMY_VOICE_STRIDE 10
 
+/*
+ * A creature's numbers at its making (monster_init, monster_give_spells; the decomp leaves them inline): every skill is level * FOE_SKILL_PER_LEVEL + FOE_SKILL_BASE, held to
+ * FOE_SKILL_MAX; health is FOE_HIT_DIE-sided dice; a creature that casts has FOE_CASTER_MAGICKA_BASE + FOE_CASTER_MAGICKA_PER_LEVEL a level of magicka and its six magic skills at
+ * FOE_CASTER_MAGIC_SKILL. A fighter's armour is ARMOR_SCALE times its row's armour in each of BODY_PARTS places.
+ */
+#define FOE_SKILL_PER_LEVEL 5
+#define FOE_SKILL_BASE 30
+#define FOE_SKILL_MAX 100
+#define FOE_HIT_DIE 8
+#define FOE_CASTER_MAGICKA_PER_LEVEL 10
+#define FOE_CASTER_MAGICKA_BASE 100
+#define FOE_CASTER_MAGIC_SKILL 80
+#define FOE_ARMOR_SCALE 5
+
 /* Editor records: a random creature, a fixed one. */
 #define ENEMY_RANDOM_MARKER 15
 #define ENEMY_FIXED_MARKER 16

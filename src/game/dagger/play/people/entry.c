@@ -95,7 +95,7 @@ int building_try_enter(const EntryBuilding *b, const EntryPlayer *p, df_u32 now,
         if (random_range(0, 100) <= chance) {
             out->line = lock_text(LOCK_OPEN);
             out->picked = 1;
-            guild_count_crime(5, 1, now);
+            guild_count_crime(GUILD_COUNT_THIEF, 1, now);
             if (witnessed || random_range(1, 300) < 100 - character_state()->skill[SKILL_STEALTH]) {
                 out->crime = 1;
             }

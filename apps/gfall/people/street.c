@@ -194,7 +194,7 @@ static int street_hit(const Camera *cam)
         street_blood(e);
         sound_at(17,e->x,e->y,e->z);
         people_fell(e);
-        guild_count_crime(6, 5, game_state()->minutes);
+        guild_count_crime(GUILD_COUNT_KILL, 5, game_state()->minutes);
         struck++;
     }
     return struck;

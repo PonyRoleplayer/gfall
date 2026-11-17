@@ -22,6 +22,9 @@
  * taken in, the guild's best skill must be JOIN_PRIMARY_MIN (the first step of the primary table) and its second JOIN_SECONDARY_MIN (the first of the secondary).
  */
 #define REPUTATION_PER_RANK 10
+/* guild_count_crime: crime 5 is a pickpocket (the Thieves), GUILD_COUNT_KILL a kill (the Brotherhood: a townsperson, a watchman). */
+#define GUILD_COUNT_THIEF 5
+#define GUILD_COUNT_KILL 6
 #define RANK_STEPS 10
 #define MAX_RANK 9
 #define JOIN_PRIMARY_MIN 22

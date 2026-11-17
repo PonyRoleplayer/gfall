@@ -6,6 +6,56 @@
 #include "game/dagger/play/combat/weapon.h"
 #include "engine/scene/entity.h"
 
+/*
+ * A creature's reach and senses (ai_creature_think, equip.c). It reaches FOE_REACH_PLAYER at the player and FOE_REACH_FOE at another creature, and shoots from FOE_RANGED_REACH_MUL times
+ * that when it can; it swings, shoots or casts facing within FOE_ATTACK_ARC; nothing beyond FOE_ACTIVE_RANGE is thought of. Its voice is heard within FOE_VOICE_RANGE and, closer than
+ * FOE_VOICE_NEAR, is the attack's three times in four. Between swings it waits FOE_ATTACK_WAIT_MIN..MAX milliseconds, less FOE_ATTACK_WAIT_PER_LEVEL for each of the player's levels over
+ * FOE_ATTACK_WAIT_LEVEL_PIVOT, a fresh creature having reflexes 0 (FOE_ATTACK_WAIT_PER_REFLEX each below normal), and FOE_ATTACK_WAIT_FALLBACK when that comes to nothing.
+ * Ours, not the decomp's: the body and its clamp to the picture, the chest and the bow above the feet, the stop FOE_CLOSE_MARGIN short of the reach, the voice timer, the retarget and
+ * sleeper-look timers, the hurt time, and the watch's longer memory.
+ */
+#define FOE_REACH_PLAYER 90
+#define FOE_REACH_FOE 60
+#define FOE_RANGED_REACH_MUL 4
+#define FOE_ATTACK_ARC 128
+#define FOE_ACTIVE_RANGE 2048
+#define FOE_VOICE_RANGE 1024
+#define FOE_VOICE_NEAR 128
+#define FOE_ATTACK_WAIT_MIN 1500
+#define FOE_ATTACK_WAIT_MAX 3000
+#define FOE_ATTACK_WAIT_LEVEL_PIVOT 10
+#define FOE_ATTACK_WAIT_PER_LEVEL 50
+#define FOE_ATTACK_WAIT_PER_REFLEX 450
+#define FOE_ATTACK_WAIT_FALLBACK 1500
+#define FOE_BODY_RADIUS 12
+#define FOE_BODY_HEIGHT 80
+#define FOE_BODY_STEP 24
+#define FOE_BODY_EYE 60
+#define FOE_BODY_HEIGHT_MIN 24
+#define FOE_BODY_HEIGHT_MAX 128
+#define FOE_BODY_STEP_DIV 4
+#define FOE_CHEST_HEIGHT 40
+#define FOE_BOW_HEIGHT 50
+#define FOE_CLOSE_MARGIN 20
+#define FOE_VOICE_STAGGER_MS 4000
+#define FOE_VOICE_MIN_MS 2000
+#define FOE_VOICE_MAX_MS 6000
+#define FOE_RETARGET_TIME 0.45f
+#define FOE_RETARGET_STAGGER 0.04f
+#define FOE_RETARGET_SLOTS 8
+#define FOE_SLEEP_LOOK_TIME 0.2f
+#define FOE_HURT_TIME 0.25f
+#define WATCH_GIVE_UP 600
+#define FOE_ANIM_DEFAULT_MS 100
+/* The animation scripts' actions and the pictures they use (monster_set_action). */
+#define ACTION_ATTACK 8
+#define ACTION_SHOOT 24
+#define ACTION_CAST 32
+#define RECORD_CAST 20
+#define RECORD_SHOOT_2 25
+#define FOE_CAST_PAUSE 0.5f
+#define FOE_ATTACK_WAIT_FLOOR 0.1f
+
 #define FOES 128
 #define FOE_ACTORS (FOES + 16)
 #define ARROWS 16

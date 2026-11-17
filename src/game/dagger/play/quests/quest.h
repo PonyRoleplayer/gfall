@@ -18,8 +18,14 @@
 
 /* A place a quest names, bound to a location of the map (quest_init_place, qinit.c 2.4): the location's number in the map's list, its region and index there, its kind, its pixel, name. */
 /* The key of a quest's creature: this bit, the foe's number and the copy (up to 16 of a foe). A kill reads the number back. */
-#define QUEST_FOE_KEY 0xe0000000u
-#define QUEST_FOE_THING(number, copy) (QUEST_FOE_KEY | (((df_u32)(number) & 0xffffffu) << 4) | (df_u32)(copy))
+#define QUEST_FOE_MASK 0xe0000000u
+#define QUEST_FOE_KEY QUEST_FOE_MASK
+#define QUEST_FOE_NUMBER_SHIFT 4
+#define QUEST_FOE_NUMBER_MASK 0xffffffu
+#define QUEST_FOE_THING(number, copy) (QUEST_FOE_KEY | (((df_u32)(number) & QUEST_FOE_NUMBER_MASK) << QUEST_FOE_NUMBER_SHIFT) | (df_u32)(copy))
+/* Whether a thing key is a quest's creature, and the foe's number in it. */
+#define QUEST_FOE_IS(thing) (((thing) & QUEST_FOE_MASK) == QUEST_FOE_KEY)
+#define QUEST_FOE_NUMBER(thing) ((int)(((thing) >> QUEST_FOE_NUMBER_SHIFT) & QUEST_FOE_NUMBER_MASK))
 
 typedef struct QuestPlace {
     int bound, ordinal, region, index, type, px, py;

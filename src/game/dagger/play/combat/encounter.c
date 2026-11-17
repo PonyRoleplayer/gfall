@@ -255,8 +255,8 @@ static int place_actor(const Camera *camera, int kind, df_u32 thing, const float
     rate = adopt(live);
     if (rate < 0) { return 0; }
     if (summoned) { dungeon_set_team(rate,team); dungeon_wake(rate); }
-    else if ((thing & 0xe0000000u) == QUEST_FOE_KEY &&
-        quest_foe_pacified((int)((thing >> 4) & 0xffffffu))) { dungeon_set_pacified(rate,1); }
+    else if (QUEST_FOE_IS(thing) &&
+        quest_foe_pacified(QUEST_FOE_NUMBER(thing))) { dungeon_set_pacified(rate,1); }
     return 1;
 }
 

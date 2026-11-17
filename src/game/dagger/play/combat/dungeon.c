@@ -52,8 +52,27 @@ enum { FOE_AWAKE = 1, FOE_PASSIVE = 2, FOE_ALLIED = 4, FOE_MARKER_ROLLED = 8 };
 static const Scene *g_scene;
 static int (*g_street_hit)(const Camera *cam);
 static void (*g_street_died)(int kind, Entity *entity);
-static SpawnId g_splash[8];
-static float g_splash_time[8];
+/* The blood splashes (ours: the decomp makes a type-42 record of each): at most SPLASHES alive, each FOE_SPLASH_SIZE across at SPLASH_RATE frames a second, for SPLASH_LIFE seconds. */
+#define SPLASHES 8
+#define SPLASH_SIZE 40
+#define SPLASH_RATE 12
+#define SPLASH_LIFE 0.3f
+static SpawnId g_splash[SPLASHES];
+static float g_splash_time[SPLASHES];
+/* Our keep row's layout (docs/game.md): a tag byte, the AI flags, the blocked count, the navigation (direction in the low nibble, turns above), the health and the maximum as words, then
+ * the mind's counters. */
+#define FOE_ROW_TAG 0xc1
+#define FOE_ROW_FLAGS 1
+#define FOE_ROW_BLOCKED 2
+#define FOE_ROW_NAV 3
+#define FOE_ROW_HEALTH 4
+#define FOE_ROW_MAXIMUM 8
+#define FOE_ROW_GIVE_UP 12
+#define FOE_ROW_STUCK 13
+#define FOE_ROW_DETECTED 14
+#define FOE_ROW_ENCOUNTERED 15
+#define FOE_ROW_NAV_TURN_SHIFT 4
+#define FOE_ROW_NAV_DIR_MASK 15
 
 static float minimum(float a, float b) { return a < b ? a : b; }
 static float maximum(float a, float b) { return a > b ? a : b; }
@@ -70,17 +89,17 @@ static void store_health(FoeState *f)
     if (!f->entity->key.place && !f->entity->key.thing) { return; }
     row = keep_get(f->entity->key,KEEP_ENTITY);
     if (!row) { return; }
-    row->game[0] = 0xc1;
-    row->game[1] = (df_u8)((f->awake ? FOE_AWAKE : 0) | (f->passive ? FOE_PASSIVE : 0) |
+    row->game[0] = FOE_ROW_TAG;
+    row->game[FOE_ROW_FLAGS] = (df_u8)((f->awake ? FOE_AWAKE : 0) | (f->passive ? FOE_PASSIVE : 0) |
                           (f->team == TEAM_PLAYER ? FOE_ALLIED : 0) | (f->marker_rolled ? FOE_MARKER_ROLLED : 0));
-    row->game[2] = (df_u8)f->mind.blocked;
-    row->game[3] = (df_u8)(f->mind.direction | (f->mind.turns << 4));
-    write32(row->game+4,(df_u32)f->fighter.health);
-    write32(row->game+8,(df_u32)f->fighter.maximum);
-    row->game[12] = (df_u8)f->mind.give_up;
-    row->game[13] = (df_u8)f->mind.stuck;
-    row->game[14] = (df_u8)f->mind.detected;
-    row->game[15] = (df_u8)f->mind.encountered;
+    row->game[FOE_ROW_BLOCKED] = (df_u8)f->mind.blocked;
+    row->game[FOE_ROW_NAV] = (df_u8)(f->mind.direction | (f->mind.turns << FOE_ROW_NAV_TURN_SHIFT));
+    write32(row->game+FOE_ROW_HEALTH,(df_u32)f->fighter.health);
+    write32(row->game+FOE_ROW_MAXIMUM,(df_u32)f->fighter.maximum);
+    row->game[FOE_ROW_GIVE_UP] = (df_u8)f->mind.give_up;
+    row->game[FOE_ROW_STUCK] = (df_u8)f->mind.stuck;
+    row->game[FOE_ROW_DETECTED] = (df_u8)f->mind.detected;
+    row->game[FOE_ROW_ENCOUNTERED] = (df_u8)f->mind.encountered;
 }
 
 void dungeon_alert(int source)
@@ -98,7 +117,7 @@ void dungeon_alert(int source)
         dz = f->entity->z-player->feet[2];
         if (i == source || ai_stealth(f->mind.detected,df_iround(df_sqrt(dx*dx+dy*dy+dz*dz)),f->mind.encountered)) {
             f->awake = f->mind.detected = f->mind.encountered = 1;
-            f->mind.give_up = 200; store_health(f);
+            f->mind.give_up = FOE_GIVE_UP; store_health(f);
         }
     }
 }
@@ -168,7 +187,7 @@ void dungeon_gear_to(int index, df_u32 container)
 void dungeon_close(void)
 {
     int i;
-    for (i = 0; i < 8; i++) { if (g_splash[i]) { spawn_remove(g_splash[i]); } }
+    for (i = 0; i < SPLASHES; i++) { if (g_splash[i]) { spawn_remove(g_splash[i]); } }
     mem_zero(g_splash,sizeof(g_splash));
     mem_zero(g_splash_time,sizeof(g_splash_time));
     mem_zero(g_arrow,sizeof(g_arrow));
@@ -209,38 +228,38 @@ int dungeon_add(Entity *entity, int kind, int passive, int rate)
     f->target = TARGET_NONE; f->team = TEAM_HOSTILE;
     f->script = foe_script(f->kind);
     f->type = foe_texture_kind(f->kind);
-    f->voice_time = 1+(float)(f->entity->key.thing%4000)/1000;
+    f->voice_time = 1+(float)(f->entity->key.thing%FOE_VOICE_STAGGER_MS)/1000;
     f->def = foe_def(f->kind);
     career = ENEMY_IS_CLASS(f->kind) ? class_at((f->kind-ENEMY_FIRST_CLASS)%ENEMY_CLASS_COUNT) : 0;
     f->fighter.race = ENEMY_IS_CLASS(f->kind) ? ENEMY_RACE_CLASS : f->kind;
     f->fighter.level = f->def ? f->def->level : character_state()->level;
     f->fighter.metal = f->def ? f->def->metal : 0;
-    skill = f->fighter.level*5+30; if (skill > 100) { skill = 100; }
+    skill = f->fighter.level*FOE_SKILL_PER_LEVEL+FOE_SKILL_BASE; if (skill > FOE_SKILL_MAX) { skill = FOE_SKILL_MAX; }
     for (j = 0; j < SKILLS; j++) { f->fighter.skill[j] = skill; }
     for (j = 0; j < ATTRS; j++) { f->fighter.attribute[j] = f->def ? f->def->attribute[j] : career ? career->attribute[j] : 50; }
-    for (j = 0; j < 7; j++) { f->fighter.armor[j] = f->def ? f->def->armor : 60; }
+    for (j = 0; j < BODY_PARTS; j++) { f->fighter.armor[j] = f->def ? f->def->armor : 60; }
     f->fighter.fatigue = fatigue_maximum(f->fighter.attribute[ATTR_STR],f->fighter.attribute[ATTR_END]);
     f->fighter.magicka = f->fighter.max_magicka = f->fighter.attribute[ATTR_INT]*2;
     if (creature_spells(f->kind,f->fighter.level)) {
-        f->fighter.magicka = f->fighter.max_magicka = f->fighter.level*10+100;
-        for (j = 22; j <= 27; j++) { f->fighter.skill[j] = 80; }
+        f->fighter.magicka = f->fighter.max_magicka = f->fighter.level*FOE_CASTER_MAGICKA_PER_LEVEL+FOE_CASTER_MAGICKA_BASE;
+        for (j = SKILL_DESTRUCTION; j <= SKILL_MYSTICISM; j++) { f->fighter.skill[j] = FOE_CASTER_MAGIC_SKILL; }
     }
     row = keep_find(f->entity->key);
     f->restored = row && row->placed;
-    if (row && row->game[0] == 0xc1) {
-        f->fighter.health = (int)df_ru32(row->game+4); f->fighter.maximum = (int)df_ru32(row->game+8);
-        f->awake = (row->game[1] & FOE_AWAKE) != 0;
-        f->passive = (row->game[1] & FOE_PASSIVE) != 0;
-        f->marker_rolled = (row->game[1] & FOE_MARKER_ROLLED) != 0;
-        if (row->game[1] & FOE_ALLIED) { f->team = TEAM_PLAYER; g_allies++; }
-        f->mind.blocked = row->game[2]; f->mind.direction = row->game[3] & 15;
-        f->mind.turns = row->game[3] >> 4;
-        f->mind.give_up = row->game[12]; f->mind.stuck = row->game[13];
-        f->mind.detected = row->game[14]; f->mind.encountered = row->game[15];
+    if (row && row->game[0] == FOE_ROW_TAG) {
+        f->fighter.health = (int)df_ru32(row->game+FOE_ROW_HEALTH); f->fighter.maximum = (int)df_ru32(row->game+FOE_ROW_MAXIMUM);
+        f->awake = (row->game[FOE_ROW_FLAGS] & FOE_AWAKE) != 0;
+        f->passive = (row->game[FOE_ROW_FLAGS] & FOE_PASSIVE) != 0;
+        f->marker_rolled = (row->game[FOE_ROW_FLAGS] & FOE_MARKER_ROLLED) != 0;
+        if (row->game[FOE_ROW_FLAGS] & FOE_ALLIED) { f->team = TEAM_PLAYER; g_allies++; }
+        f->mind.blocked = row->game[FOE_ROW_BLOCKED]; f->mind.direction = row->game[FOE_ROW_NAV] & FOE_ROW_NAV_DIR_MASK;
+        f->mind.turns = row->game[FOE_ROW_NAV] >> FOE_ROW_NAV_TURN_SHIFT;
+        f->mind.give_up = row->game[FOE_ROW_GIVE_UP]; f->mind.stuck = row->game[FOE_ROW_STUCK];
+        f->mind.detected = row->game[FOE_ROW_DETECTED]; f->mind.encountered = row->game[FOE_ROW_ENCOUNTERED];
     } else {
         health = foe_hp_bonus(f->kind);
         dice = f->def ? f->def->dice : f->fighter.level;
-        for (j = 0; j < dice; j++) { health += random_range(1,f->def ? 8 : career ? career->hp_per_level : 10); }
+        for (j = 0; j < dice; j++) { health += random_range(1,f->def ? FOE_HIT_DIE : career ? career->hp_per_level : 10); }
         f->fighter.health = f->fighter.maximum = health > 0 ? health : 1;
         store_health(f);
     }
@@ -248,9 +267,9 @@ int dungeon_add(Entity *entity, int kind, int passive, int rate)
         f->entity->dead = 1; f->entity->radius = 0;
         f->entity->act = ENTITY_DEAD; f->entity->hold = 1; f->entity->frame = 0;
     }
-    body_init(&f->body,12,80,24,60);
-    f->body.radius = f->entity->radius > 0 ? f->entity->radius : 12;
-    f->body.height = 80; f->body.eye = 60; f->body.step = 24; f->body.self = f->entity;
+    body_init(&f->body,FOE_BODY_RADIUS,FOE_BODY_HEIGHT,FOE_BODY_STEP,FOE_BODY_EYE);
+    f->body.radius = f->entity->radius > 0 ? f->entity->radius : FOE_BODY_RADIUS;
+    f->body.height = FOE_BODY_HEIGHT; f->body.eye = FOE_BODY_EYE; f->body.step = FOE_BODY_STEP; f->body.self = f->entity;
     if (f->def && (f->def->flags & 1)) { f->body.gravity = 0; }
     body_place(&f->body,f->entity->x,f->entity->y,f->entity->z);
     magic_restore_foe(index);
@@ -289,11 +308,11 @@ int dungeon_loaded(int index)
     if (f->restored) { f->entity->y = f->body.feet[1]; }
     else { body_place(&f->body,f->entity->x,f->entity->y,f->entity->z); }
     height = f->entity->pose[ENTITY_WALK].h[0];
-    if (height < 24) { height = 24; }
-    if (height > 128) { height = 128; }
+    if (height < FOE_BODY_HEIGHT_MIN) { height = FOE_BODY_HEIGHT_MIN; }
+    if (height > FOE_BODY_HEIGHT_MAX) { height = FOE_BODY_HEIGHT_MAX; }
     f->body.height = height; f->body.eye = f->body.eye_now = height/2;
     /* A rat's step used to consume its entire collision ellipsoid. */
-    f->body.step = minimum(24,height/4);
+    f->body.step = minimum(FOE_BODY_STEP,height/FOE_BODY_STEP_DIV);
     if (!f->entity->dead) { f->entity->radius = f->body.radius; }
     if (ENEMY_IS_CLASS(f->kind) || f->kind == ENEMY_ORC || f->kind == ENEMY_CENTAUR || f->kind == ENEMY_ORC_SERGEANT || f->kind == ENEMY_ORC_SHAMAN || f->kind == ENEMY_ORC_WARLORD) {
         foe_equipment(f->kind,dungeon_container(index),f->equipped,&f->fighter);
@@ -389,13 +408,13 @@ static void splash(const Scene *scene, const Entity *target, int green)
     Entity e;
     int i;
     if (g_blood[green] < 0) { return; }
-    for (i = 0; i < 8; i++) {
+    for (i = 0; i < SPLASHES; i++) {
         if (g_splash_time[i] > 0) { continue; }
-        entity_init(&e); e.live = 1; e.x = target->x; e.y = target->y+40; e.z = target->z;
+        entity_init(&e); e.live = 1; e.x = target->x; e.y = target->y+FOE_CHEST_HEIGHT; e.z = target->z;
         e.pose[ENTITY_IDLE].slot[0] = (df_u16)g_blood[green];
-        e.pose[ENTITY_IDLE].w[0] = e.pose[ENTITY_IDLE].h[0] = 40;
-        e.pose[ENTITY_IDLE].rate = 12;
-        g_splash[i] = spawn_add(scene,&e,0); g_splash_time[i] = 0.3f;
+        e.pose[ENTITY_IDLE].w[0] = e.pose[ENTITY_IDLE].h[0] = SPLASH_SIZE;
+        e.pose[ENTITY_IDLE].rate = SPLASH_RATE;
+        g_splash[i] = spawn_add(scene,&e,0); g_splash_time[i] = SPLASH_LIFE;
         return;
     }
 }
@@ -411,30 +430,30 @@ static int hit_foe_from(const Scene *scene, int i, int damage, float yaw, int so
     f = &g_foe[i]; e = f->entity;
     damage = magic_absorb(i,damage); if (!damage) { return 0; }
     f->fighter.health -= damage; f->awake = 1; f->passive = 0;
-    f->mind.detected = f->mind.encountered = 1; f->mind.give_up = 200;
+    f->mind.detected = f->mind.encountered = 1; f->mind.give_up = FOE_GIVE_UP;
     attacker = source == TARGET_PLAYER ? game_state()->entity_id : 0;
     splash(scene,e,f->kind == 7 || f->kind == 8);
     if (f->fighter.health <= 0) {
         f->fighter.health = 0; e->dead = 1; e->radius = 0;
         e->act = ENTITY_DEAD; e->hold = 1; e->frame = 0; e->moving = 0;
         if (source == TARGET_PLAYER) { magic_soul_capture(i); }
-        sound_at(17,e->x,e->y,e->z);
+        sound_at(SOUND_DEATH,e->x,e->y,e->z);
         state_event(EVENT_KILL,e->key.thing,attacker,damage);
         /* Event 2 of the quests: a creature a quest placed died. */
-        if ((e->key.thing & 0xe0000000u) == QUEST_FOE_KEY) { quest_foe_killed((int)((e->key.thing >> 4) & 0xffffffu)); }
+        if (QUEST_FOE_IS(e->key.thing)) { quest_foe_killed(QUEST_FOE_NUMBER(e->key.thing)); }
         if (g_street_died) { g_street_died(f->kind,e); }
         /* damage_creature_death: a watchman killed is counted by the Brotherhood (guild_count_crime(6, 1)). */
-        if (source == TARGET_PLAYER && f->kind == ENEMY_CITY_WATCH) { guild_count_crime(6, 1, game_state()->minutes); }
+        if (source == TARGET_PLAYER && f->kind == ENEMY_CITY_WATCH) { guild_count_crime(GUILD_COUNT_KILL, 1, game_state()->minutes); }
     } else {
         weight = foe_weight(f->kind);
         if (weight && !f->knock) {
-            force = damage*10;
-            absorbed = (damage*2*((force-weight)*256/(force+weight)))/256;
-            f->knock = (float)((force/weight)*(damage*2-absorbed));
-            if (f->knock < 15) { f->knock = 15; }
+            force = damage*KNOCK_FORCE_PER_DAMAGE;
+            absorbed = (damage*KNOCK_AMOUNT_PER_DAMAGE*((force-weight)*256/(force+weight)))/256;
+            f->knock = (float)((force/weight)*(damage*KNOCK_AMOUNT_PER_DAMAGE-absorbed));
+            if (f->knock < KNOCK_SPEED_MIN) { f->knock = KNOCK_SPEED_MIN; }
             f->knock_yaw = yaw;
         }
-        f->hurt = 0.25f; e->act = ENTITY_HURT; e->hold = 1; e->frame = 0;
+        f->hurt = FOE_HURT_TIME; e->act = ENTITY_HURT; e->hold = 1; e->frame = 0;
         state_event(EVENT_HURT,e->key.thing,attacker,damage);
     }
     store_health(f);
@@ -521,7 +540,7 @@ static int miss_sound(int weapon, int kind)
 {
     if (weapon >= 0 && foe_parries(kind)) {
         /* Watcom rand() < 32768 always succeeds; retain that original check. */
-        random_range(0,32767); return random_range(291,299);
+        random_range(0,RAND_MAX_WATCOM); return random_range(SOUND_PARRY_FIRST,SOUND_PARRY_LAST);
     }
     return swing_sound(weapon);
 }
@@ -534,39 +553,39 @@ static void resolve_player(const Scene *scene, const Camera *cam, int target, co
     float toward;
     f = &g_foe[target];
     fighter_player(&a);
-    part = struck_part(random_range(0,19));
+    part = struck_part(random_range(0,BODY_PART_ROLLS-1));
     skill = weapon_skill(index);
     expert = index >= 0 && (weapon_proficiency(index) & game_state()->career.expert);
     chance = a.skill[skill] + (expert ? a.level : 0);
     toward = df_atan2(cam->x-f->entity->x,cam->z-f->entity->z)-f->entity->yaw;
-    backstab = !s->bow && df_cos(toward) < df_cos(640*DF_TAU/2048) ? a.skill[SKILL_BACKSTABBING] : 0;
+    backstab = !s->bow && df_cos(toward) < df_cos(BACKSTAB_ARC*DF_TAU/ANGLE_FULL) ? a.skill[SKILL_BACKSTABBING] : 0;
     chance += backstab;
     skill_use(skill); skill_use(SKILL_CRITICAL_STRIKE); if (backstab) { skill_use(SKILL_BACKSTABBING); }
     if (!god_mode() && index >= 0 && material < f->fighter.metal) {
         f->awake = 1; store_health(f);
         msg_set("Your weapon is ineffective against this creature.");
-        sound_at(miss_sound(index,f->kind),f->entity->x,f->entity->y+40,f->entity->z); return;
+        sound_at(miss_sound(index,f->kind),f->entity->x,f->entity->y+FOE_CHEST_HEIGHT,f->entity->z); return;
     }
     chance = attack_chance(&a,&f->fighter,chance,index,index >= 0 ? material_hit(material) : 0,
                               part,s->hit,random_range(1,100));
     f->awake = 1;
     if (!god_mode() && random_range(0,100) > chance) {
-        sound_at(miss_sound(index,f->kind),f->entity->x,f->entity->y+40,f->entity->z);
+        sound_at(miss_sound(index,f->kind),f->entity->x,f->entity->y+FOE_CHEST_HEIGHT,f->entity->z);
         store_health(f); return;
     }
     base = index >= 0 ? random_range(weapon_damage(index,0),weapon_damage(index,1)) :
-        random_range(a.skill[SKILL_HAND_TO_HAND]/10+1,a.skill[SKILL_HAND_TO_HAND]/5+1);
+        random_range(a.skill[SKILL_HAND_TO_HAND]/HAND_DAMAGE_MIN_DIV+1,a.skill[SKILL_HAND_TO_HAND]/HAND_DAMAGE_MAX_DIV+1);
     damage = attack_damage(&a,&f->fighter,index,material,s->damage,expert,base);
     /* damage_bonus_vs_target: a creature of a class is a humanoid. */
     if (index >= 0 && s->item) { damage += enchant_hit_bonus(s->item, foe_enchant_category(f->kind)); if (damage < 0) { damage = 0; } }
     if (god_mode() && damage < 1) { damage = 1; }
-    if (backstab && random_range(1,100) <= backstab) { damage *= 3; msg_set("Backstab!"); }
+    if (backstab && random_range(1,100) <= backstab) { damage *= BACKSTAB_MULTIPLIER; msg_set("Backstab!"); }
     /* Event 21: the player hit a creature of a quest. */
-    if (damage && (f->entity->key.thing & 0xe0000000u) == QUEST_FOE_KEY) { quest_foe_hit((int)((f->entity->key.thing >> 4) & 0xffffffu)); }
+    if (damage && QUEST_FOE_IS(f->entity->key.thing)) { quest_foe_hit(QUEST_FOE_NUMBER(f->entity->key.thing)); }
     damage = hit_foe(scene,target,damage,cam->yaw);
     if (damage && index >= 0 && s->item) { enchant_strike(s->item, target, damage); }
     if (damage) {
-        sound_at(random_range(378,382),f->entity->x,f->entity->y+40,f->entity->z); item_wear(s->item,damage);
+        sound_at(random_range(SOUND_HIT_FIRST,SOUND_HIT_FIRST+SOUND_HIT_COUNT-1),f->entity->x,f->entity->y+FOE_CHEST_HEIGHT,f->entity->z); item_wear(s->item,damage);
         item_wear(f->equipped[armor_slot(part)],damage);
     }
 }
@@ -606,10 +625,10 @@ void dungeon_strike(const Scene *scene, const Camera *cam, const StrikeInfo *s)
         if (e->dead || !e->live || dungeon_team(i) == TEAM_PLAYER) { continue; }
         dx = e->x-cam->x; dz = e->z-cam->z;
         distance = df_sqrt(dx*dx+dz*dz);
-        if (distance > 90 || df_absf(e->y-move_body()->feet[1]) > 90) { continue; }
+        if (distance > MELEE_REACH || df_absf(e->y-move_body()->feet[1]) > MELEE_REACH) { continue; }
         facing = df_cos(df_atan2(dx,dz)-cam->yaw);
-        if (distance > 10 && facing <= df_cos(200*DF_TAU/2048)) { continue; }
-        point[0] = e->x; point[1] = e->y+40; point[2] = e->z;
+        if (distance > MELEE_ARC_SKIP && facing <= df_cos(MELEE_ARC*DF_TAU/ANGLE_FULL)) { continue; }
+        point[0] = e->x; point[1] = e->y+FOE_CHEST_HEIGHT; point[2] = e->z;
         if (!visible(scene,from,point)) { continue; }
         dungeon_alert(i);
         resolve_player(scene,cam,i,s,index,material); hits++;
@@ -689,7 +708,7 @@ static void arrows_step(const Scene *scene, const Camera *cam, float dt)
                 hit_player = target == g_count;
                 if (hit_player) { fighter_player(&player); victim = &player; }
                 else { victim = &g_foe[target].fighter; }
-                part = struck_part(random_range(0,19));
+                part = struck_part(random_range(0,BODY_PART_ROLLS-1));
                 chance = attack_chance(&archer->fighter,victim,archer->fighter.skill[SKILL_ARCHERY],16,0,part,0,random_range(1,100));
                 if (hit_player) { skill_use(SKILL_DODGING); }
                 if (random_range(0,100) <= chance) {
@@ -745,7 +764,7 @@ static int pick_target(const Scene *scene, const Camera *cam, FoeState *foe)
     int target, best, best_score, score;
 
     if (!g_allies && foe->team == TEAM_HOSTILE) { return TARGET_PLAYER; }
-    from[0] = foe->entity->x; from[1] = foe->entity->y+40; from[2] = foe->entity->z;
+    from[0] = foe->entity->x; from[1] = foe->entity->y+FOE_CHEST_HEIGHT; from[2] = foe->entity->z;
     best = TARGET_NONE; best_score = -1;
     /* The original considers the creatures in list order, then the player. */
     for (target = 0; target <= g_count; target++) {
@@ -756,11 +775,11 @@ static int pick_target(const Scene *scene, const Camera *cam, FoeState *foe)
         target_point(cam,candidate,to);
         dx = to[0]-from[0]; dy = to[1]-from[1]; dz = to[2]-from[2];
         distance = df_sqrt(dx*dx+dy*dy+dz*dz);
-        if (distance > 2048) { continue; }
-        score = 30-(int)distance/128;
-        if (dungeon_target(candidate) == TARGET_NONE) { score += 5; }
-        if (score+20 <= best_score) { continue; }
-        if (visible(scene,from,to)) { score += 20; }
+        if (distance > FOE_ACTIVE_RANGE) { continue; }
+        score = TARGET_SCORE_BASE-(int)distance/TARGET_SCORE_DISTANCE_DIV;
+        if (dungeon_target(candidate) == TARGET_NONE) { score += TARGET_SCORE_IDLE; }
+        if (score+TARGET_SCORE_SEEN <= best_score) { continue; }
+        if (visible(scene,from,to)) { score += TARGET_SCORE_SEEN; }
         if (score > best_score) { best = candidate; best_score = score; }
     }
     return best;
@@ -776,12 +795,12 @@ static void monster_strike(const Scene *scene, const Camera *cam, FoeState *foe,
     df_u32 weapon_id;
 
     target_point(cam,target,to);
-    from[0] = foe->entity->x; from[1] = foe->entity->y+40; from[2] = foe->entity->z;
+    from[0] = foe->entity->x; from[1] = foe->entity->y+FOE_CHEST_HEIGHT; from[2] = foe->entity->z;
     dx = to[0]-from[0]; dy = to[1]-from[1]; dz = to[2]-from[2];
     distance = dx*dx+dy*dy+dz*dz;
-    if (distance > 90*90) { return; }
+    if (distance > MELEE_REACH*MELEE_REACH) { return; }
     yaw = df_atan2(dx,dz);
-    if (distance > 100 && df_cos(yaw-foe->entity->yaw) <= df_cos(200*DF_TAU/2048)) { return; }
+    if (distance > MELEE_ARC_SKIP*MELEE_ARC_SKIP && df_cos(yaw-foe->entity->yaw) <= df_cos(MELEE_ARC*DF_TAU/ANGLE_FULL)) { return; }
     if (!visible(scene,from,to)) { return; }
     if (target == TARGET_PLAYER) {
         fighter_player(&player); player.metal = curse_min_metal(); victim = &player;
@@ -791,19 +810,19 @@ static void monster_strike(const Scene *scene, const Camera *cam, FoeState *foe,
         category = foe_enchant_category(g_foe[target].kind);
     }
     source = (int)(foe-g_foe);
-    part = struck_part(random_range(0,19)); total = 0;
+    part = struck_part(random_range(0,BODY_PART_ROLLS-1)); total = 0;
     weapon_id = foe->equipped[EQUIP_RIGHT_HAND]; weapon = object_at(weapon_id);
     index = weapon && weapon->condition > 0 ? weapon->index : -1;
     material = index >= 0 ? weapon->material : 0; skill = weapon_skill(index);
-    for (i = 0; i < (index < 0 && foe->def ? 5 : 1); i++) {
-        if (index < 0 && foe->def && (!foe->def->minimum[i] || random_range(0,99) >= 50-(character_state()->reflexes-2)*10)) { continue; }
+    for (i = 0; i < (index < 0 && foe->def ? FOE_ATTACKS : 1); i++) {
+        if (index < 0 && foe->def && (!foe->def->minimum[i] || random_range(0,PERCENT-1) >= FOE_ATTACK_TRY_BASE-(character_state()->reflexes-REFLEXES_NORMAL)*FOE_ATTACK_TRY_PER_REFLEX)) { continue; }
         chance = attack_chance(&foe->fighter,victim,foe->fighter.skill[skill],index,
             index >= 0 ? material_hit(material) : 0,part,0,random_range(1,100));
         if (target == TARGET_PLAYER) { skill_use(SKILL_DODGING); }
         if (random_range(0,100) > chance || (index >= 0 && material < victim->metal)) { continue; }
         damage = index >= 0 ? random_range(weapon_damage(index,0),weapon_damage(index,1)) :
             foe->def ? random_range(foe->def->minimum[i],foe->def->maximum[i]) :
-            random_range(foe->fighter.skill[SKILL_HAND_TO_HAND]/10+1,foe->fighter.skill[SKILL_HAND_TO_HAND]/5+1);
+            random_range(foe->fighter.skill[SKILL_HAND_TO_HAND]/HAND_DAMAGE_MIN_DIV+1,foe->fighter.skill[SKILL_HAND_TO_HAND]/HAND_DAMAGE_MAX_DIV+1);
         damage = attack_damage(&foe->fighter,victim,index,material,0,0,damage);
         if (index >= 0) {
             damage += enchant_hit_bonus_for(weapon_id,category,source,foe->fighter.level);
@@ -827,7 +846,7 @@ static void monster_strike(const Scene *scene, const Camera *cam, FoeState *foe,
         if (index >= 0 && !foe->entity->dead) { item_wear(weapon_id,dealt); }
         if (foe->entity->dead || !target_live(target)) { break; }
     }
-    sound_at(total ? random_range(380,381) : 374,from[0],from[1],from[2]);
+    sound_at(total ? random_range(SOUND_CLAW_HIT_FIRST,SOUND_CLAW_HIT_FIRST+1) : SOUND_CLAW_MISS,from[0],from[1],from[2]);
 }
 
 static void monster_swing(const Scene *scene, const Camera *cam, FoeState *foe)
@@ -886,13 +905,13 @@ static void foe_step(const Scene *scene, const Camera *cam, int index, float dt)
         return;
     }
     dx = cam->x-e->x; dz = cam->z-e->z; distance = df_sqrt(dx*dx+dz*dz);
-    if (distance > 2048) { return; }
+    if (distance > FOE_ACTIVE_RANGE) { return; }
     stepped = 0;
     if (f->def && (f->def->flags & 1)) { f->body.vy = 0; }
     f->voice_time -= dt;
-    if (distance < 1024 && f->voice_time <= 0) {
-        foe_voice(f,f->awake ? (distance < 128 && random_range(0,3) ? 2 : 1) : 0);
-        f->voice_time = (float)random_range(2000,6000)/1000;
+    if (distance < FOE_VOICE_RANGE && f->voice_time <= 0) {
+        foe_voice(f,f->awake ? (distance < FOE_VOICE_NEAR && random_range(0,3) ? 2 : 1) : 0);
+        f->voice_time = (float)random_range(FOE_VOICE_MIN_MS,FOE_VOICE_MAX_MS)/1000;
     }
     if (f->passive) { return; }
     /* A sleeper looks only when its think timer is due: the sight ray gathers every triangle between it and the player, too much to do for each sleeper each frame. */
@@ -900,11 +919,11 @@ static void foe_step(const Scene *scene, const Camera *cam, int index, float dt)
         f->think -= dt;
         if (f->think > 0) { return; }
     }
-    from[0] = e->x; from[1] = e->y+40; from[2] = e->z;
+    from[0] = e->x; from[1] = e->y+FOE_CHEST_HEIGHT; from[2] = e->z;
     f->retarget -= dt;
     if (f->retarget <= 0 || (f->target != TARGET_NONE && !target_opposes(f,f->target))) {
         f->target = pick_target(scene,cam,f);
-        f->retarget = 0.45f+(float)(index & 7)*0.04f;
+        f->retarget = FOE_RETARGET_TIME+(float)(index & (FOE_RETARGET_SLOTS-1))*FOE_RETARGET_STAGGER;
     }
     if (f->target == TARGET_NONE) {
         e->moving = 0; e->act = 0; e->hold = 0;
@@ -914,73 +933,73 @@ static void foe_step(const Scene *scene, const Camera *cam, int index, float dt)
     target_point(cam,f->target,to);
     dx = to[0]-from[0]; dz = to[2]-from[2];
     distance = df_sqrt(dx*dx+dz*dz);
-    reach = f->target == TARGET_PLAYER ? 90 : 60;
+    reach = f->target == TARGET_PLAYER ? FOE_REACH_PLAYER : FOE_REACH_FOE;
     sight = visible(scene,from,to);
-    angle = df_iround(df_atan2(dx,dz)*(2048/DF_TAU)) & 2047;
-    facing = df_iround(e->yaw*(2048/DF_TAU)) & 2047;
+    angle = df_iround(df_atan2(dx,dz)*(ANGLE_FULL/DF_TAU)) & ANGLE_MASK;
+    facing = df_iround(e->yaw*(ANGLE_FULL/DF_TAU)) & ANGLE_MASK;
     if (!f->awake) {
         {
-            f->think = 0.2f;
-            if (sight && (f->target != TARGET_PLAYER || (magic_sees(f->kind) && (ai_angle(facing,angle) <= 512 ||
+            f->think = FOE_SLEEP_LOOK_TIME;
+            if (sight && (f->target != TARGET_PLAYER || (magic_sees(f->kind) && (ai_angle(facing,angle) <= FOE_SIGHT_ARC ||
                 ai_stealth(f->mind.detected,df_iround(distance),f->mind.encountered))))) {
                 f->awake = f->mind.detected = f->mind.encountered = 1;
-                f->mind.give_up = 200; store_health(f);
+                f->mind.give_up = FOE_GIVE_UP; store_health(f);
             }
         }
         if (!f->awake) { return; }
     }
     if (f->mind.give_up > 0) {
-        f->mind.give_up -= dt*60;
+        f->mind.give_up -= dt*TICKS_PER_SECOND;
         if (f->mind.give_up < 0) { f->mind.give_up = 0; }
-    } else if (f->target == TARGET_PLAYER && (!magic_sees(f->kind) || ((!sight || ai_angle(facing,angle) > 512) &&
+    } else if (f->target == TARGET_PLAYER && (!magic_sees(f->kind) || ((!sight || ai_angle(facing,angle) > FOE_SIGHT_ARC) &&
                !ai_stealth(0,df_iround(distance),f->mind.encountered)))) {
         f->awake = f->mind.detected = 0; e->moving = 0; store_health(f); return;
-    } else { f->mind.detected = 1; f->mind.give_up = 200; }
+    } else { f->mind.detected = 1; f->mind.give_up = FOE_GIVE_UP; }
     f->attack_wait -= dt;
     e->moving = 0;
     if (f->hurt > 0) {
         f->hurt -= dt;
         if (f->knock > 0) {
-            if (f->knock > 40) { f->knock = 40; }
-            speed = f->knock > 40 ? 40 : f->knock;
-            speed = (speed > 25 ? 25 : speed)*dt*60;
+            if (f->knock > KNOCK_SPEED_MAX) { f->knock = KNOCK_SPEED_MAX; }
+            speed = f->knock > KNOCK_SPEED_MAX ? KNOCK_SPEED_MAX : f->knock;
+            speed = (speed > KNOCK_STEP_MAX ? KNOCK_STEP_MAX : speed)*dt*TICKS_PER_SECOND;
             foe_move(f,scene,df_sin(f->knock_yaw)*speed,df_cos(f->knock_yaw)*speed,dt);
             stepped = 1;
-            f->knock -= dt*300;
+            f->knock -= dt*KNOCK_DECAY_PER_TICK*TICKS_PER_SECOND;
         }
         if (f->hurt <= 0) { f->knock = 0; mem_zero(&f->anim,sizeof(f->anim)); }
     } else if (f->anim.script && !f->anim.ended) {
-        f->anim.time += dt*1000;
+        f->anim.time += dt*MS_PER_SECOND;
         while (f->anim.time >= f->rate && !f->anim.ended) {
             f->anim.time -= f->rate; events = anim_tick(&f->anim);
             if (events & 1) { monster_swing(scene,cam,f); if (e->dead) { return; } }
             if ((events & 2) && target_opposes(f,f->target)) {
                 Camera shot;
-                shot.x = e->x; shot.y = e->y+50; shot.z = e->z;
+                shot.x = e->x; shot.y = e->y+FOE_BOW_HEIGHT; shot.z = e->z;
                 shot.yaw = df_atan2(dx,dz); shot.pitch = df_atan2(to[1]-shot.y,distance);
                 sound_at(6,shot.x,shot.y,shot.z); launch_arrow(&shot,index,0,16,0);
             }
         }
-        pose = f->anim.record == 25 ? ENTITY_SHOOT : f->anim.record == 20 ? ENTITY_CAST : ENTITY_ATTACK;
+        pose = f->anim.record == RECORD_SHOOT_2 ? ENTITY_SHOOT : f->anim.record == RECORD_CAST ? ENTITY_CAST : ENTITY_ATTACK;
         e->act = (df_u8)pose; e->hold = 1; e->frame = (df_u8)f->anim.frame;
     } else {
         e->hold = 0; e->act = 0;
-        if (f->attack_wait <= 0 && sight && ai_angle(facing,angle) < 128 &&
+        if (f->attack_wait <= 0 && sight && ai_angle(facing,angle) < FOE_ATTACK_ARC &&
             magic_creature_at(index,f->target,cam)) {
-            anim_start(&f->anim,f->script,32); f->attack_wait = 0.5f;
+            anim_start(&f->anim,f->script,ACTION_CAST); f->attack_wait = FOE_CAST_PAUSE;
             e->act = ENTITY_CAST; e->hold = 1; e->frame = 0;
         } else if (f->attack_wait <= 0 && (distance <= reach ||
-            ((foe_type_flags(f->type) & 32) && distance > 4*reach))) {
-            if (sight && ai_angle(facing,angle) < 128) {
-                anim_start(&f->anim,f->script,distance > 4*reach ? 24 : 8);
+            ((foe_type_flags(f->type) & 32) && distance > FOE_RANGED_REACH_MUL*reach))) {
+            if (sight && ai_angle(facing,angle) < FOE_ATTACK_ARC) {
+                anim_start(&f->anim,f->script,distance > FOE_RANGED_REACH_MUL*reach ? ACTION_SHOOT : ACTION_ATTACK);
                 if (f->voice_time < 2) { foe_voice(f,2); f->voice_time = 2; }
                 /* Newly initialized monsters have reflexes zero in the original. */
-                f->attack_wait = (float)(random_range(1500,3000)-(character_state()->level-10)*50-900)/1000;
-                if (f->attack_wait < 0.1f) { f->attack_wait = 1.5f; }
+                f->attack_wait = (float)(random_range(FOE_ATTACK_WAIT_MIN,FOE_ATTACK_WAIT_MAX)-(character_state()->level-FOE_ATTACK_WAIT_LEVEL_PIVOT)*FOE_ATTACK_WAIT_PER_LEVEL-REFLEXES_NORMAL*FOE_ATTACK_WAIT_PER_REFLEX)/1000;
+                if (f->attack_wait < FOE_ATTACK_WAIT_FLOOR) { f->attack_wait = (float)FOE_ATTACK_WAIT_FALLBACK/1000; }
             } else if (sight) {
-                e->yaw = ai_turn(facing,angle,df_iround(dt*60*64))*(DF_TAU/2048);
+                e->yaw = ai_turn(facing,angle,df_iround(dt*TICKS_PER_SECOND*FOE_TURN_PER_TICK))*(DF_TAU/ANGLE_FULL);
             }
-        } else if (distance > reach-20) {
+        } else if (distance > reach-FOE_CLOSE_MARGIN) {
             /* monster_move_step: SPD - 50 + D_00187CA9 (200). */
             speed = (float)(f->fighter.attribute[ATTR_SPD]+WALK_SPEED_ADD);
             ai_walk(&f->mind,&f->body,e,scene,to,sight,
@@ -988,7 +1007,7 @@ static void foe_step(const Scene *scene, const Camera *cam, int index, float dt)
             stepped = 1;
             e->moving = 1;
         } else {
-            e->yaw = ai_turn(facing,angle,df_iround(dt*60*64))*(DF_TAU/2048);
+            e->yaw = ai_turn(facing,angle,df_iround(dt*TICKS_PER_SECOND*FOE_TURN_PER_TICK))*(DF_TAU/ANGLE_FULL);
         }
     }
     /* Gravity and floor contact also run during attack and hurt pictures. */
@@ -1005,7 +1024,7 @@ void dungeon_step(const Scene *scene, const Camera *cam, float dt)
     combat_step(dt);
     for (i = 0; i < g_count && character_state()->health > 0; i++) { foe_step(scene,cam,i,dt); }
     arrows_step(scene,cam,dt);
-    for (i = 0; i < 8; i++) {
+    for (i = 0; i < SPLASHES; i++) {
         if (g_splash_time[i] > 0) {
             g_splash_time[i] -= dt;
             if (g_splash_time[i] <= 0 && g_splash[i]) { spawn_remove(g_splash[i]); g_splash[i] = 0; }
@@ -1068,7 +1087,7 @@ void dungeon_wake(int index)
     f->awake = 1;
     f->mind.detected = f->mind.encountered = 1;
     /* A city watch gives up after three times a creature's count. */
-    f->mind.give_up = 600;
+    f->mind.give_up = WATCH_GIVE_UP;
 }
 
 int dungeon_index(const Entity *e)

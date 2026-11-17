@@ -49,7 +49,7 @@ int steal_pocket(int creature, int victim_level, StealState *out)
     out->line = line;
     out->ok = 1;
     /* A pocket that paid is counted by the Thieves Guild (guild_count_crime(5, 1)); an empty one is not. */
-    guild_count_crime(5, 1, game_state()->minutes);
+    guild_count_crime(GUILD_COUNT_THIEF, 1, game_state()->minutes);
     return 1;
 }
 
