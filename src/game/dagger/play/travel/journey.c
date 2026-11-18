@@ -1,4 +1,7 @@
 #include "game/dagger/play/travel/travel.h"
+#include "game/dagger/play/character/rest.h"
+#include "game/dagger/play/character/ailments.h"
+#include "game/dagger/formats/climate.h"
 #include "game/dagger/play/character/vitals.h"
 #include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/play/state.h"
@@ -9,6 +12,30 @@
 #include "game/dagger/tables/traveldefs.h"
 #include "engine/core/mem.h"
 
+/*
+ * A journey (travel_pixel_time, travel_route, travel_trip_cost; inline in the decomp). Each pixel of land takes (TRAVEL_TERRAIN_SPAN - the terrain's modifier) times the transport's factor
+ * (TRANSPORT_FACTOR_* of 256, TRAVEL_PIXEL_BASE / 256 of it) over 256; a pixel of sea TRAVEL_SEA_SHIP by ship, TRAVEL_SEA_NO_SHIP not. Camping takes TRAVEL_CAMP_NUM / TRAVEL_CAMP_DEN of the time,
+ * a reckless trip halves it (TRAVEL_RECKLESS_DIV). An inn is INN_NIGHT_PRICE a night (an inn night is HOURS_PER_DAY hours less the sea) and a ship SHIP_DAY_PRICE a day of sea. Ours: a trip
+ * by day for a sun-hurt class waits to SUN_ARRIVAL_MINUTE, and a cautious traveller to MORNING_ARRIVAL_MINUTE (06:10).
+ */
+#define TRANSPORT_HORSE 1
+#define TRANSPORT_CART 2
+#define TRANSPORT_FACTOR_HORSE 128
+#define TRANSPORT_FACTOR_CART 192
+#define TRANSPORT_FACTOR_FOOT 256
+#define TRAVEL_PIXEL_BASE 102
+#define TRAVEL_TERRAIN_SPAN 512
+#define TRAVEL_SEA_SHIP 51
+#define TRAVEL_SEA_NO_SHIP 255
+#define TRAVEL_CAMP_NUM 300
+#define TRAVEL_CAMP_DEN 256
+#define TRAVEL_RECKLESS_DIV 2
+#define INN_NIGHT_PRICE 5
+#define HOURS_PER_DAY 24
+#define SHIP_DAY_PRICE 25
+#define SUN_ARRIVAL_MINUTE 1090
+#define MORNING_ARRIVAL_MINUTE 370
+
 static int absolute(int n) { return n < 0 ? -n : n; }
 void journey_plan(int sx, int sy, int ex, int ey, int reckless, int camp,
                      int ship, int transport, JourneyPlan *out)
@@ -16,23 +43,23 @@ void journey_plan(int sx, int sy, int ex, int ey, int reckless, int camp,
     int dx, dy, adx, ady, n, i, error, climate, minutes, factor;
     mem_zero(out,sizeof(*out)); dx = ex-sx; dy = ey-sy;
     adx = absolute(dx); ady = absolute(dy); n = adx > ady ? adx : ady;
-    error = 0; factor = transport == 1 ? 128 : transport == 2 ? 192 : 256;
+    error = 0; factor = transport == TRANSPORT_HORSE ? TRANSPORT_FACTOR_HORSE : transport == TRANSPORT_CART ? TRANSPORT_FACTOR_CART : TRANSPORT_FACTOR_FOOT;
     /* func_0009CEC4: the minor axis advances only after a strict >. */
     for (i = 0; i < n; i++) {
         if (n == adx) { sx += dx < 0 ? -1 : 1; error += ady; if (error > adx) { error -= adx; sy += dy < 0 ? -1 : 1; } }
         else { sy += dy < 0 ? -1 : 1; error += adx; if (error > ady) { error -= ady; sx += dx < 0 ? -1 : 1; } }
         climate = travel_climate(sx,sy);
-        if (climate == 223) { out->sea_pixels++; minutes = ship ? 51 : 255; }
-        else { minutes = ((512-travel_terrain(climate))*((factor*102)/256))/256; }
-        if (camp) { minutes = minutes*300/256; }
+        if (climate == CLIMATE_OCEAN) { out->sea_pixels++; minutes = ship ? TRAVEL_SEA_SHIP : TRAVEL_SEA_NO_SHIP; }
+        else { minutes = ((TRAVEL_TERRAIN_SPAN-travel_terrain(climate))*((factor*TRAVEL_PIXEL_BASE)/256))/256; }
+        if (camp) { minutes = minutes*TRAVEL_CAMP_NUM/TRAVEL_CAMP_DEN; }
         out->minutes += minutes;
     }
     /* travel_open_trip/toggle_option halve the cached estimate too,
      * before travel_trip_cost prices its nights. */
-    if (reckless) { out->minutes /= 2; }
-    out->hours = (out->minutes+59)/60;
-    out->cost = camp ? 0 : ((out->hours-out->sea_pixels)/24)*5+5;
-    if (ship && out->sea_pixels) { out->cost += (out->sea_pixels/24+1)*25; }
+    if (reckless) { out->minutes /= TRAVEL_RECKLESS_DIV; }
+    out->hours = (out->minutes+MINUTES_PER_HOUR-1)/MINUTES_PER_HOUR;
+    out->cost = camp ? 0 : ((out->hours-out->sea_pixels)/HOURS_PER_DAY)*INN_NIGHT_PRICE+INN_NIGHT_PRICE;
+    if (ship && out->sea_pixels) { out->cost += (out->sea_pixels/HOURS_PER_DAY+1)*SHIP_DAY_PRICE; }
 }
 int journey_transport(void)
 {
@@ -42,7 +69,7 @@ int journey_transport(void)
         const ObjectInfo *item;
         item = &game_state()->object[i];
         if (item->id && item->type == RECORD_ITEM && item->parent == game_state()->inventory_id && item->group == ITEM_GROUP_TRANSPORT) {
-            if (item->index == 1) { transport = 1; } else if (item->index == 0) { transport = 2; }
+            if (item->index == 1) { transport = TRANSPORT_HORSE; } else if (item->index == 0) { transport = TRANSPORT_CART; }
         }
     }
     return transport;
@@ -58,7 +85,7 @@ int journey_warning(void)
         const AilmentInfo *a;
         a = &magic_state()->ailment[i];
         if (a->active && a->target.place == player.place && a->target.thing == player.thing &&
-            (a->id < 100 || (a->id >= 128 && a->stage))) { return 1; }
+            (a->id < DISEASE_CURSE_FIRST || (a->id >= POISON_FIRST && a->stage))) { return 1; }
     }
     return 0;
 }
@@ -105,9 +132,9 @@ int journey_begin(int region, int index, int reckless, int camp, int ship)
     }
     /* travel_begin_trip waits to 06:10 for cautious ordinary travellers,
      * or 18:10 for a daylight-damaged class. Unlike GFALL, not 07:10. */
-    minute = game_state()->minutes%1440; wait = 0;
-    if (game_state()->career.flags & CLASS_SUN_DAMAGE) { if (minute >= 360 && minute < 1080) { wait = 1090-minute; } }
-    else if (!reckless) { if (minute >= 1080) { wait = 1440-minute+370; } else if (minute < 360) { wait = 370-minute; } }
+    minute = game_state()->minutes%MINUTES_PER_DAY; wait = 0;
+    if (game_state()->career.flags & CLASS_SUN_DAMAGE) { if (minute >= DAWN_MINUTE && minute < DUSK_MINUTE) { wait = SUN_ARRIVAL_MINUTE-minute; } }
+    else if (!reckless) { if (minute >= DUSK_MINUTE) { wait = MINUTES_PER_DAY-minute+MORNING_ARRIVAL_MINUTE; } else if (minute < DAWN_MINUTE) { wait = MORNING_ARRIVAL_MINUTE-minute; } }
     if (wait) { state_pass_minutes(wait); }
     if (who->health > 0) { who->fatigue = reckless ? fatigue : fatigue_maximum(who->attribute[ATTR_STR],who->attribute[ATTR_END]); }
     progress_rest(); return 1;

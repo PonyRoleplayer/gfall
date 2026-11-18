@@ -1,4 +1,5 @@
 #include "game/dagger/play/travel/actions.h"
+#include "game/dagger/play/character/survival.h"
 #include "game/dagger/play/travel/travel.h"
 #include "game/dagger/play/combat/combat.h"
 #include "game/dagger/play/cheats.h"
@@ -13,7 +14,6 @@
 #include "engine/scene/keep.h"
 
 #define LINK_MARK 0xa2
-#define BIOS_HZ 18.2065f
 typedef struct Link {
     ActionInfo data;
     int active, reverse, begun;

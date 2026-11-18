@@ -21,18 +21,18 @@ void survival_step(const Scene *scene, float seconds)
 
     if (!scene || seconds <= 0 || character_state()->health <= 0) { return; }
     survival = survival_state(); who = character_state(); body = move_body();
-    survival->fraction += seconds*18.2065f;
+    survival->fraction += seconds*BIOS_HZ;
     ticks = df_ifloor(survival->fraction); survival->fraction -= ticks; survival->ticks += ticks;
     if (!scene_water_at(scene,body->feet[0],body->feet[2],&surface,&color) ||
         body->feet[1]+body->eye_now >= surface) {
         survival->breath = 0; survival->last_tick = survival->ticks; return;
     }
     if (who->conditions & COND_WATER_BREATHING) { return; }
-    limit = who->attribute[ATTR_END]/2;
-    if (limit > 50) { limit = 50; }
+    limit = who->attribute[ATTR_END]/BREATH_END_DIV;
+    if (limit > BREATH_MOST) { limit = BREATH_MOST; }
     if (god_mode()) { survival->breath = limit; survival->last_tick = survival->ticks; return; }
     if (!survival->breath) { survival->breath = limit; }
-    if (survival->ticks-survival->last_tick > 18) {
+    if (survival->ticks-survival->last_tick > BREATH_TICKS) {
         survival->last_tick = survival->ticks;
         if (curse_race() != PLAYER_RACE_ARGONIAN || !(survival->ticks & 1)) { survival->breath--; }
     }
@@ -45,23 +45,23 @@ void survival_minutes(int count, int running, int climbing)
     int delta;
     if (god_mode() || game_state()->mode != GAME_WORLD || character_state()->health <= 0) { return; }
     while (count-- > 0) {
-        delta = 11;
+        delta = FATIGUE_MOVE;
         if (move_in_water() && curse_race() != PLAYER_RACE_ARGONIAN) {
-            if (random_range(1,100) > character_state()->skill[SKILL_SWIMMING]) { delta = 44; }
+            if (random_range(1,PERCENT) > character_state()->skill[SKILL_SWIMMING]) { delta = FATIGUE_SWIM_FAIL; }
             skill_use(SKILL_SWIMMING);
         }
-        if (running) { delta = 88; }
-        if (climbing) { delta = 22; }
+        if (running) { delta = FATIGUE_RUN; }
+        if (climbing) { delta = FATIGUE_CLIMB; }
         fatigue_spend(delta);
         if (character_state()->fatigue > 0) { continue; }
         move_camera(&camera);
-        if (dungeon_nearby(&camera,1024)) {
+        if (dungeon_nearby(&camera,ENEMIES_NEAR)) {
             msg_set("You drop to the ground, completely exhausted.");
             damage_player(character_state()->health,-1); return;
         }
         /* Collapse recovery excludes another minute's fatigue and encounters,
          * as original D_001962A4 does while passing this hour. */
-        state_pass_minutes(60); rest_recover();
+        state_pass_minutes(COLLAPSE_MINUTES); rest_recover();
         msg_set("You collapse from exhaustion and recover for an hour.");
         return;
     }

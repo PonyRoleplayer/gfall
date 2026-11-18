@@ -21,8 +21,8 @@
 
 /* The day: MINUTES_PER_DAY minutes, daylight from DAWN_MINUTE to DUSK_MINUTE (06:00 to 18:00). */
 #define MINUTES_PER_DAY 1440u
-#define DAWN_MINUTE 360u
-#define DUSK_MINUTE 1080u
+#define DAWN_MINUTE 360
+#define DUSK_MINUTE 1080
 #define MINUTES_PER_WEEK 10080u
 #define MONTHS 12
 
