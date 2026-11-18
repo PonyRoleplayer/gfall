@@ -73,6 +73,8 @@ typedef struct FsTime {
 void fs_local_time(FsTime *t);
 /* Open or read a file beside the program, as fs_open and fs_read_all do inside the root. */
 FsFile *fs_open_beside(const char *name);
+/* Like fs_open, then, when the game root has no such file, the CD-ROM drives' DAGGER\\ARENA2 and ARENA2 (the original disc): the movies are read from the installation first and from the CD only when the install lacks them. */
+FsFile *fs_open_media(const char *rel);
 df_u8 *fs_read_beside(const char *name, df_u32 *size);
 /*
  * Replace one file beside the program. A file already there is replaced. fs_create opens it,

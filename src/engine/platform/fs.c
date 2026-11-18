@@ -369,6 +369,19 @@ void fs_local_time(FsTime *t)
     t->second = tm.tm_sec;
 }
 
+#include <stdlib.h>
+
+/* Where the original game's CD may be: only for tests, by the environment (GFALL_MEDIA, a folder that holds the movies). */
+static int media_roots(char roots[][FS_PATH], int max)
+{
+    const char *dir;
+
+    dir = getenv("GFALL_MEDIA");
+    if (!dir || max < 1) { return 0; }
+    df_copy(roots[0], dir, FS_PATH);
+    return 1;
+}
+
 #else
 
 #define WINVER 0x0400
@@ -672,6 +685,28 @@ void fs_local_time(FsTime *t)
     t->second = st.wSecond;
 }
 
+/* The CD-ROM drives: the original game's disc keeps its files under DAGGER\ARENA2 (some copies directly under ARENA2). */
+static int media_roots(char roots[][FS_PATH], int max)
+{
+    char drives[128];
+    DWORD n, i;
+    int count;
+
+    n = GetLogicalDriveStringsA(sizeof(drives) - 1, drives);
+    count = 0;
+    for (i = 0; i + 3 <= n && drives[i] && count + 2 <= max; i += 4) {
+        if (GetDriveTypeA(drives + i) == DRIVE_CDROM) {
+            df_copy(roots[count], drives + i, FS_PATH);
+            df_copy(roots[count] + 3, "DAGGER\\ARENA2", FS_PATH - 3);
+            count++;
+            df_copy(roots[count], drives + i, FS_PATH);
+            df_copy(roots[count] + 3, "ARENA2", FS_PATH - 3);
+            count++;
+        }
+    }
+    return count;
+}
+
 #endif
 
 int fs_make_dirs(const char *path)
@@ -762,6 +797,44 @@ FsFile *fs_open_beside(const char *name)
         return 0;
     }
     return open_path(path);
+}
+
+#ifdef DF_HOST
+#define MEDIA_SEP '/'
+#else
+#define MEDIA_SEP '\\'
+#endif
+
+FsFile *fs_open_media(const char *rel)
+{
+    char path[FS_PATH];
+    char roots[8][FS_PATH];
+    FsFile *file;
+    int n, i, len;
+
+    /* A big movie file is read from the installation first (the whole game is meant to be installed). */
+    file = fs_open(rel);
+    if (file || !name_stays(rel)) {
+        return file;
+    }
+    n = media_roots(roots, 8);
+    for (i = 0; i < n; i++) {
+        df_copy(path, roots[i], FS_PATH);
+        for (len = 0; path[len]; len++) {
+        }
+        if (len + 2 >= FS_PATH) {
+            continue;
+        }
+        if (path[len - 1] != '\\' && path[len - 1] != '/') {
+            path[len++] = MEDIA_SEP;
+        }
+        df_copy(path + len, rel, FS_PATH - len);
+        file = open_path(path);
+        if (file) {
+            return file;
+        }
+    }
+    return 0;
 }
 
 static df_u8 *read_whole(FsFile *file, df_u32 *size)

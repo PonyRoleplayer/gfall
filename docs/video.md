@@ -10,5 +10,8 @@ Every movie decodes to its last frame in hostcheck (`check_vid`), with the origi
 ## Where they play (decomp)
 - `ANIM0012`: death. `ANIM0002` and `ANIM0004`: the lycanthropy and vampirism dreams on the first rest. `ANIM0013`: the ghost's farewell (quest op 50 of `S0000015`). Quest op 50 plays `anim%04d.vid`. The intro and Bethesda logo (`intro.c`). The princes' FLC in the summoning.
 
+## Where they are read from
+GFALL assumes a full ("huge") installation: the whole of ARENA2, movies included, on the hard disk. `fs_open_media` (engine/platform/fs.c) opens a movie from the game root first, and only when the install lacks it tries the CD-ROM drives (`X:\\DAGGER\\ARENA2`, then `X:\\ARENA2`: the original disc), by `GetDriveTypeA`. No disc and no file: the movie is skipped. Host tests give the "disc" through `GFALL_MEDIA`. The movies are the only files that fall back to the CD.
+
 ## Playing them (next)
 A frame goes to the card as two P_8 tiles (`pic_update` on a 256x200 and a 64x200 picture) under the movie's palette, drawn scaled to the window; the sound is streamed to the mixer as it is read (resampled from the movie's rate), and the frame clock follows the sound when there is some. Escape skips. No Glide change is needed. Video through a REALmagic card is not planned: the files are not MPEG, and a Voodoo 1's pass-through owns the monitor in a game.

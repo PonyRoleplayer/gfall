@@ -148,7 +148,7 @@ int vid_open(Vid *v, const char *rel)
     df_u8 head[VID_HEADER_BYTES];
 
     mem_zero(v, sizeof(*v));
-    v->file = fs_open(rel);
+    v->file = fs_open_media(rel);
     if (!v->file) { return 0; }
     v->size = fs_size(v->file);
     if (v->size < VID_HEADER_BYTES || !fs_read_at(v->file, 0, head, VID_HEADER_BYTES) || head[0] != 'V' || head[1] != 'I' || head[2] != 'D') {

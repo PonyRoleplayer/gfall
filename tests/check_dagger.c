@@ -3290,6 +3290,20 @@ static void check_vid(void)
         printf("vid: %s %d frames, %d palettes, %.1f s, %lu bytes of sound in %lu chunks\n", names[i], frames, palettes, (double)total_ticks / VID_TICK_HZ, (unsigned long)g_vid_audio, (unsigned long)g_vid_audio_chunks);
         vid_close(&vid);
     }
+    /* The install first, the CD only when the install lacks the movie: a root with no movies and a "disc" that has them. */
+    {
+        char saved[260];
+        Vid cd;
+
+        fs_root(saved, (int)sizeof(saved));
+        fs_set_root("build");
+        check_expect(!vid_open(&cd, "ANIM0012.VID"), "vid: opened from a root that has no movie and no disc");
+        setenv("GFALL_MEDIA", saved, 1);
+        check_expect(vid_open(&cd, "ANIM0012.VID") && vid_next(&cd), "vid: the disc did not supply the movie the install lacks");
+        vid_close(&cd);
+        unsetenv("GFALL_MEDIA");
+        fs_set_root(saved);
+    }
 }
 
 int check_dagger(const char *root_in)
