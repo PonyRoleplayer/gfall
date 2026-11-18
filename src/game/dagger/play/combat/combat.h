@@ -2,6 +2,7 @@
 #define GFALL_COMBAT_H
 
 /* FALL.EXE damage_roll_to_hit / damage_resolve_attack. See docs/game.md. */
+#include "game/dagger/play/watcom.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/tables/items.h"
 
@@ -51,6 +52,10 @@
  * each tried FOE_ATTACK_TRY_BASE percent less FOE_ATTACK_TRY_PER_REFLEX for each point of the player's reflexes above REFLEXES_NORMAL.
  */
 #define PERCENT 100
+/* A body's middle is BODY_MIDDLE above its feet (aim and hit); a creature aims CREATURE_AIM_HEIGHT above the target's feet. Ours; the original aims at the record's point. */
+#define BODY_MIDDLE 40
+#define CREATURE_AIM_HEIGHT 50
+
 #define MELEE_REACH 90
 #define MELEE_ARC 200
 #define MELEE_ARC_SKIP 10
@@ -80,7 +85,6 @@
 #define SOUND_CLAW_HIT_FIRST 380
 #define SOUND_CLAW_MISS 374
 #define SOUND_DEATH 17
-#define RAND_MAX_WATCOM 32767
 
 typedef struct FighterInfo {
     int race, level, health, maximum, flags, metal, armor[BODY_PARTS];

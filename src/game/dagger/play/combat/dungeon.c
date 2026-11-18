@@ -138,7 +138,7 @@ void dungeon_shift(float dx, float dz)
 }
 void dungeon_variant(int i, int type)
 {
-    if (i >= 0 && i < g_count && type >= 0 && type < 60) {
+    if (i >= 0 && i < g_count && type >= 0 && type < FOE_TYPES) {
         g_foe[i].type = type; g_foe[i].script = foe_type_script(type);
     }
 }
@@ -154,12 +154,12 @@ int dungeon_nearby(const Camera *cam, float reach)
     for (i = 0; i < g_count; i++) {
         e = g_foe[i].entity;
         if (!e->live || e->dead || g_foe[i].passive || g_foe[i].team == TEAM_PLAYER) { continue; }
-        dx = e->x-cam->x; dy = e->y+40-cam->y; dz = e->z-cam->z;
+        dx = e->x-cam->x; dy = e->y+BODY_MIDDLE-cam->y; dz = e->z-cam->z;
         if (dx*dx+dy*dy+dz*dz >= reach*reach) { continue; }
         /* A sleeper behind a wall does not keep the player from resting; the original counts the creatures round the player, which is every one in the cells loaded. */
         if (!g_foe[i].awake && g_scene) {
             float from[3], to[3];
-            from[0] = e->x; from[1] = e->y+40; from[2] = e->z;
+            from[0] = e->x; from[1] = e->y+BODY_MIDDLE; from[2] = e->z;
             to[0] = cam->x; to[1] = cam->y; to[2] = cam->z;
             if (!visible(g_scene,from,to)) { continue; }
         }
@@ -224,7 +224,7 @@ int dungeon_add(Entity *entity, int kind, int passive, int rate)
     if (index == FOE_ACTORS) { return -1; }
     if (index == g_count) { g_count++; }
     f = &g_foe[index]; mem_zero(f,sizeof(*f)); f->entity = entity;
-    f->kind = kind; f->passive = passive; f->rate = rate > 0 ? rate : 100;
+    f->kind = kind; f->passive = passive; f->rate = rate > 0 ? rate : FOE_RATE_NORMAL;
     f->target = TARGET_NONE; f->team = TEAM_HOSTILE;
     f->script = foe_script(f->kind);
     f->type = foe_texture_kind(f->kind);
@@ -285,7 +285,7 @@ void dungeon_open(const Scene *scene, const int *kinds, const int *passive, cons
     mem_zero(g_foe,sizeof(g_foe));
     for (i = 0; scene && i < scene->nentities && i < FOES; i++) {
         dungeon_add((Entity *)&scene->entities[i],kinds ? kinds[i] : 0,
-                       passive ? passive[i] : 0,rates ? rates[i] : 100);
+                       passive ? passive[i] : 0,rates ? rates[i] : FOE_RATE_NORMAL);
     }
 }
 
@@ -678,7 +678,7 @@ static void arrows_step(const Scene *scene, const Camera *cam, float dt)
                 dx = cam->x-a->at[0]; dy = chest(cam)-a->at[1]; dz = cam->z-a->at[2]; r = 30;
             } else {
                 e = g_foe[j].entity; if (e->dead || !e->live || dungeon_team(j) == dungeon_team(a->source)) { continue; }
-                dx = e->x-a->at[0]; dy = e->y+40-a->at[1]; dz = e->z-a->at[2];
+                dx = e->x-a->at[0]; dy = e->y+BODY_MIDDLE-a->at[1]; dz = e->z-a->at[2];
                 r = e->radius > 20 ? e->radius : 20; r += 20;
             }
             along = dx*a->direction[0]+dy*a->direction[1]+dz*a->direction[2];
@@ -748,7 +748,7 @@ static void target_point(const Camera *cam, int target, float point[3])
 
     entity = dungeon_entity(target);
     point[0] = entity ? entity->x : cam->x;
-    point[1] = entity ? entity->y+40 : chest(cam);
+    point[1] = entity ? entity->y+BODY_MIDDLE : chest(cam);
     point[2] = entity ? entity->z : cam->z;
 }
 

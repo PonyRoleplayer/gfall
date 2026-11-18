@@ -113,8 +113,7 @@ df_u32 item_create(df_u32 parent, int group, int index, int metal)
         item->message = book_id(i);
         if (book_title(item->message,item->name,sizeof(item->name),&seed)) {
             /* item_init_book seeds rand from the title, then restores it. */
-            seed = seed * 1103515245u + 12345u;
-            item->value = BOOK_VALUE_MIN + (int)(((seed >> 16) & 0x7fffu) % BOOK_VALUE_SPREAD);
+            item->value = BOOK_VALUE_MIN + (int)(watcom_next(&seed) % BOOK_VALUE_SPREAD);
         }
     }
     if (group == ITEM_GROUP_PAINTING) { item->message = random_range(0,RAND_MAX_WATCOM); }
@@ -229,16 +228,16 @@ static int forbidden(const ObjectInfo *item)
                (career->forbidden_materials & (1 << item->material));
     }
     if (item->group != ITEM_GROUP_ARMOR) { return 0; }
-    bits = item->index >= 7 ? 1 << (item->index + 2) : 1 << (item->armor_type + 6);
+    bits = item->index >= ARMOR_SHIELD_FIRST ? 1 << (item->index + FORBID_SHIELD_SHIFT) : 1 << (item->armor_type + FORBID_ARMOR_TYPE_SHIFT);
     return (career->forbidden_equipment & bits) ||
-           (item->armor_type == 2 && (career->forbidden_materials & (1 << item->material)));
+           (item->armor_type == ARMOR_PLATE && (career->forbidden_materials & (1 << item->material)));
 }
 
 static int equip_sound(const ObjectInfo *item)
 {
     if (item->group == ITEM_GROUP_WEAPON) { return weapon_sound(item->index); }
     if (item->group == ITEM_GROUP_ARMOR) {
-        if (item->index == 1 || (item->index >= 5 && item->index != 6)) { return SOUND_EQUIP_METAL; }
+        if (item->index == ARMOR_GAUNTLETS || (item->index >= ARMOR_HELM && item->index != ARMOR_BOOTS)) { return SOUND_EQUIP_METAL; }
         return item->armor_type+SOUND_EQUIP_ARMOR;
     }
     if (item->group == ITEM_GROUP_MENS_CLOTHING || item->group == ITEM_GROUP_WOMENS_CLOTHING) { return SOUND_EQUIP_CLOTHES; }
@@ -327,7 +326,7 @@ int inventory_armor(int part)
     value = 0;
     if (item && item->group == ITEM_GROUP_ARMOR) {
         value = armor_base(item->armor_type);
-        if (item->armor_type == 2) { value += material_hit(item->material); }
+        if (item->armor_type == ARMOR_PLATE) { value += material_hit(item->material); }
     }
     shield = object_at(game_state()->equipped[EQUIP_LEFT_HAND]);
     if (shield && shield->group == ITEM_GROUP_ARMOR && shield_covers(shield->index,part)) { value += (shield->index-SHIELD_INDEX_BASE)*SHIELD_ARMOR_PER_SIZE; }
@@ -351,7 +350,7 @@ void inventory_start_spells(df_u32 book)
 {
     int klass, i, spell;
     klass = character_state()->klass;
-    if (klass == 18) {
+    if (klass == CLASS_CUSTOM) {
         const ClassInfo *career;
         int skills[12], n;
         career = &game_state()->career;
@@ -434,7 +433,7 @@ static void roll_loot(df_u32 container, int index)
         chance = table[category] * (category <= LOOT_LEVEL_LAST ? level : 1);
         if (random_range(0, RAND_MAX_WATCOM) % PERCENT > chance) { continue; }
         group = loot_group(category);
-        if (group == LOOT_CLOTHING) { group = character_state()->female ? 12 : 6; }
+        if (group == LOOT_CLOTHING) { group = character_state()->female ? ITEM_GROUP_WOMENS_CLOTHING : ITEM_GROUP_MENS_CLOTHING; }
         /* MAGIC.DEF and enchantment records are a later rules slice. Never
          * substitute a mundane weapon for a magic item. */
         if (group == ITEM_GROUP_MAGIC_ITEM) { continue; }
@@ -476,7 +475,7 @@ df_u32 loot_container(df_u32 place, df_u32 thing, float x, float y, float z, int
     container->thing_key = thing;
     container->x = x; container->y = y; container->z = z;
     if (table >= 0) {
-        for (i = 0; i < 32 && !inventory_rows(id,-1,0,0); i++) { roll_loot(id, table); }
+        for (i = 0; i < LOOT_FILL_TRIES && !inventory_rows(id,-1,0,0); i++) { roll_loot(id, table); }
     }
     return id;
 }
@@ -528,8 +527,8 @@ int inventory_upgrade(GameState *state)
         init_item(item, def);
         if (item->group == ITEM_GROUP_WEAPON && item->index != WEAPON_ARROW) { set_metal(item, item->material); }
         if (item->group == ITEM_GROUP_ARMOR || item->group == ITEM_GROUP_MENS_CLOTHING || item->group == ITEM_GROUP_WOMENS_CLOTHING) {
-            if (item->group == ITEM_GROUP_ARMOR && !state->who.female) { item->inventory_image += 4 * 128; }
-            item->inventory_image += body_shape(state->who.race) * 128;
+            if (item->group == ITEM_GROUP_ARMOR && !state->who.female) { item->inventory_image += ARMOR_MALE_OFFSET * IMAGE_ARCHIVE_STRIDE; }
+            item->inventory_image += body_shape(state->who.race) * IMAGE_ARCHIVE_STRIDE;
         }
     }
     state->version = STATE_VERSION;

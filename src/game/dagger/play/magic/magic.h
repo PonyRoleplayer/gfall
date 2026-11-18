@@ -56,9 +56,6 @@ enum { SPELL_COST_DURATION_CHANCE = 1, SPELL_COST_DURATION_MAGNITUDE, SPELL_COST
 #define AREA_BASE 64
 #define AREA_MUL 3
 #define AREA_KNOCKBACK_MUL 30
-/* A body's middle is BODY_MIDDLE above its feet (aim and hit); a creature aims CREATURE_AIM_HEIGHT above the target's feet. Ours; the original aims at the record's point. */
-#define BODY_MIDDLE 40
-#define CREATURE_AIM_HEIGHT 50
 /* The missile's and the burst's sprite sizes and rate (ours), the cast light's place (ahead, down). */
 #define MISSILE_SIZE 48
 #define BURST_SIZE 128

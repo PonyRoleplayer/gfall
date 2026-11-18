@@ -309,10 +309,10 @@ static void screen_keys(const PlayIn *in)
     if (was == UI_MAP && chargen_mode() == UI_RACE) {
         race = character_state()->race;
         if (race >= 0 && race < 8) {
-            play_sound(race + 209);
+            play_sound(SND_RACE_VOICE + race);
         }
     }
-    if (was == UI_CLASS_LIST && chargen_mode() == UI_CLASS_YES) { play_sound(217); }
+    if (was == UI_CLASS_LIST && chargen_mode() == UI_CLASS_YES) { play_sound(SND_CLASS_CONFIRM); }
 }
 
 /* Position within one ninth's row or column; the last cell has spare pixels. */

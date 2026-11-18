@@ -433,7 +433,7 @@ static void lycanthrope_tick(void)
         if (who->health > new_max) { who->health = new_max; }
     }
     if (c->form <= CURSE_FORM_VAMPIRE) {
-        day = (int)(game_state()->minutes / 1440u);
+        day = (int)(game_state()->minutes / MINUTES_PER_DAY);
         if (day % MOON_PERIOD == 0 || (day + MOON_GAP) % MOON_PERIOD == 0) {
             msg_set("You dream, once again, of the moon...");
             curse_shapechange(1);

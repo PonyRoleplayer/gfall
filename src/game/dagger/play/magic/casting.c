@@ -1,4 +1,5 @@
 #include "game/dagger/play/magic/magic.h"
+#include "game/dagger/play/combat/combat.h"
 #include "game/dagger/play/character/survival.h"
 #include "game/dagger/tables/magic.h"
 #include "game/dagger/play/combat/dungeon.h"

@@ -91,7 +91,7 @@ df_u32 spell_create(df_u32 book, int definition)
     int count, i;
     def = spell_def(definition);
     parent = object_at(book);
-    if (!def || !parent || parent->type != RECORD_ITEM || parent->group != 27 || parent->index != 0) { return 0; }
+    if (!def || !parent || parent->type != RECORD_ITEM || parent->group != ITEM_GROUP_MISC || parent->index != MISC_SPELLBOOK) { return 0; }
     count = spell_rows(book,rows,OBJECTS);
     if (count >= 128) { return 0; }
     id = object_new(RECORD_SPELL,book,definition,100);

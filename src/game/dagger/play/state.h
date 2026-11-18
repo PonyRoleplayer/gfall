@@ -54,9 +54,7 @@ enum {
 /* The records that are people: a person flat and a walking townsperson (spfx.c, talk.c). */
 #define RECORD_PERSON 8
 #define RECORD_PEDESTRIAN 53
-/* Watcom's rand, code at 0x9DC25: seed * MUL + ADD, the high word's low 15 bits; one stream for creation and play. */
-#define WATCOM_RAND_MUL 1103515245u
-#define WATCOM_RAND_ADD 12345u
+#include "game/dagger/play/watcom.h"
 /* A skill's uses stop here (skill_add_uses). */
 #define SKILL_USES_MOST 20000
 /* object_new_id: the low word of an id runs OBJECT_ID_FIRST up to OBJECT_ID_END and wraps; the high word is the place. */

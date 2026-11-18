@@ -567,7 +567,7 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
         break;
     case QOP_DAY_RANGE:
         /* The day of the world in a range (no file uses it). */
-        quest_arg_set(q, op, 0, (int)(game_state()->minutes / 1440u) >= op->arg[1].value && (int)(game_state()->minutes / 1440u) <= op->arg[2].value);
+        quest_arg_set(q, op, 0, (int)(game_state()->minutes / MINUTES_PER_DAY) >= op->arg[1].value && (int)(game_state()->minutes / MINUTES_PER_DAY) <= op->arg[2].value);
         break;
     case QOP_LOG_SET:
         /* Once: entry `index` of the quest's log is the message. */

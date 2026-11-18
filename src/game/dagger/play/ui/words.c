@@ -1,3 +1,4 @@
+#include "game/dagger/play/watcom.h"
 #include "game/dagger/play/ui/words.h"
 #include "game/dagger/formats/textrsc.h"
 #include "game/dagger/tables/careers.h"
@@ -49,8 +50,7 @@ static int words_roll(int n)
 {
     if (n <= 1) { return 0; }
     if (g_roll) { return g_roll(n); }
-    g_dice = g_dice * 1103515245u + 12345u;
-    return (int)((g_dice >> 16) % (df_u32)n);
+    return (int)(watcom_next(&g_dice) % (df_u32)n);
 }
 
 /* A record chosen and filled in, as a macro's text. */

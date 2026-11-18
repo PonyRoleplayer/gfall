@@ -28,8 +28,8 @@ int ai_stealth(int detected, int distance, int encountered)
 
 /* The reseed hash of a marker's roll (ours). */
 #define PACIFY_SEED_MIX 0x9e3779b9u
-#define PACIFY_SEED_MUL 1103515245u
-#define PACIFY_SEED_ADD 12345u
+#define PACIFY_SEED_MUL WATCOM_RAND_MUL
+#define PACIFY_SEED_ADD WATCOM_RAND_ADD
 
 /* monster_pacify_check: a drawn weapon sets the base to -25. Only
  * creatures with a language train that skill, even when the roll fails. */

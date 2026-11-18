@@ -79,7 +79,7 @@ void foe_equipment(int kind, df_u32 container, df_u32 *slots, FighterInfo *fight
         armor = ARMOR_BASE; item = object_at(slots[armor_slot(part)]);
         if (item && item->group == 2) {
             armor -= armor_base(item->armor_type);
-            if (item->armor_type == 2) { armor -= material_hit(item->material); }
+            if (item->armor_type == ARMOR_PLATE) { armor -= material_hit(item->material); }
         }
         if (shield && shield->group == 2 && shield_covers(shield->index,part)) { armor -= (shield->index-(ARMOR_SHIELD_FIRST-1))*SHIELD_ARMOR_STEP; }
         fighter->armor[part] = armor > FOE_ARMOR_BARE_OVER ? FOE_ARMOR_BARE : armor < -ARMOR_LIMIT ? -ARMOR_LIMIT : armor;

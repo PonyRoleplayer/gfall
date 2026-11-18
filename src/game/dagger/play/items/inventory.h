@@ -30,6 +30,9 @@
 #define LOOT_LEVEL_LAST 5
 #define LOOT_CLOTHING 255
 #define LOOT_FILL_TRIES 32
+/* A class forbids armour by bit: a shield (index from ARMOR_SHIELD_FIRST) at FORBID_SHIELD_SHIFT + its index, a body piece at FORBID_ARMOR_TYPE_SHIFT + its type. A cuirass-style piece sounds metal when put on: the gauntlets (index 1) and from the helm up, but not the boots (equip sound). */
+#define FORBID_SHIELD_SHIFT 2
+#define FORBID_ARMOR_TYPE_SHIFT 6
 
 df_u32 item_create(df_u32 parent, int group, int index, int material);
 void item_name(const ObjectInfo *item, char *out, int capacity);

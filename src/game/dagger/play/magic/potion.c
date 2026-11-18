@@ -546,7 +546,7 @@ int recipe_of(df_u32 item)
     const ObjectInfo *o;
 
     o = object_at(item);
-    if (!o || o->type != RECORD_ITEM || o->group != 27 || o->index != 4 || o->message < 1 || o->message > RECIPES) {
+    if (!o || o->type != RECORD_ITEM || o->group != ITEM_GROUP_MISC || o->index != MISC_RECIPE || o->message < 1 || o->message > RECIPES) {
         return -1;
     }
     return o->message - 1;

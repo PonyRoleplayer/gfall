@@ -1,3 +1,4 @@
+#include "game/dagger/play/watcom.h"
 #include "game/dagger/play/items/describe.h"
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/magic/spellbook.h"
@@ -172,8 +173,7 @@ void spell_help(df_u32 id, int effect, char *out, int capacity)
  * the world simulation or retaining the original shared scratch globals. */
 static unsigned lore_random(df_u32 *seed)
 {
-    *seed = *seed*1103515245u+12345u;
-    return (*seed >> 16) & 32767;
+    return watcom_next(seed);
 }
 static void append(char *out, int cap, const char *text)
 {

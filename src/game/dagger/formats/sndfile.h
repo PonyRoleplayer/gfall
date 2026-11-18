@@ -31,6 +31,9 @@
 #define SND_WIND_BLOW_B 72
 #define SND_MONSTER_ROAR 73
 /* The coins of a settled trade (trade_settle_offer), at volume 100, and the dialog click. */
+/* Character creation: a race's voice is SND_RACE_VOICE + its number; confirming the class. */
+#define SND_RACE_VOICE 209
+#define SND_CLASS_CONFIRM 217
 #define SND_COINS 204
 #define SND_CLICK 203
 #define SND_GOLD 74

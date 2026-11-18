@@ -11,7 +11,7 @@ int maps_open(int travel)
 {
     if (g_open || !game_state()->ready || character_state()->health <= 0 || !g_hooks.open) { return 0; }
     /* travel_map_open: a vampire, or a class hurt by sunlight, cannot start a fast travel by day (a teleport is not one). */
-    if (travel && travel != 100 && (curse_form() == CURSE_FORM_VAMPIRE || (game_state()->career.flags & CLASS_SUN_DAMAGE)) && game_state()->minutes % 1440u >= 360u && game_state()->minutes % 1440u < 1080u) {
+    if (travel && travel != 100 && (curse_form() == CURSE_FORM_VAMPIRE || (game_state()->career.flags & CLASS_SUN_DAMAGE)) && game_state()->minutes % MINUTES_PER_DAY >= DAWN_MINUTE && game_state()->minutes % MINUTES_PER_DAY < DUSK_MINUTE) {
         msg_set("You cannot initiate fast travel during the day."); return 0;
     }
     if (!g_hooks.open(travel)) { msg_set(travel ? "You must be outside to travel." : "No map is available here."); return 0; }

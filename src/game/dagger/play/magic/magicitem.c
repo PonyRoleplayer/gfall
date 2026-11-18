@@ -125,7 +125,7 @@ static int pick_base_kind(int group)
         kind = g_magic_kind1[random_range(0, (int)sizeof(g_magic_kind1) - 1)];
     }
     if (kind == 12 || kind == 6) {
-        kind = character_state()->female ? 12 : 6;
+        kind = character_state()->female ? ITEM_GROUP_WOMENS_CLOTHING : ITEM_GROUP_MENS_CLOTHING;
     }
     return kind;
 }

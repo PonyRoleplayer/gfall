@@ -1,5 +1,6 @@
 #include "game/dagger/play/state.h"
 #include "game/dagger/tables/itemdefs.h"
+#include "game/dagger/tables/careers.h"
 #include "game/dagger/tables/enemies.h"
 #include "engine/core/mem.h"
 #include "game/dagger/play/items/inventory.h"
@@ -139,6 +140,12 @@ void random_seed(df_u32 seed)
     g_state.random = seed;
 }
 
+unsigned watcom_next(df_u32 *seed)
+{
+    *seed = *seed * WATCOM_RAND_MUL + WATCOM_RAND_ADD;
+    return (*seed >> 16) & (df_u32)RAND_MAX_WATCOM;
+}
+
 int random_range(int low, int high)
 {
     if (high < low || ((df_u32)high - (df_u32)low + 1u) == 0) {
@@ -146,9 +153,7 @@ int random_range(int low, int high)
     }
     /* Watcom rand at code VA 0009DC25, verified against FALL.EXE bytes.
      * Seed zero is valid. One stream is shared by creation and gameplay. */
-    g_state.random = g_state.random * WATCOM_RAND_MUL + WATCOM_RAND_ADD;
-    return low + (int)(((g_state.random >> 16) & RAND_MAX_WATCOM) %
-                        ((df_u32)high - (df_u32)low + 1u));
+    return low + (int)(watcom_next(&g_state.random) % ((df_u32)high - (df_u32)low + 1u));
 }
 
 static int object_slot(const GameState *s, df_u32 id)
@@ -811,7 +816,7 @@ int state_restore(const GameState *snapshot)
     /* The quests come back by reading their files again; bytes that cannot be read leave none running. */
     (void)quest_unpack(g_state.quest_blob, g_state.quest_len);
     spells_sync_custom(&g_state);
-    if (g_state.who.klass == 18) {
+    if (g_state.who.klass == CLASS_CUSTOM) {
         class_set(18, &g_state.career);
     }
     state_calendar();

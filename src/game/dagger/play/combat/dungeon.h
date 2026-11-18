@@ -18,6 +18,9 @@
 #define FOE_REACH_FOE 60
 #define FOE_RANGED_REACH_MUL 4
 #define FOE_ATTACK_ARC 128
+/* A creature's picture types are 0..FOE_TYPES - 1 (dungeon_variant); its speed rate is a percent, FOE_RATE_NORMAL unless a place gives one. */
+#define FOE_TYPES 60
+#define FOE_RATE_NORMAL 100
 #define FOE_ACTIVE_RANGE 2048
 #define FOE_VOICE_RANGE 1024
 #define FOE_VOICE_NEAR 128

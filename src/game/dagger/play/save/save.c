@@ -674,7 +674,7 @@ int save_read(int slot)
             const ObjectInfo *item;
             item = &game_state()->object[i];
             if (!item->id || item->type != RECORD_ITEM || item->parent != game_state()->inventory_id) { continue; }
-            if (item->group == 27 && item->index == 0) { inventory_start_spells(item->id); }
+            if (item->group == ITEM_GROUP_MISC && item->index == MISC_SPELLBOOK) { inventory_start_spells(item->id); }
             else if (item->group == 6 || item->group == 12) { inventory_equip(item->id); }
         }
     }

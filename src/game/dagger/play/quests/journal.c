@@ -65,7 +65,7 @@ static int symbol_text(int slot, df_i32 hash, int form, df_i32 hash2, char *out,
             delay = q->timer[i].delay;
             /* _a`b_: the second timer's delay is added to the first's. */
             for (i = 0; hash2 && i < q->qbn.n_timer; i++) { if (q->qbn.timer[i].hash == hash2) { delay += q->timer[i].delay; } }
-            return form == 0 ? log_format(out, cap, "%d", (int)delay) : log_format(out, cap, "%d", (int)((delay + 1439u) / 1440u));
+            return form == 0 ? log_format(out, cap, "%d", (int)delay) : log_format(out, cap, "%d", (int)((delay + MINUTES_PER_DAY - 1u) / MINUTES_PER_DAY));
         }
     }
     return 0;
@@ -221,7 +221,7 @@ void quest_rumour_add(int slot, int message, int target, int flags)
     r = &quest_runtime.rumours[i];
     mem_zero(r, sizeof(*r));
     r->used = 1; r->quest_id = quest_runtime.slots[slot].qbn.id; r->message = message; r->flags = flags; r->target = target;
-    r->expires = game_state()->minutes + (flags & 2 ? 180u : 30u) * 1440u;
+    r->expires = game_state()->minutes + (flags & 2 ? 180u : 30u) * MINUTES_PER_DAY;
     log_format(r->name, sizeof(r->name), "%s", quest_runtime.slots[slot].qbn.name);
     log_format(r->text, sizeof(r->text), "%s", said);
 }
