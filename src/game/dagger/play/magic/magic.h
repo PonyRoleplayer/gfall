@@ -18,6 +18,42 @@ int effect_cost_raw(int group, const df_i16 *c, const int *d, const int *ch, con
  * cold and a Breton against magic gain RESIST_RACIAL, and it is held to RESIST_MIN..RESIST_MAX. A roll over the chance is the full effect; one that is more than RESIST_NONE_BAND under it, none; between
  * them the effect is the margin times RESIST_PARTIAL_STEP percent.
  */
+/* The cast animation is CAST_FRAMES frames at BIOS_HZ, done after CAST_TICKS ticks. */
+#define CAST_FRAMES 6
+#define CAST_TICKS 7
+/* spell_area_effect: an area's radius is AREA_STRIKE_RADIUS for a strike (icon ICON_STRIKE and up), else level * AREA_PER_LEVEL + AREA_BASE, times AREA_MUL. The original also knocks back each creature caught by radius * AREA_KNOCKBACK_MUL (not built). */
+#define ICON_STRIKE 250
+#define AREA_STRIKE_RADIUS 168
+#define AREA_PER_LEVEL 4
+#define AREA_BASE 64
+#define AREA_MUL 3
+#define AREA_KNOCKBACK_MUL 30
+/* A body's middle is BODY_MIDDLE above its feet (aim and hit); a creature aims CREATURE_AIM_HEIGHT above the target's feet. Ours; the original aims at the record's point. */
+#define BODY_MIDDLE 40
+#define CREATURE_AIM_HEIGHT 50
+/* The missile's and the burst's sprite sizes and rate (ours), the cast light's place (ahead, down). */
+#define MISSILE_SIZE 48
+#define BURST_SIZE 128
+#define MISSILE_RATE 12
+#define MISSILE_DROP 24
+#define CAST_LIGHT_AHEAD 192
+#define CAST_LIGHT_DOWN 18
+/* spell_missile_update (func_0005C448.c): a missile flies MISSILE_SPEED a second, is launched MISSILE_LAUNCH ahead, bursts at MISSILE_RANGE from the player, hits a body within MISSILE_HIT_RADIUS and bursts for BURST_MS ms;. */
+#define MISSILE_SPEED 400.0f
+#define MISSILE_LAUNCH 110.0f
+#define MISSILE_RANGE 2048
+#define MISSILE_HIT_RADIUS 60
+#define BURST_MS 600
+/* The touch target: within TOUCH_REACH, TOUCH_ACROSS off the aim. */
+#define TOUCH_REACH 160
+#define TOUCH_ACROSS 60
+/* A creature casts at range when farther than CAST_RANGED_REACH_MUL times its reach (a body 60, the player 90) and CAST_RANGED_MIN, nearer than CAST_RANGED_MAX, one frame in CAST_RANGED_ODDS (equip.c:966..983). */
+#define CREATURE_REACH_BODY 60
+#define CREATURE_REACH_PLAYER 90
+#define CAST_RANGED_REACH_MUL 4
+#define CAST_RANGED_MIN 256
+#define CAST_RANGED_MAX 2048
+#define CAST_RANGED_ODDS 40
 #define RESIST_FULL 100
 #define RESIST_BASE 50
 #define RESIST_RACIAL 30

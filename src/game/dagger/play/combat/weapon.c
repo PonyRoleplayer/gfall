@@ -11,6 +11,7 @@
 #include "game/dagger/play/cheats.h"
 #include "game/dagger/tables/combatdefs.h"
 #include "engine/core/mem.h"
+#include "game/dagger/play/input/move.h"
 
 static WeaponView g_view;
 static df_u32 g_item;
@@ -18,8 +19,8 @@ static int g_hand, g_step, g_sector, g_bow;
 static float g_time, g_reload;
 static void (*g_draw)(const WeaponView *, float);
 
-int weapon_delay(int speed) { int n; n = (115-speed)*3; return n < 1 ? 1 : n; }
-int bow_delay(int speed) { int n; n = (100-speed)*10+1000; return n < 200 ? 200 : n; }
+int weapon_delay(int speed) { int n; n = (SWING_SPEED_BASE-speed)*SWING_FRAME_MS; return n < 1 ? 1 : n; }
+int bow_delay(int speed) { int n; n = (BOW_RELOAD_SPEED_BASE-speed)*BOW_RELOAD_PER_SPD+BOW_RELOAD_BASE; return n < BOW_RELOAD_FLOOR ? BOW_RELOAD_FLOOR : n; }
 int weapon_hand(void) { return g_hand; }
 const WeaponView *weapon_view(void) { return &g_view; }
 void weapon_set_draw(void (*draw)(const WeaponView *, float)) { g_draw = draw; }
@@ -54,8 +55,8 @@ int weapon_sector(int dx, int dy)
 {
     int angle;
     /* XnGine angle 0 points down the screen; clockwise motion has positive X. */
-    angle = (int)(df_atan2((float)dx,(float)dy)*2048/DF_TAU);
-    return (angle & 2047) >> 7;
+    angle = (int)(df_atan2((float)dx,(float)dy)*ANGLE_FULL/DF_TAU);
+    return (angle & (ANGLE_FULL - 1)) >> SWING_SECTOR_SHIFT;
 }
 
 int arrow_count(void)
@@ -93,7 +94,7 @@ static void strike_at(StrikeInfo *s)
     curse_attack_sound();
     s->hit = g_bow ? 0 : swing_hit(g_sector);
     s->damage = g_bow ? 0 : swing_damage(g_sector);
-    fatigue_spend(11);
+    fatigue_spend(FATIGUE_PER_BLOW);
 }
 
 void weapon_frame(const PlayIn *in, int blocked, StrikeInfo *strike)
@@ -111,7 +112,7 @@ void weapon_frame(const PlayIn *in, int blocked, StrikeInfo *strike)
     bow = item && (item->index == WEAPON_SHORT_BOW || item->index == WEAPON_LONG_BOW);
     if (id != g_item || bow != g_bow) { weapon_cancel(); g_item = id; g_bow = bow; }
     /* A beast fights with claws (WEAPON11.CIF, the fists are 10): its hands were emptied when it changed. */
-    g_view.cif = curse_beast() ? 11 : weapon_cif(item ? item->index : -1);
+    g_view.cif = curse_beast() ? CIF_FISTS_BEAST : weapon_cif(item ? item->index : -1);
     g_view.enchanted = item && !bow && item_enchanted(id);
     g_view.material = item ? item->material : 0; g_view.hand = g_hand;
     g_view.color = item ? item->color : 0;
@@ -126,15 +127,16 @@ void weapon_frame(const PlayIn *in, int blocked, StrikeInfo *strike)
         }
         if (g_step < 0) { g_step = 0; g_time = 0; }
         g_time += in->dt;
-        if (g_step == 3) {
+        if (g_step == BOW_FRAME_WAIT) {
             if (!blocked && (in->pressed[SWING_BUTTON] || (in->mouse_pressed & 2))) {
-                play_sound(6); g_step = 4; g_time = 0;
+                play_sound(SND_BOW); g_step = BOW_FRAME_WAIT + 1; g_time = 0;
             }
-        } else if (g_time >= 1.0f/60) {
+        } else if (g_time >= BOW_FRAME_SECONDS) {
             g_time = 0; g_step++;
-            if (g_step == 5 && arrow_take()) { strike_at(strike); }
-            if (g_step >= 7) {
-                g_reload = (float)bow_delay(character_state()->attribute[ATTR_SPD])/1000;
+            if (g_step == BOW_FRAME_SHOOT && arrow_take()) { strike_at(strike); }
+            if (g_step >= BOW_FRAME_END) {
+                /* The original counts the reload down to BOW_RELOAD_FLOOR, so the wait is the counter less that: 200 ms shorter than the whole. */
+                g_reload = (float)(bow_delay(character_state()->attribute[ATTR_SPD]) - BOW_RELOAD_FLOOR)/1000;
                 g_step = -1; g_view.visible = 0; return;
             }
         }
@@ -144,10 +146,10 @@ void weapon_frame(const PlayIn *in, int blocked, StrikeInfo *strike)
     if (g_step < 0) {
         g_view.group = 0; g_view.frame = 0;
         if (!held) { return; }
-        dx = in->mouse_dx*320/df_view_w(); dy = in->mouse_dy*320/df_view_w();
+        dx = in->mouse_dx*CLASSIC_WIDTH/df_view_w(); dy = in->mouse_dy*CLASSIC_WIDTH/df_view_w();
         motion = dx < 0 ? -dx : dx; small = dy < 0 ? -dy : dy;
         if (small > motion) { frame = small; small = motion; motion = frame; }
-        if (motion+small/2 < 45) { return; }
+        if (motion+small/2 < SWING_MOTION_MIN) { return; }
         g_sector = weapon_sector(dx,dy);
         g_step = 0; g_time = 0;
     }
@@ -159,8 +161,8 @@ void weapon_frame(const PlayIn *in, int blocked, StrikeInfo *strike)
     g_time += in->dt;
     while (g_time >= delay && g_step >= 0) {
         g_time -= delay; g_step++;
-        if (g_step == ((!g_item && swing_group(g_sector) == 2) ? 4 : 2)) { strike_at(strike); }
-        if (g_step >= ((!g_item && swing_group(g_sector) == 2) ? 8 : 5)) {
+        if (g_step == ((!g_item && swing_group(g_sector) == 2) ? KICK_STRIKE_FRAME : SWING_STRIKE_FRAME)) { strike_at(strike); }
+        if (g_step >= ((!g_item && swing_group(g_sector) == 2) ? KICK_END_FRAME : SWING_END_FRAME)) {
             g_step = -1;
         }
     }

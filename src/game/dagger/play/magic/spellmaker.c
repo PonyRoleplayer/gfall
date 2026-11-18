@@ -1,3 +1,4 @@
+#include "game/dagger/tables/magic.h"
 #include "game/dagger/play/magic/spellmaker.h"
 #include "game/dagger/play/magic/spellbook.h"
 #include "game/dagger/play/magic/magic.h"
@@ -14,12 +15,12 @@ static Maker g;
 
 const Maker *maker_state(void) { return &g; }
 
-static int type_of(int slot) { return g.spell[slot * 2]; }
-static int sub_of(int slot) { return g.spell[slot * 2 + 1]; }
-static int cost_of(int slot) { return (short)(g.spell[8 + slot * 2] | (g.spell[9 + slot * 2] << 8)); }
+static int type_of(int slot) { return g.spell[SPELL_TYPE_AT + slot * 2]; }
+static int sub_of(int slot) { return g.spell[SPELL_TYPE_AT + slot * 2 + 1]; }
+static int cost_of(int slot) { return (short)(g.spell[SPELL_COST_AT + slot * 2] | (g.spell[SPELL_COST_AT + 1 + slot * 2] << 8)); }
 static void store_cost(int slot, int value)
 {
-    g.spell[8 + slot * 2] = (df_u8)(value & 255); g.spell[9 + slot * 2] = (df_u8)((value >> 8) & 255);
+    g.spell[SPELL_COST_AT + slot * 2] = (df_u8)(value & 255); g.spell[SPELL_COST_AT + 1 + slot * 2] = (df_u8)((value >> 8) & 255);
 }
 
 void maker_new(void)
@@ -27,10 +28,10 @@ void maker_new(void)
     int k;
 
     mem_zero(&g, sizeof(g));
-    for (k = 0; k < 89; k++) { g.spell[k] = 1; }
+    for (k = 0; k < SPELL_RECORD; k++) { g.spell[k] = 1; }
     for (k = MAKER_NAME_AT; k < MAKER_NAME_AT + 24; k++) { g.spell[k] = 0; }
-    g.spell[7] = 0; g.spell[6] = 4;
-    for (k = 0; k < 6; k++) { g.spell[k] = 255; }
+    g.spell[SPELL_TARGET_AT] = 0; g.spell[SPELL_ELEMENT_AT] = ELEMENT_MAGIC;
+    for (k = 0; k < 6; k++) { g.spell[k] = MAGIC_EFFECT_NONE; }
     for (k = 8; k < 14; k++) { g.spell[k] = 0; }
     g.slot = 0; g.kind = 0;
 }
@@ -41,7 +42,7 @@ int maker_targets(void)
 
     mode = 2;
     for (k = 0; k < 3; k++) {
-        if (type_of(k) == 255) { continue; }
+        if (type_of(k) == MAGIC_EFFECT_NONE) { continue; }
         class = effect_target_class(type_of(k));
         if (class == 2) { continue; }
         mode = class;
@@ -65,7 +66,7 @@ int maker_free_slot(void)
 {
     int k;
 
-    for (k = 0; k < 3; k++) { if (type_of(k) == 255) { return k; } }
+    for (k = 0; k < 3; k++) { if (type_of(k) == MAGIC_EFFECT_NONE) { return k; } }
     return -1;
 }
 
@@ -75,7 +76,7 @@ int maker_effect_list(int *types, int cap)
 
     mode = maker_targets();
     n = 0;
-    for (i = 0; i < 51 && n < cap; i++) {
+    for (i = 0; i < EFFECTS && n < cap; i++) {
         if (!effect_name(i)[0]) { continue; }
         class = effect_target_class(i);
         if (!(class == 2 || mode == 2 || class == mode)) { continue; }
@@ -88,7 +89,7 @@ int maker_subtype_count(int type)
 {
     int n;
 
-    for (n = 0; n < 12 && effect_sub_name(type, n); n++) { }
+    for (n = 0; n < SUB_EFFECTS_MOST && effect_sub_name(type, n); n++) { }
     return n;
 }
 
@@ -99,12 +100,12 @@ int maker_pick_effect(int type)
     slot = maker_free_slot();
     if (slot < 0) { return -1; }
     g.slot = slot;
-    g.spell[slot * 2] = (df_u8)type;
-    if (maker_elements() == 0) { g.spell[6] = 4; }
+    g.spell[SPELL_TYPE_AT + slot * 2] = (df_u8)type;
+    if (maker_elements() == 0) { g.spell[SPELL_ELEMENT_AT] = ELEMENT_MAGIC; }
     mode = maker_targets();
     if (mode != 2) {
-        if (mode == 0 && g.spell[7] != 0) { g.spell[7] = 0; }
-        if (mode == 1 && g.spell[7] == 0) { g.spell[7]++; }
+        if (mode == 0 && g.spell[SPELL_TARGET_AT] != 0) { g.spell[SPELL_TARGET_AT] = 0; }
+        if (mode == 1 && g.spell[SPELL_TARGET_AT] == 0) { g.spell[SPELL_TARGET_AT]++; }
     }
     /* With no subtypes the effect's numbers are chosen at once; else after the subtype. */
     if (!maker_subtype_count(type)) { g.kind = effect_flags(type, 0); }
@@ -116,7 +117,7 @@ void maker_pick_subtype(int sub)
     int type;
 
     type = type_of(g.slot);
-    g.spell[g.slot * 2 + 1] = (df_u8)sub;
+    g.spell[SPELL_TYPE_AT + g.slot * 2 + 1] = (df_u8)sub;
     g.kind = effect_flags(type, sub);
 }
 
@@ -124,10 +125,10 @@ void maker_edit(int slot)
 {
     int sub;
 
-    if (slot < 0 || slot > 2 || type_of(slot) == 255) { return; }
+    if (slot < 0 || slot > 2 || type_of(slot) == MAGIC_EFFECT_NONE) { return; }
     g.slot = slot;
     sub = sub_of(slot);
-    if (sub == 255) { sub = 0; }
+    if (sub == MAGIC_EFFECT_NONE) { sub = 0; }
     g.kind = effect_flags(type_of(slot), sub);
     if (!g.kind) { maker_recompute(); }
 }
@@ -137,9 +138,9 @@ void maker_delete(int slot)
     int k;
 
     if (slot < 0 || slot > 2) { return; }
-    g.spell[slot * 2] = g.spell[slot * 2 + 1] = 255;
-    for (k = 0; k < 3; k++) { g.spell[14 + slot * 3 + k] = 1; g.spell[23 + slot * 3 + k] = 1; }
-    for (k = 0; k < 5; k++) { g.spell[32 + slot * 5 + k] = 1; }
+    g.spell[SPELL_TYPE_AT + slot * 2] = g.spell[SPELL_TYPE_AT + slot * 2 + 1] = MAGIC_EFFECT_NONE;
+    for (k = 0; k < 3; k++) { g.spell[SPELL_DURATION_AT + slot * 3 + k] = 1; g.spell[SPELL_CHANCE_AT + slot * 3 + k] = 1; }
+    for (k = 0; k < 5; k++) { g.spell[SPELL_MAGNITUDE_AT + slot * 5 + k] = 1; }
     store_cost(slot, 0);
 }
 
@@ -197,18 +198,18 @@ void maker_recompute(void)
     const df_i16 *record;
 
     last = -1;
-    for (k = 0; k < 3; k++) { if (type_of(k) != 255) { last = k; } }
-    if (last < 0 || type_of(g.slot) == 255) { return; }
+    for (k = 0; k < 3; k++) { if (type_of(k) != MAGIC_EFFECT_NONE) { last = k; } }
+    if (last < 0 || type_of(g.slot) == MAGIC_EFFECT_NONE) { return; }
     record = effect_costs(type_of(last), sub_of(last));
-    for (k = 0; k < 3; k++) { d[k] = g.spell[14 + g.slot * 3 + k]; ch[k] = g.spell[23 + g.slot * 3 + k]; }
-    for (k = 0; k < 5; k++) { m[k] = g.spell[32 + g.slot * 5 + k]; }
+    for (k = 0; k < 3; k++) { d[k] = g.spell[SPELL_DURATION_AT + g.slot * 3 + k]; ch[k] = g.spell[SPELL_CHANCE_AT + g.slot * 3 + k]; }
+    for (k = 0; k < 5; k++) { m[k] = g.spell[SPELL_MAGNITUDE_AT + g.slot * 5 + k]; }
     store_cost(g.slot, effect_cost_raw(type_of(g.slot), record, d, ch, m));
 }
 
 void maker_set_element(int element)
 {
     if (element < 0 || element > 4) { return; }
-    if (element == 4 || maker_elements() > 0) { g.spell[6] = (df_u8)element; }
+    if (element == 4 || maker_elements() > 0) { g.spell[SPELL_ELEMENT_AT] = (df_u8)element; }
 }
 
 void maker_set_target(int target)
@@ -217,12 +218,12 @@ void maker_set_target(int target)
 
     if (target < 0 || target > 4) { return; }
     mode = maker_targets();
-    if (target == 0 ? mode != 1 : mode != 0) { g.spell[7] = (df_u8)target; }
+    if (target == 0 ? mode != 1 : mode != 0) { g.spell[SPELL_TARGET_AT] = (df_u8)target; }
 }
 
 void maker_icon(int step)
 {
-    g.spell[72] = (df_u8)((g.spell[72] + MAKER_ICONS + step) % MAKER_ICONS);
+    g.spell[SPELL_ICON_AT] = (df_u8)((g.spell[SPELL_ICON_AT] + MAKER_ICONS + step) % MAKER_ICONS);
 }
 
 void maker_set_name(const char *name)
@@ -235,12 +236,12 @@ void maker_set_name(const char *name)
 
 int maker_price(void)
 {
-    return (cost_of(0) + cost_of(1) + cost_of(2)) * target_factor(g.spell[7]) * 2;
+    return (cost_of(0) + cost_of(1) + cost_of(2)) * target_factor(g.spell[SPELL_TARGET_AT]) * SPELLMAKER_PRICE_MUL;
 }
 
 int maker_shown(void)
 {
-    return (((cost_of(0) + cost_of(1) + cost_of(2)) * target_factor(g.spell[7])) >> 1) << 2;
+    return (((cost_of(0) + cost_of(1) + cost_of(2)) * target_factor(g.spell[SPELL_TARGET_AT])) >> 1) << 2;
 }
 
 int maker_spell_points(void)
@@ -249,11 +250,11 @@ int maker_spell_points(void)
     int k, n;
 
     mem_zero(&def, sizeof(def));
-    def.target = g.spell[7]; def.element = g.spell[6];
+    def.target = g.spell[SPELL_TARGET_AT]; def.element = g.spell[SPELL_ELEMENT_AT];
     for (k = 0; k < 3; k++) {
-        def.group[k] = g.spell[k * 2]; def.sub[k] = g.spell[k * 2 + 1];
-        for (n = 0; n < 3; n++) { def.duration[k][n] = g.spell[14 + k * 3 + n]; def.chance[k][n] = g.spell[23 + k * 3 + n]; }
-        for (n = 0; n < 5; n++) { def.magnitude[k][n] = g.spell[32 + k * 5 + n]; }
+        def.group[k] = g.spell[SPELL_TYPE_AT + k * 2]; def.sub[k] = g.spell[SPELL_TYPE_AT + k * 2 + 1];
+        for (n = 0; n < 3; n++) { def.duration[k][n] = g.spell[SPELL_DURATION_AT + k * 3 + n]; def.chance[k][n] = g.spell[SPELL_CHANCE_AT + k * 3 + n]; }
+        for (n = 0; n < 5; n++) { def.magnitude[k][n] = g.spell[SPELL_MAGNITUDE_AT + k * 5 + n]; }
     }
     return spell_cost(&def, character_state());
 }
@@ -265,23 +266,23 @@ int maker_buy(void)
     int price, k, slot, count;
     df_u32 rows[OBJECTS];
 
-    if (type_of(0) == 255 && type_of(1) == 255 && type_of(2) == 255) { return 0; }
-    if (!g.spell[MAKER_NAME_AT]) { return 1704; }
+    if (type_of(0) == MAGIC_EFFECT_NONE && type_of(1) == MAGIC_EFFECT_NONE && type_of(2) == MAGIC_EFFECT_NONE) { return 0; }
+    if (!g.spell[MAKER_NAME_AT]) { return TEXT_SPELL_NO_NAME; }
     price = maker_price();
-    if (!gold_can_afford(price)) { return 1702; }
+    if (!gold_can_afford(price)) { return TEXT_SPELL_TOO_DEAR; }
     book = inventory_book();
     if (!book) { return -1; }
     count = spell_rows(book, rows, OBJECTS);
     slot = -1;
     for (k = 0; k < CUSTOM_SPELLS; k++) { if (!custom_spell_edit(k)->used) { slot = k; break; } }
-    if (count > 128 || slot < 0) { return 1709; }
+    if (count > SPELLBOOK_MOST || slot < 0) { return TEXT_SPELLBOOK_FULL; }
     gold_spend(price);
     custom = custom_spell_edit(slot);
     custom->used = 1;
-    mem_copy(custom->record, g.spell, 89);
+    mem_copy(custom->record, g.spell, SPELL_RECORD);
     spells_sync_custom(game_state());
     spell_create(book, CUSTOM_SPELL_ID + slot);
-    play_sound(206);
+    play_sound(SND_SPELL_BOUGHT);
     maker_new();
-    return 1705;
+    return TEXT_SPELL_MADE;
 }

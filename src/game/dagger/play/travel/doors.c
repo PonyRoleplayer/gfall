@@ -13,19 +13,32 @@
 #include "engine/scene/keep.h"
 
 #define LOCK_ATTEMPT 0xd1
+/* lockpick_door (archive.c:200..240): a pick succeeds with skill + (level - lock) * LOCK_PER_LEVEL held to LOCK_CHANCE_MIN..LOCK_CHANCE_MAX, rolled on 0..100; a lock of LOCK_IMPOSSIBLE
+ * or more cannot be picked. Bashing opens it when 1..100 is at most BASH_BASE - lock (func_000733AD.c:136). */
+#define LOCK_IMPOSSIBLE 20
+#define LOCK_PER_LEVEL 5
+#define LOCK_CHANCE_MIN 5
+#define LOCK_CHANCE_MAX 95
+#define BASH_BASE 20
+/* The Lock and Open spells' effects, the door key (misc item 3) and the sounds of the lock opening and the bash. */
+#define EFFECT_LOCK 16
+#define EFFECT_OPEN 17
+#define MISC_KEY 3
+#define SND_LOCK_OPEN 60
+#define SND_BASH 9
 
 int lock_chance(int skill, int level, int lock)
 {
     int chance;
 
-    if (lock <= 0 || lock >= 20) { return 0; }
-    chance = skill+(level-lock)*5;
-    return chance < 5 ? 5 : chance > 95 ? 95 : chance;
+    if (lock <= 0 || lock >= LOCK_IMPOSSIBLE) { return 0; }
+    chance = skill+(level-lock)*LOCK_PER_LEVEL;
+    return chance < LOCK_CHANCE_MIN ? LOCK_CHANCE_MIN : chance > LOCK_CHANCE_MAX ? LOCK_CHANCE_MAX : chance;
 }
 
 int bash_chance(int lock)
 {
-    return lock > 0 && lock < 20 ? 20-lock : 0;
+    return lock > 0 && lock < LOCK_IMPOSSIBLE ? BASH_BASE-lock : 0;
 }
 
 static Mover *door_at(const Scene *scene, int usable)
@@ -111,7 +124,7 @@ static df_u32 find_key(const Mover *door)
         item = &game_state()->object[i];
         /* door_key_match_cb compares both fields with the location ID.
          * Its lock-level argument is unused; 27/3 is an unshipped item slot. */
-        if (!item->id || item->type != RECORD_ITEM || item->group != ITEM_GROUP_MISC || item->index != 3 ||
+        if (!item->id || item->type != RECORD_ITEM || item->group != ITEM_GROUP_MISC || item->index != MISC_KEY ||
             item->value != (int)location || (df_u16)item->message != location) { continue; }
         owner = item;
         for (depth = 0; owner && depth < OBJECTS; depth++) {
@@ -136,19 +149,19 @@ int door_use(const Scene *scene, int usable, int mode)
     if (mover_busy(scene,mover)) { return 1; }
     if ((character_state()->conditions & COND_LOCK) && (door->lock <= 0 || mover_at_end(door))) {
         if (mover_at_end(door)) {
-            if (mover_start(scene,mover) && random_range(1,100) <= magic_chance(-1,16,-1)) {
+            if (mover_start(scene,mover) && random_range(1,100) <= magic_chance(-1,EFFECT_LOCK,-1)) {
                 door_lock(door,character_state()->level);
             }
             return 1;
         }
-        if (random_range(1,100) <= magic_chance(-1,16,-1)) {
+        if (random_range(1,100) <= magic_chance(-1,EFFECT_LOCK,-1)) {
             door_lock(door,character_state()->level); return 1;
         }
     }
     if (door->lock <= 0 || mover_at_end(door) || !interact_locks()) {
         if (interact_use(scene,usable)) {
             dungeon_alert(-1);
-            actions_trigger(scene,scene->usables[usable].model,2);
+            actions_trigger(scene,scene->usables[usable].model,LINK_EVENT_USE);
         }
         return 1;
     }
@@ -160,8 +173,9 @@ int door_use(const Scene *scene, int usable, int mode)
     skill = character_state()->skill[SKILL_LOCKPICKING];
     if (mode != MODE_STEAL) {
         if (character_state()->conditions & COND_OPEN) {
-            chance = magic_chance(-1,17,-1); magic_remove(-1,17);
-            if (random_range(1,100) <= chance && mover_start(scene,mover)) {
+            /* lockpick_door:211..215: an Open spell's chance is the spell's plus (level - lock) * 5, held to 5..95, rolled on 0..100; a lock of 20 still cannot open. */
+            chance = lock_chance(magic_chance(-1,EFFECT_OPEN,-1),character_state()->level,door->lock); magic_remove(-1,EFFECT_OPEN);
+            if (chance && random_range(0,100) <= chance && mover_start(scene,mover)) {
                 door_unlock(door); dungeon_alert(-1);
             } else { interact_say("The spell failed."); }
             return 1;
@@ -172,7 +186,7 @@ int door_use(const Scene *scene, int usable, int mode)
     chance = lock_chance(skill,character_state()->level,door->lock);
     if (!chance || tried(door,skill)) {
         interact_say(lock_text(LOCK_FAILED));
-        if (!chance) { actions_trigger(scene,scene->usables[usable].model,4); }
+        if (!chance) { actions_trigger(scene,scene->usables[usable].model,LINK_EVENT_LOCK_FAIL); }
         return 1;
     }
     /* Secure the attempt before rolling, so a failed allocation cannot give
@@ -186,7 +200,7 @@ int door_use(const Scene *scene, int usable, int mode)
     if (random_range(0,100) <= chance) {
         door_unlock(door);
         mover_start(scene,mover);
-        sound_at(60,door->x0,door->y0,door->z0);
+        sound_at(SND_LOCK_OPEN,door->x0,door->y0,door->z0);
         interact_say(lock_text(LOCK_OPEN));
     } else {
         /* Only failure updates lockpick_skill_tried. A successful pick must
@@ -198,8 +212,8 @@ int door_use(const Scene *scene, int usable, int mode)
     row->lock = door->lock;
     row->at_end = (df_u8)(!door->teleport && mover_at_end(door));
     /* Trigger callbacks can grow Keep: do not retain row across this call. */
-    if (!door->lock) { dungeon_alert(-1); actions_trigger(scene,scene->usables[usable].model,7); }
-    else { actions_trigger(scene,scene->usables[usable].model,4); }
+    if (!door->lock) { dungeon_alert(-1); actions_trigger(scene,scene->usables[usable].model,LINK_EVENT_LOCK_PICKED); }
+    else { actions_trigger(scene,scene->usables[usable].model,LINK_EVENT_LOCK_FAIL); }
     return 1;
 }
 
@@ -215,7 +229,7 @@ int door_strike(const Scene *scene, const Camera *camera)
     door = door_at(scene,hit.usable);
     if (!door) { return 0; }
     dx = door->x0-camera->x; dz = door->z0-camera->z;
-    if (dx*dx+dz*dz > 100*100) { return 0; }
+    if (dx*dx+dz*dz > STRIKE_MODEL_REACH*STRIKE_MODEL_REACH) { return 0; }
     mover = scene->usables[hit.usable].mover;
     if (mover_busy(scene,mover)) { return 1; }
     if (door->lock <= 0 || mover_at_end(door)) {
@@ -229,6 +243,6 @@ int door_strike(const Scene *scene, const Camera *camera)
     if (chance && random_range(1,100) <= chance && mover_start(scene,mover)) {
         door_unlock(door);
     }
-    sound_at(9,door->x0,door->y0,door->z0);
+    sound_at(SND_BASH,door->x0,door->y0,door->z0);
     return 1;
 }

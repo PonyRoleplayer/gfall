@@ -57,6 +57,8 @@ typedef struct Quote {
 #define SHOP_HOLIDAY_WEAPONSMITH 49
 #define SHOP_TYPE_TEMPLE 9
 #define SHOP_HOLIDAY_TEMPLE 29
+/* The holiday (the number of holidaydefs.h) of free identification at a temple and half-price spells at a spell merchant. */
+#define HOLIDAY_SPELLS_HALF 43
 /* A pickpocket's chance falls a thirty-second of the total and a quarter of the weight (trade_steal_chance). */
 #define STEAL_TOTAL_DIVISOR 32
 #define STEAL_WEIGHT_DIVISOR 4

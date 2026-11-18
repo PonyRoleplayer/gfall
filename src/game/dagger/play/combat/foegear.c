@@ -4,6 +4,23 @@
 #include "game/dagger/tables/itemdefs.h"
 
 #define FOE_SLOT 0x10000
+/* monster_init_items' gear tiers: light, medium (a weapon 9..14), heavy. A class enemy is 0 or 1 by a coin. */
+enum { FOE_TIER_LIGHT = 0, FOE_TIER_MEDIUM = 1, FOE_TIER_HEAVY = 2, FOE_TIER_CLASS = 3 };
+/* monster_give_equipment (moninit.c:196..234): a weapon always (WEAPON_LIGHT_* for the light tier, WEAPON_HEAVY_* otherwise), a light-tier shield SHIELD_* half the time, else half the time a weapon 0..3 that is not 2; each armour piece at FOE_ARMOR_CHANCE by tier. */
+#define FOE_WEAPON_CHANCE 100
+#define WEAPON_LIGHT_FIRST 5
+#define WEAPON_LIGHT_LAST 7
+#define WEAPON_HEAVY_FIRST 9
+#define WEAPON_HEAVY_LAST 14
+#define FOE_SHIELD_FIRST ARMOR_SHIELD_FIRST
+#define FOE_SHIELD_LAST 8
+#define FOE_SHIELD_CHANCE 50
+#define FOE_SIDEARM_LAST 3
+#define FOE_SIDEARM_EXCLUDE 2
+#define FOE_SIDEARM_CHANCE 50
+#define SHIELD_ARMOR_STEP 5
+#define FOE_ARMOR_BARE_OVER 50
+#define FOE_ARMOR_BARE 60
 
 static void make(df_u32 parent, int group, int low, int high, int exclude, int chance, int slot)
 {
@@ -21,29 +38,31 @@ void foe_equipment(int kind, df_u32 container, df_u32 *slots, FighterInfo *fight
     ObjectInfo *pack;
     int tier, i, part, armor, equipped;
     static const int gear_slot[6] = {EQUIP_HEAD,EQUIP_RIGHT_PAULDRON,EQUIP_LEFT_PAULDRON,EQUIP_CUIRASS,EQUIP_GREAVES,EQUIP_BOOTS};
-    static const int armor_index[6] = {5,4,3,0,2,6};
-    if (ENEMY_IS_CLASS(kind)) { tier = 3; }
-    else if (kind == ENEMY_ORC || kind == ENEMY_ORC_SHAMAN) { tier = 0; }
-    else if (kind == ENEMY_CENTAUR || kind == ENEMY_ORC_SERGEANT) { tier = 1; }
-    else if (kind == ENEMY_ORC_WARLORD) { tier = 2; }
+    static const int armor_index[6] = {ARMOR_HELM,ARMOR_RIGHT_PAULDRON,ARMOR_LEFT_PAULDRON,ARMOR_CUIRASS,ARMOR_GREAVES,ARMOR_BOOTS};
+    /* The chance of each armour piece, by tier. */
+    static const int g_armor_chance[3] = {50,75,90};
+    if (ENEMY_IS_CLASS(kind)) { tier = FOE_TIER_CLASS; }
+    else if (kind == ENEMY_ORC || kind == ENEMY_ORC_SHAMAN) { tier = FOE_TIER_LIGHT; }
+    else if (kind == ENEMY_CENTAUR || kind == ENEMY_ORC_SERGEANT) { tier = FOE_TIER_MEDIUM; }
+    else if (kind == ENEMY_ORC_WARLORD) { tier = FOE_TIER_HEAVY; }
     else { return; }
     pack = object_edit(container);
     if (!pack) { return; }
     if (!(pack->flags & 2)) {
-        if (tier == 3) { tier = random_range(0,1); }
-        make(container,3,tier ? 9 : 5,tier ? 14 : 7,-1,100,EQUIP_RIGHT_HAND);
-        if (!tier) {
-            make(container,2,7,8,-1,50,EQUIP_LEFT_HAND);
+        if (tier == FOE_TIER_CLASS) { tier = random_range(0,1); }
+        make(container,ITEM_GROUP_WEAPON,tier ? WEAPON_HEAVY_FIRST : WEAPON_LIGHT_FIRST,tier ? WEAPON_HEAVY_LAST : WEAPON_LIGHT_LAST,-1,FOE_WEAPON_CHANCE,EQUIP_RIGHT_HAND);
+        if (tier == FOE_TIER_LIGHT) {
+            make(container,ITEM_GROUP_ARMOR,FOE_SHIELD_FIRST,FOE_SHIELD_LAST,-1,FOE_SHIELD_CHANCE,EQUIP_LEFT_HAND);
             equipped = 0;
             for (i = 0; i < OBJECTS; i++) {
                 item = &game_state()->object[i];
                 if (item->id && item->parent == container && (item->flags & FOE_SLOT) &&
-                    ((item->flags >> 8) & 31) == 21) { equipped = 1; }
+                    ((item->flags >> 8) & 31) == EQUIP_LEFT_HAND) { equipped = 1; }
             }
-            if (!equipped) { make(container,3,0,3,2,50,EQUIP_LEFT_HAND); }
+            if (!equipped) { make(container,ITEM_GROUP_WEAPON,0,FOE_SIDEARM_LAST,FOE_SIDEARM_EXCLUDE,FOE_SIDEARM_CHANCE,EQUIP_LEFT_HAND); }
         }
         for (i = 0; i < 6; i++) {
-            make(container,2,armor_index[i],armor_index[i],-1,tier == 0 ? 50 : tier == 1 ? 75 : 90,gear_slot[i]);
+            make(container,ITEM_GROUP_ARMOR,armor_index[i],armor_index[i],-1,g_armor_chance[tier],gear_slot[i]);
         }
         pack->flags |= 2;
     }
@@ -55,14 +74,14 @@ void foe_equipment(int kind, df_u32 container, df_u32 *slots, FighterInfo *fight
             if (part < EQUIP_SLOTS) { slots[part] = item->id; }
         }
     }
-    shield = object_at(slots[21]);
-    for (part = 0; part < 7; part++) {
-        armor = 100; item = object_at(slots[armor_slot(part)]);
+    shield = object_at(slots[EQUIP_LEFT_HAND]);
+    for (part = 0; part < BODY_PARTS; part++) {
+        armor = ARMOR_BASE; item = object_at(slots[armor_slot(part)]);
         if (item && item->group == 2) {
             armor -= armor_base(item->armor_type);
             if (item->armor_type == 2) { armor -= material_hit(item->material); }
         }
-        if (shield && shield->group == 2 && shield_covers(shield->index,part)) { armor -= (shield->index-6)*5; }
-        fighter->armor[part] = armor > 50 ? 60 : armor < -100 ? -100 : armor;
+        if (shield && shield->group == 2 && shield_covers(shield->index,part)) { armor -= (shield->index-(ARMOR_SHIELD_FIRST-1))*SHIELD_ARMOR_STEP; }
+        fighter->armor[part] = armor > FOE_ARMOR_BARE_OVER ? FOE_ARMOR_BARE : armor < -ARMOR_LIMIT ? -ARMOR_LIMIT : armor;
     }
 }

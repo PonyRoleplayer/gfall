@@ -58,7 +58,7 @@ int magic_def_artifact(int i)
     const df_u8 *d;
 
     d = def(i);
-    return d && d[32] != 0;
+    return d && d[MAGIC_DEF_ARTIFACT] != 0;
 }
 
 /* enchant_spell_cost: the standard spell of this id costed for a character with every skill at 50, ten times; 0 for no such spell. */
@@ -74,9 +74,9 @@ int magic_spell_cost(int id)
     }
     dummy = *character_state();
     for (i = 0; i < SKILLS; i++) {
-        dummy.skill[i] = 50;
+        dummy.skill[i] = ENCHANT_SPELL_SKILL;
     }
-    return spell_cost(s, &dummy) * 10;
+    return spell_cost(s, &dummy) * ENCHANT_SPELL_COST_MUL;
 }
 
 int magic_def_value(int i)
@@ -89,25 +89,25 @@ int magic_def_value(int i)
         return 0;
     }
     value = 0;
-    for (k = 0; k < 10; k++) {
-        type = d[35 + k * 2];
-        param = d[36 + k * 2];
-        if (type == 255) {
+    for (k = 0; k < MAGIC_DEF_ENCHANTS_MOST; k++) {
+        type = d[MAGIC_DEF_ENCHANTS + k * 2];
+        param = d[MAGIC_DEF_ENCHANTS + 1 + k * 2];
+        if (type == MAGIC_DEF_END) {
             break;
         }
         /* The enchantment's type is a signed short in the item; 255 is the end here and 16 and over are not costed. */
-        if (type >= 16) {
+        if (type >= ENCHANT_TYPES) {
             continue;
         }
         code = g_enchant_code[type];
         if (code == 0) {
             continue;
         }
-        if (code < 100) {
+        if (code < ENCHANT_CODE_PARAM) {
             /* enchant_value_slot_cost: 5 to 7 a spell's cost, else the fixed cost of the code. A parameter of 255 (to be chosen) names no spell. */
-            value += code >= 5 && code <= 7 ? magic_spell_cost(param) : g_enchant_fixed[code];
+            value += code >= ENCHANT_CODE_SPELL_FIRST && code <= ENCHANT_CODE_SPELL_LAST ? magic_spell_cost(param) : g_enchant_fixed[code];
         } else {
-            value += g_enchant_by_param[code - 1000][param < 12 ? param : 11];
+            value += g_enchant_by_param[code - ENCHANT_CODE_PARAM][param < ENCHANT_PARAMS ? param : ENCHANT_PARAMS - 1];
         }
     }
     return value;
@@ -119,9 +119,9 @@ static int pick_base_kind(int group)
 
     kind = 3;
     if (group == 0) {
-        kind = g_magic_kind0[random_range(0, 6)];
+        kind = g_magic_kind0[random_range(0, (int)sizeof(g_magic_kind0) - 1)];
     } else if (group == 1) {
-        kind = g_magic_kind1[random_range(0, 4)];
+        kind = g_magic_kind1[random_range(0, (int)sizeof(g_magic_kind1) - 1)];
     }
     if (kind == 12 || kind == 6) {
         kind = character_state()->female ? 12 : 6;
@@ -160,7 +160,7 @@ df_u32 magic_item_create(df_u32 container, int which)
     do {
         int kind;
 
-        kind = pick_base_kind(d[33]);
+        kind = pick_base_kind(d[MAGIC_DEF_GROUP]);
         kinds = item_kinds(kind);
         if (kinds < 1) {
             return 0;
@@ -176,13 +176,13 @@ df_u32 magic_item_create(df_u32 container, int which)
         }
     } while (!item);
     df_copy(item->name, (const char *)d, (int)sizeof(item->name));
-    item->condition = item->max_condition = (int)(short)(d[0x37] | d[0x38] << 8);
-    item->material = d[0x3d];
+    item->condition = item->max_condition = (int)(short)(d[MAGIC_DEF_CONDITION] | d[MAGIC_DEF_CONDITION + 1] << 8);
+    item->material = d[MAGIC_DEF_MATERIAL];
     if (item->material == MATERIAL_IRON && (item->group == ITEM_GROUP_ARMOR || item->group == ITEM_GROUP_WEAPON)) {
         /* item_roll_material: left as the base item rolled it. */
     }
     if (item->group == ITEM_GROUP_ARMOR) {
-        item->armor_type = 2;
+        item->armor_type = ARMOR_PLATE;
     }
     if (item->group != ITEM_GROUP_USELESS && item->group != ITEM_GROUP_BOOK && item->group != ITEM_GROUP_PAINTING && item->group != ITEM_GROUP_MISC) {
         item->message = i + 1;
@@ -212,14 +212,14 @@ df_u32 magic_artifact_create(df_u32 container, int ordinal)
     }
     d = def(i);
     if (!d || i >= MAGIC_DEF_MASK) { return 0; }
-    id = item_create(container,d[33],d[34],d[0x3d] <= 9 ? d[0x3d] : -1);
+    id = item_create(container,d[MAGIC_DEF_GROUP],d[MAGIC_DEF_INDEX],d[MAGIC_DEF_MATERIAL] < MATERIALS ? d[MAGIC_DEF_MATERIAL] : -1);
     item = object_edit(id);
     if (!item) { return 0; }
     df_copy(item->name,(const char *)d,sizeof(item->name));
-    item->condition = item->max_condition = df_ru16(d+0x37);
-    item->value = df_ru32(d+0x39);
+    item->condition = item->max_condition = df_ru16(d+MAGIC_DEF_CONDITION);
+    item->value = df_ru32(d+MAGIC_DEF_VALUE);
     item->flags |= (i + 1) << MAGIC_DEF_SHIFT;
-    if (ordinal < (int)sizeof(picture)) { item->inventory_image = (432 + character_state()->female)*128 + picture[ordinal]; }
+    if (ordinal < (int)sizeof(picture)) { item->inventory_image = (ARTIFACT_IMAGE_ARCHIVE + character_state()->female)*IMAGE_ARCHIVE_STRIDE + picture[ordinal]; }
     return id;
 }
 
@@ -229,8 +229,8 @@ int magic_def_enchant(int i, int k, int *type, int *param)
     const df_u8 *d;
 
     d = def(i);
-    if (!d || k < 0 || k > 9 || d[35 + k * 2] == 255) { return 0; }
-    *type = d[35 + k * 2]; *param = d[36 + k * 2] == 255 ? -1 : d[36 + k * 2];
+    if (!d || k < 0 || k >= MAGIC_DEF_ENCHANTS_MOST || d[MAGIC_DEF_ENCHANTS + k * 2] == MAGIC_DEF_END) { return 0; }
+    *type = d[MAGIC_DEF_ENCHANTS + k * 2]; *param = d[MAGIC_DEF_ENCHANTS + 1 + k * 2] == MAGIC_DEF_END ? -1 : d[MAGIC_DEF_ENCHANTS + 1 + k * 2];
     return 1;
 }
 
@@ -245,7 +245,7 @@ int magic_item_def(df_u32 item)
     if (entry) { return def(entry-1) ? entry-1 : -1; }
     /* The message field held MAGIC.DEF indices before item flags did. */
     if (o->group == ITEM_GROUP_USELESS || o->group == ITEM_GROUP_BOOK || o->group == ITEM_GROUP_PAINTING || o->group == ITEM_GROUP_MISC ||
-        (o->group == ITEM_GROUP_CURIO && o->index == 5) || o->message < 1 || o->message > g_count) {
+        (o->group == ITEM_GROUP_CURIO && o->index == CURIO_ARTIFACT_EXEMPT) || o->message < 1 || o->message > g_count) {
         return -1;
     }
     return o->message - 1;
@@ -261,7 +261,7 @@ int magic_item_unknown(df_u32 id)
 
 int magic_item_identify_price(df_u32 id)
 {
-    return magic_item_unknown(id) ? (int)(((df_u32)object_at(id)->value * 25u) >> 8) : 0;
+    return magic_item_unknown(id) ? (int)(((df_u32)object_at(id)->value * IDENTIFY_PRICE_NUM) >> 8) : 0;
 }
 
 int magic_item_identify(df_u32 id)
@@ -276,7 +276,7 @@ int magic_artifact_power(df_u32 id)
     int entry, type, param;
 
     entry = magic_item_def(id);
-    return magic_def_artifact(entry) && magic_def_enchant(entry,0,&type,&param) && type == 26 ? param : -1;
+    return magic_def_artifact(entry) && magic_def_enchant(entry,0,&type,&param) && type == ENCHANT_ARTIFACT ? param : -1;
 }
 
 df_u32 magic_artifact_worn(int power)
@@ -298,7 +298,7 @@ int magic_artifact_text(df_u32 id)
     index = magic_item_def(id);
     if (!magic_def_artifact(index)) { return 0; }
     for (i = ordinal = 0; i < index; i++) { ordinal += magic_def_artifact(i); }
-    return 8700 + ordinal;
+    return TEXT_ARTIFACT_LORE + ordinal;
 }
 
 void magic_shop_stock(df_u32 container, int quality, int soul_traps)

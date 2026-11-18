@@ -12,6 +12,31 @@
  * allows. Its enchantments are the entry's, so the item keeps only which entry it is (one more, in its message field); what the enchantments do when it is worn or struck is not built.
  */
 #define MAGIC_DEF_BYTES 62
+/* An entry's offsets: the name at 0, then the artifact byte, the base item's group and index, MAGIC_DEF_ENCHANTS_MOST (type, parameter) pairs ended by MAGIC_DEF_END, a condition, a value and a material. */
+#define MAGIC_DEF_ARTIFACT 32
+#define MAGIC_DEF_GROUP 33
+#define MAGIC_DEF_INDEX 34
+#define MAGIC_DEF_ENCHANTS 35
+#define MAGIC_DEF_ENCHANTS_MOST 10
+#define MAGIC_DEF_END 255
+#define MAGIC_DEF_CONDITION 0x37
+#define MAGIC_DEF_VALUE 0x39
+#define MAGIC_DEF_MATERIAL 0x3D
+/* enchant_spell_cost: a cast-spell power costs the spell's cost at every skill ENCHANT_SPELL_SKILL, times ENCHANT_SPELL_COST_MUL. Enchantment type ENCHANT_ARTIFACT holds the artifact's number. */
+#define ENCHANT_SPELL_SKILL 50
+#define ENCHANT_SPELL_COST_MUL 10
+#define ENCHANT_ARTIFACT 26
+/* The enchantment codes below ENCHANT_CODE_PARAM are fixed costs, ENCHANT_CODE_SPELL_FIRST..LAST cost the spell's; from ENCHANT_CODE_PARAM the cost is by parameter, ENCHANT_PARAMS of them. A type from ENCHANT_TYPES up is not costed. */
+#define ENCHANT_CODE_PARAM 1000
+#define ENCHANT_CODE_SPELL_FIRST 5
+#define ENCHANT_CODE_SPELL_LAST 7
+#define ENCHANT_PARAMS 12
+#define ENCHANT_TYPES 16
+/* The artifacts' pictures are in image archive ARTIFACT_IMAGE_ARCHIVE (the next one for a woman); identifying costs value * IDENTIFY_PRICE_NUM / 256; an artifact's lore is TEXT_ARTIFACT_LORE plus its number. A curio index CURIO_ARTIFACT_EXEMPT is no magic item. */
+#define ARTIFACT_IMAGE_ARCHIVE 432
+#define IDENTIFY_PRICE_NUM 25
+#define TEXT_ARTIFACT_LORE 8700
+#define CURIO_ARTIFACT_EXEMPT 5
 
 /* MAGIC.DEF's bytes, kept by the caller. */
 void magic_defs_set(const df_u8 *bytes, df_u32 size);

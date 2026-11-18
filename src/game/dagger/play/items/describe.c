@@ -8,6 +8,26 @@
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
 
+/* item_info (inven.c:920..968): the TEXT.RSC records that describe an item. */
+#define TEXT_INFO_ARMOR 1000
+#define TEXT_INFO_WEAPON 1001
+#define TEXT_INFO_OTHER 1003
+#define TEXT_INFO_SOUL_TRAP 1004
+#define TEXT_INFO_CREDIT 1007
+#define TEXT_INFO_BOOK 1009
+#define TEXT_INFO_ARROW 1011
+/* The description macros' order in expand_macro: the first MACRO_SPELL_FIRST are item numbers, then the spell's duration, chance and magnitude (three each), then the painting words and the artist, then the names. */
+#define MACRO_SPELL_FIRST 13
+#define MACRO_CHANCE_FIRST 16
+#define MACRO_MAGNITUDE_FIRST 19
+#define MACRO_PAINTING_FIRST 24
+#define MACRO_ARTIST 28
+#define MACRO_NAMES_FIRST 29
+/* A plate piece's armour is PLATE_ARMOR_BASE plus the material's, shown in tenths; a weapon's material hit counts a fifth. */
+#define PLATE_ARMOR_BASE 45
+#define ARMOR_SHOWN_DIV 10
+#define MATERIAL_DAMAGE_DIV 5
+
 typedef struct Description {
     const ObjectInfo *item;
     const SpellDef *spell;
@@ -21,12 +41,12 @@ int item_info_record(df_u32 id)
     const ObjectInfo *item;
     item = object_at(id);
     if (!item || item->type != RECORD_ITEM) { return -1; }
-    if (item->group == ITEM_GROUP_ARMOR) { return 1000; }
-    if (item->group == ITEM_GROUP_WEAPON) { return item->index == WEAPON_ARROW ? 1011 : 1001; }
-    if (item->group == ITEM_GROUP_BOOK) { return 1009; }
-    if (item->group == ITEM_GROUP_MISC && item->index == MISC_SOUL_TRAP) { return 1004; }
-    if (item->group == ITEM_GROUP_MISC && item->index == MISC_LETTER_OF_CREDIT) { return 1007; }
-    return 1003;
+    if (item->group == ITEM_GROUP_ARMOR) { return TEXT_INFO_ARMOR; }
+    if (item->group == ITEM_GROUP_WEAPON) { return item->index == WEAPON_ARROW ? TEXT_INFO_ARROW : TEXT_INFO_WEAPON; }
+    if (item->group == ITEM_GROUP_BOOK) { return TEXT_INFO_BOOK; }
+    if (item->group == ITEM_GROUP_MISC && item->index == MISC_SOUL_TRAP) { return TEXT_INFO_SOUL_TRAP; }
+    if (item->group == ITEM_GROUP_MISC && item->index == MISC_LETTER_OF_CREDIT) { return TEXT_INFO_CREDIT; }
+    return TEXT_INFO_OTHER;
 }
 
 /* Longest macro first where names share a prefix. Each result is copied before
@@ -44,38 +64,38 @@ static int expand_macro(const char *src, const Description *d, char *out, int ca
         if (!names[i][n]) { break; }
     }
     if (i == (int)(sizeof(names)/sizeof(names[0]))) { return 0; }
-    if (i >= 29) { df_copy(out,d->names[i-29],cap); return n; }
-    if (i >= 24) { df_copy(out,i == 28 ? d->artist : d->painting[i-24],cap); return n; }
-    if (i >= 13) {
+    if (i >= MACRO_NAMES_FIRST) { df_copy(out,d->names[i-MACRO_NAMES_FIRST],cap); return n; }
+    if (i >= MACRO_PAINTING_FIRST) { df_copy(out,i == MACRO_ARTIST ? d->artist : d->painting[i-MACRO_PAINTING_FIRST],cap); return n; }
+    if (i >= MACRO_SPELL_FIRST) {
         const SpellDef *s;
         s = d->spell;
         if (!s) { return 0; }
-        value = i < 16 ? s->duration[d->effect][i-13] : i < 19 ? s->chance[d->effect][i-16] : s->magnitude[d->effect][i-19];
+        value = i < MACRO_CHANCE_FIRST ? s->duration[d->effect][i-MACRO_SPELL_FIRST] : i < MACRO_MAGNITUDE_FIRST ? s->chance[d->effect][i-MACRO_CHANCE_FIRST] : s->magnitude[d->effect][i-MACRO_MAGNITUDE_FIRST];
         log_format(out,cap,"%d",value);
         return n;
     }
     if (!item) { return 0; }
     switch (i) {
     case 0:
-        df_copy(out,item->group == ITEM_GROUP_ARMOR && (item->index >= 7 || item->index == 5) ? "" :
-                item->group == ITEM_GROUP_ARMOR && item->armor_type != 2 ? (item->armor_type ? "Chain" : "Leather") :
+        df_copy(out,item->group == ITEM_GROUP_ARMOR && (item->index >= ARMOR_SHIELD_FIRST || item->index == ARMOR_HELM) ? "" :
+                item->group == ITEM_GROUP_ARMOR && item->armor_type != ARMOR_PLATE ? (item->armor_type != ARMOR_LEATHER ? "Chain" : "Leather") :
                 material_name(item->material),cap);
         break;
     case 1: case 2: case 7: case 8: df_copy(out,item->name,cap); break;
     case 3:
-        value = item->index >= 7 ? item->index-6 :
-                (item->armor_type == 2 ? 45+material_hit(item->material) : armor_base(item->armor_type))/10;
+        value = item->index >= ARMOR_SHIELD_FIRST ? item->index-SHIELD_INDEX_BASE :
+                (item->armor_type == ARMOR_PLATE ? PLATE_ARMOR_BASE+material_hit(item->material) : armor_base(item->armor_type))/ARMOR_SHOWN_DIV;
         log_format(out,cap,"%s%d",value >= 0 ? "+" : "",value);
         break;
     case 4:
-        value = material_hit(item->material)/5;
+        value = material_hit(item->material)/MATERIAL_DAMAGE_DIV;
         low = weapon_damage(item->index,0)+value; high = weapon_damage(item->index,1)+value;
         log_format(out,cap,"%d - %d",low < 0 ? 0 : low,high < 0 ? 0 : high);
         break;
     case 5: df_copy(out,condition_name(item->condition,item->max_condition),cap); break;
     case 6: log_format(out,cap,"%d",item->value); break;
     case 9:
-        weight = (item->group == ITEM_GROUP_CURRENCY ? item->value/100 : item->group == ITEM_GROUP_TRANSPORT ? 0 : item->weight*item->count) + inventory_weight(item->id);
+        weight = (item->group == ITEM_GROUP_CURRENCY ? item->value/GOLD_PER_WEIGHT : item->group == ITEM_GROUP_TRANSPORT ? 0 : item->weight*item->count) + inventory_weight(item->id);
         weight_text(weight,out,cap);
         break;
     case 10: df_copy(out,d->title,cap); break;

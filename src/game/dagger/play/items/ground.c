@@ -4,11 +4,22 @@
 #include "engine/scene/spawn.h"
 #include "engine/scene/stream.h"
 #include "engine/core/mem.h"
+#include "game/dagger/formats/worldmap.h"
 
 /* Four nearby piles leave room for eight encounters, eight blood effects,
  * eight spell missiles and Light in the engine's fixed 32-entry spawn pool. */
 #define GROUND_VISIBLE 4
-#define PIXEL_UNITS (8*STREAM_CHUNK)
+/* A world map pixel is GROUND_PIXEL_CHUNKS chunks wide; a pile's row is keyed by GROUND_KEY_BIT, the pixel and a GROUND_CELL-unit cell (ours: the original keeps a
+ * dropped item as a child of the place's record). Shown within GROUND_SHOW_RANGE as a GROUND_SPRITE-unit sprite, picked within GROUND_PICK_RADIUS. */
+#define GROUND_PIXEL_CHUNKS 8
+#define GROUND_KEY_BIT 0x80000000u
+#define GROUND_CELL 64
+#define GROUND_CELL_BITS 15
+#define GROUND_CELL_MASK 32767u
+#define GROUND_SHOW_RANGE 320
+#define GROUND_SPRITE 24
+#define GROUND_PICK_RADIUS 12
+#define PIXEL_UNITS (GROUND_PIXEL_CHUNKS*STREAM_CHUNK)
 static const Scene *g_scene;
 static int g_slot;
 static SpawnId g_picture[GROUND_VISIBLE];
@@ -24,15 +35,15 @@ df_u32 ground_pile(float x, float y, float z, int table)
     if (where->kind == WHERE_WORLD) {
         /* Origin chunks are exact integers. Reduce before converting back
          * to float, keeping sub-unit precision even at the far map edge. */
-        px = where->origin_x/8; pz = where->origin_z/8;
-        x += (where->origin_x%8)*STREAM_CHUNK; z += (where->origin_z%8)*STREAM_CHUNK;
+        px = where->origin_x/GROUND_PIXEL_CHUNKS; pz = where->origin_z/GROUND_PIXEL_CHUNKS;
+        x += (where->origin_x%GROUND_PIXEL_CHUNKS)*STREAM_CHUNK; z += (where->origin_z%GROUND_PIXEL_CHUNKS)*STREAM_CHUNK;
         qx = df_ifloor(x/PIXEL_UNITS); qz = df_ifloor(z/PIXEL_UNITS);
         px += qx; pz += qz; x -= qx*PIXEL_UNITS; z -= qz*PIXEL_UNITS;
-        if (px < 0 || px >= 1000 || pz < 0 || pz >= 500) { return 0; }
-        place = 0x80000000u | (df_u32)(pz*1000+px);
+        if (px < 0 || px >= WORLDMAP_W || pz < 0 || pz >= WORLDMAP_H) { return 0; }
+        place = GROUND_KEY_BIT | (df_u32)(pz*WORLDMAP_W+px);
     }
-    qx = df_ifloor(x/64); qz = df_ifloor(z/64);
-    thing = 0x80000000u | (((df_u32)qx & 32767u) << 15) | ((df_u32)qz & 32767u);
+    qx = df_ifloor(x/GROUND_CELL); qz = df_ifloor(z/GROUND_CELL);
+    thing = GROUND_KEY_BIT | (((df_u32)qx & GROUND_CELL_MASK) << GROUND_CELL_BITS) | ((df_u32)qz & GROUND_CELL_MASK);
     return loot_container(place,thing,x,y,z,table);
 }
 df_u32 ground_container(float x, float y, float z) { return ground_pile(x,y,z,-1); }
@@ -42,13 +53,13 @@ int ground_position(const ObjectInfo *container, float *x, float *y, float *z)
     int pixel;
     where = &world_where()->where;
     if (where->kind != WHERE_WORLD || !container || container->type != RECORD_CONTAINER ||
-        container->parent != WORLD_ROOT || !(container->place_key & 0x80000000u) ||
-        !(container->thing_key & 0x80000000u)) { return 0; }
+        container->parent != WORLD_ROOT || !(container->place_key & GROUND_KEY_BIT) ||
+        !(container->thing_key & GROUND_KEY_BIT)) { return 0; }
     pixel = (int)(container->place_key & 0x7fffffffu);
-    if (pixel >= 500000) { return 0; }
-    *x = container->x+(pixel%1000*8-where->origin_x)*STREAM_CHUNK;
+    if (pixel >= WORLDMAP_W*WORLDMAP_H) { return 0; }
+    *x = container->x+(pixel%WORLDMAP_W*GROUND_PIXEL_CHUNKS-where->origin_x)*STREAM_CHUNK;
     *y = container->y;
-    *z = container->z+(pixel/1000*8-where->origin_z)*STREAM_CHUNK;
+    *z = container->z+(pixel/WORLDMAP_W*GROUND_PIXEL_CHUNKS-where->origin_z)*STREAM_CHUNK;
     return 1;
 }
 void ground_close(void)
@@ -71,7 +82,7 @@ void ground_frame(const Camera *camera)
     df_u32 chosen[GROUND_VISIBLE];
     if (!g_scene || g_slot < 0) { return; }
     mem_zero(chosen,sizeof(chosen));
-    for (i = 0; i < GROUND_VISIBLE; i++) { nearest[i] = 320*320; }
+    for (i = 0; i < GROUND_VISIBLE; i++) { nearest[i] = GROUND_SHOW_RANGE*GROUND_SHOW_RANGE; }
     for (i = 0; i < OBJECTS; i++) {
         item = &game_state()->object[i];
         if (!item->id || !ground_position(item,&x,&y,&z)) { continue; }
@@ -87,7 +98,7 @@ void ground_frame(const Camera *camera)
         if (!live) {
             entity_init(&entity); entity.live = 1;
             entity.pose[ENTITY_IDLE].slot[0] = (df_u16)g_slot;
-            entity.pose[ENTITY_IDLE].w[0] = entity.pose[ENTITY_IDLE].h[0] = 24;
+            entity.pose[ENTITY_IDLE].w[0] = entity.pose[ENTITY_IDLE].h[0] = GROUND_SPRITE;
             g_picture[i] = spawn_add(g_scene,&entity,0); live = spawn_get(g_picture[i]);
         }
         item = object_at(chosen[i]);
@@ -104,10 +115,10 @@ df_u32 ground_aim(float x, float y, float z, float dx, float dy, float dz, float
     for (i = 0; i < GROUND_VISIBLE; i++) {
         entity = spawn_get(g_picture[i]);
         if (!entity || !g_container[i]) { continue; }
-        ex = entity->x-x; ey = entity->y+12-y; ez = entity->z-z;
+        ex = entity->x-x; ey = entity->y+GROUND_SPRITE/2-y; ez = entity->z-z;
         along = ex*dx+ey*dy+ez*dz; off = ex*ex+ey*ey+ez*ez-along*along;
-        if (along < 0 || off > 12*12) { continue; }
-        along -= df_sqrt(12*12-(off > 0 ? off : 0));
+        if (along < 0 || off > GROUND_PICK_RADIUS*GROUND_PICK_RADIUS) { continue; }
+        along -= df_sqrt(GROUND_PICK_RADIUS*GROUND_PICK_RADIUS-(off > 0 ? off : 0));
         if (along < 0) { along = 0; }
         if (along <= reach) { chosen = g_container[i]; reach = along; }
     }

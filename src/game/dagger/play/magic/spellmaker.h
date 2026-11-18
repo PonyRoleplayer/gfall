@@ -15,12 +15,35 @@
 #include "engine/core/df.h"
 
 /* The spell's bytes. */
+/* The 89-byte spell record (struct spell): type and subtype pairs from SPELL_TYPE_AT, the element, the target, the costs from SPELL_COST_AT, durations, chances and magnitudes, the icon; the name at MAKER_NAME_AT. */
+#define SPELL_RECORD 89
+#define SPELL_TYPE_AT 0
+#define SPELL_ELEMENT_AT 6
+#define SPELL_TARGET_AT 7
+#define SPELL_COST_AT 8
+#define SPELL_DURATION_AT 14
+#define SPELL_CHANCE_AT 23
+#define SPELL_MAGNITUDE_AT 32
+#define SPELL_ICON_AT 72
+/* The element when no effect takes one is magic. */
+#define ELEMENT_MAGIC 4
+/* The sub-effects a type lists at most. */
+#define SUB_EFFECTS_MOST 12
+/* The price is the target's factor times the three costs times SPELLMAKER_PRICE_MUL; the window shows the sum shifted right once, then left twice. */
+#define SPELLMAKER_PRICE_MUL 2
+/* spellmaker_buy: the texts, the book's limit and the sound. */
+#define TEXT_SPELL_NO_NAME 1704
+#define TEXT_SPELL_TOO_DEAR 1702
+#define SPELLBOOK_MOST 128
+#define TEXT_SPELLBOOK_FULL 1709
+#define SND_SPELL_BOUGHT 206
+#define TEXT_SPELL_MADE 1705
 #define MAKER_ICONS 69
 #define MAKER_NAME_AT 47
 #define MAKER_NAME_LEN 24
 
 typedef struct Maker {
-    df_u8 spell[89];
+    df_u8 spell[SPELL_RECORD];
     /* spell_effect_slot, and spellmaker_settings_kind: 0 for no panel, else the bits 1 duration, 2 chance, 4 magnitude the effect's numbers use. */
     int slot, kind;
 } Maker;

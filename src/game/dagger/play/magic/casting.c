@@ -1,4 +1,5 @@
 #include "game/dagger/play/magic/magic.h"
+#include "game/dagger/play/character/survival.h"
 #include "game/dagger/tables/magic.h"
 #include "game/dagger/play/combat/dungeon.h"
 #include "game/dagger/play/cheats.h"
@@ -53,7 +54,7 @@ static void animate(int element)
 }
 void magic_draw(void)
 {
-    if (g_element >= 0 && g_draw) { g_draw(g_element,df_ifloor(g_animation*18.2065f)%6); }
+    if (g_element >= 0 && g_draw) { g_draw(g_element,df_ifloor(g_animation*BIOS_HZ)%CAST_FRAMES); }
     if (g_hud) { g_hud(magic_state()); }
 }
 int magic_pending(void) { return magic_state()->ready != 0; }
@@ -80,13 +81,13 @@ static void apply_area(const SpellDef *s, int caster, int level, float x, float 
     Body *body;
     int i;
     float dx, dy, dz, radius;
-    radius = (s->icon >= 250 ? 168 : level*4+64)*3;
+    radius = (s->icon >= ICON_STRIKE ? AREA_STRIKE_RADIUS : level*AREA_PER_LEVEL+AREA_BASE)*AREA_MUL;
     for (i = -1; i < dungeon_count(); i++) {
         e = dungeon_entity(i);
-        if (i == -1) { body = move_body(); dx = body->feet[0]-x; dy = body->feet[1]+40-y; dz = body->feet[2]-z; }
+        if (i == -1) { body = move_body(); dx = body->feet[0]-x; dy = body->feet[1]+BODY_MIDDLE-y; dz = body->feet[2]-z; }
         else {
             if (e->dead || !e->live) { continue; }
-            dx = e->x-x; dy = e->y+40-y; dz = e->z-z;
+            dx = e->x-x; dy = e->y+BODY_MIDDLE-y; dz = e->z-z;
         }
         if (dx*dx+dy*dy+dz*dz >= radius*radius || !line_clear(x,y,z,x+dx,y+dy,z+dz)) { continue; }
         if (caster == -1 && i == -1 && s->target == 3) { continue; }
@@ -104,14 +105,14 @@ static void visual(int i)
     if (!live) {
         entity_init(&entity); entity.live = 1; entity.glow = 1;
         entity.pose[ENTITY_IDLE].slot[0] = (df_u16)slot;
-        entity.pose[ENTITY_IDLE].w[0] = entity.pose[ENTITY_IDLE].h[0] = m->burst ? 128 : 48;
-        entity.pose[ENTITY_IDLE].rate = 12;
+        entity.pose[ENTITY_IDLE].w[0] = entity.pose[ENTITY_IDLE].h[0] = m->burst ? BURST_SIZE : MISSILE_SIZE;
+        entity.pose[ENTITY_IDLE].rate = MISSILE_RATE;
         g_visual[i] = spawn_add(g_scene,&entity,0); live = spawn_get(g_visual[i]);
     }
     if (live) {
-        live->x = m->x; live->y = m->y-24; live->z = m->z;
+        live->x = m->x; live->y = m->y-MISSILE_DROP; live->z = m->z;
         live->pose[ENTITY_IDLE].slot[0] = (df_u16)slot;
-        live->pose[ENTITY_IDLE].w[0] = live->pose[ENTITY_IDLE].h[0] = m->burst ? 128 : 48;
+        live->pose[ENTITY_IDLE].w[0] = live->pose[ENTITY_IDLE].h[0] = m->burst ? BURST_SIZE : MISSILE_SIZE;
     }
 }
 static void step_missile(int index, const Camera *camera, float dt);
@@ -131,7 +132,7 @@ static int launch(const SpellDef *s, int caster, int level, const Camera *aim)
     /* The original launch advances 110 units. Sweep this too, so a nearby
      * wall or creature cannot be skipped between the hand and that point. */
     sound_at(cast_sound(s->element),m->x,m->y,m->z);
-    step_missile(i,aim,110.0f/400.0f);
+    step_missile(i,aim,MISSILE_LAUNCH/MISSILE_SPEED);
     return 1;
 }
 
@@ -208,10 +209,10 @@ void magic_strike(int spell, int victim)
     s = spell_def(spell);
     e = dungeon_entity(victim);
     if (!s || !e) { return; }
-    strike = *s; strike.icon = 250;
+    strike = *s; strike.icon = ICON_STRIKE;
     magic_hostile();
     play_sound(cast_sound(s->element));
-    if (s->target >= 3) { apply_area(&strike,-1,character_state()->level,e->x,e->y+40,e->z); }
+    if (s->target >= 3) { apply_area(&strike,-1,character_state()->level,e->x,e->y+BODY_MIDDLE,e->z); }
     else if (s->target != 0) { magic_apply_def(&strike,spell,-1,victim,character_state()->level,0); }
 }
 
@@ -225,13 +226,13 @@ void magic_creature_item_strike(int spell, int attacker, int target, int level)
     def = spell_def(spell);
     foe = dungeon_entity(attacker);
     if (!def || !foe || foe->dead) { return; }
-    strike = *def; strike.icon = 250;
-    sound_at(cast_sound(strike.element),foe->x,foe->y+40,foe->z);
+    strike = *def; strike.icon = ICON_STRIKE;
+    sound_at(cast_sound(strike.element),foe->x,foe->y+BODY_MIDDLE,foe->z);
     if (strike.target >= 3) {
         victim = dungeon_entity(target);
         body = move_body();
         apply_area(&strike,attacker,level,victim ? victim->x : body->feet[0],
-            (victim ? victim->y : body->feet[1])+40,victim ? victim->z : body->feet[2]);
+            (victim ? victim->y : body->feet[1])+BODY_MIDDLE,victim ? victim->z : body->feet[2]);
     } else { magic_apply_def(&strike,spell,attacker,strike.target == 0 ? attacker : target,level,0); }
 }
 
@@ -288,7 +289,7 @@ static void impact(int i, int victim, int model)
     caster = magic_index(m->caster);
     if (!s) { m->live = 0; return; }
     sound_at(impact_sound(m->element),m->x,m->y,m->z);
-    if (model >= 0) { actions_trigger(g_scene,model,6); }
+    if (model >= 0) { actions_trigger(g_scene,model,LINK_EVENT_SPELL); }
     if (m->target == 4) { apply_area(s,caster,m->level,m->x,m->y,m->z); }
     else if (victim >= -1) { magic_apply(s->id,caster,victim,m->level,0); }
     m->burst = 1; visual(i);
@@ -304,20 +305,20 @@ static void step_missile(int index, const Camera *camera, float dt)
     m = &magic_state()->missile[index]; if (!m->live) { return; }
     if (m->burst) {
         m->burst += df_iround(dt*1000);
-        if (m->burst > 600) { m->live = 0; spawn_remove(g_visual[index]); g_visual[index] = 0; }
+        if (m->burst > BURST_MS) { m->live = 0; spawn_remove(g_visual[index]); g_visual[index] = 0; }
         else { visual(index); }
         return;
     }
     dx = camera->x-m->x; dy = camera->y-m->y; dz = camera->z-m->z;
-    if (dx*dx+dy*dy+dz*dz > 2048*2048) { m->burst = 1; visual(index); return; }
-    distance = 400*dt;
+    if (dx*dx+dy*dy+dz*dz > MISSILE_RANGE*MISSILE_RANGE) { m->burst = 1; visual(index); return; }
+    distance = MISSILE_SPEED*dt;
     interact_cast(g_scene,m->x,m->y,m->z,m->dx,m->dy,m->dz,distance,&wall);
     nearest = wall.wall; victim = -2; caster = magic_index(m->caster);
     for (i = -1; i < dungeon_count(); i++) {
         if (i == caster || (caster >= 0 && dungeon_team(i) == dungeon_team(caster))) { continue; }
-        e = dungeon_entity(i); radius = 60;
-        if (i == -1) { body = move_body(); dx = body->feet[0]-m->x; dy = body->feet[1]+40-m->y; dz = body->feet[2]-m->z; }
-        else { if (e->dead || !e->live) { continue; } dx = e->x-m->x; dy = e->y+40-m->y; dz = e->z-m->z; }
+        e = dungeon_entity(i); radius = MISSILE_HIT_RADIUS;
+        if (i == -1) { body = move_body(); dx = body->feet[0]-m->x; dy = body->feet[1]+BODY_MIDDLE-m->y; dz = body->feet[2]-m->z; }
+        else { if (e->dead || !e->live) { continue; } dx = e->x-m->x; dy = e->y+BODY_MIDDLE-m->y; dz = e->z-m->z; }
         along = dx*m->dx+dy*m->dy+dz*m->dz;
         squared = dx*dx+dy*dy+dz*dz-along*along;
         if (squared > radius*radius || along < 0) { continue; }
@@ -349,14 +350,14 @@ void magic_frame(const Scene *scene, const Camera *camera, const PlayIn *input, 
             entity_init(&light); light.live = light.glow = 1;
             light.pose[ENTITY_IDLE].slot[0] = (df_u16)g_light_slot;
             light.pose[ENTITY_IDLE].w[0] = (df_u16)g_light_w; light.pose[ENTITY_IDLE].h[0] = (df_u16)g_light_h;
-            light.pose[ENTITY_IDLE].rate = 12; g_light = spawn_add(scene,&light,0); live = spawn_get(g_light);
+            light.pose[ENTITY_IDLE].rate = MISSILE_RATE; g_light = spawn_add(scene,&light,0); live = spawn_get(g_light);
         }
         if (live) {
-            live->x = camera->x+df_sin(camera->yaw)*192;
-            live->y = camera->y-18; live->z = camera->z+df_cos(camera->yaw)*192;
+            live->x = camera->x+df_sin(camera->yaw)*CAST_LIGHT_AHEAD;
+            live->y = camera->y-CAST_LIGHT_DOWN; live->z = camera->z+df_cos(camera->yaw)*CAST_LIGHT_AHEAD;
         }
     } else if (g_light) { spawn_remove(g_light); g_light = 0; }
-    if (g_element >= 0) { g_animation += input->dt; if (g_animation*18.2065f >= 7) { g_element = -1; } }
+    if (g_element >= 0) { g_animation += input->dt; if (g_animation*BIOS_HZ >= CAST_TICKS) { g_element = -1; } }
     /* An item's readied spell is let go with the readying (fired, or put away). */
     if (g_item_spell && magic_state()->ready != g_item_spell) { object_delete(g_item_spell); g_item_spell = 0; }
     if (magic_pending()) {
@@ -365,14 +366,14 @@ void magic_frame(const Scene *scene, const Camera *camera, const PlayIn *input, 
         else if (!blocked) {
             cast = input->mouse_pressed & 3;
             if (s->target == 1) {
-                victim = -2; best = 160; camera_basis(&aim,&basis);
+                victim = -2; best = TOUCH_REACH; camera_basis(&aim,&basis);
                 for (i = 0; i < dungeon_count(); i++) {
                     e = dungeon_entity(i); if (!e->live || e->dead) { continue; }
-                    dx = e->x-camera->x; dy = e->y+40-camera->y; dz = e->z-camera->z;
+                    dx = e->x-camera->x; dy = e->y+BODY_MIDDLE-camera->y; dz = e->z-camera->z;
                     distance = dx*basis.fx*basis.cp+dy*basis.sp+dz*basis.fz*basis.cp;
                     across = dx*dx+dy*dy+dz*dz-distance*distance;
-                    if (distance < 0 || distance >= best || across > 60*60 ||
-                        !line_clear(camera->x,camera->y,camera->z,e->x,e->y+40,e->z)) { continue; }
+                    if (distance < 0 || distance >= best || across > TOUCH_ACROSS*TOUCH_ACROSS ||
+                        !line_clear(camera->x,camera->y,camera->z,e->x,e->y+BODY_MIDDLE,e->z)) { continue; }
                     victim = i; best = distance;
                 }
                 if (cast && victim >= 0 && cast_paid(s)) {
@@ -409,11 +410,11 @@ int magic_creature_at(int index, int target, const Camera *camera)
     victim = dungeon_entity(target);
     if (target != TARGET_PLAYER && (!victim || !victim->live || victim->dead)) { return 0; }
     x = victim ? victim->x : camera->x;
-    y = victim ? victim->y+40 : camera->y-20;
+    y = victim ? victim->y+BODY_MIDDLE : camera->y-20;
     z = victim ? victim->z : camera->z;
     dx = x-e->x; dz = z-e->z; distance = df_sqrt(dx*dx+dz*dz);
-    reach = victim ? 60 : 90;
-    ranged = distance > 4*reach && distance > 256;
+    reach = victim ? CREATURE_REACH_BODY : CREATURE_REACH_PLAYER;
+    ranged = distance > CAST_RANGED_REACH_MUL*reach && distance > CAST_RANGED_MIN && distance < CAST_RANGED_MAX;
     if (!ranged && distance > reach) { return 0; }
     key = magic_key(target);
     n = 0;
@@ -431,12 +432,12 @@ int magic_creature_at(int index, int target, const Camera *camera)
     }
     if (!n) { return 0; }
     s = spell_def(ids[random_range(0,n-1)]);
-    if (ranged && random_range(0,39)) { return 0; }
-    if (!line_clear(e->x,e->y+40,e->z,x,y,z)) { return 0; }
-    aim.x = e->x; aim.y = e->y+50; aim.z = e->z;
+    if (ranged && random_range(0,CAST_RANGED_ODDS-1)) { return 0; }
+    if (!line_clear(e->x,e->y+BODY_MIDDLE,e->z,x,y,z)) { return 0; }
+    aim.x = e->x; aim.y = e->y+CREATURE_AIM_HEIGHT; aim.z = e->z;
     aim.yaw = df_atan2(dx,dz); aim.pitch = df_atan2(y-aim.y,distance);
     if (s->target == 2 || s->target == 4) { if (!launch(s,index,who.level,&aim)) { return 0; } }
-    else { sound_at(cast_sound(s->element),e->x,e->y+40,e->z); magic_apply(s->id,index,s->target == 0 ? index : target,who.level,0); }
+    else { sound_at(cast_sound(s->element),e->x,e->y+BODY_MIDDLE,e->z); magic_apply(s->id,index,s->target == 0 ? index : target,who.level,0); }
     if (magic_target(index,&who,&career,base)) {
         who.magicka -= spell_cost(s,&who); magic_commit(index,&who,index);
     }
@@ -457,7 +458,7 @@ void magic_trap(int spell, float x, float y, float z)
     if (s->target == 2 || s->target == 4) {
         body = move_body(); dx = body->feet[0]-x; dz = body->feet[2]-z;
         distance = df_sqrt(dx*dx+dz*dz); aim.x = x; aim.y = y; aim.z = z;
-        aim.yaw = df_atan2(dx,dz); aim.pitch = df_atan2(body->feet[1]+40-y,distance);
+        aim.yaw = df_atan2(dx,dz); aim.pitch = df_atan2(body->feet[1]+BODY_MIDDLE-y,distance);
         launch(s,-3,character_state()->level,&aim);
     } else {
         sound_at(cast_sound(s->element),x,y,z);
