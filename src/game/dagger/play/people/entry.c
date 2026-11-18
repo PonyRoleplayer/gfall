@@ -19,9 +19,27 @@
 static struct { df_u32 building; int skill; } g_tried[TRIED_MOST];
 static int g_tried_count;
 
+/* A street door bashed open (flag 16): kept for the visit to the town, as the original keeps it until the town reloads. */
+static df_u32 g_bashed[TRIED_MOST];
+static int g_bashed_count;
+
 void entry_reset(void)
 {
     g_tried_count = 0;
+    g_bashed_count = 0;
+}
+
+void entry_set_bashed(df_u32 building)
+{
+    if (!entry_bashed(building) && g_bashed_count < TRIED_MOST) { g_bashed[g_bashed_count++] = building; }
+}
+
+int entry_bashed(df_u32 building)
+{
+    int i;
+
+    for (i = 0; i < g_bashed_count; i++) { if (g_bashed[i] == building) { return 1; } }
+    return 0;
 }
 
 static int was_tried(df_u32 building, int skill)

@@ -17,6 +17,10 @@
 #include "game/dagger/play/people/guild.h"
 #include "game/dagger/play/people/hours.h"
 #include "game/dagger/play/people/entry.h"
+#include "game/dagger/play/travel/doors.h"
+#include "game/dagger/play/combat/combat.h"
+#include "game/dagger/formats/sndfile.h"
+#include "game/dagger/tables/careers.h"
 #include "game/dagger/play/ui/hud.h"
 #include "game/dagger/places/travel.h"
 
@@ -27,6 +31,31 @@
  * A door from the street into a building (building_try_enter): its hours, a guild's own door, a house by day, a lock picked in Steal mode (and the crime of it), else how hard
  * the lock is. Anything else, a dungeon's door, the way out of a building, goes straight to travel_use.
  */
+const char *gfall_building_passage(const Usable *u);
+
+/* A building's street door struck: 9 % it gives (flag 16) and the player goes in if the building lets them; else, if a roll is over Stealth and no guard is about, crime 0 and the watch. */
+int gfall_building_bash(const Usable *u)
+{
+    const TownBuilding *t;
+    Usable in;
+    int region, index;
+    const char *refusal;
+
+    if (u->kind != USE_PASSAGE || !travel_door_in_town(u, &in, &region, &index) || !(t = town_building(region, index, u->tag >> 8, u->tag & 0xff))) { return 0; }
+    play_sound(SND_BASH);
+    if (random_range(1, PERCENT) < BASH_OPEN_UNDER) {
+        entry_set_bashed(gfall_building_id(t));
+        refusal = gfall_building_passage(u);
+        if (refusal) { msg_set(refusal); }
+        return 1;
+    }
+    if (random_range(1, PERCENT) > character_state()->skill[SKILL_STEALTH] && (!guards_present() || !(guards_witnesses() & 1))) {
+        law_state()->crime = CRIME_NONE;
+        guards_summon(1);
+    }
+    return 1;
+}
+
 const char *gfall_building_passage(const Usable *u)
 {
     const TownBuilding *t;
@@ -41,6 +70,7 @@ const char *gfall_building_passage(const Usable *u)
         mem_zero(&b, sizeof(b));
         b.id = gfall_building_id(t);
         b.type = t->type; b.faction = t->faction; b.name_seed = t->name_seed;
+        b.flags = entry_bashed(b.id) ? BUILDING_FLAG_OPEN : 0;
         b.quest_open = quest_building_open(region, index, t->block, t->record);
         b.access = quest_building_access(region, index, t->block, t->record, game_state()->minutes);
         mem_zero(&p, sizeof(p));

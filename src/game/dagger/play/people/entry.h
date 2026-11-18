@@ -61,5 +61,13 @@ typedef struct Entry {
 /* 1 when the door lets the player in. The lock's try is remembered by building and Lockpicking value (not saved). */
 int building_try_enter(const EntryBuilding *building, const EntryPlayer *player, df_u32 now, int witnessed, Entry *out);
 void entry_reset(void);
+/*
+ * A building's street door bashed (weapon_melee_strike): a roll of 1..100 under BASH_OPEN_UNDER sets its flag 16 (open to the street: a house for good, a shop only
+ * in its hours and no longer to be picked) and the player goes in; else, if 1..100 is over Stealth and no guard is about, a crime of none (0) and the watch comes (the court
+ * ignores crime 0). Kept while the town stays loaded.
+ */
+#define BASH_OPEN_UNDER 10
+void entry_set_bashed(df_u32 building);
+int entry_bashed(df_u32 building);
 
 #endif

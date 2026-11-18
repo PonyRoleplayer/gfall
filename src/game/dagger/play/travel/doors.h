@@ -19,5 +19,7 @@ int door_relock(Mover *door);
 int door_use(const Scene *scene, int usable, int mode);
 /* Called at the melee hit frame only when no creature was struck. */
 int door_strike(const Scene *scene, const Camera *camera);
+/* The game's answer to a building's street door being struck (1 when it handled it). */
+void door_set_street_bash(int (*fn)(const Usable *u));
 
 #endif

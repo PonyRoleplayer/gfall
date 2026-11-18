@@ -9,6 +9,7 @@ unsigned gfall_building_id(const TownBuilding *building);
 void gfall_building_name(const TownBuilding *building, int region, int index, char *out, int cap);
 void gfall_building_announce(const PlaceWhere *where);
 const char *gfall_building_passage(const Usable *door);
+int gfall_building_bash(const Usable *door);
 void gfall_building_install(void);
 
 #endif

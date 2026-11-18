@@ -1,4 +1,5 @@
 #include "game/dagger/play/state.h"
+#include "game/dagger/play/travel/doors.h"
 #include "game/dagger/tables/buildingtypes.h"
 #include "game/dagger/play/ui/msg.h"
 #include "game/dagger/play/quests/quest.h"
@@ -104,4 +105,5 @@ void gfall_building_announce(const PlaceWhere *where)
 void gfall_building_install(void)
 {
     names_set_expand(building_expand);
+    door_set_street_bash(gfall_building_bash);
 }

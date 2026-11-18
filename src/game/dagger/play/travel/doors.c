@@ -1,4 +1,5 @@
 #include "game/dagger/play/travel/doors.h"
+#include "game/dagger/formats/sndfile.h"
 #include "game/dagger/tables/magic.h"
 #include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/tables/careers.h"
@@ -7,12 +8,26 @@
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/combat/dungeon.h"
 #include "game/dagger/play/travel/actions.h"
+#include "game/dagger/play/people/entry.h"
+#include "game/dagger/play/people/law.h"
 #include "game/dagger/play/magic/magic.h"
 #include "game/dagger/tables/doordefs.h"
 #include "engine/scene/interact.h"
 #include "engine/scene/keep.h"
 
 #define LOCK_ATTEMPT 0xd1
+/* lockpick_door (archive.c 475..477), PICK_SEEN_ROLL and PICK_SEEN_BASE of entry.h: after every attempt at an inner door, a witness or a roll of 1..PICK_SEEN_ROLL under PICK_SEEN_BASE less Stealth is a crime of attempted breaking and the watch comes. */
+/* A building's street door struck (weapon_melee_strike, func_000733AD.c 120..150): the game's answer (the building's bash), if it set one. */
+static int (*g_street_bash)(const Usable *u);
+void door_set_street_bash(int (*fn)(const Usable *u)) { g_street_bash = fn; }
+
+static void pick_crime(void)
+{
+    if ((guards_witnesses() & 3) || random_range(1,PICK_SEEN_ROLL) < PICK_SEEN_BASE - character_state()->skill[SKILL_STEALTH]) {
+        law_note(CRIME_ATTEMPTED_BREAKING);
+        guards_summon(1);
+    }
+}
 /* lockpick_door (archive.c:200..240): a pick succeeds with skill + (level - lock) * LOCK_PER_LEVEL held to LOCK_CHANCE_MIN..LOCK_CHANCE_MAX, rolled on 0..100; a lock of LOCK_IMPOSSIBLE
  * or more cannot be picked. Bashing opens it when 1..100 is at most BASH_BASE - lock (func_000733AD.c:136). */
 #define LOCK_IMPOSSIBLE 20
@@ -25,7 +40,7 @@
 #define EFFECT_OPEN 17
 #define MISC_KEY 3
 #define SND_LOCK_OPEN 60
-#define SND_BASH 9
+
 
 int lock_chance(int skill, int level, int lock)
 {
@@ -187,6 +202,7 @@ int door_use(const Scene *scene, int usable, int mode)
     if (!chance || tried(door,skill)) {
         interact_say(lock_text(LOCK_FAILED));
         if (!chance) { actions_trigger(scene,scene->usables[usable].model,LINK_EVENT_LOCK_FAIL); }
+        pick_crime();
         return 1;
     }
     /* Secure the attempt before rolling, so a failed allocation cannot give
@@ -214,6 +230,7 @@ int door_use(const Scene *scene, int usable, int mode)
     /* Trigger callbacks can grow Keep: do not retain row across this call. */
     if (!door->lock) { dungeon_alert(-1); actions_trigger(scene,scene->usables[usable].model,LINK_EVENT_LOCK_PICKED); }
     else { actions_trigger(scene,scene->usables[usable].model,LINK_EVENT_LOCK_FAIL); }
+    pick_crime();
     return 1;
 }
 
@@ -227,7 +244,12 @@ int door_strike(const Scene *scene, const Camera *camera)
     if (!camera) { return 0; }
     if (!interact_aim(scene,camera,&hit)) { return 0; }
     door = door_at(scene,hit.usable);
-    if (!door) { return 0; }
+    if (!door) {
+        const Usable *u;
+
+        u = hit.usable >= 0 && hit.usable < scene->nusables ? &scene->usables[hit.usable] : 0;
+        return u && u->kind == USE_PASSAGE && hit.dist <= STRIKE_MODEL_REACH && g_street_bash ? g_street_bash(u) : 0;
+    }
     dx = door->x0-camera->x; dz = door->z0-camera->z;
     if (dx*dx+dz*dz > STRIKE_MODEL_REACH*STRIKE_MODEL_REACH) { return 0; }
     mover = scene->usables[hit.usable].mover;

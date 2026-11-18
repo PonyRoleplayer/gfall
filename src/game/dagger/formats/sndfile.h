@@ -34,6 +34,8 @@
 /* Character creation: a race's voice is SND_RACE_VOICE + its number; confirming the class. */
 #define SND_RACE_VOICE 209
 #define SND_CLASS_CONFIRM 217
+/* A door bashed (volume 100). */
+#define SND_BASH 9
 #define SND_COINS 204
 #define SND_CLICK 203
 #define SND_GOLD 74
