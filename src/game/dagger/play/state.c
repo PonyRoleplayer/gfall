@@ -3,6 +3,7 @@
 #include "game/dagger/tables/enemies.h"
 #include "engine/core/mem.h"
 #include "game/dagger/play/items/inventory.h"
+#include "game/dagger/play/combat/combat.h"
 #include "game/dagger/play/magic/magic.h"
 #include "game/dagger/play/magic/enchant.h"
 #include "game/dagger/play/quests/quest.h"
@@ -90,7 +91,7 @@ void skill_add_uses(int skill, int n)
 
     if (skill < 0 || skill >= SKILLS) { return; }
     uses = (long)g_state.skill_uses[skill] + n;
-    g_state.skill_uses[skill] = uses < 0 ? 0 : uses > 20000 ? 20000 : (df_u32)uses;
+    g_state.skill_uses[skill] = uses < 0 ? 0 : uses > SKILL_USES_MOST ? SKILL_USES_MOST : (df_u32)uses;
 }
 
 void skill_use(int skill)
@@ -126,7 +127,7 @@ void state_clear(void)
     g_state.random = seed;
     g_state.settings_flags = flags;
     g_state.mouse_mode = mouse;
-    g_state.next_low = 10000;
+    g_state.next_low = OBJECT_ID_FIRST;
     g_state.region = g_state.location = -1;
     spells_sync_custom(&g_state);
     quest_reset();
@@ -145,8 +146,8 @@ int random_range(int low, int high)
     }
     /* Watcom rand at code VA 0009DC25, verified against FALL.EXE bytes.
      * Seed zero is valid. One stream is shared by creation and gameplay. */
-    g_state.random = g_state.random * 1103515245u + 12345u;
-    return low + (int)(((g_state.random >> 16) & 0x7fffu) %
+    g_state.random = g_state.random * WATCOM_RAND_MUL + WATCOM_RAND_ADD;
+    return low + (int)(((g_state.random >> 16) & RAND_MAX_WATCOM) %
                         ((df_u32)high - (df_u32)low + 1u));
 }
 
@@ -223,9 +224,9 @@ df_u32 object_new(int type, df_u32 parent, int index, unsigned high)
         return 0;
     }
     /* object_new_id: low IDs 10000..62999, then wrap, checking both roots. */
-    for (i = 0; i < 53000; i++) {
-        if (g_state.next_low >= 63000u) {
-            g_state.next_low = 10000u;
+    for (i = 0; i < (int)OBJECT_ID_SPAN; i++) {
+        if (g_state.next_low >= OBJECT_ID_END) {
+            g_state.next_low = OBJECT_ID_FIRST;
         }
         id = ((df_u32)high << 16) | g_state.next_low++;
         if (!object_at(id)) {
@@ -342,9 +343,9 @@ int state_begin(void)
     g_state.move_id = object_new(RECORD_MOVE, PLAYER_ROOT, 0, 100);
     g_state.eye_id = object_new(RECORD_EYE, g_state.move_id, 0, 100);
     g_state.entity_id = object_new(RECORD_ENTITY, g_state.move_id, 0, 100);
-    for (i = 0; i <= 8; i++) {
+    for (i = 0; i < PLAYER_CONTAINERS; i++) {
         /* Wagon exists only when owned. */
-        if (i == 4) {
+        if (i == CONTAINER_WAGON) {
             continue;
         }
         id = object_new(RECORD_CONTAINER, g_state.entity_id, i, 100);
@@ -356,23 +357,23 @@ int state_begin(void)
     object_new(RECORD_OPTIONS, g_state.entity_id, 0, 100);
     object_new(RECORD_LOGBOOK, g_state.entity_id, 0, 100);
     object_new(RECORD_BANK, g_state.entity_id, 0, 100);
-    for (i = 0; i < who.gifts && i < 32; i++) {
+    for (i = 0; i < who.gifts && i < KIT_GIFTS_MOST; i++) {
         id = item_create(g_state.inventory_id, who.gift[i].group,
                             who.gift[i].index, who.gift[i].material);
         if (!id) { return 0; }
         if (who.gift[i].group == ITEM_GROUP_WEAPON && who.gift[i].index == WEAPON_ARROW) {
-            object_edit(id)->count = who.arrows ? who.arrows : 24;
+            object_edit(id)->count = who.arrows ? who.arrows : KIT_ARROWS;
         }
         if (who.gift[i].group == ITEM_GROUP_MISC && who.gift[i].index == MISC_SPELLBOOK) { inventory_start_spells(id); }
-        if (i == who.gifts-2 && who.klass != 13 && who.gift[i].group == ITEM_GROUP_WEAPON) {
+        if (i == who.gifts-2 && who.klass != CLASS_ARCHER && who.gift[i].group == ITEM_GROUP_WEAPON) {
             /* starting_equipment_give fixes a standard class weapon's value. */
-            object_edit(id)->value = 15;
+            object_edit(id)->value = KIT_WEAPON_VALUE;
         }
         if (who.gift[i].group == ITEM_GROUP_MENS_CLOTHING || who.gift[i].group == ITEM_GROUP_WOMENS_CLOTHING) {
             inventory_equip(id);
         }
     }
-    g_state.minutes = 523530u; /* Initial value, func_0004ED36; game_reset differs. */
+    g_state.minutes = NEW_GAME_MINUTES; /* Initial value, func_0004ED36; game_reset differs. */
     g_state.ready = 1;
     progress_begin();
     automap_clear();
@@ -438,18 +439,18 @@ void state_date(int *year, int *month, int *day, int *weekday)
 {
     df_u32 days;
 
-    days = g_state.minutes / 1440u;
+    days = g_state.minutes / MINUTES_PER_DAY;
     if (year) {
-        *year = 400 + (int)(days / 360u);
+        *year = YEAR_FIRST + (int)(days / DAYS_PER_YEAR);
     }
     if (month) {
-        *month = (int)((days % 360u) / 30u);
+        *month = (int)((days % DAYS_PER_YEAR) / DAYS_PER_MONTH);
     }
     if (day) {
-        *day = (int)(days % 30u);
+        *day = (int)(days % DAYS_PER_MONTH);
     }
     if (weekday) {
-        *weekday = (int)(days % 7u);
+        *weekday = (int)(days % DAYS_PER_WEEK);
     }
 }
 
@@ -458,12 +459,12 @@ void state_calendar(void)
     Calendar c;
     clock_calendar_default(&c);
     c.week_restarts = 0;
-    c.start_year = 400;
+    c.start_year = YEAR_FIRST;
     c.start_month = c.start_day = 0;
     clock_set_calendar(&c);
     clock_set_scale(0); /* GFALL owns time; rendering cannot advance it again. */
-    clock_set_day(400 * 360 + (int)(g_state.minutes / 1440u));
-    clock_set_minute((float)(g_state.minutes % 1440u));
+    clock_set_day(YEAR_FIRST * DAYS_PER_YEAR + (int)(g_state.minutes / MINUTES_PER_DAY));
+    clock_set_minute((float)(g_state.minutes % MINUTES_PER_DAY));
 }
 
 void state_pass_minutes(df_u32 minutes)
@@ -545,7 +546,7 @@ static int character_valid(const GameState *state)
     career = &state->career;
     if (who->race < 0 || who->race > 7 || who->female < 0 || who->female > 1 ||
         who->klass < 0 || who->klass >= CLASSES || who->name[NAME_LEN - 1] ||
-        who->gifts < 0 || who->gifts > 32 || who->reflexes < 0 || who->reflexes > 4 ||
+        who->gifts < 0 || who->gifts > KIT_GIFTS_MOST || who->reflexes < 0 || who->reflexes > 4 ||
         who->gold < 0 || who->gold > 100000000 || who->level < 1 || who->max_health < 1 || who->max_health > 1000000 ||
         who->health < 0 || who->health > who->max_health ||
         who->max_magicka < 0 || who->max_magicka > 1000000 ||
@@ -658,7 +659,7 @@ static int clock_and_view_valid(const GameState *state)
         if (state->progress.floor[i] < 0 || state->progress.floor[i] > 100) { return 0; }
     }
 
-    if (state->next_low < 10000u || state->next_low > 63000u ||
+    if (state->next_low < OBJECT_ID_FIRST || state->next_low > OBJECT_ID_END ||
         state->minutes > 0x7fffffffu || state->stealth_minute > state->minutes ||
         state->ticks >= 90u || state->tick_fraction >= 65536000u ||
         !(state->frame_fraction >= 0 && state->frame_fraction < 1) ||

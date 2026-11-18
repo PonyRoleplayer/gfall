@@ -3,20 +3,31 @@
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/tables/shopdefs.h"
+#include "game/dagger/play/combat/combat.h"
 
 /* See shelf.h. */
 
+/* The furniture that holds stock: model 418, and model 410 when its variant is a container (click.c:968). */
+#define MODEL_SHELF 418
+#define MODEL_FURNITURE 410
+/* The first item is always made; then the chance halves, and rand() % 100 > chance ends it. */
+#define SHELF_FIRST_CHANCE 100
+/* A book's rarity is (quality + BOOK_RARITY_ADD) / BOOK_RARITY_DIV (equip.c:804). */
+#define BOOK_RARITY_ADD 3
+#define BOOK_RARITY_DIV 5
+
 int shelf_model(int model_id, int variant)
 {
-    if (model_id == 418) {
+    if (model_id == MODEL_SHELF) {
         return 1;
     }
-    if (model_id != 410) {
+    if (model_id != MODEL_FURNITURE) {
         return 0;
     }
     /* furniture_is_container */
     return variant == 3 || variant == 4 || variant == 7 || variant == 8 || variant == 50 || variant == 51 ||
            (variant >= 32 && variant <= 38);
+    /* The original passes the variant plus MODEL_FURNITURE * 128 to this list, which stops at 51, so there no model 410 ever stocks; ours stocks its containers (docs/game-later.md). */
 }
 
 /* rand_range(0, n - 1) the original's way: the Watcom stream, through the session. */
@@ -35,7 +46,7 @@ int shelf_stock(df_u32 container, int variant, int quality, int building_type, i
         return 0;
     }
     group = groups[pick(n)];
-    chance = 100;
+    chance = SHELF_FIRST_CHANCE;
     made = 0;
     for (;;) {
         df_u32 id;
@@ -44,11 +55,11 @@ int shelf_stock(df_u32 container, int variant, int quality, int building_type, i
         id = 0;
         if (group == ITEM_GROUP_MENS_CLOTHING || group == ITEM_GROUP_WOMENS_CLOTHING) {
             /* Clothes for the player's sex (the original tests the character's flag bit 0). */
-            group = character_state()->female ? 12 : 6;
+            group = character_state()->female ? ITEM_GROUP_WOMENS_CLOTHING : ITEM_GROUP_MENS_CLOTHING;
         }
         if (group == ITEM_GROUP_BOOK) {
-            /* item_make(7, (quality + 3) / 5): a book of that rarity. */
-            id = item_create(container, ITEM_GROUP_BOOK, (quality + 3) / 5, -1);
+            /* item_make(7, (quality + BOOK_RARITY_ADD) / BOOK_RARITY_DIV): a book of that rarity. */
+            id = item_create(container, ITEM_GROUP_BOOK, (quality + BOOK_RARITY_ADD) / BOOK_RARITY_DIV, -1);
         } else if (group != ITEM_GROUP_MAGIC_ITEM && group != ITEM_GROUP_ARTIFACT && group != ITEM_GROUP_MAP) {
             kinds = item_kinds(group);
             if (kinds > 0) {
@@ -61,7 +72,7 @@ int shelf_stock(df_u32 container, int variant, int quality, int building_type, i
         }
         chance >>= 1;
         /* rand() % 100 > chance ends it. */
-        if (random_range(0, 32767) % 100 > chance) {
+        if (random_range(0, RAND_MAX_WATCOM) % PERCENT > chance) {
             break;
         }
     }

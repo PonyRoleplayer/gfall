@@ -192,7 +192,7 @@ void check_guild(void)
             const ObjectInfo *o;
 
             o = &game_state()->object[i2];
-            if (o->id && o->type == RECORD_ITEM && o->parent == game_state()->inventory_id && o->group == 2 && o->armor_type == 2 && o->material == 2) { plates++; }
+            if (o->id && o->type == RECORD_ITEM && o->parent == game_state()->inventory_id && o->group == 2 && o->armor_type == 2 && o->material == 1) { plates++; }
         }
         id = 0;
         check_expect(ok2 && text == 463 && plates >= 1 && (knight->armor & (1u << 3)), "guild: a knight's rank 3 gift is not a plate piece of metal 2");

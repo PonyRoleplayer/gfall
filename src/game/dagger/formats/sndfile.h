@@ -30,6 +30,9 @@
 #define SND_WIND_BLOW_A 71
 #define SND_WIND_BLOW_B 72
 #define SND_MONSTER_ROAR 73
+/* The coins of a settled trade (trade_settle_offer), at volume 100, and the dialog click. */
+#define SND_COINS 204
+#define SND_CLICK 203
 #define SND_GOLD 74
 /* What DFU's SoundClips names GoldPieces: a purchase or a sale (DaggerfallTradeWindow). */
 #define SND_GOLD_PIECES 361

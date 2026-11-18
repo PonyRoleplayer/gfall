@@ -30,6 +30,81 @@
 #define JOIN_PRIMARY_MIN 22
 #define JOIN_SECONDARY_MIN 4
 #define RANK_MONTH 40320u
+/* A guild's index: the low six bits of its kind (guild_join_or_promote); the order is guild_kind_of_faction's. */
+#define KIND_GUILD_MASK 63
+enum { GUILD_DARK_BROTHERHOOD = 0, GUILD_MAGES = 1, GUILD_FIGHTERS = 2, GUILD_THIEVES = 3, GUILD_FIRST_KNIGHT = 4, GUILD_FIRST_TEMPLE = 14 };
+#define KNIGHT_ORDERS 10
+#define TEMPLES 8
+/* The guild lists end with this byte (g_guild_skills). */
+#define SKILL_LIST_END 255
+/* A rank is a byte; an expulsion takes it past RANK_EXPELLED_OVER. Thieves at rank 6 or 8 get the map of their halls (THIEVES_MAP_RANK_*), the Brotherhood at every promotion under RANK_EXPELLED_OVER. */
+#define RANK_EXPELLED_OVER 100
+#define THIEVES_MAP_RANK_1 6
+#define THIEVES_MAP_RANK_2 8
+#define TEXT_GUILD_EXPELLED 668
+#define TEXT_GUILD_DEMOTED 667
+/* The messages a guild has: refused (no skill), reputation too low, ask, welcome, then one for each rank from GUILD_MSG_RANK0. */
+enum { GUILD_MSG_REFUSED = 0, GUILD_MSG_REPUTATION = 1, GUILD_MSG_ASK = 2, GUILD_MSG_RANK0 = 3 };
+/* A knight from elsewhere counts as local at this rank. */
+#define KNIGHT_ANYWHERE_RANK 4
+/* The invitation counters (guild_count_crime): THIEVES_INVITE_AT thefts, BROTHERHOOD_INVITE_AT kills, then GUILD_INVITE_DELAY minutes (3 days); GUILD_INVITED marks it taken. */
+#define THIEVES_INVITE_AT 6
+#define BROTHERHOOD_INVITE_AT 15
+#define GUILD_INVITE_DELAY 4320u
+#define GUILD_INVITED 100
+#define SERVICE_LABELS 89
+/* Training: once in TRAINING_GAP minutes (text TEXT_TRAINING_TOO_SOON), level * TRAINING_PRICE_PER_LEVEL gold, shifted left TRAINING_STRANGER_SHIFT for a stranger; none above TRAINING_SKILL_MOST (text TEXT_TRAINING_TOO_GOOD);
+ * the skill gains TRAINING_USES_MIN..MAX times its advance and TRAINING_MINUTES pass (text TEXT_TRAINED). */
+#define TRAINING_GAP 720u
+#define TEXT_TRAINING_TOO_SOON 4023
+#define TRAINING_PRICE_PER_LEVEL 100
+#define TRAINING_STRANGER_SHIFT 2
+#define TRAINING_SKILL_MOST 50
+#define TEXT_TRAINING_TOO_GOOD 4022
+#define TRAINING_USES_MIN 10
+#define TRAINING_USES_MAX 20
+#define TEXT_TRAINED 5221
+#define TRAINING_MINUTES 180
+/* A blessing's target: BLESS_LEGAL the legal standing, bit BLESS_ATTRIBUTE an attribute, else a skill; each held at STAT_MOST (blessing_apply). */
+#define BLESS_LEGAL 255
+#define BLESS_ATTRIBUTE 128
+/* A member's blessing lasts rank + BLESS_DAYS_BASE days and gives rank + BLESS_AMOUNT_MEMBER_BASE; a stranger (rank -1) BLESS_DAYS_BASE days and BLESS_AMOUNT_STRANGER. Temple 142's has none; one at a time (TEXT_BLESSED_ALREADY). */
+#define BLESS_DAYS_BASE 4
+#define BLESS_AMOUNT_MEMBER_BASE 10
+#define BLESS_AMOUNT_STRANGER 8
+#define TEXT_BLESSED_ALREADY 454
+#define TEMPLE_AKATOSH 142
+/* A Mages Guild member whose class cannot regain magicka has it filled on entering (text TEXT_MAGICKA_FILLED). */
+#define TEXT_MAGICKA_FILLED 465
+/* A knight's armour: one gift for each rank (TEXT_ARMOR_GIVEN if given), a piece 0..KNIGHT_ARMOR_PIECES, text TEXT_ARMOR_GIFT; a house at rank KNIGHT_HOUSE_RANK only (TEXT_HOUSE_RANK). */
+#define TEXT_ARMOR_GIVEN 461
+#define TEXT_ARMOR_GIFT 463
+#define KNIGHT_ARMOR_PIECES 6
+#define KNIGHT_HOUSE_RANK 9
+#define TEXT_HOUSE_RANK 460
+/* The summoning day (daedra_offer): DAEDRA_DAYS princes' days, the entry DAEDRA_DAY_NONE is the "none" sentinel (TEXT_NO_SUMMONING); a price (100 - reputation) * SUMMON_PRICE_PER_REP + SUMMON_PRICE_BASE, at most SUMMON_PRICE_MOST (asked by TEXT_SUMMON_PRICE). */
+#define DAEDRA_DAYS 16
+#define DAEDRA_DAY_NONE 3
+#define TEXT_NO_SUMMONING 480
+#define TEXT_SUMMON_PRICE 481
+#define SUMMON_PRICE_PER_REP 1000
+#define SUMMON_PRICE_BASE 100000
+#define SUMMON_PRICE_MOST 200000
+/* daedra_summon: in a storm (WEATHER_STORM) a prince is forced to PRINCE_FORCED 15 % of the time, else 5 %; the chance is 30 + the prince's reputation, +30 in his weather (DAEDRA_ANY_WEATHER: any). */
+#define WEATHER_STORM 6
+#define SUMMON_FORCED_STORM 15
+#define SUMMON_FORCED 5
+#define PRINCE_FORCED 9
+#define SUMMON_CHANCE_BASE 30
+#define SUMMON_WEATHER_BONUS 30
+#define DAEDRA_ANY_WEATHER 100
+#define DAEDRA_SERVANTS 5
+/* The price scale is 8.8 fixed point: PRICE_SCALE_ONE is the full price, a member of rank r pays (MAX_RANK + 1 - r) / (MAX_RANK + 1). */
+#define PRICE_SCALE_ONE 256
+/* Every temple's stranger list: the quest giver, the donation and the cure (people factions). */
+#define PERSON_TEMPLE_QUEST 240
+#define PERSON_TEMPLE_DONATE 810
+#define PERSON_TEMPLE_CURE 813
 #define KIND_KNIGHT 64
 #define KIND_TEMPLE 128
 

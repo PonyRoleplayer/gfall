@@ -1,3 +1,4 @@
+#include "game/dagger/formats/sndfile.h"
 #include "game/dagger/play/character/rest.h"
 #include "game/dagger/play/combat/combat.h"
 #include "game/dagger/tables/buildingtypes.h"

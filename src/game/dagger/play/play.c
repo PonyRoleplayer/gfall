@@ -1,3 +1,4 @@
+#include "game/dagger/formats/sndfile.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/tables/magic.h"
 #include "game/dagger/play/character/curse.h"
@@ -355,7 +356,7 @@ static int modal_frame(const PlayIn *input)
         result = controls_editing();
         if (input->key && controls_key(input->key)) { options_back(); return FRAME_MENU; }
         if (result < 0 && (input->mouse_pressed & 1) && input->on_picture && controls_editing() < 0) {
-            play_sound(203);
+            play_sound(SND_CLICK);
             if (controls_click(input->cx, input->cy)) { options_back(); }
         }
         controls_drag(input->cx, input->cy, input->mouse_held);
@@ -568,7 +569,7 @@ int play_frame(const PlayIn *in, Camera *cam, const Scene *scene)
     if (in->pressed[AUTOMAP]) { maps_open(0); }
     if (in->pressed[TRAVEL]) { maps_open(1); }
     if (in->pressed[TRANSPORT] || in->pressed[MAGIC_ITEM]) {
-        play_sound(203);
+        play_sound(SND_CLICK);
     }
     if (in->pressed[MAGIC_ITEM]) { possessions_magic_items(); }
     if (in->pressed[SHEET]) { possessions_open(VIEW_SHEET,0); }

@@ -21,6 +21,8 @@
 
 /* The day: MINUTES_PER_DAY minutes, daylight from DAWN_MINUTE to DUSK_MINUTE (06:00 to 18:00). */
 #define MINUTES_PER_DAY 1440u
+/* The year: DAYS_PER_YEAR days of MINUTES_PER_DAY (tamriel.c). */
+#define MINUTES_PER_YEAR 518400u
 #define DAWN_MINUTE 360
 #define DUSK_MINUTE 1080
 #define MINUTES_PER_WEEK 10080u
@@ -48,6 +50,29 @@ enum {
     EQUIP_SLOT22, EQUIP_GREAVES, EQUIP_LEGS_CLOTHES, EQUIP_SLOT25, EQUIP_BOOTS,
     EQUIP_SLOTS
 };
+
+/* The records that are people: a person flat and a walking townsperson (spfx.c, talk.c). */
+#define RECORD_PERSON 8
+#define RECORD_PEDESTRIAN 53
+/* Watcom's rand, code at 0x9DC25: seed * MUL + ADD, the high word's low 15 bits; one stream for creation and play. */
+#define WATCOM_RAND_MUL 1103515245u
+#define WATCOM_RAND_ADD 12345u
+/* A skill's uses stop here (skill_add_uses). */
+#define SKILL_USES_MOST 20000
+/* object_new_id: the low word of an id runs OBJECT_ID_FIRST up to OBJECT_ID_END and wraps; the high word is the place. */
+#define OBJECT_ID_FIRST 10000u
+#define OBJECT_ID_END 63000u
+#define OBJECT_ID_SPAN (OBJECT_ID_END - OBJECT_ID_FIRST)
+/* init_player_records: the player's containers 0..PLAYER_CONTAINERS-1; number CONTAINER_WAGON exists only when a wagon is owned. */
+#define PLAYER_CONTAINERS 9
+#define CONTAINER_WAGON 4
+/* A new game's clock in minutes (func_0004ED36); game_reset after a death sets 519210, three days earlier. */
+#define NEW_GAME_MINUTES 523530u
+/* The calendar: year YEAR_FIRST plus days / DAYS_PER_YEAR, twelve months of DAYS_PER_MONTH days, DAYS_PER_WEEK weekdays. */
+#define YEAR_FIRST 400
+#define DAYS_PER_YEAR 360u
+#define DAYS_PER_MONTH 30u
+#define DAYS_PER_WEEK 7u
 
 enum {
     RECORD_WORLD = 1,

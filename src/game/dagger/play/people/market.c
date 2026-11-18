@@ -1,3 +1,4 @@
+#include "game/dagger/formats/sndfile.h"
 #include "game/dagger/play/people/market.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/play/magic/itemmaker.h"
@@ -190,9 +191,9 @@ int market_confirm(int yes)
             }
         }
     }
-    /* trade_settle_offer: a yes is one use of Mercantile; then the coins' sound (204). */
+    /* trade_settle_offer: a yes is one use of Mercantile; then the coins' sound (SND_COINS). */
     skill_use(SKILL_MERCANTILE);
-    play_sound(204);
+    play_sound(SND_COINS);
     return q.price;
 }
 

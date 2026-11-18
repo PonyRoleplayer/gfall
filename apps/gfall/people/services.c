@@ -401,7 +401,7 @@ static void hall_blessing(int kind, int rank)
     if (kind == 142) { return; }
     if (guilds_state()->blessing.active) { hall_text(454); return; }
     g_blessing_kind = kind;
-    g_blessing_rank = rank < 0 ? 0 : rank;
+    g_blessing_rank = rank; /* -1: a stranger, who is given the lesser blessing */
     hall_confirm(100, hall_blessing_paid);
 }
 
@@ -721,7 +721,13 @@ static void hall_service(void)
     m = guild_find_faction(g_hall.faction);
     service = guild_service(g_hall.kind, g_hall.person, m ? m->rank : -1, &heal);
     (void)service;
-    if (heal && hall_heal()) {
+    if (heal && g_hall.kind == GUILD_MAGES) {
+        /* run_0006DC35.c:306..309: a Mages Guild member whose class cannot regain magicka and is short of it has it filled; the Mages' hall gives no healing of health. */
+        if ((game_state()->career.flags & CLASS_NO_MAGICKA_REGEN) && character_state()->magicka < character_state()->max_magicka) {
+            character_state()->magicka = character_state()->max_magicka;
+            hall_text(TEXT_MAGICKA_FILLED);
+        }
+    } else if (heal && hall_heal()) {
         return;
     }
     hall_run();

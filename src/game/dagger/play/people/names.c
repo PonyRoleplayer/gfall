@@ -1,8 +1,11 @@
 #include "game/dagger/play/people/names.h"
 #include "game/dagger/tables/buildingtypes.h"
 #include "game/dagger/play/state.h"
+#include "game/dagger/play/combat/combat.h"
+#include "game/dagger/formats/factionfile.h"
 #include "engine/core/mem.h"
 #include "game/dagger/tables/namedata.h"
+#include "game/dagger/tables/names.h"
 
 /* See names.h. */
 
@@ -11,7 +14,7 @@ static df_u32 g_size;
 static void (*g_expand)(const char *in, char *out, int cap);
 
 /* One bank's six sets, as namegen_read_part has them in namegen_part_offsets and _counts. */
-static df_u32 g_offset[6], g_count[6];
+static df_u32 g_offset[NAME_SETS], g_count[NAME_SETS];
 
 void names_set_data(const df_u8 *bytes, df_u32 size)
 {
@@ -26,13 +29,13 @@ void names_set_expand(void (*expand)(const char *in, char *out, int cap))
 
 int region_bank(int region)
 {
-    return region >= 0 && region < 62 ? g_region_bank[region] : 0;
+    return region >= 0 && region < REGIONS ? g_region_bank[region] : 0;
 }
 
 /* rand() % n on the session's stream, as the original writes it. */
 static int rand_mod(int n)
 {
-    return random_range(0, 32767) % n;
+    return random_range(0, RAND_MAX_WATCOM) % n;
 }
 
 static df_u32 word(const df_u8 *p)
@@ -66,7 +69,7 @@ static void read_part(int set, char *piece)
         return;
     }
     at = g_offset[set] + (df_u32)rand_mod((int)g_count[set]) * 10u;
-    for (i = 0; i < 10 && at + (df_u32)i < g_size && g_data[at + (df_u32)i]; i++) {
+    for (i = 0; i < NAME_PIECE_MOST && at + (df_u32)i < g_size && g_data[at + (df_u32)i]; i++) {
         piece[i] = (char)g_data[at + (df_u32)i];
     }
     piece[i] = 0;
@@ -75,7 +78,7 @@ static void read_part(int set, char *piece)
 /* The part to the name: copied when first, else appended. */
 static void part(char *name, int cap, int set, int first)
 {
-    char piece[11];
+    char piece[NAME_PIECE_MOST + 1];
 
     read_part(set, piece);
     if (first) {
@@ -90,32 +93,32 @@ static void given(int bank, int female, char *name, int cap)
     int p;
 
     switch (bank) {
-    case 1:
+    case NAME_BANK_REDGUARD:
         part(name, cap, 0, 1);
         part(name, cap, 1, 0);
         part(name, cap, 2, 0);
-        if (!female && rand_mod(100) < 75) {
+        if (!female && rand_mod(PERCENT) < NAME_REDGUARD_EXTRA) {
             part(name, cap, 3, 0);
         }
         if (female) {
             part(name, cap, 4, 0);
         }
         break;
-    case 2:
+    case NAME_BANK_NORD:
         p = female ? 2 : 0;
         part(name, cap, p, 1);
         part(name, cap, p + 1, 0);
         break;
-    case 8:
+    case NAME_BANK_MONSTER1:
         part(name, cap, 0, 1);
-        if (rand_mod(50) < 25) {
+        if (rand_mod(NAME_MIDDLE_ROLL) < NAME_MIDDLE_UNDER) {
             part(name, cap, 1, 0);
         }
         part(name, cap, 2, 0);
         break;
-    case 9:
+    case NAME_BANK_MONSTER2:
         part(name, cap, 0, 1);
-        if (rand_mod(50) < 25) {
+        if (rand_mod(NAME_MIDDLE_ROLL) < NAME_MIDDLE_UNDER) {
             part(name, cap, 1, 0);
         }
         part(name, cap, 2, 0);
@@ -123,8 +126,8 @@ static void given(int bank, int female, char *name, int cap)
             part(name, cap, 3, 0);
         }
         break;
-    case 10:
-        if (!female && rand_mod(100) < 25) {
+    case NAME_BANK_MONSTER3:
+        if (!female && rand_mod(PERCENT) < NAME_TITLE_CHANCE) {
             part(name, cap, 3, 1);
             append(name, cap, " ");
             part(name, cap, 0, 0);
@@ -147,46 +150,46 @@ static void family(int bank, char *name, int cap)
 {
     name[0] = 0;
     switch (bank) {
-    case 1: case 8: case 9: case 10:
+    case NAME_BANK_REDGUARD: case NAME_BANK_MONSTER1: case NAME_BANK_MONSTER2: case NAME_BANK_MONSTER3:
         break;
-    case 2:
+    case NAME_BANK_NORD:
         part(name, cap, 0, 0);
         part(name, cap, 1, 0);
         append(name, cap, g_surname_sen);
         break;
     default:
-        part(name, cap, 4, 0);
-        part(name, cap, 5, 0);
+        part(name, cap, NAME_SURNAME_FIRST, 0);
+        part(name, cap, NAME_SURNAME_SECOND, 0);
         break;
     }
 }
 
 void name_generate(int bank, int female, char *out, int cap)
 {
-    char first[30], last[30];
+    char first[NAME_PART_MOST], last[NAME_PART_MOST];
     const df_u8 *b;
     int i;
 
     out[0] = 0;
-    if (!g_data || bank < 0 || bank >= 11 || g_size < (df_u32)(bank + 1) * 48u) {
+    if (!g_data || bank < 0 || bank >= NAME_BANKS || g_size < (df_u32)(bank + 1) * NAME_BANK_HEAD) {
         return;
     }
-    b = g_data + bank * 48;
-    for (i = 0; i < 6; i++) {
+    b = g_data + bank * NAME_BANK_HEAD;
+    for (i = 0; i < NAME_SETS; i++) {
         g_offset[i] = word(b + i * 4);
-        g_count[i] = word(b + 24 + i * 4);
+        g_count[i] = word(b + NAME_COUNTS_AT + i * 4);
     }
     first[0] = 0;
-    given(bank, female, first, 30);
+    given(bank, female, first, NAME_PART_MOST);
     /* The given name is copied out (40 characters at most) before the surname reuses the part buffer. */
-    for (i = 0; first[i] && i < 39 && i < cap - 1; i++) {
+    for (i = 0; first[i] && i < NAME_WHOLE_MOST - 1 && i < cap - 1; i++) {
         out[i] = first[i];
     }
     out[i] = 0;
-    family(bank, last, 30);
+    family(bank, last, NAME_PART_MOST);
     if (last[0]) {
-        append(out, cap < 41 ? cap : 41, " ");
-        append(out, cap < 41 ? cap : 41, last);
+        append(out, cap < NAME_WHOLE_MOST + 1 ? cap : NAME_WHOLE_MOST + 1, " ");
+        append(out, cap < NAME_WHOLE_MOST + 1 ? cap : NAME_WHOLE_MOST + 1, last);
     }
 }
 
@@ -194,7 +197,7 @@ void name_seeded(int bank, int female, df_u32 seed, char *out, int cap)
 {
     int saved;
 
-    saved = random_range(0, 32767);
+    saved = random_range(0, RAND_MAX_WATCOM);
     random_seed(seed);
     name_generate(bank, female, out, cap);
     random_seed((df_u32)saved);
@@ -205,7 +208,7 @@ int npc_name(const NpcName *npc, char *out, int cap)
     int i;
 
     out[0] = 0;
-    if (npc->type != 8 && npc->type != 53) {
+    if (npc->type != RECORD_PERSON && npc->type != RECORD_PEDESTRIAN) {
         return 0;
     }
     if (npc->faction && npc->faction_is_individual && npc->faction_name) {
@@ -263,7 +266,7 @@ void building_name(const BuildingName *b, char *out, int cap)
     const char *last;
 
     out[0] = 0;
-    saved = random_range(0, 32767);
+    saved = random_range(0, RAND_MAX_WATCOM);
     if (b->player_house) {
         copy(out, cap, g_your_house);
         random_seed((df_u32)saved);
@@ -326,9 +329,9 @@ void building_name(const BuildingName *b, char *out, int cap)
         copy(out, cap, g_city_wall);
         break;
     default:
-        if (b->faction == 108 && b->brotherhood) {
+        if (b->faction == FACTION_DARK_BROTHERHOOD && b->brotherhood) {
             copy(out, cap, g_brotherhood);
-        } else if (b->faction == 42 && b->thieves) {
+        } else if (b->faction == FACTION_THIEVES_GUILD && b->thieves) {
             copy(out, cap, g_thieves);
         } else if (b->resident && b->resident[0]) {
             copy(out, cap, "The ");

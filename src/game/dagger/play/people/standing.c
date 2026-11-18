@@ -1,5 +1,7 @@
 #include "game/dagger/play/people/standing.h"
 #include "engine/core/mem.h"
+#include "game/dagger/formats/factionfile.h"
+#include "game/dagger/play/people/guild.h"
 
 /* See standing.h. */
 
@@ -135,12 +137,12 @@ int standing_valid(const StandingState *s)
     int i;
 
     for (i = 0; i < g_count; i++) {
-        if (s->rep[i] < -100 || s->rep[i] > 100) {
+        if (s->rep[i] < REP_LEAST || s->rep[i] > REP_MOST) {
             return 0;
         }
     }
     for (i = 0; i < REGIONS; i++) {
-        if (s->price[i] < 250 || s->price[i] > 4000) {
+        if (s->price[i] < PRICE_LEAST || s->price[i] > PRICE_MOST) {
             return 0;
         }
     }
@@ -174,7 +176,7 @@ static void add_index(int i, int amount)
     rep = &standing_state()->rep[i];
     sum = *rep + amount;
     /* The original stores a short: above 100 it stops at 100, below -100 it is 65436, which is -100. */
-    *rep = (short)(sum > 100 ? 100 : (sum < -100 ? -100 : sum));
+    *rep = (short)(sum > REP_MOST ? REP_MOST : (sum < REP_LEAST ? REP_LEAST : sum));
 }
 
 void faction_add_reputation(int id, int amount)
@@ -205,19 +207,19 @@ static void propagate(int original, int amount)
         return;
     }
     while (g_parent[f] >= 0) {
-        if (g_def[f].id == 108) {
+        if (g_def[f].id == FACTION_DARK_BROTHERHOOD) {
             add_index(f, amount);
             break;
         }
         f = g_parent[f];
     }
-    if (g_parent[f] < 0 && g_def[f].id != 844) {
+    if (g_parent[f] < 0 && g_def[f].id != FACTION_GENERIC_KNIGHTS) {
         add_index(f, amount);
     }
-    if (g_def[f].id == 844) {
+    if (g_def[f].id == FACTION_GENERIC_KNIGHTS) {
         add_index(f, amount);
         /* The player's order of that bit, when they belong to one, takes it too, and its tree follows. */
-        m = g_membership ? g_membership(64) : 0;
+        m = g_membership ? g_membership(KIND_KNIGHT) : 0;
         if (m && faction_index(m) >= 0) {
             f = faction_index(m);
         }
@@ -234,8 +236,8 @@ void faction_change_reputation(int id, int amount)
     if (f < 0) {
         return;
     }
-    if (g_def[f].id == 240) {
-        m = g_membership ? g_membership(128) : 0;
+    if (g_def[f].id == FACTION_TEMPLE_MISSIONARIES) {
+        m = g_membership ? g_membership(KIND_TEMPLE) : 0;
         if (m && faction_index(m) >= 0) {
             f = faction_index(m);
         }
@@ -283,10 +285,10 @@ void standing_decay(int court_open)
     }
     for (i = 0; i < g_count; i++) {
         /* A value under -100 is set to 100 first, as the original does, so it comes out at 99. */
-        if (s->rep[i] > 100) {
-            s->rep[i] = 100;
-        } else if (s->rep[i] < -100) {
-            s->rep[i] = 100;
+        if (s->rep[i] > REP_MOST) {
+            s->rep[i] = REP_MOST;
+        } else if (s->rep[i] < REP_LEAST) {
+            s->rep[i] = REP_MOST;
         }
         if (s->rep[i] > 0) {
             s->rep[i]--;

@@ -12,6 +12,20 @@
 #define ATTRS 8
 #define SKILLS 35
 #define CLASSES 19
+/* A starting kit holds at most this many gifts (clothes, shoes, a weapon, a bow with arrows, the spellbook). */
+#define KIT_GIFTS_MOST 32
+/* kludge.c, newgame_give_kit: a woman is given clothing index 8, a man 10, and both shoes 24. */
+#define KIT_WOMENS_CLOTHES 8
+#define KIT_MENS_CLOTHES 10
+#define KIT_SHOES 24
+/* The weapon byte of the archer class: no table weapon, the long bow and a short sword instead. */
+#define KIT_ARCHER 254
+#define KIT_NONE 255
+#define KIT_ARCHER_SWORD 14
+#define KIT_ARROWS 24
+/* The class weapon is made with value 15, except the archer's (CLASS_ARCHER). */
+#define KIT_WEAPON_VALUE 15
+#define CLASS_ARCHER 13
 
 enum {
     ATTR_STR,
@@ -102,7 +116,7 @@ typedef struct CharacterState {
     /* Creation gifts, retained until an inventory consumes them. */
     int arrows;
     int gifts;
-    struct { int group, index, material; } gift[32];
+    struct { int group, index, material; } gift[KIT_GIFTS_MOST];
 } CharacterState;
 
 void gfall_tables_startup(void);

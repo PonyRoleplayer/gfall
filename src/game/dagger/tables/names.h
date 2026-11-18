@@ -25,6 +25,24 @@
 #define NAME_BANKS 11
 #define NAME_SETS 6
 #define NAME_PER_SET 64
+/* A bank's file head: NAME_SETS piece offsets, then NAME_SETS counts from NAME_COUNTS_AT; NAME_BANK_HEAD bytes (name_generate reads bank * 48). */
+#define NAME_BANK_HEAD 48
+#define NAME_COUNTS_AT 24
+/* A piece is at most NAME_PIECE_MOST letters; a piece's name NAME_PART_MOST, a whole name NAME_WHOLE_MOST characters in the original's buffers. */
+#define NAME_PIECE_MOST 10
+#define NAME_PART_MOST 30
+#define NAME_WHOLE_MOST 40
+/* A Redguard man's name takes a fourth piece NAME_REDGUARD_EXTRA percent of the time; banks 8 and 9 a middle piece when rand() % NAME_MIDDLE_ROLL < NAME_MIDDLE_UNDER; a bank-10 man is titled NAME_TITLE_CHANCE percent. */
+#define NAME_REDGUARD_EXTRA 75
+#define NAME_MIDDLE_ROLL 50
+#define NAME_MIDDLE_UNDER 25
+#define NAME_TITLE_CHANCE 25
+/* The monster banks of DFU's names; they have no surname. The others' surname is pieces NAME_SURNAME_FIRST and NAME_SURNAME_SECOND. */
+#define NAME_BANK_MONSTER1 8
+#define NAME_BANK_MONSTER2 9
+#define NAME_BANK_MONSTER3 10
+#define NAME_SURNAME_FIRST 4
+#define NAME_SURNAME_SECOND 5
 
 /* The banks (DFU's NameHelper.BankTypes). */
 enum {

@@ -18,7 +18,6 @@
 #define REST_HOURS_MOST 99
 #define MINUTES_PER_HOUR 60
 #define ENEMIES_NEAR 1024
-#define SND_CLICK 203
 
 #include "game/dagger/play/play.h"
 #include "game/dagger/play/people/lodging.h"

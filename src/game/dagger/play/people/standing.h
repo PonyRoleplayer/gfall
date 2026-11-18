@@ -20,6 +20,14 @@
 #define FACTION_LINKS 3
 /* A region price adjustment: 1000 is normal; classic keeps it within 250..4000. */
 #define PRICE_NORMAL 1000
+#define PRICE_LEAST 250
+#define PRICE_MOST 4000
+/* A reputation is REP_LEAST..REP_MOST (faction_add_reputation, reputation_decay). */
+#define REP_MOST 100
+#define REP_LEAST -100
+/* Faction 844, the Generic Knightly Order, takes a change whole like the Dark Brotherhood (FACTION_DARK_BROTHERHOOD), and the faction 240, the Temple Missionaries, stands for the player's own temple. */
+#define FACTION_GENERIC_KNIGHTS 844
+#define FACTION_TEMPLE_MISSIONARIES 240
 
 typedef struct FactionDef {
     short id, parent, type, region;
