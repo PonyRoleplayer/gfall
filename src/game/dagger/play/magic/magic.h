@@ -18,6 +18,7 @@ int effect_cost_raw(int group, const df_i16 *c, const int *d, const int *ch, con
  * cold and a Breton against magic gain RESIST_RACIAL, and it is held to RESIST_MIN..RESIST_MAX. A roll over the chance is the full effect; one that is more than RESIST_NONE_BAND under it, none; between
  * them the effect is the margin times RESIST_PARTIAL_STEP percent.
  */
+#define RESIST_FULL 100
 #define RESIST_BASE 50
 #define RESIST_RACIAL 30
 #define RESIST_MIN 5

@@ -202,7 +202,7 @@ int magic_resist(int index, int element, int bit, int modifier)
     if ((who.conditions & resist_flag(element)) && random_range(1,100) <= magic_chance(index,GROUP_ELEMENTAL_RESISTANCE,element)) { return 0; }
     chance = RESIST_BASE;
     if (career.immunity & bit) { return 0; }
-    if (career.weakness & bit) { return 100; }
+    if (career.weakness & bit) { return RESIST_FULL; }
     if (career.tolerance & bit) { chance >>= 1; }
     if (career.resistance & bit) { chance += chance >> 1; }
     chance += modifier;
@@ -211,7 +211,7 @@ int magic_resist(int index, int element, int bit, int modifier)
     if ((element == ELEMENT_COLD && race == PLAYER_RACE_NORD) || (element == ELEMENT_MAGIC && race == PLAYER_RACE_BRETON)) { chance += RESIST_RACIAL; }
     if (chance < RESIST_MIN) { chance = RESIST_MIN; } if (chance > RESIST_MAX) { chance = RESIST_MAX; }
     roll = random_range(1,100);
-    if (roll > chance) { return 100; }
+    if (roll > chance) { return RESIST_FULL; }
     if (chance-RESIST_NONE_BAND > roll) { return 0; }
     return (chance-roll)*RESIST_PARTIAL_STEP;
 }
