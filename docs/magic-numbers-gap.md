@@ -15,7 +15,9 @@ The cleanup order at the end of this document, steps 1 to 11, is done; no behavi
 - Trade, guild, class maker: `trade.h`, `guild.h`, `chargen.h`.
 - `curse.c`: its own spells, clans, sounds, rolls and caps.
 
-Still open: step 12 (rectangles: `possessions.c`, `chargen.c`, `travelmap.c`, `controls.c`, `guild.c`, `spellmaker.c`, `talkwin.c`, `ui.c` have none), the quest machine (`quests/`, being split by another session), `combat/dungeon.c` (the AI's reaches, arcs and timers, 290 literals), `magic/enchant.c`, `character/ailments.c`, `magic/potion.c`, `magic/itemmaker.c`, `combat/encounter.c`, `combat/ai.c`, `travel/actions.c` and the weapon delays of section C.
+Done 2026-11-18 (every file of `docs/gfall-constants.md` in the decomp): `kit`, `state`, `guild`, `shelf`, `market`, `names`, `standing`, `journey`, `survival`, `foegear`, `weapon`, `casting`, `spellmaker`, `spellshop`, `magicitem`, `magic`, `potion`, `itemmaker`, `describe`, `ground`, `doors`, and the quest ops (`QOP_*` in `quests/internal.h`). The differences from FALL.EXE that this found, fixed and open, are in `docs/game-later.md`.
+
+Still open: step 12 (screen rectangles in `chargen.c`, `travelmap.c`, `controls.c`, `ui.c`, `possessions/*`, `talkwin.c`), the quest machine's other numbers (`machine.c`, `binding.c`, `journal.c`), the save bounds (`state.c`, `save.c`, `config.c`), and the person-faction tables in `guild.c`.
 
 Read at `260e993` (`main`). The working tree also had uncommitted edits, including `play/combat/dungeon.c`, `play/magic/magic.c` and `play/combat/combat.c`. Line numbers below are that working tree. A clean `260e993` will not match every line in the dirty files.
 
