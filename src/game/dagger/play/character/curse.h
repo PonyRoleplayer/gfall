@@ -96,6 +96,9 @@ void curse_tick(void);
 void curse_schedule(df_u32 start, df_u32 minutes);
 /* rest_close: 1 when the infection's dream is to be shown (once); its video is not played here. */
 int curse_dream(void);
+/* The movies of the dreams: lycanthropy ANIM0002.VID, vampirism ANIM0004.VID (rest_close, xn_vid_play). */
+#define DREAM_MOVIE_LYCANTHROPY 2
+#define DREAM_MOVIE_VAMPIRISM 4
 
 /* A change of form (7.2): forced by the moons, or cast. 1 when it happened. */
 int curse_shapechange(int forced);

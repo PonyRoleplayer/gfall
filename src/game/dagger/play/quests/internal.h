@@ -23,6 +23,8 @@ extern QuestRuntime quest_runtime;
 extern int quest_foe_counter;
 extern const QuestWorld *quest_world;
 /* The quest ops (quest-machine.md 3.x), by what each does; the numbers are the files'. Ops 58, 59, 82 and 84 are the curse ops (docs/curses.md). A face op below QOP_FACE_FIRST_FOE is a person's. */
+/* Op 29 (ask yes or no): its operands are the state set with no beside the state set with yes, and the question's QRC id; the yes state is 1, the no state 2 (prompt_answer). */
+#define QOP_ASK_MESSAGE_ARG 3
 enum {
     QOP_PLACE_ITEM = 0,
     QOP_REWARD = 4,

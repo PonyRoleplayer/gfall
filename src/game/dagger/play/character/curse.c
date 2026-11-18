@@ -135,7 +135,7 @@ int curse_dream(void)
 {
     if (!curse_infected() || !curse_state()->dream) { return 0; }
     curse_state()->dream = 0;
-    return 1;
+    return curse_state()->infection_kind ? DREAM_MOVIE_LYCANTHROPY : DREAM_MOVIE_VAMPIRISM;
 }
 
 /* ---- What a curse gives and takes back ---- */

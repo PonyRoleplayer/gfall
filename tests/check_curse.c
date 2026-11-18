@@ -67,7 +67,14 @@ static void infection(void)
     curse_clear_infection();
     check_expect(curse_dream() == 0, "curse: a dream was shown with no infection");
     curse_infect_vampirism();
-    check_expect(curse_dream() == 1 && curse_dream() == 0, "curse: the dream was not shown exactly once");
+    check_expect(curse_dream() == DREAM_MOVIE_VAMPIRISM && curse_dream() == 0, "curse: the vampirism dream was not ANIM0004, shown exactly once");
+    curse_clear_infection();
+    curse_infect_lycanthropy(0);
+    check_expect(curse_dream() == DREAM_MOVIE_LYCANTHROPY && curse_dream() == 0, "curse: the lycanthropy dream was not ANIM0002, shown exactly once");
+    curse_infect_lycanthropy(0);
+    state_pass_minutes(4400);
+    check_expect(!curse_infected() && curse_dream() == 0, "curse: a dream came after the curse had already taken");
+    curse_cure_lycanthropy();
     curse_clear_infection();
 }
 

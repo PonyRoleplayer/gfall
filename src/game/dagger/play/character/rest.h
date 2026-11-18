@@ -46,4 +46,7 @@ void rest_frame(const PlayIn *input, const Camera *camera);
 /* rest_recover (0x71606), once per whole hour, indoors. */
 void rest_recover(void);
 
+/* The game's movie player for an infection's dream (a movie number, DREAM_MOVIE_*), called by rest_close. */
+void rest_set_dream(void (*play)(int movie));
+
 #endif

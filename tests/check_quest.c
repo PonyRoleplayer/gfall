@@ -10,6 +10,8 @@
 #include "game/dagger/play/people/standing.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/formats/textrsc.h"
+#include "game/dagger/play/character/curse.h"
+#include "game/dagger/play/character/ailments.h"
 
 static int g_said, g_asked;
 static char g_text[200];
@@ -133,6 +135,225 @@ static void put_op(df_u8 *p, int opcode, int message, const int *args, const int
 
     put16(p, opcode); put16(p + 81, message);
     for (k = 0; k < 5; k++) { put_arg(p + 6 + k * 15, args[k], negate ? negate[k] : 0); }
+}
+
+/* The two cure adventures, driven through the real $CUREWER and $CUREVAM files against the stub map (docs/curses.md 9.3; the decomp's curses-cures-and-dreams.md). */
+static int person_who(const QuestState *q, int i) { return q->person[i].who; }
+static void cure_begin(const char *name, int *slot)
+{
+    static const QuestWorld world = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, w_marker_at, w_spawn_at, w_place_at, w_pick_building, w_pick_site, w_person_name, w_outdoors };
+
+    quest_reset();
+    quest_set_world(&world); quest_set_names(0); quest_set_text(real_text); quest_set_say(take_say); quest_set_ask(take_ask);
+    g_spawned = 0; g_floor = 1;
+    *slot = quest_begin(name, 0);
+}
+
+/* An item of the quest marked read, the way the pack's use of it does (flag 512). */
+static void item_read(const QuestState *q, int n) { ((ObjectInfo *)object_at(q->item[n].object))->flags |= 512; }
+
+/* Every attribute the cure tests start from. */
+#define CURE_TEST_ATTRIBUTE 50
+
+static void make_lycanthrope(void)
+{
+    CharacterState *who;
+    int i;
+
+    who = character_state();
+
+    /* An empty pack and 50 gold: the earlier tests leave theirs full. */
+    for (i = 0; i < OBJECTS; i++) {
+        const ObjectInfo *o = &game_state()->object[i];
+        df_u32 up;
+        int hops;
+
+        for (up = o->parent, hops = 0; o->id && up && up != game_state()->inventory_id && object_at(up) && hops < OBJECTS; hops++) { up = object_at(up)->parent; }
+        if (o->id && up == game_state()->inventory_id && o->type == RECORD_ITEM) { inventory_unequip(o->id); object_delete(o->id); }
+    }
+    who->gold = 0;
+    who->level = 5; who->max_health = 100; who->health = 100;
+    for (i = 0; i < ATTRS; i++) { who->attribute[i] = CURE_TEST_ATTRIBUTE; state_base_attribute(i, CURE_TEST_ATTRIBUTE); }
+    curse_state()->infection_kind = 0; curse_state()->disease = 0;
+    curse_infect_lycanthropy(0);
+    state_pass_minutes(4400);
+}
+
+/* The ops run in file order, so one event can take several runs to reach the end of its chain. */
+static void settle(void) { int k; for (k = 0; k < 4; k++) { quest_run(); } }
+
+static void check_cure_werewolf(void)
+{
+    const QuestState *q;
+    int slot, gold, legal, region, here, px, py, strength;
+    char log[2048];
+
+    w_here(&region, &here, &px, &py);
+    /* The yes road: the letter, the priest's choice, the alchemist's 1000 gold for the vial, the local, the child. */
+    make_lycanthrope();
+    check_expect(curse_is_lycanthrope(), "cure: no lycanthrope to cure");
+    strength = CURE_TEST_ATTRIBUTE;
+    cure_begin("$CUREWER", &slot);
+    check_expect(slot >= 0, "cure: $CUREWER did not start");
+    if (slot < 0) { return; }
+    q = quest_at(slot);
+    settle();
+    check_expect(!(q->timer[1].flags & 64) && quest_state(slot, 9) == 0, "cure: the hunt began before the letter came");
+    check_expect(inventory_transfer(q->item[0].object, game_state()->inventory_id), "cure: the letter could not go to the pack");
+    settle();
+    check_expect(quest_state(slot, 9) && (q->timer[1].flags & 64), "cure: the letter in the pack did not start the hunt's first timer");
+    item_read(q, 0);
+    settle();
+    check_expect(quest_state(slot, 1) && logbook_slot(0) && logbook_slot(0)->used && logbook_slot(0)->message[0] == 1050, "cure: reading the letter did not log the hunter's threat (1050)");
+    g_answer = 0;
+    check_expect(quest_talk(person_who(q, 0), q->person[0].faction), "cure: the priest's talk was not taken");
+    settle();
+    check_expect(g_answer != 0 && quest_state(slot, 0), "cure: the priest did not ask (1030)");
+    if (g_answer) { g_answer(1); }
+    check_expect(quest_state(slot, 3) && !quest_state(slot, 4), "cure: yes to the priest did not set the yes state");
+    settle();
+    check_expect(logbook_slot(0)->message[1] == 1051, "cure: the yes road did not log 1051");
+    /* The alchemist wants exactly 1000 gold: short, nothing is taken and the state is clear again; paid, the vial is given. */
+    gold = character_state()->gold = 999;
+    quest_talk(person_who(q, 3), q->person[3].faction);
+    settle();
+    check_expect(character_state()->gold == gold && !carried_by_player(q->item[1].object) && !quest_state(slot, 11) && !quest_state(slot, 12), "cure: 999 gold bought a vial, or the short state was left set");
+    gold = character_state()->gold = 1000;
+    quest_talk(person_who(q, 3), q->person[3].faction);
+    settle();
+    check_expect(character_state()->gold == 0 && carried_by_player(q->item[1].object), "cure: 1000 gold did not buy the vial of blood");
+    quest_talk(person_who(q, 5), q->person[5].faction);
+    settle();
+    check_expect(quest_state(slot, 13) && logbook_slot(0)->message[2] == 1054, "cure: the local did not tell of the child (1054)");
+    /* The blood to the child, yes: the cure, -10 legal, no reward but the words, the child hidden and a wereboar placed. */
+    legal = region_legal(region);
+    g_answer = 0;
+    quest_talk(person_who(q, 1), q->person[1].faction);
+    settle();
+    check_expect(quest_state(slot, 8) && !carried_by_player(q->item[1].object) && g_answer != 0, "cure: the vial was not taken, or the child was not asked (1028)");
+    check_expect(curse_is_lycanthrope(), "cure: the lycanthrope was cured before the answer");
+    if (g_answer) { g_answer(1); }
+    settle();
+    check_expect(quest_state(slot, 14) && !curse_is_lycanthrope() && game_state()->base_attribute[ATTR_STR] == strength, "cure: yes to the child did not cure lycanthropy");
+    check_expect(region_legal(region) == legal - 10, "cure: the cure did not cost 10 legal reputation");
+    check_expect((q->qbn.person[1].flags & 0x800) && q->foe[1].placed, "cure: the child was not hidden or the wereboar not placed");
+    check_expect(quest_at(slot) != 0 && !q->ended, "cure: the quest ended at the cure, but only the hunt's timer ends it");
+    quest_foe_killed(q->foe[1].number);
+    settle();
+    check_expect(quest_state(slot, 17) && region_legal(region) == legal - 30, "cure: killing the wereboar did not cost another 20 legal reputation");
+    /* The hunt: the first timer's end starts the second, whose end ends the quest. */
+    (void)log;
+    quest_reset(); quest_set_world(0);
+
+    /* The no road: the priest's legend, the page and the map; nothing is cured. */
+    make_lycanthrope();
+    g_revealed_count = 0;
+    cure_begin("$CUREWER", &slot);
+    q = quest_at(slot);
+    settle();
+    inventory_transfer(q->item[0].object, game_state()->inventory_id);
+    settle();
+    item_read(q, 0);
+    settle();
+    g_answer = 0;
+    quest_talk(person_who(q, 0), q->person[0].faction);
+    settle();
+    if (g_answer) { g_answer(0); }
+    settle();
+    check_expect(quest_state(slot, 4) && !quest_state(slot, 3) && logbook_slot(0)->message[1] == 1052, "cure: no to the priest did not set the no state and log 1052");
+    check_expect(g_revealed_count >= 1, "cure: no to the priest did not show the hint dungeon");
+    inventory_transfer(q->item[3].object, game_state()->inventory_id);
+    settle();
+    item_read(q, 3);
+    settle();
+    check_expect(quest_state(slot, 16) && logbook_slot(0)->message[2] == 1053, "cure: reading the page did not log 1053");
+    check_expect(curse_is_lycanthrope(), "cure: the no road cured lycanthropy");
+    quest_reset(); quest_set_world(0);
+    ailments_cure(-1, 0);
+    curse_cure_lycanthropy();
+}
+
+
+static void make_vampire(void)
+{
+    make_lycanthrope();
+    curse_cure_lycanthropy();
+    curse_infect_vampirism();
+    state_pass_minutes(4400);
+}
+
+/* $CUREVAM up to the point where the player holds the token and the letter was read, the letter shown or not. */
+static void vampire_to_vamp1(int *slot, int show_letter)
+{
+    const QuestState *q;
+
+    make_vampire();
+    cure_begin("$CUREVAM", slot);
+    q = quest_at(*slot);
+    if (!q) { return; }
+    settle();
+    inventory_transfer(q->item[0].object, game_state()->inventory_id);
+    settle();
+    item_read(q, 0);
+    settle();
+    g_answer = 0; g_revealed_count = 0;
+    quest_talk(person_who(q, 0), q->person[0].faction);
+    settle();
+    if (show_letter) { if (g_answer) { g_answer(1); } } else if (g_answer) { g_answer(0); }
+    settle();
+}
+
+static void check_cure_vampire(void)
+{
+    const QuestState *q;
+    int slot, rep, gold_before, clan;
+
+    /* The road to the bloodfather: the letter, vamp1 without the letter shown, the bracelet to vamp2, the bloodfather dead. */
+    vampire_to_vamp1(&slot, 0);
+    check_expect(slot >= 0 && curse_is_vampire(), "cure: $CUREVAM did not start for a vampire");
+    if (slot < 0) { return; }
+    q = quest_at(slot);
+    check_expect(quest_state(slot, 3) && logbook_slot(0)->message[0] == 1050 && (q->timer[2].flags & 64), "cure: the letter did not log 1050 or start the hunt's first timer");
+    check_expect(quest_state(slot, 9) && !quest_state(slot, 8), "cure: not showing the letter did not set the no state");
+    check_expect(carried_by_player(q->item[1].object) && g_revealed_count >= 2 && (q->timer[0].flags & 64) && logbook_slot(0)->message[1] == 1051,
+                 "cure: the bracelet was not given, both dungeons not shown, timer 0 not started or 1051 not logged");
+    quest_talk(person_who(q, 1), q->person[1].faction);
+    settle();
+    check_expect(quest_state(slot, 16) && !carried_by_player(q->item[1].object) && logbook_slot(0)->message[2] == 1052, "cure: the bracelet to vamp2 did not take it and log 1052");
+    clan = q->person[0].faction;
+    rep = faction_rep(clan);
+    check_expect(curse_is_vampire(), "cure: the vampire was cured before the bloodfather died");
+    quest_foe_killed(q->foe[0].number);
+    settle();
+    check_expect(!curse_is_vampire() && faction_rep(clan) == rep - 20, "cure: the bloodfather's death did not cure vampirism and cost 20 reputation with vamp1's clan");
+    check_expect(!quest_at(slot), "cure: the quest did not end with the bloodfather");
+    quest_reset(); quest_set_world(0);
+
+    /* Showing the letter to vamp1: they thank the player, hide, and there is no bracelet and no cure. */
+    vampire_to_vamp1(&slot, 1);
+    q = quest_at(slot);
+    check_expect(q && quest_state(slot, 8) && !carried_by_player(q->item[1].object) && (q->qbn.person[0].flags & 0x800) && (q->qbn.person[1].flags & 0x800),
+                 "cure: showing the letter did not hide vamp1 and vamp2 without a bracelet");
+    quest_reset(); quest_set_world(0);
+
+    /* Timer 0: if vamp2 is not reached in its 1 to 3 days, the clan is angry (-15 reputation with vamp1's clan) and they hide. */
+    vampire_to_vamp1(&slot, 0);
+    q = quest_at(slot);
+    rep = faction_rep(q->person[0].faction);
+    gold_before = character_state()->gold;
+    state_pass_minutes(4300);
+    settle();
+    check_expect(quest_state(slot, 10) && faction_rep(q->person[0].faction) == rep - 15 && (q->qbn.person[0].flags & 0x800), "cure: timer 0 did not cost 15 reputation with vamp1's clan and hide them");
+    (void)gold_before;
+    quest_reset(); quest_set_world(0);
+    ailments_cure(-1, 0);
+    curse_cure_vampirism();
+}
+
+static void check_cures(void)
+{
+    check_cure_werewolf();
+    check_cure_vampire();
 }
 
 void check_quest(void)
@@ -862,4 +1083,5 @@ void check_quest(void)
         quest_reset();
         quest_set_world(0);
     }
+    check_cures();
 }

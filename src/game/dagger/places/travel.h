@@ -84,6 +84,9 @@ df_u32 travel_place_key(void);
 int travel_go_to_town(int region, int index);
 /* The same from the travel map: a dungeon's outside is landed on by its way down, as a hold first left is. */
 int travel_go_to_place(int region, int index, int by_way_down);
+/* The next place is a dungeon of the region, by its index in the region's dungeon list, entered on its start marker (the vampire's crypt: location_load_nth_dungeon_of_type then map_goto_location,
+ * docs/curses.md 4.5). Asked at once; 0 for a place the map does not have. */
+int travel_go_into_dungeon(int region, int index);
 /* The world pixel under cam, in the world; 0 elsewhere. */
 int travel_pixel(const Camera *cam, int *px, int *py);
 /* The next place is a save's: where, the feet as saved and the stream's origin then (chunks), the way it looked. */

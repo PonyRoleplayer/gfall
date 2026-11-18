@@ -86,26 +86,24 @@ int gfall_quest_outside(void)
 #define DUNGEON_REFS 4400
 static DunRef g_dungeon_refs[DUNGEON_REFS];
 
-/* The curses (docs/curses.md 4): a region's crypts (dungeon type 0), one of them picked, the player taken to it; the region's vampire clan; the region the player is in. */
+/* The curses (docs/curses.md 4.5, curses-cures-and-dreams.md 6): a new vampire wakes in a crypt of the region. The original counts the region's crypts (dungeon type 0), draws n below that count and
+ * loads the region's n-th dungeon of ANY type (location_load_nth_dungeon_of_type's bug): kept. The player stands on the dungeon's start marker; a region with no crypt leaves them where they are. */
 static int curse_haunt(int region)
 {
     static Dungeon dungeon;
-    int n, i, count, pick, outside;
+    int n, i, count, pick;
 
     n = dungeon_list(g_dungeon_refs, DUNGEON_REFS);
     if (n > DUNGEON_REFS) { n = DUNGEON_REFS; }
-    count = 0; pick = -1;
+    count = 0;
     for (i = 0; i < n; i++) {
         if (g_dungeon_refs[i].region == region && dungeon_load_at(region, g_dungeon_refs[i].index, &dungeon) && dungeon.dungeon_type == DUN_TYPE_CRYPT) { count++; }
     }
     if (!count) { return 0; }
     pick = random_range(0, count - 1);
     for (i = 0; i < n; i++) {
-        if (g_dungeon_refs[i].region != region || !dungeon_load_at(region, g_dungeon_refs[i].index, &dungeon) || dungeon.dungeon_type != DUN_TYPE_CRYPT) { continue; }
-        if (pick-- == 0) {
-            outside = dungeon_outside(region, dungeon.exterior_id);
-            return outside >= 0 && teleport(region, outside);
-        }
+        if (g_dungeon_refs[i].region != region) { continue; }
+        if (pick-- == 0) { return travel_go_into_dungeon(region, g_dungeon_refs[i].index); }
     }
     return 0;
 }

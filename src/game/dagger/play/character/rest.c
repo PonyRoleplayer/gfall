@@ -52,12 +52,20 @@ static int may_sleep(void)
     return why == REST_OK;
 }
 
+static void (*g_dream)(int movie);
+void rest_set_dream(void (*play)(int movie)) { g_dream = play; }
+
 void rest_close(void)
 {
     if (g.open) {
-        state_mode_pop(); progress_rest();
-        /* An infection's dream is shown on the first rest after it (anim0002.vid, or anim0004.vid for vampirism); we have no movie, the flag is only spent. */
-        curse_dream();
+        int movie;
+
+        state_mode_pop();
+        /* An infection's dream is shown on the first rest that ends with the infection still pending (rest_close): ANIM0002.VID for lycanthropy, ANIM0004.VID for vampirism, once, after the
+         * closing line and before the skills are checked. No text goes with it. Without a player the flag is only spent. */
+        movie = curse_dream();
+        if (movie && g_dream) { g_dream(movie); }
+        progress_rest();
     }
     g.open = 0; g_scene = 0; g.revision++;
 }

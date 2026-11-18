@@ -113,6 +113,23 @@ int travel_go_to_place(int region, int index, int by_way_down)
     return 1;
 }
 
+int travel_go_into_dungeon(int region, int index)
+{
+    Dungeon dungeon;
+
+    if (!dungeon_load_at(region, index, &dungeon)) {
+        return 0;
+    }
+    mem_zero(&g_next, sizeof(g_next));
+    g_next.kind = TRAVEL_DUNGEON;
+    g_next.located = 1;
+    g_next.region = region;
+    g_next.index = index;
+    g_land = LAND_START;
+    g_asked = 1;
+    return 1;
+}
+
 int travel_pixel(const Camera *cam, int *px, int *py)
 {
     if (!g_open || g_here.kind != TRAVEL_WORLD) {

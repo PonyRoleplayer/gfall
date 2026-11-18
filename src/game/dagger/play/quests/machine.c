@@ -635,9 +635,12 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
         /* Once: a yes/no box with the op's QRC message; the answer sets its yes or no state. One box at a time. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1) && g_prompt_slot < 0 && quest_text_hooks.ask && quest_text_hooks.read) {
             char text[1024], said[1024];
+            int message;
 
+            /* The question's QRC id is the op's fourth operand, a number (the files hold -1 in the message field of this op); a message field, when set, is a TEXT.RSC or QRC id as the others. */
+            message = op->message >= 0 ? op->message : op->argc > QOP_ASK_MESSAGE_ARG && op->arg[QOP_ASK_MESSAGE_ARG].literal ? op->arg[QOP_ASK_MESSAGE_ARG].value : -1;
             text[0] = 0;
-            if (quest_text_hooks.read(q->qbn.name, op->message & 0x7fff, (op->message & 0x8000) != 0, text, sizeof(text)) > 0 && text[0]) {
+            if (message >= 0 && quest_text_hooks.read(q->qbn.name, message & 0x7fff, (message & 0x8000) != 0, text, sizeof(text)) > 0 && text[0]) {
                 quest_expand(slot, text, said, sizeof(said), game_state()->minutes, 0);
                 g_prompt_slot = slot; g_prompt_op = (int)(op - q->qbn.op);
                 if (!quest_text_hooks.ask(said, prompt_answer)) { g_prompt_slot = -1; }
@@ -771,4 +774,6 @@ void quest_run(void)
 void quest_reset_initial_start(void)
 {
     g_initial_pending = 0;
+    /* A box left open by the old game belongs to no quest of the new one. */
+    g_prompt_slot = -1; g_prompt_op = -1;
 }
