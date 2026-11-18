@@ -99,6 +99,20 @@ enum { GUILD_MSG_REFUSED = 0, GUILD_MSG_REPUTATION = 1, GUILD_MSG_ASK = 2, GUILD
 #define SUMMON_WEATHER_BONUS 30
 #define DAEDRA_ANY_WEATHER 100
 #define DAEDRA_SERVANTS 5
+/* The covens (faction type 8, factions 419..432) summon the prince the day's seed draws, 1..DAEDRA_PRINCES but never PRINCE_HIRCINE; Glenmoril (419) only ever Hircine (daedra_summon, func_000202C5.c). */
+#define FACTION_COVEN_FIRST 419
+#define FACTION_COVEN_LAST 432
+#define FACTION_GLENMORIL 419
+#define DAEDRA_PRINCES 16
+#define PRINCE_HIRCINE 4
+/* The quest file a prince starts, "%c0c0%cy00": his code (prince_quest_codes, through prince_index) and a letter, '0', or 'x' for Malacath's code PRINCE_CODE_MALACATH (0C0XY00, ChildGard bars it). */
+#define PRINCE_CODE_MALACATH '8'
+#define PRINCE_LETTER_PLAIN '0'
+#define PRINCE_LETTER_MALACATH 'x'
+/* The weather byte keeps the storm mark in bit 7 (a rain in a thunderstorm is not rain to the princes). */
+#define WEATHER_STORM_MARK 128
+#define TEXT_DAEDRA_TWICE 482
+#define TEXT_DAEDRA_FAILED 484
 /* The price scale is 8.8 fixed point: PRICE_SCALE_ONE is the full price, a member of rank r pays (MAX_RANK + 1 - r) / (MAX_RANK + 1). */
 #define PRICE_SCALE_ONE 256
 /* Every temple's stranger list: the quest giver, the donation and the cure (people factions). */
@@ -241,11 +255,17 @@ int knight_house_allowed(const Membership *m, int has_house, int *text);
  */
 typedef struct DaedraStep {
     int text, ask, price, prince;
+    /* The quest file's letter the day's prince asks for (PRINCE_LETTER_*). */
+    int letter;
     const char *line;
 } DaedraStep;
 int daedra_offer(int hall_faction, int hall_reputation, df_u32 now, DaedraStep *step);
-enum { DAEDRA_FAILED, DAEDRA_QUEST, DAEDRA_ALLY };
-/* The gold is the caller's to spend first. *kind is the creature kind of an ally. */
-int daedra_summon(int prince, int weather, int *kind);
+enum { DAEDRA_FAILED, DAEDRA_QUEST, DAEDRA_FOE };
+/* The gold is the caller's to spend first. weather is the weather byte (storm mark included). A first success fills quest (9 bytes, upper case) with the prince's file name, which may name
+ * none (Sheogorath replacing Malacath keeps his letter: the original's quirk); a later one is a creature of kind *kind, HOSTILE (the original makes it an ally, then sets its team to the
+ * foes'), waiting in daedra_servant_take. */
+int daedra_summon(int prince, int letter, int weather, int *kind, char *quest);
+/* The servant a summoning called, once: its creature kind, or -1 for none. The frame puts it beside the player as a foe. */
+int daedra_servant_take(void);
 
 #endif

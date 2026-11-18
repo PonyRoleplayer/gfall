@@ -8,6 +8,7 @@
 #include "game/dagger/play/combat/combat.h"
 #include "game/dagger/play/character/curse.h"
 #include "engine/core/mem.h"
+#include "game/dagger/play/watcom.h"
 #include "game/dagger/tables/guilddata.h"
 
 /* See guild.h. */
@@ -628,10 +629,20 @@ int daedra_offer(int hall_faction, int hall_reputation, df_u32 now, DaedraStep *
 {
     int day, i, prince, price;
 
-    step->text = 0; step->ask = 0; step->price = 0; step->prince = 0; step->line = 0;
+    step->text = 0; step->ask = 0; step->price = 0; step->prince = 0; step->line = 0; step->letter = PRINCE_LETTER_PLAIN;
     day = (int)((now % MINUTES_PER_YEAR) / MINUTES_PER_DAY);
     prince = 0;
-    for (i = 0; i < DAEDRA_DAYS; i++) {
+    if (hall_faction >= FACTION_COVEN_FIRST && hall_faction <= FACTION_COVEN_LAST) {
+        /* A coven: the day number seeds a draw of 1..16 that skips Hircine, the same prince for every coven and no day refusal, no enemy test; Glenmoril always Hircine. (The original's
+         * srand leaks into the shared stream when the player says no; here the draw has its own seed.) */
+        df_u32 seed = now / MINUTES_PER_DAY;
+
+        prince = PRINCE_HIRCINE;
+        if (hall_faction != FACTION_GLENMORIL) {
+            while (prince == PRINCE_HIRCINE) { prince = (int)(watcom_next(&seed) % DAEDRA_PRINCES) + 1; }
+        }
+    }
+    for (i = 0; !prince && i < DAEDRA_DAYS; i++) {
         /* The fourth entry is the original's "no summoning" sentinel (D_00179E66). */
         if (g_daedra_day[i] == day && i != DAEDRA_DAY_NONE) {
             prince = i + 1;
@@ -642,7 +653,7 @@ int daedra_offer(int hall_faction, int hall_reputation, df_u32 now, DaedraStep *
         step->text = TEXT_NO_SUMMONING;
         return 0;
     }
-    if (hall_faction != FACTION_MAGES_GUILD && faction_has_enemy(hall_faction, prince)) {
+    if (hall_faction != FACTION_MAGES_GUILD && !(hall_faction >= FACTION_COVEN_FIRST && hall_faction <= FACTION_COVEN_LAST) && faction_has_enemy(hall_faction, prince)) {
         step->line = "Today is a day for summoning enemies. We won't.";
         return 0;
     }
@@ -650,13 +661,24 @@ int daedra_offer(int hall_faction, int hall_reputation, df_u32 now, DaedraStep *
     if (price < 0) { price = -price; }
     if (price > SUMMON_PRICE_MOST) { price = SUMMON_PRICE_MOST; }
     step->prince = prince;
+    if (g_prince_codes[g_prince_index[prince]] == PRINCE_CODE_MALACATH) { step->letter = PRINCE_LETTER_MALACATH; }
     step->price = price;
     step->text = TEXT_SUMMON_PRICE;
     step->ask = 1;
     return 1;
 }
 
-int daedra_summon(int prince, int weather, int *kind)
+static int g_servant = -1;
+
+int daedra_servant_take(void)
+{
+    int kind = g_servant;
+
+    g_servant = -1;
+    return kind;
+}
+
+int daedra_summon(int prince, int letter, int weather, int *kind, char *quest)
 {
     int chance, n;
 
@@ -673,9 +695,16 @@ int daedra_summon(int prince, int weather, int *kind)
     }
     if (guilds_state()->daedra_met & (1u << prince)) {
         *kind = g_daedra_kind[random_range(0, DAEDRA_SERVANTS - 1)];
-        return DAEDRA_ALLY;
+        g_servant = *kind;
+        return DAEDRA_FOE;
     }
     guilds_state()->daedra_met |= 1u << prince;
+    if (quest) {
+        quest[0] = g_prince_codes[g_prince_index[prince]];
+        quest[1] = PRINCE_LETTER_PLAIN; quest[2] = 'C'; quest[3] = PRINCE_LETTER_PLAIN;
+        quest[4] = letter >= 'a' && letter <= 'z' ? (char)(letter - 'a' + 'A') : (char)letter;
+        quest[5] = 'Y'; quest[6] = '0'; quest[7] = '0'; quest[8] = 0;
+    }
     return DAEDRA_QUEST;
 }
 

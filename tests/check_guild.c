@@ -227,7 +227,8 @@ void check_guild(void)
     /* Daedra summoning: a prince's day (index + 1), the sentinel and the day with none; the price from the hall's reputation; the roll and the first and later successes. */
     {
         DaedraStep d;
-        int kind, result, n, quests, allies, failed;
+        int kind, result, n, quests, allies, failed, a, b;
+        char quest[9];
 
         check_expect(!daedra_offer(40, 0, 1440u * 1u, &d) && d.text == 480, "daedra: a day with no prince was offered");
         check_expect(!daedra_offer(40, 0, 1440u * 154u, &d) && d.text == 480, "daedra: the sentinel day was offered");
@@ -238,12 +239,25 @@ void check_guild(void)
         quests = allies = failed = 0;
         for (n = 0; n < 300; n++) {
             guilds_state()->daedra_met = 0;
-            result = daedra_summon(2, 0, &kind);
+            result = daedra_summon(2, PRINCE_LETTER_PLAIN, 0, &kind, quest);
             quests += result == DAEDRA_QUEST; failed += result == DAEDRA_FAILED;
-            result = daedra_summon(2, 0, &kind);
-            allies += result == DAEDRA_ALLY && (kind == 26 || kind == 25 || kind == 27 || kind == 29 || kind == 31);
+            result = daedra_summon(2, PRINCE_LETTER_PLAIN, 0, &kind, quest);
+            allies += result == DAEDRA_FOE && (kind == 26 || kind == 25 || kind == 27 || kind == 29 || kind == 31);
         }
         check_expect(quests > 120 && failed > 20 && allies > 60, "daedra: the first success, the failures and a later success are not in the odds the original has");
+        guilds_state()->daedra_met = 0;
+        /* The covens: Glenmoril always Hircine, the others one prince a day and never his, no day refusal. Malacath's file takes the letter x. */
+        check_expect(daedra_offer(FACTION_GLENMORIL, 0, 1440u * 1u, &d) && d.prince == PRINCE_HIRCINE, "daedra: Glenmoril did not call Hircine");
+        a = b = 0;
+        for (n = 0; n < 40; n++) {
+            check_expect(daedra_offer(FACTION_COVEN_FIRST + 1, 0, 1440u * (unsigned)n, &d) && d.prince != PRINCE_HIRCINE && d.prince >= 1 && d.prince <= DAEDRA_PRINCES, "daedra: a coven's prince is out of range");
+            a = d.prince;
+            check_expect(daedra_offer(FACTION_COVEN_LAST, 0, 1440u * (unsigned)n, &d) && d.prince == a, "daedra: two covens drew different princes on a day");
+        }
+        check_expect(daedra_offer(40, 0, 1440u * 277u, &d) && d.prince == 7 && d.letter == PRINCE_LETTER_MALACATH, "daedra: Malacath's letter is not x");
+        guilds_state()->daedra_met = 0;
+        for (n = 0; n < 300 && b == 0; n++) { guilds_state()->daedra_met = 0; b = daedra_summon(1, PRINCE_LETTER_PLAIN, 0, &kind, quest) == DAEDRA_QUEST; }
+        check_expect(b && !strcmp(quest, "V0C00Y00"), "daedra: Clavicus Vile's file is not V0C00Y00");
         guilds_state()->daedra_met = 0;
     }
 }

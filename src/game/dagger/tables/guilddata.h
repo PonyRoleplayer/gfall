@@ -71,6 +71,9 @@ static const unsigned char g_trainer_skills[12][14] = {
 static const df_i16 g_skill_advance[] = { 12, 1, 1, 5, 15, 15, 15, 15, 15, 15, 15, 15, 15, 2, 1, 2, 2, 1, 2, 1, 4, 50, 1, 2, 1, 1, 2, 1, 2, 2, 2, 2, 2, 1, 8 };
 static const df_u16 g_daedra_day[] = { 0, 319, 349, 154, 45, 98, 277, 64, 31, 301, 128, 12, 189, 247, 282, 80 };
 static const df_u8 g_daedra_weather[] = { 0, 100, 100, 100, 100, 4, 4, 100, 100, 6, 4, 100, 100, 100, 4, 100, 100 };
+/* prince_index (0x179E94): a prince's place in prince_quest_codes (0x1850D4); entry 0 is unused. */
+static const df_u8 g_prince_index[] = { 0, 2, 5, 8, 4, 13, 11, 14, 3, 12, 1, 9, 7, 15, 10, 6, 0 };
+static const char g_prince_codes[] = "TUVWXYZ123456789";
 static const df_u8 g_daedra_kind[] = { 26, 25, 27, 29, 31 };
 static const char *const g_rank_name[22][10] = {
     { "Apprentice", "Journeyman", "Operator", "Slayer", "Executioner", "Punisher", "Terminator", "Assassin", "Dark Brother", "Master Assassin" },

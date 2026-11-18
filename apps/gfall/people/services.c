@@ -11,6 +11,7 @@
 #include "engine/core/log.h"
 #include "engine/ui/pic.h"
 #include "engine/scene/interact.h"
+#include "engine/scene/weather.h"
 
 #include "game/dagger/places/town.h"
 #include "game/dagger/tables/holidaydefs.h"
@@ -426,20 +427,25 @@ static void hall_spell_buy(int id)
     hall_confirm(spellshop_price(spell, holiday_today(game_state()->minutes, travel_region())), hall_spell_paid);
 }
 
-/* daedra_summon: the day's prince, the price asked (481), the gold spent and the roll; a first success is the prince's quest (not built), a later one an ally (not built either). */
-static int g_daedra_prince, g_daedra_price;
+/* daedra_summon: the day's prince, the price asked (481), the gold spent and the roll; a first success starts the prince's quest, a later one is his angry servant, hostile, put
+ * beside the player by the frame (daedra_servant_take). The weather byte carries the storm mark: a thunderstorm is a rain marked (4 + WEATHER_STORM_MARK). */
+static int g_daedra_prince, g_daedra_price, g_daedra_letter;
 
 static void hall_daedra_answer(int yes)
 {
-    int kind, result;
+    int kind, result, weather;
+    char quest[9];
+    Weather w;
 
     if (!yes) { return; }
     if (!gold_can_afford(g_daedra_price)) { hall_text(454); return; }
     gold_spend(g_daedra_price);
-    result = daedra_summon(g_daedra_prince, 0, &kind);
-    if (result == DAEDRA_FAILED) { hall_text(484); }
-    else if (result == DAEDRA_QUEST) { possessions_message("The Daedra Prince has heard you. His quest is not yet built.", 0); }
-    else { possessions_message("A Daedra answers your call. Summoned creatures are not yet built.", 0); }
+    weather_state(&w);
+    weather = w.kind == WEATHER_THUNDER ? WEATHER_RAIN | WEATHER_STORM_MARK : w.kind;
+    result = daedra_summon(g_daedra_prince, g_daedra_letter, weather, &kind, quest);
+    if (result == DAEDRA_FAILED) { hall_text(TEXT_DAEDRA_FAILED); }
+    else if (result == DAEDRA_QUEST) { quest_begin(quest, g_daedra_prince); }
+    else { hall_text(TEXT_DAEDRA_TWICE); }
 }
 
 static void hall_daedra(void)
@@ -453,6 +459,7 @@ static void hall_daedra(void)
     }
     g_daedra_prince = step.prince;
     g_daedra_price = step.price;
+    g_daedra_letter = step.letter;
     gfall_offer_say(step.text, step.price, line, (int)sizeof(line));
     possessions_ask(line, hall_daedra_answer);
 }
