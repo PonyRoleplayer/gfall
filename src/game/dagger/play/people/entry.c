@@ -1,4 +1,7 @@
 #include "game/dagger/play/people/entry.h"
+#include "game/dagger/formats/factionfile.h"
+#include "game/dagger/play/people/law.h"
+#include "game/dagger/play/combat/combat.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/tables/buildingtypes.h"
 #include "game/dagger/play/state.h"
@@ -56,28 +59,28 @@ int building_try_enter(const EntryBuilding *b, const EntryPlayer *p, df_u32 now,
 
     mem_zero(out, sizeof(*out));
     if (b->id && b->id == p->house) { out->allow = 1; return 1; }
-    if (b->type == 24) { out->allow = 1; return 1; }
+    if (b->type == BUILDING_ALWAYS_OPEN) { out->allow = 1; return 1; }
     hours.brotherhood = p->brotherhood; hours.thieves = p->thieves; hours.fighters = p->fighters; hours.mages = p->mages;
-    if (b->type < 17 && building_open(b->type, b->faction, b->id, now, p->daytime, &hours)) { out->allow = 1; return 1; }
-    if (b->type < 17 && (b->flags & 16)) { return 0; }
-    if (b->flags & 16) { out->allow = 1; return 1; }
+    if (b->type < BUILDING_HOUSE1 && building_open(b->type, b->faction, b->id, now, p->daytime, &hours)) { out->allow = 1; return 1; }
+    if (b->type < BUILDING_HOUSE1 && (b->flags & BUILDING_FLAG_OPEN)) { return 0; }
+    if (b->flags & BUILDING_FLAG_OPEN) { out->allow = 1; return 1; }
     if (b->quest_open) { out->allow = 1; return 1; }
     if (p->lock_spell) {
         out->spent_spell = 1;
         out->allow = 1;
         return 1;
     }
-    if (b->faction == 108 && p->brotherhood >= 0) { out->allow = 1; return 1; }
-    if (b->faction == 42 && p->thieves >= 0) { out->allow = 1; return 1; }
-    if (b->type >= BUILDING_HOUSE1 && b->type <= BUILDING_HOUSE4 && p->daytime && (b->id & 65535u) % 100u < 50u) {
-        out->text = 256;
+    if (b->faction == FACTION_DARK_BROTHERHOOD && p->brotherhood >= 0) { out->allow = 1; return 1; }
+    if (b->faction == FACTION_THIEVES_GUILD && p->thieves >= 0) { out->allow = 1; return 1; }
+    if (b->type >= BUILDING_HOUSE1 && b->type <= BUILDING_HOUSE4 && p->daytime && (b->id & 65535u) % (unsigned)PERCENT < HOUSE_OPEN_CHANCE) {
+        out->text = TEXT_HOUSE_OPEN;
         out->allow = 1;
         return 1;
     }
-    lock = b->name_seed % 10 + 3;
+    lock = b->name_seed % DOOR_LOCK_SPREAD + DOOR_LOCK_MIN;
     if (p->steal) {
         /* lockpick_action_door */
-        if (b->access >= 10) {
+        if (b->access >= ACCESS_OPEN) {
             out->allow = 1;
             return 1;
         }
@@ -85,18 +88,18 @@ int building_try_enter(const EntryBuilding *b, const EntryPlayer *p, df_u32 now,
         if (was_tried(b->id, skill)) {
             return 0;
         }
-        if (lock >= 20) {
+        if (lock >= LOCK_IMPOSSIBLE) {
             out->line = lock_text(LOCK_FAILED);
             return 0;
         }
         skill_use(SKILL_LOCKPICKING);
-        chance = skill - lock * 5;
-        chance = chance < 5 ? 5 : chance > 95 ? 95 : chance;
-        if (random_range(0, 100) <= chance) {
+        chance = skill - lock * LOCK_PER_LEVEL;
+        chance = chance < CHANCE_MIN ? CHANCE_MIN : chance > CHANCE_MAX ? CHANCE_MAX : chance;
+        if (random_range(0, PERCENT) <= chance) {
             out->line = lock_text(LOCK_OPEN);
             out->picked = 1;
             guild_count_crime(GUILD_COUNT_THIEF, 1, now);
-            if (witnessed || random_range(1, 300) < 100 - character_state()->skill[SKILL_STEALTH]) {
+            if (witnessed || random_range(1, PICK_SEEN_ROLL) < PICK_SEEN_BASE - character_state()->skill[SKILL_STEALTH]) {
                 out->crime = 1;
             }
             out->allow = 1;

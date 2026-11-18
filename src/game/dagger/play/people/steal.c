@@ -1,4 +1,5 @@
 #include "game/dagger/play/people/steal.h"
+#include "game/dagger/play/combat/combat.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/people/law.h"
 #include "game/dagger/play/people/guild.h"
@@ -11,7 +12,7 @@
 /* rand() % 101 on the session's stream. */
 static int roll101(void)
 {
-    return random_range(0, 32767) % 101;
+    return random_range(0, RAND_MAX_WATCOM) % (PERCENT + 1);
 }
 
 int steal_pocket(int creature, int victim_level, StealState *out)
@@ -23,12 +24,12 @@ int steal_pocket(int creature, int victim_level, StealState *out)
     chance = character_state()->skill[SKILL_PICKPOCKET];
     skill_use(SKILL_PICKPOCKET);
     if (creature) {
-        chance += (character_state()->level - victim_level) * 5;
+        chance += (character_state()->level - victim_level) * PICKPOCKET_PER_LEVEL;
     }
-    if (chance < 5) {
-        chance = 5;
-    } else if (chance > 95) {
-        chance = 95;
+    if (chance < CHANCE_MIN) {
+        chance = CHANCE_MIN;
+    } else if (chance > CHANCE_MAX) {
+        chance = CHANCE_MAX;
     }
     if (roll101() > chance) {
         out->line = g_steal_failed;
@@ -38,12 +39,12 @@ int steal_pocket(int creature, int victim_level, StealState *out)
         guards_summon(1);
         return 0;
     }
-    if (roll101() < 33) {
-        out->text = 8999;
+    if (roll101() < POCKET_EMPTY_CHANCE) {
+        out->text = TEXT_POCKET_EMPTY;
         out->ok = 1;
         return 1;
     }
-    out->gold = random_range(0, 32767) % 5 + 1;
+    out->gold = random_range(0, RAND_MAX_WATCOM) % POCKET_GOLD_MAX + 1;
     character_state()->gold += out->gold;
     log_format(line, (int)sizeof(line), g_steal_gold, out->gold);
     out->line = line;
@@ -58,7 +59,7 @@ int steal_shop(int total, int weight, StealState *out)
     int chance;
 
     mem_zero(out, sizeof(*out));
-    chance = character_state()->skill[SKILL_PICKPOCKET] - total / 32 - weight / 4;
+    chance = character_state()->skill[SKILL_PICKPOCKET] - total / SHOP_STEAL_VALUE_DIV - weight / SHOP_STEAL_WEIGHT_DIV;
     if (roll101() > chance) {
         skill_use(SKILL_STEALTH);
         law_note(CRIME_THEFT);
@@ -73,7 +74,7 @@ int steal_shop(int total, int weight, StealState *out)
 
 int steal_shelf(void)
 {
-    if (random_range(0, 255) >= 108 - character_state()->skill[SKILL_PICKPOCKET]) {
+    if (random_range(0, SHELF_STEAL_ROLL) >= SHELF_STEAL_BASE - character_state()->skill[SKILL_PICKPOCKET]) {
         law_note(CRIME_THEFT);
         guards_summon(1);
         return 1;

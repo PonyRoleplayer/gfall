@@ -13,6 +13,20 @@
  */
 
 
+/*
+ * pickpocket_attempt, trade_steal_button and the shelf click (steal.c, inven.c, click.c; inline there): a creature's pocket adds PICKPOCKET_PER_LEVEL for each level the thief has over it, the
+ * chance is held to CHANCE_MIN..CHANCE_MAX; POCKET_EMPTY_CHANCE in 101 pockets are empty (TEXT_POCKET_EMPTY) and the rest hold 1..POCKET_GOLD_MAX gold. A shop theft is the skill less
+ * total / SHOP_STEAL_VALUE_DIV and weight / SHOP_STEAL_WEIGHT_DIV; a shelf grab alarms when a roll of 0..SHELF_STEAL_ROLL reaches SHELF_STEAL_BASE less the skill.
+ */
+#define PICKPOCKET_PER_LEVEL 5
+#define POCKET_EMPTY_CHANCE 33
+#define TEXT_POCKET_EMPTY 8999
+#define POCKET_GOLD_MAX 5
+#define SHOP_STEAL_VALUE_DIV 32
+#define SHOP_STEAL_WEIGHT_DIV 4
+#define SHELF_STEAL_ROLL 255
+#define SHELF_STEAL_BASE 108
+
 typedef struct StealState {
     /* 1 when it worked. */
     int ok;

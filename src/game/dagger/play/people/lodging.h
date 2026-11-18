@@ -17,6 +17,17 @@
  */
 
 #define ROOMS_MOST 16
+/* tavern_room_offer, tavern_buy_food, rest_allowed (tavern.c, rest.c; inline there): TEXT_ROOM_TOO_LONG answers a stay over ROOM_DAYS_MOST; a stay over DAY_HEARTS_DAY (the festival) has a night free;
+ * food is half on HOLIDAY_HARVESTS_END and free on HOLIDAY_NEW_LIFE, and a meal heals MEAL_HEAL_PER_GOLD for each gold. The Fighters Guild's hall (FACTION_FIGHTERS_GUILD) lends a bed. Resting in
+ * the open is allowed at the location kinds LOCATION_LABYRINTH, LOCATION_KEEP and past LOCATION_LAST_TOWN (the dungeons, graveyards, covens, homes). */
+#define TEXT_ROOM_TOO_LONG 16
+#define DAY_HEARTS_DAY 46
+#define HOLIDAY_HARVESTS_END 37
+#define HOLIDAY_NEW_LIFE 1
+#define MEAL_HEAL_PER_GOLD 2
+#define LOCATION_LABYRINTH 4
+#define LOCATION_KEEP 7
+#define LOCATION_LAST_TOWN 9
 /* A room can be kept up to a year less a fortnight (the original refuses past 350 days left). */
 #define ROOM_DAYS_MOST 350
 #define ROOM_DAY_PRICE 7

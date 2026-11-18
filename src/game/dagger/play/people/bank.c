@@ -1,6 +1,8 @@
 #include "game/dagger/play/people/bank.h"
 #include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/play/state.h"
+#include "game/dagger/play/combat/combat.h"
+#include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/items/inventory.h"
 
 /* See bank.h. */
@@ -27,7 +29,7 @@ static BankAccount *account(int region)
 
 int gold_can_carry(int amount)
 {
-    return inventory_weight(game_state()->inventory_id) + amount / 100 <= inventory_capacity() * 4;
+    return inventory_weight(game_state()->inventory_id) + amount / GOLD_PER_WEIGHT <= inventory_capacity() * WEIGHT_UNITS_PER_KG;
 }
 
 static int refuse(int *text, int id)
@@ -123,7 +125,7 @@ int bank_letter(int region, int amount, int *text)
     if (amount < LETTER_MIN) {
         return refuse(text, BANK_TEXT_LETTER_MIN);
     }
-    fee = amount / 100 + 1;
+    fee = amount / LETTER_FEE_DIV + 1;
     if (fee + amount > a->balance) {
         return refuse(text, BANK_TEXT_FEE);
     }
@@ -161,7 +163,7 @@ int bank_borrow(int region, int amount, int *text)
         return refuse(text, BANK_TEXT_LOAN_TOO_BIG);
     }
     a->loan_due = game_state()->minutes + LOAN_MINUTES;
-    a->loan_owed = amount + (amount * 10) / 100;
+    a->loan_owed = amount + (amount * LOAN_INTEREST_PERCENT) / PERCENT;
     a->balance += amount;
     return BANK_DONE;
 }
@@ -213,7 +215,7 @@ static int sell(int region, int *price, int *owned, int ask, int confirmed, int 
         *text = ask;
         return BANK_ASK;
     }
-    a->balance += *price - (*price * 15) / 100;
+    a->balance += *price - (*price * SALE_FEE_PERCENT) / PERCENT;
     *price = 0;
     *owned = 0;
     return BANK_DONE;

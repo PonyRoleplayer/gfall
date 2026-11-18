@@ -1,6 +1,24 @@
 #ifndef GFALL_ENTRY_H
 #define GFALL_ENTRY_H
 
+/*
+ * building_try_enter and the door's lock (maplogic.c, archive.c; inline there): a building of type BUILDING_ALWAYS_OPEN is always open, those under the first house open by the hours (with
+ * BUILDING_FLAG_OPEN a shop is shut and a house open), a house by day lets in HOUSE_OPEN_CHANCE in 100 by its id (TEXT_HOUSE_OPEN), and a door's lock is DOOR_LOCK_MIN plus the sign's seed
+ * mod DOOR_LOCK_SPREAD. An access level of ACCESS_OPEN opens it; a lock of LOCK_IMPOSSIBLE or more cannot be picked; a pick's chance is the skill less LOCK_PER_LEVEL a level of lock; it is seen
+ * when a roll of 1..PICK_SEEN_ROLL is under PICK_SEEN_BASE less Stealth.
+ */
+#define BUILDING_ALWAYS_OPEN 24
+#define BUILDING_FLAG_OPEN 16
+#define HOUSE_OPEN_CHANCE 50
+#define TEXT_HOUSE_OPEN 256
+#define DOOR_LOCK_SPREAD 10
+#define DOOR_LOCK_MIN 3
+#define ACCESS_OPEN 10
+#define LOCK_IMPOSSIBLE 20
+#define LOCK_PER_LEVEL 5
+#define PICK_SEEN_ROLL 300
+#define PICK_SEEN_BASE 100
+
 #include "engine/core/df.h"
 
 /*

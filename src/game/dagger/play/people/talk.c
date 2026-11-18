@@ -1,4 +1,7 @@
 #include "game/dagger/play/people/talk.h"
+#include "game/dagger/formats/factionfile.h"
+#include "game/dagger/tables/magic.h"
+#include "game/dagger/play/combat/combat.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/tables/buildingtypes.h"
 #include "game/dagger/play/state.h"
@@ -47,7 +50,7 @@ int talk_start(TalkState *talk, const TalkWho *who, const TalkPlayer *player, in
         const FactionDef *d;
 
         d = faction_def(f);
-        if (d->type == 2 || d->type == 7 || d->type == 9) {
+        if (d->type == FACTION_GROUP || d->type == FACTION_PROVINCE || d->type == FACTION_TEMPLE) {
             break;
         }
         f = faction_index(faction_parent_id(d->id));
@@ -57,12 +60,12 @@ int talk_start(TalkState *talk, const TalkWho *who, const TalkPlayer *player, in
     talk->disposition = faction_rep(talk->faction) + player->temple_rank;
     social = faction_def(faction_index(talk->faction))->social_group;
     /* A group below five adds the player's reputation with it; the reaction enchantments of every item carried (reaction_mod_item_cb) add or take ten each. */
-    if (social < 5) {
+    if (social < SOCIAL_GROUPS) {
         talk->disposition += c->reputation[social];
     }
     talk->disposition += enchant_reaction(social);
-    if (magic_artifact_worn(0)) { talk->disposition += c->attribute[ATTR_PER]/5; }
-    if (talk->disposition < -20) {
+    if (magic_artifact_worn(ARTIFACT_TALK_BONUS)) { talk->disposition += c->attribute[ATTR_PER]/5; }
+    if (talk->disposition < TALK_REFUSE_BELOW) {
         *text = TALK_TEXT_REFUSES;
         return 0;
     }
@@ -75,18 +78,18 @@ static int faction_greeting(TalkState *talk, const TalkPlayer *player, int facti
     int relation, roll, rep, social;
 
     d = faction_def(faction_index(faction_id));
-    if (!d || d->type == 15 || d->type == 14) {
+    if (!d || d->type == FACTION_PEOPLE || d->type == FACTION_COURTS) {
         return 0;
     }
     relation = faction_relation(faction_id, player->members, player->member_count, &talk->score);
     rep = faction_rep(faction_id);
     talk->score += rep;
     social = d->social_group;
-    if (social < 5) {
+    if (social < SOCIAL_GROUPS) {
         talk->score += character_state()->reputation[social];
     }
-    roll = rand_range(0, 15) - 10;
-    if (talk->score >= roll && rep >= 30) {
+    roll = rand_range(0, GREETING_ROLL_MAX) - GREETING_ROLL_SHIFT;
+    if (talk->score >= roll && rep >= GREETING_ALLIED_REP) {
         return g_greeting[relation][0];
     }
     if (talk->score >= roll) {
@@ -107,7 +110,7 @@ int talk_open(TalkState *talk, const TalkPlayer *player, int witnessed, int *tex
     if (!own || !speaks) {
         return TALK_REFUSED;
     }
-    if (speaks->social_group == 4 && witnessed) {
+    if (speaks->social_group == SOCIAL_UNDERWORLD && witnessed) {
         law_note(CRIME_CONSPIRACY);
         guards_summon(0);
         return TALK_REFUSED;
@@ -122,9 +125,9 @@ int talk_open(TalkState *talk, const TalkPlayer *player, int witnessed, int *tex
     talk->cache[0] = talk->cache[1] = 0;
     talk->cache[2] = g_stale_cache;
     /* The speech style is the social group, a commoner's and a merchant's swapped; a group past four is a merchant's. */
-    id = own->type == 15 || own->type == 14 ? own->id : speaks->id;
-    social = (own->type == 15 || own->type == 14) ? own->social_group : speaks->social_group;
-    talk->style = social < 5 ? social : 1;
+    id = own->type == FACTION_PEOPLE || own->type == FACTION_COURTS ? own->id : speaks->id;
+    social = (own->type == FACTION_PEOPLE || own->type == FACTION_COURTS) ? own->social_group : speaks->social_group;
+    talk->style = social < SOCIAL_GROUPS ? social : SOCIAL_MERCHANTS;
     if (talk->style == 1) {
         talk->style = 0;
     } else if (talk->style == 0) {
@@ -138,9 +141,9 @@ int talk_open(TalkState *talk, const TalkPlayer *player, int witnessed, int *tex
     }
     if (talk->disposition < 0) {
         *text = TALK_TEXT_HOSTILE;
-    } else if (talk->disposition < 10) {
+    } else if (talk->disposition < GREET_COOL_BELOW) {
         *text = TALK_TEXT_COOL;
-    } else if (talk->disposition < 30) {
+    } else if (talk->disposition < GREET_WARM_BELOW) {
         *text = TALK_TEXT_WARM;
     } else {
         *text = TALK_TEXT_FRIENDLY;
@@ -156,13 +159,13 @@ int talk_attitude(TalkState *talk)
     c = character_state();
     attitude = 0;
     if (talk->tone == TONE_POLITE) {
-        attitude += rand_range(1, 100) < c->skill[SKILL_ETIQUETTE] ? 10 : -5;
+        attitude += rand_range(1, PERCENT) < c->skill[SKILL_ETIQUETTE] ? TONE_PASS : TONE_FAIL;
         if (talk->cache[0] == 0) {
             skill_use(SKILL_ETIQUETTE);
         }
     }
     if (talk->tone == TONE_BLUNT) {
-        attitude += rand_range(1, 100) < c->skill[SKILL_STREETWISE] ? 10 : -5;
+        attitude += rand_range(1, PERCENT) < c->skill[SKILL_STREETWISE] ? TONE_PASS : TONE_FAIL;
         /* The original tests the middle tone's cache here. */
         if (talk->cache[1] == 0) {
             skill_use(SKILL_STREETWISE);
@@ -171,7 +174,7 @@ int talk_attitude(TalkState *talk)
     kind = ((1 - talk->mode) << 2) + talk->tab;
     attitude += g_attitude_mod[kind];
     attitude += c->attribute[ATTR_PER] / 5;
-    roll = rand_range(0, 20);
+    roll = rand_range(0, ATTITUDE_ROLL_MAX);
     if (talk->cache[talk->tone] != 0) {
         attitude = talk->cache[talk->tone];
     } else {
@@ -183,20 +186,20 @@ int talk_attitude(TalkState *talk)
     if (attitude < roll) {
         return 0;
     }
-    return roll + 30 <= attitude ? 2 : 1;
+    return roll + ATTITUDE_BEST_OVER <= attitude ? 2 : 1;
 }
 
 int talk_knows(TalkState *talk)
 {
     int seed, kind, knows;
 
-    seed = random_range(0, 32767);
-    if (talk->own == 806 || talk->own == 842) {
+    seed = random_range(0, RAND_MAX_WATCOM);
+    if (talk->own == FACTION_SHADOW_SPIES || talk->own == FACTION_DARK_PLOTTERS) {
         return 1;
     }
     kind = ((1 - talk->mode) << 2) + talk->tab;
     random_seed((df_u32)((talk->npc ^ (talk->npc >> 16)) + (unsigned)kind) + (unsigned)talk->row);
-    knows = rand_range(1, 20) <= g_knows[kind][talk->style] + 10;
+    knows = rand_range(1, KNOWS_ROLL_MAX) <= g_knows[kind][talk->style] + KNOWS_BASE;
     random_seed((df_u32)seed);
     return knows;
 }
@@ -212,14 +215,14 @@ int talk_category(int building_type, int building_flags)
     int i;
 
     if (building_type != BUILDING_HOUSE_FOR_SALE && building_type <= BUILDING_PALACE) {
-        for (i = 0; i < 13; i++) {
+        for (i = 0; i < TALK_BUILDING_CATEGORIES; i++) {
             if (g_category_type[i] == building_type) {
                 return i;
             }
         }
-        return 13;
+        return TALK_CATEGORY_OTHER;
     }
-    return (building_flags & 8) ? 13 : -1;
+    return (building_flags & TALK_BUILDING_FLAG) ? TALK_CATEGORY_OTHER : -1;
 }
 
 const char *talk_category_name(int category)
@@ -281,11 +284,11 @@ int talk_answer(TalkState *talk, const TalkAsk *ask, int *text)
     if (ask->mode == 0) {
         /* The news was given already: no roll is made (talk_ask_news is not reached). */
         if (talk->news_asked) {
-            *text = 1457;
+            *text = TALK_TEXT_NEWS_ASKED;
             return ANSWER_TEXT;
         }
         knows = talk_knows(talk);
-        if (talk->own != 806 && talk->own != 842) {
+        if (talk->own != FACTION_SHADOW_SPIES && talk->own != FACTION_DARK_PLOTTERS) {
             talk->news_asked = 1;
         }
         if (ask->row == 0 && ask->news) {
@@ -294,11 +297,11 @@ int talk_answer(TalkState *talk, const TalkAsk *ask, int *text)
     } else {
         knows = talk_knows(talk);
     }
-    if (ask->tab == 3) {
+    if (ask->tab == TALK_TAB_WORK) {
         if (ask->no_work) {
-            *text = 8078;
+            *text = TALK_TEXT_NO_WORK;
         } else {
-            *text = 8075 + (talk->attitude == 0 ? 0 : talk->attitude == 1 ? 1 : 2);
+            *text = TALK_TEXT_WORK + (talk->attitude == 0 ? 0 : talk->attitude == 1 ? 1 : 2);
         }
         return ANSWER_TEXT;
     }
@@ -307,7 +310,7 @@ int talk_answer(TalkState *talk, const TalkAsk *ask, int *text)
         return ANSWER_TEXT;
     }
     if (ask->tab == 0 && ask->category == TALK_REGIONAL) {
-        *text = 28;
+        *text = TALK_TEXT_REGIONAL;
         return ANSWER_TEXT;
     }
     *text = g_where_answer[knows][talk->style][talk->attitude];
@@ -318,11 +321,11 @@ int talk_hint(const TalkAsk *ask, int regional_known, int distance, int outdoors
 {
     *noted = 0;
     if (ask->tab == 0 && ask->category == TALK_REGIONAL) {
-        return regional_known ? 10 : 11;
+        return regional_known ? TALK_TEXT_REGION_KNOWN : TALK_TEXT_REGION_UNKNOWN;
     }
-    if (outdoors && (distance < 2048 || rand_range(1, 100) <= 25)) {
+    if (outdoors && (distance < TALK_MARK_NEAR || rand_range(1, PERCENT) <= TALK_MARK_CHANCE)) {
         *noted = 1;
-        return 7332;
+        return TALK_TEXT_MARKED;
     }
-    return 7333;
+    return TALK_TEXT_DIRECTIONS;
 }

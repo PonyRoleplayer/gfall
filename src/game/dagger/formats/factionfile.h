@@ -34,6 +34,11 @@ enum {
     FACTION_PEOPLE = 15
 };
 
+/* Factions the rules name: the Fighters Guild's hall, the Thieves Guild, the Dark Brotherhood. */
+#define FACTION_FIGHTERS_GUILD 41
+#define FACTION_THIEVES_GUILD 42
+#define FACTION_DARK_BROTHERHOOD 108
+
 /* Social groups, the file's sgroup; past these (the gods' 6) a person counts as a merchant. */
 enum {
     SOCIAL_COMMONERS,

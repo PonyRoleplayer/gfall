@@ -1,4 +1,5 @@
 #include "game/dagger/play/people/lodging.h"
+#include "game/dagger/formats/factionfile.h"
 #include "game/dagger/tables/buildingtypes.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/people/bank.h"
@@ -66,7 +67,7 @@ int room_offer(df_u32 building, int days, const ShopState *shop, int mercantile,
     out->line = 0;
     out->text = 0;
     if (room_days_left(building, now) + days > ROOM_DAYS_MOST) {
-        out->text = 16;
+        out->text = TEXT_ROOM_TOO_LONG;
         return ROOM_REFUSED;
     }
     if (days == 0) {
@@ -74,7 +75,7 @@ int room_offer(df_u32 building, int days, const ShopState *shop, int mercantile,
     }
     day = (int)((now % 518400u) / MINUTES_A_DAY) + 1;
     /* The festival on day 46 (Heart's Day) takes a night off the bill. */
-    raw = day <= 46 && day + days > 46 ? (days - 1) * ROOM_DAY_PRICE : days * ROOM_DAY_PRICE;
+    raw = day <= DAY_HEARTS_DAY && day + days > DAY_HEARTS_DAY ? (days - 1) * ROOM_DAY_PRICE : days * ROOM_DAY_PRICE;
     if (knight) {
         out->line = g_msg_knight;
         return ROOM_FREE;
@@ -139,7 +140,7 @@ int meal_at(int food, int holiday, df_u32 now, const char **line, int *text)
         return 0;
     }
     price = g_food_price[food];
-    if (holiday == 37) {
+    if (holiday == HOLIDAY_HARVESTS_END) {
         price >>= 1;
         if (price == 0) {
             price++;
@@ -153,7 +154,7 @@ int meal_at(int food, int holiday, df_u32 now, const char **line, int *text)
     if (holiday != 1) {
         c->gold -= price;
     }
-    c->health += price * 2;
+    c->health += price * MEAL_HEAL_PER_GOLD;
     if (c->health > c->max_health) {
         c->health = c->max_health;
     }
@@ -168,7 +169,7 @@ int rest_allowed(const RestSite *site, df_u32 now, int *to_room)
         return REST_OK;
     }
     if (site->kind == SITE_TOWN) {
-        if (site->location_kind == 4 || site->location_kind == 7 || site->location_kind > 9) {
+        if (site->location_kind == LOCATION_LABYRINTH || site->location_kind == LOCATION_KEEP || site->location_kind > LOCATION_LAST_TOWN) {
             return REST_OK;
         }
         return REST_VAGRANT;
@@ -181,7 +182,7 @@ int rest_allowed(const RestSite *site, df_u32 now, int *to_room)
             *to_room = 1;
             return REST_OK;
         }
-        if (site->building_faction == 41 && site->knight_member) {
+        if (site->building_faction == FACTION_FIGHTERS_GUILD && site->knight_member) {
             *to_room = 1;
             return REST_OK;
         }

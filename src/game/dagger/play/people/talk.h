@@ -4,6 +4,44 @@
 #include "engine/core/df.h"
 
 /*
+ * talk_start, talk_open, talk_roll_attitude, talk_roll_knows (talk.c; inline there). Social groups 0..SOCIAL_GROUPS-1 have a reputation; refusing to talk under TALK_REFUSE_BELOW. The greeting roll
+ * is 0..GREETING_ROLL_MAX less GREETING_ROLL_SHIFT, the allied row at a reputation of GREETING_ALLIED_REP; the plain greeting is cool under GREET_COOL_BELOW and warm under GREET_WARM_BELOW.
+ * Etiquette or streetwise against a roll of 1..100 adds TONE_PASS or TONE_FAIL; the attitude roll is 0..ATTITUDE_ROLL_MAX and ATTITUDE_BEST_OVER over it is the best answer. A person knows
+ * when 1..KNOWS_ROLL_MAX is within the table's number plus KNOWS_BASE; the Shadow Spies and the Dark Plotters always do. There are TALK_BUILDING_CATEGORIES building categories, the last (TALK_CATEGORY_OTHER)
+ * any; building flag TALK_BUILDING_FLAG admits it. Texts: news already asked, the work tab (TALK_TAB_WORK) with no work or by attitude, a regional place known or not, the directions with or
+ * without a mark (a building within TALK_MARK_NEAR, or one time in TALK_MARK_CHANCE).
+ */
+#define SOCIAL_GROUPS 5
+#define TALK_REFUSE_BELOW -20
+#define GREETING_ROLL_MAX 15
+#define GREETING_ROLL_SHIFT 10
+#define GREETING_ALLIED_REP 30
+#define GREET_COOL_BELOW 10
+#define GREET_WARM_BELOW 30
+#define TONE_PASS 10
+#define TONE_FAIL -5
+#define ATTITUDE_ROLL_MAX 20
+#define ATTITUDE_BEST_OVER 30
+#define FACTION_SHADOW_SPIES 806
+#define FACTION_DARK_PLOTTERS 842
+#define KNOWS_ROLL_MAX 20
+#define KNOWS_BASE 10
+#define TALK_BUILDING_CATEGORIES 13
+#define TALK_CATEGORY_OTHER 13
+#define TALK_BUILDING_FLAG 8
+#define TALK_TEXT_NEWS_ASKED 1457
+#define TALK_TAB_WORK 3
+#define TALK_TEXT_WORK 8075
+#define TALK_TEXT_NO_WORK 8078
+#define TALK_TEXT_REGIONAL 28
+#define TALK_TEXT_REGION_KNOWN 10
+#define TALK_TEXT_REGION_UNKNOWN 11
+#define TALK_MARK_NEAR 2048
+#define TALK_MARK_CHANCE 25
+#define TALK_TEXT_MARKED 7332
+#define TALK_TEXT_DIRECTIONS 7333
+
+/*
  * Conversation with a person: who will talk, how they greet, and the rolls behind a question. Slice 6 of
  * people and law (docs/game-people.md), from the decomp's talk_start (src/lifted/talk.c 356), talk_open
  * (src/hand/func_00014AE8.c), talk_faction_greeting, talk_faction_relation (src/hand/func_00018BDC.c),

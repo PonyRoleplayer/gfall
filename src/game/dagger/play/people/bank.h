@@ -1,6 +1,11 @@
 #ifndef GFALL_BANK_H
 #define GFALL_BANK_H
 
+/* A letter of credit costs 1 in LETTER_FEE_DIV and one more; a loan owes LOAN_INTEREST_PERCENT more; a house or ship sells SALE_FEE_PERCENT under its price. */
+#define LETTER_FEE_DIV 100
+#define LOAN_INTEREST_PERCENT 10
+#define SALE_FEE_PERCENT 15
+
 #include "engine/core/df.h"
 #include "game/dagger/play/people/standing.h"
 
