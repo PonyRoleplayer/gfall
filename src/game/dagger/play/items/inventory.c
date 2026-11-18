@@ -1,4 +1,5 @@
 #include "game/dagger/play/items/inventory.h"
+#include "game/dagger/play/combat/combat.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/play/magic/enchant.h"
 #include "game/dagger/play/magic/magicitem.h"
@@ -14,11 +15,11 @@ const char *inventory_error(void) { return g_error; }
 static int metal_roll(void)
 {
     int roll, level, metal;
-    level = character_state()->level - 10;
-    roll = random_range(0, 255) + (level < 0 ? level * 4 : level * 2);
+    level = character_state()->level - MATERIAL_LEVEL_PIVOT;
+    roll = random_range(0, MATERIAL_ROLL_MAX) + (level < 0 ? level * MATERIAL_LEVEL_LOW_MUL : level * MATERIAL_LEVEL_HIGH_MUL);
     if (roll < 0) { roll = 0; }
-    if (roll > 256) { roll = 256; }
-    for (metal = 0; metal < 9 && roll > material_share(metal); metal++) {
+    if (roll > MATERIAL_ROLL_CLAMP) { roll = MATERIAL_ROLL_CLAMP; }
+    for (metal = 0; metal < MATERIALS - 1 && roll > material_share(metal); metal++) {
         roll -= material_share(metal);
     }
     return metal;
@@ -27,10 +28,10 @@ static int metal_roll(void)
 static void set_metal(ObjectInfo *item, int metal)
 {
     item->material = metal;
-    item->color = metal + 16;
-    item->value *= 3 * material_value(metal);
-    item->weight = item->weight * material_weight(metal) / 4;
-    item->max_condition = item->max_condition * material_condition(metal) / 4;
+    item->color = metal + MATERIAL_COLOR_BASE;
+    item->value *= MATERIAL_VALUE_MUL * material_value(metal);
+    item->weight = item->weight * material_weight(metal) / MATERIAL_SCALE;
+    item->max_condition = item->max_condition * material_condition(metal) / MATERIAL_SCALE;
     item->condition = item->max_condition;
 }
 
@@ -50,7 +51,7 @@ static void init_item(ObjectInfo *item, const ItemDef *def)
     item->value = def->value;
     item->inventory_image = def->inventory_image ? def->inventory_image : def->dropped_image;
     item->dropped_image = def->dropped_image ? def->dropped_image : def->inventory_image;
-    item->color = 18;
+    item->color = ITEM_COLOR_PLAIN;
 }
 
 df_u32 item_create(df_u32 parent, int group, int index, int metal)
@@ -62,7 +63,7 @@ df_u32 item_create(df_u32 parent, int group, int index, int metal)
     if (group == ITEM_GROUP_MAGIC_ITEM) { return magic_item_create(parent,index); }
     if (group == ITEM_GROUP_ARTIFACT) { return magic_artifact_create(parent,index); }
     def = item_def(group, index);
-    if (!def || metal < -1 || metal > 9) { return 0; }
+    if (!def || metal < -1 || metal >= MATERIALS) { return 0; }
     id = object_new(RECORD_ITEM, parent, index, 100);
     item = object_edit(id);
     if (!item) { g_error = "There is no room for another item."; return 0; }
@@ -70,33 +71,33 @@ df_u32 item_create(df_u32 parent, int group, int index, int metal)
     init_item(item, def);
     if (group == ITEM_GROUP_MENS_CLOTHING || group == ITEM_GROUP_WOMENS_CLOTHING || group == ITEM_GROUP_ARMOR) {
         if (def->variants > 1) { item->inventory_image += random_range(0, def->variants - 1); }
-        if (group == ITEM_GROUP_ARMOR && !character_state()->female) { item->inventory_image += 4 * 128; }
-        item->inventory_image += body_shape(character_state()->race) * 128;
+        if (group == ITEM_GROUP_ARMOR && !character_state()->female) { item->inventory_image += ARMOR_MALE_OFFSET * IMAGE_ARCHIVE_STRIDE; }
+        item->inventory_image += body_shape(character_state()->race) * IMAGE_ARCHIVE_STRIDE;
         if (group == ITEM_GROUP_MENS_CLOTHING || group == ITEM_GROUP_WOMENS_CLOTHING) {
-            if (random_range(0,100) >= 25) {
-                item->color = random_range(1,10);
-                if ((group == ITEM_GROUP_MENS_CLOTHING && (index == 10 || index == 11)) || (group == ITEM_GROUP_WOMENS_CLOTHING && index == 8)) {
-                    item->color = clothing_dye(0,random_range(0,32767));
-                } else if (group == ITEM_GROUP_MENS_CLOTHING && index == 4) { item->color = clothing_dye(1,random_range(0,32767)); }
+            if (random_range(0,PERCENT) >= DYE_KEEP_CHANCE) {
+                item->color = random_range(DYE_COLOR_MIN,DYE_COLOR_MAX);
+                if ((group == ITEM_GROUP_MENS_CLOTHING && (index == MENS_DYED_FIRST || index == MENS_DYED_FIRST + 1)) || (group == ITEM_GROUP_WOMENS_CLOTHING && index == WOMENS_DYED)) {
+                    item->color = clothing_dye(0,random_range(0,RAND_MAX_WATCOM));
+                } else if (group == ITEM_GROUP_MENS_CLOTHING && index == MENS_DYED_OTHER) { item->color = clothing_dye(1,random_range(0,RAND_MAX_WATCOM)); }
             }
-            if ((group == ITEM_GROUP_MENS_CLOTHING && (index == 13 || index == 14)) || (group == ITEM_GROUP_WOMENS_CLOTHING && (index == 9 || index == 10))) {
+            if ((group == ITEM_GROUP_MENS_CLOTHING && (index == MENS_EXTRA_STYLE || index == MENS_EXTRA_STYLE + 1)) || (group == ITEM_GROUP_WOMENS_CLOTHING && (index == WOMENS_EXTRA_STYLE || index == WOMENS_EXTRA_STYLE + 1))) {
                 item->inventory_image++;
             }
         }
     }
     if (group == ITEM_GROUP_WEAPON && index != WEAPON_ARROW) { set_metal(item, metal < 0 ? metal_roll() : metal); }
     if (group == ITEM_GROUP_ARMOR) {
-        roll = metal < 0 ? random_range(1, 100) : 100;
-        item->armor_type = roll < 70 ? 0 : (roll < 90 ? 1 : 2);
-        if (!item->armor_type) { item->weight >>= 1; }
-        if (item->armor_type == 2) { set_metal(item, metal < 0 ? metal_roll() : metal); }
+        roll = metal < 0 ? random_range(1, PERCENT) : PERCENT;
+        item->armor_type = roll < ARMOR_LEATHER_CHANCE ? ARMOR_LEATHER : (roll < ARMOR_CHAIN_CHANCE ? ARMOR_CHAIN : ARMOR_PLATE);
+        if (item->armor_type == ARMOR_LEATHER) { item->weight >>= 1; }
+        if (item->armor_type == ARMOR_PLATE) { set_metal(item, metal < 0 ? metal_roll() : metal); }
         else { item->value *= item->armor_type + 1; }
         image = armor_image(index, item->armor_type);
-        if (image >= 0) { item->inventory_image = (item->inventory_image & ~127) + image; }
+        if (image >= 0) { item->inventory_image = (item->inventory_image & ~(IMAGE_ARCHIVE_STRIDE - 1)) + image; }
     }
     /* item_init_from_template: a recipe item holds a recipe drawn from twenty (rand() % 20). */
-    if (group == ITEM_GROUP_MISC && index == 4) { item->message = random_range(0,32767) % 20 + 1; }
-    if (group == ITEM_GROUP_WEAPON && index == WEAPON_ARROW) { item->count = random_range(1, 20); item->condition = 0; }
+    if (group == ITEM_GROUP_MISC && index == MISC_RECIPE) { item->message = random_range(0,RAND_MAX_WATCOM) % RECIPES + 1; }
+    if (group == ITEM_GROUP_WEAPON && index == WEAPON_ARROW) { item->count = random_range(ARROW_STACK_MIN, ARROW_STACK_ROLL_MAX); item->condition = 0; }
     if (group == ITEM_GROUP_BOOK && book_count()) {
         df_u32 seed;
         int count, pick, i;
@@ -113,10 +114,10 @@ df_u32 item_create(df_u32 parent, int group, int index, int metal)
         if (book_title(item->message,item->name,sizeof(item->name),&seed)) {
             /* item_init_book seeds rand from the title, then restores it. */
             seed = seed * 1103515245u + 12345u;
-            item->value = 300 + (int)(((seed >> 16) & 0x7fffu) % 501u);
+            item->value = BOOK_VALUE_MIN + (int)(((seed >> 16) & 0x7fffu) % BOOK_VALUE_SPREAD);
         }
     }
-    if (group == ITEM_GROUP_PAINTING) { item->message = random_range(0,32767); }
+    if (group == ITEM_GROUP_PAINTING) { item->message = random_range(0,RAND_MAX_WATCOM); }
     return id;
 }
 
@@ -237,11 +238,11 @@ static int equip_sound(const ObjectInfo *item)
 {
     if (item->group == ITEM_GROUP_WEAPON) { return weapon_sound(item->index); }
     if (item->group == ITEM_GROUP_ARMOR) {
-        if (item->index == 1 || (item->index >= 5 && item->index != 6)) { return 233; }
-        return item->armor_type+231;
+        if (item->index == 1 || (item->index >= 5 && item->index != 6)) { return SOUND_EQUIP_METAL; }
+        return item->armor_type+SOUND_EQUIP_ARMOR;
     }
-    if (item->group == ITEM_GROUP_MENS_CLOTHING || item->group == ITEM_GROUP_WOMENS_CLOTHING) { return 234; }
-    return 236;
+    if (item->group == ITEM_GROUP_MENS_CLOTHING || item->group == ITEM_GROUP_WOMENS_CLOTHING) { return SOUND_EQUIP_CLOTHES; }
+    return SOUND_EQUIP_OTHER;
 }
 
 int inventory_equip(df_u32 id)
@@ -296,10 +297,10 @@ int inventory_weight(df_u32 parent)
     for (i = 0; i < OBJECTS; i++) {
         item = &game_state()->object[i];
         if (!item->id || item->type != RECORD_ITEM || !belongs_to(item->parent, parent)) { continue; }
-        if (item->group == ITEM_GROUP_CURRENCY) { weight += item->value / 100; }
+        if (item->group == ITEM_GROUP_CURRENCY) { weight += item->value / GOLD_PER_WEIGHT; }
         else { weight += enchant_weight(item->id, item->weight) * item->count; }
     }
-    if (parent == game_state()->inventory_id) { weight += character_state()->gold / 100; }
+    if (parent == game_state()->inventory_id) { weight += character_state()->gold / GOLD_PER_WEIGHT; }
     return weight;
 }
 int inventory_capacity(void)
@@ -329,9 +330,9 @@ int inventory_armor(int part)
         if (item->armor_type == 2) { value += material_hit(item->material); }
     }
     shield = object_at(game_state()->equipped[EQUIP_LEFT_HAND]);
-    if (shield && shield->group == ITEM_GROUP_ARMOR && shield_covers(shield->index,part)) { value += (shield->index-6)*5; }
-    if (value > 200) { value = 200; }
-    return value / 5;
+    if (shield && shield->group == ITEM_GROUP_ARMOR && shield_covers(shield->index,part)) { value += (shield->index-SHIELD_INDEX_BASE)*SHIELD_ARMOR_PER_SIZE; }
+    if (value > ARMOR_RATING_CAP) { value = ARMOR_RATING_CAP; }
+    return value / ARMOR_RATING_DIV;
 }
 
 df_u32 inventory_book(void)
@@ -377,19 +378,19 @@ int inventory_transfer(df_u32 id, df_u32 parent)
     if (!item || item->type != RECORD_ITEM || !target || target->type != RECORD_CONTAINER) { return 0; }
     if (item->parent == parent) { return 1; }
     taking = parent == game_state()->inventory_id;
-    weight = item->group == ITEM_GROUP_CURRENCY ? item->value / 100 : item->weight * item->count;
+    weight = item->group == ITEM_GROUP_CURRENCY ? item->value / GOLD_PER_WEIGHT : item->weight * item->count;
     weight += inventory_weight(id);
-    if (taking && inventory_weight(parent) + weight > inventory_capacity() * 4) {
+    if (taking && inventory_weight(parent) + weight > inventory_capacity() * WEIGHT_UNITS_PER_KG) {
         g_error = "You cannot carry any more."; return 0;
     }
     if (taking && item->group == ITEM_GROUP_CURRENCY) {
         int gold;
         gold = item->value;
-        if (gold > 100000000 - character_state()->gold) { g_error = "Too much gold."; return 0; }
+        if (gold > GOLD_MAX - character_state()->gold) { g_error = "Too much gold."; return 0; }
         if (!object_delete(id)) { return 0; }
         character_state()->gold += gold;
         state_event(EVENT_GOLD, id, parent, gold);
-        play_sound(204);
+        play_sound(SOUND_GOLD);
         return 1;
     }
     if (taking && item->group == ITEM_GROUP_WEAPON && item->index == WEAPON_ARROW) {
@@ -402,7 +403,7 @@ int inventory_transfer(df_u32 id, df_u32 parent)
             count = stack->count + item->count;
             /* inv_merge_arrows clamps the one carried stack to 199 and
              * deletes the incoming stack, including any excess arrows. */
-            if (count > 199) { count = 199; }
+            if (count > STACK_MAX) { count = STACK_MAX; }
             if (!object_delete(id)) { return 0; }
             stack->count = count;
             state_event(EVENT_GIVE,stack->id,parent,count);
@@ -429,11 +430,11 @@ static void roll_loot(df_u32 container, int index)
     }
     /* loot_generate uses <= (so zero has a 1% first chance), scales only
      * categories 2..5 by level, and halves the chance after each success. */
-    for (category = 2; category < 15; category++) {
-        chance = table[category] * (category <= 5 ? level : 1);
-        if (random_range(0, 32767) % 100 > chance) { continue; }
+    for (category = LOOT_FIRST_CATEGORY; category < LOOT_CATEGORIES; category++) {
+        chance = table[category] * (category <= LOOT_LEVEL_LAST ? level : 1);
+        if (random_range(0, RAND_MAX_WATCOM) % PERCENT > chance) { continue; }
         group = loot_group(category);
-        if (group == 255) { group = character_state()->female ? 12 : 6; }
+        if (group == LOOT_CLOTHING) { group = character_state()->female ? 12 : 6; }
         /* MAGIC.DEF and enchantment records are a later rules slice. Never
          * substitute a mundane weapon for a magic item. */
         if (group == ITEM_GROUP_MAGIC_ITEM) { continue; }
@@ -441,7 +442,7 @@ static void roll_loot(df_u32 container, int index)
             id = item_create(container, group, random_range(0, item_kinds(group) - 1), -1);
             if (!id) { return; }
             chance >>= 1;
-        } while (random_range(0, 32767) % 100 <= chance);
+        } while (random_range(0, RAND_MAX_WATCOM) % PERCENT <= chance);
     }
 }
 
