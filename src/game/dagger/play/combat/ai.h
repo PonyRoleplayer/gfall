@@ -4,6 +4,7 @@
 /* Original detection and wall-following on generic engine bodies.
  * ai_stealth_check, ai_move_toward_target and ai_center_in_corridor.
  * See docs/game.md. No renderer or platform dependencies. */
+#include "game/dagger/play/input/move.h"
 #include "engine/scene/body.h"
 #include "engine/scene/entity.h"
 
@@ -14,9 +15,7 @@
  * TARGET_SCORE_IDLE more when nothing else has it and TARGET_SCORE_SEEN more when it is in sight.
  */
 #define TICKS_PER_SECOND 60
-/* The angle's halves and quarters, in 2048ths, and the eight octants a heading falls in. */
-#define ANGLE_HALF 1024
-#define ANGLE_QUARTER 512
+/* The eight octants a heading falls in. */
 #define OCTANTS 8
 /* ai_stealth_check: a creature further than STEALTH_RANGE never notices; the player is unnoticed when a roll of 1..100 is over (stealth skill * distance / STEALTH_RANGE) * STEALTH_MULTIPLIER;
  * a player moving faster than 1/STEALTH_MOMENTUM_DIV of the walk speed is always noticed by one that has met them. */
@@ -50,9 +49,6 @@
 #define NAV_SNAP_FAR 56
 #define STEP_MOVED_MIN 2
 #define WALK_STOP_SHORT 60
-#define MS_PER_SECOND 1000
-#define ANGLE_FULL 2048
-#define ANGLE_MASK (ANGLE_FULL - 1)
 #define FOE_SIGHT_ARC 512
 #define FOE_TURN_PER_TICK 64
 #define FOE_GIVE_UP 200

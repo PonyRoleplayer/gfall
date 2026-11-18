@@ -19,8 +19,6 @@
 
 /* Default mouse_turn_rate 0 makes the turn cap 4. At weight 255 that is 255 steps a second. */
 #define TURN_PER_SEC 255
-/* Classic units in a circle. Compass and pitch use this. */
-#define CIRCLE 2048
 
 static Body g_body;
 static int g_ready;
@@ -59,13 +57,13 @@ int ground_speed(int spd, int crouched, int running, int run_skill, int in_water
 
 int region_speed(int region, int base)
 {
-    if (region < 0 || region == 3 || region == 4 || region == 5) {
+    if (region < 0 || region == STEER_TURN_LEFT || region == STEER_CENTRE || region == STEER_TURN_RIGHT) {
         return 0;
     }
-    if (region == 1) {
-        return base * 255 / 220;
+    if (region == STEER_FORWARD) {
+        return base * STEER_WEIGHT_KEYS / STEER_FORWARD_DIV;
     }
-    return base * 255 / 256;
+    return base * STEER_WEIGHT_KEYS / STEER_DIV;
 }
 
 void move_init(void)
@@ -175,15 +173,15 @@ static void wish(int region, int speed, float *dx, float *dz)
     float fz;
 
     heading = g_yaw;
-    if (region == 6) {
-        heading -= 512;
-    } else if (region == 8) {
-        heading += 512;
-    } else if (region == 7) {
-        heading += 1024;
+    if (region == STEER_SLIDE_LEFT) {
+        heading -= ANGLE_QUARTER;
+    } else if (region == STEER_SLIDE_RIGHT) {
+        heading += ANGLE_QUARTER;
+    } else if (region == STEER_BACK) {
+        heading += ANGLE_HALF;
     }
-    heading = (heading + 4096) & 0x7ff;
-    yaw = (float)heading * (DF_TAU / (float)CIRCLE);
+    heading = (heading + 2 * ANGLE_FULL) & ANGLE_MASK;
+    yaw = (float)heading * (DF_TAU / (float)ANGLE_FULL);
     fx = df_sin(yaw);
     fz = df_cos(yaw);
     *dx = fx * (float)speed;
@@ -206,10 +204,10 @@ static int wall_near(const Scene *scene)
 {
     UseHit hit;
     float yaw;
-    yaw = g_yaw*(DF_TAU/2048);
+    yaw = g_yaw*(DF_TAU/ANGLE_FULL);
     interact_cast(scene,g_body.feet[0],g_body.feet[1]+2,g_body.feet[2],
-                    df_sin(yaw),0,df_cos(yaw),g_body.radius+8,&hit);
-    return hit.model >= 0 && hit.wall <= g_body.radius+8;
+                    df_sin(yaw),0,df_cos(yaw),g_body.radius+CLIMB_PROBE_PAD,&hit);
+    return hit.model >= 0 && hit.wall <= g_body.radius+CLIMB_PROBE_PAD;
 }
 
 static void climb_update(const Scene *scene, float dx, float dz, float moved, float dt)
@@ -227,8 +225,8 @@ static void climb_update(const Scene *scene, float dx, float dz, float moved, fl
             g_body.grounded = 1;
         } else if (game_state()->minutes-survival->climb_minute > 1) {
             survival->climb_minute = game_state()->minutes; skill_use(SKILL_CLIMBING);
-            chance = character_state()->skill[SKILL_CLIMBING]+(curse_race() == PLAYER_RACE_KHAJIIT ? 30 : 0);
-            if (!(character_state()->conditions & COND_CLIMBING) && random_range(1,100) > 95 && random_range(1,100) > chance) {
+            chance = character_state()->skill[SKILL_CLIMBING]+(curse_race() == PLAYER_RACE_KHAJIIT ? KHAJIIT_CLIMB_BONUS : 0);
+            if (!(character_state()->conditions & COND_CLIMBING) && random_range(1,PERCENT) > CLIMB_SLIP_ROLL && random_range(1,PERCENT) > chance) {
                 survival->climbing = 0; survival->climb_failed = 1;
             }
         }
@@ -237,9 +235,9 @@ static void climb_update(const Scene *scene, float dx, float dz, float moved, fl
         length = df_sqrt(dx*dx+dz*dz);
         into = length > 0 ? df_absf((dx*g_body.wall_normal[0]+dz*g_body.wall_normal[2])/length) : 0;
         if (scene && g_body.hit_wall && !g_water && !survival->climb_failed &&
-            !(character_state()->conditions & COND_LEVITATING) && length > 0 && moved < 25 && into >= 251.0f/256) {
+            !(character_state()->conditions & COND_LEVITATING) && length > 0 && moved < CLIMB_MOVED_MAX*CLIMB_MOVED_MAX && into >= (float)CLIMB_COS_MIN/RATIO_ONE) {
             survival->climb_time += dt;
-            if (survival->climb_time > 14/18.2065f) {
+            if (survival->climb_time > CLIMB_DELAY_TICKS/BIOS_TICKS_PER_SECOND) {
                 survival->climbing = 1; survival->climb_time = 0;
                 survival->climb_minute = game_state()->minutes;
                 skill_use(SKILL_CLIMBING); msg_set("Climbing mode.");
@@ -255,7 +253,7 @@ static void crouch_down(void)
         return;
     }
     g_crouch = 1;
-    body_set_size(&g_body, WALK_HEIGHT * 0.5f, WALK_EYE * 0.5f);
+    body_set_size(&g_body, WALK_HEIGHT * CROUCH_SCALE, WALK_EYE * CROUCH_SCALE);
 }
 
 static int steering_speed(int region, int base, const MoveIn *input)
@@ -266,24 +264,24 @@ static int steering_speed(int region, int base, const MoveIn *input)
         return region_speed(region, base);
     }
     switch (region) {
-    case 0:
-    case 1:
-    case 2:
+    case STEER_FORWARD_LEFT:
+    case STEER_FORWARD:
+    case STEER_FORWARD_RIGHT:
         weight = input->weight_up;
         break;
-    case 6:
+    case STEER_SLIDE_LEFT:
         weight = input->weight_left;
         break;
-    case 7:
+    case STEER_BACK:
         weight = input->weight_down;
         break;
-    case 8:
+    case STEER_SLIDE_RIGHT:
         weight = input->weight_right;
         break;
     default:
         return 0;
     }
-    return base * weight / (region == 1 ? 220 : 256);
+    return base * weight / (region == STEER_FORWARD ? STEER_FORWARD_DIV : STEER_DIV);
 }
 
 void move_frame(const Scene *scene, const MoveIn *in)
@@ -323,21 +321,21 @@ void move_frame(const Scene *scene, const MoveIn *in)
         }
     }
     if (in->view_mode) {
-        g_yaw = (g_yaw + in->mouse_dx * game_config()->sensitivity_x) & 0x7ff;
+        g_yaw = (g_yaw + in->mouse_dx * game_config()->sensitivity_x) & ANGLE_MASK;
         g_pitch += in->mouse_dy * game_config()->sensitivity_y * (game_config()->reverse_y ? 1 : -1);
-        if (g_pitch > 256) {
-            g_pitch = 256;
+        if (g_pitch > PITCH_LIMIT) {
+            g_pitch = PITCH_LIMIT;
         }
-        if (g_pitch < -256) {
-            g_pitch = -256;
+        if (g_pitch < -PITCH_LIMIT) {
+            g_pitch = -PITCH_LIMIT;
         }
     }
     if (!g_air && in->held) {
         int look;
         look = in->held[LOOK_UP] - in->held[LOOK_DOWN];
-        g_pitch += df_iround((float)look * 160.0f * in->dt);
-        if (g_pitch > 256) { g_pitch = 256; }
-        if (g_pitch < -256) { g_pitch = -256; }
+        g_pitch += df_iround((float)look * LOOK_KEY_SPEED * in->dt);
+        if (g_pitch > PITCH_LIMIT) { g_pitch = PITCH_LIMIT; }
+        if (g_pitch < -PITCH_LIMIT) { g_pitch = -PITCH_LIMIT; }
     }
     if (!g_air && in->pressed && in->pressed[LOOK_HOME]) {
         g_pitch = 0;
@@ -368,10 +366,10 @@ void move_frame(const Scene *scene, const MoveIn *in)
         speed = view_slow(speed);
     }
     speed = steering_speed(region, speed, in);
-    if (!g_air && (region == 0 || region == 3)) {
+    if (!g_air && (region == STEER_FORWARD_LEFT || region == STEER_TURN_LEFT)) {
         face(-df_iround((float)(in->mouse_steer ? in->weight_left : TURN_PER_SEC) *
              (float)(game_config()->turn_rate * 2 + 4) * 0.25f * in->dt));
-    } else if (!g_air && (region == 2 || region == 5)) {
+    } else if (!g_air && (region == STEER_FORWARD_RIGHT || region == STEER_TURN_RIGHT)) {
         face(df_iround((float)(in->mouse_steer ? in->weight_right : TURN_PER_SEC) *
              (float)(game_config()->turn_rate * 2 + 4) * 0.25f * in->dt));
     }
@@ -394,7 +392,7 @@ void move_frame(const Scene *scene, const MoveIn *in)
         impulse = jump_impulse(mag, (who->conditions & COND_ACROBAT) != 0, (who->class_flags & CLASS_JUMP_BONUS) != 0);
         if (body_jump(&g_body, jump_ups(impulse))) {
             skill_use(SKILL_JUMPING);
-            fatigue_spend(11);
+            fatigue_spend(JUMP_FATIGUE);
             g_air = 1;
             jumped = 1;
         }
@@ -402,16 +400,17 @@ void move_frame(const Scene *scene, const MoveIn *in)
     was_ground = g_body.grounded && !jumped;
     if (scene) {
         if (free_move) {
-            vertical = survival_state()->climbing ? speed*in->dt/3 : 0;
+            vertical = survival_state()->climbing ? speed*in->dt/CLIMB_SPEED_DIV : 0;
             if (swimming || (who->conditions & COND_LEVITATING)) {
-                vertical = in->held ? (in->held[FLOAT_UP]-in->held[FLOAT_DOWN])*80*in->dt : 0;
-                if (swimming && g_weight > 250 && !(in->held && in->held[FLOAT_DOWN])) { vertical -= 80*in->dt; }
+                vertical = in->held ? (in->held[FLOAT_UP]-in->held[FLOAT_DOWN])*FLOAT_SPEED*in->dt : 0;
+                /* A swimmer over the weight sinks, unless pressing down already or levitating or water-walking (intrface.c 616). */
+                if (swimming && g_weight > SWIM_SINK_WEIGHT && !(in->held && in->held[FLOAT_DOWN]) && !(who->conditions & (COND_LEVITATING | COND_WATER_WALKING))) { vertical -= FLOAT_SPEED*in->dt; }
             }
             g_body.vy = 0;
             body_fly_step(&g_body,scene,step_x,vertical,step_z);
             g_body.top = g_body.feet[1];
         } else {
-            if ((who->conditions & COND_SLOWFALL) && g_body.vy < -60) { g_body.vy = -60; }
+            if ((who->conditions & COND_SLOWFALL) && g_body.vy < -SLOWFALL_SPEED) { g_body.vy = -SLOWFALL_SPEED; }
             body_step(&g_body, scene, step_x, step_z, in->dt);
         }
     }
@@ -447,8 +446,8 @@ void move_frame(const Scene *scene, const MoveIn *in)
     g_bob_offset = 0;
     if ((options_flags() & 2) && g_body.grounded && !g_air && !wet && !(who->conditions & COND_LEVITATING)) {
         if (moved > 0.001f) {
-            g_bob_ms += in->dt * 1000.0f;
-            while (g_bob_ms >= 1000.0f) { g_bob_ms -= 1000.0f; }
+            g_bob_ms += in->dt * MS_PER_SECOND;
+            while (g_bob_ms >= MS_PER_SECOND) { g_bob_ms -= MS_PER_SECOND; }
         } else { g_bob_ms = 0; }
         g_bob_offset = (float)bob_sample(df_ifloor(g_bob_ms));
     } else { g_bob_ms = 0; }
@@ -468,8 +467,8 @@ void move_camera(Camera *cam)
         return;
     }
     body_eye(&g_body, &x, &y, &z);
-    yaw = (float)g_yaw * (DF_TAU / (float)CIRCLE);
-    pitch = (float)g_pitch * (DF_TAU / (float)CIRCLE);
+    yaw = (float)g_yaw * (DF_TAU / (float)ANGLE_FULL);
+    pitch = (float)g_pitch * (DF_TAU / (float)ANGLE_FULL);
     camera_set(cam, x, y + g_bob_offset, z, yaw, pitch);
 }
 

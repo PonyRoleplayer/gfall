@@ -53,6 +53,39 @@ void move_restore(const MotionState *motion);
  * (150): a creature's chase speed and the stealth momentum are that same sum. Crouched it is SPD + CROUCH_SPEED_ADD. Running scales it by (RUN_BASE + running skill * 256 / RUN_SKILL_DIVISOR)
  * over 256, and in water a quarter of it plus the swimming skill's share.
  */
+/* Classic angles: ANGLE_FULL to a turn (the compass, the view's yaw, a creature's facing), with its half and quarter and the mask that wraps one. */
+#define MS_PER_SECOND 1000.0f
+#define ANGLE_FULL 2048
+#define ANGLE_HALF 1024
+#define ANGLE_QUARTER 512
+#define ANGLE_MASK (ANGLE_FULL - 1)
+/*
+ * The classic steering grid is nine regions, three by three (intrface.c): the forward cell's speed is scaled by weight over STEER_FORWARD_DIV (a little faster than straight), the others over
+ * STEER_DIV; the keys give every weight STEER_WEIGHT_KEYS. A slide turns the heading by a quarter turn, the back by a half. Climbing: a wall probe ours (CLIMB_PROBE_PAD past the body), the
+ * player standing nearly still (moved under CLIMB_MOVED_MAX), facing the wall within CLIMB_COS_MIN/256, CLIMB_DELAY_TICKS of BIOS ticks (BIOS_TICKS_PER_SECOND) against it, then rising at
+ * 1/CLIMB_SPEED_DIV of the speed; a Khajiit has KHAJIIT_CLIMB_BONUS more skill and a climber may slip once a minute when two rolls pass CLIMB_SLIP_ROLL and the skill. A jump costs JUMP_FATIGUE,
+ * floating FLOAT_SPEED a second, and a swimmer over SWIM_SINK_WEIGHT carried sinks at FLOAT_SPEED unless levitating or water-walking. Ours: the slowfall cap SLOWFALL_SPEED, the crouch's
+ * CROUCH_SCALE, the view's pitch limit and key speed.
+ */
+enum { STEER_FORWARD_LEFT, STEER_FORWARD, STEER_FORWARD_RIGHT, STEER_TURN_LEFT, STEER_CENTRE, STEER_TURN_RIGHT, STEER_SLIDE_LEFT, STEER_BACK, STEER_SLIDE_RIGHT };
+#define STEER_WEIGHT_KEYS 255
+#define STEER_FORWARD_DIV 220
+#define STEER_DIV 256
+#define CLIMB_PROBE_PAD 8
+#define CLIMB_MOVED_MAX 5
+#define CLIMB_COS_MIN 251
+#define CLIMB_DELAY_TICKS 14
+#define BIOS_TICKS_PER_SECOND 18.2065f
+#define CLIMB_SPEED_DIV 3
+#define KHAJIIT_CLIMB_BONUS 30
+#define CLIMB_SLIP_ROLL 95
+#define JUMP_FATIGUE 11
+#define FLOAT_SPEED 80
+#define SWIM_SINK_WEIGHT 250
+#define SLOWFALL_SPEED 60
+#define CROUCH_SCALE 0.5f
+#define PITCH_LIMIT 256
+#define LOOK_KEY_SPEED 160.0f
 #define WALK_ADD 200
 #define ATTRIBUTE_NEUTRAL 50
 #define WALK_SPEED_ADD (WALK_ADD - ATTRIBUTE_NEUTRAL)
