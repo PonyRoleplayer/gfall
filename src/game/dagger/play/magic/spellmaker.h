@@ -25,10 +25,6 @@
 #define SPELL_CHANCE_AT 23
 #define SPELL_MAGNITUDE_AT 32
 #define SPELL_ICON_AT 72
-/* The element when no effect takes one is magic. */
-#define ELEMENT_MAGIC 4
-/* The sub-effects a type lists at most. */
-#define SUB_EFFECTS_MOST 12
 /* The price is the target's factor times the three costs times SPELLMAKER_PRICE_MUL; the window shows the sum shifted right once, then left twice. */
 #define SPELLMAKER_PRICE_MUL 2
 /* spellmaker_buy: the texts, the book's limit and the sound. */

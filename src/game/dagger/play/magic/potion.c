@@ -4,6 +4,9 @@
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/magic/spellbook.h"
 #include "game/dagger/play/magic/magic.h"
+#include "game/dagger/play/magic/spellmaker.h"
+#include "game/dagger/play/combat/combat.h"
+#include "game/dagger/tables/magic.h"
 #include "engine/core/log.h"
 #include "game/dagger/tables/potiondata.h"
 #include "game/dagger/tables/souldata.h"
@@ -21,7 +24,7 @@ void potions_register(void)
     int i;
 
     for (i = 0; i < RECIPES; i++) {
-        spell_register(g_recipe[i] + 20, POTION_SPELL + i);
+        spell_register(g_recipe[i] + RECIPE_SPELL_OFFSET, POTION_SPELL + i);
     }
 }
 
@@ -40,7 +43,7 @@ const char *potion_name(int recipe)
 
 int potion_value(int recipe)
 {
-    return recipe >= 0 && recipe < RECIPES ? (int)(g_recipe[recipe][8] | g_recipe[recipe][9] << 8) : 0;
+    return recipe >= 0 && recipe < RECIPES ? (int)(g_recipe[recipe][RECIPE_VALUE_OFFSET] | g_recipe[recipe][RECIPE_VALUE_OFFSET + 1] << 8) : 0;
 }
 
 int potion_spell(int recipe)
@@ -128,19 +131,19 @@ void soul_trap_stock(df_u32 container, int quality)
     df_u32 trap;
 
     for (i = 0; i < (quality >> 1) + 1; i++) {
-        trap = item_create(container, 27, 1, -1);
+        trap = item_create(container, ITEM_GROUP_MISC, MISC_SOUL_TRAP, -1);
         if (!trap) {
             return;
         }
-        object_edit(trap)->value = 5000;
-        if (random_range(1, 100) < 25) {
+        object_edit(trap)->value = SOUL_TRAP_VALUE;
+        if (random_range(1, PERCENT) < SOUL_TRAP_FILLED_CHANCE) {
             /* soul_trap_add_soul: a kind drawn again until one has a value. */
-            kind = random_range(0, 42);
+            kind = random_range(0, SOUL_CREATURES - 1);
             while (!g_soul_value[kind]) {
-                kind = random_range(0, 42);
+                kind = random_range(0, SOUL_CREATURES - 1);
             }
             if (object_new(RECORD_SOUL, trap, kind, 100)) {
-                object_edit(trap)->value = g_soul_value[kind] + 5000;
+                object_edit(trap)->value = g_soul_value[kind] + SOUL_TRAP_VALUE;
             }
         }
     }
@@ -160,7 +163,7 @@ const Cauldron *cauldron_state(void)
 void cauldron_clear(void)
 {
     mem_zero(&g_cauldron, sizeof(g_cauldron));
-    mem_fill(g_cauldron.key, 254, CAULDRON);
+    mem_fill(g_cauldron.key, CAULDRON_EMPTY, CAULDRON);
 }
 
 int ingredient_at(df_u32 item)
@@ -230,7 +233,7 @@ int cauldron_remove(int cell)
         return 0;
     }
     g_cauldron.item[cell] = 0;
-    g_cauldron.key[cell] = 254;
+    g_cauldron.key[cell] = CAULDRON_EMPTY;
     return 1;
 }
 
@@ -284,7 +287,7 @@ int potion_match(int recipe, const Cauldron *c)
     if (recipe < 0 || recipe >= RECIPES) {
         return 0;
     }
-    n = potion_ingredients(recipe, group, index, 8);
+    n = potion_ingredients(recipe, group, index, RECIPE_INGREDIENTS);
     unmatched = 0;
     value = 0;
     for (i = 0; i < 8; i++) {
@@ -292,16 +295,16 @@ int potion_match(int recipe, const Cauldron *c)
             const ItemDef *def;
 
             def = item_def(group[i], index[i]);
-            ids[i] = def ? (unsigned char)def->variants : 255;
+            ids[i] = def ? (unsigned char)def->variants : RECIPE_USED;
             value += item_rarity(group[i], index[i]);
             unmatched++;
         } else {
-            ids[i] = 255;
+            ids[i] = RECIPE_USED;
         }
     }
     potency = 0;
     for (i = 0; i < 8; i++) {
-        if (c->key[i] == 254) {
+        if (c->key[i] == CAULDRON_EMPTY) {
             continue;
         }
         found = -1;
@@ -310,7 +313,7 @@ int potion_match(int recipe, const Cauldron *c)
         }
         if (found >= 0) {
             potency += c->potency[i];
-            ids[found] = 255;
+            ids[found] = RECIPE_USED;
             unmatched--;
         } else {
             potency -= c->potency[i];
@@ -319,7 +322,7 @@ int potion_match(int recipe, const Cauldron *c)
     if (unmatched != 0) {
         return 0;
     }
-    return ((potency - value) >> 1) + 5 >= 1;
+    return ((potency - value) >> 1) + POTION_BREW_BASE >= 1;
 }
 
 /* potion_sort_ingredients: a bubble sort of three arrays by the first, largest first. */
@@ -369,9 +372,9 @@ int brew_effects(const Cauldron *c, int *type, int *subtype)
     }
     sort3(y, x, z, n);
     sum = 0;
-    if (n > 3) {
-        for (i = 3; i < n; i++) { sum += y[i]; }
-        n = 3;
+    if (n > MIX_EFFECTS_MAX) {
+        for (i = MIX_EFFECTS_MAX; i < n; i++) { sum += y[i]; }
+        n = MIX_EFFECTS_MAX;
     }
     switch (n) {
     case 3:
@@ -399,21 +402,21 @@ static void brew_record(int n, const int *type, const int *subtype, df_u8 *r)
 {
     int i, flags;
 
-    mem_zero(r, 89);
-    for (i = 0; i < 6; i++) { r[i] = 255; }
-    r[6] = 4;
-    r[7] = 0;
+    mem_zero(r, SPELL_RECORD);
+    for (i = 0; i < 2 * SPELL_EFFECTS; i++) { r[i] = MAGIC_EFFECT_NONE; }
+    r[SPELL_ELEMENT_AT] = ELEMENT_MAGIC;
+    r[SPELL_TARGET_AT] = 0;
     for (i = 0; i < n; i++) {
         flags = effect_flags(type[i], subtype[i]);
-        r[i * 2] = (df_u8)type[i];
-        r[i * 2 + 1] = (df_u8)subtype[i];
-        if (flags & 1) { r[14 + i * 3] = r[15 + i * 3] = r[16 + i * 3] = 1; }
-        if (flags & 2) { r[23 + i * 3] = 70; r[24 + i * 3] = r[25 + i * 3] = 1; }
+        r[SPELL_TYPE_AT + i * 2] = (df_u8)type[i];
+        r[SPELL_TYPE_AT + i * 2 + 1] = (df_u8)subtype[i];
+        if (flags & 1) { r[SPELL_DURATION_AT + i * 3] = r[SPELL_DURATION_AT + i * 3 + 1] = r[SPELL_DURATION_AT + i * 3 + 2] = 1; }
+        if (flags & 2) { r[SPELL_CHANCE_AT + i * 3] = MIX_CHANCE; r[SPELL_CHANCE_AT + i * 3 + 1] = r[SPELL_CHANCE_AT + i * 3 + 2] = 1; }
         /* base_min 10, base_max and plus_min 1; the rest are what the spell record held before, here nothing. */
-        if (flags & 4) { r[32 + i * 5] = 10; r[33 + i * 5] = 1; r[34 + i * 5] = 1; }
+        if (flags & 4) { r[SPELL_MAGNITUDE_AT + i * 5] = MIX_MAGNITUDE; r[SPELL_MAGNITUDE_AT + i * 5 + 1] = 1; r[SPELL_MAGNITUDE_AT + i * 5 + 2] = 1; }
     }
-    for (i = 0; g_maker_unknown[i] && i < 24; i++) { r[47 + i] = (df_u8)g_maker_unknown[i]; }
-    r[73] = 255;
+    for (i = 0; g_maker_unknown[i] && i < MAKER_NAME_LEN; i++) { r[MAKER_NAME_AT + i] = (df_u8)g_maker_unknown[i]; }
+    r[SPELL_ICON_AT + 1] = MAGIC_EFFECT_NONE;
 }
 
 static int brew_pack(int n, const int *type, const int *subtype)
@@ -422,7 +425,7 @@ static int brew_pack(int n, const int *type, const int *subtype)
 
     packed = 0;
     for (i = 0; i < n; i++) {
-        packed |= ((type[i] + 1) << 4 | (subtype[i] & 15)) << (i * 10);
+        packed |= ((type[i] + 1) << 4 | (subtype[i] & 15)) << (i * PACKED_EFFECT_BITS);
     }
     return BREW_FLAG | packed;
 }
@@ -433,7 +436,7 @@ static int brew_unpack(int message, int *type, int *subtype)
 
     n = 0;
     for (i = 0; i < 3; i++) {
-        field = (message >> (i * 10)) & 1023;
+        field = (message >> (i * PACKED_EFFECT_BITS)) & ((1 << PACKED_EFFECT_BITS) - 1);
         if (field >> 4) {
             type[n] = (field >> 4) - 1;
             subtype[n] = field & 15;
@@ -529,7 +532,7 @@ df_u32 recipe_create(df_u32 container, int recipe)
     if (recipe < 0 || recipe >= RECIPES) {
         return 0;
     }
-    id = item_create(container, 27, 4, -1);
+    id = item_create(container, ITEM_GROUP_MISC, MISC_RECIPE, -1);
     item = object_edit(id);
     if (!item) {
         return 0;
@@ -570,7 +573,7 @@ int recipe_load(int recipe)
     df_u32 pack[512];
     int group[8], index[8], n, i, k, count, found;
 
-    n = potion_ingredients(recipe, group, index, 8);
+    n = potion_ingredients(recipe, group, index, RECIPE_INGREDIENTS);
     count = ingredient_list(pack, 512);
     /* potion_have_recipe_ingredients: the cauldron's cells emptied (the arrays of keys are not), then each ingredient of the recipe sought in the pack. */
     for (i = 0; i < CAULDRON; i++) { g_cauldron.item[i] = 0; }

@@ -72,6 +72,7 @@ static const EnchantWorld *g_world;
 void enchant_set_world(const EnchantWorld *world) { g_world = world; }
 
 static int daylight(void) { return g_world && g_world->daylight && g_world->daylight(); }
+int enchant_daylight(void) { return daylight(); }
 static int temple(void) { return g_world && g_world->temple && g_world->temple(); }
 
 static void item_break(df_u32 id)

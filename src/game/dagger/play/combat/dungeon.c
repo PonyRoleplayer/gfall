@@ -237,7 +237,7 @@ int dungeon_add(Entity *entity, int kind, int passive, int rate)
     skill = f->fighter.level*FOE_SKILL_PER_LEVEL+FOE_SKILL_BASE; if (skill > FOE_SKILL_MAX) { skill = FOE_SKILL_MAX; }
     for (j = 0; j < SKILLS; j++) { f->fighter.skill[j] = skill; }
     for (j = 0; j < ATTRS; j++) { f->fighter.attribute[j] = f->def ? f->def->attribute[j] : career ? career->attribute[j] : 50; }
-    for (j = 0; j < BODY_PARTS; j++) { f->fighter.armor[j] = f->def ? f->def->armor : 60; }
+    for (j = 0; j < BODY_PARTS; j++) { f->fighter.armor[j] = FOE_ARMOR_SCALE * (f->def ? f->def->armor : enemy_class_armor(f->kind == ENEMY_CITY_WATCH ? ENEMY_CLASS_COUNT : (f->kind-ENEMY_FIRST_CLASS)%ENEMY_CLASS_COUNT)); }
     f->fighter.fatigue = fatigue_maximum(f->fighter.attribute[ATTR_STR],f->fighter.attribute[ATTR_END]);
     f->fighter.magicka = f->fighter.max_magicka = f->fighter.attribute[ATTR_INT]*2;
     if (creature_spells(f->kind,f->fighter.level)) {

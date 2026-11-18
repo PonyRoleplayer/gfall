@@ -650,7 +650,7 @@ static int clock_and_view_valid(const GameState *state)
         state->progress.active < 0 || state->progress.active > 1 ||
         (!state->progress.active && state->progress.points) ||
         state->progress.base_sum < -1500 || state->progress.base_sum > 600 || state->progress.raised_hi > 7) { return 0; }
-    if (state->survival.breath < 0 || state->survival.breath > 80 ||
+    if (state->survival.breath < 0 || state->survival.breath > BREATH_SAVE_MOST ||
         !(state->survival.fraction >= 0 && state->survival.fraction < 1) ||
         !(state->survival.climb_time >= 0 && state->survival.climb_time <= 1) ||
         state->survival.climb_minute > state->minutes || state->survival.climbing < 0 ||

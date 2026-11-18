@@ -2,6 +2,8 @@
 #include "game/dagger/tables/enemies.h"
 #include "game/dagger/play/magic/spellbook.h"
 #include "game/dagger/play/magic/magicitem.h"
+#include "game/dagger/play/magic/enchant.h"
+#include "game/dagger/tables/magic.h"
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/people/law.h"
 #include "game/dagger/tables/itemdefs.h"
@@ -22,13 +24,13 @@ const ItemMaker *itemmaker_state(void) { return &g; }
 void itemmaker_set_souls(int (*list)(int *creatures, int cap)) { g_souls = list; }
 
 /* A slot's type in the item's numbering. */
-static int item_type(int s) { return g.kind[s] == 1 ? g.type[s] + 15 : g.type[s]; }
+static int item_type(int s) { return g.kind[s] == 1 ? g.type[s] + ENCHANT_SIDE_FIRST : g.type[s]; }
 
 static void clear_pairs(int row)
 {
     int k;
 
-    for (k = 0; k < 5; k++) { g.pair[row][k][0] = g.pair[row][k][1] = 255; }
+    for (k = 0; k < ITEMMAKER_PAIRS; k++) { g.pair[row][k][0] = g.pair[row][k][1] = PAIR_NONE; }
 }
 
 void itemmaker_reset(void)
@@ -36,8 +38,8 @@ void itemmaker_reset(void)
     int s;
 
     mem_zero(&g, sizeof(g));
-    for (s = 0; s < 10; s++) { g.kind[s] = -1; g.param[s] = -1; }
-    for (s = 0; s < 12; s++) { clear_pairs(s); }
+    for (s = 0; s < ITEM_ENCHANTMENTS; s++) { g.kind[s] = -1; g.param[s] = -1; }
+    for (s = 0; s < ITEMMAKER_ROWS; s++) { clear_pairs(s); }
     g.pending = -1;
 }
 
@@ -55,8 +57,8 @@ int itemmaker_capacity(df_u32 id)
     points = g_template_enchant[template];
     if (points <= 0) { return 0; }
     /* item_init_from_template: only weapons (not arrows) and plate armour roll a material, which scales the points. */
-    if ((item->group == ITEM_GROUP_WEAPON && !df_eq(item_def(ITEM_GROUP_WEAPON, item->index)->name, "Arrow")) || (item->group == ITEM_GROUP_ARMOR && item->armor_type == 2)) {
-        if (item->material >= 0 && item->material < 10) { points = (points * g_ench_material[item->material]) >> 2; }
+    if ((item->group == ITEM_GROUP_WEAPON && !df_eq(item_def(ITEM_GROUP_WEAPON, item->index)->name, "Arrow")) || (item->group == ITEM_GROUP_ARMOR && item->armor_type == ARMOR_PLATE)) {
+        if (item->material >= 0 && item->material < MATERIALS) { points = (points * g_ench_material[item->material]) >> MATERIAL_SCALE_SHIFT; }
     }
     return points;
 }
@@ -116,7 +118,7 @@ int itemmaker_param_kind(int side, int kind)
 
 static int souls_list(int *ids, int cap)
 {
-    return g_souls ? g_souls(ids, cap < 63 ? cap : 63) : 0;
+    return g_souls ? g_souls(ids, cap < ITEMMAKER_SOULS_MAX ? cap : ITEMMAKER_SOULS_MAX) : 0;
 }
 
 static int spell_count(int list)
@@ -134,8 +136,8 @@ int itemmaker_param_count(int side, int kind)
 
     pk = itemmaker_param_kind(side, kind);
     if (pk == 0) { return 0; }
-    if (pk <= 3) { return spell_count(pk - 1); }
-    if (pk == 4) { return souls_list(ids, 63); }
+    if (pk <= PARAM_SPELLS_STRIKE) { return spell_count(pk - 1); }
+    if (pk == PARAM_SOULS) { return souls_list(ids, ITEMMAKER_SOULS_MAX); }
     return g_ench_label_count[pk - 100];
 }
 
@@ -144,19 +146,19 @@ const char *itemmaker_param_name(int side, int kind, int param)
     int pk;
 
     pk = itemmaker_param_kind(side, kind);
-    if (pk >= 1 && pk <= 3) {
+    if (pk >= PARAM_SPELLS_USED && pk <= PARAM_SPELLS_STRIKE) {
         const SpellDef *spell;
 
         spell = param >= 0 && param < spell_count(pk - 1) ? spell_def(g_ench_spells[pk - 1][param]) : 0;
         return spell ? spell->name : "";
     }
-    if (pk == 4) {
+    if (pk == PARAM_SOULS) {
         const FoeDef *foe;
 
         foe = ENEMY_IS_CLASSIC(param) ? foe_def(param) : 0;
         return foe ? foe->name : "";
     }
-    if (pk >= 100 && param >= 0 && param < g_ench_label_count[pk - 100]) { return g_ench_labels[pk - 100][param]; }
+    if (pk >= PARAM_LABELS && param >= 0 && param < g_ench_label_count[pk - PARAM_LABELS]) { return g_ench_labels[pk - PARAM_LABELS][param]; }
     return "";
 }
 
@@ -185,11 +187,11 @@ static int rep_excluded(int t, int q)
 {
     int s, other;
 
-    other = t == 25 ? 14 : 25;
-    for (s = 0; s < 10; s++) {
+    other = t == ENCHANT_BAD_REP_WITH ? ENCHANT_GOOD_REP_WITH : ENCHANT_BAD_REP_WITH;
+    for (s = 0; s < ITEM_ENCHANTMENTS; s++) {
         if (g.kind[s] == -1 || s == g.pending) { continue; }
-        if (item_type(s) == t && g.param[s] != 5 && q == 5) { return 1; }
-        if (item_type(s) == t && g.param[s] == 5) { return 1; }
+        if (item_type(s) == t && g.param[s] != SOCIAL_GROUP_ALL && q == SOCIAL_GROUP_ALL) { return 1; }
+        if (item_type(s) == t && g.param[s] == SOCIAL_GROUP_ALL) { return 1; }
         if (item_type(s) == other && g.param[s] == q) { return 1; }
     }
     return 0;
@@ -202,10 +204,10 @@ static int allowed(int side, int kind, int *out, int cap)
 
     pk = itemmaker_param_kind(side, kind);
     if (pk == 0) { return 0; }
-    t = side ? kind + 15 : kind;
+    t = side ? kind + ENCHANT_SIDE_FIRST : kind;
     n = 0;
-    if (pk == 4) {
-        count = souls_list(ids, 63);
+    if (pk == PARAM_SOULS) {
+        count = souls_list(ids, ITEMMAKER_SOULS_MAX);
         for (q = 0; q < count && n < cap; q++) { out[n++] = ids[q]; }
         return n;
     }
@@ -213,7 +215,7 @@ static int allowed(int side, int kind, int *out, int cap)
     for (q = 0; q < count && n < cap; q++) {
         /* A spell's parameter is its index in the list; the soul's rule-outs sit in rows 10 and 11 as (0, index) and (1, index). */
         if (has_pair(t, q)) { continue; }
-        if ((t == 14 || t == 25) && rep_excluded(t, q)) { continue; }
+        if ((t == ENCHANT_GOOD_REP_WITH || t == ENCHANT_BAD_REP_WITH) && rep_excluded(t, q)) { continue; }
         out[n++] = q;
     }
     return n;
@@ -227,17 +229,17 @@ int itemmaker_kinds(int side, int *kinds, int cap)
     item = object_at(g.item);
     n = 0;
     for (kind = 0; kind < (side ? 11 : 15) && n < cap; kind++) {
-        t = side ? kind + 15 : kind;
+        t = side ? kind + ENCHANT_SIDE_FIRST : kind;
         if (has_kind_pair(t)) { continue; }
-        if (t == 20 && (!item || item->group != ITEM_GROUP_WEAPON)) { continue; }
-        if (t == 18 || t == 19) { continue; }
+        if (t == ENCHANT_LOW_DAMAGE_VS && (!item || item->group != ITEM_GROUP_WEAPON)) { continue; }
+        if (t == ENCHANT_VISION_PROBLEMS || t == ENCHANT_WALKING_PROBLEMS) { continue; }
         /* itemmaker_power_excluded: a reputation kind is gone once All of the other, or of itself, is on the item. */
-        if (t == 25 || t == 14) {
+        if (t == ENCHANT_BAD_REP_WITH || t == ENCHANT_GOOD_REP_WITH) {
             for (s = 0; s < 10; s++) { if (g.kind[s] != -1 && item_type(s) == t && g.param[s] == 5) { break; } }
-            if (s < 10) { continue; }
+            if (s < ITEM_ENCHANTMENTS) { continue; }
         }
-        if (t == 15) { for (s = 0; s < 10; s++) { if (g.kind[s] == 1 && g.type[s] == 0) { break; } } if (s < 10) { continue; } }
-        if (t == 21) { for (s = 0; s < 10; s++) { if (g.kind[s] == 1 && g.type[s] == 6) { break; } } if (s < 10) { continue; } }
+        if (t == 15) { for (s = 0; s < 10; s++) { if (g.kind[s] == 1 && g.type[s] == 0) { break; } } if (s < ITEM_ENCHANTMENTS) { continue; } }
+        if (t == 21) { for (s = 0; s < 10; s++) { if (g.kind[s] == 1 && g.type[s] == 6) { break; } } if (s < ITEM_ENCHANTMENTS) { continue; } }
         /* A kind with every parameter taken is not offered (7.3). */
         if (itemmaker_param_kind(side, kind)) {
             count = allowed(side, kind, scratch, 40);
@@ -270,12 +272,12 @@ int itemmaker_begin(int side, int kind)
         return s;
     }
     /* A kind with no parameter writes its own pairs: Feather Weight and Extra weight rule each other out, as do Strengthens and Weakens armor; a power that can be had once rules itself out (7.7). */
-    if (!side && kind == 11) { set_pair(s, 0, 23, 255); set_pair(s, 1, 11, 255); }
-    else if (!side && kind == 12) { set_pair(s, 0, 24, 255); set_pair(s, 1, 12, 255); }
-    else if (!side && kind == 8) { set_pair(s, 0, 8, 255); }
-    else if (!side && kind == 9) { set_pair(s, 0, 9, 255); }
-    else if (side && kind == 8) { set_pair(s, 0, 11, 255); set_pair(s, 1, 23, 255); }
-    else if (side && kind == 9) { set_pair(s, 0, 12, 255); set_pair(s, 1, 24, 255); }
+    if (!side && kind == ENCHANT_FEATHER_WEIGHT) { set_pair(s, 0, ENCHANT_EXTRA_WEIGHT, PAIR_NONE); set_pair(s, 1, ENCHANT_FEATHER_WEIGHT, PAIR_NONE); }
+    else if (!side && kind == ENCHANT_STRENGTHENS_ARMOR) { set_pair(s, 0, ENCHANT_WEAKENS_ARMOR, PAIR_NONE); set_pair(s, 1, ENCHANT_STRENGTHENS_ARMOR, PAIR_NONE); }
+    else if (!side && kind == ENCHANT_REPAIRS_OBJECTS) { set_pair(s, 0, ENCHANT_REPAIRS_OBJECTS, PAIR_NONE); }
+    else if (!side && kind == ENCHANT_ABSORBS_SPELLS) { set_pair(s, 0, ENCHANT_ABSORBS_SPELLS, PAIR_NONE); }
+    else if (side && kind == ENCHANT_EXTRA_WEIGHT - ENCHANT_SIDE_FIRST) { set_pair(s, 0, ENCHANT_FEATHER_WEIGHT, PAIR_NONE); set_pair(s, 1, ENCHANT_EXTRA_WEIGHT, PAIR_NONE); }
+    else if (side && kind == ENCHANT_WEAKENS_ARMOR - ENCHANT_SIDE_FIRST) { set_pair(s, 0, ENCHANT_STRENGTHENS_ARMOR, PAIR_NONE); set_pair(s, 1, ENCHANT_WEAKENS_ARMOR, PAIR_NONE); }
     return s;
 }
 
@@ -310,13 +312,13 @@ static void fill_pairs(int s)
     int side, kind, param;
 
     side = g.kind[s]; kind = g.type[s]; param = g.param[s];
-    set_pair(s, 0, side ? kind + 15 : kind, param);
+    set_pair(s, 0, side ? kind + ENCHANT_SIDE_FIRST : kind, param);
     if (!side && param < 0) {
-        if (kind == 11) { set_pair(s, 0, 23, 255); set_pair(s, 1, 11, 255); }
-        else if (kind == 12) { set_pair(s, 0, 24, 255); set_pair(s, 1, 12, 255); }
+        if (kind == ENCHANT_FEATHER_WEIGHT) { set_pair(s, 0, ENCHANT_EXTRA_WEIGHT, PAIR_NONE); set_pair(s, 1, ENCHANT_FEATHER_WEIGHT, PAIR_NONE); }
+        else if (kind == ENCHANT_STRENGTHENS_ARMOR) { set_pair(s, 0, ENCHANT_WEAKENS_ARMOR, PAIR_NONE); set_pair(s, 1, ENCHANT_STRENGTHENS_ARMOR, PAIR_NONE); }
     } else if (side && param < 0) {
-        if (kind == 8) { set_pair(s, 0, 11, 255); set_pair(s, 1, 23, 255); }
-        else if (kind == 9) { set_pair(s, 0, 12, 255); set_pair(s, 1, 24, 255); }
+        if (kind == ENCHANT_EXTRA_WEIGHT - ENCHANT_SIDE_FIRST) { set_pair(s, 0, ENCHANT_FEATHER_WEIGHT, PAIR_NONE); set_pair(s, 1, ENCHANT_EXTRA_WEIGHT, PAIR_NONE); }
+        else if (kind == ENCHANT_WEAKENS_ARMOR - ENCHANT_SIDE_FIRST) { set_pair(s, 0, ENCHANT_STRENGTHENS_ARMOR, PAIR_NONE); set_pair(s, 1, ENCHANT_WEAKENS_ARMOR, PAIR_NONE); }
     } else {
         row_pairs(s, side, kind, param);
     }
@@ -334,14 +336,14 @@ static int add_soul_powers(int soul_slot, int creature)
         int kind, arg;
 
         kind = g_ench_soul_rule[r * 4 + k * 2]; arg = g_ench_soul_rule[r * 4 + k * 2 + 1];
-        if (kind == 255) { continue; }
-        if (kind == 128 || kind == 129) {
+        if (kind == PAIR_NONE) { continue; }
+        if (kind == SOUL_SPELLS_USED || kind == SOUL_SPELLS_HELD) {
             int list, row, slot_out;
 
             list = kind - 128; row = 10 + list; slot_out = 0;
             for (j = 0; j < 5 && slot_out < 5; j++) {
                 spell = g_ench_soul_spells[arg * 5 + j];
-                if (spell == 255) { continue; }
+                if (spell == PAIR_NONE) { continue; }
                 for (idx = 0; idx < spell_count(list); idx++) {
                     if (g_ench_spells[list][idx] == spell) { set_pair(row, slot_out++, list, idx); break; }
                 }
@@ -367,7 +369,7 @@ static int add_soul_powers(int soul_slot, int creature)
             int kind;
 
             kind = g_ench_soul_rule[r * 4 + k * 2];
-            if (kind != 255) { set_pair(s, 3 + k, kind, g_ench_soul_rule[r * 4 + k * 2 + 1]); }
+            if (kind != PAIR_NONE) { set_pair(s, 3 + k, kind, g_ench_soul_rule[r * 4 + k * 2 + 1]); }
         }
     }
     return 0;
@@ -386,11 +388,11 @@ int itemmaker_choose(int param)
         /* Soul bound: the parameter is the creature; its powers come first, and the soul slot's own pairs after. */
         g.param[s] = param;
         result = add_soul_powers(s, param);
-        set_pair(s, 0, 15, 255);
+        set_pair(s, 0, ENCHANT_SOUL_BOUND, PAIR_NONE);
         return result;
     }
     g.param[s] = param;
-    set_pair(s, 0, side ? kind + 15 : kind, param);
+    set_pair(s, 0, side ? kind + ENCHANT_SIDE_FIRST : kind, param);
     row_pairs(s, side, kind, param);
     return result;
 }
@@ -418,7 +420,7 @@ void itemmaker_remove(int slot)
             g.soul[s] = 0; g.kind[s] = -1; g.type[s] = 0; g.param[s] = -1;
             clear_pairs(s);
         }
-        clear_pairs(10); clear_pairs(11);
+        clear_pairs(ITEMMAKER_SOUL_ROW); clear_pairs(ITEMMAKER_SOUL_ROW + 1);
     }
     g.kind[slot] = -1; g.param[slot] = -1; g.type[slot] = 0;
     clear_pairs(slot);
@@ -436,15 +438,15 @@ static int slot_cost(int side, int type, int param, int as_points)
         code = g_enchant_code[type];
         if (code == 0) { return 0; }
         if (code >= 1000) { return g_enchant_by_param[code - 1000][param < 0 ? 0 : param < 12 ? param : 11]; }
-        if (code >= 5 && code <= 7) { return param >= 0 && param < spell_count(code - 5) ? magic_spell_cost(g_ench_spells[code - 5][param]) : 0; }
+        if (code >= ENCHANT_CODE_SPELL_FIRST && code <= ENCHANT_CODE_SPELL_LAST) { return param >= 0 && param < spell_count(code - ENCHANT_CODE_SPELL_FIRST) ? magic_spell_cost(g_ench_spells[code - ENCHANT_CODE_SPELL_FIRST][param]) : 0; }
         return g_enchant_fixed[code];
     }
     code = g_ench_side_code[type];
-    if (code == 99) {
+    if (code == COST_SOUL) {
         int v;
 
         v = ENEMY_IS_CLASSIC(param) ? g_soul_value[param] : 0;
-        if (as_points) { v /= 100; }
+        if (as_points) { v /= ITEMMAKER_POINTS_DIV; }
         return -v;
     }
     if (code >= 1000) { return g_ench_side_by_param[type][param < 0 ? 0 : param < 6 ? param : 5]; }
@@ -472,7 +474,7 @@ int itemmaker_gold(void)
         if (g.kind[s] != 0 || s == g.pending) { continue; }
         cost += slot_cost(0, g.type[s], g.param[s], 0);
     }
-    return cost * 10;
+    return cost * ITEMMAKER_GOLD_MUL;
 }
 
 int itemmaker_enchant(void (*consume)(int creature))
@@ -504,7 +506,7 @@ int itemmaker_enchant(void (*consume)(int creature))
     soul_creature = -1;
     for (s = 0, n = 0; s < 10; s++) {
         if (g.kind[s] == -1 || s == g.pending) { continue; }
-        row->type[n] = g.kind[s] == 1 ? g.type[s] + 15 : g.type[s];
+        row->type[n] = g.kind[s] == 1 ? g.type[s] + ENCHANT_SIDE_FIRST : g.type[s];
         row->param[n] = g.param[s];
         /* The first three powers store the spell they name, not its place in the list. */
         if (g.kind[s] == 0 && g.type[s] <= 2 && g.param[s] >= 0) { row->param[n] = g_ench_spells[g.type[s]][g.param[s]]; }
@@ -534,7 +536,7 @@ int itemmaker_value(df_u32 id)
         code = g_enchant_code[row->type[k]];
         if (code == 0) { continue; }
         if (code >= 1000) { value += g_enchant_by_param[code - 1000][param < 0 ? 0 : param < 12 ? param : 11]; }
-        else if (code >= 5 && code <= 7) { value += magic_spell_cost(param); }
+        else if (code >= ENCHANT_CODE_SPELL_FIRST && code <= ENCHANT_CODE_SPELL_LAST) { value += magic_spell_cost(param); }
         else { value += g_enchant_fixed[code]; }
     }
     return value;
@@ -551,12 +553,12 @@ static int enchant_lines(const ItemEnchant *row, char *out, int cap)
 
         type = row->type[k]; param = row->param[k];
         if (type < 0) { continue; }
-        name = type < 15 ? g_ench_power_name[type] : g_ench_side_name[type - 15];
+        name = type < ITEMMAKER_POWERS ? g_ench_power_name[type] : g_ench_side_name[type - ENCHANT_SIDE_FIRST];
         what = "";
         if (param >= 0) {
-            if (type < 3) { const SpellDef *spell; spell = spell_def(param); what = spell ? spell->name : ""; }
-            else if (type == 15) { const FoeDef *foe; foe = param < ENEMY_CLASSIC_KINDS ? foe_def(param) : 0; what = foe ? foe->name : ""; }
-            else { what = itemmaker_param_name(type < 15 ? 0 : 1, type < 15 ? type : type - 15, param); }
+            if (type < ENCHANT_CAST_WHEN_STRIKES + 1) { const SpellDef *spell; spell = spell_def(param); what = spell ? spell->name : ""; }
+            else if (type == ENCHANT_SOUL_BOUND) { const FoeDef *foe; foe = param < ENEMY_CLASSIC_KINDS ? foe_def(param) : 0; what = foe ? foe->name : ""; }
+            else { what = itemmaker_param_name(type < ITEMMAKER_POWERS ? 0 : 1, type < ITEMMAKER_POWERS ? type : type - ENCHANT_SIDE_FIRST, param); }
         }
         /* The names of the first three powers end with ": "; the others are followed by a space. */
         n += log_format(out + n, cap - n, what[0] && name[0] && name[strlen_of(name) - 1] != ' ' ? "%s %s\n" : "%s%s\n", name, what);

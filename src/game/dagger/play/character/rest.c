@@ -1,6 +1,7 @@
 #include "game/dagger/formats/sndfile.h"
 #include "game/dagger/play/character/rest.h"
 #include "game/dagger/play/combat/combat.h"
+#include "game/dagger/play/magic/enchant.h"
 #include "game/dagger/tables/buildingtypes.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/play/character/curse.h"
@@ -82,8 +83,10 @@ void rest_recover(void)
     int rate, heal, fatigue;
     who = character_state(); rate = HEAL_BASE;
     if (who->health <= 0 || curse_hungry()) { return; }
-    /* Privateer's Hold is indoors: rapid healing in darkness or always. */
-    if (game_state()->career.rapid & 6) { rate += HEAL_RAPID; }
+    /* func_00071606.c: rapid healing is RAPID_ALWAYS, or RAPID_DAYLIGHT by day, or RAPID_DARKNESS when not in daylight (the first that applies). */
+    if ((game_state()->career.rapid & RAPID_ALWAYS) ||
+        ((game_state()->career.rapid & RAPID_DAYLIGHT) && enchant_daylight()) ||
+        ((game_state()->career.rapid & RAPID_DARKNESS) && !enchant_daylight())) { rate += HEAL_RAPID; }
     rate += who->skill[SKILL_MEDICAL];
     heal = who->max_health*rate/HEAL_DIVISOR+(who->attribute[ATTR_END]-ATTRIBUTE_NEUTRAL)/HEAL_END_DIV;
     if (heal < 1) { heal = 1; }

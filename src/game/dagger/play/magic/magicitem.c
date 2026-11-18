@@ -1,4 +1,5 @@
 #include "game/dagger/play/magic/magicitem.h"
+#include "game/dagger/tables/magic.h"
 #include "game/dagger/tables/items.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/items/inventory.h"
@@ -276,7 +277,7 @@ int magic_artifact_power(df_u32 id)
     int entry, type, param;
 
     entry = magic_item_def(id);
-    return magic_def_artifact(entry) && magic_def_enchant(entry,0,&type,&param) && type == ENCHANT_ARTIFACT ? param : -1;
+    return magic_def_artifact(entry) && magic_def_enchant(entry,0,&type,&param) && type == ENCHANT_SPECIAL_ADVANTAGE ? param : -1;
 }
 
 df_u32 magic_artifact_worn(int power)

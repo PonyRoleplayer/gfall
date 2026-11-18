@@ -12,6 +12,27 @@
  * casting of a spell on the player at the player's own level.
  */
 
+/* A recipe record (109 bytes in the original): its value, the 16-bit word at RECIPE_VALUE_OFFSET; its spell RECIPE_SPELL_OFFSET bytes in (our copy); RECIPE_INGREDIENTS indexes from RECIPE_INGREDIENTS_OFFSET
+ * (RECIPE_NO_INGREDIENT empty) with their groups from RECIPE_GROUPS_OFFSET. In the cauldron an empty cell is CAULDRON_EMPTY and a recipe ingredient already matched RECIPE_USED. */
+#define RECIPE_VALUE_OFFSET 8
+#define RECIPE_SPELL_OFFSET 20
+#define RECIPE_INGREDIENTS 8
+#define RECIPE_NO_INGREDIENT -2
+#define RECIPE_GROUPS_OFFSET 10
+#define CAULDRON_EMPTY 254
+#define RECIPE_USED 255
+/* A recipe brews when ((potency - rarities) >> 1) + POTION_BREW_BASE >= 1; an unknown mix keeps MIX_EFFECTS_MAX effects at most. */
+#define POTION_BREW_BASE 5
+#define MIX_EFFECTS_MAX 3
+/* The spell an unknown brew makes: element magic on the caster, a chance of MIX_CHANCE and a magnitude MIX_MAGNITUDE (the original's own odd values); the sound of mixing is SOUND_POTION_MIX. */
+#define MIX_CHANCE 70
+#define MIX_MAGNITUDE 10
+/* A soul trap in a shop is worth SOUL_TRAP_VALUE (plus its soul's); SOUL_TRAP_FILLED_CHANCE percent hold the soul of one of SOUL_CREATURES kinds. */
+#define SOUL_TRAP_VALUE 5000
+#define SOUL_TRAP_FILLED_CHANCE 25
+#define SOUL_CREATURES 43
+/* Our packing of three effects into a potion's message: PACKED_EFFECT_BITS bits each, a type + 1 above a 4-bit subtype. */
+#define PACKED_EFFECT_BITS 10
 #define POTION_SPELL 1000
 /* An unknown brew's spell is made fresh into this id each time one is drunk. */
 #define BREW_SPELL 2999

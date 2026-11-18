@@ -21,6 +21,30 @@ typedef struct ItemMaker {
 } ItemMaker;
 
 /* TEXT.RSC ids the rules answer with (a negative number is a text: 1650 not enough gold, 1651 too many points, 1652 enchanted, 1653 no item, 1657 and 1658 no free slot, 1659 no points, 1660 enchanted already). */
+/* The item maker's numbers (item-making-math.md). A side effect is the type ENCHANT_SIDE_FIRST + its kind; the powers are 0..ITEMMAKER_POWERS - 1 and the sides ITEMMAKER_SIDES. An item has ITEM_ENCHANTMENTS slots; each slot
+ * has ITEMMAKER_PAIRS exclusion pairs (PAIR_NONE an empty half) and the table has ITEMMAKER_ROWS rows, the ten slots and the soul's two (ITEMMAKER_SOUL_ROW). The parameters kinds: PARAM_SPELLS_USED..STRIKE the three spell lists,
+ * PARAM_SOULS the souls, PARAM_LABELS and up the label tables; at most ITEMMAKER_SOULS_MAX souls are listed. Soul rules use codes SOUL_SPELLS_USED and SOUL_SPELLS_HELD for the soul's spell lists. */
+#define ENCHANT_SIDE_FIRST 15
+#define ITEMMAKER_POWERS 15
+#define ITEMMAKER_SIDES 11
+#define ITEM_ENCHANTMENTS 10
+#define ITEMMAKER_PAIRS 5
+#define PAIR_NONE 255
+#define ITEMMAKER_ROWS 12
+#define ITEMMAKER_SOUL_ROW 10
+#define ITEMMAKER_SOULS_MAX 63
+#define PARAM_SPELLS_USED 1
+#define PARAM_SPELLS_HELD 2
+#define PARAM_SPELLS_STRIKE 3
+#define PARAM_SOULS 4
+#define PARAM_LABELS 100
+#define SOUL_SPELLS_USED 128
+#define SOUL_SPELLS_HELD 129
+/* Enchant points are scaled by the material's factor, shifted right MATERIAL_SCALE_SHIFT; points are the cost / ITEMMAKER_POINTS_DIV; gold is the cost times ITEMMAKER_GOLD_MUL. The cost code COST_SOUL is a soul's. */
+#define MATERIAL_SCALE_SHIFT 2
+#define ITEMMAKER_POINTS_DIV 100
+#define ITEMMAKER_GOLD_MUL 10
+#define COST_SOUL 99
 #define IM_NO_GOLD 1650
 #define IM_NO_POINTS 1651
 #define IM_DONE 1652

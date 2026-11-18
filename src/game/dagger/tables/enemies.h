@@ -172,6 +172,9 @@ int enemy_group(int kind);
 #define FOE_CASTER_MAGICKA_BASE 100
 #define FOE_CASTER_MAGIC_SKILL 80
 #define FOE_ARMOR_SCALE 5
+/* A class enemy's armour is its creature row's (class_creature_types, 0x1878FC, then monster_table rows 43..59 at 0x18487A: 4..8) times FOE_ARMOR_SCALE; entry
+ * ENEMY_CLASS_COUNT is the city watch's (class 18, "a guard"). `class` 0..ENEMY_CLASS_COUNT. */
+int enemy_class_armor(int klass);
 
 /* Editor records: a random creature, a fixed one. */
 #define ENEMY_RANDOM_MARKER 15

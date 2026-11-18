@@ -346,3 +346,11 @@ int enemy_group(int kind)
     }
     return ENEMY_GROUP_NONE;
 }
+
+/* The armour value of the creature row each class enemy takes (monster_table[class_creature_types[class]].armor, read from FALL.EXE). */
+int enemy_class_armor(int klass)
+{
+    static const signed char armor[ENEMY_CLASS_COUNT + 1] = { 8, 5, 5, 5, 8, 5, 7, 7, 5, 7, 7, 5, 4, 6, 6, 4, 4, 4, 4 };
+
+    return klass >= 0 && klass <= ENEMY_CLASS_COUNT ? armor[klass] : armor[0];
+}

@@ -1,5 +1,6 @@
 #include "game/dagger/play/travel/travel.h"
 #include "game/dagger/play/character/rest.h"
+#include "game/dagger/play/people/guild.h"
 #include "game/dagger/play/character/ailments.h"
 #include "game/dagger/formats/climate.h"
 #include "game/dagger/play/character/vitals.h"
@@ -40,7 +41,7 @@ static int absolute(int n) { return n < 0 ? -n : n; }
 void journey_plan(int sx, int sy, int ex, int ey, int reckless, int camp,
                      int ship, int transport, JourneyPlan *out)
 {
-    int dx, dy, adx, ady, n, i, error, climate, minutes, factor;
+    int dx, dy, adx, ady, n, i, error, climate, minutes, factor, knight;
     mem_zero(out,sizeof(*out)); dx = ex-sx; dy = ey-sy;
     adx = absolute(dx); ady = absolute(dy); n = adx > ady ? adx : ady;
     error = 0; factor = transport == TRANSPORT_HORSE ? TRANSPORT_FACTOR_HORSE : transport == TRANSPORT_CART ? TRANSPORT_FACTOR_CART : TRANSPORT_FACTOR_FOOT;
@@ -58,8 +59,10 @@ void journey_plan(int sx, int sy, int ex, int ey, int reckless, int camp,
      * before travel_trip_cost prices its nights. */
     if (reckless) { out->minutes /= TRAVEL_RECKLESS_DIV; }
     out->hours = (out->minutes+MINUTES_PER_HOUR-1)/MINUTES_PER_HOUR;
-    out->cost = camp ? 0 : ((out->hours-out->sea_pixels)/HOURS_PER_DAY)*INN_NIGHT_PRICE+INN_NIGHT_PRICE;
-    if (ship && out->sea_pixels) { out->cost += (out->sea_pixels/HOURS_PER_DAY+1)*SHIP_DAY_PRICE; }
+    /* travel_trip_cost: a knight of any order (membership bit KIND_KNIGHT) pays neither the inns nor the ship. */
+    knight = guild_find_bits(KIND_KNIGHT) != 0;
+    out->cost = camp || knight ? 0 : ((out->hours-out->sea_pixels)/HOURS_PER_DAY)*INN_NIGHT_PRICE+INN_NIGHT_PRICE;
+    if (ship && out->sea_pixels && !knight) { out->cost += (out->sea_pixels/HOURS_PER_DAY+1)*SHIP_DAY_PRICE; }
 }
 int journey_transport(void)
 {
@@ -121,7 +124,8 @@ int journey_begin(int region, int index, int reckless, int camp, int ship)
     transport = journey_transport();
     journey_plan(world_where()->px,world_where()->py,location.px,location.py,reckless,camp,ship,transport,&route);
     who = character_state();
-    if (route.cost > who->gold) { msg_set("You do not have enough gold for that journey."); return 0; }
+    /* func_0009C3E7.c:61..64: a trip that cannot be paid takes all the gold and goes; it is not refused. */
+    if (route.cost > who->gold) { route.cost = who->gold; }
     if (!travel_go(region,index)) { return 0; }
     who->gold -= route.cost; fatigue = who->fatigue;
     state_pass_minutes(route.minutes);

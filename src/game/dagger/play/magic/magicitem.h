@@ -22,10 +22,9 @@
 #define MAGIC_DEF_CONDITION 0x37
 #define MAGIC_DEF_VALUE 0x39
 #define MAGIC_DEF_MATERIAL 0x3D
-/* enchant_spell_cost: a cast-spell power costs the spell's cost at every skill ENCHANT_SPELL_SKILL, times ENCHANT_SPELL_COST_MUL. Enchantment type ENCHANT_ARTIFACT holds the artifact's number. */
+/* enchant_spell_cost: a cast-spell power costs the spell's cost at every skill ENCHANT_SPELL_SKILL, times ENCHANT_SPELL_COST_MUL. Enchantment type ENCHANT_SPECIAL_ADVANTAGE holds the artifact's number. */
 #define ENCHANT_SPELL_SKILL 50
 #define ENCHANT_SPELL_COST_MUL 10
-#define ENCHANT_ARTIFACT 26
 /* The enchantment codes below ENCHANT_CODE_PARAM are fixed costs, ENCHANT_CODE_SPELL_FIRST..LAST cost the spell's; from ENCHANT_CODE_PARAM the cost is by parameter, ENCHANT_PARAMS of them. A type from ENCHANT_TYPES up is not costed. */
 #define ENCHANT_CODE_PARAM 1000
 #define ENCHANT_CODE_SPELL_FIRST 5

@@ -1,5 +1,6 @@
 #include "internal.h"
 #include "game/dagger/play/state.h"
+#include "game/dagger/play/combat/combat.h"
 #include "game/dagger/play/play.h"
 #include "game/dagger/play/combat/dungeon.h"
 #include "game/dagger/tables/combatdefs.h"
@@ -184,7 +185,17 @@ static int person_faction(const QuestState *q, int n)
     return n >= 0 && n < q->qbn.n_person && q->person[n].bound ? q->person[n].faction : 0;
 }
 
-static int minute_of_day(void) { return (int)(game_state()->minutes % 1440u); }
+static int minute_of_day(void) { return (int)(game_state()->minutes % MINUTES_PER_DAY); }
+
+/* The courier of op 76 comes in the day, strictly between DAWN_MINUTE and DUSK_MINUTE (is_daytime), or by night for a vampire. */
+#define COURIER_CHANCE 10
+static int courier_hour(void)
+{
+    int day;
+
+    day = minute_of_day() > DAWN_MINUTE && minute_of_day() < DUSK_MINUTE;
+    return curse_is_vampire() ? !day : day;
+}
 
 /* Whether the player is in a town, a village or the like: the location they are in, not a dungeon (kinds 4, 7 and over 9 are the dungeons and the rest). */
 static int town_here(void)
@@ -478,13 +489,14 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
         }
         break;
     case 76:
-        /* The item delivered later: pending, then handed over by chance on a passing minute when the player is in a town by day (the original also wants no creature near and the street, not
-         * a building: no source for them here yet). */
+        /* The item delivered later (func_00031658): pending, then handed over by chance on a passing minute, only in the streets of a town (out of doors, not in a building or a dungeon)
+         * and while the game runs in the world (not the rest screen, whose hours pass in blocks, nor a menu): by daylight (a vampire's courier comes by night). The original also wants
+         * no creature near, which the quests are not told of yet. One roll a game minute, 1..100 under COURIER_CHANCE. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             n = op->arg[1].value;
             if (n < 0 || n >= q->qbn.n_item || !q->item[n].object) { quest_op_done(q, op); break; }
-            if (g_minute && (curse_is_vampire() ? !(minute_of_day() >= 360 && minute_of_day() < 1080) : (minute_of_day() >= 360 && minute_of_day() < 1080)) && town_here() && random_range(1, 100) < 10 &&
-                inventory_transfer(q->item[n].object, game_state()->inventory_id)) { quest_op_done(q, op); }
+            if (g_minute && game_state()->mode == GAME_WORLD && courier_hour() && quest_world && quest_world->outdoors && quest_world->outdoors() && town_here() &&
+                random_range(1, PERCENT) < COURIER_CHANCE && inventory_transfer(q->item[n].object, game_state()->inventory_id)) { quest_op_done(q, op); }
         }
         break;
     case 6:

@@ -9,6 +9,11 @@
 #define BIOS_HZ 18.2065f
 #define BREATH_END_DIV 2
 #define BREATH_MOST 50
+/* A member of Kynareth's temple (kind TEMPLE_KYNARETH) holds BREATH_PER_TEMPLE_RANK more breath for each rank (breath_update:26..27). */
+#define TEMPLE_KYNARETH 149
+#define BREATH_PER_TEMPLE_RANK 3
+/* A save holds at most this much breath (50 plus 3 for each of 9 ranks, with room). */
+#define BREATH_SAVE_MOST 80
 #define BREATH_TICKS 18
 #define FATIGUE_MOVE 11
 #define FATIGUE_SWIM_FAIL 44

@@ -1,5 +1,6 @@
 #include "game/dagger/play/character/survival.h"
 #include "game/dagger/tables/magic.h"
+#include "game/dagger/play/people/guild.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/play/character/curse.h"
 #include "game/dagger/play/state.h"
@@ -30,6 +31,7 @@ void survival_step(const Scene *scene, float seconds)
     if (who->conditions & COND_WATER_BREATHING) { return; }
     limit = who->attribute[ATTR_END]/BREATH_END_DIV;
     if (limit > BREATH_MOST) { limit = BREATH_MOST; }
+    { const Membership *kynareth = guild_find_kind(TEMPLE_KYNARETH); if (kynareth) { limit += BREATH_PER_TEMPLE_RANK * kynareth->rank; } }
     if (god_mode()) { survival->breath = limit; survival->last_tick = survival->ticks; return; }
     if (!survival->breath) { survival->breath = limit; }
     if (survival->ticks-survival->last_tick > BREATH_TICKS) {

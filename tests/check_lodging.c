@@ -81,9 +81,9 @@ void check_lodging(void)
     site.building_type = 3;
     site.building_faction = 41;
     check_expect(rest_allowed(&site, now0, &to_room) == REST_TRESPASS, "lodging: another's building allowed rest");
-    site.knight_member = 1;
+    site.fighters_member = 1;
     check_expect(rest_allowed(&site, now0, &to_room) == REST_OK && to_room, "lodging: a knight was refused the order's room");
-    site.knight_member = 0;
+    site.fighters_member = 0;
     site.own_house = 900;
     check_expect(rest_allowed(&site, now0, &to_room) == REST_OK && !to_room, "lodging: one's own house refused rest");
     for (i = 0; i < ROOMS_MOST; i++) {

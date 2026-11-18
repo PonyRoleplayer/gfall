@@ -182,7 +182,7 @@ int rest_allowed(const RestSite *site, df_u32 now, int *to_room)
             *to_room = 1;
             return REST_OK;
         }
-        if (site->building_faction == FACTION_FIGHTERS_GUILD && site->knight_member) {
+        if (site->building_faction == FACTION_FIGHTERS_GUILD && site->fighters_member) {
             *to_room = 1;
             return REST_OK;
         }

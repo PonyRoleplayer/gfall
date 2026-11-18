@@ -11,6 +11,10 @@
 #define TEXT_VAMPIRE_HUNGRY 36
 #define HEAL_BASE 60
 #define HEAL_RAPID 40
+/* The rapid healing flags of a class: by day, in the dark, or always. */
+#define RAPID_DAYLIGHT 1
+#define RAPID_DARKNESS 2
+#define RAPID_ALWAYS 4
 #define HEAL_DIVISOR 1000
 #define HEAL_END_DIV 10
 #define MAGICKA_REST_SHIFT 3

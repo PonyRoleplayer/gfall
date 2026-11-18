@@ -342,7 +342,7 @@ static void street_checks(void)
         for (g = 0; g < dungeon_count() && !guard; g++) { if (dungeon_kind(g) == 146) { guard = dungeon_entity(g); } }
         check_expect(guard != 0, "street: no guard of the watch to strike");
         if (guard) {
-            for (tries = 0; tries < 40 && !guard->dead; tries++) {
+            for (tries = 0; tries < 400 && !guard->dead; tries++) { /* a guard wears the class row's armour times 5, so a raw first-level swing lands rarely */
                 camera_set(&swing, guard->x, guard->y + entity_height(guard) * 0.5f, guard->z - 40, 0, 0);
                 strike.damage = 999; strike.hit = 1;
                 dungeon_strike(sc, &swing, &strike);

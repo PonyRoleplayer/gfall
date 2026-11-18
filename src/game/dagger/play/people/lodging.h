@@ -93,10 +93,10 @@ typedef struct RestSite {
     int kind;
     /* In a town's streets: the location's kind (4, 7 and over 9 are no town: its people leave a sleeper be). */
     int location_kind;
-    /* Inside a building: its type (15 a tavern), its faction (41, the knights' order, whose members may use its rooms), its id and the player's own house. */
+    /* Inside a building: its type (15 a tavern), its faction (41, the Fighters Guild, whose members may use its rooms), its id and the player's own house. */
     int building_type, building_faction;
     df_u32 building, own_house;
-    int knight_member;
+    int fighters_member;
     /* A ship owned and the place's id under 1000 (a port at sea): always welcome. */
     int ship_berth;
 } RestSite;

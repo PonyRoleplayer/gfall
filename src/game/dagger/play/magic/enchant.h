@@ -72,6 +72,8 @@
 #define ITEM_NAME_MAX 48
 #define TEXT_LINE_MAX 80
 
+/* The player is in daylight (the world's hook): rapid healing and the sun-hurt classes ask it. */
+int enchant_daylight(void);
 /* What the game tells the tick about the world: daylight (6:00 to 18:00 outdoors), a temple, creatures round the player. Every hook may be 0 (false). */
 typedef struct EnchantWorld {
     int (*daylight)(void);

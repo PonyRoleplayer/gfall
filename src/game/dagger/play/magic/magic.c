@@ -13,6 +13,7 @@
 #include "game/dagger/play/ui/msg.h"
 #include "game/dagger/tables/magicdefs.h"
 #include "game/dagger/play/items/inventory.h"
+#include "game/dagger/play/character/progress.h"
 #include "engine/core/mem.h"
 #include "engine/core/log.h"
 
@@ -34,7 +35,7 @@ KeepKey magic_key(int index)
     Entity *e;
 
     key.place = key.thing = 0; e = dungeon_entity(index);
-    if (index == -3) { key.place = MAGIC_EPHEMERAL_PLACE; key.thing = MAGIC_TRAP_THING; }
+    if (index == MAGIC_INDEX_TRAP) { key.place = MAGIC_EPHEMERAL_PLACE; key.thing = MAGIC_TRAP_THING; }
     if (e) {
         key = e->key;
         if (!key.place && !key.thing) { key.place = MAGIC_EPHEMERAL_PLACE; key.thing = (df_u32)index+1; }
@@ -46,7 +47,7 @@ int magic_index(KeepKey key)
 {
     int i;
     if (!key.place && !key.thing) { return -1; }
-    if (key.place == MAGIC_EPHEMERAL_PLACE && key.thing == MAGIC_TRAP_THING) { return -3; }
+    if (key.place == MAGIC_EPHEMERAL_PLACE && key.thing == MAGIC_TRAP_THING) { return MAGIC_INDEX_TRAP; }
     if (ephemeral_key(key)) {
         i = (int)key.thing-1;
         return dungeon_entity(i) && same(key,magic_key(i)) ? i : TARGET_NONE;
@@ -67,13 +68,13 @@ void magic_forget_actor(int target)
     for (i = 0; i < EFFECTS; i++) {
         if (!magic->effect[i].active) { continue; }
         if (same(magic->effect[i].target,key)) { magic->effect[i].active = 0; }
-        else if (same(magic->effect[i].caster,key)) { magic->effect[i].caster = magic_key(-3); }
+        else if (same(magic->effect[i].caster,key)) { magic->effect[i].caster = magic_key(MAGIC_INDEX_TRAP); }
     }
     for (i = 0; i < MAGIC_ACTORS; i++) {
         if (magic->actor[i].active && same(magic->actor[i].key,key)) { magic->actor[i].active = 0; }
     }
     for (i = 0; i < MISSILES; i++) {
-        if (magic->missile[i].live && same(magic->missile[i].caster,key)) { magic->missile[i].caster = magic_key(-3); }
+        if (magic->missile[i].live && same(magic->missile[i].caster,key)) { magic->missile[i].caster = magic_key(MAGIC_INDEX_TRAP); }
     }
 }
 
@@ -86,7 +87,7 @@ void magic_forget_transients(void)
     for (i = 0; i < EFFECTS; i++) {
         if (!magic->effect[i].active) { continue; }
         if (ephemeral_key(magic->effect[i].target)) { magic->effect[i].active = 0; }
-        else if (ephemeral_key(magic->effect[i].caster)) { magic->effect[i].caster = magic_key(-3); }
+        else if (ephemeral_key(magic->effect[i].caster)) { magic->effect[i].caster = magic_key(MAGIC_INDEX_TRAP); }
     }
     for (i = 0; i < MAGIC_ACTORS; i++) {
         if (magic->actor[i].active && ephemeral_key(magic->actor[i].key)) { magic->actor[i].active = 0; }
@@ -98,12 +99,12 @@ void magic_forget_transients(void)
 
 int magic_target(int index, CharacterState *who, ClassInfo *career, int *base)
 {
-    if (index == -3) {
+    if (index == MAGIC_INDEX_TRAP) {
         int i;
         mem_zero(who,sizeof(*who)); mem_zero(career,sizeof(*career));
         who->level = character_state()->level; who->health = who->max_health = 1;
-        for (i = 0; i < ATTRS; i++) { who->attribute[i] = base[i] = 50; }
-        for (i = 0; i < SKILLS; i++) { who->skill[i] = 50; }
+        for (i = 0; i < ATTRS; i++) { who->attribute[i] = base[i] = MAGIC_TRAP_STAT; }
+        for (i = 0; i < SKILLS; i++) { who->skill[i] = MAGIC_TRAP_STAT; }
         return 1;
     }
     if (index == -1) {
@@ -159,13 +160,13 @@ int effect_cost_raw(int group, const df_i16 *c, const int *d, const int *ch, con
     int formula, cost;
 
     formula = effect_formula(group); cost = 0;
-    if (formula == 1) { cost = c[0]*d[0]+divide(d[1],d[2])*c[1]+c[2]*ch[0]+divide(ch[1],ch[2])*c[3]; }
-    else if (formula == 2) { cost = c[0]*d[0]+divide(d[1],d[2])*c[1]+c[2]*((m[0]+m[1])/2)+divide((m[2]+m[3])/2,m[4])*c[3]; }
-    else if (formula == 3) { cost = c[0]*d[0]+divide(d[1],d[2])*c[1]; }
-    else if (formula == 4) { cost = c[0]*ch[0]+divide(ch[1],ch[2])*c[1]; }
-    else if (formula == 5) { cost = c[0]*((m[0]+m[1])/2)+divide((m[2]+m[3])/2,m[4])*c[1]; }
-    else if (formula == 6) { cost = c[2]*((m[0]+m[1])/2)+((m[2]+m[3])/2)*divide(c[3],m[4])+c[0]*d[0]+divide(d[1]*c[1],d[2]); }
-    else if (formula == 7) { cost = divide((df_i16)(c[0]*((m[0]+m[1])/2)+divide((m[2]+m[3])/2,m[4])*c[1])*d[0],d[1]); }
+    if (formula == SPELL_COST_DURATION_CHANCE) { cost = c[0]*d[0]+divide(d[1],d[2])*c[1]+c[2]*ch[0]+divide(ch[1],ch[2])*c[3]; }
+    else if (formula == SPELL_COST_DURATION_MAGNITUDE) { cost = c[0]*d[0]+divide(d[1],d[2])*c[1]+c[2]*((m[0]+m[1])/2)+divide((m[2]+m[3])/2,m[4])*c[3]; }
+    else if (formula == SPELL_COST_DURATION) { cost = c[0]*d[0]+divide(d[1],d[2])*c[1]; }
+    else if (formula == SPELL_COST_CHANCE) { cost = c[0]*ch[0]+divide(ch[1],ch[2])*c[1]; }
+    else if (formula == SPELL_COST_MAGNITUDE) { cost = c[0]*((m[0]+m[1])/2)+divide((m[2]+m[3])/2,m[4])*c[1]; }
+    else if (formula == SPELL_COST_MIXED_6) { cost = c[2]*((m[0]+m[1])/2)+((m[2]+m[3])/2)*divide(c[3],m[4])+c[0]*d[0]+divide(d[1]*c[1],d[2]); }
+    else if (formula == SPELL_COST_MIXED_7) { cost = divide((df_i16)(c[0]*((m[0]+m[1])/2)+divide((m[2]+m[3])/2,m[4])*c[1])*d[0],d[1]); }
     return (df_i16)cost;
 }
 int spell_cost(const SpellDef *s, const CharacterState *caster)
@@ -197,7 +198,7 @@ int magic_resist(int index, int element, int bit, int modifier)
 {
     CharacterState who;
     ClassInfo career;
-    int base[8], chance, roll, race;
+    int base[ATTRS], chance, roll, race;
     if (!magic_target(index,&who,&career,base)) { return 0; }
     if ((who.conditions & resist_flag(element)) && random_range(1,100) <= magic_chance(index,GROUP_ELEMENTAL_RESISTANCE,element)) { return 0; }
     chance = RESIST_BASE;
@@ -221,19 +222,19 @@ static int condition(int group)
     if (group == GROUP_PARALYZE) { return COND_PARALYZED; }
     if (group >= GROUP_INVISIBILITY && group <= GROUP_JUMPING) { return COND_GROUP(group); }
     if (group == GROUP_SHIELD) { return COND_SHIELD; }
-    if (group == 39) { return COND_GROUP39; }
-    if (group == 42) { return COND_GROUP42; }
-    return group >= GROUP_COMPREHEND_LANGUAGES && group <= 46 ? COND_LATE_GROUP(group) : 0;
+    if (group == GROUP_39) { return COND_GROUP39; }
+    if (group == GROUP_42) { return COND_GROUP42; }
+    return group >= GROUP_COMPREHEND_LANGUAGES && group <= GROUP_LAST_CONDITION ? COND_LATE_GROUP(group) : 0;
 }
 static void end(Effect *e)
 {
     CharacterState who;
     ClassInfo career;
-    int base[8], index;
+    int base[ATTRS], index;
     index = magic_index(e->target); e->active = 0;
     if (!magic_target(index,&who,&career,base)) { return; }
     who.conditions &= ~(e->group == GROUP_ELEMENTAL_RESISTANCE ? (int)resist_flag(e->sub) : condition(e->group));
-    if (e->group == GROUP_FORTIFY && e->sub < 8) { who.attribute[e->sub] -= e->change; }
+    if (e->group == GROUP_FORTIFY && e->sub < ATTRS) { who.attribute[e->sub] -= e->change; }
     magic_commit(index,&who,-1);
 }
 void magic_remove(int target, int group)
@@ -271,8 +272,8 @@ static Effect *extend_or_allocate(const Effect *value)
     for (i = 0; i < EFFECTS; i++) {
         e = &magic_state()->effect[i];
         if (!e->active) { if (!free) { free = e; } continue; }
-        if (value->icon < 200 && e->group == value->group && e->sub == value->sub && same(e->target,value->target)) {
-            e->rounds = (e->rounds+value->rounds) & 65535; return 0;
+        if ((value->icon < SPELL_ICON_HELD || value->icon == SPELL_ICON_STRIKE) && e->group == value->group && e->sub == value->sub && same(e->target,value->target)) {
+            e->rounds = (e->rounds+value->rounds) & ROUNDS_MASK; return 0;
         }
     }
     return free;
@@ -286,10 +287,10 @@ static void damage(CharacterState *who, int sub, int magnitude)
 }
 static void heal(CharacterState *who, const int *base, int sub, int magnitude)
 {
-    if (sub < 8) { who->attribute[sub] += magnitude; if (who->attribute[sub] > base[sub]) { who->attribute[sub] = base[sub]; } }
-    else if (sub == 8) { who->health += magnitude; }
-    else if (sub == 9) { who->fatigue += magnitude*FATIGUE_UNIT; }
-    else if (sub == 10) { who->magicka += magnitude; }
+    if (sub < ATTRS) { who->attribute[sub] += magnitude; if (who->attribute[sub] > base[sub]) { who->attribute[sub] = base[sub]; } }
+    else if (sub == DISEASE_STAT_HEALTH) { who->health += magnitude; }
+    else if (sub == DISEASE_STAT_FATIGUE) { who->fatigue += magnitude*FATIGUE_UNIT; }
+    else if (sub == DISEASE_STAT_MAGICKA) { who->magicka += magnitude; }
 }
 
 static int g_dispel[EFFECTS], g_dispel_count, g_dispel_chance;
@@ -304,8 +305,8 @@ static void dispel_answer(const char *answer)
     if (*answer || row < 1 || row > g_dispel_count) { return; }
     e = &magic_state()->effect[g_dispel[row-1]];
     if (!e->active) { return; }
-    chance = g_dispel_chance+(character_state()->level-e->level)*5;
-    if (chance < 5) { chance = 5; } if (chance > 95) { chance = 95; }
+    chance = g_dispel_chance+(character_state()->level-e->level)*DISPEL_PER_LEVEL;
+    if (chance < SPELL_CHANCE_MIN) { chance = SPELL_CHANCE_MIN; } if (chance > SPELL_CHANCE_MAX) { chance = SPELL_CHANCE_MAX; }
     if ((!e->caster.place && !e->caster.thing) || random_range(1,100) <= chance) {
         selected = *e;
         for (i = 0; i < EFFECTS; i++) {
@@ -344,7 +345,7 @@ static void apply_effect(Effect *e, int index, int caster)
 {
     CharacterState who, giver;
     ClassInfo career;
-    int base[8], other_base[8], group, sub, before, chance;
+    int base[ATTRS], other_base[ATTRS], group, sub, before, chance;
     if (!magic_target(index,&who,&career,base)) { return; }
     group = e->group; sub = e->sub;
     if (group == GROUP_PARALYZE) {
@@ -369,23 +370,23 @@ static void apply_effect(Effect *e, int index, int caster)
             CharacterState victim;
             for (i = 0; i < dungeon_count(); i++) {
                 if (!dispel_kind(dungeon_kind(i),sub-1) || !magic_target(i,&victim,&career,base)) { continue; }
-                level = e->level; chance = e->chance+(level-victim.level)*5;
-                if (chance < 5) { chance = 5; } if (chance > 95) { chance = 95; }
+                level = e->level; chance = e->chance+(level-victim.level)*DISPEL_PER_LEVEL;
+                if (chance < SPELL_CHANCE_MIN) { chance = SPELL_CHANCE_MIN; } if (chance > SPELL_CHANCE_MAX) { chance = SPELL_CHANCE_MAX; }
                 if (random_range(1,100) <= chance) { victim.health = 0; magic_commit(i,&victim,caster); }
             }
             return;
         }
     } else if (group == GROUP_DRAIN || group == GROUP_TRANSFER) {
         before = e->magnitude; if (group == GROUP_TRANSFER) { before >>= 1; }
-        if (sub < 8) { who.attribute[sub] -= before; if (who.attribute[sub] < 1) { who.attribute[sub] = 1; } }
-        else if (sub == 8) { who.health -= before; }
-        else if (sub == 9) { who.fatigue -= before; if (who.fatigue < 1) { who.fatigue = 1; } }
+        if (sub < ATTRS) { who.attribute[sub] -= before; if (who.attribute[sub] < 1) { who.attribute[sub] = 1; } }
+        else if (sub == DISEASE_STAT_HEALTH) { who.health -= before; }
+        else if (sub == DISEASE_STAT_FATIGUE) { who.fatigue -= before; if (who.fatigue < 1) { who.fatigue = 1; } }
         if (group == GROUP_TRANSFER && magic_target(caster,&giver,&career,other_base)) {
             heal(&giver,other_base,sub,before); magic_commit(caster,&giver,caster);
         }
     } else if (group == GROUP_FORTIFY && sub < 8) {
         before = who.attribute[sub]; who.attribute[sub] += e->magnitude;
-        if (who.attribute[sub] > 100) { who.attribute[sub] = 100; }
+        if (who.attribute[sub] > STAT_MOST) { who.attribute[sub] = STAT_MOST; }
         e->change = who.attribute[sub]-before;
     } else if (group == GROUP_HEAL) { heal(&who,base,sub,e->magnitude); }
     else if (group == GROUP_FREE_ACTION) { magic_remove(index,0); who.conditions &= ~COND_PARALYZED; }
@@ -416,7 +417,7 @@ void magic_soul_capture(int index)
     int i, j, depth, kind, star_worn;
 
     kind = dungeon_kind(index); if (!ENEMY_IS_CLASSIC(kind)) { return; }
-    gem = magic_artifact_worn(9);
+    gem = magic_artifact_worn(ARTIFACT_AZURAS_STAR);
     star_worn = gem != 0;
     if (star_worn) {
         if (soul_trap_empty(gem) && object_new(RECORD_SOUL,gem,kind,100)) {
@@ -431,7 +432,7 @@ void magic_soul_capture(int index)
         for (j = 0; j < OBJECTS; j++) {
             item = &game_state()->object[j];
             if (!item->id || item->type != RECORD_ITEM ||
-                !((item->group == ITEM_GROUP_MISC && item->index == MISC_SOUL_TRAP) || magic_artifact_power(item->id) == 9) ||
+                !((item->group == ITEM_GROUP_MISC && item->index == MISC_SOUL_TRAP) || magic_artifact_power(item->id) == ARTIFACT_AZURAS_STAR) ||
                 !soul_trap_empty(item->id)) { continue; }
             owner = item;
             for (depth = 0; owner && depth < OBJECTS; depth++) {
@@ -452,13 +453,13 @@ static void apply_spell(const SpellDef *s, int spell, int caster, int target, in
     CharacterState from, to;
     ClassInfo career;
     Effect value, *stored;
-    int base[8], k, flags, percent, rounds;
+    int base[ATTRS], k, flags, percent, rounds;
     if (!s || !magic_target(caster,&from,&career,base) || !magic_target(target,&to,&career,base)) { return; }
     if (level <= 0) { level = from.level; }
-    if (s->icon >= 200) { level = 8; }
+    if (s->icon >= SPELL_ICON_HELD) { level = HELD_SPELL_LEVEL; }
     if (target == -1 && god_mode() && caster != -1) { return; }
     if (!no_resist && s->target != 0) {
-        if ((to.conditions & COND_ABSORPTION) || (career.absorption & 6)) {
+        if ((to.conditions & COND_ABSORPTION) || (career.absorption & (CLASS_ABSORB_DAY | CLASS_ABSORB_NIGHT))) {
             if (!(to.conditions & COND_ABSORPTION) || random_range(1,100) <= magic_chance(target,GROUP_SPELL_ABSORPTION,-1)) {
                 k = spell_cost(s,&to);
                 if (to.magicka+k <= to.max_magicka) { to.magicka += k; magic_commit(target,&to,caster); return; }
@@ -472,7 +473,7 @@ static void apply_spell(const SpellDef *s, int spell, int caster, int target, in
     percent = no_resist || s->target == 0 ? 100 : magic_resist(target,s->element,element_bit(s->element),-(level-to.level)*5);
     if (!percent) { msg_set("The spell has no effect."); return; }
     for (k = 0; k < 3; k++) {
-        if (s->group[k] == 255) { continue; }
+        if (s->group[k] == MAGIC_EFFECT_NONE) { continue; }
         flags = effect_flags(s->group[k],s->sub[k]); mem_zero(&value,sizeof(value));
         value.active = 1; value.target = magic_key(target); value.caster = magic_key(caster);
         value.group = s->group[k]; value.sub = s->sub[k]; value.spell = spell;
@@ -481,7 +482,7 @@ static void apply_spell(const SpellDef *s, int spell, int caster, int target, in
         value.rounds = (df_u16)(rounds*percent/100);
         value.permanent = s->duration[k][0] == -1;
         value.chance = (df_u8)(s->chance[k][0]+s->chance[k][1]*divide(level,s->chance[k][2]));
-        if (flags & 4) {
+        if (flags & EFFECT_SETTING_MAGNITUDE) {
             value.magnitude = (df_u16)((random_range(s->magnitude[k][0],s->magnitude[k][1])+
                 divide(level,s->magnitude[k][4])*random_range(s->magnitude[k][2],s->magnitude[k][3]))*percent/100);
         }
@@ -514,9 +515,9 @@ void magic_hold(int spell, int slot)
 
     s = spell_def(spell);
     if (!s || slot < 0 || slot >= EQUIP_SLOTS) { return; }
-    held = *s; held.icon = 200 + slot;
+    held = *s; held.icon = SPELL_ICON_HELD + slot;
     for (k = 0; k < 3; k++) {
-        if (held.group[k] == 255) { continue; }
+        if (held.group[k] == MAGIC_EFFECT_NONE) { continue; }
         held.duration[k][0] = -1; held.duration[k][1] = 0; held.duration[k][2] = 0;
     }
     apply_spell(&held, spell, -1, -1, 0, 1);
@@ -531,7 +532,7 @@ void magic_release(int spell, int slot)
         Effect *e;
 
         e = &magic_state()->effect[i];
-        if (e->active && e->icon == 200 + slot && e->spell == spell && !e->target.place && !e->target.thing) { end(e); }
+        if (e->active && e->icon == SPELL_ICON_HELD + slot && e->spell == spell && !e->target.place && !e->target.thing) { end(e); }
     }
 }
 
@@ -573,7 +574,7 @@ void magic_restore_foe(int index)
         e = &magic_state()->effect[i];
         if (!e->active || !same(e->target,magic_key(index))) { continue; }
         who.conditions |= e->group == GROUP_ELEMENTAL_RESISTANCE ? (int)resist_flag(e->sub) : condition(e->group);
-        if (e->group == GROUP_FORTIFY && e->sub < 8) { who.attribute[e->sub] += e->change; }
+        if (e->group == GROUP_FORTIFY && e->sub < ATTRS) { who.attribute[e->sub] += e->change; }
     }
     for (i = 0; i < AILMENTS; i++) {
         a = &magic_state()->ailment[i];
@@ -623,8 +624,8 @@ int magic_valid(const MagicState *state)
     }
     for (i = 0; i < EFFECTS; i++) {
         e = &state->effect[i]; if (!e->active) { continue; }
-        if (e->active != 1 || e->group < 0 || e->group >= 51 || e->sub < 0 || (e->sub >= 12 && e->sub != 255) ||
-            e->rounds < 0 || e->rounds > 65535 || e->magnitude < 0 || e->magnitude > 65535 ||
+        if (e->active != 1 || e->group < 0 || e->group >= EFFECTS || e->sub < 0 || (e->sub >= SUB_EFFECTS_MOST && e->sub != MAGIC_EFFECT_NONE) ||
+            e->rounds < 0 || e->rounds > ROUNDS_MASK || e->magnitude < 0 || e->magnitude > ROUNDS_MASK ||
             e->chance < 0 || e->chance > 255 || e->icon < 0 || e->icon > 255 || !spell_def(e->spell) || e->level < 1 || e->level > 1000 ||
             e->element < 0 || e->element > 4 || e->permanent < 0 || e->permanent > 1 ||
             e->change < -1000 || e->change > 1000) { return 0; }
@@ -684,6 +685,6 @@ void magic_status(void)
     }
     /* status_show: TEXT.RSC 22 (the date, the time and where the player stands), then show_health_status: the ailments, or record 18 when there are none. Active spells are ours. */
     { static char intro[300]; if (status_intro(intro,sizeof(intro)) > 0) { possessions_message(intro,0); } }
-    if (used == 26) { df_copy(text,words_state(18),sizeof(text)); }
+    if (used == 26) { df_copy(text,words_state(WORDS_NO_EFFECTS),sizeof(text)); }
     if (text[0]) { possessions_message(text,0); }
 }

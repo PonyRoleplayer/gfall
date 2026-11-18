@@ -18,6 +18,34 @@ int effect_cost_raw(int group, const df_i16 *c, const int *d, const int *ch, con
  * cold and a Breton against magic gain RESIST_RACIAL, and it is held to RESIST_MIN..RESIST_MAX. A roll over the chance is the full effect; one that is more than RESIST_NONE_BAND under it, none; between
  * them the effect is the margin times RESIST_PARTIAL_STEP percent.
  */
+/* The spell cost formulas (spell_cost: spell_effect_cost_formula[type] - 1 dispatched): duration and chance; duration and magnitude; duration; chance; magnitude; the two mixed ones. */
+enum { SPELL_COST_DURATION_CHANCE = 1, SPELL_COST_DURATION_MAGNITUDE, SPELL_COST_DURATION, SPELL_COST_CHANCE, SPELL_COST_MAGNITUDE, SPELL_COST_MIXED_6, SPELL_COST_MIXED_7 };
+/* Our index for the trap (a link's spell, cast with no caster record) and the stats it casts with. */
+#define MAGIC_INDEX_TRAP -3
+#define MAGIC_TRAP_STAT 50
+/* Spell icons: a lasting spell with an icon below SPELL_ICON_HELD, or SPELL_ICON_STRIKE (a weapon's strike spell), extends the same effect instead of stacking (cast_spell_on, runspell.c:184);
+ * an item's held spell has icon SPELL_ICON_HELD + its slot and is cast at HELD_SPELL_LEVEL; a duration is held to ROUNDS_MASK rounds. */
+#define SPELL_ICON_HELD 200
+#define SPELL_ICON_STRIKE 250
+#define HELD_SPELL_LEVEL 8
+#define ROUNDS_MASK 65535
+/* A dispel or a killing effect's chance is the effect's plus (level difference) * DISPEL_PER_LEVEL, held to SPELL_CHANCE_MIN..SPELL_CHANCE_MAX (the banish rule's shape). */
+#define DISPEL_PER_LEVEL 5
+#define SPELL_CHANCE_MIN 5
+#define SPELL_CHANCE_MAX 95
+/* The class absorption flags: by day, by night; and the effect settings bit "magnitude by level". Azura's Star (artifact 9) traps a soul without the chance roll. */
+#define CLASS_ABSORB_DAY 2
+#define CLASS_ABSORB_NIGHT 4
+#define EFFECT_SETTING_MAGNITUDE 4
+#define ARTIFACT_AZURAS_STAR 9
+/* A spell has SPELL_EFFECTS effects; the last group that sets a condition bit is GROUP_LAST_CONDITION, and the groups 39 and 42 have bits of their own. The message when nothing is active is WORDS_NO_EFFECTS. */
+/* The sub-effects an effect type lists at most. */
+#define SUB_EFFECTS_MOST 12
+#define SPELL_EFFECTS 3
+#define GROUP_LAST_CONDITION 46
+#define GROUP_39 39
+#define GROUP_42 42
+#define WORDS_NO_EFFECTS 18
 /* The cast animation is CAST_FRAMES frames at BIOS_HZ, done after CAST_TICKS ticks. */
 #define CAST_FRAMES 6
 #define CAST_TICKS 7
