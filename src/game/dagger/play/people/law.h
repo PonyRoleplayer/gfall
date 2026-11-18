@@ -21,6 +21,34 @@
 #define CRIMES 13
 
 /* Crimes by the original's id, 1..13. */
+/*
+ * The court (court_open, court_frame, crime.c; FALL.EXE leaves the numbers inline). A region's punishment flags are PUNISH_BANISHED and PUNISH_DEATH (PUNISH_MASK both). The severity of a crime is
+ * a roll of 1..100 against the lower of COURT_SEVERITY_MOST and the legal standing's loss (or half of it); the fine's columns are CRIME_FINE_MUL, _BASE, _MIN and _MAX; each COURT_FINE_STEP of it
+ * is that much gold or COURT_STEP_DAYS days by a coin. A guild may clear a crime when its rank is at least a roll of 0..COURT_GUILD_ROLL. A plea's chance is held to CHANCE_MIN..CHANCE_MAX; at
+ * severity 2 a failed plea halves the fine over PLEA_HALVE_OVER and doubles it under PLEA_DOUBLE_UNDER. Guards made when nobody turned: GUARDS_MADE_MIN..MAX; they come after
+ * GUARDS_DELAY_MIN..MAX seconds when only a commoner saw. A player hurt below ARREST_DEATH_BELOW is dead unless they surrendered.
+ */
+#define PUNISH_BANISHED 1
+#define PUNISH_DEATH 2
+#define PUNISH_MASK 3
+#define CRIME_NAMES 14
+#define COURT_SEVERITY_MOST 75
+#define CRIME_FINE_MUL 0
+#define CRIME_FINE_BASE 1
+#define CRIME_FINE_MIN 2
+#define CRIME_FINE_MAX 3
+#define COURT_FINE_STEP 40
+#define COURT_STEP_DAYS 3
+#define COURT_GUILD_ROLL 19
+#define CHANCE_MIN 5
+#define CHANCE_MAX 95
+#define PLEA_HALVE_OVER 75
+#define PLEA_DOUBLE_UNDER 25
+#define GUARDS_MADE_MIN 2
+#define GUARDS_MADE_MAX 5
+#define GUARDS_DELAY_MIN 5
+#define GUARDS_DELAY_MAX 10
+#define ARREST_DEATH_BELOW -20
 enum {
     CRIME_NONE,
     CRIME_ATTEMPTED_BREAKING = 1,

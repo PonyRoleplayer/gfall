@@ -1,4 +1,6 @@
 #include "game/dagger/play/people/law.h"
+#include "game/dagger/formats/factionfile.h"
+#include "game/dagger/play/combat/combat.h"
 #include "game/dagger/play/character/vitals.h"
 #include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/play/state.h"
@@ -14,7 +16,7 @@ int law_valid(const LawState *law)
     int i;
 
     for (i = 0; i < REGIONS; i++) {
-        if (law->punishment[i] > 3) {
+        if (law->punishment[i] > PUNISH_MASK) {
             return 0;
         }
     }
@@ -40,7 +42,7 @@ int crime_loss(int crime)
 
 const char *crime_name(int crime)
 {
-    return crime >= 1 && crime <= 14 ? g_crime_name[crime - 1] : "";
+    return crime >= 1 && crime <= CRIME_NAMES ? g_crime_name[crime - 1] : "";
 }
 
 void law_note(int crime)
@@ -124,7 +126,7 @@ void crime_penalty(int region, int crime)
 
     loss = crime_loss(crime);
     region_add_legal(region, -(int)(short)loss);
-    f = faction_of_type(region, 15);
+    f = faction_of_type(region, FACTION_PEOPLE);
     if (f >= 0) {
         faction_change_reputation(faction_def(f)->id, -(loss >> 1));
     }
@@ -135,7 +137,7 @@ void court_restore_reputation(int region, int change)
     int f;
 
     region_add_legal(region, change - 1);
-    f = faction_of_type(region, 15);
+    f = faction_of_type(region, FACTION_PEOPLE);
     if (f >= 0) {
         faction_change_reputation(faction_def(f)->id, (-(change - 1)) / 2);
     }
@@ -172,43 +174,43 @@ int court_open(Court *court, int crime, int region, const CourtGuilds *guilds, C
     court->change = g_crime_loss[crime] >> 1;
     penalty = half = 0;
     if (legal < 0) {
-        penalty = -legal > 75 ? 75 : -legal;
-        half = (-legal) / 2 > 75 ? 75 : (-legal) / 2;
+        penalty = -legal > COURT_SEVERITY_MOST ? COURT_SEVERITY_MOST : -legal;
+        half = (-legal) / 2 > COURT_SEVERITY_MOST ? COURT_SEVERITY_MOST : (-legal) / 2;
     }
     /* The harsher the standing, the likelier a banishment; else the usual fine and days. */
-    if (rand_range(1, 100) <= half) {
+    if (rand_range(1, PERCENT) <= half) {
         court->severity = 0;
-    } else if (rand_range(1, 100) <= penalty) {
+    } else if (rand_range(1, PERCENT) <= penalty) {
         court->severity = 0;
     } else {
         court->severity = 2;
     }
-    fine = legal < 0 ? g_crime_fine[crime][1] - legal * g_crime_fine[crime][0] : g_crime_fine[crime][1] + legal * g_crime_fine[crime][0];
-    if (g_crime_fine[crime][2] > fine) {
-        fine = g_crime_fine[crime][2];
-    } else if (g_crime_fine[crime][3] < fine) {
-        fine = g_crime_fine[crime][3];
+    fine = legal < 0 ? g_crime_fine[crime][CRIME_FINE_BASE] - legal * g_crime_fine[crime][CRIME_FINE_MUL] : g_crime_fine[crime][CRIME_FINE_BASE] + legal * g_crime_fine[crime][CRIME_FINE_MUL];
+    if (g_crime_fine[crime][CRIME_FINE_MIN] > fine) {
+        fine = g_crime_fine[crime][CRIME_FINE_MIN];
+    } else if (g_crime_fine[crime][CRIME_FINE_MAX] < fine) {
+        fine = g_crime_fine[crime][CRIME_FINE_MAX];
     }
     /* Forty gold or three days for each forty of the fine, by a coin. */
-    steps = fine / 40;
+    steps = fine / COURT_FINE_STEP;
     court->days = 0;
     for (fine = i = 0; i < steps; i++) {
-        if (random_range(0, 32767) & 1) {
-            fine += 40;
+        if (random_range(0, RAND_MAX_WATCOM) & 1) {
+            fine += COURT_FINE_STEP;
         } else {
-            court->days += 3;
+            court->days += COURT_STEP_DAYS;
         }
     }
     gold = gold_total();
     if (gold < fine) {
-        court->days += (fine - gold) / 40;
+        court->days += (fine - gold) / COURT_FINE_STEP;
         fine -= fine - gold;
     }
     court->fine = fine;
     /* The Dark Brotherhood clears murder and assault, the Thieves Guild the crimes of the hand; rank against a roll of 0..19. */
-    if ((crime == 4 || crime == 3) && guilds && guilds->brotherhood_rank >= 0 && guilds->brotherhood_rank >= rand_range(0, 19)) {
+    if ((crime == CRIME_MURDER - 1 || crime == CRIME_ASSAULT - 1) && guilds && guilds->brotherhood_rank >= 0 && guilds->brotherhood_rank >= rand_range(0, COURT_GUILD_ROLL)) {
         step->text[0] = TEXT_GUILD_BROTHERHOOD;
-    } else if ((crime <= 2 || crime == 11) && guilds && guilds->thieves_rank >= 0 && guilds->thieves_rank >= rand_range(0, 19)) {
+    } else if ((crime <= CRIME_BREAKING - 1 || crime == CRIME_PICKPOCKETING - 1) && guilds && guilds->thieves_rank >= 0 && guilds->thieves_rank >= rand_range(0, COURT_GUILD_ROLL)) {
         step->text[0] = TEXT_GUILD_THIEVES;
     }
     if (step->text[0]) {
@@ -281,7 +283,7 @@ void court_accept(Court *court, CourtStep *step)
         return;
     }
     /* Not enough: every coin and letter, a day for each forty short (and one more), the sentence's reputation, then the days. */
-    court->days += (court->fine - gold) / 40 + 1;
+    court->days += (court->fine - gold) / COURT_FINE_STEP + 1;
     step->gold_taken = gold;
     gold_remove_all();
     court_restore_reputation(court->region, court->change);
@@ -301,12 +303,12 @@ void court_plead(Court *court, int streetwise, int skill, int personality, Court
     }
     legal = region_legal(court->region);
     chance = (personality + skill) / 2 + legal;
-    if (chance < 5) {
-        chance = 5;
-    } else if (chance > 95) {
-        chance = 95;
+    if (chance < CHANCE_MIN) {
+        chance = CHANCE_MIN;
+    } else if (chance > CHANCE_MAX) {
+        chance = CHANCE_MAX;
     }
-    if (rand_range(1, 100) <= chance) {
+    if (rand_range(1, PERCENT) <= chance) {
         /* Not guilty: the court says so and sets them free where it found them. */
         step->text[0] = TEXT_COURT_ACQUITTED;
         step->release = RELEASE_ACQUITTED;
@@ -318,10 +320,10 @@ void court_plead(Court *court, int streetwise, int skill, int personality, Court
         punish(court, court->severity, step);
         return;
     }
-    roll = rand_range(1, 100) + legal;
-    if (roll > 75) {
+    roll = rand_range(1, PERCENT) + legal;
+    if (roll > PLEA_HALVE_OVER) {
         court->fine >>= 1;
-    } else if (roll < 25) {
+    } else if (roll < PLEA_DOUBLE_UNDER) {
         court->fine <<= 1;
     }
     /* The fine is changed and not charged: the days are what is served (as the original does). */
@@ -379,7 +381,7 @@ int guards_summon(int now)
         if (made) {
             return made;
         }
-        n = rand_range(2, 5);
+        n = rand_range(GUARDS_MADE_MIN, GUARDS_MADE_MAX);
         while (n-- > 0) {
             if (g_world.spawn && g_world.spawn()) {
                 made++;
@@ -395,7 +397,7 @@ int guards_summon(int now)
         return guards_summon(1);
     }
     if (bits & 1) {
-        g_guard_timer = (float)rand_range(5, 10);
+        g_guard_timer = (float)rand_range(GUARDS_DELAY_MIN, GUARDS_DELAY_MAX);
     }
     return 0;
 }
@@ -439,10 +441,10 @@ int law_guards_or_court(int surrendered, int region, const CourtGuilds *guilds, 
     court->open = 0;
     standing = region_legal(region);
     mem_zero(step, sizeof(*step));
-    if (standing < -20 && !surrendered) {
+    if (standing < ARREST_DEATH_BELOW && !surrendered) {
         return ARREST_DEATH;
     }
-    if (standing >= -20 && standing <= 0 && (random_range(0, 32767) & 1) && !surrendered) {
+    if (standing >= ARREST_DEATH_BELOW && standing <= 0 && (random_range(0, RAND_MAX_WATCOM) & 1) && !surrendered) {
         return ARREST_DEATH;
     }
     court_open(court, law_state()->crime, region, guilds, step);
