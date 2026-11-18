@@ -233,52 +233,52 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
     int i, n, count, pick, found;
 
     switch (op->opcode) {
-    case 10:
-    case 11:
+    case QOP_TOPICS_SHOW:
+    case QOP_TOPICS_HIDE:
         /* Once: the topics shown (10) or hidden (11): the place and the item by flag 128, the person by 0x8000. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             for (i = 1; i < 4 && i < op->argc; i++) {
                 n = op->arg[i].value;
                 if (op->arg[i].literal || n < 0) { continue; }
-                if (i == 1 && n < q->qbn.n_place) { if (op->opcode == 11) { q->qbn.place[n].flags |= 128; } else { q->qbn.place[n].flags &= 127; } }
-                if (i == 2 && n < q->qbn.n_person) { if (op->opcode == 11) { q->qbn.person[n].flags |= 0x8000; } else { q->qbn.person[n].flags &= ~0x8000; } }
-                if (i == 3 && n < q->qbn.n_item) { if (op->opcode == 11) { q->qbn.item[n].flags |= 128; } else { q->qbn.item[n].flags &= 127; } }
+                if (i == 1 && n < q->qbn.n_place) { if (op->opcode == QOP_TOPICS_HIDE) { q->qbn.place[n].flags |= 128; } else { q->qbn.place[n].flags &= 127; } }
+                if (i == 2 && n < q->qbn.n_person) { if (op->opcode == QOP_TOPICS_HIDE) { q->qbn.person[n].flags |= 0x8000; } else { q->qbn.person[n].flags &= ~0x8000; } }
+                if (i == 3 && n < q->qbn.n_item) { if (op->opcode == QOP_TOPICS_HIDE) { q->qbn.item[n].flags |= 128; } else { q->qbn.item[n].flags &= 127; } }
             }
             quest_op_done(q, op);
         }
         break;
-    case 25:
+    case QOP_COUNTDOWN:
         /* While the gate holds and the flag is clear: the counter counts down, and at 0 the flag is set. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1) && op->arg[1].value != -1 && !quest_arg_state(q, op, 1)) {
             if (op->arg[2].value != 0) { op->arg[2].value--; }
             if (op->arg[2].value == 0) { quest_arg_set(q, op, 1, 1); quest_op_done(q, op); }
         }
         break;
-    case 44:
+    case QOP_DELETE_PERSON:
         /* Once: the person gone from the quest. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) { n = op->arg[1].value; if (n >= 0 && n < q->qbn.n_person) { q->person[n].bound = 0; } quest_op_done(q, op); }
         break;
-    case 46:
-    case 48:
+    case QOP_HIDE_PERSON:
+    case QOP_SHOW_PERSON:
         /* Once: the person hidden (flags 0xA00) or shown. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             n = op->arg[1].value;
-            if (n >= 0 && n < q->qbn.n_person) { if (op->opcode == 46) { q->qbn.person[n].flags |= 0xA00; } else { q->qbn.person[n].flags &= ~0xA00; } }
+            if (n >= 0 && n < q->qbn.n_person) { if (op->opcode == QOP_HIDE_PERSON) { q->qbn.person[n].flags |= 0xA00; } else { q->qbn.person[n].flags &= ~0xA00; } }
             quest_op_done(q, op);
         }
         break;
-    case 55:
-    case 56:
-    case 63:
-    case 64:
+    case QOP_FACE_PERSON_ON:
+    case QOP_FACE_PERSON_OFF:
+    case QOP_FACE_FOE_ON:
+    case QOP_FACE_FOE_OFF:
         /* Once: a person's (55, 56) or a foe's (63, 64) face put at the top of the screen, or taken away. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             n = op->arg[1].value;
-            if (n >= 0 && n < (op->opcode < 60 ? q->qbn.n_person : q->qbn.n_foe)) { quest_face_set(q, op->opcode < 60 ? 1 : 2, n, op->opcode == 55 || op->opcode == 63); }
+            if (n >= 0 && n < (op->opcode < QOP_FACE_FIRST_FOE ? q->qbn.n_person : q->qbn.n_foe)) { quest_face_set(q, op->opcode < QOP_FACE_FIRST_FOE ? 1 : 2, n, op->opcode == QOP_FACE_PERSON_ON || op->opcode == QOP_FACE_FOE_ON); }
             quest_op_done(q, op);
         }
         break;
-    case 8:
+    case QOP_START_QUEST:
         /* Once, outside region 31: another quest started, S plus seven digits drawn between the two numbers. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             int region, here, px, py;
@@ -298,7 +298,7 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             quest_op_done(q, op);
         }
         break;
-    case 9:
+    case QOP_SPAWN_REPEAT:
         /* A foe placed again and again: every `interval` minutes, with a chance in a hundred, `count` more (a count of -1 never runs out; 0 is a no-op). */
         if (quest_arg_state(q, op, 0) && op->arg[4].value != 0 && op->arg[1].value >= 0 && op->arg[1].value < q->qbn.n_foe &&
             game_state()->minutes - op->last_minutes >= (df_u32)op->arg[2].value) {
@@ -316,7 +316,7 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             }
         }
         break;
-    case 17:
+    case QOP_GRANT_ACCESS:
         /* Every run while the gate holds: the place's building open to the access kind until the minutes are up (the grant of the same place and kind is renewed). */
         if (quest_arg_state(q, op, 0)) {
             n = op->arg[1].value;
@@ -336,7 +336,7 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             quest_op_done(q, op);
         }
         break;
-    case 30:
+    case QOP_MOVE_PERSON:
         /* Once: the person put in the place (a person that is only a faction stays). With no person named: the player taken to the place of the person of the next argument. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             if (op->arg[1].value == -1) {
@@ -361,7 +361,7 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             quest_op_done(q, op);
         }
         break;
-    case 75:
+    case QOP_TEMPLATE_ITEMS:
         /* Every run while the gate holds: the items named are the templates of the quest op 8 starts. */
         if (quest_arg_state(q, op, 0)) {
             for (i = 1; i < 5 && i < op->argc; i++) {
@@ -370,7 +370,7 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             }
         }
         break;
-    case 81:
+    case QOP_OPEN_BUILDING:
         /* Once: the place and the person marked open to the quest (place flag 64, person 0x4000). */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             n = op->arg[1].value;
@@ -379,7 +379,7 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             if (!op->arg[2].literal && n >= 0 && n < q->qbn.n_person) { q->qbn.person[n].flags |= 0x4000; }
         }
         break;
-    case 83:
+    case QOP_TELEPORT_PLAYER:
         /* Once: the player taken to the dungeon of a region whose map pixel is the number (map id: the pixel's row times 1000 and its column). */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             if (quest_world && quest_world->go && quest_world->count && quest_world->location) {
@@ -392,7 +392,7 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             op->flags |= 1;
         }
         break;
-    case 4:
+    case QOP_REWARD:
         /* Once: +5 with the quest's faction and the reward given. The reward box of the original holds gold as a purse here (it would open the inventory on it): the coins go straight to the
          * player. An item already given is passed over (7.4). Other items wait for step 9; the Brotherhood's and the Thieves' joining quests too. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
@@ -420,7 +420,7 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             quest_op_done(q, op);
         }
         break;
-    case 0:
+    case QOP_PLACE_ITEM:
         /* Once: the item set in its place: now when that is the location the player is in, else when it is loaded. An item already out in the world is taken back first. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             n = op->arg[1].value;
@@ -432,7 +432,7 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             quest_op_done(q, op);
         }
         break;
-    case 26:
+    case QOP_GIVE_ITEM:
         /* Once: the item given to the player (into the pack). A pack with no room leaves it for the next run. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             n = op->arg[1].value;
@@ -440,7 +440,7 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             quest_op_done(q, op);
         }
         break;
-    case 36:
+    case QOP_DELETE_ITEM:
         /* Once: the item deleted. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             n = op->arg[1].value;
@@ -448,11 +448,11 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             if (n >= 0 && n < q->qbn.n_item && q->item[n].object) { object_delete(q->item[n].object); quest_item_forget(q, n); }
         }
         break;
-    case 54:
+    case QOP_FORGET_ITEM:
         /* Once: the item forgotten: it stays in the world, no longer the quest's. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) { quest_item_forget(q, op->arg[1].value); quest_op_done(q, op); }
         break;
-    case 39:
+    case QOP_FOE_CARRIES:
         /* Once: the foe carries the item; it is set down where the player is when the foe dies. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             n = op->arg[1].value;
@@ -460,7 +460,7 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             quest_op_done(q, op);
         }
         break;
-    case 43:
+    case QOP_IN_PLACE:
         /* Every run while the gate holds: the result is whether the player is in the place; done when it is. */
         if (quest_arg_state(q, op, 0) && op->arg[2].value >= 0) {
             found = quest_in_place(q, op->arg[2].value);
@@ -468,14 +468,14 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             if (found) { quest_op_done(q, op); }
         }
         break;
-    case 57:
+    case QOP_ITEM_USED:
         /* Once the item has been used (flag 512): the result is set. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             n = op->arg[2].value;
             if (n >= 0 && n < q->qbn.n_item && q->item[n].object && object_at(q->item[n].object) && (object_at(q->item[n].object)->flags & 512)) { quest_arg_set(q, op, 1, 1); quest_op_done(q, op); }
         }
         break;
-    case 70:
+    case QOP_CARRIES_ALL:
         /* Once the player carries every item named: the result is set; until then it is clear. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             found = 1;
@@ -488,7 +488,7 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             if (found) { quest_op_done(q, op); }
         }
         break;
-    case 76:
+    case QOP_DELIVER_LATER:
         /* The item delivered later (func_00031658): pending, then handed over by chance on a passing minute, only in the streets of a town (out of doors, not in a building or a dungeon)
          * and while the game runs in the world (not the rest screen, whose hours pass in blocks, nor a menu): by daylight (a vampire's courier comes by night). The original also wants
          * no creature near, which the quests are not told of yet. One roll a game minute, 1..100 under COURIER_CHANCE. */
@@ -499,7 +499,7 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
                 random_range(1, PERCENT) < COURIER_CHANCE && inventory_transfer(q->item[n].object, game_state()->inventory_id)) { quest_op_done(q, op); }
         }
         break;
-    case 6:
+    case QOP_END:
         /* The end: when set (no delivery is pending and the box is empty, both so with gold paid directly). A quest never rewarded costs -2 with its faction. The rumours are step 9. */
         if (quest_arg_state(q, op, 0)) {
             if (!q->rewarded && q->qbn.faction) { faction_change_reputation(q->qbn.faction, -2); }
@@ -509,10 +509,10 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             q->ended = 1;
         }
         break;
-    case 7:
+    case QOP_CLEAR_STATES:
         if (quest_arg_state(q, op, 0)) { for (i = 1; i < op->argc; i++) { quest_arg_set(q, op, i, 0); } }
         break;
-    case 12:
+    case QOP_TIMER_START:
         /* Once: start the timer that is not running, its delay worked from now. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             n = op->arg[1].value;
@@ -522,15 +522,15 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             quest_op_done(q, op);
         }
         break;
-    case 13:
+    case QOP_TIMER_STOP:
         if (quest_arg_state(q, op, 0)) {
             n = op->arg[1].value;
             if (n >= 0 && n < q->qbn.n_timer) { q->timer[n].flags &= ~64; }
             quest_op_done(q, op);
         }
         break;
-    case 19:
-    case 20:
+    case QOP_REVEAL_PLACE:
+    case QOP_REVEAL_PLACE_2:
         /* Once: the place's location shown on the map (7.12: the bound place, whatever its kind). */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             n = op->arg[1].value;
@@ -538,7 +538,7 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             quest_op_done(q, op);
         }
         break;
-    case 27:
+    case QOP_REVEAL_LOCATION:
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             if (quest_world && quest_world->reveal && quest_world->count && quest_world->location) {
                 LocationInfo lo;
@@ -550,8 +550,8 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             quest_op_done(q, op);
         }
         break;
-    case 22:
-    case 33:
+    case QOP_PLACE_FOE:
+    case QOP_PLACE_FOE_2:
         /* Once: the foe placed (a place of the quest, or near the player when there is none); made now when the dungeon is the one the player is in, else when it is loaded. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             n = op->arg[1].value;
@@ -565,18 +565,18 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             quest_op_done(q, op);
         }
         break;
-    case 16:
+    case QOP_DAY_RANGE:
         /* The day of the world in a range (no file uses it). */
         quest_arg_set(q, op, 0, (int)(game_state()->minutes / 1440u) >= op->arg[1].value && (int)(game_state()->minutes / 1440u) <= op->arg[2].value);
         break;
-    case 23:
+    case QOP_LOG_SET:
         /* Once: entry `index` of the quest's log is the message. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) { logbook_add(slot, op->arg[2].value, op->arg[1].value); quest_op_done(q, op); }
         break;
-    case 24:
+    case QOP_LOG_REMOVE:
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) { logbook_remove(slot, op->arg[1].value); quest_op_done(q, op); }
         break;
-    case 31: {
+    case QOP_MINUTE_RANGE: {
         int from, to, m, inside;
 
         from = op->arg[1].value; to = op->arg[2].value; m = minute_of_day();
@@ -584,7 +584,7 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
         quest_arg_set(q, op, 0, inside);
         break;
     }
-    case 34:
+    case QOP_SET_ONE_OF:
         /* Once: one of the given states at random. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             count = 0;
@@ -599,7 +599,7 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             quest_op_done(q, op);
         }
         break;
-    case 35:
+    case QOP_CLEAR_AND_NEXT:
         /* Once: the first of the given states that is set is cleared and the next is set; none set: the first is. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             found = -1;
@@ -613,25 +613,25 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             quest_op_done(q, op);
         }
         break;
-    case 51:
+    case QOP_SAY:
         if (quest_arg_state(q, op, 0)) { quest_op_done(q, op); }
         break;
-    case 52:
+    case QOP_ALL_OF:
         /* Every run: all the given states true sets the state, which is never cleared by this op (7.9 kept). */
         n = 1;
         for (i = 1; i < op->argc; i++) { if (!op->arg[i].literal && op->arg[i].value == -2) { continue; } if (!quest_arg_state(q, op, i)) { n = 0; } }
         if (n) { quest_arg_set(q, op, 0, 1); }
         break;
-    case 53:
+    case QOP_ANY_OF:
         /* Every run: the state is whether any given state is true. */
         n = 0;
         for (i = 1; i < op->argc; i++) { if (!op->arg[i].literal && op->arg[i].value == -2) { continue; } if (quest_arg_state(q, op, i)) { n = 1; } }
         quest_arg_set(q, op, 0, n);
         break;
-    case 77:
+    case QOP_LEVEL_AT_LEAST:
         quest_arg_set(q, op, 0, character_state()->level >= op->arg[1].value);
         break;
-    case 29:
+    case QOP_ASK_YES_NO:
         /* Once: a yes/no box with the op's QRC message; the answer sets its yes or no state. One box at a time. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1) && g_prompt_slot < 0 && quest_text_hooks.ask && quest_text_hooks.read) {
             char text[1024], said[1024];
@@ -644,7 +644,7 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             } else { op->flags |= 1; }
         }
         break;
-    case 37:
+    case QOP_REPUTATION_AT_LEAST:
         /* Every run while the gate holds: the result is whether the person's faction thinks of the player at least `value` (and their social group's standing is added when it is under 5). */
         if (quest_arg_state(q, op, 0) && op->arg[1].value != -1 && person_faction(q, op->arg[2].value)) {
             int faction, rep;
@@ -658,16 +658,16 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             quest_op_done(q, op);
         }
         break;
-    case 49:
+    case QOP_CURE_DISEASES:
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) { ailments_cure(0, 0); quest_op_done(q, op); }
         break;
-    case 61:
+    case QOP_CHANGE_REPUTATION:
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             if (person_faction(q, op->arg[1].value)) { faction_change_reputation(person_faction(q, op->arg[1].value), op->arg[2].value); }
             quest_op_done(q, op);
         }
         break;
-    case 65:
+    case QOP_LEGAL_REPUTATION:
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             int region, here, px, py;
 
@@ -679,32 +679,32 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             quest_op_done(q, op);
         }
         break;
-    case 58:
+    case QOP_OP_58:
         /* Once: the cure of vampirism ($CUREVAM). */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) { curse_cure_vampirism(); quest_op_done(q, op); }
         break;
-    case 59:
+    case QOP_OP_59:
         /* Once: the cure of lycanthropy ($CUREWER). */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) { curse_cure_lycanthropy(); quest_op_done(q, op); }
         break;
-    case 68:
+    case QOP_PACIFY_FOE:
         if (quest_arg_state(q,op,0) && !(op->flags & 1)) {
             n = op->arg[1].value;
             if (n >= 0 && n < q->qbn.n_foe) { quest_set_foe_pacified(&q->foe[n],quest_arg_state(q,op,2)); }
             quest_op_done(q,op);
         }
         break;
-    case 72:
+    case QOP_INFECT:
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) { disease_infect(0, op->arg[1].value, 1); quest_op_done(q, op); }
         break;
-    case 79:
+    case QOP_FACTION_REPUTATION:
         /* Once a game minute while the state is clear: set when the faction's reputation (as it stands) is at least the value. */
         if (!quest_arg_state(q, op, 0) && g_minute && op->arg[1].literal && op->arg[2].literal && faction_rep(op->arg[1].value) >= op->arg[2].value) { quest_arg_set(q, op, 0, 1); }
         break;
-    case 80:
+    case QOP_SHOW_MESSAGE:
         if (quest_arg_state(q, op, 0)) { quest_show_message(q, op->message); }
         break;
-    case 84:
+    case QOP_OP_84:
         /* Once the game minute changes, on every period's minute and by chance, while the state is set: the sound (S0000977's scream in Daggerfall at night). */
         if (quest_arg_state(q, op, 0) && g_minute && op->arg[2].literal && op->arg[3].literal && op->arg[2].value > 0 &&
             game_state()->minutes % (df_u32)op->arg[2].value == 0 && game_state()->minutes != op->last_minutes && random_range(1, 100) <= op->arg[3].value) {
@@ -713,7 +713,7 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             quest_op_done(q, op);
         }
         break;
-    case 82:
+    case QOP_OP_82:
         /* The person's talk passes through (flag 0x2000) while the state is set. */
         n = op->arg[1].value;
         if (n >= 0 && n < q->qbn.n_person) { if (quest_arg_state(q, op, 0)) { q->qbn.person[n].flags |= 0x2000; } else { q->qbn.person[n].flags &= ~0x2000; } }
