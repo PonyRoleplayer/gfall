@@ -367,6 +367,19 @@ void guards_reset(void)
     g_asked = 0;
 }
 
+void law_time_pass(int region)
+{
+    if (law_is_serving() || region < 0 || region >= REGIONS) { return; }
+    if (region_legal(region) < LAW_BAD_STANDING && rand_range(1, PERCENT) < LAW_BAD_ROLL) {
+        law_state()->crime = CRIME_CONSPIRACY;
+        guards_summon(0);
+    }
+    if ((law_state()->punishment[region] & PUNISH_BANISHED) && rand_range(1, PERCENT) < LAW_BANISHED_ROLL) {
+        law_state()->crime = CRIME_CONSPIRACY;
+        guards_summon(0);
+    }
+}
+
 int guards_summon(int now)
 {
     int made, n, bits;

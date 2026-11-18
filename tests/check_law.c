@@ -226,6 +226,29 @@ static void click(int cx, int cy)
     possessions_frame(&in);
 }
 
+/* The watch's roll for a pass of time: only a region under -10 or banished rolls, at 4 % and 9 %, and a hit is Criminal Conspiracy. */
+void check_law_time_pass_hook(void)
+{
+    int i, hits, region = 17;
+
+    region_add_legal(region, -region_legal(region));
+    law_state()->punishment[region] = 0;
+    hits = 0;
+    for (i = 0; i < 300; i++) { law_state()->crime = 0; law_time_pass(region); hits += law_state()->crime == CRIME_CONSPIRACY; }
+    check_expect(hits == 0, "law: a region of good standing rolled the watch");
+    region_add_legal(region, -30);
+    hits = 0;
+    for (i = 0; i < 2000; i++) { law_state()->crime = 0; law_time_pass(region); hits += law_state()->crime == CRIME_CONSPIRACY; }
+    check_expect(hits > 30 && hits < 140, "law: the roll under -10 is not about 4 in 100");
+    region_add_legal(region, 30);
+    law_state()->punishment[region] = PUNISH_BANISHED;
+    hits = 0;
+    for (i = 0; i < 2000; i++) { law_state()->crime = 0; law_time_pass(region); hits += law_state()->crime == CRIME_CONSPIRACY; }
+    check_expect(hits > 120 && hits < 260, "law: the banished roll is not about 9 in 100");
+    law_state()->punishment[region] = 0;
+    law_state()->crime = 0;
+}
+
 void check_law_guards(void)
 {
     static const GuardWorld world = { fake_present, fake_count, fake_spawn, fake_witnesses, fake_dungeon, 0, 0 };

@@ -5,5 +5,6 @@
 void check_law(void);
 /* The guards, the arrest and the court screen driven by clicks. */
 void check_law_guards(void);
+void check_law_time_pass_hook(void);
 
 #endif

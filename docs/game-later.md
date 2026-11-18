@@ -96,7 +96,7 @@ for now. Each line names where to look.
 
 ## Still open after the 2026-11-10 bug pass
 - Crash entering a second building while pursued by the watch: not reproduced (host test with two enter/leave cycles, AddressSanitizer). Wanted: a save or the log from just before it.
-- The per-minute guard roll (legal reputation under -10 or a punishment flag: 5% a minute, crime 7, `tamriel.c` 245..254) is not built, so nothing makes more guards once the watch is dead short of a new crime.
+- The watch's roll is built (`law_time_pass`, `tamriel.c` 247..254): once for each pass of game time, not each minute, 4 % under -10 legal reputation and 9 % banished (the banishment's bit is never cleared, as in the original), crime 7, only while the world runs. `guards_summon(0)` reads our fresh witnesses, where the original reads a stored byte that can be stale. Still open: the post-court no-damage flag (`D_001962B2`).
 - House containers: whether every piece of furniture the user finds unlootable is outside the original's variants (3, 4, 7, 8, 32..38, 50, 51) is unchecked; a container's stock uses `shelf_stock`.
 - The Affiliations list uses a colon where the original has tab columns; the town's building name is not shown when a wall is clicked (`click_show_building_info`).
 - Coins behind the shop's things repaint the 320 x 200 screen every 0.08 s: unmeasured on the 233.

@@ -46,6 +46,13 @@
 #define PLEA_DOUBLE_UNDER 25
 #define GUARDS_MADE_MIN 2
 #define GUARDS_MADE_MAX 5
+/* time_pass_minutes (tamriel.c 247..254), once for a pass, not once a minute: a region whose legal reputation is under LAW_BAD_STANDING rolls 1..100 under LAW_BAD_ROLL, a banished one under
+ * LAW_BANISHED_ROLL; a hit is Criminal Conspiracy (CRIME_CONSPIRACY) and guards_summon(0). Both can hit; neither rolls in a court, a prison or a menu. */
+#define LAW_BAD_STANDING (-10)
+#define LAW_BAD_ROLL 5
+#define LAW_BANISHED_ROLL 10
+/* The watch's roll for a pass of game time in a region (the world running: not a court, a prison or a menu). */
+void law_time_pass(int region);
 #define GUARDS_DELAY_MIN 5
 #define GUARDS_DELAY_MAX 10
 #define ARREST_DEATH_BELOW -20

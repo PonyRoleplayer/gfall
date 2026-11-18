@@ -10,6 +10,8 @@
 #include "game/dagger/play/quests/quest.h"
 #include "game/dagger/tables/combatdefs.h"
 #include "engine/scene/clock.h"
+#include "game/dagger/places/travel.h"
+#include "game/dagger/play/people/law.h"
 
 static GameState g_state;
 WorldState *world_where(void) { return &g_state.world_state; }
@@ -499,6 +501,8 @@ void state_pass_minutes(df_u32 minutes)
         }
     }
     blessing_expire(g_state.minutes);
+    /* The watch's roll comes once for the pass, and only while the world runs (not in court, prison or a menu). */
+    if (g_state.mode == GAME_WORLD) { law_time_pass(travel_region()); }
     state_calendar();
     /* time_pass_minutes ends with the lycanthrope's tick and the infection that takes (docs/curses.md 2.4). */
     curse_tick();

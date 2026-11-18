@@ -396,6 +396,7 @@ void check_state(const char *root)
     check_law();
     state_restore(&g_initial);
     check_law_guards();
+    check_law_time_pass_hook();
     state_restore(&g_initial);
     check_talk();
     check_steal();
