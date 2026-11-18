@@ -2,6 +2,8 @@
 #include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/combat/combat.h"
+#include "game/dagger/play/people/standing.h"
+#include "game/dagger/tables/enemies.h"
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/items/inventory.h"
 
@@ -136,6 +138,35 @@ int bank_letter(int region, int amount, int *text)
     object_edit(id)->value = amount;
     a->balance -= fee + amount;
     return BANK_DONE;
+}
+
+void bank_loans_due(df_u32 start, df_u32 end)
+{
+    int region;
+
+    for (region = 0; region < REGIONS; region++) {
+        df_u32 due;
+
+        due = bank_state()->account[region].loan_due;
+        if (due && due > start && due <= end) { region_add_legal(region, -LOAN_DUE_PENALTY); }
+    }
+}
+
+int bank_collectors(df_u32 now, int region, int in_dungeon, int *kinds)
+{
+    static const int collector[COLLECTOR_KINDS] = { ENEMY_FIRST_CLASS + 1, ENEMY_FIRST_CLASS + 16, ENEMY_FIRST_CLASS + 2, ENEMY_FIRST_CLASS + 11 };
+    static df_u32 next;
+    int n, i;
+
+    if (in_dungeon) { return 0; }
+    /* Not kept in saves: after a load the first check is a day off, as an arrival in a place does in the original. */
+    if (!next || next > now + COLLECTOR_CHECK_MAX) { next = now + (df_u32)random_range(COLLECTOR_CHECK_MIN, COLLECTOR_CHECK_MAX); return 0; }
+    if (next > now) { return 0; }
+    next = now + (df_u32)random_range(COLLECTOR_CHECK_MIN, COLLECTOR_CHECK_MAX);
+    if (region < 0 || region >= REGIONS || !bank_state()->account[region].loan_due || bank_state()->account[region].loan_due >= now) { return 0; }
+    n = random_range(COLLECTORS_MIN, COLLECTORS_MAX);
+    for (i = 0; i < n; i++) { kinds[i] = collector[random_range(0, COLLECTOR_KINDS - 1)]; }
+    return n;
 }
 
 int bank_borrow(int region, int amount, int *text)

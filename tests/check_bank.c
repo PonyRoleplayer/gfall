@@ -151,6 +151,34 @@ static void type(const char *digits)
 }
 
 /* The bank by clicks: the original's ten buttons, an amount typed where it asks, the questions, a message dismissed, Exit. */
+/* A late loan: the region's standing falls once as the due minute passes, and collectors come for the region the player stands in. */
+void check_bank_loans(void)
+{
+    BankState *b;
+    int kinds[COLLECTORS_MAX], n, i, before, got;
+    const int region = 17;
+
+    b = bank_state();
+    mem_zero(b, sizeof(*b));
+    b->account[region].loan_due = 5000u; b->account[region].loan_owed = 1000;
+    before = region_legal(region);
+    bank_loans_due(4000u, 4999u);
+    check_expect(region_legal(region) == before, "bank loans: the standing fell before the due minute");
+    bank_loans_due(4999u, 6000u);
+    check_expect(region_legal(region) == before - LOAN_DUE_PENALTY, "bank loans: the due minute did not cost the standing");
+    got = 0;
+    /* The first call fixes the next check; then a check each day or so: an overdue loan here sends 2..5, another region's none, a dungeon none. */
+    bank_collectors(10000u, region, 0, kinds);
+    for (i = 0; i < 4; i++) {
+        n = bank_collectors(10000u + 2000u * (df_u32)(i + 1), region, 0, kinds);
+        check_expect(n == 0 || (n >= COLLECTORS_MIN && n <= COLLECTORS_MAX), "bank loans: a group of collectors of a wrong size");
+        got += n > 0;
+    }
+    check_expect(got == 4, "bank loans: an overdue loan did not send collectors at each check");
+    check_expect(bank_collectors(30000u, 3, 0, kinds) == 0 && bank_collectors(60000u, region, 1, kinds) == 0, "bank loans: collectors came for another region or in a dungeon");
+    mem_zero(b, sizeof(*b));
+}
+
 void check_bank_screen(void)
 {
     const Possessions *view;

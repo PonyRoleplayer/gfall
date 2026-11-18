@@ -390,6 +390,7 @@ void check_state(const char *root)
     check_bank();
     state_restore(&g_initial);
     check_bank_screen();
+    check_bank_loans();
     state_restore(&g_initial);
     check_lodging();
     state_restore(&g_initial);

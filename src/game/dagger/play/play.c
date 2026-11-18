@@ -11,6 +11,8 @@
 #include "game/dagger/play/cheats.h"
 #include "game/dagger/play/character/rest.h"
 #include "game/dagger/play/combat/encounter.h"
+#include "game/dagger/play/people/bank.h"
+#include "game/dagger/places/travel.h"
 #include "game/dagger/play/travel/actions.h"
 #include "game/dagger/play/magic/magic.h"
 #include "game/dagger/play/travel/travel.h"
@@ -614,6 +616,13 @@ int play_frame(const PlayIn *in, Camera *cam, const Scene *scene)
     if (cam) {
         move_camera(cam);
         encounter_update(scene,cam);
+        {
+            int kinds[COLLECTORS_MAX], n, k;
+
+            /* A late loan's collectors (bank_collectors): class creatures, hidden and hostile. */
+            n = character_state()->health > 0 && game_state()->mode == GAME_WORLD ? bank_collectors(game_state()->minutes, travel_region(), world_where()->where.kind == WHERE_DUNGEON, kinds) : 0;
+            for (k = 0; k < n; k++) { encounter_summon(cam, kinds[k], TEAM_HOSTILE); }
+        }
         if (game_state()->minutes > minute && character_state()->health > 0) {
             df_u32 elapsed;
 

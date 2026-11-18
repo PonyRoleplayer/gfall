@@ -57,6 +57,22 @@ typedef struct BankState {
     int ship, ship_price;
 } BankState;
 
+/*
+ * A loan that is late (world-economy-loans.md). FALL.EXE reads account 0 only, for every region (its loop never advances the pointer), so a late loan does nothing outside the Alik'r
+ * Desert and there flood the player: GFALL takes the intent. At the due minute the region of the late account loses LOAN_DUE_PENALTY legal reputation, once; and while the loan of the
+ * region the player stands in is overdue, a check every COLLECTOR_CHECK_MIN..MAX minutes (never in a dungeon) sends one group of COLLECTORS_MIN..MAX class creatures, drawn from the four
+ * COLLECTOR_KINDS (Spellsword, Warrior, Battlemage, Assassin), hidden and hostile, at the player's level. No text, no loot, and the loan is untouched.
+ */
+#define LOAN_DUE_PENALTY 5
+#define COLLECTOR_CHECK_MIN 1400
+#define COLLECTOR_CHECK_MAX 1700
+#define COLLECTORS_MIN 2
+#define COLLECTORS_MAX 5
+#define COLLECTOR_KINDS 4
+/* The standing taken from each region whose loan fell due in (start, end]. */
+void bank_loans_due(df_u32 start, df_u32 end);
+/* The collectors to send now: their kinds into kinds[COLLECTORS_MAX] (class creature ids), 0 when none. */
+int bank_collectors(df_u32 now, int region, int in_dungeon, int *kinds);
 BankState *bank_state(void);
 int bank_valid(const BankState *bank);
 
