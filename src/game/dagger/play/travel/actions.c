@@ -26,9 +26,9 @@ static void start_chain(int index);
 
 int actions_accepts(int trigger, int event)
 {
-    trigger &= 15;
-    if (trigger == 8) { return event == 2 || event == 3 || event == 5 || event == 6; }
-    if (trigger == 9) { return event == 2 || event == 3; }
+    trigger &= TRIGGER_MASK;
+    if (trigger == TRIGGER_ANY_USE) { return event == LINK_EVENT_USE || event == LINK_EVENT_WALK_INTO || event == LINK_EVENT_STRIKE || event == LINK_EVENT_SPELL; }
+    if (trigger == TRIGGER_TOUCH) { return event == LINK_EVENT_USE || event == LINK_EVENT_WALK_INTO; }
     return trigger && trigger == event;
 }
 
@@ -39,7 +39,7 @@ static Mover *motion(const Link *link)
     return g_scene && index >= 0 && index < g_scene->nmovers ? &g_scene->movers[index] : 0;
 }
 
-static int is_motion(int kind) { return (kind >= 1 && kind <= 8) || kind == 14; }
+static int is_motion(int kind) { return (kind >= ACTION_TRANSLATE && kind <= ACTION_ROTATE) || kind == ACTION_TELEPORT; }
 static float duration(const Link *link)
 {
     Mover *m;
@@ -82,47 +82,47 @@ static void effect(Link *link, float seconds)
     Mover *m;
     int damage;
     a = &link->data; m = motion(link);
-    if (a->kind >= 16 && a->kind <= 20 && link->reverse) { link->begun = 1; return; }
+    if (a->kind >= ACTION_DOOR_OPEN && a->kind <= ACTION_DOOR_LOCK && link->reverse) { link->begun = 1; return; }
     switch (a->kind) {
-    case 9:
+    case ACTION_CAST:
         link->pulse -= seconds;
         if (link->pulse <= 0) {
             Body *body;
             body = move_body(); link->pulse += 1;
-            magic_trap(a->sound,m ? m->x0 : body->feet[0],m ? m->y0+40 : body->feet[1]+40,
+            magic_trap(a->sound,m ? m->x0 : body->feet[0],m ? m->y0+TRAP_CAST_HEIGHT : body->feet[1]+TRAP_CAST_HEIGHT,
                           m ? m->z0 : body->feet[2]);
         }
         break;
-    case 1: case 2: case 3: case 4: case 5: case 6: case 7: case 8: case 14:
+    case 1: case 2: case 3: case 4: case 5: case 6: case 7: case ACTION_ROTATE: case ACTION_TELEPORT:
         if (!link->begun && m && !mover_busy(g_scene,a->mover)) { mover_start(g_scene,a->mover); }
         break;
     case 10: case 13: case 29: break;
-    case 11:
-        if (!link->begun) { possessions_message(words_state(8600+a->sound),0); }
+    case ACTION_MESSAGE:
+        if (!link->begun) { possessions_message(words_state(TEXT_LINK_MESSAGE+a->sound),0); }
         break;
-    case 12:
+    case ACTION_RIDDLE:
         if (!link->begun) {
             g_question = (int)(link-g_link); g_deferred = a->next;
-            if (!possessions_message(words_state(5400+a->sound),answer)) {
+            if (!possessions_message(words_state(TEXT_RIDDLE+a->sound),answer)) {
                 g_question = g_deferred = -1;
                 log_text(LOG_WARN,"GFALL: missing dungeon riddle text");
             }
         }
         break;
-    case 15: if (m && !link->begun) { door_lock(m,a->axis); } break;
-    case 16: case 18:
-        if (!link->begun && m && (a->kind == 18 || !m->lock) && !mover_at_end(m)) {
-            if (mover_start(g_scene,a->mover) && a->kind == 18) { door_unlock(m); }
+    case ACTION_SET_LOCK: if (m && !link->begun) { door_lock(m,a->axis); } break;
+    case ACTION_DOOR_OPEN: case ACTION_DOOR_FORCE:
+        if (!link->begun && m && (a->kind == ACTION_DOOR_FORCE || !m->lock) && !mover_at_end(m)) {
+            if (mover_start(g_scene,a->mover) && a->kind == ACTION_DOOR_FORCE) { door_unlock(m); }
         }
         break;
-    case 17: if (m && !link->begun) { door_unlock(m); } break;
-    case 19: case 20:
+    case ACTION_DOOR_UNLOCK: if (m && !link->begun) { door_unlock(m); } break;
+    case ACTION_DOOR_CLOSE: case ACTION_DOOR_LOCK:
         if (!link->begun && m) {
             if (mover_at_end(m)) { mover_start(g_scene,a->mover); }
-            if (a->kind == 20) { door_relock(m); }
+            if (a->kind == ACTION_DOOR_LOCK) { door_relock(m); }
         }
         break;
-    case 21:
+    case ACTION_HURT:
         link->pulse -= seconds;
         if (link->pulse <= 0) {
             link->pulse += 1;
@@ -130,25 +130,25 @@ static void effect(Link *link, float seconds)
             damage_player(damage ? damage : character_state()->level,-1);
         }
         break;
-    case 22: case 23: case 24: case 25:
+    case 22: case 23: case 24: case ACTION_HURT_ELEMENT_LAST:
         /* link_hurt_player calls spfx_damage directly, without the spell
          * bundle's resistance roll. The element does not change this sum. */
         damage_player(a->axis*character_state()->level,-1);
         break;
-    case 28:
+    case ACTION_DRAIN_MAGICKA:
         damage = a->axis ? a->axis : 1;
         if (damage > character_state()->magicka) { damage = character_state()->magicka; }
         magicka_spend(damage);
         break;
-    case 26: case 27:
+    case ACTION_POISON: case ACTION_DISEASE:
         link->pulse -= seconds;
         if (link->pulse <= 0) {
             link->pulse += 1;
-            if (a->kind == 26) { poison_apply(-1,random_range(128,139),0); }
-            else { disease_infect(-1,random_range(0,16),0); }
+            if (a->kind == ACTION_POISON) { poison_apply(-1,random_range(POISON_FIRST,POISON_FIRST+POISONS-1),0); }
+            else { disease_infect(-1,random_range(0,DISEASES-1),0); }
         }
         break;
-    case 30:
+    case ACTION_SOUND:
         if (a->sound && m) { sound_at(a->sound,m->x0,m->y0,m->z0); }
         break;
     default:
@@ -167,7 +167,7 @@ static void start_chain(int index)
         if (link->active) { return; }
         link->active = 1; link->begun = 0; link->elapsed = link->pulse = 0;
         effect(link,0);
-        if (link->data.kind == 12) { return; }
+        if (link->data.kind == ACTION_RIDDLE) { return; }
         index = link->data.next;
     }
 }
@@ -193,7 +193,7 @@ static int use(const Scene *scene, const Usable *usable, int index)
     if (travel_passage(usable)) { return 1; }
     if (scene != g_scene || usable->what != USE_ACTION || usable->tag < 0 || usable->tag >= g_count) { return 0; }
     action = &g_link[usable->tag].data;
-    event = interact_using_touch() ? (action->trigger == 1 ? 1 : 3) : action->trigger == 6 ? 6 : 2;
+    event = interact_using_touch() ? (action->trigger == LINK_EVENT_STAND ? LINK_EVENT_STAND : LINK_EVENT_WALK_INTO) : action->trigger == LINK_EVENT_SPELL ? LINK_EVENT_SPELL : LINK_EVENT_USE;
     actions_trigger(scene,action->model,event);
     return 1;
 }
@@ -292,6 +292,6 @@ void actions_strike(const Scene *scene, const Camera *camera, int event)
     Basis basis;
     if (scene != g_scene || !camera) { return; }
     camera_basis(camera,&basis);
-    interact_cast(scene,camera->x,camera->y,camera->z,basis.fx*basis.cp,basis.sp,basis.fz*basis.cp,100,&hit);
-    if (hit.model >= 0 && hit.wall <= 100) { actions_trigger(scene,hit.model,event); }
+    interact_cast(scene,camera->x,camera->y,camera->z,basis.fx*basis.cp,basis.sp,basis.fz*basis.cp,STRIKE_MODEL_REACH,&hit);
+    if (hit.model >= 0 && hit.wall <= STRIKE_MODEL_REACH) { actions_trigger(scene,hit.model,event); }
 }

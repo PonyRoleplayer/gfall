@@ -48,16 +48,14 @@
 #define WATCH_GIVE_UP 600
 #define FOE_ANIM_DEFAULT_MS 100
 /* The animation scripts' actions and the pictures they use (monster_set_action). */
-#define ACTION_ATTACK 8
-#define ACTION_SHOOT 24
-#define ACTION_CAST 32
+#define ANIM_ACTION_ATTACK 8
+#define ANIM_ACTION_SHOOT 24
+#define ANIM_ACTION_CAST 32
 #define RECORD_CAST 20
 #define RECORD_SHOOT_2 25
 #define FOE_CAST_PAUSE 0.5f
 #define FOE_ATTACK_WAIT_FLOOR 0.1f
 
-/* An arrow that strikes a wall fires its action's trigger (weapons.c 283). */
-#define TRIGGER_ARROW_WALL 5
 #define FOES 128
 #define FOE_ACTORS (FOES + 16)
 #define ARROWS 16

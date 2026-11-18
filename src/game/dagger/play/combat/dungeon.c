@@ -729,7 +729,7 @@ static void arrows_step(const Scene *scene, const Camera *cam, float dt)
                 interact_cast(scene,a->at[0]-a->direction[0]*(nearest+1),
                     a->at[1]-a->direction[1]*(nearest+1),a->at[2]-a->direction[2]*(nearest+1),
                     a->direction[0],a->direction[1],a->direction[2],nearest+2,&hit);
-                if (hit.model >= 0) { actions_trigger(scene,hit.model,TRIGGER_ARROW_WALL); }
+                if (hit.model >= 0) { actions_trigger(scene,hit.model,LINK_EVENT_STRIKE); }
             }
             a->live = 0;
         }
@@ -987,12 +987,12 @@ static void foe_step(const Scene *scene, const Camera *cam, int index, float dt)
         e->hold = 0; e->act = 0;
         if (f->attack_wait <= 0 && sight && ai_angle(facing,angle) < FOE_ATTACK_ARC &&
             magic_creature_at(index,f->target,cam)) {
-            anim_start(&f->anim,f->script,ACTION_CAST); f->attack_wait = FOE_CAST_PAUSE;
+            anim_start(&f->anim,f->script,ANIM_ACTION_CAST); f->attack_wait = FOE_CAST_PAUSE;
             e->act = ENTITY_CAST; e->hold = 1; e->frame = 0;
         } else if (f->attack_wait <= 0 && (distance <= reach ||
             ((foe_type_flags(f->type) & 32) && distance > FOE_RANGED_REACH_MUL*reach))) {
             if (sight && ai_angle(facing,angle) < FOE_ATTACK_ARC) {
-                anim_start(&f->anim,f->script,distance > FOE_RANGED_REACH_MUL*reach ? ACTION_SHOOT : ACTION_ATTACK);
+                anim_start(&f->anim,f->script,distance > FOE_RANGED_REACH_MUL*reach ? ANIM_ACTION_SHOOT : ANIM_ACTION_ATTACK);
                 if (f->voice_time < 2) { foe_voice(f,2); f->voice_time = 2; }
                 /* Newly initialized monsters have reflexes zero in the original. */
                 f->attack_wait = (float)(random_range(FOE_ATTACK_WAIT_MIN,FOE_ATTACK_WAIT_MAX)-(character_state()->level-FOE_ATTACK_WAIT_LEVEL_PIVOT)*FOE_ATTACK_WAIT_PER_LEVEL-REFLEXES_NORMAL*FOE_ATTACK_WAIT_PER_REFLEX)/1000;
