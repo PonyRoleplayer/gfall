@@ -131,7 +131,8 @@ FORMATS_SRC := \
 	src/game/dagger/formats/biog.c \
 	src/game/dagger/formats/classcfg.c \
 	src/game/dagger/formats/namegen.c \
-	src/game/dagger/formats/spells.c
+	src/game/dagger/formats/spells.c \
+	src/game/dagger/formats/vid.c
 
 # Daggerfall's rules for dressing a place.
 TABLES_SRC := \

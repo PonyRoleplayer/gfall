@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "engine/assets/vfs.h"
+#include "game/dagger/formats/vid.h"
 #include "engine/core/mem.h"
 #include "game/dagger/formats/arch3d.h"
 #include "game/dagger/formats/bsa.h"
@@ -3255,6 +3256,42 @@ static void check_dungeon_automap(void)
     keep_clear();
 }
 
+
+/* The movies: every ANIM####.VID and DAG2.VID decodes to its last frame, with a palette and some sound. */
+static df_u32 g_vid_audio, g_vid_audio_chunks;
+static void vid_sound(void *ctx, const df_u8 *data, int bytes, int rate) { (void)ctx; (void)data; (void)rate; g_vid_audio += (df_u32)bytes; g_vid_audio_chunks++; }
+
+static void check_vid(void)
+{
+    static const char *names[] = { "ANIM0000.VID", "ANIM0001.VID", "ANIM0002.VID", "ANIM0003.VID", "ANIM0004.VID", "ANIM0005.VID", "ANIM0006.VID", "ANIM0007.VID",
+        "ANIM0008.VID", "ANIM0009.VID", "ANIM0010.VID", "ANIM0011.VID", "ANIM0012.VID", "ANIM0013.VID", "ANIM0014.VID", "ANIM0015.VID", "DAG2.VID" };
+    int i, frames, palettes, nonzero, ticks;
+    df_u32 total_ticks;
+    Vid vid;
+
+    for (i = 0; i < (int)(sizeof(names) / sizeof(names[0])); i++) {
+        char msg[96];
+
+        if (!vid_open(&vid, names[i])) { sprintf(msg, "vid: %s did not open", names[i]); check_expect(0, msg); continue; }
+        g_vid_audio = g_vid_audio_chunks = 0;
+        vid_set_audio(&vid, vid_sound, 0);
+        frames = palettes = ticks = 0; total_ticks = 0; nonzero = 0;
+        while (vid_next(&vid)) {
+            frames++; palettes += vid.palette_changed; total_ticks += (df_u32)vid.ticks;
+            if (frames == vid.frames / 2) { int p; if (i == 0 || i == 12 || i == 16) { char path[48]; FILE *out; sprintf(path, "build/vid%d.ppm", i); out = fopen(path, "wb"); if (out) { int q; fprintf(out, "P6\n%d %d\n255\n", vid.width, vid.height); for (q = 0; q < vid.width * vid.height; q++) { fwrite(vid.palette + vid.frame[q] * 3, 1, 3, out); } fclose(out); } } for (p = 0; p < vid.width * vid.height; p++) { nonzero += vid.frame[p] != 0; } }
+        }
+        (void)ticks;
+        sprintf(msg, "vid: %s decoded %d of %d frames", names[i], frames, vid.frames);
+        check_expect(frames == vid.frames, msg);
+        sprintf(msg, "vid: %s is %dx%d", names[i], vid.width, vid.height);
+        check_expect(vid.width <= 320 && vid.height == 200, msg);
+        sprintf(msg, "vid: %s has a blank middle frame", names[i]);
+        check_expect(nonzero > 0, msg);
+        printf("vid: %s %d frames, %d palettes, %.1f s, %lu bytes of sound in %lu chunks\n", names[i], frames, palettes, (double)total_ticks / VID_TICK_HZ, (unsigned long)g_vid_audio, (unsigned long)g_vid_audio_chunks);
+        vid_close(&vid);
+    }
+}
+
 int check_dagger(const char *root_in)
 {
     World *world;
@@ -3943,5 +3980,6 @@ int check_dagger(const char *root_in)
     check_dungeon_automap();
     check_dunstream_people();
     check_dungeon_people();
+    check_vid();
     return check_failed() ? 1 : 0;
 }
