@@ -3261,6 +3261,16 @@ static void check_dungeon_automap(void)
 static df_u32 g_vid_audio, g_vid_audio_chunks;
 static void vid_sound(void *ctx, const df_u8 *data, int bytes, int rate) { (void)ctx; (void)data; (void)rate; g_vid_audio += (df_u32)bytes; g_vid_audio_chunks++; }
 
+/* Ports: Daggerfall is one (the byte at 0x2F of its exterior data is 16), a hold's outside is not. */
+static void check_ports(void)
+{
+    int region, index, hold_region, hold_index;
+
+    check_expect(worldmap_open(), "ports: the world map did not read");
+    check_expect(worldmap_location(207, 213, &region, &index) && exterior_is_port(region, index), "ports: Daggerfall is not a port");
+    check_expect(worldmap_location(109, 158, &hold_region, &hold_index) && !exterior_is_port(hold_region, hold_index), "ports: Privateer's Hold's outside is a port");
+}
+
 static void check_vid(void)
 {
     static const char *names[] = { "ANIM0000.VID", "ANIM0001.VID", "ANIM0002.VID", "ANIM0003.VID", "ANIM0004.VID", "ANIM0005.VID", "ANIM0006.VID", "ANIM0007.VID",
@@ -3994,6 +4004,7 @@ int check_dagger(const char *root_in)
     check_dungeon_automap();
     check_dunstream_people();
     check_dungeon_people();
+    check_ports();
     check_vid();
     return check_failed() ? 1 : 0;
 }

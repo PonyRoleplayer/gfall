@@ -110,6 +110,8 @@ typedef struct DunSite {
     unsigned short building, flags, object;
 } DunSite;
 int dungeon_sites(int region, int index, DunSite *out, int cap);
+/* Whether an exterior (by its index in the region) is a port, where a ship can be bought. */
+int exterior_is_port(int region, int index);
 int exterior_sites(int region, int index, DunSite *out, int cap);
 
 const char *dungeon_error(void);

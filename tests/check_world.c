@@ -109,6 +109,23 @@ static void check_named_directions(const Camera *cam)
         return;
     }
     buildings = town_buildings(region, index, &count);
+    {
+        /* The houses for sale: each has a price of five times its largest model's radius. */
+        int h, houses, priced;
+
+        houses = priced = 0;
+        for (h = 0; h < count; h++) {
+            if (buildings[h].type == BUILDING_HOUSE_FOR_SALE) {
+                int price;
+
+                houses++;
+                price = town_house_price(region, index, buildings[h].block);
+                priced += price > 0;
+                if (houses <= 3) { printf("house for sale: block %d price %d\n", buildings[h].block, price); }
+            }
+        }
+        check_expect(houses == 0 || priced > 0, "houses: no house for sale of the town has a price");
+    }
     window = talkwin_state();
     for (type = BUILDING_TEMPLE; type <= BUILDING_TAVERN; type++) {
         int category, i, expected, named, last_distance, answers;

@@ -1283,6 +1283,52 @@ int exterior_sites(int region, int index, DunSite *out, int cap)
     return walk.n;
 }
 
+/* Whether the exterior at index of a region is a port. After the doors comes the 119-byte location record (its building count, a u16, at +0x70), then the buildings of 26 bytes, then the exterior data,
+ * whose byte at +0x2F is DFU's PortTownAndUnknown: 16 in the 39 ports (every one has a bank); the original's bank sells ships wherever it is not 0, which also counts eight small towns with a low
+ * value and no bit 16: bit 16 is taken. */
+#define LOC_RECORD_BYTES 0x77
+#define LOC_BUILDING_COUNT 0x70
+#define LOC_BUILDING_BYTES 26
+#define EXTERIOR_PORT 0x2F
+#define PORT_BIT 16
+struct PortWalk {
+    int want;
+    int port;
+    ExtNames src;
+};
+
+static int port_visit(const df_u8 *rec, df_u32 size, int index, void *user)
+{
+    struct PortWalk *walk;
+    df_u32 doors, at, exterior;
+
+    walk = (struct PortWalk *)user;
+    if (index != walk->want) { return 1; }
+    if (size >= 4) {
+        doors = df_ru32(rec);
+        at = 4u + doors * 6u;
+        if (doors <= 4096 && at + LOC_RECORD_BYTES <= size) {
+            exterior = at + LOC_RECORD_BYTES + LOC_BUILDING_BYTES * (df_u32)df_ru16(rec + at + LOC_BUILDING_COUNT);
+            if (exterior + EXTERIOR_PORT + 1u <= size) { walk->port = (rec[exterior + EXTERIOR_PORT] & PORT_BIT) != 0; }
+        }
+    }
+    return 0;
+}
+
+int exterior_is_port(int region, int index)
+{
+    Bsa *maps;
+    struct PortWalk walk;
+
+    if (region < 0 || region >= DUN_REGIONS || index < 0) { return 0; }
+    maps = g_keep ? g_keep_maps : bsa_open(MAP_NAME);
+    if (!maps) { return 0; }
+    walk.want = index; walk.port = 0; walk.src.names = 0; walk.src.name_bytes = 0; walk.src.region = region;
+    each_exterior(maps, region, &walk.src, port_visit, &walk);
+    if (!g_keep) { bsa_close(maps); }
+    return walk.port;
+}
+
 const char *dungeon_error(void)
 {
     return g_why;

@@ -1,5 +1,7 @@
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/travel/doors.h"
+#include "game/dagger/play/people/bank.h"
+#include "game/dagger/formats/dungeon.h"
 #include "game/dagger/tables/buildingtypes.h"
 #include "game/dagger/play/ui/msg.h"
 #include "game/dagger/play/quests/quest.h"
@@ -102,8 +104,37 @@ void gfall_building_announce(const PlaceWhere *where)
     msg_set(line);
 }
 
+/* The houses for sale of the town the player stands in (type 1 buildings, at most HOUSES_MOST) with their prices, and whether the place is a port. */
+static int houses_for_sale(df_u32 *ids, int *prices, int cap)
+{
+    const PlaceWhere *w;
+    const TownBuilding *rows;
+    int count, i, n;
+
+    w = &world_where()->where;
+    if (!w->located) { return 0; }
+    rows = town_buildings(w->region, w->index, &count);
+    for (i = n = 0; rows && i < count && n < cap; i++) {
+        if (rows[i].type != BUILDING_HOUSE_FOR_SALE) { continue; }
+        ids[n] = gfall_building_id(&rows[i]);
+        prices[n] = town_house_price(w->region, w->index, rows[i].block);
+        n++;
+    }
+    return n;
+}
+
+static int in_port(void)
+{
+    const PlaceWhere *w;
+
+    w = &world_where()->where;
+    return w->located && exterior_is_port(w->region, w->index);
+}
+
 void gfall_building_install(void)
 {
+    bank_set_houses(houses_for_sale);
+    bank_set_port(in_port);
     names_set_expand(building_expand);
     door_set_street_bash(gfall_building_bash);
 }

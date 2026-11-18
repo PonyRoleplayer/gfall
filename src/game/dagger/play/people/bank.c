@@ -252,6 +252,54 @@ static int sell(int region, int *price, int *owned, int ask, int confirmed, int 
     return BANK_DONE;
 }
 
+static BankHouses g_houses;
+static int (*g_port)(void);
+void bank_set_houses(BankHouses houses) { g_houses = houses; }
+void bank_set_port(int (*port)(void)) { g_port = port; }
+int bank_houses(df_u32 *ids, int *prices, int cap) { return g_houses ? g_houses(ids, prices, cap < HOUSES_MOST ? cap : HOUSES_MOST) : 0; }
+int bank_in_port(void) { return g_port ? g_port() : 0; }
+
+int bank_buy_house(int region, df_u32 id, int price, int *text)
+{
+    BankAccount *a;
+    BankState *b;
+
+    *text = 0;
+    b = bank_state();
+    a = account(region);
+    if (!a) { return BANK_REFUSED; }
+    if (b->house) { *text = BANK_TEXT_HOUSE_OWNED; return BANK_REFUSED; }
+    if (a->balance < price) { *text = BANK_TEXT_CANNOT_AFFORD; return BANK_REFUSED; }
+    a->balance -= price;
+    b->house = id;
+    b->house_price = price;
+    *text = TEXT_HOUSE_BOUGHT;
+    return BANK_DONE;
+}
+
+int bank_buy_ship(int region, int kind, int *text)
+{
+    BankAccount *a;
+    BankState *b;
+    int price;
+
+    *text = 0;
+    b = bank_state();
+    a = account(region);
+    if (!a || (kind != SHIP_SMALL && kind != SHIP_LARGE)) { return BANK_REFUSED; }
+    if (b->ship) { *text = TEXT_SHIP_OWNED; return BANK_REFUSED; }
+    if (!bank_in_port()) { *text = TEXT_NOT_A_PORT; return BANK_REFUSED; }
+    price = kind == SHIP_SMALL ? SHIP_SMALL_PRICE : SHIP_LARGE_PRICE;
+    if (a->balance < price) { *text = BANK_TEXT_CANNOT_AFFORD; return BANK_REFUSED; }
+    a->balance -= price;
+    b->ship = kind;
+    b->ship_price = price;
+    *text = TEXT_SHIP_BOUGHT;
+    return BANK_DONE;
+}
+
+void bank_gift_house(df_u32 id) { bank_state()->house = id; }
+
 int bank_sell_house(int region, int confirmed, int *text)
 {
     BankState *b;

@@ -9,6 +9,10 @@
 #define WATCOM_RAND_MUL 1103515245u
 #define WATCOM_RAND_ADD 12345u
 /* One step of Watcom's rand on a seed of its own: the new seed, and the value (0..RAND_MAX_WATCOM) it gives. */
-unsigned watcom_next(df_u32 *seed);
+static __inline__ unsigned watcom_next(df_u32 *seed)
+{
+    *seed = *seed * WATCOM_RAND_MUL + WATCOM_RAND_ADD;
+    return (*seed >> 16) & (df_u32)RAND_MAX_WATCOM;
+}
 
 #endif

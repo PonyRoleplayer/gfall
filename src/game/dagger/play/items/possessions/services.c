@@ -1,5 +1,6 @@
 #include "internal.h"
 #include "game/dagger/play/people/bank.h"
+#include "engine/core/log.h"
 #include "game/dagger/play/combat/combat.h"
 #include "engine/core/mem.h"
 #include "game/dagger/play/people/guild.h"
@@ -208,6 +209,53 @@ void possessions_bank_run(int op, int amount, int confirmed)
     possessions_view.revision++;
 }
 
+/* The houses for sale and the ships, as the original lists them (rows of "Price : %ld gold"); a row picked is bought from the balance. */
+static df_u32 g_house_id[HOUSES_MOST];
+static int g_house_price[HOUSES_MOST];
+
+static void house_picked(int row)
+{
+    int text;
+
+    if (row < 0 || row >= HOUSES_MOST) { return; }
+    bank_buy_house(possessions_view.bank_region, g_house_id[row], g_house_price[row], &text);
+    if (text) { bank_say(text); }
+    possessions_view.revision++;
+}
+
+static void ship_picked(int row)
+{
+    int text;
+
+    if (row < 0 || row > 1) { return; }
+    bank_buy_ship(possessions_view.bank_region, row == 0 ? SHIP_SMALL : SHIP_LARGE, &text);
+    if (text) { bank_say(text); }
+    possessions_view.revision++;
+}
+
+static void bank_buy_house_click(void)
+{
+    static char rows[HOUSES_MOST][LIST_NAME];
+    int n, i;
+
+    if (bank_state()->house) { bank_say(BANK_TEXT_HOUSE_OWNED); return; }
+    n = bank_houses(g_house_id, g_house_price, HOUSES_MOST);
+    if (!n) { bank_say(BANK_TEXT_NO_HOUSE); return; }
+    for (i = 0; i < n; i++) { log_format(rows[i], LIST_NAME, "Price : %d gold", g_house_price[i]); }
+    possessions_list((const char (*)[LIST_NAME])rows, n, house_picked);
+}
+
+static void bank_buy_ship_click(void)
+{
+    static char rows[2][LIST_NAME];
+
+    if (bank_state()->ship) { bank_say(TEXT_SHIP_OWNED); return; }
+    if (!bank_in_port()) { bank_say(TEXT_NOT_A_PORT); return; }
+    log_format(rows[0], LIST_NAME, "%d", SHIP_SMALL_PRICE);
+    log_format(rows[1], LIST_NAME, "%d", SHIP_LARGE_PRICE);
+    possessions_list((const char (*)[LIST_NAME])rows, 2, ship_picked);
+}
+
 static void bank_click(int x, int y)
 {
     int b;
@@ -216,11 +264,10 @@ static void bank_click(int x, int y)
     if (b == BK_EXIT) { possessions_close(); return; }
     if (b == BK_NONE) { return; }
     if (b == BK_BUY_HOUSE) {
-        /* Houses for sale are read from a town's blocks, which come with the wider world: none, or one owned. */
-        bank_say(bank_state()->house ? BANK_TEXT_HOUSE_OWNED : BANK_TEXT_NO_HOUSE);
+        bank_buy_house_click();
         return;
     }
-    if (b == BK_BUY_SHIP) { bank_say(bank_state()->ship ? 284 : 285); return; }
+    if (b == BK_BUY_SHIP) { bank_buy_ship_click(); return; }
     if (b == BK_LETTERS || b == BK_SELL_HOUSE || b == BK_SELL_SHIP) { possessions_bank_run(b, 0, 0); return; }
     /* The others take an amount, typed where the original asks (157, 152). */
     possessions_view.bank_op = b;

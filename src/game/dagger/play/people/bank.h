@@ -97,6 +97,33 @@ int bank_repay(int region, int amount, int *text);
 /* bank_sell_house and bank_sell_ship: the price less 15% into the account, after the question (298, 299). */
 int bank_sell_house(int region, int confirmed, int *text);
 int bank_sell_ship(int region, int confirmed, int *text);
+/*
+ * Houses and ships (world-economy-property.md). The houses for sale of a town are the game's (bank_set_houses: a building's id and its price, five times its largest model's radius, at most
+ * HOUSES_MOST); a house is paid from the account balance, not the gold carried (454), and sets the house and its price (TEXT_HOUSE_BOUGHT). A ship is sold in a port only (285), one at a
+ * time (284): the small at SHIP_SMALL_PRICE and the large at SHIP_LARGE_PRICE (SHIP_SMALL, SHIP_LARGE), TEXT_SHIP_BOUGHT. A knight's Seneschal gives a house without a price (bank_gift_house).
+ */
+#define HOUSES_MOST 20
+#define SHIP_SMALL 1
+#define SHIP_LARGE 2
+#define SHIP_SMALL_PRICE 100000
+#define SHIP_LARGE_PRICE 200000
+#define TEXT_HOUSE_BOUGHT 282
+#define TEXT_SHIP_BOUGHT 283
+#define TEXT_SHIP_OWNED 284
+#define TEXT_NOT_A_PORT 285
+/* The town's houses for sale: ids and prices into the arrays; how many. */
+typedef int (*BankHouses)(df_u32 *ids, int *prices, int cap);
+void bank_set_houses(BankHouses houses);
+int bank_houses(df_u32 *ids, int *prices, int cap);
+/* Whether the player stands in a port. */
+void bank_set_port(int (*port)(void));
+int bank_in_port(void);
+/* The house of a row bought from the balance: BANK_DONE (TEXT_HOUSE_BOUGHT) or BANK_REFUSED with the text (286 owned, 454 short). */
+int bank_buy_house(int region, df_u32 id, int price, int *text);
+/* A ship of a kind (SHIP_SMALL or SHIP_LARGE). */
+int bank_buy_ship(int region, int kind, int *text);
+/* The Seneschal's gift: the house, no price (the sale then offers 85 % of whatever price was kept). */
+void bank_gift_house(df_u32 id);
 /* gold_total: the coins carried and every letter of credit's value, what the bank shows as the player's gold. */
 int gold_total(void);
 /* gold_spend (law.h) takes coins and letters; the bank asks it to make good a short balance. */

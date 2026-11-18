@@ -6,5 +6,6 @@ void check_bank(void);
 /* The bank screen driven by clicks and typing. */
 void check_bank_screen(void);
 void check_bank_loans(void);
+void check_bank_property(void);
 
 #endif

@@ -1,6 +1,7 @@
 #include "game/dagger/play/travel/travel.h"
 #include "game/dagger/play/character/rest.h"
 #include "game/dagger/play/people/guild.h"
+#include "game/dagger/play/people/bank.h"
 #include "game/dagger/play/character/ailments.h"
 #include "game/dagger/formats/climate.h"
 #include "game/dagger/play/character/vitals.h"
@@ -50,7 +51,7 @@ void journey_plan(int sx, int sy, int ex, int ey, int reckless, int camp,
         if (n == adx) { sx += dx < 0 ? -1 : 1; error += ady; if (error > adx) { error -= adx; sy += dy < 0 ? -1 : 1; } }
         else { sy += dy < 0 ? -1 : 1; error += adx; if (error > ady) { error -= ady; sx += dx < 0 ? -1 : 1; } }
         climate = travel_climate(sx,sy);
-        if (climate == CLIMATE_OCEAN) { out->sea_pixels++; minutes = ship ? TRAVEL_SEA_SHIP : TRAVEL_SEA_NO_SHIP; }
+        if (climate == CLIMATE_OCEAN) { out->sea_pixels++; minutes = ship || bank_state()->ship ? TRAVEL_SEA_SHIP : TRAVEL_SEA_NO_SHIP; /* an owned ship sails at 51 whatever the choice (travel_pixel_time) */ }
         else { minutes = ((TRAVEL_TERRAIN_SPAN-travel_terrain(climate))*((factor*TRAVEL_PIXEL_BASE)/256))/256; }
         if (camp) { minutes = minutes*TRAVEL_CAMP_NUM/TRAVEL_CAMP_DEN; }
         out->minutes += minutes;
@@ -62,7 +63,7 @@ void journey_plan(int sx, int sy, int ex, int ey, int reckless, int camp,
     /* travel_trip_cost: a knight of any order (membership bit KIND_KNIGHT) pays neither the inns nor the ship. */
     knight = guild_find_bits(KIND_KNIGHT) != 0;
     out->cost = camp || knight ? 0 : ((out->hours-out->sea_pixels)/HOURS_PER_DAY)*INN_NIGHT_PRICE+INN_NIGHT_PRICE;
-    if (ship && out->sea_pixels && !knight) { out->cost += (out->sea_pixels/HOURS_PER_DAY+1)*SHIP_DAY_PRICE; }
+    if (ship && out->sea_pixels && !knight && !bank_state()->ship) { /* an owned ship pays no fare */ out->cost += (out->sea_pixels/HOURS_PER_DAY+1)*SHIP_DAY_PRICE; }
 }
 int journey_transport(void)
 {

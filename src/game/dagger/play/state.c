@@ -143,12 +143,6 @@ void random_seed(df_u32 seed)
     g_state.random = seed;
 }
 
-unsigned watcom_next(df_u32 *seed)
-{
-    *seed = *seed * WATCOM_RAND_MUL + WATCOM_RAND_ADD;
-    return (*seed >> 16) & (df_u32)RAND_MAX_WATCOM;
-}
-
 int random_range(int low, int high)
 {
     if (high < low || ((df_u32)high - (df_u32)low + 1u) == 0) {

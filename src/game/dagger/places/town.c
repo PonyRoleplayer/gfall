@@ -187,3 +187,36 @@ const unsigned char *town_block_bytes(int region, int index, int block, unsigned
     bsa_close(blocks);
     return copy;
 }
+
+/* The price of a house for sale: five times the largest model radius (the int at +12 of the ARCH3D record) among the models of its block (bank_add_house_for_sale, bank.c 218..241). */
+#define HOUSE_PRICE_PER_RADIUS 5
+#define ARCH_RADIUS_AT 12
+#define HOUSE_MODELS_MOST 128
+
+int town_house_price(int region, int index, int block)
+{
+    const df_u8 *bytes;
+    unsigned size;
+    df_u32 ids[HOUSE_MODELS_MOST];
+    Bsa *arch;
+    int n, i, best, radius;
+
+    bytes = town_block_bytes(region, index, block, &size);
+    if (!bytes) { return 0; }
+    n = rmb_model_ids(bytes, size, ids, HOUSE_MODELS_MOST);
+    arch = bsa_open("ARCH3D.BSA");
+    if (!arch) { return 0; }
+    best = 0;
+    for (i = 0; i < n; i++) {
+        const BsaRec *rec;
+        const df_u8 *model;
+
+        rec = bsa_find_id(arch, ids[i]);
+        if (!rec || rec->size < ARCH_RADIUS_AT + 4) { continue; }
+        model = bsa_read_scratch(arch, rec, BSA_SCRATCH_MODEL);
+        radius = model ? df_ri32(model + ARCH_RADIUS_AT) : 0;
+        if (radius > best) { best = radius; }
+    }
+    bsa_close(arch);
+    return best * HOUSE_PRICE_PER_RADIUS;
+}

@@ -39,6 +39,8 @@ const TownBuilding *town_buildings(int region, int index, int *count);
 #define TOWN_MAP_SIDE 512
 #define TOWN_MAP_MOST (TOWN_MAP_SIDE * TOWN_MAP_SIDE)
 int town_automap(int region, int index, unsigned char *out, int *w, int *h);
+/* The price of the house for sale in a block of the town: five times its largest model radius (0 when it does not read). */
+int town_house_price(int region, int index, int block);
 /* The name of the town last read. */
 const char *town_name(void);
 /*

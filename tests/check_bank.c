@@ -179,6 +179,32 @@ void check_bank_loans(void)
     mem_zero(b, sizeof(*b));
 }
 
+static int test_port;
+static int in_test_port(void) { return test_port; }
+
+/* Houses and ships: bought from the balance; a house one at a time, a ship in a port only. */
+void check_bank_property(void)
+{
+    BankState *b;
+    int text;
+    const int region = 17;
+
+    b = bank_state();
+    mem_zero(b, sizeof(*b));
+    bank_set_port(in_test_port);
+    b->account[region].balance = 150000;
+    check_expect(bank_buy_house(region, 77u, 200000, &text) == BANK_REFUSED && text == BANK_TEXT_CANNOT_AFFORD && !b->house, "bank: a house was bought without the balance");
+    check_expect(bank_buy_house(region, 77u, 120000, &text) == BANK_DONE && text == TEXT_HOUSE_BOUGHT && b->house == 77u && b->house_price == 120000 && b->account[region].balance == 30000, "bank: a house was not paid from the balance");
+    check_expect(bank_buy_house(region, 78u, 1, &text) == BANK_REFUSED && text == BANK_TEXT_HOUSE_OWNED, "bank: a second house was bought");
+    b->account[region].balance = 300000;
+    test_port = 0;
+    check_expect(bank_buy_ship(region, SHIP_SMALL, &text) == BANK_REFUSED && text == TEXT_NOT_A_PORT, "bank: a ship was sold away from a port");
+    test_port = 1;
+    check_expect(bank_buy_ship(region, SHIP_LARGE, &text) == BANK_DONE && text == TEXT_SHIP_BOUGHT && b->ship == SHIP_LARGE && b->account[region].balance == 100000, "bank: a large ship was not paid 200000 from the balance");
+    check_expect(bank_buy_ship(region, SHIP_SMALL, &text) == BANK_REFUSED && text == TEXT_SHIP_OWNED, "bank: a second ship was bought");
+    mem_zero(b, sizeof(*b));
+}
+
 void check_bank_screen(void)
 {
     const Possessions *view;
