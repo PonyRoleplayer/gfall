@@ -9,6 +9,69 @@
  */
 #include "engine/core/df.h"
 
+/*
+ * The numbers of the enchantments (item_enchantment_tick, inv_use_item, damage_weapon_strike_effects; FALL.EXE leaves them inline). Enhances Skill adds ENCHANT_SKILL_BONUS. Extra Spell
+ * Points' parameter is a season (XSP_WINTER..XSP_AUTUMN, by month), a moon (XSP_FULL_MOON, XSP_HALF_MOON, XSP_NEW_MOON, by the day's phase of MOON_PHASE_MASK + 1, looked MOON_LOOKAHEAD_MINUTES
+ * ahead as well) or a creature of a category near (XSP_NEAR_FIRST..XSP_NEAR_LAST, within XSP_NEAR_RANGE); it gives XSP_POINTS, wears the item every XSP_WEAR_EVERY-th minute and, near a
+ * creature, restores XSP_MAGICKA_PER_STEP a step. Regenerating and repairing wear an item one time in ENCHANT_WEAR_ONE_IN. Vampiric's parameter is VAMPIRIC_TICK or VAMPIRIC_STRIKE; a strike
+ * heals dealt / VAMPIRIC_HEAL_DIV and wears healed / VAMPIRIC_WEAR_DIV + 1. Item Deteriorates by DETERIORATE_DAY or DETERIORATE_TEMPLE; Health Leech is LEECH_WHEN_USED, LEECH_DAILY or
+ * LEECH_WEEKLY (a kill within a day or a week prevents it). A cast or a strike wears ENCHANT_CAST_WEAR; a leech's use costs (level >> LEECH_USE_LEVEL_SHIFT) + 1 and wears LEECH_USE_WEAR, its hit
+ * (level >> LEECH_HIT_LEVEL_SHIFT) + 1. Artifacts wear ARTIFACT_USE_WEAR (ARTIFACT_SUMMON_WEAR for the summoners). The tick counts a gap over TICK_GAP_MAX minutes as none, then the minutes
+ * shifted by TICK_MINUTES_SHIFT; a sun-hurt class takes CLASS_SUN_DAMAGE_PER_STEP a step. Armour is changed by ENCHANT_ARMOR_MODIFIER; carrying by CARRY_BONUS_SMALL or CARRY_BONUS_LARGE over 256;
+ * an item weighs FEATHER_WEIGHT, or EXTRA_WEIGHT_MULTIPLIER times, at least EXTRA_WEIGHT_MIN; a reaction moves ENCHANT_REACTION (SOCIAL_GROUP_ALL for every group).
+ */
+#define ENCHANT_SKILL_BONUS 15
+#define XSP_WINTER 0
+#define XSP_SPRING 1
+#define XSP_SUMMER 2
+#define XSP_AUTUMN 3
+#define XSP_SEASON_LAST 3
+#define XSP_FULL_MOON 4
+#define XSP_HALF_MOON 5
+#define XSP_NEW_MOON 6
+#define XSP_NEAR_FIRST 7
+#define XSP_NEAR_LAST 10
+#define XSP_NEAR_RANGE 1024
+#define XSP_POINTS 75
+#define XSP_WEAR_EVERY 4u
+#define XSP_MAGICKA_PER_STEP 5
+#define MOON_PHASE_MASK 31u
+#define MOON_LOOKAHEAD_MINUTES 5760u
+#define MOON_FULL 0
+#define MOON_HALF_WAX 8
+#define MOON_NEW 16
+#define MOON_HALF_WANE 24
+#define ENCHANT_WEAR_ONE_IN 10
+#define VAMPIRIC_TICK 0
+#define VAMPIRIC_STRIKE 1
+#define VAMPIRIC_HEAL_DIV 2
+#define VAMPIRIC_WEAR_DIV 4
+#define DETERIORATE_ALWAYS 0
+#define DETERIORATE_DAY 1
+#define DETERIORATE_TEMPLE 2
+#define LEECH_WHEN_USED 0
+#define LEECH_DAILY 1
+#define LEECH_WEEKLY 2
+#define ENCHANT_CAST_WEAR 10
+#define LEECH_USE_LEVEL_SHIFT 1
+#define LEECH_USE_WEAR 2
+#define LEECH_HIT_LEVEL_SHIFT 2
+#define ARTIFACT_USE_WEAR 50
+#define ARTIFACT_SUMMON_WEAR 100
+#define TICK_GAP_MAX 100u
+#define TICK_MINUTES_SHIFT 2
+#define CLASS_SUN_DAMAGE_PER_STEP 12
+#define ENCHANT_ARMOR_MODIFIER 25
+#define CARRY_BONUS_SMALL 320
+#define CARRY_BONUS_LARGE 384
+#define FEATHER_WEIGHT 1
+#define EXTRA_WEIGHT_MULTIPLIER 4
+#define EXTRA_WEIGHT_MIN 20
+#define ENCHANT_REACTION 10
+#define SOCIAL_GROUP_ALL 5
+#define ITEM_NAME_MAX 48
+#define TEXT_LINE_MAX 80
+
 /* What the game tells the tick about the world: daylight (6:00 to 18:00 outdoors), a temple, creatures round the player. Every hook may be 0 (false). */
 typedef struct EnchantWorld {
     int (*daylight)(void);

@@ -23,6 +23,8 @@
 #define MINUTES_PER_DAY 1440u
 #define DAWN_MINUTE 360u
 #define DUSK_MINUTE 1080u
+#define MINUTES_PER_WEEK 10080u
+#define MONTHS 12
 
 #define STATE_VERSION 18
 /* The room a save keeps for the quests (quest.c packs into it). */

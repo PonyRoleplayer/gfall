@@ -101,6 +101,8 @@ const EnemyKind *enemy_kind(int kind);
 enum { ENEMY_GROUP_NONE, ENEMY_GROUP_UNDEAD, ENEMY_GROUP_DAEDRA, ENEMY_GROUP_HUMANOID, ENEMY_GROUP_ANIMALS };
 int enemy_group(int kind);
 #define ENEMY_RAT 0
+#define ENEMY_IMP 1
+#define ENEMY_SPRIGGAN 2
 #define ENEMY_SPIDER 6
 #define ENEMY_ORC 7
 #define ENEMY_CENTAUR 8
@@ -124,6 +126,7 @@ int enemy_group(int kind);
 #define ENEMY_WRAITH 23
 #define ENEMY_DREUGH 41
 #define ENEMY_LAMIA 42
+#define ENEMY_DAEDROTH 27
 #define ENEMY_FIRST_CLASS 128
 /* City Watch: archive 399, bark DAGGER.SND 456 (Halt). */
 #define ENEMY_CITY_WATCH 146

@@ -1,4 +1,5 @@
 #include "game/dagger/play/character/curse.h"
+#include "game/dagger/tables/magic.h"
 #include "game/dagger/tables/items.h"
 #include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/tables/enemies.h"
@@ -313,10 +314,8 @@ void curse_cure_lycanthropy(void)
     c->form = CURSE_FORM_NONE; c->disease = 0; c->health_base = 0;
 }
 
-/* Hircine's ring is artifact 3 (item_artifact_equipped(3)). Worn, it ends the hunger and the moons and the wait between changes. */
-#define HIRCINE_RING 3
-
-static int ring_worn(void) { return magic_artifact_worn(HIRCINE_RING) != 0; }
+/* Hircine's ring (item_artifact_equipped(3)) worn ends the hunger and the moons and the wait between changes. */
+static int ring_worn(void) { return magic_artifact_worn(ARTIFACT_HIRCINE_RING) != 0; }
 
 /* ---- A lycanthrope's changes (7) ---- */
 
