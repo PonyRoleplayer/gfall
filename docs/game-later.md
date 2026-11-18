@@ -155,3 +155,7 @@ read other places on demand so a long campaign can grow on disk within the
 crosses today's world and automap limits, revisits changed dungeons, and saves
 and reloads in a fresh process. Raising the wire buffer alone leaves the
 record-count limits in place.
+
+## From the constants pass (2026-11-18, docs/gfall-constants.md in the decomp)
+Fixed: a creature hurt gives up after 60 ticks, not 200; the second blood picture is the undead's; an arrow on a wall fires trigger 5; Repairs Objects skips arrows; a swimmer over 250 does not sink while levitating or water-walking.
+Open, with the decomp's value: a class enemy's armour is its creature row ×5 (20..40), ours 60; the city watch's level is the player's + rand(3,6); a creature rolls `rand() % SPD < SPD/8 + 6` before a swing; a knocked creature that hits a wall takes speed/2 and the knockback stops at 5; a flag-2 creature gives up a target under a score of 8; the encounter table rerolls a Daedra Seducer, a Nymph or entry 42 when DAGGER.GRD exists; the material roll lacks +60 for an enchanted item and -(14 - quality) * 2 in a shop; a recipe is `rand() % 20` in the count, not 1..20 in `message`; silver armour rolls its material twice; `magic_resist` lacks the biography modifiers (resist magic, disease, poison); Potent vs and Low damage vs sum every entry (the original counts them only when all ten slots are full: kept as a fix); the original reads the attacker's race for hit effects even for the player (docs/curses.md 11).

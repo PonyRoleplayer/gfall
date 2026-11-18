@@ -117,7 +117,7 @@ void dungeon_alert(int source)
         dz = f->entity->z-player->feet[2];
         if (i == source || ai_stealth(f->mind.detected,df_iround(df_sqrt(dx*dx+dy*dy+dz*dz)),f->mind.encountered)) {
             f->awake = f->mind.detected = f->mind.encountered = 1;
-            f->mind.give_up = FOE_GIVE_UP; store_health(f);
+            f->mind.give_up = FOE_GIVE_UP_HURT; store_health(f);
         }
     }
 }
@@ -430,9 +430,10 @@ static int hit_foe_from(const Scene *scene, int i, int damage, float yaw, int so
     f = &g_foe[i]; e = f->entity;
     damage = magic_absorb(i,damage); if (!damage) { return 0; }
     f->fighter.health -= damage; f->awake = 1; f->passive = 0;
-    f->mind.detected = f->mind.encountered = 1; f->mind.give_up = FOE_GIVE_UP;
+    f->mind.detected = f->mind.encountered = 1; f->mind.give_up = FOE_GIVE_UP_HURT;
     attacker = source == TARGET_PLAYER ? game_state()->entity_id : 0;
-    splash(scene,e,f->kind == 7 || f->kind == 8);
+    /* damage_spawn_splash: the second blood picture is the undead's, the others bleed the first. */
+    splash(scene,e,foe_category(f->kind) == FOE_UNDEAD && !ENEMY_IS_CLASS(f->kind));
     if (f->fighter.health <= 0) {
         f->fighter.health = 0; e->dead = 1; e->radius = 0;
         e->act = ENTITY_DEAD; e->hold = 1; e->frame = 0; e->moving = 0;
@@ -728,7 +729,7 @@ static void arrows_step(const Scene *scene, const Camera *cam, float dt)
                 interact_cast(scene,a->at[0]-a->direction[0]*(nearest+1),
                     a->at[1]-a->direction[1]*(nearest+1),a->at[2]-a->direction[2]*(nearest+1),
                     a->direction[0],a->direction[1],a->direction[2],nearest+2,&hit);
-                if (hit.model >= 0) { actions_trigger(scene,hit.model,6); }
+                if (hit.model >= 0) { actions_trigger(scene,hit.model,TRIGGER_ARROW_WALL); }
             }
             a->live = 0;
         }

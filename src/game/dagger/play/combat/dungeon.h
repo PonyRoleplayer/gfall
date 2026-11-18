@@ -56,6 +56,8 @@
 #define FOE_CAST_PAUSE 0.5f
 #define FOE_ATTACK_WAIT_FLOOR 0.1f
 
+/* An arrow that strikes a wall fires its action's trigger (weapons.c 283). */
+#define TRIGGER_ARROW_WALL 5
 #define FOES 128
 #define FOE_ACTORS (FOES + 16)
 #define ARROWS 16
