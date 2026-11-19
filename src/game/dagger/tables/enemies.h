@@ -129,7 +129,12 @@ int enemy_group(int kind);
 #define ENEMY_DAEDROTH 27
 #define ENEMY_FIRST_CLASS 128
 /* City Watch: archive 399, bark DAGGER.SND 456 (Halt). */
+/* The assassin's mobile id (128 + the class), whose weapon is poisoned most often (monster_give_equipment). */
+#define ENEMY_ASSASSIN 139
 #define ENEMY_CITY_WATCH 146
+/* A watchman's level is the player's plus rand_range(3, 6) (monster_init, func_00078566.c 139; the other class enemies have the player's level). */
+#define WATCH_LEVEL_MIN 3
+#define WATCH_LEVEL_MAX 6
 
 /*
  * The bands of mobile ids. The classic mobiles (rat .. lamia) are 0..ENEMY_CLASSIC_KINDS - 1. A class enemy is ENEMY_FIRST_CLASS + the class (ENEMY_CLASS_COUNT of

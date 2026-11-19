@@ -8,6 +8,9 @@
 #include "game/dagger/play/cheats.h"
 #include "game/dagger/play/character/vitals.h"
 #include "game/dagger/play/combat/dungeon.h"
+#include "game/dagger/play/combat/foegear.h"
+#include "game/dagger/play/character/ailments.h"
+#include "game/dagger/tables/enemies.h"
 #include "game/dagger/play/combat/encounter.h"
 #include "game/dagger/play/ui/hud.h"
 #include "game/dagger/play/items/inventory.h"
@@ -667,6 +670,56 @@ static void hold_round_trip(const char *root)
     check_expect(seam_open_hold(&x,&y,&z),"restore the original test session after combat");
 }
 
+/* A container and what is in it. */
+static void drop_bag(df_u32 bag)
+{
+    int i;
+
+    for (i = 0; i < OBJECTS; i++) {
+        if (game_state()->object[i].id && game_state()->object[i].parent == bag) { object_delete(game_state()->object[i].id); }
+    }
+    object_delete(bag);
+}
+
+/* Poisoned weapons (monster_give_equipment): none while the player is level 1; from level 2 an assassin's weapon in about 59 in a hundred, the others' in 4, the poison one of the eight, spent by weapon_poison_spend. */
+static void poisoned_weapons(void)
+{
+    int n, poisoned, level_one, poisons[8], i, bad;
+    df_u32 bag, slots[EQUIP_SLOTS];
+    FighterInfo fighter;
+    int kinds[2];
+
+    kinds[0] = ENEMY_ASSASSIN; kinds[1] = ENEMY_FIRST_CLASS;
+    for (i = 0; i < 8; i++) { poisons[i] = 0; }
+    level_one = 0; bad = 0;
+    for (n = 0; n < 100; n++) {
+        bag = object_new(RECORD_CONTAINER,WORLD_ROOT,0,1);
+        foe_equipment(ENEMY_ASSASSIN,bag,slots,&fighter);
+        level_one += weapon_poison(slots[EQUIP_RIGHT_HAND]) != 0;
+        drop_bag(bag);
+    }
+    check_expect(level_one == 0, "foe gear: a weapon was poisoned while the player was level 1");
+    character_state()->level = POISON_WEAPON_LEVEL;
+    for (i = 0; i < 2; i++) {
+        poisoned = 0;
+        for (n = 0; n < 1000; n++) {
+            int p;
+
+            bag = object_new(RECORD_CONTAINER,WORLD_ROOT,0,1);
+            if (!bag) { bad = 1; break; }
+            foe_equipment(kinds[i],bag,slots,&fighter);
+            p = weapon_poison(slots[EQUIP_RIGHT_HAND]);
+            if (p) { poisoned++; if (p >= POISON_FIRST && p < POISON_FIRST+POISON_WEAPON_KINDS) { poisons[p-POISON_FIRST]++; } else { bad = 1; } weapon_poison_spend(slots[EQUIP_RIGHT_HAND]); if (weapon_poison(slots[EQUIP_RIGHT_HAND])) { bad = 1; } }
+            drop_bag(bag);
+        }
+        check_expect(!bad && (i == 0 ? poisoned > 520 && poisoned < 660 : poisoned > 15 && poisoned < 75), i == 0 ? "foe gear: an assassin's weapon is not poisoned about 59 times in a hundred" : "foe gear: another class's weapon is not poisoned about 4 times in a hundred");
+    }
+    bad = 0;
+    for (i = 0; i < 8; i++) { bad += poisons[i] == 0; }
+    check_expect(!bad, "foe gear: a weapon's poison is not each of the eight");
+    character_state()->level = 1;
+}
+
 void check_combat(const char *root)
 {
     df_u32 sword;
@@ -684,6 +737,7 @@ void check_combat(const char *root)
     sword = item_create(game_state()->inventory_id,3,5,1);
     dungeon_blood(-1,-1);
     check_doors(root);
+    poisoned_weapons();
     rules(); ai_rules(); swings(sword); melee(sword); archery(); marker_pacification(); creature_teams(); injuries(); flyer_corpse(); god_swing(sword);
     small_creature_floor(); flying_creature_floor(); flight_stairwell();
     dungeon_close(); weapon_cancel(); state_restore(&g_before); state_restore_world();

@@ -76,6 +76,10 @@
 #define KNOCK_SPEED_MAX 40
 #define KNOCK_STEP_MAX 25
 #define KNOCK_DECAY_PER_TICK 5
+/* A creature thrown against a wall takes half its speed in damage and stops (damage_knockback_move, func_0002F824.c 45); a throw slowed to KNOCK_STOP_SPEED or less ends. A step that gets under
+ * KNOCK_WALL_RATIO of its length met a wall (the engine's body gives no collision flag). */
+#define KNOCK_STOP_SPEED 5
+#define KNOCK_WALL_RATIO 0.5f
 /* DAGGER.SND: a blow that hurts is one of SOUND_HIT_COUNT from SOUND_HIT_FIRST; a parry one of SOUND_PARRY_FIRST..SOUND_PARRY_LAST; a creature's blow SOUND_CLAW_HIT_FIRST or the next, or
  * SOUND_CLAW_MISS; a creature dying SOUND_DEATH. Watcom's rand() is 0..RAND_MAX_WATCOM. */
 #define SOUND_HIT_FIRST 378

@@ -58,6 +58,11 @@
 #define RECORD_SHOOT_2 25
 #define FOE_CAST_PAUSE 0.5f
 #define FOE_ATTACK_WAIT_FLOOR 0.1f
+/* A creature in reach also needs rand() % SPD < SPD / FOE_SWING_SPEED_DIV + FOE_SWING_SPEED_ADD to swing (ai_creature_think, equip.c 996), rolled once a frame of the original, which we take as
+ * FOE_THINK_HZ a second (its frame rate was not fixed; a Pentium 90 ran the game at some ten to twenty): a speed of 50 swings on one step in four. */
+#define FOE_SWING_SPEED_DIV 8
+#define FOE_SWING_SPEED_ADD 6
+#define FOE_THINK_HZ 20
 
 #define FOES 128
 #define FOE_ACTORS (FOES + 16)

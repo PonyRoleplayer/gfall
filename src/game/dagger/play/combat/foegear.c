@@ -2,6 +2,7 @@
 #include "game/dagger/tables/enemies.h"
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/tables/itemdefs.h"
+#include "game/dagger/play/character/ailments.h"
 
 #define FOE_SLOT 0x10000
 /* monster_init_items' gear tiers: light, medium (a weapon 9..14), heavy. A class enemy is 0 or 1 by a coin. */
@@ -36,7 +37,7 @@ void foe_equipment(int kind, df_u32 container, df_u32 *slots, FighterInfo *fight
 {
     const ObjectInfo *item, *shield;
     ObjectInfo *pack;
-    int tier, i, part, armor, equipped;
+    int tier, i, part, armor, equipped, chance;
     static const int gear_slot[6] = {EQUIP_HEAD,EQUIP_RIGHT_PAULDRON,EQUIP_LEFT_PAULDRON,EQUIP_CUIRASS,EQUIP_GREAVES,EQUIP_BOOTS};
     static const int armor_index[6] = {ARMOR_HELM,ARMOR_RIGHT_PAULDRON,ARMOR_LEFT_PAULDRON,ARMOR_CUIRASS,ARMOR_GREAVES,ARMOR_BOOTS};
     /* The chance of each armour piece, by tier. */
@@ -64,6 +65,22 @@ void foe_equipment(int kind, df_u32 container, df_u32 *slots, FighterInfo *fight
         for (i = 0; i < 6; i++) {
             make(container,ITEM_GROUP_ARMOR,armor_index[i],armor_index[i],-1,g_armor_chance[tier],gear_slot[i]);
         }
+        /* The poison (only once the player is past level 1, and only on the gear made now). */
+        if (character_state()->level >= POISON_WEAPON_LEVEL) {
+            chance = 0;
+            if (ENEMY_IS_CLASS(kind)) { chance = kind == ENEMY_ASSASSIN ? POISON_WEAPON_ASSASSIN : POISON_WEAPON_OTHER; }
+            else if (kind == ENEMY_ORC || kind == ENEMY_CENTAUR || kind == ENEMY_ORC_SERGEANT) { chance = POISON_WEAPON_OTHER; }
+            if (chance && random_range(1,100) < chance) {
+                for (i = 0; i < OBJECTS; i++) {
+                    ObjectInfo *weapon = object_edit(game_state()->object[i].id);
+
+                    if (weapon && weapon->parent == container && (weapon->flags & FOE_SLOT) && ((weapon->flags >> 8) & 31) == EQUIP_RIGHT_HAND) {
+                        weapon->flags |= WEAPON_POISONED | ((df_u32)random_range(0,POISON_WEAPON_KINDS-1) << WEAPON_POISON_SHIFT);
+                        break;
+                    }
+                }
+            }
+        }
         pack->flags |= 2;
     }
     for (i = 0; i < EQUIP_SLOTS; i++) { slots[i] = 0; }
@@ -84,4 +101,18 @@ void foe_equipment(int kind, df_u32 container, df_u32 *slots, FighterInfo *fight
         if (shield && shield->group == 2 && shield_covers(shield->index,part)) { armor -= (shield->index-(ARMOR_SHIELD_FIRST-1))*SHIELD_ARMOR_STEP; }
         fighter->armor[part] = armor > FOE_ARMOR_BARE_OVER ? FOE_ARMOR_BARE : armor < -ARMOR_LIMIT ? -ARMOR_LIMIT : armor;
     }
+}
+
+int weapon_poison(df_u32 weapon)
+{
+    const ObjectInfo *item = object_at(weapon);
+
+    return item && (item->flags & WEAPON_POISONED) ? POISON_FIRST + (int)((item->flags >> WEAPON_POISON_SHIFT) & WEAPON_POISON_MASK) : 0;
+}
+
+void weapon_poison_spend(df_u32 weapon)
+{
+    ObjectInfo *item = object_edit(weapon);
+
+    if (item) { item->flags &= ~((df_u32)WEAPON_POISONED | ((df_u32)WEAPON_POISON_MASK << WEAPON_POISON_SHIFT)); }
 }

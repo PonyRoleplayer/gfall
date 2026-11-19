@@ -39,7 +39,7 @@ typedef struct FoeState {
     const AnimScript *script;
     int kind, type, passive, awake, rate, loaded, restored;
     int team, target, marker_rolled;
-    float retarget, attack_wait, hurt, knock, knock_yaw, think, voice_time;
+    float retarget, attack_wait, hurt, knock, knock_yaw, think, voice_time, swing_clock;
 } FoeState;
 
 static FoeState g_foe[FOE_ACTORS];
@@ -243,6 +243,7 @@ int dungeon_add(Entity *entity, int kind, int passive, int rate)
     career = ENEMY_IS_CLASS(f->kind) ? class_at((f->kind-ENEMY_FIRST_CLASS)%ENEMY_CLASS_COUNT) : 0;
     f->fighter.race = ENEMY_IS_CLASS(f->kind) ? ENEMY_RACE_CLASS : f->kind;
     f->fighter.level = f->def ? f->def->level : character_state()->level;
+    if (f->kind == ENEMY_CITY_WATCH) { f->fighter.level += random_range(WATCH_LEVEL_MIN, WATCH_LEVEL_MAX); }
     f->fighter.metal = f->def ? f->def->metal : 0;
     skill = f->fighter.level*FOE_SKILL_PER_LEVEL+FOE_SKILL_BASE; if (skill > FOE_SKILL_MAX) { skill = FOE_SKILL_MAX; }
     for (j = 0; j < SKILLS; j++) { f->fighter.skill[j] = skill; }
@@ -851,6 +852,8 @@ static void monster_strike(const Scene *scene, const Camera *cam, FoeState *foe,
         }
         if (dealt > 0) {
             total += dealt;
+            /* A poisoned weapon's first wound: the poison on the victim (it may resist), and spent. */
+            if (index >= 0 && weapon_poison(weapon_id)) { poison_apply(target,weapon_poison(weapon_id),0); weapon_poison_spend(weapon_id); }
             if (index >= 0) { enchant_strike_for(weapon_id,source,target,foe->fighter.level,dealt); }
             if (target == TARGET_PLAYER) { enchant_reflect(source,foe_enchant_category(foe->kind),dealt); }
         }
@@ -899,6 +902,20 @@ static void corpse_fall(FoeState *f, const Scene *scene, float dt)
     f->body.gravity = WALK_GRAVITY;
     body_step(&f->body,scene,0,0,dt);
     e->x = f->body.feet[0]; e->y = f->body.feet[1]; e->z = f->body.feet[2];
+}
+
+/* The Speed roll of a melee swing (see FOE_SWING_SPEED_DIV): the steps of the original that fell in this frame, each rolled; 1 when one passed. */
+static int swing_roll(FoeState *f, float dt)
+{
+    int speed;
+
+    speed = f->fighter.attribute[ATTR_SPD];
+    f->swing_clock += dt*FOE_THINK_HZ;
+    while (f->swing_clock >= 1) {
+        f->swing_clock -= 1;
+        if (speed <= 0 || random_range(0,RAND_MAX_WATCOM) % speed < speed/FOE_SWING_SPEED_DIV + FOE_SWING_SPEED_ADD) { f->swing_clock = 0; return 1; }
+    }
+    return 0;
 }
 
 static void foe_step(const Scene *scene, const Camera *cam, int index, float dt)
@@ -974,9 +991,25 @@ static void foe_step(const Scene *scene, const Camera *cam, int index, float dt)
             if (f->knock > KNOCK_SPEED_MAX) { f->knock = KNOCK_SPEED_MAX; }
             speed = f->knock > KNOCK_SPEED_MAX ? KNOCK_SPEED_MAX : f->knock;
             speed = (speed > KNOCK_STEP_MAX ? KNOCK_STEP_MAX : speed)*dt*TICKS_PER_SECOND;
-            foe_move(f,scene,df_sin(f->knock_yaw)*speed,df_cos(f->knock_yaw)*speed,dt);
-            stepped = 1;
+            {
+                float want_x = df_sin(f->knock_yaw)*speed, want_z = df_cos(f->knock_yaw)*speed, was_x = f->body.feet[0], was_z = f->body.feet[2], got_x, got_z;
+
+                foe_move(f,scene,want_x,want_z,dt);
+                got_x = f->body.feet[0]-was_x; got_z = f->body.feet[2]-was_z;
+                stepped = 1;
+                /* Against a wall: half the speed is the damage, and the throw is over. */
+                if (got_x*got_x+got_z*got_z < KNOCK_WALL_RATIO*KNOCK_WALL_RATIO*(want_x*want_x+want_z*want_z)) {
+                    int damage = (int)f->knock/2;
+
+                    f->knock = 0;
+                    e->x = f->body.feet[0]; e->y = f->body.feet[1]; e->z = f->body.feet[2];
+                    hit_foe_from(scene,index,damage,0,TARGET_NONE);
+                    store_health(f);
+                    return;
+                }
+            }
             f->knock -= dt*KNOCK_DECAY_PER_TICK*TICKS_PER_SECOND;
+            if (f->knock <= KNOCK_STOP_SPEED) { f->knock = 0; }
         }
         if (f->hurt <= 0) { f->knock = 0; mem_zero(&f->anim,sizeof(f->anim)); }
     } else if (f->anim.script && !f->anim.ended) {
@@ -1001,7 +1034,9 @@ static void foe_step(const Scene *scene, const Camera *cam, int index, float dt)
             e->act = ENTITY_CAST; e->hold = 1; e->frame = 0;
         } else if (f->attack_wait <= 0 && (distance <= reach ||
             ((foe_type_flags(f->type) & 32) && distance > FOE_RANGED_REACH_MUL*reach))) {
-            if (sight && ai_angle(facing,angle) < FOE_ATTACK_ARC) {
+            if (sight && ai_angle(facing,angle) < FOE_ATTACK_ARC && distance <= FOE_RANGED_REACH_MUL*reach && !swing_roll(f,dt)) {
+                /* The roll failed: it stands this step (monster_set_action 48). */
+            } else if (sight && ai_angle(facing,angle) < FOE_ATTACK_ARC) {
                 anim_start(&f->anim,f->script,distance > FOE_RANGED_REACH_MUL*reach ? ANIM_ACTION_SHOOT : ANIM_ACTION_ATTACK);
                 if (f->voice_time < 2) { foe_voice(f,2); f->voice_time = 2; }
                 /* Newly initialized monsters have reflexes zero in the original. */
