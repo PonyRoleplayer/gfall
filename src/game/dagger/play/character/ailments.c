@@ -21,7 +21,7 @@ static AilmentInfo *allocate(int target)
     msg_set("Too many active ailments."); return 0;
 }
 
-static int vulnerable(int target, int bit, int no_resist)
+static int vulnerable(int target, int bit, int no_resist, int modifier)
 {
     CharacterState who;
     ClassInfo career;
@@ -30,7 +30,7 @@ static int vulnerable(int target, int bit, int no_resist)
         (target == -1 && (career.immunity & bit))) { return 0; }
     /* Preserve disease.c's comparison: it rejects a result of 100, not 0.
      * This differs from the spell bundle's damage-percentage interpretation. */
-    return no_resist || magic_resist(target,RESIST_KIND_DISEASE,bit,0) != RESIST_FULL;
+    return no_resist || magic_resist(target,RESIST_KIND_DISEASE,bit,modifier) != RESIST_FULL;
 }
 
 static int infect(int target, const df_u8 *list, int id, int no_resist)
@@ -38,7 +38,7 @@ static int infect(int target, const df_u8 *list, int id, int no_resist)
     const DiseaseDef *def;
     AilmentInfo *a;
     int i, count;
-    if (!vulnerable(target,EFFECT_BIT_DISEASE,no_resist)) { return 0; }
+    if (!vulnerable(target,EFFECT_BIT_DISEASE,no_resist,character_state()->bio_resist_disease)) { return 0; }
     if (list) {
         for (count = 0; list[count] != LIST_END; count++) { }
         if (!count) { return 0; }
@@ -59,7 +59,7 @@ int poison_apply(int target, int id, int no_resist)
     const df_i16 *def;
     AilmentInfo *a;
     def = poison_def(id);
-    if (!def || !vulnerable(target,EFFECT_BIT_POISON,no_resist)) { return 0; }
+    if (!def || !vulnerable(target,EFFECT_BIT_POISON,no_resist,character_state()->bio_resist_poison)) { return 0; }
     a = allocate(target); if (!a) { return 0; }
     a->id = id; a->left = random_range(def[POISON_DAYS_MIN],def[POISON_DAYS_MAX]); a->delay = random_range(def[POISON_DELAY_MIN],def[POISON_DELAY_MAX]);
     return 1;

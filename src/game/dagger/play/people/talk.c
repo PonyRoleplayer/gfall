@@ -63,7 +63,8 @@ int talk_start(TalkState *talk, const TalkWho *who, const TalkPlayer *player, in
     if (social < SOCIAL_GROUPS) {
         talk->disposition += c->reputation[social];
     }
-    talk->disposition += enchant_reaction(social);
+    /* player_reaction_mod: a group past the fourth is asked as the "all" group (100), and the biography's RR (reputation_mod) is added whichever the group. */
+    talk->disposition += enchant_reaction(social < SOCIAL_GROUPS ? social : SOCIAL_GROUP_ALL) + c->reaction;
     if (magic_artifact_worn(ARTIFACT_TALK_BONUS)) { talk->disposition += c->attribute[ATTR_PER]/5; }
     if (talk->disposition < TALK_REFUSE_BELOW) {
         *text = TALK_TEXT_REFUSES;

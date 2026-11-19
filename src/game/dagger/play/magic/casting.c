@@ -93,6 +93,8 @@ static void apply_area(const SpellDef *s, int caster, int level, float x, float 
         if (dx*dx+dy*dy+dz*dz >= radius*radius || !line_clear(x,y,z,x+dx,y+dy,z+dz)) { continue; }
         if (caster == -1 && i == -1 && s->target == 3) { continue; }
         magic_apply_def(s,s->id,caster,i,level,0);
+        /* spell_area_effect: each creature caught is thrown away from the burst with force radius * AREA_KNOCKBACK_MUL (the player is not). */
+        if (i >= 0) { dungeon_knockback(i,(int)radius*AREA_KNOCKBACK_MUL,(int)radius,df_atan2(dx,dz)); }
     }
 }
 static void visual(int i)

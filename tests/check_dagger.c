@@ -12,6 +12,7 @@
 #include "engine/assets/vfs.h"
 #include "game/dagger/formats/vid.h"
 #include "game/dagger/formats/flc.h"
+#include "game/dagger/formats/biog.h"
 #include "engine/core/mem.h"
 #include "game/dagger/formats/arch3d.h"
 #include "game/dagger/formats/bsa.h"
@@ -3317,6 +3318,29 @@ static void check_vid(void)
     }
 }
 
+/* The biographies' lasting modifiers (RD, MR, TH, RP, FT): each of the eighteen classes' files has some, and every kind is found. */
+static void check_biog_modifiers(void)
+{
+    static Biog biog;
+    int klass, q, a, e, found[6];
+
+    memset(found, 0, sizeof(found));
+    for (klass = 0; klass < 18; klass++) {
+        if (!biog_load(klass, &biog)) { check_expect(0, "biog: a class's questions did not load"); continue; }
+        for (q = 0; q < biog.questions; q++) {
+            for (a = 0; a < biog.question[q].answers; a++) {
+                for (e = 0; e < biog.question[q].answer[a].effects; e++) {
+                    int kind = biog.question[q].answer[a].effect[e].kind;
+
+                    if (kind >= BIOG_RESIST_DISEASE && kind <= BIOG_FATIGUE) { found[kind - BIOG_RESIST_DISEASE]++; }
+                    if (kind >= BIOG_RESIST_DISEASE && kind <= BIOG_FATIGUE && biog.question[q].answer[a].effect[e].a == 0) { check_expect(0, "biog: a lasting modifier read as 0"); }
+                }
+            }
+        }
+    }
+    check_expect(found[0] > 5 && found[1] > 5 && found[2] > 5 && found[3] > 5 && found[4] > 5, "biog: RD, MR, TH, RP or FT was not read from the answers");
+}
+
 /* The princes' FLICs: each of the 16 opens, plays its first frame, 14 more, and the last, a delta back to the first, leaves the picture the first frame was. */
 static void check_flc(void)
 {
@@ -4053,5 +4077,6 @@ int check_dagger(const char *root_in)
     check_ports();
     check_vid();
     check_flc();
+    check_biog_modifiers();
     return check_failed() ? 1 : 0;
 }

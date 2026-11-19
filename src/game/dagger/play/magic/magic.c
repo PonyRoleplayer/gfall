@@ -206,7 +206,8 @@ int magic_resist(int index, int element, int bit, int modifier)
     if (career.weakness & bit) { return RESIST_FULL; }
     if (career.tolerance & bit) { chance >>= 1; }
     if (career.resistance & bit) { chance += chance >> 1; }
-    chance += modifier;
+    /* The biography's MR is added for every target, a creature's roll too: the original reads it as a global (spfx_resist_roll). */
+    chance += modifier+character_state()->bio_resist_magic;
     /* The form of the player counts as the race the original reads: a vampire or a beast has none of a race's gifts. */
     race = index == -1 ? curse_race() : who.race;
     if ((element == ELEMENT_COLD && race == PLAYER_RACE_NORD) || (element == ELEMENT_MAGIC && race == PLAYER_RACE_BRETON)) { chance += RESIST_RACIAL; }

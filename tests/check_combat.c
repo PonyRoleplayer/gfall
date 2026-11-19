@@ -126,6 +126,9 @@ static void rules(void)
     a.skill[20] = 40;
     check_expect(attack_chance(&a,&t,50,5,0,0,0,100) == 60,
                  "byte-matched attack uses the attacker's Dodging");
+    t.to_hit_against = 5;
+    check_expect(attack_chance(&a,&t,50,5,0,0,0,100) == 55, "the biography's TH is taken off the chance to hit the player");
+    t.to_hit_against = 0;
     check_expect(attack_chance(&a,&t,1000,5,0,0,0,100) == 97 &&
                  attack_chance(&a,&t,-1000,5,0,0,0,100) == 3,"hit chance clamps to 3..97");
     check_expect(attack_damage(&a,&t,5,1,4,0,5) == 9,"a downward swing adds four damage");

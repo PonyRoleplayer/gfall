@@ -491,6 +491,14 @@ static void transfer(Wire *w, GameState *s)
 
     if (w->version >= 18) { wire_curse(w, &s->curse); }
 
+    /* The biography's lasting modifiers (schema 19). */
+    if (w->version >= 19) {
+        CharacterState *c = &s->who;
+
+        wire_int(w, &c->bio_resist_disease); wire_int(w, &c->bio_resist_magic); wire_int(w, &c->bio_to_hit_against);
+        wire_int(w, &c->bio_resist_poison); wire_int(w, &c->bio_fatigue);
+    }
+
     /* What an entity the game made keeps in its keep row (schema 17: ENT_KEPT, docs/entities.md, Kept; a row is the whole entity): after everything else, a record a row. */
     if (w->version >= 17) {
         int k;

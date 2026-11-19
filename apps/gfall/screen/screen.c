@@ -466,6 +466,16 @@ int gfall_background(int klass, int question, int answer)
             who->reputation[e->a] += e->b;
         } else if (e->kind == BIOG_REACTION) {
             who->reaction += e->a;
+        } else if (e->kind == BIOG_RESIST_DISEASE) {
+            who->bio_resist_disease += e->a;
+        } else if (e->kind == BIOG_RESIST_MAGIC) {
+            who->bio_resist_magic += e->a;
+        } else if (e->kind == BIOG_TO_HIT_AGAINST) {
+            who->bio_to_hit_against += e->a;
+        } else if (e->kind == BIOG_RESIST_POISON) {
+            who->bio_resist_poison += e->a;
+        } else if (e->kind == BIOG_FATIGUE) {
+            who->bio_fatigue += e->a;
         } else if (e->kind == BIOG_ITEM && who->gifts < 32) {
             who->gift[who->gifts].group = e->a;
             who->gift[who->gifts].index = e->b;

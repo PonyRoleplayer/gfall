@@ -20,6 +20,8 @@
 #define FATIGUE_RUN 88
 #define FATIGUE_CLIMB 22
 #define COLLAPSE_MINUTES 60
+/* The biography's FT: with it set, a minute whose number has these bits clear (one in four) costs no fatigue (fatigue_update, rest.c 117). */
+#define BIO_FATIGUE_SKIP_MASK 3
 
 /* Original breath_update and minute-based fatigue_update. The engine only
  * supplies body/water queries. See docs/game.md. */

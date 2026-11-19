@@ -90,6 +90,16 @@ static void read_effect(BiogAnswer *answer, const char *s, const char *end)
         e->kind = BIOG_REACTION;
         e->a = (short)read_number(&s, end);
         answer->effects++;
+    } else if (end - s > 2 && s[0] == 'R' && (s[1] == 'D' || s[1] == 'P')) {
+        e->kind = s[1] == 'D' ? BIOG_RESIST_DISEASE : BIOG_RESIST_POISON;
+        s += 2;
+        e->a = (short)read_number(&s, end);
+        answer->effects++;
+    } else if (end - s > 2 && ((s[0] == 'M' && s[1] == 'R') || (s[0] == 'T' && s[1] == 'H') || (s[0] == 'F' && s[1] == 'T'))) {
+        e->kind = s[0] == 'M' ? BIOG_RESIST_MAGIC : s[0] == 'T' ? BIOG_TO_HIT_AGAINST : BIOG_FATIGUE;
+        s += 2;
+        e->a = (short)read_number(&s, end);
+        answer->effects++;
     } else if (end - s > 2 && s[0] == 'I' && s[1] == 'T') {
         s += 2;
         e->kind = BIOG_ITEM;

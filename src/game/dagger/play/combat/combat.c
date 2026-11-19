@@ -26,6 +26,7 @@ void fighter_player(FighterInfo *out)
     out->race = curse_race();
     out->level = who->level; out->health = who->health; out->maximum = who->max_health;
     out->flags = game_state()->career.flags;
+    out->to_hit_against = who->bio_to_hit_against;
     for (i = 0; i < ATTRS; i++) { out->attribute[i] = who->attribute[i]; }
     for (i = 0; i < SKILLS; i++) { out->skill[i] = who->skill[i]; }
     /* armor_value_for_part starts at 100; the sheet displays fifths. */
@@ -49,6 +50,7 @@ int attack_chance(const FighterInfo *a, const FighterInfo *t, int skill, int wea
     chance = skill + swing + material;
     if (a->health < a->maximum/LOW_HEALTH_DIVISOR && (a->flags & CLASS_ADRENALINE_RUSH)) { chance += ADRENALINE_CHANCE; }
     if (t->health < t->maximum/LOW_HEALTH_DIVISOR && (t->flags & CLASS_ADRENALINE_RUSH)) { chance -= ADRENALINE_CHANCE; }
+    chance -= t->to_hit_against;
     chance += (a->attribute[ATTR_AGI]-t->attribute[ATTR_AGI])/ATTRIBUTE_HIT_DIVISOR;
     chance += (a->attribute[ATTR_LUC]-t->attribute[ATTR_LUC])/ATTRIBUTE_HIT_DIVISOR;
     chance += t->armor[part >= 0 && part < BODY_PARTS ? part : 0];

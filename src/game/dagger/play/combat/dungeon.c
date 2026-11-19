@@ -430,10 +430,33 @@ static void splash(const Scene *scene, const Entity *target, int green)
     }
 }
 
+/* damage_knockback (damage.c 205): the throw of force and amount (a blow's are damage * KNOCK_FORCE_PER_DAMAGE and * KNOCK_AMOUNT_PER_DAMAGE) against the creature's weight, thrown the way yaw points; a throw already going is not
+ * changed, and one under KNOCK_SPEED_MIN is that. */
+static void foe_knock(FoeState *f, int force, int amount, float yaw)
+{
+    int weight, absorbed;
+
+    weight = foe_weight(f->kind);
+    if (!weight || f->knock) { return; }
+    absorbed = (amount*((force-weight)*256/(force+weight)))/256;
+    f->knock = (float)((force/weight)*(amount-absorbed));
+    if (f->knock < KNOCK_SPEED_MIN) { f->knock = KNOCK_SPEED_MIN; }
+    f->knock_yaw = yaw;
+}
+
+void dungeon_knockback(int index, int force, int amount, float yaw)
+{
+    FoeState *f;
+
+    if (index < 0 || index >= g_count || g_foe[index].entity->dead || !g_foe[index].entity->live) { return; }
+    f = &g_foe[index];
+    foe_knock(f,force,amount,yaw);
+    f->hurt = FOE_HURT_TIME; f->entity->act = ENTITY_HURT; f->entity->hold = 1; f->entity->frame = 0;
+}
+
 static int hit_foe_from(const Scene *scene, int i, int damage, float yaw, int source)
 {
     FoeState *f;
-    int force, weight, absorbed;
     Entity *e;
     df_u32 attacker;
 
@@ -457,14 +480,7 @@ static int hit_foe_from(const Scene *scene, int i, int damage, float yaw, int so
         /* damage_creature_death: a watchman killed is counted by the Brotherhood (guild_count_crime(6, 1)). */
         if (source == TARGET_PLAYER && f->kind == ENEMY_CITY_WATCH) { guild_count_crime(GUILD_COUNT_KILL, 1, game_state()->minutes); }
     } else {
-        weight = foe_weight(f->kind);
-        if (weight && !f->knock) {
-            force = damage*KNOCK_FORCE_PER_DAMAGE;
-            absorbed = (damage*KNOCK_AMOUNT_PER_DAMAGE*((force-weight)*256/(force+weight)))/256;
-            f->knock = (float)((force/weight)*(damage*KNOCK_AMOUNT_PER_DAMAGE-absorbed));
-            if (f->knock < KNOCK_SPEED_MIN) { f->knock = KNOCK_SPEED_MIN; }
-            f->knock_yaw = yaw;
-        }
+        foe_knock(f,damage*KNOCK_FORCE_PER_DAMAGE,damage*KNOCK_AMOUNT_PER_DAMAGE,yaw);
         f->hurt = FOE_HURT_TIME; e->act = ENTITY_HURT; e->hold = 1; e->frame = 0;
         state_event(EVENT_HURT,e->key.thing,attacker,damage);
     }

@@ -200,7 +200,7 @@ static void check_legacy_save(const df_u8 *current, df_u32 size)
     /* Standing, from schema 8, sits between the magic rows and the world: ready, a count, a pair a faction and a pair a region. */
     static df_u8 quest_buf[QUEST_BLOB];
     int quest_bytes = quest_pack(quest_buf, QUEST_BLOB);
-    df_u32 stand = 8u + (game_state()->standing.ready ? (df_u32)faction_total()*8u + REGIONS*8u : 0u) + (REGIONS*16u + 16u) + (ROOMS_MOST*12u + 4u) + (4u + REGIONS*4u) + (MEMBERSHIPS*24u + 16u + 4u + 4u + 20u) + CUSTOM_SPELLS*(4u + 89u) + ENCHANTED_ITEMS*(4u + 4u + 80u) + 4u + 4u + (df_u32)quest_bytes + CURSE_WIRE_BYTES + (df_u32)game_state()->world_count * 18u;
+    df_u32 stand = 8u + (game_state()->standing.ready ? (df_u32)faction_total()*8u + REGIONS*8u : 0u) + (REGIONS*16u + 16u) + (ROOMS_MOST*12u + 4u) + (4u + REGIONS*4u) + (MEMBERSHIPS*24u + 16u + 4u + 4u + 20u) + CUSTOM_SPELLS*(4u + 89u) + ENCHANTED_ITEMS*(4u + 4u + 80u) + 4u + 4u + (df_u32)quest_bytes + CURSE_WIRE_BYTES + BIO_WIRE_BYTES + (df_u32)game_state()->world_count * 18u;
     check_expect(size > 24u+1272u+256u*124u && df_ru32(current+24+1272) == WORLD_ROOT,
                  "fixture locates the documented original object section");
     if (size <= 24u+1272u+256u*124u) { return; }
@@ -270,6 +270,7 @@ static void check_disk(const char *root)
     id = item_create(game_state()->inventory_id, 3, 17, 0);
     state_pose(12.5f, 82.0f, -400.25f, 700, -40);
     character_state()->gold = 731;
+    character_state()->bio_resist_disease = -5; character_state()->bio_resist_magic = -5; character_state()->bio_to_hit_against = 5; character_state()->bio_resist_poison = -10; character_state()->bio_fatigue = 5;
     character_state()->health -= 3;
     options_set_flags(3);
     options_set_mouse(1);

@@ -113,6 +113,8 @@ typedef struct CharacterState {
     int weapon_sound;
     int reputation[10];
     int reaction;
+    /* The biography's lasting modifiers (career_answer_effect, func_00024C88.c): RD resist disease, MR resist magic, TH the chance to be hit (less), RP resist poison, FT fatigue (any drains one minute in four less). */
+    int bio_resist_disease, bio_resist_magic, bio_to_hit_against, bio_resist_poison, bio_fatigue;
     /* Creation gifts, retained until an inventory consumes them. */
     int arrows;
     int gifts;

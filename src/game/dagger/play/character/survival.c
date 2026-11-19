@@ -47,6 +47,7 @@ void survival_minutes(int count, int running, int climbing)
     int delta;
     if (god_mode() || game_state()->mode != GAME_WORLD || character_state()->health <= 0) { return; }
     while (count-- > 0) {
+        if (character_state()->bio_fatigue && !((game_state()->minutes+(df_u32)count) & BIO_FATIGUE_SKIP_MASK)) { continue; }
         delta = FATIGUE_MOVE;
         if (move_in_water() && curse_race() != PLAYER_RACE_ARGONIAN) {
             if (random_range(1,PERCENT) > character_state()->skill[SKILL_SWIMMING]) { delta = FATIGUE_SWIM_FAIL; }

@@ -49,7 +49,7 @@ enum { SPELL_COST_DURATION_CHANCE = 1, SPELL_COST_DURATION_MAGNITUDE, SPELL_COST
 /* The cast animation is CAST_FRAMES frames at BIOS_HZ, done after CAST_TICKS ticks. */
 #define CAST_FRAMES 6
 #define CAST_TICKS 7
-/* spell_area_effect: an area's radius is AREA_STRIKE_RADIUS for a strike (icon ICON_STRIKE and up), else level * AREA_PER_LEVEL + AREA_BASE, times AREA_MUL. The original also knocks back each creature caught by radius * AREA_KNOCKBACK_MUL (not built). */
+/* spell_area_effect: an area's radius is AREA_STRIKE_RADIUS for a strike (icon ICON_STRIKE and up), else level * AREA_PER_LEVEL + AREA_BASE, times AREA_MUL. Each creature caught is also thrown away from the burst, force radius * AREA_KNOCKBACK_MUL and amount radius (dungeon_knockback). */
 #define ICON_STRIKE 250
 #define AREA_STRIKE_RADIUS 168
 #define AREA_PER_LEVEL 4

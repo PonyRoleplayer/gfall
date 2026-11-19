@@ -13,10 +13,10 @@
  *   r2 +5        social group 2's reputation moves by 5
  *   rf48 -3      faction 48's reputation moves by -3
  *   RR +2        every reaction to the player, for good
- *   RP FT RD MR TH   other lasting modifiers (not kept yet)
+ *   RD MR TH RP FT   resist disease, resist magic, the chance to be hit, resist poison, fatigue: lasting modifiers of the player
  *
- * Only what the game can do yet is read: skills, gold, weapons and armour,
- * and reputations. The rest are skipped. Plain C: hostcheck runs it.
+ * Only what the game can do is read: skills, gold, weapons and armour,
+ * reputations and the lasting modifiers. The words are skipped. Plain C: hostcheck runs it.
  */
 
 #define BIOG_QUESTIONS 12
@@ -33,7 +33,12 @@ enum {
     BIOG_ITEM,
     BIOG_SOCIAL,
     BIOG_FACTION,
-    BIOG_REACTION
+    BIOG_REACTION,
+    BIOG_RESIST_DISEASE,
+    BIOG_RESIST_MAGIC,
+    BIOG_TO_HIT_AGAINST,
+    BIOG_RESIST_POISON,
+    BIOG_FATIGUE
 };
 
 typedef struct BiogEffect {

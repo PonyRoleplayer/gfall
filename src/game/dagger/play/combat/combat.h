@@ -94,6 +94,8 @@ typedef struct FighterInfo {
     int race, level, health, maximum, flags, metal, armor[BODY_PARTS];
     int attribute[ATTRS], skill[SKILLS];
     int fatigue, magicka, max_magicka, conditions;
+    /* The player's biography TH: taken off every chance to hit this fighter (qkey.c 437; 0 for a creature). */
+    int to_hit_against;
 } FighterInfo;
 
 void fighter_player(FighterInfo *out);

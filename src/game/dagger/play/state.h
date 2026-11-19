@@ -28,10 +28,12 @@
 #define MINUTES_PER_WEEK 10080u
 #define MONTHS 12
 
-#define STATE_VERSION 18
+#define STATE_VERSION 19
 /* The room a save keeps for the quests (quest.c packs into it). */
 #define QUEST_BLOB 24576
 #define STATE5_WIRE_BYTES 348
+/* The biography's five lasting modifiers a save holds from schema 19, four bytes each. */
+#define BIO_WIRE_BYTES 20
 #define WORLD_ROWS 512
 #define THUMB_W 80
 #define THUMB_H 50
