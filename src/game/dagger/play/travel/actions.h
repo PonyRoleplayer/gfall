@@ -15,7 +15,7 @@
 enum {
     ACTION_TRANSLATE = 1, ACTION_ROTATE = 8, ACTION_CAST = 9, ACTION_MESSAGE = 11, ACTION_RIDDLE = 12, ACTION_TELEPORT = 14, ACTION_SET_LOCK = 15,
     ACTION_DOOR_OPEN = 16, ACTION_DOOR_UNLOCK = 17, ACTION_DOOR_FORCE = 18, ACTION_DOOR_CLOSE = 19, ACTION_DOOR_LOCK = 20,
-    ACTION_HURT = 21, ACTION_HURT_ELEMENT_FIRST = 22, ACTION_HURT_ELEMENT_LAST = 25, ACTION_POISON = 26, ACTION_DISEASE = 27, ACTION_DRAIN_MAGICKA = 28, ACTION_SOUND = 30
+    ACTION_HURT = 21, ACTION_HURT_ELEMENT_FIRST = 22, ACTION_HURT_ELEMENT_LAST = 25, ACTION_POISON = 26, ACTION_DISEASE = 27, ACTION_DRAIN_MAGICKA = 28, ACTION_SOUND = 30, ACTION_TRESPASS = 99
 };
 enum { LINK_EVENT_STAND = 1, LINK_EVENT_USE = 2, LINK_EVENT_WALK_INTO = 3, LINK_EVENT_LOCK_FAIL = 4, LINK_EVENT_STRIKE = 5, LINK_EVENT_SPELL = 6, LINK_EVENT_LOCK_PICKED = 7 };
 #define TRIGGER_MASK 15
@@ -41,6 +41,10 @@ typedef struct ActionInfo {
 
 int actions_open(const Scene *scene, const ActionInfo *actions, int count);
 void actions_close(void);
+/* Action 99 (run_0006480F.c 341..346): sets the dungeon's trespass level to the link's axis (5 ends it, 10 and more start it), the castles' guards and courtiers sleeping on their markers (action byte 99) act
+ * only while it is over TRESPASS_LEVEL_FREE (player_frame_update: D_0019628C > 5). Reset when a dungeon opens. */
+#define TRESPASS_LEVEL_FREE 5
+int actions_trespassing(void);
 int actions_trigger(const Scene *scene, int model, int event);
 int actions_accepts(int trigger, int event);
 void actions_step(float seconds);

@@ -66,6 +66,10 @@ static int answer_matches(const char *answers, const char *answer)
     return 0;
 }
 
+/* The dungeon's trespass level (action 99): 0 when none was set. */
+static int g_trespass_level;
+int actions_trespassing(void) { return g_trespass_level > TRESPASS_LEVEL_FREE; }
+
 static void answer(const char *text)
 {
     int next, index;
@@ -148,6 +152,10 @@ static void effect(Link *link, float seconds)
             else { disease_infect(-1,random_range(0,DISEASES-1),0); }
         }
         break;
+    case ACTION_TRESPASS:
+        if (!link->begun) { g_trespass_level = a->axis; }
+        if (a->sound && !link->begun && m) { sound_at(a->sound,m->x0,m->y0,m->z0); }
+        break;
     case ACTION_SOUND:
         if (a->sound && m) { sound_at(a->sound,m->x0,m->y0,m->z0); }
         break;
@@ -200,7 +208,7 @@ static int use(const Scene *scene, const Usable *usable, int index)
 
 void actions_close(void)
 {
-    g_count = 0; g_scene = 0; g_question = g_deferred = -1;
+    g_count = 0; g_scene = 0; g_question = g_deferred = -1; g_trespass_level = 0;
     interact_set_handler(0);
 }
 

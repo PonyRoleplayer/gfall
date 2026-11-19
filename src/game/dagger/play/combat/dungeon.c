@@ -38,6 +38,8 @@ typedef struct FoeState {
     Anim anim;
     const AnimScript *script;
     int kind, type, passive, awake, rate, loaded, restored;
+    /* A creature the level's markers keep standing (action byte 99: a castle's guard or courtier): idle until the player trespasses or one of them is hurt (wait_state, equip.c 946). */
+    int sleeper;
     int team, target, marker_rolled;
     float retarget, attack_wait, hurt, knock, knock_yaw, think, voice_time, swing_clock;
 } FoeState;
@@ -234,7 +236,7 @@ int dungeon_add(Entity *entity, int kind, int passive, int rate)
     if (index == FOE_ACTORS) { return -1; }
     if (index == g_count) { g_count++; }
     f = &g_foe[index]; mem_zero(f,sizeof(*f)); f->entity = entity;
-    f->kind = kind; f->passive = passive; f->rate = rate > 0 ? rate : FOE_RATE_NORMAL;
+    f->kind = kind; f->passive = passive; f->sleeper = passive != 0; f->rate = rate > 0 ? rate : FOE_RATE_NORMAL;
     f->target = TARGET_NONE; f->team = TEAM_HOSTILE;
     f->script = foe_script(f->kind);
     f->type = foe_texture_kind(f->kind);
@@ -260,7 +262,7 @@ int dungeon_add(Entity *entity, int kind, int passive, int rate)
     if (row && row->game[0] == FOE_ROW_TAG) {
         f->fighter.health = (int)df_ru32(row->game+FOE_ROW_HEALTH); f->fighter.maximum = (int)df_ru32(row->game+FOE_ROW_MAXIMUM);
         f->awake = (row->game[FOE_ROW_FLAGS] & FOE_AWAKE) != 0;
-        f->passive = (row->game[FOE_ROW_FLAGS] & FOE_PASSIVE) != 0;
+        f->passive = (row->game[FOE_ROW_FLAGS] & FOE_PASSIVE) != 0; f->sleeper = f->passive;
         f->marker_rolled = (row->game[FOE_ROW_FLAGS] & FOE_MARKER_ROLLED) != 0;
         if (row->game[FOE_ROW_FLAGS] & FOE_ALLIED) { f->team = TEAM_PLAYER; g_allies++; }
         f->mind.blocked = row->game[FOE_ROW_BLOCKED]; f->mind.direction = row->game[FOE_ROW_NAV] & FOE_ROW_NAV_DIR_MASK;
@@ -454,6 +456,15 @@ void dungeon_knockback(int index, int force, int amount, float yaw)
     f->hurt = FOE_HURT_TIME; f->entity->act = ENTITY_HURT; f->entity->hold = 1; f->entity->frame = 0;
 }
 
+static void wake_sleepers(void)
+{
+    int k;
+
+    for (k = 0; k < g_count; k++) {
+        if (g_foe[k].sleeper && !g_foe[k].entity->dead) { g_foe[k].passive = 0; g_foe[k].awake = 1; g_foe[k].sleeper = 0; }
+    }
+}
+
 static int hit_foe_from(const Scene *scene, int i, int damage, float yaw, int source)
 {
     FoeState *f;
@@ -464,6 +475,8 @@ static int hit_foe_from(const Scene *scene, int i, int damage, float yaw, int so
     f = &g_foe[i]; e = f->entity;
     damage = magic_absorb(i,damage); if (!damage) { return 0; }
     f->fighter.health -= damage; f->awake = 1; f->passive = 0;
+    /* monster_wake_all: a sleeper hurt wakes every one in the place (the original; ours woke only the one). */
+    if (f->sleeper) { wake_sleepers(); }
     f->mind.detected = f->mind.encountered = 1; f->mind.give_up = FOE_GIVE_UP_HURT;
     attacker = source == TARGET_PLAYER ? game_state()->entity_id : 0;
     /* damage_spawn_splash: the second blood picture is the undead's, the others bleed the first. */
@@ -553,7 +566,7 @@ void dungeon_set_pacified(int index, int passive)
 
     if (index < 0 || index >= g_count) { return; }
     f = &g_foe[index];
-    f->passive = passive != 0;
+    f->passive = passive != 0; f->sleeper = 0;
     if (f->passive) {
         f->awake = 0; f->target = TARGET_NONE; f->entity->moving = 0;
         f->entity->act = 0; f->entity->hold = 0;
@@ -957,7 +970,7 @@ static void foe_step(const Scene *scene, const Camera *cam, int index, float dt)
         foe_voice(f,f->awake ? (distance < FOE_VOICE_NEAR && random_range(0,3) ? 2 : 1) : 0);
         f->voice_time = (float)random_range(FOE_VOICE_MIN_MS,FOE_VOICE_MAX_MS)/1000;
     }
-    if (f->passive) { return; }
+    if (f->passive && !(f->sleeper && actions_trespassing())) { return; }
     /* A sleeper looks only when its think timer is due: the sight ray gathers every triangle between it and the player, too much to do for each sleeper each frame. */
     if (!f->awake) {
         f->think -= dt;

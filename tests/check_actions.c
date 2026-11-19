@@ -118,6 +118,14 @@ void check_actions(void)
     check_expect(actions_trigger(&g_scene,0,2) && character_state()->magicka == magicka,
                  "god mode protects magicka from a dungeon drain");
     god_set(0); actions_close();
+    /* Action 99 sets the trespass level to its axis: 10 starts it, 5 ends it, and closing the dungeon forgets it. */
+    fixture(); g_action[0].kind = ACTION_TRESPASS; g_action[0].axis = 10; g_action[0].next = -1; g_action[0].sound = 0;
+    actions_open(&g_scene,g_action,1);
+    check_expect(!actions_trespassing(), "action 99: trespass before any trigger");
+    actions_trigger(&g_scene,0,2); actions_step(0.1f);
+    check_expect(actions_trespassing(), "action 99 with axis 10 did not start the trespass");
+    actions_close();
+    check_expect(!actions_trespassing(), "action 99: a closed dungeon kept its trespass");
     fixture(); g_action[0].kind = 12; g_action[0].sound = 1; g_action[0].next = 1;
     g_action[1].next = -1;
     set_word_variants(0); set_words(words);
