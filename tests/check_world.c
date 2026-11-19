@@ -545,6 +545,13 @@ void check_world(const char *root)
             talk_shot("tavern0");
             click_at(160, 82);
             check_expect(possessions_state()->page == VIEW_NONE, "people: Goodbye did not close the tavern's panel");
+            /* A coven's menu (DAED00I0): Talk, Summon, Quest and Exit; a click between the buttons leaves it be, Exit leaves. */
+            check_expect(possessions_service(SERVICE_COVEN) && possessions_state()->service == SERVICE_COVEN, "people: the coven's menu did not open");
+            talk_shot("coven0");
+            click_at(160, 79);
+            check_expect(possessions_state()->page == VIEW_SERVICE, "people: a click between the coven's buttons closed its menu");
+            click_at(160, 87);
+            check_expect(possessions_state()->page == VIEW_NONE, "people: Exit did not close the coven's menu");
             /* A guild hall's menu: Join is shut to a member; Exit leaves. A yes or no and a number go to their callbacks. */
             check_expect(possessions_guild(1, "Training") && possessions_state()->service == SERVICE_GUILD, "people: the hall's menu did not open");
             talk_shot("guild0");

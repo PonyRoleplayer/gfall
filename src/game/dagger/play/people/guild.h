@@ -100,6 +100,10 @@ enum { GUILD_MSG_REFUSED = 0, GUILD_MSG_REPUTATION = 1, GUILD_MSG_ASK = 2, GUILD
 #define DAEDRA_ANY_WEATHER 100
 #define DAEDRA_SERVANTS 5
 /* The covens (faction type 8, factions 419..432) summon the prince the day's seed draws, 1..DAEDRA_PRINCES but never PRINCE_HIRCINE; Glenmoril (419) only ever Hircine (daedra_summon, func_000202C5.c). */
+/* A coven's quests are the files that begin with this letter (coven_menu_quest: quest_pick_file('Q', 'Q', '0', 'C', level); Q0C00Y01 and the like). */
+#define COVEN_QUEST_LETTER 'Q'
+/* The faction type of a witches' coven (npc_click_service: its people open the coven's menu). */
+#define FACTION_TYPE_COVEN 8
 #define FACTION_COVEN_FIRST 419
 #define FACTION_COVEN_LAST 432
 #define FACTION_GLENMORIL 419
@@ -265,6 +269,7 @@ enum { DAEDRA_FAILED, DAEDRA_QUEST, DAEDRA_FOE };
  * none (Sheogorath replacing Malacath keeps his letter: the original's quirk); a later one is a creature of kind *kind, HOSTILE (the original makes it an ally, then sets its team to the
  * foes'), waiting in daedra_servant_take. */
 int daedra_summon(int prince, int letter, int weather, int *kind, char *quest);
+/* quest: with DAEDRA_QUEST the quest file's name; with DAEDRA_FOE only quest[0], the code of the prince that came (his animation is prince_flc(quest[0])). */
 /* The servant a summoning called, once: its creature kind, or -1 for none. The frame puts it beside the player as a foe. */
 int daedra_servant_take(void);
 /* The animation of the prince a quest code (the first letter of his quest, in either case) belongs to: AZURA.FLC and the like; 0 when the letter is no prince's (quest_offer_prompt's strchr in prince_quest_codes). */

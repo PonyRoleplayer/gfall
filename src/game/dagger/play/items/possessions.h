@@ -91,8 +91,9 @@ int possessions_talk(const TalkWho *who, const TalkPlayer *player, int witnessed
  * buttons. SERVICE_REPAIR is REPR01I0 (Repair item, Talk, Sell, Exit); the other two are GNRC01I0 (Talk, the service row,
  * Exit) with the service's word, "Banking" or "Sell". What each button does is the game's: the actions below.
  */
-enum { SERVICE_REPAIR = 1, SERVICE_BANK, SERVICE_SELL, SERVICE_GUILD, SERVICE_TAVERN };
-enum { SERVICE_TALK, SERVICE_DO, SERVICE_REPAIR_ITEM, SERVICE_SELL_ITEMS, SERVICE_JOIN, SERVICE_ROOM, SERVICE_FOOD };
+/* SERVICE_COVEN is a witches' coven's menu (coven_menu_open: DAED00I0.IMG, Talk, Summon, Quest, Exit; the buttons at (99,51), (99,60) and (99,69), nine pixels each). */
+enum { SERVICE_REPAIR = 1, SERVICE_BANK, SERVICE_SELL, SERVICE_GUILD, SERVICE_TAVERN, SERVICE_COVEN };
+enum { SERVICE_TALK, SERVICE_DO, SERVICE_REPAIR_ITEM, SERVICE_SELL_ITEMS, SERVICE_JOIN, SERVICE_ROOM, SERVICE_FOOD, SERVICE_SUMMON, SERVICE_QUEST };
 int possessions_service(int kind);
 /* A guild hall's menu (guild_menu, GILD0xI0.IMG): Join (not for a member), Talk, the service row carrying label, Exit. */
 int possessions_guild(int member, const char *label);

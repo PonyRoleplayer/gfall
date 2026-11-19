@@ -696,6 +696,8 @@ int daedra_summon(int prince, int letter, int weather, int *kind, char *quest)
     if (guilds_state()->daedra_met & (1u << prince)) {
         *kind = g_daedra_kind[random_range(0, DAEDRA_SERVANTS - 1)];
         g_servant = *kind;
+        /* The prince whose animation plays is the one summoned (Sheogorath's when he barged in), though the words name the day's: his code goes in quest[0] (prince_flc). */
+        if (quest) { quest[0] = g_prince_codes[g_prince_index[prince]]; quest[1] = 0; }
         return DAEDRA_FOE;
     }
     guilds_state()->daedra_met |= 1u << prince;

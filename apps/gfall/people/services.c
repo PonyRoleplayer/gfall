@@ -68,6 +68,7 @@ int gfall_standing_membership(int bits)
 /* What each button of a panel does (repair_menu_talk, repair_menu_sell, shop_open_repair, bank_open, service_menu_sell). */
 static void hall_act(int what);
 static void inn_act(int what);
+static void coven_act(int what);
 
 void gfall_service_act(int what)
 {
@@ -80,6 +81,10 @@ void gfall_service_act(int what)
 
     if (possessions_state()->service == SERVICE_GUILD) {
         hall_act(what);
+        return;
+    }
+    if (possessions_state()->service == SERVICE_COVEN) {
+        coven_act(what);
         return;
     }
 
@@ -449,7 +454,7 @@ static void hall_daedra_answer(int yes)
     if (result == DAEDRA_FAILED) { possessions_message(line, 0); }
     else if (result == DAEDRA_QUEST) { quest_begin(quest, g_daedra_prince); }
     /* A second success: the prince's animation says it (text 482) and his servant is put beside the player when it ends. */
-    else if (!movie_scene(prince_flc_of(g_daedra_prince), line, 0, 0)) { possessions_message(line, 0); }
+    else if (!movie_scene(prince_flc(quest[0]), line, 0, 0)) { possessions_message(line, 0); }
 }
 
 static void hall_daedra(void)
@@ -790,6 +795,28 @@ void gfall_hall_enter(int person_faction, int hall_faction)
     }
     m = guild_find_faction(hall_faction);
     possessions_guild(m != 0, label);
+}
+
+/* The coven's menu (coven_menu_open, coven_menu_frame, click.c 796..: DAED00I0.IMG): Talk, Summon (daedra_summon of this coven: the day's prince for every coven, Hircine at Glenmoril) and Quest (coven_menu_quest:
+ * quest_pick_file('Q', 'Q', '0', 'C', the player's level), a quest of the coven for a level, whoever the player is). The covens have no ranks and no membership. */
+void gfall_coven_enter(int coven_faction)
+{
+    g_hall.faction = coven_faction;
+    g_hall.person = coven_faction;
+    g_hall.kind = -1;
+    if (!possessions_service(SERVICE_COVEN)) { gfall_start_talk(); }
+}
+
+static void coven_act(int what)
+{
+    char name[9];
+
+    if (what == SERVICE_TALK) { gfall_start_talk(); return; }
+    if (what == SERVICE_SUMMON) { hall_daedra(); return; }
+    if (what == SERVICE_QUEST && !quest_person_busy((int)gfall_people_id())) {
+        quest_set_questor((int)gfall_people_id(), g_hall.person, gfall_people_name(), town_name());
+        if (quest_pick(COVEN_QUEST_LETTER, COVEN_QUEST_LETTER, 'C', character_state()->level, name)) { quest_begin(name, g_hall.person); }
+    }
 }
 
 void seam_hall_enter(int person_faction, int hall_faction)

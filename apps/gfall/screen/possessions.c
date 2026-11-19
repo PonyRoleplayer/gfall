@@ -869,12 +869,12 @@ static void paint_service(void)
 
     view = possessions_state();
     gfall_screen_cover_screen(0, 0, 0);
-    if (img_load(view->service == SERVICE_REPAIR ? "REPR01I0.IMG" : view->service == SERVICE_TAVERN ? "TVRN00I0.IMG" : view->service == SERVICE_GUILD ? guild_picture(view->service_member) : "GNRC01I0.IMG", &panel)) {
+    if (img_load(view->service == SERVICE_REPAIR ? "REPR01I0.IMG" : view->service == SERVICE_TAVERN ? "TVRN00I0.IMG" : view->service == SERVICE_COVEN ? "DAED00I0.IMG" : view->service == SERVICE_GUILD ? guild_picture(view->service_member) : "GNRC01I0.IMG", &panel)) {
         gfall_screen_blit_ix(panel.x, panel.y, panel.pixels, panel.width, panel.height, 0);
     }
     if (view->service == SERVICE_GUILD) {
         gfall_screen_centered_text(159, 71, view->service_label, 145);
-    } else if (view->service != SERVICE_REPAIR && view->service != SERVICE_TAVERN) {
+    } else if (view->service != SERVICE_REPAIR && view->service != SERVICE_TAVERN && view->service != SERVICE_COVEN) {
         gfall_screen_centered_text(159, 70, view->service == SERVICE_BANK ? "Banking" : "Sell", 145);
     }
 }

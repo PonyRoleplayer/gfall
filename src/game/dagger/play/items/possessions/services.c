@@ -284,7 +284,7 @@ void possessions_set_service(void (*act)(int what)) { g_service_act = act; }
 
 int possessions_service(int kind)
 {
-    if (possessions_view.page || kind < SERVICE_REPAIR || kind > SERVICE_TAVERN || !possessions_open(VIEW_SERVICE, 0)) { return 0; }
+    if (possessions_view.page || kind < SERVICE_REPAIR || kind > SERVICE_COVEN || !possessions_open(VIEW_SERVICE, 0)) { return 0; }
     g_service_kind = kind;
     possessions_view.service = kind;
     return 1;
@@ -311,6 +311,11 @@ static int service_button(int x, int y)
         if (possessions_hit(x,y,99,60,220,68)) { return SERVICE_TALK; }
         if (possessions_hit(x,y,99,69,220,77)) { return SERVICE_FOOD; }
         return possessions_hit(x,y,99,78,220,86) ? -1 : -2;
+    } else if (g_service_kind == SERVICE_COVEN) {
+        /* coven_menu_buttons: Talk, Summon, Quest, Exit. */
+        if (possessions_hit(x,y,99,51,220,59)) { return SERVICE_TALK; }
+        if (possessions_hit(x,y,99,60,220,68)) { return SERVICE_SUMMON; }
+        if (possessions_hit(x,y,99,69,220,77)) { return SERVICE_QUEST; }
     } else if (g_service_kind == SERVICE_GUILD) {
         /* guild_menu_buttons: Join (a member cannot), Talk, the service, Exit. */
         if (possessions_hit(x,y,99,51,220,59) && !possessions_view.service_member) { return SERVICE_JOIN; }

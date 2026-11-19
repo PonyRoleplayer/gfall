@@ -642,6 +642,12 @@ int gfall_talk_used(const Usable *u, int mode, float dist, const Camera *cam)
     if (dist > 256.0f) {
         return 1;
     }
+    /* npc_click_service: a person of a coven (a faction of type 8) opens the coven's menu, after the quest events of the click. */
+    if (f && f->type == FACTION_TYPE_COVEN) {
+        if (quest_talk((int)g_met.who, g_met.faction)) { return 1; }
+        gfall_coven_enter(what);
+        return 1;
+    }
     kind = 0;
     merchant = seam_interior_shopkeeper(cam, what, u->tag);
     if (travel_building(&type, &faction, &quality, &place)) {

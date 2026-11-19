@@ -259,5 +259,18 @@ void check_guild(void)
         for (n = 0; n < 300 && b == 0; n++) { guilds_state()->daedra_met = 0; b = daedra_summon(1, PRINCE_LETTER_PLAIN, 0, &kind, quest) == DAEDRA_QUEST; }
         check_expect(b && !strcmp(quest, "V0C00Y00"), "daedra: Clavicus Vile's file is not V0C00Y00");
         guilds_state()->daedra_met = 0;
+        /* A later success names the prince that came by his code, so his animation is his: Clavicus's (V) unless Sheogorath (6) barged in. */
+        {
+            int saw_clavicus = 0, saw_sheogorath = 0;
+
+            for (n = 0; n < 600; n++) {
+                guilds_state()->daedra_met = 0xFFFFFFFFu;
+                quest[0] = 0;
+                if (daedra_summon(1, PRINCE_LETTER_PLAIN, 0, &kind, quest) == DAEDRA_FOE) { saw_clavicus += quest[0] == 'V'; saw_sheogorath += quest[0] == '6'; }
+            }
+            check_expect(saw_clavicus > 100 && saw_sheogorath > 10 && !strcmp(prince_flc('v'), "CLAVICUS.FLC") && !strcmp(prince_flc('6'), "SHEOGRTH.FLC") && !prince_flc('S') && !strcmp(prince_flc_of(16), "AZURA.FLC"),
+                         "daedra: a servant's prince is not named by his code, or a code does not give his animation");
+        }
+        guilds_state()->daedra_met = 0;
     }
 }
