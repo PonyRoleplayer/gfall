@@ -101,8 +101,9 @@ void glide_polygon(const DrawVert *v, int n);
 void glide_line(const DrawVert *a, const DrawVert *b);
 int glide_palette(const df_u8 *r, const df_u8 *g, const df_u8 *b);
 /*
- * A picture's palette on TMU0 (pic.c): table is 0xRRGGBB, id its slot,
- * sent only when another palette is on. glide_level_palette puts the
+ * A picture's palette on TMU0 (pic.c): table is 0xRRGGBB, id its key
+ * (a slot and its version: the same key, the same table), sent only
+ * when another palette is on. glide_level_palette puts the
  * level's back, only if it was replaced; draw_frame calls it after the
  * game's overlays.
  */

@@ -25,6 +25,8 @@ typedef struct Voice {
     float walled;
     /* 1 once a ray has answered for it (sound_voice_walled). */
     int checked;
+    /* 1: the stream's voice (sound_stream_open), mixed no further than what was pushed, never taken. */
+    int stream;
 } Voice;
 
 static Voice g_voice[SOUND_VOICES];
@@ -43,6 +45,31 @@ static float g_rz;
 static int g_muffle = SOUND_MUFFLE;
 /* A voice goes behind a wall or comes out from it over this long, so its gain does not click. */
 #define MUFFLE_SECS 0.25f
+/* sound_set_mix_rate was called: hostcheck mixes by hand with no card. */
+static int g_by_hand;
+
+/*
+ * The stream: a ring of signed samples, mixed as a looping clip over the
+ * whole ring (so mix_voice wraps it) but never past what was pushed. The
+ * counts run from the open and are compared by difference, so they may
+ * wrap. g_mixed can pass g_pushed by a sample or two when the stream's
+ * rate is above the mix's (a step skips samples): those are skipped
+ * when they come, as they would have been.
+ */
+#define RING_MASK (SOUND_STREAM_BYTES - 1)
+/* Unsigned 8-bit's middle is 128, signed 0: flipping the top bit is the change. */
+#define STREAM_SIGN 0x80
+/*
+ * Pushed samples one mix call looks at, at most: (avail << 16) stays in
+ * 31 bits, and a call never needs more than a refill's worth.
+ */
+#define STREAM_MIX_MAX 32767
+/* A level above any voice's: take() then gives a free voice or the quietest. */
+#define TAKE_ANY 1.0e30f
+static signed char g_ring[SOUND_STREAM_BYTES];
+static SoundClip g_ring_clip;
+static df_u32 g_pushed;
+static df_u32 g_mixed;
 
 static float sq_root(float v)
 {
@@ -141,6 +168,7 @@ void sound_set_mix_rate(int rate)
 {
     if (rate > 0) {
         g_mix_rate = rate;
+        g_by_hand = 1;
     }
 }
 
@@ -243,6 +271,10 @@ static Voice *take(float level)
         if (!g_voice[i].mix.on) {
             return &g_voice[i];
         }
+        /* The stream's voice is the movie's: no effect takes it. */
+        if (g_voice[i].stream) {
+            continue;
+        }
         if (!quiet || g_voice[i].level < quiet->level) {
             quiet = &g_voice[i];
         }
@@ -266,6 +298,7 @@ static int start(Voice *v, const SoundClip *clip, int flags)
     v->mix.step = g_mix_rate > 0 ? (df_u32)(((df_u32)clip->rate << 16) / (df_u32)g_mix_rate) : MIX_ONE;
     v->mix.loop = (flags & SOUND_LOOP) ? 1 : 0;
     v->mix.on = 1;
+    v->stream = 0;
     /* A taken voice must not hand its wall on to the new sound. */
     v->muffled = 0.0f;
     v->walled = 0.0f;
@@ -350,6 +383,7 @@ void sound_stop(int handle)
     if (v) {
         v->mix.on = 0;
         v->handle = 0;
+        v->stream = 0;
     }
 }
 
@@ -387,6 +421,7 @@ void sound_stop_all(void)
     for (i = 0; i < SOUND_VOICES; i++) {
         g_voice[i].mix.on = 0;
         g_voice[i].handle = 0;
+        g_voice[i].stream = 0;
     }
 }
 
@@ -402,6 +437,111 @@ int sound_busy(void)
     return n;
 }
 
+static Voice *stream_of(int handle)
+{
+    Voice *v;
+
+    v = voice_of(handle);
+    return v && v->stream ? v : 0;
+}
+
+int sound_stream_open(int rate)
+{
+    Voice *v;
+    int i;
+
+    if (!g_on || rate < 1 || rate > SOUND_STREAM_RATE_MAX || (audio_mode() == AUDIO_NONE && !g_by_hand)) {
+        return 0;
+    }
+    for (i = 0; i < SOUND_VOICES; i++) {
+        if (g_voice[i].mix.on && g_voice[i].stream) {
+            return 0;
+        }
+    }
+    /* Whatever is playing: a free voice, else the quietest effect's. */
+    v = take(TAKE_ANY);
+    if (!v) {
+        return 0;
+    }
+    g_ring_clip.data = g_ring;
+    g_ring_clip.frames = SOUND_STREAM_BYTES;
+    g_ring_clip.rate = (df_u32)rate;
+    g_pushed = 0;
+    g_mixed = 0;
+    v->positional = 0;
+    v->pan = 0.0f;
+    v->volume = 1.0f;
+    start(v, &g_ring_clip, SOUND_LOOP);
+    v->stream = 1;
+    return v->handle;
+}
+
+int sound_stream_push(int handle, const df_u8 *data, int bytes)
+{
+    df_i32 queued;
+    df_u32 room;
+    int n;
+    int i;
+
+    if (!stream_of(handle) || !data || bytes < 1) {
+        return 0;
+    }
+    /* One short of the whole ring: a full ring and an empty one never look alike. */
+    queued = (df_i32)(g_pushed - g_mixed);
+    room = (df_u32)(SOUND_STREAM_BYTES - 1) - (queued > 0 ? (df_u32)queued : 0u);
+    n = (df_u32)bytes < room ? bytes : (int)room;
+    for (i = 0; i < n; i++) {
+        g_ring[(g_pushed + (df_u32)i) & RING_MASK] = (signed char)(data[i] ^ STREAM_SIGN);
+    }
+    g_pushed += (df_u32)n;
+    return n;
+}
+
+int sound_stream_queued(int handle)
+{
+    df_i32 queued;
+
+    if (!stream_of(handle)) {
+        return -1;
+    }
+    queued = (df_i32)(g_pushed - g_mixed);
+    return queued > 0 ? (int)queued : 0;
+}
+
+void sound_stream_close(int handle)
+{
+    if (stream_of(handle)) {
+        sound_stop(handle);
+    }
+}
+
+/*
+ * The stream's frames: as many as the pushed samples cover, the rest
+ * silence. Output frame k reads the sample (frac + k * step) >> 16 past
+ * pos, so n frames read only pushed samples when that is under avail
+ * for k = n - 1. The ring is the clip and loops, so mix_voice wraps it.
+ */
+static void stream_mix(Voice *v, df_i16 *dst, int frames)
+{
+    df_i32 queued;
+    df_u32 avail;
+    df_u32 n;
+    df_u32 pos;
+
+    queued = (df_i32)(g_pushed - g_mixed);
+    if (queued <= 0 || v->mix.step == 0) {
+        return;
+    }
+    avail = queued > STREAM_MIX_MAX ? STREAM_MIX_MAX : (df_u32)queued;
+    n = ((avail << 16) - 1u - v->mix.frac) / v->mix.step + 1u;
+    if (n > (df_u32)frames) {
+        n = (df_u32)frames;
+    }
+    pos = v->mix.pos;
+    mix_voice(&v->mix, dst, (int)n);
+    g_mixed += (v->mix.pos - pos) & RING_MASK;
+}
+
 void sound_mix(df_i16 *dst, int frames)
 {
     int i;
@@ -411,6 +551,10 @@ void sound_mix(df_i16 *dst, int frames)
 
         v = &g_voice[i];
         if (!v->mix.on) {
+            continue;
+        }
+        if (v->stream) {
+            stream_mix(v, dst, frames);
             continue;
         }
         mix_voice(&v->mix, dst, frames);

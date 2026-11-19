@@ -96,6 +96,17 @@ int pic_box_565(const df_u8 *src, int sw, int sh, int stride, df_u16 *out, int w
  * again, 0 when nothing changed; -1 for no such P_8 picture.
  */
 int pic_update(int id, const df_u8 *pixels);
+/*
+ * A new palette for a P_8 picture (768 bytes, RGB, 8 bits a channel):
+ * a movie's colours changing between frames. Only the table changes;
+ * the card gets it once, at the picture's next draw, and the tiles stay
+ * as they are (pic_update goes on working). A cutout's keeps the key
+ * rules; a cutout on a card without the chroma key carries its colours
+ * in its 1555 texels, so each of its tiles on the card is widened and
+ * sent again. The tiles sent again (0 but for that cutout); -1 for no
+ * such P_8 picture, or no palette slot free (the old one is kept).
+ */
+int pic_set_palette(int id, const df_u8 *rgb);
 void pic_free(int id);
 /* Its size; 0 for an id not loaded. */
 int pic_size(int id, int *w, int *h);
@@ -125,7 +136,10 @@ typedef struct PicOps {
     void (*release)(df_u32 handle);
     /*
      * A draw: its state on (how: PIC_OPAQUE, PIC_KEYED, PIC_ALPHA), its
-     * palette (id 0..PIC_PALETTES-1; not for PIC_ALPHA), quads, off.
+     * palette (not for PIC_ALPHA), quads, off. The palette's id is a key,
+     * 0 or more: its slot (0..PIC_PALETTES-1) and the slot's version, so
+     * the same key is the same table, and the card need send a table only
+     * when the key is not the one it holds.
      */
     void (*begin)(int how, int alpha);
     void (*palette)(int id, const df_u32 *table);

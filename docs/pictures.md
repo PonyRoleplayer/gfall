@@ -6,6 +6,7 @@ A game's 2D pictures, such as Daggerfall's IMG and CIF screens, the weapon's swi
 
 - `pic_load(pixels, w, h, rgb, cutout)` returns an id, or 0 when nothing is free. `pixels` is `w × h` palette indices (each side 1..1024), row 0 at the top. `rgb` is the picture's own 768-byte palette. The engine copies both, so the game may free its own.
 - `pic_free(id)` and `pic_size(id, &w, &h)`.
+- `pic_update(id, pixels)` and `pic_set_palette(id, rgb)`: new pixels, or new colours, for a P_8 picture already loaded (below).
 - `pic_draw(id, x, top, w, h)` draws the whole picture into a rectangle `w × h` whose top left is `x, top`.
 - `pic_draw_part(id, sx, sy, sw, sh, x, top, w, h, alpha)` draws a part of it, at an opacity of 0..255: a frame of a sheet, a strip of the compass, a fade.
 - `pic_stats` gives the pictures loaded, the tiles on the card, their bytes and the room.
@@ -67,6 +68,14 @@ The game's calls stay as they were. A new public call in `glide.c` must open wit
 
 `pic_update(id, pixels)` takes new pixels for a P_8 picture, its size, palette and cutout as loaded. Each tile is cut again into a scratch buffer and compared with the texels it holds. Only a tile that changed is copied and sent again, into its own room: its old handle is given back first, so the record is reused. A tile off the card just keeps the new texels for when it goes up. A screen composed in memory that changes in a few places (an inventory scrolled, a shop's coin turning) costs the tiles those places touch, not `pic_free` and `pic_load` of the whole screen. It answers the tiles sent, 0 when nothing changed, and -1 for no such picture or a full colour one. The compare is 64000 bytes for a full screen.
 
+### A new palette
+
+`pic_set_palette(id, rgb)` gives a P_8 picture new colours, its pixels as they are: a movie's palette chunk between frames (`docs/video.md`). For an opaque picture only the table changes. The card gets it at the picture's next draw, one 256-entry download, and no tile is sent. `pic_update` goes on working after it. A cutout keeps the key rules (entry 0 the key, nothing else on it). A cutout on a card without the chroma key is the exception: it carries its colours in its 1555 texels, so each of its tiles on the card is widened again and sent into its own room. The call answers the tiles sent (0 but for that cutout), and -1 for no such P_8 picture or no palette slot free (the old colours are kept).
+
+Palette slots are shared by pictures of the same colours. A picture alone in its slot takes a slot again for its new colours (the same one, or one already holding them). A picture sharing one leaves it to the others and takes another, and two pictures whose colours meet again share one. So a movie in two pictures under one palette needs at most one more slot while it changes.
+
+The card sends a picture's palette only when the one it holds differs (`glide_pic_palette`), and knows them by a key, not by the slot alone: the slot and a stamp bumped whenever the slot's table changes (a free slot taken, a new palette), `slot + PIC_PALETTES * stamp`. The same key is the same colours, so a run of pictures under one palette still sends it once, and a slot whose colours changed is sent again even inside one frame. Before the stamp the key was the slot, and a slot freed and taken by other colours within one frame would have drawn under the old ones. `draw_frame` puts the level's palette back at the end of each frame, which hid that.
+
 ### Order
 
 Each `pic_draw` sends its quads when it is called, over the frame with no depth test, so the calls land in their order: a later picture covers an earlier one. A save screen draws the snapshot first and its composed canvas over it as a cutout, clear where the snapshot shows.
@@ -120,6 +129,7 @@ The RAM cost is a byte a texel, cutouts included: 65 KB for a full screen. A ful
 - freed tiles joined so that one 64 KB tile fits where a screen's 29 were;
 - a 160 × 120 full colour picture in its 29 tiles of 565 and 40 KB, drawn opaque and whole with no palette, its texels little-endian;
 - `pic_update`: one pixel changed sends its one tile again, its texel the new one, with the room and the tiles on the card unchanged; the same pixels again send nothing; two pixels in two of the bottom strip's tiles send two; a bad id or no pixels is refused;
+- `pic_set_palette`: new colours drawn under a new key with nothing uploaded; the same colours again keep the key; `pic_update` works after it; a picture sharing a slot that changes leaves the other its colours and key, and the two share again once their colours meet; a bad id or no colours is refused; a 1555 cutout on a card with no key sends each of its tiles again, in the same room;
 - `check_pic_box`: a box's mean rounded to the nearest, a size that does not divide covering every source pixel once, a larger output or a short stride refused.
 
 ## Not yet

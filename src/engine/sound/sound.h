@@ -100,11 +100,40 @@ void sound_voice_walled(int i, int walled);
 void sound_ease(float secs);
 
 /*
+ * A streamed source (docs/sound.md, A stream): a movie's sound, pushed
+ * as it is read. Unsigned 8-bit mono at its own rate, 1..SOUND_STREAM_
+ * RATE_MAX, resampled to the mix rate as a clip is (nearest sample),
+ * flat in the middle at the effects volume, on one of the SOUND_VOICES,
+ * which no other sound takes from it. One at a time.
+ *
+ * sound_stream_open: its handle, 0 when sound is off, no card is open
+ * (nothing would drain it), the rate is bad, or a stream is open.
+ * sound_stream_push copies into a ring of SOUND_STREAM_BYTES (flipped
+ * to signed as it goes) and answers the bytes taken: fewer when the ring
+ * is full, 0 for a handle not playing. sound_stream_queued: samples
+ * pushed and not mixed yet, the clock to pace frames by (the card is
+ * audio_lead_ms behind the mix); -1 for a handle not playing (closed, or
+ * stopped by sound_stop_all, sound off or the card opened again). A ring
+ * run dry mixes silence and the stream stays open: a push resumes it.
+ * The voice is mixed by mix_voice as a clip is, so the C and MMX loops
+ * agree on it bit for bit.
+ */
+#define SOUND_STREAM_BYTES 65536
+#define SOUND_STREAM_RATE_MAX 65535
+int sound_stream_open(int rate);
+int sound_stream_push(int handle, const df_u8 *data, int bytes);
+int sound_stream_queued(int handle);
+void sound_stream_close(int handle);
+
+/*
  * The mix itself: frames stereo frames added into dst. audio.c calls it;
  * hostcheck calls it to hear the voices without a card.
  */
 void sound_mix(df_i16 *dst, int frames);
-/* The rate voices are stepped for; hostcheck sets it with no card. */
+/*
+ * The rate voices are stepped for; hostcheck sets it with no card, and
+ * then mixes by hand (sound_mix), so a stream opens as for a card.
+ */
 void sound_set_mix_rate(int rate);
 
 #endif

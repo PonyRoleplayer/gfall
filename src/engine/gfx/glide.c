@@ -157,8 +157,9 @@ static FxU32 g_pal[256];
 static int g_have_pal;
 /*
  * Which palette TMU0 holds: PAL_LEVEL the level's, PAL_OTHER the sky's
- * or the glow's, or a picture's slot (glide_pic_palette), so a run of
- * pictures under one palette sends it once.
+ * or the glow's, or a picture palette's key (glide_pic_palette: a slot
+ * and its version), so a run of pictures under one palette sends it once
+ * and a slot whose colours changed is sent again.
  */
 #define PAL_LEVEL -1
 #define PAL_OTHER -2

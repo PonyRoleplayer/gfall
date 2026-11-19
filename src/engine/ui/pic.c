@@ -47,6 +47,13 @@ typedef struct Pic {
 
 typedef struct Palette {
     int refs;
+    /*
+     * Bumped whenever the slot's table changes (a free slot taken,
+     * pic_set_palette), so its key (pal_key) is new and the card, which
+     * sends a palette only when the key differs from the one it holds,
+     * sends this one again.
+     */
+    df_u16 stamp;
     df_u32 table[256];
 } Palette;
 
@@ -285,6 +292,12 @@ void pic_end(void)
     g_nfree = 0;
 }
 
+/* The key the card knows a slot's table by: the slot and its stamp, the same key the same colours. */
+static int pal_key(int slot)
+{
+    return slot + PIC_PALETTES * (int)g_pal[slot].stamp;
+}
+
 static int pot_floor(int n)
 {
     int p;
@@ -321,8 +334,40 @@ static int palette_find(const df_u32 *table)
             g_pal[free_slot].table[k] = table[k];
         }
         g_pal[free_slot].refs = 1;
+        g_pal[free_slot].stamp++;
     }
     return free_slot;
+}
+
+/*
+ * A picture's table from its 768-byte palette: 0xRRGGBB, as
+ * grTexDownloadTable takes it (glide_palette). A cutout's index 0 is the
+ * key, and no other entry may land on it, in 24 bits or in the card's
+ * 565: one that would gets a step of green (a 64th), unseen, so it stays
+ * drawn.
+ */
+/* A channel that lands on 565's top (red, blue: 5 bits) or its bottom (green: 6 bits), and a step of green. */
+#define KEY_NEAR_TOP 0xf8u
+#define KEY_NEAR_ZERO 0x04u
+#define KEY_NUDGE 0x000400u
+
+static void table_make(const df_u8 *rgb, int cutout, df_u32 *table)
+{
+    int i;
+
+    for (i = 0; i < 256; i++) {
+        table[i] = ((df_u32)rgb[i * 3] << 16) | ((df_u32)rgb[i * 3 + 1] << 8) | (df_u32)rgb[i * 3 + 2];
+    }
+    if (!cutout) {
+        return;
+    }
+    table[0] = PIC_KEY;
+    for (i = 1; i < 256; i++) {
+        if (((table[i] >> 16) & 0xffu) >= KEY_NEAR_TOP && ((table[i] >> 8) & 0xffu) < KEY_NEAR_ZERO
+            && (table[i] & 0xffu) >= KEY_NEAR_TOP) {
+            table[i] = (table[i] & 0xff00ffu) | KEY_NUDGE;
+        }
+    }
 }
 
 /* The loading picture's source, for tile_fill. */
@@ -530,27 +575,8 @@ int pic_load(const df_u8 *pixels, int w, int h, const df_u8 *rgb, int cutout)
     p->missing = 0;
     {
         df_u32 table[256];
-        int i;
 
-        /* 0xRRGGBB, as grTexDownloadTable takes it (glide_palette). */
-        for (i = 0; i < 256; i++) {
-            table[i] = ((df_u32)rgb[i * 3] << 16) | ((df_u32)rgb[i * 3 + 1] << 8)
-                | (df_u32)rgb[i * 3 + 2];
-        }
-        if (p->cutout) {
-            /*
-             * Index 0 is the key, and no other entry may land on it, in 24
-             * bits or in the card's 565: one that would gets a step of green
-             * (a 64th), unseen, so it stays drawn.
-             */
-            table[0] = PIC_KEY;
-            for (i = 1; i < 256; i++) {
-                if (((table[i] >> 16) & 0xffu) >= 0xf8u && ((table[i] >> 8) & 0xffu) < 0x04u
-                    && (table[i] & 0xffu) >= 0xf8u) {
-                    table[i] = (table[i] & 0xff00ffu) | 0x000400u;
-                }
-            }
-        }
+        table_make(rgb, p->cutout, table);
         p->pal = palette_find(table);
         if (p->pal < 0) {
             log_text(LOG_WARN, "pictures: no palette slot free");
@@ -633,6 +659,25 @@ int pic_load_565(const df_u16 *pixels, int w, int h)
 /* A tile's texels cut fresh for pic_update, to compare with what it holds. */
 static df_u8 g_cut[PIC_TILE_MAX * PIC_TILE_MAX * 2];
 
+/*
+ * A tile of p whose texels or colours changed. On the card: sent again
+ * into its own room, its old handle given back first so the record is
+ * the one reused. Off it, nothing: it goes up as it now is when it does.
+ */
+static void tile_resend(Pic *p, Tile *t)
+{
+    if (!t->on || !g_ops) {
+        return;
+    }
+    g_ops->release(t->handle);
+    if (!g_ops->upload(pic_format(p) == PIC_FMT_1555 ? widen(t, g_pal[p->pal].table) : t->texels,
+                       t->side, pic_format(p), t->addr, &t->handle)) {
+        room_give(t->addr, t->bytes);
+        t->on = 0;
+        p->missing++;
+    }
+}
+
 int pic_update(int id, const df_u8 *pixels)
 {
     Pic *p;
@@ -663,23 +708,59 @@ int pic_update(int id, const df_u8 *pixels)
             continue;
         }
         mem_copy(t->texels, g_cut, (df_u32)n);
-        /*
-         * On the card: sent again into its own room, its old handle given
-         * back first so the record is the one reused. Off it, the new
-         * texels go up when it does.
-         */
-        if (t->on && g_ops) {
-            g_ops->release(t->handle);
-            if (!g_ops->upload(pic_format(p) == PIC_FMT_1555 ? widen(t, g_pal[p->pal].table) : t->texels,
-                               t->side, pic_format(p), t->addr, &t->handle)) {
-                room_give(t->addr, t->bytes);
-                t->on = 0;
-                p->missing++;
-            }
-        }
+        tile_resend(p, t);
         sent++;
     }
     g_src = 0;
+    return sent;
+}
+
+int pic_set_palette(int id, const df_u8 *rgb)
+{
+    Pic *p;
+    df_u32 table[256];
+    int old;
+    int slot;
+    int sent;
+    int i;
+
+    if (id < 1 || id > PIC_MAX || !g_pic[id].used || !rgb || g_pic[id].rgb) {
+        return -1;
+    }
+    p = &g_pic[id];
+    table_make(rgb, p->cutout, table);
+    old = p->pal;
+    for (i = 0; i < 256 && g_pal[old].table[i] == table[i]; i++) {
+    }
+    if (i == 256) {
+        return 0;
+    }
+    /*
+     * Its slot given up first: a picture alone in it takes a slot again
+     * (that one, or one that already holds these colours), and pictures
+     * sharing it keep theirs. Either way the slot it ends in has a new
+     * key, or is one whose key the card already knows for these colours.
+     */
+    g_pal[old].refs--;
+    slot = palette_find(table);
+    if (slot < 0) {
+        g_pal[old].refs++;
+        log_text(LOG_WARN, "pictures: no palette slot free");
+        return -1;
+    }
+    p->pal = slot;
+    /* P_8 is read through the table at the draw: nothing on the card changes. */
+    if (pic_format(p) != PIC_FMT_1555) {
+        return 0;
+    }
+    /* A cutout on a card with no key carries its colours in its 1555 texels: each tile widened again. */
+    sent = 0;
+    for (i = p->first; i != NO_TILE; i = g_tile[i].next) {
+        if (g_tile[i].on) {
+            tile_resend(p, &g_tile[i]);
+            sent++;
+        }
+    }
     return sent;
 }
 
@@ -810,7 +891,7 @@ void pic_draw_part(int id, int sx, int sy, int sw, int sh, int x, int top, int w
     g_ops->begin(!p->cutout ? PIC_OPAQUE : (pic_wide(p) ? PIC_ALPHA : PIC_KEYED), alpha);
     /* P_8 is drawn through its palette; 1555 and 565 carry their colour. */
     if (pic_format(p) == PIC_FMT_P8) {
-        g_ops->palette(p->pal, g_pal[p->pal].table);
+        g_ops->palette(pal_key(p->pal), g_pal[p->pal].table);
     }
     for (i = p->first; i != NO_TILE; i = g_tile[i].next) {
         const Tile *t;

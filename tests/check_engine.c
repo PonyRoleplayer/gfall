@@ -1537,6 +1537,54 @@ static void check_pictures(void)
         check_expect(pic_update(PIC_MAX + 1, upd) == -1 && pic_update(a, 0) == -1, "a bad pic_update was taken");
         pic_update(a, screen);
     }
+    /*
+     * pic_set_palette, a movie's colours: the table alone changes, under a
+     * new key so the card sends it again, nothing is uploaded, and
+     * pic_update goes on working. Pictures sharing a slot part when one
+     * changes and share again when their colours meet.
+     */
+    {
+        static df_u8 rgb2[768];
+        static df_u8 upd[320 * 200];
+        df_u32 next;
+        int key;
+        int key_b;
+
+        for (i = 0; i < 768; i++) {
+            rgb2[i] = (df_u8)(255 - (i & 0xff));
+        }
+        pic_draw(a, 0, 440, 640, 400);
+        key = g_pc_pal;
+        next = g_pc_next;
+        check_expect(pic_set_palette(a, rgb2) == 0 && g_pc_next == next, "a new palette uploaded tiles");
+        pic_draw(a, 0, 440, 640, 400);
+        check_expect(g_pc_pal >= 0 && g_pc_pal != key && g_pc_entry[1] == 0xfcfbfau && g_pc_quads == 29,
+                     "a new palette was not drawn under a new key");
+        key = g_pc_pal;
+        check_expect(pic_set_palette(a, rgb2) == 0, "the same palette again was refused");
+        pic_draw(a, 0, 440, 640, 400);
+        check_expect(g_pc_pal == key, "the same palette again took a new key");
+        mem_copy(upd, screen, sizeof(upd));
+        upd[256] = 0x77;
+        check_expect(pic_update(a, upd) == 1, "pic_update did not work after a new palette");
+        pic_update(a, screen);
+        b = pic_load(screen, 64, 64, rgb2, 0);
+        pic_draw(b, 0, 64, 64, 64);
+        check_expect(b && g_pc_pal == key, "a picture under the same colours did not share the slot");
+        check_expect(pic_set_palette(a, rgb) == 0, "a shared slot's picture could not change its palette");
+        pic_draw(b, 0, 64, 64, 64);
+        key_b = g_pc_pal;
+        check_expect(key_b == key && g_pc_entry[1] == 0xfcfbfau, "the picture left in the slot lost its colours");
+        pic_draw(a, 0, 440, 640, 400);
+        check_expect(g_pc_pal != key_b && g_pc_entry[1] == 0x030405u, "the picture that changed kept the shared slot");
+        key = g_pc_pal;
+        pic_set_palette(b, rgb);
+        pic_draw(b, 0, 64, 64, 64);
+        check_expect(g_pc_pal == key, "two pictures whose colours met again did not share a slot");
+        pic_free(b);
+        check_expect(pic_set_palette(PIC_MAX + 1, rgb) == -1 && pic_set_palette(a, 0) == -1,
+                     "a bad pic_set_palette was taken");
+    }
     /* A part: 30 x 40 at 10, 20, into 60 x 80 at 100, 300. */
     pic_draw_part(a, 10, 20, 30, 40, 100, 300, 60, 80, 128);
     check_expect(g_pc_bad == 0 && check_near(g_pc_area, 60.0f * 80.0f, 0.1f)
@@ -1579,6 +1627,28 @@ static void check_pictures(void)
         pic_draw(b, 0, 30, 40, 30);
         check_expect(b && used - 66560u == 2u * keyed_bytes && g_pc_how == PIC_ALPHA && g_pc_pal == -1,
                      "a cutout on a card with no key did not go as 1555, alpha-tested");
+        /* Its colours are in its texels: a new palette widens and sends each of its tiles again. */
+        {
+            static df_u8 rgb3[768];
+            df_u32 next;
+            int on_b;
+            int sent;
+
+            for (i = 0; i < 768; i++) {
+                rgb3[i] = (df_u8)(i / 3);
+            }
+            on_b = on;
+            pic_free(b);
+            pic_stats(&pics, &on, &used, &room);
+            on_b -= on;
+            b = pic_load(sprite, 40, 30, rgb, 1);
+            next = g_pc_next;
+            sent = pic_set_palette(b, rgb3);
+            pic_stats(&pics, &on, &used, &room);
+            check_expect(sent == on_b && g_pc_next == next + (df_u32)on_b && g_pc_format == PIC_FMT_1555
+                         && used - 66560u == 2u * keyed_bytes,
+                         "a new palette on a 1555 cutout did not send its tiles again in their room");
+        }
         pic_free(b);
         ops.chroma = 1;
         pic_begin(4096, 4096 + 256u * 1024u, &ops);
@@ -5096,6 +5166,145 @@ static void check_sound(void)
     }
 }
 
+/* A clip of samples mixed alone from silence into out (frames), for the stream to be held to. */
+static void snd_clip_ref(const signed char *data, df_u32 n, df_u32 rate, df_i16 *out, int frames)
+{
+    SoundClip clip;
+    int k;
+
+    clip.data = data;
+    clip.frames = n;
+    clip.rate = rate;
+    k = sound_play(&clip, 1.0f, 0.0f, 0);
+    mix_clear(out, frames);
+    sound_mix(out, frames);
+    sound_stop(k);
+}
+
+/*
+ * The streamed source (docs/sound.md, A stream): it mixes what a clip of
+ * the same samples would, bit for bit, and stops where the pushes stop;
+ * it drains by the step, skips a sample the step passed, keeps one short
+ * of a full ring, agrees between C and MMX, keeps its voice from louder
+ * sounds, and is gone once closed or stopped.
+ */
+static void check_sound_stream(void)
+{
+    static df_u8 raw[2000];
+    static signed char flipped[2000];
+    static df_u8 big[SOUND_STREAM_BYTES + 100];
+    static df_i16 a[1500 * 2];
+    static df_i16 b[1500 * 2];
+    SoundClip quiet;
+    int h;
+    int k;
+    int i;
+
+    for (i = 0; i < 2000; i++) {
+        raw[i] = (df_u8)(snd_rand() & 255);
+        flipped[i] = (signed char)(raw[i] ^ 0x80);
+    }
+    sound_set_mix_rate(11025);
+    sound_set_on(1);
+    sound_set_volume(100);
+    sound_stop_all();
+    check_expect(sound_stream_open(0) == 0 && sound_stream_open(SOUND_STREAM_RATE_MAX + 1) == 0,
+                 "a stream opened at a bad rate");
+
+    /* At the mix's rate: the clip of the same 1000 samples, then silence where the pushes stop. */
+    snd_clip_ref(flipped, 1000, 11025, b, 1500);
+    h = sound_stream_open(11025);
+    check_expect(h != 0 && sound_stream_open(11025) == 0, "a stream did not open, or a second one did");
+    mix_clear(a, 100);
+    sound_mix(a, 100);
+    check_expect(sound_stream_queued(h) == 0 && a[0] == 0 && a[199] == 0, "a stream with nothing pushed was heard");
+    check_expect(sound_stream_push(h, raw, 1000) == 1000 && sound_stream_queued(h) == 1000,
+                 "a push was not taken whole");
+    mix_clear(a, 1500);
+    sound_mix(a, 400);
+    check_expect(sound_stream_queued(h) == 600, "400 frames at the mix's rate did not take 400 samples");
+    sound_mix(a + 400 * 2, 1100);
+    check_expect(memcmp(a, b, sizeof(a)) == 0,
+                 "the stream did not mix as a clip of its samples, or went on past the pushes");
+    check_expect(sound_stream_queued(h) == 0 && sound_playing(h), "a stream run dry did not stay open");
+
+    /*
+     * Run dry, it resumes at the next sample pushed: a mix that had gone
+     * on past the pushes (the ring's zeros sound like silence) would read
+     * from further on. Then C and MMX on the same pushes: the run at the
+     * mix's rate is the MMX loop's, and must agree.
+     */
+    mix_set_mmx(0);
+    snd_clip_ref(flipped + 1000, 1000, 11025, b, 1500);
+    sound_stream_push(h, raw + 1000, 1000);
+    mix_clear(a, 1500);
+    sound_mix(a, 1500);
+    check_expect(memcmp(a, b, sizeof(a)) == 0, "a stream run dry did not resume at the next sample pushed");
+    sound_stream_close(h);
+    check_expect(sound_stream_queued(h) == -1 && sound_stream_push(h, raw, 10) == 0,
+                 "a closed stream still takes samples");
+    mix_set_mmx(1);
+    h = sound_stream_open(11025);
+    sound_stream_push(h, raw + 1000, 1000);
+    mix_clear(b, 1500);
+    sound_mix(b, 1500);
+    check_expect(memcmp(a, b, sizeof(a)) == 0, "the stream differs between the C and MMX mixers");
+    sound_stream_close(h);
+
+    /* Twice the mix's rate: a frame takes two samples, the last frame reads only pushed ones. */
+    snd_clip_ref(flipped, 101, 22050, b, 1000);
+    h = sound_stream_open(22050);
+    sound_stream_push(h, raw, 101);
+    mix_clear(a, 1000);
+    sound_mix(a, 1000);
+    check_expect(memcmp(a, b, 1000 * 2 * sizeof(df_i16)) == 0 && sound_stream_queued(h) == 0,
+                 "a stream at twice the mix's rate did not mix as its clip");
+    check_expect(sound_stream_push(h, raw + 101, 10) == 10 && sound_stream_queued(h) == 9,
+                 "a sample the step had passed was not skipped when it came");
+    sound_stream_close(h);
+    /* Half the mix's rate: each sample two frames, 100 samples 200 frames. */
+    sound_set_mix_rate(22050);
+    snd_clip_ref(flipped, 100, 11025, b, 1000);
+    h = sound_stream_open(11025);
+    sound_stream_push(h, raw, 100);
+    mix_clear(a, 1000);
+    sound_mix(a, 1000);
+    check_expect(memcmp(a, b, 1000 * 2 * sizeof(df_i16)) == 0 && sound_stream_queued(h) == 0,
+                 "a stream at half the mix's rate did not mix as its clip");
+    sound_stream_close(h);
+    sound_set_mix_rate(11025);
+
+    /* The ring: one short of full, then room again as the mix takes samples. */
+    for (i = 0; i < SOUND_STREAM_BYTES + 100; i++) {
+        big[i] = (df_u8)i;
+    }
+    h = sound_stream_open(11025);
+    check_expect(sound_stream_push(h, big, SOUND_STREAM_BYTES + 100) == SOUND_STREAM_BYTES - 1
+                 && sound_stream_queued(h) == SOUND_STREAM_BYTES - 1 && sound_stream_push(h, big, 1) == 0,
+                 "a full ring took more than one short of its size");
+    mix_clear(a, 1000);
+    sound_mix(a, 1000);
+    check_expect(sound_stream_queued(h) == SOUND_STREAM_BYTES - 1 - 1000 && sound_stream_push(h, big, 2000) == 1000,
+                 "the ring did not give back the room the mix took");
+
+    /* Every other voice busy and a louder sound coming: it takes an effect's voice, not the stream's. */
+    quiet.data = flipped;
+    quiet.frames = 2000;
+    quiet.rate = 11025;
+    for (i = 0; i < SOUND_VOICES - 1; i++) {
+        sound_play(&quiet, 0.01f, 0.0f, SOUND_LOOP);
+    }
+    k = sound_play(&quiet, 1.0f, 0.0f, 0);
+    check_expect(k != 0 && sound_busy() == SOUND_VOICES && sound_stream_queued(h) > 0,
+                 "a louder sound took the stream's voice");
+    sound_stop_all();
+    check_expect(sound_stream_queued(h) == -1, "sound_stop_all left the stream playing");
+    sound_set_on(0);
+    check_expect(sound_stream_open(11025) == 0, "a stream opened with sound off");
+    sound_set_on(1);
+    printf("sound stream: a clip's bits at 1x, 2x and 0.5x, C and MMX agree, ring %d\n", SOUND_STREAM_BYTES);
+}
+
 static int g_handled;
 static int g_handled_what;
 
@@ -6659,5 +6868,6 @@ void check_engine(void)
     check_texres_floor();
     check_entities();
     check_sound();
+    check_sound_stream();
     check_recfile();
 }

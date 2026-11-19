@@ -97,6 +97,16 @@ There is no thread. Each frame `audio_update` mixes up to a lead ahead of the pl
 
 The latency of a new sound is the lead: about 150 ms at 13 frames a second.
 
+### A stream
+
+A movie's sound comes as it is read, not as a clip loaded whole (`docs/video.md`). `sound_stream_open(rate)` gives it one of the 16 voices: unsigned 8-bit mono at its own rate (1..`SOUND_STREAM_RATE_MAX`), flat in the middle at the effects volume. `sound_stream_push` copies the bytes into a ring of `SOUND_STREAM_BYTES` (64 KB, static: about 6 s at a movie's 11 kHz), flipping each to signed as it goes. `sound_stream_queued` says how many samples are pushed and not mixed yet: the clock a movie paces its frames by, a lead (`audio_lead_ms`) ahead of what the speaker plays. `sound_stream_close` gives the voice back. One stream at a time.
+
+- **The mix.** The voice's clip is the whole ring, looping, so `mix_voice` wraps it and the stream mixes by the same loops as any clip: the MMX loop at the output's rate, nearest sample in C at another, bit for bit the same (hostcheck holds a stream to a clip of its samples, and C to MMX). Each mix takes only the output frames whose samples are all pushed: frame k reads sample (frac + k · step) >> 16, which must be under what is queued. The rest of the call is silence, and the voice stays open, so a push after a dry spell resumes at the next sample. A step above one (a rate above the mix's) can pass a sample or two not yet pushed; they are skipped when they come, as they would have been. `queued` counts by difference, so the counts may wrap.
+- **The ring.** A push takes at most one short of the whole ring, so a full ring and an empty one never look alike, and answers the bytes it took. A movie that pushes faster than it plays sees fewer taken and holds the rest.
+- **Its voice.** No effect takes it, however loud: `take` passes over it, and the stream itself takes a free voice or the quietest effect's. `sound_stop_all` (sound off, the card opened again) stops it; `queued` then answers -1, and so does a closed handle.
+- **No card.** Nothing would mix it, and `queued` would never drain, so `sound_stream_open` answers 0 when no card is open, as with sound off. A movie then paces by its own clock. hostcheck has no card but mixes by hand (`sound_set_mix_rate`, then `sound_mix`), and a stream opens for it.
+- **The frame.** Nothing new: the stream drains wherever the card is refilled, `ambience_frame` or `ambience_idle`, so a game's screen frame (`gfx_frame(cam, 0)`) keeps it playing with nothing else running.
+
 ## Each frame: `ambience_frame`
 
 1. A new place (scene, soundscape, heap epoch or emitter count changed): every voice stops, the song is asked again. The count compared is the place's own, not the capped one, or a place past the cap would start again every frame.
@@ -139,6 +149,7 @@ Kept for the process (`mem_keep`): the voices may play after their place's heap 
 | Song buffers: the loader's, the sort's, the kept song | 3 × 256 KB |
 | The stream | 442 KB |
 | Wave blocks (wave path only) | 77 KB |
+| A sound stream's ring (static) | 64 KB |
 
 On a place's heap: its emitters, 2048 at most (`MAX_EMITTERS`), 32 bytes each; a stream's are its slots', 121 × 80. `ambience.c` follows 10240 (`TRACK`, a handle each, 40 KB static); past that the rest are silent.
 
@@ -171,7 +182,7 @@ An emitter is only a place a sound may come from. A game's one-shots (`sound_pla
 ## Tests
 
 hostcheck runs everything but the card:
-- **Engine:** the mixers agree bit for bit; full scale is (s << 8) · g >> 16; the mix saturates; half rate holds each sample two frames. A sound on the right is louder on the right and moves left when the listener turns; one out of reach takes no voice; a loud one takes the quietest voice and a quiet one does not. The sort puts note-offs first at a tick; forty notes under 32 voices end the oldest eight; controller 7 is scaled; the stream opens with the tempo and ends at the song's length.
+- **Engine:** the mixers agree bit for bit; full scale is (s << 8) · g >> 16; the mix saturates; half rate holds each sample two frames. A sound on the right is louder on the right and moves left when the listener turns; one out of reach takes no voice; a loud one takes the quietest voice and a quiet one does not. A sound stream at the output's rate, twice it and half it mixes what a clip of its samples would, bit for bit, and stops where the pushes stop; run dry it stays open and resumes at the next sample pushed; a sample the step passed is skipped when it comes; the ring takes one short of its size and gives room back as the mix takes samples; C and MMX agree on it; a louder sound takes an effect's voice, not the stream's; closed, stopped or with sound off there is none. The sort puts note-offs first at a tick; forty notes under 32 voices end the oldest eight; controller 7 is scaled; the stream opens with the tempo and ends at the song's length.
 - **Dagger:** 459 clips, the rain 31346 signed samples; record id 385 at position 389. 131 songs that all read and render within 32 voices; D1.HMI is 224 s; D1FM's FM tracks read. Every playlist's songs exist. The hold has 53 sounding torches, a dungeon song, and fire beside a torch but none 5000 units off; `sndlist`'s view of them matches, and the playing torch is the one held. A farm in a thunderstorm is louder than on a sunny day.
 
 It writes what it mixed, to listen to: `build/snd0.wav` beside a torch in the hold, `build/snd1.wav` the farm in a storm.
