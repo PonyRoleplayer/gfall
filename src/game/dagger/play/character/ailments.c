@@ -198,3 +198,13 @@ void ailments_strike(int creature, int kind)
     if (kind == ENEMY_NYMPH) { fatigue_spend(random_range(NYMPH_FATIGUE_MIN,NYMPH_FATIGUE_MAX)*FATIGUE_UNIT); }
     if ((kind == ENEMY_SPIDER || kind == ENEMY_GIANT_SCORPION) && !magic_chance(-1,0,-1)) { magic_apply(SPELL_CREATURE_PARALYSIS,creature,-1,0,0); }
 }
+
+const char *poison_name(int id)
+{
+    static const char *const name[] = {
+        "Nux Vomica", "Arsenic", "Moonseed", "Drothweed", "Somnalius", "Pyrrhic Acid", "Magebane", "Thyrwort", "Indulcet", "Sursum", "Quaesto Vil", "Aegrotat"
+    };
+
+    if (id >= POISON_FIRST) { id -= POISON_FIRST; }
+    return id >= 0 && id < (int)(sizeof(name)/sizeof(name[0])) ? name[id] : "";
+}

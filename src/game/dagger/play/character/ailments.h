@@ -34,6 +34,8 @@ enum {
     POISON_NUX_VOMICA, POISON_ARSENIC, POISON_MOONSEED, POISON_DROTHWEED, POISON_SOMNALIUS, POISON_PYRRHIC_ACID,
     POISON_MAGEBANE, POISON_THYRWORT, POISON_INDULCET, POISON_SURSUM, POISON_QUAESTO_VIL, POISON_AEGROTAT
 };
+/* A poison's name (id from POISON_FIRST, or the POISON_*): "Nux Vomica" and the like, from FALL.EXE's names; "" for any other. */
+const char *poison_name(int id);
 int disease_infect(int target, int disease, int no_resist);
 int poison_apply(int target, int poison, int no_resist);
 void ailments_cure(int target, int poison);

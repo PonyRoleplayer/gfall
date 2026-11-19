@@ -14,6 +14,7 @@
 #include "game/dagger/play/combat/encounter.h"
 #include "game/dagger/play/ui/hud.h"
 #include "game/dagger/play/items/inventory.h"
+#include "game/dagger/play/items/describe.h"
 #include "game/dagger/play/save/save.h"
 #include "game/dagger/play/combat/weapon.h"
 #include "game/dagger/play/ui/options.h"
@@ -720,6 +721,20 @@ static void poisoned_weapons(void)
     bad = 0;
     for (i = 0; i < 8; i++) { bad += poisons[i] == 0; }
     check_expect(!bad, "foe gear: a weapon's poison is not each of the eight");
+    {
+        char text[300];
+        df_u32 sword = item_create(game_state()->inventory_id,3,5,1);
+
+        item_info(sword,text,sizeof(text));
+        check_expect(!strstr(text,"Poisoned"), "item info: a clean sword says it is poisoned");
+        object_edit(sword)->flags |= WEAPON_POISONED | ((df_u32)POISON_ARSENIC << WEAPON_POISON_SHIFT);
+        item_info(sword,text,sizeof(text));
+        check_expect(strstr(text,"Poisoned with Arsenic") != 0, "item info: a poisoned sword (1005) does not say with what");
+        weapon_poison_spend(sword);
+        item_info(sword,text,sizeof(text));
+        check_expect(!strstr(text,"Poisoned"), "item info: a spent poison still shows");
+        drop_bag(sword);
+    }
     character_state()->level = 1;
 }
 

@@ -1,6 +1,8 @@
 #include "game/dagger/play/watcom.h"
 #include "game/dagger/play/items/describe.h"
 #include "game/dagger/play/items/inventory.h"
+#include "game/dagger/play/combat/foegear.h"
+#include "game/dagger/play/character/ailments.h"
 #include "game/dagger/play/magic/spellbook.h"
 #include "game/dagger/play/play.h"
 #include "game/dagger/formats/lore.h"
@@ -17,6 +19,8 @@
 #define TEXT_INFO_CREDIT 1007
 #define TEXT_INFO_BOOK 1009
 #define TEXT_INFO_ARROW 1011
+/* A weapon with a poison on it (children: the poison record): 1005, whose %wpn is the poison's name. */
+#define TEXT_INFO_POISONED 1005
 /* The description macros' order in expand_macro: the first MACRO_SPELL_FIRST are item numbers, then the spell's duration, chance and magnitude (three each), then the painting words and the artist, then the names. */
 #define MACRO_SPELL_FIRST 13
 #define MACRO_CHANCE_FIRST 16
@@ -24,6 +28,7 @@
 #define MACRO_PAINTING_FIRST 24
 #define MACRO_ARTIST 28
 #define MACRO_NAMES_FIRST 29
+#define MACRO_POISON 33
 /* A plate piece's armour is PLATE_ARMOR_BASE plus the material's, shown in tenths; a weapon's material hit counts a fifth. */
 #define PLATE_ARMOR_BASE 45
 #define ARMOR_SHOWN_DIV 10
@@ -31,6 +36,7 @@
 
 typedef struct Description {
     const ObjectInfo *item;
+    int poison;
     const SpellDef *spell;
     int effect;
     char title[65], author[65];
@@ -43,6 +49,7 @@ int item_info_record(df_u32 id)
     item = object_at(id);
     if (!item || item->type != RECORD_ITEM) { return -1; }
     if (item->group == ITEM_GROUP_ARMOR) { return TEXT_INFO_ARMOR; }
+    if (item->group == ITEM_GROUP_WEAPON && weapon_poison(id)) { return TEXT_INFO_POISONED; }
     if (item->group == ITEM_GROUP_WEAPON) { return item->index == WEAPON_ARROW ? TEXT_INFO_ARROW : TEXT_INFO_WEAPON; }
     if (item->group == ITEM_GROUP_BOOK) { return TEXT_INFO_BOOK; }
     if (item->group == ITEM_GROUP_MISC && item->index == MISC_SOUL_TRAP) { return TEXT_INFO_SOUL_TRAP; }
@@ -56,7 +63,7 @@ static int expand_macro(const char *src, const Description *d, char *out, int ca
 {
     static const char *names[] = {"%mat","%arm","%wep","%mod","%wdm","%qua","%wth","%mit","%it","%kg","%bt","%ba","%hs",
         "%bdr","%adr","%cld","%bch","%ach","%clc","%1bm","%2bm","%1am","%2am","%clm",
-        "%sub","%adj","%pp1","%pp2","%an","%fn2","%mn2","%fn","%mn"};
+        "%sub","%adj","%pp1","%pp2","%an","%fn2","%mn2","%fn","%mn","%wpn"};
     const ObjectInfo *item;
     int i, n, value, low, high, weight;
     item = d->item;
@@ -65,6 +72,7 @@ static int expand_macro(const char *src, const Description *d, char *out, int ca
         if (!names[i][n]) { break; }
     }
     if (i == (int)(sizeof(names)/sizeof(names[0]))) { return 0; }
+    if (i == MACRO_POISON) { df_copy(out,poison_name(d->poison),cap); return n; }
     if (i >= MACRO_NAMES_FIRST) { df_copy(out,d->names[i-MACRO_NAMES_FIRST],cap); return n; }
     if (i >= MACRO_PAINTING_FIRST) { df_copy(out,i == MACRO_ARTIST ? d->artist : d->painting[i-MACRO_PAINTING_FIRST],cap); return n; }
     if (i >= MACRO_SPELL_FIRST) {
@@ -140,7 +148,7 @@ void item_info(df_u32 id, char *out, int capacity)
     out[0] = 0;
     record = item_info_record(id);
     if (record < 0) { return; }
-    mem_zero(&d,sizeof(d)); d.item = object_at(id);
+    mem_zero(&d,sizeof(d)); d.item = object_at(id); d.poison = weapon_poison(id);
     if (d.item->group == ITEM_GROUP_BOOK) { book_header(d.item->message,d.title,sizeof(d.title),d.author,sizeof(d.author)); }
     expand(words_state(record),&d,out,capacity);
     if (!out[0]) { item_name(d.item,out,capacity); }
