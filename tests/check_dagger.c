@@ -3192,6 +3192,10 @@ static void check_dungeon_automap(void)
         check_expect(dunstream_quest_marker(-1, QUEST_MARKER_PERSON, 5u, &qx, &qy, &qz) && qx == 645.0f && dunstream_quest_marker(-1, QUEST_MARKER_ITEM, 9u, &rx, &ry, &rz) && rx == 1428.0f &&
                      dunstream_quest_marker(-1, -1, 3u, &qx, &qy, &qz) && qx == 1428.0f,
                      "the hold: a quest marker picked by its record or by a seed is not the person's or the item's");
+        check_expect(dunstream_nearest_marker(QUEST_MARKER_PERSON, 1400.0f, 1700.0f, &qx, &qy, &qz) && qx == 645.0f && qz == 1585.0f &&
+                     dunstream_nearest_marker(-1, 1400.0f, 1700.0f, &qx, &qy, &qz) && qx == 1428.0f && qz == 1699.0f &&
+                     dunstream_nearest_marker(-1, 600.0f, 1500.0f, &qx, &qy, &qz) && qx == 645.0f && !dunstream_nearest_marker(5, 0.0f, 0.0f, &qx, &qy, &qz),
+                     "the hold: the nearest quest marker to a point is not the one nearest it, or one of another record was found");
     }
     automap_set_place(17);
     /* A look round from the start, a quarter turn a frame. */

@@ -43,6 +43,8 @@ static int g_asked;
 static int g_open;
 static int g_dungeon_streaming = 1;
 static int g_land;
+/* The dungeon being entered is a crypt (travel_go_into_dungeon): the arrival goes to the nearest quest marker. */
+static int g_arrive_at_marker;
 static int g_land_what;
 /* Where the journey started, in world units, so the arrival faces that way. */
 static int g_have_from;
@@ -126,6 +128,7 @@ int travel_go_into_dungeon(int region, int index)
     g_next.region = region;
     g_next.index = index;
     g_land = LAND_START;
+    g_arrive_at_marker = 1;
     g_asked = 1;
     return 1;
 }
@@ -624,6 +627,13 @@ void travel_land(const Level *level, Camera *cam, float eye, TravelPose *out)
         p.yaw = g_saved_yaw;
         p.pitch = g_saved_pitch;
     }
+    /* A crypt entered for a vampire's start (travel_go_into_dungeon): on the quest marker nearest the start marker, if the dungeon has one (player_to_nearest_marker, curses-cures-and-dreams.md). */
+    if (g_arrive_at_marker && g_land == LAND_START && g_here.kind == TRAVEL_DUNGEON && g_dungeon_streaming) {
+        float mx, my, mz;
+
+        if (dunstream_nearest_marker(QUEST_MARKER_PERSON, p.x, p.z, &mx, &my, &mz)) { p.x = mx; p.y = my + eye; p.z = mz; }
+    }
+    g_arrive_at_marker = 0;
     camera_set(cam, p.x, p.y, p.z, p.yaw, p.pitch);
     fill_round(cam);
     if (g_land == LAND_STREET) {

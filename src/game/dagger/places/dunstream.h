@@ -98,5 +98,7 @@ int dunstream_active(void);
  * n < 0: one of the markers of the record (any with a record below 0) picked by the seed, the same each time. 1 when there is one.
  */
 int dunstream_quest_marker(int n, int record, unsigned seed, float *x, float *y, float *z);
+/* The marker of the record (a quest marker's, 11 a person's or a foe's: the original's kind 9) nearest the point, in the game's frame; 1 when there is one (player_to_nearest_marker). */
+int dunstream_nearest_marker(int record, float px, float pz, float *x, float *y, float *z);
 
 #endif

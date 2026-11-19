@@ -1517,6 +1517,24 @@ int dunstream_passive(const Entity *e)
     return d ? d->passive : 0;
 }
 
+int dunstream_nearest_marker(int record, float px, float pz, float *x, float *y, float *z)
+{
+    int cx, cz, i, best;
+    float best_distance, mx, mz, d;
+
+    if (!g_open || !g_dun) { return 0; }
+    stream_origin(&cx, &cz);
+    best = -1; best_distance = 0;
+    for (i = 0; i < g_nqm; i++) {
+        if (record >= 0 && g_qm[i].record != record) { continue; }
+        mx = g_qm[i].x + (float)(g_dun->block[g_qm[i].block].x - cx) * DUNSTREAM_BLOCK;
+        mz = g_qm[i].z + (float)(g_dun->block[g_qm[i].block].z - cz) * DUNSTREAM_BLOCK;
+        d = (mx-px)*(mx-px)+(mz-pz)*(mz-pz);
+        if (best < 0 || d < best_distance) { best = i; best_distance = d; *x = mx; *y = g_qm[i].y; *z = mz; }
+    }
+    return best >= 0;
+}
+
 int dunstream_quest_marker(int n, int record, unsigned seed, float *x, float *y, float *z)
 {
     int cx, cz, i, count, pick;
