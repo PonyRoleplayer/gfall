@@ -81,6 +81,8 @@ static int w_find_number(int number, int *region, int *index)
 static int w_pick_building(int region, int index, int type, unsigned seed, int *block, int *record) { (void)region; (void)index; (void)type; *block = 3 + (int)(seed % 2u) * 0; *record = 7; return 1; }
 static int g_out;
 static int w_outdoors(void) { return g_out; }
+static int g_creatures;
+static int w_creatures(void) { return g_creatures; }
 static int g_site_mode = -1, g_site_value, g_site_none;
 static const int a51_none[5] = {-1, -2, -2, -2, -2};
 static int w_pick_site(int region, int index, int mode, int value, unsigned seed, int *block, int *record, int *faction)
@@ -153,7 +155,7 @@ static void put_op(df_u8 *p, int opcode, int message, const int *args, const int
 static int person_who(const QuestState *q, int i) { return q->person[i].who; }
 static void cure_begin(const char *name, int *slot)
 {
-    static const QuestWorld world = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, w_marker_at, w_spawn_at, w_place_at, w_pick_building, w_pick_site, w_person_name, w_outdoors };
+    static const QuestWorld world = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, w_marker_at, w_spawn_at, w_place_at, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures };
 
     quest_reset();
     quest_set_world(&world); quest_set_names(0); quest_set_text(real_text); quest_set_say(take_say); quest_set_ask(take_ask);
@@ -548,6 +550,60 @@ void check_quest(void)
             } else { check_expect(0, "quest: the item quest did not start"); }
             quest_end(0);
         }
+        /* Op 76, the courier (func_00031658): the item comes by chance on a passing minute, out of doors in a town, by day (strictly between 06:00 and 18:00), with no creature loaded and the game
+         * running in the world; never at night, indoors, with a creature about, at 06:00 sharp, or while a screen is open. */
+        {
+            int d76[5] = {0, 0, -2, -2, -2};
+            df_u32 day = 100u * 1440u;
+            int mode_was = game_state()->mode;
+            ObjectInfo *carried = 0;
+            int i76, got, pass;
+            static const struct { const char *what; df_u32 minute; int out, creatures, mode, want; } cases[] = {
+                { "by day in the streets", 10 * 60, 1, 0, GAME_WORLD, 1 },
+                { "at night", 2 * 60, 1, 0, GAME_WORLD, 0 },
+                { "at 06:00 sharp", 6 * 60, 1, 0, GAME_WORLD, 0 },
+                { "at 18:00 sharp", 18 * 60, 1, 0, GAME_WORLD, 0 },
+                { "indoors", 10 * 60, 0, 0, GAME_WORLD, 0 },
+                { "with a creature loaded", 10 * 60, 1, 1, GAME_WORLD, 0 },
+                { "with a screen open", 10 * 60, 1, 0, GAME_INVENTORY, 0 }
+            };
+
+            static const QuestWorld w76 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures };
+
+            (void)carried;
+            quest_set_world(&w76);
+            quest_end(0);
+            memset(f3, 0, sizeof(f3));
+            put16(f3 + 0x10 + 0 * 2, 1); put16(f3 + 0x24 + 0 * 2, 0x80);
+            put16(f3 + 0x10 + 8 * 2, 1); put16(f3 + 0x24 + 8 * 2, 0x100);
+            put16(f3 + 0x10 + 9 * 2, 1); put16(f3 + 0x24 + 9 * 2, 0x100 + 87);
+            put16(f3 + 0x80 + 3, 3); put16(f3 + 0x80 + 5, 0);
+            put16(f3 + 0x100 + 87, 0); put32(f3 + 0x100 + 87 + 4, 100u);
+            put_op(f3 + 0x100, 76, -1, d76, 0);
+            for (i76 = 0; i76 < (int)(sizeof(cases) / sizeof(cases[0])); i76++) {
+                char msg[96];
+
+                quest_set_names(0);
+                slot = quest_start_bytes("TEST0076", f3, 0x100 + 87 + 8, 0);
+                if (slot != 0 || !quest_at(0)->item[0].object) { check_expect(0, "quest: the courier's quest did not start"); break; }
+                id = quest_at(0)->item[0].object;
+                quest_set_state(0, 0, 1);
+                g_out = cases[i76].out; g_creatures = cases[i76].creatures; ((GameState *)game_state())->mode = cases[i76].mode;
+                got = 0;
+                /* One roll a minute at one in ten: 400 minutes of a day's hour leave a miss of 1e-18. */
+                for (pass = 0; pass < 400 && !got; pass++) {
+                    ((GameState *)game_state())->minutes = day + cases[i76].minute + (df_u32)(pass % 5);
+                    if (cases[i76].minute == 6 * 60 || cases[i76].minute == 18 * 60) { ((GameState *)game_state())->minutes = day + cases[i76].minute; }
+                    quest_run_minute();
+                    got = carried_by_player(id);
+                }
+                sprintf(msg, "quest: the courier %s %s", cases[i76].want ? "did not come" : "came", cases[i76].what);
+                check_expect(got == cases[i76].want, msg);
+                quest_end(0);
+            }
+            g_out = 1; g_creatures = 0; ((GameState *)game_state())->mode = mode_was;
+            quest_set_world(0);
+        }
         /* Topics, rumours, faces and the countdown: op 11 hides the item's topic and op 10 shows it again, op 25 counts three runs, ops 55 and 56 put a face up and take it away, and the quest's start
          * left a rumour that people tell as news. */
         {
@@ -626,7 +682,7 @@ void check_quest(void)
             put_op(f3 + 0x140 + 435, 8, -1, d8, 0);
             put_lit(f3 + 0x140 + 435 + 6 + 1 * 15, 101); put_lit(f3 + 0x140 + 435 + 6 + 2 * 15, 101);
             {
-                static const QuestWorld w9 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors };
+                static const QuestWorld w9 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures };
 
                 quest_set_world(&w9);
             }
@@ -682,7 +738,7 @@ void check_quest(void)
         /* The quests of a new game: _BRISIEN then _TUTOR__ begin at the first run, their fixed places found by the location's number (low word 2 read as the location), _BRISIEN's person made
          * (kind -1, her flags 0x101) though standing nowhere, and its ops 6 and 7, which wait while the player is in the hold (op 43 sets state 5 there), start the main story's S0000977 and S0000999 once they are out of it. */
         {
-            static const QuestWorld w10 = { w_count, w_location, w_here_out, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors };
+            static const QuestWorld w10 = { w_count, w_location, w_here_out, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures };
             int k, found999, found977;
 
             for (k = 0; k < quest_count(); k++) { quest_end(k); }
@@ -705,7 +761,7 @@ void check_quest(void)
         /* A person with a body: Brisienna's kind (-1, a faction of an individual, flags 0x101: any building, a woman asked for by neither sex bit so tossed) put by op 30 in a tavern of another
          * town stands in that building (block and record) when it is entered, with her name, and her flat's tag names her. */
         {
-            static const QuestWorld w11 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors };
+            static const QuestWorld w11 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures };
             int e30[5] = {-1, 0, 0, -2, -2};
             QuestHere here[4];
             int who, faction, female, tag, k;
@@ -758,7 +814,7 @@ void check_quest(void)
         }
         /* A foe on its place's quest marker: with the floor not loaded it waits (nothing made), and when it is loaded both are made on the marker with the foe's keys, once. */
         {
-            static const QuestWorld w12 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, w_marker_at, w_spawn_at, w_place_at, w_pick_building, w_pick_site, w_person_name, w_outdoors };
+            static const QuestWorld w12 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, w_marker_at, w_spawn_at, w_place_at, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures };
             int f22[5] = {-1, 0, 0, -2, -2}, calm[5] = {-1, 0, -1, -2, -2};
             int release[5] = {0, 0, -2, -2, -2}, k;
 
@@ -795,7 +851,7 @@ void check_quest(void)
         /* Persons that pick a site at the start: a tavern (kind 15) in the town the player is in, a person linked to it by their faction (-5, anywhere), and a faction of a type in another town (-2, low
          * byte 1): each homed in a building of the town, the second asking for buildings of the first's faction. */
         {
-            static const QuestWorld w13 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors };
+            static const QuestWorld w13 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures };
             const QuestState *pq;
             int k;
 
@@ -843,7 +899,7 @@ void check_quest(void)
         }
         /* The guilds' invitations: a Thieves Guild invitation falling due out of doors starts O0A0AL00 (no prompt), and its op 4 joins the guild instead of rewarding. */
         {
-            static const QuestWorld w14 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors };
+            static const QuestWorld w14 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures };
             int k, started;
 
             for (k = 0; k < quest_count(); k++) { quest_end(k); }
@@ -890,7 +946,7 @@ void check_quest(void)
         }
         /* A quest person put in a dungeon place (op 30) stands on its quest marker: homed in the dungeon (block -2) with the marker's point. */
         {
-            static const QuestWorld w15 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, w_marker_at, w_spawn_at, w_place_at, w_pick_building, w_pick_site, w_person_name, w_outdoors };
+            static const QuestWorld w15 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, w_marker_at, w_spawn_at, w_place_at, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures };
             int h30[5] = {-1, 0, 0, -2, -2}, k;
             QuestHere dh[4];
 
@@ -1010,7 +1066,7 @@ void check_quest(void)
     /* Places and timers: M0B00Y00's two dungeons bound to two different dungeons of the region other than the one the player is in, its timer's delay the travel estimate and a week
      * for the kind, doubled; op 19 shows the first on the map; at the delay the timer's state ends the quest (op 6). */
     {
-        static const QuestWorld world = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors };
+        static const QuestWorld world = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures };
         const QuestState *q2;
         int s2, spent;
 

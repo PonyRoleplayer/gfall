@@ -145,6 +145,16 @@ void dungeon_variant(int i, int type)
 
 static int visible(const Scene *scene, const float *from, const float *to);
 
+int dungeon_alive(void)
+{
+    int i, n = 0;
+
+    for (i = 0; i < g_count; i++) {
+        if (g_foe[i].entity->live && !g_foe[i].entity->dead) { n++; }
+    }
+    return n;
+}
+
 int dungeon_nearby(const Camera *cam, float reach)
 {
     const Entity *e;

@@ -100,6 +100,8 @@ void dungeon_set_pacified(int index, int passive);
 /* Same human variant as the walking art; no sprite pointers enter saves. */
 void dungeon_variant(int index, int texture_kind);
 int dungeon_nearby(const Camera *camera, float reach);
+/* How many creatures are loaded and alive, of any team and temper: the original's creature_count, which a quest's courier (op 76) waits on. */
+int dungeon_alive(void);
 /* Source is a struck creature index, or -1 for a door/noise. */
 void dungeon_alert(int source);
 int dungeon_count(void);

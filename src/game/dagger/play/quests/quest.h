@@ -112,6 +112,8 @@ typedef struct QuestWorld {
     void (*person_name)(int who, int faction, int female, char *out, int cap);
     /* The player is out of doors (the streamed world's streets and fields, not a building or a dungeon): a guild's invitation comes then. */
     int (*outdoors)(void);
+    /* The creatures loaded and alive (creature_count): the courier of op 76 comes only when there are none. */
+    int (*creatures)(void);
 } QuestWorld;
 void quest_set_world(const QuestWorld *world);
 

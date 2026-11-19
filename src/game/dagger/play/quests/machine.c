@@ -491,12 +491,11 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
         break;
     case QOP_DELIVER_LATER:
         /* The item delivered later (func_00031658): pending, then handed over by chance on a passing minute, only in the streets of a town (out of doors, not in a building or a dungeon)
-         * and while the game runs in the world (not the rest screen, whose hours pass in blocks, nor a menu): by daylight (a vampire's courier comes by night). The original also wants
-         * no creature near, which the quests are not told of yet. One roll a game minute, 1..100 under COURIER_CHANCE. */
+         * and while the game runs in the world (not the rest screen, whose hours pass in blocks, nor a menu): by daylight (a vampire's courier comes by night). And none of the creatures loaded alive (creature_count). One roll a game minute, 1..100 under COURIER_CHANCE. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             n = op->arg[1].value;
             if (n < 0 || n >= q->qbn.n_item || !q->item[n].object) { quest_op_done(q, op); break; }
-            if (g_minute && game_state()->mode == GAME_WORLD && courier_hour() && quest_world && quest_world->outdoors && quest_world->outdoors() && town_here() &&
+            if (g_minute && game_state()->mode == GAME_WORLD && courier_hour() && quest_world && quest_world->outdoors && quest_world->outdoors() && town_here() && (!quest_world->creatures || quest_world->creatures() == 0) &&
                 random_range(1, PERCENT) < COURIER_CHANCE && inventory_transfer(q->item[n].object, game_state()->inventory_id)) { quest_op_done(q, op); }
         }
         break;

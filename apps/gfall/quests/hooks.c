@@ -2,6 +2,7 @@
 #include "game/dagger/play/items/possessions.h"
 #include "game/dagger/play/input/activate.h"
 #include "game/dagger/play/combat/encounter.h"
+#include "game/dagger/play/combat/dungeon.h"
 #include "game/dagger/play/travel/travel.h"
 #include "game/dagger/play/items/ground.h"
 #include "game/dagger/places/dunstream.h"
@@ -250,6 +251,7 @@ static int quest_pick_building(int region, int index, int type, unsigned seed, i
 }
 
 static int quest_outdoors(void) { return world_where()->where.kind == WHERE_WORLD; }
+static int quest_creatures(void) { return dungeon_alive(); }
 
 /* A building of a town for a person's site: of a type, any shop-like one, of a faction, or of a faction of a type. */
 static int site_matches(const TownBuilding *b, int mode, int value)
@@ -398,7 +400,7 @@ void gfall_quests_install_text(void)
     static const QuestWorld world = {
         travel_count, travel_location, quest_here, quest_region_name, quest_journey, travel_discover,
         quest_spawn_foe, teleport, quest_place_item, quest_find_number, quest_marker_at,
-        quest_spawn_foe_at, quest_place_item_at, quest_pick_building, quest_pick_site, quest_person_name, quest_outdoors
+        quest_spawn_foe_at, quest_place_item_at, quest_pick_building, quest_pick_site, quest_person_name, quest_outdoors, quest_creatures
     };
     static const CurseWorld curse = { curse_haunt, curse_clan, curse_region };
 
