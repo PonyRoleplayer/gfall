@@ -35,6 +35,15 @@ int rmb_building_at(const df_u8 *rmb, df_u32 size, int record, int *type, int *f
 Block *rmb_load_interior(const df_u8 *rmb, df_u32 size, struct Bsa *arch, int record,
                          ArchEnt *cache, int *ncache);
 /*
+ * An interior's section 3 (the building's restriction points, 16 bytes each: x, y, z and a word whose byte 1 is the restriction: interior_restriction_at_player, run_0007E815.c 52..80,
+ * which takes (data >> 8) & 255): each point placed in the interior's own frame as rmb_load_interior places its flats, and that byte. At most cap; the count. 0 when it has none.
+ */
+typedef struct RmbRestriction {
+    float x, y, z;
+    int level;
+} RmbRestriction;
+int rmb_restrictions(const df_u8 *rmb, df_u32 size, int record, RmbRestriction *out, int cap);
+/*
  * What building record is (Daggerfall Unity's BuildingTypes: 15 a
  * tavern, 14 a temple, 17 and up houses) and its faction. 0 for none.
  */

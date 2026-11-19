@@ -23,10 +23,53 @@ static int g_tried_count;
 static df_u32 g_bashed[TRIED_MOST];
 static int g_bashed_count;
 
+static struct { df_u32 building, expires; int level, used; } g_grant[TRIED_MOST];
+
 void entry_reset(void)
 {
+    int i;
+
+    for (i = 0; i < TRIED_MOST; i++) { g_grant[i].used = 0; }
     g_tried_count = 0;
     g_bashed_count = 0;
+}
+
+void entry_grant(df_u32 building, int type, int level, df_u32 now)
+{
+    int i, slot = -1;
+    df_u32 ends;
+
+    ends = level == ACCESS_OWNER || type >= BUILDING_HOUSE1 || type == BUILDING_TAVERN ? now + ACCESS_NO_END :
+           type == BUILDING_TEMPLE ? now + (df_u32)(TEMPLE_GRANT_END_MINUTES - (int)(now % MINUTES_PER_DAY)) : now + (df_u32)building_minutes_to_close(type, now);
+    for (i = 0; i < TRIED_MOST; i++) {
+        if (g_grant[i].used && g_grant[i].building == building) { slot = i; break; }
+        if (!g_grant[i].used && slot < 0) { slot = i; }
+    }
+    if (slot < 0) { return; }
+    g_grant[slot].used = 1; g_grant[slot].building = building; g_grant[slot].level = level; g_grant[slot].expires = ends;
+}
+
+void entry_leave(df_u32 building)
+{
+    int i;
+
+    for (i = 0; i < TRIED_MOST; i++) { if (g_grant[i].used && g_grant[i].building == building) { g_grant[i].used = 0; } }
+}
+
+int entry_access(df_u32 building, df_u32 now)
+{
+    int i;
+
+    for (i = 0; i < TRIED_MOST; i++) {
+        if (g_grant[i].used && g_grant[i].building == building && g_grant[i].expires > now) { return g_grant[i].level; }
+    }
+    return 0;
+}
+
+int entry_trespass(int restriction, int access, int was)
+{
+    if (restriction - access <= 0) { return 0; }
+    return was ? CRIME_BREAKING : CRIME_TRESPASS;
 }
 
 void entry_set_bashed(df_u32 building)

@@ -23,6 +23,9 @@
 
 #include "game/dagger/play/play.h"
 
+#include "game/dagger/formats/rmb.h"
+#include "game/dagger/places/travel.h"
+#include "game/dagger/play/people/entry.h"
 #include "buildings.h"
 unsigned gfall_building_id(const TownBuilding *t)
 {
@@ -102,6 +105,54 @@ void gfall_building_announce(const PlaceWhere *where)
     if (df_eq(label, "Residence")) { label = "a residence"; }
     log_format(line, sizeof(line), "You've entered %s.", label);
     msg_set(line);
+}
+
+static df_u32 g_in_building;
+static int g_in_type, g_in_block, g_in_record, g_in_region, g_in_index, g_trespassing;
+/* The interior's restriction points, read when the building is entered. */
+#define RESTRICTIONS_MOST 192
+static RmbRestriction g_restrict[RESTRICTIONS_MOST];
+static int g_restrictions;
+
+void gfall_building_entered(const PlaceWhere *where)
+{
+    const TownBuilding *t;
+    const unsigned char *bytes;
+    unsigned size;
+    static int town_region = -1, town_index = -1;
+
+    t = town_building(where->region, where->index, where->block, where->record);
+    if (!t) { return; }
+    /* The bashed doors and the picks tried last as long as the town stays loaded (building_try_enter's flags, support.c). */
+    if (where->region != town_region || where->index != town_index) { entry_reset(); town_region = where->region; town_index = where->index; }
+    g_in_building = gfall_building_id(t); g_in_type = t->type; g_in_block = where->block; g_in_record = where->record;
+    g_in_region = where->region; g_in_index = where->index; g_trespassing = 0;
+    entry_grant(g_in_building, t->type, g_in_building == (df_u32)bank_state()->house ? ACCESS_OWNER : ACCESS_VISITOR, game_state()->minutes);
+    bytes = town_block_bytes(where->region, where->index, where->block, &size);
+    g_restrictions = bytes ? rmb_restrictions(bytes, size, where->record, g_restrict, RESTRICTIONS_MOST) : 0;
+}
+
+void gfall_building_frame(const Camera *cam)
+{
+    int type, faction, quality, i, best, restriction, crime;
+    unsigned place;
+    float best_distance, dx, dy, dz, d;
+
+    if (!g_in_building) { return; }
+    if (!travel_building(&type, &faction, &quality, &place)) {
+        entry_leave(g_in_building); g_in_building = 0; g_restrictions = 0; g_trespassing = 0;
+        return;
+    }
+    best = -1; best_distance = 0;
+    for (i = 0; i < g_restrictions; i++) {
+        dx = g_restrict[i].x-cam->x; dy = g_restrict[i].y-cam->y; dz = g_restrict[i].z-cam->z;
+        d = dx*dx+dy*dy+dz*dz;
+        if (best < 0 || d < best_distance) { best = i; best_distance = d; }
+    }
+    restriction = best >= 0 ? g_restrict[best].level : 0;
+    crime = entry_trespass(restriction, entry_access(g_in_building, game_state()->minutes), g_trespassing);
+    g_trespassing = crime != 0;
+    if (crime) { law_note(crime); guards_summon(0); }
 }
 
 /* The houses for sale of the town the player stands in (type 1 buildings, at most HOUSES_MOST) with their prices, and whether the place is a port. */

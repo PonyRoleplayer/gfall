@@ -682,6 +682,38 @@ int rmb_building_at(const df_u8 *rmb, df_u32 size, int record, int *type, int *f
     return 1;
 }
 
+/* Byte 1 of a section 3 point's data word, at +12 (the original's restriction: mode 2). */
+#define SECTION_DATA 12
+#define RESTRICTION_SHIFT 8
+#define SECTION_MOST 256
+
+int rmb_restrictions(const df_u8 *rmb, df_u32 size, int record, RmbRestriction *out, int cap)
+{
+    df_u32 start, end, at;
+    const df_u8 *bp;
+    int nsec, i, n;
+    float sx, sz, syaw, oz;
+
+    if (!rmb || !out || size < (df_u32)FLD_BYTES || !find_record(rmb, size, record, &start, &end)) { return 0; }
+    at = skip_list(rmb, end, start);
+    if (at + 17 > end) { return 0; }
+    nsec = (int)rmb[at + 2];
+    at += 17u + (df_u32)rmb[at] * MODEL_BYTES + (df_u32)rmb[at + 1] * FLAT_BYTES;
+    if (nsec > SECTION_MOST || at + (df_u32)nsec * 16u > end) { return 0; }
+    bp = rmb + 3 + record * 20;
+    sx = (float)df_ri32(bp + 8); sz = (float)df_ri32(bp + 12); syaw = (float)df_ri32(bp + 16) * ROT_STEP;
+    oz = RMB_SIDE - sz;
+    for (n = 0, i = 0; i < nsec && n < cap; i++, at += 16u) {
+        Instance in;
+
+        place_child(&in, syaw, 0.0f, (float)df_ri32(rmb + at), -(float)df_ri32(rmb + at + 4), (float)df_ri32(rmb + at + 8), sx, 0.0f, oz);
+        out[n].x = in.x; out[n].y = in.y; out[n].z = in.z;
+        out[n].level = (int)((df_ru32(rmb + at + SECTION_DATA) >> RESTRICTION_SHIFT) & 0xFF);
+        n++;
+    }
+    return n;
+}
+
 Block *rmb_load_interior(const df_u8 *rmb, df_u32 size, Bsa *arch, int record,
                          ArchEnt *cache, int *ncache)
 {

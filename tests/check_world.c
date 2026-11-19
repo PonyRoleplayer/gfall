@@ -1,6 +1,7 @@
 #include "check_world.h"
 #include "game/dagger/tables/buildingtypes.h"
 #include "check_util.h"
+#include "game/dagger/formats/rmb.h"
 #include "../apps/gfall/seam.h"
 #include "game/dagger/play/travel/travel.h"
 #include "game/dagger/play/save/save.h"
@@ -491,6 +492,23 @@ void check_world(const char *root)
         }
         printf("interior: %d buildings, %d people, %d of %d shops have a shopkeeper, %d houses\n", count, people_total, shopkeepers, shops, house_keepers);
         check_expect(people_total > 20 && shops > 5 && shopkeepers * 2 > shops && house_keepers == 0, "people: the block's shopkeepers are not in the shops");
+        /* Section 3: every interior's points read, with the restriction bytes the BLOCKS.BSA scan found (0, 5..45) and most of them 5 or 10. */
+        {
+            static RmbRestriction points[192];
+            int total = 0, low = 0, odd = 0, k2, m;
+            const unsigned char *bytes;
+            unsigned size;
+
+            for (i = 0; rows && i < count; i++) {
+                bytes = town_block_bytes(region_t, index_t, rows[i].block, &size);
+                m = rmb_restrictions(bytes, size, rows[i].record, points, 192);
+                for (k2 = 0; k2 < m; k2++) {
+                    total++; low += points[k2].level == 5 || points[k2].level == 10;
+                    odd += points[k2].level < 0 || points[k2].level > 45;
+                }
+            }
+            check_expect(total > 100 && odd == 0 && low * 10 > total * 7, "access: the interiors' restriction points are not mostly 5 and 10, or are out of 0..45");
+        }
     }
     /* Slice 8: a person in the view is named in info mode, greets in talk mode, and has a pocket in steal mode. */
     {

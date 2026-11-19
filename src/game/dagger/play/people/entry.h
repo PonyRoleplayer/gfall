@@ -67,6 +67,24 @@ void entry_reset(void);
  * ignores crime 0). Kept while the town stays loaded.
  */
 #define BASH_OPEN_UNDER 10
+/*
+ * The access grant and trespass (building_enter and building_exit, maplogic.c 389..441; building_grant_access and building_access_level, run_0007E815.c; player_frame_update,
+ * func_00010585.c 69..86). Inside, the player holds a grant: ACCESS_OWNER for their own house, else ACCESS_VISITOR until the building closes (a temple until 01:00 the next day);
+ * leaving ends it. Each frame the nearest restriction point of the interior (rmb_restrictions) less the grant is the trespass: any over 0 is crime CRIME_TRESPASS the first frame and
+ * CRIME_BREAKING after, and the watch is called. Deliberate (world-economy-access.md 3, "Uncertain"): the original's grant is nothing for a tavern and ends at once for a house, which makes
+ * every point of either trespass; here a tavern and a house the player was let into give the visitor grant until they leave, as the points of 5 suggest ("a visitor may stand here").
+ */
+#define ACCESS_VISITOR 5
+#define ACCESS_OWNER 255
+/* A grant with no end of its own (a house, a tavern, the owner's: building_grant_access with game_minutes + 10000000). */
+#define ACCESS_NO_END 10000000u
+/* A temple stays open for the visitor until 01:00 next day: 25 hours less the minute of the day. */
+#define TEMPLE_GRANT_END_MINUTES (25*60)
+void entry_grant(df_u32 building, int type, int level, df_u32 now);
+void entry_leave(df_u32 building);
+int entry_access(df_u32 building, df_u32 now);
+/* The trespass of standing where the restriction is: 0 for none, else the crime to note; was is whether the last frame was one. */
+int entry_trespass(int restriction, int access, int was);
 void entry_set_bashed(df_u32 building);
 int entry_bashed(df_u32 building);
 

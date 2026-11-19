@@ -882,6 +882,7 @@ void seam_land(Camera *camera, int restoring, int changing)
      * The original shows the name when the player inspects the building from outside. */
     if (changing && !restoring && travel_entered_building()) {
         gfall_building_announce(&world_where()->where);
+        gfall_building_entered(&world_where()->where);
     }
 }
 
@@ -1007,6 +1008,7 @@ void seam_world_step(Camera *camera, float seconds)
 
     gfall_people_set_camera(camera);
     gfall_street_tick(seconds);
+    gfall_building_frame(camera);
     if (!g_place_open || !g_level.streamed) { return; }
     travel_update(camera,1,2,seconds,&dx,&dz);
     if (dx || dz) {
