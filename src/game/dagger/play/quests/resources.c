@@ -1,6 +1,7 @@
 #include "internal.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/combat/dungeon.h"
+#include "game/dagger/play/magic/magic.h"
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/tables/itemdefs.h"
 #include "engine/core/log.h"
@@ -98,6 +99,30 @@ void quest_set_foe_pacified(QuestFoe *foe, int pacified)
     key = QUEST_FOE_THING(foe->number,0);
     for (i = 0; i < dungeon_count(); i++) {
         if ((dungeon_entity(i)->key.thing & ~15u) == key) { dungeon_set_pacified(i,pacified); }
+    }
+}
+
+/* Op 69 (qaction_op69_cast_spell_on_foe): the spell, by its id, cast by the player on each live copy of the foe, with the resistance rolls of any other cast. The player's level is the caster's. */
+void quest_cast_on_foe(const QuestFoe *foe, int spell)
+{
+    int i;
+    df_u32 key;
+
+    key = QUEST_FOE_THING(foe->number,0);
+    for (i = 0; i < dungeon_count(); i++) {
+        if ((dungeon_entity(i)->key.thing & ~15u) == key && dungeon_entity(i)->live && !dungeon_entity(i)->dead) { magic_apply(spell, QUEST_CASTER_PLAYER, i, character_state()->level, 0); }
+    }
+}
+
+/* Op 87 (qaction_op87_respawn): the foe's earlier copies go before it is placed again, a body or a living one (the original deletes the twin). */
+void quest_remove_foe(const QuestFoe *foe)
+{
+    int i;
+    df_u32 key;
+
+    key = QUEST_FOE_THING(foe->number,0);
+    for (i = 0; i < dungeon_count(); i++) {
+        if ((dungeon_entity(i)->key.thing & ~15u) == key && dungeon_entity(i)->live) { dungeon_remove(i); }
     }
 }
 

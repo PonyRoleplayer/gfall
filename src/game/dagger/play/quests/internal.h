@@ -88,6 +88,11 @@ enum {
     QOP_OP_82 = 82,
     QOP_TELEPORT_PLAYER = 83,
     QOP_OP_84 = 84,
+    QOP_SOUND = 60,
+    QOP_CAST_ON_FOE = 69,
+    QOP_FACTION_FLAG_SET = 85,
+    QOP_FACTION_FLAG_CLEAR = 86,
+    QOP_RESPAWN_FOE = 87,
     QOP_FACE_FIRST_FOE = 60
 };
 
@@ -99,6 +104,12 @@ int quest_bind_resources(int slot);
 int quest_marker_point(const QuestState *q, int place, int record, int extra, float *x, float *y, float *z);
 void quest_spawn_foe(QuestState *q, int f);
 void quest_set_foe_pacified(QuestFoe *foe, int pacified);
+void quest_cast_on_foe(const QuestFoe *foe, int spell);
+void quest_remove_foe(const QuestFoe *foe);
+/* The caster magic_apply takes for the player (the spells the player casts). */
+#define QUEST_CASTER_PLAYER (-1)
+/* The flag ops 85 and 86 set and clear on a person's faction (a faction's flags are the FACTION.TXT's; nothing in FALL.EXE reads this bit, so it is not kept). */
+#define FACTION_FLAG_QUEST 0x200
 void quest_make_item(QuestState *q, int i);
 int quest_item_carried(df_u32 id);
 void quest_item_forget(QuestState *q, int n);

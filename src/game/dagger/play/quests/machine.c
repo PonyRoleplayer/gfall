@@ -304,7 +304,7 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
         if (quest_arg_state(q, op, 0) && op->arg[4].value != 0 && op->arg[1].value >= 0 && op->arg[1].value < q->qbn.n_foe &&
             game_state()->minutes - op->last_minutes >= (df_u32)op->arg[2].value) {
             op->last_minutes = game_state()->minutes;
-            if (random_range(0, 32767) % 100 <= op->arg[3].value) {
+            if (random_range(0, RAND_MAX_WATCOM) % PERCENT <= op->arg[3].value) {
                 QuestFoe *foe;
                 int made;
 
@@ -710,6 +710,43 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
         break;
     case QOP_SHOW_MESSAGE:
         if (quest_arg_state(q, op, 0)) { quest_show_message(q, op->message); }
+        break;
+    case QOP_SOUND:
+        /* Every run while the state is set (the original's quirk, quest-machine.md 7.8): the sound. */
+        if (quest_arg_state(q, op, 0)) { play_sound(op->arg[1].value); quest_op_done(q, op); }
+        break;
+    case QOP_CAST_ON_FOE:
+        /* Once: the spell cast by the player on the foe's live copies. */
+        if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
+            n = op->arg[1].value;
+            if (n >= 0 && n < q->qbn.n_foe) { quest_cast_on_foe(&q->foe[n], op->arg[2].value); }
+            quest_op_done(q, op);
+        }
+        break;
+    case QOP_FACTION_FLAG_SET:
+    case QOP_FACTION_FLAG_CLEAR:
+        /* Once: FACTION_FLAG_QUEST set or cleared on the person's faction. FALL.EXE keeps it in the faction's flags and never reads it, so the op is only done (and says its message). */
+        if (quest_arg_state(q, op, 0) && !(op->flags & 1)) { quest_op_done(q, op); }
+        break;
+    case QOP_RESPAWN_FOE:
+        /* Every run while the gate holds (qaction_op87_respawn): the count (-1 endless) not spent, the interval passed, the earlier copies gone, then the chance of a hundred decides whether it comes back. */
+        if (quest_arg_state(q, op, 0) && op->arg[4].value != 0 && op->arg[1].value >= 0 && op->arg[1].value < q->qbn.n_foe &&
+            game_state()->minutes - op->last_minutes >= (df_u32)op->arg[2].value) {
+            QuestFoe *foe;
+
+            op->last_minutes = game_state()->minutes;
+            foe = &q->foe[op->arg[1].value];
+            quest_remove_foe(foe);
+            if (random_range(0, RAND_MAX_WATCOM) % PERCENT <= op->arg[3].value) {
+                int made;
+
+                if (op->arg[4].value != -1) { op->arg[4].value--; }
+                for (made = 0; quest_world && quest_world->spawn_foe && made < q->qbn.foe[op->arg[1].value].count && made < 16; made++) {
+                    if (!quest_world->spawn_foe(q->qbn.foe[op->arg[1].value].type, QUEST_FOE_THING(foe->number, (foe->next++) & 15))) { break; }
+                    foe->live++;
+                }
+            }
+        }
         break;
     case QOP_OP_84:
         /* Once the game minute changes, on every period's minute and by chance, while the state is set: the sound (S0000977's scream in Daggerfall at night). */

@@ -18,23 +18,24 @@ retired on 2026-11-12 at tag `before-gfall-retire`.
   states are wired. The royal audiences, later dungeon stages and every ending
   still need checkpointed playthroughs.
 - The installed 232 QBN files use 69 opcode IDs across 5,655 records. GFALL
-  dispatches 62 IDs across frame and event handlers. Six absent IDs perform
-  actions in FALL.EXE and appear in 103 records across 26 files. They are movie
-  playback (50), immediate sound (60), casting on a quest foe (69), faction flag
-  changes (85 and 86), and foe respawn (87). Op 38 is absent and does nothing in
-  FALL.EXE. GFALL currently skips unhandled frame ops silently. Handler presence
-  measures static coverage. Branch reachability and parity require playthroughs.
+  dispatches all of them that act in FALL.EXE: the last six (50 movie, 60
+  sound, 69 cast on a foe, 85 and 86 a faction flag nothing reads, 87 respawn)
+  are in. Op 38 is absent and does nothing in FALL.EXE. GFALL still skips
+  unknown frame ops silently. Handler presence measures static coverage.
+  Branch reachability and parity require playthroughs.
 - Quest foes can persist through saves, and op 68 can pacify or release them.
   Quest-specified equipment and exact MAPS/RMB site selection still need work.
   The Where-is menu lacks its People list and some quest-specific answers.
-- Letters and guild invitations are wired. Courier timing still differs on
-  fast travel, during rest and inside buildings. The quest-minute pass runs
-  once per batched advance, so repeated interval and chance checks can diverge.
-  The saved log has entries on parchment. The original logbook controls and
-  copied notes page are missing.
-- Vampirism and lycanthropy have scheduled cure quests and cure opcodes.
-  Both cure adventures still need end-to-end tests. Crypt-marker arrival,
-  infection dreams and racial hit effects remain open.
+- Letters and guild invitations are wired. The courier (op 76, Brisienna's
+  letter) follows the original: in a town's streets by day, no creature alive,
+  while the world runs; rest and fast travel do not deliver. The quest-minute
+  pass still runs once per batched advance, so repeated interval and chance
+  checks of other ops can diverge. The saved log has entries on parchment. The
+  original logbook controls and copied notes page are missing.
+- Vampirism and lycanthropy have scheduled cure quests, cure opcodes and
+  end-to-end tests of both adventures; the infection dreams and the crypt
+  arrival are in. The move to the kind-9 marker nearest the start marker and
+  racial hit effects remain open.
 
 ### Combat, magic, and world systems
 
@@ -47,16 +48,18 @@ retired on 2026-11-12 at tag `before-gfall-retire`.
   artifact powers remain open. Creatures can use enchanted weapons. Standard
   creature gear generation still produces plain equipment, and the Skull of
   Corruption currently copies non-class creatures.
-- Daedra summoning reaches its outcome prompt. It still needs actual weather,
-  a prince's quest and the allied-creature outcome. Region politics, events
-  and price or news updates remain incomplete. Installed noble work already
+- Daedra summoning is whole: the day's prince, the weather with the storm
+  mark, the prince's quest in his FLC scene, the hostile servant on a repeat,
+  the covens and their menu (ChildGard aside). Region politics, events and
+  price or news updates remain incomplete. Installed noble work already
   includes ordinary R0C quests from marked nobles.
 - Banks have accounts and loans. Buying houses and ships, entering and using
   owned property, and the town's sale listings remain incomplete. Building
   access still approximates some original flags, lockpick persistence and
   trespass behavior. Street people still use the places layer's pool.
-- Opening, death, infection and scripted movies need playback. Joystick and
-  the moving local light remain open. Detail currently controls texture and
+- The opening, death, infection and scripted movies and the princes' FLC
+  scenes play (`skip_opening` in settings.cfg turns the opening off; untested on
+  the 233). Joystick and the moving local light remain open. Detail currently controls texture and
   sprite quality.
 
 ### Deferred save work and target acceptance

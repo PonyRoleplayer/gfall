@@ -8,6 +8,7 @@
 #include "game/dagger/play/people/talk.h"
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/people/standing.h"
+#include "game/dagger/play/play.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/formats/textrsc.h"
 #include "game/dagger/play/character/curse.h"
@@ -82,6 +83,9 @@ static int w_pick_building(int region, int index, int type, unsigned seed, int *
 static int g_out;
 static int w_outdoors(void) { return g_out; }
 static int g_creatures;
+static int g_sounds, g_sound_id;
+static void count_sound(int id) { g_sounds++; g_sound_id = id; }
+static GameState *game_state_edit(void) { return (GameState *)game_state(); }
 static int w_creatures(void) { return g_creatures; }
 static int g_site_mode = -1, g_site_value, g_site_none;
 static const int a51_none[5] = {-1, -2, -2, -2, -2};
@@ -548,6 +552,55 @@ void check_quest(void)
                 check_expect(!quest_talk(1, 9) && object_at(id), "quest: another faction's person took the item");
                 check_expect(quest_talk(1, 7) && !object_at(id) && quest_state(0, 2) == 1 && quest_at(0)->item[0].object == 0, "quest: op 1 did not take the item for the person and set its state");
             } else { check_expect(0, "quest: the item quest did not start"); }
+            quest_end(0);
+        }
+        /* The last absent ops: 60 plays its sound on every run while its state is set, 85 and 86 are done once (the flag they set has no reader), 69 is done once (no foe of the stub is alive to be cast on),
+         * and 87 places the foe again every interval minutes with its count spent one at a time, 100 in a hundred here, until the count (3) is gone. */
+        {
+            int e60[5] = {0, 0, -2, -2, -2}, e85[5] = {0, 0, -2, -2, -2}, e69[5] = {0, 0, 0, -2, -2}, e87[5] = {0, 0, 0, 0, 0};
+            static const QuestWorld w87 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures };
+            int run, first, again;
+
+            quest_end(0);
+            memset(f3, 0, sizeof(f3));
+            put16(f3 + 0x10 + 3 * 2, 1); put16(f3 + 0x24 + 3 * 2, 0xC0);
+            put16(f3 + 0x10 + 7 * 2, 1); put16(f3 + 0x24 + 7 * 2, 0xE0);
+            put16(f3 + 0x10 + 8 * 2, 5); put16(f3 + 0x24 + 8 * 2, 0x100);
+            put16(f3 + 0x10 + 9 * 2, 1); put16(f3 + 0x24 + 9 * 2, 0x100 + 5 * 87);
+            put16(f3 + 0xC0 + 4, (df_u32)-8); put16(f3 + 0xC0 + 6, 7);
+            f3[0xE0 + 3] = 5; f3[0xE0 + 4] = 2;
+            put16(f3 + 0x100 + 5 * 87, 0); put32(f3 + 0x100 + 5 * 87 + 4, 100u);
+            put_op(f3 + 0x100, 60, -1, e60, 0); put_lit(f3 + 0x100 + 6 + 15, 52);
+            put_op(f3 + 0x100 + 87, 85, -1, e85, 0);
+            put_op(f3 + 0x100 + 174, 86, -1, e85, 0);
+            put_op(f3 + 0x100 + 261, 69, -1, e69, 0); put_lit(f3 + 0x100 + 261 + 6 + 30, 17);
+            put_op(f3 + 0x100 + 348, 87, -1, e87, 0);
+            put_lit(f3 + 0x100 + 348 + 6 + 30, 10); put_lit(f3 + 0x100 + 348 + 6 + 45, 100); put_lit(f3 + 0x100 + 348 + 6 + 60, 3);
+            quest_set_world(&w87);
+            quest_set_names(0);
+            g_sounds = 0; set_sound(count_sound);
+            slot = quest_start_bytes("TEST0087", f3, 0x100 + 5 * 87 + 8, 0);
+            check_expect(slot == 0, "quest: the quest of the last ops did not start");
+            if (slot == 0) {
+                quest_set_state(0, 0, 1);
+                g_spawned = 0;
+                game_state_edit()->minutes = 200000u;
+                for (run = 0; run < 3; run++) { quest_run(); }
+                check_expect(g_sounds == 3 && g_sound_id == 52, "quest: op 60 did not play its sound on every run while its state was set");
+                check_expect((quest_at(0)->qbn.op[1].flags & 1) && (quest_at(0)->qbn.op[2].flags & 1) && (quest_at(0)->qbn.op[3].flags & 1), "quest: op 85, 86 or 69 was not done once");
+                first = g_spawned;
+                check_expect(first == 2 && quest_at(0)->qbn.op[4].arg[4].value == 2, "quest: op 87 did not place the foe's two and spend one of its count");
+                game_state_edit()->minutes += 5u;
+                quest_run();
+                check_expect(g_spawned == first, "quest: op 87 placed the foe again before its interval");
+                game_state_edit()->minutes += 10u; quest_run();
+                game_state_edit()->minutes += 10u; quest_run();
+                again = g_spawned;
+                game_state_edit()->minutes += 10u; quest_run();
+                check_expect(again == 6 && g_spawned == 6 && quest_at(0)->qbn.op[4].arg[4].value == 0, "quest: op 87 did not stop when its count of 3 was spent");
+            }
+            set_sound(0);
+            quest_set_world(0);
             quest_end(0);
         }
         /* Op 76, the courier (func_00031658): the item comes by chance on a passing minute, out of doors in a town, by day (strictly between 06:00 and 18:00), with no creature loaded and the game
