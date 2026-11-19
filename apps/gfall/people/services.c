@@ -3,6 +3,7 @@
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/travel/maps.h"
 #include "game/dagger/play/quests/quest.h"
+#include "game/dagger/play/ui/movie.h"
 #include "../seam.h"
 #include "../screen/screen.h"
 #include "../sound.h"
@@ -435,6 +436,7 @@ static void hall_daedra_answer(int yes)
 {
     int kind, result, weather;
     char quest[9];
+    static char line[600];
     Weather w;
 
     if (!yes) { return; }
@@ -443,9 +445,11 @@ static void hall_daedra_answer(int yes)
     weather_state(&w);
     weather = w.kind == WEATHER_THUNDER ? WEATHER_RAIN | WEATHER_STORM_MARK : w.kind;
     result = daedra_summon(g_daedra_prince, g_daedra_letter, weather, &kind, quest);
-    if (result == DAEDRA_FAILED) { hall_text(TEXT_DAEDRA_FAILED); }
+    gfall_daedra_say(result == DAEDRA_FAILED ? TEXT_DAEDRA_FAILED : TEXT_DAEDRA_TWICE, 0, g_daedra_prince, line, (int)sizeof(line));
+    if (result == DAEDRA_FAILED) { possessions_message(line, 0); }
     else if (result == DAEDRA_QUEST) { quest_begin(quest, g_daedra_prince); }
-    else { hall_text(TEXT_DAEDRA_TWICE); }
+    /* A second success: the prince's animation says it (text 482) and his servant is put beside the player when it ends. */
+    else if (!movie_scene(prince_flc_of(g_daedra_prince), line, 0, 0)) { possessions_message(line, 0); }
 }
 
 static void hall_daedra(void)
@@ -460,7 +464,7 @@ static void hall_daedra(void)
     g_daedra_prince = step.prince;
     g_daedra_price = step.price;
     g_daedra_letter = step.letter;
-    gfall_offer_say(step.text, step.price, line, (int)sizeof(line));
+    gfall_daedra_say(step.text, step.price, step.prince, line, (int)sizeof(line));
     possessions_ask(line, hall_daedra_answer);
 }
 

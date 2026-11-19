@@ -1,4 +1,5 @@
 #include "game/dagger/play/state.h"
+#include "game/dagger/play/ui/movie.h"
 #include "game/dagger/play/items/possessions.h"
 #include "game/dagger/play/travel/maps.h"
 #include "game/dagger/play/quests/quest.h"
@@ -1178,6 +1179,8 @@ int seam_screen_covers(void)
 {
     int page;
 
+    /* A movie or a prince's scene is the whole picture (movie.h): no world is drawn behind it, so DAG2's side bars and the letterbox are black. */
+    if (movie_active()) { return 1; }
     page = possessions_state()->page;
     if (!page || page == VIEW_MESSAGE || maps_up() || options_up() || !g_comp[g_screen_kind]) {
         return 0;

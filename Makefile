@@ -132,7 +132,8 @@ FORMATS_SRC := \
 	src/game/dagger/formats/classcfg.c \
 	src/game/dagger/formats/namegen.c \
 	src/game/dagger/formats/spells.c \
-	src/game/dagger/formats/vid.c
+	src/game/dagger/formats/vid.c \
+	src/game/dagger/formats/flc.c
 
 # Daggerfall's rules for dressing a place.
 TABLES_SRC := \
@@ -176,8 +177,7 @@ PLAY_SRC := \
 	src/game/dagger/play/travel/townmap.c \
 	src/game/dagger/play/travel/dunmap.c \
 	src/game/dagger/play/travel/marker.c \
-	src/game/dagger/play/ui/words.c \
-	src/game/dagger/play/ui/movie.c
+	src/game/dagger/play/ui/words.c
 
 # GFALL: original gameplay and the streamed world.
 GFALL_GAME_SRC := \
@@ -264,6 +264,7 @@ GFALL_GAME_SRC := \
 	src/game/dagger/play/input/steer.c \
 	src/game/dagger/play/ui/hud.c \
 	src/game/dagger/play/ui/screen.c \
+	src/game/dagger/play/ui/movie.c \
 	src/game/dagger/play/ui/msg.c \
 	src/game/dagger/play/character/kit.c \
 	src/game/dagger/play/config.c \

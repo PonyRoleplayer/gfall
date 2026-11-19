@@ -74,6 +74,11 @@ static const df_u8 g_daedra_weather[] = { 0, 100, 100, 100, 100, 4, 4, 100, 100,
 /* prince_index (0x179E94): a prince's place in prince_quest_codes (0x1850D4); entry 0 is unused. */
 static const df_u8 g_prince_index[] = { 0, 2, 5, 8, 4, 13, 11, 14, 3, 12, 1, 9, 7, 15, 10, 6, 0 };
 static const char g_prince_codes[] = "TUVWXYZ123456789";
+/* The princes' animations (the pointer table at 0x1850E5), in the order of prince_quest_codes: the quest code's place picks the file. */
+static const char *const g_prince_flc[] = {
+    "AZURA.FLC", "BOETHIAH.FLC", "CLAVICUS.FLC", "HERMAEUS.FLC", "HIRCINE.FLC", "MEHRUNES.FLC", "MEPHALA.FLC", "MERIDIA.FLC",
+    "MOLAGBAL.FLC", "NAMIRA.FLC", "NOCTURNA.FLC", "PERYITE.FLC", "SHEOGRTH.FLC", "SANGUINE.FLC", "MALACATH.FLC", "VAERNIMA.FLC"
+};
 static const df_u8 g_daedra_kind[] = { 26, 25, 27, 29, 31 };
 static const char *const g_rank_name[22][10] = {
     { "Apprentice", "Journeyman", "Operator", "Slayer", "Executioner", "Punisher", "Terminator", "Assassin", "Dark Brother", "Master Assassin" },

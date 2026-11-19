@@ -1,6 +1,8 @@
 #include "game/dagger/play/ui/movie.h"
 #include "game/dagger/play/ui/screen.h"
 #include "game/dagger/formats/vid.h"
+#include "game/dagger/formats/flc.h"
+#include "game/dagger/formats/smallfont.h"
 #include "engine/ui/pic.h"
 #include "engine/sound/sound.h"
 #include "engine/sound/music.h"
@@ -48,10 +50,13 @@ static int g_enabled = 0;
 #else
 static int g_enabled = 1;
 #endif
-void movie_set_enabled(int on) { g_enabled = on; if (!on) { g_queued = 0; movie_stop(); } }
+static void scene_end(int answer);
+void movie_set_enabled(int on) { g_enabled = on; if (!on) { g_queued = 0; movie_stop(); scene_end(-1); } }
 int movie_enabled(void) { return g_enabled; }
 
-int movie_active(void) { return g.active || g_queued > 0; }
+static int scene_up(void);
+static int scene_pic(void);
+int movie_active(void) { return g.active || g_queued > 0 || scene_up(); }
 int movie_frames_shown(void) { return g.frames; }
 
 /* Ends the movie that plays; the queue goes on (a skip) unless movie_stop_all. */
@@ -153,6 +158,133 @@ int movie_frame(float dt, int skip)
 
 void movie_draw(void)
 {
+    if (scene_up()) { blit(scene_pic(), 0, 0, MOVIE_SCREEN_W, MOVIE_SCREEN_H); return; }
     if (!g.active || !g.pic) { return; }
     blit(g.pic, (MOVIE_SCREEN_W - g.w) / 2, 0, g.w, MOVIE_SCREEN_H);
+}
+
+/* ---- The prince's scene ---- */
+
+/* The text's place and colours (flc_draw_text_page): four lines from y 150, ten apart, centred on x 160, in the palette's ink and shadow. */
+#define SCENE_LINES 4
+#define SCENE_TOP 150
+#define SCENE_LINE_H 10
+#define SCENE_CENTRE 160
+#define SCENE_INK 145
+#define SCENE_SHADOW 156
+/* The words a scene holds, its lines (a quest's message runs to a few pages), and the keys the scene answers to. */
+#define SCENE_TEXT 1024
+#define SCENE_ROWS 48
+#define SCENE_KEY_ESCAPE 27
+#define SCENE_KEY_ENTER 13
+#define SCENE_KEY_SPACE ' '
+#define SCENE_FONT "FONT0003.FNT"
+
+static struct {
+    int active, pic, ask, page, rows, at_end;
+    Flc flc;
+    SmallFont font;
+    char text[SCENE_TEXT];
+    char *row[SCENE_ROWS];
+    MovieAnswer done;
+    double wait;                /* seconds into the frame that shows */
+    df_u8 shown[MOVIE_SCREEN_W * MOVIE_SCREEN_H];
+} s;
+
+static int scene_up(void) { return s.active; }
+static int scene_pic(void) { return s.pic; }
+
+/* The frame as it stands with the page's lines over it. */
+static void scene_compose(void)
+{
+    int i, first;
+
+    mem_copy(s.shown, s.flc.image, (df_u32)(MOVIE_SCREEN_W * MOVIE_SCREEN_H));
+    first = s.page * SCENE_LINES;
+    for (i = 0; i < SCENE_LINES && first + i < s.rows; i++) {
+        const char *line = s.row[first + i];
+        smallfont_draw(&s.font, s.shown, MOVIE_SCREEN_W, MOVIE_SCREEN_H, SCENE_CENTRE - smallfont_width(&s.font, line) / 2, SCENE_TOP + i * SCENE_LINE_H, SCENE_INK, SCENE_SHADOW, line);
+    }
+    if (s.pic) { if (s.flc.palette_changed) { pic_set_palette(s.pic, s.flc.palette); } pic_update(s.pic, s.shown); }
+}
+
+/* Ends it and tells who asked (answer -1: no one, the movies were turned off). The callback may start the next scene. */
+static void scene_end(int answer)
+{
+    MovieAnswer done;
+
+    if (!s.active) { return; }
+    done = s.done;
+    if (s.pic) { pic_free(s.pic); }
+    flc_close(&s.flc);
+    s.active = 0; s.pic = 0; s.done = 0;
+    if (done && answer >= 0) { done(answer); }
+}
+
+int movie_scene_active(void) { return s.active; }
+
+int movie_scene(const char *flc, const char *words, int ask, MovieAnswer done)
+{
+    int i, n;
+
+    if (!g_enabled || s.active || !flc || !words) { return 0; }
+    mem_zero(&s, sizeof(s));
+    if (!flc_open(&s.flc, flc)) { return 0; }
+    if (s.flc.width != MOVIE_SCREEN_W || s.flc.height != MOVIE_SCREEN_H || !flc_next(&s.flc)) { flc_close(&s.flc); return 0; }
+    if (!smallfont_load(&s.font, SCENE_FONT)) { flc_close(&s.flc); return 0; }
+    /* The lines: a break ends one, a line's leading blanks are dropped (the file's continuation lines begin with one), a blank line is nothing. */
+    n = 0;
+    for (i = 0; words[i] && n < SCENE_TEXT - 1; i++) { s.text[n++] = words[i]; }
+    s.text[n] = 0;
+    for (i = 0; i < n && s.rows < SCENE_ROWS; ) {
+        while (s.text[i] == ' ') { i++; }
+        if (s.text[i] && s.text[i] != '\n') { s.row[s.rows++] = s.text + i; }
+        while (s.text[i] && s.text[i] != '\n') { i++; }
+        if (s.text[i]) { s.text[i++] = 0; }
+    }
+    s.pic = pic_load(s.flc.image, MOVIE_SCREEN_W, MOVIE_SCREEN_H, s.flc.palette, 0);
+    if (!s.pic) { flc_close(&s.flc); return 0; }
+    s.ask = ask; s.done = done; s.active = 1; s.wait = 0.0;
+    scene_compose();
+    return 1;
+}
+
+/* A page on: the next one, or whether this was the last. */
+static int scene_turn(void)
+{
+    if ((s.page + 1) * SCENE_LINES < s.rows) { s.page++; scene_compose(); return 1; }
+    return 0;
+}
+
+void movie_scene_frame(float dt, int key, int click)
+{
+    if (!s.active) { return; }
+    {
+        int last = (s.page + 1) * SCENE_LINES >= s.rows;
+
+        /* Y and N answer a question on its last page; Escape is a no there (the original has none), and any other leaving click is a click. */
+        if (s.ask && last) {
+            if (key == 'y' || key == 'Y') { scene_end(MOVIE_ANSWER_YES); return; }
+            if (key == 'n' || key == 'N' || key == SCENE_KEY_ESCAPE) { scene_end(MOVIE_ANSWER_NO); return; }
+        }
+        if (click || key == SCENE_KEY_ENTER || key == SCENE_KEY_SPACE || (!s.ask && key == SCENE_KEY_ESCAPE)) {
+            if (scene_turn()) { return; }
+            if (!s.ask) { scene_end(MOVIE_ANSWER_LEFT); return; }
+        }
+    }
+    /* The animation: a frame every flc_frame_ms; the file's last frame is a delta back to the first, so the loop goes on at the second. */
+    s.wait += (double)dt;
+    if (s.wait * 1000.0 >= (double)flc_frame_ms(&s.flc)) {
+        s.wait -= (double)flc_frame_ms(&s.flc) / 1000.0;
+        if (s.wait > 1.0) { s.wait = 0.0; }
+        if (!flc_next(&s.flc)) { flc_rewind(&s.flc); flc_next(&s.flc); }
+        scene_compose();
+    }
+}
+
+const unsigned char *movie_scene_pixels(const unsigned char **palette)
+{
+    if (!s.active) { return 0; }
+    if (palette) { *palette = s.flc.palette; }
+    return s.shown;
 }

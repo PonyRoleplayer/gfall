@@ -115,7 +115,9 @@ void gfall_play_startup(void)
     move_init();
     weapon_reset(); combat_reset();
     /* The opening: the publisher's logo (intro_play_logo), then the cinematic (intro_play_movie: ANIM0000, ANIM0011, DAG2 at x 32). Each skips at a key or a click. */
-    movie_play(MOVIE_LOGO); movie_play(MOVIE_OPENING); movie_play(MOVIE_OPENING_2); movie_play_file(MOVIE_OPENING_3);
+    if (!(game_config()->flags & CONFIG_FLAG_SKIP_OPENING)) {
+        movie_play(MOVIE_LOGO); movie_play(MOVIE_OPENING); movie_play(MOVIE_OPENING_2); movie_play_file(MOVIE_OPENING_3);
+    }
     rest_set_dream(dream_movie);
 }
 
@@ -456,6 +458,13 @@ int play_frame(const PlayIn *in, Camera *cam, const Scene *scene)
     }
     if (chargen_quit()) {
         return FRAME_QUIT;
+    }
+    /* A prince's scene (his animation with the words under it) owns the screen the same way; Y and N, a click and Enter answer it. */
+    if (movie_scene_active()) {
+        movie_scene_frame(in->dt, in->ch, in->mouse_pressed & 1);
+        g_mouse_prev = in->mouse_held;
+        if (!movie_scene_active()) { g_wait_buttons = (in->mouse_held & 3) != 0; }
+        return FRAME_MENU;
     }
     /* A movie owns the screen: nothing else moves. A key, Space, Enter, Escape or a click ends it, and its closing click is waited out. */
     if (movie_active()) {

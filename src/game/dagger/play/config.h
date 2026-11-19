@@ -6,6 +6,9 @@
 #include "game/dagger/play/input/steer.h"
 
 #define CONFIG_FILE "gfall\\settings.cfg"
+/* Config.flags: bit 0 full screen, bit 1 head bob (the original's two view switches, which a save keeps), and bit 2, ours: the opening's logo and movies are not played at start (`skip_opening=on`; a key still skips each one when played). */
+#define CONFIG_FLAG_SKIP_OPENING 4
+#define CONFIG_FLAGS_MOST 7
 typedef struct Config {
     int flags, mouse_mode;
     int sound_volume, music_volume, detail;

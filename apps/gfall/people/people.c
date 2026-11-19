@@ -20,6 +20,7 @@
 #include "game/dagger/places/people.h"
 #include "game/dagger/play/people/shelf.h"
 #include "game/dagger/play/ui/words.h"
+#include "game/dagger/tables/datedefs.h"
 #include "game/dagger/places/town.h"
 #include "game/dagger/tables/holidaydefs.h"
 #include "game/dagger/play/people/bank.h"
@@ -122,6 +123,24 @@ int gfall_offer_say(int text, int price, char *out, int cap)
     w.amount = price;
     w.city = town_name();
     w.place = "This shop";
+    words_use(&w);
+    return words_say(text, out, cap);
+}
+
+int gfall_daedra_say(int text, int price, int prince, char *out, int cap)
+{
+    Words w;
+    const Faction *daedra;
+    char date[48];
+
+    mem_zero(&w, sizeof(w));
+    w.amount = price;
+    w.city = town_name();
+    w.place = "This shop";
+    daedra = faction_find(prince);
+    w.daedra = daedra ? daedra->name : "";
+    date_text(game_state()->minutes, date, sizeof(date));
+    w.date = date;
     words_use(&w);
     return words_say(text, out, cap);
 }

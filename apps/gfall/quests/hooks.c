@@ -7,6 +7,8 @@
 #include "game/dagger/places/dunstream.h"
 #include "game/dagger/places/entbuild.h"
 #include "game/dagger/play/quests/quest.h"
+#include "game/dagger/play/ui/movie.h"
+#include "game/dagger/play/people/guild.h"
 #include "../seam.h"
 #include "../screen/screen.h"
 #include "../sound.h"
@@ -42,6 +44,14 @@ static int quest_text(const char *quest, int message, int in_text_rsc, char *out
 }
 
 static void quest_say(const char *text) { possessions_message(text, 0); }
+
+/* A prince's scene: his animation and the words, for the offer of his quest (quest_offer_prompt). */
+static int quest_scene(char code, const char *words, int ask, void (*answer)(int answer))
+{
+    const char *file = prince_flc(code);
+
+    return file ? movie_scene(file, words, ask, answer) : 0;
+}
 
 /* The TEXT.RSC macros of a quest's text: the player's name and race, the town and the region. */
 static int quest_macros(const char *in, char *out, int cap)
@@ -395,6 +405,7 @@ void gfall_quests_install_text(void)
     quest_set_text(quest_text);
     quest_set_say(quest_say);
     quest_set_ask(possessions_ask);
+    quest_set_scene(quest_scene);
     quest_set_macros(quest_macros);
     quest_set_place(quest_place);
     quest_set_world(&world);

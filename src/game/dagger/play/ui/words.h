@@ -53,6 +53,9 @@ typedef struct Words {
     /* The tone 0..2, what the person thinks of the player: which greeting, and a name or "stranger". */
     int tone;
     int reaction;
+    /* A Daedra prince's name (%dae) and the day's date (%dat), as the summoning's texts 481, 482 and 484 say them. */
+    const char *daedra;
+    const char *date;
 } Words;
 
 /* The macros' values, until the next call. w is read, not copied: it stays valid while words_say is called. */

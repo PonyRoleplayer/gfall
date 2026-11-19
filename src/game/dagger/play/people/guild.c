@@ -713,3 +713,19 @@ const char *guild_rank_name(int kind, int rank)
     if (kind < 0 || kind >= GUILDS || rank < 0 || rank > MAX_RANK) { return ""; }
     return g_rank_name[kind][rank];
 }
+
+const char *prince_flc(char code)
+{
+    int i;
+
+    if (code >= 'a' && code <= 'z') { code = (char)(code - 'a' + 'A'); }
+    for (i = 0; g_prince_codes[i]; i++) {
+        if (g_prince_codes[i] == code) { return g_prince_flc[i]; }
+    }
+    return 0;
+}
+
+const char *prince_flc_of(int prince)
+{
+    return prince >= 1 && prince <= DAEDRA_PRINCES ? g_prince_flc[g_prince_index[prince]] : 0;
+}

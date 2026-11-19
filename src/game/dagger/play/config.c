@@ -36,7 +36,7 @@ static const struct { const char *token, *name; int key; } g_action[ACTS] = {
 typedef struct Setting { const char *name; size_t offset; int low, high; } Setting;
 #define SETTING(name, field, low, high) {name, offsetof(Config, field), low, high}
 static const Setting g_setting[] = {
-    SETTING("view_flags", flags, 0, 3), SETTING("mouse_mode", mouse_mode, 0, 1),
+    SETTING("view_flags", flags, 0, CONFIG_FLAGS_MOST), SETTING("mouse_mode", mouse_mode, 0, 1),
     SETTING("sound_volume", sound_volume, 0, 100), SETTING("music_volume", music_volume, 0, 100),
     SETTING("detail", detail, 0, 127),
     SETTING("sensitivity_x", sensitivity_x, 1, 15), SETTING("sensitivity_y", sensitivity_y, 1, 15),
@@ -223,9 +223,9 @@ static int set_named(Config *config, const char *name, char *value)
 {
     int v, i;
     char *height;
-    if (df_eq(name, "full_screen") || df_eq(name, "head_bob")) {
+    if (df_eq(name, "full_screen") || df_eq(name, "head_bob") || df_eq(name, "skip_opening")) {
         if (!boolean(value, &v)) { return 0; }
-        i = df_eq(name, "full_screen") ? 1 : 2;
+        i = df_eq(name, "full_screen") ? 1 : df_eq(name, "head_bob") ? 2 : CONFIG_FLAG_SKIP_OPENING;
         config->flags = (config->flags & ~i) | (v ? i : 0);
         return 1;
     }
@@ -324,6 +324,8 @@ int config_format(const Config *config, char *text, int capacity)
     PUT(line);
     PUT(config->flags & 1 ? "full_screen=on\r\n" : "full_screen=off\r\n");
     PUT(config->flags & 2 ? "head_bob=on\r\n" : "head_bob=off\r\n");
+    PUT("# skip_opening: do not play the logo and the opening movies at start.\r\n");
+    PUT(config->flags & CONFIG_FLAG_SKIP_OPENING ? "skip_opening=on\r\n" : "skip_opening=off\r\n");
     PUT("\r\n# Audio volumes are percentages. Detail is stored only (0..127).\r\n");
 #define NUMBER(name, value) do { log_format(line, sizeof(line), name "=%d\r\n", value); PUT(line); } while (0)
     NUMBER("sound_volume", config->sound_volume);

@@ -966,6 +966,64 @@ static void check_movie(void)
     check_expect(!movie_active(), "movie: turning movies off left one queued");
 }
 
+/* The prince's scene: pages of four lines, a click turns them and leaves on the last, Y and N answer a question, the callback may start the next scene. */
+static int g_scene_answer, g_scene_calls, g_scene_chain;
+static void scene_took(int answer) { g_scene_answer = answer; g_scene_calls++; }
+static void scene_chain(int answer) { g_scene_answer = answer; g_scene_calls++; if (!g_scene_chain++) { movie_scene("MALACATH.FLC", "Again.\n", 0, scene_took); } }
+
+static void check_scene(void)
+{
+    static const char nine[] = "One\n two\nThree\n four\n\nFive\nsix\nseven\neight\nnine";
+    int i;
+
+    check_expect(!movie_scene("AZURA.FLC", nine, 0, scene_took), "scene: shown while movies are off");
+    movie_set_enabled(1);
+    check_expect(!movie_scene("NOSUCH.FLC", nine, 0, scene_took) && !movie_scene_active(), "scene: a missing file was shown");
+    g_scene_calls = 0; g_scene_answer = -1;
+    check_expect(movie_scene("AZURA.FLC", nine, 0, scene_took) && movie_scene_active() && movie_active(), "scene: AZURA did not start");
+    check_expect(!movie_scene("HIRCINE.FLC", nine, 0, 0), "scene: a second scene started over the first");
+    movie_draw();
+    {
+        const unsigned char *pal, *px = movie_scene_pixels(&pal);
+        int ink = 0, shadow = 0;
+        FILE *out;
+
+        for (i = 320 * 150; i < 320 * 200; i++) { ink += px[i] == 145; shadow += px[i] == 156; }
+        check_expect(ink > 50 && shadow > 50, "scene: the page's words are not drawn in the ink and shadow");
+        out = fopen("build/scene0.ppm", "wb");
+        if (out) { fprintf(out, "P6\n320 200\n255\n"); for (i = 0; i < 320 * 200; i++) { fwrite(pal + px[i] * 3, 1, 3, out); } fclose(out); }
+    }
+    for (i = 0; i < 40; i++) { movie_scene_frame(0.1f, 0, 0); }
+    check_expect(movie_scene_active() && g_scene_calls == 0, "scene: it ended by itself");
+    /* Nine lines are three pages: two clicks turn, the third leaves. */
+    movie_scene_frame(0.0f, 0, 1); movie_scene_frame(0.0f, 'y', 0);
+    check_expect(movie_scene_active() && g_scene_calls == 0, "scene: a Y answered a scene that asks nothing, or the page did not turn");
+    movie_scene_frame(0.0f, 0, 1);
+    check_expect(movie_scene_active(), "scene: it left before the last page");
+    movie_scene_frame(0.0f, 0, 1);
+    check_expect(!movie_scene_active() && g_scene_calls == 1 && g_scene_answer == MOVIE_ANSWER_LEFT, "scene: a click on the last page did not leave");
+    /* A question waits on its last page for Y or N: a click leaves nothing. */
+    check_expect(movie_scene("HIRCINE.FLC", "Shall we?\nYes?\n", 1, scene_took), "scene: the question did not start");
+    movie_scene_frame(0.0f, 0, 1); movie_scene_frame(0.0f, ' ', 0); movie_scene_frame(0.0f, 'x', 0);
+    check_expect(movie_scene_active(), "scene: a click answered a question");
+    movie_scene_frame(0.0f, 'Y', 0);
+    check_expect(!movie_scene_active() && g_scene_answer == MOVIE_ANSWER_YES, "scene: Y was not a yes");
+    movie_scene("HIRCINE.FLC", "Shall we?\n", 1, scene_took); movie_scene_frame(0.0f, 'n', 0);
+    check_expect(g_scene_answer == MOVIE_ANSWER_NO && !movie_scene_active(), "scene: N was not a no");
+    movie_scene("HIRCINE.FLC", "Shall we?\n", 1, scene_took); movie_scene_frame(0.0f, 27, 0);
+    check_expect(g_scene_answer == MOVIE_ANSWER_NO, "scene: Escape was not a no");
+    /* Its own answer starts the next. */
+    g_scene_chain = 0;
+    movie_scene("AZURA.FLC", "Once.\n", 0, scene_chain); movie_scene_frame(0.0f, 0, 1);
+    check_expect(movie_scene_active(), "scene: the callback's scene did not start");
+    movie_scene_frame(0.0f, 0, 1);
+    check_expect(!movie_scene_active() && g_scene_calls >= 5, "scene: the chained scene did not end");
+    /* Turning movies off drops it, without the callback. */
+    g_scene_calls = 0;
+    movie_scene("AZURA.FLC", "Once.\n", 0, scene_took); movie_set_enabled(0);
+    check_expect(!movie_scene_active() && g_scene_calls == 0, "scene: turning movies off left it up or called back");
+}
+
 void check_game(const char *root)
 {
     int id;
@@ -975,6 +1033,7 @@ void check_game(const char *root)
     for (id = 1; id <= PIC_MAX; id++) { pic_free(id); }
     pic_begin(0, 384u * 1024u, &g_card);
     check_movie();
+    check_scene();
     check_journey();
     /* The rules on a small table first: the boot below defines the real one. */
     check_standing();

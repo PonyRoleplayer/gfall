@@ -267,5 +267,9 @@ enum { DAEDRA_FAILED, DAEDRA_QUEST, DAEDRA_FOE };
 int daedra_summon(int prince, int letter, int weather, int *kind, char *quest);
 /* The servant a summoning called, once: its creature kind, or -1 for none. The frame puts it beside the player as a foe. */
 int daedra_servant_take(void);
+/* The animation of the prince a quest code (the first letter of his quest, in either case) belongs to: AZURA.FLC and the like; 0 when the letter is no prince's (quest_offer_prompt's strchr in prince_quest_codes). */
+const char *prince_flc(char code);
+/* The same for a prince by his number 1..DAEDRA_PRINCES (the summoning's day table's); 0 out of range. */
+const char *prince_flc_of(int prince);
 
 #endif

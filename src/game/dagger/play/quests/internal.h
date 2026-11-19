@@ -17,6 +17,8 @@ typedef struct QuestTextHooks {
     int (*read)(const char *quest, int message, int in_text_rsc, char *out, int cap);
     void (*say)(const char *text);
     int (*ask)(const char *words, void (*answer)(int yes));
+    /* A prince's scene (his animation with the words): the quest's first letter, the words, whether it asks (the answer: 1 yes, 2 no, 0 left); 0 when it cannot be shown. */
+    int (*scene)(char code, const char *words, int ask, void (*answer)(int answer));
 } QuestTextHooks;
 
 extern QuestRuntime quest_runtime;

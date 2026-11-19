@@ -239,6 +239,11 @@ int quest_pick_seeded(char letter, char letter2, char membership, int rank, unsi
 int quest_active(const char *name);
 /* What asks the player (a yes/no box) and says the quest's words, set by the game. */
 void quest_set_ask(int (*ask)(const char *words, void (*answer)(int yes)));
+/* The prince's scene a Daedra's quest (first letter T..Z, 1..9) is offered and answered in (quest_offer_prompt plays his FLC with messages 1000, then 1002 or 1001); with none, or when it
+ * cannot be shown, the box of quest_set_ask and quest_set_say is used. */
+/* The scene's answer for a yes (the others, 2 and 0, are no and left). */
+#define QUEST_SCENE_YES 1
+void quest_set_scene(int (*scene)(char code, const char *words, int ask, void (*answer)(int answer)));
 /* quest_start and the offer (quest_offer_prompt): the quest is started with the giver's faction when its name has a Y at its sixth place (else none); a name other than S0000xxx
  * and a Y quest or a Daedra's is asked yes or no (QRC 1000), answered by 1002 or 1001, and a no ends it. Returns the slot, -1 for none started (a missing file, a refused name,
  * a quest of that name running, no free slot). */

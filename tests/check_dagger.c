@@ -11,6 +11,7 @@
 
 #include "engine/assets/vfs.h"
 #include "game/dagger/formats/vid.h"
+#include "game/dagger/formats/flc.h"
 #include "engine/core/mem.h"
 #include "game/dagger/formats/arch3d.h"
 #include "game/dagger/formats/bsa.h"
@@ -3316,6 +3317,51 @@ static void check_vid(void)
     }
 }
 
+/* The princes' FLICs: each of the 16 opens, plays its first frame, 14 more, and the last, a delta back to the first, leaves the picture the first frame was. */
+static void check_flc(void)
+{
+    static const char *names[] = { "AZURA.FLC", "BOETHIAH.FLC", "CLAVICUS.FLC", "HERMAEUS.FLC", "HIRCINE.FLC", "MALACATH.FLC", "MEHRUNES.FLC", "MEPHALA.FLC",
+        "MERIDIA.FLC", "MOLAGBAL.FLC", "NAMIRA.FLC", "NOCTURNA.FLC", "PERYITE.FLC", "SANGUINE.FLC", "SHEOGRTH.FLC", "VAERNIMA.FLC" };
+    static df_u8 first[320 * 200];
+    int i, frames, differs, moved, lit;
+    Flc f;
+
+    for (i = 0; i < (int)(sizeof(names) / sizeof(names[0])); i++) {
+        char msg[96];
+        int p;
+
+        if (!flc_open(&f, names[i])) { sprintf(msg, "flc: %s did not open", names[i]); check_expect(0, msg); continue; }
+        check_expect(f.width == 320 && f.height == 200, "flc: not 320 x 200");
+        frames = 0; differs = 0; moved = 0; lit = 0;
+        while (flc_next(&f)) {
+            frames++;
+            if (frames == 1) {
+                mem_copy(first, f.image, sizeof(first));
+                check_expect(f.palette_changed, "flc: the first frame carries no palette");
+                for (p = 0; p < 320 * 200; p++) { lit += f.image[p] != 0; }
+            } else if (frames == 2) {
+                for (p = 0; p < 320 * 200; p++) { moved += f.image[p] != first[p]; }
+            }
+        }
+        for (p = 0; p < 320 * 200; p++) { differs += f.image[p] != first[p]; }
+        sprintf(msg, "flc: %s has %d frames (header %d plus the ring frame)", names[i], frames, f.frames);
+        check_expect(frames == f.frames + 1, msg);
+        sprintf(msg, "flc: %s ends on %d pixels that are not its first frame's", names[i], differs);
+        check_expect(differs == 0, msg);
+        sprintf(msg, "flc: %s is blank or never moves (lit %d, moved %d)", names[i], lit, moved);
+        check_expect(lit > 0 && moved > 0, msg);
+        /* The loop: from the second frame on, a round is 14 frames again. */
+        flc_rewind(&f);
+        frames = 0;
+        while (flc_next(&f)) { frames++; }
+        sprintf(msg, "flc: %s loops on %d frames", names[i], frames);
+        check_expect(frames == f.frames, msg);
+        if (i == 0) { FILE *out = fopen("build/flc0.ppm", "wb"); if (out) { int q; fprintf(out, "P6\n320 200\n255\n"); for (q = 0; q < 320 * 200; q++) { fwrite(f.palette + first[q] * 3, 1, 3, out); } fclose(out); } }
+        printf("flc: %s %d frames, %d ms each\n", names[i], frames, flc_frame_ms(&f));
+        flc_close(&f);
+    }
+}
+
 int check_dagger(const char *root_in)
 {
     World *world;
@@ -4006,5 +4052,6 @@ int check_dagger(const char *root_in)
     check_dungeon_people();
     check_ports();
     check_vid();
+    check_flc();
     return check_failed() ? 1 : 0;
 }

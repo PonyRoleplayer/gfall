@@ -13,6 +13,7 @@ static const char *(*g_place)(void);
 void quest_set_text(int (*read)(const char *quest, int message, int in_text_rsc, char *out, int cap)) { quest_text_hooks.read = read; }
 void quest_set_say(void (*say)(const char *text)) { quest_text_hooks.say = say; }
 void quest_set_ask(int (*ask)(const char *words, void (*answer)(int yes))) { quest_text_hooks.ask = ask; }
+void quest_set_scene(int (*scene)(char code, const char *words, int ask, void (*answer)(int answer))) { quest_text_hooks.scene = scene; }
 void quest_set_names(const QuestNames *names) { g_names = names; }
 void quest_set_macros(int (*fill)(const char *in, char *out, int cap)) { g_macros = fill; }
 void quest_set_place(const char *(*current)(void)) { g_place = current; }

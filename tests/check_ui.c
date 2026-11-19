@@ -253,6 +253,9 @@ static void check_preferences(void)
     check_expect(config_parse(&parsed, "view_flags=3\nmouse_mode=1\nkey.forward=75\nkey.swing=2\n") &&
                  parsed.flags == 3 && parsed.mouse_mode == 1 && parsed.key[FORWARD] == 'K' &&
                  parsed.key[SWING_BUTTON] == 2, "existing numeric settings preserve user preferences");
+    check_expect(config_parse(&parsed, "skip_opening=on\n") && (parsed.flags & CONFIG_FLAG_SKIP_OPENING) && !(parsed.flags & 3) &&
+                 config_format(&parsed, text, sizeof(text)) && strstr(text, "skip_opening=on") && config_parse(&parsed, text) && (parsed.flags & CONFIG_FLAG_SKIP_OPENING),
+                 "skip_opening is read, written and read again, apart from the two view switches");
     check_expect(!config_parse(&parsed, "head_bob=maybe\n") &&
                  !config_parse(&parsed, "mouse=flight\n") &&
                  !config_parse(&parsed, "key.forward=Banana\n"), "unknown symbolic values are refused");

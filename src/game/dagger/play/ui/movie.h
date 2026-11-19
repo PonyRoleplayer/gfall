@@ -33,4 +33,22 @@ void movie_stop(void);
 /* What is playing, for tests: the movie's frames shown so far. */
 int movie_frames_shown(void);
 
+/*
+ * A prince's scene (FALL.EXE's flc_play_with_text): his *.FLC (formats/flc.h) loops over the whole screen with a page of text in four lines under it, in the palette's yellow with a brown
+ * shadow; a click turns the page, and on the last page leaves, or, when the scene asks, waits for Y or N. It is what the summoning's "you have summoned him once" (TEXT.RSC 482) and a prince's
+ * quest offer (QRC messages 1000, 1002 and 1001) are said in. It needs the movies on and the file; it returns 0 when it cannot be shown, and the caller says its words in a box instead.
+ * The scene is one at a time, and it may be started from its own answer (the offer's 1000 and then its 1002). Read docs/video.md.
+ */
+#define MOVIE_ANSWER_LEFT 0     /* a click on the last page of a scene that asks nothing */
+#define MOVIE_ANSWER_YES 1
+#define MOVIE_ANSWER_NO 2
+typedef void (*MovieAnswer)(int answer);
+/* words: the lines of the text, '\n' between them (leading blanks of a line are dropped). done may be 0. */
+int movie_scene(const char *flc, const char *words, int ask, MovieAnswer done);
+int movie_scene_active(void);
+/* One frame of it: real seconds since the last call, the key typed this frame (0 none) and whether a new click came. */
+void movie_scene_frame(float dt, int key, int click);
+/* The 320 x 200 indices the scene shows now and its palette (768 bytes), for tests; 0 when no scene is up. */
+const unsigned char *movie_scene_pixels(const unsigned char **palette);
+
 #endif

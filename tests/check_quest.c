@@ -111,6 +111,18 @@ static int w_spawn(int kind, df_u32 thing) { if (g_spawned < 16) { g_spawn_kind[
 static void (*g_answer)(int yes);
 static int take_ask(const char *words, void (*answer)(int yes)) { g_answer = answer; strncpy(g_text, words, sizeof(g_text) - 1); return 1; }
 
+/* A prince's scene as the game's stub: what it was shown and asked, and the answer the quest gave it. */
+static char g_scene_code, g_scene_text[1024];
+static int g_scene_ask, g_scene_count, g_scene_shows;
+static void (*g_scene_answer)(int answer);
+static int take_scene(char code, const char *words, int ask, void (*answer)(int answer))
+{
+    if (!g_scene_shows) { return 0; }
+    g_scene_code = code; g_scene_ask = ask; g_scene_answer = answer; g_scene_count++;
+    strncpy(g_scene_text, words, sizeof(g_scene_text) - 1);
+    return 1;
+}
+
 static void put16(df_u8 *p, int v) { p[0] = (df_u8)v; p[1] = (df_u8)(v >> 8); }
 static void put32(df_u8 *p, df_u32 v) { p[0] = (df_u8)v; p[1] = (df_u8)(v >> 8); p[2] = (df_u8)(v >> 16); p[3] = (df_u8)(v >> 24); }
 
@@ -935,6 +947,27 @@ void check_quest(void)
     slot = quest_begin("M0B00Y00", 851); g_asked = -1;
     g_answer(0);
     check_expect(!quest_at(slot) && g_asked == 1001, "quest: no did not say QRC 1001 and end the quest");
+    /* A prince's quest (Meridia's, 10C00Y00) is offered in his scene: 1000 asks, a yes keeps the quest and says 1002 in the scene again, a no ends it and says 1001; with no scene, the box asks. */
+    quest_reset();
+    quest_set_scene(take_scene);
+    g_scene_shows = 1; g_scene_count = 0; g_answer = 0;
+    questor(3);
+    slot = quest_begin("10C00Y00", 0);
+    check_expect(slot >= 0 && g_scene_count == 1 && g_scene_code == '1' && g_scene_ask == 1 && g_scene_text[0] && !g_answer, "quest: a prince's offer was not asked in his scene");
+    g_scene_answer(QUEST_SCENE_YES);
+    check_expect(quest_at(slot) && g_scene_count == 2 && g_scene_ask == 0 && g_scene_text[0], "quest: a yes did not keep the quest and say 1002 in the scene");
+    quest_reset();
+    questor(3);
+    slot = quest_begin("10C00Y00", 0);
+    g_scene_answer(2);
+    check_expect(!quest_at(slot) && g_scene_count == 4 && g_scene_ask == 0, "quest: a no did not end the quest and say 1001 in the scene");
+    quest_reset();
+    g_scene_shows = 0; g_answer = 0;
+    questor(3);
+    slot = quest_begin("10C00Y00", 0);
+    check_expect(slot >= 0 && g_answer, "quest: a scene that cannot be shown did not fall back on the box");
+    quest_set_scene(0);
+    quest_reset();
     /* Persons: the questor is bound to who gave the quest; they are busy until it ends, another quest is refused them, and meeting them is event 28. */
     quest_reset();
     questor(7);

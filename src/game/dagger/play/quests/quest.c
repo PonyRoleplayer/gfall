@@ -127,24 +127,39 @@ int quest_active(const char *name)
     return 0;
 }
 
-/* The player's answer to the offer: 1002 says yes, 1001 no, and a no ends the quest. */
+/* A Daedra prince's quest (quest_offer_prompt's strchr in prince_quest_codes: T..Z and 1..9, either case). */
+static int prince_code(char c)
+{
+    return (c >= '1' && c <= '9') || (c >= 'T' && c <= 'Z') || (c >= 't' && c <= 'z');
+}
+
+/* The prince's scene the offer is in, its code and what it was answered. */
+static char g_offer_code;
+
+/* The player's answer to the offer: 1002 says yes, 1001 no, and a no ends the quest. A prince says it in his scene, anyone else in a box. */
 static void offer_answer(int yes)
 {
     int slot;
-    char text[1024];
+    char text[1024], said[1024];
+    char code;
 
     slot = g_offer_slot;
+    code = g_offer_code;
     g_offer_slot = -1;
     if (slot < 0 || !quest_runtime.slots[slot].used) { return; }
-    text[0] = 0;
-    if (quest_text_hooks.read && quest_text_hooks.say && quest_text_hooks.read(quest_runtime.slots[slot].qbn.name, yes ? 1002 : 1001, 0, text, sizeof(text)) > 0 && text[0]) {
-        char said[1024];
-
+    text[0] = 0; said[0] = 0;
+    if (quest_text_hooks.read && quest_text_hooks.read(quest_runtime.slots[slot].qbn.name, yes ? 1002 : 1001, 0, text, sizeof(text)) > 0 && text[0]) {
         quest_expand(slot, text, said, sizeof(said), game_state()->minutes, 0);
-        quest_text_hooks.say(said);
     }
+    /* The words are made before the quest goes (they name its places); a no ends it at once. */
     if (!yes) { quest_end(slot); }
+    if (!said[0]) { return; }
+    if (code && quest_text_hooks.scene && quest_text_hooks.scene(code, said, 0, 0)) { return; }
+    if (quest_text_hooks.say) { quest_text_hooks.say(said); }
 }
+
+/* The scene's answer: a yes is 1, a no 2 (Escape too). */
+static void offer_scene_answer(int answer) { offer_answer(answer == QUEST_SCENE_YES); }
 
 int quest_begin(const char *name, int faction)
 {
@@ -163,14 +178,21 @@ int quest_begin(const char *name, int faction)
     slot = quest_start(name, name[5] == 'Y' ? faction : 0);
     if (slot < 0) { return -1; }
     if (name[0] == 'S' || name[0] == 's') { return slot; }
-    /* The Daedra's offers (T..Z, 1..9) and a Y quest ask; the princes' FLC is not played. Anything else is accepted silently. */
+    /* The Daedra's offers (T..Z, 1..9) and a Y quest ask; a prince's in his scene. Anything else is accepted silently. */
     text[0] = 0;
-    asked = name[5] == 'Y' || (name[0] >= '1' && name[0] <= '9') || (name[0] >= 'T' && name[0] <= 'Z');
+    asked = name[5] == 'Y' || prince_code(name[0]);
     if (asked && quest_text_hooks.read && quest_text_hooks.ask && quest_text_hooks.read(quest_runtime.slots[slot].qbn.name, 1000, 0, text, sizeof(text)) > 0 && text[0]) {
         char said[1024];
 
         quest_expand(slot, text, said, sizeof(said), game_state()->minutes, 0);
         g_offer_slot = slot;
+        g_offer_code = 0;
+        /* A prince asks in his scene (the question's words under his animation); if it cannot be shown, the box asks. */
+        if (prince_code(name[0]) && quest_text_hooks.scene) {
+            g_offer_code = name[0];
+            if (quest_text_hooks.scene(name[0], said, 1, offer_scene_answer)) { return slot; }
+            g_offer_code = 0;
+        }
         if (!quest_text_hooks.ask(said, offer_answer)) { g_offer_slot = -1; quest_end(slot); return -1; }
     }
     return slot;
