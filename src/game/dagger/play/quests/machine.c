@@ -1,4 +1,5 @@
 #include "internal.h"
+#include "game/dagger/play/ui/movie.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/combat/combat.h"
 #include "game/dagger/play/play.h"
@@ -612,6 +613,10 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
             }
             quest_op_done(q, op);
         }
+        break;
+    case QOP_PLAY_MOVIE:
+        /* Once (qcom.c op 50): ANIM<number>.VID, the number the second operand holds (the ghost's farewell of S0000015 is ANIM0013). */
+        if (quest_arg_state(q, op, 0) && !(op->flags & 1)) { movie_play(op->arg[1].value); quest_op_done(q, op); }
         break;
     case QOP_SAY:
         if (quest_arg_state(q, op, 0)) { quest_op_done(q, op); }

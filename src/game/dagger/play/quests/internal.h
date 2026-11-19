@@ -60,6 +60,7 @@ enum {
     QOP_HIDE_PERSON = 46,
     QOP_SHOW_PERSON = 48,
     QOP_CURE_DISEASES = 49,
+    QOP_PLAY_MOVIE = 50,
     QOP_SAY = 51,
     QOP_ALL_OF = 52,
     QOP_ANY_OF = 53,

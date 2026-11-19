@@ -13,6 +13,7 @@
 #include "game/dagger/play/combat/encounter.h"
 #include "game/dagger/play/people/bank.h"
 #include "game/dagger/play/people/guild.h"
+#include "game/dagger/play/ui/movie.h"
 #include "game/dagger/places/travel.h"
 #include "game/dagger/play/travel/actions.h"
 #include "game/dagger/play/magic/magic.h"
@@ -75,6 +76,9 @@ void play_sound(int id)
     }
 }
 
+/* An infection's dream (rest_close). */
+static void dream_movie(int number) { movie_play(number); }
+
 void gfall_play_startup(void)
 {
     int i;
@@ -110,6 +114,9 @@ void gfall_play_startup(void)
     chargen_begin();
     move_init();
     weapon_reset(); combat_reset();
+    /* The opening: the publisher's logo (intro_play_logo), then the cinematic (intro_play_movie: ANIM0000, ANIM0011, DAG2 at x 32). Each skips at a key or a click. */
+    movie_play(MOVIE_LOGO); movie_play(MOVIE_OPENING); movie_play(MOVIE_OPENING_2); movie_play_file(MOVIE_OPENING_3);
+    rest_set_dream(dream_movie);
 }
 
 void gfall_play_shutdown(void)
@@ -214,7 +221,7 @@ void compass_set(int frame, int pic, int w, int h)
 
 int play_paused(void)
 {
-    return !g_world || maps_up() || options_up() || possessions_state()->page || rest_state()->open ||
+    return movie_active() || !g_world || maps_up() || options_up() || possessions_state()->page || rest_state()->open ||
         (g_world && character_state()->health <= 0) || chargen_mode() != UI_WORLD;
 }
 
@@ -414,6 +421,9 @@ static int modal_frame(const PlayIn *input)
     return FRAME_MENU;
 }
 
+/* The funeral movie of this death has been started. */
+static int g_death_shown;
+
 int play_frame(const PlayIn *in, Camera *cam, const Scene *scene)
 {
     int bar;
@@ -447,6 +457,16 @@ int play_frame(const PlayIn *in, Camera *cam, const Scene *scene)
     if (chargen_quit()) {
         return FRAME_QUIT;
     }
+    /* A movie owns the screen: nothing else moves. A key, Space, Enter, Escape or a click ends it, and its closing click is waited out. */
+    if (movie_active()) {
+        movie_frame(in->dt, in->ch == 27 || in->ch == 13 || in->ch == ' ' || (in->mouse_pressed & 1));
+        g_mouse_prev = in->mouse_held;
+        if (!movie_active()) { g_wait_buttons = (in->mouse_held & 3) != 0; }
+        return FRAME_MENU;
+    }
+    /* Death (damage.c play_death_video): the funeral movie once, then the choice screen. */
+    if (play_dead() && !g_death_shown) { g_death_shown = 1; movie_play(MOVIE_DEATH); return FRAME_MENU; }
+    if (!play_dead()) { g_death_shown = 0; }
     if (maps_up()) {
         maps_frame(in); g_mouse_prev = in->mouse_held;
         if (!maps_up()) { g_wait_buttons = (in->mouse_held & 3) != 0; }
@@ -734,6 +754,7 @@ void play_draw(void)
     static const int mode_row[4] = { 2, 3, 0, 1 };
 
     mode = chargen_mode();
+    if (movie_active()) { movie_draw(); return; }
     if (maps_up()) {
         blit(g_pic[PIC_SCREEN],0,0,320,200); maps_overlay(); draw_pointer(); return;
     }

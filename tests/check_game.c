@@ -40,6 +40,8 @@
 #include "game/dagger/play/play.h"
 #include "game/dagger/play/character/vitals.h"
 #include "check_combat.h"
+#include "game/dagger/play/ui/movie.h"
+#include "game/dagger/formats/vid.h"
 #include "game/dagger/tables/tables.h"
 
 static int g_card_quads;
@@ -936,6 +938,34 @@ static void check_hold(const char *root)
     check_expect(grounded, "the jump lands");
 }
 
+/* The movie player (play/ui/movie.c): every frame of a movie shown, one tick at a time, with no sound card (it runs on its ticks); a skip; a missing movie passed over; movies off. */
+static void check_movie(void)
+{
+    Vid vid;
+    int frames, n;
+
+    check_expect(!movie_enabled(), "movie: movies are on in the host before a test turned them on");
+    movie_play(MOVIE_DEATH);
+    check_expect(!movie_active(), "movie: a movie was queued while they are off");
+    movie_set_enabled(1);
+    check_expect(vid_open(&vid, "ANIM0012.VID"), "movie: ANIM0012 did not open");
+    frames = vid.frames;
+    vid_close(&vid);
+    check_expect(movie_play(9999) && movie_play(MOVIE_DEATH) && movie_active(), "movie: two movies were not queued");
+    for (n = 0; n < frames * 600 && movie_frame(1.0f / 60.0f, 0); n++) { }
+    check_expect(!movie_active() && movie_frames_shown() == frames, "movie: the missing one was not passed over, or the death movie did not show every frame");
+    movie_play(MOVIE_DEATH);
+    movie_frame(1.0f / 60.0f, 0); movie_draw();
+    check_expect(movie_active() && movie_frames_shown() >= 1, "movie: the movie did not start");
+    movie_frame(1.0f / 60.0f, 1);
+    check_expect(!movie_active(), "movie: a skip did not end the movie");
+    movie_play(MOVIE_LOGO); movie_play(MOVIE_OPENING);
+    movie_frame(1.0f / 60.0f, 1);
+    check_expect(movie_active(), "movie: a skip did not pass to the next queued movie");
+    movie_set_enabled(0);
+    check_expect(!movie_active(), "movie: turning movies off left one queued");
+}
+
 void check_game(const char *root)
 {
     int id;
@@ -944,6 +974,7 @@ void check_game(const char *root)
     pic_end();
     for (id = 1; id <= PIC_MAX; id++) { pic_free(id); }
     pic_begin(0, 384u * 1024u, &g_card);
+    check_movie();
     check_journey();
     /* The rules on a small table first: the boot below defines the real one. */
     check_standing();

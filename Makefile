@@ -176,7 +176,8 @@ PLAY_SRC := \
 	src/game/dagger/play/travel/townmap.c \
 	src/game/dagger/play/travel/dunmap.c \
 	src/game/dagger/play/travel/marker.c \
-	src/game/dagger/play/ui/words.c
+	src/game/dagger/play/ui/words.c \
+	src/game/dagger/play/ui/movie.c
 
 # GFALL: original gameplay and the streamed world.
 GFALL_GAME_SRC := \
