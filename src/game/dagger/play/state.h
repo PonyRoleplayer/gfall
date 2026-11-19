@@ -8,6 +8,7 @@
 #include "game/dagger/play/people/lodging.h"
 #include "game/dagger/play/people/law.h"
 #include "game/dagger/play/people/guild.h"
+#include "game/dagger/play/people/politics.h"
 #include "engine/core/df.h"
 #include "game/dagger/tables/tables.h"
 #include "game/dagger/play/input/move.h"
@@ -28,7 +29,7 @@
 #define MINUTES_PER_WEEK 10080u
 #define MONTHS 12
 
-#define STATE_VERSION 19
+#define STATE_VERSION 20
 /* The room a save keeps for the quests (quest.c packs into it). */
 #define QUEST_BLOB 24576
 #define STATE5_WIRE_BYTES 348
@@ -169,6 +170,8 @@ typedef struct GameState {
     LodgingState lodging;
     LawState law;
     GuildsState guilds;
+    /* The politics, region flags and news (schema 20). */
+    PoliticsState politics;
     /* Vampirism and lycanthropy (schema 18): the infection, the form, the bonuses and the saved class. */
     CurseState curse;
     CustomSpell custom_spell[CUSTOM_SPELLS];

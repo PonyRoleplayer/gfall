@@ -603,6 +603,18 @@ int doors_build(DoorBuild *b)
             }
         }
     }
+    /* A town's notice boards. */
+    if (b->place == PLACE_TOWN) {
+        for (i = 0; i < b->ninst; i++) {
+            if (b->act[i].id == NOTICE_BOARD_MODEL) {
+                Usable *u = new_use(b, USE_OTHER, "notice board", DOOR_REACH);
+
+                if (!u) { break; }
+                u->model = i;
+                u->what = OTHER_NOTICE;
+            }
+        }
+    }
     /* People, by their flats. */
     for (i = 0; i < b->nflat; i++) {
         Usable *u;

@@ -158,6 +158,14 @@ static void say_macro(const char *macro, char *out, int cap, int depth)
         text = w->crime;
     } else if (df_eq(macro, "pen")) {
         text = w->penalty;
+    } else if (df_eq(macro, "fx1")) {
+        text = w->faction1;
+    } else if (df_eq(macro, "fx2")) {
+        text = w->faction2;
+    } else if (df_eq(macro, "nrn")) {
+        text = w->ruler;
+    } else if (df_eq(macro, "ptm")) {
+        text = w->temple;
     } else if (macro[0] == 'f') {
         /* %fnpc, %fpc and the factions round them: the one faction this person answers for, for now. */
         text = w->faction;
@@ -221,7 +229,7 @@ static int macro_known(const char *macro)
 {
     static const char *const known[] = {
         "pcn", "pc", "pcf", "pcnf", "ra", "hnr", "pct", "t", "oth", "1com", "2com", "n", "key", "loc",
-        "di", "hnt", "hnt2", "cn", "rn", "reg", "cpn", "tcn", "cri", "pen", "a", "dip", "pdg", "prn", "fnpc", "fpc", "pqn", "pqp", "dae", "dat"
+        "di", "hnt", "hnt2", "cn", "rn", "reg", "cpn", "tcn", "cri", "pen", "a", "dip", "pdg", "prn", "fnpc", "fpc", "pqn", "pqp", "dae", "dat", "fx1", "fx2", "nrn", "ptm"
     };
     int i;
 

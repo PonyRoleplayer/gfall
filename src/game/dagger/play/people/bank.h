@@ -123,7 +123,10 @@ int bank_buy_house(int region, df_u32 id, int price, int *text);
 /* A ship of a kind (SHIP_SMALL or SHIP_LARGE). */
 int bank_buy_ship(int region, int kind, int *text);
 /* The Seneschal's gift: the house, no price (the sale then offers 85 % of whatever price was kept). */
-void bank_gift_house(df_u32 id);
+/* The Seneschal's gift: one of the town's houses for sale at random, at its price; 0 when the town has none. */
+int bank_gift_house(void);
+/* TEXT.RSC 462 says it was given. */
+#define TEXT_HOUSE_GIVEN 462
 /* gold_total: the coins carried and every letter of credit's value, what the bank shows as the player's gold. */
 int gold_total(void);
 /* gold_spend (law.h) takes coins and letters; the bank asks it to make good a short balance. */

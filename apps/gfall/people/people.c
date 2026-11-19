@@ -29,6 +29,7 @@
 #include "game/dagger/play/people/talk.h"
 #include "game/dagger/play/people/steal.h"
 #include "game/dagger/play/people/guild.h"
+#include "game/dagger/play/people/politics.h"
 #include "game/dagger/play/people/hours.h"
 #include "game/dagger/play/ui/hud.h"
 #include "game/dagger/formats/interior.h"
@@ -352,7 +353,17 @@ void gfall_person_say_text(int text, char *out, int cap)
 }
 
 /* talk_start for whoever g_met is: the window opens, or the record that says they will not (shown as a message). */
-static int seam_quest_news(int faction, char *out, int cap) { return quest_news(faction, out, cap); }
+/* rumor_pick_news over the one file: a quest's rumour or a faction's, one of the two at random when both have news. */
+static int seam_quest_news(int faction, char *out, int cap)
+{
+    char quest[400];
+    int have_quest = quest_news(faction, quest, (int)sizeof(quest)) > 0;
+
+    if (politics_news(out, cap) && (!have_quest || random_range(0, 1))) { return 1; }
+    if (!have_quest) { return 0; }
+    df_copy(out, quest, cap);
+    return 1;
+}
 static int seam_quest_rumour_for(unsigned npc, char *out, int cap) { return quest_rumour_for((int)npc, out, cap); }
 
 static int g_talk_events_done;
@@ -721,6 +732,17 @@ int gfall_container_used(int index)
     g_container_pending = id;
     if (!possessions_ask(words_state(37), container_answer)) { interact_say("You cannot take anything now."); }
     return 1;
+}
+
+void gfall_notice_used(void)
+{
+    static char board[700], page[760];
+    char town[40];
+
+    df_copy(town, town_name(), sizeof(town));
+    if (!politics_board(travel_region(), board, (int)sizeof(board))) { interact_say("There is nothing on the notice board."); return; }
+    log_format(page, sizeof(page), "%s\n%s", town, board);
+    possessions_message(page, 0);
 }
 
 int gfall_shelf_used(int index, int variant)

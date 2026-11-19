@@ -686,7 +686,7 @@ static void hall_run(void)
             int text;
 
             if (knight_house_allowed(m, bank_state()->house != 0, &text)) {
-                possessions_message("The houses of the town are not yet in the order's gift.", 0);
+                if (bank_gift_house()) { hall_text(TEXT_HOUSE_GIVEN); } else { possessions_message("There is no house for sale here.", 0); }
             } else if (text) {
                 hall_text(text);
             }

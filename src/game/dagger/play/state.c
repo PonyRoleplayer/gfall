@@ -68,6 +68,11 @@ GuildsState *guilds_state(void)
     return &g_state.guilds;
 }
 
+PoliticsState *politics_state(void)
+{
+    return &g_state.politics;
+}
+
 CurseState *curse_state(void)
 {
     return &g_state.curse;
@@ -377,6 +382,8 @@ int state_begin(void)
     }
     g_state.minutes = NEW_GAME_MINUTES; /* Initial value, func_0004ED36; game_reset differs. */
     g_state.ready = 1;
+    /* init_game_data: the factions' politics, twelve rounds, before the title (main, func_00010010.c 98..102). */
+    politics_start(g_state.minutes);
     progress_begin();
     automap_clear();
     state_calendar();
@@ -491,6 +498,7 @@ void state_pass_minutes(df_u32 minutes)
     for (i = 0; i < minutes; i++) {
         state_event(EVENT_MINUTE, 0, 0, (int)(start + i + 1));
         /* time_pass: each 161280 minutes the standings drift one point toward nothing (reputation_decay). */
+        politics_minute(start + i + 1);
         if ((start + i + 1) % DECAY_MINUTES == 0) {
             standing_decay(law_is_serving());
         }
@@ -800,7 +808,7 @@ int state_valid(const GameState *snapshot)
         character_valid(snapshot) && clock_and_view_valid(snapshot) && objects_valid(snapshot) &&
         saved_world_valid(snapshot) && encounters_valid(&snapshot->encounters) &&
         magic_valid(&snapshot->magic) && world_valid(&snapshot->world_state) && magic_references_valid(snapshot) && inventory_valid(snapshot) &&
-        (!snapshot->standing.ready || standing_valid(&snapshot->standing)) && bank_valid(&snapshot->bank) && lodging_valid(&snapshot->lodging) && law_valid(&snapshot->law) && guilds_valid(&snapshot->guilds) && curse_valid(&snapshot->curse);
+        (!snapshot->standing.ready || standing_valid(&snapshot->standing)) && bank_valid(&snapshot->bank) && lodging_valid(&snapshot->lodging) && law_valid(&snapshot->law) && guilds_valid(&snapshot->guilds) && politics_valid(&snapshot->politics) && curse_valid(&snapshot->curse);
 }
 
 int state_restore(const GameState *snapshot)

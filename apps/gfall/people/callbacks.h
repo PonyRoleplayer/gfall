@@ -7,6 +7,10 @@
 
 int gfall_shelf_used(int index, int variant);
 int gfall_container_used(int index);
+/* A notice board used (click_show_building_info, click.c 1088): the town name, then the region's regional news. */
+void gfall_notice_used(void);
+/* A notice board used (click_show_building_info, click.c 1088): the town's name, then the region's regional news. */
+void gfall_notice_used(void);
 int gfall_person_used(const Camera *aim, int mode);
 int gfall_talk_used(const Usable *u, int mode, float dist, const Camera *cam);
 void gfall_service_act(int what);

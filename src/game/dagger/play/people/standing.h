@@ -44,6 +44,8 @@ typedef struct StandingState {
     short power[FACTIONS_MAX];
     short legal[REGIONS];
     unsigned short price[REGIONS];
+    /* Each faction's three allies and three enemies as table indices (-1 none): the table's at a new game, then changed by the politics (politics.c). */
+    short ally[FACTIONS_MAX][FACTION_LINKS], enemy[FACTIONS_MAX][FACTION_LINKS];
 } StandingState;
 
 /*
@@ -67,6 +69,8 @@ void standing_set_membership(int (*find)(int bits));
 
 /* The live state at the start of a game or when a save has none. */
 void standing_defaults(StandingState *s);
+/* The allies and enemies as the table has them (a save older than schema 20 holds none). */
+void standing_relations_defaults(StandingState *s);
 StandingState *standing_state(void);
 /* A table or a save of another shape: valid when its ranges hold. */
 int standing_valid(const StandingState *s);

@@ -41,6 +41,9 @@ enum {
 #define OTHER_CONTAINER 2
 /* A dungeon model whose action sets one of the quests' 64 global states (RDB action 31; tag is the state's number, the action's axis byte): used by hand, it is the game's to say. */
 #define OTHER_GLOBAL 3
+/* A town's notice board (click_show_building_info: model 417, variant 39, id NOTICE_BOARD_MODEL): used by hand, the game shows the region's news. */
+#define OTHER_NOTICE 4
+#define NOTICE_BOARD_MODEL 41739u
 
 /* What the place is, so which passages it has. */
 enum {

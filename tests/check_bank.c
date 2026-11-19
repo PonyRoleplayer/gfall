@@ -11,6 +11,8 @@
 #include <string.h>
 
 /* By hand, from docs/economy-math.md ("Bank, houses, ships, loans"). Region 17 is the test's bank. */
+static int gift_houses(df_u32 *ids, int *prices, int cap) { (void)cap; ids[0] = 501u; prices[0] = 300000; ids[1] = 502u; prices[1] = 400000; return 2; }
+
 void check_bank(void)
 {
     BankState *b;
@@ -88,6 +90,11 @@ void check_bank(void)
     check_expect(bank_sell_house(region, 1, &text) == BANK_DONE && b->account[region].balance == 850 && b->house == 0 && b->house_price == 0,
                  "bank: a house of 1000 did not sell for 850");
     check_expect(bank_sell_house(region, 1, &text) == BANK_REFUSED, "bank: sold a house not owned");
+    /* The Seneschal's gift: a house of the town's list at its own price; none to give with no houses. */
+    check_expect(!bank_gift_house(), "bank: a house was given in a town with none for sale");
+    bank_set_houses(gift_houses);
+    check_expect(bank_gift_house() && (b->house == 501u || b->house == 502u) && b->house_price == (b->house == 501u ? 300000 : 400000), "bank: the gifted house is not one of the list at its price");
+    b->house = 0; b->house_price = 0; bank_set_houses(0);
     b->ship = 1;
     b->ship_price = 100000;
     check_expect(bank_sell_ship(region, 1, &text) == BANK_DONE && b->account[region].balance == 850 + 85000 && b->ship == 0, "bank: a ship of 100000 did not sell for 85000");

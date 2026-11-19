@@ -10,8 +10,11 @@ static FactionDef g_def[FACTIONS_MAX];
 static short g_parent[FACTIONS_MAX];
 static short g_child[FACTIONS_MAX];
 static short g_next[FACTIONS_MAX];
-static short g_ally[FACTIONS_MAX][FACTION_LINKS];
-static short g_enemy[FACTIONS_MAX][FACTION_LINKS];
+/* The table's alliances and enmities as indices (-1 for none): where a game starts; the live lists, which the politics change, are in StandingState. */
+static short g_ally0[FACTIONS_MAX][FACTION_LINKS];
+static short g_enemy0[FACTIONS_MAX][FACTION_LINKS];
+#define g_ally (standing_state()->ally)
+#define g_enemy (standing_state()->enemy)
 static int g_count;
 static int (*g_membership)(int bits);
 
@@ -78,8 +81,8 @@ int factions_define(const FactionDef *defs, int count)
     }
     for (i = 0; i < count; i++) {
         for (j = 0; j < FACTION_LINKS; j++) {
-            g_ally[i][j] = (short)(g_def[i].ally[j] ? faction_index(g_def[i].ally[j]) : -1);
-            g_enemy[i][j] = (short)(g_def[i].enemy[j] ? faction_index(g_def[i].enemy[j]) : -1);
+            g_ally0[i][j] = (short)(g_def[i].ally[j] ? faction_index(g_def[i].ally[j]) : -1);
+            g_enemy0[i][j] = (short)(g_def[i].enemy[j] ? faction_index(g_def[i].enemy[j]) : -1);
         }
     }
     return 1;
@@ -116,6 +119,15 @@ void standing_set_membership(int (*find)(int bits))
     g_membership = find;
 }
 
+void standing_relations_defaults(StandingState *s)
+{
+    int i, j;
+
+    for (i = 0; i < g_count; i++) {
+        for (j = 0; j < FACTION_LINKS; j++) { s->ally[i][j] = g_ally0[i][j]; s->enemy[i][j] = g_enemy0[i][j]; }
+    }
+}
+
 void standing_defaults(StandingState *s)
 {
     int i;
@@ -125,6 +137,7 @@ void standing_defaults(StandingState *s)
         s->rep[i] = g_def[i].rep;
         s->power[i] = g_def[i].power;
     }
+    standing_relations_defaults(s);
     /* New-game values: classic's start is not in the C; DFU starts every region at no legal standing and normal prices. */
     for (i = 0; i < REGIONS; i++) {
         s->price[i] = PRICE_NORMAL;

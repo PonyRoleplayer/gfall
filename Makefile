@@ -206,6 +206,7 @@ GFALL_GAME_SRC := \
 	src/game/dagger/play/people/lodging.c \
 	src/game/dagger/play/people/law.c \
 	src/game/dagger/play/people/guild.c \
+	src/game/dagger/play/people/politics.c \
 	src/game/dagger/play/people/hours.c \
 	src/game/dagger/play/people/entry.c \
 	src/game/dagger/play/magic/potion.c \

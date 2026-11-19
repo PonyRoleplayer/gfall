@@ -50,7 +50,8 @@ int gfall_building_bash(const Usable *u)
         return 1;
     }
     if (random_range(1, PERCENT) > character_state()->skill[SKILL_STEALTH] && (!guards_present() || !(guards_witnesses() & 1))) {
-        law_state()->crime = CRIME_NONE;
+        /* The original notes crime 0, which the court refuses; a forced door is the attempted breaking in (crime 1). */
+        law_state()->crime = CRIME_ATTEMPTED_BREAKING;
         guards_summon(1);
     }
     return 1;

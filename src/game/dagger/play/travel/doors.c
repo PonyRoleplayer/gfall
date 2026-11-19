@@ -188,14 +188,21 @@ int door_use(const Scene *scene, int usable, int mode)
     skill = character_state()->skill[SKILL_LOCKPICKING];
     if (mode != MODE_STEAL) {
         if (character_state()->conditions & COND_OPEN) {
-            /* lockpick_door:211..215: an Open spell's chance is the spell's plus (level - lock) * 5, held to 5..95, rolled on 0..100; a lock of 20 still cannot open. */
-            chance = lock_chance(magic_chance(-1,EFFECT_OPEN,-1),character_state()->level,door->lock); magic_remove(-1,EFFECT_OPEN);
-            if (chance && random_range(0,100) <= chance && mover_start(scene,mover)) {
+            /* door_try_open (weapons.c 460..468): in use mode the spell's own chance is rolled on 1..100 bare (no level, no clamp, no limit of lock), so it can open a held lock. */
+            chance = magic_chance(-1,EFFECT_OPEN,-1); magic_remove(-1,EFFECT_OPEN);
+            if (random_range(1,100) <= chance && mover_start(scene,mover)) {
                 door_unlock(door); dungeon_alert(-1);
-            } else { interact_say("The spell failed."); }
+            } else { interact_say("Spell effect failed."); }
             return 1;
         }
         interact_say(lock_hint(skill,door->lock));
+        return 1;
+    }
+    if ((character_state()->conditions & COND_OPEN) && door->lock < LOCK_IMPOSSIBLE) {
+        /* lockpick_door (steal mode, Open active): the spell's chance plus (level - lock) * 5, held to 5..95, rolled on 0..100; a lock of LOCK_IMPOSSIBLE fails first and keeps the spell. */
+        chance = lock_chance(magic_chance(-1,EFFECT_OPEN,-1),character_state()->level,door->lock); magic_remove(-1,EFFECT_OPEN);
+        if (random_range(0,100) <= chance && mover_start(scene,mover)) { door_unlock(door); dungeon_alert(-1); return 1; }
+        interact_say(lock_text(LOCK_FAILED)); pick_crime();
         return 1;
     }
     chance = lock_chance(skill,character_state()->level,door->lock);

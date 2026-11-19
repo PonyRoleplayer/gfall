@@ -145,6 +145,30 @@ static void wire_character(Wire *w, CharacterState *c)
     }
 }
 
+static void wire_df_u32_politics(Wire *w, PoliticsState *po)
+{
+    int k;
+
+    wire_u32(w, &po->now_last);
+    wire_bytes(w, po->flags, sizeof(po->flags));
+    wire_bytes(w, po->groups, sizeof(po->groups));
+    for (k = 0; k < REGIONS; k++) { int v = po->persecuted[k]; wire_int(w, &v); po->persecuted[k] = (short)v; }
+    wire_bytes(w, po->factor, sizeof(po->factor));
+    for (k = 0; k < FACTIONS_MAX; k++) { wire_u32(w, &po->seed[k]); }
+    for (k = 0; k < RUMOURS_MOST; k++) {
+        NewsRumour *r = &po->rumour[k];
+        int v;
+
+        v = r->faction1; wire_int(w, &v); r->faction1 = (short)v;
+        v = r->faction2; wire_int(w, &v); r->faction2 = (short)v;
+        v = r->kind; wire_int(w, &v); r->kind = (short)v;
+        wire_bytes(w, &r->region, 1); wire_bytes(w, &r->flags, 1); wire_bytes(w, &r->used, 1);
+        wire_u32(w, &r->expires);
+        wire_bytes(w, r->text, RUMOUR_TEXT);
+        r->text[RUMOUR_TEXT - 1] = 0;
+    }
+}
+
 static void wire_career(Wire *w, ClassInfo *k)
 {
     int i;
@@ -491,6 +515,25 @@ static void transfer(Wire *w, GameState *s)
 
     if (w->version >= 18) { wire_curse(w, &s->curse); }
 
+    /* The politics (schema 20): the factions' alliances and enmities, then the region flags, the factors and the rumours. */
+    if (w->version >= 20) {
+        StandingState *st = &s->standing;
+        PoliticsState *po = &s->politics;
+        int k, j;
+
+        wire_int(w, &po->ready);
+        if (st->ready) {
+            for (k = 0; k < faction_total(); k++) {
+                for (j = 0; j < FACTION_LINKS; j++) {
+                    int v;
+                    v = st->ally[k][j]; wire_int(w, &v); st->ally[k][j] = (short)v;
+                    v = st->enemy[k][j]; wire_int(w, &v); st->enemy[k][j] = (short)v;
+                }
+            }
+        }
+        wire_df_u32_politics(w, po);
+    }
+
     /* The biography's lasting modifiers (schema 19). */
     if (w->version >= 19) {
         CharacterState *c = &s->who;
@@ -585,6 +628,7 @@ static int read_save(const char *path)
         g_candidate.progress.base_sum = progress_sum(&g_candidate.who,&g_candidate.career)-(g_candidate.who.level-1)*15;
     }
     if (w.version < 8) { standing_defaults(&g_candidate.standing); }
+    if (w.version < 20 && g_candidate.standing.ready) { standing_relations_defaults(&g_candidate.standing); }
     if (w.version < STATE_VERSION) { g_candidate.version = STATE_VERSION; }
     spells_sync_custom(&g_candidate);
     if (w.bad || w.pos != size || !state_valid(&g_candidate)) {

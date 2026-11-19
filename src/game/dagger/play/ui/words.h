@@ -56,6 +56,8 @@ typedef struct Words {
     /* A Daedra prince's name (%dae) and the day's date (%dat), as the summoning's texts 481, 482 and 484 say them. */
     const char *daedra;
     const char *date;
+    /* A rumour's two factions (%fx1, %fx2), the ruler of the region it is about (%nrn) and the temple it outlaws (%ptm). */
+    const char *faction1, *faction2, *ruler, *temple;
 } Words;
 
 /* The macros' values, until the next call. w is read, not copied: it stays valid while words_say is called. */

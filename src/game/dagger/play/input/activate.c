@@ -90,6 +90,8 @@ void activate_aim(const Camera *camera, int cursor_mode, int cursor_active,
 
 static int g_container_what = -1;
 static int (*g_container_use)(int index);
+static int g_notice_what = -1;
+static void (*g_notice_use)(void);
 static int g_global_what = -1;
 static void (*g_global_use)(int state);
 static int g_shelf_what = -1;
@@ -112,6 +114,8 @@ void activate_set_container(int what, int (*use)(int index))
     g_container_what = what;
     g_container_use = use;
 }
+
+void activate_set_notice(int what, void (*use)(void)) { g_notice_what = what; g_notice_use = use; }
 
 void activate_set_global(int what, void (*use)(int state))
 {
@@ -203,6 +207,11 @@ int activate(const Scene *scene, const Camera *cam, int mode,
         if (usable->kind == USE_OTHER && g_container_use && usable->what == g_container_what) {
             if (mode == MODE_GRAB) { return g_container_use(hit.usable); }
             if (mode == MODE_INFO) { interact_say("container"); }
+            return 1;
+        }
+        if (usable->kind == USE_OTHER && g_notice_use && usable->what == g_notice_what) {
+            if (mode == MODE_GRAB) { g_notice_use(); }
+            if (mode == MODE_INFO) { interact_say("notice board"); }
             return 1;
         }
         if (usable->kind == USE_OTHER && g_global_use && usable->what == g_global_what) {

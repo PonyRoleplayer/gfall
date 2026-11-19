@@ -298,7 +298,34 @@ int bank_buy_ship(int region, int kind, int *text)
     return BANK_DONE;
 }
 
-void bank_gift_house(df_u32 id) { bank_state()->house = id; }
+int bank_gift_house(void)
+{
+    df_u32 ids[HOUSES_MOST];
+    int prices[HOUSES_MOST], n, pick;
+
+    n = bank_houses(ids, prices, HOUSES_MOST);
+    if (!n) { return 0; }
+    pick = random_range(0, n - 1);
+    /* The Seneschal's house is at its list price (the original left the previous owner's price, so its sale offered 85 % of a stale one). */
+    bank_state()->house = ids[pick]; bank_state()->house_price = prices[pick];
+    return 1;
+}
+
+/* A sold house's chests and cupboards are emptied and forgotten (TEXT 298 promises it; the original left the contents in the store): every container of the house's place and what is in it. */
+static void empty_house(df_u32 house)
+{
+    int i, j;
+
+    for (i = 0; i < OBJECTS; i++) {
+        const ObjectInfo *box = &game_state()->object[i];
+
+        if (!box->id || box->type != RECORD_CONTAINER || box->place_key != house || box->parent != WORLD_ROOT) { continue; }
+        for (j = 0; j < OBJECTS; j++) {
+            if (game_state()->object[j].id && game_state()->object[j].parent == box->id) { object_delete(game_state()->object[j].id); }
+        }
+        object_delete(box->id);
+    }
+}
 
 int bank_sell_house(int region, int confirmed, int *text)
 {
@@ -309,6 +336,7 @@ int bank_sell_house(int region, int confirmed, int *text)
     owned = b->house != 0;
     r = sell(region, &b->house_price, &owned, BANK_TEXT_ASK_SELL_HOUSE, confirmed, text);
     if (r == BANK_DONE) {
+        empty_house(b->house);
         b->house = 0;
     }
     return r;
