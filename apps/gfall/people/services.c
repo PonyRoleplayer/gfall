@@ -673,18 +673,16 @@ static void hall_run(void)
                 o = &game_state()->object[i];
                 if (o->id && o->type == RECORD_ITEM && o->parent == g_counter) { object_delete(o->id); }
             }
+            /* The stock is the building's and the epoch's (docs/gfall-place-state.md, 4): the same on every visit and every reload, new when the epoch turns over; it was drawn from the live stream (fishable), the magic items' from the building's number alone. */
+            seed_stream_begin(thing_seed(place, (df_u32)service));
             if (service == SVC_SOULGEMS) { soul_trap_stock(g_counter, quality); }
             else if (service == SVC_MAGIC_ITEMS) {
-                /* guild_buy_magic_items: the stock drawn on the stream started at the building's number (the same each visit), put back after; members of rank 4 and over also find soul traps; the festival 38 halves the prices. */
-                int saved;
-
-                saved = random_range(0, 32767);
-                random_seed((df_u32)place);
+                /* guild_buy_magic_items: members of rank 4 and over also find soul traps; the festival 38 halves the prices. */
                 magic_shop_stock(g_counter, quality, m && m->rank >= 4);
-                random_seed((df_u32)saved);
                 if (holiday_today(game_state()->minutes, travel_region()) == 38) { shop.scale = 128; }
             }
             else { potion_stock(g_counter, quality); }
+            seed_stream_end();
             possessions_trade(MARKET_BUY, &shop, g_counter);
         }
         break;

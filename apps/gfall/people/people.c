@@ -719,7 +719,10 @@ int gfall_container_used(int index)
     if (!box) { interact_say("There is no room for another container."); return 1; }
     if (!(box->flags & 2)) {
         box->flags |= 2;
+        /* A house's chest or a shop's counter holds what its building's seed says this epoch (docs/gfall-place-state.md, 4). */
+        seed_stream_begin(thing_seed(place, (df_u32)u->tag));
         shelf_stock(id, (int)((df_u32)u->hd % 100u), quality, type, u->model);
+        seed_stream_end();
     }
     if (!inventory_rows(id, -1, 0, 0)) {
         interact_say("There is nothing here you want.");
@@ -745,6 +748,9 @@ void gfall_notice_used(void)
     possessions_message(page, 0);
 }
 
+/* A shelf's thing number in its building's seed, kept apart from a chest's (the usable's tag) by the high bit. */
+#define SHELF_THING_BASE 0x80000000u
+
 int gfall_shelf_used(int index, int variant)
 {
     ShopState shop;
@@ -769,6 +775,8 @@ int gfall_shelf_used(int index, int variant)
             interact_say("There is no room for another shelf.");
             return 1;
         }
+        /* The shelf holds what its building's seed says this epoch: the same on every visit and every reload, new when the epoch turns over (docs/gfall-place-state.md, 4). */
+        seed_stream_begin(thing_seed(place, SHELF_THING_BASE + (df_u32)index));
         shelf_stock(g_shelf_box[index], variant, quality, type, index);
         /* shelf_open_stock: an alchemist's shelf, a quarter of the time, also holds a recipe for a potion; each shelf of a general store, when first opened, a horse and a cart (collected_count == 0). */
         if (type == 0 && random_range(1, 100) < 25) { item_create(g_shelf_box[index], 27, 4, 0); }
@@ -776,6 +784,7 @@ int gfall_shelf_used(int index, int variant)
             item_create(g_shelf_box[index], 23, 1, -1);
             item_create(g_shelf_box[index], 23, 0, -1);
         }
+        seed_stream_end();
     }
     region = travel_region();
     shop.region_adjust = region_price(region);

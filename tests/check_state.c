@@ -26,6 +26,7 @@
 #include "game/dagger/play/ui/options.h"
 #include "game/dagger/play/save/save.h"
 #include "game/dagger/play/state.h"
+#include "game/dagger/play/people/shelf.h"
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/magic/spellbook.h"
 #include "engine/scene/keep.h"
@@ -587,6 +588,40 @@ static void check_place_sweep(void)
     keep_clear();
 }
 
+/* A shop's stock (docs/gfall-place-state.md, 4): the same shelf on every visit within an epoch, a new one when the epoch turns over, a place's own whatever the stream has spent. */
+#define SHOP_PLACE 0xC0000042u
+#define SHOP_TYPE_ALCHEMIST 0
+#define SHOP_VARIANT 3
+#define SHOP_QUALITY 10
+static df_u32 shelf_once(df_u32 thing)
+{
+    df_u32 box, sum;
+
+    box = object_new(RECORD_CONTAINER, WORLD_ROOT, 0, 1);
+    if (!box) { return 0u; }
+    seed_stream_begin(thing_seed(SHOP_PLACE, thing));
+    shelf_stock(box, SHOP_VARIANT, SHOP_QUALITY, SHOP_TYPE_ALCHEMIST, 0);
+    seed_stream_end();
+    sum = pile_sum(box);
+    pile_drop(box);
+    return sum;
+}
+static void check_vendor_seeds(void)
+{
+    df_u32 first, again, later;
+    int i;
+
+    state_restore(&g_initial); character_state()->level = 6;
+    first = shelf_once(1u);
+    for (i = 0; i < PILE_STREAM_SPENT; i++) { random_range(0, 1000); }
+    again = shelf_once(1u);
+    check_expect(first != 0u && first == again, "vendor seeds: a shelf stocked again after the stream moved on is not the same shelf");
+    check_expect(shelf_once(2u) != first, "vendor seeds: another shelf held the same stock");
+    state_pass_minutes(PLACE_EPOCH_DAYS * MINUTES_PER_DAY);
+    later = shelf_once(1u);
+    check_expect(later != first, "vendor seeds: the stock did not change when the epoch turned over");
+}
+
 void check_state(const char *root)
 {
     g_initial = *game_state();
@@ -629,4 +664,5 @@ void check_state(const char *root)
     check_full_disk();
     check_place_seeds();
     check_place_sweep();
+    check_vendor_seeds();
 }
