@@ -108,6 +108,8 @@ int dungeon_nearby(const Camera *camera, float reach);
 /* How many creatures are loaded and alive, of any team and temper: the original's creature_count, which a quest's courier (op 76) waits on. */
 int dungeon_alive(void);
 /* A creature thrown (damage_knockback) by force and amount the way yaw points, and hurt: an area spell's (radius * AREA_KNOCKBACK_MUL, radius). */
+/* monster_wake_all: every creature the markers keep standing is awake and acts. */
+void dungeon_wake_sleepers(void);
 void dungeon_knockback(int index, int force, int amount, float yaw);
 /* Source is a struck creature index, or -1 for a door/noise. */
 void dungeon_alert(int source);

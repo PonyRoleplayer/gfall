@@ -417,6 +417,8 @@ static void injuries(void)
     /* Attacking alerts the rat; it must then use its animation event. */
     keep_find(g_entity[0].key)->game[1] = 1;
     dungeon_open(&g_scene,g_kind,g_passive,g_rate); dungeon_loaded(0);
+    /* The row's flag is ignored without the dungeon's own tag, so the rat is alerted as a noise would (a sleeper that wakes by chance made this test depend on the dice). */
+    dungeon_alert(0);
     before = character_state()->health;
     check_expect(dungeon_nearby(&g_cam,1024),"an alerted hostile creature prevents resting nearby");
     for (i = 0; i < 200 && character_state()->health == before; i++) { dungeon_step(&g_scene,&g_cam,0.05f); }

@@ -162,8 +162,16 @@ static void say_macro(const char *macro, char *out, int cap, int depth)
         text = w->faction1;
     } else if (df_eq(macro, "fx2")) {
         text = w->faction2;
-    } else if (df_eq(macro, "nrn")) {
+    } else if (df_eq(macro, "nrn") || df_eq(macro, "fl1")) {
         text = w->ruler;
+    } else if (df_eq(macro, "ol1")) {
+        text = w->ruler_old;
+    } else if (df_eq(macro, "olf")) {
+        text = w->fate;
+    } else if (df_eq(macro, "lt1")) {
+        text = w->title;
+    } else if (df_eq(macro, "g3")) {
+        text = w->pronoun;
     } else if (df_eq(macro, "ptm")) {
         text = w->temple;
     } else if (macro[0] == 'f') {
@@ -229,7 +237,7 @@ static int macro_known(const char *macro)
 {
     static const char *const known[] = {
         "pcn", "pc", "pcf", "pcnf", "ra", "hnr", "pct", "t", "oth", "1com", "2com", "n", "key", "loc",
-        "di", "hnt", "hnt2", "cn", "rn", "reg", "cpn", "tcn", "cri", "pen", "a", "dip", "pdg", "prn", "fnpc", "fpc", "pqn", "pqp", "dae", "dat", "fx1", "fx2", "nrn", "ptm"
+        "di", "hnt", "hnt2", "cn", "rn", "reg", "cpn", "tcn", "cri", "pen", "a", "dip", "pdg", "prn", "fnpc", "fpc", "pqn", "pqp", "dae", "dat", "fx1", "fx2", "nrn", "ptm", "fl1", "ol1", "olf", "lt1", "g3"
     };
     int i;
 

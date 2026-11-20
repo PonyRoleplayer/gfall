@@ -182,10 +182,22 @@ static int in_port(void)
     return w->located && exterior_is_port(w->region, w->index);
 }
 
+/* The castles of Daggerfall, Wayrest and Sentinel (locations 50027, 50029, 50033). */
+#define CASTLE_DAGGERFALL 50027
+#define CASTLE_WAYREST 50029
+#define CASTLE_SENTINEL 50033
+static int in_castle(void)
+{
+    const Dungeon *d = world_where()->where.kind == WHERE_DUNGEON ? travel_place_data() : 0;
+
+    return d && (d->location_id == CASTLE_DAGGERFALL || d->location_id == CASTLE_WAYREST || d->location_id == CASTLE_SENTINEL);
+}
+
 void gfall_building_install(void)
 {
     bank_set_houses(houses_for_sale);
     bank_set_port(in_port);
     names_set_expand(building_expand);
     door_set_street_bash(gfall_building_bash);
+    door_set_castle(in_castle);
 }

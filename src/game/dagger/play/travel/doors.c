@@ -20,6 +20,9 @@
 /* A building's street door struck (weapon_melee_strike, func_000733AD.c 120..150): the game's answer (the building's bash), if it set one. */
 static int (*g_street_bash)(const Usable *u);
 void door_set_street_bash(int (*fn)(const Usable *u)) { g_street_bash = fn; }
+/* Whether the dungeon is one of the three castles (Daggerfall, Wayrest, Sentinel: locations 50027, 50029, 50033), where bashing a door wakes the creatures the markers keep standing (monster_wake_all). */
+static int (*g_in_castle)(void);
+void door_set_castle(int (*fn)(void)) { g_in_castle = fn; }
 
 static void pick_crime(void)
 {
@@ -268,6 +271,7 @@ int door_strike(const Scene *scene, const Camera *camera)
     /* weapon_melee_strike trains Stealth, even at a magically held door. */
     skill_use(SKILL_STEALTH);
     dungeon_alert(-1);
+    if (g_in_castle && g_in_castle()) { dungeon_wake_sleepers(); }
     chance = bash_chance(door->lock);
     if (chance && random_range(1,100) <= chance && mover_start(scene,mover)) {
         door_unlock(door);

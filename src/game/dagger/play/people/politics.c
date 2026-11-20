@@ -23,6 +23,7 @@ static df_u32 g_now;
 #define TYPE_NOBLE 7
 #define TYPE_COVEN 8
 #define TYPE_TEMPLE 9
+#define TYPE_INDIVIDUAL 4
 /* A faction with this flag keeps its ruler (func_00019676.c: flags & 16). */
 #define FACTION_KEEPS_RULER 16
 #define POWER_MOST 100
@@ -172,21 +173,33 @@ static int player_related(int f)
 
 static const char *name_of(int i) { const FactionDef *d = def(i); return d ? d->name : ""; }
 
-/* The ruler of a noble's region, named from the faction's seed on its region's bank: a woman or a man by the seed's low bit. */
-static void ruler_name(int f, char *out, int cap)
+/* %fl1 (the ruler named from a 16-bit seed): a noble whose first child is an individual (type 4) is that person; else a name of one of the eight banks and a sex taken from the seed (the original
+ * seeds its generator with the word and draws them: the draw is ours). seed 0 is the faction's own word's low half, 1 its high half (the old ruler). */
+static void ruler_name(int f, int old, char *out, int cap)
 {
-    int r = region_of(f);
+    int r = region_of(f), i;
+    df_u32 s;
 
     out[0] = 0;
     if (f < 0 || r < 0) { return; }
-    name_seeded(region_bank(r), (int)(PS->seed[f] & 1), PS->seed[f], out, cap);
+    for (i = 0; !old && i < total(); i++) {
+        const FactionDef *d = def(i);
+        if (d->parent == def(f)->id && d->type == TYPE_INDIVIDUAL) { df_copy(out, d->name, cap); return; }
+    }
+    s = old ? PS->seed[f] >> 16 : PS->seed[f] & 0xFFFFu;
+    name_seeded((int)(s & 7u), (int)((s >> 3) & 1u), s, out, cap);
 }
+
+/* ruler_titles (FALL.EXE): from a number 1..12, King and Queen, Duke and Duchess, Marquis and Marquise, Count and Countess, Baron and Baroness, Lord and Lady: odd is a man, even a woman.
+ * Our factions carry no ruler number, so a region's is its own (region % 12 + 1). */
+#define RULER_TITLES 12
+#define RULER_FATES 6
 
 static void rumour_add(int f1, int f2, int kind, int region, int text)
 {
     NewsRumour *r;
     Words w;
-    char said[RUMOUR_TEXT], ruler[40], temple[FACTION_NAME];
+    char said[RUMOUR_TEXT], ruler[40], old_ruler[40], temple[FACTION_NAME];
     const Faction *province;
     int i, tries, slot, noble, said_ok;
 
@@ -201,13 +214,26 @@ static void rumour_add(int f1, int f2, int kind, int region, int text)
     w.region = province ? province->name : "";
     noble = f1 >= 0 && is_noble(f1) ? f1 : -1;
     if (noble < 0) { for (i = 0; i < total(); i++) { if (is_noble(i) && region_of(i) == region) { noble = i; break; } } }
-    ruler_name(noble, ruler, sizeof(ruler)); w.ruler = ruler;
+    ruler_name(noble, 0, ruler, sizeof(ruler)); w.ruler = ruler;
+    {
+        static const char *const titles[RULER_TITLES] = { "King", "Queen", "Duke", "Duchess", "Marquis", "Marquise", "Count", "Countess", "Baron", "Baroness", "Lord", "Lady" };
+        static const char *const fates[RULER_FATES] = { "died of heart failure", "struck his head", "died of the plague", "stepped down", "was overthrown", "was murdered in his bed" };
+        int number = region % RULER_TITLES;
+
+        ruler_name(noble, 1, old_ruler, sizeof(old_ruler)); w.ruler_old = old_ruler;
+        w.title = titles[number]; w.pronoun = number & 1 ? "her" : "his";
+        w.fate = fates[(PS->seed[noble >= 0 ? noble : 0] >> 16) % RULER_FATES];
+    }
     temple[0] = 0;
     if (PS->persecuted[region] > 0) { const FactionDef *t = def(faction_index(PS->persecuted[region])); if (t) { for (i = 0; i < FACTION_NAME - 1 && t->name[i]; i++) { temple[i] = t->name[i]; } temple[i] = 0; } }
     w.temple = temple;
     words_use(&w);
     said_ok = 0;
     for (tries = 0; tries < SAY_TRIES && !said_ok; tries++) { said_ok = words_say_plain(text, said, (int)sizeof(said)) > 0; }
+
+
+    /* The expansion's macros live on this frame: nothing may keep pointing at them. */
+    words_use(0);
     if (!said_ok) { return; }
     slot = -1;
     for (i = 0; i < RUMOURS_MOST; i++) {

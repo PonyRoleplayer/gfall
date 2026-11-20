@@ -492,7 +492,7 @@ void curse_tick(void)
     lycanthrope_tick();
     if (!law_is_serving()) { infection_tick(); }
     /* crime_check_beast_form_in_town: a beast in a town calls the guards every half hour (they come if the street's witnesses are set). */
-    if (curse_beast() && game_state()->minutes % 30u == 0) { guards_summon(0); }
+    if (curse_beast() && game_state()->minutes % BEAST_CHECK_MINUTES == 0 && (!g_world || !g_world->in_town || g_world->in_town())) { guards_summon(0); }
     g_busy = 0;
 }
 

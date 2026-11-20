@@ -456,6 +456,7 @@ void dungeon_knockback(int index, int force, int amount, float yaw)
     f->hurt = FOE_HURT_TIME; f->entity->act = ENTITY_HURT; f->entity->hold = 1; f->entity->frame = 0;
 }
 
+void dungeon_wake_sleepers(void);
 static void wake_sleepers(void)
 {
     int k;
@@ -655,6 +656,7 @@ void dungeon_strike(const Scene *scene, const Camera *cam, const StrikeInfo *s)
     float dx, dz, distance, point[3], from[3], facing;
     int i, hits, index, material;
     if (!s || s->hand < 0 || !cam) { return; }
+    law_grace_end();
     magic_hostile();
     item = object_at(s->item); index = item ? item->index : -1; material = item ? item->material : 0;
     if (s->bow) { launch_arrow(cam,-1,s->item,index,material); return; }
@@ -1225,3 +1227,5 @@ int dungeon_guards(void)
     }
     return n;
 }
+
+void dungeon_wake_sleepers(void) { wake_sleepers(); }

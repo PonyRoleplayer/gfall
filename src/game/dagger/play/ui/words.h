@@ -58,6 +58,8 @@ typedef struct Words {
     const char *date;
     /* A rumour's two factions (%fx1, %fx2), the ruler of the region it is about (%nrn) and the temple it outlaws (%ptm). */
     const char *faction1, *faction2, *ruler, *temple;
+    /* The ruler a new-ruler rumour is about: the old one's name (%ol1) and fate (%olf), the title (%lt1, and %t the same), and his or her (%g3). */
+    const char *ruler_old, *fate, *title, *pronoun;
 } Words;
 
 /* The macros' values, until the next call. w is read, not copied: it stays valid while words_say is called. */

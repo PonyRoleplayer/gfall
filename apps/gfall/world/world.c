@@ -37,6 +37,7 @@
 #include "game/dagger/formats/texture.h"
 #include "game/dagger/places/world.h"
 #include "game/dagger/places/travel.h"
+#include "game/dagger/tables/holidaydefs.h"
 #include "game/dagger/places/wild.h"
 #include "game/dagger/places/wres.h"
 #include "game/dagger/formats/worldmap.h"
@@ -883,6 +884,12 @@ void seam_land(Camera *camera, int restoring, int changing)
     if (changing && !restoring && travel_entered_building()) {
         gfall_building_announce(&world_where()->where);
         gfall_building_entered(&world_where()->where);
+    }
+    /* arrival_room_messages (support.c 1135..1160): outside in a town, today's holiday is announced (TEXT 8349 + the holiday). Ours asks only that the place is a located town of the streamed world. */
+    if (changing && world_where()->where.kind == WHERE_WORLD && world_where()->where.located && !travel_entered_building()) {
+        int holiday = holiday_today((unsigned)game_state()->minutes, world_where()->where.region);
+
+        if (holiday > 0) { msg_set(words_state(TEXT_HOLIDAY_FIRST + holiday)); }
     }
 }
 

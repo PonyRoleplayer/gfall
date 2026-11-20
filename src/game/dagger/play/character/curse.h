@@ -55,6 +55,8 @@ typedef struct CurseState {
 #define CURSE_WIRE_BYTES (4 + 6 * 4 + ATTRS * 4 + (16 + 35 * 4) + 4 + 4 + 4 + 4)
 
 /* What the game tells the curse about the world. Every hook may be 0. */
+/* A beast in a town's streets draws the guards every BEAST_CHECK_MINUTES (crime_check_beast_form_in_town). */
+#define BEAST_CHECK_MINUTES 30u
 typedef struct CurseWorld {
     /* Takes the player to a random crypt (dungeon type 0) of the region, 1 when there is one (4). */
     int (*haunt)(int region);
@@ -62,6 +64,8 @@ typedef struct CurseWorld {
     int (*clan)(int region);
     /* The region the player is in. */
     int (*region)(void);
+    /* The player is out of doors inside a town's area (crime_check_beast_form_in_town: outside, and location_here_contains); 0 for no hook counts as yes. */
+    int (*in_town)(void);
 } CurseWorld;
 void curse_set_world(const CurseWorld *world);
 const CurseWorld *curse_world(void);

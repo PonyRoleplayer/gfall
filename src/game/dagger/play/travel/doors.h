@@ -21,5 +21,7 @@ int door_use(const Scene *scene, int usable, int mode);
 int door_strike(const Scene *scene, const Camera *camera);
 /* The game's answer to a building's street door being struck (1 when it handled it). */
 void door_set_street_bash(int (*fn)(const Usable *u));
+/* The game says whether the dungeon is one of the three castles (a door bashed there wakes the sleepers). */
+void door_set_castle(int (*fn)(void));
 
 #endif

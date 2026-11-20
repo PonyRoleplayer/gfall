@@ -90,6 +90,9 @@ void law_note(int crime);
 /* While a prison sentence's days pass the legal standing does not decay (prison_serve_sentence sets D_001962B0). */
 void law_serving(int on);
 int law_is_serving(void);
+/* The grace after a court (court_reputation_restore sets D_001962B2; func_000733AD.c 88..90): no damage reaches the player until the next melee swing finishes, anyone's. Not saved. */
+int law_grace(void);
+void law_grace_end(void);
 
 /* gold_total, gold_can_afford and gold_spend: coins and letters of credit as one purse; a spend takes a letter that covers it, else walks the letters, then the coins. */
 int gold_can_afford(int amount);

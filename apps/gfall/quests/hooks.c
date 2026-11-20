@@ -395,6 +395,9 @@ static int quest_people_add(const EntBuild *b, Entity *out, int cap)
     return made;
 }
 
+/* Out of doors in a town: the streamed world, a located place (a town's own area), not inside a building. */
+static int curse_in_town(void) { return world_where()->where.kind == WHERE_WORLD && world_where()->where.located; }
+
 void gfall_quests_install_text(void)
 {
     static const QuestWorld world = {
@@ -402,7 +405,7 @@ void gfall_quests_install_text(void)
         quest_spawn_foe, teleport, quest_place_item, quest_find_number, quest_marker_at,
         quest_spawn_foe_at, quest_place_item_at, quest_pick_building, quest_pick_site, quest_person_name, quest_outdoors, quest_creatures
     };
-    static const CurseWorld curse = { curse_haunt, curse_clan, curse_region };
+    static const CurseWorld curse = { curse_haunt, curse_clan, curse_region, curse_in_town };
 
     quest_set_text(quest_text);
     quest_set_say(quest_say);

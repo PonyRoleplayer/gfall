@@ -105,7 +105,7 @@ void damage_player(int damage, int part)
     CharacterState *who;
     int amount;
     who = character_state();
-    if (damage <= 0 || who->health <= 0) { return; }
+    if (damage <= 0 || who->health <= 0 || law_grace()) { return; }
     damage = magic_absorb(-1,damage); if (!damage) { return; }
     /* damage_apply: while guards are about the first blow is the offer to surrender, held back until it is answered. It is the law's, not the body's: god mode does not skip it. */
     if (law_blow(game_state()->region) == BLOW_ASK && possessions_surrender()) { return; }

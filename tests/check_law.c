@@ -319,6 +319,7 @@ void check_law_guards(void)
     character_state()->max_health = 30;
     character_state()->health = 30;
     g_present = 1;
+    law_grace_end();
     view = possessions_state();
     damage_player(5, -1);
     check_expect(view->page == VIEW_COURT && view->prompt == PROMPT_ASK && character_state()->health == 30 && view->offer[0], "court: the first blow did not ask to surrender, holding the blow back");
@@ -340,4 +341,7 @@ void check_law_guards(void)
     guards_set_world(0);
     guards_reset();
     possessions_set_court(0, 0);
+    /* The court left its grace on (no damage until a melee swing); later suites hurt the player. */
+    check_expect(law_grace(), "court: no grace after the sentence");
+    law_grace_end();
 }

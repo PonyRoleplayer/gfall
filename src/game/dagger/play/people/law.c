@@ -143,8 +143,13 @@ void court_restore_reputation(int region, int change)
     }
 }
 
+static int g_grace;
+int law_grace(void) { return g_grace; }
+void law_grace_end(void) { g_grace = 0; }
+
 void court_restore_vitals(void)
 {
+    g_grace = 1;
     CharacterState *c;
 
     c = character_state();

@@ -8,5 +8,7 @@
  * is for a region when its table byte is 255 or the region + 1.
  */
 int holiday_today(unsigned minutes, int region);
+/* The line said on arrival in a town on a holiday is TEXT.RSC TEXT_HOLIDAY_FIRST + the holiday's number (holiday_announce, tamriel.c 419). */
+#define TEXT_HOLIDAY_FIRST 8349
 
 #endif
