@@ -663,7 +663,17 @@ static void transfer(Wire *w, GameState *s)
     }
 
     /* The world's seed (schema 23). */
-    if (w->version >= 23) { wire_u32(w, &s->world_seed); }
+    if (w->version >= 23) {
+        wire_u32(w, &s->world_seed);
+        wire_u32(w, &s->sweep_epoch);
+        wire_int(w, &s->places);
+        if (s->places < 0 || s->places > PLACE_ROWS) { w->bad = 1; return; }
+        for (i = 0; i < s->places; i++) {
+            PlaceRow *row = &s->place[i];
+
+            wire_u32(w, &row->place); wire_u32(w, &row->seed_epoch); wire_u32(w, &row->last_epoch); wire_int(w, &row->roll_level);
+        }
+    }
 
     /* The ship's way back (schema 22). */
     if (w->version >= 22) {
@@ -821,7 +831,10 @@ static int read_save(const char *path, int rows)
     if (w->version < 8) { standing_defaults(&g_candidate.standing); }
     if (w->version < 20 && g_candidate.standing.ready) { standing_relations_defaults(&g_candidate.standing); }
     /* A save from before the world seed is given one from what it holds: the same save always gets the same world. */
-    if (w->version < 23) { g_candidate.world_seed = seed_mix(g_candidate.random, g_candidate.minutes); }
+    if (w->version < 23) {
+        g_candidate.world_seed = seed_mix(g_candidate.random, g_candidate.minutes);
+        g_candidate.sweep_epoch = g_candidate.minutes / (MINUTES_PER_DAY * PLACE_EPOCH_DAYS);
+    }
     if (w->version < STATE_VERSION) { g_candidate.version = STATE_VERSION; }
     spells_sync_custom(&g_candidate);
     if (!w->bad && rows) {

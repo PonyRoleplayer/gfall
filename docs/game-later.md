@@ -226,3 +226,6 @@ Poison vials as bottles (the potion bottle's message field in a separate range f
 
 Later: purging dungeon leftovers (2026-11-20, the user's rule; waits for DOCUMENTER on what FALL.EXE does at re-entry)
 Keep rows have no time, so nothing ages out and a long campaign grows the keep without bound (the 64 MB machine is the ceiling). The user's rule: leftovers of a place (the dead, the creatures that were left, moved things) stay for three in-game days counted by the calendar from 00:00, so a row last touched on day D is purged when day D+3 begins at 00:00 (day number difference, not 72 hours). Plan: a day stamp on each row of a place other than the open one, a purge at the midnight tick and at a load, and a hard cap on rows that drops the oldest first.
+
+Place state, what the first three phases leave (2026-11-20)
+Only dungeons have place rows and a sweep. Towns, buildings, the world's ground piles and the vendors' stock (phase 4: stock seeded by `mix(world_seed, building key, epoch)`, rerolled when the epoch turns over, a city swept while the player is in it but each part when next built) are not done. Quest objects lying in a dungeon are not swept by the place (the quest owns them) but a dungeon's keep rows may hold their markers. The sweep's day granularity: all places stamped in one epoch tie, and a full table drops the first of the oldest.

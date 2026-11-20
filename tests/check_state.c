@@ -207,7 +207,7 @@ static void check_legacy_save(const df_u8 *current, df_u32 size)
     /* Standing, from schema 8, sits between the magic rows and the world: ready, a count, a pair a faction and a pair a region. */
     static df_u8 quest_buf[TEST_QUEST_BUFFER];
     int quest_bytes = quest_pack(quest_buf, TEST_QUEST_BUFFER);
-    df_u32 stand = 8u + (game_state()->standing.ready ? (df_u32)faction_total()*8u + REGIONS*8u : 0u) + (REGIONS*16u + 16u) + (ROOMS_MOST*12u + 4u) + (4u + REGIONS*4u) + (MEMBERSHIPS*24u + 16u + 4u + 4u + 20u) + CUSTOM_SPELLS*(4u + 89u) + ENCHANTED_ITEMS*(4u + 4u + 80u) + 4u + 4u + (df_u32)quest_bytes + CURSE_WIRE_BYTES + BIO_WIRE_BYTES + 2u*BANK_PLACE_NAME + SHIP_WIRE_BYTES + (4u + (game_state()->standing.ready ? (df_u32)faction_total()*FACTION_LINKS*8u : 0u) + 4u + REGIONS*29u + REGIONS*14u + REGIONS*4u + FACTIONS_MAX + FACTIONS_MAX*4u + RUMOURS_MOST*(4u+4u+4u+3u+4u+RUMOUR_TEXT)) + 4u + (df_u32)game_state()->world_count * 18u;
+    df_u32 stand = 8u + (game_state()->standing.ready ? (df_u32)faction_total()*8u + REGIONS*8u : 0u) + (REGIONS*16u + 16u) + (ROOMS_MOST*12u + 4u) + (4u + REGIONS*4u) + (MEMBERSHIPS*24u + 16u + 4u + 4u + 20u) + CUSTOM_SPELLS*(4u + 89u) + ENCHANTED_ITEMS*(4u + 4u + 80u) + 4u + 4u + (df_u32)quest_bytes + CURSE_WIRE_BYTES + BIO_WIRE_BYTES + 2u*BANK_PLACE_NAME + SHIP_WIRE_BYTES + (4u + (game_state()->standing.ready ? (df_u32)faction_total()*FACTION_LINKS*8u : 0u) + 4u + REGIONS*29u + REGIONS*14u + REGIONS*4u + FACTIONS_MAX + FACTIONS_MAX*4u + RUMOURS_MOST*(4u+4u+4u+3u+4u+RUMOUR_TEXT)) + 4u + 4u + 4u + (df_u32)game_state()->places * 16u + (df_u32)game_state()->world_count * 18u;
     check_expect(size > 24u+1272u+256u*124u && df_ru32(current+24+1272) == WORLD_ROOT,
                  "fixture locates the documented original object section");
     if (size <= 24u+1272u+256u*124u) { return; }
@@ -494,7 +494,7 @@ static void pile_drop(df_u32 container)
 #define PILE_STREAM_SPENT 37
 static void check_place_seeds(void)
 {
-    df_u32 first, again, other_thing, other_place, other_epoch, id;
+    df_u32 first, again, other_thing, other_place, other_epoch, same_later, id;
     int i;
 
     state_restore(&g_initial); character_state()->level = 6;
@@ -510,10 +510,81 @@ static void check_place_seeds(void)
     id = loot_container(PILE_PLACE, PILE_THING + 1u, 0, 0, 0, PILE_TABLE); other_thing = pile_sum(id); pile_drop(id);
     id = loot_container(PILE_PLACE + 1u, PILE_THING, 0, 0, 0, PILE_TABLE); other_place = pile_sum(id); pile_drop(id);
     check_expect(other_thing != first && other_place != first, "place seeds: another thing or another place gave the same pile");
+    /* A place's seeds are frozen at its first entry: an epoch later (within the grace) it is the same pile. */
     state_pass_minutes(PLACE_EPOCH_DAYS * MINUTES_PER_DAY);
+    id = loot_container(PILE_PLACE, PILE_THING, 0, 0, 0, PILE_TABLE); same_later = pile_sum(id); pile_drop(id);
+    check_expect(same_later == first, "place seeds: a place within its grace gave another pile");
+    /* Left for more than the grace, its row is swept and the next entry is a new roll. */
+    state_pass_minutes(PLACE_EPOCH_DAYS * MINUTES_PER_DAY * (PLACE_GRACE_EPOCHS + 1));
     id = loot_container(PILE_PLACE, PILE_THING, 0, 0, 0, PILE_TABLE); other_epoch = pile_sum(id); pile_drop(id);
-    check_expect(other_epoch != first, "place seeds: another epoch gave the same pile");
+    check_expect(other_epoch != first, "place seeds: a swept place gave the same pile");
     check_expect(seed_mix(1u, 2u) == seed_mix(1u, 2u) && seed_mix(1u, 2u) != seed_mix(2u, 1u) && seed_mix(0u, 0u) != 0u, "place seeds: the mix is not a function of its words in order");
+}
+
+/* The sweep (docs/gfall-place-state.md, 3 and 4): a place left for more than its grace is cleaned of its keep rows and piles and row, one sweep however many days pass, never the place the player is in, and a full table drops the oldest that is not. */
+#define SWEEP_PLACE_A 0x40000201u
+#define SWEEP_PLACE_B 0x40000202u
+static int place_has_things(df_u32 place)
+{
+    int i, found = 0;
+
+    for (i = 0; i < keep_count(); i++) { if (keep_at(i)->key.place == place) { found = 1; } }
+    for (i = 0; i < OBJECTS; i++) { if (game_state()->object[i].id && game_state()->object[i].place_key == place) { found = 1; } }
+    return found;
+}
+static void place_dirty(df_u32 place)
+{
+    KeepKey key;
+    Keep *row;
+
+    key.place = place; key.thing = 9u;
+    row = keep_get(key, KEEP_MOVER);
+    if (row) { row->at_end = 1; }
+    loot_container(place, 5u, 0, 0, 0, PILE_TABLE);
+}
+static void check_place_sweep(void)
+{
+    df_u32 day = MINUTES_PER_DAY * PLACE_EPOCH_DAYS;
+    int i, base;
+
+    state_restore(&g_initial); keep_clear(); character_state()->level = 4;
+    /* Other suites may have left rows; the counts below are against what is there. */
+    state_pass_minutes(day * 20u);
+    base = game_state()->places;
+    place_dirty(SWEEP_PLACE_A);
+    check_expect(place_has_things(SWEEP_PLACE_A) && game_state()->places == base + 1 && place_roll_level(SWEEP_PLACE_A) == 4, "place sweep: a place entered has no row, things or level");
+    /* The level is the one it was entered at, whatever the player becomes. */
+    character_state()->level = 9;
+    check_expect(place_roll_level(SWEEP_PLACE_A) == 4, "place sweep: a place's roll level followed the player");
+    /* Within its grace, left: it stays. */
+    place_leave(SWEEP_PLACE_A);
+    state_pass_minutes(day);
+    check_expect(place_has_things(SWEEP_PLACE_A) && game_state()->places == base + 1, "place sweep: a place within its grace was swept");
+    /* Past it, one sweep however many days a long rest spans. */
+    state_pass_minutes(day * 5u);
+    check_expect(!place_has_things(SWEEP_PLACE_A) && game_state()->places == base, "place sweep: a place left for more than its grace was kept");
+    /* The place the player is in is not swept, however long they wait; it is stamped when they leave. */
+    place_dirty(SWEEP_PLACE_B);
+    object_edit(WORLD_ROOT)->place_key = SWEEP_PLACE_B;
+    state_pass_minutes(day * 4u);
+    check_expect(place_has_things(SWEEP_PLACE_B), "place sweep: the place the player is in was swept");
+    place_leave(SWEEP_PLACE_B);
+    object_edit(WORLD_ROOT)->place_key = 0;
+    state_pass_minutes(day);
+    check_expect(place_has_things(SWEEP_PLACE_B), "place sweep: a place just left was swept at once");
+    state_pass_minutes(day * 2u);
+    check_expect(!place_has_things(SWEEP_PLACE_B), "place sweep: a place left past its grace was kept");
+    /* Never swept: what is the player's own. */
+    check_expect(game_state()->inventory_id != 0 && object_at(game_state()->inventory_id) != 0, "place sweep: the player's pack was swept");
+    /* A full table drops the place left longest ago, never the one the player is in. */
+    keep_clear();
+    place_dirty(0x40001000u);
+    for (i = 1; game_state()->places < PLACE_ROWS && i < PLACE_ROWS * 2; i++) { place_roll_level(0x40001000u + (df_u32)i); state_pass_minutes(1); }
+    check_expect(game_state()->places == PLACE_ROWS, "place sweep: the table did not fill");
+    place_dirty(0x40009000u);
+    check_expect(game_state()->places == PLACE_ROWS && place_has_things(0x40009000u), "place sweep: a full table did not take a new place");
+    check_expect(!place_has_things(0x40001000u), "place sweep: a full table did not drop the oldest place");
+    keep_clear();
 }
 
 void check_state(const char *root)
@@ -557,4 +628,5 @@ void check_state(const char *root)
     check_long_campaign();
     check_full_disk();
     check_place_seeds();
+    check_place_sweep();
 }

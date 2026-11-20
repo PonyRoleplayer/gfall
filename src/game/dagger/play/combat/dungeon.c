@@ -256,7 +256,7 @@ int dungeon_add(Entity *entity, int kind, int passive, int rate)
     f->def = foe_def(f->kind);
     career = ENEMY_IS_CLASS(f->kind) ? class_at((f->kind-ENEMY_FIRST_CLASS)%ENEMY_CLASS_COUNT) : 0;
     f->fighter.race = ENEMY_IS_CLASS(f->kind) ? ENEMY_RACE_CLASS : f->kind;
-    f->fighter.level = f->def ? f->def->level : character_state()->level;
+    f->fighter.level = f->def ? f->def->level : place_roll_level(f->entity->key.place);
     if (f->kind == ENEMY_CITY_WATCH) { f->fighter.level += random_range(WATCH_LEVEL_MIN, WATCH_LEVEL_MAX); }
     f->fighter.metal = f->def ? f->def->metal : 0;
     skill = f->fighter.level*FOE_SKILL_PER_LEVEL+FOE_SKILL_BASE; if (skill > FOE_SKILL_MAX) { skill = FOE_SKILL_MAX; }

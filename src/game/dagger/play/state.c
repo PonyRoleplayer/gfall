@@ -232,7 +232,122 @@ df_u32 seed_mix(df_u32 a, df_u32 b)
 
 df_u32 place_epoch(void) { return g_state.minutes / (MINUTES_PER_DAY * PLACE_EPOCH_DAYS); }
 
-df_u32 place_seed(df_u32 place) { return seed_mix(seed_mix(g_state.world_seed, place), place_epoch()); }
+/* A dungeon's key has these top bits (PLACE_KEY_DUNGEON); only those places keep a row. */
+#define PLACE_KEY_KIND_SHIFT 30
+#define PLACE_KEY_KIND_DUNGEON 1u
+
+static int place_is_dungeon(df_u32 place) { return (place >> PLACE_KEY_KIND_SHIFT) == PLACE_KEY_KIND_DUNGEON; }
+
+static PlaceRow *place_find(df_u32 place)
+{
+    int i;
+
+    for (i = 0; i < g_state.places; i++) { if (g_state.place[i].place == place) { return &g_state.place[i]; } }
+    return 0;
+}
+
+static void place_purge(df_u32 place);
+
+/* The place the player is in now, 0 for none. */
+static df_u32 place_active(void) { return object_at(WORLD_ROOT) ? object_at(WORLD_ROOT)->place_key : 0u; }
+
+/* The row of a dungeon, made if there is none (the player has just come into it): at the current epoch and the player's level. A full table drops the place left longest ago that is not the one the player is in. */
+static PlaceRow *place_row(df_u32 place)
+{
+    PlaceRow *row;
+    int i, oldest;
+
+    if (!place_is_dungeon(place)) { return 0; }
+    row = place_find(place);
+    if (!row) { place_sweep(); }
+    if (row) { return row; }
+    if (g_state.places >= PLACE_ROWS) {
+        oldest = -1;
+        for (i = 0; i < g_state.places; i++) {
+            if (g_state.place[i].place == place_active()) { continue; }
+            if (oldest < 0 || g_state.place[i].last_epoch < g_state.place[oldest].last_epoch) { oldest = i; }
+        }
+        if (oldest < 0) { return 0; }
+        place_purge(g_state.place[oldest].place);
+    }
+    row = &g_state.place[g_state.places++];
+    row->place = place; row->seed_epoch = row->last_epoch = place_epoch();
+    row->roll_level = character_state()->level;
+    return row;
+}
+
+df_u32 place_seed(df_u32 place)
+{
+    PlaceRow *row = place_row(place);
+
+    if (row) { row->last_epoch = place_epoch(); }
+    return seed_mix(seed_mix(g_state.world_seed, place), row ? row->seed_epoch : place_epoch());
+}
+
+void place_leave(df_u32 place)
+{
+    PlaceRow *row = place_is_dungeon(place) ? place_find(place) : 0;
+
+    if (row) { row->last_epoch = place_epoch(); }
+}
+
+int place_roll_level(df_u32 place)
+{
+    PlaceRow *row = place_row(place);
+
+    return row ? row->roll_level : character_state()->level;
+}
+
+/* An object and everything under it, deleted. */
+static void object_purge(df_u32 id)
+{
+    int i;
+
+    for (i = 0; i < OBJECTS; i++) {
+        if (g_state.object[i].id && g_state.object[i].parent == id) { object_purge(g_state.object[i].id); }
+    }
+    object_delete(id);
+}
+
+/* Everything a place has kept: its keep rows (doors, creatures, the dead), its piles and what was dropped in it, and its row. */
+static void place_purge(df_u32 place)
+{
+    int i;
+
+    for (i = keep_count() - 1; i >= 0; i--) {
+        const Keep *row = keep_at(i);
+
+        if (row && row->key.place == place) { keep_forget(row->key); }
+    }
+    for (i = 0; i < OBJECTS; i++) {
+        const ObjectInfo *o = &g_state.object[i];
+
+        if (o->id && o->type == RECORD_CONTAINER && o->parent == WORLD_ROOT && o->place_key == place) { object_purge(o->id); }
+    }
+    for (i = 0; i < g_state.places; i++) {
+        if (g_state.place[i].place == place) { g_state.place[i] = g_state.place[--g_state.places]; mem_zero(&g_state.place[g_state.places], sizeof(PlaceRow)); break; }
+    }
+}
+
+int place_sweep(void)
+{
+    df_u32 epoch, active;
+    int i, swept;
+
+    epoch = place_epoch();
+    if (epoch == g_state.sweep_epoch) { return 0; }
+    g_state.sweep_epoch = epoch;
+    active = place_active();
+    swept = 0;
+    for (i = g_state.places - 1; i >= 0; i--) {
+        if (i >= g_state.places) { continue; }
+        if (g_state.place[i].place != active && g_state.place[i].last_epoch + PLACE_GRACE_EPOCHS < epoch) {
+            place_purge(g_state.place[i].place);
+            swept++;
+        }
+    }
+    return swept;
+}
 
 df_u32 thing_seed(df_u32 place, df_u32 thing) { return seed_mix(place_seed(place), thing); }
 
@@ -495,6 +610,7 @@ int state_begin(void)
         }
     }
     g_state.minutes = NEW_GAME_MINUTES; /* Initial value, func_0004ED36; game_reset differs. */
+    g_state.sweep_epoch = place_epoch();
     g_state.ready = 1;
     /* init_game_data: the factions' politics, twelve rounds, before the title (main, func_00010010.c 98..102). */
     politics_start(g_state.minutes);
@@ -618,6 +734,8 @@ void state_pass_minutes(df_u32 minutes)
         }
     }
     blessing_expire(g_state.minutes);
+    /* One sweep when the epoch has turned over, once however many days passed. */
+    place_sweep();
     /* The watch's roll comes once for the pass, and only while the world runs (not in court, prison or a menu). */
     bank_loans_due(start, g_state.minutes);
     if (g_state.mode == GAME_WORLD) { law_time_pass(travel_region()); }

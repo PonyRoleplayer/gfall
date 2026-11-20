@@ -422,7 +422,8 @@ static void roll_loot(df_u32 container, int index)
     int category, chance, group, level;
     table = item_loot_list(index);
     if (!table) { return; }
-    level = character_state()->level;
+    /* A place's piles are rolled at the level the player had when they came into it (docs/gfall-place-state.md). */
+    level = place_roll_level(object_at(container) ? object_at(container)->place_key : 0u);
     if (table[0] || table[1]) {
         id = item_create(container, ITEM_GROUP_CURRENCY, 0, 0);
         if (id) { object_edit(id)->value = level * random_range(table[0], table[1]); }

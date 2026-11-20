@@ -128,6 +128,10 @@ typedef struct CustomSpell { int used; df_u8 record[89]; } CustomSpell;
 #define ENCHANTED_ITEMS 64
 typedef struct ItemEnchant { df_u32 item; int identified; int type[10], param[10]; } ItemEnchant;
 
+/* A dungeon the player has come into (the place state, below, explains the row). */
+#define PLACE_ROWS 64
+typedef struct PlaceRow { df_u32 place, seed_epoch, last_epoch; int roll_level; } PlaceRow;
+
 typedef struct GameState {
     int version, ready;
     CharacterState who;
@@ -139,6 +143,10 @@ typedef struct GameState {
     df_u32 random, next_low, minutes;
     /* Made at a new game and saved (schema 23): every place's rolls derive from it (docs/gfall-place-state.md), so a pile is the same on every save and load. */
     df_u32 world_seed;
+    /* The places in use and the epoch of the last sweep (schema 23). */
+    PlaceRow place[PLACE_ROWS];
+    int places;
+    df_u32 sweep_epoch;
     df_u32 tick_fraction, ticks;
     float frame_fraction;
     int settings_flags, mouse_mode;
@@ -215,6 +223,17 @@ void random_seed(df_u32 seed);
 #define SEED_FMIX_1 0x85EBCA6Bu
 #define SEED_FMIX_2 0xC2B2AE35u
 #define SEED_GOLDEN 0x9E3779B9u
+/*
+ * A dungeon the player has entered has a row (PLACE_ROWS at most; made the first time anything asks for its seed): the epoch its seeds come from (frozen, so what was rolled stays what it was while the place is kept), the
+ * epoch it was last in use, and the player's level at the first entry (what its piles and creatures are rolled at). One sweep, when the epoch turns over, drops the rows, keep rows and piles of every place
+ * left for more than PLACE_GRACE_EPOCHS epochs, never the one the player is in. A place that is not a dungeon has no row: its seed uses the current epoch.
+ */
+/* The player left this place: it is stamped as last in use now. */
+void place_leave(df_u32 place);
+/* The level a place's piles and creatures are rolled at: its row's, else the player's. */
+int place_roll_level(df_u32 place);
+/* Runs the sweep if the epoch has turned over since the last one (the day tick, a load and a place's entry call it). The number of places swept. */
+int place_sweep(void);
 df_u32 seed_mix(df_u32 a, df_u32 b);
 df_u32 place_epoch(void);
 df_u32 place_seed(df_u32 place);

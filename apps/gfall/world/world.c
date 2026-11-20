@@ -823,6 +823,7 @@ int seam_open_place(int restoring, int changing, float *x, float *y, float *z)
     gfall_screen_enter_world();
     if (changing && g_place_open) {
         Camera from;
+        place_leave(object_at(WORLD_ROOT)->place_key);
         move_camera(&from); travel_came_from(&from);
         if (!seam_capture_world()) { gfall_error(state_error()); return 0; }
         mem_zero(magic_state()->missile,sizeof(magic_state()->missile));
