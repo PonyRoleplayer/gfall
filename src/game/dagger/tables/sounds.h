@@ -39,5 +39,7 @@ int sounds_flat(int file, int image, float x, float y, float z, Emitter *out);
  * is FM. A place's own song replaces it once the world is open.
  */
 const char *sounds_title(void);
+/* The song of a visit in which the player trespasses: one of seven, by the pick drawn when the building was entered. */
+const char *sounds_sneak(unsigned pick);
 
 #endif

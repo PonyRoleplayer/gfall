@@ -1047,6 +1047,14 @@ static void check_sound_files(void)
                  "record id 385 is not position 389, or the empty record at 5 gave a clip");
     printf("songs %d\n", hmi_count());
     check_expect(hmi_count() == 131, "MIDI.BSA does not have 131 songs");
+    /* The sneaking songs of a trespass: the seven of the General MIDI list are songs of MIDI.BSA, and the pick wraps. */
+    {
+        int k, ok = 1;
+        Song sneak;
+
+        for (k = 0; k < 8; k++) { ok &= hmi_load(sounds_sneak((unsigned)k), 0, &sneak) != 0; }
+        check_expect(ok && df_eq(sounds_sneak(7), sounds_sneak(0)) && !df_eq(sounds_sneak(0), sounds_sneak(1)), "sounds: a sneaking song is not in MIDI.BSA, or the pick does not wrap");
+    }
     ok = 1;
     most_events = 0;
     most_notes = 0;
@@ -3345,6 +3353,31 @@ static void check_biog_modifiers(void)
     check_expect(found[0] > 5 && found[1] > 5 && found[2] > 5 && found[3] > 5 && found[4] > 5, "biog: RD, MR, TH, RP or FT was not read from the answers");
 }
 
+/* The notice boards stand in the town walls' own block lists (model 417 variant 39 is id NOTICE_BOARD_MODEL): two in each of WALLAA08..11. */
+static void check_notice_boards(void)
+{
+    static df_u32 ids[1024];
+    Bsa *blocks;
+    int w, k, n, found;
+
+    blocks = bsa_open("BLOCKS.BSA");
+    check_expect(blocks != 0, "notice boards: BLOCKS.BSA did not open");
+    if (!blocks) { return; }
+    for (w = 8; w <= 11; w++) {
+        char name[16];
+        const BsaRec *rec;
+        const df_u8 *bytes;
+
+        sprintf(name, "WALLAA%02d.RMB", w);
+        rec = bsa_find_name(blocks, name);
+        bytes = rec ? bsa_read_scratch(blocks, rec, BSA_SCRATCH_BLOCK) : 0;
+        n = bytes ? rmb_model_ids(bytes, rec->size, ids, 1024) : 0;
+        for (found = 0, k = 0; k < n; k++) { found += ids[k] == NOTICE_BOARD_MODEL; }
+        check_expect(found == 2, "notice boards: a town wall block does not hold two boards (model 41739)");
+    }
+    bsa_close(blocks);
+}
+
 /* The princes' FLICs: each of the 16 opens, plays its first frame, 14 more, and the last, a delta back to the first, leaves the picture the first frame was. */
 static void check_flc(void)
 {
@@ -4081,6 +4114,7 @@ int check_dagger(const char *root_in)
     check_ports();
     check_vid();
     check_flc();
+    check_notice_boards();
     check_biog_modifiers();
     return check_failed() ? 1 : 0;
 }

@@ -91,6 +91,18 @@ static void enter(const Level *level)
     }
 }
 
+/* A song the game puts over the place's own (a building's sneaking music while the player trespasses); 0 for none. */
+static const char *g_override;
+
+void ambience_set_song(const char *name)
+{
+    if (name == g_override || (name && g_override && df_eq(name, g_override))) { return; }
+    g_override = name;
+    /* Asked again at the next frame: the place's song comes back when it is cleared. */
+    g_song_kind = -2;
+    g_song_night = -2;
+}
+
 static void song(int kind, int night)
 {
     const char *name;
@@ -101,10 +113,10 @@ static void song(int kind, int night)
     }
     g_song_kind = kind;
     g_song_night = night;
-    if (!g_scape || !g_scape->song) {
+    if (!g_override && (!g_scape || !g_scape->song)) {
         return;
     }
-    name = g_scape->song(g_scape, kind, night);
+    name = g_override ? g_override : g_scape->song(g_scape, kind, night);
     if (!name) {
         music_stop();
         return;

@@ -110,6 +110,11 @@ int dungeon_alive(void);
 /* A creature thrown (damage_knockback) by force and amount the way yaw points, and hurt: an area spell's (radius * AREA_KNOCKBACK_MUL, radius). */
 /* monster_wake_all: every creature the markers keep standing is awake and acts. */
 void dungeon_wake_sleepers(void);
+/* The nearest live creature the ray (from a point, along a unit direction) passes within AIM_RADIUS_MIN (or its own radius) of, within reach; -1 for none. A pickpocket's target (click_creature). */
+#define AIM_RADIUS_MIN 32.0f
+int dungeon_aim(float x, float y, float z, float dx, float dy, float dz, float reach);
+/* A creature's level (a pickpocket weighs it against the player's). */
+int dungeon_level(int index);
 void dungeon_knockback(int index, int force, int amount, float yaw);
 /* Source is a struck creature index, or -1 for a door/noise. */
 void dungeon_alert(int source);

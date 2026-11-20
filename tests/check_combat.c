@@ -419,6 +419,14 @@ static void injuries(void)
     dungeon_open(&g_scene,g_kind,g_passive,g_rate); dungeon_loaded(0);
     /* The row's flag is ignored without the dungeon's own tag, so the rat is alerted as a noise would (a sleeper that wakes by chance made this test depend on the dice). */
     dungeon_alert(0);
+    /* A pickpocket's aim: the ray at the rat finds it, the opposite ray or a short reach does not. */
+    {
+        float vx = g_entity[0].x-g_cam.x, vy = g_entity[0].y+BODY_MIDDLE-g_cam.y, vz = g_entity[0].z-g_cam.z, d = df_sqrt(vx*vx+vy*vy+vz*vz);
+
+        vx /= d; vy /= d; vz /= d;
+        check_expect(dungeon_aim(g_cam.x,g_cam.y,g_cam.z,vx,vy,vz,d+10.0f) == 0 && dungeon_aim(g_cam.x,g_cam.y,g_cam.z,-vx,-vy,-vz,d+10.0f) < 0 &&
+                     dungeon_aim(g_cam.x,g_cam.y,g_cam.z,vx,vy,vz,d*0.5f) < 0 && dungeon_level(0) >= 0, "dungeon aim: a creature in the ray was not found, or one behind or past reach was");
+    }
     before = character_state()->health;
     check_expect(dungeon_nearby(&g_cam,1024),"an alerted hostile creature prevents resting nearby");
     for (i = 0; i < 200 && character_state()->health == before; i++) { dungeon_step(&g_scene,&g_cam,0.05f); }

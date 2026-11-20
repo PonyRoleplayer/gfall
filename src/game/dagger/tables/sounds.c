@@ -113,6 +113,15 @@ enum {
     HOUSE_KNIGHT
 };
 
+/* The sneaking songs (run_00077B9E.c 196..201: environment 2 while trespassing): sneak[rand() % 7], General MIDI then FM (the FM list repeats FSNEAK2). */
+static const char *const g_sneak[] = { "GSNEAK2.HMI", "SNEAKING.HMI", "SNEAKNG2.HMI", "16.HMI", "09.HMI", "25.HMI", "30.HMI" };
+static const char *const g_sneak_fm[] = { "FSNEAK2.HMI", "FMSNEAK2.HMI", "FSNEAK2.HMI", "16FM.HMI", "09FM.HMI", "25FM.HMI", "30FM.HMI" };
+
+const char *sounds_sneak(unsigned pick)
+{
+    return (music_kind() == MUSIC_FM ? g_sneak_fm : g_sneak)[pick % COUNT(g_sneak)];
+}
+
 static Playlist house_list(int which, int fm)
 {
     Playlist p;

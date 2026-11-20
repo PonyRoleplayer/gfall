@@ -42,6 +42,8 @@ void activate_set_shelf(int what, int (*use)(int index, int tag));
 /* A house's chest or cupboard (what OTHER_CONTAINER): use(index) with the usable's index in the scene. */
 void activate_set_container(int what, int (*use)(int index));
 /* A dungeon model that sets a quest's global state (RDB action 31): used by hand, the game is told the state's number. */
+/* How far a pickpocket reaches a creature (a townsperson's is 128 too). */
+#define STEAL_CREATURE_REACH 128.0f
 void activate_set_global(int what, void (*use)(int state));
 /* A town's notice board (OTHER_NOTICE): the game shows what the region's notice board says. */
 void activate_set_notice(int what, void (*use)(void));

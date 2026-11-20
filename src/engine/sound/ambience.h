@@ -36,6 +36,8 @@
  */
 void ambience_frame(const Level *level, const Camera *cam, const Weather *w,
                     float night, int stroke, float secs);
+/* A song named by the game (music loader name, "GSNEAK2.HMI") that plays instead of the place's own until it is cleared with 0. The name must outlive the call. */
+void ambience_set_song(const char *name);
 /* The console is up: only aim and refill, so the sound runs on. */
 void ambience_idle(void);
 /* Emitters within reach last frame, and loops held. */

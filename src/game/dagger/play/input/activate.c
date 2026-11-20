@@ -9,6 +9,9 @@
 #include "game/dagger/play/ui/screen.h"
 #include "game/dagger/play/ui/options.h"
 #include "game/dagger/play/travel/doors.h"
+#include "game/dagger/play/combat/dungeon.h"
+#include "game/dagger/play/people/steal.h"
+#include "game/dagger/play/play.h"
 #include "game/dagger/play/items/ground.h"
 
 #include "engine/core/df.h"
@@ -170,6 +173,19 @@ int activate(const Scene *scene, const Camera *cam, int mode,
         if (pile) {
             if (mode == MODE_GRAB) { return possessions_open(VIEW_INVENTORY,pile); }
             if (mode == MODE_INFO) { interact_say("Treasure"); }
+            return 1;
+        }
+    }
+    /* click_creature in Steal mode (pickpocket_attempt on a creature, steal.c): a creature in reach of the view is robbed, at its level against the player's; failing wakes every sleeper of the place. */
+    if (mode == MODE_STEAL && world_where()->where.kind == WHERE_DUNGEON) {
+        int c = dungeon_aim(x, y, z, dx, dy, dz, STEAL_CREATURE_REACH);
+
+        if (c >= 0) {
+            StealState taken;
+
+            steal_pocket(1, dungeon_level(c), &taken);
+            if (taken.wake) { dungeon_wake_sleepers(); }
+            if (taken.text) { interact_say(words_state(taken.text)); } else if (taken.line) { interact_say(taken.line); }
             return 1;
         }
     }

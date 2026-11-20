@@ -1229,3 +1229,26 @@ int dungeon_guards(void)
 }
 
 void dungeon_wake_sleepers(void) { wake_sleepers(); }
+
+int dungeon_level(int index) { return index >= 0 && index < g_count ? g_foe[index].fighter.level : 0; }
+
+int dungeon_aim(float x, float y, float z, float dx, float dy, float dz, float reach)
+{
+    int i, best = -1;
+    float best_along = 0;
+
+    for (i = 0; i < g_count; i++) {
+        const Entity *e = g_foe[i].entity;
+        float px, py, pz, along, ex, ey, ez, radius;
+
+        if (!e->live || e->dead) { continue; }
+        px = e->x-x; py = e->y+BODY_MIDDLE-y; pz = e->z-z;
+        along = px*dx+py*dy+pz*dz;
+        if (along < 0 || along > reach) { continue; }
+        ex = px-dx*along; ey = py-dy*along; ez = pz-dz*along;
+        radius = e->radius > AIM_RADIUS_MIN ? e->radius : AIM_RADIUS_MIN;
+        if (ex*ex+ey*ey+ez*ez > radius*radius) { continue; }
+        if (best < 0 || along < best_along) { best = i; best_along = along; }
+    }
+    return best;
+}
