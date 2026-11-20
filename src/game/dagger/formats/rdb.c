@@ -233,6 +233,17 @@ static void place_model(Instance *in, float rx, float ry, float rz)
     in->m[8] = z;
 }
 
+void rdb_resolve_act(ModelAct *act)
+{
+    /* links_resolve (func_00064228.c) at load: the old spell trigger is a use, and sound 108 is 100. The original compares the whole byte; the lock's bits are kept apart here (see TRIGGER_MASK). */
+    if ((act->trigger & RDB_TRIGGER_BITS) == RDB_TRIGGER_OLD_SPELL) {
+        act->trigger = (act->trigger & ~(df_u32)RDB_TRIGGER_BITS) | RDB_TRIGGER_USE;
+    }
+    if (act->sound == RDB_SOUND_OLD) {
+        act->sound = RDB_SOUND_NEW;
+    }
+}
+
 /*
  * The model resource past its turn and model index (Daggerfall Unity's
  * RdbModelResource): the trigger and starting lock (u32 at 14), a sound
@@ -260,6 +271,7 @@ static void read_act(ModelAct *act, const df_u8 *rdb, df_u32 size, df_u32 at, df
     }
     act->trigger = df_ru32(rdb + res + 14);
     act->sound = rdb[res + 18];
+    rdb_resolve_act(act);
     ao = df_ri32(rdb + res + 19);
     if (ao > 0 && (df_u32)ao + 10 <= size) {
         act->axis = rdb[ao];

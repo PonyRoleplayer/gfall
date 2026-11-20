@@ -41,7 +41,6 @@
 #define TRIG_COLLIDE1 1
 #define TRIG_COLLIDE3 3
 #define TRIG_DIRECT 2
-#define TRIG_DIRECT6 6
 #define TRIG_MULTI 8
 #define TRIG_COLLIDE9 9
 
@@ -517,7 +516,7 @@ int doors_build(DoorBuild *b)
                 int hand;
                 int touch;
 
-                hand = trig == TRIG_DIRECT || trig == TRIG_DIRECT6 || trig == TRIG_MULTI
+                hand = trig == TRIG_DIRECT || trig == TRIG_MULTI
                     || trig == TRIG_COLLIDE9;
                 touch = trig == TRIG_COLLIDE1 || trig == TRIG_COLLIDE3 || trig == TRIG_COLLIDE9;
                 if (hand || touch) {

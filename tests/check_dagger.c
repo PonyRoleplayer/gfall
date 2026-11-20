@@ -4147,6 +4147,16 @@ int check_dagger(const char *root_in)
     check_ports();
     check_vid();
     check_corpses();
+    {
+        ModelAct act;
+
+        memset(&act, 0, sizeof(act));
+        act.trigger = 6u | (3u << 4); act.sound = 108;
+        rdb_resolve_act(&act);
+        check_expect(act.trigger == (2u | (3u << 4)) && act.sound == 100, "rdb: trigger 6 did not become 2 (lock kept) or sound 108 did not become 100");
+        act.trigger = 8u; act.sound = 107; rdb_resolve_act(&act);
+        check_expect(act.trigger == 8u && act.sound == 107, "rdb: another trigger or sound was renumbered");
+    }
     check_ship_marker();
     check_flc();
     check_notice_boards();

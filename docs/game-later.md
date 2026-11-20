@@ -216,3 +216,9 @@ World and economy, last pass (2026-11-20)
 - News: gossip 1450..1456, which the original never writes, are written one a round (`rumour_add(.., NEWS_GOSSIP, ..)`); the arrival's tavern-room line (`gfall_building_room_lines`) is built. Rulers' names are drawn from the faction's own seed (`random_seed`, a name bank, a gender bit, `name_generate`), not the original's shared draw.
 - Law: the surrender flag clears when no creature is alive (`law_calm`); the original cleared it only when none remained at all. The child-guard flag is left as it is.
 - Corpses: a creature's body picture has two sources in FALL.EXE and in ENEM/CFG rows; they differ for kinds 29 and 39 and the CFG row is the wrong one, so `enemy_corpse` uses FALL.EXE's table for the classic kinds (`check_corpses`).
+
+Dungeons and combat, last pass (2026-11-20)
+- Built: links get the original's load rewrite (`rdb_resolve_act`, links_resolve): an old spell trigger 6 becomes 2 (use), sound 108 becomes 100, so a spell missile no longer fires a click-only link (`check_dagger.c`). The archer's long bow takes the ordinary material roll (`KIT_MATERIAL_ROLL`); its sword stays iron.
+- Kept on purpose (the original's quirks, not copied): the link trigger is `& 15` (the original does not mask, so a link with lock bits never fires); the scan checks every link of a model (the original stops at the first mismatch); a second new game in one run starts at the same minute as the first (the original's `game_reset` starts 3 days earlier); model-410 furniture is stocked (classic never does).
+- Checked: the combat table's seed is the location number: the dungeon's place key holds `location_id` (the MAPDITEM u16) and `ENC_SEED_MASK` takes its low word, as `srand(location_object->id >> 16)` does.
+- Assumption that stays: the Speed swing roll is once per original frame and the frame rate was not fixed; ours is `FOE_THINK_HZ` 20 a second.

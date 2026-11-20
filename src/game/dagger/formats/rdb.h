@@ -29,6 +29,13 @@ typedef struct Marker {
     df_u32 pos;
 } Marker;
 
+/* The trigger's own bits (the top nibble is a door's starting lock), the old spell trigger and the use trigger it becomes, and the sound id that is renumbered: links_resolve, func_00064228.c. */
+#define RDB_TRIGGER_BITS 15u
+#define RDB_TRIGGER_OLD_SPELL 6u
+#define RDB_TRIGGER_USE 2u
+#define RDB_SOUND_OLD 108
+#define RDB_SOUND_NEW 100
+
 /*
  * What a block's file says of one model beyond where it stands, beside
  * Block.inst: what world.c needs for its doors and actions. Read
@@ -59,6 +66,9 @@ typedef struct ModelAct {
 /* Flat.tag of a person (an RMB people record, or an RDB flat whose action is RDB_ACTION_PERSON): this bit, and the faction under it. */
 #define FLAT_PERSON 0x8000
 #define RDB_ACTION_PERSON 29
+
+/* The renumbering a link gets as its block loads (links_resolve): the trigger and the sound. */
+void rdb_resolve_act(ModelAct *act);
 
 typedef struct Block {
     Instance *inst;

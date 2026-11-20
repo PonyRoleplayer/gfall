@@ -23,6 +23,8 @@
 #define KIT_NONE 255
 #define KIT_ARCHER_SWORD 14
 #define KIT_ARROWS 24
+/* A gift made with no forced material: the ordinary roll (item_create takes -1 so). The archer's long bow is one (kludge.c 365..367 sets forced_material only after it). */
+#define KIT_MATERIAL_ROLL -1
 /* The class weapon is made with value 15, except the archer's (CLASS_ARCHER). */
 #define KIT_WEAPON_VALUE 15
 #define CLASS_ARCHER 13

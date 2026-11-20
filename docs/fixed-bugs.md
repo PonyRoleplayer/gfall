@@ -49,3 +49,5 @@ Bugs found while building the game and fixed rather than kept, whether they were
 | Two tables gave a creature's corpse picture and the CFG-derived one was used, wrong for kinds 29 and 39 | `enemy_corpse` takes FALL.EXE's `monster_corpse_textures` for classic kinds | `check_dagger.c` `check_corpses` |
 | The surrender flag stayed set while any creature was left in the place | it clears when no creature is alive (`law_calm`) | `check_law.c` |
 | The ship's arrival stood in the street, not on the deck | lands on editor marker 8 of the ship's block | `check_dagger.c` `check_ship_marker` |
+| A spell missile fired a link meant for a click (trigger 6), and sound 108 was played as itself | the load rewrite of the original: trigger 6 becomes 2, sound 108 becomes 100 (`rdb_resolve_act`) | `check_dagger.c` |
+| The archer's long bow was always iron | the ordinary material roll the original makes | the new-game suites run it; the roll itself is not asserted |

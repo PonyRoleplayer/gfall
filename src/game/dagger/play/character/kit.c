@@ -35,7 +35,7 @@ void kit_give(CharacterState *who)
     gift(who, who->female ? ITEM_GROUP_WOMENS_CLOTHING : ITEM_GROUP_MENS_CLOTHING, KIT_SHOES, 0);
     weapon = g_weapon[klass][0];
     if (weapon == KIT_ARCHER) {
-        gift(who, ITEM_GROUP_WEAPON, WEAPON_LONG_BOW, 0);
+        gift(who, ITEM_GROUP_WEAPON, WEAPON_LONG_BOW, KIT_MATERIAL_ROLL);
         gift(who, ITEM_GROUP_WEAPON, KIT_ARCHER_SWORD, 0);
         gift(who, ITEM_GROUP_WEAPON, WEAPON_ARROW, 0);
         /* Original index 18 is arrows; 17 is a long bow. */
