@@ -492,6 +492,17 @@ void check_world(const char *root)
         }
         printf("interior: %d buildings, %d people, %d of %d shops have a shopkeeper, %d houses\n", count, people_total, shopkeepers, shops, house_keepers);
         check_expect(people_total > 20 && shops > 5 && shopkeepers * 2 > shops && house_keepers == 0, "people: the block's shopkeepers are not in the shops");
+        /* A building's key is its own: no two of the town's buildings share one (the record alone was the key, and every block has record 0), whatever the block. */
+        {
+            int a, c2, same = 0;
+
+            for (a = 0; rows && a < count; a++) {
+                for (c2 = a + 1; c2 < count; c2++) {
+                    same += town_building_key(region_t,index_t,rows[a].block,rows[a].record) == town_building_key(region_t,index_t,rows[c2].block,rows[c2].record);
+                }
+            }
+            check_expect(count > 1 && same == 0 && town_building_key(region_t,index_t,0,0) != town_building_key(region_t,index_t,1,0), "buildings: two buildings of a town share a key");
+        }
         /* Section 3: every interior's points read, with the restriction bytes the BLOCKS.BSA scan found (0, 5..45) and most of them 5 or 10. */
         {
             static RmbRestriction points[192];

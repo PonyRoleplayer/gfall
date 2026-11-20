@@ -32,7 +32,9 @@
 #include "buildings.h"
 unsigned gfall_building_id(const TownBuilding *t)
 {
-    return ((unsigned)(t->block + 1) << 8) | (unsigned)t->record;
+    const PlaceWhere *town = &world_where()->where;
+
+    return town_building_key(town->region, town->index, t->block, t->record);
 }
 
 static Words g_building_words;
@@ -133,7 +135,7 @@ void gfall_building_entered(const PlaceWhere *where)
     g_in_building = gfall_building_id(t); g_in_type = t->type; g_in_block = where->block; g_in_record = where->record;
     g_in_region = where->region; g_in_index = where->index; g_trespassing = 0;
     g_sneak_pick = (unsigned)random_range(0, RAND_MAX_WATCOM);
-    entry_grant(g_in_building, t->type, g_in_building == (df_u32)bank_state()->house ? ACCESS_OWNER : ACCESS_VISITOR, game_state()->minutes);
+    entry_grant(g_in_building, t->type, bank_owns_place(g_in_building) ? ACCESS_OWNER : ACCESS_VISITOR, game_state()->minutes);
     bytes = town_block_bytes(where->region, where->index, where->block, &size);
     g_restrictions = bytes ? rmb_restrictions(bytes, size, where->record, g_restrict, RESTRICTIONS_MOST) : 0;
 }
@@ -191,6 +193,17 @@ static void house_names(char *region, char *town, int cap)
     df_copy(town, town_name(), cap);
 }
 
+/* The cabin of a ship: every building of its "Your Ship" location, by the key a visit to it makes. */
+static int ship_places(int ship, df_u32 *keys, int cap)
+{
+    const TownBuilding *rows;
+    int count, i, n = 0, index = ship == SHIP_LARGE ? 2 : 1;
+
+    rows = town_buildings(SHIP_REGION, index, &count);
+    for (i = 0; rows && i < count && n < cap; i++) { keys[n++] = town_building_key(SHIP_REGION, index, rows[i].block, rows[i].record); }
+    return n;
+}
+
 static int in_port(void)
 {
     const PlaceWhere *w;
@@ -215,6 +228,7 @@ void gfall_building_install(void)
     bank_set_houses(houses_for_sale);
     bank_set_port(in_port);
     bank_set_names(house_names);
+    bank_set_ship_places(ship_places);
     names_set_expand(building_expand);
     door_set_street_bash(gfall_building_bash);
     door_set_castle(in_castle);

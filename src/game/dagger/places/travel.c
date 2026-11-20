@@ -799,7 +799,7 @@ int travel_building(int *type, int *faction, int *quality, unsigned *place_key)
     t = town_building(g_here.region, g_here.index, g_here.block, g_here.record);
     *quality = t ? t->quality : 10;
     /* As world.c keys a building's things (docs/game.md, What the player changed). */
-    *place_key = (3u << 30) | (((unsigned)g_here.record + 1u) << 24) | ((unsigned)g_town.location_id & 0xFFFFFFu);
+    *place_key = town_building_key(g_here.region, g_here.index, g_here.block, g_here.record);
     return 1;
 }
 

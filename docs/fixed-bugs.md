@@ -43,3 +43,6 @@ Bugs found while building the game and fixed rather than kept, whether they were
 | A creature swung with no Speed roll | the original's roll, once per frame of the original (assumed 20 a second) | dungeon.c |
 | The watch had the player's level | the player's plus 3 to 6 | enemies.h |
 | A wielded weapon's poison could not be put on by the player | a drug may be put on the weapon in hand (a later addition: FALL.EXE has no way) | `check_combat.c` |
+| A building's key (its chests' place key) was its record number alone, so every building of a town in another block shared the chests of the building with the same record, and a house's chests could be another house's | one key from the town's place, block and record (`town_building_key`), the same number for the bank's house, the entry's building and the things' place | `check_world.c`, `check_bank.c` |
+| The bank's house was a different number from the building's place key, so the player's own house was never recognised: its chests asked leave, its bed was not free, and a sold house's chests were never emptied | `bank_owns_place`, one key | `check_bank.c` |
+| The ship's cabin was never the player's: its chests asked leave and a sold ship kept its contents | the cabin's keys come from the map (`bank_set_ship_places`), a sale empties them | `check_bank.c` |

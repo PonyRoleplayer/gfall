@@ -725,7 +725,7 @@ int gfall_container_used(int index)
         interact_say("There is nothing here you want.");
         return 1;
     }
-    if ((df_u32)bank_state()->house == place) {
+    if (bank_owns_place(place)) {
         if (!possessions_open(VIEW_INVENTORY, id)) { interact_say("You cannot take anything now."); }
         return 1;
     }
@@ -834,7 +834,7 @@ int gfall_rest_site(RestSite *site)
         site->building_type = type;
         site->building_faction = faction;
         site->building = place;
-        site->own_house = bank_state()->house;
+        site->own_house = bank_owns_place(place) ? place : 0;
         site->fighters_member = guild_find_faction(FACTION_FIGHTERS_GUILD) != 0; /* a bed is for the Fighters Guild's members, not the knights (run_0006DC35.c) */
     } else if (g_site_camera && travel_town_here(g_site_camera, &region, &index, &x, &z, &block, &record)) {
         site->kind = SITE_TOWN;

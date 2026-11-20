@@ -132,6 +132,10 @@ int bank_buy_ship(int region, int kind, int *text);
 /* The Seneschal's gift: one of the town's houses for sale at random, at its price; 0 when the town has none. */
 int bank_gift_house(void);
 /* The game says the region's name and the town's, to save with a house when it is bought or given (bank_house_bought: saved_region_name, saved_location_name). */
+/* Whether a building's place key is the player's (their house, or the cabin of their ship): what is kept there is theirs to open with no question. */
+int bank_owns_place(df_u32 place);
+/* The game says which place keys the cabin of a ship (SHIP_SMALL or SHIP_LARGE) is: the buildings of its "Your Ship" location. */
+void bank_set_ship_places(int (*places)(int ship, df_u32 *keys, int cap));
 void bank_set_names(void (*names)(char *region, char *town, int cap));
 /* The deed (group 27, index MISC_HOUSE_DEED: template 285, "House deed"): FALL.EXE has it and TEXT 1073 but never makes it; here the bank hands one over with a house and takes it back with its sale. */
 /* TEXT.RSC 462 says it was given. */

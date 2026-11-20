@@ -220,3 +220,17 @@ int town_house_price(int region, int index, int block)
     bsa_close(arch);
     return best * HOUSE_PRICE_PER_RADIUS;
 }
+
+df_u32 town_building_key(int region, int index, int block, int record)
+{
+    df_u32 h;
+    int part[4], i, k;
+
+    /* FNV-1a over the four numbers' bytes. */
+    h = 2166136261u;
+    part[0] = region; part[1] = index; part[2] = block; part[3] = record;
+    for (i = 0; i < 4; i++) {
+        for (k = 0; k < 4; k++) { h = (h ^ (df_u32)((part[i] >> (8 * k)) & 0xFF)) * 16777619u; }
+    }
+    return BUILDING_KEY_KIND | (h & ~BUILDING_KEY_KIND);
+}

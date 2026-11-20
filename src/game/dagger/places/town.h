@@ -1,6 +1,8 @@
 #ifndef DF_TOWN_H
 #define DF_TOWN_H
 
+#include "engine/core/df.h"
+
 /*
  * A town's buildings, from its blocks' files: what each is and where it stands
  * in the town's own frame, the one a house is loaded in (world_load_inside).
@@ -50,5 +52,13 @@ const char *town_name(void);
 const unsigned char *town_block_bytes(int region, int index, int block, unsigned *size);
 /* One of them, by what a door's tag names; 0 for none. */
 const TownBuilding *town_building(int region, int index, int block, int record);
+
+/*
+ * A building's identity everywhere: what the player owns (the house), what is kept of it (its chests and cupboards: container keys), who is let in. One number from the town's map place and the building's block and
+ * record, so no two buildings of a town share one (the key was the record alone, and every block has record 0), and the same number is the bank's house, the entry's building and the things' place key.
+ * The top two bits are set (a building's, as ground piles have another), the rest a hash of the four.
+ */
+#define BUILDING_KEY_KIND (3u << 30)
+df_u32 town_building_key(int region, int index, int block, int record);
 
 #endif

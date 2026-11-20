@@ -340,15 +340,33 @@ int bank_gift_house(void)
     return 1;
 }
 
-/* A sold house's chests and cupboards are emptied and forgotten (TEXT 298 promises it; the original left the contents in the store): every container of the house's place and what is in it. */
-static void empty_house(df_u32 house)
+/* The place keys of the buildings of the player's ship (its cabin: the buildings of the "Your Ship" location), which only the game's map knows. */
+static int (*g_ship_places)(int ship, df_u32 *keys, int cap);
+void bank_set_ship_places(int (*places)(int ship, df_u32 *keys, int cap)) { g_ship_places = places; }
+
+#define SHIP_PLACES_MOST 8
+
+int bank_owns_place(df_u32 place)
+{
+    df_u32 keys[SHIP_PLACES_MOST];
+    int n, i;
+
+    if (!place) { return 0; }
+    if (bank_state()->house == place) { return 1; }
+    n = bank_state()->ship && g_ship_places ? g_ship_places(bank_state()->ship, keys, SHIP_PLACES_MOST) : 0;
+    for (i = 0; i < n; i++) { if (keys[i] == place) { return 1; } }
+    return 0;
+}
+
+/* What a sold house or ship held is gone (TEXT 298 and 299 promise it; the original left the contents in its store): every container of the place and what is in it. */
+static void empty_place(df_u32 place)
 {
     int i, j;
 
     for (i = 0; i < OBJECTS; i++) {
         const ObjectInfo *box = &game_state()->object[i];
 
-        if (!box->id || box->type != RECORD_CONTAINER || box->place_key != house || box->parent != WORLD_ROOT) { continue; }
+        if (!box->id || box->type != RECORD_CONTAINER || box->place_key != place || box->parent != WORLD_ROOT) { continue; }
         for (j = 0; j < OBJECTS; j++) {
             if (game_state()->object[j].id && game_state()->object[j].parent == box->id) { object_delete(game_state()->object[j].id); }
         }
@@ -365,7 +383,7 @@ int bank_sell_house(int region, int confirmed, int *text)
     owned = b->house != 0;
     r = sell(region, &b->house_price, &owned, BANK_TEXT_ASK_SELL_HOUSE, confirmed, text);
     if (r == BANK_DONE) {
-        empty_house(b->house);
+        empty_place(b->house);
         disown_house();
         b->house = 0;
     }
@@ -375,9 +393,15 @@ int bank_sell_house(int region, int confirmed, int *text)
 int bank_sell_ship(int region, int confirmed, int *text)
 {
     BankState *b;
+    df_u32 keys[SHIP_PLACES_MOST];
+    int n, i, r, kind;
 
     b = bank_state();
-    return sell(region, &b->ship_price, &b->ship, BANK_TEXT_ASK_SELL_SHIP, confirmed, text);
+    kind = b->ship;
+    n = kind && g_ship_places ? g_ship_places(kind, keys, SHIP_PLACES_MOST) : 0;
+    r = sell(region, &b->ship_price, &b->ship, BANK_TEXT_ASK_SELL_SHIP, confirmed, text);
+    if (r == BANK_DONE) { for (i = 0; i < n; i++) { empty_place(keys[i]); } }
+    return r;
 }
 
 int gold_total(void)

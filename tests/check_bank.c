@@ -14,6 +14,7 @@
 
 /* By hand, from docs/economy-math.md ("Bank, houses, ships, loans"). Region 17 is the test's bank. */
 static void deed_names(char *region, char *town, int cap) { strncpy(region, "Test Province", (size_t)cap); strncpy(town, "Test Town", (size_t)cap); }
+static int ship_cabin(int ship, df_u32 *keys, int cap) { (void)ship; (void)cap; keys[0] = 0xC0000007u; return 1; }
 static int gift_houses(df_u32 *ids, int *prices, int cap) { (void)cap; ids[0] = 501u; prices[0] = 300000; ids[1] = 502u; prices[1] = 400000; return 2; }
 
 void check_bank(void)
@@ -111,6 +112,28 @@ void check_bank(void)
     check_expect(bank_sell_house(region, 1, &text) == BANK_DONE && b->account[region].balance == 850 && b->house == 0 && b->house_price == 0,
                  "bank: a house of 1000 did not sell for 850");
     check_expect(bank_sell_house(region, 1, &text) == BANK_REFUSED, "bank: sold a house not owned");
+    /* What is the player's: their house's key, and the keys of their ship's cabin while they own a ship. */
+    {
+        b->house = 0x80001234u; b->ship = 0;
+        bank_set_ship_places(ship_cabin);
+        check_expect(bank_owns_place(0x80001234u) && !bank_owns_place(0x80005678u) && !bank_owns_place(0), "bank: the house's key is not the player's, or another is");
+        check_expect(!bank_owns_place(0xC0000007u), "bank: a ship's cabin was the player's with no ship");
+        b->ship = SHIP_SMALL;
+        check_expect(bank_owns_place(0xC0000007u) && !bank_owns_place(0xC0000008u), "bank: the cabin of the owned ship is not the player's");
+        /* A sold house empties the chests kept under its key (and leaves another place's). */
+        {
+            df_u32 mine = object_new(RECORD_CONTAINER, WORLD_ROOT, 0, 1), other = object_new(RECORD_CONTAINER, WORLD_ROOT, 0, 1), thing;
+            int t3;
+
+            object_edit(mine)->place_key = 0x80001234u; object_edit(other)->place_key = 0x80005678u;
+            thing = item_create(mine, 3, 5, 1);
+            b->house = 0x80001234u; b->house_price = 1000; b->account[region].balance = 0;
+            check_expect(thing && bank_sell_house(region, 1, &t3) == BANK_DONE, "bank: the house with chests did not sell");
+            check_expect(!object_at(mine) && !object_at(thing) && object_at(other) != 0, "bank: a sold house kept its chests or lost another place's");
+            if (object_at(other)) { object_delete(other); }
+        }
+        b->ship = 0; b->house = 0; bank_set_ship_places(0);
+    }
     /* The Seneschal's gift: a house of the town's list at its own price; none to give with no houses. */
     check_expect(!bank_gift_house(), "bank: a house was given in a town with none for sale");
     bank_set_houses(gift_houses);
