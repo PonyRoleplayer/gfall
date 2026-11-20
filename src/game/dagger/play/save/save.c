@@ -662,6 +662,9 @@ static void transfer(Wire *w, GameState *s)
         wire_df_u32_politics(w, po);
     }
 
+    /* The world's seed (schema 23). */
+    if (w->version >= 23) { wire_u32(w, &s->world_seed); }
+
     /* The ship's way back (schema 22). */
     if (w->version >= 22) {
         ShipBack *sh = &s->world_state.ship;
@@ -817,6 +820,8 @@ static int read_save(const char *path, int rows)
     }
     if (w->version < 8) { standing_defaults(&g_candidate.standing); }
     if (w->version < 20 && g_candidate.standing.ready) { standing_relations_defaults(&g_candidate.standing); }
+    /* A save from before the world seed is given one from what it holds: the same save always gets the same world. */
+    if (w->version < 23) { g_candidate.world_seed = seed_mix(g_candidate.random, g_candidate.minutes); }
     if (w->version < STATE_VERSION) { g_candidate.version = STATE_VERSION; }
     spells_sync_custom(&g_candidate);
     if (!w->bad && rows) {

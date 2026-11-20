@@ -207,7 +207,7 @@ static void check_legacy_save(const df_u8 *current, df_u32 size)
     /* Standing, from schema 8, sits between the magic rows and the world: ready, a count, a pair a faction and a pair a region. */
     static df_u8 quest_buf[TEST_QUEST_BUFFER];
     int quest_bytes = quest_pack(quest_buf, TEST_QUEST_BUFFER);
-    df_u32 stand = 8u + (game_state()->standing.ready ? (df_u32)faction_total()*8u + REGIONS*8u : 0u) + (REGIONS*16u + 16u) + (ROOMS_MOST*12u + 4u) + (4u + REGIONS*4u) + (MEMBERSHIPS*24u + 16u + 4u + 4u + 20u) + CUSTOM_SPELLS*(4u + 89u) + ENCHANTED_ITEMS*(4u + 4u + 80u) + 4u + 4u + (df_u32)quest_bytes + CURSE_WIRE_BYTES + BIO_WIRE_BYTES + 2u*BANK_PLACE_NAME + SHIP_WIRE_BYTES + (4u + (game_state()->standing.ready ? (df_u32)faction_total()*FACTION_LINKS*8u : 0u) + 4u + REGIONS*29u + REGIONS*14u + REGIONS*4u + FACTIONS_MAX + FACTIONS_MAX*4u + RUMOURS_MOST*(4u+4u+4u+3u+4u+RUMOUR_TEXT)) + (df_u32)game_state()->world_count * 18u;
+    df_u32 stand = 8u + (game_state()->standing.ready ? (df_u32)faction_total()*8u + REGIONS*8u : 0u) + (REGIONS*16u + 16u) + (ROOMS_MOST*12u + 4u) + (4u + REGIONS*4u) + (MEMBERSHIPS*24u + 16u + 4u + 4u + 20u) + CUSTOM_SPELLS*(4u + 89u) + ENCHANTED_ITEMS*(4u + 4u + 80u) + 4u + 4u + (df_u32)quest_bytes + CURSE_WIRE_BYTES + BIO_WIRE_BYTES + 2u*BANK_PLACE_NAME + SHIP_WIRE_BYTES + (4u + (game_state()->standing.ready ? (df_u32)faction_total()*FACTION_LINKS*8u : 0u) + 4u + REGIONS*29u + REGIONS*14u + REGIONS*4u + FACTIONS_MAX + FACTIONS_MAX*4u + RUMOURS_MOST*(4u+4u+4u+3u+4u+RUMOUR_TEXT)) + 4u + (df_u32)game_state()->world_count * 18u;
     check_expect(size > 24u+1272u+256u*124u && df_ru32(current+24+1272) == WORLD_ROOT,
                  "fixture locates the documented original object section");
     if (size <= 24u+1272u+256u*124u) { return; }
@@ -459,6 +459,63 @@ static void check_full_disk(void)
     check_expect(save_read(FULL_DISK_SLOT) && character_state()->gold == 4242, "full disk: the slot did not keep its previous save");
 }
 
+/* A pile's contents as one number, whatever the object ids: what is in it and how it is. */
+static df_u32 pile_sum(df_u32 container)
+{
+    df_u32 sum = 0u;
+    int i;
+
+    for (i = 0; i < OBJECTS; i++) {
+        const ObjectInfo *o = &game_state()->object[i];
+
+        if (o->id && o->parent == container) {
+            sum = seed_mix(sum, (df_u32)(o->group * 1000 + o->index));
+            sum = seed_mix(sum, (df_u32)(o->material * 100000 + o->count));
+            sum = seed_mix(sum, (df_u32)(o->value + o->condition * 7 + o->color));
+        }
+    }
+    return sum;
+}
+
+static void pile_drop(df_u32 container)
+{
+    int i;
+
+    for (i = 0; i < OBJECTS; i++) {
+        if (game_state()->object[i].id && game_state()->object[i].parent == container) { object_delete(game_state()->object[i].id); }
+    }
+    object_delete(container);
+}
+
+/* Place state (docs/gfall-place-state.md): a pile is a function of saved numbers. Opened, thrown away and opened again after the stream has moved on, it is the same pile; another thing, another place or another epoch gives another. */
+#define PILE_PLACE 0x40000123u
+#define PILE_THING 77u
+#define PILE_TABLE 3
+#define PILE_STREAM_SPENT 37
+static void check_place_seeds(void)
+{
+    df_u32 first, again, other_thing, other_place, other_epoch, id;
+    int i;
+
+    state_restore(&g_initial); character_state()->level = 6;
+    id = loot_container(PILE_PLACE, PILE_THING, 0, 0, 0, PILE_TABLE);
+    check_expect(id != 0, "place seeds: a pile could not be made");
+    first = pile_sum(id);
+    pile_drop(id);
+    for (i = 0; i < PILE_STREAM_SPENT; i++) { random_range(0, 1000); }
+    id = loot_container(PILE_PLACE, PILE_THING, 0, 0, 0, PILE_TABLE);
+    again = pile_sum(id);
+    check_expect(first == again && first != 0u, "place seeds: a pile opened again after the stream moved on is not the same pile");
+    pile_drop(id);
+    id = loot_container(PILE_PLACE, PILE_THING + 1u, 0, 0, 0, PILE_TABLE); other_thing = pile_sum(id); pile_drop(id);
+    id = loot_container(PILE_PLACE + 1u, PILE_THING, 0, 0, 0, PILE_TABLE); other_place = pile_sum(id); pile_drop(id);
+    check_expect(other_thing != first && other_place != first, "place seeds: another thing or another place gave the same pile");
+    state_pass_minutes(PLACE_EPOCH_DAYS * MINUTES_PER_DAY);
+    id = loot_container(PILE_PLACE, PILE_THING, 0, 0, 0, PILE_TABLE); other_epoch = pile_sum(id); pile_drop(id);
+    check_expect(other_epoch != first, "place seeds: another epoch gave the same pile");
+    check_expect(seed_mix(1u, 2u) == seed_mix(1u, 2u) && seed_mix(1u, 2u) != seed_mix(2u, 1u) && seed_mix(0u, 0u) != 0u, "place seeds: the mix is not a function of its words in order");
+}
+
 void check_state(const char *root)
 {
     g_initial = *game_state();
@@ -499,4 +556,5 @@ void check_state(const char *root)
     check_disk(root);
     check_long_campaign();
     check_full_disk();
+    check_place_seeds();
 }

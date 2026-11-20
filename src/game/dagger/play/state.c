@@ -219,6 +219,42 @@ void random_seed(df_u32 seed)
     g_state.random = seed;
 }
 
+static df_u32 seed_fmix(df_u32 h)
+{
+    h ^= h >> 16; h *= SEED_FMIX_1; h ^= h >> 13; h *= SEED_FMIX_2; h ^= h >> 16;
+    return h;
+}
+
+df_u32 seed_mix(df_u32 a, df_u32 b)
+{
+    return seed_fmix(seed_fmix(a + SEED_GOLDEN) ^ b);
+}
+
+df_u32 place_epoch(void) { return g_state.minutes / (MINUTES_PER_DAY * PLACE_EPOCH_DAYS); }
+
+df_u32 place_seed(df_u32 place) { return seed_mix(seed_mix(g_state.world_seed, place), place_epoch()); }
+
+df_u32 thing_seed(df_u32 place, df_u32 thing) { return seed_mix(place_seed(place), thing); }
+
+/* The streams seed_stream_begin has set aside, innermost last. */
+#define SEED_NEST 4
+static df_u32 g_seed_saved[SEED_NEST];
+static int g_seed_depth;
+
+void seed_stream_begin(df_u32 seed)
+{
+    if (g_seed_depth < SEED_NEST) { g_seed_saved[g_seed_depth] = g_state.random; }
+    g_seed_depth++;
+    g_state.random = seed;
+}
+
+void seed_stream_end(void)
+{
+    if (g_seed_depth <= 0) { return; }
+    g_seed_depth--;
+    if (g_seed_depth < SEED_NEST) { g_state.random = g_seed_saved[g_seed_depth]; }
+}
+
 int random_range(int low, int high)
 {
     if (high < low || ((df_u32)high - (df_u32)low + 1u) == 0) {
@@ -408,6 +444,8 @@ int state_begin(void)
         return 0;
     }
     state_clear();
+    /* The world's seed: two draws of the stream the app seeded from the clock, so each new game is its own world. */
+    g_state.world_seed = seed_mix((df_u32)random_range(0, RAND_MAX_WATCOM), (df_u32)random_range(0, RAND_MAX_WATCOM));
     standing_defaults(&g_state.standing);
     g_state.who = who;
     g_state.who.weapon = g_state.who.weapon_sound = 0;

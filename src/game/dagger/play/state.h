@@ -29,7 +29,7 @@
 #define MINUTES_PER_WEEK 10080u
 #define MONTHS 12
 
-#define STATE_VERSION 22
+#define STATE_VERSION 23
 #define STATE5_WIRE_BYTES 348
 /* The biography's five lasting modifiers a save holds from schema 19, four bytes each. */
 #define BIO_WIRE_BYTES 20
@@ -137,6 +137,8 @@ typedef struct GameState {
     df_u32 skill_uses[SKILLS];
     df_u32 equipped[EQUIP_SLOTS];
     df_u32 random, next_low, minutes;
+    /* Made at a new game and saved (schema 23): every place's rolls derive from it (docs/gfall-place-state.md), so a pile is the same on every save and load. */
+    df_u32 world_seed;
     df_u32 tick_fraction, ticks;
     float frame_fraction;
     int settings_flags, mouse_mode;
@@ -202,6 +204,24 @@ const char *state_error(void);
 void state_clear(void);
 int state_begin(void);
 void random_seed(df_u32 seed);
+/*
+ * Place state (docs/gfall-place-state.md): what a place holds is derived from saved numbers, never from the live stream, so saving, opening a pile and reloading always opens the same pile.
+ * place_seed = mix(world_seed, place key, epoch); thing_seed = mix(place_seed, thing key). The epoch is the game day / PLACE_EPOCH_DAYS: when it moves on, a place's seed changes and its contents with it.
+ * A place left unvisited for more than PLACE_GRACE_EPOCHS epochs is swept (the user chose one epoch of grace: a place survives 3 to 6 days after the player leaves; 0 is the plain rule).
+ */
+#define PLACE_EPOCH_DAYS 3
+#define PLACE_GRACE_EPOCHS 1
+/* Murmur3's finaliser constants and the golden ratio that keeps a zero word from mixing to zero: integer only, the same on the host and the 233. */
+#define SEED_FMIX_1 0x85EBCA6Bu
+#define SEED_FMIX_2 0xC2B2AE35u
+#define SEED_GOLDEN 0x9E3779B9u
+df_u32 seed_mix(df_u32 a, df_u32 b);
+df_u32 place_epoch(void);
+df_u32 place_seed(df_u32 place);
+df_u32 thing_seed(df_u32 place, df_u32 thing);
+/* Runs the random stream on seed until seed_stream_end puts the game's own back exactly (no draw is spent); they nest. */
+void seed_stream_begin(df_u32 seed);
+void seed_stream_end(void);
 int random_range(int low, int high);
 const ObjectInfo *object_at(df_u32 id);
 /* Editing fields never changes record identity, type or ownership. */
