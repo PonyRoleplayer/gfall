@@ -55,7 +55,7 @@ void encounter_prepare(df_u32 place, int type)
     if (state->place == place) { return; }
     state->place = place;
     saved_seed = random_range(0,RAND_MAX_WATCOM);
-    random_seed(place & ENC_SEED_MASK);
+    random_seed(place_seed(place));
     /* dungeon_roll_monster_tables rolls the whole land table. Rest takes
      * slots 1..6, not six fresh table draws on every attempted interruption. */
     for (i = 0; i < ENC_TABLE_SIZE; i++) {

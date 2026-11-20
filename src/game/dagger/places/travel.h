@@ -83,6 +83,9 @@ df_u32 travel_place_key(void);
  */
 int travel_go_to_town(int region, int index);
 /* The same from the travel map: a dungeon's outside is landed on by its way down, as a hold first left is. */
+/* A dungeon's place key: the automap's and the keep's, and what the place seed derives from. */
+#define PLACE_KEY_DUNGEON(location_id) ((1u << 30) | ((df_u32)(location_id) & 0xFFFFFFu))
+
 /* The editor marker a ship's arrival stands on (player_to_nearest_marker(location, 8), inven.c func_00098A15). */
 #define SHIP_MARKER 8
 /* travel_go_to_town, landing on that marker instead of the street edge. */

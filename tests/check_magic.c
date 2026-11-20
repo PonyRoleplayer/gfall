@@ -360,6 +360,15 @@ void check_magic(void)
         check_expect(chance == 40 && magic_identify_take() == 0 && me->magicka == 140, "magic: an Identify spell left no chance (40), left one twice, or did not give its cost back");
         me->magicka = me->max_magicka;
     }
+    /* A creature is the same creature whenever its place is entered (docs/gfall-place-state.md): its health is its marker's own roll, whatever the stream has spent. */
+    {
+        int first, again;
+
+        fixture(0); first = dungeon_max_health(0);
+        for (i = 0; i < 29; i++) { random_range(0, 1000); }
+        fixture(0); again = dungeon_max_health(0);
+        check_expect(first > 0 && first == again, "a creature's health was not the same on entering its place again");
+    }
     g_bad = *game_state(); g_bad.magic.ready = 0x12345678u;
     check_expect(!state_valid(&g_bad),"save validation rejects a ready spell with no owned record");
     g_bad = *game_state(); g_bad.magic.ailment[0].active = 1; g_bad.magic.ailment[0].id = 127;

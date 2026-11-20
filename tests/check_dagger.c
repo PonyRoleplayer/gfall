@@ -437,6 +437,7 @@ static void check_enemy_rules(void)
      * the crypt's first six, one under the water from the underwater
      * table's first six.
      */
+    enemy_set_seeder(0);
     enemy_dungeon(1234, DUN_TYPE_CRYPT, 1);
     mk.record = ENEMY_RANDOM_MARKER;
     low = 1;

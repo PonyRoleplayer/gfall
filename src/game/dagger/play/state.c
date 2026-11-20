@@ -236,6 +236,10 @@ df_u32 place_seed(df_u32 place) { return seed_mix(seed_mix(g_state.world_seed, p
 
 df_u32 thing_seed(df_u32 place, df_u32 thing) { return seed_mix(place_seed(place), thing); }
 
+/* What a dungeon's creature table starts from: the place seed of its key. */
+static df_u32 dungeon_table_seed(df_u32 location_id) { return place_seed(PLACE_KEY_DUNGEON(location_id)); }
+void place_seeds_install(void) { enemy_set_seeder(dungeon_table_seed); }
+
 /* The streams seed_stream_begin has set aside, innermost last. */
 #define SEED_NEST 4
 static df_u32 g_seed_saved[SEED_NEST];
@@ -444,6 +448,7 @@ int state_begin(void)
         return 0;
     }
     state_clear();
+    place_seeds_install();
     /* The world's seed: two draws of the stream the app seeded from the clock, so each new game is its own world. */
     g_state.world_seed = seed_mix((df_u32)random_range(0, RAND_MAX_WATCOM), (df_u32)random_range(0, RAND_MAX_WATCOM));
     standing_defaults(&g_state.standing);
@@ -927,6 +932,7 @@ int state_restore(const GameState *snapshot)
         return 0;
     }
     g_state = *snapshot;
+    place_seeds_install();
     /* The quests come back by reading their files again; bytes that cannot be read leave none running. */
     (void)quest_unpack(g_stage_quest, g_stage_quest ? g_state.quest_len : 0);
     g_stage_quest = 0;

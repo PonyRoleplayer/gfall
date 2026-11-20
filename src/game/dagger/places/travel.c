@@ -860,7 +860,7 @@ int travel_out_to_street(void)
 static df_u32 automap_key(void)
 {
     if (g_here.kind == TRAVEL_DUNGEON) {
-        return g_dungeon.location_id > 0 ? (1u << 30) | ((df_u32)g_dungeon.location_id & 0xFFFFFFu) : 0;
+        return g_dungeon.location_id > 0 ? PLACE_KEY_DUNGEON(g_dungeon.location_id) : 0;
     }
     if (g_here.kind == TRAVEL_INSIDE) {
         return (3u << 30) | ((((df_u32)g_here.record + 1u) & 63u) << 24) | ((df_u32)g_town.location_id & 0xFFFFFFu);

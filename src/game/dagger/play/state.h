@@ -222,6 +222,8 @@ df_u32 thing_seed(df_u32 place, df_u32 thing);
 /* Runs the random stream on seed until seed_stream_end puts the game's own back exactly (no draw is spent); they nest. */
 void seed_stream_begin(df_u32 seed);
 void seed_stream_end(void);
+/* Gives the dungeons' creature tables the place seed (state_begin and state_restore do it). */
+void place_seeds_install(void);
 int random_range(int low, int high);
 const ObjectInfo *object_at(df_u32 id);
 /* Editing fields never changes record identity, type or ownership. */

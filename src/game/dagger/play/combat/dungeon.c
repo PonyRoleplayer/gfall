@@ -241,7 +241,7 @@ int dungeon_add(Entity *entity, int kind, int passive, int rate)
     FoeState *f;
     const Keep *row;
     const ClassInfo *career;
-    int index, j, skill, health, dice;
+    int index, j, skill, health, dice, keyed;
     if (!entity || !ENEMY_IS_KNOWN(kind)) { return -1; }
     for (index = 0; index < g_count && g_foe[index].entity != &g_unused_actor; index++) { }
     if (index == FOE_ACTORS) { return -1; }
@@ -282,9 +282,13 @@ int dungeon_add(Entity *entity, int kind, int passive, int rate)
         f->mind.give_up = row->game[FOE_ROW_GIVE_UP]; f->mind.stuck = row->game[FOE_ROW_STUCK];
         f->mind.detected = row->game[FOE_ROW_DETECTED]; f->mind.encountered = row->game[FOE_ROW_ENCOUNTERED];
     } else {
+        /* Its health comes from its marker's own seed, so it is the same creature whenever the place is entered in its epoch (docs/gfall-place-state.md); one with no key rolls on the stream. */
+        keyed = f->entity->key.place || f->entity->key.thing;
+        if (keyed) { seed_stream_begin(thing_seed(f->entity->key.place, f->entity->key.thing)); }
         health = foe_hp_bonus(f->kind);
         dice = f->def ? f->def->dice : f->fighter.level;
         for (j = 0; j < dice; j++) { health += random_range(1,f->def ? FOE_HIT_DIE : career ? career->hp_per_level : 10); }
+        if (keyed) { seed_stream_end(); }
         f->fighter.health = f->fighter.maximum = health > 0 ? health : 1;
         store_health(f);
     }
@@ -340,7 +344,10 @@ int dungeon_loaded(int index)
     f->body.step = minimum(FOE_BODY_STEP,height/FOE_BODY_STEP_DIV);
     if (!f->entity->dead) { f->entity->radius = f->body.radius; }
     if (ENEMY_IS_CLASS(f->kind) || f->kind == ENEMY_ORC || f->kind == ENEMY_CENTAUR || f->kind == ENEMY_ORC_SERGEANT || f->kind == ENEMY_ORC_SHAMAN || f->kind == ENEMY_ORC_WARLORD) {
+        /* Its gear and gold are its marker's too. */
+        seed_stream_begin(thing_seed(f->entity->key.place, f->entity->key.thing));
         foe_equipment(f->kind,dungeon_container(index),f->equipped,&f->fighter);
+        seed_stream_end();
     }
     return 1;
 }

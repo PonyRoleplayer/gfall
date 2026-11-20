@@ -226,6 +226,10 @@ int enemy_encounter(int dungeon_type, int level, df_u32 seed)
     return kind == INVALID_KIND ? -1 : kind;
 }
 
+static df_u32 (*g_seeder)(df_u32 location_id);
+
+void enemy_set_seeder(df_u32 (*seed_of)(df_u32 location_id)) { g_seeder = seed_of; }
+
 void enemy_dungeon(int location_id, int dungeon_type, int level)
 {
     const Encounter *t;
@@ -233,7 +237,8 @@ void enemy_dungeon(int location_id, int dungeon_type, int level)
     int i;
 
     g_level = level < 1 ? 1 : level;
-    g_rng = (df_u32)location_id;
+    /* Classic seeds with the location id; the game may put its place seed there instead (enemy_set_seeder), so a place's draws change with its epoch. */
+    g_rng = g_seeder ? g_seeder((df_u32)location_id) : (df_u32)location_id;
     /* The dungeon's table by its type; DUN_TYPE_NONE and a type no table names have none. */
     t = dungeon_type == ENCOUNTER_UNDERWATER ? 0 : (const Encounter *)rec_row(encounter_table(), dungeon_type);
     wet = (const Encounter *)rec_row(encounter_table(), ENCOUNTER_UNDERWATER);

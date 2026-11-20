@@ -214,6 +214,8 @@ int enemy_aquatic(int kind);
  * toward the table's start (1 for now: no player yet).
  */
 void enemy_dungeon(int location_id, int dungeon_type, int level);
+/* The seed a dungeon's draws start from, given its location id (classic's: the id itself, with no seeder). The game installs its place seed (state.c) so the table changes with the place's epoch. */
+void enemy_set_seeder(df_u32 (*seed_of)(df_u32 location_id));
 
 /*
  * The creature at an editor marker, given its block's water level

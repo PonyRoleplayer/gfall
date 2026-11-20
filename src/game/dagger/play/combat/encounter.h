@@ -9,7 +9,7 @@
 /*
  * encounter_pick_monster (mplace.c): the level band of a pick: ENC_BAND_NEAR_CHANCE percent level +- ENC_BAND_NEAR, ENC_BAND_LOW_CHANCE percent up to level + ENC_BAND_LOW_HIGH, else up to the
  * top of the table when the level is over ENC_BAND_WIDE_LEVEL (level + ENC_BAND_WIDE_LOW_HIGH if not); a low under 0 gives 0..ENC_TABLE_FLOOR_HIGH, a high over ENC_TABLE_LAST gives
- * ENC_TABLE_CEIL_LOW..ENC_TABLE_LAST. The land table has ENC_TABLE_SIZE entries, seeded by the location's number (ENC_SEED_MASK of the place key: it must be the number), and a rest takes
+ * ENC_TABLE_CEIL_LOW..ENC_TABLE_LAST. The land table has ENC_TABLE_SIZE entries, seeded by the place seed (the world seed, the place and the epoch: docs/gfall-place-state.md), and a rest takes
  * ENC_REST_CHOICES of them from ENC_REST_FIRST. A roll is made every ENC_ROLL_MINUTES minutes and succeeds 1 in 36 by day (the roll's top ENC_CHANCE_DAY) and 1 in 24 by night
  * (ENC_CHANCE_NIGHT). The wilderness table of a climate is its base plus ENC_TABLE_DAY by day and ENC_TABLE_NIGHT by night.
  */
@@ -23,7 +23,6 @@
 #define ENC_TABLE_FLOOR_HIGH 5
 #define ENC_TABLE_CEIL_LOW 14
 #define ENC_TABLE_SIZE 256
-#define ENC_SEED_MASK 0xffffu
 #define ENC_REST_FIRST 1
 #define ENC_REST_CHOICES 6
 #define ENC_ROLL_MINUTES 12
