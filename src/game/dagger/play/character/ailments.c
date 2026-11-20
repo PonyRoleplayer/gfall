@@ -28,9 +28,9 @@ static int vulnerable(int target, int bit, int no_resist, int modifier)
     int base[ATTRS];
     if (!magic_target(target,&who,&career,base) || who.level == 1 ||
         (target == -1 && (career.immunity & bit))) { return 0; }
-    /* Preserve disease.c's comparison: it rejects a result of 100, not 0.
-     * This differs from the spell bundle's damage-percentage interpretation. */
-    return no_resist || magic_resist(target,RESIST_KIND_DISEASE,bit,modifier) != RESIST_FULL;
+    /* The resist roll gives RESIST_FULL when the roll beats the chance, that is, when the target is not resisting: the infection or poison takes then. (FALL.EXE tests the other way, `== 100` stops it, so an
+     * immune target is always infected and a fragile one never: not kept.) */
+    return no_resist || magic_resist(target,RESIST_KIND_DISEASE,bit,modifier) == RESIST_FULL;
 }
 
 static int infect(int target, const df_u8 *list, int id, int no_resist)

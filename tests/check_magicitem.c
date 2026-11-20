@@ -417,6 +417,13 @@ void check_magicitem(void)
         check_expect(ring && magic_artifact_text(ring) == 8703 && !magic_item_unknown(ring) &&
                      item_enchantment(ring,0,&type,&param) && type == 26 && param == 3,
                      "artifact construction binds the original powers and text ordinal");
+        /* An artifact is told by the artifact texts (1012 and 1014 for weapons and armour) and its powers by TEXT.RSC 8700 + its index; an ordinary magic item is neither. */
+        {
+            char powers[400];
+
+            check_expect(ring && magic_item_artifact(ring) && !magic_item_artifact(id) && item_powers_text(ring,powers,sizeof(powers)) > 0 && strcmp(powers,"Powers unknown.") != 0,
+                         "magicitem: an artifact's powers are not its lore text, or an ordinary item is an artifact");
+        }
         object_delete(ring);
     }
     /* Never an artifact in a shop: many items, none of them one. */

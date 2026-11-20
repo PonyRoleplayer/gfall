@@ -241,9 +241,18 @@ int item_use(df_u32 id)
             int kind, index;
             const Entity *entity;
 
-            for (index = 0; index < dungeon_count(); index++) {
-                entity = dungeon_entity(index);
-                if (entity->live && !entity->dead && dungeon_team(index) == TEAM_HOSTILE) { break; }
+            /* The nearest hostile creature that is alive (the original takes the first of its list, which may be anything). */
+            {
+                float best = 0, dx, dz;
+                int found = -1;
+
+                for (index = 0; index < dungeon_count(); index++) {
+                    entity = dungeon_entity(index);
+                    if (!entity->live || entity->dead || dungeon_team(index) != TEAM_HOSTILE) { continue; }
+                    dx = entity->x-move_body()->feet[0]; dz = entity->z-move_body()->feet[2];
+                    if (found < 0 || dx*dx+dz*dz < best) { found = index; best = dx*dx+dz*dz; }
+                }
+                index = found < 0 ? dungeon_count() : found;
             }
             if (index == dungeon_count()) { msg_set("There are no creatures nearby."); return 0; }
             kind = param == ARTIFACT_SUMMON_DAEDROTH ? ENEMY_DAEDROTH : dungeon_kind(index);
@@ -298,6 +307,25 @@ void enchant_strike_for(df_u32 weapon, int attacker, int victim, int level, int 
             if (attacker < 0) { magic_strike(param,victim); }
             else { magic_creature_item_strike(param,attacker,victim,level); }
             item_damage(weapon, ENCHANT_CAST_WEAR);
+        } else if (type == ENCHANT_SPECIAL_ADVANTAGE && param == ARTIFACT_MEHRUNES_RAZOR && victim >= 0 && dealt > 0) {
+            int health = dungeon_health(victim);
+
+            if (health > 0 && magic_resist(victim,ELEMENT_MAGIC,RAZOR_CLASS_BIT,0) == RESIST_FULL) {
+                dungeon_enchant_damage(victim,health,attacker < 0 ? TARGET_PLAYER : attacker);
+                item_damage(weapon, health / RAZOR_WEAR_DIV + 1);
+            }
+        } else if (type == ENCHANT_SPECIAL_ADVANTAGE && param == ARTIFACT_MACE_MOLAG_BAL && victim >= 0) {
+            CharacterState target;
+            ClassInfo career;
+            int base[ATTRS], drain;
+
+            drain = random_range(1,MACE_DRAIN_MOST);
+            if (dungeon_spell_target(victim,&target,&career,base)) {
+                if (target.magicka > MACE_FLOOR) { target.magicka -= drain; if (target.magicka < 0) { target.magicka = 0; } }
+                else if (target.attribute[ATTR_STR] > MACE_FLOOR) { target.attribute[ATTR_STR] -= drain; }
+                dungeon_spell_commit(victim,&target,attacker);
+            }
+            item_damage(weapon, MACE_WEAR);
         } else if (type == ENCHANT_VAMPIRIC && param == VAMPIRIC_STRIKE) {
             if (attacker >= 0) { healed = dungeon_enchant_heal(attacker,dealt/VAMPIRIC_HEAL_DIV); }
             else {

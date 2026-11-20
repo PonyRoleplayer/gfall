@@ -1,4 +1,5 @@
 #include "game/dagger/play/magic/magicitem.h"
+#include "game/dagger/play/people/trade.h"
 #include "game/dagger/tables/magic.h"
 #include "game/dagger/tables/items.h"
 #include "game/dagger/play/state.h"
@@ -262,7 +263,7 @@ int magic_item_unknown(df_u32 id)
 
 int magic_item_identify_price(df_u32 id)
 {
-    return magic_item_unknown(id) ? (int)(((df_u32)object_at(id)->value * IDENTIFY_PRICE_NUM) >> 8) : 0;
+    return magic_item_unknown(id) ? (int)(((df_u32)object_at(id)->value * IDENTIFY_NUMERATOR) >> 8) : 0;
 }
 
 int magic_item_identify(df_u32 id)
@@ -314,3 +315,5 @@ void magic_shop_stock(df_u32 container, int quality, int soul_traps)
         soul_trap_stock(container, quality);
     }
 }
+
+int magic_item_artifact(df_u32 item) { int entry = magic_item_def(item); return entry >= 0 && magic_def_artifact(entry); }

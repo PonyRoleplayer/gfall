@@ -31,9 +31,8 @@
 #define ENCHANT_CODE_SPELL_LAST 7
 #define ENCHANT_PARAMS 12
 #define ENCHANT_TYPES 16
-/* The artifacts' pictures are in image archive ARTIFACT_IMAGE_ARCHIVE (the next one for a woman); identifying costs value * IDENTIFY_PRICE_NUM / 256; an artifact's lore is TEXT_ARTIFACT_LORE plus its number. A curio index CURIO_ARTIFACT_EXEMPT is no magic item. */
+/* The artifacts' pictures are in image archive ARTIFACT_IMAGE_ARCHIVE (the next one for a woman); identifying costs value * IDENTIFY_NUMERATOR (trade.h) / 256; an artifact's lore is TEXT_ARTIFACT_LORE plus its number. A curio index CURIO_ARTIFACT_EXEMPT is no magic item. */
 #define ARTIFACT_IMAGE_ARCHIVE 432
-#define IDENTIFY_PRICE_NUM 25
 #define TEXT_ARTIFACT_LORE 8700
 #define CURIO_ARTIFACT_EXEMPT 5
 
@@ -55,6 +54,8 @@ int magic_def_enchant(int def, int k, int *type, int *param);
 /* The entry a magic item is of, -1 for another item. */
 int magic_item_def(df_u32 item);
 int magic_item_unknown(df_u32 item);
+/* Whether the item is an artifact (the original's item flag 2048). */
+int magic_item_artifact(df_u32 item);
 int magic_item_identify_price(df_u32 item);
 int magic_item_identify(df_u32 item);
 int magic_artifact_text(df_u32 item);

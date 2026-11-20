@@ -96,6 +96,8 @@ enum { SPELL_COST_DURATION_CHANCE = 1, SPELL_COST_DURATION_MAGNITUDE, SPELL_COST
 #define SPELL_COST_MIN 5
 /* The chance an Identify spell cast on the player left (lock_open_chance), 0 when none is waiting; taking it clears it. */
 int magic_identify_take(void);
+/* What the cast cost (spell_ready_cost): charged once before the items are shown and again for each one chosen, success or not (trade_identify_button, magic-items-math.md); the player's magicka alone is tested, not the bonus. */
+int magic_identify_cost(void);
 int magic_resist(int index, int element, int class_bit, int modifier);
 int magic_chance(int index, int group, int sub);
 void magic_apply(int spell, int caster, int target, int level, int no_resist);

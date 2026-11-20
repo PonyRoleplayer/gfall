@@ -57,6 +57,14 @@
 #define LEECH_USE_WEAR 2
 #define LEECH_HIT_LEVEL_SHIFT 2
 #define ARTIFACT_USE_WEAR 50
+/* Mehrunes' Razor (artifact 1, on a hit that deals damage): the target is killed when a resist roll (magic, class bit RAZOR_CLASS_BIT, modifier 0) comes to RESIST_FULL, the item wearing health / RAZOR_WEAR_DIV + 1. (FALL.EXE
+ * kills when the roll is not 100, which spares the ones that fail and kills the immune: not kept.) The Mace of Molag Bal (artifact 2, on a hit): 1..MACE_DRAIN_MOST taken from the target's magicka when it has more than MACE_FLOOR, else
+ * from its Strength when that is over MACE_FLOOR; wear MACE_WEAR. (The original's 12-minute return of the drain is not kept for a creature, which does not outlive its place.) */
+#define RAZOR_CLASS_BIT 2
+#define RAZOR_WEAR_DIV 8
+#define MACE_DRAIN_MOST 6
+#define MACE_FLOOR 10
+#define MACE_WEAR 2
 #define ARTIFACT_SUMMON_WEAR 100
 #define TICK_GAP_MAX 100u
 #define TICK_MINUTES_SHIFT 2

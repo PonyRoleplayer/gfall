@@ -16,6 +16,7 @@
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/items/describe.h"
 #include "game/dagger/play/magic/itemmaker.h"
+#include "game/dagger/play/magic/magicitem.h"
 #include "game/dagger/play/magic/potion.h"
 #include "game/dagger/play/save/save.h"
 #include "game/dagger/play/combat/weapon.h"
@@ -745,7 +746,7 @@ static void poisoned_weapons(void)
         weapon_poison_spend(sword);
         item_info(sword,text,sizeof(text));
         check_expect(!strstr(text,"Poisoned"), "item info: a spent poison still shows");
-        /* An enchanted sword is told by 1012 (no material in front of its name), a plain one by 1001. */
+        /* An enchanted sword that is no artifact is still told by 1001 (1012 is the artifact's, with no material). */
         {
             char plain[300];
             ItemEnchant *row = item_enchant_edit(0);
@@ -756,7 +757,7 @@ static void poisoned_weapons(void)
             for (k = 0; k < 10; k++) { row->type[k] = -1; row->param[k] = -1; }
             row->type[0] = 5; row->param[0] = 0;
             item_info(sword,text,sizeof(text));
-            check_expect(item_enchanted(sword) && strlen(text) < strlen(plain), "item info: an enchanted sword is not told by record 1012");
+            check_expect(item_enchanted(sword) && !magic_item_artifact(sword) && strlen(text) == strlen(plain), "item info: an enchanted sword that is no artifact is not told by record 1001");
             row->item = 0;
         }
         /* A bottle with a recipe is told by 1008 with the potion's name. */

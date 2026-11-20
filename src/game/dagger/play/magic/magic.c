@@ -342,8 +342,9 @@ static void dispel_prompt(int target, const Effect *effect)
     else { msg_set("There are no spells to dispel."); }
 }
 
-static int g_identify_chance;
+static int g_identify_chance, g_identify_cost;
 int magic_identify_take(void) { int c = g_identify_chance; g_identify_chance = 0; return c; }
+int magic_identify_cost(void) { return g_identify_cost; }
 
 static void apply_effect(Effect *e, int index, int caster)
 {
@@ -357,6 +358,7 @@ static void apply_effect(Effect *e, int index, int caster)
         CharacterState *me = character_state();
 
         g_identify_chance = e->chance > 0 ? e->chance : 1;
+        g_identify_cost = magic_state()->paid;
         me->magicka += magic_state()->paid; if (me->magicka > me->max_magicka) { me->magicka = me->max_magicka; }
         e->active = 0;
         return;

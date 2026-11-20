@@ -3,6 +3,7 @@
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/combat/foegear.h"
 #include "game/dagger/play/magic/itemmaker.h"
+#include "game/dagger/play/magic/magicitem.h"
 #include "game/dagger/play/magic/potion.h"
 #include "game/dagger/play/people/bank.h"
 #include "game/dagger/play/character/ailments.h"
@@ -22,7 +23,7 @@
 #define TEXT_INFO_CREDIT 1007
 #define TEXT_INFO_BOOK 1009
 #define TEXT_INFO_ARROW 1011
-/* An item with enchantments (flag 2048 in the original) is told by its own name: a weapon 1012, armour 1014 (inv_item_info; 1013, the same for a non-weapon, is dead there: it sits under the weapon test). */
+/* An artifact (item flag 2048, set only by item_make_artifact with the identified flag; not any enchanted item) is told by its own name: a weapon 1012, armour 1014 (inv_item_info; 1013 is dead there: it sits under the weapon test). A magic item that is no artifact is 1001 or 1000, then 1016. */
 #define TEXT_INFO_MAGIC_WEAPON 1012
 #define TEXT_INFO_MAGIC_ARMOR 1014
 /* A weapon with a poison on it (children: the poison record): 1005, whose %wpn is the poison's name. */
@@ -62,9 +63,9 @@ int item_info_record(df_u32 id)
     const ObjectInfo *item;
     item = object_at(id);
     if (!item || item->type != RECORD_ITEM) { return -1; }
-    if (item->group == ITEM_GROUP_ARMOR) { return item_enchanted(id) ? TEXT_INFO_MAGIC_ARMOR : TEXT_INFO_ARMOR; }
+    if (item->group == ITEM_GROUP_ARMOR) { return magic_item_artifact(id) ? TEXT_INFO_MAGIC_ARMOR : TEXT_INFO_ARMOR; }
     if (item->group == ITEM_GROUP_WEAPON && weapon_poison(id)) { return TEXT_INFO_POISONED; }
-    if (item->group == ITEM_GROUP_WEAPON) { return item->index == WEAPON_ARROW ? TEXT_INFO_ARROW : item_enchanted(id) ? TEXT_INFO_MAGIC_WEAPON : TEXT_INFO_WEAPON; }
+    if (item->group == ITEM_GROUP_WEAPON) { return item->index == WEAPON_ARROW ? TEXT_INFO_ARROW : magic_item_artifact(id) ? TEXT_INFO_MAGIC_WEAPON : TEXT_INFO_WEAPON; }
     if (item->group == ITEM_GROUP_MISC && item->index == MISC_HOUSE_DEED) { return TEXT_INFO_DEED; }
     if (item->group == POTION_GROUP && item->index == POTION_INDEX && potion_of(id) >= 0) { return TEXT_INFO_POTION; }
     if (item->group == ITEM_GROUP_BOOK) { return TEXT_INFO_BOOK; }

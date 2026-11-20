@@ -9,6 +9,7 @@
 #include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/tables/combatdefs.h"
 #include "engine/core/mem.h"
+#include "game/dagger/formats/textrsc.h"
 #include "engine/core/log.h"
 #include "game/dagger/tables/itemmakerdata.h"
 #include "game/dagger/tables/enchantdata.h"
@@ -604,6 +605,8 @@ int item_powers_text(df_u32 id, char *out, int cap)
     if (itemmaker_row(id)) { return itemmaker_text(id, out, cap); }
     def = magic_item_def(id);
     if (def < 0) { out[0] = 0; return 0; }
+    /* An artifact's powers are TEXT.RSC 8700 + its index, told identified or not. */
+    if (magic_item_artifact(id)) { return textrsc_read(magic_artifact_text(id), out, cap); }
     if (magic_item_unknown(id)) { return log_format(out,cap,"Powers unknown."); }
     mem_zero(&row, sizeof(row));
     for (k = 0; k < 10; k++) { row.type[k] = -1; row.param[k] = -1; }

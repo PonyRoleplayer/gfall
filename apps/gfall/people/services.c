@@ -21,6 +21,7 @@
 #include "game/dagger/play/people/law.h"
 #include "game/dagger/play/people/guild.h"
 #include "game/dagger/play/magic/potion.h"
+#include "game/dagger/play/magic/magic.h"
 #include "game/dagger/play/magic/magicitem.h"
 #include "game/dagger/play/magic/spellshop.h"
 #include "game/dagger/play/character/ailments.h"
@@ -525,18 +526,24 @@ static void hall_identify(void)
     else { possessions_message("You have no unidentified magical items.",0); }
 }
 
-/* The Identify spell (trade_identify_button, outside a Mages Guild): each item chosen costs its price in spell points (the guild's gold price, free on the holiday of free identification) and is identified when the spell's chance is at least a roll of 1..100; only an item with powers that is not yet known can be chosen. */
-static int g_spell_identify_chance;
+/* The Identify spell (trade_identify_button, outside a Mages Guild): the cast's own cost is charged once before the items are shown and again for each one chosen, whether or not it is identified, in magicka alone
+ * (spell_ready_cost; the holiday does not touch it; a guild hall's gold price is the Mages' own service). An item is identified when the spell's chance is at least a roll of 1..100; only an item with powers not yet known is
+ * offered (FALL.EXE offers any item: its gate has no caller). */
+static int g_spell_identify_chance, g_spell_identify_cost;
+
+static int spell_identify_pay(void)
+{
+    CharacterState *me = character_state();
+
+    if (g_spell_identify_cost > me->magicka) { msg_set("You do not have enough spell points."); return 0; }
+    me->magicka -= g_spell_identify_cost;
+    return 1;
+}
 
 static void spell_identify_pick(int row)
 {
-    CharacterState *me = character_state();
-    int price;
-
     if (row < 0 || row >= LIST_MOST || !magic_item_unknown(g_identify_items[row])) { return; }
-    price = hall_identify_price(g_identify_items[row]);
-    if (price > me->magicka + me->spell_points_bonus) { msg_set("You do not have enough spell points."); return; }
-    me->magicka -= price; if (me->magicka < 0) { me->magicka = 0; }
+    if (!spell_identify_pay()) { return; }
     if (g_spell_identify_chance >= random_range(1, 100)) {
         char name[64];
 
@@ -552,15 +559,16 @@ void gfall_spell_identify(int chance)
     const ObjectInfo *item;
     int i, n;
 
-    g_spell_identify_chance = chance;
+    g_spell_identify_chance = chance; g_spell_identify_cost = magic_identify_cost();
     for (i = n = 0; i < OBJECTS && n < LIST_MOST; i++) {
         item = &game_state()->object[i];
         if (!item->id || item->parent != game_state()->inventory_id || !magic_item_unknown(item->id)) { continue; }
         g_identify_items[n] = item->id;
         item_name(item,names[n++],LIST_NAME);
     }
-    if (n) { possessions_list((const char (*)[LIST_NAME])names,n,spell_identify_pick); }
-    else { possessions_message("You have no unidentified magical items.",0); }
+    if (!n) { possessions_message("You have no unidentified magical items.",0); return; }
+    if (!spell_identify_pay()) { return; }
+    possessions_list((const char (*)[LIST_NAME])names,n,spell_identify_pick);
 }
 
 static void hall_run(void);
