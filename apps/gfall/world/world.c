@@ -37,6 +37,8 @@
 #include "game/dagger/formats/texture.h"
 #include "game/dagger/places/world.h"
 #include "game/dagger/places/travel.h"
+#include "game/dagger/tables/enemies.h"
+#include "game/dagger/tables/combatdefs.h"
 #include "game/dagger/tables/holidaydefs.h"
 #include "game/dagger/places/wild.h"
 #include "game/dagger/places/wres.h"
@@ -374,13 +376,14 @@ static int ench_spawn_creature(int kind, int team)
     SpawnId id;
     int rate, foe;
 
-    if (!g_place_open || kind < 0 || kind >= 43) { return 0; }
+    /* Any kind the game knows: the classic creatures and the class enemies and the watch (the Skull of Corruption copies whoever is nearest, monster_summon_near_player(creature_list[0] mobile id)). */
+    if (!g_place_open || !ENEMY_IS_KNOWN(kind)) { return 0; }
     move_camera(&cam);
     if (world_where()->where.kind == WHERE_DUNGEON) {
         return encounter_summon(&cam,kind,team);
     }
     if (g_level.streamed ? !streamed_soul_art(kind,&entity,&rate) :
-        !encounter_art(kind,255+kind,&entity,&rate)) { return 0; }
+        !encounter_art(kind,foe_archive(kind),&entity,&rate)) { return 0; }
     if (!entity.pose[ENTITY_WALK].w[0]) { return 0; }
     mem_zero(&spot,sizeof(spot));
     body = move_body();
