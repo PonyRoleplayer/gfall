@@ -257,6 +257,10 @@ static void melee(df_u32 sword)
         for (i = 0; i < 20 && !g_entity[0].dead; i++) { dungeon_strike(&g_scene,&g_cam,&s); }
         check_expect(g_entity[0].dead,"the collision ray also ignores a visual model");
     }
+    /* The court's truce: the first swing with an enemy in reach only ends it (a dud), and then blows land again. */
+    arena(0); before = dungeon_health(0); court_restore_vitals();
+    dungeon_strike(&g_scene,&g_cam,&s);
+    check_expect(dungeon_health(0) == before && !law_grace(), "the court's truce: the first swing near an enemy was not a dud that ended it");
     arena(0); before = dungeon_health(1);
     for (i = 0; i < 30 && !g_entity[0].dead; i++) { dungeon_strike(&g_scene,&g_cam,&s); }
     check_expect(g_entity[0].dead && dungeon_health(0) == 0 && g_entity[0].act == ENTITY_DEAD && !g_entity[0].radius,

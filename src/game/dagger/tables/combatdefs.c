@@ -20,7 +20,22 @@ const AnimScript *foe_type_script(int type)
     return type >= 0 && type < 60 ? &g_anim[type] : 0;
 }
 int foe_type_flags(int type) { return type >= 0 && type < 60 ? g_monster[type][2] : 0; }
-int foe_weight(int kind) { return ENEMY_IS_CLASSIC(kind) ? g_weight[kind] : 80; }
+/*
+ * damage_knockback's weight (object_weight, parse.c 1807; docs combat-world-gaps.md B.2). FALL.EXE's table has 40 real entries and ids 40..42 read past it into pointers (18164, 23, 18183): those
+ * three are given real weights here, ours (kind 40's sort is not named, so a middling creature's; a Dreugh and a Lamia are the size of a man or more). A class creature or the watch is a person:
+ * 240 for a woman, 350 for a man; the foe does not keep its sex, so 350.
+ */
+#define WEIGHT_KIND_40 400
+#define WEIGHT_DREUGH 600
+#define WEIGHT_LAMIA 400
+#define WEIGHT_PERSON_MAN 350
+int foe_weight(int kind)
+{
+    if (kind == 40) { return WEIGHT_KIND_40; }
+    if (kind == ENEMY_DREUGH) { return WEIGHT_DREUGH; }
+    if (kind == ENEMY_LAMIA) { return WEIGHT_LAMIA; }
+    return ENEMY_IS_CLASSIC(kind) ? g_weight[kind] : WEIGHT_PERSON_MAN;
+}
 int foe_language(int kind) { return ENEMY_IS_CLASSIC(kind) ? g_language[kind] : 0; }
 int foe_category(int kind) { return ENEMY_IS_CLASSIC(kind) ? g_category[kind] : 0; }
 int foe_enchant_category(int kind) { return ENEMY_IS_CLASS(kind) ? FOE_HUMANOID : foe_category(kind); }

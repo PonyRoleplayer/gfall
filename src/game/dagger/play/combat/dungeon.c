@@ -491,7 +491,8 @@ static int hit_foe_from(const Scene *scene, int i, int damage, float yaw, int so
     Entity *e;
     df_u32 attacker;
 
-    if (damage <= 0) { return 0; }
+    /* damage_apply returns 0 for any target from any source while the court's truce stands (qkey.c 545). */
+    if (damage <= 0 || law_grace()) { return 0; }
     f = &g_foe[i]; e = f->entity;
     damage = magic_absorb(i,damage); if (!damage) { return 0; }
     f->fighter.health -= damage; f->awake = 1; f->passive = 0;
@@ -677,11 +678,19 @@ void dungeon_strike(const Scene *scene, const Camera *cam, const StrikeInfo *s)
     float dx, dz, distance, point[3], from[3], facing;
     int i, hits, index, material;
     if (!s || s->hand < 0 || !cam) { return; }
-    law_grace_end();
     magic_hostile();
     item = object_at(s->item); index = item ? item->index : -1; material = item ? item->material : 0;
     if (s->bow) { launch_arrow(cam,-1,s->item,index,material); return; }
     hits = 0;
+    /* While the court's truce stands, the first swing with an enemy in reach only ends it: nothing is hit, nothing opens, nothing is heard (weapon_melee_strike, func_000733AD.c 88..90). */
+    if (law_grace()) {
+        for (i = 0; i < g_count; i++) {
+            e = g_foe[i].entity;
+            if (e->dead || !e->live || dungeon_team(i) == TEAM_PLAYER) { continue; }
+            dx = e->x-cam->x; dz = e->z-cam->z;
+            if (df_sqrt(dx*dx+dz*dz) <= MELEE_REACH && df_absf(e->y-move_body()->feet[1]) <= MELEE_REACH) { law_grace_end(); return; }
+        }
+    }
     /* The ray of a blow starts at the middle of the body, not a fixed 35 under the eye: crouched, the eye is 32 above the floor and 35 under it is in the floor, where no blow would ever be seen to connect. */
     from[0] = cam->x; from[1] = chest(cam); from[2] = cam->z;
     for (i = 0; i < g_count; i++) {
@@ -850,6 +859,19 @@ static int pick_target(const Scene *scene, const Camera *cam, FoeState *foe)
     return best;
 }
 
+/* A creature's hit effects on a creature (damage_monster_hit_effects: only the unarmed attack slots call it). */
+static int index_is_weapon(int index) { return index >= 0; }
+static void creature_hit_effects(int kind, int source, int target)
+{
+    FoeState *victim = &g_foe[target];
+
+    if ((kind == ENEMY_SPIDER || kind == ENEMY_GIANT_SCORPION) && !magic_chance(target,0,-1)) { magic_apply(SPELL_CREATURE_PARALYSIS,source,target,0,0); }
+    if (kind == ENEMY_NYMPH) {
+        victim->fighter.fatigue -= random_range(NYMPH_FATIGUE_MIN,NYMPH_FATIGUE_MAX)*FATIGUE_UNIT;
+        if (victim->fighter.fatigue < 0) { victim->fighter.fatigue = 0; }
+    }
+}
+
 static void monster_strike(const Scene *scene, const Camera *cam, FoeState *foe, int target)
 {
     FighterInfo player;
@@ -867,6 +889,8 @@ static void monster_strike(const Scene *scene, const Camera *cam, FoeState *foe,
     yaw = df_atan2(dx,dz);
     if (distance > MELEE_ARC_SKIP*MELEE_ARC_SKIP && df_cos(yaw-foe->entity->yaw) <= df_cos(MELEE_ARC*DF_TAU/ANGLE_FULL)) { return; }
     if (!visible(scene,from,to)) { return; }
+    /* The court's truce (D_001962B2) is ended by the first melee strike near an enemy, anyone's, and that strike is a dud (weapon_melee_strike, func_000733AD.c 88..90). */
+    if (law_grace()) { law_grace_end(); return; }
     if (target == TARGET_PLAYER) {
         fighter_player(&player); player.metal = curse_min_metal(); victim = &player;
         category = curse_beast() ? foe_category(curse_form() == CURSE_FORM_WEREWOLF ? ENEMY_WEREWOLF : ENEMY_WEREBOAR) : FOE_HUMANOID;
@@ -902,6 +926,8 @@ static void monster_strike(const Scene *scene, const Camera *cam, FoeState *foe,
         } else {
             dealt = hit_foe_from(scene,target,damage,yaw,source);
             if (dealt > 0) { item_wear(g_foe[target].equipped[armor_slot(part)],dealt); }
+            /* damage_monster_hit_effects against a creature of the other team (damage.c 80): a spider's or scorpion's touch paralyses it unless it is already; a nymph drains its fatigue (the collapse that follows is the player's alone, so none here). The diseases and the curses do nothing to a creature, and lycanthropy and vampirism touch only the player. */
+            if (dealt > 0 && !index_is_weapon(index)) { creature_hit_effects(foe->kind,source,target); }
         }
         if (dealt > 0) {
             total += dealt;
