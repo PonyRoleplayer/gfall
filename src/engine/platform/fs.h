@@ -7,11 +7,23 @@
 
 typedef struct FsFile FsFile;
 
+/*
+ * Why a write failed (fs_last_error): no room on the drive, not let
+ * (read-only, in use, write-protected), or another reason.
+ */
+enum {
+    FS_ERR_NONE,
+    FS_ERR_DISK_FULL,
+    FS_ERR_ACCESS,
+    FS_ERR_OTHER
+};
+
 void fs_set_root(const char *root);
 void fs_root(char *dst, int n);
 
 FsFile *fs_open(const char *rel);
 void fs_close(FsFile *file);
+/* Sizes and offsets are df_u32: a file up to 4 GB - 1, FAT32's largest. A bigger one does not open. */
 df_u32 fs_size(FsFile *file);
 int fs_read_at(FsFile *file, df_u32 offset, void *dst, df_u32 n);
 
@@ -56,9 +68,19 @@ int fs_remove_dir(const char *name);
  * its old self under to + ".OLD": a reader that finds to missing and the
  * ".OLD" there should take that. 1 when from is now to. from and to in
  * one folder is the way to use it (a file written under a name of its
- * own, then moved over the real one).
+ * own, then moved over the real one). A failure says why in
+ * fs_last_error, the first step that failed (a rename on a full disk
+ * can need room for the folder's entry).
  */
 int fs_move(const char *from, const char *to);
+/*
+ * Free bytes on the drive that holds name beside the program (a file or
+ * a folder, there or not; refused as every name is), for this user,
+ * clamped to 0xFFFFFFFF. 1 and *bytes, or 0 when it cannot be told.
+ * Windows 95 before OSR2 and its 32-bit call say at most about 2 GB on
+ * a bigger drive: less than there is, never more.
+ */
+int fs_free_bytes(const char *name, df_u32 *bytes);
 
 /* The local date and time: 1..12 for the month, 1..31 for the day, 0..23 for the hour. */
 typedef struct FsTime {
@@ -79,12 +101,26 @@ df_u8 *fs_read_beside(const char *name, df_u32 *size);
 /*
  * Replace one file beside the program. A file already there is replaced. fs_create opens it,
  * fs_append writes, fs_finish keeps it, fs_abort deletes the partial.
+ *
+ * fs_finish is 1 only when what was written reached the disk and the
+ * file closed: Windows 98 can find a full disk only at the flush or the
+ * close, not at the write (Win32: FlushFileBuffers, then CloseHandle;
+ * POSIX: fsync, then close; both checked). On 0 the file is closed and
+ * left where it is, for the caller to fs_delete. fs_append writes it all
+ * or fails; a short write is a full disk.
+ *
+ * fs_last_error: why the latest fs_create, fs_append, fs_finish or
+ * fs_move failed, FS_ERR_NONE when it worked; read it right after the
+ * call that answered 0. Nothing else sets it. A reason the system does
+ * not name, on a drive with less free than the write needed (64 KB at
+ * the least), is FS_ERR_DISK_FULL.
  */
 int fs_create(const char *name);
 /* Full path of name in that directory beside the program. 0 if too long. */
 int fs_beside(char *dst, int n, const char *name);
 int fs_append(const void *src, df_u32 n);
-void fs_finish(void);
+int fs_finish(void);
 void fs_abort(void);
+int fs_last_error(void);
 
 #endif

@@ -6,6 +6,12 @@
 
 #include <stdio.h>
 #include <string.h>
+/* The host's own calls, to make writes fail and files big for the fs tests (check_fs_writes). */
+#include <fcntl.h>
+#include <signal.h>
+#include <sys/resource.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "engine/scene/pack.h"
 #include "engine/ui/packview.h"
@@ -1383,6 +1389,139 @@ static void check_beside_saves(void)
     check_expect(now.year >= 2000 && now.month >= 1 && now.month <= 12 && now.day >= 1 && now.day <= 31
                  && now.hour >= 0 && now.hour <= 23 && now.minute >= 0 && now.minute <= 59
                  && now.second >= 0 && now.second <= 60, "the local time is out of range");
+    vfs_mount(was);
+}
+
+/*
+ * Writes that can fail, as a save game's do: a good file finishes with 1
+ * and is all there; a drive with no room (/dev/full under the file's
+ * name) is FS_ERR_DISK_FULL at the write, and a finish that fails says so
+ * and leaves the file; a write cut short (the process's file size limit)
+ * is FS_ERR_DISK_FULL; a folder not to be written in is FS_ERR_ACCESS, at
+ * a create or a move; free bytes are told; a file past 2 GB opens and
+ * reads at its end.
+ */
+static void check_fs_writes(void)
+{
+    static df_u8 block[5000];
+    static const df_u8 mark[4] = {'E', 'N', 'D', '!'};
+    /* 2.5 GB: past what a signed offset reaches, short of FAT32's 4 GB. */
+    const df_u32 big = 0xa0000000u;
+    char was[260];
+    char path[260];
+    df_u8 got[4];
+    df_u32 free_bytes;
+    df_u32 n;
+    df_u8 *all;
+    FsFile *f;
+    int i;
+
+    for (i = 0; i < 5000; i++) {
+        block[i] = (df_u8)i;
+    }
+    vfs_root(was, (int)sizeof(was));
+    vfs_mount("build/ARENA2");
+    /* What a run before may have left. */
+    fs_delete("fswrite\\GOOD.DAT");
+    fs_delete("fswrite\\NEW.TMP");
+    fs_delete("fswrite\\FULL.DAT");
+    fs_delete("fswrite\\PART.DAT");
+    fs_delete("fswrite\\BIG.DAT");
+    if (fs_beside(path, (int)sizeof(path), "fswrite\\locked")) {
+        chmod(path, 0755);
+    }
+    fs_remove_dir("fswrite\\locked");
+    check_expect(fs_make_dirs("fswrite"), "no folder for the write tests");
+
+    /* A good file: 1 at the finish, nothing wrong, all of it there. */
+    check_expect(fs_create("fswrite\\GOOD.DAT") && fs_last_error() == FS_ERR_NONE && fs_append(block, 5000)
+                 && fs_finish() == 1 && fs_last_error() == FS_ERR_NONE, "a good file did not finish with 1");
+    all = vfs_read_beside("fswrite\\GOOD.DAT", &n);
+    check_expect(all && n == 5000 && all[4999] == (df_u8)4999, "a finished file was not all there");
+    check_expect(!fs_finish() && fs_last_error() == FS_ERR_OTHER && !fs_append(block, 1)
+                 && fs_last_error() == FS_ERR_OTHER, "a finish or a write with no file open was taken");
+    check_expect(fs_free_bytes("fswrite\\GOOD.DAT", &free_bytes) && free_bytes > 0
+                 && fs_free_bytes("fswrite\\not\\made\\yet.sav", &free_bytes)
+                 && !fs_free_bytes("..\\up.sav", &free_bytes),
+                 "free bytes were not told, for a name not there yet too, or a name outside was taken");
+
+    /* No room: /dev/full under the file's name. Its flush (fsync) fails too, and the file is left. */
+    if (fs_beside(path, (int)sizeof(path), "fswrite\\FULL.DAT") && access("/dev/full", W_OK) == 0
+        && symlink("/dev/full", path) == 0) {
+        check_expect(fs_create("fswrite\\FULL.DAT") && !fs_append(block, 5000)
+                     && fs_last_error() == FS_ERR_DISK_FULL, "a write to a full drive was not FS_ERR_DISK_FULL");
+        check_expect(!fs_finish() && fs_last_error() != FS_ERR_NONE && fs_exists("fswrite\\FULL.DAT"),
+                     "a finish that failed said it worked, or took the file away");
+        check_expect(fs_delete("fswrite\\FULL.DAT"), "the file a failed finish left could not be deleted");
+    } else {
+        printf("fs: no /dev/full here, the full drive is not tried\n");
+    }
+
+    /* Cut short: past the process's file size limit a write stops short, then fails (EFBIG, no SIGXFSZ). */
+    {
+        struct rlimit lim;
+        struct rlimit lim_was;
+        void (*sig_was)(int);
+        int ok;
+
+        if (getrlimit(RLIMIT_FSIZE, &lim_was) == 0) {
+            lim = lim_was;
+            lim.rlim_cur = 1000;
+            check_expect(fs_create("fswrite\\PART.DAT"), "no file for the write cut short");
+            sig_was = signal(SIGXFSZ, SIG_IGN);
+            setrlimit(RLIMIT_FSIZE, &lim);
+            ok = fs_append(block, 5000);
+            setrlimit(RLIMIT_FSIZE, &lim_was);
+            signal(SIGXFSZ, sig_was);
+            check_expect(!ok && fs_last_error() == FS_ERR_DISK_FULL, "a write cut short was not FS_ERR_DISK_FULL");
+            check_expect(fs_finish() == 1 && fs_delete("fswrite\\PART.DAT"),
+                         "the file cut short did not close, or could not be deleted");
+        }
+    }
+
+    /* Moves: from nothing an other; a good one nothing wrong. */
+    check_expect(!fs_move("fswrite\\NONE.TMP", "fswrite\\GOOD.DAT") && fs_last_error() == FS_ERR_OTHER,
+                 "a move from nothing was not an other");
+    check_expect(fs_create("fswrite\\NEW.TMP") && fs_append(block, 10) && fs_finish()
+                 && fs_move("fswrite\\NEW.TMP", "fswrite\\GOOD.DAT") && fs_last_error() == FS_ERR_NONE,
+                 "a good move did not say so");
+    /* A folder not to be written in: a create and a move into it are FS_ERR_ACCESS. Root writes anywhere. */
+    if (geteuid() != 0 && fs_make_dirs("fswrite\\locked") && fs_beside(path, (int)sizeof(path), "fswrite\\locked")
+        && chmod(path, 0555) == 0) {
+        check_expect(!fs_create("fswrite\\locked\\X.DAT") && fs_last_error() == FS_ERR_ACCESS,
+                     "a create in a folder not to be written in was not FS_ERR_ACCESS");
+        check_expect(!fs_move("fswrite\\GOOD.DAT", "fswrite\\locked\\GOOD.DAT") && fs_last_error() == FS_ERR_ACCESS
+                     && fs_exists("fswrite\\GOOD.DAT"), "a move into a folder not to be written in was not FS_ERR_ACCESS");
+        chmod(path, 0755);
+    }
+    fs_remove_dir("fswrite\\locked");
+
+    /* Past 2 GB: a sparse file opens, says its size and reads at its end. */
+    if (fs_beside(path, (int)sizeof(path), "fswrite\\BIG.DAT")) {
+        struct stat st;
+        int fd;
+        int made;
+
+        fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        made = fd >= 0 && ftruncate(fd, (off_t)big) == 0 && pwrite(fd, mark, 4, (off_t)big - 4) == 4
+            && fstat(fd, &st) == 0 && st.st_blocks < 2048;
+        if (fd >= 0) {
+            close(fd);
+        }
+        if (made) {
+            f = fs_open_beside("fswrite\\BIG.DAT");
+            check_expect(f && fs_size(f) == big && fs_read_at(f, big - 4, got, 4) && memcmp(got, mark, 4) == 0,
+                         "a file past 2 GB did not open, or did not read at its end");
+            fs_close(f);
+        } else {
+            printf("fs: no sparse file here, past 2 GB is not tried\n");
+        }
+        fs_delete("fswrite\\BIG.DAT");
+    }
+    fs_delete("fswrite\\GOOD.DAT");
+    check_expect(fs_remove_dir("fswrite"), "the write tests left something behind");
+    printf("fs: a checked finish, a full drive, a write cut short and a locked folder say why; %u MB free; 2.5 GB read\n",
+           (unsigned)(free_bytes >> 20));
     vfs_mount(was);
 }
 
@@ -6827,6 +6966,7 @@ void check_engine(void)
     check_vfs();
     check_beside();
     check_beside_saves();
+    check_fs_writes();
     check_pic_box();
     check_pictures();
     check_pack();

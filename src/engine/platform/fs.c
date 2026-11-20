@@ -2,8 +2,26 @@
 #include "engine/core/mem.h"
 
 #define FS_PATH 260
+/* The largest size a df_u32 holds, FAT32's largest file: what big sizes and free bytes are clamped to. */
+#define FS_U32_MAX 0xffffffffu
+/*
+ * A write that failed for a reason the system did not name, on a drive
+ * with less free than this (or than the write still needed), was the
+ * drive filling: two clusters of the largest FAT32 or FAT16 drives use.
+ */
+#define FS_FULL_SLACK 65536u
 
 static char g_root[FS_PATH];
+/* fs_last_error: what the latest fs_create, fs_append, fs_finish or fs_move came to. */
+static int g_err;
+
+int fs_last_error(void)
+{
+    return g_err;
+}
+
+/* Free bytes on the drive holding path (full); each half's. */
+static int path_free(const char *path, df_u32 *bytes);
 
 static int fs_join(char *dst, int n, const char *rel)
 {
@@ -76,6 +94,7 @@ void fs_root(char *dst, int n)
 #include <fcntl.h>
 #include <stdio.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -98,7 +117,7 @@ static FsFile *open_path(const char *path)
         return 0;
     }
     end = lseek(file->fd, 0, SEEK_END);
-    if (end < 0 || end > 0x7fffffff) {
+    if (end < 0 || (unsigned long long)end > FS_U32_MAX) {
         close(file->fd);
         return 0;
     }
@@ -146,6 +165,64 @@ int fs_read_at(FsFile *file, df_u32 offset, void *dst, df_u32 n)
 
 static int g_out = -1;
 static char g_out_path[FS_PATH];
+
+/* An errno as fs_last_error tells it. EFBIG, a file past what the drive takes, is no room as well. */
+static int err_of(int e)
+{
+    switch (e) {
+    case ENOSPC:
+#ifdef EDQUOT
+    case EDQUOT:
+#endif
+    case EFBIG:
+        return FS_ERR_DISK_FULL;
+    case EACCES:
+    case EPERM:
+    case EROFS:
+    case ETXTBSY:
+        return FS_ERR_ACCESS;
+    }
+    return FS_ERR_OTHER;
+}
+
+/* A write that failed with e, need bytes short: a reason not named, on a drive short of room, is no room (FS_FULL_SLACK). */
+static int write_err(int e, df_u32 need)
+{
+    df_u32 free_bytes;
+    int err;
+
+    err = err_of(e);
+    if (err == FS_ERR_OTHER && path_free(g_out_path, &free_bytes)
+        && free_bytes < (need > FS_FULL_SLACK ? need : FS_FULL_SLACK)) {
+        err = FS_ERR_DISK_FULL;
+    }
+    return err;
+}
+
+static int path_free(const char *path, df_u32 *bytes)
+{
+    char dir[FS_PATH];
+    struct statvfs st;
+    unsigned long long avail;
+    int k;
+
+    df_copy(dir, path, FS_PATH);
+    /* The nearest folder that is there: statvfs wants a path that exists. */
+    while (statvfs(dir, &st) != 0) {
+        for (k = 0; dir[k]; k++) {
+        }
+        while (k > 0 && dir[k - 1] != '/') {
+            k--;
+        }
+        if (k <= 1) {
+            return 0;
+        }
+        dir[k - 1] = 0;
+    }
+    avail = (unsigned long long)st.f_bavail * (unsigned long long)st.f_frsize;
+    *bytes = avail > FS_U32_MAX ? FS_U32_MAX : (df_u32)avail;
+    return 1;
+}
 
 static int beside_path(char *dst, int n, const char *name)
 {
@@ -209,14 +286,17 @@ int fs_create(const char *name)
         close(g_out);
         g_out = -1;
     }
+    g_err = FS_ERR_OTHER;
     if (!beside_path(path, FS_PATH, name)) {
         return 0;
     }
     g_out = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (g_out < 0) {
+        g_err = err_of(errno);
         return 0;
     }
     df_copy(g_out_path, path, FS_PATH);
+    g_err = FS_ERR_NONE;
     return 1;
 }
 
@@ -225,6 +305,7 @@ int fs_append(const void *src, df_u32 n)
     const df_u8 *p;
     df_u32 got;
 
+    g_err = FS_ERR_OTHER;
     if (g_out < 0 || !src) {
         return 0;
     }
@@ -233,21 +314,40 @@ int fs_append(const void *src, df_u32 n)
     while (got < n) {
         ssize_t chunk;
 
+        /* A short write goes round again: the next says why (ENOSPC, EFBIG), or writes nothing, no room. */
         chunk = write(g_out, p + got, n - got);
-        if (chunk <= 0) {
+        if (chunk < 0) {
+            g_err = write_err(errno, n - got);
+            return 0;
+        }
+        if (chunk == 0) {
+            g_err = FS_ERR_DISK_FULL;
             return 0;
         }
         got += (df_u32)chunk;
     }
+    g_err = FS_ERR_NONE;
     return 1;
 }
 
-void fs_finish(void)
+int fs_finish(void)
 {
-    if (g_out >= 0) {
-        close(g_out);
-        g_out = -1;
+    int e;
+
+    if (g_out < 0) {
+        g_err = FS_ERR_OTHER;
+        return 0;
     }
+    e = 0;
+    if (fsync(g_out) != 0) {
+        e = errno;
+    }
+    if (close(g_out) != 0 && !e) {
+        e = errno;
+    }
+    g_out = -1;
+    g_err = e ? write_err(e, 0) : FS_ERR_NONE;
+    return !e;
 }
 
 void fs_abort(void)
@@ -340,18 +440,31 @@ int fs_remove_dir(const char *name)
     return rmdir(path) == 0 || !path_exists(path);
 }
 
-/* from to to, failing when to is there, as Windows 98's MoveFile does: fs_move's steps run the same on both. */
+/*
+ * from to to, failing when to is there, as Windows 98's MoveFile does
+ * (ERROR_ALREADY_EXISTS, an other): fs_move's steps run the same on both.
+ * Each says why it failed in g_err.
+ */
 static int rename_plain(const char *from, const char *to)
 {
     if (path_exists(to)) {
+        g_err = FS_ERR_OTHER;
         return 0;
     }
-    return rename(from, to) == 0;
+    if (rename(from, to) != 0) {
+        g_err = err_of(errno);
+        return 0;
+    }
+    return 1;
 }
 
 static int remove_plain(const char *path)
 {
-    return unlink(path) == 0;
+    if (unlink(path) != 0) {
+        g_err = err_of(errno);
+        return 0;
+    }
+    return 1;
 }
 
 void fs_local_time(FsTime *t)
@@ -414,11 +527,22 @@ static FsFile *open_path(const char *path)
     if (file->handle == INVALID_HANDLE_VALUE) {
         return 0;
     }
-    sz = GetFileSize(file->handle, 0);
-    if (sz == 0xffffffff) {
-        CloseHandle(file->handle);
-        file->handle = INVALID_HANDLE_VALUE;
-        return 0;
+    {
+        DWORD high;
+
+        /*
+         * The high word asked for, so a file of 4 GB - 1 (FAT32's largest,
+         * INVALID_FILE_SIZE as a low word) is told from a failure; one past
+         * what a df_u32 holds is not opened.
+         */
+        high = 0;
+        SetLastError(NO_ERROR);
+        sz = GetFileSize(file->handle, &high);
+        if ((sz == INVALID_FILE_SIZE && GetLastError() != NO_ERROR) || high != 0) {
+            CloseHandle(file->handle);
+            file->handle = INVALID_HANDLE_VALUE;
+            return 0;
+        }
     }
     file->size = (df_u32)sz;
     return file;
@@ -448,8 +572,21 @@ int fs_read_at(FsFile *file, df_u32 offset, void *dst, df_u32 n)
     if (offset > file->size || n > file->size - offset) {
         return 0;
     }
-    if (SetFilePointer(file->handle, (LONG)offset, 0, FILE_BEGIN) == 0xffffffff) {
-        return 0;
+    {
+        LONG high;
+
+        /*
+         * A high word of 0 given, so the offset is unsigned, good to 4 GB - 1:
+         * with none, Windows takes the low word as signed and every offset
+         * past 2 GB fails. INVALID_SET_FILE_POINTER is then also a real
+         * place, told apart by GetLastError.
+         */
+        high = 0;
+        SetLastError(NO_ERROR);
+        if (SetFilePointer(file->handle, (LONG)offset, &high, FILE_BEGIN) == INVALID_SET_FILE_POINTER
+            && GetLastError() != NO_ERROR) {
+            return 0;
+        }
     }
     out = (df_u8 *)dst;
     got = 0;
@@ -466,6 +603,137 @@ int fs_read_at(FsFile *file, df_u32 offset, void *dst, df_u32 n)
 
 static HANDLE g_out = INVALID_HANDLE_VALUE;
 static char g_out_path[FS_PATH];
+
+/* GetLastError as fs_last_error tells it. */
+static int err_of(DWORD code)
+{
+    switch (code) {
+    case ERROR_DISK_FULL:
+    case ERROR_HANDLE_DISK_FULL:
+        return FS_ERR_DISK_FULL;
+    case ERROR_ACCESS_DENIED:
+    case ERROR_SHARING_VIOLATION:
+    case ERROR_LOCK_VIOLATION:
+    case ERROR_WRITE_PROTECT:
+        return FS_ERR_ACCESS;
+    }
+    return FS_ERR_OTHER;
+}
+
+/*
+ * A write that failed with code, need bytes short. Windows 98 does not
+ * always name a full disk (a flush or a close can fail with another
+ * code), so a reason not named, on a drive short of room
+ * (FS_FULL_SLACK), is no room.
+ */
+static int write_err(DWORD code, df_u32 need)
+{
+    df_u32 free_bytes;
+    int err;
+
+    err = err_of(code);
+    if (err == FS_ERR_OTHER && path_free(g_out_path, &free_bytes)
+        && free_bytes < (need > FS_FULL_SLACK ? need : FS_FULL_SLACK)) {
+        err = FS_ERR_DISK_FULL;
+    }
+    return err;
+}
+
+/* A 64-bit count as GetDiskFreeSpaceExA writes it (ULARGE_INTEGER), low word first. */
+typedef struct FsBig {
+    DWORD lo;
+    DWORD hi;
+} FsBig;
+typedef BOOL (WINAPI *free_ex_fn)(LPCSTR dir, FsBig *avail, FsBig *total, FsBig *free_all);
+
+/*
+ * The drive's root of a full path: "C:\", or a share's "\\server\share\".
+ * Both calls below take it, and it is always there.
+ */
+static int drive_root(const char *path, char *root, int n)
+{
+    int k;
+    int slashes;
+
+    if (path[0] && path[1] == ':') {
+        if (n < 4) {
+            return 0;
+        }
+        root[0] = path[0];
+        root[1] = ':';
+        root[2] = '\\';
+        root[3] = 0;
+        return 1;
+    }
+    if (path[0] != '\\' || path[1] != '\\') {
+        return 0;
+    }
+    slashes = 0;
+    for (k = 0; path[k] && k < n - 2; k++) {
+        root[k] = path[k];
+        if (path[k] == '\\' && ++slashes == 4) {
+            root[k + 1] = 0;
+            return 1;
+        }
+    }
+    /* "\\server\share" with no backslash after it: the root is the share, ended with one. */
+    if (slashes == 3 && k < n - 2) {
+        root[k] = '\\';
+        root[k + 1] = 0;
+        return 1;
+    }
+    return 0;
+}
+
+/*
+ * Free bytes for this user (quotas counted) on path's drive, clamped to a
+ * df_u32. GetDiskFreeSpaceExA is Windows 95 OSR2's and later, so it is
+ * looked for, not imported: the first Windows 95 has only
+ * GetDiskFreeSpaceA, whose 32-bit counts stop near 2 GB on a big FAT32
+ * drive (it says less, never more).
+ */
+static int path_free(const char *path, df_u32 *bytes)
+{
+    static free_ex_fn free_ex;
+    static int looked;
+    char root[FS_PATH];
+    DWORD per_cluster;
+    DWORD sectors;
+    DWORD sector_bytes;
+    DWORD free_clusters;
+    DWORD clusters;
+
+    if (!drive_root(path, root, FS_PATH)) {
+        return 0;
+    }
+    if (!looked) {
+        HMODULE kernel;
+
+        looked = 1;
+        kernel = GetModuleHandleA("KERNEL32.DLL");
+        free_ex = kernel ? (free_ex_fn)(void *)GetProcAddress(kernel, "GetDiskFreeSpaceExA") : 0;
+    }
+    if (free_ex) {
+        FsBig avail;
+        FsBig total;
+        FsBig free_all;
+
+        if (free_ex(root, &avail, &total, &free_all)) {
+            *bytes = avail.hi ? FS_U32_MAX : (df_u32)avail.lo;
+            return 1;
+        }
+    }
+    if (!GetDiskFreeSpaceA(root, &sectors, &sector_bytes, &free_clusters, &clusters)) {
+        return 0;
+    }
+    per_cluster = sectors * sector_bytes;
+    if (!per_cluster) {
+        *bytes = 0;
+        return 1;
+    }
+    *bytes = free_clusters > FS_U32_MAX / per_cluster ? FS_U32_MAX : (df_u32)(free_clusters * per_cluster);
+    return 1;
+}
 
 static int beside_path(char *dst, int n, const char *name)
 {
@@ -529,6 +797,7 @@ int fs_create(const char *name)
         CloseHandle(g_out);
         g_out = INVALID_HANDLE_VALUE;
     }
+    g_err = FS_ERR_OTHER;
     if (!beside_path(path, FS_PATH, name)) {
         return 0;
     }
@@ -541,39 +810,61 @@ int fs_create(const char *name)
         FILE_ATTRIBUTE_NORMAL,
         0);
     if (g_out == INVALID_HANDLE_VALUE) {
+        g_err = err_of(GetLastError());
         return 0;
     }
     df_copy(g_out_path, path, FS_PATH);
+    g_err = FS_ERR_NONE;
     return 1;
 }
 
 int fs_append(const void *src, df_u32 n)
 {
-    const df_u8 *p;
-    df_u32 got;
+    DWORD done;
 
+    g_err = FS_ERR_OTHER;
     if (g_out == INVALID_HANDLE_VALUE || !src) {
         return 0;
     }
-    p = (const df_u8 *)src;
-    got = 0;
-    while (got < n) {
-        DWORD chunk;
-
-        if (!WriteFile(g_out, p + got, n - got, &chunk, 0) || chunk == 0) {
-            return 0;
-        }
-        got += (df_u32)chunk;
+    if (!n) {
+        g_err = FS_ERR_NONE;
+        return 1;
     }
+    if (!WriteFile(g_out, src, n, &done, 0)) {
+        g_err = write_err(GetLastError(), n);
+        return 0;
+    }
+    /* Windows 98 answers a full disk with a short write and no error: one call writes it all or the disk is full. */
+    if (done < n) {
+        g_err = FS_ERR_DISK_FULL;
+        return 0;
+    }
+    g_err = FS_ERR_NONE;
     return 1;
 }
 
-void fs_finish(void)
+int fs_finish(void)
 {
-    if (g_out != INVALID_HANDLE_VALUE) {
-        CloseHandle(g_out);
-        g_out = INVALID_HANDLE_VALUE;
+    DWORD code;
+
+    if (g_out == INVALID_HANDLE_VALUE) {
+        g_err = FS_ERR_OTHER;
+        return 0;
     }
+    /*
+     * Windows 98 keeps what was written in its cache and can find the
+     * disk full only now, at the flush or the close: both are checked.
+     */
+    code = NO_ERROR;
+    if (!FlushFileBuffers(g_out)) {
+        code = GetLastError();
+    }
+    if (!CloseHandle(g_out) && code == NO_ERROR) {
+        code = GetLastError();
+    }
+    g_out = INVALID_HANDLE_VALUE;
+    g_err = code == NO_ERROR ? FS_ERR_NONE : write_err(code, 0);
+    return code == NO_ERROR;
 }
 
 void fs_abort(void)
@@ -661,15 +952,23 @@ int fs_remove_dir(const char *name)
     return RemoveDirectoryA(path) || !path_exists(path);
 }
 
-/* MoveFile fails when to is there: fs_move's steps make room first. */
+/* MoveFile fails when to is there: fs_move's steps make room first. Each says why it failed in g_err. */
 static int rename_plain(const char *from, const char *to)
 {
-    return MoveFileA(from, to) ? 1 : 0;
+    if (!MoveFileA(from, to)) {
+        g_err = err_of(GetLastError());
+        return 0;
+    }
+    return 1;
 }
 
 static int remove_plain(const char *path)
 {
-    return DeleteFileA(path) ? 1 : 0;
+    if (!DeleteFileA(path)) {
+        g_err = err_of(GetLastError());
+        return 0;
+    }
+    return 1;
 }
 
 void fs_local_time(FsTime *t)
@@ -741,7 +1040,9 @@ int fs_move(const char *from, const char *to)
     char old[FS_PATH];
     int had;
     int k;
+    int err;
 
+    g_err = FS_ERR_OTHER;
     if (!beside_path(src, FS_PATH, from) || !beside_path(dst, FS_PATH, to) || !path_exists(src)) {
         return 0;
     }
@@ -768,15 +1069,29 @@ int fs_move(const char *from, const char *to)
         }
     }
     if (!rename_plain(src, dst)) {
+        /* Why the move failed, not how the old one's way back went. */
+        err = g_err;
         if (had) {
             rename_plain(old, dst);
         }
+        g_err = err;
         return 0;
     }
     if (had) {
         remove_plain(old);
     }
+    g_err = FS_ERR_NONE;
     return 1;
+}
+
+int fs_free_bytes(const char *name, df_u32 *bytes)
+{
+    char path[FS_PATH];
+
+    if (!bytes || !beside_path(path, FS_PATH, name)) {
+        return 0;
+    }
+    return path_free(path, bytes);
 }
 
 FsFile *fs_open(const char *rel)
