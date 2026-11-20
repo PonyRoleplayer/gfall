@@ -526,31 +526,29 @@ static void hall_identify(void)
     else { possessions_message("You have no unidentified magical items.",0); }
 }
 
-/* The Identify spell (trade_identify_button, outside a Mages Guild): the cast's own cost is charged once before the items are shown and again for each one chosen, whether or not it is identified, in magicka alone
- * (spell_ready_cost; the holiday does not touch it; a guild hall's gold price is the Mages' own service). An item is identified when the spell's chance is at least a roll of 1..100; only an item with powers not yet known is
- * offered (FALL.EXE offers any item: its gate has no caller). */
+/* The Identify spell (trade_identify_button, inven.c 1494..1527; outside a Mages Guild; docs items-identify-artifacts.md 1.4a). Casting costs nothing net (spfx_identify gives the cast's cost back), so opening the
+ * list and closing it is free. Each press of IDENTIFY is a list: its fee of one cast cost up front, then one per item, in magicka alone, whether or not the item is identified (the holiday does not touch it; a
+ * guild hall's gold price is the Mages' own service). FALL.EXE has the player drag items into a list; ours takes them one at a time, so each pick is a list of one: the fee, the item's price, one roll of 1..100
+ * under the spell's chance, and the original's single box "%d out of %d identified." ("1 out of 1" or "0 out of 1"). Short of one cast cost at the press: "You do not have enough spell points left.", nothing
+ * charged. Short for the item after the fee: the item is counted, neither charged nor rolled. Only an item with powers not yet known is offered (FALL.EXE offers any item, its gate has no caller: a fix). */
 static int g_spell_identify_chance, g_spell_identify_cost;
-
-static int spell_identify_pay(void)
-{
-    CharacterState *me = character_state();
-
-    if (g_spell_identify_cost > me->magicka) { msg_set("You do not have enough spell points."); return 0; }
-    me->magicka -= g_spell_identify_cost;
-    return 1;
-}
 
 static void spell_identify_pick(int row)
 {
-    if (row < 0 || row >= LIST_MOST || !magic_item_unknown(g_identify_items[row])) { return; }
-    if (!spell_identify_pay()) { return; }
-    if (g_spell_identify_chance >= random_range(1, 100)) {
-        char name[64];
+    CharacterState *me = character_state();
+    char line[LIST_NAME];
+    int identified;
 
-        magic_item_identify(g_identify_items[row]);
-        item_name(object_at(g_identify_items[row]),name,sizeof(name));
-        possessions_message(name,0);
-    } else { msg_set("The spell failed to reveal its powers."); }
+    if (row < 0 || row >= LIST_MOST || !magic_item_unknown(g_identify_items[row])) { return; }
+    if (g_spell_identify_cost > me->magicka) { msg_set(TEXT_IDENTIFY_SHORT); return; }
+    me->magicka -= g_spell_identify_cost;
+    identified = 0;
+    if (g_spell_identify_cost <= me->magicka) {
+        me->magicka -= g_spell_identify_cost;
+        if (g_spell_identify_chance >= random_range(1, 100)) { magic_item_identify(g_identify_items[row]); identified = 1; }
+    }
+    log_format(line, sizeof(line), TEXT_IDENTIFY_COUNT, identified, 1);
+    possessions_message(line, 0);
 }
 
 void gfall_spell_identify(int chance)
@@ -567,7 +565,6 @@ void gfall_spell_identify(int chance)
         item_name(item,names[n++],LIST_NAME);
     }
     if (!n) { possessions_message("You have no unidentified magical items.",0); return; }
-    if (!spell_identify_pay()) { return; }
     possessions_list((const char (*)[LIST_NAME])names,n,spell_identify_pick);
 }
 

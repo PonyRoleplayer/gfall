@@ -97,6 +97,9 @@ enum { SPELL_COST_DURATION_CHANCE = 1, SPELL_COST_DURATION_MAGNITUDE, SPELL_COST
 /* The chance an Identify spell cast on the player left (lock_open_chance), 0 when none is waiting; taking it clears it. */
 int magic_identify_take(void);
 /* What the cast cost (spell_ready_cost): charged once before the items are shown and again for each one chosen, success or not (trade_identify_button, magic-items-math.md); the player's magicka alone is tested, not the bonus. */
+/* The Identify spell's two literals, FALL.EXE strings (inven.c 1504 and 1519, not TEXT.RSC records): too few spell points at the press, and the count a press ends with. */
+#define TEXT_IDENTIFY_SHORT "You do not have enough spell points left."
+#define TEXT_IDENTIFY_COUNT "%d out of %d identified."
 int magic_identify_cost(void);
 int magic_resist(int index, int element, int class_bit, int modifier);
 int magic_chance(int index, int group, int sub);

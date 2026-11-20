@@ -51,3 +51,4 @@ Bugs found while building the game and fixed rather than kept, whether they were
 | The ship's arrival stood in the street, not on the deck | lands on editor marker 8 of the ship's block | `check_dagger.c` `check_ship_marker` |
 | A spell missile fired a link meant for a click (trigger 6), and sound 108 was played as itself | the load rewrite of the original: trigger 6 becomes 2, sound 108 becomes 100 (`rdb_resolve_act`) | `check_dagger.c` |
 | The archer's long bow was always iron | the ordinary material roll the original makes | the new-game suites run it; the roll itself is not asserted |
+| The Identify spell charged its cast at the open, so casting and closing cost magicka, and said "The spell failed to reveal its powers." which the original never says | the cast nets zero; a press charges the fee and the item; the original's two literals (`TEXT_IDENTIFY_SHORT`, `TEXT_IDENTIFY_COUNT`) | `check_magic.c` (the effect's refund); the list is the app's |
