@@ -107,6 +107,8 @@ int bank_sell_ship(int region, int confirmed, int *text);
  * time (284): the small at SHIP_SMALL_PRICE and the large at SHIP_LARGE_PRICE (SHIP_SMALL, SHIP_LARGE), TEXT_SHIP_BOUGHT. A knight's Seneschal gives a house without a price (bank_gift_house).
  */
 #define HOUSES_MOST 20
+/* The two "Your Ship" locations of region SHIP_REGION (High Rock sea coast), the small ship's index SHIP_SMALL and the large one's SHIP_LARGE (map_goto_location(31, 1, small ? 1 : 2)). */
+#define SHIP_REGION 31
 #define SHIP_SMALL 1
 #define SHIP_LARGE 2
 #define SHIP_SMALL_PRICE 100000

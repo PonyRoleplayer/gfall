@@ -10,6 +10,7 @@
 #include "game/dagger/play/quests/quest.h"
 #include "game/dagger/play/magic/magicitem.h"
 #include "game/dagger/play/character/ailments.h"
+#include "game/dagger/play/combat/foegear.h"
 #include "game/dagger/play/items/ground.h"
 #include "game/dagger/play/input/move.h"
 
@@ -184,6 +185,28 @@ static void show_item_info(const ObjectInfo *item)
     }
 }
 
+/* The drug the player was asked about, and the answer: a yes puts its poison on the weapon in hand and it is gone, a no takes it as always. */
+static df_u32 g_drug;
+
+static void drug_answer(int yes)
+{
+    const ObjectInfo *drug = object_at(g_drug);
+    df_u32 weapon = game_state()->equipped[EQUIP_RIGHT_HAND];
+    int poison;
+
+    if (!drug) { return; }
+    poison = POISON_FIRST+DRUG_POISON_FIRST+drug->index;
+    if (yes && weapon) {
+        weapon_poison_set(weapon,poison);
+        df_copy(possessions_view.notice,"Your weapon is poisoned.",sizeof(possessions_view.notice));
+    } else {
+        poison_apply(-1,poison,1);
+        df_copy(possessions_view.notice,"You consume the drug.",sizeof(possessions_view.notice));
+    }
+    object_delete(g_drug);
+    possessions_view.revision++;
+}
+
 int possessions_use(df_u32 id)
 {
     const ObjectInfo *item;
@@ -235,6 +258,12 @@ int possessions_use(df_u32 id)
             return 1;
         }
         if (!object_at(id)) { possessions_view.revision++; return 1; }
+    }
+    if (item->group == ITEM_GROUP_DRUGS && item->index >= 0 && item->index < DRUG_KINDS && game_state()->equipped[EQUIP_RIGHT_HAND] && item->parent == game_state()->inventory_id) {
+        /* A drug may be put on the weapon in hand instead: the first blow that wounds carries it. */
+        g_drug = id;
+        if (possessions_ask("Put it on your weapon? (No: take it yourself.)",drug_answer)) { return 1; }
+        g_drug = 0;
     }
     if (item->group == ITEM_GROUP_DRUGS && item->index >= 0 && item->index < 4) {
         /* inven.c consumes the entire drug record, even when level-one

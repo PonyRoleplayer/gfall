@@ -367,7 +367,7 @@ static int outdoor_encounter_site(const Camera *camera, int *settlement)
     return worldmap_climate(px,py);
 }
 
-static int ench_spawn_creature(int kind, int team)
+static int ench_spawn_at(int kind, int team, const float *at)
 {
     Camera cam;
     SpawnSpot spot;
@@ -387,8 +387,8 @@ static int ench_spawn_creature(int kind, int team)
     if (!entity.pose[ENTITY_WALK].w[0]) { return 0; }
     mem_zero(&spot,sizeof(spot));
     body = move_body();
-    spot.x = body->feet[0]; spot.y = body->feet[1]; spot.z = body->feet[2];
-    spot.inner = 128; spot.outer = 512; spot.climb = 128;
+    spot.x = at ? at[0] : body->feet[0]; spot.y = at ? at[1] : body->feet[1]; spot.z = at ? at[2] : body->feet[2];
+    spot.inner = at ? 0 : 128; spot.outer = 512; spot.climb = 128;
     spot.height = entity.pose[ENTITY_WALK].h[0];
     if (spot.height < 24) { spot.height = 24; }
     if (spot.height > 128) { spot.height = 128; }
@@ -406,6 +406,31 @@ static int ench_spawn_creature(int kind, int team)
     return 1;
 }
 
+static int ench_spawn_creature(int kind, int team) { return ench_spawn_at(kind,team,0); }
+
+/* transport_toggle_ship (inven.c 1582..1603): on land with a ship owned, the place and the feet are kept and the player goes aboard (region SHIP_REGION, location 1 for the small ship, 2 for the large); aboard, back to where they stood. */
+void gfall_transport(void)
+{
+    ShipBack *back = &world_where()->ship;
+    const PlaceWhere *here = &world_where()->where;
+    Body *body;
+    MotionState motion;
+
+    if (back->valid && here->kind == WHERE_WORLD && here->located && here->region == SHIP_REGION) {
+        if (travel_return(&back->where,back->x,back->y,back->z,back->yaw,back->pitch)) { back->valid = 0; msg_set("You go ashore."); }
+        else { msg_set("Your ship's shore is unavailable."); }
+        return;
+    }
+    if (!bank_state()->ship) { msg_set("You have no ship."); return; }
+    if (here->kind != WHERE_WORLD || !g_place_open) { msg_set("You can only board your ship from outside."); return; }
+    travel_capture();
+    back->where = world_where()->where;
+    body = move_body(); back->x = body->feet[0]; back->y = body->feet[1]+body->eye_now; back->z = body->feet[2];
+    move_capture(&motion); back->yaw = motion.yaw; back->pitch = motion.pitch;
+    if (travel_go_to_town(SHIP_REGION,bank_state()->ship == SHIP_LARGE ? 2 : 1)) { back->valid = 1; msg_set("You board your ship."); }
+    else { msg_set("Your ship is not at anchor."); }
+}
+
 /* The Wabbajack: the creature becomes another of the kind where it stands (a dungeon's; the place's art decides), and is gone itself. */
 int gfall_transform(int victim, int kind)
 {
@@ -413,13 +438,14 @@ int gfall_transform(int victim, int kind)
     const Entity *old;
     int before, ok;
 
-    if (!g_place_open || world_where()->where.kind != WHERE_DUNGEON || !ENEMY_IS_KNOWN(kind)) { return -1; }
+    if (!g_place_open || !ENEMY_IS_KNOWN(kind)) { return -1; }
     old = dungeon_entity(victim);
     if (!old || !old->live || old->dead) { return -1; }
     before = dungeon_max_health(victim);
     move_camera(&cam);
     dungeon_next_transformed(1);
-    ok = encounter_place_at(&cam,kind,0,old->x,old->y,old->z);
+    if (world_where()->where.kind == WHERE_DUNGEON) { ok = encounter_place_at(&cam,kind,0,old->x,old->y,old->z); }
+    else { float at[3]; at[0] = old->x; at[1] = old->y; at[2] = old->z; ok = ench_spawn_at(kind,TEAM_HOSTILE,at); }
     dungeon_next_transformed(0);
     if (!ok) { return -1; }
     dungeon_remove(victim);

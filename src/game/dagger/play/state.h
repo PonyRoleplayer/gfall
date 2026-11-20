@@ -29,7 +29,7 @@
 #define MINUTES_PER_WEEK 10080u
 #define MONTHS 12
 
-#define STATE_VERSION 21
+#define STATE_VERSION 22
 /* The room a save keeps for the quests (quest.c packs into it). */
 #define QUEST_BLOB 24576
 #define STATE5_WIRE_BYTES 348

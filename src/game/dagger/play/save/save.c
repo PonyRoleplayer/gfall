@@ -534,6 +534,15 @@ static void transfer(Wire *w, GameState *s)
         wire_df_u32_politics(w, po);
     }
 
+    /* The ship's way back (schema 22). */
+    if (w->version >= 22) {
+        ShipBack *sh = &s->world_state.ship;
+
+        wire_int(w, &sh->valid); wire_where(w, &sh->where);
+        wire_float(w, &sh->x); wire_float(w, &sh->y); wire_float(w, &sh->z);
+        wire_int(w, &sh->yaw); wire_int(w, &sh->pitch);
+    }
+
     /* The house's region and town names (schema 21). */
     if (w->version >= 21) {
         wire_bytes(w, s->bank.house_region, BANK_PLACE_NAME); wire_bytes(w, s->bank.house_town, BANK_PLACE_NAME);

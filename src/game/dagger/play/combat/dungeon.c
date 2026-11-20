@@ -637,6 +637,8 @@ static void resolve_player(const Scene *scene, const Camera *cam, int target, co
     /* Event 21: the player hit a creature of a quest. */
     if (damage && QUEST_FOE_IS(f->entity->key.thing)) { quest_foe_hit(QUEST_FOE_NUMBER(f->entity->key.thing)); }
     damage = hit_foe(scene,target,damage,cam->yaw);
+    /* A weapon the player poisoned: the first blow that wounds puts the poison on the creature (which may resist) and is spent (qkey.c 403..408). */
+    if (damage && s->item && weapon_poison(s->item)) { poison_apply(target,weapon_poison(s->item),0); weapon_poison_spend(s->item); }
     if (damage && index >= 0 && s->item) { enchant_strike(s->item, target, damage); }
     if (damage) {
         sound_at(random_range(SOUND_HIT_FIRST,SOUND_HIT_FIRST+SOUND_HIT_COUNT-1),f->entity->x,f->entity->y+FOE_CHEST_HEIGHT,f->entity->z); item_wear(s->item,damage);

@@ -139,6 +139,8 @@ int pointer_region(void)
     return mouse_region(g_pointer_x, g_pointer_y, 320, bar ? 154 : 200, 0, 0);
 }
 
+static void (*g_transport)(void);
+void play_set_transport(void (*go)(void)) { g_transport = go; }
 static void (*g_identify)(int chance);
 void play_set_identify(void (*open)(int chance)) { g_identify = open; }
 
@@ -606,6 +608,7 @@ int play_frame(const PlayIn *in, Camera *cam, const Scene *scene)
     if (in->pressed[TRANSPORT] || in->pressed[MAGIC_ITEM]) {
         play_sound(SND_CLICK);
     }
+    if (in->pressed[TRANSPORT] && g_transport) { g_transport(); }
     if (in->pressed[MAGIC_ITEM]) { possessions_magic_items(); }
     if (in->pressed[SHEET]) { possessions_open(VIEW_SHEET,0); }
     else if (in->pressed[INVENTORY]) { possessions_open(VIEW_INVENTORY,0); }

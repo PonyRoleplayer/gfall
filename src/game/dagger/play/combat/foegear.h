@@ -16,7 +16,13 @@ void foe_equipment(int kind, df_u32 container, df_u32 *slots, FighterInfo *fight
 #define POISON_WEAPON_KINDS 8
 #define WEAPON_POISONED 0x100000
 #define WEAPON_POISON_SHIFT 24
-#define WEAPON_POISON_MASK 0x7
+/* Four bits: a creature's weapon holds one of eight poisons, a drug the player puts on theirs one of the twelve. */
+#define WEAPON_POISON_MASK 0xF
+/* A weapon the player poisons from a drug (a group 0 item of index under DRUG_KINDS: the poison POISON_FIRST + DRUG_POISON_FIRST + index): FALL.EXE has no way to; a later addition. */
+#define DRUG_KINDS 4
+#define DRUG_POISON_FIRST 8
+/* Puts the poison (an id from POISON_FIRST) on a weapon. */
+void weapon_poison_set(df_u32 weapon, int poison);
 /* The poison a weapon carries (an id from POISON_FIRST), 0 for none. */
 int weapon_poison(df_u32 weapon);
 /* The weapon's poison spent (after a blow that wounded). */

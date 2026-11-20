@@ -85,6 +85,8 @@ void gfall_play_shutdown(void);
 void set_sound(void (*fn)(int id));
 /* What opens when an Identify spell was cast (its chance): the unidentified items to pick from, each paid for in spell points. */
 void play_set_identify(void (*open)(int chance));
+/* The transport key (transport_toggle_ship): the game boards the player's ship or brings them back. */
+void play_set_transport(void (*go)(void));
 void play_sound(int id);
 void set_sound_at(void (*fn)(int id, float x, float y, float z));
 void sound_at(int id, float x, float y, float z);

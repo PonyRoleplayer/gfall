@@ -746,6 +746,11 @@ static void poisoned_weapons(void)
         weapon_poison_spend(sword);
         item_info(sword,text,sizeof(text));
         check_expect(!strstr(text,"Poisoned"), "item info: a spent poison still shows");
+        /* The player's own poison: a drug's (136..139) goes on a weapon and reads back whole. */
+        weapon_poison_set(sword,POISON_FIRST+DRUG_POISON_FIRST+1);
+        item_info(sword,text,sizeof(text));
+        check_expect(weapon_poison(sword) == POISON_FIRST+DRUG_POISON_FIRST+1 && strstr(text,"Poisoned with Sursum") != 0, "weapon poison: a drug's poison did not go on the weapon or read back");
+        weapon_poison_spend(sword);
         /* An enchanted sword that is no artifact is still told by 1001 (1012 is the artifact's, with no material). */
         {
             char plain[300];

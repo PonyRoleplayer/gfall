@@ -3278,9 +3278,11 @@ static void vid_sound(void *ctx, const df_u8 *data, int bytes, int rate) { (void
 /* Ports: Daggerfall is one (the byte at 0x2F of its exterior data is 16), a hold's outside is not. */
 static void check_ports(void)
 {
-    int region, index, hold_region, hold_index;
+    int region, index, hold_region, hold_index, spx, spy, k;
 
     check_expect(worldmap_open(), "ports: the world map did not read");
+    /* The ships are two locations of region 31 ("Your Ship", indexes 1 and 2) with a pixel each. */
+    for (k = 1; k <= 2; k++) { check_expect(worldmap_pixel_of(31, k, &spx, &spy), "ports: a ship's location of region 31 has no map pixel"); }
     check_expect(worldmap_location(207, 213, &region, &index) && exterior_is_port(region, index), "ports: Daggerfall is not a port");
     check_expect(worldmap_location(109, 158, &hold_region, &hold_index) && !exterior_is_port(hold_region, hold_index), "ports: Privateer's Hold's outside is a port");
 }

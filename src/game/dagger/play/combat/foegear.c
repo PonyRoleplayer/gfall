@@ -116,3 +116,12 @@ void weapon_poison_spend(df_u32 weapon)
 
     if (item) { item->flags &= ~((df_u32)WEAPON_POISONED | ((df_u32)WEAPON_POISON_MASK << WEAPON_POISON_SHIFT)); }
 }
+
+void weapon_poison_set(df_u32 weapon, int poison)
+{
+    ObjectInfo *item = object_edit(weapon);
+
+    if (!item || poison < POISON_FIRST || poison >= POISON_FIRST + WEAPON_POISON_MASK + 1) { return; }
+    item->flags &= ~((df_u32)WEAPON_POISON_MASK << WEAPON_POISON_SHIFT);
+    item->flags |= WEAPON_POISONED | ((df_u32)(poison - POISON_FIRST) << WEAPON_POISON_SHIFT);
+}
