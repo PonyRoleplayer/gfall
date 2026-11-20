@@ -49,4 +49,11 @@ void market_clear(void);
 /* Leave: unpaid items back on the shelves, the counter's back in the pack. */
 void market_close(void);
 
+/*
+ * Kept (docs/gfall-place-state.md, 4): what the player sells to a shop is not destroyed but put in the shop's own container (SHOP_SOLD_THING under the building's key), and shows on the next shelf opened, so a
+ * wrong sale can be bought back; a shelf that something was bought from is flagged BOX_MODIFIED and kept as it is (apps/gfall/people). Both stay until the sweep takes them (place_sweep), three to six days.
+ */
+#define BOX_MODIFIED 4
+#define SHOP_SOLD_THING 0x40000000u
+
 #endif

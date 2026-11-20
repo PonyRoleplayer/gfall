@@ -575,6 +575,12 @@ static void check_place_sweep(void)
     check_expect(place_has_things(SWEEP_PLACE_B), "place sweep: a place just left was swept at once");
     state_pass_minutes(day * 2u);
     check_expect(!place_has_things(SWEEP_PLACE_B), "place sweep: a place left past its grace was kept");
+    /* A town's piles and a shop's kept goods go with the sweep too (someone grabbed them; the shop sold them on), after their grace. */
+    loot_container(0xC0000900u, 3u, 0, 0, 0, -1); loot_container(0x80000044u, 5u, 0, 0, 0, -1);
+    state_pass_minutes(day);
+    check_expect(loot_container_find(0xC0000900u, 3u) && loot_container_find(0x80000044u, 5u), "place sweep: a shop's goods or a ground pile went within their grace");
+    state_pass_minutes(day * 3u);
+    check_expect(!loot_container_find(0xC0000900u, 3u) && !loot_container_find(0x80000044u, 5u), "place sweep: a shop's goods or a ground pile outlived their grace");
     /* Never swept: what is the player's own. */
     check_expect(game_state()->inventory_id != 0 && object_at(game_state()->inventory_id) != 0, "place sweep: the player's pack was swept");
     /* A full table drops the place left longest ago, never the one the player is in. */

@@ -76,6 +76,7 @@ void check_market(void)
     check_expect(paid == q.price && character_state()->gold == gold - q.price && unpaid_count() == 0 && object_at(a)->parent == game_state()->inventory_id,
                  "market: paying did not take the price and keep the item");
     bought = paid;
+    check_expect((object_at(shelf)->flags & BOX_MODIFIED) != 0, "market: a shelf something was bought from was not flagged to be kept");
     check_expect((int)game_state()->skill_uses[14] == merc_uses + 1, "market: a yes was not one use of Mercantile");
 
     /* A no leaves everything; a basket put back is off the books; an unaffordable one is refused with 454. */
@@ -110,6 +111,19 @@ void check_market(void)
         market_take(item_create(game_state()->inventory_id, 6, 3, -1));
         market_close();
         check_expect(market_mode() == MARKET_NONE, "market: it did not close");
+        /* A shop with a building's key keeps what it was sold, to be bought back (market.h, Kept). */
+        {
+            df_u32 sold, ledger, counter2;
+
+            shop.place = 0xC0000777u;
+            sold = item_create(game_state()->inventory_id, 3, 0, 1);
+            counter2 = object_new(RECORD_CONTAINER, WORLD_ROOT, 0, 1);
+            check_expect(sold && counter2 && market_open(MARKET_SELL, &shop, counter2) && market_take(sold) && market_offer() >= 263 && market_confirm(1) > 0, "market: a sale to a keyed shop did not go through");
+            ledger = loot_container_find(shop.place, SHOP_SOLD_THING);
+            check_expect(ledger && object_at(sold) && object_at(sold)->parent == ledger, "market: what was sold was not kept by the shop");
+            market_close();
+            shop.place = 0;
+        }
         printf("market: bought for %d, sold for %d, refused 454, returned the unpaid\n", bought, q.price);
     }
 }

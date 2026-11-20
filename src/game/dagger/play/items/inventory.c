@@ -474,6 +474,7 @@ df_u32 loot_container(df_u32 place, df_u32 thing, float x, float y, float z, int
     if (!container) { return 0; }
     container->place_key = place;
     container->thing_key = thing;
+    container->message = (int)place_epoch();
     container->x = x; container->y = y; container->z = z;
     if (table >= 0) {
         /* The pile is the same however often it is opened afresh: its rolls come from its own seed, not from the stream the frame loop spends (docs/gfall-place-state.md, 1). */

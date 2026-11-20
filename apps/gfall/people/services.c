@@ -55,6 +55,7 @@ static int shop_here(ShopState *shop)
     shop->holiday = holiday_today(game_state()->minutes, region);
     shop->half = 0;
     shop->scale = 256;
+    shop->place = place;
     return 1;
 }
 

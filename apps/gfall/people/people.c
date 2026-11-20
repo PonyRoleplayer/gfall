@@ -104,16 +104,46 @@ static df_u32 g_shelf_box[SHELVES_MOST];
 static const Level *g_shelf_level;
 static unsigned g_shelf_place;
 
+/* A shelf's thing number in its building's seed, kept apart from a chest's (the usable's tag) by the high bit. */
+#define SHELF_THING_BASE 0x80000000u
+
+/*
+ * Leaving a shop (docs/gfall-place-state.md, 4): a shelf nothing was bought from is let go, to be stocked again from its seed; one something was bought from (BOX_MODIFIED) is kept as it is, under the
+ * building's key and its shelf's number, and found there on the next visit, until the sweep takes it. One that was found, already kept, is only let go of.
+ */
 static void forget_shelves(void)
 {
     int i;
+    ObjectInfo *box;
 
     for (i = 0; i < SHELVES_MOST; i++) {
-        if (g_shelf_box[i]) {
+        if (!g_shelf_box[i]) { continue; }
+        box = object_edit(g_shelf_box[i]);
+        if (box && box->thing_key) {
+            /* already kept */
+        } else if (box && (box->flags & BOX_MODIFIED) && g_shelf_place) {
+            box->place_key = g_shelf_place; box->thing_key = SHELF_THING_BASE + (df_u32)i;
+            place_container_stamp(box->id);
+        } else {
             shelf_discard(g_shelf_box[i]);
-            g_shelf_box[i] = 0;
         }
+        g_shelf_box[i] = 0;
     }
+}
+
+/* What the player sold to this shop (market.h, Kept) is put on the shelf now opened, for sale again at the shop's price; the sold-goods container goes when it is empty. A shelf that took some is kept. */
+static void put_back_sold(df_u32 place, df_u32 box)
+{
+    df_u32 ledger, ids[OBJECTS];
+    int n, i, moved;
+
+    ledger = loot_container_find(place, SHOP_SOLD_THING);
+    if (!ledger || !object_at(box)) { return; }
+    n = inventory_rows(ledger, -1, ids, OBJECTS);
+    moved = 0;
+    for (i = 0; i < n && i < OBJECTS; i++) { if (inventory_transfer(ids[i], box)) { moved++; } }
+    if (moved) { object_edit(box)->flags |= BOX_MODIFIED; }
+    if (!inventory_rows(ledger, -1, 0, 0)) { object_delete(ledger); }
 }
 
 int gfall_offer_say(int text, int price, char *out, int cap)
@@ -748,9 +778,6 @@ void gfall_notice_used(void)
     possessions_message(page, 0);
 }
 
-/* A shelf's thing number in its building's seed, kept apart from a chest's (the usable's tag) by the high bit. */
-#define SHELF_THING_BASE 0x80000000u
-
 int gfall_shelf_used(int index, int variant)
 {
     ShopState shop;
@@ -770,6 +797,10 @@ int gfall_shelf_used(int index, int variant)
         return 1;
     }
     if (!g_shelf_box[index]) {
+        /* A shelf kept from an earlier visit is as it was left (bought from, or sold back to); else it is stocked from its seed. */
+        g_shelf_box[index] = loot_container_find(place, SHELF_THING_BASE + (df_u32)index);
+    }
+    if (!g_shelf_box[index]) {
         g_shelf_box[index] = object_new(RECORD_CONTAINER, WORLD_ROOT, 0, 1);
         if (!g_shelf_box[index]) {
             interact_say("There is no room for another shelf.");
@@ -786,6 +817,7 @@ int gfall_shelf_used(int index, int variant)
         }
         seed_stream_end();
     }
+    put_back_sold(place, g_shelf_box[index]);
     region = travel_region();
     shop.region_adjust = region_price(region);
     shop.quality = quality;
@@ -793,6 +825,7 @@ int gfall_shelf_used(int index, int variant)
     shop.holiday = holiday_today(game_state()->minutes, region);
     shop.half = 0;
     shop.scale = 256;
+    shop.place = place;
     {
         /* shelf_open_stock: a shop that is open sells from its shelves; one that is shut lets them be opened as a plain container, the goods free to take. */
         HoursPlayer hours;

@@ -13,6 +13,7 @@
 #include "game/dagger/places/travel.h"
 #include "game/dagger/play/people/law.h"
 #include "game/dagger/play/people/bank.h"
+#include "game/dagger/play/people/lodging.h"
 
 static GameState g_state;
 WorldState *world_where(void) { return &g_state.world_state; }
@@ -329,6 +330,36 @@ static void place_purge(df_u32 place)
     }
 }
 
+/* A world container's place key is of a ground pile (top bits 10) or a building (11): what the sweep may take when old (a dungeon's, 01, goes with its row). */
+#define PLACE_KEY_KIND_GROUND 2u
+#define PLACE_KEY_KIND_BUILDING 3u
+
+void place_container_stamp(df_u32 container)
+{
+    ObjectInfo *o = object_edit(container);
+
+    if (o) { o->message = (int)place_epoch(); }
+}
+
+static void place_sweep_containers(df_u32 epoch)
+{
+    int i;
+
+    for (i = 0; i < OBJECTS; i++) {
+        const ObjectInfo *o = &g_state.object[i];
+        df_u32 kind;
+
+        if (!o->id || o->type != RECORD_CONTAINER || o->parent != WORLD_ROOT || !o->place_key || !o->thing_key) { continue; }
+        kind = o->place_key >> PLACE_KEY_KIND_SHIFT;
+        if (kind != PLACE_KEY_KIND_GROUND && kind != PLACE_KEY_KIND_BUILDING) { continue; }
+        /* The player's own: the house, the ship, a room still rented. */
+        if (bank_owns_place(o->place_key) || room_rented(o->place_key, g_state.minutes)) { continue; }
+        /* One with no stamp (made before it was kept, or by another way) is stamped now and kept this time. */
+        if (!o->message) { object_edit(o->id)->message = (int)epoch; continue; }
+        if ((df_u32)o->message + PLACE_GRACE_EPOCHS < epoch) { object_purge(o->id); }
+    }
+}
+
 int place_sweep(void)
 {
     df_u32 epoch, active;
@@ -339,6 +370,7 @@ int place_sweep(void)
     g_state.sweep_epoch = epoch;
     active = place_active();
     swept = 0;
+    place_sweep_containers(epoch);
     for (i = g_state.places - 1; i >= 0; i--) {
         if (i >= g_state.places) { continue; }
         if (g_state.place[i].place != active && g_state.place[i].last_epoch + PLACE_GRACE_EPOCHS < epoch) {

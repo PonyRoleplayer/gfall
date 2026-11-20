@@ -148,6 +148,7 @@ int market_offer(void)
 int market_confirm(int yes)
 {
     Quote q;
+    df_u32 ledger;
     int i;
 
     g_refusal = 0;
@@ -168,18 +169,21 @@ int market_confirm(int yes)
     }
     if (g_mode == MARKET_SELL) {
         character_state()->gold += q.price;
-        /* object_free_children of the counter: what was sold is gone. */
+        /* object_free_children of the counter: what was sold is gone from the player. The shop keeps it, to be bought back (market.h, Kept); with no room for it, it is gone as in the original. */
+        ledger = g_shop.place ? loot_container(g_shop.place, SHOP_SOLD_THING, 0.0f, 0.0f, 0.0f, -1) : 0;
         for (i = 0; i < OBJECTS; i++) {
             const ObjectInfo *item;
 
             item = &game_state()->object[i];
             if (item->id && item->type == RECORD_ITEM && item->parent == g_shelves) {
-                object_delete(item->id);
+                if (!ledger || !inventory_transfer(item->id, ledger)) { object_delete(item->id); }
             }
         }
     } else {
         character_state()->gold -= q.price;
         if (g_mode == MARKET_BUY) {
+            /* The shelf is no longer as its seed made it: it is kept as it is. */
+            if (object_edit(g_shelves)) { object_edit(g_shelves)->flags |= BOX_MODIFIED; }
             /* inv_claim_items: what was in the basket is theirs. */
             for (i = 0; i < OBJECTS; i++) {
                 ObjectInfo *item;

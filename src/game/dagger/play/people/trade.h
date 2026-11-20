@@ -25,6 +25,8 @@ typedef struct ShopState {
     int half;
     /* trade_price_scale, out of 256: 256 unless a guild changed it. */
     int scale;
+    /* The building's key (town_building_key): what a sale and a purchase are kept under (market.h, Kept), 0 for none. */
+    df_u32 place;
 } ShopState;
 
 /* A quote: the total before the buyer's skills, and the price they pay. */

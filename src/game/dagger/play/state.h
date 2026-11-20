@@ -228,6 +228,11 @@ void random_seed(df_u32 seed);
  * epoch it was last in use, and the player's level at the first entry (what its piles and creatures are rolled at). One sweep, when the epoch turns over, drops the rows, keep rows and piles of every place
  * left for more than PLACE_GRACE_EPOCHS epochs, never the one the player is in. A place that is not a dungeon has no row: its seed uses the current epoch.
  */
+/*
+ * A container of the world (a ground pile, a shop's kept shelf or sold goods, a chest) holds in its message field the epoch it was made in (loot_container, persist_box): the sweep takes the ones made more than
+ * PLACE_GRACE_EPOCHS epochs ago, a town's piles that "someone grabbed" and a shop's kept shelves rerolling, never the house, the ship or a room rented. Made by place_container_stamp.
+ */
+void place_container_stamp(df_u32 container);
 /* The player left this place: it is stamped as last in use now. */
 void place_leave(df_u32 place);
 /* The level a place's piles and creatures are rolled at: its row's, else the player's. */

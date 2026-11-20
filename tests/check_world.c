@@ -862,6 +862,8 @@ void check_world(const char *root)
     }
     state_pose(g_camera.x,g_camera.y,g_camera.z,move_yaw(),0); state_capture_motion();
     state_save_label("World round trip");
+    /* The street checks above sent the player to prison for months: a pile left outside for that long is gone (the town's sweep, docs/gfall-place-state.md), so this test's own is dropped again. */
+    if (!object_at(g_dropped)) { drop_outside(); }
     check_expect(seam_capture_world() && save_write(6),"save an outside place with its stream origin");
     child = fork();
     if (!child) { execl("/proc/self/exe","gfall-test","--gfall-resume-world",test_root,(char *)0); _exit(127); }
