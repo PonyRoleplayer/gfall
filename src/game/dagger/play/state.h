@@ -30,12 +30,9 @@
 #define MONTHS 12
 
 #define STATE_VERSION 22
-/* The room a save keeps for the quests (quest.c packs into it). */
-#define QUEST_BLOB 24576
 #define STATE5_WIRE_BYTES 348
 /* The biography's five lasting modifiers a save holds from schema 19, four bytes each. */
 #define BIO_WIRE_BYTES 20
-#define WORLD_ROWS 512
 #define THUMB_W 80
 #define THUMB_H 50
 #define THUMB_PIXELS (THUMB_W * THUMB_H)
@@ -151,8 +148,8 @@ typedef struct GameState {
     ObjectInfo object[OBJECTS];
     int motion_valid;
     MotionState motion;
+    /* How many keep rows the world holds (docs/game.md, Saves): the rows themselves live in the engine's keep and are streamed to and from a save, never copied here, so a long campaign has no row limit. */
     int world_count;
-    Keep world[WORLD_ROWS];
     int hud_mode, weapon_ready, cursor_active;
     char save_label[32];
     int preview_valid;
@@ -178,9 +175,8 @@ typedef struct GameState {
     ItemEnchant enchant[ENCHANTED_ITEMS];
     /* The game minute of the player's last kill (character +0x1FD, set by damage_creature_death): Health leech's clock. */
     df_u32 last_kill;
-    /* The quests as quest.c packs them (schema 16): filled when a save is written, read when one is restored. */
+    /* The quests as quest.c packs them (schema 16): their length in a save; the bytes are staged (state_stage_quest), not held here. */
     int quest_len;
-    df_u8 quest_blob[QUEST_BLOB];
 } GameState;
 
 CharacterState *character_state(void);
@@ -238,9 +234,23 @@ void state_clear_skill_uses(int skill);
 void state_base_attribute(int attribute, int value);
 int state_valid(const GameState *snapshot);
 int state_restore(const GameState *snapshot);
-/* Capture the engine's keyed changes only at a save boundary. */
+/* Capture the engine's keyed changes only at a save boundary: the count of keep rows (the rows stay in the keep and are written from it). */
 int state_capture_world(void);
+/* The keep takes the rows a read save staged, or is emptied after a new game or a clear; with neither it is left as it is. */
 int state_restore_world(void);
+/*
+ * What a save read holds until the world is rebuilt (docs/game.md, Saves): the keep rows, the automap rows and the quests' bytes, in a heap of their own, sized by the save (no limit
+ * but memory). A failed stage returns 0 and leaves nothing staged. state_stage_drop frees all three; a restore consumes its own.
+ */
+Keep *state_stage_keep(int count);
+AutomapRow *state_stage_map(int count);
+df_u8 *state_stage_quest(int len);
+void state_stage_drop(void);
+/* The staged automap rows and how many, taken by world_restore (travel.c) and then dropped. */
+const AutomapRow *state_staged_map(int *count);
+void state_stage_map_done(void);
+/* A keep row of a save that is consistent (the checks a restored row must pass). */
+int state_keep_row_valid(const Keep *row);
 void state_capture_motion(void);
 void state_ui(int mode, int weapon_ready, int cursor_active);
 void state_save_label(const char *label);

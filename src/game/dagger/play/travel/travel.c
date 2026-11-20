@@ -66,31 +66,34 @@ static int where_valid(const PlaceWhere *where)
 }
 int world_valid(const WorldState *world)
 {
-    int i;
     if (!where_valid(&world->where) || !where_valid(&world->recall_where) ||
         world->px < 0 || world->px >= 1000 || world->py < 0 || world->py >= 500 ||
-        world->map_count < 0 || world->map_count > MAP_ROWS) { return 0; }
-    for (i = 0; i < world->map_count; i++) {
-        const AutomapRow *row;
-        row = &world->map[i];
-        if (!row->place || row->x < -100000000 || row->x > 100000000 || row->y < -100000000 ||
-            row->y > 100000000 || row->z < -100000000 || row->z > 100000000) { return 0; }
-    }
+        world->map_count < 0) { return 0; }
     return 1;
+}
+/* A saved automap row that makes sense: a place, and a point inside the world's span. */
+int world_map_row_valid(const AutomapRow *row)
+{
+    return row->place && row->x >= -100000000 && row->x <= 100000000 && row->y >= -100000000 &&
+        row->y <= 100000000 && row->z >= -100000000 && row->z <= 100000000;
 }
 void world_capture(void)
 {
     WorldState *world;
-    int i;
     world = world_where(); travel_capture();
-    world->map_count = automap_count(); if (world->map_count > MAP_ROWS) { world->map_count = MAP_ROWS; }
-    for (i = 0; i < world->map_count; i++) { world->map[i] = *automap_at(i); }
+    world->map_count = automap_count();
 }
+/* The automap takes the rows a read save staged; with none staged it stays as the player has seen it (a new game empties it itself). */
 void world_restore(void)
 {
-    int i;
+    const AutomapRow *rows;
+    int i, count;
+
+    rows = state_staged_map(&count);
+    if (!rows) { return; }
     automap_clear();
-    for (i = 0; i < world_where()->map_count; i++) { automap_put(&world_where()->map[i]); }
+    for (i = 0; i < count; i++) { automap_put(&rows[i]); }
+    state_stage_map_done();
 }
 static int lower(int c) { return c >= 'A' && c <= 'Z' ? c+32 : c; }
 static int matches(const char *name, const char *query, int exact)

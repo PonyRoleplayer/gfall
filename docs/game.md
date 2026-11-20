@@ -542,6 +542,13 @@ see the final destination clock, as original elapsed-time maintenance does.
 This is the event contract, not an implemented quest interpreter or a claim
 that every original maintenance handler already runs.
 
+### Saves, streamed (2026-11-20)
+The wire layout of schema 22 is unchanged; what changed is how it moves. `save.c` keeps a 64 KiB window (`Wire`): writing is two passes over the same state, the first only counting (the header holds the size and the checksum, which come before the bytes), the second filling the window and appending it to a temporary file; reading checks the header and the checksum over the file a window at a time, then parses through the window. No buffer holds the file, so nothing caps its size.
+
+The keep rows (`world_count`) and the automap rows (`map_count`) are not copied into `GameState`: `GameState` holds the counts, `save_write` sets them from the live keep and automap and writes the rows from there, and a read stages them in a heap of its own (`state_stage_keep`, `state_stage_map`, with the quests' bytes in `state_stage_quest`), judged (`state_keep_row_valid`, `world_map_row_valid`) before anything is taken. `state_restore` unpacks the quests, `state_restore_world` and `world_restore` fill the keep and the automap, and the heap goes when all three are consumed. A place change no longer copies the keep out and back; a new game or a clear empties it. The quests' bytes are packed into a buffer doubled until they fit (`pack_quests`).
+
+A write goes to `S####.TMP`, is read back whole and its checksum compared, and only then replaces the slot (`fs_move`, which keeps the old file under `.OLD` until the new one is in place): a failed or interrupted write never damages the previous save.
+
 ### GFALL's save format and location
 
 `play/save/save.c` writes **`gfall/saves/S0001.SAV`** through `S9999.SAV`, relative

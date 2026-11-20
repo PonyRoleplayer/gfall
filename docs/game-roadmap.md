@@ -64,11 +64,9 @@ retired on 2026-11-12 at tag `before-gfall-retire`.
 
 ### Deferred save work and target acceptance
 
-- A slot is roughly 288 KiB at the current schema's maximum. World capture
-  refuses the save at 513 keep records, the automap saves its first 8,192 rows,
-  and quest packing has a separate 24 KiB limit. The deferred plan is to store
-  changes by place and page them from disk within the 64 MB RAM budget.
-  See [long-campaign save limits](game-later.md#long-campaign-save-limits-2026-11-16).
+- Saves are streamed and have no row limits (2026-11-20; docs/game.md, Saves, streamed).
+  Paging other places' changes from disk instead of holding them in memory is still
+  open, and matters only if a campaign outgrows the 64 MB RAM budget.
 - Host tests and Win98 binary checks pass. Full-game stability, peak RAM/VRAM,
   frame pacing, outdoor encounter art loads and animated panel repaints still
   need measurement on the MMX 233/Voodoo 1. Dungeons load whole, and streaming

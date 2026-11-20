@@ -134,27 +134,15 @@ Ask once when the place opens and keep the answer. `dungeon_outside` keeps its l
 ## Vampirism and lycanthropy: what is left (2026-11-14)
 See docs/game.md, Vampirism and lycanthropy, Not built. The form lives in `CurseState`, not in `CharacterState.race`: a decoupled game that reads `race > 7` must read `curse_form()`.
 
-## Long-campaign save limits (2026-11-16)
+## Long-campaign save limits (2026-11-16, lifted 2026-11-20)
 
-The schema 18 serializer can write at most about 288 KiB per slot with the
-current record limits. Its wire buffer is 512 KiB. Both are GFALL limits.
+Lifted: a save has no size limit but the disk and the memory of the load. The old limits (512 keep rows, 8,192 automap rows, a 24 KiB quest blob, a 512 KiB wire buffer, and the 512-row stash that
+`world.c` made at a place change, which wrote past its end on a long campaign) are gone. The rows stay in the engine's keep and automap, which grow by doubling; a save is written from them and read
+into them. See docs/game.md, Saves, streamed.
 
-- **World state.** `state_capture_world` in `play/state.c` accepts 512 keep
-  records and refuses to save at 513. Host probes verified both cases. Dungeon
-  creatures can create keep records during initialization, so visiting dungeons
-  can consume the budget without combat.
-- **Automap.** `world_capture` in `play/travel/travel.c` keeps the first 8,192 records.
-  Exploration beyond that cutoff can disappear on reload.
-- **Quests.** `quest_pack` has a 24 KiB budget. If it overflows, `save_write`
-  refuses the new save before replacing the existing slot.
-
-Deferred work. Store world changes by place and omit records for creatures
-still in their default state. Keep the active place's records in memory and
-read other places on demand so a long campaign can grow on disk within the
-64 MB target's RAM budget. Preserve existing saves and test a campaign that
-crosses today's world and automap limits, revisits changed dungeons, and saves
-and reloads in a fresh process. Raising the wire buffer alone leaves the
-record-count limits in place.
+Still true: reading a save stages its rows in memory (one `Keep` is 76 bytes, one automap row 20) before the world is rebuilt, so a very large save needs that much free memory on the target; a
+failure to get it is an error ("Not enough memory to read this save"), never a half-loaded game. Not built: storing changes by place and paging other places from disk. Test: `check_state.c`
+`check_long_campaign` (3,000 keep rows, 20,000 automap rows).
 
 ## From the constants pass (2026-11-18, docs/gfall-constants.md in the decomp)
 Fixed: a creature hurt gives up after 60 ticks, not 200; the second blood picture is the undead's; an arrow on a wall fires trigger 5; Repairs Objects skips arrows; a swimmer over 250 does not sink while levitating or water-walking.

@@ -1,3 +1,5 @@
+/* A buffer for what quest_pack makes in these tests (the save itself sizes its own). */
+#define TEST_QUEST_BUFFER 65536
 #include "check_state.h"
 #include "check_shelf.h"
 #include "check_market.h"
@@ -26,6 +28,8 @@
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/magic/spellbook.h"
+#include "engine/scene/keep.h"
+#include "engine/scene/automap.h"
 #include <string.h>
 
 static GameState g_initial;
@@ -199,8 +203,8 @@ static void check_legacy_save(const df_u8 *current, df_u32 size)
     int row, spell_count, version, record_bytes;
     df_u32 spells[OBJECTS];
     /* Standing, from schema 8, sits between the magic rows and the world: ready, a count, a pair a faction and a pair a region. */
-    static df_u8 quest_buf[QUEST_BLOB];
-    int quest_bytes = quest_pack(quest_buf, QUEST_BLOB);
+    static df_u8 quest_buf[TEST_QUEST_BUFFER];
+    int quest_bytes = quest_pack(quest_buf, TEST_QUEST_BUFFER);
     df_u32 stand = 8u + (game_state()->standing.ready ? (df_u32)faction_total()*8u + REGIONS*8u : 0u) + (REGIONS*16u + 16u) + (ROOMS_MOST*12u + 4u) + (4u + REGIONS*4u) + (MEMBERSHIPS*24u + 16u + 4u + 4u + 20u) + CUSTOM_SPELLS*(4u + 89u) + ENCHANTED_ITEMS*(4u + 4u + 80u) + 4u + 4u + (df_u32)quest_bytes + CURSE_WIRE_BYTES + BIO_WIRE_BYTES + 2u*BANK_PLACE_NAME + SHIP_WIRE_BYTES + (4u + (game_state()->standing.ready ? (df_u32)faction_total()*FACTION_LINKS*8u : 0u) + 4u + REGIONS*29u + REGIONS*14u + REGIONS*4u + FACTIONS_MAX + FACTIONS_MAX*4u + RUMOURS_MOST*(4u+4u+4u+3u+4u+RUMOUR_TEXT)) + (df_u32)game_state()->world_count * 18u;
     check_expect(size > 24u+1272u+256u*124u && df_ru32(current+24+1272) == WORLD_ROOT,
                  "fixture locates the documented original object section");
@@ -291,8 +295,10 @@ static void check_disk(const char *root)
     }
     /* The ship's way back goes through the save too. */
     world_where()->ship.valid = 1; world_where()->ship.where.region = 17; world_where()->ship.where.index = 3; world_where()->ship.x = 12.5f; world_where()->ship.yaw = 700;
+    /* The capture a save follows: the counts of the keep's and the automap's rows (the rows stay where they are and are written from there). */
+    state_capture_world(); world_where()->map_count = automap_count();
     g_saved = *game_state();
-    g_saved.quest_len = quest_pack(g_saved.quest_blob, QUEST_BLOB);
+    { static df_u8 quest_bytes[TEST_QUEST_BUFFER]; g_saved.quest_len = quest_pack(quest_bytes, TEST_QUEST_BUFFER); }
     check_expect(save_write(1), "write an GFALL session");
     check_expect(fs_exists("gfall\\saves\\S0001.SAV"), "saves live in gfall/saves");
     check_expect(!fs_exists("saves\\S0001.SAV"), "GFALL does not use GFALL's saves folder");
@@ -379,6 +385,55 @@ static void check_disk(const char *root)
     state_restore(&g_initial);
 }
 
+/* A long campaign (docs/game.md, Saves): far more keep rows than the old 512 and automap rows than the old 8192 go through a save and a load, and what the quests pack takes the room it needs. */
+#define LONG_KEEP_ROWS 3000
+#define LONG_MAP_ROWS 20000
+#define LONG_MAP_PER_PLACE 100
+static void check_long_campaign(void)
+{
+    int i, same;
+    KeepKey key;
+    Keep *row;
+    AutomapRow seen;
+
+    keep_clear(); automap_clear();
+    for (i = 0; i < LONG_KEEP_ROWS; i++) {
+        key.place = 0x40000000u + (df_u32)i; key.thing = 1u + (df_u32)(i % 7);
+        row = keep_get(key, KEEP_MOVER);
+        check_expect(row != 0, "long campaign: a keep row could not be made");
+        if (!row) { return; }
+        row->at_end = (df_u8)(i & 1); row->lock = i;
+    }
+    for (i = 0; i < LONG_MAP_ROWS; i++) {
+        seen.place = 1u + (df_u32)(i / LONG_MAP_PER_PLACE); seen.mesh = (df_u32)i; seen.x = i; seen.y = -i; seen.z = i * 2;
+        check_expect(automap_put(&seen), "long campaign: an automap row could not be made");
+    }
+    state_capture_world(); world_where()->map_count = automap_count();
+    check_expect(game_state()->world_count == LONG_KEEP_ROWS && world_where()->map_count == LONG_MAP_ROWS, "long campaign: the counts are not the rows held");
+    check_expect(save_write(7), "long campaign: a save with many rows was refused");
+    keep_clear(); automap_clear();
+    check_expect(save_read(7), "long campaign: a save with many rows did not load");
+    check_expect(state_restore_world(), "long campaign: the keep rows were not restored");
+    world_restore();
+    check_expect(keep_count() == LONG_KEEP_ROWS && automap_count() == LONG_MAP_ROWS, "long campaign: rows were lost in the save");
+    same = 1;
+    for (i = 0; i < LONG_KEEP_ROWS && same; i++) {
+        key.place = 0x40000000u + (df_u32)i; key.thing = 1u + (df_u32)(i % 7);
+        row = keep_find(key);
+        same = row && row->lock == i && row->at_end == (i & 1);
+    }
+    check_expect(same, "long campaign: a keep row came back different");
+    same = 1;
+    for (i = 0; i < LONG_MAP_ROWS && same; i++) {
+        /* The rows come back in the order they were made (place, then mesh). */
+        const AutomapRow *got = automap_at(i);
+        same = got && got->place == 1u + (df_u32)(i / LONG_MAP_PER_PLACE) && got->mesh == (df_u32)i && got->x == i && got->y == -i && got->z == i * 2;
+    }
+    check_expect(same, "long campaign: an automap row came back different");
+    keep_clear(); automap_clear();
+    state_capture_world(); world_where()->map_count = 0;
+}
+
 void check_state(const char *root)
 {
     g_initial = *game_state();
@@ -417,4 +472,5 @@ void check_state(const char *root)
     state_restore(&g_initial);
     state_restore(&g_initial);
     check_disk(root);
+    check_long_campaign();
 }

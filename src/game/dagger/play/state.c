@@ -18,6 +18,75 @@ static GameState g_state;
 WorldState *world_where(void) { return &g_state.world_state; }
 static void (*g_observer)(const QuestEvent *event);
 static const char *g_error = "";
+
+/* What a save read holds until the world is rebuilt: three arrays in one heap of their own, freed together by state_stage_drop (the pieces a restore has consumed just stop pointing in). */
+static MemHeap *g_stage_heap;
+static Keep *g_stage_keep;
+static int g_stage_keep_count;
+static AutomapRow *g_stage_map;
+static int g_stage_map_count;
+static df_u8 *g_stage_quest;
+/* A keep that a new game or a clear leaves to be emptied by the next restore. */
+static int g_keep_reset;
+
+void state_stage_drop(void)
+{
+    if (g_stage_heap) { mem_heap_delete(g_stage_heap); g_stage_heap = 0; }
+    g_stage_keep = 0; g_stage_keep_count = 0; g_stage_map = 0; g_stage_map_count = 0; g_stage_quest = 0;
+}
+
+/* The heap goes when nothing in it is waiting to be taken. */
+static void stage_release(void)
+{
+    if (!g_stage_keep && !g_stage_map && !g_stage_quest) { state_stage_drop(); }
+}
+
+/* count items of size bytes each, from the stage's heap (made on the first call after a drop); 0 when they do not fit (the sum is checked against 32 bits, not wrapped). */
+static void *stage_alloc(df_u32 count, df_u32 size)
+{
+    MemHeap *before;
+    void *p;
+
+    if (count && size > 0xFFFFFFFFu / count) { return 0; }
+    if (!g_stage_heap) { g_stage_heap = mem_heap_new(); }
+    if (!g_stage_heap) { return 0; }
+    before = mem_heap_use(g_stage_heap);
+    p = mem_alloc(count * size + 1u);
+    mem_heap_use(before);
+    return p;
+}
+
+Keep *state_stage_keep(int count)
+{
+    if (count < 0) { return 0; }
+    g_stage_keep = (Keep *)stage_alloc((df_u32)count, (df_u32)sizeof(Keep));
+    g_stage_keep_count = g_stage_keep ? count : 0;
+    return g_stage_keep;
+}
+
+AutomapRow *state_stage_map(int count)
+{
+    if (count < 0) { return 0; }
+    g_stage_map = (AutomapRow *)stage_alloc((df_u32)count, (df_u32)sizeof(AutomapRow));
+    g_stage_map_count = g_stage_map ? count : 0;
+    return g_stage_map;
+}
+
+df_u8 *state_stage_quest(int len)
+{
+    if (len < 0) { return 0; }
+    g_stage_quest = (df_u8 *)stage_alloc((df_u32)len, 1u);
+    return g_stage_quest;
+}
+
+const AutomapRow *state_staged_map(int *count)
+{
+    *count = g_stage_map_count;
+    return g_stage_map;
+}
+
+void state_stage_map_done(void) { g_stage_map = 0; g_stage_map_count = 0; stage_release(); }
+
 MagicState *magic_state(void) { return &g_state.magic; }
 
 void state_stealth_checked(void) { g_state.stealth_minute = g_state.minutes; }
@@ -132,6 +201,8 @@ void state_clear(void)
     flags = g_state.settings_flags;
     mouse = g_state.mouse_mode;
     mem_zero(&g_state, sizeof(g_state));
+    state_stage_drop();
+    g_keep_reset = 1;
     g_state.version = STATE_VERSION;
     g_state.random = seed;
     g_state.settings_flags = flags;
@@ -739,13 +810,22 @@ static int kept_row_valid(const Keep *row)
            (archive == expect || (ENEMY_IS_CLASS_ONLY(kind) && archive == expect+1));
 }
 
+int state_keep_row_valid(const Keep *row)
+{
+    return (row->key.place || row->key.thing) &&
+        (row->kind == KEEP_MOVER || row->kind == KEEP_ENTITY) && row->at_end <= 1 &&
+        row->dead <= 1 && row->moving <= 1 && row->placed <= 1 && row->hold <= 1 &&
+        row->made <= 2 && row->residence <= ENT_HOME_ROAM && (!row->made || kept_row_valid(row)) &&
+        row->act < ENTITY_POSES && position_valid(row->x) && position_valid(row->y) &&
+        position_valid(row->z) && row->yaw >= 0 && row->yaw < DF_TAU;
+}
+
 static int saved_world_valid(const GameState *state)
 {
-    const Keep *row;
     const MotionState *motion;
-    int i, j;
+    int i;
 
-    if (state->world_count < 0 || state->world_count > WORLD_ROWS ||
+    if (state->world_count < 0 || state->quest_len < 0 ||
         state->save_label[31] || state->preview_valid < 0 || state->preview_valid > 1 ||
         state->motion_valid < 0 || state->motion_valid > 1 ||
         state->hud_mode < 0 || state->hud_mode > 3 ||
@@ -767,18 +847,6 @@ static int saved_world_valid(const GameState *state)
             motion->have_safe < 0 || motion->have_safe > 1) { return 0; }
         for (i = 0; i < 3; i++) {
             if (!position_valid(motion->feet[i]) || !position_valid(motion->safe[i])) { return 0; }
-        }
-    }
-    for (i = 0; i < state->world_count; i++) {
-        row = &state->world[i];
-        if ((!row->key.place && !row->key.thing) ||
-            (row->kind != KEEP_MOVER && row->kind != KEEP_ENTITY) || row->at_end > 1 ||
-            row->dead > 1 || row->moving > 1 || row->placed > 1 || row->hold > 1 ||
-            row->made > 2 || row->residence > ENT_HOME_ROAM || (row->made && !kept_row_valid(row)) ||
-            row->act >= ENTITY_POSES || !position_valid(row->x) || !position_valid(row->y) ||
-            !position_valid(row->z) || !(row->yaw >= 0 && row->yaw < DF_TAU)) { return 0; }
-        for (j = 0; j < i; j++) {
-            if (row->key.place == state->world[j].key.place && row->key.thing == state->world[j].key.thing) { return 0; }
         }
     }
     return 1;
@@ -822,7 +890,9 @@ int state_restore(const GameState *snapshot)
     }
     g_state = *snapshot;
     /* The quests come back by reading their files again; bytes that cannot be read leave none running. */
-    (void)quest_unpack(g_state.quest_blob, g_state.quest_len);
+    (void)quest_unpack(g_stage_quest, g_stage_quest ? g_state.quest_len : 0);
+    g_stage_quest = 0;
+    stage_release();
     spells_sync_custom(&g_state);
     if (g_state.who.klass == CLASS_CUSTOM) {
         class_set(18, &g_state.career);
@@ -835,22 +905,25 @@ int state_restore(const GameState *snapshot)
 
 int state_capture_world(void)
 {
-    int i, count;
-    count = keep_count();
-    if (count > WORLD_ROWS) { g_error = "Too many changed world objects to save"; return 0; }
-    mem_zero(g_state.world, sizeof(g_state.world));
-    for (i = 0; i < count; i++) { g_state.world[i] = *keep_at(i); }
-    g_state.world_count = count;
+    g_state.world_count = keep_count();
     return 1;
 }
 
 int state_restore_world(void)
 {
     int i;
-    keep_clear();
-    for (i = 0; i < g_state.world_count; i++) {
-        if (!keep_put(&g_state.world[i])) { g_error = "No memory to restore world changes"; return 0; }
+
+    if (g_stage_keep) {
+        keep_clear();
+        for (i = 0; i < g_stage_keep_count; i++) {
+            if (!keep_put(&g_stage_keep[i])) { g_error = "No memory to restore world changes"; return 0; }
+        }
+        g_stage_keep = 0; g_stage_keep_count = 0;
+        stage_release();
+    } else if (g_keep_reset) {
+        keep_clear();
     }
+    g_keep_reset = 0;
     return 1;
 }
 

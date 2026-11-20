@@ -173,16 +173,20 @@ void check_encounter(void)
     {
         int r, kept;
 
+        Keep row;
+
         kept = -1;
-        for (r = 0; r < game_state()->world_count; r++) { if (game_state()->world[r].made) { kept = r; break; } }
+        for (r = 0; r < keep_count(); r++) { if (keep_at(r)->made) { kept = r; break; } }
         check_expect(kept >= 0, "a rest encounter is a kept row of the saved session");
         if (kept >= 0) {
-            g_bad = *game_state(); g_bad.world[kept].owner = (g_bad.world[kept].owner & ~(4095u << 8)) | (483u << 8);
-            check_expect(!state_valid(&g_bad),"save validation refuses a kept creature with a different archive");
-            g_bad = *game_state(); g_bad.world[kept].flags &= ~(unsigned)ENT_KEPT;
-            check_expect(!state_valid(&g_bad),"save validation refuses a made row that is not flagged kept");
-            g_bad = *game_state(); g_bad.world[kept].owner = (g_bad.world[kept].owner & ~255u) | 127u;
-            check_expect(!state_valid(&g_bad),"save validation refuses a kept creature of no kind");
+            row = *keep_at(kept);
+            check_expect(state_keep_row_valid(&row), "a kept creature's own row is valid");
+            row = *keep_at(kept); row.owner = (row.owner & ~(4095u << 8)) | (483u << 8);
+            check_expect(!state_keep_row_valid(&row),"save validation refuses a kept creature with a different archive");
+            row = *keep_at(kept); row.flags &= ~(unsigned)ENT_KEPT;
+            check_expect(!state_keep_row_valid(&row),"save validation refuses a made row that is not flagged kept");
+            row = *keep_at(kept); row.owner = (row.owner & ~255u) | 127u;
+            check_expect(!state_keep_row_valid(&row),"save validation refuses a kept creature of no kind");
         }
     }
     check_expect(encounter_release_soul(&camera,0) && dungeon_count() == 2 && spawn_count() == 2 &&

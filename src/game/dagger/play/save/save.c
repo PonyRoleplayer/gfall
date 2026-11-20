@@ -5,6 +5,8 @@
 #include "game/dagger/play/magic/spellbook.h"
 #include "engine/core/mem.h"
 #include "engine/platform/fs.h"
+#include "engine/scene/keep.h"
+#include "engine/scene/automap.h"
 
 static GameState g_candidate;
 static int g_legacy;
@@ -48,25 +50,87 @@ static int magic_matches(const df_u8 *data)
     return 1;
 }
 
-/* Explicit little-endian wire fields. Never write struct layout or pointers. */
-#define SAVE_CAP 524288u
-static df_u8 g_wire[SAVE_CAP];
+/*
+ * Explicit little-endian wire fields. Never write struct layout or pointers.
+ *
+ * A save is streamed (docs/game.md, Saves): a window of WIRE_WINDOW bytes goes to the file as it fills, or is refilled from it, so the size of a save is not held in memory and
+ * has no limit but the disk. Writing is two passes over the same state, the first only counting (the header holds the size and the checksum, which come before the bytes); the rows of the keep and
+ * the automap are written from the engine's own arrays and read into a staged heap (state_stage_*), taken by the restore once the whole save has been judged.
+ */
+#define WIRE_WINDOW 65536u
+/* The least bytes a keep row and an automap row take on the wire: a count that could not fit in what is left of the file is refused before anything is allocated. */
+#define WIRE_KEEP_LEAST 52u
+#define WIRE_MAP_LEAST 20u
 typedef struct Wire {
     df_u32 pos, limit;
     int read, bad, version;
+    /* Writing: count only (nothing leaves), the checksum of the bytes after the header, and the file failing. */
+    int count_only, io_failed;
+    df_u32 sum;
+    /* Reading: the file the window refills from, and where in it the window starts. */
+    FsFile *file;
+    df_u32 base;
+    df_u32 fill;
+    /* Reading: where the rows go (0 for a read that only wants the header's facts), and what the quests' section holds. */
+    Keep *keeps;
+    AutomapRow *maprows;
+    df_u8 *quest;
+    int discard;
+    df_u8 win[WIRE_WINDOW];
 } Wire;
+static Wire g_w;
+/* A place to read the quests' bytes into when a save is only being looked at. */
+static df_u8 g_scratch[4096];
+
+#define FNV_BASIS 2166136261u
+#define FNV_PRIME 16777619u
+
+static void wire_flush(Wire *w)
+{
+    if (w->fill && !w->count_only && !fs_append(w->win, w->fill)) { w->bad = 1; w->io_failed = 1; }
+    w->fill = 0;
+}
+
 static void wire_bytes(Wire *w, void *data, df_u32 size)
 {
+    df_u8 *bytes;
+    df_u32 done, n, i;
+
     if (w->bad || size > w->limit - w->pos) {
         w->bad = 1;
         return;
     }
+    bytes = (df_u8 *)data;
     if (w->read) {
-        mem_copy(data, g_wire + w->pos, size);
-    } else {
-        mem_copy(g_wire + w->pos, data, size);
+        for (done = 0; done < size; done += n) {
+            if (w->pos < w->base || w->pos >= w->base + w->fill) {
+                w->base = w->pos;
+                w->fill = w->limit - w->pos < WIRE_WINDOW ? w->limit - w->pos : WIRE_WINDOW;
+                if (!fs_read_at(w->file, w->base, w->win, w->fill)) { w->bad = 1; w->fill = 0; return; }
+            }
+            n = w->fill - (w->pos - w->base);
+            if (n > size - done) { n = size - done; }
+            mem_copy(bytes + done, w->win + (w->pos - w->base), n);
+            w->pos += n;
+        }
+        return;
     }
-    w->pos += size;
+    for (i = 0; i < size; i++) { w->sum = (w->sum ^ bytes[i]) * FNV_PRIME; }
+    if (w->count_only) {
+        w->pos += size;
+        return;
+    }
+    for (done = 0; done < size; done += n) {
+        n = WIRE_WINDOW - w->fill;
+        if (n > size - done) { n = size - done; }
+        mem_copy(w->win + w->fill, bytes + done, n);
+        w->fill += n;
+        w->pos += n;
+        if (w->fill == WIRE_WINDOW) {
+            wire_flush(w);
+            if (w->bad) { return; }
+        }
+    }
 }
 
 static void wire_u32(Wire *w, df_u32 *v)
@@ -225,6 +289,35 @@ static void wire_motion(Wire *w, MotionState *motion)
     wire_int(w, &motion->grounded); wire_int(w, &motion->have_safe);
 }
 
+/* Where row i of the world is on the wire: reading, in the staged array (or a scratch row when only the header's facts are wanted); writing, a copy of the keep's own. */
+static Keep *keep_slot(Wire *w, int i, Keep *tmp)
+{
+    const Keep *live;
+
+    if (!w->read) {
+        live = keep_at(i);
+        if (live) { *tmp = *live; } else { mem_zero(tmp, (df_u32)sizeof(*tmp)); w->bad = 1; }
+        return tmp;
+    }
+    if (w->keeps) { return &w->keeps[i]; }
+    mem_zero(tmp, (df_u32)sizeof(*tmp));
+    return tmp;
+}
+
+static AutomapRow *map_slot(Wire *w, int i, AutomapRow *tmp)
+{
+    const AutomapRow *live;
+
+    if (!w->read) {
+        live = automap_at(i);
+        if (live) { *tmp = *live; } else { mem_zero(tmp, (df_u32)sizeof(*tmp)); w->bad = 1; }
+        return tmp;
+    }
+    if (w->maprows) { return &w->maprows[i]; }
+    mem_zero(tmp, (df_u32)sizeof(*tmp));
+    return tmp;
+}
+
 static void wire_keep(Wire *w, Keep *row)
 {
     wire_u32(w, &row->key.place); wire_u32(w, &row->key.thing);
@@ -318,8 +411,19 @@ static void transfer(Wire *w, GameState *s)
     wire_int(w, &s->motion_valid);
     wire_motion(w, &s->motion);
     wire_int(w, &s->world_count);
-    if (s->world_count < 0 || s->world_count > WORLD_ROWS) { w->bad = 1; return; }
-    for (i = 0; i < s->world_count; i++) { wire_keep(w, &s->world[i]); }
+    if (w->bad) { return; }
+    if (s->world_count < 0 || (w->read && (df_u32)s->world_count > (w->limit - w->pos) / WIRE_KEEP_LEAST)) { w->bad = 1; return; }
+    if (w->read && !w->discard) {
+        w->keeps = state_stage_keep(s->world_count);
+        if (!w->keeps) { g_error = "Not enough memory to read this save"; w->bad = 1; return; }
+        mem_zero(w->keeps, (df_u32)s->world_count * (df_u32)sizeof(Keep));
+    }
+    for (i = 0; i < s->world_count; i++) {
+        Keep tmp, *row;
+
+        row = keep_slot(w, i, &tmp);
+        wire_keep(w, row);
+    }
     wire_int(w, &s->hud_mode); wire_int(w, &s->weapon_ready); wire_int(w, &s->cursor_active);
     wire_bytes(w, s->save_label, sizeof(s->save_label));
     wire_int(w, &s->preview_valid);
@@ -495,8 +599,24 @@ static void transfer(Wire *w, GameState *s)
     /* The quests (schema 16): a length and the bytes quest.c packed. */
     if (w->version >= 16) {
         wire_int(w, &s->quest_len);
-        if (s->quest_len < 0 || s->quest_len > QUEST_BLOB) { w->bad = 1; return; }
-        wire_bytes(w, s->quest_blob, s->quest_len);
+        if (w->bad) { return; }
+        if (s->quest_len < 0 || (w->read && (df_u32)s->quest_len > w->limit - w->pos)) { w->bad = 1; return; }
+        if (w->read) {
+            df_u8 *blob;
+
+            /* A save only asked about (the slot list) skips the bytes in a scratch of its own, a piece at a time. */
+            if (w->discard) {
+                int left;
+
+                for (left = s->quest_len; left > 0 && !w->bad; left -= (int)sizeof(g_scratch)) { wire_bytes(w, g_scratch, (df_u32)(left < (int)sizeof(g_scratch) ? left : (int)sizeof(g_scratch))); }
+            } else {
+                blob = state_stage_quest(s->quest_len);
+                if (!blob) { g_error = "Not enough memory to read this save"; w->bad = 1; return; }
+                wire_bytes(w, blob, (df_u32)s->quest_len);
+            }
+        } else {
+            wire_bytes(w, w->quest, (df_u32)s->quest_len);
+        }
     }
 
     if (w->version >= 7) {
@@ -505,10 +625,17 @@ static void transfer(Wire *w, GameState *s)
         wire_where(w,&world->where); wire_where(w,&world->recall_where);
         wire_int(w,&world->px); wire_int(w,&world->py);
         wire_bytes(w,world->known,KNOWN_BYTES); wire_int(w,&world->map_count);
-        if (world->map_count < 0 || world->map_count > MAP_ROWS) { w->bad = 1; return; }
+        if (w->bad) { return; }
+        if (world->map_count < 0 || (w->read && (df_u32)world->map_count > (w->limit - w->pos) / WIRE_MAP_LEAST)) { w->bad = 1; return; }
+        if (w->read && !w->discard) {
+            w->maprows = state_stage_map(world->map_count);
+            if (!w->maprows) { g_error = "Not enough memory to read this save"; w->bad = 1; return; }
+        }
         for (i = 0; i < world->map_count; i++) {
-            AutomapRow *row;
-            row = &world->map[i]; wire_u32(w,&row->place); wire_u32(w,&row->mesh);
+            AutomapRow tmp, *row;
+
+            row = map_slot(w, i, &tmp);
+            wire_u32(w,&row->place); wire_u32(w,&row->mesh);
             wire_int(w,&row->x); wire_int(w,&row->y); wire_int(w,&row->z);
         }
     }
@@ -562,9 +689,9 @@ static void transfer(Wire *w, GameState *s)
         int k;
 
         for (k = 0; k < s->world_count; k++) {
-            Keep *row;
+            Keep tmp, *row;
 
-            row = &s->world[k];
+            row = keep_slot(w, k, &tmp);
             wire_bytes(w, &row->made, 1); wire_bytes(w, &row->residence, 1);
             wire_u32(w, &row->flags); wire_u32(w, &row->owner);
             wire_int(w, &row->cx); wire_int(w, &row->cz);
@@ -572,14 +699,17 @@ static void transfer(Wire *w, GameState *s)
     }
 }
 
-static df_u32 checksum(const df_u8 *p, df_u32 n)
+/* What a failed write says. */
+static const char *save_failure(const char *general)
 {
-    df_u32 h, i;
-    h = 2166136261u;
-    for (i = 0; i < n; i++) {
-        h = (h ^ p[i]) * 16777619u;
-    }
-    return h;
+    return general;
+}
+
+/* The temporary file kept: 1 when its data reached the disk. */
+static int save_finish(void)
+{
+    fs_finish();
+    return 1;
 }
 
 static int path_for(char *path, int slot, const char *suffix)
@@ -601,64 +731,138 @@ static int path_for(char *path, int slot, const char *suffix)
     return 1;
 }
 
-static int read_save(const char *path)
+/* The header (24 bytes) and the checksum of the rest, read a window at a time: 1 when the file is a save of ours that was written whole. */
+static int file_sound(FsFile *f, df_u32 size, df_u32 *version)
+{
+    df_u8 head[24];
+    df_u32 at, n, sum, i;
+
+    if (size < 24 || !fs_read_at(f, 0, head, 24)) { return 0; }
+    *version = df_ru32(head + 8);
+    if (!magic_matches(head) || *version < 2 || *version > STATE_VERSION || df_ru32(head + 12) != size - 24 || df_ru32(head + 20) != 0) { return 0; }
+    sum = FNV_BASIS;
+    for (at = 24; at < size; at += n) {
+        n = size - at < WIRE_WINDOW ? size - at : WIRE_WINDOW;
+        if (!fs_read_at(f, at, g_w.win, n)) { return 0; }
+        for (i = 0; i < n; i++) { sum = (sum ^ g_w.win[i]) * FNV_PRIME; }
+    }
+    return sum == df_ru32(head + 16);
+}
+
+/* Reads a save into g_candidate. rows: 1 stages the keep's and the automap's rows and the quests' bytes for the restore; 0 only looks (the slot list, the check after a write). */
+static int read_save(const char *path, int rows)
 {
     FsFile *f;
-    df_u32 size;
-    Wire w;
+    df_u32 size, version;
+    Wire *w;
+
     g_legacy = 0;
+    g_error = "";
+    if (rows) { state_stage_drop(); }
     f = fs_open_beside(path);
     if (!f) {
         g_error = "Cannot open GFALL save";
         return 0;
     }
     size = fs_size(f);
-    if (size < 24 || size > SAVE_CAP || !fs_read_at(f, 0, g_wire, size)) {
+    if (!file_sound(f, size, &version)) {
         fs_close(f);
-        g_error = "Incomplete GFALL save";
-        return 0;
-    }
-    fs_close(f);
-    if (!magic_matches(g_wire) ||
-        (df_ru32(g_wire + 8) < 2 || df_ru32(g_wire + 8) > STATE_VERSION) || df_ru32(g_wire + 12) != size - 24 ||
-        df_ru32(g_wire + 20) != 0 || df_ru32(g_wire + 16) != checksum(g_wire + 24, size - 24)) {
-        g_error = "Unsupported or damaged GFALL save";
+        g_error = size < 24 ? "Incomplete GFALL save" : "Unsupported or damaged GFALL save";
         return 0;
     }
     mem_zero(&g_candidate, sizeof(g_candidate));
-    w.pos = 24;
-    w.limit = size;
-    w.version = (int)df_ru32(g_wire + 8);
-    w.read = 1;
-    w.bad = 0;
-    transfer(&w, &g_candidate);
-    if (w.version == 2 && !w.bad) {
-        if (!inventory_upgrade(&g_candidate)) { w.bad = 1; }
+    w = &g_w;
+    w->pos = 24;
+    w->limit = size;
+    w->version = (int)version;
+    w->read = 1;
+    w->bad = 0;
+    w->io_failed = 0;
+    w->file = f;
+    w->base = 0;
+    w->fill = 0;
+    w->keeps = 0;
+    w->maprows = 0;
+    w->discard = !rows;
+    transfer(w, &g_candidate);
+    fs_close(f);
+    w->file = 0;
+    if (w->version == 2 && !w->bad) {
+        if (!inventory_upgrade(&g_candidate)) { w->bad = 1; }
         else { g_legacy = 1; }
     }
-    if (w.version < 4 && !w.bad) { spell_upgrade(&g_candidate); }
-    if (w.version < 5 && !w.bad) {
+    if (w->version < 4 && !w->bad) { spell_upgrade(&g_candidate); }
+    if (w->version < 5 && !w->bad) {
         g_candidate.version = STATE_VERSION;
         g_candidate.progress.checked = g_candidate.minutes;
         g_candidate.progress.base_sum = progress_sum(&g_candidate.who,&g_candidate.career)-(g_candidate.who.level-1)*15;
     }
-    if (w.version < 8) { standing_defaults(&g_candidate.standing); }
-    if (w.version < 20 && g_candidate.standing.ready) { standing_relations_defaults(&g_candidate.standing); }
-    if (w.version < STATE_VERSION) { g_candidate.version = STATE_VERSION; }
+    if (w->version < 8) { standing_defaults(&g_candidate.standing); }
+    if (w->version < 20 && g_candidate.standing.ready) { standing_relations_defaults(&g_candidate.standing); }
+    if (w->version < STATE_VERSION) { g_candidate.version = STATE_VERSION; }
     spells_sync_custom(&g_candidate);
-    if (w.bad || w.pos != size || !state_valid(&g_candidate)) {
+    if (!w->bad && rows) {
+        int i;
+
+        /* A row that makes no sense is a save that does not: judged now, before anything of it is taken. */
+        for (i = 0; w->keeps && i < g_candidate.world_count; i++) { if (!state_keep_row_valid(&w->keeps[i])) { w->bad = 1; break; } }
+        for (i = 0; w->maprows && i < g_candidate.world_state.map_count; i++) { if (!world_map_row_valid(&w->maprows[i])) { w->bad = 1; break; } }
+    }
+    if (w->bad || w->pos != size || !state_valid(&g_candidate)) {
         spells_sync_custom(game_state());
-        g_error = "Invalid GFALL save state";
+        if (rows) { state_stage_drop(); }
+        if (!g_error[0]) { g_error = "Invalid GFALL save state"; }
         return 0;
     }
     return 1;
 }
 
+/* The quests' bytes, packed into a buffer that is doubled until they fit (quest.c refuses to overrun it); the heap they live in is the caller's to delete. Not enough memory is an error, not a short save. */
+#define QUEST_PACK_FIRST 65536
+static df_u8 *pack_quests(MemHeap *heap, int *length)
+{
+    MemHeap *before;
+    df_u8 *buffer;
+    int cap, len;
+
+    for (cap = QUEST_PACK_FIRST; cap > 0; cap *= 2) {
+        before = mem_heap_use(heap);
+        buffer = (df_u8 *)mem_alloc((df_u32)cap);
+        mem_heap_use(before);
+        if (!buffer) { return 0; }
+        len = quest_pack(buffer, cap);
+        if (len >= 0) { *length = len; return buffer; }
+    }
+    return 0;
+}
+
+/* One pass of the state through the wire: counting (the first) or emitting (the second). */
+static int write_pass(int counting, df_u8 *quests)
+{
+    Wire *w = &g_w;
+
+    w->pos = 24;
+    w->limit = 0xFFFFFFFFu;
+    w->version = STATE_VERSION;
+    w->read = 0;
+    w->bad = 0;
+    w->io_failed = 0;
+    w->count_only = counting;
+    w->sum = FNV_BASIS;
+    w->fill = 0;
+    w->quest = quests;
+    transfer(w, &g_candidate);
+    if (!w->bad && !counting) { wire_flush(w); }
+    return !w->bad;
+}
+
 int save_write(int slot)
 {
-    Wire w;
     char path[64], temp[64];
-    df_u32 size;
+    df_u8 head[24], *quests;
+    df_u32 size, sum;
+    MemHeap *heap;
+    int len, wrote;
     if (!path_for(path, slot, ".SAV") || !path_for(temp, slot, ".TMP")) {
         return 0;
     }
@@ -670,45 +874,61 @@ int save_write(int slot)
         g_error = "A dead character cannot be saved.";
         return 0;
     }
-    w.pos = 24;
-    w.limit = SAVE_CAP;
-    w.version = STATE_VERSION;
-    w.read = 0;
-    w.bad = 0;
     g_candidate = *game_state();
-    g_candidate.quest_len = quest_pack(g_candidate.quest_blob, QUEST_BLOB);
-    if (g_candidate.quest_len < 0) {
-        g_error = "Too many quests to save";
+    /* The rows are written from the keep and the automap themselves: the counts are what they hold now. */
+    g_candidate.world_count = keep_count();
+    g_candidate.world_state.map_count = automap_count();
+    heap = mem_heap_new();
+    quests = heap ? pack_quests(heap, &len) : 0;
+    if (!quests) {
+        if (heap) { mem_heap_delete(heap); }
+        g_error = "Not enough memory to pack the quests for a save";
         return 0;
     }
+    g_candidate.quest_len = len;
     /* Menus are transient; a loaded save always resumes the world. */
     g_candidate.mode = GAME_WORLD;
     g_candidate.depth = 0;
     mem_zero(g_candidate.mode_stack, sizeof(g_candidate.mode_stack));
-    transfer(&w, &g_candidate);
-    if (w.bad) {
-        g_error = "GFALL save is too large";
+    g_error = "";
+    if (!write_pass(1, quests)) {
+        mem_heap_delete(heap);
+        g_error = "The state does not fit a save";
         return 0;
     }
-    size = w.pos;
-    mem_copy(g_wire, "OGSAVE\r\n", 8);
-    put_u32(g_wire + 8, STATE_VERSION);
-    put_u32(g_wire + 12, size - 24);
-    put_u32(g_wire + 16, checksum(g_wire + 24, size - 24));
-    put_u32(g_wire + 20, 0);
+    size = g_w.pos;
+    sum = g_w.sum;
+    mem_copy(head, "OGSAVE\r\n", 8);
+    put_u32(head + 8, STATE_VERSION);
+    put_u32(head + 12, size - 24);
+    put_u32(head + 16, sum);
+    put_u32(head + 20, 0);
     if (!fs_make_dirs(SAVE_DIR) || !fs_create(temp)) {
-        g_error = "Cannot create GFALL save";
+        mem_heap_delete(heap);
+        g_error = save_failure("Cannot create GFALL save");
         return 0;
     }
-    if (!fs_append(g_wire, size)) {
+    wrote = fs_append(head, 24) && write_pass(0, quests);
+    if (!wrote || g_w.pos != size || g_w.sum != sum) {
+        mem_heap_delete(heap);
+        g_error = !wrote ? save_failure("Cannot write GFALL save") : "The save did not come out the size it was counted";
         fs_abort();
-        g_error = "Cannot write GFALL save";
         return 0;
     }
-    fs_finish();
-    if (!read_save(temp) || !fs_move(temp, path)) {
+    mem_heap_delete(heap);
+    if (!save_finish()) {
+        g_error = save_failure("Cannot finish writing GFALL save");
+        fs_delete(temp);
+        return 0;
+    }
+    if (!read_save(temp, 0)) {
         fs_delete(temp);
         g_error = "Cannot verify or replace GFALL save";
+        return 0;
+    }
+    if (!fs_move(temp, path)) {
+        fs_delete(temp);
+        g_error = save_failure("Cannot verify or replace GFALL save");
         return 0;
     }
     g_error = "";
@@ -726,12 +946,13 @@ int save_read(int slot)
     if (!fs_exists(path)) {
         append_text(path, ".OLD", 64);
     }
-    if (!read_save(path)) { return 0; }
+    if (!read_save(path, 1)) { return 0; }
     if (g_candidate.who.health <= 0) {
         g_error = "This save contains a dead character. Choose another save or start a new game.";
         return 0;
     }
     if (!state_restore(&g_candidate)) {
+        state_stage_drop();
         return 0;
     }
     if (g_legacy) {
@@ -758,7 +979,7 @@ int save_info(int slot, SaveInfo *info)
         append_text(path, ".OLD", sizeof(path));
         if (!fs_exists(path)) { return 0; }
     }
-    if (!read_save(path)) { return -1; }
+    if (!read_save(path, 0)) { return -1; }
     df_copy(info->label, g_candidate.save_label[0] ? g_candidate.save_label : g_candidate.who.name, sizeof(info->label));
     df_copy(info->character, g_candidate.who.name, sizeof(info->character));
     info->level = g_candidate.who.level;

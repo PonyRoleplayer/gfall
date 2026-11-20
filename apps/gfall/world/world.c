@@ -127,7 +127,9 @@ static void marker6(float *x, float *y, float *z)
 /* A loaded actor can add four five-view poses and one corpse. A
  * prepared spawn can also add its walk and idle poses. */
 #define HOLD_EXTRA_IMAGES (ENCOUNTER_ART * 31 + HOLD_TREASURES + 16)
-static Keep g_entity_keeps[WORLD_ROWS];
+/* The entity rows lifted out of the keep for a place change, put back once the place is built: as many as the keep held (grown, never capped). */
+static Keep *g_entity_keeps;
+static int g_entity_keep_cap;
 static int g_entity_keep_count;
 static Image *const *g_world_images;
 static int g_world_image_count;
@@ -835,7 +837,11 @@ int seam_open_place(int restoring, int changing, float *x, float *y, float *z)
     {
         int i;
         g_entity_keep_count = 0;
-        for (i = keep_count()-1; i >= 0; i--) {
+        if (keep_count() > g_entity_keep_cap) {
+            g_entity_keeps = (Keep *)mem_keep((df_u32)keep_count() * (df_u32)sizeof(Keep));
+            g_entity_keep_cap = g_entity_keeps ? keep_count() : 0;
+        }
+        for (i = keep_count()-1; g_entity_keeps && i >= 0; i--) {
             if (keep_at(i)->kind == KEEP_ENTITY) {
                 g_entity_keeps[g_entity_keep_count] = *keep_at(i);
                 keep_forget(g_entity_keeps[g_entity_keep_count++].key);

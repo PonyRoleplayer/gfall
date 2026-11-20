@@ -4,7 +4,6 @@
  * World/back positions are whole engine units; stream origins are chunks. */
 #include "engine/scene/automap.h"
 #define KNOWN_BYTES 2048
-#define MAP_ROWS 8192
 #define WORLD_WIRE_BASE (96 + 8 + KNOWN_BYTES + 4)
 enum { WHERE_DUNGEON, WHERE_WORLD, WHERE_INSIDE };
 typedef struct PlaceWhere {
@@ -21,11 +20,12 @@ typedef struct WorldState {
     int px, py;
     ShipBack ship;
     df_u8 known[KNOWN_BYTES];
+    /* How many automap rows the player has seen (the rows live in the engine's automap and are streamed to and from a save). */
     int map_count;
-    AutomapRow map[MAP_ROWS];
 } WorldState;
 WorldState *world_where(void);
 int world_valid(const WorldState *world);
+int world_map_row_valid(const AutomapRow *row);
 void world_capture(void);
 void world_restore(void);
 #endif

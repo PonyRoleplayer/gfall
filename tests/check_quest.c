@@ -1,3 +1,5 @@
+/* A buffer for what quest_pack makes in these tests (the save itself sizes its own). */
+#define TEST_QUEST_BUFFER 65536
 #include <dirent.h>
 #include <stdio.h>
 #include <string.h>
@@ -939,7 +941,7 @@ void check_quest(void)
         }
         /* A dungeon action's global state (Mantellan Crux's sets 36): set, kept in the globals and through a pack. */
         {
-            static df_u8 gb[QUEST_BLOB];
+            static df_u8 gb[TEST_QUEST_BUFFER];
             int len;
 
             quest_globals_clear();
@@ -1187,7 +1189,7 @@ void check_quest(void)
             check_expect(quest_at(s2) != 0 && character_state()->gold == gold, "quest: the reward came before the questgiver was spoken to");
             /* Saved mid-quest and read back: the quest, its rolled gold, bound places, timer, foes, states and the logbook come back, and it can still be finished. */
             {
-                static df_u8 blob[QUEST_BLOB];
+                static df_u8 blob[TEST_QUEST_BUFFER];
                 int len, s3, st1, ord0, delay;
                 char log1[2048], log2[2048];
 
