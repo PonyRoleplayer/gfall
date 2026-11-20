@@ -13,6 +13,7 @@
 #include "game/dagger/formats/vid.h"
 #include "game/dagger/formats/flc.h"
 #include "game/dagger/places/town.h"
+#include "game/dagger/formats/rmb.h"
 #include "game/dagger/places/travel.h"
 #include "game/dagger/tables/combatdefs.h"
 #include "game/dagger/tables/enemies.h"

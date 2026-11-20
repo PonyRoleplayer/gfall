@@ -4,6 +4,7 @@
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/magic/spellbook.h"
 #include "engine/core/mem.h"
+#include "engine/core/log.h"
 #include "engine/platform/fs.h"
 #include "engine/scene/keep.h"
 #include "engine/scene/automap.h"
@@ -699,17 +700,34 @@ static void transfer(Wire *w, GameState *s)
     }
 }
 
-/* What a failed write says. */
+/* What a failed write says, by what the engine found (fs_last_error, read right after the call that failed): a full disk and a folder that will not take the file are told as such. */
+static char g_failure[96];
 static const char *save_failure(const char *general)
 {
-    return general;
+    switch (fs_last_error()) {
+    case FS_ERR_DISK_FULL: return "The disk is full: the game was not saved. Free some space and save again.";
+    case FS_ERR_ACCESS: return "The save folder cannot be written (read-only or in use): the game was not saved.";
+    default: break;
+    }
+    df_copy(g_failure, general, (int)sizeof(g_failure));
+    return g_failure;
 }
 
-/* The temporary file kept: 1 when its data reached the disk. */
+/* The temporary file kept: 1 when its data reached the disk (the flush and the close both worked; a full disk can show only there). */
 static int save_finish(void)
 {
-    fs_finish();
-    return 1;
+    return fs_finish();
+}
+
+/* Room for the temporary file before a byte of it is written: the drive's free bytes against the save's size and a cluster's slack (the old slot stays until the new one replaces it, so both are on the disk at once). 1 when there is room or the drive cannot say. */
+#define SAVE_SPACE_SLACK 4096u
+static int save_room(const char *temp, df_u32 size)
+{
+    df_u32 free_bytes;
+
+    if (!fs_free_bytes(temp, &free_bytes) || free_bytes >= size + SAVE_SPACE_SLACK) { return 1; }
+    log_format(g_failure, (int)sizeof(g_failure), "Not enough disk space to save: %u KB needed, %u KB free.", (unsigned)((size + 1023u) / 1024u), (unsigned)(free_bytes / 1024u));
+    return 0;
 }
 
 static int path_for(char *path, int slot, const char *suffix)
@@ -903,6 +921,11 @@ int save_write(int slot)
     put_u32(head + 12, size - 24);
     put_u32(head + 16, sum);
     put_u32(head + 20, 0);
+    if (!save_room(temp, size)) {
+        mem_heap_delete(heap);
+        g_error = g_failure;
+        return 0;
+    }
     if (!fs_make_dirs(SAVE_DIR) || !fs_create(temp)) {
         mem_heap_delete(heap);
         g_error = save_failure("Cannot create GFALL save");

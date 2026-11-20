@@ -31,6 +31,8 @@
 #include "engine/scene/keep.h"
 #include "engine/scene/automap.h"
 #include <string.h>
+#include <signal.h>
+#include <sys/resource.h>
 
 static GameState g_initial;
 static GameState g_saved;
@@ -434,6 +436,29 @@ static void check_long_campaign(void)
     state_capture_world(); world_where()->map_count = 0;
 }
 
+/* A save that cannot be finished (the host's file size limit stands for a full disk): it says so, leaves no half-written file, and the slot keeps what it had. */
+#define FULL_DISK_LIMIT 50000
+#define FULL_DISK_SLOT 8
+static void check_full_disk(void)
+{
+    struct rlimit was, small;
+    int before;
+
+    character_state()->gold = 4242;
+    check_expect(save_write(FULL_DISK_SLOT), "full disk: the first save was refused");
+    character_state()->gold = 5151;
+    getrlimit(RLIMIT_FSIZE, &was);
+    small = was; small.rlim_cur = FULL_DISK_LIMIT;
+    signal(SIGXFSZ, SIG_IGN);
+    setrlimit(RLIMIT_FSIZE, &small);
+    before = save_write(FULL_DISK_SLOT);
+    setrlimit(RLIMIT_FSIZE, &was);
+    check_expect(!before, "full disk: a write that could not finish was reported as saved");
+    check_expect(strstr(save_error(), "disk is full") != 0, "full disk: the message does not say the disk is full");
+    check_expect(!fs_exists("gfall\\saves\\S0008.TMP"), "full disk: a half-written file was left behind");
+    check_expect(save_read(FULL_DISK_SLOT) && character_state()->gold == 4242, "full disk: the slot did not keep its previous save");
+}
+
 void check_state(const char *root)
 {
     g_initial = *game_state();
@@ -473,4 +498,5 @@ void check_state(const char *root)
     state_restore(&g_initial);
     check_disk(root);
     check_long_campaign();
+    check_full_disk();
 }

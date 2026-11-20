@@ -223,3 +223,6 @@ Drugs, poisons and vials (2026-11-20; daggerfall-decomp/docs/drugs-group0.md)
 
 Later: finish the cut poison feature (2026-11-20; worth exploring, after the game is complete)
 Poison vials as bottles (the potion bottle's message field in a separate range for poison ids 128..135), text 1006 ("Containing: %wpn"), applied to the weapon in hand through the drug flow, sold by the Venom Masters' Buy Potions from Dark Brotherhood rank 1 (text 6611's promise; 6612's cauldron promise stays flavour), priced by a constant of ours. First ask DOCUMENTER whether a poison price, duration or strength table exists for 128..135 beyond `poison_table`.
+
+Later: purging dungeon leftovers (2026-11-20, the user's rule; waits for DOCUMENTER on what FALL.EXE does at re-entry)
+Keep rows have no time, so nothing ages out and a long campaign grows the keep without bound (the 64 MB machine is the ceiling). The user's rule: leftovers of a place (the dead, the creatures that were left, moved things) stay for three in-game days counted by the calendar from 00:00, so a row last touched on day D is purged when day D+3 begins at 00:00 (day number difference, not 72 hours). Plan: a day stamp on each row of a place other than the open one, a purge at the midnight tick and at a load, and a hard cap on rows that drops the oldest first.
