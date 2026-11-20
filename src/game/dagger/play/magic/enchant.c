@@ -314,6 +314,10 @@ void enchant_strike_for(df_u32 weapon, int attacker, int victim, int level, int 
                 dungeon_enchant_damage(victim,health,attacker < 0 ? TARGET_PLAYER : attacker);
                 item_damage(weapon, health / RAZOR_WEAR_DIV + 1);
             }
+        } else if (type == ENCHANT_SPECIAL_ADVANTAGE && param == ARTIFACT_WABBAJACK && victim >= 0 && g_world && g_world->transform && !dungeon_transformed(victim)) {
+            int change = g_world->transform(victim,g_wabbajack_kinds[random_range(0,WABBAJACK_KINDS-1)]);
+
+            if (change >= 0) { item_damage(weapon, change); }
         } else if (type == ENCHANT_SPECIAL_ADVANTAGE && param == ARTIFACT_MACE_MOLAG_BAL && victim >= 0) {
             CharacterState target;
             ClassInfo career;

@@ -110,6 +110,15 @@ int dungeon_alive(void);
 /* A creature thrown (damage_knockback) by force and amount the way yaw points, and hurt: an area spell's (radius * AREA_KNOCKBACK_MUL, radius). */
 /* monster_wake_all: every creature the markers keep standing is awake and acts. */
 void dungeon_wake_sleepers(void);
+/* The creatures added from now are summoned by an artifact (until it is called with 0): they give up a target scoring under SUMMON_GIVE_UP_SCORE and vanish when alone. */
+#define SUMMON_GIVE_UP_SCORE 8
+void dungeon_next_summoned(int on);
+/* The Wabbajack: creatures added from now are its work (not changed again); whether one is, and a creature's most health. */
+void dungeon_next_transformed(int on);
+int dungeon_transformed(int index);
+int dungeon_max_health(int index);
+/* The index of the creature added last (the one a summon or a placement made). */
+int dungeon_last_added(void);
 /* The nearest live creature the ray (from a point, along a unit direction) passes within AIM_RADIUS_MIN (or its own radius) of, within reach; -1 for none. A pickpocket's target (click_creature). */
 #define AIM_RADIUS_MIN 32.0f
 int dungeon_aim(float x, float y, float z, float dx, float dy, float dz, float reach);

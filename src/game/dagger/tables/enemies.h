@@ -129,6 +129,8 @@ int enemy_group(int kind);
 #define ENEMY_DAEDROTH 27
 #define ENEMY_FIRST_CLASS 128
 /* City Watch: archive 399, bark DAGGER.SND 456 (Halt). */
+/* The kinds the Wabbajack turns a creature into (wabbajack_creatures, FALL.EXE). */
+static const unsigned char g_wabbajack_kinds[17] = { 0, 1, 2, 3, 4, 6, 10, 13, 15, 16, 17, 20, 36, 37, 38, 35, 32 };
 /* The assassin's mobile id (128 + the class), whose weapon is poisoned most often (monster_give_equipment). */
 #define ENEMY_ASSASSIN 139
 #define ENEMY_CITY_WATCH 146

@@ -65,6 +65,8 @@
 #define MACE_DRAIN_MOST 6
 #define MACE_FLOOR 10
 #define MACE_WEAR 2
+/* The Wabbajack (artifact 6, on a hit): a creature not yet its work becomes one of these kinds (monster_init), and the item wears by the change in most health (the original added condition when that was negative: the size is used). */
+#define WABBAJACK_KINDS 17
 #define ARTIFACT_SUMMON_WEAR 100
 #define TICK_GAP_MAX 100u
 #define TICK_MINUTES_SHIFT 2
@@ -92,6 +94,8 @@ typedef struct EnchantWorld {
     int (*hurt_nearest)(int amount);
     void (*release_soul)(int kind);
     int (*summon_ally)(int kind);
+    /* The Wabbajack: the creature (an index of the dungeon's) becomes a new one of a kind where it stands; the change in its most health, or -1 when it could not. */
+    int (*transform)(int victim, int kind);
 } EnchantWorld;
 void enchant_set_world(const EnchantWorld *world);
 

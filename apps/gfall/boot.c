@@ -174,7 +174,7 @@ int seam_boot(void)
     {
         static const EnchantWorld world = {
             ench_daylight, ench_temple, ench_category_near, ench_hurt_nearest,
-            gfall_release_soul, gfall_summon_ally
+            gfall_release_soul, gfall_summon_ally, gfall_transform
         };
 
         enchant_set_world(&world);

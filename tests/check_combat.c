@@ -776,6 +776,19 @@ static void poisoned_weapons(void)
     character_state()->level = 1;
 }
 
+/* A creature an artifact summoned, left alone, vanishes (ai_update_creatures, flag 2). */
+static void summoned_alone(void)
+{
+    character_state()->health = character_state()->max_health;
+    arena(0);
+    dungeon_next_summoned(1);
+    dungeon_open(&g_scene,g_kind,g_passive,g_rate); dungeon_loaded(0);
+    dungeon_next_summoned(0);
+    g_entity[1].dead = 1;
+    dungeon_step(&g_scene,&g_cam,0.05f);
+    check_expect(!g_entity[0].live, "a summoned creature left alone did not vanish");
+}
+
 void check_combat(const char *root)
 {
     df_u32 sword;
@@ -794,7 +807,7 @@ void check_combat(const char *root)
     dungeon_blood(-1,-1);
     check_doors(root);
     poisoned_weapons();
-    rules(); ai_rules(); swings(sword); melee(sword); archery(); marker_pacification(); creature_teams(); injuries(); flyer_corpse(); god_swing(sword);
+    rules(); ai_rules(); swings(sword); melee(sword); archery(); marker_pacification(); creature_teams(); injuries(); summoned_alone(); flyer_corpse(); god_swing(sword);
     small_creature_floor(); flying_creature_floor(); flight_stairwell();
     dungeon_close(); weapon_cancel(); state_restore(&g_before); state_restore_world();
     hold_round_trip(root);

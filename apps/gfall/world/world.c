@@ -406,8 +406,37 @@ static int ench_spawn_creature(int kind, int team)
     return 1;
 }
 
+/* The Wabbajack: the creature becomes another of the kind where it stands (a dungeon's; the place's art decides), and is gone itself. */
+int gfall_transform(int victim, int kind)
+{
+    Camera cam;
+    const Entity *old;
+    int before, ok;
+
+    if (!g_place_open || world_where()->where.kind != WHERE_DUNGEON || !ENEMY_IS_KNOWN(kind)) { return -1; }
+    old = dungeon_entity(victim);
+    if (!old || !old->live || old->dead) { return -1; }
+    before = dungeon_max_health(victim);
+    move_camera(&cam);
+    dungeon_next_transformed(1);
+    ok = encounter_place_at(&cam,kind,0,old->x,old->y,old->z);
+    dungeon_next_transformed(0);
+    if (!ok) { return -1; }
+    dungeon_remove(victim);
+    ok = dungeon_max_health(dungeon_last_added())-before;
+    return ok < 0 ? -ok : ok;
+}
+
 void gfall_release_soul(int kind) { ench_spawn_creature(kind,TEAM_HOSTILE); }
-int gfall_summon_ally(int kind) { return ench_spawn_creature(kind,TEAM_PLAYER); }
+int gfall_summon_ally(int kind)
+{
+    int ok;
+
+    dungeon_next_summoned(1);
+    ok = ench_spawn_creature(kind,TEAM_PLAYER);
+    dungeon_next_summoned(0);
+    return ok;
+}
 
 static int prepare_encounter_art(int kind, int archive, Image **images, df_u8 *cutout, int *slots)
 {

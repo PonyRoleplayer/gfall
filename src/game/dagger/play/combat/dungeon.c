@@ -40,6 +40,10 @@ typedef struct FoeState {
     int kind, type, passive, awake, rate, loaded, restored;
     /* A creature the level's markers keep standing (action byte 99: a castle's guard or courtier): idle until the player trespasses or one of them is hurt (wait_state, equip.c 946). */
     int sleeper;
+    /* A creature the player summoned with an artifact (character flag 2): it takes no target under SUMMON_GIVE_UP_SCORE and vanishes when it is the only creature left (ai_pick_target, ai_update_creatures). */
+    int summoned;
+    /* A creature the Wabbajack made (character flag 0x1000): another blow of it does not change it again. */
+    int transformed;
     int team, target, marker_rolled;
     float retarget, attack_wait, hurt, knock, knock_yaw, think, voice_time, swing_clock;
 } FoeState;
@@ -225,6 +229,13 @@ void dungeon_rebind(Entity *entities, int count)
     }
 }
 
+static int g_next_summoned, g_next_transformed, g_last_added = -1;
+int dungeon_last_added(void) { return g_last_added; }
+void dungeon_next_transformed(int on) { g_next_transformed = on != 0; }
+int dungeon_transformed(int index) { return index >= 0 && index < g_count && g_foe[index].transformed; }
+int dungeon_max_health(int index) { return index >= 0 && index < g_count ? g_foe[index].fighter.maximum : 0; }
+void dungeon_next_summoned(int on) { g_next_summoned = on != 0; }
+
 int dungeon_add(Entity *entity, int kind, int passive, int rate)
 {
     FoeState *f;
@@ -236,7 +247,8 @@ int dungeon_add(Entity *entity, int kind, int passive, int rate)
     if (index == FOE_ACTORS) { return -1; }
     if (index == g_count) { g_count++; }
     f = &g_foe[index]; mem_zero(f,sizeof(*f)); f->entity = entity;
-    f->kind = kind; f->passive = passive; f->sleeper = passive != 0; f->rate = rate > 0 ? rate : FOE_RATE_NORMAL;
+    g_last_added = index;
+    f->kind = kind; f->passive = passive; f->sleeper = passive != 0; f->summoned = g_next_summoned; f->transformed = g_next_transformed; f->rate = rate > 0 ? rate : FOE_RATE_NORMAL;
     f->target = TARGET_NONE; f->team = TEAM_HOSTILE;
     f->script = foe_script(f->kind);
     f->type = foe_texture_kind(f->kind);
@@ -825,6 +837,7 @@ static int pick_target(const Scene *scene, const Camera *cam, FoeState *foe)
         if (visible(scene,from,to)) { score += TARGET_SCORE_SEEN; }
         if (score > best_score) { best = candidate; best_score = score; }
     }
+    if (foe->summoned && best_score < SUMMON_GIVE_UP_SCORE) { return TARGET_NONE; }
     return best;
 }
 
@@ -1100,6 +1113,13 @@ void dungeon_step(const Scene *scene, const Camera *cam, float dt)
     if (dt > 0.1f) { dt = 0.1f; }
     combat_step(dt);
     for (i = 0; i < g_count && character_state()->health > 0; i++) { foe_step(scene,cam,i,dt); }
+    /* A summoned creature left alone is gone (ai_update_creatures: one creature, flag 2). */
+    {
+        int alive = 0, only = -1;
+
+        for (i = 0; i < g_count; i++) { if (g_foe[i].entity->live && !g_foe[i].entity->dead) { alive++; only = i; } }
+        if (alive == 1 && g_foe[only].summoned) { dungeon_remove(only); }
+    }
     arrows_step(scene,cam,dt);
     for (i = 0; i < SPLASHES; i++) {
         if (g_splash_time[i] > 0) {

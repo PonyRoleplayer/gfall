@@ -1,6 +1,7 @@
 #include <string.h>
 #include "check_magicitem.h"
 #include "check_util.h"
+#include "game/dagger/tables/enemies.h"
 #include "engine/assets/vfs.h"
 #include "game/dagger/play/magic/magicitem.h"
 #include "game/dagger/play/state.h"
@@ -161,7 +162,7 @@ static void itemmaker_checks(void)
     g_consumed = -1;
     check_expect(itemmaker_enchant(eat_soul) == IM_DONE && g_consumed == 31, "itemmaker: the soul bound was not consumed");
     {
-        static const EnchantWorld world = {0,0,0,0,released_soul,0};
+        static const EnchantWorld world = {0,0,0,0,released_soul,0,0};
 
         check_expect(item_enchanted(ring),"the bound item retains its powers");
         if (item_enchanted(ring)) {
@@ -379,6 +380,9 @@ static void itemmaker_checks(void)
     (void)daedric; (void)text; (void)n; (void)list;
 }
 
+static int g_transforms, g_transform_kind;
+static int fake_transform(int victim, int kind) { (void)victim; g_transforms++; g_transform_kind = kind; return 5; }
+
 void check_magicitem(void)
 {
     const df_u8 *bytes;
@@ -425,6 +429,23 @@ void check_magicitem(void)
                          "magicitem: an artifact's powers are not its lore text, or an ordinary item is an artifact");
         }
         object_delete(ring);
+        /* The Wabbajack (artifact 6): a blow asks the game to change the creature into one of the 17 kinds and the item wears by the change in its most health. */
+        {
+            static const EnchantWorld wab = {0,0,0,0,0,0,fake_transform};
+            df_u32 staff = item_create(container,5,6,-1);
+            int before, ok = 0, k;
+
+            if (staff) {
+                enchant_set_world(&wab);
+                before = object_at(staff)->condition;
+                g_transforms = 0;
+                enchant_strike_for(staff,-1,0,10,7);
+                for (k = 0; k < 17; k++) { ok |= g_transform_kind == g_wabbajack_kinds[k]; }
+                check_expect(object_at(staff) && g_transforms == 1 && ok && object_at(staff)->condition == before - 5, "magicitem: a Wabbajack blow did not change the creature into one of its kinds and wear by the change");
+                enchant_set_world(0);
+                object_delete(staff);
+            }
+        }
     }
     /* Never an artifact in a shop: many items, none of them one. */
     magic = 0;
