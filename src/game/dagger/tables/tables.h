@@ -14,10 +14,10 @@
 #define CLASSES 19
 /* A starting kit holds at most this many gifts (clothes, shoes, a weapon, a bow with arrows, the spellbook). */
 #define KIT_GIFTS_MOST 32
-/* kludge.c, newgame_give_kit: a woman is given clothing index 8, a man 10, and both shoes 24. */
+/* kludge.c, starting_equipment_give: a woman is given clothing index 8, a man 10 (both "Casual pants"), and both a "Short shirt", index 24 (not shoes: the player starts barefoot). Worn from the start. */
 #define KIT_WOMENS_CLOTHES 8
 #define KIT_MENS_CLOTHES 10
-#define KIT_SHOES 24
+#define KIT_SHIRT 24
 /* The weapon byte of the archer class: no table weapon, the long bow and a short sword instead. */
 #define KIT_ARCHER 254
 #define KIT_NONE 255

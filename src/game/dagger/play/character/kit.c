@@ -32,7 +32,7 @@ void kit_give(CharacterState *who)
     if (klass < 0 || klass >= CLASSES) { return; }
     gift(who, who->female ? ITEM_GROUP_WOMENS_CLOTHING : ITEM_GROUP_MENS_CLOTHING,
          who->female ? KIT_WOMENS_CLOTHES : KIT_MENS_CLOTHES, 0);
-    gift(who, who->female ? ITEM_GROUP_WOMENS_CLOTHING : ITEM_GROUP_MENS_CLOTHING, KIT_SHOES, 0);
+    gift(who, who->female ? ITEM_GROUP_WOMENS_CLOTHING : ITEM_GROUP_MENS_CLOTHING, KIT_SHIRT, 0);
     weapon = g_weapon[klass][0];
     if (weapon == KIT_ARCHER) {
         gift(who, ITEM_GROUP_WEAPON, WEAPON_LONG_BOW, KIT_MATERIAL_ROLL);
