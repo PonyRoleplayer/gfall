@@ -172,8 +172,8 @@ static void paint_doll(int x, int y)
     for (i = 0; i < 184; i++) { mem_copy(g_doll_back+i*110,back.pixels+(i+7)*back.width+8,110); }
     mem_copy(g_doll,g_doll_back,sizeof(g_doll));
     for (i = 0; i < (int)sizeof(g_doll); i++) { doll_owners()[i] = 255; }
+    /* The body is drawn once, the race's first picture; what the player wears goes on it as layers (the second, "clothed" picture was drawn over it, so the worn clothes were painted twice). */
     doll_img(character_state()->female ? race->body_female : race->body_male);
-    doll_img(character_state()->female ? race->body_female_clothed : race->body_male_clothed);
     if (cif_open(character_state()->female ? race->heads_female : race->heads_male,&faces)) {
         face = cif_frame(&faces,character_state()->face);
         if (face) { doll_layer(face->pixels,face->w,face->h,face->x,face->y,-1,-1); }
