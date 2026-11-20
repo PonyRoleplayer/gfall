@@ -682,6 +682,39 @@ int rmb_building_at(const df_u8 *rmb, df_u32 size, int record, int *type, int *f
     return 1;
 }
 
+int rmb_editor_marker(const df_u8 *rmb, df_u32 size, int record, float *x, float *z)
+{
+    df_u32 pos;
+    int nsub, i, found;
+
+    if (!rmb || size < (df_u32)FLD_BYTES) { return 0; }
+    nsub = (int)rmb[0];
+    if (nsub > 32) { return 0; }
+    pos = (df_u32)FLD_BYTES;
+    for (i = 0; i < nsub; i++) {
+        df_i32 span = df_ri32(rmb + FLD_SIZES + i * 4);
+
+        if (span < 17 || pos + (df_u32)span > size) { return 0; }
+        pos += (df_u32)span;
+    }
+    pos += (df_u32)rmb[1] * (df_u32)MODEL_BYTES;
+    found = 0;
+    for (i = 0; i < (int)rmb[2] && pos + FLAT_BYTES <= size; i++, pos += FLAT_BYTES) {
+        float fx, fz;
+        int inside;
+
+        if ((int)(df_ru16(rmb + pos + 12) >> 7) != EDITOR_ARCHIVE || (int)(df_ru16(rmb + pos + 12) & 0x7f) != record) { continue; }
+        /* The flat is placed as the block's own are (rmb_load): its file x, and z from the block's far side. */
+        fx = (float)df_ri32(rmb + pos);
+        fz = RMB_SIDE + (float)df_ri32(rmb + pos + 8);
+        inside = fx >= 0.0f && fx <= RMB_SIDE && fz >= 0.0f && fz <= RMB_SIDE;
+        /* One in the block is the visitor's; a stray one outside it is not. */
+        if (inside || !found) { *x = fx; *z = fz; found = 1; }
+        if (inside) { break; }
+    }
+    return found;
+}
+
 /* Byte 1 of a section 3 point's data word, at +12 (the original's restriction: mode 2). */
 #define SECTION_DATA 12
 #define RESTRICTION_SHIFT 8

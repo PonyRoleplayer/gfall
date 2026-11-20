@@ -46,6 +46,9 @@ enum { NEWSFLAG_REGIONAL = 1, NEWSFLAG_FACTION = 8 };
 #define TEXT_NEWS_RULER_GOSSIP 1406
 #define TEXT_NEWS_WAR_GOSSIP 1407
 #define TEXT_NEWS_WAR_WON 1408
+/* The general gossip: witches, vampires, Daedra, artifacts, the Thieves Guild, the Brotherhood, small talk. */
+#define TEXT_GOSSIP_FIRST 1450
+#define TEXT_GOSSIP_LAST 1456
 /* A rumour lives RUMOUR_LIFE minutes (about 30 days); the rounds' purge keeps a faction's, never a region's. */
 #define RUMOUR_LIFE 43140u
 /* A faction rumour naming a faction whose flag NEWSFLAG_HUSH is set passes news only on a roll over RUMOUR_HUSH_ROLL (func_0001D54B.c). */

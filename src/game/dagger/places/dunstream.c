@@ -602,13 +602,14 @@ static void hold_pictures(Chunk *c)
         }
         {
             const EnemyKind *ek;
+            int body_archive, body_record;
 
             ek = enemy_kind(kind);
             if (ek) {
                 hold(c, wres_slot(BLOOD_ARCHIVE, ek->blood, WRES_SPRITE));
             }
-            if (ek && ek->corpse_archive) {
-                hold(c, wres_slot(ek->corpse_archive, ek->corpse_record, WRES_SPRITE));
+            if (enemy_corpse(kind, &body_archive, &body_record)) {
+                hold(c, wres_slot(body_archive, body_record, WRES_SPRITE));
             }
         }
     }
@@ -798,7 +799,7 @@ static int creature_look(Entity *e, int kind, int female)
      * creature still stands.
      */
     {
-        const EnemyKind *ek;
+        int body_archive, body_record;
         int got;
 
         got = 1;
@@ -826,9 +827,8 @@ static int creature_look(Entity *e, int kind, int female)
             mem_zero(&e->pose[ENTITY_ATTACK], sizeof(EntityPose));
         }
         /* A body is one picture, facing every viewer (slot[1] none). */
-        ek = enemy_kind(kind);
-        if (ek && ek->corpse_archive) {
-            e->pose[ENTITY_DEAD].slot[0] = (df_u16)wres_slot(ek->corpse_archive, ek->corpse_record, WRES_SPRITE);
+        if (enemy_corpse(kind, &body_archive, &body_record)) {
+            e->pose[ENTITY_DEAD].slot[0] = (df_u16)wres_slot(body_archive, body_record, WRES_SPRITE);
             if (!size_of(e->pose[ENTITY_DEAD].slot[0], &e->pose[ENTITY_DEAD].w[0], &e->pose[ENTITY_DEAD].h[0])) {
                 mem_zero(&e->pose[ENTITY_DEAD], sizeof(EntityPose));
             }

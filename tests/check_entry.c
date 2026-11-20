@@ -33,7 +33,7 @@ void check_entry(void)
     check_expect(building_try_enter(&b, &p, night, 0, &e) && e.allow, "entry: a building a quest marked open was shut to the quest");
     b.quest_open = 0;
     b.type = 24;
-    check_expect(building_try_enter(&b, &p, night, 0, &e), "entry: the city wall was shut");
+    check_expect(building_try_enter(&b, &p, night, 0, &e), "entry: the ship's cabin (building type 24) was shut at night");
     /* A guild's own door at any hour; the Brotherhood's hall is shut to a stranger. */
     b.type = 11; b.faction = 108;
     check_expect(!building_try_enter(&b, &p, night, 0, &e), "entry: the Brotherhood's hall was open to a stranger");

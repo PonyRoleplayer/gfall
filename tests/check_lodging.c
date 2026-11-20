@@ -69,6 +69,10 @@ void check_lodging(void)
     site.kind = SITE_TOWN;
     site.location_kind = 5;
     check_expect(rest_allowed(&site, now0, &to_room) == REST_VAGRANT, "lodging: sleeping in a town's streets was allowed");
+    /* Aboard an owned ship, a berth: always welcome, in the streets of its location too. */
+    site.ship_berth = 1;
+    check_expect(rest_allowed(&site, now0, &to_room) == REST_OK, "lodging: a ship's berth refused rest");
+    site.ship_berth = 0;
     site.location_kind = 4;
     check_expect(rest_allowed(&site, now0, &to_room) == REST_OK, "lodging: a location of kind 4 refused rest");
     site.kind = SITE_INSIDE;

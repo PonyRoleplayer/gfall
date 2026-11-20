@@ -18,6 +18,8 @@ static df_u32 g_now;
 #define SAY_TRIES 8
 #define RANDOM_FACTION_TRIES 4096
 /* A faction's type (FACTION.TXT): 2 a group, 3 a subgroup, 7 a noble, 8 a coven, 9 a temple. */
+/* The name banks a ruler's name draws from: rand() & NAME_BANK_MASK, one of eight. */
+#define NAME_BANK_MASK 7
 #define TYPE_GROUP 2
 #define TYPE_SUBGROUP 3
 #define TYPE_NOBLE 7
@@ -187,13 +189,26 @@ static void ruler_name(int f, int old, char *out, int cap)
         if (d->parent == def(f)->id && d->type == TYPE_INDIVIDUAL) { df_copy(out, d->name, cap); return; }
     }
     s = old ? PS->seed[f] >> 16 : PS->seed[f] & 0xFFFFu;
-    name_seeded((int)(s & 7u), (int)((s >> 3) & 1u), s, out, cap);
+    /* macro_fl1 / macro_ol1: srand(the half), then name_generate(rand() & 7, rand() & 1), as FALL.EXE draws them. */
+    {
+        df_u32 keep = game_state()->random;
+        int bank, female;
+
+        random_seed(s);
+        bank = random_range(0,RAND_MAX_WATCOM) & NAME_BANK_MASK;
+        female = random_range(0,RAND_MAX_WATCOM) & 1;
+        name_generate(bank, female, out, cap);
+        random_seed(keep);
+    }
 }
 
 /* ruler_titles (FALL.EXE): from a number 1..12, King and Queen, Duke and Duchess, Marquis and Marquise, Count and Countess, Baron and Baroness, Lord and Lady: odd is a man, even a woman.
  * Our factions carry no ruler number, so a region's is its own (region % 12 + 1). */
 #define RULER_TITLES 12
 #define RULER_FATES 6
+
+/* The general gossip (1450..1456) names no faction, which the original's test for "player related" refuses, so it never wrote any: here it is written at the end of a round (a deliberate addition). */
+static int g_free_gossip;
 
 static void rumour_add(int f1, int f2, int kind, int region, int text)
 {
@@ -204,7 +219,7 @@ static void rumour_add(int f1, int f2, int kind, int region, int text)
     int i, tries, slot, noble, said_ok;
 
     if (!g_writing) { return; }
-    if (kind == NEWS_GOSSIP && !player_related(f1) && !player_related(f2)) { return; }
+    if (kind == NEWS_GOSSIP && !g_free_gossip && !player_related(f1) && !player_related(f2)) { return; }
     if (region < 0 && f1 >= 0) { region = region_of(f1); }
     if (region < 0 && f2 >= 0) { region = region_of(f2); }
     if (region < 0) { region = rolled(0, REGIONS - 1); }
@@ -222,7 +237,14 @@ static void rumour_add(int f1, int f2, int kind, int region, int text)
 
         ruler_name(noble, 1, old_ruler, sizeof(old_ruler)); w.ruler_old = old_ruler;
         w.title = titles[number]; w.pronoun = number & 1 ? "her" : "his";
-        w.fate = fates[(PS->seed[noble >= 0 ? noble : 0] >> 16) % RULER_FATES];
+        /* %olf: ruler_fates[rand_range(0, 5)] under srand(seed & 0xFFFF). */
+        {
+            df_u32 keep = game_state()->random;
+
+            random_seed(PS->seed[noble >= 0 ? noble : 0] & 0xFFFFu);
+            w.fate = fates[random_range(0,RULER_FATES-1)];
+            random_seed(keep);
+        }
     }
     temple[0] = 0;
     if (PS->persecuted[region] > 0) { const FactionDef *t = def(faction_index(PS->persecuted[region])); if (t) { for (i = 0; i < FACTION_NAME - 1 && t->name[i]; i++) { temple[i] = t->name[i]; } temple[i] = 0; } }
@@ -504,6 +526,10 @@ void politics_round(df_u32 now, int write)
     if (tally >= 3) { add_power(faction_index(FACTION_MERCHANTS), -1); }
     tally = 0; for (j = 0; j < REGIONS; j++) { tally += PS->groups[j][GROUP_WAR]; }
     if (tally >= 3) { add_power(faction_index(FACTION_MERCHANTS), 1); }
+    /* The general gossip: one of each of the seven texts, in no faction's name. */
+    g_free_gossip = 1;
+    for (j = TEXT_GOSSIP_FIRST; j <= TEXT_GOSSIP_LAST; j++) { rumour_add(-1, -1, NEWS_GOSSIP, -1, j); }
+    g_free_gossip = 0;
     g_writing = 0;
 }
 

@@ -159,6 +159,12 @@ static void check_politics(void)
         }
     }
     check_expect(ok, "politics: a rumour's flags, text or end are not by its kind");
+    {
+        int gossip = 0;
+
+        for (i = 0; i < RUMOURS_MOST; i++) { gossip += po->rumour[i].used && po->rumour[i].kind == NEWS_GOSSIP && !po->rumour[i].faction1 && !po->rumour[i].faction2; }
+        check_expect(gossip >= 3, "politics: a writing round left the general gossip (1450..1456) unwritten");
+    }
     for (i = 0; i < RUMOURS_MOST; i++) { po->rumour[i].used = 0; }
     po->rumour[0].used = 1; po->rumour[0].flags = NEWSFLAG_REGIONAL; po->rumour[0].region = 5; po->rumour[0].expires = now + 10u; df_copy(po->rumour[0].text, "Plague.", RUMOUR_TEXT);
     po->rumour[1].used = 1; po->rumour[1].flags = NEWSFLAG_FACTION; po->rumour[1].expires = now + 10000000u; df_copy(po->rumour[1].text, "A war.", RUMOUR_TEXT);

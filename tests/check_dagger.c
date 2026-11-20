@@ -12,6 +12,10 @@
 #include "engine/assets/vfs.h"
 #include "game/dagger/formats/vid.h"
 #include "game/dagger/formats/flc.h"
+#include "game/dagger/places/town.h"
+#include "game/dagger/places/travel.h"
+#include "game/dagger/tables/combatdefs.h"
+#include "game/dagger/tables/enemies.h"
 #include "game/dagger/formats/biog.h"
 #include "engine/core/mem.h"
 #include "game/dagger/formats/arch3d.h"
@@ -3380,6 +3384,33 @@ static void check_notice_boards(void)
     bsa_close(blocks);
 }
 
+/* A creature's body: FALL.EXE's table wins over the ENEMY###.CFG's where they differ (kinds 29 and 39), and every classic kind has one. */
+static void check_corpses(void)
+{
+    int k, bad = 0, f, r;
+
+    for (k = 0; k < 43; k++) {
+        int a, c;
+
+        foe_corpse(k, &f, &r);
+        bad += !enemy_corpse(k, &a, &c) || a != f || c != r;
+    }
+    check_expect(bad == 0, "corpses: a classic kind's body is not FALL.EXE's");
+    check_expect(enemy_corpse(29, &f, &r) && f == 400 && r == 5 && enemy_corpse(39, &f, &r) && f == 401 && r == 2, "corpses: kinds 29 and 39 do not use FALL.EXE's pictures");
+}
+
+/* A ship's arrival is editor marker 8 of its block (player_to_nearest_marker): both of "Your Ship" have one inside the block's 4096 square. */
+static void check_ship_marker(void)
+{
+    int k;
+
+    for (k = 1; k <= 2; k++) {
+        float x, z;
+
+        check_expect(town_marker(31, k, SHIP_MARKER, &x, &z) && x >= 0.0f && x <= 4096.0f && z >= 0.0f && z <= 4096.0f, "ship: the marker the player lands on is not in its block");
+    }
+}
+
 /* The princes' FLICs: each of the 16 opens, plays its first frame, 14 more, and the last, a delta back to the first, leaves the picture the first frame was. */
 static void check_flc(void)
 {
@@ -4115,6 +4146,8 @@ int check_dagger(const char *root_in)
     check_dungeon_people();
     check_ports();
     check_vid();
+    check_corpses();
+    check_ship_marker();
     check_flc();
     check_notice_boards();
     check_biog_modifiers();

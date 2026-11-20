@@ -827,6 +827,8 @@ int gfall_rest_site(RestSite *site)
 
     mem_zero(site, sizeof(*site));
     travel_here(&here, origin);
+    /* A ship owned and the player on its location (the streets of "Your Ship" or its cabin): a berth, always welcome (rest_allowed, rest.c 199..201). */
+    if (bank_state()->ship && here.kind != TRAVEL_DUNGEON && here.located && here.region == SHIP_REGION) { site->ship_berth = 1; }
     if (here.kind == TRAVEL_DUNGEON) {
         site->kind = SITE_DUNGEON;
     } else if (here.kind == TRAVEL_INSIDE && travel_building(&type, &faction, &quality, &place)) {

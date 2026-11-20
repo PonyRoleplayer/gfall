@@ -1,4 +1,5 @@
 #include "game/dagger/play/people/law.h"
+#include "game/dagger/play/combat/dungeon.h"
 #include "game/dagger/formats/factionfile.h"
 #include "game/dagger/play/combat/combat.h"
 #include "game/dagger/play/character/vitals.h"
@@ -444,9 +445,10 @@ int law_blow(int region)
     return BLOW_ASK;
 }
 
+/* The offer to surrender comes once per cycle: the question is asked again only after no creature at all is loaded (player_frame_update, func_00010585.c 147..148: creature_count == 0), not when the guards go. */
 void law_calm(void)
 {
-    if (!guards_present()) {
+    if (dungeon_alive() == 0) {
         g_asked = 0;
     }
 }

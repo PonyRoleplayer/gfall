@@ -8,6 +8,8 @@
 unsigned gfall_building_id(const TownBuilding *building);
 void gfall_building_name(const TownBuilding *building, int region, int index, char *out, int cap);
 void gfall_building_announce(const PlaceWhere *where);
+/* arrival_room_messages: for each tavern of the town where a room is still rented, "You have a room at <tavern> for <n> hours.". */
+void gfall_building_room_lines(const PlaceWhere *where);
 /* The player has come into a building (building_enter): the access grant, 5 or 255 for their own house. */
 void gfall_building_entered(const PlaceWhere *where);
 /* Each frame inside (player_frame_update): the interior's restriction at the player against the grant; trespass is a crime and the watch. Outside, a grant held is given up (building_exit). */

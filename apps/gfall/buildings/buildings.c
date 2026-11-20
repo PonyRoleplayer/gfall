@@ -26,6 +26,7 @@
 #include "game/dagger/formats/rmb.h"
 #include "game/dagger/places/travel.h"
 #include "game/dagger/play/people/entry.h"
+#include "game/dagger/play/people/lodging.h"
 #include "game/dagger/play/watcom.h"
 #include "game/dagger/tables/sounds.h"
 #include "engine/sound/ambience.h"
@@ -110,6 +111,28 @@ void gfall_building_announce(const PlaceWhere *where)
     if (df_eq(label, "Residence")) { label = "a residence"; }
     log_format(line, sizeof(line), "You've entered %s.", label);
     msg_set(line);
+}
+
+#define ROOM_LINE_HOURS_DIV 60
+void gfall_building_room_lines(const PlaceWhere *where)
+{
+    const TownBuilding *rows;
+    int count, i, k;
+    char name[65], line[MESSAGE_LEN];
+
+    rows = town_buildings(where->region, where->index, &count);
+    for (k = 0; rows && k < ROOMS_MOST; k++) {
+        const RoomInfo *room = &lodging_state()->room[k];
+
+        if (!room->building || room->expires <= game_state()->minutes) { continue; }
+        for (i = 0; i < count; i++) {
+            if (gfall_building_id(&rows[i]) != room->building) { continue; }
+            gfall_building_name(&rows[i], where->region, where->index, name, (int)sizeof(name));
+            log_format(line, sizeof(line), "You have a room at %s for %d hours.", name, (int)((room->expires - game_state()->minutes) / ROOM_LINE_HOURS_DIV) + 1);
+            msg_set(line);
+            break;
+        }
+    }
 }
 
 static df_u32 g_in_building;

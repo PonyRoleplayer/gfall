@@ -94,6 +94,11 @@ RecTable *enemy_table(void);
 RecTable *encounter_table(void);
 /* A kind's record, or 0. */
 const EnemyKind *enemy_kind(int kind);
+/*
+ * A creature's body picture: the TEXTURE archive and record. Two tables name it for a classic creature and they differ for two kinds (29: 400/6 in its ENEMY###.CFG, 400/5 in FALL.EXE; 39: none in the file,
+ * 401/2 in FALL.EXE): FALL.EXE's (monster_corpse_textures, which the game reads when a creature dies) is the one used; a class enemy and a mod's kind have only their ENEM row. 0 when the kind has no body.
+ */
+int enemy_corpse(int kind, int *archive, int *record);
 
 /* Mobile ids. Classic's run below ENEMY_KINDS; a mod may add more past it. */
 #define ENEMY_KINDS 147

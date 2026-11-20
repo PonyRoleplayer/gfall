@@ -1,4 +1,5 @@
 #include "game/dagger/tables/enemies.h"
+#include "game/dagger/tables/combatdefs.h"
 #include "game/dagger/formats/dungeon.h"
 
 /* See enemies.h and docs/entities.md. */
@@ -353,4 +354,15 @@ int enemy_class_armor(int klass)
     static const signed char armor[ENEMY_CLASS_COUNT + 1] = { 8, 5, 5, 5, 8, 5, 7, 7, 5, 7, 7, 5, 4, 6, 6, 4, 4, 4, 4 };
 
     return klass >= 0 && klass <= ENEMY_CLASS_COUNT ? armor[klass] : armor[0];
+}
+
+int enemy_corpse(int kind, int *archive, int *record)
+{
+    const EnemyKind *e;
+
+    if (ENEMY_IS_CLASSIC(kind)) { foe_corpse(kind, archive, record); return *archive != 0; }
+    e = enemy_kind(kind);
+    if (!e || !e->corpse_archive) { return 0; }
+    *archive = e->corpse_archive; *record = e->corpse_record;
+    return 1;
 }

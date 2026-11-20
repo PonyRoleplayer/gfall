@@ -28,7 +28,9 @@ enum {
     /* Where a save says. */
     LAND_SAVED,
     /* On the walkable cell nearest the place's start: a town's middle can be inside a building. */
-    LAND_STREET
+    LAND_STREET,
+    /* On the place's editor marker (a ship's deck, travel_go_aboard). */
+    LAND_MARKER
 };
 
 /* A town's walking cells are 64 units; how many rings of them to look through for a street. */
@@ -100,6 +102,15 @@ int travel_go_to_town(int region, int index)
     g_next.index = index;
     g_land = LAND_STREET;
     g_asked = 1;
+    return 1;
+}
+
+int travel_go_aboard(int region, int index)
+{
+    if (!travel_go_to_town(region, index)) {
+        return 0;
+    }
+    g_land = LAND_MARKER;
     return 1;
 }
 
@@ -451,7 +462,17 @@ static int open_world(Level *level, int radius)
         }
         stream_world(g_start.x, g_start.z, &wx, &wz);
         if (wild_town(wx, wz, &x0, &z0, &x1, &z1, &blocks, &climate, &type)) {
-            if (g_land == LAND_STREET) {
+            float tx, tz;
+
+            if (g_land == LAND_MARKER && town_marker(g_next.region, g_next.index, SHIP_MARKER, &tx, &tz)) {
+                /* The deck: the marker's point in the town, from its corner (player_to_nearest_marker, the ship's 8). */
+                double mx = x0 + (double)tx;
+                double mz = z0 + (double)tz;
+
+                g_start.x += (float)(mx - wx);
+                g_start.y += wild_ground(mx, mz) - wild_ground(wx, wz);
+                g_start.z += (float)(mz - wz);
+            } else if (g_land == LAND_STREET || g_land == LAND_MARKER) {
                 /* The edge facing the way they came, not the middle of the town. */
                 stand_outside(x0, z0, x1, z1);
             } else {

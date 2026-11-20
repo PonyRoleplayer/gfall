@@ -83,6 +83,10 @@ df_u32 travel_place_key(void);
  */
 int travel_go_to_town(int region, int index);
 /* The same from the travel map: a dungeon's outside is landed on by its way down, as a hold first left is. */
+/* The editor marker a ship's arrival stands on (player_to_nearest_marker(location, 8), inven.c func_00098A15). */
+#define SHIP_MARKER 8
+/* travel_go_to_town, landing on that marker instead of the street edge. */
+int travel_go_aboard(int region, int index);
 int travel_go_to_place(int region, int index, int by_way_down);
 /* The next place is a dungeon of the region, by its index in the region's dungeon list, entered on its start marker (the vampire's crypt: location_load_nth_dungeon_of_type then map_goto_location,
  * docs/curses.md 4.5). Asked at once; 0 for a place the map does not have. */

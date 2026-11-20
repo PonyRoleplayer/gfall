@@ -26,6 +26,9 @@ int rmb_model_ids(const df_u8 *rmb, df_u32 size, df_u32 *ids, int cap);
 /* A building record's type, faction, quality (0..20) and place in its block, as its outside is placed. 0 past the block's records. */
 int rmb_building_at(const df_u8 *rmb, df_u32 size, int record, int *type, int *faction, int *quality, float *x, float *z);
 
+/* The block's own editor marker (199) of that record, as the block places its flats: where a ship's deck starts (8). The one inside the block when several are. 0 when there is none. */
+int rmb_editor_marker(const df_u8 *rmb, df_u32 size, int record, float *x, float *z);
+
 /*
  * The inside of building record (its subrecord): models, flats, people,
  * the editor markers (199: 8 is where a visitor enters), and the hinged

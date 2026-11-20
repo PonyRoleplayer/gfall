@@ -150,6 +150,7 @@ TABLES_SRC := \
 	src/game/dagger/tables/quests.c \
 	src/game/dagger/tables/swaps.c \
 	src/game/dagger/tables/enemies.c \
+	src/game/dagger/tables/combatdefs.c \
 	src/game/dagger/tables/forecast.c \
 	src/game/dagger/tables/sounds.c
 
@@ -191,7 +192,6 @@ GFALL_GAME_SRC := \
 	src/game/dagger/tables/shopdefs.c \
 	src/game/dagger/tables/datedefs.c \
 	src/game/dagger/tables/holidaydefs.c \
-	src/game/dagger/tables/combatdefs.c \
 	src/game/dagger/tables/doordefs.c \
 	src/game/dagger/tables/progressdefs.c \
 	src/game/dagger/tables/magicdefs.c \
@@ -502,6 +502,7 @@ DAT_SRC := \
 	src/game/dagger/tables/names.c \
 	src/game/dagger/tables/quests.c \
 	src/game/dagger/tables/enemies.c \
+	src/game/dagger/tables/combatdefs.c \
 	src/game/dagger/tables/forecast.c \
 	src/game/dagger/formats/texture.c \
 	src/game/dagger/formats/palette.c \

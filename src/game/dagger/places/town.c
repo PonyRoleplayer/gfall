@@ -234,3 +234,15 @@ df_u32 town_building_key(int region, int index, int block, int record)
     }
     return BUILDING_KEY_KIND | (h & ~BUILDING_KEY_KIND);
 }
+
+int town_marker(int region, int index, int record, float *x, float *z)
+{
+    unsigned size;
+    const unsigned char *bytes = town_block_bytes(region, index, 0, &size);
+    float mx, mz;
+
+    if (!bytes || !rmb_editor_marker(bytes, size, record, &mx, &mz)) { return 0; }
+    *x = (float)g_town.block[0].x * BLOCK_SIDE + mx;
+    *z = (float)g_town.block[0].z * BLOCK_SIDE + mz;
+    return 1;
+}

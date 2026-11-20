@@ -59,6 +59,8 @@ const TownBuilding *town_building(int region, int index, int block, int record);
  * The top two bits are set (a building's, as ground piles have another), the rest a hash of the four.
  */
 #define BUILDING_KEY_KIND (3u << 30)
+/* Where the editor marker `record` (199) of the town's block 0 stands in the town's own frame (the corner of the blocks the origin). 0 when there is none. */
+int town_marker(int region, int index, int record, float *x, float *z);
 df_u32 town_building_key(int region, int index, int block, int record);
 
 #endif

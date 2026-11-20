@@ -427,7 +427,7 @@ void gfall_transport(void)
     back->where = world_where()->where;
     body = move_body(); back->x = body->feet[0]; back->y = body->feet[1]+body->eye_now; back->z = body->feet[2];
     move_capture(&motion); back->yaw = motion.yaw; back->pitch = motion.pitch;
-    if (travel_go_to_town(SHIP_REGION,bank_state()->ship == SHIP_LARGE ? 2 : 1)) { back->valid = 1; msg_set("You board your ship."); }
+    if (travel_go_aboard(SHIP_REGION,bank_state()->ship == SHIP_LARGE ? 2 : 1)) { back->valid = 1; msg_set("You board your ship."); }
     else { msg_set("Your ship is not at anchor."); }
 }
 
@@ -948,6 +948,7 @@ void seam_land(Camera *camera, int restoring, int changing)
         int holiday = holiday_today((unsigned)game_state()->minutes, world_where()->where.region);
 
         if (holiday > 0) { msg_set(words_state(TEXT_HOLIDAY_FIRST + holiday)); }
+        gfall_building_room_lines(&world_where()->where);
     }
 }
 

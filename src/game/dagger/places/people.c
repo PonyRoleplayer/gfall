@@ -869,7 +869,7 @@ void people_fell(Entity *e)
 
 int people_lay_corpse(Entity *e)
 {
-    const EnemyKind *k;
+    int body_archive, body_record;
     Person *p;
     int i;
     int slot;
@@ -879,11 +879,10 @@ int people_lay_corpse(Entity *e)
     if (!living(i) || g_per[i].effect || g_set[g_per[i].set].archive != GUARD_ARCHIVE) {
         return 0;
     }
-    k = enemy_kind(ENEMY_CITY_WATCH);
-    if (!k || !k->corpse_archive) {
+    if (!enemy_corpse(ENEMY_CITY_WATCH, &body_archive, &body_record)) {
         return 0;
     }
-    slot = wres_slot(k->corpse_archive, k->corpse_record, WRES_SPRITE);
+    slot = wres_slot(body_archive, body_record, WRES_SPRITE);
     if (slot < 0 || !wres_acquire(slot) || !size_of(slot, &e->pose[ENTITY_DEAD].w[0], &e->pose[ENTITY_DEAD].h[0])) {
         return 0;
     }
