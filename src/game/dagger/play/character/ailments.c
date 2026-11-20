@@ -26,7 +26,7 @@ static int vulnerable(int target, int bit, int no_resist, int modifier)
     CharacterState who;
     ClassInfo career;
     int base[ATTRS];
-    if (!magic_target(target,&who,&career,base) || who.level == 1 ||
+    if (!magic_target(target,&who,&career,base) || who.level == AILMENT_PROTECTED_LEVEL ||
         (target == -1 && (career.immunity & bit))) { return 0; }
     /* The resist roll gives RESIST_FULL when the roll beats the chance, that is, when the target is not resisting: the infection or poison takes then. (FALL.EXE tests the other way, `== 100` stops it, so an
      * immune target is always infected and a fragile one never: not kept.) */

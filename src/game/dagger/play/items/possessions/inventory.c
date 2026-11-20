@@ -266,8 +266,12 @@ int possessions_use(df_u32 id)
         g_drug = 0;
     }
     if (item->group == ITEM_GROUP_DRUGS && item->index >= 0 && item->index < 4) {
-        /* inven.c consumes the entire drug record, even when level-one
-         * protection or class immunity rejects its poison. */
+        /* inven.c consumes the whole drug even when class immunity rejects its poison (kept); at level one the poison is refused before it is made and the drug is used up for nothing
+         * (a bug: here it stays in the pack, docs/fixed-bugs.md). */
+        if (character_state()->level == AILMENT_PROTECTED_LEVEL) {
+            df_copy(possessions_view.notice,"Nothing happens; you keep it.",sizeof(possessions_view.notice)); possessions_view.revision++;
+            return 1;
+        }
         poison_apply(-1,item->index+136,1);
         object_delete(id);
         df_copy(possessions_view.notice,"You consume the drug.",sizeof(possessions_view.notice)); possessions_view.revision++;

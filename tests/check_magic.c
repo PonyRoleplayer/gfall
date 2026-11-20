@@ -206,6 +206,9 @@ static void poison_variants(void)
     fixture(0); drug = item_create(game_state()->inventory_id,0,0,0);
     check_expect(drug && possessions_use(drug) && !object_at(drug) && ailments() == 1 &&
                  magic_state()->ailment[0].id == 136,"inventory Use consumes an Indulcet drug into its original delayed poison record");
+    /* At level one the poison is refused, and the drug stays in the pack (FALL.EXE used it up for nothing). */
+    fixture(0); character_state()->level = AILMENT_PROTECTED_LEVEL; drug = item_create(game_state()->inventory_id,0,0,0);
+    check_expect(drug && possessions_use(drug) && object_at(drug) && ailments() == 0,"a drug used at level one was spent for nothing");
 }
 static void infections(void)
 {
