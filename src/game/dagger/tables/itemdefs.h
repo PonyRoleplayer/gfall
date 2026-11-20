@@ -41,7 +41,7 @@ enum {
     ITEM_GROUP_CURRENCY = 28
 };
 /* Indexes in ITEM_GROUP_MISC: the spellbook, a soul trap, a letter of credit. In ITEM_GROUP_WEAPON: the two bows and the arrow. */
-enum { MISC_SPELLBOOK = 0, MISC_SOUL_TRAP = 1, MISC_LETTER_OF_CREDIT = 2 };
+enum { MISC_SPELLBOOK = 0, MISC_SOUL_TRAP = 1, MISC_LETTER_OF_CREDIT = 2, MISC_HOUSE_DEED = 6 };
 enum { WEAPON_SHORT_BOW = 16, WEAPON_LONG_BOW = 17, WEAPON_ARROW = 18 };
 
 /*

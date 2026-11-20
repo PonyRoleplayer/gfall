@@ -15,6 +15,8 @@
 #include "game/dagger/play/ui/hud.h"
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/items/describe.h"
+#include "game/dagger/play/magic/itemmaker.h"
+#include "game/dagger/play/magic/potion.h"
 #include "game/dagger/play/save/save.h"
 #include "game/dagger/play/combat/weapon.h"
 #include "game/dagger/play/ui/options.h"
@@ -743,6 +745,31 @@ static void poisoned_weapons(void)
         weapon_poison_spend(sword);
         item_info(sword,text,sizeof(text));
         check_expect(!strstr(text,"Poisoned"), "item info: a spent poison still shows");
+        /* An enchanted sword is told by 1012 (no material in front of its name), a plain one by 1001. */
+        {
+            char plain[300];
+            ItemEnchant *row = item_enchant_edit(0);
+            int k;
+
+            item_info(sword,plain,sizeof(plain));
+            row->item = sword; row->identified = 1;
+            for (k = 0; k < 10; k++) { row->type[k] = -1; row->param[k] = -1; }
+            row->type[0] = 5; row->param[0] = 0;
+            item_info(sword,text,sizeof(text));
+            check_expect(item_enchanted(sword) && strlen(text) < strlen(plain), "item info: an enchanted sword is not told by record 1012");
+            row->item = 0;
+        }
+        /* A bottle with a recipe is told by 1008 with the potion's name. */
+        {
+            df_u32 bottle = item_create(game_state()->inventory_id,POTION_GROUP,POTION_INDEX,-1);
+
+            if (bottle) {
+                object_edit(bottle)->message = 1;
+                item_info(bottle,text,sizeof(text));
+                check_expect(potion_name(0)[0] && strstr(text,potion_name(0)) != 0, "item info: a potion's bottle (1008) does not name the potion");
+                drop_bag(bottle);
+            }
+        }
         drop_bag(sword);
     }
     character_state()->level = 1;

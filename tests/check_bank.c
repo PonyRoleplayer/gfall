@@ -1,5 +1,7 @@
 #include "check_bank.h"
 #include "check_util.h"
+#include "game/dagger/tables/itemdefs.h"
+#include "game/dagger/play/items/describe.h"
 #include "game/dagger/play/people/bank.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/items/inventory.h"
@@ -11,6 +13,7 @@
 #include <string.h>
 
 /* By hand, from docs/economy-math.md ("Bank, houses, ships, loans"). Region 17 is the test's bank. */
+static void deed_names(char *region, char *town, int cap) { strncpy(region, "Test Province", (size_t)cap); strncpy(town, "Test Town", (size_t)cap); }
 static int gift_houses(df_u32 *ids, int *prices, int cap) { (void)cap; ids[0] = 501u; prices[0] = 300000; ids[1] = 502u; prices[1] = 400000; return 2; }
 
 void check_bank(void)
@@ -83,6 +86,24 @@ void check_bank(void)
                  "bank: a repayment bigger than the balance was not made good from the gold");
 
     /* Selling a house or a ship: the question, then the price less 15% into the account. */
+    /* A house bought brings its deed, said by 1073 with the names kept; its sale takes the deed away. */
+    {
+        int k, deeds = 0, t2;
+        char info[200];
+        df_u32 deed = 0;
+
+        bank_set_names(deed_names);
+        b->house = 0; b->account[region].balance = 5000;
+        check_expect(bank_buy_house(region, 124u, 1000, &t2) == BANK_DONE && !strcmp(b->house_town, "Test Town") && !strcmp(b->house_region, "Test Province"), "bank: a bought house did not keep its names");
+        for (k = 0; k < OBJECTS; k++) { const ObjectInfo *o = &game_state()->object[k]; if (o->id && o->group == ITEM_GROUP_MISC && o->index == MISC_HOUSE_DEED) { deeds++; deed = o->id; } }
+        check_expect(deeds == 1, "bank: a bought house did not bring one deed");
+        if (deed) { item_info(deed, info, sizeof(info)); check_expect(strstr(info, "Test Town") && strstr(info, "Test Province"), "bank: the deed (1073) does not name the house's region and town"); }
+        bank_set_names(0);
+        b->account[region].balance = 0;
+        check_expect(bank_sell_house(region, 1, &t2) == BANK_DONE, "bank: the bought house did not sell");
+        for (k = 0, deeds = 0; k < OBJECTS; k++) { const ObjectInfo *o = &game_state()->object[k]; deeds += o->id && o->group == ITEM_GROUP_MISC && o->index == MISC_HOUSE_DEED; }
+        check_expect(deeds == 0, "bank: a sold house left its deed");
+    }
     b->house = 123;
     b->house_price = 1000;
     check_expect(bank_sell_house(region, 0, &text) == BANK_ASK && text == BANK_TEXT_ASK_SELL_HOUSE && b->house == 123, "bank: selling a house did not ask");

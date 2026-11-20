@@ -44,6 +44,8 @@ enum { SPELL_COST_DURATION_CHANCE = 1, SPELL_COST_DURATION_MAGNITUDE, SPELL_COST
 #define SPELL_EFFECTS 3
 #define GROUP_LAST_CONDITION 46
 #define GROUP_39 39
+/* The Identify spell (spfx_identify): the cast is paid back, its chance is kept for the items (the guild's price in spell points each) and the inventory opens in identify mode: magic_identify_take. */
+/* GROUP_IDENTIFY (the group of effect 40) is in the effect table's enum. */
 #define GROUP_42 42
 #define WORDS_NO_EFFECTS 18
 /* The cast animation is CAST_FRAMES frames at BIOS_HZ, done after CAST_TICKS ticks. */
@@ -92,6 +94,8 @@ enum { SPELL_COST_DURATION_CHANCE = 1, SPELL_COST_DURATION_MAGNITUDE, SPELL_COST
 /* spell_cost: each effect costs (SPELL_COST_SKILL_CEILING - the school's skill) percent of its raw cost; the target's factor halves the sum; a spell costs SPELL_COST_MIN at least. */
 #define SPELL_COST_SKILL_CEILING 110
 #define SPELL_COST_MIN 5
+/* The chance an Identify spell cast on the player left (lock_open_chance), 0 when none is waiting; taking it clears it. */
+int magic_identify_take(void);
 int magic_resist(int index, int element, int class_bit, int modifier);
 int magic_chance(int index, int group, int sub);
 void magic_apply(int spell, int caster, int target, int level, int no_resist);

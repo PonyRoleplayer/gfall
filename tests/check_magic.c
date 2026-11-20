@@ -1,5 +1,6 @@
 #include "check_magic.h"
 #include "check_util.h"
+#include "game/dagger/tables/magic.h"
 #include "game/dagger/play/magic/magic.h"
 #include "game/dagger/play/combat/combat.h"
 #include "game/dagger/play/character/ailments.h"
@@ -340,6 +341,22 @@ void check_magic(void)
     for (i = 0; i < ATTRS; i++) { g_fixture.who.attribute[i] = g_fixture.base_attribute[i] = 50; }
     for (i = 0; i < SKILLS; i++) { g_fixture.who.skill[i] = 50; }
     costs_and_durations(); missiles_and_art(); defenses_and_recall(); souls_and_rest(); creature_casting(); poison_variants(); infections();
+    /* The Identify spell: cast on the player it leaves its chance for the items and gives its cost back. */
+    {
+        SpellDef made;
+        int k, chance;
+        CharacterState *me = character_state();
+
+        /* No standard spell has the effect: a spell of the player's own does (the spell maker). */
+        mem_zero(&made,sizeof(made));
+        for (k = 0; k < 3; k++) { made.group[k] = MAGIC_EFFECT_NONE; }
+        made.id = 4000; made.group[0] = GROUP_IDENTIFY; made.sub[0] = 255; made.chance[0][0] = 40; made.target = 0; made.icon = 1;
+        me->magicka = 100; magic_state()->paid = 40;
+        magic_apply_def(&made,made.id,-1,-1,10,1);
+        chance = magic_identify_take();
+        check_expect(chance == 40 && magic_identify_take() == 0 && me->magicka == 140, "magic: an Identify spell left no chance (40), left one twice, or did not give its cost back");
+        me->magicka = me->max_magicka;
+    }
     g_bad = *game_state(); g_bad.magic.ready = 0x12345678u;
     check_expect(!state_valid(&g_bad),"save validation rejects a ready spell with no owned record");
     g_bad = *game_state(); g_bad.magic.ailment[0].active = 1; g_bad.magic.ailment[0].id = 127;

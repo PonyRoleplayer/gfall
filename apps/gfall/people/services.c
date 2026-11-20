@@ -4,6 +4,7 @@
 #include "game/dagger/play/travel/maps.h"
 #include "game/dagger/play/quests/quest.h"
 #include "game/dagger/play/ui/movie.h"
+#include "game/dagger/play/ui/msg.h"
 #include "../seam.h"
 #include "../screen/screen.h"
 #include "../sound.h"
@@ -521,6 +522,44 @@ static void hall_identify(void)
         item_name(item,names[n++],LIST_NAME);
     }
     if (n) { possessions_list((const char (*)[LIST_NAME])names,n,hall_identify_pick); }
+    else { possessions_message("You have no unidentified magical items.",0); }
+}
+
+/* The Identify spell (trade_identify_button, outside a Mages Guild): each item chosen costs its price in spell points (the guild's gold price, free on the holiday of free identification) and is identified when the spell's chance is at least a roll of 1..100; only an item with powers that is not yet known can be chosen. */
+static int g_spell_identify_chance;
+
+static void spell_identify_pick(int row)
+{
+    CharacterState *me = character_state();
+    int price;
+
+    if (row < 0 || row >= LIST_MOST || !magic_item_unknown(g_identify_items[row])) { return; }
+    price = hall_identify_price(g_identify_items[row]);
+    if (price > me->magicka + me->spell_points_bonus) { msg_set("You do not have enough spell points."); return; }
+    me->magicka -= price; if (me->magicka < 0) { me->magicka = 0; }
+    if (g_spell_identify_chance >= random_range(1, 100)) {
+        char name[64];
+
+        magic_item_identify(g_identify_items[row]);
+        item_name(object_at(g_identify_items[row]),name,sizeof(name));
+        possessions_message(name,0);
+    } else { msg_set("The spell failed to reveal its powers."); }
+}
+
+void gfall_spell_identify(int chance)
+{
+    static char names[LIST_MOST][LIST_NAME];
+    const ObjectInfo *item;
+    int i, n;
+
+    g_spell_identify_chance = chance;
+    for (i = n = 0; i < OBJECTS && n < LIST_MOST; i++) {
+        item = &game_state()->object[i];
+        if (!item->id || item->parent != game_state()->inventory_id || !magic_item_unknown(item->id)) { continue; }
+        g_identify_items[n] = item->id;
+        item_name(item,names[n++],LIST_NAME);
+    }
+    if (n) { possessions_list((const char (*)[LIST_NAME])names,n,spell_identify_pick); }
     else { possessions_message("You have no unidentified magical items.",0); }
 }
 

@@ -1,4 +1,5 @@
 #include "game/dagger/play/people/bank.h"
+#include "engine/core/mem.h"
 #include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/combat/combat.h"
@@ -259,6 +260,32 @@ void bank_set_port(int (*port)(void)) { g_port = port; }
 int bank_houses(df_u32 *ids, int *prices, int cap) { return g_houses ? g_houses(ids, prices, cap < HOUSES_MOST ? cap : HOUSES_MOST) : 0; }
 int bank_in_port(void) { return g_port ? g_port() : 0; }
 
+static void (*g_names)(char *region, char *town, int cap);
+void bank_set_names(void (*names)(char *region, char *town, int cap)) { g_names = names; }
+
+/* A house is owned from now: its names are kept and its deed is in the pack. */
+static void own_house(void)
+{
+    BankState *b = bank_state();
+
+    mem_zero(b->house_region, sizeof(b->house_region)); mem_zero(b->house_town, sizeof(b->house_town));
+    if (g_names) { g_names(b->house_region, b->house_town, BANK_PLACE_NAME); }
+    item_create(game_state()->inventory_id, ITEM_GROUP_MISC, MISC_HOUSE_DEED, -1);
+}
+
+/* A house sold: its deed goes from the pack. */
+static void disown_house(void)
+{
+    int i;
+
+    for (i = 0; i < OBJECTS; i++) {
+        const ObjectInfo *o = &game_state()->object[i];
+
+        if (o->id && o->type == RECORD_ITEM && o->group == ITEM_GROUP_MISC && o->index == MISC_HOUSE_DEED) { object_delete(o->id); }
+    }
+    mem_zero(bank_state()->house_region, BANK_PLACE_NAME); mem_zero(bank_state()->house_town, BANK_PLACE_NAME);
+}
+
 int bank_buy_house(int region, df_u32 id, int price, int *text)
 {
     BankAccount *a;
@@ -273,6 +300,7 @@ int bank_buy_house(int region, df_u32 id, int price, int *text)
     a->balance -= price;
     b->house = id;
     b->house_price = price;
+    own_house();
     *text = TEXT_HOUSE_BOUGHT;
     return BANK_DONE;
 }
@@ -308,6 +336,7 @@ int bank_gift_house(void)
     pick = random_range(0, n - 1);
     /* The Seneschal's house is at its list price (the original left the previous owner's price, so its sale offered 85 % of a stale one). */
     bank_state()->house = ids[pick]; bank_state()->house_price = prices[pick];
+    own_house();
     return 1;
 }
 
@@ -337,6 +366,7 @@ int bank_sell_house(int region, int confirmed, int *text)
     r = sell(region, &b->house_price, &owned, BANK_TEXT_ASK_SELL_HOUSE, confirmed, text);
     if (r == BANK_DONE) {
         empty_house(b->house);
+        disown_house();
         b->house = 0;
     }
     return r;

@@ -200,7 +200,7 @@ static void check_legacy_save(const df_u8 *current, df_u32 size)
     /* Standing, from schema 8, sits between the magic rows and the world: ready, a count, a pair a faction and a pair a region. */
     static df_u8 quest_buf[QUEST_BLOB];
     int quest_bytes = quest_pack(quest_buf, QUEST_BLOB);
-    df_u32 stand = 8u + (game_state()->standing.ready ? (df_u32)faction_total()*8u + REGIONS*8u : 0u) + (REGIONS*16u + 16u) + (ROOMS_MOST*12u + 4u) + (4u + REGIONS*4u) + (MEMBERSHIPS*24u + 16u + 4u + 4u + 20u) + CUSTOM_SPELLS*(4u + 89u) + ENCHANTED_ITEMS*(4u + 4u + 80u) + 4u + 4u + (df_u32)quest_bytes + CURSE_WIRE_BYTES + BIO_WIRE_BYTES + (4u + (game_state()->standing.ready ? (df_u32)faction_total()*FACTION_LINKS*8u : 0u) + 4u + REGIONS*29u + REGIONS*14u + REGIONS*4u + FACTIONS_MAX + FACTIONS_MAX*4u + RUMOURS_MOST*(4u+4u+4u+3u+4u+RUMOUR_TEXT)) + (df_u32)game_state()->world_count * 18u;
+    df_u32 stand = 8u + (game_state()->standing.ready ? (df_u32)faction_total()*8u + REGIONS*8u : 0u) + (REGIONS*16u + 16u) + (ROOMS_MOST*12u + 4u) + (4u + REGIONS*4u) + (MEMBERSHIPS*24u + 16u + 4u + 4u + 20u) + CUSTOM_SPELLS*(4u + 89u) + ENCHANTED_ITEMS*(4u + 4u + 80u) + 4u + 4u + (df_u32)quest_bytes + CURSE_WIRE_BYTES + BIO_WIRE_BYTES + 2u*BANK_PLACE_NAME + (4u + (game_state()->standing.ready ? (df_u32)faction_total()*FACTION_LINKS*8u : 0u) + 4u + REGIONS*29u + REGIONS*14u + REGIONS*4u + FACTIONS_MAX + FACTIONS_MAX*4u + RUMOURS_MOST*(4u+4u+4u+3u+4u+RUMOUR_TEXT)) + (df_u32)game_state()->world_count * 18u;
     check_expect(size > 24u+1272u+256u*124u && df_ru32(current+24+1272) == WORLD_ROOT,
                  "fixture locates the documented original object section");
     if (size <= 24u+1272u+256u*124u) { return; }

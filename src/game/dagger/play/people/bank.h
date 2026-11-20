@@ -43,6 +43,8 @@ enum {
     BANK_TEXT_CANNOT_AFFORD = 454
 };
 
+#define BANK_PLACE_NAME 32
+
 typedef struct BankAccount {
     int balance, loan_owed;
     df_u32 loan_due;
@@ -55,6 +57,8 @@ typedef struct BankState {
     df_u32 house;
     int house_price;
     int ship, ship_price;
+    /* saved_region_name and saved_location_name (SAVEVARS 710..711): where the house is, said by %hrg and %htwn (parse.c 803..811); BANK_PLACE_NAME bytes each. */
+    char house_region[BANK_PLACE_NAME], house_town[BANK_PLACE_NAME];
 } BankState;
 
 /*
@@ -125,6 +129,9 @@ int bank_buy_ship(int region, int kind, int *text);
 /* The Seneschal's gift: the house, no price (the sale then offers 85 % of whatever price was kept). */
 /* The Seneschal's gift: one of the town's houses for sale at random, at its price; 0 when the town has none. */
 int bank_gift_house(void);
+/* The game says the region's name and the town's, to save with a house when it is bought or given (bank_house_bought: saved_region_name, saved_location_name). */
+void bank_set_names(void (*names)(char *region, char *town, int cap));
+/* The deed (group 27, index MISC_HOUSE_DEED: template 285, "House deed"): FALL.EXE has it and TEXT 1073 but never makes it; here the bank hands one over with a house and takes it back with its sale. */
 /* TEXT.RSC 462 says it was given. */
 #define TEXT_HOUSE_GIVEN 462
 /* gold_total: the coins carried and every letter of credit's value, what the bank shows as the player's gold. */

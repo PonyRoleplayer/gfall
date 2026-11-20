@@ -182,6 +182,15 @@ static int houses_for_sale(df_u32 *ids, int *prices, int cap)
     return n;
 }
 
+/* saved_region_name and saved_location_name: the province the house is in and the town. */
+static void house_names(char *region, char *town, int cap)
+{
+    const Faction *province = faction_province_of(travel_region());
+
+    df_copy(region, province ? province->name : "", cap);
+    df_copy(town, town_name(), cap);
+}
+
 static int in_port(void)
 {
     const PlaceWhere *w;
@@ -205,6 +214,7 @@ void gfall_building_install(void)
 {
     bank_set_houses(houses_for_sale);
     bank_set_port(in_port);
+    bank_set_names(house_names);
     names_set_expand(building_expand);
     door_set_street_bash(gfall_building_bash);
     door_set_castle(in_castle);

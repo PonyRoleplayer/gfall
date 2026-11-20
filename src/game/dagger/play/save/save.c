@@ -534,6 +534,12 @@ static void transfer(Wire *w, GameState *s)
         wire_df_u32_politics(w, po);
     }
 
+    /* The house's region and town names (schema 21). */
+    if (w->version >= 21) {
+        wire_bytes(w, s->bank.house_region, BANK_PLACE_NAME); wire_bytes(w, s->bank.house_town, BANK_PLACE_NAME);
+        s->bank.house_region[BANK_PLACE_NAME - 1] = 0; s->bank.house_town[BANK_PLACE_NAME - 1] = 0;
+    }
+
     /* The biography's lasting modifiers (schema 19). */
     if (w->version >= 19) {
         CharacterState *c = &s->who;

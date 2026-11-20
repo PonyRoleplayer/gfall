@@ -139,6 +139,9 @@ int pointer_region(void)
     return mouse_region(g_pointer_x, g_pointer_y, 320, bar ? 154 : 200, 0, 0);
 }
 
+static void (*g_identify)(int chance);
+void play_set_identify(void (*open)(int chance)) { g_identify = open; }
+
 void set_sound(void (*fn)(int id))
 {
     g_sound = fn;
@@ -674,6 +677,8 @@ int play_frame(const PlayIn *in, Camera *cam, const Scene *scene)
                 dungeon_strike(scene,cam,&strike);
             }
             magic_frame(scene,cam,in,blocks);
+            /* An Identify spell cast: the game opens the items to choose from (spfx_identify opens the inventory in identify mode). */
+            { int chance = magic_identify_take(); if (chance && g_identify) { g_identify(chance); } }
             dungeon_step(scene,cam,in->dt);
             guards_tick(in->dt);
             law_calm();

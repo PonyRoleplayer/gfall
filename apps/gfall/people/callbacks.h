@@ -9,6 +9,8 @@ int gfall_shelf_used(int index, int variant);
 int gfall_container_used(int index);
 /* A notice board used (click_show_building_info, click.c 1088): the town name, then the region's regional news. */
 void gfall_notice_used(void);
+/* An Identify spell was cast: the unidentified items to choose from. */
+void gfall_spell_identify(int chance);
 /* A notice board used (click_show_building_info, click.c 1088): the town's name, then the region's regional news. */
 void gfall_notice_used(void);
 int gfall_person_used(const Camera *aim, int mode);

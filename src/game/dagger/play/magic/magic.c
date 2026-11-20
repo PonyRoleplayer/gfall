@@ -342,6 +342,9 @@ static void dispel_prompt(int target, const Effect *effect)
     else { msg_set("There are no spells to dispel."); }
 }
 
+static int g_identify_chance;
+int magic_identify_take(void) { int c = g_identify_chance; g_identify_chance = 0; return c; }
+
 static void apply_effect(Effect *e, int index, int caster)
 {
     CharacterState who, giver;
@@ -349,6 +352,15 @@ static void apply_effect(Effect *e, int index, int caster)
     int base[ATTRS], other_base[ATTRS], group, sub, before, chance;
     if (!magic_target(index,&who,&career,base)) { return; }
     group = e->group; sub = e->sub;
+    if (group == GROUP_IDENTIFY && index == -1) {
+        /* spfx_identify: the chance is kept, the cast's cost comes back (up to the most), and the items are chosen next. */
+        CharacterState *me = character_state();
+
+        g_identify_chance = e->chance > 0 ? e->chance : 1;
+        me->magicka += magic_state()->paid; if (me->magicka > me->max_magicka) { me->magicka = me->max_magicka; }
+        e->active = 0;
+        return;
+    }
     if (group == GROUP_PARALYZE) {
         if ((index == -1 ? curse_race() : who.race) == PLAYER_RACE_HIGH_ELF || (index == -1 && (career.immunity & EFFECT_BIT_PARALYSIS)) || (who.conditions & (COND_FREE_ACTION | COND_PARALYZED)) || random_range(1,100) > e->chance) { e->active = 0; return; }
     }

@@ -10,6 +10,7 @@ void gfall_people_install(void)
     activate_set_shelf(OTHER_SHELF, gfall_shelf_used);
     activate_set_container(OTHER_CONTAINER, gfall_container_used);
     activate_set_notice(OTHER_NOTICE, gfall_notice_used);
+    play_set_identify(gfall_spell_identify);
     activate_set_person(gfall_person_used);
     activate_set_talk_use(gfall_talk_used);
     possessions_set_service(gfall_service_act);
