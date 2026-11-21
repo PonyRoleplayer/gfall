@@ -399,10 +399,18 @@ int inventory_transfer(df_u32 id, df_u32 parent)
             stack = object_edit(game_state()->object[i].id);
             if (!stack || stack->parent != parent || stack->type != RECORD_ITEM ||
                 stack->group != ITEM_GROUP_WEAPON || stack->index != WEAPON_ARROW) { continue; }
+            /* inv_merge_arrows clamps the one carried stack to 199 and deletes the incoming stack, excess arrows and all: the arrows over the most stay where they were, in the stack they came from. */
             count = stack->count + item->count;
-            /* inv_merge_arrows clamps the one carried stack to 199 and
-             * deletes the incoming stack, including any excess arrows. */
-            if (count > STACK_MAX) { count = STACK_MAX; }
+            if (count > STACK_MAX) {
+                int took = STACK_MAX - stack->count;
+
+                if (took <= 0) { g_error = "You cannot carry any more arrows."; return 0; }
+                stack->count = STACK_MAX;
+                object_edit(id)->count = item->count - took;
+                state_event(EVENT_GIVE,stack->id,parent,STACK_MAX);
+                g_error = "You cannot carry any more arrows.";
+                return 1;
+            }
             if (!object_delete(id)) { return 0; }
             stack->count = count;
             state_event(EVENT_GIVE,stack->id,parent,count);

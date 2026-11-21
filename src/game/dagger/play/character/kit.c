@@ -28,6 +28,9 @@ void kit_give(CharacterState *who)
     int weapon;
 
     if (!who) { return; }
+    /* The kit is made afresh each time: a character made again in one run (a second new game, a class changed) kept the gifts of the first and was given its clothes, bow and arrows again, a stack of 24 for each. */
+    who->gifts = 0;
+    who->arrows = 0;
     klass = who->klass;
     if (klass < 0 || klass >= CLASSES) { return; }
     gift(who, who->female ? ITEM_GROUP_WOMENS_CLOTHING : ITEM_GROUP_MENS_CLOTHING,

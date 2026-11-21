@@ -572,8 +572,10 @@ static void check_inventory_completion(const char *test_root)
                  "taken arrows merge into the existing carried stack and consume the source only once");
     object_edit(arrows)->count = 190;
     incoming = item_create(loot,3,18,0); object_edit(incoming)->count = 20;
-    check_expect(inventory_transfer(incoming,game_state()->inventory_id) && object_at(arrows)->count == 199 && !object_at(incoming),
-                 "the original arrow merge caps the carried stack at 199, including its overflow behavior");
+    /* The carried stack holds 199; the arrows over it stay in the stack they came from (the original deleted them: docs/fixed-bugs.md). */
+    check_expect(inventory_transfer(incoming,game_state()->inventory_id) && object_at(arrows)->count == 199 && object_at(incoming) && object_at(incoming)->count == 11 &&
+                 object_at(incoming)->parent == loot,
+                 "arrows over the carried stack's 199 were not left where they were");
     {
         df_u32 full[OBJECTS], record;
         int filled;
@@ -583,6 +585,10 @@ static void check_inventory_completion(const char *test_root)
             if (!record) { break; }
             full[filled] = record;
         }
+        check_expect(!inventory_transfer(incoming,game_state()->inventory_id) && object_at(incoming) && object_at(arrows)->count == 199,
+                     "a full arrow stack took more arrows");
+        object_delete(incoming);
+        incoming = item_create(loot,3,18,0); object_edit(incoming)->count = 1; object_edit(arrows)->count = 198;
         check_expect(inventory_transfer(incoming,game_state()->inventory_id) && !object_at(incoming) && object_at(arrows)->count == 199,
                      "merging an existing arrow stack succeeds even with every object slot occupied");
         for (i = 0; i < filled; i++) { object_delete(full[i]); }
@@ -770,6 +776,7 @@ static void check_possessions(const char *test_root)
         archer = before.who;
         archer.klass = 13; archer.gifts = archer.arrows = 0;
         kit_give(&archer);
+        { int gifts = archer.gifts; kit_give(&archer); check_expect(archer.gifts == gifts && archer.arrows == KIT_ARROWS, "a kit made twice for one character gave its gifts and arrows twice"); }
         *character_state() = archer;
         check_expect(state_begin(), "Archer starting records build from the original class kit");
         count = inventory_rows(game_state()->inventory_id,-1,rows,OBJECTS);
