@@ -5,6 +5,7 @@
 #include "game/dagger/formats/smallfont.h"
 #include "engine/ui/pic.h"
 #include "engine/sound/sound.h"
+#include "engine/sound/audio.h"
 #include "engine/sound/music.h"
 #include "engine/core/mem.h"
 
@@ -12,18 +13,34 @@
 #define MOVIE_SCREEN_W 320
 #define MOVIE_SCREEN_H 200
 #define MOVIE_DRIFT_TICKS 6
-/* The most frames decoded in one call (a slow frame catches up, the picture is drawn once). */
+/* The most frames shown in one call (a slow frame catches up, the picture is drawn once). */
 #define MOVIE_CATCH_UP 8
+/*
+ * The sound comes with the frames, so a movie that decodes a frame only when it is due has no sound ahead of it: any hitch (a window of the file read from the disc, a slow frame) runs the stream dry and it
+ * crackles. The reader therefore runs ahead of the clock: frames are decoded into a ring of MOVIE_RING frames while the stream holds less than a MOVIE_LEAD_DIV-th of a second of sound, and shown when
+ * the clock reaches them. The clock is the wall's, set forward to the sound's when that is more than MOVIE_DRIFT_TICKS ahead; it is never set back to the sound (its movies' sound is about 8 % shorter
+ * than their frames, and a clock held to it ran the picture down to a crawl, or held it still when the sound ran out: nothing decoded, so nothing pushed). The movie ends when its last frame was shown and its sound has drained.
+ */
+#define MOVIE_RING 4
+#define MOVIE_LEAD_DIV 4
+#define MOVIE_FRAME_BYTES (MOVIE_SCREEN_W * MOVIE_SCREEN_H)
+#define MOVIE_PALETTE_BYTES 768
 
 static struct {
     int active, pic, stream, frames;
     Vid vid;
     double clock, due;          /* ticks since the start, and when the next frame is due */
-    int have_frame;             /* the frame in vid.frame has not been drawn into the picture yet */
-    df_u32 pushed;              /* audio samples handed to the stream */
+    int have_frame;             /* unused: kept so a frame of the ring is the one thing that waits */
+    df_u32 pushed;              /* audio samples the stream took */
+    int head, count, decoded;   /* the ring: the next frame to show, how many wait, and the reader at the end */
     int rate;
     int w, mute;
 } g;
+/* The ring of frames decoded ahead: pixels, ticks and a palette change each carries. Kept for the process (one movie at a time). */
+static df_u8 g_ring[MOVIE_RING][MOVIE_FRAME_BYTES];
+static df_u8 g_ring_palette[MOVIE_RING][MOVIE_PALETTE_BYTES];
+static int g_ring_ticks[MOVIE_RING];
+static int g_ring_changed[MOVIE_RING];
 /* The song that played before the first movie of a run, which comes back after the last. */
 static int g_music_was, g_music_held;
 
@@ -32,7 +49,7 @@ static void take_audio(void *ctx, const df_u8 *data, int bytes, int rate)
 {
     (void)ctx;
     if (!g.stream && !g.mute && rate > 0) { g.stream = sound_stream_open(rate); g.rate = rate; if (!g.stream) { g.mute = 1; } }
-    if (g.stream > 0) { sound_stream_push(g.stream, data, bytes); g.pushed += (df_u32)bytes; }
+    if (g.stream > 0) { int took = sound_stream_push(g.stream, data, bytes); if (took > 0) { g.pushed += (df_u32)took; } }
 }
 
 /* Movies waiting their turn (the opening is three, a quest's one after another): their file names. A missing one is skipped. */
@@ -86,6 +103,7 @@ static int start_file(const char *name)
     if (!g.pic) { vid_close(&g.vid); return 0; }
     vid_set_audio(&g.vid, take_audio, 0);
     g.active = 1; g.have_frame = 0; g.frames = 1;
+    g.head = g.count = g.decoded = 0;
     g.due = g.vid.ticks;
     return 1;
 }
@@ -115,9 +133,31 @@ int movie_play(int number)
     return movie_play_file(name);
 }
 
+/* Decodes frames into the ring while there is room and the sound ahead is short (or, with no sound, while none waits). */
+static void ring_fill(void)
+{
+    int slot, ahead;
+
+    while (!g.decoded && g.count < MOVIE_RING) {
+        if (g.stream > 0 && g.rate > 0) {
+            ahead = sound_stream_queued(g.stream);
+            if (ahead >= g.rate / MOVIE_LEAD_DIV) { break; }
+        } else if (g.count >= 1) {
+            break;
+        }
+        if (!vid_next(&g.vid)) { g.decoded = 1; break; }
+        slot = (g.head + g.count) % MOVIE_RING;
+        mem_copy(g_ring[slot], g.vid.frame, (df_u32)(g.vid.width * g.vid.height));
+        g_ring_ticks[slot] = g.vid.ticks;
+        g_ring_changed[slot] = g.vid.palette_changed;
+        if (g.vid.palette_changed) { mem_copy(g_ring_palette[slot], g.vid.palette, MOVIE_PALETTE_BYTES); }
+        g.count++;
+    }
+}
+
 int movie_frame(float dt, int skip)
 {
-    int guard;
+    int guard, queued;
 
     /* The next queued movie starts when none plays; one that cannot open is passed over. */
     while (!g.active && g_queued > 0) {
@@ -130,29 +170,34 @@ int movie_frame(float dt, int skip)
     if (!g.active) { return 0; }
     if (skip) { movie_stop(); return movie_active(); }
     g.clock += (double)dt * VID_TICK_HZ;
-    /* Held to the sound's clock once it is playing: the samples the card has taken, at the movie's rate. */
-    if (g.stream > 0 && g.rate > 0) {
-        int queued;
+    ring_fill();
+    /* The clock follows the sound only while there is sound to follow. */
+    queued = g.stream > 0 && g.rate > 0 ? sound_stream_queued(g.stream) : 0;
+    if (queued < 0) {
+        /* The card stopped it (no card, sound off): the movie runs on its ticks, and later chunks are dropped. */
+        sound_stream_close(g.stream); g.stream = 0; g.mute = 1; queued = 0;
+    }
+    if (queued > 0) {
         double played;
 
-        queued = sound_stream_queued(g.stream);
-        if (queued < 0) {
-            /* The card stopped it (no card, sound off): the movie runs on its ticks, and later chunks are dropped. */
-            sound_stream_close(g.stream); g.stream = 0; g.mute = 1;
-        } else {
-            played = ((double)g.pushed - (double)queued) * VID_TICK_HZ / (double)g.rate;
-            if (played > 0.0 && (g.clock - played > MOVIE_DRIFT_TICKS || played - g.clock > MOVIE_DRIFT_TICKS)) { g.clock = played; }
-        }
+        /* What the speaker has played: the samples mixed, less what the card still holds (audio_lead_ms). Only forward: a movie's sound is a little shorter than its frames, so it falls behind the picture and is no clock to hold it to. */
+        played = ((double)g.pushed - (double)queued) * VID_TICK_HZ / (double)g.rate - (double)audio_lead_ms() * VID_TICK_HZ / 1000.0;
+        if (played - g.clock > MOVIE_DRIFT_TICKS) { g.clock = played; }
     }
-    for (guard = 0; guard < MOVIE_CATCH_UP && g.clock >= g.due; guard++) {
-        if (!vid_next(&g.vid)) { movie_stop(); return movie_active(); }
-        if (g.vid.palette_changed) { pic_set_palette(g.pic, g.vid.palette); }
-        pic_update(g.pic, g.vid.frame);
+    for (guard = 0; guard < MOVIE_CATCH_UP && g.count > 0 && g.clock >= g.due; guard++) {
+        if (g_ring_changed[g.head]) { pic_set_palette(g.pic, g_ring_palette[g.head]); }
+        pic_update(g.pic, g_ring[g.head]);
         g.frames++;
-        g.due += g.vid.ticks;
+        g.due += g_ring_ticks[g.head];
+        g.head = (g.head + 1) % MOVIE_RING; g.count--;
+        ring_fill();
     }
     /* Far behind (a long stall): drop the lost time instead of racing through frames. */
-    if (g.clock >= g.due) { g.due = g.clock + 1.0; }
+    if (g.count > 0 && g.clock >= g.due) { g.due = g.clock + 1.0; }
+    /* The end: every frame shown, and the sound played out (the last chunk is heard, not cut). */
+    if (g.decoded && g.count == 0) {
+        if (g.stream <= 0 || sound_stream_queued(g.stream) <= 0) { movie_stop(); return movie_active(); }
+    }
     return 1;
 }
 

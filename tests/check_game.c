@@ -938,6 +938,45 @@ static void check_hold(const char *root)
     check_expect(grounded, "the jump lands");
 }
 
+/*
+ * A movie with its sound (the logo, the opening, DAG2): the sound card is simulated by mixing the stream a wall-clock step at a time. Each must end when its frames are over (the sound is a little
+ * shorter than the frames, so it must not hold the picture), show every frame, and not stall; at the frame rates a card may give. The player used to hold the clock to the sound's and stopped for good.
+ */
+#define MOVIE_SIM_RATE 11025
+#define MOVIE_SIM_SLACK 1.05
+static void movie_sound_run(const char *name, float dt)
+{
+    Vid v;
+    short out[MOVIE_SIM_RATE * 2];
+    int ticks = 0, frames, n, steps, alive, was_on;
+    double wall = 0.0;
+    char msg[96];
+
+    if (!vid_open(&v, name)) { return; }
+    frames = v.frames;
+    while (vid_next(&v)) { ticks += v.ticks; }
+    vid_close(&v);
+    movie_set_enabled(1);
+    was_on = sound_on();
+    sound_set_mix_rate(MOVIE_SIM_RATE); sound_set_on(1); sound_stop_all();
+    movie_play_file(name);
+    steps = (int)((double)ticks / 60.0 / dt * 4.0);
+    alive = 1;
+    for (n = 0; n < steps && alive; n++) {
+        int mixed = (int)(dt * MOVIE_SIM_RATE);
+
+        alive = movie_frame(dt, 0);
+        wall += dt;
+        sound_mix(out, mixed);
+    }
+    sprintf(msg, "movie sound: %s at %.0f ms a step did not end with its frames (%.1f s of %.1f)", name, dt * 1000.0, wall, ticks / 60.0);
+    check_expect(!alive && wall < ticks / 60.0 * MOVIE_SIM_SLACK + 1.0, msg);
+    sprintf(msg, "movie sound: %s did not show every frame", name);
+    check_expect(movie_frames_shown() == frames, msg);
+    sound_stop_all(); sound_set_on(was_on);
+    movie_set_enabled(0);
+}
+
 /* The movie player (play/ui/movie.c): every frame of a movie shown, one tick at a time, with no sound card (it runs on its ticks); a skip; a missing movie passed over; movies off. */
 static void check_movie(void)
 {
@@ -964,6 +1003,10 @@ static void check_movie(void)
     check_expect(movie_active(), "movie: a skip did not pass to the next queued movie");
     movie_set_enabled(0);
     check_expect(!movie_active(), "movie: turning movies off left one queued");
+    movie_sound_run("ANIM0001.VID", 1.0f / 30.0f);
+    movie_sound_run("ANIM0001.VID", 1.0f / 10.0f);
+    movie_sound_run("ANIM0011.VID", 1.0f / 60.0f);
+    movie_sound_run("DAG2.VID", 1.0f / 30.0f);
 }
 
 /* The prince's scene: pages of four lines, a click turns them and leaves on the last, Y and N answer a question, the callback may start the next scene. */
