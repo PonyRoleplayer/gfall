@@ -1,14 +1,27 @@
 # GFALL: from Privateer's Hold to the full game
 
-Status as of 2026-11-16. GFALL.EXE plays from character creation through
+Status as of 2026-11-22. GFALL.EXE plays from character creation through
 Privateer's Hold into the streamed world. It includes combat, magic and
-crafting, towns and guild services, law, travel, curses and the quest machine.
-Recent work added opposing creature teams, marker-time pacification, outdoor
-encounters, inventory magic animation, guild identification and soul release.
-GFALL saves use schema 18 under `gfall/saves`. Preferences and bindings live in
-`gfall/settings.cfg`. See [game.md](game.md) for implementation notes and
-[game-later.md](game-later.md) for specific gaps. The first-generation player was
-retired on 2026-11-12 at tag `before-gfall-retire`.
+crafting, towns and guild services, law, travel, curses, the quest machine,
+property (houses, the ship), politics and news, the movies and the princes'
+scenes, and saves that stream to disk with no limits (schema 23: a world seed
+and place rows). Place state is derived from seeds and swept every three
+days (docs/game.md, Place state). See [game.md](game.md) for implementation
+notes and [game-later.md](game-later.md) for specific gaps and what was
+closed. The first-generation player was retired on 2026-11-12 at tag
+`before-gfall-retire`.
+
+**Still missing for a full game (2026-11-22):** the main story's checkpoints
+(the royal audiences, the later dungeon stages and every ending have never been
+played end to end); quest-specified equipment and exact site selection, the
+Where-is People list, the quest-minute batching and the logbook's controls and
+notes page; towns' own place rows and the guild counters keeping purchases;
+the vampire's paper doll; joystick and the moving local light; movement that
+does not stick on walls (below); and everything that only the 233 can say
+(stability, memory, frame rate). Deliberately later: the tutorial, EAX, a
+modern indoor map, Pony97, poison vials, worn underwear in its own slot,
+Half-Life style movement and head bob. The lists below were written on
+2026-11-16 and are partly out of date: where they disagree, game-later.md wins.
 
 ## What is still missing
 
