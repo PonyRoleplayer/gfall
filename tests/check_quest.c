@@ -81,7 +81,7 @@ static int w_find_number(int number, int *region, int *index)
     if (number == 50026) { *index = 11; return 1; }
     return 0;
 }
-static int w_pick_building(int region, int index, int type, unsigned seed, int *block, int *record) { (void)region; (void)index; (void)type; *block = 3 + (int)(seed % 2u) * 0; *record = 7; return 1; }
+static int w_pick_building(int region, int index, int type, int site, unsigned seed, int *block, int *record) { (void)region; (void)index; (void)type; (void)site; *block = 3 + (int)(seed % 2u) * 0; *record = 7; return 1; }
 static int g_out;
 static int w_outdoors(void) { return g_out; }
 static int g_creatures;
@@ -115,6 +115,140 @@ static df_u32 w_place_at(float x, float y, float z) { (void)x; (void)y; (void)z;
 static df_u32 g_pile_made;
 static df_u32 w_place_item(void) { g_pile_made++; return 0; }
 static int w_spawn(int kind, df_u32 thing) { if (g_spawned < 16) { g_spawn_kind[g_spawned] = kind; g_spawn_thing[g_spawned++] = thing; } return 1; }
+
+static int g_rat_in_building, g_rat_clear;
+
+static int rat_inside(int region, int index, int block, int record)
+{
+    return g_rat_in_building && region == 17 && index == 10 && block == 3 && record == 7;
+}
+
+static int rat_spawn(int kind, df_u32 thing)
+{
+    return g_rat_clear && w_spawn(kind, thing);
+}
+
+static void check_timed_rats(void)
+{
+    static const QuestWorld world = {
+        .count = w_count, .location = w_location, .here = w_here,
+        .pick_building = w_pick_building, .inside = rat_inside, .spawn_foe = rat_spawn
+    };
+    df_u32 minutes = game_state()->minutes;
+    const QuestState *q;
+    int i, slot;
+
+    quest_reset();
+    quest_set_world(&world);
+    questor(5);
+    g_spawned = g_rat_clear = g_rat_in_building = 0;
+    slot = quest_start("M0C00Y14", 41);
+    q = quest_at(slot);
+    check_expect(q && !q->foe[0].placed && quest_foe_at_site(q, 0, 17, 10, 3, 7) &&
+                 !quest_foe_at_site(q, 0, 17, 10, 3, 5),
+                 "rat quest: reserve the timed foe's art only at the quest building");
+    if (q) {
+        game_state_edit()->minutes += 5;
+        quest_run();
+        check_expect(q->qbn.op[4].arg[4].value == 7 && !g_spawned,
+                     "rat quest: the timer cannot spend an attempt outside the building");
+        g_rat_in_building = 1;
+        seed_stream_begin(0);
+        quest_run();
+        seed_stream_end();
+        check_expect(q->qbn.op[4].arg[4].value == 7 && !q->foe[0].next && !g_spawned,
+                     "rat quest: a blocked spawn cannot spend a wave or an actor key");
+        g_rat_clear = 1;
+        for (i = 0; i < 4; i++) {
+            game_state_edit()->minutes += 5;
+            seed_stream_begin(0);
+            quest_run();
+            seed_stream_end();
+            check_expect(g_spawned == i + 1 && g_spawn_kind[i] == 0 &&
+                         g_spawn_thing[i] == QUEST_FOE_THING(q->foe[0].number, i),
+                         "rat quest: each timed wave should spawn a rat with its own key");
+            quest_foe_killed(q->foe[0].number);
+        }
+        check_expect(q->qbn.op[4].arg[4].value == 3 && quest_state(slot, 1),
+                     "rat quest: four successful kills should meet the objective");
+    }
+    quest_reset();
+    quest_set_world(0);
+    game_state_edit()->minutes = minutes;
+}
+
+static void check_timed_bats(void)
+{
+    static const QuestWorld world = {
+        .count = w_count, .location = w_location, .here = w_here,
+        .pick_building = w_pick_building, .inside = rat_inside, .spawn_foe = rat_spawn
+    };
+    static df_u8 saved[TEST_QUEST_BUFFER];
+    const QuestState *q;
+    LogSlot *entry;
+    char log[768];
+    df_u32 minutes = game_state()->minutes;
+    int i, slot, spider_id = 0, len;
+
+    quest_reset();
+    quest_set_world(&world);
+    quest_set_text(real_text);
+    questor(5);
+    g_spawned = g_rat_in_building = 0;
+    g_rat_clear = 1;
+    slot = quest_start("M0C00Y12", 41);
+    if (quest_at(slot)) {
+        spider_id = quest_at(slot)->qbn.id;
+        quest_run();
+        check_expect(!strcmp(logbook_slot(0)->name, "M0C00Y12"), "spider quest: write its own journal entry");
+        quest_end(slot);
+    }
+    questor(5);
+    slot = quest_start("M0B00Y15", 41);
+    q = quest_at(slot);
+    check_expect(q != 0, "bat quest: start the shipped infestation");
+    if (q) {
+        quest_run();
+        entry = (LogSlot *)logbook_slot(0);
+        check_expect(spider_id && q->qbn.id == spider_id && !strcmp(entry->name, "M0B00Y15") &&
+                     logbook_text(log, sizeof(log)) > 0 && strstr(log, "rats or bats"),
+                     "reusing the spider quest's id should display the active infestation entry");
+
+        /* Reproduce the filename and a leftover entry from the previous occupant in an older save. */
+        strcpy(entry->name, "M0C00Y12");
+        entry->message[1] = 1010;
+        entry->minutes[1] = minutes - 1;
+        len = quest_pack(saved, sizeof(saved));
+        check_expect(len > 0 && quest_unpack(saved, len) && quest_at(slot) &&
+                     !strcmp(logbook_slot(0)->name, "M0B00Y15") && !logbook_slot(0)->message[1] &&
+                     logbook_text(log, sizeof(log)) > 0 && strstr(log, "rats or bats"),
+                     "older saves should recover the current journal text and discard stale entries");
+        q = quest_at(slot);
+    }
+    if (q) {
+        quest_set_state(slot, 5, 0);
+        quest_set_state(slot, 6, 1); /* Choose the bat branch of this rat-or-bat quest. */
+        g_rat_in_building = 1;
+        for (i = 0; i < 10; i++) {
+            int before = g_spawned;
+
+            game_state_edit()->minutes += 3;
+            seed_stream_begin(0);
+            quest_run();
+            seed_stream_end();
+            if (g_spawned > before) {
+                check_expect(g_spawn_kind[before] == 3, "bat quest: the bat branch spawns a giant bat");
+                quest_foe_killed(q->foe[0].number);
+            }
+            if (i == 3) { check_expect(quest_state(slot, 1), "bat quest: four kills complete the kill objective"); }
+        }
+        check_expect(g_spawned == 7 && q->qbn.op[7].arg[4].value == 0 && q->qbn.foe[0].killed == 4,
+                     "bat quest: the script can keep sending bats after the objective, up to seven in all");
+    }
+    quest_reset();
+    quest_set_world(0);
+    game_state_edit()->minutes = minutes;
+}
 
 static void (*g_answer)(int yes);
 static int take_ask(const char *words, void (*answer)(int yes)) { g_answer = answer; strncpy(g_text, words, sizeof(g_text) - 1); return 1; }
@@ -161,7 +295,7 @@ static void put_op(df_u8 *p, int opcode, int message, const int *args, const int
 static int person_who(const QuestState *q, int i) { return q->person[i].who; }
 static void cure_begin(const char *name, int *slot)
 {
-    static const QuestWorld world = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, w_marker_at, w_spawn_at, w_place_at, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures };
+    static const QuestWorld world = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, w_marker_at, w_spawn_at, w_place_at, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures, 0 };
 
     quest_reset();
     quest_set_world(&world); quest_set_names(0); quest_set_text(real_text); quest_set_say(take_say); quest_set_ask(take_ask);
@@ -560,7 +694,7 @@ void check_quest(void)
          * and 87 places the foe again every interval minutes with its count spent one at a time, 100 in a hundred here, until the count (3) is gone. */
         {
             int e60[5] = {0, 0, -2, -2, -2}, e85[5] = {0, 0, -2, -2, -2}, e69[5] = {0, 0, 0, -2, -2}, e87[5] = {0, 0, 0, 0, 0};
-            static const QuestWorld w87 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures };
+            static const QuestWorld w87 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures, 0 };
             int run, first, again;
 
             quest_end(0);
@@ -623,7 +757,7 @@ void check_quest(void)
                 { "with a screen open", 10 * 60, 1, 0, GAME_INVENTORY, 0 }
             };
 
-            static const QuestWorld w76 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures };
+            static const QuestWorld w76 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures, 0 };
 
             (void)carried;
             quest_set_world(&w76);
@@ -737,7 +871,7 @@ void check_quest(void)
             put_op(f3 + 0x140 + 435, 8, -1, d8, 0);
             put_lit(f3 + 0x140 + 435 + 6 + 1 * 15, 101); put_lit(f3 + 0x140 + 435 + 6 + 2 * 15, 101);
             {
-                static const QuestWorld w9 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures };
+                static const QuestWorld w9 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures, 0 };
 
                 quest_set_world(&w9);
             }
@@ -793,7 +927,7 @@ void check_quest(void)
         /* The quests of a new game: _BRISIEN then _TUTOR__ begin at the first run, their fixed places found by the location's number (low word 2 read as the location), _BRISIEN's person made
          * (kind -1, her flags 0x101) though standing nowhere, and its ops 6 and 7, which wait while the player is in the hold (op 43 sets state 5 there), start the main story's S0000977 and S0000999 once they are out of it. */
         {
-            static const QuestWorld w10 = { w_count, w_location, w_here_out, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures };
+            static const QuestWorld w10 = { w_count, w_location, w_here_out, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures, 0 };
             int k, found999, found977;
 
             for (k = 0; k < quest_count(); k++) { quest_end(k); }
@@ -816,7 +950,7 @@ void check_quest(void)
         /* A person with a body: Brisienna's kind (-1, a faction of an individual, flags 0x101: any building, a woman asked for by neither sex bit so tossed) put by op 30 in a tavern of another
          * town stands in that building (block and record) when it is entered, with her name, and her flat's tag names her. */
         {
-            static const QuestWorld w11 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures };
+            static const QuestWorld w11 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures, 0 };
             int e30[5] = {-1, 0, 0, -2, -2};
             QuestHere here[4];
             int who, faction, female, tag, k;
@@ -869,7 +1003,7 @@ void check_quest(void)
         }
         /* A foe on its place's quest marker: with the floor not loaded it waits (nothing made), and when it is loaded both are made on the marker with the foe's keys, once. */
         {
-            static const QuestWorld w12 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, w_marker_at, w_spawn_at, w_place_at, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures };
+            static const QuestWorld w12 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, w_marker_at, w_spawn_at, w_place_at, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures, 0 };
             int f22[5] = {-1, 0, 0, -2, -2}, calm[5] = {-1, 0, -1, -2, -2};
             int release[5] = {0, 0, -2, -2, -2}, k;
 
@@ -906,7 +1040,7 @@ void check_quest(void)
         /* Persons that pick a site at the start: a tavern (kind 15) in the town the player is in, a person linked to it by their faction (-5, anywhere), and a faction of a type in another town (-2, low
          * byte 1): each homed in a building of the town, the second asking for buildings of the first's faction. */
         {
-            static const QuestWorld w13 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures };
+            static const QuestWorld w13 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures, 0 };
             const QuestState *pq;
             int k;
 
@@ -954,7 +1088,7 @@ void check_quest(void)
         }
         /* The guilds' invitations: a Thieves Guild invitation falling due out of doors starts O0A0AL00 (no prompt), and its op 4 joins the guild instead of rewarding. */
         {
-            static const QuestWorld w14 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures };
+            static const QuestWorld w14 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures, 0 };
             int k, started;
 
             for (k = 0; k < quest_count(); k++) { quest_end(k); }
@@ -1001,7 +1135,7 @@ void check_quest(void)
         }
         /* A quest person put in a dungeon place (op 30) stands on its quest marker: homed in the dungeon (block -2) with the marker's point. */
         {
-            static const QuestWorld w15 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, w_marker_at, w_spawn_at, w_place_at, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures };
+            static const QuestWorld w15 = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, w_marker_at, w_spawn_at, w_place_at, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures, 0 };
             int h30[5] = {-1, 0, 0, -2, -2}, k;
             QuestHere dh[4];
 
@@ -1121,7 +1255,7 @@ void check_quest(void)
     /* Places and timers: M0B00Y00's two dungeons bound to two different dungeons of the region other than the one the player is in, its timer's delay the travel estimate and a week
      * for the kind, doubled; op 19 shows the first on the map; at the delay the timer's state ends the quest (op 6). */
     {
-        static const QuestWorld world = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures };
+        static const QuestWorld world = { w_count, w_location, w_here, w_region, w_journey, w_reveal, w_spawn, w_go, w_place_item, w_find_number, 0, 0, 0, w_pick_building, w_pick_site, w_person_name, w_outdoors, w_creatures, 0 };
         const QuestState *q2;
         int s2, spent;
 
@@ -1154,6 +1288,9 @@ void check_quest(void)
             placed = -1;
             for (f = 0; f < 3; f++) { if (q2->foe[f].placed) { placed = f; } }
             check_expect(placed >= 0 && g_spawned == 0, "quest: op 22 did not place one beast, or made it before its dungeon was loaded");
+            check_expect(placed >= 0 && quest_foe_at_site(q2, placed, q2->place[0].region, q2->place[0].index, -1, -1) &&
+                         !quest_foe_at_site(q2, placed, q2->place[0].region, q2->place[1].index, -1, -1),
+                         "quest: the placed beast's art should be needed in its own dungeon");
             quest_location_loaded(q2->place[0].region, q2->place[0].index);
             check_expect(g_spawned == 1 && g_spawn_kind[0] == q2->qbn.foe[placed].type && g_spawn_thing[0] == QUEST_FOE_THING(q2->foe[placed].number, 0), "quest: the beast was not made with its type and key when its dungeon loaded");
             quest_location_loaded(q2->place[0].region, q2->place[0].index);
@@ -1228,4 +1365,6 @@ void check_quest(void)
         quest_set_world(0);
     }
     check_cures();
+    check_timed_rats();
+    check_timed_bats();
 }

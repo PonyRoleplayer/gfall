@@ -33,6 +33,27 @@ static void place_from(QuestPlace *place, int ordinal, const LocationInfo *lo)
     log_format(place->name, sizeof(place->name), "%s", lo->name);
 }
 
+static int bind_building(QuestState *q, int i, unsigned seed)
+{
+    QuestPlace *place = &q->place[i];
+    const QbnPlace *pl = &q->qbn.place[i];
+    return !quest_world->pick_building ||
+        quest_world->pick_building(place->region, place->index, pl->p2, pl->p3, seed, &place->block, &place->record);
+}
+
+/* Earlier saves of a local building quest kept the town but omitted the building. */
+void quest_repair_places(QuestState *q)
+{
+    int i;
+
+    if (!quest_world || !quest_world->pick_building) { return; }
+    for (i = 0; i < q->qbn.n_place; i++) {
+        if (q->place[i].bound && q->place[i].block < 0 && q->qbn.place[i].scope == 1 && q->qbn.place[i].p1 == 0) {
+            bind_building(q, i, seed_mix((unsigned)q->qbn.id, (unsigned)i));
+        }
+    }
+}
+
 /* quest_init_place for a place that is a location: a fixed one (scope 0) waits for the steps that read the world's records; scope 1 or below is where the player is; scope 2 and up a location
  * of the kind (p1: 0 a town, 1 a dungeon) in the player's region, other than the one they are in. A location another quest uses is drawn again, up to 100 times. */
 static int bind_place(int slot, int i)
@@ -57,7 +78,10 @@ static int bind_place(int slot, int i)
     count = quest_world->count();
     if (pl->scope <= 1) {
         for (k = 0; k < count; k++) {
-            if (quest_world->location(k, &lo) && lo.region == region && lo.index == here) { place_from(&q->place[i], k, &lo); return 1; }
+            if (quest_world->location(k, &lo) && lo.region == region && lo.index == here) {
+                place_from(&q->place[i], k, &lo);
+                return pl->p1 != 0 || bind_building(q, i, (unsigned)random_range(0, 32767));
+            }
         }
         return 0;
     }
@@ -78,12 +102,7 @@ static int bind_place(int slot, int i)
         if (ordinal < 0 || !quest_world->location(ordinal, &lo)) { return 0; }
         if (location_used(slot, i, lo.region, lo.index)) { continue; }
         place_from(&q->place[i], ordinal, &lo);
-        /* A building place: which building of the town, by the seed of this quest and place. */
-        q->place[i].block = -1; q->place[i].record = -1;
-        if (pl->p1 == 0 && quest_world->pick_building) {
-            quest_world->pick_building(lo.region, lo.index, pl->p2, (unsigned)(q->qbn.id * 977 + i * 31 + random_range(0, 32767)), &q->place[i].block, &q->place[i].record);
-        }
-        return 1;
+        if (pl->p1 != 0 || bind_building(q, i, (unsigned)random_range(0, 32767))) { return 1; }
     }
     return 0;
 }

@@ -662,6 +662,8 @@ static void transfer(Wire *w, GameState *s)
         wire_df_u32_politics(w, po);
     }
 
+    if (w->version >= 24) { wire_u32(w, &s->motion.mount); }
+
     /* The world's seed (schema 23). */
     if (w->version >= 23) {
         wire_u32(w, &s->world_seed);

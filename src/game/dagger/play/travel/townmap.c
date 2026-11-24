@@ -36,6 +36,14 @@ static const Rect g_compass_rect = { 3, 172, 76, 17 };
 /* Zoom: 2 is half size (two map pixels a screen pixel), 1 whole, -2, -3, -4 that many screen pixels a map pixel. */
 #define ZOOM_HALF 2
 #define ZOOM_MOST 4
+#define MAP_CELL 64.0f
+
+static int (*g_building_name)(const TownBuilding *, int, int, char *, int);
+
+void townmap_set_building_name(int (*name)(const TownBuilding *, int, int, char *, int))
+{
+    g_building_name = name;
+}
 
 /*
  * The kinds' colours: TOWN00I0.IMG's own caption swatches (guilds and temples,
@@ -56,17 +64,12 @@ enum {
 
 static void pan(int dx, int dy);
 
-/* The building talk last pointed out: its town, its place in the town's frame, its kind. Kept past the map's closing. */
-static struct {
-    int set;
-    int region;
-    int index;
-    float x;
-    float z;
-    int type;
-} g_mark;
-/* The ring round a marked building: this many screen pixels from its middle, in the talk's yellow ink. */
 #define MARK_RING 4
+
+typedef struct TownMapNote {
+    int x, y;
+    char name[65];
+} TownMapNote;
 
 static struct {
     int open;
@@ -87,12 +90,14 @@ static struct {
     /* Where on the screen the player's cell was drawn, for the arrow; -100 when off the area. */
     int arrow_x;
     int arrow_y;
-    /* The town on the map, and the marked building's map pixel there; -1 when none is. */
+    /* The town's known names, with the last directions target drawn on top. */
     int region;
     int index;
-    int mark_x;
-    int mark_y;
-    char line[48];
+    TownMapNote *notes;
+    int note_count;
+    int marked;
+    int hover_x, hover_y;
+    char line[65];
     int changed;
 } g;
 
@@ -155,6 +160,58 @@ static int fit_zoom(void)
     return g.w <= g_area.w && g.h <= g_area.h ? 1 : ZOOM_HALF;
 }
 
+/* The screen pixel containing a map cell, including odd cells at half zoom. */
+static int cell_on_screen(int mx, int my, int *sx, int *sy)
+{
+    int dx = mx - g.cx, dy = my - g.cy;
+
+    if (g.zoom == ZOOM_HALF) {
+        dx = df_ifloor(dx * 0.5f);
+        dy = df_ifloor(dy * 0.5f);
+    } else if (g.zoom < 0) {
+        int cells = -g.zoom;
+
+        dx = dx * cells + cells / 2;
+        dy = dy * cells + cells / 2;
+    }
+    *sx = (int)g_area.x + g_area.w / 2 + dx;
+    *sy = (int)g_area.y + g_area.h / 2 + dy;
+    return mx >= 0 && mx < g.w && my >= 0 && my < g.h && rect_has(&g_area, *sx, *sy);
+}
+
+static void load_notes(void)
+{
+    const TownBuilding *buildings;
+    MemHeap *was;
+    int count, i;
+
+    buildings = town_buildings(g.region, g.index, &count);
+    if (!buildings || !count || !g_building_name) { return; }
+    was = mem_heap_use(g.composer.heap);
+    g.notes = (TownMapNote *)mem_alloc(count * sizeof(*g.notes));
+    mem_heap_use(was);
+    if (!g.notes) { return; }
+    for (i = 0; i < count; i++) {
+        TownMapNote *note = &g.notes[g.note_count];
+        int kind = g_building_name(&buildings[i], g.region, g.index, note->name, sizeof(note->name));
+
+        if (!kind) { continue; }
+        note->x = df_ifloor(buildings[i].x / MAP_CELL);
+        note->y = g.h - 1 - df_ifloor(buildings[i].z / MAP_CELL);
+        if (kind == TOWNMAP_MARKED) { g.marked = g.note_count; }
+        g.note_count++;
+    }
+    if (g.marked >= 0) {
+        const TownMapNote *note = &g.notes[g.marked];
+        int x, y;
+
+        if (!cell_on_screen(note->x, note->y, &x, &y)) {
+            g.cx = note->x;
+            g.cy = note->y;
+        }
+    }
+}
+
 int townmap_open(int region, int index, float x, float z, float yaw)
 {
     MemHeap *was;
@@ -180,8 +237,8 @@ int townmap_open(int region, int index, float x, float z, float yaw)
         return 0;
     }
     /* The player's cell: 64 units a cell, the town's north at the top. */
-    g.px = df_ifloor(x / 64.0f);
-    g.py = g.h - 1 - df_ifloor(z / 64.0f);
+    g.px = df_ifloor(x / MAP_CELL);
+    g.py = g.h - 1 - df_ifloor(z / MAP_CELL);
     g.yaw = yaw;
     g.cx = g.px >= 0 && g.px < g.w ? g.px : g.w / 2;
     g.cy = g.py >= 0 && g.py < g.h ? g.py : g.h / 2;
@@ -192,39 +249,13 @@ int townmap_open(int region, int index, float x, float z, float yaw)
         g.cy = g.h / 2;
     }
     g.mode = MODE_ORIGINAL;
-    df_copy(g.line, town_name(), (int)sizeof(g.line));
     g.region = region;
     g.index = index;
-    g.mark_x = -1;
-    g.mark_y = -1;
-    if (townmap_marked(region, index, &g.mark_x, &g.mark_y)) {
-        const BuildingKind *kind;
-
-        kind = building_kind(g_mark.type);
-        log_format(g.line, (int)sizeof(g.line), "%s: marked", kind ? kind->name : town_name());
-    }
+    g.marked = -1;
+    g.hover_x = g.hover_y = -2;
+    load_notes();
+    df_copy(g.line, town_name(), (int)sizeof(g.line));
     g.changed = 1;
-    return 1;
-}
-
-void townmap_mark(int region, int index, float x, float z, int type)
-{
-    g_mark.set = 1;
-    g_mark.region = region;
-    g_mark.index = index;
-    g_mark.x = x;
-    g_mark.z = z;
-    g_mark.type = type;
-}
-
-int townmap_marked(int region, int index, int *mx, int *my)
-{
-    if (!g_mark.set || g_mark.region != region || g_mark.index != index) {
-        return 0;
-    }
-    /* As the player's cell: 64 units a cell, north at the top. The map's height is the open map's. */
-    *mx = df_ifloor(g_mark.x / 64.0f);
-    *my = (g.open ? g.h : 0) - 1 - df_ifloor(g_mark.z / 64.0f);
     return 1;
 }
 
@@ -287,10 +318,40 @@ int townmap_on_map(int x, int y)
     return rect_has(&g_area, x, y);
 }
 
+static void draw_note(const TownMapNote *note, int marked)
+{
+    int x, y, width, max_x, max_y, left, top;
+
+    if (!cell_on_screen(note->x, note->y, &x, &y)) { return; }
+    if (marked) {
+        int dx, dy;
+
+        for (dy = -MARK_RING; dy <= MARK_RING; dy++) {
+            for (dx = -MARK_RING; dx <= MARK_RING; dx++) {
+                if (dx != -MARK_RING && dx != MARK_RING && dy != -MARK_RING && dy != MARK_RING) { continue; }
+                if (rect_has(&g_area, x + dx, y + dy)) {
+                    g.composer.screen[(y + dy) * CANVAS_W + x + dx] = CANVAS_INK;
+                }
+            }
+        }
+    }
+    width = canvas_width(note->name);
+    max_x = g_area.x + g_area.w - width - 1;
+    max_y = g_area.y + g_area.h - g.composer.font.height - 1;
+    left = x + (marked ? MARK_RING + 2 : 2);
+    if (left > max_x) { left = marked ? x - MARK_RING - width - 1 : max_x; }
+    if (left < g_area.x) { left = g_area.x; }
+    top = y - g.composer.font.height / 2;
+    if (top > max_y) { top = max_y; }
+    if (top < g_area.y) { top = g_area.y; }
+    canvas_label(left, top, note->name);
+}
+
 void townmap_compose(void)
 {
     int sx;
     int sy;
+    int i;
 
     canvas_use(&g.composer);
     canvas_copy_all(g.back);
@@ -310,49 +371,15 @@ void townmap_compose(void)
             if (colour) {
                 g.composer.screen[sy * CANVAS_W + sx] = (df_u8)colour;
             }
-            if (mx == g.px && my == g.py && g.arrow_x < 0) {
-                g.arrow_x = sx;
-                g.arrow_y = sy;
-            }
         }
     }
-    /* A building pointed out in talk: a square ring round its cell, kept inside the map's area. */
-    if (g.mark_x >= 0) {
-        int mid_x;
-        int mid_y;
-        int k;
-
-        mid_x = -1;
-        mid_y = -1;
-        for (sy = g_area.y; sy < g_area.y + g_area.h && mid_x < 0; sy++) {
-            for (sx = g_area.x; sx < g_area.x + g_area.w; sx++) {
-                int mx;
-                int my;
-
-                if (map_at(sx, sy, &mx, &my) && mx == g.mark_x && my == g.mark_y) {
-                    mid_x = sx;
-                    mid_y = sy;
-                    break;
-                }
-            }
-        }
-        for (k = -MARK_RING; mid_x >= 0 && k <= MARK_RING; k++) {
-            int i;
-
-            for (i = 0; i < 4; i++) {
-                int x;
-                int y;
-
-                x = mid_x + (i == 0 ? -MARK_RING : (i == 1 ? MARK_RING : k));
-                y = mid_y + (i == 2 ? -MARK_RING : (i == 3 ? MARK_RING : k));
-                if (rect_has(&g_area, x, y)) {
-                    g.composer.screen[y * CANVAS_W + x] = (df_u8)CANVAS_INK;
-                }
-            }
-        }
+    for (i = 0; i < g.note_count; i++) {
+        if (i != g.marked) { draw_note(&g.notes[i], 0); }
     }
     /* The arrow is drawn over this picture, a picture of its own (marker.h): only its place is found here. */
+    if (cell_on_screen(g.px, g.py, &sx, &sy)) { g.arrow_x = sx; g.arrow_y = sy; }
     canvas_label(g_area.x + 3, g_area.y + 2, g.line);
+    if (g.marked >= 0) { draw_note(&g.notes[g.marked], 1); }
     g.changed = 0;
 }
 
@@ -372,13 +399,18 @@ int townmap_changed(void)
 
 void townmap_point(int x, int y)
 {
-    char was[48];
+    char was[sizeof(g.line)];
     int mx;
     int my;
 
+    if (!g.open) { return; }
+    if (!rect_has(&g_area, x, y) || !map_at(x, y, &mx, &my)) { mx = my = -1; }
+    if (mx == g.hover_x && my == g.hover_y) { return; }
+    g.hover_x = mx;
+    g.hover_y = my;
     df_copy(was, g.line, (int)sizeof(was));
     df_copy(g.line, town_name(), (int)sizeof(g.line));
-    if (rect_has(&g_area, x, y) && map_at(x, y, &mx, &my)) {
+    if (mx >= 0) {
         int byte;
         const BuildingKind *kind;
 
@@ -386,7 +418,13 @@ void townmap_point(int x, int y)
         byte = g.map[my * g.w + mx];
         kind = byte >= 1 && byte <= BUILDING_TYPES ? building_kind(byte - 1) : 0;
         if (kind) {
-            df_copy(g.line, kind->name, (int)sizeof(g.line));
+            const TownBuilding *building = g_building_name ?
+                town_building_near(g.region, g.index, (mx + 0.5f) * MAP_CELL,
+                                   (g.h - my - 0.5f) * MAP_CELL, byte - 1) : 0;
+
+            if (!building || !g_building_name(building, g.region, g.index, g.line, (int)sizeof(g.line))) {
+                df_copy(g.line, kind->name, (int)sizeof(g.line));
+            }
         }
     }
     if (!df_eq(was, g.line)) {

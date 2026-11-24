@@ -300,7 +300,7 @@ int place_roll_level(df_u32 place)
 }
 
 /* An object and everything under it, deleted. */
-static void object_purge(df_u32 id)
+void object_purge(df_u32 id)
 {
     int i;
 
@@ -1026,8 +1026,16 @@ static int saved_world_valid(const GameState *state)
         state->cursor_active < 0 || state->cursor_active > 1) { return 0; }
     motion = &state->motion;
     if (state->motion_valid) {
+        if (motion->mount) {
+            int slot = object_slot(state, motion->mount);
+            const ObjectInfo *item = slot >= 0 ? &state->object[slot] : 0;
+
+            if (!item || state->world_state.where.kind != WHERE_WORLD || motion->crouched || item->type != RECORD_ITEM ||
+                item->group != ITEM_GROUP_TRANSPORT || item->index < 0 || item->index > 1 ||
+                item->parent != state->inventory_id || (item->flags & ITEM_UNPAID)) { return 0; }
+        }
         if (motion->yaw < 0 || motion->yaw >= 2048 || motion->pitch < -256 || motion->pitch > 256 ||
-            !(motion->eye > 0 && motion->eye <= 100) ||
+            !(motion->eye > 0 && motion->eye <= (motion->mount ? WALK_EYE + RIDE_EYE_ADD : 100.0f)) ||
             !(motion->bob_ms >= 0 && motion->bob_ms < 1000) ||
             !(motion->vy >= -4000 && motion->vy <= 4000) ||
             !(motion->vx >= -10000 && motion->vx <= 10000) ||
@@ -1112,6 +1120,8 @@ int state_restore_world(void)
         for (i = 0; i < g_stage_keep_count; i++) {
             if (!keep_put(&g_stage_keep[i])) { g_error = "No memory to restore world changes"; return 0; }
         }
+        quest_prune_foes();
+        g_state.world_count = keep_count();
         g_stage_keep = 0; g_stage_keep_count = 0;
         stage_release();
     } else if (g_keep_reset) {

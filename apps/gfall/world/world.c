@@ -1,6 +1,7 @@
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/input/activate.h"
 #include "game/dagger/play/items/inventory.h"
+#include "game/dagger/play/items/possessions.h"
 #include "game/dagger/play/combat/weapon.h"
 #include "game/dagger/play/combat/dungeon.h"
 #include "game/dagger/play/travel/actions.h"
@@ -9,6 +10,8 @@
 #include "game/dagger/play/travel/travel.h"
 #include "game/dagger/play/travel/maps.h"
 #include "game/dagger/play/ui/msg.h"
+#include "game/dagger/play/ui/words.h"
+#include "game/dagger/play/people/names.h"
 #include "game/dagger/play/items/ground.h"
 #include "game/dagger/play/magic/itemmaker.h"
 #include "game/dagger/play/quests/quest.h"
@@ -33,7 +36,9 @@
 #include "game/dagger/formats/arch3d.h"
 #include "game/dagger/formats/bsa.h"
 #include "game/dagger/formats/dungeon.h"
+#include "game/dagger/formats/factionfile.h"
 #include "game/dagger/formats/rdb.h"
+#include "game/dagger/formats/sndfile.h"
 #include "game/dagger/formats/texture.h"
 #include "game/dagger/places/world.h"
 #include "game/dagger/places/travel.h"
@@ -411,11 +416,10 @@ static int ench_spawn_at(int kind, int team, const float *at)
 static int ench_spawn_creature(int kind, int team) { return ench_spawn_at(kind,team,0); }
 
 /* transport_toggle_ship (inven.c 1582..1603): on land with a ship owned, the place and the feet are kept and the player goes aboard (region SHIP_REGION, location 1 for the small ship, 2 for the large); aboard, back to where they stood. */
-void gfall_transport(void)
+static void transport_ship(void)
 {
     ShipBack *back = &world_where()->ship;
     const PlaceWhere *here = &world_where()->where;
-    Body *body;
     MotionState motion;
 
     if (back->valid && here->kind == WHERE_WORLD && here->located && here->region == SHIP_REGION) {
@@ -427,10 +431,71 @@ void gfall_transport(void)
     if (here->kind != WHERE_WORLD || !g_place_open) { msg_set("You can only board your ship from outside."); return; }
     travel_capture();
     back->where = world_where()->where;
-    body = move_body(); back->x = body->feet[0]; back->y = body->feet[1]+body->eye_now; back->z = body->feet[2];
-    move_capture(&motion); back->yaw = motion.yaw; back->pitch = motion.pitch;
-    if (travel_go_aboard(SHIP_REGION,bank_state()->ship == SHIP_LARGE ? 2 : 1)) { back->valid = 1; msg_set("You board your ship."); }
+    move_capture(&motion);
+    back->x = motion.feet[0]; back->y = motion.feet[1] + (motion.mount ? WALK_EYE : motion.eye); back->z = motion.feet[2];
+    back->yaw = motion.yaw; back->pitch = motion.pitch;
+    if (travel_go_aboard(SHIP_REGION,bank_state()->ship == SHIP_LARGE ? 2 : 1)) { move_mount(0, 0); back->valid = 1; msg_set("You board your ship."); }
     else { msg_set("Your ship is not at anchor."); }
+}
+
+static df_u32 g_transport_items[TRANSPORT_EXIT];
+
+static void transport_chosen(int row)
+{
+    if (row == TRANSPORT_BOARD_SHIP) {
+        transport_ship();
+    } else if (move_mount(&g_level.scene, g_transport_items[row])) {
+        msg_set(row == TRANSPORT_ON_FOOT ? "You are on foot." :
+                row == TRANSPORT_RIDE_HORSE ? "You mount your horse." : "You hitch up your cart.");
+    } else {
+        msg_set("You need clear ground to mount here.");
+    }
+}
+
+void gfall_transport(void)
+{
+    const PlaceWhere *here = &world_where()->where;
+    unsigned enabled = 0;
+    int i, aboard;
+
+    if (!g_place_open || here->kind != WHERE_WORLD) { msg_set("You cannot change transportation indoors."); return; }
+    mem_zero(g_transport_items, sizeof(g_transport_items));
+    aboard = world_where()->ship.valid && here->located && here->region == SHIP_REGION;
+    if (!aboard) { enabled |= 1u << TRANSPORT_ON_FOOT; }
+    if (aboard || bank_state()->ship) { enabled |= 1u << TRANSPORT_BOARD_SHIP; }
+    for (i = 0; !aboard && i < OBJECTS; i++) {
+        const ObjectInfo *item = &game_state()->object[i];
+
+        if (item->id && item->type == RECORD_ITEM && item->parent == game_state()->inventory_id &&
+            item->group == ITEM_GROUP_TRANSPORT && !(item->flags & ITEM_UNPAID)) {
+            if (item->index == 1) { g_transport_items[TRANSPORT_RIDE_HORSE] = item->id; }
+            if (item->index == 0) { g_transport_items[TRANSPORT_RIDE_CART] = item->id; }
+        }
+    }
+    if (g_transport_items[TRANSPORT_RIDE_HORSE]) { enabled |= 1u << TRANSPORT_RIDE_HORSE; }
+    if (g_transport_items[TRANSPORT_RIDE_CART]) { enabled |= 1u << TRANSPORT_RIDE_CART; }
+    possessions_transport(enabled, transport_chosen);
+}
+
+void gfall_mount_sound(int active)
+{
+    enum { HORSE_WALK_SOUND = 365, HORSE_TROT_SOUND = 366, CART_SOUND = 372 };
+    static int handle, playing;
+    float speed = active ? move_mount_speed() : 0;
+    int sound = 0;
+
+    if (speed > 2) {
+        if (move_mounted() == MOUNT_CART) { sound = CART_SOUND; }
+        else {
+            int walk = ground_speed(character_state()->attribute[ATTR_SPD], 0, 0, 0, 0, 0);
+
+            sound = speed > (walk + HORSE_SPEED_ADD) * 0.75f ? HORSE_TROT_SOUND : HORSE_WALK_SOUND;
+        }
+    }
+    if (sound != playing) { sound_stop(handle); handle = 0; playing = sound; }
+    if (sound && !sound_playing(handle)) {
+        handle = sound_play(sndfile_clip(sndfile_by_id((df_u32)sound)), 1, 0, SOUND_LOOP);
+    }
 }
 
 /* The Wabbajack: the creature becomes another of the kind where it stands (a dungeon's; the place's art decides), and is gone itself. */
@@ -446,7 +511,7 @@ int gfall_transform(int victim, int kind)
     before = dungeon_max_health(victim);
     move_camera(&cam);
     dungeon_next_transformed(1);
-    if (world_where()->where.kind == WHERE_DUNGEON) { ok = encounter_place_at(&cam,kind,0,old->x,old->y,old->z); }
+    if (world_where()->where.kind == WHERE_DUNGEON) { ok = encounter_place_at(&cam,kind,0,old->x,old->y,old->z,ENC_AT_CLIMB); }
     else { float at[3]; at[0] = old->x; at[1] = old->y; at[2] = old->z; ok = ench_spawn_at(kind,TEAM_HOSTILE,at); }
     dungeon_next_transformed(0);
     if (!ok) { return -1; }
@@ -545,15 +610,18 @@ static void prepare_soul_art(Image **images, df_u8 *cutout, int *slots)
 
 static int hold_encounter_art(Image **images, df_u8 *cutout, int *slots)
 {
+    const PlaceWhere *where = &world_where()->where;
     EncounterState *state;
-    int i, kind, archive, variants;
+    int i, s, f, kind, archive, variants, index, block, record;
 
     g_encounter_art_count = 0; state = encounter_state();
-    for (i = 0; i < 6; i++) {
-        kind = state->choices[i]; archive = kind < 43 ? 255+kind : kind == 146 ? 399 : 432+foe_texture_kind(kind);
-        variants = kind >= 128 && kind < 146 ? 2 : 1;
-        if (!prepare_encounter_art(kind,archive,images,cutout,slots)) { return 0; }
-        if (variants == 2 && !prepare_encounter_art(kind,archive+1,images,cutout,slots)) { return 0; }
+    if (where->kind == WHERE_DUNGEON) {
+        for (i = 0; i < 6; i++) {
+            kind = state->choices[i]; archive = foe_archive(kind);
+            variants = kind >= 128 && kind < 146 ? 2 : 1;
+            if (!prepare_encounter_art(kind,archive,images,cutout,slots)) { return 0; }
+            if (variants == 2 && !prepare_encounter_art(kind,archive+1,images,cutout,slots)) { return 0; }
+        }
     }
     /* The creatures of earlier visits and saves are kept rows (made 2) of this place: their art, by the kind and archive their owner says (encounter.c). */
     for (i = 0; i < keep_count(); i++) {
@@ -562,6 +630,23 @@ static int hold_encounter_art(Image **images, df_u8 *cutout, int *slots)
         row = keep_at(i);
         if (row && row->made == 2 && row->key.place == state->place && (row->key.thing & 0x80000000u) &&
             !prepare_encounter_art((int)(row->owner & 255u),(int)((row->owner >> 8) & 4095u),images,cutout,slots)) { return 0; }
+    }
+    if (where->kind == WHERE_INSIDE || where->kind == WHERE_DUNGEON) {
+        index = gfall_quest_outside();
+        block = where->kind == WHERE_INSIDE ? where->block : -1;
+        record = where->kind == WHERE_INSIDE ? where->record : -1;
+        for (s = 0; s < quest_count(); s++) {
+            const QuestState *q = quest_at(s);
+
+            if (!q) { continue; }
+            for (f = 0; f < q->qbn.n_foe; f++) {
+                if (!quest_foe_at_site(q, f, where->region, index, block, record)) { continue; }
+                kind = q->qbn.foe[f].type; archive = foe_archive(kind);
+                if (prepare_encounter_art(kind,archive,images,cutout,slots) && kind >= 128 && kind < 146) {
+                    prepare_encounter_art(kind,archive+1,images,cutout,slots);
+                }
+            }
+        }
     }
     prepare_soul_art(images,cutout,slots);
     g_original_entities = g_level.scene.nentities;
@@ -697,6 +782,8 @@ static int hold_treasures(void)
     object_edit(WORLD_ROOT)->place_key = travel_place_key();
     if (world_where()->where.kind == WHERE_DUNGEON) {
         encounter_prepare(object_at(WORLD_ROOT)->place_key,hold.dungeon_type);
+    } else {
+        encounter_state()->place = object_at(WORLD_ROOT)->place_key;
     }
     g_hold_loot_table = dungeon_loot_kind(hold.dungeon_type);
     g_hold_capacity = g_level.scene.nsprites + HOLD_TREASURES + OBJECTS;
@@ -872,7 +959,6 @@ int seam_open_place(int restoring, int changing, float *x, float *y, float *z)
     if (!g_place_open) { gfall_error(travel_error()); return 0; }
     world_restore(); travel_capture();
     if (!g_world) {
-        if (!seam_world_art()) { gfall_error("Cannot prepare world gameplay pictures"); return 0; }
         if (x) { *x = 0; } if (y) { *y = WALK_EYE; } if (z) { *z = 0; }
         actions_open(&g_level.scene,0,0);
         return 1;
@@ -894,8 +980,8 @@ int seam_open_place(int restoring, int changing, float *x, float *y, float *z)
     }
     if (!hold_treasures()) { gfall_error("Cannot build the Hold treasure containers"); return 0; }
     if (!hold_actions()) { return 0; }
-    if (world_where()->where.kind == WHERE_DUNGEON && !encounter_open(&g_level.scene,encounter_art)) {
-        gfall_error("Cannot restore the dungeon encounters"); return 0;
+    if (!encounter_open(&g_level.scene,encounter_art,world_where()->where.kind == WHERE_DUNGEON)) {
+        gfall_error("Cannot restore encounters"); return 0;
     }
     /* A dungeon loaded: the foes of the quests placed in it are made (func_0004C759 links them as a location loads). */
     if (world_where()->where.kind == WHERE_DUNGEON) { quest_location_loaded(world_where()->where.region, gfall_quest_outside()); }
@@ -914,11 +1000,47 @@ int seam_open_place(int restoring, int changing, float *x, float *y, float *z)
 }
 
 int seam_open_hold(float *x, float *y, float *z) { return seam_open_place(0,0,x,y,z); }
-void seam_land(Camera *camera, int restoring, int changing)
+
+/* holiday_announce (tamriel.c): a settlement's full TEXT.RSC entry in a parchment. */
+static void announce_holiday(const WorldState *world)
+{
+    static const char *const types[] = {
+        "Town", "Village", "Community", "Farm", "Dungeon Entrance",
+        "Temple", "Tavern", "Castle", "Manor", "Shrine"
+    };
+    const Faction *province, *ruler;
+    Words words = {0};
+    char text[1024];
+    int holiday, kind;
+
+    holiday = holiday_today(game_state()->minutes, world->where.region);
+    if (!holiday) { return; }
+    kind = worldmap_location_type(world->px, world->py);
+    if (kind < 0 || kind == WORLDMAP_DUNGEON_LABYRINTH || kind >= (int)(sizeof(types) / sizeof(types[0]))) { return; }
+
+    province = faction_province_of(world->where.region);
+    ruler = province && !province->ruler ? faction_find(province->parent) : province;
+    words.region = province ? province->name : "";
+    words.city = worldmap_location_name(worldmap_location_id(world->px, world->py));
+    words.location_type = types[kind];
+    words.ruler_title = name_ruler_title(ruler ? ruler->ruler : 0);
+    words_use(&words);
+    words_expand(words_state(TEXT_HOLIDAY_FIRST + holiday), text, sizeof(text));
+    words_use(0);
+    possessions_message(text, 0);
+}
+
+int seam_land(Camera *camera, int restoring, int changing)
 {
     TravelPose at;
     MotionState motion;
     int ox, oz, sx, sz;
+
+    /* gfx_prepare has now opened the streamed texture cache for these uploads. */
+    if (!g_world && !seam_world_art()) {
+        gfall_error("Cannot prepare world gameplay pictures");
+        return 0;
+    }
     travel_land(&g_level,camera,WALK_EYE,&at);
     if (restoring && world_where()->where.kind == WHERE_WORLD) {
         stream_origin(&ox,&oz);
@@ -946,17 +1068,21 @@ void seam_land(Camera *camera, int restoring, int changing)
     }
     /* Intentional departure from FALL.EXE: show the building's name on entry.
      * The original shows the name when the player inspects the building from outside. */
+    if (world_where()->where.kind == WHERE_INSIDE) {
+        quest_location_loaded(world_where()->where.region, world_where()->where.index);
+        gfall_building_visit(&world_where()->where);
+        gfall_building_entered(&world_where()->where, restoring);
+        gfall_building_frame();
+    }
     if (changing && !restoring && travel_entered_building()) {
         gfall_building_announce(&world_where()->where);
-        gfall_building_entered(&world_where()->where);
     }
-    /* arrival_room_messages (support.c 1135..1160): outside in a town, today's holiday is announced (TEXT 8349 + the holiday). Ours asks only that the place is a located town of the streamed world. */
+    /* arrival_room_messages (support.c 1135..1160) also reminds the player about rented rooms. */
     if (changing && world_where()->where.kind == WHERE_WORLD && world_where()->where.located && !travel_entered_building()) {
-        int holiday = holiday_today((unsigned)game_state()->minutes, world_where()->where.region);
-
-        if (holiday > 0) { msg_set(words_state(TEXT_HOLIDAY_FIRST + holiday)); }
+        announce_holiday(world_where());
         gfall_building_room_lines(&world_where()->where);
     }
+    return 1;
 }
 
 void seam_close_hold(void)
@@ -964,6 +1090,7 @@ void seam_close_hold(void)
     float x, y, z, yaw;
 
     if (!g_place_open) { return; }
+    gfall_building_left();
     maps_close();
     ground_close();
     magic_lighting(0);
@@ -1081,7 +1208,7 @@ void seam_world_step(Camera *camera, float seconds)
 
     gfall_people_set_camera(camera);
     gfall_street_tick(seconds);
-    gfall_building_frame(camera);
+    gfall_building_frame();
     if (!g_place_open || !g_level.streamed) { return; }
     travel_update(camera,1,2,seconds,&dx,&dz);
     if (dx || dz) {

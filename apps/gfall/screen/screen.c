@@ -1283,6 +1283,10 @@ static void paint_controls(void)
         gfall_screen_blit_ix(g_controls_view.x, g_controls_view.y, g_controls_view.pixels,
                 g_controls_view.width, g_controls_view.height, 0);
     }
+    rect = control_rect(SPRINT);
+    gfall_screen_fill_box(rect->x0, rect->y0, rect->x1 - rect->x0 + 1, rect->y1 - rect->y0 + 1, 93);
+    gfall_screen_outline(rect->x0, rect->y0, rect->x1 - rect->x0 + 1, rect->y1 - rect->y0 + 1, 120);
+    gfall_screen_centered_text((rect->x0 + rect->x1) / 2, rect->y0 - 9, "SPRINT", 146);
     for (i = 0; i < ACTS; i++) {
         rect = control_rect(i);
         if (i == controls_editing()) { df_copy(name, "Press key", sizeof(name)); ink = 246; }
@@ -1295,24 +1299,41 @@ static void paint_controls(void)
 
 static void paint_mouse(void)
 {
-    static df_u8 pixels[188 * 146];
+    static df_u8 pixels[MOUSE_PANEL_W * MOUSE_PANEL_H];
     const Config *config;
-    int i, x, y, id;
+    const char *bow;
+    int i, x, y, id, split;
 
     config = game_config();
     gfall_screen_cover_screen(0, 0, 0);
-    gfall_screen_blit_ix(g_mouse_art.x, g_mouse_art.y, g_mouse_art.pixels, g_mouse_art.width, g_mouse_art.height, 0);
+    split = MOUSE_BOW_Y - g_mouse_art.y;
+    if (g_mouse_art.pixels && split > 0 && split < g_mouse_art.height) {
+        gfall_screen_blit_ix(g_mouse_art.x, g_mouse_art.y, g_mouse_art.pixels, g_mouse_art.width, split, 0);
+        gfall_screen_blit_ix(g_mouse_art.x, MOUSE_BOW_Y + MOUSE_BOW_H, g_mouse_art.pixels + split * g_mouse_art.width,
+                            g_mouse_art.width, g_mouse_art.height - split, 0);
+    }
+    gfall_screen_fill_box(MOUSE_PANEL_X, MOUSE_BOW_Y, MOUSE_PANEL_W, MOUSE_BOW_H, 122);
+    gfall_screen_fill_box(72, MOUSE_BOW_Y + 1, 176, MOUSE_BOW_H - 2, 93);
+    gfall_screen_outline(72, MOUSE_BOW_Y + 1, 176, MOUSE_BOW_H - 2, 120);
+    if (config->bow_style == BOW_STYLE_AUTO) {
+        bow = config_bow_draw() ? "Bow: Auto (Draw and release)" : "Bow: Auto (Classic)";
+    } else {
+        bow = config_bow_draw() ? "Bow: Draw and release" : "Bow: Classic";
+    }
+    gfall_screen_centered_text(160, MOUSE_BOW_Y + 4, bow, 146);
     gfall_screen_fill_box(config->mouse_mode ? 220 : 134, 47, 5, 5, 246);
     for (i = 0; i < config->sensitivity_x; i++) { gfall_screen_fill_box(139 + i * 7, 108, 5, 6, 246); }
     for (i = 0; i < config->sensitivity_y; i++) { gfall_screen_fill_box(139 + i * 7, 121, 5, 6, 246); }
     for (i = 0; i < config->turn_rate; i++) { gfall_screen_fill_box(139 + i * 7, 134, 5, 6, 246); }
-    if (config->reverse_y) { gfall_screen_outline(72, 147, 76, 15, 246); }
-    for (y = 0; y < 146; y++) {
-        for (x = 0; x < 188; x++) { pixels[y * 188 + x] = g_buf[(22 + y) * 320 + 66 + x]; }
+    if (config->reverse_y) { gfall_screen_outline(72, 147 + MOUSE_BOW_H, 76, 15, 246); }
+    for (y = 0; y < MOUSE_PANEL_H; y++) {
+        for (x = 0; x < MOUSE_PANEL_W; x++) {
+            pixels[y * MOUSE_PANEL_W + x] = g_buf[(MOUSE_PANEL_Y + y) * 320 + MOUSE_PANEL_X + x];
+        }
     }
     id = play_pic(PIC_MOUSE);
     if (id) { pic_update(id, pixels); }
-    else { pic_set(PIC_MOUSE, pic_load(pixels, 188, 146, g_art_rgb, 0)); }
+    else { pic_set(PIC_MOUSE, pic_load(pixels, MOUSE_PANEL_W, MOUSE_PANEL_H, g_art_rgb, 0)); }
     pic_set(PIC_SCREEN, 0);
     g_screen_kind = 1;
 }

@@ -132,7 +132,7 @@ void check_encounter(void)
     for (i = 0; i < 6; i++) { encounter_state()->choices[i] = 0; }
     move_init(); move_place(0,WALK_EYE,0,0); camera_set(&camera,0,WALK_EYE,0,0,0);
     dungeon_open(&g_scene,0,0,0);
-    check_expect(encounter_open(&g_scene,art),"open a dungeon encounter pool");
+    check_expect(encounter_open(&g_scene,art,1),"open a dungeon encounter pool");
     random = game_state()->random;
     check_expect(!encounter_minute(&g_scene,&camera,12,ENCOUNTER_LOITER) &&
                  !encounter_minute(&g_scene,&camera,12,ENCOUNTER_WALK) &&
@@ -160,7 +160,7 @@ void check_encounter(void)
                      "encounter identity, corpse, health and position pass through the save codec");
         encounter_close(); dungeon_open(&g_scene,0,0,0);
         random = game_state()->random;
-        check_expect(encounter_open(&g_scene,art) && spawn_count() == 1 && dungeon_count() == 1,
+        check_expect(encounter_open(&g_scene,art,1) && spawn_count() == 1 && dungeon_count() == 1,
                      "reloading recreates an encounter exactly once");
         entity = dungeon_entity(0);
         check_expect(entity && entity->key.thing == key.thing && entity->dead &&

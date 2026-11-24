@@ -27,6 +27,8 @@
  * embedded in it.
  */
 #define VERY_CLOSE 0.005f
+/* A small outward bias keeps rounding from turning a slide back into a hit. */
+#define TANGENT_BIAS 1.0e-6f
 /* Slides per sweep: hit, slide along, hit again. Five settles any corner. */
 #define SLIDE_STEPS 5
 /*
@@ -148,6 +150,13 @@ static float dot3(const float *a, const float *b)
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }
 
+static void cross3(const float *a, const float *b, float *out)
+{
+    out[0] = a[1] * b[2] - a[2] * b[1];
+    out[1] = a[2] * b[0] - a[0] * b[2];
+    out[2] = a[0] * b[1] - a[1] * b[0];
+}
+
 void collide_set_shape(float rx, float ry)
 {
     rx = rx > LEAST_RADIUS ? rx : LEAST_RADIUS;
@@ -188,9 +197,7 @@ static int shape_tri(CTri *ct, const WTri *wt)
         e1[k] = ct->b[k] - ct->a[k];
         e2[k] = ct->c[k] - ct->a[k];
     }
-    ct->n[0] = e1[1] * e2[2] - e1[2] * e2[1];
-    ct->n[1] = e1[2] * e2[0] - e1[0] * e2[2];
-    ct->n[2] = e1[0] * e2[1] - e1[1] * e2[0];
+    cross3(e1, e2, ct->n);
     len = root(dot3(ct->n, ct->n));
     if (len < NOTHING) {
         return 0;
@@ -597,60 +604,28 @@ typedef struct Contact {
 static int lowest_root(float a, float b, float c, float limit, float *out)
 {
     float det;
-    float s;
-    float half_over_a;
-    float r1;
-    float r2;
+    float t;
 
-    if (df_absf(a) < NOTHING_SQUARED) {
+    /* With a positive leading term, distance is smallest at -b / (2a). */
+    if (a < NOTHING_SQUARED || b >= 0.0f) {
         return 0;
     }
     /*
-     * Already inside (a corner's sphere, an edge's cylinder: c and a of
-     * opposite signs, as both quadratics are written). Its roots then are
-     * the way in, past, and the way out: the way out is no contact, and
-     * taking it let a body a unit into a stair's edge walk on through it.
-     * Getting deeper (b and a of opposite signs) is a contact now; getting
-     * out is none.
+     * Already touching or inside: this motion would go deeper. Use a
+     * contact now, since the positive root is where it comes out.
      */
-    if (c * a < 0.0f) {
-        if (b * a < 0.0f) {
-            *out = 0.0f;
-            return 1;
-        }
-        return 0;
-    }
-    /*
-     * Outside, and not coming nearer: the roots' product c / a is not
-     * negative here, so they share a sign, and their sum -b / a is not
-     * positive: neither is ahead. Half the corners and edges of every
-     * triangle near a moving body end here, before the square root.
-     */
-    if (b * a >= 0.0f) {
-        return 0;
+    if (c <= 0.0f) {
+        *out = 0.0f;
+        return 1;
     }
     det = b * b - 4.0f * a * c;
     if (det < 0.0f) {
         return 0;
     }
-    s = root(det);
-    /* One divide for both roots: 39 cycles on the Pentium at the precision the walk runs at. */
-    half_over_a = 0.5f / a;
-    r1 = (-b - s) * half_over_a;
-    r2 = (-b + s) * half_over_a;
-    if (r1 > r2) {
-        float tmp;
-
-        tmp = r1;
-        r1 = r2;
-        r2 = tmp;
-    }
-    if (r1 > 0.0f && r1 < limit) {
-        *out = r1;
-        return 1;
-    }
-    if (r2 > 0.0f && r2 < limit) {
-        *out = r2;
+    /* The smaller root without subtracting nearly equal numbers. */
+    t = (2.0f * c) / (-b + root(det));
+    if (t < limit) {
+        *out = t;
         return 1;
     }
     return 0;
@@ -801,7 +776,9 @@ static void sweep_tri(const CTri *tr, const float *base, const float *vel, float
             const float *p2;
             float edge[3];
             float btv[3];
-            float es, edv, edb, a, b, cc, f;
+            float across[3];
+            float offset[3];
+            float es, a, b, cc, f;
             int j;
 
             p1 = v[k];
@@ -810,14 +787,19 @@ static void sweep_tri(const CTri *tr, const float *base, const float *vel, float
                 edge[j] = p2[j] - p1[j];
                 btv[j] = p1[j] - base[j];
             }
+            /* Use the actual perpendicular components. The difference of
+             * two squared lengths can give a false edge hit when sliding
+             * parallel to a long edge. */
+            cross3(edge, vel, across);
+            a = dot3(across, across);
+            if (a < NOTHING_SQUARED) { continue; }
+            cross3(edge, btv, offset);
+            b = -2.0f * dot3(across, offset);
+            if (b >= 0.0f) { continue; }
             es = dot3(edge, edge);
-            edv = dot3(edge, vel);
-            edb = dot3(edge, btv);
-            a = es * -vv + edv * edv;
-            b = es * (2.0f * dot3(vel, btv)) - 2.0f * edv * edb;
-            cc = es * (SPHERE * SPHERE - dot3(btv, btv)) + edb * edb;
+            cc = dot3(offset, offset) - es * SPHERE * SPHERE;
             if (lowest_root(a, b, cc, t, &nt)) {
-                f = (edv * nt - edb) / es;
+                f = (dot3(edge, vel) * nt - dot3(edge, btv)) / es;
                 if (f >= 0.0f && f <= 1.0f) {
                     t = nt;
                     found = 1;
@@ -871,10 +853,11 @@ float collide_slide(float *pos, float vx, float vy, float vz, CollideHit *hit)
         Contact c;
         float vv;
         float len;
-        float dest[3];
         float sn[3];
         float sl;
         float back;
+        float advance;
+        float into;
         float wx, wy, wz, wl;
 
         vv = dot3(vel, vel);
@@ -893,23 +876,13 @@ float collide_slide(float *pos, float vx, float vy, float vz, CollideHit *hit)
             base[2] += vel[2];
             break;
         }
-        for (i = 0; i < 3; i++) {
-            dest[i] = base[i] + vel[i];
-        }
-        /* Stop just short of the contact, and keep the contact as far off. */
+        /* Stop just short of contact. Use the normal at impact even if the
+         * hit was too close to advance to it. */
         back = c.t * len;
-        if (back >= VERY_CLOSE) {
-            float k;
-
-            k = (back - VERY_CLOSE) / len;
-            for (i = 0; i < 3; i++) {
-                base[i] += vel[i] * k;
-                c.point[i] -= vel[i] / len * VERY_CLOSE;
-            }
-        }
-        /* Slide along the plane through the contact, facing the sphere's centre. */
+        advance = back >= VERY_CLOSE ? (back - VERY_CLOSE) / len : 0.0f;
         for (i = 0; i < 3; i++) {
-            sn[i] = base[i] - c.point[i];
+            sn[i] = (base[i] - c.point[i]) + vel[i] * c.t;
+            base[i] += vel[i] * advance;
         }
         sl = root(dot3(sn, sn));
         if (sl < NOTHING) {
@@ -937,16 +910,12 @@ float collide_slide(float *pos, float vx, float vy, float vz, CollideHit *hit)
                 hit->wall_normal[2] = wz / wl;
             }
         }
-        {
-            float into;
-
-            into = 0.0f;
-            for (i = 0; i < 3; i++) {
-                into += sn[i] * (dest[i] - c.point[i]);
-            }
-            for (i = 0; i < 3; i++) {
-                vel[i] = dest[i] - sn[i] * into - c.point[i];
-            }
+        /* Project the displacement directly. Reconstructing it from world
+         * positions rounds off small slides and can repeatedly hit the same
+         * edge at t=0. Bias the tangent out by one part per million. */
+        into = dot3(vel, sn) - len * TANGENT_BIAS;
+        for (i = 0; i < 3; i++) {
+            vel[i] = (vel[i] - sn[i] * into) * (1.0f - advance);
         }
     }
     pos[0] = base[0] * g_rx;

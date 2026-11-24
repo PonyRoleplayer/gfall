@@ -601,6 +601,12 @@ Block *rmb_load(const df_u8 *rmb, df_u32 size, Bsa *arch, int ground_file,
 /* An interior's hinged doors are models 9000 to 9004, by the record's model byte mod 5. */
 #define DOOR_MODEL 9000
 
+static df_u32 list_bytes(const df_u8 *header)
+{
+    return 17u + (df_u32)header[0] * MODEL_BYTES + (df_u32)header[1] * FLAT_BYTES
+        + (df_u32)header[2] * 16u + (df_u32)header[3] * FLAT_BYTES + (df_u32)header[4] * DOOR_BYTES;
+}
+
 /* Where the list after the one at `at` begins: the interior follows the exterior. */
 static df_u32 skip_list(const df_u8 *rmb, df_u32 end, df_u32 at)
 {
@@ -609,10 +615,50 @@ static df_u32 skip_list(const df_u8 *rmb, df_u32 end, df_u32 at)
     if (at + 17 > end) {
         return end;
     }
-    bytes = 17u + (df_u32)rmb[at] * MODEL_BYTES + (df_u32)rmb[at + 1] * FLAT_BYTES
-        + (df_u32)rmb[at + 2] * 16u + (df_u32)rmb[at + 3] * FLAT_BYTES
-        + (df_u32)rmb[at + 4] * DOOR_BYTES;
+    bytes = list_bytes(rmb + at);
     return at + bytes > end ? end : at + bytes;
+}
+
+static int subrecord_objects(const df_u8 *header)
+{
+    const df_u8 *flat = header + 17u + (df_u32)header[0] * MODEL_BYTES;
+    int count, i;
+
+    if (!header[0] && !header[1] && !header[2]) { return 0; }
+    count = 1 + header[3] + header[4];
+    for (i = 0; i < header[1]; i++, flat += FLAT_BYTES) {
+        int image = df_ru16(flat + 12);
+        int marker = image & 31;
+
+        /* Quest/item markers use the separate marker counter. */
+        if ((image >> 7) == EDITOR_ARCHIVE && (marker == 10 || marker == 15 || marker == 16 || marker == 19)) { count++; }
+    }
+    return count;
+}
+
+int rmb_object_counts(const df_u8 *rmb, df_u32 size, RmbObjectCounts out[RMB_BUILDINGS_MAX], int *loose)
+{
+    df_u32 at = FLD_BYTES;
+    int r;
+
+    if (!rmb || size < at || rmb[0] > RMB_BUILDINGS_MAX) { return 0; }
+    for (r = 0; r < rmb[0]; r++) {
+        df_u32 span = df_ru32(rmb + FLD_SIZES + r * 4);
+        df_u32 end, inside;
+
+        if (span < 34u || span > size - at) { return 0; }
+        end = at + span;
+        inside = skip_list(rmb, end, at);
+        if (end - inside < 17u || list_bytes(rmb + inside) > end - inside) { return 0; }
+        out[r].outside = subrecord_objects(rmb + at);
+        out[r].inside = subrecord_objects(rmb + inside);
+        at = end;
+    }
+    if ((df_u32)rmb[1] * MODEL_BYTES + (df_u32)rmb[2] * FLAT_BYTES > size - at) { return 0; }
+    at += (df_u32)rmb[1] * MODEL_BYTES;
+    *loose = 0;
+    for (r = 0; r < rmb[2]; r++, at += FLAT_BYTES) { *loose += df_ru16(rmb + at + 14) != 0; }
+    return 1;
 }
 
 /* Where subrecord record's lists begin and end, from the block's sizes. 0 when it has none. */

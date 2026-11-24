@@ -441,6 +441,8 @@ int play_frame(const PlayIn *in, Camera *cam, const Scene *scene)
     int blocks;
     int result;
     int casting;
+    int draw_bow;
+    int sprinting;
     df_u32 minute;
     MoveIn mv;
 
@@ -457,6 +459,7 @@ int play_frame(const PlayIn *in, Camera *cam, const Scene *scene)
     if (in->reset) {
         g_attack_click = 0;
         g_mouse_prev = in->mouse_held;
+        weapon_cancel();
         chargen_scroll_frame(0, 0, 0, 0, 0);
         options_cancel_drag();
         return play_paused() ? FRAME_MENU : FRAME_WORLD;
@@ -546,8 +549,9 @@ int play_frame(const PlayIn *in, Camera *cam, const Scene *scene)
         move_camera(cam);
     }
     actions_step(in->dt);
-    if (possessions_state()->page || play_dead()) { return FRAME_MENU; }
+    if (possessions_state()->page || play_dead()) { weapon_cancel(); return FRAME_MENU; }
     if (progress_state()->active && !dungeon_nearby(cam,1024)) {
+        weapon_cancel();
         possessions_open(VIEW_SHEET,0);
         return FRAME_MENU;
     }
@@ -555,7 +559,9 @@ int play_frame(const PlayIn *in, Camera *cam, const Scene *scene)
         options_set_flags(options_flags() ^ 1);
         config_write();
     }
-    if (in->pressed[CURSOR_KEY] && options_mouse() == 1) {
+    if (options_mouse() == 0) {
+        g_cursor_active = 0;
+    } else if (in->pressed[CURSOR_KEY]) {
         g_cursor_active = g_cursor_active ? 0 : 1;
     }
     if (in->pressed[KEY_STEAL]) {
@@ -628,11 +634,13 @@ int play_frame(const PlayIn *in, Camera *cam, const Scene *scene)
     mv.held = in->held;
     mv.pressed = in->pressed;
     mv.region = region;
-    mv.view_mode = options_mouse() == 1 && !g_cursor_active;
+    mv.view_mode = options_mouse() == 1;
     mv.mouse_dx = in->mouse_dx;
     mv.mouse_dy = in->mouse_dy;
-    /* A held attack gesture owns relative motion in either control scheme. */
-    if (hud_weapon_ready() && in->held[SWING_BUTTON]) {
+    draw_bow = (g_cursor_active || in->held[SWING_BUTTON]) && hud_weapon_ready() && weapon_hold_to_draw();
+    /* The HUD pointer and a held swing can take the mouse without changing the walk. */
+    if (g_cursor_active || (mv.view_mode && in->pressed[CURSOR_KEY]) ||
+        (hud_weapon_ready() && in->held[SWING_BUTTON] && !draw_bow)) {
         mv.mouse_dx = 0; mv.mouse_dy = 0;
     }
     mv.dt = in->dt;
@@ -641,16 +649,21 @@ int play_frame(const PlayIn *in, Camera *cam, const Scene *scene)
     cursor_weights(&mv, in->cx, in->cy, bar);
     /* The pack's weight walks every object: refreshed every few frames, the walk's speed is not felt to lag by so much. */
     { static int weight_age = 8, weight; if (++weight_age >= 8) { weight = inventory_weight(game_state()->inventory_id); weight_age = 0; } move_set_weight(weight); }
-    move_frame(scene, &mv);
+    sprinting = move_frame(scene, &mv);
     minute = game_state()->minutes;
     state_frame(in->dt);
-    survival_minutes((int)(game_state()->minutes-minute),in->held[RUN],move_climbing());
+    survival_minutes((int)(game_state()->minutes-minute),in->held[RUN] && !sprinting && !move_mounted(),move_climbing());
     survival_step(scene,in->dt);
     if (move_splashed()) {
         play_sound(86);
     }
     if (cam) {
         move_camera(cam);
+        if (possessions_state()->page) {
+            weapon_cancel();
+            g_mouse_prev = in->mouse_held;
+            return FRAME_MENU;
+        }
         encounter_update(scene,cam);
         {
             int kinds[COLLECTORS_MAX], n, k;
@@ -675,10 +688,10 @@ int play_frame(const PlayIn *in, Camera *cam, const Scene *scene)
         casting = magic_visible();
         {
             StrikeInfo strike;
-            if (!magic_visible() && !(character_state()->conditions & COND_PARALYZED)) {
-                weapon_frame(in,blocks,&strike);
+            if (!casting) {
+                weapon_frame(in,blocks || (g_cursor_active && draw_bow),&strike);
                 dungeon_strike(scene,cam,&strike);
-            }
+            } else if (hud_weapon_ready() && weapon_hold_to_draw()) { weapon_cancel(); }
             magic_frame(scene,cam,in,blocks);
             /* An Identify spell cast: the game opens the items to choose from (spfx_identify opens the inventory in identify mode). */
             { int chance = magic_identify_take(); if (chance && g_identify) { g_identify(chance); } }
@@ -728,6 +741,7 @@ int play_frame(const PlayIn *in, Camera *cam, const Scene *scene)
     }
     g_mouse_prev = in->mouse_held;
     if (options_up() || possessions_state()->page) {
+        weapon_cancel();
         return FRAME_MENU;
     }
     return FRAME_WORLD;
@@ -780,7 +794,7 @@ void play_draw(void)
         draw_pointer();
         return;
     }
-    if (possessions_state()->page && possessions_state()->page != VIEW_MESSAGE) {
+    if (possessions_state()->page && possessions_state()->page != VIEW_MESSAGE && possessions_state()->page != VIEW_TRANSPORT) {
         blit(g_pic[PIC_SCREEN],0,0,320,200);
         draw_pointer();
         return;
@@ -806,7 +820,7 @@ void play_draw(void)
             if (options_panel() == PANEL_OPTIONS) {
                 blit(g_pic[PIC_OPTIONS], 85, 40, 150, 84);
             } else if (options_panel() == PANEL_CONTROLS && controls_mouse()) {
-                blit(g_pic[PIC_MOUSE], 66, 22, 188, 146);
+                blit(g_pic[PIC_MOUSE], MOUSE_PANEL_X, MOUSE_PANEL_Y, MOUSE_PANEL_W, MOUSE_PANEL_H);
             } else {
                 blit(g_pic[PIC_SCREEN], 0, 0, 320, 200);
                 files_draw_previews();
@@ -853,7 +867,9 @@ void play_draw(void)
         hud_blit_part(g_pic[PIC_COMPASS_WIDE], (move_yaw() & 2047) / 8, 0, 65, 13,
                          253, 185, 65, 13);
     }
-    if (rest_state()->open || possessions_state()->page == VIEW_MESSAGE) { blit(g_pic[PIC_SCREEN],0,0,320,200); }
+    if (rest_state()->open || possessions_state()->page == VIEW_MESSAGE || possessions_state()->page == VIEW_TRANSPORT) {
+        blit(g_pic[PIC_SCREEN],0,0,320,200);
+    }
     if (survival_state()->breath > 0) {
         int remaining, id;
         remaining = survival_state()->breath;

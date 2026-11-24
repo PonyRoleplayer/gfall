@@ -1,5 +1,6 @@
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/combat/combat.h"
+#include "game/dagger/play/combat/weapon.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/play/magic/enchant.h"
 #include "game/dagger/play/magic/magicitem.h"
@@ -295,7 +296,7 @@ int inventory_weight(df_u32 parent)
     weight = 0;
     for (i = 0; i < OBJECTS; i++) {
         item = &game_state()->object[i];
-        if (!item->id || item->type != RECORD_ITEM || !belongs_to(item->parent, parent)) { continue; }
+        if (!item->id || item->type != RECORD_ITEM || item->group == ITEM_GROUP_TRANSPORT || !belongs_to(item->parent, parent)) { continue; }
         if (item->group == ITEM_GROUP_CURRENCY) { weight += item->value / GOLD_PER_WEIGHT; }
         else { weight += enchant_weight(item->id, item->weight) * item->count; }
     }
@@ -367,6 +368,35 @@ void inventory_start_spells(df_u32 book)
     }
 }
 
+static ObjectInfo *carried_arrow_stack(df_u32 except)
+{
+    int i;
+
+    for (i = 0; i < OBJECTS; i++) {
+        const ObjectInfo *item = &game_state()->object[i];
+
+        if (item->id && item->id != except && item->parent == game_state()->inventory_id && item->type == RECORD_ITEM &&
+            item->group == ITEM_GROUP_WEAPON && item->index == WEAPON_ARROW && !(item->flags & ITEM_UNPAID)) {
+            return object_edit(item->id);
+        }
+    }
+    return 0;
+}
+
+void inventory_claim(df_u32 id)
+{
+    ObjectInfo *item = object_edit(id);
+
+    if (!item || !(item->flags & ITEM_UNPAID)) { return; }
+    item->flags &= ~ITEM_UNPAID;
+    if (item->group == ITEM_GROUP_WEAPON && item->index == WEAPON_ARROW) {
+        ObjectInfo *stack = carried_arrow_stack(id);
+        int count = item->count;
+
+        if (stack && stack->count + count <= STACK_MAX && object_delete(id)) { stack->count += count; }
+    }
+}
+
 int inventory_transfer(df_u32 id, df_u32 parent)
 {
     const ObjectInfo *item, *target;
@@ -377,10 +407,12 @@ int inventory_transfer(df_u32 id, df_u32 parent)
     if (!item || item->type != RECORD_ITEM || !target || target->type != RECORD_CONTAINER) { return 0; }
     if (item->parent == parent) { return 1; }
     taking = parent == game_state()->inventory_id;
-    weight = item->group == ITEM_GROUP_CURRENCY ? item->value / GOLD_PER_WEIGHT : item->weight * item->count;
-    weight += inventory_weight(id);
-    if (taking && inventory_weight(parent) + weight > inventory_capacity() * WEIGHT_UNITS_PER_KG) {
-        g_error = "You cannot carry any more."; return 0;
+    if (taking && item->group != ITEM_GROUP_TRANSPORT) {
+        weight = item->group == ITEM_GROUP_CURRENCY ? item->value / GOLD_PER_WEIGHT : item->weight * item->count;
+        weight += inventory_weight(id);
+        if (inventory_weight(parent) + weight > inventory_capacity() * WEIGHT_UNITS_PER_KG) {
+            g_error = "You cannot carry any more."; return 0;
+        }
     }
     if (taking && item->group == ITEM_GROUP_CURRENCY) {
         int gold;
@@ -393,27 +425,25 @@ int inventory_transfer(df_u32 id, df_u32 parent)
         return 1;
     }
     if (taking && item->group == ITEM_GROUP_WEAPON && item->index == WEAPON_ARROW) {
-        int i, count;
-        for (i = 0; i < OBJECTS; i++) {
-            ObjectInfo *stack;
-            stack = object_edit(game_state()->object[i].id);
-            if (!stack || stack->parent != parent || stack->type != RECORD_ITEM ||
-                stack->group != ITEM_GROUP_WEAPON || stack->index != WEAPON_ARROW) { continue; }
-            /* inv_merge_arrows clamps the one carried stack to 199 and deletes the incoming stack, excess arrows and all: the arrows over the most stay where they were, in the stack they came from. */
-            count = stack->count + item->count;
-            if (count > STACK_MAX) {
-                int took = STACK_MAX - stack->count;
+        int count = item->count, space = STACK_MAX - arrow_count();
+        ObjectInfo *stack;
 
-                if (took <= 0) { g_error = "You cannot carry any more arrows."; return 0; }
-                stack->count = STACK_MAX;
-                object_edit(id)->count = item->count - took;
-                state_event(EVENT_GIVE,stack->id,parent,STACK_MAX);
+        /* The shop's stack stays separate so it can be priced and returned intact. */
+        if (space <= 0 || ((item->flags & ITEM_UNPAID) && count > space)) {
+            g_error = "You cannot carry any more arrows."; return 0;
+        }
+        stack = item->flags & ITEM_UNPAID ? 0 : carried_arrow_stack(id);
+        if (stack) {
+            if (count > space) {
+                stack->count += space;
+                object_edit(id)->count = count - space;
+                state_event(EVENT_GIVE,stack->id,parent,stack->count);
                 g_error = "You cannot carry any more arrows.";
                 return 1;
             }
             if (!object_delete(id)) { return 0; }
-            stack->count = count;
-            state_event(EVENT_GIVE,stack->id,parent,count);
+            stack->count += count;
+            state_event(EVENT_GIVE,stack->id,parent,stack->count);
             return 1;
         }
     }

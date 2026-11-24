@@ -13,7 +13,9 @@
 #include "engine/core/log.h"
 #include "engine/ui/pic.h"
 #include "engine/scene/interact.h"
+#include "engine/scene/spawn.h"
 #include "engine/scene/weather.h"
+#include "engine/scene/walker.h"
 
 #include "game/dagger/places/town.h"
 #include "game/dagger/tables/holidaydefs.h"
@@ -25,6 +27,7 @@
 #include "game/dagger/play/magic/magicitem.h"
 #include "game/dagger/play/magic/spellshop.h"
 #include "game/dagger/play/character/ailments.h"
+#include "game/dagger/play/input/move.h"
 #include "game/dagger/play/people/standing.h"
 #include "game/dagger/places/world.h"
 #include "game/dagger/places/travel.h"
@@ -123,8 +126,9 @@ static struct { int kind, faction, person; } g_hall;
 static void hall_text(int text)
 {
     static char line[600];
+    const Membership *member = guild_find_faction(g_hall.faction);
 
-    gfall_person_say_text(text, line, (int)sizeof(line));
+    gfall_person_say_text(text, member ? guild_rank_name(member->kind, member->rank) : 0, line, (int)sizeof(line));
     possessions_message(line, 0);
 }
 
@@ -161,8 +165,7 @@ static void hall_donate_answer(int amount)
 /*
  * A tavern's innkeeper (tavern_open, src/lifted/tavern.c; TVRN00I0.IMG: Room, Talk, Food and drinks, Goodbye). A room asks for the days (record 5102, or 5100 with
  * the hours left when one is held), refuses over 350 days kept (16), is free to a local knight and on Heart's Day, else is priced at 7 gold a day through the buyer's
- * skills and offered; a yes rents it, or adds the days. Food is a list of eleven, refused within 240 minutes of the last meal. The bed marker's number the room
- * would send the sleeper to is not read (room 0).
+ * skills and offered; a yes rents it, or adds the days. Food is a list of eleven, refused within 240 minutes of the last meal.
  */
 /*
  * The beds of a tavern's inside: the editor markers of record 4 ("kind 2", `(image & 31) - 2`) in file order. A rented room is the number of one of them, drawn at random when the
@@ -180,6 +183,9 @@ static int bed_count(void)
 
 void gfall_go_to_bed(df_u32 building, int tavern)
 {
+    const Level *level = seam_level();
+    Body *body = move_body();
+    SpawnSpot spot = {0};
     float x, y, z;
     int room, k;
 
@@ -189,9 +195,17 @@ void gfall_go_to_bed(df_u32 building, int tavern)
             if (lodging_state()->room[k].building == building) { room = lodging_state()->room[k].room; }
         }
     }
-    if (world_marker_nth(travel_whole_world(), 4, room, &x, &y, &z)) {
-        move_place(x, y + 64.0f, z, game_state()->yaw);
-    }
+    if (!level || !world_marker_nth(travel_whole_world(), 4, room, &spot.x, &spot.y, &spot.z)) { return; }
+    /* The marker can sit in a bed or above the floor. Find standing room on that floor. */
+    spot.outer = body->radius * 4.0f;
+    spot.climb = WALK_HEIGHT;
+    spot.radius = body->radius;
+    spot.height = body->height;
+    spot.flags = SPAWN_DRY;
+    if (!spawn_find(&level->scene, 0, &spot, &x, &y, &z)) { return; }
+    move_place(x, y + WALK_EYE, z, game_state()->yaw);
+    body->grounded = 1;
+    body_step(body, &level->scene, 0.0f, 0.0f, 0.0f);
 }
 
 static unsigned g_inn_building;
@@ -256,7 +270,7 @@ static void inn_act(int what)
     if (!travel_building(&type, &faction, &quality, &place)) { return; }
     g_inn_building = place;
     if (what == SERVICE_ROOM) {
-        gfall_person_say_text(room_rented(place, game_state()->minutes) ? 5100 : 5102, words, (int)sizeof(words));
+        gfall_person_say_text(room_rented(place, game_state()->minutes) ? 5100 : 5102, 0, words, (int)sizeof(words));
         /* %dwr: the hours left (macro_dwr_room_hours_left). */
         for (i = 0; words[i]; i++) {
             if (words[i] == '%' && words[i+1] == 'd' && words[i+2] == 'w' && words[i+3] == 'r') {
@@ -597,7 +611,7 @@ static int hall_heal(void)
         if (character_state()->attribute[i] < game_state()->base_attribute[i]) { lowered++; }
     }
     if (!lowered) { hall_text(350); return 0; }
-    gfall_person_say_text(403, line, (int)sizeof(line));
+    gfall_person_say_text(403, 0, line, (int)sizeof(line));
     return possessions_ask(line, hall_heal_answer);
 }
 
@@ -801,7 +815,7 @@ static void hall_act(int what)
         gfall_start_talk();
     } else if (what == SERVICE_JOIN) {
         if (guild_offer(g_hall.kind, g_hall.faction, faction_rep(g_hall.faction), &step)) {
-            gfall_person_say_text(step.text, line, (int)sizeof(line));
+            gfall_person_say_text(step.text, 0, line, (int)sizeof(line));
             if (step.ask) {
                 possessions_ask(line, hall_join_answer);
             } else {

@@ -115,8 +115,8 @@ gcc -std=gnu90 -Wall -Wextra -Werror -DDF_HOST -Itests/input_win32 -Isrc tests/c
 `InputKeys` is an optional caller-owned bank of up to 64 bindings, attached with
 `input_keys_attach`. Each slot has its own virtual key and held/pressed/released
 bytes. It is separate from the legacy `Input` bitmask and does not change any
-existing action number. GFALL attaches its 38 original actions plus two fixed
-UI keys. Other programs attach nothing and retain the existing path.
+existing action number. GFALL attaches its 38 original actions, Sprint, and two
+fixed UI keys. Other programs attach nothing and retain the existing path.
 
 `input_read` folds attached slots before clearing window key notes, using the
 same cached physical samples as the built-in actions and mouse buttons. A tap

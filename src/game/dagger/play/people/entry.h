@@ -69,13 +69,13 @@ void entry_reset(void);
 #define BASH_OPEN_UNDER 10
 /*
  * The access grant and trespass (building_enter and building_exit, maplogic.c 389..441; building_grant_access and building_access_level, run_0007E815.c; player_frame_update,
- * func_00010585.c 69..86). Inside, the player holds a grant: ACCESS_OWNER for their own house, else ACCESS_VISITOR until the building closes (a temple until 01:00 the next day);
- * leaving ends it. Each frame the nearest restriction point of the interior (rmb_restrictions) less the grant is the trespass: any over 0 is crime CRIME_TRESPASS the first frame and
- * CRIME_BREAKING after, and the watch is called. Deliberate (world-economy-access.md 3, "Uncertain"): the original's grant is nothing for a tavern and ends at once for a house, which makes
- * every point of either trespass; here a tavern and a house the player was let into give the visitor grant until they leave, as the points of 5 suggest ("a visitor may stand here").
+ * func_00010585.c 69..86). The player holds ACCESS_VISITOR until the building closes (a temple until 01:00 the next day), or until leaving a house that admitted them.
+ * An owned house or a tavern grants ACCESS_FULL until the player leaves. Resting in a tavern still requires a room.
+ * Each frame the nearest restriction point of the interior (rmb_restrictions) less the grant is the trespass: any over 0 is crime CRIME_TRESPASS the first frame and
+ * CRIME_BREAKING after, and the watch is called. GFALL's tavern grant accommodates the higher restriction values at some entrances and beds.
  */
 #define ACCESS_VISITOR 5
-#define ACCESS_OWNER 255
+#define ACCESS_FULL 255
 /* A grant with no end of its own (a house, a tavern, the owner's: building_grant_access with game_minutes + 10000000). */
 #define ACCESS_NO_END 10000000u
 /* A temple stays open for the visitor until 01:00 next day: 25 hours less the minute of the day. */

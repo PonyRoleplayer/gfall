@@ -33,6 +33,11 @@ The first version was an ellipsoid alone, with a step-up: lift, move, put down. 
 
 The first contact over all the gathered triangles, if any before t = 1, stops the body a hundredth of a radius short (`VERY_CLOSE`), and what is left of the motion is projected onto the plane through the contact, facing the sphere's centre: the body slides. Five slides settle any corner. Because the whole motion is tested, no speed and no frame time lets the body through a wall or a floor; a 700-unit move in one frame stops at the wall in hostcheck. Triangles count from both sides.
 
+The slide uses the normal at impact and projects the remaining displacement
+directly. Subtracting two nearby positions had rounded small slides
+back into the contact surface. A one-part-per-million outward bias keeps
+the next sweep from spending all its iterations on the same stair edge.
+
 **Moving away, and from inside.** Two cases were found in Privateer's Hold on the 233, where a body walked and jumped through walls:
 - **A plane the body moves away from.** Its face cannot be met, so a body in it can always leave. But while the body is within reach of that plane (distance under 1), the triangle's edges and corners off to its side still can be. A body that had slid along one wall then walked into the end of the next, a wall's edge facing it, because the triangle was skipped whole. Now only the face is skipped; edges and corners are tested until the body leaves the plane's reach.
 - **A body already inside an edge's cylinder or a corner's sphere**, by a unit or so. The quadratic's roots then are the way in, already past, and the way out, and `lowest_root` took the way out as the contact, so the body walked on through. Now a body moving deeper is stopped at once (t = 0), and one moving out is let go.
@@ -41,7 +46,12 @@ A 10-minute random walk and jump through the whole hold, with every door open, a
 
 Point in triangle is barycentric (Ericson, *Real-Time Collision Detection*, 3.4), its two weights compared times their denominator, so no divide; the static overlap test for `stuck` is the closest point on a triangle (Ericson 5.1.5).
 
-A corner or an edge the body is outside of and not coming nearer cannot be met, and `lowest_root` says so from the signs of its quadratic's terms, before the square root: the roots share a sign (their product c / a is not negative outside), and their sum -b / a is not positive. About half the corners and edges round a moving body end there. The two roots take one divide between them.
+A corner or an edge the body is moving away from cannot be hit. Both
+quadratics have a positive leading term, so `lowest_root` can reject motion
+with a nonnegative initial slope before taking a square root. It computes
+the entry root with one divide. Edge tests use cross products to measure
+motion across the edge. Subtracting squared lengths had produced spurious
+hits while landing along a vertical edge such as the throne back in the Hold.
 
 ### The numbers
 
@@ -79,7 +89,7 @@ To put a thing on the ground from outside a step (a corpse, a pile of treasure) 
 1. Gravity: `vy -= g dt`, `dy = vy dt`. Semi-implicit Euler, two multiply-adds. `g` is the body's own (`Body.gravity`): `body_init` sets `WALK_GRAVITY`, 9.8 m/s², and a game sets another for its bodies (Daggerfall Unity's player falls at 20 m/s², 800 units/s²). The fall's top speed is the same for every body.
 2. One gather round the body: across as far as the move reaches, down by a step and the fall, up by a step and the rise. It reached 2 units over the head before: a jump rose through ceilings and roofs that were never gathered, and a step up under a low ceiling put the head through it.
 3. Across. On the ground, the upper body is swept by the move, and what is under a step is walked over. A slope the upper body meets lifts it as it slides. That lift is undone by sliding back down, so the feet do not go forward at their own height into what lifted them (a steep ramp, a ladder). If it cannot get back down, the body stays where it was. In the air, the whole body is swept, feet to head, and it rides up a slope as it slides. With the upper body alone, the legs went into walls and ledges in a jump, and the feet then found a floor behind them, or none, and fell through.
-4. Down: standing, the floor within a step up or down of the feet, and the upper body swept to it, so a low ceiling over a stair keeps the body off it. With no room for the head over a step, the feet go back where they were, their height too: the sweep had got part way up, and the body hung over the step and jittered (the hold's ramp, walked into, seemed to pull the body in and snap it back). Falling: the floor within this frame's fall, landed on with the upper body, which the floor never meets; or, with none, the whole body swept down by the fall.
+4. Down: standing, the floor within a step up or down of the feet, and the upper body swept to it, so a low ceiling over a stair keeps the body off it. With no room for the head over a step, the feet go back where they were, their height too: the sweep had got part way up, and the body hung over the step and jittered (the hold's ramp, walked into, seemed to pull the body in and snap it back). Falling: the floor within this frame's fall, landed on with the upper body, which the floor never meets; or, with none, the whole body swept down by the fall. Gravity keeps building downward motion until the feet reach a floor. Losing it at each brush with a riser could leave the body suspended mid-jump.
 
 The gathered set is kept twice: each triangle's corners in the world (`g_world`), and the same triangle in the ellipsoid's space with its plane (`g_set`), which is what the sweeps read. A change of shape (upper body or whole body) marks the second stale, and the next query makes it again from the first (`shape_set`): a scale, a cross product and a square root a triangle. It used to gather again from the same box, grid, model boxes, every triangle's range test and all, twice a frame for a body in the air. A gather makes both in the shape of the moment, so what a step reads is to the bit what it read before.
 

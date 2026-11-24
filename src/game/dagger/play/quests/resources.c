@@ -5,12 +5,59 @@
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/tables/itemdefs.h"
 #include "engine/core/log.h"
+#include "engine/scene/ent.h"
+#include "engine/scene/keep.h"
 
 /* Op 75's templates for the quest op 8 starts this run: the group and index of up to four items (-1 none). */
 static int g_tpl_group[4] = { -1, -1, -1, -1 }, g_tpl_index[4];
 static void lay_items(QuestState *q, int region, int index);
 
 /* ---- Foes in the world (quest_place_object) and the events they raise ---- */
+
+/* A timed spawn can be gated by the state written by "player is in place". */
+int quest_repeat_place(const QuestState *q, const QbnOp *repeat)
+{
+    const QbnArg *gate = &repeat->arg[0];
+    int i;
+
+    if (gate->literal || gate->negate || gate->value < 0) { return -1; }
+    for (i = 0; i < q->qbn.n_op; i++) {
+        const QbnOp *op = &q->qbn.op[i];
+        const QbnArg *state = &op->arg[1], *place = &op->arg[2];
+
+        if (op->opcode == QOP_IN_PLACE && !state->literal && !state->negate &&
+            state->section == gate->section && state->value == gate->value &&
+            !place->literal && place->value >= 0 && place->value < q->qbn.n_place) { return place->value; }
+    }
+    return -1;
+}
+
+static int site_target(const QuestState *q, int target, int region, int index, int block, int record)
+{
+    const QuestPlace *p;
+
+    if (target < 0 || target >= q->qbn.n_place) { return 0; }
+    p = &q->place[target];
+    return p->bound && p->region == region && p->index == index && p->block == block && p->record == record;
+}
+
+int quest_foe_at_site(const QuestState *q, int foe, int region, int index, int block, int record)
+{
+    int i;
+
+    if (q->foe[foe].placed && q->foe[foe].made < q->qbn.foe[foe].count &&
+        site_target(q, q->foe[foe].place, region, index, block, record)) { return 1; }
+    for (i = 0; i < q->qbn.n_op; i++) {
+        const QbnOp *op = &q->qbn.op[i];
+
+        if (op->arg[1].literal || op->arg[1].value != foe) { continue; }
+        if ((op->opcode == QOP_PLACE_FOE || op->opcode == QOP_PLACE_FOE_2) && !(op->flags & 1) &&
+            !op->arg[2].literal && site_target(q, op->arg[2].value, region, index, block, record)) { return 1; }
+        if (op->opcode == QOP_SPAWN_REPEAT && op->arg[4].value &&
+            site_target(q, quest_repeat_place(q, op), region, index, block, record)) { return 1; }
+    }
+    return 0;
+}
 
 /* A quest marker of a place of the quest, in the dungeon the player is in: the place's own marker (a fixed place names its 0xFA0n), else one of the record picked by a seed of the quest and place. */
 int quest_marker_point(const QuestState *q, int place, int record, int extra, float *x, float *y, float *z)
@@ -19,11 +66,21 @@ int quest_marker_point(const QuestState *q, int place, int record, int extra, fl
 
     if (!quest_world || !quest_world->marker_at || place < 0 || place >= q->qbn.n_place || !q->place[place].bound) { return 0; }
     marker = q->place[place].marker >= 0xFA01 ? q->place[place].marker - 0xFA01 : -1;
+    if (q->place[place].block >= 0 && q->qbn.place[place].p3 >= 0) {
+        record = q->qbn.place[place].p3 == 1 ? 18 : 11;
+    }
     return quest_world->marker_at(marker, record, (unsigned)(q->qbn.id * 977 + place * 31 + extra * 7), x, y, z);
 }
 
 /* Whether the player is where the foe was placed: in its place's location, or in any dungeon when it has none. */
 static int g_loaded_region = -1, g_loaded_index = -1;   /* the location that is being loaded, before the player's place says so */
+
+static int matches_place(const QuestPlace *place, int region, int index)
+{
+    return place->bound && place->region == region && place->index == index &&
+        (place->block < 0 || !quest_world->inside ||
+         quest_world->inside(region, index, place->block, place->record));
+}
 
 static int foe_here(const QuestState *q, int f)
 {
@@ -34,7 +91,7 @@ static int foe_here(const QuestState *q, int f)
     if (g_loaded_region >= 0) { region = g_loaded_region; here = g_loaded_index; }
     where = q->foe[f].place;
     if (where < 0) { return here >= 0; }
-    return where < q->qbn.n_place && q->place[where].bound && q->place[where].region == region && q->place[where].index == here;
+    return where < q->qbn.n_place && matches_place(&q->place[where], region, here);
 }
 
 /* The foe's creatures not yet in the world are made, on the foe's marker when its place has one (the hold's, the dungeon's) else near the player. A floor not loaded yet leaves the rest for the next try. */
@@ -77,17 +134,67 @@ void quest_location_loaded(int region, int index)
     g_loaded_region = -1; g_loaded_index = -1;
 }
 
-int quest_foe_pacified(int number)
+static const QuestFoe *quest_foe_find(int number)
 {
     int slot, foe;
 
     for (slot = 0; slot < QUESTS; slot++) {
         if (!quest_runtime.slots[slot].used) { continue; }
         for (foe = 0; foe < quest_runtime.slots[slot].qbn.n_foe; foe++) {
-            if (quest_runtime.slots[slot].foe[foe].number == number) { return quest_runtime.slots[slot].foe[foe].pacified; }
+            if (quest_runtime.slots[slot].foe[foe].number == number) { return &quest_runtime.slots[slot].foe[foe]; }
         }
     }
     return 0;
+}
+
+int quest_foe_pacified(int number)
+{
+    const QuestFoe *foe = quest_foe_find(number);
+
+    return foe && foe->pacified;
+}
+
+static void forget_foe_row(KeepKey key)
+{
+    df_u32 loot = loot_container_find(key.place, key.thing);
+
+    if (loot) { object_purge(loot); }
+    keep_forget(key);
+}
+
+void quest_forget_foe(const QuestFoe *foe)
+{
+    df_u32 thing = QUEST_FOE_THING(foe->number, 0);
+    int i;
+
+    for (i = dungeon_count() - 1; i >= 0; i--) {
+        Entity *entity = dungeon_entity(i);
+
+        if ((entity->flags & ENT_KEPT) && (entity->key.thing & ~15u) == thing) {
+            EntId id = ent_id(entity);
+
+            forget_foe_row(entity->key);
+            dungeon_release_actor(i);
+            ent_remove(id);
+        }
+    }
+    for (i = keep_count() - 1; i >= 0; i--) {
+        const Keep *row = keep_at(i);
+
+        if (row->kind == KEEP_ENTITY && row->made && (row->key.thing & ~15u) == thing) { forget_foe_row(row->key); }
+    }
+}
+
+void quest_prune_foes(void)
+{
+    int i;
+
+    for (i = keep_count() - 1; i >= 0; i--) {
+        const Keep *row = keep_at(i);
+
+        if (row->kind == KEEP_ENTITY && row->made && QUEST_FOE_IS(row->key.thing) &&
+            !quest_foe_find(QUEST_FOE_NUMBER(row->key.thing))) { forget_foe_row(row->key); }
+    }
 }
 
 void quest_set_foe_pacified(QuestFoe *foe, int pacified)
@@ -263,7 +370,7 @@ int quest_in_place(const QuestState *q, int n)
 
     if (n < 0 || n >= q->qbn.n_place || !q->place[n].bound || !quest_world || !quest_world->here) { return 0; }
     quest_world->here(&region, &here, &px, &py);
-    return q->place[n].region == region && q->place[n].index == here;
+    return matches_place(&q->place[n], region, here);
 }
 
 /* An item set down in the world at the player's feet: the pile the game makes, the item moved into it. */
@@ -286,8 +393,8 @@ static void lay_items(QuestState *q, int region, int index)
     int i;
 
     for (i = 0; i < q->qbn.n_item; i++) {
-        if (q->item[i].object && q->item[i].place >= 0 && !q->item[i].laid && q->place[q->item[i].place].bound &&
-            q->place[q->item[i].place].region == region && q->place[q->item[i].place].index == index) {
+        if (q->item[i].object && q->item[i].place >= 0 && !q->item[i].laid &&
+            matches_place(&q->place[q->item[i].place], region, index)) {
             quest_put_item_down(q, i); q->item[i].laid = 1;
         }
     }

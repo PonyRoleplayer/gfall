@@ -148,7 +148,7 @@ Pictures the seam should load, which this repo already reads: `TITL00I0.IMG` and
 
 ### Controls
 
-Default keys are the decomp's, not the engine's WASD defaults (`docs/play.md`). Rebind with `input_bind` at startup. Forward and back are the arrows, not W. W is the travel map and does nothing in this slice. Turn left and right are the arrows. Shift with a turn is a slide. J jumps, D crouches, P runs. Page Up and Page Down are the float keys (the hold is dry; still bind them). The activate-centre action is its own key (action 18 in `player_movement_update`), not E. E aborts a spell in the decomp and does nothing here. Right button activates in cursor mode while the weapon is sheathed; it does not swing. A readies the weapon (action 32).
+Forward, back and turn use the arrow keys. Ctrl with a turn is a slide. J jumps, D crouches, P runs, and Shift sprints. Page Up and Page Down are the float keys. Space activates the object at the centre of the view, and E aborts a spell. A readies the weapon, and W opens the travel map. Rebind these actions on the Controls screen.
 
 Regions, matching `intrface_key_region` and `docs/state.md`:
 
@@ -166,7 +166,7 @@ Regions, matching `intrface_key_region` and `docs/state.md`:
 
 The grid is the 3D view, three by three (`intrface_set_regions`: width/3, height/3, plus the view's origin). The bar is not part of the grid. `hud_update` returning 1 skips the rest of `player_movement_update`, so the mouse does not also steer.
 
-View mode: `input_set_pointer(0)` while the cursor is inactive, so the mouse recentres and `mouse_dx` / `mouse_dy` keep coming. Apply that motion in the game to yaw, and to pitch clamped to a quarter turn (the ±256 of a 2048-step circle in `docs/port.md`, "VIEW mode"). Do not use `Input.look_dx`: it adds arrow steps and is suppressed in pointer mode. When the cursor is active, `input_set_pointer(1)` and the mouse moves the arrow instead. Toggle on the transition only. A toggle flushes motion (`input.h`).
+View mode uses `input_set_pointer(0)` while the cursor is inactive, so the mouse recentres and `mouse_dx` / `mouse_dy` keep coming. The game uses them for yaw and pitch, with pitch limited to ±256 of a 2048-step circle. Forward/Reverse and Slide Left/Right combine independently. Turn Left/Right still turn, and holding the Slide modifier makes them strafe. Forward/Reverse default to Up/Down, Slide Left/Right to comma and period, and the Slide modifier to Ctrl. Rebind them on the Controls screen. Enter frees the HUD pointer and suspends mouse look while keyboard movement continues with the same controls.
 
 Cursor mode stays on `input_set_pointer(1)` for the whole dungeon. The game draws the arrow. The engine must not also look.
 
@@ -174,13 +174,17 @@ Cursor mode stays on `input_set_pointer(1)` for the whole dungeon. The game draw
 
 The engine body is the collider. +Y is up. Do not port `object_apply_gravity` or classic's Y sign.
 
-`player_compute_jump_velocity`: `((SPD + STR) / 2) + 50`, then add `jumping * that / 100`. The decomp then negates and shifts left 8 because its velocity is in 1/256 and its jump is negative. Take the magnitude before that negate. Convert to engine units per second in one function in `play/input/move.c`, and host-test the integer magnitude and the conversion separately. Acrobat (`conditions` bit `0x10000`) doubles the impulse. Class flag bit 2 adds half again. Both use the integer magnitude. A jump from the ground spends 11 fatigue (`fatigue_add(-11)`), sets airborne, and does not re-steer until landing.
+`player_compute_jump_velocity`: `((SPD + STR) / 2) + 50`, then add `jumping * that / 100`. The decomp then negates and shifts left 8 because its velocity is in 1/256 and its jump is negative. Take the magnitude before that negate. Convert to engine units per second in one function in `play/input/move.c`, and host-test the integer magnitude and the conversion separately. Acrobat (`conditions` bit `0x10000`) doubles the impulse. Class flag bit 2 adds half again. Both use the integer magnitude. A jump from the ground spends 11 fatigue (`fatigue_add(-11)`) and sets airborne.
+
+View walking accelerates toward a yaw-relative velocity, brakes on release, and turns more quickly when reversing. Diagonals share the same speed cap as straight movement. A jump carries takeoff momentum with a small amount of air steering. During ascent the body still sweeps against walls and risers, with approach momentum ready to carry it forward when it clears an edge. On the ground and during descent, View removes the inward component of velocity at wall contact so the player can keep moving along the wall. Swimming, levitation and climbing keep their own movement rules.
+
+Hold Shift while moving on dry ground to sprint in View or Cursor mode. Sprint doubles walking speed and spends four fatigue points per second of movement. At one point of fatigue, movement returns to its regular pace. Horses and carts use their normal riding speeds. The Controls screen has a separate binding for Sprint alongside Classic Run.
 
 Fall damage, on the classic-scaled impact speed, only when it is positive: `d = ((v / 256) / 40) - 7`, then `d * d / 2`, applied to health. Map `body_landed`'s downward speed into that `v` with the same conversion, reversed. Host-test the expression on known `v`, not by eyeballing a fall.
 
 Other rules in `player_movement_update` that slice 1 keeps:
 
-- Airborne: keep the speed from takeoff. Do not read the steer region again until the ground.
+- Cursor mode keeps the speed from takeoff and resumes reading the steer region after landing.
 - View mode, on the ground, with the decomp's key 23 held: halve that speed, then subtract one. Integer. The key is whatever action 23 is in `key_map`; bind it, do not drop the decrement.
 - Crouch is `body_set_size` to half height, and the step while crouched is the smaller one (`step_size` 5 against 10 in the classic loop). Ask `body_can_stand` before standing.
 - Run is the faster steer speed. The decomp's run key is P.
@@ -599,17 +603,19 @@ slider values. Sound and Music change the engine's effect and MIDI volumes
 immediately; held drags stay captured outside the three-pixel track and clamp
 at either end. Detail retains its value and indicator without changing renderer
 detail, as requested. Full Screen hides the stone HUD and draws the original
-COMPASS/COMPBOX heading strip; F10 also toggles it. Head Bobbing now changes the
-camera using the original **int32** samples at FALL.EXE 0x18767C:
-`0,2,4,6,8,6,4,2,0,0` over the 1000-tick walking cycle. It does not move the
-collision body and stops in air, water and the relevant condition or at rest.
+COMPASS/COMPBOX heading strip; F10 also toggles it. Head Bobbing affects the
+camera only. Cursor uses the original **int32** samples at FALL.EXE 0x18767C:
+`0,2,4,6,8,6,4,2,0,0` over the 1000-tick walking cycle. View uses a smooth
+cycle driven by distance traveled on the ground, with less movement at lower
+speeds and while crouching. It eases out when stopped or airborne and adds a
+brief dip on landing. Both use the same Head Bobbing switch.
 
-CONTROLS opens CNFG00I0, not a scheme toggle. Its 38 cells and four bottom
-buttons follow `controls_buttons` at 0x17B808. The defaults translate the original
-scan-code table at 0x18484C into Windows virtual keys, including F5/F6 for sheet
-and inventory. Click a cell, release the opening mouse button, then press a key
-or mouse button. Escape cancels capture. Duplicate bindings are red and prevent
-Continue until resolved; Defaults restores keys only. Unsupported joystick input
+CONTROLS opens CNFG00I0 with its 38 original key cells, four bottom buttons and
+GFALL's Sprint cell. Defaults use Windows virtual keys, including F5/F6 for the
+sheet and inventory, with comma and period for direct slides to free Shift for
+Sprint. Click a cell, release the opening mouse button, then press a key or
+mouse button. Escape cancels capture. Duplicate bindings are red and prevent
+Continue until resolved. Defaults restores keys only. Unsupported joystick input
 has an explicit notice. A capture cannot reinterpret its own mouse press as a
 second grid click.
 
@@ -627,10 +633,14 @@ ARENA2. Like GFALL's config, it has comment headings and readable `name=value`
 lines: `resolution=640x480`, `fov=75`, `full_screen=off`, `head_bob=on`,
 `skip_opening=off` (on: no logo or opening movies at start), `mouse=cursor` (or `view`), `reverse_y=off`, audio volumes in percent,
 `detail` (0..127, stored only), `sensitivity_x`/`sensitivity_y` (1..15), and
-`turn_rate` (0..15). Switches also accept yes/no or 1/0. Keys use the names
+`turn_rate` (0..15). The Bow setting in Controls → Mouse is saved as `bow=auto`,
+`bow=classic` or `bow=draw`. Auto selects draw and release in View mode and
+Classic in Cursor mode. Switches also accept yes/no or 1/0. Keys use the names
 shown by the controls: `key.forward=Up`, `key.jump=K`,
-`key.slide_left=Left Shift`, `key.swing=Right Button`. Names are case insensitive;
+`key.slide_left=,`, `key.sprint=Shift`, `key.swing=Right Button`. Names are case insensitive.
 `Digit 2` distinguishes the keyboard's 2 from an old numeric VK code.
+Older settings with the stock Shift bindings for Slide Left/Right get new slide keys.
+If a custom action already uses Shift, Sprint gets a free key.
 The previous numeric format (including `view_flags`, `mouse_mode`, `width`,
 `height` and numeric bindings) is still read and rewritten in the readable form
 on Continue. CRLF output opens cleanly in Windows 98 Notepad. Supported resolution pairs
@@ -932,7 +942,8 @@ container persistence and dropped-pile removal remain in place.
 Equipment sounds use the original per-weapon table and armor/clothing/jewellery
 IDs. Weapon-ready sound follows the equipped weapon's index. Cloaks now add the
 first style as a back layer at order zero, matching `paperdoll_draw`, while
-retaining their front style and owner mask. Cycling a clothing style rewinds
+retaining their front style and owner mask. The Khajiit Suit leaves the
+head's opaque pixels visible where its collar overlaps. Cycling a clothing style rewinds
 within its contiguous original style range. Neither layering nor hand-specific
 art changes the saved inventory picture.
 
@@ -1003,7 +1014,10 @@ spends 11 fatigue. Swing frames wait `(115 - SPD) * 3` milliseconds. The origina
 16 sectors select six swing groups and the original hit/damage modifiers.
 An upward thrust is +10 to hit/-4 damage; a downward chop is -10/+4.
 
-A readied bow draws to frame 3 and waits for a right-button press. Release
+A readied bow with Classic controls draws to frame 3 and waits for a right-button
+press. With draw-and-release controls it stays lowered until the attack button
+is held. Mouselook can aim during the draw. Releasing the button fires once the
+bow reaches full draw, and a menu or focus reset cancels the draw. The arrow
 fires at frame 5, consumes one carried arrow and spends 11 fatigue. Reload is
 `(100 - SPD) * 10 + 1000` milliseconds. Empty bows lower with a message. The
 render-dependent original bow/arrow steps use a 60 Hz time base here: arrows
@@ -1564,6 +1578,15 @@ cross-place and rebased outdoor returns use the same queued exact-pose landing.
 An old anchor without sufficient place identity is refused instead of opening
 the wrong place.
 
+The outdoor Transport chooser follows `transport_menu` and `transport_choose`.
+It draws `MOVE00I0.IMG` over the world and uses the matching strip of
+`MOVE01I0.IMG` for each unavailable option.
+Horses and carts must be owned, raise the eye 50 units, add 225 and 100 units
+per second respectively, and require dismounting before entering buildings
+or dungeons. The ride uses GFALL's body with additional headroom. The two
+MRED CFA files provide the view of the mount, paired with the original riding
+sound loops. Saves from schema 24 remember the mounted item by ID.
+
 Outdoor drops are keyed by map pixel and quantized position inside it, with
 small saved coordinates. This avoids float precision loss and key collisions
 between separate stream origins. Four nearest nonempty piles within 320 units
@@ -1599,6 +1622,8 @@ order. Travel advances GFALL time and ailment/effect ticks, spends gold, applies
 cautious recovery or retains reckless fatigue, and performs skill advancement.
 A cautious ordinary arrival waits to 06:10 if it is night; daylight-damaged
 classes wait to 18:10 when necessary. A fatal journey remains fatal.
+City arrivals use the street marker nearest the journey's approach edge,
+facing into town. The stream fills around the selected gate before play resumes.
 
 Schema 7 appends two explicit 48-byte place descriptors (current and Recall),
 map pixel, 2048 discovery bytes, a count and up to 8192 seen-model rows at 20
@@ -1624,7 +1649,7 @@ command registrations or gameplay globals during tests.
 
 This opens the world; it does not complete every world system. Remaining work
 includes original map notes/markings and exact indoor camera controls, streamed
-large-dungeon population support, outdoor combat/encounters, riding and wagon
+large-dungeon population support, outdoor combat/encounters, and wagon
 storage, owned ships/guild travel privileges, NPC services/law/quests and an
 audit of world terrain/climate/population decisions against the decomp. Ground
 shape and pedestrian presentation currently follow GFALL's efficient builders.
@@ -1748,6 +1773,8 @@ FALL.EXE: `holiday_days` at 0x17CA24 and `holiday_regions` at 0x17CA8E, 53 holid
 - **`holiday_today`** is a year of 518400 minutes (360 days), the last five days having none; a
   holiday is for a region when its table byte is 255 or the region + 1. It comes from the 53-entry
   tables, not GFALL's sixteen.
+- A holiday announcement on arrival uses the full TEXT.RSC entry in a parchment, with the town,
+  settlement type, province and ruler title filled in. Rented-room reminders use the HUD feed.
 - **Adaptations and limits:** an arrow stack is priced by its count (the original keeps the count
   in the condition field). Repair has no enchanted-item case yet, as there are no enchantments. The
   session does not draw anything and is not wired to a screen: the inventory's shop layout
@@ -1777,7 +1804,9 @@ Source: `inventory_draw` (`src/hand/func_00092ED8.c`), `inventory_load_images` a
   and puts an unpaid one back; selling puts a pack item on the counter and takes one off it. Buy asks the
   offer: a yes-or-no box with the shopkeeper's words and Accept and Reject (Enter and Escape too); Accept
   pays, and without the gold shows TEXT.RSC 454. Clear returns the basket or the counter; Exit (or the
-  inventory key) leaves and returns everything unpaid. Steal does nothing yet (slice 7).
+  inventory key) leaves and returns everything unpaid. The Small Cart uses the wagon frame from
+  `INVE16I0.CIF`, as in `inv_draw_item_cell`. Horses and carts bypass the carry limit and
+  add no pack weight. Shop arrow stacks stay separate from owned arrows until they are claimed.
 - **The offer's words** are TEXT.RSC 260..265, one variant picked at random, its macros filled in by the
   dagger reader: `%a` the price, `%cn` the town. `%cpn` (the shop's name, `building_name` in the
   decomp's names.c) is not built, so a shop is "This shop". The original draws its variant with one
@@ -1788,7 +1817,9 @@ Source: `inventory_draw` (`src/hand/func_00092ED8.c`), `inventory_load_images` a
   stocks the models whose id is 418, or 410 with a container variant (`interior_stock_shelves`), which is
   not the dagger's shelf list; the two should be reconciled when interior models are read from the RMB
   blocks directly. A building's quality and type come from the town (`travel_building`), the price from
-  the region's standing, the holiday from the clock. Opening hours and a closed shop are left to the door.
+  the region's standing, the holiday from the clock. Armorer, general store, pawn shop and weaponsmith
+  shelves roll their own ammunition stock using the building type's weapon odds and quality. Opening
+  hours and a closed shop are left to the door.
 - **Not done:** the haggling window; Steal; selling and repair are reachable by the session API but no
   shopkeeper opens them yet (that is talk, slice 6); a save made inside a shop would leave the shelf
   containers behind as objects.
@@ -1923,8 +1954,9 @@ controller (`possessions_surrender`, `possessions_arrested`), painted by the sea
   dungeon ones and are not prepared for the watch, so the spawn hook says none and a summons makes nobody (the
   rules, the timer and the court are all tested with a fake world). A guard seen by a person is not
   modelled (`people_check_witnesses` needs the pedestrians' lines of sight). The held-back first blow is lost
-  rather than dealt after a No. Release puts the player out in the street from a building and leaves them where they
-  stand otherwise (no marker kinds 8, 4 or 12 to move to). The prison's screen (`PRIS00I0`, "N days until
+  rather than dealt after a No. A street release picks one of the town's kind 8 street markers when present
+  (editor record 10), including when the arrest started outdoors. Banishment sets a regional flag and releases the
+  player in the current town, often by a gate. The prison's screen (`PRIS00I0`, "N days until
   freedom") is not drawn: the days pass at once. `%prn` says "the prison" or a variant of record 8100.
 
 
@@ -2123,7 +2155,7 @@ trainer driven by clicks to a lesson in `tests/check_world.c`. Cure and blessing
 
 - **The innkeeper** (`inn_act`, `TVRN00I0.IMG`: Room, Talk, Food and drinks, Goodbye at x 99..220, y 51, 60, 69, 78): a person of a tavern who keeps it (the block's shopkeeper flag) offers it.
   Room asks the days (record 5102, or 5100 with the hours left, `%dwr` = minutes left / 60), then `room_offer`'s rules (record 16 past 350 days, free to a local knight and on Heart's
-  Day, else 7 gold a day through the buyer's skills with the offer's words) and `room_take`. The bed marker the room sends a sleeper to is not read (room 0). Food is a list of eleven,
+  Day, else 7 gold a day through the buyer's skills with the offer's words) and `room_take`. Food is a list of eleven,
   refused within 240 minutes of the last meal.
 - **Knights' gifts** (`knight_armor`, `knight_house_allowed`): one piece of plate a rank, a random one of seven, in the metal the rank names (rank 0 wraps the byte and gets 2),
   records 461 and 463. The house waits until the towns' houses are GFALL's own (their price is five times the largest model's radius, which the model layer holds).
@@ -2215,7 +2247,7 @@ Tests: `tests/check_magicitem.c`.
 ### Tavern beds
 
 A tavern's inside has beds: editor markers of record 4 (`world_marker_nth`, a small accessor in the dagger layer over the place's kept markers, in file order). Renting a room draws a bed at random (`rand() % how many`, `tavern_rent`) and keeps its
-number as the room; sleeping in a rented room, or in a knight's hall (room 0 unless one was rented), puts the player on that bed first (`rest_set_room`, `tavern_go_to_room`), a floor point with the eye 64 above it.
+number as the room. Sleeping in a rented room or a knight's hall (room 0 unless one was rented) looks for a clear standing point near its bed marker. The player arrives with their feet supported and their falling state cleared. If there is no clear point, they rest from their current position.
 
 ### The watch and the street
 
@@ -2224,10 +2256,11 @@ The decomp's rules (`guards_summon`, `guard_spawn`, `people_check_witnesses`, `p
 - **Witnesses** (`street_witnesses`): a citizen in the pool, up to 4096 units off with a ray from their chest to the player's eye that no wall stops, is bit 0; a guard is bit 1; none in a dungeon.
 - **A swing in a town** (`dungeon_set_street`): its hit frame kills every person within 90 units and 200 of the view (distance counts height), with none of a creature's rolls. The victim is still among the people, so a killing in sight is
   always witnessed: murder (crime 5) and `guards_summon(1)`; the Brotherhood counts it (`guild_count_crime(6, 5)`).
-- **The watch** (`street_convert`, `street_spawn`): every guard of the pool becomes a creature of kind 146 (`dungeon_add` on their entity, so the original's stats and mind apply), woken knowing the player with a
-  give-up three times a creature's (`dungeon_wake`); also a quarter of the people behind the player (over 600 of 2048 round from where they face) are replaced by a guard made near; if none came, two to five are made near.
-  A guard seen by a witness brings only the guards. A killed guard's body is the dagger's corpse (`people_lay_corpse`); the court sends the watch away (`dungeon_remove`, `people_fell`). A streamed town opens GFALL's creatures
+- **The watch** (`street_convert`, `street_spawn`): guards within combat range become creatures of kind 146 (`dungeon_add` on their entity, so the original's stats and mind apply), woken knowing the player with a
+  give-up three times a creature's (`dungeon_wake`). A full summons also turns a quarter of nearby civilians outside the player's forward arc (at least 600 of 2048 round from where the player faces) into armored guards where they stand. If none came, two to five are made near.
+  A guard witness brings only the guards. A killed guard shows the human corpse and leaves loot (`people_lay_corpse`); the court sends the watch away (`dungeon_release_actor`, `people_fell`). A streamed town opens GFALL's creatures
   with none of its own (`dungeon_open_street`), and their bodies move with the stream's origin (`dungeon_shift`).
+- **Banishment** keeps Classic's timed chance of a report within the region. In GFALL, a nearby patrol can also recognize a banished player within line of sight or join a pursuit already underway.
 - Tests: `tests/check_world.c`, `street_checks` (the last test of that file).
 
 Fixed: a guard taken from the street's people has no keep key (0, 0), and `store_health` wrote a keep row for it all the same (`keep_get` does not refuse an unkeyed key); the row was

@@ -19,8 +19,6 @@
  */
 
 enum { MARKET_NONE, MARKET_BUY, MARKET_SELL, MARKET_REPAIR };
-/* The record flag of an item in the basket that is not yet paid for (the original's 32). */
-#define ITEM_UNPAID 32
 
 /* The text ids (TEXT.RSC) the box shows after Pay: a refusal for want of gold. */
 #define TEXT_CANNOT_AFFORD 454

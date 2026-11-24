@@ -3,7 +3,7 @@
 
 static void (*g_answer)(const char *);
 /* Messages waiting behind the one shown (a service that has several things to say). */
-static char g_queue[4][512];
+static char g_queue[4][sizeof(possessions_view.notice)];
 static int g_queued;
 
 /* A dialog over the world: the message page already up and between questions is used again (an answer's follow-up), else one is opened. */
@@ -31,6 +31,7 @@ int possessions_ask(const char *words, void (*answer)(int yes))
 {
     if (!words || !*words || !answer || !dialog_ready()) { return 0; }
     df_copy(possessions_view.offer,words,sizeof(possessions_view.offer));
+    possessions_view.offer_page = 0;
     df_copy(possessions_view.yes,"Yes",sizeof(possessions_view.yes)); df_copy(possessions_view.no,"No",sizeof(possessions_view.no));
     possessions_view.prompt = PROMPT_ASK; g_ask_cb = answer; possessions_view.revision++;
     return 1;
@@ -211,6 +212,24 @@ void possessions_prompt_frame(const PlayIn *in, int click)
 {
     int n;
 
+    if (possessions_view.prompt == PROMPT_ASK && possessions_view.page == VIEW_MESSAGE && g_ask_cb) {
+        int last;
+        int left = click && possessions_hit(in->cx,in->cy,84,116,151,134);
+        int right = click && possessions_hit(in->cx,in->cy,169,116,236,134);
+
+        if (!left && !right && in->ch != 13 && in->ch != 27 && in->key != KEY_PRIOR && in->key != KEY_NEXT) { return; }
+        last = (notice_lines(possessions_view.offer,0,0,0)-1)/ASK_LINES;
+        if (in->ch == 27) { prompt_reject(); }
+        else if (in->key == KEY_PRIOR || (right && possessions_view.offer_page < last)) {
+            if (possessions_view.offer_page > 0) { possessions_view.offer_page--; }
+        } else if (in->key == KEY_NEXT) {
+            if (possessions_view.offer_page < last) { possessions_view.offer_page++; }
+        } else if (in->ch == 13 || left) {
+            if (possessions_view.offer_page < last) { possessions_view.offer_page++; }
+            else { prompt_accept(); }
+        } else if (right) { prompt_reject(); }
+        return;
+    }
     if (possessions_view.prompt == PROMPT_LIST) {
         /* The rows are 8 pixels from y 34; a click on one picks it, Escape none. */
         int shown;

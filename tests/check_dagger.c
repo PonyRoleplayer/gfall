@@ -1943,6 +1943,33 @@ static void check_far_bake(const Image *baked, const Palette *pal)
     printf("far ground: %d real textures, %d/256 baked tiles agree with original averages\n", n, matched);
 }
 
+static void check_gate_pavement(void)
+{
+    Bsa *arch = bsa_open("ARCH3D.BSA");
+    df_u32 id;
+
+    check_expect(arch != 0, "city gates: load the model archive");
+    if (!arch) { return; }
+    for (id = 446; id <= 447; id++) {
+        const BsaRec *record = bsa_find_id(arch, id);
+        const df_u8 *bytes = record ? bsa_read_scratch(arch, record, BSA_SCRATCH_MODEL) : 0;
+        const Mesh *mesh = bytes ? arch3d_load(bytes, record->size, id) : 0;
+        int i, pavement, coplanar;
+
+        pavement = coplanar = 0;
+        for (i = 0; mesh && i < mesh->ntris; i++) {
+            const Tri *t = &mesh->tris[i];
+
+            if (t->y[0] != t->y[1] || t->y[1] != t->y[2]) { continue; }
+            pavement += t->y[0] > 0 && t->y[0] <= 2.0f;
+            coplanar += t->y[0] == 0;
+        }
+        check_expect(pavement == 2 && coplanar == 0,
+                     "city gates: pavement clears the town ground by a small step");
+    }
+    bsa_close(arch);
+}
+
 /*
  * The world map and the stream (docs/streaming.md): Daggerfall's pixel
  * holds Daggerfall; a stream opened there fills its ring, and a walk of
@@ -2921,8 +2948,21 @@ static void check_platform(const Scene *scene, int lift)
         return;
     }
     top = start.cy + start.ey;
-    /* Toward its near edge: the throne stands on the far half of it. */
     body_init(&body, WALK_RADIUS, WALK_HEIGHT, WALK_STEP, WALK_EYE);
+    /* A high jump reaches the chair back during descent. Finish the drop
+     * along its edge and find the seat, 20 above the platform. */
+    body_place(&body, start.cx - start.ex - 50.0f, top - 36.0f, start.cz);
+    for (i = 0; i < 3; i++) {
+        body_step(&body, scene, 0.0f, 0.0f, 1.0f / 30.0f);
+    }
+    check_expect(body_jump(&body, 240.0f), "dungeon movers: jump toward the throne starts on the room floor");
+    for (i = 0; i < 60 && !body.grounded; i++) {
+        body_step(&body, scene, 200.0f / 30.0f, 0.0f, 1.0f / 30.0f);
+    }
+    check_expect(body.grounded && check_near(body.feet[1], top + 20.0f, 0.1f),
+                 "dungeon movers: a high jump lands on the throne seat along its back");
+
+    /* Toward its near edge: the throne stands on the far half of it. */
     body_place(&body, start.cx - start.ex * 0.66f, top, start.cz);
     for (i = 0; i < 5; i++) {
         body_step(&body, scene, 0.0f, 0.0f, 1.0f / 30.0f);
@@ -4140,6 +4180,7 @@ int check_dagger(const char *root_in)
 
     check_skies();
     check_land();
+    check_gate_pavement();
     check_stream();
     check_dungeon_lights();
     check_dungeon_movers();

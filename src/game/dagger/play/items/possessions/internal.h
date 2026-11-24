@@ -22,6 +22,7 @@ int possessions_drop_gold(int value);
 
 /* People and services. */
 void possessions_service_frame(const PlayIn *in, int click);
+void possessions_transport_frame(const PlayIn *in, int click);
 void possessions_talk_frame(const PlayIn *in, int click);
 void possessions_bank_frame(const PlayIn *in, int click);
 void possessions_bank_run(int op, int amount, int confirmed);

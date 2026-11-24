@@ -20,8 +20,8 @@
 #include "game/dagger/places/doors.h"
 #include "game/dagger/places/travel.h"
 #include "game/dagger/places/town.h"
-#include "game/dagger/tables/commerce.h"
-#include "game/dagger/tables/careers.h"
+#include "game/dagger/tables/buildingtypes.h"
+#include "game/dagger/play/state.h"
 #include "game/dagger/play/travel/dunmap.h"
 #include "game/dagger/play/travel/marker.h"
 #include "game/dagger/play/ui/words.h"
@@ -150,20 +150,26 @@ static void count_polygon(void *ctx, const AutomapCorner *corner, int n, df_u32 
     (*(int *)ctx)++;
 }
 
+static int first_variant(int count) { (void)count; return 0; }
+
 static void check_words(void)
 {
     static const int records[] = { 7206, 7207, 7208, 7209, 7215, 7218, 7225, 7231, 7333, 7250, 7251, 7266, 7281, 7304, 7261, 7294, 8050, 8055, 8062, 8063 };
-    WordsPlayer sheet;
+    static const char *const races[] = {
+        "Breton", "Redguard", "Nord", "Dark Elf", "High Elf", "Wood Elf", "Khajiit", "Argonian"
+    };
+    CharacterState *pc = character_state();
+    CharacterState saved = *pc;
     Words w;
-    char out[512];
+    char out[512], offer[512], expected[64];
     int r;
     int i;
 
-    mem_zero(&sheet, sizeof(sheet));
-    strcpy(sheet.name, "Ada Lovel");
-    sheet.race = RACE_BRETON;
+    strcpy(pc->name, "Ada Lovel");
+    pc->race = PLAYER_RACE_BRETON;
+    pc->female = 1;
+    words_set_player(pc, race_name);
     mem_zero(&w, sizeof(w));
-    w.pc = &sheet;
     w.key = "the bank";
     w.loc = "the bank";
     w.direction = "north";
@@ -196,7 +202,26 @@ static void check_words(void)
     }
     words_expand("%pcf the %ra", out, (int)sizeof(out));
     check_expect(strcmp(out, "Ada the Breton") == 0, "words: the first name and the race");
+    words_expand("%hnr %pcn / %pcnf", out, sizeof(out));
+    check_expect(strcmp(out, "Lady Ada Lovel / Ada") == 0, "words: player name and honorific need no dialogue-specific context");
+    words_set_roll(first_variant);
+    words_say(7208, out, sizeof(out));
+    words_set_roll(0);
+    check_expect(strcmp(out, "Good day to you, Ada.") == 0, "words: a townsperson's original greeting addresses the character");
+    if (textrsc_read_in("M0C00Y13.QRC", 1000, offer, sizeof(offer)) >= 0) {
+        for (i = 0; i < (int)(sizeof(races) / sizeof(races[0])); i++) {
+            pc->race = i;
+            words_expand(offer, out, sizeof(out));
+            snprintf(expected, sizeof(expected), "a stand up %s.", races[i]);
+            check_expect(strstr(out, expected) && strstr(out, "you away Ada Lovel."),
+                         "words: the original Fighters Guild offer uses the selected race and full name");
+        }
+    } else {
+        check_expect(0, "words: read M0C00Y13's original offer");
+    }
     words_use(0);
+    words_set_player(0, 0);
+    *pc = saved;
 }
 
 static void check_marker(void)

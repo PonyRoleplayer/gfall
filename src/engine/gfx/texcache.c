@@ -701,20 +701,22 @@ df_u32 texcache_stream_ram(void)
     return g_res ? mem_heap_bytes(g_chain_heap) : 0;
 }
 
-void texcache_bind(int slot)
+int texcache_bind(int slot)
 {
     if (g_stream || g_all || (g_res && slot >= 0 && slot < TEX_SLOTS && g_dyn[slot])) {
         df_u32 h;
 
         if (texres_handle(slot, &h)) {
             glide_bind(h);
+            return 1;
         }
-        return;
+        return 0;
     }
     if (slot < 0 || slot >= g_n || !g_live[slot]) {
-        return;
+        return 0;
     }
     glide_bind(g_handle[slot]);
+    return 1;
 }
 
 void texcache_stats(int *live, int *unfit, int *total, df_u32 *bytes)

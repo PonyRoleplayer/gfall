@@ -4,6 +4,7 @@
 #include "game/dagger/places/wild.h"
 #include "game/dagger/formats/worldmap.h"
 #include "game/dagger/places/wres.h"
+#include "game/dagger/tables/combatdefs.h"
 #include "game/dagger/tables/enemies.h"
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
@@ -88,15 +89,12 @@ static int g_nset;
 /* Archive 399's attack records 5..9, held once a guard is called to a fight. */
 static int g_attack[5];
 static int g_attack_on;
-/* Corpse keys, so two bodies are not the same row. */
-static df_u32 g_corpse_n;
+static int g_corpse_slot = -1;
 /* TEXTURE.380: the human blood splash. */
 #define BLOOD_ARCHIVE 380
 /* A corpse is put on the floor found from this far above its feet to this far below: a fall's worth. */
 #define CORPSE_FLOOR_ABOVE 4.0f
 #define CORPSE_FLOOR_BELOW 4096.0f
-/* A guard corpse's keep place: not a location id. */
-#define CORPSE_PLACE 0x57544348u
 static int g_pictures;
 static float g_tick;
 static df_u32 g_seed = 0x6d2b79f5u;
@@ -160,6 +158,8 @@ void people_end(void)
         g_scene->nentities = 0;
     }
     release_attack();
+    wres_release(g_corpse_slot);
+    g_corpse_slot = -1;
     /* The pictures are the stream's: they go with it (wres_end). */
     g_on = 0;
     g_scene = 0;
@@ -502,34 +502,44 @@ static void walk(int i, float secs)
     e->z += dz / d * step;
 }
 
-/* Pictures on, health set: a citizen's 1, a guard's not rolled yet. 0 when a picture has no size. */
-static int embody(int slot, int set, float lx, float lz, double cx, double cz)
+/* Walking in five views, and one idle picture facing the viewer. */
+static int dress(Entity *e, const Set *set)
 {
-    Entity *e;
-    Person *p;
+    EntityPose walk = {0}, idle = {0};
     int k;
 
-    e = &g_ent[slot];
-    p = &g_per[slot];
-    entity_init(e);
-    mem_zero(p, sizeof(Person));
-    /* Walking, five views; standing, one picture that faces the viewer. */
     for (k = 0; k < ENTITY_VIEWS; k++) {
-        e->pose[ENTITY_WALK].slot[k] = (df_u16)g_set[set].slot[k];
-        e->pose[ENTITY_IDLE].slot[k] = 0xffff;
-        if (!size_of(g_set[set].slot[k], &e->pose[ENTITY_WALK].w[k], &e->pose[ENTITY_WALK].h[k])) {
+        walk.slot[k] = (df_u16)set->slot[k];
+        idle.slot[k] = SLOT_NONE;
+        if (!size_of(set->slot[k], &walk.w[k], &walk.h[k])) {
             return 0;
         }
     }
-    e->pose[ENTITY_IDLE].slot[0] = (df_u16)g_set[set].slot[5];
-    if (!size_of(g_set[set].slot[5], &e->pose[ENTITY_IDLE].w[0], &e->pose[ENTITY_IDLE].h[0])) {
+    idle.slot[0] = (df_u16)set->slot[5];
+    if (!size_of(set->slot[5], &idle.w[0], &idle.h[0])) {
+        return 0;
+    }
+    walk.rate = 4;
+    idle.rate = 1;
+    e->pose[ENTITY_WALK] = walk;
+    e->pose[ENTITY_IDLE] = idle;
+    return 1;
+}
+
+/* Pictures on, health set: a citizen's 1, a guard's not rolled yet. */
+static int embody(int slot, int set, float lx, float lz, double cx, double cz)
+{
+    Entity *e = &g_ent[slot];
+    Person *p = &g_per[slot];
+
+    entity_init(e);
+    mem_zero(p, sizeof(Person));
+    if (!dress(e, &g_set[set])) {
         return 0;
     }
     e->x = lx;
     e->z = lz;
     e->y = wild_ground(cx, cz);
-    e->pose[ENTITY_WALK].rate = 4;
-    e->pose[ENTITY_IDLE].rate = 1;
     e->phase = (df_u8)pick(256);
     e->moving = 1;
     e->live = 1;
@@ -558,7 +568,8 @@ static int spawn(const Camera *cam, double x0, double z0, int climate, int anywh
     int attempt;
     int set;
 
-    for (slot = 0; slot < PEOPLE_MAX && g_ent[slot].live; slot++) {
+    /* A vanishing guard's slot stays reserved until combat drops its reference. */
+    for (slot = 0; slot < PEOPLE_MAX && (g_ent[slot].live || g_per[slot].held); slot++) {
     }
     if (slot == PEOPLE_MAX) {
         return 0;
@@ -876,17 +887,22 @@ int people_lay_corpse(Entity *e)
     float fy;
 
     i = slot_of(e);
-    if (!living(i) || g_per[i].effect || g_set[g_per[i].set].archive != GUARD_ARCHIVE) {
+    if (i < 0 || !e->live || g_per[i].effect || g_set[g_per[i].set].archive != GUARD_ARCHIVE) {
         return 0;
     }
-    if (!enemy_corpse(ENEMY_CITY_WATCH, &body_archive, &body_record)) {
+    if (g_corpse_slot < 0) {
+        foe_corpse(ENEMY_CITY_WATCH, &body_archive, &body_record);
+        slot = wres_slot(body_archive, body_record, WRES_SPRITE);
+        if (!wres_acquire(slot)) {
+            wres_release(slot);
+            return 0;
+        }
+        g_corpse_slot = slot;
+    }
+    if (!size_of(g_corpse_slot, &e->pose[ENTITY_DEAD].w[0], &e->pose[ENTITY_DEAD].h[0])) {
         return 0;
     }
-    slot = wres_slot(body_archive, body_record, WRES_SPRITE);
-    if (slot < 0 || !wres_acquire(slot) || !size_of(slot, &e->pose[ENTITY_DEAD].w[0], &e->pose[ENTITY_DEAD].h[0])) {
-        return 0;
-    }
-    e->pose[ENTITY_DEAD].slot[0] = (df_u16)slot;
+    e->pose[ENTITY_DEAD].slot[0] = (df_u16)g_corpse_slot;
     e->pose[ENTITY_DEAD].slot[1] = 0xffff;
     e->pose[ENTITY_DEAD].rate = 1;
     e->act = ENTITY_DEAD;
@@ -901,11 +917,6 @@ int people_lay_corpse(Entity *e)
     p->hostile = 0;
     p->corpse = 1;
     p->health = 0;
-    if (!e->key.place && !e->key.thing) {
-        g_corpse_n++;
-        e->key.place = CORPSE_PLACE;
-        e->key.thing = g_corpse_n;
-    }
     /* Onto the floor under it, from a little above its feet down as far as a fall goes. */
     if (g_scene && collide_floor_at(g_scene, e->x, e->z, e->y + CORPSE_FLOOR_ABOVE, e->y - CORPSE_FLOOR_BELOW, &fy)) {
         e->y = fy;
@@ -936,7 +947,7 @@ Entity *people_blood(float x, float y, float z, int record)
     if (slot < 0 || !wres_acquire(slot) || !size_of(slot, &w, &h)) {
         return 0;
     }
-    for (i = 0; i < PEOPLE_MAX && g_ent[i].live; i++) {
+    for (i = 0; i < PEOPLE_MAX && (g_ent[i].live || g_per[i].held); i++) {
     }
     if (i == PEOPLE_MAX) {
         return 0;
@@ -954,7 +965,6 @@ Entity *people_blood(float x, float y, float z, int record)
     e->moving = 1;
     e->live = 1;
     g_per[i].effect = 1;
-    g_per[i].held = 1;
     return e;
 }
 
@@ -1025,17 +1035,6 @@ static void arm_guard(Entity *e)
     e->pose[ENTITY_ATTACK].rate = 4;
 }
 
-void people_hold(int index)
-{
-    if (!living(index)) {
-        return;
-    }
-    g_per[index].held = 1;
-    if (g_set[g_per[index].set].archive == GUARD_ARCHIVE) {
-        arm_guard(&g_ent[index]);
-    }
-}
-
 /* One set's pictures read now, and no one else's: a guard needed this frame must not wait for the whole street's. */
 static void load_set(int set)
 {
@@ -1054,6 +1053,34 @@ static void load_set(int set)
     s->ready = 1;
 }
 
+int people_hold_guard(int index)
+{
+    Person *p;
+    Entity *e;
+    int set;
+
+    if (!living(index) || g_per[index].effect) {
+        return 0;
+    }
+    p = &g_per[index];
+    e = &g_ent[index];
+    if (g_set[p->set].archive != GUARD_ARCHIVE) {
+        set = set_of(GUARD_ARCHIVE);
+        if (set < 0) {
+            return 0;
+        }
+        load_set(set);
+        if (!dress(e, &g_set[set])) {
+            return 0;
+        }
+        p->set = set;
+        p->health = -1;
+    }
+    arm_guard(e);
+    p->held = 1;
+    return 1;
+}
+
 /*
  * A slot for a guard: a free one, else a citizen sent away to make room (a busy street fills all
  * PEOPLE_MAX, and no guard could then come: a crime in Daggerfall brought a shout and no one). The
@@ -1068,7 +1095,7 @@ static int room_for_guard(const Camera *cam)
     int i;
 
     for (i = 0; i < PEOPLE_MAX; i++) {
-        if (!g_ent[i].live) {
+        if (!g_ent[i].live && !g_per[i].held) {
             return i;
         }
     }
@@ -1085,7 +1112,7 @@ static int room_for_guard(const Camera *cam)
 
         e = &g_ent[i];
         p = &g_per[i];
-        if (e->dead || p->effect || p->held || p->hostile || g_set[p->set].archive == GUARD_ARCHIVE) {
+        if (!e->live || e->dead || p->effect || p->held || p->hostile || g_set[p->set].archive == GUARD_ARCHIVE) {
             continue;
         }
         dx = e->x - cam->x;

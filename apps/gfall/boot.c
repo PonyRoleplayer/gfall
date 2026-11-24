@@ -29,6 +29,7 @@
 #include "game/dagger/formats/formats.h"
 #include "game/dagger/places/place.h"
 #include "game/dagger/play/play.h"
+#include "game/dagger/play/ui/words.h"
 #include "game/dagger/tables/tables.h"
 
 #include "buildings/buildings.h"
@@ -169,6 +170,7 @@ int seam_boot(void)
     gfall_screen_install_draw();
     set_save_capture(seam_capture_world);
     set_words(textrsc_read);
+    words_set_player(character_state(), race_name);
     set_status_intro(seam_status_intro);
     gfall_quests_install_text();
     {

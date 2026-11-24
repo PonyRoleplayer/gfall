@@ -10,6 +10,8 @@
 #include "game/dagger/play/quests/quest.h"
 #include "game/dagger/play/ui/movie.h"
 #include "game/dagger/play/people/guild.h"
+#include "game/dagger/tables/buildingtypes.h"
+#include "../buildings/buildings.h"
 #include "../seam.h"
 #include "../screen/screen.h"
 #include "../sound.h"
@@ -18,6 +20,7 @@
 #include "engine/core/log.h"
 #include "engine/core/mem.h"
 #include "engine/ui/pic.h"
+#include "engine/scene/interact.h"
 #include "engine/scene/stream.h"
 
 #include "game/dagger/formats/factionfile.h"
@@ -57,21 +60,19 @@ static int quest_scene(char code, const char *words, int ask, void (*answer)(int
 /* The TEXT.RSC macros of a quest's text: the player's name and race, the town and the region. */
 static int quest_macros(const char *in, char *out, int cap)
 {
-    static WordsPlayer pc;
     Words w;
     int i;
     char province[32];
     const Faction *faction;
 
-    for (i = 0; i < (int)sizeof(pc.name) - 1 && character_state()->name[i]; i++) { pc.name[i] = character_state()->name[i]; }
-    pc.name[i] = 0;
-    pc.race = character_state()->race; pc.female = character_state()->female;
     faction = faction_province_of(travel_region());
     df_copy(province, faction ? faction->name : "", sizeof(province));
     mem_zero(&w, sizeof(w));
-    w.pc = &pc; w.city = town_name(); w.region = province;
+    w.oath_race = character_state()->race;
+    w.city = town_name(); w.region = province;
     words_use(&w);
     words_expand(in, out, cap);
+    words_use(0);
     for (i = 0; out[i]; i++) { }
     return i;
 }
@@ -135,6 +136,27 @@ static void quest_here(int *region, int *index, int *px, int *py)
     *px = world_where()->px; *py = world_where()->py;
 }
 
+static int quest_inside(int region, int index, int block, int record)
+{
+    const PlaceWhere *where = &world_where()->where;
+
+    return where->kind == WHERE_INSIDE && where->region == region && where->index == index &&
+           where->block == block && where->record == record;
+}
+
+static int quest_building_name(int slot, int i, int form, char *out, int cap)
+{
+    const QuestPlace *p = &quest_at(slot)->place[i];
+    const TownBuilding *building = town_building(p->region, p->index, p->block, p->record);
+    df_u32 seed = game_state()->random;
+
+    (void)form;
+    if (!building) { return 0; }
+    gfall_building_name(building, p->region, p->index, out, cap);
+    random_seed(seed);
+    return out[0] != 0;
+}
+
 /* A location's number (MAPS' LOC_ID, 1 for an outside and its dungeon the next): the region and the outside's index in it, found by reading each region's two lists once and kept. */
 static int quest_find_number(int number, int *region, int *index)
 {
@@ -168,12 +190,57 @@ static int quest_region_name(int region, char *out, int cap)
     return faction ? 1 : 0;
 }
 
-/* quest_place_object: a quest's creature among the dungeon's actors, unseen and near the player. */
+/* spawn_point_building uses kind 6 (editor record 8), with a preference
+ * for an unseen marker on the player's floor. GFALL checks clearance and
+ * can also use a quest marker if the entrances are too close or blocked. */
+#define BUILDING_SPAWN_FLOOR 64.0f
+static int quest_spawn_in_building(const Camera *cam, int kind, df_u32 thing)
+{
+    static const int records[] = { 8, 11 };
+    const World *world = travel_whole_world();
+    const Body *body = move_body();
+    const Level *level = seam_level();
+    float x, y, z;
+    int r, count, first, pass, i;
+
+    if (!world || !level) { return 0; }
+    for (r = 0; r < (int)(sizeof(records) / sizeof(records[0])); r++) {
+        for (count = 0; world_marker_nth(world, records[r], count, &x, &y, &z); count++) { }
+        if (!count) { continue; }
+        first = (int)(thing % (unsigned)count);
+        for (pass = 0; pass < 3; pass++) {
+            for (i = 0; i < count; i++) {
+                float dx, dy, dz, dist;
+                UseHit hit;
+
+                world_marker_nth(world, records[r], (first + i) % count, &x, &y, &z);
+                dx = x - body->feet[0]; dz = z - body->feet[2];
+                if (dx * dx + dz * dz <= 80.0f * 80.0f) { continue; }
+                if (pass < 2) {
+                    int same_floor = df_absf(y - body->feet[1]) < BUILDING_SPAWN_FLOOR;
+
+                    if (same_floor != (pass == 0)) { continue; }
+                    dx = x - cam->x; dy = y + 24.0f - cam->y; dz = z - cam->z;
+                    dist = df_sqrt(dx * dx + dy * dy + dz * dz);
+                    if (dist > 1.0f && dx * df_sin(cam->yaw) + dz * df_cos(cam->yaw) > dist * 0.34f) {
+                        interact_cast(&level->scene, cam->x, cam->y, cam->z, dx / dist, dy / dist, dz / dist, dist, &hit);
+                        if (hit.wall >= dist) { continue; }
+                    }
+                }
+                if (encounter_place_at(cam, kind, thing, x, y, z, BUILDING_SPAWN_FLOOR)) { return 1; }
+            }
+        }
+    }
+    return 0;
+}
+
+/* quest_place_object: make the creature at a building marker or near the player. */
 static int quest_spawn_foe(int kind, df_u32 thing)
 {
     Camera cam;
 
     move_camera(&cam);
+    if (world_where()->where.kind == WHERE_INSIDE && quest_spawn_in_building(&cam, kind, thing)) { return 1; }
     return encounter_place(&cam, kind, thing);
 }
 
@@ -210,17 +277,32 @@ static const char *quest_place(void)
 /* A quest marker of the dungeon the player is in (dunstream's), a quest's creature on the floor beside it, and a pile there for its item. */
 static int quest_marker_at(int marker, int record, unsigned seed, float *x, float *y, float *z)
 {
+    const World *world = travel_whole_world();
+
+    if (world_where()->where.kind == WHERE_INSIDE) {
+        float point[3];
+        int count = 0;
+
+        while (world_marker_nth(world, record, count, &point[0], &point[1], &point[2])) { count++; }
+        if (!count) {
+            record = record == 11 ? 18 : 11;
+            while (world_marker_nth(world, record, count, &point[0], &point[1], &point[2])) { count++; }
+        }
+        return count && world_marker_nth(world, record, (int)(seed % (unsigned)count), x, y, z);
+    }
     /* GFALL loads its dungeons whole (a streamed one is the viewers'): the world's markers; a streamed dungeon's are dunstream's. */
     if (dunstream_active()) { return dunstream_quest_marker(marker, record, seed, x, y, z); }
-    return travel_whole_world() && world_quest_marker(travel_whole_world(), marker, record, seed, x, y, z);
+    return world && world_quest_marker(world, marker, record, seed, x, y, z);
 }
 
 static int quest_spawn_foe_at(int kind, df_u32 thing, float x, float y, float z)
 {
     Camera cam;
+    float climb;
 
     move_camera(&cam);
-    return encounter_place_at(&cam, kind, thing, x, y, z);
+    climb = world_where()->where.kind == WHERE_INSIDE ? BUILDING_SPAWN_FLOOR : ENC_AT_CLIMB;
+    return encounter_place_at(&cam, kind, thing, x, y, z, climb);
 }
 
 static df_u32 quest_place_item_at(float x, float y, float z)
@@ -228,8 +310,18 @@ static df_u32 quest_place_item_at(float x, float y, float z)
     return ground_container(x, y, z);
 }
 
-/* A building of a town for a quest's place: of the type asked (17..20 any house, below 0 any) picked by the seed. */
-static int quest_pick_building(int region, int index, int type, unsigned seed, int *block, int *record)
+static int building_sites(const TownBuilding *building, int type, int site)
+{
+    if (type >= BUILDING_HOUSE1 && type <= BUILDING_HOUSE4) {
+        if (building->type < BUILDING_HOUSE1 || building->type > BUILDING_HOUSE4) { return 0; }
+    } else if (type >= 0 && (building->type != type || (type == BUILDING_GUILD_HALL && building->faction != 40))) {
+        return 0;
+    }
+    return building->sites[site < 0 ? SITE_ANY : site == 1 ? SITE_ITEM : SITE_QUEST];
+}
+
+/* Choose among the town's matching interior quest markers. */
+static int quest_pick_building(int region, int index, int type, int site, unsigned seed, int *block, int *record)
 {
     const TownBuilding *list;
     int count, i, n, pick;
@@ -237,15 +329,12 @@ static int quest_pick_building(int region, int index, int type, unsigned seed, i
     list = town_buildings(region, index, &count);
     if (!list) { return 0; }
     n = 0;
-    for (i = 0; i < count; i++) {
-        if (type < 0 ? (list[i].type < 17 && list[i].type != 1) : (list[i].type == type || (type >= 17 && type <= 20 && list[i].type >= 17 && list[i].type <= 20))) { n++; }
-    }
+    for (i = 0; i < count; i++) { n += building_sites(&list[i], type, site); }
     if (!n) { return 0; }
     pick = (int)(seed % (unsigned)n);
     for (i = 0; i < count; i++) {
-        if (type < 0 ? (list[i].type < 17 && list[i].type != 1) : (list[i].type == type || (type >= 17 && type <= 20 && list[i].type >= 17 && list[i].type <= 20))) {
-            if (pick-- == 0) { *block = list[i].block; *record = list[i].record; return 1; }
-        }
+        pick -= building_sites(&list[i], type, site);
+        if (pick < 0) { *block = list[i].block; *record = list[i].record; return 1; }
     }
     return 0;
 }
@@ -403,8 +492,10 @@ void gfall_quests_install_text(void)
     static const QuestWorld world = {
         travel_count, travel_location, quest_here, quest_region_name, quest_journey, travel_discover,
         quest_spawn_foe, teleport, quest_place_item, quest_find_number, quest_marker_at,
-        quest_spawn_foe_at, quest_place_item_at, quest_pick_building, quest_pick_site, quest_person_name, quest_outdoors, quest_creatures
+        quest_spawn_foe_at, quest_place_item_at, quest_pick_building, quest_pick_site, quest_person_name, quest_outdoors, quest_creatures,
+        quest_inside
     };
+    static const QuestNames names = { 0, quest_building_name, 0 };
     static const CurseWorld curse = { curse_haunt, curse_clan, curse_region, curse_in_town };
 
     quest_set_text(quest_text);
@@ -413,6 +504,7 @@ void gfall_quests_install_text(void)
     quest_set_scene(quest_scene);
     quest_set_macros(quest_macros);
     quest_set_place(quest_place);
+    quest_set_names(&names);
     quest_set_world(&world);
     curse_set_world(&curse);
 }

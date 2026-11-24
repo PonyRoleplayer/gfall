@@ -29,7 +29,7 @@
 #define MINUTES_PER_WEEK 10080u
 #define MONTHS 12
 
-#define STATE_VERSION 23
+#define STATE_VERSION 24
 #define STATE5_WIRE_BYTES 348
 /* The biography's five lasting modifiers a save holds from schema 19, four bytes each. */
 #define BIO_WIRE_BYTES 20
@@ -257,6 +257,8 @@ df_u32 object_new(int type, df_u32 parent, int index, unsigned high);
 int object_reparent(df_u32 id, df_u32 parent);
 /* Only leaves may be deleted. Mandatory session records are protected. */
 int object_delete(df_u32 id);
+/* Delete an object and the contents it owns. */
+void object_purge(df_u32 id);
 void state_settings(int flags, int mouse_mode);
 int state_mode_push(int mode);
 int state_mode_pop(void);

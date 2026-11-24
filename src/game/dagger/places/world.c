@@ -164,9 +164,11 @@ struct World {
     int nuse;
     Mover *mover;
     int nmover;
-    /* Inside: the editor markers, and what the building is. */
+    /* Inside: the editor markers, the access restriction points, and what the building is. */
     Marker *mark;
     int nmark;
+    RmbRestriction *restriction;
+    int nrestriction;
     int building;
     int faction;
     /*
@@ -1734,6 +1736,10 @@ static World *assemble(const Dungeon *hold, int require_start, int inside_block,
         }
         if (inside_block >= 0) {
             block = rmb_load_interior(rdb_bytes, rec->size, arch, inside_record, cache, &ncache);
+            world->restriction = (RmbRestriction *)mem_alloc(RMB_RESTRICTIONS_MAX * sizeof(RmbRestriction));
+            if (world->restriction) {
+                world->nrestriction = rmb_restrictions(rdb_bytes, rec->size, inside_record, world->restriction, RMB_RESTRICTIONS_MAX);
+            }
             if (!rmb_building(rdb_bytes, rec->size, inside_record,
                               &world->building, &world->faction)) {
                 world->building = -1;
@@ -1754,8 +1760,14 @@ static World *assemble(const Dungeon *hold, int require_start, int inside_block,
         }
         shift_block(block, hold->block[b].x, hold->block[b].z, tile);
         if (inside_block >= 0) {
+            int i;
+
             world->mark = block->marker;
             world->nmark = block->nmarker;
+            for (i = 0; i < world->nrestriction; i++) {
+                world->restriction[i].x += (float)(hold->block[b].x * tile);
+                world->restriction[i].z += (float)(hold->block[b].z * tile);
+            }
         }
         if (world->place == PLACE_DUNGEON) {
             int level;
@@ -2230,6 +2242,21 @@ int world_building(const World *world, int *faction)
         *faction = world ? world->faction : 0;
     }
     return world && world->place == PLACE_INSIDE ? world->building : -1;
+}
+
+int world_restriction_at(const World *world, const float feet[3])
+{
+    int i, nearest = -1;
+    float best = 0.0f;
+
+    for (i = 0; world && i < world->nrestriction; i++) {
+        const RmbRestriction *point = &world->restriction[i];
+        float x = point->x - feet[0], y = point->y - feet[1], z = point->z - feet[2];
+        float distance = x*x + y*y + z*z;
+
+        if (nearest < 0 || distance < best) { nearest = i; best = distance; }
+    }
+    return nearest >= 0 ? world->restriction[nearest].level : 0;
 }
 
 int world_emitter_count(const World *world)

@@ -13,6 +13,7 @@
 #include "engine/core/df.h"
 #include "engine/scene/stream.h"
 #include "engine/scene/automap.h"
+#include "engine/scene/collide.h"
 #include "engine/scene/interact.h"
 #include "engine/sound/music.h"
 #include "engine/sound/sound.h"
@@ -29,8 +30,12 @@ enum {
     LAND_SAVED,
     /* On the walkable cell nearest the place's start: a town's middle can be inside a building. */
     LAND_STREET,
+    /* A city arrival marker nearest the approach edge. */
+    LAND_GATE,
     /* On the place's editor marker (a ship's deck, travel_go_aboard). */
-    LAND_MARKER
+    LAND_MARKER,
+    /* A court release marker in the town's own coordinates. */
+    LAND_RELEASE
 };
 
 /* A town's walking cells are 64 units; how many rings of them to look through for a street. */
@@ -48,6 +53,7 @@ static int g_land;
 /* The dungeon being entered is a crypt (travel_go_into_dungeon): the arrival goes to the nearest quest marker. */
 static int g_arrive_at_marker;
 static int g_land_what;
+static float g_release_x, g_release_z;
 /* Where the journey started, in world units, so the arrival faces that way. */
 static int g_have_from;
 static double g_from_x;
@@ -433,6 +439,22 @@ static void stand_outside(double x0, double z0, double x1, double z1)
     g_start.pitch = 0.0f;
 }
 
+/* location_place_player_at_edge moves a city arrival to the nearest kind-8 editor marker. */
+static void stand_at_gate(double x0, double z0)
+{
+    double wx, wz, mx, mz;
+    float tx, tz;
+
+    stream_world(g_start.x, g_start.z, &wx, &wz);
+    if (!town_nearest_street_marker(g_next.region, g_next.index, (float)(wx - x0), (float)(wz - z0), &tx, &tz)) { return; }
+    mx = x0 + tx;
+    mz = z0 + tz;
+    g_start.x += (float)(mx - wx);
+    g_start.z += (float)(mz - wz);
+    g_start.y = wild_ground(mx, mz);
+    g_land = LAND_GATE;
+}
+
 static int open_world(Level *level, int radius)
 {
     g_start.yaw = g_next.back_yaw;
@@ -464,17 +486,21 @@ static int open_world(Level *level, int radius)
         if (wild_town(wx, wz, &x0, &z0, &x1, &z1, &blocks, &climate, &type)) {
             float tx, tz;
 
-            if (g_land == LAND_MARKER && town_marker(g_next.region, g_next.index, SHIP_MARKER, &tx, &tz)) {
-                /* The deck: the marker's point in the town, from its corner (player_to_nearest_marker, the ship's 8). */
-                double mx = x0 + (double)tx;
-                double mz = z0 + (double)tz;
+            if (g_land == LAND_RELEASE ||
+                (g_land == LAND_MARKER && town_marker(g_next.region, g_next.index, SHIP_MARKER, &tx, &tz))) {
+                double mx, mz;
+
+                if (g_land == LAND_RELEASE) { tx = g_release_x; tz = g_release_z; }
+                /* The deck or the court's street marker, measured from the town corner. */
+                mx = x0 + (double)tx;
+                mz = z0 + (double)tz;
 
                 g_start.x += (float)(mx - wx);
                 g_start.y += wild_ground(mx, mz) - wild_ground(wx, wz);
                 g_start.z += (float)(mz - wz);
             } else if (g_land == LAND_STREET || g_land == LAND_MARKER) {
-                /* The edge facing the way they came, not the middle of the town. */
                 stand_outside(x0, z0, x1, z1);
+                if (g_land == LAND_STREET && type == WORLDMAP_TOWN_CITY) { stand_at_gate(x0, z0); }
             } else {
                 double mx;
                 double mz;
@@ -655,8 +681,17 @@ void travel_land(const Level *level, Camera *cam, float eye, TravelPose *out)
         if (dunstream_nearest_marker(QUEST_MARKER_PERSON, p.x, p.z, &mx, &my, &mz)) { p.x = mx; p.y = my + eye; p.z = mz; }
     }
     g_arrive_at_marker = 0;
+    if (g_land == LAND_GATE) { p.y += eye; }
     camera_set(cam, p.x, p.y, p.z, p.yaw, p.pitch);
     fill_round(cam);
+    if (g_land == LAND_GATE) {
+        float ground = p.y - eye, floor;
+
+        if (collide_floor_at(&level->scene, p.x, p.z, ground + WALK_STEP, ground - WALK_STEP, &floor)) {
+            p.y = floor + eye;
+            camera_set(cam, p.x, p.y, p.z, p.yaw, p.pitch);
+        }
+    }
     if (g_land == LAND_STREET) {
         land_on_street(&p, eye);
         camera_set(cam, p.x, p.y, p.z, p.yaw, p.pitch);
@@ -850,6 +885,18 @@ int travel_out_to_street(void)
     }
     ask_world();
     return g_asked;
+}
+
+int travel_release_to_street(unsigned draw, float yaw)
+{
+    if (g_open && g_here.located && g_here.kind != TRAVEL_DUNGEON &&
+        town_release_marker(g_here.region, g_here.index, draw, &g_release_x, &g_release_z) &&
+        travel_go_to_town(g_here.region, g_here.index)) {
+        g_land = LAND_RELEASE;
+        g_next.back_yaw = yaw;
+        return 1;
+    }
+    return travel_out_to_street();
 }
 
 /*

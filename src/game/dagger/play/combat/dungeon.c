@@ -620,7 +620,7 @@ static void resolve_player(const Scene *scene, const Camera *cam, int target, co
     expert = index >= 0 && (weapon_proficiency(index) & game_state()->career.expert);
     chance = a.skill[skill] + (expert ? a.level : 0);
     toward = df_atan2(cam->x-f->entity->x,cam->z-f->entity->z)-f->entity->yaw;
-    backstab = !s->bow && df_cos(toward) < df_cos(BACKSTAB_ARC*DF_TAU/ANGLE_FULL) ? a.skill[SKILL_BACKSTABBING] : 0;
+    backstab = df_cos(toward) < df_cos(BACKSTAB_ARC*DF_TAU/ANGLE_FULL) ? a.skill[SKILL_BACKSTABBING] : 0;
     chance += backstab;
     skill_use(skill); skill_use(SKILL_CRITICAL_STRIKE); if (backstab) { skill_use(SKILL_BACKSTABBING); }
     if (!god_mode() && index >= 0 && material < f->fighter.metal) {
@@ -736,7 +736,7 @@ static void arrows_step(const Scene *scene, const Camera *cam, float dt)
     ArrowInfo *a;
     StrikeInfo s;
     Camera aim;
-    float wall, length, nearest, along, dx, dy, dz, r, closest, centre[3];
+    float wall, length, nearest, along, dx, dy, dz, r, closest, half, centre[3];
     Entity *e;
     int i, j, target, blocked, k;
     for (i = 0; i < ARROWS; i++) {
@@ -756,7 +756,9 @@ static void arrows_step(const Scene *scene, const Camera *cam, float dt)
             along = dx*a->direction[0]+dy*a->direction[1]+dz*a->direction[2];
             closest = dx*dx+dy*dy+dz*dz-along*along;
             if (closest > r*r) { continue; }
-            along -= df_sqrt(r*r-closest);
+            half = df_sqrt(r*r-closest);
+            if (along+half < 0) { continue; }
+            along -= half;
             if (along < 0) { along = 0; }
             if (along <= nearest) {
                 centre[0] = a->at[0]+dx; centre[1] = a->at[1]+dy; centre[2] = a->at[2]+dz;
@@ -769,7 +771,11 @@ static void arrows_step(const Scene *scene, const Camera *cam, float dt)
             sound_at(7,a->at[0],a->at[1],a->at[2]);
             if (a->source < 0) {
                 mem_zero(&s,sizeof(s)); s.hand = 0; s.bow = 1; s.item = a->weapon;
-                aim = *cam; aim.yaw = df_atan2(a->direction[0],a->direction[2]);
+                /* Use the shot's origin to judge the angle even if the player moved before impact. */
+                aim = *cam;
+                aim.x = a->at[0]-a->distance*a->direction[0];
+                aim.z = a->at[2]-a->distance*a->direction[2];
+                aim.yaw = df_atan2(a->direction[0],a->direction[2]);
                 resolve_player(scene,&aim,target,&s,a->index,a->material); recover_to(dungeon_container(target));
             } else {
                 FighterInfo player;
@@ -860,7 +866,6 @@ static int pick_target(const Scene *scene, const Camera *cam, FoeState *foe)
 }
 
 /* A creature's hit effects on a creature (damage_monster_hit_effects: only the unarmed attack slots call it). */
-static int index_is_weapon(int index) { return index >= 0; }
 static void creature_hit_effects(int kind, int source, int target)
 {
     FoeState *victim = &g_foe[target];
@@ -922,12 +927,12 @@ static void monster_strike(const Scene *scene, const Camera *cam, FoeState *foe,
 
             before = character_state()->health;
             damage_player(damage,part); dealt = before-character_state()->health;
-            if (damage > 0) { ailments_strike(source,foe->kind); }
+            if (dealt > 0 && index < 0) { ailments_strike(source,foe->kind); }
         } else {
             dealt = hit_foe_from(scene,target,damage,yaw,source);
             if (dealt > 0) { item_wear(g_foe[target].equipped[armor_slot(part)],dealt); }
             /* damage_monster_hit_effects against a creature of the other team (damage.c 80): a spider's or scorpion's touch paralyses it unless it is already; a nymph drains its fatigue (the collapse that follows is the player's alone, so none here). The diseases and the curses do nothing to a creature, and lycanthropy and vampirism touch only the player. */
-            if (dealt > 0 && !index_is_weapon(index)) { creature_hit_effects(foe->kind,source,target); }
+            if (dealt > 0 && index < 0) { creature_hit_effects(foe->kind,source,target); }
         }
         if (dealt > 0) {
             total += dealt;

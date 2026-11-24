@@ -3,6 +3,10 @@
 #include "engine/scene/scene.h"
 
 #define MAX_FACE 24
+/* The gate's pavement shares y=0 with the exterior ground tiles. */
+#define GATE_OPEN_MODEL 446u
+#define GATE_CLOSED_MODEL 447u
+#define GATE_PAVEMENT_LIFT 2.0f
 /* Corners a face may have once weld has inserted its neighbours' corners. */
 #define WELD_MAX 32
 /*
@@ -986,6 +990,17 @@ Mesh *arch3d_load(const df_u8 *rec, df_u32 size, df_u32 id)
         emit_fan(mesh, cap, pts, npts, uv_u, uv_v, tex);
     }
     g_counting = 0;
+    if (id == GATE_OPEN_MODEL || id == GATE_CLOSED_MODEL) {
+        int i;
+
+        for (i = 0; i < mesh->ntris; i++) {
+            Tri *t = &mesh->tris[i];
+
+            if (t->y[0] == 0 && t->y[1] == 0 && t->y[2] == 0) {
+                t->y[0] = t->y[1] = t->y[2] = GATE_PAVEMENT_LIFT;
+            }
+        }
+    }
     mesh_measure(mesh);
     /* Its corners numbered: the draw turns each to the view once a model (mesh_index). */
     mesh_index(mesh);

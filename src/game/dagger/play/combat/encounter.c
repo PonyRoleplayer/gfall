@@ -21,6 +21,7 @@
 
 static const Scene *g_scene;
 static int (*g_art)(int, int, Entity *, int *);
+static int g_rest_encounters;
 
 typedef struct OutdoorActor {
     SpawnId id;
@@ -209,9 +210,10 @@ void encounter_close(void)
     g_scene = 0; g_art = 0;
 }
 
-int encounter_open(const Scene *scene, int (*art)(int, int, Entity *, int *))
+int encounter_open(const Scene *scene, int (*art)(int, int, Entity *, int *), int rest_encounters)
 {
     encounter_close(); g_scene = scene; g_art = art;
+    g_rest_encounters = rest_encounters;
     if (scene) {
         ent_set_revive_hook(revive);
         ent_place(scene);
@@ -229,7 +231,7 @@ void encounter_open_outdoors(const Scene *scene, const EncounterOutdoors *world)
 
 /* A creature put in the dungeon by something other than a rest's table (a quest's foe) or by it: near the player and unseen, or (at != 0) on the floor near a point, where a quest's marker is. It is a kept
  * entity of the place (ENT_KEPT, its key and owner say what it is), a mind joins it to the dungeon's combat. 0 when there is no room or no floor there yet (the chunk is not loaded): the caller tries again. */
-static int place_actor(const Camera *camera, int kind, df_u32 thing, const float *at, int generated, int summoned, int team)
+static int place_actor(const Camera *camera, int kind, df_u32 thing, const float *at, float at_climb, int generated, int summoned, int team)
 {
     Entity entity, *live;
     SpawnSpot want;
@@ -243,7 +245,7 @@ static int place_actor(const Camera *camera, int kind, df_u32 thing, const float
     if (!g_art(kind,archive,&entity,&rate)) { return 0; }
     player = move_body(); mem_zero(&want,sizeof(want));
     want.x = at ? at[0] : player->feet[0]; want.y = at ? at[1] : player->feet[1]; want.z = at ? at[2] : player->feet[2];
-    if (at) { want.inner = 0; want.outer = ENC_AT_OUTER; want.climb = ENC_AT_CLIMB; }
+    if (at) { want.inner = 0; want.outer = ENC_AT_OUTER; want.climb = at_climb; }
     else if (summoned) { want.inner = SUMMON_INNER; want.outer = SUMMON_OUTER; want.climb = SUMMON_CLIMB; }
     else { want.inner = ENC_HIDDEN_INNER; want.outer = ENC_HIDDEN_OUTER; want.climb = ENC_HIDDEN_CLIMB; }
     want.radius = FOE_BODY_RADIUS; want.height = entity.pose[ENTITY_WALK].h[0];
@@ -271,22 +273,22 @@ static int place_actor(const Camera *camera, int kind, df_u32 thing, const float
 int encounter_try(const Camera *camera)
 {
     if (!g_scene || !g_art || !camera) { return 0; }
-    return place_actor(camera, encounter_state()->choices[random_range(0,ENC_REST_CHOICES-1)], 0, 0, 1, 0, TEAM_HOSTILE);
+    return place_actor(camera, encounter_state()->choices[random_range(0,ENC_REST_CHOICES-1)], 0, 0, 0, 1, 0, TEAM_HOSTILE);
 }
 
-int encounter_place(const Camera *camera, int kind, df_u32 thing) { return place_actor(camera, kind, thing, 0, 0, 0, TEAM_HOSTILE); }
+int encounter_place(const Camera *camera, int kind, df_u32 thing) { return place_actor(camera, kind, thing, 0, 0, 0, 0, TEAM_HOSTILE); }
 
-int encounter_place_at(const Camera *camera, int kind, df_u32 thing, float x, float y, float z)
+int encounter_place_at(const Camera *camera, int kind, df_u32 thing, float x, float y, float z, float climb)
 {
     float at[3];
 
     at[0] = x; at[1] = y; at[2] = z;
-    return place_actor(camera, kind, thing, at, 0, 0, TEAM_HOSTILE);
+    return place_actor(camera, kind, thing, at, climb, 0, 0, TEAM_HOSTILE);
 }
 
 int encounter_summon(const Camera *camera, int kind, int team)
 {
-    return place_actor(camera,kind,0,0,1,1,team);
+    return place_actor(camera,kind,0,0,0,1,1,team);
 }
 
 int encounter_release_soul(const Camera *camera, int kind)
@@ -360,7 +362,7 @@ int encounter_minute(const Scene *scene, const Camera *camera, df_u32 minute, in
 
     if (!g_scene || scene != g_scene || !camera || activity == ENCOUNTER_LOITER || minute%ENC_ROLL_MINUTES) { return 0; }
     if (!g_outdoors) {
-        return activity == ENCOUNTER_REST && random_range(0,ENC_CHANCE_DAY) == 0 && encounter_try(camera);
+        return g_rest_encounters && activity == ENCOUNTER_REST && random_range(0,ENC_CHANCE_DAY) == 0 && encounter_try(camera);
     }
     if (!g_outdoors->site || !g_outdoors->art) { return 0; }
     climate = g_outdoors->site(camera,&settlement);

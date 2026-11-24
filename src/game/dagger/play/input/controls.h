@@ -3,6 +3,12 @@
 
 /* The original 38-key control grid and mouse panel. Read docs/game.md. */
 typedef struct ControlRect { int x0, y0, x1, y1; } ControlRect;
+#define MOUSE_PANEL_X 66
+#define MOUSE_PANEL_Y 22
+#define MOUSE_PANEL_W 188
+#define MOUSE_PANEL_H 160
+#define MOUSE_BOW_Y 142
+#define MOUSE_BOW_H 14
 const ControlRect *control_rect(int index);
 void controls_open(void);
 int controls_editing(void);

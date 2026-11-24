@@ -15,6 +15,8 @@
 #define GOLD_PER_WEIGHT 100
 #define GOLD_MAX 100000000
 #define STACK_MAX 199
+/* The original's record flag 32, held on a shop item until the basket is paid. */
+#define ITEM_UNPAID 32
 #define SHIELD_INDEX_BASE 6
 #define SHIELD_ARMOR_PER_SIZE 5
 #define ARMOR_RATING_CAP 200
@@ -42,6 +44,8 @@ int item_two_handed(const ObjectInfo *item);
 int inventory_equip(df_u32 id);
 void inventory_unequip(df_u32 id);
 int inventory_transfer(df_u32 id, df_u32 parent);
+/* Give ownership of an unpaid shop item and combine any purchased arrows with carried arrows. */
+void inventory_claim(df_u32 id);
 int inventory_weight(df_u32 parent);
 int inventory_capacity(void);
 void weight_text(int quarters, char *out, int capacity);

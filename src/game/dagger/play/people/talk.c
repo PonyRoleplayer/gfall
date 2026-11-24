@@ -215,6 +215,7 @@ int talk_category(int building_type, int building_flags)
 {
     int i;
 
+    if (building_flags & TALK_QUEST_SITE_FLAG) { return TALK_CATEGORY_QUEST; }
     if (building_type != BUILDING_HOUSE_FOR_SALE && building_type <= BUILDING_PALACE) {
         for (i = 0; i < TALK_BUILDING_CATEGORIES; i++) {
             if (g_category_type[i] == building_type) {
@@ -228,7 +229,8 @@ int talk_category(int building_type, int building_flags)
 
 const char *talk_category_name(int category)
 {
-    return category >= 0 && category < TALK_CATEGORIES ? g_category_name[category] : "";
+    if (category == TALK_CATEGORY_QUEST) { return "Quest Sites"; }
+    return category >= 0 && category < (int)(sizeof(g_category_name) / sizeof(g_category_name[0])) ? g_category_name[category] : "";
 }
 
 int talk_topics(TalkTopic *out, int cap, const TalkBuilding *buildings, int count)

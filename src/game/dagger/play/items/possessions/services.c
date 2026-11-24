@@ -279,6 +279,41 @@ static void bank_click(int x, int y)
 /* ---- A shopkeeper's panel ---- */
 static void (*g_service_act)(int what);
 static int g_service_kind;
+static void (*g_transport_choose)(int option);
+
+const short *possessions_transport_rect(int option)
+{
+    /* FALL.EXE's transport_buttons, in art coordinates. */
+    static const short rects[TRANSPORT_ROWS][4] = {
+        {99, 51, 220, 59}, {99, 60, 220, 68}, {99, 69, 220, 77},
+        {99, 78, 220, 86}, {139, 89, 181, 103}
+    };
+
+    return option >= 0 && option < TRANSPORT_ROWS ? rects[option] : 0;
+}
+
+int possessions_transport(unsigned enabled, void (*choose)(int option))
+{
+    if (possessions_view.page || !possessions_open(VIEW_TRANSPORT, 0)) { return 0; }
+    possessions_view.transport_enabled = enabled | (1u << TRANSPORT_EXIT);
+    g_transport_choose = choose;
+    return 1;
+}
+
+void possessions_transport_frame(const PlayIn *in, int click)
+{
+    int i;
+
+    if (!click) { return; }
+    for (i = 0; i < TRANSPORT_ROWS; i++) {
+        const short *r = possessions_transport_rect(i);
+
+        if (!(possessions_view.transport_enabled & (1u << i)) || !possessions_hit(in->cx, in->cy, r[0], r[1], r[2], r[3])) { continue; }
+        possessions_close();
+        if (i != TRANSPORT_EXIT && g_transport_choose) { g_transport_choose(i); }
+        return;
+    }
+}
 
 void possessions_set_service(void (*act)(int what)) { g_service_act = act; }
 

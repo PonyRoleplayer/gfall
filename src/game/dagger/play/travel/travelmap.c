@@ -15,7 +15,6 @@
 #define VK_BACK_KEY 0x08
 #define VK_RETURN_KEY 0x0D
 #define VK_ESCAPE_KEY 0x1B
-#define VK_SPACE_KEY 0x20
 
 /* The province map's panel, and the line over it. */
 #define PANEL_X 0
@@ -71,6 +70,8 @@ static const Rect g_popup_exit_rect = { 222, 112, 48, 10 };
 static const Rect g_ask_rect = { 70, 60, 180, 70 };
 static const Rect g_yes_rect = { 104, 112, CANVAS_BUTTON_W, CANVAS_BUTTON_H };
 static const Rect g_no_rect = { 184, 112, CANVAS_BUTTON_W, CANVAS_BUTTON_H };
+/* travel_button_find's two rows of SPOP tiles, with input on the prompt line. */
+static const Rect g_find_scroll = { 6, 78, 308, 44 };
 
 /* TEXT.RSC. */
 #define RECORD_NO_PLACE 13
@@ -262,14 +263,17 @@ static int map_palettes(void)
 }
 
 /* What was drawn in the art palette within r, into the map's. */
-static void art_rect_to_map(const Rect *r)
+static void art_rect_to_map(const Rect *r, int cutout)
 {
     int y;
     int x;
 
     for (y = r->y; y < r->y + r->h && y < CANVAS_H; y++) {
         for (x = r->x; x < r->x + r->w && x < CANVAS_W; x++) {
-            g.composer.screen[y * CANVAS_W + x] = g.art_to_map[g.composer.screen[y * CANVAS_W + x]];
+            int i = y * CANVAS_W + x;
+            df_u8 ink = g.composer.screen[i];
+
+            g.composer.screen[i] = cutout && !ink ? g.under[i] : g.art_to_map[ink];
         }
     }
 }
@@ -348,6 +352,14 @@ static const char *region_name(int region)
 
     f = factionfile_open() ? faction_province_of(region) : 0;
     return f ? f->name : "";
+}
+
+static void show_world(void)
+{
+    g.step = STEP_WORLD;
+    g.region = -1;
+    g.region_pic = 0;
+    g.line[0] = 0;
 }
 
 /* A province's map and its places' names, read into the composer's heap; the last province's are let go with it. */
@@ -458,7 +470,6 @@ int travelmap_open_rules(const TravelMapRules *rules, int px, int py, int region
     g.here_px = px;
     g.here_py = py;
     g.here_region = region;
-    g.region = -1;
     g.place = -1;
     g.world = raw("TRAV0I00.IMG");
     g.mask = raw("TRAV0I01.IMG");
@@ -491,7 +502,7 @@ int travelmap_open_rules(const TravelMapRules *rules, int px, int py, int region
         travelmap_close();
         return 0;
     }
-    g.step = STEP_WORLD;
+    show_world();
     g.ship = 1;
     g.changed = 1;
     return 1;
@@ -733,7 +744,30 @@ static void compose_popup(void)
     canvas_label(117, 107, text);
     log_format(text, (int)sizeof(text), "%d", g.step == STEP_COUNTING ? g.days_left : g.journey.days);
     canvas_label(129, 117, text);
-    art_rect_to_map(&whole);
+    art_rect_to_map(&whole, 0);
+}
+
+static void compose_find(void)
+{
+    static const char prompt[] = "Enter name of place : ";
+    const Rect *r = &g_find_scroll;
+    char input[sizeof(g.typed) + 1];
+    const char *visible;
+    int x, y, right;
+
+    x = r->x + 10;
+    y = r->y + 15;
+    right = r->x + r->w - 10;
+    canvas_box(r, 0);
+    canvas_scroll(r);
+    canvas_set_ink(145, CANVAS_INK_SHADOW);
+    canvas_label(x, y, prompt);
+    x += canvas_width(prompt);
+    log_format(input, (int)sizeof(input), "%s_", g.typed);
+    visible = input;
+    while (*visible && x + canvas_width(visible) > right) { visible++; }
+    canvas_label(x, y, visible);
+    art_rect_to_map(r, 1);
 }
 
 static void compose_ask(void)
@@ -837,17 +871,12 @@ void travelmap_compose(void)
         compose_bar();
     }
     canvas_set_ink(g.ink, g.shadow);
-    if (g.step == STEP_FIND) {
-        char text[LINE_TEXT];
-
-        log_format(text, (int)sizeof(text), "Find: %s_", g.typed);
-        canvas_label_centred(&g_line_rect, 0, text);
-    } else {
-        canvas_label_centred(&g_line_rect, 0, g.note ? g.note : g.line);
-    }
+    canvas_label_centred(&g_line_rect, 0, g.note ? g.note : g.line);
     /* What follows draws in the art palette: kept as it is, to tell what it changed. */
     mem_copy(g.under, g.composer.screen, CANVAS_BYTES);
-    if (g.step == STEP_ASK) {
+    if (g.step == STEP_FIND) {
+        compose_find();
+    } else if (g.step == STEP_ASK) {
         compose_ask();
     } else if (g.step == STEP_FOUND) {
         compose_found();
@@ -950,7 +979,7 @@ static void go_to_found(int k)
         }
     }
     if (!show_region(region, map_of(region, part) ? part : 0)) {
-        g.step = STEP_WORLD;
+        show_world();
         return;
     }
     /* DFU's identify flash: the place shown before it is asked about (travelmap_step). */
@@ -1004,7 +1033,7 @@ static int click_region(int x, int y)
     int i;
 
     if (rect_has(&g_exit_rect, x, y)) {
-        g.step = STEP_WORLD;
+        show_world();
         g.note = 0;
         return TRAVELMAP_STAY;
     }
@@ -1131,7 +1160,7 @@ int travelmap_click(int x, int y)
     }
 }
 
-int travelmap_key(int vk)
+int travelmap_key(int vk, int ch)
 {
     int n;
 
@@ -1147,9 +1176,16 @@ int travelmap_key(int vk)
             if (n > 0) {
                 g.typed[n - 1] = 0;
             }
-        } else if (((vk >= 'A' && vk <= 'Z') || ui_digit(vk) || vk == VK_SPACE_KEY) && n < 32) {
-            g.typed[n] = (char)(ui_digit(vk) ? ui_digit(vk) : vk);
-            g.typed[n + 1] = 0;
+        } else if (n < (int)sizeof(g.typed) - 1) {
+            if (!ch) {
+                ch = ui_digit(vk);
+                if (!ch && ((vk >= 'A' && vk <= 'Z') || vk == ' ')) { ch = vk; }
+            }
+            if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+                (ch >= '0' && ch <= '9') || ch == ' ') {
+                g.typed[n] = (char)ch;
+                g.typed[n + 1] = 0;
+            }
         }
         return TRAVELMAP_STAY;
     }
@@ -1173,7 +1209,7 @@ int travelmap_key(int vk)
         return TRAVELMAP_STAY;
     }
     if (g.step == STEP_REGION) {
-        g.step = STEP_WORLD;
+        show_world();
         return TRAVELMAP_STAY;
     }
     return TRAVELMAP_LEAVE;

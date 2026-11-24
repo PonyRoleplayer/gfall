@@ -11,6 +11,7 @@
 #include "engine/sound/music.h"
 #include "engine/ui/pic.h"
 #include "game/dagger/formats/sndfile.h"
+#include "game/dagger/formats/cif.h"
 #include "game/dagger/formats/texture.h"
 #include "game/dagger/play/character/chargen.h"
 #include "game/dagger/play/config.h"
@@ -27,6 +28,7 @@
 #include "game/dagger/play/input/activate.h"
 #include "game/dagger/play/ui/hud.h"
 #include "game/dagger/play/ui/msg.h"
+#include "game/dagger/tables/careers.h"
 #include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/play/save/save.h"
 #include "game/dagger/play/ui/screen.h"
@@ -216,6 +218,85 @@ static void check_weapon_hands(void)
     possessions_reset();
 }
 
+static void check_suit_head(void)
+{
+    static GameState saved, unrestricted;
+    static CifSet faces;
+    int female, i;
+
+    saved = *game_state();
+    unrestricted = saved;
+    unrestricted.career.forbidden_equipment = unrestricted.career.forbidden_materials = 0;
+    check_expect(state_restore(&unrestricted), "prepare unrestricted equipment for the suit test");
+    for (female = 0; female <= 1; female++) {
+        const CareerRace *race = career_race(female ? RACE_ARGONIAN : RACE_KHAJIIT);
+        int group = female ? ITEM_GROUP_WOMENS_CLOTHING : ITEM_GROUP_MENS_CLOTHING;
+        int kind = female ? WOMENS_KHAJIIT_SUIT : MENS_KHAJIIT_SUIT;
+        const CifFrame *face;
+        const Image *suit;
+        const df_u8 *screen, *owners;
+        df_u32 suit_id, helm_id;
+        int image, x, y, row, col, suit_slot, helm_slot, overlap = 0, preserved = 0, visible = 0, covered = 0;
+
+        for (i = 0; i < EQUIP_SLOTS; i++) { state_equip(i, 0); }
+        character_state()->race = race->id - 1;
+        character_state()->female = female;
+        character_state()->face = female ? 2 : 1;
+        suit_id = item_create(game_state()->inventory_id, group, kind, 0);
+        check_expect(inventory_equip(suit_id), "equip the original Khajiit Suit");
+        suit_slot = item_equipped(suit_id);
+        if (suit_slot < 0) { continue; }
+        image = object_at(suit_id)->inventory_image;
+        suit = texture_load(image >> 7, image & 127);
+        if (!suit || !texture_offset(image >> 7, image & 127, &x, &y) ||
+            !cif_open(female ? race->heads_female : race->heads_male, &faces)) {
+            check_expect(0, "the original suit and face art should load");
+            continue;
+        }
+        face = cif_frame(&faces, character_state()->face);
+        possessions_open(VIEW_INVENTORY, 0);
+        seam_present();
+        screen = seam_screen(0);
+        owners = doll_owners();
+        for (row = 0; face && row < face->h; row++) {
+            for (col = 0; col < face->w; col++) {
+                int fx = face->x + col, fy = face->y + row;
+                int pixel = face->pixels[row * face->w + col];
+                int sx = fx - x, sy = fy - y;
+
+                if (!pixel || sx < 0 || sy < 0 || sx >= suit->width || sy >= suit->height ||
+                    !suit->index[sy * suit->width + sx]) { continue; }
+                overlap++;
+                if (screen[(fy + 5) * 320 + fx - 151] == pixel && owners[(fy - 8) * 110 + fx - 200] == 255) {
+                    preserved++;
+                }
+            }
+        }
+        for (i = 0; i < 110 * 184; i++) { visible += owners[i] == suit_slot; }
+        check_expect(overlap > 0 && preserved == overlap && visible > 0,
+                     "the suit stays clickable below the head and leaves overlapping face pixels visible");
+        possessions_close();
+        helm_id = item_create(game_state()->inventory_id, ITEM_GROUP_ARMOR, ARMOR_HELM, 0);
+        check_expect(inventory_equip(helm_id), "equip a helm over the head and suit");
+        helm_slot = item_equipped(helm_id);
+        possessions_open(VIEW_INVENTORY, 0);
+        seam_present();
+        for (row = 0; face && row < face->h; row++) {
+            for (col = 0; col < face->w; col++) {
+                if (face->pixels[row * face->w + col] &&
+                    owners[(face->y + row - 8) * 110 + face->x + col - 200] == helm_slot) {
+                    covered++;
+                }
+            }
+        }
+        check_expect(covered > 0, "a helm still draws and can be selected over the head");
+        possessions_close();
+        cif_close(&faces);
+    }
+    check_expect(state_restore(&saved), "restore the surrounding session after the suit test");
+    possessions_reset();
+}
+
 static void check_preferences(void)
 {
     Config config, parsed;
@@ -229,6 +310,7 @@ static void check_preferences(void)
     config.sound_volume = 37;
     config.music_volume = 64;
     config.mouse_mode = 1;
+    config.bow_style = BOW_STYLE_CLASSIC;
     config.sensitivity_x = 4;
     config.sensitivity_y = 7;
     config.turn_rate = 3;
@@ -236,10 +318,10 @@ static void check_preferences(void)
     config.width = 512; config.height = 384; config.fov = 90;
     size = config_format(&config, text, sizeof(text));
     check_expect(size && config_parse(&parsed, text) && !memcmp(&parsed, &config, sizeof(config)),
-                 "every preference and all 38 keys round-trip through text");
+                 "every preference and key binding round-trips through text");
     check_expect(strstr(text, "full_screen=on\r\nhead_bob=on") &&
-                 strstr(text, "resolution=512x384") && strstr(text, "mouse=view") &&
-                 strstr(text, "key.forward=K") && strstr(text, "key.slide_left=Left Shift") &&
+                 strstr(text, "resolution=512x384") && strstr(text, "mouse=view") && strstr(text, "bow=classic") &&
+                 strstr(text, "key.forward=K") && strstr(text, "key.slide_left=,") && strstr(text, "key.sprint=Shift") &&
                  strstr(text, "key.swing=Right Button") && !strstr(text, "view_flags="),
                  "written preferences use readable switches, resolution, scheme and key names");
     check_expect(config_parse(&parsed,
@@ -252,7 +334,21 @@ static void check_preferences(void)
                  "hand edits accept names without losing punctuation or digit bindings");
     check_expect(config_parse(&parsed, "view_flags=3\nmouse_mode=1\nkey.forward=75\nkey.swing=2\n") &&
                  parsed.flags == 3 && parsed.mouse_mode == 1 && parsed.key[FORWARD] == 'K' &&
-                 parsed.key[SWING_BUTTON] == 2, "existing numeric settings preserve user preferences");
+                 parsed.key[SWING_BUTTON] == 2 && parsed.bow_style == BOW_STYLE_AUTO,
+                 "existing settings keep their bindings and pick bow style from the mouse mode");
+    check_expect(config_parse(&parsed, "key.slide_left=Left Shift\nkey.slide_right=Right Shift\n") &&
+                 parsed.key[SLIDE_LEFT] == KEY_COMMA && parsed.key[SLIDE_RIGHT] == KEY_PERIOD &&
+                 parsed.key[SPRINT] == KEY_SHIFT,
+                 "legacy Shift slides migrate to the new defaults and free Shift for Sprint");
+    check_expect(config_parse(&parsed, "key.slide_left=Left Shift\nkey.jump=,\nkey.crouch=Right Shift\n") &&
+                 parsed.key[JUMP] == KEY_COMMA && parsed.key[CROUCH] == KEY_RSHIFT &&
+                 !config_key_taken(&parsed, SLIDE_LEFT, parsed.key[SLIDE_LEFT]) &&
+                 !config_key_taken(&parsed, SPRINT, parsed.key[SPRINT]),
+                 "migration preserves custom bindings on Sprint and Slide's new defaults");
+    check_expect(config_parse(&parsed, "key.sprint=K\nkey.slide_left=Left Shift\nkey.slide_right=Right Shift\n") &&
+                 parsed.key[SPRINT] == 'K' && parsed.key[SLIDE_LEFT] == KEY_LSHIFT && parsed.key[SLIDE_RIGHT] == KEY_RSHIFT &&
+                 config_key_taken(&parsed, SPRINT, KEY_SHIFT),
+                 "explicit Sprint settings preserve side-specific Shift keys and recognize overlap");
     check_expect(config_parse(&parsed, "skip_opening=on\n") && (parsed.flags & CONFIG_FLAG_SKIP_OPENING) && !(parsed.flags & 3) &&
                  config_format(&parsed, text, sizeof(text)) && strstr(text, "skip_opening=on") && config_parse(&parsed, text) && (parsed.flags & CONFIG_FLAG_SKIP_OPENING),
                  "skip_opening is read, written and read again, apart from the two view switches");
@@ -332,14 +428,26 @@ static void check_options_and_controls(void)
     check_expect(controls_mouse(), "Mouse opens Cursor/View and sensitivity controls");
     click(200, 60);
     click(175, 110);
-    click(73, 152);
+    click(73, 152 + MOUSE_BOW_H);
     check_expect(options_mouse() == 1 && game_config()->sensitivity_x > 1 && game_config()->reverse_y,
                  "mouse scheme, sensitivity and reverse controls change their real settings");
+    check_expect(game_config()->bow_style == BOW_STYLE_AUTO && config_bow_draw(),"View defaults to draw and release");
     screenshot("mouse");
-    click(200, 152);
+    click(160, MOUSE_BOW_Y + 5);
+    check_expect(game_config()->bow_style == BOW_STYLE_CLASSIC && !config_bow_draw(),"View can use Classic bow controls");
+    click(160, MOUSE_BOW_Y + 5); click(100, 60);
+    check_expect(game_config()->bow_style == BOW_STYLE_DRAW && config_bow_draw(),"Cursor can use draw and release");
+    click(160, MOUSE_BOW_Y + 5);
+    check_expect(game_config()->bow_style == BOW_STYLE_AUTO && !config_bow_draw(),"Cursor defaults to the Classic bow");
+    click(160, MOUSE_BOW_Y + 5); click(200, 60);
+    click(200, 152 + MOUSE_BOW_H);
     click(200, 194);
-    check_expect(game_config()->key[FORWARD] == 0x26, "Defaults restores the original key map");
+    check_expect(game_config()->key[FORWARD] == 0x26 && game_config()->key[SPRINT] == KEY_SHIFT,
+                 "Defaults restores Forward and Sprint bindings");
     click(80, 15); key(0, 'K');
+    click(182, 138);
+    check_expect(controls_editing() == SPRINT, "the Sprint cell captures a key");
+    key(0, 'G');
     click(280, 194);
     check_expect(options_panel() == PANEL_OPTIONS && fs_exists(CONFIG_FILE), "Continue writes bindings and returns to Options");
     mem_zero(&input, sizeof(input));
@@ -353,8 +461,9 @@ static void check_options_and_controls(void)
     input.mouse_held = 0; frame(&input);
     check_expect(!options_up(), "Continue resumes play");
     config = *game_config();
-    check_expect(config_read() && game_config()->key[FORWARD] == 'K' &&
-                 game_config()->reverse_y && game_config()->flags == config.flags,
+    check_expect(config_read() && game_config()->key[FORWARD] == 'K' && game_config()->key[SPRINT] == 'G' &&
+                 game_config()->reverse_y && game_config()->flags == config.flags &&
+                 game_config()->bow_style == BOW_STYLE_CLASSIC,
                  "binding and visual changes persist after reloading settings.cfg");
     config_defaults(&config);
     config_set(&config);
@@ -381,6 +490,48 @@ static void check_pointer_shapes(void)
     frame(&input);
     check_expect(pointer_region() == -1, "View-mode UI uses the ordinary arrow");
     options_set_mouse(0);
+}
+
+static void check_bow_aim(void)
+{
+    Config config = *game_config();
+    MotionState motion;
+    PlayIn input;
+    int i, hand, ready, count;
+    df_u32 equipped, bow, arrows;
+
+    ready = hud_weapon_ready();
+    weapon_reset();
+    hand = weapon_hand() ? EQUIP_LEFT_HAND : EQUIP_RIGHT_HAND;
+    equipped = game_state()->equipped[hand];
+    bow = item_create(game_state()->inventory_id,ITEM_GROUP_WEAPON,WEAPON_SHORT_BOW,1);
+    arrows = item_create(game_state()->inventory_id,ITEM_GROUP_WEAPON,WEAPON_ARROW,0);
+    state_equip(hand,bow);
+    count = arrow_count();
+    move_capture(&motion);
+    options_set_mouse(1);
+    if (!ready) { hud_toggle_ready(); }
+    mem_zero(&input,sizeof(input));
+    input.on_picture = 1; input.cx = 160; input.cy = 75; input.dt = 1.0f/60;
+    input.pressed[SWING_BUTTON] = input.held[SWING_BUTTON] = 1;
+    frame(&input);
+    input.pressed[SWING_BUTTON] = 0;
+    input.mouse_dx = 12;
+    for (i = 0; i < 5; i++) { frame(&input); }
+    check_expect(move_yaw() != motion.yaw && weapon_view()->frame == BOW_FRAME_WAIT && arrow_count() == count,
+                 "mouselook still aims while holding the bow fully drawn");
+    input.reset = 1; input.held[SWING_BUTTON] = 0; input.mouse_dx = 0;
+    frame(&input);
+    input.reset = 0;
+    for (i = 0; i < 8; i++) { frame(&input); }
+    check_expect(weapon_view()->visible && weapon_view()->frame == 0 && arrow_count() == count,
+                 "a focus reset cancels the drawn bow without firing");
+    state_equip(hand,equipped);
+    object_delete(bow); object_delete(arrows);
+    possessions_close();
+    if (!ready) { hud_toggle_ready(); }
+    weapon_reset(); config_set(&config);
+    move_restore(&motion); move_camera(&g_camera);
 }
 
 static void check_save_load(const char *root, const char *test_root)
@@ -791,6 +942,7 @@ static void check_possessions(const char *test_root)
         check_expect(state_restore(&before), "restore the character after the Archer-kit check");
     }
     check_weapon_hands();
+    check_suit_head();
     sound_stop_all();
     mem_zero(&in,sizeof(in)); in.pressed[INVENTORY] = 1;
     frame(&in);
@@ -1205,6 +1357,7 @@ void check_ui(const char *root)
     check_options_and_controls();
     check_pointer_shapes();
     check_save_load(root, test_root);
+    check_bow_aim();
     check_possessions(test_root);
     check_inventory_completion(test_root);
     check_drawn_weapon_pickup();

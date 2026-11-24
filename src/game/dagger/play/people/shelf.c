@@ -2,6 +2,7 @@
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/tables/itemdefs.h"
+#include "game/dagger/tables/buildingtypes.h"
 #include "game/dagger/tables/shopdefs.h"
 #include "game/dagger/play/combat/combat.h"
 
@@ -36,7 +37,7 @@ static int pick(int n)
     return random_range(0, n - 1);
 }
 
-int shelf_stock(df_u32 container, int variant, int quality, int building_type, int model_index)
+static int stock(df_u32 container, int variant, int quality, int building_type, int model_index, int shop)
 {
     int groups[SHOP_GROUPS_MOST];
     int n, group, chance, made;
@@ -62,6 +63,7 @@ int shelf_stock(df_u32 container, int variant, int quality, int building_type, i
             id = item_create(container, ITEM_GROUP_BOOK, (quality + BOOK_RARITY_ADD) / BOOK_RARITY_DIV, -1);
         } else if (group != ITEM_GROUP_MAGIC_ITEM && group != ITEM_GROUP_ARTIFACT && group != ITEM_GROUP_MAP) {
             kinds = item_kinds(group);
+            if (shop && group == ITEM_GROUP_WEAPON) { kinds = WEAPON_ARROW; }
             if (kinds > 0) {
                 id = item_create(container, group, pick(kinds), -1);
             }
@@ -74,6 +76,34 @@ int shelf_stock(df_u32 container, int variant, int quality, int building_type, i
         /* rand() % 100 > chance ends it. */
         if (random_range(0, RAND_MAX_WATCOM) % PERCENT > chance) {
             break;
+        }
+    }
+    return made;
+}
+
+int shelf_stock(df_u32 container, int variant, int quality, int building_type, int model_index)
+{
+    return stock(container, variant, quality, building_type, model_index, 0);
+}
+
+int shelf_stock_shop(df_u32 container, int variant, int quality, int building_type, int model_index)
+{
+    /* shelf_stock_items rolls each weapon template for these buildings,
+     * regardless of the shelf model. Use that roll for ammunition. */
+    static const df_u8 weapon_chance[BUILDING_TYPES] = {
+        [BUILDING_ARMORER] = 20, [BUILDING_GENERAL] = 20, [BUILDING_PAWN] = 10, [BUILDING_WEAPONS] = 70
+    };
+    int rarity = item_rarity(ITEM_GROUP_WEAPON, WEAPON_ARROW);
+    int chance = building_type >= 0 && building_type < BUILDING_TYPES ? weapon_chance[building_type] : 0;
+    int made = stock(container, variant, quality, building_type, model_index, 1);
+
+    chance = (21 - rarity) * 5 * chance / 100;
+    if (chance && rarity <= quality && random_range(1, PERCENT) <= chance) {
+        df_u32 id = item_create(container, ITEM_GROUP_WEAPON, WEAPON_ARROW, 0);
+
+        if (id) {
+            object_edit(id)->thing_key = (df_u32)model_index + 1u;
+            made++;
         }
     }
     return made;

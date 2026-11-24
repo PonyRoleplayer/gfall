@@ -74,8 +74,8 @@ talk needs standing and the quest hooks left by milestone 8.
 
 ## Local directions
 
-With a townsperson, choose **Where is → Places**, select **Taverns** or
-**Local temples**, then use **OKAY** to open the list. Select a named building
+With a townsperson, choose **Where is → Places**, select **Libraries**,
+**Taverns**, or **Local temples**, then use **OKAY** to open the list. Select a named building
 and use **OKAY** again to ask for directions. The horizontal arrows reveal names
 that extend past the list column.
 
@@ -85,15 +85,24 @@ interior loads and uses the same sign name as the directions menu. This is an
 intentional departure from FALL.EXE, which shows building names when the player
 inspects them from outside.
 
+Entering or inspecting a building with Info writes its sign name on the town
+automap. An NPC who offers to mark a destination writes the same kind of note,
+including for a quest residence. Discoveries survive saving and loading. GFALL
+highlights the latest directions in each town and brings the target into view
+if it would open offscreen. Unaffiliated static patrons use
+the local people's faction for dialogue.
+
 FALL.EXE's `talk_build_place_topics` scans the whole town, omits ordinary
 residences, adds quest destinations and orders local topics by distance. GFALL
 previously capped the raw list at 64 before filtering. The dialogue now covers
 the full town loader's capacity. It keeps each destination's building ID for
 the answer, even when two buildings have the same name. The name resolver uses
-the building's seed, honors named `TEXT.RSC` records and looks up a temple's
-first child faction, as in `building_name`. The host test opens dialogue with a
-pedestrian in Daggerfall, checks the two lists against the actual town records,
-and submits a named question from each.
+the building's town-specific MAPPITEM seed, honors named `TEXT.RSC` records and looks up a temple's
+first child faction, as in `building_name`. Generated signs draw the suffix
+first, as FALL.EXE does. Owner names come from `NAMEGEN.DAT`, and ruler titles
+come from the regional court or its parent faction. The host test opens
+dialogue with a pedestrian in Daggerfall, checks the lists against the actual
+town records, and submits a named question from each.
 
 ## Acceptance
 

@@ -203,7 +203,7 @@ static void ruler_name(int f, int old, char *out, int cap)
 }
 
 /* ruler_titles (FALL.EXE): from a number 1..12, King and Queen, Duke and Duchess, Marquis and Marquise, Count and Countess, Baron and Baroness, Lord and Lady: odd is a man, even a woman.
- * Our factions carry no ruler number, so a region's is its own (region % 12 + 1). */
+ * The simulated news uses the region number to pick a title (region % 12 + 1). */
 #define RULER_TITLES 12
 #define RULER_FATES 6
 
@@ -231,12 +231,11 @@ static void rumour_add(int f1, int f2, int kind, int region, int text)
     if (noble < 0) { for (i = 0; i < total(); i++) { if (is_noble(i) && region_of(i) == region) { noble = i; break; } } }
     ruler_name(noble, 0, ruler, sizeof(ruler)); w.ruler = ruler;
     {
-        static const char *const titles[RULER_TITLES] = { "King", "Queen", "Duke", "Duchess", "Marquis", "Marquise", "Count", "Countess", "Baron", "Baroness", "Lord", "Lady" };
         static const char *const fates[RULER_FATES] = { "died of heart failure", "struck his head", "died of the plague", "stepped down", "was overthrown", "was murdered in his bed" };
         int number = region % RULER_TITLES;
 
         ruler_name(noble, 1, old_ruler, sizeof(old_ruler)); w.ruler_old = old_ruler;
-        w.title = titles[number]; w.pronoun = number & 1 ? "her" : "his";
+        w.title = name_ruler_title(number + 1); w.pronoun = number & 1 ? "her" : "his";
         /* %olf: ruler_fates[rand_range(0, 5)] under srand(seed & 0xFFFF). */
         {
             df_u32 keep = game_state()->random;

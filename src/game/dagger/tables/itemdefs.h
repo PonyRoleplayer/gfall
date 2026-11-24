@@ -43,6 +43,7 @@ enum {
 /* Indexes in ITEM_GROUP_MISC: the spellbook, a soul trap, a letter of credit. In ITEM_GROUP_WEAPON: the two bows and the arrow. */
 enum { MISC_SPELLBOOK = 0, MISC_SOUL_TRAP = 1, MISC_LETTER_OF_CREDIT = 2, MISC_HOUSE_DEED = 6 };
 enum { WEAPON_SHORT_BOW = 16, WEAPON_LONG_BOW = 17, WEAPON_ARROW = 18 };
+enum { MENS_KHAJIIT_SUIT = 15, WOMENS_KHAJIIT_SUIT = 11 };
 
 /*
  * Making an item (item_roll_material, item_roll_armor_type, item_roll_dye, item_init_from_template; equip.c leaves the numbers inline). A material is a roll of 0..MATERIAL_ROLL_MAX, plus

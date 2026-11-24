@@ -1249,8 +1249,10 @@ static void draw_flat(const Camera *cam, const Basis *basis, const Level *level,
     corner[3].z = cz - uz;
     corner[3].u = u0;
     corner[3].v = uh;
-    texcache_bind((int)flat->slot);
-    emit_poly(corner, 4, inv_w, inv_h, 255.0f, 255.0f, 255.0f);
+    /* An unavailable sprite must not draw with the previous picture. */
+    if (texcache_bind((int)flat->slot)) {
+        emit_poly(corner, 4, inv_w, inv_h, 255.0f, 255.0f, 255.0f);
+    }
 }
 
 static void draw_covers(void);

@@ -29,6 +29,7 @@
 #define TALK_BUILDING_CATEGORIES 13
 #define TALK_CATEGORY_OTHER 13
 #define TALK_BUILDING_FLAG 8
+#define TALK_QUEST_SITE_FLAG 16
 #define TALK_TEXT_NEWS_ASKED 1457
 #define TALK_TAB_WORK 3
 #define TALK_TEXT_WORK 8075
@@ -120,8 +121,9 @@ void talk_tone(TalkState *talk, int tone);
  * counts every building of a town that is not a house (type 1) or past 16, and a quest site is a category of its
  * own ("General", 13).
  */
-#define TALK_CATEGORIES 15
+#define TALK_CATEGORIES 16
 #define TALK_REGIONAL 14
+#define TALK_CATEGORY_QUEST 15
 /* Up to 64 town blocks of 32 buildings, plus the Regional entry. */
 #define TALK_TOPICS 2049
 

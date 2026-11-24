@@ -672,8 +672,8 @@ void body_step(Body *b, const Scene *scene, float want_dx, float want_dz, float 
             shape(b, 0);
             rise_to(b, floor_y);
             b->grounded = df_absf(b->feet[1] - floor_y) < REACHED;
-            b->vy = 0.0f;
             if (b->grounded) {
+                b->vy = 0.0f;
                 /* Landed: how fast, and from how high (body_landed, once). */
                 b->landed = 1;
                 b->land_speed = speed > 0.0f ? speed : 0.0f;
@@ -683,8 +683,9 @@ void body_step(Body *b, const Scene *scene, float want_dx, float want_dz, float 
         } else {
             /* Up or down in the air: the whole body, so its legs go into nothing either. */
             shape(b, 1);
-            if (!rise_to(b, b->feet[1] + dy)) {
-                /* Struck something on the way: a ceiling, a slope. */
+            if (!rise_to(b, b->feet[1] + dy) && dy > 0.0f) {
+                /* Stop rising at a ceiling. Keep gravity while sliding
+                 * down a riser until a floor actually supports the feet. */
                 b->vy = 0.0f;
             }
         }

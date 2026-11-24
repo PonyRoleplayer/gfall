@@ -2456,12 +2456,12 @@ static void check_body_fixes(void)
     /* It meets the edge and slides round it: never nearer than its radius. */
     check_expect(c[0] * c[0] + c[2] * c[2] >= 15.9f * 15.9f && c[0] > -20.0f && !collide_overlap(c),
                  "sliding past a wall's end, a hair away from its plane, went into its edge");
-    /* Already inside the edge by a unit: on toward it, no deeper; back out, free. */
+    /* Already inside the edge by a unit: slide without getting deeper, then back out. */
     c[0] = -13.0f;
     c[1] = 0.0f;
     c[2] = 8.0f;
     collide_slide(c, 5.0f, 0.0f, 0.0f, 0);
-    ok = c[0] <= -12.99f;
+    ok = c[0] * c[0] + c[2] * c[2] >= 13.0f * 13.0f + 8.0f * 8.0f - 0.1f;
     c[0] = -13.0f;
     c[2] = 8.0f;
     collide_slide(c, -5.0f, 0.0f, 0.0f, 0);

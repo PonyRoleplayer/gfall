@@ -27,6 +27,9 @@ void check_guild(void)
                  guild_kind_of_faction(21) == 142 && guild_kind_of_faction(82) == 142 && guild_kind_of_faction(368) == 68 && guild_kind_of_faction(999) == -1,
                  "guild: the kinds of the halls' factions");
     mages = guild_kind_of_faction(40);
+    check_expect(!strcmp(guild_rank_name(guild_kind_of_faction(368), 0), "Aspirant") &&
+                 !strcmp(guild_rank_name(guild_kind_of_faction(82), 0), "Novice"),
+                 "guild: knightly and temple membership flags preserve the rank title");
 
     /* Joining wants the best of the guild's skills at 22 and the next at 4, and a reputation that is not negative. */
     skills(21, 10, 0);

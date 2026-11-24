@@ -4,6 +4,7 @@
 #include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/tables/careers.h"
 #include "game/dagger/play/ui/hud.h"
+#include "game/dagger/play/ui/msg.h"
 #include "game/dagger/play/play.h"
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/combat/dungeon.h"
@@ -195,22 +196,22 @@ int door_use(const Scene *scene, int usable, int mode)
             chance = magic_chance(-1,EFFECT_OPEN,-1); magic_remove(-1,EFFECT_OPEN);
             if (random_range(1,100) <= chance && mover_start(scene,mover)) {
                 door_unlock(door); dungeon_alert(-1);
-            } else { interact_say("Spell effect failed."); }
+            } else { msg_set("Spell effect failed."); }
             return 1;
         }
-        interact_say(lock_hint(skill,door->lock));
+        msg_set(lock_hint(skill,door->lock));
         return 1;
     }
     if ((character_state()->conditions & COND_OPEN) && door->lock < LOCK_IMPOSSIBLE) {
         /* lockpick_door (steal mode, Open active): the spell's chance plus (level - lock) * 5, held to 5..95, rolled on 0..100; a lock of LOCK_IMPOSSIBLE fails first and keeps the spell. */
         chance = lock_chance(magic_chance(-1,EFFECT_OPEN,-1),character_state()->level,door->lock); magic_remove(-1,EFFECT_OPEN);
         if (random_range(0,100) <= chance && mover_start(scene,mover)) { door_unlock(door); dungeon_alert(-1); return 1; }
-        interact_say(lock_text(LOCK_FAILED)); pick_crime();
+        msg_set(lock_text(LOCK_FAILED)); pick_crime();
         return 1;
     }
     chance = lock_chance(skill,character_state()->level,door->lock);
     if (!chance || tried(door,skill)) {
-        interact_say(lock_text(LOCK_FAILED));
+        msg_set(lock_text(LOCK_FAILED));
         if (!chance) { actions_trigger(scene,scene->usables[usable].model,LINK_EVENT_LOCK_FAIL); }
         pick_crime();
         return 1;
@@ -219,7 +220,7 @@ int door_use(const Scene *scene, int usable, int mode)
      * unlimited retries or leave a lock-changing row with an uninitialized lock. */
     row = door_state(door);
     if (!row) {
-        interact_say("Cannot remember this lock.");
+        msg_set("Cannot remember this lock.");
         return 1;
     }
     skill_use(SKILL_LOCKPICKING);
@@ -227,13 +228,13 @@ int door_use(const Scene *scene, int usable, int mode)
         door_unlock(door);
         mover_start(scene,mover);
         sound_at(SND_LOCK_OPEN,door->x0,door->y0,door->z0);
-        interact_say(lock_text(LOCK_OPEN));
+        msg_set(lock_text(LOCK_OPEN));
     } else {
         /* Only failure updates lockpick_skill_tried. A successful pick must
          * not become a failed attempt if a later action relocks the door. */
         row->game[1] = 1;
         for (i = 0; i < 4; i++) { row->game[i+4] = (df_u8)((df_u32)skill >> (i*8)); }
-        interact_say(lock_text(LOCK_FAILED));
+        msg_set(lock_text(LOCK_FAILED));
     }
     row->lock = door->lock;
     row->at_end = (df_u8)(!door->teleport && mover_at_end(door));

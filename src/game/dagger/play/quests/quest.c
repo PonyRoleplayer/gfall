@@ -36,6 +36,7 @@ void quest_end(int slot)
     if (q->used) {
         log_print(LOG_INFO, "quest: %s ends (%s), minute %u", q->qbn.name,
                   q->ended ? "its end op" : "refused or stopped", (unsigned)game_state()->minutes);
+        logbook_forget_quest(q->qbn.id);
     }
     for (i = 0; i < QUEST_FACES; i++) {
         QuestFace *face = &quest_runtime.faces[i];
@@ -45,6 +46,8 @@ void quest_end(int slot)
         Rumour *rumour = &quest_runtime.rumours[i];
         if (rumour->used && (rumour->flags & 4) && rumour->quest_id == q->qbn.id) { rumour->used = 0; }
     }
+    /* quest_remove_objects also takes the quest's foes and their copies. */
+    for (i = 0; i < q->qbn.n_foe; i++) { quest_forget_foe(&q->foe[i]); }
     /* Quest-owned items go with the quest, including items in the pack. */
     for (i = 0; i < q->qbn.n_item; i++) {
         if (q->item[i].object) { object_delete(q->item[i].object); }
@@ -140,7 +143,7 @@ static char g_offer_code;
 static void offer_answer(int yes)
 {
     int slot;
-    char text[1024], said[1024];
+    static char text[QUEST_DIALOG_CAP], said[QUEST_DIALOG_CAP];
     char code;
 
     slot = g_offer_slot;
@@ -164,7 +167,7 @@ static void offer_scene_answer(int answer) { offer_answer(answer == QUEST_SCENE_
 int quest_begin(const char *name, int faction)
 {
     int slot, asked;
-    char text[1024];
+    static char text[QUEST_DIALOG_CAP], said[QUEST_DIALOG_CAP];
 
     /* quest_start refuses an empty name, N0C00Y01 and a quest already running. */
     if (!name || !name[0] || quest_active(name)) { return -1; }
@@ -182,8 +185,6 @@ int quest_begin(const char *name, int faction)
     text[0] = 0;
     asked = name[5] == 'Y' || prince_code(name[0]);
     if (asked && quest_text_hooks.read && quest_text_hooks.ask && quest_text_hooks.read(quest_runtime.slots[slot].qbn.name, 1000, 0, text, sizeof(text)) > 0 && text[0]) {
-        char said[1024];
-
         quest_expand(slot, text, said, sizeof(said), game_state()->minutes, 0);
         g_offer_slot = slot;
         g_offer_code = 0;

@@ -12,8 +12,6 @@
  * windows.h. Forward is Up, not W.
  */
 
-#define ACTS 38
-
 enum {
     FORWARD,
     BACK,
@@ -52,7 +50,9 @@ enum {
     SWITCH,
     STATUS_KEY,
     SHEET,
-    INVENTORY
+    INVENTORY,
+    SPRINT,
+    ACTS
 };
 
 /* Win32 virtual keys, numeric so the game stays free of windows.h. */
@@ -66,10 +66,13 @@ enum {
 #define KEY_UP 0x26
 #define KEY_RIGHT 0x27
 #define KEY_DOWN 0x28
+#define KEY_SHIFT 0x10
 #define KEY_CONTROL 0x11
 #define KEY_MENU 0x12
 #define KEY_LSHIFT 0xA0
 #define KEY_RSHIFT 0xA1
+#define KEY_COMMA 0xBC
+#define KEY_PERIOD 0xBE
 #define KEY_F1 0x70
 #define KEY_F2 0x71
 #define KEY_F3 0x72

@@ -73,13 +73,15 @@ int cif_rle(const df_u8 *src, int n, df_u8 *dst, int need);
 
 /*
  * A CFA picture (MRED00I0.CFA, a riding horse): a 14-byte header (width, height,
- * the compressed width, two unknowns, bits a pixel, frames, the header's size),
+ * the compressed width, the screen x and y, bits a pixel, frames, and the first frame offset),
  * then one RLE stream of every frame one after the other, 8-bit under
  * ART_PAL.COL. The frames into the current heap.
  */
 typedef struct CfaPicture {
     int width;
     int height;
+    int x;
+    int y;
     int frames;
     df_u8 *pixels;
 } CfaPicture;

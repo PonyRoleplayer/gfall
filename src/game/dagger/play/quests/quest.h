@@ -104,7 +104,7 @@ typedef struct QuestWorld {
     int (*spawn_foe_at)(int kind, df_u32 thing, float x, float y, float z);
     df_u32 (*place_item_at)(float x, float y, float z);
     /* A building of a town for a place that is one (p1 0): the town (region, index), the building's type (below 0 any shop-like one, 17..20 any house, 11 only a Mages Guild) and a seed that picks among them; its block and record. 1 when there is one. */
-    int (*pick_building)(int region, int index, int type, unsigned seed, int *block, int *record);
+    int (*pick_building)(int region, int index, int type, int site, unsigned seed, int *block, int *record);
     /* A building of a town for a person's site (quest_init_person): mode 0 of the type value (17..20 any house, 11 only a Mages Guild), 1 any shop-like one, 2 of the faction value, 3 of a faction of the type
      * value; picked by the seed; its block, record and faction. 1 when there is one. */
     int (*pick_site)(int region, int index, int mode, int value, unsigned seed, int *block, int *record, int *faction);
@@ -114,6 +114,8 @@ typedef struct QuestWorld {
     int (*outdoors)(void);
     /* The creatures loaded and alive (creature_count): the courier of op 76 comes only when there are none. */
     int (*creatures)(void);
+    /* Whether the player is inside the named building, as opposed to elsewhere in its town. */
+    int (*inside)(int region, int index, int block, int record);
 } QuestWorld;
 void quest_set_world(const QuestWorld *world);
 
@@ -182,6 +184,8 @@ int quest_building_open(int region, int index, int block, int record);
 /* quest_find_site_for_building as the talk window and building_name use it: 1 when a running quest has a place that is this building or a person standing in it; surname the quest person's, or one made from
  * the building when it is a place (a quest residence is "The Surname Residence"). */
 int quest_building_site(int region, int index, int block, int record, char *surname, int cap);
+/* Whether a quest foe can spawn at this site. Dungeons use the exterior index and -1 for block and record. */
+int quest_foe_at_site(const QuestState *q, int foe, int region, int index, int block, int record);
 /* The access level op 17 granted the building, while its minutes last (building_access_level: 10 and over opens its door to a lockpicker); 0 for none. */
 int quest_building_access(int region, int index, int block, int record, df_u32 now);
 const QuestAccess *quest_access(int i);
@@ -230,8 +234,10 @@ int quest_count(void);
 /* The console command that lists the running quests (cheats_startup registers it). */
 void quest_commands(void);
 const QuestState *quest_at(int slot);
-/* A quest ended (op 6): its slot is free. */
+/* A quest ended (op 6): its slot and owned foes are removed. */
 void quest_end(int slot);
+/* Remove world rows left by finished quests in older saves, before the place opens. */
+void quest_prune_foes(void);
 
 /* quest_pick_file (func_0004C274): the quest files whose name begins with a letter or the other (0 for none), then '0', then the membership letter ('B' members only, 'C' anyone), whose
  * rank digit is at most the rank, one picked at random into name (9 bytes). 0 when none qualifies. (DAGGER.GRD's hiding of X quests is not read: there is no such file.) */

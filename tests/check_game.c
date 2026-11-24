@@ -31,6 +31,7 @@
 #include "game/dagger/play/character/chargen.h"
 #include "game/dagger/play/config.h"
 #include "game/dagger/play/items/inventory.h"
+#include "game/dagger/tables/itemdefs.h"
 #include "game/dagger/play/items/possessions.h"
 #include "game/dagger/play/ui/hud.h"
 #include "game/dagger/play/input/move.h"
@@ -42,6 +43,7 @@
 #include "check_combat.h"
 #include "game/dagger/play/ui/movie.h"
 #include "game/dagger/formats/vid.h"
+#include "game/dagger/tables/careers.h"
 #include "game/dagger/tables/tables.h"
 
 static int g_card_quads;
@@ -645,15 +647,253 @@ static void check_place_and_screen(void)
     check_expect(pointer_classic(10, 10, 640, 480, &cx, &cy) == 0, "the letterbox is outside");
 }
 
+static void check_view_movement(const Scene *scene)
+{
+    static const struct { int forward, side; } directions[] = {
+        {1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {1, -1}, {-1, 1}, {-1, -1}
+    };
+    unsigned char held[ACTS] = {0};
+    unsigned char pressed[ACTS] = {0};
+    MoveIn in = {0};
+    MotionState motion;
+    Camera cam;
+    float speed, dx, dz, scale, y, distance_60;
+    int i, frame;
+
+    in.held = held;
+    in.pressed = pressed;
+    in.view_mode = 1;
+    in.dt = 1.0f / 60.0f;
+    speed = (float)ground_speed(character_state()->attribute[ATTR_SPD], 0, 0, 0, 0, 0);
+    for (i = 0; i < (int)(sizeof(directions) / sizeof(directions[0])); i++) {
+        /* At a quarter turn, forward is +X and strafe right is -Z. */
+        move_place(0, WALK_EYE, 0, ANGLE_QUARTER);
+        held[FORWARD] = directions[i].forward > 0;
+        held[BACK] = directions[i].forward < 0;
+        held[SLIDE_RIGHT] = directions[i].side > 0;
+        held[SLIDE_LEFT] = directions[i].side < 0;
+        for (frame = 0; frame < 12; frame++) { move_frame(scene, &in); }
+        move_capture(&motion);
+        scale = directions[i].forward && directions[i].side ? 0.70710678f : 1.0f;
+        check_expect(check_near(motion.vx, directions[i].forward * speed * scale, 0.03f) &&
+                     check_near(motion.vz, -directions[i].side * speed * scale, 0.03f),
+                     "View's eight directions follow yaw at the same top speed");
+    }
+
+    mem_zero(held, sizeof(held));
+    move_place(0, WALK_EYE, 0, 0);
+    held[FORWARD] = held[BACK] = held[STRAFE] = held[TURN_RIGHT] = 1;
+    for (frame = 0; frame < 12; frame++) { move_frame(scene, &in); }
+    move_capture(&motion);
+    check_expect(motion.yaw == 0 && motion.vz == 0 && check_near(motion.vx, speed, 0.03f),
+                 "opposite axes cancel and the Slide modifier turns a turn key into strafe");
+
+    mem_zero(held, sizeof(held));
+    held[FORWARD] = 1;
+    move_place(0, WALK_EYE, 0, 0);
+    move_frame(scene, &in);
+    move_capture(&motion);
+    check_expect(motion.vz > 0 && motion.vz < speed * 0.5f && motion.feet[2] > 0,
+                 "View starts moving immediately and accelerates to walking speed");
+    for (frame = 1; frame < 18; frame++) { move_frame(scene, &in); }
+    distance_60 = move_body()->feet[2];
+    move_place(0, WALK_EYE, 0, 0);
+    in.dt = 1.0f / 30.0f;
+    for (frame = 0; frame < 9; frame++) { move_frame(scene, &in); }
+    check_expect(check_near(move_body()->feet[2], distance_60, 0.03f),
+                 "View covers the same ground at 30 and 60 FPS during acceleration");
+    in.dt = 1.0f / 60.0f;
+    held[FORWARD] = 0;
+    move_frame(scene, &in);
+    move_capture(&motion);
+    check_expect(motion.vz > 0 && motion.vz < speed && motion.feet[2] > distance_60,
+                 "releasing the movement key brakes View's momentum");
+    for (frame = 0; frame < 9; frame++) { move_frame(scene, &in); }
+    move_capture(&motion);
+    check_expect(motion.vz == 0 && motion.feet[2] < distance_60 + speed * 0.06f,
+                 "View comes to a quick full stop");
+
+    options_set_flags(2);
+    held[FORWARD] = 1;
+    for (frame = 0; frame < 12; frame++) { move_frame(scene, &in); }
+    move_camera(&cam);
+    y = cam.y;
+    check_expect(df_absf(y - move_body()->feet[1] - move_body()->eye_now) > 0.25f,
+                 "View gait offsets the camera while walking");
+    move_shift(20, -20);
+    move_camera(&cam);
+    check_expect(cam.y == y, "a streamed origin change preserves the View gait");
+    pressed[JUMP] = 1;
+    move_frame(scene, &in);
+    pressed[JUMP] = held[FORWARD] = 0;
+    move_capture(&motion);
+    dz = motion.vz;
+    move_frame(scene, &in);
+    move_capture(&motion);
+    check_expect(motion.airborne && motion.vz == dz, "releasing View controls in a jump keeps momentum");
+    held[SLIDE_RIGHT] = 1;
+    move_frame(scene, &in);
+    move_capture(&motion);
+    dx = motion.vx;
+    check_expect(dx > 0 && dx < speed * 0.1f && motion.vz > speed * 0.8f,
+                 "View lets the player adjust a jump without replacing takeoff speed");
+    held[SLIDE_RIGHT] = 0;
+    for (frame = 0; frame < 180 && move_airborne(); frame++) { move_frame(scene, &in); }
+    for (frame = 0; frame < 16; frame++) { move_frame(scene, &in); }
+    /* A fixed impulse makes the impact independent of the fixture's Jumping skill. */
+    check_expect(body_jump(move_body(), 125.0f), "start a standing jump for the landing camera check");
+    move_frame(scene, &in);
+    for (frame = 0; frame < 180 && move_airborne(); frame++) { move_frame(scene, &in); }
+    for (frame = 0; frame < 4; frame++) { move_frame(scene, &in); }
+    move_camera(&cam);
+    check_expect(!move_airborne() && cam.y < move_body()->feet[1] + move_body()->eye_now - 0.15f,
+                 "View adds a short camera dip on landing");
+    for (frame = 0; frame < 16; frame++) { move_frame(scene, &in); }
+    move_camera(&cam);
+    check_expect(check_near(cam.y, move_body()->feet[1] + move_body()->eye_now, 0.001f),
+                 "View camera settles after landing and stopping");
+    options_set_flags(0);
+}
+
+static void check_sprint(const Scene *scene)
+{
+    unsigned char held[ACTS] = {0};
+    MoveIn in = {0};
+    CharacterState *who = character_state();
+    MotionState motion;
+    int initial_fatigue = who->fatigue;
+    int strength = who->attribute[ATTR_STR], endurance = who->attribute[ATTR_END];
+    int fatigue_60, fps, i;
+    float walk;
+
+    in.held = held;
+    in.view_mode = 1;
+    who->attribute[ATTR_STR] = who->attribute[ATTR_END] = 50;
+    walk = (float)ground_speed(who->attribute[ATTR_SPD], 0, 0, 0, 0, 0);
+    fatigue_60 = 0;
+    for (fps = 60; fps >= 30; fps -= 30) {
+        move_init();
+        move_place(0, WALK_EYE, 0, 0);
+        who->fatigue = 40 * FATIGUE_UNIT;
+        held[SPRINT] = 1;
+        held[FORWARD] = held[SLIDE_RIGHT] = 0;
+        in.dt = 1.0f / (float)fps;
+        for (i = 0; i < 6; i++) { move_frame(scene, &in); }
+        check_expect(who->fatigue == 40 * FATIGUE_UNIT, "holding Sprint while idle uses no stamina");
+        held[FORWARD] = held[SLIDE_RIGHT] = 1;
+        for (i = 0; i < fps; i++) { move_frame(scene, &in); }
+        move_capture(&motion);
+        check_expect(check_near(motion.vx, walk * 2 * 0.70710678f, 0.03f) &&
+                     check_near(motion.vz, motion.vx, 0.03f), "View sprints diagonally at twice the walk speed");
+        if (fps == 60) { fatigue_60 = who->fatigue; }
+        check_expect(df_absf((float)(who->fatigue - 36 * FATIGUE_UNIT)) <= 1 &&
+                     df_absf((float)(who->fatigue - fatigue_60)) <= 1,
+                     "sprint spends four stamina points per second at either frame rate");
+    }
+    who->fatigue = FATIGUE_UNIT + 1;
+    for (i = 0; i < 12; i++) { move_frame(scene, &in); }
+    move_capture(&motion);
+    check_expect(who->fatigue == FATIGUE_UNIT && check_near(motion.vz, walk * 0.70710678f, 0.03f),
+                 "sprint gives out and returns to walking before stamina reaches zero");
+
+    who->fatigue = 40 * FATIGUE_UNIT;
+    in.view_mode = 0;
+    in.region = STEER_FORWARD;
+    in.mouse_steer = 1;
+    in.weight_up = STEER_WEIGHT_KEYS;
+    check_expect(move_frame(scene, &in) && check_near(move_body()->feet[2] - motion.feet[2],
+                 region_speed(STEER_FORWARD, (int)walk * 2) * in.dt, 0.03f) && who->fatigue < 40 * FATIGUE_UNIT,
+                 "sprint applies to Cursor steering and draws from the same stamina");
+    who->fatigue = initial_fatigue;
+    who->attribute[ATTR_STR] = strength;
+    who->attribute[ATTR_END] = endurance;
+}
+
+static void check_ride_motion(Scene *scene)
+{
+    unsigned char held[ACTS] = {0}, pressed[ACTS] = {0};
+    MoveIn in = {0};
+    MotionState motion;
+    df_u32 horse, cart, seed = game_state()->random;
+    int i, fatigue, outdoor = scene->outdoor;
+    float walk;
+
+    /* The movement fixtures run before the Hold creates the player's pack. */
+    character_state()->klass = 0;
+    character_state()->race = 0;
+    if (!state_begin()) { check_expect(0, "transport: could not create the test character's pack"); return; }
+    horse = item_create(game_state()->inventory_id, ITEM_GROUP_TRANSPORT, 1, 0);
+    cart = item_create(game_state()->inventory_id, ITEM_GROUP_TRANSPORT, 0, 0);
+    walk = (float)ground_speed(character_state()->attribute[ATTR_SPD], 0, 0, 0, 0, 0);
+    in.held = held; in.pressed = pressed; in.view_mode = 1; in.dt = 1.0f / 60.0f;
+    scene->outdoor = 1;
+    move_place(0, WALK_EYE, 0, 0);
+    for (i = 0; i < 16 && !move_body()->grounded; i++) { move_frame(scene, &in); }
+    check_expect(horse && cart && move_mount(scene, horse), "transport: the player could not mount their horse outdoors");
+    fatigue = character_state()->fatigue;
+    held[FORWARD] = held[RUN] = held[SPRINT] = pressed[JUMP] = pressed[CROUCH] = 1;
+    for (i = 0; i < 16; i++) { move_frame(scene, &in); }
+    move_capture(&motion);
+    check_expect(move_mounted() && check_near(motion.vz, walk + 225.0f, 0.03f) && !motion.airborne && !motion.crouched &&
+                 motion.eye > WALK_EYE + 45.0f && motion.mount == horse && character_state()->fatigue == fatigue,
+                 "transport: horseback movement keeps its raised eye and riding speed even with Sprint held");
+    check_expect(move_mount(scene, cart), "transport: the player could not change to their cart");
+    held[RUN] = pressed[JUMP] = pressed[CROUCH] = 0;
+    in.view_mode = 0; in.region = STEER_FORWARD;
+    move_frame(scene, &in);
+    move_capture(&motion);
+    check_expect(check_near(motion.vz, (float)region_speed(STEER_FORWARD, (int)walk + 100), 0.03f) &&
+                 character_state()->fatigue == fatigue, "transport: Sprint does not change cart speed or fatigue");
+    check_expect(move_mount(scene, 0) && !move_mounted(), "transport: returning to foot did not dismount");
+    state_clear();
+    random_seed(seed);
+    scene->outdoor = outdoor;
+}
+
+static void check_view_wall(const Scene *scene)
+{
+    unsigned char held[ACTS] = {0};
+    MoveIn in = {0};
+    MotionState motion;
+    Camera cam;
+    float x;
+    int i;
+
+    in.held = held;
+    in.view_mode = 1;
+    in.dt = 1.0f / 60.0f;
+    options_set_flags(2);
+    move_place(377, WALK_EYE, 0, 0);
+    held[FORWARD] = held[SLIDE_RIGHT] = 1;
+    for (i = 0; i < 20; i++) { move_frame(scene, &in); }
+    move_capture(&motion);
+    check_expect(motion.feet[0] < 385 && motion.feet[2] > 20 &&
+                 df_absf(motion.vx) < 3 && motion.vz > 40,
+                 "View slides against a wall and keeps its tangential momentum");
+    held[FORWARD] = 0;
+    for (i = 0; i < 28; i++) { move_frame(scene, &in); }
+    move_camera(&cam);
+    x = cam.x;
+    check_expect(check_near(cam.y, move_body()->feet[1] + move_body()->eye_now, 0.001f),
+                 "holding a movement key against a wall does not sustain View bob");
+    held[SLIDE_RIGHT] = 0;
+    held[SLIDE_LEFT] = 1;
+    move_frame(scene, &in);
+    check_expect(move_body()->feet[0] < x, "View can step away from the wall immediately");
+    options_set_flags(0);
+}
+
 /* A large empty floor isolates controls from Hold walls and spawn geometry. */
 static void check_movement_directions(void)
 {
     static Scene scene;
     static Mesh mesh;
     static Instance instance;
-    static Tri triangle[2];
+    static Tri triangle[4];
     static const float x[2][3] = { {-2000, 2000, 2000}, {-2000, 2000, -2000} };
     static const float z[2][3] = { {-2000, -2000, 2000}, {-2000, 2000, 2000} };
+    static const float wall_y[2][3] = { {0, 200, 200}, {0, 200, 0} };
+    static const float wall_z[2][3] = { {-1000, -1000, 1000}, {-1000, 1000, 1000} };
     unsigned char held[ACTS];
     unsigned char pressed[ACTS];
     MoveIn in;
@@ -765,6 +1005,20 @@ static void check_movement_directions(void)
     move_camera(&cam);
     check_expect(check_near(cam.y, move_body()->feet[1] + move_body()->eye_now, 0.001f),
                  "disabling head bobbing returns the camera to the body eye");
+    check_view_movement(&scene);
+    check_sprint(&scene);
+    check_ride_motion(&scene);
+    for (i = 0; i < 2; i++) {
+        for (j = 0; j < 3; j++) {
+            triangle[2+i].x[j] = 400;
+            triangle[2+i].y[j] = wall_y[i][j];
+            triangle[2+i].z[j] = wall_z[i][j];
+        }
+        triangle[2+i].slot = 1;
+    }
+    mesh.ntris = 4;
+    scene.version++;
+    check_view_wall(&scene);
     move_init();
 }
 
@@ -824,6 +1078,58 @@ static void check_list_scroll(void)
     check_expect(chargen_list_sel() == 2, "holding a scroll arrow repeats the selection");
     chargen_scroll_frame(243, 150, 0, 0, 0);
     screen_shot("class-list", "MAP100I0.IMG", 241, 59, 5, 37);
+}
+
+static void check_hold_view_jumps(const Scene *scene)
+{
+    static const struct {
+        float x, y, min_x, min_y;
+        int fps, approach_frames;
+        const char *message;
+    } cases[] = {
+        {1026, 512, 1044, 528, 60, 3, "View jumps up the Hold stairs and lands at 60 FPS"},
+        {1061, 544, 1079, 560, 30, 3, "View jumps up the Hold stairs and lands at 30 FPS"},
+        {1570, 1024, 1650, 1060, 60, 22, "View jumps onto the throne dais with forward momentum"},
+        {1570, 1024, 1650, 1060, 30, 22, "View jumps onto the throne dais from its edge without climbing"},
+        {1600, 1024, 1650, 1060, 10, 2, "View jumps onto the throne dais at 10 FPS"},
+        {1682, 1060, 1716, 1080, 60, 10, "View jumps from the dais onto the throne seat"}
+    };
+    CharacterState *who = character_state();
+    CharacterState before = *who;
+    df_u32 jump_uses = game_state()->skill_uses[SKILL_JUMPING];
+    unsigned char held[ACTS] = {0};
+    unsigned char pressed[ACTS] = {0};
+    MoveIn in = {0};
+    MotionState motion;
+    const Body *body = move_body();
+    int i, frame;
+
+    move_capture(&motion);
+    who->attribute[ATTR_SPD] = who->attribute[ATTR_STR] = 50;
+    who->skill[SKILL_JUMPING] = 20;
+    who->class_flags = who->conditions = 0;
+    in.held = held;
+    in.pressed = pressed;
+    in.view_mode = 1;
+    for (i = 0; i < (int)(sizeof(cases) / sizeof(cases[0])); i++) {
+        move_place(cases[i].x, cases[i].y + WALK_EYE, 1025, ANGLE_QUARTER);
+        in.dt = 1.0f / (float)cases[i].fps;
+        held[FORWARD] = 0;
+        for (frame = 0; frame < 3; frame++) { move_frame(scene, &in); }
+        held[FORWARD] = 1;
+        for (frame = 0; frame < cases[i].approach_frames; frame++) { move_frame(scene, &in); }
+        pressed[JUMP] = 1;
+        move_frame(scene, &in);
+        pressed[JUMP] = 0;
+        check_expect(move_airborne(), "a View jump starts at the Hold obstacle");
+        for (frame = 0; frame < 2 * cases[i].fps && move_airborne(); frame++) { move_frame(scene, &in); }
+        check_expect(body->grounded && !move_climbing() && body->feet[0] > cases[i].min_x &&
+                     body->feet[1] >= cases[i].min_y - 0.1f, cases[i].message);
+    }
+    *who = before;
+    skill_add_uses(SKILL_JUMPING, (int)jump_uses - (int)game_state()->skill_uses[SKILL_JUMPING]);
+    move_restore(&motion);
+    state_pose(motion.feet[0], motion.feet[1] + motion.eye, motion.feet[2], motion.yaw, motion.pitch);
 }
 
 static void check_hold(const char *root)
@@ -936,6 +1242,7 @@ static void check_hold(const char *root)
         }
     }
     check_expect(grounded, "the jump lands");
+    check_hold_view_jumps(&seam_level()->scene);
 }
 
 /*
@@ -1139,7 +1446,7 @@ int check_game_resume(const char *root, int slot)
         saved_z += (double)world_where()->where.origin_z*STREAM_CHUNK;
     }
     if (!seam_open_place(1,0,&x, &y, &z)) { return 1; }
-    seam_land(&camera,1,0);
+    if (!seam_land(&camera,1,0)) { return 1; }
     world_x = camera.x; world_z = camera.z;
     if (slot == 7) { stream_world(camera.x,camera.z,&world_x,&world_z); }
     check_expect(check_near((float)(world_x-saved_x),0,0.1f) &&

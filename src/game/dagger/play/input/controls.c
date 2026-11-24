@@ -4,8 +4,10 @@
 #include "engine/core/df.h"
 #include "game/dagger/play/ui/msg.h"
 
-/* FALL.EXE 1.07.213 controls_buttons at 0x17B808, strict hit bounds. */
-static const ControlRect g_rect[42] = {
+enum { CONTROL_JOYSTICK = ACTS, CONTROL_MOUSE, CONTROL_DEFAULTS, CONTROL_CONTINUE, CONTROL_COUNT };
+
+/* FALL.EXE 1.07.213 controls_buttons at 0x17B808, plus the Sprint cell. */
+static const ControlRect g_rect[CONTROL_COUNT] = {
     { 55, 11, 104, 20 },
     { 55, 22, 104, 31 },
     { 55, 33, 104, 42 },
@@ -44,6 +46,7 @@ static const ControlRect g_rect[42] = {
     { 100, 157, 149, 166 },
     { 100, 168, 149, 177 },
     { 100, 179, 149, 188 },
+    { 155, 134, 204, 143 }, /* Sprint */
     { 0, 190, 79, 199 },
     { 80, 190, 159, 199 },
     { 160, 190, 239, 199 },
@@ -58,7 +61,7 @@ static const char *g_notice = "";
 
 const ControlRect *control_rect(int index)
 {
-    return index >= 0 && index < 42 ? &g_rect[index] : 0;
+    return index >= 0 && index < CONTROL_COUNT ? &g_rect[index] : 0;
 }
 
 void controls_open(void)
@@ -98,13 +101,9 @@ void controls_cancel_drag(void)
 
 int controls_duplicate(int action)
 {
-    int i;
-    for (i = 0; i < ACTS; i++) {
-        if (i != action && game_config()->key[i] == game_config()->key[action]) {
-            return 1;
-        }
-    }
-    return 0;
+    const Config *config = game_config();
+
+    return config_key_taken(config, action, config->key[action]);
 }
 
 static int finish(void)
@@ -225,10 +224,13 @@ int controls_click(int x, int y)
         else if (inside(x,y,137,132,250,140)) {
             g_drag = 2;
         }
-        else if (inside(x,y,71,145,150,164)) {
+        else if (inside(x,y,71,MOUSE_BOW_Y,249,MOUSE_BOW_Y + MOUSE_BOW_H)) {
+            config.bow_style = (config.bow_style + 1) % BOW_STYLES;
+        }
+        else if (inside(x,y,71,145 + MOUSE_BOW_H,150,164 + MOUSE_BOW_H)) {
             config.reverse_y ^= 1;
         }
-        else if (inside(x,y,159,145,248,164)) {
+        else if (inside(x,y,159,145 + MOUSE_BOW_H,248,164 + MOUSE_BOW_H)) {
             g_mouse = 0;
             g_drag = -1;
         }
@@ -238,7 +240,7 @@ int controls_click(int x, int y)
         }
         return 0;
     }
-    for (i = 0; i < 42; i++) {
+    for (i = 0; i < CONTROL_COUNT; i++) {
         if (!inside(x,y,g_rect[i].x0,g_rect[i].y0,g_rect[i].x1,g_rect[i].y1)) {
             continue;
         }
@@ -246,13 +248,13 @@ int controls_click(int x, int y)
             g_edit = i;
             g_wait_release = 1;
         }
-        else if (i == 38) {
+        else if (i == CONTROL_JOYSTICK) {
             g_notice = "Joystick input is not available.";
         }
-        else if (i == 39) {
+        else if (i == CONTROL_MOUSE) {
             g_mouse = 1;
         }
-        else if (i == 40) {
+        else if (i == CONTROL_DEFAULTS) {
             config = *game_config();
             config_defaults(&defaults);
             for (i = 0; i < ACTS; i++) {
@@ -308,6 +310,10 @@ void control_key_name(int action, char *text, int capacity)
         df_copy(text, "L Shift", capacity);
     } else if (key == 0xa1) {
         df_copy(text, "R Shift", capacity);
+    } else if (key == KEY_COMMA) {
+        df_copy(text, "Comma", capacity);
+    } else if (key == KEY_PERIOD) {
+        df_copy(text, "Period", capacity);
     } else {
         input_key_name(key, text, capacity);
     }

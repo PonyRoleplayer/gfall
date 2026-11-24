@@ -101,6 +101,12 @@ static int g_shelf_what = -1;
 static int (*g_shelf_use)(int index, int tag);
 static int (*g_person_use)(const Camera *aim, int mode);
 static int (*g_talk_use)(const Usable *person, int mode, float dist, const Camera *cam);
+static const char *(*g_building_info)(const Usable *door);
+
+void activate_set_building_info(const char *(*name)(const Usable *door))
+{
+    g_building_info = name;
+}
 
 void activate_set_talk_use(int (*use)(const Usable *person, int mode, float dist, const Camera *cam))
 {
@@ -259,9 +265,10 @@ int activate(const Scene *scene, const Camera *cam, int mode,
     if (mode == MODE_GRAB) {
         interact_request_use_from(x, y, z, dx, dy, dz);
     } else if (mode == MODE_INFO && hit.usable >= 0 && hit.usable < scene->nusables) {
-        if (scene->usables[hit.usable].label) {
-            interact_say(scene->usables[hit.usable].label);
-        }
+        const Usable *usable = &scene->usables[hit.usable];
+        const char *name = g_building_info && usable->kind == USE_PASSAGE ? g_building_info(usable) : 0;
+
+        if (name || usable->label) { interact_say(name ? name : usable->label); }
     }
     return 1;
 }

@@ -13,6 +13,7 @@
 #include "game/dagger/play/items/describe.h"
 #include "game/dagger/tables/magicdefs.h"
 #include "game/dagger/tables/combatdefs.h"
+#include "game/dagger/tables/enemies.h"
 #include "engine/core/mem.h"
 #include "engine/scene/keep.h"
 #include "engine/scene/spawn.h"
@@ -275,7 +276,13 @@ static void defenses_and_recall(void)
     check_expect(!(character_state()->conditions & 1) && !effects(0),"Free Action removes the paralysis record and condition");
     character_state()->race = 4; magic_apply(50,0,-1,40,1);
     check_expect(!(character_state()->conditions & 1),"High Elves retain the original paralysis immunity");
-    character_state()->race = 0; magic_apply(6,-1,-1,10,1);
+    character_state()->race = 0;
+    magic_apply(SPELL_CREATURE_PARALYSIS,0,-1,foe_def(ENEMY_GIANT_SCORPION)->level,1);
+    magic_minutes(0,13);
+    check_expect(character_state()->conditions & COND_PARALYZED,"an unresisted Giant Scorpion sting lasts thirteen rounds");
+    magic_minutes(13,1);
+    check_expect(!(character_state()->conditions & COND_PARALYZED),"Spider Touch clears on the tick after its last round");
+    magic_apply(6,-1,-1,10,1);
     check_expect(!magic_sees(0) && magic_sees(18),"ordinary creatures lose an invisible player while the original undead/daedra see through it");
     magic_hostile(); check_expect(!(character_state()->conditions & 4),"a hostile action breaks ordinary Invisibility");
     magic_remove(-1,-1); magic_apply(82,-1,-1,10,1); magic_apply(59,-1,-1,10,1); answer("1");

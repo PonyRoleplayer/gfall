@@ -77,9 +77,9 @@ struct World *travel_whole_world(void);
 const struct Dungeon *travel_place_data(void);
 df_u32 travel_place_key(void);
 /*
- * The next place is a town's streets, from anywhere: the console's goto. Asked
- * at once, travel_asked now 1, on a walkable cell near its middle. 0 for a place
- * the map does not have.
+ * The next place is a town's streets, from anywhere. Cities use the gate
+ * marker nearest the approach edge. Other settlements look for a walkable
+ * cell near that edge. 0 for a place the map does not have.
  */
 int travel_go_to_town(int region, int index);
 /* The same from the travel map: a dungeon's outside is landed on by its way down, as a hold first left is. */
@@ -162,6 +162,8 @@ int travel_building(int *type, int *faction, int *quality, unsigned *place_key);
 int travel_door_building(const Usable *door, int *type, int *quality);
 /* Out to the street from a building: 1 when asked, travel_asked now 1; 0 in the street already. */
 int travel_out_to_street(void);
+/* Release at a street marker in the current town when one exists. */
+int travel_release_to_street(unsigned draw, float yaw);
 /* The radius of chunks a far clip needs: 4096 a ring, at least one. */
 int travel_radius(float far);
 /* The nearest usable passage of what (DOOR_*) to x, z in the scene; 0 when none is loaded. */

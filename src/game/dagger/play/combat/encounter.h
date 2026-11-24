@@ -67,7 +67,7 @@ typedef struct EncounterState {
 EncounterState *encounter_state(void);
 /* Per-place resource preparation, before the card sees the Level. */
 void encounter_prepare(df_u32 place, int dungeon_type);
-int encounter_open(const Scene *scene, int (*art)(int kind, int archive, Entity *out, int *rate));
+int encounter_open(const Scene *scene, int (*art)(int kind, int archive, Entity *out, int *rate), int rest_encounters);
 typedef struct EncounterOutdoors {
     /* Climate at the camera, including ocean, and whether it is inside a settlement. */
     int (*site)(const Camera *camera, int *settlement);
@@ -83,7 +83,7 @@ int encounter_try(const Camera *camera);
  * from the camera where there is floor. 0 when there is no room or no floor. */
 int encounter_place(const Camera *camera, int kind, df_u32 thing);
 /* The same on the floor near a point (a quest marker's), not unseen; 0 while the point has no floor loaded, to be tried again. */
-int encounter_place_at(const Camera *camera, int kind, df_u32 thing, float x, float y, float z);
+int encounter_place_at(const Camera *camera, int kind, df_u32 thing, float x, float y, float z, float climb);
 int encounter_summon(const Camera *camera, int kind, int team);
 int encounter_release_soul(const Camera *camera, int kind);
 void encounter_capture(void);

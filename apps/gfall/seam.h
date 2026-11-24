@@ -12,7 +12,8 @@ void seam_title(void);
 /* Marker 8 from world_start, then the nearest marker 6 when one exists. */
 int seam_open_hold(float *x, float *y, float *z);
 int seam_open_place(int restoring, int changing, float *x, float *y, float *z);
-void seam_land(Camera *camera, int restoring, int changing);
+/* For a streamed place, the caller prepares the card before landing. */
+int seam_land(Camera *camera, int restoring, int changing);
 void seam_world_step(Camera *camera, float seconds);
 int seam_world_needs_reload(void);
 void seam_world_reload(Camera *camera);

@@ -712,7 +712,9 @@ int daedra_summon(int prince, int letter, int weather, int *kind, char *quest)
 
 const char *guild_rank_name(int kind, int rank)
 {
-    if (kind < 0 || kind >= GUILDS || rank < 0 || rank > MAX_RANK) { return ""; }
+    if (kind < 0 || rank < 0 || rank > MAX_RANK) { return ""; }
+    kind &= KIND_GUILD_MASK;
+    if (kind >= GUILDS) { return ""; }
     return g_rank_name[kind][rank];
 }
 

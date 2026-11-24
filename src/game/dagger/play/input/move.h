@@ -16,8 +16,10 @@
  * approach angle, hold delay and skill/fall checks. Swimming, levitation
  * and climbing use full-body sweeps without the walker's floor snapping.
  *
- * Head bobbing uses view-flags bit 1 and the original int32 sample
- * curve, on the camera only. Motion snapshots carry its phase.
+ * View combines independent movement axes with acceleration and air control.
+ * Cursor uses the original regions and keeps takeoff velocity in the air.
+ * Head bobbing uses view-flags bit 1 and affects the camera only. Motion
+ * snapshots carry the Cursor sample phase. View bob eases in after a load.
  *
  * Classic's step of 5 or 10 is how far one collide call slides, and
  * body_step covers the whole wish in one sweep, gravity included.
@@ -29,7 +31,7 @@ typedef struct MoveIn {
     const unsigned char *held;
     const unsigned char *pressed;
     int region;
-    int view_mode;
+    int view_mode; /* Selected scheme, including View with its HUD pointer up. */
     int mouse_dx;
     int mouse_dy;
     float dt;
@@ -44,6 +46,7 @@ typedef struct MotionState {
     float feet[3], safe[3];
     float eye, vy, top, vx, vz, bob_ms;
     int yaw, pitch, airborne, crouched, water, weight, grounded, have_safe;
+    df_u32 mount;
 } MotionState;
 void move_capture(MotionState *out);
 void move_restore(const MotionState *motion);
@@ -101,6 +104,14 @@ int region_speed(int region, int base);
 
 void move_init(void);
 Body *move_body(void);
+/* Mount a carried horse or cart outdoors, or return to foot with item 0. */
+int move_mount(const Scene *scene, df_u32 item);
+enum { MOUNT_FOOT, MOUNT_HORSE, MOUNT_CART };
+int move_mounted(void);
+float move_mount_speed(void);
+#define RIDE_EYE_ADD 50.0f
+#define HORSE_SPEED_ADD 225
+#define CART_SPEED_ADD 100
 /* A streamed place moved its local origin; motion and saved pose move once. */
 void move_shift(float dx, float dz);
 void move_place(float x, float eye_y, float z, int classic_yaw);
@@ -117,8 +128,8 @@ int move_splashed(void);
 void move_set_weight(int weight);
 int move_climbing(void);
 
-/* One frame. scene may be 0 in a test that only checks the sums. */
-void move_frame(const Scene *scene, const MoveIn *in);
+/* One frame. Returns true when the player moved under sprint power. */
+int move_frame(const Scene *scene, const MoveIn *in);
 /* The camera on the body's eye, plus the classic pitch. */
 void move_camera(Camera *cam);
 

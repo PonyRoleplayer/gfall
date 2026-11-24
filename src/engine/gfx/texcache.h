@@ -15,7 +15,8 @@ struct Image;
  */
 
 int texcache_upload(const struct Level *level);
-void texcache_bind(int slot);
+/* 1 when slot has a texture to bind. */
+int texcache_bind(int slot);
 const char *texcache_error(void);
 /*
  * From the last upload. live pictures are on the card, using bytes.

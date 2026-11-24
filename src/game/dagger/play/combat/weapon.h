@@ -47,7 +47,8 @@ void weapon_reset(void);
 void weapon_cancel(void);
 void weapon_switch(void);
 int weapon_hand(void);
-/* Set by the adapter from decoded CIF data. Bow groups have no idle IMG. */
+/* Whether the active weapon uses hold-to-draw bow controls. */
+int weapon_hold_to_draw(void);
 void weapon_frame(const PlayIn *input, int blocked, StrikeInfo *strike);
 const WeaponView *weapon_view(void);
 int weapon_sector(int dx, int dy);

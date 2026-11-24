@@ -12,6 +12,7 @@
 #include "engine/ui/pic.h"
 
 #include "game/dagger/places/town.h"
+#include "game/dagger/places/doors.h"
 #include "game/dagger/play/people/bank.h"
 #include "game/dagger/play/people/law.h"
 #include "game/dagger/play/people/guild.h"
@@ -67,6 +68,9 @@ const char *gfall_building_passage(const Usable *u)
     Membership *m;
     int region, index, minute;
 
+    if (u->kind == USE_PASSAGE && (u->what == DOOR_ENTER || u->what == DOOR_DUNGEON) && move_mounted()) {
+        return "Dismount before entering.";
+    }
     if (u->kind == USE_PASSAGE && travel_door_in_town(u, &in, &region, &index) && (t = town_building(region, index, u->tag >> 8, u->tag & 0xff)) != 0) {
         mem_zero(&b, sizeof(b));
         b.id = gfall_building_id(t);

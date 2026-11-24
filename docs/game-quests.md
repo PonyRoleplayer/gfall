@@ -55,12 +55,14 @@ markers, and save round trips, including rejection of truncated data.
 The machine is data-driven: the quest files are read in place, never copied; nothing is hard-coded per quest. State lives in the pointer-free `GameState` (a quest table of states, timers and bindings by resource, the logbook, the global states, saved from the first step that can run).
 
 1. **Load and run** a QBN: header, sections, arg encoding, COUNT.DAT, states as bytes, ops in order each frame and each passing minute (ops 51, 52, 53, 7, 6 first); QRC messages in the message box. Host-tested on a quest that ends at once.
-2. **Start and offer**: `quest_start` (the `Y` prompt 1000/1001/1002), the quest list by guild, faction, rank and reputation, Get Quest in a hall (GFALL's guild menu already has `SVC_QUEST` and the temple quests); M0B00Y00 offered and accepted at the Fighters Guild.
-3. **Text and the logbook**: the hash, quest symbol text, `%qdt` `%cn` and the macros, ops 23/24, the Log button's screen (the sheet has the button).
-4. **Places and timers**: `quest_init_place`, op 19, timers 0..5 with ops 12/13, the state by hash.
-5. **Foes and kills**: `quest_init_foe`, op 22 placing in a dungeon through GFALL's own dungeon creatures, event 2, op 34.
+2. **Start and offer**: `quest_start` (the `Y` prompt 1000/1001/1002), the quest list by guild, faction, rank and reputation, Get Quest in a hall (GFALL's guild menu already has `SVC_QUEST` and the temple quests); M0B00Y00 offered and accepted at the Fighters Guild. Long parchment offers page through the full text, with Yes and No on the last page.
+3. **Text and the logbook**: the hash, quest symbol text, `%qdt` `%cn` and the macros, ops 23/24, the Log button's screen (the sheet has the button). Quest text and dialogue resolve the player's name, original race and honorific from the current character. Ending a quest releases its journal slot before the id can be reused. When an older save pairs an active quest with another quest's filename, entries backed by its recorded log writes use the active quest's text.
+4. **Places and timers**: `quest_init_place`, op 19, timers 0..5 with ops 12/13, the state by hash. Building destinations are drawn from MAPPITEM's interior quest sites. The text uses the selected building's in-game name, and loading an older save repairs local building bindings stored as only a town.
+5. **Foes and kills**: `quest_init_foe`, op 22 placing in dungeons or the bound building interior, event 2, op 34. The Fighters Guild spider quest exercises the named destination and the monster's placement.
+   Timed spawns (op 9) gated by a building entry check also reserve their sprites when the destination loads. They use the building's entrance markers for placement, with a quest marker as a fallback. A failed placement leaves the wave available for the next timed attempt. The Fighters Guild bat infestation has seven possible waves and needs four kills. The script can send the remaining waves while the job is active.
+   Ending a quest removes its creatures, corpses and their loot rows from the loaded scene and the saved world. Loading an older save clears those rows when their quest has already ended.
 6. **Persons and talk**: `quest_init_person`, the live copy, event 28 from the talk window (`play/people/talkwin.c`), quest topics, rumours.
-7. **Rewards**: gold, items, op 4 with the box; M0B00Y00 plays end to end.
+7. **Rewards**: op 4 shows the quest's completion parchment (message 1004) and awards gold, items and reputation. The Fighters Guild bat job shows its own reward text when turned in.
 8. **Save and load** (schema bump): the quest tree, faces, global states; save mid-quest in a dungeon, load, finish.
 9. **The rest by use**: items, the other events, topics and rumours, faces, hide/restore, child quests, building access, the S quests and the main story's global states, the Daedra and temple quests, noble quests, invitation letters.
 

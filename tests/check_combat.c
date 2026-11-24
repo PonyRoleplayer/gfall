@@ -4,18 +4,22 @@
 #include "check_util.h"
 #include "game/dagger/play/combat/anim.h"
 #include "game/dagger/play/combat/ai.h"
+#include "game/dagger/play/config.h"
 #include "game/dagger/play/combat/combat.h"
 #include "game/dagger/play/cheats.h"
 #include "game/dagger/play/character/vitals.h"
 #include "game/dagger/play/combat/dungeon.h"
 #include "game/dagger/play/combat/foegear.h"
 #include "game/dagger/play/character/ailments.h"
+#include "game/dagger/tables/careers.h"
 #include "game/dagger/tables/enemies.h"
+#include "game/dagger/tables/magic.h"
 #include "game/dagger/play/combat/encounter.h"
 #include "game/dagger/play/ui/hud.h"
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/items/describe.h"
 #include "game/dagger/play/magic/itemmaker.h"
+#include "game/dagger/play/magic/magic.h"
 #include "game/dagger/play/magic/magicitem.h"
 #include "game/dagger/play/magic/potion.h"
 #include "game/dagger/play/save/save.h"
@@ -290,10 +294,12 @@ static void melee(df_u32 sword)
 
 static void archery(void)
 {
+    static const int kinds[2] = {ENEMY_GIANT_SCORPION, ENEMY_RAT};
     PlayIn in;
     StrikeInfo strike;
+    Camera moved;
     df_u32 bow, arrows;
-    int i, hits, before;
+    int i, hits, before, skill;
     bow = item_create(game_state()->inventory_id,3,16,1);
     arrows = item_create(game_state()->inventory_id,3,18,0);
     object_edit(arrows)->count = 2; state_equip(19,bow); weapon_reset();
@@ -316,9 +322,123 @@ static void archery(void)
     for (i = 0; i < 3; i++) { dungeon_step(&g_scene,&g_cam,0.05f); }
     check_expect(!dungeon_arrow(0)->live && inventory_rows(dungeon_container(0),0,0,0) > 0,
                  "a struck creature retains the recoverable arrow in its loot");
+    arena(0); g_entity[0].z = -150;
+    dungeon_strike(&g_scene,&g_cam,&strike);
+    dungeon_step(&g_scene,&g_cam,0.05f);
+    check_expect(dungeon_arrow(0)->live,"an arrow cannot hit a creature entirely behind its launch point");
+
+    arena(0); keep_clear(); g_entity[0].z = 150;
+    dungeon_open(&g_scene,kinds,g_passive,g_rate);
+    for (i = 0; i < 2; i++) { dungeon_loaded(i); }
+    skill = character_state()->skill[SKILL_ARCHERY];
+    character_state()->skill[SKILL_ARCHERY] = 0;
+    before = dungeon_health(0);
+    g_entity[0].yaw = DF_TAU/2;
+    seed_stream_begin(1);
+    dungeon_strike(&g_scene,&g_cam,&strike);
+    dungeon_step(&g_scene,&g_cam,0.1f);
+    seed_stream_end();
+    check_expect(!dungeon_arrow(0)->live && dungeon_health(0) == before,
+                 "a frontal arrow can reach the scorpion and miss its hit roll");
+    g_entity[0].yaw = 0;
+    moved = g_cam; moved.z = 350;
+    seed_stream_begin(1);
+    dungeon_strike(&g_scene,&g_cam,&strike);
+    dungeon_step(&g_scene,&moved,0.1f);
+    seed_stream_end();
+    check_expect(dungeon_health(0) < before,"a rear shot uses Backstabbing from the arrow's launch point");
+    character_state()->skill[SKILL_ARCHERY] = skill;
     weapon_cancel(); weapon_reset(); object_edit(arrows)->count = 0;
     object_delete(arrows); weapon_frame(&in,0,&strike);
     check_expect(!hud_weapon_ready() && strike.hand < 0,"a bow without ammunition lowers without firing");
+}
+
+static int bow_frames(const PlayIn *in, int blocked, int frames)
+{
+    StrikeInfo strike;
+    int shots = 0;
+
+    while (frames-- > 0) {
+        weapon_frame(in,blocked,&strike);
+        shots += strike.hand >= 0 && strike.bow;
+    }
+    return shots;
+}
+
+static void draw_and_release(void)
+{
+    Config before = *game_config(), config = before;
+    PlayIn in;
+    df_u32 arrows;
+    int count, fatigue, shots;
+
+    config.mouse_mode = 1; config.bow_style = BOW_STYLE_AUTO;
+    config.key[SWING_BUTTON] = 'B';
+    config_set(&config);
+    arrows = item_create(game_state()->inventory_id,3,18,0);
+    object_edit(arrows)->count = 4;
+    count = arrow_count(); fatigue = character_state()->fatigue;
+    hud_toggle_ready(); weapon_reset();
+    mem_zero(&in,sizeof(in)); in.dt = 1.0f/60;
+    check_expect(!bow_frames(&in,0,12) && weapon_view()->visible && weapon_view()->frame == 0,
+                 "a readied View bow stays lowered until the player starts drawing");
+    in.mouse_pressed = 2;
+    check_expect(!bow_frames(&in,0,12) && weapon_view()->frame == 0,
+                 "a physical right click cannot draw the bow when attack is rebound");
+    in.mouse_pressed = 0;
+    in.pressed[SWING_BUTTON] = in.held[SWING_BUTTON] = 1;
+    shots = bow_frames(&in,0,1);
+    in.pressed[SWING_BUTTON] = 0;
+    shots += bow_frames(&in,0,120);
+    check_expect(!shots && weapon_view()->frame == BOW_FRAME_WAIT && arrow_count() == count &&
+                 character_state()->fatigue == fatigue,"holding the attack draws without firing or spending an arrow");
+    in.held[SWING_BUTTON] = 0;
+    check_expect(bow_frames(&in,0,6) == 1 && arrow_count() == count-1 &&
+                 character_state()->fatigue == fatigue-FATIGUE_PER_BLOW,"release fires one arrow and spends fatigue once");
+    check_expect(!bow_frames(&in,0,180) && weapon_view()->visible && weapon_view()->frame == 0,
+                 "the View bow returns to its lowered state after reloading");
+
+    in.pressed[SWING_BUTTON] = 1;
+    shots = bow_frames(&in,0,1);
+    in.pressed[SWING_BUTTON] = 0;
+    shots += bow_frames(&in,0,180);
+    check_expect(shots == 1 && arrow_count() == count-2,"a quick tap finishes the draw before firing once");
+    in.pressed[SWING_BUTTON] = in.held[SWING_BUTTON] = 1;
+    bow_frames(&in,0,1);
+    in.pressed[SWING_BUTTON] = in.held[SWING_BUTTON] = 0;
+    check_expect(!bow_frames(&in,1,1) && !bow_frames(&in,0,12) && arrow_count() == count-2,
+                 "opening the HUD pointer before release cancels the queued shot");
+    object_delete(arrows);
+    hud_toggle_ready(); weapon_reset();
+    config_set(&before);
+}
+
+static void shielded_sting(void)
+{
+    static const int kinds[2] = {ENEMY_GIANT_SCORPION, ENEMY_RAT};
+    Effect *shield = 0;
+    int before, points, i;
+
+    arena(0); keep_clear(); dungeon_open(&g_scene,kinds,g_passive,g_rate);
+    dungeon_loaded(0); dungeon_set_pacified(0,0); dungeon_wake(0);
+    magic_apply(17,-1,-1,40,1);
+    for (i = 0; i < EFFECTS; i++) {
+        if (magic_state()->effect[i].active && magic_state()->effect[i].group == GROUP_SHIELD) {
+            shield = &magic_state()->effect[i];
+            break;
+        }
+    }
+    check_expect(shield && shield->magnitude > foe_def(ENEMY_GIANT_SCORPION)->maximum[0],
+                 "the shield can absorb a whole scorpion sting");
+    if (!shield) { return; }
+    points = shield->magnitude; before = character_state()->health;
+    seed_stream_begin(1);
+    for (i = 0; i < 300 && shield->magnitude == points; i++) { dungeon_step(&g_scene,&g_cam,0.05f); }
+    seed_stream_end();
+    check_expect(shield->magnitude < points && character_state()->health == before &&
+                 !(character_state()->conditions & COND_PARALYZED),
+                 "a fully absorbed scorpion sting cannot paralyze the player");
+    magic_remove(-1,-1);
 }
 
 /* A flyer killed in the air falls to the floor and lies there; flying bodies have no gravity, a corpse must. */
@@ -816,7 +936,7 @@ void check_combat(const char *root)
     dungeon_blood(-1,-1);
     check_doors(root);
     poisoned_weapons();
-    rules(); ai_rules(); swings(sword); melee(sword); archery(); marker_pacification(); creature_teams(); injuries(); summoned_alone(); flyer_corpse(); god_swing(sword);
+    rules(); ai_rules(); swings(sword); melee(sword); archery(); draw_and_release(); shielded_sting(); marker_pacification(); creature_teams(); injuries(); summoned_alone(); flyer_corpse(); god_swing(sword);
     small_creature_floor(); flying_creature_floor(); flight_stairwell();
     dungeon_close(); weapon_cancel(); state_restore(&g_before); state_restore_world();
     hold_round_trip(root);

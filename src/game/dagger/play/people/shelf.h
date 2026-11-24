@@ -22,6 +22,8 @@ int shelf_model(int model_id, int variant);
  * systems. Returns how many items were made.
  */
 int shelf_stock(df_u32 container, int variant, int quality, int building_type, int model_index);
+/* A shop shelf uses the building's weapon stock odds for its ammunition. */
+int shelf_stock_shop(df_u32 container, int variant, int quality, int building_type, int model_index);
 
 /* A shelf's container and every item still on it, gone: what a new visit does to the last one's stock. */
 void shelf_discard(df_u32 container);

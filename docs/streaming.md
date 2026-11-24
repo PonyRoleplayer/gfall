@@ -119,7 +119,7 @@ What a picture costs to bring in was mostly waste in three places, all exact, th
 
 ### The slots
 
-121 slots, each of 192 models, 128 flats, 16 lights, 80 emitters, 128 usables and 8 movers (a chunk holds at most its land's near and far meshes, a block's 64 ground patches and 103 buildings, and its far quad: 170; 74 flats and 64 flora). Two spans a slot: its ground, near or far, and the rest. Sprites (`Span.sfirst`, `scount`) and emitters (`efirst`, `ecount`) are by span too when `Scene.sprite_spans` is 1: the sprite cull skips a span whose box is out of view, and the ambience walks the spans' emitters, not ten thousand records a frame. The rebase moves everything a slot holds, its boxes and spans, and the light decals (the source's `shift`).
+121 slots, each of 192 models, 144 flats, 16 lights, 80 emitters, 128 usables and 8 movers (a chunk holds at most its land's near and far meshes, a block's 64 ground patches and 103 buildings, and its far quad: 170; 74 flats and 64 flora). Two spans a slot: its ground, near or far, and the rest. Sprites (`Span.sfirst`, `scount`) and emitters (`efirst`, `ecount`) are by span too when `Scene.sprite_spans` is 1: the sprite cull skips a span whose box is out of view, and the ambience walks the spans' emitters, not ten thousand records a frame. The rebase moves everything a slot holds, its boxes and spans, and the light decals (the source's `shift`).
 
 ### A chunk's contents
 
@@ -246,6 +246,10 @@ LEVELFALL's handler lets a streamed door through when its pixel's town is in the
 
 A town is flat at its level: the mean of the land's heights over its rectangle (9 × 9 samples, `terrain_level`), worked out once a location and kept with its record. Round it the land eases to that level over `TERRAIN_BLEND` (4096, one chunk), with strength (1 − dx/4096)(1 − dz/4096), smoothstepped, where dx and dz are the distances outside the rectangle; the strength is 1 at the rectangle's edge, so the land meets the town's ground there exactly. DFU blends over the whole pixel instead; with a reach of one chunk, a chunk on a pixel's edge ring also takes the neighbour pixel's town (`gather_flats`). Every block of the town, its ground, buildings, flats, lamps, sounds and doors, is raised to the level; the land's cells under the rectangle are not drawn (a town lies on 2048s, so the cells divide cleanly). `wild_ground` is the ground's y anywhere, for the camera's start and the step out of a door.
 
+The city gate pavement in ARCH3D models 446 and 447 sits two units above the
+town tiles. This separates the two surfaces in the depth buffer while keeping
+the threshold walkable. [Daggerfall Unity's model notes](https://github.com/Interkarma/daggerfall-unity/blob/master/Assets/Scripts/API/Arch3dPatch.cs)
+
 ### The land's tiles
 
 At each tile corner a kind, as DFU's `DefaultTerrainTexturing`: water at the sea floor; dirt up to the beach (scaled 40, ± 1.5 by a hash of the corner); else a three-octave noise (0.05 a tile, amplitudes 0.9, 0.36, 0.144) under 0.5 is dirt, over 0.95 stone, else grass. Each tile then takes DFU's marching table: the four corners' kinds make a shape (bit 0 of each: dirt and stone 1) and a ring (their mean), and those pick the archive's transition record, turned (0x40) and flipped (0x80). The tiles are kept as an RMB block keeps its own (row 0 north), so the near mesh, the far bake and `rmb.c` read them alike; a map of them shows the transitions join (checked by eye, edges continuous). The archive is the pixel's climate family's ground (the sea's swamp's), in winter its snowy one.
@@ -263,6 +267,8 @@ The same grid's even points: 2 × 2 quads 2048 apart, under the land's baked pic
 Daggerfall Unity's `DefaultTerrainNature`: a chance on each plain tile of dirt (0.2), grass (0.9) or stone (0.05), times the pixel's height over 128 (between 0.4 and 1), a quarter in the desert; nothing on water, a transition, the beach, ground steeper than 50°, or within 1024 of a town. Records 1 to 31 of the climate's nature archive (500 to 511, the woodland and mountain sets snowy in winter). DFU draws thousands a map pixel as one batch on a modern card; here `FLORA_DENSITY` (0.3) of those chances stand, at most 64 a chunk, about 18 on average, chosen by a hash of each tile's place so a chunk is the same every time it loads. Each stands on the land a little sunk (more on a slope), and is drawn only within `FLORA_SIGHT` (3072) of the camera across the ground: `Flat.sight`, in 16s, which `scene_visible_sprites` checks before anything else.
 
 The console's switches act on what stands, with no reload: `flora` (on, off; alone it flips), `floradensity` (the percent drawn, by each one's rank, `Flat.thin`, an even spread over 0..255 from a hash of its own; 40 by default, so 0.12 of DFU's chances draw), `florasight` (units, in place of each flat's own sight). They are the engine's (`scene_set_flora*`): a flat with a sight is flora to them.
+
+In the November 23–24 playtest, the tester reported mostly 60 FPS in 86Box with a Pentium MMX 233 and Voodoo 1, and found the woods sparse. To measure headroom for denser trees and undergrowth, compare `floradensity 40` and `floradensity 100` on the same wooded route with resolution, fog and `florasight` held fixed. Record frame-time spikes while sprinting across chunk boundaries and turning through nearby trees. At 100 the game draws all of the flora it placed within sight. Testing densities closer to DFU also requires raising the placement rate in `wild.c` and checking the per-chunk sprite budget.
 
 ### What the land costs
 

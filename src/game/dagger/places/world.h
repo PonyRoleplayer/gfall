@@ -70,6 +70,8 @@ const Mover *world_mover(const World *world, int index);
 int world_passage(const World *world, int what, float x, float y, float z);
 /* Inside: what the building is (BuildingTypes) and its faction; -1 elsewhere. */
 int world_building(const World *world, int *faction);
+/* Nearest interior restriction in the same coordinates as the building's models and markers. */
+int world_restriction_at(const World *world, const float feet[3]);
 /* 1 for an RMB place, under the sky. */
 int world_outdoor(const World *world);
 /* The sky an outdoor place draws; 0 indoors. */

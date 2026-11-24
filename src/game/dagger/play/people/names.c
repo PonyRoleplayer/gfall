@@ -244,6 +244,16 @@ static void copy(char *out, int cap, const char *text)
     append(out, cap, text);
 }
 
+const char *name_ruler_title(int ruler)
+{
+    static const char *const titles[] = {
+        "Lord", "King", "Queen", "Duke", "Duchess", "Marquis", "Marquise",
+        "Count", "Countess", "Baron", "Baroness", "Lord", "Lady"
+    };
+
+    return ruler > 0 && ruler < (int)(sizeof(titles) / sizeof(titles[0])) ? titles[ruler] : titles[0];
+}
+
 /* "%s %s" of two words, run through the macro expander when the game gave one. */
 static void two_words(char *out, int cap, const char *first, const char *second)
 {
@@ -284,8 +294,9 @@ void building_name(const BuildingName *b, char *out, int cap)
     case BUILDING_LIBRARY:
     case BUILDING_PAWN:
     case BUILDING_WEAPONS:
-        first = pick(g_shop_first);
+        /* FALL.EXE evaluates the suffix's draw first (building_name at 0x8BE9C). */
         last = pick(g_shop_last[b->type]);
+        first = pick(g_shop_first);
         two_words(out, cap, first, last);
         break;
     case BUILDING_HOUSE_FOR_SALE:
@@ -318,8 +329,8 @@ void building_name(const BuildingName *b, char *out, int cap)
         }
         break;
     case BUILDING_TAVERN:
-        first = pick(g_tavern_first);
         last = pick(g_tavern_last);
+        first = pick(g_tavern_first);
         two_words(out, cap, first, last);
         break;
     case BUILDING_PALACE:

@@ -53,7 +53,7 @@ void possessions_close(void)
 
 int possessions_open(int page, df_u32 remote)
 {
-    if (!game_state()->ready || page < VIEW_INVENTORY || page > VIEW_ITEMMAKER) { return 0; }
+    if (!game_state()->ready || page < VIEW_INVENTORY || page > VIEW_TRANSPORT) { return 0; }
     /* inventory_open: a beast has no pack to open (docs/curses.md 7.3). */
     if (page == VIEW_INVENTORY && curse_beast()) { msg_set("You cannot access the inventory while shapechanged..."); return 0; }
     if (page == VIEW_SPELLS) {
@@ -115,6 +115,7 @@ static int page_frame(const PlayIn *in, int click)
     case VIEW_MAKER: possessions_spellmaker_frame(in, click); break;
     case VIEW_POTION: possessions_alchemy_frame(in, click); break;
     case VIEW_SERVICE: possessions_service_frame(in, click); break;
+    case VIEW_TRANSPORT: possessions_transport_frame(in, click); break;
     case VIEW_TALK: possessions_talk_frame(in, click); break;
     default: break;
     }

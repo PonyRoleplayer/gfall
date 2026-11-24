@@ -150,7 +150,7 @@ typedef struct GuildsState {
 
 /* The live memberships, kept in the session (state.c). */
 GuildsState *guilds_state(void);
-/* sheet_affiliation_line: a membership's rank title by guild kind (0..21) and rank (0..9), FALL.EXE's faction_rank_names. */
+/* FALL.EXE's faction_rank_names, indexed by the membership's guild kind and rank (0..9). */
 const char *guild_rank_name(int kind, int rank);
 void guilds_clear(void);
 int guilds_valid(const GuildsState *g);

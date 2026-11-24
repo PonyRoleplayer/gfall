@@ -116,7 +116,7 @@ int people_nearest_guard(float x, float z);
  * town has no free slot or no cell. Does not start them chasing: the game does.
  */
 int people_spawn_guard(const Camera *cam);
-/* The street motor leaves index alone. A guard is given the attack records. */
-void people_hold(int index);
+/* Dress a living pedestrian as the watch in place, give it attack poses and hold its slot for combat. */
+int people_hold_guard(int index);
 
 #endif

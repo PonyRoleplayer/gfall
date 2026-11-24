@@ -54,7 +54,7 @@ int travelmap_changed(void);
 /* The pointer at x, y: what is under it is named. */
 void travelmap_point(int x, int y);
 int travelmap_click(int x, int y);
-int travelmap_key(int vk);
+int travelmap_key(int vk, int ch);
 /* Each frame: the countdown of a journey begun. */
 int travelmap_step(float dt);
 /* Where the journey goes, its sums, and whether cautiously. */

@@ -63,6 +63,7 @@ typedef struct Faction {
     short rep;
     short power;
     short flags;
+    short ruler;
     /* Its own face, -1 for none; the flats it shows as, a man's and a woman's (archive, record), 0 for none. */
     short face;
     short flat_archive[2];

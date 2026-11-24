@@ -3,6 +3,8 @@
 
 #include "quest.h"
 
+#define QUEST_DIALOG_CAP 2048
+
 /* Shared by quest modules. persist.c encodes each field explicitly. */
 typedef struct QuestRuntime {
     QuestState slots[QUESTS];
@@ -101,8 +103,11 @@ extern QuestTextHooks quest_text_hooks;
 /* Binding and world resources. */
 int quest_location_is_dungeon(int type);
 int quest_bind_resources(int slot);
+void quest_repair_places(QuestState *q);
+int quest_repeat_place(const QuestState *q, const QbnOp *repeat);
 int quest_marker_point(const QuestState *q, int place, int record, int extra, float *x, float *y, float *z);
 void quest_spawn_foe(QuestState *q, int f);
+void quest_forget_foe(const QuestFoe *foe);
 void quest_set_foe_pacified(QuestFoe *foe, int pacified);
 void quest_cast_on_foe(const QuestFoe *foe, int spell);
 void quest_remove_foe(const QuestFoe *foe);
@@ -117,6 +122,8 @@ int quest_in_place(const QuestState *q, int n);
 void quest_put_item_down(QuestState *q, int i);
 void quest_foe_dropped(QuestState *q, int f);
 /* Journal and text. */
+void logbook_forget_quest(int id);
+void logbook_repair(void);
 void quest_face_set(const QuestState *q, int kind, int index, int on);
 void quest_rumour_add(int slot, int message, int target, int flags);
 void quest_rumour_questor(int slot, int rewarded);

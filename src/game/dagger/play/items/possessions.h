@@ -9,7 +9,7 @@
 #include "game/dagger/play/people/law.h"
 #include "game/dagger/play/people/talkwin.h"
 
-enum { VIEW_NONE, VIEW_INVENTORY, VIEW_SHEET, VIEW_SPELLS, VIEW_BOOK, VIEW_MESSAGE, VIEW_BANK, VIEW_COURT, VIEW_TALK, VIEW_SERVICE, VIEW_POTION, VIEW_SPELLSHOP, VIEW_MAKER, VIEW_ITEMMAKER };
+enum { VIEW_NONE, VIEW_INVENTORY, VIEW_SHEET, VIEW_SPELLS, VIEW_BOOK, VIEW_MESSAGE, VIEW_BANK, VIEW_COURT, VIEW_TALK, VIEW_SERVICE, VIEW_POTION, VIEW_SPELLSHOP, VIEW_MAKER, VIEW_ITEMMAKER, VIEW_TRANSPORT };
 enum { ITEM_INFO, ITEM_EQUIP, ITEM_REMOVE, ITEM_USE };
 enum { PROMPT_NONE, PROMPT_GOLD, PROMPT_NAME, PROMPT_PAGE, PROMPT_SPELL_NAME, PROMPT_ANSWER, PROMPT_OFFER, PROMPT_AMOUNT, PROMPT_ASK, PROMPT_NUMBER, PROMPT_LIST };
 #define LIST_MOST 64
@@ -17,9 +17,10 @@ enum { PROMPT_NONE, PROMPT_GOLD, PROMPT_NAME, PROMPT_PAGE, PROMPT_SPELL_NAME, PR
 #define LIST_SHOWN 20
 #define LIST_NAME 24
 #define NOTICE_LINES 16
+#define ASK_LINES 13
 typedef struct Possessions {
     int page, underlay, tab, action, scroll[2], selected, skill_group, skill_scroll;
-    int prompt, book_page, notice_page, painting, casting;
+    int prompt, book_page, notice_page, offer_page, painting, casting;
     int drag, drag_offset, repeat_step;
     float repeat_time;
     df_u32 remote, book;
@@ -30,6 +31,7 @@ typedef struct Possessions {
     /* The shopkeeper's panel (SERVICE_*) when page is VIEW_SERVICE. */
     int service, service_member;
     char service_label[40];
+    unsigned transport_enabled;
     /* The court over the world: the case, which question is up (COURT_*), the records waiting to be shown, and the answers' words. */
     Court court;
     int court_stage, court_texts[3], court_text_at;
@@ -41,7 +43,7 @@ typedef struct Possessions {
     int im_tab, im_scroll;
     /* The spell shop's list: the spell definitions offered. */
     int shop[96], shop_count;
-    char offer[200];
+    char offer[2048];
     char notice[2048], input[32];
     unsigned revision;
 } Possessions;
@@ -95,6 +97,9 @@ int possessions_talk(const TalkWho *who, const TalkPlayer *player, int witnessed
 enum { SERVICE_REPAIR = 1, SERVICE_BANK, SERVICE_SELL, SERVICE_GUILD, SERVICE_TAVERN, SERVICE_COVEN };
 enum { SERVICE_TALK, SERVICE_DO, SERVICE_REPAIR_ITEM, SERVICE_SELL_ITEMS, SERVICE_JOIN, SERVICE_ROOM, SERVICE_FOOD, SERVICE_SUMMON, SERVICE_QUEST };
 int possessions_service(int kind);
+enum { TRANSPORT_ON_FOOT, TRANSPORT_RIDE_HORSE, TRANSPORT_RIDE_CART, TRANSPORT_BOARD_SHIP, TRANSPORT_EXIT, TRANSPORT_ROWS };
+int possessions_transport(unsigned enabled, void (*choose)(int option));
+const short *possessions_transport_rect(int option);
 /* A guild hall's menu (guild_menu, GILD0xI0.IMG): Join (not for a member), Talk, the service row carrying label, Exit. */
 int possessions_guild(int member, const char *label);
 /* A yes or no over the world (msgbox_yes_no_rsc): the words, and the answer (1 yes, 0 no or Escape) given to the callback. 0 when something else is open. */

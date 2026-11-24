@@ -94,19 +94,25 @@ static Image *possession_texture(int file, int record)
     return possession_texture_frame(file,record,0);
 }
 
-static void doll_layer(const df_u8 *pixels, int w, int h, int x, int y, int owner, int color_map)
+static void doll_layer(const df_u8 *pixels, int w, int h, int x, int y, int owner, int color_map, const CifFrame *head)
 {
     int row, col, dx, dy, color;
     df_u8 *owners;
     owners = doll_owners();
     if (!pixels) { return; }
     for (row = 0; row < h; row++) {
+        const df_u8 *head_row = 0;
+
         dy = y + row - 8;
         if (dy < 0 || dy >= 184) { continue; }
+        if (head && y + row >= head->y && y + row < head->y + head->h) {
+            head_row = head->pixels + (y + row - head->y) * head->w;
+        }
         for (col = 0; col < w; col++) {
             dx = x + col - 200;
             color = pixels[row*w+col];
             if (!color || dx < 0 || dx >= 110) { continue; }
+            if (head_row && x + col >= head->x && x + col < head->x + head->w && head_row[x + col - head->x]) { continue; }
             if (owner >= 0 && color == 255) {
                 g_doll[dy*110+dx] = g_doll_back[dy*110+dx];
                 owners[dy*110+dx] = 255;
@@ -121,7 +127,7 @@ static void doll_layer(const df_u8 *pixels, int w, int h, int x, int y, int owne
 static void doll_img(const char *name)
 {
     ImgPicture picture;
-    if (img_load(name,&picture)) { doll_layer(picture.pixels,picture.width,picture.height,picture.x,picture.y,-1,-1); }
+    if (img_load(name,&picture)) { doll_layer(picture.pixels,picture.width,picture.height,picture.x,picture.y,-1,-1,0); }
 }
 
 static int doll_item_image(const ObjectInfo *item, int slot)
@@ -156,10 +162,10 @@ static void paint_doll(int x, int y)
     const ItemDef *def;
     ImgPicture back;
     CifSet faces;
-    const CifFrame *face;
+    const CifFrame *face = 0;
     Image *image;
     DollLayer layers[27];
-    int i, n, slot, image_id, layer, cloak, px, py, color_map;
+    int i, n, slot, image_id, layer, cloak, px, py, have_faces;
     race = career_race(character_state()->race+1);
     /* A beast has its own picture, background and body in one, and wears nothing (docs/curses.md 7.3). */
     if (curse_beast()) {
@@ -174,10 +180,10 @@ static void paint_doll(int x, int y)
     for (i = 0; i < (int)sizeof(g_doll); i++) { doll_owners()[i] = 255; }
     /* The body is drawn once, the race's first picture; what the player wears goes on it as layers (the second, "clothed" picture was drawn over it, so the worn clothes were painted twice). */
     doll_img(character_state()->female ? race->body_female : race->body_male);
-    if (cif_open(character_state()->female ? race->heads_female : race->heads_male,&faces)) {
+    have_faces = cif_open(character_state()->female ? race->heads_female : race->heads_male,&faces);
+    if (have_faces) {
         face = cif_frame(&faces,character_state()->face);
-        if (face) { doll_layer(face->pixels,face->w,face->h,face->x,face->y,-1,-1); }
-        cif_close(&faces);
+        if (face) { doll_layer(face->pixels,face->w,face->h,face->x,face->y,-1,-1,0); }
     }
     n = cloak = 0;
     for (i = 0; i < 27; i++) {
@@ -196,14 +202,21 @@ static void paint_doll(int x, int y)
         }
     }
     for (i = 0; i < n; i++) {
+        const CifFrame *cover = 0;
+
         slot = layers[i].slot;
         item = object_at(game_state()->equipped[slot]);
         image_id = layers[i].image;
         image = possession_texture(image_id >> 7,image_id & 127);
         if (!image || !texture_offset(image_id >> 7,image_id & 127,&px,&py)) { continue; }
-        color_map = item->color;
-        doll_layer(image->index,image->width,image->height,px,py,slot,color_map);
+        /* The suit's collar sits behind the head. Other gear keeps its Classic draw order. */
+        if ((item->group == ITEM_GROUP_MENS_CLOTHING && item->index == MENS_KHAJIIT_SUIT) ||
+            (item->group == ITEM_GROUP_WOMENS_CLOTHING && item->index == WOMENS_KHAJIIT_SUIT)) {
+            cover = face;
+        }
+        doll_layer(image->index,image->width,image->height,px,py,slot,item->color,cover);
     }
+    if (have_faces) { cif_close(&faces); }
     gfall_screen_blit_ix(x,y,g_doll,110,184,0);
 }
 
@@ -216,17 +229,29 @@ static void copy_art_rect(const ImgPicture *art, int x, int y, int w, int h)
 
 static void paint_item_icon(const ObjectInfo *item, int x, int y, int width, int height)
 {
-    const Image *image;
-    int w, h, row, col, color, color_map;
-    image = possession_texture(item->inventory_image >> 7,item->inventory_image & 127);
-    if (!image) { return; }
-    w = image->width; h = image->height;
+    const df_u8 *pixels;
+    int src_w, src_h, w, h, row, col, color, color_map;
+
+    if (item->group == ITEM_GROUP_TRANSPORT && item->index == 0) {
+        /* Classic draws the Small Cart with the wagon icon from INVE16I0.CIF. */
+        const CifFrame *wagon = cif_frame(&g_container_icons, 3);
+
+        if (!wagon) { return; }
+        pixels = wagon->pixels; src_w = wagon->w; src_h = wagon->h;
+        color_map = 0;
+    } else {
+        const Image *image = possession_texture(item->inventory_image >> 7, item->inventory_image & 127);
+
+        if (!image) { return; }
+        pixels = image->index; src_w = image->width; src_h = image->height;
+        color_map = item->color;
+    }
+    w = src_w; h = src_h;
     size_fit(&w,&h,width,height);
     if (!w || !h) { return; }
-    color_map = item->color;
     for (row = 0; row < h; row++) {
         for (col = 0; col < w; col++) {
-            color = image->index[(row*image->height/h)*image->width+col*image->width/w];
+            color = pixels[(row*src_h/h)*src_w+col*src_w/w];
             if (color && color != 255) { gfall_screen_put_px(x+(width-w)/2+col,y+(height-h)/2+row,item_ink(color_map,color)); }
         }
     }
@@ -826,10 +851,10 @@ static void paint_talk(void)
     }
     /* Clip the scrolling list to the text column, including the glyph shadows. */
     {
-        static df_u8 pixels[TW_LIST_WIDTH * TALK_CATEGORIES * 7];
+        static df_u8 pixels[TW_LIST_WIDTH * TW_CATEGORY_ROWS * 7];
         int rows, height;
 
-        rows = t->mode == 1 && t->tab == 0 && t->categories ? TALK_CATEGORIES : TW_LIST_ROWS;
+        rows = t->mode == 1 && t->tab == 0 && t->categories ? TW_CATEGORY_ROWS : TW_LIST_ROWS;
         height = rows * 7;
         for (y = 0; y < height; y++) {
             mem_copy(pixels + y * TW_LIST_WIDTH, gfall_screen_pixels() + (71 + y) * 320 + 6, TW_LIST_WIDTH);
@@ -876,6 +901,26 @@ static void paint_service(void)
         gfall_screen_centered_text(159, 71, view->service_label, 145);
     } else if (view->service != SERVICE_REPAIR && view->service != SERVICE_TAVERN && view->service != SERVICE_COVEN) {
         gfall_screen_centered_text(159, 70, view->service == SERVICE_BANK ? "Banking" : "Sell", 145);
+    }
+}
+
+static void paint_transport(void)
+{
+    ImgPicture panel, disabled;
+    unsigned enabled = possessions_state()->transport_enabled;
+    int i, row_height;
+
+    gfall_screen_cover_screen(0, 0, 0);
+    if (!img_load("MOVE00I0.IMG", &panel)) { return; }
+    gfall_screen_blit_ix(panel.x, panel.y, panel.pixels, panel.width, panel.height, 0);
+    if (!img_load("MOVE01I0.IMG", &disabled) || disabled.height % TRANSPORT_EXIT) { return; }
+    row_height = disabled.height / TRANSPORT_EXIT;
+    for (i = 0; i < TRANSPORT_EXIT; i++) {
+        const short *r = possessions_transport_rect(i);
+
+        if (!(enabled & (1u << i))) {
+            gfall_screen_blit_ix(r[0], r[1], disabled.pixels + i * disabled.width * row_height, disabled.width, row_height, 0);
+        }
     }
 }
 
@@ -1087,6 +1132,7 @@ int gfall_screen_present_possessions(void)
     else if (view->page == VIEW_BANK) { paint_bank(); }
     else if (view->page == VIEW_TALK) { paint_talk(); }
     else if (view->page == VIEW_SERVICE) { paint_service(); }
+    else if (view->page == VIEW_TRANSPORT) { paint_transport(); }
     else if (view->page == VIEW_POTION) { paint_potion_maker(); }
     else if (view->page == VIEW_SPELLSHOP) { paint_spellshop(); }
     else if (view->page == VIEW_MAKER) { paint_maker(); }
@@ -1120,6 +1166,33 @@ int gfall_screen_present_possessions(void)
         shown = view->list_count < LIST_SHOWN ? view->list_count : LIST_SHOWN;
         gfall_screen_fill_box(100,26,120,shown*8+14,45); gfall_screen_outline(100,26,120,shown*8+14,145);
         for (k = 0; k < shown; k++) { smallfont_draw(gfall_screen_font(),gfall_screen_pixels(),CANVAS_W,CANVAS_H,106,34+k*8,145,156,view->list[view->list_top+k]); }
+    } else if (view->prompt == PROMPT_ASK && view->page == VIEW_MESSAGE) {
+        char lines[ASK_LINES][96];
+        int first = view->offer_page * ASK_LINES;
+        int count = notice_lines(view->offer, first, lines, ASK_LINES);
+        int shown = count - first;
+        int more = shown > ASK_LINES;
+        int x, y, cols, rows, ty;
+
+        if (more) { shown = ASK_LINES; }
+        gfall_screen_paper_box(lines, shown, 1, &x, &y, &cols, &rows, &ty);
+        if (cols < 8) { cols = 8; x = 160 - cols * 11; }
+        y = 145 - rows * 22;
+        if (gfall_screen_paper_ready()) { gfall_screen_lay_paper(x,y,cols,rows); }
+        else { gfall_screen_fill_box(x,y,cols*22,rows*22,45); gfall_screen_outline(x,y,cols*22,rows*22,145); }
+        gfall_screen_paint_lines(lines,shown,1,x,y+6,146);
+        if (count > ASK_LINES) {
+            log_format(line,sizeof(line),"Page %d/%d  PgUp/PgDn",view->offer_page+1,(count+ASK_LINES-1)/ASK_LINES);
+            gfall_screen_centered_text(160,107,line,146);
+        }
+        if (!more && gfall_screen_paper_ready()) {
+            gfall_screen_lay_button(3,112,117); gfall_screen_lay_button(4,176,117);
+        } else {
+            gfall_screen_centered_text(128,121,more ? "Next" : view->yes,145);
+            if (!more || view->offer_page) {
+                gfall_screen_centered_text(192,121,more ? "Back" : view->no,145);
+            }
+        }
     } else if (view->prompt == PROMPT_OFFER || view->prompt == PROMPT_ASK) {
         /* msgbox_yes_no_rsc: the shopkeeper's words over a box, Accept and Reject under them. */
         char wrapped[10][96];
@@ -1164,7 +1237,7 @@ int gfall_screen_present_possessions(void)
     }
     for (i = 0; i < g_panel_file_count; i++) { texture_forget(g_panel_files[i]); }
     mem_heap_use(was); mem_heap_delete(heap);
-    gfall_screen_publish_surface(1,(view->page == VIEW_SPELLS && !view->underlay) || view->page == VIEW_MESSAGE || view->page == VIEW_BANK || view->page == VIEW_TALK || view->page == VIEW_POTION || view->page == VIEW_SPELLSHOP || view->page == VIEW_MAKER || view->page == VIEW_ITEMMAKER || (view->page == VIEW_COURT && !view->court.open));
+    gfall_screen_publish_surface(1,(view->page == VIEW_SPELLS && !view->underlay) || view->page == VIEW_MESSAGE || view->page == VIEW_TRANSPORT || view->page == VIEW_BANK || view->page == VIEW_TALK || view->page == VIEW_POTION || view->page == VIEW_SPELLSHOP || view->page == VIEW_MAKER || view->page == VIEW_ITEMMAKER || (view->page == VIEW_COURT && !view->court.open));
     return 1;
 }
 

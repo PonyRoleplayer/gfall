@@ -37,9 +37,11 @@ static int symbol_text(int slot, df_i32 hash, int form, df_i32 hash2, char *out,
     for (i = 0; i < q->qbn.n_item; i++) { if (q->qbn.item[i].symbol == hash) { return g_names && g_names->item && g_names->item(slot, i, form, out, cap); } }
     for (i = 0; i < q->qbn.n_place; i++) {
         if (q->qbn.place[i].symbol != hash) { continue; }
-        /* A place bound to a location says its name (forms 0, 16, 32) or its region's (48). */
+        /* A building says its sign (0), the surrounding town (16, 32) or the region (48). */
         if (q->place[i].bound) {
             if (form >= 48 && quest_world && quest_world->region_name) { return quest_world->region_name(q->place[i].region, out, cap) > 0; }
+            if (form < 16 && q->place[i].block >= 0 && g_names && g_names->place &&
+                g_names->place(slot, i, form, out, cap)) { return 1; }
             return log_format(out, cap, "%s", q->place[i].name) > 0;
         }
         return g_names && g_names->place && g_names->place(slot, i, form, out, cap);
@@ -74,7 +76,7 @@ static int symbol_text(int slot, df_i32 hash, int form, df_i32 hash2, char *out,
 
 int quest_expand(int slot, const char *in, char *out, int cap, df_u32 minutes, const char *place)
 {
-    static char stage[2048];
+    static char stage[QUEST_DIALOG_CAP];
     char name[24], name2[24], said[256];
     int at, n, k, form, second;
     char lead;
@@ -109,7 +111,7 @@ int quest_expand(int slot, const char *in, char *out, int cap, df_u32 minutes, c
     stage[at] = 0;
     /* %qdt: the date a log entry was written; %cn: its place, when it has one. */
     {
-        static char second[2048];
+        static char second[QUEST_DIALOG_CAP];
         int s, d;
         char date[64];
 
@@ -133,18 +135,71 @@ int quest_expand(int slot, const char *in, char *out, int cap, df_u32 minutes, c
 const LogSlot *logbook_slot(int i) { return i >= 0 && i < LOG_SLOTS ? &quest_runtime.log[i] : 0; }
 void logbook_clear(void) { mem_zero(quest_runtime.log, sizeof(quest_runtime.log)); }
 
-/* logbook_prune_quests: the slot of a quest that is not running is free. */
-static void prune(void)
+static int logbook_quest(const LogSlot *entry)
 {
-    int i, k, alive;
+    int i;
+
+    for (i = 0; i < QUESTS; i++) {
+        if (quest_runtime.slots[i].used && quest_runtime.slots[i].qbn.id == entry->quest_id) { return i; }
+    }
+    return -1;
+}
+
+void logbook_forget_quest(int id)
+{
+    int i;
 
     for (i = 0; i < LOG_SLOTS; i++) {
-        if (!quest_runtime.log[i].used) { continue; }
-        alive = 0;
-        for (k = 0; k < QUESTS; k++) { if (quest_runtime.slots[k].used && quest_runtime.slots[k].qbn.id == quest_runtime.log[i].quest_id) { alive = 1; } }
-        if (!alive) { mem_zero(&quest_runtime.log[i], sizeof(quest_runtime.log[i])); }
+        LogSlot *entry = &quest_runtime.log[i];
+
+        if (entry->used && entry->quest_id == id) { mem_zero(entry, sizeof(*entry)); }
     }
 }
+
+static int entry_index(int index) { return ((index % 10) + 10) % 10; }
+
+/* Older saves could retain a prior quest's filename when an id was reused.
+ * Keep cached entries that the current quest's executed log ops wrote. */
+static int repair_entry(LogSlot *entry, const Qbn *qbn)
+{
+    int i, k, found = 0;
+
+    for (i = 0; i < 10; i++) {
+        if (!entry->message[i]) { continue; }
+        for (k = 0; k < qbn->n_op; k++) {
+            const QbnOp *op = &qbn->op[k];
+
+            if (op->opcode == QOP_LOG_SET && (op->flags & 1) &&
+                entry_index(op->arg[2].value) == i && op->arg[1].value == entry->message[i] &&
+                entry->minutes[i] >= op->last_minutes) { break; }
+        }
+        if (k < qbn->n_op) { found = 1; }
+        else { entry->message[i] = 0; entry->minutes[i] = 0; entry->place[i][0] = 0; }
+    }
+    if (found) { df_copy(entry->name, qbn->name, sizeof(entry->name)); }
+    return found;
+}
+
+/* logbook_prune_quests: the slot of a quest that is not running is free. */
+static void prune(int restoring)
+{
+    int i, slot;
+
+    for (i = 0; i < LOG_SLOTS; i++) {
+        LogSlot *entry = &quest_runtime.log[i];
+
+        if (!entry->used) { continue; }
+        slot = logbook_quest(entry);
+        if (slot >= 0) {
+            const Qbn *qbn = &quest_runtime.slots[slot].qbn;
+
+            if (df_eq(entry->name, qbn->name) || (restoring && repair_entry(entry, qbn))) { continue; }
+        }
+        mem_zero(entry, sizeof(*entry));
+    }
+}
+
+void logbook_repair(void) { prune(1); }
 
 void logbook_add(int quest_slot, int index, int message)
 {
@@ -152,7 +207,7 @@ void logbook_add(int quest_slot, int index, int message)
     const char *where;
 
     if (!quest_at(quest_slot)) { return; }
-    prune();
+    prune(0);
     found = -1;
     for (i = 0; i < LOG_SLOTS; i++) { if (quest_runtime.log[i].used && quest_runtime.log[i].quest_id == quest_runtime.slots[quest_slot].qbn.id) { found = i; } }
     if (found < 0) {
@@ -164,7 +219,7 @@ void logbook_add(int quest_slot, int index, int message)
         quest_runtime.log[found].used = 1; quest_runtime.log[found].quest_id = quest_runtime.slots[quest_slot].qbn.id;
         for (k = 0; k < 8; k++) { quest_runtime.log[found].name[k] = quest_runtime.slots[quest_slot].qbn.name[k]; }
     }
-    index = ((index % 10) + 10) % 10;
+    index = entry_index(index);
     quest_runtime.log[found].message[index] = message;
     quest_runtime.log[found].minutes[index] = game_state()->minutes;
     where = g_place ? g_place() : 0;
@@ -177,7 +232,7 @@ void logbook_remove(int quest_slot, int index)
     int i;
 
     if (!quest_at(quest_slot)) { return; }
-    index = ((index % 10) + 10) % 10;
+    index = entry_index(index);
     for (i = 0; i < LOG_SLOTS; i++) {
         if (quest_runtime.log[i].used && quest_runtime.log[i].quest_id == quest_runtime.slots[quest_slot].qbn.id) { quest_runtime.log[i].message[index] = 0; quest_runtime.log[i].minutes[index] = 0; quest_runtime.log[i].place[index][0] = 0; }
     }
@@ -188,16 +243,16 @@ int logbook_text(char *out, int cap)
     int i, k, n, quest;
     char raw[1024], said[1024];
 
-    prune();
+    prune(0);
     n = 0; out[0] = 0;
     for (i = 0; i < LOG_SLOTS; i++) {
         if (!quest_runtime.log[i].used) { continue; }
-        for (quest = 0; quest < QUESTS && !(quest_runtime.slots[quest].used && quest_runtime.slots[quest].qbn.id == quest_runtime.log[i].quest_id); quest++) { }
-        if (quest == QUESTS) { continue; }
+        quest = logbook_quest(&quest_runtime.log[i]);
+        if (quest < 0) { continue; }
         for (k = 0; k < 10; k++) {
             if (!quest_runtime.log[i].message[k] || !quest_text_hooks.read) { continue; }
             raw[0] = 0;
-            if (quest_text_hooks.read(quest_runtime.log[i].name, quest_runtime.log[i].message[k], 0, raw, sizeof(raw)) <= 0 || !raw[0]) { continue; }
+            if (quest_text_hooks.read(quest_runtime.slots[quest].qbn.name, quest_runtime.log[i].message[k], 0, raw, sizeof(raw)) <= 0 || !raw[0]) { continue; }
             quest_expand(quest, raw, said, sizeof(said), quest_runtime.log[i].minutes[k], quest_runtime.log[i].place[k]);
             n += log_format(out + n, cap - n, "%s\n", said);
         }
@@ -401,7 +456,7 @@ static void join_lines(char *text)
 
 void quest_show_message(const QuestState *q, int message)
 {
-    char text[1024], said[1024];
+    static char text[QUEST_DIALOG_CAP], said[QUEST_DIALOG_CAP];
 
     if (message == -1 || !quest_text_hooks.read || !quest_text_hooks.say) { return; }
     text[0] = 0;

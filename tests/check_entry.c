@@ -77,7 +77,7 @@ void check_entry(void)
     character_state()->skill[16] = 100;
     b.id = 78u;
     check_expect(building_try_enter(&b, &p, noon, 1, &e) ? e.crime == 1 : 1, "entry: a witnessed pick was not a crime");
-    /* The access grant and trespass: a visitor holds 5 until a shop closes (nothing after), 5 in a house and a tavern until they leave, 255 in their own, a temple's till 01:00; a point over the grant is crime 2, then 3. */
+    /* A visitor's grant expires at closing unless the place grants access for the visit. */
     {
         df_u32 shop = 700u, temple = 701u, house = 702u, tavern = 703u, own = 704u, day = 20u * 1440u;
 
@@ -86,12 +86,12 @@ void check_entry(void)
         check_expect(entry_access(shop, day + 12u * 60u) == ACCESS_VISITOR && entry_access(shop, day + 23u * 60u + 30u) == 0, "access: a shop's grant does not run to closing");
         entry_grant(temple, 14, ACCESS_VISITOR, day + 23u * 60u);
         check_expect(entry_access(temple, day + 24u * 60u + 30u) == ACCESS_VISITOR && entry_access(temple, day + 25u * 60u + 1u) == 0, "access: a temple's grant does not run to 01:00");
-        entry_grant(house, 17, ACCESS_VISITOR, day); entry_grant(tavern, 15, ACCESS_VISITOR, day); entry_grant(own, 17, ACCESS_OWNER, day);
-        check_expect(entry_access(house, day + 5000u) == ACCESS_VISITOR && entry_access(tavern, day + 5000u) == ACCESS_VISITOR && entry_access(own, day + 5000u) == ACCESS_OWNER, "access: a house, a tavern or one's own has the wrong grant");
+        entry_grant(house, 17, ACCESS_VISITOR, day); entry_grant(tavern, 15, ACCESS_VISITOR, day); entry_grant(own, 17, ACCESS_FULL, day);
+        check_expect(entry_access(house, day + 5000u) == ACCESS_VISITOR && entry_access(tavern, day + 5000u) == ACCESS_FULL && entry_access(own, day + 5000u) == ACCESS_FULL, "access: a house, a tavern or one's own has the wrong grant");
         entry_leave(house);
-        check_expect(entry_access(house, day) == 0 && entry_access(tavern, day) == ACCESS_VISITOR, "access: leaving did not end the grant of that building alone");
+        check_expect(entry_access(house, day) == 0 && entry_access(tavern, day) == ACCESS_FULL, "access: leaving did not end the grant of that building alone");
         check_expect(entry_trespass(5, ACCESS_VISITOR, 0) == 0 && entry_trespass(10, ACCESS_VISITOR, 0) == CRIME_TRESPASS && entry_trespass(10, ACCESS_VISITOR, 1) == CRIME_BREAKING &&
-                     entry_trespass(45, ACCESS_OWNER, 0) == 0 && entry_trespass(5, 0, 0) == CRIME_TRESPASS, "access: a point over the grant is not crime 2, then 3");
+                     entry_trespass(45, ACCESS_FULL, 0) == 0 && entry_trespass(5, 0, 0) == CRIME_TRESPASS, "access: a point over the grant is not crime 2, then 3");
         entry_reset();
         check_expect(entry_access(tavern, day) == 0, "access: a town reload kept a grant");
     }

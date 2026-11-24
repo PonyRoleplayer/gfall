@@ -38,6 +38,8 @@
 #include "game/dagger/formats/dungeon.h"
 #include "game/dagger/places/travel.h"
 #include "game/dagger/play/travel/travelmap.h"
+#include "game/dagger/play/input/move.h"
+#include "game/dagger/play/watcom.h"
 
 #include "game/dagger/play/play.h"
 
@@ -235,14 +237,10 @@ static int talk_buildings(TalkBuilding *out, int cap)
     for (i = n = 0; i < count && n < cap; i++) {
         int flags;
 
-        /* A residence is a topic only when a quest marks it as a destination. */
-        flags = 0;
-        if (talk_category(rows[i].type, 0) < 0) {
-            if (!quest_building_site(g_talk_region, g_talk_index, rows[i].block, rows[i].record, 0, 0)) {
-                continue;
-            }
-            flags = 8;
-        }
+        /* Keep quest destinations distinct from other buildings with the same sign. */
+        flags = quest_building_site(g_talk_region, g_talk_index, rows[i].block, rows[i].record, 0, 0)
+            ? TALK_QUEST_SITE_FLAG : 0;
+        if (talk_category(rows[i].type, flags) < 0) { continue; }
         out[n].id = gfall_building_id(&rows[i]);
         out[n].type = rows[i].type;
         out[n].flags = flags;
@@ -285,6 +283,13 @@ static int talk_distance(unsigned id)
 
     t = talk_building(id);
     return t ? talk_distance_to(t) : 99999;
+}
+
+static void talk_note_building(unsigned id)
+{
+    const TownBuilding *building = talk_building(id);
+
+    if (building) { gfall_building_note(building, g_talk_region, g_talk_index, 1); }
 }
 
 /* Which of the eight ways (east first, counter-clockwise) a building lies, by the slope's three bands (tan 22.5 degrees is about 0.414). */
@@ -368,7 +373,7 @@ static void talk_say_text(int text, char *out, int cap)
     }
 }
 
-void gfall_person_say_text(int text, char *out, int cap)
+void gfall_person_say_text(int text, const char *guild_rank, char *out, int cap)
 {
     Words w;
 
@@ -376,10 +381,12 @@ void gfall_person_say_text(int text, char *out, int cap)
     w.city = town_name();
     w.tone = 1;
     w.place = "This place";
+    w.guild_rank = guild_rank;
     words_use(&w);
     if (words_say(text, out, cap) < 0) {
         out[0] = 0;
     }
+    words_use(0);
 }
 
 /* talk_start for whoever g_met is: the window opens, or the record that says they will not (shown as a message). */
@@ -446,6 +453,7 @@ void gfall_start_talk(void)
     world.building_name = talk_building_name;
     world.town_has = talk_town_has;
     world.distance = talk_distance;
+    world.note_building = talk_note_building;
     world.say = talk_say;
     world.news = seam_quest_news;
     world.topic_count = quest_topic_count; world.topic_name = quest_topic_name; world.topic_answer = quest_topic_answer;
@@ -504,7 +512,7 @@ int gfall_person_used(const Camera *aim, int mode)
         }
         steal_pocket(0, 0, &taken);
         if (taken.text) {
-            gfall_person_say_text(taken.text, line, (int)sizeof(line));
+            gfall_person_say_text(taken.text, 0, line, (int)sizeof(line));
             interact_say(line);
         } else if (taken.line) {
             interact_say(taken.line);
@@ -668,7 +676,13 @@ int gfall_talk_used(const Usable *u, int mode, float dist, const Camera *cam)
     mem_zero(&npc, sizeof(npc));
     npc.type = 8;
     f = faction_def(faction_index(what));
-    npc.faction = what;
+    if (!f) {
+        const Faction *people = faction_people_of(travel_region());
+
+        /* Unaffiliated residents speak as the people of the current region. */
+        if (people) { g_met.faction = people->id; }
+    }
+    npc.faction = g_met.faction;
     npc.faction_is_individual = f && f->type == 4;
     npc.faction_name = f ? f->name : 0;
     npc.region = travel_region();
@@ -808,7 +822,7 @@ int gfall_shelf_used(int index, int variant)
         }
         /* The shelf holds what its building's seed says this epoch: the same on every visit and every reload, new when the epoch turns over (docs/gfall-place-state.md, 4). */
         seed_stream_begin(thing_seed(place, SHELF_THING_BASE + (df_u32)index));
-        shelf_stock(g_shelf_box[index], variant, quality, type, index);
+        shelf_stock_shop(g_shelf_box[index], variant, quality, type, index);
         /* shelf_open_stock: an alchemist's shelf, a quarter of the time, also holds a recipe for a potion; each shelf of a general store, when first opened, a horse and a cart (collected_count == 0). */
         if (type == 0 && random_range(1, 100) < 25) { item_create(g_shelf_box[index], 27, 4, 0); }
         if (type == 9) {
@@ -890,15 +904,10 @@ int gfall_rest_site(RestSite *site)
 
 int gfall_court_say(int text, const Court *court, char *out, int cap)
 {
-    static WordsPlayer pc;
     static char penalty[96], prison[48];
     Words w;
-    int i;
 
-    for (i = 0; i < (int)sizeof(pc.name) - 1 && character_state()->name[i]; i++) { pc.name[i] = character_state()->name[i]; }
-    pc.name[i] = 0;
     mem_zero(&w, sizeof(w));
-    w.pc = &pc;
     w.city = town_name();
     w.crime = crime_name(court->crime + 1);
     if (court->severity == 0) { df_copy(penalty, "Banishment", sizeof(penalty)); }
@@ -918,9 +927,12 @@ int gfall_court_say(int text, const Court *court, char *out, int cap)
 
 void gfall_court_release(int where)
 {
-    /* The street (8) and the walls' edge (4) and an acquittal's (12) are all out of the building the case was heard in. */
-    (void)where;
-    travel_out_to_street();
+    if (where == RELEASE_STREET) {
+        travel_release_to_street((unsigned)random_range(0, RAND_MAX_WATCOM),
+                                 move_yaw() * (DF_TAU / 2048.0f));
+    } else {
+        travel_out_to_street();
+    }
 }
 unsigned gfall_people_id(void) { return g_met.who; }
 const char *gfall_people_name(void) { return g_met.name; }

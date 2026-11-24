@@ -264,7 +264,10 @@ static void rebuild(void)
     }
     if (g.tab == 0) {
         if (g.categories) {
-            for (category = 0; category < TALK_CATEGORIES; category++) {
+            if (talk_has_category(g.building, g.building_count, TALK_CATEGORY_QUEST)) {
+                add_item(talk_category_name(TALK_CATEGORY_QUEST), TALK_CATEGORY_QUEST);
+            }
+            for (category = 0; category < TALK_CATEGORY_QUEST; category++) {
                 if (talk_has_category(g.building, g.building_count, category)) {
                     add_item(talk_category_name(category), category);
                 }
@@ -400,16 +403,14 @@ static int inside(int button, int x, int y)
 
 static void list_scroll(int delta)
 {
-    int top;
+    int top, rows;
 
-    if (g.mode == 1 && g.tab == 0 && g.categories) {
-        return;
-    }
+    rows = g.mode == 1 && g.tab == 0 && g.categories ? TW_CATEGORY_ROWS : TW_LIST_ROWS;
     top = g.top + delta;
     if (delta < 0 && g.top == 0) {
         return;
     }
-    if (delta > 0 && g.top + TW_LIST_ROWS >= g.count) {
+    if (delta > 0 && g.top + rows >= g.count) {
         return;
     }
     g.top = top;
@@ -434,7 +435,7 @@ static void list_click(int y)
 
     visible = (y - 71) / 7;
     row = g.top + visible;
-    if (row >= g.count || visible >= (g.mode == 1 && g.tab == 0 && g.categories ? TALK_CATEGORIES : TW_LIST_ROWS)) {
+    if (row >= g.count || visible >= (g.mode == 1 && g.tab == 0 && g.categories ? TW_CATEGORY_ROWS : TW_LIST_ROWS)) {
         return;
     }
     if (g.mode == 1 && g.tab == 0) {
@@ -518,6 +519,7 @@ static void ask(void)
                 copy(place, (int)sizeof(place), g_key);
             }
             topic_text = talk_hint(&a, found, building && g_world.distance ? g_world.distance(building) : 99999, g_world.outdoors, &noted);
+            if (noted && building && g_world.note_building) { g_world.note_building(building); }
             context(&ctx);
             ctx.loc = place;
             ctx.building = building;

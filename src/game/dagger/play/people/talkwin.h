@@ -24,6 +24,7 @@
 #define TW_QUESTION 8
 /* Rows of the list shown at once (talk_list_bottom = top + 13), and of the answer. */
 #define TW_LIST_ROWS 14
+#define TW_CATEGORY_ROWS 15
 #define TW_LIST_WIDTH 95
 #define TW_ANSWER_ROWS 18
 
@@ -46,6 +47,8 @@ typedef struct TalkWinWorld {
     int (*regional_found)(int index, char *out, int cap);
     /* How far the building is from the player now, in the game's units. */
     int (*distance)(unsigned building);
+    /* The NPC has offered to write the destination on the town map. */
+    void (*note_building)(unsigned building);
     /* rumor_pick_news: one piece of news for the faction; 0 when none. */
     int (*news)(int faction, char *out, int cap);
     /* The quests' topics of "Tell me about" (a name and its answer, by number), and the rumour the person who gave a quest tells in their greeting (rumor_find_for_npc); 0 for none. */

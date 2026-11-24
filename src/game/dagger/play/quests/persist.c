@@ -153,5 +153,9 @@ int quest_unpack(const df_u8 *in, int len)
     for (i = 0; i < QUEST_ACCESS && !w.bad; i++) { quest_runtime.access[i].used = (int)qget(&w); quest_runtime.access[i].quest_id = (int)qget(&w); quest_runtime.access[i].region = (int)qget(&w); quest_runtime.access[i].index = (int)qget(&w); quest_runtime.access[i].block = (int)qget(&w); quest_runtime.access[i].record = (int)qget(&w); quest_runtime.access[i].access = (int)qget(&w); quest_runtime.access[i].until = qget(&w); }
     for (i = 0; i < QUEST_FACES && !w.bad; i++) { quest_runtime.faces[i].used = (int)qget(&w); quest_runtime.faces[i].quest_id = (int)qget(&w); quest_runtime.faces[i].kind = (int)qget(&w); quest_runtime.faces[i].index = (int)qget(&w); quest_runtime.faces[i].face = (int)qget(&w); }
     if (w.bad || w.n != len) { quest_reset(); return 0; }
+    logbook_repair();
+    for (i = 0; i < QUESTS; i++) {
+        if (quest_runtime.slots[i].used) { quest_repair_places(&quest_runtime.slots[i]); }
+    }
     return 1;
 }

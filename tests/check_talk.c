@@ -187,6 +187,12 @@ void check_talk(void)
         check_expect(n == 4 && t[0].building == 12 && t[1].building == 13 && t[2].building == 10 && t[3].category == TALK_REGIONAL && !t[3].building,
                      "talk: places are not listed nearest first, houses out, the regional entry last");
         check_expect(talk_has_category(b, 5, 2) && !talk_has_category(b, 5, 7) && talk_has_category(b, 5, TALK_REGIONAL), "talk: town_has_category");
+        b[1].type = b[0].type;
+        b[1].flags = TALK_QUEST_SITE_FLAG;
+        n = talk_topics(t, 16, b, 2);
+        check_expect(n == 3 && t[0].building == 11 && t[0].category == TALK_CATEGORY_QUEST &&
+                     t[1].building == 10 && t[1].category == 2,
+                     "talk: a quest destination and another building of its type should have distinct directions entries");
 
         /* The answers: "where is" picks its record by knowing, style and attitude; "tell me about" gives the news once. */
         standing_defaults(standing_state());

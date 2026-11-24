@@ -15,6 +15,7 @@
 #include "engine/ui/pic.h"
 
 #include "game/dagger/formats/cif.h"
+#include "game/dagger/play/input/move.h"
 
 #include "internal.h"
 #include "game/dagger/play/ui/canvas.h"
@@ -24,6 +25,30 @@ static int g_weapon_file = -1, g_weapon_pic, g_weapon_frame = -1;
 static int g_weapon_color = -1, g_weapon_hand = -1, g_weapon_bar = -1;
 static int g_hurt_pic;
 static df_u8 *g_weapon_pixels;
+static CfaPicture g_mount_art[2];
+static int g_mount_pic, g_mount_kind, g_mount_frame;
+
+void gfall_screen_draw_mount(void)
+{
+    static const char *const names[] = {"MRED00I0.CFA", "MRED01I0.CFA"};
+    CfaPicture *art;
+    const df_u8 *pixels;
+    int kind = move_mounted(), frame;
+
+    if (!kind) { return; }
+    art = &g_mount_art[kind - 1];
+    if (!art->pixels && !cfa_load(names[kind - 1], art)) { return; }
+    frame = move_mount_speed() > 2 ? (int)((game_state()->minutes * 45u + (game_state()->ticks >> 1)) & 3u) : 0;
+    pixels = art->pixels + (frame % art->frames) * art->width * art->height;
+    if (kind != g_mount_kind) {
+        if (g_mount_pic) { pic_free(g_mount_pic); g_mount_pic = 0; }
+        g_mount_kind = kind;
+    }
+    if (!g_mount_pic) { g_mount_pic = pic_load(pixels, art->width, art->height, gfall_screen_art_palette(), 1); }
+    else if (frame != g_mount_frame) { pic_update(g_mount_pic, pixels); }
+    g_mount_frame = frame;
+    hud_blit(g_mount_pic, art->x, art->y + ((options_flags() & 1) ? 46 : 0), art->width, art->height);
+}
 
 const df_u8 *seam_weapon_screen(const df_u8 **palette)
 {
@@ -155,4 +180,6 @@ void gfall_screen_leave_world(void)
     if (g_weapon_pic) { pic_free(g_weapon_pic); g_weapon_pic = 0; }
     g_weapon_frame = -1;
     if (g_cast_pic) { pic_free(g_cast_pic); g_cast_pic = 0; }
+    if (g_mount_pic) { pic_free(g_mount_pic); g_mount_pic = 0; }
+    mem_zero(g_mount_art, sizeof(g_mount_art));
 }

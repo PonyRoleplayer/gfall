@@ -10,6 +10,7 @@
 #include "game/dagger/play/travel/doors.h"
 #include "game/dagger/play/combat/dungeon.h"
 #include "game/dagger/play/ui/hud.h"
+#include "game/dagger/play/ui/msg.h"
 #include "game/dagger/play/save/save.h"
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/play/magic/magic.h"
@@ -77,8 +78,8 @@ static void lockpicking(void)
     activate(&g_scene,&g_camera,MODE_GRAB,0,0,1,160,100);
     check_expect(!mover_at_end(&g_door) && random == game_state()->random &&
                  uses == game_state()->skill_uses[13] &&
-                 !strcmp(interact_saying(0),lock_hint(50,10)),
-                 "Grab reports difficulty without consuming a lockpick roll or training");
+                 !strcmp(message_line(),lock_hint(50,10)),
+                 "Grab reports difficulty in the HUD feed without a lockpick roll or training");
     choose_roll(0,100,26); pick();
     check_expect(g_door.lock == 10 && !mover_at_end(&g_door) &&
                  game_state()->skill_uses[13] == uses+1,"failed picking trains once and keeps the lock shut");
@@ -98,7 +99,7 @@ static void lockpicking(void)
     character_state()->skill[13]++;
     choose_roll(0,100,26); pick();
     check_expect(!g_door.lock && mover_at_end(&g_door) &&
-                 !strcmp(interact_saying(0),lock_text(LOCK_OPEN)),
+                 !strcmp(message_line(),lock_text(LOCK_OPEN)),
                  "a changed skill permits another attempt and a boundary roll unlocks and opens");
     random = game_state()->random; pick();
     check_expect(game_state()->random == random,"using a moving door cannot consume another roll");

@@ -14,19 +14,17 @@
  * Plain C: hostcheck runs it.
  */
 
-/* The player, as the macros say them: the name, the race's number (career_race) and a woman. */
-typedef struct WordsPlayer {
-    char name[32];
-    int race;
-    int female;
-} WordsPlayer;
-
 /* The game's dice for the variant of a record (n variants: 0..n-1); a simple generator of its own until it gives them. */
 void words_set_roll(int (*roll)(int n));
 
-/* What the macros say, set before words_say. Anything left 0 or empty says nothing. */
+/* The game's live character and the race names its character sheet uses. */
+struct CharacterState;
+void words_set_player(const struct CharacterState *player, const char *(*race_name)(int race));
+
+/* Values supplied by the caller. Player names, race and honorific come from the current character. */
 typedef struct Words {
-    const WordsPlayer *pc;
+    /* The caller's choice of oath, with the default at 0. */
+    int oath_race;
     /* What is being asked about (%key), and the place named in a hint (%loc). */
     const char *key;
     const char *loc;
@@ -37,11 +35,18 @@ typedef struct Words {
     const char *city;
     const char *region;
     const char *place;
+    /* Holiday notices name the settlement type (%ct) and the local ruler's title (%t). */
+    const char *location_type;
+    const char *ruler_title;
+    /* %ef draws the owner's given name on the current building's name stream. */
+    void (*shop_owner)(char *out, int cap);
     /* The giver of a quest the player is pointed to (%pqn their name, %pqp their building's name). */
     const char *questor;
     const char *questor_place;
     /* The person's faction (%fnpc and the like). */
     const char *faction;
+    /* The player's rank in the guild speaking (%lev). */
+    const char *guild_rank;
     /* A court's words (%cri, %pen) and sums (%dip days, %a gold). */
     const char *crime;
     const char *penalty;
@@ -58,7 +63,7 @@ typedef struct Words {
     const char *date;
     /* A rumour's two factions (%fx1, %fx2), the ruler of the region it is about (%nrn) and the temple it outlaws (%ptm). */
     const char *faction1, *faction2, *ruler, *temple;
-    /* The ruler a new-ruler rumour is about: the old one's name (%ol1) and fate (%olf), the title (%lt1, and %t the same), and his or her (%g3). */
+    /* The old ruler's name (%ol1) and fate (%olf), the title (%lt1 and %rt), and his or her (%g3). */
     const char *ruler_old, *fate, *title, *pronoun;
 } Words;
 

@@ -15,11 +15,14 @@ static int g_count;
 static int g_region = -1;
 static int g_index = -1;
 static Dungeon g_town;
+static ExteriorBuilding g_signs[TOWN_BUILDINGS];
 
 const TownBuilding *town_buildings(int region, int index, int *count)
 {
     Bsa *blocks;
-    int b;
+    ExteriorBuildings signs = {g_signs, TOWN_BUILDINGS, 0, 0};
+    int b, next = 0;
+    df_u32 object_id;
 
     if (region == g_region && index == g_index) {
         *count = g_count;
@@ -29,7 +32,7 @@ const TownBuilding *town_buildings(int region, int index, int *count)
     if (!g_rows) {
         g_rows = (TownBuilding *)mem_keep((df_u32)TOWN_BUILDINGS * (df_u32)sizeof(TownBuilding));
     }
-    if (!g_rows || !exterior_load_at(region, index, &g_town)) {
+    if (!g_rows || !exterior_load_town(region, index, &g_town, &signs)) {
         return 0;
     }
     blocks = bsa_open("BLOCKS.BSA");
@@ -37,16 +40,22 @@ const TownBuilding *town_buildings(int region, int index, int *count)
         return 0;
     }
     g_count = 0;
+    /* The first town object follows the player and location records. */
+    object_id = signs.location_id + 2u;
     for (b = 0; b < g_town.nblocks; b++) {
         const BsaRec *rec;
         const df_u8 *bytes;
-        int r;
+        RmbObjectCounts counts[RMB_BUILDINGS_MAX];
+        int r, loose = 0;
 
         rec = bsa_find_name(blocks, g_town.block[b].name);
         bytes = rec ? bsa_read_scratch(blocks, rec, BSA_SCRATCH_BLOCK) : 0;
         if (!bytes) {
+            next = signs.count;
             continue;
         }
+        if (next < signs.count && !rmb_object_counts(bytes, rec->size, counts, &loose)) { next = signs.count; }
+        object_id++;
         for (r = 0; g_count < TOWN_BUILDINGS; r++) {
             TownBuilding *t;
             int type;
@@ -64,10 +73,23 @@ const TownBuilding *town_buildings(int region, int index, int *count)
             t->type = (short)type;
             t->quality = (short)quality;
             t->name_seed = (unsigned short)rmb_building_seed(bytes, rec->size, r);
+            mem_zero(t->sites, sizeof(t->sites));
+            if (next < signs.count) {
+                /* MAPPITEM lists the kept buildings by exterior object ID. An
+                 * omitted building still counts its exterior, but has no interior object. */
+                if (counts[r].outside && object_id == signs.rows[next].id) {
+                    t->name_seed = signs.rows[next].name_seed;
+                    mem_copy(t->sites, signs.rows[next].sites, sizeof(t->sites));
+                    next++;
+                    object_id += (df_u32)counts[r].inside;
+                }
+                object_id += (df_u32)counts[r].outside;
+            }
             t->faction = faction;
             t->x = (float)g_town.block[b].x * BLOCK_SIDE + x;
             t->z = (float)g_town.block[b].z * BLOCK_SIDE + z;
         }
+        object_id += (df_u32)loose;
     }
     bsa_close(blocks);
     g_region = region;
@@ -152,6 +174,30 @@ const TownBuilding *town_building(int region, int index, int block, int record)
         }
     }
     return 0;
+}
+
+const TownBuilding *town_building_near(int region, int index, float x, float z, int type)
+{
+    const TownBuilding *rows, *nearest;
+    float best;
+    int count, i, bx, bz;
+
+    rows = town_buildings(region, index, &count);
+    bx = df_ifloor(x / BLOCK_SIDE);
+    bz = df_ifloor(z / BLOCK_SIDE);
+    nearest = 0;
+    best = 0;
+    for (i = 0; rows && i < count; i++) {
+        const TownBuilding *b = &rows[i];
+        float dx, dz, distance;
+
+        if (b->type != type || g_town.block[b->block].x != bx || g_town.block[b->block].z != bz) { continue; }
+        dx = x - b->x;
+        dz = z - b->z;
+        distance = dx * dx + dz * dz;
+        if (!nearest || distance < best) { nearest = b; best = distance; }
+    }
+    return nearest;
 }
 
 #define BLOCK_COPY_MOST 131072
@@ -245,4 +291,59 @@ int town_marker(int region, int index, int record, float *x, float *z)
     *x = (float)g_town.block[0].x * BLOCK_SIDE + mx;
     *z = (float)g_town.block[0].z * BLOCK_SIDE + mz;
     return 1;
+}
+
+static int street_marker(int region, int index, unsigned draw, const float *approach, float *x, float *z)
+{
+    static Dungeon town;
+    float street[DUN_MAX_BLOCKS][2];
+    Bsa *blocks;
+    int i, n = 0;
+
+    if (!exterior_load_at(region, index, &town)) { return 0; }
+    blocks = bsa_open("BLOCKS.BSA");
+    if (!blocks) { return 0; }
+    for (i = 0; i < town.nblocks; i++) {
+        const DunBlock *block = &town.block[i];
+        const BsaRec *rec = bsa_find_name(blocks, block->name);
+        const df_u8 *bytes = rec ? bsa_read_scratch(blocks, rec, BSA_SCRATCH_BLOCK) : 0;
+        float mx, mz;
+
+        /* Classic marker kind 8 is editor flat 199, record 10. */
+        if (!bytes || !rmb_editor_marker(bytes, rec->size, 10, &mx, &mz)) { continue; }
+        street[n][0] = (float)block->x * BLOCK_SIDE + mx;
+        street[n][1] = (float)block->z * BLOCK_SIDE + mz;
+        n++;
+    }
+    bsa_close(blocks);
+    if (!n) { return 0; }
+    i = (int)(draw % (unsigned)n);
+    if (approach) {
+        float closest = 0.0f;
+        int k;
+
+        for (k = 0; k < n; k++) {
+            float dx = street[k][0] - approach[0], dz = street[k][1] - approach[1];
+            float distance = dx * dx + dz * dz;
+
+            if (k == 0 || distance < closest) { i = k; closest = distance; }
+        }
+    }
+    *x = street[i][0];
+    *z = street[i][1];
+    return 1;
+}
+
+int town_release_marker(int region, int index, unsigned draw, float *x, float *z)
+{
+    return street_marker(region, index, draw, 0, x, z);
+}
+
+int town_nearest_street_marker(int region, int index, float from_x, float from_z, float *x, float *z)
+{
+    float approach[2];
+
+    approach[0] = from_x;
+    approach[1] = from_z;
+    return street_marker(region, index, 0, approach, x, z);
 }

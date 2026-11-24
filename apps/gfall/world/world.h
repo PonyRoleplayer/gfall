@@ -7,5 +7,6 @@ void gfall_release_soul(int kind);
 int gfall_summon_ally(int kind);
 int gfall_transform(int victim, int kind);
 void gfall_transport(void);
+void gfall_mount_sound(int active);
 
 #endif

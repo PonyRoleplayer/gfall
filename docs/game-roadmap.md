@@ -1,27 +1,35 @@
 # GFALL: from Privateer's Hold to the full game
 
-Status as of 2026-11-22. GFALL.EXE plays from character creation through
+Status as of 2026-11-24. GFALL.EXE plays from character creation through
 Privateer's Hold into the streamed world. It includes combat, magic and
 crafting, towns and guild services, law, travel, curses, the quest machine,
 property (houses, the ship), politics and news, the movies and the princes'
-scenes, and saves that stream to disk with no limits (schema 23: a world seed
-and place rows). Place state is derived from seeds and swept every three
+scenes, and saves that stream world state to disk. Schema 24 remembers the
+mounted item. Place state is derived from seeds and swept every three
 days (docs/game.md, Place state). See [game.md](game.md) for implementation
 notes and [game-later.md](game-later.md) for specific gaps and what was
 closed. The first-generation player was retired on 2026-11-12 at tag
 `before-gfall-retire`.
 
-**Still missing for a full game (2026-11-22):** the main story's checkpoints
+**Still missing for a full game (2026-11-24):** the main story's checkpoints
 (the royal audiences, the later dungeon stages and every ending have never been
 played end to end); quest-specified equipment and exact site selection, the
 Where-is People list, the quest-minute batching and the logbook's controls and
 notes page; towns' own place rows and the guild counters keeping purchases;
-the vampire's paper doll; joystick and the moving local light; movement that
-does not stick on walls (below); and everything that only the 233 can say
+the vampire's paper doll; joystick and the moving local light; playtesting
+View movement in dungeon corridors; and everything that only the 233 can say
 (stability, memory, frame rate). Deliberately later: the tutorial, EAX, a
-modern indoor map, Pony97, poison vials, worn underwear in its own slot,
-Half-Life style movement and head bob. The lists below were written on
-2026-11-16 and are partly out of date: where they disagree, game-later.md wins.
+modern indoor map, Pony97, poison vials, worn underwear in its own slot.
+The lists below were written on 2026-11-16 and are partly out of date: where
+they disagree, game-later.md wins.
+
+## November 23–24 playtest
+
+- View movement gained acceleration, normalized diagonals, air steering, wall sliding and smoother head bob. Shift sprints on foot in either control scheme. View defaults to hold and release for bows.
+- Horse and cart purchases bypass pack weight, and the Transport menu supports both. Shops stock arrows and keep them separate from the player's stacks until purchase.
+- Building signs and local directions use the destination's own name. Visits and NPC directions persist on the town map. Guards can pursue wanted players, and a rented-room arrival sets the player's feet on a clear floor.
+- Quest fixes cover long offers, local foe placement, journal entries attached to reused quest IDs and turn-in confirmation. The travel map's Find prompt and holiday notices use parchment. Fast travel uses city gate markers, which the tester confirmed in-game.
+- The tester reported mostly 60 FPS on the emulated Pentium MMX 233 and Voodoo 1 setup. Denser wilderness scenery is the next comparison. See [Flora](streaming.md#flora).
 
 ## What is still missing
 

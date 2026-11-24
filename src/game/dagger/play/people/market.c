@@ -50,10 +50,12 @@ int market_take(df_u32 id)
     }
     g_offered = 0;
     if (g_mode == MARKET_BUY) {
-        if (item->parent != g_shelves || !inventory_transfer(id, game_state()->inventory_id)) {
+        if (item->parent != g_shelves || item->group == ITEM_GROUP_CURRENCY) { return 0; }
+        object_edit(id)->flags |= ITEM_UNPAID;
+        if (!inventory_transfer(id, game_state()->inventory_id)) {
+            object_edit(id)->flags &= ~ITEM_UNPAID;
             return 0;
         }
-        object_edit(id)->flags |= ITEM_UNPAID;
         return 1;
     }
     /* Selling and repair: from the pack to the counter, never an unpaid thing, never gold. */
@@ -145,6 +147,19 @@ int market_offer(void)
     return trade_offer_text(g_mode, q.total, q.price);
 }
 
+static void claim_basket(void)
+{
+    int i;
+
+    for (i = 0; i < OBJECTS; i++) {
+        const ObjectInfo *item = &game_state()->object[i];
+
+        if (item->id && item->type == RECORD_ITEM && in_pack(item) && (item->flags & ITEM_UNPAID)) {
+            inventory_claim(item->id);
+        }
+    }
+}
+
 int market_confirm(int yes)
 {
     Quote q;
@@ -185,14 +200,7 @@ int market_confirm(int yes)
             /* The shelf is no longer as its seed made it: it is kept as it is. */
             if (object_edit(g_shelves)) { object_edit(g_shelves)->flags |= BOX_MODIFIED; }
             /* inv_claim_items: what was in the basket is theirs. */
-            for (i = 0; i < OBJECTS; i++) {
-                ObjectInfo *item;
-
-                item = object_edit(game_state()->object[i].id);
-                if (item && item->type == RECORD_ITEM && in_pack(item) && (item->flags & ITEM_UNPAID)) {
-                    item->flags &= ~ITEM_UNPAID;
-                }
-            }
+            claim_basket();
         }
     }
     /* trade_settle_offer: a yes is one use of Mercantile; then the coins' sound (SND_COINS). */
@@ -204,7 +212,6 @@ int market_confirm(int yes)
 int market_steal(StealState *out)
 {
     Quote q;
-    int i;
 
     g_offered = 0;
     if (g_mode != MARKET_BUY) {
@@ -218,14 +225,7 @@ int market_steal(StealState *out)
         return 0;
     }
     /* A success is inv_claim_items with no coins: what was in the basket is theirs. */
-    for (i = 0; i < OBJECTS; i++) {
-        ObjectInfo *item;
-
-        item = object_edit(game_state()->object[i].id);
-        if (item && item->type == RECORD_ITEM && in_pack(item) && (item->flags & ITEM_UNPAID)) {
-            item->flags &= ~ITEM_UNPAID;
-        }
-    }
+    claim_basket();
     return 1;
 }
 

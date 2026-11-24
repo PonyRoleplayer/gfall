@@ -23,6 +23,10 @@ enum {
  * does not read.
  */
 int townmap_open(int region, int index, float x, float z, float yaw);
+struct TownBuilding;
+enum { TOWNMAP_UNNAMED, TOWNMAP_NAMED, TOWNMAP_MARKED };
+/* Supply a discovered building's label and whether it is the current directions target. */
+void townmap_set_building_name(int (*name)(const struct TownBuilding *, int, int, char *, int));
 void townmap_close(void);
 void townmap_compose(void);
 const unsigned char *townmap_pixels(void);
@@ -38,15 +42,6 @@ int townmap_marker(float *sx, float *sy, float *angle);
 /* The wheel: notches above 0 zoom in. */
 void townmap_wheel(int notches);
 int townmap_key(int vk);
-
-/*
- * A building someone gave the way to in talk, marked on the town's map with
- * a ring and named on the map's line, until another is pointed out (DFU's
- * talk discovers the building and shows it on the automap). Not saved.
- */
-void townmap_mark(int region, int index, float x, float z, int type);
-/* 1 and where, in the town's map pixels, when a building in this town is marked. */
-int townmap_marked(int region, int index, int *mx, int *my);
 
 /* What a test reads: the map pixels a screen pixel is (negative: screen pixels a map pixel is, halved); the cell at the view's middle; the line. */
 int townmap_scale(void);

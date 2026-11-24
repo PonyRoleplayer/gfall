@@ -106,6 +106,8 @@ static void read_line(Faction *f, const char *s, const char *end, int *flats)
         f->power = (short)read_int(&v, end);
     } else if (key_is(s, end, "flags", &v)) {
         f->flags = (short)read_int(&v, end);
+    } else if (key_is(s, end, "ruler", &v)) {
+        f->ruler = (short)read_int(&v, end);
     } else if (key_is(s, end, "face", &v)) {
         f->face = (short)read_int(&v, end);
     } else if (key_is(s, end, "sgroup", &v)) {

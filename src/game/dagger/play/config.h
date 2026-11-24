@@ -9,8 +9,9 @@
 /* Config.flags: bit 0 full screen, bit 1 head bob (the original's two view switches, which a save keeps), and bit 2, ours: the opening's logo and movies are not played at start (`skip_opening=on`; a key still skips each one when played). */
 #define CONFIG_FLAG_SKIP_OPENING 4
 #define CONFIG_FLAGS_MOST 7
+enum { BOW_STYLE_AUTO, BOW_STYLE_CLASSIC, BOW_STYLE_DRAW, BOW_STYLES };
 typedef struct Config {
-    int flags, mouse_mode;
+    int flags, mouse_mode, bow_style;
     int sound_volume, music_volume, detail;
     int sensitivity_x, sensitivity_y, turn_rate, reverse_y;
     int width, height, fov;
@@ -19,6 +20,7 @@ typedef struct Config {
 
 void config_defaults(Config *config);
 const Config *game_config(void);
+int config_bow_draw(void);
 /* Validated whole replacement. apply synchronizes engine audio and view flags. */
 int config_set(const Config *config);
 void config_apply(void);
@@ -30,5 +32,6 @@ const char *config_error(void);
 const char *action_name(int action);
 const char *action_token(int action);
 int key_allowed(int key);
+int config_key_taken(const Config *config, int action, int key);
 
 #endif

@@ -9,10 +9,14 @@
 #define CLIMATE_NAME "CLIMATE.PAK"
 #define HOLD_NAME "Privateer's Hold"
 #define LOC_NAME 71
+#define LOC_OBJECT_ID 31
 #define LOC_ID 33
 #define LOC_HAS_PARENT 39
 #define LOC_PARENT 41
 #define LOC_TAIL 112
+#define EXT_BUILDING_START (LOC_TAIL + 7)
+#define EXT_BUILDING_BYTES 26u
+#define EXT_BUILDING_ID 20
 #define DUN_HEAD 17
 #define MAP_W 1000
 #define MAP_H 500
@@ -772,7 +776,7 @@ static int exterior_at(const df_u8 *rec, df_u32 size, df_u32 *ext_out, int *widt
     if (buildings < 0 || buildings > 4096) {
         return 0;
     }
-    ext = at + (df_u32)LOC_TAIL + 7u + (df_u32)buildings * 26u;
+    ext = at + EXT_BUILDING_START + (df_u32)buildings * EXT_BUILDING_BYTES;
     if (ext > size || size - ext < 241u) {
         return 0;
     }
@@ -1106,6 +1110,7 @@ struct ExtOne {
     int want;
     Dungeon *out;
     Bsa *maps;
+    ExteriorBuildings *buildings;
     int found;
     int bad;
 };
@@ -1142,6 +1147,28 @@ static int ext_one_visit(const df_u8 *rec, df_u32 size, int index, void *user)
     }
     doors = df_ru32(rec);
     at = 4u + doors * 6u;
+    if (one->buildings) {
+        ExteriorBuildings *buildings = one->buildings;
+        int i, count = (int)df_ru16(rec + at + LOC_TAIL);
+        const df_u8 *row = rec + at + EXT_BUILDING_START;
+
+        buildings->location_id = df_ru32(rec + at + LOC_OBJECT_ID);
+        buildings->count = count < buildings->capacity ? count : buildings->capacity;
+        for (i = 0; i < buildings->count; i++, row += EXT_BUILDING_BYTES) {
+            buildings->rows[i].id = df_ru32(row + EXT_BUILDING_ID);
+            buildings->rows[i].name_seed = df_ru16(row);
+            mem_zero(buildings->rows[i].sites, sizeof(buildings->rows[i].sites));
+        }
+        for (i = 0; i < (int)doors; i++) {
+            const df_u8 *site = rec + 4 + i * 6;
+            int building = df_ru16(site), flags = df_ru16(site + 2) & 0x5000;
+
+            if (building >= buildings->count || !flags) { continue; }
+            buildings->rows[building].sites[SITE_ANY]++;
+            if (flags == 0x4000) { buildings->rows[building].sites[SITE_QUEST]++; }
+            if (flags & 0x1000) { buildings->rows[building].sites[SITE_ITEM]++; }
+        }
+    }
     one->out->location_id = (int)df_ru16(rec + at + LOC_ID);
     one->out->exterior_id = one->out->location_id;
     one->out->climate = climate_of_index(one->maps, one->src.region, index, 0);
@@ -1154,13 +1181,14 @@ static int ext_one_visit(const df_u8 *rec, df_u32 size, int index, void *user)
     return 0;
 }
 
-int exterior_load_at(int region, int index, Dungeon *out)
+int exterior_load_town(int region, int index, Dungeon *out, ExteriorBuildings *buildings)
 {
     Bsa *maps;
     struct ExtOne one;
     char name[16];
 
     why("load failed");
+    if (buildings) { buildings->count = 0; }
     if (!out || region < 0 || region >= DUN_REGIONS || index < 0) {
         return 0;
     }
@@ -1184,6 +1212,7 @@ int exterior_load_at(int region, int index, Dungeon *out)
     one.want = index;
     one.out = out;
     one.maps = maps;
+    one.buildings = buildings;
     one.found = 0;
     one.bad = 0;
     if (!each_exterior(maps, region, &one.src, ext_one_visit, &one)) {
@@ -1204,6 +1233,11 @@ int exterior_load_at(int region, int index, Dungeon *out)
     }
     why("");
     return 1;
+}
+
+int exterior_load_at(int region, int index, Dungeon *out)
+{
+    return exterior_load_town(region, index, out, 0);
 }
 
 /* ---- A location's quest sites: the 6-byte records before its location record (quest-places-and-start.md 1) ---- */

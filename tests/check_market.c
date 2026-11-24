@@ -11,10 +11,14 @@
 #include "game/dagger/play/state.h"
 #include "game/dagger/play/items/inventory.h"
 #include "game/dagger/tables/holidaydefs.h"
+#include "game/dagger/tables/itemdefs.h"
+#include "game/dagger/tables/buildingtypes.h"
+#include "game/dagger/formats/cif.h"
+#include "game/dagger/play/ui/screen.h"
 
 static ShopState neutral(void)
 {
-    ShopState s;
+    ShopState s = {0};
 
     s.region_adjust = 1000;
     s.quality = 10;
@@ -23,6 +27,77 @@ static ShopState neutral(void)
     s.half = 0;
     s.scale = 256;
     return s;
+}
+
+static int unpaid_count(void);
+
+static void check_market_transport(void)
+{
+    ShopState shop = neutral();
+    df_u32 pack = game_state()->inventory_id;
+    df_u32 shelf, horse, cart, ballast, goods;
+    int gold = character_state()->gold;
+    int full, price;
+
+    character_state()->gold = 5000;
+    shop.type = BUILDING_GENERAL;
+    shelf = object_new(RECORD_CONTAINER, WORLD_ROOT, 0, 1);
+    horse = item_create(shelf, ITEM_GROUP_TRANSPORT, 1, 0);
+    cart = item_create(shelf, ITEM_GROUP_TRANSPORT, 0, 0);
+    goods = item_create(shelf, ITEM_GROUP_WEAPON, 0, 0);
+    full = inventory_capacity() * WEIGHT_UNITS_PER_KG;
+    ballast = item_create(pack, ITEM_GROUP_WEAPON, 0, 0);
+    check_expect(horse && cart && goods && ballast, "market: could not stock the transport fixture");
+    if (horse && cart && goods && ballast) {
+        object_edit(ballast)->weight += full - inventory_weight(pack);
+        check_expect(inventory_weight(pack) == full && market_open(MARKET_BUY, &shop, shelf), "market: transport fixture did not open with a full pack");
+        check_expect(inventory_weight(shelf) == object_at(goods)->weight, "market: transport counted toward shelf weight");
+        check_expect(market_take(horse) && market_take(cart) && unpaid_count() == 2 && inventory_weight(pack) == full,
+                     "market: horse or cart could not be selected with a full pack");
+        check_expect(!market_take(goods) && object_at(goods)->parent == shelf, "market: ordinary goods bypassed the carry limit");
+        price = market_quote().price;
+        check_expect(price > 0 && market_offer() && market_confirm(1) == price && character_state()->gold == 5000 - price &&
+                     !unpaid_count() && object_at(horse)->parent == pack && object_at(cart)->parent == pack &&
+                     inventory_weight(pack) == full - (5000 / GOLD_PER_WEIGHT - (5000 - price) / GOLD_PER_WEIGHT),
+                     "market: paid transport did not stay owned and weightless");
+        market_close();
+    }
+    object_delete(horse); object_delete(cart); object_delete(ballast); object_delete(shelf);
+    character_state()->gold = gold;
+}
+
+static void check_market_arrows(void)
+{
+    ShopState shop = neutral();
+    df_u32 pack = game_state()->inventory_id;
+    df_u32 shelf = object_new(RECORD_CONTAINER, WORLD_ROOT, 0, 1);
+    df_u32 owned = item_create(pack, ARROW_GROUP, ARROW_INDEX, 0);
+    df_u32 stock = item_create(shelf, ARROW_GROUP, ARROW_INDEX, 0);
+    int gold = character_state()->gold;
+    int price, before;
+
+    check_expect(owned && stock, "market: could not create the arrow stacks");
+    if (owned && stock) {
+        character_state()->gold = 500;
+        object_edit(owned)->count = 10;
+        object_edit(stock)->count = 12;
+        check_expect(market_open(MARKET_BUY, &shop, shelf) && market_take(stock) && object_at(stock) &&
+                     object_at(stock)->parent == pack && (object_at(stock)->flags & ITEM_UNPAID) && object_at(owned)->count == 10 &&
+                     market_quote().total == trade_base_price(&shop, object_at(stock)->value * 12),
+                     "market: selecting arrows did not preserve owned and unpaid stacks");
+        market_close();
+        check_expect(object_at(stock) && object_at(stock)->parent == shelf && object_at(stock)->count == 12,
+                     "market: leaving the shop did not return the unpaid arrows intact");
+        before = character_state()->gold;
+        check_expect(market_open(MARKET_BUY, &shop, shelf) && market_take(stock), "market: could not reselect the arrow stack");
+        price = market_quote().price;
+        check_expect(price > 0 && market_offer() && market_confirm(1) == price && character_state()->gold == before - price &&
+                     !object_at(stock) && object_at(owned)->count == 22 && !unpaid_count(),
+                     "market: paying did not add the arrows to the owned stack");
+        market_close();
+    }
+    object_delete(owned); object_delete(stock); object_delete(shelf);
+    character_state()->gold = gold;
 }
 
 static int unpaid_count(void)
@@ -126,6 +201,8 @@ void check_market(void)
         }
         printf("market: bought for %d, sold for %d, refused 454, returned the unpaid\n", bought, q.price);
     }
+    check_market_transport();
+    check_market_arrows();
 }
 
 /* The composed 320 x 200 screen, to look at (build/gfall-<name>.ppm). */
@@ -169,6 +246,44 @@ static void click(int cx, int cy)
     in.cy = cy;
     in.on_picture = 1;
     possessions_frame(&in);
+}
+
+static void check_cart_icon(const ShopState *shop)
+{
+    static CifSet inventory_art;
+    df_u32 shelf = object_new(RECORD_CONTAINER, WORLD_ROOT, 0, 1);
+    df_u32 cart = item_create(shelf, ITEM_GROUP_TRANSPORT, 0, 0);
+    const CifFrame *wagon;
+    const df_u8 *pixels;
+    int w, h, x, y, opaque = 0, wrong = 0;
+
+    if (!cart || !cif_open("INVE16I0.CIF", &inventory_art) || !possessions_trade(MARKET_BUY, shop, shelf)) {
+        check_expect(0, "cart icon: could not open the shop and original inventory art");
+        shelf_discard(shelf);
+        return;
+    }
+    click(200, 4);
+    seam_present();
+    pixels = seam_screen(0);
+    wagon = cif_frame(&inventory_art, 3);
+    check_expect(wagon && pixels, "cart icon: the wagon image or shop screen did not load");
+    if (wagon && pixels) {
+        w = wagon->w; h = wagon->h;
+        size_fit(&w, &h, 46, 33);
+        for (y = 0; y < h; y++) {
+            for (x = 0; x < w; x++) {
+                int color = wagon->pixels[(y * wagon->h / h) * wagon->w + x * wagon->w / w];
+
+                if (!color || color == 255) { continue; }
+                opaque++;
+                wrong += pixels[(50 + (33 - h) / 2 + y) * 320 + 272 + (46 - w) / 2 + x] != color;
+            }
+        }
+        check_expect(opaque > 0 && !wrong, "cart icon: the shop cell did not draw the wagon CIF frame");
+    }
+    possessions_close();
+    cif_close(&inventory_art);
+    shelf_discard(shelf);
 }
 
 /*
@@ -233,4 +348,5 @@ void check_market_screen(void)
     click(240, 188);
     check_expect(view->page == VIEW_NONE && view->trade == 0 && market_mode() == MARKET_NONE, "screen: Exit did not leave the shop");
     shelf_discard(shelf);
+    check_cart_icon(&shop);
 }

@@ -13,6 +13,7 @@
 #include "engine/scene/interact.h"
 
 #include "game/dagger/places/people.h"
+#include "game/dagger/tables/enemies.h"
 #include "game/dagger/play/people/law.h"
 #include "game/dagger/play/people/guild.h"
 
@@ -21,15 +22,23 @@
 #include "people.h"
 #include "../world/world.h"
 static int seam_guards_present(void) { return dungeon_guards(); }
+
+static int guards_count(void)
+{
+    int i, n = 0;
+
+    for (i = 0; i < dungeon_count(); i++) {
+        const Entity *e = dungeon_entity(i);
+        if (e && e->live && !e->dead) { n++; }
+    }
+    return n;
+}
 /*
  * The street's people and the watch (people and law, the town's creatures): the dagger layer's people pool stands for the original's pedestrians. A guard is a person of archive 399; the watch
  * is those guards (and, when called, more made near the player) taken into GFALL's own creatures (kind 146, the original's stats and mind) and woken knowing where the player is. A swing's hit
  * kills whoever is within 90 units and 200 of the view (the original's pedestrian pass), the victim itself a witness; a killing seen is murder (crime 5) and brings the guards. Neither
  * the pictures nor the walking of the people are GFALL's.
  */
-#define STREET_GUARD_KIND 146
-#define STREET_GUARD_ARCHIVE 399
-
 /* collide_line_of_sight: a ray from the person's chest to the player's eye that no wall stops. */
 static int street_sees(const Entity *e, const float *eye)
 {
@@ -72,21 +81,25 @@ static int street_witnesses(void)
     return bits;
 }
 
-/* One of the pool's guards taken into the creatures and woken: a creature of the watch (kind 146) on the person's entity. */
+/* A pedestrian becomes a creature of the watch where they stand. */
 static int street_enlist(int index)
 {
     Entity *e;
     int foe;
 
     e = people_at(index);
-    if (!e || !people_is_guard(e)) { return 0; }
+    if (!e || !(people_is_guard(e) || people_is_citizen(e))) { return 0; }
     foe = dungeon_index(e);
     if (foe < 0) {
-        people_hold(index);
+        if (guards_count() > GUARDS_CREATURES_MOST) { return 0; }
+        if (!people_hold_guard(index)) { return 0; }
+        foe = dungeon_add(e, ENEMY_CITY_WATCH, 0, gfall_creature_rate(ENEMY_ARCHIVE_WATCH));
+        if (foe < 0) {
+            people_unhold(e);
+            return 0;
+        }
         /* A guard of the watch in pursuit is not talked to (the street's talk refuses the hostile). */
         people_set_hostile(e, 1);
-        foe = dungeon_add(e, STREET_GUARD_KIND, 0, gfall_creature_rate(STREET_GUARD_ARCHIVE));
-        if (foe < 0) { return 0; }
         dungeon_loaded(foe);
     }
     dungeon_wake(foe);
@@ -99,12 +112,16 @@ static int street_spawn(void)
     Camera cam;
     int index;
 
+    if (guards_count() > GUARDS_CREATURES_MOST) { return 0; }
     move_camera(&cam);
     index = people_spawn_guard(&cam);
-    return index >= 0 && street_enlist(index);
+    if (index < 0) { return 0; }
+    if (street_enlist(index)) { return 1; }
+    people_fell(people_at(index));
+    return 0;
 }
 
-/* guards_summon's people: every guard comes; unless guards_only, a quarter of those behind the player (more than 600 of 2048 round from where they face) turn out to be guards too. */
+/* Every guard comes. A full summons also converts a quarter of the pedestrians outside the player's forward arc. */
 static int street_convert(int guards_only)
 {
     Camera cam;
@@ -114,38 +131,67 @@ static int street_convert(int guards_only)
     n = 0;
     for (i = 0; i < PEOPLE_MAX; i++) {
         Entity *e;
+        float dx, dz, diff;
 
         e = people_at(i);
         /* people_is_citizen is false for a guard: the guards walking the street are the first the watch is made of. */
         if (!e || !(people_is_citizen(e) || people_is_guard(e))) { continue; }
+        dx = e->x - cam.x; dz = e->z - cam.z;
+        /* GFALL's crowd extends beyond combat range. A distant pedestrian would never start pursuit. */
+        if (dx * dx + dz * dz > (float)FOE_ACTIVE_RANGE * FOE_ACTIVE_RANGE) { continue; }
         if (people_is_guard(e)) {
             n += street_enlist(i);
             continue;
         }
         if (guards_only) { continue; }
-        {
-            float dx, dz, diff;
-
-            dx = e->x - cam.x; dz = e->z - cam.z;
-            diff = df_absf(df_atan2(dx, dz) - cam.yaw);
-            while (diff > DF_TAU) { diff -= DF_TAU; }
-            if (diff > DF_TAU / 2) { diff = DF_TAU - diff; }
-            if (diff < 600.0f * DF_TAU / 2048.0f) { continue; }
-        }
+        diff = df_absf(df_atan2(dx, dz) - cam.yaw);
+        while (diff > DF_TAU) { diff -= DF_TAU; }
+        if (diff > DF_TAU / 2) { diff = DF_TAU - diff; }
+        if (diff < 600.0f * DF_TAU / 2048.0f) { continue; }
         if (random_range(0, 32767) & 3) { continue; }
-        /* The original makes a guard of the person where they stand; the pictures are not the person's, so a guard is made near and the person goes. */
-        if (street_spawn()) {
-            people_fell(e);
-            n++;
-        }
+        n += street_enlist(i);
     }
     return n;
 }
 
 /* damage_spawn_splash on a person struck: a splash of blood in the people pool for a second, taken down by street_blood_tick. */
 #define STREET_BLOODS 4
+#define WATCH_RECOGNITION_RANGE 512.0f
+#define WATCH_RECOGNITION_INTERVAL 0.25f
 static Entity *g_street_blood[STREET_BLOODS];
 static float g_street_blood_left[STREET_BLOODS];
+static float g_watch_recognition;
+
+/* A close patrol can join an active pursuit or recognize a banished player.
+ * The regional clock still handles the chance of a report from farther away. */
+static void street_recognize(float seconds)
+{
+    const PlaceWhere *where = &world_where()->where;
+    Camera cam;
+    float eye[3];
+    int i, pursuing;
+
+    if (where->kind != WHERE_WORLD || !where->located || where->region < 0 || where->region >= REGIONS) { return; }
+    g_watch_recognition -= seconds;
+    if (g_watch_recognition > 0.0f) { return; }
+    g_watch_recognition = WATCH_RECOGNITION_INTERVAL;
+    pursuing = guards_present();
+    if (!pursuing && !(law_state()->punishment[where->region] & PUNISH_BANISHED)) { return; }
+    move_camera(&cam);
+    eye[0] = cam.x; eye[1] = cam.y; eye[2] = cam.z;
+    for (i = 0; i < PEOPLE_MAX; i++) {
+        Entity *e = people_at(i);
+        float dx, dz;
+
+        if (!people_is_guard(e) || people_hostile(e)) { continue; }
+        dx = e->x - cam.x; dz = e->z - cam.z;
+        if (dx * dx + dz * dz > WATCH_RECOGNITION_RANGE * WATCH_RECOGNITION_RANGE ||
+            !street_sees(e, eye) || !street_enlist(i)) { continue; }
+        if (!pursuing) { law_note(CRIME_CONSPIRACY); }
+        pursuing = 1;
+    }
+}
+
 static void street_blood(const Entity *e)
 {
     int i;
@@ -161,11 +207,21 @@ void gfall_street_tick(float seconds)
 {
     int i;
 
+    for (i = 0; i < dungeon_count(); i++) {
+        Entity *e;
+
+        if (dungeon_kind(i) != ENEMY_CITY_WATCH) { continue; }
+        e = dungeon_entity(i);
+        if (people_index(e) < 0 || e->live) { continue; }
+        dungeon_release_actor(i);
+        people_fell(e);
+    }
     for (i = 0; i < STREET_BLOODS; i++) {
         if (g_street_blood_left[i] <= 0.0f) { continue; }
         g_street_blood_left[i] -= seconds;
         if (g_street_blood_left[i] <= 0.0f && g_street_blood[i]) { g_street_blood[i]->live = 0; g_street_blood[i] = 0; }
     }
+    street_recognize(seconds);
 }
 
 /* The pedestrian pass of a swing (func_000733AD.c 96..110). */
@@ -187,13 +243,11 @@ static int street_hit(const Camera *cam)
         if (distance > 10.0f && df_cos(df_atan2(dx, dz) - cam->yaw) <= df_cos(200.0f * DF_TAU / 2048.0f)) { continue; }
         /* pedestrian_killed: the victim is still among the people, so they have seen it; murder, and the guards. */
         bits = street_witnesses();
-        if (bits) {
-            law_note(CRIME_MURDER);
-            guards_summon(1);
-        }
+        if (bits) { law_note(CRIME_MURDER); }
         street_blood(e);
         sound_at(17,e->x,e->y,e->z);
         people_fell(e);
+        if (bits) { guards_summon(1); }
         guild_count_crime(GUILD_COUNT_KILL, 5, game_state()->minutes);
         struck++;
     }
@@ -203,8 +257,8 @@ static int street_hit(const Camera *cam)
 /* A creature of the watch killed: the body is laid, the guard's corpse. */
 static void street_died(int kind, Entity *e)
 {
-    if (kind == STREET_GUARD_KIND && people_index(e) >= 0) {
-        people_lay_corpse(e);
+    if (kind == ENEMY_CITY_WATCH && people_index(e) >= 0) {
+        if (!people_lay_corpse(e)) { e->live = 0; }
         /* The body's things lie on the ground there, a pile the use key opens (the street has no corpse usables). */
         {
             df_u32 pile;
@@ -233,20 +287,24 @@ static void street_dismiss(void)
     for (i = 0; i < dungeon_count(); i++) {
         Entity *e;
 
-        if (dungeon_kind(i) != STREET_GUARD_KIND) { continue; }
+        if (dungeon_kind(i) != ENEMY_CITY_WATCH) { continue; }
         e = dungeon_entity(i);
-        dungeon_remove(i);
-        if (e && people_index(e) >= 0) { people_fell(e); }
+        if (people_index(e) >= 0) {
+            dungeon_release_actor(i);
+            people_fell(e);
+        } else {
+            dungeon_remove(i);
+        }
     }
 }
 
-static int guards_count(void) { return dungeon_count(); }
 static int guards_dungeon(void) { return world_where()->where.kind == WHERE_DUNGEON; }
 
 void gfall_street_open(void)
 {
     mem_zero(g_street_blood, sizeof(g_street_blood));
     mem_zero(g_street_blood_left, sizeof(g_street_blood_left));
+    g_watch_recognition = 0.0f;
 }
 
 void gfall_street_install(void)

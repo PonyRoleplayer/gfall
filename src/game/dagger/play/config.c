@@ -11,10 +11,11 @@
 
 static Config g_config;
 static const char *g_error = "";
+static const char *const g_bow_style[BOW_STYLES] = { "auto", "classic", "draw" };
 static const struct { const char *token, *name; int key; } g_action[ACTS] = {
     {"forward", "Forward", 0x26}, {"back", "Reverse", 0x28},
-    {"turn_left", "Turn left", 0x25}, {"slide_left", "Slide left", 0xa0},
-    {"turn_right", "Turn right", 0x27}, {"slide_right", "Slide right", 0xa1},
+    {"turn_left", "Turn left", 0x25}, {"slide_left", "Slide left", KEY_COMMA},
+    {"turn_right", "Turn right", 0x27}, {"slide_right", "Slide right", KEY_PERIOD},
     {"float_up", "Float up", 0x21}, {"float_down", "Float down", 0x22},
     {"jump", "Jump", 'J'}, {"crouch", "Crouch", 'D'},
     {"strafe", "Slide", 0x11}, {"run", "Run", 'P'},
@@ -30,7 +31,8 @@ static const struct { const char *token, *name; int key; } g_action[ACTS] = {
     {"abort", "Abort spell", 'E'}, {"magic_item", "Use magic item", 'U'},
     {"ready", "Ready weapon", 'A'}, {"swing", "Swing weapon", 2},
     {"switch_hand", "Switch hand", 'S'}, {"status", "Status", 'I'},
-    {"sheet", "Character sheet", 0x74}, {"inventory", "Inventory", 0x75}
+    {"sheet", "Character sheet", 0x74}, {"inventory", "Inventory", 0x75},
+    {"sprint", "Sprint", KEY_SHIFT}
 };
 
 typedef struct Setting { const char *name; size_t offset; int low, high; } Setting;
@@ -56,6 +58,12 @@ const Config *game_config(void)
     return &g_config;
 }
 
+int config_bow_draw(void)
+{
+    return g_config.bow_style == BOW_STYLE_DRAW ||
+           (g_config.bow_style == BOW_STYLE_AUTO && g_config.mouse_mode);
+}
+
 const char *config_error(void)
 {
     return g_error;
@@ -75,6 +83,35 @@ int key_allowed(int key)
 {
     /* Escape, the console and F10 retain their own UI actions. */
     return key >= 1 && key <= 254 && key != 0x1b && key != 0xc0 && key != 0x79;
+}
+
+int config_key_taken(const Config *config, int action, int key)
+{
+    int i, other;
+
+    for (i = 0; i < ACTS; i++) {
+        if (i == action) { continue; }
+        other = config->key[i];
+        if (other == key ||
+            (key == KEY_SHIFT && (other == KEY_LSHIFT || other == KEY_RSHIFT)) ||
+            (other == KEY_SHIFT && (key == KEY_LSHIFT || key == KEY_RSHIFT))) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void use_free_binding(Config *config, int action)
+{
+    int key = g_action[action].key;
+
+    if (config_key_taken(config, action, key)) {
+        /* Start with the letter keys. */
+        for (key = 'A'; key <= 254; key++) {
+            if (key_allowed(key) && !config_key_taken(config, action, key)) { break; }
+        }
+    }
+    config->key[action] = key;
 }
 
 void config_defaults(Config *config)
@@ -97,6 +134,7 @@ static int valid(const Config *config)
 {
     int i, value;
 
+    if (config->bow_style < 0 || config->bow_style >= BOW_STYLES) { return 0; }
     for (i = 0; i < (int)(sizeof(g_setting) / sizeof(g_setting[0])); i++) {
         value = *(const int *)((const char *)config + g_setting[i].offset);
         if (value < g_setting[i].low || value > g_setting[i].high) {
@@ -234,6 +272,12 @@ static int set_named(Config *config, const char *name, char *value)
         if (same_word(value, "view")) { config->mouse_mode = 1; return 1; }
         return 0;
     }
+    if (df_eq(name, "bow")) {
+        for (i = 0; i < BOW_STYLES; i++) {
+            if (same_word(value, g_bow_style[i])) { config->bow_style = i; return 1; }
+        }
+        return 0;
+    }
     if (df_eq(name, "resolution")) {
         height = value;
         while (*height && *height != 'x' && *height != 'X') { height++; }
@@ -259,7 +303,7 @@ int config_parse(Config *out, const char *text)
     Config candidate;
     char line[128];
     char *name, *value;
-    int n;
+    int n, has_sprint = 0;
 
     if (!out || !text) { return 0; }
     config_defaults(&candidate);
@@ -290,6 +334,13 @@ int config_parse(Config *out, const char *text)
         name = trim(name);
         value = trim(value);
         if (!set_named(&candidate, name, value)) { return 0; }
+        if (df_eq(name, "key.sprint")) { has_sprint = 1; }
+    }
+    if (!has_sprint) {
+        /* The old stock slides occupied both sides of Shift. Keep custom keys. */
+        if (candidate.key[SLIDE_LEFT] == KEY_LSHIFT) { use_free_binding(&candidate, SLIDE_LEFT); }
+        if (candidate.key[SLIDE_RIGHT] == KEY_RSHIFT) { use_free_binding(&candidate, SLIDE_RIGHT); }
+        use_free_binding(&candidate, SPRINT);
     }
     if (!valid(&candidate)) {
         return 0;
@@ -338,6 +389,9 @@ int config_format(const Config *config, char *text, int capacity)
     NUMBER("turn_rate", config->turn_rate);
 #undef NUMBER
     PUT(config->reverse_y ? "reverse_y=on\r\n" : "reverse_y=off\r\n");
+    PUT("# Bow: auto (draw in View, classic in Cursor), classic, or draw.\r\n");
+    log_format(line, sizeof(line), "bow=%s\r\n", g_bow_style[config->bow_style]);
+    PUT(line);
     PUT("\r\n# Keys use names: Up, K, Left Shift, Right Button, Digit 2, etc.\r\n");
     PUT("# Escape, F10 and the console key are reserved.\r\n");
     for (i = 0; i < ACTS; i++) {

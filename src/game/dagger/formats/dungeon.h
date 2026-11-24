@@ -1,6 +1,8 @@
 #ifndef DF_DUNGEON_H
 #define DF_DUNGEON_H
 
+#include "engine/core/df.h"
+
 /* RMB names run to TEMP + letters + a 3-digit number + ".RMB". */
 #define DUN_NAME_MAX 16
 #define DUN_MAX_BLOCKS 64
@@ -82,6 +84,19 @@ int exterior_list(DunRef *out, int cap);
 
 /* One outdoor location. Blocks are RMB names on a width*height grid. */
 int exterior_load_at(int region, int index, Dungeon *out);
+/* MAPPITEM's kept buildings, in exterior object ID order. */
+enum { SITE_QUEST, SITE_ITEM, SITE_ANY, SITE_KINDS };
+typedef struct ExteriorBuilding {
+    df_u32 id;
+    df_u16 name_seed;
+    df_u16 sites[SITE_KINDS];
+} ExteriorBuilding;
+typedef struct ExteriorBuildings {
+    ExteriorBuilding *rows;
+    int capacity, count;
+    df_u32 location_id;
+} ExteriorBuildings;
+int exterior_load_town(int region, int index, Dungeon *out, ExteriorBuildings *buildings);
 /* One region's outdoor places, as exterior_list, in their MAPPITEM order: row i is index i. How many there are, which may be more than cap. */
 int exterior_list_region(int region, DunRef *out, int cap);
 /* The outside whose LOC_ID is number: its region and index; one open of MAPS.BSA, each region read once, stopping at the match. 1 when found. */

@@ -341,6 +341,8 @@ int cfa_load(const char *name, CfaPicture *out)
     out->width = (int)df_ru16(b);
     out->height = (int)df_ru16(b + 2);
     compressed = (int)df_ru16(b + 4);
+    out->x = (int)df_ri16(b + 6);
+    out->y = (int)df_ri16(b + 8);
     out->frames = (int)b[11];
     header = (int)df_ru16(b + 12);
     if (out->width < 1 || out->height < 1 || out->frames < 1 || compressed != out->width || header >= (int)n) {

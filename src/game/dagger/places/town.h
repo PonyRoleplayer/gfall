@@ -2,6 +2,7 @@
 #define DF_TOWN_H
 
 #include "engine/core/df.h"
+#include "game/dagger/formats/dungeon.h"
 
 /*
  * A town's buildings, from its blocks' files: what each is and where it stands
@@ -25,6 +26,7 @@ typedef struct TownBuilding {
     short quality;
     /* The sign's seed, the building record's first word. */
     unsigned short name_seed;
+    df_u16 sites[SITE_KINDS];
     int faction;
     float x;
     float z;
@@ -52,6 +54,8 @@ const char *town_name(void);
 const unsigned char *town_block_bytes(int region, int index, int block, unsigned *size);
 /* One of them, by what a door's tag names; 0 for none. */
 const TownBuilding *town_building(int region, int index, int block, int record);
+/* Resolve a typed automap cell to the nearest matching building in its block. */
+const TownBuilding *town_building_near(int region, int index, float x, float z, int type);
 
 /*
  * A building's identity everywhere: what the player owns (the house), what is kept of it (its chests and cupboards: container keys), who is let in. One number from the town's map place and the building's block and
@@ -61,6 +65,10 @@ const TownBuilding *town_building(int region, int index, int block, int record);
 #define BUILDING_KEY_KIND (3u << 30)
 /* Where the editor marker `record` (199) of the town's block 0 stands in the town's own frame (the corner of the blocks the origin). 0 when there is none. */
 int town_marker(int region, int index, int record, float *x, float *z);
+/* The court's street markers (editor record 10). Pick one in block order. */
+int town_release_marker(int region, int index, unsigned draw, float *x, float *z);
+/* The closest street marker to an approach point in the town's own frame. */
+int town_nearest_street_marker(int region, int index, float from_x, float from_z, float *x, float *z);
 df_u32 town_building_key(int region, int index, int block, int record);
 
 #endif

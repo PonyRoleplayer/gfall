@@ -3,6 +3,7 @@
 #include "game/dagger/play/travel/travel.h"
 #include "game/dagger/play/travel/maps.h"
 #include "../seam.h"
+#include "../buildings/buildings.h"
 #include "../sound.h"
 #include "screen.h"
 #include "callbacks.h"
@@ -93,7 +94,7 @@ static int frame_maps(const PlayIn *input)
     if (g_maps_mode != 3 && input->pressed[AUTOMAP]) { return 1; }
     if (g_maps_mode == 2 && input->pressed[TRAVEL]) { close_maps(); return !open_maps(1); }
     if (input->key) {
-        result = g_maps_mode == 1 ? dunmap_key(input->key) : g_maps_mode == 2 ? townmap_key(input->key) : travelmap_key(input->key);
+        result = g_maps_mode == 1 ? dunmap_key(input->key) : g_maps_mode == 2 ? townmap_key(input->key) : travelmap_key(input->key,input->ch);
     }
     if (g_maps_mode == 3) {
         if (input->on_picture) { travelmap_point(input->cx,input->cy); }
@@ -176,6 +177,7 @@ void gfall_screen_install_maps(void)
     MapsHooks hooks;
     hooks.open = open_maps; hooks.close = close_maps; hooks.frame = frame_maps; hooks.overlay = map_overlay;
     maps_install(&hooks);
+    townmap_set_building_name(gfall_building_map_name);
 }
 void gfall_screen_present_maps(void)
 {

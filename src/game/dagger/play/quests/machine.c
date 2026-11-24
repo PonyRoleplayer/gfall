@@ -308,12 +308,13 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
                 QuestFoe *foe;
                 int made;
 
-                if (op->arg[4].value != -1) { op->arg[4].value--; }
                 foe = &q->foe[op->arg[1].value];
                 for (made = 0; quest_world && quest_world->spawn_foe && made < q->qbn.foe[op->arg[1].value].count && made < 16; made++) {
-                    if (!quest_world->spawn_foe(q->qbn.foe[op->arg[1].value].type, QUEST_FOE_THING(foe->number, (foe->next++) & 15))) { break; }
+                    if (!quest_world->spawn_foe(q->qbn.foe[op->arg[1].value].type, QUEST_FOE_THING(foe->number, foe->next & 15))) { break; }
+                    foe->next++;
                     foe->live++;
                 }
+                if (made && op->arg[4].value > 0) { op->arg[4].value--; }
             }
         }
         break;
@@ -394,16 +395,17 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
         }
         break;
     case QOP_REWARD:
-        /* Once: +5 with the quest's faction and the reward given. The reward box of the original holds gold as a purse here (it would open the inventory on it): the coins go straight to the
-         * player. An item already given is passed over (7.4). Other items wait for step 9; the Brotherhood's and the Thieves' joining quests too. */
+        /* Once: show the quest's reward message, then give the reward and +5 with its faction.
+         * Coins go straight to the player. An item already given is passed over. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1)) {
             q->rewarded = 1;
+            quest_op_done(q, op);
+            quest_show_message(q, 1004);
             /* The two guilds' invitation quests join the guild instead (rank 0, nothing given, no reputation): by their names, case blind. */
             if (same_name_blind(q->qbn.name, "L0A01L00") || same_name_blind(q->qbn.name, "O0A0AL00")) {
                 GuildStep joined;
 
                 guild_join(q->qbn.name[0] == 'L' || q->qbn.name[0] == 'l' ? 0 : 3, q->qbn.name[0] == 'L' || q->qbn.name[0] == 'l' ? 108 : 42, game_state()->minutes, &joined);
-                quest_op_done(q, op);
                 break;
             }
             if (q->qbn.faction) { faction_change_reputation(q->qbn.faction, 5); }
@@ -418,7 +420,6 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
                     q->item[n].given = 1; quest_item_forget(q, n);
                 }
             }
-            quest_op_done(q, op);
         }
         break;
     case QOP_PLACE_ITEM:
@@ -638,7 +639,7 @@ static void run_op(int slot, QuestState *q, QbnOp *op)
     case QOP_ASK_YES_NO:
         /* Once: a yes/no box with the op's QRC message; the answer sets its yes or no state. One box at a time. */
         if (quest_arg_state(q, op, 0) && !(op->flags & 1) && g_prompt_slot < 0 && quest_text_hooks.ask && quest_text_hooks.read) {
-            char text[1024], said[1024];
+            static char text[QUEST_DIALOG_CAP], said[QUEST_DIALOG_CAP];
             int message;
 
             /* The question's QRC id is the op's fourth operand, a number (the files hold -1 in the message field of this op); a message field, when set, is a TEXT.RSC or QRC id as the others. */
@@ -803,7 +804,7 @@ void quest_run(void)
         if (!q->used) { continue; }
         for (i = 0; i < q->qbn.n_op && !q->ended; i++) { run_op(slot, q, &q->qbn.op[i]); }
         /* A foe whose floor was not there when it was placed (a marker far off) is made as the player comes near. */
-        for (i = 0; i < q->qbn.n_foe; i++) { if (q->foe[i].placed && q->foe[i].made < q->qbn.foe[i].count) { quest_spawn_foe(q, i); } }
+        for (i = 0; i < q->qbn.n_foe && !q->ended; i++) { if (q->foe[i].placed && q->foe[i].made < q->qbn.foe[i].count) { quest_spawn_foe(q, i); } }
         /* The four template slots are cleared after each quest's run. */
         quest_item_templates_clear();
         if (!q->ended) { timers_run(q); }

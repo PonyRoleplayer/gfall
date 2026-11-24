@@ -1,7 +1,7 @@
 #include "game/dagger/play/watcom.h"
 #include "game/dagger/play/ui/words.h"
 #include "game/dagger/formats/textrsc.h"
-#include "game/dagger/tables/careers.h"
+#include "game/dagger/tables/tables.h"
 #include "engine/core/df.h"
 #include "engine/core/log.h"
 
@@ -21,6 +21,14 @@
 static const signed char g_oath_of_race[9] = { 3, 3, 2, 0, 7, 6, 5, 1, 4 };
 
 static const Words *g_words;
+static const CharacterState *g_player;
+static const char *(*g_race_name)(int race);
+
+void words_set_player(const CharacterState *player, const char *(*race_name)(int race))
+{
+    g_player = player;
+    g_race_name = race_name;
+}
 
 static int text_length(const char *s)
 {
@@ -66,32 +74,13 @@ static void say_into(int record, char *out, int cap, int depth)
     }
 }
 
-/* How the person speaks of the player: Sir or Lady. */
-static const char *honorific(const Words *w)
-{
-    return w->pc && w->pc->female ? "Lady" : "Sir";
-}
-
-/* The race's name; "stranger" for no character. */
-static const char *race_name(const Words *w)
-{
-    const CareerRace *r;
-
-    r = w->pc ? career_race(w->pc->race) : 0;
-    return r ? r->name : "stranger";
-}
-
 /* The character's name up to its first space. */
-static void first_name(const Words *w, char *out, int cap)
+static void first_name(const char *name, char *out, int cap)
 {
     int i;
 
-    out[0] = 0;
-    if (!w->pc) {
-        return;
-    }
-    for (i = 0; i < cap - 1 && w->pc->name[i] && w->pc->name[i] != ' '; i++) {
-        out[i] = w->pc->name[i];
+    for (i = 0; i < cap - 1 && name[i] && name[i] != ' '; i++) {
+        out[i] = name[i];
     }
     out[i] = 0;
 }
@@ -110,16 +99,22 @@ static void say_macro(const char *macro, char *out, int cap, int depth)
     }
     text = 0;
     if (df_eq(macro, "pcn") || df_eq(macro, "pc")) {
-        text = w->pc ? w->pc->name : "";
+        text = g_player ? g_player->name : "";
     } else if (df_eq(macro, "pcf") || df_eq(macro, "pcnf")) {
-        first_name(w, out, cap);
+        first_name(g_player ? g_player->name : "", out, cap);
         return;
     } else if (df_eq(macro, "ra")) {
-        text = race_name(w);
+        /* Classic uses the original race even when the player changes form. */
+        text = g_player && g_race_name ? g_race_name(g_player->race) : "";
+        if (!text[0]) { text = "stranger"; }
+    } else if (df_eq(macro, "lev")) {
+        text = w->guild_rank && w->guild_rank[0] ? w->guild_rank : g_player ? g_player->name : "";
+    } else if (df_eq(macro, "t") && w->ruler_title) {
+        text = w->ruler_title;
     } else if (df_eq(macro, "hnr") || df_eq(macro, "pct") || df_eq(macro, "t")) {
-        text = honorific(w);
+        text = g_player && g_player->female ? "Lady" : "Sir";
     } else if (df_eq(macro, "oth")) {
-        race = w->pc ? w->pc->race : 0;
+        race = w->oath_race;
         say_into(RECORD_OATHS + g_oath_of_race[race >= 0 && race < 9 ? race : 0], out, cap, depth);
         return;
     } else if (df_eq(macro, "1com")) {
@@ -133,7 +128,7 @@ static void say_macro(const char *macro, char *out, int cap, int depth)
         if (w->reaction <= 0) {
             say_into(RECORD_NAME_FOR + w->tone, out, cap, depth);
         } else {
-            first_name(w, out, cap);
+            first_name(g_player ? g_player->name : "", out, cap);
         }
         return;
     } else if (df_eq(macro, "key")) {
@@ -146,7 +141,14 @@ static void say_macro(const char *macro, char *out, int cap, int depth)
         text = w->hint;
     } else if (df_eq(macro, "cn")) {
         text = w->city;
-    } else if (df_eq(macro, "rn") || df_eq(macro, "reg")) {
+    } else if (df_eq(macro, "ct")) {
+        text = w->location_type;
+    } else if (df_eq(macro, "ef")) {
+        if (w->shop_owner) { w->shop_owner(out, cap); }
+        return;
+    } else if (df_eq(macro, "rt")) {
+        text = w->title;
+    } else if (df_eq(macro, "rn") || df_eq(macro, "reg") || df_eq(macro, "lp")) {
         text = w->region;
     } else if (df_eq(macro, "cpn") || df_eq(macro, "tcn")) {
         text = w->place;
@@ -236,8 +238,8 @@ void words_expand(const char *src, char *out, int cap)
 static int macro_known(const char *macro)
 {
     static const char *const known[] = {
-        "pcn", "pc", "pcf", "pcnf", "ra", "hnr", "pct", "t", "oth", "1com", "2com", "n", "key", "loc",
-        "di", "hnt", "hnt2", "cn", "rn", "reg", "cpn", "tcn", "cri", "pen", "a", "dip", "pdg", "prn", "fnpc", "fpc", "pqn", "pqp", "dae", "dat", "fx1", "fx2", "nrn", "ptm", "fl1", "ol1", "olf", "lt1", "g3"
+        "pcn", "pc", "pcf", "pcnf", "ra", "lev", "hnr", "pct", "t", "oth", "1com", "2com", "n", "key", "loc",
+        "di", "hnt", "hnt2", "cn", "ct", "ef", "rt", "rn", "reg", "lp", "cpn", "tcn", "cri", "pen", "a", "dip", "pdg", "prn", "fnpc", "fpc", "pqn", "pqp", "dae", "dat", "fx1", "fx2", "nrn", "ptm", "fl1", "ol1", "olf", "lt1", "g3"
     };
     int i;
 

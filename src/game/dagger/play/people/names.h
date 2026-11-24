@@ -24,6 +24,8 @@ int region_bank(int region);
 void name_generate(int bank, int female, char *out, int cap);
 /* name_generate_seeded: the same on a stream started at seed and put back after. */
 void name_seeded(int bank, int female, df_u32 seed, char *out, int cap);
+/* The title named by FACTION.TXT's ruler field. Missing entries use Lord. */
+const char *name_ruler_title(int ruler);
 
 typedef struct NpcName {
     /* The person's record type (8 person, 53 a quest's person), faction id (0 none) and what the faction table says of it. */

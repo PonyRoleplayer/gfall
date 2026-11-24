@@ -4,6 +4,8 @@
 #include "engine/assets/vfs.h"
 #include "game/dagger/play/people/names.h"
 #include "game/dagger/play/state.h"
+#include "game/dagger/tables/buildingtypes.h"
+#include "../apps/gfall/buildings/buildings.h"
 
 static int has_space(const char *s)
 {
@@ -99,4 +101,25 @@ void check_names(void)
     check_expect(!strcmp(a, "Residence"), "names: a plain residence");
     bld.type = 20; bld.faction = 108; bld.brotherhood = 1; building_name(&bld, a, sizeof(a));
     check_expect(!strcmp(a, "The Dark Brotherhood"), "names: the Brotherhood's hall");
+
+    {
+        TownBuilding shop = {0};
+
+        /* These seeds select a possessive owner or court title after the
+         * suffix draw, as in FALL.EXE's building_name. */
+        shop.type = BUILDING_LIBRARY;
+        shop.name_seed = 531;
+        gfall_building_name(&shop, 17, 1231, a, sizeof(a));
+        gfall_building_name(&shop, 17, 1231, b, sizeof(b));
+        check_expect(!strcmp(a, "Uthynak's Historians") && !strcmp(a, b),
+                     "names: the library sign has its seeded owner's given name");
+        shop.type = BUILDING_GEMS;
+        shop.name_seed = 151;
+        gfall_building_name(&shop, 17, 1231, a, sizeof(a));
+        check_expect(!strcmp(a, "Dunore's Jewelry Shop"), "names: the jewelry shop sign has its owner");
+        shop.type = BUILDING_LIBRARY;
+        shop.name_seed = 146;
+        gfall_building_name(&shop, 17, 1231, a, sizeof(a));
+        check_expect(!strcmp(a, "The King's Library"), "names: the sign uses the Daggerfall court's ruler title");
+    }
 }

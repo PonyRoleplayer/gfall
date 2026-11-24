@@ -38,6 +38,8 @@
 #include "game/dagger/play/ui/msg.h"
 
 #include "seam.h"
+#include "screen/screen.h"
+#include "world/world.h"
 
 static float frame_secs(void)
 {
@@ -130,6 +132,7 @@ static void extra(void)
 
     /* The parchment, the list and the name screen, before play_draw blits them. */
     seam_present();
+    if (chargen_mode() == UI_WORLD && !maps_up() && !seam_screen_covers()) { gfall_screen_draw_mount(); }
     play_draw();
     /* Chargen captions used to be painted on the map. The pictures carry the words. */
     if (chargen_mode() != UI_WORLD) {
@@ -177,7 +180,10 @@ static int enter_place(Camera *cam, int restoring, int changing)
         win_fail(gfx_error());
         return 0;
     }
-    seam_land(cam,restoring,changing);
+    if (!seam_land(cam,restoring,changing)) {
+        win_fail(seam_error());
+        return 0;
+    }
     seam_creatures(cam);
     gfx_prime(level, cam);
     gfx_fade_in(0.5f);
@@ -296,6 +302,7 @@ static int gfall_main(void *instance)
             sound_listen(cam.x, cam.y, cam.z, cam.yaw);
         }
         gfx_set_pause(play_paused());
+        gfall_mount_sound(have && !play_paused() && !console_open());
         /* No world behind a map, or behind a page that covers the whole screen (seam_screen_covers). */
         gfx_frame(&cam,have && !maps_up() && !seam_screen_covers() ? seam_level() : 0);
     }
